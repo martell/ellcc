@@ -1,5 +1,5 @@
 # Build ELLCC.
-VERSION=0.0.1
+VERSION=0.0.2
 
 # Get the names of the subdirectories.
 SUBDIRS := llvm-build gnu libecc
