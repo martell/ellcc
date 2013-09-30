@@ -36,12 +36,13 @@ $(Configs):
 	make -C src/compiler-rt ellcc_linux-$@
 
 %.libunwind.configure:
-	@echo Configuring libunwind for $* in obj/$*/linux/libunwind
-	mkdir -p obj/$*/linux/libunwind
-	cd obj/$*/linux/libunwind ; \
-	../../../../src/libunwind/configure CC="$(ELLCC)/bin/ecc $(CFLAGS.$*) -Wno-header-guard" \
-	    --enable-shared=no --enable-cxx-exceptions=yes \
-            # --host=$*
+	@echo Configuring libunwind for $* in libunwind-build/$*/linux
+	mkdir -p libunwind-build/$*/linux
+	cd libunwind-build/$*/linux ; \
+	../../../src/libunwind/configure CC="$(ELLCC)/bin/ecc $(CFLAGS.$*) -Wno-header-guard" \
+	    --enable-shared=no \
+        --enable-cxx-exceptions=yes \
+        --host=$*
 
 clean:
 	make -C src/musl distclean
