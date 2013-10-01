@@ -23,7 +23,7 @@ TEST_GROUP(Tgmath)
     double complex dc = 0;
     long double complex ldc = 0;
     TEST_TRACE(C99 7.22/4)
-    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+    TEST_RESOLVED(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
     f = acos(f);
     d = acos(d);
     ld = acos(ld);
@@ -213,7 +213,7 @@ TEST_GROUP(Tgmath)
     ld = nearbyint(ld);
     f = nextafter(f, f);
     d = nextafter(d, d);
-    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+    TEST_RESOLVED(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
         ld = nextafter(ld, ld);
     f = nexttoward(f, f);

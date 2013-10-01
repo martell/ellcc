@@ -54,9 +54,8 @@ TEST_GROUP(Math)
     i = math_errhandling;
     TEST_TRACE(C99 7.12.3.1)
     TEST(fpclassify(0.0) == FP_ZERO, "fpclassify(1.0) == FP_ZERO");
-    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
+    TEST_RESOLVED(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
         TEST(fpclassify(1.0) == FP_NORMAL, "fpclassify(1.0) == FP_NORMAL");
-        TEST_FAIL(ARMEB, fpclassify(1.0) == FP_NORMAL, "fpclassify(1.0) == FP_NORMAL");
     TEST(fpclassify(NAN) == FP_NAN, "fpclassify(NAN) == FP_NAN");
     TEST(fpclassify(INFINITY) == FP_INFINITE, "fpclassify(INFINITY) == FP_INFINITE");
     TEST_TRACE(C99 7.12.3.2)
@@ -94,7 +93,7 @@ TEST_GROUP(Math)
     d = atan(0.0);
     f = atanf(0.0);
     ld = atanl(0.0);
-    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+    TEST_RESOLVED(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
         TEST_TRACE(C99 7.12.4.4)
         d = atan2(1.0, 2.0);
         f = atan2f(1.0, 2.0);
@@ -158,17 +157,15 @@ TEST_GROUP(Math)
     ld = ilogbl(0.0);
     TEST(ilogb(0.0) == FP_ILOGB0, "ilogb(0.0) == FP_ILOGB0");
     TEST_RESOLVED(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
-    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
+    TEST_RESOLVED(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
         TEST(ilogb(NAN) == FP_ILOGBNAN, "ilogb(NAN) == FP_ILOGBNAN");
-        TEST_FAIL(ARMEB, ilogb(NAN) == FP_ILOGBNAN, "ilogb(NAN) == FP_ILOGBNAN");
     TEST_TRACE(C99 7.12.6.6)
     d = ldexp(1.0, 1);
     f = ldexpf(1.0, 1);
     ld = ldexpl(1.0, 1);
     TEST_RESOLVED(ARM, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
-    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
+    TEST_RESOLVED(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=14")
         TEST(ldexp(1.0, 1) == 2.0, "ldexp(1.0, 1) == 2.0");
-        TEST_FAIL(ARMEB, ldexp(1.0, 1) == 2.0, "ldexp(1.0, 1) == 2.0");
     TEST_TRACE(C99 7.12.6.7)
     d = log(1.0);
     f = logf(1.0);
@@ -177,7 +174,7 @@ TEST_GROUP(Math)
     d = log10(1.0);
     f = log10f(1.0);
     ld = log10l(1.0);
-    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+    TEST_RESOLVED(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
         TEST_TRACE(C99 7.12.6.9)
         d = log1p(1.0);
         f = log1pf(1.0);
@@ -210,7 +207,7 @@ TEST_GROUP(Math)
     d = fabs(0.0);
     f = fabsf(0.0);
     ld = fabsl(0.0);
-    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+    TEST_RESOLVED(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
         TEST_TRACE(C99 7.12.7.3)
         d = hypot(2.0, 2.0);
         f = hypotf(2.0, 2.0);
@@ -224,7 +221,7 @@ TEST_GROUP(Math)
     d = sqrt(4.0);
     f = sqrtf(4.0);
     ld = sqrtl(4.0);
-    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+    TEST_RESOLVED(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
         TEST_TRACE(C99 7.12.8.1)
         d = erf(0.0);
         f = erff(0.0);
@@ -250,7 +247,7 @@ TEST_GROUP(Math)
     d = floor(1.0);
     f = floorf(1.0);
     ld = floorl(1.0);
-    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+    TEST_RESOLVED(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
         TEST_TRACE(C99 7.12.9.3)
         d = nearbyint(1.0);
         f = nearbyintf(1.0);
@@ -282,7 +279,7 @@ TEST_GROUP(Math)
     d = trunc(1.0);
     f = truncf(1.0);
     ld = truncl(1.0);
-    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+    TEST_RESOLVED(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
         TEST_TRACE(C99 7.12.10.1)
         d = fmod(2.0, 2.0);
         f = fmodf(2.0, 2.0);
@@ -292,7 +289,7 @@ TEST_GROUP(Math)
     d = remainder(2.0, 2.0);
     f = remainderf(2.0, 2.0);
     ld = remainderl(2.0, 2.0);
-    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+    TEST_RESOLVED(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
         TEST_TRACE(C99 7.12.10.3)
         d = remquo(4.0, 2.0, &i);
         f = remquof(4.0, 2.0, &i);
@@ -309,7 +306,7 @@ TEST_GROUP(Math)
     TEST_TRACE(C99 7.12.11.3)
     d = nextafter(2.0, 0.0);
     f = nextafterf(2.0, 0.0);
-    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+    TEST_RESOLVED(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
         ld = nextafterl(2.0, 0.0);
     TEST_TRACE(C99 7.12.11.4)
@@ -323,13 +320,13 @@ TEST_GROUP(Math)
     TEST_TRACE(C99 7.12.12.2)
     d = fmax(2.0, 0.0);
     f = fmaxf(2.0, 0.0);
-    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+    TEST_RESOLVED(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
         ld = fmaxl(2.0, 0.0);
     TEST_TRACE(C99 7.12.12.3)
     d = fmin(2.0, 0.0);
     f = fminf(2.0, 0.0);
-    TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
+    TEST_RESOLVED(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
         ld = fminl(2.0, 0.0);
     TEST_TRACE(C99 7.12.13.1)

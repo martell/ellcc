@@ -58,7 +58,7 @@ TEST_GROUP(Stdlib)
     d = strtod("1.0", &p);
     TEST(d == 1.0 && *p == '\0', "strtod(1.0) == 1.0");
     f = strtof("1.0", &p);
-    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=56")
+    TEST_RESOLVED(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=56")
         TEST(f == 1.0F && *p == '\0', "strtof(1.0) == 1.0F (%g)", f);
         TEST_FAIL(ARMEB, f == 1.0F && *p == '\0', "strtof(1.0) == 1.0F (%g)", f);
     ld = strtold("1.0", &p);

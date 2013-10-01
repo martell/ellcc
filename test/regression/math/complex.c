@@ -17,7 +17,7 @@ TEST_GROUP(Complex)
     float complex f = I;
     double complex d = I;
     long double complex ld = I;
-    TEST_EXCLUDE(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
+    TEST_RESOLVED(MIPS, "http://ellcc.org/bugzilla/show_bug.cgi?id=59") {
     TEST_TRACE(C99 7.3.5.1)
         d = cacos(d);
         f = cacosf(f);

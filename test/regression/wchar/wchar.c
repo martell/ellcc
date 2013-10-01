@@ -229,9 +229,8 @@ TEST_GROUP(Wchar)
     d = wcstod(L"1.0", &p);
     TEST(d == 1.0 && *p == L'\0', "wcstod(1.0) == 1.0");
     fl = wcstof(L"1.0", &p);
-    TEST_EXCLUDE(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=56")
+    TEST_RESOLVED(ARMEB, "http://ellcc.org/bugzilla/show_bug.cgi?id=56")
         TEST(fl == 1.0F && *p == L'\0', "wcstof(1.0) == 1.0F");
-        TEST_FAIL(ARMEB, fl == 1.0F && *p == L'\0', "wcstof(1.0) == 1.0F");
     ld = wcstold(L"1.0", &p);
     TEST_EXCLUDE(PPC, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
     TEST_EXCLUDE(PPC64, "http://ellcc.org/bugzilla/show_bug.cgi?id=47")
