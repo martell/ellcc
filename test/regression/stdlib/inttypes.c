@@ -325,7 +325,7 @@ TEST_GROUP(Inttypes)
     TEST_TRACE(C99 7.8.2.3)
     intmax_t m;
     m = strtoimax("100", 0, 0);
-    TEST_RESOLVED(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=54")
+    TEST_EXCLUDE(MICROBLAZE, "http://ellcc.org/bugzilla/show_bug.cgi?id=54")
         TEST(m == 100, "strtoimax(\"100\", 0, 0) == 100 (%" PRIdMAX ")", m);
         TEST_FAIL(MICROBLAZE, m == 100, "strtoimax(\"100\", 0, 0) == 100 (%" PRIdMAX ")", m);
     uintmax_t um;
