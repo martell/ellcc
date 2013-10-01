@@ -11,6 +11,8 @@
 # include "libunwind-ia64.h"
 #elif defined __mips__
 # include "libunwind-mips.h"
+#elif defined __microblaze__
+# include "libunwind-microblaze.h"
 #elif defined __powerpc__ && !defined __powerpc64__
 # include "libunwind-ppc32.h"
 #elif defined __powerpc64__

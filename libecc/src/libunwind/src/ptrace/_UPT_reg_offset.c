@@ -337,6 +337,20 @@ const int _UPT_reg_offset[UNW_REG_LAST + 1] =
 #endif
 #elif defined(UNW_TARGET_PPC32) || defined(UNW_TARGET_PPC64)
 
+// RICH: From ptrace.h
+#define PT_CTR  35
+#define PT_LNK  36
+#define PT_XER  37
+#define PT_CCR  38
+
+#define PT_FPR0 48
+#if defined(__PPC64__)
+#define PT_FPSCR (PT_FPR0 + 32)
+#else
+#define PT_FPSCR (PT_FPR0 + 2*32 + 1)
+#endif
+
+
 #define UNW_REG_SLOT_SIZE sizeof(unsigned long)
 #define UNW_PPC_R(v) ((v) * UNW_REG_SLOT_SIZE)
 #define UNW_PPC_PT(p) UNW_PPC_R(PT_##p)
@@ -345,7 +359,7 @@ const int _UPT_reg_offset[UNW_REG_LAST + 1] =
     [UNW_PPC##b##_F##i] = UNW_PPC_R(PT_FPR0 + i * 8/UNW_REG_SLOT_SIZE)
 
 #define UNW_R_OFF(b, i) \
-    [UNW_PPC##b##_R##i] = UNW_PPC_R(PT_R##i)
+    [UNW_PPC##b##_R##i] = UNW_PPC_R(i)
 
 #define UNW_PPC_REGS(b) \
     UNW_R_OFF(b, 0),	\
@@ -500,6 +514,7 @@ const int _UPT_reg_offset[UNW_REG_LAST + 1] =
     [UNW_ARM_R14]      = 0x38,
     [UNW_ARM_R15]      = 0x3c,
 #elif defined(UNW_TARGET_MIPS)
+#elif defined(UNW_TARGET_MICROBLAZE)
 #elif defined(UNW_TARGET_SH)
 #else
 # error Fix me.

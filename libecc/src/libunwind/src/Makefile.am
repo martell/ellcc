@@ -259,6 +259,31 @@ libunwind_mips_la_SOURCES_mips = $(libunwind_la_SOURCES_mips_common)	    \
 	mips/Gglobal.c mips/Ginit.c mips/Ginit_local.c mips/Ginit_remote.c	    \
 	mips/Gis_signal_frame.c mips/Gregs.c mips/Gresume.c mips/Gstep.c
 
+# The list of files that go info libunwind and libunwind-microblaze:
+noinst_HEADERS += microblaze/init.h microblaze/offsets.h
+libunwind_la_SOURCES_microblaze_common = $(libunwind_la_SOURCES_common)	    \
+	microblaze/is_fpreg.c microblaze/regname.c
+
+# The list of files that go into libunwind:
+libunwind_la_SOURCES_microblaze = $(libunwind_la_SOURCES_microblaze_common) \
+	$(libunwind_la_SOURCES_local)					\
+	microblaze/getcontext.S						\
+	microblaze/Lcreate_addr_space.c microblaze/Lget_proc_info.c 	\
+	microblaze/Lget_save_loc.c microblaze/Lglobal.c 		\
+	microblaze/Linit.c microblaze/Linit_local.c 			\
+	microblaze/Linit_remote.c  					\
+	microblaze/Lis_signal_frame.c microblaze/Lregs.c 		\
+	microblaze/Lresume.c microblaze/Lstep.c
+
+libunwind_microblaze_la_SOURCES_microblaze = 				\
+	$(libunwind_la_SOURCES_microblaze_common)	    		\
+	$(libunwind_la_SOURCES_generic)					\
+	microblaze/Gcreate_addr_space.c microblaze/Gget_proc_info.c 	\
+	microblaze/Gget_save_loc.c microblaze/Gglobal.c 		\
+	microblaze/Ginit.c microblaze/Ginit_local.c 			\
+	microblaze/Ginit_remote.c microblaze/Gis_signal_frame.c 	\
+	microblaze/Gregs.c microblaze/Gresume.c microblaze/Gstep.c
+
 # The list of files that go both into libunwind and libunwind-x86:
 noinst_HEADERS += x86/init.h x86/offsets.h x86/unwind_i.h
 libunwind_la_SOURCES_x86_common = $(libunwind_la_SOURCES_common)	\
@@ -476,6 +501,18 @@ if !REMOTE_ONLY
 endif
  libunwind_setjmp_la_SOURCES += mips/siglongjmp.S
 else
+if ARCH_MICROBLAZE
+ lib_LTLIBRARIES += libunwind-microblaze.la
+ libunwind_la_SOURCES = $(libunwind_la_SOURCES_microblaze)
+ libunwind_microblaze_la_SOURCES = $(libunwind_microblaze_la_SOURCES_microblaze)
+ libunwind_microblaze_la_LDFLAGS = $(COMMON_SO_LDFLAGS) -version-info $(SOVERSION)
+ libunwind_microblaze_la_LIBADD = libunwind-dwarf-generic.la
+ libunwind_microblaze_la_LIBADD += libunwind-elfxx.la
+if !REMOTE_ONLY
+ libunwind_microblaze_la_LIBADD += libunwind.la -lc
+endif
+ libunwind_setjmp_la_SOURCES += microblaze/siglongjmp.S
+else
 if ARCH_X86
  lib_LTLIBRARIES += libunwind-x86.la
  libunwind_la_SOURCES = $(libunwind_la_SOURCES_x86) $(libunwind_x86_la_SOURCES_os)
@@ -542,6 +579,7 @@ endif # ARCH_PPC32
 endif # ARCH_X86_64
 endif # ARCH_X86
 endif # ARCH_MIPS
+endif # ARCH_MICROBLAZE
 endif # ARCH_HPPA
 endif # ARCH_IA64
 endif # ARCH_ARM
@@ -571,6 +609,7 @@ EXTRA_DIST =	$(libunwind_la_SOURCES_arm)			\
 		$(libunwind_la_SOURCES_hppa)			\
 		$(libunwind_la_SOURCES_ia64)			\
 		$(libunwind_la_SOURCES_mips)			\
+		$(libunwind_la_SOURCES_microblaze)		\
 		$(libunwind_la_SOURCES_sh)			\
 		$(libunwind_la_SOURCES_x86)			\
 		$(libunwind_la_SOURCES_os_freebsd)		\
@@ -583,6 +622,7 @@ EXTRA_DIST =	$(libunwind_la_SOURCES_arm)			\
 		$(libunwind_hppa_la_SOURCES_hppa)		\
 		$(libunwind_ia64_la_SOURCES_ia64)		\
 		$(libunwind_mips_la_SOURCES_mips)		\
+		$(libunwind_microblaze_la_SOURCES_microblaze)	\
 		$(libunwind_sh_la_SOURCES_sh)			\
 		$(libunwind_x86_la_SOURCES_x86)			\
 		$(libunwind_x86_64_la_SOURCES_x86_64)

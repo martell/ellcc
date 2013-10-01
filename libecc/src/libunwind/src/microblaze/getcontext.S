@@ -1,6 +1,5 @@
 /* libunwind - a platform-independent unwind library
-   Copyright (C) 2008 CodeSourcery
-   Copyright (C) 2012 Tommi Rantala <tt.rantala@gmail.com>
+   Copyright (C) 2013 Richard Pennington
 
 This file is part of libunwind.
 
@@ -28,7 +27,6 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 
 	.text
 
-#if _MIPS_SIM == _ABIO32
 # if __BYTE_ORDER == __BIG_ENDIAN
 #  define OFFSET 4
 # else
@@ -43,16 +41,12 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
  sw $31, (LINUX_UC_MCONTEXT_PC + OFFSET) ($4); \
  sra $1, $31, 31; \
  sw $1, (LINUX_UC_MCONTEXT_PC + 4 - OFFSET) ($4)
-#else
-# define SREG(X) sd $X, (LINUX_UC_MCONTEXT_GREGS + 8 * X) ($4)
-# define SPC sd $31, (LINUX_UC_MCONTEXT_PC) ($4)
-#endif
 
-	.global _Umips_getcontext
-	.type	_Umips_getcontext, %function
-	# This is a stub version of getcontext() for MIPS which only stores core
+	.global _Umicroblaze_getcontext
+	.type	_Umicroblaze_getcontext, %function
+	# This is a stub version of getcontext() for Microblaze which only stores core
 	# registers.
-_Umips_getcontext:
+_Umicroblaze_getcontext:
 	.set noat
 	SREG (1)
 	SREG (0)
@@ -90,4 +84,4 @@ _Umips_getcontext:
 	li	$2, 0
 	j $31
 
-	.size	_Umips_getcontext, .-_Umips_getcontext
+	.size	_Umicroblaze_getcontext, .-_Umicroblaze_getcontext

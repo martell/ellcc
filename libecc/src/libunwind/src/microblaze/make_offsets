@@ -1,0 +1,2 @@
+../../../../../bin/ecc -target microblaze-ellcc-linux -o gen_offsets gen-offsets.c
+../../../../../bin/qemu-microblaze gen_offsets > offsets.h

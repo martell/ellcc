@@ -14,6 +14,9 @@ endif
 if ARCH_MIPS
 include_HEADERS += include/libunwind-mips.h
 endif
+if ARCH_MICROBLAZE
+include_HEADERS += include/libunwind-microblaze.h
+endif
 if ARCH_X86
 include_HEADERS += include/libunwind-x86.h
 endif

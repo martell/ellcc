@@ -657,6 +657,8 @@ ARCH_X86_64_FALSE
 ARCH_X86_64_TRUE
 ARCH_X86_FALSE
 ARCH_X86_TRUE
+ARCH_MICROBLAZE_FALSE
+ARCH_MICROBLAZE_TRUE
 ARCH_MIPS_FALSE
 ARCH_MIPS_TRUE
 ARCH_HPPA_FALSE
@@ -16655,6 +16657,14 @@ else
   ARCH_MIPS_FALSE=
 fi
 
+ if test x$target_arch = xmicroblaze; then
+  ARCH_MICROBLAZE_TRUE=
+  ARCH_MICROBLAZE_FALSE='#'
+else
+  ARCH_MICROBLAZE_TRUE='#'
+  ARCH_MICROBLAZE_FALSE=
+fi
+
  if test x$target_arch = xx86; then
   ARCH_X86_TRUE=
   ARCH_X86_FALSE='#'
@@ -16723,11 +16733,11 @@ fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for ELF helper width" >&5
 $as_echo_n "checking for ELF helper width... " >&6; }
 case "${target_arch}" in
-(arm|hppa|ppc32|x86|sh) use_elf32=yes; { $as_echo "$as_me:${as_lineno-$LINENO}: result: 32" >&5
+(arm|hppa|microblaze|ppc32|x86|sh) use_elf32=yes; { $as_echo "$as_me:${as_lineno-$LINENO}: result: 32" >&5
 $as_echo "32" >&6; };;
-(ia64|ppc64|x86_64)    use_elf64=yes; { $as_echo "$as_me:${as_lineno-$LINENO}: result: 64" >&5
+(ia64|ppc64|x86_64)                use_elf64=yes; { $as_echo "$as_me:${as_lineno-$LINENO}: result: 64" >&5
 $as_echo "64" >&6; };;
-(mips)                 use_elfxx=yes; { $as_echo "$as_me:${as_lineno-$LINENO}: result: xx" >&5
+(mips)                             use_elfxx=yes; { $as_echo "$as_me:${as_lineno-$LINENO}: result: xx" >&5
 $as_echo "xx" >&6; };;
 *)                     as_fn_error $? "Unknown ELF target: ${target_arch}" "$LINENO" 5
 esac
@@ -17036,7 +17046,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
 
 if test x$GCC = xyes -a x$intel_compiler != xyes; then
   CFLAGS="${CFLAGS} -fexceptions -Wall -Wsign-compare"
-  LIBCRTS="-lcompiler_rt"
+  LIBCRTS="-lgcc"
 fi
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: $intel_compiler" >&5
 $as_echo "$intel_compiler" >&6; }
@@ -17382,6 +17392,10 @@ Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${ARCH_MIPS_TRUE}" && test -z "${ARCH_MIPS_FALSE}"; then
   as_fn_error $? "conditional \"ARCH_MIPS\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${ARCH_MICROBLAZE_TRUE}" && test -z "${ARCH_MICROBLAZE_FALSE}"; then
+  as_fn_error $? "conditional \"ARCH_MICROBLAZE\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${ARCH_X86_TRUE}" && test -z "${ARCH_X86_FALSE}"; then
