@@ -25,6 +25,7 @@ typedef DWARFDebugLine::LineTable DWARFLineTable;
 
 DWARFContext::~DWARFContext() {
   DeleteContainerPointers(CUs);
+  DeleteContainerPointers(TUs);
   DeleteContainerPointers(DWOCUs);
 }
 
@@ -40,22 +41,20 @@ static void dumpPubSection(raw_ostream &OS, StringRef Name, StringRef Data,
   if (GnuStyle)
     OS << "Offset     Linkage  Kind     Name\n";
   else
-    OS << "Offset        Name\n";
+    OS << "Offset     Name\n";
 
   while (offset < Data.size()) {
     uint32_t dieRef = pubNames.getU32(&offset);
     if (dieRef == 0)
       break;
+    OS << format("0x%8.8x ", dieRef);
     if (GnuStyle) {
       PubIndexEntryDescriptor desc(pubNames.getU8(&offset));
-      OS << format("0x%8.8x ", dieRef)
-         << format("%-8s", dwarf::GDBIndexEntryLinkageString(desc.Linkage))
+      OS << format("%-8s", dwarf::GDBIndexEntryLinkageString(desc.Linkage))
          << ' ' << format("%-8s", dwarf::GDBIndexEntryKindString(desc.Kind))
-         << ' ' << '\"' << pubNames.getCStr(&offset) << "\"\n";
-    } else {
-      OS << format("0x%8.8x    ", dieRef);
-      OS << '\"' << pubNames.getCStr(&offset) << "\"\n";
+         << ' ';
     }
+    OS << '\"' << pubNames.getCStr(&offset) << "\"\n";
   }
 }
 
@@ -232,13 +231,7 @@ const DWARFDebugAranges *DWARFContext::getDebugAranges() {
   if (Aranges)
     return Aranges.get();
 
-  DataExtractor arangesData(getARangeSection(), isLittleEndian(), 0);
-
   Aranges.reset(new DWARFDebugAranges());
-  Aranges->extract(arangesData);
-  // Generate aranges from DIEs: even if .debug_aranges section is present,
-  // it may describe only a small subset of compilation units, so we need to
-  // manually build aranges for the rest of them.
   Aranges->generate(this);
   return Aranges.get();
 }

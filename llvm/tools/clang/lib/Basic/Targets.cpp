@@ -253,6 +253,11 @@ protected:
     Builder.defineMacro("__KPRINTF_ATTRIBUTE__");
     DefineStd(Builder, "unix", Opts);
     Builder.defineMacro("__ELF__");
+
+    // On FreeBSD, wchar_t contains the number of the code point as
+    // used by the character set of the locale. These character sets are
+    // not necessarily a superset of ASCII.
+    Builder.defineMacro("__STDC_MB_MIGHT_NEQ_WC__", "1");
   }
 public:
   FreeBSDTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
@@ -4035,6 +4040,13 @@ public:
 
     if (CPUArch.startswith("8"))
       Builder.defineMacro("__ARM_FEATURE_CRC32");
+
+    if (CPUArch[0] >= '6' && CPUArch != "6M") {
+      Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
+      Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");
+      Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");
+      Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8");
+    }
   }
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
                                  unsigned &NumRecords) const {

@@ -278,6 +278,10 @@ void OMPClauseProfiler::VisitOMPClauseList(T *Node) {
 void OMPClauseProfiler::VisitOMPPrivateClause(const OMPPrivateClause *C) {
   VisitOMPClauseList(C);
 }
+void OMPClauseProfiler::VisitOMPFirstprivateClause(
+                                         const OMPFirstprivateClause *C) {
+  VisitOMPClauseList(C);
+}
 void OMPClauseProfiler::VisitOMPSharedClause(const OMPSharedClause *C) {
   VisitOMPClauseList(C);
 }
@@ -880,9 +884,6 @@ StmtProfiler::VisitLambdaExpr(const LambdaExpr *S) {
     case LCK_ByCopy:
       VisitDecl(C->getCapturedVar());
       ID.AddBoolean(C->isPackExpansion());
-      break;
-    case LCK_Init:
-      VisitDecl(C->getInitCaptureField());
       break;
     }
   }

@@ -14,9 +14,9 @@ set(PACKAGE_BUGREPORT "llvmbugs@cs.uiuc.edu")
 
 # Add path for custom modules
 set(CMAKE_MODULE_PATH
-  ${CMAKE_MODULE_PATH}
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake"
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules"
+  ${CMAKE_MODULE_PATH}
   )
 
 # Require out of source build.
@@ -25,6 +25,10 @@ MACRO_ENSURE_OUT_OF_SOURCE_BUILD(
  "${PROJECT_NAME} requires an out of source build. Please create a separate
  build directory and run 'cmake /path/to/${PROJECT_NAME} [options]' there."
  )
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(LIBCXX_BUILT_STANDALONE 1)
+endif()
 
 #===============================================================================
 # Setup CMake Options
@@ -114,6 +118,24 @@ if ("${LIBCXX_CXX_ABI}" STREQUAL "libsupc++")
     FILES_MATCHING
     PATTERN "*"
     )
+endmacro()
+
+if ("${LIBCXX_CXX_ABI}" STREQUAL "libsupc++")
+  set(_LIBSUPCXX_INCLUDE_FILES
+    cxxabi.h bits/c++config.h bits/os_defines.h bits/cpu_defines.h
+    bits/cxxabi_tweaks.h bits/cxxabi_forced.h
+    )
+  setup_abi_lib("LIBCXX_LIBSUPCXX_INCLUDE_PATHS" "-D__GLIBCXX__"
+    "supc++" "${_LIBSUPCXX_INCLUDE_FILES}" "bits"
+    )
+elseif ("${LIBCXX_CXX_ABI}" STREQUAL "libcxxabi")
+  setup_abi_lib("LIBCXX_LIBCXXABI_INCLUDE_PATHS" ""
+    "c++abi" "cxxabi.h" ""
+    )
+elseif ("${LIBCXX_CXX_ABI}" STREQUAL "libcxxrt")
+  setup_abi_lib("LIBCXX_LIBCXXRT_INCLUDE_PATHS" "-DLIBCXXRT"
+    "cxxrt" "cxxabi.h;unwind.h;unwind-arm.h;unwind-itanium.h" ""
+    )
 elseif (NOT "${LIBCXX_CXX_ABI}" STREQUAL "none")
   message(FATAL_ERROR
           "Currently only none and libsupc++ are supported for c++ abi.")
@@ -156,6 +178,9 @@ append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_WNO_LONG_LONG_FLAG -Wno-long-long)
 if (LIBCXX_ENABLE_WERROR)
   append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_WERROR_FLAG -Werror)
   append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_WX_FLAG -WX)
+else()
+  append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_WNO_ERROR_FLAG -Wno-error)
+  append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_NO_WX_FLAG -WX-)
 endif()
 if (LIBCXX_ENABLE_PEDANTIC)
   append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_PEDANTIC_FLAG -pedantic)

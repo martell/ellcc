@@ -2493,7 +2493,8 @@ public:
                              CorrectionCandidateCallback &CCC,
                              DeclContext *MemberContext = 0,
                              bool EnteringContext = false,
-                             const ObjCObjectPointerType *OPT = 0);
+                             const ObjCObjectPointerType *OPT = 0,
+                             bool RecordFailure = true);
 
   void diagnoseTypo(const TypoCorrection &Correction,
                     const PartialDiagnostic &TypoDiag,
@@ -2542,6 +2543,10 @@ public:
   bool CheckCallingConvAttr(const AttributeList &attr, CallingConv &CC, 
                             const FunctionDecl *FD = 0);
   bool CheckNoReturnAttr(const AttributeList &attr);
+  bool checkStringLiteralArgumentAttr(const AttributeList &Attr,
+                                      unsigned ArgNum, StringRef &Str,
+                                      SourceLocation *ArgLocation = 0);
+
   void CheckAlignasUnderalignment(Decl *D);
 
   /// Adjust the calling convention of a method to be the ABI default if it
@@ -2704,6 +2709,17 @@ private:
   ObjCMethodDecl *LookupMethodInGlobalPool(Selector Sel, SourceRange R,
                                            bool receiverIdOrClass,
                                            bool warn, bool instance);
+
+  /// \brief Record the typo correction failure and return an empty correction.
+  TypoCorrection FailedCorrection(IdentifierInfo *Typo, SourceLocation TypoLoc,
+                                  bool RecordFailure = true,
+                                  bool IsUnqualifiedLookup = false) {
+    if (IsUnqualifiedLookup)
+      (void)UnqualifiedTyposCorrected[Typo];
+    if (RecordFailure)
+      TypoCorrectionFailures[Typo].insert(TypoLoc);
+    return TypoCorrection();
+  }
 
 public:
   /// AddInstanceMethodToGlobalPool - All instance methods in a translation
@@ -4121,12 +4137,16 @@ public:
                               bool Diagnose = true);
   void DeclareGlobalNewDelete();
   void DeclareGlobalAllocationFunction(DeclarationName Name, QualType Return,
-                                       QualType Argument,
+                                       QualType Param1,
+                                       QualType Param2 = QualType(),
                                        bool addMallocAttr = false);
 
   bool FindDeallocationFunction(SourceLocation StartLoc, CXXRecordDecl *RD,
                                 DeclarationName Name, FunctionDecl* &Operator,
                                 bool Diagnose = true);
+  FunctionDecl *FindUsualDeallocationFunction(SourceLocation StartLoc,
+                                              bool CanProvideSize,
+                                              DeclarationName Name);
 
   /// ActOnCXXDelete - Parsed a C++ 'delete' expression
   ExprResult ActOnCXXDelete(SourceLocation StartLoc,
@@ -4446,10 +4466,13 @@ public:
                         bool ExplicitResultType,
                         bool Mutable);
 
-  /// \brief Check and build an init-capture with the specified name and
-  /// initializer.
-  FieldDecl *checkInitCapture(SourceLocation Loc, bool ByRef,
-                              IdentifierInfo *Id, Expr *Init);
+  /// \brief Check an init-capture and build the implied variable declaration
+  /// with the specified name and initializer.
+  VarDecl *checkInitCapture(SourceLocation Loc, bool ByRef,
+                            IdentifierInfo *Id, Expr *Init);
+
+  /// \brief Build the implicit field for an init-capture.
+  FieldDecl *buildInitCaptureField(sema::LambdaScopeInfo *LSI, VarDecl *Var);
 
   /// \brief Note that we have finished the explicit captures for the
   /// given lambda.
@@ -4877,7 +4900,7 @@ public:
   AccessResult CheckFriendAccess(NamedDecl *D);
   AccessResult CheckMemberAccess(SourceLocation UseLoc,
                                  CXXRecordDecl *NamingClass,
-                                 NamedDecl *D);
+                                 DeclAccessPair Found);
   AccessResult CheckMemberOperatorAccess(SourceLocation Loc,
                                          Expr *ObjectExpr,
                                          Expr *ArgExpr,
@@ -6308,6 +6331,14 @@ public:
   /// string represents a keyword.
   UnqualifiedTyposCorrectedMap UnqualifiedTyposCorrected;
 
+  typedef llvm::SmallSet<SourceLocation, 2> SrcLocSet;
+  typedef llvm::DenseMap<IdentifierInfo *, SrcLocSet> IdentifierSourceLocations;
+
+  /// \brief A cache containing identifiers for which typo correction failed and
+  /// their locations, so that repeated attempts to correct an identifier in a
+  /// given location are ignored if typo correction already failed for it.
+  IdentifierSourceLocations TypoCorrectionFailures;
+
   /// \brief Worker object for performing CFG-based warnings.
   sema::AnalysisBasedWarnings AnalysisWarnings;
 
@@ -7000,6 +7031,11 @@ public:
                                       SourceLocation StartLoc,
                                       SourceLocation LParenLoc,
                                       SourceLocation EndLoc);
+  /// \brief Called on well-formed 'firstprivate' clause.
+  OMPClause *ActOnOpenMPFirstprivateClause(ArrayRef<Expr *> VarList,
+                                           SourceLocation StartLoc,
+                                           SourceLocation LParenLoc,
+                                           SourceLocation EndLoc);
   /// \brief Called on well-formed 'shared' clause.
   OMPClause *ActOnOpenMPSharedClause(ArrayRef<Expr *> VarList,
                                      SourceLocation StartLoc,

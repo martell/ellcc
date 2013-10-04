@@ -177,11 +177,13 @@ addMSAIntType(MVT::SimpleValueType Ty, const TargetRegisterClass *RC) {
   setOperationAction(ISD::MUL, Ty, Legal);
   setOperationAction(ISD::OR, Ty, Legal);
   setOperationAction(ISD::SDIV, Ty, Legal);
+  setOperationAction(ISD::SREM, Ty, Legal);
   setOperationAction(ISD::SHL, Ty, Legal);
   setOperationAction(ISD::SRA, Ty, Legal);
   setOperationAction(ISD::SRL, Ty, Legal);
   setOperationAction(ISD::SUB, Ty, Legal);
   setOperationAction(ISD::UDIV, Ty, Legal);
+  setOperationAction(ISD::UREM, Ty, Legal);
   setOperationAction(ISD::VECTOR_SHUFFLE, Ty, Custom);
   setOperationAction(ISD::VSELECT, Ty, Legal);
   setOperationAction(ISD::XOR, Ty, Legal);
@@ -207,6 +209,7 @@ addMSAFloatType(MVT::SimpleValueType Ty, const TargetRegisterClass *RC) {
   setOperationAction(ISD::STORE, Ty, Legal);
   setOperationAction(ISD::BITCAST, Ty, Legal);
   setOperationAction(ISD::EXTRACT_VECTOR_ELT, Ty, Legal);
+  setOperationAction(ISD::INSERT_VECTOR_ELT, Ty, Legal);
 
   if (Ty != MVT::v8f16) {
     setOperationAction(ISD::FABS,  Ty, Legal);
@@ -827,6 +830,14 @@ MipsSETargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
     return emitMSACBranchPseudo(MI, BB, Mips::BZ_D);
   case Mips::SZ_V_PSEUDO:
     return emitMSACBranchPseudo(MI, BB, Mips::BZ_V);
+  case Mips::COPY_FW_PSEUDO:
+    return emitCOPY_FW(MI, BB);
+  case Mips::COPY_FD_PSEUDO:
+    return emitCOPY_FD(MI, BB);
+  case Mips::INSERT_FW_PSEUDO:
+    return emitINSERT_FW(MI, BB);
+  case Mips::INSERT_FD_PSEUDO:
+    return emitINSERT_FD(MI, BB);
   }
 }
 
@@ -1039,19 +1050,6 @@ static SDValue lowerMSACopyIntr(SDValue Op, SelectionDAG &DAG, unsigned Opc) {
   return Result;
 }
 
-// Lower an MSA insert intrinsic into the specified SelectionDAG node
-static SDValue lowerMSAInsertIntr(SDValue Op, SelectionDAG &DAG, unsigned Opc) {
-  SDLoc DL(Op);
-  SDValue Op0 = Op->getOperand(1);
-  SDValue Op1 = Op->getOperand(2);
-  SDValue Op2 = Op->getOperand(3);
-  EVT ResTy = Op->getValueType(0);
-
-  SDValue Result = DAG.getNode(Opc, DL, ResTy, Op0, Op2, Op1);
-
-  return Result;
-}
-
 static SDValue
 lowerMSASplatImm(SDLoc DL, EVT ResTy, SDValue ImmOp, SelectionDAG &DAG) {
   EVT ViaVecTy = ResTy;
@@ -1233,10 +1231,26 @@ SDValue MipsSETargetLowering::lowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::mips_copy_s_h:
   case Intrinsic::mips_copy_s_w:
     return lowerMSACopyIntr(Op, DAG, MipsISD::VEXTRACT_SEXT_ELT);
+  case Intrinsic::mips_copy_s_d:
+    // Don't lower directly into VEXTRACT_SEXT_ELT since i64 might be illegal.
+    // Instead lower to the generic EXTRACT_VECTOR_ELT node and let the type
+    // legalizer and EXTRACT_VECTOR_ELT lowering sort it out.
+    return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, SDLoc(Op), Op->getValueType(0),
+                       Op->getOperand(1), Op->getOperand(2));
   case Intrinsic::mips_copy_u_b:
   case Intrinsic::mips_copy_u_h:
   case Intrinsic::mips_copy_u_w:
     return lowerMSACopyIntr(Op, DAG, MipsISD::VEXTRACT_ZEXT_ELT);
+  case Intrinsic::mips_copy_u_d:
+    // Don't lower directly into VEXTRACT_ZEXT_ELT since i64 might be illegal.
+    // Instead lower to the generic EXTRACT_VECTOR_ELT node and let the type
+    // legalizer and EXTRACT_VECTOR_ELT lowering sort it out.
+    //
+    // Note: When i64 is illegal, this results in copy_s.w instructions instead
+    // of copy_u.w instructions. This makes no difference to the behaviour
+    // since i64 is only illegal when the register file is 32-bit.
+    return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, SDLoc(Op), Op->getValueType(0),
+                       Op->getOperand(1), Op->getOperand(2));
   case Intrinsic::mips_div_s_b:
   case Intrinsic::mips_div_s_h:
   case Intrinsic::mips_div_s_w:
@@ -1300,15 +1314,17 @@ SDValue MipsSETargetLowering::lowerINTRINSIC_WO_CHAIN(SDValue Op,
                        Op->getOperand(2));
   case Intrinsic::mips_fill_b:
   case Intrinsic::mips_fill_h:
-  case Intrinsic::mips_fill_w: {
+  case Intrinsic::mips_fill_w:
+  case Intrinsic::mips_fill_d: {
     SmallVector<SDValue, 16> Ops;
     EVT ResTy = Op->getValueType(0);
 
     for (unsigned i = 0; i < ResTy.getVectorNumElements(); ++i)
       Ops.push_back(Op->getOperand(1));
 
-    return DAG.getNode(ISD::BUILD_VECTOR, DL, ResTy, &Ops[0],
-                       Ops.size());
+    // If ResTy is v2i64 then the type legalizer will break this node down into
+    // an equivalent v4i32.
+    return DAG.getNode(ISD::BUILD_VECTOR, DL, ResTy, &Ops[0], Ops.size());
   }
   case Intrinsic::mips_flog2_w:
   case Intrinsic::mips_flog2_d:
@@ -1354,7 +1370,9 @@ SDValue MipsSETargetLowering::lowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::mips_insert_b:
   case Intrinsic::mips_insert_h:
   case Intrinsic::mips_insert_w:
-    return lowerMSAInsertIntr(Op, DAG, ISD::INSERT_VECTOR_ELT);
+  case Intrinsic::mips_insert_d:
+    return DAG.getNode(ISD::INSERT_VECTOR_ELT, SDLoc(Op), Op->getValueType(0),
+                       Op->getOperand(1), Op->getOperand(3), Op->getOperand(2));
   case Intrinsic::mips_ldi_b:
   case Intrinsic::mips_ldi_h:
   case Intrinsic::mips_ldi_w:
@@ -1408,6 +1426,18 @@ SDValue MipsSETargetLowering::lowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::mips_mini_u_d:
     return DAG.getNode(MipsISD::VUMIN, DL, Op->getValueType(0),
                        Op->getOperand(1), lowerMSASplatImm(Op, 2, DAG));
+  case Intrinsic::mips_mod_s_b:
+  case Intrinsic::mips_mod_s_h:
+  case Intrinsic::mips_mod_s_w:
+  case Intrinsic::mips_mod_s_d:
+    return DAG.getNode(ISD::SREM, DL, Op->getValueType(0), Op->getOperand(1),
+                       Op->getOperand(2));
+  case Intrinsic::mips_mod_u_b:
+  case Intrinsic::mips_mod_u_h:
+  case Intrinsic::mips_mod_u_w:
+  case Intrinsic::mips_mod_u_d:
+    return DAG.getNode(ISD::UREM, DL, Op->getValueType(0), Op->getOperand(1),
+                       Op->getOperand(2));
   case Intrinsic::mips_mulv_b:
   case Intrinsic::mips_mulv_h:
   case Intrinsic::mips_mulv_w:
@@ -1470,6 +1500,13 @@ SDValue MipsSETargetLowering::lowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::mips_slli_d:
     return DAG.getNode(ISD::SHL, DL, Op->getValueType(0),
                        Op->getOperand(1), lowerMSASplatImm(Op, 2, DAG));
+  case Intrinsic::mips_splati_b:
+  case Intrinsic::mips_splati_h:
+  case Intrinsic::mips_splati_w:
+  case Intrinsic::mips_splati_d:
+    return DAG.getNode(MipsISD::VSHF, DL, Op->getValueType(0),
+                       lowerMSASplatImm(Op, 2, DAG), Op->getOperand(1),
+                       Op->getOperand(1));
   case Intrinsic::mips_sra_b:
   case Intrinsic::mips_sra_h:
   case Intrinsic::mips_sra_w:
@@ -1655,10 +1692,19 @@ lowerEXTRACT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const {
   SDLoc DL(Op);
   EVT ResTy = Op->getValueType(0);
   SDValue Op0 = Op->getOperand(0);
-  SDValue Op1 = Op->getOperand(1);
-  EVT EltTy = Op0->getValueType(0).getVectorElementType();
-  return DAG.getNode(MipsISD::VEXTRACT_SEXT_ELT, DL, ResTy, Op0, Op1,
-                     DAG.getValueType(EltTy));
+  EVT VecTy = Op0->getValueType(0);
+
+  if (!VecTy.is128BitVector())
+    return SDValue();
+
+  if (ResTy.isInteger()) {
+    SDValue Op1 = Op->getOperand(1);
+    EVT EltTy = VecTy.getVectorElementType();
+    return DAG.getNode(MipsISD::VEXTRACT_SEXT_ELT, DL, ResTy, Op0, Op1,
+                       DAG.getValueType(EltTy));
+  }
+
+  return Op;
 }
 
 static bool isConstantOrUndef(const SDValue Op) {
@@ -2228,4 +2274,124 @@ emitMSACBranchPseudo(MachineInstr *MI, MachineBasicBlock *BB,
 
   MI->eraseFromParent();   // The pseudo instruction is gone now.
   return Sink;
+}
+
+// Emit the COPY_FW pseudo instruction.
+//
+// copy_fw_pseudo $fd, $ws, n
+// =>
+// copy_u_w $rt, $ws, $n
+// mtc1     $rt, $fd
+//
+// When n is zero, the equivalent operation can be performed with (potentially)
+// zero instructions due to register overlaps. This optimization is never valid
+// for lane 1 because it would require FR=0 mode which isn't supported by MSA.
+MachineBasicBlock * MipsSETargetLowering::
+emitCOPY_FW(MachineInstr *MI, MachineBasicBlock *BB) const{
+  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
+  DebugLoc DL = MI->getDebugLoc();
+  unsigned Fd = MI->getOperand(0).getReg();
+  unsigned Ws = MI->getOperand(1).getReg();
+  unsigned Lane = MI->getOperand(2).getImm();
+
+  if (Lane == 0)
+    BuildMI(*BB, MI, DL, TII->get(Mips::COPY), Fd).addReg(Ws, 0, Mips::sub_lo);
+  else {
+    unsigned Wt = RegInfo.createVirtualRegister(&Mips::MSA128WRegClass);
+
+    BuildMI(*BB, MI, DL, TII->get(Mips::SPLATI_W), Wt).addReg(Ws).addImm(1);
+    BuildMI(*BB, MI, DL, TII->get(Mips::COPY), Fd).addReg(Wt, 0, Mips::sub_lo);
+  }
+
+  MI->eraseFromParent();   // The pseudo instruction is gone now.
+  return BB;
+}
+
+// Emit the COPY_FD pseudo instruction.
+//
+// copy_fd_pseudo $fd, $ws, n
+// =>
+// splati.d $wt, $ws, $n
+// copy $fd, $wt:sub_64
+//
+// When n is zero, the equivalent operation can be performed with (potentially)
+// zero instructions due to register overlaps. This optimization is always
+// valid because FR=1 mode which is the only supported mode in MSA.
+MachineBasicBlock * MipsSETargetLowering::
+emitCOPY_FD(MachineInstr *MI, MachineBasicBlock *BB) const{
+  assert(Subtarget->isFP64bit());
+
+  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
+  unsigned Fd  = MI->getOperand(0).getReg();
+  unsigned Ws  = MI->getOperand(1).getReg();
+  unsigned Lane = MI->getOperand(2).getImm() * 2;
+  DebugLoc DL = MI->getDebugLoc();
+
+  if (Lane == 0)
+    BuildMI(*BB, MI, DL, TII->get(Mips::COPY), Fd).addReg(Ws, 0, Mips::sub_64);
+  else {
+    unsigned Wt = RegInfo.createVirtualRegister(&Mips::MSA128DRegClass);
+
+    BuildMI(*BB, MI, DL, TII->get(Mips::SPLATI_D), Wt).addReg(Ws).addImm(1);
+    BuildMI(*BB, MI, DL, TII->get(Mips::COPY), Fd).addReg(Wt, 0, Mips::sub_64);
+  }
+
+  MI->eraseFromParent();   // The pseudo instruction is gone now.
+  return BB;
+}
+
+// Emit the INSERT_FW pseudo instruction.
+//
+// insert_fw_pseudo $wd, $wd_in, $n, $fs
+// =>
+// subreg_to_reg $wt:sub_lo, $fs
+// insve_w $wd[$n], $wd_in, $wt[0]
+MachineBasicBlock * MipsSETargetLowering::
+emitINSERT_FW(MachineInstr *MI, MachineBasicBlock *BB) const{
+  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
+  DebugLoc DL = MI->getDebugLoc();
+  unsigned Wd = MI->getOperand(0).getReg();
+  unsigned Wd_in = MI->getOperand(1).getReg();
+  unsigned Lane = MI->getOperand(2).getImm();
+  unsigned Fs = MI->getOperand(3).getReg();
+  unsigned Wt = RegInfo.createVirtualRegister(&Mips::MSA128WRegClass);
+
+  BuildMI(*BB, MI, DL, TII->get(Mips::SUBREG_TO_REG), Wt)
+      .addImm(0).addReg(Fs).addImm(Mips::sub_lo);
+  BuildMI(*BB, MI, DL, TII->get(Mips::INSVE_W), Wd)
+      .addReg(Wd_in).addImm(Lane).addReg(Wt);
+
+  MI->eraseFromParent();   // The pseudo instruction is gone now.
+  return BB;
+}
+
+// Emit the INSERT_FD pseudo instruction.
+//
+// insert_fd_pseudo $wd, $fs, n
+// =>
+// subreg_to_reg $wt:sub_64, $fs
+// insve_d $wd[$n], $wd_in, $wt[0]
+MachineBasicBlock * MipsSETargetLowering::
+emitINSERT_FD(MachineInstr *MI, MachineBasicBlock *BB) const{
+  assert(Subtarget->isFP64bit());
+
+  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
+  DebugLoc DL = MI->getDebugLoc();
+  unsigned Wd = MI->getOperand(0).getReg();
+  unsigned Wd_in = MI->getOperand(1).getReg();
+  unsigned Lane = MI->getOperand(2).getImm();
+  unsigned Fs = MI->getOperand(3).getReg();
+  unsigned Wt = RegInfo.createVirtualRegister(&Mips::MSA128DRegClass);
+
+  BuildMI(*BB, MI, DL, TII->get(Mips::SUBREG_TO_REG), Wt)
+      .addImm(0).addReg(Fs).addImm(Mips::sub_64);
+  BuildMI(*BB, MI, DL, TII->get(Mips::INSVE_D), Wd)
+      .addReg(Wd_in).addImm(Lane).addReg(Wt);
+
+  MI->eraseFromParent();   // The pseudo instruction is gone now.
+  return BB;
 }

@@ -33,6 +33,7 @@
 #include "clang/Sema/ScopeInfo.h"
 #include "clang/Sema/SemaDiagnostic.h"
 #include "clang/Sema/SemaInternal.h"
+#include "clang/Sema/Template.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <algorithm>
@@ -593,6 +594,11 @@ public:
 
   /// \brief Transform the captures and body of a lambda expression.
   ExprResult TransformLambdaScope(LambdaExpr *E, CXXMethodDecl *CallOperator);
+
+  TemplateParameterList *TransformTemplateParameterList(
+        TemplateParameterList *TPL) {
+    return TPL;
+  }
 
   ExprResult TransformAddressOfOperand(Expr *E);
   ExprResult TransformDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *E,
@@ -1311,6 +1317,18 @@ public:
                                      SourceLocation EndLoc) {
     return getSema().ActOnOpenMPPrivateClause(VarList, StartLoc, LParenLoc,
                                               EndLoc);
+  }
+
+  /// \brief Build a new OpenMP 'firstprivate' clause.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  OMPClause *RebuildOMPFirstprivateClause(ArrayRef<Expr *> VarList,
+                                          SourceLocation StartLoc,
+                                          SourceLocation LParenLoc,
+                                          SourceLocation EndLoc) {
+    return getSema().ActOnOpenMPFirstprivateClause(VarList, StartLoc, LParenLoc,
+                                                   EndLoc);
   }
 
   OMPClause *RebuildOMPSharedClause(ArrayRef<Expr *> VarList,
@@ -4561,6 +4579,19 @@ template<typename Derived>
 QualType TreeTransform<Derived>::TransformDecltypeType(TypeLocBuilder &TLB,
                                                        DecltypeTypeLoc TL) {
   const DecltypeType *T = TL.getTypePtr();
+  // Don't transform a decltype construct that has already been transformed 
+  // into a non-dependent type.
+  // Allows the following to compile:
+  // auto L = [](auto a) {
+  //   return [](auto b) ->decltype(a) {
+  //     return b;
+  //  };
+  //};  
+  if (!T->isInstantiationDependentType()) {
+    DecltypeTypeLoc NewTL = TLB.push<DecltypeTypeLoc>(TL.getType());
+    NewTL.setNameLoc(TL.getNameLoc());
+    return NewTL.getType();
+  }
 
   // decltype expressions are not potentially evaluated contexts
   EnterExpressionEvaluationContext Unevaluated(SemaRef, Sema::Unevaluated, 0,
@@ -6339,6 +6370,26 @@ TreeTransform<Derived>::TransformOMPPrivateClause(OMPPrivateClause *C) {
                                               C->getLocStart(),
                                               C->getLParenLoc(),
                                               C->getLocEnd());
+}
+
+template<typename Derived>
+OMPClause *
+TreeTransform<Derived>::TransformOMPFirstprivateClause(
+                                                 OMPFirstprivateClause *C) {
+  llvm::SmallVector<Expr *, 16> Vars;
+  Vars.reserve(C->varlist_size());
+  for (OMPFirstprivateClause::varlist_iterator I = C->varlist_begin(),
+                                               E = C->varlist_end();
+       I != E; ++I) {
+    ExprResult EVar = getDerived().TransformExpr(cast<Expr>(*I));
+    if (EVar.isInvalid())
+      return 0;
+    Vars.push_back(EVar.take());
+  }
+  return getDerived().RebuildOMPFirstprivateClause(Vars,
+                                                   C->getLocStart(),
+                                                   C->getLParenLoc(),
+                                                   C->getLocEnd());
 }
 
 template<typename Derived>
@@ -8252,24 +8303,27 @@ template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
  
-  // FIXME: Implement nested generic lambda transformations.
-  if (E->isGenericLambda()) {
-    getSema().Diag(E->getIntroducerRange().getBegin(), 
-      diag::err_glambda_not_fully_implemented) 
-      << " template transformation of generic lambdas not implemented yet";
-    return ExprError();
+  getSema().PushLambdaScope();
+  LambdaScopeInfo *LSI = getSema().getCurLambda();
+  TemplateParameterList *const OrigTPL = E->getTemplateParameterList();
+  TemplateParameterList *NewTPL = 0;
+  // Transform the template parameters, and add them to the 
+  // current instantiation scope.
+  if (OrigTPL) {
+      NewTPL = getDerived().TransformTemplateParameterList(OrigTPL);
   }
-  // Transform the type of the lambda parameters and start the definition of
-  // the lambda itself.
-  TypeSourceInfo *MethodTy
-    = TransformType(E->getCallOperator()->getTypeSourceInfo());
-  if (!MethodTy)
+  LSI->GLTemplateParameterList = NewTPL;
+   // Transform the type of the lambda parameters and start the definition of
+   // the lambda itself.
+  TypeSourceInfo *OldCallOpTSI = E->getCallOperator()->getTypeSourceInfo(); 
+  TypeSourceInfo *NewCallOpTSI = TransformType(OldCallOpTSI);
+  if (!NewCallOpTSI)
     return ExprError();
 
   // Create the local class that will describe the lambda.
   CXXRecordDecl *Class
     = getSema().createLambdaClosureType(E->getIntroducerRange(),
-                                        MethodTy,
+                                        NewCallOpTSI,
                                         /*KnownDependent=*/false);
   getDerived().transformedLocalDecl(E->getLambdaClass(), Class);
 
@@ -8281,19 +8335,49 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
         E->getCallOperator()->param_size(),
         0, ParamTypes, &Params))
     return ExprError();
-  getSema().PushLambdaScope();
-  LambdaScopeInfo *LSI = getSema().getCurLambda();
-  // TODO: Fix for nested lambdas
-  LSI->GLTemplateParameterList = 0;
+
   // Build the call operator.
-  CXXMethodDecl *CallOperator
+  CXXMethodDecl *NewCallOperator
     = getSema().startLambdaDefinition(Class, E->getIntroducerRange(),
-                                      MethodTy,
+                                      NewCallOpTSI,
                                       E->getCallOperator()->getLocEnd(),
                                       Params);
-  getDerived().transformAttrs(E->getCallOperator(), CallOperator);
-
-  return getDerived().TransformLambdaScope(E, CallOperator);
+  LSI->CallOperator = NewCallOperator;
+  // Fix the Decl Contexts of the parameters within the call op function 
+  // prototype.
+  getDerived().transformAttrs(E->getCallOperator(), NewCallOperator);
+  
+  TypeLoc NewCallOpTL = NewCallOpTSI->getTypeLoc();
+  FunctionProtoTypeLoc NewFPTL = NewCallOpTL.castAs<FunctionProtoTypeLoc>();
+  ParmVarDecl **NewParamDeclArray = NewFPTL.getParmArray();
+  const unsigned NewNumArgs = NewFPTL.getNumArgs();
+  for (unsigned I = 0; I < NewNumArgs; ++I) {
+      NewParamDeclArray[I]->setOwningFunction(NewCallOperator);
+  }
+  // If this is a non-generic lambda, the parameters do not get added to the
+  // current instantiation scope, so add them.  This feels kludgey.
+  // Anyway, it allows the following to compile when the enclosing template
+  // is specialized and the entire lambda expression has to be
+  // transformed.  Without this FindInstantiatedDecl causes an assertion.
+  // template<class T> void foo(T t) {
+  //    auto L = [](auto a) { 
+  //      auto M = [](char b) { <-- note: non-generic lambda
+  //        auto N = [](auto c) {
+  //          int x = sizeof(a);        
+  //          x = sizeof(b); <-- specifically this line
+  //          x = sizeof(c);
+  //        };  
+  //      };    
+  //    };
+  //  }
+  //  foo('a');
+  //
+  if (!E->isGenericLambda()) {
+    for (unsigned I = 0; I < NewNumArgs; ++I)
+      SemaRef.CurrentInstantiationScope->InstantiatedLocal(
+                                   NewParamDeclArray[I], NewParamDeclArray[I]);
+  }
+  return getDerived().TransformLambdaScope(E, NewCallOperator);
 }
 
 template<typename Derived>
@@ -8313,7 +8397,9 @@ TreeTransform<Derived>::TransformLambdaScope(LambdaExpr *E,
     if (!C->isInitCapture())
       continue;
     InitCaptureExprs[C - E->capture_begin()] =
-        getDerived().TransformExpr(E->getInitCaptureInit(C));
+        getDerived().TransformInitializer(
+            C->getCapturedVar()->getInit(),
+            C->getCapturedVar()->getInitStyle() == VarDecl::CallInit);
   }
 
   // Introduce the context of the call operator.
@@ -8353,14 +8439,15 @@ TreeTransform<Derived>::TransformLambdaScope(LambdaExpr *E,
         Invalid = true;
         continue;
       }
-      FieldDecl *OldFD = C->getInitCaptureField();
-      FieldDecl *NewFD = getSema().checkInitCapture(
-          C->getLocation(), OldFD->getType()->isReferenceType(),
-          OldFD->getIdentifier(), Init.take());
-      if (!NewFD)
+      VarDecl *OldVD = C->getCapturedVar();
+      VarDecl *NewVD = getSema().checkInitCapture(
+          C->getLocation(), OldVD->getType()->isReferenceType(),
+          OldVD->getIdentifier(), Init.take());
+      if (!NewVD)
         Invalid = true;
       else
-        getDerived().transformedLocalDecl(OldFD, NewFD);
+        getDerived().transformedLocalDecl(OldVD, NewVD);
+      getSema().buildInitCaptureField(LSI, NewVD);
       continue;
     }
 

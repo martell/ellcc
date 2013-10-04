@@ -567,8 +567,36 @@ static bool isNoCommonDefault(const llvm::Triple &Triple) {
 //
 // FIXME: Centralize feature selection, defaulting shouldn't be also in the
 // frontend target.
-static void getFPUFeatures(const Driver &D, const Arg *A, const ArgList &Args,
-                           std::vector<const char *> &Features) {
+static void getAArch64FPUFeatures(const Driver &D, const Arg *A,
+                                  const ArgList &Args,
+                                  std::vector<const char *> &Features) {
+  StringRef FPU = A->getValue();
+  if (FPU == "fp-armv8") {
+    Features.push_back("+fp-armv8");
+  } else if (FPU == "neon-fp-armv8") {
+    Features.push_back("+fp-armv8");
+    Features.push_back("+neon");
+  } else if (FPU == "crypto-neon-fp-armv8") {
+    Features.push_back("+fp-armv8");
+    Features.push_back("+neon");
+    Features.push_back("+crypto");
+  } else if (FPU == "neon") {
+    Features.push_back("+neon");
+  } else if (FPU == "none") {
+    Features.push_back("-fp-armv8");
+    Features.push_back("-crypto");
+    Features.push_back("-neon");
+  } else
+    D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
+}
+
+// Handle -mfpu=.
+//
+// FIXME: Centralize feature selection, defaulting shouldn't be also in the
+// frontend target.
+static void getARMFPUFeatures(const Driver &D, const Arg *A,
+                              const ArgList &Args,
+                              std::vector<const char *> &Features) {
   StringRef FPU = A->getValue();
 
   // Set the target features based on the FPU.
@@ -597,6 +625,13 @@ static void getFPUFeatures(const Driver &D, const Arg *A, const ArgList &Args,
     Features.push_back("+fp-armv8");
   } else if (FPU == "neon") {
     Features.push_back("+neon");
+  } else if (FPU == "none") {
+    Features.push_back("-vfp2");
+    Features.push_back("-vfp3");
+    Features.push_back("-vfp4");
+    Features.push_back("-fp-armv8");
+    Features.push_back("-crypto");
+    Features.push_back("-neon");
   } else
     D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
 }
@@ -698,7 +733,7 @@ static void getARMTargetFeatures(const Driver &D, const llvm::Triple &Triple,
 
   // Honor -mfpu=.
   if (const Arg *A = Args.getLastArg(options::OPT_mfpu_EQ))
-    getFPUFeatures(D, A, Args, Features);
+    getARMFPUFeatures(D, A, Args, Features);
 
   // Setting -msoft-float effectively disables NEON because of the GCC
   // implementation, although the same isn't true of VFP or VFP3.
@@ -724,7 +759,8 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
   } else if (Triple.isOSDarwin()) {
     // The backend is hardwired to assume AAPCS for M-class processors, ensure
     // the frontend matches that.
-    if (StringRef(CPUName).startswith("cortex-m")) {
+    if (Triple.getEnvironment() == llvm::Triple::EABI ||
+        StringRef(CPUName).startswith("cortex-m")) {
       ABIName = "aapcs";
     } else {
       ABIName = "apcs-gnu";
@@ -1442,7 +1478,7 @@ static void getAArch64TargetFeatures(const Driver &D, const ArgList &Args,
                                      std::vector<const char *> &Features) {
   // Honor -mfpu=.
   if (const Arg *A = Args.getLastArg(options::OPT_mfpu_EQ))
-    getFPUFeatures(D, A, Args, Features);
+    getAArch64FPUFeatures(D, A, Args, Features);
 }
 
 static void getTargetFeatures(const Driver &D, const llvm::Triple &Triple,
@@ -3103,11 +3139,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fmodule-maps");
   }
 
-  // -fmodule-decluse checks that modules used are declared so (off by default).
+  // -fmodules-decluse checks that modules used are declared so (off by default).
   if (Args.hasFlag(options::OPT_fmodules_decluse,
                    options::OPT_fno_modules_decluse,
                    false)) {
-    CmdArgs.push_back("-fmodule-decluse");
+    CmdArgs.push_back("-fmodules-decluse");
   }
 
   // If a module path was provided, pass it along. Otherwise, use a temporary
@@ -3257,12 +3293,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       else
         CmdArgs.push_back("-fobjc-dispatch-method=non-legacy");
     }
-  }
-
-  // -fobjc-default-synthesize-properties=1 is default. This only has an effect
-  // if the nonfragile objc abi is used.
-  if (getToolChain().IsObjCDefaultSynthPropertiesDefault()) {
-    CmdArgs.push_back("-fobjc-default-synthesize-properties");
   }
 
   // -fencode-extended-block-signature=1 is default.
@@ -7010,6 +7040,10 @@ Command *visualstudio::Compile::GetCommand(Compilation &C, const JobAction &JA,
                                                                    : "/GR-");
   if (Args.hasArg(options::OPT_fsyntax_only))
     CmdArgs.push_back("/Zs");
+
+  std::vector<std::string> Includes = Args.getAllArgValues(options::OPT_include);
+  for (size_t I = 0, E = Includes.size(); I != E; ++I)
+    CmdArgs.push_back(Args.MakeArgString(std::string("/FI") + Includes[I]));
 
   // Flags that can simply be passed through.
   Args.AddAllArgs(CmdArgs, options::OPT__SLASH_LD);

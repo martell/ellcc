@@ -7864,14 +7864,7 @@ GVALinkage ASTContext::GetGVALinkageForVariable(const VarDecl *VD) {
   if (!VD->isExternallyVisible())
     return GVA_Internal;
 
-  // If this is a static data member, compute the kind of template
-  // specialization. Otherwise, this variable is not part of a
-  // template.
-  TemplateSpecializationKind TSK = TSK_Undeclared;
-  if (VD->isStaticDataMember())
-    TSK = VD->getTemplateSpecializationKind();
-
-  switch (TSK) {
+  switch (VD->getTemplateSpecializationKind()) {
   case TSK_Undeclared:
   case TSK_ExplicitSpecialization:
     return GVA_StrongExternal;
@@ -7988,9 +7981,9 @@ MangleContext *ASTContext::createMangleContext() {
   case TargetCXXABI::GenericItanium:
   case TargetCXXABI::GenericARM:
   case TargetCXXABI::iOS:
-    return createItaniumMangleContext(*this, getDiagnostics());
+    return ItaniumMangleContext::create(*this, getDiagnostics());
   case TargetCXXABI::Microsoft:
-    return createMicrosoftMangleContext(*this, getDiagnostics());
+    return MicrosoftMangleContext::create(*this, getDiagnostics());
   }
   llvm_unreachable("Unsupported ABI");
 }

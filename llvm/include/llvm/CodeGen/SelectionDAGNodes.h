@@ -942,13 +942,7 @@ public:
 class HandleSDNode : public SDNode {
   SDUse Op;
 public:
-  // FIXME: Remove the "noinline" attribute once <rdar://problem/5852746> is
-  // fixed.
-#if __GNUC__==4 && __GNUC_MINOR__==2 && defined(__APPLE__) && !defined(__llvm__)
-  explicit __attribute__((__noinline__)) HandleSDNode(SDValue X)
-#else
   explicit HandleSDNode(SDValue X)
-#endif
     : SDNode(ISD::HANDLENODE, 0, DebugLoc(), getSDVTList(MVT::Other)) {
     InitOperands(&Op, X);
   }
@@ -1073,7 +1067,6 @@ public:
 ///
 class AtomicSDNode : public MemSDNode {
   SDUse Ops[4];
-  SDUse* DynOps;
 
   void InitAtomic(AtomicOrdering Ordering, SynchronizationScope SynchScope) {
     // This must match encodeMemSDNodeFlags() in SelectionDAG.cpp.
@@ -1101,7 +1094,7 @@ public:
                SDValue Chain, SDValue Ptr,
                SDValue Cmp, SDValue Swp, MachineMemOperand *MMO,
                AtomicOrdering Ordering, SynchronizationScope SynchScope)
-    : MemSDNode(Opc, Order, dl, VTL, MemVT, MMO), DynOps(NULL) {
+    : MemSDNode(Opc, Order, dl, VTL, MemVT, MMO) {
     InitAtomic(Ordering, SynchScope);
     InitOperands(Ops, Chain, Ptr, Cmp, Swp);
   }
@@ -1110,7 +1103,7 @@ public:
                SDValue Chain, SDValue Ptr,
                SDValue Val, MachineMemOperand *MMO,
                AtomicOrdering Ordering, SynchronizationScope SynchScope)
-    : MemSDNode(Opc, Order, dl, VTL, MemVT, MMO), DynOps(NULL) {
+    : MemSDNode(Opc, Order, dl, VTL, MemVT, MMO) {
     InitAtomic(Ordering, SynchScope);
     InitOperands(Ops, Chain, Ptr, Val);
   }
@@ -1119,21 +1112,19 @@ public:
                SDValue Chain, SDValue Ptr,
                MachineMemOperand *MMO,
                AtomicOrdering Ordering, SynchronizationScope SynchScope)
-    : MemSDNode(Opc, Order, dl, VTL, MemVT, MMO), DynOps(NULL) {
+    : MemSDNode(Opc, Order, dl, VTL, MemVT, MMO) {
     InitAtomic(Ordering, SynchScope);
     InitOperands(Ops, Chain, Ptr);
   }
   AtomicSDNode(unsigned Opc, unsigned Order, DebugLoc dl, SDVTList VTL, EVT MemVT,
-               SDValue* AllOps, unsigned NumOps,
+               SDValue* AllOps, SDUse *DynOps, unsigned NumOps,
                MachineMemOperand *MMO,
                AtomicOrdering Ordering, SynchronizationScope SynchScope)
     : MemSDNode(Opc, Order, dl, VTL, MemVT, MMO) {
-    DynOps = new SDUse[NumOps];
     InitAtomic(Ordering, SynchScope);
-    InitOperands(DynOps, AllOps, NumOps);
-  }
-  ~AtomicSDNode() {
-    delete[] DynOps;
+    assert((DynOps || NumOps <= array_lengthof(Ops)) &&
+           "Too many ops for internal storage!");
+    InitOperands(DynOps ? DynOps : Ops, AllOps, NumOps);
   }
 
   const SDValue &getBasePtr() const { return getOperand(1); }

@@ -19,6 +19,7 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/ValueSymbolTable.h"
@@ -64,6 +65,9 @@ bool LLParser::ValidateEndOfModule() {
     }
     ForwardRefInstMetadata.clear();
   }
+
+  for (unsigned I = 0, E = InstsWithTBAATag.size(); I < E; I++)
+    UpgradeInstWithTBAATag(InstsWithTBAATag[I]);
 
   // Handle any function attribute group forward references.
   for (std::map<Value*, std::vector<unsigned> >::iterator
@@ -1427,6 +1431,9 @@ bool LLParser::ParseInstructionMetadata(Instruction *Inst,
       }
     }
 
+    if (MDK == LLVMContext::MD_tbaa)
+      InstsWithTBAATag.push_back(Inst);
+
     // If this is the end of the list, we're done.
   } while (EatIfPresent(lltok::comma));
   return false;
@@ -2386,7 +2393,6 @@ bool LLParser::ParseValID(ValID &ID, PerFunctionState *PFS) {
     Lex.Lex();
 
     ValID Fn, Label;
-    LocTy FnLoc, LabelLoc;
 
     if (ParseToken(lltok::lparen, "expected '(' in block address expression") ||
         ParseValID(Fn) ||
@@ -3178,7 +3184,6 @@ bool LLParser::ParseBasicBlock(PerFunctionState &PFS) {
 
   // Parse the instructions in this block until we get a terminator.
   Instruction *Inst;
-  SmallVector<std::pair<unsigned, MDNode *>, 4> MetadataOnInst;
   do {
     // This instruction may have three possibilities for a name: a) none
     // specified, b) name specified "%foo =", c) number specified: "%4 =".

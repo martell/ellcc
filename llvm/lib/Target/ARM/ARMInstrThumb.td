@@ -289,6 +289,11 @@ def tSEV : T1pI<(outs), (ins), NoItinerary, "sev", "", []>,
            T1SystemEncoding<0x40>, // A8.6.157
            Requires<[IsThumb2]>;
 
+def tSEVL : T1pI<(outs), (ins), NoItinerary, "sevl", "", [(int_arm_sevl)]>,
+            T1SystemEncoding<0x50>,
+            Requires<[IsThumb2, HasV8]>;
+
+
 // The imm operand $val can be used by a debugger to store more information
 // about the breakpoint.
 def tBKPT : T1I<(outs), (ins imm0_255:$val), NoItinerary, "bkpt\t$val",
@@ -308,7 +313,7 @@ def tHLT : T1I<(outs), (ins imm0_63:$val), NoItinerary, "hlt\t$val",
 }
 
 def tSETEND : T1I<(outs), (ins setend_op:$end), NoItinerary, "setend\t$end",
-                  []>, T1Encoding<0b101101> {
+                  []>, T1Encoding<0b101101>, Deprecated<HasV8Ops> {
   bits<1> end;
   // A8.6.156
   let Inst{9-5} = 0b10010;

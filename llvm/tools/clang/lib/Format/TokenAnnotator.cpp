@@ -853,6 +853,10 @@ public:
 
   /// \brief Parse expressions with the given operatore precedence.
   void parse(int Precedence = 0) {
+    // Skip 'return' as it is not part of a binary expression.
+    while (Current && Current->is(tok::kw_return))
+      next();
+
     if (Current == NULL || Precedence > PrecedenceArrowAndPeriod)
       return;
 
@@ -1161,7 +1165,11 @@ unsigned TokenAnnotator::splitPenalty(const AnnotatedLine &Line,
   if (Right.is(tok::lessless)) {
     if (Left.is(tok::string_literal)) {
       StringRef Content = Left.TokenText;
-      Content = Content.drop_back(1).drop_front(1).trim();
+      if (Content.startswith("\""))
+        Content = Content.drop_front(1);
+      if (Content.endswith("\""))
+        Content = Content.drop_back(1);
+      Content = Content.trim();
       if (Content.size() > 1 &&
           (Content.back() == ':' || Content.back() == '='))
         return 25;

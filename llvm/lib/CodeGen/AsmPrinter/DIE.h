@@ -152,6 +152,9 @@ namespace llvm {
     /// Climb up the parent chain to get the compile unit DIE this DIE belongs
     /// to.
     DIE *getCompileUnit();
+    /// Similar to getCompileUnit, returns null when DIE is not added to an
+    /// owner yet.
+    DIE *checkCompileUnit();
     void setTag(uint16_t Tag) { Abbrev.setTag(Tag); }
     void setOffset(unsigned O) { Offset = O; }
     void setSize(unsigned S) { Size = S; }
@@ -166,10 +169,7 @@ namespace llvm {
     /// addChild - Add a child to the DIE.
     ///
     void addChild(DIE *Child) {
-      if (Child->getParent()) {
-        assert (Child->getParent() == this && "Unexpected DIE Parent!");
-        return;
-      }
+      assert(!Child->getParent());
       Abbrev.setChildrenFlag(dwarf::DW_CHILDREN_yes);
       Children.push_back(Child);
       Child->Parent = this;

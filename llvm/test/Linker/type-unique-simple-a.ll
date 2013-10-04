@@ -1,7 +1,22 @@
-; RUN: llvm-link %s %p/type-unique-simple-b.ll -S -o - | FileCheck %s
+; REQUIRES: object-emission
 
-; CHECK: DW_TAG_structure_type
+; RUN: llvm-link %s %p/type-unique-simple-b.ll -S -o %t
+; RUN: cat %t | FileCheck %s -check-prefix=LINK
+; RUN: llc -filetype=obj -O0 < %t > %t2
+; RUN: llvm-dwarfdump -debug-dump=info %t2 | FileCheck %s
+; CHECK: 0x[[INT:.*]]: DW_TAG_base_type
+; CHECK-NEXT: DW_AT_name {{.*}} = "int"
+; CHECK-NOT: DW_TAG_base_type
+; CHECK: 0x[[BASE:.*]]: DW_TAG_structure_type
+; CHECK-NEXT: DW_AT_name {{.*}} = "Base"
 ; CHECK-NOT: DW_TAG_structure_type
+; CHECK: DW_TAG_formal_parameter
+; CHECK: DW_AT_type [DW_FORM_ref_addr] {{.*}}[[INT]])
+; CHECK: DW_TAG_variable
+; CHECK: DW_AT_type [DW_FORM_ref_addr] {{.*}}[[BASE]])
+
+; LINK: DW_TAG_structure_type
+; LINK-NOT: DW_TAG_structure_type
 ; Content of header files:
 ; struct Base {
 ;   int a;
@@ -25,8 +40,6 @@
 ;   return 0;
 ; }
 ; ModuleID = 'foo.cpp'
-target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64-S128"
-target triple = "x86_64-apple-macosx10.8.0"
 
 %struct.Base = type { i32 }
 

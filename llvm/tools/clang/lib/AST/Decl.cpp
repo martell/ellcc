@@ -1092,6 +1092,19 @@ static LinkageInfo getLVForLocalDecl(const NamedDecl *D,
                      LV.isVisibilityExplicit());
 }
 
+static inline const CXXRecordDecl*
+getOutermostEnclosingLambda(const CXXRecordDecl *Record) {
+  const CXXRecordDecl *Ret = Record;
+  while (Record && Record->isLambda()) {
+    Ret = Record;
+    if (!Record->getParent()) break;
+    // Get the Containing Class of this Lambda Class
+    Record = dyn_cast_or_null<CXXRecordDecl>(
+      Record->getParent()->getParent());
+  }
+  return Ret;
+}
+
 static LinkageInfo computeLVForDecl(const NamedDecl *D,
                                     LVComputationKind computation) {
   // Objective-C: treat all Objective-C declarations as having external
@@ -1122,9 +1135,24 @@ static LinkageInfo computeLVForDecl(const NamedDecl *D,
           return LinkageInfo::internal();
         }
 
-        // This lambda has its linkage/visibility determined by its owner.
-        return getLVForClosure(D->getDeclContext()->getRedeclContext(),
-                               Record->getLambdaContextDecl(), computation);
+        // This lambda has its linkage/visibility determined:
+        //  - either by the outermost lambda if that lambda has no mangling 
+        //    number. 
+        //  - or by the parent of the outer most lambda
+        // This prevents infinite recursion in settings such as nested lambdas 
+        // used in NSDMI's, for e.g. 
+        //  struct L {
+        //    int t{};
+        //    int t2 = ([](int a) { return [](int b) { return b; };})(t)(t);    
+        //  };
+        const CXXRecordDecl *OuterMostLambda = 
+            getOutermostEnclosingLambda(Record);
+        if (!OuterMostLambda->getLambdaManglingNumber())
+          return LinkageInfo::internal();
+        
+        return getLVForClosure(
+                  OuterMostLambda->getDeclContext()->getRedeclContext(),
+                  OuterMostLambda->getLambdaContextDecl(), computation);
       }
       
       break;
@@ -1689,13 +1717,24 @@ VarDecl::DefinitionKind VarDecl::isThisDeclarationADefinition(
   //   A declaration is a definition unless [...] it contains the 'extern'
   //   specifier or a linkage-specification and neither an initializer [...],
   //   it declares a static data member in a class declaration [...].
-  // C++ [temp.expl.spec]p15:
-  //   An explicit specialization of a static data member of a template is a
-  //   definition if the declaration includes an initializer; otherwise, it is
-  //   a declaration.
+  // C++1y [temp.expl.spec]p15:
+  //   An explicit specialization of a static data member or an explicit
+  //   specialization of a static data member template is a definition if the
+  //   declaration includes an initializer; otherwise, it is a declaration.
+  //
+  // FIXME: How do you declare (but not define) a partial specialization of
+  // a static data member template outside the containing class?
   if (isStaticDataMember()) {
-    if (isOutOfLine() && (hasInit() ||
-          getTemplateSpecializationKind() != TSK_ExplicitSpecialization))
+    if (isOutOfLine() &&
+        (hasInit() ||
+         // If the first declaration is out-of-line, this may be an
+         // instantiation of an out-of-line partial specialization of a variable
+         // template for which we have not yet instantiated the initializer.
+         (getFirstDeclaration()->isOutOfLine()
+              ? getTemplateSpecializationKind() == TSK_Undeclared
+              : getTemplateSpecializationKind() !=
+                    TSK_ExplicitSpecialization) ||
+         isa<VarTemplatePartialSpecializationDecl>(this)))
       return Definition;
     else
       return DeclarationOnly;
@@ -1709,6 +1748,13 @@ VarDecl::DefinitionKind VarDecl::isThisDeclarationADefinition(
   //   initializer, the declaration is an external definition for the identifier
   if (hasInit())
     return Definition;
+
+  // A variable template specialization (other than a static data member
+  // template or an explicit specialization) is a declaration until we
+  // instantiate its initializer.
+  if (isa<VarTemplateSpecializationDecl>(this) &&
+      getTemplateSpecializationKind() != TSK_ExplicitSpecialization)
+    return DeclarationOnly;
 
   if (hasExternalStorage())
     return DeclarationOnly;
@@ -1978,8 +2024,19 @@ TemplateSpecializationKind VarDecl::getTemplateSpecializationKind() const {
 
   if (MemberSpecializationInfo *MSI = getMemberSpecializationInfo())
     return MSI->getTemplateSpecializationKind();
-  
+
   return TSK_Undeclared;
+}
+
+SourceLocation VarDecl::getPointOfInstantiation() const {
+  if (const VarTemplateSpecializationDecl *Spec =
+          dyn_cast<VarTemplateSpecializationDecl>(this))
+    return Spec->getPointOfInstantiation();
+
+  if (MemberSpecializationInfo *MSI = getMemberSpecializationInfo())
+    return MSI->getPointOfInstantiation();
+
+  return SourceLocation();
 }
 
 VarTemplateDecl *VarDecl::getDescribedVarTemplate() const {
@@ -2002,13 +2059,16 @@ MemberSpecializationInfo *VarDecl::getMemberSpecializationInfo() const {
 
 void VarDecl::setTemplateSpecializationKind(TemplateSpecializationKind TSK,
                                          SourceLocation PointOfInstantiation) {
+  assert((isa<VarTemplateSpecializationDecl>(this) ||
+          getMemberSpecializationInfo()) &&
+         "not a variable or static data member template specialization");
+
   if (VarTemplateSpecializationDecl *Spec =
           dyn_cast<VarTemplateSpecializationDecl>(this)) {
     Spec->setSpecializationKind(TSK);
     if (TSK != TSK_ExplicitSpecialization && PointOfInstantiation.isValid() &&
         Spec->getPointOfInstantiation().isInvalid())
       Spec->setPointOfInstantiation(PointOfInstantiation);
-    return;
   }
 
   if (MemberSpecializationInfo *MSI = getMemberSpecializationInfo()) {
@@ -2016,11 +2076,7 @@ void VarDecl::setTemplateSpecializationKind(TemplateSpecializationKind TSK,
     if (TSK != TSK_ExplicitSpecialization && PointOfInstantiation.isValid() &&
         MSI->getPointOfInstantiation().isInvalid())
       MSI->setPointOfInstantiation(PointOfInstantiation);
-    return;
   }
-
-  llvm_unreachable(
-      "Not a variable or static data member template specialization");
 }
 
 void
@@ -2282,8 +2338,11 @@ bool FunctionDecl::isReplaceableGlobalAllocationFunction() const {
     return true;
 
   // Otherwise, we're looking for a second parameter whose type is
-  // 'const std::nothrow_t &'.
+  // 'const std::nothrow_t &', or, in C++1y, 'std::size_t'.
   QualType Ty = FPT->getArgType(1);
+  ASTContext &Ctx = getASTContext();
+  if (Ctx.getLangOpts().SizedDeallocation && Ty == Ctx.getSizeType())
+    return true;
   if (!Ty->isReferenceType())
     return false;
   Ty = Ty->getPointeeType();

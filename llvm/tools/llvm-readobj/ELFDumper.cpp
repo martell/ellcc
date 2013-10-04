@@ -421,8 +421,6 @@ static const EnumEntry<unsigned> ElfSegmentFlags[] = {
 
 template<class ELFT>
 void ELFDumper<ELFT>::printFileHeaders() {
-  error_code EC;
-
   const typename ELFO::Elf_Ehdr *Header = Obj->getHeader();
 
   {
@@ -513,7 +511,6 @@ template<class ELFT>
 void ELFDumper<ELFT>::printRelocations() {
   ListScope D(W, "Relocations");
 
-  error_code EC;
   int SectionNumber = -1;
   for (typename ELFO::Elf_Shdr_Iter SecI = Obj->begin_sections(),
                                     SecE = Obj->end_sections();
@@ -769,8 +766,6 @@ void ELFDumper<ELFT>::printDynamicTable() {
 template<class ELFT>
 void ELFDumper<ELFT>::printNeededLibraries() {
   ListScope D(W, "NeededLibraries");
-
-  error_code EC;
 
   typedef std::vector<StringRef> LibsTy;
   LibsTy Libs;

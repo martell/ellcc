@@ -5,6 +5,37 @@
 // attempt within a single file (which is to avoid having very broken files take
 // minutes to finally be rejected by the parser).
 
+namespace bogus_keyword_suggestion {
+void test() {
+   status = "OK";  // expected-error-re {{use of undeclared identifier 'status'$}}
+   return status;  // expected-error-re {{use of undeclared identifier 'status'$}}
+ }
+}
+
+namespace PR13387 {
+struct A {
+  void CreateFoo(float, float);
+  void CreateBar(float, float);
+};
+struct B : A {
+  using A::CreateFoo;
+  void CreateFoo(int, int);
+};
+void f(B &x) {
+  x.Createfoo(0,0);  // expected-error {{no member named 'Createfoo' in 'PR13387::B'; did you mean 'CreateFoo'?}}
+}
+}
+
+struct DataStruct {void foo();};
+struct T {
+ DataStruct data_struct;
+ void f();
+};
+// should be void T::f();
+void f() {
+ data_struct->foo();  // expected-error-re{{use of undeclared identifier 'data_struct'$}}
+}
+
 namespace PR12287 {
 class zif {
   void nab(int);
@@ -91,4 +122,32 @@ void testAccess() {
     break;
   }
 }
+}
+
+long readline(const char *, char *, unsigned long);
+void assign_to_unknown_var() {
+    deadline_ = 1;  // expected-error-re {{use of undeclared identifier 'deadline_'$}}
+}
+
+namespace no_ns_before_dot {
+namespace re2 {}
+void test() {
+    req.set_check(false);  // expected-error-re {{use of undeclared identifier 'req'$}}
+}
+}
+
+namespace PR17394 {
+  class A {
+  protected:
+    long zzzzzzzzzz;
+  };
+  class B : private A {};
+  B zzzzzzzzzy<>; // expected-error {{expected ';' after top level declarator}}{}
+}
+
+namespace correct_fields_in_member_funcs {
+struct S {
+  int my_member;  // expected-note {{'my_member' declared here}}
+  void f() { my_menber = 1; }  // expected-error {{use of undeclared identifier 'my_menber'; did you mean 'my_member'?}}
+};
 }
