@@ -41,7 +41,7 @@ namespace llvm {
       case GT: return LE;
       case LT: return GE;
       case GE: return LT;
-      case LE: return GE;
+      case LE: return GT;
       }
     }
 
