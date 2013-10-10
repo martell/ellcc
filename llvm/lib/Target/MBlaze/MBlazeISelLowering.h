@@ -23,6 +23,9 @@
 
 namespace llvm {
   namespace MBlazeCC {
+    // CAUTION: This enum must match the last argument to Select_CC
+    // in MBlazeInstrInfo.td. Do not change or add unless MBlazeInstrInfo.td
+    // is also changed.
     enum CC {
       FIRST = 0,
       EQ,

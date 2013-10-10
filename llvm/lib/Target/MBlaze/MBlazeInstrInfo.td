@@ -759,6 +759,9 @@ def : Pat<(sra GPR:$L, GPR:$R), (ShiftRA GPR:$L, GPR:$R)>;
 def : Pat<(srl GPR:$L, GPR:$R), (ShiftRL GPR:$L, GPR:$R)>;
 
 // SET_CC operations
+// CAUTION: The Magic numbers here, the last argument to Select_CC, are
+// also represented in MBlazeISelLowering.h as the MBlaze::CC enum.
+// Do not change unless MBlazeISelLowering.h is also changed.
 def : Pat<(setcc (i32 GPR:$L), (i32 0), SETEQ),
           (Select_CC (ADDIK (i32 R0), 1), (ADDIK (i32 R0), 0), GPR:$L, 1)>;
 def : Pat<(setcc (i32 GPR:$L), (i32 0), SETNE),
