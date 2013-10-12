@@ -116,6 +116,13 @@ static const unsigned InitAbbreviationsSetSize = 9; // log2(512)
 
 namespace llvm {
 
+/// resolve - Look in the DwarfDebug map for the MDNode that
+/// corresponds to the reference.
+template <typename T>
+T DbgVariable::resolve(DIRef<T> Ref) const {
+  return DD->resolve(Ref);
+}
+
 DIType DbgVariable::getType() const {
   DIType Ty = Var.getType();
   // FIXME: isBlockByrefVariable should be reformulated in terms of complex
@@ -149,13 +156,13 @@ DIType DbgVariable::getType() const {
     uint16_t tag = Ty.getTag();
 
     if (tag == dwarf::DW_TAG_pointer_type)
-      subType = DD->resolve(DIDerivedType(Ty).getTypeDerivedFrom());
+      subType = resolve(DIDerivedType(Ty).getTypeDerivedFrom());
 
     DIArray Elements = DICompositeType(subType).getTypeArray();
     for (unsigned i = 0, N = Elements.getNumElements(); i < N; ++i) {
       DIDerivedType DT = DIDerivedType(Elements.getElement(i));
       if (getName() == DT.getName())
-        return (DD->resolve(DT.getTypeDerivedFrom()));
+        return (resolve(DT.getTypeDerivedFrom()));
     }
   }
   return Ty;
@@ -364,7 +371,7 @@ bool DwarfDebug::isSubprogramContext(const MDNode *Context) {
 // scope then create and insert DIEs for these variables.
 DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
                                           const MDNode *SPNode) {
-  DIE *SPDie = getSPDIE(SPNode);
+  DIE *SPDie = SPCU->getDIE(SPNode);
 
   assert(SPDie && "Unable to find subprogram DIE!");
   DISubprogram SP(SPNode);
@@ -372,16 +379,11 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
   // If we're updating an abstract DIE, then we will be adding the children and
   // object pointer later on. But what we don't want to do is process the
   // concrete DIE twice.
-  DIE *AbsSPDIE = AbstractSPDies.lookup(SPNode);
-  if (AbsSPDIE) {
-    bool InSameCU = (AbsSPDIE->getCompileUnit() == SPCU->getCUDie());
+  if (DIE *AbsSPDIE = AbstractSPDies.lookup(SPNode)) {
     // Pick up abstract subprogram DIE.
     SPDie = new DIE(dwarf::DW_TAG_subprogram);
-    // If AbsSPDIE belongs to a different CU, use DW_FORM_ref_addr instead of
-    // DW_FORM_ref4.
     SPCU->addDIEEntry(SPDie, dwarf::DW_AT_abstract_origin,
-                      InSameCU ? dwarf::DW_FORM_ref4 : dwarf::DW_FORM_ref_addr,
-                      AbsSPDIE);
+                      dwarf::DW_FORM_ref4, AbsSPDIE);
     SPCU->addDie(SPDie);
   } else {
     DISubprogram SPDecl = SP.getFunctionDeclaration();
@@ -391,9 +393,10 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
       // function then gdb prefers the definition at top level and but does not
       // expect specification DIE in parent function. So avoid creating
       // specification DIE for a function defined inside a function.
-      if (SP.isDefinition() && !SP.getContext().isCompileUnit() &&
-          !SP.getContext().isFile() &&
-          !isSubprogramContext(SP.getContext())) {
+      DIScope SPContext = resolve(SP.getContext());
+      if (SP.isDefinition() && !SPContext.isCompileUnit() &&
+          !SPContext.isFile() &&
+          !isSubprogramContext(SPContext)) {
         SPCU->addFlag(SPDie, dwarf::DW_AT_declaration);
 
         // Add arguments.
@@ -518,7 +521,7 @@ DIE *DwarfDebug::constructInlinedScopeDIE(CompileUnit *TheCU,
     return NULL;
   DIScope DS(Scope->getScopeNode());
   DISubprogram InlinedSP = getDISubprogram(DS);
-  DIE *OriginDIE = getSPDIE(InlinedSP);
+  DIE *OriginDIE = TheCU->getDIE(InlinedSP);
   if (!OriginDIE) {
     DEBUG(dbgs() << "Unable to find original DIE for an inlined subprogram.");
     return NULL;
@@ -623,7 +626,7 @@ DIE *DwarfDebug::constructScopeDIE(CompileUnit *TheCU, LexicalScope *Scope) {
   else if (DS.isSubprogram()) {
     ProcessedSPNodes.insert(DS);
     if (Scope->isAbstractScope()) {
-      ScopeDIE = getSPDIE(DS);
+      ScopeDIE = TheCU->getDIE(DS);
       // Note down abstract DIE.
       if (ScopeDIE)
         AbstractSPDies.insert(std::make_pair(DS, ScopeDIE));
@@ -688,8 +691,10 @@ unsigned DwarfDebug::getOrCreateSourceID(StringRef FileName,
                                          StringRef DirName, unsigned CUID) {
   // If we use .loc in assembly, we can't separate .file entries according to
   // compile units. Thus all files will belong to the default compile unit.
-  if (Asm->TM.hasMCUseLoc() &&
-      Asm->OutStreamer.getKind() == MCStreamer::SK_AsmStreamer)
+
+  // FIXME: add a better feature test than hasRawTextSupport. Even better,
+  // extend .file to support this.
+  if (Asm->TM.hasMCUseLoc() && Asm->OutStreamer.hasRawTextSupport())
     CUID = 0;
 
   // If FE did not provide a file name, then assume stdin.
@@ -757,9 +762,8 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
 
   // Use a single line table if we are using .loc and generating assembly.
   bool UseTheFirstCU =
-    (Asm->TM.hasMCUseLoc() &&
-     Asm->OutStreamer.getKind() == MCStreamer::SK_AsmStreamer) ||
-    (NewCU->getUniqueID() == 0);
+      (Asm->TM.hasMCUseLoc() && Asm->OutStreamer.hasRawTextSupport()) ||
+      (NewCU->getUniqueID() == 0);
 
   if (!useSplitDwarf()) {
     // DW_AT_stmt_list is a offset of line number information for this
@@ -993,7 +997,7 @@ void DwarfDebug::collectDeadVariables() {
         CompileUnit *SPCU = CUMap.lookup(TheCU);
         assert(SPCU && "Unable to find Compile Unit!");
         constructSubprogramDIE(SPCU, SP);
-        DIE *ScopeDIE = getSPDIE(SP);
+        DIE *ScopeDIE = SPCU->getDIE(SP);
         for (unsigned vi = 0, ve = Variables.getNumElements(); vi != ve; ++vi) {
           DIVariable DV(Variables.getElement(vi));
           if (!DV.isVariable()) continue;
@@ -1064,15 +1068,6 @@ void DwarfDebug::finalizeModuleInfo() {
       CUMap.begin()->second->addUInt(Die, dwarf::DW_AT_GNU_odr_signature,
                                      dwarf::DW_FORM_data8,
                                      Hash.computeDIEODRSignature(Die));
-  }
-
-  // Process the worklist to add attributes with the correct form (ref_addr or
-  // ref4).
-  for (unsigned I = 0, E = DIEEntryWorklist.size(); I < E; I++) {
-    addDIEEntry(DIEEntryWorklist[I].Die, DIEEntryWorklist[I].Attribute,
-                dwarf::DW_FORM_ref4, DIEEntryWorklist[I].Entry);
-    assert(E == DIEEntryWorklist.size() &&
-           "We should not add to the worklist during finalization.");
   }
 
   // Handle anything that needs to be done on a per-cu basis.
@@ -1615,8 +1610,7 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
   LexicalScope *FnScope = LScopes.getCurrentFunctionScope();
   CompileUnit *TheCU = SPMap.lookup(FnScope->getScopeNode());
   assert(TheCU && "Unable to find compile unit!");
-  if (Asm->TM.hasMCUseLoc() &&
-      Asm->OutStreamer.getKind() == MCStreamer::SK_AsmStreamer)
+  if (Asm->TM.hasMCUseLoc() && Asm->OutStreamer.hasRawTextSupport())
     // Use a single line table if we are using .loc and generating assembly.
     Asm->OutStreamer.getContext().setDwarfCompileUnitID(0);
   else
@@ -1973,18 +1967,14 @@ DwarfUnits::computeSizeAndOffset(DIE *Die, unsigned Offset) {
 // Compute the size and offset of all the DIEs.
 void DwarfUnits::computeSizeAndOffsets() {
   // Offset from the beginning of debug info section.
-  unsigned SecOffset = 0;
   for (SmallVectorImpl<CompileUnit *>::iterator I = CUs.begin(),
          E = CUs.end(); I != E; ++I) {
-    (*I)->setDebugInfoOffset(SecOffset);
     unsigned Offset =
       sizeof(int32_t) + // Length of Compilation Unit Info
       sizeof(int16_t) + // DWARF version number
       sizeof(int32_t) + // Offset Into Abbrev. Section
       sizeof(int8_t);   // Pointer Size (in bytes)
-
-    unsigned EndOffset = computeSizeAndOffset((*I)->getCUDie(), Offset);
-    SecOffset += EndOffset;
+    computeSizeAndOffset((*I)->getCUDie(), Offset);
   }
 }
 
@@ -2064,23 +2054,11 @@ void DwarfDebug::emitDIE(DIE *Die, std::vector<DIEAbbrev *> *Abbrevs) {
       Asm->OutStreamer.AddComment(dwarf::AttributeString(Attr));
 
     switch (Attr) {
-    case dwarf::DW_AT_abstract_origin:
-    case dwarf::DW_AT_type:
-    case dwarf::DW_AT_friend:
-    case dwarf::DW_AT_specification:
-    case dwarf::DW_AT_containing_type: {
+    case dwarf::DW_AT_abstract_origin: {
       DIEEntry *E = cast<DIEEntry>(Values[i]);
       DIE *Origin = E->getEntry();
       unsigned Addr = Origin->getOffset();
-      if (Form == dwarf::DW_FORM_ref_addr) {
-        // For DW_FORM_ref_addr, output the offset from beginning of debug info
-        // section. Origin->getOffset() returns the offset from start of the
-        // compile unit.
-        DwarfUnits &Holder = useSplitDwarf() ? SkeletonHolder : InfoHolder;
-        Addr += Holder.getCUOffset(Origin->getCompileUnit());
-      }
-      Asm->OutStreamer.EmitIntValue(Addr,
-          Form == dwarf::DW_FORM_ref_addr ? DIEEntry::getRefAddrSize(Asm) : 4);
+      Asm->EmitInt32(Addr);
       break;
     }
     case dwarf::DW_AT_ranges: {
@@ -2175,19 +2153,6 @@ void DwarfUnits::emitUnits(DwarfDebug *DD,
     Asm->OutStreamer.EmitLabel(Asm->GetTempSymbol(USection->getLabelEndName(),
                                                   TheCU->getUniqueID()));
   }
-}
-
-/// For a given compile unit DIE, returns offset from beginning of debug info.
-unsigned DwarfUnits::getCUOffset(DIE *Die) {
-  assert(Die->getTag() == dwarf::DW_TAG_compile_unit  &&
-         "Input DIE should be compile unit in getCUOffset.");
-  for (SmallVectorImpl<CompileUnit *>::iterator I = CUs.begin(), E = CUs.end();
-       I != E; ++I) {
-    CompileUnit *TheCU = *I;
-    if (TheCU->getCUDie() == Die)
-      return TheCU->getDebugInfoOffset();
-  }
-  llvm_unreachable("The compile unit DIE should belong to CUs in DwarfUnits.");
 }
 
 // Emit the debug info section.
@@ -3047,25 +3012,4 @@ void DwarfDebug::emitDebugStrDWO() {
   const MCSymbol *StrSym = DwarfStrSectionSym;
   InfoHolder.emitStrings(Asm->getObjFileLowering().getDwarfStrDWOSection(),
                          OffSec, StrSym);
-}
-
-/// When we don't know whether the correct form is ref4 or ref_addr, we create
-/// a worklist item and insert it to DIEEntryWorklist.
-void DwarfDebug::addDIEEntry(DIE *Die, uint16_t Attribute, uint16_t Form,
-                             DIEEntry *Entry) {
-  /// Early exit when we only have a single CU.
-  if (GlobalCUIndexCount == 1 || Form != dwarf::DW_FORM_ref4) {
-    Die->addValue(Attribute, Form, Entry);
-    return;
-  }
-  DIE *DieCU = Die->checkCompileUnit();
-  DIE *EntryCU = Entry->getEntry()->checkCompileUnit();
-  if (!DieCU || !EntryCU) {
-    // Die or Entry is not added to an owner yet.
-    insertDIEEntryWorklist(Die, Attribute, Entry);
-    return;
-  }
-  Die->addValue(Attribute,
-         EntryCU == DieCU ? dwarf::DW_FORM_ref4 : dwarf::DW_FORM_ref_addr,
-         Entry);
 }

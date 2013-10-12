@@ -12,16 +12,15 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARMBaseInfo.h"
-#include "ARMELFStreamer.h"
 #include "ARMMCAsmInfo.h"
 #include "ARMMCTargetDesc.h"
 #include "InstPrinter/ARMInstPrinter.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/MC/MCCodeGenInfo.h"
+#include "llvm/MC/MCELFStreamer.h"
 #include "llvm/MC/MCInstrAnalysis.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
-#include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
@@ -157,7 +156,7 @@ std::string ARM_MC::ParseARMTriple(StringRef TT, StringRef CPU) {
         isThumb = true;
         if (NoCPU)
           // v6m: FeatureNoARM, FeatureMClass
-          ARMArchFeature = "+v6,+noarm,+mclass";
+          ARMArchFeature = "+v6m,+noarm,+mclass";
         else
           ARMArchFeature = "+v6";
       } else
@@ -371,6 +370,10 @@ extern "C" void LLVMInitializeARMTargetMC() {
   TargetRegistry::RegisterMCObjectStreamer(TheARMTarget, createMCStreamer);
   TargetRegistry::RegisterMCObjectStreamer(TheARMEBTarget, createMCStreamer);
   TargetRegistry::RegisterMCObjectStreamer(TheThumbTarget, createMCStreamer);
+
+  // Register the asm streamer.
+  TargetRegistry::RegisterAsmStreamer(TheARMTarget, createMCAsmStreamer);
+  TargetRegistry::RegisterAsmStreamer(TheThumbTarget, createMCAsmStreamer);
 
   // Register the MCInstPrinter.
   TargetRegistry::RegisterMCInstPrinter(TheARMTarget, createARMMCInstPrinter);

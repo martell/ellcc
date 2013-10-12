@@ -328,14 +328,16 @@ private:
         Tok->Previous->Type = TT_ObjCSelectorName;
         if (Tok->Previous->ColumnWidth >
             Contexts.back().LongestObjCSelectorName) {
-          Contexts.back().LongestObjCSelectorName =
-              Tok->Previous->ColumnWidth;
+          Contexts.back().LongestObjCSelectorName = Tok->Previous->ColumnWidth;
         }
         if (Contexts.back().FirstObjCSelectorName == NULL)
           Contexts.back().FirstObjCSelectorName = Tok->Previous;
       } else if (Contexts.back().ColonIsForRangeExpr) {
         Tok->Type = TT_RangeBasedForLoopColon;
-      } else if (Contexts.size() == 1) {
+      } else if (CurrentToken != NULL &&
+                 CurrentToken->is(tok::numeric_constant)) {
+        Tok->Type = TT_BitFieldColon;
+      } else if (Contexts.size() == 1 && Line.First->isNot(tok::kw_enum)) {
         Tok->Type = TT_InheritanceColon;
       } else if (Contexts.back().ContextKind == tok::l_paren) {
         Tok->Type = TT_InlineASMColon;
@@ -523,7 +525,8 @@ private:
 
     // Reset token type in case we have already looked at it and then recovered
     // from an error (e.g. failure to find the matching >).
-    if (CurrentToken != NULL && CurrentToken->Type != TT_LambdaLSquare)
+    if (CurrentToken != NULL && CurrentToken->Type != TT_LambdaLSquare &&
+        CurrentToken->Type != TT_ImplicitStringLiteral)
       CurrentToken->Type = TT_Unknown;
   }
 
@@ -1290,6 +1293,8 @@ bool TokenAnnotator::spaceRequiredBefore(const AnnotatedLine &Line,
                                          const FormatToken &Tok) {
   if (Tok.Tok.getIdentifierInfo() && Tok.Previous->Tok.getIdentifierInfo())
     return true; // Never ever merge two identifiers.
+  if (Tok.Previous->Type == TT_ImplicitStringLiteral)
+    return Tok.WhitespaceRange.getBegin() != Tok.WhitespaceRange.getEnd();
   if (Line.Type == LT_ObjCMethodDecl) {
     if (Tok.Previous->Type == TT_ObjCMethodSpecifier)
       return true;
@@ -1366,11 +1371,11 @@ bool TokenAnnotator::mustBreakBefore(const AnnotatedLine &Line,
     // FIXME: Fix horrible hack of using BindingStrength to find top-level <>.
     return true;
   } else if (Right.Type == TT_CtorInitializerComma &&
-             Style.BreakConstructorInitializersBeforeComma) {
+             Style.BreakConstructorInitializersBeforeComma &&
+             !Style.ConstructorInitializerAllOnOneLineOrOnePerLine) {
     return true;
   } else if (Right.Previous->BlockKind == BK_Block &&
-             Right.Previous->isNot(tok::r_brace) &&
-             Right.isNot(tok::r_brace)) {
+             Right.Previous->isNot(tok::r_brace) && Right.isNot(tok::r_brace)) {
     return true;
   } else if (Right.is(tok::l_brace) && (Right.BlockKind == BK_Block)) {
     return Style.BreakBeforeBraces == FormatStyle::BS_Allman;
@@ -1450,6 +1455,9 @@ bool TokenAnnotator::canBreakBefore(const AnnotatedLine &Line,
   if (Left.Type == TT_CtorInitializerComma &&
       Style.BreakConstructorInitializersBeforeComma)
     return false;
+  if (Right.Type == TT_CtorInitializerComma &&
+      Style.BreakConstructorInitializersBeforeComma)
+    return true;
   if (Right.isBinaryOperator() && Style.BreakBeforeBinaryOperators)
     return true;
   if (Left.is(tok::greater) && Right.is(tok::greater) &&

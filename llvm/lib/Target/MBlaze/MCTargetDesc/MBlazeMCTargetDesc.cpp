@@ -14,10 +14,12 @@
 #include "MBlazeMCTargetDesc.h"
 #include "InstPrinter/MBlazeInstPrinter.h"
 #include "MBlazeMCAsmInfo.h"
+#include "MBlazeTargetStreamer.h"
 #include "llvm/MC/MCCodeGenInfo.h"
+#include "llvm/MC/MCELF.h"
+#include "llvm/MC/MCELFStreamer.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
-#include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
@@ -32,7 +34,6 @@
 #include "MBlazeGenRegisterInfo.inc"
 
 using namespace llvm;
-
 
 static MCInstrInfo *createMBlazeMCInstrInfo() {
   MCInstrInfo *X = new MCInstrInfo();
@@ -53,7 +54,7 @@ static MCSubtargetInfo *createMBlazeMCSubtargetInfo(StringRef TT, StringRef CPU,
   return X;
 }
 
-static MCAsmInfo *createMCAsmInfo(const MCRegisterInfo &MRI, StringRef TT) {
+static MCAsmInfo *createMBlazeMCAsmInfo(const MCRegisterInfo &MRI, StringRef TT) {
   Triple TheTriple(TT);
   switch (TheTriple.getOS()) {
   default:
@@ -73,23 +74,46 @@ static MCCodeGenInfo *createMBlazeMCCodeGenInfo(StringRef TT, Reloc::Model RM,
   return X;
 }
 
+class MBlazeTargetAsmStreamer : public MBlazeTargetStreamer {
+  formatted_raw_ostream &OS;
+
+public:
+  MBlazeTargetAsmStreamer(formatted_raw_ostream &OS);
+};
+
+MBlazeTargetAsmStreamer::MBlazeTargetAsmStreamer(formatted_raw_ostream &OS)
+    : OS(OS) {}
+
+class MBlazeTargetELFStreamer : public MBlazeTargetStreamer {
+public:
+  MCELFStreamer &getStreamer();
+  MBlazeTargetELFStreamer();
+};
+
+MBlazeTargetELFStreamer::MBlazeTargetELFStreamer() {}
+
+MCELFStreamer &MBlazeTargetELFStreamer::getStreamer() {
+  return static_cast<MCELFStreamer &>(*Streamer);
+}
+
 static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
                                     MCContext &Ctx, MCAsmBackend &MAB,
-                                    raw_ostream &_OS,
-                                    MCCodeEmitter *_Emitter,
-                                    bool RelaxAll,
-                                    bool NoExecStack) {
-  Triple TheTriple(TT);
+                                    raw_ostream &OS, MCCodeEmitter *Emitter,
+                                    bool RelaxAll, bool NoExecStack) {
+  MBlazeTargetELFStreamer *S = new MBlazeTargetELFStreamer();
+  return createELFStreamer(Ctx, S, MAB, OS, Emitter, RelaxAll, NoExecStack);
+}
 
-  if (TheTriple.isOSDarwin()) {
-    llvm_unreachable("MBlaze does not support Darwin MACH-O format");
-  }
+static MCStreamer *
+createMCAsmStreamer(MCContext &Ctx, formatted_raw_ostream &OS,
+                    bool isVerboseAsm, bool useLoc, bool useCFI,
+                    bool useDwarfDirectory, MCInstPrinter *InstPrint,
+                    MCCodeEmitter *CE, MCAsmBackend *TAB, bool ShowInst) {
+  MBlazeTargetAsmStreamer *S = new MBlazeTargetAsmStreamer(OS);
 
-  if (TheTriple.isOSWindows()) {
-    llvm_unreachable("MBlaze does not support Windows COFF format");
-  }
-
-  return createELFStreamer(Ctx, MAB, _OS, _Emitter, RelaxAll, NoExecStack);
+  return llvm::createAsmStreamer(Ctx, S, OS, isVerboseAsm, useLoc, useCFI,
+                                 useDwarfDirectory, InstPrint, CE, TAB,
+                                 ShowInst);
 }
 
 static MCInstPrinter *createMBlazeMCInstPrinter(const Target &T,
@@ -106,7 +130,7 @@ static MCInstPrinter *createMBlazeMCInstPrinter(const Target &T,
 // Force static initialization.
 extern "C" void LLVMInitializeMBlazeTargetMC() {
   // Register the MC asm info.
-  RegisterMCAsmInfoFn X(TheMBlazeTarget, createMCAsmInfo);
+  RegisterMCAsmInfoFn X(TheMBlazeTarget, createMBlazeMCAsmInfo);
 
   // Register the MC codegen info.
   TargetRegistry::RegisterMCCodeGenInfo(TheMBlazeTarget,
@@ -127,6 +151,9 @@ extern "C" void LLVMInitializeMBlazeTargetMC() {
   TargetRegistry::RegisterMCCodeEmitter(TheMBlazeTarget,
                                         llvm::createMBlazeMCCodeEmitter);
 
+  // Register the asm streamer
+  TargetRegistry::RegisterAsmStreamer(TheMBlazeTarget,
+                                       createMCAsmStreamer);
   // Register the asm backend
   TargetRegistry::RegisterMCAsmBackend(TheMBlazeTarget,
                                        createMBlazeAsmBackend);

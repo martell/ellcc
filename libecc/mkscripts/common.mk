@@ -12,6 +12,8 @@ else
     COV :=
 endif
 
+include $(LEVEL)/../../mkscripts/targets/$(TARGET)/setup.mk
+
 # Determine the architecture.
 ifneq ($(filter arm%, $(TARGET)),)
   ARCH := arm
@@ -45,7 +47,7 @@ LIBDIR  = $(LEVEL)/../../lib/$(TARGET)$(COV)$(OSDIR)
 
 ifeq ($(XCC),)
   # The build compiler.
-  CC = $(LEVEL)/../../../bin/ecc -target $(TARGET)-$(OS)-ellcc
+  CC = $(LEVEL)/../../../bin/ecc
 
   # The archiver.
   AR = $(LEVEL)/../../../bin/ecc-ar
@@ -55,12 +57,13 @@ endif
 
 ifeq ($(XCXX),)
   # The build C++ compiler.
-  CXX = $(LEVEL)/../../../bin/ecc++ -target $(TARGET)-$(OS)-ellcc
+  CXX = $(LEVEL)/../../../bin/ecc++
 else
   CXX = $(XCXX)
 endif
 
-CFLAGS += -Werror -MD -MP -O1
+CFLAGS += $(CFLAGS.$(TARGET)) -Werror -MD -MP -O1
+CXXFLAGS += $(CXXFLAGS.$(TARGET)) -MD -MP -O1
 
 ifndef NODEBUG
   CFLAGS += -g

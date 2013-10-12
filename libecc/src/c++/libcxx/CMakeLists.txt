@@ -44,7 +44,7 @@ option(LIBCXX_ENABLE_CXX0X "Enable -std=c++0x and use of c++0x language features
 option(LIBCXX_ENABLE_SHARED "Build libc++ as a shared library." ON)
 option(LIBCXX_INSTALL_SUPPORT_HEADERS "Install libc++ support headers." ON)
 
-set(CXXABIS none libcxxabi libcxxrt libsupc++)
+set(CXXABIS none libcxxabi libcxxrt libstdc++ libsupc++)
 if (NOT DEFINED LIBCXX_CXX_ABI)
   set(LIBCXX_CXX_ABI "none")
 endif()
@@ -120,13 +120,22 @@ if ("${LIBCXX_CXX_ABI}" STREQUAL "libsupc++")
     )
 endmacro()
 
-if ("${LIBCXX_CXX_ABI}" STREQUAL "libsupc++")
+if ("${LIBCXX_CXX_ABI}" STREQUAL "libstdc++" OR
+    "${LIBCXX_CXX_ABI}" STREQUAL "libsupc++")
   set(_LIBSUPCXX_INCLUDE_FILES
     cxxabi.h bits/c++config.h bits/os_defines.h bits/cpu_defines.h
     bits/cxxabi_tweaks.h bits/cxxabi_forced.h
     )
-  setup_abi_lib("LIBCXX_LIBSUPCXX_INCLUDE_PATHS" "-D__GLIBCXX__"
-    "supc++" "${_LIBSUPCXX_INCLUDE_FILES}" "bits"
+  if ("${LIBCXX_CXX_ABI}" STREQUAL "libstdc++")
+    set(_LIBSUPCXX_DEFINES "-DLIBSTDCXX")
+    set(_LIBSUPCXX_LIBNAME stdc++)
+  else()
+    set(_LIBSUPCXX_DEFINES "")
+    set(_LIBSUPCXX_LIBNAME supc++)
+  endif()
+  setup_abi_lib("LIBCXX_LIBSUPCXX_INCLUDE_PATHS"
+    "-D__GLIBCXX__ ${_LIBSUPCXX_DEFINES}"
+    "${_LIBSUPCXX_LIBNAME}" "${_LIBSUPCXX_INCLUDE_FILES}" "bits"
     )
 elseif ("${LIBCXX_CXX_ABI}" STREQUAL "libcxxabi")
   setup_abi_lib("LIBCXX_LIBCXXABI_INCLUDE_PATHS" ""
@@ -138,7 +147,9 @@ elseif ("${LIBCXX_CXX_ABI}" STREQUAL "libcxxrt")
     )
 elseif (NOT "${LIBCXX_CXX_ABI}" STREQUAL "none")
   message(FATAL_ERROR
-          "Currently only none and libsupc++ are supported for c++ abi.")
+    "Currently libstdc++, libsupc++, libcxxabi, libcxxrt and none are "
+    "supported for c++ abi."
+    )
 endif ()
 
 # Configure compiler.
@@ -170,7 +181,9 @@ macro(append_if list condition var)
 endmacro()
 
 # Get warning flags
-append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_WALL_FLAG -Wall)
+if (NOT MSVC)
+  append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_WALL_FLAG -Wall)
+endif()
 append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_W_FLAG -W)
 append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_WNO_UNUSED_PARAMETER_FLAG -Wno-unused-parameter)
 append_if(LIBCXX_CXX_WARNING_FLAGS LIBCXX_HAS_WWRITE_STRINGS_FLAG -Wwrite-strings)

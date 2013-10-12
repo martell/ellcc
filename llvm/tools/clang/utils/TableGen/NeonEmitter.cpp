@@ -119,7 +119,8 @@ enum OpKind {
   OpDiv,
   OpLongHi,
   OpNarrowHi,
-  OpMovlHi
+  OpMovlHi,
+  OpCopy
 };
 
 enum ClassKind {
@@ -264,6 +265,7 @@ public:
     OpMap["OP_LONG_HI"] = OpLongHi;
     OpMap["OP_NARROW_HI"] = OpNarrowHi;
     OpMap["OP_MOVL_HI"] = OpMovlHi;
+    OpMap["OP_COPY"] = OpCopy;
 
     Record *SI = R.getClass("SInst");
     Record *II = R.getClass("IInst");
@@ -456,6 +458,13 @@ static char ModType(const char mod, char type, bool &quad, bool &poly,
       if (type == 'd')
         type = 'l';
       break;
+    case 'o':
+      scal = true;
+      type = 'd';
+      usgn = false;
+      break;
+    case 'y':
+      scal = true;
     case 'f':
       if (type == 'h')
         quad = true;
@@ -484,6 +493,8 @@ static char ModType(const char mod, char type, bool &quad, bool &poly,
       scal = true;
       usgn = true;
       break;
+    case 'r':
+      type = Widen(type);
     case 's':
     case 'a':
       scal = true;
@@ -1319,7 +1330,8 @@ static bool MacroArgUsedDirectly(const std::string &proto, unsigned i) {
 }
 
 // Generate the string "(argtype a, argtype b, ...)"
-static std::string GenArgs(const std::string &proto, StringRef typestr) {
+static std::string GenArgs(const std::string &proto, StringRef typestr,
+                           const std::string &name) {
   bool define = UseMacro(proto);
   char arg = 'a';
 
@@ -1337,6 +1349,9 @@ static std::string GenArgs(const std::string &proto, StringRef typestr) {
       s += TypeString(proto[i], typestr) + " __";
     }
     s.push_back(arg);
+    //To avoid argument being multiple defined, add extra number for renaming.
+    if (name == "vcopy_lane")
+      s.push_back('1');
     if ((i + 1) < e)
       s += ", ";
   }
@@ -1347,7 +1362,8 @@ static std::string GenArgs(const std::string &proto, StringRef typestr) {
 
 // Macro arguments are not type-checked like inline function arguments, so
 // assign them to local temporaries to get the right type checking.
-static std::string GenMacroLocals(const std::string &proto, StringRef typestr) {
+static std::string GenMacroLocals(const std::string &proto, StringRef typestr,
+                                  const std::string &name ) {
   char arg = 'a';
   std::string s;
   bool generatedLocal = false;
@@ -1358,11 +1374,18 @@ static std::string GenMacroLocals(const std::string &proto, StringRef typestr) {
     if (MacroArgUsedDirectly(proto, i))
       continue;
     generatedLocal = true;
+    bool extranumber = false;
+    if(name == "vcopy_lane")
+      extranumber = true;
 
     s += TypeString(proto[i], typestr) + " __";
     s.push_back(arg);
+    if(extranumber)
+      s.push_back('1');
     s += " = (";
     s.push_back(arg);
+    if(extranumber)
+      s.push_back('1');
     s += "); ";
   }
 
@@ -1823,6 +1846,12 @@ static std::string GenOpString(const std::string &name, OpKind op,
          MangleName(RemoveHigh(name), typestr, ClassS) + "(__b, __c));";
     break;
   }
+  case OpCopy: {
+    s += TypeString('s', typestr) + " __c2 = " +
+         MangleName("vget_lane", typestr, ClassS) + "(__c1, __d1); \\\n  " +
+         MangleName("vset_lane", typestr, ClassS) + "(__c2, __a1, __b1);";
+    break;
+  }
   default:
     PrintFatalError("unknown OpKind!");
   }
@@ -1878,6 +1907,12 @@ static unsigned GetNeonEnum(const std::string &proto, StringRef typestr) {
   return Flags.getFlags();
 }
 
+static bool ProtoHasScalar(const std::string proto)
+{
+  return (proto.find('s') != std::string::npos
+          || proto.find('r') != std::string::npos);
+}
+
 // Generate the definition for this intrinsic, e.g. __builtin_neon_cls(a)
 static std::string GenBuiltin(const std::string &name, const std::string &proto,
                               StringRef typestr, ClassKind ck) {
@@ -1892,7 +1927,7 @@ static std::string GenBuiltin(const std::string &name, const std::string &proto,
   // Check if the prototype has a scalar operand with the type of the vector
   // elements.  If not, bitcasting the args will take care of arg checking.
   // The actual signedness etc. will be taken care of with special enums.
-  if (proto.find('s') == std::string::npos)
+  if (!ProtoHasScalar(proto))
     ck = ClassB;
 
   if (proto[0] != 'v') {
@@ -2003,7 +2038,7 @@ static std::string GenBuiltinDef(const std::string &name,
   // If all types are the same size, bitcasting the args will take care
   // of arg checking.  The actual signedness etc. will be taken care of with
   // special enums.
-  if (proto.find('s') == std::string::npos)
+  if (!ProtoHasScalar(proto))
     ck = ClassB;
 
   s += MangleName(name, typestr, ck);
@@ -2047,12 +2082,12 @@ static std::string GenIntrinsic(const std::string &name,
   s += mangledName;
 
   // Function arguments
-  s += GenArgs(proto, inTypeStr);
+  s += GenArgs(proto, inTypeStr, name);
 
   // Definition.
   if (define) {
     s += " __extension__ ({ \\\n  ";
-    s += GenMacroLocals(proto, inTypeStr);
+    s += GenMacroLocals(proto, inTypeStr, name);
   } else if (kind == OpUnavailable) {
     s += " __attribute__((unavailable));\n";
     return s;
@@ -2413,7 +2448,7 @@ NeonEmitter::genIntrinsicRangeCheckCode(raw_ostream &OS,
         else
           PrintFatalError(R->getLoc(),
               "Fixed point convert name should contains \"32\" or \"64\"");
-      } else if (Proto.find('s') == std::string::npos) {
+      } else if (!ProtoHasScalar(Proto)) {
         // Builtins which are overloaded by type will need to have their upper
         // bound computed at Sema time based on the type constant.
         ck = ClassB;
@@ -2510,7 +2545,7 @@ NeonEmitter::genOverloadTypeCheckCode(raw_ostream &OS,
 
     // Functions which have a scalar argument cannot be overloaded, no need to
     // check them if we are emitting the type checking code.
-    if (Proto.find('s') != std::string::npos)
+    if (ProtoHasScalar(Proto))
       continue;
 
     SmallVector<StringRef, 16> TypeVec;

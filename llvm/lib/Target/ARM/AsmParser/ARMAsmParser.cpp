@@ -52,6 +52,11 @@ class ARMAsmParser : public MCTargetAsmParser {
   const MCInstrInfo &MII;
   const MCRegisterInfo *MRI;
 
+  ARMTargetStreamer &getTargetStreamer() {
+    MCTargetStreamer &TS = getParser().getStreamer().getTargetStreamer();
+    return static_cast<ARMTargetStreamer &>(TS);
+  }
+
   // Unwind directives state
   SMLoc FnStartLoc;
   SMLoc CantUnwindLoc;
@@ -162,6 +167,9 @@ class ARMAsmParser : public MCTargetAsmParser {
   bool hasV6Ops() const {
     return STI.getFeatureBits() & ARM::HasV6Ops;
   }
+  bool hasV6MOps() const {
+    return STI.getFeatureBits() & ARM::HasV6MOps;
+  }
   bool hasV7Ops() const {
     return STI.getFeatureBits() & ARM::HasV7Ops;
   }
@@ -260,13 +268,6 @@ public:
 
     // Not in an ITBlock to start with.
     ITState.CurPosition = ~0U;
-
-    // Set ELF header flags.
-    // FIXME: This should eventually end up somewhere else where more
-    // intelligent flag decisions can be made. For now we are just maintaining
-    // the statu/parseDirects quo for ARM and setting EF_ARM_EABI_VER5 as the default.
-    if (MCELFStreamer *MES = dyn_cast<MCELFStreamer>(&Parser.getStreamer()))
-      MES->getAssembler().setELFHeaderEFlags(ELF::EF_ARM_EABI_VER5);
   }
 
   // Implementation of the MCTargetAsmParser interface:
@@ -4819,7 +4820,10 @@ getMnemonicAcceptInfo(StringRef Mnemonic, StringRef FullInst,
         Mnemonic != "stc2" && Mnemonic != "stc2l" &&
         !Mnemonic.startswith("rfe") && !Mnemonic.startswith("srs");
   } else if (isThumbOne()) {
-    CanAcceptPredicationCode = Mnemonic != "nop" && Mnemonic != "movs";
+    if (hasV6MOps())
+      CanAcceptPredicationCode = Mnemonic != "movs";
+    else
+      CanAcceptPredicationCode = Mnemonic != "nop" && Mnemonic != "movs";
   } else
     CanAcceptPredicationCode = true;
 }
@@ -7962,7 +7966,7 @@ bool ARMAsmParser::parseDirectiveFnStart(SMLoc L) {
   }
 
   FnStartLoc = L;
-  getParser().getStreamer().EmitFnStart();
+  getTargetStreamer().emitFnStart();
   return false;
 }
 
@@ -7975,8 +7979,7 @@ bool ARMAsmParser::parseDirectiveFnEnd(SMLoc L) {
 
   // Reset the unwind directives parser state
   resetUnwindDirectiveParserState();
-
-  getParser().getStreamer().EmitFnEnd();
+  getTargetStreamer().emitFnEnd();
   return false;
 }
 
@@ -7998,7 +8001,7 @@ bool ARMAsmParser::parseDirectiveCantUnwind(SMLoc L) {
     return true;
   }
 
-  getParser().getStreamer().EmitCantUnwind();
+  getTargetStreamer().emitCantUnwind();
   return false;
 }
 
@@ -8029,7 +8032,7 @@ bool ARMAsmParser::parseDirectivePersonality(SMLoc L) {
   Parser.Lex();
 
   MCSymbol *PR = getParser().getContext().GetOrCreateSymbol(Name);
-  getParser().getStreamer().EmitPersonality(PR);
+  getTargetStreamer().emitPersonality(PR);
   return false;
 }
 
@@ -8046,7 +8049,7 @@ bool ARMAsmParser::parseDirectiveHandlerData(SMLoc L) {
     return true;
   }
 
-  getParser().getStreamer().EmitHandlerData();
+  getTargetStreamer().emitHandlerData();
   return false;
 }
 
@@ -8106,9 +8109,8 @@ bool ARMAsmParser::parseDirectiveSetFP(SMLoc L) {
     Offset = CE->getValue();
   }
 
-  getParser().getStreamer().EmitSetFP(static_cast<unsigned>(NewFPReg),
-                                      static_cast<unsigned>(NewSPReg),
-                                      Offset);
+  getTargetStreamer().emitSetFP(static_cast<unsigned>(NewFPReg),
+                                static_cast<unsigned>(NewSPReg), Offset);
   return false;
 }
 
@@ -8137,7 +8139,7 @@ bool ARMAsmParser::parseDirectivePad(SMLoc L) {
   if (!CE)
     return Error(ExLoc, "pad offset must be an immediate");
 
-  getParser().getStreamer().EmitPad(CE->getValue());
+  getTargetStreamer().emitPad(CE->getValue());
   return false;
 }
 
@@ -8169,7 +8171,7 @@ bool ARMAsmParser::parseDirectiveRegSave(SMLoc L, bool IsVector) {
   if (IsVector && !Op->isDPRRegList())
     return Error(L, ".vsave expects DPR registers");
 
-  getParser().getStreamer().EmitRegSave(Op->getRegList(), IsVector);
+  getTargetStreamer().emitRegSave(Op->getRegList(), IsVector);
   return false;
 }
 

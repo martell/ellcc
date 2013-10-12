@@ -44,6 +44,18 @@ static bool startsSegmentOfBuilderTypeCall(const FormatToken &Tok) {
   return Tok.isMemberAccess() && Tok.Previous && Tok.Previous->closesScope();
 }
 
+// Returns \c true if \c Current starts a new parameter.
+static bool startsNextParameter(const FormatToken &Current,
+                                const FormatStyle &Style) {
+  const FormatToken &Previous = *Current.Previous;
+  if (Current.Type == TT_CtorInitializerComma &&
+      Style.BreakConstructorInitializersBeforeComma)
+    return true;
+  return Previous.is(tok::comma) && !Current.isTrailingComment() &&
+         (Previous.Type != TT_CtorInitializerComma ||
+          !Style.BreakConstructorInitializersBeforeComma);
+}
+
 ContinuationIndenter::ContinuationIndenter(const FormatStyle &Style,
                                            SourceManager &SourceMgr,
                                            WhitespaceManager &Whitespaces,
@@ -113,15 +125,9 @@ bool ContinuationIndenter::mustBreak(const LineState &State) {
     return true;
   if (Previous.is(tok::semi) && State.LineContainsContinuedForLoopSection)
     return true;
-  if (Style.BreakConstructorInitializersBeforeComma) {
-    if (Previous.Type == TT_CtorInitializerComma)
-      return false;
-    if (Current.Type == TT_CtorInitializerComma)
-      return true;
-  }
-  if ((Previous.isOneOf(tok::comma, tok::semi) || Current.is(tok::question) ||
-       (Current.Type == TT_ConditionalExpr &&
-        !(Current.is(tok::colon) && Previous.is(tok::question)))) &&
+  if ((startsNextParameter(Current, Style) || Previous.is(tok::semi) ||
+       Current.is(tok::question) ||
+       (Current.Type == TT_ConditionalExpr && Previous.isNot(tok::question))) &&
       State.Stack.back().BreakBeforeParameter && !Current.isTrailingComment() &&
       !Current.isOneOf(tok::r_paren, tok::r_brace))
     return true;
@@ -172,7 +178,8 @@ bool ContinuationIndenter::mustBreak(const LineState &State) {
       State.Stack.back().BreakBeforeParameter)
     return true;
   if ((Current.Type == TT_CtorInitializerColon ||
-       (Previous.ClosesTemplateDeclaration && State.ParenLevel == 0)))
+       (Previous.ClosesTemplateDeclaration && State.ParenLevel == 0 &&
+        !Current.isTrailingComment())))
     return true;
 
   if ((Current.Type == TT_StartOfName || Current.is(tok::kw_operator)) &&
@@ -250,8 +257,7 @@ void ContinuationIndenter::addTokenOnCurrentLine(LineState &State, bool DryRun,
   if (Previous.opensScope() && Previous.Type != TT_ObjCMethodExpr &&
       Current.Type != TT_LineComment)
     State.Stack.back().Indent = State.Column + Spaces;
-  if (Previous.is(tok::comma) && !Current.isTrailingComment() &&
-      State.Stack.back().AvoidBinPacking)
+  if (State.Stack.back().AvoidBinPacking && startsNextParameter(Current, Style))
     State.Stack.back().NoLineBreak = true;
   if (startsSegmentOfBuilderTypeCall(Current))
     State.Stack.back().ContainsUnwrappedBuilder = true;
@@ -273,9 +279,10 @@ void ContinuationIndenter::addTokenOnCurrentLine(LineState &State, bool DryRun,
     // simple assignment without binary expression on the RHS. Also indent
     // relative to unary operators and the colons of constructor initializers.
     State.Stack.back().LastSpace = State.Column;
-  else if (Previous.Type == TT_InheritanceColon)
+  else if (Previous.Type == TT_InheritanceColon) {
     State.Stack.back().Indent = State.Column;
-  else if (Previous.opensScope()) {
+    State.Stack.back().LastSpace = State.Column;
+  } else if (Previous.opensScope()) {
     // If a function has a trailing call, indent all parameters from the
     // opening parenthesis. This avoids confusing indents like:
     //   OuterFunction(InnerFunctionCall( // break

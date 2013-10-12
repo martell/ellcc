@@ -491,7 +491,8 @@ RecognizableInstr::filter_ret RecognizableInstr::filter() const {
   assert(Rec->isSubClassOf("X86Inst") && "Can only filter X86 instructions");
 
   if (Form == X86Local::Pseudo ||
-      (IsCodeGenOnly && Name.find("_REV") == Name.npos))
+      (IsCodeGenOnly && Name.find("_REV") == Name.npos &&
+       Name.find("INC32") == Name.npos && Name.find("DEC32") == Name.npos))
     return FILTER_STRONG;
 
 
@@ -521,35 +522,21 @@ RecognizableInstr::filter_ret RecognizableInstr::filter() const {
 
   // Filter out alternate forms of AVX instructions
   if (Name.find("_alt") != Name.npos ||
-      Name.find("XrYr") != Name.npos ||
-      (Name.find("r64r") != Name.npos && Name.find("r64r64") == Name.npos) ||
+      (Name.find("r64r") != Name.npos && Name.find("r64r64") == Name.npos && Name.find("r64r8") == Name.npos) ||
       Name.find("_64mr") != Name.npos ||
-      Name.find("Xrr") != Name.npos ||
       Name.find("rr64") != Name.npos)
     return FILTER_WEAK;
 
   // Special cases.
 
-  if (Name.find("PCMPISTRI") != Name.npos && Name != "PCMPISTRI")
-    return FILTER_WEAK;
-  if (Name.find("PCMPESTRI") != Name.npos && Name != "PCMPESTRI")
-    return FILTER_WEAK;
-
   if (Name.find("MOV") != Name.npos && Name.find("r0") != Name.npos)
-    return FILTER_WEAK;
-  if (Name.find("MOVZ") != Name.npos && Name.find("MOVZX") == Name.npos)
     return FILTER_WEAK;
   if (Name.find("Fs") != Name.npos)
     return FILTER_WEAK;
   if (Name == "PUSH64i16"         ||
       Name == "MOVPQI2QImr"       ||
       Name == "VMOVPQI2QImr"      ||
-      Name == "MMX_MOVD64rrv164"  ||
-      Name == "MOV64ri64i32"      ||
-      Name == "VMASKMOVDQU64"     ||
-      Name == "VEXTRACTPSrr64"    ||
-      Name == "VMOVQd64rr"        ||
-      Name == "VMOVQs64rr")
+      Name == "VMASKMOVDQU64")
     return FILTER_WEAK;
 
   // XACQUIRE and XRELEASE reuse REPNE and REP respectively.

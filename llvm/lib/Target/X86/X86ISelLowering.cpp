@@ -1330,7 +1330,16 @@ void X86TargetLowering::resetOperationActions() {
     setOperationAction(ISD::FMA,                MVT::v16f32, Legal);
     setOperationAction(ISD::SDIV,               MVT::v16i32, Custom);
 
-
+    setOperationAction(ISD::FP_TO_SINT,         MVT::i32, Legal);
+    setOperationAction(ISD::FP_TO_UINT,         MVT::i32, Legal);
+    setOperationAction(ISD::SINT_TO_FP,         MVT::i32, Legal);
+    setOperationAction(ISD::UINT_TO_FP,         MVT::i32, Legal);
+    if (Subtarget->is64Bit()) {
+      setOperationAction(ISD::FP_TO_UINT,       MVT::i64, Legal);
+      setOperationAction(ISD::FP_TO_SINT,       MVT::i64, Legal);
+      setOperationAction(ISD::SINT_TO_FP,       MVT::i64, Legal);
+      setOperationAction(ISD::UINT_TO_FP,       MVT::i64, Legal);
+    }
     setOperationAction(ISD::FP_TO_SINT,         MVT::v16i32, Legal);
     setOperationAction(ISD::FP_TO_UINT,         MVT::v16i32, Legal);
     setOperationAction(ISD::FP_TO_UINT,         MVT::v8i32, Legal);
@@ -6138,6 +6147,10 @@ LowerVECTOR_SHUFFLEtoBlend(ShuffleVectorSDNode *SVOp,
   MVT VT = SVOp->getSimpleValueType(0);
   MVT EltVT = VT.getVectorElementType();
   unsigned NumElems = VT.getVectorNumElements();
+
+  // There is no blend with immediate in AVX-512.
+  if (VT.is512BitVector())
+    return SDValue();
 
   if (!Subtarget->hasSSE41() || EltVT == MVT::i8)
     return SDValue();
@@ -18810,7 +18823,7 @@ static SDValue PerformSINT_TO_FPCombine(SDNode *N, SelectionDAG &DAG,
     if (!Ld->isVolatile() && !N->getValueType(0).isVector() &&
         ISD::isNON_EXTLoad(Op0.getNode()) && Op0.hasOneUse() &&
         !XTLI->getSubtarget()->is64Bit() &&
-        !DAG.getTargetLoweringInfo().isTypeLegal(VT)) {
+        VT == MVT::i64) {
       SDValue FILDChain = XTLI->BuildFILD(SDValue(N, 0), Ld->getValueType(0),
                                           Ld->getChain(), Op0, DAG);
       DAG.ReplaceAllUsesOfValueWith(Op0.getValue(1), FILDChain.getValue(1));

@@ -1492,6 +1492,18 @@ TEST_F(FormatTest, SeparatesLogicalBlocks) {
                    "protected:\n"
                    "int h;\n"
                    "};"));
+  EXPECT_EQ("class A {\n"
+            "protected:\n"
+            "public:\n"
+            "  void f();\n"
+            "};",
+            format("class A {\n"
+                   "protected:\n"
+                   "\n"
+                   "public:\n"
+                   "\n"
+                   "  void f();\n"
+                   "};"));
 }
 
 TEST_F(FormatTest, FormatsClasses) {
@@ -1518,6 +1530,11 @@ TEST_F(FormatTest, FormatsClasses) {
                "  int i;\n"
                "};",
                getLLVMStyleWithColumns(32));
+  verifyFormat("struct aaaaaaaaaaaaa : public aaaaaaaaaaaaaaaaaaa< // break\n"
+               "                           aaaaaaaaaaaaaaaa> {};");
+  verifyFormat("struct aaaaaaaaaaaaaaaaaaaa\n"
+               "    : public aaaaaaaaaaaaaaaaaaa<aaaaaaaaaaaaaaaaaaaaa,\n"
+               "                                 aaaaaaaaaaaaaaaaaaaaaa> {};");
 }
 
 TEST_F(FormatTest, FormatsVariableDeclarationsAfterStructOrClass) {
@@ -1617,6 +1634,10 @@ TEST_F(FormatTest, FormatsBitfields) {
   verifyFormat("struct Bitfields {\n"
                "  unsigned sClass : 8;\n"
                "  unsigned ValueKind : 2;\n"
+               "};");
+  verifyFormat("struct A {\n"
+               "  int aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa : 1,\n"
+               "      bbbbbbbbbbbbbbbbbbbbbbbbb;\n"
                "};");
 }
 
@@ -1867,6 +1888,16 @@ TEST_F(FormatTest, EndOfFileEndsPPDirective) {
   EXPECT_EQ("#line 42 \"test\"",
             format("#  \\\n  line  \\\n  42  \\\n  \"test\""));
   EXPECT_EQ("#define A B", format("#  \\\n define  \\\n    A  \\\n       B"));
+}
+
+TEST_F(FormatTest, DoesntRemoveUnknownTokens) {
+  verifyFormat("#define A \\x20");
+  verifyFormat("#define A \\ x20");
+  EXPECT_EQ("#define A \\ x20", format("#define A \\   x20"));
+  verifyFormat("#define A ''");
+  verifyFormat("#define A ''qqq");
+  verifyFormat("#define A `qqq");
+  verifyFormat("f(\"aaaa, bbbb, \"\\\"ccccc\\\"\");");
 }
 
 TEST_F(FormatTest, IndentsPPDirectiveInReducedSpace) {
@@ -3569,6 +3600,9 @@ TEST_F(FormatTest, WrapsTemplateDeclarations) {
                "          template <typename> class Baaaaaaar>\n"
                "struct C {};",
                AlwaysBreak);
+  verifyFormat("template <typename T> // T can be A, B or C.\n"
+               "struct C {};",
+               AlwaysBreak);
 }
 
 TEST_F(FormatTest, WrapsAtNestedNameSpecifiers) {
@@ -4456,6 +4490,7 @@ TEST_F(FormatTest, UnderstandContextOfRecordTypeKeywords) {
   verifyFormat("class __attribute__(X) Z {\n} n;");
   verifyFormat("class __declspec(X) Z {\n} n;");
   verifyFormat("class A##B##C {\n} n;");
+  verifyFormat("class alignas(16) Z {\n} n;");
 
   // Redefinition from nested context:
   verifyFormat("class A::B::C {\n} n;");
@@ -6573,6 +6608,20 @@ TEST_F(FormatTest, ConstructorInitializerIndentWidth) {
                ": a(a)\n"
                ", b(b)\n"
                ", c(c) {}",
+               Style);
+
+  Style.ConstructorInitializerAllOnOneLineOrOnePerLine = true;
+  Style.ConstructorInitializerIndentWidth = 4;
+  verifyFormat(
+      "SomeClass::Constructor()\n"
+      "    : aaaaaaaa(aaaaaaaa), aaaaaaaa(aaaaaaaa), aaaaaaaa(aaaaaaaa) {}",
+      Style);
+  Style.ConstructorInitializerIndentWidth = 4;
+  Style.ColumnLimit = 60;
+  verifyFormat("SomeClass::Constructor()\n"
+               "    : aaaaaaaa(aaaaaaaa)\n"
+               "    , aaaaaaaa(aaaaaaaa)\n"
+               "    , aaaaaaaa(aaaaaaaa) {}",
                Style);
 }
 

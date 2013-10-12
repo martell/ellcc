@@ -34,8 +34,9 @@ void RemoteTargetExternal::create() {
   int PipeFD[2][2];
   pid_t ChildPID;
 
-  pipe(PipeFD[0]);
-  pipe(PipeFD[1]);
+  // Create two pipes.
+  if (pipe(PipeFD[0]) != 0 || pipe(PipeFD[1]) != 0)
+    perror("Error creating pipe: ");
 
   ChildPID = fork();
 
@@ -86,6 +87,10 @@ int RemoteTargetExternal::ReadBytes(void *Data, size_t Size) {
 
 void RemoteTargetExternal::Wait() {
   wait(NULL);
+}
+
+RemoteTargetExternal::~RemoteTargetExternal() {
+  delete static_cast<ConnectionData_t *>(ConnectionData);
 }
 
 } // namespace llvm

@@ -238,12 +238,13 @@ void Initialize(ThreadState *thr) {
   InitializeLibIgnore();
   // Initialize external symbolizer before internal threads are started.
   const char *external_symbolizer = flags()->external_symbolizer_path;
-  if (external_symbolizer != 0 && external_symbolizer[0] != '\0') {
-    if (!getSymbolizer()->InitializeExternal(external_symbolizer)) {
-      Printf("Failed to start external symbolizer: '%s'\n",
-             external_symbolizer);
-      Die();
-    }
+  bool symbolizer_started =
+      getSymbolizer()->InitializeExternal(external_symbolizer);
+  if (external_symbolizer != 0 && external_symbolizer[0] != '\0' &&
+      !symbolizer_started) {
+    Printf("Failed to start external symbolizer: '%s'\n",
+           external_symbolizer);
+    Die();
   }
 #endif
   internal_start_thread(&BackgroundThread, 0);
@@ -698,7 +699,7 @@ void FuncExit(ThreadState *thr) {
 void ThreadIgnoreBegin(ThreadState *thr) {
   DPrintf("#%d: ThreadIgnoreBegin\n", thr->tid);
   thr->ignore_reads_and_writes++;
-  CHECK_GE(thr->ignore_reads_and_writes, 0);
+  CHECK_GT(thr->ignore_reads_and_writes, 0);
   thr->fast_state.SetIgnoreBit();
 }
 
@@ -708,6 +709,18 @@ void ThreadIgnoreEnd(ThreadState *thr) {
   CHECK_GE(thr->ignore_reads_and_writes, 0);
   if (thr->ignore_reads_and_writes == 0)
     thr->fast_state.ClearIgnoreBit();
+}
+
+void ThreadIgnoreSyncBegin(ThreadState *thr) {
+  DPrintf("#%d: ThreadIgnoreSyncBegin\n", thr->tid);
+  thr->ignore_sync++;
+  CHECK_GT(thr->ignore_sync, 0);
+}
+
+void ThreadIgnoreSyncEnd(ThreadState *thr) {
+  DPrintf("#%d: ThreadIgnoreSyncEnd\n", thr->tid);
+  thr->ignore_sync--;
+  CHECK_GE(thr->ignore_sync, 0);
 }
 
 bool MD5Hash::operator==(const MD5Hash &other) const {

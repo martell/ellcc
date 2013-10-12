@@ -922,6 +922,8 @@ def err_allocation_of_abstract_type : Error<
 def err_throw_abstract_type : Error<
   "cannot throw an object of abstract type %0">;
 def err_array_of_abstract_type : Error<"array of abstract class type %0">;
+def err_capture_of_abstract_type : Error<
+  "by-copy capture of value of abstract type %0">;
 
 def err_multiple_final_overriders : Error<
   "virtual function %q0 has more than one final overrider in %1">; 
@@ -2053,6 +2055,9 @@ def err_cconv_knr : Error<
   "function with no prototype cannot use %0 calling convention">;
 def err_cconv_varargs : Error<
   "variadic function cannot use %0 calling convention">;
+def warn_cconv_varargs : Warning<
+  "%0 calling convention ignored on variadic function">,
+  InGroup<IgnoredAttributes>;
 def err_regparm_mismatch : Error<"function declared with regparm(%0) "
   "attribute was previously declared "
   "%plural{0:without the regparm|:with the regparm(%1)}1 attribute">;
@@ -2195,12 +2200,12 @@ def warn_thread_safety_beta : Warning<
   "Thread safety beta warning.">, InGroup<ThreadSafetyBeta>, DefaultIgnore;
 
 // Consumed warnings
-def warn_use_while_consumed : Warning<
-  "invocation of method '%0' on object '%1' while it is in the 'consumed' "
+def warn_use_in_invalid_state : Warning<
+  "invalid invocation of method '%0' on object '%1' while it is in the '%2' "
   "state">, InGroup<Consumed>, DefaultIgnore;
-def warn_use_of_temp_while_consumed : Warning<
-  "invocation of method '%0' on a temporary object while it is in the "
-  "'consumed' state">, InGroup<Consumed>, DefaultIgnore;
+def warn_use_of_temp_in_invalid_state : Warning<
+  "invalid invocation of method '%0' on a temporary object while it is in the "
+  "'%1' state">, InGroup<Consumed>, DefaultIgnore;
 def warn_attr_on_unconsumable_class : Warning<
   "consumed analysis attribute is attached to member of class '%0' which isn't "
   "marked as consumable">, InGroup<Consumed>, DefaultIgnore;
@@ -2210,14 +2215,11 @@ def warn_return_typestate_for_unconsumable_type : Warning<
 def warn_return_typestate_mismatch : Warning<
   "return value not in expected state; expected '%0', observed '%1'">,
   InGroup<Consumed>, DefaultIgnore;
+def warn_loop_state_mismatch : Warning<
+  "state of variable '%0' must match at the entry and exit of loop">,
+  InGroup<Consumed>, DefaultIgnore;
 
 // ConsumedStrict warnings
-def warn_use_in_unknown_state : Warning<
-  "invocation of method '%0' on object '%1' while it is in an unknown state">,
-  InGroup<ConsumedStrict>, DefaultIgnore;
-def warn_use_of_temp_in_unknown_state : Warning<
-  "invocation of method '%0' on a temporary object while it is in an unknown "
-  "state">, InGroup<ConsumedStrict>, DefaultIgnore;
 def warn_unnecessary_test : Warning<
   "unnecessary test. Variable '%0' is known to be in the '%1' state">,
   InGroup<ConsumedStrict>, DefaultIgnore;
@@ -2817,7 +2819,8 @@ def err_addr_ovl_no_qualifier : Error<
 def err_ovl_no_viable_literal_operator : Error<
   "no matching literal operator for call to %0"
   "%select{| with argument of type %2| with arguments of types %2 and %3}1"
-  "%select{| or 'const char *', and no matching literal operator template}4">;
+  "%select{| or 'const char *'}4"
+  "%select{|, and no matching literal operator template}5">;
 
 // C++ Template Declarations
 def err_template_param_shadow : Error<
@@ -4482,6 +4485,8 @@ def ext_typecheck_addrof_temporary : ExtWarn<
   InGroup<DiagGroup<"address-of-temporary">>, DefaultError;
 def err_typecheck_addrof_temporary : Error<
   "taking the address of a temporary object of type %0">;
+def err_typecheck_addrof_dtor : Error<
+  "taking the address of a destructor">;
 def err_typecheck_unary_expr : Error<
   "invalid argument type %0 to unary expression">;
 def err_typecheck_indirection_requires_pointer : Error<
@@ -5919,6 +5924,9 @@ def err_literal_operator_params : Error<
   "parameter declaration for literal operator %0 is not valid">;
 def err_literal_operator_extern_c : Error<
   "literal operator must have C++ linkage">;
+def ext_string_literal_operator_template : ExtWarn<
+  "string literal operator templates are a GNU extension">,
+  InGroup<GNUStringLiteralOperatorTemplate>;
 def warn_user_literal_reserved : Warning<
   "user-defined literal suffixes not starting with '_' are reserved"
   "%select{; no literal will invoke this operator|}0">,
@@ -6417,6 +6425,8 @@ def err_selector_element_not_lvalue : Error<
   "selector element is not a valid lvalue">;
 def err_selector_element_type : Error<
   "selector element type %0 is not a valid object">;
+def err_selector_element_const_type : Error<
+  "selector element of type %0 cannot be a constant l-value expression">;
 def err_collection_expr_type : Error<
   "the type %0 is not a pointer to a fast-enumerable object">;
 def warn_collection_expr_type : Warning<
