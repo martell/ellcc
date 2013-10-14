@@ -364,8 +364,8 @@ MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
   //  ...
   //   TrueVal = ...
   //   setcc r1, r2, r3
-  //   bNE   r1, r0, copy1MBB
-  //   fallthrough --> copy0MBB
+  //   bNE   r1, r0, dneMBB
+  //   fallthrough --> flsMBB
   MachineFunction *F = MBB->getParent();
   MachineBasicBlock *flsBB = F->CreateMachineBasicBlock(LLVM_BB);
   MachineBasicBlock *dneBB = F->CreateMachineBasicBlock(LLVM_BB);
@@ -399,16 +399,12 @@ MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
     .addMBB(dneBB);
 
   //  sinkMBB:
-  //   %Result = phi [ %FalseValue, copy0MBB ], [ %TrueValue, thisMBB ]
+  //   %Result = phi  [ %TrueValue, MBB ], [ %FalseValue, flsMBB ]
   //  ...
-  //BuildMI(dneBB, dl, TII->get(MBlaze::PHI), MI->getOperand(0).getReg())
-  //  .addReg(MI->getOperand(1).getReg()).addMBB(flsBB)
-  //  .addReg(MI->getOperand(2).getReg()).addMBB(BB);
-
   BuildMI(*dneBB, dneBB->begin(), dl,
           TII->get(MBlaze::PHI), MI->getOperand(0).getReg())
-    .addReg(MI->getOperand(2).getReg()).addMBB(flsBB)
-    .addReg(MI->getOperand(1).getReg()).addMBB(MBB);
+    .addReg(MI->getOperand(1).getReg()).addMBB(MBB)
+    .addReg(MI->getOperand(2).getReg()).addMBB(flsBB);
 
   MI->eraseFromParent();   // The pseudo instruction is gone now.
   return dneBB;
