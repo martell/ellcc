@@ -85,6 +85,7 @@ compiler-rt.install:
 	  echo Installing libcompiler-rt for $$target ; \
 	  mkdir -p ../../../lib/$$target/linux ; \
 	  cp $$target/*.a ../../../lib/$$target/linux ; \
+      (cd ../../../lib/$$target/linux; ln -s libcompiler_rt.a libgcc.a); \
 	done
 
 other-libs:

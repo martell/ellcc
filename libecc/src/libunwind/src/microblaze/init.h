@@ -1,5 +1,5 @@
 /* libunwind - a platform-independent unwind library
-   Copyright (C) 2013 Richard Pennington
+   Copyright (C) 2008 CodeSourcery
 
 This file is part of libunwind.
 
@@ -22,58 +22,39 @@ LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 
-#include "offsets.h"
-#include <bits/endian.h>
+#include "unwind_i.h"
 
-	.text
+static inline int
+common_init (struct cursor *c, unsigned use_prev_instr)
+{
+  int ret, i;
 
-#define REG(X) r ## X
-# define SREG(X) \
- swi REG(X), r5, (LINUX_UC_MCONTEXT_GREGS + 4 * X)
+  for (i = 0; i < 32; i++)
+    c->dwarf.loc[i] = DWARF_REG_LOC (&c->dwarf, UNW_MIPS_R0 + i);
+  for (i = 32; i < DWARF_NUM_PRESERVED_REGS; ++i)
+    c->dwarf.loc[i] = DWARF_NULL_LOC;
 
-/* Yes, we save the return address to PC. */
-# define SPC \
- swi r15, r5, (LINUX_UC_MCONTEXT_PC)
+  c->dwarf.loc[UNW_MIPS_PC] = DWARF_REG_LOC (&c->dwarf, UNW_MIPS_PC);
 
-	.global _Umicroblaze_getcontext
-	.type	_Umicroblaze_getcontext, %function
-	# This is a stub version of getcontext() for Microblaze which only stores core
-	# registers.
-_Umicroblaze_getcontext:
-	SREG (1)
-	SREG (0)
-	SREG (2)
-	SREG (3)
-	SREG (4)
-	SREG (5)
-	SREG (6)
-	SREG (7)
-	SREG (8)
-	SREG (9)
-	SREG (10)
-	SREG (11)
-	SREG (12)
-	SREG (13)
-	SREG (14)
-	SREG (15)
-	SREG (16)
-	SREG (17)
-	SREG (18)
-	SREG (19)
-	SREG (20)
-	SREG (21)
-	SREG (22)
-	SREG (23)
-	SREG (24)
-	SREG (25)
-	SREG (26)
-	SREG (27)
-	SREG (28)
-	SREG (29)
-	SREG (30)
-	SREG (31)
-	SPC
-	rtsd      r15, 8
-    add r3, r0, r0
+  ret = dwarf_get (&c->dwarf, c->dwarf.loc[UNW_MIPS_PC], &c->dwarf.ip);
+  if (ret < 0)
+    return ret;
 
-	.size	_Umicroblaze_getcontext, .-_Umicroblaze_getcontext
+  ret = dwarf_get (&c->dwarf, DWARF_REG_LOC (&c->dwarf, UNW_MIPS_R29),
+		   &c->dwarf.cfa);
+  if (ret < 0)
+    return ret;
+
+  /* FIXME: Initialisation for other registers.  */
+
+  c->dwarf.args_size = 0;
+  c->dwarf.ret_addr_column = 0;
+  c->dwarf.stash_frames = 0;
+  c->dwarf.use_prev_instr = use_prev_instr;
+  c->dwarf.pi_valid = 0;
+  c->dwarf.pi_is_dynamic = 0;
+  c->dwarf.hint = 0;
+  c->dwarf.prev_rs = 0;
+
+  return 0;
+}
