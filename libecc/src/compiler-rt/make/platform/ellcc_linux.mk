@@ -18,6 +18,7 @@ CommonFunctions := GCDAProfiling $(CommonFunctions)
 ###
 
 FUNCTIONS.arm := $(call set_difference, $(CommonFunctions), clear_cache) \
+		 aeabi_idivmod \
 		 aeabi_uidivmod \
 		 aeabi_ldivmod \
 		 aeabi_uldivmod \
@@ -25,6 +26,7 @@ FUNCTIONS.arm := $(call set_difference, $(CommonFunctions), clear_cache) \
 		 aeabi_memmove \
 		 aeabi_memcpy
 FUNCTIONS.armeb := $(call set_difference, $(CommonFunctions), clear_cache) \
+		 aeabi_idivmod \
 		 aeabi_uidivmod \
 		 aeabi_ldivmod \
 		 aeabi_uldivmod \

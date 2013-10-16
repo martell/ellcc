@@ -42,7 +42,7 @@ $(Configs):
 	../../../src/libunwind/configure CC="$(ELLCC)/bin/ecc $(CFLAGS.$*) -Wno-header-guard" \
 	    --enable-shared=no \
         --enable-cxx-exceptions=yes \
-        --host=$*
+        --host=$*-linux
 
 clean:
 	make -C src/musl distclean
@@ -85,7 +85,7 @@ compiler-rt.install:
 	  echo Installing libcompiler-rt for $$target ; \
 	  mkdir -p ../../../lib/$$target/linux ; \
 	  cp $$target/*.a ../../../lib/$$target/linux ; \
-      (cd ../../../lib/$$target/linux; ln -s libcompiler_rt.a libgcc.a); \
+          (cd ../../../lib/$$target/linux; ln -fs libcompiler_rt.a libgcc.a); \
 	done
 
 other-libs:
