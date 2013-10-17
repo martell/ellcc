@@ -35,7 +35,7 @@ $(Configs)::
 	@echo Making libcompiler-rt for $@ in src/compiler-rt
 	make -C src/compiler-rt ellcc_linux-$@
 
-$(Configs)::
+$(Configs)::  compiler-rt.install
 	make $@.libunwind.configure && \
 	make $@.libunwind.build && \
 	make $@.libunwind.install
