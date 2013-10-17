@@ -1,7 +1,8 @@
+        .text
         .weak  _init
         .weak  _fini
         .global _start
-        .type   _start, %function
+        .type   _start,@function
 _start:
         mr      9, 1                  # Save the original stack pointer.
         clrrwi  1, 1, 4               # Align the stack to 16 bytes.
@@ -22,5 +23,13 @@ _start:
         li      8, 0                   # ldso_fini == NULL
         bl       __libc_start_main      # Let's go!
         b       .                       # Never gets here.
-        .end    _start
         .size   _start, .-_start
+
+	    .type	__dso_handle,@object
+	    .section	.bss,"aw",@nobits
+	    .globl	__dso_handle
+	    .align	2
+__dso_handle:
+	    .long	0
+	    .size	__dso_handle, 4
+

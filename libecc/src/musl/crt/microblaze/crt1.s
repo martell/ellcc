@@ -14,3 +14,11 @@ _start:
 	addik   r1, r1, -4*6            # Leave space for the args.
 	bri     __libc_start_main       # Let's go!
 	nop                             # Never gets here.
+
+	.type	__dso_handle,@object
+	.section	.sbss,"aw",@nobits
+	.globl	__dso_handle
+	.align	2
+__dso_handle:
+	.long	0
+	.size	__dso_handle, 4

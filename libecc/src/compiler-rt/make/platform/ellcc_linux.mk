@@ -38,7 +38,7 @@ FUNCTIONS.microblaze := $(CommonFunctions) $(ArchFunctions.microblaze)
 FUNCTIONS.mips := $(CommonFunctions) $(ArchFunctions.mips)
 FUNCTIONS.mipsel := $(CommonFunctions) $(ArchFunctions.mipsel)
 FUNCTIONS.ppc := $(CommonFunctions) $(ArchFunctions.ppc)
-FUNCTIONS.ppc64 := $(CommonFunctions) $(ArchFunctions.ppc64)
+# RICH: FUNCTIONS.ppc64 := $(CommonFunctions) $(ArchFunctions.ppc64)
 FUNCTIONS.x86_64 := $(CommonFunctions) $(ArchFunctions.x86_64)
 
 # Always use optimized variants.

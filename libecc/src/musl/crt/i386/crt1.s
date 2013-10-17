@@ -17,3 +17,11 @@ _start:
 	push $main
 	call __libc_start_main
 1:	jmp 1b
+
+	.type	__dso_handle,@object
+	.bss
+	.globl	__dso_handle
+	.align	4
+__dso_handle:
+	.long	0
+	.size	__dso_handle, 4

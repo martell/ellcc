@@ -15,3 +15,11 @@ _start:
 	ldr a1,=main
 	bl __libc_start_main
 1:	b 1b
+
+	.type	__dso_handle,%object
+	.bss
+	.globl	__dso_handle
+	.align	2
+__dso_handle:
+	.long	0
+	.size	__dso_handle, 4

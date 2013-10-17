@@ -5,7 +5,7 @@
 # SUBDIRS = arm i386 microblaze mips mipsel nios2 ppc ppc64 sparc x86_64
 #SUBDIRS = gcc.cov x86_64 mips
 # Define directories to ignore.
-IGNORE = nios2 sparc
+IGNORE = nios2 sparc ppc64
 # Define subdirectories to ignore.
 SUBIGNORE = 
 

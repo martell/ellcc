@@ -20,7 +20,6 @@ VERSION := $(shell $(ELLCC)/bin/ecc -v 2>&1 | grep version 2>&1 | sed "s/.*versi
 OBJ := $(PWD)/musl-build
 install:header.install \
 	$(Configs) \
-	compiler-rt.install \
 	other-libs
 
 all:
@@ -34,8 +33,9 @@ $(Configs)::
 	make $@.musl.install
 	@echo Making libcompiler-rt for $@ in src/compiler-rt
 	make -C src/compiler-rt ellcc_linux-$@
+	make $@.compiler-rt.install
 
-$(Configs)::  compiler-rt.install
+$(Configs)::
 	make $@.libunwind.configure && \
 	make $@.libunwind.build && \
 	make $@.libunwind.install
@@ -94,13 +94,13 @@ musl.install:
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/lib/*.a $*/lib/*.o ../lib/$*/linux
 
-compiler-rt.install:
+%.compiler-rt.install:
 	cd src/compiler-rt/ellcc_linux ; \
 	for target in `echo *` ; do \
-	  echo Installing libcompiler-rt for $$target ; \
-	  mkdir -p ../../../lib/$$target/linux ; \
-	  cp $$target/*.a ../../../lib/$$target/linux ; \
-          (cd ../../../lib/$$target/linux; ln -fs libcompiler_rt.a libgcc.a); \
+	  echo Installing libcompiler-rt for $* ; \
+	  mkdir -p ../../../lib/$*/linux ; \
+	  cp $*/libcompiler_rt.a ../../../lib/$*/linux ; \
+          (cd ../../../lib/$*/linux; ln -fs libcompiler_rt.a libgcc.a); \
 	done
 
 other-libs:

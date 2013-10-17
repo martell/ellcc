@@ -14,3 +14,11 @@ _start:
 	mov $main,%rdi  /* 1st arg: application entry ip */
 	call __libc_start_main /* musl init will run the program */
 1:	jmp 1b
+
+	.type	__dso_handle,@object
+	.bss
+	.globl	__dso_handle
+	.align	8
+__dso_handle:
+	.quad	0
+	.size	__dso_handle, 8

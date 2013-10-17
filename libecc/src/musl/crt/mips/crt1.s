@@ -24,3 +24,11 @@ _start:
 	nop
 	b       .                        # Never gets here.
 	nop
+
+	.type	__dso_handle,@object
+	.bss
+	.globl	__dso_handle
+	.align	2
+__dso_handle:
+	.4byte	0
+	.size	__dso_handle, 4
