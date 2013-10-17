@@ -304,4 +304,24 @@ x86_local_resume (unw_addr_space_t as, unw_cursor_t *cursor, void *arg)
     }
   return -UNW_EINVAL;
 }
+
+// RICH: FIXME
+HIDDEN NORETURN void
+sigreturn (unw_cursor_t *cursor)
+{
+#if RICH
+  struct cursor *c = (struct cursor *) cursor;
+  struct sigcontext *sc = (struct sigcontext *) c->sigcontext_addr;
+
+  Debug (8, "resuming at ip=%llx via sigreturn(%p)\n",
+	     (unsigned long long) c->dwarf.ip, sc);
+  __asm__ __volatile__ ("mov %0, %%rsp;"
+			"mov %1, %%rax;"
+			"syscall"
+			:: "r"(sc), "i"(SYS_rt_sigreturn)
+			: "memory");
+#endif
+  abort();
+}
+
 #endif

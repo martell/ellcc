@@ -293,6 +293,7 @@ libunwind_la_SOURCES_x86_common = $(libunwind_la_SOURCES_common)	\
 libunwind_la_SOURCES_x86 = $(libunwind_la_SOURCES_x86_common)		\
         $(libunwind_la_SOURCES_x86_os_local)				\
 	$(libunwind_la_SOURCES_local)					\
+	x86/setcontext.S					    	\
 	x86/Lcreate_addr_space.c x86/Lget_save_loc.c x86/Lglobal.c	\
 	x86/Linit.c x86/Linit_local.c x86/Linit_remote.c		\
 	x86/Lget_proc_info.c x86/Lregs.c				\

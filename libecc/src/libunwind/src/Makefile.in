@@ -609,8 +609,8 @@ am__libunwind_la_SOURCES_DIST = os-freebsd.c os-hpux.c os-linux.c \
 	x86_64/Lresume.c x86_64/Lstash_frame.c x86_64/Lstep.c \
 	x86_64/Ltrace.c x86_64/getcontext.S x86/is_fpreg.c \
 	x86/regname.c x86/Los-freebsd.c x86/Los-linux.c \
-	x86/Lcreate_addr_space.c x86/Lget_save_loc.c x86/Lglobal.c \
-	x86/Linit.c x86/Linit_local.c x86/Linit_remote.c \
+	x86/setcontext.S x86/Lcreate_addr_space.c x86/Lget_save_loc.c \
+	x86/Lglobal.c x86/Linit.c x86/Linit_local.c x86/Linit_remote.c \
 	x86/Lget_proc_info.c x86/Lregs.c x86/Lresume.c x86/Lstep.c \
 	x86/getcontext-freebsd.S x86/getcontext-linux.S \
 	microblaze/is_fpreg.c microblaze/regname.c \
@@ -693,9 +693,10 @@ am__objects_52 = $(am__objects_39) $(am__objects_51) $(am__objects_46) \
 @OS_FREEBSD_FALSE@@OS_LINUX_TRUE@am__objects_53 = x86/Los-linux.lo
 @OS_FREEBSD_TRUE@am__objects_53 = x86/Los-freebsd.lo
 am__objects_54 = $(am__objects_36) $(am__objects_53) $(am__objects_46) \
-	x86/Lcreate_addr_space.lo x86/Lget_save_loc.lo x86/Lglobal.lo \
-	x86/Linit.lo x86/Linit_local.lo x86/Linit_remote.lo \
-	x86/Lget_proc_info.lo x86/Lregs.lo x86/Lresume.lo x86/Lstep.lo
+	x86/setcontext.lo x86/Lcreate_addr_space.lo \
+	x86/Lget_save_loc.lo x86/Lglobal.lo x86/Linit.lo \
+	x86/Linit_local.lo x86/Linit_remote.lo x86/Lget_proc_info.lo \
+	x86/Lregs.lo x86/Lresume.lo x86/Lstep.lo
 @OS_FREEBSD_FALSE@@OS_LINUX_TRUE@am__objects_55 =  \
 @OS_FREEBSD_FALSE@@OS_LINUX_TRUE@	x86/getcontext-linux.lo
 @OS_FREEBSD_TRUE@am__objects_55 = x86/getcontext-freebsd.lo
@@ -1228,6 +1229,7 @@ libunwind_la_SOURCES_x86_common = $(libunwind_la_SOURCES_common)	\
 libunwind_la_SOURCES_x86 = $(libunwind_la_SOURCES_x86_common)		\
         $(libunwind_la_SOURCES_x86_os_local)				\
 	$(libunwind_la_SOURCES_local)					\
+	x86/setcontext.S					    	\
 	x86/Lcreate_addr_space.c x86/Lget_save_loc.c x86/Lglobal.c	\
 	x86/Linit.c x86/Linit_local.c x86/Linit_remote.c		\
 	x86/Lget_proc_info.c x86/Lregs.c				\
@@ -2151,6 +2153,7 @@ x86_64/getcontext.lo: x86_64/$(am__dirstamp) \
 	x86_64/$(DEPDIR)/$(am__dirstamp)
 x86/Los-freebsd.lo: x86/$(am__dirstamp) x86/$(DEPDIR)/$(am__dirstamp)
 x86/Los-linux.lo: x86/$(am__dirstamp) x86/$(DEPDIR)/$(am__dirstamp)
+x86/setcontext.lo: x86/$(am__dirstamp) x86/$(DEPDIR)/$(am__dirstamp)
 x86/Lcreate_addr_space.lo: x86/$(am__dirstamp) \
 	x86/$(DEPDIR)/$(am__dirstamp)
 x86/Lget_save_loc.lo: x86/$(am__dirstamp) \
@@ -2959,6 +2962,8 @@ mostlyclean-compile:
 	-rm -f x86/longjmp.lo
 	-rm -f x86/regname.$(OBJEXT)
 	-rm -f x86/regname.lo
+	-rm -f x86/setcontext.$(OBJEXT)
+	-rm -f x86/setcontext.lo
 	-rm -f x86/siglongjmp.$(OBJEXT)
 	-rm -f x86/siglongjmp.lo
 	-rm -f x86_64/Gcreate_addr_space.$(OBJEXT)
@@ -3377,6 +3382,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@x86/$(DEPDIR)/is_fpreg.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@x86/$(DEPDIR)/longjmp.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@x86/$(DEPDIR)/regname.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@x86/$(DEPDIR)/setcontext.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@x86/$(DEPDIR)/siglongjmp.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@x86_64/$(DEPDIR)/Gcreate_addr_space.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@x86_64/$(DEPDIR)/Gget_proc_info.Plo@am__quote@
