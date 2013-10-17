@@ -30,17 +30,17 @@ common_init (struct cursor *c, unsigned use_prev_instr)
   int ret, i;
 
   for (i = 0; i < 32; i++)
-    c->dwarf.loc[i] = DWARF_REG_LOC (&c->dwarf, UNW_MIPS_R0 + i);
+    c->dwarf.loc[i] = DWARF_REG_LOC (&c->dwarf, UNW_MICROBLAZE_R0 + i);
   for (i = 32; i < DWARF_NUM_PRESERVED_REGS; ++i)
     c->dwarf.loc[i] = DWARF_NULL_LOC;
 
-  c->dwarf.loc[UNW_MIPS_PC] = DWARF_REG_LOC (&c->dwarf, UNW_MIPS_PC);
+  c->dwarf.loc[UNW_MICROBLAZE_PC] = DWARF_REG_LOC (&c->dwarf, UNW_MICROBLAZE_PC);
 
-  ret = dwarf_get (&c->dwarf, c->dwarf.loc[UNW_MIPS_PC], &c->dwarf.ip);
+  ret = dwarf_get (&c->dwarf, c->dwarf.loc[UNW_MICROBLAZE_PC], &c->dwarf.ip);
   if (ret < 0)
     return ret;
 
-  ret = dwarf_get (&c->dwarf, DWARF_REG_LOC (&c->dwarf, UNW_MIPS_R29),
+  ret = dwarf_get (&c->dwarf, DWARF_REG_LOC (&c->dwarf, UNW_MICROBLAZE_R29),
 		   &c->dwarf.cfa);
   if (ret < 0)
     return ret;

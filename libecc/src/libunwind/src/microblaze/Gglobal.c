@@ -25,7 +25,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  */
 #include "unwind_i.h"
 #include "dwarf_i.h"
 
-HIDDEN define_lock (mips_lock);
+HIDDEN define_lock (microblaze_lock);
 HIDDEN int tdep_init_done;
 
 HIDDEN void
@@ -35,7 +35,7 @@ tdep_init (void)
 
   sigfillset (&unwi_full_mask);
 
-  lock_acquire (&mips_lock, saved_mask);
+  lock_acquire (&microblaze_lock, saved_mask);
   {
     if (tdep_init_done)
       /* another thread else beat us to it... */
@@ -46,10 +46,10 @@ tdep_init (void)
     dwarf_init ();
 
 #ifndef UNW_REMOTE_ONLY
-    mips_local_addr_space_init ();
+    microblaze_local_addr_space_init ();
 #endif
     tdep_init_done = 1;	/* signal that we're initialized... */
   }
  out:
-  lock_release (&mips_lock, saved_mask);
+  lock_release (&microblaze_lock, saved_mask);
 }

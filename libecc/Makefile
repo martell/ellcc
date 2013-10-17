@@ -25,7 +25,7 @@ install:header.install \
 
 all:
 
-$(Configs):
+$(Configs)::
 	@echo Making libecc for $@ in musl-build/$@
 	mkdir -p $(OBJ)/$@
 	./config.musl "$(CFLAGS.$@)" $@ $(ELLCC) || exit 1
@@ -35,14 +35,29 @@ $(Configs):
 	@echo Making libcompiler-rt for $@ in src/compiler-rt
 	make -C src/compiler-rt ellcc_linux-$@
 
+$(Configs)::
+	make $@.libunwind.configure && \
+	make $@.libunwind.build && \
+	make $@.libunwind.install
+
 %.libunwind.configure:
 	@echo Configuring libunwind for $* in libunwind-build/$*/linux
 	mkdir -p libunwind-build/$*/linux
 	cd libunwind-build/$*/linux ; \
 	../../../src/libunwind/configure CC="$(ELLCC)/bin/ecc $(CFLAGS.$*) -Wno-header-guard" \
-	    --enable-shared=no \
+        --enable-shared=no \
+        --enable-coredump=no \
         --enable-cxx-exceptions=yes \
         --host=$*-linux
+
+%.libunwind.build:
+	make -C libunwind-build/$*/linux
+
+%.libunwind.install:
+	@cd libunwind-build ; \
+	echo Installing libunwind for $* ; \
+	mkdir -p ../lib/$*/linux ; \
+	cp $*/linux/src/.libs/libunwind.a ../lib/$*/linux
 
 clean:
 	make -C src/musl distclean

@@ -490,8 +490,8 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
     unsigned opcode = 0;
     switch (MI->getOpcode()) {
     default: llvm_unreachable("Cannot lower unknown atomic load!");
-    case MBlaze::LAA32: opcode = MBlaze::ADDIK; break;
-    case MBlaze::LAS32: opcode = MBlaze::RSUBIK; break;
+    case MBlaze::LAA32: opcode = MBlaze::ADDK; break;
+    case MBlaze::LAS32: opcode = MBlaze::RSUBK; break;
     case MBlaze::LAD32: opcode = MBlaze::AND; break;
     case MBlaze::LAO32: opcode = MBlaze::OR; break;
     case MBlaze::LAX32: opcode = MBlaze::XOR; break;

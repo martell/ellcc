@@ -6857,6 +6857,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       !Args.hasArg(options::OPT_nodefaultlibs)) {
     if (D.CCCIsCXX()) {
       CmdArgs.push_back("-lc++");
+      CmdArgs.push_back("-lunwind");
       CmdArgs.push_back("-lm");
     }
 
@@ -6864,12 +6865,12 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
         Args.hasArg(options::OPT_fprofile_generate) ||
         Args.hasArg(options::OPT_fcreate_profile) ||
         Args.hasArg(options::OPT_coverage)) {
-      CmdArgs.push_back("-lprofile-rt");
+      CmdArgs.push_back("-lprofile_rt");
     }
 
     if (Args.hasArg(options::OPT_pthread))
       CmdArgs.push_back("-pthread");
-    CmdArgs.push_back("-(");    // RICH: compiler-rt for ARM needs this.
+    CmdArgs.push_back("-(");    // RICH: compiler_rt for ARM needs this.
     if (!Args.hasArg(options::OPT_shared))
       CmdArgs.push_back("-lc");
     CmdArgs.push_back("-lcompiler_rt");

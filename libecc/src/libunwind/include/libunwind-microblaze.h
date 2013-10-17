@@ -106,9 +106,7 @@ microblaze_regnum_t;
 
 typedef enum
   {
-    UNW_MICROBLAZE_ABI_O32,
-    UNW_MICROBLAZE_ABI_N32,
-    UNW_MICROBLAZE_ABI_N64
+    UNW_MICROBLAZE_ABI
   }
 microblaze_abi_t;
 

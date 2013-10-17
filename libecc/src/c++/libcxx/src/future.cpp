@@ -52,12 +52,14 @@ __future_error_category::message(int ev) const
 
 #pragma clang diagnostic pop
 
+#if !defined(__MICROBLAZE__)
 const error_category&
 future_category() _NOEXCEPT
 {
     static __future_error_category __f;
     return __f;
 }
+#endif
 
 future_error::future_error(error_code __ec)
     : logic_error(__ec.message()),

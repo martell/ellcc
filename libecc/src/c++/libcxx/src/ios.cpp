@@ -62,12 +62,14 @@ __iostream_category::message(int ev) const
     return string("unspecified iostream_category error");
 }
 
+#if !defined(__MICROBLAZE__)
 const error_category&
 iostream_category()
 {
     static __iostream_category s;
     return s;
 }
+#endif
 
 // ios_base::failure
 

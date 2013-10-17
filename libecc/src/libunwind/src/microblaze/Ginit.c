@@ -42,9 +42,9 @@ static inline void *
 uc_addr (ucontext_t *uc, int reg)
 {
   if (reg >= UNW_MICROBLAZE_R0 && reg < UNW_MICROBLAZE_R0 + 32)
-    return &uc->uc_mcontext.regs[reg - UNW_MICROBLAZE_R0];
+    return &((unsigned long *)(&uc->uc_mcontext.regs))[reg - UNW_MICROBLAZE_R0];
   else if (reg == UNW_MICROBLAZE_PC)
-    return &uc->uc_mcontext.pc;
+    return &uc->uc_mcontext.regs.pc;
   else
     return NULL;
 }
@@ -58,7 +58,7 @@ tdep_uc_addr (ucontext_t *uc, int reg)
 
   if (reg >= UNW_MICROBLAZE_R0 && reg <= UNW_MICROBLAZE_R31
       && tdep_big_endian (unw_local_addr_space)
-      && unw_local_addr_space->abi == UNW_MICROBLAZE_ABI_O32)
+      && unw_local_addr_space->abi == UNW_MICROBLAZE_ABI)
     addr += 4;
 
   return addr;
@@ -120,12 +120,12 @@ access_reg (unw_addr_space_t as, unw_regnum_t reg, unw_word_t *val, int write,
 
   if (write)
     {
-      *(unw_word_t *) (intptr_t) addr = (mips_reg_t) *val;
+      *(unw_word_t *) (intptr_t) addr = (microblaze_reg_t) *val;
       Debug (12, "%s <- %llx\n", unw_regname (reg), (long long) *val);
     }
   else
     {
-      *val = (mips_reg_t) *(unw_word_t *) (intptr_t) addr;
+      *val = (microblaze_reg_t) *(unw_word_t *) (intptr_t) addr;
       Debug (12, "%s -> %llx\n", unw_regname (reg), (long long) *val);
     }
   return 0;
@@ -178,19 +178,11 @@ get_static_proc_name (unw_addr_space_t as, unw_word_t ip,
 }
 
 HIDDEN void
-mips_local_addr_space_init (void)
+microblaze_local_addr_space_init (void)
 {
   memset (&local_addr_space, 0, sizeof (local_addr_space));
   local_addr_space.big_endian = (__BYTE_ORDER == __BIG_ENDIAN);
-#if _MICROBLAZE_SIM == _ABIO32
-  local_addr_space.abi = UNW_MICROBLAZE_ABI_O32;
-#elif _MICROBLAZE_SIM == _ABIN32
-  local_addr_space.abi = UNW_MICROBLAZE_ABI_N32;
-#elif _MICROBLAZE_SIM == _ABI64
-  local_addr_space.abi = UNW_MICROBLAZE_ABI_N64;
-#else
-# error Unsupported ABI
-#endif
+  local_addr_space.abi = UNW_MICROBLAZE_ABI;
   local_addr_space.addr_size = sizeof (void *);
   local_addr_space.caching_policy = UNW_CACHE_GLOBAL;
   local_addr_space.acc.find_proc_info = dwarf_find_proc_info;
@@ -199,7 +191,7 @@ mips_local_addr_space_init (void)
   local_addr_space.acc.access_mem = access_mem;
   local_addr_space.acc.access_reg = access_reg;
   local_addr_space.acc.access_fpreg = access_fpreg;
-  local_addr_space.acc.resume = NULL;  /* mips_local_resume?  FIXME!  */
+  local_addr_space.acc.resume = NULL;  /* microblaze_local_resume?  FIXME!  */
   local_addr_space.acc.get_proc_name = get_static_proc_name;
   unw_flush_cache (&local_addr_space, 0, 0);
 }

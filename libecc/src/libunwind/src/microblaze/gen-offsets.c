@@ -25,6 +25,7 @@ main (void)
   UC ("SIGMASK", uc_sigmask);
 
   UC ("MCONTEXT_REGS", uc_mcontext.regs);
+  UC ("MCONTEXT_PC", uc_mcontext.regs.pc);
 
   return 0;
 }

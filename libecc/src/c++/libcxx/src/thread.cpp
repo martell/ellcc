@@ -125,12 +125,14 @@ sleep_for(const chrono::nanoseconds& ns)
 
 }  // this_thread
 
+#if !defined(__MICROBLAZE__)
 __thread_specific_ptr<__thread_struct>&
 __thread_local_data()
 {
     static __thread_specific_ptr<__thread_struct> __p;
     return __p;
 }
+#endif // __MICROBLAZE__
 
 // __thread_struct_imp
 

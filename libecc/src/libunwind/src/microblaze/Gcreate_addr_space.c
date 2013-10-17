@@ -58,7 +58,7 @@ unw_create_addr_space (unw_accessors_t *a, int byte_order)
     as->big_endian = (byte_order == __BIG_ENDIAN);
 
   /* FIXME!  There is no way to specify the ABI.  */
-  as->abi = UNW_MIPS_ABI_O32;
+  as->abi = UNW_MICROBLAZE_ABI;
   as->addr_size = 4;
 
   return as;

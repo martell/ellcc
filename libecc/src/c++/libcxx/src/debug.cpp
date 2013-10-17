@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if !defined(__MICROBLAZE__)
 #define _LIBCPP_DEBUG 1
 #include "__config"
 #include "__debug"
@@ -528,3 +529,4 @@ __c_node::__remove(__i_node* p)
 }
 
 _LIBCPP_END_NAMESPACE_STD
+#endif  // __MICROBLAZE__
