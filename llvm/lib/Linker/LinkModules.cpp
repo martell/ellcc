@@ -22,6 +22,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include <cctype>
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -1349,6 +1350,11 @@ Linker::Linker(Module *M) : Composite(M) {
 }
 
 Linker::~Linker() {
+}
+
+void Linker::deleteModule() {
+  delete Composite;
+  Composite = NULL;
 }
 
 bool Linker::linkInModule(Module *Src, unsigned Mode, std::string *ErrorMsg) {

@@ -7009,3 +7009,255 @@ void test_vst4_p16(poly16_t *a, poly16x4x4_t b) {
   // CHECK: st4 {v{{[0-9]+}}.4h, v{{[0-9]+}}.4h, v{{[0-9]+}}.4h,
   // v{{[0-9]+}}.4h}, [{{x[0-9]+|sp}}]
 }
+
+int64_t test_vceqd_s64(int64_t a, int64_t b) {
+// CHECK: test_vceqd_s64
+// CHECK: cmeq {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vceqd_s64(a, b);
+}
+
+uint64_t test_vceqd_u64(uint64_t a, uint64_t b) {
+// CHECK: test_vceqd_u64
+// CHECK: cmeq {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vceqd_u64(a, b);
+} 
+
+int64_t test_vceqzd_s64(int64_t a) {
+// CHECK: test_vceqzd_s64
+// CHECK: cmeq {{d[0-9]+}}, {{d[0-9]+}}, #0x0
+  return (int64_t)vceqzd_s64(a);
+}
+
+int64_t test_vceqzd_u64(int64_t a) {
+// CHECK: test_vceqzd_u64
+// CHECK: cmeq {{d[0-9]+}}, {{d[0-9]+}}, #0x0
+  return (int64_t)vceqzd_u64(a);
+}
+
+int64_t test_vcged_s64(int64_t a, int64_t b) {
+// CHECK: test_vcged_s64
+// CHECK: cmge {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vcged_s64(a, b);
+}
+
+uint64_t test_vcged_u64(uint64_t a, uint64_t b) {
+// CHECK: test_vcged_u64
+// CHECK: cmhs {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+    return (uint64_t)vcged_u64(a, b);
+}
+
+int64_t test_vcgezd_s64(int64_t a) {
+// CHECK: test_vcgezd_s64
+// CHECK: cmge {{d[0-9]+}}, {{d[0-9]+}}, #0x0
+  return (int64_t)vcgezd_s64(a);
+}
+
+int64_t test_vcgtd_s64(int64_t a, int64_t b) {
+// CHECK: test_vcgtd_s64
+// CHECK: cmgt {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vcgtd_s64(a, b);
+}
+
+uint64_t test_vcgtd_u64(uint64_t a, uint64_t b) {
+// CHECK: test_vcgtd_u64
+// CHECK: cmhi {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (uint64_t)vcgtd_u64(a, b);
+}
+
+int64_t test_vcgtzd_s64(int64_t a) {
+// CHECK: test_vcgtzd_s64
+// CHECK: cmgt {{d[0-9]+}}, {{d[0-9]+}}, #0x0
+  return (int64_t)vcgtzd_s64(a);
+}
+
+int64_t test_vcled_s64(int64_t a, int64_t b) {
+// CHECK: test_vcled_s64
+// CHECK: cmge {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vcled_s64(a, b);
+}
+
+uint64_t test_vcled_u64(uint64_t a, uint64_t b) {
+// CHECK: test_vcled_u64
+// CHECK: cmhs {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (uint64_t)vcled_u64(a, 0);
+}
+
+int64_t test_vclezd_s64(int64_t a) {
+// CHECK: test_vclezd_s64
+// CHECK: cmle {{d[0-9]+}}, {{d[0-9]+}}, #0x0
+  return (int64_t)vclezd_s64(a);
+}
+
+int64_t test_vcltd_s64(int64_t a, int64_t b) {
+// CHECK: test_vcltd_s64
+// CHECK: cmgt {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vcltd_s64(a, b);
+}
+
+uint64_t test_vcltd_u64(uint64_t a, uint64_t b) {
+// CHECK: test_vcltd_u64
+// CHECK: cmhi {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (uint64_t)vcltd_u64(a, b);
+}
+
+int64_t test_vcltzd_s64(int64_t a) {
+// CHECK: test_vcltzd_s64
+// CHECK: cmlt {{d[0-9]+}}, {{d[0-9]+}}, #0x0
+  return (int64_t)vcltzd_s64(a);
+}
+
+int64_t test_vtstd_s64(int64_t a, int64_t b) {
+// CHECK: test_vtstd_s64
+// CHECK: cmtst {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vtstd_s64(a, b);
+}
+
+uint64_t test_vtstd_u64(uint64_t a, uint64_t b) {
+// CHECK: test_vtstd_u64
+// CHECK: cmtst {{d[0-9]+}}, {{d[0-9]+}}, {{d[0-9]+}}
+  return (uint64_t)vtstd_u64(a, b);
+}
+
+int64_t test_vabsd_s64(int64_t a) {
+// CHECK: test_vabsd_s64
+// CHECK: abs {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vabsd_s64(a);
+}
+
+int8_t test_vqabsb_s8(int8_t a) {
+// CHECK: test_vqabsb_s8
+// CHECK: sqabs {{b[0-9]+}}, {{b[0-9]+}}
+  return (int8_t)vqabsb_s8(a);
+}
+
+int16_t test_vqabsh_s16(int16_t a) {
+// CHECK: test_vqabsh_s16
+// CHECK: sqabs {{h[0-9]+}}, {{h[0-9]+}}
+  return (int16_t)vqabsh_s16(a);
+}
+
+int32_t test_vqabss_s32(int32_t a) {
+// CHECK: test_vqabss_s32
+// CHECK: sqabs {{s[0-9]+}}, {{s[0-9]+}}
+  return (int32_t)vqabss_s32(a);
+}
+
+int64_t test_vqabsd_s64(int64_t a) {
+// CHECK: test_vqabsd_s64
+// CHECK: sqabs {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vqabsd_s64(a);
+}
+
+int64_t test_vnegd_s64(int64_t a) {
+// CHECK: test_vnegd_s64
+// CHECK: neg {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vnegd_s64(a);
+}
+
+int8_t test_vqnegb_s8(int8_t a) {
+// CHECK: test_vqnegb_s8
+// CHECK: sqneg {{b[0-9]+}}, {{b[0-9]+}}
+  return (int8_t)vqnegb_s8(a);
+}
+
+int16_t test_vqnegh_s16(int16_t a) {
+// CHECK: test_vqnegh_s16
+// CHECK: sqneg {{h[0-9]+}}, {{h[0-9]+}}
+  return (int16_t)vqnegh_s16(a);
+}
+
+int32_t test_vqnegs_s32(int32_t a) {
+// CHECK: test_vqnegs_s32
+// CHECK: sqneg {{s[0-9]+}}, {{s[0-9]+}}
+  return (int32_t)vqnegs_s32(a);
+}
+
+int64_t test_vqnegd_s64(int64_t a) {
+// CHECK: test_vqnegd_s64
+// CHECK: sqneg {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vqnegd_s64(a);
+}
+
+int8_t test_vuqaddb_s8(int8_t a, int8_t b) {
+// CHECK: test_vuqaddb_s8
+// CHECK: suqadd {{b[0-9]+}}, {{b[0-9]+}}
+  return (int8_t)vuqaddb_s8(a, b);
+}
+
+int16_t test_vuqaddh_s16(int16_t a, int16_t b) {
+// CHECK: test_vuqaddh_s16
+// CHECK: suqadd {{h[0-9]+}}, {{h[0-9]+}}
+  return (int16_t)vuqaddh_s16(a, b);
+}
+
+int32_t test_vuqadds_s32(int32_t a, int32_t b) {
+// CHECK: test_vuqadds_s32
+// CHECK: suqadd {{s[0-9]+}}, {{s[0-9]+}}
+  return (int32_t)vuqadds_s32(a, b);
+}
+
+int64_t test_vuqaddd_s64(int64_t a, int64_t b) {
+// CHECK: test_vuqaddd_s64
+// CHECK: suqadd {{d[0-9]+}}, {{d[0-9]+}}
+  return (int64_t)vuqaddd_s64(a, b);
+}
+
+uint8_t test_vsqaddb_u8(uint8_t a, uint8_t b) {
+// CHECK: test_vsqaddb_u8
+// CHECK: usqadd {{b[0-9]+}}, {{b[0-9]+}}
+  return (uint8_t)vsqaddb_u8(a, b);
+}
+
+uint16_t test_vsqaddh_u16(uint16_t a, uint16_t b) {
+// CHECK: test_vsqaddh_u16
+// CHECK: usqadd {{h[0-9]+}}, {{h[0-9]+}}
+  return (uint16_t)vsqaddh_u16(a, b);
+}
+
+uint32_t test_vsqadds_u32(uint32_t a, uint32_t b) {
+// CHECK: test_vsqadds_u32
+// CHECK: usqadd {{s[0-9]+}}, {{s[0-9]+}}
+  return (uint32_t)vsqadds_u32(a, b);
+}
+
+uint64_t test_vsqaddd_u64(uint64_t a, uint64_t b) {
+// CHECK: test_vsqaddd_u64
+// CHECK: usqadd {{d[0-9]+}}, {{d[0-9]+}}
+  return (uint64_t)vsqaddd_u64(a, b);
+}
+
+int32_t test_vqdmlalh_s16(int16_t a, int16_t b) {
+// CHECK: test_vqdmlalh_s16
+// CHECK: sqdmlal {{s[0-9]+}}, {{h[0-9]+}}, {{h[0-9]+}}
+  return (int32_t)vqdmlalh_s16(a, b);
+}
+
+int64_t test_vqdmlals_s32(int32_t a, int32_t b) {
+// CHECK: test_vqdmlals_s32
+// CHECK: sqdmlal {{d[0-9]+}}, {{s[0-9]+}}, {{s[0-9]+}}
+  return (int64_t)vqdmlals_s32(a, b);
+}
+
+int32_t test_vqdmlslh_s16(int16_t a, int16_t b) {
+// CHECK: test_vqdmlslh_s16
+// CHECK: sqdmlsl {{s[0-9]+}}, {{h[0-9]+}}, {{h[0-9]+}}
+  return (int32_t)vqdmlslh_s16(a, b);
+}
+
+int64_t test_vqdmlsls_s32(int32_t a, int32_t b) {
+// CHECK: test_vqdmlsls_s32
+// CHECK: sqdmlsl {{d[0-9]+}}, {{s[0-9]+}}, {{s[0-9]+}}
+  return (int64_t)vqdmlsls_s32(a, b);
+}
+
+int32_t test_vqdmullh_s16(int16_t a, int16_t b) {
+// CHECK: test_vqdmullh_s16
+// CHECK: sqdmull {{s[0-9]+}}, {{h[0-9]+}}, {{h[0-9]+}}
+  return (int32_t)vqdmullh_s16(a, b);
+}
+
+int64_t test_vqdmulls_s32(int32_t a, int32_t b) {
+// CHECK: test_vqdmulls_s32
+// CHECK: sqdmull {{d[0-9]+}}, {{s[0-9]+}}, {{s[0-9]+}}
+  return (int64_t)vqdmulls_s32(a, b);
+}

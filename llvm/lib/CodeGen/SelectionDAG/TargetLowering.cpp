@@ -635,6 +635,31 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
                           TLO.DAG.getNode(ISD::ANY_EXTEND, dl, Op.getValueType(),
                                           NarrowShl));
         }
+        // Repeat the SHL optimization above in cases where an extension
+        // intervenes: (shl (anyext (shr x, c1)), c2) to
+        // (shl (anyext x), c2-c1).  This requires that the bottom c1 bits
+        // aren't demanded (as above) and that the shifted upper c1 bits of
+        // x aren't demanded.
+        if (InOp.hasOneUse() &&
+            InnerOp.getOpcode() == ISD::SRL &&
+            InnerOp.hasOneUse() &&
+            isa<ConstantSDNode>(InnerOp.getOperand(1))) {
+          uint64_t InnerShAmt = cast<ConstantSDNode>(InnerOp.getOperand(1))
+            ->getZExtValue();
+          if (InnerShAmt < ShAmt &&
+              InnerShAmt < InnerBits &&
+              NewMask.lshr(InnerBits - InnerShAmt + ShAmt) == 0 &&
+              NewMask.trunc(ShAmt) == 0) {
+            SDValue NewSA =
+              TLO.DAG.getConstant(ShAmt - InnerShAmt,
+                                  Op.getOperand(1).getValueType());
+            EVT VT = Op.getValueType();
+            SDValue NewExt = TLO.DAG.getNode(ISD::ANY_EXTEND, dl, VT,
+                                             InnerOp.getOperand(0));
+            return TLO.CombineTo(Op, TLO.DAG.getNode(ISD::SHL, dl, VT,
+                                                     NewExt, NewSA));
+          }
+        }
       }
 
       KnownZero <<= SA->getZExtValue();
@@ -725,13 +750,24 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
 
       // If the input sign bit is known to be zero, or if none of the top bits
       // are demanded, turn this into an unsigned shift right.
-      if (KnownZero.intersects(SignBit) || (HighBits & ~NewMask) == HighBits) {
+      if (KnownZero.intersects(SignBit) || (HighBits & ~NewMask) == HighBits)
         return TLO.CombineTo(Op, TLO.DAG.getNode(ISD::SRL, dl, VT,
                                                  Op.getOperand(0),
                                                  Op.getOperand(1)));
-      } else if (KnownOne.intersects(SignBit)) { // New bits are known one.
-        KnownOne |= HighBits;
+
+      int Log2 = NewMask.exactLogBase2();
+      if (Log2 >= 0) {
+        // The bit must come from the sign.
+        SDValue NewSA =
+          TLO.DAG.getConstant(BitWidth - 1 - Log2,
+                              Op.getOperand(1).getValueType());
+        return TLO.CombineTo(Op, TLO.DAG.getNode(ISD::SRL, dl, VT,
+                                                 Op.getOperand(0), NewSA));
       }
+
+      if (KnownOne.intersects(SignBit))
+        // New bits are known one.
+        KnownOne |= HighBits;
     }
     break;
   case ISD::SIGN_EXTEND_INREG: {
@@ -2012,7 +2048,7 @@ void TargetLowering::LowerAsmOperandForConstraint(SDValue Op,
 std::pair<unsigned, const TargetRegisterClass*> TargetLowering::
 getRegForInlineAsmConstraint(const std::string &Constraint,
                              MVT VT) const {
-  if (Constraint[0] != '{')
+  if (Constraint.empty() || Constraint[0] != '{')
     return std::make_pair(0u, static_cast<TargetRegisterClass*>(0));
   assert(*(Constraint.end()-1) == '}' && "Not a brace enclosed constraint?");
 

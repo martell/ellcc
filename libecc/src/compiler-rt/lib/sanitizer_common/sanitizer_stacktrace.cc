@@ -13,7 +13,6 @@
 
 #include "sanitizer_common.h"
 #include "sanitizer_flags.h"
-#include "sanitizer_libc.h"
 #include "sanitizer_procmaps.h"
 #include "sanitizer_stacktrace.h"
 #include "sanitizer_symbolizer.h"
@@ -33,11 +32,6 @@ uptr StackTrace::GetPreviousInstructionPc(uptr pc) {
 #else
   return pc - 1;
 #endif
-}
-
-void StackTrace::CopyFrom(const uptr *src, uptr src_size) {
-  size = Min(src_size, kStackTraceMax);
-  internal_memcpy(trace, src, sizeof(trace[0]) * size);
 }
 
 static void PrintStackFramePrefix(uptr frame_num, uptr pc) {
@@ -114,8 +108,7 @@ uptr StackTrace::GetCurrentPc() {
 void StackTrace::FastUnwindStack(uptr pc, uptr bp,
                                  uptr stack_top, uptr stack_bottom,
                                  uptr max_depth) {
-  max_size = max_depth;
-  if (max_size == 0) {
+  if (max_depth == 0) {
     size = 0;
     return;
   }
@@ -129,7 +122,7 @@ void StackTrace::FastUnwindStack(uptr pc, uptr bp,
          frame < (uhwptr *)stack_top - 2 &&
          frame > (uhwptr *)stack_bottom &&
          IsAligned((uptr)frame, sizeof(*frame)) &&
-         size < max_size) {
+         size < max_depth) {
     uhwptr pc1 = frame[1];
     if (pc1 != pc) {
       trace[size++] = (uptr) pc1;
@@ -150,7 +143,6 @@ void StackTrace::PopStackFrames(uptr count) {
 // On 32-bits we don't compress stack traces.
 // On 64-bits we compress stack traces: if a given pc differes slightly from
 // the previous one, we record a 31-bit offset instead of the full pc.
-SANITIZER_INTERFACE_ATTRIBUTE
 uptr StackTrace::CompressStack(StackTrace *stack, u32 *compressed, uptr size) {
 #if SANITIZER_WORDSIZE == 32
   // Don't compress, just copy.
@@ -213,7 +205,6 @@ uptr StackTrace::CompressStack(StackTrace *stack, u32 *compressed, uptr size) {
   return res;
 }
 
-SANITIZER_INTERFACE_ATTRIBUTE
 void StackTrace::UncompressStack(StackTrace *stack,
                                  u32 *compressed, uptr size) {
 #if SANITIZER_WORDSIZE == 32

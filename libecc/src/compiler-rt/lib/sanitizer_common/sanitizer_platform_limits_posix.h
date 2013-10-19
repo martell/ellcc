@@ -28,6 +28,7 @@ namespace __sanitizer {
   extern unsigned siginfo_t_sz;
   extern unsigned struct_itimerval_sz;
   extern unsigned pthread_t_sz;
+  extern unsigned pthread_cond_t_sz;
   extern unsigned pid_t_sz;
   extern unsigned timeval_sz;
   extern unsigned uid_t_sz;
@@ -37,6 +38,7 @@ namespace __sanitizer {
   extern unsigned struct_itimerspec_sz;
   extern unsigned struct_sigevent_sz;
   extern unsigned struct_sched_param_sz;
+  extern unsigned struct_statfs_sz;
 
 #if !SANITIZER_ANDROID
   extern unsigned ucontext_t_sz;
@@ -60,7 +62,6 @@ namespace __sanitizer {
   extern unsigned struct_ustat_sz;
 
   extern unsigned struct_rlimit_sz;
-  extern unsigned struct_statfs_sz;
   extern unsigned struct_epoll_event_sz;
   extern unsigned struct_sysinfo_sz;
   extern unsigned struct_timespec_sz;
@@ -83,6 +84,8 @@ namespace __sanitizer {
 #if SANITIZER_LINUX && !SANITIZER_ANDROID
   extern unsigned struct_rlimit64_sz;
   extern unsigned struct_statfs64_sz;
+  extern unsigned struct_statvfs_sz;
+  extern unsigned struct_statvfs64_sz;
 #endif // SANITIZER_LINUX && !SANITIZER_ANDROID
 
   struct __sanitizer_iovec {
@@ -109,6 +112,17 @@ namespace __sanitizer {
     long int tm_gmtoff;
     const char *tm_zone;
   };
+
+#if SANITIZER_LINUX
+  struct __sanitizer_mntent {
+    char *mnt_fsname;
+    char *mnt_dir;
+    char *mnt_type;
+    char *mnt_opts;
+    int mnt_freq;
+    int mnt_passno;
+  };
+#endif
 
 #if SANITIZER_ANDROID || SANITIZER_MAC
   struct __sanitizer_msghdr {
@@ -220,6 +234,20 @@ namespace __sanitizer {
 #if SANITIZER_LINUX
     void (*sa_restorer)();
 #endif
+  };
+
+  struct __sanitizer_kernel_sigset_t {
+    u8 sig[8];
+  };
+
+  struct __sanitizer_kernel_sigaction_t {
+    union {
+      void (*sigaction)(int signo, void *info, void *ctx);
+      void (*handler)(int signo);
+    };
+    unsigned long sa_flags;
+    void (*sa_restorer)(void);
+    __sanitizer_kernel_sigset_t sa_mask;
   };
 
   extern uptr sig_ign;

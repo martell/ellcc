@@ -226,9 +226,9 @@ void CompileUnit::addDelta(DIE *Die, uint16_t Attribute, uint16_t Form,
 
 /// addDIEEntry - Add a DIE attribute data and value.
 ///
-void CompileUnit::addDIEEntry(DIE *Die, uint16_t Attribute, uint16_t Form,
-                              DIE *Entry) {
-  Die->addValue(Attribute, Form, createDIEEntry(Entry));
+void CompileUnit::addDIEEntry(DIE *Die, uint16_t Attribute, DIE *Entry) {
+  // We currently only use ref4.
+  Die->addValue(Attribute, dwarf::DW_FORM_ref4, createDIEEntry(Entry));
 }
 
 /// addBlock - Add block data.
@@ -911,8 +911,10 @@ void CompileUnit::addAccelType(StringRef Name, std::pair<DIE *, unsigned> Die) {
 }
 
 /// addGlobalName - Add a new global name to the compile unit.
-void CompileUnit::addGlobalName(StringRef Name, DIE *Die) {
-  GlobalNames[Name] = Die;
+void CompileUnit::addGlobalName(StringRef Name, DIE *Die, DIScope Context) {
+  std::string ContextString = getParentContextString(Context);
+  std::string FullName = ContextString + Name.str();
+  GlobalNames[FullName] = Die;
 }
 
 /// addGlobalType - Add a new global type to the compile unit.
@@ -922,8 +924,51 @@ void CompileUnit::addGlobalType(DIType Ty) {
   if (!Ty.getName().empty() && !Ty.isForwardDecl() &&
       (!Context || Context.isCompileUnit() || Context.isFile() ||
        Context.isNameSpace()))
-    if (DIEEntry *Entry = getDIEEntry(Ty))
-      GlobalTypes[Ty.getName()] = Entry->getEntry();
+    if (DIEEntry *Entry = getDIEEntry(Ty)) {
+      std::string ContextString = getParentContextString(Context);
+      std::string FullName = ContextString + Ty.getName().str();
+      GlobalTypes[FullName] = Entry->getEntry();
+    }
+}
+
+/// getParentContextString - Walks the metadata parent chain in a language
+/// specific manner (using the compile unit language) and returns
+/// it as a string. This is done at the metadata level because DIEs may
+/// not currently have been added to the parent context and walking the
+/// DIEs looking for names is more expensive than walking the metadata.
+std::string CompileUnit::getParentContextString(DIScope Context) const {
+  if (!Context)
+    return "";
+
+  // FIXME: Decide whether to implement this for non-C++ languages.
+  if (getLanguage() != dwarf::DW_LANG_C_plus_plus)
+    return "";
+
+  std::string CS = "";
+  SmallVector<DIScope, 1> Parents;
+  while (!Context.isCompileUnit()) {
+    Parents.push_back(Context);
+    if (Context.getContext())
+      Context = resolve(Context.getContext());
+    else
+      // Structure, etc types will have a NULL context if they're at the top
+      // level.
+      break;
+  }
+
+  // Reverse iterate over our list to go from the outermost construct to the
+  // innermost.
+  for (SmallVectorImpl<DIScope>::reverse_iterator I = Parents.rbegin(),
+                                                  E = Parents.rend();
+       I != E; ++I) {
+    DIScope Ctx = *I;
+    StringRef Name = Ctx.getName();
+    if (Name != "") {
+      CS += Name;
+      CS += "::";
+    }
+  }
+  return CS;
 }
 
 /// addPubTypes - Add subprogram argument types for pubtypes section.
@@ -982,7 +1027,7 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DIDerivedType DTy) {
     addUInt(&Buffer, dwarf::DW_AT_byte_size, 0, Size);
 
   if (Tag == dwarf::DW_TAG_ptr_to_member_type)
-      addDIEEntry(&Buffer, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4,
+      addDIEEntry(&Buffer, dwarf::DW_AT_containing_type,
                   getOrCreateTypeDIE(resolve(DTy.getClassType())));
   // Add source line info if available and TyDesc is not a forward declaration.
   if (!DTy.isForwardDecl())
@@ -1112,11 +1157,13 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
           ElemDie = new DIE(dwarf::DW_TAG_friend);
           addType(ElemDie, resolve(DDTy.getTypeDerivedFrom()),
                   dwarf::DW_AT_friend);
-        } else if (DDTy.isStaticMember())
-          ElemDie = createStaticMemberDIE(DDTy);
-        else
+          Buffer.addChild(ElemDie);
+        } else if (DDTy.isStaticMember()) {
+          ElemDie = getOrCreateStaticMemberDIE(DDTy);
+        } else {
           ElemDie = createMemberDIE(DDTy);
-        Buffer.addChild(ElemDie);
+          Buffer.addChild(ElemDie);
+        }
       } else if (Element.isObjCProperty()) {
         DIObjCProperty Property(Element);
         ElemDie = new DIE(Property.getTag());
@@ -1162,7 +1209,7 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
 
     DICompositeType ContainingType(resolve(CTy.getContainingType()));
     if (DIDescriptor(ContainingType).isCompositeType())
-      addDIEEntry(&Buffer, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4,
+      addDIEEntry(&Buffer, dwarf::DW_AT_containing_type,
                   getOrCreateTypeDIE(DIType(ContainingType)));
 
     if (CTy.isObjcClassComplete())
@@ -1287,7 +1334,7 @@ DIE *CompileUnit::getOrCreateNameSpace(DINameSpace NS) {
   if (!NS.getName().empty()) {
     addString(NDie, dwarf::DW_AT_name, NS.getName());
     addAccelNamespace(NS.getName(), NDie);
-    addGlobalName(NS.getName(), NDie);
+    addGlobalName(NS.getName(), NDie, NS.getContext());
   } else
     addAccelNamespace("(anonymous namespace)", NDie);
   addSourceLine(NDie, NS);
@@ -1319,9 +1366,6 @@ DIE *CompileUnit::getOrCreateSubprogramDIE(DISubprogram SP) {
     DeclDie = getOrCreateSubprogramDIE(SPDecl);
   }
 
-  // Add to context owner.
-  ContextDIE->addChild(SPDie);
-
   // Add function template parameters.
   addTemplateParams(*SPDie, SP.getTemplateParams());
 
@@ -1329,11 +1373,16 @@ DIE *CompileUnit::getOrCreateSubprogramDIE(DISubprogram SP) {
   // then there is no need to add other attributes.
   if (DeclDie) {
     // Refer function declaration directly.
-    addDIEEntry(SPDie, dwarf::DW_AT_specification, dwarf::DW_FORM_ref4,
-                DeclDie);
+    addDIEEntry(SPDie, dwarf::DW_AT_specification, DeclDie);
+
+    // Add subprogram definitions to the CU die directly.
+    CUDie.get()->addChild(SPDie);
 
     return SPDie;
   }
+
+  // Add to context owner.
+  ContextDIE->addChild(SPDie);
 
   // Add the linkage name if we have one.
   StringRef LinkageName = SP.getLinkageName();
@@ -1455,11 +1504,7 @@ void CompileUnit::createGlobalVariableDIE(const MDNode *N) {
   if (SDMDecl.Verify()) {
     assert(SDMDecl.isStaticMember() && "Expected static member decl");
     // We need the declaration DIE that is in the static member's class.
-    // But that class might not exist in the DWARF yet.
-    // Creating the class will create the static member decl DIE.
-    getOrCreateContextDIE(resolve(SDMDecl.getContext()));
-    VariableDIE = getDIE(SDMDecl);
-    assert(VariableDIE && "Static member decl has no context?");
+    VariableDIE = getOrCreateStaticMemberDIE(SDMDecl);
     IsStaticMember = true;
   }
 
@@ -1475,10 +1520,8 @@ void CompileUnit::createGlobalVariableDIE(const MDNode *N) {
     addType(VariableDIE, GTy);
 
     // Add scoping info.
-    if (!GV.isLocalToUnit()) {
+    if (!GV.isLocalToUnit())
       addFlag(VariableDIE, dwarf::DW_AT_external);
-      addGlobalName(GV.getName(), VariableDIE);
-    }
 
     // Add line number info.
     addSourceLine(VariableDIE, GV);
@@ -1523,8 +1566,7 @@ void CompileUnit::createGlobalVariableDIE(const MDNode *N) {
         !GVContext.isFile() && !DD->isSubprogramContext(GVContext)) {
       // Create specification DIE.
       VariableSpecDIE = new DIE(dwarf::DW_TAG_variable);
-      addDIEEntry(VariableSpecDIE, dwarf::DW_AT_specification,
-                  dwarf::DW_FORM_ref4, VariableDIE);
+      addDIEEntry(VariableSpecDIE, dwarf::DW_AT_specification, VariableDIE);
       addBlock(VariableSpecDIE, dwarf::DW_AT_location, 0, Block);
       // A static member's declaration is already flagged as such.
       if (!SDMDecl.Verify())
@@ -1572,13 +1614,17 @@ void CompileUnit::createGlobalVariableDIE(const MDNode *N) {
     if (GV.getLinkageName() != "" && GV.getName() != GV.getLinkageName())
       addAccelName(GV.getLinkageName(), AddrDIE);
   }
+
+  if (!GV.isLocalToUnit())
+    addGlobalName(GV.getName(), VariableSpecDIE ? VariableSpecDIE : VariableDIE,
+                  GV.getContext());
 }
 
 /// constructSubrangeDIE - Construct subrange DIE from DISubrange.
 void CompileUnit::constructSubrangeDIE(DIE &Buffer, DISubrange SR,
                                        DIE *IndexTy) {
   DIE *DW_Subrange = new DIE(dwarf::DW_TAG_subrange_type);
-  addDIEEntry(DW_Subrange, dwarf::DW_AT_type, dwarf::DW_FORM_ref4, IndexTy);
+  addDIEEntry(DW_Subrange, dwarf::DW_AT_type, IndexTy);
 
   // The LowerBound value defines the lower bounds which is typically zero for
   // C/C++. The Count value is the number of elements.  Values are 64 bit. If
@@ -1654,7 +1700,7 @@ void CompileUnit::constructContainingTypeDIEs() {
     if (!N) continue;
     DIE *NDie = getDIE(N);
     if (!NDie) continue;
-    addDIEEntry(SPDie, dwarf::DW_AT_containing_type, dwarf::DW_FORM_ref4, NDie);
+    addDIEEntry(SPDie, dwarf::DW_AT_containing_type, NDie);
   }
 }
 
@@ -1668,8 +1714,7 @@ DIE *CompileUnit::constructVariableDIE(DbgVariable *DV,
   DbgVariable *AbsVar = DV->getAbstractVariable();
   DIE *AbsDIE = AbsVar ? AbsVar->getDIE() : NULL;
   if (AbsDIE)
-    addDIEEntry(VariableDie, dwarf::DW_AT_abstract_origin,
-                            dwarf::DW_FORM_ref4, AbsDIE);
+    addDIEEntry(VariableDie, dwarf::DW_AT_abstract_origin, AbsDIE);
   else {
     if (!Name.empty())
       addString(VariableDie, dwarf::DW_AT_name, Name);
@@ -1822,12 +1867,24 @@ DIE *CompileUnit::createMemberDIE(DIDerivedType DT) {
   return MemberDie;
 }
 
-/// createStaticMemberDIE - Create new DIE for C++ static member.
-DIE *CompileUnit::createStaticMemberDIE(const DIDerivedType DT) {
+/// getOrCreateStaticMemberDIE - Create new DIE for C++ static member.
+DIE *CompileUnit::getOrCreateStaticMemberDIE(const DIDerivedType DT) {
   if (!DT.Verify())
     return NULL;
 
-  DIE *StaticMemberDIE = new DIE(DT.getTag());
+  // Construct the context before querying for the existence of the DIE in case
+  // such construction creates the DIE.
+  DIE *ContextDIE = getOrCreateContextDIE(resolve(DT.getContext()));
+  assert(ContextDIE && "Static member should belong to a non-CU context.");
+
+  DIE *StaticMemberDIE = getDIE(DT);
+  if (StaticMemberDIE)
+    return StaticMemberDIE;
+
+  StaticMemberDIE = new DIE(DT.getTag());
+  // Add to context owner.
+  ContextDIE->addChild(StaticMemberDIE);
+
   DIType Ty = resolve(DT.getTypeDerivedFrom());
 
   addString(StaticMemberDIE, dwarf::DW_AT_name, DT.getName());

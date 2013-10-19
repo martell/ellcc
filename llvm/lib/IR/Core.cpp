@@ -147,6 +147,16 @@ LLVMBool LLVMPrintModuleToFile(LLVMModuleRef M, const char *Filename,
   return false;
 }
 
+char *LLVMPrintModuleToString(LLVMModuleRef M) {
+  std::string buf;
+  raw_string_ostream os(buf);
+
+  unwrap(M)->print(os, NULL);
+  os.flush();
+
+  return strdup(buf.c_str());
+}
+
 /*--.. Operations on inline assembler ......................................--*/
 void LLVMSetModuleInlineAsm(LLVMModuleRef M, const char *Asm) {
   unwrap(M)->setModuleInlineAsm(StringRef(Asm));
@@ -208,6 +218,10 @@ LLVMBool LLVMTypeIsSized(LLVMTypeRef Ty)
 
 LLVMContextRef LLVMGetTypeContext(LLVMTypeRef Ty) {
   return wrap(&unwrap(Ty)->getContext());
+}
+
+void LLVMDumpType(LLVMTypeRef Ty) {
+  return unwrap(Ty)->dump();
 }
 
 /*--.. Operations on integer types .........................................--*/

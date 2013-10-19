@@ -329,6 +329,26 @@ INTERCEPTOR(double, strtod, const char *nptr, char **endptr) {  // NOLINT
   return res;
 }
 
+INTERCEPTOR(double, strtod_l, const char *nptr, char **endptr,
+            void *loc) {  // NOLINT
+  ENSURE_MSAN_INITED();
+  double res = REAL(strtod_l)(nptr, endptr, loc);  // NOLINT
+  if (!__msan_has_dynamic_component()) {
+    __msan_unpoison(endptr, sizeof(*endptr));
+  }
+  return res;
+}
+
+INTERCEPTOR(double, __strtod_l, const char *nptr, char **endptr,
+            void *loc) {  // NOLINT
+  ENSURE_MSAN_INITED();
+  double res = REAL(__strtod_l)(nptr, endptr, loc);  // NOLINT
+  if (!__msan_has_dynamic_component()) {
+    __msan_unpoison(endptr, sizeof(*endptr));
+  }
+  return res;
+}
+
 INTERCEPTOR(float, strtof, const char *nptr, char **endptr) {  // NOLINT
   ENSURE_MSAN_INITED();
   float res = REAL(strtof)(nptr, endptr);  // NOLINT
@@ -338,9 +358,49 @@ INTERCEPTOR(float, strtof, const char *nptr, char **endptr) {  // NOLINT
   return res;
 }
 
+INTERCEPTOR(float, strtof_l, const char *nptr, char **endptr,
+            void *loc) {  // NOLINT
+  ENSURE_MSAN_INITED();
+  float res = REAL(strtof_l)(nptr, endptr, loc);  // NOLINT
+  if (!__msan_has_dynamic_component()) {
+    __msan_unpoison(endptr, sizeof(*endptr));
+  }
+  return res;
+}
+
+INTERCEPTOR(float, __strtof_l, const char *nptr, char **endptr,
+            void *loc) {  // NOLINT
+  ENSURE_MSAN_INITED();
+  float res = REAL(__strtof_l)(nptr, endptr, loc);  // NOLINT
+  if (!__msan_has_dynamic_component()) {
+    __msan_unpoison(endptr, sizeof(*endptr));
+  }
+  return res;
+}
+
 INTERCEPTOR(long double, strtold, const char *nptr, char **endptr) {  // NOLINT
   ENSURE_MSAN_INITED();
   long double res = REAL(strtold)(nptr, endptr);  // NOLINT
+  if (!__msan_has_dynamic_component()) {
+    __msan_unpoison(endptr, sizeof(*endptr));
+  }
+  return res;
+}
+
+INTERCEPTOR(long double, strtold_l, const char *nptr, char **endptr,
+            void *loc) {  // NOLINT
+  ENSURE_MSAN_INITED();
+  long double res = REAL(strtold_l)(nptr, endptr, loc);  // NOLINT
+  if (!__msan_has_dynamic_component()) {
+    __msan_unpoison(endptr, sizeof(*endptr));
+  }
+  return res;
+}
+
+INTERCEPTOR(long double, __strtold_l, const char *nptr, char **endptr,
+            void *loc) {  // NOLINT
+  ENSURE_MSAN_INITED();
+  long double res = REAL(__strtold_l)(nptr, endptr, loc);  // NOLINT
   if (!__msan_has_dynamic_component()) {
     __msan_unpoison(endptr, sizeof(*endptr));
   }
@@ -508,28 +568,6 @@ INTERCEPTOR(double, wcstod, const wchar_t *nptr, wchar_t **endptr) {
   __msan_unpoison(endptr, sizeof(*endptr));
   return res;
 }
-
-// #define UNSUPPORTED(name) \
-//   INTERCEPTOR(void, name, void) {                     \
-//     Printf("MSAN: Unsupported %s\n", __FUNCTION__);   \
-//     Die();                                            \
-//   }
-
-// FIXME: intercept the following functions:
-// Note, they only matter when running without a dynamic tool.
-// UNSUPPORTED(wcscoll_l)
-// UNSUPPORTED(wcsnrtombs)
-// UNSUPPORTED(wcstol)
-// UNSUPPORTED(wcstoll)
-// UNSUPPORTED(wcstold)
-// UNSUPPORTED(wcstoul)
-// UNSUPPORTED(wcstoull)
-// UNSUPPORTED(wcsxfrm_l)
-// UNSUPPORTED(wcsdup)
-// UNSUPPORTED(wcsftime)
-// UNSUPPORTED(wcsstr)
-// UNSUPPORTED(wcsrchr)
-// UNSUPPORTED(wctob)
 
 INTERCEPTOR(int, gettimeofday, void *tv, void *tz) {
   ENSURE_MSAN_INITED();
@@ -710,38 +748,6 @@ INTERCEPTOR(int, getrlimit64, int resource, void *rlim) {
   int res = REAL(getrlimit64)(resource, rlim);
   if (!res)
     __msan_unpoison(rlim, __sanitizer::struct_rlimit64_sz);
-  return res;
-}
-
-INTERCEPTOR(int, statfs, const char *s, void *buf) {
-  ENSURE_MSAN_INITED();
-  int res = REAL(statfs)(s, buf);
-  if (!res)
-    __msan_unpoison(buf, __sanitizer::struct_statfs_sz);
-  return res;
-}
-
-INTERCEPTOR(int, fstatfs, int fd, void *buf) {
-  ENSURE_MSAN_INITED();
-  int res = REAL(fstatfs)(fd, buf);
-  if (!res)
-    __msan_unpoison(buf, __sanitizer::struct_statfs_sz);
-  return res;
-}
-
-INTERCEPTOR(int, statfs64, const char *s, void *buf) {
-  ENSURE_MSAN_INITED();
-  int res = REAL(statfs64)(s, buf);
-  if (!res)
-    __msan_unpoison(buf, __sanitizer::struct_statfs64_sz);
-  return res;
-}
-
-INTERCEPTOR(int, fstatfs64, int fd, void *buf) {
-  ENSURE_MSAN_INITED();
-  int res = REAL(fstatfs64)(fd, buf);
-  if (!res)
-    __msan_unpoison(buf, __sanitizer::struct_statfs64_sz);
   return res;
 }
 
@@ -1044,7 +1050,7 @@ INTERCEPTOR(int, pthread_create, void *th, void *attr, void *(*callback)(void*),
     attr = &myattr;
   }
 
-  AdjustStackSizeLinux(attr, flags()->verbosity);
+  AdjustStackSizeLinux(attr);
 
   int res = REAL(pthread_create)(th, attr, callback, param);
   if (attr == &myattr)
@@ -1320,8 +1326,14 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(strtoul);
   INTERCEPT_FUNCTION(strtoull);
   INTERCEPT_FUNCTION(strtod);
+  INTERCEPT_FUNCTION(strtod_l);
+  INTERCEPT_FUNCTION(__strtod_l);
   INTERCEPT_FUNCTION(strtof);
+  INTERCEPT_FUNCTION(strtof_l);
+  INTERCEPT_FUNCTION(__strtof_l);
   INTERCEPT_FUNCTION(strtold);
+  INTERCEPT_FUNCTION(strtold_l);
+  INTERCEPT_FUNCTION(__strtold_l);
   INTERCEPT_FUNCTION(vasprintf);
   INTERCEPT_FUNCTION(asprintf);
   INTERCEPT_FUNCTION(vsprintf);
@@ -1358,10 +1370,6 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(fgets_unlocked);
   INTERCEPT_FUNCTION(getrlimit);
   INTERCEPT_FUNCTION(getrlimit64);
-  INTERCEPT_FUNCTION(statfs);
-  INTERCEPT_FUNCTION(fstatfs);
-  INTERCEPT_FUNCTION(statfs64);
-  INTERCEPT_FUNCTION(fstatfs64);
   INTERCEPT_FUNCTION(uname);
   INTERCEPT_FUNCTION(gethostname);
   INTERCEPT_FUNCTION(epoll_wait);

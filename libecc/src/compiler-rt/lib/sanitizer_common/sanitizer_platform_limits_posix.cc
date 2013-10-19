@@ -44,6 +44,7 @@
 #include <wchar.h>
 
 #if SANITIZER_LINUX
+#include <mntent.h>
 #include <utime.h>
 #include <sys/mount.h>
 #include <sys/ptrace.h>
@@ -77,6 +78,7 @@
 #include <sys/mtio.h>
 #include <sys/kd.h>
 #include <sys/shm.h>
+#include <sys/statvfs.h>
 #include <sys/timex.h>
 #include <sys/user.h>
 #include <sys/ustat.h>
@@ -124,6 +126,7 @@ namespace __sanitizer {
   unsigned struct_sigaction_sz = sizeof(struct sigaction);
   unsigned struct_itimerval_sz = sizeof(struct itimerval);
   unsigned pthread_t_sz = sizeof(pthread_t);
+  unsigned pthread_cond_t_sz = sizeof(pthread_cond_t);
   unsigned pid_t_sz = sizeof(pid_t);
   unsigned timeval_sz = sizeof(timeval);
   unsigned uid_t_sz = sizeof(uid_t);
@@ -133,6 +136,7 @@ namespace __sanitizer {
   unsigned struct_tms_sz = sizeof(struct tms);
   unsigned struct_sigevent_sz = sizeof(struct sigevent);
   unsigned struct_sched_param_sz = sizeof(struct sched_param);
+  unsigned struct_statfs_sz = sizeof(struct statfs);
 
 #if !SANITIZER_ANDROID
   unsigned ucontext_t_sz = sizeof(ucontext_t);
@@ -140,7 +144,6 @@ namespace __sanitizer {
 
 #if SANITIZER_LINUX
   unsigned struct_rlimit_sz = sizeof(struct rlimit);
-  unsigned struct_statfs_sz = sizeof(struct statfs);
   unsigned struct_epoll_event_sz = sizeof(struct epoll_event);
   unsigned struct_sysinfo_sz = sizeof(struct sysinfo);
   unsigned struct_timespec_sz = sizeof(struct timespec);
@@ -162,6 +165,8 @@ namespace __sanitizer {
   unsigned struct_msqid_ds_sz = sizeof(struct msqid_ds);
   unsigned struct_shmid_ds_sz = sizeof(struct shmid_ds);
   unsigned struct_mq_attr_sz = sizeof(struct mq_attr);
+  unsigned struct_statvfs_sz = sizeof(struct statvfs);
+  unsigned struct_statvfs64_sz = sizeof(struct statvfs64);
 #endif // SANITIZER_LINUX && !SANITIZER_ANDROID
 
   uptr sig_ign = (uptr)SIG_IGN;
@@ -894,5 +899,15 @@ CHECK_SIZE_AND_OFFSET(tm, tm_yday);
 CHECK_SIZE_AND_OFFSET(tm, tm_isdst);
 CHECK_SIZE_AND_OFFSET(tm, tm_gmtoff);
 CHECK_SIZE_AND_OFFSET(tm, tm_zone);
+
+#if SANITIZER_LINUX
+CHECK_TYPE_SIZE(mntent);
+CHECK_SIZE_AND_OFFSET(mntent, mnt_fsname);
+CHECK_SIZE_AND_OFFSET(mntent, mnt_dir);
+CHECK_SIZE_AND_OFFSET(mntent, mnt_type);
+CHECK_SIZE_AND_OFFSET(mntent, mnt_opts);
+CHECK_SIZE_AND_OFFSET(mntent, mnt_freq);
+CHECK_SIZE_AND_OFFSET(mntent, mnt_passno);
+#endif
 
 #endif  // SANITIZER_LINUX || SANITIZER_MAC

@@ -1227,6 +1227,32 @@ bool Sema::isCurrentClassName(const IdentifierInfo &II, Scope *,
   return false;
 }
 
+/// \brief Determine whether the identifier II is a typo for the name of
+/// the class type currently being defined. If so, update it to the identifier
+/// that should have been used.
+bool Sema::isCurrentClassNameTypo(IdentifierInfo *&II, const CXXScopeSpec *SS) {
+  assert(getLangOpts().CPlusPlus && "No class names in C!");
+
+  if (!getLangOpts().SpellChecking)
+    return false;
+
+  CXXRecordDecl *CurDecl;
+  if (SS && SS->isSet() && !SS->isInvalid()) {
+    DeclContext *DC = computeDeclContext(*SS, true);
+    CurDecl = dyn_cast_or_null<CXXRecordDecl>(DC);
+  } else
+    CurDecl = dyn_cast_or_null<CXXRecordDecl>(CurContext);
+
+  if (CurDecl && CurDecl->getIdentifier() && II != CurDecl->getIdentifier() &&
+      3 * II->getName().edit_distance(CurDecl->getIdentifier()->getName())
+          < II->getLength()) {
+    II = CurDecl->getIdentifier();
+    return true;
+  }
+
+  return false;
+}
+
 /// \brief Determine whether the given class is a base class of the given
 /// class, including looking at dependent bases.
 static bool findCircularInheritance(const CXXRecordDecl *Class,
@@ -1347,9 +1373,10 @@ Sema::CheckBaseSpecifier(CXXRecordDecl *Class,
   // C++ [class]p3:
   //   If a class is marked final and it appears as a base-type-specifier in 
   //   base-clause, the program is ill-formed.
-  if (CXXBaseDecl->hasAttr<FinalAttr>()) {
+  if (FinalAttr *FA = CXXBaseDecl->getAttr<FinalAttr>()) {
     Diag(BaseLoc, diag::err_class_marked_final_used_as_base) 
-      << CXXBaseDecl->getDeclName();
+      << CXXBaseDecl->getDeclName()
+      << FA->isSpelledAsSealed();
     Diag(CXXBaseDecl->getLocation(), diag::note_previous_decl)
       << CXXBaseDecl->getDeclName();
     return 0;
@@ -1736,7 +1763,8 @@ void Sema::CheckOverrideControl(NamedDecl *D) {
       } else if (FinalAttr *FA = D->getAttr<FinalAttr>()) {
         Diag(FA->getLocation(),
              diag::override_keyword_hides_virtual_member_function)
-            << "final" << (OverloadedMethods.size() > 1);
+          << (FA->isSpelledAsSealed() ? "sealed" : "final")
+          << (OverloadedMethods.size() > 1);
       }
       NoteHiddenVirtualMethods(MD, OverloadedMethods);
       MD->setInvalidDecl();
@@ -1756,7 +1784,8 @@ void Sema::CheckOverrideControl(NamedDecl *D) {
     if (FinalAttr *FA = D->getAttr<FinalAttr>()) {
       Diag(FA->getLocation(),
            diag::override_keyword_only_allowed_on_virtual_member_functions)
-        << "final" << FixItHint::CreateRemoval(FA->getLocation());
+        << (FA->isSpelledAsSealed() ? "sealed" : "final")
+        << FixItHint::CreateRemoval(FA->getLocation());
       D->dropAttr<FinalAttr>();
     }
     return;
@@ -1778,11 +1807,13 @@ void Sema::CheckOverrideControl(NamedDecl *D) {
 /// C++11 [class.virtual]p4.
 bool Sema::CheckIfOverriddenFunctionIsMarkedFinal(const CXXMethodDecl *New,
                                                   const CXXMethodDecl *Old) {
-  if (!Old->hasAttr<FinalAttr>())
+  FinalAttr *FA = Old->getAttr<FinalAttr>();
+  if (!FA)
     return false;
 
   Diag(New->getLocation(), diag::err_final_function_overridden)
-    << New->getDeclName();
+    << New->getDeclName()
+    << FA->isSpelledAsSealed();
   Diag(Old->getLocation(), diag::note_overridden_virtual_function);
   return true;
 }
@@ -2041,7 +2072,8 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
   if (VS.isOverrideSpecified())
     Member->addAttr(new (Context) OverrideAttr(VS.getOverrideLoc(), Context));
   if (VS.isFinalSpecified())
-    Member->addAttr(new (Context) FinalAttr(VS.getFinalLoc(), Context));
+    Member->addAttr(new (Context) FinalAttr(VS.getFinalLoc(), Context,
+                                            VS.isFinalSpelledSealed()));
 
   if (VS.getLastLocation().isValid()) {
     // Update the end location of a method that has a virt-specifiers.
@@ -4380,9 +4412,12 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
            diag::warn_non_virtual_dtor) << Context.getRecordType(Record);
   }
 
-  if (Record->isAbstract() && Record->hasAttr<FinalAttr>()) {
-    Diag(Record->getLocation(), diag::warn_abstract_final_class);
-    DiagnoseAbstractType(Record);
+  if (Record->isAbstract()) {
+    if (FinalAttr *FA = Record->getAttr<FinalAttr>()) {
+      Diag(Record->getLocation(), diag::warn_abstract_final_class)
+        << FA->isSpelledAsSealed();
+      DiagnoseAbstractType(Record);
+    }
   }
 
   if (!Record->isDependentType()) {
@@ -4449,6 +4484,13 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
         break;
       }
     }
+  }
+
+  // Check to see if we're trying to lay out a struct using the ms_struct
+  // attribute that is dynamic.
+  if (Record->isMsStruct(Context) && Record->isDynamicClass()) {
+    Diag(Record->getLocation(), diag::warn_pragma_ms_struct_failed);
+    Record->dropAttr<MsStructAttr>();
   }
 
   // Declare inheriting constructors. We do this eagerly here because:
@@ -4831,14 +4873,28 @@ void Sema::CheckExplicitlyDefaultedMemberExceptionSpec(
     SpecifiedType, MD->getLocation());
 }
 
-void Sema::CheckDelayedExplicitlyDefaultedMemberExceptionSpecs() {
-  for (unsigned I = 0, N = DelayedDefaultedMemberExceptionSpecs.size();
-       I != N; ++I)
-    CheckExplicitlyDefaultedMemberExceptionSpec(
-      DelayedDefaultedMemberExceptionSpecs[I].first,
-      DelayedDefaultedMemberExceptionSpecs[I].second);
+void Sema::CheckDelayedMemberExceptionSpecs() {
+  SmallVector<std::pair<const CXXDestructorDecl *, const CXXDestructorDecl *>,
+              2> Checks;
+  SmallVector<std::pair<CXXMethodDecl *, const FunctionProtoType *>, 2> Specs;
 
-  DelayedDefaultedMemberExceptionSpecs.clear();
+  std::swap(Checks, DelayedDestructorExceptionSpecChecks);
+  std::swap(Specs, DelayedDefaultedMemberExceptionSpecs);
+
+  // Perform any deferred checking of exception specifications for virtual
+  // destructors.
+  for (unsigned i = 0, e = Checks.size(); i != e; ++i) {
+    const CXXDestructorDecl *Dtor = Checks[i].first;
+    assert(!Dtor->getParent()->isDependentType() &&
+           "Should not ever add destructors of templates into the list.");
+    CheckOverridingFunctionExceptionSpec(Dtor, Checks[i].second);
+  }
+
+  // Check that any explicitly-defaulted methods have exception specifications
+  // compatible with their implicit exception specifications.
+  for (unsigned I = 0, N = Specs.size(); I != N; ++I)
+    CheckExplicitlyDefaultedMemberExceptionSpec(Specs[I].first,
+                                                Specs[I].second);
 }
 
 namespace {
@@ -7807,7 +7863,7 @@ Decl *Sema::ActOnAliasDeclaration(Scope *S,
     if (Invalid)
       NewDecl->setInvalidDecl();
     else if (OldDecl)
-      NewDecl->setPreviousDeclaration(OldDecl);
+      NewDecl->setPreviousDecl(OldDecl);
 
     NewND = NewDecl;
   } else {
@@ -8149,9 +8205,8 @@ void Sema::DefineImplicitDefaultConstructor(SourceLocation CurrentLocation,
 }
 
 void Sema::ActOnFinishDelayedMemberInitializers(Decl *D) {
-  // Check that any explicitly-defaulted methods have exception specifications
-  // compatible with their implicit exception specifications.
-  CheckDelayedExplicitlyDefaultedMemberExceptionSpecs();
+  // Perform any delayed checks on exception specifications.
+  CheckDelayedMemberExceptionSpecs();
 
   // Once all the member initializers are processed, perform checks to see if
   // any unintialized use is happeneing.
@@ -8674,23 +8729,11 @@ void Sema::ActOnFinishCXXMemberDecls() {
   // If the context is an invalid C++ class, just suppress these checks.
   if (CXXRecordDecl *Record = dyn_cast<CXXRecordDecl>(CurContext)) {
     if (Record->isInvalidDecl()) {
+      DelayedDefaultedMemberExceptionSpecs.clear();
       DelayedDestructorExceptionSpecChecks.clear();
       return;
     }
   }
-
-  // Perform any deferred checking of exception specifications for virtual
-  // destructors.
-  for (unsigned i = 0, e = DelayedDestructorExceptionSpecChecks.size();
-       i != e; ++i) {
-    const CXXDestructorDecl *Dtor =
-        DelayedDestructorExceptionSpecChecks[i].first;
-    assert(!Dtor->getParent()->isDependentType() &&
-           "Should not ever add destructors of templates into the list.");
-    CheckOverridingFunctionExceptionSpec(Dtor,
-        DelayedDestructorExceptionSpecChecks[i].second);
-  }
-  DelayedDestructorExceptionSpecChecks.clear();
 }
 
 void Sema::AdjustDestructorExceptionSpec(CXXRecordDecl *ClassDecl,

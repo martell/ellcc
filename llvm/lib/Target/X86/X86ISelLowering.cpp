@@ -1498,6 +1498,7 @@ void X86TargetLowering::resetOperationActions() {
   }
 
   // We have target-specific dag combine patterns for the following nodes:
+  setTargetDAGCombine(ISD::CONCAT_VECTORS);
   setTargetDAGCombine(ISD::VECTOR_SHUFFLE);
   setTargetDAGCombine(ISD::EXTRACT_VECTOR_ELT);
   setTargetDAGCombine(ISD::VSELECT);
@@ -7627,12 +7628,7 @@ X86TargetLowering::LowerEXTRACT_VECTOR_ELT(SDValue Op,
       MVT MaskVT = MVT::getVectorVT(MaskEltVT, VecVT.getSizeInBits() /
                                     MaskEltVT.getSizeInBits());
       
-      if (Idx.getSimpleValueType() != MaskEltVT)
-        if (Idx.getOpcode() == ISD::ZERO_EXTEND ||
-            Idx.getOpcode() == ISD::SIGN_EXTEND)
-          Idx = Idx.getOperand(0);
-      assert(Idx.getSimpleValueType() == MaskEltVT &&
-             "Unexpected index in insertelement");
+      Idx = DAG.getZExtOrTrunc(Idx, dl, MaskEltVT);
       SDValue Mask = DAG.getNode(X86ISD::VINSERT, dl, MaskVT,
                                 getZeroVector(MaskVT, Subtarget, DAG, dl),
                                 Idx, DAG.getConstant(0, getPointerTy()));
@@ -8210,10 +8206,9 @@ static SDValue LowerToTLSExecModel(GlobalAddressSDNode *GA, SelectionDAG &DAG,
   Value *Ptr = Constant::getNullValue(Type::getInt8PtrTy(*DAG.getContext(),
                                                          is64Bit ? 257 : 256));
 
-  SDValue ThreadPointer = DAG.getLoad(PtrVT, dl, DAG.getEntryNode(),
-                                      DAG.getIntPtrConstant(0),
-                                      MachinePointerInfo(Ptr),
-                                      false, false, false, 0);
+  SDValue ThreadPointer =
+      DAG.getLoad(PtrVT, dl, DAG.getEntryNode(), DAG.getIntPtrConstant(0),
+                  MachinePointerInfo(Ptr), false, false, false, 0);
 
   unsigned char OperandFlags = 0;
   // Most TLS accesses are not RIP relative, even on x86-64.  One exception is
@@ -8235,21 +8230,20 @@ static SDValue LowerToTLSExecModel(GlobalAddressSDNode *GA, SelectionDAG &DAG,
   // emit "addl x@ntpoff,%eax" (local exec)
   // or "addl x@indntpoff,%eax" (initial exec)
   // or "addl x@gotntpoff(%ebx) ,%eax" (initial exec, 32-bit pic)
-  SDValue TGA = DAG.getTargetGlobalAddress(GA->getGlobal(), dl,
-                                           GA->getValueType(0),
-                                           GA->getOffset(), OperandFlags);
+  SDValue TGA =
+      DAG.getTargetGlobalAddress(GA->getGlobal(), dl, GA->getValueType(0),
+                                 GA->getOffset(), OperandFlags);
   SDValue Offset = DAG.getNode(WrapperKind, dl, PtrVT, TGA);
 
   if (model == TLSModel::InitialExec) {
     if (isPIC && !is64Bit) {
       Offset = DAG.getNode(ISD::ADD, dl, PtrVT,
-                          DAG.getNode(X86ISD::GlobalBaseReg, SDLoc(), PtrVT),
+                           DAG.getNode(X86ISD::GlobalBaseReg, SDLoc(), PtrVT),
                            Offset);
     }
 
     Offset = DAG.getLoad(PtrVT, dl, DAG.getEntryNode(), Offset,
-                         MachinePointerInfo::getGOT(), false, false, false,
-                         0);
+                         MachinePointerInfo::getGOT(), false, false, false, 0);
   }
 
   // The address of the thread local variable is the add of the thread
@@ -10755,7 +10749,8 @@ X86TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
   // Get the inputs.
   SDValue Chain = Op.getOperand(0);
   SDValue Size  = Op.getOperand(1);
-  // FIXME: Ensure alignment here
+  unsigned Align = cast<ConstantSDNode>(Op.getOperand(2))->getZExtValue();
+  EVT VT = Op.getNode()->getValueType(0);
 
   bool Is64Bit = Subtarget->is64Bit();
   EVT SPTy = Is64Bit ? MVT::i64 : MVT::i32;
@@ -10793,14 +10788,20 @@ X86TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
     SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
 
     Chain = DAG.getNode(X86ISD::WIN_ALLOCA, dl, NodeTys, Chain, Flag);
-    Flag = Chain.getValue(1);
 
     const X86RegisterInfo *RegInfo =
       static_cast<const X86RegisterInfo*>(getTargetMachine().getRegisterInfo());
-    Chain = DAG.getCopyFromReg(Chain, dl, RegInfo->getStackRegister(),
-                               SPTy).getValue(1);
+    unsigned SPReg = RegInfo->getStackRegister();
+    SDValue SP = DAG.getCopyFromReg(Chain, dl, SPReg, SPTy);
+    Chain = SP.getValue(1);
 
-    SDValue Ops1[2] = { Chain.getValue(0), Chain };
+    if (Align) {
+      SP = DAG.getNode(ISD::AND, dl, VT, SP.getValue(0),
+                       DAG.getConstant(-(uint64_t)Align, VT));
+      Chain = DAG.getCopyToReg(Chain, dl, SPReg, SP);
+    }
+
+    SDValue Ops1[2] = { SP, Chain };
     return DAG.getMergeValues(Ops1, 2, dl);
   }
 }
@@ -12462,14 +12463,24 @@ static SDValue LowerSDIV(SDValue Op, SelectionDAG &DAG) {
       (SplatValue.isPowerOf2() || (-SplatValue).isPowerOf2())) {
     unsigned lg2 = SplatValue.countTrailingZeros();
     // Splat the sign bit.
-    SDValue Sz = DAG.getConstant(EltTy.getSizeInBits()-1, MVT::i32);
-    SDValue SGN = getTargetVShiftNode(X86ISD::VSRAI, dl, VT, N0, Sz, DAG);
+    SmallVector<SDValue, 16> Sz(NumElts,
+                                DAG.getConstant(EltTy.getSizeInBits() - 1,
+                                                EltTy));
+    SDValue SGN = DAG.getNode(ISD::SRA, dl, VT, N0,
+                              DAG.getNode(ISD::BUILD_VECTOR, dl, VT, &Sz[0],
+                                          NumElts));
     // Add (N0 < 0) ? abs2 - 1 : 0;
-    SDValue Amt = DAG.getConstant(EltTy.getSizeInBits() - lg2, MVT::i32);
-    SDValue SRL = getTargetVShiftNode(X86ISD::VSRLI, dl, VT, SGN, Amt, DAG);
+    SmallVector<SDValue, 16> Amt(NumElts,
+                                 DAG.getConstant(EltTy.getSizeInBits() - lg2,
+                                                 EltTy));
+    SDValue SRL = DAG.getNode(ISD::SRL, dl, VT, SGN,
+                              DAG.getNode(ISD::BUILD_VECTOR, dl, VT, &Amt[0],
+                                          NumElts));
     SDValue ADD = DAG.getNode(ISD::ADD, dl, VT, N0, SRL);
-    SDValue Lg2Amt = DAG.getConstant(lg2, MVT::i32);
-    SDValue SRA = getTargetVShiftNode(X86ISD::VSRAI, dl, VT, ADD, Lg2Amt, DAG);
+    SmallVector<SDValue, 16> Lg2Amt(NumElts, DAG.getConstant(lg2, EltTy));
+    SDValue SRA = DAG.getNode(ISD::SRA, dl, VT, ADD,
+                              DAG.getNode(ISD::BUILD_VECTOR, dl, VT, &Lg2Amt[0],
+                                          NumElts));
 
     // If we're dividing by a positive value, we're done.  Otherwise, we must
     // negate the result.
@@ -16141,6 +16152,44 @@ static SDValue PerformShuffleCombine256(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+static SDValue PerformConcatCombine(SDNode *N, SelectionDAG &DAG,
+                                    TargetLowering::DAGCombinerInfo &DCI,
+                                    const X86Subtarget *Subtarget) {
+  // Creating a v8i16 from a v4i16 argument and an undef runs into trouble in
+  // type legalization and ends up spilling to the stack. Avoid that by
+  // creating a vector first and bitcasting the result rather than
+  // bitcasting the source then creating the vector. Similar problems with
+  // v8i8.
+
+  // No point in doing this after legalize, so early exit for that.
+  if (!DCI.isBeforeLegalize())
+    return SDValue();
+
+  EVT VT = N->getValueType(0);
+  SDValue Op0 = N->getOperand(0);
+  SDValue Op1 = N->getOperand(1);
+  const TargetLowering &TLI = DAG.getTargetLoweringInfo();
+  if (VT.getSizeInBits() == 128 && N->getNumOperands() == 2 &&
+      Op1->getOpcode() == ISD::UNDEF &&
+      Op0->getOpcode() == ISD::BITCAST &&
+      !TLI.isTypeLegal(Op0->getValueType(0)) &&
+      TLI.isTypeLegal(Op0->getOperand(0)->getValueType(0))) {
+    SDValue Scalar = Op0->getOperand(0);
+    // Any legal type here will be a simple value type.
+    MVT SVT = Scalar->getValueType(0).getSimpleVT();
+    // As a special case, bail out on MMX values.
+    if (SVT == MVT::x86mmx)
+      return SDValue();
+    EVT NVT = MVT::getVectorVT(SVT, 2);
+    SDLoc dl = SDLoc(N);
+    SDValue Res = DAG.getNode(ISD::SCALAR_TO_VECTOR, dl, NVT, Scalar);
+    Res = DAG.getNode(ISD::BITCAST, dl, VT, Res);
+    return Res;
+  }
+
+  return SDValue();
+}
+
 /// PerformShuffleCombine - Performs several different shuffle combines.
 static SDValue PerformShuffleCombine(SDNode *N, SelectionDAG &DAG,
                                      TargetLowering::DAGCombinerInfo &DCI,
@@ -19019,6 +19068,7 @@ SDValue X86TargetLowering::PerformDAGCombine(SDNode *N,
   case X86ISD::VPERMILP:
   case X86ISD::VPERM2X128:
   case ISD::VECTOR_SHUFFLE: return PerformShuffleCombine(N, DAG, DCI,Subtarget);
+  case ISD::CONCAT_VECTORS: return PerformConcatCombine(N, DAG, DCI, Subtarget);
   case ISD::FMA:            return PerformFMACombine(N, DAG, Subtarget);
   }
 

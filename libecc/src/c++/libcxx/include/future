@@ -542,14 +542,14 @@ public:
         __state_ |= __future_attached;
     }
     _LIBCPP_INLINE_VISIBILITY
-    bool __has_future_attached() const {return __state_ & __future_attached;}
+    bool __has_future_attached() const {return (__state_ & __future_attached) != 0;}
 
     _LIBCPP_INLINE_VISIBILITY
     void __set_deferred() {__state_ |= deferred;}
 
     void __make_ready();
     _LIBCPP_INLINE_VISIBILITY
-    bool __is_ready() const {return __state_ & ready;}
+    bool __is_ready() const {return (__state_ & ready) != 0;}
 
     void set_value();
     void set_value_at_thread_exit();
@@ -2013,10 +2013,26 @@ public:
     // construction and destruction
     _LIBCPP_INLINE_VISIBILITY
     packaged_task() _NOEXCEPT : __p_(nullptr) {}
-    template <class _Fp>
+    template <class _Fp,
+              class = typename enable_if
+              <
+                  !is_same<
+                      typename decay<_Fp>::type, 
+                      packaged_task
+                      >::value
+                  >::type
+             >
         _LIBCPP_INLINE_VISIBILITY
         explicit packaged_task(_Fp&& __f) : __f_(_VSTD::forward<_Fp>(__f)) {}
-    template <class _Fp, class _Allocator>
+    template <class _Fp, class _Allocator,
+              class = typename enable_if
+              <
+                  !is_same<
+                      typename decay<_Fp>::type, 
+                      packaged_task
+                      >::value
+                  >::type
+              >
         _LIBCPP_INLINE_VISIBILITY
         explicit packaged_task(allocator_arg_t, const _Allocator& __a, _Fp&& __f)
              : __f_(allocator_arg, __a, _VSTD::forward<_Fp>(__f)),
@@ -2128,10 +2144,26 @@ public:
     // construction and destruction
     _LIBCPP_INLINE_VISIBILITY
     packaged_task() _NOEXCEPT : __p_(nullptr) {}
-    template <class _Fp>
+    template <class _Fp,
+              class = typename enable_if
+              <
+                  !is_same<
+                      typename decay<_Fp>::type, 
+                      packaged_task
+                      >::value
+                  >::type
+              >
         _LIBCPP_INLINE_VISIBILITY
         explicit packaged_task(_Fp&& __f) : __f_(_VSTD::forward<_Fp>(__f)) {}
-    template <class _Fp, class _Allocator>
+    template <class _Fp, class _Allocator,
+              class = typename enable_if
+              <
+                  !is_same<
+                      typename decay<_Fp>::type, 
+                      packaged_task
+                      >::value
+                  >::type
+              >    
         _LIBCPP_INLINE_VISIBILITY
         explicit packaged_task(allocator_arg_t, const _Allocator& __a, _Fp&& __f)
              : __f_(allocator_arg, __a, _VSTD::forward<_Fp>(__f)),

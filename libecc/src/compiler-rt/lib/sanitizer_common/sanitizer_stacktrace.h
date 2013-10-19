@@ -32,13 +32,21 @@ struct StackTrace {
   typedef bool (*SymbolizeCallback)(const void *pc, char *out_buffer,
                                      int out_size);
   uptr size;
-  uptr max_size;
   uptr trace[kStackTraceMax];
+
   static void PrintStack(const uptr *addr, uptr size, bool symbolize,
                          SymbolizeCallback symbolize_callback);
 
-  void CopyFrom(const uptr *src, uptr src_size);
+  void CopyFrom(const uptr *src, uptr src_size) {
+    size = src_size;
+    if (size > kStackTraceMax) size = kStackTraceMax;
+    for (uptr i = 0; i < size; i++)
+      trace[i] = src[i];
+  }
 
+  void Unwind(uptr max_depth, uptr pc, uptr bp, uptr stack_top,
+              uptr stack_bottom, bool fast);
+  // FIXME: Make FastUnwindStack and SlowUnwindStack private methods.
   void FastUnwindStack(uptr pc, uptr bp, uptr stack_top, uptr stack_bottom,
                        uptr max_depth);
   void SlowUnwindStack(uptr pc, uptr max_depth);
@@ -48,16 +56,11 @@ struct StackTrace {
   static uptr GetCurrentPc();
   static uptr GetPreviousInstructionPc(uptr pc);
 
-  SANITIZER_INTERFACE_ATTRIBUTE
   static uptr CompressStack(StackTrace *stack,
                             u32 *compressed, uptr size);
-  SANITIZER_INTERFACE_ATTRIBUTE
   static void UncompressStack(StackTrace *stack,
                               u32 *compressed, uptr size);
 };
-
-void GetStackTrace(StackTrace *stack, uptr max_s, uptr pc, uptr bp,
-                   uptr stack_top, uptr stack_bottom, bool fast);
 
 }  // namespace __sanitizer
 

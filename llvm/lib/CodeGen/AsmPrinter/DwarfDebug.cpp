@@ -196,9 +196,8 @@ DwarfDebug::DwarfDebug(AsmPrinter *A, Module *M)
   DwarfAbbrevDWOSectionSym = DwarfStrDWOSectionSym = 0;
   FunctionBeginSym = FunctionEndSym = 0;
 
-  // Turn on accelerator tables and older gdb compatibility
-  // for Darwin by default, pubnames by default for non-Darwin,
-  // and handle split dwarf.
+  // Turn on accelerator tables for Darwin by default, pubnames by
+  // default for non-Darwin, and handle split dwarf.
   bool IsDarwin = Triple(A->getTargetTriple()).isOSDarwin();
 
   if (DwarfAccelTables == Default)
@@ -222,8 +221,6 @@ DwarfDebug::DwarfDebug(AsmPrinter *A, Module *M)
     NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
     beginModule();
   }
-}
-DwarfDebug::~DwarfDebug() {
 }
 
 // Switch to the specified MCSection and emit an assembler
@@ -382,8 +379,7 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
   if (DIE *AbsSPDIE = AbstractSPDies.lookup(SPNode)) {
     // Pick up abstract subprogram DIE.
     SPDie = new DIE(dwarf::DW_TAG_subprogram);
-    SPCU->addDIEEntry(SPDie, dwarf::DW_AT_abstract_origin,
-                      dwarf::DW_FORM_ref4, AbsSPDIE);
+    SPCU->addDIEEntry(SPDie, dwarf::DW_AT_abstract_origin, AbsSPDIE);
     SPCU->addDie(SPDie);
   } else {
     DISubprogram SPDecl = SP.getFunctionDeclaration();
@@ -411,14 +407,12 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
             if (ATy.isArtificial())
               SPCU->addFlag(Arg, dwarf::DW_AT_artificial);
             if (ATy.isObjectPointer())
-              SPCU->addDIEEntry(SPDie, dwarf::DW_AT_object_pointer,
-                                dwarf::DW_FORM_ref4, Arg);
+              SPCU->addDIEEntry(SPDie, dwarf::DW_AT_object_pointer, Arg);
             SPDie->addChild(Arg);
           }
         DIE *SPDeclDie = SPDie;
         SPDie = new DIE(dwarf::DW_TAG_subprogram);
-        SPCU->addDIEEntry(SPDie, dwarf::DW_AT_specification,
-                          dwarf::DW_FORM_ref4, SPDeclDie);
+        SPCU->addDIEEntry(SPDie, dwarf::DW_AT_specification, SPDeclDie);
         SPCU->addDie(SPDie);
       }
     }
@@ -528,8 +522,7 @@ DIE *DwarfDebug::constructInlinedScopeDIE(CompileUnit *TheCU,
   }
 
   DIE *ScopeDIE = new DIE(dwarf::DW_TAG_inlined_subroutine);
-  TheCU->addDIEEntry(ScopeDIE, dwarf::DW_AT_abstract_origin,
-                     dwarf::DW_FORM_ref4, OriginDIE);
+  TheCU->addDIEEntry(ScopeDIE, dwarf::DW_AT_abstract_origin, OriginDIE);
 
   if (Ranges.size() > 1) {
     // .debug_range section has not been laid out yet. Emit offset in
@@ -674,8 +667,7 @@ DIE *DwarfDebug::constructScopeDIE(CompileUnit *TheCU, LexicalScope *Scope) {
     ScopeDIE->addChild(*I);
 
   if (DS.isSubprogram() && ObjectPointer != NULL)
-    TheCU->addDIEEntry(ScopeDIE, dwarf::DW_AT_object_pointer,
-                       dwarf::DW_FORM_ref4, ObjectPointer);
+    TheCU->addDIEEntry(ScopeDIE, dwarf::DW_AT_object_pointer, ObjectPointer);
 
   if (DS.isSubprogram())
     TheCU->addPubTypes(DISubprogram(DS));
@@ -834,8 +826,11 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
 }
 
 // Construct subprogram DIE.
-void DwarfDebug::constructSubprogramDIE(CompileUnit *TheCU,
-                                        const MDNode *N) {
+void DwarfDebug::constructSubprogramDIE(CompileUnit *TheCU, const MDNode *N) {
+  // FIXME: We should only call this routine once, however, during LTO if a
+  // program is defined in multiple CUs we could end up calling it out of
+  // beginModule as we walk the CUs.
+
   CompileUnit *&CURef = SPMap[N];
   if (CURef)
     return;
@@ -850,7 +845,7 @@ void DwarfDebug::constructSubprogramDIE(CompileUnit *TheCU,
   DIE *SubprogramDie = TheCU->getOrCreateSubprogramDIE(SP);
 
   // Expose as a global name.
-  TheCU->addGlobalName(SP.getName(), SubprogramDie);
+  TheCU->addGlobalName(SP.getName(), SubprogramDie, resolve(SP.getContext()));
 }
 
 void DwarfDebug::constructImportedEntityDIE(CompileUnit *TheCU,
@@ -893,8 +888,7 @@ void DwarfDebug::constructImportedEntityDIE(CompileUnit *TheCU,
                                         TheCU->getUniqueID());
   TheCU->addUInt(IMDie, dwarf::DW_AT_decl_file, 0, FileID);
   TheCU->addUInt(IMDie, dwarf::DW_AT_decl_line, 0, Module.getLineNumber());
-  TheCU->addDIEEntry(IMDie, dwarf::DW_AT_import, dwarf::DW_FORM_ref4,
-                     EntityDie);
+  TheCU->addDIEEntry(IMDie, dwarf::DW_AT_import, EntityDie);
   StringRef Name = Module.getName();
   if (!Name.empty())
     TheCU->addString(IMDie, dwarf::DW_AT_name, Name);
@@ -983,28 +977,33 @@ void DwarfDebug::collectDeadVariables() {
       DIArray Subprograms = TheCU.getSubprograms();
       for (unsigned i = 0, e = Subprograms.getNumElements(); i != e; ++i) {
         DISubprogram SP(Subprograms.getElement(i));
-        if (ProcessedSPNodes.count(SP) != 0) continue;
-        if (!SP.isSubprogram()) continue;
-        if (!SP.isDefinition()) continue;
+        if (ProcessedSPNodes.count(SP) != 0)
+          continue;
+        if (!SP.isSubprogram())
+          continue;
+        if (!SP.isDefinition())
+          continue;
         DIArray Variables = SP.getVariables();
-        if (Variables.getNumElements() == 0) continue;
+        if (Variables.getNumElements() == 0)
+          continue;
 
         LexicalScope *Scope =
-          new LexicalScope(NULL, DIDescriptor(SP), NULL, false);
+            new LexicalScope(NULL, DIDescriptor(SP), NULL, false);
         DeadFnScopeMap[SP] = Scope;
 
         // Construct subprogram DIE and add variables DIEs.
         CompileUnit *SPCU = CUMap.lookup(TheCU);
         assert(SPCU && "Unable to find Compile Unit!");
-        constructSubprogramDIE(SPCU, SP);
-        DIE *ScopeDIE = SPCU->getDIE(SP);
+        DIE *SPDIE = SPCU->getDIE(SP);
+        assert(SPDIE && "Subprogram wasn't created?");
         for (unsigned vi = 0, ve = Variables.getNumElements(); vi != ve; ++vi) {
           DIVariable DV(Variables.getElement(vi));
-          if (!DV.isVariable()) continue;
+          if (!DV.isVariable())
+            continue;
           DbgVariable NewVar(DV, NULL, this);
           if (DIE *VariableDIE =
-              SPCU->constructVariableDIE(&NewVar, Scope->isAbstractScope()))
-            ScopeDIE->addChild(VariableDIE);
+                  SPCU->constructVariableDIE(&NewVar, Scope->isAbstractScope()))
+            SPDIE->addChild(VariableDIE);
         }
       }
     }
@@ -2363,9 +2362,17 @@ void DwarfDebug::emitAccelTypes() {
 /// computeIndexValue - Compute the gdb index value for the DIE and CU.
 static dwarf::PubIndexEntryDescriptor computeIndexValue(CompileUnit *CU,
                                                         DIE *Die) {
-  dwarf::GDBIndexEntryLinkage Linkage =
-      Die->findAttribute(dwarf::DW_AT_external) ? dwarf::GIEL_EXTERNAL
-                                                : dwarf::GIEL_STATIC;
+  dwarf::GDBIndexEntryLinkage Linkage = dwarf::GIEL_STATIC;
+
+  // We could have a specification DIE that has our most of our knowledge,
+  // look for that now.
+  DIEValue *SpecVal = Die->findAttribute(dwarf::DW_AT_specification);
+  if (SpecVal) {
+    DIE *SpecDIE = cast<DIEEntry>(SpecVal)->getEntry();
+    if (SpecDIE->findAttribute(dwarf::DW_AT_external))
+      Linkage = dwarf::GIEL_EXTERNAL;
+  } else if (Die->findAttribute(dwarf::DW_AT_external))
+    Linkage = dwarf::GIEL_EXTERNAL;
 
   switch (Die->getTag()) {
   case dwarf::DW_TAG_class_type:

@@ -1484,6 +1484,27 @@ public:
     Warnings.push_back(DelayedDiag(Warning, OptionalNotes()));
   }
   
+  void warnParamReturnTypestateMismatch(SourceLocation Loc,
+                                        StringRef VariableName,
+                                        StringRef ExpectedState,
+                                        StringRef ObservedState) {
+    
+    PartialDiagnosticAt Warning(Loc, S.PDiag(
+      diag::warn_param_return_typestate_mismatch) << VariableName <<
+        ExpectedState << ObservedState);
+    
+    Warnings.push_back(DelayedDiag(Warning, OptionalNotes()));
+  }
+  
+  void warnParamTypestateMismatch(SourceLocation Loc, StringRef ExpectedState,
+                                  StringRef ObservedState) {
+    
+    PartialDiagnosticAt Warning(Loc, S.PDiag(
+      diag::warn_param_typestate_mismatch) << ExpectedState << ObservedState);
+    
+    Warnings.push_back(DelayedDiag(Warning, OptionalNotes()));
+  }
+  
   void warnReturnTypestateForUnconsumableType(SourceLocation Loc,
                                               StringRef TypeName) {
     PartialDiagnosticAt Warning(Loc, S.PDiag(
@@ -1497,15 +1518,6 @@ public:
                                     
     PartialDiagnosticAt Warning(Loc, S.PDiag(
       diag::warn_return_typestate_mismatch) << ExpectedState << ObservedState);
-    
-    Warnings.push_back(DelayedDiag(Warning, OptionalNotes()));
-  }
-  
-  void warnUnnecessaryTest(StringRef VariableName, StringRef VariableState,
-                           SourceLocation Loc) {
-
-    PartialDiagnosticAt Warning(Loc, S.PDiag(diag::warn_unnecessary_test) <<
-                                 VariableName << VariableState);
     
     Warnings.push_back(DelayedDiag(Warning, OptionalNotes()));
   }
@@ -1607,6 +1619,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
   const Stmt *Body = D->getBody();
   assert(Body);
 
+  // Construct the analysis context with the specified CFG build options.
   AnalysisDeclContext AC(/* AnalysisDeclContextManager */ 0, D);
 
   // Don't generate EH edges for CallExprs as we'd like to avoid the n^2
@@ -1640,8 +1653,7 @@ AnalysisBasedWarnings::IssueWarnings(sema::AnalysisBasedWarnings::Policy P,
       .setAlwaysAdd(Stmt::AttributedStmtClass);
   }
 
-  // Construct the analysis context with the specified CFG build options.
-  
+
   // Emit delayed diagnostics.
   if (!fscope->PossiblyUnreachableDiags.empty()) {
     bool analyzed = false;

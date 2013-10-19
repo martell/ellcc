@@ -59,6 +59,25 @@ namespace consumed {
     virtual void warnLoopStateMismatch(SourceLocation Loc,
                                        StringRef VariableName) {}
     
+    /// \brief Warn about parameter typestate mismatches upon return.
+    ///
+    /// \param Loc -- The SourceLocation of the return statement.
+    ///
+    /// \param ExpectedState -- The state the return value was expected to be
+    /// in.
+    ///
+    /// \param ObservedState -- The state the return value was observed to be
+    /// in.
+    virtual void warnParamReturnTypestateMismatch(SourceLocation Loc,
+                                                  StringRef VariableName,
+                                                  StringRef ExpectedState,
+                                                  StringRef ObservedState) {};
+    
+    // FIXME: Add documentation.
+    virtual void warnParamTypestateMismatch(SourceLocation LOC,
+                                            StringRef ExpectedState,
+                                            StringRef ObservedState) {}
+    
     // FIXME: This can be removed when the attr propagation fix for templated
     //        classes lands.
     /// \brief Warn about return typestates set for unconsumable types.
@@ -70,21 +89,17 @@ namespace consumed {
                                                         StringRef TypeName) {}
     
     /// \brief Warn about return typestate mismatches.
+    ///
     /// \param Loc -- The SourceLocation of the return statement.
+    ///
+    /// \param ExpectedState -- The state the return value was expected to be
+    /// in.
+    ///
+    /// \param ObservedState -- The state the return value was observed to be
+    /// in.
     virtual void warnReturnTypestateMismatch(SourceLocation Loc,
                                              StringRef ExpectedState,
                                              StringRef ObservedState) {}
-    
-    /// \brief Warn about unnecessary-test errors.
-    /// \param VariableName -- The name of the variable that holds the unique
-    /// value.
-    ///
-    /// \param VariableState -- The known state of the value.
-    ///
-    /// \param Loc -- The SourceLocation of the unnecessary test.
-    virtual void warnUnnecessaryTest(StringRef VariableName,
-                                     StringRef VariableState,
-                                     SourceLocation Loc) {}
 
     /// \brief Warn about use-while-consumed errors.
     /// \param MethodName -- The name of the method that was incorrectly
@@ -128,6 +143,11 @@ namespace consumed {
     ConsumedStateMap() : Reachable(true), From(NULL) {}
     ConsumedStateMap(const ConsumedStateMap &Other)
       : Reachable(Other.Reachable), From(Other.From), Map(Other.Map) {}
+    
+    /// \brief Warn if any of the parameters being tracked are not in the state
+    /// they were declared to be in upon return from a function.
+    void checkParamsForReturnTypestate(SourceLocation BlameLoc,
+      ConsumedWarningsHandlerBase &WarningsHandler) const;
     
     /// \brief Get the consumed state of a given variable.
     ConsumedState getState(const VarDecl *Var) const;

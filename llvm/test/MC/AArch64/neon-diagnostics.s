@@ -4286,3 +4286,219 @@
 // CHECK-ERROR         dup v5.2d, w0
 // CHECK-ERROR                    ^
 
+//----------------------------------------------------------------------
+// Scalar Compare Bitwise Equal
+//----------------------------------------------------------------------
+
+         cmeq b20, d21, d22
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmeq b20, d21, d22
+// CHECK-ERROR:               ^
+
+//----------------------------------------------------------------------
+// Scalar Compare Bitwise Equal To Zero
+//----------------------------------------------------------------------
+
+         cmeq d20, b21, #0
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmeq d20, b21, #0
+// CHECK-ERROR:                    ^
+
+//----------------------------------------------------------------------
+// Scalar Compare Unsigned Higher Or Same
+//----------------------------------------------------------------------
+
+         cmhs b20, d21, d22
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmhs b20, d21, d22
+// CHECK-ERROR:               ^
+
+        
+//----------------------------------------------------------------------
+// Scalar Compare Signed Greather Than Or Equal
+//----------------------------------------------------------------------
+
+         cmge b20, d21, d22
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmge b20, d21, d22
+// CHECK-ERROR:               ^
+
+//----------------------------------------------------------------------
+// Scalar Compare Signed Greather Than Or Equal To Zero
+//----------------------------------------------------------------------
+
+         cmge d20, b21, #0
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmge d20, b21, #0
+// CHECK-ERROR:                    ^
+
+//----------------------------------------------------------------------
+// Scalar Compare Unsigned Higher
+//----------------------------------------------------------------------
+
+         cmhi b20, d21, d22
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmhi b20, d21, d22
+// CHECK-ERROR:               ^
+
+//----------------------------------------------------------------------
+// Scalar Compare Signed Greater Than
+//----------------------------------------------------------------------
+
+         cmgt b20, d21, d22
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmgt b20, d21, d22
+// CHECK-ERROR:               ^
+
+//----------------------------------------------------------------------
+// Scalar Compare Signed Greater Than Zero
+//----------------------------------------------------------------------
+
+         cmgt d20, b21, #0
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmgt d20, b21, #0
+// CHECK-ERROR:                    ^
+
+//----------------------------------------------------------------------
+// Scalar Compare Signed Less Than Or Equal To Zero
+//----------------------------------------------------------------------
+
+         cmle d20, b21, #0
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmle d20, b21, #0
+// CHECK-ERROR:                    ^
+
+//----------------------------------------------------------------------
+// Scalar Compare Less Than Zero
+//----------------------------------------------------------------------
+
+         cmlt d20, b21, #0
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmlt d20, b21, #0
+// CHECK-ERROR:                    ^
+
+//----------------------------------------------------------------------
+// Scalar Compare Bitwise Test Bits
+//----------------------------------------------------------------------
+
+         cmtst b20, d21, d22
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:          cmtst b20, d21, d22
+// CHECK-ERROR:                ^
+
+//----------------------------------------------------------------------
+// Scalar Signed Saturating Accumulated of Unsigned Value
+//----------------------------------------------------------------------
+
+        suqadd b0, h1
+        suqadd h0, s1
+        suqadd s0, d1
+        suqadd d0, b0
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        suqadd b0, h1
+// CHECK-ERROR:                   ^
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        suqadd h0, s1
+// CHECK-ERROR:                   ^
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        suqadd s0, d1
+// CHECK-ERROR:                   ^
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        suqadd d0, b0
+// CHECK-ERROR:                   ^
+
+//----------------------------------------------------------------------
+// Scalar Unsigned Saturating Accumulated of Signed Value
+//----------------------------------------------------------------------
+
+        usqadd b0, h1
+        usqadd h0, s1
+        usqadd s0, d1
+        usqadd d0, b1
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        usqadd b0, h1
+// CHECK-ERROR:                   ^
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        usqadd h0, s1
+// CHECK-ERROR:                   ^
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        usqadd s0, d1
+// CHECK-ERROR:                   ^
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        usqadd d0, b1
+// CHECK-ERROR:                   ^
+
+//----------------------------------------------------------------------
+// Scalar Absolute Value
+//----------------------------------------------------------------------
+
+    abs d29, s24
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        abs d29, s24
+// CHECK-ERROR:                 ^
+
+//----------------------------------------------------------------------
+// Scalar Negate
+//----------------------------------------------------------------------
+
+    neg d29, s24
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        neg d29, s24
+// CHECK-ERROR:                 ^
+
+//----------------------------------------------------------------------
+// Signed Saturating Doubling Multiply-Add Long
+//----------------------------------------------------------------------
+
+    sqdmlal s17, h27, s12
+    sqdmlal d19, s24, d12
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        sqdmlal s17, h27, s12
+// CHECK-ERROR:                          ^
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        sqdmlal d19, s24, d12
+// CHECK-ERROR:                          ^
+
+//----------------------------------------------------------------------
+// Signed Saturating Doubling Multiply-Subtract Long
+//----------------------------------------------------------------------
+
+    sqdmlsl s14, h12, s25
+    sqdmlsl d12, s23, d13
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        sqdmlsl s14, h12, s25
+// CHECK-ERROR:                          ^
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        sqdmlsl d12, s23, d13
+// CHECK-ERROR:                          ^
+
+//----------------------------------------------------------------------
+// Signed Saturating Doubling Multiply Long
+//----------------------------------------------------------------------
+
+    sqdmull s12, h22, s12
+    sqdmull d15, s22, d12
+
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        sqdmull s12, h22, s12
+// CHECK-ERROR:                          ^
+// CHECK-ERROR: error: invalid operand for instruction
+// CHECK-ERROR:        sqdmull d15, s22, d12
+// CHECK-ERROR:                          ^

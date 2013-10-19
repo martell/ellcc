@@ -147,6 +147,9 @@ protected:
   typedef SmallVector<SectionEntry, 64> SectionList;
   SectionList Sections;
 
+  typedef unsigned SID; // Type for SectionIDs
+  #define RTDYLD_INVALID_SECTION_ID ((SID)(-1)) 
+
   // Keep a map of sections from object file to the SectionID which
   // references it.
   typedef std::map<SectionRef, unsigned> ObjSectionToIDMap;
@@ -181,30 +184,10 @@ protected:
   typedef std::map<RelocationValueRef, uintptr_t> StubMap;
 
   Triple::ArchType Arch;
+  bool IsTargetLittleEndian;
 
-  inline unsigned getMaxStubSize() {
-    if (Arch == Triple::aarch64)
-      return 20; // movz; movk; movk; movk; br
-    if (Arch == Triple::arm || Arch == Triple::thumb)
-      return 8; // 32-bit instruction and 32-bit address
-    else if (Arch == Triple::mipsel || Arch == Triple::mips)
-      return 16;
-    else if (Arch == Triple::ppc64 || Arch == Triple::ppc64le)
-      return 44;
-    else if (Arch == Triple::x86_64)
-      return 6; // 2-byte jmp instruction + 32-bit relative address
-    else if (Arch == Triple::systemz)
-      return 16;
-    else
-      return 0;
-  }
-
-  inline unsigned getStubAlignment() {
-    if (Arch == Triple::systemz)
-      return 8;
-    else
-      return 1;
-  }
+  virtual unsigned getMaxStubSize() = 0;
+  virtual unsigned getStubAlignment() = 0;
 
   bool HasError;
   std::string ErrorStr;
@@ -225,14 +208,14 @@ protected:
   }
 
   void writeInt16BE(uint8_t *Addr, uint16_t Value) {
-    if (sys::IsLittleEndianHost)
+    if (IsTargetLittleEndian)
       Value = sys::SwapByteOrder(Value);
     *Addr     = (Value >> 8) & 0xFF;
     *(Addr+1) = Value & 0xFF;
   }
 
   void writeInt32BE(uint8_t *Addr, uint32_t Value) {
-    if (sys::IsLittleEndianHost)
+    if (IsTargetLittleEndian)
       Value = sys::SwapByteOrder(Value);
     *Addr     = (Value >> 24) & 0xFF;
     *(Addr+1) = (Value >> 16) & 0xFF;
@@ -241,7 +224,7 @@ protected:
   }
 
   void writeInt64BE(uint8_t *Addr, uint64_t Value) {
-    if (sys::IsLittleEndianHost)
+    if (IsTargetLittleEndian)
       Value = sys::SwapByteOrder(Value);
     *Addr     = (Value >> 56) & 0xFF;
     *(Addr+1) = (Value >> 48) & 0xFF;
@@ -357,9 +340,11 @@ public:
 
   virtual bool isCompatibleFormat(const ObjectBuffer *Buffer) const = 0;
 
-  virtual StringRef getEHFrameSection();
+  virtual void registerEHFrames();
 
-  virtual void finalizeLoad() {}
+  virtual void deregisterEHFrames();
+
+  virtual void finalizeLoad(ObjSectionToIDMap &SectionMap) {}
 };
 
 } // end namespace llvm

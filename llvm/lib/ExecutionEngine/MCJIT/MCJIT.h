@@ -51,8 +51,14 @@ public:
     ClientMM->notifyObjectLoaded(EE, Obj);
   }
 
-  virtual void registerEHFrames(StringRef SectionData) {
-    ClientMM->registerEHFrames(SectionData);
+  virtual void registerEHFrames(uint8_t *Addr, uint64_t LoadAddr, size_t Size) {
+    ClientMM->registerEHFrames(Addr, LoadAddr, Size);
+  }
+
+  virtual void deregisterEHFrames(uint8_t *Addr,
+                                  uint64_t LoadAddr,
+                                  size_t Size) {
+    ClientMM->deregisterEHFrames(Addr, LoadAddr, Size);
   }
 
   virtual bool finalizeMemory(std::string *ErrMsg = 0) {

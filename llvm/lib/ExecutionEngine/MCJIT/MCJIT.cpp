@@ -62,6 +62,8 @@ MCJIT::MCJIT(Module *m, TargetMachine *tm, RTDyldMemoryManager *MM,
 }
 
 MCJIT::~MCJIT() {
+  Dyld.deregisterEHFrames();
+
   LoadedObjectMap::iterator it, end = LoadedObjects.end();
   for (it = LoadedObjects.begin(); it != end; ++it) {
     ObjectImage *Obj = it->second;
@@ -178,13 +180,11 @@ void MCJIT::finalizeLoadedModules() {
 
     if (ModuleStates[M].hasBeenLoaded() &&
         !ModuleStates[M].hasBeenFinalized()) {
-      // FIXME: This should be module specific!
-      StringRef EHData = Dyld.getEHFrameSection();
-      if (!EHData.empty())
-        MemMgr.registerEHFrames(EHData);
       ModuleStates[M] = ModuleFinalized;
     }
   }
+
+  Dyld.registerEHFrames();
 
   // Set page permissions.
   MemMgr.finalizeMemory();
@@ -221,13 +221,11 @@ void MCJIT::finalizeObject() {
 
     if (ModuleStates[M].hasBeenLoaded() &&
         !ModuleStates[M].hasBeenFinalized()) {
-      // FIXME: This should be module specific!
-      StringRef EHData = Dyld.getEHFrameSection();
-      if (!EHData.empty())
-        MemMgr.registerEHFrames(EHData);
       ModuleStates[M] = ModuleFinalized;
     }
   }
+
+  Dyld.registerEHFrames();
 
   // Set page permissions.
   MemMgr.finalizeMemory();
@@ -248,10 +246,7 @@ void MCJIT::finalizeModule(Module *M) {
   // Resolve any outstanding relocations.
   Dyld.resolveRelocations();
 
-  // FIXME: Should this be module specific?
-  StringRef EHData = Dyld.getEHFrameSection();
-  if (!EHData.empty())
-    MemMgr.registerEHFrames(EHData);
+  Dyld.registerEHFrames();
 
   // Set page permissions.
   MemMgr.finalizeMemory();

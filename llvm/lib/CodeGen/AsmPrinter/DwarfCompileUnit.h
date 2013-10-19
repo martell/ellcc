@@ -123,9 +123,13 @@ public:
   ///
   bool hasContent() const { return !CUDie->getChildren().empty(); }
 
+  /// getParentContextString - Get a string containing the language specific
+  /// context for a global name.
+  std::string getParentContextString(DIScope Context) const;
+
   /// addGlobalName - Add a new global entity to the compile unit.
   ///
-  void addGlobalName(StringRef Name, DIE *Die);
+  void addGlobalName(StringRef Name, DIE *Die, DIScope Context);
 
   /// addGlobalType - Add a new global type to the compile unit.
   ///
@@ -207,7 +211,7 @@ public:
 
   /// addDIEEntry - Add a DIE attribute data and value.
   ///
-  void addDIEEntry(DIE *Die, uint16_t Attribute, uint16_t Form, DIE *Entry);
+  void addDIEEntry(DIE *Die, uint16_t Attribute, DIE *Entry);
 
   /// addBlock - Add block data.
   ///
@@ -329,8 +333,8 @@ private:
   /// createMemberDIE - Create new member DIE.
   DIE *createMemberDIE(DIDerivedType DT);
 
-  /// createStaticMemberDIE - Create new static data member DIE.
-  DIE *createStaticMemberDIE(DIDerivedType DT);
+  /// getOrCreateStaticMemberDIE - Create new static data member DIE.
+  DIE *getOrCreateStaticMemberDIE(DIDerivedType DT);
 
   /// getLowerBoundDefault - Return the default lower bound for an array. If the
   /// DWARF version doesn't handle the language, return -1.

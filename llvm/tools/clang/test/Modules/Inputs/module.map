@@ -204,6 +204,10 @@ module cxx_templates_b {
   header "cxx-templates-b.h"
 }
 
+module cxx_templates_c {
+  header "cxx-templates-c.h"
+}
+
 module cxx_decls {
   module unimported {
     header "cxx-decls-unimported.h"
@@ -249,4 +253,8 @@ module incomplete_mod {
 
 module warning {
   header "warning.h"
+}
+
+module initializer_list {
+  header "initializer_list"
 }

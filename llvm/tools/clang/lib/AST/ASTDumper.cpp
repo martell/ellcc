@@ -501,7 +501,8 @@ void ASTDumper::dumpDeclContext(const DeclContext *DC) {
   if (!DC)
     return;
   bool HasUndeserializedDecls = DC->hasExternalLexicalStorage();
-  for (DeclContext::decl_iterator I = DC->noload_decls_begin(), E = DC->noload_decls_end();
+  for (DeclContext::decl_iterator I = DC->noload_decls_begin(),
+                                  E = DC->noload_decls_end();
        I != E; ++I) {
     DeclContext::decl_iterator Next = I;
     ++Next;
@@ -578,21 +579,29 @@ void ASTDumper::dumpAttr(const Attr *A) {
 #include "clang/AST/AttrDump.inc"
 }
 
-static Decl *getPreviousDeclImpl(...) {
-  return 0;
+static void dumpPreviousDeclImpl(raw_ostream &OS, ...) {}
+
+template<typename T>
+static void dumpPreviousDeclImpl(raw_ostream &OS, const Mergeable<T> *D) {
+  const T *First = D->getFirstDecl();
+  if (First != D)
+    OS << " first " << First;
 }
 
 template<typename T>
-static const Decl *getPreviousDeclImpl(const Redeclarable<T> *D) {
-  return D->getPreviousDecl();
+static void dumpPreviousDeclImpl(raw_ostream &OS, const Redeclarable<T> *D) {
+  const T *Prev = D->getPreviousDecl();
+  if (Prev)
+    OS << " prev " << Prev;
 }
 
-/// Get the previous declaration in the redeclaration chain for a declaration.
-static const Decl *getPreviousDecl(const Decl *D) {
+/// Dump the previous declaration in the redeclaration chain for a declaration,
+/// if any.
+static void dumpPreviousDecl(raw_ostream &OS, const Decl *D) {
   switch (D->getKind()) {
 #define DECL(DERIVED, BASE) \
   case Decl::DERIVED: \
-    return getPreviousDeclImpl(cast<DERIVED##Decl>(D));
+    return dumpPreviousDeclImpl(OS, cast<DERIVED##Decl>(D));
 #define ABSTRACT_DECL(DECL)
 #include "clang/AST/DeclNodes.inc"
   }
@@ -729,8 +738,7 @@ void ASTDumper::dumpDecl(const Decl *D) {
   dumpPointer(D);
   if (D->getLexicalDeclContext() != D->getDeclContext())
     OS << " parent " << cast<Decl>(D->getDeclContext());
-  if (const Decl *Prev = getPreviousDecl(D))
-    OS << " prev " << Prev;
+  dumpPreviousDecl(OS, D);
   dumpSourceRange(D->getSourceRange());
 
   bool HasAttrs = D->attr_begin() != D->attr_end();

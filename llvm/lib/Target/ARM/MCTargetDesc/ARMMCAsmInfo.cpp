@@ -50,8 +50,6 @@ ARMELFMCAsmInfo::ARMELFMCAsmInfo(bool LittleEndian) {
   Code16Directive = ".code\t16";
   Code32Directive = ".code\t32";
 
-  WeakRefDirective = "\t.weak\t";
-
   HasLEB128 = true;
   SupportsDebugInformation = true;
 

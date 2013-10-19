@@ -138,6 +138,8 @@ void ScanRangeForPointers(uptr begin, uptr end,
     if (!CanBeAHeapPointer(reinterpret_cast<uptr>(p))) continue;
     uptr chunk = PointsIntoChunk(p);
     if (!chunk) continue;
+    // Pointers to self don't count. This matters when tag == kIndirectlyLeaked.
+    if (chunk == begin) continue;
     LsanMetadata m(chunk);
     // Reachable beats ignored beats leaked.
     if (m.tag() == kReachable) continue;
@@ -149,6 +151,11 @@ void ScanRangeForPointers(uptr begin, uptr end,
     if (frontier)
       frontier->push_back(chunk);
   }
+}
+
+void ForEachExtraStackRangeCb(uptr begin, uptr end, void* arg) {
+  Frontier *frontier = reinterpret_cast<Frontier *>(arg);
+  ScanRangeForPointers(begin, end, frontier, "FAKE STACK", kReachable);
 }
 
 // Scans thread data (stacks and TLS) for heap pointers.
@@ -199,6 +206,7 @@ static void ProcessThreads(SuspendedThreadsList const &suspended_threads,
       }
       ScanRangeForPointers(stack_begin, stack_end, frontier, "STACK",
                            kReachable);
+      ForEachExtraStackRange(os_id, ForEachExtraStackRangeCb, frontier);
     }
 
     if (flags()->use_tls) {

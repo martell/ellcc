@@ -502,6 +502,14 @@ class ImmZExtAsmOperandClass : AsmOperandClass {
   let RenderMethod = "addImmOperands";
 }
 
+def X86GR32orGR64AsmOperand : AsmOperandClass {
+  let Name = "GR32orGR64";
+}
+
+def GR32orGR64 : RegisterOperand<GR32> {
+  let ParserMatchClass = X86GR32orGR64AsmOperand;
+}
+
 // Sign-extended immediate classes. We don't need to define the full lattice
 // here because there is no instruction with an ambiguity between ImmSExti64i32
 // and ImmSExti32i8.
@@ -679,7 +687,7 @@ def HasADX       : Predicate<"Subtarget->hasADX()">;
 def HasSHA       : Predicate<"Subtarget->hasSHA()">;
 def HasPRFCHW    : Predicate<"Subtarget->hasPRFCHW()">;
 def HasRDSEED    : Predicate<"Subtarget->hasRDSEED()">;
-def HasPrefetchW : Predicate<"Subtarget->has3DNow() || Subtarget->hasPRFCHW()">;
+def HasPrefetchW : Predicate<"Subtarget->hasPRFCHW()">;
 def FPStackf32   : Predicate<"!Subtarget->hasSSE1()">;
 def FPStackf64   : Predicate<"!Subtarget->hasSSE2()">;
 def HasCmpxchg16b: Predicate<"Subtarget->hasCmpxchg16b()">;
