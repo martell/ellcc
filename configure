@@ -27,7 +27,10 @@ bin=`cd bin; pwd`
 mkdir -p llvm-build
 cd llvm-build
 ../llvm/configure --prefix=$prefix --enable-optimized || exit 1
+# Build and install the LLVM tools.
+make -j 6 install
 cd ..
+
 
 # Configure for GNU tools.
 cd gnu
