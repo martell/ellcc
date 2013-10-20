@@ -1,0 +1,50 @@
+# This file determins the target list and compilers to use.
+# Get the supported targets.
+targets=`cat $prefix/targets`
+targetlist=`echo $targets | sed -e "s/ /,/g"`
+
+bin=$prefix/bin
+host=`uname -p`
+target=$host 
+os=linux
+
+if [ `which ecc` ] ; then
+  # ecc exists, and is in the PATH.
+  ecc=ecc
+fi
+
+if [ -e $bin/ecc ]; then
+  ecc=$bin/ecc
+fi
+
+if [ "x$ecc" != "x" ] ; then
+  # An ecc exists, use it to compile.
+  if [ -e $prefix/libecc/lib/$target/$os/libc.a ]; then
+    # To build for $target with libecc:
+    cc="$ecc -target $target-ellcc-linux"
+    cxx="$ecc++ -target $target-ellcc-linux"
+    hcc=$ecc
+    hcxx=$ecc++
+    builddir="-$target"
+    haslibs=1
+  else
+    # libecc has not been built, use the host's libraries.
+    cc=$ecc
+    cxx=$ecc++
+    hcc=$ecc
+    hcxx=$ecc++
+    builddir=""
+    haslibs=0
+  fi
+else
+  # Build with the gcc compiler
+  cc=gcc
+  cxx=g++
+  hcc=gcc
+  hcxx=g++
+  builddir=""
+  haslibs=0
+fi
+
+export CC=$cc
+export CXX=$cxx
