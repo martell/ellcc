@@ -639,7 +639,7 @@ public:
 		   const T* p_UserData = STATIC_CAST(T*)(0),
 		   bool with_frame=FALSE,
 		   bool autoDelete_Items=FALSE)
-    : NCursesMenu (Items, with_frame, autoDelete_Items) {
+    : NCursesMenu (&Items, with_frame, autoDelete_Items) {
       if (menu)
 	set_user (const_cast<void *>(p_UserData));
   };
@@ -651,7 +651,7 @@ public:
 		   int begin_x = 0,
 		   const T* p_UserData = STATIC_CAST(T*)(0),
 		   bool with_frame=FALSE)
-    : NCursesMenu (Items, nlines, ncols, begin_y, begin_x, with_frame) {
+    : NCursesMenu (&Items, nlines, ncols, begin_y, begin_x, with_frame) {
       if (menu)
 	set_user (const_cast<void *>(p_UserData));
   };

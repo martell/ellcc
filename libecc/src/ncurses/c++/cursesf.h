@@ -681,7 +681,7 @@ public:
 		   const T* p_UserData = STATIC_CAST(T*)(0),
 		   bool with_frame=FALSE,
 		   bool autoDelete_Fields=FALSE)
-    : NCursesForm (Fields, with_frame, autoDelete_Fields) {
+    : NCursesForm (&Fields, with_frame, autoDelete_Fields) {
       if (form)
 	set_user (const_cast<void *>(p_UserData));
   };
@@ -694,7 +694,7 @@ public:
 		   const T* p_UserData = STATIC_CAST(T*)(0),
 		   bool with_frame=FALSE,
 		   bool autoDelete_Fields=FALSE)
-    : NCursesForm (Fields, nlines, ncols, begin_y, begin_x,
+    : NCursesForm (&Fields, nlines, ncols, begin_y, begin_x,
 		   with_frame, autoDelete_Fields) {
       if (form)
 	set_user (const_cast<void *>(p_UserData));
