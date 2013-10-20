@@ -13,6 +13,13 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Pass.h"
 
+#if defined(__ELLCC__)
+#undef fopen64
+#undef fseeko64
+#undef ftello64
+#undef tmpfile64
+#endif
+
 namespace llvm {
   class Triple;
 

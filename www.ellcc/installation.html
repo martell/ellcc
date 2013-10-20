@@ -1,12 +1,11 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <html>
   <head>
-    <meta content="text/html; charset=ISO-8859-1"
+    <meta content="text/html; charset=windows-1252"
       http-equiv="Content-Type">
     <title>ELLCC Installation</title>
     <meta content="Richard Pennington" name="author">
-
-<script type="text/javascript">
+    <script type="text/javascript">
 
   var _gaq = _gaq || [];
   _gaq.push(['_setAccount', 'UA-38388212-1']);
@@ -19,7 +18,6 @@
   })();
 
 </script>
-
   </head>
   <body>
     <table style="text-align: left; width: 100%; height: 100%;"
@@ -38,6 +36,7 @@
                       src="images/ellcc.png"></td>
                   <td style="text-align: center;">
                     <h1><a class="mozTocH1" name="mozTocId15539"></a>ELLCC
+
 
 
                       Installation</h1>
@@ -62,6 +61,7 @@
             <a href="http://ellcc.org/viewvc/svn/ellcc/">Source
               Repository</a><br>
             <a href="mailto:rich@pennware.com">Contact</a><br>
+            <br>
           </td>
           <td style="vertical-align: top;">
             <ol id="mozToc">
@@ -98,21 +98,29 @@
               </code></div>
             <h2><a class="mozTocH2" name="mozTocId231222"></a><a
                 name="Building"></a>Building ELLCC</h2>
+            <p>The ELLCC build script will attempt to <i>bootstrap</i>
+              ELLCC so that it can compile itself. If you haven't
+              installed ELLCC before, the first thing that will happen
+              is that a build will be done using gcc. That compiler will
+              be used to build the GNU tools and the ELLCC standard
+              libraries. After that, everything will be rebuilt using
+              the ELLCC.<br>
+            </p>
             <div style="margin-left: 40px;"><code><span
                   style="font-family: monospace;"></span></code><span
-                style="font-family: monospace;">[~] main% cd ellcc</span><br>
-              <code><span style="font-family: monospace;">[~/ellcc]
-                  main%</span></code><br>
+                style="font-family: monospace;">[~] main% cd ellcc</span><code><span
+                  style="font-family: monospace;"></span></code><br>
               <code><span style="font-family: monospace;"> </span></code><code><span
-                  style="font-family: monospace;">[~/ellcc] main%
-                  ./configure</span></code><br>
+                  style="font-family: monospace;">[~/ellcc] main% ./build</span></code><br>
               <code><span style="font-family: monospace;">[~/ellcc]
-                  main% make<br>
-                  [~/ellcc] main% make install<br>
+                  main% <br>
                 </span></code> <code><span style="font-family:
                   monospace;"> </span><span style="font-family:
                   monospace;"></span></code><code></code><br>
             </div>
+            At this point you may be prompted to re-sun the build script
+            to complete the bootstrap process.<br>
+            <br>
             If everything has been successful up to this point, you have
             built <span style="font-family: monospace;">ecc, binutils,
               GDB, </span><span style="font-family: monospace;">QEMU,
@@ -129,12 +137,15 @@
                 </span></code><span style="font-family: monospace;">arm-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 ecc-objdump*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                 llvm-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 qemu-io*</span><br style="font-family: monospace;">
               <span style="font-family: monospace;">bugpoint*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 ecc-ranlib*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -144,13 +155,16 @@
               <span style="font-family: monospace;">c-index-test*&nbsp;&nbsp;
 
 
+
                 ecc-readelf*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                 llvm-prof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                 qemu-mips*</span><br style="font-family: monospace;">
               <span style="font-family: monospace;">clang-tblgen*&nbsp;&nbsp;
 
 
+
                 ecc-size*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 llvm-ranlib*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -158,10 +172,12 @@
               <span style="font-family: monospace;">ecc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 ecc-strings*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                 llvm-readobj*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                 qemu-nbd*</span><br style="font-family: monospace;">
               <span style="font-family: monospace;">ecc++@&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 ecc-strip*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -174,7 +190,9 @@
               <span style="font-family: monospace;">ecc-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 llc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 llvm-stress*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -183,7 +201,9 @@
               <span style="font-family: monospace;">ecc-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 lli*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 llvm-tblgen*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -191,10 +211,13 @@
               <span style="font-family: monospace;">ecc-c++filt*&nbsp;&nbsp;&nbsp;
 
 
+
                 llvm-ar*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 macho-dump*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 qemu-system-arm*</span><br style="font-family:
@@ -202,12 +225,15 @@
               <span style="font-family: monospace;">ecc-elfedit*&nbsp;&nbsp;&nbsp;
 
 
+
                 llvm-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 microblaze-elf-as*&nbsp; qemu-system-microblaze*</span><br
                 style="font-family: monospace;">
               <span style="font-family: monospace;">ecc-embedspu*&nbsp;&nbsp;
+
 
 
                 llvm-bcanalyzer*&nbsp;
@@ -217,8 +243,10 @@
               <span style="font-family: monospace;">ecc-gdb*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 llvm-config*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                 opt*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 qemu-system-mipsel*</span><br style="font-family:
@@ -227,10 +255,12 @@
                 llvm-cov*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 ppc64-elf-as*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                 qemu-system-ppc*</span><br style="font-family:
                 monospace;">
               <span style="font-family: monospace;">ecc-gdbtui*&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 llvm-diff*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -240,15 +270,19 @@
               <span style="font-family: monospace;">ecc-gprof*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 llvm-dis*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 qemu*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 qemu-system-sparc*</span><br style="font-family:
                 monospace;">
               <span style="font-family: monospace;">ecc-ld*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 llvm-dwarfdump*&nbsp;&nbsp;
@@ -258,10 +292,12 @@
               <span style="font-family: monospace;">ecc-ld.bfd*&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 llvm-extract*&nbsp;&nbsp;&nbsp;&nbsp;
                 qemu-armeb*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
                 qemu-x86_64*</span><br style="font-family: monospace;">
               <span style="font-family: monospace;">ecc-nm*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 llvm-link*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
@@ -270,10 +306,13 @@
               <span style="font-family: monospace;">ecc-objcopy*&nbsp;&nbsp;&nbsp;
 
 
+
                 llvm-mc*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 
 
+
                 qemu-img*&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+
 
 
                 x86_64-elf-as*</span><br style="font-family: monospace;">

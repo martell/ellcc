@@ -1,41 +1,23 @@
 #!/bin/sh
-# ELLCC GNU tools configure
+# ELLCC GNU tools build script.
 
 # Get the staging directory.
 prefix=`cd ..; pwd`
-# Get the bin directory.
-bin=`cd ../bin; pwd`
 
-# Get the supported targets.
-targets=`cat ../targets`
-targetlist=`echo $targets | sed -e "s/ /,/g"`
+# Figure out the compilers to use.
+. ../build-setup
 
-host=`uname -p`
-# To build for the host with libecc:
-cc="$bin/ecc -target $host-ellcc-linux"
-cxx="$bin/ecc++ -target $host-ellcc-linux"
-# GDB and QEMU need host libraries.
-hcc=$bin/ecc
-hcxx=$bin/ecc++
-
-# To build with the hosted ecc and host libraries:
-#cc=$bin/ecc
-#cxx=$bin/ecc++
-#hcc=$bin/ecc
-#hcxx=$bin/ecc++
-
-# To build with the gcc compiler:
-#cc=gcc
-#cxx=g++
-#hcc=gcc
-#hcxx=g++
+echo Building the GNU tools with:
+echo C compiler: $CC
+echo C++ compiler: $CXX
+echo In: llvm-build$builddir
 
 # Configure for GNU tools.
-mkdir -p gnu-build
+mkdir -p gnu-build$builddir
 
 # Configure for binutils.
 # binutils are build to support all targets in the target list.
-cd gnu-build
+cd gnu-build$builddir
 packages="binutils"
 for p in $packages; do
   echo Configuring package $p for $targets
@@ -61,7 +43,7 @@ cd ..
 
 # Configure for GDB.
 # GDB is built to support all GDB targets.
-cd gnu-build
+cd gnu-build$builddir
 packages="gdb"
 for p in $packages; do
   echo Configuring package $p for $targets
@@ -83,7 +65,7 @@ done
 cd ..
 
 # Configure for assemblers for all targets..
-cd gnu-build
+cd gnu-build$builddir
 cd binutils
 for t in $targets; do
   mkdir $t
@@ -120,3 +102,6 @@ if [ $? -ne 0 ] ; then
   exit 1
 fi
 cd ../..
+
+# Finally, make ind install everything.
+make install || exit 1

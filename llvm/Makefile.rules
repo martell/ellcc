@@ -380,16 +380,18 @@ ifeq ($(ENABLE_EXPENSIVE_CHECKS),1)
   CPP.Defines += -D_GLIBCXX_DEBUG -DXDEBUG
 endif
 
-# LOADABLE_MODULE implies several other things so we force them to be
-# defined/on.
-ifdef LOADABLE_MODULE
-  SHARED_LIBRARY := 1
-  LINK_LIBS_IN_SHARED := 1
-endif
+ifeq ($(ENABLE_SHARED),1)
+  # LOADABLE_MODULE implies several other things so we force them to be
+  # defined/on.
+  ifdef LOADABLE_MODULE
+    SHARED_LIBRARY := 1
+    LINK_LIBS_IN_SHARED := 1
+  endif
 
-ifdef SHARED_LIBRARY
-  ENABLE_PIC := 1
-  PIC_FLAG = "(PIC)"
+  ifdef SHARED_LIBRARY
+    ENABLE_PIC := 1
+    PIC_FLAG = "(PIC)"
+  endif
 endif
 
 ifeq ($(ENABLE_PIC),1)
