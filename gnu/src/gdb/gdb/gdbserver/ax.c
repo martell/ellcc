@@ -67,7 +67,10 @@ static const char *gdb_agent_op_names [gdb_agent_op_last] =
 #undef DEFOP
   };
 
-static const unsigned char gdb_agent_op_sizes [gdb_agent_op_last] =
+#if RICH
+static // clang bug?
+#endif
+unsigned char gdb_agent_op_sizes [gdb_agent_op_last] =
   {
     0
 #define DEFOP(NAME, SIZE, DATA_SIZE, CONSUMED, PRODUCED, VALUE)  , SIZE

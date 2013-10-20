@@ -588,7 +588,7 @@ const int crx_num_opcodes = ARRAY_SIZE (crx_instruction);
       REG(u4, 0x84, CRX_U_REGTYPE)
    is interpreted as :
       {"u4",  u4, 0x84, CRX_U_REGTYPE}  */
-#define REG(NAME, N, TYPE)    {STRINGX(NAME), {NAME}, N, TYPE}
+#define REG(NAME, N, TYPE)    {STRINGX(NAME), {(reg)NAME}, N, TYPE}
 
 const reg_entry crx_regtab[] =
 {

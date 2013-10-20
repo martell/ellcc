@@ -33,11 +33,15 @@
 #include "elf/common.h"
 #include <sys/uio.h>
 #include <sys/ptrace.h>
-#include <sys/debugreg.h>
 #include <sys/syscall.h>
 #include <sys/procfs.h>
 #include <sys/user.h>
+#if defined(__ELLCC__)
+#define ARCH_GET_FS 0x1003
+#define ARCH_GET_GS 0x1004
+#else
 #include <asm/prctl.h>
+#include <sys/debugreg.h>
 /* FIXME ezannoni-2003-07-09: we need <sys/reg.h> to be included after
    <asm/ptrace.h> because the latter redefines FS and GS for no apparent
    reason, and those definitions don't match the ones that libpthread_db
@@ -46,6 +50,7 @@
    been removed from ptrace.h in the kernel.  However, better safe than
    sorry.  */
 #include <asm/ptrace.h>
+#endif
 #include <sys/reg.h>
 #include "gdb_proc_service.h"
 

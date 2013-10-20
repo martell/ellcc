@@ -1759,7 +1759,7 @@ get_pending_status (struct lwp_info *lp, int *status)
     }
   else
     {
-      *status = W_STOPCODE (gdb_signal_to_host (signo));
+      WSETSTOP (*status, gdb_signal_to_host (signo));
 
       if (debug_linux_nat)
 	fprintf_unfiltered (gdb_stdlog,
@@ -2616,7 +2616,7 @@ wait_lwp (struct lwp_info *lp)
 	 recorded in lp->waitstatus if we care for it.  We can carry
 	 on handling the event like a regular SIGTRAP from here
 	 on.  */
-      status = W_STOPCODE (SIGTRAP);
+      WSETSTOP (status, SIGTRAP);
       if (linux_handle_syscall_trap (lp, 1))
 	return wait_lwp (lp);
     }
@@ -3149,7 +3149,7 @@ stop_and_resume_callback (struct lwp_info *lp, void *data)
 				    "SARC: core wanted LWP %ld stopped "
 				    "(leaving SIGSTOP pending)\n",
 				    GET_LWP (lp->ptid));
-	      lp->status = W_STOPCODE (SIGSTOP);
+	      WSETSTOP (lp->status, SIGSTOP);
 	    }
 
 	  if (lp->status == 0)
@@ -3237,7 +3237,7 @@ linux_nat_filter_event (int lwpid, int status, int *new_pending_p)
 	 recorded in lp->waitstatus if we care for it.  We can carry
 	 on handling the event like a regular SIGTRAP from here
 	 on.  */
-      status = W_STOPCODE (SIGTRAP);
+      WSETSTOP (status, SIGTRAP);
       if (linux_handle_syscall_trap (lp, 0))
 	return NULL;
     }
@@ -5295,10 +5295,10 @@ lin_thread_get_thread_signals (sigset_t *set)
      fortunately they don't change!  */
 
   if (restart == 0)
-    restart = __SIGRTMIN;
+    restart = SIGRTMIN;
 
   if (cancel == 0)
-    cancel = __SIGRTMIN + 1;
+    cancel = SIGRTMIN + 1;
 
   sigaddset (set, restart);
   sigaddset (set, cancel);

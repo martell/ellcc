@@ -361,7 +361,7 @@ vfinfo (FILE *fp, const char *fmt, va_list arg, bfd_boolean is_warning)
 		    if (functionname != NULL && fmt[-1] == 'G')
 		      lfinfo (fp, "%T", functionname);
 		    else if (filename != NULL && linenumber != 0)
-		      fprintf (fp, "%u%s", linenumber, ":" + done);
+		      fprintf (fp, "%u%s", linenumber, &":"[done]);
 		    else
 		      done = FALSE;
 		  }

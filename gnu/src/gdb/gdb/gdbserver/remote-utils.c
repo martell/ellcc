@@ -432,7 +432,9 @@ fromhex (int a)
 
 #endif
 
+#if RICH
 static const char hexchars[] = "0123456789abcdef";
+#endif
 
 static int
 ishex (int ch, int *val)

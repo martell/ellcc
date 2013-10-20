@@ -1392,6 +1392,9 @@ void Driver::BuildJobs(Compilation &C) const {
   // Claim -### here.
   (void) C.getArgs().hasArg(options::OPT__HASH_HASH_HASH);
 
+  // Claim -g here.
+  (void) C.getArgs().hasArg(options::OPT_g_Flag);
+
   // Claim --driver-mode, it was handled earlier.
   (void) C.getArgs().hasArg(options::OPT_driver_mode);
 

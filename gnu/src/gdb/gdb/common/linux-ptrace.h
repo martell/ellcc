@@ -20,6 +20,7 @@
 
 struct buffer;
 
+#include <sys/types.h>
 #include <sys/ptrace.h>
 
 #ifndef PTRACE_GETSIGINFO

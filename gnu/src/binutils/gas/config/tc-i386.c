@@ -1295,6 +1295,7 @@ cpu_flags_all_zero (const union i386_cpu_flags *x)
     }
 }
 
+#if RICH
 static INLINE void
 cpu_flags_set (union i386_cpu_flags *x, unsigned int v)
 {
@@ -1311,6 +1312,7 @@ cpu_flags_set (union i386_cpu_flags *x, unsigned int v)
       abort ();
     }
 }
+#endif
 
 static INLINE int
 cpu_flags_equal (const union i386_cpu_flags *x,

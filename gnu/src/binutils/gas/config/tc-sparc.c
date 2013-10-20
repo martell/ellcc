@@ -975,6 +975,7 @@ in_signed_range (bfd_signed_vma val, bfd_signed_vma max)
   return 1;
 }
 
+#if RICH
 /* Return non-zero if VAL is in the range 0 to MAX.  */
 
 static inline int
@@ -984,6 +985,7 @@ in_unsigned_range (bfd_vma val, bfd_vma max)
     return 0;
   return 1;
 }
+#endif
 
 /* Return non-zero if VAL is in the range -(MAX/2+1) to MAX.
    (e.g. -15 to +31).  */

@@ -1419,7 +1419,7 @@ mips_elf_create_stub_symbol (struct bfd_link_info *info,
     value |= 1;
 
   /* Create a new symbol.  */
-  name = ACONCAT ((prefix, h->root.root.root.string, NULL));
+  name = ACONCAT ((prefix, h->root.root.root.string, (char *)NULL));
   bh = NULL;
   if (!_bfd_generic_link_add_one_symbol (info, s->owner, name,
 					 BSF_LOCAL, s, value, NULL,
@@ -1456,7 +1456,7 @@ mips_elf_create_shadow_symbol (struct bfd_link_info *info,
   value = h->root.root.u.def.value;
 
   /* Create a new symbol.  */
-  name = ACONCAT ((prefix, h->root.root.root.string, NULL));
+  name = ACONCAT ((prefix, h->root.root.root.string, (char *)NULL));
   bh = NULL;
   if (!_bfd_generic_link_add_one_symbol (info, s->owner, name,
 					 BSF_LOCAL, s, value, NULL,
@@ -1989,6 +1989,7 @@ got_page_reloc_p (unsigned int r_type)
   return r_type == R_MIPS_GOT_PAGE || r_type == R_MICROMIPS_GOT_PAGE;
 }
 
+#if RICH
 static inline bfd_boolean
 got_ofst_reloc_p (unsigned int r_type)
 {
@@ -2000,6 +2001,7 @@ got_hi16_reloc_p (unsigned int r_type)
 {
   return r_type == R_MIPS_GOT_HI16 || r_type == R_MICROMIPS_GOT_HI16;
 }
+#endif
 
 static inline bfd_boolean
 got_lo16_reloc_p (unsigned int r_type)

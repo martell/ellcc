@@ -245,6 +245,7 @@ static const char * const mips_cp0_names_r5900[32] =
   "c0_taglo",     "c0_taghi",     "c0_errorepc",  "$31"
 };
 
+#if RICH
 static const struct mips_cp0sel_name mips_cp0sel_names_mipsr5900[] =
 {
   { 24, 2, "c0_iab"			},
@@ -256,6 +257,7 @@ static const struct mips_cp0sel_name mips_cp0sel_names_mipsr5900[] =
   { 25, 1, "c0_perfcnt,1"	},
   { 25, 2, "c0_perfcnt,2"	}
 };
+#endif
 
 static const char * const mips_cp0_names_mips3264[32] =
 {

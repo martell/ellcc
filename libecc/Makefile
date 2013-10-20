@@ -59,6 +59,32 @@ $(Configs)::
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/linux/src/.libs/libunwind.a ../lib/$*/linux
 
+#$(Configs)::
+#	make $@.ncurses.configure && \
+#	make $@.ncurses.build && \
+#	make $@.ncurses.install
+
+%.ncurses.configure:
+	@echo Configuring ncurses for $* in ncurses-build/$*/linux
+	mkdir -p ncurses-build/$*/linux
+	cd ncurses-build/$*/linux ; \
+	../../../src/ncurses/configure \
+	    CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
+	    CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+            --with-build-cc=$(ELLCC)/bin/ecc \
+	    --prefix=$(ELLCC)
+
+%.ncurses.build:
+	make -C ncurses-build/$*/linux
+
+%.ncurses.install:
+	@cd ncurses-build ; \
+	echo Installing ncurses for $* ; \
+	mkdir -p ../lib/$*/linux ; \
+	cp $*/linux/lib/*.a ../lib/$*/linux ; \
+	mkdir -p ../include/$*/linux ; \
+	cp $*/linux/include/*.h ../include/linux
+
 clean:
 	make -C src/musl distclean
 	make -C src/compiler-rt clean

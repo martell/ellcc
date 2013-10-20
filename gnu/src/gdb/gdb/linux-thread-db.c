@@ -47,6 +47,26 @@
 #include <signal.h>
 #include <ctype.h>
 
+#ifndef HAVE_THREAD_DB_H
+void
+check_for_thread_db (void)
+{
+}
+
+int
+thread_db_attach_lwp (ptid_t ptid)
+{
+    return 0;
+}
+
+/* Provide a prototype to silence -Wmissing-prototypes.  */
+extern initialize_file_ftype _initialize_thread_db;
+
+void
+_initialize_thread_db (void)
+{
+}
+#else
 /* GNU/Linux libthread_db support.
 
    libthread_db is a library, provided along with libpthread.so, which
@@ -2124,3 +2144,4 @@ Usage: info auto-load libthread-db"),
      the new_objfile observer won't get called for libpthread.  */
   observer_attach_inferior_created (thread_db_inferior_created);
 }
+#endif /* HAVE_THREAD_DB_H */

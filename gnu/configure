@@ -10,17 +10,25 @@ bin=`cd ../bin; pwd`
 targets=`cat ../targets`
 targetlist=`echo $targets | sed -e "s/ /,/g"`
 
-# To build for the x86 with libecc:
-#cc=$bin/i386-elf-ecc
-#cxx=$bin/i386-elf-e++
+host=`uname -p`
+# To build for the host with libecc:
+cc="$bin/ecc -target $host-ellcc-linux"
+cxx="$bin/ecc++ -target $host-ellcc-linux"
+# GDB and QEMU need host libraries.
+hcc=$bin/ecc
+hcxx=$bin/ecc++
 
 # To build with the hosted ecc and host libraries:
 #cc=$bin/ecc
-#cxx=$bin/e++
+#cxx=$bin/ecc++
+#hcc=$bin/ecc
+#hcxx=$bin/ecc++
 
-# To build with the host compiler:
-cc=gcc
-cxx=g++
+# To build with the gcc compiler:
+#cc=gcc
+#cxx=g++
+#hcc=gcc
+#hcxx=g++
 
 # Configure for GNU tools.
 mkdir -p gnu-build
@@ -33,8 +41,10 @@ for p in $packages; do
   echo Configuring package $p for $targets
   mkdir $p
   cd $p
-  ../../src/$p/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=$targetlist \
-    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bin --datadir=$prefix/lib/share
+  ../../src/$p/configure CC="$cc" CXX="$cxx" --enable-64-bit-bfd \
+    --enable-targets=$targetlist \
+    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bin \
+    --datadir=$prefix/lib/share
   if [ $? -ne 0 ] ; then
     echo configure for $p failed
     exit 1
@@ -42,6 +52,9 @@ for p in $packages; do
 
   sed -e "s:/.*/gnu/src/missing ::g" Makefile > tmp$$
   mv tmp$$ Makefile
+  # We have to make binutils here so the configuration of the assemblers
+  # later in this file works. Ugh!
+  make
   cd ..
 done
 cd ..
@@ -54,8 +67,10 @@ for p in $packages; do
   echo Configuring package $p for $targets
   mkdir $p
   cd $p
-  ../../src/$p/configure CC=$cc CXX=$cxx --enable-64-bit-bfd --enable-targets=all \
-    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bin --datadir=$prefix/lib/share
+  ../../src/$p/configure CC="$hcc" CXX="$hcxx" --enable-64-bit-bfd \
+    --enable-targets=$targetlist \
+    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bin \
+    --datadir=$prefix/lib/share
   if [ $? -ne 0 ] ; then
     echo configure for $p failed
     exit 1
@@ -74,7 +89,7 @@ for t in $targets; do
   mkdir $t
   cd $t
   echo Configuring the assembler for $t
-  ../../../src/binutils/gas/configure CC=$cc CXX=$cxx --target=$t --program-prefix=${t}- \
+  ../../../src/binutils/gas/configure CC="$cc" CXX="$cxx" --target=$t --program-prefix=${t}- \
       --prefix=$prefix/lib --bindir=$bin --datadir=$prefix/lib/share
   if [ $? -ne 0 ] ; then
     echo configure for $t failed
@@ -98,7 +113,7 @@ if [ `uname` = "Linux" ] ; then
 fi
 
 echo Configuring package qemu for $targets
-./configure --cc=$cc --host-cc=$cc --prefix=$prefix --disable-strip \
+./configure --cc="$hcc" --host-cc="$hcc" --prefix=$prefix --disable-strip \
   --target-list="$qemu_target_list" --disable-guest-agent
 if [ $? -ne 0 ] ; then
   echo configure for qemu failed
