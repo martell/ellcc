@@ -104,4 +104,5 @@ fi
 cd ../..
 
 # Finally, make ind install everything.
+make || exit 1
 make install || exit 1

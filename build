@@ -18,13 +18,15 @@ cd llvm-build$builddir
 ../llvm/configure --prefix=$prefix --enable-optimized --enable-shared=no || exit 1
 # Build and install the LLVM tools.
 make -j 6 || exit 1
-make -j 6 install || exit 1
 cd ..
 
 # Configure and build the GNU tools.
 cd gnu
 ./build || exit 1
 cd ..
+
+# Now install the ELLCC tools.
+make -j 6 -C llvm-build$builddir install || exit 1
 
 # Build libecc.
 cd libecc
@@ -34,7 +36,7 @@ cd ..
 
 if [ ! $haslibs ]; then
   echo "Please run the build script again to bootstrap ecc."
-  echo "This may have to be done a total of three times:"
+  echo "This may have to be done a few times:"
   echo "1. ecc is built with gcc and host libraries."
   echo "2. ecc is built with itself and host libraries."
   echo "3. ecc is build with itself and libecc."
