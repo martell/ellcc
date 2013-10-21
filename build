@@ -15,7 +15,8 @@ echo In: llvm-build$builddir
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 cd llvm-build$builddir
-../llvm/configure --prefix=$prefix --enable-optimized --enable-shared=no || exit 1
+../llvm/configure --prefix=$prefix --enable-optimized --enable-shared=no \
+                  --host=$host-$os || exit 1
 # Build and install the LLVM tools.
 make -j 6 || exit 1
 cd ..

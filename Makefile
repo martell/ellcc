@@ -13,7 +13,7 @@ all install clean veryclean check:: llvm-build gnu/gnu-build
 install:: docs
 
 llvm-build gnu/gnu-build:
-	./configure
+	./build
 
 .PHONY: buildrelease
 buildrelease:

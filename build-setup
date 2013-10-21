@@ -4,10 +4,13 @@ targets=`cat $prefix/targets`
 targetlist=`echo $targets | sed -e "s/ /,/g"`
 
 bin=$prefix/bin
-host=`uname -p`
-target=$host 
+# Get the build processor. For now it is also the host and target processor.
+build=`uname -p`
+host=$build
+target=$build 
 os=linux
 
+host=arm
 if [ `which ecc` ] ; then
   # ecc exists, and is in the PATH.
   ecc=ecc
@@ -21,11 +24,12 @@ if [ "x$ecc" != "x" ] ; then
   # An ecc exists, use it to compile.
   if [ -e $prefix/libecc/lib/$target/$os/libc.a ]; then
     # To build for $target with libecc:
-    cc="$ecc -target $target-ellcc-linux"
-    cxx="$ecc++ -target $target-ellcc-linux"
+    cc="$ecc -target $host-ellcc-$os"
+    cxx="$ecc++ -target $host-ellcc-$os"
     hcc=$ecc
     hcxx=$ecc++
-    builddir="-$target"
+    ar=$ecc-ar
+    builddir="-$host-$os"
     haslibs=1
   else
     # libecc has not been built, use the host's libraries.
@@ -33,6 +37,7 @@ if [ "x$ecc" != "x" ] ; then
     cxx=$ecc++
     hcc=$ecc
     hcxx=$ecc++
+    ar=$ecc-ar
     builddir=""
     haslibs=0
   fi
@@ -42,6 +47,7 @@ else
   cxx=g++
   hcc=gcc
   hcxx=g++
+  ar=ar
   builddir=""
   haslibs=0
 fi
