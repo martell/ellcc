@@ -10,7 +10,7 @@ host=$build
 target=$build 
 os=linux
 
-host=arm
+#host=arm
 if [ `which ecc` ] ; then
   # ecc exists, and is in the PATH.
   ecc=ecc
