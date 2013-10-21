@@ -84,7 +84,7 @@ cd ../..
 # Configure for QEMU.
 cd src/qemu
 # The QEMU system targets.
-qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu armeb-softmmu \
+qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu \
     microblaze-softmmu mips-softmmu mipsel-softmmu \
     ppc-softmmu ppc64-softmmu sparc-softmmu"
 
