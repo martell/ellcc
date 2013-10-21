@@ -12,7 +12,6 @@ echo C compiler: $CC
 echo C++ compiler: $CXX
 echo In: llvm-build$builddir
 
-if [ 0 -ne 0 ] ; then
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 cd llvm-build$builddir
@@ -34,7 +33,6 @@ cd libecc
 make clean
 make || exit 1
 cd ..
-fi
 
 if [ $haslibs -eq 0 ] ; then
   echo "Please run the build script again to bootstrap ecc."
