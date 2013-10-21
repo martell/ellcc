@@ -39,5 +39,5 @@ if [ ! $haslibs ]; then
   echo "This may have to be done a few times:"
   echo "1. ecc is built with gcc and host libraries."
   echo "2. ecc is built with itself and host libraries."
-  echo "3. ecc is build with itself and libecc."
+  echo "3. ecc is built with itself and libecc."
 fi

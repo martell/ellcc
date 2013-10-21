@@ -2,20 +2,24 @@
 
 # Get the names of the subdirectories.
 
-SUBDIRS := gnu-build/binutils gnu-build/gdb \
-	   gnu-build/binutils/arm-elf        gnu-build/binutils/ppc64-elf \
-	   gnu-build/binutils/i386-elf       gnu-build/binutils/ppc-elf \
-	   gnu-build/binutils/microblaze-elf gnu-build/binutils/sparc-elf \
-	   gnu-build/binutils/mips-elf       gnu-build/binutils/x86_64-elf \
+SUBDIRS := gnu-build$(TARGETDIR)/binutils gnu-build/gdb \
+	   gnu-build$(TARGETDIR)/binutils/arm-elf \
+	   gnu-build$(TARGETDIR)/binutils/ppc64-elf \
+	   gnu-build$(TARGETDIR)/binutils/i386-elf \
+	   gnu-build$(TARGETDIR)/binutils/ppc-elf \
+	   gnu-build$(TARGETDIR)/binutils/microblaze-elf \
+	   gnu-build$(TARGETDIR)/binutils/sparc-elf \
+	   gnu-build$(TARGETDIR)/binutils/mips-elf \
+	   gnu-build$(TARGETDIR)/binutils/x86_64-elf \
 	   src/qemu
 
-all install clean veryclean check:: gnu-build
+all install clean veryclean check:: gnu-build$(TARGETDIR)
 	@for dir in $(SUBDIRS) ; do \
 	  echo Making $@ in $$dir ; \
 	  $(MAKE) -C $$dir $@ || exit 1; \
 	done
 
-DOCDIRS := gnu-build/binutils gnu-build/gdb
+DOCDIRS := gnu-build$(TARGETDIR)/binutils gnu-build$(TARGETDIR)/gdb
 
 install::
 	@for dir in $(DOCDIRS) ; do \
@@ -25,7 +29,7 @@ install::
 
 install::
 	mkdir -p ../libecc/ldscripts/linux
-	cp gnu-build/binutils/ld/ldscripts/* ../libecc/ldscripts/linux/
+	cp gnu-build$(TARGETDIR)/binutils/ld/ldscripts/* ../libecc/ldscripts/linux/
 
-gnu-build:
+gnu-build$TARGETDIR):
 	./configure

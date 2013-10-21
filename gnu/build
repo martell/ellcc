@@ -84,12 +84,14 @@ cd ../..
 # Configure for QEMU.
 cd src/qemu
 # The QEMU system targets.
-qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu microblaze-softmmu mips-softmmu mipsel-softmmu \
+qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu armeb-softmmu \
+    microblaze-softmmu mips-softmmu mipsel-softmmu \
     ppc-softmmu ppc64-softmmu sparc-softmmu"
 
 if [ `uname` = "Linux" ] ; then 
     # The QEMU Linux user space targets.
-    qemu_target_list="$qemu_target_list i386-linux-user x86_64-linux-user arm-linux-user armeb-linux-user \
+    qemu_target_list="$qemu_target_list i386-linux-user \
+    x86_64-linux-user arm-linux-user armeb-linux-user \
     microblaze-linux-user mips-linux-user mipsel-linux-user \
     ppc-linux-user ppc64-linux-user ppc64abi32-linux-user sparc-linux-user"
 fi
@@ -103,6 +105,6 @@ if [ $? -ne 0 ] ; then
 fi
 cd ../..
 
-# Finally, make ind install everything.
-make || exit 1
-make install || exit 1
+# Finally, make and install everything.
+make TARGETDIR=$builddir || exit 1
+make TARGETDIR=$builddir install || exit 1
