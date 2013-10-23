@@ -6837,7 +6837,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     }
     CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
       + ArchName + "/"
-      + Triple.getOSTypeName(Triple.getOS()) + "/crti.o"));
+      + Triple.getOSTypeName(Triple.getOS()) + "/crtbegin.o"));
   }
 
   // Find the relative path to the libraries and linker scripts:
@@ -6896,7 +6896,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       !Args.hasArg(options::OPT_nostartfiles)) {
     CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
       + ArchName + "/"
-      + Triple.getOSTypeName(Triple.getOS()) + "/crtn.o"));
+      + Triple.getOSTypeName(Triple.getOS()) + "/crtend.o"));
   }
 
   const char *Exec =

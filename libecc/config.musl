@@ -6,7 +6,7 @@ cmp musl.new musl.last && exit 0
 make clean
 export CC=$3/bin/ecc
 export CROSS_COMPILE=$3/bin/ecc-
-export CFLAGS=$1
+export CFLAGS="$1"
 export LIBCC=-lcompiler-rt
 ./configure --prefix=$3/libecc/musl-build/$2 \
   --target=$2 \
