@@ -5,7 +5,7 @@
 prefix=`pwd`
 
 # Figure out the compilers to use.
-. ./build-setup
+. ./build-setup $*
 
 echo Building ecc with:
 echo C compiler: $CC
@@ -15,7 +15,7 @@ echo In: llvm-build$builddir
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 cd llvm-build$builddir
-../llvm/configure --prefix=$prefix --enable-optimized --enable-shared=no \
+../llvm/configure --bindir=$bindir --prefix=$prefix --enable-optimized --enable-shared=no \
                   || exit 1
 # Build and install the LLVM tools.
 make -j 6 || exit 1
@@ -28,6 +28,12 @@ cd ..
 
 # Now install the ELLCC tools.
 make -j 6 -C llvm-build$builddir install || exit 1
+
+if [ "$host" != "$build" ] ; then
+  # The host system is not the build system.
+  # No nead to build the libraries again.
+  exit 0
+fi
 
 # Build libecc.
 cd libecc

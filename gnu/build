@@ -5,7 +5,7 @@
 prefix=`cd ..; pwd`
 
 # Figure out the compilers to use.
-. ../build-setup
+. ../build-setup $*
 
 echo Building the GNU tools with:
 echo C compiler: $CC
@@ -24,8 +24,8 @@ for p in $packages; do
   mkdir $p
   cd $p
   ../../src/$p/configure CC="$cc" CXX="$cxx" AR="$ar" --enable-64-bit-bfd \
-    --host=$host-$os --enable-targets=$targetlist \
-    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bin \
+    --bindir=$bindir --host=$host-$os --enable-targets=$targetlist \
+    --program-prefix=ecc- --prefix=$prefix/lib \
     --datadir=$prefix/lib/share
   if [ $? -ne 0 ] ; then
     echo configure for $p failed
@@ -49,8 +49,8 @@ for t in $targets; do
   cd $t
   echo Configuring the assembler for $t
   ../../../src/binutils/gas/configure CC="$cc" CXX="$cxx" AR="$ar" \
-      --target=$t --program-prefix=${t}- \
-      --host=$host-$os --prefix=$prefix/lib --bindir=$bin --datadir=$prefix/lib/share
+      --bindir=$bindir --target=$t --program-prefix=${t}- \
+      --host=$host-$os --prefix=$prefix/lib --datadir=$prefix/lib/share
   if [ $? -ne 0 ] ; then
     echo configure for $t failed
     exit 1
@@ -63,6 +63,9 @@ cd ../..
 if [ "$host" != "$build" ] ; then
   # The host system is not the build system.
   # Build only  binutils and the assemblers.
+  # Finally, install into the target specific bin dir.
+  mkdir -p $bindir
+  make TARGETDIR=$builddir BINDIR=$bindir installcross || exit 1
   exit 0
 fi
 
@@ -76,7 +79,7 @@ for p in $packages; do
   cd $p
   ../../src/$p/configure CC="$hcc" CXX="$hcxx" --enable-64-bit-bfd \
     --enable-targets=$targetlist \
-    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bin \
+    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bindir \
     --datadir=$prefix/lib/share
   if [ $? -ne 0 ] ; then
     echo configure for $p failed

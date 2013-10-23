@@ -22,7 +22,7 @@ void __get_handler_set(sigset_t *set)
 int __libc_sigaction(int sig, const struct sigaction *restrict sa, struct sigaction *restrict old)
 {
 	struct k_sigaction ksa, ksa_old;
-	if (sig >= (unsigned)_NSIG) {
+	if (sig <= 0 || sig >= (unsigned)_NSIG) {
 		errno = EINVAL;
 		return -1;
 	}
