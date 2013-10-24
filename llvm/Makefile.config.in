@@ -94,7 +94,7 @@ else
 PROJ_internal_prefix := $(prefix)
 endif
 
-PROJ_bindir     := $(PROJ_prefix)/bin
+PROJ_bindir     := @bindir@
 PROJ_libdir     := $(PROJ_prefix)/lib
 PROJ_datadir    := $(PROJ_prefix)/share
 PROJ_docsdir    := $(PROJ_prefix)/docs/llvm

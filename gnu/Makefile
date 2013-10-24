@@ -11,10 +11,12 @@ CROSSSUBDIRS := \
 	   gnu-build$(TARGETDIR)/binutils/sparc-elf \
 	   gnu-build$(TARGETDIR)/binutils/mips-elf \
 	   gnu-build$(TARGETDIR)/binutils/x86_64-elf \
+           gnu-build$(TARGETDIR)/binutils
 
-SUBDIRS := gnu-build$(TARGETDIR)/binutils gnu-build/gdb \
+SUBDIRS := \
        $(CROSSSUBDIRS) \
-	   src/qemu
+       gnu-build/gdb \
+       src/qemu
 
 all install clean veryclean check:: gnu-build$(TARGETDIR)
 	@for dir in $(SUBDIRS) ; do \

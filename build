@@ -15,13 +15,14 @@ echo In: llvm-build$builddir
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 cd llvm-build$builddir
-../llvm/configure --bindir=$bindir --prefix=$prefix --enable-optimized --enable-shared=no \
+../llvm/configure --host=$host-$os --bindir=$bindir --prefix=$prefix \
+                  --enable-optimized --enable-shared=no \
                   || exit 1
-# Build and install the LLVM tools.
+# Build the LLVM tools.
 make -j 6 || exit 1
 cd ..
 
-# Configure and build the GNU tools.
+# Configure and install the GNU tools.
 cd gnu
 ./build || exit 1
 cd ..
