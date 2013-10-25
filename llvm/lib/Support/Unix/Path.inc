@@ -16,6 +16,11 @@
 //===          is guaranteed to work on *all* UNIX variants.
 //===----------------------------------------------------------------------===//
 
+#if defined(__ELLCC__)
+#define _BSD_SOURCE
+#include <sys/time.h>
+#endif
+
 #include "Unix.h"
 #include "llvm/Support/Process.h"
 #include <limits.h>
