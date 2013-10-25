@@ -8,14 +8,14 @@ prefix=`pwd`
 . ./build-setup $*
 
 echo Building ecc with:
-echo C compiler: $CC
-echo C++ compiler: $CXX
+echo C compiler: $cc
+echo C++ compiler: $cxx
 echo In: llvm-build$builddir
 
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 cd llvm-build$builddir
-../llvm/configure --host=$host-$os --bindir=$bindir --prefix=$prefix \
+../llvm/configure CC="$cc" CXX="$cxx" --host=$host-$os --bindir=$bindir --prefix=$prefix \
                   --enable-optimized --enable-shared=no \
                   || exit 1
 # Build the LLVM tools.
@@ -32,7 +32,7 @@ make -j 6 -C llvm-build$builddir install || exit 1
 
 if [ "$host" != "$build" ] ; then
   # The host system is not the build system.
-  # No nead to build the libraries again.
+  # No need to build the libraries again.
   exit 0
 fi
 
