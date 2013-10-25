@@ -59,5 +59,3 @@ else
   haslibs=0
 fi
 
-export CC=$cc
-export CXX=$cxx

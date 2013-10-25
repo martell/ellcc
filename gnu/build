@@ -8,8 +8,8 @@ prefix=`cd ..; pwd`
 . ../build-setup $*
 
 echo Building the GNU tools with:
-echo C compiler: $CC
-echo C++ compiler: $CXX
+echo C compiler: $cc
+echo C++ compiler: $cxx
 echo In: llvm-build$builddir
 
 # Configure for GNU tools.
