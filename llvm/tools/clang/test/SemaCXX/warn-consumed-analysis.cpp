@@ -51,9 +51,10 @@ public:
 
 class CONSUMABLE(unconsumed) DestructorTester {
 public:
+  DestructorTester() RETURN_TYPESTATE(unconsumed);
   DestructorTester(int);
   
-  void operator*();
+  void operator*() CALLABLE_WHEN("unconsumed");
   
   ~DestructorTester() CALLABLE_WHEN("consumed");
 };
@@ -62,9 +63,10 @@ void baf0(const ConsumableClass<int>  var);
 void baf1(const ConsumableClass<int> &var);
 void baf2(const ConsumableClass<int> *var);
 
-void baf3(ConsumableClass<int>  &var);
-void baf4(ConsumableClass<int>  *var);
-void baf5(ConsumableClass<int> &&var);
+void baf3(ConsumableClass<int>   var);
+void baf4(ConsumableClass<int>  &var);
+void baf5(ConsumableClass<int>  *var);
+void baf6(ConsumableClass<int> &&var);
 
 ConsumableClass<int> returnsUnconsumed() {
   return ConsumableClass<int>(); // expected-warning {{return value not in expected state; expected 'unconsumed', observed 'consumed'}}
@@ -101,9 +103,14 @@ void testDestruction() {
   *D0;
   *D1;
   
+  DestructorTester D2;
+  *D2;
+  
   D0.~DestructorTester(); // expected-warning {{invalid invocation of method '~DestructorTester' on object 'D0' while it is in the 'unconsumed' state}}
   
-  return; // expected-warning {{invalid invocation of method '~DestructorTester' on object 'D0' while it is in the 'unconsumed' state}} expected-warning {{invalid invocation of method '~DestructorTester' on object 'D1' while it is in the 'unconsumed' state}}
+  return; // expected-warning {{invalid invocation of method '~DestructorTester' on object 'D0' while it is in the 'unconsumed' state}} \
+             expected-warning {{invalid invocation of method '~DestructorTester' on object 'D1' while it is in the 'unconsumed' state}} \
+             expected-warning {{invalid invocation of method '~DestructorTester' on object 'D2' while it is in the 'unconsumed' state}}
 }
 
 void testTempValue() {
@@ -262,9 +269,9 @@ void testComplexConditionals1() {
   ConsumableClass<int> var0, var1, var2;
   
   // Coerce all variables into the unknown state.
-  baf3(var0);
-  baf3(var1);
-  baf3(var2);
+  baf4(var0);
+  baf4(var1);
+  baf4(var2);
   
   if (var0 && var1) {
     *var0;
@@ -368,7 +375,7 @@ void testStateChangeInBranch() {
   ConsumableClass<int> var;
   
   // Make var enter the 'unknown' state.
-  baf3(var);
+  baf4(var);
   
   if (!var) {
     var = ConsumableClass<int>(42);
@@ -420,6 +427,18 @@ void testParamTypestateCaller() {
   testParamTypestateCallee(Var0, Var1); // expected-warning {{argument not in expected state; expected 'consumed', observed 'unconsumed'}}
 }
 
+void baf3(ConsumableClass<int> var) {
+  *var;
+}
+
+void baf4(ConsumableClass<int> &var) {
+  *var;  // expected-warning {{invalid invocation of method 'operator*' on object 'var' while it is in the 'unknown' state}}
+}
+
+void baf6(ConsumableClass<int> &&var) {
+  *var;
+}
+
 void testCallingConventions() {
   ConsumableClass<int> var(42);
   
@@ -432,15 +451,15 @@ void testCallingConventions() {
   baf2(&var);  
   *var;
   
-  baf3(var);  
+  baf4(var);  
   *var; // expected-warning {{invalid invocation of method 'operator*' on object 'var' while it is in the 'unknown' state}}
   
   var = ConsumableClass<int>(42);
-  baf4(&var);  
+  baf5(&var);  
   *var; // expected-warning {{invalid invocation of method 'operator*' on object 'var' while it is in the 'unknown' state}}
   
   var = ConsumableClass<int>(42);
-  baf5(static_cast<ConsumableClass<int>&&>(var));  
+  baf6(static_cast<ConsumableClass<int>&&>(var));  
   *var; // expected-warning {{invalid invocation of method 'operator*' on object 'var' while it is in the 'consumed' state}}
 }
 
@@ -477,7 +496,7 @@ void testCallableWhen() {
   
   *var;
   
-  baf3(var);
+  baf4(var);
   
   var.callableWhenUnknown();
 }
@@ -622,4 +641,47 @@ void read(bool sf) {
 }
 
 } // end namespace ContinueICETest
+
+
+namespace InitializerAssertionFailTest {
+
+class CONSUMABLE(unconsumed) Status {
+  int code;
+
+public:
+  Status() RETURN_TYPESTATE(consumed);
+  Status(int c) RETURN_TYPESTATE(unconsumed);
+
+  Status(const Status &other);
+  //Status(Status &&other);
+
+  Status& operator=(const Status &other) CALLABLE_WHEN("unknown", "consumed");
+  //Status& operator=(Status &&other) CALLABLE_WHEN("unknown", "consumed");
+
+  bool check()  const SET_TYPESTATE(consumed);
+  void ignore() const SET_TYPESTATE(consumed);
+  // Status& markAsChecked() { return *this; }
+
+  void clear() CALLABLE_WHEN("unknown", "consumed") SET_TYPESTATE(consumed);
+
+  ~Status() CALLABLE_WHEN("unknown", "consumed");
+};
+
+
+bool   cond();
+Status doSomething();
+void   handleStatus(const Status& s);
+void   handleStatusPtr(const Status* s);
+
+int a;
+
+
+void test() {
+  if (cond()) {
+    Status s = doSomething();
+    return;                     // Warning: Store it, but don't check.
+  }
+}
+
+} // end namespace InitializerAssertionFailTest
 

@@ -45,6 +45,7 @@
 
 #if SANITIZER_LINUX
 #include <mntent.h>
+#include <netinet/ether.h>
 #include <utime.h>
 #include <sys/mount.h>
 #include <sys/ptrace.h>
@@ -91,6 +92,8 @@
 #include <linux/scc.h>
 #include <linux/serial.h>
 #include <sys/msg.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #endif // SANITIZER_LINUX && !SANITIZER_ANDROID
 
 #if SANITIZER_ANDROID
@@ -109,8 +112,10 @@
 #endif // SANITIZER_LINUX
 
 #if SANITIZER_MAC
+#include <net/ethernet.h>
 #include <netinet/ip_mroute.h>
 #include <sys/filio.h>
+#include <sys/mount.h>
 #include <sys/sockio.h>
 #endif
 
@@ -140,6 +145,7 @@ namespace __sanitizer {
 
 #if !SANITIZER_ANDROID
   unsigned ucontext_t_sz = sizeof(ucontext_t);
+  unsigned struct_statfs64_sz = sizeof(struct statfs64);
 #endif // !SANITIZER_ANDROID
 
 #if SANITIZER_LINUX
@@ -160,7 +166,6 @@ namespace __sanitizer {
 
 #if SANITIZER_LINUX && !SANITIZER_ANDROID
   unsigned struct_rlimit64_sz = sizeof(struct rlimit64);
-  unsigned struct_statfs64_sz = sizeof(struct statfs64);
   unsigned struct_timex_sz = sizeof(struct timex);
   unsigned struct_msqid_ds_sz = sizeof(struct msqid_ds);
   unsigned struct_shmid_ds_sz = sizeof(struct shmid_ds);
@@ -175,6 +180,16 @@ namespace __sanitizer {
 
 #if SANITIZER_LINUX
   int e_tabsz = (int)E_TABSZ;
+#endif
+
+
+#if SANITIZER_LINUX && !SANITIZER_ANDROID
+  unsigned struct_shminfo_sz = sizeof(struct shminfo);
+  unsigned struct_shm_info_sz = sizeof(struct shm_info);
+  int shmctl_ipc_stat = (int)IPC_STAT;
+  int shmctl_ipc_info = (int)IPC_INFO;
+  int shmctl_shm_info = (int)SHM_INFO;
+  int shmctl_shm_stat = (int)SHM_INFO;
 #endif
 
   int af_inet = (int)AF_INET;
@@ -909,5 +924,7 @@ CHECK_SIZE_AND_OFFSET(mntent, mnt_opts);
 CHECK_SIZE_AND_OFFSET(mntent, mnt_freq);
 CHECK_SIZE_AND_OFFSET(mntent, mnt_passno);
 #endif
+
+CHECK_TYPE_SIZE(ether_addr);
 
 #endif  // SANITIZER_LINUX || SANITIZER_MAC

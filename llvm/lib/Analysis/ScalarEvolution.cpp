@@ -2606,15 +2606,6 @@ const SCEV *ScalarEvolution::getSizeOfExpr(Type *IntTy, Type *AllocTy) {
   return getTruncateOrZeroExtend(getSCEV(C), Ty);
 }
 
-const SCEV *ScalarEvolution::getAlignOfExpr(Type *AllocTy) {
-  Constant *C = ConstantExpr::getAlignOf(AllocTy);
-  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(C))
-    if (Constant *Folded = ConstantFoldConstantExpression(CE, TD, TLI))
-      C = Folded;
-  Type *Ty = getEffectiveSCEVType(PointerType::getUnqual(AllocTy));
-  return getTruncateOrZeroExtend(getSCEV(C), Ty);
-}
-
 const SCEV *ScalarEvolution::getOffsetOfExpr(Type *IntTy,
                                              StructType *STy,
                                              unsigned FieldNo) {
@@ -2630,18 +2621,8 @@ const SCEV *ScalarEvolution::getOffsetOfExpr(Type *IntTy,
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(C))
     if (Constant *Folded = ConstantFoldConstantExpression(CE, TD, TLI))
       C = Folded;
-  Type *Ty = getEffectiveSCEVType(PointerType::getUnqual(STy));
-  return getTruncateOrZeroExtend(getSCEV(C), Ty);
-}
 
-const SCEV *ScalarEvolution::getOffsetOfExpr(Type *IntTy,
-                                             Type *CTy,
-                                             Constant *FieldNo) {
-  Constant *C = ConstantExpr::getOffsetOf(CTy, FieldNo);
-  if (ConstantExpr *CE = dyn_cast<ConstantExpr>(C))
-    if (Constant *Folded = ConstantFoldConstantExpression(CE, TD, TLI))
-      C = Folded;
-  Type *Ty = getEffectiveSCEVType(PointerType::getUnqual(CTy));
+  Type *Ty = getEffectiveSCEVType(PointerType::getUnqual(STy));
   return getTruncateOrZeroExtend(getSCEV(C), Ty);
 }
 
@@ -3186,7 +3167,7 @@ const SCEV *ScalarEvolution::createNodeForGEP(GEPOperator *GEP) {
   Type *IntPtrTy = getEffectiveSCEVType(GEP->getType());
   Value *Base = GEP->getOperand(0);
   // Don't attempt to analyze GEPs over unsized objects.
-  if (!cast<PointerType>(Base->getType())->getElementType()->isSized())
+  if (!Base->getType()->getPointerElementType()->isSized())
     return getUnknown(GEP);
 
   // Don't blindly transfer the inbounds flag from the GEP instruction to the
@@ -5122,18 +5103,23 @@ static Constant *BuildConstantFromSCEV(const SCEV *V) {
     case scAddExpr: {
       const SCEVAddExpr *SA = cast<SCEVAddExpr>(V);
       if (Constant *C = BuildConstantFromSCEV(SA->getOperand(0))) {
-        if (C->getType()->isPointerTy())
-          C = ConstantExpr::getBitCast(C, Type::getInt8PtrTy(C->getContext()));
+        if (PointerType *PTy = dyn_cast<PointerType>(C->getType())) {
+          unsigned AS = PTy->getAddressSpace();
+          Type *DestPtrTy = Type::getInt8PtrTy(C->getContext(), AS);
+          C = ConstantExpr::getBitCast(C, DestPtrTy);
+        }
         for (unsigned i = 1, e = SA->getNumOperands(); i != e; ++i) {
           Constant *C2 = BuildConstantFromSCEV(SA->getOperand(i));
           if (!C2) return 0;
 
           // First pointer!
           if (!C->getType()->isPointerTy() && C2->getType()->isPointerTy()) {
+            unsigned AS = C2->getType()->getPointerAddressSpace();
             std::swap(C, C2);
+            Type *DestPtrTy = Type::getInt8PtrTy(C->getContext(), AS);
             // The offsets have been converted to bytes.  We can add bytes to an
             // i8* by GEP with the byte count in the first index.
-            C = ConstantExpr::getBitCast(C,Type::getInt8PtrTy(C->getContext()));
+            C = ConstantExpr::getBitCast(C, DestPtrTy);
           }
 
           // Don't bother trying to sum two pointers. We probably can't
@@ -5141,8 +5127,8 @@ static Constant *BuildConstantFromSCEV(const SCEV *V) {
           if (C2->getType()->isPointerTy())
             return 0;
 
-          if (C->getType()->isPointerTy()) {
-            if (cast<PointerType>(C->getType())->getElementType()->isStructTy())
+          if (PointerType *PTy = dyn_cast<PointerType>(C->getType())) {
+            if (PTy->getElementType()->isStructTy())
               C2 = ConstantExpr::getIntegerCast(
                   C2, Type::getInt32Ty(C->getContext()), true);
             C = ConstantExpr::getGetElementPtr(C, C2);
@@ -6398,13 +6384,6 @@ ScalarEvolution::HowManyLessThans(const SCEV *LHS, const SCEV *RHS,
   if (!AddRec || AddRec->getLoop() != L)
     return getCouldNotCompute();
 
-  // Check to see if we have a flag which makes analysis easy.
-  bool NoWrap = false;
-  if (!IsSubExpr) {
-    NoWrap = AddRec->getNoWrapFlags(
-      (SCEV::NoWrapFlags)(((isSigned ? SCEV::FlagNSW : SCEV::FlagNUW))
-                          | SCEV::FlagNW));
-  }
   if (AddRec->isAffine()) {
     unsigned BitWidth = getTypeSizeInBits(AddRec->getType());
     const SCEV *Step = AddRec->getStepRecurrence(*this);
@@ -6414,29 +6393,33 @@ ScalarEvolution::HowManyLessThans(const SCEV *LHS, const SCEV *RHS,
     if (Step->isOne()) {
       // With unit stride, the iteration never steps past the limit value.
     } else if (isKnownPositive(Step)) {
-      // Test whether a positive iteration can step past the limit
-      // value and past the maximum value for its type in a single step.
-      // Note that it's not sufficient to check NoWrap here, because even
-      // though the value after a wrap is undefined, it's not undefined
-      // behavior, so if wrap does occur, the loop could either terminate or
-      // loop infinitely, but in either case, the loop is guaranteed to
-      // iterate at least until the iteration where the wrapping occurs.
+      // Test whether a positive iteration can step past the limit value and
+      // past the maximum value for its type in a single step. Constant negative
+      // stride should be rare because LHS > RHS comparisons are canonicalized
+      // to -LHS < -RHS.
+      //
+      // NSW/NUW flags imply that stepping past RHS would immediately result in
+      // undefined behavior. No self-wrap is not useful here because the loop
+      // counter may signed or unsigned wrap but continue iterating and
+      // terminate with defined behavior without ever self-wrapping.
       const SCEV *One = getConstant(Step->getType(), 1);
       if (isSigned) {
-        APInt Max = APInt::getSignedMaxValue(BitWidth);
-        if ((Max - getSignedRange(getMinusSCEV(Step, One)).getSignedMax())
+        if (!AddRec->getNoWrapFlags(SCEV::FlagNSW)) {
+          APInt Max = APInt::getSignedMaxValue(BitWidth);
+          if ((Max - getSignedRange(getMinusSCEV(Step, One)).getSignedMax())
               .slt(getSignedRange(RHS).getSignedMax()))
-          return getCouldNotCompute();
-      } else {
+            return getCouldNotCompute();
+        }
+      } else if (!AddRec->getNoWrapFlags(SCEV::FlagNUW)){
         APInt Max = APInt::getMaxValue(BitWidth);
         if ((Max - getUnsignedRange(getMinusSCEV(Step, One)).getUnsignedMax())
               .ult(getUnsignedRange(RHS).getUnsignedMax()))
           return getCouldNotCompute();
       }
-    } else
-      // TODO: Handle negative strides here and below.
+    } else {
+      // Cannot handle variable stride.
       return getCouldNotCompute();
-
+    }
     // We know the LHS is of the form {n,+,s} and the RHS is some loop-invariant
     // m.  So, we count the number of iterations in which {n,+,s} < m is true.
     // Note that we cannot simply return max(m-n,0)/s because it's not safe to
@@ -6481,6 +6464,15 @@ ScalarEvolution::HowManyLessThans(const SCEV *LHS, const SCEV *RHS,
                   getMinusSCEV(getConstant(APInt::getMaxValue(BitWidth)),
                                StepMinusOne));
 
+    // If the loop counter does not self-wrap, then the trip count may be
+    // computed by dividing the distance by the step. This is independent of
+    // signed or unsigned wrap.
+    bool NoWrap = false;
+    if (!IsSubExpr) {
+      NoWrap = AddRec->getNoWrapFlags(
+        (SCEV::NoWrapFlags)(((isSigned ? SCEV::FlagNSW : SCEV::FlagNUW))
+                            | SCEV::FlagNW));
+    }
     // Finally, we subtract these two values and divide, rounding up, to get
     // the number of times the backedge is executed.
     const SCEV *BECount = getBECount(Start, End, Step, NoWrap);

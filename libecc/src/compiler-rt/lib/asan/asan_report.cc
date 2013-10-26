@@ -20,6 +20,7 @@
 #include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_flags.h"
 #include "sanitizer_common/sanitizer_report_decorator.h"
+#include "sanitizer_common/sanitizer_stackdepot.h"
 #include "sanitizer_common/sanitizer_symbolizer.h"
 
 namespace __asan {
@@ -180,8 +181,8 @@ static bool IsASCII(unsigned char c) {
 static const char *MaybeDemangleGlobalName(const char *name) {
   // We can spoil names of globals with C linkage, so use an heuristic
   // approach to check if the name should be demangled.
-  return (name[0] == '_' && name[1] == 'Z' && &getSymbolizer)
-             ? getSymbolizer()->Demangle(name)
+  return (name[0] == '_' && name[1] == 'Z')
+             ? Symbolizer::Get()->Demangle(name)
              : name;
 }
 
@@ -485,7 +486,9 @@ void DescribeThread(AsanThreadContext *context) {
          context->parent_tid,
          ThreadNameWithParenthesis(context->parent_tid,
                                    tname, sizeof(tname)));
-  PrintStack(&context->stack);
+  uptr stack_size;
+  const uptr *stack_trace = StackDepotGet(context->stack_id, &stack_size);
+  PrintStack(stack_trace, stack_size);
   // Recursively described parent thread if needed.
   if (flags()->print_full_thread_history) {
     AsanThreadContext *parent_context =
@@ -547,16 +550,14 @@ class ScopedInErrorReport {
 };
 
 static void ReportSummary(const char *error_type, StackTrace *stack) {
-  if (!stack->size) return;
-  if (&getSymbolizer && getSymbolizer()->IsAvailable()) {
-    AddressInfo ai;
+  AddressInfo ai;
+  if (Symbolizer::Get()->IsAvailable()) {
     // Currently, we include the first stack frame into the report summary.
     // Maybe sometimes we need to choose another frame (e.g. skip memcpy/etc).
     uptr pc = StackTrace::GetPreviousInstructionPc(stack->trace[0]);
-    getSymbolizer()->SymbolizeCode(pc, &ai, 1);
-    ReportErrorSummary(error_type, ai.file, ai.line, ai.function);
+    Symbolizer::Get()->SymbolizeCode(pc, &ai, 1);
   }
-  // FIXME: do we need to print anything at all if there is no symbolizer?
+  ReportErrorSummary(error_type, ai.file, ai.line, ai.function);
 }
 
 void ReportSIGSEGV(uptr pc, uptr sp, uptr bp, uptr addr) {

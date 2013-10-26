@@ -149,7 +149,9 @@ static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
     Str[4] = '0' + (Rev % 10);
     Str[5] = '\0';
     Builder.defineMacro("__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__", Str);
-  } else {
+  } else if (Triple.getArchName() != "thumbv6m" &&
+             Triple.getArchName() != "thumbv7m" &&
+             Triple.getArchName() != "thumbv7em") {
     // Note that the Driver allows versions which aren't representable in the
     // define (because we only get a single digit for the minor and micro
     // revision numbers). So, we limit them to the maximum representable
@@ -3764,11 +3766,18 @@ class ARMTargetInfo : public TargetInfo {
     VFP2FPU = (1 << 0),
     VFP3FPU = (1 << 1),
     VFP4FPU = (1 << 2),
-    NeonFPU = (1 << 3)
+    NeonFPU = (1 << 3),
+    FPARMV8 = (1 << 4)
+  };
+
+  // Possible HWDiv features.
+  enum HWDivMode {
+    HWDivThumb = (1 << 0),
+    HWDivARM = (1 << 1)
   };
 
   static bool FPUModeIsVFP(FPUMode Mode) {
-    return Mode & (VFP2FPU | VFP3FPU | VFP4FPU | NeonFPU);
+    return Mode & (VFP2FPU | VFP3FPU | VFP4FPU | NeonFPU | FPARMV8);
   }
 
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
@@ -3782,12 +3791,12 @@ class ARMTargetInfo : public TargetInfo {
     FP_Neon
   } FPMath;
 
-  unsigned FPU : 4;
+  unsigned FPU : 5;
 
 protected:
   unsigned IsAAPCS : 1;
   unsigned IsThumb : 1;
-private:
+  unsigned HWDiv : 2;
 
   // Initialized via features.
   unsigned SoftFloat : 1;
@@ -3925,16 +3934,35 @@ public:
   }
 
   void getDefaultFeatures(llvm::StringMap<bool> &Features) const {
+    StringRef ArchName = getTriple().getArchName();
     if (CPU == "arm1136jf-s" || CPU == "arm1176jzf-s" || CPU == "mpcore")
       Features["vfp2"] = true;
     else if (CPU == "cortex-a8" || CPU == "cortex-a9" ||
              CPU == "cortex-a9-mp") {
       Features["vfp3"] = true;
       Features["neon"] = true;
-    } else if (CPU == "swift" || CPU == "cortex-a5" ||
-        CPU == "cortex-a7" || CPU == "cortex-a15") {
+    }
+    else if (CPU == "cortex-a5") {
       Features["vfp4"] = true;
       Features["neon"] = true;
+    } else if (CPU == "swift" || CPU == "cortex-a7" || CPU == "cortex-a15") {
+      Features["vfp4"] = true;
+      Features["neon"] = true;
+      Features["hwdiv"] = true;
+      Features["hwdiv-arm"] = true;
+    } else if (CPU == "cortex-a53" || CPU == "cortex-a57") {
+      Features["fp-armv8"] = true;
+      Features["neon"] = true;
+      Features["hwdiv"] = true;
+      Features["hwdiv-arm"] = true;
+    } else if (CPU == "cortex-r5" || CPU == "cortex-m3" ||
+               CPU == "cortex-m4" ||
+               // Enable the hwdiv extension for all v8a AArch32 cores by
+               // default.
+               ArchName == "armv8a" || ArchName == "armv8" ||
+               ArchName == "thumbv8a" || ArchName == "thumbv8") {
+      Features["hwdiv"] = true;
+      Features["hwdiv-arm"] = true;
     }
   }
 
@@ -3942,6 +3970,7 @@ public:
                                     DiagnosticsEngine &Diags) {
     FPU = 0;
     SoftFloat = SoftFloatABI = false;
+    HWDiv = 0;
     for (unsigned i = 0, e = Features.size(); i != e; ++i) {
       if (Features[i] == "+soft-float")
         SoftFloat = true;
@@ -3953,8 +3982,14 @@ public:
         FPU |= VFP3FPU;
       else if (Features[i] == "+vfp4")
         FPU |= VFP4FPU;
+      else if (Features[i] == "+fp-armv8")
+        FPU |= FPARMV8;
       else if (Features[i] == "+neon")
         FPU |= NeonFPU;
+      else if (Features[i] == "+hwdiv")
+        HWDiv |= HWDivThumb;
+      else if (Features[i] == "+hwdiv-arm")
+        HWDiv |= HWDivARM;
     }
 
     if (!(FPU & NeonFPU) && FPMath == FP_Neon) {
@@ -3984,6 +4019,8 @@ public:
         .Case("softfloat", SoftFloat)
         .Case("thumb", IsThumb)
         .Case("neon", (FPU & NeonFPU) && !SoftFloat)
+        .Case("hwdiv", HWDiv & HWDivThumb)
+        .Case("hwdiv-arm", HWDiv & HWDivARM)
         .Default(false);
   }
   // FIXME: Should we actually have some table instead of these switches?
@@ -4010,13 +4047,14 @@ public:
       .Case("swift", "7S")
       .Cases("cortex-m3", "cortex-m4", "7M")
       .Case("cortex-m0", "6M")
-      .Case("cortex-a53", "8A")
+      .Cases("cortex-a53", "cortex-a57", "8A")
       .Default(0);
   }
   static const char *getCPUProfile(StringRef Name) {
     return llvm::StringSwitch<const char*>(Name)
       .Cases("cortex-a5", "cortex-a7", "cortex-a8", "A")
       .Cases("cortex-a9", "cortex-a12", "cortex-a15", "A")
+      .Cases("cortex-a53", "cortex-a57", "A")
       .Cases("cortex-m3", "cortex-m4", "cortex-m0", "M")
       .Cases("cortex-r4", "cortex-r5", "R")
       .Default("");
@@ -4046,6 +4084,10 @@ public:
     Builder.defineMacro("__REGISTER_PREFIX__", "");
 
     StringRef CPUArch = getCPUDefineSuffix(CPU);
+    unsigned int CPUArchVer;
+    if(CPUArch.substr(0, 1).getAsInteger<unsigned int>(10, CPUArchVer)) {
+      llvm_unreachable("Invalid char for architecture version number");
+    }
     Builder.defineMacro("__ARM_ARCH_" + CPUArch + "__");
     Builder.defineMacro("__ARM_ARCH", CPUArch.substr(0, 1));
     StringRef CPUProfile = getCPUProfile(CPU);
@@ -4056,7 +4098,7 @@ public:
 
     // FIXME: It's more complicated than this and we don't really support
     // interworking.
-    if ('5' <= CPUArch[0] && CPUArch[0] <= '7')
+    if (5 <= CPUArchVer && CPUArchVer <= 7)
       Builder.defineMacro("__THUMB_INTERWORK__");
 
     if (ABI == "aapcs" || ABI == "aapcs-linux" || ABI == "aapcs-vfp") {
@@ -4077,13 +4119,14 @@ public:
     if (CPU == "xscale")
       Builder.defineMacro("__XSCALE__");
 
-    bool IsARMv7 = CPUArch.startswith("7");
     if (IsThumb) {
       Builder.defineMacro("__THUMBEL__");
       Builder.defineMacro("__thumb__");
-      if (CPUArch == "6T2" || IsARMv7)
+      if (CPUArch == "6T2" || CPUArchVer == 7)
         Builder.defineMacro("__thumb2__");
     }
+    if (((HWDiv & HWDivThumb) && IsThumb) || ((HWDiv & HWDivARM) && !IsThumb))
+      Builder.defineMacro("__ARM_ARCH_EXT_IDIV__", "1");
 
     // Note, this is always on in gcc, even though it doesn't make sense.
     Builder.defineMacro("__APCS_32__");
@@ -4102,13 +4145,13 @@ public:
     // the VFP define, hence the soft float and arch check. This is subtly
     // different from gcc, we follow the intent which was that it should be set
     // when Neon instructions are actually available.
-    if ((FPU & NeonFPU) && !SoftFloat && IsARMv7)
+    if ((FPU & NeonFPU) && !SoftFloat && CPUArchVer >= 7)
       Builder.defineMacro("__ARM_NEON__");
 
-    if (CPUArch.startswith("8"))
+    if (CPUArchVer == 8)
       Builder.defineMacro("__ARM_FEATURE_CRC32");
 
-    if (CPUArch[0] >= '6' && CPUArch != "6M") {
+    if (CPUArchVer >= 6 && CPUArch != "6M") {
       Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_1");
       Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_2");
       Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");
@@ -4983,6 +5026,7 @@ class MipsTargetInfoBase : public TargetInfo {
     NoDSP, DSP1, DSP2
   } DspRev;
   bool HasMSA;
+  bool HasFP64;
 
 protected:
   std::string ABI;
@@ -4992,7 +5036,7 @@ public:
                      const std::string &CPUStr)
       : TargetInfo(Triple), CPU(CPUStr), IsMips16(false), IsMicromips(false),
         IsNan2008(false), IsSingleFloat(false), FloatABI(HardFloat),
-        DspRev(NoDSP), HasMSA(false), ABI(ABIStr) {}
+        DspRev(NoDSP), HasMSA(false), HasFP64(false), ABI(ABIStr) {}
 
   virtual const char *getABI() const { return ABI.c_str(); }
   virtual bool setABI(const std::string &Name) = 0;
@@ -5022,6 +5066,10 @@ public:
 
     if (IsSingleFloat)
       Builder.defineMacro("__mips_single_float", Twine(1));
+
+    Builder.defineMacro("__mips_fpr", HasFP64 ? Twine(64) : Twine(32));
+    Builder.defineMacro("_MIPS_FPSET",
+                        Twine(32 / (HasFP64 || IsSingleFloat ? 1 : 2)));
 
     if (IsMips16)
       Builder.defineMacro("__mips16", Twine(1));
@@ -5133,6 +5181,7 @@ public:
     IsSingleFloat = false;
     FloatABI = HardFloat;
     DspRev = NoDSP;
+    HasFP64 = ABI == "n32" || ABI == "n64" || ABI == "64";
 
     for (std::vector<std::string>::iterator it = Features.begin(),
          ie = Features.end(); it != ie; ++it) {
@@ -5150,6 +5199,10 @@ public:
         DspRev = std::max(DspRev, DSP2);
       else if (*it == "+msa")
         HasMSA = true;
+      else if (*it == "+fp64")
+        HasFP64 = true;
+      else if (*it == "-fp64")
+        HasFP64 = false;
       else if (*it == "+nan2008")
         IsNan2008 = true;
     }

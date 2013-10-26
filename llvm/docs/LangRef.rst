@@ -511,6 +511,9 @@ module, including those with external linkage or appearing in
 ``@llvm.used``. This assumption may be suppressed by marking the
 variable with ``externally_initialized``.
 
+If a global variable dose not have its address taken, it will be optionally
+flagged ``notaddrtaken``.
+
 An explicit alignment may be specified for a global, which must be a
 power of 2. If not present, or if the alignment is set to zero, the
 alignment of the global is set by the target to whatever it feels
@@ -1177,6 +1180,30 @@ that does not embed this target-specific detail into the IR, then you
 don't have to specify the string. This will disable some optimizations
 that require precise layout information, but this also prevents those
 optimizations from introducing target specificity into the IR.
+
+.. _langref_triple:
+
+Target Triple
+-------------
+
+A module may specify a target triple string that describes the target
+host. The syntax for the target triple is simply:
+
+.. code-block:: llvm
+
+    target triple = "x86_64-apple-macosx10.7.0"
+
+The *target triple* string consists of a series of identifiers delimited
+by the minus sign character ('-'). The canonical forms are:
+
+::
+
+    ARCHITECTURE-VENDOR-OPERATING_SYSTEM
+    ARCHITECTURE-VENDOR-OPERATING_SYSTEM-ENVIRONMENT
+
+This information is passed along to the backend so that it generates
+code for the proper architecture. It's possible to override this on the
+command line with the ``-mtriple`` command line option.
 
 .. _pointeraliasing:
 
@@ -6874,7 +6901,7 @@ The '``llvm.memcpy.*``' intrinsics copy a block of memory from the
 source location to the destination location, which are not allowed to
 overlap. It copies "len" bytes of memory over. If the argument is known
 to be aligned to some boundary, this can be specified as the fourth
-argument, otherwise it should be set to 0 or 1.
+argument, otherwise it should be set to 0 or 1 (both meaning no alignment).
 
 '``llvm.memmove``' Intrinsic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -6929,7 +6956,7 @@ The '``llvm.memmove.*``' intrinsics copy a block of memory from the
 source location to the destination location, which may overlap. It
 copies "len" bytes of memory over. If the argument is known to be
 aligned to some boundary, this can be specified as the fourth argument,
-otherwise it should be set to 0 or 1.
+otherwise it should be set to 0 or 1 (both meaning no alignment).
 
 '``llvm.memset.*``' Intrinsics
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -6980,7 +7007,7 @@ Semantics:
 The '``llvm.memset.*``' intrinsics fill "len" bytes of memory starting
 at the destination location. If the argument is known to be aligned to
 some boundary, this can be specified as the fourth argument, otherwise
-it should be set to 0 or 1.
+it should be set to 0 or 1 (both meaning no alignment).
 
 '``llvm.sqrt.*``' Intrinsic
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

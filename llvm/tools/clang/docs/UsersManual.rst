@@ -921,6 +921,8 @@ are listed below.
       destination.
    -  ``-fsanitize=float-divide-by-zero``: Floating point division by
       zero.
+   -  ``-fsanitize=function``: Indirect call of a function through a
+      function pointer of the wrong type (Linux, C++ and x86/x86_64 only).
    -  ``-fsanitize=integer-divide-by-zero``: Integer division by zero.
    -  ``-fsanitize=null``: Use of a null pointer or creation of a null
       reference.
@@ -1044,6 +1046,17 @@ are listed below.
    selected model is not supported by the target, or if a more
    efficient model can be used. The TLS model can be overridden per
    variable using the ``tls_model`` attribute.
+
+.. option:: -mhwdiv=[values]
+
+   Select the ARM modes (arm or thumb) that support hardware division
+   instructions.
+
+   Valid values are: ``arm``, ``thumb`` and ``arm,thumb``.
+   This option is used to indicate which mode (arm or thumb) supports
+   hardware division instructions. This only applies to the ARM
+   architecture.
+
 
 Controlling Size of Debug Information
 -------------------------------------

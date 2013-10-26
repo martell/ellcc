@@ -190,3 +190,46 @@ define i64 @test_x86_avx512_cvtsd2usi64(<2 x double> %a0) {
   ret i64 %res
 }
 declare i64 @llvm.x86.avx512.cvtsd2usi64(<2 x double>) nounwind readnone
+
+define <16 x float> @test_x86_vcvtph2ps_512(<16 x i16> %a0) {
+  ; CHECK: vcvtph2ps
+  %res = call <16 x float> @llvm.x86.avx512.vcvtph2ps.512(<16 x i16> %a0)
+  ret <16 x float> %res
+}
+declare <16 x float> @llvm.x86.avx512.vcvtph2ps.512(<16 x i16>) nounwind readonly
+
+
+define <16 x i16> @test_x86_vcvtps2ph_256(<16 x float> %a0) {
+  ; CHECK: vcvtps2ph
+  %res = call <16 x i16> @llvm.x86.avx512.vcvtps2ph.512(<16 x float> %a0, i32 0)
+  ret <16 x i16> %res
+}
+declare <16 x i16> @llvm.x86.avx512.vcvtps2ph.512(<16 x float>, i32) nounwind readonly
+
+define <16 x float> @test_x86_vbroadcast_ss_512(i8* %a0) {
+  ; CHECK: vbroadcastss
+  %res = call <16 x float> @llvm.x86.avx512.vbroadcast.ss.512(i8* %a0) ; <<16 x float>> [#uses=1]
+  ret <16 x float> %res
+}
+declare <16 x float> @llvm.x86.avx512.vbroadcast.ss.512(i8*) nounwind readonly
+
+define <8 x double> @test_x86_vbroadcast_sd_512(i8* %a0) {
+  ; CHECK: vbroadcastsd
+  %res = call <8 x double> @llvm.x86.avx512.vbroadcast.sd.512(i8* %a0) ; <<8 x double>> [#uses=1]
+  ret <8 x double> %res
+}
+declare <8 x double> @llvm.x86.avx512.vbroadcast.sd.512(i8*) nounwind readonly
+
+define <16 x float> @test_x86_vbroadcast_ss_ps_512(<4 x float> %a0) {
+  ; CHECK: vbroadcastss
+  %res = call <16 x float> @llvm.x86.avx512.vbroadcast.ss.ps.512(<4 x float> %a0) ; <<16 x float>> [#uses=1]
+  ret <16 x float> %res
+}
+declare <16 x float> @llvm.x86.avx512.vbroadcast.ss.ps.512(<4 x float>) nounwind readonly
+
+define <8 x double> @test_x86_vbroadcast_sd_pd_512(<2 x double> %a0) {
+  ; CHECK: vbroadcastsd
+  %res = call <8 x double> @llvm.x86.avx512.vbroadcast.sd.pd.512(<2 x double> %a0) ; <<8 x double>> [#uses=1]
+  ret <8 x double> %res
+}
+declare <8 x double> @llvm.x86.avx512.vbroadcast.sd.pd.512(<2 x double>) nounwind readonly

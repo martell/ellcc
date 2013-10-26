@@ -166,7 +166,8 @@ class NoTestOpInst<string n, string p, string t, Op o> : Inst<n, p, t, o> {}
 // i: constant int
 // l: constant uint64
 // s: scalar of element type
-// r: scalar of double width element type
+// z: scalar of half width element type, signed
+// r: scalar of double width element type, signed
 // a: scalar of element type (splat to vector type)
 // y: scalar of float
 // o: scalar of double
@@ -881,13 +882,25 @@ def SCALAR_USQADD : SInst<"vsqadd", "sss", "SUcSUsSUiSUl">;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Signed Saturating Doubling Multiply-Add Long
-def SCALAR_SQDMLAL : SInst<"vqdmlal", "rss", "SsSi">;
+def SCALAR_SQDMLAL : SInst<"vqdmlal", "rrss", "SsSi">;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Signed Saturating Doubling Multiply-Subtract Long
-def SCALAR_SQDMLSL : SInst<"vqdmlsl", "rss", "SsSi">;
+def SCALAR_SQDMLSL : SInst<"vqdmlsl", "rrss", "SsSi">;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Signed Saturating Doubling Multiply Long
 def SCALAR_SQDMULL : SInst<"vqdmull", "rss", "SsSi">;
+
+////////////////////////////////////////////////////////////////////////////////
+// Scalar Signed Saturating Extract Unsigned Narrow
+def SCALAR_SQXTUN : SInst<"vqmovun", "zs", "SsSiSl">;
+
+////////////////////////////////////////////////////////////////////////////////
+// Scalar Signed Saturating Extract Narrow
+def SCALAR_SQXTN : SInst<"vqmovn", "zs", "SsSiSl">;
+
+////////////////////////////////////////////////////////////////////////////////
+// Scalar Unsigned Saturating Extract Narrow
+def SCALAR_UQXTN : SInst<"vqmovn", "zs", "SUsSUiSUl">;
 }

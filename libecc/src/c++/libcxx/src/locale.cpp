@@ -37,6 +37,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+// On Linux, wint_t and wchar_t have different signed-ness, and this causes
+// lots of noise in the build log, but no bugs that I know of. 
+#if defined(__clang__)
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#endif
+
 _LIBCPP_BEGIN_NAMESPACE_STD
 
 #ifdef __cloc_defined
@@ -120,14 +126,23 @@ const locale::category locale::time;
 const locale::category locale::messages;
 const locale::category locale::all;
 
+#if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpadded"
+#endif
 
 class _LIBCPP_HIDDEN locale::__imp
     : public facet
 {
     enum {N = 28};
+#if defined(_LIBCPP_MSVC)
+// FIXME: MSVC doesn't support aligned parameters by value.
+// I can't get the __sso_allocator to work here
+// for MSVC I think for this reason.
+    vector<facet*> facets_;
+#else
     vector<facet*, __sso_allocator<facet*, N> > facets_;
+#endif
     string         name_;
 public:
     explicit __imp(size_t refs = 0);
@@ -151,7 +166,9 @@ private:
     template <class F> void install_from(const __imp& other);
 };
 
+#if defined(__clang__)
 #pragma clang diagnostic pop
+#endif
 
 locale::__imp::__imp(size_t refs)
     : facet(refs),
@@ -761,7 +778,7 @@ ctype<wchar_t>::~ctype()
 bool
 ctype<wchar_t>::do_is(mask m, char_type c) const
 {
-    return isascii(c) ? ctype<char>::classic_table()[c] & m : false;
+    return isascii(c) ? (ctype<char>::classic_table()[c] & m) != 0 : false;
 }
 
 const wchar_t*
@@ -4350,7 +4367,7 @@ __num_put_base::__format_float(char* __fmtp, const char* __len,
     if (__flags & ios_base::showpoint)
         *__fmtp++ = '#';
     ios_base::fmtflags floatfield = __flags & ios_base::floatfield;
-    bool uppercase = __flags & ios_base::uppercase;
+    bool uppercase = (__flags & ios_base::uppercase) != 0;
     if (floatfield == (ios_base::fixed | ios_base::scientific))
         specify_precision = false;
     else
@@ -4681,9 +4698,12 @@ __time_get::~__time_get()
 {
     freelocale(__loc_);
 }
-
+#if defined(__clang__)
 #pragma clang diagnostic ignored "-Wmissing-field-initializers"
+#endif
+#if defined(__GNUG__)
 #pragma GCC   diagnostic ignored "-Wmissing-field-initializers"
+#endif
 
 template <>
 string
@@ -4829,7 +4849,9 @@ __time_get_storage<char>::__analyze(char fmt, const ctype<char>& ct)
     return result;
 }
 
+#if defined(__clang__)
 #pragma clang diagnostic ignored "-Wmissing-braces"
+#endif
 
 template <>
 wstring

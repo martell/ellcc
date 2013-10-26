@@ -475,9 +475,13 @@ Value *SimplifyCFGOpt::isValueEqualityComparison(TerminatorInst *TI) {
           CV = ICI->getOperand(0);
 
   // Unwrap any lossless ptrtoint cast.
-  if (TD && CV && CV->getType() == TD->getIntPtrType(CV->getContext()))
-    if (PtrToIntInst *PTII = dyn_cast<PtrToIntInst>(CV))
-      CV = PTII->getOperand(0);
+  if (TD && CV) {
+    if (PtrToIntInst *PTII = dyn_cast<PtrToIntInst>(CV)) {
+      Value *Ptr = PTII->getPointerOperand();
+      if (PTII->getType() == TD->getIntPtrType(Ptr->getType()))
+        CV = Ptr;
+    }
+  }
   return CV;
 }
 
@@ -925,7 +929,7 @@ bool SimplifyCFGOpt::FoldValueComparisonIntoPredecessors(TerminatorInst *TI,
       // Convert pointer to int before we switch.
       if (CV->getType()->isPointerTy()) {
         assert(TD && "Cannot switch on pointer without DataLayout");
-        CV = Builder.CreatePtrToInt(CV, TD->getIntPtrType(CV->getContext()),
+        CV = Builder.CreatePtrToInt(CV, TD->getIntPtrType(CV->getType()),
                                     "magicptr");
       }
 
@@ -1557,6 +1561,19 @@ static bool SpeculativelyExecuteBB(BranchInst *BI, BasicBlock *ThenBB) {
   return true;
 }
 
+/// \returns True if this block contains a CallInst with the NoDuplicate
+/// attribute.
+static bool HasNoDuplicateCall(const BasicBlock *BB) {
+  for (BasicBlock::const_iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+    const CallInst *CI = dyn_cast<CallInst>(I);
+    if (!CI)
+      continue;
+    if (CI->cannotDuplicate())
+      return true;
+  }
+  return false;
+}
+
 /// BlockIsSimpleEnoughToThreadThrough - Return true if we can thread a branch
 /// across this block.
 static bool BlockIsSimpleEnoughToThreadThrough(BasicBlock *BB) {
@@ -1603,6 +1620,8 @@ static bool FoldCondBranchOnPHI(BranchInst *BI, const DataLayout *TD) {
 
   // Now we know that this block has multiple preds and two succs.
   if (!BlockIsSimpleEnoughToThreadThrough(BB)) return false;
+
+  if (HasNoDuplicateCall(BB)) return false;
 
   // Okay, this is a simple enough basic block.  See if any phi values are
   // constants.
@@ -2788,7 +2807,7 @@ static bool SimplifyBranchOnICmpChain(BranchInst *BI, const DataLayout *TD,
   if (CompVal->getType()->isPointerTy()) {
     assert(TD && "Cannot switch on pointer without DataLayout");
     CompVal = Builder.CreatePtrToInt(CompVal,
-                                     TD->getIntPtrType(CompVal->getContext()),
+                                     TD->getIntPtrType(CompVal->getType()),
                                      "magicptr");
   }
 
@@ -3734,14 +3753,32 @@ static bool SwitchToLookupTable(SwitchInst *SI,
                                             CommonDest->getParent(),
                                             CommonDest);
 
-  // Check whether the condition value is within the case range, and branch to
-  // the new BB.
+  // Compute the table index value.
   Builder.SetInsertPoint(SI);
   Value *TableIndex = Builder.CreateSub(SI->getCondition(), MinCaseVal,
                                         "switch.tableidx");
-  Value *Cmp = Builder.CreateICmpULT(TableIndex, ConstantInt::get(
-      MinCaseVal->getType(), TableSize));
-  Builder.CreateCondBr(Cmp, LookupBB, SI->getDefaultDest());
+
+  // Compute the maximum table size representable by the integer type we are
+  // switching upon.
+  unsigned CaseSize = MinCaseVal->getType()->getPrimitiveSizeInBits();
+  uint64_t MaxTableSize = CaseSize > 63? UINT64_MAX : 1ULL << CaseSize;
+  assert(MaxTableSize >= TableSize &&
+         "It is impossible for a switch to have more entries than the max "
+         "representable value of its input integer type's size.");
+
+  // If we have a fully covered lookup table, unconditionally branch to the
+  // lookup table BB. Otherwise, check if the condition value is within the case
+  // range. If it is so, branch to the new BB. Otherwise branch to SI's default
+  // destination.
+  const bool GeneratingCoveredLookupTable = MaxTableSize == TableSize;
+  if (GeneratingCoveredLookupTable) {
+    Builder.CreateBr(LookupBB);
+    SI->getDefaultDest()->removePredecessor(SI->getParent());
+  } else {
+    Value *Cmp = Builder.CreateICmpULT(TableIndex, ConstantInt::get(
+                                         MinCaseVal->getType(), TableSize));
+    Builder.CreateCondBr(Cmp, LookupBB, SI->getDefaultDest());
+  }
 
   // Populate the BB that does the lookups.
   Builder.SetInsertPoint(LookupBB);
@@ -3770,9 +3807,11 @@ static bool SwitchToLookupTable(SwitchInst *SI,
     Builder.CreateBr(CommonDest);
 
   // Remove the switch.
-  for (unsigned i = 0; i < SI->getNumSuccessors(); ++i) {
+  for (unsigned i = 0, e = SI->getNumSuccessors(); i < e; ++i) {
     BasicBlock *Succ = SI->getSuccessor(i);
-    if (Succ == SI->getDefaultDest()) continue;
+
+    if (Succ == SI->getDefaultDest())
+      continue;
     Succ->removePredecessor(SI->getParent());
   }
   SI->eraseFromParent();
