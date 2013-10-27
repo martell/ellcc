@@ -1,7 +1,10 @@
 .text
 .global __clone
+.weak clone
 .type __clone, %function
+.type   clone,@function
 __clone:
+clone:
 # int clone(fn, stack, flags, arg, ptid, tls, ctid)
 #            a  b       c     d     e    f    g
 #            3  4       5     6     7    8    9
