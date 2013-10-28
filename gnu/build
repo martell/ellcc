@@ -15,9 +15,6 @@ echo In: gnu-build$builddir
 # Configure for GNU tools.
 mkdir -p gnu-build$builddir
 
-if false ; then
-echo foo
-exit 1
 # Configure for binutils.
 # binutils are build to support all targets in the target list.
 #cd gnu-build$builddir
@@ -28,7 +25,6 @@ make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
     binutils.configure || exit 1
 
 make -C gnu-build$builddir/binutils || exit 1
-fi
 
 # Configure for assemblers for all targets.
 for t in $targets; do

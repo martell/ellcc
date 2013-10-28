@@ -45,15 +45,17 @@ install::
 -include $(prefix)/libecc/mkscripts/targets/$(TARGET)/setup.mk
 
 ifneq ($(CC),gcc)
-  CFLAGS=$(CFLAGS.$(TARGET))
-  CXXFLAGS=$(CXXFLAGS.$(TARGET))
+  ifeq (x"$(haslibs)","x1")
+    CFLAGS=$(CFLAGS.$(TARGET))
+    CXXFLAGS=$(CXXFLAGS.$(TARGET))
+  endif
 endif
 
 binutils.configure:
 	cd $(DIR) ; \
-	mkdir -p binutils ; \
-	cd binutils ; \
-    ../../../src/binutils/configure \
+    mkdir -p binutils ; \
+    cd binutils ; \
+    ../../src/binutils/configure \
         CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
         AR=$(AR) --enable-64-bit-bfd \
         --bindir=$(bindir) --host=$(TARGET)-$(OS) --enable-targets=$(targetlist) \
