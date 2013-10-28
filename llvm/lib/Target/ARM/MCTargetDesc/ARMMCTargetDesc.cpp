@@ -237,8 +237,13 @@ static MCCodeGenInfo *createARMMCCodeGenInfo(StringRef TT, Reloc::Model RM,
   MCCodeGenInfo *X = new MCCodeGenInfo();
   if (RM == Reloc::Default) {
     Triple TheTriple(TT);
-    // Default relocation model on Darwin is PIC, not DynamicNoPIC.
-    RM = TheTriple.isOSDarwin() ? Reloc::PIC_ : Reloc::DynamicNoPIC;
+    if (TheTriple.getVendor() == llvm::Triple::ELLCC) {
+      // Default relocation model for ELLCC is static.
+      RM = Reloc::Static;
+    } else {
+      // Default relocation model on Darwin is PIC, not DynamicNoPIC.
+      RM = TheTriple.isOSDarwin() ? Reloc::PIC_ : Reloc::DynamicNoPIC;
+    }
   }
   X->InitMCCodeGenInfo(RM, CM, OL);
   return X;

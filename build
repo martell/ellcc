@@ -14,13 +14,18 @@ echo In: llvm-build$builddir
 
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
-cd llvm-build$builddir
-../llvm/configure CC="$cc" CXX="$cxx" --host=$host-$os --bindir=$bindir --prefix=$prefix \
-                  --enable-optimized --enable-shared=no \
-                  || exit 1
+#if [ 0 ] ; then
+#../llvm/configure CC="$cc" CXX="$cxx" --host=$host-$os --bindir=$bindir --prefix=$prefix \
+                  #--enable-optimized --enable-shared=no \
+                  #|| exit 1
+
+make DIR=llvm-build$builddir CC="$cc" CXX="$cxx" TARGET=$host OS=$os \
+    bindir=$bindir prefix=$prefix build=$build-linux \
+    llvm.configure
+exit 0
+
 # Build the LLVM tools.
-make -j 6 || exit 1
-cd ..
+make -C llvm-build$builddir -j 6 || exit 1
 
 # Configure and install the GNU tools.
 cd gnu

@@ -31,8 +31,8 @@ if [ "x$ecc" != "x" ] ; then
   # An ecc exists, use it to compile.
   if [ -e $prefix/libecc/lib/$target/$os/libc.a ]; then
     # To build for $target with libecc:
-    cc="$ecc -target $host-ellcc-$os"
-    cxx="$ecc++ -target $host-ellcc-$os"
+    cc=$ecc
+    cxx=$ecc++
     hcc=$ecc
     hcxx=$ecc++
     ar=$ecc-ar

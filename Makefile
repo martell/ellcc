@@ -48,3 +48,21 @@ docs:
 	./lib/share/doc/as.html \
 	./share/doc/qemu \
 	libecc/doc
+
+-include libecc/mkscripts/targets/$(TARGET)/setup.mk
+ifeq ($(filter arm%, $(TARGET)),)
+  # Limit ARM targets for to keep the ecc executable small.
+  TARGETS=--enable-targets=arm
+else
+  TARGETS=
+endif
+
+llvm.configure:
+	cd $(DIR) ; \
+	../llvm/configure \
+	    CC=$(CC) CFLAGS="$(CFLAGS.$(TARGET))" \
+	    CXX=$(CXX) CXXFLAGS="$(CXXFLAGS.$(TARGET))" \
+	    --host=$(TARGET)-$(OS) --bindir=$(bindir) --prefix=$(prefix) \
+	    --build=$(build) \
+            --enable-optimized --enable-shared=no -enable-pic=no \
+	    $(TARGETS)

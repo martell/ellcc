@@ -18,6 +18,10 @@
 #include <algorithm>
 #include <string>
 #include <vector>
+#if defined(__ELLCC__)
+// Our friend configure is messing this up for us.
+#undef HAVE_EXECINFO_H
+#endif
 #if HAVE_EXECINFO_H
 # include <execinfo.h>         // For backtrace().
 #endif

@@ -71,6 +71,7 @@ $(Configs)::
 	../../../src/ncurses/configure \
 	    CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
 	    CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+            --host=$(TARGET)-$(OS) \
             --with-build-cc=$(ELLCC)/bin/ecc \
 	    --prefix=$(ELLCC)
 
@@ -84,6 +85,27 @@ $(Configs)::
 	cp $*/linux/lib/*.a ../lib/$*/linux ; \
 	mkdir -p ../include/$*/linux ; \
 	cp $*/linux/include/*.h ../include/linux
+
+%.zlib.configure:
+	@echo Configuring zlib for $* in zlib-build/$*/linux
+	mkdir -p zlib-build/$*/linux
+	cp -r src/zlib/* zlib-build/$*/linux
+	cd zlib-build/$*/linux ; \
+	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
+	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+	    ./configure --static --prefix=$(ELLCC)
+
+%.zlib.build:
+	make -C zlib-build/$*/linux
+
+%.zlib.install:
+	@cd zlib-build ; \
+	echo Installing zlib for $* ; \
+	mkdir -p ../lib/$*/linux ; \
+	cp $*/linux/*.a ../lib/$*/linux ; \
+	mkdir -p ../include/$*/linux ; \
+	cp $*/linux/zlib.h ../include/linux ; \
+	cp $*/linux/zconf.h ../include/$*/linux
 
 clean:
 	make -C src/musl distclean

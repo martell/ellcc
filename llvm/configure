@@ -4822,7 +4822,7 @@ else
   if test "$CYGWIN" = yes || test "$MINGW32" = yes; then
   ac_cv_build_exeext=.exe
 else
-  ac_build_prefix=${build_alias}-
+  #ac_build_prefix=${build_alias}-
 
   # Extract the first word of "${ac_build_prefix}gcc", so it can be a program name with args.
 set dummy ${ac_build_prefix}gcc; ac_word=$2
@@ -4959,7 +4959,7 @@ fi
   test -z "$BUILD_CC" && { { echo "$as_me:$LINENO: error: no acceptable cc found in \$PATH" >&5
 echo "$as_me: error: no acceptable cc found in \$PATH" >&2;}
    { (exit 1); exit 1; }; }
-  ac_build_link='${BUILD_CC-cc} -o conftest $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS 1>&5'
+  ac_build_link='${BUILD_CC-cc} -o conftest conftest.$ac_ext $LIBS 1>&5'
   rm -f conftest*
   echo 'int main () { return 0; }' > conftest.$ac_ext
   ac_cv_build_exeext=
@@ -4990,7 +4990,7 @@ test x"${ac_cv_build_exeext}" != xblank && BUILD_EXEEXT=${ac_cv_build_exeext}
 echo "${ECHO_T}${ac_cv_build_exeext}" >&6; }
 ac_build_exeext=$BUILD_EXEEXT
 
-  ac_build_prefix=${build_alias}-
+  #ac_build_prefix=${build_alias}-
   # Extract the first word of "${ac_build_prefix}g++", so it can be a program name with args.
 set dummy ${ac_build_prefix}g++; ac_word=$2
 { echo "$as_me:$LINENO: checking for $ac_word" >&5

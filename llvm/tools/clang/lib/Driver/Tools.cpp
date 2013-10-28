@@ -866,6 +866,12 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
       CmdArgs.push_back("-backend-option");
       CmdArgs.push_back("-arm-reserve-r9");
     }
+
+    // RICH: Allow enabling of long calls.
+    if (Args.hasArg(options::OPT_mlong_calls)) {
+      CmdArgs.push_back("-backend-option");
+      CmdArgs.push_back("-arm-long-calls");
+    }
 }
 
 void Clang::AddMBlazeTargetArgs(const ArgList &Args,

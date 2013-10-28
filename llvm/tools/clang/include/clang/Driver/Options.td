@@ -1023,6 +1023,8 @@ def mno_thumb : Flag<["-"], "mno-thumb">, Group<m_arm_Features_Group>;
 def marm : Flag<["-"], "marm">, Alias<mno_thumb>;
 def ffixed_r9 : Flag<["-"], "ffixed-r9">, Group<m_arm_Features_Group>,
   HelpText<"Reserve the r9 register (ARM only)">;
+def mlong_calls : Flag<["-"], "mlong-calls">, Group<m_arm_Features_Group>;
+def mno_long_calls : Flag<["-"], "mno-long-calls">, Group<m_arm_Features_Group>;
 
 def mvsx : Flag<["-"], "mvsx">, Group<m_ppc_Features_Group>;
 def mno_vsx : Flag<["-"], "mno-vsx">, Group<m_ppc_Features_Group>;
