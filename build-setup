@@ -31,6 +31,9 @@ fi
 
 if [ "x$ecc" != "x" ] ; then
   # An ecc exists, use it to compile.
+  if [ -e $prefix/libecc/lib/$host/$os/libc.a \
+       -a \
+       -e $ecc-ar ]; then
   if [ -e $prefix/libecc/lib/$host/$os/libc.a ]; then
     # To build for host with libecc:
     cc=$ecc
