@@ -13,6 +13,7 @@
 
 #define _BSD_SOURCE
 #include <stdlib.h>
+#include <sys/time.h>
 #include "llvm/Config/config.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Process.h"

@@ -7,37 +7,31 @@ prefix=`pwd`
 # Figure out the compilers to use.
 . ./build-setup $*
 
-echo Building ecc with:
-echo C compiler: $cc
-echo C++ compiler: $cxx
-echo In: llvm-build$builddir
-
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
-#if [ 0 ] ; then
-#../llvm/configure CC="$cc" CXX="$cxx" --host=$host-$os --bindir=$bindir --prefix=$prefix \
-                  #--enable-optimized --enable-shared=no \
-                  #|| exit 1
 
 make DIR=llvm-build$builddir CC="$cc" CXX="$cxx" TARGET=$host OS=$os \
     bindir=$bindir prefix=$prefix build=$build-linux \
     llvm.configure
-exit 0
 
 # Build the LLVM tools.
 make -C llvm-build$builddir -j 6 || exit 1
 
-# Configure and install the GNU tools.
-cd gnu
-./build || exit 1
-cd ..
-
 # Now install the ELLCC tools.
 make -j 6 -C llvm-build$builddir install || exit 1
+
+# Build the GNU tools.
+cd gnu
+./build $arg1 || exit 1
+cd ..
 
 if [ "$host" != "$build" ] ; then
   # The host system is not the build system.
   # No need to build the libraries again.
+  echo Configured to $WHY.
+  echo C compiler: $cc
+  echo C++ compiler: $cxx
+  echo In: llvm-build$builddir
   exit 0
 fi
 
@@ -50,7 +44,6 @@ cd ..
 if [ $haslibs -eq 0 ] ; then
   echo "Please run the build script again to bootstrap ecc."
   echo "This may be done a few times:"
-  echo "1. ecc is built with gcc and host libraries."
   echo "2. ecc is built with itself (compiled with gcc) and libecc."
   echo "3. ecc is built with itself (compiled with itself) and libecc."
 fi

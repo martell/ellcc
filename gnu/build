@@ -7,91 +7,68 @@ prefix=`cd ..; pwd`
 # Figure out the compilers to use.
 . ../build-setup $*
 
-echo Building the GNU tools with:
-echo C compiler: $cc
-echo C++ compiler: $cxx
-echo In: llvm-build$builddir
+echo Configured to $WHY.
+echo C compiler: $cc $CFLAGS
+echo C++ compiler: $cxx $CXXFLAGS
+echo In: gnu-build$builddir
 
 # Configure for GNU tools.
 mkdir -p gnu-build$builddir
 
+if false ; then
+echo foo
+exit 1
 # Configure for binutils.
 # binutils are build to support all targets in the target list.
+#cd gnu-build$builddir
+echo Configuring package binutils for $targets
+make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
+    targetlist=$targetlist \
+    bindir=$bindir prefix=$prefix build=$build-linux \
+    binutils.configure || exit 1
+
+make -C gnu-build$builddir/binutils || exit 1
+fi
+
+# Configure for assemblers for all targets.
+for t in $targets; do
+  echo Configuring the assembler for $t
+  make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
+      target=$t \
+      bindir=$bindir prefix=$prefix build=$build-linux \
+      gas.configure || exit 1
+
+  make -C gnu-build$builddir/binutils/$t || exit 1
+done
+
+# Configure for GDB.
+# GDB is built to support all GDB targets.
 cd gnu-build$builddir
-packages="binutils"
-for p in $packages; do
-  echo Configuring package $p for $targets
-  mkdir $p
-  cd $p
-  ../../src/$p/configure CC="$cc" CXX="$cxx" AR="$ar" --enable-64-bit-bfd \
-    --bindir=$bindir --host=$host-$os --enable-targets=$targetlist \
-    --program-prefix=ecc- --prefix=$prefix/lib \
-    --datadir=$prefix/lib/share
-  if [ $? -ne 0 ] ; then
-    echo configure for $p failed
-    exit 1
-  fi
+echo Configuring package gdb for $targets
+mkdir gdb
+cd gdb
+../../src/gdb/configure CC="$hcc" CXX="$hcxx" --enable-64-bit-bfd \
+  --enable-targets=$targetlist \
+  --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bindir \
+  --datadir=$prefix/lib/share
+if [ $? -ne 0 ] ; then
+  echo configure for gdb failed
+  exit 1
+fi
 
   sed -e "s:/.*/gnu/src/missing ::g" Makefile > tmp$$
   mv tmp$$ Makefile
-  # We have to make binutils here so the configuration of the assemblers
-  # later in this file works. Ugh!
   make || exit 1
-  cd ..
-done
-cd ..
-
-# Configure for assemblers for all targets.
-cd gnu-build$builddir
-cd binutils
-for t in $targets; do
-  mkdir $t
-  cd $t
-  echo Configuring the assembler for $t
-  ../../../src/binutils/gas/configure CC="$cc" CXX="$cxx" AR="$ar" \
-      --bindir=$bindir --target=$t --program-prefix=${t}- \
-      --host=$host-$os --prefix=$prefix/lib --datadir=$prefix/lib/share
-  if [ $? -ne 0 ] ; then
-    echo configure for $t failed
-    exit 1
-  fi
-  make || exit 1
-  cd ..
-done
-cd ../..
+  cd ../..
 
 if [ "$host" != "$build" ] ; then
   # The host system is not the build system.
-  # Build only  binutils and the assemblers.
+  # Build only  binutils, the assemblers, and gdb.
   # Finally, install into the target specific bin dir.
   mkdir -p $bindir
   make TARGETDIR=$builddir BINDIR=$bindir installcross || exit 1
   exit 0
 fi
-
-# Configure for GDB.
-# GDB is built to support all GDB targets.
-cd gnu-build$builddir
-packages="gdb"
-for p in $packages; do
-  echo Configuring package $p for $targets
-  mkdir $p
-  cd $p
-  ../../src/$p/configure CC="$hcc" CXX="$hcxx" --enable-64-bit-bfd \
-    --enable-targets=$targetlist \
-    --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bindir \
-    --datadir=$prefix/lib/share
-  if [ $? -ne 0 ] ; then
-    echo configure for $p failed
-    exit 1
-  fi
-
-  sed -e "s:/.*/gnu/src/missing ::g" Makefile > tmp$$
-  mv tmp$$ Makefile
-  make || exit 1
-  cd ..
-done
-cd ..
 
 # Configure for QEMU.
 cd src/qemu

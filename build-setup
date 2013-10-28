@@ -10,10 +10,12 @@ build=`uname -p`
 host=$build
 target=$build 
 os=linux
+arg1=
 
 if [ $# -ge 1 ] ; then
   # The first argument is the desired cross host.
   host=$1
+  arg1=$host
   bindir=$bindir-$host-$os
   shift
 fi
@@ -29,8 +31,8 @@ fi
 
 if [ "x$ecc" != "x" ] ; then
   # An ecc exists, use it to compile.
-  if [ -e $prefix/libecc/lib/$target/$os/libc.a ]; then
-    # To build for $target with libecc:
+  if [ -e $prefix/libecc/lib/$host/$os/libc.a ]; then
+    # To build for host with libecc:
     cc=$ecc
     cxx=$ecc++
     hcc=$ecc
@@ -38,15 +40,17 @@ if [ "x$ecc" != "x" ] ; then
     ar=$ecc-ar
     builddir="-$host-$os"
     haslibs=1
+    WHY="build for $host with libecc using ecc"
   else
     # libecc has not been built, use the host's libraries.
     cc=$ecc
     cxx=$ecc++
     hcc=$ecc
     hcxx=$ecc++
-    ar=$ecc-ar
+    ar=ar
     builddir=""
     haslibs=0
+    WHY="build for $host with host libraries using ecc"
   fi
 else
   # Build with the gcc compiler
@@ -57,5 +61,6 @@ else
   ar=ar
   builddir=""
   haslibs=0
+  WHY="build for $host with host libraries using gcc"
 fi
 

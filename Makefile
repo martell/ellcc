@@ -51,18 +51,33 @@ docs:
 
 -include libecc/mkscripts/targets/$(TARGET)/setup.mk
 ifeq ($(filter arm%, $(TARGET)),)
+  # Default to all targets.
+  TARGETS=
+else
   # Limit ARM targets for to keep the ecc executable small.
   TARGETS=--enable-targets=arm
+endif
+
+ifneq ($(TARGET),$(build))
+  HOST=--host=$(TARGET)-$(OS)
+  BUILD=--build=$(build)
 else
-  TARGETS=
+  HOST=
+  BUILD=
+endif
+
+ifneq ($(CC),gcc)
+  ifeq (x"$(haslibs)","x1")
+    CFLAGS=$(CFLAGS.$(TARGET))
+    CXXFLAGS=$(CXXFLAGS.$(TARGET))
+  endif
 endif
 
 llvm.configure:
 	cd $(DIR) ; \
 	../llvm/configure \
-	    CC=$(CC) CFLAGS="$(CFLAGS.$(TARGET))" \
-	    CXX=$(CXX) CXXFLAGS="$(CXXFLAGS.$(TARGET))" \
-	    --host=$(TARGET)-$(OS) --bindir=$(bindir) --prefix=$(prefix) \
-	    --build=$(build) \
-            --enable-optimized --enable-shared=no -enable-pic=no \
-	    $(TARGETS)
+        CC=$(CC) CFLAGS="$(CFLAGS)" \
+        CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
+        --bindir=$(bindir) --prefix=$(prefix) \
+        $(HOST) $(BUILD) $(TARGETS) \
+        --enable-optimized --enable-shared=no -enable-pic=no
