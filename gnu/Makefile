@@ -85,6 +85,6 @@ gdb.configure:
     cd gdb ; \
     ../../src/gdb/configure \
         CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
-	--enable-64-bit-bfd --enable-targets=$(targetlist))) \
+	--enable-64-bit-bfd --enable-targets=$(targetlist) \
 	--program-prefix=ecc- --prefix=$(prefix)/lib --bindir=$(bindir) \
-	--datadir=$(prefix)/lib/share
+	$(HOST) --datadir=$(prefix)/lib/share

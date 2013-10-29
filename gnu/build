@@ -14,6 +14,7 @@ echo In: gnu-build$builddir
 
 # Configure for GNU tools.
 mkdir -p gnu-build$builddir
+if [ `false` ] ; then
 
 # Configure for binutils.
 # binutils are build to support all targets in the target list.
@@ -40,7 +41,6 @@ done
 # Configure for GDB.
 # GDB is built to support all GDB targets.
 cd gnu-build$builddir
-echo Configuring package gdb for $targets
 mkdir gdb
 cd gdb
 ../../src/gdb/configure CC="$hcc" CXX="$hcxx" --enable-64-bit-bfd \
@@ -56,6 +56,15 @@ fi
   mv tmp$$ Makefile
   make || exit 1
   cd ../..
+fi
+
+echo Configuring package gdb for $targets
+make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
+    targetlist=$targetlist haslibs=$haslibs \
+    bindir=$bindir prefix=$prefix build=$build-linux \
+    gdb.configure || exit 1
+
+make -C gnu-build$builddir/gdb || exit 1
 
 if [ "$host" != "$build" ] ; then
   # The host system is not the build system.
