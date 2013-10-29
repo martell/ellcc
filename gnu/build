@@ -14,11 +14,9 @@ echo In: gnu-build$builddir
 
 # Configure for GNU tools.
 mkdir -p gnu-build$builddir
-if [ `false` ] ; then
 
 # Configure for binutils.
 # binutils are build to support all targets in the target list.
-#cd gnu-build$builddir
 echo Configuring package binutils for $targets
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
     targetlist=$targetlist haslibs=$haslibs \
@@ -40,24 +38,6 @@ done
 
 # Configure for GDB.
 # GDB is built to support all GDB targets.
-cd gnu-build$builddir
-mkdir gdb
-cd gdb
-../../src/gdb/configure CC="$hcc" CXX="$hcxx" --enable-64-bit-bfd \
-  --enable-targets=$targetlist \
-  --program-prefix=ecc- --prefix=$prefix/lib --bindir=$bindir \
-  --datadir=$prefix/lib/share
-if [ $? -ne 0 ] ; then
-  echo configure for gdb failed
-  exit 1
-fi
-
-  sed -e "s:/.*/gnu/src/missing ::g" Makefile > tmp$$
-  mv tmp$$ Makefile
-  make || exit 1
-  cd ../..
-fi
-
 echo Configuring package gdb for $targets
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
     targetlist=$targetlist haslibs=$haslibs \

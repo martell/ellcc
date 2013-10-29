@@ -87,4 +87,5 @@ gdb.configure:
         CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
 	--enable-64-bit-bfd --enable-targets=$(targetlist) \
 	--program-prefix=ecc- --prefix=$(prefix)/lib --bindir=$(bindir) \
-	$(HOST) --datadir=$(prefix)/lib/share
+	$(HOST) --datadir=$(prefix)/lib/share --enable-gdbserver=no \
+	--enable-sim=no

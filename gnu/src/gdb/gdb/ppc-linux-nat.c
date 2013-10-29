@@ -39,6 +39,19 @@
 #include <fcntl.h>
 #include <sys/procfs.h>
 #include <sys/ptrace.h>
+#if defined(__ELLCC__)
+#define PT_R0 0
+#define PT_NIP 32
+#define PT_MSR 33
+#define PT_CTR 35
+#define PT_LNK 36
+#define PT_XER 37
+#define PT_CCR 38
+#define PT_FPR0 48
+#if !defined(__powerpc64__)
+#define PT_FPSCR (PT_FPR0 + (2 * 32) + 1)
+#endif
+#endif /* __ELLCC__ */
 
 /* Prototypes for supply_gregset etc.  */
 #include "gregset.h"

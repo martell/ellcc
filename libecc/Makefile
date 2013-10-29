@@ -59,10 +59,14 @@ $(Configs)::
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/linux/src/.libs/libunwind.a ../lib/$*/linux
 
-#$(Configs)::
-#	make $@.ncurses.configure && \
-#	make $@.ncurses.build && \
-#	make $@.ncurses.install
+$(Configs)::
+	make $@.ncurses.configure && \
+	make $@.ncurses.build && \
+	make $@.ncurses.install
+
+# RICH: NOCXX added below because of a Microblaze C++ error.
+# Remove when fixed or if Microblaze is removed.
+	#NOCXX="--without-cxx-binding" ; \
 
 %.ncurses.configure:
 	@echo Configuring ncurses for $* in ncurses-build/$*/linux
@@ -73,7 +77,7 @@ $(Configs)::
 	    CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
             --host=$(TARGET)-$(OS) \
             --with-build-cc=$(ELLCC)/bin/ecc \
-	    --prefix=$(ELLCC)
+	    --prefix=$(ELLCC) $$NOCXX
 
 %.ncurses.build:
 	make -C ncurses-build/$*/linux
@@ -85,6 +89,11 @@ $(Configs)::
 	cp $*/linux/lib/*.a ../lib/$*/linux ; \
 	mkdir -p ../include/$*/linux ; \
 	cp $*/linux/include/*.h ../include/linux
+
+$(Configs)::
+	make $@.zlib.configure && \
+	make $@.zlib.build && \
+	make $@.zlib.install
 
 %.zlib.configure:
 	@echo Configuring zlib for $* in zlib-build/$*/linux

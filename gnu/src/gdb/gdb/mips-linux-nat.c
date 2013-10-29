@@ -32,7 +32,6 @@
 #include "gdb_proc_service.h"
 #include "gregset.h"
 
-#include <sgidefs.h>
 #include <sys/ptrace.h>
 
 #include "features/mips-linux.c"
