@@ -29,7 +29,14 @@ if [ -e $bin/ecc ]; then
   ecc=$bin/ecc
 fi
 
+hasecc=0
 if [ "x$ecc" != "x" ] ; then
+  if [ -e $ecc-ar ]; then
+    hasecc=1
+  fi
+fi
+
+if [ $hasecc ] ; then
   # An ecc exists, use it to compile.
   if [ -e $prefix/libecc/lib/$host/$os/libc.a ]; then
     # To build for host with libecc:
@@ -37,11 +44,7 @@ if [ "x$ecc" != "x" ] ; then
     cxx=$ecc++
     hcc=$ecc
     hcxx=$ecc++
-    if [ -e $ecc-ar ]; then
-      ar=$ecc-ar
-    else
-      ar=ar
-    fi
+    ar=$ecc-ar
     builddir="-$host-$os"
     haslibs=yes
     WHY="build for $host with libecc using ecc"
