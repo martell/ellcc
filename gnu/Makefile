@@ -78,3 +78,13 @@ gas.configure:
       CC=$(CC) CFLAGS="$(CFLAGS)" CXX="$cxx" CXXFLAGS="$(CXXFLAGS)" AR=$(AR) \
       --bindir=$(bindir) --target=$(target) --program-prefix=${target}- \
       $(HOST) --prefix=$(prefix)/lib --datadir=$(prefix)/lib/share
+
+gdb.configure:
+	cd $(DIR) ; \
+    mkdir -p gdb ; \
+    cd gdb ; \
+    ../../src/gdb/configure \
+        CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
+	--enable-64-bit-bfd --enable-targets=$(targetlist))) \
+	--program-prefix=ecc- --prefix=$(prefix)/lib --bindir=$(bindir) \
+	--datadir=$(prefix)/lib/share

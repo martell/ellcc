@@ -88,7 +88,7 @@ if [ $? -ne 0 ] ; then
   echo configure for qemu failed
   exit 1
 fi
-make
+make || exit 1
 cd ../..
 
 # Finally, install everything.
