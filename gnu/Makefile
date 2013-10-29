@@ -44,6 +44,14 @@ install::
 
 -include $(prefix)/libecc/mkscripts/targets/$(TARGET)/setup.mk
 
+ifneq ($(TARGET),$(build))
+  HOST=--host=$(TARGET)-$(OS)
+  BUILD=--build=$(build)
+else
+  HOST=
+  BUILD=
+endif
+
 ifneq ($(CC),gcc)
   ifeq (x"$(haslibs)","x1")
     CFLAGS=$(CFLAGS.$(TARGET))
@@ -58,7 +66,7 @@ binutils.configure:
     ../../src/binutils/configure \
         CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
         AR=$(AR) --enable-64-bit-bfd \
-        --bindir=$(bindir) --host=$(TARGET)-$(OS) --enable-targets=$(targetlist) \
+        --bindir=$(bindir) $(HOST) --enable-targets=$(targetlist) \
         --program-prefix=ecc- --prefix=$(prefix)/lib \
         --datadir=$(prefix)/lib/share
 
@@ -69,4 +77,4 @@ gas.configure:
     ../../../src/binutils/gas/configure \
       CC=$(CC) CFLAGS="$(CFLAGS)" CXX="$cxx" CXXFLAGS="$(CXXFLAGS)" AR=$(AR) \
       --bindir=$(bindir) --target=$(target) --program-prefix=${target}- \
-      --host=$(TARGET)-$(OS) --prefix=$(prefix)/lib --datadir=$(prefix)/lib/share
+      $(HOST) --prefix=$(prefix)/lib --datadir=$(prefix)/lib/share

@@ -34,7 +34,6 @@ if [ "x$ecc" != "x" ] ; then
   if [ -e $prefix/libecc/lib/$host/$os/libc.a \
        -a \
        -e $ecc-ar ]; then
-  if [ -e $prefix/libecc/lib/$host/$os/libc.a ]; then
     # To build for host with libecc:
     cc=$ecc
     cxx=$ecc++
