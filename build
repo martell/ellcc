@@ -11,7 +11,7 @@ prefix=`pwd`
 mkdir -p llvm-build$builddir
 
 make DIR=llvm-build$builddir CC="$cc" CXX="$cxx" TARGET=$host OS=$os \
-    bindir=$bindir prefix=$prefix build=$build-linux \
+    bindir=$bindir prefix=$prefix build=$build-linux haslibs=$haslibs \
     llvm.configure
 
 # Build the LLVM tools.

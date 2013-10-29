@@ -67,7 +67,7 @@ else
 endif
 
 ifneq ($(CC),gcc)
-  ifeq (x"$(haslibs)","x1")
+  ifeq ($(haslibs),yes)
     CFLAGS=$(CFLAGS.$(TARGET))
     CXXFLAGS=$(CXXFLAGS.$(TARGET))
   endif

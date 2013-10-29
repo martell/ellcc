@@ -31,17 +31,19 @@ fi
 
 if [ "x$ecc" != "x" ] ; then
   # An ecc exists, use it to compile.
-  if [ -e $prefix/libecc/lib/$host/$os/libc.a \
-       -a \
-       -e $ecc-ar ]; then
+  if [ -e $prefix/libecc/lib/$host/$os/libc.a ]; then
     # To build for host with libecc:
     cc=$ecc
     cxx=$ecc++
     hcc=$ecc
     hcxx=$ecc++
-    ar=$ecc-ar
+    if [ -e $ecc-ar ]; then
+      ar=$ecc-ar
+    else
+      ar=ar
+    fi
     builddir="-$host-$os"
-    haslibs=1
+    haslibs=yes
     WHY="build for $host with libecc using ecc"
   else
     # libecc has not been built, use the host's libraries.
@@ -51,7 +53,7 @@ if [ "x$ecc" != "x" ] ; then
     hcxx=$ecc++
     ar=ar
     builddir=""
-    haslibs=0
+    haslibs=no
     WHY="build for $host with host libraries using ecc"
   fi
 else
@@ -62,7 +64,7 @@ else
   hcxx=g++
   ar=ar
   builddir=""
-  haslibs=0
+  haslibs=no
   WHY="build for $host with host libraries using gcc"
 fi
 
