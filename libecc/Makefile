@@ -66,12 +66,12 @@ $(Configs)::
 
 # RICH: NOCXX added below because of a Microblaze C++ error.
 # Remove when fixed or if Microblaze is removed.
-	#NOCXX="--without-cxx-binding" ; \
 
 %.ncurses.configure:
 	@echo Configuring ncurses for $* in ncurses-build/$*/linux
 	mkdir -p ncurses-build/$*/linux
 	cd ncurses-build/$*/linux ; \
+	NOCXX="--without-cxx-binding" ; \
 	../../../src/ncurses/configure \
 	    CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
 	    CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
