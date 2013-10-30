@@ -80,4 +80,5 @@ llvm.configure:
         CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
         --bindir=$(bindir) --prefix=$(prefix) \
         $(HOST) $(BUILD) $(TARGETS) \
-        --enable-optimized --enable-shared=no -enable-pic=no
+        --enable-optimized --enable-shared=no -enable-pic=no \
+	--enable-keep-symbols
