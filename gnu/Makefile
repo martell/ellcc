@@ -46,10 +46,8 @@ install::
 
 ifneq ($(TARGET),$(build))
   HOST=--host=$(TARGET)-$(OS)
-  BUILD=--build=$(build)
 else
   HOST=
-  BUILD=
 endif
 
 ifneq ($(CC),gcc)

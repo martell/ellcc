@@ -20,7 +20,7 @@ mkdir -p gnu-build$builddir
 echo Configuring package binutils for $targets
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
     targetlist=$targetlist haslibs=$haslibs \
-    bindir=$bindir prefix=$prefix build=$build-linux \
+    bindir=$bindir prefix=$prefix build=$build \
     binutils.configure || exit 1
 
 make -C gnu-build$builddir/binutils || exit 1
@@ -30,7 +30,7 @@ for t in $targets; do
   echo Configuring the assembler for $t
   make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
       target=$t haslibs=$haslibs \
-      bindir=$bindir prefix=$prefix build=$build-linux \
+      bindir=$bindir prefix=$prefix build=$build \
       gas.configure || exit 1
 
   make -C gnu-build$builddir/binutils/$t || exit 1
@@ -41,7 +41,7 @@ done
 echo Configuring package gdb for $targets
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
     targetlist=$targetlist haslibs=$haslibs \
-    bindir=$bindir prefix=$prefix build=$build-linux \
+    bindir=$bindir prefix=$prefix build=$build \
     gdb.configure || exit 1
 
 make -C gnu-build$builddir/gdb || exit 1
