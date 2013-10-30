@@ -60,7 +60,7 @@ endif
 
 ifneq ($(TARGET),$(build))
   HOST=--host=$(TARGET)-$(OS)
-  BUILD=--build=$(build)-$(os)
+  BUILD=--build=$(build)-$(OS)
 else
   HOST=
   BUILD=
