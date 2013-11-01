@@ -425,6 +425,11 @@ def : Pat<(v8i64 (X86VBroadcast (i64 GR64:$src))),
 def : Pat<(v8i64 (X86VBroadcastm VK8WM:$mask, (i64 GR64:$src))),
         (VPBROADCASTQrZkrr VK8WM:$mask, GR64:$src)>;
 
+def : Pat<(v16i32 (int_x86_avx512_pbroadcastd_i32_512 (i32 GR32:$src))),
+        (VPBROADCASTDrZrr GR32:$src)>;
+def : Pat<(v8i64 (int_x86_avx512_pbroadcastq_i64_512 (i64 GR64:$src))),
+        (VPBROADCASTQrZrr GR64:$src)>;
+
 multiclass avx512_int_broadcast_rm<bits<8> opc, string OpcodeStr,
                           X86MemOperand x86memop, PatFrag ld_frag,
                           RegisterClass DstRC, ValueType OpVT, ValueType SrcVT,
@@ -460,6 +465,11 @@ defm VPBROADCASTDZ  : avx512_int_broadcast_rm<0x58, "vpbroadcastd", i32mem,
 defm VPBROADCASTQZ  : avx512_int_broadcast_rm<0x59, "vpbroadcastq", i64mem,
                       loadi64, VR512, v8i64, v2i64, VK8WM>,  EVEX_V512, VEX_W,
                       EVEX_CD8<64, CD8VT1>;
+
+def : Pat<(v16i32 (int_x86_avx512_pbroadcastd_512 (v4i32 VR128X:$src))),
+          (VPBROADCASTDZrr VR128X:$src)>;
+def : Pat<(v8i64 (int_x86_avx512_pbroadcastq_512 (v2i64 VR128X:$src))),
+          (VPBROADCASTQZrr VR128X:$src)>;
 
 def : Pat<(v16f32 (X86VBroadcast (v4f32 VR128X:$src))),
           (VBROADCASTSSZrr VR128X:$src)>;
@@ -1598,6 +1608,34 @@ defm VPMULUDQZ : avx512_binop_rm2<0xF4, "vpmuludq", v8i64, v16i32,
 
 def : Pat<(v8i64 (X86pmuludq (v16i32 VR512:$src1), (v16i32 VR512:$src2))),
           (VPMULUDQZrr VR512:$src1, VR512:$src2)>;
+
+defm VPMAXUDZ : avx512_binop_rm<0x3F, "vpmaxud", X86umax, v16i32, VR512, memopv16i32,
+                   i512mem, loadi32, i32mem, "{1to16}", SSE_INTALU_ITINS_P, 1>,
+                   T8, EVEX_V512, EVEX_CD8<32, CD8VF>;
+defm VPMAXUQZ : avx512_binop_rm<0x3F, "vpmaxuq", X86umax, v8i64, VR512, memopv8i64,
+                   i512mem, loadi64, i64mem, "{1to8}", SSE_INTALU_ITINS_P, 0>,
+                   T8, EVEX_V512, VEX_W, EVEX_CD8<64, CD8VF>;
+
+defm VPMAXSDZ : avx512_binop_rm<0x3D, "vpmaxsd", X86smax, v16i32, VR512, memopv16i32,
+                   i512mem, loadi32, i32mem, "{1to16}", SSE_INTALU_ITINS_P, 1>,
+                   EVEX_V512, EVEX_CD8<32, CD8VF>;
+defm VPMAXSQZ : avx512_binop_rm<0x3D, "vpmaxsq", X86smax, v8i64, VR512, memopv8i64,
+                   i512mem, loadi64, i64mem, "{1to8}", SSE_INTALU_ITINS_P, 0>,
+                   T8, EVEX_V512, VEX_W, EVEX_CD8<64, CD8VF>;
+
+defm VPMINUDZ : avx512_binop_rm<0x3B, "vpminud", X86umin, v16i32, VR512, memopv16i32,
+                   i512mem, loadi32, i32mem, "{1to16}", SSE_INTALU_ITINS_P, 1>,
+                   T8, EVEX_V512, EVEX_CD8<32, CD8VF>;
+defm VPMINUQZ : avx512_binop_rm<0x3B, "vpminuq", X86umin, v8i64, VR512, memopv8i64,
+                   i512mem, loadi64, i64mem, "{1to8}", SSE_INTALU_ITINS_P, 0>,
+                   T8, EVEX_V512, VEX_W, EVEX_CD8<64, CD8VF>;
+
+defm VPMINSDZ : avx512_binop_rm<0x39, "vpminsd", X86smin, v16i32, VR512, memopv16i32,
+                   i512mem, loadi32, i32mem, "{1to16}", SSE_INTALU_ITINS_P, 1>,
+                   T8, EVEX_V512, EVEX_CD8<32, CD8VF>;
+defm VPMINSQZ : avx512_binop_rm<0x39, "vpminsq", X86smin, v8i64, VR512, memopv8i64,
+                   i512mem, loadi64, i64mem, "{1to8}", SSE_INTALU_ITINS_P, 0>,
+                   T8, EVEX_V512, VEX_W, EVEX_CD8<64, CD8VF>;
 
 //===----------------------------------------------------------------------===//
 // AVX-512 - Unpack Instructions

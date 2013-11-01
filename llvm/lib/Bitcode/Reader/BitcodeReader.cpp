@@ -623,11 +623,7 @@ bool BitcodeReader::ParseAttrKind(uint64_t Code, Attribute::AttrKind *Kind) {
     *Kind = Attribute::ZExt;
     return false;
   default:
-    std::string Buf;
-    raw_string_ostream fmt(Buf);
-    fmt << "Unknown attribute kind (" << Code << ")";
-    fmt.flush();
-    return Error(Buf.c_str());
+    return Error("Unknown attribute kind");
   }
 }
 
@@ -1848,9 +1844,6 @@ bool BitcodeReader::ParseModule(bool Resume) {
         new GlobalVariable(*TheModule, Ty, isConstant, Linkage, 0, "", 0,
                            TLM, AddressSpace, ExternallyInitialized);
       NewGV->setAlignment(Alignment);
-      if (Record.size() > 10)
-        NewGV->setAddressMaybeTaken(Record[10]);
-
       if (!Section.empty())
         NewGV->setSection(Section);
       NewGV->setVisibility(Visibility);

@@ -183,10 +183,10 @@ DwarfDebug::DwarfDebug(AsmPrinter *A, Module *M)
     AbbreviationsSet(InitAbbreviationsSetSize),
     SourceIdMap(DIEValueAllocator),
     PrevLabel(NULL), GlobalCUIndexCount(0),
-    InfoHolder(A, &AbbreviationsSet, &Abbreviations, "info_string",
+    InfoHolder(A, &AbbreviationsSet, Abbreviations, "info_string",
                DIEValueAllocator),
     SkeletonAbbrevSet(InitAbbreviationsSetSize),
-    SkeletonHolder(A, &SkeletonAbbrevSet, &SkeletonAbbrevs, "skel_string",
+    SkeletonHolder(A, &SkeletonAbbrevSet, SkeletonAbbrevs, "skel_string",
                    DIEValueAllocator) {
 
   DwarfInfoSectionSym = DwarfAbbrevSectionSym = 0;
@@ -279,10 +279,10 @@ void DwarfUnits::assignAbbrevNumber(DIEAbbrev &Abbrev) {
   // If it's newly added.
   if (InSet == &Abbrev) {
     // Add to abbreviation list.
-    Abbreviations->push_back(&Abbrev);
+    Abbreviations.push_back(&Abbrev);
 
     // Assign the vector position + 1 as its number.
-    Abbrev.setNumber(Abbreviations->size());
+    Abbrev.setNumber(Abbreviations.size());
   } else {
     // Assign existing abbreviation number.
     Abbrev.setNumber(InSet->getNumber());
@@ -378,9 +378,8 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
   // concrete DIE twice.
   if (DIE *AbsSPDIE = AbstractSPDies.lookup(SPNode)) {
     // Pick up abstract subprogram DIE.
-    SPDie = new DIE(dwarf::DW_TAG_subprogram);
+    SPDie = SPCU->createAndAddDIE(dwarf::DW_TAG_subprogram, *SPCU->getCUDie());
     SPCU->addDIEEntry(SPDie, dwarf::DW_AT_abstract_origin, AbsSPDIE);
-    SPCU->addDie(SPDie);
   } else {
     DISubprogram SPDecl = SP.getFunctionDeclaration();
     if (!SPDecl.isSubprogram()) {
@@ -401,19 +400,19 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
         uint16_t SPTag = SPTy.getTag();
         if (SPTag == dwarf::DW_TAG_subroutine_type)
           for (unsigned i = 1, N = Args.getNumElements(); i < N; ++i) {
-            DIE *Arg = new DIE(dwarf::DW_TAG_formal_parameter);
+            DIE *Arg =
+                SPCU->createAndAddDIE(dwarf::DW_TAG_formal_parameter, *SPDie);
             DIType ATy = DIType(Args.getElement(i));
             SPCU->addType(Arg, ATy);
             if (ATy.isArtificial())
               SPCU->addFlag(Arg, dwarf::DW_AT_artificial);
             if (ATy.isObjectPointer())
               SPCU->addDIEEntry(SPDie, dwarf::DW_AT_object_pointer, Arg);
-            SPDie->addChild(Arg);
           }
         DIE *SPDeclDie = SPDie;
-        SPDie = new DIE(dwarf::DW_TAG_subprogram);
+        SPDie =
+            SPCU->createAndAddDIE(dwarf::DW_TAG_subprogram, *SPCU->getCUDie());
         SPCU->addDIEEntry(SPDie, dwarf::DW_AT_specification, SPDeclDie);
-        SPCU->addDie(SPDie);
       }
     }
   }
@@ -822,6 +821,7 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
   InfoHolder.addUnit(NewCU);
 
   CUMap.insert(std::make_pair(N, NewCU));
+  CUDieMap.insert(std::make_pair(Die, NewCU));
   return NewCU;
 }
 
@@ -1916,7 +1916,8 @@ void DwarfDebug::recordSourceLine(unsigned Line, unsigned Col, const MDNode *S,
 // Emit Methods
 //===----------------------------------------------------------------------===//
 
-// Compute the size and offset of a DIE.
+// Compute the size and offset of a DIE. The offset is relative to start of the
+// CU. It returns the offset after laying out the DIE.
 unsigned
 DwarfUnits::computeSizeAndOffset(DIE *Die, unsigned Offset) {
   // Get the children.
@@ -1927,7 +1928,7 @@ DwarfUnits::computeSizeAndOffset(DIE *Die, unsigned Offset) {
 
   // Get the abbreviation for this DIE.
   unsigned AbbrevNumber = Die->getAbbrevNumber();
-  const DIEAbbrev *Abbrev = Abbreviations->at(AbbrevNumber - 1);
+  const DIEAbbrev *Abbrev = Abbreviations[AbbrevNumber - 1];
 
   // Set DIE offset
   Die->setOffset(Offset);
@@ -1961,16 +1962,23 @@ DwarfUnits::computeSizeAndOffset(DIE *Die, unsigned Offset) {
 
 // Compute the size and offset for each DIE.
 void DwarfUnits::computeSizeAndOffsets() {
+  // Offset from the first CU in the debug info section is 0 initially.
+  unsigned SecOffset = 0;
+
   // Iterate over each compile unit and set the size and offsets for each
   // DIE within each compile unit. All offsets are CU relative.
   for (SmallVectorImpl<CompileUnit *>::iterator I = CUs.begin(),
          E = CUs.end(); I != E; ++I) {
-    unsigned Offset =
-      sizeof(int32_t) + // Length of Compilation Unit Info
-      sizeof(int16_t) + // DWARF version number
-      sizeof(int32_t) + // Offset Into Abbrev. Section
-      sizeof(int8_t);   // Pointer Size (in bytes)
-    computeSizeAndOffset((*I)->getCUDie(), Offset);
+    (*I)->setDebugInfoOffset(SecOffset);
+
+    // CU-relative offset is reset to 0 here.
+    unsigned Offset = sizeof(int32_t) + // Length of Unit Info
+                      (*I)->getHeaderSize(); // Unit-specific headers
+
+    // EndOffset here is CU-relative, after laying out
+    // all of the CU DIE.
+    unsigned EndOffset = computeSizeAndOffset((*I)->getCUDie(), Offset);
+    SecOffset += EndOffset;
   }
 }
 
@@ -2024,10 +2032,10 @@ void DwarfDebug::emitSectionLabels() {
 }
 
 // Recursively emits a debug information entry.
-void DwarfDebug::emitDIE(DIE *Die, std::vector<DIEAbbrev *> *Abbrevs) {
+void DwarfDebug::emitDIE(DIE *Die, ArrayRef<DIEAbbrev *> Abbrevs) {
   // Get the abbreviation for this DIE.
   unsigned AbbrevNumber = Die->getAbbrevNumber();
-  const DIEAbbrev *Abbrev = Abbrevs->at(AbbrevNumber - 1);
+  const DIEAbbrev *Abbrev = Abbrevs[AbbrevNumber - 1];
 
   // Emit the code (index) for the abbreviation.
   if (Asm->isVerbose())
@@ -2050,6 +2058,38 @@ void DwarfDebug::emitDIE(DIE *Die, std::vector<DIEAbbrev *> *Abbrevs) {
       Asm->OutStreamer.AddComment(dwarf::AttributeString(Attr));
 
     switch (Attr) {
+    case dwarf::DW_AT_abstract_origin:
+    case dwarf::DW_AT_type:
+    case dwarf::DW_AT_friend:
+    case dwarf::DW_AT_specification:
+    case dwarf::DW_AT_import:
+    case dwarf::DW_AT_containing_type: {
+      DIEEntry *E = cast<DIEEntry>(Values[i]);
+      DIE *Origin = E->getEntry();
+      unsigned Addr = Origin->getOffset();
+      if (Form == dwarf::DW_FORM_ref_addr) {
+        assert(!useSplitDwarf() && "TODO: dwo files can't have relocations.");
+        // For DW_FORM_ref_addr, output the offset from beginning of debug info
+        // section. Origin->getOffset() returns the offset from start of the
+        // compile unit.
+        CompileUnit *CU = CUDieMap.lookup(Origin->getCompileUnit());
+        assert(CU && "CUDie should belong to a CU.");
+        Addr += CU->getDebugInfoOffset();
+        if (Asm->MAI->doesDwarfUseRelocationsAcrossSections())
+          Asm->EmitLabelPlusOffset(DwarfInfoSectionSym, Addr,
+                                   DIEEntry::getRefAddrSize(Asm));
+        else
+          Asm->EmitLabelOffsetDifference(DwarfInfoSectionSym, Addr,
+                                         DwarfInfoSectionSym,
+                                         DIEEntry::getRefAddrSize(Asm));
+      } else {
+        // Make sure Origin belong to the same CU.
+        assert(Die->getCompileUnit() == Origin->getCompileUnit() &&
+               "The referenced DIE should belong to the same CU in ref4");
+        Asm->EmitInt32(Addr);
+      }
+      break;
+    }
     case dwarf::DW_AT_ranges: {
       // DW_AT_range Value encodes offset in debug_range section.
       DIEInteger *V = cast<DIEInteger>(Values[i]);
@@ -2123,20 +2163,10 @@ void DwarfUnits::emitUnits(DwarfDebug *DD,
                                     TheCU->getUniqueID()));
 
     // Emit size of content not including length itself
-    unsigned ContentSize = Die->getSize() +
-      sizeof(int16_t) + // DWARF version number
-      sizeof(int32_t) + // Offset Into Abbrev. Section
-      sizeof(int8_t);   // Pointer Size (in bytes)
+    Asm->OutStreamer.AddComment("Length of Unit");
+    Asm->EmitInt32(TheCU->getHeaderSize() + Die->getSize());
 
-    Asm->OutStreamer.AddComment("Length of Compilation Unit Info");
-    Asm->EmitInt32(ContentSize);
-    Asm->OutStreamer.AddComment("DWARF version number");
-    Asm->EmitInt16(DD->getDwarfVersion());
-    Asm->OutStreamer.AddComment("Offset Into Abbrev. Section");
-    Asm->EmitSectionOffset(Asm->GetTempSymbol(ASection->getLabelBeginName()),
-                           ASectionSym);
-    Asm->OutStreamer.AddComment("Address Size (in bytes)");
-    Asm->EmitInt8(Asm->getDataLayout().getPointerSize());
+    TheCU->emitHeader(ASection, ASectionSym);
 
     DD->emitDIE(Die, Abbreviations);
     Asm->OutStreamer.EmitLabel(Asm->GetTempSymbol(USection->getLabelEndName(),

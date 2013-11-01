@@ -295,7 +295,7 @@ static void PrintStackTraceById(u32 stack_trace_id) {
   CHECK(stack_trace_id);
   uptr size = 0;
   const uptr *trace = StackDepotGet(stack_trace_id, &size);
-  StackTrace::PrintStack(trace, size, common_flags()->symbolize, 0);
+  StackTrace::PrintStack(trace, size);
 }
 
 // ForEachChunk callback. Aggregates unreachable chunks into a LeakReport.
@@ -492,7 +492,6 @@ void LeakReport::PrintLargest(uptr num_leaks_to_print) {
            leaks_[i].total_size, leaks_[i].hit_count);
     Printf("%s", d.End());
     PrintStackTraceById(leaks_[i].stack_trace_id);
-    Printf("\n");
     leaks_printed++;
     if (leaks_printed == num_leaks_to_print) break;
   }

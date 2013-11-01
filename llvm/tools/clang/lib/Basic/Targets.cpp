@@ -1469,7 +1469,8 @@ class R600TargetInfo : public TargetInfo {
     GK_EVERGREEN_DOUBLE_OPS,
     GK_NORTHERN_ISLANDS,
     GK_CAYMAN,
-    GK_SOUTHERN_ISLANDS
+    GK_SOUTHERN_ISLANDS,
+    GK_SEA_ISLANDS
   } GPU;
 
 public:
@@ -1548,6 +1549,9 @@ public:
       .Case("pitcairn", GK_SOUTHERN_ISLANDS)
       .Case("verde",    GK_SOUTHERN_ISLANDS)
       .Case("oland",    GK_SOUTHERN_ISLANDS)
+      .Case("bonaire",  GK_SEA_ISLANDS)
+      .Case("kabini",   GK_SEA_ISLANDS)
+      .Case("kaveri",   GK_SEA_ISLANDS)
       .Default(GK_NONE);
 
     if (GPU == GK_NONE) {
@@ -1570,6 +1574,7 @@ public:
       DescriptionString = DescriptionStringR600DoubleOps;
       break;
     case GK_SOUTHERN_ISLANDS:
+    case GK_SEA_ISLANDS:
       DescriptionString = DescriptionStringSI;
       break;
     }
@@ -3635,6 +3640,13 @@ public:
     return Feature == "aarch64" || (Feature == "neon" && FPU == NeonMode);
   }
 
+  virtual bool setCPU(const std::string &Name) {
+    return llvm::StringSwitch<bool>(Name)
+             .Case("generic", true)
+             .Cases("cortex-a53", "cortex-a57", true)
+             .Default(false);
+  }
+
   virtual bool handleTargetFeatures(std::vector<std::string> &Features,
                                     DiagnosticsEngine &Diags) {
     FPU = FPUMode;
@@ -3802,6 +3814,8 @@ protected:
   unsigned SoftFloat : 1;
   unsigned SoftFloatABI : 1;
 
+  unsigned CRC : 1;
+
   static const Builtin::Info BuiltinInfo[];
 
   static bool shouldUseInlineAtomic(const llvm::Triple &T) {
@@ -3955,6 +3969,7 @@ public:
       Features["neon"] = true;
       Features["hwdiv"] = true;
       Features["hwdiv-arm"] = true;
+      Features["crc"] = true;
     } else if (CPU == "cortex-r5" || CPU == "cortex-m3" ||
                CPU == "cortex-m4" ||
                // Enable the hwdiv extension for all v8a AArch32 cores by
@@ -3969,6 +3984,7 @@ public:
   virtual bool handleTargetFeatures(std::vector<std::string> &Features,
                                     DiagnosticsEngine &Diags) {
     FPU = 0;
+    CRC = 0;
     SoftFloat = SoftFloatABI = false;
     HWDiv = 0;
     for (unsigned i = 0, e = Features.size(); i != e; ++i) {
@@ -3990,6 +4006,8 @@ public:
         HWDiv |= HWDivThumb;
       else if (Features[i] == "+hwdiv-arm")
         HWDiv |= HWDivARM;
+      else if (Features[i] == "+crc")
+        CRC = 1;
     }
 
     if (!(FPU & NeonFPU) && FPMath == FP_Neon) {
@@ -4148,7 +4166,7 @@ public:
     if ((FPU & NeonFPU) && !SoftFloat && CPUArchVer >= 7)
       Builder.defineMacro("__ARM_NEON__");
 
-    if (CPUArchVer == 8)
+    if (CRC)
       Builder.defineMacro("__ARM_FEATURE_CRC32");
 
     if (CPUArchVer >= 6 && CPUArch != "6M") {
@@ -5013,6 +5031,8 @@ namespace {
 
 namespace {
 class MipsTargetInfoBase : public TargetInfo {
+  virtual void setDescriptionString() = 0;
+
   static const Builtin::Info BuiltinInfo[];
   std::string CPU;
   bool IsMips16;
@@ -5026,9 +5046,9 @@ class MipsTargetInfoBase : public TargetInfo {
     NoDSP, DSP1, DSP2
   } DspRev;
   bool HasMSA;
-  bool HasFP64;
 
 protected:
+  bool HasFP64;
   std::string ABI;
 
 public:
@@ -5111,7 +5131,10 @@ public:
     NumRecords = clang::Mips::LastTSBuiltin - Builtin::FirstTSBuiltin;
   }
   virtual bool hasFeature(StringRef Feature) const {
-    return Feature == "mips";
+    return llvm::StringSwitch<bool>(Feature)
+      .Case("mips", true)
+      .Case("fp64", HasFP64)
+      .Default(false);
   }
   virtual BuiltinVaListKind getBuiltinVaListKind() const {
     return TargetInfo::VoidPtrBuiltinVaList;
@@ -5216,6 +5239,8 @@ public:
     if (it != Features.end())
       Features.erase(it);
 
+    setDescriptionString();
+
     return true;
   }
 
@@ -5306,11 +5331,18 @@ public:
 };
 
 class Mips32EBTargetInfo : public Mips32TargetInfoBase {
+  virtual void setDescriptionString() {
+    if (HasFP64)
+      DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                          "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32-S128";
+    else
+      DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                          "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32-S64";
+  }
+
 public:
   Mips32EBTargetInfo(const llvm::Triple &Triple)
       : Mips32TargetInfoBase(Triple) {
-    DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
-                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32-S64";
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const {
@@ -5322,12 +5354,19 @@ public:
 };
 
 class Mips32ELTargetInfo : public Mips32TargetInfoBase {
+  virtual void setDescriptionString() {
+    if (HasFP64)
+      DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                          "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32-S128";
+    else
+      DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                          "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32-S64";
+  }
+
 public:
   Mips32ELTargetInfo(const llvm::Triple &Triple)
       : Mips32TargetInfoBase(Triple) {
     BigEndian = false;
-    DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
-                        "i64:64:64-f32:32:32-f64:64:64-v64:64:64-n32-S64";
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const {
@@ -5339,7 +5378,6 @@ public:
 };
 
 class Mips64TargetInfoBase : public MipsTargetInfoBase {
-  virtual void SetDescriptionString(const std::string &Name) = 0;
 public:
   Mips64TargetInfoBase(const llvm::Triple &Triple)
       : MipsTargetInfoBase(Triple, "n64", "mips64") {
@@ -5355,7 +5393,6 @@ public:
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
   }
   virtual bool setABI(const std::string &Name) {
-    SetDescriptionString(Name);
     if (Name == "n32") {
       LongWidth = LongAlign = 32;
       PointerWidth = PointerAlign = 32;
@@ -5431,21 +5468,21 @@ public:
 };
 
 class Mips64EBTargetInfo : public Mips64TargetInfoBase {
-  virtual void SetDescriptionString(const std::string &Name) {
-    // Change DescriptionString only if ABI is n32.  
-    if (Name == "n32")
+  virtual void setDescriptionString() {
+    if (ABI == "n32")
       DescriptionString = "E-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
                           "i64:64:64-f32:32:32-f64:64:64-f128:128:128-"
                           "v64:64:64-n32:64-S128";
+    else
+      DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                          "i64:64:64-f32:32:32-f64:64:64-f128:128:128-"
+                          "v64:64:64-n32:64-S128";
+
   }
+
 public:
   Mips64EBTargetInfo(const llvm::Triple &Triple)
-      : Mips64TargetInfoBase(Triple) {
-    // Default ABI is n64.
-    DescriptionString = "E-p:64:64:64-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
-                        "i64:64:64-f32:32:32-f64:64:64-f128:128:128-"
-                        "v64:64:64-n32:64-S128";
-  }
+      : Mips64TargetInfoBase(Triple) {}
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const {
     DefineStd(Builder, "MIPSEB", Opts);
@@ -5455,21 +5492,21 @@ public:
 };
 
 class Mips64ELTargetInfo : public Mips64TargetInfoBase {
-  virtual void SetDescriptionString(const std::string &Name) {
-    // Change DescriptionString only if ABI is n32.  
-    if (Name == "n32")
+  virtual void setDescriptionString() {
+    if (ABI == "n32")
       DescriptionString = "e-p:32:32:32-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
                           "i64:64:64-f32:32:32-f64:64:64-f128:128:128"
                           "-v64:64:64-n32:64-S128";
+    else
+      DescriptionString = "e-p:64:64:64-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
+                          "i64:64:64-f32:32:32-f64:64:64-f128:128:128-"
+                          "v64:64:64-n32:64-S128";
   }
 public:
   Mips64ELTargetInfo(const llvm::Triple &Triple)
       : Mips64TargetInfoBase(Triple) {
     // Default ABI is n64.
     BigEndian = false;
-    DescriptionString = "e-p:64:64:64-i1:8:8-i8:8:32-i16:16:32-i32:32:32-"
-                        "i64:64:64-f32:32:32-f64:64:64-f128:128:128-"
-                        "v64:64:64-n32:64-S128";
   }
   virtual void getTargetDefines(const LangOptions &Opts,
                                 MacroBuilder &Builder) const {

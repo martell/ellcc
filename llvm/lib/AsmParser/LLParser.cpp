@@ -704,7 +704,7 @@ bool LLParser::ParseGlobal(const std::string &Name, LocTy NameLoc,
                            unsigned Linkage, bool HasLinkage,
                            unsigned Visibility) {
   unsigned AddrSpace;
-  bool IsConstant, UnnamedAddr, IsExternallyInitialized, notAddrTaken;
+  bool IsConstant, UnnamedAddr, IsExternallyInitialized;
   GlobalVariable::ThreadLocalMode TLM;
   LocTy UnnamedAddrLoc;
   LocTy IsExternallyInitializedLoc;
@@ -719,7 +719,6 @@ bool LLParser::ParseGlobal(const std::string &Name, LocTy NameLoc,
                          IsExternallyInitialized,
                          &IsExternallyInitializedLoc) ||
       ParseGlobalType(IsConstant) ||
-      ParseOptionalToken(lltok::kw_notaddrtaken, notAddrTaken) ||
       ParseType(Ty, TyLoc))
     return true;
 
@@ -777,7 +776,6 @@ bool LLParser::ParseGlobal(const std::string &Name, LocTy NameLoc,
   GV->setLinkage((GlobalValue::LinkageTypes)Linkage);
   GV->setVisibility((GlobalValue::VisibilityTypes)Visibility);
   GV->setExternallyInitialized(IsExternallyInitialized);
-  GV->setAddressMaybeTaken(!notAddrTaken);
   GV->setThreadLocalMode(TLM);
   GV->setUnnamedAddr(UnnamedAddr);
 
@@ -1351,6 +1349,7 @@ bool LLParser::ParseOptionalVisibility(unsigned &Res) {
 ///   ::= 'spir_kernel'
 ///   ::= 'x86_64_sysvcc'
 ///   ::= 'x86_64_win64cc'
+///   ::= 'webkit_jscc'
 ///   ::= 'cc' UINT
 ///
 bool LLParser::ParseOptionalCallingConv(CallingConv::ID &CC) {
@@ -1373,6 +1372,7 @@ bool LLParser::ParseOptionalCallingConv(CallingConv::ID &CC) {
   case lltok::kw_intel_ocl_bicc: CC = CallingConv::Intel_OCL_BI; break;
   case lltok::kw_x86_64_sysvcc:  CC = CallingConv::X86_64_SysV; break;
   case lltok::kw_x86_64_win64cc: CC = CallingConv::X86_64_Win64; break;
+  case lltok::kw_webkit_jscc:    CC = CallingConv::WebKit_JS; break;
   case lltok::kw_cc: {
       unsigned ArbitraryCC;
       Lex.Lex();

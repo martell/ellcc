@@ -1,4 +1,4 @@
-(*===-- llvm/llvm.mli - LLVM Ocaml Interface -------------------------------===*
+(*===-- llvm/llvm.mli - LLVM OCaml Interface ------------------------------===*
  *
  *                     The LLVM Compiler Infrastructure
  *
@@ -9,7 +9,7 @@
 
 (** Core API.
 
-    This interface provides an ocaml API for the LLVM intermediate
+    This interface provides an OCaml API for the LLVM intermediate
     representation, the classes in the VMCore library. *)
 
 
@@ -2342,7 +2342,7 @@ module MemoryBuffer : sig
       raised. *)
   val of_file : string -> llmemorybuffer
   
-  (** [stdin ()] is the memory buffer containing the contents of standard input.
+  (** [of_stdin ()] is the memory buffer containing the contents of standard input.
       If standard input is empty, then [IoError msg] is raised. *)
   val of_stdin : unit -> llmemorybuffer
   

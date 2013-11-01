@@ -48,7 +48,6 @@ class GlobalVariable : public GlobalValue, public ilist_node<GlobalVariable> {
                                                // can change from its initial
                                                // value before global
                                                // initializers are run?
-  bool notAddrTaken : 1;                       // Dose not have address taken.
 
 public:
   // allocate space for exactly one operand
@@ -85,9 +84,7 @@ public:
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
-  /// hasInitializer - Unless a global variable isExternal(), it has an
-  /// initializer.  The initializer for the global variable/constant is held by
-  /// Initializer if an initializer is specified.
+  /// Definitions have initializers, declarations don't.
   ///
   inline bool hasInitializer() const { return !isDeclaration(); }
 
@@ -174,9 +171,6 @@ public:
   void setExternallyInitialized(bool Val) {
     isExternallyInitializedConstant = Val;
   }
-
-  void setAddressMaybeTaken(bool Val) { notAddrTaken = !Val; }
-  bool AddressMaybeTaken(void) const { return !notAddrTaken; }
 
   /// copyAttributesFrom - copy all additional attributes (those not needed to
   /// create a GlobalVariable) from the GlobalVariable Src to this one.

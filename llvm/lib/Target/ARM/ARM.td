@@ -70,6 +70,8 @@ def FeatureTrustZone : SubtargetFeature<"trustzone", "HasTrustZone", "true",
 def FeatureCrypto : SubtargetFeature<"crypto", "HasCrypto", "true",
                           "Enable support for Cryptography extensions",
                           [FeatureNEON]>;
+def FeatureCRC : SubtargetFeature<"crc", "HasCRC", "true",
+                          "Enable support for CRC instructions">;
 
 // Some processors have FP multiply-accumulate instructions that don't
 // play nicely with other VFP / NEON instructions, and it's generally better
@@ -202,13 +204,13 @@ def ProcA53     : SubtargetFeature<"a53", "ARMProcFamily", "CortexA53",
                                    "Cortex-A53 ARM processors",
                                    [FeatureMP, FeatureHWDiv, FeatureHWDivARM,
                                     FeatureTrustZone, FeatureT2XtPk,
-                                    FeatureCrypto]>;
+                                    FeatureCrypto, FeatureCRC]>;
 
 def ProcA57     : SubtargetFeature<"a57", "ARMProcFamily", "CortexA57",
                                    "Cortex-A57 ARM processors",
                                    [FeatureMP, FeatureHWDiv, FeatureHWDivARM,
                                     FeatureTrustZone, FeatureT2XtPk,
-                                    FeatureCrypto]>;
+                                    FeatureCrypto, FeatureCRC]>;
 
 def ProcR5      : SubtargetFeature<"r5", "ARMProcFamily", "CortexR5",
                                    "Cortex-R5 ARM processors",
@@ -309,7 +311,7 @@ def : ProcessorModel<"cortex-r5",   CortexA8Model,
                                     [ProcR5, HasV7Ops, FeatureDB,
                                      FeatureVFP3, FeatureDSPThumb2,
                                      FeatureHasRAS, FeatureVFPOnlySP,
-                                     FeatureRClass]>;
+                                     FeatureD16, FeatureRClass]>;
 
 // V7M Processors.
 def : ProcNoItin<"cortex-m3",       [HasV7Ops,
@@ -321,7 +323,8 @@ def : ProcNoItin<"cortex-m4",       [HasV7Ops,
                                      FeatureThumb2, FeatureNoARM, FeatureDB,
                                      FeatureHWDiv, FeatureDSPThumb2,
                                      FeatureT2XtPk, FeatureVFP4,
-                                     FeatureVFPOnlySP, FeatureMClass]>;
+                                     FeatureVFPOnlySP, FeatureD16,
+                                     FeatureMClass]>;
 
 // Swift uArch Processors.
 def : ProcessorModel<"swift",       SwiftModel,

@@ -532,6 +532,26 @@ static std::string getARMTargetCPU(const ArgList &Args,
     .Default("arm7tdmi");
 }
 
+/// getAArch64TargetCPU - Get the (LLVM) name of the AArch64 cpu we are targeting.
+//
+// FIXME: tblgen this.
+static std::string getAArch64TargetCPU(const ArgList &Args,
+                                       const llvm::Triple &Triple) {
+  // FIXME: Warn on inconsistent use of -mcpu and -march.
+
+  // If we have -mcpu=, use that.
+  if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
+    StringRef MCPU = A->getValue();
+    // Handle -mcpu=native.
+    if (MCPU == "native")
+      return llvm::sys::getHostCPUName();
+    else
+      return MCPU;
+  }
+
+  return "generic";
+}
+
 // FIXME: Move to target hook.
 static bool isSignedCharDefault(const llvm::Triple &Triple) {
   switch (Triple.getArch()) {
@@ -767,6 +787,15 @@ static void getARMTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   // implementation, although the same isn't true of VFP or VFP3.
   if (FloatABI == "soft")
     Features.push_back("-neon");
+
+  // En/disable crc
+  if (Arg *A = Args.getLastArg(options::OPT_mcrc,
+                               options::OPT_mnocrc)) {
+    if (A->getOption().matches(options::OPT_mcrc))
+      Features.push_back("+crc");
+    else
+      Features.push_back("-crc");
+  }
 }
 
 void Clang::AddARMTargetArgs(const ArgList &Args,
@@ -1373,6 +1402,9 @@ static std::string getCPUName(const ArgList &Args, const llvm::Triple &T) {
   default:
     return "";
 
+  case llvm::Triple::aarch64:
+    return getAArch64TargetCPU(Args, T);
+
   case llvm::Triple::arm:
   case llvm::Triple::thumb:
     return getARMTargetCPU(Args, T);
@@ -1828,6 +1860,7 @@ static void addSanitizerRTLinkFlagsLinux(
   CmdArgs.push_back("-lpthread");
   CmdArgs.push_back("-lrt");
   CmdArgs.push_back("-ldl");
+  CmdArgs.push_back("-lm");
 
   // If possible, use a dynamic symbols file to export the symbols from the
   // runtime library. If we can't do so, use -export-dynamic instead to export

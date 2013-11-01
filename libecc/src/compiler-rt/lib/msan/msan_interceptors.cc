@@ -896,6 +896,13 @@ INTERCEPTOR(int, dladdr, void *addr, dlinfo *info) {
   return res;
 }
 
+INTERCEPTOR(char *, dlerror) {
+  ENSURE_MSAN_INITED();
+  char *res = REAL(dlerror)();
+  if (res != 0) __msan_unpoison(res, REAL(strlen)(res) + 1);
+  return res;
+}
+
 // dlopen() ultimately calls mmap() down inside the loader, which generally
 // doesn't participate in dynamic symbol resolution.  Therefore we won't
 // intercept its calls to mmap, and we have to hook it here.  The loader
@@ -1157,6 +1164,51 @@ INTERCEPTOR(int, __cxa_atexit, void (*func)(void *), void *arg,
   return REAL(__cxa_atexit)(MSanAtExitWrapper, r, dso_handle);
 }
 
+DECLARE_REAL(int, shmctl, int shmid, int cmd, void *buf)
+
+INTERCEPTOR(void *, shmat, int shmid, const void *shmaddr, int shmflg) {
+  ENSURE_MSAN_INITED();
+  void *p = REAL(shmat)(shmid, shmaddr, shmflg);
+  if (p != (void *)-1) {
+    __sanitizer_shmid_ds ds;
+    int res = REAL(shmctl)(shmid, shmctl_ipc_stat, &ds);
+    if (!res) {
+      __msan_unpoison(p, ds.shm_segsz);
+    }
+  }
+  return p;
+}
+
+// Linux kernel has a bug that leads to kernel deadlock if a process
+// maps TBs of memory and then calls mlock().
+static void MlockIsUnsupported() {
+  static atomic_uint8_t printed;
+  if (atomic_exchange(&printed, 1, memory_order_relaxed))
+    return;
+  if (common_flags()->verbosity > 0)
+    Printf("INFO: MemorySanitizer ignores mlock/mlockall/munlock/munlockall\n");
+}
+
+INTERCEPTOR(int, mlock, const void *addr, uptr len) {
+  MlockIsUnsupported();
+  return 0;
+}
+
+INTERCEPTOR(int, munlock, const void *addr, uptr len) {
+  MlockIsUnsupported();
+  return 0;
+}
+
+INTERCEPTOR(int, mlockall, int flags) {
+  MlockIsUnsupported();
+  return 0;
+}
+
+INTERCEPTOR(int, munlockall, void) {
+  MlockIsUnsupported();
+  return 0;
+}
+
 struct MSanInterceptorContext {
   bool in_interceptor_scope;
 };
@@ -1207,6 +1259,9 @@ extern "C" int *__errno_location(void);
   } while (false)
 #define COMMON_INTERCEPTOR_SET_THREAD_NAME(ctx, name) \
   do {                                                \
+  } while (false)  // FIXME
+#define COMMON_INTERCEPTOR_SET_PTHREAD_NAME(ctx, thread, name) \
+  do {                                                         \
   } while (false)  // FIXME
 #define COMMON_INTERCEPTOR_BLOCK_REAL(name) REAL(name)
 #define COMMON_INTERCEPTOR_ON_EXIT(ctx) OnExit()
@@ -1449,6 +1504,7 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(recv);
   INTERCEPT_FUNCTION(recvfrom);
   INTERCEPT_FUNCTION(dladdr);
+  INTERCEPT_FUNCTION(dlerror);
   INTERCEPT_FUNCTION(dlopen);
   INTERCEPT_FUNCTION(dl_iterate_phdr);
   INTERCEPT_FUNCTION(getrusage);
@@ -1459,6 +1515,7 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(pthread_join);
   INTERCEPT_FUNCTION(tzset);
   INTERCEPT_FUNCTION(__cxa_atexit);
+  INTERCEPT_FUNCTION(shmat);
 
   if (REAL(pthread_key_create)(&g_thread_finalize_key, &thread_finalize)) {
     Printf("MemorySanitizer: failed to create thread key\n");

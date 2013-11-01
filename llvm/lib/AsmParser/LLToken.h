@@ -51,7 +51,6 @@ namespace lltok {
     kw_localdynamic, kw_initialexec, kw_localexec,
     kw_zeroinitializer,
     kw_undef, kw_null,
-    kw_notaddrtaken,
     kw_to,
     kw_tail,
     kw_target,
@@ -93,6 +92,7 @@ namespace lltok {
     kw_ptx_kernel, kw_ptx_device,
     kw_spir_kernel, kw_spir_func,
     kw_x86_64_sysvcc, kw_x86_64_win64cc,
+    kw_webkit_jscc,
 
     // Attributes:
     kw_attributes,

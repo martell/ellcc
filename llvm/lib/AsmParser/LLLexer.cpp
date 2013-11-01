@@ -504,7 +504,6 @@ lltok::Kind LLLexer::LexIdentifier() {
   KEYWORD(zeroinitializer);
   KEYWORD(undef);
   KEYWORD(null);
-  KEYWORD(notaddrtaken);
   KEYWORD(to);
   KEYWORD(tail);
   KEYWORD(target);
@@ -560,6 +559,7 @@ lltok::Kind LLLexer::LexIdentifier() {
   KEYWORD(intel_ocl_bicc);
   KEYWORD(x86_64_sysvcc);
   KEYWORD(x86_64_win64cc);
+  KEYWORD(webkit_jscc);
 
   KEYWORD(cc);
   KEYWORD(c);

@@ -112,8 +112,8 @@ std::string ARM_MC::ParseARMTriple(StringRef TT, StringRef CPU) {
     if (SubVer == '8') {
       if (NoCPU)
         // v8a: FeatureDB, FeatureFPARMv8, FeatureNEON, FeatureDSPThumb2, FeatureMP,
-        //      FeatureHWDiv, FeatureHWDivARM, FeatureTrustZone, FeatureT2XtPk, FeatureCrypto
-        ARMArchFeature = "+v8,+db,+fp-armv8,+neon,+t2dsp,+mp,+hwdiv,+hwdiv-arm,+trustzone,+t2xtpk,+crypto";
+        //      FeatureHWDiv, FeatureHWDivARM, FeatureTrustZone, FeatureT2XtPk, FeatureCrypto, FeatureCRC
+        ARMArchFeature = "+v8,+db,+fp-armv8,+neon,+t2dsp,+mp,+hwdiv,+hwdiv-arm,+trustzone,+t2xtpk,+crypto,+crc";
       else
         // Use CPU to figure out the exact features
         ARMArchFeature = "+v8";
@@ -383,6 +383,7 @@ extern "C" void LLVMInitializeARMTargetMC() {
 
   // Register the asm streamer.
   TargetRegistry::RegisterAsmStreamer(TheARMTarget, createMCAsmStreamer);
+  TargetRegistry::RegisterAsmStreamer(TheARMEBTarget, createMCAsmStreamer);
   TargetRegistry::RegisterAsmStreamer(TheThumbTarget, createMCAsmStreamer);
 
   // Register the MCInstPrinter.
@@ -392,6 +393,8 @@ extern "C" void LLVMInitializeARMTargetMC() {
 
   // Register the MC relocation info.
   TargetRegistry::RegisterMCRelocationInfo(TheARMTarget,
+                                           createARMMCRelocationInfo);
+  TargetRegistry::RegisterMCRelocationInfo(TheARMEBTarget,
                                            createARMMCRelocationInfo);
   TargetRegistry::RegisterMCRelocationInfo(TheThumbTarget,
                                            createARMMCRelocationInfo);
