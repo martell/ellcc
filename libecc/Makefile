@@ -98,7 +98,7 @@ $(Configs)::
 %.zlib.configure:
 	@echo Configuring zlib for $* in zlib-build/$*/linux
 	mkdir -p zlib-build/$*/linux
-	cp -r src/zlib/* zlib-build/$*/linux
+	cp -fr src/zlib/* zlib-build/$*/linux
 	cd zlib-build/$*/linux ; \
 	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
 	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
