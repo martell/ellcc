@@ -190,47 +190,6 @@ print <<EOF;
 
 </head>
 <body>
-<table style="text-align: left; width: 100%; height: 100%;" border="0"
- cellpadding="0" cellspacing="0">
-  <tbody>
-    <tr align="center">
-      <th
- style="text-align: center; vertical-align: middle; background-color: rgb(192, 192, 192); height: 135px;"
- colspan="2" rowspan="1">
-      <table style="text-align: left; width: 100%;" border="0"
- cellpadding="0" cellspacing="0">
-        <tbody>
-          <tr>
-            <td style="height: 135px; width: 135px;"><img
- style="width: 135px; height: 135px;" alt="ELLCC" src="../images/ellcc.png"></td>
-            <td style="text-align: center;">
-            <h1>Try out ELLCC in your browser!</h1>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      </th>
-    </tr>
-    <tr>
-      <td
- style="vertical-align: top; background-color: rgb(153, 255, 153); width: 135px;"><a
- href="../index.html">Home</a><br>
-      <a href="../blog/">Blog</a><br>
-      <a href="../news.html">News</a><br>
-      <a href="../demo/">Demo</a><br>
-      <a href="../ellcc/libecc/share/doc">Documentation</a><br>
-      <a href="../installation.html">Installation</a><br>
-      <a href="../targetsupport.html">Target Support</a><br>
-      <a href="../bugzilla">Bug Database</a><br>
-      <a href="http://ellcc.org/viewvc/svn/ellcc/">Source Repository</a><br>
-      <a href="mailto:rich\@pennware.com">Contact</a><br>
-      <br>
-The ELLCC project is supported by <a href="http://pennware.com">Pennington
-Software</a><br>
-      <br>
-      </td>
-      <td style="vertical-align: top;">
-      <table>
 EOF
 
 if ( -f "$ROOT/locked" ) {
@@ -582,7 +541,7 @@ s@(\n)?#include.*[<"](.*\.\..*)[">].*\n@$1#error "invalid #include file $2 detec
 }
 
 print <<END;
-</td></tr></tbody></table></body>
+</body>
 END
 print $c->hr, $c->end_html;
 system("rm $ROOT/locked");
