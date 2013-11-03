@@ -61,15 +61,17 @@ endif
 ifneq ($(TARGET),$(build))
   HOST=--host=$(TARGET)-$(OS)
   BUILD=--build=$(build)-$(OS)
+  ELLCC_ARG0=-DELLCC_ARG0=\\\"$(Triple.$(TARGET))\\\"
 else
   HOST=
   BUILD=
+  ELLCC_ARG0=
 endif
 
 ifneq ($(CC),gcc)
   ifeq ($(haslibs),yes)
-    CFLAGS=$(CFLAGS.$(TARGET))
-    CXXFLAGS=$(CXXFLAGS.$(TARGET))
+    CFLAGS=$(CFLAGS.$(TARGET)) $(ELLCC_ARG0)
+    CXXFLAGS=$(CXXFLAGS.$(TARGET)) $(ELLCC_ARG0)
   endif
 endif
 

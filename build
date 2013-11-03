@@ -12,7 +12,7 @@ mkdir -p llvm-build$builddir
 
 make DIR=llvm-build$builddir CC="$cc" CXX="$cxx" TARGET=$host OS=$os \
     bindir=$bindir prefix=$prefix build=$build haslibs=$haslibs \
-    llvm.configure
+    llvm.configure || exit 1
 
 # Build the LLVM tools.
 make -C llvm-build$builddir -j 6 || exit 1

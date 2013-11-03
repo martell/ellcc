@@ -246,7 +246,8 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
 
   // Builtin includes use #include_next directives and should be positioned
   // just prior C include dirs.
-  if (HSOpts.UseBuiltinIncludes) {
+  if (triple.getVendor() != llvm::Triple::ELLCC &&
+      HSOpts.UseBuiltinIncludes) {
     // Ignore the sys root, we *always* look for clang headers relative to
     // supplied path.
     SmallString<128> P = StringRef(HSOpts.ResourceDir);

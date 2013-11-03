@@ -267,44 +267,33 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
     ProgNameRef = ProgNameRef.slice(0, LastComponent);
   }
 
-  if (Prefix.empty())
-    return;
-
   if (TheDriver.CCCIsELLCC) {
-    llvm::Triple triple(ProgName);
-    if (triple.getArch() != llvm::Triple::UnknownArch) {
-      llvm::StringRef OS = triple.getVendorName();
-      triple.setOSName(OS);
-      if (OS == "elf" || triple.getOS() != llvm::Triple::UnknownOS) {
-        // We have a valid arch and OS.
-        // "elf" is used for OS neutural builds.
-        // Use this to create the ELLCC triple.
-        // The name looks like <arch>-<os>-*
-        if (OS == "elf") {
-            triple.setOSName("unknown");
-        }
-      }
-    }
-
-    std::vector<const char*> ExtraArgs;
-    ExtraArgs.push_back("-ccc-clang-archs");
-    ExtraArgs.push_back("");
-    ExtraArgs.push_back("-ccc-host-triple");
-    std::string et(triple.getArchName().str() + "-ellcc-" + triple.getOSName().str());
-    ExtraArgs.push_back(SaveStringInSet(SavedStrings,
-                                        et.c_str()));
-    ArgVector.insert(&ArgVector[1], ExtraArgs.begin(), ExtraArgs.end());
-  } else {
-    std::string IgnoredError;
-    if (llvm::TargetRegistry::lookupTarget(Prefix, IgnoredError)) {
+#if defined(ELLCC_ARG0)
+    // Override the default target for a cross compiler.
+    if (Prefix.empty()) {
       SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
       if (it != ArgVector.end())
         ++it;
       const char* Strings[] =
         { SaveStringInSet(SavedStrings, std::string("-target")),
-          SaveStringInSet(SavedStrings, Prefix) };
+          SaveStringInSet(SavedStrings, std::string(ELLCC_ARG0)) };
       ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
-      }
+      return;
+    }
+#endif
+  }
+  if (Prefix.empty())
+    return;
+
+  std::string IgnoredError;
+  if (llvm::TargetRegistry::lookupTarget(Prefix, IgnoredError)) {
+    SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
+    if (it != ArgVector.end())
+      ++it;
+    const char* Strings[] =
+      { SaveStringInSet(SavedStrings, std::string("-target")),
+        SaveStringInSet(SavedStrings, Prefix) };
+    ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
   }
 }
 

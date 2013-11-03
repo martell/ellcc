@@ -1,6 +1,7 @@
 TARGET := microblaze
 Arch.$(TARGET) := microblaze
-TARGET.$(TARGET) := -target $(TARGET)-ellcc-$(OS)
+Triple.$(TARGET) := $(TARGET)-ellcc-$(OS)
+TARGET.$(TARGET) := -target $(Triple.$(TARGET))
 CFLAGS.$(TARGET) := $(TARGET.$(TARGET)) $(CFLAGS)
 CXXFLAGS.$(TARGET) := $(TARGET.$(TARGET)) $(CXXFLAGS)
 LDFLAGS := $(TARGET.$(TARGET))
