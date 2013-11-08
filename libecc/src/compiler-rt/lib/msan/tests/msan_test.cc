@@ -1300,8 +1300,8 @@ void TestUnalignedMemcpy(int left, int right, bool src_is_aligned) {
 }
 
 TEST(MemorySanitizer, memcpy_unaligned) {
-  for (int i = 0; i < 4; ++i) {
-    for (int j = 0; j < 4; ++j) {
+  for (int i = 0; i < 10; ++i) {
+    for (int j = 0; j < 10; ++j) {
       TestUnalignedMemcpy(i, j, true);
       TestUnalignedMemcpy(i, j, false);
     }
@@ -1316,6 +1316,53 @@ TEST(MemorySanitizer, memmove) {
   memmove(y, x, 2);
   EXPECT_NOT_POISONED(y[0]);
   EXPECT_POISONED(y[1]);
+}
+
+TEST(MemorySanitizer, memccpy_nomatch) {
+  char* x = new char[5];
+  char* y = new char[5];
+  strcpy(x, "abc");
+  memccpy(y, x, 'd', 4);
+  EXPECT_NOT_POISONED(y[0]);
+  EXPECT_NOT_POISONED(y[1]);
+  EXPECT_NOT_POISONED(y[2]);
+  EXPECT_NOT_POISONED(y[3]);
+  EXPECT_POISONED(y[4]);
+  delete[] x;
+  delete[] y;
+}
+
+TEST(MemorySanitizer, memccpy_match) {
+  char* x = new char[5];
+  char* y = new char[5];
+  strcpy(x, "abc");
+  memccpy(y, x, 'b', 4);
+  EXPECT_NOT_POISONED(y[0]);
+  EXPECT_NOT_POISONED(y[1]);
+  EXPECT_POISONED(y[2]);
+  EXPECT_POISONED(y[3]);
+  EXPECT_POISONED(y[4]);
+  delete[] x;
+  delete[] y;
+}
+
+TEST(MemorySanitizer, memccpy_nomatch_positive) {
+  char* x = new char[5];
+  char* y = new char[5];
+  strcpy(x, "abc");
+  EXPECT_UMR(memccpy(y, x, 'd', 5));
+  delete[] x;
+  delete[] y;
+}
+
+TEST(MemorySanitizer, memccpy_match_positive) {
+  char* x = new char[5];
+  char* y = new char[5];
+  x[0] = 'a';
+  x[2] = 'b';
+  EXPECT_UMR(memccpy(y, x, 'b', 5));
+  delete[] x;
+  delete[] y;
 }
 
 TEST(MemorySanitizer, bcopy) {
@@ -1811,6 +1858,15 @@ TEST(MemorySanitizer, time) {
   time_t t2 = time(&t);
   assert(t2 != (time_t)-1);
   EXPECT_NOT_POISONED(t);
+}
+
+TEST(MemorySanitizer, strptime) {
+  struct tm time;
+  char *p = strptime("11/1/2013-05:39", "%m/%d/%Y-%H:%M", &time);
+  assert(p != 0);
+  EXPECT_NOT_POISONED(time.tm_sec);
+  EXPECT_NOT_POISONED(time.tm_hour);
+  EXPECT_NOT_POISONED(time.tm_year);
 }
 
 TEST(MemorySanitizer, localtime) {

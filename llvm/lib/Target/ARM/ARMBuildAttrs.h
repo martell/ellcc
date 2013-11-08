@@ -137,14 +137,26 @@ namespace ARMBuildAttrs {
     AllowIEE754 = 3, // this code to use all the IEEE 754-defined FP encodings
 
     // Tag_ABI_HardFP_use, (=27), uleb128
+    HardFPImplied = 0, // FP use should be implied by Tag_FP_arch
     HardFPSinglePrecision = 1, // Single-precision only
-    HardFPImplied = 3, // FP use should be implied by Tag_FP_arch
+
+    // Tag_ABI_VFP_args, (=28), uleb128
+    BaseAAPCS = 0,
+    HardFPAAPCS = 1,
+
+    // Tag_MPextension_use, (=42), uleb128
+    AllowMP = 1, // Allow use of MP extensions
 
     // Tag_DIV_use, (=44), uleb128
     AllowDIVIfExists = 0, // Allow hardware divide if available in arch, or no info exists.
     DisallowDIV = 1, // Hardware divide explicitly disallowed
-    AllowDIVExt = 2  // Allow hardware divide as optional architecture extension above
+    AllowDIVExt = 2, // Allow hardware divide as optional architecture extension above
                      // the base arch specified by Tag_CPU_arch and Tag_CPU_arch_profile.
+
+    // Tag_Virtualization_use, (=68), uleb128
+    AllowTZ = 1,
+    AllowVirtualization = 2,
+    AllowTZVirtualization = 3
   };
 
 } // namespace ARMBuildAttrs

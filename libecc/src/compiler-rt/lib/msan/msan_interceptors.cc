@@ -120,6 +120,16 @@ INTERCEPTOR(void *, mempcpy, void *dest, const void *src, SIZE_T n) {
   return (char *)__msan_memcpy(dest, src, n) + n;
 }
 
+INTERCEPTOR(void *, memccpy, void *dest, const void *src, int c, SIZE_T n) {
+  ENSURE_MSAN_INITED();
+  void *res = REAL(memccpy)(dest, src, c, n);
+  CHECK(!res || (res >= dest && res <= (char *)dest + n));
+  SIZE_T sz = res ? (char *)res - (char *)dest : n;
+  CHECK_UNPOISONED(src, sz);
+  __msan_unpoison(dest, sz);
+  return res;
+}
+
 INTERCEPTOR(void *, memmove, void *dest, const void *src, SIZE_T n) {
   return __msan_memmove(dest, src, n);
 }
@@ -485,7 +495,7 @@ INTERCEPTOR(int, swprintf, void *str, uptr size, void *format, ...) {
 
 // SIZE_T strftime(char *s, SIZE_T max, const char *format,const struct tm *tm);
 INTERCEPTOR(SIZE_T, strftime, char *s, SIZE_T max, const char *format,
-            void *tm) {
+            __sanitizer_tm *tm) {
   ENSURE_MSAN_INITED();
   SIZE_T res = REAL(strftime)(s, max, format, tm);
   if (res) __msan_unpoison(s, res + 1);
@@ -1338,7 +1348,7 @@ u32 get_origin_if_poisoned(uptr a, uptr size) {
   unsigned char *s = (unsigned char *)MEM_TO_SHADOW(a);
   for (uptr i = 0; i < size; ++i)
     if (s[i])
-      return *(uptr *)SHADOW_TO_ORIGIN((s + i) & ~3UL);
+      return *(u32 *)SHADOW_TO_ORIGIN((s + i) & ~3UL);
   return 0;
 }
 
@@ -1351,7 +1361,7 @@ void __msan_copy_origin(void *dst, const void *src, uptr size) {
   if (beg < d) {
     u32 o = get_origin_if_poisoned(beg, d - beg);
     if (o)
-      *(uptr *)MEM_TO_ORIGIN(beg) = o;
+      *(u32 *)MEM_TO_ORIGIN(beg) = o;
     beg += 4;
   }
 
@@ -1360,7 +1370,7 @@ void __msan_copy_origin(void *dst, const void *src, uptr size) {
   if (end > d + size) {
     u32 o = get_origin_if_poisoned(d + size, end - d - size);
     if (o)
-      *(uptr *)MEM_TO_ORIGIN(end - 4) = o;
+      *(u32 *)MEM_TO_ORIGIN(end - 4) = o;
     end -= 4;
   }
 
@@ -1428,6 +1438,7 @@ void InitializeInterceptors() {
   INTERCEPT_FUNCTION(fread_unlocked);
   INTERCEPT_FUNCTION(readlink);
   INTERCEPT_FUNCTION(memcpy);
+  INTERCEPT_FUNCTION(memccpy);
   INTERCEPT_FUNCTION(mempcpy);
   INTERCEPT_FUNCTION(memset);
   INTERCEPT_FUNCTION(memmove);

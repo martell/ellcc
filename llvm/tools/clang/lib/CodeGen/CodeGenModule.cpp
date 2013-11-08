@@ -172,6 +172,20 @@ void CodeGenModule::createCUDARuntime() {
   CUDARuntime = CreateNVCUDARuntime(*this);
 }
 
+void CodeGenModule::applyReplacements() {
+  for (ReplacementsTy::iterator I = Replacements.begin(),
+                                E = Replacements.end();
+       I != E; ++I) {
+    StringRef MangledName = I->first();
+    llvm::Constant *Replacement = I->second;
+    llvm::GlobalValue *Entry = GetGlobalValue(MangledName);
+    if (!Entry)
+      continue;
+    Entry->replaceAllUsesWith(Replacement);
+    Entry->eraseFromParent();
+  }
+}
+
 void CodeGenModule::checkAliases() {
   bool Error = false;
   for (std::vector<GlobalDecl>::iterator I = Aliases.begin(),
@@ -207,6 +221,7 @@ void CodeGenModule::checkAliases() {
 
 void CodeGenModule::Release() {
   EmitDeferred();
+  applyReplacements();
   checkAliases();
   EmitCXXGlobalInitFunc();
   EmitCXXGlobalDtorFunc();
@@ -1405,6 +1420,12 @@ CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
     // list, and remove it from DeferredDecls (since we don't need it anymore).
     DeferredDeclsToEmit.push_back(DDI->second);
     DeferredDecls.erase(DDI);
+
+  // Otherwise, if this is a sized deallocation function, emit a weak definition
+  // for it at the end of the translation unit.
+  } else if (D && cast<FunctionDecl>(D)
+                      ->getCorrespondingUnsizedGlobalDeallocationFunction()) {
+    DeferredDeclsToEmit.push_back(GD);
 
   // Otherwise, there are cases we have to worry about where we're
   // using a declaration for which we must emit a definition but where

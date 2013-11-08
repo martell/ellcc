@@ -238,3 +238,55 @@ class JALR_FM_MM<bits<10> funct> : MMArch {
   let Inst{15-6}  = funct;
   let Inst{5-0}   = 0x3c;
 }
+
+class BEQ_FM_MM<bits<6> op> : MMArch {
+  bits<5>  rs;
+  bits<5>  rt;
+  bits<16> offset;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = op;
+  let Inst{25-21} = rt;
+  let Inst{20-16} = rs;
+  let Inst{15-0}  = offset;
+}
+
+class BGEZ_FM_MM<bits<5> funct> : MMArch {
+  bits<5>  rs;
+  bits<16> offset;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0x10;
+  let Inst{25-21} = funct;
+  let Inst{20-16} = rs;
+  let Inst{15-0}  = offset;
+}
+
+class BGEZAL_FM_MM<bits<5> funct> : MMArch {
+  bits<5>  rs;
+  bits<16> offset;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0x10;
+  let Inst{25-21} = funct;
+  let Inst{20-16} = rs;
+  let Inst{15-0}  = offset;
+}
+
+class TEQ_FM_MM<bits<6> funct> : MMArch {
+  bits<5> rs;
+  bits<5> rt;
+  bits<4> code_;
+
+  bits<32> Inst;
+
+  let Inst{31-26} = 0x00;
+  let Inst{25-21} = rt;
+  let Inst{20-16} = rs;
+  let Inst{15-12} = code_;
+  let Inst{11-6}  = funct;
+  let Inst{5-0}   = 0x3c;
+}

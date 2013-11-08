@@ -125,8 +125,11 @@ bool ContinuationIndenter::mustBreak(const LineState &State) {
   if (Previous.is(tok::semi) && State.LineContainsContinuedForLoopSection)
     return true;
   if ((startsNextParameter(Current, Style) || Previous.is(tok::semi) ||
-       Current.is(tok::question) ||
-       (Current.Type == TT_ConditionalExpr && Previous.isNot(tok::question))) &&
+       (Style.BreakBeforeTernaryOperators &&
+        (Current.is(tok::question) || (Current.Type == TT_ConditionalExpr &&
+                                       Previous.isNot(tok::question)))) ||
+       (!Style.BreakBeforeTernaryOperators &&
+        (Previous.is(tok::question) || Previous.Type == TT_ConditionalExpr))) &&
       State.Stack.back().BreakBeforeParameter && !Current.isTrailingComment() &&
       !Current.isOneOf(tok::r_paren, tok::r_brace))
     return true;
@@ -337,7 +340,9 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
   if (Current.is(tok::l_brace) && Current.BlockKind == BK_Block) {
     State.Column = State.FirstIndent;
   } else if (Current.isOneOf(tok::r_brace, tok::r_square)) {
-    if (Current.closesBlockTypeList(Style))
+    if (Current.closesBlockTypeList(Style) ||
+        (Current.MatchingParen &&
+         Current.MatchingParen->BlockKind == BK_BracedInit))
       State.Column = State.Stack[State.Stack.size() - 2].LastSpace;
     else
       State.Column = State.FirstIndent;
@@ -355,7 +360,9 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
     } else {
       State.Column = State.Stack.back().CallContinuation;
     }
-  } else if (Current.Type == TT_ConditionalExpr) {
+  } else if (State.Stack.back().QuestionColumn != 0 &&
+             (Current.Type == TT_ConditionalExpr ||
+              Previous.Type == TT_ConditionalExpr)) {
     State.Column = State.Stack.back().QuestionColumn;
   } else if (Previous.is(tok::comma) && State.Stack.back().VariablePos != 0) {
     State.Column = State.Stack.back().VariablePos;
@@ -368,7 +375,11 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
                State.Line->StartsDefinition))) {
     State.Column = State.Stack.back().Indent;
   } else if (Current.Type == TT_ObjCSelectorName) {
-    if (State.Stack.back().ColonPos > Current.ColumnWidth) {
+    if (State.Stack.back().ColonPos == 0) {
+      State.Stack.back().ColonPos =
+          State.Stack.back().Indent + Current.LongestObjCSelectorName;
+      State.Column = State.Stack.back().ColonPos - Current.ColumnWidth;
+    } else if (State.Stack.back().ColonPos > Current.ColumnWidth) {
       State.Column = State.Stack.back().ColonPos - Current.ColumnWidth;
     } else {
       State.Column = State.Stack.back().Indent;
@@ -396,14 +407,15 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
       State.Column += Style.ContinuationIndentWidth;
   }
 
-  if (Current.is(tok::question))
-    State.Stack.back().BreakBeforeParameter = true;
   if ((Previous.isOneOf(tok::comma, tok::semi) &&
        !State.Stack.back().AvoidBinPacking) ||
       Previous.Type == TT_BinaryOperator)
     State.Stack.back().BreakBeforeParameter = false;
   if (Previous.Type == TT_TemplateCloser && State.ParenLevel == 0)
     State.Stack.back().BreakBeforeParameter = false;
+  if (Current.is(tok::question) ||
+      (PreviousNonComment && PreviousNonComment->is(tok::question)))
+    State.Stack.back().BreakBeforeParameter = true;
 
   if (!DryRun) {
     unsigned Newlines = 1;
@@ -463,7 +475,10 @@ unsigned ContinuationIndenter::moveStateToNextToken(LineState &State,
   if (Current.Type == TT_ArraySubscriptLSquare &&
       State.Stack.back().StartOfArraySubscripts == 0)
     State.Stack.back().StartOfArraySubscripts = State.Column;
-  if (Current.is(tok::question))
+  if ((Current.is(tok::question) && Style.BreakBeforeTernaryOperators) ||
+      (Current.getPreviousNonComment() && Current.isNot(tok::colon) &&
+       Current.getPreviousNonComment()->is(tok::question) &&
+       !Style.BreakBeforeTernaryOperators))
     State.Stack.back().QuestionColumn = State.Column;
   if (!Current.opensScope() && !Current.closesScope())
     State.LowestLevelOnLine =
@@ -497,7 +512,8 @@ unsigned ContinuationIndenter::moveStateToNextToken(LineState &State,
   // is special cased.
   bool SkipFirstExtraIndent =
       (Previous && (Previous->opensScope() || Previous->is(tok::kw_return) ||
-                    Previous->getPrecedence() == prec::Assignment));
+                    Previous->getPrecedence() == prec::Assignment ||
+                    Previous->Type == TT_ObjCMethodExpr));
   for (SmallVectorImpl<prec::Level>::const_reverse_iterator
            I = Current.FakeLParens.rbegin(),
            E = Current.FakeLParens.rend();

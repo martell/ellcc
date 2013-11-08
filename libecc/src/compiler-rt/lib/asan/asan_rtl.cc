@@ -126,7 +126,6 @@ static void ParseFlagsFromString(Flags *f, const char *str) {
   ParseFlag(str, &f->poison_heap, "poison_heap");
   ParseFlag(str, &f->poison_partial, "poison_partial");
   ParseFlag(str, &f->alloc_dealloc_mismatch, "alloc_dealloc_mismatch");
-  ParseFlag(str, &f->use_stack_depot, "use_stack_depot");
   ParseFlag(str, &f->strict_memcmp, "strict_memcmp");
   ParseFlag(str, &f->strict_init_order, "strict_init_order");
 }
@@ -149,7 +148,7 @@ void InitializeFlags(Flags *f, const char *env) {
   f->redzone = 16;
   f->debug = false;
   f->report_globals = 1;
-  f->check_initialization_order = true;
+  f->check_initialization_order = false;
   f->replace_str = true;
   f->replace_intrin = true;
   f->mac_ignore_invalid_free = false;
@@ -177,7 +176,6 @@ void InitializeFlags(Flags *f, const char *env) {
   // Turn off alloc/dealloc mismatch checker on Mac and Windows for now.
   // TODO(glider,timurrrr): Fix known issues and enable this back.
   f->alloc_dealloc_mismatch = (SANITIZER_MAC == 0) && (SANITIZER_WINDOWS == 0);
-  f->use_stack_depot = true;
   f->strict_memcmp = true;
   f->strict_init_order = false;
 
@@ -202,10 +200,10 @@ void InitializeFlags(Flags *f, const char *env) {
   }
 #endif
 
-  if (cf->detect_leaks && !f->use_stack_depot) {
-    Report("%s: detect_leaks is ignored (requires use_stack_depot).\n",
-           SanitizerToolName);
-    cf->detect_leaks = false;
+  // Make "strict_init_order" imply "check_initialization_order".
+  // TODO(samsonov): Use a single runtime flag for an init-order checker.
+  if (f->strict_init_order) {
+    f->check_initialization_order = true;
   }
 }
 

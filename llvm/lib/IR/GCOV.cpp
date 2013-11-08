@@ -59,8 +59,18 @@ bool GCOVFile::read(GCOVBuffer &Buffer) {
       (void)ReadGCDA;
       assert(ReadGCDA && ".gcda data does not match .gcno data");
     }
-    while (Buffer.readProgramTag())
+    if (Buffer.readObjectTag()) {
+      uint32_t Length = Buffer.readInt();
+      Buffer.readInt(); // checksum
+      Buffer.readInt(); // num
+      RunCount = Buffer.readInt();
+      Buffer.advanceCursor(Length-3);
+    }
+    while (Buffer.readProgramTag()) {
+      uint32_t Length = Buffer.readInt();
+      Buffer.advanceCursor(Length);
       ++ProgramCount;
+    }
   }
 
   return true;
@@ -79,6 +89,7 @@ void GCOVFile::collectLineCounts(FileInfo &FI) {
   for (SmallVectorImpl<GCOVFunction *>::iterator I = Functions.begin(),
          E = Functions.end(); I != E; ++I) 
     (*I)->collectLineCounts(FI);
+  FI.setRunCount(RunCount);
   FI.setProgramCount(ProgramCount);
 }
 
@@ -250,14 +261,16 @@ void GCOVLines::dump() {
 // FileInfo implementation.
 
 /// print -  Print source files with collected line count information.
-void FileInfo::print(StringRef gcnoFile, StringRef gcdaFile) {
+void FileInfo::print(raw_fd_ostream &OS, StringRef gcnoFile,
+                     StringRef gcdaFile) {
   for (StringMap<LineCounts>::iterator I = LineInfo.begin(), E = LineInfo.end();
        I != E; ++I) {
     StringRef Filename = I->first();
-    outs() << "        -:    0:Source:" << Filename << "\n";
-    outs() << "        -:    0:Graph:" << gcnoFile << "\n";
-    outs() << "        -:    0:Data:" << gcdaFile << "\n";
-    outs() << "        -:    0:Programs:" << ProgramCount << "\n";
+    OS << "        -:    0:Source:" << Filename << "\n";
+    OS << "        -:    0:Graph:" << gcnoFile << "\n";
+    OS << "        -:    0:Data:" << gcdaFile << "\n";
+    OS << "        -:    0:Runs:" << RunCount << "\n";
+    OS << "        -:    0:Programs:" << ProgramCount << "\n";
     LineCounts &L = LineInfo[Filename];
     OwningPtr<MemoryBuffer> Buff;
     if (error_code ec = MemoryBuffer::getFileOrSTDIN(Filename, Buff)) {
@@ -269,16 +282,16 @@ void FileInfo::print(StringRef gcnoFile, StringRef gcdaFile) {
     while (!AllLines.empty()) {
       if (L.find(i) != L.end()) {
         if (L[i] == 0)
-          outs() << "    #####:";
+          OS << "    #####:";
         else
-          outs() << format("%9lu:", L[i]);
+          OS << format("%9lu:", L[i]);
       } else {
-        outs() << "        -:";
+        OS << "        -:";
       }
       std::pair<StringRef, StringRef> P = AllLines.split('\n');
       if (AllLines != P.first)
-        outs() << format("%5u:", i+1) << P.first;
-      outs() << "\n";
+        OS << format("%5u:", i+1) << P.first;
+      OS << "\n";
       AllLines = P.second;
       ++i;
     }

@@ -913,6 +913,7 @@ enum {
   R_MICROMIPS_HI16         = 134,
   R_MICROMIPS_LO16         = 135,
   R_MICROMIPS_GOT16        = 138,
+  R_MICROMIPS_PC16_S1      = 141,
   R_MICROMIPS_CALL16       = 142,
   R_MICROMIPS_GOT_DISP     = 145,
   R_MICROMIPS_GOT_PAGE     = 146,
@@ -1597,6 +1598,7 @@ enum {
   DT_RELCOUNT     = 0x6FFFFFFA, // ELF32_Rel count.
 
   DT_FLAGS_1      = 0X6FFFFFFB, // Flags_1.
+  DT_VERSYM       = 0x6FFFFFF0, // The address of .gnu.version section.
   DT_VERDEF       = 0X6FFFFFFC, // The address of the version definition table.
   DT_VERDEFNUM    = 0X6FFFFFFD, // The number of entries in DT_VERDEF.
   DT_VERNEED      = 0X6FFFFFFE, // The address of the version Dependency table.

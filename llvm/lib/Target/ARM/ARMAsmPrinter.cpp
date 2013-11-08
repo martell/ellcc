@@ -692,12 +692,19 @@ void ARMAsmPrinter::emitAttributes() {
   ATS.emitAttribute(ARMBuildAttrs::ABI_align8_needed, 1);
   ATS.emitAttribute(ARMBuildAttrs::ABI_align8_preserved, 1);
 
+  // ABI_HardFP_use attribute to indicate single precision FP.
+  if (Subtarget->isFPOnlySP())
+    ATS.emitAttribute(ARMBuildAttrs::ABI_HardFP_use,
+                      ARMBuildAttrs::HardFPSinglePrecision);
+
   // Hard float.  Use both S and D registers and conform to AAPCS-VFP.
-  if (Subtarget->isAAPCS_ABI() && TM.Options.FloatABIType == FloatABI::Hard) {
-    ATS.emitAttribute(ARMBuildAttrs::ABI_HardFP_use, 3);
-    ATS.emitAttribute(ARMBuildAttrs::ABI_VFP_args, 1);
-  }
+  if (Subtarget->isAAPCS_ABI() && TM.Options.FloatABIType == FloatABI::Hard)
+    ATS.emitAttribute(ARMBuildAttrs::ABI_VFP_args, ARMBuildAttrs::HardFPAAPCS);
+
   // FIXME: Should we signal R9 usage?
+
+  if (Subtarget->hasMPExtension())
+      ATS.emitAttribute(ARMBuildAttrs::MPextension_use, ARMBuildAttrs::AllowMP);
 
   if (Subtarget->hasDivide()) {
     // Check if hardware divide is only available in thumb2 or ARM as well.
@@ -705,6 +712,16 @@ void ARMAsmPrinter::emitAttributes() {
       Subtarget->hasDivideInARMMode() ? ARMBuildAttrs::AllowDIVExt :
                                         ARMBuildAttrs::AllowDIVIfExists);
   }
+
+  if (Subtarget->hasTrustZone() && Subtarget->hasVirtualization())
+      ATS.emitAttribute(ARMBuildAttrs::Virtualization_use,
+                        ARMBuildAttrs::AllowTZVirtualization);
+  else if (Subtarget->hasTrustZone())
+      ATS.emitAttribute(ARMBuildAttrs::Virtualization_use,
+                        ARMBuildAttrs::AllowTZ);
+  else if (Subtarget->hasVirtualization())
+      ATS.emitAttribute(ARMBuildAttrs::Virtualization_use,
+                        ARMBuildAttrs::AllowVirtualization);
 
   ATS.finishAttributeSection();
 }

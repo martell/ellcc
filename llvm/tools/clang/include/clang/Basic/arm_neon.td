@@ -59,6 +59,12 @@ def OP_QDMULH_LN : Op;
 def OP_QRDMULH_LN : Op;
 def OP_FMS_LN : Op;
 def OP_FMS_LNQ : Op;
+def OP_TRN1  : Op;
+def OP_ZIP1  : Op;
+def OP_UZP1  : Op;
+def OP_TRN2  : Op;
+def OP_ZIP2  : Op;
+def OP_UZP2  : Op;
 def OP_EQ    : Op;
 def OP_GE    : Op;
 def OP_LE    : Op;
@@ -98,7 +104,9 @@ def OP_DIV  : Op;
 def OP_LONG_HI : Op;
 def OP_NARROW_HI : Op;
 def OP_MOVL_HI : Op;
-def OP_COPY : Op;
+def OP_COPY_LN : Op;
+def OP_COPYQ_LN : Op;
+def OP_COPY_LNQ : Op;
 
 class Inst <string n, string p, string t, Op o> {
   string Name = n;
@@ -669,13 +677,18 @@ def VQDMLSL_HIGH : SOpInst<"vqdmlsl_high", "wwkk", "si", OP_QDMLSLHi>;
 ////////////////////////////////////////////////////////////////////////////////
 // Extract or insert element from vector
 def GET_LANE : IInst<"vget_lane", "sdi",
-                        "csilPcPsUcUsUiUlQcQsQiQlQUcQUsQUiQUlPcPsQPcQPs">;
+                     "csilPcPsUcUsUiUlQcQsQiQlQUcQUsQUiQUlPcPsQPcQPsfdQfQd">;
 def SET_LANE : IInst<"vset_lane", "dsdi",
-                 "csilPcPsUiUlUcUsUiUlQcQsQiQlQUcQUsQUiQUlPcPsQPcQPshfdQhQfQd">;
+                     "csilPcPsUcUsUiUlQcQsQiQlQUcQUsQUiQUlPcPsQPcQPsfdQfQd">;
 def COPY_LANE : IOpInst<"vcopy_lane", "ddidi",
-                     "csilPcPsUcUsUiUlQcQsQiQlQUcQUsQUiQUlPcPsQPcQPs", OP_COPY>;
-def COPY_LANEQ : IOpInst<"vcopy_laneq", "ggidi",
-                     "QcQsQiQlQUcQUsQUiQUlQPcQPs", OP_COPY>;
+                        "csiPcPsUcUsUiPcPsf", OP_COPY_LN>;
+def COPYQ_LANE : IOpInst<"vcopy_lane", "ddigi",
+                        "QcQsQiQlQUcQUsQUiQUlQPcQPsQfQd", OP_COPYQ_LN>;
+def COPY_LANEQ : IOpInst<"vcopy_laneq", "ddiki",
+                     "csiPcPsUcUsUif", OP_COPY_LNQ>;
+def COPYQ_LANEQ : IOpInst<"vcopy_laneq", "ddidi",
+                     "QcQsQiQlQUcQUsQUiQUlQPcQPsQfd", OP_COPY_LN>;
+
 
 ////////////////////////////////////////////////////////////////////////////////
 // Set all lanes to same value
@@ -760,6 +773,45 @@ def VMINV   : SInst<"vminv", "sd", "csiUcUsUiQcQsQiQUcQUsQUiQf">;
 def VADDV   : SInst<"vaddv", "sd", "csiUcUsUiQcQsQiQUcQUsQUi">;
 def FMAXNMV : SInst<"vmaxnmv", "sd", "Qf">;
 def FMINNMV : SInst<"vminnmv", "sd", "Qf">;
+ 
+////////////////////////////////////////////////////////////////////////////////
+// Newly added Vector Extract for f64
+def VEXT_A64 : WInst<"vext", "dddi",
+                     "cUcPcsUsPsiUilUlfdQcQUcQPcQsQUsQPsQiQUiQlQUlQfQd">;
+
+////////////////////////////////////////////////////////////////////////////////
+// Crypto
+def AESE : SInst<"vaese", "ddd", "QUc">;
+def AESD : SInst<"vaesd", "ddd", "QUc">;
+def AESMC : SInst<"vaesmc", "dd", "QUc">;
+def AESIMC : SInst<"vaesimc", "dd", "QUc">;
+
+def SHA1H : SInst<"vsha1h", "ss", "Ui">;
+def SHA1SU1 : SInst<"vsha1su1", "ddd", "QUi">;
+def SHA256SU0 : SInst<"vsha256su0", "ddd", "QUi">;
+
+def SHA1C : SInst<"vsha1c", "ddsd", "QUi">;
+def SHA1P : SInst<"vsha1p", "ddsd", "QUi">;
+def SHA1M : SInst<"vsha1m", "ddsd", "QUi">;
+def SHA1SU0 : SInst<"vsha1su0", "dddd", "QUi">;
+def SHA256H : SInst<"vsha256h", "dddd", "QUi">;
+def SHA256H2 : SInst<"vsha256h2", "dddd", "QUi">;
+def SHA256SU1 : SInst<"vsha256su1", "dddd", "QUi">;
+
+////////////////////////////////////////////////////////////////////////////////
+// Permutation
+def VTRN1 : SOpInst<"vtrn1", "ddd",
+                    "csiUcUsUifPcPsQcQsQiQlQUcQUsQUiQUlQfQdQPcQPs", OP_TRN1>;
+def VZIP1 : SOpInst<"vzip1", "ddd",
+                    "csiUcUsUifPcPsQcQsQiQlQUcQUsQUiQUlQfQdQPcQPs", OP_ZIP1>;
+def VUZP1 : SOpInst<"vuzp1", "ddd",
+                    "csiUcUsUifPcPsQcQsQiQlQUcQUsQUiQUlQfQdQPcQPs", OP_UZP1>;
+def VTRN2 : SOpInst<"vtrn2", "ddd",
+                    "csiUcUsUifPcPsQcQsQiQlQUcQUsQUiQUlQfQdQPcQPs", OP_TRN2>;
+def VZIP2 : SOpInst<"vzip2", "ddd",
+                    "csiUcUsUifPcPsQcQsQiQlQUcQUsQUiQUlQfQdQPcQPs", OP_ZIP2>;
+def VUZP2 : SOpInst<"vuzp2", "ddd",
+                    "csiUcUsUifPcPsQcQsQiQlQUcQUsQUiQUlQfQdQPcQPs", OP_UZP2>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Scalar Arithmetic

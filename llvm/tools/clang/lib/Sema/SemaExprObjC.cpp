@@ -602,7 +602,7 @@ ExprResult Sema::BuildObjCSubscriptExpression(SourceLocation RB, Expr *BaseExpr,
                                         Expr *IndexExpr,
                                         ObjCMethodDecl *getterMethod,
                                         ObjCMethodDecl *setterMethod) {
-  assert(!LangOpts.ObjCRuntime.isSubscriptPointerArithmetic());
+  assert(!LangOpts.isSubscriptPointerArithmetic());
 
   // We can't get dependent types here; our callers should have
   // filtered them out.
@@ -2285,6 +2285,11 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
       }
       ReceiverType = Receiver->getType();
     } else if (getLangOpts().CPlusPlus) {
+      // The receiver must be a complete type.
+      if (RequireCompleteType(Loc, Receiver->getType(),
+                              diag::err_incomplete_receiver_type))
+        return ExprError();
+
       ExprResult result = PerformContextuallyConvertToObjCPointer(Receiver);
       if (result.isUsable()) {
         Receiver = result.take();

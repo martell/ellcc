@@ -2447,6 +2447,45 @@ TEST_F(FormatTest, LayoutNestedBlocks) {
                    "  // comment\n"
                    "  int  j;\n"
                    "});"));
+
+  verifyFormat("DEBUG({\n"
+               "  if (a)\n"
+               "    return;\n"
+               "});");
+  verifyGoogleFormat("DEBUG({\n"
+                     "  if (a) return;\n"
+                     "});");
+  FormatStyle Style = getGoogleStyle();
+  Style.ColumnLimit = 45;
+  verifyFormat("Debug(aaaaa, {\n"
+               "               if (aaaaaaaaaaaaaaaaaaaaaaaa)\n"
+               "                 return;\n"
+               "             },\n"
+               "      a);", Style);
+
+  EXPECT_EQ("Debug({\n"
+            "        if (aaaaaaaaaaaaaaaaaaaaaaaa)\n"
+            "          return;\n"
+            "      },\n"
+            "      a);",
+            format("Debug({\n"
+                   "        if (aaaaaaaaaaaaaaaaaaaaaaaa)\n"
+                   "             return;\n"
+                   "      },\n"
+                   "      a);",
+                   50, 1, getLLVMStyle()));
+}
+
+TEST_F(FormatTest, IndividualStatementsOfNestedBlocks) {
+  EXPECT_EQ("DEBUG({\n"
+            "  int        i;\n"
+            "  int j;\n"
+            "});",
+            format("DEBUG(   {\n"
+                   "  int        i;\n"
+                   "  int        j;\n"
+                   "}   )  ;",
+                   40, 1, getLLVMStyle()));
 }
 
 TEST_F(FormatTest, PutEmptyBlocksIntoOneLine) {
@@ -2461,9 +2500,11 @@ TEST_F(FormatTest, PutEmptyBlocksIntoOneLine) {
 
 TEST_F(FormatTest, PreventConfusingIndents) {
   verifyFormat(
-      "SomeLongMethodName(SomeReallyLongMethod(CallOtherReallyLongMethod(\n"
-      "                       parameter, parameter, parameter)),\n"
-      "                   SecondLongCall(parameter));");
+      "void f() {\n"
+      "  SomeLongMethodName(SomeReallyLongMethod(CallOtherReallyLongMethod(\n"
+      "                         parameter, parameter, parameter)),\n"
+      "                     SecondLongCall(parameter));\n"
+      "}");
   verifyFormat(
       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
       "    aaaaaaaaaaaaaaaaaaaaaaaa(\n"
@@ -2670,6 +2711,9 @@ TEST_F(FormatTest, ConstructorInitializers) {
                "    : aaaaaaaaaaaaaaaaaaaa(a), bbbbbbbbbbbbbbbbbbbbbbbb(b) {\n"
                "}",
                getLLVMStyleWithColumns(60));
+  verifyFormat("Constructor()\n"
+               "    : aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "          aaaaaaaaaaaaaaaaaaaaaaaaa(aaaa, aaaa)) {}");
 
   // Here a line could be saved by splitting the second initializer onto two
   // lines, but that is not desireable.
@@ -3039,8 +3083,10 @@ TEST_F(FormatTest, FormatsOneParameterPerLineIfNecessary) {
   verifyFormat("aaaaaaaaaaaaaaa(aaaaaaaaa, aaaaaaaaa, aaaaaaaaaaaaaaaaaaaaa)\n"
                "    .aaaaaaaaaaaaaaaaaa();",
                NoBinPacking);
-  verifyFormat("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
-               "    aaaaaaaaaa, aaaaaaaaaa, aaaaaaaaaa, aaaaaaaaaaa);",
+  verifyFormat("void f() {\n"
+               "  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "      aaaaaaaaaa, aaaaaaaaaa, aaaaaaaaaa, aaaaaaaaaaa);\n"
+               "}",
                NoBinPacking);
 
   verifyFormat(
@@ -3129,7 +3175,8 @@ TEST_F(FormatTest, FormatsBuilderPattern) {
       "              aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)\n"
       "        ->aaaaaaaaaaaaaaaaa();");
   verifyGoogleFormat(
-      "someobj->Add((new util::filetools::Handler(dir))\n"
+      "void f() {\n"
+      "  someo->Add((new util::filetools::Handler(dir))\n"
       "                 ->OnEvent1(NewPermanentCallback(\n"
       "                       this, &HandlerHolderClass::EventHandlerCBA))\n"
       "                 ->OnEvent2(NewPermanentCallback(\n"
@@ -3139,7 +3186,8 @@ TEST_F(FormatTest, FormatsBuilderPattern) {
       "                 ->OnEvent5(NewPermanentCallback(\n"
       "                       this, &HandlerHolderClass::EventHandlerCBD))\n"
       "                 ->OnEvent6(NewPermanentCallback(\n"
-      "                       this, &HandlerHolderClass::EventHandlerCBE)));");
+      "                       this, &HandlerHolderClass::EventHandlerCBE)));\n"
+      "}");
 
   verifyFormat(
       "aaaaaaaaaaa().aaaaaaaaaaa().aaaaaaaaaaa().aaaaaaaaaaa().aaaaaaaaaaa();");
@@ -3340,6 +3388,94 @@ TEST_F(FormatTest, BreaksConditionalExpressions) {
       "        ?: aaaaaaaaaaaaaaa);\n"
       "}",
       NoBinPacking);
+}
+
+TEST_F(FormatTest, BreaksConditionalExpressionsAfterOperator) {
+  FormatStyle Style = getLLVMStyle();
+  Style.BreakBeforeTernaryOperators = false;
+  Style.ColumnLimit = 70;
+  verifyFormat(
+      "aaaa(aaaaaaaaaaaaaaaaaaaa, aaaaaaaaaaaaaaaaaaaaaaaaaa ?\n"
+      "                               aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa :\n"
+      "                               aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa);",
+      Style);
+  verifyFormat(
+      "aaaa(aaaaaaaaaaaaaaaaaaaa, aaaaaaa ? aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa :\n"
+      "                                     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa);",
+      Style);
+  verifyFormat(
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaa ? aaaa(aaaaaa) :\n"
+      "                                                      aaaaaaaaaaaaa);",
+      Style);
+  verifyFormat(
+      "aaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+      "                   aaaaaaaaaaaaaaaa ? aaaaaaaaaaaaaaaaaaaaaaaaaaaaa :\n"
+      "                                      aaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+      "                   aaaaaaaaaaaaa);",
+      Style);
+  verifyFormat(
+      "aaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+      "                   aaaaaaaaaaaaaaaa ?: aaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+      "                   aaaaaaaaaaaaa);",
+      Style);
+  verifyFormat("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ?\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) :\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa);",
+               Style);
+  verifyFormat("aaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+               "       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ?\n"
+               "           aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "               aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) :\n"
+               "           aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "               aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa),\n"
+               "       aaaaaaaaaaaaaaaaaaaaaaaaaaa);",
+               Style);
+  verifyFormat("aaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+               "       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ?:\n"
+               "           aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "               aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa),\n"
+               "       aaaaaaaaaaaaaaaaaaaaaaaaaaa);",
+               Style);
+  verifyFormat("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ?\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaa :\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaa;",
+               Style);
+  verifyFormat("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa aaaaaa =\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ?\n" 
+               "        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa :\n"
+               "        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;",
+               Style);
+  verifyFormat(
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa == aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ?\n"
+      "    aaaaaaaaaaaaaaa :\n"
+      "    aaaaaaaaaaaaaaa;",
+      Style);
+  verifyFormat("f(aaaaaaaaaaaaaaaa == // force break\n"
+               "          aaaaaaaaa ?\n"
+               "      b :\n"
+               "      c);",
+               Style);
+  verifyFormat(
+      "unsigned Indent =\n"
+      "    format(TheLine.First, IndentForLevel[TheLine.Level] >= 0 ?\n"
+      "                              IndentForLevel[TheLine.Level] :\n"
+      "                              TheLine * 2,\n"
+      "           TheLine.InPPDirective, PreviousEndOfLineColumn);",
+      Style);
+  verifyFormat("bool aaaaaa = aaaaaaaaaaaaa ? //\n"
+               "                  aaaaaaaaaaaaaaa :\n"
+               "                  bbbbbbbbbbbbbbb ? //\n"
+               "                      ccccccccccccccc :\n"
+               "                      ddddddddddddddd;",
+               Style);
+  verifyFormat("bool aaaaaa = aaaaaaaaaaaaa ? //\n"
+               "                  aaaaaaaaaaaaaaa :\n"
+               "                  (bbbbbbbbbbbbbbb ? //\n"
+               "                       ccccccccccccccc :\n"
+               "                       ddddddddddddddd);",
+               Style);
 }
 
 TEST_F(FormatTest, DeclarationsOfMultipleVariables) {
@@ -3599,8 +3735,10 @@ TEST_F(FormatTest, WrapsAtFunctionCallsIfNecessary) {
   verifyFormat("aaaaa(aaaaa(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
                "            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa).aaaaa(aaaaa),\n"
                "      aaaaaaaaaaaaaaaaaaaaa);");
-  verifyFormat("aaaaaaaaaaaaaaaaaaaaaaaaa(\n"
-               "    aaaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaa)->aaaaaaaaa());");
+  verifyFormat("void f() {\n"
+               "  aaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "      aaaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaa)->aaaaaaaaa());\n"
+               "}");
   verifyFormat(
       "aaaaa(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
       "      aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)\n"
@@ -3684,8 +3822,10 @@ TEST_F(FormatTest, WrapsTemplateDeclarations) {
       "aaaaaaaaaaaaaaaaaaaaaaaa<aaaaaaaaaaaaaaaaa, aaaaaaaaaaaaaaaaa>(\n"
       "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa);");
 
-  verifyFormat("a<aaaaaaaaaaaaaaaaaaaaa, aaaaaaaaaaaaaaaaaaa>(\n"
-               "    a(aaaaaaaaaaaaaaaaaa, aaaaaaaaaaaaaaaa));");
+  verifyFormat("void f() {\n"
+               "  a<aaaaaaaaaaaaaaaaaaaaa, aaaaaaaaaaaaaaaaaaa>(\n"
+               "      a(aaaaaaaaaaaaaaaaaa, aaaaaaaaaaaaaaaa));\n"
+               "}");
 
   verifyFormat("template <typename T> class C {};");
   verifyFormat("template <typename T> void f();");
@@ -4029,6 +4169,7 @@ TEST_F(FormatTest, UnderstandsUsesOfStarAndAmp) {
   verifyFormat("for (int i = 0; i < a * a; ++i) {\n}");
   verifyGoogleFormat("for (int i = 0; i * 2 < z; i *= 2) {\n}");
 
+  verifyFormat("#define A (!a * b)");
   verifyFormat("#define MACRO     \\\n"
                "  int *i = a * b; \\\n"
                "  void f(a *b);",
@@ -4212,6 +4353,9 @@ TEST_F(FormatTest, FormatsFunctionTypes) {
 TEST_F(FormatTest, BreaksLongDeclarations) {
   verifyFormat("typedef LoooooooooooooooooooooooooooooooooooooooongType\n"
                "    AnotherNameForTheLongType;",
+               getGoogleStyle());
+  verifyFormat("typedef LongTemplateType<aaaaaaaaaaaaaaaaaaa()>\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;",
                getGoogleStyle());
   verifyFormat("LoooooooooooooooooooooooooooooooooooooooongType\n"
                "    LoooooooooooooooooooooooooooooooooooooooongVariable;",
@@ -4503,6 +4647,11 @@ TEST_F(FormatTest, LayoutCxx11ConstructorBraceInitializers) {
     verifyFormat("class Class {\n"
                  "  T member = {arg1, arg2};\n"
                  "};",
+                 NoSpaces);
+    verifyFormat("Constructor::Constructor()\n"
+                 "    : some_value{ //\n"
+                 "          aaaaaaa //\n"
+                 "      } {}",
                  NoSpaces);
 }
 
@@ -5313,10 +5462,21 @@ TEST_F(FormatTest, FormatObjCMethodExpr) {
                "    aaaaaaaaaa:bbbbbbbbbbbbbbbbb\n"
                "         aaaaa:bbbbbbbbbbb + bbbbbbbbbbbb\n"
                "          aaaa:bbb];");
+  verifyFormat(
+      "[self aaaaaaaaaa:aaaaaaaaaaaaaaa | aaaaaaaaaaaaaaa | aaaaaaaaaaaaaaa |\n"
+      "                 aaaaaaaaaaaaaaa | aaaaaaaaaaaaaaa | aaaaaaaaaaaaaaa |\n"
+      "                 aaaaaaaaaaaaaaa | aaaaaaaaaaaaaaa];");
 
   // Variadic parameters.
   verifyFormat(
       "NSArray *myStrings = [NSArray stringarray:@\"a\", @\"b\", nil];");
+  verifyFormat(
+      "[self aaaaaaaaaaaaa:aaaaaaaaaaaaaaa, aaaaaaaaaaaaaaa, aaaaaaaaaaaaaaa,\n"
+      "                    aaaaaaaaaaaaaaa, aaaaaaaaaaaaaaa, aaaaaaaaaaaaaaa,\n"
+      "                    aaaaaaaaaaaaaaa, aaaaaaaaaaaaaaa];");
+  verifyFormat("[self // break\n"
+               "      a:a\n"
+               "    aaa:aaa];");
 }
 
 TEST_F(FormatTest, ObjCAt) {
@@ -6591,6 +6751,7 @@ TEST_F(FormatTest, ParsesConfiguration) {
   CHECK_PARSE_BOOL(AlwaysBreakTemplateDeclarations);
   CHECK_PARSE_BOOL(BinPackParameters);
   CHECK_PARSE_BOOL(BreakBeforeBinaryOperators);
+  CHECK_PARSE_BOOL(BreakBeforeTernaryOperators);
   CHECK_PARSE_BOOL(BreakConstructorInitializersBeforeComma);
   CHECK_PARSE_BOOL(ConstructorInitializerAllOnOneLineOrOnePerLine);
   CHECK_PARSE_BOOL(DerivePointerBinding);

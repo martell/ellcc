@@ -23,9 +23,11 @@ static const uptr kStackTraceMax = 256;
     defined(__powerpc__) || defined(__powerpc64__) || \
     defined(__sparc__) || \
     defined(__mips__))
-#define SANITIZER_CAN_FAST_UNWIND 0
+# define SANITIZER_CAN_FAST_UNWIND 0
+#elif SANITIZER_WINDOWS
+# define SANITIZER_CAN_FAST_UNWIND 0
 #else
-#define SANITIZER_CAN_FAST_UNWIND 1
+# define SANITIZER_CAN_FAST_UNWIND 1
 #endif
 
 struct StackTrace {
@@ -45,22 +47,26 @@ struct StackTrace {
       trace[i] = src[i];
   }
 
-  void Unwind(uptr max_depth, uptr pc, uptr bp, uptr stack_top,
-              uptr stack_bottom, bool fast);
-  // FIXME: Make FastUnwindStack and SlowUnwindStack private methods.
-  void FastUnwindStack(uptr pc, uptr bp, uptr stack_top, uptr stack_bottom,
-                       uptr max_depth);
-  void SlowUnwindStack(uptr pc, uptr max_depth);
+  static bool WillUseFastUnwind(bool request_fast_unwind) {
+    // Check if fast unwind is available. Fast unwind is the only option on Mac.
+    if (!SANITIZER_CAN_FAST_UNWIND)
+      return false;
+    else if (SANITIZER_MAC)
+      return true;
+    return request_fast_unwind;
+  }
 
-  void PopStackFrames(uptr count);
+  void Unwind(uptr max_depth, uptr pc, uptr bp, uptr stack_top,
+              uptr stack_bottom, bool request_fast_unwind);
 
   static uptr GetCurrentPc();
   static uptr GetPreviousInstructionPc(uptr pc);
 
-  static uptr CompressStack(StackTrace *stack,
-                            u32 *compressed, uptr size);
-  static void UncompressStack(StackTrace *stack,
-                              u32 *compressed, uptr size);
+ private:
+  void FastUnwindStack(uptr pc, uptr bp, uptr stack_top, uptr stack_bottom,
+                       uptr max_depth);
+  void SlowUnwindStack(uptr pc, uptr max_depth);
+  void PopStackFrames(uptr count);
 };
 
 }  // namespace __sanitizer

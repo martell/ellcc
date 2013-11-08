@@ -1925,6 +1925,7 @@ class X86TargetInfo : public TargetInfo {
     //@{
     CK_BDVER1,
     CK_BDVER2,
+    CK_BDVER3,
     //@}
 
     /// This specification is deprecated and will be removed in the future.
@@ -2067,6 +2068,7 @@ public:
       .Case("btver2", CK_BTVER2)
       .Case("bdver1", CK_BDVER1)
       .Case("bdver2", CK_BDVER2)
+      .Case("bdver3", CK_BDVER3)
       .Case("x86-64", CK_x86_64)
       .Case("geode", CK_Geode)
       .Default(CK_Generic);
@@ -2135,6 +2137,7 @@ public:
     case CK_BTVER2:
     case CK_BDVER1:
     case CK_BDVER2:
+    case CK_BDVER3:
     case CK_x86_64:
       return true;
     }
@@ -2338,6 +2341,7 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     setFeatureEnabledImpl(Features, "cx16", true);
     break;
   case CK_BDVER2:
+  case CK_BDVER3:
     setFeatureEnabledImpl(Features, "xop", true);
     setFeatureEnabledImpl(Features, "lzcnt", true);
     setFeatureEnabledImpl(Features, "aes", true);
@@ -2835,6 +2839,9 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     break;
   case CK_BDVER2:
     defineCPUMacros(Builder, "bdver2");
+    break;
+  case CK_BDVER3:
+    defineCPUMacros(Builder, "bdver3");
     break;
   case CK_Geode:
     defineCPUMacros(Builder, "geode");
