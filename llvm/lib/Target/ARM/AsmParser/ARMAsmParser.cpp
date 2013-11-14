@@ -3549,7 +3549,7 @@ parseInstSyncBarrierOptOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   if (Tok.is(AsmToken::Identifier)) {
     StringRef OptStr = Tok.getString();
 
-    if (OptStr.lower() == "sy")
+    if (OptStr.equals_lower("sy"))
       Opt = ARM_ISB::SY;
     else
       return MatchOperand_NoMatch;
@@ -5481,6 +5481,22 @@ validateInstruction(MCInst &Inst,
                    "writeback register not allowed in register list");
     break;
   }
+  case ARM::sysLDMIA_UPD:
+  case ARM::sysLDMDA_UPD:
+  case ARM::sysLDMDB_UPD:
+  case ARM::sysLDMIB_UPD:
+    if (!listContainsReg(Inst, 3, ARM::PC))
+      return Error(Operands[4]->getStartLoc(),
+                   "writeback register only allowed on system LDM "
+                   "if PC in register-list");
+    break;
+  case ARM::sysSTMIA_UPD:
+  case ARM::sysSTMDA_UPD:
+  case ARM::sysSTMDB_UPD:
+  case ARM::sysSTMIB_UPD:
+    return Error(Operands[2]->getStartLoc(),
+                 "system STM cannot have writeback register");
+    break;
   case ARM::tMUL: {
     // The second source operand must be the same register as the destination
     // operand.

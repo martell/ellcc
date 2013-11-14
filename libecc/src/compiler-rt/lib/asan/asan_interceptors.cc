@@ -107,18 +107,32 @@ using namespace __asan;  // NOLINT
 DECLARE_REAL_AND_INTERCEPTOR(void *, malloc, uptr)
 DECLARE_REAL_AND_INTERCEPTOR(void, free, void *)
 
+#if !SANITIZER_MAC
+#define ASAN_INTERCEPT_FUNC(name)                                      \
+  do {                                                                 \
+    if ((!INTERCEPT_FUNCTION(name) || !REAL(name)) &&                  \
+        common_flags()->verbosity > 0)                                 \
+      Report("AddressSanitizer: failed to intercept '" #name "'\n");   \
+  } while (0)
+#else
+// OS X interceptors don't need to be initialized with INTERCEPT_FUNCTION.
+#define ASAN_INTERCEPT_FUNC(name)
+#endif  // SANITIZER_MAC
+
+#define COMMON_INTERCEPT_FUNCTION(name) ASAN_INTERCEPT_FUNC(name)
 #define COMMON_INTERCEPTOR_UNPOISON_PARAM(ctx, count) \
   do {                                                \
   } while (false)
 #define COMMON_INTERCEPTOR_WRITE_RANGE(ctx, ptr, size) \
   ASAN_WRITE_RANGE(ptr, size)
 #define COMMON_INTERCEPTOR_READ_RANGE(ctx, ptr, size) ASAN_READ_RANGE(ptr, size)
-#define COMMON_INTERCEPTOR_ENTER(ctx, func, ...)              \
-  do {                                                        \
-    if (asan_init_is_running) return REAL(func)(__VA_ARGS__); \
-    ctx = 0;                                                  \
-    (void) ctx;                                               \
-    ENSURE_ASAN_INITED();                                     \
+#define COMMON_INTERCEPTOR_ENTER(ctx, func, ...)                       \
+  do {                                                                 \
+    if (asan_init_is_running) return REAL(func)(__VA_ARGS__);          \
+    ctx = 0;                                                           \
+    (void) ctx;                                                        \
+    if (SANITIZER_MAC && !asan_inited) return REAL(func)(__VA_ARGS__); \
+    ENSURE_ASAN_INITED();                                              \
   } while (false)
 #define COMMON_INTERCEPTOR_FD_ACQUIRE(ctx, fd) \
   do {                                         \
@@ -166,7 +180,7 @@ INTERCEPTOR(int, pthread_create, void *thread,
   GET_STACK_TRACE_THREAD;
   int detached = 0;
   if (attr != 0)
-    pthread_attr_getdetachstate(attr, &detached);
+    REAL(pthread_attr_getdetachstate)(attr, &detached);
 
   u32 current_tid = GetCurrentTidOrInvalid();
   AsanThread *t = AsanThread::Create(start_routine, arg);
@@ -646,22 +660,15 @@ static void AtCxaAtexit(void *unused) {
 #if ASAN_INTERCEPT___CXA_ATEXIT
 INTERCEPTOR(int, __cxa_atexit, void (*func)(void *), void *arg,
             void *dso_handle) {
+#if SANITIZER_MAC
+  if (!asan_inited) return REAL(__cxa_atexit)(func, arg, dso_handle);
+#endif
   ENSURE_ASAN_INITED();
   int res = REAL(__cxa_atexit)(func, arg, dso_handle);
   REAL(__cxa_atexit)(AtCxaAtexit, 0, 0);
   return res;
 }
 #endif  // ASAN_INTERCEPT___CXA_ATEXIT
-
-#if !SANITIZER_MAC
-#define ASAN_INTERCEPT_FUNC(name) do { \
-      if (!INTERCEPT_FUNCTION(name) && common_flags()->verbosity > 0) \
-        Report("AddressSanitizer: failed to intercept '" #name "'\n"); \
-    } while (0)
-#else
-// OS X interceptors don't need to be initialized with INTERCEPT_FUNCTION.
-#define ASAN_INTERCEPT_FUNC(name)
-#endif  // SANITIZER_MAC
 
 #if SANITIZER_WINDOWS
 INTERCEPTOR_WINAPI(DWORD, CreateThread,

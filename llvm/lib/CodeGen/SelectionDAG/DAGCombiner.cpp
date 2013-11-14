@@ -3691,6 +3691,12 @@ SDValue DAGCombiner::visitSHL(SDNode *N) {
   EVT VT = N0.getValueType();
   unsigned OpSizeInBits = VT.getScalarType().getSizeInBits();
 
+  // fold vector ops
+  if (VT.isVector()) {
+    SDValue FoldedVOp = SimplifyVBinOp(N);
+    if (FoldedVOp.getNode()) return FoldedVOp;
+  }
+
   // fold (shl c1, c2) -> c1<<c2
   if (N0C && N1C)
     return DAG.FoldConstantArithmetic(ISD::SHL, VT, N0C, N1C);
@@ -3842,6 +3848,12 @@ SDValue DAGCombiner::visitSRA(SDNode *N) {
   EVT VT = N0.getValueType();
   unsigned OpSizeInBits = VT.getScalarType().getSizeInBits();
 
+  // fold vector ops
+  if (VT.isVector()) {
+    SDValue FoldedVOp = SimplifyVBinOp(N);
+    if (FoldedVOp.getNode()) return FoldedVOp;
+  }
+
   // fold (sra c1, c2) -> (sra c1, c2)
   if (N0C && N1C)
     return DAG.FoldConstantArithmetic(ISD::SRA, VT, N0C, N1C);
@@ -3986,6 +3998,12 @@ SDValue DAGCombiner::visitSRL(SDNode *N) {
   ConstantSDNode *N1C = dyn_cast<ConstantSDNode>(N1);
   EVT VT = N0.getValueType();
   unsigned OpSizeInBits = VT.getScalarType().getSizeInBits();
+
+  // fold vector ops
+  if (VT.isVector()) {
+    SDValue FoldedVOp = SimplifyVBinOp(N);
+    if (FoldedVOp.getNode()) return FoldedVOp;
+  }
 
   // fold (srl c1, c2) -> c1 >>u c2
   if (N0C && N1C)
@@ -4344,6 +4362,29 @@ SDValue DAGCombiner::visitVSELECT(SDNode *N) {
       AddToWorkList(Add.getNode());
       return DAG.getNode(ISD::XOR, DL, VT, Add, Shift);
     }
+  }
+
+  // Treat SETCC as a vector mask and promote the result type based on the
+  // targets expected SETCC result type. This will ensure that SETCC and VSELECT
+  // are both split by the type legalizer. This is done to prevent the type
+  // legalizer from unrolling SETCC into scalar comparions.
+  EVT SelectVT = N->getValueType(0);
+  EVT MaskVT = getSetCCResultType(SelectVT);
+  assert(MaskVT.isVector() && "Expected a vector type.");
+  if (N0.getOpcode() == ISD::SETCC && N0.getValueType() != MaskVT) {
+    SDLoc MaskDL(N0);
+
+    // Extend the mask to the desired value type.
+    ISD::NodeType ExtendCode =
+      TargetLowering::getExtendForContent(TLI.getBooleanContents(true));
+    SDValue Mask = DAG.getNode(ExtendCode, MaskDL, MaskVT, N0);
+
+    AddToWorkList(Mask.getNode());
+
+    SDValue LHS = N->getOperand(1);
+    SDValue RHS = N->getOperand(2);
+
+    return DAG.getNode(ISD::VSELECT, DL, SelectVT, Mask, LHS, RHS);
   }
 
   return SDValue();

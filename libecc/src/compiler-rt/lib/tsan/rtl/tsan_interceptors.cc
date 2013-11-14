@@ -1840,6 +1840,7 @@ struct TsanInterceptorContext {
 // Causes interceptor recursion (glob64() calls lstat64())
 #undef SANITIZER_INTERCEPT_GLOB
 
+#define COMMON_INTERCEPT_FUNCTION(name) INTERCEPT_FUNCTION(name)
 #define COMMON_INTERCEPTOR_UNPOISON_PARAM(ctx, count) \
   do {                                                \
   } while (false)
@@ -2102,8 +2103,8 @@ void InitializeInterceptors() {
   TSAN_INTERCEPT(pthread_rwlock_timedwrlock);
   TSAN_INTERCEPT(pthread_rwlock_unlock);
 
-  INTERCEPT_FUNCTION_VER(pthread_cond_destroy, GLIBC_2.3.2);
-  INTERCEPT_FUNCTION_VER(pthread_cond_timedwait, GLIBC_2.3.2);
+  INTERCEPT_FUNCTION_VER(pthread_cond_destroy, "GLIBC_2.3.2");
+  INTERCEPT_FUNCTION_VER(pthread_cond_timedwait, "GLIBC_2.3.2");
 
   TSAN_INTERCEPT(pthread_barrier_init);
   TSAN_INTERCEPT(pthread_barrier_destroy);

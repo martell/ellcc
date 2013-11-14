@@ -141,14 +141,10 @@ static void ParseFlagsFromString(Flags *f, const char *str) {
 
 static void InitializeFlags(Flags *f, const char *options) {
   CommonFlags *cf = common_flags();
+  SetCommonFlagDefaults();
   cf->external_symbolizer_path = GetEnv("MSAN_SYMBOLIZER_PATH");
-  cf->symbolize = true;
-  cf->strip_path_prefix = "";
-  cf->fast_unwind_on_fatal = false;
-  cf->fast_unwind_on_malloc = true;
   cf->malloc_context_size = 20;
   cf->handle_ioctl = true;
-  cf->log_path = 0;
 
   internal_memset(f, 0, sizeof(*f));
   f->poison_heap_with_zeroes = false;
@@ -294,14 +290,16 @@ void __msan_init() {
 
   SetDieCallback(MsanDie);
   InitTlsSize();
+
+  const char *msan_options = GetEnv("MSAN_OPTIONS");
+  InitializeFlags(&msan_flags, msan_options);
+  __sanitizer_set_report_path(common_flags()->log_path);
+
   InitializeInterceptors();
   InstallAtExitHandler(); // Needs __cxa_atexit interceptor.
 
   if (MSAN_REPLACE_OPERATORS_NEW_AND_DELETE)
     ReplaceOperatorsNewAndDelete();
-  const char *msan_options = GetEnv("MSAN_OPTIONS");
-  InitializeFlags(&msan_flags, msan_options);
-  __sanitizer_set_report_path(common_flags()->log_path);
   if (StackSizeIsUnlimited()) {
     if (common_flags()->verbosity)
       Printf("Unlimited stack, doing reexec\n");

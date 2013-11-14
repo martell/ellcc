@@ -135,7 +135,7 @@ bool ContinuationIndenter::mustBreak(const LineState &State) {
     return true;
   if (Style.AlwaysBreakBeforeMultilineStrings &&
       State.Column > State.Stack.back().Indent && // Breaking saves columns.
-      !Previous.isOneOf(tok::kw_return, tok::lessless) &&
+      !Previous.isOneOf(tok::kw_return, tok::lessless, tok::at) &&
       Previous.Type != TT_InlineASMColon && NextIsMultilineString(State))
     return true;
   if (((Previous.Type == TT_DictLiteral && Previous.is(tok::l_brace)) ||
@@ -277,7 +277,7 @@ void ContinuationIndenter::addTokenOnCurrentLine(LineState &State, bool DryRun,
     // Treat the condition inside an if as if it was a second function
     // parameter, i.e. let nested calls have a continuation indent.
     State.Stack.back().LastSpace = State.Column + 1; // 1 is length of "(".
-  else if (Previous.is(tok::comma))
+  else if (Previous.is(tok::comma) || Previous.Type == TT_ObjCMethodExpr)
     State.Stack.back().LastSpace = State.Column;
   else if ((Previous.Type == TT_BinaryOperator ||
             Previous.Type == TT_ConditionalExpr ||
@@ -439,10 +439,12 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
   for (unsigned i = 0, e = State.Stack.size() - 1; i != e; ++i) {
     State.Stack[i].BreakBeforeParameter = true;
   }
-  const FormatToken *TokenBefore = Current.getPreviousNonComment();
-  if (TokenBefore && !TokenBefore->isOneOf(tok::comma, tok::semi) &&
-      TokenBefore->Type != TT_TemplateCloser &&
-      TokenBefore->Type != TT_BinaryOperator && !TokenBefore->opensScope())
+  if (PreviousNonComment &&
+      !PreviousNonComment->isOneOf(tok::comma, tok::semi) &&
+      PreviousNonComment->Type != TT_TemplateCloser &&
+      PreviousNonComment->Type != TT_BinaryOperator &&
+      Current.Type != TT_BinaryOperator && 
+      !PreviousNonComment->opensScope())
     State.Stack.back().BreakBeforeParameter = true;
 
   // If we break after { or the [ of an array initializer, we should also break
@@ -732,6 +734,7 @@ unsigned ContinuationIndenter::breakProtrudingToken(const FormatToken &Current,
 
   llvm::OwningPtr<BreakableToken> Token;
   unsigned StartColumn = State.Column - Current.ColumnWidth;
+  unsigned ColumnLimit = getColumnLimit(State);
 
   if (Current.isOneOf(tok::string_literal, tok::wide_string_literal,
                       tok::utf8_string_literal, tok::utf16_string_literal,
@@ -776,16 +779,17 @@ unsigned ContinuationIndenter::breakProtrudingToken(const FormatToken &Current,
              (Current.Previous == NULL ||
               Current.Previous->Type != TT_ImplicitStringLiteral)) {
     Token.reset(new BreakableLineComment(Current, State.Line->Level,
-                                         StartColumn, State.Line->InPPDirective,
+                                         StartColumn, /*InPPDirective=*/false,
                                          Encoding, Style));
+    // We don't insert backslashes when breaking line comments.
+    ColumnLimit = Style.ColumnLimit;
   } else {
     return 0;
   }
-  if (Current.UnbreakableTailLength >= getColumnLimit(State))
+  if (Current.UnbreakableTailLength >= ColumnLimit)
     return 0;
 
-  unsigned RemainingSpace =
-      getColumnLimit(State) - Current.UnbreakableTailLength;
+  unsigned RemainingSpace = ColumnLimit - Current.UnbreakableTailLength;
   bool BreakInserted = false;
   unsigned Penalty = 0;
   unsigned RemainingTokenColumns = 0;
@@ -798,7 +802,7 @@ unsigned ContinuationIndenter::breakProtrudingToken(const FormatToken &Current,
         Token->getLineLengthAfterSplit(LineIndex, TailOffset, StringRef::npos);
     while (RemainingTokenColumns > RemainingSpace) {
       BreakableToken::Split Split =
-          Token->getSplit(LineIndex, TailOffset, getColumnLimit(State));
+          Token->getSplit(LineIndex, TailOffset, ColumnLimit);
       if (Split.first == StringRef::npos) {
         // The last line's penalty is handled in addNextStateToQueue().
         if (LineIndex < EndIndex - 1)
@@ -809,15 +813,23 @@ unsigned ContinuationIndenter::breakProtrudingToken(const FormatToken &Current,
       assert(Split.first != 0);
       unsigned NewRemainingTokenColumns = Token->getLineLengthAfterSplit(
           LineIndex, TailOffset + Split.first + Split.second, StringRef::npos);
+
+      // We can remove extra whitespace instead of breaking the line.
+      if (RemainingTokenColumns + 1 - Split.second <= RemainingSpace) {
+        RemainingTokenColumns = 0;
+        if (!DryRun)
+          Token->replaceWhitespace(LineIndex, TailOffset, Split, Whitespaces);
+        break;
+      }
+
       assert(NewRemainingTokenColumns < RemainingTokenColumns);
       if (!DryRun)
         Token->insertBreak(LineIndex, TailOffset, Split, Whitespaces);
       Penalty += Current.SplitPenalty;
       unsigned ColumnsUsed =
           Token->getLineLengthAfterSplit(LineIndex, TailOffset, Split.first);
-      if (ColumnsUsed > getColumnLimit(State)) {
-        Penalty += Style.PenaltyExcessCharacter *
-                   (ColumnsUsed - getColumnLimit(State));
+      if (ColumnsUsed > ColumnLimit) {
+        Penalty += Style.PenaltyExcessCharacter * (ColumnsUsed - ColumnLimit);
       }
       TailOffset += Split.first + Split.second;
       RemainingTokenColumns = NewRemainingTokenColumns;

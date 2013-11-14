@@ -2730,10 +2730,19 @@ void GVN::addDeadBlock(BasicBlock *BB) {
     if (DeadBlocks.count(B))
       continue;
 
-    for (pred_iterator PI = pred_begin(B), PE = pred_end(B); PI != PE; PI++) {
+    SmallVector<BasicBlock *, 4> Preds(pred_begin(B), pred_end(B));
+    for (SmallVectorImpl<BasicBlock *>::iterator PI = Preds.begin(),
+           PE = Preds.end(); PI != PE; PI++) {
       BasicBlock *P = *PI;
+
       if (!DeadBlocks.count(P))
         continue;
+
+      if (isCriticalEdge(P->getTerminator(), GetSuccessorNumber(P, B))) {
+        if (BasicBlock *S = splitCriticalEdges(P, B))
+          DeadBlocks.insert(P = S);
+      }
+
       for (BasicBlock::iterator II = B->begin(); isa<PHINode>(II); ++II) {
         PHINode &Phi = cast<PHINode>(*II);
         Phi.setIncomingValue(Phi.getBasicBlockIndex(P),

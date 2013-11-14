@@ -340,6 +340,7 @@ static unsigned RFT(unsigned t, bool shift = false) {
   case NeonTypeFlags::Int32:
     return shift ? 31 : (2 << IsQuad) - 1;
   case NeonTypeFlags::Int64:
+  case NeonTypeFlags::Poly64:
     return shift ? 63 : (1 << IsQuad) - 1;
   case NeonTypeFlags::Float16:
     assert(!shift && "cannot shift float types!");
@@ -357,7 +358,8 @@ static unsigned RFT(unsigned t, bool shift = false) {
 /// getNeonEltType - Return the QualType corresponding to the elements of
 /// the vector type specified by the NeonTypeFlags.  This is used to check
 /// the pointer arguments for Neon load/store intrinsics.
-static QualType getNeonEltType(NeonTypeFlags Flags, ASTContext &Context) {
+static QualType getNeonEltType(NeonTypeFlags Flags, ASTContext &Context,
+                               bool IsAArch64) {
   switch (Flags.getEltType()) {
   case NeonTypeFlags::Int8:
     return Flags.isUnsigned() ? Context.UnsignedCharTy : Context.SignedCharTy;
@@ -368,11 +370,13 @@ static QualType getNeonEltType(NeonTypeFlags Flags, ASTContext &Context) {
   case NeonTypeFlags::Int64:
     return Flags.isUnsigned() ? Context.UnsignedLongLongTy : Context.LongLongTy;
   case NeonTypeFlags::Poly8:
-    return Context.SignedCharTy;
+    return IsAArch64 ? Context.UnsignedCharTy : Context.SignedCharTy;
   case NeonTypeFlags::Poly16:
-    return Context.ShortTy;
+    return IsAArch64 ? Context.UnsignedShortTy : Context.ShortTy;
+  case NeonTypeFlags::Poly64:
+    return Context.UnsignedLongLongTy;
   case NeonTypeFlags::Float16:
-    return Context.UnsignedShortTy;
+    return Context.HalfTy;
   case NeonTypeFlags::Float32:
     return Context.FloatTy;
   case NeonTypeFlags::Float64:
@@ -416,7 +420,7 @@ bool Sema::CheckAArch64BuiltinFunctionCall(unsigned BuiltinID,
       Arg = ICE->getSubExpr();
     ExprResult RHS = DefaultFunctionArrayLvalueConversion(Arg);
     QualType RHSTy = RHS.get()->getType();
-    QualType EltTy = getNeonEltType(NeonTypeFlags(TV), Context);
+    QualType EltTy = getNeonEltType(NeonTypeFlags(TV), Context, true);
     if (HasConstPtr)
       EltTy = EltTy.withConst();
     QualType LHSTy = Context.getPointerType(EltTy);
@@ -603,7 +607,7 @@ bool Sema::CheckARMBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
       Arg = ICE->getSubExpr();
     ExprResult RHS = DefaultFunctionArrayLvalueConversion(Arg);
     QualType RHSTy = RHS.get()->getType();
-    QualType EltTy = getNeonEltType(NeonTypeFlags(TV), Context);
+    QualType EltTy = getNeonEltType(NeonTypeFlags(TV), Context, false);
     if (HasConstPtr)
       EltTy = EltTy.withConst();
     QualType LHSTy = Context.getPointerType(EltTy);
@@ -625,6 +629,8 @@ bool Sema::CheckARMBuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   case ARM::BI__builtin_arm_usat: i = 1; u = 31; break;
   case ARM::BI__builtin_arm_vcvtr_f:
   case ARM::BI__builtin_arm_vcvtr_d: i = 1; u = 1; break;
+  case ARM::BI__builtin_arm_dmb:
+  case ARM::BI__builtin_arm_dsb: l = 0; u = 15; break;
 #define GET_NEON_IMMEDIATE_CHECK
 #include "clang/Basic/arm_neon.inc"
 #undef GET_NEON_IMMEDIATE_CHECK

@@ -1,4 +1,4 @@
-; RUN: llc < %s -mtriple=x86_64-apple-darwin | FileCheck %s
+; RUN: llc < %s -mtriple=x86_64-apple-darwin -disable-fp-elim | FileCheck %s
 ;
 ; Note: Print verbose stackmaps using -debug-only=stackmaps.
 
@@ -9,7 +9,7 @@
 ; CHECK-NEXT:   .long   1
 ; CHECK-NEXT:   .quad   4294967296
 ; Num Callsites
-; CHECK-NEXT:   .long   8
+; CHECK-NEXT:   .long   9
 
 ; Constant arguments
 ;
@@ -41,7 +41,7 @@
 define void @constantargs() {
 entry:
   %0 = inttoptr i64 12345 to i8*
-  tail call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 1, i32 2, i8* %0, i32 0, i64 65535, i64 65536, i64 4294967295, i64 4294967296)
+  tail call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 1, i32 15, i8* %0, i32 0, i64 65535, i64 65536, i64 4294967295, i64 4294967296)
   ret void
 }
 
@@ -91,7 +91,7 @@ entry:
 cold:
   ; OSR patchpoint with 12-byte nop-slide and 2 live vars.
   %thunk = inttoptr i64 -559038737 to i8*
-  call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 4, i32 12, i8* %thunk, i32 0, i64 %a, i64 %b)
+  call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 4, i32 15, i8* %thunk, i32 0, i64 %a, i64 %b)
   unreachable
 ret:
   ret void
@@ -108,7 +108,7 @@ ret:
 define i64 @propertyRead(i64* %obj) {
 entry:
   %resolveRead = inttoptr i64 -559038737 to i8*
-  %result = call i64 (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.i64(i32 5, i32 12, i8* %resolveRead, i32 1, i64* %obj)
+  %result = call i64 (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.i64(i32 5, i32 15, i8* %resolveRead, i32 1, i64* %obj)
   %add = add i64 %result, 3
   ret i64 %add
 }
@@ -124,7 +124,7 @@ entry:
 define void @propertyWrite(i64 %dummy1, i64* %obj, i64 %dummy2, i64 %a) {
 entry:
   %resolveWrite = inttoptr i64 -559038737 to i8*
-  call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 6, i32 12, i8* %resolveWrite, i32 2, i64* %obj, i64 %a)
+  call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 6, i32 15, i8* %resolveWrite, i32 2, i64* %obj, i64 %a)
   ret void
 }
 
@@ -147,7 +147,7 @@ entry:
 define void @jsVoidCall(i64 %dummy1, i64* %obj, i64 %arg, i64 %l1, i64 %l2) {
 entry:
   %resolveCall = inttoptr i64 -559038737 to i8*
-  call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 7, i32 12, i8* %resolveCall, i32 2, i64* %obj, i64 %arg, i64 %l1, i64 %l2)
+  call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 7, i32 15, i8* %resolveCall, i32 2, i64* %obj, i64 %arg, i64 %l1, i64 %l2)
   ret void
 }
 
@@ -170,7 +170,7 @@ entry:
 define i64 @jsIntCall(i64 %dummy1, i64* %obj, i64 %arg, i64 %l1, i64 %l2) {
 entry:
   %resolveCall = inttoptr i64 -559038737 to i8*
-  %result = call i64 (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.i64(i32 8, i32 12, i8* %resolveCall, i32 2, i64* %obj, i64 %arg, i64 %l1, i64 %l2)
+  %result = call i64 (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.i64(i32 8, i32 15, i8* %resolveCall, i32 2, i64* %obj, i64 %arg, i64 %l1, i64 %l2)
   %add = add i64 %result, 3
   ret i64 %add
 }
@@ -182,21 +182,36 @@ entry:
 ; CHECK:      .long 11
 ; CHECK-NEXT: .long L{{.*}}-_spilledValue
 ; CHECK-NEXT: .short 0
-; CHECK-NEXT: .short 10
+; CHECK-NEXT: .short 17
 ;
-; Check that at least one is a spilled entry (Indirect).
+; Check that at least one is a spilled entry from RBP.
+; Location: Indirect RBP + ...
 ; CHECK: .byte 3
 ; CHECK: .byte 0
+; CHECK: .short 6
 define void @spilledValue(i64 %arg0, i64 %arg1, i64 %arg2, i64 %arg3, i64 %arg4, i64 %l0, i64 %l1, i64 %l2, i64 %l3, i64 %l4, i64 %l5, i64 %l6, i64 %l7, i64 %l8, i64 %l9, i64 %l10, i64 %l11, i64 %l12, i64 %l13, i64 %l14, i64 %l15, i64 %l16) {
 entry:
-  %resolveCall = inttoptr i64 -559038737 to i8*
-  call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 11, i32 12, i8* %resolveCall, i32 5, i64 %arg0, i64 %arg1, i64 %arg2, i64 %arg3, i64 %arg4, i64 %l0, i64 %l1, i64 %l2, i64 %l3, i64 %l4, i64 %l5, i64 %l6, i64 %l7, i64 %l8, i64 %l9)
+  call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 11, i32 15, i8* null, i32 5, i64 %arg0, i64 %arg1, i64 %arg2, i64 %arg3, i64 %arg4, i64 %l0, i64 %l1, i64 %l2, i64 %l3, i64 %l4, i64 %l5, i64 %l6, i64 %l7, i64 %l8, i64 %l9, i64 %l10, i64 %l11, i64 %l12, i64 %l13, i64 %l14, i64 %l15, i64 %l16)
+  ret void
+}
 
-; FIXME: The Spiller needs to be able to fold all rematted loads! This
-; can be seen by adding %l15 to the stackmap.
-; <rdar:/15202984> [JS] Ran out of registers during register allocation
-;  %resolveCall = inttoptr i64 -559038737 to i8*
-;  call void (i32, i32, i8*, i32, ...)* @llvm.experimental.patchpoint.void(i32 12, i32 12, i8* %resolveCall, i32 5, i64 %arg0, i64 %arg1, i64 %arg2, i64 %arg3, i64 %arg4, i64 %l0, i64 %l1, i64 %l2, i64 %l3, i64 %l4, i64 %l5, i64 %l6, i64 %l7, i64 %l8, i64 %l9, i64 %l10, i64 %l11, i64 %l12, i64 %l13, i64 %l14, i64 %l15, i64 %l16)
+; Spilled stack map values.
+;
+; Verify 17 stack map entries.
+;
+; CHECK:       .long 12
+; CHECK-LABEL: .long L{{.*}}-_spilledStackMapValue
+; CHECK-NEXT:  .short 0
+; CHECK-NEXT:  .short 17
+;
+; Check that at least one is a spilled entry from RBP.
+; Location: Indirect RBP + ...
+; CHECK: .byte 3
+; CHECK: .byte 0
+; CHECK: .short 6
+define webkit_jscc void @spilledStackMapValue(i64 %l0, i64 %l1, i64 %l2, i64 %l3, i64 %l4, i64 %l5, i64 %l6, i64 %l7, i64 %l8, i64 %l9, i64 %l10, i64 %l11, i64 %l12, i64 %l13, i64 %l14, i64 %l15, i64 %l16) {
+entry:
+  call void (i32, i32, ...)* @llvm.experimental.stackmap(i32 12, i32 15, i64 %l0, i64 %l1, i64 %l2, i64 %l3, i64 %l4, i64 %l5, i64 %l6, i64 %l7, i64 %l8, i64 %l9, i64 %l10, i64 %l11, i64 %l12, i64 %l13, i64 %l14, i64 %l15, i64 %l16)
   ret void
 }
 

@@ -941,9 +941,13 @@ defm V_ASHR_I32 : VOP2_32 <0x00000017, "V_ASHR_I32",
 >;
 defm V_ASHRREV_I32 : VOP2_32 <0x00000018, "V_ASHRREV_I32", [], "V_ASHR_I32">;
 
+let hasPostISelHook = 1 in {
+
 defm V_LSHL_B32 : VOP2_32 <0x00000019, "V_LSHL_B32",
   [(set i32:$dst, (shl i32:$src0, i32:$src1))]
 >;
+
+}
 defm V_LSHLREV_B32 : VOP2_32 <0x0000001a, "V_LSHLREV_B32", [], "V_LSHL_B32">;
 
 defm V_AND_B32 : VOP2_32 <0x0000001b, "V_AND_B32",
@@ -1172,12 +1176,31 @@ def S_NOR_B32 : SOP2_32 <0x0000001a, "S_NOR_B32", []>;
 def S_NOR_B64 : SOP2_64 <0x0000001b, "S_NOR_B64", []>;
 def S_XNOR_B32 : SOP2_32 <0x0000001c, "S_XNOR_B32", []>;
 def S_XNOR_B64 : SOP2_64 <0x0000001d, "S_XNOR_B64", []>;
-def S_LSHL_B32 : SOP2_32 <0x0000001e, "S_LSHL_B32", []>;
-def S_LSHL_B64 : SOP2_64 <0x0000001f, "S_LSHL_B64", []>;
-def S_LSHR_B32 : SOP2_32 <0x00000020, "S_LSHR_B32", []>;
-def S_LSHR_B64 : SOP2_64 <0x00000021, "S_LSHR_B64", []>;
-def S_ASHR_I32 : SOP2_32 <0x00000022, "S_ASHR_I32", []>;
-def S_ASHR_I64 : SOP2_64 <0x00000023, "S_ASHR_I64", []>;
+
+// Use added complexity so these patterns are preferred to the VALU patterns.
+let AddedComplexity = 1 in {
+
+def S_LSHL_B32 : SOP2_32 <0x0000001e, "S_LSHL_B32",
+  [(set i32:$dst, (shl i32:$src0, i32:$src1))]
+>;
+def S_LSHL_B64 : SOP2_SHIFT_64 <0x0000001f, "S_LSHL_B64",
+  [(set i64:$dst, (shl i64:$src0, i32:$src1))]
+>;
+def S_LSHR_B32 : SOP2_32 <0x00000020, "S_LSHR_B32",
+  [(set i32:$dst, (srl i32:$src0, i32:$src1))]
+>;
+def S_LSHR_B64 : SOP2_SHIFT_64 <0x00000021, "S_LSHR_B64",
+  [(set i64:$dst, (srl i64:$src0, i32:$src1))]
+>;
+def S_ASHR_I32 : SOP2_32 <0x00000022, "S_ASHR_I32",
+  [(set i32:$dst, (sra i32:$src0, i32:$src1))]
+>;
+def S_ASHR_I64 : SOP2_SHIFT_64 <0x00000023, "S_ASHR_I64",
+  [(set i64:$dst, (sra i64:$src0, i32:$src1))]
+>;
+
+} // End AddedComplexity = 1
+
 def S_BFM_B32 : SOP2_32 <0x00000024, "S_BFM_B32", []>;
 def S_BFM_B64 : SOP2_64 <0x00000025, "S_BFM_B64", []>;
 def S_MUL_I32 : SOP2_32 <0x00000026, "S_MUL_I32", []>;
@@ -1270,6 +1293,36 @@ def SI_KILL : InstSI <
 
 let Uses = [EXEC], Defs = [EXEC,VCC,M0] in {
 
+//defm SI_ : RegisterLoadStore <VReg_32, FRAMEri64, ADDRIndirect>;
+
+let UseNamedOperandTable = 1 in {
+
+def SI_RegisterLoad : AMDGPUShaderInst <
+  (outs VReg_32:$dst, SReg_64:$temp),
+  (ins FRAMEri64:$addr, i32imm:$chan),
+  "", []
+> {
+  let isRegisterLoad = 1;
+  let mayLoad = 1;
+}
+
+class SIRegStore<dag outs> : AMDGPUShaderInst <
+  outs,
+  (ins VReg_32:$val, FRAMEri64:$addr, i32imm:$chan),
+  "", []
+> {
+  let isRegisterStore = 1;
+  let mayStore = 1;
+}
+
+let usesCustomInserter = 1 in {
+def SI_RegisterStorePseudo : SIRegStore<(outs)>;
+} // End usesCustomInserter = 1
+def SI_RegisterStore : SIRegStore<(outs SReg_64:$temp)>;
+
+
+} // End UseNamedOperandTable = 1
+
 def SI_INDIRECT_SRC : InstSI <
   (outs VReg_32:$dst, SReg_64:$temp),
   (ins unknown:$src, VSrc_32:$idx, i32imm:$off),
@@ -1286,6 +1339,7 @@ class SI_INDIRECT_DST<RegisterClass rc> : InstSI <
   let Constraints = "$src = $dst";
 }
 
+def SI_INDIRECT_DST_V1 : SI_INDIRECT_DST<VReg_32>;
 def SI_INDIRECT_DST_V2 : SI_INDIRECT_DST<VReg_64>;
 def SI_INDIRECT_DST_V4 : SI_INDIRECT_DST<VReg_128>;
 def SI_INDIRECT_DST_V8 : SI_INDIRECT_DST<VReg_256>;
@@ -1965,7 +2019,7 @@ def : Pat<
   (V_CMP_U_F32_e64 $src0, $src1)
 >;
 
-//============================================================================//
+//===----------------------------------------------------------------------===//
 // Miscellaneous Patterns
 //===----------------------------------------------------------------------===//
 
@@ -1974,6 +2028,11 @@ def : Pat <
   (INSERT_SUBREG (INSERT_SUBREG (i64 (IMPLICIT_DEF)),
     (i32 (EXTRACT_SUBREG $x, sub0)), sub0),
     (i32 (EXTRACT_SUBREG $x, sub1)), sub1)
+>;
+
+def : Pat <
+  (i32 (trunc i64:$a)),
+  (EXTRACT_SUBREG $a, sub0)
 >;
 
 def : Pat <

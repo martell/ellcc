@@ -181,8 +181,22 @@ void CodeGenModule::applyReplacements() {
     llvm::GlobalValue *Entry = GetGlobalValue(MangledName);
     if (!Entry)
       continue;
-    Entry->replaceAllUsesWith(Replacement);
-    Entry->eraseFromParent();
+    llvm::Function *OldF = cast<llvm::Function>(Entry);
+    llvm::Function *NewF = dyn_cast<llvm::Function>(Replacement);
+    if (!NewF) {
+      llvm::ConstantExpr *CE = cast<llvm::ConstantExpr>(Replacement);
+      assert(CE->getOpcode() == llvm::Instruction::BitCast ||
+             CE->getOpcode() == llvm::Instruction::GetElementPtr);
+      NewF = dyn_cast<llvm::Function>(CE->getOperand(0));
+    }
+
+    // Replace old with new, but keep the old order.
+    OldF->replaceAllUsesWith(Replacement);
+    if (NewF) {
+      NewF->removeFromParent();
+      OldF->getParent()->getFunctionList().insertAfter(OldF, NewF);
+    }
+    OldF->eraseFromParent();
   }
 }
 
@@ -1022,9 +1036,9 @@ void CodeGenModule::EmitGlobalAnnotations() {
 }
 
 llvm::Constant *CodeGenModule::EmitAnnotationString(StringRef Str) {
-  llvm::StringMap<llvm::Constant*>::iterator i = AnnotationStrings.find(Str);
-  if (i != AnnotationStrings.end())
-    return i->second;
+  llvm::Constant *&AStr = AnnotationStrings[Str];
+  if (AStr)
+    return AStr;
 
   // Not found yet, create a new global.
   llvm::Constant *s = llvm::ConstantDataArray::getString(getLLVMContext(), Str);
@@ -1032,7 +1046,7 @@ llvm::Constant *CodeGenModule::EmitAnnotationString(StringRef Str) {
     true, llvm::GlobalValue::PrivateLinkage, s, ".str");
   gv->setSection(AnnotationSection);
   gv->setUnnamedAddr(true);
-  AnnotationStrings[Str] = gv;
+  AStr = gv;
   return gv;
 }
 
