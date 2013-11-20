@@ -116,6 +116,33 @@ $(Configs)::
 	cp $*/linux/zlib.h ../include/linux ; \
 	cp $*/linux/zconf.h ../include/$*/linux
 
+$(Configs)::
+	make $@.expat.configure && \
+	make $@.expat.build && \
+	make $@.expat.install
+
+%.expat.configure:
+	@echo Configuring expat for $* in expat-build/$*/linux
+	mkdir -p expat-build/$*/linux
+	cd expat-build/$*/linux ; \
+	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
+	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+	    ../../../src/expat/configure \
+            --host=$(TARGET)-$(OS) \
+	        --prefix=$(ELLCC) --enable-shared=no
+
+%.expat.build:
+	make -C expat-build/$*/linux
+
+%.expat.install:
+	@cd expat-build ; \
+	echo Installing expat for $* ; \
+	mkdir -p ../lib/$*/linux ; \
+	cp $*/linux/.libs/*.a ../lib/$*/linux ; \
+	mkdir -p ../include/$*/linux ; \
+	cp ../src/expat/lib/expat.h ../include/linux ; \
+	cp ../src/expat/lib/expat_external.h ../include/linux
+
 clean:
 	make -C src/musl distclean
 	make -C src/compiler-rt clean
