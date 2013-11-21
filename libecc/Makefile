@@ -88,7 +88,8 @@ $(Configs)::
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/linux/lib/*.a ../lib/$*/linux ; \
 	mkdir -p ../include/$*/linux ; \
-	cp $*/linux/include/*.h ../include/linux
+	cp $*/linux/include/*.h ../include/linux ; \
+	make -C $*/linux/misc install
 
 $(Configs)::
 	make $@.zlib.configure && \
