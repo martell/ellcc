@@ -28,10 +28,47 @@
 
 using namespace llvm;
 
-void StackMaps::recordStackMap(const MachineInstr &MI, uint32_t ID,
-                               MachineInstr::const_mop_iterator MOI,
-                               MachineInstr::const_mop_iterator MOE,
-                               bool recordResult) {
+PatchPointOpers::PatchPointOpers(const MachineInstr *MI):
+  MI(MI),
+  HasDef(MI->getOperand(0).isReg() && MI->getOperand(0).isDef() &&
+         !MI->getOperand(0).isImplicit()),
+  IsAnyReg(MI->getOperand(getMetaIdx(CCPos)).getImm() == CallingConv::AnyReg) {
+
+#ifndef NDEBUG
+  {
+  unsigned CheckStartIdx = 0, e = MI->getNumOperands();
+  while (CheckStartIdx < e && MI->getOperand(CheckStartIdx).isReg() &&
+         MI->getOperand(CheckStartIdx).isDef() &&
+         !MI->getOperand(CheckStartIdx).isImplicit())
+    ++CheckStartIdx;
+
+  assert(getMetaIdx() == CheckStartIdx &&
+         "Unexpected additonal definition in Patchpoint intrinsic.");
+  }
+#endif
+}
+
+unsigned PatchPointOpers::getNextScratchIdx(unsigned StartIdx) const {
+  if (!StartIdx)
+    StartIdx = getVarIdx();
+
+  // Find the next scratch register (implicit def and early clobber)
+  unsigned ScratchIdx = StartIdx, e = MI->getNumOperands();
+  while (ScratchIdx < e &&
+         !(MI->getOperand(ScratchIdx).isReg() &&
+           MI->getOperand(ScratchIdx).isDef() &&
+           MI->getOperand(ScratchIdx).isImplicit() &&
+           MI->getOperand(ScratchIdx).isEarlyClobber()))
+    ++ScratchIdx;
+
+  assert(ScratchIdx != e && "No scratch register available");
+  return ScratchIdx;
+}
+
+void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint32_t ID,
+                                    MachineInstr::const_mop_iterator MOI,
+                                    MachineInstr::const_mop_iterator MOE,
+                                    bool recordResult) {
 
   MCContext &OutContext = AP.OutStreamer.getContext();
   MCSymbol *MILabel = OutContext.CreateTempSymbol();
@@ -41,7 +78,7 @@ void StackMaps::recordStackMap(const MachineInstr &MI, uint32_t ID,
 
   if (recordResult) {
     std::pair<Location, MachineInstr::const_mop_iterator> ParseResult =
-      OpParser(MI.operands_begin(), llvm::next(MI.operands_begin(), 1));
+      OpParser(MI.operands_begin(), llvm::next(MI.operands_begin()), AP.TM);
 
     Location &Loc = ParseResult.first;
     assert(Loc.LocType == Location::Register &&
@@ -51,7 +88,7 @@ void StackMaps::recordStackMap(const MachineInstr &MI, uint32_t ID,
 
   while (MOI != MOE) {
     std::pair<Location, MachineInstr::const_mop_iterator> ParseResult =
-      OpParser(MOI, MOE);
+      OpParser(MOI, MOE, AP.TM);
 
     Location &Loc = ParseResult.first;
 
@@ -73,6 +110,49 @@ void StackMaps::recordStackMap(const MachineInstr &MI, uint32_t ID,
   CSInfos.push_back(CallsiteInfo(CSOffsetExpr, ID, CallsiteLocs));
 }
 
+static MachineInstr::const_mop_iterator
+getStackMapEndMOP(MachineInstr::const_mop_iterator MOI,
+                  MachineInstr::const_mop_iterator MOE) {
+  for (; MOI != MOE; ++MOI)
+    if (MOI->isRegMask() || (MOI->isReg() && MOI->isImplicit()))
+      break;
+
+  return MOI;
+}
+
+void StackMaps::recordStackMap(const MachineInstr &MI) {
+  assert(MI.getOpcode() == TargetOpcode::STACKMAP && "exected stackmap");
+
+  int64_t ID = MI.getOperand(0).getImm();
+  assert((int32_t)ID == ID && "Stack maps hold 32-bit IDs");
+  recordStackMapOpers(MI, ID, llvm::next(MI.operands_begin(), 2),
+                      getStackMapEndMOP(MI.operands_begin(),
+                                        MI.operands_end()));
+}
+
+void StackMaps::recordPatchPoint(const MachineInstr &MI) {
+  assert(MI.getOpcode() == TargetOpcode::PATCHPOINT && "exected stackmap");
+
+  PatchPointOpers opers(&MI);
+  int64_t ID = opers.getMetaOper(PatchPointOpers::IDPos).getImm();
+  assert((int32_t)ID == ID && "Stack maps hold 32-bit IDs");
+  MachineInstr::const_mop_iterator MOI =
+    llvm::next(MI.operands_begin(), opers.getStackMapStartIdx());
+  recordStackMapOpers(MI, ID, MOI, getStackMapEndMOP(MOI, MI.operands_end()),
+                      opers.isAnyReg() && opers.hasDef());
+
+#ifndef NDEBUG
+  // verify anyregcc
+  LocationVec &Locations = CSInfos.back().Locations;
+  if (opers.isAnyReg()) {
+    unsigned NArgs = opers.getMetaOper(PatchPointOpers::NArgPos).getImm();
+    for (unsigned i = 0, e = (opers.hasDef() ? NArgs+1 : NArgs); i != e; ++i)
+      assert(Locations[i].LocType == Location::Register &&
+             "anyreg arg must be in reg.");
+  }
+#endif
+}
+
 /// serializeToStackMapSection conceptually populates the following fields:
 ///
 /// uint32 : Reserved (header)
@@ -86,7 +166,7 @@ void StackMaps::recordStackMap(const MachineInstr &MI, uint32_t ID,
 ///   uint16 : NumLocations
 ///   Location[NumLocations] {
 ///     uint8  : Register | Direct | Indirect | Constant | ConstantIndex
-///     uint8  : Reserved (location flags)
+///     uint8  : Size in Bytes
 ///     uint16 : Dwarf RegNum
 ///     int32  : Offset
 ///   }
@@ -200,22 +280,31 @@ void StackMaps::serializeToStackMapSection() {
       );
 
       unsigned RegNo = 0;
+      int Offset = Loc.Offset;
       if(Loc.Reg) {
         RegNo = MCRI.getDwarfRegNum(Loc.Reg, false);
         for (MCSuperRegIterator SR(Loc.Reg, TRI);
              SR.isValid() && (int)RegNo < 0; ++SR) {
           RegNo = TRI->getDwarfRegNum(*SR, false);
         }
+        // If this is a register location, put the subregister byte offset in
+        // the location offset.
+        if (Loc.LocType == Location::Register) {
+          assert(!Loc.Offset && "Register location should have zero offset");
+          unsigned LLVMRegNo = MCRI.getLLVMRegNum(RegNo, false);
+          unsigned SubRegIdx = MCRI.getSubRegIndex(LLVMRegNo, Loc.Reg);
+          if (SubRegIdx)
+            Offset = MCRI.getSubRegIdxOffset(SubRegIdx);
+        }
       }
       else {
-        assert((Loc.LocType != Location::Register
-                && Loc.LocType != Location::Register) &&
+        assert(Loc.LocType != Location::Register &&
                "Missing location register");
       }
       AP.OutStreamer.EmitIntValue(Loc.LocType, 1);
-      AP.OutStreamer.EmitIntValue(0, 1); // Reserved location flags.
+      AP.OutStreamer.EmitIntValue(Loc.Size, 1);
       AP.OutStreamer.EmitIntValue(RegNo, 2);
-      AP.OutStreamer.EmitIntValue(Loc.Offset, 4);
+      AP.OutStreamer.EmitIntValue(Offset, 4);
     }
   }
 

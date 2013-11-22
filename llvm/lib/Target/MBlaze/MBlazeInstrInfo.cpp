@@ -22,10 +22,13 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/TargetRegistry.h"
 
-#define GET_INSTRINFO_CTOR
+#define GET_INSTRINFO_CTOR_DTOR
 #include "MBlazeGenInstrInfo.inc"
 
 using namespace llvm;
+
+// Pin the vtable to this file.
+void MBlazeInstrInfo::anchor() {}
 
 MBlazeInstrInfo::MBlazeInstrInfo(MBlazeTargetMachine &tm)
   : MBlazeGenInstrInfo(MBlaze::ADJCALLSTACKDOWN, MBlaze::ADJCALLSTACKUP),

@@ -167,6 +167,7 @@ namespace MBlaze {
 }
 
 class MBlazeInstrInfo : public MBlazeGenInstrInfo {
+  virtual void anchor();
   MBlazeTargetMachine &TM;
   const MBlazeRegisterInfo RI;
 public:

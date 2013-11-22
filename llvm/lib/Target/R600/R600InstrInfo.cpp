@@ -23,7 +23,7 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 
-#define GET_INSTRINFO_CTOR
+#define GET_INSTRINFO_CTOR_DTOR
 #include "AMDGPUGenDFAPacketizer.inc"
 
 using namespace llvm;
@@ -75,6 +75,18 @@ R600InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     NewMI->getOperand(getOperandIdx(*NewMI, AMDGPU::OpName::src0))
                                     .setIsKill(KillSrc);
   }
+}
+
+/// \returns true if \p MBBI can be moved into a new basic.
+bool R600InstrInfo::isLegalToSplitMBBAt(MachineBasicBlock &MBB,
+                                       MachineBasicBlock::iterator MBBI) const {
+  for (MachineInstr::const_mop_iterator I = MBBI->operands_begin(),
+                                        E = MBBI->operands_end(); I != E; ++I) {
+    if (I->isReg() && !TargetRegisterInfo::isVirtualRegister(I->getReg()) &&
+        I->isUse() && RI.isPhysRegLiveAcrossClauses(I->getReg()))
+      return false;
+  }
+  return true;
 }
 
 unsigned R600InstrInfo::getIEQOpcode() const {
@@ -139,6 +151,14 @@ bool R600InstrInfo::isLDSInstr(unsigned Opcode) const {
   return ((TargetFlags & R600_InstFlag::LDS_1A) |
           (TargetFlags & R600_InstFlag::LDS_1A1D) |
           (TargetFlags & R600_InstFlag::LDS_1A2D));
+}
+
+bool R600InstrInfo::isLDSNoRetInstr(unsigned Opcode) const {
+  return isLDSInstr(Opcode) && getOperandIdx(Opcode, AMDGPU::OpName::dst) == -1;
+}
+
+bool R600InstrInfo::isLDSRetInstr(unsigned Opcode) const {
+  return isLDSInstr(Opcode) && getOperandIdx(Opcode, AMDGPU::OpName::dst) != -1;
 }
 
 bool R600InstrInfo::canBeConsideredALU(const MachineInstr *MI) const {
@@ -1001,6 +1021,20 @@ R600InstrInfo::PredicateInstruction(MachineInstr *MI,
     return true;
   }
 
+  if (MI->getOpcode() == AMDGPU::DOT_4) {
+    MI->getOperand(getOperandIdx(*MI, AMDGPU::OpName::pred_sel_X))
+        .setReg(Pred[2].getReg());
+    MI->getOperand(getOperandIdx(*MI, AMDGPU::OpName::pred_sel_Y))
+        .setReg(Pred[2].getReg());
+    MI->getOperand(getOperandIdx(*MI, AMDGPU::OpName::pred_sel_Z))
+        .setReg(Pred[2].getReg());
+    MI->getOperand(getOperandIdx(*MI, AMDGPU::OpName::pred_sel_W))
+        .setReg(Pred[2].getReg());
+    MachineInstrBuilder MIB(*MI->getParent()->getParent(), MI);
+    MIB.addReg(AMDGPU::PREDICATE_BIT, RegState::Implicit);
+    return true;
+  }
+
   if (PIdx != -1) {
     MachineOperand &PMO = MI->getOperand(PIdx);
     PMO.setReg(Pred[2].getReg());
@@ -1208,6 +1242,11 @@ MachineInstr *R600InstrInfo::buildSlotOfVectorInstruction(
     AMDGPU::OpName::src1_abs,
     AMDGPU::OpName::src1_sel,
   };
+
+  MachineOperand &MO = MI->getOperand(getOperandIdx(MI->getOpcode(),
+      getSlotedOps(AMDGPU::OpName::pred_sel, Slot)));
+  MIB->getOperand(getOperandIdx(Opcode, AMDGPU::OpName::pred_sel))
+      .setReg(MO.getReg());
 
   for (unsigned i = 0; i < 14; i++) {
     MachineOperand &MO = MI->getOperand(

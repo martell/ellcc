@@ -329,8 +329,17 @@ void DarwinClang::AddLinkRuntimeLibArgs(const ArgList &Args,
         // The ASAN runtime library requires C++.
         AddCXXStdlibLibArgs(Args, CmdArgs);
       }
-      AddLinkRuntimeLib(Args, CmdArgs,
-                        "libclang_rt.asan_osx_dynamic.dylib", true);
+      if (isTargetMacOS()) {
+        AddLinkRuntimeLib(Args, CmdArgs,
+                          "libclang_rt.asan_osx_dynamic.dylib",
+                          true);
+      } else {
+        if (isTargetIOSSimulator()) {
+          AddLinkRuntimeLib(Args, CmdArgs,
+                            "libclang_rt.asan_iossim_dynamic.dylib",
+                            true);
+        }
+      }
     }
   }
 
@@ -784,6 +793,10 @@ DerivedArgList *Darwin::TranslateArgs(const DerivedArgList &Args,
 
     else if (Name == "x86_64")
       DAL->AddFlagArg(0, Opts.getOption(options::OPT_m64));
+    else if (Name == "x86_64h") {
+      DAL->AddFlagArg(0, Opts.getOption(options::OPT_m64));
+      DAL->AddJoinedArg(0, MArch, "x86_64h");
+    }
 
     else if (Name == "arm")
       DAL->AddJoinedArg(0, MArch, "armv4t");
@@ -1338,6 +1351,11 @@ static bool isMicroMips(const ArgList &Args) {
   return A && A->getOption().matches(options::OPT_mmicromips);
 }
 
+static bool isMipsFP64(const ArgList &Args) {
+  Arg *A = Args.getLastArg(options::OPT_mfp64, options::OPT_mfp32);
+  return A && A->getOption().matches(options::OPT_mfp64);
+}
+
 static bool isMipsNan2008(const ArgList &Args) {
   Arg *A = Args.getLastArg(options::OPT_mnan_EQ);
   return A && A->getValue() == StringRef("2008");
@@ -1451,8 +1469,13 @@ void Generic_GCC::GCCInstallationDetector::findMIPSABIDirSuffix(
 
     if (isSoftFloatABI(Args))
       Suffix += "/sof";
-    else if (isMipsNan2008(Args))
-      Suffix += "/nan2008";
+    else {
+      if (isMipsFP64(Args))
+        Suffix += "/fp64";
+
+      if (isMipsNan2008(Args))
+        Suffix += "/nan2008";
+    }
   }
 
   if (!hasCrtBeginObj(Path + Suffix))

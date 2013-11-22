@@ -116,7 +116,7 @@ else()
       $<TARGET_OBJECTS:RTInterception.${arch}>
       $<TARGET_OBJECTS:RTSanitizerCommon.${arch}>
       $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>)
-    if (NOT MSVC)
+    if (NOT WIN32)
       # We can't build Leak Sanitizer on Windows yet.
       list(APPEND ASAN_RUNTIME_OBJECTS $<TARGET_OBJECTS:RTLSanCommon.${arch}>)
     endif()
@@ -142,6 +142,10 @@ else()
 endif()
 
 add_compiler_rt_resource_file(asan_blacklist asan_blacklist.txt)
+
+# All ASan runtime dependencies.
+add_custom_target(asan_runtime_libraries
+  DEPENDS asan_blacklist ${ASAN_RUNTIME_LIBRARIES})
 
 if(LLVM_INCLUDE_TESTS)
   add_subdirectory(tests)

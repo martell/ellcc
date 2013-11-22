@@ -275,6 +275,10 @@ lltok::Kind LLLexer::LexAt() {
       if (CurChar == '"') {
         StrVal.assign(TokStart+2, CurPtr-1);
         UnEscapeLexed(StrVal);
+        if (StringRef(StrVal).find_first_of(0) != StringRef::npos) {
+          Error("Null bytes are not allowed in names");
+          return lltok::Error;
+        }
         return lltok::GlobalVar;
       }
     }
@@ -665,6 +669,7 @@ lltok::Kind LLLexer::LexIdentifier() {
   INSTKEYWORD(inttoptr,    IntToPtr);
   INSTKEYWORD(ptrtoint,    PtrToInt);
   INSTKEYWORD(bitcast,     BitCast);
+  INSTKEYWORD(addrspacecast, AddrSpaceCast);
   INSTKEYWORD(select,      Select);
   INSTKEYWORD(va_arg,      VAArg);
   INSTKEYWORD(ret,         Ret);

@@ -66,6 +66,7 @@ const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
 const int EINVAL = 22;
 const int EBUSY = 16;
+const int EOWNERDEAD = 130;
 const int EPOLL_CTL_ADD = 1;
 const int SIGILL = 4;
 const int SIGABRT = 6;
@@ -948,9 +949,10 @@ TSAN_INTERCEPTOR(int, pthread_mutex_destroy, void *m) {
 TSAN_INTERCEPTOR(int, pthread_mutex_trylock, void *m) {
   SCOPED_TSAN_INTERCEPTOR(pthread_mutex_trylock, m);
   int res = REAL(pthread_mutex_trylock)(m);
-  if (res == 0) {
+  if (res == EOWNERDEAD)
+    MutexRepair(thr, pc, (uptr)m);
+  if (res == 0 || res == EOWNERDEAD)
     MutexLock(thr, pc, (uptr)m);
-  }
   return res;
 }
 
@@ -1892,6 +1894,10 @@ struct TsanInterceptorContext {
   MutexUnlock(((TsanInterceptorContext *)ctx)->thr, \
             ((TsanInterceptorContext *)ctx)->pc, (uptr)m)
 
+#define COMMON_INTERCEPTOR_MUTEX_REPAIR(ctx, m) \
+  MutexRepair(((TsanInterceptorContext *)ctx)->thr, \
+            ((TsanInterceptorContext *)ctx)->pc, (uptr)m)
+
 #include "sanitizer_common/sanitizer_common_interceptors.inc"
 
 #define TSAN_SYSCALL() \
@@ -2042,10 +2048,14 @@ void InitializeInterceptors() {
 
   SANITIZER_COMMON_INTERCEPTORS_INIT;
 
-  TSAN_INTERCEPT(setjmp);
-  TSAN_INTERCEPT(_setjmp);
-  TSAN_INTERCEPT(sigsetjmp);
-  TSAN_INTERCEPT(__sigsetjmp);
+  // We can not use TSAN_INTERCEPT to get setjmp addr,
+  // because it does &setjmp and setjmp is not present in some versions of libc.
+  using __interception::GetRealFunctionAddress;
+  GetRealFunctionAddress("setjmp", (uptr*)&REAL(setjmp), 0, 0);
+  GetRealFunctionAddress("_setjmp", (uptr*)&REAL(_setjmp), 0, 0);
+  GetRealFunctionAddress("sigsetjmp", (uptr*)&REAL(sigsetjmp), 0, 0);
+  GetRealFunctionAddress("__sigsetjmp", (uptr*)&REAL(__sigsetjmp), 0, 0);
+
   TSAN_INTERCEPT(longjmp);
   TSAN_INTERCEPT(siglongjmp);
 

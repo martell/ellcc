@@ -33,6 +33,12 @@
 #include <link.h>
 #endif
 
+// This function is defined elsewhere if we intercepted pthread_attr_getstack.
+SANITIZER_WEAK_ATTRIBUTE
+int __sanitizer_pthread_attr_getstack(void *attr, void **addr, size_t *size) {
+  return pthread_attr_getstack((pthread_attr_t*)attr, addr, size);
+}
+
 namespace __sanitizer {
 
 void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
@@ -74,7 +80,7 @@ void GetThreadStackTopAndBottom(bool at_initialization, uptr *stack_top,
   CHECK_EQ(pthread_getattr_np(pthread_self(), &attr), 0);
   uptr stacksize = 0;
   void *stackaddr = 0;
-  pthread_attr_getstack(&attr, &stackaddr, (size_t*)&stacksize);
+  __sanitizer_pthread_attr_getstack(&attr, &stackaddr, (size_t*)&stacksize);
   pthread_attr_destroy(&attr);
 
   CHECK_LE(stacksize, kMaxThreadStackSize);  // Sanity check.
@@ -161,7 +167,7 @@ void StackTrace::SlowUnwindStack(uptr pc, uptr max_depth) {
   UnwindTraceArg arg = {this, Min(max_depth + 1, kStackTraceMax)};
   _Unwind_Backtrace(Unwind_Trace, &arg);
   // We need to pop a few frames so that pc is on top.
-  uptr to_pop = LocatePcInTrace(pc, 6);
+  uptr to_pop = LocatePcInTrace(pc);
   // trace[0] belongs to the current function so we always pop it.
   if (to_pop == 0)
     to_pop = 1;
@@ -270,7 +276,7 @@ void AdjustStackSizeLinux(void *attr_) {
   pthread_attr_t *attr = (pthread_attr_t *)attr_;
   uptr stackaddr = 0;
   size_t stacksize = 0;
-  pthread_attr_getstack(attr, (void**)&stackaddr, &stacksize);
+  __sanitizer_pthread_attr_getstack(attr, (void**)&stackaddr, &stacksize);
   // GLibC will return (0 - stacksize) as the stack address in the case when
   // stacksize is set, but stackaddr is not.
   bool stack_set = (stackaddr != 0) && (stackaddr + stacksize != 0);

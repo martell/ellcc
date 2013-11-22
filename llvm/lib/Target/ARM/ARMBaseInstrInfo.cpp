@@ -37,7 +37,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 
-#define GET_INSTRINFO_CTOR
+#define GET_INSTRINFO_CTOR_DTOR
 #include "ARMGenInstrInfo.inc"
 
 using namespace llvm;
@@ -1934,7 +1934,8 @@ bool llvm::tryFoldSPUpdateIntoPushPop(MachineFunction &MF,
       return false;
 
     // Mark the unimportant registers as <def,dead> in the POP.
-    RegList.push_back(MachineOperand::CreateReg(CurReg, true, false, true));
+    RegList.push_back(MachineOperand::CreateReg(CurReg, true, false, false,
+                                                true));
   }
 
   if (RegsNeeded > 0)

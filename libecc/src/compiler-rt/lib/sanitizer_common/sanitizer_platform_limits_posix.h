@@ -48,17 +48,41 @@ namespace __sanitizer {
 #endif // !SANITIZER_ANDROID
 
 #if SANITIZER_LINUX
-  extern unsigned struct___old_kernel_stat_sz;
-  extern unsigned struct_kernel_stat_sz;
-  extern unsigned struct_kernel_stat64_sz;
-  extern unsigned struct_io_event_sz;
+
+#if defined(__x86_64__)
+  const unsigned struct___old_kernel_stat_sz = 32;
+  const unsigned struct_kernel_stat_sz = 144;
+  const unsigned struct_kernel_stat64_sz = 0;
+#elif defined(__i386__)
+  const unsigned struct___old_kernel_stat_sz = 32;
+  const unsigned struct_kernel_stat_sz = 64;
+  const unsigned struct_kernel_stat64_sz = 96;
+#elif defined(__arm__)
+  const unsigned struct___old_kernel_stat_sz = 32;
+  const unsigned struct_kernel_stat_sz = 64;
+  const unsigned struct_kernel_stat64_sz = 104;
+#elif defined(__powerpc__) && !defined(__powerpc64__)
+  const unsigned struct___old_kernel_stat_sz = 32;
+  const unsigned struct_kernel_stat_sz = 72;
+  const unsigned struct_kernel_stat64_sz = 104;
+#elif defined(__powerpc64__)
+  const unsigned struct___old_kernel_stat_sz = 0;
+  const unsigned struct_kernel_stat_sz = 144;
+  const unsigned struct_kernel_stat64_sz = 104;
+#endif
+  const unsigned struct_io_event_sz = 32;
+  struct __sanitizer_perf_event_attr {
+    unsigned type;
+    unsigned size;
+    // More fields that vary with the kernel version.
+  };
+
   extern unsigned struct_utimbuf_sz;
   extern unsigned struct_new_utsname_sz;
   extern unsigned struct_old_utsname_sz;
   extern unsigned struct_oldold_utsname_sz;
   extern unsigned struct_msqid_ds_sz;
   extern unsigned struct_mq_attr_sz;
-  extern unsigned struct_perf_event_attr_sz;
   extern unsigned struct_timex_sz;
   extern unsigned struct_ustat_sz;
 
@@ -85,8 +109,8 @@ namespace __sanitizer {
     u64   aio_reserved3;
   };
 
-  extern unsigned iocb_cmd_pread;
-  extern unsigned iocb_cmd_pwrite;
+  const unsigned iocb_cmd_pread = 0;
+  const unsigned iocb_cmd_pwrite = 1;
 
   struct __sanitizer___sysctl_args {
     int *name;
@@ -110,17 +134,24 @@ namespace __sanitizer {
     int gid;
     int cuid;
     int cgid;
+#ifdef __powerpc64__
+    unsigned mode;
+    unsigned __seq;
+#else
     unsigned short mode;
     unsigned short __pad1;
     unsigned short __seq;
     unsigned short __pad2;
+#endif
     uptr __unused1;
     uptr __unused2;
   };
 
   struct __sanitizer_shmid_ds {
     __sanitizer_ipc_perm shm_perm;
+  #ifndef __powerpc__
     uptr shm_segsz;
+  #endif
     uptr shm_atime;
   #ifndef _LP64
     uptr __unused1;
@@ -132,6 +163,9 @@ namespace __sanitizer {
     uptr shm_ctime;
   #ifndef _LP64
     uptr __unused3;
+  #endif
+  #ifdef __powerpc__
+    uptr shm_segsz;
   #endif
     int shm_cpid;
     int shm_lpid;
@@ -255,8 +289,15 @@ namespace __sanitizer {
   typedef unsigned short __sanitizer___kernel_gid_t;
   typedef long __sanitizer___kernel_off_t;
 #endif
+
+#if defined(__powerpc64__)
+  typedef unsigned int __sanitizer___kernel_old_uid_t;
+  typedef unsigned int __sanitizer___kernel_old_gid_t;
+#else
   typedef unsigned short __sanitizer___kernel_old_uid_t;
   typedef unsigned short __sanitizer___kernel_old_gid_t;
+#endif
+
   typedef long long __sanitizer___kernel_loff_t;
   typedef struct {
     unsigned long fds_bits[1024 / (8 * sizeof(long))];
@@ -503,7 +544,7 @@ namespace __sanitizer {
   extern unsigned struct_unimapinit_sz;
 #endif
 
-#if !SANITIZER_ANDROID
+#if !SANITIZER_ANDROID && !SANITIZER_MAC
   extern unsigned struct_sioc_sg_req_sz;
   extern unsigned struct_sioc_vif_req_sz;
 #endif
@@ -558,7 +599,7 @@ namespace __sanitizer {
   extern unsigned IOCTL_TIOCSPGRP;
   extern unsigned IOCTL_TIOCSTI;
   extern unsigned IOCTL_TIOCSWINSZ;
-#if (SANITIZER_LINUX && !SANITIZER_ANDROID) || SANITIZER_MAC
+#if (SANITIZER_LINUX && !SANITIZER_ANDROID)
   extern unsigned IOCTL_SIOCGETSGCNT;
   extern unsigned IOCTL_SIOCGETVIFCNT;
 #endif
@@ -921,6 +962,7 @@ namespace __sanitizer {
   extern unsigned IOCTL_TIOCSSERIAL;
 #endif
 
+  extern const int errno_EOWNERDEAD;
 }  // namespace __sanitizer
 
 #define CHECK_TYPE_SIZE(TYPE) \
@@ -941,4 +983,3 @@ namespace __sanitizer {
                  offsetof(struct CLASS, MEMBER))
 
 #endif
-
