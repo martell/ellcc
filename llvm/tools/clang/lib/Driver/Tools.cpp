@@ -943,20 +943,6 @@ void Clang::AddMBlazeTargetArgs(const ArgList &Args,
   }
 }
 
-// Translate MIPS CPU name alias option to CPU name.
-static StringRef getMipsCPUFromAlias(const Arg &A) {
-  if (A.getOption().matches(options::OPT_mips32))
-    return "mips32";
-  if (A.getOption().matches(options::OPT_mips32r2))
-    return "mips32r2";
-  if (A.getOption().matches(options::OPT_mips64))
-    return "mips64";
-  if (A.getOption().matches(options::OPT_mips64r2))
-    return "mips64r2";
-  llvm_unreachable("Unexpected option");
-  return "";
-}
-
 // Get CPU and ABI names. They are not independent
 // so we have to calculate them together.
 static void getMipsCPUAndABI(const ArgList &Args,
@@ -6964,6 +6950,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   StringRef emulation;
   bool hash = true;
   bool buildID = true;
+  bool eh_frame_hdr = true;
   switch (Triple.getArch()) {
     case llvm::Triple::arm:
       emulation = "armelf";
@@ -6988,6 +6975,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     case llvm::Triple::mblaze: emulation = "elf32microblaze";
       hash = false;
       buildID = false;
+      eh_frame_hdr = false;
       break;
     default: emulation = "unknown";
   }
@@ -7012,7 +7000,9 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   } else {
     if (Args.hasArg(options::OPT_rdynamic))
       CmdArgs.push_back("-export-dynamic");
-    CmdArgs.push_back("--eh-frame-hdr");
+    if (eh_frame_hdr) {
+      CmdArgs.push_back("--eh-frame-hdr");
+    }
     CmdArgs.push_back("-Bdynamic");
     if (Args.hasArg(options::OPT_shared)) {
       CmdArgs.push_back("-shared");

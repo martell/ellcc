@@ -62,7 +62,7 @@ class Garbage_collection;
 class Icf;
 
 // The base class of an entry in the symbol table.  The symbol table
-// can have a lot of entries, so we don't want this class to big.
+// can have a lot of entries, so we don't want this class too big.
 // Size dependent fields can be found in the template class
 // Sized_symbol.  Targets may support their own derived classes.
 
@@ -120,6 +120,10 @@ class Symbol
   const char*
   version() const
   { return this->version_; }
+
+  void
+  clear_version()
+  { this->version_ = NULL; }
 
   // Return whether this version is the default for this symbol name
   // (eg, "foo@@V2" is a default version; "foo@V1" is not).  Only
@@ -813,6 +817,11 @@ class Symbol
   is_predefined() const
   { return this->is_predefined_; }
 
+  // Return true if this is a C++ vtable symbol.
+  bool
+  is_cxx_vtable() const
+  { return is_prefix_of("_ZTV", this->name_); }
+
  protected:
   // Instances of this class should always be created at a specific
   // size.
@@ -1178,6 +1187,25 @@ struct Define_symbol_in_segment
   Symbol::Segment_offset_base offset_base;
   // If true, this symbol is defined only if we see a reference to it.
   bool only_if_ref;
+};
+
+// Specify an object/section/offset location.  Used by ODR code.
+
+struct Symbol_location
+{
+  // Object where the symbol is defined.
+  Object* object;
+  // Section-in-object where the symbol is defined.
+  unsigned int shndx;
+  // For relocatable objects, offset-in-section where the symbol is defined.
+  // For dynamic objects, address where the symbol is defined.
+  off_t offset;
+  bool operator==(const Symbol_location& that) const
+  {
+    return (this->object == that.object
+	    && this->shndx == that.shndx
+	    && this->offset == that.offset);
+  }
 };
 
 // This class manages warnings.  Warnings are a GNU extension.  When
@@ -1599,19 +1627,6 @@ class Symbol_table
   // the locations the symbols is (weakly) defined (and certain other
   // conditions are met).  This map will be used later to detect
   // possible One Definition Rule (ODR) violations.
-  struct Symbol_location
-  {
-    Object* object;         // Object where the symbol is defined.
-    unsigned int shndx;     // Section-in-object where the symbol is defined.
-    off_t offset;           // Offset-in-section where the symbol is defined.
-    bool operator==(const Symbol_location& that) const
-    {
-      return (this->object == that.object
-              && this->shndx == that.shndx
-              && this->offset == that.offset);
-    }
-  };
-
   struct Symbol_location_hash
   {
     size_t operator()(const Symbol_location& loc) const

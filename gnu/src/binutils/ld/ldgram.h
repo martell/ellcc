@@ -1,24 +1,23 @@
-/* A Bison parser, made by GNU Bison 2.3.  */
+
+/* A Bison parser, made by GNU Bison 2.4.1.  */
 
 /* Skeleton interface for Bison's Yacc-like parsers in C
-
-   Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003, 2004, 2005, 2006
+   
+      Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003, 2004, 2005, 2006
    Free Software Foundation, Inc.
-
-   This program is free software; you can redistribute it and/or modify
+   
+   This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2, or (at your option)
-   any later version.
-
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+   
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-
+   
    You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 51 Franklin Street, Fifth Floor,
-   Boston, MA 02110-1301, USA.  */
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 /* As a special exception, you may create a larger work that contains
    part or all of the Bison parser skeleton and distribute that work
@@ -29,9 +28,10 @@
    special exception, which will cause the skeleton and the resulting
    Bison output files to be licensed under the GNU General Public
    License without this special exception.
-
+   
    This special exception was added by the Free Software Foundation in
    version 2.2 of Bison.  */
+
 
 /* Tokens.  */
 #ifndef YYTOKENTYPE
@@ -138,33 +138,35 @@
      ORDER = 354,
      NAMEWORD = 355,
      ASSERT_K = 356,
-     FORMAT = 357,
-     PUBLIC = 358,
-     DEFSYMEND = 359,
-     BASE = 360,
-     ALIAS = 361,
-     TRUNCATE = 362,
-     REL = 363,
-     INPUT_SCRIPT = 364,
-     INPUT_MRI_SCRIPT = 365,
-     INPUT_DEFSYM = 366,
-     CASE = 367,
-     EXTERN = 368,
-     START = 369,
-     VERS_TAG = 370,
-     VERS_IDENTIFIER = 371,
-     GLOBAL = 372,
-     LOCAL = 373,
-     VERSIONK = 374,
-     INPUT_VERSION_SCRIPT = 375,
-     KEEP = 376,
-     ONLY_IF_RO = 377,
-     ONLY_IF_RW = 378,
-     SPECIAL = 379,
-     INPUT_SECTION_FLAGS = 380,
-     EXCLUDE_FILE = 381,
-     CONSTANT = 382,
-     INPUT_DYNAMIC_LIST = 383
+     LOG2CEIL = 357,
+     FORMAT = 358,
+     PUBLIC = 359,
+     DEFSYMEND = 360,
+     BASE = 361,
+     ALIAS = 362,
+     TRUNCATE = 363,
+     REL = 364,
+     INPUT_SCRIPT = 365,
+     INPUT_MRI_SCRIPT = 366,
+     INPUT_DEFSYM = 367,
+     CASE = 368,
+     EXTERN = 369,
+     START = 370,
+     VERS_TAG = 371,
+     VERS_IDENTIFIER = 372,
+     GLOBAL = 373,
+     LOCAL = 374,
+     VERSIONK = 375,
+     INPUT_VERSION_SCRIPT = 376,
+     KEEP = 377,
+     ONLY_IF_RO = 378,
+     ONLY_IF_RW = 379,
+     SPECIAL = 380,
+     INPUT_SECTION_FLAGS = 381,
+     ALIGN_WITH_INPUT = 382,
+     EXCLUDE_FILE = 383,
+     CONSTANT = 384,
+     INPUT_DYNAMIC_LIST = 385
    };
 #endif
 /* Tokens.  */
@@ -267,41 +269,46 @@
 #define ORDER 354
 #define NAMEWORD 355
 #define ASSERT_K 356
-#define FORMAT 357
-#define PUBLIC 358
-#define DEFSYMEND 359
-#define BASE 360
-#define ALIAS 361
-#define TRUNCATE 362
-#define REL 363
-#define INPUT_SCRIPT 364
-#define INPUT_MRI_SCRIPT 365
-#define INPUT_DEFSYM 366
-#define CASE 367
-#define EXTERN 368
-#define START 369
-#define VERS_TAG 370
-#define VERS_IDENTIFIER 371
-#define GLOBAL 372
-#define LOCAL 373
-#define VERSIONK 374
-#define INPUT_VERSION_SCRIPT 375
-#define KEEP 376
-#define ONLY_IF_RO 377
-#define ONLY_IF_RW 378
-#define SPECIAL 379
-#define INPUT_SECTION_FLAGS 380
-#define EXCLUDE_FILE 381
-#define CONSTANT 382
-#define INPUT_DYNAMIC_LIST 383
+#define LOG2CEIL 357
+#define FORMAT 358
+#define PUBLIC 359
+#define DEFSYMEND 360
+#define BASE 361
+#define ALIAS 362
+#define TRUNCATE 363
+#define REL 364
+#define INPUT_SCRIPT 365
+#define INPUT_MRI_SCRIPT 366
+#define INPUT_DEFSYM 367
+#define CASE 368
+#define EXTERN 369
+#define START 370
+#define VERS_TAG 371
+#define VERS_IDENTIFIER 372
+#define GLOBAL 373
+#define LOCAL 374
+#define VERSIONK 375
+#define INPUT_VERSION_SCRIPT 376
+#define KEEP 377
+#define ONLY_IF_RO 378
+#define ONLY_IF_RW 379
+#define SPECIAL 380
+#define INPUT_SECTION_FLAGS 381
+#define ALIGN_WITH_INPUT 382
+#define EXCLUDE_FILE 383
+#define CONSTANT 384
+#define INPUT_DYNAMIC_LIST 385
 
 
 
 
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-#line 62 "ldgram.y"
 {
+
+/* Line 1676 of yacc.c  */
+#line 60 "ldgram.y"
+
   bfd_vma integer;
   struct big_int
     {
@@ -330,14 +337,17 @@ typedef union YYSTYPE
   struct bfd_elf_version_deps *deflist;
   struct bfd_elf_version_expr *versyms;
   struct bfd_elf_version_tree *versnode;
-}
-/* Line 1529 of yacc.c.  */
-#line 336 "ldgram.h"
-	YYSTYPE;
+
+
+
+/* Line 1676 of yacc.c  */
+#line 345 "ldgram.h"
+} YYSTYPE;
+# define YYSTYPE_IS_TRIVIAL 1
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
-# define YYSTYPE_IS_TRIVIAL 1
 #endif
 
 extern YYSTYPE yylval;
+
 

@@ -88,7 +88,7 @@ struct ppc_mopt ppc_opts[] = {
 		| PPC_OPCODE_A2),
     0 },
   { "altivec", (PPC_OPCODE_PPC),
-    PPC_OPCODE_ALTIVEC },
+    PPC_OPCODE_ALTIVEC | PPC_OPCODE_ALTIVEC2 },
   { "any",     0,
     PPC_OPCODE_ANY },
   { "booke",   (PPC_OPCODE_PPC | PPC_OPCODE_BOOKE),
@@ -147,6 +147,11 @@ struct ppc_mopt ppc_opts[] = {
 		| PPC_OPCODE_POWER4 | PPC_OPCODE_POWER5 | PPC_OPCODE_POWER6
 		| PPC_OPCODE_POWER7 | PPC_OPCODE_ALTIVEC | PPC_OPCODE_VSX),
     0 },
+  { "power8",  (PPC_OPCODE_PPC | PPC_OPCODE_ISEL | PPC_OPCODE_64
+		| PPC_OPCODE_POWER4 | PPC_OPCODE_POWER5 | PPC_OPCODE_POWER6
+		| PPC_OPCODE_POWER7 | PPC_OPCODE_POWER8 | PPC_OPCODE_HTM
+		| PPC_OPCODE_ALTIVEC | PPC_OPCODE_ALTIVEC2 | PPC_OPCODE_VSX),
+    0 },
   { "ppc",     (PPC_OPCODE_PPC),
     0 },
   { "ppc32",   (PPC_OPCODE_PPC),
@@ -176,6 +181,11 @@ struct ppc_mopt ppc_opts[] = {
 		| PPC_OPCODE_POWER4 | PPC_OPCODE_POWER5 | PPC_OPCODE_POWER6
 		| PPC_OPCODE_POWER7 | PPC_OPCODE_ALTIVEC | PPC_OPCODE_VSX),
     0 },
+  { "pwr8",    (PPC_OPCODE_PPC | PPC_OPCODE_ISEL | PPC_OPCODE_64
+		| PPC_OPCODE_POWER4 | PPC_OPCODE_POWER5 | PPC_OPCODE_POWER6
+		| PPC_OPCODE_POWER7 | PPC_OPCODE_POWER8 | PPC_OPCODE_HTM
+		| PPC_OPCODE_ALTIVEC | PPC_OPCODE_ALTIVEC2 | PPC_OPCODE_VSX),
+    0 },
   { "pwrx",    (PPC_OPCODE_POWER | PPC_OPCODE_POWER2),
     0 },
   { "spe",     (PPC_OPCODE_PPC | PPC_OPCODE_EFS),
@@ -187,6 +197,8 @@ struct ppc_mopt ppc_opts[] = {
     PPC_OPCODE_VLE },
   { "vsx",     (PPC_OPCODE_PPC),
     PPC_OPCODE_VSX },
+  { "htm",     (PPC_OPCODE_PPC),
+    PPC_OPCODE_HTM },
 };
 
 /* Switch between Booke and VLE dialects for interlinked dumps.  */
@@ -211,13 +223,8 @@ get_powerpc_dialect (struct disassemble_info *info)
 /* Handle -m and -M options that set cpu type, and .machine arg.  */
 
 ppc_cpu_t
-ppc_parse_cpu (ppc_cpu_t ppc_cpu, const char *arg)
+ppc_parse_cpu (ppc_cpu_t ppc_cpu, ppc_cpu_t *sticky, const char *arg)
 {
-  const ppc_cpu_t retain_mask = (PPC_OPCODE_ALTIVEC | PPC_OPCODE_VSX
-				 | PPC_OPCODE_SPE | PPC_OPCODE_ANY
-				 | PPC_OPCODE_VLE | PPC_OPCODE_PMR);
-  /* Sticky bits.  */
-  ppc_cpu_t retain_flags = ppc_cpu & retain_mask;
   unsigned int i;
 
   for (i = 0; i < sizeof (ppc_opts) / sizeof (ppc_opts[0]); i++)
@@ -225,8 +232,8 @@ ppc_parse_cpu (ppc_cpu_t ppc_cpu, const char *arg)
       {
 	if (ppc_opts[i].sticky)
 	  {
-	    retain_flags |= ppc_opts[i].sticky;
-	    if ((ppc_cpu & ~retain_mask) != 0)
+	    *sticky |= ppc_opts[i].sticky;
+	    if ((ppc_cpu & ~*sticky) != 0)
 	      break;
 	  }
 	ppc_cpu = ppc_opts[i].cpu;
@@ -235,7 +242,7 @@ ppc_parse_cpu (ppc_cpu_t ppc_cpu, const char *arg)
   if (i >= sizeof (ppc_opts) / sizeof (ppc_opts[0]))
     return 0;
 
-  ppc_cpu |= retain_flags;
+  ppc_cpu |= *sticky;
   return ppc_cpu;
 }
 
@@ -245,11 +252,54 @@ static void
 powerpc_init_dialect (struct disassemble_info *info)
 {
   ppc_cpu_t dialect = 0;
+  ppc_cpu_t sticky = 0;
   char *arg;
   struct dis_private *priv = calloc (sizeof (*priv), 1);
 
   if (priv == NULL)
     priv = &private;
+
+  switch (info->mach)
+    {
+    case bfd_mach_ppc_403:
+    case bfd_mach_ppc_403gc:
+      dialect = ppc_parse_cpu (dialect, &sticky, "403");
+      break;
+    case bfd_mach_ppc_405:
+      dialect = ppc_parse_cpu (dialect, &sticky, "405");
+      break;
+    case bfd_mach_ppc_601:
+      dialect = ppc_parse_cpu (dialect, &sticky, "601");
+      break;
+    case bfd_mach_ppc_a35:
+    case bfd_mach_ppc_rs64ii:
+    case bfd_mach_ppc_rs64iii:
+      dialect = ppc_parse_cpu (dialect, &sticky, "pwr2") | PPC_OPCODE_64;
+      break;
+    case bfd_mach_ppc_e500:
+      dialect = ppc_parse_cpu (dialect, &sticky, "e500");
+      break;
+    case bfd_mach_ppc_e500mc:
+      dialect = ppc_parse_cpu (dialect, &sticky, "e500mc");
+      break;
+    case bfd_mach_ppc_e500mc64:
+      dialect = ppc_parse_cpu (dialect, &sticky, "e500mc64");
+      break;
+    case bfd_mach_ppc_e5500:
+      dialect = ppc_parse_cpu (dialect, &sticky, "e5500");
+      break;
+    case bfd_mach_ppc_e6500:
+      dialect = ppc_parse_cpu (dialect, &sticky, "e6500");
+      break;
+    case bfd_mach_ppc_titan:
+      dialect = ppc_parse_cpu (dialect, &sticky, "titan");
+      break;
+    case bfd_mach_ppc_vle:
+      dialect = ppc_parse_cpu (dialect, &sticky, "vle");
+      break;
+    default:
+      dialect = ppc_parse_cpu (dialect, &sticky, "power8") | PPC_OPCODE_ANY;
+    }
 
   arg = info->disassembler_options;
   while (arg != NULL)
@@ -260,7 +310,7 @@ powerpc_init_dialect (struct disassemble_info *info)
       if (end != NULL)
 	*end = 0;
 
-      if ((new_cpu = ppc_parse_cpu (dialect, arg)) != 0)
+      if ((new_cpu = ppc_parse_cpu (dialect, &sticky, arg)) != 0)
 	dialect = new_cpu;
       else if (strcmp (arg, "32") == 0)
 	dialect &= ~(ppc_cpu_t) PPC_OPCODE_64;
@@ -272,20 +322,6 @@ powerpc_init_dialect (struct disassemble_info *info)
       if (end != NULL)
 	*end++ = ',';
       arg = end;
-    }
-
-  if ((dialect & ~(ppc_cpu_t) PPC_OPCODE_64) == 0)
-    {
-      if (info->mach == bfd_mach_ppc64)
-	dialect |= PPC_OPCODE_64;
-      else
-	dialect &= ~(ppc_cpu_t) PPC_OPCODE_64;
-      if (info->mach == bfd_mach_ppc_vle)
-        dialect |= PPC_OPCODE_PPC | PPC_OPCODE_VLE;
-      else
-        /* Choose a reasonable default.  */
-        dialect |= (PPC_OPCODE_PPC | PPC_OPCODE_COMMON | PPC_OPCODE_601
-		    | PPC_OPCODE_ALTIVEC);
     }
 
   info->private_data = priv;

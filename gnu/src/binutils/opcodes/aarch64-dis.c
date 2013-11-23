@@ -1,5 +1,5 @@
 /* aarch64-dis.c -- AArch64 disassembler.
-   Copyright 2009, 2010, 2011, 2012  Free Software Foundation, Inc.
+   Copyright 2009-2013  Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of the GNU opcodes library.
@@ -24,12 +24,7 @@
 #include "libiberty.h"
 #include "opintl.h"
 #include "aarch64-dis.h"
-
-#if !defined(EMBEDDED_ENV)
-#define SYMTAB_AVAILABLE 1
 #include "elf-bfd.h"
-#include "elf/aarch64.h"
-#endif
 
 #define ERR_OK   0
 #define ERR_UND -1
@@ -125,7 +120,7 @@ parse_aarch64_dis_options (const char *options)
    N.B. the fields are required to be in such an order than the most signficant
    field for VALUE comes the first, e.g. the <index> in
     SQDMLAL <Va><d>, <Vb><n>, <Vm>.<Ts>[<index>]
-   is encoded in H:L:M in some cases, the the fields H:L:M should be passed in
+   is encoded in H:L:M in some cases, the fields H:L:M should be passed in
    the order of H, L, M.  */
 
 static inline aarch64_insn
@@ -135,6 +130,7 @@ extract_fields (aarch64_insn code, aarch64_insn mask, ...)
   const aarch64_field *field;
   enum aarch64_field_kind kind;
   va_list va;
+
   va_start (va, mask);
   num = va_arg (va, uint32_t);
   assert (num <= 5);
@@ -154,6 +150,7 @@ static inline int32_t
 sign_extend (aarch64_insn value, unsigned i)
 {
   uint32_t ret = value;
+
   assert (i < 32);
   if ((value >> i) & 0x1)
     {
@@ -181,6 +178,7 @@ static inline enum aarch64_opnd_qualifier
 get_vreg_qualifier_from_value (aarch64_insn value)
 {
   enum aarch64_opnd_qualifier qualifier = AARCH64_OPND_QLF_V_8B + value;
+
   assert (value <= 0x8
 	  && aarch64_get_qualifier_standard_value (qualifier) == value);
   return qualifier;
@@ -191,6 +189,7 @@ static inline enum aarch64_opnd_qualifier
 get_sreg_qualifier_from_value (aarch64_insn value)
 {
   enum aarch64_opnd_qualifier qualifier = AARCH64_OPND_QLF_S_B + value;
+
   assert (value <= 0x4
 	  && aarch64_get_qualifier_standard_value (qualifier) == value);
   return qualifier;
@@ -253,7 +252,7 @@ aarch64_ext_reglane (const aarch64_operand *self, aarch64_opnd_info *info,
   info->reglane.regno = extract_field (self->fields[0], code,
 				       inst->opcode->mask);
 
-  /* index and/or type */
+  /* Index and/or type.  */
   if (inst->opcode->iclass == asisdone
     || inst->opcode->iclass == asimdins)
     {
@@ -290,7 +289,7 @@ aarch64_ext_reglane (const aarch64_operand *self, aarch64_opnd_info *info,
     }
   else
     {
-      /* index only for e.g. SQDMLAL <Va><d>, <Vb><n>, <Vm>.<Ts>[<index>]
+      /* Index only for e.g. SQDMLAL <Va><d>, <Vb><n>, <Vm>.<Ts>[<index>]
          or SQDMLAL <Va><d>, <Vb><n>, <Vm>.<Ts>[<index>].  */
 
       /* Need information in other operand(s) to help decoding.  */
@@ -638,6 +637,7 @@ aarch64_ext_advsimd_imm_modified (const aarch64_operand *self ATTRIBUTE_UNUSED,
 	{
 	case 4: gen_sub_field (FLD_cmode, 1, 2, &field); break;	/* per word */
 	case 2: gen_sub_field (FLD_cmode, 1, 1, &field); break;	/* per half */
+	case 1: gen_sub_field (FLD_cmode, 1, 0, &field); break;	/* per byte */
 	default: assert (0); return 0;
 	}
       /* 00: 0; 01: 8; 10:16; 11:24.  */
@@ -715,7 +715,7 @@ aarch64_ext_limm (const aarch64_operand *self ATTRIBUTE_UNUSED,
     return 0;
 
   /* The immediate value is S+1 bits to 1, left rotated by SIMDsize - R
-     (in other words, right rotated by R), then replicated. */
+     (in other words, right rotated by R), then replicated.  */
   if (N != 0)
     {
       simd_size = 64;
@@ -1473,6 +1473,20 @@ convert_extr_to_ror (aarch64_inst *inst)
   return 0;
 }
 
+/* UXTL<Q> <Vd>.<Ta>, <Vn>.<Tb>
+     is equivalent to:
+   USHLL<Q> <Vd>.<Ta>, <Vn>.<Tb>, #0.  */
+static int
+convert_shll_to_xtl (aarch64_inst *inst)
+{
+  if (inst->operands[2].imm.value == 0)
+    {
+      inst->operands[2].type = AARCH64_OPND_NIL;
+      return 1;
+    }
+  return 0;
+}
+
 /* Convert
      UBFM <Xd>, <Xn>, #<shift>, #63.
    to
@@ -1726,6 +1740,11 @@ convert_to_alias (aarch64_inst *inst, const aarch64_opcode *alias)
       return convert_movebitmask_to_mov (inst);
     case OP_ROR_IMM:
       return convert_extr_to_ror (inst);
+    case OP_SXTL:
+    case OP_SXTL2:
+    case OP_UXTL:
+    case OP_UXTL2:
+      return convert_shll_to_xtl (inst);
     default:
       return 0;
     }
@@ -2070,7 +2089,7 @@ print_mnemonic_name (const aarch64_inst *inst, struct disassemble_info *info)
 	 suffix.  */
       char name[8], *ptr;
       size_t len;
-      
+
       ptr = strchr (inst->opcode->name, '.');
       assert (ptr && inst->cond);
       len = ptr - inst->opcode->name;
@@ -2129,7 +2148,7 @@ print_insn_aarch64_word (bfd_vma pc,
 
   if (((word >> 21) & 0x3ff) == 1)
     {
-      /* RESERVED for ALES. */
+      /* RESERVED for ALES.  */
       assert (ret != ERR_OK);
       ret = ERR_NYI;
     }

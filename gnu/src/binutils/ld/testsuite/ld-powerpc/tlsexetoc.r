@@ -1,7 +1,7 @@
 #source: tlslib.s
 #source: tlstoc.s
 #as: -a64
-#ld: -melf64ppc
+#ld: 
 #readelf: -WSsrl
 #target: powerpc64*-*-*
 
@@ -97,8 +97,8 @@ Symbol table '\.symtab' contains [0-9]+ entries:
 .* (FUNC|NOTYPE) +LOCAL +DEFAULT +UND \.__tls_get_addr(|_opt)
 .* FILE +LOCAL +DEFAULT +ABS .*
 .* OBJECT +LOCAL +DEFAULT +10 _DYNAMIC
-.* NOTYPE +LOCAL +DEFAULT +7 00000010\.plt_call\.__tls_get_addr(|_opt)\+0
 .* NOTYPE +LOCAL +DEFAULT +7 __glink_PLTresolve
+.* NOTYPE +LOCAL +DEFAULT +7 .*\.plt_call\.__tls_get_addr(|_opt)
 .* TLS +GLOBAL +DEFAULT +UND gd
 .* TLS +GLOBAL +DEFAULT +9 le0
 .* TLS +GLOBAL +DEFAULT +9 ld0
