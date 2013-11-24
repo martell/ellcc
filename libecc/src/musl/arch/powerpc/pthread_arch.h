@@ -2,7 +2,7 @@ static inline struct pthread *__pthread_self()
 {
 #ifdef __clang__
         char *tp;
-        __asm__ __volatile__ ("mr %0, 2" : "=r" (tp) : : "2" );
+        __asm__ __volatile__ ("mr %0, 2" : "=r" (tp));
 #else
 	register char* tp __asm__("r2");
 #endif
