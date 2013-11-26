@@ -913,7 +913,8 @@ DIE *CompileUnit::getOrCreateContextDIE(DIScope Context) {
 }
 
 DIE *CompileUnit::createTypeDIE(DICompositeType Ty) {
-  DIE *ContextDIE = getOrCreateContextDIE(resolve(Ty.getContext()));
+  DIScope Context = resolve(Ty.getContext());
+  DIE *ContextDIE = getOrCreateContextDIE(Context);
 
   DIE *TyDIE = getDIE(Ty);
   if (TyDIE)
@@ -922,10 +923,44 @@ DIE *CompileUnit::createTypeDIE(DICompositeType Ty) {
   // Create new type.
   TyDIE = createAndAddDIE(Ty.getTag(), *ContextDIE, Ty);
 
-  constructTypeDIEImpl(*TyDIE, Ty);
+  constructTypeDIE(*TyDIE, Ty);
 
-  updateAcceleratorTables(Ty, TyDIE);
+  updateAcceleratorTables(Context, Ty, TyDIE);
   return TyDIE;
+}
+
+/// Return true if the type is appropriately scoped to be contained inside
+/// its own type unit.
+static bool isTypeUnitScoped(DIType Ty, const DwarfDebug *DD) {
+  DIScope Parent = DD->resolve(Ty.getContext());
+  while (Parent) {
+    // Don't generate a hash for anything scoped inside a function.
+    if (Parent.isSubprogram())
+      return false;
+    Parent = DD->resolve(Parent.getContext());
+  }
+  return true;
+}
+
+/// Return true if the type should be split out into a type unit.
+static bool shouldCreateTypeUnit(DICompositeType CTy, const DwarfDebug *DD) {
+  if (!GenerateTypeUnits)
+    return false;
+
+  uint16_t Tag = CTy.getTag();
+
+  switch (Tag) {
+  case dwarf::DW_TAG_structure_type:
+  case dwarf::DW_TAG_union_type:
+  case dwarf::DW_TAG_enumeration_type:
+  case dwarf::DW_TAG_class_type:
+    // If this is a class, structure, union, or enumeration type
+    // that is a definition (not a declaration), and not scoped
+    // inside a function then separate this out as a type unit.
+    return !CTy.isForwardDecl() && isTypeUnitScoped(CTy, DD);
+  default:
+    return false;
+  }
 }
 
 /// getOrCreateTypeDIE - Find existing DIE or create new DIE for the
@@ -939,7 +974,8 @@ DIE *CompileUnit::getOrCreateTypeDIE(const MDNode *TyNode) {
 
   // Construct the context before querying for the existence of the DIE in case
   // such construction creates the DIE.
-  DIE *ContextDIE = getOrCreateContextDIE(resolve(Ty.getContext()));
+  DIScope Context = resolve(Ty.getContext());
+  DIE *ContextDIE = getOrCreateContextDIE(Context);
   assert(ContextDIE);
 
   DIE *TyDIE = getDIE(Ty);
@@ -951,19 +987,26 @@ DIE *CompileUnit::getOrCreateTypeDIE(const MDNode *TyNode) {
 
   if (Ty.isBasicType())
     constructTypeDIE(*TyDIE, DIBasicType(Ty));
-  else if (Ty.isCompositeType())
-    constructTypeDIE(*TyDIE, DICompositeType(Ty));
-  else {
+  else if (Ty.isCompositeType()) {
+    DICompositeType CTy(Ty);
+    if (shouldCreateTypeUnit(CTy, DD)) {
+      DD->addTypeUnitType(TyDIE, CTy);
+      // Skip updating the accellerator tables since this is not the full type
+      return TyDIE;
+    }
+    constructTypeDIE(*TyDIE, CTy);
+  } else {
     assert(Ty.isDerivedType() && "Unknown kind of DIType");
     constructTypeDIE(*TyDIE, DIDerivedType(Ty));
   }
 
-  updateAcceleratorTables(Ty, TyDIE);
+  updateAcceleratorTables(Context, Ty, TyDIE);
 
   return TyDIE;
 }
 
-void CompileUnit::updateAcceleratorTables(DIType Ty, const DIE *TyDIE) {
+void CompileUnit::updateAcceleratorTables(DIScope Context, DIType Ty,
+                                          const DIE *TyDIE) {
   if (!Ty.getName().empty() && !Ty.isForwardDecl()) {
     bool IsImplementation = 0;
     if (Ty.isCompositeType()) {
@@ -974,6 +1017,10 @@ void CompileUnit::updateAcceleratorTables(DIType Ty, const DIE *TyDIE) {
     }
     unsigned Flags = IsImplementation ? dwarf::DW_FLAG_type_implementation : 0;
     addAccelType(Ty.getName(), std::make_pair(TyDIE, Flags));
+
+    if (!Context || Context.isCompileUnit() || Context.isFile() ||
+        Context.isNameSpace())
+      GlobalTypes[getParentContextString(Context) + Ty.getName().str()] = TyDIE;
   }
 }
 
@@ -996,10 +1043,6 @@ void CompileUnit::addType(DIE *Entity, DIType Ty, dwarf::Attribute Attribute) {
   Entry = createDIEEntry(Buffer);
   insertDIEEntry(Ty, Entry);
   addDIEEntry(Entity, Attribute, Entry);
-
-  // If this is a complete composite type then include it in the
-  // list of global types.
-  addGlobalType(Ty);
 }
 
 // Accelerator table mutators - add each name along with its companion
@@ -1035,20 +1078,6 @@ void CompileUnit::addAccelType(StringRef Name,
 void CompileUnit::addGlobalName(StringRef Name, DIE *Die, DIScope Context) {
   std::string FullName = getParentContextString(Context) + Name.str();
   GlobalNames[FullName] = Die;
-}
-
-/// addGlobalType - Add a new global type to the compile unit.
-///
-void CompileUnit::addGlobalType(DIType Ty) {
-  DIScope Context = resolve(Ty.getContext());
-  if (!Ty.getName().empty() && !Ty.isForwardDecl() &&
-      (!Context || Context.isCompileUnit() || Context.isFile() ||
-       Context.isNameSpace()))
-    if (DIEEntry *Entry = getDIEEntry(Ty)) {
-      std::string FullName =
-          getParentContextString(Context) + Ty.getName().str();
-      GlobalTypes[FullName] = Entry->getEntry();
-    }
 }
 
 /// getParentContextString - Walks the metadata parent chain in a language
@@ -1089,22 +1118,6 @@ std::string CompileUnit::getParentContextString(DIScope Context) const {
     }
   }
   return CS;
-}
-
-/// addPubTypes - Add subprogram argument types for pubtypes section.
-void CompileUnit::addPubTypes(DISubprogram SP) {
-  DICompositeType SPTy = SP.getType();
-  uint16_t SPTag = SPTy.getTag();
-  if (SPTag != dwarf::DW_TAG_subroutine_type)
-    return;
-
-  DIArray Args = SPTy.getTypeArray();
-  for (unsigned i = 0, e = Args.getNumElements(); i != e; ++i) {
-    DIType ATy(Args.getElement(i));
-    if (!ATy.isType())
-      continue;
-    addGlobalType(ATy);
-  }
 }
 
 /// constructTypeDIE - Construct basic type die from DIBasicType.
@@ -1154,51 +1167,8 @@ void CompileUnit::constructTypeDIE(DIE &Buffer, DIDerivedType DTy) {
     addSourceLine(&Buffer, DTy);
 }
 
-/// Return true if the type is appropriately scoped to be contained inside
-/// its own type unit.
-static bool isTypeUnitScoped(DIType Ty, const DwarfDebug *DD) {
-  DIScope Parent = DD->resolve(Ty.getContext());
-  while (Parent) {
-    // Don't generate a hash for anything scoped inside a function.
-    if (Parent.isSubprogram())
-      return false;
-    Parent = DD->resolve(Parent.getContext());
-  }
-  return true;
-}
-
-/// Return true if the type should be split out into a type unit.
-static bool shouldCreateTypeUnit(DICompositeType CTy, const DwarfDebug *DD) {
-  if (!GenerateTypeUnits)
-    return false;
-
-  uint16_t Tag = CTy.getTag();
-
-  switch (Tag) {
-  case dwarf::DW_TAG_structure_type:
-  case dwarf::DW_TAG_union_type:
-  case dwarf::DW_TAG_enumeration_type:
-  case dwarf::DW_TAG_class_type:
-    // If this is a class, structure, union, or enumeration type
-    // that is a definition (not a declaration), and not scoped
-    // inside a function then separate this out as a type unit.
-    return !CTy.isForwardDecl() && isTypeUnitScoped(CTy, DD);
-  default:
-    return false;
-  }
-}
-
 /// constructTypeDIE - Construct type DIE from DICompositeType.
 void CompileUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
-  // If this is a type applicable to a type unit it then add it to the
-  // list of types we'll compute a hash for later.
-  if (shouldCreateTypeUnit(CTy, DD))
-    DD->addTypeUnitType(&Buffer, CTy);
-  else
-    constructTypeDIEImpl(Buffer, CTy);
-}
-
-void CompileUnit::constructTypeDIEImpl(DIE &Buffer, DICompositeType CTy) {
   // Add name if not anonymous or intermediate type.
   StringRef Name = CTy.getName();
 

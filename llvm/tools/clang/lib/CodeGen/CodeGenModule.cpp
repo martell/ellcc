@@ -258,6 +258,11 @@ void CodeGenModule::Release() {
     // We can change from Warning to Latest if such mode is supported.
     getModule().addModuleFlag(llvm::Module::Warning, "Dwarf Version",
                               CodeGenOpts.DwarfVersion);
+  if (DebugInfo)
+    // We support a single version in the linked module: error out when
+    // modules do not have the same version.
+    getModule().addModuleFlag(llvm::Module::Error, "Debug Info Version",
+                              llvm::dwarf::DEBUG_INFO_VERSION);
 
   SimplifyPersonality();
 
@@ -2095,6 +2100,10 @@ void CodeGenModule::EmitGlobalFunctionDefinition(GlobalDecl GD) {
     Entry = CE->getOperand(0);
   }
 
+  if (!cast<llvm::GlobalValue>(Entry)->isDeclaration()) {
+    getDiags().Report(D->getLocation(), diag::err_duplicate_mangled_name);
+    return;
+  }
 
   if (cast<llvm::GlobalValue>(Entry)->getType()->getElementType() != Ty) {
     llvm::GlobalValue *OldFn = cast<llvm::GlobalValue>(Entry);

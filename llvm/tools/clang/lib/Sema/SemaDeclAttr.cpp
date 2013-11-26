@@ -61,6 +61,14 @@ enum AttributeDeclKind {
   ExpectedType
 };
 
+namespace AttributeLangSupport {
+  enum LANG {
+    C,
+    Cpp,
+    ObjC
+  };
+}
+
 //===----------------------------------------------------------------------===//
 //  Helper functions
 //===----------------------------------------------------------------------===//
@@ -1846,7 +1854,8 @@ static void handleNoCommonAttr(Sema &S, Decl *D, const AttributeList &Attr) {
 
 static void handleCommonAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   if (S.LangOpts.CPlusPlus) {
-    S.Diag(Attr.getLoc(), diag::err_common_not_supported_cplusplus);
+    S.Diag(Attr.getLoc(), diag::err_attribute_not_supported_in_lang)
+      << Attr.getName() << AttributeLangSupport::Cpp;
     return;
   }
 
@@ -2116,6 +2125,11 @@ static void handleAttrWithMessage(Sema &S, Decl *D,
 
 static void handleArcWeakrefUnavailableAttr(Sema &S, Decl *D, 
                                             const AttributeList &Attr) {
+  if (!isa<ObjCInterfaceDecl>(D)) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedObjectiveCInterface;
+    return;
+  }
   D->addAttr(::new (S.Context)
              ArcWeakrefUnavailableAttr(Attr.getRange(), S.Context,
                                        Attr.getAttributeSpellingListIndex()));
@@ -2134,10 +2148,32 @@ static void handleObjCRootClassAttr(Sema &S, Decl *D,
                                Attr.getAttributeSpellingListIndex()));
 }
 
+static void handleObjCSuppresProtocolAttr(Sema &S, Decl *D,
+                                          const AttributeList &Attr) {
+  if (!isa<ObjCInterfaceDecl>(D)) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedObjectiveCInterface;
+    return;
+  }
+
+  IdentifierLoc *Parm = Attr.isArgIdent(0) ? Attr.getArgAsIdent(0) : 0;
+
+  if (!Parm) {
+    S.Diag(D->getLocStart(), diag::err_objc_attr_not_id) << Attr.getName() << 1;
+    return;
+  }
+
+  D->addAttr(::new (S.Context)
+             ObjCSuppressProtocolAttr(Attr.getRange(), S.Context, Parm->Ident,
+                                      Attr.getAttributeSpellingListIndex()));
+}
+
+
 static void handleObjCRequiresPropertyDefsAttr(Sema &S, Decl *D,
                                                const AttributeList &Attr) {
   if (!isa<ObjCInterfaceDecl>(D)) {
-    S.Diag(Attr.getLoc(), diag::err_suppress_autosynthesis);
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedObjectiveCInterface;
     return;
   }
   
@@ -2527,10 +2563,11 @@ static void handleObjCNSObject(Sema &S, Decl *D, const AttributeList &Attr) {
                               Attr.getAttributeSpellingListIndex()));
 }
 
-static void
-handleOverloadableAttr(Sema &S, Decl *D, const AttributeList &Attr) {
+static void handleOverloadableAttr(Sema &S, Decl *D,
+                                   const AttributeList &Attr) {
   if (!isa<FunctionDecl>(D)) {
-    S.Diag(Attr.getLoc(), diag::err_attribute_overloadable_not_function);
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedFunction;
     return;
   }
 
@@ -4053,6 +4090,12 @@ static void handleTypeTagForDatatypeAttr(Sema &S, Decl *D,
   if (!checkAttributeNumArgs(S, Attr, 1))
     return;
 
+  if (!isa<VarDecl>(D)) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedVariable;
+    return;
+  }
+
   IdentifierInfo *PointerKind = Attr.getArgAsIdent(0)->Ident;
   TypeSourceInfo *MatchingCTypeLoc = 0;
   S.GetTypeFromParser(Attr.getMatchingCType(), &MatchingCTypeLoc);
@@ -4452,8 +4495,20 @@ static bool checkMicrosoftExt(Sema &S, const AttributeList &Attr,
 }
 
 static void handleUuidAttr(Sema &S, Decl *D, const AttributeList &Attr) {
+  if (!S.LangOpts.CPlusPlus) {
+    S.Diag(Attr.getLoc(), diag::err_attribute_not_supported_in_lang)
+      << Attr.getName() << AttributeLangSupport::C;
+    return;
+  }
+
   if (!checkMicrosoftExt(S, Attr, S.LangOpts.Borland))
     return;
+
+  if (!isa<CXXRecordDecl>(D)) {
+    S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
+      << Attr.getName() << ExpectedClass;
+    return;
+  }
 
   StringRef StrRef;
   SourceLocation LiteralLoc;
@@ -4514,10 +4569,10 @@ static void handlePortabilityAttr(Sema &S, Decl *D, const AttributeList &Attr) {
     return;
 
   AttributeList::Kind Kind = Attr.getKind();
-    if (Kind == AttributeList::AT_Win64)
-    D->addAttr(
-        ::new (S.Context) Win64Attr(Attr.getRange(), S.Context,
-                                    Attr.getAttributeSpellingListIndex()));
+  if (Kind == AttributeList::AT_Win64)
+  D->addAttr(
+      ::new (S.Context) Win64Attr(Attr.getRange(), S.Context,
+                                  Attr.getAttributeSpellingListIndex()));
 }
 
 static void handleForceInlineAttr(Sema &S, Decl *D, const AttributeList &Attr) {
@@ -4713,7 +4768,10 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case AttributeList::AT_ObjCRootClass:
     handleObjCRootClassAttr(S, D, Attr);
     break;
-  case AttributeList::AT_ObjCRequiresPropertyDefs: 
+  case AttributeList::AT_ObjCSuppressProtocol:
+    handleObjCSuppresProtocolAttr(S, D, Attr);
+    break;
+  case AttributeList::AT_ObjCRequiresPropertyDefs:
     handleObjCRequiresPropertyDefsAttr (S, D, Attr); 
     break;
   case AttributeList::AT_Unused:      handleUnusedAttr      (S, D, Attr); break;

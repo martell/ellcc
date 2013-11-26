@@ -256,6 +256,10 @@ public:
         NextStringPoolNumber(0), StringPref(Pref), AddressPool(),
         NextAddrPoolNumber(0) {}
 
+  ~DwarfUnits();
+
+  const SmallVectorImpl<CompileUnit *> &getUnits() { return CUs; }
+
   /// \brief Compute the size and offset of a DIE given an incoming Offset.
   unsigned computeSizeAndOffset(DIE *Die, unsigned Offset);
 
@@ -468,9 +472,6 @@ class DwarfDebug {
   // original object file, rather than things that are meant
   // to be in the .dwo sections.
 
-  // The CUs left in the original object file for separated debug info.
-  SmallVector<CompileUnit *, 1> SkeletonCUs;
-
   // Used to uniquely define abbreviations for the skeleton emission.
   FoldingSet<DIEAbbrev> SkeletonAbbrevSet;
 
@@ -480,9 +481,11 @@ class DwarfDebug {
   // Holder for the skeleton information.
   DwarfUnits SkeletonHolder;
 
-private:
-
   void addScopeVariable(LexicalScope *LS, DbgVariable *Var);
+
+  const SmallVectorImpl<CompileUnit *> &getUnits() {
+    return InfoHolder.getUnits();
+  }
 
   /// \brief Find abstract variable associated with Var.
   DbgVariable *findAbstractVariable(DIVariable &Var, DebugLoc Loc);

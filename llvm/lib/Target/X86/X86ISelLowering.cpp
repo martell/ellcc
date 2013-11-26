@@ -3092,9 +3092,13 @@ X86TargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
   if (isCalleeStructRet || isCallerStructRet)
     return false;
 
-  // An stdcall caller is expected to clean up its arguments; the callee
-  // isn't going to do that.
-  if (!CCMatch && CallerCC == CallingConv::X86_StdCall)
+  // An stdcall/thiscall caller is expected to clean up its arguments; the
+  // callee isn't going to do that.
+  // FIXME: this is more restrictive than needed. We could produce a tailcall
+  // when the stack adjustment matches. For example, with a thiscall that takes
+  // only one argument.
+  if (!CCMatch && (CallerCC == CallingConv::X86_StdCall ||
+                   CallerCC == CallingConv::X86_ThisCall))
     return false;
 
   // Do not sibcall optimize vararg calls unless all arguments are passed via
@@ -3413,6 +3417,24 @@ bool X86::isCalleePop(CallingConv::ID CallingConv,
   case CallingConv::HiPE:
     return TailCallOpt;
   }
+}
+
+/// \brief Return true if the condition is an unsigned comparison operation.
+static bool isX86CCUnsigned(unsigned X86CC) {
+  switch (X86CC) {
+  default: llvm_unreachable("Invalid integer condition!");
+  case X86::COND_E:     return true;
+  case X86::COND_G:     return false;
+  case X86::COND_GE:    return false;
+  case X86::COND_L:     return false;
+  case X86::COND_LE:    return false;
+  case X86::COND_NE:    return true;
+  case X86::COND_B:     return true;
+  case X86::COND_A:     return true;
+  case X86::COND_BE:    return true;
+  case X86::COND_AE:    return true;
+  }
+  llvm_unreachable("covered switch fell through?!");
 }
 
 /// TranslateX86CC - do a one to one translation of a ISD::CondCode to the X86
@@ -9658,6 +9680,17 @@ SDValue X86TargetLowering::EmitCmp(SDValue Op0, SDValue Op1, unsigned X86CC,
   SDLoc dl(Op0);
   if ((Op0.getValueType() == MVT::i8 || Op0.getValueType() == MVT::i16 ||
        Op0.getValueType() == MVT::i32 || Op0.getValueType() == MVT::i64)) {
+    // Do the comparison at i32 if it's smaller. This avoids subregister
+    // aliasing issues. Keep the smaller reference if we're optimizing for
+    // size, however, as that'll allow better folding of memory operations.
+    if (Op0.getValueType() != MVT::i32 && Op0.getValueType() != MVT::i64 &&
+        !DAG.getMachineFunction().getFunction()->getAttributes().hasAttribute(
+             AttributeSet::FunctionIndex, Attribute::MinSize)) {
+      unsigned ExtendOp =
+          isX86CCUnsigned(X86CC) ? ISD::ZERO_EXTEND : ISD::SIGN_EXTEND;
+      Op0 = DAG.getNode(ExtendOp, dl, MVT::i32, Op0);
+      Op1 = DAG.getNode(ExtendOp, dl, MVT::i32, Op1);
+    }
     // Use SUB instead of CMP to enable CSE between SUB and CMP.
     SDVTList VTs = DAG.getVTList(Op0.getValueType(), MVT::i32);
     SDValue Sub = DAG.getNode(X86ISD::SUB, dl, VTs,
@@ -13133,19 +13166,27 @@ SDValue X86TargetLowering::LowerSIGN_EXTEND_INREG(SDValue Op,
       // fall through
     case MVT::v4i32:
     case MVT::v8i16: {
-      // (sext (vzext x)) -> (vsext x)
       SDValue Op0 = Op.getOperand(0);
       SDValue Op00 = Op0.getOperand(0);
       SDValue Tmp1;
       // Hopefully, this VECTOR_SHUFFLE is just a VZEXT.
       if (Op0.getOpcode() == ISD::BITCAST &&
-          Op00.getOpcode() == ISD::VECTOR_SHUFFLE)
+          Op00.getOpcode() == ISD::VECTOR_SHUFFLE) {
+        // (sext (vzext x)) -> (vsext x)
         Tmp1 = LowerVectorIntExtend(Op00, Subtarget, DAG);
-      if (Tmp1.getNode()) {
-        SDValue Tmp1Op0 = Tmp1.getOperand(0);
-        assert(Tmp1Op0.getOpcode() == X86ISD::VZEXT &&
-               "This optimization is invalid without a VZEXT.");
-        return DAG.getNode(X86ISD::VSEXT, dl, VT, Tmp1Op0.getOperand(0));
+        if (Tmp1.getNode()) {
+          EVT ExtraEltVT = ExtraVT.getVectorElementType();
+          // This folding is only valid when the in-reg type is a vector of i8,
+          // i16, or i32.
+          if (ExtraEltVT == MVT::i8 || ExtraEltVT == MVT::i16 ||
+              ExtraEltVT == MVT::i32) {
+            SDValue Tmp1Op0 = Tmp1.getOperand(0);
+            assert(Tmp1Op0.getOpcode() == X86ISD::VZEXT &&
+                   "This optimization is invalid without a VZEXT.");
+            return DAG.getNode(X86ISD::VSEXT, dl, VT, Tmp1Op0.getOperand(0));
+          }
+          Op0 = Tmp1;
+        }
       }
 
       // If the above didn't work, then just use Shift-Left + Shift-Right.
@@ -15778,6 +15819,51 @@ X86TargetLowering::emitEHSjLjLongJmp(MachineInstr *MI,
   return MBB;
 }
 
+/// Convert any TargetFrameIndex operands into the x86-specific pattern of five
+/// memory operands that is recognized by PrologEpilogInserter.
+MachineBasicBlock *
+X86TargetLowering::emitPatchPoint(MachineInstr *MI,
+                                  MachineBasicBlock *MBB) const {
+  const TargetMachine &TM = getTargetMachine();
+  const X86InstrInfo *TII = static_cast<const X86InstrInfo*>(TM.getInstrInfo());
+
+  // MI changes inside this loop as we grow operands.
+  for(unsigned OperIdx = 0; OperIdx != MI->getNumOperands(); ++OperIdx) {
+    MachineOperand &MO = MI->getOperand(OperIdx);
+    if (!MO.isFI())
+      continue;
+
+    // foldMemoryOperand builds a new MI after replacing a single FI operand
+    // with the canonical set of five x86 addressing-mode operands.
+    int FI = MO.getIndex();
+    MachineFunction &MF = *MBB->getParent();
+    SmallVector<unsigned, 1> FIOps(1, OperIdx);
+    MachineInstr *NewMI = TII->foldMemoryOperandImpl(MF, MI, FIOps, FI);
+    assert(NewMI && "Cannot fold frame index operand into stackmap.");
+
+    // Inherit previous memory operands.
+    NewMI->setMemRefs(MI->memoperands_begin(), MI->memoperands_end());
+    assert(NewMI->mayLoad() && "Folded a stackmap use to a non-load!");
+
+    // Add a new memory operand for this FI.
+    const MachineFrameInfo &MFI = *MF.getFrameInfo();
+    assert(MFI.getObjectOffset(FI) != -1);
+    MachineMemOperand *MMO =
+      MF.getMachineMemOperand(MachinePointerInfo::getFixedStack(FI),
+                              MachineMemOperand::MOLoad,
+                              TM.getDataLayout()->getPointerSize(),
+                              MFI.getObjectAlignment(FI));
+    NewMI->addMemOperand(MF, MMO);
+
+    // Replace the instruction and update the operand index.
+    MBB->insert(MachineBasicBlock::iterator(MI), NewMI);
+    OperIdx += (NewMI->getNumOperands() - MI->getNumOperands()) - 1;
+    MI->eraseFromParent();
+    MI = NewMI;
+  }
+  return MBB;
+}
+
 MachineBasicBlock *
 X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
                                                MachineBasicBlock *BB) const {
@@ -16005,6 +16091,10 @@ X86TargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   case X86::EH_SjLj_LongJmp32:
   case X86::EH_SjLj_LongJmp64:
     return emitEHSjLjLongJmp(MI, BB);
+
+  case TargetOpcode::STACKMAP:
+  case TargetOpcode::PATCHPOINT:
+    return emitPatchPoint(MI, BB);
   }
 }
 
@@ -17020,6 +17110,15 @@ static SDValue PerformSELECTCombine(SDNode *N, SelectionDAG &DAG,
     if (BitWidth == 1)
       return SDValue();
 
+    // Check all uses of that condition operand to check whether it will be
+    // consumed by non-BLEND instructions, which may depend on all bits are set
+    // properly.
+    for (SDNode::use_iterator I = Cond->use_begin(),
+                              E = Cond->use_end(); I != E; ++I)
+      if (I->getOpcode() != ISD::VSELECT)
+        // TODO: Add other opcodes eventually lowered into BLEND.
+        return SDValue();
+
     assert(BitWidth >= 8 && BitWidth <= 64 && "Invalid mask size");
     APInt DemandedMask = APInt::getHighBitsSet(BitWidth, 1);
 
@@ -17901,12 +18000,12 @@ static SDValue PerformOrCombine(SDNode *N, SelectionDAG &DAG,
   MachineFunction &MF = DAG.getMachineFunction();
   bool OptForSize = MF.getFunction()->getAttributes().
     hasAttribute(AttributeSet::FunctionIndex, Attribute::OptimizeForSize);
- 
-  // SHLD/SHRD instructions have lower register pressure, but on some 
-  // platforms they have higher latency than the equivalent 
-  // series of shifts/or that would otherwise be generated. 
+
+  // SHLD/SHRD instructions have lower register pressure, but on some
+  // platforms they have higher latency than the equivalent
+  // series of shifts/or that would otherwise be generated.
   // Don't fold (or (x << c) | (y >> (64 - c))) if SHLD/SHRD instructions
-  // have higer latencies and we are not optimizing for size.  
+  // have higher latencies and we are not optimizing for size.
   if (!OptForSize && Subtarget->isSHLDSlow())
     return SDValue();
 
