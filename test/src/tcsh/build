@@ -1,0 +1,33 @@
+#!/bin/sh
+# ELLCC build script.
+
+# Get the staging directory.
+prefix=`cd ../../..; pwd`
+
+# Figure out the compilers to use.
+. $prefix/build-setup $*
+
+echo Configured to $WHY.
+echo C compiler: $cc $CFLAGS
+echo C++ compiler: $cxx $CXXFLAGS
+echo In: build$builddir
+
+if [ "x$arg1" != "x" ] ; then
+    # Build for a single target.
+    targets=$arg1
+fi
+
+# Configure for all active targets in the target list.
+for t in $targets; do
+  t=`basename $t -elf`
+  if [ -e $prefix/libecc/mkscripts/targets/$t/setup.mk ] ; then
+    echo Configuring for $t-$os
+    mkdir -p build-$t-$os
+    make DIR=build-$t-$os CC=$cc CXX=$cxx AR=$ar TARGET=$t OS=$os \
+        target=$t haslibs=$haslibs \
+        bindir=$bindir prefix=$prefix build=$build \
+        configure || exit 1
+
+    make -C build-$t-$os || exit 1
+  fi
+done
