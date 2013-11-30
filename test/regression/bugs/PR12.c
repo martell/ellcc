@@ -11,6 +11,7 @@ static void handler(int sig)
 }
 
 TEST_GROUP(Signal)
+    signal(SIGINT, handler);
     TEST(raise(SIGINT) == 0, "Raise a signal");
     TEST(i == 1, "The signal handler has been called");
 END_GROUP
