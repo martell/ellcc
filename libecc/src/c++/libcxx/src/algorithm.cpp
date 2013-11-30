@@ -68,14 +68,12 @@ __rs_default::~__rs_default()
         pthread_mutex_unlock(&__rs_mut);
 }
 
-#if !defined(__MICROBLAZE__)
 __rs_default::result_type
 __rs_default::operator()()
 {
     static mt19937 __rs_g;
     return __rs_g();
 }
-#endif
 
 __rs_default
 __rs_get()

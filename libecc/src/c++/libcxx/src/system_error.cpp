@@ -7,7 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#if !defined(__MICROBLAZE__)
 #define	_LIBCPP_BUILDING_SYSTEM_ERROR
 #include "system_error"
 #include "string"
@@ -204,4 +203,3 @@ __throw_system_error(int ev, const char* what_arg)
 }
 
 _LIBCPP_END_NAMESPACE_STD
-#endif // __MICROBLAZE__

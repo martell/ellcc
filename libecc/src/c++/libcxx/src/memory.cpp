@@ -159,7 +159,6 @@ __sp_mut::unlock() _NOEXCEPT
     static_cast<mutex*>(__lx)->unlock();
 }
 
-#if !defined(__MICROBLAZE__)
 __sp_mut&
 __get_sp_mut(const void* p)
 {
@@ -172,7 +171,6 @@ __get_sp_mut(const void* p)
     };
     return muts[hash<const void*>()(p) & (__sp_mut_count-1)];
 }
-#endif
 
 #endif // __has_feature(cxx_atomic)
 

@@ -1600,6 +1600,10 @@ public:
   MBlazeTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
     DescriptionString = "E-p:32:32:32-i8:8:8-i16:16:16-i32:32:32-i64:64:64-"
                         "f32:32:32-f64:64:64-v64:64:64-n32-S64";
+    // Microblaze targets default to using the ARM C++ ABI.
+    TheCXXABI.set(TargetCXXABI::GenericARM);
+    // Microblaze supports atomics up to 4 bytes.
+    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 32;
   }
 
   virtual void getTargetBuiltins(const Builtin::Info *&Records,
@@ -3885,9 +3889,15 @@ public:
     BigEndian = false;
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
-
-    // AAPCS 7.1.1, ARM-Linux ABI 2.4: type of wchar_t is unsigned int.
-    WCharType = UnsignedInt;
+    switch (getTriple().getOS()) {
+    case llvm::Triple::NetBSD:
+      WCharType = SignedInt;
+      break;
+    default:
+      // AAPCS 7.1.1, ARM-Linux ABI 2.4: type of wchar_t is unsigned int.
+      WCharType = UnsignedInt;
+      break;
+    }
 
     // {} in inline assembly are neon specifiers, not assembly variant
     // specifiers.

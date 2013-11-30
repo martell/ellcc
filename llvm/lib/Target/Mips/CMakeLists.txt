@@ -35,6 +35,7 @@ add_llvm_target(MipsCodeGen
   MipsMCInstLower.cpp
   MipsMachineFunction.cpp
   MipsModuleISelDAGToDAG.cpp
+  MipsOptimizePICCall.cpp
   MipsOs16.cpp
   MipsRegisterInfo.cpp
   MipsSEFrameLowering.cpp
@@ -48,8 +49,6 @@ add_llvm_target(MipsCodeGen
   MipsSelectionDAGInfo.cpp
   MipsIntrinsicInfo.cpp
   )
-
-add_dependencies(LLVMMipsCodeGen MipsCommonTableGen intrinsics_gen)
 
 add_subdirectory(InstPrinter)
 add_subdirectory(Disassembler)
