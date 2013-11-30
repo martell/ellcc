@@ -1,4 +1,4 @@
-// XF AIL: *
+// XFAIL: *
 // RUN: %x86_64ecc -o %t %s && %x86_64run %t
 #include "../ecc_test.h"
 #include <signal.h>
