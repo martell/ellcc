@@ -413,13 +413,7 @@ enum mips_operand_type {
 
   /* Like OP_VU0_SUFFIX, but used when the operand's value has already
      been set.  Any suffix used here must match the previous value.  */
-  OP_VU0_MATCH_SUFFIX,
-
-  /* An index selected by an integer, e.g. [1].  */
-  OP_IMM_INDEX,
-
-  /* An index selected by a register, e.g. [$2].  */
-  OP_REG_INDEX
+  OP_VU0_MATCH_SUFFIX
 };
 
 /* Enumerates the types of MIPS register.  */
@@ -460,13 +454,7 @@ enum mips_reg_operand_type {
   OP_REG_R5900_I,
   OP_REG_R5900_Q,
   OP_REG_R5900_R,
-  OP_REG_R5900_ACC,
-
-  /* MSA registers $w0-$w31.  */
-  OP_REG_MSA,
-
-  /* MSA control registers $0-$31.  */
-  OP_REG_MSA_CTRL
+  OP_REG_R5900_ACC
 };
 
 /* Base class for all operands.  */
@@ -903,32 +891,6 @@ struct mips_opcode
    Enhanced VA Scheme:
    "+j" 9-bit signed offset in bit 7 (OP_*_EVAOFFSET)
 
-   MSA Extension:
-   "+d" 5-bit MSA register (FD)
-   "+e" 5-bit MSA register (FS)
-   "+h" 5-bit MSA register (FT)
-   "+k" 5-bit GPR at bit 6
-   "+l" 5-bit MSA control register at bit 6
-   "+n" 5-bit MSA control register at bit 11
-   "+o" 5-bit vector element index at bit 16
-   "+u" 4-bit vector element index at bit 16
-   "+v" 3-bit vector element index at bit 16
-   "+w" 2-bit vector element index at bit 16
-   "+T" (-512 .. 511) << 0 at bit 16
-   "+U" (-512 .. 511) << 1 at bit 16
-   "+V" (-512 .. 511) << 2 at bit 16
-   "+W" (-512 .. 511) << 3 at bit 16
-   "+~" 2 bit LSA/DLSA shift amount from 1 to 4 at bit 6
-   "+!" 3 bit unsigned bit position at bit 16
-   "+@" 4 bit unsigned bit position at bit 16
-   "+#" 6 bit unsigned bit position at bit 16
-   "+$" 5 bit unsigned immediate at bit 16
-   "+%" 5 bit signed immediate at bit 16
-   "+^" 10 bit signed immediate at bit 11
-   "+&" 0 vector element index
-   "+*" 5-bit register vector element index at bit 16
-   "+|" 8-bit mask at bit 16
-
    Other:
    "()" parens surrounding optional value
    ","  separates operands
@@ -943,9 +905,8 @@ struct mips_opcode
    Extension character sequences used so far ("+" followed by the
    following), for quick reference when adding more:
    "1234567890"
-   "~!@#$%^&*|"
-   "ABCEFGHJKLMNPQSTUVWXZ"
-   "abcdefghijklmnopqrstuvwxyz"
+   "ABCEFGHJKLMNPQSXZ"
+   "abcfgijmpqrstxyz"
 */
 
 /* These are the bits which may be set in the pinfo field of an
@@ -1154,9 +1115,6 @@ static const unsigned int mips_isa_table[] =
 /* Virtualization ASE */
 #define ASE_VIRT		0x00000200
 #define ASE_VIRT64		0x00000400
-/* MSA Extension  */
-#define ASE_MSA			0x00000800
-#define ASE_MSA64		0x00001000
 
 /* MIPS ISA defines, use instead of hardcoding ISA level.  */
 
@@ -2086,33 +2044,6 @@ extern const int bfd_mips16_num_opcodes;
    microMIPS Enhanced VA Scheme:
    "+j" 9-bit signed offset in bit 0 (OP_*_EVAOFFSET)
 
-   MSA Extension:
-   "+d" 5-bit MSA register (FD)
-   "+e" 5-bit MSA register (FS)
-   "+h" 5-bit MSA register (FT)
-   "+k" 5-bit GPR at bit 6
-   "+l" 5-bit MSA control register at bit 6
-   "+n" 5-bit MSA control register at bit 11
-   "+o" 5-bit vector element index at bit 16
-   "+u" 4-bit vector element index at bit 16
-   "+v" 3-bit vector element index at bit 16
-   "+w" 2-bit vector element index at bit 16
-   "+x" 5-bit shift amount at bit 16
-   "+T" (-512 .. 511) << 0 at bit 16
-   "+U" (-512 .. 511) << 1 at bit 16
-   "+V" (-512 .. 511) << 2 at bit 16
-   "+W" (-512 .. 511) << 3 at bit 16
-   "+~" 2 bit LSA/DLSA shift amount from 1 to 4 at bit 6
-   "+!" 3 bit unsigned bit position at bit 16
-   "+@" 4 bit unsigned bit position at bit 16
-   "+#" 6 bit unsigned bit position at bit 16
-   "+$" 5 bit unsigned immediate at bit 16
-   "+%" 5 bit signed immediate at bit 16
-   "+^" 10 bit signed immediate at bit 11
-   "+&" 0 vector element index
-   "+*" 5-bit register vector element index at bit 16
-   "+|" 8-bit mask at bit 16
-
    Other:
    "()" parens surrounding optional value
    ","  separates operands
@@ -2128,9 +2059,9 @@ extern const int bfd_mips16_num_opcodes;
    Extension character sequences used so far ("+" followed by the
    following), for quick reference when adding more:
    ""
-   "~!@#$%^&*|"
-   "ABCEFGHTUVW"
-   "dehijklnouvwx"
+   ""
+   "ABCEFGH"
+   "ij"
 
    Extension character sequences used so far ("m" followed by the
    following), for quick reference when adding more:

@@ -1,23 +1,24 @@
-
-/* A Bison parser, made by GNU Bison 2.4.1.  */
+/* A Bison parser, made by GNU Bison 2.3.  */
 
 /* Skeleton implementation for Bison's Yacc-like parsers in C
-   
-      Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003, 2004, 2005, 2006
+
+   Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003, 2004, 2005, 2006
    Free Software Foundation, Inc.
-   
-   This program is free software: you can redistribute it and/or modify
+
+   This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation, either version 3 of the License, or
-   (at your option) any later version.
-   
+   the Free Software Foundation; either version 2, or (at your option)
+   any later version.
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
-   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin Street, Fifth Floor,
+   Boston, MA 02110-1301, USA.  */
 
 /* As a special exception, you may create a larger work that contains
    part or all of the Bison parser skeleton and distribute that work
@@ -28,7 +29,7 @@
    special exception, which will cause the skeleton and the resulting
    Bison output files to be licensed under the GNU General Public
    License without this special exception.
-   
+
    This special exception was added by the Free Software Foundation in
    version 2.2 of Bison.  */
 
@@ -46,7 +47,7 @@
 #define YYBISON 1
 
 /* Bison version.  */
-#define YYBISON_VERSION "2.4.1"
+#define YYBISON_VERSION "2.3"
 
 /* Skeleton name.  */
 #define YYSKELETON_NAME "yacc.c"
@@ -54,84 +55,9 @@
 /* Pure parsers.  */
 #define YYPURE 0
 
-/* Push parsers.  */
-#define YYPUSH 0
-
-/* Pull parsers.  */
-#define YYPULL 1
-
 /* Using locations.  */
 #define YYLSP_NEEDED 0
 
-
-
-/* Copy the first part of user declarations.  */
-
-/* Line 189 of yacc.c  */
-#line 1 "mcparse.y"
- /* mcparse.y -- parser for Windows mc files
-  Copyright 2007
-  Free Software Foundation, Inc.
-  
-  Parser for Windows mc files
-  Written by Kai Tietz, Onevision.
-  
-  This file is part of GNU Binutils.
-  
-  This program is free software; you can redistribute it and/or modify
-  it under the terms of the GNU General Public License as published by
-  the Free Software Foundation; either version 3 of the License, or
-  (at your option) any later version.
-  
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-  
-  You should have received a copy of the GNU General Public License
-  along with this program; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
-  02110-1301, USA.  */
-
-/* This is a parser for Windows rc files.  It is based on the parser
-   by Gunther Ebert <gunther.ebert@ixos-leipzig.de>.  */
-
-#include "sysdep.h"
-#include "bfd.h"
-#include "bucomm.h"
-#include "libiberty.h"
-#include "windmc.h"
-#include "safe-ctype.h"
-
-static rc_uint_type mc_last_id = 0;
-static rc_uint_type mc_sefa_val = 0;
-static unichar *mc_last_symbol = NULL;
-static const mc_keyword *mc_cur_severity = NULL;
-static const mc_keyword *mc_cur_facility = NULL;
-static mc_node *cur_node = NULL;
-
-
-
-/* Line 189 of yacc.c  */
-#line 117 "mcparse.c"
-
-/* Enabling traces.  */
-#ifndef YYDEBUG
-# define YYDEBUG 0
-#endif
-
-/* Enabling verbose error messages.  */
-#ifdef YYERROR_VERBOSE
-# undef YYERROR_VERBOSE
-# define YYERROR_VERBOSE 1
-#else
-# define YYERROR_VERBOSE 0
-#endif
-
-/* Enabling the token table.  */
-#ifndef YYTOKEN_TABLE
-# define YYTOKEN_TABLE 0
-#endif
 
 
 /* Tokens.  */
@@ -183,34 +109,93 @@ static mc_node *cur_node = NULL;
 
 
 
+/* Copy the first part of user declarations.  */
+#line 1 "mcparse.y"
+ /* mcparse.y -- parser for Windows mc files
+  Copyright 2007
+  Free Software Foundation, Inc.
+  
+  Parser for Windows mc files
+  Written by Kai Tietz, Onevision.
+  
+  This file is part of GNU Binutils.
+  
+  This program is free software; you can redistribute it and/or modify
+  it under the terms of the GNU General Public License as published by
+  the Free Software Foundation; either version 3 of the License, or
+  (at your option) any later version.
+  
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU General Public License for more details.
+  
+  You should have received a copy of the GNU General Public License
+  along with this program; if not, write to the Free Software
+  Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
+  02110-1301, USA.  */
+
+/* This is a parser for Windows rc files.  It is based on the parser
+   by Gunther Ebert <gunther.ebert@ixos-leipzig.de>.  */
+
+#include "sysdep.h"
+#include "bfd.h"
+#include "bucomm.h"
+#include "libiberty.h"
+#include "windmc.h"
+#include "safe-ctype.h"
+
+static rc_uint_type mc_last_id = 0;
+static rc_uint_type mc_sefa_val = 0;
+static unichar *mc_last_symbol = NULL;
+static const mc_keyword *mc_cur_severity = NULL;
+static const mc_keyword *mc_cur_facility = NULL;
+static mc_node *cur_node = NULL;
+
+
+
+/* Enabling traces.  */
+#ifndef YYDEBUG
+# define YYDEBUG 0
+#endif
+
+/* Enabling verbose error messages.  */
+#ifdef YYERROR_VERBOSE
+# undef YYERROR_VERBOSE
+# define YYERROR_VERBOSE 1
+#else
+# define YYERROR_VERBOSE 0
+#endif
+
+/* Enabling the token table.  */
+#ifndef YYTOKEN_TABLE
+# define YYTOKEN_TABLE 0
+#endif
+
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-{
-
-/* Line 214 of yacc.c  */
 #line 45 "mcparse.y"
-
+{
   rc_uint_type ival;
   unichar *ustr;
   const mc_keyword *tok;
   mc_node *nod;
-
-
-
-/* Line 214 of yacc.c  */
-#line 202 "mcparse.c"
-} YYSTYPE;
-# define YYSTYPE_IS_TRIVIAL 1
+}
+/* Line 193 of yacc.c.  */
+#line 186 "mcparse.c"
+	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
+# define YYSTYPE_IS_TRIVIAL 1
 #endif
+
 
 
 /* Copy the second part of user declarations.  */
 
 
-/* Line 264 of yacc.c  */
-#line 214 "mcparse.c"
+/* Line 216 of yacc.c.  */
+#line 199 "mcparse.c"
 
 #ifdef short
 # undef short
@@ -260,7 +245,7 @@ typedef short int yytype_int16;
 #define YYSIZE_MAXIMUM ((YYSIZE_T) -1)
 
 #ifndef YY_
-# if YYENABLE_NLS
+# if defined YYENABLE_NLS && YYENABLE_NLS
 #  if ENABLE_NLS
 #   include <libintl.h> /* INFRINGES ON USER NAME SPACE */
 #   define YY_(msgid) dgettext ("bison-runtime", msgid)
@@ -285,14 +270,14 @@ typedef short int yytype_int16;
 #if (defined __STDC__ || defined __C99__FUNC__ \
      || defined __cplusplus || defined _MSC_VER)
 static int
-YYID (int yyi)
+YYID (int i)
 #else
 static int
-YYID (yyi)
-    int yyi;
+YYID (i)
+    int i;
 #endif
 {
-  return yyi;
+  return i;
 }
 #endif
 
@@ -373,9 +358,9 @@ void free (void *); /* INFRINGES ON USER NAME SPACE */
 /* A type that is properly aligned for any stack member.  */
 union yyalloc
 {
-  yytype_int16 yyss_alloc;
-  YYSTYPE yyvs_alloc;
-};
+  yytype_int16 yyss;
+  YYSTYPE yyvs;
+  };
 
 /* The size of the maximum gap between one aligned stack and the next.  */
 # define YYSTACK_GAP_MAXIMUM (sizeof (union yyalloc) - 1)
@@ -409,12 +394,12 @@ union yyalloc
    elements in the stack, and YYPTR gives the new location of the
    stack.  Advance YYPTR to a properly aligned location for the next
    stack.  */
-# define YYSTACK_RELOCATE(Stack_alloc, Stack)				\
+# define YYSTACK_RELOCATE(Stack)					\
     do									\
       {									\
 	YYSIZE_T yynewbytes;						\
-	YYCOPY (&yyptr->Stack_alloc, Stack, yysize);			\
-	Stack = &yyptr->Stack_alloc;					\
+	YYCOPY (&yyptr->Stack, Stack, yysize);				\
+	Stack = &yyptr->Stack;						\
 	yynewbytes = yystacksize * sizeof (*Stack) + YYSTACK_GAP_MAXIMUM; \
 	yyptr += yynewbytes / sizeof (*yyptr);				\
       }									\
@@ -552,7 +537,7 @@ static const char *const yytname[] =
   "MCFACILITY", "MCSYMBOLICNAME", "MCNUMBER", "'='", "'('", "')'", "':'",
   "'+'", "$accept", "input", "entities", "entity", "global_section",
   "severitymaps", "severitymap", "facilitymaps", "facilitymap", "langmaps",
-  "langmap", "alias_name", "message", "$@1", "id", "vid", "sefasy_def",
+  "langmap", "alias_name", "message", "@1", "id", "vid", "sefasy_def",
   "severity", "facility", "symbol", "lang_entities", "lang_entity",
   "lines", "comments", "lang", "token", "lex_want_nl", "lex_want_line",
   "lex_want_filename", 0
@@ -781,7 +766,7 @@ while (YYID (0))
    we won't break user code: when these are the locations we know.  */
 
 #ifndef YY_LOCATION_PRINT
-# if YYLTYPE_IS_TRIVIAL
+# if defined YYLTYPE_IS_TRIVIAL && YYLTYPE_IS_TRIVIAL
 #  define YY_LOCATION_PRINT(File, Loc)			\
      fprintf (File, "%d.%d-%d.%d",			\
 	      (Loc).first_line, (Loc).first_column,	\
@@ -892,20 +877,17 @@ yy_symbol_print (yyoutput, yytype, yyvaluep)
 #if (defined __STDC__ || defined __C99__FUNC__ \
      || defined __cplusplus || defined _MSC_VER)
 static void
-yy_stack_print (yytype_int16 *yybottom, yytype_int16 *yytop)
+yy_stack_print (yytype_int16 *bottom, yytype_int16 *top)
 #else
 static void
-yy_stack_print (yybottom, yytop)
-    yytype_int16 *yybottom;
-    yytype_int16 *yytop;
+yy_stack_print (bottom, top)
+    yytype_int16 *bottom;
+    yytype_int16 *top;
 #endif
 {
   YYFPRINTF (stderr, "Stack now");
-  for (; yybottom <= yytop; yybottom++)
-    {
-      int yybot = *yybottom;
-      YYFPRINTF (stderr, " %d", yybot);
-    }
+  for (; bottom <= top; ++bottom)
+    YYFPRINTF (stderr, " %d", *bottom);
   YYFPRINTF (stderr, "\n");
 }
 
@@ -939,11 +921,11 @@ yy_reduce_print (yyvsp, yyrule)
   /* The symbols being reduced.  */
   for (yyi = 0; yyi < yynrhs; yyi++)
     {
-      YYFPRINTF (stderr, "   $%d = ", yyi + 1);
+      fprintf (stderr, "   $%d = ", yyi + 1);
       yy_symbol_print (stderr, yyrhs[yyprhs[yyrule] + yyi],
 		       &(yyvsp[(yyi + 1) - (yynrhs)])
 		       		       );
-      YYFPRINTF (stderr, "\n");
+      fprintf (stderr, "\n");
     }
 }
 
@@ -1223,8 +1205,10 @@ yydestruct (yymsg, yytype, yyvaluep)
 	break;
     }
 }
+
 
 /* Prevent warnings from -Wmissing-prototypes.  */
+
 #ifdef YYPARSE_PARAM
 #if defined __STDC__ || defined __cplusplus
 int yyparse (void *YYPARSE_PARAM);
@@ -1240,10 +1224,11 @@ int yyparse ();
 #endif /* ! YYPARSE_PARAM */
 
 
-/* The lookahead symbol.  */
+
+/* The look-ahead symbol.  */
 int yychar;
 
-/* The semantic value of the lookahead symbol.  */
+/* The semantic value of the look-ahead symbol.  */
 YYSTYPE yylval;
 
 /* Number of syntax errors so far.  */
@@ -1251,9 +1236,9 @@ int yynerrs;
 
 
 
-/*-------------------------.
-| yyparse or yypush_parse.  |
-`-------------------------*/
+/*----------.
+| yyparse.  |
+`----------*/
 
 #ifdef YYPARSE_PARAM
 #if (defined __STDC__ || defined __C99__FUNC__ \
@@ -1277,39 +1262,14 @@ yyparse ()
 #endif
 #endif
 {
-
-
-    int yystate;
-    /* Number of tokens to shift before error messages enabled.  */
-    int yyerrstatus;
-
-    /* The stacks and their tools:
-       `yyss': related to states.
-       `yyvs': related to semantic values.
-
-       Refer to the stacks thru separate pointers, to allow yyoverflow
-       to reallocate them elsewhere.  */
-
-    /* The state stack.  */
-    yytype_int16 yyssa[YYINITDEPTH];
-    yytype_int16 *yyss;
-    yytype_int16 *yyssp;
-
-    /* The semantic value stack.  */
-    YYSTYPE yyvsa[YYINITDEPTH];
-    YYSTYPE *yyvs;
-    YYSTYPE *yyvsp;
-
-    YYSIZE_T yystacksize;
-
+  
+  int yystate;
   int yyn;
   int yyresult;
-  /* Lookahead token as an internal (translated) token number.  */
-  int yytoken;
-  /* The variables used to return semantic value and location from the
-     action routines.  */
-  YYSTYPE yyval;
-
+  /* Number of tokens to shift before error messages enabled.  */
+  int yyerrstatus;
+  /* Look-ahead token as an internal (translated) token number.  */
+  int yytoken = 0;
 #if YYERROR_VERBOSE
   /* Buffer for error messages, and its allocated size.  */
   char yymsgbuf[128];
@@ -1317,28 +1277,51 @@ yyparse ()
   YYSIZE_T yymsg_alloc = sizeof yymsgbuf;
 #endif
 
+  /* Three stacks and their tools:
+     `yyss': related to states,
+     `yyvs': related to semantic values,
+     `yyls': related to locations.
+
+     Refer to the stacks thru separate pointers, to allow yyoverflow
+     to reallocate them elsewhere.  */
+
+  /* The state stack.  */
+  yytype_int16 yyssa[YYINITDEPTH];
+  yytype_int16 *yyss = yyssa;
+  yytype_int16 *yyssp;
+
+  /* The semantic value stack.  */
+  YYSTYPE yyvsa[YYINITDEPTH];
+  YYSTYPE *yyvs = yyvsa;
+  YYSTYPE *yyvsp;
+
+
+
 #define YYPOPSTACK(N)   (yyvsp -= (N), yyssp -= (N))
+
+  YYSIZE_T yystacksize = YYINITDEPTH;
+
+  /* The variables used to return semantic value and location from the
+     action routines.  */
+  YYSTYPE yyval;
+
 
   /* The number of symbols on the RHS of the reduced rule.
      Keep to zero when no symbol should be popped.  */
   int yylen = 0;
-
-  yytoken = 0;
-  yyss = yyssa;
-  yyvs = yyvsa;
-  yystacksize = YYINITDEPTH;
 
   YYDPRINTF ((stderr, "Starting parse\n"));
 
   yystate = 0;
   yyerrstatus = 0;
   yynerrs = 0;
-  yychar = YYEMPTY; /* Cause a token to be read.  */
+  yychar = YYEMPTY;		/* Cause a token to be read.  */
 
   /* Initialize stack pointers.
      Waste one element of value and location stack
      so that they stay on the same level as the state stack.
      The wasted elements are never initialized.  */
+
   yyssp = yyss;
   yyvsp = yyvs;
 
@@ -1368,6 +1351,7 @@ yyparse ()
 	YYSTYPE *yyvs1 = yyvs;
 	yytype_int16 *yyss1 = yyss;
 
+
 	/* Each stack pointer address is followed by the size of the
 	   data in use in that stack, in bytes.  This used to be a
 	   conditional around just the two extra args, but that might
@@ -1375,6 +1359,7 @@ yyparse ()
 	yyoverflow (YY_("memory exhausted"),
 		    &yyss1, yysize * sizeof (*yyssp),
 		    &yyvs1, yysize * sizeof (*yyvsp),
+
 		    &yystacksize);
 
 	yyss = yyss1;
@@ -1397,8 +1382,9 @@ yyparse ()
 	  (union yyalloc *) YYSTACK_ALLOC (YYSTACK_BYTES (yystacksize));
 	if (! yyptr)
 	  goto yyexhaustedlab;
-	YYSTACK_RELOCATE (yyss_alloc, yyss);
-	YYSTACK_RELOCATE (yyvs_alloc, yyvs);
+	YYSTACK_RELOCATE (yyss);
+	YYSTACK_RELOCATE (yyvs);
+
 #  undef YYSTACK_RELOCATE
 	if (yyss1 != yyssa)
 	  YYSTACK_FREE (yyss1);
@@ -1409,6 +1395,7 @@ yyparse ()
       yyssp = yyss + yysize - 1;
       yyvsp = yyvs + yysize - 1;
 
+
       YYDPRINTF ((stderr, "Stack size increased to %lu\n",
 		  (unsigned long int) yystacksize));
 
@@ -1418,9 +1405,6 @@ yyparse ()
 
   YYDPRINTF ((stderr, "Entering state %d\n", yystate));
 
-  if (yystate == YYFINAL)
-    YYACCEPT;
-
   goto yybackup;
 
 /*-----------.
@@ -1429,16 +1413,16 @@ yyparse ()
 yybackup:
 
   /* Do appropriate processing given the current state.  Read a
-     lookahead token if we need one and don't already have one.  */
+     look-ahead token if we need one and don't already have one.  */
 
-  /* First try to decide what to do without reference to lookahead token.  */
+  /* First try to decide what to do without reference to look-ahead token.  */
   yyn = yypact[yystate];
   if (yyn == YYPACT_NINF)
     goto yydefault;
 
-  /* Not known => get a lookahead token if don't already have one.  */
+  /* Not known => get a look-ahead token if don't already have one.  */
 
-  /* YYCHAR is either YYEMPTY or YYEOF or a valid lookahead symbol.  */
+  /* YYCHAR is either YYEMPTY or YYEOF or a valid look-ahead symbol.  */
   if (yychar == YYEMPTY)
     {
       YYDPRINTF ((stderr, "Reading a token: "));
@@ -1470,16 +1454,20 @@ yybackup:
       goto yyreduce;
     }
 
+  if (yyn == YYFINAL)
+    YYACCEPT;
+
   /* Count tokens shifted since error; after three, turn off error
      status.  */
   if (yyerrstatus)
     yyerrstatus--;
 
-  /* Shift the lookahead token.  */
+  /* Shift the look-ahead token.  */
   YY_SYMBOL_PRINT ("Shifting", yytoken, &yylval, &yylloc);
 
-  /* Discard the shifted token.  */
-  yychar = YYEMPTY;
+  /* Discard the shifted token unless it is eof.  */
+  if (yychar != YYEOF)
+    yychar = YYEMPTY;
 
   yystate = yyn;
   *++yyvsp = yylval;
@@ -1519,8 +1507,6 @@ yyreduce:
   switch (yyn)
     {
         case 7:
-
-/* Line 1455 of yacc.c  */
 #line 77 "mcparse.y"
     {
 	    cur_node = mc_add_node ();
@@ -1529,78 +1515,56 @@ yyreduce:
     break;
 
   case 8:
-
-/* Line 1455 of yacc.c  */
 #line 81 "mcparse.y"
     { mc_fatal ("syntax error"); }
     break;
 
   case 10:
-
-/* Line 1455 of yacc.c  */
 #line 86 "mcparse.y"
     { mc_fatal ("missing ')' in SeverityNames"); }
     break;
 
   case 11:
-
-/* Line 1455 of yacc.c  */
 #line 87 "mcparse.y"
     { mc_fatal ("missing '(' in SeverityNames"); }
     break;
 
   case 12:
-
-/* Line 1455 of yacc.c  */
 #line 88 "mcparse.y"
     { mc_fatal ("missing '=' for SeverityNames"); }
     break;
 
   case 14:
-
-/* Line 1455 of yacc.c  */
 #line 90 "mcparse.y"
     { mc_fatal ("missing ')' in LanguageNames"); }
     break;
 
   case 15:
-
-/* Line 1455 of yacc.c  */
 #line 91 "mcparse.y"
     { mc_fatal ("missing '(' in LanguageNames"); }
     break;
 
   case 16:
-
-/* Line 1455 of yacc.c  */
 #line 92 "mcparse.y"
     { mc_fatal ("missing '=' for LanguageNames"); }
     break;
 
   case 18:
-
-/* Line 1455 of yacc.c  */
 #line 94 "mcparse.y"
     { mc_fatal ("missing ')' in FacilityNames"); }
     break;
 
   case 19:
-
-/* Line 1455 of yacc.c  */
 #line 95 "mcparse.y"
     { mc_fatal ("missing '(' in FacilityNames"); }
     break;
 
   case 20:
-
-/* Line 1455 of yacc.c  */
 #line 96 "mcparse.y"
     { mc_fatal ("missing '=' for FacilityNames"); }
     break;
 
   case 21:
-
-/* Line 1455 of yacc.c  */
 #line 98 "mcparse.y"
     {
 	    if ((yyvsp[(3) - (3)].ival) != 10 && (yyvsp[(3) - (3)].ival) != 16)
@@ -1610,8 +1574,6 @@ yyreduce:
     break;
 
   case 22:
-
-/* Line 1455 of yacc.c  */
 #line 104 "mcparse.y"
     {
 	    mcset_msg_id_typedef = (yyvsp[(3) - (3)].ustr);
@@ -1619,8 +1581,6 @@ yyreduce:
     break;
 
   case 23:
-
-/* Line 1455 of yacc.c  */
 #line 108 "mcparse.y"
     {
 	    mc_fatal ("MessageIdTypedef expects an identifier");
@@ -1628,8 +1588,6 @@ yyreduce:
     break;
 
   case 24:
-
-/* Line 1455 of yacc.c  */
 #line 112 "mcparse.y"
     {
 	    mc_fatal ("missing '=' for MessageIdTypedef");
@@ -1637,15 +1595,11 @@ yyreduce:
     break;
 
   case 27:
-
-/* Line 1455 of yacc.c  */
 #line 120 "mcparse.y"
     { mc_fatal ("severity ident missing"); }
     break;
 
   case 28:
-
-/* Line 1455 of yacc.c  */
 #line 125 "mcparse.y"
     {
 	    mc_add_keyword ((yyvsp[(1) - (4)].ustr), MCTOKEN, "severity", (yyvsp[(3) - (4)].ival), (yyvsp[(4) - (4)].ustr));
@@ -1653,29 +1607,21 @@ yyreduce:
     break;
 
   case 29:
-
-/* Line 1455 of yacc.c  */
 #line 128 "mcparse.y"
     { mc_fatal ("severity number missing"); }
     break;
 
   case 30:
-
-/* Line 1455 of yacc.c  */
 #line 129 "mcparse.y"
     { mc_fatal ("severity missing '='"); }
     break;
 
   case 33:
-
-/* Line 1455 of yacc.c  */
 #line 135 "mcparse.y"
     { mc_fatal ("missing ident in FacilityNames"); }
     break;
 
   case 34:
-
-/* Line 1455 of yacc.c  */
 #line 140 "mcparse.y"
     {
 	    mc_add_keyword ((yyvsp[(1) - (4)].ustr), MCTOKEN, "facility", (yyvsp[(3) - (4)].ival), (yyvsp[(4) - (4)].ustr));
@@ -1683,29 +1629,21 @@ yyreduce:
     break;
 
   case 35:
-
-/* Line 1455 of yacc.c  */
 #line 143 "mcparse.y"
     { mc_fatal ("facility number missing"); }
     break;
 
   case 36:
-
-/* Line 1455 of yacc.c  */
 #line 144 "mcparse.y"
     { mc_fatal ("facility missing '='"); }
     break;
 
   case 39:
-
-/* Line 1455 of yacc.c  */
 #line 150 "mcparse.y"
     { mc_fatal ("missing ident in LanguageNames"); }
     break;
 
   case 40:
-
-/* Line 1455 of yacc.c  */
 #line 155 "mcparse.y"
     {
 	    mc_add_keyword ((yyvsp[(1) - (6)].ustr), MCTOKEN, "language", (yyvsp[(3) - (6)].ival), (yyvsp[(6) - (6)].ustr));
@@ -1713,36 +1651,26 @@ yyreduce:
     break;
 
   case 41:
-
-/* Line 1455 of yacc.c  */
 #line 158 "mcparse.y"
     { mc_fatal ("missing filename in LanguageNames"); }
     break;
 
   case 42:
-
-/* Line 1455 of yacc.c  */
 #line 159 "mcparse.y"
     { mc_fatal ("missing ':' in LanguageNames"); }
     break;
 
   case 43:
-
-/* Line 1455 of yacc.c  */
 #line 160 "mcparse.y"
     { mc_fatal ("missing language code in LanguageNames"); }
     break;
 
   case 44:
-
-/* Line 1455 of yacc.c  */
 #line 161 "mcparse.y"
     { mc_fatal ("missing '=' for LanguageNames"); }
     break;
 
   case 45:
-
-/* Line 1455 of yacc.c  */
 #line 166 "mcparse.y"
     {
 	    (yyval.ustr) = NULL;
@@ -1750,8 +1678,6 @@ yyreduce:
     break;
 
   case 46:
-
-/* Line 1455 of yacc.c  */
 #line 170 "mcparse.y"
     {
 	    (yyval.ustr) = (yyvsp[(2) - (2)].ustr);
@@ -1759,15 +1685,11 @@ yyreduce:
     break;
 
   case 47:
-
-/* Line 1455 of yacc.c  */
 #line 173 "mcparse.y"
     { mc_fatal ("illegal token in identifier"); (yyval.ustr) = NULL; }
     break;
 
   case 48:
-
-/* Line 1455 of yacc.c  */
 #line 178 "mcparse.y"
     {
 	    cur_node = mc_add_node ();
@@ -1781,29 +1703,21 @@ yyreduce:
     break;
 
   case 50:
-
-/* Line 1455 of yacc.c  */
 #line 190 "mcparse.y"
     { (yyval.ival) = (yyvsp[(3) - (3)].ival); }
     break;
 
   case 51:
-
-/* Line 1455 of yacc.c  */
 #line 191 "mcparse.y"
     { mc_fatal ("missing number in MessageId"); (yyval.ival) = 0; }
     break;
 
   case 52:
-
-/* Line 1455 of yacc.c  */
 #line 192 "mcparse.y"
     { mc_fatal ("missing '=' for MessageId"); (yyval.ival) = 0; }
     break;
 
   case 53:
-
-/* Line 1455 of yacc.c  */
 #line 196 "mcparse.y"
     {
 	    (yyval.ival) = ++mc_last_id;
@@ -1811,8 +1725,6 @@ yyreduce:
     break;
 
   case 54:
-
-/* Line 1455 of yacc.c  */
 #line 200 "mcparse.y"
     {
 	    (yyval.ival) = (yyvsp[(1) - (1)].ival);
@@ -1820,8 +1732,6 @@ yyreduce:
     break;
 
   case 55:
-
-/* Line 1455 of yacc.c  */
 #line 204 "mcparse.y"
     {
 	    (yyval.ival) = mc_last_id + (yyvsp[(2) - (2)].ival);
@@ -1829,15 +1739,11 @@ yyreduce:
     break;
 
   case 56:
-
-/* Line 1455 of yacc.c  */
 #line 207 "mcparse.y"
     { mc_fatal ("missing number after MessageId '+'"); }
     break;
 
   case 57:
-
-/* Line 1455 of yacc.c  */
 #line 212 "mcparse.y"
     {
 	    (yyval.ival) = 0;
@@ -1849,8 +1755,6 @@ yyreduce:
     break;
 
   case 58:
-
-/* Line 1455 of yacc.c  */
 #line 220 "mcparse.y"
     {
 	    if ((yyvsp[(1) - (2)].ival) & 1)
@@ -1860,8 +1764,6 @@ yyreduce:
     break;
 
   case 59:
-
-/* Line 1455 of yacc.c  */
 #line 226 "mcparse.y"
     {
 	    if ((yyvsp[(1) - (2)].ival) & 2)
@@ -1871,8 +1773,6 @@ yyreduce:
     break;
 
   case 60:
-
-/* Line 1455 of yacc.c  */
 #line 232 "mcparse.y"
     {
 	    if ((yyvsp[(1) - (2)].ival) & 4)
@@ -1882,8 +1782,6 @@ yyreduce:
     break;
 
   case 61:
-
-/* Line 1455 of yacc.c  */
 #line 240 "mcparse.y"
     {
 	    mc_sefa_val &= ~ (0x3UL << 30);
@@ -1893,8 +1791,6 @@ yyreduce:
     break;
 
   case 62:
-
-/* Line 1455 of yacc.c  */
 #line 248 "mcparse.y"
     {
 	    mc_sefa_val &= ~ (0xfffUL << 16);
@@ -1904,8 +1800,6 @@ yyreduce:
     break;
 
   case 63:
-
-/* Line 1455 of yacc.c  */
 #line 256 "mcparse.y"
     {
 	  mc_last_symbol = (yyvsp[(3) - (3)].ustr);
@@ -1913,8 +1807,6 @@ yyreduce:
     break;
 
   case 66:
-
-/* Line 1455 of yacc.c  */
 #line 268 "mcparse.y"
     {
 	    mc_node_lang *h;
@@ -1926,8 +1818,6 @@ yyreduce:
     break;
 
   case 67:
-
-/* Line 1455 of yacc.c  */
 #line 278 "mcparse.y"
     {
 	    (yyval.ustr) = (yyvsp[(1) - (1)].ustr);
@@ -1935,8 +1825,6 @@ yyreduce:
     break;
 
   case 68:
-
-/* Line 1455 of yacc.c  */
 #line 282 "mcparse.y"
     {
 	    unichar *h;
@@ -1952,29 +1840,21 @@ yyreduce:
     break;
 
   case 69:
-
-/* Line 1455 of yacc.c  */
 #line 293 "mcparse.y"
     { mc_fatal ("missing end of message text"); (yyval.ustr) = NULL; }
     break;
 
   case 70:
-
-/* Line 1455 of yacc.c  */
 #line 294 "mcparse.y"
     { mc_fatal ("missing end of message text"); (yyval.ustr) = (yyvsp[(1) - (2)].ustr); }
     break;
 
   case 71:
-
-/* Line 1455 of yacc.c  */
 #line 297 "mcparse.y"
     { (yyval.ustr) = (yyvsp[(1) - (1)].ustr); }
     break;
 
   case 72:
-
-/* Line 1455 of yacc.c  */
 #line 299 "mcparse.y"
     {
 	    unichar *h;
@@ -1990,8 +1870,6 @@ yyreduce:
     break;
 
   case 73:
-
-/* Line 1455 of yacc.c  */
 #line 313 "mcparse.y"
     {
 	    (yyval.tok) = (yyvsp[(4) - (5)].tok);
@@ -1999,8 +1877,6 @@ yyreduce:
     break;
 
   case 74:
-
-/* Line 1455 of yacc.c  */
 #line 317 "mcparse.y"
     {
 	    (yyval.tok) = NULL;
@@ -2009,8 +1885,6 @@ yyreduce:
     break;
 
   case 75:
-
-/* Line 1455 of yacc.c  */
 #line 322 "mcparse.y"
     {
 	    (yyval.tok) = NULL;
@@ -2019,8 +1893,6 @@ yyreduce:
     break;
 
   case 76:
-
-/* Line 1455 of yacc.c  */
 #line 327 "mcparse.y"
     {
 	    (yyval.tok) = NULL;
@@ -2029,8 +1901,6 @@ yyreduce:
     break;
 
   case 77:
-
-/* Line 1455 of yacc.c  */
 #line 332 "mcparse.y"
     {
 	    (yyval.tok) = NULL;
@@ -2039,44 +1909,33 @@ yyreduce:
     break;
 
   case 78:
-
-/* Line 1455 of yacc.c  */
 #line 338 "mcparse.y"
     { (yyval.ustr) = (yyvsp[(1) - (1)].ustr); }
     break;
 
   case 79:
-
-/* Line 1455 of yacc.c  */
 #line 339 "mcparse.y"
     { (yyval.ustr) = (yyvsp[(1) - (1)].tok)->usz; }
     break;
 
   case 80:
-
-/* Line 1455 of yacc.c  */
 #line 343 "mcparse.y"
     { mclex_want_nl = 1; }
     break;
 
   case 81:
-
-/* Line 1455 of yacc.c  */
 #line 347 "mcparse.y"
     { mclex_want_line = 1; }
     break;
 
   case 82:
-
-/* Line 1455 of yacc.c  */
 #line 351 "mcparse.y"
     { mclex_want_filename = 1; }
     break;
 
 
-
-/* Line 1455 of yacc.c  */
-#line 2080 "mcparse.c"
+/* Line 1267 of yacc.c.  */
+#line 1939 "mcparse.c"
       default: break;
     }
   YY_SYMBOL_PRINT ("-> $$ =", yyr1[yyn], &yyval, &yyloc);
@@ -2086,6 +1945,7 @@ yyreduce:
   YY_STACK_PRINT (yyss, yyssp);
 
   *++yyvsp = yyval;
+
 
   /* Now `shift' the result of the reduction.  Determine what state
      that goes to, based on the state we popped back to and the rule
@@ -2151,7 +2011,7 @@ yyerrlab:
 
   if (yyerrstatus == 3)
     {
-      /* If just tried and failed to reuse lookahead token after an
+      /* If just tried and failed to reuse look-ahead token after an
 	 error, discard it.  */
 
       if (yychar <= YYEOF)
@@ -2168,7 +2028,7 @@ yyerrlab:
 	}
     }
 
-  /* Else will try to reuse lookahead token after shifting the error
+  /* Else will try to reuse look-ahead token after shifting the error
      token.  */
   goto yyerrlab1;
 
@@ -2225,6 +2085,9 @@ yyerrlab1:
       YY_STACK_PRINT (yyss, yyssp);
     }
 
+  if (yyn == YYFINAL)
+    YYACCEPT;
+
   *++yyvsp = yylval;
 
 
@@ -2249,7 +2112,7 @@ yyabortlab:
   yyresult = 1;
   goto yyreturn;
 
-#if !defined(yyoverflow) || YYERROR_VERBOSE
+#ifndef yyoverflow
 /*-------------------------------------------------.
 | yyexhaustedlab -- memory exhaustion comes here.  |
 `-------------------------------------------------*/
@@ -2260,7 +2123,7 @@ yyexhaustedlab:
 #endif
 
 yyreturn:
-  if (yychar != YYEMPTY)
+  if (yychar != YYEOF && yychar != YYEMPTY)
      yydestruct ("Cleanup: discarding lookahead",
 		 yytoken, &yylval);
   /* Do not reclaim the symbols of the rule which action triggered
@@ -2286,8 +2149,6 @@ yyreturn:
 }
 
 
-
-/* Line 1675 of yacc.c  */
 #line 354 "mcparse.y"
 
 

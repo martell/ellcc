@@ -1105,6 +1105,8 @@ i386/elf relocations
 @deffnx {} BFD_RELOC_X86_64_TLSDESC_CALL
 @deffnx {} BFD_RELOC_X86_64_TLSDESC
 @deffnx {} BFD_RELOC_X86_64_IRELATIVE
+@deffnx {} BFD_RELOC_X86_64_PC32_BND
+@deffnx {} BFD_RELOC_X86_64_PLT32_BND
 x86-64/elf relocations
 @end deffn
 @deffn {} BFD_RELOC_NS32K_IMM_8
@@ -1203,6 +1205,8 @@ Picojava relocs.  Not all of these appear in object files.
 @deffnx {} BFD_RELOC_PPC64_TOC16_LO_DS
 @deffnx {} BFD_RELOC_PPC64_PLTGOT16_DS
 @deffnx {} BFD_RELOC_PPC64_PLTGOT16_LO_DS
+@deffnx {} BFD_RELOC_PPC64_ADDR16_HIGH
+@deffnx {} BFD_RELOC_PPC64_ADDR16_HIGHA
 Power(rs6000) and PowerPC relocations.
 @end deffn
 @deffn {} BFD_RELOC_PPC_TLS
@@ -1247,6 +1251,10 @@ Power(rs6000) and PowerPC relocations.
 @deffnx {} BFD_RELOC_PPC64_DTPREL16_HIGHERA
 @deffnx {} BFD_RELOC_PPC64_DTPREL16_HIGHEST
 @deffnx {} BFD_RELOC_PPC64_DTPREL16_HIGHESTA
+@deffnx {} BFD_RELOC_PPC64_TPREL16_HIGH
+@deffnx {} BFD_RELOC_PPC64_TPREL16_HIGHA
+@deffnx {} BFD_RELOC_PPC64_DTPREL16_HIGH
+@deffnx {} BFD_RELOC_PPC64_DTPREL16_HIGHA
 PowerPC and PowerPC64 thread-local storage relocations.
 @end deffn
 @deffn {} BFD_RELOC_I370_D12

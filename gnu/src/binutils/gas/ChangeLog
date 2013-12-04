@@ -1,94 +1,117 @@
-2013-10-18  Chao-ying Fu  <Chao-ying.Fu@imgtec.com>
+2013-11-18  H.J. Lu  <hongjiu.lu@intel.com>
 
-	* config/tc-mips.c (fpr_read_mask): Test MSA registers.
-	(fpr_write_mask): Test MSA registers.
-	(can_swap_branch_p): Check fpr write followed by fpr read.
+	* config/tc-i386.c (lex_got): Add a dummy "int bnd_prefix"
+	argument.
 
-2013-10-18  Nick Clifton  <nickc@redhat.com>
+2013-11-18  Renlin Li  <Renlin.Li@arm.com>
 
-	* config/tc-tic6x.c (tic6x_parse_operand): Revert previous delta.
+	* config/tc-arm.c (arm_archs): New armv7ve architecture option.
+	(arm_cpus): Replace ARM_ARCH_V7A_IDIV_MP_SEC_VIRT with
+	ARM_ARCH_V7VE for cortex-a7, cortex-a12 and cortex-a15.
+	(cpu_arch_ver): Likewise.
+	* doc/c-arm.texi: Document armv7ve.
 
-2013-10-14  Richard Sandiford  <rdsandiford@googlemail.com>
-	    Chao-ying Fu  <Chao-ying.Fu@imgtec.com>
+2013-11-18  Zhenqiang Chen  <zhenqiang.chen@linaro.org>
 
-	* config/tc-mips.c (options): Add OPTION_MSA and OPTION_NO_MSA.
-	(md_longopts): Add mmsa and mno-msa.
-	(mips_ases): Add msa.
-	(RTYPE_MASK): Update.
-	(RTYPE_MSA): New define.
-	(OT_REG_ELEMENT): Replace with...
-	(OT_INTEGER_INDEX, OT_REG_INDEX): ...these new operand types.
-	(mips_operand_token): Replace reg_element with index.
-	(mips_parse_argument_token): Treat vector indices as separate tokens.
-	Handle register indices.
-	(md_begin): Add MSA register names.
-	(operand_reg_mask): Handle cases for OP_IMM_INDEX and OP_REG_INDEX.
-	(convert_reg_type): Handle cases for OP_REG_MSA and OP_REG_MSA_CTRL.
-	(match_mdmx_imm_reg_operand): Update accordingly.
-	(match_imm_index_operand): New function.
-	(match_reg_index_operand): New function.
-	(match_operand): Handle cases for OP_IMM_INDEX and OP_REG_INDEX.
-	(md_convert_frag): Convert bz.b/h/w/d, bnz.b/h/w/d, bz.v bnz.v.
-	(md_show_usage): Print -mmsa and -mno-msa.
-	* doc/as.texinfo: Document -mmsa and -mno-msa.
-	* doc/c-mips.texi: Document -mmsa and -mno-msa.
-	Document .set msa and .set nomsa.
+	* config/tc-aarch64.c (parse_sys_reg): Support
+	S2_<op1>_<Cn>_<Cm>_<op2>.
 
-2013-10-14  Nick Clifton  <nickc@redhat.com>
+2013-11-18  Yufeng Zhang  <yufeng.zhang@arm.com>
 
-	* read.c (add_include_dir): Use xrealloc.
-	* config/tc-score.c (do_macro_bcmp): Initialise inst_main.
-	* config/tc-tic6x.c (tic6x_parse_operand): Initialise second_reg.
+	Revert
 
-2013-10-13  Sandra Loosemore  <sandra@codesourcery.com>
+	2013-11-15  Yufeng Zhang  <yufeng.zhang@arm.com>
 
-	* config/tc-nios2.c (nios2_consume_arg): Make the "ba" warning
-	also test/refer to "sstatus".  Reformat the warning message.
+	* config/tc-aarch64.c (set_other_error): New function.
+	(parse_sys_reg): Add new parameter 'sys_reg' and if non-NULL set
+	the variable to which it points with 'o'.
+	(parse_operands): Update; check for write to read-only system
+	registers or read from write-only ones.
 
-2013-10-10  Sean Keys <skeys@ipdatasys.com>
+2013-11-17  H.J. Lu  <hongjiu.lu@intel.com>
 
-	* tc-xgate.c (xgate_find_match): Refactor opcode matching.
+	* config/tc-i386.c (reloc): Add an argument, bnd_prefix, to
+	indicate if instruction has the BND prefix.  Return
+	BFD_RELOC_X86_64_PC32_BND instead of BFD_RELOC_32_PCREL if
+	bnd_prefix isn't zero.
+	(output_branch): Pass BFD_RELOC_X86_64_PC32_BND to frag_var
+	if needed.
+	(output_jump): Update reloc call.
+	(output_interseg_jump): Likewise.
+	(output_disp): Likewise.
+	(output_imm): Likewise.
+	(x86_cons_fix_new): Likewise.
+	(lex_got): Add an argument, bnd_prefix, to indicate if
+	instruction has the BND prefix.  Use BFD_RELOC_X86_64_PLT32_BND
+	if needed.
+	(x86_cons): Update lex_got call.
+	(i386_immediate): Likewise.
+	(i386_displacement): Likewise.
+	(md_apply_fix): Handle BFD_RELOC_X86_64_PC32_BND and
+	BFD_RELOC_X86_64_PLT32_BND.
+	(tc_gen_reloc): Likewise.
+	* config/tc-i386-intel.c (i386_operator): Update lex_got call.
 
-2013-10-10  Jan Beulich <jbeulich@suse.com>
+2013-11-15  Yufeng Zhang  <yufeng.zhang@arm.com>
 
-	* tc-i386-intel.c (i386_intel_simplify_register): Suppress base/index
-	swapping for bndmk, bndldx, and bndstx.
+	* config/tc-aarch64.c (set_other_error): New function.
+	(parse_sys_reg): Add new parameter 'sys_reg' and if non-NULL set
+	the variable to which it points with 'o'.
+	(parse_operands): Update; check for write to read-only system
+	registers or read from write-only ones.
 
-2013-10-09  Nick Clifton  <nickc@redhat.com>
+2013-11-15  H.J. Lu  <hongjiu.lu@intel.com>
 
-	PR gas/16025
-	* config/tc-epiphany.c (md_convert_frag): Add missing break
-	statement.
+	Backport from master
+	2013-11-15  Michael Zolotukhin  <michael.v.zolotukhin@gmail.com>
 
-	PR gas/16026
-	* config/tc-mn10200.c (md_convert_frag): Add missing break
-	statement.
+	* config/tc-i386.c (check_VecOperands): Reorder checks.
 
-2013-10-08  Jan Beulich <jbeulich@suse.com>
+2013-11-15  Alan Modra  <amodra@gmail.com>
 
-	* tc-i386.c (check_word_reg): Remove misplaced "else".
-	(check_long_reg): Restore symmetry with check_word_reg.
+	Apply changes from mainline to 2.24
+	2013-11-08  Jan-Benedict Glaw  <jbglaw@lug-owl.de
+	* config/tc-ppc.c (ppc_elf_localentry): Add cast.
 
-2013-10-08  Jan Beulich <jbeulich@suse.com>
+	2013-10-30  Ulrich Weigand  <uweigand@de.ibm.com>
+	* config/tc-ppc.c (md_pseudo_table): Add .localentry.
+	(ppc_elf_localentry): New function.
+	(ppc_force_relocation): Force relocs on all branches to localenty
+	symbols.
+	(ppc_fix_adjustable): Don't reduce such symbols to section+offset.
 
-	* gas/config/tc-arm.c (do_t_push_pop): Honor inst.size_req. Simplify
-	LR/PC check.
+	2013-10-30  Alan Modra  <amodra@gmail.com>
+	* config/tc-ppc.c: Include elf/ppc64.h.
+	(ppc_abiversion): New variable.
+	(md_pseudo_table): Add .abiversion.
+	(ppc_elf_abiversion, ppc_elf_end): New functions.
+	* config/tc-ppc.h (md_end): Define.
 
-2013-10-08  Nick Clifton  <nickc@redhat.com>
+	2013-10-30  Alan Modra  <amodra@gmail.com>
+	* config/tc-ppc.c (SEX16): Don't mask.
+	(REPORT_OVERFLOW_HI): Define as zero.
+	(ppc_elf_suffix): Support @high, @higha, @dtprel@high, @dtprel@higha,
+	@tprel@high, and @tprel@higha modifiers.
+	(md_assemble): Ignore X_unsigned when applying 16-bit insn fields.
+	Add (disabled) code to check @h and @ha reloc overflow for powerpc64.
+	Handle new relocs.
+	(md_apply_fix): Similarly.
 
-	* config/tc-msp430.c (msp430_operands): Accept "<foo>.a" as an alias
-	for "<foo>a".  Issue error messages for unrecognised or corrrupt
-	size extensions.
+2013-11-05  Yufeng Zhang  <yufeng.zhang@arm.com>
 
-2013-10-04  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
+	* config/tc-aarch64.c (parse_sys_reg): Update to use aarch64_sys_reg;
+	call aarch64_sys_reg_deprecated_p and warn about the deprecated
+	system registers.
 
-	* config/tc-arm.c (do_t_mvn_tst): Use narrow form for tst when
-	possible.
+2013-11-05  Yufeng Zhang  <yufeng.zhang@arm.com>
 
-2013-09-30  Saravanan Ekanathan <saravanan.ekanathan@amd.com>
+	* config/tc-aarch64.c (parse_operands): Handle AARCH64_OPND_COND1.
 
-	* config/tc-i386.c (cpu_arch): Add CPU_BDVER4_FLAGS.
-	* doc/c-i386.texi: Add -march=bdver4 option.
+2013-11-05  Will Newton  <will.newton@linaro.org>
+
+	PR gas/16103
+	* config/tc-aarch64.c (parse_operands): Avoid trying to
+	parse a vector register as an immediate.
 
 2013-09-20  Alan Modra  <amodra@gmail.com>
 

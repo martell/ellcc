@@ -1,70 +1,113 @@
-2013-10-18  Hans-Peter Nilsson  <hp@axis.com>
+2013-11-19  Roland McGrath  <mcgrathr@google.com>
 
-	* ld-cris/asneed1.d: New test.
+	* ld-elf/ehdr_start-userdef.t: New file.
+	* ld-elf/ehdr_start-userdef.d: New file.
+	* ld-elf/ehdr_start-strongref.s: New file.
+	* ld-elf/ehdr_start-missing.t: New file.
+	* ld-elf/ehdr_start-missing.d: New file.
+	* ld-elf/ehdr_start-weak.d: New file.
+	* ld-mips-elf/ehdr_start-2.nd: Expect __ehdr_start to be global.
 
-2013-10-14  Chao-ying Fu  <Chao-ying.Fu@imgtec.com>
+2013-11-17  H.J. Lu  <hongjiu.lu@intel.com>
 
-	* ld-mips-elf/attr-gnu-8-0.s, ld-mips-elf/attr-gnu-8-1.s,
-	ld-mips-elf/attr-gnu-8-2.s,
-	ld-mips-elf/attr-gnu-8-00.d, ld-mips-elf/attr-gnu-8-01.d,
-	ld-mips-elf/attr-gnu-8-02.d, ld-mips-elf/attr-gnu-8-10.d,
-	ld-mips-elf/attr-gnu-8-11.d, ld-mips-elf/attr-gnu-8-12.d,
-	ld-mips-elf/attr-gnu-8-20.d, ld-mips-elf/attr-gnu-8-21.d,
-	ld-mips-elf/attr-gnu-8-22.d: New.
-	* ld-mips-elf/mips-elf.exp: Run new tests.
+	* ld-x86-64/mpx.exp: New file.
+	* ld-x86-64/mpx1.out: Likewise.
+	* ld-x86-64/mpx1a.c: Likewise.
+	* ld-x86-64/mpx1a.rd: Likewise.
+	* ld-x86-64/mpx1b.c: Likewise.
+	* ld-x86-64/mpx1c.c: Likewise.
+	* ld-x86-64/mpx1c.rd: Likewise.
 
-2013-10-13  Richard Sandiford  <rdsandiford@googlemail.com>
+2013-11-15  Alan Modra  <amodra@gmail.com>
 
-	* lib/ld-lib.exp (default_ld_compile): Add a -I option for the source
-	directory.
-	* ld-mips-elf/compressed-plt-1.ld, ld-mips-elf/compressed-plt-1.s,
-	ld-mips-elf/compressed-plt-1-dyn.s, ld-mips-elf/compressed-plt-1a.s,
-	ld-mips-elf/compressed-plt-1b.s, ld-mips-elf/compressed-plt-1c.s,
-	ld-mips-elf/compressed-plt-1d.s, ld-mips-elf/compressed-plt-1e.s,
-	ld-mips-elf/compressed-plt-1-o32-se.rd,
-	ld-mips-elf/compressed-plt-1-o32-se.od,
-	ld-mips-elf/compressed-plt-1-o32-mips16-only.rd,
-	ld-mips-elf/compressed-plt-1-o32-mips16-only.od,
-	ld-mips-elf/compressed-plt-1-o32-umips-only.rd,
-	ld-mips-elf/compressed-plt-1-o32-umips-only.od,
-	ld-mips-elf/compressed-plt-1-o32-mips16.rd,
-	ld-mips-elf/compressed-plt-1-o32-mips16.od,
-	ld-mips-elf/compressed-plt-1-o32-mips16-got.rd,
-	ld-mips-elf/compressed-plt-1-o32-mips16-got.od,
-	ld-mips-elf/compressed-plt-1-o32-mips16-word.rd,
-	ld-mips-elf/compressed-plt-1-o32-mips16-word.od,
-	ld-mips-elf/compressed-plt-1-o32-umips.rd,
-	ld-mips-elf/compressed-plt-1-o32-umips.od,
-	ld-mips-elf/compressed-plt-1-o32-umips-got.rd,
-	ld-mips-elf/compressed-plt-1-o32-umips-got.od,
-	ld-mips-elf/compressed-plt-1-o32-umips-word.rd,
-	ld-mips-elf/compressed-plt-1-o32-umips-word.od,
-	ld-mips-elf/compressed-plt-1-n32-mips16.rd,
-	ld-mips-elf/compressed-plt-1-n32-mips16.od,
-	ld-mips-elf/compressed-plt-1-n32-umips.rd,
-	ld-mips-elf/compressed-plt-1-n32-umips.od: New tests.
-	* ld-mips-elf/mips-elf.exp: Run them.
+	Apply changes from mainline to 2.24
+	2013-11-04  Alan Modra  <amodra@gmail.com>
+	* ld-powerpc/elfv2exe.d: Adjust for non-PIC global entry.
 
-2013-10-13  Richard Sandiford  <rdsandiford@googlemail.com>
+	2013-11-04  Alan Modra  <amodra@gmail.com>
+	* ld-elfvers/vers24.rd: Allow extra readelf output after
+	symbol visibility.
+	* ld-ifunc/ifunc.exp: Likewise.
 
-	* ld-mips-elf/pic-and-nonpic-6-n32.ad,
+	2013-11-04  Alan Modra  <amodra@gmail.com>
+	* ld-scripts/crossref.exp: Don't allow changes made to CFLAGS
+	for this test to bleed into following tests.  Don't set
+	-mcall-aixdesc for powerpc64le.
+
+	2013-10-30  Alan Modra  <amodra@gmail.com>
+	* ld-powerpc/elfv2.s,
+	* ld-powerpc/elfv2so.d,
+	* ld-powerpc/elfv2exe.d: New tests.
+	* ld-powerpc/powerpc.exp: Run them.
+
+	2013-10-30  Alan Modra  <amodra@gmail.com>
+	* ld-powerpc/tls.s: Add proper .opd entry for _start.
+	* ld-powerpc/tlstoc.s: Likewise.
+	* ld-powerpc/relbrlt.d: Update for changed stubs.
+	* ld-powerpc/tls.d: Update for changed stubs and _start .opd entry.
+	* ld-powerpc/tls.g: Likewise.
+	* ld-powerpc/tlsexe.d: Likewise.
+	* ld-powerpc/tlsexe.g: Likewise.
+	* ld-powerpc/tlsexe.r: Likewise.
+	* ld-powerpc/tlsexetoc.d: Likewise.
+	* ld-powerpc/tlsexetoc.g: Likewise.
+	* ld-powerpc/tlsexetoc.r: Likewise.
+	* ld-powerpc/tlsso.d: Likewise.
+	* ld-powerpc/tlsso.g: Likewise.
+	* ld-powerpc/tlsso.r: Likewise.
+	* ld-powerpc/tlstoc.d: Likewise.
+	* ld-powerpc/tlstoc.g: Likewise.
+	* ld-powerpc/tlstocso.d: Likewise.
+	* ld-powerpc/tlstocso.g: Likewise.
+	* ld-powerpc/tlstocso.r: Likewise.
+
+2013-11-07  Roland McGrath  <mcgrathr@google.com>
+
+	* ld-x86-64/x86-64.exp (mixed1, mixed2): Loosen error string match
+	so it accepts "i386:nacl" in place of "i386".
+	* ld-x86-64/ilp32-2.d: Likewise.
+	* ld-x86-64/ilp32-3.d: Likewise.
+	* ld-x86-64/lp64-2.d: Likewise.
+	* ld-x86-64/lp64-3.d: Likewise.
+
+2013-11-01  Roland McGrath  <mcgrathr@google.com>
+
+	* ld-x86-64/plt-nacl.pd: Update expected disassembly for PLT nop fix.
+	* ld-x86-64/tlsdesc-nacl.pd: Likewise.
+
+2013-10-05  Gregory Fong  <gregory.0xf0@gmail.com>
+
+	* ld-mips-elf/eh-frame5.d, ld-mips-elf/jalx-2.dd,
+	ld-mips-elf/mips-elf.exp, ld-mips-elf/mips16-pic-2.ad,
+	ld-mips-elf/mips16-pic-2.nd, ld-mips-elf/pic-and-nonpic-3a.dd,
+	ld-mips-elf/pic-and-nonpic-3b.ad, ld-mips-elf/pic-and-nonpic-3b.dd,
+	ld-mips-elf/pic-and-nonpic-3b.nd, ld-mips-elf/pic-and-nonpic-4b.ad,
+	ld-mips-elf/pic-and-nonpic-4b.nd, ld-mips-elf/pic-and-nonpic-4b.rd,
+	ld-mips-elf/pic-and-nonpic-5b.ad, ld-mips-elf/pic-and-nonpic-5b.nd,
+	ld-mips-elf/pic-and-nonpic-6-n32.ad,
 	ld-mips-elf/pic-and-nonpic-6-n32.dd,
-	ld-mips-elf/pic-and-nonpic-6-n32.gd,
 	ld-mips-elf/pic-and-nonpic-6-n32.nd,
-	ld-mips-elf/pic-and-nonpic-6-n32.rd,
 	ld-mips-elf/pic-and-nonpic-6-n64.ad,
 	ld-mips-elf/pic-and-nonpic-6-n64.dd,
-	ld-mips-elf/pic-and-nonpic-6-n64.gd,
 	ld-mips-elf/pic-and-nonpic-6-n64.nd,
-	ld-mips-elf/pic-and-nonpic-6-n64.rd,
 	ld-mips-elf/pic-and-nonpic-6-o32.ad,
 	ld-mips-elf/pic-and-nonpic-6-o32.dd,
-	ld-mips-elf/pic-and-nonpic-6-o32.gd,
-	ld-mips-elf/pic-and-nonpic-6-o32.nd,
-	ld-mips-elf/pic-and-nonpic-6-o32.rd: Fix symbol value of extf4.
-	No longer expect extf3, extf4 and extd2 to be in the global GOT.
+	ld-mips-elf/pic-and-nonpic-6-o32.nd, ld-mips-elf/rel32-n32.d,
+	ld-mips-elf/rel32-o32.d, ld-mips-elf/rel64.d,
+	ld-mips-elf/tls-multi-got-1.got, ld-mips-elf/tls-multi-got-1.r,
+	ld-mips-elf/tlsdyn-o32-1.d, ld-mips-elf/tlsdyn-o32-1.got,
+	ld-mips-elf/tlsdyn-o32-2.d, ld-mips-elf/tlsdyn-o32-2.got,
+	ld-mips-elf/tlsdyn-o32-3.d, ld-mips-elf/tlsdyn-o32-3.got,
+	ld-mips-elf/tlsdyn-o32.d, ld-mips-elf/tlsdyn-o32.got,
+	ld-mips-elf/tlslib-o32-ver.got, ld-mips-elf/tlslib-o32.got: Update
+	for removal of _GLOBAL_OFFSET_TABLE_ from .dynsym.
 
-2013-10-03  Will Newton  <will.newton@linaro.org>
+2013-10-04  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
+
+	* ld-aarch64/eh-frame.d: Update expected output to allow for
+	64-bit addresses.
+
+2013-10-04  Will Newton  <will.newton@linaro.org>
 
 	* ld-ifunc/ifunc.exp: Enable ifunc tests for AArch64.
 	* ld-aarch64/aarch64-elf.exp: Run ifunc tests.
@@ -137,38 +180,6 @@
 	* ld-aarch64/ifunc-8b.s: Likewise.
 	* ld-aarch64/ifunc-9.d: Likewise.
 	* ld-aarch64/ifunc-9.s: Likewise.
-
-2013-09-24  Gregory Fong  <gregory.0xf0@gmail.com>
-
-	* ld-mips-elf/eh-frame5.d, ld-mips-elf/jalx-2.dd,
-	ld-mips-elf/mips-elf.exp, ld-mips-elf/mips16-pic-2.ad,
-	ld-mips-elf/mips16-pic-2.nd, ld-mips-elf/pic-and-nonpic-3a.dd,
-	ld-mips-elf/pic-and-nonpic-3b.ad, ld-mips-elf/pic-and-nonpic-3b.dd,
-	ld-mips-elf/pic-and-nonpic-3b.nd, ld-mips-elf/pic-and-nonpic-4b.ad,
-	ld-mips-elf/pic-and-nonpic-4b.nd, ld-mips-elf/pic-and-nonpic-4b.rd,
-	ld-mips-elf/pic-and-nonpic-5b.ad, ld-mips-elf/pic-and-nonpic-5b.nd,
-	ld-mips-elf/pic-and-nonpic-6-n32.ad,
-	ld-mips-elf/pic-and-nonpic-6-n32.dd,
-	ld-mips-elf/pic-and-nonpic-6-n32.nd,
-	ld-mips-elf/pic-and-nonpic-6-n64.ad,
-	ld-mips-elf/pic-and-nonpic-6-n64.dd,
-	ld-mips-elf/pic-and-nonpic-6-n64.nd,
-	ld-mips-elf/pic-and-nonpic-6-o32.ad,
-	ld-mips-elf/pic-and-nonpic-6-o32.dd,
-	ld-mips-elf/pic-and-nonpic-6-o32.nd, ld-mips-elf/rel32-n32.d,
-	ld-mips-elf/rel32-o32.d, ld-mips-elf/rel64.d,
-	ld-mips-elf/tls-multi-got-1.got, ld-mips-elf/tls-multi-got-1.r,
-	ld-mips-elf/tlsdyn-o32-1.d, ld-mips-elf/tlsdyn-o32-1.got,
-	ld-mips-elf/tlsdyn-o32-2.d, ld-mips-elf/tlsdyn-o32-2.got,
-	ld-mips-elf/tlsdyn-o32-3.d, ld-mips-elf/tlsdyn-o32-3.got,
-	ld-mips-elf/tlsdyn-o32.d, ld-mips-elf/tlsdyn-o32.got,
-	ld-mips-elf/tlslib-o32-ver.got, ld-mips-elf/tlslib-o32.got: Update
-	for removal of _GLOBAL_OFFSET_TABLE_ from .dynsym.
-
-2013-09-18  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
-
-	* ld-aarch64/eh-frame.d: Update expected output to allow for
-	64-bit addresses.
 
 2013-09-12  Nick Clifton  <nickc@redhat.com>
 

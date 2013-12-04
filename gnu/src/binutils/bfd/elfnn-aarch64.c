@@ -1297,7 +1297,11 @@ static reloc_howto_type elfNN_aarch64_howto_table[] =
 	 0,			/* bitpos */
 	 complain_overflow_dont,	/* complain_on_overflow */
 	 bfd_elf_generic_reloc,	/* special_function */
+#if ARCH_SIZE == 64
+	 AARCH64_R_STR (TLS_DTPMOD64),	/* name */
+#else
 	 AARCH64_R_STR (TLS_DTPMOD),	/* name */
+#endif
 	 FALSE,			/* partial_inplace */
 	 0,			/* src_mask */
 	 ALL_ONES,		/* dst_mask */
@@ -1311,7 +1315,11 @@ static reloc_howto_type elfNN_aarch64_howto_table[] =
 	 0,			/* bitpos */
 	 complain_overflow_dont,	/* complain_on_overflow */
 	 bfd_elf_generic_reloc,	/* special_function */
+#if ARCH_SIZE == 64
+	 AARCH64_R_STR (TLS_DTPREL64),	/* name */
+#else
 	 AARCH64_R_STR (TLS_DTPREL),	/* name */
+#endif
 	 FALSE,			/* partial_inplace */
 	 0,			/* src_mask */
 	 ALL_ONES,		/* dst_mask */
@@ -1325,7 +1333,11 @@ static reloc_howto_type elfNN_aarch64_howto_table[] =
 	 0,			/* bitpos */
 	 complain_overflow_dont,	/* complain_on_overflow */
 	 bfd_elf_generic_reloc,	/* special_function */
+#if ARCH_SIZE == 64
+	 AARCH64_R_STR (TLS_TPREL64),	/* name */
+#else
 	 AARCH64_R_STR (TLS_TPREL),	/* name */
+#endif
 	 FALSE,			/* partial_inplace */
 	 0,			/* src_mask */
 	 ALL_ONES,		/* dst_mask */
@@ -1667,8 +1679,8 @@ _aarch64_elf_section_data;
 #define elf_aarch64_section_data(sec) \
   ((_aarch64_elf_section_data *) elf_section_data (sec))
 
-/* The size of the thread control block which is defined to be two pointers.  */
-#define TCB_SIZE	(ARCH_SIZE/8)*2
+/* The size of the thread control block.  */
+#define TCB_SIZE	16
 
 struct elf_aarch64_local_symbol
 {

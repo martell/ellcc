@@ -737,7 +737,6 @@ main (int argc, char **argv)
 
   if (mri_mode)
     {
-      default_deterministic ();
       mri_emul ();
     }
   else

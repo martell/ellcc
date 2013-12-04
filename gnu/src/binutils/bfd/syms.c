@@ -934,11 +934,12 @@ _bfd_stab_section_find_nearest_line (bfd *abfd,
   struct stab_find_info *info;
   bfd_size_type stabsize, strsize;
   bfd_byte *stab, *str;
-  bfd_byte *nul_fun, *nul_str;
+  bfd_byte *last_stab, *last_str;
   bfd_size_type stroff;
   struct indexentry *indexentry;
   char *file_name;
   char *directory_name;
+  int saw_fun;
   bfd_boolean saw_line, saw_func;
 
   *pfound = FALSE;
@@ -987,6 +988,7 @@ _bfd_stab_section_find_nearest_line (bfd *abfd,
       long reloc_size, reloc_count;
       arelent **reloc_vector;
       int i;
+      char *name;
       char *function_name;
       bfd_size_type amt = sizeof *info;
 
@@ -1019,7 +1021,6 @@ _bfd_stab_section_find_nearest_line (bfd *abfd,
       stabsize = (info->stabsec->rawsize
 		  ? info->stabsec->rawsize
 		  : info->stabsec->size);
-      stabsize = (stabsize / STABSIZE) * STABSIZE;
       strsize = (info->strsec->rawsize
 		 ? info->strsec->rawsize
 		 : info->strsec->size);
@@ -1101,37 +1102,36 @@ _bfd_stab_section_find_nearest_line (bfd *abfd,
 	 table.  */
 
       info->indextablesize = 0;
-      nul_fun = NULL;
+      saw_fun = 1;
       for (stab = info->stabs; stab < info->stabs + stabsize; stab += STABSIZE)
 	{
 	  if (stab[TYPEOFF] == (bfd_byte) N_SO)
 	    {
-	      /* if we did not see a function def, leave space for one.  */
-	      if (nul_fun != NULL)
-		++info->indextablesize;
-
 	      /* N_SO with null name indicates EOF */
 	      if (bfd_get_32 (abfd, stab + STRDXOFF) == 0)
-		nul_fun = NULL;
-	      else
-		{
-		  nul_fun = stab;
+		continue;
 
-		  /* two N_SO's in a row is a filename and directory. Skip */
-		  if (stab + STABSIZE + TYPEOFF < info->stabs + stabsize
-		      && *(stab + STABSIZE + TYPEOFF) == (bfd_byte) N_SO)
-		    stab += STABSIZE;
+	      /* if we did not see a function def, leave space for one.  */
+	      if (saw_fun == 0)
+		++info->indextablesize;
+
+	      saw_fun = 0;
+
+	      /* two N_SO's in a row is a filename and directory. Skip */
+	      if (stab + STABSIZE < info->stabs + stabsize
+		  && *(stab + STABSIZE + TYPEOFF) == (bfd_byte) N_SO)
+		{
+		  stab += STABSIZE;
 		}
 	    }
-	  else if (stab[TYPEOFF] == (bfd_byte) N_FUN
-		   && bfd_get_32 (abfd, stab + STRDXOFF) != 0)
+	  else if (stab[TYPEOFF] == (bfd_byte) N_FUN)
 	    {
-	      nul_fun = NULL;
+	      saw_fun = 1;
 	      ++info->indextablesize;
 	    }
 	}
 
-      if (nul_fun != NULL)
+      if (saw_fun == 0)
 	++info->indextablesize;
 
       if (info->indextablesize == 0)
@@ -1146,10 +1146,10 @@ _bfd_stab_section_find_nearest_line (bfd *abfd,
 
       file_name = NULL;
       directory_name = NULL;
-      nul_fun = NULL;
+      saw_fun = 1;
       stroff = 0;
 
-      for (i = 0, stab = info->stabs, nul_str = str = info->strs;
+      for (i = 0, last_stab = stab = info->stabs, last_str = str = info->strs;
 	   i < info->indextablesize && stab < info->stabs + stabsize;
 	   stab += STABSIZE)
 	{
@@ -1171,30 +1171,35 @@ _bfd_stab_section_find_nearest_line (bfd *abfd,
 	         Note that a N_SO without a file name is an EOF and
 	         there could be 2 N_SO following it with the new filename
 	         and directory.  */
-	      if (nul_fun != NULL)
+	      if (saw_fun == 0)
 		{
-		  info->indextable[i].val = bfd_get_32 (abfd, nul_fun + VALOFF);
-		  info->indextable[i].stab = nul_fun;
-		  info->indextable[i].str = nul_str;
+		  info->indextable[i].val = bfd_get_32 (abfd, last_stab + VALOFF);
+		  info->indextable[i].stab = last_stab;
+		  info->indextable[i].str = last_str;
 		  info->indextable[i].directory_name = directory_name;
 		  info->indextable[i].file_name = file_name;
 		  info->indextable[i].function_name = NULL;
 		  ++i;
 		}
+	      saw_fun = 0;
 
-	      directory_name = NULL;
 	      file_name = (char *) str + bfd_get_32 (abfd, stab + STRDXOFF);
-	      if (file_name == (char *) str)
+	      if (*file_name == '\0')
 		{
+		  directory_name = NULL;
 		  file_name = NULL;
-		  nul_fun = NULL;
+		  saw_fun = 1;
 		}
 	      else
 		{
-		  nul_fun = stab;
-		  nul_str = str;
-		  if (stab + STABSIZE + TYPEOFF < info->stabs + stabsize
-		      && *(stab + STABSIZE + TYPEOFF) == (bfd_byte) N_SO)
+		  last_stab = stab;
+		  last_str = str;
+		  if (stab + STABSIZE >= info->stabs + stabsize
+		      || *(stab + STABSIZE + TYPEOFF) != (bfd_byte) N_SO)
+		    {
+		      directory_name = NULL;
+		    }
+		  else
 		    {
 		      /* Two consecutive N_SOs are a directory and a
 			 file name.  */
@@ -1213,11 +1218,17 @@ _bfd_stab_section_find_nearest_line (bfd *abfd,
 
 	    case N_FUN:
 	      /* A function name.  */
-	      function_name = (char *) str + bfd_get_32 (abfd, stab + STRDXOFF);
-	      if (function_name == (char *) str)
+	      saw_fun = 1;
+	      name = (char *) str + bfd_get_32 (abfd, stab + STRDXOFF);
+
+	      if (*name == '\0')
+		name = NULL;
+
+	      function_name = name;
+
+	      if (name == NULL)
 		continue;
 
-	      nul_fun = NULL;
 	      info->indextable[i].val = bfd_get_32 (abfd, stab + VALOFF);
 	      info->indextable[i].stab = stab;
 	      info->indextable[i].str = str;
@@ -1229,11 +1240,11 @@ _bfd_stab_section_find_nearest_line (bfd *abfd,
 	    }
 	}
 
-      if (nul_fun != NULL)
+      if (saw_fun == 0)
 	{
-	  info->indextable[i].val = bfd_get_32 (abfd, nul_fun + VALOFF);
-	  info->indextable[i].stab = nul_fun;
-	  info->indextable[i].str = nul_str;
+	  info->indextable[i].val = bfd_get_32 (abfd, last_stab + VALOFF);
+	  info->indextable[i].stab = last_stab;
+	  info->indextable[i].str = last_str;
 	  info->indextable[i].directory_name = directory_name;
 	  info->indextable[i].file_name = file_name;
 	  info->indextable[i].function_name = NULL;

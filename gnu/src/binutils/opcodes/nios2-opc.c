@@ -69,6 +69,7 @@ const struct nios2_reg nios2_builtin_regs[] = {
   {"r28", 28},
   {"r29", 29},
   {"r30", 30},
+  {"sstatus", 30},
   {"r31", 31},
 
   /* control register names */

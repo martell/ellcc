@@ -62,5 +62,3 @@ foo:
 	neg r0, r1
 	negs r0, r1
 
-	it gt
-	tstgt.n r0, r4

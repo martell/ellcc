@@ -1,32 +1,87 @@
-2013-10-18  Chao-ying Fu  <Chao-ying.Fu@imgtec.com>
+2013-11-20  Yufeng Zhang  <yufeng.zhang@arm.com>
 
-	* gas/mips/micromips@msa-branch.d, gas/mips/msa-branch.d,
-	gas/mips/msa-branch.s: New.
-	* gas/mips/mips.exp: Run new tests.
+	* gas/aarch64/msr.s: Add tests.
+	* gas/aarch64/msr.d: Update.
 
-2013-10-15  Ramana Radhakrishnan  <ramana.radhakrishnan@arm.com>
+2013-11-18  Renlin Li  <Renlin.Li@arm.com>
 
-	* gas/arm/neon-cov.d: Adjust output.
+	* gas/arm/attr-march-armv7ve.d: New test case for armv7ve.
 
-2013-10-14  Chao-ying Fu  <Chao-ying.Fu@imgtec.com>
+2013-11-18  Zhenqiang Chen  <zhenqiang.chen@linaro.org>
 
-	* gas/mips/micromips@msa-relax.d, gas/mips/micromips@msa.d,
-	gas/mips/micromips@msa64.d, gas/mips/msa-relax.d,
-	gas/mips/msa-relax.l, gas/mips/msa-relax.s,
-	gas/mips/msa.d, gas/mips/msa.s, gas/mips/msa64.d,
-	gas/mips/msa64.s: New.
-	* gas/mips/mips.exp: Run new tests.
+	* gas/aarch64/sysreg.s: Add test.
+	* gas/aarch64/sysreg.d: Update.
 
-2013-10-14  Nick Clifton  <nickc@redhat.com>
+2013-11-18  Yufeng Zhang  <yufeng.zhang@arm.com>
 
-	* gas/all/itbl-test.c (main): Close fas.
+	Revert
 
-2013-10-13  Sandra Loosemore  <sandra@codesourcery.com>
+	2013-11-15  Yufeng Zhang  <yufeng.zhang@arm.com>
 
-	* gas/nios2/warn_nobreak.l: Update text of warning messages.
-	* gas/nios2/registers.s: Use "sstatus" rather than "ba"
-	as the primary name of r30.
-	* gas/nios2/registers.d: Likewise.
+	* gas/aarch64/diagnostic.s: Add tests.
+	* gas/aarch64/diagnostic.l: Update.
+	* gas/aarch64/tracereg-illegal.d: New file.
+	* gas/aarch64/tracereg-illegal.l: Ditto.
+	* gas/aarch64/tracereg-illegal.s: Ditto.
+	* gas/aarch64/tracereg.d: Ditto.
+	* gas/aarch64/tracereg.s: Ditto.
+
+
+2013-11-17  H.J. Lu  <hongjiu.lu@intel.com>
+
+	* gas/i386/i386.exp: Run x86-64-mpx-branch-1 and
+	x86-64-mpx-branch-2 on 64-bit ELF targets.
+	* gas/i386/x86-64-mpx-branch-1.d: New file.
+	* gas/i386/x86-64-mpx-branch-1.s: Likewise.
+	* gas/i386/x86-64-mpx-branch-2.d: Likewise.
+	* gas/i386/x86-64-mpx-branch-2.s: Likewise.
+
+2013-11-15  Yufeng Zhang  <yufeng.zhang@arm.com>
+
+	* gas/aarch64/diagnostic.s: Add tests.
+	* gas/aarch64/diagnostic.l: Update.
+	* gas/aarch64/tracereg-illegal.d: New file.
+	* gas/aarch64/tracereg-illegal.l: Ditto.
+	* gas/aarch64/tracereg-illegal.s: Ditto.
+	* gas/aarch64/tracereg.d: Ditto.
+	* gas/aarch64/tracereg.s: Ditto.
+
+2013-11-15  H.J. Lu  <hongjiu.lu@intel.com>
+
+	Backport from master
+	2013-11-15  Michael Zolotukhin  <michael.v.zolotukhin@gmail.com>
+
+	* gas/i386/inval-avx512f.s: Add invalid test for gather instruction
+	with default mask.
+	* gas/i386/inval-avx512f.l: Update correspondingly.
+
+2013-11-05  Yufeng Zhang  <yufeng.zhang@arm.com>
+
+	* gas/aarch64/deprecated.d: New file.
+	* gas/aarch64/deprecated.l: New file.
+	* gas/aarch64/deprecated.s: New file.
+	* gas/aarch64/sysreg-1.s: Add tests.
+	* gas/aarch64/sysreg-1.d: Add tests.
+
+2013-11-05  Yufeng Zhang  <yufeng.zhang@arm.com>
+
+	* gas/aarch64/alias.s: Add tests.
+	* gas/aarch64/alias.d: Update.
+	* gas/aarch64/no-aliases.d: Update.
+	* gas/aarch64/diagnostic.s: Add tests.
+	* gas/aarch64/diagnostic.l: Update.
+	* gas/aarch64/illegal.s: Add tests.
+	* gas/aarch64/illegal.l: Update.
+
+2013-11-05  Yufeng Zhang  <yufeng.zhang@arm.com>
+
+	* gas/aarch64/diagnostic.s: Add tests of ldp/stp.
+	* gas/aarch64/diagnostic.l: Update.
+
+2013-11-05  Will Newton  <will.newton@linaro.org>
+
+	* gas/aarch64/advsimd-mov-bad.d: New file.
+	* gas/aarch64/advsimd-mov-bad.s: Likewise.
 
 2013-10-12  H.J. Lu  <hongjiu.lu@intel.com>
 
@@ -35,44 +90,6 @@
 
 	* gas/i386/mpx.d: Updated.
 	* gas/i386/x86-64-mpx.d: Likewise.
-
-2013-10-10  Sean Keys  <skeys@ipdatasys.com>
-
-	* gas/xgate/all_insns.d: Add com macro insn test.
-	* gas/xgate/all_insns.s: Add com macro insn test.
-
-2013-10-08  Jan Beulich <jbeulich@suse.com>
-
-	* gas/arm/thumb-w-good.s: Add PUSH.W and POP.W tests.
-	* gas/arm/thumb-w-good.d: Update accordingly.
-
-2013-10-08  Nick Clifton  <nickc@redhat.com>
-
-	* gas/msp430/bad.s: New test: Checks erroneous size extensions.
-	* gas/msp430/bad.d: New test command file.
-	* gas/msp430/bad.l: New file: Expected error messages.
-	* gas/msp430/msp430.exp: Run the new test.
-	* gas/msp430/msp430x.s: Add "<foo>.a" aliases of "<foo>a"
-	instructions.
-	* gas/msp430/msp430x.d: Update expected disassembly.
-
-2013-10-07  Chao-ying Fu  <Chao-ying.Fu@imgtec.com>
-
-	* gas/mips/micromips@virt64.d: Fix dmfgc0 and dmtgc0.
-
-2013-10-04  Kyrylo Tkachov  <kyrylo.tkachov@arm.com>
-
-	* gas/arm/thumb2_it.s: Add test for narrow tst.
-	* gas/arm/thumb2_it.d: Update expected output.
-	* gas/arm/thumb2_it_auto.d: Likewise.
-
-2013-09-30  Saravanan Ekanathan <saravanan.ekanathan@amd.com>
-
-	* gas/i386/i386.exp: Run bdver4 test cases.
-	* gas/i386/nops-1-bdver4.d: New.
-	* gas/i386/arch-10-bdver4.d: New.
-	* gas/i386/x86-64-nops-1-bdver4.d: New.
-	* gas/i386/x86-64-arch-2-bdver4.d: New.
 
 2013-09-17  Richard Sandiford  <rsandifo@linux.vnet.ibm.com>
 

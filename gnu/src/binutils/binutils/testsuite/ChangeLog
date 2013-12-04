@@ -1,4 +1,4 @@
-2013-09-27  H.J. Lu  <hongjiu.lu@intel.com>
+2013-10-12  H.J. Lu  <hongjiu.lu@intel.com>
 
 	* binutils-all/x86-64/compressed-1a.d: Updated for 64-bit addresses.
 

@@ -1575,7 +1575,7 @@ get_ppc_dynamic_type (unsigned long type)
   switch (type)
     {
     case DT_PPC_GOT:    return "PPC_GOT";
-    case DT_PPC_TLSOPT: return "PPC_TLSOPT";
+    case DT_PPC_OPT:    return "PPC_OPT";
     default:
       return NULL;
     }
@@ -1589,7 +1589,7 @@ get_ppc64_dynamic_type (unsigned long type)
     case DT_PPC64_GLINK:  return "PPC64_GLINK";
     case DT_PPC64_OPD:    return "PPC64_OPD";
     case DT_PPC64_OPDSZ:  return "PPC64_OPDSZ";
-    case DT_PPC64_TLSOPT: return "PPC64_TLSOPT";
+    case DT_PPC64_OPT:    return "PPC64_OPT";
     default:
       return NULL;
     }
@@ -2459,6 +2459,16 @@ get_machine_flags (unsigned e_flags, unsigned e_machine)
 
 	  if (e_flags & EF_PPC_RELOCATABLE_LIB)
 	    strcat (buf, _(", relocatable-lib"));
+	  break;
+
+	case EM_PPC64:
+	  if (e_flags & EF_PPC64_ABI)
+	    {
+	      char abi[] = ", abiv0";
+
+	      abi[6] += e_flags & EF_PPC64_ABI;
+	      strcat (buf, abi);
+	    }
 	  break;
 
 	case EM_V800:
@@ -9201,6 +9211,19 @@ get_ia64_symbol_other (unsigned int other)
 }
 
 static const char *
+get_ppc64_symbol_other (unsigned int other)
+{
+  if (PPC64_LOCAL_ENTRY_OFFSET (other) != 0)
+    {
+      static char buf[32];
+      snprintf (buf, sizeof buf, _("<localentry>: %d"),
+		PPC64_LOCAL_ENTRY_OFFSET (other));
+      return buf;
+    }
+  return NULL;
+}
+
+static const char *
 get_symbol_other (unsigned int other)
 {
   const char * result = NULL;
@@ -9216,6 +9239,9 @@ get_symbol_other (unsigned int other)
       break;
     case EM_IA_64:
       result = get_ia64_symbol_other (other);
+      break;
+    case EM_PPC64:
+      result = get_ppc64_symbol_other (other);
       break;
     default:
       break;
@@ -9858,7 +9884,6 @@ process_symbol_table (FILE * file)
       counts = (unsigned long *) calloc (maxlength + 1, sizeof (*counts));
       if (counts == NULL)
 	{
-	  free (lengths);
 	  error (_("Out of memory\n"));
 	  return 0;
 	}
@@ -9927,7 +9952,6 @@ process_symbol_table (FILE * file)
       counts = (unsigned long *) calloc (maxlength + 1, sizeof (*counts));
       if (counts == NULL)
 	{
-	  free (lengths);
 	  error (_("Out of memory\n"));
 	  return 0;
 	}
@@ -11768,30 +11792,6 @@ display_mips_gnu_attribute (unsigned char * p,
 	}
       return p;
    }
-
-  if (tag == Tag_GNU_MIPS_ABI_MSA)
-    {
-      unsigned int len;
-      int val;
-
-      val = read_uleb128 (p, &len, end);
-      p += len;
-      printf ("  Tag_GNU_MIPS_ABI_MSA: ");
-
-      switch (val)
-	{
-	case Val_GNU_MIPS_ABI_MSA_ANY:
-	  printf (_("Any MSA or not\n"));
-	  break;
-	case Val_GNU_MIPS_ABI_MSA_128:
-	  printf (_("128-bit MSA\n"));
-	  break;
-	default:
-	  printf ("??? (%d)\n", val);
-	  break;
-	}
-      return p;
-    }
 
   return display_tag_value (tag & 1, p, end);
 }

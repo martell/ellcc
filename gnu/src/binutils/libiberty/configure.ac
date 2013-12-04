@@ -225,12 +225,6 @@ case "${enable_shared}" in
   "") shared=no ;;
   *) shared=yes ;;
 esac
-
-# ...unless --enable-host-shared was passed from top-level config:
-if [[ "${enable_host_shared}" = "yes" ]]; then
-  shared=yes
-fi
-
 if [[ "${shared}" != "yes" ]]; then
   PICFLAG=
 fi

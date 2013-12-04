@@ -956,7 +956,7 @@ case "${target}" in
   sh*-*-pe|mips*-*-pe|*arm-wince-pe)
     noconfigdirs="$noconfigdirs tcl tk itcl libgui sim"
     ;;
-  arc-*-*|arceb-*-*)
+  arc-*-*)
     noconfigdirs="$noconfigdirs target-libgloss"
     ;;
   arm-*-pe*)
@@ -1653,9 +1653,6 @@ if test "x$with_isl" != "xno" &&
   ISL_CHECK_VERSION(0,10)
   if test "${gcc_cv_isl}" = no ; then
     ISL_CHECK_VERSION(0,11)
-    if test "${gcc_cv_isl}" = no ; then
-      ISL_CHECK_VERSION(0,12)
-    fi
   fi
   dnl Only execute fail-action, if ISL has been requested.
   ISL_IF_FAILED([
@@ -3300,13 +3297,6 @@ case ${enable_werror} in
   *) stage2_werror_flag="" ;;
 esac
 AC_SUBST(stage2_werror_flag)
-
-# Enable --enable-host-shared.
-AC_ARG_ENABLE(host-shared,
-[AS_HELP_STRING([--enable-host-shared],
-		[build host code as shared libraries])],
-[host_shared=$enableval], [host_shared=no])
-AC_SUBST(host_shared)
 
 # Specify what files to not compare during bootstrap.
 

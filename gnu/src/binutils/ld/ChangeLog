@@ -1,6 +1,64 @@
-2013-10-14  Nick Clifton  <nickc@redhat.com>
+2013-11-25  Yufeng Zhang  <yufeng.zhang@arm.com>
 
-	* emultempl/aix.em (_read_file): Close file at end of function.
+	Backport from master
+
+	2013-11-21  Andrew Pinski  <apinski@cavium.com>
+
+	* Makefile.am (ALL_64_EMULATION_SOURCES): Add eaarch64linux32.c
+	and eaarch64linux32b.c
+	(eaarch64linux32.c): New target.
+	(eaarch64linux32b.c): Likewise.
+	* Makefile.in: Regenerate.
+	* configure.tgt (aarch64_be-*-linux*): Add
+	aarch64linux32 and aarch64linux32b to targ_extra_libpath.
+	(aarch64-*-linux*): Likewise.
+	* emulparams/aarch64elf32.sh (SEPARATE_GOTPLT): Change to 12 (3 words).
+	* emulparams/aarch64linux32.sh: New file.
+	* emulparams/aarch64linux32b.sh: New file.
+
+2013-11-25  Yufeng Zhang  <yufeng.zhang@arm.com>
+
+	Backport from master
+
+	2013-11-21  Andrew Pinski  <apinski@cavium.com>
+
+	* configure.tgt (aarch64_be-*-linux*): Split out the linux targets
+	into targ_extra_libpath.
+	(aarch64-*-linux*): Likewise.
+
+2013-11-22  Cory Fields  <cory@coryfields.com>
+
+	* libcoff-in.h: Add insert_timestamp flag to the pe_data struct.
+	* libcoff.h: Regenerate.
+	* peXXigen.c (_bfd_XXi_only_swap_filehdr_out): Only use a real
+	timestamp if --insert-timestamp was used.
+
+2013-11-19  Roland McGrath  <mcgrathr@google.com>
+	    Alan Modra  <amodra@gmail.com>
+
+	* emultempl/elf32.em (gld${EMULATION_NAME}_before_allocation):
+	Don't use bfd_elf_record_link_assignment to mark __ehdr_start
+	hidden.  Instead, just do it directly here, and only if it was
+	referenced but not defined.
+
+2013-11-18  Chung-Lin Tang  <cltang@codesourcery.com>
+
+	Backport from master
+	2013-11-18  Chung-Lin Tang  <cltang@codesourcery.com>
+	* emulparams/nios2linux.sh: New emulation file.
+	* configure.tgt: Add nios2*-*-linux* emulation case.
+	* Makefile.am (enios2elf.c): Change tdir_nios2 to tdir_nios2elf.
+	(enios2linux.c): New emulation entry.
+	* Makefile.in: Regenerate.
+
+2013-11-15  Alan Modra  <amodra@gmail.com>
+
+	Apply mainline changes to 2.24
+	2013-09-24  Alan Modra  <amodra@gmail.com>
+	* emulparams/elf32ppccommon.sh (LIBPATH_SUFFIX): Provide 32-bit
+	and cross-endian values.
+	* emulparams/elf64ppc.sh: Source elf32ppccomon.sh.  Delete duplicate,
+	and unset unwanted variables.
 
 2013-10-10  Roland McGrath  <mcgrathr@google.com>
 
@@ -13,39 +71,10 @@
 	rather than a dummy assignment for unused parameter.
 	* plugin.c (get_input_file, release_input_file): Likewise.
 
-2013-10-09  Nick Clifton  <nickc@redhat.com>
-
-	PR ld/16028
-	* ldmain.c (add_keepsyms_file): Close file at end of function.
-
-2013-10-03  Will Newton  <will.newton@linaro.org>
+2013-10-04  Will Newton  <will.newton@linaro.org>
 
 	* emulparams/aarch64elf.sh: Add IREL_IN_PLT.
 	* emulparams/aarch64elf32.sh: Likewise.
-
-2013-09-30  Nick Clifton  <nickc@redhat.com>
-
-	* emulparams/msp430all.sh: Update ARCH names.
-
-2013-09-24  Alan Modra  <amodra@gmail.com>
-
-	* emulparams/elf32ppccommon.sh (LIBPATH_SUFFIX): Provide 32-bit
-	and cross-endian values.
-	* emulparams/elf64ppc.sh: Source elf32ppccomon.sh.  Delete duplicate,
-	and unset unwanted variables.
-
-2013-09-24  Alan Modra  <amodra@gmail.com>
-
-	* genscripts.sh (LIB_PATH): Don't exclude libdir or tooldir when
-	sysrooted.  Also, don't always add tooldir when non-sysrooted.
-	Instead add both when native and tooldir also when TOOL_DIR is
-	defined.  Always prepend '=' to paths when sysrooted.  Always
-	put paths with LIBPATH_SUFFIX first in search order.
-
-2013-09-20  Chung-Lin Tang  <cltang@codesourcery.com>
-
-	* Makefile.am (enios2elf.c): Change tdir_nios2 to tdir_nios2elf.
-	* Makefile.in: Regenerate.
 
 2013-09-20  Alan Modra  <amodra@gmail.com>
 

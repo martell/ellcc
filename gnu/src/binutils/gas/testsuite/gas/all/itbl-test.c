@@ -1,6 +1,6 @@
 /* itbl-test.c
 
-   Copyright (C) 1997-2013 Free Software Foundation.
+   Copyright (C) 1997, 2005, 2007  Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -97,7 +97,6 @@ main (int argc, char **argv)
   test_reg (3, e_creg, "c2", 22);
   test_reg (3, e_dreg, "d3", 3);
 
-  fclose (fas);
   return 0;
 }
 

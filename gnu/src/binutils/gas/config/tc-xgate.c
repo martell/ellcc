@@ -33,9 +33,6 @@ const char line_separator_chars[] = "";
 const char EXP_CHARS[] = "eE";
 const char FLT_CHARS[] = "dD";
 
-/* Max opcodes per opcode handle.  */
-#define MAX_OPCODES     0x05
-
 #define SIXTEENTH_BIT		0x8000
 #define N_BITS_IN_WORD		16
 #define MAX_NUM_OPERANDS	3
@@ -104,7 +101,7 @@ static inline char *skip_whitespace (char *);
 static void get_default_target (void);
 static char *extract_word (char *, char *, int);
 static struct xgate_opcode *xgate_find_match (struct xgate_opcode_handle *,
-					      int, s_operand [], unsigned int);
+					      int, unsigned int);
 static int cmp_opcode (struct xgate_opcode *, struct xgate_opcode *);
 static void xgate_print_table (void);
 static unsigned int xgate_get_operands (char *, s_operand []);
@@ -482,7 +479,7 @@ md_assemble (char *input_line)
   /* Caller expects it to be returned as it was passed.  */
   char *saved_input_line = input_line;
   char op_name[9] =  { 0 };
-  unsigned int operandCount = 0;
+  unsigned int sh_format = 0;
   char *p = 0;
 
   s_operand new_operands[MAX_NUM_OPERANDS];
@@ -504,10 +501,10 @@ md_assemble (char *input_line)
     {
       /* Parse operands so we can find the proper opcode bin.  */
 
-      operandCount = xgate_get_operands (input_line, new_operands);
+      sh_format = xgate_get_operands(input_line, new_operands);
 
       opcode = xgate_find_match (opcode_handle, opcode_handle->number_of_modes,
-				 new_operands, operandCount);
+				 sh_format);
 
       if (!opcode)
 	{
@@ -555,11 +552,13 @@ md_assemble (char *input_line)
 		}
 	      else
 		{
-		  operandCount = xgate_get_operands(input_line, new_operands);
-		  macro_opcode = xgate_find_match (opcode_handle,
-						   opcode_handle->number_of_modes, new_operands,
-					       operandCount);
+		  sh_format = xgate_get_operands(input_line, new_operands);
+		  macro_opcode
+		    = xgate_find_match (opcode_handle,
+					opcode_handle->number_of_modes,
+					sh_format);
 		  xgate_scan_operands (macro_opcode, new_operands);
+
 		}
 	    }
 	}
@@ -906,7 +905,8 @@ cmp_opcode (struct xgate_opcode *op1, struct xgate_opcode *op2)
 
 static struct xgate_opcode *
 xgate_find_match (struct xgate_opcode_handle *opcode_handle,
-		  int numberOfModes, s_operand oprs[], unsigned int operandCount)
+		  int numberOfModes,
+		  unsigned int sh_format)
 {
   int i;
 
@@ -914,84 +914,10 @@ xgate_find_match (struct xgate_opcode_handle *opcode_handle,
     return opcode_handle->opc0[0];
 
   for (i = 0; i <= numberOfModes; i++)
-    {
-      switch (operandCount)
-        {
-      case 0:
-        if (!strcmp(opcode_handle->opc0[i]->constraints, XGATE_OP_INH))
-          return opcode_handle->opc0[i];
-        break;
-      case 1:
-        if (oprs[0].reg >= REG_R0 && oprs[0].reg <= REG_R7)
-          if (!strcmp(opcode_handle->opc0[i]->constraints, XGATE_OP_MON))
-            return opcode_handle->opc0[i];
-          if (!strcmp(opcode_handle->opc0[i]->constraints, XGATE_OP_DYA_MON))
-            return opcode_handle->opc0[i];
-        if (oprs[0].reg == REG_NONE)
-          if (!strcmp(opcode_handle->opc0[i]->constraints, XGATE_OP_IMM3))
-            return opcode_handle->opc0[i];
-        break;
-      case 2:
-        if (oprs[0].reg >= REG_R0 && oprs[0].reg <= REG_R7)
-          {
-            if (oprs[1].reg >= REG_R0 && oprs[1].reg <= REG_R7)
-              if (!strcmp(opcode_handle->opc0[i]->constraints, XGATE_OP_DYA))
-                return opcode_handle->opc0[i];
-            if (oprs[1].reg == REG_CCR)
-              if (!strcmp(opcode_handle->opc0[i]->constraints,
-                  XGATE_OP_MON_R_C))
-                return opcode_handle->opc0[i];
-            if (oprs[1].reg == REG_PC)
-              if (!strcmp(opcode_handle->opc0[i]->constraints,
-                  XGATE_OP_MON_R_P))
-                return opcode_handle->opc0[i];
-            if (oprs[1].reg == REG_NONE)
-              if (!strcmp(opcode_handle->opc0[i]->constraints, XGATE_OP_IMM16)
-                  || !strcmp(opcode_handle->opc0[i]->constraints, XGATE_OP_IMM8)
-                  || !strcmp(opcode_handle->opc0[i]->constraints, XGATE_OP_IMM4)
-                  || !strcmp(opcode_handle->opc0[i]->constraints,
-                      XGATE_OP_IMM16mADD)
-                  || !strcmp(opcode_handle->opc0[i]->constraints,
-                      XGATE_OP_IMM16mAND)
-                  || !strcmp(opcode_handle->opc0[i]->constraints,
-                      XGATE_OP_IMM16mCPC)
-                  || !strcmp(opcode_handle->opc0[i]->constraints,
-                      XGATE_OP_IMM16mSUB)
-                  || !strcmp(opcode_handle->opc0[i]->constraints,
-                      XGATE_OP_IMM16mLDW))
-                return opcode_handle->opc0[i];
-          }
-        if (oprs[0].reg == REG_CCR)
-          if (!strcmp(opcode_handle->opc0[i]->constraints, XGATE_OP_MON_C_R))
-            return opcode_handle->opc0[i];
-        break;
-      case 3:
-        if (oprs[0].reg >= REG_R0 && oprs[0].reg <= REG_R7)
-          {
-            if (oprs[1].reg >= REG_R0 && oprs[1].reg <= REG_R7)
-              {
-                if (oprs[2].reg >= REG_R0 && oprs[2].reg <= REG_R7)
-                  {
-                    if (!strcmp(opcode_handle->opc0[i]->constraints,
-                        XGATE_OP_IDR)
-                        || !strcmp(opcode_handle->opc0[i]->constraints,
-                            XGATE_OP_TRI))
-                      return opcode_handle->opc0[i];
-                  }
+    if (opcode_handle->opc0[i]->sh_format & sh_format)
+      return opcode_handle->opc0[i];
 
-                if (oprs[2].reg == REG_NONE)
-                  if (!strcmp(opcode_handle->opc0[i]->constraints,
-                      XGATE_OP_IDO5))
-                    return opcode_handle->opc0[i];
-              }
-          }
-        break;
-      default:
-        as_bad(_("unknown operand count"));
-        break;
-        }
-    }
-  return NULL ;
+  return NULL;
 }
 
 /* Because we are dealing with two different core that view the system
@@ -1022,7 +948,7 @@ xgate_get_operands (char *line, s_operand oprs[])
 
   /* If there are no operands, then it must be inherent.  */
   if (*line == 0 || *line == '\n' || *line == '\r')
-    return 0;
+    return XG_INH;
 
   for (num_operands = 0; strlen (line) && (num_operands < MAX_NUM_OPERANDS);
        num_operands++)
@@ -1047,9 +973,51 @@ xgate_get_operands (char *line, s_operand oprs[])
 	  line++;
 	}
     }
+
   if (num_operands > MAX_NUM_OPERANDS)
     return 0;
-  return num_operands;
+
+  switch (num_operands)
+    {
+    case 1:
+      if (oprs[0].reg >= REG_R0 && oprs[0].reg <= REG_R7)
+	return XG_R;
+      if (oprs[0].reg == REG_NONE)
+	return XG_I;
+      break;
+    case 2:
+      if (oprs[0].reg >= REG_R0 && oprs[0].reg <= REG_R7)
+	{
+	  if (oprs[1].reg >= REG_R0 && oprs[1].reg <= REG_R7)
+	    return XG_R_R;
+	  if (oprs[1].reg == REG_CCR)
+	    return XG_R_C;
+	  if (oprs[1].reg == REG_PC)
+	    return XG_R_P;
+	  if (oprs[1].reg == REG_NONE)
+	    return XG_R_I;
+	}
+      if (oprs[0].reg == REG_CCR)
+	return XG_C_R;
+      break;
+    case 3:
+      if (oprs[0].reg >= REG_R0 && oprs[0].reg <= REG_R7)
+	{
+	  if (oprs[1].reg >= REG_R0 && oprs[1].reg <= REG_R7)
+	    {
+	      if (oprs[2].reg >= REG_R0 && oprs[2].reg <= REG_R7)
+		return XG_R_R_R;
+	      if (oprs[2].reg >= REG_NONE)
+		return XG_R_R_I;
+	    }
+	}
+      break;
+    default:
+      as_bad (_("unknown operand format"));
+      break;
+    }
+
+  return 0;
 }
 
 /* reg_name_search() finds the register number given its name.
@@ -1190,8 +1158,7 @@ xgate_scan_operands (struct xgate_opcode *opcode, s_operand oprs[])
     {
       bfd_putl16 (bin, frag);
     }
-  else if ( !strcmp (opcode->constraints, XGATE_OP_REL9)
-      || !strcmp (opcode->constraints, XGATE_OP_REL10))
+  else if ((opcode->sh_format & XG_PCREL))
     {
       /* Write our data to a frag for further processing.  */
       bfd_putl16 (opcode->bin_opcode, frag);

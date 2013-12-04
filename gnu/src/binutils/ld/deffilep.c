@@ -1,23 +1,24 @@
-
-/* A Bison parser, made by GNU Bison 2.4.1.  */
+/* A Bison parser, made by GNU Bison 2.3.  */
 
 /* Skeleton implementation for Bison's Yacc-like parsers in C
-   
-      Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003, 2004, 2005, 2006
+
+   Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003, 2004, 2005, 2006
    Free Software Foundation, Inc.
-   
-   This program is free software: you can redistribute it and/or modify
+
+   This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation, either version 3 of the License, or
-   (at your option) any later version.
-   
+   the Free Software Foundation; either version 2, or (at your option)
+   any later version.
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
-   along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin Street, Fifth Floor,
+   Boston, MA 02110-1301, USA.  */
 
 /* As a special exception, you may create a larger work that contains
    part or all of the Bison parser skeleton and distribute that work
@@ -28,7 +29,7 @@
    special exception, which will cause the skeleton and the resulting
    Bison output files to be licensed under the GNU General Public
    License without this special exception.
-   
+
    This special exception was added by the Free Software Foundation in
    version 2.2 of Bison.  */
 
@@ -46,7 +47,7 @@
 #define YYBISON 1
 
 /* Bison version.  */
-#define YYBISON_VERSION "2.4.1"
+#define YYBISON_VERSION "2.3"
 
 /* Skeleton name.  */
 #define YYSKELETON_NAME "yacc.c"
@@ -54,20 +55,81 @@
 /* Pure parsers.  */
 #define YYPURE 0
 
-/* Push parsers.  */
-#define YYPUSH 0
-
-/* Pull parsers.  */
-#define YYPULL 1
-
 /* Using locations.  */
 #define YYLSP_NEEDED 0
 
 
 
-/* Copy the first part of user declarations.  */
+/* Tokens.  */
+#ifndef YYTOKENTYPE
+# define YYTOKENTYPE
+   /* Put the tokens into the symbol table, so that GDB and other debuggers
+      know about them.  */
+   enum yytokentype {
+     NAME = 258,
+     LIBRARY = 259,
+     DESCRIPTION = 260,
+     STACKSIZE_K = 261,
+     HEAPSIZE = 262,
+     CODE = 263,
+     DATAU = 264,
+     DATAL = 265,
+     SECTIONS = 266,
+     EXPORTS = 267,
+     IMPORTS = 268,
+     VERSIONK = 269,
+     BASE = 270,
+     CONSTANTU = 271,
+     CONSTANTL = 272,
+     PRIVATEU = 273,
+     PRIVATEL = 274,
+     ALIGNCOMM = 275,
+     READ = 276,
+     WRITE = 277,
+     EXECUTE = 278,
+     SHARED = 279,
+     NONAMEU = 280,
+     NONAMEL = 281,
+     DIRECTIVE = 282,
+     EQUAL = 283,
+     ID = 284,
+     DIGITS = 285
+   };
+#endif
+/* Tokens.  */
+#define NAME 258
+#define LIBRARY 259
+#define DESCRIPTION 260
+#define STACKSIZE_K 261
+#define HEAPSIZE 262
+#define CODE 263
+#define DATAU 264
+#define DATAL 265
+#define SECTIONS 266
+#define EXPORTS 267
+#define IMPORTS 268
+#define VERSIONK 269
+#define BASE 270
+#define CONSTANTU 271
+#define CONSTANTL 272
+#define PRIVATEU 273
+#define PRIVATEL 274
+#define ALIGNCOMM 275
+#define READ 276
+#define WRITE 277
+#define EXECUTE 278
+#define SHARED 279
+#define NONAMEU 280
+#define NONAMEL 281
+#define DIRECTIVE 282
+#define EQUAL 283
+#define ID 284
+#define DIGITS 285
 
-/* Line 189 of yacc.c  */
+
+
+
+/* Copy the first part of user declarations.  */
 #line 1 "deffilep.y"
  /* deffilep.y - parser for .def files */
 
@@ -182,9 +244,6 @@ static const char *lex_parse_string_end = 0;
 
 
 
-/* Line 189 of yacc.c  */
-#line 187 "deffilep.c"
-
 /* Enabling traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -203,105 +262,31 @@ static const char *lex_parse_string_end = 0;
 # define YYTOKEN_TABLE 0
 #endif
 
-
-/* Tokens.  */
-#ifndef YYTOKENTYPE
-# define YYTOKENTYPE
-   /* Put the tokens into the symbol table, so that GDB and other debuggers
-      know about them.  */
-   enum yytokentype {
-     NAME = 258,
-     LIBRARY = 259,
-     DESCRIPTION = 260,
-     STACKSIZE_K = 261,
-     HEAPSIZE = 262,
-     CODE = 263,
-     DATAU = 264,
-     DATAL = 265,
-     SECTIONS = 266,
-     EXPORTS = 267,
-     IMPORTS = 268,
-     VERSIONK = 269,
-     BASE = 270,
-     CONSTANTU = 271,
-     CONSTANTL = 272,
-     PRIVATEU = 273,
-     PRIVATEL = 274,
-     ALIGNCOMM = 275,
-     READ = 276,
-     WRITE = 277,
-     EXECUTE = 278,
-     SHARED = 279,
-     NONAMEU = 280,
-     NONAMEL = 281,
-     DIRECTIVE = 282,
-     EQUAL = 283,
-     ID = 284,
-     DIGITS = 285
-   };
-#endif
-/* Tokens.  */
-#define NAME 258
-#define LIBRARY 259
-#define DESCRIPTION 260
-#define STACKSIZE_K 261
-#define HEAPSIZE 262
-#define CODE 263
-#define DATAU 264
-#define DATAL 265
-#define SECTIONS 266
-#define EXPORTS 267
-#define IMPORTS 268
-#define VERSIONK 269
-#define BASE 270
-#define CONSTANTU 271
-#define CONSTANTL 272
-#define PRIVATEU 273
-#define PRIVATEL 274
-#define ALIGNCOMM 275
-#define READ 276
-#define WRITE 277
-#define EXECUTE 278
-#define SHARED 279
-#define NONAMEU 280
-#define NONAMEL 281
-#define DIRECTIVE 282
-#define EQUAL 283
-#define ID 284
-#define DIGITS 285
-
-
-
-
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
 typedef union YYSTYPE
-{
-
-/* Line 214 of yacc.c  */
 #line 114 "deffilep.y"
-
+{
   char *id;
   const char *id_const;
   int number;
   bfd_vma vma;
   char *digits;
-
-
-
-/* Line 214 of yacc.c  */
-#line 293 "deffilep.c"
-} YYSTYPE;
-# define YYSTYPE_IS_TRIVIAL 1
+}
+/* Line 193 of yacc.c.  */
+#line 277 "deffilep.c"
+	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
+# define YYSTYPE_IS_TRIVIAL 1
 #endif
+
 
 
 /* Copy the second part of user declarations.  */
 
 
-/* Line 264 of yacc.c  */
-#line 305 "deffilep.c"
+/* Line 216 of yacc.c.  */
+#line 290 "deffilep.c"
 
 #ifdef short
 # undef short
@@ -351,7 +336,7 @@ typedef short int yytype_int16;
 #define YYSIZE_MAXIMUM ((YYSIZE_T) -1)
 
 #ifndef YY_
-# if YYENABLE_NLS
+# if defined YYENABLE_NLS && YYENABLE_NLS
 #  if ENABLE_NLS
 #   include <libintl.h> /* INFRINGES ON USER NAME SPACE */
 #   define YY_(msgid) dgettext ("bison-runtime", msgid)
@@ -376,14 +361,14 @@ typedef short int yytype_int16;
 #if (defined __STDC__ || defined __C99__FUNC__ \
      || defined __cplusplus || defined _MSC_VER)
 static int
-YYID (int yyi)
+YYID (int i)
 #else
 static int
-YYID (yyi)
-    int yyi;
+YYID (i)
+    int i;
 #endif
 {
-  return yyi;
+  return i;
 }
 #endif
 
@@ -464,9 +449,9 @@ void free (void *); /* INFRINGES ON USER NAME SPACE */
 /* A type that is properly aligned for any stack member.  */
 union yyalloc
 {
-  yytype_int16 yyss_alloc;
-  YYSTYPE yyvs_alloc;
-};
+  yytype_int16 yyss;
+  YYSTYPE yyvs;
+  };
 
 /* The size of the maximum gap between one aligned stack and the next.  */
 # define YYSTACK_GAP_MAXIMUM (sizeof (union yyalloc) - 1)
@@ -500,12 +485,12 @@ union yyalloc
    elements in the stack, and YYPTR gives the new location of the
    stack.  Advance YYPTR to a properly aligned location for the next
    stack.  */
-# define YYSTACK_RELOCATE(Stack_alloc, Stack)				\
+# define YYSTACK_RELOCATE(Stack)					\
     do									\
       {									\
 	YYSIZE_T yynewbytes;						\
-	YYCOPY (&yyptr->Stack_alloc, Stack, yysize);			\
-	Stack = &yyptr->Stack_alloc;					\
+	YYCOPY (&yyptr->Stack, Stack, yysize);				\
+	Stack = &yyptr->Stack;						\
 	yynewbytes = yystacksize * sizeof (*Stack) + YYSTACK_GAP_MAXIMUM; \
 	yyptr += yynewbytes / sizeof (*yyptr);				\
       }									\
@@ -890,7 +875,7 @@ while (YYID (0))
    we won't break user code: when these are the locations we know.  */
 
 #ifndef YY_LOCATION_PRINT
-# if YYLTYPE_IS_TRIVIAL
+# if defined YYLTYPE_IS_TRIVIAL && YYLTYPE_IS_TRIVIAL
 #  define YY_LOCATION_PRINT(File, Loc)			\
      fprintf (File, "%d.%d-%d.%d",			\
 	      (Loc).first_line, (Loc).first_column,	\
@@ -1001,20 +986,17 @@ yy_symbol_print (yyoutput, yytype, yyvaluep)
 #if (defined __STDC__ || defined __C99__FUNC__ \
      || defined __cplusplus || defined _MSC_VER)
 static void
-yy_stack_print (yytype_int16 *yybottom, yytype_int16 *yytop)
+yy_stack_print (yytype_int16 *bottom, yytype_int16 *top)
 #else
 static void
-yy_stack_print (yybottom, yytop)
-    yytype_int16 *yybottom;
-    yytype_int16 *yytop;
+yy_stack_print (bottom, top)
+    yytype_int16 *bottom;
+    yytype_int16 *top;
 #endif
 {
   YYFPRINTF (stderr, "Stack now");
-  for (; yybottom <= yytop; yybottom++)
-    {
-      int yybot = *yybottom;
-      YYFPRINTF (stderr, " %d", yybot);
-    }
+  for (; bottom <= top; ++bottom)
+    YYFPRINTF (stderr, " %d", *bottom);
   YYFPRINTF (stderr, "\n");
 }
 
@@ -1048,11 +1030,11 @@ yy_reduce_print (yyvsp, yyrule)
   /* The symbols being reduced.  */
   for (yyi = 0; yyi < yynrhs; yyi++)
     {
-      YYFPRINTF (stderr, "   $%d = ", yyi + 1);
+      fprintf (stderr, "   $%d = ", yyi + 1);
       yy_symbol_print (stderr, yyrhs[yyprhs[yyrule] + yyi],
 		       &(yyvsp[(yyi + 1) - (yynrhs)])
 		       		       );
-      YYFPRINTF (stderr, "\n");
+      fprintf (stderr, "\n");
     }
 }
 
@@ -1332,8 +1314,10 @@ yydestruct (yymsg, yytype, yyvaluep)
 	break;
     }
 }
+
 
 /* Prevent warnings from -Wmissing-prototypes.  */
+
 #ifdef YYPARSE_PARAM
 #if defined __STDC__ || defined __cplusplus
 int yyparse (void *YYPARSE_PARAM);
@@ -1349,10 +1333,11 @@ int yyparse ();
 #endif /* ! YYPARSE_PARAM */
 
 
-/* The lookahead symbol.  */
+
+/* The look-ahead symbol.  */
 int yychar;
 
-/* The semantic value of the lookahead symbol.  */
+/* The semantic value of the look-ahead symbol.  */
 YYSTYPE yylval;
 
 /* Number of syntax errors so far.  */
@@ -1360,9 +1345,9 @@ int yynerrs;
 
 
 
-/*-------------------------.
-| yyparse or yypush_parse.  |
-`-------------------------*/
+/*----------.
+| yyparse.  |
+`----------*/
 
 #ifdef YYPARSE_PARAM
 #if (defined __STDC__ || defined __C99__FUNC__ \
@@ -1386,39 +1371,14 @@ yyparse ()
 #endif
 #endif
 {
-
-
-    int yystate;
-    /* Number of tokens to shift before error messages enabled.  */
-    int yyerrstatus;
-
-    /* The stacks and their tools:
-       `yyss': related to states.
-       `yyvs': related to semantic values.
-
-       Refer to the stacks thru separate pointers, to allow yyoverflow
-       to reallocate them elsewhere.  */
-
-    /* The state stack.  */
-    yytype_int16 yyssa[YYINITDEPTH];
-    yytype_int16 *yyss;
-    yytype_int16 *yyssp;
-
-    /* The semantic value stack.  */
-    YYSTYPE yyvsa[YYINITDEPTH];
-    YYSTYPE *yyvs;
-    YYSTYPE *yyvsp;
-
-    YYSIZE_T yystacksize;
-
+  
+  int yystate;
   int yyn;
   int yyresult;
-  /* Lookahead token as an internal (translated) token number.  */
-  int yytoken;
-  /* The variables used to return semantic value and location from the
-     action routines.  */
-  YYSTYPE yyval;
-
+  /* Number of tokens to shift before error messages enabled.  */
+  int yyerrstatus;
+  /* Look-ahead token as an internal (translated) token number.  */
+  int yytoken = 0;
 #if YYERROR_VERBOSE
   /* Buffer for error messages, and its allocated size.  */
   char yymsgbuf[128];
@@ -1426,28 +1386,51 @@ yyparse ()
   YYSIZE_T yymsg_alloc = sizeof yymsgbuf;
 #endif
 
+  /* Three stacks and their tools:
+     `yyss': related to states,
+     `yyvs': related to semantic values,
+     `yyls': related to locations.
+
+     Refer to the stacks thru separate pointers, to allow yyoverflow
+     to reallocate them elsewhere.  */
+
+  /* The state stack.  */
+  yytype_int16 yyssa[YYINITDEPTH];
+  yytype_int16 *yyss = yyssa;
+  yytype_int16 *yyssp;
+
+  /* The semantic value stack.  */
+  YYSTYPE yyvsa[YYINITDEPTH];
+  YYSTYPE *yyvs = yyvsa;
+  YYSTYPE *yyvsp;
+
+
+
 #define YYPOPSTACK(N)   (yyvsp -= (N), yyssp -= (N))
+
+  YYSIZE_T yystacksize = YYINITDEPTH;
+
+  /* The variables used to return semantic value and location from the
+     action routines.  */
+  YYSTYPE yyval;
+
 
   /* The number of symbols on the RHS of the reduced rule.
      Keep to zero when no symbol should be popped.  */
   int yylen = 0;
-
-  yytoken = 0;
-  yyss = yyssa;
-  yyvs = yyvsa;
-  yystacksize = YYINITDEPTH;
 
   YYDPRINTF ((stderr, "Starting parse\n"));
 
   yystate = 0;
   yyerrstatus = 0;
   yynerrs = 0;
-  yychar = YYEMPTY; /* Cause a token to be read.  */
+  yychar = YYEMPTY;		/* Cause a token to be read.  */
 
   /* Initialize stack pointers.
      Waste one element of value and location stack
      so that they stay on the same level as the state stack.
      The wasted elements are never initialized.  */
+
   yyssp = yyss;
   yyvsp = yyvs;
 
@@ -1477,6 +1460,7 @@ yyparse ()
 	YYSTYPE *yyvs1 = yyvs;
 	yytype_int16 *yyss1 = yyss;
 
+
 	/* Each stack pointer address is followed by the size of the
 	   data in use in that stack, in bytes.  This used to be a
 	   conditional around just the two extra args, but that might
@@ -1484,6 +1468,7 @@ yyparse ()
 	yyoverflow (YY_("memory exhausted"),
 		    &yyss1, yysize * sizeof (*yyssp),
 		    &yyvs1, yysize * sizeof (*yyvsp),
+
 		    &yystacksize);
 
 	yyss = yyss1;
@@ -1506,8 +1491,9 @@ yyparse ()
 	  (union yyalloc *) YYSTACK_ALLOC (YYSTACK_BYTES (yystacksize));
 	if (! yyptr)
 	  goto yyexhaustedlab;
-	YYSTACK_RELOCATE (yyss_alloc, yyss);
-	YYSTACK_RELOCATE (yyvs_alloc, yyvs);
+	YYSTACK_RELOCATE (yyss);
+	YYSTACK_RELOCATE (yyvs);
+
 #  undef YYSTACK_RELOCATE
 	if (yyss1 != yyssa)
 	  YYSTACK_FREE (yyss1);
@@ -1518,6 +1504,7 @@ yyparse ()
       yyssp = yyss + yysize - 1;
       yyvsp = yyvs + yysize - 1;
 
+
       YYDPRINTF ((stderr, "Stack size increased to %lu\n",
 		  (unsigned long int) yystacksize));
 
@@ -1527,9 +1514,6 @@ yyparse ()
 
   YYDPRINTF ((stderr, "Entering state %d\n", yystate));
 
-  if (yystate == YYFINAL)
-    YYACCEPT;
-
   goto yybackup;
 
 /*-----------.
@@ -1538,16 +1522,16 @@ yyparse ()
 yybackup:
 
   /* Do appropriate processing given the current state.  Read a
-     lookahead token if we need one and don't already have one.  */
+     look-ahead token if we need one and don't already have one.  */
 
-  /* First try to decide what to do without reference to lookahead token.  */
+  /* First try to decide what to do without reference to look-ahead token.  */
   yyn = yypact[yystate];
   if (yyn == YYPACT_NINF)
     goto yydefault;
 
-  /* Not known => get a lookahead token if don't already have one.  */
+  /* Not known => get a look-ahead token if don't already have one.  */
 
-  /* YYCHAR is either YYEMPTY or YYEOF or a valid lookahead symbol.  */
+  /* YYCHAR is either YYEMPTY or YYEOF or a valid look-ahead symbol.  */
   if (yychar == YYEMPTY)
     {
       YYDPRINTF ((stderr, "Reading a token: "));
@@ -1579,16 +1563,20 @@ yybackup:
       goto yyreduce;
     }
 
+  if (yyn == YYFINAL)
+    YYACCEPT;
+
   /* Count tokens shifted since error; after three, turn off error
      status.  */
   if (yyerrstatus)
     yyerrstatus--;
 
-  /* Shift the lookahead token.  */
+  /* Shift the look-ahead token.  */
   YY_SYMBOL_PRINT ("Shifting", yytoken, &yylval, &yylloc);
 
-  /* Discard the shifted token.  */
-  yychar = YYEMPTY;
+  /* Discard the shifted token unless it is eof.  */
+  if (yychar != YYEOF)
+    yychar = YYEMPTY;
 
   yystate = yyn;
   *++yyvsp = yylval;
@@ -1628,435 +1616,311 @@ yyreduce:
   switch (yyn)
     {
         case 4:
-
-/* Line 1455 of yacc.c  */
 #line 144 "deffilep.y"
     { def_image_name ((yyvsp[(2) - (3)].id), (yyvsp[(3) - (3)].vma), 0); }
     break;
 
   case 5:
-
-/* Line 1455 of yacc.c  */
 #line 145 "deffilep.y"
     { def_image_name ((yyvsp[(2) - (3)].id), (yyvsp[(3) - (3)].vma), 1); }
     break;
 
   case 6:
-
-/* Line 1455 of yacc.c  */
 #line 146 "deffilep.y"
     { def_description ((yyvsp[(2) - (2)].id));}
     break;
 
   case 7:
-
-/* Line 1455 of yacc.c  */
 #line 147 "deffilep.y"
     { def_stacksize ((yyvsp[(2) - (3)].number), (yyvsp[(3) - (3)].number));}
     break;
 
   case 8:
-
-/* Line 1455 of yacc.c  */
 #line 148 "deffilep.y"
     { def_heapsize ((yyvsp[(2) - (3)].number), (yyvsp[(3) - (3)].number));}
     break;
 
   case 9:
-
-/* Line 1455 of yacc.c  */
 #line 149 "deffilep.y"
     { def_section ("CODE", (yyvsp[(2) - (2)].number));}
     break;
 
   case 10:
-
-/* Line 1455 of yacc.c  */
 #line 150 "deffilep.y"
     { def_section ("DATA", (yyvsp[(2) - (2)].number));}
     break;
 
   case 14:
-
-/* Line 1455 of yacc.c  */
 #line 154 "deffilep.y"
     { def_version ((yyvsp[(2) - (2)].number), 0);}
     break;
 
   case 15:
-
-/* Line 1455 of yacc.c  */
 #line 155 "deffilep.y"
     { def_version ((yyvsp[(2) - (4)].number), (yyvsp[(4) - (4)].number));}
     break;
 
   case 16:
-
-/* Line 1455 of yacc.c  */
 #line 156 "deffilep.y"
     { def_directive ((yyvsp[(2) - (2)].id));}
     break;
 
   case 17:
-
-/* Line 1455 of yacc.c  */
 #line 157 "deffilep.y"
     { def_aligncomm ((yyvsp[(2) - (4)].id), (yyvsp[(4) - (4)].number));}
     break;
 
   case 21:
-
-/* Line 1455 of yacc.c  */
 #line 172 "deffilep.y"
     { def_exports ((yyvsp[(1) - (7)].id), (yyvsp[(2) - (7)].id), (yyvsp[(3) - (7)].number), (yyvsp[(5) - (7)].number), (yyvsp[(7) - (7)].id)); }
     break;
 
   case 22:
-
-/* Line 1455 of yacc.c  */
 #line 178 "deffilep.y"
     { (yyval.number) = (yyvsp[(1) - (3)].number) | (yyvsp[(3) - (3)].number); }
     break;
 
   case 23:
-
-/* Line 1455 of yacc.c  */
 #line 179 "deffilep.y"
     { (yyval.number) = 0; }
     break;
 
   case 24:
-
-/* Line 1455 of yacc.c  */
 #line 182 "deffilep.y"
     { (yyval.number) = 1; }
     break;
 
   case 25:
-
-/* Line 1455 of yacc.c  */
 #line 183 "deffilep.y"
     { (yyval.number) = 1; }
     break;
 
   case 26:
-
-/* Line 1455 of yacc.c  */
 #line 184 "deffilep.y"
     { (yyval.number) = 2; }
     break;
 
   case 27:
-
-/* Line 1455 of yacc.c  */
 #line 185 "deffilep.y"
     { (yyval.number) = 2; }
     break;
 
   case 28:
-
-/* Line 1455 of yacc.c  */
 #line 186 "deffilep.y"
     { (yyval.number) = 4; }
     break;
 
   case 29:
-
-/* Line 1455 of yacc.c  */
 #line 187 "deffilep.y"
     { (yyval.number) = 4; }
     break;
 
   case 30:
-
-/* Line 1455 of yacc.c  */
 #line 188 "deffilep.y"
     { (yyval.number) = 8; }
     break;
 
   case 31:
-
-/* Line 1455 of yacc.c  */
 #line 189 "deffilep.y"
     { (yyval.number) = 8; }
     break;
 
   case 34:
-
-/* Line 1455 of yacc.c  */
 #line 198 "deffilep.y"
     { def_import ((yyvsp[(1) - (8)].id), (yyvsp[(3) - (8)].id), (yyvsp[(5) - (8)].id), (yyvsp[(7) - (8)].id), -1, (yyvsp[(8) - (8)].id)); }
     break;
 
   case 35:
-
-/* Line 1455 of yacc.c  */
 #line 200 "deffilep.y"
     { def_import ((yyvsp[(1) - (8)].id), (yyvsp[(3) - (8)].id), (yyvsp[(5) - (8)].id),  0, (yyvsp[(7) - (8)].number), (yyvsp[(8) - (8)].id)); }
     break;
 
   case 36:
-
-/* Line 1455 of yacc.c  */
 #line 202 "deffilep.y"
     { def_import ((yyvsp[(1) - (6)].id), (yyvsp[(3) - (6)].id),  0, (yyvsp[(5) - (6)].id), -1, (yyvsp[(6) - (6)].id)); }
     break;
 
   case 37:
-
-/* Line 1455 of yacc.c  */
 #line 204 "deffilep.y"
     { def_import ((yyvsp[(1) - (6)].id), (yyvsp[(3) - (6)].id),  0,  0, (yyvsp[(5) - (6)].number), (yyvsp[(6) - (6)].id)); }
     break;
 
   case 38:
-
-/* Line 1455 of yacc.c  */
 #line 206 "deffilep.y"
     { def_import( 0, (yyvsp[(1) - (6)].id), (yyvsp[(3) - (6)].id), (yyvsp[(5) - (6)].id), -1, (yyvsp[(6) - (6)].id)); }
     break;
 
   case 39:
-
-/* Line 1455 of yacc.c  */
 #line 208 "deffilep.y"
     { def_import ( 0, (yyvsp[(1) - (4)].id),  0, (yyvsp[(3) - (4)].id), -1, (yyvsp[(4) - (4)].id)); }
     break;
 
   case 42:
-
-/* Line 1455 of yacc.c  */
 #line 217 "deffilep.y"
     { def_section ((yyvsp[(1) - (2)].id), (yyvsp[(2) - (2)].number));}
     break;
 
   case 43:
-
-/* Line 1455 of yacc.c  */
 #line 218 "deffilep.y"
     { def_section_alt ((yyvsp[(1) - (2)].id), (yyvsp[(2) - (2)].id));}
     break;
 
   case 44:
-
-/* Line 1455 of yacc.c  */
 #line 222 "deffilep.y"
     { (yyval.number) = (yyvsp[(1) - (3)].number) | (yyvsp[(3) - (3)].number); }
     break;
 
   case 45:
-
-/* Line 1455 of yacc.c  */
 #line 223 "deffilep.y"
     { (yyval.number) = (yyvsp[(1) - (1)].number); }
     break;
 
   case 48:
-
-/* Line 1455 of yacc.c  */
 #line 230 "deffilep.y"
     { (yyval.number)=(yyvsp[(2) - (2)].number);}
     break;
 
   case 49:
-
-/* Line 1455 of yacc.c  */
 #line 231 "deffilep.y"
     { (yyval.number)=-1;}
     break;
 
   case 50:
-
-/* Line 1455 of yacc.c  */
 #line 235 "deffilep.y"
     { (yyval.number) = 1;}
     break;
 
   case 51:
-
-/* Line 1455 of yacc.c  */
 #line 236 "deffilep.y"
     { (yyval.number) = 2;}
     break;
 
   case 52:
-
-/* Line 1455 of yacc.c  */
 #line 237 "deffilep.y"
     { (yyval.number)=4;}
     break;
 
   case 53:
-
-/* Line 1455 of yacc.c  */
 #line 238 "deffilep.y"
     { (yyval.number)=8;}
     break;
 
   case 54:
-
-/* Line 1455 of yacc.c  */
 #line 242 "deffilep.y"
     { (yyval.id_const) = "BASE"; }
     break;
 
   case 55:
-
-/* Line 1455 of yacc.c  */
 #line 243 "deffilep.y"
     { (yyval.id_const) = "CODE"; }
     break;
 
   case 56:
-
-/* Line 1455 of yacc.c  */
 #line 244 "deffilep.y"
     { (yyval.id_const) = "CONSTANT"; }
     break;
 
   case 57:
-
-/* Line 1455 of yacc.c  */
 #line 245 "deffilep.y"
     { (yyval.id_const) = "constant"; }
     break;
 
   case 58:
-
-/* Line 1455 of yacc.c  */
 #line 246 "deffilep.y"
     { (yyval.id_const) = "DATA"; }
     break;
 
   case 59:
-
-/* Line 1455 of yacc.c  */
 #line 247 "deffilep.y"
     { (yyval.id_const) = "data"; }
     break;
 
   case 60:
-
-/* Line 1455 of yacc.c  */
 #line 248 "deffilep.y"
     { (yyval.id_const) = "DESCRIPTION"; }
     break;
 
   case 61:
-
-/* Line 1455 of yacc.c  */
 #line 249 "deffilep.y"
     { (yyval.id_const) = "DIRECTIVE"; }
     break;
 
   case 62:
-
-/* Line 1455 of yacc.c  */
 #line 250 "deffilep.y"
     { (yyval.id_const) = "EXECUTE"; }
     break;
 
   case 63:
-
-/* Line 1455 of yacc.c  */
 #line 251 "deffilep.y"
     { (yyval.id_const) = "EXPORTS"; }
     break;
 
   case 64:
-
-/* Line 1455 of yacc.c  */
 #line 252 "deffilep.y"
     { (yyval.id_const) = "HEAPSIZE"; }
     break;
 
   case 65:
-
-/* Line 1455 of yacc.c  */
 #line 253 "deffilep.y"
     { (yyval.id_const) = "IMPORTS"; }
     break;
 
   case 66:
-
-/* Line 1455 of yacc.c  */
 #line 260 "deffilep.y"
     { (yyval.id_const) = "NAME"; }
     break;
 
   case 67:
-
-/* Line 1455 of yacc.c  */
 #line 261 "deffilep.y"
     { (yyval.id_const) = "NONAME"; }
     break;
 
   case 68:
-
-/* Line 1455 of yacc.c  */
 #line 262 "deffilep.y"
     { (yyval.id_const) = "noname"; }
     break;
 
   case 69:
-
-/* Line 1455 of yacc.c  */
 #line 263 "deffilep.y"
     { (yyval.id_const) = "PRIVATE"; }
     break;
 
   case 70:
-
-/* Line 1455 of yacc.c  */
 #line 264 "deffilep.y"
     { (yyval.id_const) = "private"; }
     break;
 
   case 71:
-
-/* Line 1455 of yacc.c  */
 #line 265 "deffilep.y"
     { (yyval.id_const) = "READ"; }
     break;
 
   case 72:
-
-/* Line 1455 of yacc.c  */
 #line 266 "deffilep.y"
     { (yyval.id_const) = "SHARED"; }
     break;
 
   case 73:
-
-/* Line 1455 of yacc.c  */
 #line 267 "deffilep.y"
     { (yyval.id_const) = "STACKSIZE"; }
     break;
 
   case 74:
-
-/* Line 1455 of yacc.c  */
 #line 268 "deffilep.y"
     { (yyval.id_const) = "VERSION"; }
     break;
 
   case 75:
-
-/* Line 1455 of yacc.c  */
 #line 269 "deffilep.y"
     { (yyval.id_const) = "WRITE"; }
     break;
 
   case 76:
-
-/* Line 1455 of yacc.c  */
 #line 272 "deffilep.y"
     { (yyval.id) = (yyvsp[(1) - (1)].id); }
     break;
 
   case 77:
-
-/* Line 1455 of yacc.c  */
 #line 274 "deffilep.y"
     {
 	    char *name = xmalloc (strlen ((yyvsp[(2) - (2)].id_const)) + 2);
@@ -2066,8 +1930,6 @@ yyreduce:
     break;
 
   case 78:
-
-/* Line 1455 of yacc.c  */
 #line 280 "deffilep.y"
     {
 	    char *name = def_pool_alloc (strlen ((yyvsp[(2) - (2)].id)) + 2);
@@ -2077,8 +1939,6 @@ yyreduce:
     break;
 
   case 79:
-
-/* Line 1455 of yacc.c  */
 #line 286 "deffilep.y"
     {
 	    char *name = def_pool_alloc (strlen ((yyvsp[(1) - (3)].id_const)) + 1 + strlen ((yyvsp[(3) - (3)].id)) + 1);
@@ -2088,8 +1948,6 @@ yyreduce:
     break;
 
   case 80:
-
-/* Line 1455 of yacc.c  */
 #line 292 "deffilep.y"
     {
 	    char *name = def_pool_alloc (strlen ((yyvsp[(1) - (3)].id)) + 1 + strlen ((yyvsp[(3) - (3)].id)) + 1);
@@ -2099,85 +1957,61 @@ yyreduce:
     break;
 
   case 81:
-
-/* Line 1455 of yacc.c  */
 #line 299 "deffilep.y"
     { (yyval.id) = (yyvsp[(1) - (1)].id); }
     break;
 
   case 82:
-
-/* Line 1455 of yacc.c  */
 #line 300 "deffilep.y"
     { (yyval.id) = ""; }
     break;
 
   case 83:
-
-/* Line 1455 of yacc.c  */
 #line 303 "deffilep.y"
     { (yyval.id) = (yyvsp[(2) - (2)].id); }
     break;
 
   case 84:
-
-/* Line 1455 of yacc.c  */
 #line 304 "deffilep.y"
     { (yyval.id) = 0; }
     break;
 
   case 85:
-
-/* Line 1455 of yacc.c  */
 #line 308 "deffilep.y"
     { (yyval.number) = (yyvsp[(2) - (2)].number);}
     break;
 
   case 86:
-
-/* Line 1455 of yacc.c  */
 #line 309 "deffilep.y"
     { (yyval.number) = -1;}
     break;
 
   case 87:
-
-/* Line 1455 of yacc.c  */
 #line 313 "deffilep.y"
     { (yyval.id) = (yyvsp[(2) - (2)].id); }
     break;
 
   case 88:
-
-/* Line 1455 of yacc.c  */
 #line 314 "deffilep.y"
     { (yyval.id) =  0; }
     break;
 
   case 89:
-
-/* Line 1455 of yacc.c  */
 #line 317 "deffilep.y"
     { (yyval.vma) = (yyvsp[(3) - (3)].vma);}
     break;
 
   case 90:
-
-/* Line 1455 of yacc.c  */
 #line 318 "deffilep.y"
     { (yyval.vma) = (bfd_vma) -1;}
     break;
 
   case 91:
-
-/* Line 1455 of yacc.c  */
 #line 321 "deffilep.y"
     { (yyval.id) = (yyvsp[(1) - (1)].id); }
     break;
 
   case 92:
-
-/* Line 1455 of yacc.c  */
 #line 323 "deffilep.y"
     {
 	    char *id = def_pool_alloc (strlen ((yyvsp[(2) - (2)].id)) + 2);
@@ -2187,8 +2021,6 @@ yyreduce:
     break;
 
   case 93:
-
-/* Line 1455 of yacc.c  */
 #line 329 "deffilep.y"
     {
 	    char *id = def_pool_alloc (strlen ((yyvsp[(1) - (4)].id)) + 1 + strlen ((yyvsp[(3) - (4)].digits)) + strlen ((yyvsp[(4) - (4)].id)) + 1);
@@ -2198,51 +2030,38 @@ yyreduce:
     break;
 
   case 94:
-
-/* Line 1455 of yacc.c  */
 #line 336 "deffilep.y"
     { (yyval.digits) = (yyvsp[(1) - (1)].digits); }
     break;
 
   case 95:
-
-/* Line 1455 of yacc.c  */
 #line 337 "deffilep.y"
     { (yyval.digits) = ""; }
     break;
 
   case 96:
-
-/* Line 1455 of yacc.c  */
 #line 340 "deffilep.y"
     { (yyval.id) = (yyvsp[(1) - (1)].id); }
     break;
 
   case 97:
-
-/* Line 1455 of yacc.c  */
 #line 341 "deffilep.y"
     { (yyval.id) = ""; }
     break;
 
   case 98:
-
-/* Line 1455 of yacc.c  */
 #line 344 "deffilep.y"
     { (yyval.number) = strtoul ((yyvsp[(1) - (1)].digits), 0, 0); }
     break;
 
   case 99:
-
-/* Line 1455 of yacc.c  */
 #line 346 "deffilep.y"
     { (yyval.vma) = (bfd_vma) strtoull ((yyvsp[(1) - (1)].digits), 0, 0); }
     break;
 
 
-
-/* Line 1455 of yacc.c  */
-#line 2246 "deffilep.c"
+/* Line 1267 of yacc.c.  */
+#line 2065 "deffilep.c"
       default: break;
     }
   YY_SYMBOL_PRINT ("-> $$ =", yyr1[yyn], &yyval, &yyloc);
@@ -2252,6 +2071,7 @@ yyreduce:
   YY_STACK_PRINT (yyss, yyssp);
 
   *++yyvsp = yyval;
+
 
   /* Now `shift' the result of the reduction.  Determine what state
      that goes to, based on the state we popped back to and the rule
@@ -2317,7 +2137,7 @@ yyerrlab:
 
   if (yyerrstatus == 3)
     {
-      /* If just tried and failed to reuse lookahead token after an
+      /* If just tried and failed to reuse look-ahead token after an
 	 error, discard it.  */
 
       if (yychar <= YYEOF)
@@ -2334,7 +2154,7 @@ yyerrlab:
 	}
     }
 
-  /* Else will try to reuse lookahead token after shifting the error
+  /* Else will try to reuse look-ahead token after shifting the error
      token.  */
   goto yyerrlab1;
 
@@ -2391,6 +2211,9 @@ yyerrlab1:
       YY_STACK_PRINT (yyss, yyssp);
     }
 
+  if (yyn == YYFINAL)
+    YYACCEPT;
+
   *++yyvsp = yylval;
 
 
@@ -2415,7 +2238,7 @@ yyabortlab:
   yyresult = 1;
   goto yyreturn;
 
-#if !defined(yyoverflow) || YYERROR_VERBOSE
+#ifndef yyoverflow
 /*-------------------------------------------------.
 | yyexhaustedlab -- memory exhaustion comes here.  |
 `-------------------------------------------------*/
@@ -2426,7 +2249,7 @@ yyexhaustedlab:
 #endif
 
 yyreturn:
-  if (yychar != YYEMPTY)
+  if (yychar != YYEOF && yychar != YYEMPTY)
      yydestruct ("Cleanup: discarding lookahead",
 		 yytoken, &yylval);
   /* Do not reclaim the symbols of the rule which action triggered
@@ -2452,8 +2275,6 @@ yyreturn:
 }
 
 
-
-/* Line 1675 of yacc.c  */
 #line 348 "deffilep.y"
 
 

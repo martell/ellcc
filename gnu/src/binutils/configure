@@ -556,7 +556,6 @@ enable_option_checking=no
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
 compare_exclusions
-host_shared
 stage2_werror_flag
 stage1_checking
 stage1_cflags
@@ -788,7 +787,6 @@ with_build_time_tools
 enable_maintainer_mode
 enable_stage1_checking
 enable_werror
-enable_host_shared
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1492,7 +1490,6 @@ Optional Features:
                           choose additional checking for stage1 of the
                           compiler
   --enable-werror         enable -Werror in bootstrap stage2 and later
-  --enable-host-shared    build host code as shared libraries
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -3623,7 +3620,7 @@ case "${target}" in
   sh*-*-pe|mips*-*-pe|*arm-wince-pe)
     noconfigdirs="$noconfigdirs tcl tk itcl libgui sim"
     ;;
-  arc-*-*|arceb-*-*)
+  arc-*-*)
     noconfigdirs="$noconfigdirs target-libgloss"
     ;;
   arm-*-pe*)
@@ -5968,55 +5965,6 @@ $as_echo "$gcc_cv_isl" >&6; }
   fi
 
 
-    if test "${gcc_cv_isl}" = no ; then
-
-  if test "${ENABLE_ISL_CHECK}" = yes ; then
-    _isl_saved_CFLAGS=$CFLAGS
-    _isl_saved_LDFLAGS=$LDFLAGS
-    _isl_saved_LIBS=$LIBS
-
-    CFLAGS="${_isl_saved_CFLAGS} ${islinc} ${gmpinc}"
-    LDFLAGS="${_isl_saved_LDFLAGS} ${isllibs}"
-    LIBS="${_isl_saved_LIBS} -lisl"
-
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for version 0.12 of ISL" >&5
-$as_echo_n "checking for version 0.12 of ISL... " >&6; }
-    if test "$cross_compiling" = yes; then :
-  gcc_cv_isl=yes
-else
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-#include <isl/version.h>
-   #include <string.h>
-int
-main ()
-{
-if (strncmp (isl_version (), "isl-0.12", strlen ("isl-0.12")) != 0)
-     return 1;
-
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_run "$LINENO"; then :
-  gcc_cv_isl=yes
-else
-  gcc_cv_isl=no
-fi
-rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
-  conftest.$ac_objext conftest.beam conftest.$ac_ext
-fi
-
-    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $gcc_cv_isl" >&5
-$as_echo "$gcc_cv_isl" >&6; }
-
-    CFLAGS=$_isl_saved_CFLAGS
-    LDFLAGS=$_isl_saved_LDFLAGS
-    LIBS=$_isl_saved_LIBS
-  fi
-
-
-    fi
   fi
 
 
@@ -14571,16 +14519,6 @@ case ${enable_werror} in
   yes) stage2_werror_flag="--enable-werror-always" ;;
   *) stage2_werror_flag="" ;;
 esac
-
-
-# Enable --enable-host-shared.
-# Check whether --enable-host-shared was given.
-if test "${enable_host_shared+set}" = set; then :
-  enableval=$enable_host_shared; host_shared=$enableval
-else
-  host_shared=no
-fi
-
 
 
 # Specify what files to not compare during bootstrap.
