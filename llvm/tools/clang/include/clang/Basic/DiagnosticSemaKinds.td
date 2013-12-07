@@ -547,7 +547,7 @@ def err_conflicting_ivar_bitwidth : Error<
   "instance variable %0 has conflicting bit-field width">;
 def err_conflicting_ivar_name : Error<
   "conflicting instance variable names: %0 vs %1">;
-def err_inconsistant_ivar_count : Error<
+def err_inconsistent_ivar_count : Error<
   "inconsistent number of instance variables specified">;
 def warn_undef_method_impl : Warning<"method definition for %0 not found">,
   InGroup<DiagGroup<"incomplete-implementation">>;
@@ -2037,7 +2037,7 @@ def warn_attribute_wrong_decl_type : Warning<
   "variables and fields|variables, data members and tag types|"
   "types and namespaces|Objective-C interfaces|methods and properties|"
   "struct or union|struct, union or class|types|"
-  "Objective-C instance methods}1">,
+  "Objective-C instance methods|variables, functions and classes}1">,
   InGroup<IgnoredAttributes>;
 def err_attribute_wrong_decl_type : Error<
   "%0 attribute only applies to %select{functions|unions|"
@@ -2049,7 +2049,7 @@ def err_attribute_wrong_decl_type : Error<
   "variables and fields|variables, data members and tag types|"
   "types and namespaces|Objective-C interfaces|methods and properties|"
   "struct or union|struct, union or class|types|"
-  "Objective-C instance methods}1">;
+  "Objective-C instance methods|variables, functions and classes}1">;
 def warn_type_attribute_wrong_type : Warning<
   "'%0' only applies to %select{function|pointer|"
   "Objective-C object or block pointer}1 types; type here is %2">,
@@ -2426,6 +2426,32 @@ def warn_objc_requires_super_protocol : Warning<
   InGroup<DiagGroup<"requires-super-attribute">>;
 def note_protocol_decl : Note<
   "protocol is declared here">;
+
+// objc_designated_initializer attribute diagnostics.
+def err_attr_objc_designated_not_init_family : Error<
+  "'objc_designated_initializer' only applies to methods of the init family">;
+def err_attr_objc_designated_not_interface : Error<
+  "'objc_designated_initializer' only applies to methods of interface declarations">;
+def warn_objc_designated_init_missing_super_call : Warning<
+  "designated initializer missing a 'super' call to a designated initializer of the super class">,
+  InGroup<ObjCDesignatedInit>;
+def note_objc_designated_init_marked_here : Note<
+  "method marked as designated initializer of the class here">;
+def warn_objc_designated_init_non_super_designated_init_call : Warning<
+  "designated initializer should only invoke a designated initializer on 'super'">,
+  InGroup<ObjCDesignatedInit>;
+def warn_objc_designated_init_non_designated_init_call : Warning<
+  "designated initializer invoked a non-designated initializer">,
+  InGroup<ObjCDesignatedInit>;
+def warn_objc_secondary_init_super_init_call : Warning<
+  "secondary initializer should not invoke an initializer on 'super'">,
+  InGroup<ObjCDesignatedInit>;
+def warn_objc_secondary_init_missing_init_call : Warning<
+  "secondary initializer missing a 'self' call to another initializer">,
+  InGroup<ObjCDesignatedInit>;
+def warn_objc_implementation_missing_designated_init_override : Warning<
+  "method override for the designated initializer of the superclass %objcinstance0 not found">,
+  InGroup<ObjCDesignatedInit>;
 
 def err_ns_bridged_not_interface : Error<
   "parameter of 'ns_bridged' attribute does not name an Objective-C class">;
@@ -3373,11 +3399,11 @@ def note_using_value_decl_missing_typename : Note<
   "add 'typename' to treat this using declaration as a type">;
 
 def err_template_kw_refers_to_non_template : Error<
-    "%0 following the 'template' keyword does not refer to a template">;
+  "%0 following the 'template' keyword does not refer to a template">;
 def err_template_kw_refers_to_class_template : Error<
-    "'%0%1' instantiated to a class template, not a function template">;
+  "'%0%1' instantiated to a class template, not a function template">;
 def note_referenced_class_template : Error<
-    "class template declared here">;
+  "class template declared here">;
 def err_template_kw_missing : Error<
   "missing 'template' keyword prior to dependent template name '%0%1'">;
 def ext_template_outside_of_template : ExtWarn<
@@ -3387,7 +3413,8 @@ def warn_cxx98_compat_template_outside_of_template : Warning<
   InGroup<CXX98Compat>, DefaultIgnore;
 
 def err_non_type_template_in_nested_name_specifier : Error<
-  "qualified name refers into a specialization of function template %0">;
+  "qualified name refers into a specialization of %select{function|variable}0 "
+  "template %1">;
 def err_template_id_not_a_type : Error<
   "template name refers to non-type template %0">;
 def note_template_declared_here : Note<
@@ -4431,6 +4458,9 @@ def warn_member_extra_qualification : Warning<
   "extra qualification on member %0">, InGroup<Microsoft>;
 def err_member_extra_qualification : Error<
   "extra qualification on member %0">;
+def warn_namespace_member_extra_qualification : Warning<
+  "extra qualification on member %0">,
+  InGroup<DiagGroup<"extra-qualification">>;
 def err_member_qualification : Error<
   "non-friend class member %0 cannot have a qualified name">;  
 def note_member_def_close_match : Note<"member declaration nearly matches">;
@@ -5005,7 +5035,7 @@ def err_qualified_catch_declarator : Error<
   "exception declarator cannot be qualified">;
 def err_early_catch_all : Error<"catch-all handler must come last">;
 def err_bad_memptr_rhs : Error<
-  "right hand operand to %0 has non pointer-to-member type %1">;
+  "right hand operand to %0 has non-pointer-to-member type %1">;
 def err_bad_memptr_lhs : Error<
   "left hand operand to %0 must be a %select{|pointer to }1class "
   "compatible with the right hand operand, but is %2">;
@@ -5982,6 +6012,8 @@ def err_operator_delete_param_type : Error<
 // C++ literal operators
 def err_literal_operator_outside_namespace : Error<
   "literal operator %0 must be in a namespace or global scope">;
+def err_literal_operator_id_outside_namespace : Error<
+  "non-namespace scope '%0' cannot have a literal operator member">;
 def err_literal_operator_default_argument : Error<
   "literal operator cannot have a default argument">;
 // FIXME: This diagnostic sucks
@@ -6426,6 +6458,8 @@ def ext_return_has_void_expr : Extension<
 def err_return_init_list : Error<
   "%select{void function|void method|constructor|destructor}1 %0 "
   "must not return a value">;
+def err_ctor_dtor_returns_void : Error<
+  "%select{constructor|destructor}1 %0 must not return void expression">;
 def warn_noreturn_function_has_return_expr : Warning<
   "function %0 declared 'noreturn' should not return">,
   InGroup<InvalidNoreturn>;

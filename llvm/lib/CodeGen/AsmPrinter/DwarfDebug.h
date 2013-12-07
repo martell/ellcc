@@ -14,6 +14,7 @@
 #ifndef CODEGEN_ASMPRINTER_DWARFDEBUG_H__
 #define CODEGEN_ASMPRINTER_DWARFDEBUG_H__
 
+#include "AsmPrinterHandler.h"
 #include "DIE.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
@@ -29,6 +30,7 @@
 
 namespace llvm {
 
+class Unit;
 class CompileUnit;
 class ConstantInt;
 class ConstantFP;
@@ -218,19 +220,20 @@ private:
 };
 
 /// \brief Collects and handles information specific to a particular
-/// collection of units.
-class DwarfUnits {
+/// collection of units. This collection represents all of the units
+/// that will be ultimately output into a single object file.
+class DwarfFile {
   // Target of Dwarf emission, used for sizing of abbreviations.
   AsmPrinter *Asm;
 
   // Used to uniquely define abbreviations.
-  FoldingSet<DIEAbbrev> *AbbreviationsSet;
+  FoldingSet<DIEAbbrev> AbbreviationsSet;
 
   // A list of all the unique abbreviations in use.
-  std::vector<DIEAbbrev *> &Abbreviations;
+  std::vector<DIEAbbrev *> Abbreviations;
 
   // A pointer to all units in the section.
-  SmallVector<CompileUnit *, 1> CUs;
+  SmallVector<Unit *, 1> CUs;
 
   // Collection of strings for this unit and assorted symbols.
   // A String->Symbol mapping of strings used by indirect
@@ -249,16 +252,13 @@ class DwarfUnits {
   unsigned NextAddrPoolNumber;
 
 public:
-  DwarfUnits(AsmPrinter *AP, FoldingSet<DIEAbbrev> *AS,
-             std::vector<DIEAbbrev *> &A, const char *Pref,
-             BumpPtrAllocator &DA)
-      : Asm(AP), AbbreviationsSet(AS), Abbreviations(A), StringPool(DA),
-        NextStringPoolNumber(0), StringPref(Pref), AddressPool(),
-        NextAddrPoolNumber(0) {}
+  DwarfFile(AsmPrinter *AP, const char *Pref, BumpPtrAllocator &DA)
+      : Asm(AP), StringPool(DA), NextStringPoolNumber(0), StringPref(Pref),
+        AddressPool(), NextAddrPoolNumber(0) {}
 
-  ~DwarfUnits();
+  ~DwarfFile();
 
-  const SmallVectorImpl<CompileUnit *> &getUnits() { return CUs; }
+  const SmallVectorImpl<Unit *> &getUnits() { return CUs; }
 
   /// \brief Compute the size and offset of a DIE given an incoming Offset.
   unsigned computeSizeAndOffset(DIE *Die, unsigned Offset);
@@ -270,12 +270,15 @@ public:
   void assignAbbrevNumber(DIEAbbrev &Abbrev);
 
   /// \brief Add a unit to the list of CUs.
-  void addUnit(CompileUnit *CU) { CUs.push_back(CU); }
+  void addUnit(Unit *CU) { CUs.push_back(CU); }
 
   /// \brief Emit all of the units to the section listed with the given
   /// abbreviation section.
   void emitUnits(DwarfDebug *DD, const MCSection *USection,
                  const MCSection *ASection, const MCSymbol *ASectionSym);
+
+  /// \brief Emit a set of abbreviations to the specific section.
+  void emitAbbrevs(const MCSection *);
 
   /// \brief Emit all of the strings to the section given.
   void emitStrings(const MCSection *StrSection, const MCSection *OffsetSection,
@@ -315,7 +318,7 @@ struct SymbolCU {
 };
 
 /// \brief Collects and handles dwarf debug information.
-class DwarfDebug {
+class DwarfDebug : public AsmPrinterHandler {
   // Target of Dwarf emission.
   AsmPrinter *Asm;
 
@@ -325,7 +328,10 @@ class DwarfDebug {
   // All DIEValues are allocated through this allocator.
   BumpPtrAllocator DIEValueAllocator;
 
-  // Handle to the a compile unit used for the inline extension handling.
+  // Handle to the compile unit used for the inline extension handling,
+  // this is just so that the DIEValue allocator has a place to store
+  // the particular elements.
+  // FIXME: Store these off of DwarfDebug instead?
   CompileUnit *FirstCU;
 
   // Maps MDNode with its corresponding CompileUnit.
@@ -341,12 +347,6 @@ class DwarfDebug {
   /// be shared across CUs, that is why we keep the map here instead
   /// of in CompileUnit.
   DenseMap<const MDNode *, DIE *> MDTypeNodeToDieMap;
-
-  // Used to uniquely define abbreviations.
-  FoldingSet<DIEAbbrev> AbbreviationsSet;
-
-  // A list of all the unique abbreviations in use.
-  std::vector<DIEAbbrev *> Abbreviations;
 
   // Stores the current file ID for a given compile unit.
   DenseMap <unsigned, unsigned> FileIDCUMap;
@@ -408,8 +408,6 @@ class DwarfDebug {
     DbgValueHistoryMap;
   DbgValueHistoryMap DbgValues;
 
-  SmallVector<const MCSymbol *, 8> DebugRangeSymbols;
-
   // Previous instruction's location information. This is used to determine
   // label location to indicate scope boundries in dwarf debug info.
   DebugLoc PrevInstLoc;
@@ -418,6 +416,12 @@ class DwarfDebug {
   // This location indicates end of function prologue and beginning of function
   // body.
   DebugLoc PrologEndLoc;
+
+  // If nonnull, stores the current machine function we're processing.
+  const MachineFunction *CurFn;
+
+  // If nonnull, stores the current machine instruction we're processing.
+  const MachineInstr *CurMI;
 
   // Section Symbols: these are assembler temporary labels that are emitted at
   // the beginning of each supported dwarf section.  These are used to form
@@ -436,8 +440,11 @@ class DwarfDebug {
   // Counter for assigning globally unique IDs for CUs.
   unsigned GlobalCUIndexCount;
 
+  // Counter for assigning globally unique IDs for ranges.
+  unsigned GlobalRangeCount;
+
   // Holder for the file specific debug information.
-  DwarfUnits InfoHolder;
+  DwarfFile InfoHolder;
 
   // Holders for the various debug information flags that we might need to
   // have exposed. See accessor functions below for description.
@@ -473,20 +480,12 @@ class DwarfDebug {
   // original object file, rather than things that are meant
   // to be in the .dwo sections.
 
-  // Used to uniquely define abbreviations for the skeleton emission.
-  FoldingSet<DIEAbbrev> SkeletonAbbrevSet;
-
-  // A list of all the unique abbreviations in use.
-  std::vector<DIEAbbrev *> SkeletonAbbrevs;
-
   // Holder for the skeleton information.
-  DwarfUnits SkeletonHolder;
+  DwarfFile SkeletonHolder;
 
   void addScopeVariable(LexicalScope *LS, DbgVariable *Var);
 
-  const SmallVectorImpl<CompileUnit *> &getUnits() {
-    return InfoHolder.getUnits();
-  }
+  const SmallVectorImpl<Unit *> &getUnits() { return InfoHolder.getUnits(); }
 
   /// \brief Find abstract variable associated with Var.
   DbgVariable *findAbstractVariable(DIVariable &Var, DebugLoc Loc);
@@ -497,12 +496,18 @@ class DwarfDebug {
   /// variables.
   DIE *updateSubprogramScopeDIE(CompileUnit *SPCU, DISubprogram SP);
 
+  /// \brief A helper function to check whether the DIE for a given Scope is
+  /// going to be null.
+  bool isLexicalScopeDIENull(LexicalScope *Scope);
+
+  /// \brief A helper function to construct a RangeSpanList for a given
+  /// lexical scope.
+  void addScopeRangeList(CompileUnit *TheCU, DIE *ScopeDIE,
+                         const SmallVectorImpl<InsnRange> &Range);
+
   /// \brief Construct new DW_TAG_lexical_block for this scope and
   /// attach DW_AT_low_pc/DW_AT_high_pc labels.
   DIE *constructLexicalScopeDIE(CompileUnit *TheCU, LexicalScope *Scope);
-  /// A helper function to check whether the DIE for a given Scope is going
-  /// to be null.
-  bool isLexicalScopeDIENull(LexicalScope *Scope);
 
   /// \brief This scope represents inlined body of a function. Construct
   /// DIE to represent this concrete inlined copy of the function.
@@ -536,9 +541,6 @@ class DwarfDebug {
   /// \brief Emit labels to close any remaining sections that have been left
   /// open.
   void endSections();
-
-  /// \brief Emit a set of abbreviations to the specific section.
-  void emitAbbrevs(const MCSection *, std::vector<DIEAbbrev*> *);
 
   /// \brief Emit the debug info section.
   void emitDebugInfo();
@@ -599,9 +601,6 @@ class DwarfDebug {
   /// section.
   CompileUnit *constructSkeletonCU(const CompileUnit *CU);
 
-  /// \brief Emit the local split abbreviations.
-  void emitSkeletonAbbrevs(const MCSection *);
-
   /// \brief Emit the debug info dwo section.
   void emitDebugInfoDWO();
 
@@ -610,6 +609,10 @@ class DwarfDebug {
 
   /// \brief Emit the debug str dwo section.
   void emitDebugStrDWO();
+
+  /// Flags to let the linker know we have emitted new style pubnames. Only
+  /// emit it here if we don't have a skeleton CU for split dwarf.
+  void addGnuPubAttributes(Unit *U, DIE *D) const;
 
   /// \brief Create new CompileUnit for the given metadata node with tag
   /// DW_TAG_compile_unit.
@@ -642,17 +645,14 @@ class DwarfDebug {
 
   /// \brief If Var is an current function argument that add it in
   /// CurrentFnArguments list.
-  bool addCurrentFnArgument(const MachineFunction *MF,
-                            DbgVariable *Var, LexicalScope *Scope);
+  bool addCurrentFnArgument(DbgVariable *Var, LexicalScope *Scope);
 
   /// \brief Populate LexicalScope entries with variables' info.
-  void collectVariableInfo(const MachineFunction *,
-                           SmallPtrSet<const MDNode *, 16> &ProcessedVars);
+  void collectVariableInfo(SmallPtrSet<const MDNode *, 16> &ProcessedVars);
 
   /// \brief Collect variable information from the side table maintained
   /// by MMI.
-  void collectVariableInfoFromMMITable(const MachineFunction * MF,
-                                       SmallPtrSet<const MDNode *, 16> &P);
+  void collectVariableInfoFromMMITable(SmallPtrSet<const MDNode *, 16> &P);
 
   /// \brief Ensure that a label will be emitted before MI.
   void requestLabelBeforeInsn(const MachineInstr *MI) {
@@ -700,11 +700,11 @@ public:
   void beginInstruction(const MachineInstr *MI);
 
   /// \brief Process end of an instruction.
-  void endInstruction(const MachineInstr *MI);
+  void endInstruction();
 
   /// \brief Add a DIE to the set of types that we're going to pull into
   /// type units.
-  void addTypeUnitType(DIE *Die, DICompositeType CTy);
+  void addTypeUnitType(uint16_t Language, DIE *Die, DICompositeType CTy);
 
   /// \brief Add a label so that arange data can be generated for it.
   void addArangeLabel(SymbolCU SCU) { ArangeLabels.push_back(SCU); }
@@ -720,7 +720,7 @@ public:
                                unsigned CUID);
 
   /// \brief Recursively Emits a debug information entry.
-  void emitDIE(DIE *Die, ArrayRef<DIEAbbrev *> Abbrevs);
+  void emitDIE(DIE *Die);
 
   // Experimental DWARF5 features.
 

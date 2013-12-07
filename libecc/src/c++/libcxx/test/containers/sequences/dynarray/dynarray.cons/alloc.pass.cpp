@@ -31,7 +31,7 @@
 #include <algorithm>
 #include <complex>
 #include <string>
-#include "../../../test_allocator.h"
+#include "test_allocator.h"
 
 template <class T, class Allocator>
 void check_allocator ( const std::dynarray<T> &dyn, const Allocator &alloc ) {

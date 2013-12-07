@@ -1322,6 +1322,8 @@ void CopyConstrain::apply(ScheduleDAGMI *DAG) {
 // GenericScheduler - Implementation of the generic MachineSchedStrategy.
 //===----------------------------------------------------------------------===//
 
+static const unsigned InvalidCycle = ~0U;
+
 namespace {
 /// GenericScheduler shrinks the unscheduled zone using heuristics to balance
 /// the schedule.
@@ -1330,7 +1332,7 @@ public:
   /// Represent the type of SchedCandidate found within a single queue.
   /// pickNodeBidirectional depends on these listed by decreasing priority.
   enum CandReason {
-    NoCand, PhysRegCopy, RegExcess, RegCritical, Cluster, Weak, RegMax,
+    NoCand, PhysRegCopy, RegExcess, RegCritical, Stall, Cluster, Weak, RegMax,
     ResourceReduce, ResourceDemand, BotHeightReduce, BotPathReduce,
     TopDepthReduce, TopPathReduce, NextDefUse, NodeOrder};
 
@@ -1491,6 +1493,10 @@ public:
     // Is the scheduled region resource limited vs. latency limited.
     bool IsResourceLimited;
 
+    // Record the highest cycle at which each resource has been reserved by a
+    // scheduled instruction.
+    SmallVector<unsigned, 16> ReservedCycles;
+
 #ifndef NDEBUG
     // Remember the greatest operand latency as an upper bound on the number of
     // times we should retry the pending queue because of a hazard.
@@ -1518,6 +1524,7 @@ public:
       MaxExecutedResCount = 0;
       ZoneCritResIdx = 0;
       IsResourceLimited = false;
+      ReservedCycles.clear();
 #ifndef NDEBUG
       MaxObservedLatency = 0;
 #endif
@@ -1582,6 +1589,12 @@ public:
       return std::max(CurrCycle * SchedModel->getLatencyFactor(),
                       MaxExecutedResCount);
     }
+
+    /// Get the difference between the given SUnit's ready time and the current
+    /// cycle.
+    unsigned getLatencyStallCycles(SUnit *SU);
+
+    unsigned getNextResourceCycle(unsigned PIdx, unsigned Cycles);
 
     bool checkHazard(SUnit *SU);
 
@@ -1704,8 +1717,10 @@ init(ScheduleDAGMI *dag, const TargetSchedModel *smodel, SchedRemainder *rem) {
   DAG = dag;
   SchedModel = smodel;
   Rem = rem;
-  if (SchedModel->hasInstrSchedModel())
+  if (SchedModel->hasInstrSchedModel()) {
     ExecutedResCounts.resize(SchedModel->getNumProcResourceKinds());
+    ReservedCycles.resize(SchedModel->getNumProcResourceKinds(), InvalidCycle);
+  }
 }
 
 /// Initialize the per-region scheduling policy.
@@ -1869,6 +1884,37 @@ void GenericScheduler::registerRoots() {
   }
 }
 
+/// Compute the stall cycles based on this SUnit's ready time. Heuristics treat
+/// these "soft stalls" differently than the hard stall cycles based on CPU
+/// resources and computed by checkHazard(). A fully in-order model
+/// (MicroOpBufferSize==0) will not make use of this since instructions are not
+/// available for scheduling until they are ready. However, a weaker in-order
+/// model may use this for heuristics. For example, if a processor has in-order
+/// behavior when reading certain resources, this may come into play.
+unsigned GenericScheduler::SchedBoundary::getLatencyStallCycles(SUnit *SU) {
+  if (!SU->isUnbuffered)
+    return 0;
+
+  unsigned ReadyCycle = (isTop() ? SU->TopReadyCycle : SU->BotReadyCycle);
+  if (ReadyCycle > CurrCycle)
+    return ReadyCycle - CurrCycle;
+  return 0;
+}
+
+/// Compute the next cycle at which the given processor resource can be
+/// scheduled.
+unsigned GenericScheduler::SchedBoundary::
+getNextResourceCycle(unsigned PIdx, unsigned Cycles) {
+  unsigned NextUnreserved = ReservedCycles[PIdx];
+  // If this resource has never been used, always return cycle zero.
+  if (NextUnreserved == InvalidCycle)
+    return 0;
+  // For bottom-up scheduling add the cycles needed for the current operation.
+  if (!isTop())
+    NextUnreserved += Cycles;
+  return NextUnreserved;
+}
+
 /// Does this SU have a hazard within the current instruction group.
 ///
 /// The scheduler supports two modes of hazard recognition. The first is the
@@ -1891,6 +1937,15 @@ bool GenericScheduler::SchedBoundary::checkHazard(SUnit *SU) {
     DEBUG(dbgs() << "  SU(" << SU->NodeNum << ") uops="
           << SchedModel->getNumMicroOps(SU->getInstr()) << '\n');
     return true;
+  }
+  if (SchedModel->hasInstrSchedModel() && SU->hasReservedResource) {
+    const MCSchedClassDesc *SC = DAG->getSchedClass(SU);
+    for (TargetSchedModel::ProcResIter
+           PI = SchedModel->getWriteProcResBegin(SC),
+           PE = SchedModel->getWriteProcResEnd(SC); PI != PE; ++PI) {
+      if (getNextResourceCycle(PI->ProcResourceIdx, PI->Cycles) > CurrCycle)
+        return true;
+    }
   }
   return false;
 }
@@ -1948,9 +2003,9 @@ getOtherResourceCount(unsigned &OtherCritIdx) {
 /// inside and outside the zone.
 void GenericScheduler::SchedBoundary::setPolicy(CandPolicy &Policy,
                                                    SchedBoundary &OtherZone) {
-  // Now that potential stalls have been considered, apply preemptive heuristics
-  // based on the the total latency and resources inside and outside this
-  // zone.
+  // Apply preemptive heuristics based on the the total latency and resources
+  // inside and outside this zone. Potential stalls should be considered before
+  // following this policy.
 
   // Compute remaining latency. We need this both to determine whether the
   // overall schedule has become latency-limited and whether the instructions
@@ -2076,7 +2131,7 @@ void GenericScheduler::SchedBoundary::incExecutedResources(unsigned PIdx,
 /// \return the next cycle at which the instruction may execute without
 /// oversubscribing resources.
 unsigned GenericScheduler::SchedBoundary::
-countResource(unsigned PIdx, unsigned Cycles, unsigned ReadyCycle) {
+countResource(unsigned PIdx, unsigned Cycles, unsigned NextCycle) {
   unsigned Factor = SchedModel->getResourceFactor(PIdx);
   unsigned Count = Factor * Cycles;
   DEBUG(dbgs() << "  " << getResourceName(PIdx)
@@ -2095,8 +2150,14 @@ countResource(unsigned PIdx, unsigned Cycles, unsigned ReadyCycle) {
           << getResourceName(PIdx) << ": "
           << getResourceCount(PIdx) / SchedModel->getLatencyFactor() << "c\n");
   }
-  // TODO: We don't yet model reserved resources. It's not hard though.
-  return CurrCycle;
+  // For reserved resources, record the highest cycle using the resource.
+  unsigned NextAvailable = getNextResourceCycle(PIdx, Cycles);
+  if (NextAvailable > CurrCycle) {
+    DEBUG(dbgs() << "  Resource conflict: "
+          << SchedModel->getProcResource(PIdx)->Name << " reserved until @"
+          << NextAvailable << "\n");
+  }
+  return NextAvailable;
 }
 
 /// Move the boundary of scheduled code by one SUnit.
@@ -2110,25 +2171,18 @@ void GenericScheduler::SchedBoundary::bumpNode(SUnit *SU) {
     }
     HazardRec->EmitInstruction(SU);
   }
+  // checkHazard should prevent scheduling multiple instructions per cycle that
+  // exceed the issue width.
   const MCSchedClassDesc *SC = DAG->getSchedClass(SU);
   unsigned IncMOps = SchedModel->getNumMicroOps(SU->getInstr());
-  CurrMOps += IncMOps;
-  // checkHazard prevents scheduling multiple instructions per cycle that exceed
-  // issue width. However, we commonly reach the maximum. In this case
-  // opportunistically bump the cycle to avoid uselessly checking everything in
-  // the readyQ. Furthermore, a single instruction may produce more than one
-  // cycle's worth of micro-ops.
-  //
-  // TODO: Also check if this SU must end a dispatch group.
-  unsigned NextCycle = CurrCycle;
-  if (CurrMOps >= SchedModel->getIssueWidth()) {
-    ++NextCycle;
-    DEBUG(dbgs() << "  *** Max MOps " << CurrMOps
-          << " at cycle " << CurrCycle << '\n');
-  }
+  assert(
+      (CurrMOps == 0 || (CurrMOps + IncMOps) <= SchedModel->getIssueWidth()) &&
+      "Cannot schedule this instructions MicroOps in the current cycle.");
+
   unsigned ReadyCycle = (isTop() ? SU->TopReadyCycle : SU->BotReadyCycle);
   DEBUG(dbgs() << "  Ready @" << ReadyCycle << "c\n");
 
+  unsigned NextCycle = CurrCycle;
   switch (SchedModel->getMicroOpBufferSize()) {
   case 0:
     assert(ReadyCycle <= CurrCycle && "Broken PendingQueue");
@@ -2141,7 +2195,11 @@ void GenericScheduler::SchedBoundary::bumpNode(SUnit *SU) {
     break;
   default:
     // We don't currently model the OOO reorder buffer, so consider all
-    // scheduled MOps to be "retired".
+    // scheduled MOps to be "retired". We do loosely model in-order resource
+    // latency. If this instruction uses an in-order resource, account for any
+    // likely stall cycles.
+    if (SU->isUnbuffered && ReadyCycle > NextCycle)
+      NextCycle = ReadyCycle;
     break;
   }
   RetiredMOps += IncMOps;
@@ -2169,9 +2227,22 @@ void GenericScheduler::SchedBoundary::bumpNode(SUnit *SU) {
            PI = SchedModel->getWriteProcResBegin(SC),
            PE = SchedModel->getWriteProcResEnd(SC); PI != PE; ++PI) {
       unsigned RCycle =
-        countResource(PI->ProcResourceIdx, PI->Cycles, ReadyCycle);
+        countResource(PI->ProcResourceIdx, PI->Cycles, NextCycle);
       if (RCycle > NextCycle)
         NextCycle = RCycle;
+    }
+    if (SU->hasReservedResource) {
+      // For reserved resources, record the highest cycle using the resource.
+      // For top-down scheduling, this is the cycle in which we schedule this
+      // instruction plus the number of cycles the operations reserves the
+      // resource. For bottom-up is it simply the instruction's cycle.
+      for (TargetSchedModel::ProcResIter
+             PI = SchedModel->getWriteProcResBegin(SC),
+             PE = SchedModel->getWriteProcResEnd(SC); PI != PE; ++PI) {
+        unsigned PIdx = PI->ProcResourceIdx;
+        if (SchedModel->getProcResource(PIdx)->BufferSize == 0)
+          ReservedCycles[PIdx] = isTop() ? NextCycle + PI->Cycles : NextCycle;
+      }
     }
   }
   // Update ExpectedLatency and DependentLatency.
@@ -2198,6 +2269,16 @@ void GenericScheduler::SchedBoundary::bumpNode(SUnit *SU) {
     IsResourceLimited =
       (int)(getCriticalCount() - (getScheduledLatency() * LFactor))
       > (int)LFactor;
+  }
+  // Update CurrMOps after calling bumpCycle to handle stalls, since bumpCycle
+  // resets CurrMOps. Loop to handle instructions with more MOps than issue in
+  // one cycle.  Since we commonly reach the max MOps here, opportunistically
+  // bump the cycle to avoid uselessly checking everything in the readyQ.
+  CurrMOps += IncMOps;
+  while (CurrMOps >= SchedModel->getIssueWidth()) {
+    bumpCycle(++NextCycle);
+    DEBUG(dbgs() << "  *** Max MOps " << CurrMOps
+          << " at cycle " << CurrCycle << '\n');
   }
   DEBUG(dumpScheduledState());
 }
@@ -2445,10 +2526,10 @@ static bool tryLatency(GenericScheduler::SchedCandidate &TryCand,
 /// \param RPTracker describes reg pressure within the scheduled zone.
 /// \param TempTracker is a scratch pressure tracker to reuse in queries.
 void GenericScheduler::tryCandidate(SchedCandidate &Cand,
-                                       SchedCandidate &TryCand,
-                                       SchedBoundary &Zone,
-                                       const RegPressureTracker &RPTracker,
-                                       RegPressureTracker &TempTracker) {
+                                    SchedCandidate &TryCand,
+                                    SchedBoundary &Zone,
+                                    const RegPressureTracker &RPTracker,
+                                    RegPressureTracker &TempTracker) {
 
   if (DAG->isTrackingPressure()) {
     // Always initialize TryCand's RPDelta.
@@ -2514,6 +2595,11 @@ void GenericScheduler::tryCandidate(SchedCandidate &Cand,
       && tryLatency(TryCand, Cand, Zone))
     return;
 
+  // Prioritize instructions that read unbuffered resources by stall cycles.
+  if (tryLess(Zone.getLatencyStallCycles(TryCand.SU),
+              Zone.getLatencyStallCycles(Cand.SU), TryCand, Cand, Stall))
+    return;
+
   // Keep clustered nodes together to encourage downstream peephole
   // optimizations which may reduce resource requirements.
   //
@@ -2577,6 +2663,7 @@ const char *GenericScheduler::getReasonStr(
   case PhysRegCopy:    return "PREG-COPY";
   case RegExcess:      return "REG-EXCESS";
   case RegCritical:    return "REG-CRIT  ";
+  case Stall:          return "STALL     ";
   case Cluster:        return "CLUSTER   ";
   case Weak:           return "WEAK      ";
   case RegMax:         return "REG-MAX   ";
@@ -2651,8 +2738,8 @@ void GenericScheduler::traceCandidate(const SchedCandidate &Cand) {
 /// DAG building. To adjust for the current scheduling location we need to
 /// maintain the number of vreg uses remaining to be top-scheduled.
 void GenericScheduler::pickNodeFromQueue(SchedBoundary &Zone,
-                                            const RegPressureTracker &RPTracker,
-                                            SchedCandidate &Cand) {
+                                         const RegPressureTracker &RPTracker,
+                                         SchedCandidate &Cand) {
   ReadyQueue &Q = Zone.Available;
 
   DEBUG(Q.dump());

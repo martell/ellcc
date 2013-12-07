@@ -292,6 +292,8 @@ namespace llvm {
     bool isScheduleHigh   : 1;          // True if preferable to schedule high.
     bool isScheduleLow    : 1;          // True if preferable to schedule low.
     bool isCloned         : 1;          // True if this node has been cloned.
+    bool isUnbuffered     : 1;          // Uses an unbuffered resource.
+    bool hasReservedResource : 1;       // Uses a reserved resource.
     Sched::Preference SchedulingPref;   // Scheduling preference.
 
   private:
@@ -316,7 +318,8 @@ namespace llvm {
         isTwoAddress(false), isCommutable(false), hasPhysRegUses(false),
         hasPhysRegDefs(false), hasPhysRegClobbers(false), isPending(false),
         isAvailable(false), isScheduled(false), isScheduleHigh(false),
-        isScheduleLow(false), isCloned(false), SchedulingPref(Sched::None),
+        isScheduleLow(false), isCloned(false), isUnbuffered(false),
+        hasReservedResource(false), SchedulingPref(Sched::None),
         isDepthCurrent(false), isHeightCurrent(false), Depth(0), Height(0),
         TopReadyCycle(0), BotReadyCycle(0), CopyDstRC(NULL), CopySrcRC(NULL) {}
 
@@ -330,7 +333,8 @@ namespace llvm {
         isTwoAddress(false), isCommutable(false), hasPhysRegUses(false),
         hasPhysRegDefs(false), hasPhysRegClobbers(false), isPending(false),
         isAvailable(false), isScheduled(false), isScheduleHigh(false),
-        isScheduleLow(false), isCloned(false), SchedulingPref(Sched::None),
+        isScheduleLow(false), isCloned(false), isUnbuffered(false),
+        hasReservedResource(false), SchedulingPref(Sched::None),
         isDepthCurrent(false), isHeightCurrent(false), Depth(0), Height(0),
         TopReadyCycle(0), BotReadyCycle(0), CopyDstRC(NULL), CopySrcRC(NULL) {}
 
@@ -343,7 +347,8 @@ namespace llvm {
         isTwoAddress(false), isCommutable(false), hasPhysRegUses(false),
         hasPhysRegDefs(false), hasPhysRegClobbers(false), isPending(false),
         isAvailable(false), isScheduled(false), isScheduleHigh(false),
-        isScheduleLow(false), isCloned(false), SchedulingPref(Sched::None),
+        isScheduleLow(false), isCloned(false), isUnbuffered(false),
+        hasReservedResource(false), SchedulingPref(Sched::None),
         isDepthCurrent(false), isHeightCurrent(false), Depth(0), Height(0),
         TopReadyCycle(0), BotReadyCycle(0), CopyDstRC(NULL), CopySrcRC(NULL) {}
 

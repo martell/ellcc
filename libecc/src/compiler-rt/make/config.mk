@@ -43,5 +43,8 @@ endif
 
 ###
 # Common compiler options
-COMMON_CXXFLAGS=-fno-exceptions -fPIC -funwind-tables -I${ProjSrcRoot}/lib -I${ProjSrcRoot}/include
-COMMON_CFLAGS= # RICH -fPIC
+COMMON_INCLUDES=-I${ProjSrcRoot}/lib -I${ProjSrcRoot}/include
+COMMON_CXXFLAGS=-fno-exceptions -fPIC -funwind-tables $(COMMON_INCLUDES)
+COMMON_CFLAGS=$(COMMON_INCLUDES)
+# RICH: COMMON_CFLAGS=-fPIC $(COMMON_INCLUDES)
+COMMON_ASMFLAGS=$(COMMON_INCLUDES)

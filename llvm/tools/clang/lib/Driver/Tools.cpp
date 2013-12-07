@@ -492,6 +492,11 @@ static std::string getARMTargetCPU(const ArgList &Args,
     MArch = Triple.getArchName();
   }
 
+  if (Triple.getOS() == llvm::Triple::NetBSD) {
+    if (MArch == "armv6")
+      return "arm1176jzf-s";
+  }
+
   // Handle -march=native.
   std::string NativeMArch;
   if (MArch == "native") {
@@ -1462,6 +1467,24 @@ static std::string getCPUName(const ArgList &Args, const llvm::Triple &T) {
   }
 }
 
+static void AddGoldPlugin(const ToolChain &ToolChain, const ArgList &Args,
+                          ArgStringList &CmdArgs) {
+  // Tell the linker to load the plugin. This has to come before AddLinkerInputs
+  // as gold requires -plugin to come before any -plugin-opt that -Wl might
+  // forward.
+  CmdArgs.push_back("-plugin");
+  std::string Plugin = ToolChain.getDriver().Dir + "/../lib/LLVMgold.so";
+  CmdArgs.push_back(Args.MakeArgString(Plugin));
+
+  // Try to pass driver level flags relevant to LTO code generation down to
+  // the plugin.
+
+  // Handle flags for selecting CPU variants.
+  std::string CPU = getCPUName(Args, ToolChain.getTriple());
+  if (!CPU.empty())
+    CmdArgs.push_back(Args.MakeArgString(Twine("-plugin-opt=mcpu=") + CPU));
+}
+
 static void getX86TargetFeatures(const llvm::Triple &Triple,
                                  const ArgList &Args,
                                  std::vector<const char *> &Features) {
@@ -1641,7 +1664,7 @@ shouldUseExceptionTablesForObjCExceptions(const ObjCRuntime &runtime,
   if (runtime.isNonFragile())
     return true;
 
-  if (!Triple.isOSDarwin())
+  if (!Triple.isMacOSX())
     return false;
 
   return (!Triple.isMacOSXVersionLT(10,5) &&
@@ -5945,25 +5968,8 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddAllArgs(CmdArgs, options::OPT_Z_Flag);
   Args.AddAllArgs(CmdArgs, options::OPT_r);
 
-  // Tell the linker to load the plugin. This has to come before AddLinkerInputs
-  // as gold requires -plugin to come before any -plugin-opt that -Wl might
-  // forward.
-  if (D.IsUsingLTO(Args)) {
-    CmdArgs.push_back("-plugin");
-    std::string Plugin = ToolChain.getDriver().Dir + "/../lib/LLVMgold.so";
-    CmdArgs.push_back(Args.MakeArgString(Plugin));
-
-    // Try to pass driver level flags relevant to LTO code generation down to
-    // the plugin.
-
-    // Handle flags for selecting CPU variants.
-    std::string CPU = getCPUName(Args, ToolChain.getTriple());
-    if (!CPU.empty()) {
-      CmdArgs.push_back(
-                        Args.MakeArgString(Twine("-plugin-opt=mcpu=") +
-                                           CPU));
-    }
-  }
+  if (D.IsUsingLTO(Args))
+    AddGoldPlugin(ToolChain, Args, CmdArgs);
 
   AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs);
 
@@ -6048,6 +6054,13 @@ void netbsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
   // instruct as in the base system to assemble 32-bit code.
   if (getToolChain().getArch() == llvm::Triple::x86)
     CmdArgs.push_back("--32");
+
+  // Pass the target CPU to GNU as for ARM, since the source code might
+  // not have the correct .cpu annotation.
+  if (getToolChain().getArch() == llvm::Triple::arm) {
+    std::string MArch(getARMTargetCPU(Args, getToolChain().getTriple()));
+    CmdArgs.push_back(Args.MakeArgString("-mcpu=" + MArch));
+  }
 
   // Set byte order explicitly
   if (getToolChain().getArch() == llvm::Triple::mips)
@@ -6528,26 +6541,8 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
        i != e; ++i)
     CmdArgs.push_back(Args.MakeArgString(StringRef("-L") + *i));
 
-  // Tell the linker to load the plugin. This has to come before AddLinkerInputs
-  // as gold requires -plugin to come before any -plugin-opt that -Wl might
-  // forward.
-  if (D.IsUsingLTO(Args)) {
-    CmdArgs.push_back("-plugin");
-    std::string Plugin = ToolChain.getDriver().Dir + "/../lib/LLVMgold.so";
-    CmdArgs.push_back(Args.MakeArgString(Plugin));
-
-    // Try to pass driver level flags relevant to LTO code generation down to
-    // the plugin.
-
-    // Handle flags for selecting CPU variants.
-    std::string CPU = getCPUName(Args, ToolChain.getTriple());
-    if (!CPU.empty()) {
-      CmdArgs.push_back(
-                        Args.MakeArgString(Twine("-plugin-opt=mcpu=") +
-                                           CPU));
-    }
-  }
-
+  if (D.IsUsingLTO(Args))
+    AddGoldPlugin(ToolChain, Args, CmdArgs);
 
   if (Args.hasArg(options::OPT_Z_Xlinker__no_demangle))
     CmdArgs.push_back("--no-demangle");
@@ -6595,8 +6590,8 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
       if (OpenMP) {
         CmdArgs.push_back("-lgomp");
 
-        // FIXME: Exclude this for platforms whith libgomp that doesn't require
-        // librt. Most modern Linux platfroms require it, but some may not.
+        // FIXME: Exclude this for platforms with libgomp that don't require
+        // librt. Most modern Linux platforms require it, but some may not.
         CmdArgs.push_back("-lrt");
       }
 

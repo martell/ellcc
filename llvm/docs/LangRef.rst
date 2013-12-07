@@ -289,13 +289,9 @@ symbols from (to) DLLs (Dynamic Link Libraries).
     pointer to a pointer in a DLL, so that it can be referenced with the
     ``dllimport`` attribute. On Microsoft Windows targets, the pointer
     name is formed by combining ``__imp_`` and the function or variable
-    name.
-
-For example, since the "``.LC0``" variable is defined to be internal, if
-another module defined a "``.LC0``" variable and was linked with this
-one, one of the two would be renamed, preventing a collision. Since
-"``main``" and "``puts``" are external (i.e., lacking any linkage
-declarations), they are accessible outside of the current module.
+    name. Since this linkage exists for defining a dll interface, the
+    compiler, assembler and linker know it is externally referenced and
+    must refrain from deleting the symbol.
 
 It is illegal for a function *declaration* to have any linkage type
 other than ``external``, ``dllimport`` or ``extern_weak``.
@@ -507,8 +503,8 @@ variables defined within the module are not modified from their
 initial values before the start of the global initializer.  This is
 true even for variables potentially accessible from outside the
 module, including those with external linkage or appearing in
-``@llvm.used``. This assumption may be suppressed by marking the
-variable with ``externally_initialized``.
+``@llvm.used`` or dllexported variables. This assumption may be suppressed
+by marking the variable with ``externally_initialized``.
 
 An explicit alignment may be specified for a global, which must be a
 power of 2. If not present, or if the alignment is set to zero, the
@@ -618,7 +614,7 @@ Syntax::
 The linkage must be one of ``private``, ``linker_private``,
 ``linker_private_weak``, ``internal``, ``linkonce``, ``weak``,
 ``linkonce_odr``, ``weak_odr``, ``external``. Note that some system linkers
-might not correctly handle dropping a weak symbol that is aliased by a non weak
+might not correctly handle dropping a weak symbol that is aliased by a non-weak
 alias.
 
 .. _namedmetadatastructure:

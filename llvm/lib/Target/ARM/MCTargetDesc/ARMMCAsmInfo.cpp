@@ -46,7 +46,6 @@ ARMELFMCAsmInfo::ARMELFMCAsmInfo(bool LittleEndian) {
   IsLittleEndian = LittleEndian;
   Data64bitsDirective = 0;
   CommentString = "@";
-  PrivateGlobalPrefix = ".L";
   Code16Directive = ".code\t16";
   Code32Directive = ".code\t32";
 
@@ -56,4 +55,7 @@ ARMELFMCAsmInfo::ARMELFMCAsmInfo(bool LittleEndian) {
   // Exceptions handling
   if (EnableARMEHABI)
     ExceptionsType = ExceptionHandling::ARM;
+
+  // foo(plt) instead of foo@plt
+  UseParensForSymbolVariant = true;
 }

@@ -49,7 +49,7 @@ struct FormatStyle {
   ///
   /// A column limit of \c 0 means that there is no column limit. In this case,
   /// clang-format will respect the input's line breaking decisions within
-  /// statements.
+  /// statements unless they contradict other rules.
   unsigned ColumnLimit;
 
   /// \brief The maximum number of consecutive empty lines to keep.
@@ -402,10 +402,13 @@ extern const char *StyleOptionHelpDescription;
 /// above.
 /// \param[in] FileName Path to start search for .clang-format if \c StyleName
 /// == "file".
+/// \param[in] FallbackStyle The name of a predefined style used to fallback to
+/// in case the style can't be determined from \p StyleName.
 ///
 /// \returns FormatStyle as specified by \c StyleName. If no style could be
 /// determined, the default is LLVM Style (see getLLVMStyle()).
-FormatStyle getStyle(StringRef StyleName, StringRef FileName);
+FormatStyle getStyle(StringRef StyleName, StringRef FileName,
+                     StringRef FallbackStyle);
 
 } // end namespace format
 } // end namespace clang
