@@ -6,6 +6,7 @@ PWD := $(shell pwd)
 ELLCC := $(PWD)/../../..
 LIBECC := $(ELLCC)/libecc
 override CC := $(ELLCC)/bin/ecc
+RANLIB   := $(ELLCC)/bin/ecc-ranlib
 Arch := unknown
 Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/mkscripts/targets; echo *))
 INCLUDES := $(foreach TARGET, $(Configs), $(LIBECC)/mkscripts/targets/$(TARGET)/setup.mk)

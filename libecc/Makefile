@@ -44,7 +44,10 @@ $(Configs)::
 	@echo Configuring libunwind for $* in libunwind-build/$*/linux
 	mkdir -p libunwind-build/$*/linux
 	cd libunwind-build/$*/linux ; \
-	../../../src/libunwind/configure CC="$(ELLCC)/bin/ecc $(CFLAGS.$*) -Wno-header-guard" \
+	../../../src/libunwind/configure \
+        CC="$(ELLCC)/bin/ecc $(CFLAGS.$*) -Wno-header-guard" \
+        AR=$(ELLCC)/bin/ecc-ar \
+        RANLIB=$(ELLCC)/bin/ecc-ranlib \
         --enable-shared=no \
         --enable-coredump=no \
         --enable-cxx-exceptions=yes \
@@ -75,9 +78,12 @@ $(Configs)::
 	../../../src/ncurses/configure \
 	    CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
 	    CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+            AR=$(ELLCC)/bin/ecc-ar \
+            RANLIB=$(ELLCC)/bin/ecc-ranlib \
             --host=$(TARGET)-$(OS) \
-            --with-build-cc=$(ELLCC)/bin/ecc \
 	    --prefix=$(ELLCC) $$NOCXX
+
+            # --with-build-cc=$(ELLCC)/bin/ecc \
 
 %.ncurses.build:
 	make -C ncurses-build/$*/linux
@@ -103,6 +109,8 @@ $(Configs)::
 	cd zlib-build/$*/linux ; \
 	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
 	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+        AR=$(ELLCC)/bin/ecc-ar \
+        RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	    ./configure --static --prefix=$(ELLCC)
 
 %.zlib.build:
@@ -128,6 +136,8 @@ $(Configs)::
 	cd expat-build/$*/linux ; \
 	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
 	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+        AR=$(ELLCC)/bin/ecc-ar \
+        RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	    ../../../src/expat/configure \
             --host=$(TARGET)-$(OS) \
 	        --prefix=$(ELLCC) --enable-shared=no
