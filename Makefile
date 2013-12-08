@@ -79,7 +79,9 @@ llvm.configure:
 	cd $(DIR) ; \
 	../llvm/configure \
         CC=$(CC) CFLAGS="$(CFLAGS)" \
+        CPP="cc -E" \
         CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
+        CXXCPP="c++ -E" \
         --bindir=$(bindir) --prefix=$(prefix) \
         $(HOST) $(BUILD) $(TARGETS) \
         --enable-optimized --enable-shared=no -enable-pic=no \
