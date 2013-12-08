@@ -6,7 +6,7 @@ targetlist=`echo $targets | sed -e "s/ /,/g"`
 bin=$prefix/bin
 bindir=$bin
 # Get the build processor. For now it is also the host and target processor.
-build=`uname -p`
+build=`uname -m`
 host=$build
 target=$build 
 os=linux

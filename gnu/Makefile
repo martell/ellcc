@@ -57,6 +57,12 @@ ifneq ($(CC),gcc)
   endif
 endif
 
+# binutils fails on Mac OS X Mavericks on calls to sbrk() because
+# it is deprecated.
+ifeq ($(shell uname),Darwin)
+  CFLAGS += -Wno-error=deprecated-declarations
+endif
+
 binutils.configure:
 	cd $(DIR) ; \
     mkdir -p binutils ; \
