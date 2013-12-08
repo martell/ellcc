@@ -72,7 +72,7 @@ binutils.configure:
         AR=$(AR) --enable-64-bit-bfd \
         --bindir=$(bindir) $(HOST) --enable-targets=$(targetlist) \
         --program-prefix=ecc- --prefix=$(prefix)/lib \
-        --datadir=$(prefix)/lib/share
+        --datadir=$(prefix)/lib/share --target=x86_64-unknown-linux
 
 gas.configure:
 	cd $(DIR) ; \
