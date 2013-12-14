@@ -1,4 +1,4 @@
-// X FAIL: *
+// XFAIL: *
 // RUN: %armexx -o %t %s && %armrun %t  | FileCheck -check-prefix=CHECK %s
 // RUN: %armebexx -o %t %s && %armebrun %t | FileCheck -check-prefix=CHECK %s
 // CHECK: foo!
