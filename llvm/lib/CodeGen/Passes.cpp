@@ -30,6 +30,11 @@
 
 using namespace llvm;
 
+namespace llvm {
+extern cl::opt<bool> EnableStackMapLiveness;
+extern cl::opt<bool> EnablePatchPointLiveness;
+}
+
 static cl::opt<bool> DisablePostRA("disable-post-ra", cl::Hidden,
     cl::desc("Disable Post Regalloc"));
 static cl::opt<bool> DisableBranchFold("disable-branch-fold", cl::Hidden,
@@ -536,6 +541,9 @@ void TargetPassConfig::addMachinePasses() {
 
   if (addPreEmitPass())
     printAndVerify("After PreEmit passes");
+
+  if (EnableStackMapLiveness || EnablePatchPointLiveness)
+    addPass(&StackMapLivenessID);
 }
 
 /// Add passes that optimize machine instructions in SSA form.
@@ -725,7 +733,10 @@ void TargetPassConfig::addMachineLateOptimization() {
     printAndVerify("After BranchFolding");
 
   // Tail duplication.
-  if (addPass(&TailDuplicateID))
+  // Note that duplicating tail just increases code size and degrades
+  // performance for targets that require Structured Control Flow.
+  // In addition it can also make CFG irreducible. Thus we disable it.
+  if (!TM->requiresStructuredCFG() && addPass(&TailDuplicateID))
     printAndVerify("After TailDuplicate");
 
   // Copy propagation.

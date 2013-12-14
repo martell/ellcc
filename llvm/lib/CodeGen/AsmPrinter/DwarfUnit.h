@@ -22,6 +22,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/DebugInfo.h"
 #include "llvm/MC/MCExpr.h"
+#include "llvm/MC/MCSection.h"
 
 namespace llvm {
 
@@ -59,7 +60,7 @@ public:
 //===----------------------------------------------------------------------===//
 /// Unit - This dwarf writer support class manages information associated
 /// with a source file.
-class Unit {
+class DwarfUnit {
 protected:
   /// UniqueID - a numeric ID unique among all CUs in the module
   unsigned UniqueID;
@@ -127,11 +128,65 @@ protected:
   // DIEIntegerOne - A preallocated DIEValue because 1 is used frequently.
   DIEInteger *DIEIntegerOne;
 
-  Unit(unsigned UID, DIE *D, DICompileUnit CU, AsmPrinter *A, DwarfDebug *DW,
-       DwarfFile *DWU);
+  /// The section this unit will be emitted in.
+  const MCSection *Section;
+
+  /// A label at the start of the non-dwo section related to this unit.
+  MCSymbol *SectionSym;
+
+  /// The start of the unit within its section.
+  MCSymbol *LabelBegin;
+
+  /// The end of the unit within its section.
+  MCSymbol *LabelEnd;
+
+  /// The label for the start of the range sets for the elements of this unit.
+  MCSymbol *LabelRange;
+
+  DwarfUnit(unsigned UID, DIE *D, DICompileUnit CU, AsmPrinter *A,
+            DwarfDebug *DW, DwarfFile *DWU);
 
 public:
-  virtual ~Unit();
+  virtual ~DwarfUnit();
+
+  /// Pass in the SectionSym even though we could recreate it in every compile
+  /// unit (type units will have actually distinct symbols once they're in
+  /// comdat sections).
+  void initSection(const MCSection *Section, MCSymbol *SectionSym) {
+    assert(!this->Section);
+    this->Section = Section;
+    this->SectionSym = SectionSym;
+    this->LabelBegin =
+        Asm->GetTempSymbol(Section->getLabelBeginName(), getUniqueID());
+    this->LabelEnd =
+        Asm->GetTempSymbol(Section->getLabelEndName(), getUniqueID());
+    this->LabelRange = Asm->GetTempSymbol("gnu_ranges", getUniqueID());
+  }
+
+  const MCSection *getSection() const {
+    assert(Section);
+    return Section;
+  }
+
+  MCSymbol *getSectionSym() const {
+    assert(Section);
+    return SectionSym;
+  }
+
+  MCSymbol *getLabelBegin() const {
+    assert(Section);
+    return LabelBegin;
+  }
+
+  MCSymbol *getLabelEnd() const {
+    assert(Section);
+    return LabelEnd;
+  }
+
+  MCSymbol *getLabelRange() const {
+    assert(Section);
+    return LabelRange;
+  }
 
   // Accessors.
   unsigned getUniqueID() const { return UniqueID; }
@@ -358,14 +413,15 @@ public:
 
   /// Compute the size of a header for this unit, not including the initial
   /// length field.
-  unsigned getHeaderSize() const {
+  virtual unsigned getHeaderSize() const {
     return sizeof(int16_t) + // DWARF version number
            sizeof(int32_t) + // Offset Into Abbrev. Section
            sizeof(int8_t);   // Pointer Size (in bytes)
   }
 
   /// Emit the header for this unit, not including the initial length field.
-  void emitHeader(const MCSection *ASection, const MCSymbol *ASectionSym);
+  virtual void emitHeader(const MCSection *ASection,
+                          const MCSymbol *ASectionSym) const;
 
 protected:
   /// getOrCreateStaticMemberDIE - Create new static data member DIE.
@@ -440,10 +496,11 @@ private:
   void updateAcceleratorTables(DIScope Context, DIType Ty, const DIE *TyDIE);
 };
 
-class CompileUnit : public Unit {
+class DwarfCompileUnit : public DwarfUnit {
 public:
-  CompileUnit(unsigned UID, DIE *D, DICompileUnit Node, AsmPrinter *A,
-              DwarfDebug *DW, DwarfFile *DWU);
+  DwarfCompileUnit(unsigned UID, DIE *D, DICompileUnit Node, AsmPrinter *A,
+                   DwarfDebug *DW, DwarfFile *DWU);
+  virtual ~DwarfCompileUnit() LLVM_OVERRIDE;
 
   /// createGlobalVariableDIE - create global variable DIE.
   void createGlobalVariableDIE(DIGlobalVariable GV);
@@ -452,18 +509,32 @@ public:
   /// either DW_FORM_addr or DW_FORM_GNU_addr_index.
   void addLabelAddress(DIE *Die, dwarf::Attribute Attribute, MCSymbol *Label);
 
-  uint16_t getLanguage() const { return getNode().getLanguage(); }
+  uint16_t getLanguage() const LLVM_OVERRIDE { return getNode().getLanguage(); }
 };
 
-class TypeUnit : public Unit {
+class DwarfTypeUnit : public DwarfUnit {
 private:
   uint16_t Language;
+  uint64_t TypeSignature;
+  const DIE *Ty;
 
 public:
-  TypeUnit(unsigned UID, DIE *D, uint16_t Language, AsmPrinter *A,
-           DwarfDebug *DW, DwarfFile *DWU);
+  DwarfTypeUnit(unsigned UID, DIE *D, uint16_t Language, AsmPrinter *A,
+                DwarfDebug *DW, DwarfFile *DWU);
+  virtual ~DwarfTypeUnit() LLVM_OVERRIDE;
 
-  uint16_t getLanguage() const { return Language; }
+  void setTypeSignature(uint64_t Signature) { TypeSignature = Signature; }
+  void setType(const DIE *Ty) { this->Ty = Ty; }
+
+  uint16_t getLanguage() const LLVM_OVERRIDE { return Language; }
+  /// Emit the header for this unit, not including the initial length field.
+  void emitHeader(const MCSection *ASection, const MCSymbol *ASectionSym) const
+      LLVM_OVERRIDE;
+  unsigned getHeaderSize() const LLVM_OVERRIDE {
+    return DwarfUnit::getHeaderSize() + sizeof(uint64_t) + // Type Signature
+           sizeof(uint32_t);                               // Type DIE Offset
+  }
+  void initSection(const MCSection *Section);
 };
 } // end llvm namespace
 #endif

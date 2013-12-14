@@ -110,6 +110,11 @@ void *MmapFixedOrDie(uptr fixed_addr, uptr size) {
   return MmapFixedNoReserve(fixed_addr, size);
 }
 
+void *MmapNoReserveOrDie(uptr size, const char *mem_type) {
+  // FIXME: make this really NoReserve?
+  return MmapOrDie(size, mem_type);
+}
+
 void *Mprotect(uptr fixed_addr, uptr size) {
   return VirtualAlloc((LPVOID)fixed_addr, size,
                       MEM_RESERVE | MEM_COMMIT, PAGE_NOACCESS);
@@ -382,6 +387,9 @@ void StackTrace::SlowUnwindStack(uptr pc, uptr max_depth) {
   // FIXME: Look at LLVMUnhandledExceptionFilter in Signals.inc
   size = CaptureStackBackTrace(2, Min(max_depth, kStackTraceMax),
                                (void**)trace, 0);
+  if (size == 0)
+    return;
+
   // Skip the RTL frames by searching for the PC in the stacktrace.
   uptr pc_location = LocatePcInTrace(pc);
   PopStackFrames(pc_location);

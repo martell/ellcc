@@ -461,8 +461,8 @@ MachineBasicBlock *MachineBlockPlacement::selectBestCandidateBlock(
     assert(SuccChain.LoopPredecessors == 0 && "Found CFG-violating block");
 
     BlockFrequency CandidateFreq = MBFI->getBlockFreq(*WBI);
-    DEBUG(dbgs() << "    " << getBlockName(*WBI) << " -> " << CandidateFreq
-                 << " (freq)\n");
+    DEBUG(dbgs() << "    " << getBlockName(*WBI) << " -> ";
+                 MBFI->printBlockFreq(dbgs(), CandidateFreq) << " (freq)\n");
     if (BestBlock && BestFreq >= CandidateFreq)
       continue;
     BestBlock = *WBI;
@@ -583,8 +583,8 @@ MachineBlockPlacement::findBestLoopTop(MachineLoop &L,
     if (!LoopBlockSet.count(Pred))
       continue;
     DEBUG(dbgs() << "    header pred: " << getBlockName(Pred) << ", "
-                 << Pred->succ_size() << " successors, "
-                 << MBFI->getBlockFreq(Pred) << " freq\n");
+                 << Pred->succ_size() << " successors, ";
+                 MBFI->printBlockFreq(dbgs(), Pred) << " freq\n");
     if (Pred->succ_size() > 1)
       continue;
 
@@ -698,7 +698,8 @@ MachineBlockPlacement::findBestLoopExit(MachineFunction &F,
       BlockFrequency ExitEdgeFreq = MBFI->getBlockFreq(*I) * SuccProb;
       DEBUG(dbgs() << "    exiting: " << getBlockName(*I) << " -> "
                    << getBlockName(*SI) << " [L:" << SuccLoopDepth
-                   << "] (" << ExitEdgeFreq << ")\n");
+                   << "] (";
+                   MBFI->printBlockFreq(dbgs(), ExitEdgeFreq) << ")\n");
       // Note that we bias this toward an existing layout successor to retain
       // incoming order in the absence of better information. The exit must have
       // a frequency higher than the current exit before we consider breaking
@@ -949,7 +950,9 @@ void MachineBlockPlacement::buildCFGChains(MachineFunction &F) {
   BlockChain &FunctionChain = *BlockToChain[&F.front()];
   buildChain(&F.front(), FunctionChain, BlockWorkList);
 
+#ifndef NDEBUG
   typedef SmallPtrSet<MachineBasicBlock *, 16> FunctionBlockSetType;
+#endif
   DEBUG({
     // Crash at the end so we get all of the debugging output first.
     bool BadFunc = false;

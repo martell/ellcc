@@ -232,7 +232,8 @@ void AsmPrinter::EmitLinkage(const GlobalValue *GV, MCSymbol *GVSym) const {
 
       bool CanBeHidden = false;
 
-      if (Linkage == GlobalValue::LinkOnceODRLinkage) {
+      if (Linkage == GlobalValue::LinkOnceODRLinkage &&
+          MAI->hasWeakDefCanBeHiddenDirective()) {
         if (GV->hasUnnamedAddr()) {
           CanBeHidden = true;
         } else {
@@ -1174,7 +1175,7 @@ void AsmPrinter::EmitJumpTableInfo() {
     // before each jump table.  The first label is never referenced, but tells
     // the assembler and linker the extents of the jump table object.  The
     // second label is actually referenced by the code.
-    if (JTInDiffSection && MAI->getLinkerPrivateGlobalPrefix()[0])
+    if (JTInDiffSection && MAI->hasLinkerPrivateGlobalPrefix())
       // FIXME: This doesn't have to have any specific name, just any randomly
       // named and numbered 'l' label would work.  Simplify GetJTISymbol.
       OutStreamer.EmitLabel(GetJTISymbol(JTI, true));
@@ -2255,3 +2256,6 @@ GCMetadataPrinter *AsmPrinter::GetOrCreateGCPrinter(GCStrategy *S) {
 
   report_fatal_error("no GCMetadataPrinter registered for GC: " + Twine(Name));
 }
+
+/// Pin vtable to this file.
+AsmPrinterHandler::~AsmPrinterHandler() {}

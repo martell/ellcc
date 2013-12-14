@@ -27,7 +27,7 @@ class MCSymbol;
 /// or EH information.
 class AsmPrinterHandler {
 public:
-  virtual ~AsmPrinterHandler() {}
+  virtual ~AsmPrinterHandler();
 
   /// \brief For symbols that have a size designated (e.g. common symbols),
   /// this tracks that size.
@@ -37,7 +37,8 @@ public:
   virtual void endModule() = 0;
 
   /// \brief Gather pre-function debug information.
-  /// Every beginFunction(MF) call should be followed by an endFunction(MF) call.
+  /// Every beginFunction(MF) call should be followed by an endFunction(MF)
+  /// call.
   virtual void beginFunction(const MachineFunction *MF) = 0;
 
   /// \brief Gather post-function debug information.

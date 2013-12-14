@@ -50,6 +50,15 @@ struct ShadowSegmentEndpoint {
   }
 };
 
+void FlushUnneededASanShadowMemory(uptr p, uptr size) {
+    // Since asan's mapping is compacting, the shadow chunk may be
+    // not page-aligned, so we only flush the page-aligned portion.
+    uptr page_size = GetPageSizeCached();
+    uptr shadow_beg = RoundUpTo(MemToShadow(p), page_size);
+    uptr shadow_end = RoundDownTo(MemToShadow(p + size), page_size);
+    FlushUnneededShadowMemory(shadow_beg, shadow_end - shadow_beg);
+}
+
 }  // namespace __asan
 
 // ---------------------- Interface ---------------- {{{1
@@ -292,3 +301,11 @@ void __sanitizer_annotate_contiguous_container(const void *beg_p,
     *(u8*)MemToShadow(b1) = static_cast<u8>(new_mid - b1);
   }
 }
+
+// --- Implementation of LSan-specific functions --- {{{1
+namespace __lsan {
+bool WordIsPoisoned(uptr addr) {
+  return (__asan_region_is_poisoned(addr, sizeof(uptr)) != 0);
+}
+}
+

@@ -83,8 +83,6 @@ $(Configs)::
             --host=$(TARGET)-$(OS) \
 	    --prefix=$(ELLCC) $$NOCXX
 
-            # --with-build-cc=$(ELLCC)/bin/ecc \
-
 %.ncurses.build:
 	make -C ncurses-build/$*/linux
 
