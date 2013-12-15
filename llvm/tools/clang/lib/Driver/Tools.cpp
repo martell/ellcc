@@ -7184,7 +7184,6 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
       !Args.hasArg(options::OPT_nodefaultlibs)) {
     if (D.CCCIsCXX()) {
       CmdArgs.push_back("-lc++");
-      CmdArgs.push_back("-lunwind");
       CmdArgs.push_back("-lm");
     }
 
