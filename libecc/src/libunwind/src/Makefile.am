@@ -346,7 +346,7 @@ libunwind_ppc_la_SOURCES_ppc_generic = ppc/Gcreate_addr_space.c		\
 # The list of files that go both into libunwind and libunwind-ppc32:
 noinst_HEADERS += ppc32/init.h ppc32/unwind_i.h ppc32/ucontext_i.h
 libunwind_la_SOURCES_ppc32_common = $(libunwind_la_SOURCES_common)      \
-	ppc32/getcontext.S						    \
+	ppc32/getcontext.S ppc32/setcontext.S			    	\
 	ppc32/is_fpreg.c ppc32/regname.c ppc32/get_func_addr.c
 
 # The list of files that go into libunwind:

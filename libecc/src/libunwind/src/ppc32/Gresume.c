@@ -45,7 +45,11 @@ my_rt_sigreturn (void *new_sp)
 HIDDEN inline int
 ppc32_local_resume (unw_addr_space_t as, unw_cursor_t *cursor, void *arg)
 {
-  /* XXX: empty stub.  */
+  struct cursor *c = (struct cursor *) cursor;
+  ucontext_t *uc = c->dwarf.as_arg;
+  Debug (8, "resuming at ip=%lx via setcontext()\n",
+         (unsigned long) c->dwarf.ip);
+  setcontext (uc);
   return -UNW_EINVAL;
 }
 

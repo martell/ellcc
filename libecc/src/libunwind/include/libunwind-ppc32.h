@@ -187,6 +187,7 @@ typedef ucontext_t unw_tdep_context_t;
    by glibc...  */
 // RICH: #define unw_tdep_getcontext(uc)		(getcontext (uc), 0)
 #define unw_tdep_getcontext                UNW_ARCH_OBJ(getcontext)
+#define unw_tdep_setcontext                UNW_ARCH_OBJ(setcontext)
 
 #include "libunwind-dynamic.h"
 
