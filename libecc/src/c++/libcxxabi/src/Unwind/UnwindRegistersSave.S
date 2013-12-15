@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "asm.h"
 
     .text
 
@@ -24,8 +25,9 @@
 #   +-----------------------+   <-- SP
 #   +                       +
 #
-  .globl _unw_getcontext
-_unw_getcontext:
+  .globl SYMBOL(unw_getcontext)
+  HIDDEN SYMBOL(unw_getcontext)
+SYMBOL(unw_getcontext):
   push  %eax
   movl  8(%esp), %eax
   movl  %ebx,  4(%eax)
@@ -60,8 +62,9 @@ _unw_getcontext:
 # On entry:
 #  thread_state pointer is in rdi
 #
-  .globl _unw_getcontext
-_unw_getcontext:
+  .globl SYMBOL(unw_getcontext)
+  HIDDEN SYMBOL(unw_getcontext)
+SYMBOL(unw_getcontext):
   movq  %rax,   (%rdi)
   movq  %rbx,  8(%rdi)
   movq  %rcx, 16(%rdi)
@@ -90,17 +93,18 @@ _unw_getcontext:
 
 #elif __ppc__
 
-;
-; extern int unw_getcontext(unw_context_t* thread_state)
-;
-; On entry:
-;  thread_state pointer is in r3
-;
-  .globl _unw_getcontext
-_unw_getcontext:
+//
+// extern int unw_getcontext(unw_context_t* thread_state)
+//
+// On entry:
+//  thread_state pointer is in r3
+//
+  .globl SYMBOL(unw_getcontext)
+  HIDDEN SYMBOL(unw_getcontext)
+SYMBOL(unw_getcontext):
   stw    r0,  8(r3)
   mflr  r0
-  stw    r0,  0(r3)  ; store lr as ssr0
+  stw    r0,  0(r3)  // store lr as ssr0
   stw    r1, 12(r3)
   stw    r2, 16(r3)
   stw    r3, 20(r3)
@@ -133,17 +137,17 @@ _unw_getcontext:
   stw     r30,128(r3)
   stw     r31,132(r3)
 
-  ; save VRSave register
+  // save VRSave register
   mfspr  r0,256
   stw    r0,156(r3)
-  ; save CR registers
+  // save CR registers
   mfcr  r0
   stw    r0,136(r3)
-  ; save CTR register
+  // save CTR register
   mfctr  r0
   stw    r0,148(r3)
 
-  ; save float registers
+  // save float registers
   stfd    f0, 160(r3)
   stfd    f1, 168(r3)
   stfd    f2, 176(r3)
@@ -178,21 +182,21 @@ _unw_getcontext:
   stfd    f31,408(r3)
 
 
-  ; save vector registers
+  // save vector registers
 
   subi  r4,r1,16
-  rlwinm  r4,r4,0,0,27  ; mask low 4-bits
-  ; r4 is now a 16-byte aligned pointer into the red zone
+  rlwinm  r4,r4,0,0,27  // mask low 4-bits
+  // r4 is now a 16-byte aligned pointer into the red zone
 
 #define SAVE_VECTOR_UNALIGNED(_vec, _offset) \
-  stvx  _vec,0,r4           @\
-  lwz    r5, 0(r4)          @\
-  stw    r5, _offset(r3)    @\
-  lwz    r5, 4(r4)          @\
-  stw    r5, _offset+4(r3)  @\
-  lwz    r5, 8(r4)          @\
-  stw    r5, _offset+8(r3)  @\
-  lwz    r5, 12(r4)         @\
+  stvx  _vec,0,r4           LB \
+  lwz    r5, 0(r4)          LB \
+  stw    r5, _offset(r3)    LB \
+  lwz    r5, 4(r4)          LB \
+  stw    r5, _offset+4(r3)  LB \
+  lwz    r5, 8(r4)          LB \
+  stw    r5, _offset+8(r3)  LB \
+  lwz    r5, 12(r4)         LB \
   stw    r5, _offset+12(r3)
 
   SAVE_VECTOR_UNALIGNED( v0, 424+0x000)
@@ -228,20 +232,21 @@ _unw_getcontext:
   SAVE_VECTOR_UNALIGNED(v30, 424+0x1E0)
   SAVE_VECTOR_UNALIGNED(v31, 424+0x1F0)
 
-  li  r3, 0    ; return UNW_ESUCCESS
+  li  r3, 0    // return UNW_ESUCCESS
   blr
 
 
 #elif __arm64__
 
-;
-; extern int unw_getcontext(unw_context_t* thread_state)
-;
-; On entry:
-;  thread_state pointer is in x0
-;
-  .globl _unw_getcontext
-_unw_getcontext:
+//
+// extern int unw_getcontext(unw_context_t* thread_state)
+//
+// On entry:
+//  thread_state pointer is in x0
+//
+  .globl SYMBOL(unw_getcontext)
+  HIDDEN SYMBOL(unw_getcontext)
+SYMBOL(unw_getcontext):
   stp    x0, x1,  [x0, #0x000]
   stp    x2, x3,  [x0, #0x010]
   stp    x4, x5,  [x0, #0x020]
@@ -260,8 +265,8 @@ _unw_getcontext:
   str    lr,      [x0, #0x0F0]
   mov    x1,sp
   str    x1,      [x0, #0x0F8]
-  str    lr,      [x0, #0x100]    ; store return address as pc
-  ; skip cpsr
+  str    lr,      [x0, #0x100]    // store return address as pc
+  // skip cpsr
   stp    d0, d1,  [x0, #0x110]
   stp    d2, d3,  [x0, #0x120]
   stp    d4, d5,  [x0, #0x130]
@@ -279,8 +284,36 @@ _unw_getcontext:
   stp    d28,d29, [x0, #0x1F0]
   str    d30,     [x0, #0x200]
   str    d31,     [x0, #0x208]
-  ldr    x0, #0      ; return UNW_ESUCCESS
+  ldr    x0, #0      // return UNW_ESUCCESS
   ret
 
+#elif __microblaze__
+  // __ELLCC__
+  .text
+  .globl SYMBOL(unw_getcontext)
+  HIDDEN SYMBOL(unw_getcontext)
+SYMBOL(unw_getcontext):
+    rtsd r15, 8
+    ori r3, r0,0        // Branch delay slot.
+
+#elif __arm__
+  // __ELLCC__
+  .text
+  .globl SYMBOL(unw_getcontext)
+  HIDDEN SYMBOL(unw_getcontext)
+SYMBOL(unw_getcontext):
+    bx lr
+
+#elif __mips__
+  // __ELLCC__
+  .text
+  .globl SYMBOL(unw_getcontext)
+  HIDDEN SYMBOL(unw_getcontext)
+SYMBOL(unw_getcontext):
+    jr  $ra
+    li  $2, 0           // Branch delay slot.
+
+#else
+#error unw_getcontext is not implemented for this target.
 #endif
 

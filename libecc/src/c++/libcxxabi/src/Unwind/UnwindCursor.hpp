@@ -26,8 +26,10 @@
 #include "AddressSpace.hpp"
 #include "Registers.hpp"
 #include "DwarfInstructions.hpp"
-#include "CompactUnwinder.hpp"
 #include "config.h"
+#if _LIBUNWIND_SUPPORT_COMPACT_UNWIND
+#include "CompactUnwinder.hpp"
+#endif
 
 namespace libunwind {
 
@@ -151,10 +153,12 @@ void DwarfFDECache<A>::removeAllIn(pint_t mh) {
   _LIBUNWIND_LOG_NON_ZERO(::pthread_rwlock_unlock(&_lock));
 }
 
+#if __APPLE__
 template <typename A>
 void DwarfFDECache<A>::dyldUnloadHook(const struct mach_header *mh, intptr_t ) {
   removeAllIn((pint_t) mh);
 }
+#endif
 
 template <typename A>
 void DwarfFDECache<A>::iterateCacheEntries(void (*func)(
@@ -627,7 +631,9 @@ bool UnwindCursor<A, R>::getInfoFromDwarfSection(pint_t pc,
       _info.handler           = cieInfo.personality;
       _info.gp                = prolog.spExtraArgSize;
       _info.flags             = 0;
+#if _LIBUNWIND_SUPPORT_COMPACT_UNWIND
       _info.format            = dwarfEncoding();
+#endif
       _info.unwind_info       = fdeInfo.fdeStart;
       _info.unwind_info_size  = (uint32_t)fdeInfo.fdeLength;
       _info.extra             = (unw_word_t) sects.dso_base;
@@ -977,7 +983,9 @@ void UnwindCursor<A, R>::setInfoBasedOnIPRegister(bool isReturnAddress) {
                                   // Some frameless functions need SP
                                   // altered when resuming in function.
         _info.flags            = 0;
+#if _LIBUNWIND_SUPPORT_COMPACT_UNWIND
         _info.format           = dwarfEncoding();
+#endif
         _info.unwind_info      = fdeInfo.fdeStart;
         _info.unwind_info_size = (uint32_t)fdeInfo.fdeLength;
         _info.extra            = 0;
@@ -1005,7 +1013,9 @@ void UnwindCursor<A, R>::setInfoBasedOnIPRegister(bool isReturnAddress) {
           _info.handler          = cieInfo.personality;
           _info.gp               = prolog.spExtraArgSize;
           _info.flags            = 0;
+#if _LIBUNWIND_SUPPORT_COMPACT_UNWIND
           _info.format           = dwarfEncoding();
+#endif
           _info.unwind_info      = fdeInfo.fdeStart;
           _info.unwind_info_size = (uint32_t)fdeInfo.fdeLength;
           _info.extra            = 0;

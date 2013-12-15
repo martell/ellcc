@@ -36,33 +36,6 @@ $(Configs)::
 	make $@.compiler-rt.install
 
 $(Configs)::
-	make $@.libunwind.configure && \
-	make $@.libunwind.build && \
-	make $@.libunwind.install
-
-%.libunwind.configure:
-	@echo Configuring libunwind for $* in libunwind-build/$*/linux
-	mkdir -p libunwind-build/$*/linux
-	cd libunwind-build/$*/linux ; \
-	../../../src/libunwind/configure \
-        CC="$(ELLCC)/bin/ecc $(CFLAGS.$*) -Wno-header-guard" \
-        AR=$(ELLCC)/bin/ecc-ar \
-        RANLIB=$(ELLCC)/bin/ecc-ranlib \
-        --enable-shared=no \
-        --enable-coredump=no \
-        --enable-cxx-exceptions=yes \
-        --host=$*-linux
-
-%.libunwind.build:
-	make -C libunwind-build/$*/linux
-
-%.libunwind.install:
-	@cd libunwind-build ; \
-	echo Installing libunwind for $* ; \
-	mkdir -p ../lib/$*/linux ; \
-	cp $*/linux/src/.libs/libunwind.a ../lib/$*/linux
-
-$(Configs)::
 	make $@.ncurses.configure && \
 	make $@.ncurses.build && \
 	make $@.ncurses.install

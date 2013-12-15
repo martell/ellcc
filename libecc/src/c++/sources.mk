@@ -12,3 +12,9 @@ SRCS += abort_message.cpp cxa_aux_runtime.cpp cxa_default_handlers.cpp \
         cxa_guard.cpp cxa_handlers.cpp cxa_new_delete.cpp cxa_personality.cpp \
         cxa_unexpected.cpp cxa_vector.cpp cxa_virtual.cpp cxx_exception.cpp \
         private_typeinfo.cpp cxx_stdexcept.cpp cxx_typeinfo.cpp
+
+CFLAGS += -I$(SRCPATH)/c++/libcxxabi/include
+CXXFLAGS += -D_GNU_SOURCE -Ddl_info=Dl_info
+VPATH := $(VPATH):$(SRCPATH)/c++/libcxxabi/src/Unwind
+SRCS += libunwind.cpp UnwindLevel1.c UnwindLevel1-gcc-ext.c \
+        UnwindRegistersRestore.S UnwindRegistersSave.S
