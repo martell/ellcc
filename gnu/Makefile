@@ -68,7 +68,7 @@ binutils.configure:
     mkdir -p binutils ; \
     cd binutils ; \
     ../../src/binutils/configure \
-        CC=$(CC) CFLAGS="-g $(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
+        CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
         AR=$(AR) --enable-64-bit-bfd \
         --bindir=$(bindir) $(HOST) --enable-targets=$(targetlist) \
         --program-prefix=ecc- --prefix=$(prefix)/lib \

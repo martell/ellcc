@@ -5,7 +5,7 @@
 
 int main()
 {
-    unsigned long long x, y;            
+    signed long long x, y;            
 
     x = 100;      
     y = 0x8000000000000000ULL;
