@@ -11,22 +11,27 @@ host=$build
 target=$build 
 os=linux
 arg1=
+hostos=`uname -s`
 
 if [ $# -ge 1 ] ; then
   # The first argument is the desired cross host.
   host=$1
   arg1=$host
   bindir=$bindir-$host-$os
+  hostos=Linux
   shift
 fi
 
-if [ `which ecc` ] ; then
-  # ecc exists, and is in the PATH.
-  ecc=ecc
-fi
+if [ "x$hostos" = "xLinux" ] ; then
+  # ELLCC can currently build itself only for Linux.
+  if [ `which ecc` ] ; then
+    # ecc exists, and is in the PATH.
+    ecc=ecc
+  fi
 
-if [ -e $bin/ecc ]; then
-  ecc=$bin/ecc
+  if [ -e $bin/ecc ]; then
+    ecc=$bin/ecc
+  fi
 fi
 
 if [ "x$ecc" != "x" ] ; then

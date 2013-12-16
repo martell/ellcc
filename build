@@ -43,9 +43,11 @@ make clean
 make || exit 1
 cd ..
 
-if [ "$haslibs" != "yes" ] ; then
-  echo "Please run the build script again to bootstrap ecc."
-  echo "This may be done a few times:"
-  echo "1. ecc is built with itself (compiled with gcc) and libecc."
-  echo "2. ecc is built with itself (compiled with itself) and libecc."
+if [ "x$hostos" = "xLinux" ] ; then
+  if [ "$haslibs" != "yes" ] ; then
+    echo "Please run the build script again to bootstrap ecc."
+    echo "This may be done a few times:"
+    echo "1. ecc is built with itself (compiled with gcc) and libecc."
+    echo "2. ecc is built with itself (compiled with itself) and libecc."
+  fi
 fi
