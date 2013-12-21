@@ -160,6 +160,7 @@ const char *Triple::getEnvironmentTypeName(EnvironmentType Kind) {
   case GNUEABI: return "gnueabi";
   case GNUX32: return "gnux32";
   case EABI: return "eabi";
+  case EABIHF: return "eabihf";
   case MachO: return "macho";
   case Android: return "android";
   case ELF: return "elf";
@@ -320,6 +321,7 @@ static Triple::OSType parseOS(StringRef OSName) {
 
 static Triple::EnvironmentType parseEnvironment(StringRef EnvironmentName) {
   return StringSwitch<Triple::EnvironmentType>(EnvironmentName)
+    .StartsWith("eabihf", Triple::EABIHF)
     .StartsWith("eabi", Triple::EABI)
     .StartsWith("gnueabihf", Triple::GNUEABIHF)
     .StartsWith("gnueabi", Triple::GNUEABI)

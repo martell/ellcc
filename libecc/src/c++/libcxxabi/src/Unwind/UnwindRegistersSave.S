@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "asm.h"
+#include "assembly.h"
 
     .text
 
@@ -25,9 +25,7 @@
 #   +-----------------------+   <-- SP
 #   +                       +
 #
-  .globl SYMBOL(unw_getcontext)
-  HIDDEN SYMBOL(unw_getcontext)
-SYMBOL(unw_getcontext):
+DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   push  %eax
   movl  8(%esp), %eax
   movl  %ebx,  4(%eax)
@@ -62,9 +60,7 @@ SYMBOL(unw_getcontext):
 # On entry:
 #  thread_state pointer is in rdi
 #
-  .globl SYMBOL(unw_getcontext)
-  HIDDEN SYMBOL(unw_getcontext)
-SYMBOL(unw_getcontext):
+DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   movq  %rax,   (%rdi)
   movq  %rbx,  8(%rdi)
   movq  %rcx, 16(%rdi)
@@ -99,9 +95,7 @@ SYMBOL(unw_getcontext):
 // On entry:
 //  thread_state pointer is in r3
 //
-  .globl SYMBOL(unw_getcontext)
-  HIDDEN SYMBOL(unw_getcontext)
-SYMBOL(unw_getcontext):
+DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   stw    r0,  8(r3)
   mflr  r0
   stw    r0,  0(r3)  // store lr as ssr0
@@ -189,14 +183,14 @@ SYMBOL(unw_getcontext):
   // r4 is now a 16-byte aligned pointer into the red zone
 
 #define SAVE_VECTOR_UNALIGNED(_vec, _offset) \
-  stvx  _vec,0,r4           LB \
-  lwz    r5, 0(r4)          LB \
-  stw    r5, _offset(r3)    LB \
-  lwz    r5, 4(r4)          LB \
-  stw    r5, _offset+4(r3)  LB \
-  lwz    r5, 8(r4)          LB \
-  stw    r5, _offset+8(r3)  LB \
-  lwz    r5, 12(r4)         LB \
+  stvx  _vec,0,r4           SEPARATOR \
+  lwz    r5, 0(r4)          SEPARATOR \
+  stw    r5, _offset(r3)    SEPARATOR \
+  lwz    r5, 4(r4)          SEPARATOR \
+  stw    r5, _offset+4(r3)  SEPARATOR \
+  lwz    r5, 8(r4)          SEPARATOR \
+  stw    r5, _offset+8(r3)  SEPARATOR \
+  lwz    r5, 12(r4)         SEPARATOR \
   stw    r5, _offset+12(r3)
 
   SAVE_VECTOR_UNALIGNED( v0, 424+0x000)
@@ -238,15 +232,13 @@ SYMBOL(unw_getcontext):
 
 #elif __arm64__
 
-//
-// extern int unw_getcontext(unw_context_t* thread_state)
-//
-// On entry:
-//  thread_state pointer is in x0
-//
-  .globl SYMBOL(unw_getcontext)
-  HIDDEN SYMBOL(unw_getcontext)
-SYMBOL(unw_getcontext):
+;
+; extern int unw_getcontext(unw_context_t* thread_state)
+;
+; On entry:
+;  thread_state pointer is in x0
+;
+DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   stp    x0, x1,  [x0, #0x000]
   stp    x2, x3,  [x0, #0x010]
   stp    x4, x5,  [x0, #0x020]
@@ -288,32 +280,37 @@ SYMBOL(unw_getcontext):
   ret
 
 #elif __microblaze__
+
   // __ELLCC__
-  .text
-  .globl SYMBOL(unw_getcontext)
-  HIDDEN SYMBOL(unw_getcontext)
-SYMBOL(unw_getcontext):
+DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
     rtsd r15, 8
     ori r3, r0,0        // Branch delay slot.
 
-#elif __arm__
-  // __ELLCC__
-  .text
-  .globl SYMBOL(unw_getcontext)
-  HIDDEN SYMBOL(unw_getcontext)
-SYMBOL(unw_getcontext):
-    bx lr
-
 #elif __mips__
   // __ELLCC__
-  .text
-  .globl SYMBOL(unw_getcontext)
-  HIDDEN SYMBOL(unw_getcontext)
-SYMBOL(unw_getcontext):
+DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
     jr  $ra
     li  $2, 0           // Branch delay slot.
+
+#elif __arm__ && !__APPLE__
+
+@
+@ extern int unw_getcontext(unw_context_t* thread_state)
+@
+@ On entry:
+@  thread_state pointer is in r0
+@
+DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
+  @ 32bit thumb-2 restrictions for stm:
+  @ . the sp (r13) cannot be in the list
+  @ . the pc (r15) cannot be in the list in an STM instruction
+  stm r0, {r0-r12}
+  str sp, [r0, #52]
+  str lr, [r0, #56]
+  str lr, [r0, #60]  @ store return address as pc
+  mov r0, #0      @ return UNW_ESUCCESS
+  mov pc, lr
 
 #else
 #error unw_getcontext is not implemented for this target.
 #endif
-

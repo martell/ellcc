@@ -7,13 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "asm.h"
+#include "assembly.h"
+
+  .text
 
 #if __i386__
-  .text
-  .globl SYMBOL(_ZN9libunwind13Registers_x866jumptoEv)
-  HIDDEN SYMBOL(_ZN9libunwind13Registers_x866jumptoEv)
-SYMBOL(_ZN9libunwind13Registers_x866jumptoEv):
+DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_x866jumptoEv)
 #
 # void libunwind::Registers_x86::jumpto()
 #
@@ -55,10 +54,7 @@ SYMBOL(_ZN9libunwind13Registers_x866jumptoEv):
 
 #elif __x86_64__
 
-  .text
-  .globl SYMBOL(_ZN9libunwind16Registers_x86_646jumptoEv)
-  HIDDEN SYMBOL(_ZN9libunwind16Registers_x86_646jumptoEv)
-SYMBOL(_ZN9libunwind16Registers_x86_646jumptoEv):
+DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind16Registers_x86_646jumptoEv)
 #
 # void libunwind::Registers_x86_64::jumpto()
 #
@@ -99,10 +95,7 @@ SYMBOL(_ZN9libunwind16Registers_x86_646jumptoEv):
 
 #elif __ppc__
 
-  .text
-  .globl SYMBOL(_ZN9libunwind13Registers_ppc6jumptoEv)
-  HIDDEN SYMBOL(_ZN9libunwind13Registers_ppc6jumptoEv)
-SYMBOL(_ZN9libunwind13Registers_ppc6jumptoEv):
+DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_ppc6jumptoEv)
 //
 // void libunwind::Registers_ppc::jumpto()
 //
@@ -189,31 +182,31 @@ SYMBOL(_ZN9libunwind13Registers_ppc6jumptoEv):
   // the _vectorRegisters may not be 16-byte aligned so copy via red zone temp buffer
 
 #define LOAD_VECTOR_UNALIGNEDl(_index)  \
-  andis.  r0,r5,(1<<(15-_index))        LB \
-  beq    Ldone ## _index                LB \
-  lwz    r0, 424+_index*16(r3)          LB \
-  stw    r0, 0(r4)                      LB \
-  lwz    r0, 424+_index*16+4(r3)        LB \
-  stw    r0, 4(r4)                      LB \
-  lwz    r0, 424+_index*16+8(r3)        LB \
-  stw    r0, 8(r4)                      LB \
-  lwz    r0, 424+_index*16+12(r3)       LB \
-  stw    r0, 12(r4)                     LB \
-  lvx    v ## _index,0,r4               LB \
+  andis.  r0,r5,(1<<(15-_index))        SEPARATOR \
+  beq    Ldone ## _index                SEPARATOR \
+  lwz    r0, 424+_index*16(r3)          SEPARATOR \
+  stw    r0, 0(r4)                      SEPARATOR \
+  lwz    r0, 424+_index*16+4(r3)        SEPARATOR \
+  stw    r0, 4(r4)                      SEPARATOR \
+  lwz    r0, 424+_index*16+8(r3)        SEPARATOR \
+  stw    r0, 8(r4)                      SEPARATOR \
+  lwz    r0, 424+_index*16+12(r3)       SEPARATOR \
+  stw    r0, 12(r4)                     SEPARATOR \
+  lvx    v ## _index,0,r4               SEPARATOR \
 Ldone  ## _index:
 
 #define LOAD_VECTOR_UNALIGNEDh(_index)  \
-  andi.  r0,r5,(1<<(31-_index))         LB \
-  beq    Ldone ## _index                LB \
-  lwz    r0, 424+_index*16(r3)          LB \
-  stw    r0, 0(r4)                      LB \
-  lwz    r0, 424+_index*16+4(r3)        LB \
-  stw    r0, 4(r4)                      LB \
-  lwz    r0, 424+_index*16+8(r3)        LB \
-  stw    r0, 8(r4)                      LB \
-  lwz    r0, 424+_index*16+12(r3)       LB \
-  stw    r0, 12(r4)                     LB \
-  lvx    v ## _index,0,r4               LB \
+  andi.  r0,r5,(1<<(31-_index))         SEPARATOR \
+  beq    Ldone ## _index                SEPARATOR \
+  lwz    r0, 424+_index*16(r3)          SEPARATOR \
+  stw    r0, 0(r4)                      SEPARATOR \
+  lwz    r0, 424+_index*16+4(r3)        SEPARATOR \
+  stw    r0, 4(r4)                      SEPARATOR \
+  lwz    r0, 424+_index*16+8(r3)        SEPARATOR \
+  stw    r0, 8(r4)                      SEPARATOR \
+  lwz    r0, 424+_index*16+12(r3)       SEPARATOR \
+  stw    r0, 12(r4)                     SEPARATOR \
+  lvx    v ## _index,0,r4               SEPARATOR \
 Ldone  ## _index:
 
 
@@ -252,7 +245,7 @@ Ldone  ## _index:
 
 Lnovec:
   lwz    r0, 136(r3) // __cr
-  mtocrf  255,r0
+  mtcrf  255,r0
   lwz    r0, 148(r3) // __ctr
   mtctr  r0
   lwz    r0, 0(r3)  // __ssr0
@@ -266,17 +259,13 @@ Lnovec:
 
 #elif __arm64__
 
-  .text
-  .globl SYMBOL(_ZN9libunwind15Registers_arm646jumptoEv)
-  HIDDEN SYMBOL(_ZN9libunwind15Registers_arm646jumptoEv)
-SYMBOL(_ZN9libunwind15Registers_arm646jumptoEv):
-//
-// void libunwind::Registers_arm64::jumpto()
-//
-// On entry:
-//  thread_state pointer is in x0
-//
-  // skip restore of x0,x1 for now
+;
+; void libunwind::Registers_arm64::jumpto()
+;
+; On entry:
+;  thread_state pointer is in x0
+;
+  ; skip restore of x0,x1 for now
   ldp    x2, x3,  [x0, #0x010]
   ldp    x4, x5,  [x0, #0x020]
   ldp    x6, x7,  [x0, #0x030]
@@ -316,34 +305,36 @@ SYMBOL(_ZN9libunwind15Registers_arm646jumptoEv):
   ldp    x0, x1,  [x0, #0x000]  // restore x0,x1
   ret    lr            // jump to pc
 
+#elif __arm__
+
+@
+@ void libunwind::Registers_arm::jumpto()
+@
+@ On entry:
+@  thread_state pointer is in r0
+@
+DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm6jumptoEv)
+  @ Use lr as base so that r0 can be restored.
+  mov lr, r0
+  @ 32bit thumb-2 restrictions for ldm:
+  @ . the sp (r13) cannot be in the list
+  @ . the pc (r15) and lr (r14) cannot both be in the list in an LDM instruction
+  ldm lr, {r0-r12}
+  ldr sp, [lr, #52]
+  ldr lr, [lr, #60]  @ restore pc into lr
+  mov pc, lr
 
 #elif __microblaze__
   // __ELLCC__
-  .text
-  .globl SYMBOL(_ZN9libunwind16Registers_microblaze6jumptoEv)
-  HIDDEN SYMBOL(_ZN9libunwind16Registers_microblaze6jumptoEv)
-SYMBOL(_ZN9libunwind16Registers_microblaze6jumptoEv):
+DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind16Registers_microblaze6jumptoEv)
     rtsd r15, 8
     ori r3, r0,0        // Branch delay slot.
-
-#elif __arm__
-  // __ELLCC__
-  .text
-  .globl SYMBOL(_ZN9libunwind16Registers_arm6jumptoEv)
-  HIDDEN SYMBOL(_ZN9libunwind16Registers_x86_646jumptoEv)
-SYMBOL(_ZN9libunwind16Registers_x86_646jumptoEv):
-    bx lr
-
 #elif __mips__
   // __ELLCC__
-  .text
-  .globl SYMBOL(_ZN9libunwind16Registers_arm6jumptoEv)
-  HIDDEN SYMBOL(_ZN9libunwind16Registers_arm6jumptoEv)
-SYMBOL(_ZN9libunwind16Registers_x86_646jumptoEv):
+DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind16Registers_mips6jumptoEv)
     jr  $ra
     li  $2, 0           // Branch delay slot.
 
 #else
 #error _ZN9libunwind16Registers_XXXX6jumptoEv is not implemented for this target.
 #endif
-

@@ -38,7 +38,7 @@ class ModuleMapParser;
   
 class ModuleMap {
   SourceManager &SourceMgr;
-  IntrusiveRefCntPtr<DiagnosticsEngine> Diags;
+  DiagnosticsEngine &Diags;
   const LangOptions &LangOpts;
   const TargetInfo *Target;
   HeaderSearch &HeaderInfo;
@@ -182,13 +182,12 @@ public:
   /// This source manager should be shared with the header-search mechanism,
   /// since they will refer to the same headers.
   ///
-  /// \param DC A diagnostic consumer that will be cloned for use in generating
-  /// diagnostics.
+  /// \param Diags A diagnostic engine used for diagnostics.
   ///
   /// \param LangOpts Language options for this translation unit.
   ///
   /// \param Target The target for this translation unit.
-  ModuleMap(SourceManager &SourceMgr, DiagnosticConsumer &DC,
+  ModuleMap(SourceManager &SourceMgr, DiagnosticsEngine &Diags,
             const LangOptions &LangOpts, const TargetInfo *Target,
             HeaderSearch &HeaderInfo);
 

@@ -411,6 +411,7 @@ def PPCS5ImmAsmOperand : AsmOperandClass {
 def s5imm   : Operand<i32> {
   let PrintMethod = "printS5ImmOperand";
   let ParserMatchClass = PPCS5ImmAsmOperand;
+  let DecoderMethod = "decodeSImmOperand<5>";
 }
 def PPCU5ImmAsmOperand : AsmOperandClass {
   let Name = "U5Imm"; let PredicateMethod = "isU5Imm";
@@ -419,6 +420,7 @@ def PPCU5ImmAsmOperand : AsmOperandClass {
 def u5imm   : Operand<i32> {
   let PrintMethod = "printU5ImmOperand";
   let ParserMatchClass = PPCU5ImmAsmOperand;
+  let DecoderMethod = "decodeUImmOperand<5>";
 }
 def PPCU6ImmAsmOperand : AsmOperandClass {
   let Name = "U6Imm"; let PredicateMethod = "isU6Imm";
@@ -427,6 +429,7 @@ def PPCU6ImmAsmOperand : AsmOperandClass {
 def u6imm   : Operand<i32> {
   let PrintMethod = "printU6ImmOperand";
   let ParserMatchClass = PPCU6ImmAsmOperand;
+  let DecoderMethod = "decodeUImmOperand<6>";
 }
 def PPCS16ImmAsmOperand : AsmOperandClass {
   let Name = "S16Imm"; let PredicateMethod = "isS16Imm";
@@ -436,6 +439,7 @@ def s16imm  : Operand<i32> {
   let PrintMethod = "printS16ImmOperand";
   let EncoderMethod = "getImm16Encoding";
   let ParserMatchClass = PPCS16ImmAsmOperand;
+  let DecoderMethod = "decodeSImmOperand<16>";
 }
 def PPCU16ImmAsmOperand : AsmOperandClass {
   let Name = "U16Imm"; let PredicateMethod = "isU16Imm";
@@ -445,6 +449,7 @@ def u16imm  : Operand<i32> {
   let PrintMethod = "printU16ImmOperand";
   let EncoderMethod = "getImm16Encoding";
   let ParserMatchClass = PPCU16ImmAsmOperand;
+  let DecoderMethod = "decodeUImmOperand<16>";
 }
 def PPCS17ImmAsmOperand : AsmOperandClass {
   let Name = "S17Imm"; let PredicateMethod = "isS17Imm";
@@ -457,6 +462,7 @@ def s17imm  : Operand<i32> {
   let PrintMethod = "printS16ImmOperand";
   let EncoderMethod = "getImm16Encoding";
   let ParserMatchClass = PPCS17ImmAsmOperand;
+  let DecoderMethod = "decodeSImmOperand<16>";
 }
 def PPCDirectBrAsmOperand : AsmOperandClass {
   let Name = "DirectBr"; let PredicateMethod = "isDirectBr";
@@ -502,6 +508,7 @@ def PPCCRBitMaskOperand : AsmOperandClass {
 def crbitm: Operand<i8> {
   let PrintMethod = "printcrbitm";
   let EncoderMethod = "get_crbitm_encoding";
+  let DecoderMethod = "decodeCRBitMOperand";
   let ParserMatchClass = PPCCRBitMaskOperand;
 }
 // Address operands
@@ -539,6 +546,7 @@ def memri : Operand<iPTR> {
   let PrintMethod = "printMemRegImm";
   let MIOperandInfo = (ops dispRI:$imm, ptr_rc_nor0:$reg);
   let EncoderMethod = "getMemRIEncoding";
+  let DecoderMethod = "decodeMemRIOperands";
 }
 def memrr : Operand<iPTR> {
   let PrintMethod = "printMemRegReg";
@@ -548,6 +556,7 @@ def memrix : Operand<iPTR> {   // memri where the imm is 4-aligned.
   let PrintMethod = "printMemRegImm";
   let MIOperandInfo = (ops dispRIX:$imm, ptr_rc_nor0:$reg);
   let EncoderMethod = "getMemRIXEncoding";
+  let DecoderMethod = "decodeMemRIXOperands";
 }
 
 // A single-register address. This is used with the SjLj
@@ -1685,6 +1694,7 @@ let PPC970_Unit = 3 in {  // FPU Operations.
 let isCompare = 1, neverHasSideEffects = 1 in {
   def FCMPUS : XForm_17<63, 0, (outs crrc:$crD), (ins f4rc:$fA, f4rc:$fB),
                         "fcmpu $crD, $fA, $fB", IIC_FPCompare>;
+  let Interpretation64Bit = 1, isCodeGenOnly = 1 in
   def FCMPUD : XForm_17<63, 0, (outs crrc:$crD), (ins f8rc:$fA, f8rc:$fB),
                         "fcmpu $crD, $fA, $fB", IIC_FPCompare>;
 }
@@ -1702,7 +1712,7 @@ let Uses = [RM] in {
                           "frsp", "$frD, $frB", IIC_FPGeneral,
                           [(set f32:$frD, (fround f64:$frB))]>;
 
-  let Interpretation64Bit = 1 in
+  let Interpretation64Bit = 1, isCodeGenOnly = 1 in
   defm FRIND  : XForm_26r<63, 392, (outs f8rc:$frD), (ins f8rc:$frB),
                           "frin", "$frD, $frB", IIC_FPGeneral,
                           [(set f64:$frD, (frnd f64:$frB))]>;
@@ -1712,21 +1722,21 @@ let Uses = [RM] in {
   }
 
   let neverHasSideEffects = 1 in {
-  let Interpretation64Bit = 1 in
+  let Interpretation64Bit = 1, isCodeGenOnly = 1 in
   defm FRIPD  : XForm_26r<63, 456, (outs f8rc:$frD), (ins f8rc:$frB),
                           "frip", "$frD, $frB", IIC_FPGeneral,
                           [(set f64:$frD, (fceil f64:$frB))]>;
   defm FRIPS  : XForm_26r<63, 456, (outs f4rc:$frD), (ins f4rc:$frB),
                           "frip", "$frD, $frB", IIC_FPGeneral,
                           [(set f32:$frD, (fceil f32:$frB))]>;
-  let Interpretation64Bit = 1 in
+  let Interpretation64Bit = 1, isCodeGenOnly = 1 in
   defm FRIZD  : XForm_26r<63, 424, (outs f8rc:$frD), (ins f8rc:$frB),
                           "friz", "$frD, $frB", IIC_FPGeneral,
                           [(set f64:$frD, (ftrunc f64:$frB))]>;
   defm FRIZS  : XForm_26r<63, 424, (outs f4rc:$frD), (ins f4rc:$frB),
                           "friz", "$frD, $frB", IIC_FPGeneral,
                           [(set f32:$frD, (ftrunc f32:$frB))]>;
-  let Interpretation64Bit = 1 in
+  let Interpretation64Bit = 1, isCodeGenOnly = 1 in
   defm FRIMD  : XForm_26r<63, 488, (outs f8rc:$frD), (ins f8rc:$frB),
                           "frim", "$frD, $frB", IIC_FPGeneral,
                           [(set f64:$frD, (ffloor f64:$frB))]>;
@@ -1759,21 +1769,21 @@ let PPC970_Unit = 3, neverHasSideEffects = 1 in {  // FPU Operations.
 defm FABSS  : XForm_26r<63, 264, (outs f4rc:$frD), (ins f4rc:$frB),
                         "fabs", "$frD, $frB", IIC_FPGeneral,
                         [(set f32:$frD, (fabs f32:$frB))]>;
-let Interpretation64Bit = 1 in
+let Interpretation64Bit = 1, isCodeGenOnly = 1 in
 defm FABSD  : XForm_26r<63, 264, (outs f8rc:$frD), (ins f8rc:$frB),
                         "fabs", "$frD, $frB", IIC_FPGeneral,
                         [(set f64:$frD, (fabs f64:$frB))]>;
 defm FNABSS : XForm_26r<63, 136, (outs f4rc:$frD), (ins f4rc:$frB),
                         "fnabs", "$frD, $frB", IIC_FPGeneral,
                         [(set f32:$frD, (fneg (fabs f32:$frB)))]>;
-let Interpretation64Bit = 1 in
+let Interpretation64Bit = 1, isCodeGenOnly = 1 in
 defm FNABSD : XForm_26r<63, 136, (outs f8rc:$frD), (ins f8rc:$frB),
                         "fnabs", "$frD, $frB", IIC_FPGeneral,
                         [(set f64:$frD, (fneg (fabs f64:$frB)))]>;
 defm FNEGS  : XForm_26r<63, 40, (outs f4rc:$frD), (ins f4rc:$frB),
                         "fneg", "$frD, $frB", IIC_FPGeneral,
                         [(set f32:$frD, (fneg f32:$frB))]>;
-let Interpretation64Bit = 1 in
+let Interpretation64Bit = 1, isCodeGenOnly = 1 in
 defm FNEGD  : XForm_26r<63, 40, (outs f8rc:$frD), (ins f8rc:$frB),
                         "fneg", "$frD, $frB", IIC_FPGeneral,
                         [(set f64:$frD, (fneg f64:$frB))]>;
@@ -1781,7 +1791,7 @@ defm FNEGD  : XForm_26r<63, 40, (outs f8rc:$frD), (ins f8rc:$frB),
 defm FCPSGNS : XForm_28r<63, 8, (outs f4rc:$frD), (ins f4rc:$frA, f4rc:$frB),
                         "fcpsgn", "$frD, $frA, $frB", IIC_FPGeneral,
                         [(set f32:$frD, (fcopysign f32:$frB, f32:$frA))]>;
-let Interpretation64Bit = 1 in
+let Interpretation64Bit = 1, isCodeGenOnly = 1 in
 defm FCPSGND : XForm_28r<63, 8, (outs f8rc:$frD), (ins f8rc:$frA, f8rc:$frB),
                         "fcpsgn", "$frD, $frA, $frB", IIC_FPGeneral,
                         [(set f64:$frD, (fcopysign f64:$frB, f64:$frA))]>;
@@ -2085,7 +2095,7 @@ let Uses = [RM] in {
 // having 4 of these, force the comparison to always be an 8-byte double (code
 // should use an FMRSD if the input comparison value really wants to be a float)
 // and 4/8 byte forms for the result and operand type..
-let Interpretation64Bit = 1 in
+let Interpretation64Bit = 1, isCodeGenOnly = 1 in
 defm FSELD : AForm_1r<63, 23,
                       (outs f8rc:$FRT), (ins f8rc:$FRA, f8rc:$FRC, f8rc:$FRB),
                       "fsel", "$FRT, $FRA, $FRC, $FRB", IIC_FPGeneral,

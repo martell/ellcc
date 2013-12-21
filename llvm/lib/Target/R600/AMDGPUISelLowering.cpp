@@ -32,8 +32,9 @@ using namespace llvm;
 static bool allocateStack(unsigned ValNo, MVT ValVT, MVT LocVT,
                       CCValAssign::LocInfo LocInfo,
                       ISD::ArgFlagsTy ArgFlags, CCState &State) {
-  unsigned Offset = State.AllocateStack(ValVT.getSizeInBits() / 8, ArgFlags.getOrigAlign());
-    State.addLoc(CCValAssign::getMem(ValNo, ValVT, Offset, LocVT, LocInfo));
+  unsigned Offset = State.AllocateStack(ValVT.getStoreSize(),
+                                        ArgFlags.getOrigAlign());
+  State.addLoc(CCValAssign::getMem(ValNo, ValVT, Offset, LocVT, LocInfo));
 
   return true;
 }
@@ -59,6 +60,7 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM) :
   setOperationAction(ISD::FFLOOR, MVT::f32, Legal);
   setOperationAction(ISD::FRINT,  MVT::f32, Legal);
   setOperationAction(ISD::FROUND, MVT::f32, Legal);
+  setOperationAction(ISD::FTRUNC, MVT::f32, Legal);
 
   // The hardware supports ROTR, but not ROTL
   setOperationAction(ISD::ROTL, MVT::i32, Expand);
@@ -183,6 +185,7 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM) :
     setOperationAction(ISD::FADD, VT, Expand);
     setOperationAction(ISD::FDIV, VT, Expand);
     setOperationAction(ISD::FFLOOR, VT, Expand);
+    setOperationAction(ISD::FTRUNC, VT, Expand);
     setOperationAction(ISD::FMUL, VT, Expand);
     setOperationAction(ISD::FRINT, VT, Expand);
     setOperationAction(ISD::FSQRT, VT, Expand);

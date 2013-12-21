@@ -53,7 +53,6 @@ static std::string ReadPCHRecord(StringRef type) {
     .Case("TypeSourceInfo *", "GetTypeSourceInfo(F, Record, Idx)")
     .Case("Expr *", "ReadExpr(F)")
     .Case("IdentifierInfo *", "GetIdentifierInfo(F, Record, Idx)")
-    .Case("SourceLocation", "ReadSourceLocation(F, Record, Idx)")
     .Default("Record[Idx++]");
 }
 
@@ -67,8 +66,6 @@ static std::string WritePCHRecord(StringRef type, StringRef name) {
     .Case("Expr *", "AddStmt(" + std::string(name) + ");\n")
     .Case("IdentifierInfo *", 
           "AddIdentifierRef(" + std::string(name) + ", Record);\n")
-    .Case("SourceLocation", 
-          "AddSourceLocation(" + std::string(name) + ", Record);\n")
     .Default("Record.push_back(" + std::string(name) + ");\n");
 }
 
@@ -94,6 +91,35 @@ static StringRef NormalizeAttrSpelling(StringRef AttrSpelling) {
   }
 
   return AttrSpelling;
+}
+
+typedef std::vector<std::pair<std::string, Record *> > ParsedAttrMap;
+
+static ParsedAttrMap getParsedAttrList(const RecordKeeper &Records) {
+  std::vector<Record*> Attrs = Records.getAllDerivedDefinitions("Attr");
+  std::set<std::string> Seen;
+  ParsedAttrMap R;
+  for (std::vector<Record*>::iterator I = Attrs.begin(), E = Attrs.end();
+       I != E; ++I) {
+    Record &Attr = **I;
+    if (Attr.getValueAsBit("SemaHandler")) {
+      std::string AN;
+      if (Attr.isSubClassOf("TargetSpecificAttr") &&
+          !Attr.isValueUnset("ParseKind")) {
+        AN = Attr.getValueAsString("ParseKind");
+
+        // If this attribute has already been handled, it does not need to be
+        // handled again.
+        if (Seen.find(AN) != Seen.end())
+          continue;
+        Seen.insert(AN);
+      } else
+        AN = NormalizeAttrName(Attr.getName()).str();
+
+      R.push_back(std::make_pair(AN, *I));
+    }
+  }
+  return R;
 }
 
 namespace {
@@ -195,8 +221,6 @@ namespace {
         OS << "\" << get" << getUpperName() << "()->getName() << \"";
       } else if (type == "TypeSourceInfo *") {
         OS << "\" << get" << getUpperName() << "().getAsString() << \"";
-      } else if (type == "SourceLocation") {
-        OS << "\" << get" << getUpperName() << "().getRawEncoding() << \"";
       } else {
         OS << "\" << get" << getUpperName() << "() << \"";
       }
@@ -211,9 +235,6 @@ namespace {
       } else if (type == "TypeSourceInfo *") {
         OS << "    OS << \" \" << SA->get" << getUpperName()
            << "().getAsString();\n";
-      } else if (type == "SourceLocation") {
-        OS << "    OS << \" \";\n";
-        OS << "    SA->get" << getUpperName() << "().print(OS, *SM);\n";
       } else if (type == "bool") {
         OS << "    if (SA->get" << getUpperName() << "()) OS << \" "
            << getUpperName() << "\";\n";
@@ -898,8 +919,6 @@ static Argument *createArgument(Record &Arg, StringRef Attr,
   else if (ArgName == "TypeArgument") Ptr = new TypeArgument(Arg, Attr);
   else if (ArgName == "UnsignedArgument")
     Ptr = new SimpleArgument(Arg, Attr, "unsigned");
-  else if (ArgName == "SourceLocArgument")
-    Ptr = new SimpleArgument(Arg, Attr, "SourceLocation");
   else if (ArgName == "VariadicUnsignedArgument")
     Ptr = new VariadicArgument(Arg, Attr, "unsigned");
   else if (ArgName == "VariadicEnumArgument")
@@ -1358,20 +1377,10 @@ void EmitClangAttrList(RecordKeeper &Records, raw_ostream &OS) {
         " INHERITABLE_PARAM_ATTR(NAME)\n";
   OS << "#endif\n\n";
 
-  OS << "#ifndef MS_INHERITANCE_ATTR\n";
-  OS << "#define MS_INHERITANCE_ATTR(NAME) INHERITABLE_ATTR(NAME)\n";
-  OS << "#endif\n\n";
-
-  OS << "#ifndef LAST_MS_INHERITANCE_ATTR\n";
-  OS << "#define LAST_MS_INHERITANCE_ATTR(NAME)"
-        " MS_INHERITANCE_ATTR(NAME)\n";
-  OS << "#endif\n\n";
-
   Record *InhClass = Records.getClass("InheritableAttr");
   Record *InhParamClass = Records.getClass("InheritableParamAttr");
-  Record *MSInheritanceClass = Records.getClass("MSInheritanceAttr");
   std::vector<Record*> Attrs = Records.getAllDerivedDefinitions("Attr"),
-                       NonInhAttrs, InhAttrs, InhParamAttrs, MSInhAttrs;
+                       NonInhAttrs, InhAttrs, InhParamAttrs;
   for (std::vector<Record*>::iterator i = Attrs.begin(), e = Attrs.end();
        i != e; ++i) {
     if (!(*i)->getValueAsBit("ASTNode"))
@@ -1379,8 +1388,6 @@ void EmitClangAttrList(RecordKeeper &Records, raw_ostream &OS) {
     
     if ((*i)->isSubClassOf(InhParamClass))
       InhParamAttrs.push_back(*i);
-    else if ((*i)->isSubClassOf(MSInheritanceClass))
-      MSInhAttrs.push_back(*i);
     else if ((*i)->isSubClassOf(InhClass))
       InhAttrs.push_back(*i);
     else
@@ -1388,16 +1395,13 @@ void EmitClangAttrList(RecordKeeper &Records, raw_ostream &OS) {
   }
 
   EmitAttrList(OS, "INHERITABLE_PARAM_ATTR", InhParamAttrs);
-  EmitAttrList(OS, "MS_INHERITANCE_ATTR", MSInhAttrs);
   EmitAttrList(OS, "INHERITABLE_ATTR", InhAttrs);
   EmitAttrList(OS, "ATTR", NonInhAttrs);
 
   OS << "#undef LAST_ATTR\n";
   OS << "#undef INHERITABLE_ATTR\n";
-  OS << "#undef MS_INHERITANCE_ATTR\n";
   OS << "#undef LAST_INHERITABLE_ATTR\n";
   OS << "#undef LAST_INHERITABLE_PARAM_ATTR\n";
-  OS << "#undef LAST_MS_INHERITANCE_ATTR\n";
   OS << "#undef ATTR\n";
 }
 
@@ -1500,23 +1504,17 @@ void EmitClangAttrSpellingListIndex(RecordKeeper &Records, raw_ostream &OS) {
                        "into internal identifiers", OS);
 
   OS <<
-    "  unsigned Index = 0;\n"
     "  switch (AttrKind) {\n"
     "  default:\n"
     "    llvm_unreachable(\"Unknown attribute kind!\");\n"
     "    break;\n";
 
-  std::vector<Record*> Attrs = Records.getAllDerivedDefinitions("Attr");
-  for (std::vector<Record*>::const_iterator I = Attrs.begin(), E = Attrs.end();
+  ParsedAttrMap Attrs = getParsedAttrList(Records);
+  for (ParsedAttrMap::const_iterator I = Attrs.begin(), E = Attrs.end();
        I != E; ++I) {
-    Record &R = **I;
-    // We only care about attributes that participate in Sema checking, so
-    // skip those attributes that are not able to make their way to Sema.
-    if (!R.getValueAsBit("SemaHandler"))
-      continue;
-
+    Record &R = *I->second;
     std::vector<Record*> Spellings = R.getValueAsListOfDefs("Spellings");
-    OS << "  case AT_" << R.getName() << " : {\n";
+    OS << "  case AT_" << I->first << ": {\n";
     for (unsigned I = 0; I < Spellings.size(); ++ I) {
       SmallString<16> Namespace;
       if (Spellings[I]->getValueAsString("Variety") == "CXX11")
@@ -1542,7 +1540,7 @@ void EmitClangAttrSpellingListIndex(RecordKeeper &Records, raw_ostream &OS) {
   }
 
   OS << "  }\n";
-  OS << "  return Index;\n";
+  OS << "  return 0;\n";
 }
 
 // Emits the LateParsed property for attributes.
@@ -1645,23 +1643,6 @@ void EmitClangAttrTemplateInstantiate(RecordKeeper &Records, raw_ostream &OS) {
      << "}\n\n"
      << "} // end namespace sema\n"
      << "} // end namespace clang\n";
-}
-
-typedef std::vector<std::pair<std::string, Record *> > ParsedAttrMap;
-
-static ParsedAttrMap getParsedAttrList(const RecordKeeper &Records) {
-  std::vector<Record*> Attrs = Records.getAllDerivedDefinitions("Attr");
-  ParsedAttrMap R;
-  for (std::vector<Record*>::iterator I = Attrs.begin(), E = Attrs.end();
-       I != E; ++I) {
-    Record &Attr = **I;
-    if (Attr.getValueAsBit("SemaHandler")) {
-      StringRef AttrName = Attr.getName();
-      AttrName = NormalizeAttrName(AttrName);
-      R.push_back(std::make_pair(AttrName.str(), *I));
-    }
-  }
-  return R;
 }
 
 // Emits the list of parsed attributes.
@@ -1996,6 +1977,7 @@ void EmitClangAttrParsedAttrKinds(RecordKeeper &Records, raw_ostream &OS) {
   std::vector<Record*> Attrs = Records.getAllDerivedDefinitions("Attr");
 
   std::vector<StringMatcher::StringPair> Matches;
+  std::set<std::string> Seen;
   for (std::vector<Record*>::iterator I = Attrs.begin(), E = Attrs.end();
        I != E; ++I) {
     Record &Attr = **I;
@@ -2005,7 +1987,16 @@ void EmitClangAttrParsedAttrKinds(RecordKeeper &Records, raw_ostream &OS) {
     if (SemaHandler || Ignored) {
       std::vector<Record*> Spellings = Attr.getValueAsListOfDefs("Spellings");
 
-      StringRef AttrName = NormalizeAttrName(StringRef(Attr.getName()));
+      std::string AttrName;
+      if (Attr.isSubClassOf("TargetSpecificAttr") &&
+          !Attr.isValueUnset("ParseKind")) {
+        AttrName = Attr.getValueAsString("ParseKind");
+        if (Seen.find(AttrName) != Seen.end())
+          continue;
+        Seen.insert(AttrName);
+      } else
+        AttrName = NormalizeAttrName(StringRef(Attr.getName())).str();
+
       for (std::vector<Record*>::const_iterator I = Spellings.begin(),
            E = Spellings.end(); I != E; ++I) {
         std::string RawSpelling = (*I)->getValueAsString("Name");
@@ -2021,7 +2012,7 @@ void EmitClangAttrParsedAttrKinds(RecordKeeper &Records, raw_ostream &OS) {
           Matches.push_back(
             StringMatcher::StringPair(
               StringRef(Spelling),
-              "return AttributeList::AT_" + AttrName.str() + ";"));
+              "return AttributeList::AT_" + AttrName + ";"));
         else
           Matches.push_back(
             StringMatcher::StringPair(

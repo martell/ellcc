@@ -70,6 +70,50 @@ def assertsext : SDNode<"ISD::AssertSext", SDT_assertext>;
 def assertzext : SDNode<"ISD::AssertZext", SDT_assertext>;
 
 //===----------------------------------------------------------------------===//
+// Addressing-mode instantiations
+//===----------------------------------------------------------------------===//
+
+multiclass ls_64_pats<dag address, dag Base, dag Offset, ValueType Ty> {
+defm : ls_neutral_pats<LSFP64_LDR, LSFP64_STR, Base,
+                      !foreach(decls.pattern, Offset,
+                               !subst(OFFSET, dword_uimm12, decls.pattern)),
+                      !foreach(decls.pattern, address,
+                               !subst(OFFSET, dword_uimm12,
+                               !subst(ALIGN, min_align8, decls.pattern))),
+                      Ty>;
+}
+
+multiclass ls_128_pats<dag address, dag Base, dag Offset, ValueType Ty> {
+defm : ls_neutral_pats<LSFP128_LDR, LSFP128_STR, Base,
+                       !foreach(decls.pattern, Offset,
+                                !subst(OFFSET, qword_uimm12, decls.pattern)),
+                       !foreach(decls.pattern, address,
+                                !subst(OFFSET, qword_uimm12,
+                                !subst(ALIGN, min_align16, decls.pattern))),
+                      Ty>;
+}
+
+multiclass uimm12_neon_pats<dag address, dag Base, dag Offset> {
+  defm : ls_64_pats<address, Base, Offset, v8i8>;
+  defm : ls_64_pats<address, Base, Offset, v4i16>;
+  defm : ls_64_pats<address, Base, Offset, v2i32>;
+  defm : ls_64_pats<address, Base, Offset, v1i64>;
+  defm : ls_64_pats<address, Base, Offset, v2f32>;
+  defm : ls_64_pats<address, Base, Offset, v1f64>;
+
+  defm : ls_128_pats<address, Base, Offset, v16i8>;
+  defm : ls_128_pats<address, Base, Offset, v8i16>;
+  defm : ls_128_pats<address, Base, Offset, v4i32>;
+  defm : ls_128_pats<address, Base, Offset, v2i64>;
+  defm : ls_128_pats<address, Base, Offset, v4f32>;
+  defm : ls_128_pats<address, Base, Offset, v2f64>;
+}
+
+defm : uimm12_neon_pats<(A64WrapperSmall
+                          tconstpool:$Hi, tconstpool:$Lo12, ALIGN),
+                        (ADRPxi tconstpool:$Hi), (i64 tconstpool:$Lo12)>;
+
+//===----------------------------------------------------------------------===//
 // Multiclasses
 //===----------------------------------------------------------------------===//
 
@@ -3252,6 +3296,21 @@ def : Pat<(store (v4i16 VPR64:$value), GPR64xsp:$addr),
 def : Pat<(store (v8i8 VPR64:$value), GPR64xsp:$addr),
           (ST1_8B GPR64xsp:$addr, VPR64:$value)>;
 
+// Match load/store of v1i8/v1i16/v1i32 type to FPR8/FPR16/FPR32 load/store.
+// FIXME: for now we have v1i8, v1i16, v1i32 legal types, if they are illegal,
+// these patterns are not needed any more.
+def : Pat<(v1i8 (load GPR64xsp:$addr)), (LSFP8_LDR $addr, 0)>;
+def : Pat<(v1i16 (load GPR64xsp:$addr)), (LSFP16_LDR $addr, 0)>;
+def : Pat<(v1i32 (load GPR64xsp:$addr)), (LSFP32_LDR $addr, 0)>;
+
+def : Pat<(store (v1i8 FPR8:$value), GPR64xsp:$addr),
+          (LSFP8_STR $value, $addr, 0)>;
+def : Pat<(store (v1i16 FPR16:$value), GPR64xsp:$addr),
+          (LSFP16_STR $value, $addr, 0)>;
+def : Pat<(store (v1i32 FPR32:$value), GPR64xsp:$addr),
+          (LSFP32_STR $value, $addr, 0)>;
+
+
 // End of vector load/store multiple N-element structure(class SIMD lselem)
 
 // The followings are post-index vector load/store multiple N-element
@@ -4367,11 +4426,14 @@ class Neon_Scalar2SameMisc_cmpz_D_V1_size_patterns<CondCode CC,
         (INSTD FPR64:$Rn, neon_uimm0:$Imm)>;
 
 multiclass Neon_Scalar2SameMisc_cmpz_SD_size_patterns<SDPatternOperator opnode,
+                                                      CondCode CC,
                                                       Instruction INSTS,
                                                       Instruction INSTD> {
   def : Pat<(v1i32 (opnode (f32 FPR32:$Rn), (f32 fpz32:$FPImm))),
             (INSTS FPR32:$Rn, fpz32:$FPImm)>;
   def : Pat<(v1i64 (opnode (f64 FPR64:$Rn), (f32 fpz32:$FPImm))),
+            (INSTD FPR64:$Rn, fpz32:$FPImm)>;
+  def : Pat<(v1i64 (Neon_cmpz (v1f64 FPR64:$Rn), (f32 fpz32:$FPImm), CC)),
             (INSTD FPR64:$Rn, fpz32:$FPImm)>;
 }
 
@@ -4873,7 +4935,9 @@ multiclass Neon_Scalar3Same_MULX_SD_size_patterns<SDPatternOperator opnode,
 }
 
 defm : Neon_Scalar3Same_MULX_SD_size_patterns<int_aarch64_neon_vmulx,
-                                              FMULXsss,FMULXddd>;
+                                              FMULXsss, FMULXddd>;
+def : Pat<(v1f64 (int_aarch64_neon_vmulx (v1f64 FPR64:$Rn), (v1f64 FPR64:$Rm))),
+          (FMULXddd FPR64:$Rn, FPR64:$Rm)>;
 
 // Scalar Integer Shift Left (Signed, Unsigned)
 def SSHLddd : NeonI_Scalar3Same_D_size<0b0, 0b01000, "sshl">;
@@ -5142,10 +5206,8 @@ def : Neon_Scalar3Same_cmp_V1_D_size_patterns<SETEQ, FCMEQddd>;
 
 // Scalar Floating-point Compare Mask Equal To Zero
 defm FCMEQZ: NeonI_Scalar2SameMisc_cmpz_SD_size<0b0, 0b01101, "fcmeq">;
-defm : Neon_Scalar2SameMisc_cmpz_SD_size_patterns<int_aarch64_neon_fceq,
+defm : Neon_Scalar2SameMisc_cmpz_SD_size_patterns<int_aarch64_neon_fceq, SETEQ,
                                                   FCMEQZssi, FCMEQZddi>;
-def : Pat<(v1i64 (Neon_cmpz (v1f64 FPR64:$Rn), (f32 fpz32:$FPImm), SETEQ)),
-          (FCMEQZddi FPR64:$Rn, fpz32:$FPImm)>;
 
 // Scalar Floating-point Compare Mask Greater Than Or Equal
 defm FCMGE: NeonI_Scalar3Same_SD_sizes<0b1, 0b0, 0b11100, "fcmge">;
@@ -5155,7 +5217,7 @@ def : Neon_Scalar3Same_cmp_V1_D_size_patterns<SETGE, FCMGEddd>;
 
 // Scalar Floating-point Compare Mask Greater Than Or Equal To Zero
 defm FCMGEZ: NeonI_Scalar2SameMisc_cmpz_SD_size<0b1, 0b01100, "fcmge">;
-defm : Neon_Scalar2SameMisc_cmpz_SD_size_patterns<int_aarch64_neon_fcge,
+defm : Neon_Scalar2SameMisc_cmpz_SD_size_patterns<int_aarch64_neon_fcge, SETGE,
                                                   FCMGEZssi, FCMGEZddi>;
 
 // Scalar Floating-point Compare Mask Greather Than
@@ -5166,17 +5228,17 @@ def : Neon_Scalar3Same_cmp_V1_D_size_patterns<SETGT, FCMGTddd>;
 
 // Scalar Floating-point Compare Mask Greather Than Zero
 defm FCMGTZ: NeonI_Scalar2SameMisc_cmpz_SD_size<0b0, 0b01100, "fcmgt">;
-defm : Neon_Scalar2SameMisc_cmpz_SD_size_patterns<int_aarch64_neon_fcgt,
+defm : Neon_Scalar2SameMisc_cmpz_SD_size_patterns<int_aarch64_neon_fcgt, SETGT,
                                                   FCMGTZssi, FCMGTZddi>;
 
 // Scalar Floating-point Compare Mask Less Than Or Equal To Zero
 defm FCMLEZ: NeonI_Scalar2SameMisc_cmpz_SD_size<0b1, 0b01101, "fcmle">;
-defm : Neon_Scalar2SameMisc_cmpz_SD_size_patterns<int_aarch64_neon_fclez,
+defm : Neon_Scalar2SameMisc_cmpz_SD_size_patterns<int_aarch64_neon_fclez, SETLE,
                                                   FCMLEZssi, FCMLEZddi>;
 
 // Scalar Floating-point Compare Mask Less Than Zero
 defm FCMLTZ: NeonI_Scalar2SameMisc_cmpz_SD_size<0b0, 0b01110, "fcmlt">;
-defm : Neon_Scalar2SameMisc_cmpz_SD_size_patterns<int_aarch64_neon_fcltz,
+defm : Neon_Scalar2SameMisc_cmpz_SD_size_patterns<int_aarch64_neon_fcltz, SETLT,
                                                   FCMLTZssi, FCMLTZddi>;
 
 // Scalar Floating-point Absolute Compare Mask Greater Than Or Equal

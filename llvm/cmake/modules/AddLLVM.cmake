@@ -152,7 +152,7 @@ endmacro(add_llvm_target)
 # Add external project that may want to be built as part of llvm such as Clang,
 # lld, and Polly. This adds two options. One for the source directory of the
 # project, which defaults to ${CMAKE_CURRENT_SOURCE_DIR}/${name}. Another to
-# enable or disable building it with everthing else.
+# enable or disable building it with everything else.
 # Additional parameter can be specified as the name of directory.
 macro(add_llvm_external_project name)
   set(add_llvm_external_dir "${ARGN}")
@@ -248,7 +248,7 @@ function(add_unittest test_suite test_name)
 endfunction()
 
 # This function provides an automatic way to 'configure'-like generate a file
-# based on a set of common and custom variables, specifically targetting the
+# based on a set of common and custom variables, specifically targeting the
 # variables needed for the 'lit.site.cfg' files. This function bundles the
 # common variables that any Lit instance is likely to need, and custom
 # variables can be passed in.
@@ -259,7 +259,7 @@ function(configure_lit_site_cfg input output)
   set(TARGETS_TO_BUILD ${TARGETS_BUILT})
 
   set(SHLIBEXT "${LTDL_SHLIB_EXT}")
-  set(SHLIBDIR "${LLVM_BINARY_DIR}/lib/${CMAKE_CFG_INTDIR}")
+  set(SHLIBDIR "${LLVM_LIBRARY_OUTPUT_INTDIR}")
 
   if(BUILD_SHARED_LIBS)
     set(LLVM_SHARED_LIBS_ENABLED "1")
@@ -285,8 +285,8 @@ function(configure_lit_site_cfg input output)
 
   set(LLVM_SOURCE_DIR ${LLVM_MAIN_SRC_DIR})
   set(LLVM_BINARY_DIR ${LLVM_BINARY_DIR})
-  set(LLVM_TOOLS_DIR "${LLVM_TOOLS_BINARY_DIR}/${LLVM_BUILD_MODE}")
-  set(LLVM_LIBS_DIR "${LLVM_BINARY_DIR}/lib/${LLVM_BUILD_MODE}")
+  string(REPLACE ${CMAKE_CFG_INTDIR} ${LLVM_BUILD_MODE} LLVM_TOOLS_DIR ${LLVM_RUNTIME_OUTPUT_INTDIR})
+  string(REPLACE ${CMAKE_CFG_INTDIR} ${LLVM_BUILD_MODE} LLVM_LIBS_DIR  ${LLVM_LIBRARY_OUTPUT_INTDIR})
   set(PYTHON_EXECUTABLE ${PYTHON_EXECUTABLE})
   set(ENABLE_SHARED ${LLVM_SHARED_LIBS_ENABLED})
   set(SHLIBPATH_VAR ${SHLIBPATH_VAR})

@@ -832,6 +832,14 @@ public:
   void PrintStats() const;
   const SmallVectorImpl<Type *>& getTypes() const { return Types; }
 
+  /// \brief Create a new implicit TU-level CXXRecordDecl or RecordDecl
+  /// declaration.
+  RecordDecl *buildImplicitRecord(StringRef Name,
+                                  RecordDecl::TagKind TK = TTK_Struct) const;
+
+  /// \brief Create a new implicit TU-level typedef declaration.
+  TypedefDecl *buildImplicitTypedef(QualType T, StringRef Name) const;
+
   /// \brief Retrieve the declaration for the 128-bit signed integer type.
   TypedefDecl *getInt128Decl() const;
 

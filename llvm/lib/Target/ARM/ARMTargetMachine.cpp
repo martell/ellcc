@@ -52,9 +52,11 @@ ARMBaseTargetMachine::ARMBaseTargetMachine(const Target &T, StringRef TT,
     Subtarget(TT, CPU, FS, Options),
     JITInfo(),
     InstrItins(Subtarget.getInstrItineraryData()) {
-  // Default to soft float ABI
+
+  // Default to triple-appropriate float ABI
   if (Options.FloatABIType == FloatABI::Default)
-    this->Options.FloatABIType = FloatABI::Soft;
+    this->Options.FloatABIType =
+        Subtarget.isTargetHardFloat() ? FloatABI::Hard : FloatABI::Soft;
 }
 
 void ARMBaseTargetMachine::addAnalysisPasses(PassManagerBase &PM) {
@@ -72,36 +74,40 @@ static std::string computeDataLayout(ARMSubtarget &ST) {
   // Little endian. Pointers are 32 bits and aligned to 32 bits.
   std::string Ret = "e-p:32:32";
 
-  // We have 64 bits floats and integers. The APCS ABI requires them to be
-  // aligned s them to 32 bits, others to 64 bits. We always try to align to
-  // 64 bits.
-  if (ST.isAPCS_ABI())
-    Ret += "-f64:32:64";
-  else
-    Ret += "-i64:64:64";
-
   // On thumb, i16,i18 and i1 have natural aligment requirements, but we try to
   // align to 32.
   if (ST.isThumb())
-    Ret += "-i16:16:32-i8:8:32-i1:8:32";
+    Ret += "-i1:8:32-i8:8:32-i16:16:32";
+
+  // ABIs other than APC have 64 bit integers with natural alignment.
+  if (!ST.isAPCS_ABI())
+    Ret += "-i64:64";
+
+  // We have 64 bits floats. The APCS ABI requires them to be aligned to 32
+  // bits, others to 64 bits. We always try to align to 64 bits.
+  if (ST.isAPCS_ABI())
+    Ret += "-f64:32:64";
 
   // We have 128 and 64 bit vectors. The APCS ABI aligns them to 32 bits, others
   // to 64. We always ty to give them natural alignment.
   if (ST.isAPCS_ABI())
-    Ret += "-v128:32:128-v64:32:64";
+    Ret += "-v64:32:64-v128:32:128";
   else
     Ret += "-v128:64:128";
 
-  // An aggregate of size 0 is ABI aligned to 0.
-  // FIXME: explain better what this means.
-  if (ST.isThumb())
+  // On thumb and APCS, only try to align aggregates to 32 bits (the default is
+  // 64 bits).
+  if (ST.isThumb() || ST.isAPCS_ABI())
     Ret += "-a:0:32";
 
   // Integer registers are 32 bits.
   Ret += "-n32";
 
-  // The stack is 64 bit aligned on AAPCS and 32 bit aligned everywhere else.
-  if (ST.isAAPCS_ABI())
+  // The stack is 128 bit aligned on NaCl, 64 bit aligned on AAPCS and 32 bit
+  // aligned everywhere else.
+  if (ST.isTargetNaCl())
+    Ret += "-S128";
+  else if (ST.isAAPCS_ABI())
     Ret += "-S64";
   else
     Ret += "-S32";
