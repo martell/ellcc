@@ -1304,8 +1304,10 @@ endif
 endif
 
 ifeq ($(HOST_OS), $(filter $(HOST_OS), DragonFly Linux NetBSD FreeBSD GNU/kFreeBSD GNU))
+ifneq ($(shell uname -s),Darwin)
 ifneq ($(ARCH), Mips)
   LD.Flags += -Wl,--version-script=$(LLVM_SRC_ROOT)/autoconf/ExportMap.map
+endif
 endif
 endif
 endif
