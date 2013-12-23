@@ -28,7 +28,7 @@ ifeq ($(ARCH), Sparc)
 DIRS := $(filter-out sample, $(DIRS))
 endif
 
-ifneq ($(ENABLE_SHARED),0)
+ifeq ($(ENABLE_SHARED),0)
 DIRS := $(filter-out sample, $(DIRS))
 endif
 
