@@ -28,4 +28,8 @@ ifeq ($(ARCH), Sparc)
 DIRS := $(filter-out sample, $(DIRS))
 endif
 
+ifneq ($(ENABLE_SHARED),0)
+DIRS := $(filter-out sample, $(DIRS))
+endif
+
 include $(PROJ_SRC_ROOT)/Makefile.rules

@@ -21,6 +21,7 @@
 #if defined(__ELLCC__)
 // Our friend configure is messing this up for us.
 #undef HAVE_EXECINFO_H
+#undef HAVE_MACH_MACH_H
 #endif
 #if HAVE_EXECINFO_H
 # include <execinfo.h>         // For backtrace().
@@ -37,7 +38,7 @@
 #if HAVE_DLFCN_H
 #include <dlfcn.h>
 #endif
-#if HAVE_MACH_MACH_H
+#if HAVE_MACH_MACH_H && !defined(__GNU__)
 #include <mach/mach.h>
 #endif
 

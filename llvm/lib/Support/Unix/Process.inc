@@ -23,13 +23,18 @@
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>
 #endif
+
+#if defined(__ELLCC__)
+#undef HAVE_MACH_MACH_H
+#endif
+
 // DragonFlyBSD, OpenBSD, and Bitrig have deprecated <malloc.h> for
 // <stdlib.h> instead. Unix.h includes this for us already.
 #if defined(HAVE_MALLOC_H) && !defined(__DragonFly__) && \
     !defined(__OpenBSD__) && !defined(__Bitrig__)
 #include <malloc.h>
 #endif
-#ifdef HAVE_MALLOC_MALLOC_H
+#if defined(HAVE_MALLOC_MALLOC_H) && !defined(__ELLCC__)
 #include <malloc/malloc.h>
 #endif
 #ifdef HAVE_SYS_IOCTL_H
