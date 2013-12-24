@@ -44,8 +44,10 @@ if [ "x$ecc" != "x" ] ; then
     hcxx=$ecc++
     if [ -e $ecc-ar ]; then
       ar=$ecc-ar
+      ranlib=$ecc-ranlib
     else
       ar=ar
+      ranlib=ranlib
     fi
     builddir="-$host-$os"
     haslibs=yes
@@ -57,6 +59,7 @@ if [ "x$ecc" != "x" ] ; then
     hcc=$ecc
     hcxx=$ecc++
     ar=ar
+    ranlib=ranlib
     builddir=""
     haslibs=no
     WHY="build for $host with host libraries using ecc"

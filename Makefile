@@ -82,6 +82,7 @@ llvm.configure:
         CPP="cc -E" \
         CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
         CXXCPP="c++ -E" \
+        AR=$(AR) RANLIB=$(RANLIB) \
         --bindir=$(bindir) --prefix=$(prefix) \
         $(HOST) $(BUILD) $(TARGETS) \
         --enable-optimized --enable-shared=no -enable-pic=no \
