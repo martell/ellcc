@@ -173,6 +173,19 @@ int putw(int, FILE *);
 char *fgetln(FILE *, size_t *);
 int asprintf(char **, const char *, ...);
 int vasprintf(char **, const char *, __isoc_va_list);
+
+#define FPARSELN_UNESCESC       0x01
+#define FPARSELN_UNESCCONT      0x02
+#define FPARSELN_UNESCCOMM      0x04
+#define FPARSELN_UNESCREST      0x08
+#define FPARSELN_UNESCALL       0x0f
+char *fparseln(FILE *, size_t *, size_t *, const char[3], int);
+
+FILE *funopen(const void *cookie,
+	      int (*readfn)(void *, char *, int),
+	      int (*writefn)(void *, const char *, int),
+	      off_t (*seekfn)(void *, off_t, int),
+	      int (*closefn)(void *));
 #endif
 
 #ifdef _GNU_SOURCE

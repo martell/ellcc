@@ -47,6 +47,7 @@
 #define _GNU_SOURCE
 #define __COPYRIGHT(arg)
 #define __RCSID(arg)
+#define __IDSTRING(arg1, arg2)
 #define setprogname(arg)        /* This might need to go someplace else. */
 extern char *program_invocation_short_name;
 #define getprogname() program_invocation_short_name
@@ -60,11 +61,32 @@ extern char *program_invocation_short_name;
 #define __END_DECLS
 #endif
 
-#define __unused
 #define __dead
 #define  __arraycount(__x) (sizeof(__x) / sizeof(__x[0]))
 
 #define MAXBSIZE 8192
+
+#define __RENAME(f)
+#define __printflike(a, b) __attribute__ ((__format__ (__printf__, (a), (b))))
+#define __UNCONST(a)    ((void *)(unsigned long)(const void *)(a))
+#define __UNVOLATILE(a)    ((void *)(unsigned long)(volatile void *)(a))
+#define strtoq strtoll
+#define SIZE_T_MAX SIZE_MAX
+
+/*
+ * The __CONCAT macro is used to concatenate parts of symbol names, e.g.
+ * with "#define OLD(foo) __CONCAT(old,foo)", OLD(foo) produces oldfoo.
+ * The __CONCAT macro is a bit tricky -- make sure you don't put spaces
+ * in between its arguments.  __CONCAT can also concatenate double-quoted
+ * strings produced by the __STRING macro, but this only works with ANSI C.
+ */
+
+#define ___STRING(x)    __STRING(x)
+#define ___CONCAT(x,y)  __CONCAT(x,y)
+
+#define __P(protos)     protos          /* full-blown ANSI C */
+#define __CONCAT(x,y)   x ## y
+#define __STRING(x)     #x
 
 #include <sys/sysmacros.h>
 

@@ -69,31 +69,31 @@ $(Configs)::
 	make -C $*/linux/misc install
 
 $(Configs)::
-	make $@.zlib.configure && \
-	make $@.zlib.build && \
-	make $@.zlib.install
+	make $@.libedit.configure && \
+	make $@.libedit.build && \
+	make $@.libedit.install
 
-%.zlib.configure:
-	@echo Configuring zlib for $* in zlib-build/$*/linux
-	mkdir -p zlib-build/$*/linux
-	cp -fr src/zlib/* zlib-build/$*/linux
-	cd zlib-build/$*/linux ; \
+%.libedit.configure:
+	@echo Configuring libedit for $* in libedit-build/$*/linux
+	mkdir -p libedit-build/$*/linux
+	cp -fr src/libedit/* libedit-build/$*/linux
+	cd libedit-build/$*/linux ; \
 	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
 	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
         AR=$(ELLCC)/bin/ecc-ar \
         RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	    ./configure --static --prefix=$(ELLCC)
 
-%.zlib.build:
-	make -C zlib-build/$*/linux
+%.libedit.build:
+	make -C libedit-build/$*/linux
 
-%.zlib.install:
-	@cd zlib-build ; \
-	echo Installing zlib for $* ; \
+%.libedit.install:
+	@cd libedit-build ; \
+	echo Installing libedit for $* ; \
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/linux/*.a ../lib/$*/linux ; \
 	mkdir -p ../include/$*/linux ; \
-	cp $*/linux/zlib.h ../include/linux ; \
+	cp $*/linux/libedit.h ../include/linux ; \
 	cp $*/linux/zconf.h ../include/$*/linux
 
 $(Configs)::
@@ -124,6 +124,35 @@ $(Configs)::
 	mkdir -p ../include/$*/linux ; \
 	cp ../src/expat/lib/expat.h ../include/linux ; \
 	cp ../src/expat/lib/expat_external.h ../include/linux
+
+$(Configs)::
+	make $@.libedit.configure && \
+	make $@.libedit.build && \
+	make $@.libedit.install
+
+%.libedit.configure:
+	@echo Configuring libedit for $* in libedit-build/$*/linux
+	mkdir -p libedit-build/$*/linux
+	cp -fr src/libedit/* libedit-build/$*/linux
+	cd libedit-build/$*/linux ; \
+	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
+	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+        AR=$(ELLCC)/bin/ecc-ar \
+        RANLIB=$(ELLCC)/bin/ecc-ranlib \
+	    ./configure --enable-shared=no --prefix=$(ELLCC)
+
+%.libedit.build:
+	make -C libedit-build/$*/linux
+
+%.libedit.install:
+	@cd libedit-build ; \
+	echo Installing libedit for $* ; \
+	mkdir -p ../lib/$*/linux ; \
+	cp $*/linux/src/.libs/*.a ../lib/$*/linux ; \
+	mkdir -p ../include/$*/linux ; \
+	mkdir -p ../include/$*/linux/ ; \
+	cp $*/linux/src/histedit.h ../include/linux ; \
+	cp $*/linux/src/editline/readline.h ../include/$*/linux
 
 clean:
 	make -C src/musl distclean
@@ -157,6 +186,7 @@ musl.install:
 	mkdir -p ../include/$*/linux ; \
 	rm -fr ../include/$*/linux/bits ; \
 	mv ../include/linux/bits ../include/$*/linux/bits ; \
+	(cd ../include/$*/linux; rm -rf machine; ln -sf bits machine) ; \
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/lib/*.a $*/lib/*.o ../lib/$*/linux
 

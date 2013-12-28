@@ -185,6 +185,10 @@ int dehumanize_number(const char *, int64_t *);
 uint32_t arc4random(void);
 void  arc4random_stir(void);
 void  arc4random_addrandom(unsigned char *, int);
+
+int heapsort(void *vbase, size_t nmemb, size_t size,
+    int (*compar)(const void *, const void *));
+
 #endif
 
 #ifdef __cplusplus

@@ -90,6 +90,12 @@ struct itimerspec
 #define CLOCK_SGI_CYCLE         10
 #define CLOCK_TAI               11
 
+#if defined(_BSD_SOURCE)
+#define TIMER_RELTIME 0
+#define timespecclear(ts) do { \
+    int i; for (i = 0; i < sizeof(*(ts)); ++i) *((char *)(ts)) = '\0'; \
+    } while (0)
+#endif
 #define TIMER_ABSTIME 1
 
 int nanosleep (const struct timespec *, struct timespec *);
