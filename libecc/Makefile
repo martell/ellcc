@@ -69,31 +69,31 @@ $(Configs)::
 	make -C $*/linux/misc install
 
 $(Configs)::
-	make $@.libedit.configure && \
-	make $@.libedit.build && \
-	make $@.libedit.install
+	make $@.zlib.configure && \
+	make $@.zlib.build && \
+	make $@.zlib.install
 
-%.libedit.configure:
-	@echo Configuring libedit for $* in libedit-build/$*/linux
-	mkdir -p libedit-build/$*/linux
-	cp -fr src/libedit/* libedit-build/$*/linux
-	cd libedit-build/$*/linux ; \
+%.zlib.configure:
+	@echo Configuring zlib for $* in zlib-build/$*/linux
+	mkdir -p zlib-build/$*/linux
+	cp -fr src/zlib/* zlib-build/$*/linux
+	cd zlib-build/$*/linux ; \
 	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
 	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
         AR=$(ELLCC)/bin/ecc-ar \
         RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	    ./configure --static --prefix=$(ELLCC)
 
-%.libedit.build:
-	make -C libedit-build/$*/linux
+%.zlib.build:
+	make -C zlib-build/$*/linux
 
-%.libedit.install:
-	@cd libedit-build ; \
-	echo Installing libedit for $* ; \
+%.zlib.install:
+	@cd zlib-build ; \
+	echo Installing zlib for $* ; \
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/linux/*.a ../lib/$*/linux ; \
 	mkdir -p ../include/$*/linux ; \
-	cp $*/linux/libedit.h ../include/linux ; \
+	cp $*/linux/zlib.h ../include/linux ; \
 	cp $*/linux/zconf.h ../include/$*/linux
 
 $(Configs)::
@@ -139,7 +139,9 @@ $(Configs)::
 	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
         AR=$(ELLCC)/bin/ecc-ar \
         RANLIB=$(ELLCC)/bin/ecc-ranlib \
-	    ./configure --enable-shared=no --prefix=$(ELLCC)
+	    ../../../src/libedit/configure \
+	    --enable-shared=no  --prefix=$(ELLCC) \
+            --host=$(TARGET)-$(OS)
 
 %.libedit.build:
 	make -C libedit-build/$*/linux
