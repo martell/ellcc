@@ -89,5 +89,6 @@ extern char *program_invocation_short_name;
 #define __STRING(x)     #x
 
 #include <sys/sysmacros.h>
+#include <sys/types.h>
 
 #endif /* !_SYS_CDEFS_H_ */
