@@ -37,6 +37,18 @@ static __inline uint64_t __bswap64(uint64_t __x)
 	return __bswap32(__x)+0ULL<<32 | __bswap32(__x>>32);
 }
 
+static __inline uint32_t le32dec(void *stream)
+{
+        uint32_t result;
+        result = ((uint8_t *)stream)[3];
+        result = (result << 8 ) | ((uint8_t *)stream)[2];
+        result = (result << 8 ) | ((uint8_t *)stream)[1];
+        result = (result << 8 ) | ((uint8_t *)stream)[0];
+        return result;
+}
+
+#define bswap32 __bswap32
+
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 #define htobe16(x) __bswap16(x)
 #define be16toh(x) __bswap16(x)

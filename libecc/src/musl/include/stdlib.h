@@ -189,6 +189,11 @@ void  arc4random_addrandom(unsigned char *, int);
 int heapsort(void *vbase, size_t nmemb, size_t size,
     int (*compar)(const void *, const void *));
 
+long long strsuftoll(const char *desc, const char *val,
+    long long min, long long max);
+long long strsuftollx(const char *desc, const char *val,
+    long long min, long long max, char *ebuf, size_t ebuflen);
+
 #endif
 
 #ifdef __cplusplus

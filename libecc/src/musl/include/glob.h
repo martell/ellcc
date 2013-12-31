@@ -13,6 +13,7 @@ extern "C" {
 
 typedef struct {
 	size_t gl_pathc;
+	size_t gl_matchc;
 	char **gl_pathv;
 	size_t gl_offs;
 	int __dummy1;

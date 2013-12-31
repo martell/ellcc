@@ -185,6 +185,7 @@ musl.install:
 	echo Installing libecc for $* ; \
 	mkdir -p ../include/linux ; \
 	cp -r $*/include/* ../include/linux ; \
+	ln -sf ../endian.h ../include/linux/sys ; \
 	mkdir -p ../include/$*/linux ; \
 	rm -fr ../include/$*/linux/bits ; \
 	mv ../include/linux/bits ../include/$*/linux/bits ; \

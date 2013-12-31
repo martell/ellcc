@@ -179,7 +179,8 @@ int glob(const char *restrict pat, int flags, int (*errfunc)(const char *path, i
 		g->gl_offs = offs;
 		g->gl_pathc = 0;
 		g->gl_pathv = NULL;
-	}
+        }
+        g->gl_matchc = 0;
 
 	if (*p) error = match_in_dir(d, p, flags, errfunc, &tail);
 	if (error == GLOB_NOSPACE) {
@@ -219,6 +220,7 @@ int glob(const char *restrict pat, int flags, int (*errfunc)(const char *path, i
 		g->gl_pathv[offs + i] = tail->name;
 	g->gl_pathv[offs + i] = NULL;
 	g->gl_pathc += cnt;
+	g->gl_matchc += cnt;
 
 	if (!(flags & GLOB_NOSORT))
 		qsort(g->gl_pathv+offs, cnt, sizeof(char *), sort);
