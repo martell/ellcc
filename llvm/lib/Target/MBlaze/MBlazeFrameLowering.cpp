@@ -253,7 +253,7 @@ static void interruptFrameLayout(MachineFunction &MF) {
   for (unsigned r = MBlaze::R3; r <= MBlaze::R12; ++r) {
     if (!MRI.isPhysRegUsed(r) && !(isIntr && r == MBlaze::R11)) continue;
     
-    int FI = MFI->CreateStackObject(4,4,false,false);
+    int FI = MFI->CreateStackObject(4,4,false);
     VFI.push_back(FI);
 
     BuildMI(MENT, MENTI, ENTDL, TII.get(MBlaze::SWI), r)
@@ -261,8 +261,8 @@ static void interruptFrameLayout(MachineFunction &MF) {
   }
     
   // Build the prologue SWI for R17, R18
-  int R17FI = MFI->CreateStackObject(4,4,false,false);
-  int R18FI = MFI->CreateStackObject(4,4,false,false);
+  int R17FI = MFI->CreateStackObject(4,4,false);
+  int R18FI = MFI->CreateStackObject(4,4,false);
 
   BuildMI(MENT, MENTI, ENTDL, TII.get(MBlaze::SWI), MBlaze::R17)
     .addFrameIndex(R17FI).addImm(0);
@@ -272,7 +272,7 @@ static void interruptFrameLayout(MachineFunction &MF) {
 
   // Buid the prologue SWI and the epilogue LWI for RMSR if needed
   if (isIntr) {
-    int MSRFI = MFI->CreateStackObject(4,4,false,false);
+    int MSRFI = MFI->CreateStackObject(4,4,false);
     BuildMI(MENT, MENTI, ENTDL, TII.get(MBlaze::MFS), MBlaze::R11)
       .addReg(MBlaze::RMSR);
     BuildMI(MENT, MENTI, ENTDL, TII.get(MBlaze::SWI), MBlaze::R11)

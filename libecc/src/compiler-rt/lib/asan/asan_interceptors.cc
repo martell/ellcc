@@ -14,14 +14,12 @@
 #include "asan_interceptors.h"
 
 #include "asan_allocator.h"
-#include "asan_intercepted_functions.h"
 #include "asan_internal.h"
 #include "asan_mapping.h"
 #include "asan_poisoning.h"
 #include "asan_report.h"
 #include "asan_stack.h"
 #include "asan_stats.h"
-#include "interception/interception.h"
 #include "sanitizer_common/sanitizer_libc.h"
 
 namespace __asan {

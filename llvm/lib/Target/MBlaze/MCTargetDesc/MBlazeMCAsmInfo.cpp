@@ -21,7 +21,7 @@ MBlazeMCAsmInfo::MBlazeMCAsmInfo() {
   StackGrowsUp                = false;
   SupportsDebugInformation    = true;
   AlignmentIsInBytes          = false;
-  PrivateGlobalPrefix         = "$";
+  PrivateGlobalPrefix         = ".L";
   GPRel32Directive            = "\t.gpword\t";
   WeakRefDirective            = "\t.weak\t";
 }

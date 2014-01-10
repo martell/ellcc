@@ -25,9 +25,9 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Option/Arg.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Option/OptSpecifier.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
-#include "llvm/Option/OptSpecifier.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
@@ -154,10 +154,11 @@ const {
   Arg *PhaseArg = 0;
   phases::ID FinalPhase;
 
-  // -{E,M,MM} only run the preprocessor.
+  // -{E,M,MM} and /P only run the preprocessor.
   if (CCCIsCPP() ||
       (PhaseArg = DAL.getLastArg(options::OPT_E)) ||
-      (PhaseArg = DAL.getLastArg(options::OPT_M, options::OPT_MM))) {
+      (PhaseArg = DAL.getLastArg(options::OPT_M, options::OPT_MM)) ||
+      (PhaseArg = DAL.getLastArg(options::OPT__SLASH_P))) {
     FinalPhase = phases::Preprocess;
 
     // -{fsyntax-only,-analyze,emit-ast,S} only run up to the compiler.
@@ -1625,6 +1626,14 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
       return C.addResultFile(FinalOutput->getValue(), &JA);
   }
 
+  // For /P, preprocess to file named after BaseInput.
+  if (C.getArgs().hasArg(options::OPT__SLASH_P)) {
+    assert(AtTopLevel && isa<PreprocessJobAction>(JA));
+    StringRef BaseName = llvm::sys::path::filename(BaseInput);
+    return C.addResultFile(MakeCLOutputFilename(C.getArgs(), "", BaseName,
+                                                types::TY_PP_C), &JA);
+  }
+
   // Default to writing to stdout?
   if (AtTopLevel && !CCGenDiagnostics &&
       (isa<PreprocessJobAction>(JA) || JA.getType() == types::TY_ModuleFile))
@@ -1857,17 +1866,24 @@ static llvm::Triple computeTargetTriple(StringRef DefaultTargetTriple,
   if (Target.isOSDarwin()) {
     // If an explict Darwin arch name is given, that trumps all.
     if (!DarwinArchName.empty()) {
-      Target.setArch(
-        tools::darwin::getArchTypeForDarwinArchName(DarwinArchName));
+      if (DarwinArchName == "x86_64h")
+        Target.setArchName(DarwinArchName);
+      else
+        Target.setArch(
+          tools::darwin::getArchTypeForDarwinArchName(DarwinArchName));
       return Target;
     }
 
     // Handle the Darwin '-arch' flag.
     if (Arg *A = Args.getLastArg(options::OPT_arch)) {
-      llvm::Triple::ArchType DarwinArch
-        = tools::darwin::getArchTypeForDarwinArchName(A->getValue());
-      if (DarwinArch != llvm::Triple::UnknownArch)
-        Target.setArch(DarwinArch);
+      if (StringRef(A->getValue()) == "x86_64h")
+        Target.setArchName(DarwinArchName);
+      else {
+        llvm::Triple::ArchType DarwinArch
+          = tools::darwin::getArchTypeForDarwinArchName(A->getValue());
+        if (DarwinArch != llvm::Triple::UnknownArch)
+          Target.setArch(DarwinArch);
+      }
     }
   }
 

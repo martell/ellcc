@@ -29,7 +29,7 @@ struct utmpx
 	long ut_session;
 	struct timeval ut_tv;
 	unsigned ut_addr_v6[4];
-	char __unused[20];
+	char __unused1[20];
 };
 
 void          endutxent(void);

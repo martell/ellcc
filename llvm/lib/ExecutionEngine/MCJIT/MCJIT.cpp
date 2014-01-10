@@ -14,18 +14,18 @@
 #include "llvm/ExecutionEngine/MCJIT.h"
 #include "llvm/ExecutionEngine/ObjectBuffer.h"
 #include "llvm/ExecutionEngine/ObjectImage.h"
-#include "llvm/PassManager.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/PassManager.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/MutexGuard.h"
-#include "llvm/Target/Mangler.h"
 
 using namespace llvm;
 
@@ -232,7 +232,7 @@ void *MCJIT::getPointerToBasicBlock(BasicBlock *BB) {
 }
 
 uint64_t MCJIT::getExistingSymbolAddress(const std::string &Name) {
-  Mangler Mang(TM);
+  Mangler Mang(TM->getDataLayout());
   SmallString<128> FullName;
   Mang.getNameWithPrefix(FullName, Name);
   return Dyld.getSymbolLoadAddress(FullName);
@@ -323,7 +323,7 @@ void *MCJIT::getPointerToFunction(Function *F) {
   //
   // This is the accessor for the target address, so make sure to check the
   // load address of the symbol, not the local address.
-  Mangler Mang(TM);
+  Mangler Mang(TM->getDataLayout());
   SmallString<128> Name;
   Mang.getNameWithPrefix(Name, F);
   return (void*)Dyld.getSymbolLoadAddress(Name);

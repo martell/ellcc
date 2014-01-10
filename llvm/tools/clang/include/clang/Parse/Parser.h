@@ -342,16 +342,16 @@ private:
   SourceLocation ConsumeAnyToken(bool ConsumeCodeCompletionTok = false) {
     if (isTokenParen())
       return ConsumeParen();
-    else if (isTokenBracket())
+    if (isTokenBracket())
       return ConsumeBracket();
-    else if (isTokenBrace())
+    if (isTokenBrace())
       return ConsumeBrace();
-    else if (isTokenStringLiteral())
+    if (isTokenStringLiteral())
       return ConsumeStringToken();
-    else if (ConsumeCodeCompletionTok && Tok.is(tok::code_completion))
-      return ConsumeCodeCompletionToken();
-    else
-      return ConsumeToken();
+    if (Tok.is(tok::code_completion))
+      return ConsumeCodeCompletionTok ? ConsumeCodeCompletionToken()
+                                      : handleUnexpectedCodeCompletionToken();
+    return ConsumeToken();
   }
 
   /// ConsumeParen - This consume method keeps the paren count up-to-date.
@@ -681,12 +681,14 @@ private:
   /// ExpectAndConsume - The parser expects that 'ExpectedTok' is next in the
   /// input.  If so, it is consumed and false is returned.
   ///
-  /// If the input is malformed, this emits the specified diagnostic.  Next, if
-  /// SkipToTok is specified, it calls SkipUntil(SkipToTok).  Finally, true is
+  /// If a trivial punctuator misspelling is encountered, a FixIt error
+  /// diagnostic is issued and false is returned after recovery.
+  ///
+  /// If the input is malformed, this emits the specified diagnostic and true is
   /// returned.
-  bool ExpectAndConsume(tok::TokenKind ExpectedTok, unsigned Diag,
-                        const char *DiagMsg = "",
-                        tok::TokenKind SkipToTok = tok::unknown);
+  bool ExpectAndConsume(tok::TokenKind ExpectedTok,
+                        unsigned Diag = diag::err_expected,
+                        const char *DiagMsg = "");
 
   /// \brief The parser expects a semicolon and, if present, will consume it.
   ///

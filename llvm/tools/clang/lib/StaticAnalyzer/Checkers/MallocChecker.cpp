@@ -108,9 +108,7 @@ public:
     OS << Table[(unsigned) K];
   }
 
-  LLVM_ATTRIBUTE_USED void dump() const {
-    dump(llvm::errs());
-  }
+  LLVM_DUMP_METHOD void dump() const { dump(llvm::errs()); }
 };
 
 enum ReallocPairKind {
@@ -909,7 +907,7 @@ bool MallocChecker::printAllocDeallocName(raw_ostream &os, CheckerContext &C,
       os << "-";
     else
       os << "+";
-    os << Msg->getSelector().getAsString();
+    Msg->getSelector().print(os);
     return true;
   }
 
@@ -1909,7 +1907,8 @@ bool MallocChecker::mayFreeAnyEscapedMemoryOrIsModeledExplicitly(
     // that the pointers get freed by following the container itself.
     if (FirstSlot.startswith("addPointer") ||
         FirstSlot.startswith("insertPointer") ||
-        FirstSlot.startswith("replacePointer")) {
+        FirstSlot.startswith("replacePointer") ||
+        FirstSlot.equals("valueWithPointer")) {
       return true;
     }
 

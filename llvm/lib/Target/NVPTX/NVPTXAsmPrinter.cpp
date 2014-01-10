@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "NVPTXAsmPrinter.h"
+#include "InstPrinter/NVPTXInstPrinter.h"
 #include "MCTargetDesc/NVPTXMCAsmInfo.h"
 #include "NVPTX.h"
 #include "NVPTXInstrInfo.h"
@@ -20,11 +21,9 @@
 #include "NVPTXRegisterInfo.h"
 #include "NVPTXTargetMachine.h"
 #include "NVPTXUtilities.h"
-#include "InstPrinter/NVPTXInstPrinter.h"
 #include "cl_common_defines.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/ConstantFolding.h"
-#include "llvm/Assembly/Writer.h"
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
@@ -33,8 +32,10 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
+#include "llvm/IR/Writer.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/CommandLine.h"
@@ -43,7 +44,6 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TimeValue.h"
-#include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include <sstream>
 using namespace llvm;
@@ -895,7 +895,7 @@ bool NVPTXAsmPrinter::doInitialization(Module &M) {
   const_cast<TargetLoweringObjectFile &>(getObjFileLowering())
       .Initialize(OutContext, TM);
 
-  Mang = new Mangler(&TM);
+  Mang = new Mangler(TM.getDataLayout());
 
   // Emit header before any dwarf directives are emitted below.
   emitHeader(M, OS1);

@@ -14,7 +14,6 @@
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
-#include "llvm/Assembly/Writer.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
 #include "llvm/CodeGen/LiveVariables.h"
 #include "llvm/CodeGen/MachineDominators.h"
@@ -25,6 +24,7 @@
 #include "llvm/CodeGen/SlotIndexes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Writer.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/Support/Debug.h"
@@ -52,7 +52,8 @@ MCSymbol *MachineBasicBlock::getSymbol() const {
   if (!CachedMCSymbol) {
     const MachineFunction *MF = getParent();
     MCContext &Ctx = MF->getContext();
-    const char *Prefix = Ctx.getAsmInfo()->getPrivateGlobalPrefix();
+    const TargetMachine &TM = MF->getTarget();
+    const char *Prefix = TM.getDataLayout()->getPrivateGlobalPrefix();
     CachedMCSymbol = Ctx.GetOrCreateSymbol(Twine(Prefix) + "BB" +
                                            Twine(MF->getFunctionNumber()) +
                                            "_" + Twine(getNumber()));

@@ -17,7 +17,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Analysis/ConstantFolding.h"
-#include "llvm/Assembly/Writer.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -29,6 +28,7 @@
 #include "llvm/DebugInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Writer.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/Support/Debug.h"
@@ -447,12 +447,12 @@ unsigned MachineFunction::addLiveIn(unsigned PReg,
 /// normal 'L' label is returned.
 MCSymbol *MachineFunction::getJTISymbol(unsigned JTI, MCContext &Ctx, 
                                         bool isLinkerPrivate) const {
+  const DataLayout *DL = getTarget().getDataLayout();
   assert(JumpTableInfo && "No jump tables");
   assert(JTI < JumpTableInfo->getJumpTables().size() && "Invalid JTI!");
-  const MCAsmInfo &MAI = *getTarget().getMCAsmInfo();
 
-  const char *Prefix = isLinkerPrivate ? MAI.getLinkerPrivateGlobalPrefix() :
-                                         MAI.getPrivateGlobalPrefix();
+  const char *Prefix = isLinkerPrivate ? DL->getLinkerPrivateGlobalPrefix() :
+                                         DL->getPrivateGlobalPrefix();
   SmallString<60> Name;
   raw_svector_ostream(Name)
     << Prefix << "JTI" << getFunctionNumber() << '_' << JTI;
@@ -462,8 +462,8 @@ MCSymbol *MachineFunction::getJTISymbol(unsigned JTI, MCContext &Ctx,
 /// getPICBaseSymbol - Return a function-local symbol to represent the PIC
 /// base.
 MCSymbol *MachineFunction::getPICBaseSymbol() const {
-  const MCAsmInfo &MAI = *Target.getMCAsmInfo();
-  return Ctx.GetOrCreateSymbol(Twine(MAI.getPrivateGlobalPrefix())+
+  const DataLayout *DL = getTarget().getDataLayout();
+  return Ctx.GetOrCreateSymbol(Twine(DL->getPrivateGlobalPrefix())+
                                Twine(getFunctionNumber())+"$pb");
 }
 

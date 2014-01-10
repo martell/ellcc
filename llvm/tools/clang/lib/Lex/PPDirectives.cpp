@@ -550,73 +550,6 @@ Module *Preprocessor::getModuleForLocation(SourceLocation FilenameLoc) {
   }
 }
 
-bool Preprocessor::violatesPrivateInclude(
-    Module *RequestingModule,
-    const FileEntry *IncFileEnt,
-    ModuleMap::ModuleHeaderRole Role,
-    Module *RequestedModule) {
-  #ifndef NDEBUG
-  // Check for consistency between the module header role
-  // as obtained from the lookup and as obtained from the module.
-  // This check is not cheap, so enable it only for debugging.
-  SmallVectorImpl<const FileEntry *> &PvtHdrs
-      = RequestedModule->PrivateHeaders;
-  SmallVectorImpl<const FileEntry *>::iterator Look
-      = std::find(PvtHdrs.begin(), PvtHdrs.end(), IncFileEnt);
-  bool IsPrivate = Look != PvtHdrs.end();
-  assert((IsPrivate && Role == ModuleMap::PrivateHeader)
-               || (!IsPrivate && Role != ModuleMap::PrivateHeader));
-  #endif
-  return Role == ModuleMap::PrivateHeader &&
-         RequestedModule->getTopLevelModule() != RequestingModule;
-}
-
-bool Preprocessor::violatesUseDeclarations(
-    Module *RequestingModule,
-    Module *RequestedModule) {
-  ModuleMap &ModMap = HeaderInfo.getModuleMap();
-  ModMap.resolveUses(RequestingModule, /*Complain=*/false);
-  const SmallVectorImpl<Module *> &AllowedUses = RequestingModule->DirectUses;
-  SmallVectorImpl<Module *>::const_iterator Declared =
-      std::find(AllowedUses.begin(), AllowedUses.end(), RequestedModule);
-  return Declared == AllowedUses.end();
-}
-
-void Preprocessor::verifyModuleInclude(SourceLocation FilenameLoc,
-                                       StringRef Filename,
-                                       const FileEntry *IncFileEnt) {
-  Module *RequestingModule = getModuleForLocation(FilenameLoc);
-  if (RequestingModule)
-    HeaderInfo.getModuleMap().resolveUses(RequestingModule, /*Complain=*/false);
-  bool FoundInModule = false;
-  ModuleMap::KnownHeader RequestedModule =
-      HeaderInfo.getModuleMap().findModuleForHeader(
-          IncFileEnt, RequestingModule, &FoundInModule);
-
-  if (!FoundInModule)
-    return; // The header is not part of a module.
-
-  if (RequestingModule == RequestedModule.getModule())
-    return; // No faults wihin a module, or between files both not in modules.
-
-  if (RequestingModule != HeaderInfo.getModuleMap().SourceModule)
-    return; // No errors for indirect modules.
-            // This may be a bit of a problem for modules with no source files.
-
-  if (RequestedModule && violatesPrivateInclude(RequestingModule, IncFileEnt,
-                                                RequestedModule.getRole(),
-                                                RequestedModule.getModule()))
-    Diag(FilenameLoc, diag::error_use_of_private_header_outside_module)
-        << Filename;
-
-  // FIXME: Add support for FixIts in module map files and offer adding the
-  // required use declaration.
-  if (RequestingModule && getLangOpts().ModulesDeclUse &&
-      violatesUseDeclarations(RequestingModule, RequestedModule.getModule()))
-    Diag(FilenameLoc, diag::error_undeclared_use_of_module)
-        << RequestingModule->getFullModuleName() << Filename;
-}
-
 const FileEntry *Preprocessor::LookupFile(
     SourceLocation FilenameLoc,
     StringRef Filename,
@@ -627,12 +560,12 @@ const FileEntry *Preprocessor::LookupFile(
     SmallVectorImpl<char> *RelativePath,
     ModuleMap::KnownHeader *SuggestedModule,
     bool SkipCache) {
-  // If the header lookup mechanism may be relative to the current file, pass in
-  // info about where the current file is.
-  const FileEntry *CurFileEnt = 0;
+  // If the header lookup mechanism may be relative to the current inclusion
+  // stack, record the parent #includes.
+  SmallVector<const FileEntry *, 16> Includers;
   if (!FromDir) {
     FileID FID = getCurrentFileLexer()->getFileID();
-    CurFileEnt = SourceMgr.getFileEntryForID(FID);
+    const FileEntry *FileEnt = SourceMgr.getFileEntryForID(FID);
 
     // If there is no file entry associated with this file, it must be the
     // predefines buffer.  Any other file is not lexed with a normal lexer, so
@@ -640,23 +573,39 @@ const FileEntry *Preprocessor::LookupFile(
     // predefines buffer, resolve #include references (which come from the
     // -include command line argument) as if they came from the main file, this
     // affects file lookup etc.
-    if (CurFileEnt == 0) {
-      FID = SourceMgr.getMainFileID();
-      CurFileEnt = SourceMgr.getFileEntryForID(FID);
+    if (!FileEnt)
+      FileEnt = SourceMgr.getFileEntryForID(SourceMgr.getMainFileID());
+
+    if (FileEnt)
+      Includers.push_back(FileEnt);
+
+    // MSVC searches the current include stack from top to bottom for
+    // headers included by quoted include directives.
+    // See: http://msdn.microsoft.com/en-us/library/36k2cdd4.aspx
+    if (LangOpts.MicrosoftMode && !isAngled) {
+      for (unsigned i = 0, e = IncludeMacroStack.size(); i != e; ++i) {
+        IncludeStackInfo &ISEntry = IncludeMacroStack[e - i - 1];
+        if (IsFileLexer(ISEntry))
+          if ((FileEnt = SourceMgr.getFileEntryForID(
+                   ISEntry.ThePPLexer->getFileID())))
+            Includers.push_back(FileEnt);
+      }
     }
   }
 
   // Do a standard file entry lookup.
   CurDir = CurDirLookup;
   const FileEntry *FE = HeaderInfo.LookupFile(
-      Filename, isAngled, FromDir, CurDir, CurFileEnt,
-      SearchPath, RelativePath, SuggestedModule, SkipCache);
+      Filename, FilenameLoc, isAngled, FromDir, CurDir, Includers, SearchPath,
+      RelativePath, SuggestedModule, SkipCache);
   if (FE) {
     if (SuggestedModule)
-      verifyModuleInclude(FilenameLoc, Filename, FE);
+      HeaderInfo.getModuleMap().diagnoseHeaderInclusion(
+          getModuleForLocation(FilenameLoc), FilenameLoc, Filename, FE);
     return FE;
   }
 
+  const FileEntry *CurFileEnt;
   // Otherwise, see if this is a subframework header.  If so, this is relative
   // to one of the headers on the #include stack.  Walk the list of the current
   // headers on the #include stack and pass them to HeaderInfo.

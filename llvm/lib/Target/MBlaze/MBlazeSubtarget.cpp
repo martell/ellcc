@@ -27,6 +27,7 @@ MBlazeSubtarget::MBlazeSubtarget(const std::string &TT,
                                  const std::string &CPU,
                                  const std::string &FS):
   MBlazeGenSubtargetInfo(TT, CPU, FS),
+  TargetTriple(TT),
   HasBarrel(false), HasDiv(false), HasMul(false), HasPatCmp(false),
   HasFPU(false), HasMul64(false), HasSqrt(false)
 {

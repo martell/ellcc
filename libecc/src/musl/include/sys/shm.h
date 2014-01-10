@@ -34,7 +34,7 @@ extern "C" {
 #define SHM_NORESERVE 010000
 
 struct shminfo {
-	unsigned long shmmax, shmmin, shmmni, shmseg, shmall, __unused[4];
+	unsigned long shmmax, shmmin, shmmni, shmseg, shmall, __unused1[4];
 };
 
 struct shm_info {

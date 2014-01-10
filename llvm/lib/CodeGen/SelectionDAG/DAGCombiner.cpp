@@ -4970,7 +4970,8 @@ SDValue DAGCombiner::visitZERO_EXTEND(SDNode *N) {
   }
 
   if (N0.getOpcode() == ISD::SETCC) {
-    if (!LegalOperations && VT.isVector()) {
+    if (!LegalOperations && VT.isVector() &&
+        N0.getValueType().getVectorElementType() == MVT::i1) {
       // zext(setcc) -> (and (vsetcc), (1, 1, ...) for vectors.
       // Only do this before legalize for now.
       EVT N0VT = N0.getOperand(0).getValueType();
@@ -5509,6 +5510,29 @@ SDValue DAGCombiner::visitSIGN_EXTEND_INREG(SDNode *N) {
     if (BSwap.getNode() != 0)
       return DAG.getNode(ISD::SIGN_EXTEND_INREG, SDLoc(N), VT,
                          BSwap, N1);
+  }
+
+  // Fold a sext_inreg of a build_vector of ConstantSDNodes or undefs
+  // into a build_vector.
+  if (ISD::isBuildVectorOfConstantSDNodes(N0.getNode())) {
+    SmallVector<SDValue, 8> Elts;
+    unsigned NumElts = N0->getNumOperands();
+    unsigned ShAmt = VTBits - EVTBits;
+
+    for (unsigned i = 0; i != NumElts; ++i) {
+      SDValue Op = N0->getOperand(i);
+      if (Op->getOpcode() == ISD::UNDEF) {
+        Elts.push_back(Op);
+        continue;
+      }
+
+      ConstantSDNode *CurrentND = cast<ConstantSDNode>(Op);
+      const APInt &C = APInt(VTBits, CurrentND->getAPIntValue().getZExtValue());
+      Elts.push_back(DAG.getConstant(C.shl(ShAmt).ashr(ShAmt).getZExtValue(),
+                                     Op.getValueType()));
+    }
+
+    return DAG.getNode(ISD::BUILD_VECTOR, SDLoc(N), VT, &Elts[0], NumElts);
   }
 
   return SDValue();

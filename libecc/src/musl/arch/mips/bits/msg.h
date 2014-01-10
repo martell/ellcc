@@ -21,5 +21,5 @@ struct msqid_ds
 	msglen_t msg_qbytes;
 	pid_t msg_lspid;
 	pid_t msg_lrpid;
-	unsigned long __unused[2];
+	unsigned long __unused4[2];
 };

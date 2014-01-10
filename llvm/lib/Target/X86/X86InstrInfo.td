@@ -510,6 +510,10 @@ def GR32orGR64 : RegisterOperand<GR32> {
   let ParserMatchClass = X86GR32orGR64AsmOperand;
 }
 
+def AVX512RC : Operand<i32> {
+  let PrintMethod = "printRoundingControl";
+  let OperandType = "OPERAND_IMMEDIATE";
+}
 // Sign-extended immediate classes. We don't need to define the full lattice
 // here because there is no instruction with an ambiguity between ImmSExti64i32
 // and ImmSExti32i8.
@@ -696,6 +700,12 @@ def Not64BitMode : Predicate<"!Subtarget->is64Bit()">,
                              AssemblerPredicate<"!Mode64Bit", "Not 64-bit mode">;
 def In64BitMode  : Predicate<"Subtarget->is64Bit()">,
                              AssemblerPredicate<"Mode64Bit", "64-bit mode">;
+def In16BitMode  : Predicate<"Subtarget->is16Bit()">,
+                             AssemblerPredicate<"Mode16Bit", "16-bit mode">;
+def Not16BitMode : Predicate<"!Subtarget->is16Bit()">,
+                             AssemblerPredicate<"!Mode16Bit", "Not 16-bit mode">;
+def In32BitMode  : Predicate<"Subtarget->is32Bit()">,
+                             AssemblerPredicate<"Mode32Bit", "32-bit mode">;
 def IsWin64      : Predicate<"Subtarget->isTargetWin64()">;
 def IsNaCl       : Predicate<"Subtarget->isTargetNaCl()">;
 def NotNaCl      : Predicate<"!Subtarget->isTargetNaCl()">;
@@ -878,15 +888,15 @@ let mayLoad = 1, SchedRW = [WriteLoad] in {
 def POP16r  : I<0x58, AddRegFrm, (outs GR16:$reg), (ins), "pop{w}\t$reg", [],
                 IIC_POP_REG16>, OpSize;
 def POP32r  : I<0x58, AddRegFrm, (outs GR32:$reg), (ins), "pop{l}\t$reg", [],
-                IIC_POP_REG>;
+                IIC_POP_REG>, Requires<[Not64BitMode]>;
 def POP16rmr: I<0x8F, MRM0r, (outs GR16:$reg), (ins), "pop{w}\t$reg", [],
                 IIC_POP_REG>, OpSize;
 def POP16rmm: I<0x8F, MRM0m, (outs), (ins i16mem:$dst), "pop{w}\t$dst", [],
                 IIC_POP_MEM>, OpSize;
 def POP32rmr: I<0x8F, MRM0r, (outs GR32:$reg), (ins), "pop{l}\t$reg", [],
-                IIC_POP_REG>;
+                IIC_POP_REG>, Requires<[Not64BitMode]>;
 def POP32rmm: I<0x8F, MRM0m, (outs), (ins i32mem:$dst), "pop{l}\t$dst", [],
-                IIC_POP_MEM>;
+                IIC_POP_MEM>, Requires<[Not64BitMode]>;
 
 def POPF16   : I<0x9D, RawFrm, (outs), (ins), "popf{w}", [], IIC_POP_F>, OpSize;
 def POPF32   : I<0x9D, RawFrm, (outs), (ins), "popf{l|d}", [], IIC_POP_FD>,
@@ -897,23 +907,24 @@ let mayStore = 1, SchedRW = [WriteStore] in {
 def PUSH16r  : I<0x50, AddRegFrm, (outs), (ins GR16:$reg), "push{w}\t$reg",[],
                  IIC_PUSH_REG>, OpSize;
 def PUSH32r  : I<0x50, AddRegFrm, (outs), (ins GR32:$reg), "push{l}\t$reg",[],
-                 IIC_PUSH_REG>;
+                 IIC_PUSH_REG>, Requires<[Not64BitMode]>;
 def PUSH16rmr: I<0xFF, MRM6r, (outs), (ins GR16:$reg), "push{w}\t$reg",[],
                  IIC_PUSH_REG>, OpSize;
 def PUSH16rmm: I<0xFF, MRM6m, (outs), (ins i16mem:$src), "push{w}\t$src",[],
                  IIC_PUSH_MEM>,
   OpSize;
 def PUSH32rmr: I<0xFF, MRM6r, (outs), (ins GR32:$reg), "push{l}\t$reg",[],
-                 IIC_PUSH_REG>;
+                 IIC_PUSH_REG>, Requires<[Not64BitMode]>;
 def PUSH32rmm: I<0xFF, MRM6m, (outs), (ins i32mem:$src), "push{l}\t$src",[],
-                 IIC_PUSH_MEM>;
+                 IIC_PUSH_MEM>, Requires<[Not64BitMode]>;
 
 def PUSHi8   : Ii8<0x6a, RawFrm, (outs), (ins i32i8imm:$imm),
-                      "push{l}\t$imm", [], IIC_PUSH_IMM>;
+                   "push{l}\t$imm", [], IIC_PUSH_IMM>, Requires<[Not64BitMode]>;
 def PUSHi16  : Ii16<0x68, RawFrm, (outs), (ins i16imm:$imm),
-                      "push{w}\t$imm", [], IIC_PUSH_IMM>, OpSize;
+                   "push{w}\t$imm", [], IIC_PUSH_IMM>, OpSize,
+                   Requires<[Not64BitMode]>;
 def PUSHi32  : Ii32<0x68, RawFrm, (outs), (ins i32imm:$imm),
-                      "push{l}\t$imm", [], IIC_PUSH_IMM>;
+                   "push{l}\t$imm", [], IIC_PUSH_IMM>, Requires<[Not64BitMode]>;
 
 def PUSHF16  : I<0x9C, RawFrm, (outs), (ins), "pushf{w}", [], IIC_PUSH_F>,
                  OpSize;
@@ -925,31 +936,32 @@ def PUSHF32  : I<0x9C, RawFrm, (outs), (ins), "pushf{l|d}", [], IIC_PUSH_F>,
 
 let Defs = [RSP], Uses = [RSP], neverHasSideEffects=1 in {
 let mayLoad = 1, SchedRW = [WriteLoad] in {
-def POP64r   : I<0x58, AddRegFrm,
-                 (outs GR64:$reg), (ins), "pop{q}\t$reg", [], IIC_POP_REG>;
+def POP64r   : I<0x58, AddRegFrm, (outs GR64:$reg), (ins), "pop{q}\t$reg", [],
+                 IIC_POP_REG>, Requires<[In64BitMode]>;
 def POP64rmr: I<0x8F, MRM0r, (outs GR64:$reg), (ins), "pop{q}\t$reg", [],
-                IIC_POP_REG>;
+                IIC_POP_REG>, Requires<[In64BitMode]>;
 def POP64rmm: I<0x8F, MRM0m, (outs), (ins i64mem:$dst), "pop{q}\t$dst", [],
-                IIC_POP_MEM>;
+                IIC_POP_MEM>, Requires<[In64BitMode]>;
 } // mayLoad, SchedRW
 let mayStore = 1, SchedRW = [WriteStore] in {
-def PUSH64r  : I<0x50, AddRegFrm,
-                 (outs), (ins GR64:$reg), "push{q}\t$reg", [], IIC_PUSH_REG>;
+def PUSH64r  : I<0x50, AddRegFrm, (outs), (ins GR64:$reg), "push{q}\t$reg", [],
+                 IIC_PUSH_REG>, Requires<[In64BitMode]>;
 def PUSH64rmr: I<0xFF, MRM6r, (outs), (ins GR64:$reg), "push{q}\t$reg", [],
-                 IIC_PUSH_REG>;
+                 IIC_PUSH_REG>, Requires<[In64BitMode]>;
 def PUSH64rmm: I<0xFF, MRM6m, (outs), (ins i64mem:$src), "push{q}\t$src", [],
-                 IIC_PUSH_MEM>;
+                 IIC_PUSH_MEM>, Requires<[In64BitMode]>;
 } // mayStore, SchedRW
 }
 
 let Defs = [RSP], Uses = [RSP], neverHasSideEffects = 1, mayStore = 1,
     SchedRW = [WriteStore] in {
 def PUSH64i8   : Ii8<0x6a, RawFrm, (outs), (ins i64i8imm:$imm),
-                     "push{q}\t$imm", [], IIC_PUSH_IMM>;
+                    "push{q}\t$imm", [], IIC_PUSH_IMM>, Requires<[In64BitMode]>;
 def PUSH64i16  : Ii16<0x68, RawFrm, (outs), (ins i16imm:$imm),
-                      "push{q}\t$imm", [], IIC_PUSH_IMM>;
+                    "push{w}\t$imm", [], IIC_PUSH_IMM>, OpSize,
+                    Requires<[In64BitMode]>;
 def PUSH64i32  : Ii32<0x68, RawFrm, (outs), (ins i64i32imm:$imm),
-                      "push{q}\t$imm", [], IIC_PUSH_IMM>;
+                    "push{q}\t$imm", [], IIC_PUSH_IMM>, Requires<[In64BitMode]>;
 }
 
 let Defs = [RSP, EFLAGS], Uses = [RSP], mayLoad = 1, neverHasSideEffects=1 in
@@ -1180,7 +1192,8 @@ def MOV64ao64 : RIi64<0xA3, RawFrm, (outs offset64:$dst), (ins),
 }
 } // hasSideEffects = 0
 
-let isCodeGenOnly = 1, hasSideEffects = 0, SchedRW = [WriteMove] in {
+let isCodeGenOnly = 1, ForceDisassemble = 1, hasSideEffects = 0,
+    SchedRW = [WriteMove] in {
 def MOV8rr_REV : I<0x8A, MRMSrcReg, (outs GR8:$dst), (ins GR8:$src),
                    "mov{b}\t{$src, $dst|$dst, $src}", [], IIC_MOV>;
 def MOV16rr_REV : I<0x8B, MRMSrcReg, (outs GR16:$dst), (ins GR16:$src),
@@ -1595,7 +1608,8 @@ def CMPXCHG16B : RI<0xC7, MRM1m, (outs), (ins i128mem:$dst),
 def LOCK_PREFIX : I<0xF0, RawFrm, (outs),  (ins), "lock", []>;
 
 // Rex64 instruction prefix
-def REX64_PREFIX : I<0x48, RawFrm, (outs),  (ins), "rex64", []>;
+def REX64_PREFIX : I<0x48, RawFrm, (outs),  (ins), "rex64", []>,
+                     Requires<[In64BitMode]>;
 
 // Data16 instruction prefix
 def DATA16_PREFIX : I<0x66, RawFrm, (outs),  (ins), "data16", []>;

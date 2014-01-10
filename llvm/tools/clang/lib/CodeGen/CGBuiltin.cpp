@@ -2638,7 +2638,7 @@ Value *CodeGenFunction::EmitAArch64CompareBuiltinExpr(
   } else {
     Op = Builder.CreateICmp(Ip, Op, ConstantAggregateZero::get(OTy));
   }
-  return Builder.CreateZExt(Op, Ty, Name);
+  return Builder.CreateSExt(Op, Ty, Name);
 }
 
 static Value *packTBLDVectorList(CodeGenFunction &CGF, ArrayRef<Value *> Ops,

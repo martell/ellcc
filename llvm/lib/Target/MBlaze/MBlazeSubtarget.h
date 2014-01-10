@@ -58,6 +58,9 @@ public:
                              TargetSubtargetInfo::AntiDepBreakMode& Mode,
                              RegClassVector& CriticalPathRCs) const;
 
+  /// TargetTriple - What processor and OS we're targeting.
+  Triple TargetTriple;
+
   /// getInstrItins - Return the instruction itineraies based on subtarget.
   const InstrItineraryData &getInstrItineraryData() const { return InstrItins; }
 
@@ -69,6 +72,7 @@ public:
   bool hasMul64()  const { return HasMul64; }
   bool hasDiv()    const { return HasDiv; }
   bool hasBarrel() const { return HasBarrel; }
+  const Triple &getTargetTriple() const { return TargetTriple; }
 };
 } // End llvm namespace
 

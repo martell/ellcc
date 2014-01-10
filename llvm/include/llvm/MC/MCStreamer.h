@@ -92,6 +92,8 @@ public:
   virtual void switchVendor(StringRef Vendor) = 0;
   virtual void emitAttribute(unsigned Attribute, unsigned Value) = 0;
   virtual void emitTextAttribute(unsigned Attribute, StringRef String) = 0;
+  virtual void emitIntTextAttribute(unsigned Attribute, unsigned IntValue,
+				    StringRef StringValue = "") = 0;
   virtual void emitFPU(unsigned FPU) = 0;
   virtual void emitArch(unsigned Arch) = 0;
   virtual void finishAttributeSection() = 0;
@@ -411,9 +413,14 @@ public:
   /// EndCOFFSymbolDef - Marks the end of the symbol definition.
   virtual void EndCOFFSymbolDef() = 0;
 
+  /// EmitCOFFSectionIndex - Emits a COFF section index.
+  ///
+  /// @param Symbol - Symbol the section number relocation should point to.
+  virtual void EmitCOFFSectionIndex(MCSymbol const *Symbol);
+
   /// EmitCOFFSecRel32 - Emits a COFF section relative relocation.
   ///
-  /// @param Symbol - Symbol the section relative realocation should point to.
+  /// @param Symbol - Symbol the section relative relocation should point to.
   virtual void EmitCOFFSecRel32(MCSymbol const *Symbol);
 
   /// EmitELFSize - Emit an ELF .size directive.

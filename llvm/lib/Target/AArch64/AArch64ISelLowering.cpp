@@ -385,6 +385,18 @@ AArch64TargetLowering::AArch64TargetLowering(AArch64TargetMachine &TM)
           setTruncStoreAction(VT, VT1, Expand);
       }
     }
+
+    // There is no v1i64/v2i64 multiply, expand v1i64/v2i64 to GPR i64 multiply.
+    // FIXME: For a v2i64 multiply, we copy VPR to GPR and do 2 i64 multiplies,
+    // and then copy back to VPR. This solution may be optimized by Following 3
+    // NEON instructions:
+    //        pmull  v2.1q, v0.1d, v1.1d
+    //        pmull2 v3.1q, v0.2d, v1.2d
+    //        ins    v2.d[1], v3.d[0]
+    // As currently we can't verify the correctness of such assumption, we can
+    // do such optimization in the future.
+    setOperationAction(ISD::MUL, MVT::v1i64, Expand);
+    setOperationAction(ISD::MUL, MVT::v2i64, Expand);
   }
 }
 
@@ -1334,6 +1346,12 @@ AArch64TargetLowering::LowerReturn(SDValue Chain,
                      &RetOps[0], RetOps.size());
 }
 
+unsigned AArch64TargetLowering::getByValTypeAlignment(Type *Ty) const {
+  // This is a new backend. For anything more precise than this a FE should
+  // set an explicit alignment.
+  return 4;
+}
+
 SDValue
 AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
                                  SmallVectorImpl<SDValue> &InVals) const {
@@ -2112,6 +2130,9 @@ SDValue AArch64TargetLowering::LowerRETURNADDR(SDValue Op, SelectionDAG &DAG) co
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo *MFI = MF.getFrameInfo();
   MFI->setReturnAddressIsTaken(true);
+
+  if (verifyReturnAddressArgumentIsConstant(Op, DAG))
+    return SDValue();
 
   EVT VT = Op.getValueType();
   SDLoc dl(Op);
@@ -3957,7 +3978,10 @@ bool AArch64TargetLowering::isKnownShuffleVector(SDValue Op, SelectionDAG &DAG,
   if (V1.getNode() && NumElts == V0NumElts &&
       V0NumElts == V1.getValueType().getVectorNumElements()) {
     SDValue Shuffle = DAG.getVectorShuffle(VT, DL, V0, V1, Mask);
-    Res = LowerVECTOR_SHUFFLE(Shuffle, DAG);
+    if(Shuffle.getOpcode() != ISD::VECTOR_SHUFFLE)
+      Res = Shuffle;
+    else
+      Res = LowerVECTOR_SHUFFLE(Shuffle, DAG);
     return true;
   } else
     return false;
@@ -4070,9 +4094,7 @@ AArch64TargetLowering::LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG,
   if (ValueCounts.size() == 0)
     return DAG.getUNDEF(VT);
 
-  // Loads are better lowered with insert_vector_elt.
-  // Keep going if we are hitting this case.
-  if (isOnlyLowElement && !ISD::isNormalLoad(Value.getNode()))
+  if (isOnlyLowElement)
     return DAG.getNode(ISD::SCALAR_TO_VECTOR, DL, VT, Value);
 
   unsigned EltSize = VT.getVectorElementType().getSizeInBits();

@@ -19,15 +19,14 @@
 #define DEBUG_TYPE "asmprinter"
 #include "PPC.h"
 #include "InstPrinter/PPCInstPrinter.h"
-#include "MCTargetDesc/PPCPredicates.h"
 #include "MCTargetDesc/PPCMCExpr.h"
+#include "MCTargetDesc/PPCPredicates.h"
 #include "PPCSubtarget.h"
 #include "PPCTargetMachine.h"
 #include "PPCTargetStreamer.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Assembly/Writer.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
@@ -37,7 +36,9 @@
 #include "llvm/DebugInfo.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Writer.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
@@ -54,7 +55,6 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetRegisterInfo.h"
@@ -139,6 +139,7 @@ static const char *stripRegisterPrefix(const char *RegName) {
 
 void PPCAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
                                  raw_ostream &O) {
+  const DataLayout *DL = TM.getDataLayout();
   const MachineOperand &MO = MI->getOperand(OpNo);
   
   switch (MO.getType()) {
@@ -158,7 +159,7 @@ void PPCAsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
     O << *MO.getMBB()->getSymbol();
     return;
   case MachineOperand::MO_ConstantPoolIndex:
-    O << MAI->getPrivateGlobalPrefix() << "CPI" << getFunctionNumber()
+    O << DL->getPrivateGlobalPrefix() << "CPI" << getFunctionNumber()
       << '_' << MO.getIndex();
     return;
   case MachineOperand::MO_BlockAddress:
@@ -281,12 +282,12 @@ bool PPCAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI, unsigned OpNo,
 /// exists for it.  If not, create one.  Then return a symbol that references
 /// the TOC entry.
 MCSymbol *PPCAsmPrinter::lookUpOrCreateTOCEntry(MCSymbol *Sym) {
-
+  const DataLayout *DL = TM.getDataLayout();
   MCSymbol *&TOCEntry = TOC[Sym];
 
   // To avoid name clash check if the name already exists.
   while (TOCEntry == 0) {
-    if (OutContext.LookupSymbol(Twine(MAI->getPrivateGlobalPrefix()) +
+    if (OutContext.LookupSymbol(Twine(DL->getPrivateGlobalPrefix()) +
                                 "C" + Twine(TOCLabelID++)) == 0) {
       TOCEntry = GetTempSymbol("C", TOCLabelID);
     }
@@ -301,6 +302,7 @@ MCSymbol *PPCAsmPrinter::lookUpOrCreateTOCEntry(MCSymbol *Sym) {
 ///
 void PPCAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   MCInst TmpInst;
+  bool isPPC64 = Subtarget.isPPC64();
   
   // Lower multi-instruction pseudo operations.
   switch (MI->getOpcode()) {
@@ -494,12 +496,13 @@ void PPCAsmPrinter::EmitInstruction(const MachineInstr *MI) {
                                 .addExpr(SymGotTprel));
     return;
   }
-  case PPC::LDgotTprelL: {
+  case PPC::LDgotTprelL:
+  case PPC::LDgotTprelL32: {
     // Transform %Xd = LDgotTprelL <ga:@sym>, %Xs
     LowerPPCMachineInstrToMCInst(MI, TmpInst, *this, Subtarget.isDarwin());
 
     // Change the opcode to LD.
-    TmpInst.setOpcode(PPC::LD);
+    TmpInst.setOpcode(isPPC64 ? PPC::LD : PPC::LWZ);
     const MachineOperand &MO = MI->getOperand(1);
     const GlobalValue *GValue = MO.getGlobal();
     MCSymbol *MOSymbol = getSymbol(GValue);
@@ -508,6 +511,24 @@ void PPCAsmPrinter::EmitInstruction(const MachineInstr *MI) {
                               OutContext);
     TmpInst.getOperand(1) = MCOperand::CreateExpr(Exp);
     OutStreamer.EmitInstruction(TmpInst);
+    return;
+  }
+
+  case PPC::PPC32GOT: {
+    MCSymbol *GOTSymbol = OutContext.GetOrCreateSymbol(StringRef("_GLOBAL_OFFSET_TABLE_"));
+    const MCExpr *SymGotTlsL =
+      MCSymbolRefExpr::Create(GOTSymbol, MCSymbolRefExpr::VK_PPC_LO,
+                              OutContext);
+    const MCExpr *SymGotTlsHA =                               
+      MCSymbolRefExpr::Create(GOTSymbol, MCSymbolRefExpr::VK_PPC_HA,
+                              OutContext);
+    OutStreamer.EmitInstruction(MCInstBuilder(PPC::LI)
+                                .addReg(MI->getOperand(0).getReg())
+                                .addExpr(SymGotTlsL));
+    OutStreamer.EmitInstruction(MCInstBuilder(PPC::ADDIS)
+                                .addReg(MI->getOperand(0).getReg())
+                                .addReg(MI->getOperand(0).getReg())
+                                .addExpr(SymGotTlsHA));
     return;
   }
   case PPC::ADDIStlsgdHA: {

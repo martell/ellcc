@@ -18,6 +18,9 @@
 #undef fseeko64
 #undef ftello64
 #undef tmpfile64
+#undef fstat64
+#undef lstat64
+#undef stat64
 #endif
 
 namespace llvm {

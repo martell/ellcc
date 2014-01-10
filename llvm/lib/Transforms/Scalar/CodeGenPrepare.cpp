@@ -22,7 +22,6 @@
 #include "llvm/Analysis/DominatorInternals.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/InstructionSimplify.h"
-#include "llvm/Assembly/Writer.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -31,6 +30,7 @@
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Writer.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/CommandLine.h"
@@ -1916,7 +1916,8 @@ bool CodeGenPrepare::OptimizeInst(Instruction *I) {
   }
 
   if (CmpInst *CI = dyn_cast<CmpInst>(I))
-    return OptimizeCmpExpression(CI);
+    if (!TLI || !TLI->hasMultipleConditionRegisters())
+      return OptimizeCmpExpression(CI);
 
   if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
     if (TLI)

@@ -63,6 +63,7 @@ extern char *program_invocation_short_name;
 
 #define __dead
 #define  __arraycount(__x) (sizeof(__x) / sizeof(__x[0]))
+#define __unused __attribute__((__unused__))
 
 #define MAXBSIZE 8192
 

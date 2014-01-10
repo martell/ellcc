@@ -188,7 +188,8 @@ def objcmt_migrate_designated_init : Flag<["-"], "objcmt-migrate-designated-init
   HelpText<"Enable migration to infer NS_DESIGNATED_INITIALIZER for initializer methods">;
 def objcmt_whitelist_dir_path: Joined<["-"], "objcmt-whitelist-dir-path=">, Flags<[CC1Option]>,
   HelpText<"Only modify files with a filename contained in the provided directory path">;
-def objcmt_white_list_dir_path: Joined<["-"], "objcmt-white-list-dir-path=">, Flags<[CC1Option]>,
+// The misspelt "white-list" [sic] alias is due for removal.
+def : Joined<["-"], "objcmt-white-list-dir-path=">, Flags<[CC1Option]>,
     Alias<objcmt_whitelist_dir_path>;
 
 // Make sure all other -ccc- options are rejected.
@@ -375,6 +376,13 @@ def fprofile_sample_use_EQ : Joined<["-"], "fprofile-sample-use=">,
     HelpText<"Enable sample-based profile guided optimizations">;
 def fauto_profile_EQ : Joined<["-"], "fauto-profile=">,
     Alias<fprofile_sample_use_EQ>;
+def fprofile_instr_generate : Flag<["-"], "fprofile-instr-generate">,
+    Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"Generate instrumented code to collect execution counts">;
+def fprofile_instr_use : Flag<["-"], "fprofile-instr-use">, Group<f_Group>;
+def fprofile_instr_use_EQ : Joined<["-"], "fprofile-instr-use=">,
+    Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"Use instrumentation data for profile-guided optimization">;
 
 def fblocks : Flag<["-"], "fblocks">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Enable the 'blocks' language feature">;
@@ -516,9 +524,9 @@ def fhonor_nans : Flag<["-"], "fhonor-nans">, Group<f_Group>;
 def fno_honor_nans : Flag<["-"], "fno-honor-nans">, Group<f_Group>;
 def fhonor_infinities : Flag<["-"], "fhonor-infinities">, Group<f_Group>;
 def fno_honor_infinities : Flag<["-"], "fno-honor-infinities">, Group<f_Group>;
-// Sic. This option was misspelled originally.
-def fhonor_infinites : Flag<["-"], "fhonor-infinites">, Alias<fhonor_infinities>;
-def fno_honor_infinites : Flag<["-"], "fno-honor-infinites">, Alias<fno_honor_infinities>;
+// This option was originally misspelt "infinites" [sic].
+def : Flag<["-"], "fhonor-infinites">, Alias<fhonor_infinities>;
+def : Flag<["-"], "fno-honor-infinites">, Alias<fno_honor_infinities>;
 def ftrapping_math : Flag<["-"], "ftrapping-math">, Group<f_Group>;
 def fno_trapping_math : Flag<["-"], "fno-trapping-math">, Group<f_Group>;
 def ffp_contract : Joined<["-"], "ffp-contract=">, Group<f_Group>,
@@ -551,8 +559,6 @@ def finstrument_functions : Flag<["-"], "finstrument-functions">, Group<f_Group>
 def fkeep_inline_functions : Flag<["-"], "fkeep-inline-functions">, Group<clang_ignored_f_Group>;
 def flat__namespace : Flag<["-"], "flat_namespace">;
 def flax_vector_conversions : Flag<["-"], "flax-vector-conversions">, Group<f_Group>;
-def flimit_debug_info : Flag<["-"], "flimit-debug-info">, Group<f_Group>, Flags<[CC1Option]>,
-  HelpText<"Limit debug information produced to reduce size of debug binary">;
 def flimited_precision_EQ : Joined<["-"], "flimited-precision=">, Group<f_Group>;
 def flto : Flag<["-"], "flto">, Group<f_Group>;
 def fno_lto : Flag<["-"], "fno-lto">, Group<f_Group>;
@@ -646,8 +652,6 @@ def fno_inline : Flag<["-"], "fno-inline">, Group<f_clang_Group>, Flags<[CC1Opti
 def fno_keep_inline_functions : Flag<["-"], "fno-keep-inline-functions">, Group<clang_ignored_f_Group>;
 def fno_lax_vector_conversions : Flag<["-"], "fno-lax-vector-conversions">, Group<f_Group>,
   HelpText<"Disallow implicit conversions between vectors with a different number of elements or different element types">, Flags<[CC1Option]>;
-def fno_limit_debug_info : Flag<["-"], "fno-limit-debug-info">, Group<f_Group>, Flags<[CC1Option]>,
-  HelpText<"Do not limit debug information produced to reduce size of debug binary">;
 def fno_merge_all_constants : Flag<["-"], "fno-merge-all-constants">, Group<f_Group>,
     Flags<[CC1Option]>, HelpText<"Disallow merging of constants">;
 def fno_modules : Flag <["-"], "fno-modules">, Group<f_Group>,
@@ -759,7 +763,7 @@ def frtti : Flag<["-"], "frtti">, Group<f_Group>;
 def fsched_interblock : Flag<["-"], "fsched-interblock">, Group<clang_ignored_f_Group>;
 def fshort_enums : Flag<["-"], "fshort-enums">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Allocate to an enum type only as many bytes as it needs for the declared range of possible values">;
-def freorder_blocks : Flag<["-"], "freorder-blocks">, Group<clang_ignored_f_Group>;
+def : Flag<["-"], "freorder-blocks">, Group<clang_ignored_f_Group>;
 def fshort_wchar : Flag<["-"], "fshort-wchar">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Force wchar_t to be a short unsigned int">;
 def fshow_overloads_EQ : Joined<["-"], "fshow-overloads=">, Group<f_Group>, Flags<[CC1Option]>,
@@ -775,6 +779,12 @@ def fno_signed_char : Flag<["-"], "fno-signed-char">, Flags<[CC1Option]>,
 def fsplit_stack : Flag<["-"], "fsplit-stack">, Group<f_Group>;
 def fstack_protector_all : Flag<["-"], "fstack-protector-all">, Group<f_Group>;
 def fstack_protector : Flag<["-"], "fstack-protector">, Group<f_Group>;
+def fstandalone_debug : Flag<["-"], "fstandalone-debug">, Group<f_Group>, Flags<[CC1Option]>,
+  HelpText<"Emit full debug info for all types used by the program">;
+def fno_standalone_debug : Flag<["-"], "fno-standalone-debug">, Group<f_Group>, Flags<[CC1Option]>,
+  HelpText<"Limit debug information produced to reduce size of debug binary">;
+def flimit_debug_info : Flag<["-"], "flimit-debug-info">, Alias<fno_standalone_debug>;
+def fno_limit_debug_info : Flag<["-"], "fno-limit-debug-info">, Alias<fstandalone_debug>;
 def fstrict_aliasing : Flag<["-"], "fstrict-aliasing">, Group<f_Group>;
 def fstrict_enums : Flag<["-"], "fstrict-enums">, Group<f_Group>, Flags<[CC1Option]>,
   HelpText<"Enable optimizations based on the strict definition of an enum's "

@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This library implements the functionality defined in llvm/Assembly/Writer.h
+// This library implements the functionality defined in llvm/IR/Writer.h
 //
 // Note that these routines must be extremely tolerant of various errors in the
 // LLVM code, because it can be used for debugging transformations.
@@ -15,15 +15,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsmWriter.h"
-
-#include "llvm/Assembly/Writer.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Assembly/AssemblyAnnotationWriter.h"
-#include "llvm/Assembly/PrintModulePass.h"
 #include "llvm/DebugInfo.h"
+#include "llvm/IR/AssemblyAnnotationWriter.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -32,15 +29,16 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
+#include "llvm/IR/PrintModulePass.h"
 #include "llvm/IR/TypeFinder.h"
 #include "llvm/IR/ValueSymbolTable.h"
+#include "llvm/IR/Writer.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/MathExtras.h"
-
 #include <algorithm>
 #include <cctype>
 using namespace llvm;

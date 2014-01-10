@@ -70,9 +70,14 @@ void ARMBaseTargetMachine::addAnalysisPasses(PassManagerBase &PM) {
 
 void ARMTargetMachine::anchor() { }
 
-static std::string computeDataLayout(ARMSubtarget &ST) {
-  // Little endian. Pointers are 32 bits and aligned to 32 bits.
-  std::string Ret = "e-p:32:32";
+static std::string computeDataLayout(ARMSubtarget &ST, bool BigEndian=false) {
+  // Endian.
+  std::string Ret = BigEndian ? "E" : "e";
+
+  Ret += DataLayout::getManglingComponent(ST.getTargetTriple());
+
+  // Pointers are 32 bits and aligned to 32 bits.
+  Ret += "-p:32:32";
 
   // On thumb, i16,i18 and i1 have natural aligment requirements, but we try to
   // align to 32.
@@ -141,14 +146,7 @@ ARMEBTargetMachine::ARMEBTargetMachine(const Target &T, StringRef TT,
                                        CodeGenOpt::Level OL)
   : ARMBaseTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
     InstrInfo(Subtarget),
-    DL(Subtarget.isAPCS_ABI() ?
-               std::string("E-p:32:32-f64:32:64-i64:32:64-"
-                           "v128:32:128-v64:32:64-n32-S32") :
-               Subtarget.isAAPCS_ABI() ?
-               std::string("E-p:32:32-f64:64:64-i64:64:64-"
-                           "v128:64:128-v64:64:64-n32-S64") :
-               std::string("E-p:32:32-f64:64:64-i64:64:64-"
-                           "v128:64:128-v64:64:64-n32-S32")),
+    DL(computeDataLayout(Subtarget, true)),
     TLInfo(*this),
     TSInfo(*this),
     FrameLowering(Subtarget) {

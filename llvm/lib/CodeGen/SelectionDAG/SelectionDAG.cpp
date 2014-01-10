@@ -20,7 +20,6 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/Assembly/Writer.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -34,6 +33,7 @@
 #include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Writer.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -176,6 +176,22 @@ bool ISD::isBuildVectorAllZeros(const SDNode *N) {
     if (N->getOperand(i) != Zero &&
         N->getOperand(i).getOpcode() != ISD::UNDEF)
       return false;
+  return true;
+}
+
+/// \brief Return true if the specified node is a BUILD_VECTOR node of
+/// all ConstantSDNode or undef.
+bool ISD::isBuildVectorOfConstantSDNodes(const SDNode *N) {
+  if (N->getOpcode() != ISD::BUILD_VECTOR)
+    return false;
+
+  for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i) {
+    SDValue Op = N->getOperand(i);
+    if (Op.getOpcode() == ISD::UNDEF)
+      continue;
+    if (!isa<ConstantSDNode>(Op))
+      return false;
+  }
   return true;
 }
 

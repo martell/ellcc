@@ -222,7 +222,7 @@ static MCAsmInfo *createARMMCAsmInfo(const MCRegisterInfo &MRI, StringRef TT) {
   if (TheTriple.getArch() == Triple::armeb)
     IsLittleEndian = false;
 
-  if (TheTriple.isOSDarwin())
+  if (TheTriple.isOSBinFormatMachO())
     return new ARMMCAsmInfoDarwin();
 
   return new ARMELFMCAsmInfo(IsLittleEndian);
@@ -255,7 +255,7 @@ static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
                                     bool NoExecStack) {
   Triple TheTriple(TT);
 
-  if (TheTriple.isOSDarwin())
+  if (TheTriple.isOSBinFormatMachO())
     return createMachOStreamer(Ctx, MAB, OS, Emitter, false);
 
   if (TheTriple.isOSWindows()) {

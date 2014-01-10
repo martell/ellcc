@@ -52,7 +52,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/Dominators.h"
-#include "llvm/Assembly/Writer.h"
 #include "llvm/DebugInfo.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/Constants.h"
@@ -63,6 +62,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Writer.h"
 #include "llvm/InstVisitor.h"
 #include "llvm/Pass.h"
 #include "llvm/PassManager.h"
@@ -550,9 +550,11 @@ void Verifier::visitGlobalAlias(GlobalAlias &GA) {
     ConstantExpr *CE = dyn_cast<ConstantExpr>(Aliasee);
     Assert1(CE &&
             (CE->getOpcode() == Instruction::BitCast ||
+             CE->getOpcode() == Instruction::AddrSpaceCast ||
              CE->getOpcode() == Instruction::GetElementPtr) &&
             isa<GlobalValue>(CE->getOperand(0)),
-            "Aliasee should be either GlobalValue or bitcast of GlobalValue",
+            "Aliasee should be either GlobalValue, bitcast or "
+             "addrspacecast of GlobalValue",
             &GA);
 
     if (CE->getOpcode() == Instruction::BitCast) {

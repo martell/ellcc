@@ -10,7 +10,6 @@
 #define DEBUG_TYPE "format-test"
 
 #include "FormatTestUtils.h"
-
 #include "clang/Format/Format.h"
 #include "llvm/Support/Debug.h"
 #include "gtest/gtest.h"
@@ -1045,6 +1044,17 @@ TEST_F(FormatTest, DontSplitLineCommentsWithEscapedNewlines) {
                    getLLVMStyleWithColumns(49)));
 }
 
+TEST_F(FormatTest, DontSplitLineCommentsWithPragmas) {
+  FormatStyle Pragmas = getLLVMStyleWithColumns(30);
+  Pragmas.CommentPragmas = "^ IWYU pragma:";
+  EXPECT_EQ(
+      "// IWYU pragma: aaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbb",
+      format("// IWYU pragma: aaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbb", Pragmas));
+  EXPECT_EQ(
+      "/* IWYU pragma: aaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbb */",
+      format("/* IWYU pragma: aaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbb */", Pragmas));
+}
+
 TEST_F(FormatTest, PriorityOfCommentBreaking) {
   EXPECT_EQ("if (xxx ==\n"
             "        yyy && // aaaaaaaaaaaa bbbbbbbbb\n"
@@ -1639,18 +1649,22 @@ TEST_F(FormatTest, FormatsEnum) {
   verifyFormat("enum X f() {\n  a();\n  return 42;\n}");
   verifyFormat("enum {\n"
                "  Bar = Foo<int, int>::value\n"
-               "};");
+               "};",
+               getLLVMStyleWithColumns(30));
+
+  verifyFormat("enum ShortEnum { A, B, C };");
+  verifyGoogleFormat("enum ShortEnum { A, B, C };");
 }
 
 TEST_F(FormatTest, FormatsEnumsWithErrors) {
   verifyFormat("enum Type {\n"
-               "  One = 0;\n" // These semicolons should be commas.
+               "  One = 0; // These semicolons should be commas.\n"
                "  Two = 1;\n"
                "};");
   verifyFormat("namespace n {\n"
                "enum Type {\n"
                "  One,\n"
-               "  Two,\n" // missing };
+               "  Two, // missing };\n"
                "  int i;\n"
                "}\n"
                "void g() {}");
@@ -1692,13 +1706,11 @@ TEST_F(FormatTest, FormatsEnumClass) {
 
 TEST_F(FormatTest, FormatsEnumTypes) {
   verifyFormat("enum X : int {\n"
-               "  A,\n"
+               "  A, // Force multiple lines.\n"
                "  B\n"
                "};");
-  verifyFormat("enum X : std::uint32_t {\n"
-               "  A,\n"
-               "  B\n"
-               "};");
+  verifyFormat("enum X : int { A, B };");
+  verifyFormat("enum X : std::uint32_t { A, B };");
 }
 
 TEST_F(FormatTest, FormatsBitfields) {
@@ -2186,6 +2198,17 @@ TEST_F(FormatTest, MacroCallsWithoutTrailingSemicolon) {
                    "    IPC_MESSAGE_HANDLER(xxx, qqq)\n"
                    "  IPC_END_MESSAGE_MAP()\n"
                    "}"));
+
+  // Same inside macros.
+  EXPECT_EQ("#define LIST(L) \\\n"
+            "  L(A)          \\\n"
+            "  L(B)          \\\n"
+            "  L(C)",
+            format("#define LIST(L) \\\n"
+                   "  L(A) \\\n"
+                   "  L(B) \\\n"
+                   "  L(C)",
+                   getGoogleStyle()));
 
   // These must not be recognized as macros.
   EXPECT_EQ("int q() {\n"
@@ -3031,6 +3054,10 @@ TEST_F(FormatTest, BreaksFunctionDeclarations) {
   verifyGoogleFormat(
       "SomeLoooooooooooooooooooooooooooooogType operator<<(\n"
       "    const SomeLooooooooogType &a, const SomeLooooooooogType &b);");
+  verifyFormat("void aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "    int aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa = 1);");
+  verifyFormat("aaaaaaaaaaaaaaaaaaaaaa\n"
+               "aaaaaaaaaaaaaaaaaaaaaaaaa(int aaaaaaaaaaaaaaaaaaaaaaaa = 1);");
 }
 
 TEST_F(FormatTest, TrailingReturnType) {
@@ -6579,7 +6606,7 @@ TEST_F(FormatTest, ConfigurableUseOfTab) {
                "};",
                Tab);
   verifyFormat("enum A {\n"
-               "\ta1,\n"
+               "\ta1, // Force multiple lines\n"
                "\ta2,\n"
                "\ta3\n"
                "};",
@@ -6996,6 +7023,16 @@ TEST_F(FormatTest, AllmanBraceBreaking) {
                "  Y = 0,\n"
                "}\n",
                BreakBeforeBrace);
+
+  BreakBeforeBrace.ColumnLimit = 19;
+  verifyFormat("void f() { int i; }", BreakBeforeBrace);
+  BreakBeforeBrace.ColumnLimit = 18;
+  verifyFormat("void f()\n"
+               "{\n"
+               "  int i;\n"
+               "}",
+               BreakBeforeBrace);
+  BreakBeforeBrace.ColumnLimit = 80;
 
   FormatStyle BreakBeforeBraceShortIfs = BreakBeforeBrace;
   BreakBeforeBraceShortIfs.AllowShortIfStatementsOnASingleLine = true;
@@ -7419,25 +7456,27 @@ TEST_F(FormatTest, ParsesConfigurationWithLanguages) {
   EXPECT_EQ(FormatStyle::LK_Cpp, Style.Language);
 }
 
+#undef CHECK_PARSE
+#undef CHECK_PARSE_BOOL
+
 TEST_F(FormatTest, UsesLanguageForBasedOnStyle) {
   FormatStyle Style = {};
   Style.Language = FormatStyle::LK_JavaScript;
   Style.BreakBeforeTernaryOperators = true;
-  CHECK_PARSE("BasedOnStyle: Google", BreakBeforeTernaryOperators, false);
+  EXPECT_EQ(0, parseConfiguration("BasedOnStyle: Google", &Style).value());
+  EXPECT_FALSE(Style.BreakBeforeTernaryOperators);
+
   Style.BreakBeforeTernaryOperators = true;
-  CHECK_PARSE("---\n"
+  EXPECT_EQ(0, parseConfiguration("---\n"
               "BasedOnStyle: Google\n"
               "---\n"
               "Language: JavaScript\n"
               "IndentWidth: 76\n"
-              "...\n",
-              BreakBeforeTernaryOperators, false);
+              "...\n", &Style).value());
+  EXPECT_FALSE(Style.BreakBeforeTernaryOperators);
   EXPECT_EQ(76u, Style.IndentWidth);
   EXPECT_EQ(FormatStyle::LK_JavaScript, Style.Language);
 }
-
-#undef CHECK_PARSE
-#undef CHECK_PARSE_BOOL
 
 TEST_F(FormatTest, ConfigurationRoundTripTest) {
   FormatStyle Style = getLLVMStyle();
@@ -7716,16 +7755,26 @@ TEST_F(FormatTest, FormatsWithWebKitStyle) {
                "    : aaaaaaaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaaaa)\n"
                "    , aaaaaaaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaa, // break\n"
                "                               aaaaaaaaaaaaaa)\n"
-               "    , aaaaaaaaaaaaaaaaaaaaaaa() {}",
-               Style);
-  verifyFormat("SomeClass::Constructor()\n"
-               "    : a(a) {}",
+               "    , aaaaaaaaaaaaaaaaaaaaaaa()\n"
+               "{\n"
+               "}",
                Style);
   verifyFormat("SomeClass::Constructor()\n"
                "    : a(a)\n"
-               "    , b(b)\n"
-               "    , c(c) {}",
+               "{\n"
+               "}",
                Style);
+  EXPECT_EQ("SomeClass::Constructor()\n"
+            "    : a(a)\n"
+            "{\n"
+            "}",
+            format("SomeClass::Constructor():a(a){}", Style));
+  verifyFormat("SomeClass::Constructor()\n"
+               "    : a(a)\n"
+               "    , b(b)\n"
+               "    , c(c)\n"
+               "{\n"
+               "}", Style);
   verifyFormat("SomeClass::Constructor()\n"
                "    : a(a)\n"
                "{\n"
@@ -7816,6 +7865,49 @@ TEST_F(FormatTest, FormatsBlocks) {
   verifyFormat("[operation setCompletionBlock:^{ [self onOperationDone]; }];");
   verifyFormat("int i = {[operation setCompletionBlock : ^{ [self "
                "onOperationDone]; }] };");
+  verifyFormat("[operation setCompletionBlock:^(int *i) { f(); }];");
+
+  verifyFormat("[operation setCompletionBlock:^{\n"
+               "    [self.delegate newDataAvailable];\n"
+               "}];",
+               getLLVMStyleWithColumns(60));
+  verifyFormat("dispatch_async(_fileIOQueue, ^{\n"
+               "    NSString *path = [self sessionFilePath];\n"
+               "    if (path) {\n"
+               "      // ...\n"
+               "    }\n"
+               "});");
+  verifyFormat("[[SessionService sharedService]\n"
+               "    loadWindowWithCompletionBlock:^(SessionWindow *window) {\n"
+               "        if (window) {\n"
+               "          [self windowDidLoad:window];\n"
+               "        } else {\n"
+               "          [self errorLoadingWindow];\n"
+               "        }\n"
+               "    }];");
+  verifyFormat("void (^largeBlock)(void) = ^{\n"
+               "    // ...\n"
+               "};\n",
+               getLLVMStyleWithColumns(40));
+  verifyFormat("[[SessionService sharedService]\n"
+               "    loadWindowWithCompletionBlock: //\n"
+               "        ^(SessionWindow *window) {\n"
+               "            if (window) {\n"
+               "              [self windowDidLoad:window];\n"
+               "            } else {\n"
+               "              [self errorLoadingWindow];\n"
+               "            }\n"
+               "        }];",
+               getLLVMStyleWithColumns(60));
+  verifyFormat("[myObject doSomethingWith:arg1\n"
+               "    firstBlock:^(Foo *a) {\n"
+               "        // ...\n"
+               "        int i;\n"
+               "    }\n"
+               "    secondBlock:^(Bar *b) {\n"
+               "        // ...\n"
+               "        int i;\n"
+               "    }];");
 }
 
 TEST_F(FormatTest, SupportsCRLF) {

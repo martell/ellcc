@@ -21,7 +21,6 @@
 #include "sanitizer_common/sanitizer_stacktrace.h"
 #include "sanitizer_common/sanitizer_symbolizer.h"
 
-#include "interception/interception.h"
 
 // ACHTUNG! No system header includes in this file.
 
@@ -301,12 +300,7 @@ void __msan_init() {
     Die();
   }
 
-  const char *external_symbolizer = common_flags()->external_symbolizer_path;
-  bool external_symbolizer_started =
-      Symbolizer::Init(external_symbolizer)->IsExternalAvailable();
-  if (external_symbolizer && external_symbolizer[0]) {
-    CHECK(external_symbolizer_started);
-  }
+  Symbolizer::Init(common_flags()->external_symbolizer_path);
   Symbolizer::Get()->AddHooks(EnterSymbolizer, ExitSymbolizer);
 
   GetThreadStackAndTls(/* main */ true, &msan_stack_bounds.stack_addr,

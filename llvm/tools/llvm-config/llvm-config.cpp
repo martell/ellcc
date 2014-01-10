@@ -147,7 +147,7 @@ Options:\n\
   --cflags          C compiler flags for files that include LLVM headers.\n\
   --cxxflags        C++ compiler flags for files that include LLVM headers.\n\
   --ldflags         Print Linker flags.\n\
-  --system-libs     Sytem Libraries needed to link against LLVM components.\n\
+  --system-libs     System Libraries needed to link against LLVM components.\n\
   --libs            Libraries needed to link against LLVM components.\n\
   --libnames        Bare library names for in-tree builds.\n\
   --libfiles        Fully qualified library filenames for makefile depends.\n\
@@ -202,7 +202,7 @@ int main(int argc, char **argv) {
   // Check to see if we are inside a development tree by comparing to possible
   // locations (prefix style or CMake style).
   if (sys::fs::equivalent(CurrentExecPrefix,
-                          Twine(LLVM_OBJ_ROOT) + "/" + LLVM_BUILDMODE)) {
+                          Twine(LLVM_OBJ_ROOT) + "/" + build_mode)) {
     IsInDevelopmentTree = true;
     DevelopmentTreeLayout = MakefileStyle;
 
@@ -240,8 +240,9 @@ int main(int argc, char **argv) {
     // layout.
     switch (DevelopmentTreeLayout) {
     case MakefileStyle:
-      ActiveBinDir = ActiveObjRoot + "/" + LLVM_BUILDMODE + "/bin";
-      ActiveLibDir = ActiveObjRoot + "/" + LLVM_BUILDMODE + "/lib";
+      ActivePrefix = ActiveObjRoot;
+      ActiveBinDir = ActiveObjRoot + "/" + build_mode + "/bin";
+      ActiveLibDir = ActiveObjRoot + "/" + build_mode + "/lib";
       break;
     case CMakeStyle:
       ActiveBinDir = ActiveObjRoot + "/bin";

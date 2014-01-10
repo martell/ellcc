@@ -293,15 +293,15 @@ template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_void
 
 // __is_nullptr_t
 
-template <class _Tp> struct ____is_nullptr_t       : public false_type {};
-template <>          struct ____is_nullptr_t<nullptr_t> : public true_type {};
+template <class _Tp> struct __is_nullptr_t_impl       : public false_type {};
+template <>          struct __is_nullptr_t_impl<nullptr_t> : public true_type {};
 
 template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY __is_nullptr_t
-    : public ____is_nullptr_t<typename remove_cv<_Tp>::type> {};
+    : public __is_nullptr_t_impl<typename remove_cv<_Tp>::type> {};
 
 #if _LIBCPP_STD_VER > 11
 template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_null_pointer
-    : public ____is_nullptr_t<typename remove_cv<_Tp>::type> {};
+    : public __is_nullptr_t_impl<typename remove_cv<_Tp>::type> {};
 #endif
 
 // is_integral
@@ -644,13 +644,13 @@ template <class _Tp> using add_pointer_t = typename add_pointer<_Tp>::type;
 // is_signed
 
 template <class _Tp, bool = is_integral<_Tp>::value>
-struct ___is_signed : public integral_constant<bool, _Tp(-1) < _Tp(0)> {};
+struct __is_signed_impl : public integral_constant<bool, _Tp(-1) < _Tp(0)> {};
 
 template <class _Tp>
-struct ___is_signed<_Tp, false> : public true_type {};  // floating point
+struct __is_signed_impl<_Tp, false> : public true_type {};  // floating point
 
 template <class _Tp, bool = is_arithmetic<_Tp>::value>
-struct __is_signed : public ___is_signed<_Tp> {};
+struct __is_signed : public __is_signed_impl<_Tp> {};
 
 template <class _Tp> struct __is_signed<_Tp, false> : public false_type {};
 
@@ -659,13 +659,13 @@ template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_signed : public __is_signed
 // is_unsigned
 
 template <class _Tp, bool = is_integral<_Tp>::value>
-struct ___is_unsigned : public integral_constant<bool, _Tp(0) < _Tp(-1)> {};
+struct __is_unsigned_impl : public integral_constant<bool, _Tp(0) < _Tp(-1)> {};
 
 template <class _Tp>
-struct ___is_unsigned<_Tp, false> : public false_type {};  // floating point
+struct __is_unsigned_impl<_Tp, false> : public false_type {};  // floating point
 
 template <class _Tp, bool = is_arithmetic<_Tp>::value>
-struct __is_unsigned : public ___is_unsigned<_Tp> {};
+struct __is_unsigned : public __is_unsigned_impl<_Tp> {};
 
 template <class _Tp> struct __is_unsigned<_Tp, false> : public false_type {};
 
@@ -1151,13 +1151,41 @@ template <size_t _Len, class ..._Types> using aligned_union_t = typename aligned
 
 #endif  // _LIBCPP_HAS_NO_VARIADICS
 
+template <class _Tp>
+struct __numeric_type
+{
+   static void __test(...);
+   static float __test(float);
+   static double __test(char);
+   static double __test(int);
+   static double __test(unsigned);
+   static double __test(long);
+   static double __test(unsigned long);
+   static double __test(long long);
+   static double __test(unsigned long long);
+   static double __test(double);
+   static long double __test(long double);
+
+   typedef decltype(__test(declval<_Tp>())) type;
+   static const bool value = !is_same<type, void>::value;
+};
+
+template <>
+struct __numeric_type<void>
+{
+   static const bool value = true;
+};
+
 // __promote
 
 template <class _A1, class _A2 = void, class _A3 = void,
-          bool = (is_arithmetic<_A1>::value || is_void<_A1>::value) &&
-                 (is_arithmetic<_A2>::value || is_void<_A2>::value) &&
-                 (is_arithmetic<_A3>::value || is_void<_A3>::value)>
-class __promote {};
+          bool = __numeric_type<_A1>::value &&
+                 __numeric_type<_A2>::value &&
+                 __numeric_type<_A3>::value>
+class __promote
+{
+    static const bool value = false;
+};
 
 template <class _A1, class _A2, class _A3>
 class __promote<_A1, _A2, _A3, true>
@@ -1168,6 +1196,7 @@ private:
     typedef typename __promote<_A3>::type __type3;
 public:
     typedef decltype(__type1() + __type2() + __type3()) type;
+    static const bool value = true;
 };
 
 template <class _A1, class _A2>
@@ -1178,16 +1207,16 @@ private:
     typedef typename __promote<_A2>::type __type2;
 public:
     typedef decltype(__type1() + __type2()) type;
+    static const bool value = true;
 };
 
 template <class _A1>
 class __promote<_A1, void, void, true>
 {
 public:
-    typedef typename conditional<is_arithmetic<_A1>::value,
-                     typename conditional<is_integral<_A1>::value, double, _A1>::type,
-                     void
-            >::type type;
+    typedef typename __numeric_type<_A1>::type type;
+    static const bool value = true;
+    static const bool __does_not_throw = _NOEXCEPT_OR_FALSE(static_cast<type>(declval<_A1>()));
 };
 
 #ifdef _LIBCPP_STORE_AS_OPTIMIZATION

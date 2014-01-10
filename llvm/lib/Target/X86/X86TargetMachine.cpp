@@ -34,6 +34,7 @@ static std::string computeDataLayout(const X86Subtarget &ST) {
   // X86 is little endian
   std::string Ret = "e";
 
+  Ret += DataLayout::getManglingComponent(ST.getTargetTriple());
   // X86 and x32 have 32 bit pointers.
   if (ST.isTarget64BitILP32() || !ST.is64Bit())
     Ret += "-p:32:32";
@@ -52,10 +53,6 @@ static std::string computeDataLayout(const X86Subtarget &ST) {
     Ret += "-f80:128";
   else
     Ret += "-f80:32";
-
-  // Objects on the stack ore aligned to 64 bits.
-  if (ST.is64Bit())
-    Ret += "-s:64";
 
   // The registers can hold 8, 16, 32 or, in x86-64, 64 bits.
   if (ST.is64Bit())
