@@ -31,6 +31,11 @@ extern "C" {
 #define st_mtimespec st_mtim
 #define st_ctimespec st_ctim
 #define S_BLKSIZE 512
+#define S_ISTXT 0
+#define S_IFWHT 0
+#undef S_ISWHT
+#define S_ISWHT(x) 0
+
 #endif
 
 #define S_IFMT  0170000
@@ -72,6 +77,12 @@ extern "C" {
 #define S_IWOTH 0002
 #define S_IXOTH 0001
 #define S_IRWXO 0007
+#endif
+
+#if defined(_BSD_SOURCE)
+#define ACCESSPERMS (S_IRWXU|S_IRWXG|S_IRWXO)
+#define ALLPERMS (S_ISUID|S_ISGID|S_ISVTX|S_IRWXU|S_IRWXG|S_IRWXO)
+#define DEFFILEMODE (S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH)
 #endif
 
 #define UTIME_NOW  0x3fffffff

@@ -199,7 +199,9 @@ musl.install:
 	  echo Installing libcompiler-rt for $* ; \
 	  mkdir -p ../../../lib/$*/linux ; \
 	  cp $*/libcompiler_rt.a ../../../lib/$*/linux ; \
-          (cd ../../../lib/$*/linux; ln -fs libcompiler_rt.a libgcc.a); \
+          (cd ../../../lib/$*/linux ; \
+	    ln -fs libcompiler_rt.a libgcc.a ; \
+	    ln -fs libncurses.a libterminfo.a); \
 	done
 
 other-libs:

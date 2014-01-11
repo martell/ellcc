@@ -254,7 +254,10 @@ typedef int sig_atomic_t;
 void (*signal(int, void (*)(int)))(int);
 int raise(int);
 
-#ifdef _BSD_SOURCE
+#if defined(_BSD_SOURCE)
+/* Signal names. The is for BSD compatability. Use strsignal() instead. */
+extern const char *_sys_siglist[_NSIG];
+extern const char *sys_siglist[_NSIG];
 extern const char *const *sys_signame;
 #define SIGINFO         SIGUSR1 /* For NetBSD compatability */
 #endif

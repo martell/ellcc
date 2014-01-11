@@ -137,6 +137,11 @@ int dn_comp(unsigned char *, unsigned char *, int, unsigned char **, unsigned ch
 int dn_expand(const unsigned char *, const unsigned char *, const unsigned char *, char *, int);
 int dn_skipname(const unsigned char *, const unsigned char *);
 
+#if defined(_BSD_SOURCE)
+int b64_ntop(u_char const *src, size_t srclength, char *target, size_t targsize);
+int b64_pton(char const *src, u_char *target, size_t targsize);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

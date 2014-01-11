@@ -520,6 +520,9 @@ int eaccess(const char *, int);
 void *setmode(const char *);
 mode_t getmode(const void *, mode_t);
 void strmode(mode_t, char *);
+#include <errno.h>
+static inline int undelete(const char *path)
+    { *__errno_location() = ENOENT; return -1; }
 #endif
 
 #ifdef __cplusplus

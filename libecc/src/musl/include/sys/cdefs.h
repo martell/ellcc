@@ -74,6 +74,24 @@ extern char *program_invocation_short_name;
 #define strtoq strtoll
 #define SIZE_T_MAX SIZE_MAX
 
+#define TIOCGSIZE TIOCGWINSZ
+#define ttysize winsize
+#define ts_cols ws_col
+#define ts_rows ws_row
+#define ts_lines ws_row
+#define INFTIM (-1)
+#define IPPORT_ANONMAX (65536)
+#define EFTYPE EINVAL
+#define GLOB_BRACE 0
+#define GLOB_TILDE 0
+#define MAXLOGNAME LOGIN_NAME_MAX
+#define __mode_t mode_t
+#define MAXNAMLEN 255
+
+#include <stdint.h>
+#include <inttypes.h>
+#include <sys/types.h>
+
 /*
  * The __CONCAT macro is used to concatenate parts of symbol names, e.g.
  * with "#define OLD(foo) __CONCAT(old,foo)", OLD(foo) produces oldfoo.
@@ -91,5 +109,14 @@ extern char *program_invocation_short_name;
 
 #include <sys/sysmacros.h>
 #include <sys/types.h>
+
+#define _PATH_DEFTAPE "/dev/tape"
+#define _PATH_CSHELL "/bin/csh"
+
+#define CTRL(x) ((x)&0x1F)
+
+#define GLOB_BRACE 0
+#define GLOB_TILDE 0
+
 
 #endif /* !_SYS_CDEFS_H_ */

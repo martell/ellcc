@@ -47,6 +47,60 @@ static __inline uint32_t le32dec(void *stream)
         return result;
 }
 
+static __inline void le32enc(void *stream, uint32_t value)
+{
+        ((uint8_t *)stream)[0] = value;
+        ((uint8_t *)stream)[1] = value >> 8;
+        ((uint8_t *)stream)[2] = value >> 16;
+        ((uint8_t *)stream)[3] = value >> 24;
+}
+
+static __inline uint32_t be32dec(void *stream)
+{
+        uint32_t result;
+        result = ((uint8_t *)stream)[0];
+        result = (result << 8 ) | ((uint8_t *)stream)[1];
+        result = (result << 8 ) | ((uint8_t *)stream)[2];
+        result = (result << 8 ) | ((uint8_t *)stream)[3];
+        return result;
+}
+
+static __inline void be32enc(void *stream, uint32_t value)
+{
+        ((uint8_t *)stream)[3] = value;
+        ((uint8_t *)stream)[2] = value >> 8;
+        ((uint8_t *)stream)[1] = value >> 16;
+        ((uint8_t *)stream)[0] = value >> 24;
+}
+
+static __inline uint16_t le16dec(void *stream)
+{
+        uint16_t result;
+        result = ((uint8_t *)stream)[1];
+        result = (result << 8 ) | ((uint8_t *)stream)[0];
+        return result;
+}
+
+static __inline void le16enc(void *stream, uint16_t value)
+{
+        ((uint8_t *)stream)[0] = value;
+        ((uint8_t *)stream)[1] = value >> 8;
+}
+
+static __inline uint16_t be16dec(void *stream)
+{
+        uint16_t result;
+        result = ((uint8_t *)stream)[0];
+        result = (result << 8 ) | ((uint8_t *)stream)[1];
+        return result;
+}
+
+static __inline void be16enc(void *stream, uint16_t value)
+{
+        ((uint8_t *)stream)[1] = value;
+        ((uint8_t *)stream)[0] = value >> 8;
+}
+
 #define bswap32 __bswap32
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN

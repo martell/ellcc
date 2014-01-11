@@ -1,11 +1,18 @@
 #ifndef _ARPA_TFTP_H
 #define _ARPA_TFTP_H
 #define SEGSIZE 512
+#if defined(_BSD_SOURCE)
+#define PKTSIZE (SEGSIZE + 4)
+#define MAXSEGSIZE 65464
+#endif
 #define RRQ 01
 #define WRQ 02
 #define DATA 03
 #define ACK 04
 #define ERROR 05
+#if defined(_BSD_SOURCE)
+#define OACK 06
+#endif
 struct tftphdr {
 	short th_opcode;
 	union {

@@ -28,6 +28,10 @@ struct dirent
 
 #define d_fileno d_ino
 
+#if defined(_BSD_SOURCE)
+#define d_namlen d_reclen
+#endif
+
 int            closedir(DIR *);
 DIR           *fdopendir(int);
 DIR           *opendir(const char *);
