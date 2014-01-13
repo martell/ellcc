@@ -56,7 +56,6 @@ if [ "$host" != "$build" ] ; then
 fi
 
 # Configure for QEMU.
-cd src/qemu
 # The QEMU system targets.
 qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu \
     microblaze-softmmu mips-softmmu mipsel-softmmu \
@@ -69,16 +68,11 @@ if [ `uname` = "Linux" ] ; then
     microblaze-linux-user mips-linux-user mipsel-linux-user \
     ppc-linux-user ppc64-linux-user ppc64abi32-linux-user sparc-linux-user"
 fi
-
 echo Configuring package qemu for $targets
-./configure --cc="$hcc" --host-cc="$hcc" --prefix=$prefix --disable-strip \
-  --target-list="$qemu_target_list" --disable-guest-agent
-if [ $? -ne 0 ] ; then
-  echo configure for qemu failed
-  exit 1
-fi
-make || exit 1
-cd ../..
+qemu_target_list=`echo $qemu_target_list | sed -e "s/ /,/g"`
+make DIR=src/qemu CC=$cc HCC=$hcc AR=$ar TARGET=$host OS=$os \
+    targetlist=$qemu_target_list haslibs=$haslibs \
+    bindir=$bindir prefix=$prefix build=$build \
+    qemu.configure || exit 1
 
-# Finally, install everything.
-make TARGETDIR=$builddir install || exit 1
+make -C src/qemu || exit 1

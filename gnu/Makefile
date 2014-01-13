@@ -93,3 +93,10 @@ gdb.configure:
 	--program-prefix=ecc- --prefix=$(prefix)/lib --bindir=$(bindir) \
 	$(HOST) --datadir=$(prefix)/lib/share --enable-gdbserver=no \
 	--enable-sim=no
+
+qemu.configure:
+	cd $(DIR) ; \
+	./configure --cc="$(CC)" --host-cc="$(HCC)" --extra-cflags="" \
+	--prefix=$(prefix) \
+	--disable-strip --target-list="$(targetlist)" --disable-guest-agent \
+	--disable-tools

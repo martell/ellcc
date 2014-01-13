@@ -101,7 +101,9 @@ static __inline void be16enc(void *stream, uint16_t value)
         ((uint8_t *)stream)[0] = value >> 8;
 }
 
+#if defined(_BSD_SOURCE)
 #define bswap32 __bswap32
+#endif
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 #define htobe16(x) __bswap16(x)
