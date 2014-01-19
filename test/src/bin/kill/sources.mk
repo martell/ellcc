@@ -1,2 +1,2 @@
 ARGS = -l
-STDOUT = grep INT
+STDOUT = grep Interrupt

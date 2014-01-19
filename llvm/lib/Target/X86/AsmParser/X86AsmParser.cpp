@@ -35,12 +35,14 @@ namespace {
 struct X86Operand;
 
 static const char OpPrecedence[] = {
-  0, // IC_PLUS
-  0, // IC_MINUS
-  1, // IC_MULTIPLY
-  1, // IC_DIVIDE
-  2, // IC_RPAREN
-  3, // IC_LPAREN
+  0, // IC_OR
+  1, // IC_AND
+  2, // IC_PLUS
+  2, // IC_MINUS
+  3, // IC_MULTIPLY
+  3, // IC_DIVIDE
+  4, // IC_RPAREN
+  5, // IC_LPAREN
   0, // IC_IMM
   0  // IC_REGISTER
 };
@@ -57,7 +59,9 @@ private:
   }
 
   enum InfixCalculatorTok {
-    IC_PLUS = 0,
+    IC_OR = 0,
+    IC_AND,
+    IC_PLUS,
     IC_MINUS,
     IC_MULTIPLY,
     IC_DIVIDE,
@@ -182,6 +186,18 @@ private:
             Val = Op1.second / Op2.second;
             OperandStack.push_back(std::make_pair(IC_IMM, Val));
             break;
+          case IC_OR:
+            assert (Op1.first == IC_IMM && Op2.first == IC_IMM &&
+                    "Or operation with an immediate and a register!");
+            Val = Op1.second | Op2.second;
+            OperandStack.push_back(std::make_pair(IC_IMM, Val));
+            break;
+          case IC_AND:
+            assert (Op1.first == IC_IMM && Op2.first == IC_IMM &&
+                    "And operation with an immediate and a register!");
+            Val = Op1.second & Op2.second;
+            OperandStack.push_back(std::make_pair(IC_IMM, Val));
+            break;
           }
         }
       }
@@ -191,6 +207,8 @@ private:
   };
 
   enum IntelExprState {
+    IES_OR,
+    IES_AND,
     IES_PLUS,
     IES_MINUS,
     IES_MULTIPLY,
@@ -237,6 +255,36 @@ private:
       return Info;
     }
 
+    void onOr() {
+      IntelExprState CurrState = State;
+      switch (State) {
+      default:
+        State = IES_ERROR;
+        break;
+      case IES_INTEGER:
+      case IES_RPAREN:
+      case IES_REGISTER:
+        State = IES_OR;
+        IC.pushOperator(IC_OR);
+        break;
+      }
+      PrevState = CurrState;
+    }
+    void onAnd() {
+      IntelExprState CurrState = State;
+      switch (State) {
+      default:
+        State = IES_ERROR;
+        break;
+      case IES_INTEGER:
+      case IES_RPAREN:
+      case IES_REGISTER:
+        State = IES_AND;
+        IC.pushOperator(IC_AND);
+        break;
+      }
+      PrevState = CurrState;
+    }
     void onPlus() {
       IntelExprState CurrState = State;
       switch (State) {
@@ -351,6 +399,8 @@ private:
         break;
       case IES_PLUS:
       case IES_MINUS:
+      case IES_OR:
+      case IES_AND:
       case IES_DIVIDE:
       case IES_MULTIPLY:
       case IES_LPAREN:
@@ -363,6 +413,7 @@ private:
           // Get the scale and replace the 'Register * Scale' with '0'.
           IC.popOperator();
         } else if ((PrevState == IES_PLUS || PrevState == IES_MINUS ||
+                    PrevState == IES_OR || PrevState == IES_AND ||
                     PrevState == IES_MULTIPLY || PrevState == IES_DIVIDE ||
                     PrevState == IES_LPAREN || PrevState == IES_LBRAC) &&
                    CurrState == IES_MINUS) {
@@ -448,11 +499,14 @@ private:
         break;
       case IES_PLUS:
       case IES_MINUS:
+      case IES_OR:
+      case IES_AND:
       case IES_MULTIPLY:
       case IES_DIVIDE:
       case IES_LPAREN:
         // FIXME: We don't handle this type of unary minus, yet.
         if ((PrevState == IES_PLUS || PrevState == IES_MINUS ||
+            PrevState == IES_OR || PrevState == IES_AND ||
             PrevState == IES_MULTIPLY || PrevState == IES_DIVIDE ||
             PrevState == IES_LPAREN || PrevState == IES_LBRAC) &&
             CurrState == IES_MINUS) {
@@ -869,19 +923,19 @@ struct X86Operand : public MCParsedAsmOperand {
   }
 
   bool isMemOffs8() const {
-    return Kind == Memory && !getMemSegReg() && !getMemBaseReg() &&
+    return Kind == Memory && !getMemBaseReg() &&
       !getMemIndexReg() && getMemScale() == 1 && (!Mem.Size || Mem.Size == 8);
   }
   bool isMemOffs16() const {
-    return Kind == Memory && !getMemSegReg() && !getMemBaseReg() &&
+    return Kind == Memory && !getMemBaseReg() &&
       !getMemIndexReg() && getMemScale() == 1 && (!Mem.Size || Mem.Size == 16);
   }
   bool isMemOffs32() const {
-    return Kind == Memory && !getMemSegReg() && !getMemBaseReg() &&
+    return Kind == Memory && !getMemBaseReg() &&
       !getMemIndexReg() && getMemScale() == 1 && (!Mem.Size || Mem.Size == 32);
   }
   bool isMemOffs64() const {
-    return Kind == Memory && !getMemSegReg() && !getMemBaseReg() &&
+    return Kind == Memory && !getMemBaseReg() &&
       !getMemIndexReg() && getMemScale() == 1 && (!Mem.Size || Mem.Size == 64);
   }
 
@@ -961,12 +1015,13 @@ struct X86Operand : public MCParsedAsmOperand {
   }
 
   void addMemOffsOperands(MCInst &Inst, unsigned N) const {
-    assert((N == 1) && "Invalid number of operands!");
+    assert((N == 2) && "Invalid number of operands!");
     // Add as immediates when possible.
     if (const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getMemDisp()))
       Inst.addOperand(MCOperand::CreateImm(CE->getValue()));
     else
       Inst.addOperand(MCOperand::CreateExpr(getMemDisp()));
+    Inst.addOperand(MCOperand::CreateReg(getMemSegReg()));
   }
 
   static X86Operand *CreateToken(StringRef Str, SMLoc Loc) {
@@ -1191,6 +1246,8 @@ static unsigned getIntelMemOperandSize(StringRef OpStr) {
     .Cases("XWORD", "xword", 80)
     .Cases("XMMWORD", "xmmword", 128)
     .Cases("YMMWORD", "ymmword", 256)
+    .Cases("ZMMWORD", "zmmword", 512)
+    .Cases("OPAQUE", "opaque", -1U) // needs to be non-zero, but doesn't matter
     .Default(0);
   return Size;
 }
@@ -1379,6 +1436,8 @@ bool X86AsmParser::ParseIntelExpression(IntelExprStateMachine &SM, SMLoc &End) {
     case AsmToken::Minus:   SM.onMinus(); break;
     case AsmToken::Star:    SM.onStar(); break;
     case AsmToken::Slash:   SM.onDivide(); break;
+    case AsmToken::Pipe:    SM.onOr(); break;
+    case AsmToken::Amp:     SM.onAnd(); break;
     case AsmToken::LBrac:   SM.onLBrac(); break;
     case AsmToken::RBrac:   SM.onRBrac(); break;
     case AsmToken::LParen:  SM.onLParen(); break;
@@ -1853,10 +1912,11 @@ X86Operand *X86AsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
   // If we reached here, then we just ate the ( of the memory operand.  Process
   // the rest of the memory operand.
   unsigned BaseReg = 0, IndexReg = 0, Scale = 1;
-  SMLoc IndexLoc;
+  SMLoc IndexLoc, BaseLoc;
 
   if (getLexer().is(AsmToken::Percent)) {
     SMLoc StartLoc, EndLoc;
+    BaseLoc = Parser.getTok().getLoc();
     if (ParseRegister(BaseReg, StartLoc, EndLoc)) return 0;
     if (BaseReg == X86::EIZ || BaseReg == X86::RIZ) {
       Error(StartLoc, "eiz and riz can only be used as index registers",
@@ -1899,6 +1959,11 @@ X86Operand *X86AsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
           }
 
           // Validate the scale amount.
+	  if (X86MCRegisterClasses[X86::GR16RegClassID].contains(BaseReg) &&
+              ScaleVal != 1) {
+            Error(Loc, "scale factor in 16-bit address must be 1");
+            return 0;
+	  }
           if (ScaleVal != 1 && ScaleVal != 2 && ScaleVal != 4 && ScaleVal != 8){
             Error(Loc, "scale factor in address must be 1, 2, 4 or 8");
             return 0;
@@ -1929,6 +1994,21 @@ X86Operand *X86AsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
   SMLoc MemEnd = Parser.getTok().getEndLoc();
   Parser.Lex(); // Eat the ')'.
 
+  // Check for use of invalid 16-bit registers. Only BX/BP/SI/DI are allowed,
+  // and then only in non-64-bit modes. Except for DX, which is a special case
+  // because an unofficial form of in/out instructions uses it.
+  if (X86MCRegisterClasses[X86::GR16RegClassID].contains(BaseReg) &&
+      (is64BitMode() || (BaseReg != X86::BX && BaseReg != X86::BP &&
+                         BaseReg != X86::SI && BaseReg != X86::DI)) &&
+      BaseReg != X86::DX) {
+    Error(BaseLoc, "invalid 16-bit base register");
+    return 0;
+  }
+  if (BaseReg == 0 &&
+      X86MCRegisterClasses[X86::GR16RegClassID].contains(IndexReg)) {
+    Error(IndexLoc, "16-bit memory operand may not include only index register");
+    return 0;
+  }
   // If we have both a base register and an index register make sure they are
   // both 64-bit or 32-bit registers.
   // To support VSIB, IndexReg can be 128-bit or 256-bit registers.
@@ -1937,15 +2017,29 @@ X86Operand *X86AsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
         (X86MCRegisterClasses[X86::GR16RegClassID].contains(IndexReg) ||
          X86MCRegisterClasses[X86::GR32RegClassID].contains(IndexReg)) &&
         IndexReg != X86::RIZ) {
-      Error(IndexLoc, "index register is 32-bit, but base register is 64-bit");
+      Error(BaseLoc, "base register is 64-bit, but index register is not");
       return 0;
     }
     if (X86MCRegisterClasses[X86::GR32RegClassID].contains(BaseReg) &&
         (X86MCRegisterClasses[X86::GR16RegClassID].contains(IndexReg) ||
          X86MCRegisterClasses[X86::GR64RegClassID].contains(IndexReg)) &&
         IndexReg != X86::EIZ){
-      Error(IndexLoc, "index register is 64-bit, but base register is 32-bit");
+      Error(BaseLoc, "base register is 32-bit, but index register is not");
       return 0;
+    }
+    if (X86MCRegisterClasses[X86::GR16RegClassID].contains(BaseReg)) {
+      if (X86MCRegisterClasses[X86::GR32RegClassID].contains(IndexReg) ||
+          X86MCRegisterClasses[X86::GR64RegClassID].contains(IndexReg)) {
+        Error(BaseLoc, "base register is 16-bit, but index register is not");
+        return 0;
+      }
+      if (((BaseReg == X86::BX || BaseReg == X86::BP) &&
+           IndexReg != X86::SI && IndexReg != X86::DI) ||
+          ((BaseReg == X86::SI || BaseReg == X86::DI) &&
+           IndexReg != X86::BX && IndexReg != X86::BP)) {
+        Error(BaseLoc, "invalid 16-bit base/index register combination");
+        return 0;
+      }
     }
   }
 
@@ -2658,11 +2752,9 @@ bool X86AsmParser::ParseDirective(AsmToken DirectiveID) {
   } else if (IDVal.startswith(".intel_syntax")) {
     getParser().setAssemblerDialect(1);
     if (getLexer().isNot(AsmToken::EndOfStatement)) {
-      if(Parser.getTok().getString() == "noprefix") {
-        // FIXME : Handle noprefix
+      // FIXME: Handle noprefix
+      if (Parser.getTok().getString() == "noprefix")
         Parser.Lex();
-      } else
-        return true;
     }
     return false;
   }
@@ -2676,7 +2768,7 @@ bool X86AsmParser::ParseDirectiveWord(unsigned Size, SMLoc L) {
     for (;;) {
       const MCExpr *Value;
       if (getParser().parseExpression(Value))
-        return true;
+        return false;
 
       getParser().getStreamer().EmitValue(Value, Size);
 
@@ -2684,8 +2776,10 @@ bool X86AsmParser::ParseDirectiveWord(unsigned Size, SMLoc L) {
         break;
 
       // FIXME: Improve diagnostic.
-      if (getLexer().isNot(AsmToken::Comma))
-        return Error(L, "unexpected token in directive");
+      if (getLexer().isNot(AsmToken::Comma)) {
+        Error(L, "unexpected token in directive");
+        return false;
+      }
       Parser.Lex();
     }
   }
@@ -2703,7 +2797,7 @@ bool X86AsmParser::ParseDirectiveCode(StringRef IDVal, SMLoc L) {
       SwitchMode(X86::Mode16Bit);
       getParser().getStreamer().EmitAssemblerFlag(MCAF_Code16);
     }
-  } else  if (IDVal == ".code32") {
+  } else if (IDVal == ".code32") {
     Parser.Lex();
     if (!is32BitMode()) {
       SwitchMode(X86::Mode32Bit);
@@ -2716,7 +2810,8 @@ bool X86AsmParser::ParseDirectiveCode(StringRef IDVal, SMLoc L) {
       getParser().getStreamer().EmitAssemblerFlag(MCAF_Code64);
     }
   } else {
-    return Error(L, "unexpected directive " + IDVal);
+    Error(L, "unknown directive " + IDVal);
+    return false;
   }
 
   return false;

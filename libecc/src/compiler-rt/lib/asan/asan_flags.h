@@ -32,9 +32,11 @@ struct Flags {
   // Lower value may reduce memory usage but increase the chance of
   // false negatives.
   int  quarantine_size;
-  // Size (in bytes) of redzones around heap objects.
-  // Requirement: redzone >= 32, is a power of two.
+  // Minimal size (in bytes) of redzones around heap objects.
+  // Requirement: redzone >= 16, is a power of two.
   int  redzone;
+  // Maximal size (in bytes) of redzones around heap objects.
+  int  max_redzone;
   // If set, prints some debugging information and does additional checks.
   bool debug;
   // Controls the way to handle globals (0 - don't detect buffer overflow
@@ -113,6 +115,11 @@ struct Flags {
   // If true, assume that dynamic initializers can never access globals from
   // other modules, even if the latter are already initialized.
   bool strict_init_order;
+  // If true, ASan tweaks a bunch of other flags (quarantine, redzone, heap
+  // poisoning) to reduce memory consumption as much as possible, and restores
+  // them to original values when the first instrumented module is loaded into
+  // the process. This is mainly intended to be used on Android.
+  bool start_deactivated;
 };
 
 extern Flags asan_flags_dont_use_directly;

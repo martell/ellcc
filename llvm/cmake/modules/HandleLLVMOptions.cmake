@@ -14,6 +14,38 @@ elseif( "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" )
   set(LLVM_COMPILER_IS_GCC_COMPATIBLE ON)
 endif()
 
+if(NOT LLVM_FORCE_USE_OLD_TOOLCHAIN)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.7)
+      message(FATAL_ERROR "Host GCC version must be at least 4.7!")
+    endif()
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.1)
+      message(FATAL_ERROR "Host Clang version must be at least 3.1!")
+    endif()
+
+    # Also test that we aren't using too old of a version of libstdc++ with the
+    # Clang compiler. This is tricky as there is no real way to check the
+    # version of libstdc++ directly. Instead we test for a known bug in
+    # libstdc++4.6 that is fixed in libstdc++4.7.
+    if(NOT LLVM_ENABLE_LIBCXX)
+      set(CMAKE_REQUIRED_FLAGS "-std=c++0x")
+      check_cxx_source_compiles("
+#include <atomic>
+std::atomic<float> x(0.0f);
+int main() { return (float)x; }"
+        LLVM_NO_OLD_LIBSTDCXX)
+      if(NOT LLVM_NO_OLD_LIBSTDCXX)
+        message(FATAL_ERROR "Host Clang must be able to find libstdc++4.7 or newer!")
+      endif()
+    endif()
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 17.0)
+      message(FATAL_ERROR "Host Visual Studio must be at least 2012 (MSVC 17.0)")
+    endif()
+  endif()
+endif()
+
 if( LLVM_ENABLE_ASSERTIONS )
   # MSVC doesn't like _DEBUG on release builds. See PR 4379.
   if( NOT MSVC )
@@ -49,8 +81,6 @@ if(WIN32)
     set(LLVM_ON_WIN32 1)
     set(LLVM_ON_UNIX 0)
   endif(CYGWIN)
-  set(LTDL_SHLIB_EXT ".dll")
-  set(EXEEXT ".exe")
   # Maximum path length is 160 for non-unicode paths
   set(MAXPATHLEN 160)
 else(WIN32)
@@ -59,18 +89,19 @@ else(WIN32)
     set(LLVM_ON_UNIX 1)
     if(APPLE)
       set(LLVM_HAVE_LINK_VERSION_SCRIPT 0)
-      set(LTDL_SHLIB_EXT ".dylib")
     else(APPLE)
       set(LLVM_HAVE_LINK_VERSION_SCRIPT 1)
-      set(LTDL_SHLIB_EXT ".so")
     endif(APPLE)
-    set(EXEEXT "")
     # FIXME: Maximum path length is currently set to 'safe' fixed value
     set(MAXPATHLEN 2024)
   else(UNIX)
     MESSAGE(SEND_ERROR "Unable to determine platform")
   endif(UNIX)
 endif(WIN32)
+
+set(EXEEXT ${CMAKE_EXECUTABLE_SUFFIX})
+set(LTDL_SHLIB_EXT ${CMAKE_SHARED_LIBRARY_SUFFIX})
+set(LLVM_PLUGIN_EXT ${CMAKE_SHARED_MODULE_SUFFIX})
 
 function(add_flag_or_print_warning flag)
   check_c_compiler_flag(${flag} C_SUPPORTS_FLAG)

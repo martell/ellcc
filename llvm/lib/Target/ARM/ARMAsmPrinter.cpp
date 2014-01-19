@@ -35,7 +35,6 @@
 #include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
-#include "llvm/IR/Writer.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCContext.h"
@@ -617,7 +616,7 @@ static ARMBuildAttrs::CPUArch getArchForCPU(StringRef CPU,
 }
 
 void ARMAsmPrinter::emitAttributes() {
-  MCTargetStreamer &TS = OutStreamer.getTargetStreamer();
+  MCTargetStreamer &TS = *OutStreamer.getTargetStreamer();
   ARMTargetStreamer &ATS = static_cast<ARMTargetStreamer &>(TS);
 
   ATS.switchVendor("aeabi");
@@ -631,15 +630,19 @@ void ARMAsmPrinter::emitAttributes() {
   ATS.emitAttribute(ARMBuildAttrs::CPU_arch,
                     getArchForCPU(CPUString, Subtarget));
 
-  if (Subtarget->isAClass()) {
-    ATS.emitAttribute(ARMBuildAttrs::CPU_arch_profile,
-                      ARMBuildAttrs::ApplicationProfile);
-  } else if (Subtarget->isRClass()) {
-    ATS.emitAttribute(ARMBuildAttrs::CPU_arch_profile,
-                      ARMBuildAttrs::RealTimeProfile);
-  } else if (Subtarget->isMClass()){
-    ATS.emitAttribute(ARMBuildAttrs::CPU_arch_profile,
-                      ARMBuildAttrs::MicroControllerProfile);
+  // Tag_CPU_arch_profile must have the default value of 0 when "Architecture
+  // profile is not applicable (e.g. pre v7, or cross-profile code)". 
+  if (Subtarget->hasV7Ops()) {
+    if (Subtarget->isAClass()) {
+      ATS.emitAttribute(ARMBuildAttrs::CPU_arch_profile,
+                        ARMBuildAttrs::ApplicationProfile);
+    } else if (Subtarget->isRClass()) {
+      ATS.emitAttribute(ARMBuildAttrs::CPU_arch_profile,
+                        ARMBuildAttrs::RealTimeProfile);
+    } else if (Subtarget->isMClass()) {
+      ATS.emitAttribute(ARMBuildAttrs::CPU_arch_profile,
+                        ARMBuildAttrs::MicroControllerProfile);
+    }
   }
 
   ATS.emitAttribute(ARMBuildAttrs::ARM_ISA_use, Subtarget->hasARMOps() ?
@@ -980,7 +983,7 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
   assert(MI->getFlag(MachineInstr::FrameSetup) &&
       "Only instruction which are involved into frame setup code are allowed");
 
-  MCTargetStreamer &TS = OutStreamer.getTargetStreamer();
+  MCTargetStreamer &TS = *OutStreamer.getTargetStreamer();
   ARMTargetStreamer &ATS = static_cast<ARMTargetStreamer &>(TS);
   const MachineFunction &MF = *MI->getParent()->getParent();
   const TargetRegisterInfo *RegInfo = MF.getTarget().getRegisterInfo();

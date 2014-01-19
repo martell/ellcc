@@ -426,6 +426,16 @@ Instruction *InstCombiner::visitFMul(BinaryOperator &I) {
         return NV;
 
     ConstantFP *C = dyn_cast<ConstantFP>(Op1);
+
+    // (fmul X, -1.0) --> (fsub -0.0, X)
+    if (C && C->isExactlyValue(-1.0)) {
+      Instruction *RI = BinaryOperator::CreateFSub(
+        ConstantFP::getNegativeZero(C->getType()),
+        Op0);
+      RI->copyFastMathFlags(&I);
+      return RI;
+    }
+
     if (C && AllowReassociate && C->getValueAPF().isFiniteNonZero()) {
       // Let MDC denote an expression in one of these forms:
       // X * C, C/X, X/C, where C is a constant.
@@ -515,8 +525,11 @@ Instruction *InstCombiner::visitFMul(BinaryOperator &I) {
       Value *N1 = dyn_castFNegVal(Opnd1, IgnoreZeroSign);
 
       // -X * -Y => X*Y
-      if (N1)
-        return BinaryOperator::CreateFMul(N0, N1);
+      if (N1) {
+        Value *FMul = Builder->CreateFMul(N0, N1);
+        FMul->takeName(&I);
+        return ReplaceInstUsesWith(I, FMul);
+      }
 
       if (Opnd0->hasOneUse()) {
         // -X * Y => -(X*Y) (Promote negation as high as possible)
@@ -1037,8 +1050,10 @@ Instruction *InstCombiner::visitFDiv(BinaryOperator &I) {
     }
 
     // X / C => X * 1/C
-    if (Instruction *T = CvtFDivConstToReciprocal(Op0, Op1C, AllowReciprocal))
+    if (Instruction *T = CvtFDivConstToReciprocal(Op0, Op1C, AllowReciprocal)) {
+      T->copyFastMathFlags(&I);
       return T;
+    }
 
     return 0;
   }

@@ -17,7 +17,6 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
-#include "llvm/MC/MCContext.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
@@ -82,7 +81,9 @@ void Mangler::getNameWithPrefix(SmallVectorImpl<char> &OutName,
     PrefixTy = Mangler::Private;
   else if (GV->hasLinkerPrivateLinkage() || GV->hasLinkerPrivateWeakLinkage())
     PrefixTy = Mangler::LinkerPrivate;
-  
+
+  size_t NameBegin = OutName.size();
+
   // If this global has a name, handle it simply.
   if (GV->hasName()) {
     StringRef Name = GV->getName();
@@ -107,13 +108,10 @@ void Mangler::getNameWithPrefix(SmallVectorImpl<char> &OutName,
     if (const Function *F = dyn_cast<Function>(GV)) {
       CallingConv::ID CC = F->getCallingConv();
     
-      // fastcall functions need to start with @.
-      // FIXME: This logic seems unlikely to be right.
+      // fastcall functions need to start with @ instead of _.
       if (CC == CallingConv::X86_FastCall) {
-        if (OutName[0] == '_')
-          OutName[0] = '@';
-        else
-          OutName.insert(OutName.begin(), '@');
+        assert(OutName[NameBegin] == '_' && DL->getGlobalPrefix() == '_');
+        OutName[NameBegin] = '@';
       }
     
       // fastcall and stdcall functions usually need @42 at the end to specify

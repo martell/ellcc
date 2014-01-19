@@ -323,15 +323,21 @@ static void SimplifyShortMoveForm(X86AsmPrinter &Printer, MCInst &Inst,
   if (Absolute &&
       (Inst.getOperand(AddrBase + 0).getReg() != 0 ||
        Inst.getOperand(AddrBase + 2).getReg() != 0 ||
-       Inst.getOperand(AddrBase + 4).getReg() != 0 ||
        Inst.getOperand(AddrBase + 1).getImm() != 1))
     return;
 
   // If so, rewrite the instruction.
   MCOperand Saved = Inst.getOperand(AddrOp);
+  MCOperand Seg = Inst.getOperand(AddrBase + 4);
   Inst = MCInst();
   Inst.setOpcode(Opcode);
   Inst.addOperand(Saved);
+  Inst.addOperand(Seg);
+}
+
+static unsigned getRetOpcode(const X86Subtarget &Subtarget)
+{
+	return Subtarget.is64Bit() ? X86::RETQ : X86::RETL;
 }
 
 void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
@@ -462,7 +468,7 @@ ReSimplify:
   case X86::EH_RETURN:
   case X86::EH_RETURN64: {
     OutMI = MCInst();
-    OutMI.setOpcode(X86::RET);
+    OutMI.setOpcode(getRetOpcode(AsmPrinter.getSubtarget()));
     break;
   }
 
@@ -777,8 +783,7 @@ void X86AsmPrinter::EmitInstruction(const MachineInstr *MI) {
 
   // Emit nothing here but a comment if we can.
   case X86::Int_MemBarrier:
-    if (OutStreamer.hasRawTextSupport())
-      OutStreamer.EmitRawText(StringRef("\t#MEMBARRIER"));
+    OutStreamer.emitRawComment("MEMBARRIER");
     return;
 
 
@@ -866,12 +871,12 @@ void X86AsmPrinter::EmitInstruction(const MachineInstr *MI) {
     return LowerPATCHPOINT(OutStreamer, SM, *MI, Subtarget->is64Bit());
 
   case X86::MORESTACK_RET:
-    OutStreamer.EmitInstruction(MCInstBuilder(X86::RET));
+    OutStreamer.EmitInstruction(MCInstBuilder(getRetOpcode(*Subtarget)));
     return;
 
   case X86::MORESTACK_RET_RESTORE_R10:
     // Return, then restore R10.
-    OutStreamer.EmitInstruction(MCInstBuilder(X86::RET));
+    OutStreamer.EmitInstruction(MCInstBuilder(getRetOpcode(*Subtarget)));
     OutStreamer.EmitInstruction(MCInstBuilder(X86::MOV64rr)
       .addReg(X86::R10)
       .addReg(X86::RAX));

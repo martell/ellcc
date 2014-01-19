@@ -38,7 +38,6 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/Writer.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
@@ -770,7 +769,7 @@ bool PPCLinuxAsmPrinter::doFinalization(Module &M) {
   bool isPPC64 = TD->getPointerSizeInBits() == 64;
 
   PPCTargetStreamer &TS =
-      static_cast<PPCTargetStreamer &>(OutStreamer.getTargetStreamer());
+      static_cast<PPCTargetStreamer &>(*OutStreamer.getTargetStreamer());
 
   if (isPPC64 && !TOC.empty()) {
     const MCSectionELF *Section = OutStreamer.getContext().getELFSection(".toc",

@@ -101,10 +101,6 @@ namespace llvm {
     /// instructions from each other when on the same line.
     const char *SeparatorString;             // Defaults to ';'
 
-    /// CommentColumn - This indicates the comment num (zero-based) at
-    /// which asm comments should be printed.
-    unsigned CommentColumn;                  // Defaults to 40
-
     /// CommentString - This indicates the comment character used by the
     /// assembler.
     const char *CommentString;               // Defaults to "#"
@@ -292,6 +288,10 @@ namespace llvm {
     /// uses relocations for references to other .debug_* sections.
     bool DwarfUsesRelocationsAcrossSections;
 
+    /// DwarfFDESymbolsUseAbsDiff - true if DWARF FDE symbol reference
+    /// relocations should be replaced by an absolute difference.
+    bool DwarfFDESymbolsUseAbsDiff;
+
     /// DwarfRegNumForCFI - True if dwarf register numbers are printed
     /// instead of symbolic register names in .cfi_* directives.
     bool DwarfRegNumForCFI;  // Defaults to false;
@@ -403,9 +403,13 @@ namespace llvm {
     const char *getSeparatorString() const {
       return SeparatorString;
     }
+
+    /// This indicates the column (zero-based) at which asm comments should be
+    /// printed.
     unsigned getCommentColumn() const {
-      return CommentColumn;
+      return 40;
     }
+
     const char *getCommentString() const {
       return CommentString;
     }
@@ -512,6 +516,9 @@ namespace llvm {
     }
     bool doesDwarfUseRelocationsAcrossSections() const {
       return DwarfUsesRelocationsAcrossSections;
+    }
+    bool doDwarfFDESymbolsUseAbsDiff() const {
+      return DwarfFDESymbolsUseAbsDiff;
     }
     bool useDwarfRegNumForCFI() const {
       return DwarfRegNumForCFI;

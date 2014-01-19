@@ -19,18 +19,16 @@
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/ValueMap.h"
-#include "llvm/Analysis/DominatorInternals.h"
-#include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/Writer.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/CommandLine.h"
@@ -108,7 +106,7 @@ namespace {
     const char *getPassName() const { return "CodeGen Prepare"; }
 
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-      AU.addPreserved<DominatorTree>();
+      AU.addPreserved<DominatorTreeWrapperPass>();
       AU.addRequired<TargetLibraryInfo>();
     }
 
@@ -131,11 +129,19 @@ namespace {
 }
 
 char CodeGenPrepare::ID = 0;
-INITIALIZE_PASS_BEGIN(CodeGenPrepare, "codegenprepare",
-                "Optimize for code generation", false, false)
-INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfo)
-INITIALIZE_PASS_END(CodeGenPrepare, "codegenprepare",
-                "Optimize for code generation", false, false)
+static void *initializeCodeGenPreparePassOnce(PassRegistry &Registry) {
+  initializeTargetLibraryInfoPass(Registry);
+  PassInfo *PI = new PassInfo(
+      "Optimize for code generation", "codegenprepare", &CodeGenPrepare::ID,
+      PassInfo::NormalCtor_t(callDefaultCtor<CodeGenPrepare>), false, false,
+      PassInfo::TargetMachineCtor_t(callTargetMachineCtor<CodeGenPrepare>));
+  Registry.registerPass(*PI, true);
+  return PI;
+}
+
+void llvm::initializeCodeGenPreparePass(PassRegistry &Registry) {
+  CALL_ONCE_INITIALIZATION(initializeCodeGenPreparePassOnce)
+}
 
 FunctionPass *llvm::createCodeGenPreparePass(const TargetMachine *TM) {
   return new CodeGenPrepare(TM);
@@ -147,7 +153,9 @@ bool CodeGenPrepare::runOnFunction(Function &F) {
   ModifiedDT = false;
   if (TM) TLI = TM->getTargetLowering();
   TLInfo = &getAnalysis<TargetLibraryInfo>();
-  DT = getAnalysisIfAvailable<DominatorTree>();
+  DominatorTreeWrapperPass *DTWP =
+      getAnalysisIfAvailable<DominatorTreeWrapperPass>();
+  DT = DTWP ? &DTWP->getDomTree() : 0;
   OptSize = F.getAttributes().hasAttribute(AttributeSet::FunctionIndex,
                                            Attribute::OptimizeForSize);
 
@@ -221,7 +229,7 @@ bool CodeGenPrepare::runOnFunction(Function &F) {
   }
 
   if (ModifiedDT && DT)
-    DT->DT->recalculate(F);
+    DT->recalculate(F);
 
   return EverMadeChange;
 }
@@ -845,7 +853,7 @@ void ExtAddrMode::print(raw_ostream &OS) const {
   if (BaseGV) {
     OS << (NeedPlus ? " + " : "")
        << "GV:";
-    WriteAsOperand(OS, BaseGV, /*PrintType=*/false);
+    BaseGV->printAsOperand(OS, /*PrintType=*/false);
     NeedPlus = true;
   }
 
@@ -855,13 +863,13 @@ void ExtAddrMode::print(raw_ostream &OS) const {
   if (BaseReg) {
     OS << (NeedPlus ? " + " : "")
        << "Base:";
-    WriteAsOperand(OS, BaseReg, /*PrintType=*/false);
+    BaseReg->printAsOperand(OS, /*PrintType=*/false);
     NeedPlus = true;
   }
   if (Scale) {
     OS << (NeedPlus ? " + " : "")
        << Scale << "*";
-    WriteAsOperand(OS, ScaledReg, /*PrintType=*/false);
+    ScaledReg->printAsOperand(OS, /*PrintType=*/false);
   }
 
   OS << ']';
