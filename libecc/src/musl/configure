@@ -439,7 +439,7 @@ echo '#if LDBL_MANT_DIG == 53' >> "$tmpc"
 echo 'typedef char ldcheck[9-(int)sizeof(long double)];' >> "$tmpc"
 echo '#endif' >> "$tmpc"
 if $CC $CFLAGS_C99FSE -I./arch/$ARCH -I./include $CPPFLAGS $CFLAGS \
-  -c -o /dev/null "$tmpc" >/dev/null 2>&1 ; then
+  -c -o /dev/null "$tmpc" ; then # >/dev/null 2>&1 ; then
 printf "yes\n"
 else
 printf "no\n"

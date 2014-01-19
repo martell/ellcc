@@ -76,3 +76,7 @@ make DIR=src/qemu CC=$cc HCC=$hcc AR=$ar TARGET=$host OS=$os \
     qemu.configure || exit 1
 
 make -C src/qemu || exit 1
+
+# Finally, install into the target specific bin dir.
+mkdir -p $bindir
+make TARGETDIR=$builddir BINDIR=$bindir install || exit 1
