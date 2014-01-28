@@ -33,7 +33,7 @@ namespace llvm {
     const MCSection *SelectSectionForGlobal(const GlobalValue *GV,
                                             SectionKind Kind,
                                             Mangler *Mang,
-                                            const TargetMachine &TM) const;
+                                            TargetMachine &TM) const;
   };
 } // end namespace llvm
 

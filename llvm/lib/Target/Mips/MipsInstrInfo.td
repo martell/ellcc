@@ -438,9 +438,9 @@ class ArithLogicI<string opstr, Operand Od, RegisterOperand RO,
 }
 
 // Arithmetic Multiply ADD/SUB
-class MArithR<string opstr, bit isComm = 0> :
+class MArithR<string opstr, InstrItinClass itin, bit isComm = 0> :
   InstSE<(outs), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
-         !strconcat(opstr, "\t$rs, $rt"), [], IIImult, FrmR, opstr> {
+         !strconcat(opstr, "\t$rs, $rt"), [], itin, FrmR, opstr> {
   let Defs = [HI0, LO0];
   let Uses = [HI0, LO0];
   let isCommutable = isComm;
@@ -544,14 +544,14 @@ class SetCC_R<string opstr, PatFrag cond_op, RegisterOperand RO> :
   InstSE<(outs GPR32Opnd:$rd), (ins RO:$rs, RO:$rt),
          !strconcat(opstr, "\t$rd, $rs, $rt"),
          [(set GPR32Opnd:$rd, (cond_op RO:$rs, RO:$rt))],
-         IIslt, FrmR, opstr>;
+         II_SLT_SLTU, FrmR, opstr>;
 
 class SetCC_I<string opstr, PatFrag cond_op, Operand Od, PatLeaf imm_type,
               RegisterOperand RO>:
   InstSE<(outs GPR32Opnd:$rt), (ins RO:$rs, Od:$imm16),
          !strconcat(opstr, "\t$rt, $rs, $imm16"),
          [(set GPR32Opnd:$rt, (cond_op RO:$rs, imm_type:$imm16))],
-         IIslt, FrmI, opstr>;
+         II_SLTI_SLTIU, FrmI, opstr>;
 
 // Jump
 class JumpFJ<DAGOperand opnd, string opstr, SDPatternOperator operator,
@@ -709,12 +709,13 @@ class MultDivPseudo<Instruction RealInst, RegisterClass R0, RegisterOperand R1,
 
 // Pseudo multiply add/sub instruction with explicit accumulator register
 // operands.
-class MAddSubPseudo<Instruction RealInst, SDPatternOperator OpNode>
+class MAddSubPseudo<Instruction RealInst, SDPatternOperator OpNode,
+                    InstrItinClass itin>
   : PseudoSE<(outs ACC64:$ac),
              (ins GPR32Opnd:$rs, GPR32Opnd:$rt, ACC64:$acin),
              [(set ACC64:$ac,
               (OpNode GPR32Opnd:$rs, GPR32Opnd:$rt, ACC64:$acin))],
-             IIImult>,
+             itin>,
     PseudoInstExpansion<(RealInst GPR32Opnd:$rs, GPR32Opnd:$rt)> {
   string Constraints = "$acin = $ac";
 }
@@ -729,21 +730,22 @@ class Div<string opstr, InstrItinClass itin, RegisterOperand RO,
 // Move from Hi/Lo
 class PseudoMFLOHI<RegisterClass DstRC, RegisterClass SrcRC, SDNode OpNode>
   : PseudoSE<(outs DstRC:$rd), (ins SrcRC:$hilo),
-             [(set DstRC:$rd, (OpNode SrcRC:$hilo))], IIHiLo>;
+             [(set DstRC:$rd, (OpNode SrcRC:$hilo))], II_MFHI_MFLO>;
 
 class MoveFromLOHI<string opstr, RegisterOperand RO, Register UseReg>:
-  InstSE<(outs RO:$rd), (ins), !strconcat(opstr, "\t$rd"), [], IIHiLo, FrmR,
-         opstr> {
+  InstSE<(outs RO:$rd), (ins), !strconcat(opstr, "\t$rd"), [], II_MFHI_MFLO,
+         FrmR, opstr> {
   let Uses = [UseReg];
   let neverHasSideEffects = 1;
 }
 
 class PseudoMTLOHI<RegisterClass DstRC, RegisterClass SrcRC>
   : PseudoSE<(outs DstRC:$lohi), (ins SrcRC:$lo, SrcRC:$hi),
-             [(set DstRC:$lohi, (MipsMTLOHI SrcRC:$lo, SrcRC:$hi))], IIHiLo>;
+             [(set DstRC:$lohi, (MipsMTLOHI SrcRC:$lo, SrcRC:$hi))],
+             II_MTHI_MTLO>;
 
 class MoveToLOHI<string opstr, RegisterOperand RO, list<Register> DefRegs>:
-  InstSE<(outs), (ins RO:$rs), !strconcat(opstr, "\t$rs"), [], IIHiLo,
+  InstSE<(outs), (ins RO:$rs), !strconcat(opstr, "\t$rs"), [], II_MTHI_MTLO,
   FrmR, opstr> {
   let Defs = DefRegs;
   let neverHasSideEffects = 1;
@@ -930,7 +932,7 @@ def ADDu  : MMRel, ArithLogicR<"addu", GPR32Opnd, 1, II_ADDU, add>,
 def SUBu  : MMRel, ArithLogicR<"subu", GPR32Opnd, 0, II_SUBU, sub>,
             ADD_FM<0, 0x23>;
 let Defs = [HI0, LO0] in
-def MUL   : MMRel, ArithLogicR<"mul", GPR32Opnd, 1, IIImul, mul>,
+def MUL   : MMRel, ArithLogicR<"mul", GPR32Opnd, 1, II_MUL, mul>,
             ADD_FM<0x1c, 2>;
 def ADD   : MMRel, ArithLogicR<"add", GPR32Opnd>, ADD_FM<0, 0x20>;
 def SUB   : MMRel, ArithLogicR<"sub", GPR32Opnd>, ADD_FM<0, 0x22>;
@@ -968,24 +970,24 @@ let Predicates = [HasMips32r2, HasStdEnc] in {
 
 /// Load and Store Instructions
 ///  aligned
-def LB  : Load<"lb", GPR32Opnd, sextloadi8, IILoad>, MMRel, LW_FM<0x20>;
-def LBu : Load<"lbu", GPR32Opnd, zextloadi8, IILoad, addrDefault>, MMRel,
+def LB  : Load<"lb", GPR32Opnd, sextloadi8, II_LB>, MMRel, LW_FM<0x20>;
+def LBu : Load<"lbu", GPR32Opnd, zextloadi8, II_LBU, addrDefault>, MMRel,
           LW_FM<0x24>;
-def LH  : Load<"lh", GPR32Opnd, sextloadi16, IILoad, addrDefault>, MMRel,
+def LH  : Load<"lh", GPR32Opnd, sextloadi16, II_LH, addrDefault>, MMRel,
           LW_FM<0x21>;
-def LHu : Load<"lhu", GPR32Opnd, zextloadi16, IILoad>, MMRel, LW_FM<0x25>;
-def LW  : Load<"lw", GPR32Opnd, load, IILoad, addrDefault>, MMRel,
+def LHu : Load<"lhu", GPR32Opnd, zextloadi16, II_LHU>, MMRel, LW_FM<0x25>;
+def LW  : Load<"lw", GPR32Opnd, load, II_LW, addrDefault>, MMRel,
           LW_FM<0x23>;
-def SB  : Store<"sb", GPR32Opnd, truncstorei8, IIStore>, MMRel, LW_FM<0x28>;
-def SH  : Store<"sh", GPR32Opnd, truncstorei16, IIStore>, MMRel, LW_FM<0x29>;
-def SW  : Store<"sw", GPR32Opnd, store, IIStore>, MMRel, LW_FM<0x2b>;
+def SB  : Store<"sb", GPR32Opnd, truncstorei8, II_SB>, MMRel, LW_FM<0x28>;
+def SH  : Store<"sh", GPR32Opnd, truncstorei16, II_SH>, MMRel, LW_FM<0x29>;
+def SW  : Store<"sw", GPR32Opnd, store, II_SW>, MMRel, LW_FM<0x2b>;
 
 /// load/store left/right
 let Predicates = [NotInMicroMips] in {
-def LWL : LoadLeftRight<"lwl", MipsLWL, GPR32Opnd, IILoad>, LW_FM<0x22>;
-def LWR : LoadLeftRight<"lwr", MipsLWR, GPR32Opnd, IILoad>, LW_FM<0x26>;
-def SWL : StoreLeftRight<"swl", MipsSWL, GPR32Opnd, IIStore>, LW_FM<0x2a>;
-def SWR : StoreLeftRight<"swr", MipsSWR, GPR32Opnd, IIStore>, LW_FM<0x2e>;
+def LWL : LoadLeftRight<"lwl", MipsLWL, GPR32Opnd, II_LWL>, LW_FM<0x22>;
+def LWR : LoadLeftRight<"lwr", MipsLWR, GPR32Opnd, II_LWR>, LW_FM<0x26>;
+def SWL : StoreLeftRight<"swl", MipsSWL, GPR32Opnd, II_SWL>, LW_FM<0x2a>;
+def SWR : StoreLeftRight<"swr", MipsSWR, GPR32Opnd, II_SWR>, LW_FM<0x2e>;
 }
 
 def SYNC : MMRel, SYNC_FT<"sync">, SYNC_FM;
@@ -1070,13 +1072,13 @@ let Uses = [V0, V1], isTerminator = 1, isReturn = 1, isBarrier = 1 in {
 }
 
 /// Multiply and Divide Instructions.
-def MULT  : MMRel, Mult<"mult", IIImult, GPR32Opnd, [HI0, LO0]>,
+def MULT  : MMRel, Mult<"mult", II_MULT, GPR32Opnd, [HI0, LO0]>,
             MULT_FM<0, 0x18>;
-def MULTu : MMRel, Mult<"multu", IIImult, GPR32Opnd, [HI0, LO0]>,
+def MULTu : MMRel, Mult<"multu", II_MULTU, GPR32Opnd, [HI0, LO0]>,
             MULT_FM<0, 0x19>;
-def SDIV  : MMRel, Div<"div", IIIdiv, GPR32Opnd, [HI0, LO0]>,
+def SDIV  : MMRel, Div<"div", II_DIV, GPR32Opnd, [HI0, LO0]>,
             MULT_FM<0, 0x1a>;
-def UDIV  : MMRel, Div<"divu", IIIdiv, GPR32Opnd, [HI0, LO0]>,
+def UDIV  : MMRel, Div<"divu", II_DIVU, GPR32Opnd, [HI0, LO0]>,
             MULT_FM<0, 0x1b>;
 
 def MTHI : MMRel, MoveToLOHI<"mthi", GPR32Opnd, [HI0]>, MTLO_FM<0x11>;
@@ -1105,26 +1107,26 @@ def NOP : PseudoSE<(outs), (ins), []>, PseudoInstExpansion<(SLL ZERO, ZERO, 0)>;
 def LEA_ADDiu : MMRel, EffectiveAddress<"addiu", GPR32Opnd>, LW_FM<9>;
 
 // MADD*/MSUB*
-def MADD  : MMRel, MArithR<"madd", 1>, MULT_FM<0x1c, 0>;
-def MADDU : MMRel, MArithR<"maddu", 1>, MULT_FM<0x1c, 1>;
-def MSUB  : MMRel, MArithR<"msub">, MULT_FM<0x1c, 4>;
-def MSUBU : MMRel, MArithR<"msubu">, MULT_FM<0x1c, 5>;
+def MADD  : MMRel, MArithR<"madd", II_MADD, 1>, MULT_FM<0x1c, 0>;
+def MADDU : MMRel, MArithR<"maddu", II_MADDU, 1>, MULT_FM<0x1c, 1>;
+def MSUB  : MMRel, MArithR<"msub", II_MSUB>, MULT_FM<0x1c, 4>;
+def MSUBU : MMRel, MArithR<"msubu", II_MSUBU>, MULT_FM<0x1c, 5>;
 
 let Predicates = [HasStdEnc, NotDSP] in {
-def PseudoMULT  : MultDivPseudo<MULT, ACC64, GPR32Opnd, MipsMult, IIImult>;
-def PseudoMULTu : MultDivPseudo<MULTu, ACC64, GPR32Opnd, MipsMultu, IIImult>;
+def PseudoMULT  : MultDivPseudo<MULT, ACC64, GPR32Opnd, MipsMult, II_MULT>;
+def PseudoMULTu : MultDivPseudo<MULTu, ACC64, GPR32Opnd, MipsMultu, II_MULTU>;
 def PseudoMFHI : PseudoMFLOHI<GPR32, ACC64, MipsMFHI>;
 def PseudoMFLO : PseudoMFLOHI<GPR32, ACC64, MipsMFLO>;
 def PseudoMTLOHI : PseudoMTLOHI<ACC64, GPR32>;
-def PseudoMADD  : MAddSubPseudo<MADD, MipsMAdd>;
-def PseudoMADDU : MAddSubPseudo<MADDU, MipsMAddu>;
-def PseudoMSUB  : MAddSubPseudo<MSUB, MipsMSub>;
-def PseudoMSUBU : MAddSubPseudo<MSUBU, MipsMSubu>;
+def PseudoMADD  : MAddSubPseudo<MADD, MipsMAdd, II_MADD>;
+def PseudoMADDU : MAddSubPseudo<MADDU, MipsMAddu, II_MADDU>;
+def PseudoMSUB  : MAddSubPseudo<MSUB, MipsMSub, II_MSUB>;
+def PseudoMSUBU : MAddSubPseudo<MSUBU, MipsMSubu, II_MSUBU>;
 }
 
-def PseudoSDIV : MultDivPseudo<SDIV, ACC64, GPR32Opnd, MipsDivRem, IIIdiv,
+def PseudoSDIV : MultDivPseudo<SDIV, ACC64, GPR32Opnd, MipsDivRem, II_DIV,
                                0, 1, 1>;
-def PseudoUDIV : MultDivPseudo<UDIV, ACC64, GPR32Opnd, MipsDivRemU, IIIdiv,
+def PseudoUDIV : MultDivPseudo<UDIV, ACC64, GPR32Opnd, MipsDivRemU, II_DIVU,
                                0, 1, 1>;
 
 def RDHWR : ReadHardware<GPR32Opnd, HWRegsOpnd>, RDHWR_FM;

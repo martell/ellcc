@@ -739,14 +739,16 @@ llvm::DIType CGDebugInfo::CreateType(const TypedefType *Ty, llvm::DIFile Unit) {
     return llvm::DIType();
   // We don't set size information, but do specify where the typedef was
   // declared.
-  unsigned Line = getLineNumber(Ty->getDecl()->getLocation());
+  SourceLocation Loc = Ty->getDecl()->getLocation();
+  llvm::DIFile File = getOrCreateFile(Loc);
+  unsigned Line = getLineNumber(Loc);
   const TypedefNameDecl *TyDecl = Ty->getDecl();
 
   llvm::DIDescriptor TypedefContext =
     getContextDescriptor(cast<Decl>(Ty->getDecl()->getDeclContext()));
 
   return
-    DBuilder.createTypedef(Src, TyDecl->getName(), Unit, Line, TypedefContext);
+    DBuilder.createTypedef(Src, TyDecl->getName(), File, Line, TypedefContext);
 }
 
 llvm::DIType CGDebugInfo::CreateType(const FunctionType *Ty,
@@ -761,8 +763,8 @@ llvm::DIType CGDebugInfo::CreateType(const FunctionType *Ty,
   if (isa<FunctionNoProtoType>(Ty))
     EltTys.push_back(DBuilder.createUnspecifiedParameter());
   else if (const FunctionProtoType *FPT = dyn_cast<FunctionProtoType>(Ty)) {
-    for (unsigned i = 0, e = FPT->getNumArgs(); i != e; ++i)
-      EltTys.push_back(getOrCreateType(FPT->getArgType(i), Unit));
+    for (unsigned i = 0, e = FPT->getNumParams(); i != e; ++i)
+      EltTys.push_back(getOrCreateType(FPT->getParamType(i), Unit));
   }
 
   llvm::DIArray EltTypeArray = DBuilder.getOrCreateArray(EltTys);

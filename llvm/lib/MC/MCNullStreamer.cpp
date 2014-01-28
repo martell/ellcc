@@ -24,12 +24,6 @@ namespace {
     /// @name MCStreamer Interface
     /// @{
 
-    virtual void InitToTextSection() {
-    }
-
-    virtual void InitSections() {
-    }
-
     virtual void ChangeSection(const MCSection *Section,
                                const MCExpr *Subsection) {
     }

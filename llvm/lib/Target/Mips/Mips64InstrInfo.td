@@ -121,32 +121,32 @@ let Predicates = [HasMips64r2, HasStdEnc] in {
 /// Load and Store Instructions
 ///  aligned
 let isCodeGenOnly = 1 in {
-def LB64  : Load<"lb", GPR64Opnd, sextloadi8, IILoad>, LW_FM<0x20>;
-def LBu64 : Load<"lbu", GPR64Opnd, zextloadi8, IILoad>, LW_FM<0x24>;
-def LH64  : Load<"lh", GPR64Opnd, sextloadi16, IILoad>, LW_FM<0x21>;
-def LHu64 : Load<"lhu", GPR64Opnd, zextloadi16, IILoad>, LW_FM<0x25>;
-def LW64  : Load<"lw", GPR64Opnd, sextloadi32, IILoad>, LW_FM<0x23>;
-def SB64  : Store<"sb", GPR64Opnd, truncstorei8, IIStore>, LW_FM<0x28>;
-def SH64  : Store<"sh", GPR64Opnd, truncstorei16, IIStore>, LW_FM<0x29>;
-def SW64  : Store<"sw", GPR64Opnd, truncstorei32, IIStore>, LW_FM<0x2b>;
+def LB64  : Load<"lb", GPR64Opnd, sextloadi8, II_LB>, LW_FM<0x20>;
+def LBu64 : Load<"lbu", GPR64Opnd, zextloadi8, II_LBU>, LW_FM<0x24>;
+def LH64  : Load<"lh", GPR64Opnd, sextloadi16, II_LH>, LW_FM<0x21>;
+def LHu64 : Load<"lhu", GPR64Opnd, zextloadi16, II_LHU>, LW_FM<0x25>;
+def LW64  : Load<"lw", GPR64Opnd, sextloadi32, II_LW>, LW_FM<0x23>;
+def SB64  : Store<"sb", GPR64Opnd, truncstorei8, II_SB>, LW_FM<0x28>;
+def SH64  : Store<"sh", GPR64Opnd, truncstorei16, II_SH>, LW_FM<0x29>;
+def SW64  : Store<"sw", GPR64Opnd, truncstorei32, II_SW>, LW_FM<0x2b>;
 }
 
-def LWu   : Load<"lwu", GPR64Opnd, zextloadi32, IILoad>, LW_FM<0x27>;
-def LD    : Load<"ld", GPR64Opnd, load, IILoad>, LW_FM<0x37>;
-def SD    : Store<"sd", GPR64Opnd, store, IIStore>, LW_FM<0x3f>;
+def LWu   : Load<"lwu", GPR64Opnd, zextloadi32, II_LWU>, LW_FM<0x27>;
+def LD    : Load<"ld", GPR64Opnd, load, II_LD>, LW_FM<0x37>;
+def SD    : Store<"sd", GPR64Opnd, store, II_SD>, LW_FM<0x3f>;
 
 /// load/store left/right
 let isCodeGenOnly = 1 in {
-def LWL64 : LoadLeftRight<"lwl", MipsLWL, GPR64Opnd, IILoad>, LW_FM<0x22>;
-def LWR64 : LoadLeftRight<"lwr", MipsLWR, GPR64Opnd, IILoad>, LW_FM<0x26>;
-def SWL64 : StoreLeftRight<"swl", MipsSWL, GPR64Opnd, IIStore>, LW_FM<0x2a>;
-def SWR64 : StoreLeftRight<"swr", MipsSWR, GPR64Opnd, IIStore>, LW_FM<0x2e>;
+def LWL64 : LoadLeftRight<"lwl", MipsLWL, GPR64Opnd, II_LWL>, LW_FM<0x22>;
+def LWR64 : LoadLeftRight<"lwr", MipsLWR, GPR64Opnd, II_LWR>, LW_FM<0x26>;
+def SWL64 : StoreLeftRight<"swl", MipsSWL, GPR64Opnd, II_SWL>, LW_FM<0x2a>;
+def SWR64 : StoreLeftRight<"swr", MipsSWR, GPR64Opnd, II_SWR>, LW_FM<0x2e>;
 }
 
-def LDL   : LoadLeftRight<"ldl", MipsLDL, GPR64Opnd, IILoad>, LW_FM<0x1a>;
-def LDR   : LoadLeftRight<"ldr", MipsLDR, GPR64Opnd, IILoad>, LW_FM<0x1b>;
-def SDL   : StoreLeftRight<"sdl", MipsSDL, GPR64Opnd, IIStore>, LW_FM<0x2c>;
-def SDR   : StoreLeftRight<"sdr", MipsSDR, GPR64Opnd, IIStore>, LW_FM<0x2d>;
+def LDL   : LoadLeftRight<"ldl", MipsLDL, GPR64Opnd, II_LDL>, LW_FM<0x1a>;
+def LDR   : LoadLeftRight<"ldr", MipsLDR, GPR64Opnd, II_LDR>, LW_FM<0x1b>;
+def SDL   : StoreLeftRight<"sdl", MipsSDL, GPR64Opnd, II_SDL>, LW_FM<0x2c>;
+def SDR   : StoreLeftRight<"sdr", MipsSDR, GPR64Opnd, II_SDR>, LW_FM<0x2d>;
 
 /// Load-linked, Store-conditional
 def LLD : LLBase<"lld", GPR64Opnd>, LW_FM<0x34>;
@@ -167,20 +167,22 @@ def TAILCALL64_R : TailCallReg<GPR64Opnd, JR, GPR32Opnd>;
 }
 
 /// Multiply and Divide Instructions.
-def DMULT  : Mult<"dmult", IIImult, GPR64Opnd, [HI0_64, LO0_64]>,
+def DMULT  : Mult<"dmult", II_DMULT, GPR64Opnd, [HI0_64, LO0_64]>,
              MULT_FM<0, 0x1c>;
-def DMULTu : Mult<"dmultu", IIImult, GPR64Opnd, [HI0_64, LO0_64]>,
+def DMULTu : Mult<"dmultu", II_DMULTU, GPR64Opnd, [HI0_64, LO0_64]>,
              MULT_FM<0, 0x1d>;
 def PseudoDMULT  : MultDivPseudo<DMULT, ACC128, GPR64Opnd, MipsMult,
-                                 IIImult>;
+                                 II_DMULT>;
 def PseudoDMULTu : MultDivPseudo<DMULTu, ACC128, GPR64Opnd, MipsMultu,
-                                 IIImult>;
-def DSDIV : Div<"ddiv", IIIdiv, GPR64Opnd, [HI0_64, LO0_64]>, MULT_FM<0, 0x1e>;
-def DUDIV : Div<"ddivu", IIIdiv, GPR64Opnd, [HI0_64, LO0_64]>, MULT_FM<0, 0x1f>;
+                                 II_DMULTU>;
+def DSDIV : Div<"ddiv", II_DDIV, GPR64Opnd, [HI0_64, LO0_64]>,
+            MULT_FM<0, 0x1e>;
+def DUDIV : Div<"ddivu", II_DDIVU, GPR64Opnd, [HI0_64, LO0_64]>,
+            MULT_FM<0, 0x1f>;
 def PseudoDSDIV : MultDivPseudo<DSDIV, ACC128, GPR64Opnd, MipsDivRem,
-                                IIIdiv, 0, 1, 1>;
+                                II_DDIV, 0, 1, 1>;
 def PseudoDUDIV : MultDivPseudo<DUDIV, ACC128, GPR64Opnd, MipsDivRemU,
-                                IIIdiv, 0, 1, 1>;
+                                II_DDIVU, 0, 1, 1>;
 
 let isCodeGenOnly = 1 in {
 def MTHI64 : MoveToLOHI<"mthi", GPR64Opnd, [HI0_64]>, MTLO_FM<0x11>;

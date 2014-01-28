@@ -38,6 +38,7 @@
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopPass.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -86,7 +87,7 @@ namespace {
       AU.addRequiredID(LoopSimplifyID);
       AU.addRequired<AliasAnalysis>();
       AU.addPreserved<AliasAnalysis>();
-      AU.addPreserved("scalar-evolution");
+      AU.addPreserved<ScalarEvolution>();
       AU.addPreservedID(LoopSimplifyID);
       AU.addRequired<TargetLibraryInfo>();
     }
@@ -272,7 +273,7 @@ bool LICM::runOnLoop(Loop *L, LPPassManager &LPM) {
 
   // Now that all loop invariants have been removed from the loop, promote any
   // memory references to scalars that we can.
-  if (!DisablePromotion && Preheader && L->hasDedicatedExits()) {
+  if (!DisablePromotion && (Preheader || L->hasDedicatedExits())) {
     SmallVector<BasicBlock *, 8> ExitBlocks;
     SmallVector<Instruction *, 8> InsertPts;
 

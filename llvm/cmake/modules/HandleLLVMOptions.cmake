@@ -29,7 +29,12 @@ if(NOT LLVM_FORCE_USE_OLD_TOOLCHAIN)
     # version of libstdc++ directly. Instead we test for a known bug in
     # libstdc++4.6 that is fixed in libstdc++4.7.
     if(NOT LLVM_ENABLE_LIBCXX)
+      set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+      set(OLD_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
       set(CMAKE_REQUIRED_FLAGS "-std=c++0x")
+      if (ANDROID)
+        set(CMAKE_REQUIRED_LIBRARIES "atomic")
+      endif()
       check_cxx_source_compiles("
 #include <atomic>
 std::atomic<float> x(0.0f);
@@ -38,8 +43,10 @@ int main() { return (float)x; }"
       if(NOT LLVM_NO_OLD_LIBSTDCXX)
         message(FATAL_ERROR "Host Clang must be able to find libstdc++4.7 or newer!")
       endif()
+      set(CMAKE_REQUIRED_FLAGS ${OLD_CMAKE_REQUIRED_FLAGS})
+      set(CMAKE_REQUIRED_LIBRARIES ${OLD_CMAKE_REQUIRED_LIBRARIES})
     endif()
-  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 17.0)
       message(FATAL_ERROR "Host Visual Studio must be at least 2012 (MSVC 17.0)")
     endif()

@@ -45,8 +45,7 @@ public:
   /// @name MCStreamer Interface
   /// @{
 
-  virtual void InitSections();
-  virtual void InitToTextSection();
+  virtual void InitSections(bool Force);
   virtual void ChangeSection(const MCSection *Section,
                              const MCExpr *Subsection);
   virtual void EmitLabel(MCSymbol *Symbol);
@@ -107,13 +106,6 @@ private:
   std::vector<LocalCommon> LocalCommons;
 
   SmallPtrSet<MCSymbol *, 16> BindingExplicitlySet;
-
-
-  void SetSection(StringRef Section, unsigned Type, unsigned Flags,
-                  SectionKind Kind);
-  void SetSectionData();
-  void SetSectionText();
-  void SetSectionBss();
 };
 
 MCELFStreamer *createARMELFStreamer(MCContext &Context, MCAsmBackend &TAB,

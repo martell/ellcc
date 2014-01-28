@@ -873,8 +873,8 @@ DEF_TRAVERSE_TYPE(FunctionNoProtoType, {
 DEF_TRAVERSE_TYPE(FunctionProtoType, {
     TRY_TO(TraverseType(T->getResultType()));
 
-    for (FunctionProtoType::arg_type_iterator A = T->arg_type_begin(),
-                                           AEnd = T->arg_type_end();
+    for (FunctionProtoType::param_type_iterator A = T->param_type_begin(),
+                                                AEnd = T->param_type_end();
          A != AEnd; ++A) {
       TRY_TO(TraverseType(*A));
     }
@@ -1103,11 +1103,11 @@ DEF_TRAVERSE_TYPELOC(FunctionProtoType, {
 
     const FunctionProtoType *T = TL.getTypePtr();
 
-    for (unsigned I = 0, E = TL.getNumArgs(); I != E; ++I) {
-      if (TL.getArg(I)) {
-        TRY_TO(TraverseDecl(TL.getArg(I)));
-      } else if (I < T->getNumArgs()) {
-        TRY_TO(TraverseType(T->getArgType(I)));
+    for (unsigned I = 0, E = TL.getNumParams(); I != E; ++I) {
+      if (TL.getParam(I)) {
+        TRY_TO(TraverseDecl(TL.getParam(I)));
+      } else if (I < T->getNumParams()) {
+        TRY_TO(TraverseType(T->getParamType(I)));
       }
     }
 
@@ -2191,8 +2191,8 @@ bool DataRecursiveASTVisitor<Derived>::TraverseLambdaExpr(LambdaExpr *S) {
     } else if (FunctionProtoTypeLoc Proto = TL.getAs<FunctionProtoTypeLoc>()) {
       if (S->hasExplicitParameters()) {
         // Visit parameters.
-        for (unsigned I = 0, N = Proto.getNumArgs(); I != N; ++I) {
-          TRY_TO(TraverseDecl(Proto.getArg(I)));
+        for (unsigned I = 0, N = Proto.getNumParams(); I != N; ++I) {
+          TRY_TO(TraverseDecl(Proto.getParam(I)));
         }
       } else {
         TRY_TO(TraverseTypeLoc(Proto.getResultLoc()));

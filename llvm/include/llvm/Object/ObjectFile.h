@@ -18,6 +18,7 @@
 #include "llvm/Object/Binary.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include <cstring>
 #include <vector>
@@ -376,17 +377,19 @@ public:
   /// @param ObjectPath The path to the object file. ObjectPath.isObject must
   ///        return true.
   /// @brief Create ObjectFile from path.
-  static ObjectFile *createObjectFile(StringRef ObjectPath);
-  static ObjectFile *createObjectFile(MemoryBuffer *Object);
+  static ErrorOr<ObjectFile *> createObjectFile(StringRef ObjectPath);
+  static ErrorOr<ObjectFile *>
+  createObjectFile(MemoryBuffer *Object,
+                   sys::fs::file_magic Type = sys::fs::file_magic::unknown);
 
   static inline bool classof(const Binary *v) {
     return v->isObject();
   }
 
 public:
-  static ObjectFile *createCOFFObjectFile(MemoryBuffer *Object);
-  static ObjectFile *createELFObjectFile(MemoryBuffer *Object);
-  static ObjectFile *createMachOObjectFile(MemoryBuffer *Object);
+  static ErrorOr<ObjectFile *> createCOFFObjectFile(MemoryBuffer *Object);
+  static ErrorOr<ObjectFile *> createELFObjectFile(MemoryBuffer *Object);
+  static ErrorOr<ObjectFile *> createMachOObjectFile(MemoryBuffer *Object);
 };
 
 // Inline function definitions.

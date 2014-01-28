@@ -104,3 +104,22 @@ define float @test9(float %x) {
 ; CHECK: fsub
 }
 
+; PR18532
+define <4 x float> @test10(<4 x float> %x) {
+  %mul = fmul <4 x float> %x, <float -1.0, float -1.0, float -1.0, float -1.0>
+  ret <4 x float> %mul
+
+; CHECK-LABEL: @test10(
+; CHECK-NOT: fmul
+; CHECK: fsub
+}
+
+define float @test11(float %x, float %y) {
+  %a = fadd fast float %x, 1.0
+  %b = fadd fast float %y, 2.0
+  %c = fadd fast float %a, %b
+  ret float %c
+; CHECK-LABEL: @test11(
+; CHECK-NOT: fadd float
+; CHECK: fadd fast float
+}

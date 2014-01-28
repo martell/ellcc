@@ -92,6 +92,9 @@ static MCContext *addPassesToGenerateCode(LLVMTargetMachine *TM,
                                           bool DisableVerify,
                                           AnalysisID StartAfter,
                                           AnalysisID StopAfter) {
+  // Add internal analysis passes from the target machine.
+  TM->addAnalysisPasses(PM);
+
   // Targets may override createPassConfig to provide a target-specific sublass.
   TargetPassConfig *PassConfig = TM->createPassConfig(PM);
   PassConfig->setStartStopPasses(StartAfter, StopAfter);
@@ -205,7 +208,6 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
                                                          *Context, *MAB, Out,
                                                          MCE, hasMCRelaxAll(),
                                                          hasMCNoExecStack()));
-    AsmStreamer.get()->setAutoInitSections(true);
     break;
   }
   case CGFT_Null:
@@ -280,7 +282,6 @@ bool LLVMTargetMachine::addPassesToEmitMC(PassManagerBase &PM,
                                                        *MAB, Out, MCE,
                                                        hasMCRelaxAll(),
                                                        hasMCNoExecStack()));
-  AsmStreamer.get()->InitSections();
 
   // Create the AsmPrinter, which takes ownership of AsmStreamer if successful.
   FunctionPass *Printer = getTarget().createAsmPrinter(*this, *AsmStreamer);

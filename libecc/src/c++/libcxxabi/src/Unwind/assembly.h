@@ -19,6 +19,8 @@
 #if (defined(__POWERPC__) || defined(__powerpc__) || defined(__ppc__)) && \
   !defined(__linux__)
 #define SEPARATOR @
+#elif defined(__arm64__)
+#define SEPARATOR %%
 #else
 #define SEPARATOR ;
 #endif

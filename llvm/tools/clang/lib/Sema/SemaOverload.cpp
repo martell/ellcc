@@ -930,24 +930,15 @@ Sema::CheckOverload(Scope *S, FunctionDecl *New, const LookupResult &Old,
       (OldIsUsingDecl || NewIsUsingDecl) && CurContext->isRecord() &&
       !New->getFriendObjectKind();
 
-    if (FunctionTemplateDecl *OldT = dyn_cast<FunctionTemplateDecl>(OldD)) {
-      if (!IsOverload(New, OldT->getTemplatedDecl(), UseMemberUsingDeclRules)) {
-        if (UseMemberUsingDeclRules && OldIsUsingDecl) {
-          HideUsingShadowDecl(S, cast<UsingShadowDecl>(*I));
-          continue;
-        }
-
-        Match = *I;
-        return Ovl_Match;
-      }
-    } else if (FunctionDecl *OldF = dyn_cast<FunctionDecl>(OldD)) {
+    if (FunctionDecl *OldF = OldD->getAsFunction()) {
       if (!IsOverload(New, OldF, UseMemberUsingDeclRules)) {
         if (UseMemberUsingDeclRules && OldIsUsingDecl) {
           HideUsingShadowDecl(S, cast<UsingShadowDecl>(*I));
           continue;
         }
 
-        if (!shouldLinkPossiblyHiddenDecl(*I, New))
+        if (!isa<FunctionTemplateDecl>(OldD) &&
+            !shouldLinkPossiblyHiddenDecl(*I, New))
           continue;
 
         Match = *I;
@@ -1015,9 +1006,9 @@ bool Sema::IsOverload(FunctionDecl *New, FunctionDecl *Old,
   // parameters (C++ 1.3.10), which includes the presence or absence
   // of the ellipsis; see C++ DR 357).
   if (OldQType != NewQType &&
-      (OldType->getNumArgs() != NewType->getNumArgs() ||
+      (OldType->getNumParams() != NewType->getNumParams() ||
        OldType->isVariadic() != NewType->isVariadic() ||
-       !FunctionArgTypesAreEqual(OldType, NewType)))
+       !FunctionParamTypesAreEqual(OldType, NewType)))
     return true;
 
   // C++ [temp.over.link]p4:
@@ -1097,7 +1088,7 @@ bool Sema::IsOverload(FunctionDecl *New, FunctionDecl *Old,
     llvm::FoldingSetNodeID NewID, OldID;
     NewI->getCond()->Profile(NewID, Context, true);
     OldI->getCond()->Profile(OldID, Context, true);
-    if (!(NewID == OldID))
+    if (NewID != OldID)
       return true;
   }
 
@@ -1443,7 +1434,6 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
 
   // Standard conversions (C++ [conv])
   SCS.setAsIdentityConversion();
-  SCS.DeprecatedStringLiteralToCharPtr = false;
   SCS.IncompatibleObjC = false;
   SCS.setFromType(FromType);
   SCS.CopyConstructor = 0;
@@ -1542,7 +1532,7 @@ static bool IsStandardConversion(Sema &S, Expr* From, QualType ToType,
     FromType = S.Context.getArrayDecayedType(FromType);
 
     if (S.IsStringLiteralToNonConstPointerConversion(From, ToType)) {
-      // This conversion is deprecated. (C++ D.4).
+      // This conversion is deprecated in C++03 (D.4)
       SCS.DeprecatedStringLiteralToCharPtr = true;
 
       // For the purpose of ranking in overload resolution
@@ -2306,7 +2296,7 @@ bool Sema::isObjCPointerConversion(QualType FromType, QualType ToType,
 
     // Perform the quick checks that will tell us whether these
     // function types are obviously different.
-    if (FromFunctionType->getNumArgs() != ToFunctionType->getNumArgs() ||
+    if (FromFunctionType->getNumParams() != ToFunctionType->getNumParams() ||
         FromFunctionType->isVariadic() != ToFunctionType->isVariadic() ||
         FromFunctionType->getTypeQuals() != ToFunctionType->getTypeQuals())
       return false;
@@ -2326,10 +2316,10 @@ bool Sema::isObjCPointerConversion(QualType FromType, QualType ToType,
     }
 
     // Check argument types.
-    for (unsigned ArgIdx = 0, NumArgs = FromFunctionType->getNumArgs();
+    for (unsigned ArgIdx = 0, NumArgs = FromFunctionType->getNumParams();
          ArgIdx != NumArgs; ++ArgIdx) {
-      QualType FromArgType = FromFunctionType->getArgType(ArgIdx);
-      QualType ToArgType = ToFunctionType->getArgType(ArgIdx);
+      QualType FromArgType = FromFunctionType->getParamType(ArgIdx);
+      QualType ToArgType = ToFunctionType->getParamType(ArgIdx);
       if (Context.getCanonicalType(FromArgType)
             == Context.getCanonicalType(ToArgType)) {
         // Okay, the types match exactly. Nothing to do.
@@ -2454,7 +2444,7 @@ bool Sema::IsBlockPointerConversion(QualType FromType, QualType ToType,
     
   // Perform the quick checks that will tell us whether these
   // function types are obviously different.
-  if (FromFunctionType->getNumArgs() != ToFunctionType->getNumArgs() ||
+  if (FromFunctionType->getNumParams() != ToFunctionType->getNumParams() ||
       FromFunctionType->isVariadic() != ToFunctionType->isVariadic())
     return false;
     
@@ -2487,11 +2477,11 @@ bool Sema::IsBlockPointerConversion(QualType FromType, QualType ToType,
    }
     
    // Check argument types.
-   for (unsigned ArgIdx = 0, NumArgs = FromFunctionType->getNumArgs();
+   for (unsigned ArgIdx = 0, NumArgs = FromFunctionType->getNumParams();
         ArgIdx != NumArgs; ++ArgIdx) {
      IncompatibleObjC = false;
-     QualType FromArgType = FromFunctionType->getArgType(ArgIdx);
-     QualType ToArgType = ToFunctionType->getArgType(ArgIdx);
+     QualType FromArgType = FromFunctionType->getParamType(ArgIdx);
+     QualType ToArgType = ToFunctionType->getParamType(ArgIdx);
      if (Context.hasSameType(FromArgType, ToArgType)) {
        // Okay, the types match exactly. Nothing to do.
      } else if (isObjCPointerConversion(ToArgType, FromArgType,
@@ -2576,18 +2566,18 @@ void Sema::HandleFunctionTypeMismatch(PartialDiagnostic &PDiag,
     return;
   }
 
-  if (FromFunction->getNumArgs() != ToFunction->getNumArgs()) {
-    PDiag << ft_parameter_arity << ToFunction->getNumArgs()
-          << FromFunction->getNumArgs();
+  if (FromFunction->getNumParams() != ToFunction->getNumParams()) {
+    PDiag << ft_parameter_arity << ToFunction->getNumParams()
+          << FromFunction->getNumParams();
     return;
   }
 
   // Handle different parameter types.
   unsigned ArgPos;
-  if (!FunctionArgTypesAreEqual(FromFunction, ToFunction, &ArgPos)) {
+  if (!FunctionParamTypesAreEqual(FromFunction, ToFunction, &ArgPos)) {
     PDiag << ft_parameter_mismatch << ArgPos + 1
-          << ToFunction->getArgType(ArgPos)
-          << FromFunction->getArgType(ArgPos);
+          << ToFunction->getParamType(ArgPos)
+          << FromFunction->getParamType(ArgPos);
     return;
   }
 
@@ -2610,19 +2600,21 @@ void Sema::HandleFunctionTypeMismatch(PartialDiagnostic &PDiag,
   PDiag << ft_default;
 }
 
-/// FunctionArgTypesAreEqual - This routine checks two function proto types
+/// FunctionParamTypesAreEqual - This routine checks two function proto types
 /// for equality of their argument types. Caller has already checked that
 /// they have same number of arguments.  If the parameters are different,
 /// ArgPos will have the parameter index of the first different parameter.
-bool Sema::FunctionArgTypesAreEqual(const FunctionProtoType *OldType,
-                                    const FunctionProtoType *NewType,
-                                    unsigned *ArgPos) {
-  for (FunctionProtoType::arg_type_iterator O = OldType->arg_type_begin(),
-       N = NewType->arg_type_begin(),
-       E = OldType->arg_type_end(); O && (O != E); ++O, ++N) {
+bool Sema::FunctionParamTypesAreEqual(const FunctionProtoType *OldType,
+                                      const FunctionProtoType *NewType,
+                                      unsigned *ArgPos) {
+  for (FunctionProtoType::param_type_iterator O = OldType->param_type_begin(),
+                                              N = NewType->param_type_begin(),
+                                              E = OldType->param_type_end();
+       O && (O != E); ++O, ++N) {
     if (!Context.hasSameType(O->getUnqualifiedType(),
                              N->getUnqualifiedType())) {
-      if (ArgPos) *ArgPos = O - OldType->arg_type_begin();
+      if (ArgPos)
+        *ArgPos = O - OldType->param_type_begin();
       return false;
     }
   }
@@ -2937,8 +2929,8 @@ static bool isFirstArgumentCompatibleWithType(ASTContext &Context,
                                               QualType Type) {
   const FunctionProtoType *CtorType =
       Constructor->getType()->getAs<FunctionProtoType>();
-  if (CtorType->getNumArgs() > 0) {
-    QualType FirstArg = CtorType->getArgType(0);
+  if (CtorType->getNumParams() > 0) {
+    QualType FirstArg = CtorType->getParamType(0);
     if (Context.hasSameUnqualifiedType(Type, FirstArg.getNonReferenceType()))
       return true;
   }
@@ -3259,18 +3251,15 @@ Sema::DiagnoseMultipleUserDefinedConversion(Expr *From, QualType ToType) {
     IsUserDefinedConversion(*this, From, ToType, ICS.UserDefined,
                             CandidateSet, false, false);
   if (OvResult == OR_Ambiguous)
-    Diag(From->getLocStart(),
-         diag::err_typecheck_ambiguous_condition)
-          << From->getType() << ToType << From->getSourceRange();
+    Diag(From->getLocStart(), diag::err_typecheck_ambiguous_condition)
+        << From->getType() << ToType << From->getSourceRange();
   else if (OvResult == OR_No_Viable_Function && !CandidateSet.empty()) {
     if (!RequireCompleteType(From->getLocStart(), ToType,
-                          diag::err_typecheck_nonviable_condition_incomplete,
+                             diag::err_typecheck_nonviable_condition_incomplete,
                              From->getType(), From->getSourceRange()))
-      Diag(From->getLocStart(),
-           diag::err_typecheck_nonviable_condition)
-           << From->getType() << From->getSourceRange() << ToType;
-  }
-  else
+      Diag(From->getLocStart(), diag::err_typecheck_nonviable_condition)
+          << From->getType() << From->getSourceRange() << ToType;
+  } else
     return false;
   CandidateSet.NoteCandidates(*this, OCD_AllCandidates, From);
   return true;
@@ -3280,37 +3269,43 @@ Sema::DiagnoseMultipleUserDefinedConversion(Expr *From, QualType ToType) {
 /// of two user-defined conversion sequences to determine whether any ordering
 /// is possible.
 static ImplicitConversionSequence::CompareKind
-compareConversionFunctions(Sema &S,
-                           FunctionDecl *Function1,
+compareConversionFunctions(Sema &S, FunctionDecl *Function1,
                            FunctionDecl *Function2) {
   if (!S.getLangOpts().ObjC1 || !S.getLangOpts().CPlusPlus11)
     return ImplicitConversionSequence::Indistinguishable;
-  
+
   // Objective-C++:
   //   If both conversion functions are implicitly-declared conversions from
-  //   a lambda closure type to a function pointer and a block pointer, 
+  //   a lambda closure type to a function pointer and a block pointer,
   //   respectively, always prefer the conversion to a function pointer,
   //   because the function pointer is more lightweight and is more likely
   //   to keep code working.
   CXXConversionDecl *Conv1 = dyn_cast<CXXConversionDecl>(Function1);
   if (!Conv1)
     return ImplicitConversionSequence::Indistinguishable;
-    
+
   CXXConversionDecl *Conv2 = dyn_cast<CXXConversionDecl>(Function2);
   if (!Conv2)
     return ImplicitConversionSequence::Indistinguishable;
-  
+
   if (Conv1->getParent()->isLambda() && Conv2->getParent()->isLambda()) {
     bool Block1 = Conv1->getConversionType()->isBlockPointerType();
     bool Block2 = Conv2->getConversionType()->isBlockPointerType();
     if (Block1 != Block2)
-      return Block1? ImplicitConversionSequence::Worse 
-                   : ImplicitConversionSequence::Better;
+      return Block1 ? ImplicitConversionSequence::Worse
+                    : ImplicitConversionSequence::Better;
   }
 
   return ImplicitConversionSequence::Indistinguishable;
 }
-  
+
+static bool hasDeprecatedStringLiteralToCharPtrConversion(
+    const ImplicitConversionSequence &ICS) {
+  return (ICS.isStandard() && ICS.Standard.DeprecatedStringLiteralToCharPtr) ||
+         (ICS.isUserDefined() &&
+          ICS.UserDefined.Before.DeprecatedStringLiteralToCharPtr);
+}
+
 /// CompareImplicitConversionSequences - Compare two implicit
 /// conversion sequences to determine whether one is better than the
 /// other or if they are indistinguishable (C++ 13.3.3.2).
@@ -3333,6 +3328,32 @@ CompareImplicitConversionSequences(Sema &S,
   //   described in 13.3.3.2, the ambiguous conversion sequence is
   //   treated as a user-defined sequence that is indistinguishable
   //   from any other user-defined conversion sequence.
+
+  // String literal to 'char *' conversion has been deprecated in C++03. It has
+  // been removed from C++11. We still accept this conversion, if it happens at
+  // the best viable function. Otherwise, this conversion is considered worse
+  // than ellipsis conversion. Consider this as an extension; this is not in the
+  // standard. For example:
+  //
+  // int &f(...);    // #1
+  // void f(char*);  // #2
+  // void g() { int &r = f("foo"); }
+  //
+  // In C++03, we pick #2 as the best viable function.
+  // In C++11, we pick #1 as the best viable function, because ellipsis
+  // conversion is better than string-literal to char* conversion (since there
+  // is no such conversion in C++11). If there was no #1 at all or #1 couldn't
+  // convert arguments, #2 would be the best viable function in C++11.
+  // If the best viable function has this conversion, a warning will be issued
+  // in C++03, or an ExtWarn (+SFINAE failure) will be issued in C++11.
+
+  if (S.getLangOpts().CPlusPlus11 && !S.getLangOpts().WritableStrings &&
+      hasDeprecatedStringLiteralToCharPtrConversion(ICS1) !=
+      hasDeprecatedStringLiteralToCharPtrConversion(ICS2))
+    return hasDeprecatedStringLiteralToCharPtrConversion(ICS1)
+               ? ImplicitConversionSequence::Worse
+               : ImplicitConversionSequence::Better;
+
   if (ICS1.getKindRank() < ICS2.getKindRank())
     return ImplicitConversionSequence::Better;
   if (ICS2.getKindRank() < ICS1.getKindRank())
@@ -4244,6 +4265,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
       ICS.Standard.BindsImplicitObjectArgumentWithoutRefQualifier = false;
       ICS.Standard.ObjCLifetimeConversionBinding = ObjCLifetimeConversion;
       ICS.Standard.CopyConstructor = 0;
+      ICS.Standard.DeprecatedStringLiteralToCharPtr = false;
 
       // Nothing more to do: the inaccessibility/ambiguity check for
       // derived-to-base conversions is suppressed when we're
@@ -4318,6 +4340,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
     ICS.Standard.BindsImplicitObjectArgumentWithoutRefQualifier = false;
     ICS.Standard.ObjCLifetimeConversionBinding = ObjCLifetimeConversion;
     ICS.Standard.CopyConstructor = 0;
+    ICS.Standard.DeprecatedStringLiteralToCharPtr = false;
     return ICS;
   }
 
@@ -4425,7 +4448,7 @@ TryReferenceInit(Sema &S, Expr *Init, QualType DeclType,
         }
       }
     }
-    
+    ICS.UserDefined.Before.setAsIdentityConversion();
     ICS.UserDefined.After.ReferenceBinding = true;
     ICS.UserDefined.After.IsLvalueReference = !isRValRef;
     ICS.UserDefined.After.BindsToFunctionLvalue = T2->isFunctionType();
@@ -5530,12 +5553,12 @@ Sema::AddOverloadCandidate(FunctionDecl *Function,
   Candidate.IgnoreObjectArgument = false;
   Candidate.ExplicitCallArguments = Args.size();
 
-  unsigned NumArgsInProto = Proto->getNumArgs();
+  unsigned NumParams = Proto->getNumParams();
 
   // (C++ 13.3.2p2): A candidate function having fewer than m
   // parameters is viable only if it has an ellipsis in its parameter
   // list (8.3.5).
-  if ((Args.size() + (PartialOverloading && Args.size())) > NumArgsInProto &&
+  if ((Args.size() + (PartialOverloading && Args.size())) > NumParams &&
       !Proto->isVariadic()) {
     Candidate.Viable = false;
     Candidate.FailureKind = ovl_fail_too_many_arguments;
@@ -5567,12 +5590,12 @@ Sema::AddOverloadCandidate(FunctionDecl *Function,
   // Determine the implicit conversion sequences for each of the
   // arguments.
   for (unsigned ArgIdx = 0; ArgIdx < Args.size(); ++ArgIdx) {
-    if (ArgIdx < NumArgsInProto) {
+    if (ArgIdx < NumParams) {
       // (C++ 13.3.2p3): for F to be a viable function, there shall
       // exist for each argument an implicit conversion sequence
       // (13.3.3.1) that converts that argument to the corresponding
       // parameter of F.
-      QualType ParamType = Proto->getArgType(ArgIdx);
+      QualType ParamType = Proto->getParamType(ArgIdx);
       Candidate.Conversions[ArgIdx]
         = TryCopyInitialization(*this, Args[ArgIdx], ParamType,
                                 SuppressUserConversions,
@@ -5773,12 +5796,12 @@ Sema::AddMethodCandidate(CXXMethodDecl *Method, DeclAccessPair FoundDecl,
   Candidate.IgnoreObjectArgument = false;
   Candidate.ExplicitCallArguments = Args.size();
 
-  unsigned NumArgsInProto = Proto->getNumArgs();
+  unsigned NumParams = Proto->getNumParams();
 
   // (C++ 13.3.2p2): A candidate function having fewer than m
   // parameters is viable only if it has an ellipsis in its parameter
   // list (8.3.5).
-  if (Args.size() > NumArgsInProto && !Proto->isVariadic()) {
+  if (Args.size() > NumParams && !Proto->isVariadic()) {
     Candidate.Viable = false;
     Candidate.FailureKind = ovl_fail_too_many_arguments;
     return;
@@ -5818,12 +5841,12 @@ Sema::AddMethodCandidate(CXXMethodDecl *Method, DeclAccessPair FoundDecl,
   // Determine the implicit conversion sequences for each of the
   // arguments.
   for (unsigned ArgIdx = 0; ArgIdx < Args.size(); ++ArgIdx) {
-    if (ArgIdx < NumArgsInProto) {
+    if (ArgIdx < NumParams) {
       // (C++ 13.3.2p3): for F to be a viable function, there shall
       // exist for each argument an implicit conversion sequence
       // (13.3.3.1) that converts that argument to the corresponding
       // parameter of F.
-      QualType ParamType = Proto->getArgType(ArgIdx);
+      QualType ParamType = Proto->getParamType(ArgIdx);
       Candidate.Conversions[ArgIdx + 1]
         = TryCopyInitialization(*this, Args[ArgIdx], ParamType,
                                 SuppressUserConversions,
@@ -6255,12 +6278,12 @@ void Sema::AddSurrogateCandidate(CXXConversionDecl *Conversion,
   Candidate.Conversions[0].UserDefined.After.setAsIdentityConversion();
 
   // Find the
-  unsigned NumArgsInProto = Proto->getNumArgs();
+  unsigned NumParams = Proto->getNumParams();
 
   // (C++ 13.3.2p2): A candidate function having fewer than m
   // parameters is viable only if it has an ellipsis in its parameter
   // list (8.3.5).
-  if (Args.size() > NumArgsInProto && !Proto->isVariadic()) {
+  if (Args.size() > NumParams && !Proto->isVariadic()) {
     Candidate.Viable = false;
     Candidate.FailureKind = ovl_fail_too_many_arguments;
     return;
@@ -6268,7 +6291,7 @@ void Sema::AddSurrogateCandidate(CXXConversionDecl *Conversion,
 
   // Function types don't have any default arguments, so just check if
   // we have enough arguments.
-  if (Args.size() < NumArgsInProto) {
+  if (Args.size() < NumParams) {
     // Not enough arguments.
     Candidate.Viable = false;
     Candidate.FailureKind = ovl_fail_too_few_arguments;
@@ -6278,12 +6301,12 @@ void Sema::AddSurrogateCandidate(CXXConversionDecl *Conversion,
   // Determine the implicit conversion sequences for each of the
   // arguments.
   for (unsigned ArgIdx = 0, N = Args.size(); ArgIdx != N; ++ArgIdx) {
-    if (ArgIdx < NumArgsInProto) {
+    if (ArgIdx < NumParams) {
       // (C++ 13.3.2p3): for F to be a viable function, there shall
       // exist for each argument an implicit conversion sequence
       // (13.3.3.1) that converts that argument to the corresponding
       // parameter of F.
-      QualType ParamType = Proto->getArgType(ArgIdx);
+      QualType ParamType = Proto->getParamType(ArgIdx);
       Candidate.Conversions[ArgIdx + 1]
         = TryCopyInitialization(*this, Args[ArgIdx], ParamType,
                                 /*SuppressUserConversions=*/false,
@@ -8256,7 +8279,7 @@ isBetterOverloadCandidate(Sema &S,
                                                       S.getASTContext(), true);
       cast<EnableIfAttr>(*Cand2I)->getCond()->Profile(Cand2ID,
                                                       S.getASTContext(), true);
-      if (!(Cand1ID == Cand2ID))
+      if (Cand1ID != Cand2ID)
         return false;
     }
   }
@@ -8709,18 +8732,18 @@ void DiagnoseArityMismatch(Sema &S, Decl *D, unsigned NumFormalArgs) {
   // at least / at most / exactly
   unsigned mode, modeCount;
   if (NumFormalArgs < MinParams) {
-    if (MinParams != FnTy->getNumArgs() ||
-        FnTy->isVariadic() || FnTy->isTemplateVariadic())
+    if (MinParams != FnTy->getNumParams() || FnTy->isVariadic() ||
+        FnTy->isTemplateVariadic())
       mode = 0; // "at least"
     else
       mode = 2; // "exactly"
     modeCount = MinParams;
   } else {
-    if (MinParams != FnTy->getNumArgs())
+    if (MinParams != FnTy->getNumParams())
       mode = 1; // "at most"
     else
       mode = 2; // "exactly"
-    modeCount = FnTy->getNumArgs();
+    modeCount = FnTy->getNumParams();
   }
 
   std::string Description;
@@ -9324,15 +9347,14 @@ void CompleteNonViableCandidate(Sema &S, OverloadCandidate *Cand,
   }
 
   // Fill in the rest of the conversions.
-  unsigned NumArgsInProto = Proto->getNumArgs();
+  unsigned NumParams = Proto->getNumParams();
   for (; ConvIdx != ConvCount; ++ConvIdx, ++ArgIdx) {
-    if (ArgIdx < NumArgsInProto) {
-      Cand->Conversions[ConvIdx]
-        = TryCopyInitialization(S, Args[ArgIdx], Proto->getArgType(ArgIdx),
-                                SuppressUserConversions,
-                                /*InOverloadResolution=*/true,
-                                /*AllowObjCWritebackConversion=*/
-                                  S.getLangOpts().ObjCAutoRefCount);
+    if (ArgIdx < NumParams) {
+      Cand->Conversions[ConvIdx] = TryCopyInitialization(
+          S, Args[ArgIdx], Proto->getParamType(ArgIdx), SuppressUserConversions,
+          /*InOverloadResolution=*/true,
+          /*AllowObjCWritebackConversion=*/
+          S.getLangOpts().ObjCAutoRefCount);
       // Store the FixIt in the candidate if it exists.
       if (!Unfixable && Cand->Conversions[ConvIdx].isBad())
         Unfixable = !Cand->TryToFixBadConversion(ConvIdx, S);
@@ -11653,7 +11675,7 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
   const FunctionProtoType *Proto =
     Method->getType()->getAs<FunctionProtoType>();
 
-  unsigned NumArgsInProto = Proto->getNumArgs();
+  unsigned NumParams = Proto->getNumParams();
 
   DeclarationNameInfo OpLocInfo(
                Context.DeclarationNames.getCXXOperatorName(OO_Call), LParenLoc);
@@ -11689,8 +11711,8 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
 
   // We may have default arguments. If so, we need to allocate more
   // slots in the call for them.
-  if (Args.size() < NumArgsInProto)
-    TheCall->setNumArgs(Context, NumArgsInProto + 1);
+  if (Args.size() < NumParams)
+    TheCall->setNumArgs(Context, NumParams + 1);
 
   bool IsError = false;
 
@@ -11705,7 +11727,7 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
   TheCall->setArg(0, Object.take());
 
   // Check the argument types.
-  for (unsigned i = 0; i != NumArgsInProto; i++) {
+  for (unsigned i = 0; i != NumParams; i++) {
     Expr *Arg;
     if (i < Args.size()) {
       Arg = Args[i];
@@ -11737,7 +11759,7 @@ Sema::BuildCallToObjectOfClassType(Scope *S, Expr *Obj,
   // If this is a variadic call, handle args passed through "...".
   if (Proto->isVariadic()) {
     // Promote the arguments (C99 6.5.2.2p7).
-    for (unsigned i = NumArgsInProto, e = Args.size(); i < e; i++) {
+    for (unsigned i = NumParams, e = Args.size(); i < e; i++) {
       ExprResult Arg = DefaultVariadicArgumentPromotion(Args[i], VariadicMethod, 0);
       IsError |= Arg.isInvalid();
       TheCall->setArg(i + 1, Arg.take());

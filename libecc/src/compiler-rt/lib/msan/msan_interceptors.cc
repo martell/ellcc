@@ -159,6 +159,9 @@ INTERCEPTOR(void *, memalign, SIZE_T boundary, SIZE_T size) {
   return ptr;
 }
 
+INTERCEPTOR(void*, __libc_memalign, uptr align, uptr s)
+  ALIAS("memalign");
+
 INTERCEPTOR(void *, valloc, SIZE_T size) {
   GET_MALLOC_STACK_TRACE;
   void *ptr = MsanReallocate(&stack, 0, size, GetPageSizeCached(), false);
@@ -905,9 +908,9 @@ INTERCEPTOR(int, dladdr, void *addr, dlinfo *info) {
   return res;
 }
 
-INTERCEPTOR(char *, dlerror) {
+INTERCEPTOR(char *, dlerror, int fake) {
   ENSURE_MSAN_INITED();
-  char *res = REAL(dlerror)();
+  char *res = REAL(dlerror)(fake);
   if (res != 0) __msan_unpoison(res, REAL(strlen)(res) + 1);
   return res;
 }
@@ -1149,9 +1152,9 @@ INTERCEPTOR(int, pthread_join, void *th, void **retval) {
 
 extern char *tzname[2];
 
-INTERCEPTOR(void, tzset) {
+INTERCEPTOR(void, tzset, int fake) {
   ENSURE_MSAN_INITED();
-  REAL(tzset)();
+  REAL(tzset)(fake);
   if (tzname[0])
     __msan_unpoison(tzname[0], REAL(strlen)(tzname[0]) + 1);
   if (tzname[1])
@@ -1291,6 +1294,8 @@ extern "C" int *__errno_location(void);
   } while (false)  // FIXME
 #define COMMON_INTERCEPTOR_BLOCK_REAL(name) REAL(name)
 #define COMMON_INTERCEPTOR_ON_EXIT(ctx) OnExit()
+// FIXME: update Msan to use common printf interceptors
+#define SANITIZER_INTERCEPT_PRINTF 0
 #include "sanitizer_common/sanitizer_common_interceptors.inc"
 
 #define COMMON_SYSCALL_PRE_READ_RANGE(p, s) CHECK_UNPOISONED(p, s)

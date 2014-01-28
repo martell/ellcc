@@ -1191,21 +1191,9 @@ void DwarfUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
     for (unsigned i = 0, N = Elements.getNumElements(); i < N; ++i) {
       DIDescriptor Element = Elements.getElement(i);
       DIE *ElemDie = NULL;
-      if (Element.isSubprogram()) {
-        DISubprogram SP(Element);
-        ElemDie = getOrCreateSubprogramDIE(SP);
-        if (SP.isProtected())
-          addUInt(ElemDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_data1,
-                  dwarf::DW_ACCESS_protected);
-        else if (SP.isPrivate())
-          addUInt(ElemDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_data1,
-                  dwarf::DW_ACCESS_private);
-        else
-          addUInt(ElemDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_data1,
-                  dwarf::DW_ACCESS_public);
-        if (SP.isExplicit())
-          addFlag(ElemDie, dwarf::DW_AT_explicit);
-      } else if (Element.isDerivedType()) {
+      if (Element.isSubprogram())
+        ElemDie = getOrCreateSubprogramDIE(DISubprogram(Element));
+      else if (Element.isDerivedType()) {
         DIDerivedType DDTy(Element);
         if (DDTy.getTag() == dwarf::DW_TAG_friend) {
           ElemDie = createAndAddDIE(dwarf::DW_TAG_friend, Buffer);
@@ -1221,7 +1209,8 @@ void DwarfUnit::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
         ElemDie = createAndAddDIE(Property.getTag(), Buffer);
         StringRef PropertyName = Property.getObjCPropertyName();
         addString(ElemDie, dwarf::DW_AT_APPLE_property_name, PropertyName);
-        addType(ElemDie, Property.getType());
+        if (Property.getType())
+          addType(ElemDie, Property.getType());
         addSourceLine(ElemDie, Property);
         StringRef GetterName = Property.getObjCPropertyGetterName();
         if (!GetterName.empty())
@@ -1489,6 +1478,19 @@ DIE *DwarfUnit::getOrCreateSubprogramDIE(DISubprogram SP) {
 
   if (SP.isRValueReference())
     addFlag(SPDie, dwarf::DW_AT_rvalue_reference);
+
+  if (SP.isProtected())
+    addUInt(SPDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_data1,
+            dwarf::DW_ACCESS_protected);
+  else if (SP.isPrivate())
+    addUInt(SPDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_data1,
+            dwarf::DW_ACCESS_private);
+  else
+    addUInt(SPDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_data1,
+            dwarf::DW_ACCESS_public);
+
+  if (SP.isExplicit())
+    addFlag(SPDie, dwarf::DW_AT_explicit);
 
   return SPDie;
 }

@@ -106,13 +106,13 @@ let DecoderNamespace = "MicroMips", Predicates = [InMicroMips] in {
   def XOR_MM   : MMRel, ArithLogicR<"xor", GPR32Opnd, 1, II_XOR, xor>,
                  ADD_FM_MM<0, 0x310>;
   def NOR_MM   : MMRel, LogicNOR<"nor", GPR32Opnd>, ADD_FM_MM<0, 0x2d0>;
-  def MULT_MM  : MMRel, Mult<"mult", IIImult, GPR32Opnd, [HI0, LO0]>,
+  def MULT_MM  : MMRel, Mult<"mult", II_MULT, GPR32Opnd, [HI0, LO0]>,
                  MULT_FM_MM<0x22c>;
-  def MULTu_MM : MMRel, Mult<"multu", IIImult, GPR32Opnd, [HI0, LO0]>,
+  def MULTu_MM : MMRel, Mult<"multu", II_MULTU, GPR32Opnd, [HI0, LO0]>,
                  MULT_FM_MM<0x26c>;
-  def SDIV_MM  : MMRel, Div<"div", IIIdiv, GPR32Opnd, [HI0, LO0]>,
+  def SDIV_MM  : MMRel, Div<"div", II_DIV, GPR32Opnd, [HI0, LO0]>,
                  MULT_FM_MM<0x2ac>;
-  def UDIV_MM  : MMRel, Div<"divu", IIIdiv, GPR32Opnd, [HI0, LO0]>,
+  def UDIV_MM  : MMRel, Div<"divu", II_DIVU, GPR32Opnd, [HI0, LO0]>,
                  MULT_FM_MM<0x2ec>;
 
   /// Shift Instructions
@@ -145,7 +145,7 @@ let DecoderNamespace = "MicroMips", Predicates = [InMicroMips] in {
     def SW_MM  : Store<"sw", GPR32Opnd>, MMRel, LW_FM_MM<0x3e>;
   }
 
-  def LWU_MM : LoadMM<"lwu", GPR32Opnd, zextloadi32, IILoad>, LL_FM_MM<0xe>;
+  def LWU_MM : LoadMM<"lwu", GPR32Opnd, zextloadi32, II_LWU>, LL_FM_MM<0xe>;
 
   /// Load and Store Instructions - unaligned
   def LWL_MM : LoadLeftRightMM<"lwl", MipsLWL, GPR32Opnd, mem_mm_12>,
@@ -178,10 +178,10 @@ let DecoderNamespace = "MicroMips", Predicates = [InMicroMips] in {
                 MFLO_FM_MM<0x075>;
 
   /// Multiply Add/Sub Instructions
-  def MADD_MM  : MMRel, MArithR<"madd", 1>, MULT_FM_MM<0x32c>;
-  def MADDU_MM : MMRel, MArithR<"maddu", 1>, MULT_FM_MM<0x36c>;
-  def MSUB_MM  : MMRel, MArithR<"msub">, MULT_FM_MM<0x3ac>;
-  def MSUBU_MM : MMRel, MArithR<"msubu">, MULT_FM_MM<0x3ec>;
+  def MADD_MM  : MMRel, MArithR<"madd", II_MADD, 1>, MULT_FM_MM<0x32c>;
+  def MADDU_MM : MMRel, MArithR<"maddu", II_MADDU, 1>, MULT_FM_MM<0x36c>;
+  def MSUB_MM  : MMRel, MArithR<"msub", II_MSUB>, MULT_FM_MM<0x3ac>;
+  def MSUBU_MM : MMRel, MArithR<"msubu", II_MSUBU>, MULT_FM_MM<0x3ec>;
 
   /// Count Leading
   def CLZ_MM : MMRel, CountLeading0<"clz", GPR32Opnd>, CLO_FM_MM<0x16c>;

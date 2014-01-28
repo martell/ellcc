@@ -65,11 +65,20 @@ def DeclBase : AttrSubject;
 def FunctionLike : SubsetSubject<DeclBase,
                                   [{S->getFunctionType(false) != NULL}]>;
 
+// HasFunctionProto is a more strict version of FunctionLike, so it should
+// never be specified in a Subjects list along with FunctionLike (due to the
+// inclusive nature of subject testing).
 def HasFunctionProto : SubsetSubject<DeclBase,
                                      [{(S->getFunctionType(true) != NULL &&
                               isa<FunctionProtoType>(S->getFunctionType())) ||
                                        isa<ObjCMethodDecl>(S) ||
                                        isa<BlockDecl>(S)}]>;
+
+// This is a fake Decl node that represents a function definition as well as a
+// function declaration. This can be used for attributes which are allowed to
+// appear on the definition of a function that's been late parsed. It is
+// treated and diagnosed the same as a FunctionDecl.
+def FunctionDefinition : DDecl<Function, 1>;
 
 // A single argument to an attribute
 class Argument<string name, bit optional> {
@@ -202,6 +211,9 @@ class Attr {
   // Set to true if all of the attribute's arguments should be parsed in an
   // unevaluated context.
   bit ParseArgumentsAsUnevaluated = 0;
+  // Set to true if this attribute can be duplicated on a subject when merging
+  // attributes. By default, attributes are not merged.
+  bit DuplicatesAllowedWhileMerging = 0;
   // Lists language options, one of which is required to be true for the
   // attribute to be applicable. If empty, no language options are required.
   list<LangOpt> LangOpts = [];
@@ -332,6 +344,7 @@ def Availability : InheritableAttr {
              .Default(llvm::StringRef());
 } }];
   let HasCustomParsing = 1;
+  let DuplicatesAllowedWhileMerging = 1;
 //  let Subjects = SubjectList<[Named]>;
 }
 
@@ -517,7 +530,7 @@ def Destructor : InheritableAttr {
 
 def EnableIf : InheritableAttr {
   let Spellings = [GNU<"enable_if">];
-  let Subjects = SubjectList<[Function]>;
+  let Subjects = SubjectList<[FunctionDefinition]>;
   let Args = [ExprArgument<"Cond">, StringArgument<"Message">];
   let TemplateDependent = 1;
 }
@@ -555,15 +568,15 @@ def Format : InheritableAttr {
   let Spellings = [GNU<"format">, CXX11<"gnu", "format">];
   let Args = [IdentifierArgument<"Type">, IntArgument<"FormatIdx">,
               IntArgument<"FirstArg">];
-  let Subjects = SubjectList<[ObjCMethod, Block, FunctionLike,
-                              HasFunctionProto], WarnDiag, "ExpectedFunction">;
+  let Subjects = SubjectList<[ObjCMethod, Block, HasFunctionProto], WarnDiag,
+                             "ExpectedFunction">;
 }
 
 def FormatArg : InheritableAttr {
   let Spellings = [GNU<"format_arg">, CXX11<"gnu", "format_arg">];
   let Args = [IntArgument<"FormatIdx">];
-  let Subjects = SubjectList<[ObjCMethod, FunctionLike, HasFunctionProto],
-                             WarnDiag, "ExpectedFunction">;
+  let Subjects = SubjectList<[ObjCMethod, HasFunctionProto], WarnDiag,
+                             "ExpectedFunction">;
 }
 
 def GNUInline : InheritableAttr {
@@ -690,9 +703,8 @@ def NoMips16 : InheritableAttr, TargetSpecificAttr<TargetMips> {
 
 def NonNull : InheritableAttr {
   let Spellings = [GNU<"nonnull">, CXX11<"gnu", "nonnull">];
-  let Subjects = SubjectList<[ObjCMethod, FunctionLike, HasFunctionProto,
-                              ParmVar],
-                             WarnDiag, "ExpectedFunctionMethodOrParameter">;
+  let Subjects = SubjectList<[ObjCMethod, HasFunctionProto, ParmVar], WarnDiag,
+                             "ExpectedFunctionMethodOrParameter">;
   let Args = [VariadicUnsignedArgument<"Args">];
   let AdditionalMembers =
 [{bool isNonNull(unsigned idx) const {
@@ -702,6 +714,12 @@ def NonNull : InheritableAttr {
         return true;
     return false;
   } }];
+}
+
+def ReturnsNonNull : InheritableAttr {
+  let Spellings = [GNU<"returns_nonnull">, CXX11<"gnu", "returns_nonnull">];
+  let Subjects = SubjectList<[ObjCMethod, HasFunctionProto], WarnDiag,
+                             "ExpectedFunctionOrMethod">;
 }
 
 def NoReturn : InheritableAttr {
@@ -818,7 +836,7 @@ def ObjCDesignatedInitializer : Attr {
 
 def Overloadable : Attr {
   let Spellings = [GNU<"overloadable">];
-  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Subjects = SubjectList<[FunctionDefinition], ErrorDiag>;
 }
 
 def Override : InheritableAttr { 
@@ -841,8 +859,7 @@ def Ownership : InheritableAttr {
     }
   }];
   let Args = [IdentifierArgument<"Module">, VariadicUnsignedArgument<"Args">];
-  let Subjects = SubjectList<[FunctionLike, HasFunctionProto], WarnDiag,
-                             "ExpectedFunction">;
+  let Subjects = SubjectList<[HasFunctionProto], WarnDiag, "ExpectedFunction">;
 }
 
 def Packed : InheritableAttr {
@@ -1101,7 +1118,7 @@ def ScopedLockable : InheritableAttr {
 
 def NoThreadSafetyAnalysis : InheritableAttr {
   let Spellings = [GNU<"no_thread_safety_analysis">];
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 def GuardedBy : InheritableAttr {
@@ -1110,6 +1127,7 @@ def GuardedBy : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
+  let DuplicatesAllowedWhileMerging = 1;
   let Subjects = SubjectList<[Field, SharedVar], WarnDiag,
                              "ExpectedFieldOrGlobalVar">;
 }
@@ -1120,6 +1138,7 @@ def PtGuardedBy : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
+  let DuplicatesAllowedWhileMerging = 1;
   let Subjects = SubjectList<[Field, SharedVar], WarnDiag,
                              "ExpectedFieldOrGlobalVar">;
 }
@@ -1130,6 +1149,7 @@ def AcquiredAfter : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
+  let DuplicatesAllowedWhileMerging = 1;
   let Subjects = SubjectList<[Field, SharedVar], WarnDiag,
                              "ExpectedFieldOrGlobalVar">;
 }
@@ -1140,6 +1160,7 @@ def AcquiredBefore : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
+  let DuplicatesAllowedWhileMerging = 1;
   let Subjects = SubjectList<[Field, SharedVar], WarnDiag,
                              "ExpectedFieldOrGlobalVar">;
 }
@@ -1150,7 +1171,8 @@ def ExclusiveLockFunction : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let DuplicatesAllowedWhileMerging = 1;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 def SharedLockFunction : InheritableAttr {
@@ -1159,7 +1181,8 @@ def SharedLockFunction : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let DuplicatesAllowedWhileMerging = 1;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 def AssertExclusiveLock : InheritableAttr {
@@ -1168,7 +1191,8 @@ def AssertExclusiveLock : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let DuplicatesAllowedWhileMerging = 1;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 def AssertSharedLock : InheritableAttr {
@@ -1177,7 +1201,8 @@ def AssertSharedLock : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let DuplicatesAllowedWhileMerging = 1;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 // The first argument is an integer or boolean value specifying the return value
@@ -1188,7 +1213,8 @@ def ExclusiveTrylockFunction : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let DuplicatesAllowedWhileMerging = 1;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 // The first argument is an integer or boolean value specifying the return value
@@ -1199,7 +1225,8 @@ def SharedTrylockFunction : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let DuplicatesAllowedWhileMerging = 1;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 def UnlockFunction : InheritableAttr {
@@ -1208,7 +1235,8 @@ def UnlockFunction : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let DuplicatesAllowedWhileMerging = 1;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 def LockReturned : InheritableAttr {
@@ -1217,7 +1245,7 @@ def LockReturned : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 def LocksExcluded : InheritableAttr {
@@ -1226,7 +1254,8 @@ def LocksExcluded : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let DuplicatesAllowedWhileMerging = 1;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 def ExclusiveLocksRequired : InheritableAttr {
@@ -1235,7 +1264,8 @@ def ExclusiveLocksRequired : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let DuplicatesAllowedWhileMerging = 1;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 def SharedLocksRequired : InheritableAttr {
@@ -1244,7 +1274,8 @@ def SharedLocksRequired : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let DuplicatesAllowedWhileMerging = 1;
+  let Subjects = SubjectList<[FunctionDefinition, FunctionTemplate]>;
 }
 
 // C/C++ consumed attributes.

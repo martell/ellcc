@@ -22,7 +22,6 @@
 #include "ARMTargetObjectFile.h"
 #include "InstPrinter/ARMInstPrinter.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
-#include "MCTargetDesc/ARMBuildAttrs.h"
 #include "MCTargetDesc/ARMMCExpr.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallString.h"
@@ -45,6 +44,7 @@
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
+#include "llvm/Support/ARMBuildAttributes.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ELF.h"
@@ -491,17 +491,11 @@ void ARMAsmPrinter::EmitStartOfAsmFile(Module &M) {
     }
 
     // Compiling with debug info should not affect the code
-    // generation!  Since some of the data sections are first switched
-    // to only in ASMPrinter::doFinalization(), the debug info
-    // sections would come before the data sections in the object
-    // file.  This is problematic, since PC-relative loads have to use
-    // different instruction sequences in order to reach global data
-    // in the same object file.
+    // generation.  Ensure the cstring section comes before the
+    // optional __DWARF secion. Otherwise, PC-relative loads would
+    // have to use different instruction sequences at "-g" in order to
+    // reach global data in the same object file.
     OutStreamer.SwitchSection(getObjFileLowering().getCStringSection());
-    OutStreamer.SwitchSection(getObjFileLowering().getDataSection());
-    OutStreamer.SwitchSection(getObjFileLowering().getDataCommonSection());
-    OutStreamer.SwitchSection(getObjFileLowering().getDataBSSSection());
-    OutStreamer.SwitchSection(getObjFileLowering().getNonLazySymbolPointerSection());
   }
 
   // Use unified assembler syntax.
@@ -697,10 +691,10 @@ void ARMAsmPrinter::emitAttributes() {
     ATS.emitAttribute(ARMBuildAttrs::ABI_FP_number_model,
                       ARMBuildAttrs::AllowIEE754);
 
-  // FIXME: add more flags to ARMBuildAttrs.h
+  // FIXME: add more flags to ARMBuildAttributes.h
   // 8-bytes alignment stuff.
-  ATS.emitAttribute(ARMBuildAttrs::ABI_align8_needed, 1);
-  ATS.emitAttribute(ARMBuildAttrs::ABI_align8_preserved, 1);
+  ATS.emitAttribute(ARMBuildAttrs::ABI_align_needed, 1);
+  ATS.emitAttribute(ARMBuildAttrs::ABI_align_preserved, 1);
 
   // ABI_HardFP_use attribute to indicate single precision FP.
   if (Subtarget->isFPOnlySP())
@@ -719,12 +713,14 @@ void ARMAsmPrinter::emitAttributes() {
   if (Subtarget->hasMPExtension())
       ATS.emitAttribute(ARMBuildAttrs::MPextension_use, ARMBuildAttrs::AllowMP);
 
-  if (Subtarget->hasDivide()) {
-    // Check if hardware divide is only available in thumb2 or ARM as well.
-    ATS.emitAttribute(ARMBuildAttrs::DIV_use,
-      Subtarget->hasDivideInARMMode() ? ARMBuildAttrs::AllowDIVExt :
-                                        ARMBuildAttrs::AllowDIVIfExists);
-  }
+  // Hardware divide in ARM mode is part of base arch, starting from ARMv8.
+  // If only Thumb hwdiv is present, it must also be in base arch (ARMv7-R/M).
+  // It is not possible to produce DisallowDIV: if hwdiv is present in the base
+  // arch, supplying -hwdiv downgrades the effective arch, via ClearImpliedBits.
+  // AllowDIVExt is only emitted if hwdiv isn't available in the base arch;
+  // otherwise, the default value (AllowDIVIfExists) applies.
+  if (Subtarget->hasDivideInARMMode() && !Subtarget->hasV8Ops())
+      ATS.emitAttribute(ARMBuildAttrs::DIV_use, ARMBuildAttrs::AllowDIVExt);
 
   if (Subtarget->hasTrustZone() && Subtarget->hasVirtualization())
       ATS.emitAttribute(ARMBuildAttrs::Virtualization_use,

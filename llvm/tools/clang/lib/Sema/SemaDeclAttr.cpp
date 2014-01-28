@@ -67,20 +67,20 @@ static bool hasFunctionProto(const Decl *D) {
   return isa<ObjCMethodDecl>(D) || isa<BlockDecl>(D);
 }
 
-/// getFunctionOrMethodNumArgs - Return number of function or method
-/// arguments. It is an error to call this on a K&R function (use
+/// getFunctionOrMethodNumParams - Return number of function or method
+/// parameters. It is an error to call this on a K&R function (use
 /// hasFunctionProto first).
-static unsigned getFunctionOrMethodNumArgs(const Decl *D) {
+static unsigned getFunctionOrMethodNumParams(const Decl *D) {
   if (const FunctionType *FnTy = D->getFunctionType())
-    return cast<FunctionProtoType>(FnTy)->getNumArgs();
+    return cast<FunctionProtoType>(FnTy)->getNumParams();
   if (const BlockDecl *BD = dyn_cast<BlockDecl>(D))
     return BD->getNumParams();
   return cast<ObjCMethodDecl>(D)->param_size();
 }
 
-static QualType getFunctionOrMethodArgType(const Decl *D, unsigned Idx) {
+static QualType getFunctionOrMethodParamType(const Decl *D, unsigned Idx) {
   if (const FunctionType *FnTy = D->getFunctionType())
-    return cast<FunctionProtoType>(FnTy)->getArgType(Idx);
+    return cast<FunctionProtoType>(FnTy)->getParamType(Idx);
   if (const BlockDecl *BD = dyn_cast<BlockDecl>(D))
     return BD->getParamDecl(Idx)->getType();
 
@@ -208,16 +208,15 @@ static bool checkAttrMutualExclusion(Sema &S, Decl *D,
   return false;
 }
 
-/// \brief Check if IdxExpr is a valid argument index for a function or
+/// \brief Check if IdxExpr is a valid parameter index for a function or
 /// instance method D.  May output an error.
 ///
 /// \returns true if IdxExpr is a valid index.
-static bool checkFunctionOrMethodArgumentIndex(Sema &S, const Decl *D,
-                                               const AttributeList &Attr,
-                                               unsigned AttrArgNum,
-                                               const Expr *IdxExpr,
-                                               uint64_t &Idx)
-{
+static bool checkFunctionOrMethodParameterIndex(Sema &S, const Decl *D,
+                                                const AttributeList &Attr,
+                                                unsigned AttrArgNum,
+                                                const Expr *IdxExpr,
+                                                uint64_t &Idx) {
   assert(isFunctionOrMethod(D));
 
   // In C++ the implicit 'this' function parameter also counts.
@@ -225,8 +224,8 @@ static bool checkFunctionOrMethodArgumentIndex(Sema &S, const Decl *D,
   bool HP = hasFunctionProto(D);
   bool HasImplicitThisParam = isInstanceMethod(D);
   bool IV = HP && isFunctionOrMethodVariadic(D);
-  unsigned NumArgs = (HP ? getFunctionOrMethodNumArgs(D) : 0) +
-                     HasImplicitThisParam;
+  unsigned NumParams =
+      (HP ? getFunctionOrMethodNumParams(D) : 0) + HasImplicitThisParam;
 
   llvm::APSInt IdxInt;
   if (IdxExpr->isTypeDependent() || IdxExpr->isValueDependent() ||
@@ -238,7 +237,7 @@ static bool checkFunctionOrMethodArgumentIndex(Sema &S, const Decl *D,
   }
 
   Idx = IdxInt.getLimitedValue();
-  if (Idx < 1 || (!IV && Idx > NumArgs)) {
+  if (Idx < 1 || (!IV && Idx > NumParams)) {
     S.Diag(Attr.getLoc(), diag::err_attribute_argument_out_of_bounds)
       << Attr.getName() << AttrArgNum << IdxExpr->getSourceRange();
     return false;
@@ -1157,12 +1156,14 @@ static void possibleTransparentUnionPointerType(QualType &T) {
 }
 
 static bool attrNonNullArgCheck(Sema &S, QualType T, const AttributeList &Attr,
-                                SourceRange R) {
+                                SourceRange R, bool isReturnValue = false) {
   T = T.getNonReferenceType();
   possibleTransparentUnionPointerType(T);
 
   if (!T->isAnyPointerType() && !T->isBlockPointerType()) {
-    S.Diag(Attr.getLoc(), diag::warn_attribute_pointers_only)
+    S.Diag(Attr.getLoc(),
+           isReturnValue ? diag::warn_attribute_return_pointers_only
+                         : diag::warn_attribute_pointers_only)
       << Attr.getName() << R;
     return false;
   }
@@ -1191,13 +1192,13 @@ static void handleNonNullAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   for (unsigned i = 0; i < Attr.getNumArgs(); ++i) {
     Expr *Ex = Attr.getArgAsExpr(i);
     uint64_t Idx;
-    if (!checkFunctionOrMethodArgumentIndex(S, D, Attr, i + 1, Ex, Idx))
+    if (!checkFunctionOrMethodParameterIndex(S, D, Attr, i + 1, Ex, Idx))
       return;
 
     // Is the function argument a pointer type?
     // FIXME: Should also highlight argument in decl in the diagnostic.
-    if (!attrNonNullArgCheck(S, getFunctionOrMethodArgType(D, Idx),
-                             Attr, Ex->getSourceRange()))
+    if (!attrNonNullArgCheck(S, getFunctionOrMethodParamType(D, Idx), Attr,
+                             Ex->getSourceRange()))
       continue;
 
     NonNullArgs.push_back(Idx);
@@ -1206,8 +1207,8 @@ static void handleNonNullAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   // If no arguments were specified to __attribute__((nonnull)) then all pointer
   // arguments have a nonnull attribute.
   if (NonNullArgs.empty()) {
-    for (unsigned i = 0, e = getFunctionOrMethodNumArgs(D); i != e; ++i) {
-      QualType T = getFunctionOrMethodArgType(D, i).getNonReferenceType();
+    for (unsigned i = 0, e = getFunctionOrMethodNumParams(D); i != e; ++i) {
+      QualType T = getFunctionOrMethodParamType(D, i).getNonReferenceType();
       possibleTransparentUnionPointerType(T);
       if (T->isAnyPointerType() || T->isBlockPointerType())
         NonNullArgs.push_back(i);
@@ -1231,13 +1232,16 @@ static void handleNonNullAttr(Sema &S, Decl *D, const AttributeList &Attr) {
                          Attr.getAttributeSpellingListIndex()));
 }
 
-static const char *ownershipKindToDiagName(OwnershipAttr::OwnershipKind K) {
-  switch (K) {
-    case OwnershipAttr::Holds:    return "'ownership_holds'";
-    case OwnershipAttr::Takes:    return "'ownership_takes'";
-    case OwnershipAttr::Returns:  return "'ownership_returns'";
-  }
-  llvm_unreachable("unknown ownership");
+static void handleReturnsNonNullAttr(Sema &S, Decl *D,
+                                     const AttributeList &Attr) {
+  QualType ResultType = getFunctionOrMethodResultType(D);
+  if (!attrNonNullArgCheck(S, ResultType, Attr, Attr.getRange(),
+                           /* isReturnValue */ true))
+    return;
+
+  D->addAttr(::new (S.Context)
+            ReturnsNonNullAttr(Attr.getRange(), S.Context,
+                               Attr.getAttributeSpellingListIndex()));
 }
 
 static void handleOwnershipAttr(Sema &S, Decl *D, const AttributeList &AL) {
@@ -1293,11 +1297,11 @@ static void handleOwnershipAttr(Sema &S, Decl *D, const AttributeList &AL) {
   for (unsigned i = 1; i < AL.getNumArgs(); ++i) {
     Expr *Ex = AL.getArgAsExpr(i);
     uint64_t Idx;
-    if (!checkFunctionOrMethodArgumentIndex(S, D, AL, i, Ex, Idx))
+    if (!checkFunctionOrMethodParameterIndex(S, D, AL, i, Ex, Idx))
       return;
 
     // Is the function argument a pointer type?
-    QualType T = getFunctionOrMethodArgType(D, Idx);
+    QualType T = getFunctionOrMethodParamType(D, Idx);
     int Err = -1;  // No error
     switch (K) {
       case OwnershipAttr::Takes:
@@ -1325,7 +1329,7 @@ static void handleOwnershipAttr(Sema &S, Decl *D, const AttributeList &AL) {
       if ((*i)->getOwnKind() != K && (*i)->args_end() !=
           std::find((*i)->args_begin(), (*i)->args_end(), Idx)) {
         S.Diag(AL.getLoc(), diag::err_attributes_are_not_compatible)
-          << AL.getName() << ownershipKindToDiagName((*i)->getOwnKind());
+          << AL.getName() << *i;
         return;
       }
     }
@@ -1646,7 +1650,7 @@ static void handleDestructorAttr(Sema &S, Decl *D, const AttributeList &Attr) {
     return;
   }
 
-  uint32_t priority = ConstructorAttr::DefaultPriority;
+  uint32_t priority = DestructorAttr::DefaultPriority;
   if (Attr.getNumArgs() > 0 &&
       !checkUInt32Argument(S, Attr, Attr.getArgAsExpr(0), priority))
     return;
@@ -2358,12 +2362,12 @@ static void handleCleanupAttr(Sema &S, Decl *D, const AttributeList &Attr) {
 /// http://gcc.gnu.org/onlinedocs/gcc/Function-Attributes.html
 static void handleFormatArgAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   Expr *IdxExpr = Attr.getArgAsExpr(0);
-  uint64_t ArgIdx;
-  if (!checkFunctionOrMethodArgumentIndex(S, D, Attr, 1, IdxExpr, ArgIdx))
+  uint64_t Idx;
+  if (!checkFunctionOrMethodParameterIndex(S, D, Attr, 1, IdxExpr, Idx))
     return;
 
   // make sure the format string is really a string
-  QualType Ty = getFunctionOrMethodArgType(D, ArgIdx);
+  QualType Ty = getFunctionOrMethodParamType(D, Idx);
 
   bool not_nsstring_type = !isNSStringType(Ty, S.Context);
   if (not_nsstring_type &&
@@ -2388,7 +2392,7 @@ static void handleFormatArgAttr(Sema &S, Decl *D, const AttributeList &Attr) {
     return;
   }
 
-  // We cannot use the ArgIdx returned from checkFunctionOrMethodArgumentIndex
+  // We cannot use the Idx returned from checkFunctionOrMethodParameterIndex
   // because that has corrected for the implicit this parameter, and is zero-
   // based.  The attribute expects what the user wrote explicitly.
   llvm::APSInt Val;
@@ -2504,7 +2508,7 @@ static void handleFormatAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   // In C++ the implicit 'this' function parameter also counts, and they are
   // counted from one.
   bool HasImplicitThisParam = isInstanceMethod(D);
-  unsigned NumArgs  = getFunctionOrMethodNumArgs(D) + HasImplicitThisParam;
+  unsigned NumArgs = getFunctionOrMethodNumParams(D) + HasImplicitThisParam;
 
   IdentifierInfo *II = Attr.getArgAsIdent(0)->Ident;
   StringRef Format = II->getName();
@@ -2554,7 +2558,7 @@ static void handleFormatAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   }
 
   // make sure the format string is really a string
-  QualType Ty = getFunctionOrMethodArgType(D, ArgIdx);
+  QualType Ty = getFunctionOrMethodParamType(D, ArgIdx);
 
   if (Kind == CFStringFormat) {
     if (!isCFStringType(Ty, S.Context)) {
@@ -3266,19 +3270,19 @@ static void handleArgumentWithTypeTagAttr(Sema &S, Decl *D,
   }
 
   uint64_t ArgumentIdx;
-  if (!checkFunctionOrMethodArgumentIndex(S, D, Attr, 2, Attr.getArgAsExpr(1),
-                                          ArgumentIdx))
+  if (!checkFunctionOrMethodParameterIndex(S, D, Attr, 2, Attr.getArgAsExpr(1),
+                                           ArgumentIdx))
     return;
 
   uint64_t TypeTagIdx;
-  if (!checkFunctionOrMethodArgumentIndex(S, D, Attr, 3, Attr.getArgAsExpr(2),
-                                          TypeTagIdx))
+  if (!checkFunctionOrMethodParameterIndex(S, D, Attr, 3, Attr.getArgAsExpr(2),
+                                           TypeTagIdx))
     return;
 
   bool IsPointer = (Attr.getName()->getName() == "pointer_with_type_tag");
   if (IsPointer) {
     // Ensure that buffer has a pointer type.
-    QualType BufferTy = getFunctionOrMethodArgType(D, ArgumentIdx);
+    QualType BufferTy = getFunctionOrMethodParamType(D, ArgumentIdx);
     if (!BufferTy->isPointerType()) {
       S.Diag(Attr.getLoc(), diag::err_attribute_pointers_only)
         << Attr.getName();
@@ -3781,8 +3785,7 @@ DLLImportAttr *Sema::mergeDLLImportAttr(Decl *D, SourceRange Range,
     }
   }
 
-  return ::new (Context)DLLImportAttr(Range, Context,
-                                      AttrSpellingListIndex);
+  return ::new (Context) DLLImportAttr(Range, Context, AttrSpellingListIndex);
 }
 
 static void handleDLLImportAttr(Sema &S, Decl *D, const AttributeList &Attr) {
@@ -3794,7 +3797,7 @@ static void handleDLLImportAttr(Sema &S, Decl *D, const AttributeList &Attr) {
     // specified.
     if (!S.getLangOpts().MicrosoftExt)
       S.Diag(Attr.getLoc(), diag::warn_attribute_wrong_decl_type)
-      << Attr.getName() << 2 /*variable and function*/;
+        << Attr.getName() << ExpectedVariableOrFunction;
     return;
   }
 
@@ -3821,13 +3824,12 @@ DLLExportAttr *Sema::mergeDLLExportAttr(Decl *D, SourceRange Range,
   if (D->hasAttr<DLLExportAttr>())
     return NULL;
 
-  return ::new (Context)DLLExportAttr(Range, Context,
-                                      AttrSpellingListIndex);
+  return ::new (Context) DLLExportAttr(Range, Context, AttrSpellingListIndex);
 }
 
 static void handleDLLExportAttr(Sema &S, Decl *D, const AttributeList &Attr) {
   // Currently, the dllexport attribute is ignored for inlined functions, unless
-  // the -fkeep-inline-functions flag has been used. Warning is emitted;
+  // the -fkeep-inline-functions flag has been used. Warning is emitted.
   if (isa<FunctionDecl>(D) && cast<FunctionDecl>(D)->isInlineSpecified()) {
     // FIXME: ... unless the -fkeep-inline-functions flag has been used.
     S.Diag(Attr.getLoc(), diag::warn_attribute_ignored) << Attr.getName();
@@ -3978,6 +3980,8 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
       else
         handleNonNullAttr(S, D, Attr);
       break;
+  case AttributeList::AT_ReturnsNonNull:
+    handleReturnsNonNullAttr(S, D, Attr); break;
   case AttributeList::AT_Overloadable:
     handleSimpleAttribute<OverloadableAttr>(S, D, Attr); break;
   case AttributeList::AT_Ownership:   handleOwnershipAttr   (S, D, Attr); break;
@@ -4020,7 +4024,6 @@ static void ProcessDeclAttribute(Sema &S, Scope *scope, Decl *D,
   case AttributeList::AT_CFUnknownTransfer:
     handleCFUnknownTransferAttr(S, D, Attr); break;
 
-  // Checker-specific.
   case AttributeList::AT_CFConsumed:
   case AttributeList::AT_NSConsumed:  handleNSConsumedAttr  (S, D, Attr); break;
   case AttributeList::AT_NSConsumesSelf:
@@ -4339,8 +4342,9 @@ NamedDecl * Sema::DeclClonePragmaWeak(NamedDecl *ND, IdentifierInfo *II,
     QualType FDTy = FD->getType();
     if (const FunctionProtoType *FT = FDTy->getAs<FunctionProtoType>()) {
       SmallVector<ParmVarDecl*, 16> Params;
-      for (FunctionProtoType::arg_type_iterator AI = FT->arg_type_begin(),
-           AE = FT->arg_type_end(); AI != AE; ++AI) {
+      for (FunctionProtoType::param_type_iterator AI = FT->param_type_begin(),
+                                                  AE = FT->param_type_end();
+           AI != AE; ++AI) {
         ParmVarDecl *Param = BuildParmVarDeclForTypedef(NewFD, Loc, *AI);
         Param->setScopeInfo(0, Params.size());
         Params.push_back(Param);

@@ -339,6 +339,7 @@ namespace llvm {
       VPERMILP,
       VPERMV,
       VPERMV3,
+      VPERMIV3,
       VPERMI,
       VPERM2X128,
       VBROADCAST,
@@ -970,6 +971,9 @@ namespace llvm {
 
     MachineBasicBlock *emitEHSjLjLongJmp(MachineInstr *MI,
                                          MachineBasicBlock *MBB) const;
+
+    MachineBasicBlock *emitFMA3Instr(MachineInstr *MI,
+                                     MachineBasicBlock *MBB) const;
 
     /// Emit nodes that will be selected as "test Op0,Op0", or something
     /// equivalent, for use with the given x86 condition code.

@@ -27,7 +27,8 @@ namespace llvm {
 class RemoteTarget {
   bool IsRunning;
 
-  SmallVector<sys::MemoryBlock, 16> Allocations;
+  typedef SmallVector<sys::MemoryBlock, 16> AllocMapType;
+  AllocMapType Allocations;
 
 protected:
   std::string ErrorMsg;
@@ -46,6 +47,18 @@ public:
   virtual bool allocateSpace(size_t Size,
                              unsigned Alignment,
                              uint64_t &Address);
+
+  bool isAllocatedMemory(uint64_t Address, uint32_t Size) {
+    uint64_t AddressEnd = Address + Size;
+    for (AllocMapType::const_iterator I = Allocations.begin(),
+                                      E = Allocations.end();
+         I != E; ++I) {
+      if (Address >= (uint64_t)I->base() &&
+          AddressEnd <= (uint64_t)I->base() + I->size())
+        return true;
+    }
+    return false;
+  }
 
   /// Load data into the target address space.
   ///
@@ -98,11 +111,6 @@ public:
 
   RemoteTarget() : IsRunning(false), ErrorMsg("") {}
   virtual ~RemoteTarget() { if (IsRunning) stop(); }
-
-  // Create an instance of the system-specific remote target class.
-  static RemoteTarget *createRemoteTarget();
-  static RemoteTarget *createExternalRemoteTarget(std::string &ChildName);
-  static bool hostSupportsExternalRemoteTarget(); 
 private:
   // Main processing function for the remote target process. Command messages
   // are received on file descriptor CmdFD and responses come back on OutFD.

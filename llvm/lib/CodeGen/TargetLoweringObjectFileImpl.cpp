@@ -232,7 +232,7 @@ static const char *getSectionPrefixForGlobal(SectionKind Kind) {
 
 const MCSection *TargetLoweringObjectFileELF::
 SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
-                       Mangler *Mang, const TargetMachine &TM) const {
+                       Mangler *Mang, TargetMachine &TM) const {
   // If we have -ffunction-section or -fdata-section then we should emit the
   // global value to a uniqued section specifically for it.
   bool EmitUniquedSection;
@@ -258,6 +258,8 @@ SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
       Flags |= ELF::SHF_GROUP;
     }
 
+    // Set that we've used a unique section name in the target machine.
+    TM.setDebugUseUniqueSections(true);
     return getContext().getELFSection(Name.str(),
                                       getELFSectionType(Name.str(), Kind),
                                       Flags, Kind, 0, Group);
@@ -402,6 +404,16 @@ TargetLoweringObjectFileELF::InitializeELF(bool UseInitArray_) {
 //                                 MachO
 //===----------------------------------------------------------------------===//
 
+/// getDepLibFromLinkerOpt - Extract the dependent library name from a linker
+/// option string. Returns StringRef() if the option does not specify a library.
+StringRef TargetLoweringObjectFileMachO::
+getDepLibFromLinkerOpt(StringRef LinkerOption) const {
+  const char *LibCmd = "-l";
+  if (LinkerOption.startswith(LibCmd))
+    return LinkerOption.substr(strlen(LibCmd));
+  return StringRef();
+}
+
 /// emitModuleFlags - Perform code emission for module flags.
 void TargetLoweringObjectFileMachO::
 emitModuleFlags(MCStreamer &Streamer,
@@ -519,7 +531,7 @@ getExplicitSectionGlobal(const GlobalValue *GV, SectionKind Kind,
 
 const MCSection *TargetLoweringObjectFileMachO::
 SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
-                       Mangler *Mang, const TargetMachine &TM) const {
+                       Mangler *Mang, TargetMachine &TM) const {
 
   // Handle thread local data.
   if (Kind.isThreadBSS()) return TLSBSSSection;
@@ -744,7 +756,7 @@ static const char *getCOFFSectionNameForUniqueGlobal(SectionKind Kind) {
 
 const MCSection *TargetLoweringObjectFileCOFF::
 SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
-                       Mangler *Mang, const TargetMachine &TM) const {
+                       Mangler *Mang, TargetMachine &TM) const {
 
   // If this global is linkonce/weak and the target handles this by emitting it
   // into a 'uniqued' section name, create and return the section now.
@@ -772,6 +784,14 @@ SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
     return BSSSection;
 
   return DataSection;
+}
+
+StringRef TargetLoweringObjectFileCOFF::
+getDepLibFromLinkerOpt(StringRef LinkerOption) const {
+  const char *LibCmd = "/DEFAULTLIB:";
+  if (LinkerOption.startswith(LibCmd))
+    return LinkerOption.substr(strlen(LibCmd));
+  return StringRef();
 }
 
 void TargetLoweringObjectFileCOFF::

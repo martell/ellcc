@@ -38,7 +38,7 @@ class TargetLoweringObjectFile : public MCObjectFileInfo {
   const DataLayout *DL;
 
   TargetLoweringObjectFile(
-    const TargetLoweringObjectFile&) LLVM_DELETED_FUNCTION;
+      const TargetLoweringObjectFile &) LLVM_DELETED_FUNCTION;
   void operator=(const TargetLoweringObjectFile&) LLVM_DELETED_FUNCTION;
 
 public:
@@ -56,6 +56,12 @@ public:
   virtual void emitPersonalityValue(MCStreamer &Streamer,
                                     const TargetMachine &TM,
                                     const MCSymbol *Sym) const;
+
+  /// getDepLibFromLinkerOpt - Extract the dependent library name from a linker
+  /// option string. Returns StringRef() if the option does not specify a library.
+  virtual StringRef getDepLibFromLinkerOpt(StringRef LinkerOption) const {
+    return StringRef();
+  }
 
   /// emitModuleFlags - Emit the module flags that the platform cares about.
   virtual void emitModuleFlags(MCStreamer &,
@@ -85,14 +91,14 @@ public:
   /// be passed external (or available externally) globals.
   const MCSection *SectionForGlobal(const GlobalValue *GV,
                                     SectionKind Kind, Mangler *Mang,
-                                    const TargetMachine &TM) const;
+                                    TargetMachine &TM) const;
   
   /// SectionForGlobal - This method computes the appropriate section to emit
   /// the specified global variable or function definition.  This should not
   /// be passed external (or available externally) globals.
   const MCSection *SectionForGlobal(const GlobalValue *GV,
                                     Mangler *Mang,
-                                    const TargetMachine &TM) const {
+                                    TargetMachine &TM) const {
     return SectionForGlobal(GV, getKindForGlobal(GV, TM), Mang, TM);
   }
 
@@ -161,7 +167,7 @@ public:
 protected:
   virtual const MCSection *
   SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
-                         Mangler *Mang, const TargetMachine &TM) const;
+                         Mangler *Mang, TargetMachine &TM) const;
 };
 
 } // end namespace llvm

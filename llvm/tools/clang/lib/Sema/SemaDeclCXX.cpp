@@ -714,8 +714,9 @@ static bool CheckConstexprParameterTypes(Sema &SemaRef,
                                          const FunctionDecl *FD) {
   unsigned ArgIndex = 0;
   const FunctionProtoType *FT = FD->getType()->getAs<FunctionProtoType>();
-  for (FunctionProtoType::arg_type_iterator i = FT->arg_type_begin(),
-       e = FT->arg_type_end(); i != e; ++i, ++ArgIndex) {
+  for (FunctionProtoType::param_type_iterator i = FT->param_type_begin(),
+                                              e = FT->param_type_end();
+       i != e; ++i, ++ArgIndex) {
     const ParmVarDecl *PD = FD->getParamDecl(ArgIndex);
     SourceLocation ParamLoc = PD->getLocation();
     if (!(*i)->isDependentType() &&
@@ -4246,11 +4247,11 @@ struct CheckAbstractUsage {
 
   void Check(FunctionProtoTypeLoc TL, Sema::AbstractDiagSelID Sel) {
     Visit(TL.getResultLoc(), Sema::AbstractReturnType);
-    for (unsigned I = 0, E = TL.getNumArgs(); I != E; ++I) {
-      if (!TL.getArg(I))
+    for (unsigned I = 0, E = TL.getNumParams(); I != E; ++I) {
+      if (!TL.getParam(I))
         continue;
-      
-      TypeSourceInfo *TSI = TL.getArg(I)->getTypeSourceInfo();
+
+      TypeSourceInfo *TSI = TL.getParam(I)->getTypeSourceInfo();
       if (TSI) Visit(TSI->getTypeLoc(), Sema::AbstractParamType);
     }
   }
@@ -4717,7 +4718,7 @@ updateExceptionSpec(Sema &S, FunctionDecl *FD, const FunctionProtoType *FPT,
   FunctionProtoType::ExtProtoInfo EPI = FPT->getExtProtoInfo();
   ExceptSpec.getEPI(EPI);
   FD->setType(S.Context.getFunctionType(FPT->getResultType(),
-                                        FPT->getArgTypes(), EPI));
+                                        FPT->getParamTypes(), EPI));
 }
 
 static FunctionProtoType::ExtProtoInfo getImplicitMethodEPI(Sema &S,
@@ -4822,7 +4823,7 @@ void Sema::CheckExplicitlyDefaultedSpecialMember(CXXMethodDecl *MD) {
   }
 
   // Check for parameter type matching.
-  QualType ArgType = ExpectedParams ? Type->getArgType(0) : QualType();
+  QualType ArgType = ExpectedParams ? Type->getParamType(0) : QualType();
   bool HasConstParam = false;
   if (ExpectedParams && ArgType->isReferenceType()) {
     // Argument must be reference to possibly-const T.
@@ -4916,6 +4917,7 @@ void Sema::CheckExplicitlyDefaultedSpecialMember(CXXMethodDecl *MD) {
       //   [For a] user-provided explicitly-defaulted function [...] if such a
       //   function is implicitly defined as deleted, the program is ill-formed.
       Diag(MD->getLocation(), diag::err_out_of_line_default_deletes) << CSM;
+      ShouldDeleteSpecialMember(MD, CSM, /*Diagnose*/true);
       HadError = true;
     }
   }
@@ -6225,8 +6227,8 @@ QualType Sema::CheckConstructorDeclarator(Declarator &D, QualType R,
   FunctionProtoType::ExtProtoInfo EPI = Proto->getExtProtoInfo();
   EPI.TypeQuals = 0;
   EPI.RefQualifier = RQ_None;
-  
-  return Context.getFunctionType(Context.VoidTy, Proto->getArgTypes(), EPI);
+
+  return Context.getFunctionType(Context.VoidTy, Proto->getParamTypes(), EPI);
 }
 
 /// CheckConstructor - Checks a fully-formed constructor for
@@ -6454,7 +6456,7 @@ void Sema::CheckConversionDeclarator(Declarator &D, QualType &R,
   const FunctionProtoType *Proto = R->getAs<FunctionProtoType>();
 
   // Make sure we don't have any parameters.
-  if (Proto->getNumArgs() > 0) {
+  if (Proto->getNumParams() > 0) {
     Diag(D.getIdentifierLoc(), diag::err_conv_function_with_params);
 
     // Delete the parameters.
@@ -7241,13 +7243,7 @@ bool Sema::CheckUsingShadowDecl(UsingDecl *Using, NamedDecl *Orig,
   if (FoundEquivalentDecl)
     return false;
 
-  if (Target->isFunctionOrFunctionTemplate()) {
-    FunctionDecl *FD;
-    if (isa<FunctionTemplateDecl>(Target))
-      FD = cast<FunctionTemplateDecl>(Target)->getTemplatedDecl();
-    else
-      FD = cast<FunctionDecl>(Target);
-
+  if (FunctionDecl *FD = Target->getAsFunction()) {
     NamedDecl *OldDecl = 0;
     switch (CheckOverload(0, FD, Previous, OldDecl, /*IsForUsingDecl*/ true)) {
     case Ovl_Overload:
@@ -8388,7 +8384,7 @@ private:
   void inherit(const CXXConstructorDecl *Ctor) {
     const FunctionProtoType *CtorType =
         Ctor->getType()->castAs<FunctionProtoType>();
-    ArrayRef<QualType> ArgTypes(CtorType->getArgTypes());
+    ArrayRef<QualType> ArgTypes(CtorType->getParamTypes());
     FunctionProtoType::ExtProtoInfo EPI = CtorType->getExtProtoInfo();
 
     SourceLocation UsingLoc = getUsingLoc(Ctor->getParent());
@@ -8531,20 +8527,20 @@ private:
     EPI.ExceptionSpecType = EST_Unevaluated;
     EPI.ExceptionSpecDecl = DerivedCtor;
     DerivedCtor->setType(Context.getFunctionType(FPT->getResultType(),
-                                                 FPT->getArgTypes(), EPI));
+                                                 FPT->getParamTypes(), EPI));
 
     // Build the parameter declarations.
     SmallVector<ParmVarDecl *, 16> ParamDecls;
-    for (unsigned I = 0, N = FPT->getNumArgs(); I != N; ++I) {
+    for (unsigned I = 0, N = FPT->getNumParams(); I != N; ++I) {
       TypeSourceInfo *TInfo =
-          Context.getTrivialTypeSourceInfo(FPT->getArgType(I), UsingLoc);
+          Context.getTrivialTypeSourceInfo(FPT->getParamType(I), UsingLoc);
       ParmVarDecl *PD = ParmVarDecl::Create(
           Context, DerivedCtor, UsingLoc, UsingLoc, /*IdentifierInfo=*/0,
-          FPT->getArgType(I), TInfo, SC_None, /*DefaultArg=*/0);
+          FPT->getParamType(I), TInfo, SC_None, /*DefaultArg=*/0);
       PD->setScopeInfo(0, I);
       PD->setImplicit();
       ParamDecls.push_back(PD);
-      ProtoLoc.setArg(I, PD);
+      ProtoLoc.setParam(I, PD);
     }
 
     // Set up the new constructor.
@@ -9237,8 +9233,9 @@ Sema::ComputeDefaultedCopyAssignmentExceptionSpec(CXXMethodDecl *MD) {
     return ExceptSpec;
 
   const FunctionProtoType *T = MD->getType()->castAs<FunctionProtoType>();
-  assert(T->getNumArgs() == 1 && "not a copy assignment op");
-  unsigned ArgQuals = T->getArgType(0).getNonReferenceType().getCVRQualifiers();
+  assert(T->getNumParams() == 1 && "not a copy assignment op");
+  unsigned ArgQuals =
+      T->getParamType(0).getNonReferenceType().getCVRQualifiers();
 
   // C++ [except.spec]p14:
   //   An implicitly declared special member function (Clause 12) shall have an
@@ -10061,8 +10058,8 @@ Sema::ComputeDefaultedCopyCtorExceptionSpec(CXXMethodDecl *MD) {
     return ExceptSpec;
 
   const FunctionProtoType *T = MD->getType()->castAs<FunctionProtoType>();
-  assert(T->getNumArgs() >= 1 && "not a copy ctor");
-  unsigned Quals = T->getArgType(0).getNonReferenceType().getCVRQualifiers();
+  assert(T->getNumParams() >= 1 && "not a copy ctor");
+  unsigned Quals = T->getParamType(0).getNonReferenceType().getCVRQualifiers();
 
   // C++ [except.spec]p14:
   //   An implicitly declared special member function (Clause 12) shall have an 
@@ -10635,11 +10632,11 @@ Sema::CompleteConstructorCall(CXXConstructorDecl *Constructor,
   const FunctionProtoType *Proto 
     = Constructor->getType()->getAs<FunctionProtoType>();
   assert(Proto && "Constructor without a prototype?");
-  unsigned NumArgsInProto = Proto->getNumArgs();
-  
+  unsigned NumParams = Proto->getNumParams();
+
   // If too few arguments are available, we'll fill in the rest with defaults.
-  if (NumArgs < NumArgsInProto)
-    ConvertedArgs.reserve(NumArgsInProto);
+  if (NumArgs < NumParams)
+    ConvertedArgs.reserve(NumParams);
   else
     ConvertedArgs.reserve(NumArgs);
 
@@ -11981,6 +11978,11 @@ void Sema::SetDeclDeleted(Decl *Dcl, SourceLocation DelLoc) {
       }
     }
   }
+
+  // C++11 [basic.start.main]p3:
+  //   A program that defines main as deleted [...] is ill-formed.
+  if (Fn->isMain())
+    Diag(DelLoc, diag::err_deleted_main);
 
   Fn->setDeletedAsWritten();
 }
