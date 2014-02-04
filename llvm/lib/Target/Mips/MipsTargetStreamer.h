@@ -18,15 +18,32 @@ class MipsTargetStreamer : public MCTargetStreamer {
   virtual void anchor();
 
 public:
-  virtual void emitMipsHackELFFlags(unsigned Flags) = 0;
+  MipsTargetStreamer(MCStreamer &S);
   virtual void emitDirectiveSetMicroMips() = 0;
   virtual void emitDirectiveSetNoMicroMips() = 0;
   virtual void emitDirectiveSetMips16() = 0;
   virtual void emitDirectiveSetNoMips16() = 0;
+
+  virtual void emitDirectiveSetMips64r2() = 0;
+  virtual void emitDirectiveSetMips64() = 0;
+  virtual void emitDirectiveSetMips32r2() = 0;
+  virtual void emitDirectiveSetMips32() = 0;
+
+  virtual void emitDirectiveSetReorder() = 0;
+  virtual void emitDirectiveSetNoReorder() = 0;
+  virtual void emitDirectiveSetMacro() = 0;
+  virtual void emitDirectiveSetNoMacro() = 0;
+  virtual void emitDirectiveSetAt() = 0;
+  virtual void emitDirectiveSetNoAt() = 0;
+  virtual void emitDirectiveEnd(StringRef Name) = 0;
+
   virtual void emitDirectiveEnt(const MCSymbol &Symbol) = 0;
   virtual void emitDirectiveAbiCalls() = 0;
   virtual void emitDirectiveOptionPic0() = 0;
-  virtual void emitDirectiveSetMips16(bool IsMips16) = 0;
+  virtual void emitFrame(unsigned StackReg, unsigned StackSize,
+                         unsigned ReturnReg) = 0;
+  virtual void emitMask(unsigned CPUBitmask, int CPUTopSavedRegOff) = 0;
+  virtual void emitFMask(unsigned FPUBitmask, int FPUTopSavedRegOff) = 0;
 };
 
 // This part is for ascii assembly output
@@ -34,16 +51,32 @@ class MipsTargetAsmStreamer : public MipsTargetStreamer {
   formatted_raw_ostream &OS;
 
 public:
-  MipsTargetAsmStreamer(formatted_raw_ostream &OS);
-  virtual void emitMipsHackELFFlags(unsigned Flags);
+  MipsTargetAsmStreamer(MCStreamer &S, formatted_raw_ostream &OS);
   virtual void emitDirectiveSetMicroMips();
   virtual void emitDirectiveSetNoMicroMips();
   virtual void emitDirectiveSetMips16();
   virtual void emitDirectiveSetNoMips16();
+
+  virtual void emitDirectiveSetMips64r2();
+  virtual void emitDirectiveSetMips64();
+  virtual void emitDirectiveSetMips32r2();
+  virtual void emitDirectiveSetMips32();
+
+  virtual void emitDirectiveSetReorder();
+  virtual void emitDirectiveSetNoReorder();
+  virtual void emitDirectiveSetMacro();
+  virtual void emitDirectiveSetNoMacro();
+  virtual void emitDirectiveSetAt();
+  virtual void emitDirectiveSetNoAt();
+  virtual void emitDirectiveEnd(StringRef Name);
+
   virtual void emitDirectiveEnt(const MCSymbol &Symbol);
   virtual void emitDirectiveAbiCalls();
   virtual void emitDirectiveOptionPic0();
-  virtual void emitDirectiveSetMips16(bool IsMips16);
+  virtual void emitFrame(unsigned StackReg, unsigned StackSize,
+                         unsigned ReturnReg);
+  virtual void emitMask(unsigned CPUBitmask, int CPUTopSavedRegOff);
+  virtual void emitFMask(unsigned FPUBitmask, int FPUTopSavedRegOff);
 };
 
 // This part is for ELF object output
@@ -53,20 +86,35 @@ class MipsTargetELFStreamer : public MipsTargetStreamer {
 public:
   bool isMicroMipsEnabled() const { return MicroMipsEnabled; }
   MCELFStreamer &getStreamer();
-  MipsTargetELFStreamer();
+  MipsTargetELFStreamer(MCStreamer &S, const MCSubtargetInfo &STI);
 
   virtual void emitLabel(MCSymbol *Symbol) LLVM_OVERRIDE;
 
-  // FIXME: emitMipsHackELFFlags() will be removed from this class.
-  virtual void emitMipsHackELFFlags(unsigned Flags);
   virtual void emitDirectiveSetMicroMips();
   virtual void emitDirectiveSetNoMicroMips();
   virtual void emitDirectiveSetMips16();
   virtual void emitDirectiveSetNoMips16();
+
+  virtual void emitDirectiveSetMips64r2();
+  virtual void emitDirectiveSetMips64();
+  virtual void emitDirectiveSetMips32r2();
+  virtual void emitDirectiveSetMips32();
+
+  virtual void emitDirectiveSetReorder();
+  virtual void emitDirectiveSetNoReorder();
+  virtual void emitDirectiveSetMacro();
+  virtual void emitDirectiveSetNoMacro();
+  virtual void emitDirectiveSetAt();
+  virtual void emitDirectiveSetNoAt();
+  virtual void emitDirectiveEnd(StringRef Name);
+
   virtual void emitDirectiveEnt(const MCSymbol &Symbol);
   virtual void emitDirectiveAbiCalls();
   virtual void emitDirectiveOptionPic0();
-  virtual void emitDirectiveSetMips16(bool IsMips16);
+  virtual void emitFrame(unsigned StackReg, unsigned StackSize,
+                         unsigned ReturnReg);
+  virtual void emitMask(unsigned CPUBitmask, int CPUTopSavedRegOff);
+  virtual void emitFMask(unsigned FPUBitmask, int FPUTopSavedRegOff);
 };
 }
 #endif

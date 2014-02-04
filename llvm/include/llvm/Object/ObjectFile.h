@@ -270,7 +270,7 @@ class ObjectFile : public Binary {
   ObjectFile(const ObjectFile &other) LLVM_DELETED_FUNCTION;
 
 protected:
-  ObjectFile(unsigned int Type, MemoryBuffer *source);
+  ObjectFile(unsigned int Type, MemoryBuffer *Source, bool BufferOwned = true);
 
   const uint8_t *base() const {
     return reinterpret_cast<const uint8_t *>(Data->getBufferStart());
@@ -378,18 +378,25 @@ public:
   ///        return true.
   /// @brief Create ObjectFile from path.
   static ErrorOr<ObjectFile *> createObjectFile(StringRef ObjectPath);
-  static ErrorOr<ObjectFile *>
-  createObjectFile(MemoryBuffer *Object,
-                   sys::fs::file_magic Type = sys::fs::file_magic::unknown);
+  static ErrorOr<ObjectFile *> createObjectFile(MemoryBuffer *Object,
+                                                bool BufferOwned,
+                                                sys::fs::file_magic Type);
+  static ErrorOr<ObjectFile *> createObjectFile(MemoryBuffer *Object) {
+    return createObjectFile(Object, true, sys::fs::file_magic::unknown);
+  }
+
 
   static inline bool classof(const Binary *v) {
     return v->isObject();
   }
 
 public:
-  static ErrorOr<ObjectFile *> createCOFFObjectFile(MemoryBuffer *Object);
-  static ErrorOr<ObjectFile *> createELFObjectFile(MemoryBuffer *Object);
-  static ErrorOr<ObjectFile *> createMachOObjectFile(MemoryBuffer *Object);
+  static ErrorOr<ObjectFile *> createCOFFObjectFile(MemoryBuffer *Object,
+                                                    bool BufferOwned = true);
+  static ErrorOr<ObjectFile *> createELFObjectFile(MemoryBuffer *Object,
+                                                   bool BufferOwned = true);
+  static ErrorOr<ObjectFile *> createMachOObjectFile(MemoryBuffer *Object,
+                                                     bool BufferOwned = true);
 };
 
 // Inline function definitions.

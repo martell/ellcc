@@ -194,7 +194,6 @@ class MipsAsmParser : public MCTargetAsmParser {
 
   bool isEvaluated(const MCExpr *Expr);
   bool parseDirectiveSet();
-  bool parseDirectiveMipsHackELFFlags();
   bool parseDirectiveOption();
 
   bool parseSetAtDirective();
@@ -869,7 +868,7 @@ void MipsAsmParser::expandMemInst(MCInst &Inst, SMLoc IDLoc,
   TempInst.addOperand(MCOperand::CreateReg(BaseRegNum));
   Instructions.push_back(TempInst);
   TempInst.clear();
-  // And finaly, create original instruction with low part
+  // And finally, create original instruction with low part
   // of offset and new base.
   TempInst.setOpcode(Inst.getOpcode());
   TempInst.addOperand(MCOperand::CreateReg(RegOpNum));
@@ -907,7 +906,7 @@ bool MipsAsmParser::MatchAndEmitInstruction(
     if (processInstruction(Inst, IDLoc, Instructions))
       return true;
     for (unsigned i = 0; i < Instructions.size(); i++)
-      Out.EmitInstruction(Instructions[i]);
+      Out.EmitInstruction(Instructions[i], STI);
     return false;
   }
   case Match_MissingFeature:
@@ -1247,7 +1246,7 @@ MipsAsmParser::ParseOperand(SmallVectorImpl<MCParsedAsmOperand *> &Operands,
       return false;
     }
     // Look for the existing symbol, we should check if
-    // we need to assigne the propper RegisterKind.
+    // we need to assigne the proper RegisterKind.
     if (searchSymbolAlias(Operands, MipsOperand::Kind_None))
       return false;
   // Else drop to expression parsing.
@@ -2311,6 +2310,7 @@ bool MipsAsmParser::parseSetNoReorderDirective() {
     return false;
   }
   Options.setNoreorder();
+  getTargetStreamer().emitDirectiveSetNoReorder();
   Parser.Lex(); // Consume the EndOfStatement.
   return false;
 }
@@ -2350,7 +2350,7 @@ bool MipsAsmParser::parseSetMips16Directive() {
     reportParseError("unexpected token in statement");
     return false;
   }
-  getTargetStreamer().emitDirectiveSetMips16(true);
+  getTargetStreamer().emitDirectiveSetMips16();
   Parser.Lex(); // Consume the EndOfStatement.
   return false;
 }
@@ -2427,17 +2427,6 @@ bool MipsAsmParser::parseDirectiveSet() {
   }
 
   return true;
-}
-
-bool MipsAsmParser::parseDirectiveMipsHackELFFlags() {
-  int64_t Flags = 0;
-  if (Parser.parseAbsoluteExpression(Flags)) {
-    TokError("unexpected token");
-    return false;
-  }
-
-  getTargetStreamer().emitMipsHackELFFlags(Flags);
-  return false;
 }
 
 /// parseDirectiveWord
@@ -2557,9 +2546,6 @@ bool MipsAsmParser::ParseDirective(AsmToken DirectiveID) {
     parseDirectiveWord(4, DirectiveID.getLoc());
     return false;
   }
-
-  if (IDVal == ".mips_hack_elf_flags")
-    return parseDirectiveMipsHackELFFlags();
 
   if (IDVal == ".option")
     return parseDirectiveOption();

@@ -74,6 +74,7 @@ static MCCodeGenInfo *createMBlazeMCCodeGenInfo(StringRef TT, Reloc::Model RM,
   return X;
 }
 
+#if RICH
 class MBlazeTargetAsmStreamer : public MBlazeTargetStreamer {
   formatted_raw_ostream &OS;
 
@@ -81,27 +82,44 @@ public:
   MBlazeTargetAsmStreamer(formatted_raw_ostream &OS);
 };
 
-MBlazeTargetAsmStreamer::MBlazeTargetAsmStreamer(formatted_raw_ostream &OS)
+MBlazeTargetAsmStreamer::
+MBlazeTargetAsmStreamer(MCStreamer &S, 
+                        formatted_raw_ostream &OS)
     : OS(OS) {}
 
 class MBlazeTargetELFStreamer : public MBlazeTargetStreamer {
 public:
   MCELFStreamer &getStreamer();
-  MBlazeTargetELFStreamer();
+  MBlazeTargetELFStreamer(MCStreamer &S, , const MCSubtargetInfo &STI);
 };
+#endif
 
-MBlazeTargetELFStreamer::MBlazeTargetELFStreamer() {}
+// Pin vtable to this file.
+void MBlazeTargetStreamer::anchor() {}
 
-MCELFStreamer &MBlazeTargetELFStreamer::getStreamer() {
-  return static_cast<MCELFStreamer &>(*Streamer);
+MBlazeTargetStreamer::MBlazeTargetStreamer(MCStreamer &S) : MCTargetStreamer(S) {}
+
+MBlazeTargetAsmStreamer::
+MBlazeTargetAsmStreamer(MCStreamer &S, formatted_raw_ostream &OS)
+  : MBlazeTargetStreamer(S), OS(OS)
+{
+}
+
+MBlazeTargetELFStreamer::
+MBlazeTargetELFStreamer(MCStreamer &S, const MCSubtargetInfo &STI)
+  : MBlazeTargetStreamer(S)
+{
 }
 
 static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
                                     MCContext &Ctx, MCAsmBackend &MAB,
                                     raw_ostream &OS, MCCodeEmitter *Emitter,
+                                    const MCSubtargetInfo &STI,
                                     bool RelaxAll, bool NoExecStack) {
-  MBlazeTargetELFStreamer *S = new MBlazeTargetELFStreamer();
-  return createELFStreamer(Ctx, S, MAB, OS, Emitter, RelaxAll, NoExecStack);
+  MCStreamer *S =
+    createELFStreamer(Ctx, MAB, OS, Emitter, RelaxAll, NoExecStack);
+  new MBlazeTargetELFStreamer(*S, STI);
+  return S;
 }
 
 static MCStreamer *
@@ -109,11 +127,11 @@ createMCAsmStreamer(MCContext &Ctx, formatted_raw_ostream &OS,
                     bool isVerboseAsm, bool useLoc, bool useCFI,
                     bool useDwarfDirectory, MCInstPrinter *InstPrint,
                     MCCodeEmitter *CE, MCAsmBackend *TAB, bool ShowInst) {
-  MBlazeTargetAsmStreamer *S = new MBlazeTargetAsmStreamer(OS);
-
-  return llvm::createAsmStreamer(Ctx, S, OS, isVerboseAsm, useLoc, useCFI,
-                                 useDwarfDirectory, InstPrint, CE, TAB,
-                                 ShowInst);
+  MCStreamer *S =
+    llvm::createAsmStreamer(Ctx, OS, isVerboseAsm, useLoc, useCFI,
+                            useDwarfDirectory, InstPrint, CE, TAB, ShowInst);
+  new MBlazeTargetAsmStreamer(*S, OS);
+  return S;
 }
 
 static MCInstPrinter *createMBlazeMCInstPrinter(const Target &T,

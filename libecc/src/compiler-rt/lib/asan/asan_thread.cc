@@ -20,6 +20,7 @@
 #include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_placement_new.h"
 #include "sanitizer_common/sanitizer_stackdepot.h"
+#include "sanitizer_common/sanitizer_tls_get_addr.h"
 #include "lsan/lsan_common.h"
 
 namespace __asan {
@@ -97,7 +98,7 @@ void AsanThread::Destroy() {
   VReport(1, "T%d exited\n", tid);
 
   malloc_storage().CommitBack();
-  if (flags()->use_sigaltstack) UnsetAlternateSignalStack();
+  if (common_flags()->use_sigaltstack) UnsetAlternateSignalStack();
   asanThreadRegistry().FinishThread(tid);
   FlushToDeadThreadStats(&stats_);
   // We also clear the shadow on thread destruction because
@@ -107,6 +108,7 @@ void AsanThread::Destroy() {
   DeleteFakeStack(tid);
   uptr size = RoundUpTo(sizeof(AsanThread), GetPageSizeCached());
   UnmapOrDie(this, size);
+  DTLS_Destroy();
 }
 
 // We want to create the FakeStack lazyly on the first use, but not eralier
@@ -154,7 +156,7 @@ void AsanThread::Init() {
 thread_return_t AsanThread::ThreadStart(uptr os_id) {
   Init();
   asanThreadRegistry().StartThread(tid(), os_id, 0);
-  if (flags()->use_sigaltstack) SetAlternateSignalStack();
+  if (common_flags()->use_sigaltstack) SetAlternateSignalStack();
 
   if (!start_routine_) {
     // start_routine_ == 0 if we're on the main thread or on one of the

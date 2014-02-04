@@ -397,20 +397,22 @@ void MCELFStreamer::fixSymbolsInTLSFixups(const MCExpr *expr) {
   }
 }
 
-void MCELFStreamer::EmitInstToFragment(const MCInst &Inst) {
-  this->MCObjectStreamer::EmitInstToFragment(Inst);
+void MCELFStreamer::EmitInstToFragment(const MCInst &Inst,
+                                       const MCSubtargetInfo &STI) {
+  this->MCObjectStreamer::EmitInstToFragment(Inst, STI);
   MCRelaxableFragment &F = *cast<MCRelaxableFragment>(getCurrentFragment());
 
   for (unsigned i = 0, e = F.getFixups().size(); i != e; ++i)
     fixSymbolsInTLSFixups(F.getFixups()[i].getValue());
 }
 
-void MCELFStreamer::EmitInstToData(const MCInst &Inst) {
+void MCELFStreamer::EmitInstToData(const MCInst &Inst,
+                                   const MCSubtargetInfo &STI) {
   MCAssembler &Assembler = getAssembler();
   SmallVector<MCFixup, 4> Fixups;
   SmallString<256> Code;
   raw_svector_ostream VecOS(Code);
-  Assembler.getEmitter().EncodeInstruction(Inst, VecOS, Fixups);
+  Assembler.getEmitter().EncodeInstruction(Inst, VecOS, Fixups, STI);
   VecOS.flush();
 
   for (unsigned i = 0, e = Fixups.size(); i != e; ++i)
@@ -543,12 +545,10 @@ void MCELFStreamer::FinishImpl() {
   this->MCObjectStreamer::FinishImpl();
 }
 
-MCStreamer *llvm::createELFStreamer(MCContext &Context,
-                                    MCTargetStreamer *Streamer,
-                                    MCAsmBackend &MAB, raw_ostream &OS,
-                                    MCCodeEmitter *CE, bool RelaxAll,
-                                    bool NoExecStack) {
-  MCELFStreamer *S = new MCELFStreamer(Context, Streamer, MAB, OS, CE);
+MCStreamer *llvm::createELFStreamer(MCContext &Context, MCAsmBackend &MAB,
+                                    raw_ostream &OS, MCCodeEmitter *CE,
+                                    bool RelaxAll, bool NoExecStack) {
+  MCELFStreamer *S = new MCELFStreamer(Context, MAB, OS, CE);
   if (RelaxAll)
     S->getAssembler().setRelaxAll(true);
   if (NoExecStack)

@@ -2560,7 +2560,7 @@ Sema::PerformMoveOrCopyInitialization(const InitializedEntity &Entity,
 static bool hasDeducedReturnType(FunctionDecl *FD) {
   const FunctionProtoType *FPT =
       FD->getTypeSourceInfo()->getType()->castAs<FunctionProtoType>();
-  return FPT->getResultType()->isUndeducedType();
+  return FPT->getReturnType()->isUndeducedType();
 }
 
 /// ActOnCapScopeReturnStmt - Utility routine to type-check return statements
@@ -2579,7 +2579,7 @@ Sema::ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
     // FIXME: Blocks might have a return type of 'auto' explicitly specified.
     FunctionDecl *FD = CurLambda->CallOperator;
     if (CurCap->ReturnType.isNull())
-      CurCap->ReturnType = FD->getResultType();
+      CurCap->ReturnType = FD->getReturnType();
 
     AutoType *AT = CurCap->ReturnType->getContainedAutoType();
     assert(AT && "lost auto type from lambda return type");
@@ -2587,7 +2587,7 @@ Sema::ActOnCapScopeReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
       FD->setInvalidDecl();
       return StmtError();
     }
-    CurCap->ReturnType = FnRetType = FD->getResultType();
+    CurCap->ReturnType = FnRetType = FD->getReturnType();
   } else if (CurCap->HasImplicitReturnType) {
     // For blocks/lambdas with implicit return types, we check each return
     // statement individually, and deduce the common return type when the block
@@ -2712,7 +2712,7 @@ bool Sema::DeduceFunctionTypeFromReturnExpr(FunctionDecl *FD,
                                             Expr *&RetExpr,
                                             AutoType *AT) {
   TypeLoc OrigResultType = FD->getTypeSourceInfo()->getTypeLoc().
-    IgnoreParens().castAs<FunctionProtoTypeLoc>().getResultLoc();
+    IgnoreParens().castAs<FunctionProtoTypeLoc>().getReturnLoc();
   QualType Deduced;
 
   if (RetExpr && isa<InitListExpr>(RetExpr)) {
@@ -2810,14 +2810,14 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
   bool isObjCMethod = false;
 
   if (const FunctionDecl *FD = getCurFunctionDecl()) {
-    FnRetType = FD->getResultType();
+    FnRetType = FD->getReturnType();
     if (FD->hasAttrs())
       Attrs = &FD->getAttrs();
     if (FD->isNoReturn())
       Diag(ReturnLoc, diag::warn_noreturn_function_has_return_expr)
         << FD->getDeclName();
   } else if (ObjCMethodDecl *MD = getCurMethodDecl()) {
-    FnRetType = MD->getResultType();
+    FnRetType = MD->getReturnType();
     isObjCMethod = true;
     if (MD->hasAttrs())
       Attrs = &MD->getAttrs();
@@ -2840,7 +2840,7 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
         FD->setInvalidDecl();
         return StmtError();
       } else {
-        FnRetType = FD->getResultType();
+        FnRetType = FD->getReturnType();
       }
     }
   }
@@ -2975,29 +2975,8 @@ Sema::ActOnReturnStmt(SourceLocation ReturnLoc, Expr *RetValExp) {
         RetValExp = Res.takeAs<Expr>();
       }
 
-      CheckReturnValExpr(RetValExp, FnRetType, ReturnLoc, isObjCMethod, Attrs);
-
-      // C++11 [basic.stc.dynamic.allocation]p4:
-      //   If an allocation function declared with a non-throwing
-      //   exception-specification fails to allocate storage, it shall return
-      //   a null pointer. Any other allocation function that fails to allocate
-      //   storage shall indicate failure only by throwing an exception [...]
-      if (const FunctionDecl *FD = getCurFunctionDecl()) {
-        OverloadedOperatorKind Op = FD->getOverloadedOperator();
-        if (Op == OO_New || Op == OO_Array_New) {
-          const FunctionProtoType *Proto
-            = FD->getType()->castAs<FunctionProtoType>();
-          bool ReturnValueNonNull;
-
-          if (!Proto->isNothrow(Context, /*ResultIfDependent*/true) &&
-              !RetValExp->isValueDependent() &&
-              RetValExp->EvaluateAsBooleanCondition(ReturnValueNonNull,
-                                                    Context) &&
-              !ReturnValueNonNull)
-            Diag(ReturnLoc, diag::warn_operator_new_returns_null)
-              << FD << getLangOpts().CPlusPlus11;
-        }
-      }
+      CheckReturnValExpr(RetValExp, FnRetType, ReturnLoc, isObjCMethod, Attrs,
+                         getCurFunctionDecl());
     }
 
     if (RetValExp) {

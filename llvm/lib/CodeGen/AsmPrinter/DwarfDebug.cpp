@@ -68,11 +68,7 @@ GenerateGnuPubSections("generate-gnu-dwarf-pub-sections", cl::Hidden,
                        cl::init(false));
 
 namespace {
-enum DefaultOnOff {
-  Default,
-  Enable,
-  Disable
-};
+enum DefaultOnOff { Default, Enable, Disable };
 }
 
 static cl::opt<DefaultOnOff>
@@ -180,6 +176,7 @@ DwarfDebug::DwarfDebug(AsmPrinter *A, Module *M)
     : Asm(A), MMI(Asm->MMI), FirstCU(0), SourceIdMap(DIEValueAllocator),
       PrevLabel(NULL), GlobalRangeCount(0),
       InfoHolder(A, "info_string", DIEValueAllocator), HasCURanges(false),
+      UsedNonDefaultText(false),
       SkeletonHolder(A, "skel_string", DIEValueAllocator) {
 
   DwarfInfoSectionSym = DwarfAbbrevSectionSym = DwarfStrSectionSym = 0;
@@ -424,10 +421,6 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(DwarfCompileUnit *SPCU,
 
   SPCU->addLabelAddress(SPDie, dwarf::DW_AT_low_pc, FunctionBeginSym);
   SPCU->addLabelAddress(SPDie, dwarf::DW_AT_high_pc, FunctionEndSym);
-
-  // Add this range to the list of ranges for the CU.
-  RangeSpan Span(FunctionBeginSym, FunctionEndSym);
-  SPCU->addRange(llvm_move(Span));
 
   const TargetRegisterInfo *RI = Asm->TM.getRegisterInfo();
   MachineLocation Location(RI->getFrameRegister(*Asm->MF));
@@ -1057,11 +1050,17 @@ void DwarfDebug::finalizeModuleInfo() {
       // FIXME: We should use ranges if we have multiple compile units or
       // allow reordering of code ala .subsections_via_symbols in mach-o.
       DwarfCompileUnit *U = SkCU ? SkCU : static_cast<DwarfCompileUnit *>(TheU);
-      if (useCURanges() && TheU->getRanges().size())
+      if (useCURanges() && TheU->getRanges().size()) {
         addSectionLabel(Asm, U, U->getUnitDie(), dwarf::DW_AT_ranges,
                         Asm->GetTempSymbol("cu_ranges", U->getUniqueID()),
                         DwarfDebugRangeSectionSym);
-      else
+
+        // A DW_AT_low_pc attribute may also be specified in combination with
+        // DW_AT_ranges to specify the default base address for use in location
+        // lists (see Section 2.6.2) and range lists (see Section 2.17.3).
+        U->addUInt(U->getUnitDie(), dwarf::DW_AT_low_pc, dwarf::DW_FORM_addr,
+                   0);
+      } else
         U->addUInt(U->getUnitDie(), dwarf::DW_AT_low_pc, dwarf::DW_FORM_addr,
                    0);
     }
@@ -1110,10 +1109,8 @@ void DwarfDebug::endSections() {
     if (Section) {
       // We can't call MCSection::getLabelEndName, as it's only safe to do so
       // if we know the section name up-front. For user-created sections, the
-      // resulting
-      // label may not be valid to use as a label. (section names can use a
-      // greater
-      // set of characters on some systems)
+      // resulting label may not be valid to use as a label. (section names can
+      // use a greater set of characters on some systems)
       Sym = Asm->GetTempSymbol("debug_end", ID);
       Asm->OutStreamer.SwitchSection(Section);
       Asm->OutStreamer.EmitLabel(Sym);
@@ -1124,10 +1121,12 @@ void DwarfDebug::endSections() {
   }
 
   // For now only turn on CU ranges if we've explicitly asked for it,
-  // we have -ffunction-sections enabled, or we've emitted a function
-  // into a unique section. At this point all sections should be finalized
-  // except for dwarf sections.
-  HasCURanges = DwarfCURanges || Asm->TM.debugUseUniqueSections() ||
+  // we have -ffunction-sections enabled, we've emitted a function
+  // into a unique section, or we're using LTO. If we're using LTO then
+  // we can't know that any particular function in the module is correlated
+  // to a particular CU and so we need to be conservative. At this point all
+  // sections should be finalized except for dwarf sections.
+  HasCURanges = DwarfCURanges || UsedNonDefaultText || (CUMap.size() > 1) ||
                 TargetMachine::getFunctionSections();
 }
 
@@ -1584,6 +1583,12 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
   else
     Asm->OutStreamer.getContext().setDwarfCompileUnitID(TheCU->getUniqueID());
 
+  // Check the current section against the standard text section. If different
+  // keep track so that we will know when we're emitting functions into multiple
+  // sections.
+  if (Asm->getObjFileLowering().getTextSection() != Asm->getCurrentSection())
+    UsedNonDefaultText = true;
+
   // Emit a label for the function so that we have a beginning address.
   FunctionBeginSym = Asm->GetTempSymbol("func_begin", Asm->getFunctionNumber());
   // Assumes in correct section after the entry point.
@@ -1801,6 +1806,7 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
   FunctionEndSym = Asm->GetTempSymbol("func_end", Asm->getFunctionNumber());
   // Assumes in correct section after the entry point.
   Asm->OutStreamer.EmitLabel(FunctionEndSym);
+
   // Set DwarfDwarfCompileUnitID in MCContext to default value.
   Asm->OutStreamer.getContext().setDwarfCompileUnitID(0);
 
@@ -1838,9 +1844,12 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
   }
 
   DIE *CurFnDIE = constructScopeDIE(TheCU, FnScope);
-
   if (!CurFn->getTarget().Options.DisableFramePointerElim(*CurFn))
     TheCU->addFlag(CurFnDIE, dwarf::DW_AT_APPLE_omit_frame_ptr);
+
+  // Add the range of this function to the list of ranges for the CU.
+  RangeSpan Span(FunctionBeginSym, FunctionEndSym);
+  TheCU->addRange(llvm_move(Span));
 
   // Clear debug info
   for (ScopeVariablesMap::iterator I = ScopeVariables.begin(),
@@ -2879,8 +2888,9 @@ void DwarfDebug::emitDebugRanges() {
   unsigned char Size = Asm->getDataLayout().getPointerSize();
 
   // Grab the specific ranges for the compile units in the module.
-  for (DenseMap<const MDNode *, DwarfCompileUnit *>::iterator I = CUMap.begin(),
-                                                              E = CUMap.end();
+  for (MapVector<const MDNode *, DwarfCompileUnit *>::iterator
+           I = CUMap.begin(),
+           E = CUMap.end();
        I != E; ++I) {
     DwarfCompileUnit *TheCU = I->second;
 

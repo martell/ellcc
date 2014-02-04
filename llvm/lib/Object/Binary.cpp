@@ -26,12 +26,12 @@ using namespace llvm;
 using namespace object;
 
 Binary::~Binary() {
-  delete Data;
+  if (BufferOwned)
+    delete Data;
 }
 
-Binary::Binary(unsigned int Type, MemoryBuffer *Source)
-  : TypeID(Type)
-  , Data(Source) {}
+Binary::Binary(unsigned int Type, MemoryBuffer *Source, bool BufferOwned)
+  : TypeID(Type), BufferOwned(BufferOwned), Data(Source) {}
 
 StringRef Binary::getData() const {
   return Data->getBuffer();
@@ -67,7 +67,7 @@ ErrorOr<Binary *> object::createBinary(MemoryBuffer *Source,
     case sys::fs::file_magic::coff_object:
     case sys::fs::file_magic::coff_import_library:
     case sys::fs::file_magic::pecoff_executable:
-      return ObjectFile::createObjectFile(scopedSource.take(), Type);
+      return ObjectFile::createObjectFile(scopedSource.take(), true, Type);
     case sys::fs::file_magic::macho_universal_binary:
       return MachOUniversalBinary::create(scopedSource.take());
     case sys::fs::file_magic::unknown:

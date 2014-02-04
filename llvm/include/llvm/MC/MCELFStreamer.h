@@ -29,16 +29,15 @@ class raw_ostream;
 
 class MCELFStreamer : public MCObjectStreamer {
 public:
-  MCELFStreamer(MCContext &Context, MCTargetStreamer *TargetStreamer,
-                MCAsmBackend &TAB, raw_ostream &OS, MCCodeEmitter *Emitter)
-      : MCObjectStreamer(Context, TargetStreamer, TAB, OS, Emitter), 
-                         SeenIdent(false) {}
+  MCELFStreamer(MCContext &Context, MCAsmBackend &TAB, raw_ostream &OS,
+                MCCodeEmitter *Emitter)
+      : MCObjectStreamer(Context, TAB, OS, Emitter),
+        SeenIdent(false) {}
 
-  MCELFStreamer(MCContext &Context, MCTargetStreamer *TargetStreamer,
-                MCAsmBackend &TAB, raw_ostream &OS, MCCodeEmitter *Emitter,
-                MCAssembler *Assembler)
-      : MCObjectStreamer(Context, TargetStreamer, TAB, OS, Emitter, Assembler), 
-                         SeenIdent(false) {}
+  MCELFStreamer(MCContext &Context, MCAsmBackend &TAB, raw_ostream &OS,
+                MCCodeEmitter *Emitter, MCAssembler *Assembler)
+      : MCObjectStreamer(Context, TAB, OS, Emitter, Assembler),
+        SeenIdent(false) {}
 
   virtual ~MCELFStreamer();
 
@@ -86,8 +85,8 @@ public:
   virtual void FinishImpl();
 
 private:
-  virtual void EmitInstToFragment(const MCInst &Inst);
-  virtual void EmitInstToData(const MCInst &Inst);
+  virtual void EmitInstToFragment(const MCInst &Inst, const MCSubtargetInfo &);
+  virtual void EmitInstToData(const MCInst &Inst, const MCSubtargetInfo &);
 
   virtual void EmitBundleAlignMode(unsigned AlignPow2);
   virtual void EmitBundleLock(bool AlignToEnd);

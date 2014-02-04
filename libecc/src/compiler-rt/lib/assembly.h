@@ -39,6 +39,52 @@
 #  endif
 #endif
 
+#if defined(__arm__)
+# ifndef __ARM_ARCH
+#  if defined (__ARM_ARCH_7__) || defined (__ARM_ARCH_7A__) || \
+     defined (__ARM_ARCH_7R__) || defined (__ARM_ARCH_7M__) || \
+     defined (__ARM_ARCH_7EM__)
+#  define __ARM_ARCH 7
+#  endif
+# endif
+
+# ifndef __ARM_ARCH
+#  if defined (__ARM_ARCH_6__) || \
+      defined (__ARM_ARCH_6J__) || defined (__ARM_ARCH_6K__) || \
+      defined (__ARM_ARCH_6Z__) || defined (__ARM_ARCH_6ZK__) || \
+      defined (__ARM_ARCH_6ZM__)
+#  define __ARM_ARCH 6
+#  endif
+# endif
+
+# ifndef __ARM_ARCH
+#  if defined (__ARM_ARCH_5__) || defined (__ARM_ARCH_5T__) || \
+      defined (__ARM_ARCH_5TE__) || defined (__ARM_ARCH_5TEJ__)
+#  define __ARM_ARCH 5
+#  endif
+# endif
+
+# ifndef __ARM_ARCH
+# define __ARM_ARCH 4
+# endif
+
+# if defined(__ARM_ARCH_4T__) || __ARM_ARCH >= 5
+# define ARM_HAS_BX
+# endif
+# if !defined(__ARM_FEATURE_CLZ) && \
+     (__ARM_ARCH >= 6 || (__ARM_ARCH == 5 && !defined(__ARM_ARCH_5__)))
+# define __ARM_FEATURE_CLZ
+# endif
+
+# ifdef ARM_HAS_BX
+# define JMP(r)		bx	r
+# define JMPc(r,c)	bx##c	r
+# else
+# define JMP(r)		mov	pc, r
+# define JMPc(r,c)	mov##c	pc, r
+# endif
+#endif
+
 #define GLUE2(a, b) a ## b
 #define GLUE(a, b) GLUE2(a, b)
 #define SYMBOL_NAME(name) GLUE(__USER_LABEL_PREFIX__, name)

@@ -948,25 +948,6 @@ entry:
   ret <2 x i32> %vecinit1.i
 }
 
-define <2 x i32> @test_concat_undef_v1i32(<1 x i32> %a) {
-; CHECK-LABEL: test_concat_undef_v1i32:
-; CHECK: dup v{{[0-9]+}}.2s, v{{[0-9]+}}.s[0]
-entry:
-  %0 = extractelement <1 x i32> %a, i32 0
-  %vecinit1.i = insertelement <2 x i32> undef, i32 %0, i32 1
-  ret <2 x i32> %vecinit1.i
-}
-
-define <2 x i32> @test_concat_v1i32_v1i32(<1 x i32> %a) {
-; CHECK-LABEL: test_concat_v1i32_v1i32:
-; CHECK: dup v{{[0-9]+}}.2s, v{{[0-9]+}}.s[0]
-entry:
-  %0 = extractelement <1 x i32> %a, i32 0
-  %vecinit.i = insertelement <2 x i32> undef, i32 %0, i32 0
-  %vecinit1.i = insertelement <2 x i32> %vecinit.i, i32 %0, i32 1
-  ret <2 x i32> %vecinit1.i
-}
-
 
 define <2 x float> @test_scalar_to_vector_f32_to_v2f32(<2 x float> %a) {
 ; CHECK-LABEL: test_scalar_to_vector_f32_to_v2f32:
@@ -993,6 +974,52 @@ entry:
 }
 
 declare float @llvm.aarch64.neon.vpmax.f32.v2f32(<2 x float>)
+
+define <2 x i32> @test_concat_undef_v1i32(<1 x i32> %a) {
+; CHECK-LABEL: test_concat_undef_v1i32:
+; CHECK: ins v{{[0-9]+}}.s[1], v{{[0-9]+}}.s[0]
+entry:
+  %0 = extractelement <1 x i32> %a, i32 0
+  %vecinit1.i = insertelement <2 x i32> undef, i32 %0, i32 1
+  ret <2 x i32> %vecinit1.i
+}
+
+declare <1 x i32> @llvm.arm.neon.vqabs.v1i32(<1 x i32>) #4
+
+define <2 x i32> @test_concat_v1i32_undef(<1 x i32> %a) {
+; CHECK-LABEL: test_concat_v1i32_undef:
+; CHECK: sqabs s{{[0-9]+}}, s{{[0-9]+}}
+; CHECK-NEXT: ret
+entry:
+  %b = tail call <1 x i32> @llvm.arm.neon.vqabs.v1i32(<1 x i32> %a)
+  %0 = extractelement <1 x i32> %b, i32 0
+  %vecinit.i432 = insertelement <2 x i32> undef, i32 %0, i32 0
+  ret <2 x i32> %vecinit.i432
+}
+
+define <2 x i32> @test_concat_same_v1i32_v1i32(<1 x i32> %a) {
+; CHECK-LABEL: test_concat_same_v1i32_v1i32:
+; CHECK: dup v{{[0-9]+}}.2s, v{{[0-9]+}}.s[0]
+entry:
+  %0 = extractelement <1 x i32> %a, i32 0
+  %vecinit.i = insertelement <2 x i32> undef, i32 %0, i32 0
+  %vecinit1.i = insertelement <2 x i32> %vecinit.i, i32 %0, i32 1
+  ret <2 x i32> %vecinit1.i
+}
+
+define <2 x i32> @test_concat_diff_v1i32_v1i32(<1 x i32> %a, <1 x i32> %b) {
+; CHECK-LABEL: test_concat_diff_v1i32_v1i32:
+; CHECK: sqabs s{{[0-9]+}}, s{{[0-9]+}}
+; CHECK-NEXT: sqabs s{{[0-9]+}}, s{{[0-9]+}}
+; CHECK-NEXT: ins v0.s[1], v1.s[0]
+entry:
+  %c = tail call <1 x i32> @llvm.arm.neon.vqabs.v1i32(<1 x i32> %a)
+  %d = extractelement <1 x i32> %c, i32 0
+  %e = tail call <1 x i32> @llvm.arm.neon.vqabs.v1i32(<1 x i32> %b)
+  %f = extractelement <1 x i32> %e, i32 0
+  %h = shufflevector <1 x i32> %c, <1 x i32> %e, <2 x i32> <i32 0, i32 1>
+  ret <2 x i32> %h
+}
 
 define <16 x i8> @test_concat_v16i8_v16i8_v16i8(<16 x i8> %x, <16 x i8> %y) #0 {
 ; CHECK-LABEL: test_concat_v16i8_v16i8_v16i8:
@@ -1116,7 +1143,7 @@ define <8 x i16> @test_concat_v8i16_v4i16_v8i16(<4 x i16> %x, <8 x i16> %y) #0 {
 ; CHECK-LABEL: test_concat_v8i16_v4i16_v8i16:
 ; CHECK: ins {{v[0-9]+}}.d[1], {{v[0-9]+}}.d[0]
 entry:
- %vecext = extractelement <4 x i16> %x, i32 0
+  %vecext = extractelement <4 x i16> %x, i32 0
   %vecinit = insertelement <8 x i16> undef, i16 %vecext, i32 0
   %vecext1 = extractelement <4 x i16> %x, i32 1
   %vecinit2 = insertelement <8 x i16> %vecinit, i16 %vecext1, i32 1

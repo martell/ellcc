@@ -191,10 +191,9 @@ void MBlazeAsmPrinter::EmitInstruction(const MachineInstr *MI) {
 
   MCInst TmpInst;
   MCInstLowering.Lower(MI, TmpInst);
-  OutStreamer.EmitInstruction(TmpInst);
+  EmitToStreamer(OutStreamer, TmpInst);
 }
 
-#include <stdio.h>
 // Print out an operand for an inline asm expression.
 bool MBlazeAsmPrinter::
 PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,

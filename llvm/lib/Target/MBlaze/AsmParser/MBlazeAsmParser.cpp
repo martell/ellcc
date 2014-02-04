@@ -336,7 +336,7 @@ MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                MatchingInlineAsm)) {
   default: break;
   case Match_Success:
-    Out.EmitInstruction(Inst);
+    Out.EmitInstruction(Inst, STI);
     return false;
   case Match_MissingFeature:
     return Error(IDLoc, "instruction use requires an option to be enabled");

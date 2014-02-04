@@ -32,24 +32,10 @@ class RemoteTargetExternal : public RemoteTarget {
   RPCChannel RPC;
 
   bool WriteBytes(const void *Data, size_t Size) {
-    int rc = RPC.WriteBytes(Data, Size);
-    if (rc != -1 && (size_t)rc == Size)
-      return true;
-
-    ErrorMsg = "WriteBytes: ";
-    RPC.ReportError(rc, Size, ErrorMsg);
-    return false;
+    return RPC.WriteBytes(Data, Size);
   }
 
-  bool ReadBytes(void *Data, size_t Size) {
-    int rc = RPC.ReadBytes(Data, Size);
-    if (rc != -1 && (size_t)rc == Size)
-      return true;
-
-    ErrorMsg = "ReadBytes: ";
-    RPC.ReportError(rc, Size, ErrorMsg);
-    return false;
-  }
+  bool ReadBytes(void *Data, size_t Size) { return RPC.ReadBytes(Data, Size); }
 
 public:
   /// Allocate space in the remote target address space.
@@ -95,7 +81,7 @@ public:
   ///          descriptive text of the encountered error.
   virtual bool executeCode(uint64_t Address, int &RetVal);
 
-  /// Minimum alignment for memory permissions. Used to seperate code and
+  /// Minimum alignment for memory permissions. Used to separate code and
   /// data regions to make sure data doesn't get marked as code or vice
   /// versa.
   ///
