@@ -15161,7 +15161,7 @@ test -z "$INSTALL_DATA" && INSTALL_DATA='${INSTALL} -m 644'
 
 if test "$GCC" = yes ; then
                         OLDCFLAGS="$CFLAGS -Wall -Wmissing-prototypes -Wstrict-prototypes"
-    CFLAGS="$OLDCFLAGS -fexceptions"
+    CFLAGS="$OLDCFLAGS" # RICH:  -fexceptions"
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether $CC accepts -fexceptions" >&5
 $as_echo_n "checking whether $CC accepts -fexceptions... " >&6; }
     cat confdefs.h - <<_ACEOF >conftest.$ac_ext

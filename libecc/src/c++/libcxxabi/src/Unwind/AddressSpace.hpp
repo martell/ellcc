@@ -278,7 +278,7 @@ inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
     return true;
   }
 #elif __ELLCC__
-#warning findUnwindSections is not implemented
+// RICH: #warning findUnwindSections is not implemented
 #else
   // TO DO
 
@@ -292,7 +292,8 @@ inline bool LocalAddressSpace::findOtherFDE(pint_t targetAddr, pint_t &fde) {
 #if __APPLE__
   return checkKeyMgrRegisteredFDEs(targetAddr, *((void**)&fde));
 #elif __ELLCC__
-#warning findOtherFDE is not implemented
+// RICH: #warning findOtherFDE is not implemented
+  return false;
 #else
   // TO DO: if OS has way to dynamically register FDEs, check that.
   return false;
