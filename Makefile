@@ -54,7 +54,7 @@ ifeq ($(filter arm%, $(TARGET)),)
   # Default to all targets.
   TARGETS=
 else
-  # Limit ARM targets for to keep the ecc executable small.
+  # Limit ARM targets to keep the ecc executable small enough to link.
   TARGETS=--enable-targets=arm
 endif
 

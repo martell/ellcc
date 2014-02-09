@@ -29,7 +29,6 @@ make -j 6 -C llvm-build$builddir install || exit 1
 if [ "$host" != "$build" ] ; then
   # The host system is not the build system.
   # No need to build the libraries again.
-  # Build the GNU tools.
 
   echo Configured to $WHY.
   echo C compiler: $cc
