@@ -716,12 +716,10 @@ static void writeSymbolTable(
       print32BE(Out, 0);
     }
 
-    error_code Err;
     for (object::symbol_iterator I = Obj->begin_symbols(),
                                  E = Obj->end_symbols();
-         I != E; I.increment(Err), failIfError(Err)) {
-      uint32_t Symflags;
-      failIfError(I->getFlags(Symflags));
+         I != E; ++I) {
+      uint32_t Symflags = I->getFlags();;
       if (Symflags & object::SymbolRef::SF_FormatSpecific)
         continue;
       if (!(Symflags & object::SymbolRef::SF_Global))

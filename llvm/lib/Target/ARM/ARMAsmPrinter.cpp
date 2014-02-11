@@ -443,14 +443,12 @@ static bool isThumb(const MCSubtargetInfo& STI) {
 }
 
 void ARMAsmPrinter::emitInlineAsmEnd(const MCSubtargetInfo &StartInfo,
-                                     MCSubtargetInfo *EndInfo) const {
+                                     const MCSubtargetInfo *EndInfo) const {
   // If either end mode is unknown (EndInfo == NULL) or different than
   // the start mode, then restore the start mode.
   const bool WasThumb = isThumb(StartInfo);
   if (EndInfo == NULL || WasThumb != isThumb(*EndInfo)) {
     OutStreamer.EmitAssemblerFlag(WasThumb ? MCAF_Code16 : MCAF_Code32);
-    if (EndInfo)
-      EndInfo->ToggleFeature(ARM::ModeThumb);
   }
 }
 
@@ -476,7 +474,7 @@ void ARMAsmPrinter::EmitStartOfAsmFile(Module &M) {
       // Now any user defined text sections from function attributes.
       for (Module::iterator F = M.begin(), e = M.end(); F != e; ++F)
         if (!F->isDeclaration() && !F->hasAvailableExternallyLinkage())
-          TextSections.insert(TLOFMacho.SectionForGlobal(F, Mang, TM));
+          TextSections.insert(TLOFMacho.SectionForGlobal(F, *Mang, TM));
       // Now the coalescable sections.
       TextSections.insert(TLOFMacho.getTextCoalSection());
       TextSections.insert(TLOFMacho.getConstTextCoalSection());
@@ -1091,11 +1089,11 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
         // instruction.
         ATS.emitPad(Offset);
       } else {
-        MI->dump();
-        llvm_unreachable("Unsupported opcode for unwinding information");
+        // Move of SP to a register.  Positive values correspond to an "add"
+        // instruction.
+        ATS.emitMovSP(DstReg, -Offset);
       }
     } else if (DstReg == ARM::SP) {
-      // FIXME: .movsp goes here
       MI->dump();
       llvm_unreachable("Unsupported opcode for unwinding information");
     }
@@ -1105,8 +1103,6 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
     }
   }
 }
-
-extern cl::opt<bool> DisableARMEHABI;
 
 // Simple pseudo-instructions have their lowering (with expansion to real
 // instructions) auto-generated.
@@ -1122,7 +1118,7 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   }
 
   // Emit unwinding stuff for frame-related instructions
-  if (Subtarget->isTargetEHABICompatible() && !DisableARMEHABI &&
+  if (Subtarget->isTargetEHABICompatible() &&
        MI->getFlag(MachineInstr::FrameSetup))
     EmitUnwindingInstruction(MI);
 

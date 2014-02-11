@@ -1195,6 +1195,17 @@ AC_ARG_ENABLE(terminfo,AS_HELP_STRING(
   esac],
   llvm_cv_enable_terminfo="yes")
 
+dnl --enable-libedit: check whether the user wants to turn off libedit.
+AC_ARG_ENABLE(libedit,AS_HELP_STRING(
+  [--enable-libedit],
+  [Use libedit if available (default is YES)]),
+  [case "$enableval" in
+    yes) llvm_cv_enable_libedit="yes" ;;
+    no)  llvm_cv_enable_libedit="no"  ;;
+    *) AC_MSG_ERROR([Invalid setting for --enable-libedit. Use "yes" or "no"]) ;;
+  esac],
+  llvm_cv_enable_libedit="yes")
+
 dnl --enable-libffi : check whether the user wants to turn off libffi:
 AC_ARG_ENABLE(libffi,AS_HELP_STRING(
   --enable-libffi,[Check for the presence of libffi (default is NO)]),
@@ -1511,6 +1522,13 @@ if test "$llvm_cv_enable_terminfo" = "yes" ; then
                            [Define if the setupterm() function is supported this platform.]))
 fi
 
+dnl The libedit library is optional; used by lib/LineEditor
+if test "$llvm_cv_enable_libedit" = "yes" ; then
+  AC_SEARCH_LIBS(el_init,edit,
+                 AC_DEFINE([HAVE_LIBEDIT],[1],
+                           [Define if libedit is available on this platform.]))
+fi
+
 dnl libffi is optional; used to call external functions from the interpreter
 if test "$llvm_cv_enable_libffi" = "yes" ; then
   AC_SEARCH_LIBS(ffi_call,ffi,AC_DEFINE([HAVE_FFI_CALL],[1],
@@ -1744,12 +1762,15 @@ AC_CHECK_FUNCS([log log2 log10 exp exp2])
 AC_CHECK_FUNCS([getpagesize getrusage getrlimit setrlimit gettimeofday ])
 AC_CHECK_FUNCS([isatty mkdtemp mkstemp ])
 AC_CHECK_FUNCS([mktemp posix_spawn pread realpath sbrk setrlimit ])
-AC_CHECK_FUNCS([strerror strerror_r setenv arc4random ])
+AC_CHECK_FUNCS([strerror strerror_r setenv ])
 AC_CHECK_FUNCS([strtoll strtoq sysconf malloc_zone_statistics ])
 AC_CHECK_FUNCS([setjmp longjmp sigsetjmp siglongjmp writev])
 AC_CHECK_FUNCS([futimes futimens])
 AC_C_PRINTF_A
 AC_FUNC_RAND48
+
+dnl Check for arc4random accessible via AC_INCLUDES_DEFAULT.
+AC_CHECK_DECLS([arc4random])
 
 dnl Check the declaration "Secure API" on Windows environments.
 AC_CHECK_DECLS([strerror_s])

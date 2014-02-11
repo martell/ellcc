@@ -1,5 +1,4 @@
 ; RUN: %lli_mcjit %s > /dev/null
-; RUN: %lli_mcjit -code-model=small %s > /dev/null
 
 define i32 @foo(i32 %x, i32 %y, double %d) {
 entry:

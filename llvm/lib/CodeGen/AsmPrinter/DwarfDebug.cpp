@@ -688,12 +688,12 @@ DIE *DwarfDebug::constructScopeDIE(DwarfCompileUnit *TheCU,
 // as well.
 unsigned DwarfDebug::getOrCreateSourceID(StringRef FileName, StringRef DirName,
                                          unsigned CUID) {
-  // If we use .loc in assembly, we can't separate .file entries according to
+  // If we print assembly, we can't separate .file entries according to
   // compile units. Thus all files will belong to the default compile unit.
 
   // FIXME: add a better feature test than hasRawTextSupport. Even better,
   // extend .file to support this.
-  if (Asm->TM.hasMCUseLoc() && Asm->OutStreamer.hasRawTextSupport())
+  if (Asm->OutStreamer.hasRawTextSupport())
     CUID = 0;
 
   // If FE did not provide a file name, then assume stdin.
@@ -766,12 +766,12 @@ DwarfCompileUnit *DwarfDebug::constructDwarfCompileUnit(DICompileUnit DIUnit) {
   Asm->OutStreamer.getContext().setMCLineTableSymbol(LineTableStartSym,
                                                      NewCU->getUniqueID());
 
-  // Use a single line table if we are using .loc and generating assembly.
+  // Use a single line table if we are generating assembly.
   bool UseTheFirstCU =
-      (Asm->TM.hasMCUseLoc() && Asm->OutStreamer.hasRawTextSupport()) ||
-      (NewCU->getUniqueID() == 0);
+      Asm->OutStreamer.hasRawTextSupport() || (NewCU->getUniqueID() == 0);
 
   if (!useSplitDwarf()) {
+    NewCU->setStatementListIndex(Die->getValues().size());
     // DW_AT_stmt_list is a offset of line number information for this
     // compile unit in debug_line section. For split dwarf this is
     // left in the skeleton CU and so not included.
@@ -849,8 +849,7 @@ void DwarfDebug::constructSubprogramDIE(DwarfCompileUnit *TheCU,
 void DwarfDebug::constructImportedEntityDIE(DwarfCompileUnit *TheCU,
                                             const MDNode *N) {
   DIImportedEntity Module(N);
-  if (!Module.Verify())
-    return;
+  assert(Module.Verify());
   if (DIE *D = TheCU->getOrCreateContextDIE(Module.getContext()))
     constructImportedEntityDIE(TheCU, Module, D);
 }
@@ -858,8 +857,7 @@ void DwarfDebug::constructImportedEntityDIE(DwarfCompileUnit *TheCU,
 void DwarfDebug::constructImportedEntityDIE(DwarfCompileUnit *TheCU,
                                             const MDNode *N, DIE *Context) {
   DIImportedEntity Module(N);
-  if (!Module.Verify())
-    return;
+  assert(Module.Verify());
   return constructImportedEntityDIE(TheCU, Module, Context);
 }
 
@@ -1527,30 +1525,6 @@ void DwarfDebug::identifyScopeMarkers() {
   }
 }
 
-// Get MDNode for DebugLoc's scope.
-static MDNode *getScopeNode(DebugLoc DL, const LLVMContext &Ctx) {
-  if (MDNode *InlinedAt = DL.getInlinedAt(Ctx))
-    return getScopeNode(DebugLoc::getFromDILocation(InlinedAt), Ctx);
-  return DL.getScope(Ctx);
-}
-
-// Walk up the scope chain of given debug loc and find line number info
-// for the function.
-static DebugLoc getFnDebugLoc(DebugLoc DL, const LLVMContext &Ctx) {
-  const MDNode *Scope = getScopeNode(DL, Ctx);
-  DISubprogram SP = getDISubprogram(Scope);
-  if (SP.isSubprogram()) {
-    // Check for number of operands since the compatibility is
-    // cheap here.
-    if (SP->getNumOperands() > 19)
-      return DebugLoc::get(SP.getScopeLineNumber(), 0, SP);
-    else
-      return DebugLoc::get(SP.getLineNumber(), 0, SP);
-  }
-
-  return DebugLoc();
-}
-
 // Gather pre-function debug information.  Assumes being called immediately
 // after the function entry point has been emitted.
 void DwarfDebug::beginFunction(const MachineFunction *MF) {
@@ -1577,8 +1551,8 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
   LexicalScope *FnScope = LScopes.getCurrentFunctionScope();
   DwarfCompileUnit *TheCU = SPMap.lookup(FnScope->getScopeNode());
   assert(TheCU && "Unable to find compile unit!");
-  if (Asm->TM.hasMCUseLoc() && Asm->OutStreamer.hasRawTextSupport())
-    // Use a single line table if we are using .loc and generating assembly.
+  if (Asm->OutStreamer.hasRawTextSupport())
+    // Use a single line table if we are generating assembly.
     Asm->OutStreamer.getContext().setDwarfCompileUnitID(0);
   else
     Asm->OutStreamer.getContext().setDwarfCompileUnitID(TheCU->getUniqueID());
@@ -1745,7 +1719,7 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
   // Record beginning of function.
   if (!PrologEndLoc.isUnknown()) {
     DebugLoc FnStartDL =
-        getFnDebugLoc(PrologEndLoc, MF->getFunction()->getContext());
+        PrologEndLoc.getFnDebugLoc(MF->getFunction()->getContext());
     recordSourceLine(
         FnStartDL.getLine(), FnStartDL.getCol(),
         FnStartDL.getScope(MF->getFunction()->getContext()),
@@ -3040,6 +3014,11 @@ void DwarfDebug::emitDebugStrDWO() {
 void DwarfDebug::addDwarfTypeUnitType(DICompileUnit CUNode,
                                       StringRef Identifier, DIE *RefDie,
                                       DICompositeType CTy) {
+  // Flag the type unit reference as a declaration so that if it contains
+  // members (implicit special members, static data member definitions, member
+  // declarations for definitions in this CU, etc) consumers don't get confused
+  // and think this is a full definition.
+  CUMap.begin()->second->addFlag(RefDie, dwarf::DW_AT_declaration);
 
   const DwarfTypeUnit *&TU = DwarfTypeUnits[CTy];
   if (TU) {

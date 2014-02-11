@@ -33,8 +33,8 @@ struct Glibc_2_19_tls_header {
   uptr start;
 };
 
-// This must be static TLS, i.e. the run-time should be build with
-// -ftls-model=initial-exec or equivalent.
+// This must be static TLS
+__attribute__((tls_model("initial-exec")))
 static __thread DTLS dtls;
 
 // Make sure we properly destroy the DTLS objects:
@@ -60,9 +60,10 @@ static inline void DTLS_Resize(uptr new_size) {
 
 void DTLS_Destroy() {
   if (!dtls.dtv_size) return;
-  UnmapOrDie(dtls.dtv, dtls.dtv_size * sizeof(DTLS::DTV));
+  uptr s = dtls.dtv_size;
+  dtls.dtv_size = kDestroyedThread;  // Do this before unmap for AS-safety.
+  UnmapOrDie(dtls.dtv, s * sizeof(DTLS::DTV));
   atomic_fetch_sub(&number_of_live_dtls, 1, memory_order_relaxed);
-  dtls.dtv_size = kDestroyedThread;
 }
 
 void DTLS_on_tls_get_addr(void *arg_void, void *res) {
@@ -74,8 +75,8 @@ void DTLS_on_tls_get_addr(void *arg_void, void *res) {
     return;
   uptr tls_size = 0;
   uptr tls_beg = reinterpret_cast<uptr>(res) - arg->offset;
-  VPrintf(2, "__tls_get_addr: %p {%p,%p} => %p; tls_beg: %p\n", arg,
-          arg->dso_id, arg->offset, res, tls_beg);
+  VPrintf(2, "__tls_get_addr: %p {%p,%p} => %p; tls_beg: %p; sp: %p\n", arg,
+          arg->dso_id, arg->offset, res, tls_beg, &tls_beg);
   if (dtls.last_memalign_ptr == tls_beg) {
     tls_size = dtls.last_memalign_size;
     VPrintf(2, "__tls_get_addr: glibc <=2.18 suspected; tls={%p,%p}\n", tls_beg,

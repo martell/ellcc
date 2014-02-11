@@ -34,6 +34,7 @@ namespace __sanitizer {
   extern unsigned pid_t_sz;
   extern unsigned timeval_sz;
   extern unsigned uid_t_sz;
+  extern unsigned gid_t_sz;
   extern unsigned mbstate_t_sz;
   extern unsigned struct_timezone_sz;
   extern unsigned struct_tms_sz;
@@ -42,6 +43,7 @@ namespace __sanitizer {
   extern unsigned struct_sched_param_sz;
   extern unsigned struct_statfs_sz;
   extern unsigned struct_statfs64_sz;
+  extern unsigned struct_sockaddr_sz;
 
 #if !SANITIZER_ANDROID
   extern unsigned ucontext_t_sz;
@@ -202,12 +204,25 @@ namespace __sanitizer {
     uptr __unused5;
   #endif
   };
-  #endif  // SANITIZER_LINUX && !SANITIZER_ANDROID
+#endif  // SANITIZER_LINUX && !SANITIZER_ANDROID
 
   struct __sanitizer_iovec {
-    void  *iov_base;
+    void *iov_base;
     uptr iov_len;
   };
+
+#if !SANITIZER_ANDROID
+  struct __sanitizer_ifaddrs {
+    struct __sanitizer_ifaddrs *ifa_next;
+    char *ifa_name;
+    unsigned int ifa_flags;
+    void *ifa_addr;    // (struct sockaddr *)
+    void *ifa_netmask; // (struct sockaddr *)
+    // This is a union on Linux.
+    void *ifa_dstaddr; // (struct sockaddr *)
+    void *ifa_data;
+  };
+#endif  // !SANITIZER_ANDROID
 
 #if SANITIZER_MAC
   typedef unsigned long __sanitizer_pthread_key_t;
@@ -361,10 +376,11 @@ namespace __sanitizer {
   };
 #endif
 
+  // Linux system headers define the 'sa_handler' and 'sa_sigaction' macros.
   struct __sanitizer_sigaction {
     union {
-      void (*sa_handler)(int sig);
-      void (*sa_sigaction)(int sig, void *siginfo, void *uctx);
+      void (*sigaction)(int sig, void *siginfo, void *uctx);
+      void (*handler)(int sig);
     };
     __sanitizer_sigset_t sa_mask;
     int sa_flags;
@@ -377,10 +393,11 @@ namespace __sanitizer {
     u8 sig[8];
   };
 
+  // Linux system headers define the 'sa_handler' and 'sa_sigaction' macros.
   struct __sanitizer_kernel_sigaction_t {
     union {
-      void (*sigaction)(int signo, void *info, void *ctx);
       void (*handler)(int signo);
+      void (*sigaction)(int signo, void *info, void *ctx);
     };
     unsigned long sa_flags;
     void (*sa_restorer)(void);
@@ -515,7 +532,36 @@ namespace __sanitizer {
   };
 #endif
 
-#define IOC_SIZE(nr) (((nr) >> 16) & 0x3fff)
+#define IOC_NRBITS 8
+#define IOC_TYPEBITS 8
+#if defined(__powerpc__) || defined(__powerpc64__)
+#define IOC_SIZEBITS 13
+#define IOC_DIRBITS 3
+#define IOC_NONE 1U
+#define IOC_WRITE 4U
+#define IOC_READ 2U
+#else
+#define IOC_SIZEBITS 14
+#define IOC_DIRBITS 2
+#define IOC_NONE 0U
+#define IOC_WRITE 1U
+#define IOC_READ 2U
+#endif
+#define IOC_NRMASK ((1 << IOC_NRBITS) - 1)
+#define IOC_TYPEMASK ((1 << IOC_TYPEBITS) - 1)
+#define IOC_SIZEMASK ((1 << IOC_SIZEBITS) - 1)
+#define IOC_DIRMASK ((1 << IOC_DIRBITS) - 1)
+#define IOC_NRSHIFT 0
+#define IOC_TYPESHIFT (IOC_NRSHIFT + IOC_NRBITS)
+#define IOC_SIZESHIFT (IOC_TYPESHIFT + IOC_TYPEBITS)
+#define IOC_DIRSHIFT (IOC_SIZESHIFT + IOC_SIZEBITS)
+#define EVIOC_EV_MAX 0x1f
+#define EVIOC_ABS_MAX 0x3f
+
+#define IOC_DIR(nr) (((nr) >> IOC_DIRSHIFT) & IOC_DIRMASK)
+#define IOC_TYPE(nr) (((nr) >> IOC_TYPESHIFT) & IOC_TYPEMASK)
+#define IOC_NR(nr) (((nr) >> IOC_NRSHIFT) & IOC_NRMASK)
+#define IOC_SIZE(nr) (((nr) >> IOC_SIZESHIFT) & IOC_SIZEMASK)
 
   extern unsigned struct_arpreq_sz;
   extern unsigned struct_ifreq_sz;

@@ -9,8 +9,7 @@
 
 LEVEL := ../..
 LIBRARYNAME := LTO
-LINK_COMPONENTS := all-targets ipo scalaropts linker bitreader bitwriter \
-                   lto mcdisassembler vectorize
+LINK_COMPONENTS := all-targets core lto mc mcdisassembler support
 ifeq ($(ENABLE_SHARED),1)
   LINK_LIBS_IN_SHARED := 1
   SHARED_LIBRARY := 1

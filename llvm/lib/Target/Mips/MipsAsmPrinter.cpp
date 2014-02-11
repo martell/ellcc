@@ -643,12 +643,6 @@ void MipsAsmPrinter::EmitStartOfAsmFile(Module &M) {
 
 }
 
-void MipsAsmPrinter::EmitEndOfAsmFile(Module &M) {
-  // Emit Mips ELF register info
-  Subtarget->getMReginfo().emitMipsReginfoSectionCG(
-             OutStreamer, getObjFileLowering(), *Subtarget);
-}
-
 void MipsAsmPrinter::PrintDebugValueComment(const MachineInstr *MI,
                                            raw_ostream &OS) {
   // TODO: implement

@@ -98,6 +98,8 @@ if("${LLVM_NATIVE_ARCH}" STREQUAL "X86")
   test_target_arch(i386 ${TARGET_32_BIT_CFLAGS})
 elseif("${LLVM_NATIVE_ARCH}" STREQUAL "PowerPC")
   test_target_arch(powerpc64 ${TARGET_64_BIT_CFLAGS})
+elseif("${LLVM_NATIVE_ARCH}" STREQUAL "ARM")
+  test_target_arch(arm "")
 endif()
 
 # We only support running instrumented tests when we're not cross compiling
@@ -139,8 +141,7 @@ if (NOT MSVC)
     -funwind-tables
     -fno-stack-protector
     -Wno-gnu  # Variadic macros with 0 arguments for ...
-    -fvisibility=hidden
-    )
+    -fvisibility=hidden)
   if (NOT COMPILER_RT_DEBUG)
     list(APPEND SANITIZER_COMMON_CFLAGS -O3)
   endif()
@@ -161,6 +162,11 @@ if (NOT MSVC)
   else()
     list(APPEND SANITIZER_COMMON_CFLAGS -g)
   endif()
+endif()
+# Build sanitizer runtimes with -fno-function-sections.
+check_cxx_compiler_flag("-Werror -fno-function-sections" SUPPORTS_FNO_FUNCTION_SECTIONS_FLAG)
+if(SUPPORTS_FNO_FUNCTION_SECTIONS_FLAG)
+  list(APPEND SANITIZER_COMMON_CFLAGS -fno-function-sections)
 endif()
 # Warnings suppressions.
 check_cxx_compiler_flag(-Wno-variadic-macros SUPPORTS_NO_VARIADIC_MACROS_FLAG)
@@ -210,7 +216,7 @@ endif()
 # Architectures supported by Sanitizer runtimes. Specific sanitizers may
 # support only subset of these (e.g. TSan works on x86_64 only).
 filter_available_targets(SANITIZER_COMMON_SUPPORTED_ARCH
-  x86_64 i386 powerpc64)
+  x86_64 i386 powerpc64 arm)
 
 add_subdirectory(include)
 

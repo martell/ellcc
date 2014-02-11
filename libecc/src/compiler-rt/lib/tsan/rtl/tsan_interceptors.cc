@@ -62,6 +62,7 @@ extern "C" void *__libc_calloc(uptr size, uptr n);
 extern "C" void *__libc_realloc(void *ptr, uptr size);
 extern "C" void __libc_free(void *ptr);
 extern "C" int mallopt(int param, int value);
+extern void *stdout, *stderr;
 const int PTHREAD_MUTEX_RECURSIVE = 1;
 const int PTHREAD_MUTEX_RECURSIVE_NP = 1;
 const int EINVAL = 22;
@@ -73,6 +74,7 @@ const int SIGABRT = 6;
 const int SIGFPE = 8;
 const int SIGSEGV = 11;
 const int SIGPIPE = 13;
+const int SIGTERM = 15;
 const int SIGBUS = 7;
 const int SIGSYS = 31;
 void *const MAP_FAILED = (void*)-1;
@@ -574,14 +576,14 @@ void *operator new[](__sanitizer::uptr size, std::nothrow_t const&) {
   user_free(thr, pc, ptr);
 
 SANITIZER_INTERFACE_ATTRIBUTE
-void operator delete(void *ptr);
-void operator delete(void *ptr) {
+void operator delete(void *ptr) throw();
+void operator delete(void *ptr) throw() {
   OPERATOR_DELETE_BODY(_ZdlPv);
 }
 
 SANITIZER_INTERFACE_ATTRIBUTE
-void operator delete[](void *ptr);
-void operator delete[](void *ptr) {
+void operator delete[](void *ptr) throw();
+void operator delete[](void *ptr) throw() {
   OPERATOR_DELETE_BODY(_ZdlPvRKSt9nothrow_t);
 }
 
@@ -1642,7 +1644,14 @@ static void CallUserSignalHandler(ThreadState *thr, bool sync, bool sigact,
     sigactions[sig].sa_sigaction(sig, info, uctx);
   else
     sigactions[sig].sa_handler(sig);
-  if (flags()->report_bugs && !sync && errno != 99) {
+  // We do not detect errno spoiling for SIGTERM,
+  // because some SIGTERM handlers do spoil errno but reraise SIGTERM,
+  // tsan reports false positive in such case.
+  // It's difficult to properly detect this situation (reraise),
+  // because in async signal processing case (when handler is called directly
+  // from rtl_generic_sighandler) we have not yet received the reraised
+  // signal; and it looks too fragile to intercept all ways to reraise a signal.
+  if (flags()->report_bugs && !sync && sig != SIGTERM && errno != 99) {
     Context *ctx = CTX();
     __tsan::StackTrace stack;
     stack.ObtainCurrent(thr, pc);
@@ -2095,7 +2104,11 @@ static void finalize(void *arg) {
   uptr pc = 0;
   atexit_ctx->exit(thr, pc);
   int status = Finalize(thr);
-  REAL(fflush)(0);
+  // Make sure the output is not lost.
+  // Flushing all the streams here may freeze the process if a child thread is
+  // performing file stream operations at the same time.
+  REAL(fflush)(stdout);
+  REAL(fflush)(stderr);
   if (status)
     REAL(_exit)(status);
 }
@@ -2299,7 +2312,7 @@ void InitializeInterceptors() {
 
 void internal_start_thread(void(*func)(void *arg), void *arg) {
   // Start the thread with signals blocked, otherwise it can steal user signals.
-  __sanitizer_kernel_sigset_t set, old;
+  __sanitizer_sigset_t set, old;
   internal_sigfillset(&set);
   internal_sigprocmask(SIG_SETMASK, &set, &old);
   void *th;
