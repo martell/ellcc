@@ -3518,11 +3518,8 @@ void Sema::DiagnoseUnusedBackingIvarInAccessor(Scope *S,
       continue;
 
     UnusedBackingIvarChecker Checker(*this, CurMethod, IV);
-    // RICH: The following line causes a compilation failure with r201043.
-    // RICH: The failure occurs when compiling ecc with an ecc compiled with
-    // ecc.
-    // RICH: Checker.TraverseStmt(CurMethod->getBody());
-    // RICH: if (Checker.AccessedIvar)
+    Checker.TraverseStmt(CurMethod->getBody());
+    if (Checker.AccessedIvar)
       continue;
 
     // Do not issue this warning if backing ivar is used somewhere and accessor

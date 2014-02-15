@@ -41,7 +41,6 @@
 // in this shared library, so that they can be overriden by programs
 // that define non-weak copies of the functions.
 
-#include <stdio.h>
 _LIBCPP_WEAK _LIBCPP_NEW_DELETE_VIS
 void *
 operator new(std::size_t size)
@@ -54,9 +53,6 @@ operator new(std::size_t size)
     void* p;
     while ((p = ::malloc(size)) == 0)
     {
-        printf("malloc(%zd) failed\n", size);
-        for (;;);
-
         // If malloc fails and there is a new_handler,
         // call it to try free up memory.
         std::new_handler nh = std::get_new_handler();
