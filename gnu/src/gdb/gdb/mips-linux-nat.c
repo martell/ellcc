@@ -33,7 +33,9 @@
 #include "gregset.h"
 
 #include <sys/ptrace.h>
+#if !defined(__ELLCC__)
 #include <asm/ptrace.h>
+#endif
 
 #include "mips-linux-watch.h"
 
