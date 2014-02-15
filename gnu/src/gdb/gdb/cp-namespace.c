@@ -1,5 +1,5 @@
 /* Helper routines for C++ support in GDB.
-   Copyright (C) 2003-2013 Free Software Foundation, Inc.
+   Copyright (C) 2003-2014 Free Software Foundation, Inc.
 
    Contributed by David Carlton and by Kealia, Inc.
 
@@ -473,7 +473,8 @@ cp_lookup_symbol_imports_or_template (const char *scope,
 	  char *name_copy = xstrdup (SYMBOL_NATURAL_NAME (function));
 	  struct cleanup *cleanups = make_cleanup (xfree, name_copy);
 	  const struct language_defn *lang = language_def (language_cplus);
-	  struct gdbarch *arch = SYMBOL_SYMTAB (function)->objfile->gdbarch;
+	  struct gdbarch *arch
+	    = get_objfile_arch (SYMBOL_SYMTAB (function)->objfile);
 	  const struct block *parent = BLOCK_SUPERBLOCK (block);
 
 	  while (1)
@@ -499,7 +500,10 @@ cp_lookup_symbol_imports_or_template (const char *scope,
 				      TYPE_N_TEMPLATE_ARGUMENTS (context),
 				      TYPE_TEMPLATE_ARGUMENTS (context));
 	      if (result != NULL)
-		return result;
+		{
+		  do_cleanups (cleanups);
+		  return result;
+		}
 	    }
 
 	  do_cleanups (cleanups);
@@ -699,6 +703,34 @@ lookup_symbol_file (const char *name,
   return sym;
 }
 
+/* Search through the base classes of PARENT_TYPE for a base class
+   named NAME and return its type.  If not found, return NULL.  */
+
+struct type *
+find_type_baseclass_by_name (struct type *parent_type, const char *name)
+{
+  int i;
+
+  CHECK_TYPEDEF (parent_type);
+  for (i = 0; i < TYPE_N_BASECLASSES (parent_type); ++i)
+    {
+      struct type *type = check_typedef (TYPE_BASECLASS (parent_type, i));
+      const char *base_name = TYPE_BASECLASS_NAME (parent_type, i);
+
+      if (base_name == NULL)
+	continue;
+
+      if (streq (base_name, name))
+	return type;
+
+      type = find_type_baseclass_by_name (type, name);
+      if (type != NULL)
+	return type;
+    }
+
+  return NULL;
+}
+
 /* Search through the base classes of PARENT_TYPE for a symbol named
    NAME in block BLOCK.  */
 
@@ -717,36 +749,40 @@ find_symbol_in_baseclass (struct type *parent_type, const char *name,
   for (i = 0; i < TYPE_N_BASECLASSES (parent_type); ++i)
     {
       size_t len;
+      struct type *base_type = TYPE_BASECLASS (parent_type, i);
       const char *base_name = TYPE_BASECLASS_NAME (parent_type, i);
 
       if (base_name == NULL)
 	continue;
 
       /* Search this particular base class.  */
-      sym = cp_lookup_symbol_namespace (base_name, name, block, VAR_DOMAIN);
+      sym = cp_lookup_symbol_in_namespace (base_name, name, block,
+					   VAR_DOMAIN, 0);
       if (sym != NULL)
 	break;
 
+      /* Now search all static file-level symbols.  We have to do this for
+	 things like typedefs in the class.  First search in this symtab,
+	 what we want is possibly there.  */
       len = strlen (base_name) + 2 + strlen (name) + 1;
       concatenated_name = xrealloc (concatenated_name, len);
       xsnprintf (concatenated_name, len, "%s::%s", base_name, name);
       sym = lookup_symbol_static (concatenated_name, block, VAR_DOMAIN);
+      if (sym != NULL)
+	break;
 
-      /* If there is currently no BLOCK, e.g., the inferior hasn't yet
-	 been started, then try searching all STATIC_BLOCK symbols in
-	 all objfiles.  */
-      if (block == NULL)
-	{
-	  sym = lookup_static_symbol_aux (concatenated_name, VAR_DOMAIN);
-	  if (sym != NULL)
-	    break;
-	}
+      /* Nope.  We now have to search all static blocks in all objfiles,
+	 even if block != NULL, because there's no guarantees as to which
+	 symtab the symbol we want is in.  */
+      sym = lookup_static_symbol_aux (concatenated_name, VAR_DOMAIN);
+      if (sym != NULL)
+	break;
 
       /* If this class has base classes, search them next.  */
-      if (TYPE_N_BASECLASSES (TYPE_BASECLASS (parent_type, i)) > 0)
+      CHECK_TYPEDEF (base_type);
+      if (TYPE_N_BASECLASSES (base_type) > 0)
 	{
-	  sym = find_symbol_in_baseclass (TYPE_BASECLASS (parent_type, i),
-					  name, block);
+	  sym = find_symbol_in_baseclass (base_type, name, block);
 	  if (sym != NULL)
 	    break;
 	}
@@ -776,6 +812,10 @@ cp_lookup_nested_symbol (struct type *parent_type,
     case TYPE_CODE_STRUCT:
     case TYPE_CODE_NAMESPACE:
     case TYPE_CODE_UNION:
+    /* NOTE: Handle modules here as well, because Fortran is re-using the C++
+       specific code to lookup nested symbols in modules, by calling the
+       function pointer la_lookup_symbol_nonlocal, which ends up here.  */
+    case TYPE_CODE_MODULE:
       {
 	/* NOTE: carlton/2003-11-10: We don't treat C++ class members
 	   of classes like, say, data or function members.  Instead,
@@ -794,8 +834,8 @@ cp_lookup_nested_symbol (struct type *parent_type,
 	if (sym != NULL)
 	  return sym;
 
-	/* Now search all static file-level symbols.  Not strictly
-	   correct, but more useful than an error.  We do not try to
+	/* Now search all static file-level symbols.  We have to do this
+	   for things like typedefs in the class.  We do not try to
 	   guess any imported namespace as even the fully specified
 	   namespace search is already not C++ compliant and more
 	   assumptions could make it too magic.  */
