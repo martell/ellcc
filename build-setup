@@ -7,6 +7,11 @@ bin=$prefix/bin
 bindir=$bin
 # Get the build processor. For now it is also the host and target processor.
 build=`uname -m`
+case "${build}" in
+  i[3-9]86)
+    build=i386
+    ;;
+esac
 host=$build
 target=$build 
 os=linux

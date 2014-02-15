@@ -389,7 +389,7 @@ intel_supports_btrace (void)
 static int
 cpu_supports_btrace (void)
 {
-#if defined __i386__ || defined __x86_64__
+#if (defined __i386__ && !defined __clang__) || defined __x86_64__
   char vendor[13];
 
   __asm__ __volatile__ ("xorl   %%ebx, %%ebx;"
