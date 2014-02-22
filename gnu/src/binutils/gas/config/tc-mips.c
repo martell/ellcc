@@ -2280,7 +2280,7 @@ report_insn_error (const char *str)
 {
   const char *msg;
 
-  msg = ACONCAT ((insn_error.msg, " `%s'", (char *)NULL));
+  msg = ACONCAT ((insn_error.msg, " `%s'", NULL));
   switch (insn_error.format)
     {
     case ERR_FMT_PLAIN:

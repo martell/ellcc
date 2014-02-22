@@ -2452,7 +2452,7 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_IMMR:
     case AARCH64_OPND_IMMS:
     case AARCH64_OPND_FBITS:
-      snprintf (buf, size, "#%" PRIi64, (long long)opnd->imm.value);
+      snprintf (buf, size, "#%" PRIi64, opnd->imm.value);
       break;
 
     case AARCH64_OPND_IMM_MOV:
@@ -2466,7 +2466,7 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	  break;
 	case 8:	/* e.g. MOV Xd, #<imm64>.  */
 	  snprintf (buf, size, "#0x%-20" PRIx64 "\t// #%" PRIi64,
-		    (unsigned long long)opnd->imm.value, (long long)opnd->imm.value);
+		    opnd->imm.value, opnd->imm.value);
 	  break;
 	default: assert (0);
 	}
@@ -2480,20 +2480,19 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_AIMM:
     case AARCH64_OPND_HALF:
       if (opnd->shifter.amount)
-	snprintf (buf, size, "#0x%" PRIx64 ", lsl #%d", (unsigned long long)opnd->imm.value,
+	snprintf (buf, size, "#0x%" PRIx64 ", lsl #%d", opnd->imm.value,
 		  opnd->shifter.amount);
       else
-	snprintf (buf, size, "#0x%" PRIx64, (unsigned long long)opnd->imm.value);
+	snprintf (buf, size, "#0x%" PRIx64, opnd->imm.value);
       break;
 
     case AARCH64_OPND_SIMD_IMM:
     case AARCH64_OPND_SIMD_IMM_SFT:
       if ((! opnd->shifter.amount && opnd->shifter.kind == AARCH64_MOD_LSL)
 	  || opnd->shifter.kind == AARCH64_MOD_NONE)
-	snprintf (buf, size, "#0x%" PRIx64, (unsigned long long)opnd->imm.value);
+	snprintf (buf, size, "#0x%" PRIx64, opnd->imm.value);
       else
-	snprintf (buf, size, "#0x%" PRIx64 ", %s #%d",
-                  (unsigned long long)opnd->imm.value,
+	snprintf (buf, size, "#0x%" PRIx64 ", %s #%d", opnd->imm.value,
 		  aarch64_operand_modifiers[opnd->shifter.kind].name,
 		  opnd->shifter.amount);
       break;
@@ -2549,7 +2548,7 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	 in the disassemble_info will take care of the printing.  But some
 	 other callers may be still interested in getting the string in *STR,
 	 so here we do snprintf regardless.  */
-      snprintf (buf, size, "#0x%" PRIx64, (unsigned long long)addr);
+      snprintf (buf, size, "#0x%" PRIx64, addr);
       break;
 
     case AARCH64_OPND_ADDR_PCREL14:
@@ -2565,7 +2564,7 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	 in the disassemble_info will take care of the printing.  But some
 	 other callers may be still interested in getting the string in *STR,
 	 so here we do snprintf regardless.  */
-      snprintf (buf, size, "#0x%" PRIx64, (unsigned long long)addr);
+      snprintf (buf, size, "#0x%" PRIx64, addr);
       break;
 
     case AARCH64_OPND_ADDR_SIMPLE:

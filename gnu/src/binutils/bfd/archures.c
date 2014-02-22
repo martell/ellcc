@@ -609,7 +609,6 @@ extern const bfd_arch_info_type bfd_xc16x_arch;
 extern const bfd_arch_info_type bfd_xgate_arch;
 extern const bfd_arch_info_type bfd_z80_arch;
 extern const bfd_arch_info_type bfd_z8k_arch;
-extern const bfd_arch_info_type bfd_nios2_arch;
 
 static const bfd_arch_info_type * const bfd_archures_list[] =
   {

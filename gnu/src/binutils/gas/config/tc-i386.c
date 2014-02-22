@@ -1419,7 +1419,6 @@ cpu_flags_all_zero (const union i386_cpu_flags *x)
     }
 }
 
-#if RICH
 static INLINE void
 cpu_flags_set (union i386_cpu_flags *x, unsigned int v)
 {
@@ -1436,7 +1435,6 @@ cpu_flags_set (union i386_cpu_flags *x, unsigned int v)
       abort ();
     }
 }
-#endif
 
 static INLINE int
 cpu_flags_equal (const union i386_cpu_flags *x,
@@ -1667,10 +1665,8 @@ static const i386_operand_type imm16_32 = OPERAND_TYPE_IMM16_32;
 static const i386_operand_type imm16_32s = OPERAND_TYPE_IMM16_32S;
 static const i386_operand_type imm16_32_32s = OPERAND_TYPE_IMM16_32_32S;
 static const i386_operand_type vec_imm4 = OPERAND_TYPE_VEC_IMM4;
-#ifdef RICH
 static const i386_operand_type regbnd = OPERAND_TYPE_REGBND;
 static const i386_operand_type vec_disp8 = OPERAND_TYPE_VEC_DISP8;
-#endif
 
 enum operand_type
 {

@@ -16,16 +16,16 @@ echo In: gnu-build$builddir
 mkdir -p gnu-build$builddir
 
 # Configure for binutils.
-# binutils are build to support all targets in the target list.
-echo Configuring package binutils for $targets
+# binutils are build to support all targets.
+echo Configuring package binutils for all targets
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
-    targetlist=$targetlist haslibs=$haslibs \
+    targetlist=all haslibs=$haslibs \
     bindir=$bindir prefix=$prefix build=$build \
     binutils.configure || exit 1
 
 make -C gnu-build$builddir/binutils || exit 1
 
-# Configure for assemblers for all targets.
+# Configure for assemblers for all targets in the target list.
 for t in $targets; do
   echo Configuring the assembler for $t
   make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
@@ -38,9 +38,9 @@ done
 
 # Configure for GDB.
 # GDB is built to support all GDB targets.
-echo Configuring package gdb for $targets
+echo Configuring package gdb for all targets
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
-    targetlist=$targetlist haslibs=$haslibs \
+    targetlist=all haslibs=$haslibs \
     bindir=$bindir prefix=$prefix build=$build \
     gdb.configure || exit 1
 

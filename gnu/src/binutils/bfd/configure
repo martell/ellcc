@@ -12199,7 +12199,8 @@ fi
 
 NO_WERROR=
 if test "${ERROR_ON_WARNING}" = yes ; then
-    GCC_WARN_CFLAGS="$GCC_WARN_CFLAGS -Werror -Wno-unused-value"
+    GCC_WARN_CFLAGS="$GCC_WARN_CFLAGS -Werror \
+        -Wno-unused-value -Wno-unused-function -Wno-unused-const-variable"
     NO_WERROR="-Wno-error"
 fi
 
@@ -15298,8 +15299,6 @@ do
     bfd_elf32_microblaze_vec)	tb="$tb elf32-microblaze.lo elf32.lo $elf" ;;
     bfd_elf32_mn10200_vec)	tb="$tb elf-m10200.lo elf32.lo $elf" ;;
     bfd_elf32_mn10300_vec)	tb="$tb elf-m10300.lo elf32.lo $elf" ;;
-    bfd_elf32_littlenios2_vec) tb="$tb elf32-nios2.lo elf32.lo $elf" ;;
-    bfd_elf32_bignios2_vec)    tb="$tb elf32-nios2.lo elf32.lo $elf" ;;
     bfd_elf32_mt_vec)           tb="$tb elf32-mt.lo elf32.lo $elf" ;;
     bfd_elf32_msp430_vec)	tb="$tb elf32-msp430.lo elf32.lo $elf" ;;
     bfd_elf32_msp430_ti_vec)	tb="$tb elf32-msp430.lo elf32.lo $elf" ;;

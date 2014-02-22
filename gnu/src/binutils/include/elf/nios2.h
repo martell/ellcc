@@ -1,26 +1,27 @@
-/* NOT ASSIGNED TO FSF.  COPYRIGHT ALTERA.  */
-/* Altera New Jersey ELF support for BFD
+/* Altera Nios II ELF support for BFD.
+   Copyright (C) 2012, 2013 Free Software Foundation, Inc.
+   Contributed by Nigel Gray (ngray@altera.com).
+   Contributed by Mentor Graphics, Inc.
 
-   Copyright (C) 2003
-   by Nigel Gray (ngray@altera.com).
+   This file is part of BFD, the Binary File Descriptor library.
 
-This file is part of BFD, the Binary File Descriptor library.
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation; either version 3 of the License, or
+   (at your option) any later version.
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 2 of the License, or
-(at your option) any later version.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+   You should have received a copy of the GNU General Public License
+   along with this program; if not, write to the Free Software
+   Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston,
+   MA 02110-1301, USA.  */
 
-You should have received a copy of the GNU General Public License
-along with this program; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
-/* This file holds definitions specific to the Altera New Jersey ELF ABI.  Note
+/* This file holds definitions specific to the Altera Nios II ELF ABI.  Note
    that most of this is not actually implemented by BFD.  */
 
 #ifndef _ELF_NIOS2_H
@@ -28,9 +29,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 
 #include "elf/reloc-macros.h"
 
-/* the order of these numbers must match the order in
+/* The order of these numbers must match the order in
    the elf_nios2_howto_table_rel table for the lookup
-   function to work properly */
+   function to work properly.  */
 
 START_RELOC_NUMBERS (elf_nios2_reloc_type)
   RELOC_NUMBER (R_NIOS2_NONE,	  0)
@@ -77,14 +78,14 @@ START_RELOC_NUMBERS (elf_nios2_reloc_type)
   RELOC_NUMBER (R_NIOS2_ILLEGAL, 41)
 END_RELOC_NUMBERS (R_NIOS2_maxext)
 
-/* Processor specific section flags */
+/* Processor-specific section flags.  */
 
-/* This is used to mark gp-relative sections */
+/* This is used to mark gp-relative sections.  */
 #define SHF_NIOS2_GPREL	0x10000000
 
-/* Processor specific dynamic array tags.  */
+/* Processor-specific dynamic array tags.  */
 
 /* Address of _gp.  */
 #define DT_NIOS2_GP 0x70000002
 
-#endif //_ELF_NIOS2_H
+#endif /* _ELF_NIOS2_H */

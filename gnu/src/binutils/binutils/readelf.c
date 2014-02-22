@@ -626,6 +626,7 @@ guess_is_rela (unsigned int e_machine)
     case EM_MSP430:
     case EM_MSP430_OLD:
     case EM_MT:
+    case EM_NIOS32:
     case EM_PPC64:
     case EM_PPC:
     case EM_RL78:
@@ -652,7 +653,6 @@ guess_is_rela (unsigned int e_machine)
     case EM_XTENSA_OLD:
     case EM_MICROBLAZE:
     case EM_MICROBLAZE_OLD:
-    case EM_NIOS32:
       return TRUE;
 
     case EM_68HC05:

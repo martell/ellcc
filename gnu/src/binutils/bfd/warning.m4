@@ -46,7 +46,7 @@ fi
 
 NO_WERROR=
 if test "${ERROR_ON_WARNING}" = yes ; then
-    GCC_WARN_CFLAGS="$GCC_WARN_CFLAGS -Werror -Wno-unused-value"
+    GCC_WARN_CFLAGS="$GCC_WARN_CFLAGS -Werror"
     NO_WERROR="-Wno-error"
 fi
 		   

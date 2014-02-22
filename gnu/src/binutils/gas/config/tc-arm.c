@@ -153,10 +153,10 @@ static const arm_feature_set *object_arch = NULL;
 
 /* Constants for known architecture features.  */
 static const arm_feature_set fpu_default = FPU_DEFAULT;
-// RICH: static const arm_feature_set fpu_arch_vfp_v1 = FPU_ARCH_VFP_V1;
+static const arm_feature_set fpu_arch_vfp_v1 = FPU_ARCH_VFP_V1;
 static const arm_feature_set fpu_arch_vfp_v2 = FPU_ARCH_VFP_V2;
-// RICH: static const arm_feature_set fpu_arch_vfp_v3 = FPU_ARCH_VFP_V3;
-// RICH: static const arm_feature_set fpu_arch_neon_v1 = FPU_ARCH_NEON_V1;
+static const arm_feature_set fpu_arch_vfp_v3 = FPU_ARCH_VFP_V3;
+static const arm_feature_set fpu_arch_neon_v1 = FPU_ARCH_NEON_V1;
 static const arm_feature_set fpu_arch_fpa = FPU_ARCH_FPA;
 static const arm_feature_set fpu_any_hard = FPU_ANY_HARD;
 static const arm_feature_set fpu_arch_maverick = FPU_ARCH_MAVERICK;
@@ -203,7 +203,7 @@ static const arm_feature_set arm_ext_adiv = ARM_FEATURE (ARM_EXT_ADIV, 0);
 static const arm_feature_set arm_ext_virt = ARM_FEATURE (ARM_EXT_VIRT, 0);
 
 static const arm_feature_set arm_arch_any = ARM_ANY;
-// RICH: static const arm_feature_set arm_arch_full = ARM_FEATURE (-1, -1);
+static const arm_feature_set arm_arch_full = ARM_FEATURE (-1, -1);
 static const arm_feature_set arm_arch_t2 = ARM_ARCH_THUMB2;
 static const arm_feature_set arm_arch_none = ARM_ARCH_NONE;
 static const arm_feature_set arm_arch_v6m_only = ARM_ARCH_V6M_ONLY;
@@ -807,13 +807,11 @@ now_it_compatible (int cond)
   return (cond & ~1) == (now_it.cc & ~1);
 }
 
-#if RICH
 static inline int
 conditional_insn (void)
 {
   return inst.cond != COND_ALWAYS;
 }
-#endif
 
 static int in_it_block (void);
 

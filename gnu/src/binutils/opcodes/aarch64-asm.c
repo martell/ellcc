@@ -1088,7 +1088,7 @@ convert_mov_to_movewide (aarch64_inst *inst)
 {
   int is32;
   uint32_t shift_amount;
-  uint64_t value;
+  uint64_t value = 0;
 
   switch (inst->opcode->op)
     {

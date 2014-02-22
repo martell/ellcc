@@ -4682,7 +4682,7 @@ fi
 
 NO_WERROR=
 if test "${ERROR_ON_WARNING}" = yes ; then
-    GCC_WARN_CFLAGS="$GCC_WARN_CFLAGS -Werror -Wno-shadow -Wno-unused-value -Wno-self-assign"
+    GCC_WARN_CFLAGS="$GCC_WARN_CFLAGS -Werror"
     NO_WERROR="-Wno-error"
 fi
 
@@ -16455,7 +16455,7 @@ fi
 
 
 # Check for dlopen support and enable plugins if possible.
-enable_plugins=no
+enable_plugins=yes
 ac_fn_c_check_header_compile "$LINENO" "dlfcn.h" "ac_cv_header_dlfcn_h" "$ac_includes_default
 "
 if test "x$ac_cv_header_dlfcn_h" = x""yes; then :

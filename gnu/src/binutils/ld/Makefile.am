@@ -397,7 +397,6 @@ ALL_EMULATION_SOURCES = \
 	emsp430xW427.c \
 	emsp430X.c \
 	enews.c \
-	enios2elf.o \
 	ens32knbsd.c \
 	eor32.c \
 	eor32elf.c \
