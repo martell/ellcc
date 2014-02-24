@@ -7122,34 +7122,158 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
                                  const char *LinkingOutput) const {
   const Driver &D = getToolChain().getDriver();
   ArgStringList CmdArgs;
+  // Choose linker arguments based on the triple.
   llvm::Triple Triple = getToolChain().getTriple();
   StringRef ArchName = Args.MakeArgString(getToolChain().getArchName());
-  StringRef emulation;
+  StringRef emulation = "";
   bool hash = true;
   bool buildID = true;
   bool eh_frame_hdr = true;
+
   switch (Triple.getArch()) {
+    case llvm::Triple::x86: emulation = "elf_i386"; break;
+
+    case llvm::Triple::aarch64:
+      switch (Triple.getOS()) {
+        case llvm::Triple::Linux: 
+          emulation = "aarch64linux";
+          break;
+        default: emulation = "aarch64elf"; break;
+      }
+      break;
+
     case llvm::Triple::arm:
-      emulation = "armelf";
+    case llvm::Triple::thumb:
+      switch (Triple.getOS()) {
+        case llvm::Triple::Linux: 
+          switch (Triple.getEnvironment()) {
+            case llvm::Triple::EABI:
+            case llvm::Triple::GNUEABI:
+              emulation = "armelf_linux_eabi"; break;
+            default: emulation = "armelf_linux"; break;
+          }
+          break;
+        case llvm::Triple::NetBSD: emulation = "armelf_nbsd"; break;
+        case llvm::Triple::FreeBSD: emulation = "armelf_fbsd"; break;
+        default: emulation = "armelf"; break;
+      }
       break;
+
     case llvm::Triple::armeb:
-      emulation = "armelfb";
+      switch (Triple.getOS()) {
+        case llvm::Triple::Linux: 
+          switch (Triple.getEnvironment()) {
+            case llvm::Triple::EABI:
+            case llvm::Triple::GNUEABI:
+              emulation = "armelfb_linux_eabi"; break;
+            default: emulation = "armelfb_linux"; break;
+          }
+          break;
+        case llvm::Triple::NetBSD: emulation = "armelfb_nbsd"; break;
+        case llvm::Triple::FreeBSD: emulation = "armelfb_fbsd"; break;
+        default: emulation = "armelfb"; break;
+      }
       break;
+
+    case llvm::Triple::ppc:
+      switch (Triple.getOS()) {
+        case llvm::Triple::Linux: 
+          emulation = "elf32ppclinux";
+          break;
+        case llvm::Triple::FreeBSD: 
+          emulation = "elf32ppc_fbsd";
+          break;
+        default: emulation = "elf32ppc"; break;
+      }
+      break;
+
+    case llvm::Triple::ppc64:
+      switch (Triple.getOS()) {
+        case llvm::Triple::Linux: 
+          emulation = "elf64ppclinux";
+          break;
+        case llvm::Triple::FreeBSD: 
+          emulation = "elf64ppc_fbsd";
+          break;
+        default: emulation = "elf64ppc"; break;
+      }
+      break;
+
+    case llvm::Triple::sparc: emulation = "elf32_sparc"; break;
+
+    case llvm::Triple::sparcv9:
+      switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD: 
+          emulation = "elf64_sparc_fbsd";
+          break;
+        default: emulation = "elf64_sparc"; break;
+      }
+      break;
+
     case llvm::Triple::mips:
       hash = false;
-      emulation = "elf32ebmip";
+      switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD: 
+          emulation = "elf32btsmip_fbsd";
+          break;
+        default: emulation = "elf32bmip";
+      }
       break;
-    case llvm::Triple::mipsel: emulation = "elf32elmip";
+
+    case llvm::Triple::mipsel:
       hash = false;
+      switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD: 
+          emulation = "elf32ltsmip_fbsd";
+          break;
+        default: emulation = "elf32lmip";
+      }
       break;
+
+    case llvm::Triple::mips64:
+      hash = false;
+      switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD: 
+          if (hasMipsABIArg(Args, "n32"))
+            emulation = "elf32btsmipn32_fbsd";
+          else
+            emulation = "elf64btsmip_fbsd";
+          break;
+        default:
+          if (hasMipsABIArg(Args, "n32"))
+            emulation = "elf32bmipn32";
+          else
+            emulation = "elf64bmip";
+          break;
+      }
+      break;
+
+    case llvm::Triple::mips64el:
+      hash = false;
+      switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD: 
+          if (hasMipsABIArg(Args, "n32"))
+            emulation = "elf32ltsmipn32_fbsd";
+          else
+            emulation = "elf64ltsmip_fbsd";
+          break;
+        default:
+          if (hasMipsABIArg(Args, "n32"))
+            emulation = "elf32lmipn32";
+          else
+            emulation = "elf64lmip";
+          break;
+      }
+      break;
+
     case llvm::Triple::msp430: emulation = "msp430"; break;
+
     case llvm::Triple::nios2: emulation = "nios2elf"; break;
-    case llvm::Triple::ppc: emulation = "elf32ppc"; break;
-    case llvm::Triple::ppc64: emulation = "elf64ppc"; break;
-    case llvm::Triple::sparc: emulation = "elf32_sparc"; break;
-    case llvm::Triple::x86: emulation = "elf_i386"; break;
+
     case llvm::Triple::x86_64: emulation = "elf_x86_64"; break;
-    case llvm::Triple::mblaze: emulation = "elf32microblaze";
+
+    case llvm::Triple::mblaze:
+      emulation = "elf32microblaze";
       hash = false;
       buildID = false;
       eh_frame_hdr = false;
@@ -7213,12 +7337,16 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   // Find the relative path to the libraries and linker scripts:
+#if RICH
   // <bindir>/../ldscripts/<os>
+#endif
   // <bindir>/../lib/<arch>/<os>
   // <bindir>/../lib/<arch>
   CmdArgs.push_back("-nostdlib");
+#if RICH
   CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/ldscripts/"
     + Triple.getOSTypeName(Triple.getOS())));
+#endif
   if (!Args.hasArg(options::OPT_nostdlib)) {
     CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
       + ArchName + "/"
@@ -7233,12 +7361,14 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
 
+#if RICH
   if (!Args.hasArg(options::OPT_T)) {
     // RICH: Other linker command files choices.
     StringRef extension = ".x";
     CmdArgs.push_back(Args.MakeArgString("-T" + 
       emulation + extension));
   }
+#endif
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nodefaultlibs)) {

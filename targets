@@ -1,7 +1,9 @@
+aarch64-elf
 arm-elf
 armeb-elf
 mips-elf
 mipsel-elf
+nios2-elf
 ppc-elf
 ppc64-elf
 microblaze-elf

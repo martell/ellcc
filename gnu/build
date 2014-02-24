@@ -17,9 +17,14 @@ mkdir -p gnu-build$builddir
 
 # Configure for binutils.
 # binutils are build to support all targets.
-echo Configuring package binutils for all targets
+# I attempded to enable all targets for binutils, but ranlib
+# failed for ARM. I think all the targets mixed it up. Try again
+# when a new binutils comes out? 
+echo Configuring package binutils for all targets, adding a couple.
+moretargets=,`echo $targets | sed -e "s/-elf /-linux,/g"`
+moretargets=,$moretargets,arm-elf-linux-eabi,armeb-elf-linux-eabi
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
-    targetlist=all haslibs=$haslibs \
+    targetlist=$targetlist$moretargets haslibs=$haslibs \
     bindir=$bindir prefix=$prefix build=$build \
     binutils.configure || exit 1
 

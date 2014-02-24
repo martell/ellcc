@@ -2923,41 +2923,48 @@ tryParseRegisterWithWriteBack(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
 /// MatchCoprocessorOperandName - Try to parse an coprocessor related
 /// instruction with a symbolic operand name. Example: "p1", "p7", "c3",
 /// "c5", ...
+/// Allow e.g. "cr5" also.
 static int MatchCoprocessorOperandName(StringRef Name, char CoprocOp) {
   // Use the same layout as the tablegen'erated register name matcher. Ugly,
   // but efficient.
-  switch (Name.size()) {
-  default: return -1;
-  case 2:
-    if (Name[0] != CoprocOp)
-      return -1;
-    switch (Name[1]) {
-    default:  return -1;
-    case '0': return 0;
-    case '1': return 1;
-    case '2': return 2;
-    case '3': return 3;
-    case '4': return 4;
-    case '5': return 5;
-    case '6': return 6;
-    case '7': return 7;
-    case '8': return 8;
-    case '9': return 9;
-    }
-  case 3:
-    if (Name[0] != CoprocOp || Name[1] != '1')
-      return -1;
-    switch (Name[2]) {
-    default:  return -1;
-    // p10 and p11 are invalid for coproc instructions (reserved for FP/NEON)
-    case '0': return CoprocOp == 'p'? -1: 10;
-    case '1': return CoprocOp == 'p'? -1: 11;
-    case '2': return 12;
-    case '3': return 13;
-    case '4': return 14;
-    case '5': return 15;
-    }
+  size_t Digit = 1;
+  if (Name[0] != CoprocOp)
+    return -1;
+  if (Name[0] == 'c' && Name[1] == 'r')
+      Digit = 2;
+  int Value = 0;
+  switch (Name[Digit]) {
+  default:  return -1;
+  case '0': Value = 0; break;
+  case '1': Value = 1; break;
+  case '2': Value = 2; break;
+  case '3': Value = 3; break;
+  case '4': Value = 4; break;
+  case '5': Value = 5; break;
+  case '6': Value = 6; break;
+  case '7': Value = 7; break;
+  case '8': Value = 8; break;
+  case '9': Value = 9; break;
   }
+  ++Digit;
+  if (Digit >= Name.size())
+      return Value;
+  if (Value != 1)
+      return -1;
+
+  switch (Name[Digit]) {
+  default:  return -1;
+  case '0': Value = CoprocOp == 'p'? -1: 10; break;
+  case '1': Value = /* RICH: Valid? CoprocOp == 'p'? -1: */ 11; break;
+  case '2': Value = 12; break;
+  case '3': Value = 13; break;
+  case '4': Value = 14; break;
+  case '5': Value = 15; break;
+  }
+  ++Digit;
+  if (Digit >= Name.size())
+      return Value;
+  return -1;
 }
 
 /// parseITCondCode - Try to parse a condition code for an IT instruction.

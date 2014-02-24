@@ -3,13 +3,15 @@
 # Get the names of the subdirectories.
 
 CROSSSUBDIRS := \
+       gnu-build$(TARGETDIR)/binutils/aarch64-elf \
        gnu-build$(TARGETDIR)/binutils/arm-elf \
-       gnu-build$(TARGETDIR)/binutils/ppc64-elf \
        gnu-build$(TARGETDIR)/binutils/i386-elf \
-       gnu-build$(TARGETDIR)/binutils/ppc-elf \
        gnu-build$(TARGETDIR)/binutils/microblaze-elf \
-       gnu-build$(TARGETDIR)/binutils/sparc-elf \
        gnu-build$(TARGETDIR)/binutils/mips-elf \
+       gnu-build$(TARGETDIR)/binutils/nios2-elf \
+       gnu-build$(TARGETDIR)/binutils/ppc-elf \
+       gnu-build$(TARGETDIR)/binutils/ppc64-elf \
+       gnu-build$(TARGETDIR)/binutils/sparc-elf \
        gnu-build$(TARGETDIR)/binutils/x86_64-elf \
        gnu-build$(TARGETDIR)/gdb \
        gnu-build$(TARGETDIR)/binutils
@@ -37,10 +39,6 @@ install::
 	  echo Making install-html in $$dir ; \
 	  $(MAKE) -C $$dir install-html || exit 1; \
 	done
-
-install::
-	mkdir -p ../libecc/ldscripts/linux
-	cp gnu-build$(TARGETDIR)/binutils/ld/ldscripts/* ../libecc/ldscripts/linux/
 
 -include $(prefix)/libecc/mkscripts/targets/$(TARGET)/setup.mk
 
@@ -71,8 +69,8 @@ binutils.configure:
         CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
         AR=$(AR) --enable-64-bit-bfd \
         --bindir=$(bindir) $(HOST) --enable-targets=$(targetlist) \
-        --program-prefix=ecc- --prefix=$(prefix)/lib \
-        --datadir=$(prefix)/lib/share --target=x86_64-unknown-linux
+        --program-prefix=ecc- --prefix=$(prefix)/lib --enable-plugins=no \
+        --datadir=$(prefix)/lib/share --target=x86_64-unknown-linux \
 
 gas.configure:
 	cd $(DIR) ; \

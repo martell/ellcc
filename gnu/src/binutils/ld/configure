@@ -16455,14 +16455,14 @@ fi
 
 
 # Check for dlopen support and enable plugins if possible.
-enable_plugins=yes
-ac_fn_c_check_header_compile "$LINENO" "dlfcn.h" "ac_cv_header_dlfcn_h" "$ac_includes_default
-"
-if test "x$ac_cv_header_dlfcn_h" = x""yes; then :
-
-else
-  enable_plugins=no
-fi
+#enable_plugins=yes
+#ac_fn_c_check_header_compile "$LINENO" "dlfcn.h" "ac_cv_header_dlfcn_h" "$ac_includes_default
+#"
+#if test "x$ac_cv_header_dlfcn_h" = x""yes; then :
+#
+#else
+#  enable_plugins=no
+#fi
 
 
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for library containing dlopen" >&5
