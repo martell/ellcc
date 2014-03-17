@@ -1648,7 +1648,6 @@ class R600_LDS_1A <bits<6> lds_op, string name, list<dag> pattern> : R600_LDS <
   let src2 = 0;
   let src2_rel = 0;
 
-  let Defs = [OQAP];
   let usesCustomInserter = 1;
   let LDS_1A = 1;
   let DisableEncoding = "$dst";
@@ -1684,7 +1683,6 @@ class R600_LDS_1A1D_RET <bits<6> lds_op, string name, list<dag> pattern> :
   let BaseOp = name;
   let usesCustomInserter = 1;
   let DisableEncoding = "$dst";
-  let Defs = [OQAP];
 }
 
 class R600_LDS_1A2D <bits<6> lds_op, string name, list<dag> pattern> :
@@ -2374,9 +2372,6 @@ def : Insert_Element <i32, v4i32, 0, sub0>;
 def : Insert_Element <i32, v4i32, 1, sub1>;
 def : Insert_Element <i32, v4i32, 2, sub2>;
 def : Insert_Element <i32, v4i32, 3, sub3>;
-
-def : Vector4_Build <v4f32, f32>;
-def : Vector4_Build <v4i32, i32>;
 
 def : Extract_Element <f32, v2f32, 0, sub0>;
 def : Extract_Element <f32, v2f32, 1, sub1>;

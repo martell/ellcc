@@ -92,7 +92,22 @@ DESCRIPTION
 bfd_boolean
 bfd_check_format (bfd *abfd, bfd_format format)
 {
-  return bfd_check_format_matches (abfd, format, NULL);
+  char **matching;
+  bfd_boolean result = bfd_check_format_matches (abfd, format, &matching);
+  if (matching)
+    {
+      if (!result)
+        {
+          int i = 0;
+          while (matching[i])
+            {
+              printf("matching[%d] = %s\n", i, matching[i]);
+              ++i;
+            }
+        }
+      free(matching);
+    }
+  return result;
 }
 
 struct bfd_preserve

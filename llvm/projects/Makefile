@@ -23,11 +23,6 @@ DIRS := $(filter-out libcxx,$(DIRS))
 # DragonEgg may be checked out here but doesn't (yet) build directly.
 DIRS := $(filter-out dragonegg,$(DIRS))
 
-# Sparc cannot link shared libraries (libtool problem?)
-ifeq ($(ARCH), Sparc)
-DIRS := $(filter-out sample, $(DIRS))
-endif
-
 ifeq ($(ENABLE_SHARED),0)
 DIRS := $(filter-out sample, $(DIRS))
 endif

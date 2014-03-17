@@ -140,7 +140,7 @@ size_t Process::GetMallocUsage() {
 void Process::GetTimeUsage(TimeValue &elapsed, TimeValue &user_time,
                            TimeValue &sys_time) {
   elapsed = TimeValue::now();
-  llvm::tie(user_time, sys_time) = getRUsageTimes();
+  std::tie(user_time, sys_time) = getRUsageTimes();
 }
 
 #if defined(HAVE_MACH_MACH_H) && !defined(__GNU__)

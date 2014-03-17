@@ -44,6 +44,9 @@ public:
                          unsigned ReturnReg) = 0;
   virtual void emitMask(unsigned CPUBitmask, int CPUTopSavedRegOff) = 0;
   virtual void emitFMask(unsigned FPUBitmask, int FPUTopSavedRegOff) = 0;
+
+  virtual void emitDirectiveSetMips32R2() = 0;
+  virtual void emitDirectiveSetDsp() = 0;
 };
 
 // This part is for ascii assembly output
@@ -77,6 +80,9 @@ public:
                          unsigned ReturnReg);
   virtual void emitMask(unsigned CPUBitmask, int CPUTopSavedRegOff);
   virtual void emitFMask(unsigned FPUBitmask, int FPUTopSavedRegOff);
+
+  virtual void emitDirectiveSetMips32R2();
+  virtual void emitDirectiveSetDsp();
 };
 
 // This part is for ELF object output
@@ -89,8 +95,8 @@ public:
   MCELFStreamer &getStreamer();
   MipsTargetELFStreamer(MCStreamer &S, const MCSubtargetInfo &STI);
 
-  virtual void emitLabel(MCSymbol *Symbol) LLVM_OVERRIDE;
-  void finish() LLVM_OVERRIDE;
+  virtual void emitLabel(MCSymbol *Symbol) override;
+  void finish() override;
 
   virtual void emitDirectiveSetMicroMips();
   virtual void emitDirectiveSetNoMicroMips();
@@ -117,6 +123,9 @@ public:
                          unsigned ReturnReg);
   virtual void emitMask(unsigned CPUBitmask, int CPUTopSavedRegOff);
   virtual void emitFMask(unsigned FPUBitmask, int FPUTopSavedRegOff);
+
+  virtual void emitDirectiveSetMips32R2();
+  virtual void emitDirectiveSetDsp();
 };
 }
 #endif

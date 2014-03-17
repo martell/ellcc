@@ -62,6 +62,10 @@
 # define MSAN_HAS_M128 0
 #endif
 
+#ifdef __AVX2__
+# include <immintrin.h>
+#endif
+
 static const int kPageSize = 4096;
 
 typedef unsigned char      U1;
@@ -326,8 +330,25 @@ TEST(MemorySanitizer, Realloc) {
 TEST(MemorySanitizer, Calloc) {
   S4 *x = (int*)Ident(calloc(1, sizeof(S4)));
   EXPECT_NOT_POISONED(*x);  // Should not be poisoned.
-  // EXPECT_EQ(0, *x);
+  EXPECT_EQ(0, *x);
   free(x);
+}
+
+TEST(MemorySanitizer, CallocReturnsZeroMem) {
+  size_t sizes[] = {16, 1000, 10000, 100000, 2100000};
+  for (size_t s = 0; s < sizeof(sizes)/sizeof(sizes[0]); s++) {
+    size_t size = sizes[s];
+    for (size_t iter = 0; iter < 5; iter++) {
+      char *x = Ident((char*)calloc(1, size));
+      EXPECT_EQ(x[0], 0);
+      EXPECT_EQ(x[size - 1], 0);
+      EXPECT_EQ(x[size / 2], 0);
+      EXPECT_EQ(x[size / 3], 0);
+      EXPECT_EQ(x[size / 4], 0);
+      memset(x, 0x42, size);
+      free(Ident(x));
+    }
+  }
 }
 
 TEST(MemorySanitizer, AndOr) {
@@ -2038,6 +2059,38 @@ TEST(MemorySanitizer, fcvt) {
   EXPECT_NOT_POISONED(b);
 }
 
+TEST(MemorySanitizer, memchr) {
+  char x[10];
+  break_optimization(x);
+  EXPECT_POISONED(x[0]);
+  x[2] = '2';
+  void *res;
+  EXPECT_UMR(res = memchr(x, '2', 10));
+  EXPECT_NOT_POISONED(res);
+  x[0] = '0';
+  x[1] = '1';
+  res = memchr(x, '2', 10);
+  EXPECT_EQ(&x[2], res);
+  EXPECT_UMR(res = memchr(x, '3', 10));
+  EXPECT_NOT_POISONED(res);
+}
+
+TEST(MemorySanitizer, memrchr) {
+  char x[10];
+  break_optimization(x);
+  EXPECT_POISONED(x[0]);
+  x[9] = '9';
+  void *res;
+  EXPECT_UMR(res = memrchr(x, '9', 10));
+  EXPECT_NOT_POISONED(res);
+  x[0] = '0';
+  x[1] = '1';
+  res = memrchr(x, '0', 2);
+  EXPECT_EQ(&x[0], res);
+  EXPECT_UMR(res = memrchr(x, '7', 10));
+  EXPECT_NOT_POISONED(res);
+}
+
 TEST(MemorySanitizer, frexp) {
   int x;
   x = *GetPoisoned<int>();
@@ -2374,6 +2427,41 @@ TEST(MemorySanitizer, VAArgTLSOverwrite) {
 struct StructByVal {
   int a, b, c, d, e, f;
 };
+
+static void vaargsfn_structbyval(int guard, ...) {
+  va_list vl;
+  va_start(vl, guard);
+  {
+    StructByVal s = va_arg(vl, StructByVal);
+    EXPECT_NOT_POISONED(s.a);
+    EXPECT_POISONED(s.b);
+    EXPECT_NOT_POISONED(s.c);
+    EXPECT_POISONED(s.d);
+    EXPECT_NOT_POISONED(s.e);
+    EXPECT_POISONED(s.f);
+  }
+  {
+    StructByVal s = va_arg(vl, StructByVal);
+    EXPECT_NOT_POISONED(s.a);
+    EXPECT_POISONED(s.b);
+    EXPECT_NOT_POISONED(s.c);
+    EXPECT_POISONED(s.d);
+    EXPECT_NOT_POISONED(s.e);
+    EXPECT_POISONED(s.f);
+  }
+  va_end(vl);
+}
+
+TEST(MemorySanitizer, VAArgStructByVal) {
+  StructByVal s;
+  s.a = 1;
+  s.b = *GetPoisoned<int>();
+  s.c = 2;
+  s.d = *GetPoisoned<int>();
+  s.e = 3;
+  s.f = *GetPoisoned<int>();
+  vaargsfn_structbyval(0, s, s);
+}
 
 NOINLINE void StructByValTestFunc(struct StructByVal s) {
   EXPECT_NOT_POISONED(s.a);
@@ -2989,6 +3077,20 @@ TEST(MemorySanitizer, getpwuid) {
   ASSERT_EQ(p->pw_uid, 0);
 }
 
+TEST(MemorySanitizer, getpwuid_r) {
+  struct passwd pwd;
+  struct passwd *pwdres;
+  char buf[10000];
+  int res = getpwuid_r(0, &pwd, buf, sizeof(buf), &pwdres);
+  ASSERT_EQ(0, res);
+  EXPECT_NOT_POISONED(pwd.pw_name);
+  ASSERT_TRUE(pwd.pw_name != NULL);
+  EXPECT_NOT_POISONED(pwd.pw_name[0]);
+  EXPECT_NOT_POISONED(pwd.pw_uid);
+  ASSERT_EQ(pwd.pw_uid, 0);
+  EXPECT_NOT_POISONED(pwdres);
+}
+
 TEST(MemorySanitizer, getpwnam_r) {
   struct passwd pwd;
   struct passwd *pwdres;
@@ -3000,6 +3102,7 @@ TEST(MemorySanitizer, getpwnam_r) {
   EXPECT_NOT_POISONED(pwd.pw_name[0]);
   EXPECT_NOT_POISONED(pwd.pw_uid);
   ASSERT_EQ(pwd.pw_uid, 0);
+  EXPECT_NOT_POISONED(pwdres);
 }
 
 TEST(MemorySanitizer, getpwnam_r_positive) {
@@ -3023,6 +3126,7 @@ TEST(MemorySanitizer, getgrnam_r) {
   ASSERT_TRUE(grp.gr_name != NULL);
   EXPECT_NOT_POISONED(grp.gr_name[0]);
   EXPECT_NOT_POISONED(grp.gr_gid);
+  EXPECT_NOT_POISONED(grpres);
 }
 
 TEST(MemorySanitizer, getgroups) {
@@ -3238,6 +3342,98 @@ TEST(MemorySanitizer, UnalignedStore64) {
   EXPECT_NOT_POISONED(x[10]);
   EXPECT_POISONED_O(x[11], origin);
 }
+
+namespace {
+typedef U2 V8x16 __attribute__((__vector_size__(16)));
+typedef U4 V4x32 __attribute__((__vector_size__(16)));
+typedef U8 V2x64 __attribute__((__vector_size__(16)));
+typedef U4 V8x32 __attribute__((__vector_size__(32)));
+typedef U8 V4x64 __attribute__((__vector_size__(32)));
+
+
+V8x16 shift_sse2_left_scalar(V8x16 x, U4 y) {
+  return _mm_slli_epi16(x, y);
+}
+
+V8x16 shift_sse2_left(V8x16 x, V8x16 y) {
+  return _mm_sll_epi16(x, y);
+}
+
+TEST(VectorShiftTest, sse2_left_scalar) {
+  V8x16 v = {(U2)(*GetPoisoned<U2>() | 3), (U2)(*GetPoisoned<U2>() | 7), 2, 3,
+             4,                            5,                            6, 7};
+  V8x16 u = shift_sse2_left_scalar(v, 2);
+  EXPECT_POISONED(u[0]);
+  EXPECT_POISONED(u[1]);
+  EXPECT_NOT_POISONED(u[0] | (~7U));
+  EXPECT_NOT_POISONED(u[1] | (~31U));
+  u[0] = u[1] = 0;
+  EXPECT_NOT_POISONED(u);
+}
+
+TEST(VectorShiftTest, sse2_left_scalar_by_uninit) {
+  V8x16 v = {0, 1, 2, 3, 4, 5, 6, 7};
+  V8x16 u = shift_sse2_left_scalar(v, *GetPoisoned<U4>());
+  EXPECT_POISONED(u[0]);
+  EXPECT_POISONED(u[1]);
+  EXPECT_POISONED(u[2]);
+  EXPECT_POISONED(u[3]);
+  EXPECT_POISONED(u[4]);
+  EXPECT_POISONED(u[5]);
+  EXPECT_POISONED(u[6]);
+  EXPECT_POISONED(u[7]);
+}
+
+TEST(VectorShiftTest, sse2_left) {
+  V8x16 v = {(U2)(*GetPoisoned<U2>() | 3), (U2)(*GetPoisoned<U2>() | 7), 2, 3,
+             4,                            5,                            6, 7};
+  // Top 64 bits of shift count don't affect the result.
+  V2x64 s = {2, *GetPoisoned<U8>()};
+  V8x16 u = shift_sse2_left(v, s);
+  EXPECT_POISONED(u[0]);
+  EXPECT_POISONED(u[1]);
+  EXPECT_NOT_POISONED(u[0] | (~7U));
+  EXPECT_NOT_POISONED(u[1] | (~31U));
+  u[0] = u[1] = 0;
+  EXPECT_NOT_POISONED(u);
+}
+
+TEST(VectorShiftTest, sse2_left_by_uninit) {
+  V8x16 v = {(U2)(*GetPoisoned<U2>() | 3), (U2)(*GetPoisoned<U2>() | 7), 2, 3,
+             4,                            5,                            6, 7};
+  V2x64 s = {*GetPoisoned<U8>(), *GetPoisoned<U8>()};
+  V8x16 u = shift_sse2_left(v, s);
+  EXPECT_POISONED(u[0]);
+  EXPECT_POISONED(u[1]);
+  EXPECT_POISONED(u[2]);
+  EXPECT_POISONED(u[3]);
+  EXPECT_POISONED(u[4]);
+  EXPECT_POISONED(u[5]);
+  EXPECT_POISONED(u[6]);
+  EXPECT_POISONED(u[7]);
+}
+
+#ifdef __AVX2__
+V4x32 shift_avx2_left(V4x32 x, V4x32 y) {
+  return _mm_sllv_epi32(x, y);
+}
+// This is variable vector shift that's only available starting with AVX2.
+// V4x32 shift_avx2_left(V4x32 x, V4x32 y) {
+TEST(VectorShiftTest, avx2_left) {
+  V4x32 v = {(U2)(*GetPoisoned<U2>() | 3), (U2)(*GetPoisoned<U2>() | 7), 2, 3};
+  V4x32 s = {2, *GetPoisoned<U4>(), 3, *GetPoisoned<U4>()};
+  V4x32 u = shift_avx2_left(v, s);
+  EXPECT_POISONED(u[0]);
+  EXPECT_NOT_POISONED(u[0] | (~7U));
+  EXPECT_POISONED(u[1]);
+  EXPECT_POISONED(u[1] | (~31U));
+  EXPECT_NOT_POISONED(u[2]);
+  EXPECT_POISONED(u[3]);
+  EXPECT_POISONED(u[3] | (~31U));
+}
+#endif // __AVX2__
+} // namespace
+
 
 TEST(MemorySanitizerDr, StoreInDSOTest) {
   if (!__msan_has_dynamic_component()) return;

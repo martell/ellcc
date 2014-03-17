@@ -422,6 +422,10 @@ QualType Type::getPointeeType() const {
     return BPT->getPointeeType();
   if (const ReferenceType *RT = getAs<ReferenceType>())
     return RT->getPointeeType();
+  if (const MemberPointerType *MPT = getAs<MemberPointerType>())
+    return MPT->getPointeeType();
+  if (const DecayedType *DT = getAs<DecayedType>())
+    return DT->getPointeeType();
   return QualType();
 }
 
@@ -1845,11 +1849,9 @@ TagType::TagType(TypeClass TC, const TagDecl *D, QualType can)
     decl(const_cast<TagDecl*>(D)) {}
 
 static TagDecl *getInterestingTagDecl(TagDecl *decl) {
-  for (TagDecl::redecl_iterator I = decl->redecls_begin(),
-                                E = decl->redecls_end();
-       I != E; ++I) {
+  for (auto I : decl->redecls()) {
     if (I->isCompleteDefinition() || I->isBeingDefined())
-      return *I;
+      return I;
   }
   // If there's no definition (not even in progress), return what we have.
   return decl;

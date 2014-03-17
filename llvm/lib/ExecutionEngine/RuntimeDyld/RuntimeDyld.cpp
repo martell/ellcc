@@ -19,7 +19,6 @@
 #include "RuntimeDyldImpl.h"
 #include "RuntimeDyldMachO.h"
 #include "llvm/Object/ELF.h"
-#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/MutexGuard.h"
 
@@ -76,35 +75,25 @@ void RuntimeDyldImpl::mapSectionAddress(const void *LocalAddress,
   llvm_unreachable("Attempting to remap address of unknown section!");
 }
 
-// Subclasses can implement this method to create specialized image instances.
-// The caller owns the pointer that is returned.
-ObjectImage *RuntimeDyldImpl::createObjectImage(ObjectBuffer *InputBuffer) {
-  return new ObjectImageCommon(InputBuffer);
-}
-
-ObjectImage *RuntimeDyldImpl::createObjectImageFromFile(ObjectFile *InputObject) {
-  return new ObjectImageCommon(InputObject);
-}
-
-ObjectImage *RuntimeDyldImpl::loadObject(ObjectFile *InputObject) {
-  return loadObject(createObjectImageFromFile(InputObject));
-}
-
-ObjectImage *RuntimeDyldImpl::loadObject(ObjectBuffer *InputBuffer) {
-  return loadObject(createObjectImage(InputBuffer));
-} 
-
-ObjectImage *RuntimeDyldImpl::loadObject(ObjectImage *InputObject) {
+ObjectImage* RuntimeDyldImpl::loadObject(ObjectImage *InputObject) {
   MutexGuard locked(lock);
 
-  OwningPtr<ObjectImage> obj(InputObject);
-  if (!obj)
+  std::unique_ptr<ObjectImage> Obj(InputObject);
+  if (!Obj)
     return NULL;
 
   // Save information about our target
-  Arch = (Triple::ArchType)obj->getArch();
-  IsTargetLittleEndian = obj->getObjectFile()->isLittleEndian();
-
+  Arch = (Triple::ArchType)Obj->getArch();
+  IsTargetLittleEndian = Obj->getObjectFile()->isLittleEndian();
+ 
+  // Compute the memory size required to load all sections to be loaded
+  // and pass this information to the memory manager
+  if (MemMgr->needsToReserveAllocationSpace()) {
+    uint64_t CodeSize = 0, DataSizeRO = 0, DataSizeRW = 0;
+    computeTotalAllocSize(*Obj, CodeSize, DataSizeRO, DataSizeRW);
+    MemMgr->reserveAllocationSpace(CodeSize, DataSizeRO, DataSizeRW);
+  }
+  
   // Symbols found in this object
   StringMap<SymbolLoc> LocalSymbols;
   // Used sections from the object file
@@ -117,24 +106,24 @@ ObjectImage *RuntimeDyldImpl::loadObject(ObjectImage *InputObject) {
 
   // Parse symbols
   DEBUG(dbgs() << "Parse symbols:\n");
-  for (symbol_iterator i = obj->begin_symbols(), e = obj->end_symbols(); i != e;
-       ++i) {
+  for (symbol_iterator I = Obj->begin_symbols(), E = Obj->end_symbols(); I != E;
+       ++I) {
     object::SymbolRef::Type SymType;
     StringRef Name;
-    Check(i->getType(SymType));
-    Check(i->getName(Name));
+    Check(I->getType(SymType));
+    Check(I->getName(Name));
 
-    uint32_t flags = i->getFlags();
+    uint32_t Flags = I->getFlags();
 
-    bool isCommon = flags & SymbolRef::SF_Common;
-    if (isCommon) {
+    bool IsCommon = Flags & SymbolRef::SF_Common;
+    if (IsCommon) {
       // Add the common symbols to a list.  We'll allocate them all below.
       uint32_t Align;
-      Check(i->getAlignment(Align));
+      Check(I->getAlignment(Align));
       uint64_t Size = 0;
-      Check(i->getSize(Size));
+      Check(I->getSize(Size));
       CommonSize += Size + Align;
-      CommonSymbols[*i] = CommonSymbolInfo(Size, Align);
+      CommonSymbols[*I] = CommonSymbolInfo(Size, Align);
     } else {
       if (SymType == object::SymbolRef::ST_Function ||
           SymType == object::SymbolRef::ST_Data ||
@@ -142,20 +131,20 @@ ObjectImage *RuntimeDyldImpl::loadObject(ObjectImage *InputObject) {
         uint64_t FileOffset;
         StringRef SectionData;
         bool IsCode;
-        section_iterator si = obj->end_sections();
-        Check(i->getFileOffset(FileOffset));
-        Check(i->getSection(si));
-        if (si == obj->end_sections()) continue;
-        Check(si->getContents(SectionData));
-        Check(si->isText(IsCode));
-        const uint8_t* SymPtr = (const uint8_t*)InputObject->getData().data() +
+        section_iterator SI = Obj->end_sections();
+        Check(I->getFileOffset(FileOffset));
+        Check(I->getSection(SI));
+        if (SI == Obj->end_sections()) continue;
+        Check(SI->getContents(SectionData));
+        Check(SI->isText(IsCode));
+        const uint8_t* SymPtr = (const uint8_t*)Obj->getData().data() +
                                 (uintptr_t)FileOffset;
         uintptr_t SectOffset = (uintptr_t)(SymPtr -
                                            (const uint8_t*)SectionData.begin());
-        unsigned SectionID = findOrEmitSection(*obj, *si, IsCode, LocalSections);
+        unsigned SectionID = findOrEmitSection(*Obj, *SI, IsCode, LocalSections);
         LocalSymbols[Name.data()] = SymbolLoc(SectionID, SectOffset);
         DEBUG(dbgs() << "\tFileOffset: " << format("%p", (uintptr_t)FileOffset)
-                     << " flags: " << flags
+                     << " flags: " << Flags
                      << " SID: " << SectionID
                      << " Offset: " << format("%p", SectOffset));
         GlobalSymbolTable[Name] = SymbolLoc(SectionID, SectOffset);
@@ -166,29 +155,29 @@ ObjectImage *RuntimeDyldImpl::loadObject(ObjectImage *InputObject) {
 
   // Allocate common symbols
   if (CommonSize != 0)
-    emitCommonSymbols(*obj, CommonSymbols, CommonSize, LocalSymbols);
+    emitCommonSymbols(*Obj, CommonSymbols, CommonSize, LocalSymbols);
 
   // Parse and process relocations
   DEBUG(dbgs() << "Parse relocations:\n");
-  for (section_iterator si = obj->begin_sections(), se = obj->end_sections();
-       si != se; ++si) {
-    bool isFirstRelocation = true;
+  for (section_iterator SI = Obj->begin_sections(), SE = Obj->end_sections();
+       SI != SE; ++SI) {
+    bool IsFirstRelocation = true;
     unsigned SectionID = 0;
     StubMap Stubs;
-    section_iterator RelocatedSection = si->getRelocatedSection();
+    section_iterator RelocatedSection = SI->getRelocatedSection();
 
-    for (relocation_iterator i = si->begin_relocations(),
-                             e = si->end_relocations();
-         i != e; ++i) {
+    for (const RelocationRef &Reloc : SI->relocations()) {
       // If it's the first relocation in this section, find its SectionID
-      if (isFirstRelocation) {
+      if (IsFirstRelocation) {
+        bool IsCode = false;
+        Check(RelocatedSection->isText(IsCode));
         SectionID =
-            findOrEmitSection(*obj, *RelocatedSection, true, LocalSections);
+            findOrEmitSection(*Obj, *RelocatedSection, IsCode, LocalSections);
         DEBUG(dbgs() << "\tSectionID: " << SectionID << "\n");
-        isFirstRelocation = false;
+        IsFirstRelocation = false;
       }
 
-      processRelocationRef(SectionID, *i, *obj, LocalSections, LocalSymbols,
+      processRelocationRef(SectionID, Reloc, *Obj, LocalSections, LocalSymbols,
                            Stubs);
     }
   }
@@ -196,7 +185,144 @@ ObjectImage *RuntimeDyldImpl::loadObject(ObjectImage *InputObject) {
   // Give the subclasses a chance to tie-up any loose ends.
   finalizeLoad(LocalSections);
 
-  return obj.take();
+  return Obj.release();
+}
+
+// A helper method for computeTotalAllocSize.
+// Computes the memory size required to allocate sections with the given sizes, 
+// assuming that all sections are allocated with the given alignment
+static uint64_t computeAllocationSizeForSections(std::vector<uint64_t>& SectionSizes, 
+                                                 uint64_t Alignment) {
+  uint64_t TotalSize = 0;
+  for (size_t Idx = 0, Cnt = SectionSizes.size(); Idx < Cnt; Idx++) {
+    uint64_t AlignedSize = (SectionSizes[Idx] + Alignment - 1) / 
+                           Alignment * Alignment;
+    TotalSize += AlignedSize;
+  }
+  return TotalSize;
+}
+
+// Compute an upper bound of the memory size that is required to load all sections
+void RuntimeDyldImpl::computeTotalAllocSize(ObjectImage &Obj, 
+    uint64_t& CodeSize, uint64_t& DataSizeRO, uint64_t& DataSizeRW) {
+  // Compute the size of all sections required for execution
+  std::vector<uint64_t> CodeSectionSizes;
+  std::vector<uint64_t> ROSectionSizes;
+  std::vector<uint64_t> RWSectionSizes;
+  uint64_t MaxAlignment = sizeof(void*);
+
+  // Collect sizes of all sections to be loaded; 
+  // also determine the max alignment of all sections
+  for (section_iterator SI = Obj.begin_sections(), SE = Obj.end_sections(); 
+       SI != SE; ++SI) {
+    const SectionRef &Section = *SI;
+
+    bool IsRequired;
+    Check(Section.isRequiredForExecution(IsRequired));
+    
+    // Consider only the sections that are required to be loaded for execution
+    if (IsRequired) {
+      uint64_t DataSize = 0;
+      uint64_t Alignment64 = 0;
+      bool IsCode = false;
+      bool IsReadOnly = false;
+      StringRef Name;
+      Check(Section.getSize(DataSize));
+      Check(Section.getAlignment(Alignment64));
+      Check(Section.isText(IsCode));
+      Check(Section.isReadOnlyData(IsReadOnly));
+      Check(Section.getName(Name));
+      unsigned Alignment = (unsigned) Alignment64 & 0xffffffffL;
+      
+      uint64_t StubBufSize = computeSectionStubBufSize(Obj, Section);
+      uint64_t SectionSize = DataSize + StubBufSize;
+      
+      // The .eh_frame section (at least on Linux) needs an extra four bytes padded
+      // with zeroes added at the end.  For MachO objects, this section has a
+      // slightly different name, so this won't have any effect for MachO objects.
+      if (Name == ".eh_frame")
+        SectionSize += 4;
+        
+      if (SectionSize > 0) {
+        // save the total size of the section
+        if (IsCode) {
+          CodeSectionSizes.push_back(SectionSize);
+        } else if (IsReadOnly) {
+          ROSectionSizes.push_back(SectionSize);
+        } else {
+          RWSectionSizes.push_back(SectionSize);
+        }
+        // update the max alignment
+        if (Alignment > MaxAlignment) {
+          MaxAlignment = Alignment;
+        }
+      }      
+    }
+  }
+
+  // Compute the size of all common symbols
+  uint64_t CommonSize = 0;
+  for (symbol_iterator I = Obj.begin_symbols(), E = Obj.end_symbols();
+       I != E; ++I) {
+    uint32_t Flags = I->getFlags();
+    if (Flags & SymbolRef::SF_Common) {
+      // Add the common symbols to a list.  We'll allocate them all below.
+      uint64_t Size = 0;
+      Check(I->getSize(Size));
+      CommonSize += Size;
+    }
+  }
+  if (CommonSize != 0) {
+    RWSectionSizes.push_back(CommonSize);
+  }
+
+  // Compute the required allocation space for each different type of sections 
+  // (code, read-only data, read-write data) assuming that all sections are 
+  // allocated with the max alignment. Note that we cannot compute with the
+  // individual alignments of the sections, because then the required size 
+  // depends on the order, in which the sections are allocated.
+  CodeSize = computeAllocationSizeForSections(CodeSectionSizes, MaxAlignment);
+  DataSizeRO = computeAllocationSizeForSections(ROSectionSizes, MaxAlignment);
+  DataSizeRW = computeAllocationSizeForSections(RWSectionSizes, MaxAlignment);   
+}
+
+// compute stub buffer size for the given section
+unsigned RuntimeDyldImpl::computeSectionStubBufSize(ObjectImage &Obj, 
+                                                    const SectionRef &Section) {
+  unsigned StubSize = getMaxStubSize();
+  if (StubSize == 0) {
+     return 0;
+  }
+  // FIXME: this is an inefficient way to handle this. We should computed the
+  // necessary section allocation size in loadObject by walking all the sections
+  // once.
+  unsigned StubBufSize = 0;
+  for (section_iterator SI = Obj.begin_sections(),
+                        SE = Obj.end_sections();
+       SI != SE; ++SI) {
+    section_iterator RelSecI = SI->getRelocatedSection();
+    if (!(RelSecI == Section))
+      continue;
+
+    for (const RelocationRef &Reloc : SI->relocations()) {
+      (void)Reloc;
+      StubBufSize += StubSize;
+    }
+  }
+
+  // Get section data size and alignment
+  uint64_t Alignment64;
+  uint64_t DataSize;
+  Check(Section.getSize(DataSize));
+  Check(Section.getAlignment(Alignment64));
+
+  // Add stubbuf size alignment
+  unsigned Alignment = (unsigned)Alignment64 & 0xffffffffL;
+  unsigned StubAlignment = getStubAlignment();
+  unsigned EndAlignment = (DataSize | Alignment) & -(DataSize | Alignment);
+  if (StubAlignment > EndAlignment)
+     StubBufSize += StubAlignment - EndAlignment;
+  return StubBufSize;
 }
 
 void RuntimeDyldImpl::emitCommonSymbols(ObjectImage &Obj,
@@ -244,28 +370,6 @@ unsigned RuntimeDyldImpl::emitSection(ObjectImage &Obj,
                                       const SectionRef &Section,
                                       bool IsCode) {
 
-  unsigned StubBufSize = 0,
-           StubSize = getMaxStubSize();
-  const ObjectFile *ObjFile = Obj.getObjectFile();
-  // FIXME: this is an inefficient way to handle this. We should computed the
-  // necessary section allocation size in loadObject by walking all the sections
-  // once.
-  if (StubSize > 0) {
-    for (section_iterator SI = ObjFile->begin_sections(),
-                          SE = ObjFile->end_sections();
-         SI != SE; ++SI) {
-      section_iterator RelSecI = SI->getRelocatedSection();
-      if (!(RelSecI == Section))
-        continue;
-
-      for (relocation_iterator I = SI->begin_relocations(),
-                               E = SI->end_relocations();
-           I != E; ++I) {
-        StubBufSize += StubSize;
-      }
-    }
-  }
-
   StringRef data;
   uint64_t Alignment64;
   Check(Section.getContents(data));
@@ -278,6 +382,7 @@ unsigned RuntimeDyldImpl::emitSection(ObjectImage &Obj,
   bool IsReadOnly;
   uint64_t DataSize;
   unsigned PaddingSize = 0;
+  unsigned StubBufSize = 0;
   StringRef Name;
   Check(Section.isRequiredForExecution(IsRequired));
   Check(Section.isVirtual(IsVirtual));
@@ -285,12 +390,8 @@ unsigned RuntimeDyldImpl::emitSection(ObjectImage &Obj,
   Check(Section.isReadOnlyData(IsReadOnly));
   Check(Section.getSize(DataSize));
   Check(Section.getName(Name));
-  if (StubSize > 0) {
-    unsigned StubAlignment = getStubAlignment();
-    unsigned EndAlignment = (DataSize | Alignment) & -(DataSize | Alignment);
-    if (StubAlignment > EndAlignment)
-      StubBufSize += StubAlignment - EndAlignment;
-  }
+    
+  StubBufSize = computeSectionStubBufSize(Obj, Section); 
 
   // The .eh_frame section (at least on Linux) needs an extra four bytes padded
   // with zeroes added at the end.  For MachO objects, this section has a
@@ -298,7 +399,7 @@ unsigned RuntimeDyldImpl::emitSection(ObjectImage &Obj,
   if (Name == ".eh_frame")
     PaddingSize = 4;
 
-  unsigned Allocate;
+  uintptr_t Allocate;
   unsigned SectionID = Sections.size();
   uint8_t *Addr;
   const char *pData = 0;
@@ -571,60 +672,70 @@ RuntimeDyld::~RuntimeDyld() {
 }
 
 ObjectImage *RuntimeDyld::loadObject(ObjectFile *InputObject) {
-  if (!Dyld) {
-    if (InputObject->isELF())
-      Dyld = new RuntimeDyldELF(MM);
-    else if (InputObject->isMachO())
-      Dyld = new RuntimeDyldMachO(MM);
-    else
-      report_fatal_error("Incompatible object format!");
-  } else {
-    if (!Dyld->isCompatibleFile(InputObject))
-      report_fatal_error("Incompatible object format!");
-  }
+  std::unique_ptr<ObjectImage> InputImage;
 
-  return Dyld->loadObject(InputObject);
+  if (InputObject->isELF()) {
+    InputImage.reset(RuntimeDyldELF::createObjectImageFromFile(InputObject));
+    if (!Dyld)
+      Dyld = new RuntimeDyldELF(MM);
+  } else if (InputObject->isMachO()) {
+    InputImage.reset(RuntimeDyldMachO::createObjectImageFromFile(InputObject));
+    if (!Dyld)
+      Dyld = new RuntimeDyldMachO(MM);
+  } else
+    report_fatal_error("Incompatible object format!");
+
+  if (!Dyld->isCompatibleFile(InputObject))
+    report_fatal_error("Incompatible object format!");
+
+  Dyld->loadObject(InputImage.get());
+  return InputImage.release();
 }
 
 ObjectImage *RuntimeDyld::loadObject(ObjectBuffer *InputBuffer) {
-  if (!Dyld) {
-    sys::fs::file_magic Type =
-        sys::fs::identify_magic(InputBuffer->getBuffer());
-    switch (Type) {
-    case sys::fs::file_magic::elf_relocatable:
-    case sys::fs::file_magic::elf_executable:
-    case sys::fs::file_magic::elf_shared_object:
-    case sys::fs::file_magic::elf_core:
+  std::unique_ptr<ObjectImage> InputImage;
+  sys::fs::file_magic Type =
+    sys::fs::identify_magic(InputBuffer->getBuffer());
+
+  switch (Type) {
+  case sys::fs::file_magic::elf_relocatable:
+  case sys::fs::file_magic::elf_executable:
+  case sys::fs::file_magic::elf_shared_object:
+  case sys::fs::file_magic::elf_core:
+    InputImage.reset(RuntimeDyldELF::createObjectImage(InputBuffer));
+    if (!Dyld)
       Dyld = new RuntimeDyldELF(MM);
-      break;
-    case sys::fs::file_magic::macho_object:
-    case sys::fs::file_magic::macho_executable:
-    case sys::fs::file_magic::macho_fixed_virtual_memory_shared_lib:
-    case sys::fs::file_magic::macho_core:
-    case sys::fs::file_magic::macho_preload_executable:
-    case sys::fs::file_magic::macho_dynamically_linked_shared_lib:
-    case sys::fs::file_magic::macho_dynamic_linker:
-    case sys::fs::file_magic::macho_bundle:
-    case sys::fs::file_magic::macho_dynamically_linked_shared_lib_stub:
-    case sys::fs::file_magic::macho_dsym_companion:
+    break;
+  case sys::fs::file_magic::macho_object:
+  case sys::fs::file_magic::macho_executable:
+  case sys::fs::file_magic::macho_fixed_virtual_memory_shared_lib:
+  case sys::fs::file_magic::macho_core:
+  case sys::fs::file_magic::macho_preload_executable:
+  case sys::fs::file_magic::macho_dynamically_linked_shared_lib:
+  case sys::fs::file_magic::macho_dynamic_linker:
+  case sys::fs::file_magic::macho_bundle:
+  case sys::fs::file_magic::macho_dynamically_linked_shared_lib_stub:
+  case sys::fs::file_magic::macho_dsym_companion:
+    InputImage.reset(RuntimeDyldMachO::createObjectImage(InputBuffer));
+    if (!Dyld)
       Dyld = new RuntimeDyldMachO(MM);
-      break;
-    case sys::fs::file_magic::unknown:
-    case sys::fs::file_magic::bitcode:
-    case sys::fs::file_magic::archive:
-    case sys::fs::file_magic::coff_object:
-    case sys::fs::file_magic::coff_import_library:
-    case sys::fs::file_magic::pecoff_executable:
-    case sys::fs::file_magic::macho_universal_binary:
-    case sys::fs::file_magic::windows_resource:
-      report_fatal_error("Incompatible object format!");
-    }
-  } else {
-    if (!Dyld->isCompatibleFormat(InputBuffer))
-      report_fatal_error("Incompatible object format!");
+    break;
+  case sys::fs::file_magic::unknown:
+  case sys::fs::file_magic::bitcode:
+  case sys::fs::file_magic::archive:
+  case sys::fs::file_magic::coff_object:
+  case sys::fs::file_magic::coff_import_library:
+  case sys::fs::file_magic::pecoff_executable:
+  case sys::fs::file_magic::macho_universal_binary:
+  case sys::fs::file_magic::windows_resource:
+    report_fatal_error("Incompatible object format!");
   }
 
-  return Dyld->loadObject(InputBuffer);
+  if (!Dyld->isCompatibleFormat(InputBuffer))
+    report_fatal_error("Incompatible object format!");
+
+  Dyld->loadObject(InputImage.get());
+  return InputImage.release();
 }
 
 void *RuntimeDyld::getSymbolAddress(StringRef Name) {

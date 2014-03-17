@@ -45,11 +45,9 @@ void AppendToErrorMessageBuffer(const char *buffer) {
 }
 
 // ---------------------- Decorator ------------------------------ {{{1
-class Decorator: private __sanitizer::AnsiColorDecorator {
+class Decorator: public __sanitizer::SanitizerCommonDecorator {
  public:
-  Decorator() : __sanitizer::AnsiColorDecorator(PrintsToTtyCached()) { }
-  const char *Warning()    { return Red(); }
-  const char *EndWarning() { return Default(); }
+  Decorator() : SanitizerCommonDecorator() { }
   const char *Access()     { return Blue(); }
   const char *EndAccess()  { return Default(); }
   const char *Location()   { return Green(); }
@@ -570,16 +568,32 @@ class ScopedInErrorReport {
   }
 };
 
-void ReportSIGSEGV(uptr pc, uptr sp, uptr bp, uptr addr) {
+void ReportStackOverflow(uptr pc, uptr sp, uptr bp, void *context, uptr addr) {
   ScopedInErrorReport in_report;
   Decorator d;
   Printf("%s", d.Warning());
-  Report("ERROR: AddressSanitizer: SEGV on unknown address %p"
-             " (pc %p sp %p bp %p T%d)\n",
-             (void*)addr, (void*)pc, (void*)sp, (void*)bp,
-             GetCurrentTidOrInvalid());
+  Report(
+      "ERROR: AddressSanitizer: stack-overflow on address %p"
+      " (pc %p sp %p bp %p T%d)\n",
+      (void *)addr, (void *)pc, (void *)sp, (void *)bp,
+      GetCurrentTidOrInvalid());
   Printf("%s", d.EndWarning());
-  GET_STACK_TRACE_FATAL(pc, bp);
+  GET_STACK_TRACE_SIGNAL(pc, bp, context);
+  stack.Print();
+  ReportErrorSummary("stack-overflow", &stack);
+}
+
+void ReportSIGSEGV(uptr pc, uptr sp, uptr bp, void *context, uptr addr) {
+  ScopedInErrorReport in_report;
+  Decorator d;
+  Printf("%s", d.Warning());
+  Report(
+      "ERROR: AddressSanitizer: SEGV on unknown address %p"
+      " (pc %p sp %p bp %p T%d)\n",
+      (void *)addr, (void *)pc, (void *)sp, (void *)bp,
+      GetCurrentTidOrInvalid());
+  Printf("%s", d.EndWarning());
+  GET_STACK_TRACE_SIGNAL(pc, bp, context);
   stack.Print();
   Printf("AddressSanitizer can not provide additional info.\n");
   ReportErrorSummary("SEGV", &stack);
@@ -702,6 +716,34 @@ void ReportBadParamsToAnnotateContiguousContainer(uptr beg, uptr end,
   ReportErrorSummary("bad-__sanitizer_annotate_contiguous_container", stack);
 }
 
+// ----------------------- CheckForInvalidPointerPair ----------- {{{1
+static NOINLINE void
+ReportInvalidPointerPair(uptr pc, uptr bp, uptr sp, uptr a1, uptr a2) {
+  ScopedInErrorReport in_report;
+  Decorator d;
+  Printf("%s", d.Warning());
+  Report("ERROR: AddressSanitizer: invalid-pointer-pair: %p %p\n", a1, a2);
+  Printf("%s", d.EndWarning());
+  GET_STACK_TRACE_FATAL(pc, bp);
+  stack.Print();
+  DescribeAddress(a1, 1);
+  DescribeAddress(a2, 1);
+  ReportErrorSummary("invalid-pointer-pair", &stack);
+}
+
+static INLINE void CheckForInvalidPointerPair(void *p1, void *p2) {
+  if (!flags()->detect_invalid_pointer_pairs) return;
+  uptr a1 = reinterpret_cast<uptr>(p1);
+  uptr a2 = reinterpret_cast<uptr>(p2);
+  AsanChunkView chunk1 = FindHeapChunkByAddress(a1);
+  AsanChunkView chunk2 = FindHeapChunkByAddress(a2);
+  bool valid1 = chunk1.IsValid();
+  bool valid2 = chunk2.IsValid();
+  if ((valid1 != valid2) || (valid1 && valid2 && !chunk1.Eq(chunk2))) {
+    GET_CALLER_PC_BP_SP;                                              \
+    return ReportInvalidPointerPair(pc, bp, sp, a1, a2);
+  }
+}
 // ----------------------- Mac-specific reports ----------------- {{{1
 
 void WarnMacFreeUnallocated(
@@ -821,7 +863,7 @@ void NOINLINE __asan_set_error_report_callback(void (*callback)(const char*)) {
   if (callback) {
     error_message_buffer_size = 1 << 16;
     error_message_buffer =
-        (char*)MmapOrDie(error_message_buffer_size, __FUNCTION__);
+        (char*)MmapOrDie(error_message_buffer_size, __func__);
     error_message_buffer_pos = 0;
   }
 }
@@ -829,6 +871,17 @@ void NOINLINE __asan_set_error_report_callback(void (*callback)(const char*)) {
 void __asan_describe_address(uptr addr) {
   DescribeAddress(addr, 1);
 }
+
+extern "C" {
+SANITIZER_INTERFACE_ATTRIBUTE
+void __sanitizer_ptr_sub(void *a, void *b) {
+  CheckForInvalidPointerPair(a, b);
+}
+SANITIZER_INTERFACE_ATTRIBUTE
+void __sanitizer_ptr_cmp(void *a, void *b) {
+  CheckForInvalidPointerPair(a, b);
+}
+}  // extern "C"
 
 #if !SANITIZER_SUPPORTS_WEAK_HOOKS
 // Provide default implementation of __asan_on_error that does nothing

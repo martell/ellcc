@@ -60,9 +60,9 @@ namespace {
       initializeMachineSinkingPass(*PassRegistry::getPassRegistry());
     }
 
-    virtual bool runOnMachineFunction(MachineFunction &MF);
+    bool runOnMachineFunction(MachineFunction &MF) override;
 
-    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+    void getAnalysisUsage(AnalysisUsage &AU) const override {
       AU.setPreservesCFG();
       MachineFunctionPass::getAnalysisUsage(AU);
       AU.addRequired<AliasAnalysis>();
@@ -72,7 +72,7 @@ namespace {
       AU.addPreserved<MachineLoopInfo>();
     }
 
-    virtual void releaseMemory() {
+    void releaseMemory() override {
       CEBCandidates.clear();
     }
 
@@ -97,16 +97,6 @@ namespace {
 
     bool PerformTrivialForwardCoalescing(MachineInstr *MI,
                                          MachineBasicBlock *MBB);
-  };
-
-  // SuccessorSorter - Sort Successors according to their loop depth. 
-  struct SuccessorSorter {
-    SuccessorSorter(MachineLoopInfo *LoopInfo) : LI(LoopInfo) {}
-    bool operator()(const MachineBasicBlock *LHS,
-                    const MachineBasicBlock *RHS) const {
-      return LI->getLoopDepth(LHS) < LI->getLoopDepth(RHS);
-    }
-    MachineLoopInfo *LI;
   };
 } // end anonymous namespace
 
@@ -184,7 +174,7 @@ MachineSinking::AllUsesDominatedByBlock(unsigned Reg,
   for (MachineRegisterInfo::use_nodbg_iterator
          I = MRI->use_nodbg_begin(Reg), E = MRI->use_nodbg_end();
        I != E; ++I) {
-    MachineInstr *UseInst = &*I;
+    MachineInstr *UseInst = I->getParent();
     MachineBasicBlock *UseBlock = UseInst->getParent();
     if (!(UseBlock == MBB && UseInst->isPHI() &&
           UseInst->getOperand(I.getOperandNo()+1).getMBB() == DefMBB)) {
@@ -199,7 +189,7 @@ MachineSinking::AllUsesDominatedByBlock(unsigned Reg,
          I = MRI->use_nodbg_begin(Reg), E = MRI->use_nodbg_end();
        I != E; ++I) {
     // Determine the block of the use.
-    MachineInstr *UseInst = &*I;
+    MachineInstr *UseInst = I->getParent();
     MachineBasicBlock *UseBlock = UseInst->getParent();
     if (UseInst->isPHI()) {
       // PHI nodes use the operand in the predecessor block, not the block with
@@ -460,8 +450,8 @@ bool MachineSinking::isProfitableToSinkTo(unsigned Reg, MachineInstr *MI,
 
   // Check if only use in post dominated block is PHI instruction.
   bool NonPHIUse = false;
-  for (MachineRegisterInfo::use_nodbg_iterator
-         I = MRI->use_nodbg_begin(Reg), E = MRI->use_nodbg_end();
+  for (MachineRegisterInfo::use_instr_nodbg_iterator
+         I = MRI->use_instr_nodbg_begin(Reg), E = MRI->use_instr_nodbg_end();
        I != E; ++I) {
     MachineInstr *UseInst = &*I;
     MachineBasicBlock *UseBlock = UseInst->getParent();
@@ -553,7 +543,12 @@ MachineBasicBlock *MachineSinking::FindSuccToSinkTo(MachineInstr *MI,
       // we should sink to.
       // We give successors with smaller loop depth higher priority.
       SmallVector<MachineBasicBlock*, 4> Succs(MBB->succ_begin(), MBB->succ_end());
-      std::stable_sort(Succs.begin(), Succs.end(), SuccessorSorter(LI));
+      // Sort Successors according to their loop depth.
+      std::stable_sort(
+          Succs.begin(), Succs.end(),
+          [this](const MachineBasicBlock *LHS, const MachineBasicBlock *RHS) {
+            return LI->getLoopDepth(LHS) < LI->getLoopDepth(RHS);
+          });
       for (SmallVectorImpl<MachineBasicBlock *>::iterator SI = Succs.begin(),
              E = Succs.end(); SI != E; ++SI) {
         MachineBasicBlock *SuccBlock = *SI;

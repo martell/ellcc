@@ -239,7 +239,7 @@ static void interruptFrameLayout(MachineFunction &MF) {
   MachineBasicBlock &MEXT   = MF.back();
 
   MachineBasicBlock::iterator MENTI = MENT.begin();
-  MachineBasicBlock::iterator MEXTI = prior(MEXT.end());
+  MachineBasicBlock::iterator MEXTI = std::prev(MEXT.end());
 
   DebugLoc ENTDL = MENTI != MENT.end() ? MENTI->getDebugLoc() : DebugLoc();
   DebugLoc EXTDL = MEXTI != MEXT.end() ? MEXTI->getDebugLoc() : DebugLoc();

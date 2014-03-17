@@ -181,23 +181,9 @@ void ScopedReport::AddMemoryAccess(uptr addr, Shadow s,
   mop->stack = SymbolizeStack(*stack);
   for (uptr i = 0; i < mset->Size(); i++) {
     MutexSet::Desc d = mset->Get(i);
-    u64 uid = 0;
-    uptr addr = SyncVar::SplitId(d.id, &uid);
-    SyncVar *s = ctx_->synctab.GetIfExistsAndLock(addr, false);
-    // Check that the mutex is still alive.
-    // Another mutex can be created at the same address,
-    // so check uid as well.
-    if (s && s->CheckId(uid)) {
-      ReportMopMutex mtx = {s->uid, d.write};
-      mop->mset.PushBack(mtx);
-      AddMutex(s);
-    } else {
-      ReportMopMutex mtx = {d.id, d.write};
-      mop->mset.PushBack(mtx);
-      AddMutex(d.id);
-    }
-    if (s)
-      s->mtx.ReadUnlock();
+    u64 mid = this->AddMutex(d.id);
+    ReportMopMutex mtx = {mid, d.write};
+    mop->mset.PushBack(mtx);
   }
 }
 
@@ -212,7 +198,7 @@ void ScopedReport::AddThread(const ThreadContext *tctx) {
   rt->id = tctx->tid;
   rt->pid = tctx->os_id;
   rt->running = (tctx->status == ThreadStatusRunning);
-  rt->name = tctx->name ? internal_strdup(tctx->name) : 0;
+  rt->name = internal_strdup(tctx->name);
   rt->parent_tid = tctx->parent_tid;
   rt->stack = 0;
 #ifdef TSAN_GO
@@ -278,6 +264,7 @@ void ScopedReport::AddMutex(const SyncVar *s) {
   ReportMutex *rm = new(mem) ReportMutex();
   rep_->mutexes.PushBack(rm);
   rm->id = s->uid;
+  rm->addr = s->addr;
   rm->destroyed = false;
   rm->stack = 0;
 #ifndef TSAN_GO
@@ -285,7 +272,26 @@ void ScopedReport::AddMutex(const SyncVar *s) {
 #endif
 }
 
-void ScopedReport::AddMutex(u64 id) {
+u64 ScopedReport::AddMutex(u64 id) {
+  u64 uid = 0;
+  u64 mid = id;
+  uptr addr = SyncVar::SplitId(id, &uid);
+  SyncVar *s = ctx_->synctab.GetIfExistsAndLock(addr, false);
+  // Check that the mutex is still alive.
+  // Another mutex can be created at the same address,
+  // so check uid as well.
+  if (s && s->CheckId(uid)) {
+    mid = s->uid;
+    AddMutex(s);
+  } else {
+    AddDeadMutex(id);
+  }
+  if (s)
+    s->mtx.ReadUnlock();
+  return mid;
+}
+
+void ScopedReport::AddDeadMutex(u64 id) {
   for (uptr i = 0; i < rep_->mutexes.Size(); i++) {
     if (rep_->mutexes[i]->id == id)
       return;
@@ -294,6 +300,7 @@ void ScopedReport::AddMutex(u64 id) {
   ReportMutex *rm = new(mem) ReportMutex();
   rep_->mutexes.PushBack(rm);
   rm->id = id;
+  rm->addr = 0;
   rm->destroyed = true;
   rm->stack = 0;
 }
@@ -713,8 +720,8 @@ void PrintCurrentStackSlow() {
 #ifndef TSAN_GO
   __sanitizer::StackTrace *ptrace = new(internal_alloc(MBlockStackTrace,
       sizeof(__sanitizer::StackTrace))) __sanitizer::StackTrace;
-  ptrace->Unwind(kStackTraceMax, __sanitizer::StackTrace::GetCurrentPc(),
-                 0, 0, 0, false);
+  ptrace->Unwind(kStackTraceMax, __sanitizer::StackTrace::GetCurrentPc(), 0, 0,
+                 0, 0, false);
   for (uptr i = 0; i < ptrace->size / 2; i++) {
     uptr tmp = ptrace->trace[i];
     ptrace->trace[i] = ptrace->trace[ptrace->size - i - 1];

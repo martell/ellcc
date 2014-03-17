@@ -151,7 +151,8 @@ def warn_ucn_not_valid_in_c89_literal : ExtWarn<
 // Literal
 def ext_nonstandard_escape : Extension<
   "use of non-standard escape character '\\%0'">;
-def ext_unknown_escape : ExtWarn<"unknown escape sequence '\\%0'">;
+def ext_unknown_escape : ExtWarn<"unknown escape sequence '\\%0'">,
+  InGroup<DiagGroup<"unknown-escape-sequence">>;
 def err_invalid_decimal_digit : Error<"invalid digit '%0' in decimal constant">;
 def err_invalid_binary_digit : Error<"invalid digit '%0' in binary constant">;
 def err_invalid_octal_digit : Error<"invalid digit '%0' in octal constant">;
@@ -402,6 +403,9 @@ def warn_has_warning_invalid_option :
    ExtWarn<"__has_warning expected option name (e.g. \"-Wundef\")">,
    InGroup<MalformedWarningCheck>;
 
+def err_pp_identifier_arg_not_identifier : Error<
+  "cannot convert %0 token to an identifier">;
+
 def warn_pragma_include_alias_mismatch_angle :
    ExtWarn<"angle-bracketed include <%0> cannot be aliased to double-quoted "
    "include \"%1\"">, InGroup<UnknownPragmas>;
@@ -437,7 +441,8 @@ def err_pragma_message_malformed : Error<
 def err_pragma_push_pop_macro_malformed : Error<
    "pragma %0 requires a parenthesized string">;
 def warn_pragma_pop_macro_no_push : Warning<
-   "pragma pop_macro could not pop '%0', no matching push_macro">;
+   "pragma pop_macro could not pop '%0', no matching push_macro">,
+  InGroup<IgnoredPragmas>;
 def warn_pragma_message : Warning<"%0">,
    InGroup<PoundPragmaMessage>, DefaultWarnNoWerror;
 def err_pragma_message : Error<"%0">;
@@ -472,7 +477,7 @@ def warn_pragma_diagnostic_unknown_warning :
    InGroup<UnknownPragmas>;
 // - #pragma __debug
 def warn_pragma_debug_unexpected_command : Warning<
-  "unexpected debug command '%0'">;
+  "unexpected debug command '%0'">, InGroup<IgnoredPragmas>;
 
 def err_defined_macro_name : Error<"'defined' cannot be used as a macro name">;
 def err_paste_at_start : Error<
@@ -493,7 +498,7 @@ def err_too_few_args_in_macro_invoc : Error<
   "too few arguments provided to function-like macro invocation">;
 def err_pp_bad_paste : Error<
   "pasting formed '%0', an invalid preprocessing token">;
-def err_pp_bad_paste_ms : Warning<
+def ext_pp_bad_paste_ms : ExtWarn<
   "pasting formed '%0', an invalid preprocessing token">, DefaultError,
   InGroup<DiagGroup<"invalid-token-paste">>;
 def err_pp_operator_used_as_macro_name : Error<
@@ -605,7 +610,7 @@ def warn_auto_module_import : Warning<
   "import of module '%1'">, InGroup<AutoImport>, DefaultIgnore;
 def warn_uncovered_module_header : Warning<
   "umbrella header for module '%0' does not include header '%1'">, 
-  InGroup<IncompleteUmbrella>, DefaultIgnore;
+  InGroup<IncompleteUmbrella>;
 def warn_forgotten_module_header : Warning<
   "header '%0' is included in module '%1' but not listed in module map">,
   InGroup<IncompleteModule>, DefaultIgnore;

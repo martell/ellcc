@@ -35,9 +35,9 @@ namespace {
       initializeLoopInstSimplifyPass(*PassRegistry::getPassRegistry());
     }
 
-    bool runOnLoop(Loop*, LPPassManager&);
+    bool runOnLoop(Loop*, LPPassManager&) override;
 
-    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+    void getAnalysisUsage(AnalysisUsage &AU) const override {
       AU.setPreservesCFG();
       AU.addRequired<LoopInfo>();
       AU.addRequiredID(LoopSimplifyID);
@@ -71,7 +71,8 @@ bool LoopInstSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
       getAnalysisIfAvailable<DominatorTreeWrapperPass>();
   DominatorTree *DT = DTWP ? &DTWP->getDomTree() : 0;
   LoopInfo *LI = &getAnalysis<LoopInfo>();
-  const DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
+  DataLayoutPass *DLP = getAnalysisIfAvailable<DataLayoutPass>();
+  const DataLayout *DL = DLP ? &DLP->getDataLayout() : 0;
   const TargetLibraryInfo *TLI = &getAnalysis<TargetLibraryInfo>();
 
   SmallVector<BasicBlock*, 8> ExitBlocks;
@@ -113,12 +114,11 @@ bool LoopInstSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
 
         // Don't bother simplifying unused instructions.
         if (!I->use_empty()) {
-          Value *V = SimplifyInstruction(I, TD, TLI, DT);
+          Value *V = SimplifyInstruction(I, DL, TLI, DT);
           if (V && LI->replacementPreservesLCSSAForm(I, V)) {
             // Mark all uses for resimplification next time round the loop.
-            for (Value::use_iterator UI = I->use_begin(), UE = I->use_end();
-                 UI != UE; ++UI)
-              Next->insert(cast<Instruction>(*UI));
+            for (User *U : I->users())
+              Next->insert(cast<Instruction>(U));
 
             I->replaceAllUsesWith(V);
             LocalChanged = true;

@@ -17,6 +17,8 @@
 
 namespace __tsan {
 
+void DDMutexInit(ThreadState *thr, uptr pc, SyncVar *s);
+
 SyncVar::SyncVar(uptr addr, u64 uid)
   : mtx(MutexTypeSyncVar, StatMtxSyncVar)
   , addr(addr)
@@ -65,6 +67,8 @@ SyncVar* SyncTab::Create(ThreadState *thr, uptr pc, uptr addr) {
 #ifndef TSAN_GO
   res->creation_stack_id = CurrentStackId(thr, pc);
 #endif
+  if (flags()->detect_deadlocks)
+    DDMutexInit(thr, pc, res);
   return res;
 }
 

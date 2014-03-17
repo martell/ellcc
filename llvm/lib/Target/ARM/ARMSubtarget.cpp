@@ -196,11 +196,12 @@ void ARMSubtarget::resetSubtargetFeatures(StringRef CPU, StringRef FS) {
     case Triple::EABIHF:
     case Triple::GNUEABI:
     case Triple::GNUEABIHF:
-    case Triple::MachO:
       TargetABI = ARM_ABI_AAPCS;
       break;
     default:
-      if (isTargetIOS() && isMClass())
+      if ((isTargetIOS() && isMClass()) ||
+          (TargetTriple.isOSBinFormatMachO() &&
+           TargetTriple.getOS() == Triple::UnknownOS))
         TargetABI = ARM_ABI_AAPCS;
       else
         TargetABI = ARM_ABI_APCS;
@@ -210,14 +211,18 @@ void ARMSubtarget::resetSubtargetFeatures(StringRef CPU, StringRef FS) {
 
   if (isAAPCS_ABI())
     stackAlignment = 8;
+  if (isTargetNaCl())
+    stackAlignment = 16;
 
   UseMovt = hasV6T2Ops() && ArmUseMOVT;
 
   if (isTargetMachO()) {
     IsR9Reserved = ReserveR9 | !HasV6Ops;
     SupportsTailCall = !isTargetIOS() || !getTargetTriple().isOSVersionLT(5, 0);
-  } else
+  } else {
     IsR9Reserved = ReserveR9;
+    SupportsTailCall = !isThumb1Only();
+  }
 
   if (!isThumb() || hasThumb2())
     PostRAScheduler = true;

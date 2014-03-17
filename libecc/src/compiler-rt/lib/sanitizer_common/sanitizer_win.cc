@@ -417,6 +417,7 @@ void GetThreadStackAndTls(bool main, uptr *stk_addr, uptr *stk_size,
 }
 
 void StackTrace::SlowUnwindStack(uptr pc, uptr max_depth) {
+  CHECK_GE(max_depth, 2);
   // FIXME: CaptureStackBackTrace might be too slow for us.
   // FIXME: Compare with StackWalk64.
   // FIXME: Look at LLVMUnhandledExceptionFilter in Signals.inc
@@ -428,6 +429,11 @@ void StackTrace::SlowUnwindStack(uptr pc, uptr max_depth) {
   // Skip the RTL frames by searching for the PC in the stacktrace.
   uptr pc_location = LocatePcInTrace(pc);
   PopStackFrames(pc_location);
+}
+
+void StackTrace::SlowUnwindStackWithContext(uptr pc, void *context,
+                                            uptr max_depth) {
+  UNREACHABLE("no signal context on windows");
 }
 
 void MaybeOpenReportFile() {

@@ -21,9 +21,13 @@
 namespace llvm {
 
 class AMDGPUMachineFunction;
+class AMDGPUSubtarget;
 class MachineRegisterInfo;
 
 class AMDGPUTargetLowering : public TargetLowering {
+protected:
+  const AMDGPUSubtarget *Subtarget;
+
 private:
   void ExtractVectorElements(SDValue Op, SelectionDAG &DAG,
                              SmallVectorImpl<SDValue> &Args,
@@ -79,10 +83,12 @@ protected:
 public:
   AMDGPUTargetLowering(TargetMachine &TM);
 
-  virtual bool isFAbsFree(EVT VT) const;
-  virtual bool isFNegFree(EVT VT) const;
-  virtual MVT getVectorIdxTy() const;
-  virtual bool isLoadBitCastBeneficial(EVT, EVT) const LLVM_OVERRIDE;
+  virtual bool isFAbsFree(EVT VT) const override;
+  virtual bool isFNegFree(EVT VT) const override;
+  virtual bool isTruncateFree(EVT Src, EVT Dest) const override;
+  virtual bool isTruncateFree(Type *Src, Type *Dest) const override;
+  virtual MVT getVectorIdxTy() const override;
+  virtual bool isLoadBitCastBeneficial(EVT, EVT) const override;
   virtual SDValue LowerReturn(SDValue Chain, CallingConv::ID CallConv,
                               bool isVarArg,
                               const SmallVectorImpl<ISD::OutputArg> &Outs,

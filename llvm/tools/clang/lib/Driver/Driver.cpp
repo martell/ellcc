@@ -19,7 +19,6 @@
 #include "clang/Driver/Tool.h"
 #include "clang/Driver/ToolChain.h"
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -36,6 +35,7 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 #include <map>
+#include <memory>
 
 // FIXME: It would prevent us from including llvm-config.h
 // if config.h were included before system_error.h.
@@ -72,10 +72,7 @@ Driver::Driver(StringRef ClangExecutable,
 Driver::~Driver() {
   delete Opts;
 
-  for (llvm::StringMap<ToolChain *>::iterator I = ToolChains.begin(),
-                                              E = ToolChains.end();
-       I != E; ++I)
-    delete I->second;
+  llvm::DeleteContainerSeconds(ToolChains);
 }
 
 void Driver::ParseDriverMode(ArrayRef<const char *> Args) {
@@ -107,7 +104,7 @@ InputArgList *Driver::ParseArgStrings(ArrayRef<const char *> ArgList) {
 
   unsigned IncludedFlagsBitmask;
   unsigned ExcludedFlagsBitmask;
-  llvm::tie(IncludedFlagsBitmask, ExcludedFlagsBitmask) =
+  std::tie(IncludedFlagsBitmask, ExcludedFlagsBitmask) =
     getIncludeExcludeOptionFlagMasks();
 
   unsigned MissingArgIndex, MissingArgCount;
@@ -520,8 +517,7 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
       std::string Err;
       std::string Script = StringRef(*it).rsplit('.').first;
       Script += ".sh";
-      llvm::raw_fd_ostream ScriptOS(
-          Script.c_str(), Err, llvm::sys::fs::F_Excl | llvm::sys::fs::F_Binary);
+      llvm::raw_fd_ostream ScriptOS(Script.c_str(), Err, llvm::sys::fs::F_Excl);
       if (!Err.empty()) {
         Diag(clang::diag::note_drv_command_failed_diag_msg)
           << "Error generating run script: " + Script + " " + Err;
@@ -618,7 +614,7 @@ int Driver::ExecuteCompilation(const Compilation &C,
 void Driver::PrintHelp(bool ShowHidden) const {
   unsigned IncludedFlagsBitmask;
   unsigned ExcludedFlagsBitmask;
-  llvm::tie(IncludedFlagsBitmask, ExcludedFlagsBitmask) =
+  std::tie(IncludedFlagsBitmask, ExcludedFlagsBitmask) =
     getIncludeExcludeOptionFlagMasks();
 
   ExcludedFlagsBitmask |= options::NoDriverOption;
@@ -743,51 +739,34 @@ bool Driver::HandleImmediateArgs(const Compilation &C) {
   }
 
   if (C.getArgs().hasArg(options::OPT_print_multi_lib)) {
-    // FIXME: We need tool chain support for this.
-    llvm::outs() << ".;\n";
+    const MultilibSet &Multilibs = TC.getMultilibs();
 
-    switch (C.getDefaultToolChain().getTriple().getArch()) {
-    default:
-      break;
-
-    case llvm::Triple::x86_64:
-      llvm::outs() << "x86_64;@m64" << "\n";
-      break;
-
-    case llvm::Triple::ppc64:
-      llvm::outs() << "ppc64;@m64" << "\n";
-      break;
-
-    case llvm::Triple::ppc64le:
-      llvm::outs() << "ppc64le;@m64" << "\n";
-      break;
+    for (MultilibSet::const_iterator I = Multilibs.begin(), E = Multilibs.end();
+         I != E; ++I) {
+      llvm::outs() << *I << "\n";
     }
     return false;
   }
 
-  // FIXME: What is the difference between print-multi-directory and
-  // print-multi-os-directory?
-  if (C.getArgs().hasArg(options::OPT_print_multi_directory) ||
-      C.getArgs().hasArg(options::OPT_print_multi_os_directory)) {
-    switch (C.getDefaultToolChain().getTriple().getArch()) {
-    default:
-    case llvm::Triple::x86:
-    case llvm::Triple::ppc:
-      llvm::outs() << "." << "\n";
-      break;
-
-    case llvm::Triple::x86_64:
-      llvm::outs() << "x86_64" << "\n";
-      break;
-
-    case llvm::Triple::ppc64:
-      llvm::outs() << "ppc64" << "\n";
-      break;
-
-    case llvm::Triple::ppc64le:
-      llvm::outs() << "ppc64le" << "\n";
-      break;
+  if (C.getArgs().hasArg(options::OPT_print_multi_directory)) {
+    const MultilibSet &Multilibs = TC.getMultilibs();
+    for (MultilibSet::const_iterator I = Multilibs.begin(), E = Multilibs.end();
+         I != E; ++I) {
+      if (I->gccSuffix().empty())
+        llvm::outs() << ".\n";
+      else {
+        StringRef Suffix(I->gccSuffix());
+        assert(Suffix.front() == '/');
+        llvm::outs() << Suffix.substr(1) << "\n";
+      }
     }
+    return false;
+  }
+
+  if (C.getArgs().hasArg(options::OPT_print_multi_os_directory)) {
+    // FIXME: This should print out "lib/../lib", "lib/../lib64", or
+    // "lib/../lib32" as appropriate for the toolchain. For now, print
+    // nothing because it's not supported yet.
     return false;
   }
 
@@ -1208,18 +1187,18 @@ void Driver::BuildActions(const ToolChain &TC, DerivedArgList &Args,
         Diag(clang::diag::warn_drv_preprocessed_input_file_unused)
           << InputArg->getAsString(Args)
           << !!FinalPhaseArg
-          << FinalPhaseArg ? FinalPhaseArg->getOption().getName() : "";
+          << (FinalPhaseArg ? FinalPhaseArg->getOption().getName() : "");
       else
         Diag(clang::diag::warn_drv_input_file_unused)
           << InputArg->getAsString(Args)
           << getPhaseName(InitialPhase)
           << !!FinalPhaseArg
-          << FinalPhaseArg ? FinalPhaseArg->getOption().getName() : "";
+          << (FinalPhaseArg ? FinalPhaseArg->getOption().getName() : "");
       continue;
     }
 
     // Build the pipeline for this file.
-    OwningPtr<Action> Current(new InputAction(*InputArg, InputType));
+    std::unique_ptr<Action> Current(new InputAction(*InputArg, InputType));
     for (SmallVectorImpl<phases::ID>::iterator
            i = PL.begin(), e = PL.end(); i != e; ++i) {
       phases::ID Phase = *i;
@@ -1231,7 +1210,7 @@ void Driver::BuildActions(const ToolChain &TC, DerivedArgList &Args,
       // Queue linker inputs.
       if (Phase == phases::Link) {
         assert((i + 1) == e && "linking must be final compilation step.");
-        LinkerInputs.push_back(Current.take());
+        LinkerInputs.push_back(Current.release());
         break;
       }
 
@@ -1242,14 +1221,14 @@ void Driver::BuildActions(const ToolChain &TC, DerivedArgList &Args,
         continue;
 
       // Otherwise construct the appropriate action.
-      Current.reset(ConstructPhaseAction(Args, Phase, Current.take()));
+      Current.reset(ConstructPhaseAction(Args, Phase, Current.release()));
       if (Current->getType() == types::TY_Nothing)
         break;
     }
 
     // If we ended with something, add to the output list.
     if (Current)
-      Actions.push_back(Current.take());
+      Actions.push_back(Current.release());
   }
 
   // Add a link action if necessary.
@@ -1996,7 +1975,7 @@ const ToolChain &Driver::getToolChain(const ArgList &Args,
         TC = new toolchains::Generic_ELF(*this, Target, Args);
         break;
       }
-      if (Target.getEnvironment() == llvm::Triple::MachO) {
+      if (Target.getObjectFormat() == llvm::Triple::MachO) {
         TC = new toolchains::MachO(*this, Target, Args);
         break;
       }

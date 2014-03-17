@@ -59,7 +59,7 @@ namespace COFF {
     IMAGE_FILE_MACHINE_AM33      = 0x13,
     IMAGE_FILE_MACHINE_AMD64     = 0x8664,
     IMAGE_FILE_MACHINE_ARM       = 0x1C0,
-    IMAGE_FILE_MACHINE_ARMV7     = 0x1C4,
+    IMAGE_FILE_MACHINE_ARMNT     = 0x1C4,
     IMAGE_FILE_MACHINE_EBC       = 0xEBC,
     IMAGE_FILE_MACHINE_I386      = 0x14C,
     IMAGE_FILE_MACHINE_IA64      = 0x200,
@@ -138,8 +138,8 @@ namespace COFF {
   };
 
   enum SymbolSectionNumber {
-    IMAGE_SYM_DEBUG     = -2,
-    IMAGE_SYM_ABSOLUTE  = -1,
+    IMAGE_SYM_DEBUG     = 0xFFFE,
+    IMAGE_SYM_ABSOLUTE  = 0xFFFF,
     IMAGE_SYM_UNDEFINED = 0
   };
 
@@ -222,7 +222,7 @@ namespace COFF {
     uint32_t Characteristics;
   };
 
-  enum SectionCharacteristics LLVM_ENUM_INT_TYPE(uint32_t) {
+  enum SectionCharacteristics : uint32_t {
     SC_Invalid = 0xffffffff,
 
     IMAGE_SCN_TYPE_NO_PAD            = 0x00000008,

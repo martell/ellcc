@@ -43,7 +43,7 @@ void LiveRangeCalc::createDeadDefs(LiveRange &LR, unsigned Reg) {
   // LR.createDeadDef() will deduplicate.
   for (MachineRegisterInfo::def_iterator
        I = MRI->def_begin(Reg), E = MRI->def_end(); I != E; ++I) {
-    const MachineInstr *MI = &*I;
+    const MachineInstr *MI = I->getParent();
     // Find the corresponding slot index.
     SlotIndex Idx;
     if (MI->isPHI())
@@ -52,7 +52,7 @@ void LiveRangeCalc::createDeadDefs(LiveRange &LR, unsigned Reg) {
     else
       // Instructions are either normal 'r', or early clobber 'e'.
       Idx = Indexes->getInstructionIndex(MI)
-        .getRegSlot(I.getOperand().isEarlyClobber());
+        .getRegSlot(I->isEarlyClobber());
 
     // Create the def in LR. This may find an existing def.
     LR.createDeadDef(Idx, *Alloc);
@@ -66,7 +66,7 @@ void LiveRangeCalc::extendToUses(LiveRange &LR, unsigned Reg) {
   // Visit all operands that read Reg. This may include partial defs.
   for (MachineRegisterInfo::reg_nodbg_iterator I = MRI->reg_nodbg_begin(Reg),
        E = MRI->reg_nodbg_end(); I != E; ++I) {
-    MachineOperand &MO = I.getOperand();
+    MachineOperand &MO = *I;
     // Clear all kill flags. They will be reinserted after register allocation
     // by LiveIntervalAnalysis::addKillFlags().
     if (MO.isUse())
@@ -75,7 +75,7 @@ void LiveRangeCalc::extendToUses(LiveRange &LR, unsigned Reg) {
       continue;
     // MI is reading Reg. We may have visited MI before if it happens to be
     // reading Reg multiple times. That is OK, extend() is idempotent.
-    const MachineInstr *MI = &*I;
+    const MachineInstr *MI = I->getParent();
 
     // Find the SlotIndex being read.
     SlotIndex Idx;
@@ -114,7 +114,7 @@ void LiveRangeCalc::updateLiveIns() {
     MachineBasicBlock *MBB = I->DomNode->getBlock();
     assert(I->Value && "No live-in value found");
     SlotIndex Start, End;
-    tie(Start, End) = Indexes->getMBBRange(MBB);
+    std::tie(Start, End) = Indexes->getMBBRange(MBB);
 
     if (I->Kill.isValid())
       // Value is killed inside this block.
@@ -212,7 +212,7 @@ bool LiveRangeCalc::findReachingDefs(LiveRange &LR, MachineBasicBlock &KillMBB,
        }
 
        SlotIndex Start, End;
-       tie(Start, End) = Indexes->getMBBRange(Pred);
+       std::tie(Start, End) = Indexes->getMBBRange(Pred);
 
        // First time we see Pred.  Try to determine the live-out value, but set
        // it as null if Pred is live-through with an unknown value.
@@ -247,7 +247,7 @@ bool LiveRangeCalc::findReachingDefs(LiveRange &LR, MachineBasicBlock &KillMBB,
     for (SmallVectorImpl<unsigned>::const_iterator I = WorkList.begin(),
          E = WorkList.end(); I != E; ++I) {
        SlotIndex Start, End;
-       tie(Start, End) = Indexes->getMBBRange(*I);
+       std::tie(Start, End) = Indexes->getMBBRange(*I);
        // Trim the live range in KillMBB.
        if (*I == KillMBBNum && Kill.isValid())
          End = Kill;
@@ -342,7 +342,7 @@ void LiveRangeCalc::updateSSA() {
         ++Changes;
         assert(Alloc && "Need VNInfo allocator to create PHI-defs");
         SlotIndex Start, End;
-        tie(Start, End) = Indexes->getMBBRange(MBB);
+        std::tie(Start, End) = Indexes->getMBBRange(MBB);
         LiveRange &LR = I->LR;
         VNInfo *VNI = LR.getNextValue(Start, *Alloc);
         I->Value = VNI;

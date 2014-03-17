@@ -31,12 +31,12 @@ private:
                                              unsigned MovRelOp,
                                              unsigned Dst,
                                              unsigned Src0) const;
-  // If you add or remove instructions from this function, you will
-
 public:
   explicit SIInstrInfo(AMDGPUTargetMachine &tm);
 
-  const SIRegisterInfo &getRegisterInfo() const;
+  const SIRegisterInfo &getRegisterInfo() const {
+    return RI;
+  }
 
   virtual void copyPhysReg(MachineBasicBlock &MBB,
                            MachineBasicBlock::iterator MI, DebugLoc DL,
@@ -70,6 +70,7 @@ public:
   virtual bool isMov(unsigned Opcode) const;
 
   virtual bool isSafeToMoveRegClassDefs(const TargetRegisterClass *RC) const;
+  bool isDS(uint16_t Opcode) const;
   int isMIMG(uint16_t Opcode) const;
   int isSMRD(uint16_t Opcode) const;
   bool isVOP1(uint16_t Opcode) const;

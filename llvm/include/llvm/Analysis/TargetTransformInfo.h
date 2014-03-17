@@ -59,11 +59,6 @@ protected:
   /// group's stack.
   void pushTTIStack(Pass *P);
 
-  /// All pass subclasses must in their finalizePass routine call popTTIStack
-  /// to update the pointers tracking the previous TTI instance in the analysis
-  /// group's stack, and the top of the analysis group's stack.
-  void popTTIStack();
-
   /// All pass subclasses must call TargetTransformInfo::getAnalysisUsage.
   virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 
@@ -321,9 +316,10 @@ public:
 
   /// \brief Additional information about an operand's possible values.
   enum OperandValueKind {
-    OK_AnyValue,            // Operand can have any value.
-    OK_UniformValue,        // Operand is uniform (splat of a value).
-    OK_UniformConstantValue // Operand is uniform constant.
+    OK_AnyValue,                 // Operand can have any value.
+    OK_UniformValue,             // Operand is uniform (splat of a value).
+    OK_UniformConstantValue,     // Operand is uniform constant.
+    OK_NonUniformConstantValue   // Operand is a non uniform constant value.
   };
 
   /// \return The number of scalar or vector registers that the target has.

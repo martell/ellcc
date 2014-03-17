@@ -110,9 +110,6 @@ DECLARE_REAL_AND_INTERCEPTOR(void, free, void *)
 #endif  // SANITIZER_MAC
 
 #define COMMON_INTERCEPT_FUNCTION(name) ASAN_INTERCEPT_FUNC(name)
-#define COMMON_INTERCEPTOR_UNPOISON_PARAM(ctx, count) \
-  do {                                                \
-  } while (false)
 #define COMMON_INTERCEPTOR_WRITE_RANGE(ctx, ptr, size) \
   ASAN_WRITE_RANGE(ptr, size)
 #define COMMON_INTERCEPTOR_READ_RANGE(ctx, ptr, size) ASAN_READ_RANGE(ptr, size)
@@ -186,6 +183,16 @@ INTERCEPTOR(int, pthread_create, void *thread,
 #endif  // ASAN_INTERCEPT_PTHREAD_CREATE
 
 #if ASAN_INTERCEPT_SIGNAL_AND_SIGACTION
+
+#if SANITIZER_ANDROID
+INTERCEPTOR(void*, bsd_signal, int signum, void *handler) {
+  if (!AsanInterceptsSignal(signum) ||
+      common_flags()->allow_user_segv_handler) {
+    return REAL(bsd_signal)(signum, handler);
+  }
+  return 0;
+}
+#else
 INTERCEPTOR(void*, signal, int signum, void *handler) {
   if (!AsanInterceptsSignal(signum) ||
       common_flags()->allow_user_segv_handler) {
@@ -193,6 +200,7 @@ INTERCEPTOR(void*, signal, int signum, void *handler) {
   }
   return 0;
 }
+#endif
 
 INTERCEPTOR(int, sigaction, int signum, const struct sigaction *act,
                             struct sigaction *oldact) {
@@ -754,7 +762,11 @@ void InitializeAsanInterceptors() {
   ASAN_INTERCEPT_FUNC(longjmp);
 #if ASAN_INTERCEPT_SIGNAL_AND_SIGACTION
   ASAN_INTERCEPT_FUNC(sigaction);
+#if SANITIZER_ANDROID
+  ASAN_INTERCEPT_FUNC(bsd_signal);
+#else
   ASAN_INTERCEPT_FUNC(signal);
+#endif
 #endif
 #if ASAN_INTERCEPT_SWAPCONTEXT
   ASAN_INTERCEPT_FUNC(swapcontext);

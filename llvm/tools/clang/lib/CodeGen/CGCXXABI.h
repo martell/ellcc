@@ -41,7 +41,7 @@ namespace CodeGen {
 class CGCXXABI {
 protected:
   CodeGenModule &CGM;
-  OwningPtr<MangleContext> MangleCtx;
+  std::unique_ptr<MangleContext> MangleCtx;
 
   CGCXXABI(CodeGenModule &CGM)
     : CGM(CGM), MangleCtx(CGM.getContext().createMangleContext()) {}
@@ -122,17 +122,15 @@ public:
   /// Load a member function from an object and a member function
   /// pointer.  Apply the this-adjustment and set 'This' to the
   /// adjusted value.
-  virtual llvm::Value *
-  EmitLoadOfMemberFunctionPointer(CodeGenFunction &CGF,
-                                  llvm::Value *&This,
-                                  llvm::Value *MemPtr,
-                                  const MemberPointerType *MPT);
+  virtual llvm::Value *EmitLoadOfMemberFunctionPointer(
+      CodeGenFunction &CGF, const Expr *E, llvm::Value *&This,
+      llvm::Value *MemPtr, const MemberPointerType *MPT);
 
   /// Calculate an l-value from an object and a data member pointer.
-  virtual llvm::Value *EmitMemberDataPointerAddress(CodeGenFunction &CGF,
-                                                    llvm::Value *Base,
-                                                    llvm::Value *MemPtr,
-                                            const MemberPointerType *MPT);
+  virtual llvm::Value *
+  EmitMemberDataPointerAddress(CodeGenFunction &CGF, const Expr *E,
+                               llvm::Value *Base, llvm::Value *MemPtr,
+                               const MemberPointerType *MPT);
 
   /// Perform a derived-to-base, base-to-derived, or bitcast member
   /// pointer conversion.
@@ -260,10 +258,12 @@ public:
   }
 
   /// Perform ABI-specific "this" argument adjustment required prior to
-  /// a virtual function call.
-  virtual llvm::Value *adjustThisArgumentForVirtualCall(CodeGenFunction &CGF,
-                                                        GlobalDecl GD,
-                                                        llvm::Value *This) {
+  /// a call of a virtual function.
+  /// The "VirtualCall" argument is true iff the call itself is virtual.
+  virtual llvm::Value *
+  adjustThisArgumentForVirtualFunctionCall(CodeGenFunction &CGF, GlobalDecl GD,
+                                           llvm::Value *This,
+                                           bool VirtualCall) {
     return This;
   }
 

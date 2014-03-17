@@ -16,12 +16,14 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalAlias.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/LLVMContext.h"
-#include "llvm/Bitcode/ReaderWriter.h"
-#include "llvm/IR/Module.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/COFF.h"
 #include "llvm/Object/ELFObjectFile.h"
+#include "llvm/Object/IRObjectFile.h"
 #include "llvm/Object/MachO.h"
 #include "llvm/Object/MachOUniversal.h"
 #include "llvm/Object/ObjectFile.h"
@@ -53,8 +55,7 @@ cl::opt<OutputFormatTy> OutputFormat(
 cl::alias OutputFormat2("f", cl::desc("Alias for --format"),
                         cl::aliasopt(OutputFormat));
 
-cl::list<std::string> InputFilenames(cl::Positional,
-                                     cl::desc("<input bitcode files>"),
+cl::list<std::string> InputFilenames(cl::Positional, cl::desc("<input files>"),
                                      cl::ZeroOrMore);
 
 cl::opt<bool> UndefinedOnly("undefined-only",
@@ -250,66 +251,14 @@ static void sortAndPrintSymbolList() {
   SymbolList.clear();
 }
 
-static char typeCharForSymbol(GlobalValue &GV) {
-  if (GV.isDeclaration())
-    return 'U';
-  if (GV.hasLinkOnceLinkage())
-    return 'C';
-  if (GV.hasCommonLinkage())
-    return 'C';
-  if (GV.hasWeakLinkage())
-    return 'W';
-  if (isa<Function>(GV) && GV.hasInternalLinkage())
-    return 't';
-  if (isa<Function>(GV))
-    return 'T';
-  if (isa<GlobalVariable>(GV) && GV.hasInternalLinkage())
-    return 'd';
-  if (isa<GlobalVariable>(GV))
-    return 'D';
-  if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(&GV)) {
-    const GlobalValue *AliasedGV = GA->getAliasedGlobal();
-    if (isa<Function>(AliasedGV))
-      return 'T';
-    if (isa<GlobalVariable>(AliasedGV))
-      return 'D';
-  }
-  return '?';
-}
-
-static void dumpSymbolNameForGlobalValue(GlobalValue &GV) {
-  // Private linkage and available_externally linkage don't exist in symtab.
-  if (GV.hasPrivateLinkage() || GV.hasLinkerPrivateLinkage() ||
-      GV.hasLinkerPrivateWeakLinkage() || GV.hasAvailableExternallyLinkage())
-    return;
-  char TypeChar = typeCharForSymbol(GV);
-  if (GV.hasLocalLinkage() && ExternalOnly)
-    return;
-
-  NMSymbol S;
-  S.Address = UnknownAddressOrSize;
-  S.Size = UnknownAddressOrSize;
-  S.TypeChar = TypeChar;
-  S.Name = GV.getName();
-  SymbolList.push_back(S);
-}
-
-static void dumpSymbolNamesFromModule(Module *M) {
-  CurrentFilename = M->getModuleIdentifier();
-  std::for_each(M->begin(), M->end(), dumpSymbolNameForGlobalValue);
-  std::for_each(M->global_begin(), M->global_end(),
-                dumpSymbolNameForGlobalValue);
-  if (!WithoutAliases)
-    std::for_each(M->alias_begin(), M->alias_end(),
-                  dumpSymbolNameForGlobalValue);
-
-  sortAndPrintSymbolList();
-}
-
 template <class ELFT>
-static char getSymbolNMTypeChar(ELFObjectFile<ELFT> &Obj, symbol_iterator I) {
+static char getSymbolNMTypeChar(ELFObjectFile<ELFT> &Obj,
+                                basic_symbol_iterator I) {
   typedef typename ELFObjectFile<ELFT>::Elf_Sym Elf_Sym;
   typedef typename ELFObjectFile<ELFT>::Elf_Shdr Elf_Shdr;
+
+  // OK, this is ELF
+  symbol_iterator SymI(I);
 
   DataRefImpl Symb = I->getRawDataRefImpl();
   const Elf_Sym *ESym = Obj.getSymbol(Symb);
@@ -339,7 +288,7 @@ static char getSymbolNMTypeChar(ELFObjectFile<ELFT> &Obj, symbol_iterator I) {
 
   if (ESym->getType() == ELF::STT_SECTION) {
     StringRef Name;
-    if (error(I->getName(Name)))
+    if (error(SymI->getName(Name)))
       return '?';
     return StringSwitch<char>(Name)
         .StartsWith(".debug", 'N')
@@ -352,9 +301,13 @@ static char getSymbolNMTypeChar(ELFObjectFile<ELFT> &Obj, symbol_iterator I) {
 
 static char getSymbolNMTypeChar(COFFObjectFile &Obj, symbol_iterator I) {
   const coff_symbol *Symb = Obj.getCOFFSymbol(I);
+  // OK, this is COFF.
+  symbol_iterator SymI(I);
+
   StringRef Name;
-  if (error(I->getName(Name)))
+  if (error(SymI->getName(Name)))
     return '?';
+
   char Ret = StringSwitch<char>(Name)
                  .StartsWith(".debug", 'N')
                  .StartsWith(".sxdata", 'N')
@@ -364,9 +317,11 @@ static char getSymbolNMTypeChar(COFFObjectFile &Obj, symbol_iterator I) {
     return Ret;
 
   uint32_t Characteristics = 0;
-  if (Symb->SectionNumber > 0) {
-    section_iterator SecI = Obj.end_sections();
-    if (error(I->getSection(SecI)))
+  if (Symb->SectionNumber > 0 &&
+      Symb->SectionNumber != llvm::COFF::IMAGE_SYM_DEBUG &&
+      Symb->SectionNumber != llvm::COFF::IMAGE_SYM_ABSOLUTE) {
+    section_iterator SecI = Obj.section_end();
+    if (error(SymI->getSection(SecI)))
       return '?';
     const coff_section *Section = Obj.getCOFFSection(SecI);
     Characteristics = Section->Characteristics;
@@ -407,7 +362,7 @@ static uint8_t getNType(MachOObjectFile &Obj, DataRefImpl Symb) {
   return STE.n_type;
 }
 
-static char getSymbolNMTypeChar(MachOObjectFile &Obj, symbol_iterator I) {
+static char getSymbolNMTypeChar(MachOObjectFile &Obj, basic_symbol_iterator I) {
   DataRefImpl Symb = I->getRawDataRefImpl();
   uint8_t NType = getNType(Obj, Symb);
 
@@ -415,7 +370,7 @@ static char getSymbolNMTypeChar(MachOObjectFile &Obj, symbol_iterator I) {
   case MachO::N_ABS:
     return 's';
   case MachO::N_SECT: {
-    section_iterator Sec = Obj.end_sections();
+    section_iterator Sec = Obj.section_end();
     Obj.getSymbolSection(Symb, Sec);
     DataRefImpl Ref = Sec->getRawDataRefImpl();
     StringRef SectionName;
@@ -431,6 +386,23 @@ static char getSymbolNMTypeChar(MachOObjectFile &Obj, symbol_iterator I) {
   return '?';
 }
 
+static char getSymbolNMTypeChar(const GlobalValue &GV) {
+  if (isa<Function>(GV))
+    return 't';
+  // FIXME: should we print 'b'? At the IR level we cannot be sure if this
+  // will be in bss or not, but we could approximate.
+  if (isa<GlobalVariable>(GV))
+    return 'd';
+  const GlobalAlias *GA = cast<GlobalAlias>(&GV);
+  const GlobalValue *AliasedGV = GA->getAliasedGlobal();
+  return getSymbolNMTypeChar(*AliasedGV);
+}
+
+static char getSymbolNMTypeChar(IRObjectFile &Obj, basic_symbol_iterator I) {
+  const GlobalValue &GV = Obj.getSymbolGV(I->getRawDataRefImpl());
+  return getSymbolNMTypeChar(GV);
+}
+
 template <class ELFT>
 static bool isObject(ELFObjectFile<ELFT> &Obj, symbol_iterator I) {
   typedef typename ELFObjectFile<ELFT>::Elf_Sym Elf_Sym;
@@ -441,7 +413,7 @@ static bool isObject(ELFObjectFile<ELFT> &Obj, symbol_iterator I) {
   return ESym->getType() == ELF::STT_OBJECT;
 }
 
-static bool isObject(ObjectFile *Obj, symbol_iterator I) {
+static bool isObject(SymbolicFile *Obj, basic_symbol_iterator I) {
   if (ELF32LEObjectFile *ELF = dyn_cast<ELF32LEObjectFile>(Obj))
     return isObject(*ELF, I);
   if (ELF64LEObjectFile *ELF = dyn_cast<ELF64LEObjectFile>(Obj))
@@ -453,7 +425,7 @@ static bool isObject(ObjectFile *Obj, symbol_iterator I) {
   return false;
 }
 
-static char getNMTypeChar(ObjectFile *Obj, symbol_iterator I) {
+static char getNMTypeChar(SymbolicFile *Obj, basic_symbol_iterator I) {
   uint32_t Symflags = I->getFlags();
   if ((Symflags & object::SymbolRef::SF_Weak) && !isa<MachOObjectFile>(Obj)) {
     char Ret = isObject(Obj, I) ? 'v' : 'w';
@@ -471,6 +443,8 @@ static char getNMTypeChar(ObjectFile *Obj, symbol_iterator I) {
   char Ret = '?';
   if (Symflags & object::SymbolRef::SF_Absolute)
     Ret = 'a';
+  else if (IRObjectFile *IR = dyn_cast<IRObjectFile>(Obj))
+    Ret = getSymbolNMTypeChar(*IR, I);
   else if (COFFObjectFile *COFF = dyn_cast<COFFObjectFile>(Obj))
     Ret = getSymbolNMTypeChar(*COFF, I);
   else if (MachOObjectFile *MachO = dyn_cast<MachOObjectFile>(Obj))
@@ -490,57 +464,55 @@ static char getNMTypeChar(ObjectFile *Obj, symbol_iterator I) {
   return Ret;
 }
 
-static void getDynamicSymbolIterators(ObjectFile *Obj, symbol_iterator &Begin,
-                                      symbol_iterator &End) {
-  if (ELF32LEObjectFile *ELF = dyn_cast<ELF32LEObjectFile>(Obj)) {
-    Begin = ELF->begin_dynamic_symbols();
-    End = ELF->end_dynamic_symbols();
-    return;
-  }
-  if (ELF64LEObjectFile *ELF = dyn_cast<ELF64LEObjectFile>(Obj)) {
-    Begin = ELF->begin_dynamic_symbols();
-    End = ELF->end_dynamic_symbols();
-    return;
-  }
-  if (ELF32BEObjectFile *ELF = dyn_cast<ELF32BEObjectFile>(Obj)) {
-    Begin = ELF->begin_dynamic_symbols();
-    End = ELF->end_dynamic_symbols();
-    return;
-  }
-  ELF64BEObjectFile *ELF = cast<ELF64BEObjectFile>(Obj);
-  Begin = ELF->begin_dynamic_symbols();
-  End = ELF->end_dynamic_symbols();
-  return;
-}
-
-static void dumpSymbolNamesFromObject(ObjectFile *Obj) {
-  symbol_iterator IBegin = Obj->begin_symbols();
-  symbol_iterator IEnd = Obj->end_symbols();
+static void dumpSymbolNamesFromObject(SymbolicFile *Obj) {
+  basic_symbol_iterator IBegin = Obj->symbol_begin();
+  basic_symbol_iterator IEnd = Obj->symbol_end();
   if (DynamicSyms) {
     if (!Obj->isELF()) {
       error("File format has no dynamic symbol table", Obj->getFileName());
       return;
     }
-    getDynamicSymbolIterators(Obj, IBegin, IEnd);
+    std::pair<symbol_iterator, symbol_iterator> IDyn =
+        getELFDynamicSymbolIterators(Obj);
+    IBegin = IDyn.first;
+    IEnd = IDyn.second;
   }
-  for (symbol_iterator I = IBegin; I != IEnd; ++I) {
+  std::string NameBuffer;
+  raw_string_ostream OS(NameBuffer);
+  for (basic_symbol_iterator I = IBegin; I != IEnd; ++I) {
     uint32_t SymFlags = I->getFlags();
     if (!DebugSyms && (SymFlags & SymbolRef::SF_FormatSpecific))
       continue;
+    if (WithoutAliases) {
+      if (IRObjectFile *IR = dyn_cast<IRObjectFile>(Obj)) {
+        const GlobalValue &GV = IR->getSymbolGV(I->getRawDataRefImpl());
+        if(isa<GlobalAlias>(GV))
+          continue;
+      }
+    }
     NMSymbol S;
     S.Size = UnknownAddressOrSize;
     S.Address = UnknownAddressOrSize;
-    if (PrintSize || SizeSort) {
-      if (error(I->getSize(S.Size)))
+    if ((PrintSize || SizeSort) && isa<ObjectFile>(Obj)) {
+      symbol_iterator SymI = I;
+      if (error(SymI->getSize(S.Size)))
         break;
     }
-    if (PrintAddress)
-      if (error(I->getAddress(S.Address)))
+    if (PrintAddress && isa<ObjectFile>(Obj))
+      if (error(symbol_iterator(I)->getAddress(S.Address)))
         break;
     S.TypeChar = getNMTypeChar(Obj, I);
-    if (error(I->getName(S.Name)))
+    if (error(I->printName(OS)))
       break;
+    OS << '\0';
     SymbolList.push_back(S);
+  }
+
+  OS.flush();
+  const char *P = NameBuffer.c_str();
+  for (unsigned I = 0; I < SymbolList.size(); ++I) {
+    SymbolList[I].Name = P;
+    P += strlen(P) + 1;
   }
 
   CurrentFilename = Obj->getFileName();
@@ -548,29 +520,15 @@ static void dumpSymbolNamesFromObject(ObjectFile *Obj) {
 }
 
 static void dumpSymbolNamesFromFile(std::string &Filename) {
-  OwningPtr<MemoryBuffer> Buffer;
+  std::unique_ptr<MemoryBuffer> Buffer;
   if (error(MemoryBuffer::getFileOrSTDIN(Filename, Buffer), Filename))
     return;
 
-  sys::fs::file_magic Magic = sys::fs::identify_magic(Buffer->getBuffer());
-
   LLVMContext &Context = getGlobalContext();
-  if (Magic == sys::fs::file_magic::bitcode) {
-    ErrorOr<Module *> ModuleOrErr = parseBitcodeFile(Buffer.get(), Context);
-    if (error(ModuleOrErr.getError(), Filename)) {
-      return;
-    } else {
-      Module *Result = ModuleOrErr.get();
-      dumpSymbolNamesFromModule(Result);
-      delete Result;
-    }
-    return;
-  }
-
-  ErrorOr<Binary *> BinaryOrErr = createBinary(Buffer.take(), Magic);
+  ErrorOr<Binary *> BinaryOrErr = createBinary(Buffer.release(), &Context);
   if (error(BinaryOrErr.getError(), Filename))
     return;
-  OwningPtr<Binary> Bin(BinaryOrErr.get());
+  std::unique_ptr<Binary> Bin(BinaryOrErr.get());
 
   if (Archive *A = dyn_cast<Archive>(Bin.get())) {
     if (ArchiveMap) {
@@ -596,34 +554,21 @@ static void dumpSymbolNamesFromFile(std::string &Filename) {
 
     for (Archive::child_iterator I = A->child_begin(), E = A->child_end();
          I != E; ++I) {
-      OwningPtr<Binary> Child;
-      if (I->getAsBinary(Child)) {
-        // Try opening it as a bitcode file.
-        OwningPtr<MemoryBuffer> Buff;
-        if (error(I->getMemoryBuffer(Buff)))
-          return;
-
-        ErrorOr<Module *> ModuleOrErr = parseBitcodeFile(Buff.get(), Context);
-        if (ModuleOrErr) {
-          Module *Result = ModuleOrErr.get();
-          dumpSymbolNamesFromModule(Result);
-          delete Result;
-        }
+      std::unique_ptr<Binary> Child;
+      if (I->getAsBinary(Child, &Context))
         continue;
-      }
-      if (ObjectFile *O = dyn_cast<ObjectFile>(Child.get())) {
+      if (SymbolicFile *O = dyn_cast<SymbolicFile>(Child.get())) {
         outs() << O->getFileName() << ":\n";
         dumpSymbolNamesFromObject(O);
       }
     }
     return;
   }
-  if (MachOUniversalBinary *UB =
-          dyn_cast<object::MachOUniversalBinary>(Bin.get())) {
+  if (MachOUniversalBinary *UB = dyn_cast<MachOUniversalBinary>(Bin.get())) {
     for (MachOUniversalBinary::object_iterator I = UB->begin_objects(),
                                                E = UB->end_objects();
          I != E; ++I) {
-      OwningPtr<ObjectFile> Obj;
+      std::unique_ptr<ObjectFile> Obj;
       if (!I->getAsObjectFile(Obj)) {
         outs() << Obj->getFileName() << ":\n";
         dumpSymbolNamesFromObject(Obj.get());
@@ -631,7 +576,7 @@ static void dumpSymbolNamesFromFile(std::string &Filename) {
     }
     return;
   }
-  if (ObjectFile *O = dyn_cast<ObjectFile>(Bin.get())) {
+  if (SymbolicFile *O = dyn_cast<SymbolicFile>(Bin.get())) {
     dumpSymbolNamesFromObject(O);
     return;
   }

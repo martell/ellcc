@@ -74,7 +74,7 @@ public:
     StructuralError = PreviousStructuralError;
   }
 
-  virtual FormatToken *getNextToken() {
+  FormatToken *getNextToken() override {
     // The \c UnwrappedLineParser guards against this by never calling
     // \c getNextToken() after it has encountered the first eof token.
     assert(!eof());
@@ -84,9 +84,9 @@ public:
     return Token;
   }
 
-  virtual unsigned getPosition() { return PreviousTokenSource->getPosition(); }
+  unsigned getPosition() override { return PreviousTokenSource->getPosition(); }
 
-  virtual FormatToken *setPosition(unsigned Position) {
+  FormatToken *setPosition(unsigned Position) override {
     Token = PreviousTokenSource->setPosition(Position);
     return Token;
   }
@@ -128,7 +128,7 @@ public:
       Parser.CurrentLines = &Parser.PreprocessorDirectives;
     else if (!Parser.Line->Tokens.empty())
       Parser.CurrentLines = &Parser.Line->Tokens.back().Children;
-    PreBlockLine = Parser.Line.take();
+    PreBlockLine = Parser.Line.release();
     Parser.Line.reset(new UnwrappedLine());
     Parser.Line->Level = PreBlockLine->Level;
     Parser.Line->InPPDirective = PreBlockLine->InPPDirective;
@@ -180,17 +180,17 @@ public:
   IndexedTokenSource(ArrayRef<FormatToken *> Tokens)
       : Tokens(Tokens), Position(-1) {}
 
-  virtual FormatToken *getNextToken() {
+  FormatToken *getNextToken() override {
     ++Position;
     return Tokens[Position];
   }
 
-  virtual unsigned getPosition() {
+  unsigned getPosition() override {
     assert(Position >= 0);
     return Position;
   }
 
-  virtual FormatToken *setPosition(unsigned P) {
+  FormatToken *setPosition(unsigned P) override {
     Position = P;
     return Tokens[Position];
   }
@@ -357,6 +357,7 @@ void UnwrappedLineParser::calculateBraceTypes() {
         LBraceStack.pop_back();
       }
       break;
+    case tok::at:
     case tok::semi:
     case tok::kw_if:
     case tok::kw_while:
@@ -759,6 +760,7 @@ bool UnwrappedLineParser::tryToParseLambda() {
   // solution.
   if (!Line->Tokens.empty() &&
       (Line->Tokens.back().Tok->isOneOf(tok::identifier, tok::kw_operator) ||
+       Line->Tokens.back().Tok->closesScope() ||
        Line->Tokens.back().Tok->isSimpleTypeSpecifier())) {
     nextToken();
     return false;
@@ -768,7 +770,7 @@ bool UnwrappedLineParser::tryToParseLambda() {
   if (!tryToParseLambdaIntroducer())
     return false;
 
-  while (FormatTok && FormatTok->isNot(tok::l_brace)) {
+  while (FormatTok->isNot(tok::l_brace)) {
     if (FormatTok->isSimpleTypeSpecifier()) {
       nextToken();
       continue;
@@ -782,8 +784,12 @@ bool UnwrappedLineParser::tryToParseLambda() {
     case tok::less:
     case tok::greater:
     case tok::identifier:
+    case tok::coloncolon:
     case tok::kw_mutable:
+      nextToken();
+      break;
     case tok::arrow:
+      FormatTok->Type = TT_TrailingReturnArrow;
       nextToken();
       break;
     default:
@@ -1363,6 +1369,7 @@ void UnwrappedLineParser::readToken() {
   bool CommentsInCurrentLine = true;
   do {
     FormatTok = Tokens->getNextToken();
+    assert(FormatTok);
     while (!Line->InPPDirective && FormatTok->Tok.is(tok::hash) &&
            (FormatTok->HasUnescapedNewline || FormatTok->IsFirst)) {
       // If there is an unfinished unwrapped line, we flush the preprocessor

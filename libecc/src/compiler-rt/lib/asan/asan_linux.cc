@@ -13,11 +13,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "sanitizer_common/sanitizer_platform.h"
-#if SANITIZER_LINUX
+#if SANITIZER_FREEBSD || SANITIZER_LINUX
 
 #include "asan_interceptors.h"
 #include "asan_internal.h"
 #include "asan_thread.h"
+#include "sanitizer_common/sanitizer_flags.h"
 #include "sanitizer_common/sanitizer_libc.h"
 #include "sanitizer_common/sanitizer_procmaps.h"
 
@@ -32,9 +33,21 @@
 #include <unistd.h>
 #include <unwind.h>
 
-#if !SANITIZER_ANDROID
-// FIXME: where to get ucontext on Android?
+#if SANITIZER_ANDROID
+#include <ucontext.h>
+#else
 #include <sys/ucontext.h>
+#endif
+
+// x86_64 FreeBSD 9.2 and older define 64-bit register names in both 64-bit
+// and 32-bit modes.
+#if SANITIZER_FREEBSD
+#include <sys/param.h>
+# if __FreeBSD_version <= 902001  // v9.2
+#  define mc_eip mc_rip
+#  define mc_ebp mc_rbp
+#  define mc_esp mc_rsp
+# endif
 #endif
 
 extern "C" void* _DYNAMIC;
@@ -51,30 +64,47 @@ void *AsanDoesNotSupportStaticLinkage() {
 }
 
 void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp) {
-#if SANITIZER_ANDROID
-  *pc = *sp = *bp = 0;
-#elif defined(__arm__)
+#if defined(__arm__)
   ucontext_t *ucontext = (ucontext_t*)context;
   *pc = ucontext->uc_mcontext.arm_pc;
   *bp = ucontext->uc_mcontext.arm_fp;
   *sp = ucontext->uc_mcontext.arm_sp;
-# elif defined(__hppa__)
+#elif defined(__aarch64__)
+  ucontext_t *ucontext = (ucontext_t*)context;
+  *pc = ucontext->uc_mcontext.pc;
+  *bp = ucontext->uc_mcontext.regs[29];
+  *sp = ucontext->uc_mcontext.sp;
+#elif defined(__hppa__)
   ucontext_t *ucontext = (ucontext_t*)context;
   *pc = ucontext->uc_mcontext.sc_iaoq[0];
   /* GCC uses %r3 whenever a frame pointer is needed.  */
   *bp = ucontext->uc_mcontext.sc_gr[3];
   *sp = ucontext->uc_mcontext.sc_gr[30];
-# elif defined(__x86_64__)
+#elif defined(__x86_64__)
+# if SANITIZER_FREEBSD
+  ucontext_t *ucontext = (ucontext_t*)context;
+  *pc = ucontext->uc_mcontext.mc_rip;
+  *bp = ucontext->uc_mcontext.mc_rbp;
+  *sp = ucontext->uc_mcontext.mc_rsp;
+# else
   ucontext_t *ucontext = (ucontext_t*)context;
   *pc = ucontext->uc_mcontext.gregs[REG_RIP];
   *bp = ucontext->uc_mcontext.gregs[REG_RBP];
   *sp = ucontext->uc_mcontext.gregs[REG_RSP];
-# elif defined(__i386__)
+# endif
+#elif defined(__i386__)
+# if SANITIZER_FREEBSD
+  ucontext_t *ucontext = (ucontext_t*)context;
+  *pc = ucontext->uc_mcontext.mc_eip;
+  *bp = ucontext->uc_mcontext.mc_ebp;
+  *sp = ucontext->uc_mcontext.mc_esp;
+# else
   ucontext_t *ucontext = (ucontext_t*)context;
   *pc = ucontext->uc_mcontext.gregs[REG_EIP];
   *bp = ucontext->uc_mcontext.gregs[REG_EBP];
   *sp = ucontext->uc_mcontext.gregs[REG_ESP];
-# elif defined(__sparc__)
+# endif
+#elif defined(__sparc__)
   ucontext_t *ucontext = (ucontext_t*)context;
   uptr *stk_ptr;
 # if defined (__arch64__)
@@ -88,7 +118,7 @@ void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp) {
   stk_ptr = (uptr *) *sp;
   *bp = stk_ptr[15];
 # endif
-# elif defined(__mips__)
+#elif defined(__mips__)
   ucontext_t *ucontext = (ucontext_t*)context;
   *pc = ucontext->uc_mcontext.gregs[31];
   *bp = ucontext->uc_mcontext.gregs[30];
@@ -120,4 +150,4 @@ void ReadContextStack(void *context, uptr *stack, uptr *ssize) {
 
 }  // namespace __asan
 
-#endif  // SANITIZER_LINUX
+#endif  // SANITIZER_FREEBSD || SANITIZER_LINUX

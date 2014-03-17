@@ -18,14 +18,14 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/Target/TargetCallingConv.h"
 
 namespace llvm {
-  class TargetRegisterInfo;
-  class TargetMachine;
-  class CCState;
+class CCState;
+class MVT;
+class TargetMachine;
+class TargetRegisterInfo;
 
 /// CCValAssign - Represent assignment of one arg/retval to a location.
 class CCValAssign {
@@ -402,6 +402,11 @@ public:
   void clearByValRegsInfo() {
     InRegsParamsProceed = 0;
     ByValRegs.clear();
+  }
+
+  // Rewind byval registers tracking info.
+  void rewindByValRegsInfo() {
+    InRegsParamsProceed = 0;
   }
 
   ParmContext getCallOrPrologue() const { return CallOrPrologue; }

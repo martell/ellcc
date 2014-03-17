@@ -27,10 +27,10 @@
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/raw_ostream.h"
+#include <memory>
 
 // TODO: Adjust states of args to constructors in the same way that arguments to
 //       function calls are handled.
@@ -851,11 +851,9 @@ void ConsumedStmtVisitor::VisitDeclRefExpr(const DeclRefExpr *DeclRef) {
 }
 
 void ConsumedStmtVisitor::VisitDeclStmt(const DeclStmt *DeclS) {
-  for (DeclStmt::const_decl_iterator DI = DeclS->decl_begin(),
-       DE = DeclS->decl_end(); DI != DE; ++DI) {
-    
-    if (isa<VarDecl>(*DI)) VisitVarDecl(cast<VarDecl>(*DI));
-  }
+  for (const auto *DI : DeclS->decls())    
+    if (isa<VarDecl>(DI))
+      VisitVarDecl(cast<VarDecl>(DI));
   
   if (DeclS->isSingleDecl())
     if (const VarDecl *Var = dyn_cast_or_null<VarDecl>(DeclS->getSingleDecl()))
@@ -1286,8 +1284,9 @@ void ConsumedAnalyzer::determineExpectedReturnState(AnalysisDeclContext &AC,
 
 bool ConsumedAnalyzer::splitState(const CFGBlock *CurrBlock,
                                   const ConsumedStmtVisitor &Visitor) {
-  
-  OwningPtr<ConsumedStateMap> FalseStates(new ConsumedStateMap(*CurrStates));
+
+  std::unique_ptr<ConsumedStateMap> FalseStates(
+      new ConsumedStateMap(*CurrStates));
   PropagationInfo PInfo;
   
   if (const IfStmt *IfNode =
@@ -1362,8 +1361,8 @@ bool ConsumedAnalyzer::splitState(const CFGBlock *CurrBlock,
     delete CurrStates;
     
   if (*++SI)
-    BlockInfo.addInfo(*SI, FalseStates.take());
-  
+    BlockInfo.addInfo(*SI, FalseStates.release());
+
   CurrStates = NULL;
   return true;
 }
@@ -1388,9 +1387,8 @@ void ConsumedAnalyzer::run(AnalysisDeclContext &AC) {
   ConsumedStmtVisitor Visitor(AC, *this, CurrStates);
   
   // Add all trackable parameters to the state map.
-  for (FunctionDecl::param_const_iterator PI = D->param_begin(),
-       PE = D->param_end(); PI != PE; ++PI) {
-    Visitor.VisitParmVarDecl(*PI);
+  for (auto PI : D->params()) {
+    Visitor.VisitParmVarDecl(PI);
   }
   
   // Visit all of the function's basic blocks.

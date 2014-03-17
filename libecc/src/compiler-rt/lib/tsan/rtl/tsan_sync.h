@@ -15,6 +15,7 @@
 
 #include "sanitizer_common/sanitizer_atomic.h"
 #include "sanitizer_common/sanitizer_common.h"
+#include "sanitizer_common/sanitizer_deadlock_detector_interface.h"
 #include "tsan_clock.h"
 #include "tsan_defs.h"
 #include "tsan_mutex.h"
@@ -68,6 +69,7 @@ struct SyncVar {
   bool is_broken;
   bool is_linker_init;
   SyncVar *next;  // In SyncTab hashtable.
+  DDMutex dd;
 
   uptr GetMemoryConsumption();
   u64 GetId() const {

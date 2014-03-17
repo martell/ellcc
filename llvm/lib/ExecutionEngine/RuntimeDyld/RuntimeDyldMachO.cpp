@@ -13,7 +13,6 @@
 
 #define DEBUG_TYPE "dyld"
 #include "RuntimeDyldMachO.h"
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 using namespace llvm;
@@ -378,7 +377,9 @@ void RuntimeDyldMachO::processRelocationRef(unsigned SectionID,
     }
   } else {
     SectionRef Sec = MachO->getRelocationSection(RE);
-    Value.SectionID = findOrEmitSection(Obj, Sec, true, ObjSectionToID);
+    bool IsCode = false;
+    Sec.isText(IsCode);
+    Value.SectionID = findOrEmitSection(Obj, Sec, IsCode, ObjSectionToID);
     uint64_t Addr;
     Sec.getAddress(Addr);
     Value.Addend = Addend - Addr;

@@ -91,6 +91,7 @@ namespace std
     template <class T> struct is_empty;
     template <class T> struct is_polymorphic;
     template <class T> struct is_abstract;
+    template <class T> struct is_final; // C++14
 
     template <class T, class... Args> struct is_constructible;
     template <class T>                struct is_default_constructible;
@@ -236,10 +237,10 @@ struct _LIBCPP_TYPE_VIS_ONLY integral_constant
     typedef _Tp               value_type;
     typedef integral_constant type;
     _LIBCPP_INLINE_VISIBILITY
-        _LIBCPP_CONSTEXPR operator value_type() const {return value;}
+        _LIBCPP_CONSTEXPR operator value_type() const _NOEXCEPT {return value;}
 #if _LIBCPP_STD_VER > 11
     _LIBCPP_INLINE_VISIBILITY
-         constexpr value_type operator ()() const {return value;}
+         constexpr value_type operator ()() const _NOEXCEPT {return value;}
 #endif
 };
 
@@ -759,6 +760,13 @@ template <class _Tp> struct __libcpp_abstract<_Tp, false> : public false_type {}
 
 template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_abstract : public __libcpp_abstract<_Tp> {};
 
+// is_final
+
+#if _LIBCPP_STD_VER > 11 && __has_feature(is_final)
+template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY 
+is_final : public integral_constant<bool, __is_final(_Tp)> {};
+#endif
+
 // is_base_of
 
 #ifdef _LIBCPP_HAS_IS_BASE_OF
@@ -946,7 +954,7 @@ template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_empty : public __libcpp_emp
 
 // is_polymorphic
 
-#if __has_feature(is_polymorphic)
+#if __has_feature(is_polymorphic) || defined(_LIBCPP_MSVC)
 
 template <class _Tp>
 struct _LIBCPP_TYPE_VIS_ONLY is_polymorphic
@@ -1385,7 +1393,7 @@ template <class _Tp>
 struct _LIBCPP_TYPE_VIS_ONLY common_type<_Tp, void, void>
 {
 public:
-    typedef _Tp type;
+    typedef typename decay<_Tp>::type type;
 };
 
 template <class _Tp, class _Up>
@@ -3079,7 +3087,7 @@ template <class _Fp, class _A0, class ..._Args,
             class = typename enable_if
             <
                 is_member_function_pointer<typename remove_reference<_Fp>::type>::value &&
-                is_base_of<typename __member_pointer_traits<typename remove_reference<_Fp>::type>::_ClassType,
+                is_base_of<typename remove_reference<typename __member_pointer_traits<typename remove_reference<_Fp>::type>::_ClassType>::type,
                            typename remove_reference<_A0>::type>::value
             >::type
          >
@@ -3092,7 +3100,7 @@ template <class _Fp, class _A0, class ..._Args,
             class = typename enable_if
             <
                 is_member_function_pointer<typename remove_reference<_Fp>::type>::value &&
-                !is_base_of<typename __member_pointer_traits<typename remove_reference<_Fp>::type>::_ClassType,
+                !is_base_of<typename remove_reference<typename __member_pointer_traits<typename remove_reference<_Fp>::type>::_ClassType>::type,
                            typename remove_reference<_A0>::type>::value
             >::type
          >

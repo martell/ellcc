@@ -19,6 +19,7 @@
 #include "sanitizer_internal_defs.h"
 #include "sanitizer_libc.h"
 #include "sanitizer_mutex.h"
+#include "sanitizer_flags.h"
 
 namespace __sanitizer {
 struct StackTrace;
@@ -124,6 +125,7 @@ void RawWrite(const char *buffer);
 bool PrintsToTty();
 // Caching version of PrintsToTty(). Not thread-safe.
 bool PrintsToTtyCached();
+bool ColorizeReports();
 void Printf(const char *format, ...);
 void Report(const char *format, ...);
 void SetPrintfAndReportCallback(void (*callback)(const char *));
@@ -178,6 +180,7 @@ u32 GetUid();
 void ReExec();
 bool StackSizeIsUnlimited();
 void SetStackSizeLimitInBytes(uptr limit);
+void AdjustStackSize(void *attr);
 void PrepareForSandboxing();
 
 void InitTlsSize();
@@ -256,6 +259,19 @@ INLINE uptr MostSignificantSetBitIndex(uptr x) {
   _BitScanReverse64(&up, x);
 #else
   _BitScanReverse(&up, x);
+#endif
+  return up;
+}
+
+INLINE uptr LeastSignificantSetBitIndex(uptr x) {
+  CHECK_NE(x, 0U);
+  unsigned long up;  // NOLINT
+#if !SANITIZER_WINDOWS || defined(__clang__) || defined(__GNUC__)
+  up = __builtin_ctzl(x);
+#elif defined(_WIN64)
+  _BitScanForward64(&up, x);
+#else
+  _BitScanForward(&up, x);
 #endif
   return up;
 }
@@ -489,7 +505,7 @@ const uptr kPthreadDestructorIterations = 0;
 // Callback type for iterating over a set of memory ranges.
 typedef void (*RangeIteratorCallback)(uptr begin, uptr end, void *arg);
 
-#if SANITIZER_LINUX && !defined(SANITIZER_GO)
+#if (SANITIZER_FREEBSD || SANITIZER_LINUX) && !defined(SANITIZER_GO)
 extern uptr indirect_call_wrapper;
 void SetIndirectCallWrapper(uptr wrapper);
 
@@ -509,9 +525,11 @@ F IndirectExternCall(F f) {
 #if SANITIZER_ANDROID
 void AndroidLogWrite(const char *buffer);
 void GetExtraActivationFlags(char *buf, uptr size);
+void SanitizerInitializeUnwinder();
 #else
 INLINE void AndroidLogWrite(const char *buffer_unused) {}
 INLINE void GetExtraActivationFlags(char *buf, uptr size) { *buf = '\0'; }
+INLINE void SanitizerInitializeUnwinder() {}
 #endif
 }  // namespace __sanitizer
 

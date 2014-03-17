@@ -41,9 +41,9 @@ public:
     initializeProcessImplicitDefsPass(*PassRegistry::getPassRegistry());
   }
 
-  virtual void getAnalysisUsage(AnalysisUsage &au) const;
+  void getAnalysisUsage(AnalysisUsage &au) const override;
 
-  virtual bool runOnMachineFunction(MachineFunction &fn);
+  bool runOnMachineFunction(MachineFunction &fn) override;
 };
 } // end anonymous namespace
 
@@ -83,7 +83,7 @@ void ProcessImplicitDefs::processImplicitDef(MachineInstr *MI) {
     for (MachineRegisterInfo::use_nodbg_iterator UI =
          MRI->use_nodbg_begin(Reg),
          UE = MRI->use_nodbg_end(); UI != UE; ++UI) {
-      MachineOperand &MO = UI.getOperand();
+      MachineOperand &MO = *UI;
       MO.setIsUndef();
       MachineInstr *UserMI = MO.getParent();
       if (!canTurnIntoImplicitDef(UserMI))

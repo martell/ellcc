@@ -677,7 +677,7 @@ static SDValue performORCombine(SDNode *N, SelectionDAG &DAG,
     }
 
     // Transform the DAG into an equivalent VSELECT.
-    return DAG.getNode(ISD::VSELECT, SDLoc(N), Ty, Cond, IfClr, IfSet);
+    return DAG.getNode(ISD::VSELECT, SDLoc(N), Ty, Cond, IfSet, IfClr);
   }
 
   return SDValue();
@@ -1459,25 +1459,27 @@ SDValue MipsSETargetLowering::lowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::mips_binsli_h:
   case Intrinsic::mips_binsli_w:
   case Intrinsic::mips_binsli_d: {
+    // binsli_x(IfClear, IfSet, nbits) -> (vselect LBitsMask, IfSet, IfClear)
     EVT VecTy = Op->getValueType(0);
     EVT EltTy = VecTy.getVectorElementType();
     APInt Mask = APInt::getHighBitsSet(EltTy.getSizeInBits(),
                                        Op->getConstantOperandVal(3));
     return DAG.getNode(ISD::VSELECT, DL, VecTy,
-                       DAG.getConstant(Mask, VecTy, true), Op->getOperand(1),
-                       Op->getOperand(2));
+                       DAG.getConstant(Mask, VecTy, true), Op->getOperand(2),
+                       Op->getOperand(1));
   }
   case Intrinsic::mips_binsri_b:
   case Intrinsic::mips_binsri_h:
   case Intrinsic::mips_binsri_w:
   case Intrinsic::mips_binsri_d: {
+    // binsri_x(IfClear, IfSet, nbits) -> (vselect RBitsMask, IfSet, IfClear)
     EVT VecTy = Op->getValueType(0);
     EVT EltTy = VecTy.getVectorElementType();
     APInt Mask = APInt::getLowBitsSet(EltTy.getSizeInBits(),
                                       Op->getConstantOperandVal(3));
     return DAG.getNode(ISD::VSELECT, DL, VecTy,
-                       DAG.getConstant(Mask, VecTy, true), Op->getOperand(1),
-                       Op->getOperand(2));
+                       DAG.getConstant(Mask, VecTy, true), Op->getOperand(2),
+                       Op->getOperand(1));
   }
   case Intrinsic::mips_bmnz_v:
     return DAG.getNode(ISD::VSELECT, DL, Op->getValueType(0), Op->getOperand(3),
@@ -1520,13 +1522,15 @@ SDValue MipsSETargetLowering::lowerINTRINSIC_WO_CHAIN(SDValue Op,
     return DAG.getNode(MipsISD::VANY_NONZERO, DL, Op->getValueType(0),
                        Op->getOperand(1));
   case Intrinsic::mips_bsel_v:
+    // bsel_v(Mask, IfClear, IfSet) -> (vselect Mask, IfSet, IfClear)
     return DAG.getNode(ISD::VSELECT, DL, Op->getValueType(0),
-                       Op->getOperand(1), Op->getOperand(2),
-                       Op->getOperand(3));
+                       Op->getOperand(1), Op->getOperand(3),
+                       Op->getOperand(2));
   case Intrinsic::mips_bseli_b:
+    // bseli_v(Mask, IfClear, IfSet) -> (vselect Mask, IfSet, IfClear)
     return DAG.getNode(ISD::VSELECT, DL, Op->getValueType(0),
-                       Op->getOperand(1), Op->getOperand(2),
-                       lowerMSASplatImm(Op, 3, DAG));
+                       Op->getOperand(1), lowerMSASplatImm(Op, 3, DAG),
+                       Op->getOperand(2));
   case Intrinsic::mips_bset_b:
   case Intrinsic::mips_bset_h:
   case Intrinsic::mips_bset_w:
@@ -1807,7 +1811,8 @@ SDValue MipsSETargetLowering::lowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::mips_ldi_w:
   case Intrinsic::mips_ldi_d:
     return lowerMSASplatImm(Op, 1, DAG);
-  case Intrinsic::mips_lsa: {
+  case Intrinsic::mips_lsa:
+  case Intrinsic::mips_dlsa: {
     EVT ResTy = Op->getValueType(0);
     return DAG.getNode(ISD::ADD, SDLoc(Op), ResTy, Op->getOperand(1),
                        DAG.getNode(ISD::SHL, SDLoc(Op), ResTy,
@@ -2620,7 +2625,7 @@ emitBPOSGE32(MachineInstr *MI, MachineBasicBlock *BB) const{
   const TargetRegisterClass *RC = &Mips::GPR32RegClass;
   DebugLoc DL = MI->getDebugLoc();
   const BasicBlock *LLVM_BB = BB->getBasicBlock();
-  MachineFunction::iterator It = llvm::next(MachineFunction::iterator(BB));
+  MachineFunction::iterator It = std::next(MachineFunction::iterator(BB));
   MachineFunction *F = BB->getParent();
   MachineBasicBlock *FBB = F->CreateMachineBasicBlock(LLVM_BB);
   MachineBasicBlock *TBB = F->CreateMachineBasicBlock(LLVM_BB);
@@ -2630,7 +2635,7 @@ emitBPOSGE32(MachineInstr *MI, MachineBasicBlock *BB) const{
   F->insert(It, Sink);
 
   // Transfer the remainder of BB and its successor edges to Sink.
-  Sink->splice(Sink->begin(), BB, llvm::next(MachineBasicBlock::iterator(MI)),
+  Sink->splice(Sink->begin(), BB, std::next(MachineBasicBlock::iterator(MI)),
                BB->end());
   Sink->transferSuccessorsAndUpdatePHIs(BB);
 
@@ -2685,7 +2690,7 @@ emitMSACBranchPseudo(MachineInstr *MI, MachineBasicBlock *BB,
   const TargetRegisterClass *RC = &Mips::GPR32RegClass;
   DebugLoc DL = MI->getDebugLoc();
   const BasicBlock *LLVM_BB = BB->getBasicBlock();
-  MachineFunction::iterator It = llvm::next(MachineFunction::iterator(BB));
+  MachineFunction::iterator It = std::next(MachineFunction::iterator(BB));
   MachineFunction *F = BB->getParent();
   MachineBasicBlock *FBB = F->CreateMachineBasicBlock(LLVM_BB);
   MachineBasicBlock *TBB = F->CreateMachineBasicBlock(LLVM_BB);
@@ -2695,7 +2700,7 @@ emitMSACBranchPseudo(MachineInstr *MI, MachineBasicBlock *BB,
   F->insert(It, Sink);
 
   // Transfer the remainder of BB and its successor edges to Sink.
-  Sink->splice(Sink->begin(), BB, llvm::next(MachineBasicBlock::iterator(MI)),
+  Sink->splice(Sink->begin(), BB, std::next(MachineBasicBlock::iterator(MI)),
                BB->end());
   Sink->transferSuccessorsAndUpdatePHIs(BB);
 
@@ -2754,7 +2759,7 @@ emitCOPY_FW(MachineInstr *MI, MachineBasicBlock *BB) const{
   else {
     unsigned Wt = RegInfo.createVirtualRegister(&Mips::MSA128WRegClass);
 
-    BuildMI(*BB, MI, DL, TII->get(Mips::SPLATI_W), Wt).addReg(Ws).addImm(1);
+    BuildMI(*BB, MI, DL, TII->get(Mips::SPLATI_W), Wt).addReg(Ws).addImm(Lane);
     BuildMI(*BB, MI, DL, TII->get(Mips::COPY), Fd).addReg(Wt, 0, Mips::sub_lo);
   }
 

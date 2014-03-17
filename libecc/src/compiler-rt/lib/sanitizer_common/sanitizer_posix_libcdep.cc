@@ -14,7 +14,7 @@
 
 #include "sanitizer_platform.h"
 
-#if SANITIZER_LINUX || SANITIZER_MAC
+#if SANITIZER_POSIX
 #include "sanitizer_common.h"
 #include "sanitizer_flags.h"
 #include "sanitizer_platform_limits_posix.h"
@@ -54,7 +54,7 @@ void DisableCoreDumper() {
 bool StackSizeIsUnlimited() {
   struct rlimit rlim;
   CHECK_EQ(0, getrlimit(RLIMIT_STACK, &rlim));
-  return (rlim.rlim_cur == (uptr)-1);
+  return ((uptr)rlim.rlim_cur == (uptr)-1);
 }
 
 void SetStackSizeLimitInBytes(uptr limit) {
@@ -100,12 +100,13 @@ void SetAlternateSignalStack() {
   stack_t altstack, oldstack;
   CHECK_EQ(0, sigaltstack(0, &oldstack));
   // If the alternate stack is already in place, do nothing.
-  if ((oldstack.ss_flags & SS_DISABLE) == 0) return;
+  // Android always sets an alternate stack, but it's too small for us.
+  if (!SANITIZER_ANDROID && !(oldstack.ss_flags & SS_DISABLE)) return;
   // TODO(glider): the mapped stack should have the MAP_STACK flag in the
   // future. It is not required by man 2 sigaltstack now (they're using
   // malloc()).
-  void* base = MmapOrDie(kAltStackSize, __FUNCTION__);
-  altstack.ss_sp = base;
+  void* base = MmapOrDie(kAltStackSize, __func__);
+  altstack.ss_sp = (char*) base;
   altstack.ss_flags = 0;
   altstack.ss_size = kAltStackSize;
   CHECK_EQ(0, sigaltstack(&altstack, 0));
@@ -146,4 +147,4 @@ void InstallDeadlySignalHandlers(SignalHandlerType handler) {
 
 }  // namespace __sanitizer
 
-#endif
+#endif  // SANITIZER_POSIX

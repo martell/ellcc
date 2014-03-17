@@ -47,16 +47,16 @@ public:
     cacheRelocations();
   }
 
-  virtual void printFileHeaders() LLVM_OVERRIDE;
-  virtual void printSections() LLVM_OVERRIDE;
-  virtual void printRelocations() LLVM_OVERRIDE;
-  virtual void printSymbols() LLVM_OVERRIDE;
-  virtual void printDynamicSymbols() LLVM_OVERRIDE;
-  virtual void printUnwindInfo() LLVM_OVERRIDE;
+  virtual void printFileHeaders() override;
+  virtual void printSections() override;
+  virtual void printRelocations() override;
+  virtual void printSymbols() override;
+  virtual void printDynamicSymbols() override;
+  virtual void printUnwindInfo() override;
 
 private:
   void printSymbol(symbol_iterator SymI);
-  void printRelocation(section_iterator SecI, relocation_iterator RelI);
+  void printRelocation(section_iterator SecI, const RelocationRef &Reloc);
   void printDataDirectory(uint32_t Index, const std::string &FieldName);
   void printX64UnwindInfo();
 
@@ -104,9 +104,8 @@ private:
 
 namespace llvm {
 
-error_code createCOFFDumper(const object::ObjectFile *Obj,
-                            StreamWriter& Writer,
-                            OwningPtr<ObjDumper> &Result) {
+error_code createCOFFDumper(const object::ObjectFile *Obj, StreamWriter &Writer,
+                            std::unique_ptr<ObjDumper> &Result) {
   const COFFObjectFile *COFFObj = dyn_cast<COFFObjectFile>(Obj);
   if (!COFFObj)
     return readobj_error::unsupported_obj_file_format;
@@ -185,7 +184,7 @@ static error_code resolveSectionAndAddress(const COFFObjectFile *Obj,
   if (error_code EC = Sym.getAddress(ResolvedAddr))
     return EC;
 
-  section_iterator iter(Obj->begin_sections());
+  section_iterator iter(Obj->section_begin());
   if (error_code EC = Sym.getSection(iter))
     return EC;
 
@@ -229,7 +228,7 @@ static const EnumEntry<COFF::MachineTypes> ImageFileMachineType[] = {
   LLVM_READOBJ_ENUM_ENT(COFF, IMAGE_FILE_MACHINE_AM33     ),
   LLVM_READOBJ_ENUM_ENT(COFF, IMAGE_FILE_MACHINE_AMD64    ),
   LLVM_READOBJ_ENUM_ENT(COFF, IMAGE_FILE_MACHINE_ARM      ),
-  LLVM_READOBJ_ENUM_ENT(COFF, IMAGE_FILE_MACHINE_ARMV7    ),
+  LLVM_READOBJ_ENUM_ENT(COFF, IMAGE_FILE_MACHINE_ARMNT    ),
   LLVM_READOBJ_ENUM_ENT(COFF, IMAGE_FILE_MACHINE_EBC      ),
   LLVM_READOBJ_ENUM_ENT(COFF, IMAGE_FILE_MACHINE_I386     ),
   LLVM_READOBJ_ENUM_ENT(COFF, IMAGE_FILE_MACHINE_IA64     ),
@@ -541,15 +540,12 @@ error_code COFFDumper::getSection(
 }
 
 void COFFDumper::cacheRelocations() {
-  for (section_iterator SecI = Obj->begin_sections(),
-                        SecE = Obj->end_sections();
+  for (section_iterator SecI = Obj->section_begin(), SecE = Obj->section_end();
        SecI != SecE; ++SecI) {
     const coff_section *Section = Obj->getCOFFSection(SecI);
 
-    for (relocation_iterator RelI = SecI->begin_relocations(),
-                             RelE = SecI->end_relocations();
-         RelI != RelE; ++RelI)
-      RelocMap[Section].push_back(*RelI);
+    for (const RelocationRef &Reloc : SecI->relocations())
+      RelocMap[Section].push_back(Reloc);
 
     // Sort relocations by address.
     std::sort(RelocMap[Section].begin(), RelocMap[Section].end(),
@@ -818,8 +814,8 @@ void COFFDumper::printCodeViewLineTables(section_iterator SecI) {
 void COFFDumper::printSections() {
   ListScope SectionsD(W, "Sections");
   int SectionNumber = 0;
-  for (section_iterator SecI = Obj->begin_sections(),
-                        SecE = Obj->end_sections();
+  for (section_iterator SecI = Obj->section_begin(),
+                        SecE = Obj->section_end();
        SecI != SecE; ++SecI) {
     ++SectionNumber;
     const coff_section *Section = Obj->getCOFFSection(SecI);
@@ -845,16 +841,14 @@ void COFFDumper::printSections() {
 
     if (opts::SectionRelocations) {
       ListScope D(W, "Relocations");
-      for (relocation_iterator RelI = SecI->begin_relocations(),
-                               RelE = SecI->end_relocations();
-           RelI != RelE; ++RelI)
-        printRelocation(SecI, RelI);
+      for (const RelocationRef &Reloc : SecI->relocations())
+        printRelocation(SecI, Reloc);
     }
 
     if (opts::SectionSymbols) {
       ListScope D(W, "Symbols");
-      for (symbol_iterator SymI = Obj->begin_symbols(),
-                           SymE = Obj->end_symbols();
+      for (symbol_iterator SymI = Obj->symbol_begin(),
+                           SymE = Obj->symbol_end();
            SymI != SymE; ++SymI) {
         bool Contained = false;
         if (SecI->containsSymbol(*SymI, Contained) || !Contained)
@@ -880,8 +874,8 @@ void COFFDumper::printRelocations() {
   ListScope D(W, "Relocations");
 
   int SectionNumber = 0;
-  for (section_iterator SecI = Obj->begin_sections(),
-                        SecE = Obj->end_sections();
+  for (section_iterator SecI = Obj->section_begin(),
+                        SecE = Obj->section_end();
                         SecI != SecE; ++SecI) {
     ++SectionNumber;
     StringRef Name;
@@ -889,16 +883,14 @@ void COFFDumper::printRelocations() {
       continue;
 
     bool PrintedGroup = false;
-    for (relocation_iterator RelI = SecI->begin_relocations(),
-                             RelE = SecI->end_relocations();
-         RelI != RelE; ++RelI) {
+    for (const RelocationRef &Reloc : SecI->relocations()) {
       if (!PrintedGroup) {
         W.startLine() << "Section (" << SectionNumber << ") " << Name << " {\n";
         W.indent();
         PrintedGroup = true;
       }
 
-      printRelocation(SecI, RelI);
+      printRelocation(SecI, Reloc);
     }
 
     if (PrintedGroup) {
@@ -909,18 +901,23 @@ void COFFDumper::printRelocations() {
 }
 
 void COFFDumper::printRelocation(section_iterator SecI,
-                                 relocation_iterator RelI) {
+                                 const RelocationRef &Reloc) {
   uint64_t Offset;
   uint64_t RelocType;
   SmallString<32> RelocName;
   StringRef SymbolName;
   StringRef Contents;
-  if (error(RelI->getOffset(Offset))) return;
-  if (error(RelI->getType(RelocType))) return;
-  if (error(RelI->getTypeName(RelocName))) return;
-  symbol_iterator Symbol = RelI->getSymbol();
-  if (error(Symbol->getName(SymbolName))) return;
-  if (error(SecI->getContents(Contents))) return;
+  if (error(Reloc.getOffset(Offset)))
+    return;
+  if (error(Reloc.getType(RelocType)))
+    return;
+  if (error(Reloc.getTypeName(RelocName)))
+    return;
+  symbol_iterator Symbol = Reloc.getSymbol();
+  if (error(Symbol->getName(SymbolName)))
+    return;
+  if (error(SecI->getContents(Contents)))
+    return;
 
   if (opts::ExpandRelocs) {
     DictScope Group(W, "Relocation");
@@ -939,7 +936,7 @@ void COFFDumper::printRelocation(section_iterator SecI,
 void COFFDumper::printSymbols() {
   ListScope Group(W, "Symbols");
 
-  for (symbol_iterator SymI = Obj->begin_symbols(), SymE = Obj->end_symbols();
+  for (symbol_iterator SymI = Obj->symbol_begin(), SymE = Obj->symbol_end();
        SymI != SymE; ++SymI)
     printSymbol(SymI);
 }
@@ -1087,8 +1084,8 @@ void COFFDumper::printUnwindInfo() {
 }
 
 void COFFDumper::printX64UnwindInfo() {
-  for (section_iterator SecI = Obj->begin_sections(),
-                        SecE = Obj->end_sections();
+  for (section_iterator SecI = Obj->section_begin(),
+                        SecE = Obj->section_end();
        SecI != SecE; ++SecI) {
     StringRef Name;
     if (error(SecI->getName(Name)))

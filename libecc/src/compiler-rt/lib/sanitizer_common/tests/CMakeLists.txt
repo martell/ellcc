@@ -3,7 +3,10 @@ include(CompilerRTCompile)
 set(SANITIZER_UNITTESTS
   sanitizer_allocator_test.cc
   sanitizer_atomic_test.cc
+  sanitizer_bitvector_test.cc
+  sanitizer_bvgraph_test.cc
   sanitizer_common_test.cc
+  sanitizer_deadlock_detector_test.cc
   sanitizer_flags_test.cc
   sanitizer_format_interceptor_test.cc
   sanitizer_ioctl_test.cc
@@ -38,7 +41,9 @@ set(SANITIZER_TEST_CFLAGS_COMMON
   -Wall -Werror -Werror=sign-compare)
 
 set(SANITIZER_TEST_LINK_FLAGS_COMMON
-  -lstdc++ -ldl)
+  -lstdc++)
+append_if(COMPILER_RT_HAS_LIBDL -ldl SANITIZER_TEST_LINK_FLAGS_COMMON)
+append_if(COMPILER_RT_HAS_LIBPTHREAD -lpthread SANITIZER_TEST_LINK_FLAGS_COMMON)
 
 include_directories(..)
 include_directories(../..)
@@ -71,14 +76,17 @@ macro(add_sanitizer_tests_for_arch arch)
   get_target_flags_for_arch(${arch} TARGET_FLAGS)
   set(SANITIZER_TEST_SOURCES ${SANITIZER_UNITTESTS}
                              ${COMPILER_RT_GTEST_SOURCE})
+  set(SANITIZER_TEST_COMPILE_DEPS ${SANITIZER_TEST_HEADERS})
+  if(NOT COMPILER_RT_STANDALONE_BUILD)
+    list(APPEND SANITIZER_TEST_COMPILE_DEPS gtest)
+  endif()
   set(SANITIZER_TEST_OBJECTS)
   foreach(source ${SANITIZER_TEST_SOURCES})
     get_filename_component(basename ${source} NAME)
     set(output_obj "${basename}.${arch}.o")
     clang_compile(${output_obj} ${source}
                   CFLAGS ${SANITIZER_TEST_CFLAGS_COMMON} ${TARGET_FLAGS}
-                  DEPS gtest ${SANITIZER_RUNTIME_LIBRARIES}
-                       ${SANITIZER_TEST_HEADERS})
+                  DEPS ${SANITIZER_TEST_COMPILE_DEPS})
     list(APPEND SANITIZER_TEST_OBJECTS ${output_obj})
   endforeach()
   get_sanitizer_common_lib_for_arch(${arch} SANITIZER_COMMON_LIB
@@ -90,7 +98,7 @@ macro(add_sanitizer_tests_for_arch arch)
                                ${SANITIZER_COMMON_LIB_NAME}
                        DEPS ${SANITIZER_TEST_OBJECTS} ${SANITIZER_COMMON_LIB}
                        LINK_FLAGS ${SANITIZER_TEST_LINK_FLAGS_COMMON}
-                                  -lpthread ${TARGET_FLAGS})
+                                  ${TARGET_FLAGS})
 
   if("${CMAKE_SYSTEM_NAME}" STREQUAL "Linux" AND "${arch}" STREQUAL "x86_64")
     # Test that the libc-independent part of sanitizer_common is indeed
@@ -99,7 +107,7 @@ macro(add_sanitizer_tests_for_arch arch)
     clang_compile(sanitizer_nolibc_test_main.${arch}.o
                   sanitizer_nolibc_test_main.cc
                   CFLAGS ${SANITIZER_TEST_CFLAGS_COMMON} ${TARGET_FLAGS}
-                  DEPS ${SANITIZER_RUNTIME_LIBRARIES} ${SANITIZER_TEST_HEADERS})
+                  DEPS ${SANITIZER_TEST_COMPILE_DEPS})
     add_compiler_rt_test(SanitizerUnitTests "Sanitizer-${arch}-Test-Nolibc"
                          OBJECTS sanitizer_nolibc_test_main.${arch}.o
                                  -Wl,-whole-archive
@@ -137,18 +145,6 @@ if(COMPILER_RT_CAN_EXECUTE_TESTS)
   if(CAN_TARGET_i386)
     add_sanitizer_tests_for_arch(i386)
   endif()
-
-  # Run unittests as a part of lit testsuite.
-  configure_lit_site_cfg(
-    ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.in
-    ${CMAKE_CURRENT_BINARY_DIR}/lit.site.cfg
-    )
-
-  add_lit_testsuite(check-sanitizer "Running sanitizer library unittests"
-    ${CMAKE_CURRENT_BINARY_DIR}
-    DEPENDS SanitizerUnitTests
-    )
-  set_target_properties(check-sanitizer PROPERTIES FOLDER "Sanitizer unittests")
 endif()
 
 if(ANDROID)

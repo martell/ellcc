@@ -37,8 +37,13 @@ extern "C" void LLVMInitializePowerPCTarget() {
 static std::string getDataLayoutString(const PPCSubtarget &ST) {
   const Triple &T = ST.getTargetTriple();
 
-  // PPC is big endian.
-  std::string Ret = "E";
+  std::string Ret;
+
+  // Most PPC* platforms are big endian, PPC64LE is little endian.
+  if (ST.isLittleEndian())
+    Ret = "e";
+  else
+    Ret = "E";
 
   Ret += DataLayout::getManglingComponent(T);
 
@@ -70,15 +75,11 @@ PPCTargetMachine::PPCTargetMachine(const Target &T, StringRef TT,
                                    CodeGenOpt::Level OL,
                                    bool is64Bit)
   : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
-    Subtarget(TT, CPU, FS, is64Bit),
+    Subtarget(TT, CPU, FS, is64Bit, OL),
     DL(getDataLayoutString(Subtarget)), InstrInfo(*this),
     FrameLowering(Subtarget), JITInfo(*this, is64Bit),
     TLInfo(*this), TSInfo(*this),
     InstrItins(Subtarget.getInstrItineraryData()) {
-
-  // The binutils for the BG/P are too old for CFI.
-  if (Subtarget.isBGP())
-    setMCUseCFI(false);
   initAsmInfo();
 }
 
@@ -158,6 +159,8 @@ bool PPCPassConfig::addInstSelector() {
   if (!DisableCTRLoops && getOptLevel() != CodeGenOpt::None)
     addPass(createPPCCTRLoopsVerify());
 #endif
+
+  addPass(createPPCVSXCopyPass());
 
   return false;
 }

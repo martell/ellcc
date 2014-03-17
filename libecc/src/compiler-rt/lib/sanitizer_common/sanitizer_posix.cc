@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "sanitizer_platform.h"
-#if SANITIZER_LINUX || SANITIZER_MAC
+#if SANITIZER_POSIX
 
 #include "sanitizer_common.h"
 #include "sanitizer_libc.h"
@@ -38,6 +38,8 @@ uptr GetMaxVirtualAddress() {
   // Note that with 'ulimit -s unlimited' the stack is moved away from the top
   // of the address space, so simply checking the stack address is not enough.
   return (1ULL << 44) - 1;  // 0x00000fffffffffffUL
+# elif defined(__aarch64__)
+  return (1ULL << 39) - 1;
 # else
   return (1ULL << 47) - 1;  // 0x00007fffffffffffUL;
 # endif
@@ -176,7 +178,7 @@ void DumpProcessMap() {
   MemoryMappingLayout proc_maps(/*cache_enabled*/true);
   uptr start, end;
   const sptr kBufSize = 4095;
-  char *filename = (char*)MmapOrDie(kBufSize, __FUNCTION__);
+  char *filename = (char*)MmapOrDie(kBufSize, __func__);
   Report("Process memory map follows:\n");
   while (proc_maps.Next(&start, &end, /* file_offset */0,
                         filename, kBufSize, /* protection */0)) {
@@ -267,4 +269,4 @@ bool GetCodeRangeForFile(const char *module, uptr *start, uptr *end) {
 
 }  // namespace __sanitizer
 
-#endif  // SANITIZER_LINUX || SANITIZER_MAC
+#endif  // SANITIZER_POSIX

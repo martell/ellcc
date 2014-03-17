@@ -23,11 +23,11 @@ public:
     TargetLoweringObjectFileELF()
   {}
 
-  const MCExpr *getTTypeGlobalReference(const GlobalValue *GV, Mangler &Mang,
-                                        MachineModuleInfo *MMI,
-                                        unsigned Encoding,
-                                        MCStreamer &Streamer) const
-      LLVM_OVERRIDE;
+  const MCExpr *
+  getTTypeGlobalReference(const GlobalValue *GV, unsigned Encoding,
+                          Mangler &Mang, const TargetMachine &TM,
+                          MachineModuleInfo *MMI,
+                          MCStreamer &Streamer) const override;
 };
 
 } // end namespace llvm

@@ -14,11 +14,11 @@ define void @bar() {
        ret void;
 }
 
-; CHECK: L_foo:                                   ## @foo
+; CHECK: l_foo:                                   ## @foo
 ; CHECK-NEXT: Ltmp0:
 
 ; CHECK: _bar:                                   ## @bar
-; CHECK-NEXT: Ltmp3:
+; CHECK-NEXT: Ltmp2:
 
 ; CHECK: ## FDE CIE Offset
 ; CHECK-NEXT: .long
@@ -30,15 +30,15 @@ define void @bar() {
 ; CHECK: ## FDE CIE Offset
 ; CHECK-NEXT: .long
 ; CHECK-NEXT: Ltmp[[NUM1:[0-9]*]]:
-; CHECK-NEXT: Ltmp[[NUM2:[0-9]*]] = Ltmp3-Ltmp[[NUM1]]   ## FDE initial location
+; CHECK-NEXT: Ltmp[[NUM2:[0-9]*]] = Ltmp2-Ltmp[[NUM1]]   ## FDE initial location
 ; CHECK-NEXT: {{.quad|.long}}   Ltmp[[NUM2]]
 
 
-; OLD: L_foo:                                   ## @foo
+; OLD: l_foo:                                   ## @foo
 ; OLD-NEXT: Ltmp0:
 
 ; OLD: _bar:                                   ## @bar
-; OLD-NEXT: Ltmp3:
+; OLD-NEXT: Ltmp2:
 
 ; OLD: ## FDE CIE Offset
 ; OLD-NEXT: .long
@@ -48,4 +48,4 @@ define void @bar() {
 ; OLD: ## FDE CIE Offset
 ; OLD-NEXT: .long
 ; OLD-NEXT: Ltmp[[NUM1:[0-9]*]]:
-; OLD-NEXT: {{.quad|.long}} Ltmp3-Ltmp[[NUM1]]          ## FDE initial location
+; OLD-NEXT: {{.quad|.long}} Ltmp2-Ltmp[[NUM1]]          ## FDE initial location

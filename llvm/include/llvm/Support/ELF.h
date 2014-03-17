@@ -679,7 +679,7 @@ enum {
 };
 
 // ARM Specific e_flags
-enum LLVM_ENUM_INT_TYPE(unsigned) {
+enum : unsigned {
   EF_ARM_SOFT_FLOAT =     0x00000200U,
   EF_ARM_VFP_FLOAT =      0x00000400U,
   EF_ARM_EABI_UNKNOWN =   0x00000000U,
@@ -829,7 +829,7 @@ enum {
 };
 
 // Mips Specific e_flags
-enum LLVM_ENUM_INT_TYPE(unsigned) {
+enum : unsigned {
   EF_MIPS_NOREORDER = 0x00000001, // Don't reorder instructions
   EF_MIPS_PIC       = 0x00000002, // Position independent code
   EF_MIPS_CPIC      = 0x00000004, // Call object with Position independent code
@@ -926,7 +926,8 @@ enum {
   R_MICROMIPS_TLS_DTPREL_LO16 = 165,
   R_MICROMIPS_TLS_TPREL_HI16  = 169,
   R_MICROMIPS_TLS_TPREL_LO16  = 170,
-  R_MIPS_NUM               = 218
+  R_MIPS_NUM               = 218,
+  R_MIPS_PC32              = 248
 };
 
 // Special values for the st_other field in the symbol table entry for MIPS.
@@ -1250,7 +1251,7 @@ enum {
 };
 
 // Section types.
-enum LLVM_ENUM_INT_TYPE(unsigned) {
+enum : unsigned {
   SHT_NULL          = 0,  // No associated section (inactive entry).
   SHT_PROGBITS      = 1,  // Program-defined contents.
   SHT_SYMTAB        = 2,  // Symbol table.
@@ -1298,7 +1299,7 @@ enum LLVM_ENUM_INT_TYPE(unsigned) {
 };
 
 // Section flags.
-enum LLVM_ENUM_INT_TYPE(unsigned) {
+enum : unsigned {
   // Section data should be writable during execution.
   SHF_WRITE = 0x1,
 
@@ -1390,7 +1391,7 @@ enum LLVM_ENUM_INT_TYPE(unsigned) {
 };
 
 // Section Group Flags
-enum LLVM_ENUM_INT_TYPE(unsigned) {
+enum : unsigned {
   GRP_COMDAT = 0x1,
   GRP_MASKOS = 0x0ff00000,
   GRP_MASKPROC = 0xf0000000
@@ -1612,7 +1613,7 @@ enum {
 };
 
 // Segment flag bits.
-enum LLVM_ENUM_INT_TYPE(unsigned) {
+enum : unsigned {
   PF_X        = 1,         // Execute
   PF_W        = 2,         // Write
   PF_R        = 4,         // Read

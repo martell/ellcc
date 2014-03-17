@@ -23,6 +23,7 @@
 using namespace llvm;
 
 #define MRM_MAPPING     \
+  MAP(C0, 32)           \
   MAP(C1, 33)           \
   MAP(C2, 34)           \
   MAP(C3, 35)           \
@@ -31,23 +32,48 @@ using namespace llvm;
   MAP(C9, 38)           \
   MAP(CA, 39)           \
   MAP(CB, 40)           \
-  MAP(E8, 41)           \
-  MAP(F0, 42)           \
-  MAP(F8, 45)           \
-  MAP(F9, 46)           \
-  MAP(D0, 47)           \
-  MAP(D1, 48)           \
-  MAP(D4, 49)           \
-  MAP(D5, 50)           \
-  MAP(D6, 51)           \
-  MAP(D8, 52)           \
-  MAP(D9, 53)           \
-  MAP(DA, 54)           \
-  MAP(DB, 55)           \
-  MAP(DC, 56)           \
-  MAP(DD, 57)           \
-  MAP(DE, 58)           \
-  MAP(DF, 59)
+  MAP(D0, 41)           \
+  MAP(D1, 42)           \
+  MAP(D4, 43)           \
+  MAP(D5, 44)           \
+  MAP(D6, 45)           \
+  MAP(D8, 46)           \
+  MAP(D9, 47)           \
+  MAP(DA, 48)           \
+  MAP(DB, 49)           \
+  MAP(DC, 50)           \
+  MAP(DD, 51)           \
+  MAP(DE, 52)           \
+  MAP(DF, 53)           \
+  MAP(E0, 54)           \
+  MAP(E1, 55)           \
+  MAP(E2, 56)           \
+  MAP(E3, 57)           \
+  MAP(E4, 58)           \
+  MAP(E5, 59)           \
+  MAP(E8, 60)           \
+  MAP(E9, 61)           \
+  MAP(EA, 62)           \
+  MAP(EB, 63)           \
+  MAP(EC, 64)           \
+  MAP(ED, 65)           \
+  MAP(EE, 66)           \
+  MAP(F0, 67)           \
+  MAP(F1, 68)           \
+  MAP(F2, 69)           \
+  MAP(F3, 70)           \
+  MAP(F4, 71)           \
+  MAP(F5, 72)           \
+  MAP(F6, 73)           \
+  MAP(F7, 74)           \
+  MAP(F8, 75)           \
+  MAP(F9, 76)           \
+  MAP(FA, 77)           \
+  MAP(FB, 78)           \
+  MAP(FC, 79)           \
+  MAP(FD, 80)           \
+  MAP(FE, 81)           \
+  MAP(FF, 82)
 
 // A clone of X86 since we can't depend on something that is generated.
 namespace X86Local {
@@ -63,12 +89,13 @@ namespace X86Local {
     RawFrmSrc   = 8,
     RawFrmDst   = 9,
     RawFrmDstSrc = 10,
+    RawFrmImm8  = 11,
+    RawFrmImm16 = 12,
+    MRMXr = 14, MRMXm = 15,
     MRM0r = 16, MRM1r = 17, MRM2r = 18, MRM3r = 19,
     MRM4r = 20, MRM5r = 21, MRM6r = 22, MRM7r = 23,
     MRM0m = 24, MRM1m = 25, MRM2m = 26, MRM3m = 27,
     MRM4m = 28, MRM5m = 29, MRM6m = 30, MRM7m = 31,
-    RawFrmImm8  = 43,
-    RawFrmImm16 = 44,
 #define MAP(from, to) MRM_##from = to,
     MRM_MAPPING
 #undef MAP
@@ -76,14 +103,11 @@ namespace X86Local {
   };
 
   enum {
-    OB = 0, TB = 1, T8 = 2, TA = 3, XOP8 = 4, XOP9 = 5, XOPA = 6,
-    D8 = 7,  D9 = 8,  DA = 9,  DB = 10,
-    DC = 11, DD = 12, DE = 13, DF = 14,
-    A6 = 15, A7 = 16
+    OB = 0, TB = 1, T8 = 2, TA = 3, XOP8 = 4, XOP9 = 5, XOPA = 6
   };
 
   enum {
-    PD = 1, XS = 2, XD = 3
+    PS = 1, PD = 2, XS = 3, XD = 4
   };
 
   enum {
@@ -95,79 +119,7 @@ namespace X86Local {
   };
 }
 
-// If rows are added to the opcode extension tables, then corresponding entries
-// must be added here.
-//
-// If the row corresponds to a single byte (i.e., 8f), then add an entry for
-// that byte to ONE_BYTE_EXTENSION_TABLES.
-//
-// If the row corresponds to two bytes where the first is 0f, add an entry for
-// the second byte to TWO_BYTE_EXTENSION_TABLES.
-//
-// If the row corresponds to some other set of bytes, you will need to modify
-// the code in RecognizableInstr::emitDecodePath() as well, and add new prefixes
-// to the X86 TD files, except in two cases: if the first two bytes of such a
-// new combination are 0f 38 or 0f 3a, you just have to add maps called
-// THREE_BYTE_38_EXTENSION_TABLES and THREE_BYTE_3A_EXTENSION_TABLES and add a
-// switch(Opcode) just below the case X86Local::T8: or case X86Local::TA: line
-// in RecognizableInstr::emitDecodePath().
-
-#define ONE_BYTE_EXTENSION_TABLES \
-  EXTENSION_TABLE(80)             \
-  EXTENSION_TABLE(81)             \
-  EXTENSION_TABLE(82)             \
-  EXTENSION_TABLE(83)             \
-  EXTENSION_TABLE(8f)             \
-  EXTENSION_TABLE(c0)             \
-  EXTENSION_TABLE(c1)             \
-  EXTENSION_TABLE(c6)             \
-  EXTENSION_TABLE(c7)             \
-  EXTENSION_TABLE(d0)             \
-  EXTENSION_TABLE(d1)             \
-  EXTENSION_TABLE(d2)             \
-  EXTENSION_TABLE(d3)             \
-  EXTENSION_TABLE(f6)             \
-  EXTENSION_TABLE(f7)             \
-  EXTENSION_TABLE(fe)             \
-  EXTENSION_TABLE(ff)
-
-#define TWO_BYTE_EXTENSION_TABLES \
-  EXTENSION_TABLE(00)             \
-  EXTENSION_TABLE(01)             \
-  EXTENSION_TABLE(0d)             \
-  EXTENSION_TABLE(18)             \
-  EXTENSION_TABLE(71)             \
-  EXTENSION_TABLE(72)             \
-  EXTENSION_TABLE(73)             \
-  EXTENSION_TABLE(ae)             \
-  EXTENSION_TABLE(ba)             \
-  EXTENSION_TABLE(c7)
-
-#define THREE_BYTE_38_EXTENSION_TABLES \
-  EXTENSION_TABLE(F3)
-
-#define XOP9_MAP_EXTENSION_TABLES \
-  EXTENSION_TABLE(01)             \
-  EXTENSION_TABLE(02)
-
 using namespace X86Disassembler;
-
-/// needsModRMForDecode - Indicates whether a particular instruction requires a
-///   ModR/M byte for the instruction to be properly decoded.  For example, a
-///   MRMDestReg instruction needs the Mod field in the ModR/M byte to be set to
-///   0b11.
-///
-/// @param form - The form of the instruction.
-/// @return     - true if the form implies that a ModR/M byte is required, false
-///               otherwise.
-static bool needsModRMForDecode(uint8_t form) {
-  return (form == X86Local::MRMDestReg    ||
-          form == X86Local::MRMDestMem    ||
-          form == X86Local::MRMSrcReg     ||
-          form == X86Local::MRMSrcMem     ||
-          (form >= X86Local::MRM0r && form <= X86Local::MRM7r) ||
-          (form >= X86Local::MRM0m && form <= X86Local::MRM7m));
-}
 
 /// isRegFormat - Indicates whether a particular form requires the Mod field of
 ///   the ModR/M byte to be 0b11.
@@ -178,6 +130,7 @@ static bool needsModRMForDecode(uint8_t form) {
 static bool isRegFormat(uint8_t form) {
   return (form == X86Local::MRMDestReg ||
           form == X86Local::MRMSrcReg  ||
+          form == X86Local::MRMXr ||
           (form >= X86Local::MRM0r && form <= X86Local::MRM7r));
 }
 
@@ -232,13 +185,13 @@ RecognizableInstr::RecognizableInstr(DisassemblerTables &tables,
     return;
   }
 
-  OpPrefix = byteFromRec(Rec->getValueAsDef("OpPrefix"), "Value");
-  OpMap    = byteFromRec(Rec->getValueAsDef("OpMap"), "Value");
+  OpPrefix = byteFromRec(Rec, "OpPrefixBits");
+  OpMap    = byteFromRec(Rec, "OpMapBits");
   Opcode   = byteFromRec(Rec, "Opcode");
   Form     = byteFromRec(Rec, "FormBits");
-  Encoding = byteFromRec(Rec->getValueAsDef("OpEnc"), "Value");
+  Encoding = byteFromRec(Rec, "OpEncBits");
 
-  OpSize           = byteFromRec(Rec->getValueAsDef("OpSize"), "Value");
+  OpSize           = byteFromRec(Rec, "OpSizeBits");
   HasAdSizePrefix  = Rec->getValueAsBit("hasAdSizePrefix");
   HasREX_WPrefix   = Rec->getValueAsBit("hasREX_WPrefix");
   HasVEX_4V        = Rec->getValueAsBit("hasVEX_4V");
@@ -250,8 +203,6 @@ RecognizableInstr::RecognizableInstr(DisassemblerTables &tables,
   HasEVEX_K        = Rec->getValueAsBit("hasEVEX_K");
   HasEVEX_KZ       = Rec->getValueAsBit("hasEVEX_Z");
   HasEVEX_B        = Rec->getValueAsBit("hasEVEX_B");
-  HasLockPrefix    = Rec->getValueAsBit("hasLockPrefix");
-  HasREPPrefix     = Rec->getValueAsBit("hasREPPrefix");
   IsCodeGenOnly    = Rec->getValueAsBit("isCodeGenOnly");
   ForceDisassemble = Rec->getValueAsBit("ForceDisassemble");
 
@@ -279,6 +230,17 @@ RecognizableInstr::RecognizableInstr(DisassemblerTables &tables,
     }
   }
 
+  if (Form == X86Local::Pseudo || (IsCodeGenOnly && !ForceDisassemble)) {
+    ShouldBeEmitted = false;
+    return;
+  }
+
+  // Special case since there is no attribute class for 64-bit and VEX
+  if (Name == "VMASKMOVDQU64") {
+    ShouldBeEmitted = false;
+    return;
+  }
+
   ShouldBeEmitted  = true;
 }
 
@@ -292,10 +254,10 @@ void RecognizableInstr::processInstr(DisassemblerTables &tables,
 
   RecognizableInstr recogInstr(tables, insn, uid);
 
-  recogInstr.emitInstructionSpecifier();
-
-  if (recogInstr.shouldBeEmitted())
+  if (recogInstr.shouldBeEmitted()) {
+    recogInstr.emitInstructionSpecifier();
     recogInstr.emitDecodePath(tables);
+  }
 }
 
 #define EVEX_KB(n) (HasEVEX_KZ && HasEVEX_B ? n##_KZ_B : \
@@ -319,8 +281,12 @@ InstructionContext RecognizableInstr::insnContext() const {
         insnContext = EVEX_KB(IC_EVEX_L_W_XS);
       else if (OpPrefix == X86Local::XD)
         insnContext = EVEX_KB(IC_EVEX_L_W_XD);
-      else
+      else if (OpPrefix == X86Local::PS)
         insnContext = EVEX_KB(IC_EVEX_L_W);
+      else {
+        errs() << "Instruction does not use a prefix: " << Name << "\n";
+        llvm_unreachable("Invalid prefix");
+      }
     } else if (HasVEX_LPrefix) {
       // VEX_L
       if (OpPrefix == X86Local::PD)
@@ -329,8 +295,12 @@ InstructionContext RecognizableInstr::insnContext() const {
         insnContext = EVEX_KB(IC_EVEX_L_XS);
       else if (OpPrefix == X86Local::XD)
         insnContext = EVEX_KB(IC_EVEX_L_XD);
-      else
+      else if (OpPrefix == X86Local::PS)
         insnContext = EVEX_KB(IC_EVEX_L);
+      else {
+        errs() << "Instruction does not use a prefix: " << Name << "\n";
+        llvm_unreachable("Invalid prefix");
+      }
     }
     else if (HasEVEX_L2Prefix && HasVEX_WPrefix) {
       // EVEX_L2 & VEX_W
@@ -340,8 +310,12 @@ InstructionContext RecognizableInstr::insnContext() const {
         insnContext = EVEX_KB(IC_EVEX_L2_W_XS);
       else if (OpPrefix == X86Local::XD)
         insnContext = EVEX_KB(IC_EVEX_L2_W_XD);
-      else
+      else if (OpPrefix == X86Local::PS)
         insnContext = EVEX_KB(IC_EVEX_L2_W);
+      else {
+        errs() << "Instruction does not use a prefix: " << Name << "\n";
+        llvm_unreachable("Invalid prefix");
+      }
     } else if (HasEVEX_L2Prefix) {
       // EVEX_L2
       if (OpPrefix == X86Local::PD)
@@ -350,8 +324,12 @@ InstructionContext RecognizableInstr::insnContext() const {
         insnContext = EVEX_KB(IC_EVEX_L2_XD);
       else if (OpPrefix == X86Local::XS)
         insnContext = EVEX_KB(IC_EVEX_L2_XS);
-      else
+      else if (OpPrefix == X86Local::PS)
         insnContext = EVEX_KB(IC_EVEX_L2);
+      else {
+        errs() << "Instruction does not use a prefix: " << Name << "\n";
+        llvm_unreachable("Invalid prefix");
+      }
     }
     else if (HasVEX_WPrefix) {
       // VEX_W
@@ -361,8 +339,12 @@ InstructionContext RecognizableInstr::insnContext() const {
         insnContext = EVEX_KB(IC_EVEX_W_XS);
       else if (OpPrefix == X86Local::XD)
         insnContext = EVEX_KB(IC_EVEX_W_XD);
-      else
+      else if (OpPrefix == X86Local::PS)
         insnContext = EVEX_KB(IC_EVEX_W);
+      else {
+        errs() << "Instruction does not use a prefix: " << Name << "\n";
+        llvm_unreachable("Invalid prefix");
+      }
     }
     // No L, no W
     else if (OpPrefix == X86Local::PD)
@@ -382,8 +364,12 @@ InstructionContext RecognizableInstr::insnContext() const {
         insnContext = IC_VEX_L_W_XS;
       else if (OpPrefix == X86Local::XD)
         insnContext = IC_VEX_L_W_XD;
-      else
+      else if (OpPrefix == X86Local::PS)
         insnContext = IC_VEX_L_W;
+      else {
+        errs() << "Instruction does not use a prefix: " << Name << "\n";
+        llvm_unreachable("Invalid prefix");
+      }
     } else if (OpPrefix == X86Local::PD && HasVEX_LPrefix)
       insnContext = IC_VEX_L_OPSIZE;
     else if (OpPrefix == X86Local::PD && HasVEX_WPrefix)
@@ -398,16 +384,20 @@ InstructionContext RecognizableInstr::insnContext() const {
       insnContext = IC_VEX_W_XS;
     else if (HasVEX_WPrefix && OpPrefix == X86Local::XD)
       insnContext = IC_VEX_W_XD;
-    else if (HasVEX_WPrefix)
+    else if (HasVEX_WPrefix && OpPrefix == X86Local::PS)
       insnContext = IC_VEX_W;
-    else if (HasVEX_LPrefix)
+    else if (HasVEX_LPrefix && OpPrefix == X86Local::PS)
       insnContext = IC_VEX_L;
     else if (OpPrefix == X86Local::XD)
       insnContext = IC_VEX_XD;
     else if (OpPrefix == X86Local::XS)
       insnContext = IC_VEX_XS;
-    else
+    else if (OpPrefix == X86Local::PS)
       insnContext = IC_VEX;
+    else {
+      errs() << "Instruction does not use a prefix: " << Name << "\n";
+      llvm_unreachable("Invalid prefix");
+    }
   } else if (Is64Bit || HasREX_WPrefix) {
     if (HasREX_WPrefix && (OpSize == X86Local::OpSize16 || OpPrefix == X86Local::PD))
       insnContext = IC_64BIT_REXW_OPSIZE;
@@ -442,54 +432,13 @@ InstructionContext RecognizableInstr::insnContext() const {
       insnContext = IC_ADSIZE;
     else if (OpPrefix == X86Local::XD)
       insnContext = IC_XD;
-    else if (OpPrefix == X86Local::XS || HasREPPrefix)
+    else if (OpPrefix == X86Local::XS)
       insnContext = IC_XS;
     else
       insnContext = IC;
   }
 
   return insnContext;
-}
-
-RecognizableInstr::filter_ret RecognizableInstr::filter() const {
-  ///////////////////
-  // FILTER_STRONG
-  //
-
-  // Filter out intrinsics
-
-  assert(Rec->isSubClassOf("X86Inst") && "Can only filter X86 instructions");
-
-  if (Form == X86Local::Pseudo || (IsCodeGenOnly && !ForceDisassemble))
-    return FILTER_STRONG;
-
-
-  // Filter out artificial instructions but leave in the LOCK_PREFIX so it is
-  // printed as a separate "instruction".
-
-
-  /////////////////
-  // FILTER_WEAK
-  //
-
-
-  // Filter out instructions with a LOCK prefix;
-  //   prefer forms that do not have the prefix
-  if (HasLockPrefix)
-    return FILTER_WEAK;
-
-  // Special cases.
-
-  if (Name == "VMASKMOVDQU64")
-    return FILTER_WEAK;
-
-  // XACQUIRE and XRELEASE reuse REPNE and REP respectively.
-  // For now, just prefer the REP versions.
-  if (Name == "XACQUIRE_PREFIX" ||
-      Name == "XRELEASE_PREFIX")
-    return FILTER_WEAK;
-
-  return FILTER_NORMAL;
 }
 
 void RecognizableInstr::handleOperand(bool optional, unsigned &operandIndex,
@@ -526,20 +475,6 @@ void RecognizableInstr::handleOperand(bool optional, unsigned &operandIndex,
 
 void RecognizableInstr::emitInstructionSpecifier() {
   Spec->name       = Name;
-
-  if (!ShouldBeEmitted)
-    return;
-
-  switch (filter()) {
-  case FILTER_WEAK:
-    Spec->filtered = true;
-    break;
-  case FILTER_STRONG:
-    ShouldBeEmitted = false;
-    return;
-  case FILTER_NORMAL:
-    break;
-  }
 
   Spec->insnContext = insnContext();
 
@@ -741,6 +676,7 @@ void RecognizableInstr::emitInstructionSpecifier() {
       HANDLE_OPTIONAL(immediate)
     HANDLE_OPTIONAL(immediate) // above might be a register in 7:4
     break;
+  case X86Local::MRMXr:
   case X86Local::MRM0r:
   case X86Local::MRM1r:
   case X86Local::MRM2r:
@@ -767,6 +703,7 @@ void RecognizableInstr::emitInstructionSpecifier() {
     HANDLE_OPTIONAL(relocation)
     HANDLE_OPTIONAL(immediate)
     break;
+  case X86Local::MRMXm:
   case X86Local::MRM0m:
   case X86Local::MRM1m:
   case X86Local::MRM2m:
@@ -816,30 +753,23 @@ void RecognizableInstr::emitInstructionSpecifier() {
       HANDLE_OPERAND(relocation)
     }
     break;
-  case X86Local::MRM_C1:
-  case X86Local::MRM_C2:
-  case X86Local::MRM_C3:
-  case X86Local::MRM_C4:
-  case X86Local::MRM_C8:
-  case X86Local::MRM_C9:
-  case X86Local::MRM_CA:
-  case X86Local::MRM_CB:
-  case X86Local::MRM_E8:
-  case X86Local::MRM_F0:
-  case X86Local::MRM_F9:
-  case X86Local::MRM_D0:
-  case X86Local::MRM_D1:
-  case X86Local::MRM_D4:
-  case X86Local::MRM_D5:
-  case X86Local::MRM_D6:
-  case X86Local::MRM_D8:
-  case X86Local::MRM_D9:
-  case X86Local::MRM_DA:
-  case X86Local::MRM_DB:
-  case X86Local::MRM_DC:
-  case X86Local::MRM_DD:
-  case X86Local::MRM_DE:
-  case X86Local::MRM_DF:
+  case X86Local::MRM_C0: case X86Local::MRM_C1: case X86Local::MRM_C2:
+  case X86Local::MRM_C3: case X86Local::MRM_C4: case X86Local::MRM_C8:
+  case X86Local::MRM_C9: case X86Local::MRM_CA: case X86Local::MRM_CB:
+  case X86Local::MRM_D0: case X86Local::MRM_D1: case X86Local::MRM_D4:
+  case X86Local::MRM_D5: case X86Local::MRM_D6: case X86Local::MRM_D8:
+  case X86Local::MRM_D9: case X86Local::MRM_DA: case X86Local::MRM_DB:
+  case X86Local::MRM_DC: case X86Local::MRM_DD: case X86Local::MRM_DE:
+  case X86Local::MRM_DF: case X86Local::MRM_E0: case X86Local::MRM_E1:
+  case X86Local::MRM_E2: case X86Local::MRM_E3: case X86Local::MRM_E4:
+  case X86Local::MRM_E5: case X86Local::MRM_E8: case X86Local::MRM_E9:
+  case X86Local::MRM_EA: case X86Local::MRM_EB: case X86Local::MRM_EC:
+  case X86Local::MRM_ED: case X86Local::MRM_EE: case X86Local::MRM_F0:
+  case X86Local::MRM_F1: case X86Local::MRM_F2: case X86Local::MRM_F3:
+  case X86Local::MRM_F4: case X86Local::MRM_F5: case X86Local::MRM_F6:
+  case X86Local::MRM_F7: case X86Local::MRM_F9: case X86Local::MRM_FA:
+  case X86Local::MRM_FB: case X86Local::MRM_FC: case X86Local::MRM_FD:
+  case X86Local::MRM_FE: case X86Local::MRM_FF:
     // Ignored.
     break;
   }
@@ -863,259 +793,50 @@ void RecognizableInstr::emitDecodePath(DisassemblerTables &tables) const {
 
   switch (OpMap) {
   default: llvm_unreachable("Invalid map!");
-  // Extended two-byte opcodes can start with 66 0f, f2 0f, f3 0f, or 0f
-  case X86Local::TB:
-    opcodeType = TWOBYTE;
-
-    switch (Opcode) {
-    default:
-      if (needsModRMForDecode(Form))
-        filter = new ModFilter(isRegFormat(Form));
-      else
-        filter = new DumbFilter();
-      break;
-#define EXTENSION_TABLE(n) case 0x##n:
-    TWO_BYTE_EXTENSION_TABLES
-#undef EXTENSION_TABLE
-      switch (Form) {
-      default:
-        llvm_unreachable("Unhandled two-byte extended opcode");
-      case X86Local::MRM0r:
-      case X86Local::MRM1r:
-      case X86Local::MRM2r:
-      case X86Local::MRM3r:
-      case X86Local::MRM4r:
-      case X86Local::MRM5r:
-      case X86Local::MRM6r:
-      case X86Local::MRM7r:
-        filter = new ExtendedFilter(true, Form - X86Local::MRM0r);
-        break;
-      case X86Local::MRM0m:
-      case X86Local::MRM1m:
-      case X86Local::MRM2m:
-      case X86Local::MRM3m:
-      case X86Local::MRM4m:
-      case X86Local::MRM5m:
-      case X86Local::MRM6m:
-      case X86Local::MRM7m:
-        filter = new ExtendedFilter(false, Form - X86Local::MRM0m);
-        break;
-      MRM_MAPPING
-      } // switch (Form)
-      break;
-    } // switch (Opcode)
-    opcodeToSet = Opcode;
-    break;
-  case X86Local::T8:
-    opcodeType = THREEBYTE_38;
-    switch (Opcode) {
-    default:
-      if (needsModRMForDecode(Form))
-        filter = new ModFilter(isRegFormat(Form));
-      else
-        filter = new DumbFilter();
-      break;
-#define EXTENSION_TABLE(n) case 0x##n:
-    THREE_BYTE_38_EXTENSION_TABLES
-#undef EXTENSION_TABLE
-      switch (Form) {
-      default:
-        llvm_unreachable("Unhandled two-byte extended opcode");
-      case X86Local::MRM0r:
-      case X86Local::MRM1r:
-      case X86Local::MRM2r:
-      case X86Local::MRM3r:
-      case X86Local::MRM4r:
-      case X86Local::MRM5r:
-      case X86Local::MRM6r:
-      case X86Local::MRM7r:
-        filter = new ExtendedFilter(true, Form - X86Local::MRM0r);
-        break;
-      case X86Local::MRM0m:
-      case X86Local::MRM1m:
-      case X86Local::MRM2m:
-      case X86Local::MRM3m:
-      case X86Local::MRM4m:
-      case X86Local::MRM5m:
-      case X86Local::MRM6m:
-      case X86Local::MRM7m:
-        filter = new ExtendedFilter(false, Form - X86Local::MRM0m);
-        break;
-      MRM_MAPPING
-      } // switch (Form)
-      break;
-    } // switch (Opcode)
-    opcodeToSet = Opcode;
-    break;
-  case X86Local::TA:
-    opcodeType = THREEBYTE_3A;
-    if (needsModRMForDecode(Form))
-      filter = new ModFilter(isRegFormat(Form));
-    else
-      filter = new DumbFilter();
-    opcodeToSet = Opcode;
-    break;
-  case X86Local::A6:
-    opcodeType = THREEBYTE_A6;
-    if (needsModRMForDecode(Form))
-      filter = new ModFilter(isRegFormat(Form));
-    else
-      filter = new DumbFilter();
-    opcodeToSet = Opcode;
-    break;
-  case X86Local::A7:
-    opcodeType = THREEBYTE_A7;
-    if (needsModRMForDecode(Form))
-      filter = new ModFilter(isRegFormat(Form));
-    else
-      filter = new DumbFilter();
-    opcodeToSet = Opcode;
-    break;
-  case X86Local::XOP8:
-    opcodeType = XOP8_MAP;
-    if (needsModRMForDecode(Form))
-      filter = new ModFilter(isRegFormat(Form));
-    else
-      filter = new DumbFilter();
-    opcodeToSet = Opcode;
-    break;
-  case X86Local::XOP9:
-    opcodeType = XOP9_MAP;
-    switch (Opcode) {
-    default:
-      if (needsModRMForDecode(Form))
-        filter = new ModFilter(isRegFormat(Form));
-      else
-        filter = new DumbFilter();
-      break;
-#define EXTENSION_TABLE(n) case 0x##n:
-    XOP9_MAP_EXTENSION_TABLES
-#undef EXTENSION_TABLE
-      switch (Form) {
-      default:
-        llvm_unreachable("Unhandled XOP9 extended opcode");
-      case X86Local::MRM0r:
-      case X86Local::MRM1r:
-      case X86Local::MRM2r:
-      case X86Local::MRM3r:
-      case X86Local::MRM4r:
-      case X86Local::MRM5r:
-      case X86Local::MRM6r:
-      case X86Local::MRM7r:
-        filter = new ExtendedFilter(true, Form - X86Local::MRM0r);
-        break;
-      case X86Local::MRM0m:
-      case X86Local::MRM1m:
-      case X86Local::MRM2m:
-      case X86Local::MRM3m:
-      case X86Local::MRM4m:
-      case X86Local::MRM5m:
-      case X86Local::MRM6m:
-      case X86Local::MRM7m:
-        filter = new ExtendedFilter(false, Form - X86Local::MRM0m);
-        break;
-      MRM_MAPPING
-      } // switch (Form)
-      break;
-    } // switch (Opcode)
-    opcodeToSet = Opcode;
-    break;
-  case X86Local::XOPA:
-    opcodeType = XOPA_MAP;
-    if (needsModRMForDecode(Form))
-      filter = new ModFilter(isRegFormat(Form));
-    else
-      filter = new DumbFilter();
-    opcodeToSet = Opcode;
-    break;
-  case X86Local::D8:
-  case X86Local::D9:
-  case X86Local::DA:
-  case X86Local::DB:
-  case X86Local::DC:
-  case X86Local::DD:
-  case X86Local::DE:
-  case X86Local::DF:
-    assert(Opcode >= 0xc0 && "Unexpected opcode for an escape opcode");
-    assert(Form == X86Local::RawFrm);
-    opcodeType = ONEBYTE;
-    filter = new ExactFilter(Opcode);
-    opcodeToSet = 0xd8 + (OpMap - X86Local::D8);
-    break;
   case X86Local::OB:
-    opcodeType = ONEBYTE;
-    switch (Opcode) {
-#define EXTENSION_TABLE(n) case 0x##n:
-    ONE_BYTE_EXTENSION_TABLES
-#undef EXTENSION_TABLE
-      switch (Form) {
-      default:
-        llvm_unreachable("Fell through the cracks of a single-byte "
-                         "extended opcode");
-      case X86Local::MRM0r:
-      case X86Local::MRM1r:
-      case X86Local::MRM2r:
-      case X86Local::MRM3r:
-      case X86Local::MRM4r:
-      case X86Local::MRM5r:
-      case X86Local::MRM6r:
-      case X86Local::MRM7r:
-        filter = new ExtendedFilter(true, Form - X86Local::MRM0r);
-        break;
-      case X86Local::MRM0m:
-      case X86Local::MRM1m:
-      case X86Local::MRM2m:
-      case X86Local::MRM3m:
-      case X86Local::MRM4m:
-      case X86Local::MRM5m:
-      case X86Local::MRM6m:
-      case X86Local::MRM7m:
-        filter = new ExtendedFilter(false, Form - X86Local::MRM0m);
-        break;
-      MRM_MAPPING
-      } // switch (Form)
-      break;
-    case 0xd8:
-    case 0xd9:
-    case 0xda:
-    case 0xdb:
-    case 0xdc:
-    case 0xdd:
-    case 0xde:
-    case 0xdf:
-      switch (Form) {
-      default:
-        llvm_unreachable("Unhandled escape opcode form");
-      case X86Local::MRM0r:
-      case X86Local::MRM1r:
-      case X86Local::MRM2r:
-      case X86Local::MRM3r:
-      case X86Local::MRM4r:
-      case X86Local::MRM5r:
-      case X86Local::MRM6r:
-      case X86Local::MRM7r:
-        filter = new ExtendedFilter(true, Form - X86Local::MRM0r);
-        break;
-      case X86Local::MRM0m:
-      case X86Local::MRM1m:
-      case X86Local::MRM2m:
-      case X86Local::MRM3m:
-      case X86Local::MRM4m:
-      case X86Local::MRM5m:
-      case X86Local::MRM6m:
-      case X86Local::MRM7m:
-        filter = new ExtendedFilter(false, Form - X86Local::MRM0m);
-        break;
-      } // switch (Form)
-      break;
+  case X86Local::TB:
+  case X86Local::T8:
+  case X86Local::TA:
+  case X86Local::XOP8:
+  case X86Local::XOP9:
+  case X86Local::XOPA:
+    switch (OpMap) {
+    default: llvm_unreachable("Unexpected map!");
+    case X86Local::OB:   opcodeType = ONEBYTE;      break;
+    case X86Local::TB:   opcodeType = TWOBYTE;      break;
+    case X86Local::T8:   opcodeType = THREEBYTE_38; break;
+    case X86Local::TA:   opcodeType = THREEBYTE_3A; break;
+    case X86Local::XOP8: opcodeType = XOP8_MAP;     break;
+    case X86Local::XOP9: opcodeType = XOP9_MAP;     break;
+    case X86Local::XOPA: opcodeType = XOPA_MAP;     break;
+    }
+
+    switch (Form) {
     default:
-      if (needsModRMForDecode(Form))
-        filter = new ModFilter(isRegFormat(Form));
-      else
-        filter = new DumbFilter();
+      filter = new DumbFilter();
       break;
-    } // switch (Opcode)
+    case X86Local::MRMDestReg: case X86Local::MRMDestMem:
+    case X86Local::MRMSrcReg:  case X86Local::MRMSrcMem:
+    case X86Local::MRMXr:      case X86Local::MRMXm:
+      filter = new ModFilter(isRegFormat(Form));
+      break;
+    case X86Local::MRM0r:      case X86Local::MRM1r:
+    case X86Local::MRM2r:      case X86Local::MRM3r:
+    case X86Local::MRM4r:      case X86Local::MRM5r:
+    case X86Local::MRM6r:      case X86Local::MRM7r:
+      filter = new ExtendedFilter(true, Form - X86Local::MRM0r);
+      break;
+    case X86Local::MRM0m:      case X86Local::MRM1m:
+    case X86Local::MRM2m:      case X86Local::MRM3m:
+    case X86Local::MRM4m:      case X86Local::MRM5m:
+    case X86Local::MRM6m:      case X86Local::MRM7m:
+      filter = new ExtendedFilter(false, Form - X86Local::MRM0m);
+      break;
+    MRM_MAPPING
+    } // switch (Form)
+
     opcodeToSet = Opcode;
+    break;
   } // switch (OpMap)
 
   assert(opcodeType != (OpcodeType)-1 &&

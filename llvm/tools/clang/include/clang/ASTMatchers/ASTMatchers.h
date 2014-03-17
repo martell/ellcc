@@ -323,9 +323,13 @@ AST_MATCHER(Decl, isPrivate) {
 /// classTemplateSpecializationDecl(hasAnyTemplateArgument(
 ///     refersToType(asString("int"))))
 ///   matches the specialization \c A<int>
-AST_MATCHER_P(ClassTemplateSpecializationDecl, hasAnyTemplateArgument,
-              internal::Matcher<TemplateArgument>, InnerMatcher) {
-  llvm::ArrayRef<TemplateArgument> List = Node.getTemplateArgs().asArray();
+AST_POLYMORPHIC_MATCHER_P(
+    hasAnyTemplateArgument,
+    AST_POLYMORPHIC_SUPPORTED_TYPES_2(ClassTemplateSpecializationDecl,
+                                      TemplateSpecializationType),
+    internal::Matcher<TemplateArgument>, InnerMatcher) {
+  llvm::ArrayRef<TemplateArgument> List =
+      internal::getTemplateSpecializationArgs(Node);
   return matchesFirstInRange(InnerMatcher, List.begin(), List.end(), Finder,
                              Builder);
 }
@@ -419,12 +423,16 @@ AST_MATCHER_P(Expr, ignoringParenImpCasts,
 /// classTemplateSpecializationDecl(hasTemplateArgument(
 ///     1, refersToType(asString("int"))))
 ///   matches the specialization \c A<bool, int>
-AST_MATCHER_P2(ClassTemplateSpecializationDecl, hasTemplateArgument,
-               unsigned, N, internal::Matcher<TemplateArgument>, InnerMatcher) {
-  const TemplateArgumentList &List = Node.getTemplateArgs();
+AST_POLYMORPHIC_MATCHER_P2(
+    hasTemplateArgument,
+    AST_POLYMORPHIC_SUPPORTED_TYPES_2(ClassTemplateSpecializationDecl,
+                                      TemplateSpecializationType),
+    unsigned, N, internal::Matcher<TemplateArgument>, InnerMatcher) {
+  llvm::ArrayRef<TemplateArgument> List =
+      internal::getTemplateSpecializationArgs(Node);
   if (List.size() <= N)
     return false;
-  return InnerMatcher.matches(List.get(N), Finder, Builder);
+  return InnerMatcher.matches(List[N], Finder, Builder);
 }
 
 /// \brief Matches a TemplateArgument that refers to a certain type.
@@ -445,7 +453,8 @@ AST_MATCHER_P(TemplateArgument, refersToType,
   return InnerMatcher.matches(Node.getAsType(), Finder, Builder);
 }
 
-/// \brief Matches a TemplateArgument that refers to a certain declaration.
+/// \brief Matches a canonical TemplateArgument that refers to a certain
+/// declaration.
 ///
 /// Given
 /// \code
@@ -461,6 +470,24 @@ AST_MATCHER_P(TemplateArgument, refersToDeclaration,
               internal::Matcher<Decl>, InnerMatcher) {
   if (Node.getKind() == TemplateArgument::Declaration)
     return InnerMatcher.matches(*Node.getAsDecl(), Finder, Builder);
+  return false;
+}
+
+/// \brief Matches a sugar TemplateArgument that refers to a certain expression.
+///
+/// Given
+/// \code
+///   template<typename T> struct A {};
+///   struct B { B* next; };
+///   A<&B::next> a;
+/// \endcode
+/// templateSpecializationType(hasAnyTemplateArgument(
+///   isExpr(hasDescendant(declRefExpr(to(fieldDecl(hasName("next"))))))))
+///   matches the specialization \c A<&B::next> with \c fieldDecl(...) matching
+///     \c B::next
+AST_MATCHER_P(TemplateArgument, isExpr, internal::Matcher<Expr>, InnerMatcher) {
+  if (Node.getKind() == TemplateArgument::Expression)
+    return InnerMatcher.matches(*Node.getAsExpr(), Finder, Builder);
   return false;
 }
 
@@ -518,7 +545,7 @@ const internal::VariadicDynCastAllOfMatcher<
 ///
 /// Example matches y
 /// \code
-///   class X { void y() };
+///   class X { void y(); };
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<Decl, CXXMethodDecl> methodDecl;
 
@@ -2283,16 +2310,6 @@ AST_POLYMORPHIC_MATCHER_P(
           InnerMatcher.matches(*Condition, Finder, Builder));
 }
 
-namespace internal {
-struct NotEqualsBoundNodePredicate {
-  bool operator()(const internal::BoundNodesMap &Nodes) const {
-    return Nodes.getNode(ID) != Node;
-  }
-  std::string ID;
-  ast_type_traits::DynTypedNode Node;
-};
-} // namespace internal
-
 /// \brief Matches if a node equals a previously bound node.
 ///
 /// Matches a node if it equals the node previously bound to \p ID.
@@ -2619,6 +2636,20 @@ AST_MATCHER(CXXMethodDecl, isVirtual) {
   return Node.isVirtual();
 }
 
+/// \brief Matches if the given method declaration is pure.
+///
+/// Given
+/// \code
+///   class A {
+///    public:
+///     virtual void x() = 0;
+///   };
+/// \endcode
+///   matches A::x
+AST_MATCHER(CXXMethodDecl, isPure) {
+  return Node.isPure();
+}
+
 /// \brief Matches if the given method declaration is const.
 ///
 /// Given
@@ -2838,8 +2869,8 @@ AST_POLYMORPHIC_MATCHER(
 
 /// \brief Matches \c TypeLocs for which the given inner
 /// QualType-matcher matches.
-inline internal::BindableMatcher<TypeLoc> loc(
-    const internal::Matcher<QualType> &InnerMatcher) {
+AST_MATCHER_FUNCTION_P_OVERLOAD(internal::BindableMatcher<TypeLoc>, loc,
+                                internal::Matcher<QualType>, InnerMatcher, 0) {
   return internal::BindableMatcher<TypeLoc>(
       new internal::TypeLocTypeMatcher(InnerMatcher));
 }
@@ -3322,8 +3353,9 @@ const internal::VariadicAllOfMatcher<
 
 /// \brief Matches \c NestedNameSpecifierLocs for which the given inner
 /// NestedNameSpecifier-matcher matches.
-inline internal::BindableMatcher<NestedNameSpecifierLoc> loc(
-    const internal::Matcher<NestedNameSpecifier> &InnerMatcher) {
+AST_MATCHER_FUNCTION_P_OVERLOAD(
+    internal::BindableMatcher<NestedNameSpecifierLoc>, loc,
+    internal::Matcher<NestedNameSpecifier>, InnerMatcher, 1) {
   return internal::BindableMatcher<NestedNameSpecifierLoc>(
       new internal::LocMatcher<NestedNameSpecifierLoc, NestedNameSpecifier>(
           InnerMatcher));
@@ -3359,7 +3391,7 @@ AST_MATCHER_P(NestedNameSpecifier, specifiesType,
 ///   matches "A::"
 AST_MATCHER_P(NestedNameSpecifierLoc, specifiesTypeLoc,
               internal::Matcher<TypeLoc>, InnerMatcher) {
-  return InnerMatcher.matches(Node.getTypeLoc(), Finder, Builder);
+  return Node && InnerMatcher.matches(Node.getTypeLoc(), Finder, Builder);
 }
 
 /// \brief Matches on the prefix of a \c NestedNameSpecifier.
@@ -3479,11 +3511,9 @@ AST_MATCHER_P(CXXConstructorDecl, forEachConstructorInitializer,
               internal::Matcher<CXXCtorInitializer>, InnerMatcher) {
   BoundNodesTreeBuilder Result;
   bool Matched = false;
-  for (CXXConstructorDecl::init_const_iterator I = Node.init_begin(),
-                                               E = Node.init_end();
-       I != E; ++I) {
+  for (const auto *I : Node.inits()) {
     BoundNodesTreeBuilder InitBuilder(*Builder);
-    if (InnerMatcher.matches(**I, Finder, &InitBuilder)) {
+    if (InnerMatcher.matches(*I, Finder, &InitBuilder)) {
       Matched = true;
       Result.addMatch(InitBuilder);
     }

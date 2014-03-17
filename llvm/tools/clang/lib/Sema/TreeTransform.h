@@ -607,6 +607,7 @@ public:
   ExprResult TransformAddressOfOperand(Expr *E);
   ExprResult TransformDependentScopeDeclRefExpr(DependentScopeDeclRefExpr *E,
                                                 bool IsAddressOfOperand);
+  StmtResult TransformOMPExecutableDirective(OMPExecutableDirective *S);
 
 // FIXME: We use LLVM_ATTRIBUTE_NOINLINE because inlining causes a ridiculous
 // amount of stack usage with clang.
@@ -951,9 +952,8 @@ public:
           break;
         }
         default:
-          // FIXME: Would be nice to highlight just the source range.
           SemaRef.Diag(IdLoc, diag::err_not_tag_in_scope)
-            << Kind << Id << DC;
+              << Kind << Id << DC << QualifierLoc.getSourceRange();
           break;
       }
       return QualType();
@@ -1286,16 +1286,41 @@ public:
     return getSema().BuildObjCAtThrowStmt(AtLoc, Operand);
   }
 
-  /// \brief Build a new OpenMP parallel directive.
+  /// \brief Build a new OpenMP executable directive.
   ///
   /// By default, performs semantic analysis to build the new statement.
   /// Subclasses may override this routine to provide different behavior.
-  StmtResult RebuildOMPParallelDirective(ArrayRef<OMPClause *> Clauses,
-                                         Stmt *AStmt,
-                                         SourceLocation StartLoc,
-                                         SourceLocation EndLoc) {
-    return getSema().ActOnOpenMPParallelDirective(Clauses, AStmt,
-                                                  StartLoc, EndLoc);
+  StmtResult RebuildOMPExecutableDirective(OpenMPDirectiveKind Kind,
+                                           ArrayRef<OMPClause *> Clauses,
+                                           Stmt *AStmt,
+                                           SourceLocation StartLoc,
+                                           SourceLocation EndLoc) {
+    return getSema().ActOnOpenMPExecutableDirective(Kind, Clauses, AStmt,
+                                                    StartLoc, EndLoc);
+  }
+
+  /// \brief Build a new OpenMP 'if' clause.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  OMPClause *RebuildOMPIfClause(Expr *Condition,
+                                SourceLocation StartLoc,
+                                SourceLocation LParenLoc,
+                                SourceLocation EndLoc) {
+    return getSema().ActOnOpenMPIfClause(Condition, StartLoc,
+                                         LParenLoc, EndLoc);
+  }
+
+  /// \brief Build a new OpenMP 'num_threads' clause.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  OMPClause *RebuildOMPNumThreadsClause(Expr *NumThreads,
+                                        SourceLocation StartLoc,
+                                        SourceLocation LParenLoc,
+                                        SourceLocation EndLoc) {
+    return getSema().ActOnOpenMPNumThreadsClause(NumThreads, StartLoc,
+                                                 LParenLoc, EndLoc);
   }
 
   /// \brief Build a new OpenMP 'default' clause.
@@ -1335,6 +1360,10 @@ public:
                                                    EndLoc);
   }
 
+  /// \brief Build a new OpenMP 'shared' clause.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
   OMPClause *RebuildOMPSharedClause(ArrayRef<Expr *> VarList,
                                     SourceLocation StartLoc,
                                     SourceLocation LParenLoc,
@@ -5655,14 +5684,12 @@ StmtResult
 TreeTransform<Derived>::TransformDeclStmt(DeclStmt *S) {
   bool DeclChanged = false;
   SmallVector<Decl *, 4> Decls;
-  for (DeclStmt::decl_iterator D = S->decl_begin(), DEnd = S->decl_end();
-       D != DEnd; ++D) {
-    Decl *Transformed = getDerived().TransformDefinition((*D)->getLocation(),
-                                                         *D);
+  for (auto *D : S->decls()) {
+    Decl *Transformed = getDerived().TransformDefinition(D->getLocation(), D);
     if (!Transformed)
       return StmtError();
 
-    if (Transformed != *D)
+    if (Transformed != D)
       DeclChanged = true;
 
     Decls.push_back(Transformed);
@@ -6236,9 +6263,8 @@ StmtResult TreeTransform<Derived>::TransformSEHHandler(Stmt *Handler) {
 
 template<typename Derived>
 StmtResult
-TreeTransform<Derived>::TransformOMPParallelDirective(OMPParallelDirective *D) {
-  DeclarationNameInfo DirName;
-  getSema().StartOpenMPDSABlock(OMPD_parallel, DirName, 0);
+TreeTransform<Derived>::TransformOMPExecutableDirective(
+                                 OMPExecutableDirective *D) {
 
   // Transform the clauses
   llvm::SmallVector<OMPClause *, 16> TClauses;
@@ -6249,7 +6275,6 @@ TreeTransform<Derived>::TransformOMPParallelDirective(OMPParallelDirective *D) {
     if (*I) {
       OMPClause *Clause = getDerived().TransformOMPClause(*I);
       if (!Clause) {
-        getSema().EndOpenMPDSABlock(0);
         return StmtError();
       }
       TClauses.push_back(Clause);
@@ -6259,22 +6284,61 @@ TreeTransform<Derived>::TransformOMPParallelDirective(OMPParallelDirective *D) {
     }
   }
   if (!D->getAssociatedStmt()) {
-    getSema().EndOpenMPDSABlock(0);
     return StmtError();
   }
   StmtResult AssociatedStmt =
     getDerived().TransformStmt(D->getAssociatedStmt());
   if (AssociatedStmt.isInvalid()) {
-    getSema().EndOpenMPDSABlock(0);
     return StmtError();
   }
 
-  StmtResult Res = getDerived().RebuildOMPParallelDirective(TClauses,
-                                                            AssociatedStmt.take(),
-                                                            D->getLocStart(),
-                                                            D->getLocEnd());
-  getSema().EndOpenMPDSABlock(Res.get());
+  return getDerived().RebuildOMPExecutableDirective(D->getDirectiveKind(),
+                                                    TClauses,
+                                                    AssociatedStmt.take(),
+                                                    D->getLocStart(),
+                                                    D->getLocEnd());
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformOMPParallelDirective(OMPParallelDirective *D) {
+  DeclarationNameInfo DirName;
+  getDerived().getSema().StartOpenMPDSABlock(OMPD_parallel, DirName, 0);
+  StmtResult Res = getDerived().TransformOMPExecutableDirective(D);
+  getDerived().getSema().EndOpenMPDSABlock(Res.get());
   return Res;
+}
+
+template<typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformOMPSimdDirective(OMPSimdDirective *D) {
+  DeclarationNameInfo DirName;
+  getDerived().getSema().StartOpenMPDSABlock(OMPD_simd, DirName, 0);
+  StmtResult Res = getDerived().TransformOMPExecutableDirective(D);
+  getDerived().getSema().EndOpenMPDSABlock(Res.get());
+  return Res;
+}
+
+template<typename Derived>
+OMPClause *
+TreeTransform<Derived>::TransformOMPIfClause(OMPIfClause *C) {
+  ExprResult Cond = getDerived().TransformExpr(C->getCondition());
+  if (Cond.isInvalid())
+    return 0;
+  return getDerived().RebuildOMPIfClause(Cond.take(), C->getLocStart(),
+                                         C->getLParenLoc(), C->getLocEnd());
+}
+
+template<typename Derived>
+OMPClause *
+TreeTransform<Derived>::TransformOMPNumThreadsClause(OMPNumThreadsClause *C) {
+  ExprResult NumThreads = getDerived().TransformExpr(C->getNumThreads());
+  if (NumThreads.isInvalid())
+    return 0;
+  return getDerived().RebuildOMPNumThreadsClause(NumThreads.take(),
+                                                 C->getLocStart(),
+                                                 C->getLParenLoc(),
+                                                 C->getLocEnd());
 }
 
 template<typename Derived>
@@ -6292,10 +6356,8 @@ OMPClause *
 TreeTransform<Derived>::TransformOMPPrivateClause(OMPPrivateClause *C) {
   llvm::SmallVector<Expr *, 16> Vars;
   Vars.reserve(C->varlist_size());
-  for (OMPPrivateClause::varlist_iterator I = C->varlist_begin(),
-                                          E = C->varlist_end();
-       I != E; ++I) {
-    ExprResult EVar = getDerived().TransformExpr(cast<Expr>(*I));
+  for (auto *I : C->varlists()) {
+    ExprResult EVar = getDerived().TransformExpr(cast<Expr>(I));
     if (EVar.isInvalid())
       return 0;
     Vars.push_back(EVar.take());
@@ -6312,10 +6374,8 @@ TreeTransform<Derived>::TransformOMPFirstprivateClause(
                                                  OMPFirstprivateClause *C) {
   llvm::SmallVector<Expr *, 16> Vars;
   Vars.reserve(C->varlist_size());
-  for (OMPFirstprivateClause::varlist_iterator I = C->varlist_begin(),
-                                               E = C->varlist_end();
-       I != E; ++I) {
-    ExprResult EVar = getDerived().TransformExpr(cast<Expr>(*I));
+  for (auto *I : C->varlists()) {
+    ExprResult EVar = getDerived().TransformExpr(cast<Expr>(I));
     if (EVar.isInvalid())
       return 0;
     Vars.push_back(EVar.take());
@@ -6331,10 +6391,8 @@ OMPClause *
 TreeTransform<Derived>::TransformOMPSharedClause(OMPSharedClause *C) {
   llvm::SmallVector<Expr *, 16> Vars;
   Vars.reserve(C->varlist_size());
-  for (OMPSharedClause::varlist_iterator I = C->varlist_begin(),
-                                         E = C->varlist_end();
-       I != E; ++I) {
-    ExprResult EVar = getDerived().TransformExpr(cast<Expr>(*I));
+  for (auto *I : C->varlists()) {
+    ExprResult EVar = getDerived().TransformExpr(cast<Expr>(I));
     if (EVar.isInvalid())
       return 0;
     Vars.push_back(EVar.take());
@@ -7789,9 +7847,8 @@ TreeTransform<Derived>::TransformUnresolvedLookupExpr(
     // Expand using declarations.
     if (isa<UsingDecl>(InstD)) {
       UsingDecl *UD = cast<UsingDecl>(InstD);
-      for (UsingDecl::shadow_iterator I = UD->shadow_begin(),
-             E = UD->shadow_end(); I != E; ++I)
-        R.addDecl(*I);
+      for (auto *I : UD->shadows())
+        R.addDecl(I);
       continue;
     }
 
@@ -8657,9 +8714,8 @@ TreeTransform<Derived>::TransformUnresolvedMemberExpr(UnresolvedMemberExpr *Old)
     // Expand using declarations.
     if (isa<UsingDecl>(InstD)) {
       UsingDecl *UD = cast<UsingDecl>(InstD);
-      for (UsingDecl::shadow_iterator I = UD->shadow_begin(),
-             E = UD->shadow_end(); I != E; ++I)
-        R.addDecl(*I);
+      for (auto *I : UD->shadows())
+        R.addDecl(I);
       continue;
     }
 
@@ -9287,9 +9343,8 @@ TreeTransform<Derived>::TransformBlockExpr(BlockExpr *E) {
   // In builds with assertions, make sure that we captured everything we
   // captured before.
   if (!SemaRef.getDiagnostics().hasErrorOccurred()) {
-    for (BlockDecl::capture_iterator i = oldBlock->capture_begin(),
-           e = oldBlock->capture_end(); i != e; ++i) {
-      VarDecl *oldCapture = i->getVariable();
+    for (const auto &I : oldBlock->captures()) {
+      VarDecl *oldCapture = I.getVariable();
 
       // Ignore parameter packs.
       if (isa<ParmVarDecl>(oldCapture) &&

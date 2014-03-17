@@ -5,6 +5,8 @@ set(SANITIZER_SOURCES
   sanitizer_allocator.cc
   sanitizer_common.cc
   sanitizer_coverage.cc
+  sanitizer_deadlock_detector1.cc
+  sanitizer_deadlock_detector2.cc
   sanitizer_flags.cc
   sanitizer_libc.cc
   sanitizer_libignore.cc
@@ -39,16 +41,21 @@ set(SANITIZER_LIBCDEP_SOURCES
 # included in sanitizer_common source files, but we need to depend on
 # headers when building our custom unit tests.
 set(SANITIZER_HEADERS
+  sanitizer_addrhashmap.h
   sanitizer_allocator.h
   sanitizer_allocator_internal.h
   sanitizer_atomic.h
   sanitizer_atomic_clang.h
   sanitizer_atomic_msvc.h
+  sanitizer_bitvector.h
+  sanitizer_bvgraph.h
   sanitizer_common.h
   sanitizer_common_interceptors.inc
   sanitizer_common_interceptors_ioctl.inc
   sanitizer_common_interceptors_format.inc
   sanitizer_common_syscalls.inc
+  sanitizer_deadlock_detector.h
+  sanitizer_deadlock_detector_interface.h
   sanitizer_flags.h
   sanitizer_internal_defs.h
   sanitizer_lfstack.h
@@ -77,10 +84,7 @@ set(SANITIZER_HEADERS
 
 set(SANITIZER_COMMON_DEFINITIONS)
 
-if(ANDROID)
-  list(APPEND SANITIZER_COMMON_DEFINITIONS
-    SANITIZER_NEEDS_SEGV=0)
-elseif(MSVC)
+if(MSVC)
   list(APPEND SANITIZER_COMMON_DEFINITIONS
     SANITIZER_NEEDS_SEGV=0)
 else()
@@ -88,20 +92,13 @@ else()
     SANITIZER_NEEDS_SEGV=1)
 endif()
 
-if (NOT MSVC)
-  set(SANITIZER_CFLAGS
-    ${SANITIZER_COMMON_CFLAGS}
-    -fno-rtti)
-else()
-  set(SANITIZER_CFLAGS
-    ${SANITIZER_COMMON_CFLAGS}
-    /GR-)
-endif()
+set(SANITIZER_CFLAGS ${SANITIZER_COMMON_CFLAGS})
+append_no_rtti_flag(SANITIZER_CFLAGS)
 
-if(SUPPORTS_GLOBAL_CONSTRUCTORS_FLAG)
-  list(APPEND SANITIZER_CFLAGS -Wglobal-constructors)
-endif()
+append_if(COMPILER_RT_HAS_WFRAME_LARGER_THAN_FLAG -Wframe-larger-than=512 SANITIZER_CFLAGS)
+append_if(COMPILER_RT_HAS_WGLOBAL_CONSTRUCTORS_FLAG -Wglobal-constructors SANITIZER_CFLAGS)
 
+add_custom_target(sanitizer_common)
 set(SANITIZER_RUNTIME_LIBRARIES)
 if(APPLE)
   # Build universal binary on APPLE.
@@ -130,17 +127,20 @@ else()
     add_compiler_rt_object_library(RTSanitizerCommonLibc ${arch}
       SOURCES ${SANITIZER_LIBCDEP_SOURCES} CFLAGS ${SANITIZER_CFLAGS}
       DEFS ${SANITIZER_COMMON_DEFINITIONS})
+    list(APPEND SANITIZER_RUNTIME_LIBRARIES RTSanitizerCommon.${arch}
+                                            RTSanitizerCommonLibc.${arch})
     add_compiler_rt_static_runtime(clang_rt.san-${arch} ${arch}
       SOURCES $<TARGET_OBJECTS:RTSanitizerCommon.${arch}>
               $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>
       CFLAGS ${SANITIZER_CFLAGS}
       DEFS ${SANITIZER_COMMON_DEFINITIONS})
-    list(APPEND SANITIZER_RUNTIME_LIBRARIES RTSanitizerCommon.${arch}
-                                            RTSanitizerCommonLibc.${arch})
+    add_dependencies(sanitizer_common clang_rt.san-${arch})
   endforeach()
 endif()
 
+add_dependencies(compiler-rt sanitizer_common)
+
 # Unit tests for common sanitizer runtime.
-if(LLVM_INCLUDE_TESTS)
+if(COMPILER_RT_INCLUDE_TESTS)
   add_subdirectory(tests)
 endif()

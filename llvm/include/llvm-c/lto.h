@@ -40,7 +40,7 @@ typedef bool lto_bool_t;
  * @{
  */
 
-#define LTO_API_VERSION 8
+#define LTO_API_VERSION 10
 
 /**
  * \since prior to LTO_API_VERSION=3
@@ -176,6 +176,16 @@ extern lto_module_t
 lto_module_create_from_memory(const void* mem, size_t length);
 
 /**
+ * Loads an object file from memory with an extra path argument.
+ * Returns NULL on error (check lto_get_error_message() for details).
+ *
+ * \since prior to LTO_API_VERSION=9
+ */
+extern lto_module_t
+lto_module_create_from_memory_with_path(const void* mem, size_t length,
+                                        const char *path);
+
+/**
  * Loads an object file from disk. The seek point of fd is not preserved.
  * Returns NULL on error (check lto_get_error_message() for details).
  *
@@ -289,9 +299,10 @@ lto_module_get_linkeropt(lto_module_t mod, unsigned int index);
  * \since LTO_API_VERSION=7
  */
 typedef enum {
-  LTO_DS_ERROR,
-  LTO_DS_WARNING,
-  LTO_DS_NOTE
+  LTO_DS_ERROR = 0,
+  LTO_DS_WARNING = 1,
+  LTO_DS_REMARK = 3, // Added in LTO_API_VERSION=10.
+  LTO_DS_NOTE = 2
 } lto_codegen_diagnostic_severity_t;
 
 /**

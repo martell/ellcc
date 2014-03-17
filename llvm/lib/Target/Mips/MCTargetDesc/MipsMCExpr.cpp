@@ -9,9 +9,9 @@
 
 #define DEBUG_TYPE "mipsmcexpr"
 #include "MipsMCExpr.h"
+#include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCAsmInfo.h"
 
 using namespace llvm;
 
@@ -36,9 +36,7 @@ void MipsMCExpr::PrintImpl(raw_ostream &OS) const {
 bool
 MipsMCExpr::EvaluateAsRelocatableImpl(MCValue &Res,
                                       const MCAsmLayout *Layout) const {
-  if (!Layout)
-    return false;
-  return getSubExpr()->EvaluateAsRelocatable(Res, *Layout);
+  return getSubExpr()->EvaluateAsRelocatable(Res, Layout);
 }
 
 // FIXME: This basically copies MCObjectStreamer::AddValueSymbols. Perhaps

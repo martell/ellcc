@@ -257,6 +257,20 @@ class MipsAsmParser : public MCTargetAsmParser {
   // Example: INSERT.B $w0[n], $1 => 16 > n >= 0
   bool validateMSAIndex(int Val, int RegKind);
 
+  void setFeatureBits(unsigned Feature, StringRef FeatureString) {
+    if (!(STI.getFeatureBits() & Feature)) {
+      setAvailableFeatures(ComputeAvailableFeatures(
+                           STI.ToggleFeature(FeatureString)));
+    }
+  }
+
+  void clearFeatureBits(unsigned Feature, StringRef FeatureString) {
+    if (STI.getFeatureBits() & Feature) {
+     setAvailableFeatures(ComputeAvailableFeatures(
+                           STI.ToggleFeature(FeatureString)));
+    }
+  }
+
 public:
   MipsAsmParser(MCSubtargetInfo &sti, MCAsmParser &parser,
                 const MCInstrInfo &MII)
@@ -264,6 +278,12 @@ public:
         hasConsumedDollar(false) {
     // Initialize the set of available features.
     setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
+
+    // Assert exactly one ABI was chosen.
+    assert((((STI.getFeatureBits() & Mips::FeatureO32) != 0) +
+            ((STI.getFeatureBits() & Mips::FeatureEABI) != 0) +
+            ((STI.getFeatureBits() & Mips::FeatureN32) != 0) +
+            ((STI.getFeatureBits() & Mips::FeatureN64) != 0)) == 1);
   }
 
   MCAsmParser &getParser() const { return Parser; }
@@ -2311,6 +2331,7 @@ bool MipsAsmParser::parseSetReorderDirective() {
     return false;
   }
   Options.setReorder();
+  getTargetStreamer().emitDirectiveSetReorder();
   Parser.Lex(); // Consume the EndOfStatement.
   return false;
 }
@@ -2432,6 +2453,20 @@ bool MipsAsmParser::parseDirectiveSet() {
   } else if (Tok.getString() == "micromips") {
     getTargetStreamer().emitDirectiveSetMicroMips();
     Parser.eatToEndOfStatement();
+    return false;
+  } else if (Tok.getString() == "mips32r2") {
+    Parser.Lex(); // Eat token.
+    if (getLexer().isNot(AsmToken::EndOfStatement))
+      return reportParseError("unexpected token in .set directive");
+    setFeatureBits(Mips::FeatureMips32r2,"mips32r2");
+    getTargetStreamer().emitDirectiveSetMips32R2();
+    return false;
+  } else if (Tok.getString() == "dsp") {
+    Parser.Lex(); // Eat token.
+    if (getLexer().isNot(AsmToken::EndOfStatement))
+      return reportParseError("unexpected token in .set directive");
+    setFeatureBits(Mips::FeatureDSP, "dsp");
+    getTargetStreamer().emitDirectiveSetDsp();
     return false;
   } else {
     // It is just an identifier, look for an assignment.

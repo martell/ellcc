@@ -125,9 +125,9 @@ namespace {
         initializeMachineLICMPass(*PassRegistry::getPassRegistry());
       }
 
-    virtual bool runOnMachineFunction(MachineFunction &MF);
+    bool runOnMachineFunction(MachineFunction &MF) override;
 
-    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+    void getAnalysisUsage(AnalysisUsage &AU) const override {
       AU.addRequired<MachineLoopInfo>();
       AU.addRequired<MachineDominatorTree>();
       AU.addRequired<AliasAnalysis>();
@@ -136,7 +136,7 @@ namespace {
       MachineFunctionPass::getAnalysisUsage(AU);
     }
 
-    virtual void releaseMemory() {
+    void releaseMemory() override {
       RegSeen.clear();
       RegPressure.clear();
       RegLimit.clear();
@@ -978,8 +978,9 @@ bool MachineLICM::HasLoopPHIUse(const MachineInstr *MI) const {
       unsigned Reg = MO->getReg();
       if (!TargetRegisterInfo::isVirtualRegister(Reg))
         continue;
-      for (MachineRegisterInfo::use_iterator UI = MRI->use_begin(Reg),
-           UE = MRI->use_end(); UI != UE; ++UI) {
+      for (MachineRegisterInfo::use_instr_iterator
+           UI = MRI->use_instr_begin(Reg), UE = MRI->use_instr_end();
+           UI != UE; ++UI) {
         MachineInstr *UseMI = &*UI;
         // A PHI may cause a copy to be inserted.
         if (UseMI->isPHI()) {
@@ -1011,8 +1012,9 @@ bool MachineLICM::HasHighOperandLatency(MachineInstr &MI,
   if (!InstrItins || InstrItins->isEmpty() || MRI->use_nodbg_empty(Reg))
     return false;
 
-  for (MachineRegisterInfo::use_nodbg_iterator I = MRI->use_nodbg_begin(Reg),
-         E = MRI->use_nodbg_end(); I != E; ++I) {
+  for (MachineRegisterInfo::use_instr_nodbg_iterator
+       I = MRI->use_instr_nodbg_begin(Reg), E = MRI->use_instr_nodbg_end();
+       I != E; ++I) {
     MachineInstr *UseMI = &*I;
     if (UseMI->isCopyLike())
       continue;

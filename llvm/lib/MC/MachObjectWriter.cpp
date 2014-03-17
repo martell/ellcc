@@ -82,7 +82,7 @@ uint64_t MachObjectWriter::getSymbolAddress(const MCSymbolData* SD,
 
 
     MCValue Target;
-    if (!S.getVariableValue()->EvaluateAsRelocatable(Target, Layout))
+    if (!S.getVariableValue()->EvaluateAsRelocatable(Target, &Layout))
       report_fatal_error("unable to evaluate offset for variable '" +
                          S.getName() + "'");
 
@@ -229,7 +229,7 @@ void MachObjectWriter::WriteSection(const MCAssembler &Asm,
 
   unsigned Flags = Section.getTypeAndAttributes();
   if (SD.hasInstructions())
-    Flags |= MCSectionMachO::S_ATTR_SOME_INSTRUCTIONS;
+    Flags |= MachO::S_ATTR_SOME_INSTRUCTIONS;
 
   assert(isPowerOf2_32(SD.getAlignment()) && "Invalid alignment!");
   Write32(Log2_32(SD.getAlignment()));
@@ -437,9 +437,9 @@ void MachObjectWriter::BindIndirectSymbols(MCAssembler &Asm) {
     const MCSectionMachO &Section =
       cast<MCSectionMachO>(it->SectionData->getSection());
 
-    if (Section.getType() != MCSectionMachO::S_NON_LAZY_SYMBOL_POINTERS &&
-        Section.getType() != MCSectionMachO::S_LAZY_SYMBOL_POINTERS &&
-        Section.getType() != MCSectionMachO::S_SYMBOL_STUBS) {
+    if (Section.getType() != MachO::S_NON_LAZY_SYMBOL_POINTERS &&
+        Section.getType() != MachO::S_LAZY_SYMBOL_POINTERS &&
+        Section.getType() != MachO::S_SYMBOL_STUBS) {
 	MCSymbol &Symbol = *it->Symbol;
 	report_fatal_error("indirect symbol '" + Symbol.getName() +
                            "' not in a symbol pointer or stub section");
@@ -453,7 +453,7 @@ void MachObjectWriter::BindIndirectSymbols(MCAssembler &Asm) {
     const MCSectionMachO &Section =
       cast<MCSectionMachO>(it->SectionData->getSection());
 
-    if (Section.getType() != MCSectionMachO::S_NON_LAZY_SYMBOL_POINTERS)
+    if (Section.getType() != MachO::S_NON_LAZY_SYMBOL_POINTERS)
       continue;
 
     // Initialize the section indirect symbol base, if necessary.
@@ -469,8 +469,8 @@ void MachObjectWriter::BindIndirectSymbols(MCAssembler &Asm) {
     const MCSectionMachO &Section =
       cast<MCSectionMachO>(it->SectionData->getSection());
 
-    if (Section.getType() != MCSectionMachO::S_LAZY_SYMBOL_POINTERS &&
-        Section.getType() != MCSectionMachO::S_SYMBOL_STUBS)
+    if (Section.getType() != MachO::S_LAZY_SYMBOL_POINTERS &&
+        Section.getType() != MachO::S_SYMBOL_STUBS)
       continue;
 
     // Initialize the section indirect symbol base, if necessary.
@@ -631,7 +631,7 @@ void MachObjectWriter::markAbsoluteVariableSymbols(MCAssembler &Asm,
     // and neither symbol is external, mark the variable as absolute.
     const MCExpr *Expr = SD.getSymbol().getVariableValue();
     MCValue Value;
-    if (Expr->EvaluateAsRelocatable(Value, Layout)) {
+    if (Expr->EvaluateAsRelocatable(Value, &Layout)) {
       if (Value.getSymA() && Value.getSymB())
         const_cast<MCSymbol*>(&SD.getSymbol())->setAbsolute();
     }
@@ -688,7 +688,8 @@ IsSymbolRefDifferenceFullyResolvedImpl(const MCAssembler &Asm,
     // same assumptions about any symbol that we normally make about
     // assembler locals.
 
-    if (!Asm.getBackend().hasReliableSymbolDifference()) {
+    bool hasReliableSymbolDifference = isX86_64();
+    if (!hasReliableSymbolDifference) {
       if (!SA.isInSection() || &SecA != &SecB ||
           (!SA.isTemporary() &&
            FB.getAtom() != Asm.getSymbolData(SA).getFragment()->getAtom() &&
@@ -921,7 +922,7 @@ void MachObjectWriter::WriteObject(MCAssembler &Asm,
       // special handling.
       const MCSectionMachO &Section =
         static_cast<const MCSectionMachO&>(it->SectionData->getSection());
-      if (Section.getType() == MCSectionMachO::S_NON_LAZY_SYMBOL_POINTERS) {
+      if (Section.getType() == MachO::S_NON_LAZY_SYMBOL_POINTERS) {
         // If this symbol is defined and internal, mark it as such.
         if (it->Symbol->isDefined() &&
             !Asm.getSymbolData(*it->Symbol).isExternal()) {

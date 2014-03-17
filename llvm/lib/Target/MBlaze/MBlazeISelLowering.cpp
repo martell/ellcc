@@ -281,7 +281,7 @@ MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
   // remaining instructions from the current block to the new block which
   // will contain the Phi node for the select.
   finish->splice(finish->begin(), MBB,
-                 llvm::next(MachineBasicBlock::iterator(MI)),
+                 std::next(MachineBasicBlock::iterator(MI)),
                  MBB->end());
   finish->transferSuccessorsAndUpdatePHIs(MBB);
 
@@ -386,7 +386,7 @@ MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
 
   // Transfer the remainder of MBB and its successor edges to dneBB.
   dneBB->splice(dneBB->begin(), MBB,
-                llvm::next(MachineBasicBlock::iterator(MI)),
+                std::next(MachineBasicBlock::iterator(MI)),
                 MBB->end());
   dneBB->transferSuccessorsAndUpdatePHIs(MBB);
 
@@ -458,7 +458,7 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
   // Update machine-CFG edges by transferring adding all successors and
   // remaining instructions from the current block to the new block which
   // will contain the Phi node for the select.
-  exit->splice(exit->begin(), MBB, llvm::next(MachineBasicBlock::iterator(MI)),
+  exit->splice(exit->begin(), MBB, std::next(MachineBasicBlock::iterator(MI)),
                MBB->end());
   exit->transferSuccessorsAndUpdatePHIs(MBB);
 
