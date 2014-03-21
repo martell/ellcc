@@ -51,6 +51,7 @@ int adjtime (const struct timeval *, struct timeval *);
 	((a)->tv_usec += 1000000, (a)->tv_sec--) )
 #endif
 
+#if RICH
 #ifdef _BSD_SOURCE
 #define TIMEVAL_TO_TIMESPEC(tv, ts) do {                                \
         (ts)->tv_sec = (tv)->tv_sec;                                    \
@@ -87,6 +88,17 @@ int adjtime (const struct timeval *, struct timeval *);
                 }                                                       \
         } while (/* CONSTCOND */ 0)
 #define timespec2ns(x) (((uint64_t)(x)->tv_sec) * 1000000000L + (x)->tv_nsec)
+#endif
+#endif // RICH
+#if defined(_GNU_SOURCE)
+#define TIMEVAL_TO_TIMESPEC(tv, ts) ( \
+	(ts)->tv_sec = (tv)->tv_sec, \
+	(ts)->tv_nsec = (tv)->tv_usec * 1000, \
+	(void)0 )
+#define TIMESPEC_TO_TIMEVAL(tv, ts) ( \
+	(tv)->tv_sec = (ts)->tv_sec, \
+	(tv)->tv_usec = (ts)->tv_nsec / 1000, \
+	(void)0 )
 #endif
 
 #ifdef __cplusplus
