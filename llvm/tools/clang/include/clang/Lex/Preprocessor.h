@@ -298,19 +298,36 @@ class Preprocessor : public RefCountedBase<Preprocessor> {
   /// \#included, and macros currently being expanded from, not counting
   /// CurLexer/CurTokenLexer.
   struct IncludeStackInfo {
-    enum CurLexerKind     CurLexerKind;
-    Module                *TheSubmodule;
-    Lexer                 *TheLexer;
-    PTHLexer              *ThePTHLexer;
-    PreprocessorLexer     *ThePPLexer;
-    TokenLexer            *TheTokenLexer;
-    const DirectoryLookup *TheDirLookup;
+    enum CurLexerKind           CurLexerKind;
+    Module                     *TheSubmodule;
+    std::unique_ptr<Lexer>      TheLexer;
+    std::unique_ptr<PTHLexer>   ThePTHLexer;
+    PreprocessorLexer          *ThePPLexer;
+    std::unique_ptr<TokenLexer> TheTokenLexer;
+    const DirectoryLookup      *TheDirLookup;
 
-    IncludeStackInfo(enum CurLexerKind K, Module *M, Lexer *L, PTHLexer *P,
-                     PreprocessorLexer *PPL, TokenLexer *TL,
-                     const DirectoryLookup *D)
-        : CurLexerKind(K), TheSubmodule(M), TheLexer(L), ThePTHLexer(P),
-          ThePPLexer(PPL), TheTokenLexer(TL), TheDirLookup(D) {}
+    // The following constructors are completely useless copies of the default
+    // versions, only needed to pacify MSVC.
+    IncludeStackInfo(enum CurLexerKind CurLexerKind, Module *TheSubmodule,
+                     std::unique_ptr<Lexer> &&TheLexer,
+                     std::unique_ptr<PTHLexer> &&ThePTHLexer,
+                     PreprocessorLexer *ThePPLexer,
+                     std::unique_ptr<TokenLexer> &&TheTokenLexer,
+                     const DirectoryLookup *TheDirLookup)
+        : CurLexerKind(std::move(CurLexerKind)),
+          TheSubmodule(std::move(TheSubmodule)), TheLexer(std::move(TheLexer)),
+          ThePTHLexer(std::move(ThePTHLexer)),
+          ThePPLexer(std::move(ThePPLexer)),
+          TheTokenLexer(std::move(TheTokenLexer)),
+          TheDirLookup(std::move(TheDirLookup)) {}
+    IncludeStackInfo(IncludeStackInfo &&RHS)
+        : CurLexerKind(std::move(RHS.CurLexerKind)),
+          TheSubmodule(std::move(RHS.TheSubmodule)),
+          TheLexer(std::move(RHS.TheLexer)),
+          ThePTHLexer(std::move(RHS.ThePTHLexer)),
+          ThePPLexer(std::move(RHS.ThePPLexer)),
+          TheTokenLexer(std::move(RHS.TheTokenLexer)),
+          TheDirLookup(std::move(RHS.TheDirLookup)) {}
   };
   std::vector<IncludeStackInfo> IncludeMacroStack;
 
@@ -1328,16 +1345,16 @@ private:
 
   void PushIncludeMacroStack() {
     IncludeMacroStack.push_back(IncludeStackInfo(
-        CurLexerKind, CurSubmodule, CurLexer.release(), CurPTHLexer.release(),
-        CurPPLexer, CurTokenLexer.release(), CurDirLookup));
+        CurLexerKind, CurSubmodule, std::move(CurLexer), std::move(CurPTHLexer),
+        CurPPLexer, std::move(CurTokenLexer), CurDirLookup));
     CurPPLexer = 0;
   }
 
   void PopIncludeMacroStack() {
-    CurLexer.reset(IncludeMacroStack.back().TheLexer);
-    CurPTHLexer.reset(IncludeMacroStack.back().ThePTHLexer);
+    CurLexer = std::move(IncludeMacroStack.back().TheLexer);
+    CurPTHLexer = std::move(IncludeMacroStack.back().ThePTHLexer);
     CurPPLexer = IncludeMacroStack.back().ThePPLexer;
-    CurTokenLexer.reset(IncludeMacroStack.back().TheTokenLexer);
+    CurTokenLexer = std::move(IncludeMacroStack.back().TheTokenLexer);
     CurDirLookup  = IncludeMacroStack.back().TheDirLookup;
     CurSubmodule = IncludeMacroStack.back().TheSubmodule;
     CurLexerKind = IncludeMacroStack.back().CurLexerKind;
@@ -1461,7 +1478,7 @@ private:
   }
 
   static bool IsFileLexer(const IncludeStackInfo& I) {
-    return IsFileLexer(I.TheLexer, I.ThePPLexer);
+    return IsFileLexer(I.TheLexer.get(), I.ThePPLexer);
   }
 
   bool IsFileLexer() const {

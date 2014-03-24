@@ -16,6 +16,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/Support/COFF.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cctype>
@@ -173,11 +174,11 @@ error_code COFFObjectFile::getSymbolType(DataRefImpl Ref,
   if (Symb->StorageClass == COFF::IMAGE_SYM_CLASS_EXTERNAL &&
       Symb->SectionNumber == COFF::IMAGE_SYM_UNDEFINED) {
     Result = SymbolRef::ST_Unknown;
-  } else if (Symb->getComplexType() == COFF::IMAGE_SYM_DTYPE_FUNCTION) {
+  } else if (Symb->isFunctionDefinition()) {
     Result = SymbolRef::ST_Function;
   } else {
     uint32_t Characteristics = 0;
-    if (Symb->SectionNumber > 0) {
+    if (!COFF::isReservedSectionNumber(Symb->SectionNumber)) {
       const coff_section *Section = NULL;
       if (error_code EC = getSection(Symb->SectionNumber, Section))
         return EC;
@@ -239,9 +240,9 @@ error_code COFFObjectFile::getSymbolSize(DataRefImpl Ref,
 error_code COFFObjectFile::getSymbolSection(DataRefImpl Ref,
                                             section_iterator &Result) const {
   const coff_symbol *Symb = toSymb(Ref);
-  if (Symb->SectionNumber <= COFF::IMAGE_SYM_UNDEFINED)
+  if (COFF::isReservedSectionNumber(Symb->SectionNumber)) {
     Result = section_end();
-  else {
+  } else {
     const coff_section *Sec = 0;
     if (error_code EC = getSection(Symb->SectionNumber, Sec)) return EC;
     DataRefImpl Ref;
@@ -366,26 +367,52 @@ error_code COFFObjectFile::sectionContainsSymbol(DataRefImpl SecRef,
 relocation_iterator COFFObjectFile::section_rel_begin(DataRefImpl Ref) const {
   const coff_section *Sec = toSec(Ref);
   DataRefImpl Ret;
-  if (Sec->NumberOfRelocations == 0)
+  if (Sec->NumberOfRelocations == 0) {
     Ret.p = 0;
-  else
-    Ret.p = reinterpret_cast<uintptr_t>(base() + Sec->PointerToRelocations);
-
+  } else {
+    auto begin = reinterpret_cast<const coff_relocation*>(
+        base() + Sec->PointerToRelocations);
+    if (Sec->hasExtendedRelocations()) {
+      // Skip the first relocation entry repurposed to store the number of
+      // relocations.
+      begin++;
+    }
+    Ret.p = reinterpret_cast<uintptr_t>(begin);
+  }
   return relocation_iterator(RelocationRef(Ret, this));
+}
+
+static uint32_t getNumberOfRelocations(const coff_section *Sec,
+                                       const uint8_t *base) {
+  // The field for the number of relocations in COFF section table is only
+  // 16-bit wide. If a section has more than 65535 relocations, 0xFFFF is set to
+  // NumberOfRelocations field, and the actual relocation count is stored in the
+  // VirtualAddress field in the first relocation entry.
+  if (Sec->hasExtendedRelocations()) {
+    auto *FirstReloc = reinterpret_cast<const coff_relocation*>(
+        base + Sec->PointerToRelocations);
+    return FirstReloc->VirtualAddress;
+  }
+  return Sec->NumberOfRelocations;
 }
 
 relocation_iterator COFFObjectFile::section_rel_end(DataRefImpl Ref) const {
   const coff_section *Sec = toSec(Ref);
   DataRefImpl Ret;
-  if (Sec->NumberOfRelocations == 0)
+  if (Sec->NumberOfRelocations == 0) {
     Ret.p = 0;
-  else
-    Ret.p = reinterpret_cast<uintptr_t>(
-              reinterpret_cast<const coff_relocation*>(
-                base() + Sec->PointerToRelocations)
-              + Sec->NumberOfRelocations);
-
+  } else {
+    auto begin = reinterpret_cast<const coff_relocation*>(
+        base() + Sec->PointerToRelocations);
+    uint32_t NumReloc = getNumberOfRelocations(Sec, base());
+    Ret.p = reinterpret_cast<uintptr_t>(begin + NumReloc);
+  }
   return relocation_iterator(RelocationRef(Ret, this));
+}
+
+bool COFFObjectFile::section_rel_empty(DataRefImpl Ref) const {
+  const coff_section *Sec = toSec(Ref);
+  return Sec->NumberOfRelocations == 0;
 }
 
 // Initialize the pointer to the symbol table.
@@ -431,9 +458,8 @@ error_code COFFObjectFile::getVaPtr(uint64_t Addr, uintptr_t &Res) const {
 
 // Returns the file offset for the given RVA.
 error_code COFFObjectFile::getRvaPtr(uint32_t Addr, uintptr_t &Res) const {
-  for (section_iterator I = section_begin(), E = section_end(); I != E;
-       ++I) {
-    const coff_section *Section = getCOFFSection(I);
+  for (const SectionRef &S : sections()) {
+    const coff_section *Section = getCOFFSection(S);
     uint32_t SectionStart = Section->VirtualAddress;
     uint32_t SectionEnd = Section->VirtualAddress + Section->VirtualSize;
     if (SectionStart <= Addr && Addr < SectionEnd) {
@@ -722,9 +748,7 @@ error_code COFFObjectFile::getDataDirectory(uint32_t Index,
 error_code COFFObjectFile::getSection(int32_t Index,
                                       const coff_section *&Result) const {
   // Check for special index values.
-  if (Index == COFF::IMAGE_SYM_UNDEFINED ||
-      Index == COFF::IMAGE_SYM_ABSOLUTE ||
-      Index == COFF::IMAGE_SYM_DEBUG)
+  if (COFF::isReservedSectionNumber(Index))
     Result = NULL;
   else if (Index > 0 && Index <= COFFHeader->NumberOfSections)
     // We already verified the section table data, so no need to check again.
@@ -872,21 +896,25 @@ error_code COFFObjectFile::getRelocationType(DataRefImpl Rel,
   return object_error::success;
 }
 
-const coff_section *COFFObjectFile::getCOFFSection(section_iterator &It) const {
-  return toSec(It->getRawDataRefImpl());
+const coff_section *
+COFFObjectFile::getCOFFSection(const SectionRef &Section) const {
+  return toSec(Section.getRawDataRefImpl());
 }
 
-const coff_symbol *COFFObjectFile::getCOFFSymbol(symbol_iterator &It) const {
-  return toSymb(It->getRawDataRefImpl());
+const coff_symbol *
+COFFObjectFile::getCOFFSymbol(const SymbolRef &Symbol) const {
+  return toSymb(Symbol.getRawDataRefImpl());
 }
 
 const coff_relocation *
-COFFObjectFile::getCOFFRelocation(relocation_iterator &It) const {
-  return toRel(It->getRawDataRefImpl());
+COFFObjectFile::getCOFFRelocation(const RelocationRef &Reloc) const {
+  return toRel(Reloc.getRawDataRefImpl());
 }
 
-#define LLVM_COFF_SWITCH_RELOC_TYPE_NAME(enum) \
-  case COFF::enum: Res = #enum; break;
+#define LLVM_COFF_SWITCH_RELOC_TYPE_NAME(reloc_type)                           \
+  case COFF::reloc_type:                                                       \
+    Res = #reloc_type;                                                         \
+    break;
 
 error_code COFFObjectFile::getRelocationTypeName(DataRefImpl Rel,
                                           SmallVectorImpl<char> &Result) const {

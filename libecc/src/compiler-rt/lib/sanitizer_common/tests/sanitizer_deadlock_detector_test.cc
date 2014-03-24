@@ -406,3 +406,86 @@ void RunRecusriveLockTest() {
 TEST(DeadlockDetector, RecusriveLockTest) {
   RunRecusriveLockTest<BV2>();
 }
+
+template <class BV>
+void RunLockContextTest() {
+  ScopedDD<BV> sdd;
+  DeadlockDetector<BV> &d = *sdd.dp;
+  DeadlockDetectorTLS<BV> &dtls = sdd.dtls;
+
+  uptr l0 = d.newNode(0);
+  uptr l1 = d.newNode(0);
+  uptr l2 = d.newNode(0);
+  uptr l3 = d.newNode(0);
+  uptr l4 = d.newNode(0);
+  EXPECT_FALSE(d.onLock(&dtls, l0, 10));
+  EXPECT_FALSE(d.onLock(&dtls, l1, 11));
+  EXPECT_FALSE(d.onLock(&dtls, l2, 12));
+  EXPECT_FALSE(d.onLock(&dtls, l3, 13));
+  EXPECT_EQ(10U, d.findLockContext(&dtls, l0));
+  EXPECT_EQ(11U, d.findLockContext(&dtls, l1));
+  EXPECT_EQ(12U, d.findLockContext(&dtls, l2));
+  EXPECT_EQ(13U, d.findLockContext(&dtls, l3));
+  d.onUnlock(&dtls, l0);
+  EXPECT_EQ(0U, d.findLockContext(&dtls, l0));
+  EXPECT_EQ(11U, d.findLockContext(&dtls, l1));
+  EXPECT_EQ(12U, d.findLockContext(&dtls, l2));
+  EXPECT_EQ(13U, d.findLockContext(&dtls, l3));
+  d.onUnlock(&dtls, l2);
+  EXPECT_EQ(0U, d.findLockContext(&dtls, l0));
+  EXPECT_EQ(11U, d.findLockContext(&dtls, l1));
+  EXPECT_EQ(0U, d.findLockContext(&dtls, l2));
+  EXPECT_EQ(13U, d.findLockContext(&dtls, l3));
+
+  EXPECT_FALSE(d.onLock(&dtls, l4, 14));
+  EXPECT_EQ(14U, d.findLockContext(&dtls, l4));
+}
+
+TEST(DeadlockDetector, LockContextTest) {
+  RunLockContextTest<BV2>();
+}
+
+template <class BV>
+void RunRemoveEdgesTest() {
+  ScopedDD<BV> sdd;
+  DeadlockDetector<BV> &d = *sdd.dp;
+  DeadlockDetectorTLS<BV> &dtls = sdd.dtls;
+  vector<uptr> node(BV::kSize);
+  u32 stk_from = 0, stk_to = 0;
+  int unique_tid = 0;
+  for (size_t i = 0; i < BV::kSize; i++)
+    node[i] = d.newNode(0);
+
+  for (size_t i = 0; i < BV::kSize; i++)
+    EXPECT_FALSE(d.onLock(&dtls, node[i], i + 1));
+  for (size_t i = 0; i < BV::kSize; i++) {
+    for (uptr j = i + 1; j < BV::kSize; j++) {
+      EXPECT_TRUE(
+          d.findEdge(node[i], node[j], &stk_from, &stk_to, &unique_tid));
+      EXPECT_EQ(stk_from, i + 1);
+      EXPECT_EQ(stk_to, j + 1);
+    }
+  }
+  EXPECT_EQ(d.testOnlyGetEpoch(), d.size());
+  // Remove and re-create half of the nodes.
+  for (uptr i = 1; i < BV::kSize; i += 2)
+    d.removeNode(node[i]);
+  for (uptr i = 1; i < BV::kSize; i += 2)
+    node[i] = d.newNode(0);
+  EXPECT_EQ(d.testOnlyGetEpoch(), d.size());
+  // The edges from or to the removed nodes should be gone.
+  for (size_t i = 0; i < BV::kSize; i++) {
+    for (uptr j = i + 1; j < BV::kSize; j++) {
+      if ((i % 2) || (j % 2))
+        EXPECT_FALSE(
+            d.findEdge(node[i], node[j], &stk_from, &stk_to, &unique_tid));
+      else
+        EXPECT_TRUE(
+            d.findEdge(node[i], node[j], &stk_from, &stk_to, &unique_tid));
+    }
+  }
+}
+
+TEST(DeadlockDetector, RemoveEdgesTest) {
+  RunRemoveEdgesTest<BV1>();
+}

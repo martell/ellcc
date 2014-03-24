@@ -14,11 +14,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARM.h"
-#include "ARMBaseInstrInfo.h"
+#include "ARMBaseRegisterInfo.h"
 #include "ARMCallingConv.h"
 #include "ARMConstantPoolValue.h"
+#include "ARMISelLowering.h"
+#include "ARMMachineFunctionInfo.h"
 #include "ARMSubtarget.h"
-#include "ARMTargetMachine.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/CodeGen/Analysis.h"
@@ -73,7 +74,7 @@ namespace {
      }
   } Address;
 
-class ARMFastISel : public FastISel {
+class ARMFastISel final : public FastISel {
 
   /// Subtarget - Keep a pointer to the ARMSubtarget around so that we can
   /// make the right decision when generating code for different targets.

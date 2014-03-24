@@ -87,6 +87,7 @@ public:
   SectionRef(DataRefImpl SectionP, const ObjectFile *Owner);
 
   bool operator==(const SectionRef &Other) const;
+  bool operator!=(const SectionRef &Other) const;
   bool operator<(const SectionRef &Other) const;
 
   void moveNext();
@@ -116,6 +117,7 @@ public:
   relocation_iterator_range relocations() const {
     return relocation_iterator_range(relocation_begin(), relocation_end());
   }
+  bool relocation_empty() const;
   section_iterator getRelocatedSection() const;
 
   DataRefImpl getRawDataRefImpl() const;
@@ -259,6 +261,7 @@ protected:
                                            bool &Result) const = 0;
   virtual relocation_iterator section_rel_begin(DataRefImpl Sec) const = 0;
   virtual relocation_iterator section_rel_end(DataRefImpl Sec) const = 0;
+  virtual bool section_rel_empty(DataRefImpl Sec) const = 0;
   virtual section_iterator getRelocatedSection(DataRefImpl Sec) const;
 
   // Same as above for RelocationRef.
@@ -286,6 +289,10 @@ protected:
   virtual error_code getLibraryPath(DataRefImpl Lib, StringRef &Res) const = 0;
 
 public:
+  typedef iterator_range<symbol_iterator> symbol_iterator_range;
+  symbol_iterator_range symbols() const {
+    return symbol_iterator_range(symbol_begin(), symbol_end());
+  }
 
   virtual section_iterator section_begin() const = 0;
   virtual section_iterator section_end() const = 0;
@@ -388,6 +395,10 @@ inline bool SectionRef::operator==(const SectionRef &Other) const {
   return SectionPimpl == Other.SectionPimpl;
 }
 
+inline bool SectionRef::operator!=(const SectionRef &Other) const {
+  return SectionPimpl != Other.SectionPimpl;
+}
+
 inline bool SectionRef::operator<(const SectionRef &Other) const {
   return SectionPimpl < Other.SectionPimpl;
 }
@@ -455,6 +466,10 @@ inline relocation_iterator SectionRef::relocation_begin() const {
 
 inline relocation_iterator SectionRef::relocation_end() const {
   return OwningObject->section_rel_end(SectionPimpl);
+}
+
+inline bool SectionRef::relocation_empty() const {
+  return OwningObject->section_rel_empty(SectionPimpl);
 }
 
 inline section_iterator SectionRef::getRelocatedSection() const {

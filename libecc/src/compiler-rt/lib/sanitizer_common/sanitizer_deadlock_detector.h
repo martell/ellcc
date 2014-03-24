@@ -41,6 +41,7 @@ class DeadlockDetectorTLS {
     bv_.clear();
     epoch_ = 0;
     n_recursive_locks = 0;
+    n_all_locks_ = 0;
   }
 
   bool empty() const { return bv_.empty(); }
@@ -54,14 +55,20 @@ class DeadlockDetectorTLS {
   uptr getEpoch() const { return epoch_; }
 
   // Returns true if this is the first (non-recursive) acquisition of this lock.
-  bool addLock(uptr lock_id, uptr current_epoch) {
-    // Printf("addLock: %zx %zx\n", lock_id, current_epoch);
+  bool addLock(uptr lock_id, uptr current_epoch, u32 stk) {
+    // Printf("addLock: %zx %zx stk %u\n", lock_id, current_epoch, stk);
     CHECK_EQ(epoch_, current_epoch);
     if (!bv_.setBit(lock_id)) {
       // The lock is already held by this thread, it must be recursive.
       CHECK_LT(n_recursive_locks, ARRAY_SIZE(recursive_locks));
       recursive_locks[n_recursive_locks++] = lock_id;
       return false;
+    }
+    if (stk) {
+      CHECK_LT(n_all_locks_, ARRAY_SIZE(all_locks_with_contexts_));
+      // lock_id < BV::kSize, can cast to a smaller int.
+      u32 lock_id_short = static_cast<u32>(lock_id);
+      all_locks_with_contexts_[n_all_locks_++] = {lock_id_short, stk};
     }
     return true;
   }
@@ -78,6 +85,23 @@ class DeadlockDetectorTLS {
     }
     // Printf("remLock: %zx %zx\n", lock_id, epoch_);
     CHECK(bv_.clearBit(lock_id));
+    if (n_all_locks_) {
+      for (sptr i = n_all_locks_ - 1; i >= 0; i--) {
+        if (all_locks_with_contexts_[i].lock == static_cast<u32>(lock_id)) {
+          Swap(all_locks_with_contexts_[i],
+               all_locks_with_contexts_[n_all_locks_ - 1]);
+          n_all_locks_--;
+          break;
+        }
+      }
+    }
+  }
+
+  u32 findLockContext(uptr lock_id) {
+    for (uptr i = 0; i < n_all_locks_; i++)
+      if (all_locks_with_contexts_[i].lock == static_cast<u32>(lock_id))
+        return all_locks_with_contexts_[i].stk;
+    return 0;
   }
 
   const BV &getLocks(uptr current_epoch) const {
@@ -90,6 +114,12 @@ class DeadlockDetectorTLS {
   uptr epoch_;
   uptr recursive_locks[64];
   uptr n_recursive_locks;
+  struct LockWithContext {
+    u32 lock;
+    u32 stk;
+  };
+  LockWithContext all_locks_with_contexts_[64];
+  uptr n_all_locks_;
 };
 
 // DeadlockDetector.
@@ -123,6 +153,14 @@ class DeadlockDetector {
     if (!available_nodes_.empty())
       return getAvailableNode(data);
     if (!recycled_nodes_.empty()) {
+      // Printf("recycling: n_edges_ %zd\n", n_edges_);
+      for (sptr i = n_edges_ - 1; i >= 0; i--) {
+        if (recycled_nodes_.getBit(edges_[i].from) ||
+            recycled_nodes_.getBit(edges_[i].to)) {
+          Swap(edges_[i], edges_[n_edges_ - 1]);
+          n_edges_--;
+        }
+      }
       CHECK(available_nodes_.empty());
       // removeEdgesFrom was called in removeNode.
       g_.removeEdgesTo(recycled_nodes_);
@@ -165,11 +203,15 @@ class DeadlockDetector {
     return g_.isReachable(cur_idx, dtls->getLocks(current_epoch_));
   }
 
+  u32 findLockContext(DeadlockDetectorTLS<BV> *dtls, uptr node) {
+    return dtls->findLockContext(nodeToIndex(node));
+  }
+
   // Add cur_node to the set of locks held currently by dtls.
-  void onLockAfter(DeadlockDetectorTLS<BV> *dtls, uptr cur_node) {
+  void onLockAfter(DeadlockDetectorTLS<BV> *dtls, uptr cur_node, u32 stk = 0) {
     ensureCurrentEpoch(dtls);
     uptr cur_idx = nodeToIndex(cur_node);
-    dtls->addLock(cur_idx, current_epoch_);
+    dtls->addLock(cur_idx, current_epoch_, stk);
   }
 
   // Experimental *racy* fast path function.
@@ -189,7 +231,8 @@ class DeadlockDetector {
   // returns the number of added edges, and puts the sources of added edges
   // into added_edges[].
   // Should be called before onLockAfter.
-  uptr addEdges(DeadlockDetectorTLS<BV> *dtls, uptr cur_node, u32 stk) {
+  uptr addEdges(DeadlockDetectorTLS<BV> *dtls, uptr cur_node, u32 stk,
+                int unique_tid) {
     ensureCurrentEpoch(dtls);
     uptr cur_idx = nodeToIndex(cur_node);
     uptr added_edges[40];
@@ -197,29 +240,37 @@ class DeadlockDetector {
                                      added_edges, ARRAY_SIZE(added_edges));
     for (uptr i = 0; i < n_added_edges; i++) {
       if (n_edges_ < ARRAY_SIZE(edges_))
-        edges_[n_edges_++] = Edge((u16)added_edges[i], (u16)cur_idx, stk);
-      // Printf("Edge [%zd]: %u %zd=>%zd\n", i, stk, added_edges[i], cur_idx);
+        edges_[n_edges_++] = {(u16)added_edges[i], (u16)cur_idx,
+                              dtls->findLockContext(added_edges[i]), stk,
+                              unique_tid};
+      // Printf("Edge%zd: %u %zd=>%zd in T%d\n",
+      //        n_edges_, stk, added_edges[i], cur_idx, unique_tid);
     }
     return n_added_edges;
   }
 
-  u32 findEdge(uptr from_node, uptr to_node) {
+  bool findEdge(uptr from_node, uptr to_node, u32 *stk_from, u32 *stk_to,
+                int *unique_tid) {
     uptr from_idx = nodeToIndex(from_node);
     uptr to_idx = nodeToIndex(to_node);
     for (uptr i = 0; i < n_edges_; i++) {
-      if (edges_[i].from == from_idx && edges_[i].to == to_idx)
-        return edges_[i].stk;
+      if (edges_[i].from == from_idx && edges_[i].to == to_idx) {
+        *stk_from = edges_[i].stk_from;
+        *stk_to = edges_[i].stk_to;
+        *unique_tid = edges_[i].unique_tid;
+        return true;
+      }
     }
-    return 0;
+    return false;
   }
 
   // Test-only function. Handles the before/after lock events,
   // returns true if there is a cycle.
-  bool onLock(DeadlockDetectorTLS<BV> *dtls, uptr cur_node) {
+  bool onLock(DeadlockDetectorTLS<BV> *dtls, uptr cur_node, u32 stk = 0) {
     ensureCurrentEpoch(dtls);
     bool is_reachable = !isHeld(dtls, cur_node) && onLockBefore(dtls, cur_node);
-    addEdges(dtls, cur_node, 0);
-    onLockAfter(dtls, cur_node);
+    addEdges(dtls, cur_node, stk, 0);
+    onLockAfter(dtls, cur_node, stk);
     return is_reachable;
   }
 
@@ -228,20 +279,20 @@ class DeadlockDetector {
   // to add this lock to the currently held locks, but we should not try to
   // change the lock graph or to detect a cycle.  We may want to investigate
   // whether a more aggressive strategy is possible for try_lock.
-  bool onTryLock(DeadlockDetectorTLS<BV> *dtls, uptr cur_node) {
+  bool onTryLock(DeadlockDetectorTLS<BV> *dtls, uptr cur_node, u32 stk = 0) {
     ensureCurrentEpoch(dtls);
     uptr cur_idx = nodeToIndex(cur_node);
-    dtls->addLock(cur_idx, current_epoch_);
+    dtls->addLock(cur_idx, current_epoch_, stk);
     return false;
   }
 
   // Returns true iff dtls is empty (no locks are currently held) and we can
   // add the node to the currently held locks w/o chanding the global state.
   // This operation is thread-safe as it only touches the dtls.
-  bool onFirstLock(DeadlockDetectorTLS<BV> *dtls, uptr node) {
+  bool onFirstLock(DeadlockDetectorTLS<BV> *dtls, uptr node, u32 stk = 0) {
     if (!dtls->empty()) return false;
     if (dtls->getEpoch() && dtls->getEpoch() == nodeToEpoch(node)) {
-      dtls->addLock(nodeToIndexUnchecked(node), nodeToEpoch(node));
+      dtls->addLock(nodeToIndexUnchecked(node), nodeToEpoch(node), stk);
       return true;
     }
     return false;
@@ -274,9 +325,9 @@ class DeadlockDetector {
   // Returns true on success.
   // This operation is thread-safe as it only touches the dtls
   // (modulo racy nature of hasAllEdges).
-  bool onLockFast(DeadlockDetectorTLS<BV> *dtls, uptr node) {
+  bool onLockFast(DeadlockDetectorTLS<BV> *dtls, uptr node, u32 stk = 0) {
     if (hasAllEdges(dtls, node)) {
-      dtls->addLock(nodeToIndexUnchecked(node), nodeToEpoch(node));
+      dtls->addLock(nodeToIndexUnchecked(node), nodeToEpoch(node), stk);
       return true;
     }
     return false;
@@ -333,10 +384,9 @@ class DeadlockDetector {
   struct Edge {
     u16 from;
     u16 to;
-    u32 stk;
-    // FIXME: replace with initializer list once the tests are built as c++11.
-    Edge(u16 f, u16 t, u32 s) : from(f), to(t), stk(s) {}
-    Edge() {}
+    u32 stk_from;
+    u32 stk_to;
+    int unique_tid;
   };
 
   uptr current_epoch_;

@@ -25,8 +25,6 @@
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/IR/Function.h"
 
-const uint64_t RSRC_DATA_FORMAT = 0xf00000000000LL;
-
 using namespace llvm;
 
 SITargetLowering::SITargetLowering(TargetMachine &TM) :
@@ -398,16 +396,16 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
       static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
     MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
     unsigned SuperReg = MI->getOperand(0).getReg();
-    unsigned SubRegLo = MRI.createVirtualRegister(&AMDGPU::SReg_64RegClass);
-    unsigned SubRegHi = MRI.createVirtualRegister(&AMDGPU::SReg_64RegClass);
-    unsigned SubRegHiHi = MRI.createVirtualRegister(&AMDGPU::SReg_32RegClass);
-    unsigned SubRegHiLo = MRI.createVirtualRegister(&AMDGPU::SReg_32RegClass);
+    unsigned SubRegLo = MRI.createVirtualRegister(&AMDGPU::SGPR_64RegClass);
+    unsigned SubRegHi = MRI.createVirtualRegister(&AMDGPU::SGPR_64RegClass);
+    unsigned SubRegHiHi = MRI.createVirtualRegister(&AMDGPU::SGPR_32RegClass);
+    unsigned SubRegHiLo = MRI.createVirtualRegister(&AMDGPU::SGPR_32RegClass);
     BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::S_MOV_B64), SubRegLo)
             .addOperand(MI->getOperand(1));
     BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::S_MOV_B32), SubRegHiLo)
             .addImm(0);
     BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::S_MOV_B32), SubRegHiHi)
-            .addImm(RSRC_DATA_FORMAT >> 32);
+            .addImm(AMDGPU::RSRC_DATA_FORMAT >> 32);
     BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::REG_SEQUENCE), SubRegHi)
             .addReg(SubRegHiLo)
             .addImm(AMDGPU::sub0)

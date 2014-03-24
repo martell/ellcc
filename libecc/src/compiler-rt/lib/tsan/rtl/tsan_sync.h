@@ -22,8 +22,6 @@
 
 namespace __tsan {
 
-class SlabCache;
-
 class StackTrace {
  public:
   StackTrace();
@@ -71,7 +69,6 @@ struct SyncVar {
   SyncVar *next;  // In SyncTab hashtable.
   DDMutex dd;
 
-  uptr GetMemoryConsumption();
   u64 GetId() const {
     // 47 lsb is addr, then 14 bits is low part of uid, then 3 zero bits.
     return GetLsb((u64)addr | (uid << 47), 61);
@@ -99,8 +96,6 @@ class SyncTab {
   SyncVar* GetAndRemove(ThreadState *thr, uptr pc, uptr addr);
 
   SyncVar* Create(ThreadState *thr, uptr pc, uptr addr);
-
-  uptr GetMemoryConsumption(uptr *nsync);
 
  private:
   struct Part {

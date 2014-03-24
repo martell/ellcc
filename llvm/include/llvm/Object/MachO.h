@@ -91,6 +91,7 @@ public:
                                    bool &Result) const override;
   relocation_iterator section_rel_begin(DataRefImpl Sec) const override;
   relocation_iterator section_rel_end(DataRefImpl Sec) const override;
+  bool section_rel_empty(DataRefImpl Sec) const override;
 
   void moveRelocationNext(DataRefImpl &Rel) const override;
   error_code getRelocationAddress(DataRefImpl Rel,
@@ -178,6 +179,8 @@ public:
   getSegment64LoadCommand(const LoadCommandInfo &L) const;
   MachO::linker_options_command
   getLinkerOptionsLoadCommand(const LoadCommandInfo &L) const;
+  MachO::version_min_command
+  getVersionMinLoadCommand(const LoadCommandInfo &L) const;
 
   MachO::any_relocation_info getRelocation(DataRefImpl Rel) const;
   MachO::data_in_code_entry getDice(DataRefImpl Rel) const;

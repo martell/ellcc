@@ -20,6 +20,7 @@
 #include "sanitizer_common/sanitizer_procmaps.h"
 #include "sanitizer_common/sanitizer_stacktrace.h"
 #include "sanitizer_common/sanitizer_symbolizer.h"
+#include "sanitizer_common/sanitizer_stackdepot.h"
 
 
 // ACHTUNG! No system header includes in this file.
@@ -106,24 +107,24 @@ static atomic_uint32_t NumStackOriginDescrs;
 static void ParseFlagsFromString(Flags *f, const char *str) {
   CommonFlags *cf = common_flags();
   ParseCommonFlagsFromString(cf, str);
-  ParseFlag(str, &f->poison_heap_with_zeroes, "poison_heap_with_zeroes");
-  ParseFlag(str, &f->poison_stack_with_zeroes, "poison_stack_with_zeroes");
-  ParseFlag(str, &f->poison_in_malloc, "poison_in_malloc");
-  ParseFlag(str, &f->poison_in_free, "poison_in_free");
-  ParseFlag(str, &f->exit_code, "exit_code");
+  ParseFlag(str, &f->poison_heap_with_zeroes, "poison_heap_with_zeroes", "");
+  ParseFlag(str, &f->poison_stack_with_zeroes, "poison_stack_with_zeroes", "");
+  ParseFlag(str, &f->poison_in_malloc, "poison_in_malloc", "");
+  ParseFlag(str, &f->poison_in_free, "poison_in_free", "");
+  ParseFlag(str, &f->exit_code, "exit_code", "");
   if (f->exit_code < 0 || f->exit_code > 127) {
     Printf("Exit code not in [0, 128) range: %d\n", f->exit_code);
     Die();
   }
-  ParseFlag(str, &f->report_umrs, "report_umrs");
-  ParseFlag(str, &f->wrap_signals, "wrap_signals");
+  ParseFlag(str, &f->report_umrs, "report_umrs", "");
+  ParseFlag(str, &f->wrap_signals, "wrap_signals", "");
 
   // keep_going is an old name for halt_on_error,
   // and it has inverse meaning.
   f->halt_on_error = !f->halt_on_error;
-  ParseFlag(str, &f->halt_on_error, "keep_going");
+  ParseFlag(str, &f->halt_on_error, "keep_going", "");
   f->halt_on_error = !f->halt_on_error;
-  ParseFlag(str, &f->halt_on_error, "halt_on_error");
+  ParseFlag(str, &f->halt_on_error, "halt_on_error", "");
 }
 
 static void InitializeFlags(Flags *f, const char *options) {
@@ -234,6 +235,13 @@ const char *GetOriginDescrIfStack(u32 id, uptr *pc) {
   return StackOriginDescr[id];
 }
 
+u32 ChainOrigin(u32 id, StackTrace *stack) {
+  uptr idx = Min(stack->size, kStackTraceMax - 1);
+  stack->trace[idx] = TRACE_MAKE_CHAINED(id);
+  u32 new_id = StackDepotPut(stack->trace, idx + 1);
+  return new_id;
+}
+
 }  // namespace __msan
 
 // Interface.
@@ -269,6 +277,7 @@ void __msan_init() {
 
   const char *msan_options = GetEnv("MSAN_OPTIONS");
   InitializeFlags(&msan_flags, msan_options);
+  if (common_flags()->help) PrintFlagDescriptions();
   __sanitizer_set_report_path(common_flags()->log_path);
 
   InitializeInterceptors();
@@ -470,6 +479,11 @@ void __msan_set_alloca_origin4(void *a, uptr size, const char *descr, uptr pc) {
   if (print)
     Printf("__msan_set_alloca_origin: descr=%s id=%x\n", descr + 4, id);
   __msan_set_origin(a, size, id);
+}
+
+u32 __msan_chain_origin(u32 id) {
+  GET_STORE_STACK_TRACE;
+  return ChainOrigin(id, &stack);
 }
 
 const char *__msan_get_origin_descr_if_stack(u32 id) {

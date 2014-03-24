@@ -6573,6 +6573,18 @@ bool BuildVectorSDNode::isConstantSplat(APInt &SplatValue,
   return true;
 }
 
+ConstantSDNode *BuildVectorSDNode::getConstantSplatValue() const {
+  SDValue Op0 = getOperand(0);
+  if (Op0.getOpcode() != ISD::Constant)
+    return nullptr;
+
+  for (unsigned i = 1, e = getNumOperands(); i != e; ++i)
+    if (getOperand(i) != Op0)
+      return nullptr;
+
+  return cast<ConstantSDNode>(Op0);
+}
+
 bool BuildVectorSDNode::isConstant() const {
   for (unsigned i = 0, e = getNumOperands(); i != e; ++i) {
     unsigned Opc = getOperand(i).getOpcode();

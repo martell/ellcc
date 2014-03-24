@@ -271,7 +271,6 @@ class ELFObjectWriter : public MCObjectWriter {
     /// \param RevGroupMap - Maps a signature symbol to the group section.
     /// \param NumRegularSections - Number of non-relocation sections.
     void ComputeSymbolTable(MCAssembler &Asm,
-                            const MCAsmLayout &Layout,
                             const SectionIndexMapTy &SectionIndexMap,
                             RevGroupMapTy RevGroupMap,
                             unsigned NumRegularSections);
@@ -470,34 +469,35 @@ uint64_t ELFObjectWriter::SymbolValue(MCSymbolData &OrigData,
     return Data->getCommonAlignment();
 
   const MCSymbol *Symbol = &Data->getSymbol();
+  bool IsThumbFunc = OrigData.getFlags() & ELF_Other_ThumbFunc;
 
   uint64_t Res = 0;
   if (Symbol->isVariable()) {
     const MCExpr *Expr = Symbol->getVariableValue();
     MCValue Value;
     if (!Expr->EvaluateAsRelocatable(Value, &Layout))
-      return 0;
-    if (Value.getSymB())
-      return 0;
+      llvm_unreachable("Invalid expression");
+
+    assert(!Value.getSymB());
+
     Res = Value.getConstant();
 
-    const MCSymbolRefExpr *A = Value.getSymA();
-    if (!A)
-      return Res;
-
-    Symbol = &A->getSymbol();
-    Data = &Layout.getAssembler().getSymbolData(*Symbol);
+    if (const MCSymbolRefExpr *A = Value.getSymA()) {
+      Symbol = &A->getSymbol();
+      Data = &Layout.getAssembler().getSymbolData(*Symbol);
+    } else {
+      Symbol = 0;
+      Data = 0;
+    }
   }
 
-  if (!Symbol->isInSection())
-    return 0;
+  if (IsThumbFunc)
+    Res |= 1;
 
-  if (!Data->getFragment())
-    return 0;
+  if (!Symbol || !Symbol->isInSection())
+    return Res;
 
   Res += Layout.getSymbolOffset(Data);
-  if (Data->getFlags() & ELF_Other_ThumbFunc)
-    ++Res;
 
   return Res;
 }
@@ -575,6 +575,22 @@ static uint8_t mergeTypeForSet(uint8_t origType, uint8_t newType) {
   return Type;
 }
 
+static const MCSymbol *getBaseSymbol(const MCAsmLayout &Layout,
+                                     const MCSymbol &Symbol) {
+  if (!Symbol.isVariable())
+    return &Symbol;
+
+  const MCExpr *Expr = Symbol.getVariableValue();
+  MCValue Value;
+  if (!Expr->EvaluateAsRelocatable(Value, &Layout))
+    llvm_unreachable("Invalid Expression");
+  assert(!Value.getSymB());
+  const MCSymbolRefExpr *A = Value.getSymA();
+  if (!A)
+    return nullptr;
+  return getBaseSymbol(Layout, A->getSymbol());
+}
+
 void ELFObjectWriter::WriteSymbol(MCDataFragment *SymtabF,
                                   MCDataFragment *ShndxF,
                                   ELFSymbolData &MSD,
@@ -588,7 +604,14 @@ void ELFObjectWriter::WriteSymbol(MCDataFragment *SymtabF,
 
   // Binding and Type share the same byte as upper and lower nibbles
   uint8_t Binding = MCELF::GetBinding(OrigData);
-  uint8_t Type = mergeTypeForSet(MCELF::GetType(OrigData), MCELF::GetType(Data));
+  uint8_t Type = MCELF::GetType(OrigData);
+  const MCSymbol *Base = getBaseSymbol(Layout, OrigData.getSymbol());
+  if (Base) {
+    MCSymbolData BaseSD = Layout.getAssembler().getSymbolData(*Base);
+    Type = mergeTypeForSet(Type, MCELF::GetType(BaseSD));
+  }
+  if (OrigData.getFlags() & ELF_Other_ThumbFunc)
+    Type = ELF::STT_FUNC;
   uint8_t Info = (Binding << ELF_STB_Shift) | (Type << ELF_STT_Shift);
 
   // Other and Visibility share the same byte with Visibility using the lower
@@ -598,6 +621,8 @@ void ELFObjectWriter::WriteSymbol(MCDataFragment *SymtabF,
   Other |= Visibility;
 
   uint64_t Value = SymbolValue(OrigData, Layout);
+  if (OrigData.getFlags() & ELF_Other_ThumbFunc)
+    Value |= 1;
   uint64_t Size = 0;
 
   assert(!(Data.isCommon() && !Data.isExternal()));
@@ -789,7 +814,7 @@ void ELFObjectWriter::RecordRelocation(const MCAssembler &Asm,
         Index = 0;
       }
     } else {
-      if (Asm.getSymbolData(Symbol).getFlags() & ELF_Other_Weakref)
+      if (Target.getSymA()->getKind() == MCSymbolRefExpr::VK_WEAKREF)
         WeakrefUsedInReloc.insert(RelocSymbol);
       else
         UsedInReloc.insert(RelocSymbol);
@@ -834,16 +859,20 @@ ELFObjectWriter::getSymbolIndexInSymbolTable(const MCAssembler &Asm,
 bool ELFObjectWriter::isInSymtab(const MCAssembler &Asm,
                                  const MCSymbolData &Data,
                                  bool Used, bool Renamed) {
-  if (Data.getFlags() & ELF_Other_Weakref)
-    return false;
+  const MCSymbol &Symbol = Data.getSymbol();
+  if (Symbol.isVariable()) {
+    const MCExpr *Expr = Symbol.getVariableValue();
+    if (const MCSymbolRefExpr *Ref = dyn_cast<MCSymbolRefExpr>(Expr)) {
+      if (Ref->getKind() == MCSymbolRefExpr::VK_WEAKREF)
+        return false;
+    }
+  }
 
   if (Used)
     return true;
 
   if (Renamed)
     return false;
-
-  const MCSymbol &Symbol = Data.getSymbol();
 
   if (Symbol.getName() == "_GLOBAL_OFFSET_TABLE_")
     return true;
@@ -908,11 +937,10 @@ void ELFObjectWriter::ComputeIndexMap(MCAssembler &Asm,
   }
 }
 
-void
-ELFObjectWriter::ComputeSymbolTable(MCAssembler &Asm, const MCAsmLayout &Layout,
-                                    const SectionIndexMapTy &SectionIndexMap,
-                                    RevGroupMapTy RevGroupMap,
-                                    unsigned NumRegularSections) {
+void ELFObjectWriter::ComputeSymbolTable(MCAssembler &Asm,
+                                      const SectionIndexMapTy &SectionIndexMap,
+                                         RevGroupMapTy RevGroupMap,
+                                         unsigned NumRegularSections) {
   // FIXME: Is this the correct place to do this?
   // FIXME: Why is an undefined reference to _GLOBAL_OFFSET_TABLE_ needed?
   if (NeedsGOT) {
@@ -960,33 +988,33 @@ ELFObjectWriter::ComputeSymbolTable(MCAssembler &Asm, const MCAsmLayout &Layout,
 
     ELFSymbolData MSD;
     MSD.SymbolData = it;
-    const MCSymbol *BaseSymbol = Symbol.getBaseSymbol(Layout);
+    const MCSymbol &RefSymbol = Symbol.AliasedSymbol();
 
     // Undefined symbols are global, but this is the first place we
     // are able to set it.
     bool Local = isLocal(*it, isSignature, Used);
     if (!Local && MCELF::GetBinding(*it) == ELF::STB_LOCAL) {
-      assert(BaseSymbol);
-      MCSymbolData &SD = Asm.getSymbolData(*BaseSymbol);
+      MCSymbolData &SD = Asm.getSymbolData(RefSymbol);
       MCELF::SetBinding(*it, ELF::STB_GLOBAL);
       MCELF::SetBinding(SD, ELF::STB_GLOBAL);
     }
 
-    if (!BaseSymbol) {
-      MSD.SectionIndex = ELF::SHN_ABS;
-    } else if (it->isCommon()) {
+    if (RefSymbol.isUndefined() && !Used && WeakrefUsed)
+      MCELF::SetBinding(*it, ELF::STB_WEAK);
+
+    if (it->isCommon()) {
       assert(!Local);
       MSD.SectionIndex = ELF::SHN_COMMON;
-    } else if (BaseSymbol->isUndefined()) {
+    } else if (Symbol.isAbsolute() || RefSymbol.isVariable()) {
+      MSD.SectionIndex = ELF::SHN_ABS;
+    } else if (RefSymbol.isUndefined()) {
       if (isSignature && !Used)
         MSD.SectionIndex = SectionIndexMap.lookup(RevGroupMap[&Symbol]);
       else
         MSD.SectionIndex = ELF::SHN_UNDEF;
-      if (!Used && WeakrefUsed)
-        MCELF::SetBinding(*it, ELF::STB_WEAK);
     } else {
       const MCSectionELF &Section =
-        static_cast<const MCSectionELF&>(BaseSymbol->getSection());
+        static_cast<const MCSectionELF&>(RefSymbol.getSection());
       MSD.SectionIndex = SectionIndexMap.lookup(&Section);
       if (MSD.SectionIndex >= ELF::SHN_LORESERVE)
         NeedsSymtabShndx = true;
@@ -1572,8 +1600,8 @@ void ELFObjectWriter::WriteObject(MCAssembler &Asm,
   unsigned NumRegularSections = NumUserSections + NumIndexedSections;
 
   // Compute symbol table information.
-  ComputeSymbolTable(Asm, Layout, SectionIndexMap, RevGroupMap,
-                     NumRegularSections);
+  ComputeSymbolTable(Asm, SectionIndexMap, RevGroupMap, NumRegularSections);
+
 
   WriteRelocations(Asm, const_cast<MCAsmLayout&>(Layout), RelMap);
 

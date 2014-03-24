@@ -13,8 +13,6 @@
 #include "MCTargetDesc/ARMArchName.h"
 #include "MCTargetDesc/ARMBaseInfo.h"
 #include "MCTargetDesc/ARMMCExpr.h"
-#include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -25,11 +23,14 @@
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler.h"
+#include "llvm/MC/MCELF.h"
 #include "llvm/MC/MCELFStreamer.h"
+#include "llvm/MC/MCELFSymbolFlags.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrDesc.h"
 #include "llvm/MC/MCInstrInfo.h"
+#include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/MC/MCParser/MCParsedAsmOperand.h"
@@ -41,6 +42,7 @@
 #include "llvm/MC/MCTargetAsmParser.h"
 #include "llvm/Support/ARMBuildAttributes.h"
 #include "llvm/Support/ARMEHABI.h"
+#include "llvm/Support/COFF.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ELF.h"
 #include "llvm/Support/MathExtras.h"
@@ -229,6 +231,7 @@ class ARMAsmParser : public MCTargetAsmParser {
   bool parseDirectiveObjectArch(SMLoc L);
   bool parseDirectiveArchExtension(SMLoc L);
   bool parseDirectiveAlign(SMLoc L);
+  bool parseDirectiveThumbSet(SMLoc L);
 
   StringRef splitMnemonic(StringRef Mnemonic, unsigned &PredicationCode,
                           bool &CarrySetting, unsigned &ProcessorIMod,
@@ -8037,6 +8040,8 @@ bool ARMAsmParser::ParseDirective(AsmToken DirectiveID) {
     return parseDirectiveArchExtension(DirectiveID.getLoc());
   else if (IDVal == ".align")
     return parseDirectiveAlign(DirectiveID.getLoc());
+  else if (IDVal == ".thumb_set")
+    return parseDirectiveThumbSet(DirectiveID.getLoc());
   return true;
 }
 
@@ -8087,6 +8092,7 @@ bool ARMAsmParser::parseDirectiveThumb(SMLoc L) {
 
   if (!isThumb())
     SwitchMode();
+
   getParser().getStreamer().EmitAssemblerFlag(MCAF_Code16);
   return false;
 }
@@ -8107,6 +8113,7 @@ bool ARMAsmParser::parseDirectiveARM(SMLoc L) {
 
   if (isThumb())
     SwitchMode();
+
   getParser().getStreamer().EmitAssemblerFlag(MCAF_Code32);
   return false;
 }
@@ -8115,6 +8122,32 @@ void ARMAsmParser::onLabelParsed(MCSymbol *Symbol) {
   if (NextSymbolIsThumb) {
     getParser().getStreamer().EmitThumbFunc(Symbol);
     NextSymbolIsThumb = false;
+    return;
+  }
+
+  if (!isThumb())
+    return;
+
+  const MCObjectFileInfo::Environment Format =
+    getContext().getObjectFileInfo()->getObjectFileType();
+  switch (Format) {
+  case MCObjectFileInfo::IsCOFF: {
+    const MCSymbolData &SD =
+      getParser().getStreamer().getOrCreateSymbolData(Symbol);
+    char Type = COFF::IMAGE_SYM_DTYPE_FUNCTION << COFF::SCT_COMPLEX_TYPE_SHIFT;
+    if (SD.getFlags() & (Type << COFF::SF_TypeShift))
+      getParser().getStreamer().EmitThumbFunc(Symbol);
+    break;
+  }
+  case MCObjectFileInfo::IsELF: {
+    const MCSymbolData &SD =
+      getParser().getStreamer().getOrCreateSymbolData(Symbol);
+    if (MCELF::GetType(SD) & (ELF::STT_FUNC << ELF_STT_Shift))
+      getParser().getStreamer().EmitThumbFunc(Symbol);
+    break;
+  }
+  case MCObjectFileInfo::IsMachO:
+    break;
   }
 }
 
@@ -8806,6 +8839,7 @@ bool ARMAsmParser::parseDirectiveEven(SMLoc L) {
     Section = getStreamer().getCurrentSection().first;
   }
 
+  assert(Section && "must have section to emit alignment");
   if (Section->UseCodeAlign())
     getStreamer().EmitCodeAlignment(2);
   else
@@ -9089,6 +9123,71 @@ bool ARMAsmParser::parseDirectiveAlign(SMLoc L) {
     getStreamer().EmitCodeAlignment(4, 0);
   else
     getStreamer().EmitValueToAlignment(4, 0, 1, 0);
+
+  return false;
+}
+
+/// parseDirectiveThumbSet
+///  ::= .thumb_set name, value
+bool ARMAsmParser::parseDirectiveThumbSet(SMLoc L) {
+  StringRef Name;
+  if (Parser.parseIdentifier(Name)) {
+    TokError("expected identifier after '.thumb_set'");
+    Parser.eatToEndOfStatement();
+    return false;
+  }
+
+  if (getLexer().isNot(AsmToken::Comma)) {
+    TokError("expected comma after name '" + Name + "'");
+    Parser.eatToEndOfStatement();
+    return false;
+  }
+  Lex();
+
+  const MCExpr *Value;
+  if (Parser.parseExpression(Value)) {
+    TokError("missing expression");
+    Parser.eatToEndOfStatement();
+    return false;
+  }
+
+  if (getLexer().isNot(AsmToken::EndOfStatement)) {
+    TokError("unexpected token");
+    Parser.eatToEndOfStatement();
+    return false;
+  }
+  Lex();
+
+  MCSymbol *Alias = getContext().GetOrCreateSymbol(Name);
+  if (const MCSymbolRefExpr *SRE = dyn_cast<MCSymbolRefExpr>(Value)) {
+    MCSymbol *Sym = getContext().LookupSymbol(SRE->getSymbol().getName());
+    if (!Sym->isDefined()) {
+      getStreamer().EmitSymbolAttribute(Sym, MCSA_Global);
+      getStreamer().EmitAssignment(Alias, Value);
+      return false;
+    }
+
+    const MCObjectFileInfo::Environment Format =
+      getContext().getObjectFileInfo()->getObjectFileType();
+    switch (Format) {
+    case MCObjectFileInfo::IsCOFF: {
+      char Type = COFF::IMAGE_SYM_DTYPE_FUNCTION << COFF::SCT_COMPLEX_TYPE_SHIFT;
+      getStreamer().EmitCOFFSymbolType(Type);
+      // .set values are always local in COFF
+      getStreamer().EmitSymbolAttribute(Alias, MCSA_Local);
+      break;
+    }
+    case MCObjectFileInfo::IsELF:
+      getStreamer().EmitSymbolAttribute(Alias, MCSA_ELF_TypeFunction);
+      break;
+    case MCObjectFileInfo::IsMachO:
+      break;
+    }
+  }
+
+  // FIXME: set the function as being a thumb function via the assembler
+  getStreamer().EmitThumbFunc(Alias);
+  getStreamer().EmitAssignment(Alias, Value);
 
   return false;
 }

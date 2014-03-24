@@ -347,6 +347,9 @@ namespace llvm {
     void setMCLineTableSymbol(MCSymbol *Sym, unsigned ID) {
       getMCDwarfLineTable(ID).setLabel(Sym);
     }
+    void setMCLineTableCompilationDir(unsigned CUID, StringRef CompilationDir) {
+      getMCDwarfLineTable(CUID).setCompilationDir(CompilationDir);
+    }
 
     /// setCurrentDwarfLoc - saves the information from the currently parsed
     /// dwarf .loc directive and sets DwarfLocSeen.  When the next instruction
@@ -371,7 +374,9 @@ namespace llvm {
     bool getGenDwarfForAssembly() { return GenDwarfForAssembly; }
     void setGenDwarfForAssembly(bool Value) { GenDwarfForAssembly = Value; }
     unsigned getGenDwarfFileNumber() { return GenDwarfFileNumber; }
-    unsigned nextGenDwarfFileNumber() { return ++GenDwarfFileNumber; }
+    void setGenDwarfFileNumber(unsigned FileNumber) {
+      GenDwarfFileNumber = FileNumber;
+    }
     const MCSection *getGenDwarfSection() { return GenDwarfSection; }
     void setGenDwarfSection(const MCSection *Sec) { GenDwarfSection = Sec; }
     MCSymbol *getGenDwarfSectionStartSym() { return GenDwarfSectionStartSym; }

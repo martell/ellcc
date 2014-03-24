@@ -3604,10 +3604,8 @@ void Sema::CodeCompleteMemberReferenceExpr(Scope *S, Expr *Base,
                       AddedProperties, Results);
     
     // Add properties from the protocols in a qualified interface.
-    for (ObjCObjectPointerType::qual_iterator I = ObjCPtr->qual_begin(),
-                                              E = ObjCPtr->qual_end();
-         I != E; ++I)
-      AddObjCProperties(*I, true, /*AllowNullaryMethods=*/true, CurContext, 
+    for (auto *I : ObjCPtr->quals())
+      AddObjCProperties(I, true, /*AllowNullaryMethods=*/true, CurContext, 
                         AddedProperties, Results);
   } else if ((IsArrow && BaseType->isObjCObjectPointerType()) ||
              (!IsArrow && BaseType->isObjCObjectType())) {
@@ -4337,9 +4335,8 @@ void Sema::CodeCompleteLambdaIntroducer(Scope *S, LambdaIntroducer &Intro,
   
   // Look for other capturable variables.
   for (; S && !isNamespaceScope(S); S = S->getParent()) {
-    for (Scope::decl_iterator D = S->decl_begin(), DEnd = S->decl_end();
-         D != DEnd; ++D) {
-      VarDecl *Var = dyn_cast<VarDecl>(*D);
+    for (const auto *D : S->decls()) {
+      const auto *Var = dyn_cast<VarDecl>(D);
       if (!Var ||
           !Var->hasLocalStorage() ||
           Var->hasAttr<BlocksAttr>())
@@ -5530,10 +5527,8 @@ void Sema::CodeCompleteObjCInstanceMessage(Scope *S, Expr *Receiver,
   else if (const ObjCObjectPointerType *QualID
              = ReceiverType->getAsObjCQualifiedIdType()) {
     // Search protocols for instance methods.
-    for (ObjCObjectPointerType::qual_iterator I = QualID->qual_begin(),
-                                              E = QualID->qual_end(); 
-         I != E; ++I)
-      AddObjCMethods(*I, true, MK_Any, SelIdents, CurContext,
+    for (auto *I : QualID->quals())
+      AddObjCMethods(I, true, MK_Any, SelIdents, CurContext,
                      Selectors, AtArgumentExpression, Results);
   }
   // Handle messages to a pointer to interface type.
@@ -5545,10 +5540,8 @@ void Sema::CodeCompleteObjCInstanceMessage(Scope *S, Expr *Receiver,
                    Results);
     
     // Search protocols for instance methods.
-    for (ObjCObjectPointerType::qual_iterator I = IFacePtr->qual_begin(),
-         E = IFacePtr->qual_end(); 
-         I != E; ++I)
-      AddObjCMethods(*I, true, MK_Any, SelIdents, CurContext,
+    for (auto *I : IFacePtr->quals())
+      AddObjCMethods(I, true, MK_Any, SelIdents, CurContext,
                      Selectors, AtArgumentExpression, Results);
   }
   // Handle messages to "id".

@@ -368,9 +368,8 @@ public:
 
   void computeInfo(CGFunctionInfo &FI) const override {
     FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
-    for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-         it != ie; ++it)
-      it->info = classifyArgumentType(it->type);
+    for (auto &I : FI.arguments())
+      I.info = classifyArgumentType(I.type);
   }
 
   llvm::Value *EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
@@ -449,9 +448,8 @@ class PNaClTargetCodeGenInfo : public TargetCodeGenInfo {
 void PNaClABIInfo::computeInfo(CGFunctionInfo &FI) const {
     FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
 
-    for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-         it != ie; ++it)
-      it->info = classifyArgumentType(it->type);
+    for (auto &I : FI.arguments())
+      I.info = classifyArgumentType(I.type);
   }
 
 llvm::Value *PNaClABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
@@ -1000,10 +998,9 @@ void X86_32ABIInfo::computeInfo(CGFunctionInfo &FI) const {
     FI.setEffectiveCallingConvention(llvm::CallingConv::X86_CDeclMethod);
 
   bool UsedInAlloca = false;
-  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-       it != ie; ++it) {
-    it->info = classifyArgumentType(it->type, State);
-    UsedInAlloca |= (it->info.getKind() == ABIArgInfo::InAlloca);
+  for (auto &I : FI.arguments()) {
+    I.info = classifyArgumentType(I.type, State);
+    UsedInAlloca |= (I.info.getKind() == ABIArgInfo::InAlloca);
   }
 
   // If we needed to use inalloca for any argument, do a second pass and rewrite
@@ -2760,9 +2757,8 @@ void WinX86_64ABIInfo::computeInfo(CGFunctionInfo &FI) const {
   QualType RetTy = FI.getReturnType();
   FI.getReturnInfo() = classify(RetTy, true);
 
-  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-       it != ie; ++it)
-    it->info = classify(it->type, false);
+  for (auto &I : FI.arguments())
+    I.info = classify(I.type, false);
 }
 
 llvm::Value *WinX86_64ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
@@ -2975,21 +2971,20 @@ public:
   // when lowering the parameters in the caller and args in the callee.
   void computeInfo(CGFunctionInfo &FI) const override {
     FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
-    for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-         it != ie; ++it) {
+    for (auto &I : FI.arguments()) {
       // We rely on the default argument classification for the most part.
       // One exception:  An aggregate containing a single floating-point
       // or vector item must be passed in a register if one is available.
-      const Type *T = isSingleElementStruct(it->type, getContext());
+      const Type *T = isSingleElementStruct(I.type, getContext());
       if (T) {
         const BuiltinType *BT = T->getAs<BuiltinType>();
         if (T->isVectorType() || (BT && BT->isFloatingPoint())) {
           QualType QT(T, 0);
-          it->info = ABIArgInfo::getDirectInReg(CGT.ConvertType(QT));
+          I.info = ABIArgInfo::getDirectInReg(CGT.ConvertType(QT));
           continue;
         }
       }
-      it->info = classifyArgumentType(it->type);
+      I.info = classifyArgumentType(I.type);
     }
   }
 
@@ -3367,15 +3362,14 @@ void ARMABIInfo::computeInfo(CGFunctionInfo &FI) const {
   resetAllocatedRegs();
 
   FI.getReturnInfo() = classifyReturnType(FI.getReturnType(), FI.isVariadic());
-  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-       it != ie; ++it) {
+  for (auto &I : FI.arguments()) {
     unsigned PreAllocationVFPs = AllocatedVFPs;
     unsigned PreAllocationGPRs = AllocatedGPRs;
     bool IsHA = false;
     bool IsCPRC = false;
     // 6.1.2.3 There is one VFP co-processor register class using registers
     // s0-s15 (d0-d7) for passing arguments.
-    it->info = classifyArgumentType(it->type, IsHA, FI.isVariadic(), IsCPRC);
+    I.info = classifyArgumentType(I.type, IsHA, FI.isVariadic(), IsCPRC);
     assert((IsCPRC || !IsHA) && "Homogeneous aggregates must be CPRCs");
     // If we do not have enough VFP registers for the HA, any VFP registers
     // that are unallocated are marked as unavailable. To achieve this, we add
@@ -3385,7 +3379,7 @@ void ARMABIInfo::computeInfo(CGFunctionInfo &FI) const {
     if (IsHA && AllocatedVFPs > NumVFPs && PreAllocationVFPs < NumVFPs) {
       llvm::Type *PaddingTy = llvm::ArrayType::get(
           llvm::Type::getFloatTy(getVMContext()), NumVFPs - PreAllocationVFPs);
-      it->info = ABIArgInfo::getExpandWithPadding(false, PaddingTy);
+      I.info = ABIArgInfo::getExpandWithPadding(false, PaddingTy);
     }
 
     // If we have allocated some arguments onto the stack (due to running
@@ -3398,7 +3392,7 @@ void ARMABIInfo::computeInfo(CGFunctionInfo &FI) const {
     if (!IsCPRC && PreAllocationGPRs < NumGPRs && AllocatedGPRs > NumGPRs && StackUsed) {
       llvm::Type *PaddingTy = llvm::ArrayType::get(
           llvm::Type::getInt32Ty(getVMContext()), NumGPRs - PreAllocationGPRs);
-      it->info = ABIArgInfo::getExpandWithPadding(false, PaddingTy);
+      I.info = ABIArgInfo::getExpandWithPadding(false, PaddingTy);
     }
   }
 
@@ -4100,9 +4094,8 @@ void AArch64ABIInfo::computeInfo(CGFunctionInfo &FI) const {
                                            FreeIntRegs, FreeVFPRegs);
 
   FreeIntRegs = FreeVFPRegs = 8;
-  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-       it != ie; ++it) {
-    it->info = classifyGenericType(it->type, FreeIntRegs, FreeVFPRegs);
+  for (auto &I : FI.arguments()) {
+    I.info = classifyGenericType(I.type, FreeIntRegs, FreeVFPRegs);
 
   }
 }
@@ -4534,9 +4527,8 @@ ABIArgInfo NVPTXABIInfo::classifyArgumentType(QualType Ty) const {
 
 void NVPTXABIInfo::computeInfo(CGFunctionInfo &FI) const {
   FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
-  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-       it != ie; ++it)
-    it->info = classifyArgumentType(it->type);
+  for (auto &I : FI.arguments())
+    I.info = classifyArgumentType(I.type);
 
   // Always honor user-specified calling convention.
   if (FI.getCallingConvention() != llvm::CallingConv::C)
@@ -4618,9 +4610,8 @@ public:
 
   void computeInfo(CGFunctionInfo &FI) const override {
     FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
-    for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-         it != ie; ++it)
-      it->info = classifyArgumentType(it->type);
+    for (auto &I : FI.arguments())
+      I.info = classifyArgumentType(I.type);
   }
 
   llvm::Value *EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
@@ -5342,9 +5333,8 @@ void MipsABIInfo::computeInfo(CGFunctionInfo &FI) const {
   // Check if a pointer to an aggregate is passed as a hidden argument.  
   uint64_t Offset = RetInfo.isIndirect() ? MinABIStackAlignInBytes : 0;
 
-  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-       it != ie; ++it)
-    it->info = classifyArgumentType(it->type, Offset);
+  for (auto &I : FI.arguments())
+    I.info = classifyArgumentType(I.type, Offset);
 }
 
 llvm::Value* MipsABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
@@ -5551,9 +5541,8 @@ public:
 
 void HexagonABIInfo::computeInfo(CGFunctionInfo &FI) const {
   FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
-  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-       it != ie; ++it)
-    it->info = classifyArgumentType(it->type);
+  for (auto &I : FI.arguments())
+    I.info = classifyArgumentType(I.type);
 }
 
 ABIArgInfo HexagonABIInfo::classifyArgumentType(QualType Ty) const {
@@ -5904,9 +5893,8 @@ llvm::Value *SparcV9ABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
 
 void SparcV9ABIInfo::computeInfo(CGFunctionInfo &FI) const {
   FI.getReturnInfo() = classifyType(FI.getReturnType(), 32 * 8);
-  for (CGFunctionInfo::arg_iterator it = FI.arg_begin(), ie = FI.arg_end();
-       it != ie; ++it)
-    it->info = classifyType(it->type, 16 * 8);
+  for (auto &I : FI.arguments())
+    I.info = classifyType(I.type, 16 * 8);
 }
 
 namespace {

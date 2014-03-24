@@ -640,9 +640,8 @@ bool AsmParser::Run(bool NoInitialTextSection, bool NoFinalize) {
     MCSymbol *SectionStartSym = getContext().CreateTempSymbol();
     getStreamer().EmitLabel(SectionStartSym);
     getContext().setGenDwarfSectionStartSym(SectionStartSym);
-    getStreamer().EmitDwarfFileDirective(getContext().nextGenDwarfFileNumber(),
-                                         StringRef(),
-                                         getContext().getMainFileName());
+    getContext().setGenDwarfFileNumber(getStreamer().EmitDwarfFileDirective(
+        0, StringRef(), getContext().getMainFileName()));
   }
 
   // While we have input, parse each statement.
@@ -876,10 +875,8 @@ bool AsmParser::parsePrimaryExpr(const MCExpr *&Res, SMLoc &EndLoc) {
       MCSymbolRefExpr::VariantKind Variant = MCSymbolRefExpr::VK_None;
       if (Split.first.size() != IDVal.size()) {
         Variant = MCSymbolRefExpr::getVariantKindForName(Split.second);
-        if (Variant == MCSymbolRefExpr::VK_Invalid) {
-          Variant = MCSymbolRefExpr::VK_None;
+        if (Variant == MCSymbolRefExpr::VK_Invalid)
           return TokError("invalid variant '" + Split.second + "'");
-        }
         IDVal = Split.first;
       }
       if (IDVal == "f" || IDVal == "b") {
@@ -1589,14 +1586,10 @@ bool AsmParser::parseStatement(ParseStatementInfo &Info) {
     // If we previously parsed a cpp hash file line comment then make sure the
     // current Dwarf File is for the CppHashFilename if not then emit the
     // Dwarf File table for it and adjust the line number for the .loc.
-    const SmallVectorImpl<MCDwarfFile> &MCDwarfFiles =
-        getContext().getMCDwarfFiles();
     if (CppHashFilename.size() != 0) {
-      if (MCDwarfFiles[getContext().getGenDwarfFileNumber()].Name !=
-          CppHashFilename)
-        getStreamer().EmitDwarfFileDirective(
-            getContext().nextGenDwarfFileNumber(), StringRef(),
-            CppHashFilename);
+      unsigned FileNumber = getStreamer().EmitDwarfFileDirective(
+          0, StringRef(), CppHashFilename);
+      getContext().setGenDwarfFileNumber(FileNumber);
 
       // Since SrcMgr.FindLineNumber() is slow and messes up the SourceMgr's
       // cache with the different Loc from the call above we save the last
@@ -1622,9 +1615,9 @@ bool AsmParser::parseStatement(ParseStatementInfo &Info) {
   // If parsing succeeded, match the instruction.
   if (!HadError) {
     unsigned ErrorInfo;
-    HadError = getTargetParser().MatchAndEmitInstruction(
-        IDLoc, Info.Opcode, Info.ParsedOperands, Out, ErrorInfo,
-        ParsingInlineAsm);
+    getTargetParser().MatchAndEmitInstruction(IDLoc, Info.Opcode,
+                                              Info.ParsedOperands, Out,
+                                              ErrorInfo, ParsingInlineAsm);
   }
 
   // Don't skip the rest of the line, the instruction parser is responsible for
@@ -2003,9 +1996,10 @@ bool AsmParser::parseMacroArguments(const MCAsmMacro *M,
           break;
 
       if (FAI >= NParameters) {
+	assert(M && "expected macro to be defined");
         Error(IDLoc,
               "parameter named '" + FA.Name + "' does not exist for macro '" +
-              (M ? M->Name : "<unnamed>") + "'");
+              M->Name + "'");
         return true;
       }
       PI = FAI;
@@ -2698,7 +2692,9 @@ bool AsmParser::parseDirectiveAlign(bool IsPow2, unsigned ValueSize) {
 
   // Check whether we should use optimal code alignment for this .align
   // directive.
-  bool UseCodeAlign = getStreamer().getCurrentSection().first->UseCodeAlign();
+  const MCSection *Section = getStreamer().getCurrentSection().first;
+  assert(Section && "must have section to emit alignment");
+  bool UseCodeAlign = Section->UseCodeAlign();
   if ((!HasFillExpr || Lexer.getMAI().getTextAlignFillValue() == FillExpr) &&
       ValueSize == 1 && UseCodeAlign) {
     getStreamer().EmitCodeAlignment(Alignment, MaxBytesToFill);
@@ -2762,7 +2758,8 @@ bool AsmParser::parseDirectiveFile(SMLoc DirectiveLoc) {
             "input can't have .file dwarf directives when -g is "
             "used to generate dwarf debug info for assembly code");
 
-    if (getStreamer().EmitDwarfFileDirective(FileNumber, Directory, Filename))
+    if (getStreamer().EmitDwarfFileDirective(FileNumber, Directory, Filename) ==
+        0)
       Error(FileNumberLoc, "file number already allocated");
   }
 

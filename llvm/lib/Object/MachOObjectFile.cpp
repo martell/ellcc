@@ -214,6 +214,14 @@ void SwapStruct(MachO::linker_options_command &C) {
 }
 
 template<>
+void SwapStruct(MachO::version_min_command&C) {
+  SwapValue(C.cmd);
+  SwapValue(C.cmdsize);
+  SwapValue(C.version);
+  SwapValue(C.reserved);
+}
+
+template<>
 void SwapStruct(MachO::data_in_code_entry &C) {
   SwapValue(C.offset);
   SwapValue(C.length);
@@ -296,16 +304,16 @@ static void printRelocationTargetName(const MachOObjectFile *O,
   if (IsScattered) {
     uint32_t Val = O->getPlainRelocationSymbolNum(RE);
 
-    for (symbol_iterator SI = O->symbol_begin(), SE = O->symbol_end();
-         SI != SE; ++SI) {
+    for (const SymbolRef &Symbol : O->symbols()) {
       error_code ec;
       uint64_t Addr;
       StringRef Name;
 
-      if ((ec = SI->getAddress(Addr)))
+      if ((ec = Symbol.getAddress(Addr)))
         report_fatal_error(ec.message());
-      if (Addr != Val) continue;
-      if ((ec = SI->getName(Name)))
+      if (Addr != Val)
+        continue;
+      if ((ec = Symbol.getName(Name)))
         report_fatal_error(ec.message());
       fmt << Name;
       return;
@@ -528,8 +536,8 @@ error_code MachOObjectFile::getSymbolSize(DataRefImpl DRI,
   }
   // Unfortunately symbols are unsorted so we need to touch all
   // symbols from load command
-  for (symbol_iterator I = symbol_begin(), E = symbol_end(); I != E; ++I) {
-    DataRefImpl DRI = I->getRawDataRefImpl();
+  for (const SymbolRef &Symbol : symbols()) {
+    DataRefImpl DRI = Symbol.getRawDataRefImpl();
     Entry = getSymbolTableEntryBase(this, DRI);
     getSymbolAddress(DRI, Value);
     if (Entry.n_sect == SectionIndex && Value > BeginOffset)
@@ -808,6 +816,16 @@ MachOObjectFile::section_rel_end(DataRefImpl Sec) const {
   DataRefImpl Ret;
   Ret.p = reinterpret_cast<uintptr_t>(P + Num);
   return relocation_iterator(RelocationRef(Ret, this));
+}
+
+bool MachOObjectFile::section_rel_empty(DataRefImpl Sec) const {
+  if (is64Bit()) {
+    MachO::section_64 Sect = getSection64(Sec);
+    return Sect.nreloc == 0;
+  } else {
+    MachO::section Sect = getSection(Sec);
+    return Sect.nreloc == 0;
+  }
 }
 
 void MachOObjectFile::moveRelocationNext(DataRefImpl &Rel) const {
@@ -1465,6 +1483,11 @@ MachOObjectFile::getSegment64LoadCommand(const LoadCommandInfo &L) const {
 MachO::linker_options_command
 MachOObjectFile::getLinkerOptionsLoadCommand(const LoadCommandInfo &L) const {
   return getStruct<MachO::linker_options_command>(this, L.Ptr);
+}
+
+MachO::version_min_command
+MachOObjectFile::getVersionMinLoadCommand(const LoadCommandInfo &L) const {
+  return getStruct<MachO::version_min_command>(this, L.Ptr);
 }
 
 MachO::any_relocation_info

@@ -40,6 +40,8 @@ void __msan_warning_noreturn();
 SANITIZER_INTERFACE_ATTRIBUTE
 void __msan_unpoison(const void *a, uptr size);
 SANITIZER_INTERFACE_ATTRIBUTE
+void __msan_unpoison_string(const char *s);
+SANITIZER_INTERFACE_ATTRIBUTE
 void __msan_clear_and_unpoison(void *a, uptr size);
 SANITIZER_INTERFACE_ATTRIBUTE
 void* __msan_memcpy(void *dst, const void *src, uptr size);
@@ -47,12 +49,6 @@ SANITIZER_INTERFACE_ATTRIBUTE
 void* __msan_memset(void *s, int c, uptr n);
 SANITIZER_INTERFACE_ATTRIBUTE
 void* __msan_memmove(void* dest, const void* src, uptr n);
-SANITIZER_INTERFACE_ATTRIBUTE
-void __msan_copy_poison(void *dst, const void *src, uptr size);
-SANITIZER_INTERFACE_ATTRIBUTE
-void __msan_copy_origin(void *dst, const void *src, uptr size);
-SANITIZER_INTERFACE_ATTRIBUTE
-void __msan_move_poison(void *dst, const void *src, uptr size);
 SANITIZER_INTERFACE_ATTRIBUTE
 void __msan_poison(const void *a, uptr size);
 SANITIZER_INTERFACE_ATTRIBUTE
@@ -74,6 +70,8 @@ SANITIZER_INTERFACE_ATTRIBUTE
 void __msan_set_alloca_origin(void *a, uptr size, const char *descr);
 SANITIZER_INTERFACE_ATTRIBUTE
 void __msan_set_alloca_origin4(void *a, uptr size, const char *descr, uptr pc);
+SANITIZER_INTERFACE_ATTRIBUTE
+u32 __msan_chain_origin(u32 id);
 SANITIZER_INTERFACE_ATTRIBUTE
 u32 __msan_get_origin(const void *a);
 

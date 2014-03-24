@@ -3519,8 +3519,9 @@ bool CheckScanfHandler::HandleScanfSpecifier(
   const analyze_format_string::ArgType &AT = FS.getArgType(S.Context);
   if (AT.isValid() && !AT.matchesType(S.Context, Ex->getType())) {
     ScanfSpecifier fixedFS = FS;
-    bool success = fixedFS.fixType(Ex->getType(), S.getLangOpts(),
-                                   S.Context);
+    bool success = fixedFS.fixType(Ex->getType(),
+                                   Ex->IgnoreImpCasts()->getType(),
+                                   S.getLangOpts(), S.Context);
 
     if (success) {
       // Get the fix string from the fixed format specifier.

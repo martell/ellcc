@@ -317,7 +317,6 @@ void MachineOperand::print(raw_ostream &OS, const TargetMachine *TM) const {
         OS << "tied";
         if (TiedTo != 15)
           OS << unsigned(TiedTo - 1);
-        NeedComma = true;
       }
       OS << '>';
     }
@@ -1435,7 +1434,7 @@ void MachineInstr::copyImplicitOps(MachineFunction &MF,
   for (unsigned i = MI->getDesc().getNumOperands(), e = MI->getNumOperands();
        i != e; ++i) {
     const MachineOperand &MO = MI->getOperand(i);
-    if (MO.isReg() && MO.isImplicit())
+    if ((MO.isReg() && MO.isImplicit()) || MO.isRegMask())
       addOperand(MF, MO);
   }
 }
@@ -1675,7 +1674,7 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM,
 
   // Print debug location information.
   if (isDebugValue() && getOperand(e - 1).isMetadata()) {
-    if (!HaveSemi) OS << ";"; HaveSemi = true;
+    if (!HaveSemi) OS << ";";
     DIVariable DV(getOperand(e - 1).getMetadata());
     OS << " line no:" <<  DV.getLineNumber();
     if (MDNode *InlinedAt = DV.getInlinedAt()) {
@@ -1687,7 +1686,7 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM,
       }
     }
   } else if (!debugLoc.isUnknown() && MF) {
-    if (!HaveSemi) OS << ";"; HaveSemi = true;
+    if (!HaveSemi) OS << ";";
     OS << " dbg:";
     printDebugLoc(debugLoc, MF, OS);
   }

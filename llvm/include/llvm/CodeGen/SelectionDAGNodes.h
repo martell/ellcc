@@ -1522,6 +1522,12 @@ public:
                        unsigned MinSplatBits = 0,
                        bool isBigEndian = false) const;
 
+  /// getConstantSplatValue - Check if this is a constant splat, and if so,
+  /// return the splat value only if it is a ConstantSDNode. Otherwise
+  /// return nullptr. This is a simpler form of isConstantSplat.
+  /// Get the constant splat only if you care about the splat value.
+  ConstantSDNode *getConstantSplatValue() const;
+
   bool isConstant() const;
 
   static inline bool classof(const SDNode *N) {

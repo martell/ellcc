@@ -50,8 +50,10 @@
 namespace __sanitizer {
 
 // This function is defined elsewhere if we intercepted pthread_attr_getstack.
+extern "C" {
 SANITIZER_WEAK_ATTRIBUTE int
 real_pthread_attr_getstack(void *attr, void **addr, size_t *size);
+}  // extern "C"
 
 static int my_pthread_attr_getstack(void *attr, void **addr, size_t *size) {
   if (real_pthread_attr_getstack)
@@ -435,10 +437,11 @@ void AdjustStackSize(void *attr_) {
   const uptr minstacksize = GetTlsSize() + 128*1024;
   if (stacksize < minstacksize) {
     if (!stack_set) {
-      if (stacksize != 0)
+      if (stacksize != 0) {
         VPrintf(1, "Sanitizer: increasing stacksize %zu->%zu\n", stacksize,
                 minstacksize);
-      pthread_attr_setstacksize(attr, minstacksize);
+        pthread_attr_setstacksize(attr, minstacksize);
+      }
     } else {
       Printf("Sanitizer: pre-allocated stack size is insufficient: "
              "%zu < %zu\n", stacksize, minstacksize);
@@ -523,7 +526,7 @@ int call_pthread_cancel_with_cleanup(int(*fn)(void *c, void *m,
   int res;
   pthread_cleanup_push(cleanup, arg);
   res = fn(c, m, abstime);
-  pthread_cleanup_pop(1);
+  pthread_cleanup_pop(0);
   return res;
 }
 

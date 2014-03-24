@@ -46,14 +46,19 @@ struct DDMutex {
   u64  ctx;
 };
 
+struct DDFlags {
+  bool second_deadlock_stack;
+};
+
 struct DDReport {
+  enum { kMaxLoopSize = 8 };
   int n;  // number of entries in loop
   struct {
     u64 thr_ctx;   // user thread context
     u64 mtx_ctx0;  // user mutex context, start of the edge
     u64 mtx_ctx1;  // user mutex context, end of the edge
-    u32 stk;       // stack id for the edge
-  } loop[16];
+    u32 stk[2];  // stack ids for the edge
+  } loop[kMaxLoopSize];
 };
 
 struct DDCallback {
@@ -61,10 +66,11 @@ struct DDCallback {
   DDLogicalThread  *lt;
 
   virtual u32 Unwind() { return 0; }
+  virtual int UniqueTid() { return 0; }
 };
 
 struct DDetector {
-  static DDetector *Create();
+  static DDetector *Create(const DDFlags *flags);
 
   virtual DDPhysicalThread* CreatePhysicalThread() { return 0; }
   virtual void DestroyPhysicalThread(DDPhysicalThread *pt) {}
