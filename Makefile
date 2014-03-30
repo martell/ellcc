@@ -79,9 +79,9 @@ llvm.configure:
 	cd $(DIR) ; \
 	../llvm/configure \
         CC=$(CC) CFLAGS="$(CFLAGS)" \
-        CPP="cc -E" \
+        CPP="$(CC) -E" \
         CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
-        CXXCPP="c++ -E" \
+        CXXCPP="$(CXX) -E" \
         AR=$(AR) RANLIB=$(RANLIB) \
         --bindir=$(bindir) --prefix=$(prefix) \
         $(HOST) $(BUILD) $(TARGETS) \
