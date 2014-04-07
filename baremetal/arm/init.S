@@ -26,8 +26,8 @@ Reset_Handler:
     bl  _startup
     b   .
 
-Undefined_Handler: /* do nothing */
-B .
+Undefined_Handler:
+    b   .
 
 #define T_bit 0x20              // Thumb bit (5) of CPSR/SPSR.
 
@@ -42,8 +42,8 @@ SVC_Handler:
     bicne   r0, r0, #0xFF00     // ...extract comment field
     ldreq   r0, [lr,#-4]        // No: Load word and...
     biceq   r0, r0, #0xFF000000 // ...extract comment field
-    // r0 now contains SVC number
-    // r1 now contains pointer to stacked registers
+    // r0 now contains SVC number.
+    // r1 now contains pointer to stacked registers.
     tst     r0, #0              // Is this a system call?
     bne     Other_SVC           // Jump if not
     // In a system call.
@@ -74,6 +74,11 @@ OutOfRange:
 // Unhandled system calls.
 Unhandled_SVC:
     stmfd   sp!, {r12, lr}
+    mov     r6, r4                  // Shift arguments.
+    mov     r5, r3
+    mov     r4, r2
+    mov     r3, r1
+    mov     r2, r0
     ldr     r0, stringPtr           // Get the format string.
     ldr     r1, SysCall             // And the system call number.
     bl      printf
@@ -610,16 +615,19 @@ SVC_Table:
     .word       Unhandled_SVC
     .word       Unhandled_SVC
 
-Prefetch_Handler: /* do nothing */
-B .
-Abort_Handler: /* do nothing */
-B .
-IRQ_Handler: /* do nothing */
-B .
-FIQ_Handler: /* FIQ handler */
+Prefetch_Handler:
+    b   .
+
+Abort_Handler:
+    b   .
+
+IRQ_Handler:
+    b   .
+
+FIQ_Handler:
     b   .
 
     .data
 string:
-    .asciz "unhandled system call %d\n"
+    .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d\n"
 
