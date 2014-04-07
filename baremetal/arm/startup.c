@@ -38,18 +38,9 @@ static ssize_t sys_writev(int fd, const struct iovec *iov, int iovcount)
     return count;
 }
 
-extern unsigned long _Reset[];
-extern unsigned long _ResetEnd[];
-
 /* Main entry point */
 void _startup(void)
 {
-    // Copy the exception handlers to low memory.
-    unsigned long *s = _Reset;
-    unsigned long *d = 0;
-    while (s != _ResetEnd)
-        *d++ = *s++;
-
     // Set up a simple write system call.
     __set_syscall(SYS_write, sys_write);
     // Set up a simple writev system call.

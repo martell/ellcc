@@ -1,4 +1,4 @@
-.global _Reset, _ResetEnd
+.global _Reset
 _Reset:
     ldr pc, Reset_Addr
     ldr pc, Undefined_Addr
@@ -23,10 +23,38 @@ Reset_Handler:
     mov lr, #0
     str fp, [sp,#-4]!
     str lr, [sp,#-4]!
+
+    // Copy the exception handlers to low memory.
+    movw    r0, :lower16:_ResetEnd
+    movw    r1, :lower16:_Reset
+    movt    r0, :upper16:_ResetEnd
+    movt    r1, :upper16:_Reset
+    cmp     r1, r0
+    beq     1f
+    sub     r0, r0, #4
+    sub     r0, r0, r1
+    bfc     r0, #0, #2
+    add     r2, r0, #4
+    mov     r0, #0
+    bl      __aeabi_memcpy
+1:
+
     bl  _startup
     b   .
 
 Undefined_Handler:
+    b   .
+
+Prefetch_Handler:
+    b   .
+
+Abort_Handler:
+    b   .
+
+IRQ_Handler:
+    b   .
+
+FIQ_Handler:
     b   .
 
 #define T_bit 0x20              // Thumb bit (5) of CPSR/SPSR.
@@ -614,18 +642,6 @@ SVC_Table:
     .word       Unhandled_SVC
     .word       Unhandled_SVC
     .word       Unhandled_SVC
-
-Prefetch_Handler:
-    b   .
-
-Abort_Handler:
-    b   .
-
-IRQ_Handler:
-    b   .
-
-FIQ_Handler:
-    b   .
 
     .data
 string:
