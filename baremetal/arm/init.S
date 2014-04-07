@@ -25,6 +25,7 @@ Reset_Handler:
     str lr, [sp,#-4]!
 
     // Copy the exception handlers to low memory.
+    // RICH: Is this necessary? Change the vector address?
     movw    r0, :lower16:_ResetEnd
     movw    r1, :lower16:_Reset
     movt    r0, :upper16:_ResetEnd
