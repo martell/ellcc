@@ -45,6 +45,7 @@ void _startup(void)
     __set_syscall(SYS_write, sys_write);
     // Set up a simple writev system call.
     __set_syscall(SYS_writev, sys_writev);
+    // __syscall(1, 2, 3, 4, 5, 6, 7);
     // Test it.
     printf("hello world\n");
 }

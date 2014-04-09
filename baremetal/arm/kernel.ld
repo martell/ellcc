@@ -20,7 +20,22 @@ SECTIONS
     .data : { *(.data) }
     .bss : { *(.bss) }
     . = ALIGN(8);
-    . = . + 0x1000; /* move by 4kbyte (our stack memory) */
-    stack_top = .;
+    . = . + 0x1000; 
+    __fiq_stack_top = .;        /* Allocate the FIQ stack. */
+    . = ALIGN(8);
+    . = . + 0x1000; 
+    __irq_stack_top = .;        /* Allocate the IRQ stack. */
+    . = ALIGN(8);
+    . = . + 0x1000; 
+    __svc_stack_top = .;        /* Allocate the SVC stack. */
+    . = ALIGN(8);
+    . = . + 0x1000; 
+    __abt_stack_top = .;        /* Allocate the ABT stack. */
+    . = ALIGN(8);
+    . = . + 0x1000; 
+    __und_stack_top = .;        /* Allocate the UND stack. */
+    . = ALIGN(8);
+    . = . + 0x1000;
+    __sys_stack_top = .;        /* Allocate the SYS stack. */
 }
 

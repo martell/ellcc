@@ -17,8 +17,32 @@ IRQ_Addr:       .word IRQ_Handler
 FIQ_Addr:       .word FIQ_Handler
 _ResetEnd:
 
+#define Mode_USR 0x10
+#define Mode_FIQ 0x11
+#define Mode_IRQ 0x12
+#define Mode_SVC 0x13
+#define Mode_ABT 0x17
+#define Mode_UND 0x1B
+#define Mode_SYS 0x1F
+#define T_bit 0x20
+#define F_bit 0x40
+#define I_bit 0x80
+
 Reset_Handler:
-    ldr sp, =stack_top          // Set up stack for C function.
+    /* Set up the various stack pointers by setting the correct mode
+     * and initializing the stack pointers.
+     */
+    msr cpsr_c, #Mode_FIQ|I_bit|F_bit
+    ldr sp, =__fiq_stack_top        // Set up stack for FIQs.
+    msr cpsr_c, #Mode_IRQ|I_bit|F_bit
+    ldr sp, =__irq_stack_top        // Set up stack for IRQs.
+    msr cpsr_c, #Mode_ABT|I_bit|F_bit
+    ldr sp, =__abt_stack_top        // Set up stack for ABTs.
+    msr cpsr_c, #Mode_UND|I_bit|F_bit
+    ldr sp, =__und_stack_top        // Set up stack for UNDs.
+    msr cpsr_c, #Mode_SVC|I_bit|F_bit
+    ldr sp, =__svc_stack_top        // Set up stack for SVCs.
+
     mov fp, #0
     mov lr, #0
     str fp, [sp,#-4]!
@@ -38,6 +62,9 @@ Reset_Handler:
     bl      __aeabi_memcpy
 1:
 
+    // Finally, set up the SYS mode stack pointer and stay in SYS mode.
+    // msr cpsr_c, #Mode_SYS|I_bit|F_bit
+    // ldr sp, =__svc_stack_top        // Set up stack for SVCs.
     bl  _startup
     b   .
 
@@ -55,8 +82,6 @@ IRQ_Handler:
 
 FIQ_Handler:
     b   .
-
-#define T_bit 0x20              // Thumb bit (5) of CPSR/SPSR.
 
 SVC_Handler:
     stmfd   sp!, {r0-r3, r12, lr} // Store registers
@@ -101,14 +126,13 @@ OutOfRange:
 // Unhandled system calls.
 Unhandled_SVC:
     stmfd   sp!, {r12, lr}
-    mov     r6, r4                  // Shift arguments.
-    mov     r5, r3
-    mov     r4, r2
+    push    {r2-r5}                 // Push extra arguments.
     mov     r3, r1
     mov     r2, r0
-    ldr     r0, stringPtr           // Get the format string.
     ldr     r1, SysCall             // And the system call number.
+    ldr     r0, stringPtr           // Get the format string.
     bl      printf
+    add     sp, #16                 // clean up the stack.
 
     mvn     r0, #0                  // Return -1.
                                     // RICH: set errno
@@ -644,5 +668,5 @@ SVC_Table:
 
     .data
 string:
-    .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d\n"
+    .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d %d\n"
 
