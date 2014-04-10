@@ -160,6 +160,7 @@ SVC_Handler:
     
     // In a system call.
     // r7 is the call number.
+SVC_Frame:                      // The stack frame is valid here.
     cmp     r7, #512
     bhs     OutOfRange          // Jump if bad call.
     adr     r8, SVC_Table       // Get the system call table.
