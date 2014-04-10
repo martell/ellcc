@@ -18,24 +18,11 @@ SECTIONS
     .init . : { init.o(.text) }
     .text : { *(.text) }
     .data : { *(.data) }
+    __bss_start__ = .;
     .bss : { *(.bss) }
+    __bss_end__ = .;
     . = ALIGN(8);
-    . = . + 0x1000; 
-    __fiq_stack_top = .;        /* Allocate the FIQ stack. */
-    . = ALIGN(8);
-    . = . + 0x1000; 
-    __irq_stack_top = .;        /* Allocate the IRQ stack. */
-    . = ALIGN(8);
-    . = . + 0x1000; 
-    __svc_stack_top = .;        /* Allocate the SVC stack. */
-    . = ALIGN(8);
-    . = . + 0x1000; 
-    __abt_stack_top = .;        /* Allocate the ABT stack. */
-    . = ALIGN(8);
-    . = . + 0x1000; 
-    __und_stack_top = .;        /* Allocate the UND stack. */
-    . = ALIGN(8);
-    . = . + 0x1000;
-    __sys_stack_top = .;        /* Allocate the SYS stack. */
+    . = . + 1024 * 1024;        /* Hard code a megabyte for now. */
+    __mem_top = .;              /* Point to the top of memory. */
 }
 

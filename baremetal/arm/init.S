@@ -1,4 +1,6 @@
+.global _start
 .global _Reset
+_start:
 _Reset:
     ldr pc, Reset_Addr
     ldr pc, Undefined_Addr
@@ -19,54 +21,122 @@ _ResetEnd:
 
 #define Mode_USR 0x10
 #define Mode_FIQ 0x11
+#define Stack_FIQ 1024          // Size of the FIQ stack.
 #define Mode_IRQ 0x12
+#define Stack_IRQ 1024          // Size of the IRQ stack.
 #define Mode_SVC 0x13
+#define Stack_SVC 1024          // Size of the SVC stack.
 #define Mode_ABT 0x17
+#define Stack_ABT 1024          // Size of the ABT stack.
 #define Mode_UND 0x1B
+#define Stack_UND 1024          // Size of the UND stack.
 #define Mode_SYS 0x1F
+
 #define T_bit 0x20
 #define F_bit 0x40
 #define I_bit 0x80
+
+.weak _init
+.weak _fini
 
 Reset_Handler:
     /* Set up the various stack pointers by setting the correct mode
      * and initializing the stack pointers.
      */
     msr cpsr_c, #Mode_FIQ|I_bit|F_bit
-    ldr sp, =__fiq_stack_top        // Set up stack for FIQs.
+    ldr r0, =__mem_top           // Set up stack for FIQs.
+    mov sp, r0
+    sub r0, #Stack_FIQ
     msr cpsr_c, #Mode_IRQ|I_bit|F_bit
-    ldr sp, =__irq_stack_top        // Set up stack for IRQs.
+    mov sp, r0
+    sub r0, #Stack_IRQ
     msr cpsr_c, #Mode_ABT|I_bit|F_bit
-    ldr sp, =__abt_stack_top        // Set up stack for ABTs.
+    mov sp, r0
+    sub r0, #Stack_ABT
     msr cpsr_c, #Mode_UND|I_bit|F_bit
-    ldr sp, =__und_stack_top        // Set up stack for UNDs.
+    mov sp, r0
+    sub r0, #Stack_UND
     msr cpsr_c, #Mode_SVC|I_bit|F_bit
-    ldr sp, =__svc_stack_top        // Set up stack for SVCs.
-
-    mov fp, #0
-    mov lr, #0
-    str fp, [sp,#-4]!
-    str lr, [sp,#-4]!
+    mov sp, r0
+    sub r0, #Stack_SVC
+    // Finally, set up the SYS mode stack pointer and stay in SYS mode.
+    msr cpsr_c, #Mode_SYS|I_bit|F_bit
+    mov sp, r0
 
     // Copy the exception handlers to low memory.
     // RICH: Is this necessary? Change the vector address?
-    adr r0, _ResetEnd
-    adr r1, _Reset
-    cmp     r1, r0
-    beq     1f
-    sub     r0, r0, #4
-    sub     r0, r0, r1
-    bfc     r0, #0, #2
-    add     r2, r0, #4
-    mov     r0, #0
-    bl      __aeabi_memcpy
-1:
+    mov a1, #0
+    adr a2, _Reset
+    adr a3, _ResetEnd
+    sub a3, a3, a2
+    bl  memcpy
 
-    // Finally, set up the SYS mode stack pointer and stay in SYS mode.
-    // msr cpsr_c, #Mode_SYS|I_bit|F_bit
-    // ldr sp, =__svc_stack_top        // Set up stack for SVCs.
-    bl  _startup
+    // Clear the bss area.
+    ldr a1, bss_start
+    mov a2, #0
+    ldr a3, bss_end
+    sub a3, a3, a1
+    bl  memset
+
+    // Now start up the system by initializing the library and calling main.
+    mov fp, #0
+    mov lr, #0
+    str fp, [sp,#-4]!
+    str a1, [sp,#-4]!
+    adr a3, argv
+    mov a2, #1
+    ldr a1,=main
+    bl  __libc_start_main
     b   .
+
+bss_start:
+    .word __bss_start__
+bss_end:
+    .word __bss_end__
+
+// main()'s pseudo arguments.
+argv:
+    .word   name
+    .word   0                   // End of argv.
+    .word   0                   // End of envp.
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
+    .word   0                   // Auxv
 
 Undefined_Handler:
     b   .
@@ -84,6 +154,22 @@ FIQ_Handler:
     b   .
 
 SVC_Handler:
+    srsfd   sp!, #Mode_SYS      // Save LR_svc and SPSR_svc on the sys mode stack.
+    cpsid   i, #Mode_SYS        // Switch to sys mode.
+    push    {r8, lr}            // Save registers.
+    
+    // In a system call.
+    // r7 is the call number.
+    cmp     r7, #512
+    bhs     OutOfRange          // Jump if bad call.
+    adr     r8, SVC_Table       // Get the system call table.
+    str     r7, SysCall         // Save call number for error reporting.
+    ldr     r7, [r8, r7, lsl #2]// Get the stystem call entry.
+    blx     r7                  // Dispatch. Return value is in r0/r1
+    pop     {r8, lr}            // Restore registers.
+    rfeia   sp!                 // And return.
+
+#if RICH
     stmfd   sp!, {r0-r3, r12, lr} // Store registers
     mov     r1, sp              // Set pointer to parameters
     mrs     r0, spsr            // Get spsr
@@ -113,6 +199,7 @@ SVC_Handler:
     ldmfd   sp!, {r2, r3}       // Get spsr from stack
     msr     SPSR_cxsf, r2       // Restore spsr
     ldmfd   sp!, {r0-r3, r12, pc}^ // Restore registers and return
+#endif
 
 SysCall:
     .word   0
@@ -668,5 +755,6 @@ SVC_Table:
 
     .data
 string:
-    .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d %d\n"
-
+    .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
+name:
+    .asciz "kernel"

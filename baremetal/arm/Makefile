@@ -3,8 +3,7 @@ TARGET=arm
 CFLAGS+=-g
 QEMUFLAGS=-cpu any -M versatilepb -m 128M
 KERNEL=kernel
-SRCS=init.S startup.c
-LIBS=-L $(ELLCC)/libecc/lib/$(TARGET)/$(OS) -lc -lcompiler_rt
+SRCS=init.S main.c
 NAMES:=$(basename $(filter %.c %.cpp %.S, $(SRCS)))
 OBJS:=$(NAMES:%=%.o)
 
@@ -25,7 +24,7 @@ include $(ELLCC)/libecc/mkscripts/targets/$(TARGET)/setup.mk
 all: $(KERNEL).bin
 
 $(KERNEL).bin: Makefile kernel.ld $(OBJS)
-	$(LD) $(LDFLAGS) -nostdlib -T $(KERNEL).ld $(OBJS) $(LIBS) \
+	$(LD) $(LDFLAGS) -nostartfiles -T $(KERNEL).ld $(OBJS) \
 	    -o $(KERNEL).elf -Wl,--build-id=none
 	$(OBJCOPY) -O binary $(KERNEL).elf $(KERNEL).bin
 

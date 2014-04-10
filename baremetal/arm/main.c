@@ -1,17 +1,16 @@
-/*******************************************/
-/* Simple Bare metal program init */
-/*******************************************/
+/* A simple bare metal main.
+ * We define enough functionality here to get printf and friends
+ * working with a simple polled serial interface for debugging.
+ */
 
-#include <bits/syscall.h>
-#include <sys/uio.h>
+#include <bits/syscall.h>       // For syscall numbers.
+#include <sys/uio.h>            // For writev (used by printf().
 #include <stdio.h>
 #include "kernel.h"
 
-/* Note: QEMU model of PL011 serial port ignores the transmit
- * FIFO capabilities. When writing on a real SOC, the
- * "Transmit FIFO Full" flag must be checked in UARTFR register
- * before writing on the UART register*/
-
+/* Define to core (and soon to be superceeded) system call
+ * implimentaions: write() and writev().
+ */
 volatile unsigned int* const UART0 = (unsigned int*)0x0101F1000;
 
 static ssize_t sys_write(int fd, const void *buf, size_t count)
@@ -38,8 +37,7 @@ static ssize_t sys_writev(int fd, const struct iovec *iov, int iovcount)
     return count;
 }
 
-/* Main entry point */
-void _startup(void)
+int main(int argc, char **argv)
 {
     // Set up a simple write system call.
     __set_syscall(SYS_write, sys_write);
@@ -47,7 +45,11 @@ void _startup(void)
     __set_syscall(SYS_writev, sys_writev);
     // __syscall(1, 2, 3, 4, 5, 6, 7);
     // Test it.
+    printf("%s: hello world\n", argv[0]);
     printf("hello world\n");
+    // RICH: Loop forever here until ARM cas is fixed.
+    for ( ;; )
+        continue;
 }
 
 
