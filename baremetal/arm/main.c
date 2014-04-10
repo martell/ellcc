@@ -5,6 +5,7 @@
 
 #include <bits/syscall.h>       // For syscall numbers.
 #include <sys/uio.h>            // For writev (used by printf().
+#include <unistd.h>
 #include <stdio.h>
 #include "kernel.h"
 
@@ -27,7 +28,7 @@ static ssize_t sys_writev(int fd, const struct iovec *iov, int iovcount)
 {
     ssize_t count = 0;
     for (int i = 0; i < iovcount; ++i) {
-        ssize_t c = sys_write(fd, iov[i].iov_base, iov[i].iov_len);
+        ssize_t c = write(fd, iov[i].iov_base, iov[i].iov_len);
         if (c < 0) {
             count = c;
             break;
