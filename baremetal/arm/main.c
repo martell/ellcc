@@ -48,6 +48,7 @@ int main(int argc, char **argv)
     // Test it.
     printf("%s: hello world\n", argv[0]);
     printf("hello world\n");
+    fflush(stdout);
     // RICH: Loop forever here until ARM cas is fixed.
     for ( ;; )
         continue;
