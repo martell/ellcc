@@ -2,7 +2,7 @@
  */
 
 #include <stdio.h>
-#include "kernel.h"     // For simple_console().
+#include "simple_console.h"     // For simple_console().
 
 int main(int argc, char **argv)
 {

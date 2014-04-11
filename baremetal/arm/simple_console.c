@@ -9,6 +9,7 @@
 #include <sys/ioctl.h>
 
 #include "kernel.h"
+#include "simple_console.h"
 #include "arm_pl011.h"
 
 static int sys_ioctl(int d, int request, ...)
