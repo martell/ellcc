@@ -158,7 +158,7 @@ FIQ_Handler:
 SVC_Handler:
     srsfd   sp!, #Mode_SYS      // Save LR_svc and SPSR_svc on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
-    push    {r8, lr}            // Save registers.
+    push    {r4-r12, lr}        // Save registers.
     
     // In a system call.
     // r7 is the call number.
@@ -170,7 +170,7 @@ __in_syscall:                   // The stack frame is valid here.
     ldrlo   r7, [r8, r7, lsl #2]// Get the stystem call entry.
     blxlo   r7                  // Dispatch. Return value is in r0/r1
 goback:
-    pop     {r8, lr}            // Restore registers.
+    pop     {r4-r12, lr}        // Restore registers.
     rfeia   sp!                 // And return.
 
 #if RICH
