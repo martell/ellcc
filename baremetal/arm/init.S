@@ -33,6 +33,7 @@ _ResetEnd:
 #define Mode_UND 0x1B
 #define Stack_UND 1024          // Size of the UND stack.
 #define Mode_SYS 0x1F
+#define Stack_SYS 1024          // Size of the SYS stack.
 
 #define T_bit 0x20
 #define F_bit 0x40
@@ -64,6 +65,8 @@ Reset_Handler:
     // Finally, set up the SYS mode stack pointer and stay in SYS mode.
     msr cpsr_c, #Mode_SYS|I_bit|F_bit
     mov sp, r0
+    sub r0, #Stack_SYS
+    str r0, __heap_end
 
     // Copy the exception handlers to low memory.
     // RICH: Is this necessary? Change the vector address?
@@ -91,6 +94,9 @@ Reset_Handler:
     bl  __libc_start_main
     b   .
 
+    .global __heap_end
+__heap_end:
+    .word 0
 bss_start:
     .word __bss_start__
 bss_end:
@@ -172,46 +178,6 @@ __in_syscall:                   // The stack frame is valid here.
 goback:
     pop     {r4-r12, lr}        // Restore registers.
     rfeia   sp!                 // And return.
-
-#if RICH
-SVC_Handler:
-    stmfd   sp!, {r0-r3, r12, lr} // Store registers
-    mov     r1, sp              // Set pointer to parameters
-    mrs     r0, spsr            // Get spsr
-    stmfd   sp!, {r0, r3}       // Store spsr onto stack and another
-                                // register to maintain 8-byte-aligned stack
-    tst     r0, #T_bit          // Occurred in Thumb state?
-    ldrhne  r0, [lr,#-2]        // Yes: Load halfword and...
-    bicne   r0, r0, #0xFF00     // ...extract comment field
-    ldreq   r0, [lr,#-4]        // No: Load word and...
-    biceq   r0, r0, #0xFF000000 // ...extract comment field
-    // r0 now contains SVC number.
-    // r1 now contains pointer to stacked registers.
-    tst     r0, #0              // Is this a system call?
-    bne     Other_SVC           // Jump if not
-    // In a system call.
-    // r7 is the call number, replace the call registers r0-r1.
-    cmp     r7, #512
-    bhs     OutOfRange          // Jump if bad call.
-    adr     r0, SVC_Table       // Get the system call table.
-    str     r7, SysCall         // Save call number for error reporting.
-    ldr     r7, [r0, r7, lsl #2]// Get the stystem call entry.
-    ldr     r0, [r1,#0]         // Restore argument registers.
-    ldr     r1, [r1,#4]         //
-    blx     r7                  // Dispatch.
-    str     r0, [sp,#8]         // Save return values.
-    str     r1, [sp,#12]
-    ldmfd   sp!, {r2, r3}       // Get spsr from stack
-    msr     SPSR_cxsf, r2       // Restore spsr
-    ldmfd   sp!, {r0-r3, r12, pc}^ // Restore registers and return
-
-Other_SVC:
-    b   .
-
-OutOfRange:
-    b   .
-
-#endif
 
 SysCall:
     .word   0

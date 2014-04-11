@@ -3,7 +3,7 @@ TARGET=arm
 CFLAGS+=-g -MD -MP -Werror -Wall
 QEMUFLAGS=-cpu any -M versatilepb -m 128M
 KERNEL=kernel
-SRCS=init.S main.c simple_console.c
+SRCS=init.S main.c simple_console.c simple_memman.c
 NAMES:=$(basename $(filter %.c %.cpp %.S, $(SRCS)))
 OBJS:=$(NAMES:%=%.o)
 DEPENDS:=$(NAMES:%=%.d)
@@ -25,7 +25,10 @@ include $(ELLCC)/libecc/mkscripts/targets/$(TARGET)/setup.mk
 all: $(KERNEL).bin
 
 $(KERNEL).bin: Makefile kernel.ld $(OBJS)
-	$(LD) $(LDFLAGS) -nostartfiles -T $(KERNEL).ld $(OBJS) \
+	$(LD) $(LDFLAGS) -nostartfiles -T $(KERNEL).ld \
+	    $(ELLCC)/libecc/lib/$(TARGET)/$(OS)/crtbegin.o \
+	    $(OBJS) \
+	    $(ELLCC)/libecc/lib/$(TARGET)/$(OS)/crtend.o \
 	    -o $(KERNEL).elf -Wl,--build-id=none
 	$(OBJCOPY) -O binary $(KERNEL).elf $(KERNEL).bin
 

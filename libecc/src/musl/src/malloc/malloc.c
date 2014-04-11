@@ -115,6 +115,46 @@ static int first_set(uint64_t x)
 #endif
 }
 
+#if 1
+/* non-float bin index */
+
+static const unsigned char bintab[32]={
+     0, 0, 0, 0,32,33,34,35,36,36,37,37,38,38,39,39,
+    40,40,40,40,41,41,41,41,42,42,42,42,43,43,43,43
+};
+
+static int bin_index(size_t x)
+{
+    x = x / SIZE_ALIGN - 1;
+    if (x <= 32) return x;
+    x /= 8;
+    if (x < 32)
+        return bintab[x];
+    x /= 8;
+    if (x < 32)
+        return bintab[x]+12;
+    x /= 8;
+    if (x < 16)
+        return bintab[x]+24;
+    return 63;
+}
+
+static int bin_index_up(size_t x)
+{
+    x = x / SIZE_ALIGN - 1;
+    if (x <= 32) return x;
+    x--;
+    x /= 8;
+    if (x < 32)
+        return bintab[x]+1;
+    x /= 8;
+    if (x < 32)
+        return bintab[x]+13;
+    x /= 8;
+    return bintab[x]+25;
+}
+#else
+
 static int bin_index(size_t x)
 {
 	x = x / SIZE_ALIGN - 1;
@@ -129,6 +169,7 @@ static int bin_index_up(size_t x)
 	if (x <= 32) return x;
 	return ((union { float v; uint32_t r; }){(int)x}.r+0x1fffff>>21) - 496;
 }
+#endif
 
 #if 0
 void __dump_heap(int x)

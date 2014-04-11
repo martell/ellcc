@@ -28,7 +28,8 @@ FUNCTIONS.arm := $(CommonFunctions) \
 		 aeabi_uldivmod \
 		 aeabi_memset \
 		 aeabi_memmove \
-		 aeabi_memcpy
+		 aeabi_memcpy \
+
 #FUNCTIONS.armeb := $(call set_difference, $(CommonFunctions), clear_cache) \
 
 FUNCTIONS.armeb := $(CommonFunctions) \
@@ -39,7 +40,8 @@ FUNCTIONS.armeb := $(CommonFunctions) \
 		 aeabi_uldivmod \
 		 aeabi_memset \
 		 aeabi_memmove \
-		 aeabi_memcpy
+		 aeabi_memcpy \
+
 FUNCTIONS.i386 := $(CommonFunctions) $(ArchFunctions.i386)
 FUNCTIONS.microblaze := $(CommonFunctions) $(ArchFunctions.microblaze)
 FUNCTIONS.mips := $(CommonFunctions) $(ArchFunctions.mips)

@@ -12,6 +12,15 @@
 #include "simple_console.h"
 #include "arm_pl011.h"
 
+static void init(void)
+    __attribute__((__constructor__, __used__));
+
+static void init(void)
+{
+    // Set up the simple console for polled serial I/O.
+    simple_console();
+}
+
 static int sys_ioctl(int d, int request, ...)
 {
     switch (request) {

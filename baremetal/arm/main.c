@@ -2,13 +2,12 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include "simple_console.h"     // For simple_console().
+#include "simple_memman.h"      // For simple_memman().
 
 int main(int argc, char **argv)
 {
-    // Set up the simple console for polled serial I/O.
-    simple_console();
-    
     // __syscall(1, 2, 3, 4, 5, 6, 7);
     printf("%s: hello world\n", argv[0]);
     printf("hello world\n");
