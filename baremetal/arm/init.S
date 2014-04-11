@@ -1,3 +1,5 @@
+#include <bits/errno.h>
+
 .global _start
 .global _Reset
 _start:
@@ -154,23 +156,25 @@ FIQ_Handler:
     b   .
 
 SVC_Handler:
-    srsfd   sp!, #Mode_SYS      // Save LR_svc and SPSR_svc on the sys mode stack.
+    srsfd   sp!, #Mode_SYS      // Save LR_svc and SPSR_svc on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
     push    {r8, lr}            // Save registers.
     
     // In a system call.
     // r7 is the call number.
-SVC_Frame:                      // The stack frame is valid here.
+__in_syscall:                   // The stack frame is valid here.
     cmp     r7, #512
-    bhs     OutOfRange          // Jump if bad call.
-    adr     r8, SVC_Table       // Get the system call table.
-    str     r7, SysCall         // Save call number for error reporting.
-    ldr     r7, [r8, r7, lsl #2]// Get the stystem call entry.
-    blx     r7                  // Dispatch. Return value is in r0/r1
+    movhs   r0, #-ENOSYS        // Error if out of range.
+    adrlo   r8, SVC_Table       // Get the system call table.
+    strlo   r7, SysCall         // Save call number for error reporting.
+    ldrlo   r7, [r8, r7, lsl #2]// Get the stystem call entry.
+    blxlo   r7                  // Dispatch. Return value is in r0/r1
+goback:
     pop     {r8, lr}            // Restore registers.
     rfeia   sp!                 // And return.
 
 #if RICH
+SVC_Handler:
     stmfd   sp!, {r0-r3, r12, lr} // Store registers
     mov     r1, sp              // Set pointer to parameters
     mrs     r0, spsr            // Get spsr
@@ -200,16 +204,17 @@ SVC_Frame:                      // The stack frame is valid here.
     ldmfd   sp!, {r2, r3}       // Get spsr from stack
     msr     SPSR_cxsf, r2       // Restore spsr
     ldmfd   sp!, {r0-r3, r12, pc}^ // Restore registers and return
-#endif
-
-SysCall:
-    .word   0
 
 Other_SVC:
     b   .
 
 OutOfRange:
     b   .
+
+#endif
+
+SysCall:
+    .word   0
 
 // Unhandled system calls.
 Unhandled_SVC:
