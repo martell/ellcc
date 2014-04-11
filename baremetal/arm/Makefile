@@ -1,11 +1,12 @@
 OS=linux
 TARGET=arm
-CFLAGS+=-g
+CFLAGS+=-g -MD -MP -Werror -Wall
 QEMUFLAGS=-cpu any -M versatilepb -m 128M
 KERNEL=kernel
-SRCS=init.S main.c
+SRCS=init.S main.c simple_console.c
 NAMES:=$(basename $(filter %.c %.cpp %.S, $(SRCS)))
 OBJS:=$(NAMES:%=%.o)
+DEPENDS:=$(NAMES:%=%.d)
 
 ELLCC=../..
 CC=$(ELLCC)/bin/ecc
@@ -35,4 +36,6 @@ debug:
 	$(ELLCC)/bin/qemu-system-$(TARGET) -s -S $(QEMUFLAGS) -nographic -kernel $(KERNEL).bin
 
 clean:
-	rm -f $(OBJS) $(KERNEL).elf $(KERNEL).bin
+	rm -f $(OBJS) $(KERNEL).elf $(KERNEL).bin $(DEPENDS)
+
+-include $(DEPENDS)
