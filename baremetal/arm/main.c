@@ -3,8 +3,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "simple_console.h"     // For simple_console().
-#include "simple_memman.h"      // For simple_memman().
 
 int main(int argc, char **argv)
 {
