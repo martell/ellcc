@@ -1,10 +1,10 @@
 /* Definitions for the ARM PL011 UART.
  * http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.ddi0183g/index.html
  */
-#define UART_BASE 0x0101F1000
+#define BASE 0x0101F1000
 #define REG(reg) (*(unsigned int *)(address + (reg)))
 
-static volatile unsigned char * const address = (unsigned char *)UART_BASE;
+static volatile unsigned char * const address = (unsigned char *)BASE;
 
 #define UARTDR          0x000   // Data register.
   #define DOE      0x0800       // Overrun error.

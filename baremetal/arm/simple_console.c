@@ -66,18 +66,31 @@ static ssize_t sys_read(int fd, void *buf, size_t count)
 {
     unsigned char *s = buf;
     size_t i = 0;
-    for ( ; i < count; ++i) {
+    for ( ; i < count; ) {
         while (REG(UARTFR) & RXFE)
             continue;           // Wait while RX FIFO is empty.
         int ch = REG(UARTDR);
+        ++i;                    // Count the character.
         switch (ch) {
             // Some simple line handling.
+        case 0x7F:
+        case '\b':
+            // Simple backspace handling.
+            --i;
+            if (i) {
+              send_char('\b');
+              send_char(' ');
+              send_char('\b');
+              --s;
+              --i;
+            }
+            break;
         case '\n':
         case '\r':
             // Make sure we send both a CR and LF.
             send_char(ch == '\r' ? '\n' : '\r');
-            *s = '\n';          // and send a newline  back.
-            return i + 1;       // This read is done.
+            *s = '\n';          // and send a newline back.
+            return i;           // This read is done.
         default:
             send_char(ch);      // Echo input.
             *s++ = ch;          // and send it back.
