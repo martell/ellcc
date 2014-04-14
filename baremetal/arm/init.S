@@ -117,11 +117,29 @@ Prefetch_Handler:
 Abort_Handler:
     b   .
 
-IRQ_Handler:
-    b   .
-
 FIQ_Handler:
     b   .
+
+IRQ_Handler:
+    sub     lr, lr, #4          // Adjust return address.
+    srsfd   sp!, #Mode_SYS      // Save LR_irq and SPSR_irq on the sys stack.
+    cpsid   i, #Mode_SYS        // Switch to sys mode.
+    push    {r0-r3, r12}        // Store other AAPCS registers.
+    and     r1, sp, #4          // Align the stack.
+    sub     sp, sp, r1
+    push    {r1, lr}
+    bl      identify_irq        // Clear interrupt and get irq handler in r0.
+    cpsie   i                   // Enable IRQ
+    blx     r0
+    cpsid   i                   // Disable IRQ
+    pop     {r1, lr}
+    add     sp, sp, r1
+    pop     {r0-r3, r12}        // Restore registers
+    rfeia   sp!                 // And return.
+
+identify_irq:
+    adr     r0, identify_irq    // RICH: for now.
+    bx      lr
 
 SVC_Handler:
     srsfd   sp!, #Mode_SYS      // Save LR_svc and SPSR_svc on the sys stack.
@@ -134,9 +152,9 @@ __in_syscall:                   // The stack frame is valid here.
     cmp     r7, #512
     str     r7, SysCall         // Save call number for error reporting.
     bhs     check_arm_syscall   // Jump if too big for a syscall.
-    adrlo   r8, SVC_Table       // Get the system call table.
-    ldrlo   r7, [r8, r7, lsl #2]// Get the stystem call entry.
-    blxlo   r7                  // Dispatch. Return value is in r0/r1
+    adr     r8, SVC_Table       // Get the system call table.
+    ldr     r7, [r8, r7, lsl #2]// Get the stystem call entry.
+    blx     r7                  // Dispatch. Return value is in r0/r1
     pop     {r4-r12, lr}        // Restore registers.
     rfeia   sp!                 // And return.
 
