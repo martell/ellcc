@@ -29,12 +29,12 @@ FIQ_Addr:
     .word FIQ_Handler
 _ResetEnd:
 
-#define Stack_FIQ   1024        // Size of the FIQ stack.
-#define Stack_IRQ   1024        // Size of the IRQ stack.
-#define Stack_SVC   1024        // Size of the SVC stack.
-#define Stack_ABT   1024        // Size of the ABT stack.
-#define Stack_UND   1024        // Size of the UND stack.
-#define Stack_SYS   1024        // Size of the SYS stack.
+#define Stack_FIQ   4096        // Size of the FIQ stack.
+#define Stack_IRQ   4096        // Size of the IRQ stack.
+#define Stack_SVC   4096        // Size of the SVC stack.
+#define Stack_ABT   4096        // Size of the ABT stack.
+#define Stack_UND   4096        // Size of the UND stack.
+#define Stack_SYS   4096        // Size of the SYS stack.
 
 Reset_Handler:
     /* Set up the various stack pointers by setting the correct mode
@@ -280,7 +280,6 @@ __heap_end:
 
 SysCall:
     .word   0
-
 
 // Create the system call table with room for 512 entries.
 SVC_Table:

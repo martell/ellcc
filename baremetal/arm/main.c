@@ -1,8 +1,6 @@
 /* A simple bare metal main.
  */
 
-#undef THREAD
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -13,6 +11,7 @@
 #include "kernel.h"
 #include "arm.h"
 
+#undef THREAD   // This doesn't work yet.
 #if defined(THREAD)
 static void *thread(void *arg)
 {
@@ -26,13 +25,15 @@ long __syscall(long, ...);
 #define CONTEXT
 #if defined(CONTEXT)
 static void *main_sa;
-static void *context_sa;
+static void *context1_sa;
+static void *context2_sa;
 
 static int context(intptr_t arg1, intptr_t arg2)
 {
+    void **context_sa = (void **)arg2;
     for ( ;; ) {
-      printf("hello from context %" PRIdPTR ", %" PRIdPTR "\n", arg1, arg2);
-      __switch(&context_sa, main_sa);
+      printf("hello from context %" PRIdPTR "\n", arg1);
+      __switch(context_sa, main_sa);
     }
     return 0;
 }
@@ -58,14 +59,23 @@ int main(int argc, char **argv)
 #endif
 #if defined(CONTEXT)
     char *p = malloc(4096);
-    context_sa = p + 4096;
-    __new_context(&context_sa, context, Mode_SYS, NULL, 42, 6809);
-    __switch(&main_sa, context_sa);
-    __switch(&main_sa, context_sa);
+    context1_sa = p + 4096;
+    __new_context(&context1_sa, context, Mode_SYS, NULL, 42, (intptr_t)&context1_sa);
+    p = malloc(4096);
+    context2_sa = p + 4096;
+    __new_context(&context2_sa, context, Mode_SYS, NULL, 6809, (intptr_t)&context2_sa);
+    // Let's do some context switching.
+    __switch(&main_sa, context1_sa);
+    __switch(&main_sa, context2_sa);
+    __switch(&main_sa, context1_sa);
+    __switch(&main_sa, context2_sa);
+    __switch(&main_sa, context2_sa);
 
 #endif
     for ( ;; ) {
         char buffer[100];
+        fputs("prompt: ", stdout);
+        fflush(stdout);
         fgets(buffer, sizeof(buffer), stdin);
         printf("got: %s", buffer);
     }
