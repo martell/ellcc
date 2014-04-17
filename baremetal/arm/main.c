@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <inttypes.h>
 #include <errno.h>
 #include <string.h>
@@ -28,7 +27,7 @@ static void *main_sa;
 static void *context1_sa;
 static void *context2_sa;
 
-static int context(intptr_t arg1, intptr_t arg2)
+static intptr_t context(intptr_t arg1, intptr_t arg2)
 {
     void **context_sa = (void **)arg2;
     for ( ;; ) {
