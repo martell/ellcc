@@ -51,6 +51,7 @@ struct CommonFlags {
   const char *color;
   bool legacy_pthread_cond;
   bool help;
+  uptr mmap_limit_mb;
 };
 
 inline CommonFlags *common_flags() {

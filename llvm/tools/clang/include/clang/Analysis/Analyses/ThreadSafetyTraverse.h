@@ -409,6 +409,15 @@ protected:
     SS << "\n";
   }
 
+  void printBlockLabel(StreamType & SS, BasicBlock *BB, unsigned index) {
+    if (!BB) {
+      SS << "BB_null";
+      return;
+    }
+    SS << "BB_";
+    SS << BB->blockID();
+  }
+
   // TODO: further distinguish between binary operations.
   static const unsigned Prec_Atom = 0;
   static const unsigned Prec_Postfix = 1;
@@ -496,16 +505,42 @@ protected:
   }
 
   void printLiteral(Literal *E, StreamType &SS) {
-    // TODO: actually pretty print the literal.
-    SS << "#lit";
+    const clang::Expr *CE = E->clangExpr();
+    switch (CE->getStmtClass()) {
+      case Stmt::IntegerLiteralClass:
+        SS << cast<IntegerLiteral>(CE)->getValue().toString(10, true);
+        return;
+      case Stmt::StringLiteralClass:
+        SS << "\"" << cast<StringLiteral>(CE)->getString() << "\"";
+        return;
+      case Stmt::CharacterLiteralClass:
+      case Stmt::CXXNullPtrLiteralExprClass:
+      case Stmt::GNUNullExprClass:
+      case Stmt::CXXBoolLiteralExprClass:
+      case Stmt::FloatingLiteralClass:
+      case Stmt::ImaginaryLiteralClass:
+      case Stmt::ObjCStringLiteralClass:
+      default:
+        SS << "#lit";
+        return;
+    }
   }
 
   void printLiteralPtr(LiteralPtr *E, StreamType &SS) {
-    SS << E->clangDecl()->getName();
+    SS << E->clangDecl()->getNameAsString();
   }
 
-  void printVariable(Variable *E, StreamType &SS) {
+  void printVariable(Variable *E, StreamType &SS, bool IsVarDecl = false) {
     SS << E->name() << E->getBlockID() << "_" << E->getID();
+    if (IsVarDecl)
+      return;
+
+    SExpr *V = getCanonicalVal(E);
+    if (V != E) {
+      SS << "{";
+      printSExpr(V, SS, Prec_MAX);
+      SS << "}";
+    }
   }
 
   void printFunction(Function *E, StreamType &SS, unsigned sugared = 0) {
@@ -519,7 +554,7 @@ protected:
         SS << ", ";    // Curried functions
         break;
     }
-    self()->printVariable(E->variableDecl(), SS);
+    self()->printVariable(E->variableDecl(), SS, true);
     SS << ": ";
     self()->printSExpr(E->variableDecl()->definition(), SS, Prec_MAX);
 
@@ -532,7 +567,7 @@ protected:
 
   void printSFunction(SFunction *E, StreamType &SS) {
     SS << "@";
-    self()->printVariable(E->variableDecl(), SS);
+    self()->printVariable(E->variableDecl(), SS, true);
     SS << " ";
     self()->printSExpr(E->body(), SS, Prec_Decl);
   }
@@ -560,9 +595,11 @@ protected:
 
   void printSApply(SApply *E, StreamType &SS) {
     self()->printSExpr(E->sfun(), SS, Prec_Postfix);
-    SS << "@(";
-    self()->printSExpr(E->arg(), SS, Prec_MAX);
-    SS << ")";
+    if (E->isDelegation()) {
+      SS << "@(";
+      self()->printSExpr(E->arg(), SS, Prec_MAX);
+      SS << ")";
+    }
   }
 
   void printProject(Project *E, StreamType &SS) {
@@ -584,7 +621,7 @@ protected:
   }
 
   void printAlloc(Alloc *E, StreamType &SS) {
-    SS << "#alloc ";
+    SS << "new ";
     self()->printSExpr(E->dataType(), SS, Prec_Other-1);
   }
 
@@ -595,7 +632,7 @@ protected:
 
   void printStore(Store *E, StreamType &SS) {
     self()->printSExpr(E->destination(), SS, Prec_Other-1);
-    SS << " = ";
+    SS << " := ";
     self()->printSExpr(E->source(), SS, Prec_Other-1);
   }
 
@@ -621,16 +658,18 @@ protected:
       newline(SS);
       for (auto A : BBI->arguments()) {
         SS << "let ";
-        self()->printVariable(A, SS);
+        self()->printVariable(A, SS, true);
         SS << " = ";
         self()->printSExpr(A->definition(), SS, Prec_MAX);
         SS << ";";
         newline(SS);
       }
       for (auto I : BBI->instructions()) {
-        SS << "let ";
-        self()->printVariable(I, SS);
-        SS << " = ";
+        if (I->definition()->opcode() != COP_Store) {
+          SS << "let ";
+          self()->printVariable(I, SS, true);
+          SS << " = ";
+        }
         self()->printSExpr(I->definition(), SS, Prec_MAX);
         SS << ";";
         newline(SS);
@@ -648,31 +687,34 @@ protected:
   }
 
   void printPhi(Phi *E, StreamType &SS) {
-    SS << "#phi(";
+    SS << "phi(";
     unsigned i = 0;
-    for (auto V : E->values()) {
-      ++i;
-      if (i > 0)
-        SS << ", ";
-      self()->printSExpr(V, SS, Prec_MAX);
+    if (E->status() == Phi::PH_SingleVal) {
+      self()->printSExpr(E->values()[0], SS, Prec_MAX);
+    }
+    else {
+      for (auto V : E->values()) {
+        if (i > 0)
+          SS << ", ";
+        self()->printSExpr(V, SS, Prec_MAX);
+        ++i;
+      }
     }
     SS << ")";
   }
 
   void printGoto(Goto *E, StreamType &SS) {
-    SS << "#goto BB_";
-    SS << E->targetBlock()->blockID();
-    SS << ":";
-    SS << E->index();
+    SS << "goto ";
+    printBlockLabel(SS, E->targetBlock(), E->index());
   }
 
   void printBranch(Branch *E, StreamType &SS) {
-    SS << "#branch (";
+    SS << "branch (";
     self()->printSExpr(E->condition(), SS, Prec_MAX);
-    SS << ") BB_";
-    SS << E->thenBlock()->blockID();
-    SS << " BB_";
-    SS << E->elseBlock()->blockID();
+    SS << ") ";
+    printBlockLabel(SS, E->thenBlock(), E->thenIndex());
+    SS << " ";
+    printBlockLabel(SS, E->elseBlock(), E->elseIndex());
   }
 };
 

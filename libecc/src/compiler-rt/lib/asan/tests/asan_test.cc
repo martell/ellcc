@@ -565,7 +565,7 @@ NOINLINE void TouchStackFunc() {
     A[i] = i*i;
 }
 
-// Test that we handle longjmp and do not report fals positives on stack.
+// Test that we handle longjmp and do not report false positives on stack.
 TEST(AddressSanitizer, LongJmpTest) {
   static jmp_buf buf;
   if (!setjmp(buf)) {

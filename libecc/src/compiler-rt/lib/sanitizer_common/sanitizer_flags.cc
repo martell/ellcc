@@ -116,6 +116,9 @@ void ParseCommonFlagsFromString(CommonFlags *f, const char *str) {
   ParseFlag(str, &f->legacy_pthread_cond, "legacy_pthread_cond",
       "Enables support for dynamic libraries linked with libpthread 2.2.5.");
   ParseFlag(str, &f->help, "help", "Print the flag descriptions.");
+  ParseFlag(str, &f->mmap_limit_mb, "mmap_limit_mb",
+            "Limit the amount of mmap-ed memory (excluding shadow) in Mb; "
+            "not a user-facing flag, used mosly for testing the tools");
 
   // Do a sanity check for certain flags.
   if (f->malloc_context_size < 1)

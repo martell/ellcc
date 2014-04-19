@@ -379,6 +379,20 @@ define i32 @test25(i32 %tmp.2, i32 %AA) {
         ret i32 %tmp.6
 }
 
+define <2 x i32> @test25_vector(<2 x i32> %tmp.2, <2 x i32> %AA) {
+; CHECK-LABEL: @test25_vector(
+; CHECK: %tmp.3 = lshr <2 x i32> %tmp.2, <i32 17, i32 17>
+; CHECK-NEXT: shl <2 x i32> %tmp.3, <i32 17, i32 17>
+; CHECK-NEXT: add <2 x i32> %tmp.51, %AA
+; CHECK-NEXT: and <2 x i32> %x2, <i32 -131072, i32 -131072>
+; CHECK-NEXT: ret <2 x i32>
+  %x = lshr <2 x i32> %AA, <i32 17, i32 17>
+  %tmp.3 = lshr <2 x i32> %tmp.2, <i32 17, i32 17>
+  %tmp.5 = add <2 x i32> %tmp.3, %x
+  %tmp.6 = shl <2 x i32> %tmp.5, <i32 17, i32 17>
+  ret <2 x i32> %tmp.6
+}
+
 ;; handle casts between shifts.
 define i32 @test26(i32 %A) {
 ; CHECK-LABEL: @test26(

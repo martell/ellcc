@@ -162,7 +162,7 @@ private:
 
 // Contains various helper functions for SExprs.
 namespace ThreadSafetyTIL {
-  inline bool isTrivial(SExpr *E) {
+  inline bool isTrivial(const SExpr *E) {
     unsigned Op = E->opcode();
     return Op == COP_Variable || Op == COP_Literal || Op == COP_LiteralPtr;
   }
@@ -199,7 +199,7 @@ public:
   // These are defined after SExprRef contructor, below
   inline Variable(VariableKind K, SExpr *D = nullptr,
                   const clang::ValueDecl *Cvd = nullptr);
-  inline Variable(const clang::ValueDecl *Cvd, SExpr *D = nullptr);
+  inline Variable(SExpr *D = nullptr, const clang::ValueDecl *Cvd = nullptr);
   inline Variable(const Variable &Vd, SExpr *D);
 
   VariableKind kind() const { return static_cast<VariableKind>(Flags); }
@@ -209,6 +209,7 @@ public:
 
   // Returns the definition (for let vars) or type (for parameter & self vars)
   SExpr *definition() { return Definition.get(); }
+  const SExpr *definition() const { return Definition.get(); }
 
   void attachVar() const { ++NumUses; }
   void detachVar() const { assert(NumUses > 0); --NumUses; }
@@ -220,6 +221,7 @@ public:
     BlockID = static_cast<unsigned short>(Bid);
     Id = static_cast<unsigned short>(I);
   }
+  void setClangDecl(const clang::ValueDecl *VD) { Cvdecl = VD; }
 
   template <class V> typename V::R_SExpr traverse(V &Visitor) {
     // This routine is only called for variable references.
@@ -353,7 +355,7 @@ Variable::Variable(VariableKind K, SExpr *D, const clang::ValueDecl *Cvd)
   Flags = K;
 }
 
-Variable::Variable(const clang::ValueDecl *Cvd, SExpr *D)
+Variable::Variable(SExpr *D, const clang::ValueDecl *Cvd)
     : SExpr(COP_Variable), Definition(D), Cvdecl(Cvd),
       BlockID(0), Id(0),  NumUses(0) {
   Flags = VK_Let;
@@ -935,6 +937,8 @@ private:
   SExprRef Expr0;
 };
 
+
+
 class BasicBlock;
 
 // An SCFG is a control-flow graph.  It consists of a set of basic blocks, each
@@ -949,7 +953,8 @@ public:
   static bool classof(const SExpr *E) { return E->opcode() == COP_SCFG; }
 
   SCFG(MemRegionRef A, unsigned Nblocks)
-      : SExpr(COP_SCFG), Blocks(A, Nblocks), Entry(nullptr), Exit(nullptr) {}
+      : SExpr(COP_SCFG), Blocks(A, Nblocks),
+        Entry(nullptr), Exit(nullptr) {}
   SCFG(const SCFG &Cfg, BlockArray &&Ba) // steals memory from Ba
       : SExpr(COP_SCFG), Blocks(std::move(Ba)), Entry(nullptr), Exit(nullptr) {
     // TODO: set entry and exit!
@@ -969,7 +974,7 @@ public:
   const BasicBlock *exit() const { return Exit; }
   BasicBlock *exit() { return Exit; }
 
-  void add(BasicBlock *BB) { Blocks.push_back(BB); }
+  void add(BasicBlock *BB);
   void setEntry(BasicBlock *BB) { Entry = BB; }
   void setExit(BasicBlock *BB) { Exit = BB; }
 
@@ -998,13 +1003,16 @@ public:
 
   BasicBlock(MemRegionRef A, unsigned Nargs, unsigned Nins,
              SExpr *Term = nullptr)
-      : BlockID(0), Parent(nullptr), Args(A, Nargs), Instrs(A, Nins),
-        Terminator(Term) {}
+      : BlockID(0), NumVars(0), NumPredecessors(0), Parent(nullptr),
+        Args(A, Nargs), Instrs(A, Nins), Terminator(Term) {}
   BasicBlock(const BasicBlock &B, VarArray &&As, VarArray &&Is, SExpr *T)
-      : BlockID(0), Parent(nullptr), Args(std::move(As)), Instrs(std::move(Is)),
+      : BlockID(0),  NumVars(B.NumVars), NumPredecessors(B.NumPredecessors),
+        Parent(nullptr), Args(std::move(As)), Instrs(std::move(Is)),
         Terminator(T) {}
 
   unsigned blockID() const { return BlockID; }
+  unsigned numPredecessors() const { return NumPredecessors; }
+
   const BasicBlock *parent() const { return Parent; }
   BasicBlock *parent() { return Parent; }
 
@@ -1017,11 +1025,19 @@ public:
   const SExpr *terminator() const { return Terminator.get(); }
   SExpr *terminator() { return Terminator.get(); }
 
-  void setParent(BasicBlock *P) { Parent = P; }
   void setBlockID(unsigned i) { BlockID = i; }
+  void setParent(BasicBlock *P) { Parent = P; }
+  void setNumPredecessors(unsigned NP) { NumPredecessors = NP; }
   void setTerminator(SExpr *E) { Terminator.reset(E); }
-  void addArgument(Variable *V) { Args.push_back(V); }
-  void addInstr(Variable *V) { Args.push_back(V); }
+
+  void addArgument(Variable *V) {
+    V->setID(BlockID, NumVars++);
+    Args.push_back(V);
+  }
+  void addInstruction(Variable *V) {
+    V->setID(BlockID, NumVars++);
+    Instrs.push_back(V);
+  }
 
   template <class V> BasicBlock *traverse(V &Visitor) {
     typename V::template Container<Variable*> Nas(Visitor, Args.size());
@@ -1057,12 +1073,22 @@ private:
   friend class SCFG;
 
   unsigned BlockID;
-  BasicBlock *Parent;   // The parent block is the enclosing lexical scope.
-                        // The parent dominates this block.
-  VarArray Args;        // Phi nodes
+  unsigned NumVars;
+  unsigned NumPredecessors; // Number of blocks which jump to this one.
+
+  BasicBlock *Parent;       // The parent block is the enclosing lexical scope.
+                            // The parent dominates this block.
+  VarArray Args;            // Phi nodes.  One argument per predecessor.
   VarArray Instrs;
   SExprRef Terminator;
 };
+
+
+inline void SCFG::add(BasicBlock *BB) {
+  BB->setBlockID(Blocks.size());
+  Blocks.push_back(BB);
+}
+
 
 template <class V>
 typename V::R_SExpr SCFG::traverse(V &Visitor) {
@@ -1076,10 +1102,20 @@ typename V::R_SExpr SCFG::traverse(V &Visitor) {
   return Visitor.reduceSCFG(*this, Bbs);
 }
 
+
 class Phi : public SExpr {
 public:
   // TODO: change to SExprRef
   typedef SimpleArray<SExpr *> ValArray;
+
+  // In minimal SSA form, all Phi nodes are MultiVal.
+  // During conversion to SSA, incomplete Phi nodes may be introduced, which
+  // are later determined to be SingleVal.
+  enum Status {
+    PH_MultiVal = 0, // Phi node has multiple distinct values.  (Normal)
+    PH_SingleVal,    // Phi node has one distinct value, and can be eliminated
+    PH_Incomplete    // Phi node is incomplete
+  };
 
   static bool classof(const SExpr *E) { return E->opcode() == COP_Phi; }
 
@@ -1089,6 +1125,9 @@ public:
 
   const ValArray &values() const { return Values; }
   ValArray &values() { return Values; }
+
+  Status status() const { return static_cast<Status>(Flags); }
+  void setStatus(Status s) { Flags = s; }
 
   template <class V> typename V::R_SExpr traverse(V &Visitor) {
     typename V::template Container<typename V::R_SExpr> Nvs(Visitor,
@@ -1101,7 +1140,7 @@ public:
   }
 
   template <class C> typename C::CType compare(Phi *E, C &Cmp) {
-    // TODO -- implement CFG comparisons
+    // TODO: implement CFG comparisons
     return Cmp.comparePointers(this, E);
   }
 
@@ -1146,16 +1185,25 @@ public:
   static bool classof(const SExpr *E) { return E->opcode() == COP_Branch; }
 
   Branch(SExpr *C, BasicBlock *T, BasicBlock *E)
-      : SExpr(COP_Branch), Condition(C), ThenBlock(T), ElseBlock(E) {}
+      : SExpr(COP_Branch), Condition(C), ThenBlock(T), ElseBlock(E),
+        ThenIndex(0), ElseIndex(0)
+  {}
   Branch(const Branch &Br, SExpr *C, BasicBlock *T, BasicBlock *E)
-      : SExpr(COP_Branch), Condition(C), ThenBlock(T), ElseBlock(E) {}
+      : SExpr(COP_Branch), Condition(C), ThenBlock(T), ElseBlock(E),
+        ThenIndex(0), ElseIndex(0)
+  {}
 
   const SExpr *condition() const { return Condition; }
   SExpr *condition() { return Condition; }
+
   const BasicBlock *thenBlock() const { return ThenBlock; }
   BasicBlock *thenBlock() { return ThenBlock; }
+
   const BasicBlock *elseBlock() const { return ElseBlock; }
   BasicBlock *elseBlock() { return ElseBlock; }
+
+  unsigned thenIndex() const { return ThenIndex; }
+  unsigned elseIndex() const { return ElseIndex; }
 
   template <class V> typename V::R_SExpr traverse(V &Visitor) {
     typename V::R_SExpr Nc = Visitor.traverse(Condition);
@@ -1173,7 +1221,15 @@ private:
   SExpr *Condition;
   BasicBlock *ThenBlock;
   BasicBlock *ElseBlock;
+  unsigned ThenIndex;
+  unsigned ElseIndex;
 };
+
+
+SExpr *getCanonicalVal(SExpr *E);
+void simplifyIncompleteArg(Variable *V, til::Phi *Ph);
+
+
 
 
 } // end namespace til

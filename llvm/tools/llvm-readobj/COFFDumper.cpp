@@ -977,7 +977,11 @@ void COFFDumper::printSymbol(const SymbolRef &Sym) {
         break;
 
       DictScope AS(W, "AuxFileRecord");
-      W.printString("FileName", StringRef(Aux->FileName));
+
+      StringRef Name(Aux->FileName,
+                     Symbol->NumberOfAuxSymbols * COFF::SymbolSize);
+      W.printString("FileName", Name.rtrim(StringRef("\0", 1)));
+      break;
     } else if (Symbol->isSectionDefinition()) {
       const coff_aux_section_definition *Aux;
       if (error(getSymbolAuxData(Obj, Symbol + I, Aux)))

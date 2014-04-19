@@ -356,7 +356,7 @@ Instruction *InstCombiner::FoldShiftByConstant(Value *Op0, Constant *Op1,
     if (BO->getOpcode() == Instruction::Mul && isLeftShift)
       if (Constant *BOOp = dyn_cast<Constant>(BO->getOperand(1)))
         return BinaryOperator::CreateMul(BO->getOperand(0),
-                                        ConstantExpr::getShl(BOOp, COp1));
+                                        ConstantExpr::getShl(BOOp, Op1));
 
   // Try to fold constant and into select arguments.
   if (SelectInst *SI = dyn_cast<SelectInst>(Op0))
@@ -432,8 +432,12 @@ Instruction *InstCombiner::FoldShiftByConstant(Value *Op0, Constant *Op1,
           Value *X = Builder->CreateBinOp(Op0BO->getOpcode(), YS, V1,
                                           Op0BO->getOperand(1)->getName());
           uint32_t Op1Val = COp1->getLimitedValue(TypeBits);
-          return BinaryOperator::CreateAnd(X, ConstantInt::get(I.getContext(),
-                     APInt::getHighBitsSet(TypeBits, TypeBits-Op1Val)));
+
+          APInt Bits = APInt::getHighBitsSet(TypeBits, TypeBits - Op1Val);
+          Constant *Mask = ConstantInt::get(I.getContext(), Bits);
+          if (VectorType *VT = dyn_cast<VectorType>(X->getType()))
+            Mask = ConstantVector::getSplat(VT->getNumElements(), Mask);
+          return BinaryOperator::CreateAnd(X, Mask);
         }
 
         // Turn (Y + ((X >> C) & CC)) << C  ->  ((X & (CC << C)) + (Y << C))
@@ -464,8 +468,12 @@ Instruction *InstCombiner::FoldShiftByConstant(Value *Op0, Constant *Op1,
           Value *X = Builder->CreateBinOp(Op0BO->getOpcode(), V1, YS,
                                           Op0BO->getOperand(0)->getName());
           uint32_t Op1Val = COp1->getLimitedValue(TypeBits);
-          return BinaryOperator::CreateAnd(X, ConstantInt::get(I.getContext(),
-                     APInt::getHighBitsSet(TypeBits, TypeBits-Op1Val)));
+
+          APInt Bits = APInt::getHighBitsSet(TypeBits, TypeBits - Op1Val);
+          Constant *Mask = ConstantInt::get(I.getContext(), Bits);
+          if (VectorType *VT = dyn_cast<VectorType>(X->getType()))
+            Mask = ConstantVector::getSplat(VT->getNumElements(), Mask);
+          return BinaryOperator::CreateAnd(X, Mask);
         }
 
         // Turn (((X >> C)&CC) + Y) << C  ->  (X + (Y << C)) & (CC << C)
@@ -817,4 +825,3 @@ Instruction *InstCombiner::visitAShr(BinaryOperator &I) {
 
   return 0;
 }
-
