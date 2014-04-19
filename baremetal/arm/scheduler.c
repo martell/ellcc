@@ -14,6 +14,7 @@ typedef enum {
 
 Queue scheduler_queue;
 
+static Lock ready_lock;
 static Thread *ready;                   // The ready to run list.
 static Thread main_thread;              // The main thread.
 static Thread idle_thread;              // The idle thread.
@@ -108,8 +109,11 @@ Entry *get_queue_wait(Queue *queue)
         if (!entry) {
             // Sleep until something becomes available.
             // Remove me from the ready list.
+            lock_aquire(&ready_lock);
             Thread *me = ready;
             ready = ready->next;
+            lock_release(&ready_lock);
+ 
             // Add me to the waiter list.
             me->next = queue->waiter;
             queue->waiter = me;
