@@ -35,10 +35,15 @@ void __new_context(Context **savearea,
                    int mode, void *ret, intptr_t arg1, intptr_t arg2);
 
 /** Switch to a new context.
- * @param from A place to store the current context.
  * @param to The new context.
+ * @param from A place to store the current context.
  */
-void __switch(Context **from, void *Context);
+void __switch(Context *to, Context **from);
+
+/** Dispatch to a context.
+ * @param to The context.
+ */
+void __dispatch(Context *to);
 
 // sync.h
 typedef char Lock;

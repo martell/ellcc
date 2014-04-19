@@ -32,7 +32,7 @@ static intptr_t context(intptr_t arg1, intptr_t arg2)
     Context **context_sa = (Context **)arg2;
     for ( ;; ) {
       printf("hello from context %" PRIdPTR "\n", arg1);
-      __switch(context_sa, main_sa);
+      __switch(main_sa, context_sa);
     }
     return 0;
 }
@@ -64,13 +64,14 @@ int main(int argc, char **argv)
     context2_sa = (Context *)(p + 4096);
     __new_context(&context2_sa, context, Mode_SYS, NULL, 6809, (intptr_t)&context2_sa);
     // Let's do some context switching.
-    __switch(&main_sa, context1_sa);
-    __switch(&main_sa, context2_sa);
-    __switch(&main_sa, context1_sa);
-    __switch(&main_sa, context2_sa);
-    __switch(&main_sa, context2_sa);
+    __switch(context1_sa, &main_sa);
+    __switch(context2_sa, &main_sa);
+    __switch(context1_sa, &main_sa);
+    __switch(context2_sa, &main_sa);
+    __switch(context2_sa, &main_sa);
 
 #endif
+
     for ( ;; ) {
         char buffer[100];
         fputs("prompt: ", stdout);

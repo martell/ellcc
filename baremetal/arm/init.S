@@ -134,7 +134,9 @@ identify_irq:
     bx      lr
 
 /* Set up a context for execution.
- * void __new_context(void **savearea, int (*entry)(intptr_t, intptr_t), uint32_t spsr, void *ret, intptr_t arg1, intptr_t arg2)
+ * void __new_context(Context **savearea,
+ *                    int (*entry)(intptr_t, intptr_t), uint32_t spsr,
+ *                    void *ret, intptr_t arg1, intptr_t arg2)
  * On entry:
  * r0 points to the new context's save area, initialized to the top of the stack, aligned to 8 bytes.
  * r1 is the new context's start address
@@ -156,17 +158,26 @@ __new_context:
 
 
 /* Switch from one context to the next.
- * void __switch(void **from, void *to);
+ * void __switch(Context **to, Context *from);
  * On entry:
- * r0 points to the current save area.
- * r1 points to the next save area.
+ * r0 points to the next save area.
+ * r1 points to the current save area.
  */
     .global __switch
 __switch:
     srsfd   sp!, #Mode_SYS      // Save LR_sys and SPSR_sys on the sys stack.
     push    {r0-r12, lr}        // Store other registers.
-    str     sp, [r0]            // Save the current frame.
-    mov     sp, r1              // Get the next frame.
+    str     sp, [r1]            // Save the current frame.
+    // Fall through.
+
+/* Switch to a context.
+ * void __switch(Context *to);
+ * On entry:
+ * r0 points to the next save area.
+ * r1 points to the current save area.
+ */
+__dispatch:                     // Dispatch to the given context.
+    mov     sp, r0              // Get the next frame.
     pop     {r0-r12, lr}        // Restore registers
     rfeia   sp!                 // And dispatch.
 

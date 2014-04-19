@@ -119,7 +119,7 @@ Entry *get_queue_wait(Queue *queue)
             queue->waiter = me;
             lock_release(&queue->lock);
             // Run the next entry in the ready list.
-            __switch(&me->saved_sp, ready->saved_sp);
+            __switch(ready->saved_sp, &me->saved_sp);
         } else {
             lock_release(&queue->lock);
         }
