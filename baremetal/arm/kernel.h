@@ -6,6 +6,10 @@
 
 #include <stdint.h>
 
+#ifndef NULL
+#define NULL 0
+#endif
+
 // arm.h
 typedef struct context
 {
@@ -35,5 +39,63 @@ void __new_context(Context **savearea,
  * @param to The new context.
  */
 void __switch(Context **from, void *Context);
+
+// sync.h
+typedef char Lock;
+static inline void lock_aquire(Lock *lock)
+{
+    // RICH: interrupts.
+    while(!__atomic_test_and_set(lock, __ATOMIC_SEQ_CST))
+        continue;
+}
+
+static inline void lock_release(Lock *lock)
+{
+    // RICH: interrupts.
+    __atomic_clear(lock, __ATOMIC_SEQ_CST);
+}
+
+// queue.h
+typedef struct entry
+{
+    struct entry *next;
+} Entry;
+
+struct thread;
+typedef struct queue
+{
+    Entry *head;                // The head of the queue.
+    Entry *tail;                // The tail of the queue.
+    struct thread *waiter;      // Any threads waiting on the queue.
+    Lock lock;
+} Queue;
+
+void send_queue(Queue *queue, Entry *entry);
+Entry *get_queue(Queue *queue);
+Entry *get_queue_wait(Queue *queue);
+
+// thread.h
+typedef struct thread
+{
+    struct thread *next;        // Next thread in any list.
+    Context *saved_sp;          // The thread's saved stack pointer.
+} Thread;
+
+// message.h
+typedef struct message
+{
+    Entry entry;                // Next message in any list.
+    int code;                   // The message code.
+} Message;
+
+static inline void send_message(Queue *queue, Message *message)
+{
+    send_queue(queue, (Entry *)message);
+}
+
+static inline Message *get_message(Queue *queue)
+{
+    return (Message *)get_queue(queue);
+}
 
 #endif // _kernel_h_

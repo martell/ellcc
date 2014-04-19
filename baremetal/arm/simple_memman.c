@@ -6,17 +6,6 @@
 #include <sys/ioctl.h>
 
 #include "kernel.h"
-#include "simple_memman.h"
-
-
-static void init(void)
-    __attribute__((__constructor__, __used__));
-
-static void init(void)
-{
-    // Set up simple memory allocation.
-    simple_memman();
-}
 
 extern char __end[];            // The end of the .bss area.
 extern char *__heap_end;        // The bottom of the allocated stacks.
@@ -38,9 +27,11 @@ static char *sys_brk(char *addr)
 
 /* Initialize the simple memory allocator.
  */
-void simple_memman(void)
+static void init(void)
+    __attribute__((__constructor__, __used__));
+
+static void init(void)
 {
     // Set up a simple brk system call.
     __set_syscall(SYS_brk, sys_brk);
 }
-
