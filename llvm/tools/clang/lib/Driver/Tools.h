@@ -54,6 +54,8 @@ using llvm::opt::ArgStringList;
     void AddARMTargetArgs(const llvm::opt::ArgList &Args,
                           llvm::opt::ArgStringList &CmdArgs,
                           bool KernelOrKext) const;
+    void AddARM64TargetArgs(const llvm::opt::ArgList &Args,
+                            llvm::opt::ArgStringList &CmdArgs) const;
     void AddMBlazeTargetArgs(const llvm::opt::ArgList &Args,
                              llvm::opt::ArgStringList &CmdArgs) const;
     void AddNios2TargetArgs(const llvm::opt::ArgList &Args,

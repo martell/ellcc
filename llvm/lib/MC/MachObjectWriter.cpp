@@ -417,6 +417,7 @@ void MachObjectWriter::RecordRelocation(const MCAssembler &Asm,
                                         const MCFragment *Fragment,
                                         const MCFixup &Fixup,
                                         MCValue Target,
+                                        bool &IsPCRel,
                                         uint64_t &FixedValue) {
   TargetObjectWriter->RecordRelocation(this, Asm, Layout, Fragment, Fixup,
                                        Target, FixedValue);
@@ -668,7 +669,7 @@ IsSymbolRefDifferenceFullyResolvedImpl(const MCAssembler &Asm,
   //   - addr(atom(B)) - offset(B)
   // and the offsets are not relocatable, so the fixup is fully resolved when
   //  addr(atom(A)) - addr(atom(B)) == 0.
-  const MCSymbolData *A_Base = 0, *B_Base = 0;
+  const MCSymbolData *A_Base = nullptr, *B_Base = nullptr;
 
   const MCSymbol &SA = DataA.getSymbol().AliasedSymbol();
   const MCSection &SecA = SA.getSection();
@@ -756,6 +757,14 @@ void MachObjectWriter::WriteObject(MCAssembler &Asm,
   // Add the data-in-code load command size, if used.
   unsigned NumDataRegions = Asm.getDataRegions().size();
   if (NumDataRegions) {
+    ++NumLoadCommands;
+    LoadCommandsSize += sizeof(MachO::linkedit_data_command);
+  }
+
+  // Add the loh load command size, if used.
+  uint64_t LOHRawSize = Asm.getLOHContainer().getEmitSize(*this, Layout);
+  uint64_t LOHSize = RoundUpToAlignment(LOHRawSize, is64Bit() ? 8 : 4);
+  if (LOHSize) {
     ++NumLoadCommands;
     LoadCommandsSize += sizeof(MachO::linkedit_data_command);
   }
@@ -848,6 +857,12 @@ void MachObjectWriter::WriteObject(MCAssembler &Asm,
                              DataRegionsSize);
   }
 
+  // Write the loh load command, if used.
+  uint64_t LOHTableEnd = DataInCodeTableEnd + LOHSize;
+  if (LOHSize)
+    WriteLinkeditLoadCommand(MachO::LC_LINKER_OPTIMIZATION_HINT,
+                             DataInCodeTableEnd, LOHSize);
+
   // Write the symbol table load command, if used.
   if (NumSymbols) {
     unsigned FirstLocalSymbol = 0;
@@ -864,10 +879,10 @@ void MachObjectWriter::WriteObject(MCAssembler &Asm,
 
     // If used, the indirect symbols are written after the section data.
     if (NumIndirectSymbols)
-      IndirectSymbolOffset = DataInCodeTableEnd;
+      IndirectSymbolOffset = LOHTableEnd;
 
     // The symbol table is written after the indirect symbol data.
-    uint64_t SymbolTableOffset = DataInCodeTableEnd + IndirectSymbolSize;
+    uint64_t SymbolTableOffset = LOHTableEnd + IndirectSymbolSize;
 
     // The string table is written after symbol table.
     uint64_t StringTableOffset =
@@ -932,6 +947,17 @@ void MachObjectWriter::WriteObject(MCAssembler &Asm,
     Write32(Start);
     Write16(End - Start);
     Write16(Data->Kind);
+  }
+
+  // Write out the loh commands, if there is one.
+  if (LOHSize) {
+#ifndef NDEBUG
+    unsigned Start = OS.tell();
+#endif
+    Asm.getLOHContainer().Emit(*this, Layout);
+    // Pad to a multiple of the pointer size.
+    WriteBytes("", OffsetToAlignment(LOHRawSize, is64Bit() ? 8 : 4));
+    assert(OS.tell() - Start == LOHSize);
   }
 
   // Write the symbol table data, if used.

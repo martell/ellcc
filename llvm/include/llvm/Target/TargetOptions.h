@@ -49,9 +49,9 @@ namespace llvm {
           JITEmitDebugInfoToDisk(false), GuaranteedTailCallOpt(false),
           DisableTailCalls(false), StackAlignmentOverride(0),
           EnableFastISel(false), PositionIndependentExecutable(false),
-          EnableSegmentedStacks(false), UseInitArray(false),
-          DisableIntegratedAS(false), TrapFuncName(""),
-          FloatABIType(FloatABI::Default),
+          UseInitArray(false),
+          DisableIntegratedAS(false), CompressDebugSections(false),
+          TrapFuncName(""), FloatABIType(FloatABI::Default),
           AllowFPOpFusion(FPOpFusion::Standard) {}
 
     /// PrintMachineCode - This flag is enabled when the -print-machineinstrs
@@ -152,14 +152,15 @@ namespace llvm {
     /// if the relocation model is anything other than PIC.
     unsigned PositionIndependentExecutable : 1;
 
-    unsigned EnableSegmentedStacks : 1;
-
     /// UseInitArray - Use .init_array instead of .ctors for static
     /// constructors.
     unsigned UseInitArray : 1;
 
     /// Disable the integrated assembler.
     unsigned DisableIntegratedAS : 1;
+
+    /// Compress DWARF debug sections.
+    unsigned CompressDebugSections : 1;
 
     /// getTrapFunctionName - If this returns a non-empty string, this means
     /// isel should lower Intrinsic::trap to a call to the specified function
@@ -214,7 +215,6 @@ inline bool operator==(const TargetOptions &LHS,
     ARE_EQUAL(StackAlignmentOverride) &&
     ARE_EQUAL(EnableFastISel) &&
     ARE_EQUAL(PositionIndependentExecutable) &&
-    ARE_EQUAL(EnableSegmentedStacks) &&
     ARE_EQUAL(UseInitArray) &&
     ARE_EQUAL(TrapFuncName) &&
     ARE_EQUAL(FloatABIType) &&

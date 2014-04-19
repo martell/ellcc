@@ -384,7 +384,9 @@ void DwarfUnit::addDIEEntry(DIE *Die, dwarf::Attribute Attribute,
 /// Create a DIE with the given Tag, add the DIE to its parent, and
 /// call insertDIE if MD is not null.
 DIE *DwarfUnit::createAndAddDIE(unsigned Tag, DIE &Parent, DIDescriptor N) {
-  DIE *Die = new DIE(Tag);
+  assert(Tag != dwarf::DW_TAG_auto_variable &&
+         Tag != dwarf::DW_TAG_arg_variable);
+  DIE *Die = new DIE((dwarf::Tag)Tag);
   Parent.addChild(Die);
   if (N)
     insertDIE(N, Die);
@@ -980,8 +982,12 @@ DIE *DwarfUnit::getOrCreateTypeDIE(const MDNode *TyNode) {
 
   DIType Ty(TyNode);
   assert(Ty.isType());
-  assert(*&Ty == resolve(Ty.getRef()) &&
+  assert(Ty == resolve(Ty.getRef()) &&
          "type was not uniqued, possible ODR violation.");
+
+  // DW_TAG_restrict_type is not supported in DWARF2
+  if (Ty.getTag() == dwarf::DW_TAG_restrict_type && DD->getDwarfVersion() <= 2)
+    return getOrCreateTypeDIE(resolve(DIDerivedType(Ty).getTypeDerivedFrom()));
 
   // Construct the context before querying for the existence of the DIE in case
   // such construction creates the DIE.
@@ -1766,12 +1772,12 @@ void DwarfUnit::constructArrayTypeDIE(DIE &Buffer, DICompositeType CTy) {
   // as different languages may have different sizes for indexes.
   DIE *IdxTy = getIndexTyDie();
   if (!IdxTy) {
-    // Construct an anonymous type for index type.
+    // Construct an integer type to use for indexes.
     IdxTy = createAndAddDIE(dwarf::DW_TAG_base_type, *UnitDie);
-    addString(IdxTy, dwarf::DW_AT_name, "int");
-    addUInt(IdxTy, dwarf::DW_AT_byte_size, None, sizeof(int32_t));
+    addString(IdxTy, dwarf::DW_AT_name, "sizetype");
+    addUInt(IdxTy, dwarf::DW_AT_byte_size, None, sizeof(int64_t));
     addUInt(IdxTy, dwarf::DW_AT_encoding, dwarf::DW_FORM_data1,
-            dwarf::DW_ATE_signed);
+            dwarf::DW_ATE_unsigned);
     setIndexTyDie(IdxTy);
   }
 
@@ -2030,15 +2036,18 @@ DIE *DwarfUnit::getOrCreateStaticMemberDIE(DIDerivedType DT) {
   return StaticMemberDIE;
 }
 
-void DwarfUnit::emitHeader(const MCSection *ASection,
-                           const MCSymbol *ASectionSym) const {
+void DwarfUnit::emitHeader(const MCSymbol *ASectionSym) const {
   Asm->OutStreamer.AddComment("DWARF version number");
   Asm->EmitInt16(DD->getDwarfVersion());
   Asm->OutStreamer.AddComment("Offset Into Abbrev. Section");
   // We share one abbreviations table across all units so it's always at the
   // start of the section. Use a relocatable offset where needed to ensure
   // linking doesn't invalidate that offset.
-  Asm->EmitSectionOffset(ASectionSym, ASectionSym);
+  if (ASectionSym)
+    Asm->EmitSectionOffset(ASectionSym, ASectionSym);
+  else
+    // Use a constant value when no symbol is provided.
+    Asm->EmitInt32(0);
   Asm->OutStreamer.AddComment("Address Size (in bytes)");
   Asm->EmitInt8(Asm->getDataLayout().getPointerSize());
 }
@@ -2067,13 +2076,7 @@ void DwarfUnit::addRange(RangeSpan Range) {
 void DwarfCompileUnit::initStmtList(MCSymbol *DwarfLineSectionSym) {
   // Define start line table label for each Compile Unit.
   MCSymbol *LineTableStartSym =
-      Asm->GetTempSymbol("line_table_start", getUniqueID());
-  Asm->OutStreamer.getContext().setMCLineTableSymbol(LineTableStartSym,
-                                                     getUniqueID());
-
-  // Use a single line table if we are generating assembly.
-  bool UseTheFirstCU =
-      Asm->OutStreamer.hasRawTextSupport() || (getUniqueID() == 0);
+      Asm->OutStreamer.getDwarfLineTableSymbol(getUniqueID());
 
   stmtListIndex = UnitDie->getValues().size();
 
@@ -2083,10 +2086,7 @@ void DwarfCompileUnit::initStmtList(MCSymbol *DwarfLineSectionSym) {
   // The line table entries are not always emitted in assembly, so it
   // is not okay to use line_table_start here.
   if (Asm->MAI->doesDwarfUseRelocationsAcrossSections())
-    addSectionLabel(UnitDie.get(), dwarf::DW_AT_stmt_list,
-                    UseTheFirstCU ? DwarfLineSectionSym : LineTableStartSym);
-  else if (UseTheFirstCU)
-    addSectionOffset(UnitDie.get(), dwarf::DW_AT_stmt_list, 0);
+    addSectionLabel(UnitDie.get(), dwarf::DW_AT_stmt_list, LineTableStartSym);
   else
     addSectionDelta(UnitDie.get(), dwarf::DW_AT_stmt_list, LineTableStartSym,
                     DwarfLineSectionSym);
@@ -2098,9 +2098,8 @@ void DwarfCompileUnit::applyStmtList(DIE &D) {
              UnitDie->getValues()[stmtListIndex]);
 }
 
-void DwarfTypeUnit::emitHeader(const MCSection *ASection,
-                               const MCSymbol *ASectionSym) const {
-  DwarfUnit::emitHeader(ASection, ASectionSym);
+void DwarfTypeUnit::emitHeader(const MCSymbol *ASectionSym) const {
+  DwarfUnit::emitHeader(ASectionSym);
   Asm->OutStreamer.AddComment("Type Signature");
   Asm->OutStreamer.EmitIntValue(TypeSignature, sizeof(TypeSignature));
   Asm->OutStreamer.AddComment("Type DIE Offset");

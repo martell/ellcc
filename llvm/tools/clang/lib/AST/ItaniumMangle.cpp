@@ -21,6 +21,7 @@
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/DeclTemplate.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/TypeLoc.h"
@@ -126,6 +127,9 @@ public:
   /// @{
 
   bool shouldMangleCXXName(const NamedDecl *D) override;
+  bool shouldMangleStringLiteral(const StringLiteral *) override {
+    return false;
+  }
   void mangleCXXName(const NamedDecl *D, raw_ostream &) override;
   void mangleThunk(const CXXMethodDecl *MD, const ThunkInfo &Thunk,
                    raw_ostream &) override;
@@ -152,6 +156,8 @@ public:
   void mangleItaniumThreadLocalInit(const VarDecl *D, raw_ostream &) override;
   void mangleItaniumThreadLocalWrapper(const VarDecl *D,
                                        raw_ostream &) override;
+
+  void mangleStringLiteral(const StringLiteral *, raw_ostream &) override;
 
   bool getNextDiscriminator(const NamedDecl *ND, unsigned &disc) {
     // Lambda closure types are already numbered.
@@ -2147,8 +2153,17 @@ void CXXNameMangler::mangleNeonVectorType(const VectorType *T) {
   const char *EltName = 0;
   if (T->getVectorKind() == VectorType::NeonPolyVector) {
     switch (cast<BuiltinType>(EltType)->getKind()) {
-    case BuiltinType::SChar:     EltName = "poly8_t"; break;
-    case BuiltinType::Short:     EltName = "poly16_t"; break;
+    case BuiltinType::SChar:
+    case BuiltinType::UChar:
+      EltName = "poly8_t";
+      break;
+    case BuiltinType::Short:
+    case BuiltinType::UShort:
+      EltName = "poly16_t";
+      break;
+    case BuiltinType::ULongLong:
+      EltName = "poly64_t";
+      break;
     default: llvm_unreachable("unexpected Neon polynomial vector element type");
     }
   } else {
@@ -2161,6 +2176,7 @@ void CXXNameMangler::mangleNeonVectorType(const VectorType *T) {
     case BuiltinType::UInt:      EltName = "uint32_t"; break;
     case BuiltinType::LongLong:  EltName = "int64_t"; break;
     case BuiltinType::ULongLong: EltName = "uint64_t"; break;
+    case BuiltinType::Double:    EltName = "float64_t"; break;
     case BuiltinType::Float:     EltName = "float32_t"; break;
     case BuiltinType::Half:      EltName = "float16_t";break;
     default:
@@ -2189,6 +2205,7 @@ static StringRef mangleAArch64VectorBase(const BuiltinType *EltType) {
   case BuiltinType::Int:
     return "Int32";
   case BuiltinType::Long:
+  case BuiltinType::LongLong:
     return "Int64";
   case BuiltinType::UChar:
     return "Uint8";
@@ -2197,6 +2214,7 @@ static StringRef mangleAArch64VectorBase(const BuiltinType *EltType) {
   case BuiltinType::UInt:
     return "Uint32";
   case BuiltinType::ULong:
+  case BuiltinType::ULongLong:
     return "Uint64";
   case BuiltinType::Half:
     return "Float16";
@@ -2256,10 +2274,12 @@ void CXXNameMangler::mangleAArch64NeonVectorType(const VectorType *T) {
 void CXXNameMangler::mangleType(const VectorType *T) {
   if ((T->getVectorKind() == VectorType::NeonVector ||
        T->getVectorKind() == VectorType::NeonPolyVector)) {
+    llvm::Triple Target = getASTContext().getTargetInfo().getTriple();
     llvm::Triple::ArchType Arch =
         getASTContext().getTargetInfo().getTriple().getArch();
-    if ((Arch == llvm::Triple::aarch64) ||
-        (Arch == llvm::Triple::aarch64_be))
+    if (Arch == llvm::Triple::aarch64 ||
+        Arch == llvm::Triple::aarch64_be ||
+        (Arch == llvm::Triple::arm64 && !Target.isOSDarwin()))
       mangleAArch64NeonVectorType(T);
     else
       mangleNeonVectorType(T);
@@ -2341,8 +2361,35 @@ void CXXNameMangler::mangleType(const TemplateSpecializationType *T) {
 void CXXNameMangler::mangleType(const DependentNameType *T) {
   // Typename types are always nested
   Out << 'N';
+  // Proposal by cxx-abi-dev, 2014-03-26
+  // <class-enum-type> ::= <name>    # non-dependent or dependent type name or
+  //                                 # dependent elaborated type specifier using
+  //                                 # 'typename'
+  //                   ::= Ts <name> # dependent elaborated type specifier using
+  //                                 # 'struct' or 'class'
+  //                   ::= Tu <name> # dependent elaborated type specifier using
+  //                                 # 'union'
+  //                   ::= Te <name> # dependent elaborated type specifier using
+  //                                 # 'enum'
+  switch (T->getKeyword()) {
+    case ETK_Typename:
+      break;
+    case ETK_Struct:
+    case ETK_Class:
+    case ETK_Interface:
+      Out << "Ts";
+      break;
+    case ETK_Union:
+      Out << "Tu";
+      break;
+    case ETK_Enum:
+      Out << "Te";
+      break;
+    default:
+      llvm_unreachable("unexpected keyword for dependent type name");
+  }
   manglePrefix(T->getQualifier());
-  mangleSourceName(T->getIdentifier());    
+  mangleSourceName(T->getIdentifier());
   Out << 'E';
 }
 
@@ -3408,7 +3455,7 @@ bool CXXNameMangler::mangleSubstitution(uintptr_t Ptr) {
 
     // <seq-id> is encoded in base-36, using digits and upper case letters.
     char Buffer[10];
-    char *BufferPtr = llvm::array_endof(Buffer);
+    char *BufferPtr = std::end(Buffer);
 
     if (SeqID == 0) *--BufferPtr = '0';
 
@@ -3421,9 +3468,7 @@ bool CXXNameMangler::mangleSubstitution(uintptr_t Ptr) {
       SeqID /= 36;
     }
 
-    Out << 'S'
-        << StringRef(BufferPtr, llvm::array_endof(Buffer)-BufferPtr)
-        << '_';
+    Out << 'S' << StringRef(BufferPtr, std::end(Buffer) - BufferPtr) << '_';
   }
 
   return true;
@@ -3772,6 +3817,10 @@ void ItaniumMangleContextImpl::mangleCXXRTTIName(QualType Ty,
 
 void ItaniumMangleContextImpl::mangleTypeName(QualType Ty, raw_ostream &Out) {
   mangleCXXRTTIName(Ty, Out);
+}
+
+void ItaniumMangleContextImpl::mangleStringLiteral(const StringLiteral *, raw_ostream &) {
+  llvm_unreachable("Can't mangle string literals");
 }
 
 ItaniumMangleContext *

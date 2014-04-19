@@ -234,7 +234,7 @@ def TargetARM : TargetArch<["arm", "armeb", "thumb"]>;
 def TargetMSP430 : TargetArch<["msp430"]>;
 def TargetX86 : TargetArch<["x86"]>;
 def TargetX86Win : TargetArch<["x86", "x86_64"]> {
-  let OSes = ["Win32", "MinGW32"];
+  let OSes = ["Win32"];
 }
 def TargetMBlaze : TargetArch<["microblaze"]>;
 def TargetMips : TargetArch<["mips", "mipsel"]>;
@@ -988,6 +988,12 @@ def ObjCDesignatedInitializer : Attr {
   let Documentation = [Undocumented];
 }
 
+def OptimizeNone : InheritableAttr {
+  let Spellings = [GNU<"optnone">, CXX11<"clang", "optnone">];
+  let Subjects = SubjectList<[Function, ObjCMethod]>;
+  let Documentation = [OptnoneDocs];
+}
+
 def Overloadable : Attr {
   let Spellings = [GNU<"overloadable">];
   let Subjects = SubjectList<[Function], ErrorDiag>;
@@ -1043,7 +1049,7 @@ def Pcs : InheritableAttr {
                            ["aapcs", "aapcs-vfp"],
                            ["AAPCS", "AAPCS_VFP"]>];
 //  let Subjects = [Function, ObjCMethod];
-  let Documentation = [Undocumented];
+  let Documentation = [PcsDocs];
 }
 
 def Pure : InheritableAttr {
@@ -1082,7 +1088,7 @@ def InitPriority : InheritableAttr {
 }
 
 def Section : InheritableAttr {
-  let Spellings = [GCC<"section">];
+  let Spellings = [GCC<"section">, Declspec<"allocate">];
   let Args = [StringArgument<"Name">];
   let Subjects = SubjectList<[Function, GlobalVar, 
                               ObjCMethod, ObjCProperty], ErrorDiag,
@@ -1315,7 +1321,8 @@ def Capability : InheritableAttr {
   let Spellings = [GNU<"capability">, CXX11<"clang", "capability">,
                    GNU<"shared_capability">,
                    CXX11<"clang", "shared_capability">];
-  let Subjects = SubjectList<[Struct], ErrorDiag, "ExpectedStruct">;
+  let Subjects = SubjectList<[Struct, TypedefName], ErrorDiag,
+                             "ExpectedStructOrTypedef">;
   let Args = [StringArgument<"Name">];
   let Accessors = [Accessor<"isShared",
                     [GNU<"shared_capability">,
@@ -1703,6 +1710,7 @@ def MSInheritance : InheritableAttr {
                    Keyword<"__multiple_inheritance">,
                    Keyword<"__virtual_inheritance">,
                    Keyword<"__unspecified_inheritance">];
+  let Documentation = [SectionDocs];
   let AdditionalMembers = [{
   static bool hasVBPtrOffsetField(Spelling Inheritance) {
     return Inheritance == Keyword_unspecified_inheritance;

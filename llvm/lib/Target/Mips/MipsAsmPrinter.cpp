@@ -294,11 +294,11 @@ void MipsAsmPrinter::EmitFunctionEntryLabel() {
   else {
     TS.emitDirectiveSetNoMips16();
     if (Subtarget->hasMips64r2()) {
-      TS.emitDirectiveSetMips64r2();
+      TS.emitDirectiveSetMips64R2();
     } else if (Subtarget->hasMips64()) {
       TS.emitDirectiveSetMips64();
     } else if (Subtarget->hasMips32r2()) {
-      TS.emitDirectiveSetMips32r2();
+      TS.emitDirectiveSetMips32R2();
     } else if (Subtarget->hasMips32()) {
       TS.emitDirectiveSetMips32();
     }
@@ -656,11 +656,11 @@ void MipsAsmPrinter::EmitStartOfAsmFile(Module &M) {
 
   MipsTargetStreamer &TS = getTargetStreamer();
   if (Subtarget->hasMips64r2()) {
-    TS.emitDirectiveSetMips64r2();
+    TS.emitDirectiveSetMips64R2();
   } else if (Subtarget->hasMips64()) {
     TS.emitDirectiveSetMips64();
   } else if (Subtarget->hasMips32r2()) {
-    TS.emitDirectiveSetMips32r2();
+    TS.emitDirectiveSetMips32R2();
   } else if (Subtarget->hasMips32()) {
     TS.emitDirectiveSetMips32();
   }

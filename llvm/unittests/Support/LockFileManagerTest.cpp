@@ -44,7 +44,6 @@ TEST(LockFileManagerTest, Basic) {
   ASSERT_FALSE(EC);
 }
 
-#if !defined(_WIN32)
 TEST(LockFileManagerTest, LinkLockExists) {
   SmallString<64> TmpDir;
   error_code EC;
@@ -60,7 +59,17 @@ TEST(LockFileManagerTest, LinkLockExists) {
   SmallString<64> TmpFileLock(TmpDir);
   sys::path::append(TmpFileLock, "file.lock-000");
 
+  int FD;
+  EC = sys::fs::openFileForWrite(StringRef(TmpFileLock), FD, sys::fs::F_None);
+  ASSERT_FALSE(EC);
+
+  int Ret = close(FD);
+  ASSERT_EQ(Ret, 0);
+
   EC = sys::fs::create_link(TmpFileLock.str(), FileLocK.str());
+  ASSERT_FALSE(EC);
+
+  EC = sys::fs::remove(StringRef(TmpFileLock));
   ASSERT_FALSE(EC);
 
   {
@@ -108,11 +117,11 @@ TEST(LockFileManagerTest, RelativePath) {
 
   EC = sys::fs::remove("inner");
   ASSERT_FALSE(EC);
-  EC = sys::fs::remove(StringRef(TmpDir));
-  ASSERT_FALSE(EC);
 
   chdir(OrigPath);
+
+  EC = sys::fs::remove(StringRef(TmpDir));
+  ASSERT_FALSE(EC);
 }
-#endif
 
 } // end anonymous namespace

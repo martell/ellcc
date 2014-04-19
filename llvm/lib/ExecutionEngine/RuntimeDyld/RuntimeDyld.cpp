@@ -163,7 +163,10 @@ ObjectImage *RuntimeDyldImpl::loadObject(ObjectImage *InputObject) {
     StubMap Stubs;
     section_iterator RelocatedSection = SI->getRelocatedSection();
 
-    if (SI->relocation_empty() && !ProcessAllSections)
+    relocation_iterator I = SI->relocation_begin();
+    relocation_iterator E = SI->relocation_end();
+
+    if (I == E && !ProcessAllSections)
       continue;
 
     bool IsCode = false;
@@ -172,8 +175,7 @@ ObjectImage *RuntimeDyldImpl::loadObject(ObjectImage *InputObject) {
         findOrEmitSection(*Obj, *RelocatedSection, IsCode, LocalSections);
     DEBUG(dbgs() << "\tSectionID: " << SectionID << "\n");
 
-    for (relocation_iterator I = SI->relocation_begin(),
-         E = SI->relocation_end(); I != E;)
+    for (; I != E;)
       I = processRelocationRef(SectionID, I, *Obj, LocalSections, LocalSymbols,
                                Stubs);
   }
@@ -490,7 +492,7 @@ void RuntimeDyldImpl::addRelocationForSymbol(const RelocationEntry &RE,
 }
 
 uint8_t *RuntimeDyldImpl::createStubFunction(uint8_t *Addr) {
-  if (Arch == Triple::aarch64) {
+  if (Arch == Triple::aarch64 || Arch == Triple::aarch64_be) {
     // This stub has to be able to access the full address space,
     // since symbol lookup won't necessarily find a handy, in-range,
     // PLT stub for functions which could be anywhere.
@@ -508,7 +510,7 @@ uint8_t *RuntimeDyldImpl::createStubFunction(uint8_t *Addr) {
     *StubAddr = 0xd61f0200; // br ip0
 
     return Addr;
-  } else if (Arch == Triple::arm) {
+  } else if (Arch == Triple::arm || Arch == Triple::armeb) {
     // TODO: There is only ARM far stub now. We should add the Thumb stub,
     // and stubs for branches Thumb - ARM and ARM - Thumb.
     uint32_t *StubAddr = (uint32_t *)Addr;
@@ -760,6 +762,8 @@ void RuntimeDyld::mapSectionAddress(const void *LocalAddress,
                                     uint64_t TargetAddress) {
   Dyld->mapSectionAddress(LocalAddress, TargetAddress);
 }
+
+bool RuntimeDyld::hasError() { return Dyld->hasError(); }
 
 StringRef RuntimeDyld::getErrorString() { return Dyld->getErrorString(); }
 

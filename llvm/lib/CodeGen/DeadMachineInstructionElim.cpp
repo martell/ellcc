@@ -59,7 +59,7 @@ bool DeadMachineInstructionElim::isDead(const MachineInstr *MI) const {
 
   // Don't delete instructions with side effects.
   bool SawStore = false;
-  if (!MI->isSafeToMove(TII, 0, SawStore) && !MI->isPHI())
+  if (!MI->isSafeToMove(TII, nullptr, SawStore) && !MI->isPHI())
     return false;
 
   // Examine each operand.
@@ -84,6 +84,9 @@ bool DeadMachineInstructionElim::isDead(const MachineInstr *MI) const {
 }
 
 bool DeadMachineInstructionElim::runOnMachineFunction(MachineFunction &MF) {
+  if (skipOptnoneFunction(*MF.getFunction()))
+    return false;
+
   bool AnyChanges = false;
   MRI = &MF.getRegInfo();
   TRI = MF.getTarget().getRegisterInfo();

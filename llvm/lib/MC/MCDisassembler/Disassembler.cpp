@@ -24,9 +24,6 @@
 #include "llvm/Support/MemoryObject.h"
 #include "llvm/Support/TargetRegistry.h"
 
-namespace llvm {
-class Target;
-} // namespace llvm
 using namespace llvm;
 
 // LLVMCreateDisasm() creates a disassembler for the TripleName.  Symbolic
@@ -85,8 +82,7 @@ LLVMDisasmContextRef LLVMCreateDisasmCPU(const char *Triple, const char *CPU,
   std::unique_ptr<MCSymbolizer> Symbolizer(TheTarget->createMCSymbolizer(
       Triple, GetOpInfo, SymbolLookUp, DisInfo, Ctx, RelInfo.release()));
   DisAsm->setSymbolizer(std::move(Symbolizer));
-  DisAsm->setupForSymbolicDisassembly(GetOpInfo, SymbolLookUp, DisInfo,
-                                      Ctx, RelInfo);
+
   // Set up the instruction printer.
   int AsmPrinterVariant = MAI->getAssemblerDialect();
   MCInstPrinter *IP = TheTarget->createMCInstPrinter(AsmPrinterVariant,

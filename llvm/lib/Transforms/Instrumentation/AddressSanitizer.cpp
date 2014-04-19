@@ -326,9 +326,7 @@ struct AddressSanitizer : public FunctionPass {
  private:
   void initializeCallbacks(Module &M);
 
-  bool ShouldInstrumentGlobal(GlobalVariable *G);
   bool LooksLikeCodeInBug11395(Instruction *I);
-  void FindDynamicInitializers(Module &M);
   bool GlobalIsLinkerInitialized(GlobalVariable *G);
   bool InjectCoverage(Function &F, const ArrayRef<BasicBlock*> AllBlocks);
   void InjectCoverageAtBlock(Function &F, BasicBlock &BB);
@@ -445,11 +443,9 @@ struct FunctionStackPoisoner : public InstVisitor<FunctionStackPoisoner> {
   bool runOnFunction() {
     if (!ClStack) return false;
     // Collect alloca, ret, lifetime instructions etc.
-    for (df_iterator<BasicBlock*> DI = df_begin(&F.getEntryBlock()),
-         DE = df_end(&F.getEntryBlock()); DI != DE; ++DI) {
-      BasicBlock *BB = *DI;
+    for (BasicBlock *BB : depth_first(&F.getEntryBlock()))
       visit(*BB);
-    }
+
     if (AllocaVec.empty()) return false;
 
     initializeCallbacks(*F.getParent());

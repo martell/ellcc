@@ -2973,6 +2973,19 @@ defm XOR  : sse12_fp_packed_logical<0x57, "xor", xor>;
 let isCommutable = 0 in
   defm ANDN : sse12_fp_packed_logical<0x55, "andn", X86andnp>;
 
+// AVX1 requires type coercions in order to fold loads directly into logical
+// operations.
+let Predicates = [HasAVX1Only] in {
+  def : Pat<(bc_v8f32 (and VR256:$src1, (loadv4i64 addr:$src2))),
+            (VANDPSYrm VR256:$src1, addr:$src2)>;
+  def : Pat<(bc_v8f32 (or VR256:$src1, (loadv4i64 addr:$src2))),
+            (VORPSYrm VR256:$src1, addr:$src2)>;
+  def : Pat<(bc_v8f32 (xor VR256:$src1, (loadv4i64 addr:$src2))),
+            (VXORPSYrm VR256:$src1, addr:$src2)>;
+  def : Pat<(bc_v8f32 (X86andnp VR256:$src1, (loadv4i64 addr:$src2))),
+            (VANDNPSYrm VR256:$src1, addr:$src2)>;
+}
+
 //===----------------------------------------------------------------------===//
 // SSE 1 & 2 - Arithmetic Instructions
 //===----------------------------------------------------------------------===//
@@ -8431,6 +8444,31 @@ let Predicates = [HasAVX2] in {
               (VBROADCASTSSYrr (COPY_TO_REGCLASS GR32:$src, VR128))>;
     def : Pat<(v4i64 (X86VBroadcast GR64:$src)),
               (VBROADCASTSDYrr (COPY_TO_REGCLASS GR64:$src, VR128))>;
+
+    def : Pat<(v16i8 (X86VBroadcast GR8:$src)),
+          (VPBROADCASTBrr (COPY_TO_REGCLASS
+                           (i32 (SUBREG_TO_REG (i32 0), GR8:$src, sub_8bit)),
+                           VR128))>;
+    def : Pat<(v32i8 (X86VBroadcast GR8:$src)),
+          (VPBROADCASTBYrr (COPY_TO_REGCLASS
+                            (i32 (SUBREG_TO_REG (i32 0), GR8:$src, sub_8bit)),
+                            VR128))>;
+
+    def : Pat<(v8i16 (X86VBroadcast GR16:$src)),
+          (VPBROADCASTWrr (COPY_TO_REGCLASS
+                           (i32 (SUBREG_TO_REG (i32 0), GR16:$src, sub_16bit)),
+                           VR128))>;
+    def : Pat<(v16i16 (X86VBroadcast GR16:$src)),
+          (VPBROADCASTWYrr (COPY_TO_REGCLASS
+                            (i32 (SUBREG_TO_REG (i32 0), GR16:$src, sub_16bit)),
+                            VR128))>;
+
+    // The patterns for VPBROADCASTD are not needed because they would match
+    // the exact same thing as VBROADCASTSS patterns.
+
+    def : Pat<(v2i64 (X86VBroadcast GR64:$src)),
+          (VPBROADCASTQrr (COPY_TO_REGCLASS GR64:$src, VR128))>;
+    // The v4i64 pattern is not needed because VBROADCASTSDYrr already match.
   }
 }
 
@@ -8766,12 +8804,18 @@ multiclass avx2_gather<bits<8> opc, string OpcodeStr, RegisterClass RC256,
 let mayLoad = 1, Constraints
   = "@earlyclobber $dst,@earlyclobber $mask_wb, $src1 = $dst, $mask = $mask_wb"
   in {
-  defm VGATHERDPD : avx2_gather<0x92, "vgatherdpd", VR256, vx64mem, vx64mem>, VEX_W;
-  defm VGATHERQPD : avx2_gather<0x93, "vgatherqpd", VR256, vx64mem, vy64mem>, VEX_W;
-  defm VGATHERDPS : avx2_gather<0x92, "vgatherdps", VR256, vx32mem, vy32mem>;
-  defm VGATHERQPS : avx2_gather<0x93, "vgatherqps", VR128, vx32mem, vy32mem>;
   defm VPGATHERDQ : avx2_gather<0x90, "vpgatherdq", VR256, vx64mem, vx64mem>, VEX_W;
   defm VPGATHERQQ : avx2_gather<0x91, "vpgatherqq", VR256, vx64mem, vy64mem>, VEX_W;
   defm VPGATHERDD : avx2_gather<0x90, "vpgatherdd", VR256, vx32mem, vy32mem>;
   defm VPGATHERQD : avx2_gather<0x91, "vpgatherqd", VR128, vx32mem, vy32mem>;
+
+  let ExeDomain = SSEPackedDouble in {
+    defm VGATHERDPD : avx2_gather<0x92, "vgatherdpd", VR256, vx64mem, vx64mem>, VEX_W;
+    defm VGATHERQPD : avx2_gather<0x93, "vgatherqpd", VR256, vx64mem, vy64mem>, VEX_W;
+  }
+
+  let ExeDomain = SSEPackedSingle in {
+    defm VGATHERDPS : avx2_gather<0x92, "vgatherdps", VR256, vx32mem, vy32mem>;
+    defm VGATHERQPS : avx2_gather<0x93, "vgatherqps", VR128, vx32mem, vy32mem>;
+  }
 }

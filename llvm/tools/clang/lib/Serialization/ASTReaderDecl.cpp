@@ -1348,7 +1348,9 @@ void ASTDeclReader::VisitCXXMethodDecl(CXXMethodDecl *D) {
 
 void ASTDeclReader::VisitCXXConstructorDecl(CXXConstructorDecl *D) {
   VisitCXXMethodDecl(D);
-  
+
+  if (auto *CD = ReadDeclAs<CXXConstructorDecl>(Record, Idx))
+    D->setInheritedConstructor(CD);
   D->IsExplicitSpecified = Record[Idx++];
   std::tie(D->CtorInitializers, D->NumCtorInitializers) =
       Reader.ReadCXXCtorInitializers(F, Record, Idx);
@@ -2955,7 +2957,7 @@ void ASTDeclReader::UpdateDecl(Decl *D, ModuleFile &ModuleFile,
 
     case UPD_CXX_INSTANTIATED_FUNCTION_DEFINITION: {
       FunctionDecl *FD = cast<FunctionDecl>(D);
-      if (FD->hasBody() || Reader.PendingBodies[FD])
+      if (Reader.PendingBodies[FD])
         // FIXME: Maybe check for ODR violations.
         break;
 

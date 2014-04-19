@@ -135,22 +135,6 @@ error_code COFFObjectFile::getSymbolName(DataRefImpl Ref,
   return getSymbolName(Symb, Result);
 }
 
-error_code COFFObjectFile::getSymbolFileOffset(DataRefImpl Ref,
-                                            uint64_t &Result) const {
-  const coff_symbol *Symb = toSymb(Ref);
-  const coff_section *Section = NULL;
-  if (error_code EC = getSection(Symb->SectionNumber, Section))
-    return EC;
-
-  if (Symb->SectionNumber == COFF::IMAGE_SYM_UNDEFINED)
-    Result = UnknownAddressOrSize;
-  else if (Section)
-    Result = Section->PointerToRawData + Symb->Value;
-  else
-    Result = Symb->Value;
-  return object_error::success;
-}
-
 error_code COFFObjectFile::getSymbolAddress(DataRefImpl Ref,
                                             uint64_t &Result) const {
   const coff_symbol *Symb = toSymb(Ref);
@@ -250,11 +234,6 @@ error_code COFFObjectFile::getSymbolSection(DataRefImpl Ref,
     Result = section_iterator(SectionRef(Ref, this));
   }
   return object_error::success;
-}
-
-error_code COFFObjectFile::getSymbolValue(DataRefImpl Ref,
-                                          uint64_t &Val) const {
-  report_fatal_error("getSymbolValue unimplemented in COFFObjectFile");
 }
 
 void COFFObjectFile::moveSectionNext(DataRefImpl &Ref) const {
@@ -408,11 +387,6 @@ relocation_iterator COFFObjectFile::section_rel_end(DataRefImpl Ref) const {
     Ret.p = reinterpret_cast<uintptr_t>(begin + NumReloc);
   }
   return relocation_iterator(RelocationRef(Ret, this));
-}
-
-bool COFFObjectFile::section_rel_empty(DataRefImpl Ref) const {
-  const coff_section *Sec = toSec(Ref);
-  return Sec->NumberOfRelocations == 0;
 }
 
 // Initialize the pointer to the symbol table.
@@ -940,6 +914,27 @@ error_code COFFObjectFile::getRelocationTypeName(DataRefImpl Rel,
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_AMD64_SREL32);
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_AMD64_PAIR);
     LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_AMD64_SSPAN32);
+    default:
+      Res = "Unknown";
+    }
+    break;
+  case COFF::IMAGE_FILE_MACHINE_ARMNT:
+    switch (Reloc->Type) {
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_ABSOLUTE);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_ADDR32);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_ADDR32NB);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_BRANCH24);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_BRANCH11);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_TOKEN);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_BLX24);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_BLX11);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_SECTION);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_SECREL);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_MOV32A);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_MOV32T);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_BRANCH20T);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_BRANCH24T);
+    LLVM_COFF_SWITCH_RELOC_TYPE_NAME(IMAGE_REL_ARM_BLX23T);
     default:
       Res = "Unknown";
     }

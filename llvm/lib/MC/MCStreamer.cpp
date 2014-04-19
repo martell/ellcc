@@ -38,7 +38,7 @@ void MCTargetStreamer::emitAssignment(MCSymbol *Symbol, const MCExpr *Value) {}
 
 MCStreamer::MCStreamer(MCContext &Ctx)
     : Context(Ctx), EmitEHFrame(true), EmitDebugFrame(false),
-      CurrentW64UnwindInfo(0), LastSymbol(0) {
+      CurrentW64UnwindInfo(nullptr), LastSymbol(nullptr) {
   SectionStack.push_back(std::pair<MCSectionSubPair, MCSectionSubPair>());
 }
 
@@ -53,8 +53,8 @@ void MCStreamer::reset() {
   W64UnwindInfos.clear();
   EmitEHFrame = true;
   EmitDebugFrame = false;
-  CurrentW64UnwindInfo = 0;
-  LastSymbol = 0;
+  CurrentW64UnwindInfo = nullptr;
+  LastSymbol = nullptr;
   SectionStack.clear();
   SectionStack.push_back(std::pair<MCSectionSubPair, MCSectionSubPair>());
 }
@@ -191,9 +191,19 @@ void MCStreamer::EmitDwarfLocDirective(unsigned FileNo, unsigned Line,
                                   Discriminator);
 }
 
+MCSymbol *MCStreamer::getDwarfLineTableSymbol(unsigned CUID) {
+  MCDwarfLineTable &Table = getContext().getMCDwarfLineTable(CUID);
+  if (!Table.getLabel()) {
+    StringRef Prefix = Context.getAsmInfo()->getPrivateGlobalPrefix();
+    Table.setLabel(
+        Context.GetOrCreateSymbol(Prefix + "line_table_start" + Twine(CUID)));
+  }
+  return Table.getLabel();
+}
+
 MCDwarfFrameInfo *MCStreamer::getCurrentFrameInfo() {
   if (FrameInfos.empty())
-    return 0;
+    return nullptr;
   return &FrameInfos.back();
 }
 
@@ -631,7 +641,7 @@ void MCStreamer::Finish() {
 
 MCSymbolData &MCStreamer::getOrCreateSymbolData(const MCSymbol *Symbol) {
   report_fatal_error("Not supported!");
-  return *(static_cast<MCSymbolData*>(0));
+  return *(static_cast<MCSymbolData*>(nullptr));
 }
 
 void MCStreamer::EmitAssignment(MCSymbol *Symbol, const MCExpr *Value) {

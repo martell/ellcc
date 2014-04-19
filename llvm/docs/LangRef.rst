@@ -681,6 +681,10 @@ the aliasee.
 
 The aliasee must be a definition.
 
+Aliases are not allowed to point to aliases with linkages that can be
+overridden. Since they are only a second name, the possibility of the
+intermediate alias being overridden cannot be represented in an object file.
+
 .. _namedmetadatastructure:
 
 Named Metadata
@@ -765,8 +769,6 @@ Currently, only the following parameter attributes are defined:
 
 ``inalloca``
 
-.. Warning:: This feature is unstable and not fully implemented.
-
     The ``inalloca`` argument attribute allows the caller to take the
     address of outgoing stack arguments.  An ``inalloca`` argument must
     be a pointer to stack memory produced by an ``alloca`` instruction.
@@ -800,6 +802,9 @@ Currently, only the following parameter attributes are defined:
     not to trap and to be properly aligned. This may only be applied to
     the first parameter. This is not a valid attribute for return
     values.
+
+.. _noalias:
+
 ``noalias``
     This indicates that pointer values :ref:`based <pointeraliasing>` on
     the argument or return value do not alias pointer values which are
@@ -809,8 +814,8 @@ Currently, only the following parameter attributes are defined:
     "irrelevant" to the ``noalias`` keyword for the arguments and return
     value used in that call. The caller shares the responsibility with
     the callee for ensuring that these requirements are met. For further
-    details, please see the discussion of the NoAlias response in `alias
-    analysis <AliasAnalysis.html#MustMayNo>`_.
+    details, please see the discussion of the NoAlias response in :ref:`alias
+    analysis <Must, May, or No>`.
 
     Note that this definition of ``noalias`` is intentionally similar
     to the definition of ``restrict`` in C99 for function arguments,
@@ -1983,6 +1988,8 @@ notion of a forward declared structure.
 +--------------+-------------------+
 | ``opaque``   | An opaque type.   |
 +--------------+-------------------+
+
+.. _constants:
 
 Constants
 =========
@@ -6116,7 +6123,7 @@ Overview:
 """""""""
 
 The '``select``' instruction is used to choose one value based on a
-condition, without branching.
+condition, without IR-level branching.
 
 Arguments:
 """"""""""
@@ -6938,6 +6945,39 @@ is lowered to a constant 0.
 
 Note that runtime support may be conditional on the privilege-level code is
 running at and the host platform.
+
+'``llvm.clear_cache``' Intrinsic
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Syntax:
+"""""""
+
+::
+
+      declare void @llvm.clear_cache(i8*, i8*)
+
+Overview:
+"""""""""
+
+The '``llvm.clear_cache``' intrinsic ensures visibility of modifications
+in the specified range to the execution unit of the processor. On
+targets with non-unified instruction and data cache, the implementation
+flushes the instruction cache.
+
+Semantics:
+""""""""""
+
+On platforms with coherent instruction and data caches (e.g. x86), this
+intrinsic is a nop. On platforms with non-coherent instruction and data
+cache (e.g. ARM, MIPS), the intrinsic is lowered either to appropriate
+instructions or a system call, if cache flushing requires special
+privileges.
+
+The default behavior is to emit a call to ``__clear_cache`` from the run
+time library.
+
+This instrinsic does *not* empty the instruction pipeline. Modifications
+of the current function are outside the scope of the intrinsic.
 
 Standard C Library Intrinsics
 -----------------------------

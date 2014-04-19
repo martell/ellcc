@@ -22,8 +22,7 @@ namespace {
     virtual ~MBlazeELFObjectWriter();
   protected:
     virtual unsigned GetRelocType(const MCValue &Target, const MCFixup &Fixup,
-                                  bool IsPCRel, bool IsRelocWithSymbol,
-                                  int64_t Addend) const;
+                                  bool IsPCRel) const;
   };
 }
 
@@ -36,9 +35,7 @@ MBlazeELFObjectWriter::~MBlazeELFObjectWriter() {
 
 unsigned MBlazeELFObjectWriter::GetRelocType(const MCValue &Target,
                                              const MCFixup &Fixup,
-                                             bool IsPCRel,
-                                             bool IsRelocWithSymbol,
-                                             int64_t Addend) const {
+                                             bool IsPCRel) const {
   // determine the type of the relocation
   unsigned Type;
   if (IsPCRel) {
@@ -56,9 +53,7 @@ unsigned MBlazeELFObjectWriter::GetRelocType(const MCValue &Target,
     switch ((unsigned)Fixup.getKind()) {
     default: llvm_unreachable("invalid fixup kind!");
     case FK_Data_4:
-      Type = ((IsRelocWithSymbol || Addend !=0)
-              ? ELF::R_MICROBLAZE_32
-              : ELF::R_MICROBLAZE_64);
+      Type =  ELF::R_MICROBLAZE_32;
       break;
     case FK_Data_2:
       Type = ELF::R_MICROBLAZE_32;

@@ -244,10 +244,11 @@ static inline unsigned getIDNS(Sema::LookupNameKind NameKind,
       IDNS = Decl::IDNS_Tag;
     }
     break;
+
   case Sema::LookupLabel:
     IDNS = Decl::IDNS_Label;
     break;
-      
+
   case Sema::LookupMemberName:
     IDNS = Decl::IDNS_Member;
     if (CPlusPlus)
@@ -263,8 +264,10 @@ static inline unsigned getIDNS(Sema::LookupNameKind NameKind,
     break;
 
   case Sema::LookupUsingDeclName:
-    IDNS = Decl::IDNS_Ordinary | Decl::IDNS_Tag
-         | Decl::IDNS_Member | Decl::IDNS_Using;
+    assert(Redeclaration && "should only be used for redecl lookup");
+    IDNS = Decl::IDNS_Ordinary | Decl::IDNS_Tag | Decl::IDNS_Member |
+           Decl::IDNS_Using | Decl::IDNS_TagFriend | Decl::IDNS_OrdinaryFriend |
+           Decl::IDNS_LocalExtern;
     break;
 
   case Sema::LookupObjCProtocolName:
@@ -310,8 +313,7 @@ void LookupResult::configure() {
 }
 
 bool LookupResult::sanity() const {
-  // Note that this function is never called by NDEBUG builds. See
-  // LookupResult::sanity().
+  // This function is never called by NDEBUG builds.
   assert(ResultKind != NotFound || Decls.size() == 0);
   assert(ResultKind != Found || Decls.size() == 1);
   assert(ResultKind != FoundOverloaded || Decls.size() > 1 ||
@@ -4512,10 +4514,9 @@ bool CorrectionCandidateCallback::ValidateCandidate(const TypoCorrection &candid
 
 FunctionCallFilterCCC::FunctionCallFilterCCC(Sema &SemaRef, unsigned NumArgs,
                                              bool HasExplicitTemplateArgs,
-                                             bool AllowNonStaticMethods)
+                                             MemberExpr *ME)
     : NumArgs(NumArgs), HasExplicitTemplateArgs(HasExplicitTemplateArgs),
-      AllowNonStaticMethods(AllowNonStaticMethods),
-      CurContext(SemaRef.CurContext) {
+      CurContext(SemaRef.CurContext), MemberFn(ME) {
   WantTypeSpecifiers = SemaRef.getLangOpts().CPlusPlus;
   WantRemainingKeywords = false;
 }
@@ -4551,13 +4552,16 @@ bool FunctionCallFilterCCC::ValidateCandidate(const TypoCorrection &candidate) {
                  FD->getMinRequiredArguments() <= NumArgs))
       continue;
 
-    // If the current candidate is a non-static C++ method and non-static
-    // methods are being excluded, then skip the candidate unless the current
-    // DeclContext is a method in the same class or a descendent class of the
-    // candidate's parent class.
+    // If the current candidate is a non-static C++ method, skip the candidate
+    // unless the method being corrected--or the current DeclContext, if the
+    // function being corrected is not a method--is a method in the same class
+    // or a descendent class of the candidate's parent class.
     if (CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(FD)) {
-      if (!AllowNonStaticMethods && !MD->isStatic()) {
-        CXXMethodDecl *CurMD = dyn_cast_or_null<CXXMethodDecl>(CurContext);
+      if (MemberFn || !MD->isStatic()) {
+        CXXMethodDecl *CurMD =
+            MemberFn
+                ? dyn_cast_or_null<CXXMethodDecl>(MemberFn->getMemberDecl())
+                : dyn_cast_or_null<CXXMethodDecl>(CurContext);
         CXXRecordDecl *CurRD =
             CurMD ? CurMD->getParent()->getCanonicalDecl() : 0;
         CXXRecordDecl *RD = MD->getParent()->getCanonicalDecl();

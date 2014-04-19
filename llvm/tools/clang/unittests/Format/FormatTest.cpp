@@ -465,6 +465,15 @@ TEST_F(FormatTest, RangeBasedForLoops) {
                "     aaaaaaaaaaaa.aaaaaaaaaaaa().aaaaaaaaa().a()) {\n}");
 }
 
+TEST_F(FormatTest, ForEachLoops) {
+  verifyFormat("void f() {\n"
+               "  foreach (Item *item, itemlist) {}\n"
+               "  Q_FOREACH (Item *item, itemlist) {}\n"
+               "  BOOST_FOREACH (Item *item, itemlist) {}\n"
+               "  UNKNOWN_FORACH(Item * item, itemlist) {}\n"
+               "}");
+}
+
 TEST_F(FormatTest, FormatsWhileLoop) {
   verifyFormat("while (true) {\n}");
   verifyFormat("while (true)\n"
@@ -500,6 +509,9 @@ TEST_F(FormatTest, FormatsSwitchStatement) {
   verifyFormat("switch (x) {\n"
                "case 1: {\n"
                "  f();\n"
+               "  break;\n"
+               "}\n"
+               "case 2: {\n"
                "  break;\n"
                "}\n"
                "}");
@@ -946,6 +958,11 @@ TEST_F(FormatTest, UnderstandsBlockComments) {
                "         /* parameter 3 */ aaaaaa,\n"
                "         /* parameter 4 */ aaaaaa);",
                NoBinPacking);
+
+  // Aligning block comments in macros.
+  verifyGoogleFormat("#define A        \\\n"
+                     "  int i;   /*a*/ \\\n"
+                     "  int jjj; /*b*/");
 }
 
 TEST_F(FormatTest, AlignsBlockComments) {
@@ -2875,8 +2892,9 @@ TEST_F(FormatTest, ExpressionIndentation) {
                "            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa +\n"
                "        bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) {\n}");
   verifyFormat("if () {\n"
-               "} else if (aaaaa && bbbbb > // break\n"
-               "                        ccccc) {\n"
+               "} else if (aaaaa &&\n"
+               "           bbbbb > // break\n"
+               "               ccccc) {\n"
                "}");
 
   // Presence of a trailing comment used to change indentation of b.
@@ -3252,7 +3270,13 @@ TEST_F(FormatTest, BreaksFunctionDeclarationsWithTrailingTokens) {
                "    int someLongParameter) override {}",
                Style);
   verifyFormat("void someLongFunction(\n"
+               "    int someLongParameter) OVERRIDE {}",
+               Style);
+  verifyFormat("void someLongFunction(\n"
                "    int someLongParameter) final {}",
+               Style);
+  verifyFormat("void someLongFunction(\n"
+               "    int someLongParameter) FINAL {}",
                Style);
   verifyFormat("void someLongFunction(\n"
                "    int parameter) const override {}",
@@ -3271,6 +3295,8 @@ TEST_F(FormatTest, BreaksFunctionDeclarationsWithTrailingTokens) {
                "    LOCKS_EXCLUDED(aaaaaaaaaaaaa);");
   verifyFormat("void aaaaaaaaaaaa(int aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) const\n"
                "    LOCKS_EXCLUDED(aaaaaaaaaaaaa) {}");
+  verifyGoogleFormat("void aaaaaaaaaaaaaa(aaaaaaaa aaa) override\n"
+                     "    AAAAAAAAAAAAAAAAAAAAAAAA(aaaaaaaaaaaaaaa);");
 
   verifyFormat(
       "void aaaaaaaaaaaaaaaaaa()\n"
@@ -4455,6 +4481,7 @@ TEST_F(FormatTest, UnderstandsUsesOfStarAndAmp) {
   verifyIndependentOfContext("A<int *> a;");
   verifyIndependentOfContext("A<int **> a;");
   verifyIndependentOfContext("A<int *, int *> a;");
+  verifyIndependentOfContext("A<int *[]> a;");
   verifyIndependentOfContext(
       "const char *const p = reinterpret_cast<const char *const>(q);");
   verifyIndependentOfContext("A<int **, int **> a;");
@@ -4489,8 +4516,9 @@ TEST_F(FormatTest, UnderstandsUsesOfStarAndAmp) {
 
   verifyIndependentOfContext("f(b * /* confusing comment */ ++c);");
   verifyFormat(
-      "int *MyValues = {*A, // Operator detection might be confused by the '{'\n"
-      "                 *BB // Operator detection might be confused by previous comment\n"
+      "int *MyValues = {\n"
+      "    *A, // Operator detection might be confused by the '{'\n"
+      "    *BB // Operator detection might be confused by previous comment\n"
       "};");
 
   verifyIndependentOfContext("if (int *a = &b)");
@@ -4527,6 +4555,28 @@ TEST_F(FormatTest, UnderstandsUsesOfStarAndAmp) {
   FormatStyle PointerLeft = getLLVMStyle();
   PointerLeft.PointerBindsToType = true;
   verifyFormat("delete *x;", PointerLeft);
+  verifyFormat("STATIC_ASSERT((a & b) == 0);");
+  verifyFormat("STATIC_ASSERT(0 == (a & b));");
+  verifyFormat("template <bool a, bool b> "
+               "typename t::if<x && y>::type f() {};");
+  verifyFormat("template <int *y> f() {};");
+  verifyFormat("vector<int *> v;");
+  verifyFormat("vector<int *const> v;");
+  verifyFormat("vector<int *const **const *> v;");
+  verifyFormat("vector<int *volatile> v;");
+  verifyFormat("vector<a * b> v;");
+  verifyFormat("foo<b && false>();");
+  verifyFormat("foo<b & 1>();");
+
+  verifyIndependentOfContext("MACRO(int *i);");
+  verifyIndependentOfContext("MACRO(auto *a);");
+  verifyIndependentOfContext("MACRO(const A *a);");
+  // FIXME: Is there a way to make this work?
+  // verifyIndependentOfContext("MACRO(A *a);");
+
+  // FIXME: We cannot handle this case yet; we might be able to figure out that
+  // foo<x> d > v; doesn't make sense.
+  verifyFormat("foo<a < b && c> d > v;");
 }
 
 TEST_F(FormatTest, UnderstandsAttributes) {
@@ -5023,7 +5073,10 @@ TEST_F(FormatTest, LayoutCxx11ConstructorBraceInitializers) {
       "                                 bbbbbbbbbbbbbbbbbbbb, bbbbb };",
       ExtraSpaces);
   verifyFormat("DoSomethingWithVector({} /* No data */);", ExtraSpaces);
-  verifyFormat("DoSomethingWithVector({ {} /* No data */ }, { { 1, 2 } });",
+  verifyFormat("DoSomethingWithVector({\n"
+               "                        {} /* No data */\n"
+               "                      },\n"
+               "                      { { 1, 2 } });",
                ExtraSpaces);
   verifyFormat(
       "someFunction(OtherParam,\n"
@@ -5088,13 +5141,14 @@ TEST_F(FormatTest, FormatsBracedListsInColumnLayout) {
                "    1, 1, 1, 1, 1, 1, 1, 1,\n"
                "};",
                getLLVMStyleWithColumns(39));
-  verifyFormat("vector<int> x = {1, 1, 1, 1,\n"
-               "                 1, 1, 1, 1, //\n"
+  verifyFormat("vector<int> x = {\n"
+               "    1, 1, 1, 1, 1, 1, 1, 1, //\n"
                "};",
                getLLVMStyleWithColumns(39));
-  verifyFormat("vector<int> x = {1, 1, 1, 1,\n"
-               "                 1, 1, 1, 1,\n"
-               "                 /**/ /**/};",
+  verifyFormat("vector<int> x = {\n"
+               "    1, 1, 1, 1, 1, 1, 1, 1,\n"
+               "    /**/ /**/\n"
+               "};",
                getLLVMStyleWithColumns(39));
   verifyFormat("return {{aaaaaaaaaaaaaaaaaaaaa},\n"
                "        {aaaaaaaaaaaaaaaaaaa},\n"
@@ -5122,7 +5176,7 @@ TEST_F(FormatTest, FormatsBracedListsInColumnLayout) {
 
 TEST_F(FormatTest, PullTrivialFunctionDefinitionsIntoSingleLine) {
   FormatStyle DoNotMerge = getLLVMStyle();
-  DoNotMerge.AllowShortFunctionsOnASingleLine = false;
+  DoNotMerge.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_None;
 
   verifyFormat("void f() { return 42; }");
   verifyFormat("void f() {\n"
@@ -5179,7 +5233,8 @@ TEST_F(FormatTest, PullTrivialFunctionDefinitionsIntoSingleLine) {
             format("A()\n:b(0)\n{\n}", NoColumnLimit));
 
   FormatStyle DoNotMergeNoColumnLimit = NoColumnLimit;
-  DoNotMergeNoColumnLimit.AllowShortFunctionsOnASingleLine = false;
+  DoNotMergeNoColumnLimit.AllowShortFunctionsOnASingleLine =
+      FormatStyle::SFS_None;
   EXPECT_EQ("A()\n"
             "    : b(0) {\n"
             "}",
@@ -5207,6 +5262,19 @@ TEST_F(FormatTest, PullTrivialFunctionDefinitionsIntoSingleLine) {
                "  void f() { int i; } \\\n"
                "  int j;",
                getLLVMStyleWithColumns(23));
+}
+
+TEST_F(FormatTest, PullInlineFunctionDefinitionsIntoSingleLine) {
+  FormatStyle MergeInlineOnly = getLLVMStyle();
+  MergeInlineOnly.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_Inline;
+  verifyFormat("class C {\n"
+               "  int f() { return 42; }\n"
+               "};",
+               MergeInlineOnly);
+  verifyFormat("int f() {\n"
+               "  return 42;\n"
+               "}",
+               MergeInlineOnly);
 }
 
 TEST_F(FormatTest, UnderstandContextOfRecordTypeKeywords) {
@@ -6542,11 +6610,10 @@ TEST_F(FormatTest, CountsCharactersInMultilineRawStringLiterals) {
                    getGoogleStyleWithColumns(20)));
   EXPECT_EQ("fffffffffff(R\"x(\n"
             "multiline raw string literal xxxxxxxxxxxxxx\n"
-            ")x\" +\n"
-            "            bbbbbb);",
+            ")x\" + bbbbbb);",
             format("fffffffffff(R\"x(\n"
                    "multiline raw string literal xxxxxxxxxxxxxx\n"
-                   ")x\" + bbbbbb);",
+                   ")x\" +   bbbbbb);",
                    getGoogleStyleWithColumns(20)));
   EXPECT_EQ("fffffffffff(\n"
             "    R\"x(\n"
@@ -7498,7 +7565,6 @@ TEST_F(FormatTest, ParsesConfiguration) {
   CHECK_PARSE_BOOL(AlignEscapedNewlinesLeft);
   CHECK_PARSE_BOOL(AlignTrailingComments);
   CHECK_PARSE_BOOL(AllowAllParametersOfDeclarationOnNextLine);
-  CHECK_PARSE_BOOL(AllowShortFunctionsOnASingleLine);
   CHECK_PARSE_BOOL(AllowShortIfStatementsOnASingleLine);
   CHECK_PARSE_BOOL(AllowShortLoopsOnASingleLine);
   CHECK_PARSE_BOOL(AlwaysBreakTemplateDeclarations);
@@ -7551,6 +7617,18 @@ TEST_F(FormatTest, ParsesConfiguration) {
   CHECK_PARSE("UseTab: ForIndentation", UseTab, FormatStyle::UT_ForIndentation);
   CHECK_PARSE("UseTab: Always", UseTab, FormatStyle::UT_Always);
 
+  Style.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_Inline;
+  CHECK_PARSE("AllowShortFunctionsOnASingleLine: false",
+              AllowShortFunctionsOnASingleLine, FormatStyle::SFS_None);
+  CHECK_PARSE("AllowShortFunctionsOnASingleLine: true",
+              AllowShortFunctionsOnASingleLine, FormatStyle::SFS_All);
+  CHECK_PARSE("AllowShortFunctionsOnASingleLine: None",
+              AllowShortFunctionsOnASingleLine, FormatStyle::SFS_None);
+  CHECK_PARSE("AllowShortFunctionsOnASingleLine: Inline",
+              AllowShortFunctionsOnASingleLine, FormatStyle::SFS_Inline);
+  CHECK_PARSE("AllowShortFunctionsOnASingleLine: All",
+              AllowShortFunctionsOnASingleLine, FormatStyle::SFS_All);
+
   Style.SpaceBeforeParens = FormatStyle::SBPO_Always;
   CHECK_PARSE("SpaceBeforeParens: Never", SpaceBeforeParens,
               FormatStyle::SBPO_Never);
@@ -7587,6 +7665,16 @@ TEST_F(FormatTest, ParsesConfiguration) {
               FormatStyle::NI_Inner);
   CHECK_PARSE("NamespaceIndentation: All", NamespaceIndentation,
               FormatStyle::NI_All);
+
+  Style.ForEachMacros.clear();
+  std::vector<std::string> BoostForeach;
+  BoostForeach.push_back("BOOST_FOREACH");
+  CHECK_PARSE("ForEachMacros: [BOOST_FOREACH]", ForEachMacros, BoostForeach);
+  std::vector<std::string> BoostAndQForeach;
+  BoostAndQForeach.push_back("BOOST_FOREACH");
+  BoostAndQForeach.push_back("Q_FOREACH");
+  CHECK_PARSE("ForEachMacros: [BOOST_FOREACH, Q_FOREACH]", ForEachMacros,
+              BoostAndQForeach);
 }
 
 TEST_F(FormatTest, ParsesConfigurationWithLanguages) {
@@ -7894,7 +7982,7 @@ TEST_F(FormatTest, ConstructorInitializerIndentWidth) {
                "}",
                Style);
 
-  Style.AllowShortFunctionsOnASingleLine = false;
+  Style.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_None;
   verifyFormat("SomeClass::Constructor()\n"
                "    : a(a)\n"
                "    , b(b)\n"
@@ -7905,7 +7993,7 @@ TEST_F(FormatTest, ConstructorInitializerIndentWidth) {
                Style);
 
   Style.ColumnLimit = 80;
-  Style.AllowShortFunctionsOnASingleLine = true;
+  Style.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_All;
   Style.ConstructorInitializerIndentWidth = 2;
   verifyFormat("SomeClass::Constructor()\n"
                "  : a(a)\n"
@@ -8077,6 +8165,9 @@ TEST_F(FormatTest, FormatsLambdas) {
                "        x.end(),   //\n"
                "        [&](int, int) { return 1; });\n"
                "}\n");
+  verifyFormat("SomeFunction([]() { // A cool function...\n"
+               "  return 43;\n"
+               "});");
 
   // Lambdas with return types.
   verifyFormat("int c = []() -> int { return 2; }();\n");
@@ -8086,6 +8177,16 @@ TEST_F(FormatTest, FormatsLambdas) {
                "                   int j) -> int {\n"
                "  return fffffffffffffffffffffffffffffffffffffff(i * j);\n"
                "};");
+
+  // Multiple lambdas in the same parentheses change indentation rules.
+  verifyFormat("SomeFunction([]() {\n"
+               "               int i = 42;\n"
+               "               return i;\n"
+               "             },\n"
+               "             []() {\n"
+               "               int j = 43;\n"
+               "               return j;\n"
+               "             });");
 
   // Not lambdas.
   verifyFormat("constexpr char hello[]{\"hello\"};");
@@ -8110,6 +8211,10 @@ TEST_F(FormatTest, FormatsLambdas) {
 TEST_F(FormatTest, FormatsBlocks) {
   verifyFormat("int (^Block)(int, int);");
   verifyFormat("int (^Block1)(int, int) = ^(int i, int j)");
+  verifyFormat("void (^block)(int) = ^(id test) { int i; };");
+  verifyFormat("void (^block)(int) = ^(int test) { int i; };");
+  verifyFormat("void (^block)(int) = ^id(int test) { int i; };");
+  verifyFormat("void (^block)(int) = ^int(int test) { int i; };");
 
   verifyFormat("foo(^{ bar(); });");
   verifyFormat("foo(a, ^{ bar(); });");
@@ -8165,7 +8270,17 @@ TEST_F(FormatTest, FormatsBlocks) {
                "    secondBlock:^(Bar *b) {\n"
                "        // ...\n"
                "        int i;\n"
+               "    }\n"
+               "    thirdBlock:^Foo(Bar *b) {\n"
+               "        // ...\n"
+               "        int i;\n"
                "    }];");
+  verifyFormat("[myObject doSomethingWith:arg1\n"
+               "               firstBlock:-1\n"
+               "              secondBlock:^(Bar *b) {\n"
+               "                  // ...\n"
+               "                  int i;\n"
+               "              }];");
 
   verifyFormat("f(^{\n"
                "    @autoreleasepool {\n"

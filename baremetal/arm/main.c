@@ -10,7 +10,7 @@
 #include "kernel.h"
 #include "arm.h"
 
-#undef THREAD   // This doesn't work yet.
+#define THREAD   // This doesn't work yet.
 #if defined(THREAD)
 static void *thread(void *arg)
 {

@@ -203,6 +203,11 @@
 
 #if defined(__clang__)
 
+#if defined(__APPLE__) && !defined(__i386__) && !defined(__x86_64__) &&        \
+    !defined(__arm__)
+#define _LIBCPP_ALTERNATE_STRING_LAYOUT
+#endif
+
 #if __has_feature(cxx_alignas)
 #  define _ALIGNAS_TYPE(x) alignas(x)
 #  define _ALIGNAS(x) alignas(x)
@@ -483,6 +488,10 @@ typedef unsigned short char16_t;
 typedef unsigned int   char32_t;
 #endif  // _LIBCPP_HAS_NO_UNICODE_CHARS
 
+#ifndef __SIZEOF_INT128__
+#define _LIBCPP_HAS_NO_INT128
+#endif
+
 #ifdef _LIBCPP_HAS_NO_STATIC_ASSERT
 
 template <bool> struct __static_assert_test;
@@ -556,6 +565,10 @@ template <unsigned> struct __static_assert_check {};
 
 #ifndef _LIBCPP_EXTERN_TEMPLATE2
 #define _LIBCPP_EXTERN_TEMPLATE2(...) extern template __VA_ARGS__;
+#endif
+
+#if defined(__APPLE__) && defined(__LP64__) && !defined(__x86_64__)
+#define _LIBCPP_NONUNIQUE_RTTI_BIT (1ULL << 63)
 #endif
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(_WIN32) || defined(__sun__) || defined(__NetBSD__)

@@ -122,7 +122,7 @@ Pass *createLICMPass();
 //
 Pass *createLoopStrengthReducePass();
 
-Pass *createGlobalMergePass(const TargetMachine *TM = 0);
+Pass *createGlobalMergePass(const TargetMachine *TM = nullptr);
 
 //===----------------------------------------------------------------------===//
 //
@@ -142,6 +142,8 @@ Pass *createLoopInstSimplifyPass();
 //
 Pass *createLoopUnrollPass(int Threshold = -1, int Count = -1,
                            int AllowPartial = -1, int Runtime = -1);
+// Create an unrolling pass for full unrolling only.
+Pass *createSimpleLoopUnrollPass();
 
 //===----------------------------------------------------------------------===//
 //

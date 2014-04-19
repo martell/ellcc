@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Lex/Preprocessor.h"
+#include "clang/Basic/Attributes.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/TargetInfo.h"
@@ -114,6 +115,7 @@ void Preprocessor::RegisterBuiltinMacros() {
   Ident__has_include      = RegisterBuiltinMacro(*this, "__has_include");
   Ident__has_include_next = RegisterBuiltinMacro(*this, "__has_include_next");
   Ident__has_warning      = RegisterBuiltinMacro(*this, "__has_warning");
+  Ident__is_identifier    = RegisterBuiltinMacro(*this, "__is_identifier");
 
   // Modules.
   if (LangOpts.Modules) {
@@ -1047,20 +1049,6 @@ static bool HasExtension(const Preprocessor &PP, const IdentifierInfo *II) {
            .Default(false);
 }
 
-/// HasAttribute -  Return true if we recognize and implement the attribute
-/// specified by the given identifier.
-static bool HasAttribute(const IdentifierInfo *II, const llvm::Triple &T) {
-  StringRef Name = II->getName();
-  // Normalize the attribute name, __foo__ becomes foo.
-  if (Name.size() >= 4 && Name.startswith("__") && Name.endswith("__"))
-    Name = Name.substr(2, Name.size() - 4);
-
-  // FIXME: Do we need to handle namespaces here?
-  return llvm::StringSwitch<bool>(Name)
-#include "clang/Lex/AttrSpellings.inc"
-        .Default(false);
-}
-
 /// EvaluateHasIncludeCommon - Process a '__has_include("path")'
 /// or '__has_include_next("path")' expression.
 /// Returns true if successful.
@@ -1372,6 +1360,7 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
   } else if (II == Ident__has_feature   ||
              II == Ident__has_extension ||
              II == Ident__has_builtin   ||
+             II == Ident__is_identifier ||
              II == Ident__has_attribute) {
     // The argument to these builtins should be a parenthesized identifier.
     SourceLocation StartLoc = Tok.getLocation();
@@ -1395,11 +1384,14 @@ void Preprocessor::ExpandBuiltinMacro(Token &Tok) {
     bool Value = false;
     if (!IsValid)
       Diag(StartLoc, diag::err_feature_check_malformed);
+    else if (II == Ident__is_identifier)
+      Value = FeatureII->getTokenID() == tok::identifier;
     else if (II == Ident__has_builtin) {
       // Check for a builtin is trivial.
       Value = FeatureII->getBuiltinID() != 0;
     } else if (II == Ident__has_attribute)
-      Value = HasAttribute(FeatureII, getTargetInfo().getTriple());
+      Value = hasAttribute(AttrSyntax::Generic, nullptr, FeatureII,
+                           getTargetInfo().getTriple(), getLangOpts());
     else if (II == Ident__has_extension)
       Value = HasExtension(*this, FeatureII);
     else {

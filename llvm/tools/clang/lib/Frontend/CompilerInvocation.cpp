@@ -447,6 +447,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.InstrumentFunctions = Args.hasArg(OPT_finstrument_functions);
   Opts.InstrumentForProfiling = Args.hasArg(OPT_pg);
   Opts.EmitOpenCLArgMetadata = Args.hasArg(OPT_cl_kernel_arg_info);
+  Opts.CompressDebugSections = Args.hasArg(OPT_compress_debug_sections);
   Opts.DebugCompilationDir = Args.getLastArgValue(OPT_fdebug_compilation_dir);
   Opts.LinkBitcodeFile = Args.getLastArgValue(OPT_mlink_bitcode_file);
   Opts.SanitizerBlacklistFile = Args.getLastArgValue(OPT_fsanitize_blacklist);
@@ -1019,12 +1020,12 @@ static void ParseHeaderSearchArgs(HeaderSearchOptions &Opts, ArgList &Args) {
   }
 
   // Add the path prefixes which are implicitly treated as being system headers.
-  for (arg_iterator I = Args.filtered_begin(OPT_isystem_prefix,
-                                            OPT_ino_system_prefix),
+  for (arg_iterator I = Args.filtered_begin(OPT_system_header_prefix,
+                                            OPT_no_system_header_prefix),
                     E = Args.filtered_end();
        I != E; ++I)
-    Opts.AddSystemHeaderPrefix((*I)->getValue(),
-                               (*I)->getOption().matches(OPT_isystem_prefix));
+    Opts.AddSystemHeaderPrefix(
+        (*I)->getValue(), (*I)->getOption().matches(OPT_system_header_prefix));
 
   for (arg_iterator I = Args.filtered_begin(OPT_ivfsoverlay),
        E = Args.filtered_end(); I != E; ++I)
@@ -1342,7 +1343,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.Blocks = Args.hasArg(OPT_fblocks);
   Opts.BlocksRuntimeOptional = Args.hasArg(OPT_fblocks_runtime_optional);
   Opts.Modules = Args.hasArg(OPT_fmodules);
-  Opts.ModulesDeclUse = Args.hasArg(OPT_fmodules_decluse);
+  Opts.ModulesStrictDeclUse = Args.hasArg(OPT_fmodules_strict_decluse);
+  Opts.ModulesDeclUse =
+      Args.hasArg(OPT_fmodules_decluse) || Opts.ModulesStrictDeclUse;
   Opts.CharIsSigned = Opts.OpenCL || !Args.hasArg(OPT_fno_signed_char);
   Opts.WChar = Opts.CPlusPlus && !Args.hasArg(OPT_fno_wchar);
   Opts.ShortWChar = Args.hasFlag(OPT_fshort_wchar, OPT_fno_short_wchar, false);

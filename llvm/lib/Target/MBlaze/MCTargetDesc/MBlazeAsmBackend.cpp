@@ -122,7 +122,7 @@ public:
     : MBlazeAsmBackend(T), OSABI(_OSABI) { }
 
   void applyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
-                  uint64_t Value) const;
+                  uint64_t Value, bool IsPCRel) const;
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
     return createMBlazeELFObjectWriter(OS, OSABI);
@@ -130,7 +130,8 @@ public:
 };
 
 void ELFMBlazeAsmBackend::applyFixup(const MCFixup &Fixup, char *Data,
-                                     unsigned DataSize, uint64_t Value) const {
+                                     unsigned DataSize, uint64_t Value,
+                                     bool IsPCRel) const {
   unsigned Size = getFixupKindSize(Fixup.getKind());
 
   assert(Fixup.getOffset() + Size <= DataSize &&
