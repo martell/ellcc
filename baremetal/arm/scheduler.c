@@ -46,12 +46,16 @@ static void init(void)
 void schedule(Thread *list)
 {
     Thread *next;
+    lock_aquire(&ready_lock);
     while (list) {
         next = list->next;
         list->next = ready;
         ready = list;
         list = next;
     }
+    lock_release(&ready_lock);
+    // RICH: hole here.
+    __dispatch(ready->saved_sp);
 }
 
 void send_queue(Queue *queue, Entry *entry)

@@ -176,6 +176,7 @@ __switch:
  * r0 points to the next save area.
  * r1 points to the current save area.
  */
+    .global __dispatch
 __dispatch:                     // Dispatch to the given context.
     mov     sp, r0              // Get the next frame.
     pop     {r0-r12, lr}        // Restore registers
