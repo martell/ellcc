@@ -92,7 +92,8 @@ static int qcow_probe(const uint8_t *buf, int buf_size, const char *filename)
         return 0;
 }
 
-static int qcow_open(BlockDriverState *bs, QDict *options, int flags)
+static int qcow_open(BlockDriverState *bs, QDict *options, int flags,
+                     Error **errp)
 {
     BDRVQcowState *s = bs->opaque;
     int len, i, shift, ret;
@@ -112,23 +113,26 @@ static int qcow_open(BlockDriverState *bs, QDict *options, int flags)
     be64_to_cpus(&header.l1_table_offset);
 
     if (header.magic != QCOW_MAGIC) {
-        ret = -EMEDIUMTYPE;
+        error_setg(errp, "Image not in qcow format");
+        ret = -EINVAL;
         goto fail;
     }
     if (header.version != QCOW_VERSION) {
         char version[64];
         snprintf(version, sizeof(version), "QCOW version %d", header.version);
-        qerror_report(QERR_UNKNOWN_BLOCK_FORMAT_FEATURE,
-            bs->device_name, "qcow", version);
+        error_set(errp, QERR_UNKNOWN_BLOCK_FORMAT_FEATURE,
+                  bs->device_name, "qcow", version);
         ret = -ENOTSUP;
         goto fail;
     }
 
     if (header.size <= 1 || header.cluster_bits < 9) {
+        error_setg(errp, "invalid value in qcow header");
         ret = -EINVAL;
         goto fail;
     }
     if (header.crypt_method > QCOW_CRYPT_AES) {
+        error_setg(errp, "invalid encryption method in qcow header");
         ret = -EINVAL;
         goto fail;
     }
@@ -395,7 +399,7 @@ static uint64_t get_cluster_offset(BlockDriverState *bs,
     return cluster_offset;
 }
 
-static int coroutine_fn qcow_co_is_allocated(BlockDriverState *bs,
+static int64_t coroutine_fn qcow_co_get_block_status(BlockDriverState *bs,
         int64_t sector_num, int nb_sectors, int *pnum)
 {
     BDRVQcowState *s = bs->opaque;
@@ -410,7 +414,14 @@ static int coroutine_fn qcow_co_is_allocated(BlockDriverState *bs,
     if (n > nb_sectors)
         n = nb_sectors;
     *pnum = n;
-    return (cluster_offset != 0);
+    if (!cluster_offset) {
+        return 0;
+    }
+    if ((cluster_offset & QCOW_OFLAG_COMPRESSED) || s->crypt_method) {
+        return BDRV_BLOCK_DATA;
+    }
+    cluster_offset |= (index_in_cluster << BDRV_SECTOR_BITS);
+    return BDRV_BLOCK_DATA | BDRV_BLOCK_OFFSET_VALID | cluster_offset;
 }
 
 static int decompress_buffer(uint8_t *out_buf, int out_buf_size,
@@ -651,7 +662,8 @@ static void qcow_close(BlockDriverState *bs)
     error_free(s->migration_blocker);
 }
 
-static int qcow_create(const char *filename, QEMUOptionParameter *options)
+static int qcow_create(const char *filename, QEMUOptionParameter *options,
+                       Error **errp)
 {
     int header_size, backing_filename_len, l1_size, shift, i;
     QCowHeader header;
@@ -659,6 +671,7 @@ static int qcow_create(const char *filename, QEMUOptionParameter *options)
     int64_t total_size = 0;
     const char *backing_file = NULL;
     int flags = 0;
+    Error *local_err = NULL;
     int ret;
     BlockDriverState *qcow_bs;
 
@@ -674,13 +687,17 @@ static int qcow_create(const char *filename, QEMUOptionParameter *options)
         options++;
     }
 
-    ret = bdrv_create_file(filename, options);
+    ret = bdrv_create_file(filename, options, &local_err);
     if (ret < 0) {
+        error_propagate(errp, local_err);
         return ret;
     }
 
-    ret = bdrv_file_open(&qcow_bs, filename, NULL, BDRV_O_RDWR);
+    qcow_bs = NULL;
+    ret = bdrv_open(&qcow_bs, filename, NULL, NULL,
+                    BDRV_O_RDWR | BDRV_O_PROTOCOL, NULL, &local_err);
     if (ret < 0) {
+        error_propagate(errp, local_err);
         return ret;
     }
 
@@ -706,7 +723,7 @@ static int qcow_create(const char *filename, QEMUOptionParameter *options)
             backing_file = NULL;
         }
         header.cluster_bits = 9; /* 512 byte cluster to avoid copying
-                                    unmodifyed sectors */
+                                    unmodified sectors */
         header.l2_bits = 12; /* 32 KB L2 tables */
     } else {
         header.cluster_bits = 12; /* 4 KB clusters */
@@ -751,7 +768,7 @@ static int qcow_create(const char *filename, QEMUOptionParameter *options)
     g_free(tmp);
     ret = 0;
 exit:
-    bdrv_delete(qcow_bs);
+    bdrv_unref(qcow_bs);
     return ret;
 }
 
@@ -896,7 +913,7 @@ static BlockDriver bdrv_qcow = {
 
     .bdrv_co_readv          = qcow_co_readv,
     .bdrv_co_writev         = qcow_co_writev,
-    .bdrv_co_is_allocated   = qcow_co_is_allocated,
+    .bdrv_co_get_block_status   = qcow_co_get_block_status,
 
     .bdrv_set_key           = qcow_set_key,
     .bdrv_make_empty        = qcow_make_empty,

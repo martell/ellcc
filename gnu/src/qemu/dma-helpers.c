@@ -11,6 +11,7 @@
 #include "trace.h"
 #include "qemu/range.h"
 #include "qemu/thread.h"
+#include "qemu/main-loop.h"
 
 /* #define DEBUG_IOMMU */
 
@@ -212,6 +213,7 @@ BlockDriverAIOCB *dma_bdrv_io(
     dbs->sg_cur_index = 0;
     dbs->sg_cur_byte = 0;
     dbs->dir = dir;
+    dbs->in_cancel = false;
     dbs->io_func = io_func;
     dbs->bh = NULL;
     qemu_iovec_init(&dbs->iov, sg->nsg);

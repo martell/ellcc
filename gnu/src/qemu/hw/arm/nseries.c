@@ -202,7 +202,7 @@ static void n8x0_i2c_setup(struct n800_s *s)
 {
     DeviceState *dev;
     qemu_irq tmp_irq = qdev_get_gpio_in(s->mpu->gpio, N8X0_TMP105_GPIO);
-    i2c_bus *i2c = omap_i2c_bus(s->mpu->i2c[0]);
+    I2CBus *i2c = omap_i2c_bus(s->mpu->i2c[0]);
 
     /* Attach a menelaus PM chip */
     dev = i2c_create_slave(i2c, "twl92230", N8X0_MENELAUS_ADDR);
@@ -1340,7 +1340,7 @@ static void n8x0_init(QEMUMachineInitArgs *args,
     }
 
     if (option_rom[0].name &&
-        (args->boot_device[0] == 'n' || !args->kernel_filename)) {
+        (args->boot_order[0] == 'n' || !args->kernel_filename)) {
         uint8_t nolo_tags[0x10000];
         /* No, wait, better start at the ROM.  */
         s->mpu->cpu->env.regs[15] = OMAP2_Q2_BASE + 0x400000;
@@ -1396,14 +1396,14 @@ static QEMUMachine n800_machine = {
     .name = "n800",
     .desc = "Nokia N800 tablet aka. RX-34 (OMAP2420)",
     .init = n800_init,
-    DEFAULT_MACHINE_OPTIONS,
+    .default_boot_order = "",
 };
 
 static QEMUMachine n810_machine = {
     .name = "n810",
     .desc = "Nokia N810 tablet aka. RX-44 (OMAP2420)",
     .init = n810_init,
-    DEFAULT_MACHINE_OPTIONS,
+    .default_boot_order = "",
 };
 
 static void nseries_machine_init(void)

@@ -47,7 +47,8 @@
 
 #define VIRTIO_EXT_CODE   0x2603
 
-static void virtio_s390_bus_new(VirtioBusState *bus, VirtIOS390Device *dev);
+static void virtio_s390_bus_new(VirtioBusState *bus, size_t bus_size,
+                                VirtIOS390Device *dev);
 
 static const TypeInfo s390_virtio_bus_info = {
     .name = TYPE_S390_VIRTIO_BUS,
@@ -76,10 +77,10 @@ void s390_virtio_reset_idx(VirtIOS390Device *dev)
     for (i = 0; i < num_vq; i++) {
         idx_addr = virtio_queue_get_avail_addr(dev->vdev, i) +
             VIRTIO_VRING_AVAIL_IDX_OFFS;
-        stw_phys(idx_addr, 0);
+        stw_phys(&address_space_memory, idx_addr, 0);
         idx_addr = virtio_queue_get_used_addr(dev->vdev, i) +
             VIRTIO_VRING_USED_IDX_OFFS;
-        stw_phys(idx_addr, 0);
+        stw_phys(&address_space_memory, idx_addr, 0);
     }
 }
 
@@ -170,7 +171,7 @@ static int s390_virtio_net_init(VirtIOS390Device *s390_dev)
 static void s390_virtio_net_instance_init(Object *obj)
 {
     VirtIONetS390 *dev = VIRTIO_NET_S390(obj);
-    object_initialize(OBJECT(&dev->vdev), TYPE_VIRTIO_NET);
+    object_initialize(&dev->vdev, sizeof(dev->vdev), TYPE_VIRTIO_NET);
     object_property_add_child(obj, "virtio-backend", OBJECT(&dev->vdev), NULL);
 }
 
@@ -189,7 +190,7 @@ static int s390_virtio_blk_init(VirtIOS390Device *s390_dev)
 static void s390_virtio_blk_instance_init(Object *obj)
 {
     VirtIOBlkS390 *dev = VIRTIO_BLK_S390(obj);
-    object_initialize(OBJECT(&dev->vdev), TYPE_VIRTIO_BLK);
+    object_initialize(&dev->vdev, sizeof(dev->vdev), TYPE_VIRTIO_BLK);
     object_property_add_child(obj, "virtio-backend", OBJECT(&dev->vdev), NULL);
 }
 
@@ -230,7 +231,7 @@ static int s390_virtio_serial_init(VirtIOS390Device *s390_dev)
 static void s390_virtio_serial_instance_init(Object *obj)
 {
     VirtIOSerialS390 *dev = VIRTIO_SERIAL_S390(obj);
-    object_initialize(OBJECT(&dev->vdev), TYPE_VIRTIO_SERIAL);
+    object_initialize(&dev->vdev, sizeof(dev->vdev), TYPE_VIRTIO_SERIAL);
     object_property_add_child(obj, "virtio-backend", OBJECT(&dev->vdev), NULL);
 }
 
@@ -262,7 +263,7 @@ static int s390_virtio_scsi_init(VirtIOS390Device *s390_dev)
 static void s390_virtio_scsi_instance_init(Object *obj)
 {
     VirtIOSCSIS390 *dev = VIRTIO_SCSI_S390(obj);
-    object_initialize(OBJECT(&dev->vdev), TYPE_VIRTIO_SCSI);
+    object_initialize(&dev->vdev, sizeof(dev->vdev), TYPE_VIRTIO_SCSI);
     object_property_add_child(obj, "virtio-backend", OBJECT(&dev->vdev), NULL);
 }
 
@@ -283,7 +284,7 @@ static int s390_vhost_scsi_init(VirtIOS390Device *s390_dev)
 static void s390_vhost_scsi_instance_init(Object *obj)
 {
     VHostSCSIS390 *dev = VHOST_SCSI_S390(obj);
-    object_initialize(OBJECT(&dev->vdev), TYPE_VHOST_SCSI);
+    object_initialize(&dev->vdev, sizeof(dev->vdev), TYPE_VHOST_SCSI);
     object_property_add_child(obj, "virtio-backend", OBJECT(&dev->vdev), NULL);
 }
 #endif
@@ -309,10 +310,12 @@ static int s390_virtio_rng_init(VirtIOS390Device *s390_dev)
 static void s390_virtio_rng_instance_init(Object *obj)
 {
     VirtIORNGS390 *dev = VIRTIO_RNG_S390(obj);
-    object_initialize(OBJECT(&dev->vdev), TYPE_VIRTIO_RNG);
+    object_initialize(&dev->vdev, sizeof(dev->vdev), TYPE_VIRTIO_RNG);
     object_property_add_child(obj, "virtio-backend", OBJECT(&dev->vdev), NULL);
     object_property_add_link(obj, "rng", TYPE_RNG_BACKEND,
-                             (Object **)&dev->vdev.conf.rng, NULL);
+                             (Object **)&dev->vdev.conf.rng,
+                             qdev_prop_allow_set_link_before_realize,
+                             OBJ_PROP_LINK_UNREF_ON_RELEASE, NULL);
 }
 
 static uint64_t s390_virtio_device_vq_token(VirtIOS390Device *dev, int vq)
@@ -323,7 +326,7 @@ static uint64_t s390_virtio_device_vq_token(VirtIOS390Device *dev, int vq)
                 (vq * VIRTIO_VQCONFIG_LEN) +
                 VIRTIO_VQCONFIG_OFFS_TOKEN;
 
-    return ldq_be_phys(token_off);
+    return ldq_be_phys(&address_space_memory, token_off);
 }
 
 static ram_addr_t s390_virtio_device_num_vq(VirtIOS390Device *dev)
@@ -358,15 +361,21 @@ void s390_virtio_device_sync(VirtIOS390Device *dev)
     virtio_reset(dev->vdev);
 
     /* Sync dev space */
-    stb_phys(dev->dev_offs + VIRTIO_DEV_OFFS_TYPE, dev->vdev->device_id);
+    stb_phys(&address_space_memory,
+             dev->dev_offs + VIRTIO_DEV_OFFS_TYPE, dev->vdev->device_id);
 
-    stb_phys(dev->dev_offs + VIRTIO_DEV_OFFS_NUM_VQ, s390_virtio_device_num_vq(dev));
-    stb_phys(dev->dev_offs + VIRTIO_DEV_OFFS_FEATURE_LEN, dev->feat_len);
+    stb_phys(&address_space_memory,
+             dev->dev_offs + VIRTIO_DEV_OFFS_NUM_VQ,
+             s390_virtio_device_num_vq(dev));
+    stb_phys(&address_space_memory,
+             dev->dev_offs + VIRTIO_DEV_OFFS_FEATURE_LEN, dev->feat_len);
 
-    stb_phys(dev->dev_offs + VIRTIO_DEV_OFFS_CONFIG_LEN, dev->vdev->config_len);
+    stb_phys(&address_space_memory,
+             dev->dev_offs + VIRTIO_DEV_OFFS_CONFIG_LEN, dev->vdev->config_len);
 
     num_vq = s390_virtio_device_num_vq(dev);
-    stb_phys(dev->dev_offs + VIRTIO_DEV_OFFS_NUM_VQ, num_vq);
+    stb_phys(&address_space_memory,
+             dev->dev_offs + VIRTIO_DEV_OFFS_NUM_VQ, num_vq);
 
     /* Sync virtqueues */
     for (i = 0; i < num_vq; i++) {
@@ -377,8 +386,11 @@ void s390_virtio_device_sync(VirtIOS390Device *dev)
         vring = s390_virtio_next_ring(bus);
         virtio_queue_set_addr(dev->vdev, i, vring);
         virtio_queue_set_vector(dev->vdev, i, i);
-        stq_be_phys(vq + VIRTIO_VQCONFIG_OFFS_ADDRESS, vring);
-        stw_be_phys(vq + VIRTIO_VQCONFIG_OFFS_NUM, virtio_queue_get_num(dev->vdev, i));
+        stq_be_phys(&address_space_memory,
+                    vq + VIRTIO_VQCONFIG_OFFS_ADDRESS, vring);
+        stw_be_phys(&address_space_memory,
+                    vq + VIRTIO_VQCONFIG_OFFS_NUM,
+                    virtio_queue_get_num(dev->vdev, i));
     }
 
     cur_offs = dev->dev_offs;
@@ -386,7 +398,7 @@ void s390_virtio_device_sync(VirtIOS390Device *dev)
     cur_offs += num_vq * VIRTIO_VQCONFIG_LEN;
 
     /* Sync feature bitmap */
-    stl_le_phys(cur_offs, dev->host_features);
+    stl_le_phys(&address_space_memory, cur_offs, dev->host_features);
 
     dev->feat_offs = cur_offs + dev->feat_len;
     cur_offs += dev->feat_len * 2;
@@ -404,11 +416,12 @@ void s390_virtio_device_update_status(VirtIOS390Device *dev)
     VirtIODevice *vdev = dev->vdev;
     uint32_t features;
 
-    virtio_set_status(vdev, ldub_phys(dev->dev_offs + VIRTIO_DEV_OFFS_STATUS));
+    virtio_set_status(vdev, ldub_phys(&address_space_memory,
+                                      dev->dev_offs + VIRTIO_DEV_OFFS_STATUS));
 
     /* Update guest supported feature bitmap */
 
-    features = bswap32(ldl_be_phys(dev->feat_offs));
+    features = bswap32(ldl_be_phys(&address_space_memory, dev->feat_offs));
     virtio_set_features(vdev, features);
 }
 
@@ -585,7 +598,7 @@ static int s390_virtio_busdev_init(DeviceState *dev)
     VirtIOS390Device *_dev = (VirtIOS390Device *)dev;
     VirtIOS390DeviceClass *_info = VIRTIO_S390_DEVICE_GET_CLASS(dev);
 
-    virtio_s390_bus_new(&_dev->bus, _dev);
+    virtio_s390_bus_new(&_dev->bus, sizeof(_dev->bus), _dev);
 
     return _info->init(_dev);
 }
@@ -675,11 +688,9 @@ static int s390_virtio_bridge_init(SysBusDevice *dev)
 
 static void s390_virtio_bridge_class_init(ObjectClass *klass, void *data)
 {
-    DeviceClass *dc = DEVICE_CLASS(klass);
     SysBusDeviceClass *k = SYS_BUS_DEVICE_CLASS(klass);
 
     k->init = s390_virtio_bridge_init;
-    dc->no_user = 1;
 }
 
 static const TypeInfo s390_virtio_bridge_info = {
@@ -691,14 +702,15 @@ static const TypeInfo s390_virtio_bridge_info = {
 
 /* virtio-s390-bus */
 
-static void virtio_s390_bus_new(VirtioBusState *bus, VirtIOS390Device *dev)
+static void virtio_s390_bus_new(VirtioBusState *bus, size_t bus_size,
+                                VirtIOS390Device *dev)
 {
     DeviceState *qdev = DEVICE(dev);
     BusState *qbus;
     char virtio_bus_name[] = "virtio-bus";
 
-    qbus_create_inplace((BusState *)bus, TYPE_VIRTIO_S390_BUS, qdev,
-                        virtio_bus_name);
+    qbus_create_inplace(bus, bus_size, TYPE_VIRTIO_S390_BUS,
+                        qdev, virtio_bus_name);
     qbus = BUS(bus);
     qbus->allow_hotplug = 1;
 }

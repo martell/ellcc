@@ -161,8 +161,9 @@ static void clipper_init(QEMUMachineInitArgs *args)
             load_image_targphys(initrd_filename, initrd_base,
                                 ram_size - initrd_base);
 
-            stq_phys(param_offset + 0x100, initrd_base + 0xfffffc0000000000ULL);
-            stq_phys(param_offset + 0x108, initrd_size);
+            stq_phys(&address_space_memory,
+                     param_offset + 0x100, initrd_base + 0xfffffc0000000000ULL);
+            stq_phys(&address_space_memory, param_offset + 0x108, initrd_size);
         }
     }
 }
@@ -173,7 +174,6 @@ static QEMUMachine clipper_machine = {
     .init = clipper_init,
     .max_cpus = 4,
     .is_default = 1,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void clipper_machine_init(void)

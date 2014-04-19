@@ -12,6 +12,7 @@
 #include "qemu-common.h"
 #include "hw/qdev.h"
 #include "hw/ptimer.h"
+#include "qemu/main-loop.h"
 
 /* Common timer implementation.  */
 
@@ -319,6 +320,7 @@ static uint64_t icp_pit_read(void *opaque, hwaddr offset,
     n = offset >> 8;
     if (n > 2) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad timer %d\n", __func__, n);
+        return 0;
     }
 
     return arm_timer_read(s->timer[n], offset & 0xff);
@@ -333,6 +335,7 @@ static void icp_pit_write(void *opaque, hwaddr offset,
     n = offset >> 8;
     if (n > 2) {
         qemu_log_mask(LOG_GUEST_ERROR, "%s: Bad timer %d\n", __func__, n);
+        return;
     }
 
     arm_timer_write(s->timer[n], offset & 0xff, value);

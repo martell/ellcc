@@ -6,6 +6,11 @@
 
 #include <stdint.h>
 
+// arm.h
+typedef struct context
+{
+} Context;
+
 /** Set a system call handler.
  * @param nr The system call number.
  * @param fn The system call handling function.
@@ -21,12 +26,14 @@ int __set_syscall(int nr, void *fn);
  * @param arg1 The first argument ro the entry point.
  * @param arg2 The second argument to the entry point.
  */
-void __new_context(void **savearea, intptr_t (*entry)(intptr_t, intptr_t), int mode, void *ret, intptr_t arg1, intptr_t arg2);
+void __new_context(Context **savearea,
+                   intptr_t (*entry)(intptr_t, intptr_t),
+                   int mode, void *ret, intptr_t arg1, intptr_t arg2);
 
 /** Switch to a new context.
  * @param from A place to store the current context.
  * @param to The new context.
  */
-void __switch(void **from, void *to);
+void __switch(Context **from, void *Context);
 
 #endif // _kernel_h_

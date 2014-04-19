@@ -6,8 +6,11 @@
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
 #include "biosvar.h" // SET_BDA
-#include "util.h" // debug_enter
 #include "bregs.h" // struct bregs
+#include "hw/serialio.h" // SEROFF_IER
+#include "output.h" // debug_enter
+#include "stacks.h" // yield
+#include "util.h" // serial_setup
 
 
 /****************************************************************
@@ -91,7 +94,7 @@ handle_1401(struct bregs *regs)
     u16 addr = getComAddr(regs);
     if (!addr)
         return;
-    u32 end = calc_future_timer_ticks(GET_BDA(com_timeout[regs->dx]));
+    u32 end = irqtimer_calc_ticks(GET_BDA(com_timeout[regs->dx]));
     for (;;) {
         u8 lsr = inb(addr+SEROFF_LSR);
         if ((lsr & 0x60) == 0x60) {
@@ -101,7 +104,7 @@ handle_1401(struct bregs *regs)
             regs->ah = lsr;
             break;
         }
-        if (check_timer(end)) {
+        if (irqtimer_check(end)) {
             // Timed out - can't write data.
             regs->ah = lsr | 0x80;
             break;
@@ -118,7 +121,7 @@ handle_1402(struct bregs *regs)
     u16 addr = getComAddr(regs);
     if (!addr)
         return;
-    u32 end = calc_future_timer_ticks(GET_BDA(com_timeout[regs->dx]));
+    u32 end = irqtimer_calc_ticks(GET_BDA(com_timeout[regs->dx]));
     for (;;) {
         u8 lsr = inb(addr+SEROFF_LSR);
         if (lsr & 0x01) {
@@ -127,7 +130,7 @@ handle_1402(struct bregs *regs)
             regs->ah = lsr;
             break;
         }
-        if (check_timer(end)) {
+        if (irqtimer_check(end)) {
             // Timed out - can't read data.
             regs->ah = lsr | 0x80;
             break;
@@ -234,7 +237,7 @@ handle_1700(struct bregs *regs)
     if (!addr)
         return;
 
-    u32 end = calc_future_timer_ticks(GET_BDA(lpt_timeout[regs->dx]));
+    u32 end = irqtimer_calc_ticks(GET_BDA(lpt_timeout[regs->dx]));
 
     outb(regs->al, addr);
     u8 val8 = inb(addr+2);
@@ -249,7 +252,7 @@ handle_1700(struct bregs *regs)
             regs->ah = v ^ 0x48;
             break;
         }
-        if (check_timer(end)) {
+        if (irqtimer_check(end)) {
             // Timeout
             regs->ah = (v ^ 0x48) | 0x01;
             break;

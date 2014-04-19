@@ -70,10 +70,6 @@ all: $(PROGS) stap
 # Dummy command so that make thinks it has done something
 	@true
 
-CONFIG_NO_PCI = $(if $(subst n,,$(CONFIG_PCI)),n,y)
-CONFIG_NO_KVM = $(if $(subst n,,$(CONFIG_KVM)),n,y)
-CONFIG_NO_XEN = $(if $(subst n,,$(CONFIG_XEN)),n,y)
-
 #########################################################
 # cpu emulator library
 obj-y = exec.o translate-all.o cpu-exec.o
@@ -83,8 +79,8 @@ obj-$(CONFIG_TCG_INTERPRETER) += disas/tci.o
 obj-y += fpu/softfloat.o
 obj-y += target-$(TARGET_BASE_ARCH)/
 obj-y += disas.o
-obj-$(CONFIG_GDBSTUB_XML) += gdbstub-xml.o
-obj-$(CONFIG_NO_KVM) += kvm-stub.o
+obj-$(call notempty,$(TARGET_XML_FILES)) += gdbstub-xml.o
+obj-$(call lnot,$(CONFIG_KVM)) += kvm-stub.o
 
 #########################################################
 # Linux user emulator target
@@ -125,7 +121,7 @@ LIBS+=$(libs_softmmu)
 
 # xen support
 obj-$(CONFIG_XEN) += xen-all.o xen-mapcache.o
-obj-$(CONFIG_NO_XEN) += xen-stub.o
+obj-$(call lnot,$(CONFIG_XEN)) += xen-stub.o
 
 # Hardware support
 ifeq ($(TARGET_NAME), sparc64)
@@ -134,8 +130,6 @@ else
 obj-y += hw/$(TARGET_BASE_ARCH)/
 endif
 
-main.o: QEMU_CFLAGS+=$(GPROF_CFLAGS)
-
 GENERATED_HEADERS += hmp-commands.h qmp-commands-old.h
 
 endif # CONFIG_SOFTMMU
@@ -143,13 +137,26 @@ endif # CONFIG_SOFTMMU
 # Workaround for http://gcc.gnu.org/PR55489, see configure.
 %/translate.o: QEMU_CFLAGS += $(TRANSLATE_OPT_CFLAGS)
 
-nested-vars += obj-y
+dummy := $(call unnest-vars,,obj-y)
 
-# This resolves all nested paths, so it must come last
+# we are making another call to unnest-vars with different vars, protect obj-y,
+# it can be overriden in subdir Makefile.objs
+obj-y-save := $(obj-y)
+
+block-obj-y :=
+common-obj-y :=
 include $(SRC_PATH)/Makefile.objs
+dummy := $(call unnest-vars,.., \
+               block-obj-y \
+               block-obj-m \
+               common-obj-y \
+               common-obj-m)
 
-all-obj-y = $(obj-y)
-all-obj-y += $(addprefix ../, $(common-obj-y))
+# Now restore obj-y
+obj-y := $(obj-y-save)
+
+all-obj-y = $(obj-y) $(common-obj-y)
+all-obj-$(CONFIG_SOFTMMU) += $(block-obj-y)
 
 ifndef CONFIG_HAIKU
 LIBS+=-lm

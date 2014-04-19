@@ -47,7 +47,7 @@ qemu_irq *xen_interrupt_controller_init(void)
     return NULL;
 }
 
-int xen_init(void)
+int xen_init(QEMUMachine *machine)
 {
     return -ENOSYS;
 }
@@ -64,7 +64,7 @@ void xen_modified_memory(ram_addr_t start, ram_addr_t length)
 {
 }
 
-int xen_hvm_init(void)
+int xen_hvm_init(MemoryRegion **ram_memory)
 {
     return 0;
 }

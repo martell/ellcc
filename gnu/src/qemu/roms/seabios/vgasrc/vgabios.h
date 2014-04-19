@@ -39,6 +39,7 @@ struct saveBDAstate {
 };
 
 // Mode flags
+#define MF_LEGACY     0x0001
 #define MF_GRAYSUM    0x0002
 #define MF_NOPALETTE  0x0008
 #define MF_CUSTOMCRTC 0x0800
@@ -76,6 +77,9 @@ extern u8 vgafont16alt[];
 // Debug settings
 #define DEBUG_VGA_POST 1
 #define DEBUG_VGA_10 3
+
+// vgainit.c
+extern struct VideoSavePointer_s video_save_pointer_table;
 
 // vgabios.c
 extern int VgaBDF;

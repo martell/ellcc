@@ -29,8 +29,13 @@ virtiodev virtio-setup-vd
 \ Quiesce the virtqueue of this device so that no more background
 \ transactions can be pending.
 : shutdown  ( -- )
-   virtiodev virtio-blk-shutdown
-   FALSE to initialized?
+    initialized? IF
+        my-phandle node>path open-dev ?dup IF
+            virtiodev virtio-blk-shutdown
+            close-dev
+        THEN
+        FALSE to initialized?
+    THEN
 ;
 
 \ Basic device initialization - which has only to be done once
@@ -77,10 +82,8 @@ virtiodev virtio-setup-vd
 
 \ Set disk alias if none is set yet
 : (set-alias)
-   s" disk" find-alias 0= IF
-       s" disk" get-node node>path set-alias
-   ELSE
-      drop
+   s" disk" get-next-alias ?dup IF
+      get-node node>path set-alias
    THEN
 ;
 (set-alias)

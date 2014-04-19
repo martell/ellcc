@@ -59,14 +59,6 @@ unsigned int va_shift;
 unsigned long *l1;
 static unsigned long *context_table;
 
-static ucell *mem_reg = 0;
-static ucell *mem_avail = 0;
-static ucell *virt_avail = 0;
-
-static struct linux_mlist_v0 totphys[1];
-static struct linux_mlist_v0 totmap[1];
-static struct linux_mlist_v0 totavail[1];
-
 struct linux_mlist_v0 *ptphys;
 struct linux_mlist_v0 *ptmap;
 struct linux_mlist_v0 *ptavail;
@@ -200,55 +192,6 @@ ob_map_pages(void)
     ofmem_arch_map_pages(pa, va, size, ofmem_arch_default_translation_mode(pa));
 }
 
-static void
-update_memory_properties(void)
-{
-    /* Update the device tree memory properties from the master
-       totphys, totmap and totavail romvec arrays */
-    mem_reg[0] = 0;
-    mem_reg[1] = pointer2cell(totphys[0].start_adr);
-    mem_reg[2] = totphys[0].num_bytes;
-
-    virt_avail[0] = 0;
-    virt_avail[1] = 0;
-    virt_avail[2] = pointer2cell(totmap[0].start_adr);
-
-    mem_avail[0] = 0;
-    mem_avail[1] = pointer2cell(totavail[0].start_adr);
-    mem_avail[2] = totavail[0].num_bytes;
-}
-
-static void
-init_romvec_mem(void)
-{
-    ptphys = totphys;
-    ptmap = totmap;
-    ptavail = totavail;
-
-    /*
-     * Form memory descriptors.
-     */
-    totphys[0].theres_more = NULL;
-    totphys[0].start_adr = (char *) 0;
-    totphys[0].num_bytes = qemu_mem_size;
-
-    totavail[0].theres_more = NULL;
-    totavail[0].start_adr = (char *) 0;
-    totavail[0].num_bytes = va2pa((int)&_start) - PAGE_SIZE;
-
-    totmap[0].theres_more = NULL;
-    totmap[0].start_adr = &_start;
-    totmap[0].num_bytes = (unsigned long) &_iomem -
-        (unsigned long) &_start + PAGE_SIZE;
-
-    /* Pointers to device tree memory properties */
-    mem_reg = malloc(sizeof(ucell) * 3);
-    mem_avail = malloc(sizeof(ucell) * 3);
-    virt_avail = malloc(sizeof(ucell) * 3);
-
-    update_memory_properties();
-}
-
 char *obp_dumb_mmap(char *va, int which_io, unsigned int pa,
                     unsigned int size)
 {
@@ -286,20 +229,58 @@ char *obp_memalloc(char *va, unsigned int size, unsigned int align)
 char *obp_dumb_memalloc(char *va, unsigned int size)
 {
     unsigned long align = size;
+    phys_addr_t phys;
+    ucell virt;
     
     DPRINTF("obp_dumb_memalloc: virta 0x%x, sz %d\n", (unsigned int)va, size);    
     
     /* Solaris seems to assume that the returned value is physically aligned to size.
-       e.g. it is used for setting up page tables. Fortunately this is now handled by 
-       ofmem_claim_phys() above. */
+       e.g. it is used for setting up page tables. */
     
-    return obp_memalloc(va, size, align);
+    /* Claim physical memory */
+    phys = ofmem_claim_phys(-1, size, align);
+
+    /* Claim virtual memory - if va == NULL then we choose va address */
+    if (va == NULL) {
+        virt = ofmem_claim_virt((ucell)-1, size, align);        
+    } else {
+        virt = ofmem_claim_virt(pointer2cell(va), size, 0);
+    }
+
+    /* Map the memory */
+    ofmem_map(phys, virt, size, ofmem_arch_default_translation_mode(phys));
+
+    return cell2pointer(virt);
 }
 
-void obp_dumb_memfree(__attribute__((unused))char *va,
-                             __attribute__((unused))unsigned sz)
+void obp_dumb_memfree(char *va, unsigned size)
 {
-    DPRINTF("obp_dumb_memfree 0x%p (size %d)\n", va, sz);
+    phys_addr_t phys;
+    ucell cellmode;
+
+    DPRINTF("obp_dumb_memfree: virta 0x%x, sz %d\n", (unsigned int)va, size);
+
+    phys = ofmem_translate(pointer2cell(va), &cellmode);
+
+    ofmem_unmap(pointer2cell(va), size);
+    ofmem_release_virt(pointer2cell(va), size);
+    ofmem_release_phys(phys, size);
+}
+
+/* Data fault handling routines */
+
+extern unsigned int ignore_dfault;
+
+/* ( -- reg ) */
+static void srmmu_get_sfsr(void)
+{
+    PUSH(srmmu_get_fstatus());
+}
+
+/* ( -- addr ) */
+static void ignore_dfault_addr(void)
+{
+    PUSH(pointer2cell(&ignore_dfault));
 }
 
 void
@@ -309,8 +290,6 @@ ob_init_mmu(void)
     ucell *virtreg;
     phys_addr_t virtregsize;
     ofmem_t *ofmem = ofmem_arch_get_private();
-
-    init_romvec_mem();
 
     /* Find the phandles for the /memory and /virtual-memory nodes */
     push_str("/memory");
@@ -360,6 +339,12 @@ ob_init_mmu(void)
     bind_func("pgmap@", pgmap_fetch);
     bind_func("pgmap!", pgmap_store);
     bind_func("map-pages", ob_map_pages);
+
+    /* Install data fault handler words for cpeek etc. */
+    PUSH_xt(bind_noname_func(srmmu_get_sfsr));
+    feval("to sfsr@");
+    PUSH_xt(bind_noname_func(ignore_dfault_addr));
+    feval("to ignore-dfault");
 }
 
 /*

@@ -25,7 +25,6 @@
 #endif
 
 char obp_stdin, obp_stdout;
-static int obp_fd_stdin, obp_fd_stdout;
 const char *obp_stdin_path, *obp_stdout_path;
 
 struct linux_arguments_v0 obp_arg;
@@ -450,6 +449,8 @@ void obp_fortheval_v2(char *str, int arg0, int arg1, int arg2, int arg3, int arg
   dstackcnt = dstacktmp;
 }
 
+volatile uint32_t *obp_ticks;
+
 void *
 init_openprom(void)
 {
@@ -462,9 +463,9 @@ init_openprom(void)
     romvec0.pv_romvers = 3;
     romvec0.pv_plugin_revision = 2;
     romvec0.pv_printrev = 0x20019;
-    romvec0.pv_v0mem.v0_totphys = &ptphys;
-    romvec0.pv_v0mem.v0_prommap = &ptmap;
-    romvec0.pv_v0mem.v0_available = &ptavail;
+    romvec0.pv_v0mem.v0_totphys = NULL;
+    romvec0.pv_v0mem.v0_prommap = NULL;
+    romvec0.pv_v0mem.v0_available = NULL;
     romvec0.pv_nodeops = &nodeops0;
     romvec0.pv_bootstr = (void *)doublewalk;
     romvec0.pv_v0devops.v0_devopen = &obp_devopen_handler;
@@ -480,6 +481,13 @@ init_openprom(void)
     romvec0.pv_reboot = obp_reboot_handler;
     romvec0.pv_printf = obp_printf_handler;
     romvec0.pv_abort = obp_abort_handler;
+    
+    /* Point to the Forth obp-ticks variable and reset */
+    fword("obp-ticks");
+    obp_ticks = cell2pointer(POP());
+    *obp_ticks = 0;
+    romvec0.pv_ticks = obp_ticks;
+    
     romvec0.pv_halt = obp_halt_handler;
     romvec0.pv_synchook = &sync_hook;
     romvec0.pv_v0bootargs = &obp_argp;
@@ -498,15 +506,12 @@ init_openprom(void)
     romvec0.pv_v2bootargs.bootpath = &bootpath;
 
     romvec0.pv_v2bootargs.bootargs = &obp_arg.argv[1];
-    romvec0.pv_v2bootargs.fd_stdin = &obp_fd_stdin;
-    romvec0.pv_v2bootargs.fd_stdout = &obp_fd_stdout;
 
-    push_str(obp_stdin_path);
-    fword("open-dev");
-    obp_fd_stdin = POP();
-    push_str(obp_stdout_path);
-    fword("open-dev");
-    obp_fd_stdout = POP();
+    /* Point fd_stdin/fd_stdout to the Forth stdin/stdout variables */
+    fword("stdin");
+    romvec0.pv_v2bootargs.fd_stdin = cell2pointer(POP());
+    fword("stdout");
+    romvec0.pv_v2bootargs.fd_stdout = cell2pointer(POP());
 
     romvec0.v3_memalloc = obp_memalloc_handler;
 

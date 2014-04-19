@@ -1647,8 +1647,8 @@ static void fdctrl_handle_readid(FDCtrl *fdctrl, int direction)
     FDrive *cur_drv = get_cur_drv(fdctrl);
 
     cur_drv->head = (fdctrl->fifo[1] >> 2) & 1;
-    qemu_mod_timer(fdctrl->result_timer,
-                   qemu_get_clock_ns(vm_clock) + (get_ticks_per_sec() / 50));
+    timer_mod(fdctrl->result_timer,
+                   qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (get_ticks_per_sec() / 50));
 }
 
 static void fdctrl_handle_format_track(FDCtrl *fdctrl, int direction)
@@ -2108,7 +2108,7 @@ static void fdctrl_realize_common(FDCtrl *fdctrl, Error **errp)
     FLOPPY_DPRINTF("init controller\n");
     fdctrl->fifo = qemu_memalign(512, FD_SECTOR_LEN);
     fdctrl->fifo_size = 512;
-    fdctrl->result_timer = qemu_new_timer_ns(vm_clock,
+    fdctrl->result_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
                                              fdctrl_result_timer, fdctrl);
 
     fdctrl->version = 0x90; /* Intel 82078 controller */
@@ -2216,7 +2216,7 @@ static const VMStateDescription vmstate_isa_fdc ={
 };
 
 static Property isa_fdc_properties[] = {
-    DEFINE_PROP_HEX32("iobase", FDCtrlISABus, iobase, 0x3f0),
+    DEFINE_PROP_UINT32("iobase", FDCtrlISABus, iobase, 0x3f0),
     DEFINE_PROP_UINT32("irq", FDCtrlISABus, irq, 6),
     DEFINE_PROP_UINT32("dma", FDCtrlISABus, dma, 2),
     DEFINE_PROP_DRIVE("driveA", FDCtrlISABus, state.drives[0].bs),
@@ -2234,7 +2234,6 @@ static void isabus_fdc_class_init(ObjectClass *klass, void *data)
 
     dc->realize = isabus_fdc_realize;
     dc->fw_name = "fdc";
-    dc->no_user = 1;
     dc->reset = fdctrl_external_reset_isa;
     dc->vmsd = &vmstate_isa_fdc;
     dc->props = isa_fdc_properties;

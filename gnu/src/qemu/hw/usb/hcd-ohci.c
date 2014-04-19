@@ -234,15 +234,15 @@ struct ohci_iso_td {
 #define OHCI_STATUS_OCR       (1<<3)
 #define OHCI_STATUS_SOC       ((1<<6)|(1<<7))
 
-#define OHCI_INTR_SO          (1<<0) /* Scheduling overrun */
-#define OHCI_INTR_WD          (1<<1) /* HcDoneHead writeback */
-#define OHCI_INTR_SF          (1<<2) /* Start of frame */
-#define OHCI_INTR_RD          (1<<3) /* Resume detect */
-#define OHCI_INTR_UE          (1<<4) /* Unrecoverable error */
-#define OHCI_INTR_FNO         (1<<5) /* Frame number overflow */
-#define OHCI_INTR_RHSC        (1<<6) /* Root hub status change */
-#define OHCI_INTR_OC          (1<<30) /* Ownership change */
-#define OHCI_INTR_MIE         (1<<31) /* Master Interrupt Enable */
+#define OHCI_INTR_SO          (1U<<0) /* Scheduling overrun */
+#define OHCI_INTR_WD          (1U<<1) /* HcDoneHead writeback */
+#define OHCI_INTR_SF          (1U<<2) /* Start of frame */
+#define OHCI_INTR_RD          (1U<<3) /* Resume detect */
+#define OHCI_INTR_UE          (1U<<4) /* Unrecoverable error */
+#define OHCI_INTR_FNO         (1U<<5) /* Frame number overflow */
+#define OHCI_INTR_RHSC        (1U<<6) /* Root hub status change */
+#define OHCI_INTR_OC          (1U<<30) /* Ownership change */
+#define OHCI_INTR_MIE         (1U<<31) /* Master Interrupt Enable */
 
 #define OHCI_HCCA_SIZE        0x100
 #define OHCI_HCCA_MASK        0xffffff00
@@ -253,7 +253,7 @@ struct ohci_iso_td {
 #define OHCI_FMI_FSMPS        0xffff0000
 #define OHCI_FMI_FIT          0x80000000
 
-#define OHCI_FR_RT            (1<<31)
+#define OHCI_FR_RT            (1U<<31)
 
 #define OHCI_LS_THRESH        0x628
 
@@ -265,12 +265,12 @@ struct ohci_iso_td {
 #define OHCI_RHA_NOCP         (1<<12)
 #define OHCI_RHA_POTPGT_MASK  0xff000000
 
-#define OHCI_RHS_LPS          (1<<0)
-#define OHCI_RHS_OCI          (1<<1)
-#define OHCI_RHS_DRWE         (1<<15)
-#define OHCI_RHS_LPSC         (1<<16)
-#define OHCI_RHS_OCIC         (1<<17)
-#define OHCI_RHS_CRWE         (1<<31)
+#define OHCI_RHS_LPS          (1U<<0)
+#define OHCI_RHS_OCI          (1U<<1)
+#define OHCI_RHS_DRWE         (1U<<15)
+#define OHCI_RHS_LPSC         (1U<<16)
+#define OHCI_RHS_OCIC         (1U<<17)
+#define OHCI_RHS_CRWE         (1U<<31)
 
 #define OHCI_PORT_CCS         (1<<0)
 #define OHCI_PORT_PES         (1<<1)
@@ -1143,7 +1143,9 @@ static int ohci_service_td(OHCIState *ohci, struct ohci_ed *ed)
             switch (ret) {
             case USB_RET_IOERROR:
             case USB_RET_NODEV:
+                DPRINTF("usb-ohci: got DEV ERROR\n");
                 OHCI_SET_BM(td.flags, TD_CC, OHCI_CC_DEVICENOTRESPONDING);
+                break;
             case USB_RET_NAK:
                 DPRINTF("usb-ohci: got NAK\n");
                 return 1;
@@ -1251,8 +1253,8 @@ static int ohci_service_ed_list(OHCIState *ohci, uint32_t head, int completion)
 /* Generate a SOF event, and set a timer for EOF */
 static void ohci_sof(OHCIState *ohci)
 {
-    ohci->sof_time = qemu_get_clock_ns(vm_clock);
-    qemu_mod_timer(ohci->eof_timer, ohci->sof_time + usb_frame_time);
+    ohci->sof_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    timer_mod(ohci->eof_timer, ohci->sof_time + usb_frame_time);
     ohci_set_interrupt(ohci, OHCI_INTR_SF);
 }
 
@@ -1349,12 +1351,12 @@ static void ohci_frame_boundary(void *opaque)
  */
 static int ohci_bus_start(OHCIState *ohci)
 {
-    ohci->eof_timer = qemu_new_timer_ns(vm_clock,
+    ohci->eof_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL,
                     ohci_frame_boundary,
                     ohci);
 
     if (ohci->eof_timer == NULL) {
-        fprintf(stderr, "usb-ohci: %s: qemu_new_timer_ns failed\n", ohci->name);
+        fprintf(stderr, "usb-ohci: %s: timer_new_ns failed\n", ohci->name);
         ohci_die(ohci);
         return 0;
     }
@@ -1370,7 +1372,7 @@ static int ohci_bus_start(OHCIState *ohci)
 static void ohci_bus_stop(OHCIState *ohci)
 {
     if (ohci->eof_timer)
-        qemu_del_timer(ohci->eof_timer);
+        timer_del(ohci->eof_timer);
     ohci->eof_timer = NULL;
 }
 
@@ -1474,7 +1476,7 @@ static uint32_t ohci_get_frame_remaining(OHCIState *ohci)
     /* Being in USB operational state guarnatees sof_time was
      * set already.
      */
-    tks = qemu_get_clock_ns(vm_clock) - ohci->sof_time;
+    tks = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - ohci->sof_time;
 
     /* avoid muldiv if possible */
     if (tks >= usb_frame_time)
@@ -1881,7 +1883,7 @@ static int usb_ohci_init(OHCIState *ohci, DeviceState *dev,
             return -1;
         }
     } else {
-        usb_bus_new(&ohci->bus, &ohci_bus_ops, dev);
+        usb_bus_new(&ohci->bus, sizeof(ohci->bus), &ohci_bus_ops, dev);
         for (i = 0; i < num_ports; i++) {
             usb_register_port(&ohci->bus, &ohci->rhport[i].port,
                               ohci, i, &ohci_port_ops,
@@ -1944,7 +1946,7 @@ static int usb_ohci_initfn_pci(PCIDevice *dev)
                       pci_get_address_space(dev)) != 0) {
         return -1;
     }
-    ohci->state.irq = dev->irq[0];
+    ohci->state.irq = pci_allocate_irq(dev);
 
     pci_register_bar(dev, 0, 0, &ohci->state.mem);
     return 0;
@@ -1991,10 +1993,10 @@ static void ohci_pci_class_init(ObjectClass *klass, void *data)
     k->vendor_id = PCI_VENDOR_ID_APPLE;
     k->device_id = PCI_DEVICE_ID_APPLE_IPID_USB;
     k->class_id = PCI_CLASS_SERIAL_USB;
-    k->no_hotplug = 1;
     set_bit(DEVICE_CATEGORY_USB, dc->categories);
     dc->desc = "Apple USB Controller";
     dc->props = ohci_pci_properties;
+    dc->hotpluggable = false;
 }
 
 static const TypeInfo ohci_pci_info = {

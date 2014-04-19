@@ -11,11 +11,10 @@
  *****************************************************************************/
 
 #include <stdio.h>
+#include <cpu.h>
+#include <helpers.h>
 #include "virtio.h"
 #include "virtio-blk.h"
-
-#define sync()  asm volatile (" sync \n" ::: "memory")
-
 
 /**
  * Initialize virtio-block device.
@@ -80,11 +79,11 @@ int
 virtioblk_read(struct virtio_device *dev, char *buf, long blocknum, long cnt)
 {
 	struct vring_desc *desc;
-	int id, i;
+	int id;
 	static struct virtio_blk_req blkhdr;
 	//struct virtio_blk_config *blkconf;
 	uint64_t capacity;
-	uint32_t vq_size;
+	uint32_t vq_size, time;
 	struct vring_desc *vq_desc;		/* Descriptor vring */
 	struct vring_avail *vq_avail;		/* "Available" vring */
 	struct vring_used *vq_used;		/* "Used" vring */
@@ -140,17 +139,19 @@ virtioblk_read(struct virtio_device *dev, char *buf, long blocknum, long cnt)
 	desc->next = 0;
 
 	vq_avail->ring[vq_avail->idx % vq_size] = id;
-	sync();
+	mb();
 	vq_avail->idx += 1;
 
 	/* Tell HV that the queue is ready */
 	virtio_queue_notify(dev, 0);
 
 	/* Wait for host to consume the descriptor */
-	i = 10000000;
-	while (*current_used_idx == last_used_idx && i-- > 0) {
+	time = SLOF_GetTimer() + VIRTIO_TIMEOUT;
+	while (*current_used_idx == last_used_idx) {
 		// do something better
-		sync();
+		mb();
+		if (time < SLOF_GetTimer())
+			break;
 	}
 
 	if (status == 0)

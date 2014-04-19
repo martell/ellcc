@@ -101,6 +101,11 @@ static void lm32_evr_init(QEMUMachineInitArgs *args)
         cpu_model = "lm32-full";
     }
     cpu = cpu_lm32_init(cpu_model);
+    if (cpu == NULL) {
+        fprintf(stderr, "qemu: unable to find CPU '%s'\n", cpu_model);
+        exit(1);
+    }
+
     env = &cpu->env;
     reset_info->cpu = cpu;
 
@@ -198,6 +203,11 @@ static void lm32_uclinux_init(QEMUMachineInitArgs *args)
         cpu_model = "lm32-full";
     }
     cpu = cpu_lm32_init(cpu_model);
+    if (cpu == NULL) {
+        fprintf(stderr, "qemu: unable to find CPU '%s'\n", cpu_model);
+        exit(1);
+    }
+
     env = &cpu->env;
     reset_info->cpu = cpu;
 
@@ -289,7 +299,6 @@ static QEMUMachine lm32_evr_machine = {
     .desc = "LatticeMico32 EVR32 eval system",
     .init = lm32_evr_init,
     .is_default = 1,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine lm32_uclinux_machine = {
@@ -297,7 +306,6 @@ static QEMUMachine lm32_uclinux_machine = {
     .desc = "lm32 platform for uClinux and u-boot by Theobroma Systems",
     .init = lm32_uclinux_init,
     .is_default = 0,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void lm32_machine_init(void)

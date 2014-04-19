@@ -22,8 +22,6 @@
 
 #define MAX_IRQ 256
 
-const char *qtest_chrdev;
-const char *qtest_log;
 bool qtest_allowed;
 
 static DeviceState *irq_intercept_dev;
@@ -47,7 +45,7 @@ static bool qtest_opened;
  *
  * Clock management:
  *
- * The qtest client is completely in charge of the vm_clock.  qtest commands
+ * The qtest client is completely in charge of the QEMU_CLOCK_VIRTUAL.  qtest commands
  * let you adjust the value of the clock (monotonically).  All the commands
  * return the current value of the clock in nanoseconds.
  *
@@ -177,7 +175,7 @@ static void qtest_send_prefix(CharDriverState *chr)
 
     qtest_get_time(&tv);
     fprintf(qtest_log_fp, "[S +" FMT_timeval "] ",
-            tv.tv_sec, (long) tv.tv_usec);
+            (long) tv.tv_sec, (long) tv.tv_usec);
 }
 
 static void GCC_FMT_ATTR(2, 3) qtest_send(CharDriverState *chr,
@@ -225,7 +223,7 @@ static void qtest_process_command(CharDriverState *chr, gchar **words)
 
         qtest_get_time(&tv);
         fprintf(qtest_log_fp, "[R +" FMT_timeval "]",
-                tv.tv_sec, (long) tv.tv_usec);
+                (long) tv.tv_sec, (long) tv.tv_usec);
         for (i = 0; words[i]; i++) {
             fprintf(qtest_log_fp, " %s", words[i]);
         }
@@ -406,25 +404,25 @@ static void qtest_process_command(CharDriverState *chr, gchar **words)
 
         qtest_send_prefix(chr);
         qtest_send(chr, "OK\n");
-    } else if (strcmp(words[0], "clock_step") == 0) {
+    } else if (qtest_enabled() && strcmp(words[0], "clock_step") == 0) {
         int64_t ns;
 
         if (words[1]) {
             ns = strtoll(words[1], NULL, 0);
         } else {
-            ns = qemu_clock_deadline(vm_clock);
+            ns = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL);
         }
-        qtest_clock_warp(qemu_get_clock_ns(vm_clock) + ns);
+        qtest_clock_warp(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + ns);
         qtest_send_prefix(chr);
-        qtest_send(chr, "OK %"PRIi64"\n", (int64_t)qemu_get_clock_ns(vm_clock));
-    } else if (strcmp(words[0], "clock_set") == 0) {
+        qtest_send(chr, "OK %"PRIi64"\n", (int64_t)qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+    } else if (qtest_enabled() && strcmp(words[0], "clock_set") == 0) {
         int64_t ns;
 
         g_assert(words[1]);
         ns = strtoll(words[1], NULL, 0);
         qtest_clock_warp(ns);
         qtest_send_prefix(chr);
-        qtest_send(chr, "OK %"PRIi64"\n", (int64_t)qemu_get_clock_ns(vm_clock));
+        qtest_send(chr, "OK %"PRIi64"\n", (int64_t)qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
     } else {
         qtest_send_prefix(chr);
         qtest_send(chr, "FAIL Unknown command `%s'\n", words[0]);
@@ -485,7 +483,7 @@ static void qtest_event(void *opaque, int event)
         qtest_opened = true;
         if (qtest_log_fp) {
             fprintf(qtest_log_fp, "[I " FMT_timeval "] OPENED\n",
-                    start_time.tv_sec, (long) start_time.tv_usec);
+                    (long) start_time.tv_sec, (long) start_time.tv_usec);
         }
         break;
     case CHR_EVENT_CLOSED:
@@ -494,7 +492,7 @@ static void qtest_event(void *opaque, int event)
             qemu_timeval tv;
             qtest_get_time(&tv);
             fprintf(qtest_log_fp, "[I +" FMT_timeval "] CLOSED\n",
-                    tv.tv_sec, (long) tv.tv_usec);
+                    (long) tv.tv_sec, (long) tv.tv_usec);
         }
         break;
     default:
@@ -502,14 +500,24 @@ static void qtest_event(void *opaque, int event)
     }
 }
 
-int qtest_init(void)
+int qtest_init_accel(QEMUMachine *machine)
+{
+    configure_icount("0");
+
+    return 0;
+}
+
+void qtest_init(const char *qtest_chrdev, const char *qtest_log, Error **errp)
 {
     CharDriverState *chr;
 
-    g_assert(qtest_chrdev != NULL);
-
-    configure_icount("0");
     chr = qemu_chr_new("qtest", qtest_chrdev, NULL);
+
+    if (chr == NULL) {
+        error_setg(errp, "Failed to initialize device for qtest: \"%s\"",
+                   qtest_chrdev);
+        return;
+    }
 
     qemu_chr_add_handlers(chr, qtest_can_read, qtest_read, qtest_event, chr);
     qemu_chr_fe_set_echo(chr, true);
@@ -525,6 +533,9 @@ int qtest_init(void)
     }
 
     qtest_chr = chr;
+}
 
-    return 0;
+bool qtest_driver(void)
+{
+    return qtest_chr;
 }

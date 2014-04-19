@@ -155,7 +155,7 @@ int inet_listen_opts(QemuOpts *opts, int port_offset, Error **errp)
             continue;
         }
 
-        qemu_setsockopt(slisten, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+        socket_set_fast_reuse(slisten);
 #ifdef IPV6_V6ONLY
         if (e->ai_family == PF_INET6) {
             /* listen on both ipv4 and ipv6 */
@@ -274,7 +274,7 @@ static int inet_connect_addr(struct addrinfo *addr, bool *in_progress,
         error_set_errno(errp, errno, QERR_SOCKET_CREATE_FAILED);
         return -1;
     }
-    qemu_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    socket_set_fast_reuse(sock);
     if (connect_state != NULL) {
         qemu_set_nonblock(sock);
     }
@@ -455,7 +455,7 @@ int inet_dgram_opts(QemuOpts *opts, Error **errp)
         error_set_errno(errp, errno, QERR_SOCKET_CREATE_FAILED);
         goto err;
     }
-    qemu_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    socket_set_fast_reuse(sock);
 
     /* bind socket */
     if (bind(sock, local->ai_addr, local->ai_addrlen) < 0) {
@@ -578,7 +578,7 @@ int inet_listen(const char *str, char *ostr, int olen,
 
     addr = inet_parse(str, errp);
     if (addr != NULL) {
-        opts = qemu_opts_create_nofail(&socket_optslist);
+        opts = qemu_opts_create(&socket_optslist, NULL, 0, &error_abort);
         inet_addr_to_opts(opts, addr);
         qapi_free_InetSocketAddress(addr);
         sock = inet_listen_opts(opts, port_offset, errp);
@@ -617,7 +617,7 @@ int inet_connect(const char *str, Error **errp)
 
     addr = inet_parse(str, errp);
     if (addr != NULL) {
-        opts = qemu_opts_create_nofail(&socket_optslist);
+        opts = qemu_opts_create(&socket_optslist, NULL, 0, &error_abort);
         inet_addr_to_opts(opts, addr);
         qapi_free_InetSocketAddress(addr);
         sock = inet_connect_opts(opts, errp, NULL, NULL);
@@ -651,7 +651,7 @@ int inet_nonblocking_connect(const char *str,
 
     addr = inet_parse(str, errp);
     if (addr != NULL) {
-        opts = qemu_opts_create_nofail(&socket_optslist);
+        opts = qemu_opts_create(&socket_optslist, NULL, 0, &error_abort);
         inet_addr_to_opts(opts, addr);
         qapi_free_InetSocketAddress(addr);
         sock = inet_connect_opts(opts, errp, callback, opaque);
@@ -794,7 +794,7 @@ int unix_listen(const char *str, char *ostr, int olen, Error **errp)
     char *path, *optstr;
     int sock, len;
 
-    opts = qemu_opts_create_nofail(&socket_optslist);
+    opts = qemu_opts_create(&socket_optslist, NULL, 0, &error_abort);
 
     optstr = strchr(str, ',');
     if (optstr) {
@@ -822,7 +822,7 @@ int unix_connect(const char *path, Error **errp)
     QemuOpts *opts;
     int sock;
 
-    opts = qemu_opts_create_nofail(&socket_optslist);
+    opts = qemu_opts_create(&socket_optslist, NULL, 0, &error_abort);
     qemu_opt_set(opts, "path", path);
     sock = unix_connect_opts(opts, errp, NULL, NULL);
     qemu_opts_del(opts);
@@ -839,7 +839,7 @@ int unix_nonblocking_connect(const char *path,
 
     g_assert(callback != NULL);
 
-    opts = qemu_opts_create_nofail(&socket_optslist);
+    opts = qemu_opts_create(&socket_optslist, NULL, 0, &error_abort);
     qemu_opt_set(opts, "path", path);
     sock = unix_connect_opts(opts, errp, callback, opaque);
     qemu_opts_del(opts);
@@ -889,7 +889,7 @@ int socket_connect(SocketAddress *addr, Error **errp,
     QemuOpts *opts;
     int fd;
 
-    opts = qemu_opts_create_nofail(&socket_optslist);
+    opts = qemu_opts_create(&socket_optslist, NULL, 0, &error_abort);
     switch (addr->kind) {
     case SOCKET_ADDRESS_KIND_INET:
         inet_addr_to_opts(opts, addr->inet);
@@ -921,7 +921,7 @@ int socket_listen(SocketAddress *addr, Error **errp)
     QemuOpts *opts;
     int fd;
 
-    opts = qemu_opts_create_nofail(&socket_optslist);
+    opts = qemu_opts_create(&socket_optslist, NULL, 0, &error_abort);
     switch (addr->kind) {
     case SOCKET_ADDRESS_KIND_INET:
         inet_addr_to_opts(opts, addr->inet);
@@ -949,7 +949,7 @@ int socket_dgram(SocketAddress *remote, SocketAddress *local, Error **errp)
     QemuOpts *opts;
     int fd;
 
-    opts = qemu_opts_create_nofail(&socket_optslist);
+    opts = qemu_opts_create(&socket_optslist, NULL, 0, &error_abort);
     switch (remote->kind) {
     case SOCKET_ADDRESS_KIND_INET:
         qemu_opt_set(opts, "host", remote->inet->host);

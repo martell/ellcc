@@ -1,52 +1,20 @@
 // VGA bios implementation
 //
-// Copyright (C) 2009-2012  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2009-2013  Kevin O'Connor <kevin@koconnor.net>
 // Copyright (C) 2001-2008 the LGPL VGABios developers Team
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
-#include "bregs.h" // struct bregs
 #include "biosvar.h" // GET_BDA
-#include "util.h" // memset
-#include "vgabios.h" // calc_page_size
-#include "optionroms.h" // struct pci_data
-#include "config.h" // CONFIG_*
-#include "stdvga.h" // stdvga_set_cursor_shape
+#include "bregs.h" // struct bregs
 #include "clext.h" // clext_1012
+#include "config.h" // CONFIG_*
+#include "output.h" // dprintf
+#include "std/vbe.h" // VBE_RETURN_STATUS_FAILED
+#include "stdvga.h" // stdvga_set_cursor_shape
+#include "string.h" // memset_far
+#include "vgabios.h" // calc_page_size
 #include "vgahw.h" // vgahw_set_mode
-#include "vbe.h" // VBE_RETURN_STATUS_FAILED
-#include "pci.h" // pci_config_readw
-#include "pci_regs.h" // PCI_VENDOR_ID
-
-// Standard Video Save Pointer Table
-struct VideoSavePointer_s {
-    struct segoff_s videoparam;
-    struct segoff_s paramdynamicsave;
-    struct segoff_s textcharset;
-    struct segoff_s graphcharset;
-    struct segoff_s secsavepointer;
-    u8 reserved[8];
-} PACKED;
-
-static struct VideoSavePointer_s video_save_pointer_table VAR16;
-
-struct VideoParam_s video_param_table[29] VAR16;
-
-
-/****************************************************************
- * PCI Data
- ****************************************************************/
-
-struct pci_data rom_pci_data VAR16VISIBLE = {
-    .signature = PCI_ROM_SIGNATURE,
-    .vendor = CONFIG_VGA_VID,
-    .device = CONFIG_VGA_DID,
-    .dlen = 0x18,
-    .class_hi = 0x300,
-    .irevision = 1,
-    .type = PCIROM_CODETYPE_X86,
-    .indicator = 0x80,
-};
 
 
 /****************************************************************
@@ -420,7 +388,7 @@ handle_1000(struct bregs *regs)
     else
         regs->al = 0x30;
 
-    int flags = GET_BDA(modeset_ctl) & (MF_NOPALETTE|MF_GRAYSUM);
+    int flags = MF_LEGACY | (GET_BDA(modeset_ctl) & (MF_NOPALETTE|MF_GRAYSUM));
     if (regs->al & 0x80)
         flags |= MF_NOCLEARMEM;
 
@@ -1245,79 +1213,4 @@ handle_10(struct bregs *regs)
     case 0x4f: handle_104f(regs); break;
     default:   handle_10XX(regs); break;
     }
-}
-
-
-/****************************************************************
- * VGA post
- ****************************************************************/
-
-static void
-init_bios_area(void)
-{
-    // init detected hardware BIOS Area
-    // set 80x25 color (not clear from RBIL but usual)
-    set_equipment_flags(0x30, 0x20);
-
-    // the default char height
-    SET_BDA(char_height, 0x10);
-
-    // Clear the screen
-    SET_BDA(video_ctl, 0x60);
-
-    // Set the basic screen we have
-    SET_BDA(video_switches, 0xf9);
-
-    // Set the basic modeset options
-    SET_BDA(modeset_ctl, 0x51);
-
-    // Set the  default MSR
-    SET_BDA(video_msr, 0x09);
-}
-
-int VgaBDF VAR16 = -1;
-int HaveRunInit VAR16;
-
-void VISIBLE16
-vga_post(struct bregs *regs)
-{
-    debug_serial_setup();
-    dprintf(1, "Start SeaVGABIOS (version %s)\n", VERSION);
-    debug_enter(regs, DEBUG_VGA_POST);
-
-    if (CONFIG_VGA_PCI && !GET_GLOBAL(HaveRunInit)) {
-        u16 bdf = regs->ax;
-        if ((pci_config_readw(bdf, PCI_VENDOR_ID)
-             == GET_GLOBAL(rom_pci_data.vendor))
-            && (pci_config_readw(bdf, PCI_DEVICE_ID)
-                == GET_GLOBAL(rom_pci_data.device)))
-            SET_VGA(VgaBDF, bdf);
-    }
-
-    int ret = vgahw_init();
-    if (ret) {
-        dprintf(1, "Failed to initialize VGA hardware.  Exiting.\n");
-        return;
-    }
-
-    if (GET_GLOBAL(HaveRunInit))
-        return;
-
-    init_bios_area();
-
-    SET_VGA(video_save_pointer_table.videoparam
-            , SEGOFF(get_global_seg(), (u32)video_param_table));
-    stdvga_build_video_param();
-
-    extern void entry_10(void);
-    SET_IVT(0x10, SEGOFF(get_global_seg(), (u32)entry_10));
-
-    SET_VGA(HaveRunInit, 1);
-
-    // Fixup checksum
-    extern u8 _rom_header_size, _rom_header_checksum;
-    SET_VGA(_rom_header_checksum, 0);
-    u8 sum = -checksum_far(get_global_seg(), 0,
-                           GET_GLOBAL(_rom_header_size) * 512);
-    SET_VGA(_rom_header_checksum, sum);
 }

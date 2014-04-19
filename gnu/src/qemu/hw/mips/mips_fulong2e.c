@@ -276,7 +276,7 @@ static void mips_fulong2e_init(QEMUMachineInitArgs *args)
     qemu_irq *cpu_exit_irq;
     PCIBus *pci_bus;
     ISABus *isa_bus;
-    i2c_bus *smbus;
+    I2CBus *smbus;
     int i;
     DriveInfo *hd[MAX_IDE_BUS * MAX_IDE_DEVS];
     MIPSCPU *cpu;
@@ -403,7 +403,6 @@ static QEMUMachine mips_fulong2e_machine = {
     .name = "fulong2e",
     .desc = "Fulong 2e mini pc",
     .init = mips_fulong2e_init,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void mips_fulong2e_machine_init(void)

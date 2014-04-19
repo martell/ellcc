@@ -60,7 +60,7 @@ static int usb_ehci_pci_initfn(PCIDevice *dev)
     pci_conf[0x6e] = 0x00;
     pci_conf[0x6f] = 0xc0;  /* USBLEFCTLSTS */
 
-    s->irq = dev->irq[3];
+    s->irq = pci_allocate_irq(dev);
     s->as = pci_get_address_space(dev);
 
     usb_ehci_realize(s, DEVICE(dev), NULL);
@@ -123,7 +123,7 @@ static void ehci_class_init(ObjectClass *klass, void *data)
     k->init = usb_ehci_pci_initfn;
     k->class_id = PCI_CLASS_SERIAL_USB;
     k->config_write = usb_ehci_pci_write_config;
-    k->no_hotplug = 1;
+    dc->hotpluggable = false;
     dc->vmsd = &vmstate_ehci_pci;
     dc->props = ehci_pci_properties;
 }

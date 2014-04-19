@@ -23,6 +23,7 @@
 #include "config.h"
 #include "libopenbios/openbios.h"
 #include "libopenbios/bindings.h"
+#include "libopenbios/console.h"
 #include "drivers/pci.h"
 #include "arch/common/nvram.h"
 #include "drivers/drivers.h"
@@ -95,12 +96,12 @@ static const pci_arch_t known_arch[] = {
         .name = "PREP",
         .vendor_id = PCI_VENDOR_ID_MOTOROLA,
         .device_id = PCI_DEVICE_ID_MOTOROLA_RAVEN,
-        .cfg_addr = 0x80800000,
-        .cfg_data = 0x800c0000,
+        .cfg_addr = 0x80000cf8,
+        .cfg_data = 0x80000cfc,
         .cfg_base = 0x80000000,
         .cfg_len = 0x00100000,
-        .host_mem_base = 0xf0000000,
-        .pci_mem_base = 0xf0000000,
+        .host_pci_base = 0xc0000000,
+        .pci_mem_base = 0x100000, /* avoid VGA at 0xa0000 */
         .mem_len = 0x10000000,
         .io_base = 0x80000000,
         .io_len = 0x00010000,
@@ -116,7 +117,7 @@ static const pci_arch_t known_arch[] = {
         .cfg_data = 0xf2c00000,
         .cfg_base = 0xf2000000,
         .cfg_len = 0x02000000,
-        .host_mem_base = 0x80000000,
+        .host_pci_base = 0x0,
         .pci_mem_base = 0x80000000,
         .mem_len = 0x10000000,
         .io_base = 0xf2000000,
@@ -133,7 +134,7 @@ static const pci_arch_t known_arch[] = {
         .cfg_data = 0xf0c00000,
         .cfg_base = 0xf0000000,
         .cfg_len = 0x02000000,
-        .host_mem_base = 0x80000000,
+        .host_pci_base = 0x0,
         .pci_mem_base = 0x80000000,
         .mem_len = 0x10000000,
         .io_base = 0xf2000000,
@@ -150,7 +151,7 @@ static const pci_arch_t known_arch[] = {
         .cfg_data = 0xfee00000,
         .cfg_base = 0x80000000,
         .cfg_len = 0x7f000000,
-        .host_mem_base = 0x80000000,
+        .host_pci_base = 0x0,
         .pci_mem_base = 0x80000000,
         .mem_len = 0x10000000,
         .io_base = 0xfe000000,
@@ -161,6 +162,8 @@ static const pci_arch_t known_arch[] = {
     },
 };
 unsigned long isa_io_base;
+
+extern struct _console_ops mac_console_ops, prep_console_ops;
 
 void
 entry(void)
@@ -183,6 +186,14 @@ entry(void)
     }
 
     isa_io_base = arch->io_base;
+
+#ifdef CONFIG_DEBUG_CONSOLE
+    if (is_apple()) {
+        init_console(mac_console_ops);
+    } else {
+        init_console(prep_console_ops);
+    }
+#endif
 
     if (temp != 1) {
         printk("Incompatible configuration device version, freezing\n");
@@ -230,32 +241,32 @@ cpu_generic_init(const struct cpudef *cpu)
 
     PUSH(cpu->dcache_size);
     fword("encode-int");
-    push_str("dcache-size");
+    push_str("d-cache-size");
     fword("property");
 
     PUSH(cpu->icache_size);
     fword("encode-int");
-    push_str("icache-size");
+    push_str("i-cache-size");
     fword("property");
 
     PUSH(cpu->dcache_sets);
     fword("encode-int");
-    push_str("dcache-sets");
+    push_str("d-cache-sets");
     fword("property");
 
     PUSH(cpu->icache_sets);
     fword("encode-int");
-    push_str("icache-sets");
+    push_str("i-cache-sets");
     fword("property");
 
     PUSH(cpu->dcache_block_size);
     fword("encode-int");
-    push_str("dcache-block-size");
+    push_str("d-cache-block-size");
     fword("property");
 
     PUSH(cpu->icache_block_size);
     fword("encode-int");
-    push_str("icache-block-size");
+    push_str("i-cache-block-size");
     fword("property");
 
     PUSH(fw_cfg_read_i32(FW_CFG_PPC_TBFREQ));
@@ -734,12 +745,12 @@ arch_of_init(void)
 
         /* model */
 
-        push_str("PowerMac2,1");
+        push_str("PowerMac3,1");
         fword("model");
 
         /* compatible */
 
-        push_str("PowerMac2,1");
+        push_str("PowerMac3,1");
         fword("encode-string");
         push_str("MacRISC");
         fword("encode-string");
@@ -816,12 +827,17 @@ arch_of_init(void)
 #endif
 
     if (fw_cfg_read_i16(FW_CFG_NOGRAPHIC)) {
-        if (CONFIG_SERIAL_PORT) {
-           stdin_path = "scca";
-           stdout_path = "scca";
+        if (is_apple()) {
+            if (CONFIG_SERIAL_PORT) {
+                stdin_path = "scca";
+                stdout_path = "scca";
+            } else {
+                stdin_path = "sccb";
+                stdout_path = "sccb";
+            }
         } else {
-           stdin_path = "sccb";
-           stdout_path = "sccb";
+            stdin_path = "ttya";
+            stdout_path = "ttya";
         }
 
         /* Some bootloaders force the output to the screen device, so
@@ -836,8 +852,13 @@ arch_of_init(void)
         push_str("screen");
         fword("property");
     } else {
-        stdin_path = "adb-keyboard";
-        stdout_path = "screen";
+        if (is_apple()) {
+            stdin_path = "adb-keyboard";
+            stdout_path = "screen";
+        } else {
+            stdin_path = "keyboard";
+            stdout_path = "screen";
+        }
     }
 
     kvm_of_init();
@@ -870,18 +891,6 @@ arch_of_init(void)
     fword("find-device");
 
     push_str(stdin_path);
-    fword("open-dev");
-    fword("encode-int");
-    push_str("stdin");
-    fword("property");
-
-    push_str(stdout_path);
-    fword("open-dev");
-    fword("encode-int");
-    push_str("stdout");
-    fword("property");
-
-    push_str(stdin_path);
     fword("pathres-resolve-aliases");
     push_str("input-device");
     fword("$setenv");
@@ -890,12 +899,6 @@ arch_of_init(void)
     fword("pathres-resolve-aliases");
     push_str("output-device");
     fword("$setenv");
-
-    push_str(stdin_path);
-    fword("input");
-
-    push_str(stdout_path);
-    fword("output");
 
 #if 0
     if(getbool("tty-interface?") == 1)

@@ -27,8 +27,8 @@
 #include "qemu/timer.h"
 #include "qmp-commands.h"
 #include "sysemu/char.h"
+#include "trace.h"
 
-//#define DEBUG_CONSOLE
 #define DEFAULT_BACKSCROLL 512
 #define MAX_CONSOLES 12
 #define CONSOLE_CURSOR_PERIOD 500
@@ -124,6 +124,8 @@ struct QemuConsole {
 
     /* Graphic console state.  */
     Object *device;
+    uint32_t head;
+    QemuUIInfo ui_info;
     const GraphicHwOps *hw_ops;
     void *hw;
 
@@ -161,7 +163,7 @@ struct QemuConsole {
 };
 
 struct DisplayState {
-    struct QEMUTimer *gui_timer;
+    QEMUTimer *gui_timer;
     uint64_t last_update;
     uint64_t update_interval;
     bool refreshing;
@@ -208,8 +210,8 @@ static void gui_update(void *opaque)
         }
         trace_console_refresh(interval);
     }
-    ds->last_update = qemu_get_clock_ms(rt_clock);
-    qemu_mod_timer(ds->gui_timer, ds->last_update + interval);
+    ds->last_update = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+    timer_mod(ds->gui_timer, ds->last_update + interval);
 }
 
 static void gui_setup_refresh(DisplayState *ds)
@@ -232,12 +234,12 @@ static void gui_setup_refresh(DisplayState *ds)
     }
 
     if (need_timer && ds->gui_timer == NULL) {
-        ds->gui_timer = qemu_new_timer_ms(rt_clock, gui_update, ds);
-        qemu_mod_timer(ds->gui_timer, qemu_get_clock_ms(rt_clock));
+        ds->gui_timer = timer_new_ms(QEMU_CLOCK_REALTIME, gui_update, ds);
+        timer_mod(ds->gui_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME));
     }
     if (!need_timer && ds->gui_timer != NULL) {
-        qemu_del_timer(ds->gui_timer);
-        qemu_free_timer(ds->gui_timer);
+        timer_del(ds->gui_timer);
+        timer_free(ds->gui_timer);
         ds->gui_timer = NULL;
     }
 
@@ -408,39 +410,6 @@ static const pixman_color_t color_table_rgb[2][8] = {
         QEMU_RGB(0xff, 0xff, 0xff),  /* white */
     }
 };
-
-#ifdef DEBUG_CONSOLE
-static void console_print_text_attributes(TextAttributes *t_attrib, char ch)
-{
-    if (t_attrib->bold) {
-        printf("b");
-    } else {
-        printf(" ");
-    }
-    if (t_attrib->uline) {
-        printf("u");
-    } else {
-        printf(" ");
-    }
-    if (t_attrib->blink) {
-        printf("l");
-    } else {
-        printf(" ");
-    }
-    if (t_attrib->invers) {
-        printf("i");
-    } else {
-        printf(" ");
-    }
-    if (t_attrib->unvisible) {
-        printf("n");
-    } else {
-        printf(" ");
-    }
-
-    printf(" fg: %d bg: %d ch:'%2X' '%c'\n", t_attrib->fgcol, t_attrib->bgcol, ch, ch);
-}
-#endif
 
 static void vga_putcharxy(QemuConsole *s, int x, int y, int ch,
                           TextAttributes *t_attrib)
@@ -899,10 +868,8 @@ static void console_putchar(QemuConsole *s, int ch)
                 s->nb_esc_params++;
             if (ch == ';')
                 break;
-#ifdef DEBUG_CONSOLE
-            fprintf(stderr, "escape sequence CSI%d;%d%c, %d parameters\n",
-                    s->esc_params[0], s->esc_params[1], ch, s->nb_esc_params);
-#endif
+            trace_console_putchar_csi(s->esc_params[0], s->esc_params[1],
+                                      ch, s->nb_esc_params);
             s->state = TTY_STATE_NORM;
             switch(ch) {
             case 'A':
@@ -1016,9 +983,7 @@ static void console_putchar(QemuConsole *s, int ch)
                 s->y = s->y_saved;
                 break;
             default:
-#ifdef DEBUG_CONSOLE
-                fprintf(stderr, "unhandled escape character '%c'\n", ch);
-#endif
+                trace_console_putchar_unhandled(ch);
                 break;
             }
             break;
@@ -1040,7 +1005,7 @@ void console_select(unsigned int index)
         DisplayState *ds = s->ds;
 
         if (active_console && active_console->cursor_timer) {
-            qemu_del_timer(active_console->cursor_timer);
+            timer_del(active_console->cursor_timer);
         }
         active_console = s;
         if (ds->have_gfx) {
@@ -1059,8 +1024,8 @@ void console_select(unsigned int index)
             dpy_text_resize(s, s->width, s->height);
         }
         if (s->cursor_timer) {
-            qemu_mod_timer(s->cursor_timer,
-                   qemu_get_clock_ms(rt_clock) + CONSOLE_CURSOR_PERIOD / 2);
+            timer_mod(s->cursor_timer,
+                   qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + CONSOLE_CURSOR_PERIOD / 2);
         }
     }
 }
@@ -1105,7 +1070,7 @@ static void kbd_send_chars(void *opaque)
     /* characters are pending: we send them a bit later (XXX:
        horrible, should change char device API) */
     if (s->out_fifo.count > 0) {
-        qemu_mod_timer(s->kbd_timer, qemu_get_clock_ms(rt_clock) + 1);
+        timer_mod(s->kbd_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + 1);
     }
 }
 
@@ -1215,7 +1180,12 @@ static QemuConsole *new_console(DisplayState *ds, console_type_t console_type)
     obj = object_new(TYPE_QEMU_CONSOLE);
     s = QEMU_CONSOLE(obj);
     object_property_add_link(obj, "device", TYPE_DEVICE,
-                             (Object **)&s->device, &local_err);
+                             (Object **)&s->device,
+                             object_property_allow_set_link,
+                             OBJ_PROP_LINK_UNREF_ON_RELEASE,
+                             &local_err);
+    object_property_add_uint32_ptr(obj, "head",
+                                   &s->head, &local_err);
 
     if (!active_console || ((active_console->console_type != GRAPHIC_CONSOLE) &&
         (console_type == GRAPHIC_CONSOLE))) {
@@ -1366,7 +1336,7 @@ void update_displaychangelistener(DisplayChangeListener *dcl,
 
     dcl->update_interval = interval;
     if (!ds->refreshing && ds->update_interval > interval) {
-        qemu_mod_timer(ds->gui_timer, ds->last_update + interval);
+        timer_mod(ds->gui_timer, ds->last_update + interval);
     }
 }
 
@@ -1379,6 +1349,16 @@ void unregister_displaychangelistener(DisplayChangeListener *dcl)
     }
     QLIST_REMOVE(dcl, next);
     gui_setup_refresh(ds);
+}
+
+int dpy_set_ui_info(QemuConsole *con, QemuUIInfo *info)
+{
+    assert(con != NULL);
+    con->ui_info = *info;
+    if (con->hw_ops->ui_info) {
+        return con->hw_ops->ui_info(con->hw, con->head, info);
+    }
+    return -1;
 }
 
 void dpy_gfx_update(QemuConsole *con, int x, int y, int w, int h)
@@ -1606,7 +1586,7 @@ DisplayState *init_displaystate(void)
     return display_state;
 }
 
-QemuConsole *graphic_console_init(DeviceState *dev,
+QemuConsole *graphic_console_init(DeviceState *dev, uint32_t head,
                                   const GraphicHwOps *hw_ops,
                                   void *opaque)
 {
@@ -1624,6 +1604,8 @@ QemuConsole *graphic_console_init(DeviceState *dev,
     if (dev) {
         object_property_set_link(OBJECT(s), OBJECT(dev),
                                  "device", &local_err);
+        object_property_set_int(OBJECT(s), head,
+                                "head", &local_err);
     }
 
     s->surface = qemu_create_displaysurface(width, height);
@@ -1638,10 +1620,11 @@ QemuConsole *qemu_console_lookup_by_index(unsigned int index)
     return consoles[index];
 }
 
-QemuConsole *qemu_console_lookup_by_device(DeviceState *dev)
+QemuConsole *qemu_console_lookup_by_device(DeviceState *dev, uint32_t head)
 {
     Error *local_err = NULL;
     Object *obj;
+    uint32_t h;
     int i;
 
     for (i = 0; i < nb_consoles; i++) {
@@ -1650,9 +1633,15 @@ QemuConsole *qemu_console_lookup_by_device(DeviceState *dev)
         }
         obj = object_property_get_link(OBJECT(consoles[i]),
                                        "device", &local_err);
-        if (DEVICE(obj) == dev) {
-            return consoles[i];
+        if (DEVICE(obj) != dev) {
+            continue;
         }
+        h = object_property_get_int(OBJECT(consoles[i]),
+                                    "head", &local_err);
+        if (h != head) {
+            continue;
+        }
+        return consoles[i];
     }
     return NULL;
 }
@@ -1678,6 +1667,44 @@ bool qemu_console_is_fixedsize(QemuConsole *con)
     return con && (con->console_type != TEXT_CONSOLE);
 }
 
+int qemu_console_get_index(QemuConsole *con)
+{
+    if (con == NULL) {
+        con = active_console;
+    }
+    return con ? con->index : -1;
+}
+
+uint32_t qemu_console_get_head(QemuConsole *con)
+{
+    if (con == NULL) {
+        con = active_console;
+    }
+    return con ? con->head : -1;
+}
+
+QemuUIInfo *qemu_console_get_ui_info(QemuConsole *con)
+{
+    assert(con != NULL);
+    return &con->ui_info;
+}
+
+int qemu_console_get_width(QemuConsole *con, int fallback)
+{
+    if (con == NULL) {
+        con = active_console;
+    }
+    return con ? surface_width(con->surface) : fallback;
+}
+
+int qemu_console_get_height(QemuConsole *con, int fallback)
+{
+    if (con == NULL) {
+        con = active_console;
+    }
+    return con ? surface_height(con->surface) : fallback;
+}
+
 static void text_console_set_echo(CharDriverState *chr, bool echo)
 {
     QemuConsole *s = chr->opaque;
@@ -1691,8 +1718,8 @@ static void text_console_update_cursor(void *opaque)
 
     s->cursor_visible_phase = !s->cursor_visible_phase;
     graphic_hw_invalidate(s);
-    qemu_mod_timer(s->cursor_timer,
-                   qemu_get_clock_ms(rt_clock) + CONSOLE_CURSOR_PERIOD / 2);
+    timer_mod(s->cursor_timer,
+                   qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + CONSOLE_CURSOR_PERIOD / 2);
 }
 
 static const GraphicHwOps text_console_ops = {
@@ -1712,7 +1739,7 @@ static void text_console_do_init(CharDriverState *chr, DisplayState *ds)
 
     s->out_fifo.buf = s->out_fifo_buf;
     s->out_fifo.buf_size = sizeof(s->out_fifo_buf);
-    s->kbd_timer = qemu_new_timer_ms(rt_clock, kbd_send_chars, s);
+    s->kbd_timer = timer_new_ms(QEMU_CLOCK_REALTIME, kbd_send_chars, s);
     s->ds = ds;
 
     s->y_displayed = 0;
@@ -1729,7 +1756,7 @@ static void text_console_do_init(CharDriverState *chr, DisplayState *ds)
     }
 
     s->cursor_timer =
-        qemu_new_timer_ms(rt_clock, text_console_update_cursor, s);
+        timer_new_ms(QEMU_CLOCK_REALTIME, text_console_update_cursor, s);
 
     s->hw_ops = &text_console_ops;
     s->hw = s;

@@ -70,7 +70,7 @@ static void isa_ide_realizefn(DeviceState *dev, Error **errp)
     ISADevice *isadev = ISA_DEVICE(dev);
     ISAIDEState *s = ISA_IDE(dev);
 
-    ide_bus_new(&s->bus, dev, 0, 2);
+    ide_bus_new(&s->bus, sizeof(s->bus), dev, 0, 2);
     ide_init_ioport(&s->bus, isadev, s->iobase, s->iobase2);
     isa_init_irq(isadev, &s->irq, s->isairq);
     ide_init2(&s->bus, s->irq);
@@ -104,8 +104,8 @@ ISADevice *isa_ide_init(ISABus *bus, int iobase, int iobase2, int isairq,
 }
 
 static Property isa_ide_properties[] = {
-    DEFINE_PROP_HEX32("iobase",  ISAIDEState, iobase,  0x1f0),
-    DEFINE_PROP_HEX32("iobase2", ISAIDEState, iobase2, 0x3f6),
+    DEFINE_PROP_UINT32("iobase",  ISAIDEState, iobase,  0x1f0),
+    DEFINE_PROP_UINT32("iobase2", ISAIDEState, iobase2, 0x3f6),
     DEFINE_PROP_UINT32("irq",    ISAIDEState, isairq,  14),
     DEFINE_PROP_END_OF_LIST(),
 };

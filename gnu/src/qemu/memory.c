@@ -22,6 +22,7 @@
 #include <assert.h>
 
 #include "exec/memory-internal.h"
+#include "exec/ram_addr.h"
 
 //#define DEBUG_UNASSIGNED
 
@@ -872,7 +873,7 @@ static uint64_t unassigned_mem_read(void *opaque, hwaddr addr,
     if (current_cpu != NULL) {
         cpu_unassigned_access(current_cpu, addr, false, false, 0, size);
     }
-    return -1ULL;
+    return 0;
 }
 
 static void unassigned_mem_write(void *opaque, hwaddr addr,
@@ -1174,15 +1175,14 @@ bool memory_region_get_dirty(MemoryRegion *mr, hwaddr addr,
                              hwaddr size, unsigned client)
 {
     assert(mr->terminates);
-    return cpu_physical_memory_get_dirty(mr->ram_addr + addr, size,
-                                         1 << client);
+    return cpu_physical_memory_get_dirty(mr->ram_addr + addr, size, client);
 }
 
 void memory_region_set_dirty(MemoryRegion *mr, hwaddr addr,
                              hwaddr size)
 {
     assert(mr->terminates);
-    return cpu_physical_memory_set_dirty_range(mr->ram_addr + addr, size, -1);
+    cpu_physical_memory_set_dirty_range(mr->ram_addr + addr, size);
 }
 
 bool memory_region_test_and_clear_dirty(MemoryRegion *mr, hwaddr addr,
@@ -1190,12 +1190,9 @@ bool memory_region_test_and_clear_dirty(MemoryRegion *mr, hwaddr addr,
 {
     bool ret;
     assert(mr->terminates);
-    ret = cpu_physical_memory_get_dirty(mr->ram_addr + addr, size,
-                                        1 << client);
+    ret = cpu_physical_memory_get_dirty(mr->ram_addr + addr, size, client);
     if (ret) {
-        cpu_physical_memory_reset_dirty(mr->ram_addr + addr,
-                                        mr->ram_addr + addr + size,
-                                        1 << client);
+        cpu_physical_memory_reset_dirty(mr->ram_addr + addr, size, client);
     }
     return ret;
 }
@@ -1241,9 +1238,7 @@ void memory_region_reset_dirty(MemoryRegion *mr, hwaddr addr,
                                hwaddr size, unsigned client)
 {
     assert(mr->terminates);
-    cpu_physical_memory_reset_dirty(mr->ram_addr + addr,
-                                    mr->ram_addr + addr + size,
-                                    1 << client);
+    cpu_physical_memory_reset_dirty(mr->ram_addr + addr, size, client);
 }
 
 void *memory_region_get_ram_ptr(MemoryRegion *mr)
@@ -1473,7 +1468,7 @@ void memory_region_add_subregion(MemoryRegion *mr,
 void memory_region_add_subregion_overlap(MemoryRegion *mr,
                                          hwaddr offset,
                                          MemoryRegion *subregion,
-                                         unsigned priority)
+                                         int priority)
 {
     subregion->may_overlap = true;
     subregion->priority = priority;
@@ -1506,7 +1501,7 @@ void memory_region_set_enabled(MemoryRegion *mr, bool enabled)
 void memory_region_set_address(MemoryRegion *mr, hwaddr addr)
 {
     MemoryRegion *parent = mr->parent;
-    unsigned priority = mr->priority;
+    int priority = mr->priority;
     bool may_overlap = mr->may_overlap;
 
     if (addr == mr->addr || !parent) {
@@ -1567,7 +1562,7 @@ static FlatRange *flatview_lookup(FlatView *view, AddrRange addr)
 bool memory_region_present(MemoryRegion *parent, hwaddr addr)
 {
     MemoryRegion *mr = memory_region_find(parent, addr, 1).mr;
-    if (!mr) {
+    if (!mr || (mr == parent)) {
         return false;
     }
     memory_region_unref(mr);
@@ -1596,6 +1591,7 @@ MemoryRegionSection memory_region_find(MemoryRegion *mr,
     view = address_space_get_flatview(as);
     fr = flatview_lookup(view, range);
     if (!fr) {
+        flatview_unref(view);
         return ret;
     }
 
@@ -1809,7 +1805,9 @@ static void mtree_print_mr(fprintf_function mon_printf, void *f,
                    mr->alias->name,
                    mr->alias_offset,
                    mr->alias_offset
-                   + (hwaddr)int128_get64(mr->size) - 1);
+                   + (int128_nz(mr->size) ?
+                      (hwaddr)int128_get64(int128_sub(mr->size,
+                                                      int128_one())) : 0));
     } else {
         mon_printf(f,
                    TARGET_FMT_plx "-" TARGET_FMT_plx " (prio %d, %c%c): %s\n",

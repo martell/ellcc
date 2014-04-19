@@ -120,14 +120,12 @@ extern ucell ofmem_map_io( phys_addr_t phys, ucell size );
 extern void  ofmem_release( ucell virt, ucell size );
 extern void  ofmem_release_phys( phys_addr_t phys, ucell size );
 extern void  ofmem_release_virt( ucell virt, ucell size );
+extern void  ofmem_release_io( ucell virt, ucell size );
 extern phys_addr_t ofmem_translate( ucell virt, ucell *ret_mode );
 
 /* memory and virtual-memory nodes */
 extern phandle_t s_phandle_memory;
 extern phandle_t s_phandle_mmu;
-
-/* Currently the same for all architectures */
-#define PAGE_SHIFT   12
 
 #define PAGE_SIZE    (1 << PAGE_SHIFT)
 #define PAGE_MASK    (~(PAGE_SIZE - 1))

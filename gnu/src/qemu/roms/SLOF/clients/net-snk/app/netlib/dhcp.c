@@ -173,20 +173,8 @@ static char   * response_buffer;
 
 /*>>>>>>>>>>>>>>>>>>>>>>>>>>>> IMPLEMENTATION <<<<<<<<<<<<<<<<<<<<<<<<<<<*/
 
-/**
- * DHCP: Obtains IP and configuration info from DHCP server
- *       (makes several attempts).
- *
- * @param  boot_device   a socket number used to send and receive packets
- * @param  fn_ip         contains the following configuration information:
- *                       client MAC, client IP, TFTP-server MAC, 
- *                       TFTP-server IP, Boot file name
- * @return               ZERO - IP and configuration info obtained;
- *                       NON ZERO - error condition occurs.
- */
 int32_t
-dhcp(char *ret_buffer, filename_ip_t * fn_ip, unsigned int retries) {
-	int i = (int) retries+1;
+dhcpv4(char *ret_buffer, filename_ip_t * fn_ip) {
 
 	uint32_t dhcp_tftp_ip     = 0;
 	strcpy((char *) dhcp_filename, "");
@@ -194,20 +182,8 @@ dhcp(char *ret_buffer, filename_ip_t * fn_ip, unsigned int retries) {
 
 	response_buffer = ret_buffer;
 
-	printf("    ");
-
-	do {
-		printf("\b\b\b%03d", i-1);
-		if (getchar() == 27) {
-			printf("\nAborted\n");
-			return -1;
-		}
-		if (!--i) {
-			printf("\nGiving up after %d DHCP requests\n", retries);
-			return -1;
-		}
-	} while (!dhcp_attempt());
-	printf("\b\b\b\b");
+	if (dhcp_attempt() == 0)
+		return -1;
 
 	if (fn_ip->own_ip) {
 		dhcp_own_ip = fn_ip->own_ip;
@@ -232,7 +208,7 @@ dhcp(char *ret_buffer, filename_ip_t * fn_ip, unsigned int retries) {
 	else {
 		// TFTP server defined by its name
 		if (!strtoip(dhcp_tftp_name, &(dhcp_tftp_ip))) {
-			if (!dns_get_ip(dhcp_tftp_name, &(dhcp_tftp_ip))) {
+			if (!dns_get_ip(dhcp_tftp_name, (uint8_t *)&(dhcp_tftp_ip), 4)) {
 				// DNS error - can't obtain TFTP-server name  
 				// Use TFTP-ip from siaddr field, if presented
 				if (dhcp_siaddr_ip) {
@@ -761,13 +737,6 @@ handle_dhcp(uint8_t * packet, int32_t packetsize) {
 	if (btph -> op != 2)
 		return -1; // it is not Boot Reply
 
-	if(response_buffer) {
-		if(packetsize <= 1720)
-			memcpy(response_buffer, packet, packetsize);
-		else
-			memcpy(response_buffer, packet, 1720);
-	}
-
 	if (memcmp(btph -> vend, dhcp_magic, 4)) {
 		// It is BootP - RFC 951
 		dhcp_own_ip    = htonl(btph -> yiaddr);
@@ -930,6 +899,13 @@ handle_dhcp(uint8_t * packet, int32_t packetsize) {
 		// to be able to answer for foreign requests
 		set_ipv4_address(dhcp_own_ip);
 
+		if(response_buffer) {
+			if(packetsize <= 1720)
+				memcpy(response_buffer, packet, packetsize);
+			else
+				memcpy(response_buffer, packet, 1720);
+		}
+
 		/* Subnet mask */
 		if (opt.flag[DHCP_MASK]) {
 			/* Router */
@@ -941,7 +917,7 @@ handle_dhcp(uint8_t * packet, int32_t packetsize) {
 
 		/* DNS-server */
 		if (opt.flag[DHCP_DNS]) {
-			dns_init(opt.dns_IP);
+			dns_init(opt.dns_IP, 0, 4);
 		}
 	}
 

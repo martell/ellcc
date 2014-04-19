@@ -37,6 +37,7 @@ struct DriveInfo {
     int bus;
     int unit;
     int auto_del;               /* see blockdev_mark_auto_del() */
+    bool enable_auto_del; /* Only for legacy drive_init() */
     int media_cd;
     int cyls, heads, secs, trans;
     QemuOpts *opts;
@@ -63,7 +64,7 @@ DriveInfo *drive_init(QemuOpts *arg, BlockInterfaceType block_default_type);
 DriveInfo *add_init_drive(const char *opts);
 
 void qmp_change_blockdev(const char *device, const char *filename,
-                         bool has_format, const char *format, Error **errp);
+                         const char *format, Error **errp);
 void do_commit(Monitor *mon, const QDict *qdict);
 int do_drive_del(Monitor *mon, const QDict *qdict, QObject **ret_data);
 #endif

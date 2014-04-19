@@ -5,12 +5,12 @@
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
-#include "vgabios.h" // struct vgamode_s
-#include "stdvga.h" // stdvga_init
-#include "ioport.h" // outb
-#include "farptr.h" // SET_FARVAR
 #include "biosvar.h" // GET_GLOBAL
-#include "util.h" // memcpy_far
+#include "farptr.h" // SET_FARVAR
+#include "stdvga.h" // stdvga_setup
+#include "string.h" // memset_far
+#include "vgabios.h" // struct vgamode_s
+#include "x86.h" // outb
 
 
 /****************************************************************
@@ -123,6 +123,7 @@ stdvga_perform_gray_scale_summing(u16 start, u16 count)
         u16 intensity = ((77 * rgb[0] + 151 * rgb[1] + 28 * rgb[2]) + 0x80) >> 8;
         if (intensity > 0x3f)
             intensity = 0x3f;
+        rgb[0] = rgb[1] = rgb[2] = intensity;
 
         stdvga_dac_write(GET_SEG(SS), rgb, i, 1);
     }
@@ -211,19 +212,19 @@ stdvga_get_crtc(void)
     return VGAREG_MDA_CRTC_ADDRESS;
 }
 
-// Return the multiplication factor needed for the vga offset register.
+// Ratio between system visible framebuffer ram and the actual videoram used.
 int
-stdvga_bpp_factor(struct vgamode_s *vmode_g)
+stdvga_vram_ratio(struct vgamode_s *vmode_g)
 {
     switch (GET_GLOBAL(vmode_g->memmodel)) {
     case MM_TEXT:
         return 2;
     case MM_CGA:
-        return GET_GLOBAL(vmode_g->depth);
+        return 4 / GET_GLOBAL(vmode_g->depth);
     case MM_PLANAR:
-        return 1;
-    default:
         return 4;
+    default:
+        return 1;
     }
 }
 
@@ -277,14 +278,14 @@ int
 stdvga_get_linelength(struct vgamode_s *vmode_g)
 {
     u8 val = stdvga_crtc_read(stdvga_get_crtc(), 0x13);
-    return val * stdvga_bpp_factor(vmode_g) * 2;
+    return val * 8 / stdvga_vram_ratio(vmode_g);
 }
 
 int
 stdvga_set_linelength(struct vgamode_s *vmode_g, int val)
 {
-    int factor = stdvga_bpp_factor(vmode_g) * 2;
-    stdvga_crtc_write(stdvga_get_crtc(), 0x13, DIV_ROUND_UP(val, factor));
+    val = DIV_ROUND_UP(val * stdvga_vram_ratio(vmode_g), 8);
+    stdvga_crtc_write(stdvga_get_crtc(), 0x13, val);
     return 0;
 }
 
@@ -294,14 +295,14 @@ stdvga_get_displaystart(struct vgamode_s *vmode_g)
     u16 crtc_addr = stdvga_get_crtc();
     int addr = (stdvga_crtc_read(crtc_addr, 0x0c) << 8
                 | stdvga_crtc_read(crtc_addr, 0x0d));
-    return addr * stdvga_bpp_factor(vmode_g);
+    return addr * 4 / stdvga_vram_ratio(vmode_g);
 }
 
 int
 stdvga_set_displaystart(struct vgamode_s *vmode_g, int val)
 {
     u16 crtc_addr = stdvga_get_crtc();
-    val /= stdvga_bpp_factor(vmode_g);
+    val = val * stdvga_vram_ratio(vmode_g) / 4;
     stdvga_crtc_write(crtc_addr, 0x0c, val >> 8);
     stdvga_crtc_write(crtc_addr, 0x0d, val);
     return 0;
@@ -490,7 +491,7 @@ stdvga_enable_video_addressing(u8 disable)
 }
 
 int
-stdvga_init(void)
+stdvga_setup(void)
 {
     // switch to color mode and enable CPU access 480 lines
     stdvga_misc_write(0xc3);

@@ -16,6 +16,8 @@ static Property usb_props[] = {
     DEFINE_PROP_STRING("serial", USBDevice, serial),
     DEFINE_PROP_BIT("full-path", USBDevice, flags,
                     USB_DEV_FLAG_FULL_PATH, true),
+    DEFINE_PROP_BIT("msos-desc", USBDevice, flags,
+                    USB_DEV_FLAG_MSOS_DESC_ENABLE, true),
     DEFINE_PROP_END_OF_LIST()
 };
 
@@ -47,6 +49,10 @@ static int usb_device_post_load(void *opaque, int version_id)
     } else {
         dev->attached = 1;
     }
+    if (dev->setup_index >= sizeof(dev->data_buf) ||
+        dev->setup_len >= sizeof(dev->data_buf)) {
+        return -EINVAL;
+    }
     return 0;
 }
 
@@ -67,9 +73,10 @@ const VMStateDescription vmstate_usb_device = {
     }
 };
 
-void usb_bus_new(USBBus *bus, USBBusOps *ops, DeviceState *host)
+void usb_bus_new(USBBus *bus, size_t bus_size,
+                 USBBusOps *ops, DeviceState *host)
 {
-    qbus_create_inplace(&bus->qbus, TYPE_USB_BUS, host, NULL);
+    qbus_create_inplace(bus, bus_size, TYPE_USB_BUS, host, NULL);
     bus->ops = ops;
     bus->busnr = next_usb_bus++;
     bus->qbus.allow_hotplug = 1; /* Yes, we can */
@@ -195,6 +202,24 @@ void usb_device_ep_stopped(USBDevice *dev, USBEndpoint *ep)
     USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
     if (klass->ep_stopped) {
         klass->ep_stopped(dev, ep);
+    }
+}
+
+int usb_device_alloc_streams(USBDevice *dev, USBEndpoint **eps, int nr_eps,
+                             int streams)
+{
+    USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
+    if (klass->alloc_streams) {
+        return klass->alloc_streams(dev, eps, nr_eps, streams);
+    }
+    return 0;
+}
+
+void usb_device_free_streams(USBDevice *dev, USBEndpoint **eps, int nr_eps)
+{
+    USBDeviceClass *klass = USB_DEVICE_GET_CLASS(dev);
+    if (klass->free_streams) {
+        klass->free_streams(dev, eps, nr_eps);
     }
 }
 
@@ -351,8 +376,9 @@ void usb_port_location(USBPort *downstream, USBPort *upstream, int portnr)
 
 void usb_unregister_port(USBBus *bus, USBPort *port)
 {
-    if (port->dev)
-        qdev_free(&port->dev->qdev);
+    if (port->dev) {
+        object_unparent(OBJECT(port->dev));
+    }
     QTAILQ_REMOVE(&bus->free, port, next);
     bus->nfree--;
 }
@@ -500,7 +526,7 @@ int usb_device_delete_addr(int busnr, int addr)
         return -1;
     dev = port->dev;
 
-    qdev_free(&dev->qdev);
+    object_unparent(OBJECT(dev));
     return 0;
 }
 

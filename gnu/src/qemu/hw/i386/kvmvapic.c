@@ -366,7 +366,7 @@ static int vapic_enable(VAPICROMState *s, X86CPU *cpu)
         (((hwaddr)cpu_number) << VAPIC_CPU_SHIFT);
     cpu_physical_memory_rw(vapic_paddr + offsetof(VAPICState, enabled),
                            (void *)&enabled, sizeof(enabled), 1);
-    apic_enable_vapic(cpu->env.apic_state, vapic_paddr);
+    apic_enable_vapic(cpu->apic_state, vapic_paddr);
 
     s->state = VAPIC_ACTIVE;
 
@@ -406,7 +406,7 @@ static void patch_instruction(VAPICROMState *s, X86CPU *cpu, target_ulong ip)
     }
 
     if (!kvm_enabled()) {
-        cpu_restore_state(env, env->mem_io_pc);
+        cpu_restore_state(cs, cs->mem_io_pc);
         cpu_get_tb_cpu_state(env, &current_pc, &current_cs_base,
                              &current_flags);
     }
@@ -448,8 +448,8 @@ static void patch_instruction(VAPICROMState *s, X86CPU *cpu, target_ulong ip)
 
     if (!kvm_enabled()) {
         cs->current_tb = NULL;
-        tb_gen_code(env, current_pc, current_cs_base, current_flags, 1);
-        cpu_resume_from_signal(env, NULL);
+        tb_gen_code(cs, current_pc, current_cs_base, current_flags, 1);
+        cpu_resume_from_signal(cs, NULL);
     }
 }
 
@@ -496,12 +496,10 @@ static void vapic_enable_tpr_reporting(bool enable)
     };
     CPUState *cs;
     X86CPU *cpu;
-    CPUX86State *env;
 
-    for (cs = first_cpu; cs != NULL; cs = cs->next_cpu) {
+    CPU_FOREACH(cs) {
         cpu = X86_CPU(cs);
-        env = &cpu->env;
-        info.apic = env->apic_state;
+        info.apic = cpu->apic_state;
         run_on_cpu(cs, vapic_do_enable_tpr_reporting, &info);
     }
 }
@@ -510,9 +508,8 @@ static void vapic_reset(DeviceState *dev)
 {
     VAPICROMState *s = VAPIC(dev);
 
-    if (s->state == VAPIC_ACTIVE) {
-        s->state = VAPIC_STANDBY;
-    }
+    s->state = VAPIC_INACTIVE;
+    s->rom_state_paddr = 0;
     vapic_enable_tpr_reporting(false);
 }
 
@@ -578,7 +575,7 @@ static int patch_hypercalls(VAPICROMState *s)
  * enable write access to the option ROM so that variables can be updated by
  * the guest.
  */
-static void vapic_map_rom_writable(VAPICROMState *s)
+static int vapic_map_rom_writable(VAPICROMState *s)
 {
     hwaddr rom_paddr = s->rom_state_paddr & ROM_BLOCK_MASK;
     MemoryRegionSection section;
@@ -597,8 +594,14 @@ static void vapic_map_rom_writable(VAPICROMState *s)
     section = memory_region_find(as, 0, 1);
 
     /* read ROM size from RAM region */
+    if (rom_paddr + 2 >= memory_region_size(section.mr)) {
+        return -1;
+    }
     ram = memory_region_get_ram_ptr(section.mr);
     rom_size = ram[rom_paddr + 2] * ROM_BLOCK_SIZE;
+    if (rom_size == 0) {
+        return -1;
+    }
     s->rom_size = rom_size;
 
     /* We need to round to avoid creating subpages
@@ -612,11 +615,15 @@ static void vapic_map_rom_writable(VAPICROMState *s)
     memory_region_add_subregion_overlap(as, rom_paddr, &s->rom, 1000);
     s->rom_mapped_writable = true;
     memory_region_unref(section.mr);
+
+    return 0;
 }
 
 static int vapic_prepare(VAPICROMState *s)
 {
-    vapic_map_rom_writable(s);
+    if (vapic_map_rom_writable(s) < 0) {
+        return -1;
+    }
 
     if (patch_hypercalls(s) < 0) {
         return -1;
@@ -659,6 +666,7 @@ static void vapic_write(void *opaque, hwaddr addr, uint64_t data,
         }
         if (vapic_prepare(s) < 0) {
             s->state = VAPIC_INACTIVE;
+            s->rom_state_paddr = 0;
             break;
         }
         break;
@@ -690,7 +698,7 @@ static void vapic_write(void *opaque, hwaddr addr, uint64_t data,
     default:
     case 4:
         if (!kvm_irqchip_in_kernel()) {
-            apic_poll_irq(env->apic_state);
+            apic_poll_irq(cpu->apic_state);
         }
         break;
     }
@@ -817,7 +825,6 @@ static void vapic_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
-    dc->no_user = 1;
     dc->reset   = vapic_reset;
     dc->vmsd    = &vmstate_vapic;
     dc->realize = vapic_realize;

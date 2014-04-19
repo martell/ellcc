@@ -65,10 +65,7 @@ void *qemu_anon_ram_alloc(size_t size)
     /* FIXME: this is not exactly optimal solution since VirtualAlloc
        has 64Kb granularity, but at least it guarantees us that the
        memory is page aligned. */
-    if (!size) {
-        abort();
-    }
-    ptr = qemu_oom_check(VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE));
+    ptr = VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE);
     trace_qemu_anon_ram_alloc(size, ptr);
     return ptr;
 }
@@ -127,6 +124,16 @@ void qemu_set_nonblock(int fd)
     qemu_fd_register(fd);
 }
 
+int socket_set_fast_reuse(int fd)
+{
+    /* Enabling the reuse of an endpoint that was used by a socket still in
+     * TIME_WAIT state is usually performed by setting SO_REUSEADDR. On Windows
+     * fast reuse is the default and SO_REUSEADDR does strange things. So we
+     * don't have to do anything here. More info can be found at:
+     * http://msdn.microsoft.com/en-us/library/windows/desktop/ms740621.aspx */
+    return 0;
+}
+
 int inet_aton(const char *cp, struct in_addr *ia)
 {
     uint32_t addr = inet_addr(cp);
@@ -181,4 +188,53 @@ qemu_get_local_state_pathname(const char *relative_pathname)
     }
     return g_strdup_printf("%s" G_DIR_SEPARATOR_S "%s", base_path,
                            relative_pathname);
+}
+
+void qemu_set_tty_echo(int fd, bool echo)
+{
+    HANDLE handle = (HANDLE)_get_osfhandle(fd);
+    DWORD dwMode = 0;
+
+    if (handle == INVALID_HANDLE_VALUE) {
+        return;
+    }
+
+    GetConsoleMode(handle, &dwMode);
+
+    if (echo) {
+        SetConsoleMode(handle, dwMode | ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT);
+    } else {
+        SetConsoleMode(handle,
+                       dwMode & ~(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT));
+    }
+}
+
+static char exec_dir[PATH_MAX];
+
+void qemu_init_exec_dir(const char *argv0)
+{
+
+    char *p;
+    char buf[MAX_PATH];
+    DWORD len;
+
+    len = GetModuleFileName(NULL, buf, sizeof(buf) - 1);
+    if (len == 0) {
+        return;
+    }
+
+    buf[len] = 0;
+    p = buf + len - 1;
+    while (p != buf && *p != '\\') {
+        p--;
+    }
+    *p = 0;
+    if (access(buf, R_OK) == 0) {
+        pstrcpy(exec_dir, sizeof(exec_dir), buf);
+    }
+}
+
+char *qemu_get_exec_dir(void)
+{
+    return g_strdup(exec_dir);
 }

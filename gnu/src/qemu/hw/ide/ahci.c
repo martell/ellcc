@@ -118,11 +118,12 @@ static uint32_t  ahci_port_read(AHCIState *s, int port, int offset)
 static void ahci_irq_raise(AHCIState *s, AHCIDevice *dev)
 {
     AHCIPCIState *d = container_of(s, AHCIPCIState, ahci);
-    PCIDevice *pci_dev = PCI_DEVICE(d);
+    PCIDevice *pci_dev =
+        (PCIDevice *)object_dynamic_cast(OBJECT(d), TYPE_PCI_DEVICE);
 
     DPRINTF(0, "raise irq\n");
 
-    if (msi_enabled(pci_dev)) {
+    if (pci_dev && msi_enabled(pci_dev)) {
         msi_notify(pci_dev, 0);
     } else {
         qemu_irq_raise(s->irq);
@@ -132,10 +133,12 @@ static void ahci_irq_raise(AHCIState *s, AHCIDevice *dev)
 static void ahci_irq_lower(AHCIState *s, AHCIDevice *dev)
 {
     AHCIPCIState *d = container_of(s, AHCIPCIState, ahci);
+    PCIDevice *pci_dev =
+        (PCIDevice *)object_dynamic_cast(OBJECT(d), TYPE_PCI_DEVICE);
 
     DPRINTF(0, "lower irq\n");
 
-    if (!msi_enabled(PCI_DEVICE(d))) {
+    if (!pci_dev || !msi_enabled(pci_dev)) {
         qemu_irq_lower(s->irq);
     }
 }
@@ -961,7 +964,8 @@ static int handle_cmd(AHCIState *s, int port, int slot)
         /* We're ready to process the command in FIS byte 2. */
         ide_exec_cmd(&s->dev[port].port, cmd_fis[2]);
 
-        if (s->dev[port].port.ifs[0].status & READY_STAT) {
+        if ((s->dev[port].port.ifs[0].status & (READY_STAT|DRQ_STAT|BUSY_STAT)) ==
+            READY_STAT) {
             ahci_write_fis_d2h(&s->dev[port], cmd_fis);
         }
     }
@@ -1175,7 +1179,7 @@ void ahci_init(AHCIState *s, DeviceState *qdev, AddressSpace *as, int ports)
     for (i = 0; i < s->ports; i++) {
         AHCIDevice *ad = &s->dev[i];
 
-        ide_bus_new(&ad->port, qdev, i, 1);
+        ide_bus_new(&ad->port, sizeof(ad->port), qdev, i, 1);
         ide_init2(&ad->port, irqs[i]);
 
         ad->hba = s;
@@ -1198,7 +1202,15 @@ void ahci_reset(AHCIState *s)
     int i;
 
     s->control_regs.irqstatus = 0;
-    s->control_regs.ghc = 0;
+    /* AHCI Enable (AE)
+     * The implementation of this bit is dependent upon the value of the
+     * CAP.SAM bit. If CAP.SAM is '0', then GHC.AE shall be read-write and
+     * shall have a reset value of '0'. If CAP.SAM is '1', then AE shall be
+     * read-only and shall have a reset value of '1'.
+     *
+     * We set HOST_CAP_AHCI so we must enable AHCI at reset.
+     */
+    s->control_regs.ghc = HOST_CTL_AHCI_EN;
 
     for (i = 0; i < s->ports; i++) {
         pr = &s->dev[i].port_regs;
@@ -1302,7 +1314,7 @@ static const VMStateDescription vmstate_sysbus_ahci = {
     .name = "sysbus-ahci",
     .unmigratable = 1, /* Still buggy under I/O load */
     .fields = (VMStateField []) {
-        VMSTATE_AHCI(ahci, AHCIPCIState),
+        VMSTATE_AHCI(ahci, SysbusAHCIState),
         VMSTATE_END_OF_LIST()
     },
 };
@@ -1319,7 +1331,7 @@ static void sysbus_ahci_realize(DeviceState *dev, Error **errp)
     SysBusDevice *sbd = SYS_BUS_DEVICE(dev);
     SysbusAHCIState *s = SYSBUS_AHCI(dev);
 
-    ahci_init(&s->ahci, dev, NULL, s->num_ports);
+    ahci_init(&s->ahci, dev, &address_space_memory, s->num_ports);
 
     sysbus_init_mmio(sbd, &s->ahci.mem);
     sysbus_init_irq(sbd, &s->ahci.irq);

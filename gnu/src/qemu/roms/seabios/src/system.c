@@ -5,12 +5,16 @@
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
-#include "util.h" // memcpy_far
-#include "biosvar.h" // BIOS_CONFIG_TABLE
-#include "ioport.h" // inb
-#include "memmap.h" // E820_RAM
-#include "pic.h" // eoi_pic2
+#include "biosvar.h" // GET_GLOBAL
 #include "bregs.h" // struct bregs
+#include "hw/pic.h" // pic_reset
+#include "hw/ps2port.h" // PORT_A20
+#include "malloc.h" // LegacyRamSize
+#include "memmap.h" // E820_RAM
+#include "output.h" // debug_enter
+#include "string.h" // memcpy_far
+#include "util.h" // handle_1553
+#include "x86.h" // inb
 
 // Use PS2 System Control port A to set A20 enable
 static inline u8
@@ -174,7 +178,7 @@ handle_1587(struct bregs *regs)
 static void
 handle_1588(struct bregs *regs)
 {
-    u32 rs = GET_GLOBAL(RamSize);
+    u32 rs = GET_GLOBAL(LegacyRamSize);
 
     // According to Ralf Brown's interrupt the limit should be 15M,
     // but real machines mostly return max. 63M.
@@ -191,7 +195,7 @@ handle_1589(struct bregs *regs)
 {
     set_a20(1);
 
-    set_pics(regs->bl, regs->bh);
+    pic_reset(regs->bl, regs->bh);
 
     u64 *gdt_far = (void*)(regs->si + 0);
     u16 gdt_seg = regs->es;
@@ -270,7 +274,7 @@ handle_15e801(struct bregs *regs)
     // regs.u.r16.ax = 0;
     // regs.u.r16.bx = 0;
 
-    u32 rs = GET_GLOBAL(RamSize);
+    u32 rs = GET_GLOBAL(LegacyRamSize);
 
     // Get the amount of extended memory (above 1M)
     if (rs > 16*1024*1024) {
@@ -289,10 +293,6 @@ handle_15e801(struct bregs *regs)
 
     set_success(regs);
 }
-
-// Info on e820 map location and size.
-struct e820entry e820_list[CONFIG_MAX_E820] VAR16VISIBLE;
-int e820_count VAR16VISIBLE;
 
 static void
 handle_15e820(struct bregs *regs)
@@ -349,6 +349,7 @@ handle_15(struct bregs *regs)
     case 0x52: handle_1552(regs); break;
     case 0x53: handle_1553(regs); break;
     case 0x5f: handle_155f(regs); break;
+    case 0x7f: handle_157f(regs); break;
     case 0x83: handle_1583(regs); break;
     case 0x86: handle_1586(regs); break;
     case 0x87: handle_1587(regs); break;

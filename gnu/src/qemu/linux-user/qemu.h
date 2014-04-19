@@ -74,7 +74,7 @@ struct vm86_saved_state {
 };
 #endif
 
-#ifdef TARGET_ARM
+#if defined(TARGET_ARM) && defined(TARGET_ABI32)
 /* FPU emulator */
 #include "nwfpe/fpa11.h"
 #endif
@@ -98,8 +98,10 @@ struct emulated_sigtable {
 typedef struct TaskState {
     pid_t ts_tid;     /* tid (or pid) of this task */
 #ifdef TARGET_ARM
+# ifdef TARGET_ABI32
     /* FPA state */
     FPA11 fpa;
+# endif
     int swi_errno;
 #endif
 #ifdef TARGET_UNICORE32
@@ -124,6 +126,7 @@ typedef struct TaskState {
 #endif
     uint32_t stack_base;
     int used; /* non zero if used */
+    bool sigsegv_blocked; /* SIGSEGV blocked by guest */
     struct image_info *info;
     struct linux_binprm *bprm;
 
@@ -172,14 +175,12 @@ struct linux_binprm {
 void do_init_thread(struct target_pt_regs *regs, struct image_info *infop);
 abi_ulong loader_build_argptr(int envc, int argc, abi_ulong sp,
                               abi_ulong stringp, int push_ptr);
-int loader_exec(const char * filename, char ** argv, char ** envp,
+int loader_exec(int fdexec, const char *filename, char **argv, char **envp,
              struct target_pt_regs * regs, struct image_info *infop,
              struct linux_binprm *);
 
-int load_elf_binary(struct linux_binprm * bprm, struct target_pt_regs * regs,
-                    struct image_info * info);
-int load_flt_binary(struct linux_binprm * bprm, struct target_pt_regs * regs,
-                    struct image_info * info);
+int load_elf_binary(struct linux_binprm *bprm, struct image_info *info);
+int load_flt_binary(struct linux_binprm *bprm, struct image_info *info);
 
 abi_long memcpy_to_target(abi_ulong dest, const void *src,
                           unsigned long len);
@@ -195,6 +196,7 @@ extern THREAD CPUState *thread_cpu;
 void cpu_loop(CPUArchState *env);
 char *target_strerror(int err);
 int get_osversion(void);
+void init_qemu_uname_release(void);
 void fork_start(void);
 void fork_end(int child);
 
@@ -234,6 +236,7 @@ int host_to_target_signal(int sig);
 long do_sigreturn(CPUArchState *env);
 long do_rt_sigreturn(CPUArchState *env);
 abi_long do_sigaltstack(abi_ulong uss_addr, abi_ulong uoss_addr, abi_ulong sp);
+int do_sigprocmask(int how, const sigset_t *set, sigset_t *oldset);
 
 #ifdef TARGET_I386
 /* vm86.c */
@@ -377,9 +380,9 @@ abi_long copy_from_user(void *hptr, abi_ulong gaddr, size_t len);
 abi_long copy_to_user(abi_ulong gaddr, void *hptr, size_t len);
 
 /* Functions for accessing guest memory.  The tget and tput functions
-   read/write single values, byteswapping as necessary.  The lock_user
+   read/write single values, byteswapping as necessary.  The lock_user function
    gets a pointer to a contiguous area of guest memory, but does not perform
-   and byteswapping.  lock_user may return either a pointer to the guest
+   any byteswapping.  lock_user may return either a pointer to the guest
    memory, or a temporary buffer.  */
 
 /* Lock an area of guest memory into the host.  If copy is true then the
@@ -435,7 +438,7 @@ static inline void *lock_user_string(abi_ulong guest_addr)
     return lock_user(VERIFY_READ, guest_addr, (long)(len + 1), 1);
 }
 
-/* Helper macros for locking/ulocking a target struct.  */
+/* Helper macros for locking/unlocking a target struct.  */
 #define lock_user_struct(type, host_ptr, guest_addr, copy)	\
     (host_ptr = lock_user(type, guest_addr, sizeof(*host_ptr), copy))
 #define unlock_user_struct(host_ptr, guest_addr, copy)		\
@@ -449,5 +452,6 @@ static inline void *lock_user_string(abi_ulong guest_addr)
  */
 #include "target_cpu.h"
 #include "target_signal.h"
+#include "target_structs.h"
 
 #endif /* QEMU_H */

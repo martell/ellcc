@@ -9,6 +9,7 @@
 #include "config.h"
 #include "libopenbios/openbios.h"
 #include "libopenbios/bindings.h"
+#include "libopenbios/console.h"
 #include "drivers/drivers.h"
 #include "dict.h"
 #include "arch/common/nvram.h"
@@ -59,7 +60,7 @@ static const struct hwdef hwdefs[] = {
             .cfg_data = APB_MEM_BASE,                    // PCI bus memory space
             .cfg_base = APB_SPECIAL_BASE,
             .cfg_len = 0x2000000,
-            .host_mem_base = APB_MEM_BASE,
+            .host_pci_base = APB_MEM_BASE,
             .pci_mem_base = 0x100000, /* avoid VGA at 0xa0000 */
             .mem_len = 0x10000000,
             .io_base = APB_SPECIAL_BASE + 0x2000000ULL, // PCI Bus I/O space
@@ -505,30 +506,12 @@ void arch_nvram_get(char *data)
     }
 
     push_str(stdin_path);
-    fword("open-dev");
-    fword("encode-int");
-    push_str("stdin");
-    fword("property");
-
-    push_str(stdout_path);
-    fword("open-dev");
-    fword("encode-int");
-    push_str("stdout");
-    fword("property");
-
-    push_str(stdin_path);
     push_str("input-device");
     fword("$setenv");
 
     push_str(stdout_path);
     push_str("output-device");
     fword("$setenv");
-
-    push_str(stdin_path);
-    fword("input");
-
-    push_str(stdout_path);
-    fword("output");
 }
 
 void arch_nvram_put(char *data)
@@ -595,6 +578,8 @@ arch_init( void )
 
 unsigned long isa_io_base;
 
+extern struct _console_ops arch_console_ops;
+
 int openbios(void)
 {
         unsigned int i;
@@ -616,6 +601,7 @@ int openbios(void)
             for(;;); // Internal inconsistency, hang
 
 #ifdef CONFIG_DEBUG_CONSOLE
+        init_console(arch_console_ops);
 #ifdef CONFIG_DEBUG_CONSOLE_SERIAL
 	uart_init(CONFIG_SERIAL_PORT, CONFIG_SERIAL_SPEED);
 #endif

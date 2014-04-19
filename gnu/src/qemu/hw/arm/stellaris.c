@@ -78,14 +78,14 @@ static void gptm_update_irq(gptm_state *s)
 
 static void gptm_stop(gptm_state *s, int n)
 {
-    qemu_del_timer(s->timer[n]);
+    timer_del(s->timer[n]);
 }
 
 static void gptm_reload(gptm_state *s, int n, int reset)
 {
     int64_t tick;
     if (reset)
-        tick = qemu_get_clock_ns(vm_clock);
+        tick = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
     else
         tick = s->tick[n];
 
@@ -103,7 +103,7 @@ static void gptm_reload(gptm_state *s, int n, int reset)
         hw_error("TODO: 16-bit timer mode 0x%x\n", s->mode[n]);
     }
     s->tick[n] = tick;
-    qemu_mod_timer(s->timer[n], tick);
+    timer_mod(s->timer[n], tick);
 }
 
 static void gptm_tick(void *opaque)
@@ -318,8 +318,8 @@ static int stellaris_gptm_init(SysBusDevice *sbd)
     sysbus_init_mmio(sbd, &s->iomem);
 
     s->opaque[0] = s->opaque[1] = s;
-    s->timer[0] = qemu_new_timer_ns(vm_clock, gptm_tick, &s->opaque[0]);
-    s->timer[1] = qemu_new_timer_ns(vm_clock, gptm_tick, &s->opaque[1]);
+    s->timer[0] = timer_new_ns(QEMU_CLOCK_VIRTUAL, gptm_tick, &s->opaque[0]);
+    s->timer[1] = timer_new_ns(QEMU_CLOCK_VIRTUAL, gptm_tick, &s->opaque[1]);
     vmstate_register(dev, -1, &vmstate_stellaris_gptm, s);
     return 0;
 }
@@ -692,7 +692,7 @@ static int stellaris_sys_init(uint32_t base, qemu_irq irq,
 typedef struct {
     SysBusDevice parent_obj;
 
-    i2c_bus *bus;
+    I2CBus *bus;
     qemu_irq irq;
     MemoryRegion iomem;
     uint32_t msa;
@@ -868,7 +868,7 @@ static int stellaris_i2c_init(SysBusDevice *sbd)
 {
     DeviceState *dev = DEVICE(sbd);
     stellaris_i2c_state *s = STELLARIS_I2C(dev);
-    i2c_bus *bus;
+    I2CBus *bus;
 
     sysbus_init_irq(sbd, &s->irq);
     bus = i2c_init_bus(dev, "i2c");
@@ -1213,7 +1213,7 @@ static void stellaris_init(const char *kernel_filename, const char *cpu_model,
     qemu_irq adc;
     int sram_size;
     int flash_size;
-    i2c_bus *i2c;
+    I2CBus *i2c;
     DeviceState *dev;
     int i;
     int j;
@@ -1256,7 +1256,7 @@ static void stellaris_init(const char *kernel_filename, const char *cpu_model,
 
     if (board->dc2 & (1 << 12)) {
         dev = sysbus_create_simple(TYPE_STELLARIS_I2C, 0x40020000, pic[8]);
-        i2c = (i2c_bus *)qdev_get_child_bus(dev, "i2c");
+        i2c = (I2CBus *)qdev_get_child_bus(dev, "i2c");
         if (board->peripherals & BP_OLED_I2C) {
             i2c_create_slave(i2c, "ssd0303", 0x3d);
         }
@@ -1348,14 +1348,12 @@ static QEMUMachine lm3s811evb_machine = {
     .name = "lm3s811evb",
     .desc = "Stellaris LM3S811EVB",
     .init = lm3s811evb_init,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine lm3s6965evb_machine = {
     .name = "lm3s6965evb",
     .desc = "Stellaris LM3S6965EVB",
     .init = lm3s6965evb_init,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void stellaris_machine_init(void)

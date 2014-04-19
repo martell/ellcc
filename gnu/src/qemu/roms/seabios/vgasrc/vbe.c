@@ -6,12 +6,13 @@
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
-#include "vgabios.h" // handle_104f
-#include "config.h" // CONFIG_*
-#include "bregs.h" // struct bregs
-#include "vbe.h" // struct vbe_info
-#include "util.h" // dprintf
 #include "biosvar.h" // GET_GLOBAL
+#include "bregs.h" // struct bregs
+#include "config.h" // CONFIG_*
+#include "output.h" // dprintf
+#include "std/vbe.h" // struct vbe_info
+#include "string.h" // memset_far
+#include "vgabios.h" // handle_104f
 #include "vgahw.h" // vgahw_set_mode
 
 u32 VBE_total_memory VAR16 = 256 * 1024;
@@ -144,6 +145,10 @@ vbe_104f01(struct bregs *regs)
             mode_attr |= VBE_MODE_ATTRIBUTE_LINEAR_FRAME_BUFFER_MODE;
         break;
     }
+    if (pages > 128)
+        pages = 128;
+    if (pages < 2)
+        pages++;
     SET_FARVAR(seg, info->mode_attributes, mode_attr);
     SET_FARVAR(seg, info->planes, planes);
     SET_FARVAR(seg, info->pages, pages - 1);

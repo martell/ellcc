@@ -36,6 +36,8 @@ VARIABLE pci-max-io
 \       the 3rd slot on the HostBridge bus
 here 100 allot CONSTANT pci-device-vec
 0 VALUE pci-device-vec-len
+\ enable/disable creation of hotplug-specific properties
+0 VALUE pci-hotplug-enabled
 
 
 \ Fixme Glue to the pci-devices ... remove this later
@@ -45,7 +47,6 @@ here 100 allot CONSTANT pci-device-vec
 
 
 #include "pci-helper.fs"
-
 
 \ Dump out the pci device-slot vector
 : pci-vec ( -- )
@@ -190,11 +191,13 @@ here 100 allot CONSTANT pci-device-vec
 
 \ define function pointer as forward declaration of pci-probe-bus
 DEFER func-pci-probe-bus
+DEFER func-pci-bridge-range-props
 
 \ Setup the Base and Limits in the Bridge
 \ and scan the bus(es) beyond that Bridge
 : pci-bridge-probe ( addr -- )
         dup pci-bridge-set-bases                        \ SetUp all Base Registers
+	dup func-pci-bridge-range-props                 \ Setup temporary "range
         pci-bus-number 1+ TO pci-bus-number             \ increase number of busses found
         pci-device-vec-len 1+ TO pci-device-vec-len     \ increase the device-slot vector depth
         dup                                             \ stack config-addr for pci-bus!
@@ -334,3 +337,5 @@ DEFER func-pci-probe-bus
 \ provide all words needed to generate the properties and/or assign BAR values
 #include "pci-properties.fs"
 
+\ setup the function pointer for bridge ranges
+' pci-bridge-range-props TO func-pci-bridge-range-props

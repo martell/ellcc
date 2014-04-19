@@ -16,8 +16,11 @@ extern const char *bios_name;
 
 extern const char *qemu_name;
 extern uint8_t qemu_uuid[];
+extern bool qemu_uuid_set;
 int qemu_uuid_parse(const char *str, uint8_t *uuid);
+
 #define UUID_FMT "%02hhx%02hhx%02hhx%02hhx-%02hhx%02hhx-%02hhx%02hhx-%02hhx%02hhx-%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx"
+#define UUID_NONE "00000000-0000-0000-0000-000000000000"
 
 bool runstate_check(RunState state);
 void runstate_set(RunState new_state);
@@ -39,9 +42,11 @@ int vm_stop(RunState state);
 int vm_stop_force_state(RunState state);
 
 typedef enum WakeupReason {
-    QEMU_WAKEUP_REASON_OTHER = 0,
+    /* Always keep QEMU_WAKEUP_REASON_NONE = 0 */
+    QEMU_WAKEUP_REASON_NONE = 0,
     QEMU_WAKEUP_REASON_RTC,
     QEMU_WAKEUP_REASON_PMTIMER,
+    QEMU_WAKEUP_REASON_OTHER,
 } WakeupReason;
 
 void qemu_system_reset_request(void);
@@ -99,6 +104,7 @@ extern int autostart;
 
 typedef enum {
     VGA_NONE, VGA_STD, VGA_CIRRUS, VGA_VMWARE, VGA_XENFB, VGA_QXL,
+    VGA_TCX, VGA_CG3, VGA_DEVICE
 } VGAInterfaceType;
 
 extern int vga_interface_type;
@@ -124,10 +130,17 @@ extern int boot_menu;
 extern uint8_t *boot_splash_filedata;
 extern size_t boot_splash_filedata_size;
 extern uint8_t qemu_extra_params_fw[2];
-extern QEMUClock *rtc_clock;
+extern QEMUClockType rtc_clock;
 
 #define MAX_NODES 64
+
+/* The following shall be true for all CPUs:
+ *   cpu->cpu_index < max_cpus <= MAX_CPUMASK_BITS
+ *
+ * Note that cpu->get_arch_id() may be larger than MAX_CPUMASK_BITS.
+ */
 #define MAX_CPUMASK_BITS 255
+
 extern int nb_numa_nodes;
 extern uint64_t node_mem[MAX_NODES];
 extern unsigned long *node_cpumask[MAX_NODES];
@@ -180,7 +193,7 @@ void rtc_change_mon_event(struct tm *tm);
 
 void add_boot_device_path(int32_t bootindex, DeviceState *dev,
                           const char *suffix);
-char *get_boot_devices_list(size_t *size);
+char *get_boot_devices_list(size_t *size, bool ignore_suffixes);
 
 DeviceState *get_boot_device(uint32_t position);
 
@@ -188,6 +201,8 @@ QemuOpts *qemu_get_machine_opts(void);
 
 bool usb_enabled(bool default_usb);
 
+extern QemuOptsList qemu_legacy_drive_opts;
+extern QemuOptsList qemu_common_drive_opts;
 extern QemuOptsList qemu_drive_opts;
 extern QemuOptsList qemu_chardev_opts;
 extern QemuOptsList qemu_device_opts;

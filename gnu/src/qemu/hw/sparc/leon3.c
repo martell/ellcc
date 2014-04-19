@@ -26,6 +26,7 @@
 #include "hw/ptimer.h"
 #include "sysemu/char.h"
 #include "sysemu/sysemu.h"
+#include "sysemu/qtest.h"
 #include "hw/boards.h"
 #include "hw/loader.h"
 #include "elf.h"
@@ -44,6 +45,7 @@
 typedef struct ResetData {
     SPARCCPU *cpu;
     uint32_t  entry;            /* save kernel entry in case of reset */
+    target_ulong sp;            /* initial stack pointer */
 } ResetData;
 
 static void main_cpu_reset(void *opaque)
@@ -57,6 +59,7 @@ static void main_cpu_reset(void *opaque)
     cpu->halted = 0;
     env->pc     = s->entry;
     env->npc    = s->entry + 4;
+    env->regbase[6] = s->sp;
 }
 
 void leon3_irq_ack(void *irq_manager, int intno)
@@ -132,6 +135,7 @@ static void leon3_generic_hw_init(QEMUMachineInitArgs *args)
     /* Reset data */
     reset_info        = g_malloc0(sizeof(ResetData));
     reset_info->cpu   = cpu;
+    reset_info->sp    = 0x40000000 + ram_size;
     qemu_register_reset(main_cpu_reset, reset_info);
 
     /* Allocate IRQ manager */
@@ -178,7 +182,7 @@ static void leon3_generic_hw_init(QEMUMachineInitArgs *args)
             fprintf(stderr, "qemu: could not load prom '%s'\n", filename);
             exit(1);
         }
-    } else if (kernel_filename == NULL) {
+    } else if (kernel_filename == NULL && !qtest_enabled()) {
         fprintf(stderr, "Can't read bios image %s\n", filename);
         exit(1);
     }
@@ -216,7 +220,6 @@ static QEMUMachine leon3_generic_machine = {
     .name     = "leon3_generic",
     .desc     = "Leon-3 generic",
     .init     = leon3_generic_hw_init,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void leon3_machine_init(void)

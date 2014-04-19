@@ -393,7 +393,7 @@ static void spitz_keyboard_tick(void *opaque)
             s->fifopos = 0;
     }
 
-    qemu_mod_timer(s->kbdtimer, qemu_get_clock_ns(vm_clock) +
+    timer_mod(s->kbdtimer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
                    get_ticks_per_sec() / 32);
 }
 
@@ -485,7 +485,7 @@ static void spitz_keyboard_register(PXA2xxState *cpu)
         qdev_connect_gpio_out(cpu->gpio, spitz_gpio_key_strobe[i],
                 qdev_get_gpio_in(dev, i));
 
-    qemu_mod_timer(s->kbdtimer, qemu_get_clock_ns(vm_clock));
+    timer_mod(s->kbdtimer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 
     qemu_add_kbd_event_handler(spitz_keyboard_handler, s);
 }
@@ -505,7 +505,7 @@ static int spitz_keyboard_init(SysBusDevice *sbd)
 
     spitz_keyboard_pre_map(s);
 
-    s->kbdtimer = qemu_new_timer_ns(vm_clock, spitz_keyboard_tick, s);
+    s->kbdtimer = timer_new_ns(QEMU_CLOCK_VIRTUAL, spitz_keyboard_tick, s);
     qdev_init_gpio_in(dev, spitz_keyboard_strobe, SPITZ_KEY_STROBE_NUM);
     qdev_init_gpio_out(dev, s->sense, SPITZ_KEY_SENSE_NUM);
 
@@ -658,14 +658,15 @@ static void spitz_adc_temp_on(void *opaque, int line, int level)
         max111x_set_input(max1111, MAX1111_BATT_TEMP, 0);
 }
 
-static int corgi_ssp_init(SSISlave *dev)
+static int corgi_ssp_init(SSISlave *d)
 {
-    CorgiSSPState *s = FROM_SSI_SLAVE(CorgiSSPState, dev);
+    DeviceState *dev = DEVICE(d);
+    CorgiSSPState *s = FROM_SSI_SLAVE(CorgiSSPState, d);
 
-    qdev_init_gpio_in(&dev->qdev, corgi_ssp_gpio_cs, 3);
-    s->bus[0] = ssi_create_bus(&dev->qdev, "ssi0");
-    s->bus[1] = ssi_create_bus(&dev->qdev, "ssi1");
-    s->bus[2] = ssi_create_bus(&dev->qdev, "ssi2");
+    qdev_init_gpio_in(dev, corgi_ssp_gpio_cs, 3);
+    s->bus[0] = ssi_create_bus(dev, "ssi0");
+    s->bus[1] = ssi_create_bus(dev, "ssi1");
+    s->bus[2] = ssi_create_bus(dev, "ssi2");
 
     return 0;
 }
@@ -734,7 +735,7 @@ static void spitz_wm8750_addr(void *opaque, int line, int level)
 static void spitz_i2c_setup(PXA2xxState *cpu)
 {
     /* Attach the CPU on one end of our I2C bus.  */
-    i2c_bus *bus = pxa2xx_i2c_bus(cpu->i2c[0]);
+    I2CBus *bus = pxa2xx_i2c_bus(cpu->i2c[0]);
 
     DeviceState *wm;
 
@@ -966,28 +967,24 @@ static QEMUMachine akitapda_machine = {
     .name = "akita",
     .desc = "Akita PDA (PXA270)",
     .init = akita_init,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine spitzpda_machine = {
     .name = "spitz",
     .desc = "Spitz PDA (PXA270)",
     .init = spitz_init,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine borzoipda_machine = {
     .name = "borzoi",
     .desc = "Borzoi PDA (PXA270)",
     .init = borzoi_init,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static QEMUMachine terrierpda_machine = {
     .name = "terrier",
     .desc = "Terrier PDA (PXA270)",
     .init = terrier_init,
-    DEFAULT_MACHINE_OPTIONS,
 };
 
 static void spitz_machine_init(void)

@@ -11,6 +11,7 @@
 
 #include <hw/qdev.h>
 #include "qemu/bitops.h"
+#include "exec/address-spaces.h"
 #include "cpu.h"
 #include "ioinst.h"
 #include "css.h"
@@ -115,6 +116,15 @@ void css_conditional_io_interrupt(SubchDev *sch)
     }
 }
 
+void css_adapter_interrupt(uint8_t isc)
+{
+    S390CPU *cpu = s390_cpu_addr2state(0);
+    uint32_t io_int_word = (isc << 27) | IO_INT_WORD_AI;
+
+    trace_css_adapter_interrupt(isc);
+    s390_io_interrupt(cpu, 0, 0, 0, io_int_word);
+}
+
 static void sch_handle_clear_func(SubchDev *sch)
 {
     PMCW *p = &sch->curr_status.pmcw;
@@ -124,7 +134,7 @@ static void sch_handle_clear_func(SubchDev *sch)
     /* Path management: In our simple css, we always choose the only path. */
     path = 0x80;
 
-    /* Reset values prior to 'issueing the clear signal'. */
+    /* Reset values prior to 'issuing the clear signal'. */
     p->lpum = 0;
     p->pom = 0xff;
     s->flags &= ~SCSW_FLAGS_MASK_PNO;
@@ -667,18 +677,20 @@ static void css_update_chnmon(SubchDev *sch)
         /* Format 1, per-subchannel area. */
         uint32_t count;
 
-        count = ldl_phys(sch->curr_status.mba);
+        count = ldl_phys(&address_space_memory, sch->curr_status.mba);
         count++;
-        stl_phys(sch->curr_status.mba, count);
+        stl_phys(&address_space_memory, sch->curr_status.mba, count);
     } else {
         /* Format 0, global area. */
         uint32_t offset;
         uint16_t count;
 
         offset = sch->curr_status.pmcw.mbi << 5;
-        count = lduw_phys(channel_subsys->chnmon_area + offset);
+        count = lduw_phys(&address_space_memory,
+                          channel_subsys->chnmon_area + offset);
         count++;
-        stw_phys(channel_subsys->chnmon_area + offset, count);
+        stw_phys(&address_space_memory,
+                 channel_subsys->chnmon_area + offset, count);
     }
 }
 
@@ -1256,6 +1268,7 @@ void css_reset_sch(SubchDev *sch)
     sch->channel_prog = 0x0;
     sch->last_cmd_valid = false;
     sch->orb = NULL;
+    sch->thinint_active = false;
 }
 
 void css_reset(void)

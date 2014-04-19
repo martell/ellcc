@@ -31,9 +31,12 @@
 #include "sysemu/kvm.h"
 #include "qemu/bswap.h"
 #include "exec/memory.h"
+#include "exec/ram_addr.h"
 #include "exec/address-spaces.h"
 #include "qemu/event_notifier.h"
 #include "trace.h"
+
+#include "hw/boards.h"
 
 /* This check must be after config-host.h is included */
 #ifdef CONFIG_EVENTFD
@@ -72,7 +75,8 @@ typedef struct kvm_dirty_log KVMDirtyLog;
 
 struct KVMState
 {
-    KVMSlot slots[32];
+    KVMSlot *slots;
+    int nr_slots;
     int fd;
     int vmfd;
     int coalesced_mmio;
@@ -111,6 +115,7 @@ bool kvm_halt_in_kernel_allowed;
 bool kvm_irqfds_allowed;
 bool kvm_msi_via_irqfd_allowed;
 bool kvm_gsi_routing_allowed;
+bool kvm_gsi_direct_mapping;
 bool kvm_allowed;
 bool kvm_readonly_mem_allowed;
 
@@ -124,7 +129,7 @@ static KVMSlot *kvm_alloc_slot(KVMState *s)
 {
     int i;
 
-    for (i = 0; i < ARRAY_SIZE(s->slots); i++) {
+    for (i = 0; i < s->nr_slots; i++) {
         if (s->slots[i].memory_size == 0) {
             return &s->slots[i];
         }
@@ -140,7 +145,7 @@ static KVMSlot *kvm_lookup_matching_slot(KVMState *s,
 {
     int i;
 
-    for (i = 0; i < ARRAY_SIZE(s->slots); i++) {
+    for (i = 0; i < s->nr_slots; i++) {
         KVMSlot *mem = &s->slots[i];
 
         if (start_addr == mem->start_addr &&
@@ -162,7 +167,7 @@ static KVMSlot *kvm_lookup_overlapping_slot(KVMState *s,
     KVMSlot *found = NULL;
     int i;
 
-    for (i = 0; i < ARRAY_SIZE(s->slots); i++) {
+    for (i = 0; i < s->nr_slots; i++) {
         KVMSlot *mem = &s->slots[i];
 
         if (mem->memory_size == 0 ||
@@ -184,7 +189,7 @@ int kvm_physical_memory_addr_from_host(KVMState *s, void *ram,
 {
     int i;
 
-    for (i = 0; i < ARRAY_SIZE(s->slots); i++) {
+    for (i = 0; i < s->nr_slots; i++) {
         KVMSlot *mem = &s->slots[i];
 
         if (ram >= mem->ram && ram < mem->ram + mem->memory_size) {
@@ -356,7 +361,7 @@ static int kvm_set_migration_log(int enable)
 
     s->migration_log = enable;
 
-    for (i = 0; i < ARRAY_SIZE(s->slots); i++) {
+    for (i = 0; i < s->nr_slots; i++) {
         mem = &s->slots[i];
 
         if (!mem->memory_size) {
@@ -377,31 +382,10 @@ static int kvm_set_migration_log(int enable)
 static int kvm_get_dirty_pages_log_range(MemoryRegionSection *section,
                                          unsigned long *bitmap)
 {
-    unsigned int i, j;
-    unsigned long page_number, c;
-    hwaddr addr, addr1;
-    unsigned int pages = int128_get64(section->size) / getpagesize();
-    unsigned int len = (pages + HOST_LONG_BITS - 1) / HOST_LONG_BITS;
-    unsigned long hpratio = getpagesize() / TARGET_PAGE_SIZE;
+    ram_addr_t start = section->offset_within_region + section->mr->ram_addr;
+    ram_addr_t pages = int128_get64(section->size) / getpagesize();
 
-    /*
-     * bitmap-traveling is faster than memory-traveling (for addr...)
-     * especially when most of the memory is not dirty.
-     */
-    for (i = 0; i < len; i++) {
-        if (bitmap[i] != 0) {
-            c = leul_to_cpu(bitmap[i]);
-            do {
-                j = ffsl(c) - 1;
-                c &= ~(1ul << j);
-                page_number = (i * HOST_LONG_BITS + j) * hpratio;
-                addr1 = page_number * TARGET_PAGE_SIZE;
-                addr = section->offset_within_region + addr1;
-                memory_region_set_dirty(section->mr, addr,
-                                        TARGET_PAGE_SIZE * hpratio);
-            } while (c != 0);
-        }
-    }
+    cpu_physical_memory_set_dirty_lebitmap(bitmap, start, pages);
     return 0;
 }
 
@@ -517,7 +501,7 @@ int kvm_check_extension(KVMState *s, unsigned int extension)
     return ret;
 }
 
-static int kvm_set_ioeventfd_mmio(int fd, uint32_t addr, uint32_t val,
+static int kvm_set_ioeventfd_mmio(int fd, hwaddr addr, uint32_t val,
                                   bool assign, uint32_t size, bool datamatch)
 {
     int ret;
@@ -1069,6 +1053,10 @@ void kvm_irqchip_release_virq(KVMState *s, int virq)
     struct kvm_irq_routing_entry *e;
     int i;
 
+    if (kvm_gsi_direct_mapping()) {
+        return;
+    }
+
     for (i = 0; i < s->irq_routes->nr; i++) {
         e = &s->irq_routes->entries[i];
         if (e->gsi == virq) {
@@ -1190,6 +1178,10 @@ int kvm_irqchip_add_msi_route(KVMState *s, MSIMessage msg)
     struct kvm_irq_routing_entry kroute = {};
     int virq;
 
+    if (kvm_gsi_direct_mapping()) {
+        return msg.data & 0xffff;
+    }
+
     if (!kvm_gsi_routing_enabled()) {
         return -ENOSYS;
     }
@@ -1216,6 +1208,10 @@ int kvm_irqchip_update_msi_route(KVMState *s, int virq, MSIMessage msg)
 {
     struct kvm_irq_routing_entry kroute = {};
 
+    if (kvm_gsi_direct_mapping()) {
+        return 0;
+    }
+
     if (!kvm_irqchip_in_kernel()) {
         return -ENOSYS;
     }
@@ -1230,13 +1226,19 @@ int kvm_irqchip_update_msi_route(KVMState *s, int virq, MSIMessage msg)
     return kvm_update_routing_entry(s, &kroute);
 }
 
-static int kvm_irqchip_assign_irqfd(KVMState *s, int fd, int virq, bool assign)
+static int kvm_irqchip_assign_irqfd(KVMState *s, int fd, int rfd, int virq,
+                                    bool assign)
 {
     struct kvm_irqfd irqfd = {
         .fd = fd,
         .gsi = virq,
         .flags = assign ? 0 : KVM_IRQFD_FLAG_DEASSIGN,
     };
+
+    if (rfd != -1) {
+        irqfd.flags |= KVM_IRQFD_FLAG_RESAMPLE;
+        irqfd.resamplefd = rfd;
+    }
 
     if (!kvm_irqfds_enabled()) {
         return -ENOSYS;
@@ -1276,14 +1278,17 @@ int kvm_irqchip_update_msi_route(KVMState *s, int virq, MSIMessage msg)
 }
 #endif /* !KVM_CAP_IRQ_ROUTING */
 
-int kvm_irqchip_add_irqfd_notifier(KVMState *s, EventNotifier *n, int virq)
+int kvm_irqchip_add_irqfd_notifier(KVMState *s, EventNotifier *n,
+                                   EventNotifier *rn, int virq)
 {
-    return kvm_irqchip_assign_irqfd(s, event_notifier_get_fd(n), virq, true);
+    return kvm_irqchip_assign_irqfd(s, event_notifier_get_fd(n),
+           rn ? event_notifier_get_fd(rn) : -1, virq, true);
 }
 
 int kvm_irqchip_remove_irqfd_notifier(KVMState *s, EventNotifier *n, int virq)
 {
-    return kvm_irqchip_assign_irqfd(s, event_notifier_get_fd(n), virq, false);
+    return kvm_irqchip_assign_irqfd(s, event_notifier_get_fd(n), -1, virq,
+           false);
 }
 
 static int kvm_irqchip_create(KVMState *s)
@@ -1295,10 +1300,17 @@ static int kvm_irqchip_create(KVMState *s)
         return 0;
     }
 
-    ret = kvm_vm_ioctl(s, KVM_CREATE_IRQCHIP);
+    /* First probe and see if there's a arch-specific hook to create the
+     * in-kernel irqchip for us */
+    ret = kvm_arch_irqchip_create(s);
     if (ret < 0) {
-        fprintf(stderr, "Create kernel irqchip failed\n");
         return ret;
+    } else if (ret == 0) {
+        ret = kvm_vm_ioctl(s, KVM_CREATE_IRQCHIP);
+        if (ret < 0) {
+            fprintf(stderr, "Create kernel irqchip failed\n");
+            return ret;
+        }
     }
 
     kvm_kernel_irqchip = true;
@@ -1313,36 +1325,41 @@ static int kvm_irqchip_create(KVMState *s)
     return 0;
 }
 
-static int kvm_max_vcpus(KVMState *s)
+/* Find number of supported CPUs using the recommended
+ * procedure from the kernel API documentation to cope with
+ * older kernels that may be missing capabilities.
+ */
+static int kvm_recommended_vcpus(KVMState *s)
 {
-    int ret;
-
-    /* Find number of supported CPUs using the recommended
-     * procedure from the kernel API documentation to cope with
-     * older kernels that may be missing capabilities.
-     */
-    ret = kvm_check_extension(s, KVM_CAP_MAX_VCPUS);
-    if (ret) {
-        return ret;
-    }
-    ret = kvm_check_extension(s, KVM_CAP_NR_VCPUS);
-    if (ret) {
-        return ret;
-    }
-
-    return 4;
+    int ret = kvm_check_extension(s, KVM_CAP_NR_VCPUS);
+    return (ret) ? ret : 4;
 }
 
-int kvm_init(void)
+static int kvm_max_vcpus(KVMState *s)
+{
+    int ret = kvm_check_extension(s, KVM_CAP_MAX_VCPUS);
+    return (ret) ? ret : kvm_recommended_vcpus(s);
+}
+
+int kvm_init(QEMUMachine *machine)
 {
     static const char upgrade_note[] =
         "Please upgrade to at least kernel 2.6.29 or recent kvm-kmod\n"
         "(see http://sourceforge.net/projects/kvm).\n";
+    struct {
+        const char *name;
+        int num;
+    } num_cpus[] = {
+        { "SMP",          smp_cpus },
+        { "hotpluggable", max_cpus },
+        { NULL, }
+    }, *nc = num_cpus;
+    int soft_vcpus_limit, hard_vcpus_limit;
     KVMState *s;
     const KVMCapabilityInfo *missing_cap;
     int ret;
-    int i;
-    int max_vcpus;
+    int i, type = 0;
+    const char *kvm_type;
 
     s = g_malloc0(sizeof(KVMState));
 
@@ -1353,13 +1370,11 @@ int kvm_init(void)
      * page size for the system though.
      */
     assert(TARGET_PAGE_SIZE <= getpagesize());
+    page_size_init();
 
 #ifdef KVM_CAP_SET_GUEST_DEBUG
     QTAILQ_INIT(&s->kvm_sw_breakpoints);
 #endif
-    for (i = 0; i < ARRAY_SIZE(s->slots); i++) {
-        s->slots[i].slot = i;
-    }
     s->vmfd = -1;
     s->fd = qemu_open("/dev/kvm", O_RDWR);
     if (s->fd == -1) {
@@ -1383,24 +1398,64 @@ int kvm_init(void)
         goto err;
     }
 
-    max_vcpus = kvm_max_vcpus(s);
-    if (smp_cpus > max_vcpus) {
-        ret = -EINVAL;
-        fprintf(stderr, "Number of SMP cpus requested (%d) exceeds max cpus "
-                "supported by KVM (%d)\n", smp_cpus, max_vcpus);
+    s->nr_slots = kvm_check_extension(s, KVM_CAP_NR_MEMSLOTS);
+
+    /* If unspecified, use the default value */
+    if (!s->nr_slots) {
+        s->nr_slots = 32;
+    }
+
+    s->slots = g_malloc0(s->nr_slots * sizeof(KVMSlot));
+
+    for (i = 0; i < s->nr_slots; i++) {
+        s->slots[i].slot = i;
+    }
+
+    /* check the vcpu limits */
+    soft_vcpus_limit = kvm_recommended_vcpus(s);
+    hard_vcpus_limit = kvm_max_vcpus(s);
+
+    while (nc->name) {
+        if (nc->num > soft_vcpus_limit) {
+            fprintf(stderr,
+                    "Warning: Number of %s cpus requested (%d) exceeds "
+                    "the recommended cpus supported by KVM (%d)\n",
+                    nc->name, nc->num, soft_vcpus_limit);
+
+            if (nc->num > hard_vcpus_limit) {
+                fprintf(stderr, "Number of %s cpus requested (%d) exceeds "
+                        "the maximum cpus supported by KVM (%d)\n",
+                        nc->name, nc->num, hard_vcpus_limit);
+                exit(1);
+            }
+        }
+        nc++;
+    }
+
+    kvm_type = qemu_opt_get(qemu_get_machine_opts(), "kvm-type");
+    if (machine->kvm_type) {
+        type = machine->kvm_type(kvm_type);
+    } else if (kvm_type) {
+        fprintf(stderr, "Invalid argument kvm-type=%s\n", kvm_type);
         goto err;
     }
 
-    s->vmfd = kvm_ioctl(s, KVM_CREATE_VM, 0);
-    if (s->vmfd < 0) {
+    do {
+        ret = kvm_ioctl(s, KVM_CREATE_VM, type);
+    } while (ret == -EINTR);
+
+    if (ret < 0) {
+        fprintf(stderr, "ioctl(KVM_CREATE_VM) failed: %d %s\n", -ret,
+                strerror(-ret));
+
 #ifdef TARGET_S390X
         fprintf(stderr, "Please add the 'switch_amode' kernel parameter to "
                         "your host kernel command line\n");
 #endif
-        ret = s->vmfd;
         goto err;
     }
 
+    s->vmfd = ret;
     missing_cap = kvm_check_extension_list(s, kvm_required_capabilites);
     if (!missing_cap) {
         missing_cap =
@@ -1487,6 +1542,7 @@ err:
     if (s->fd != -1) {
         close(s->fd);
     }
+    g_free(s->slots);
     g_free(s);
 
     return ret;
@@ -1499,49 +1555,24 @@ static void kvm_handle_io(uint16_t port, void *data, int direction, int size,
     uint8_t *ptr = data;
 
     for (i = 0; i < count; i++) {
-        if (direction == KVM_EXIT_IO_IN) {
-            switch (size) {
-            case 1:
-                stb_p(ptr, cpu_inb(port));
-                break;
-            case 2:
-                stw_p(ptr, cpu_inw(port));
-                break;
-            case 4:
-                stl_p(ptr, cpu_inl(port));
-                break;
-            }
-        } else {
-            switch (size) {
-            case 1:
-                cpu_outb(port, ldub_p(ptr));
-                break;
-            case 2:
-                cpu_outw(port, lduw_p(ptr));
-                break;
-            case 4:
-                cpu_outl(port, ldl_p(ptr));
-                break;
-            }
-        }
-
+        address_space_rw(&address_space_io, port, ptr, size,
+                         direction == KVM_EXIT_IO_OUT);
         ptr += size;
     }
 }
 
 static int kvm_handle_internal_error(CPUState *cpu, struct kvm_run *run)
 {
-    fprintf(stderr, "KVM internal error.");
+    fprintf(stderr, "KVM internal error. Suberror: %d\n",
+            run->internal.suberror);
+
     if (kvm_check_extension(kvm_state, KVM_CAP_INTERNAL_ERROR_DATA)) {
         int i;
 
-        fprintf(stderr, " Suberror: %d\n", run->internal.suberror);
         for (i = 0; i < run->internal.ndata; ++i) {
             fprintf(stderr, "extra data[%d]: %"PRIx64"\n",
                     i, (uint64_t)run->internal.data[i]);
         }
-    } else {
-        fprintf(stderr, "\n");
     }
     if (run->internal.suberror == KVM_INTERNAL_ERROR_EMULATION) {
         fprintf(stderr, "emulation failure\n");
@@ -1763,6 +1794,24 @@ int kvm_vcpu_ioctl(CPUState *cpu, int type, ...)
     return ret;
 }
 
+int kvm_device_ioctl(int fd, int type, ...)
+{
+    int ret;
+    void *arg;
+    va_list ap;
+
+    va_start(ap, type);
+    arg = va_arg(ap, void *);
+    va_end(ap);
+
+    trace_kvm_device_ioctl(fd, type, arg);
+    ret = ioctl(fd, type, arg);
+    if (ret == -1) {
+        ret = -errno;
+    }
+    return ret;
+}
+
 int kvm_has_sync_mmu(void)
 {
     return kvm_check_extension(kvm_state, KVM_CAP_SYNC_MMU);
@@ -1818,19 +1867,6 @@ int kvm_has_gsi_routing(void)
 int kvm_has_intx_set_mask(void)
 {
     return kvm_state->intx_set_mask;
-}
-
-void *kvm_ram_alloc(ram_addr_t size)
-{
-#ifdef TARGET_S390X
-    void *mem;
-
-    mem = kvm_arch_ram_alloc(size);
-    if (mem) {
-        return mem;
-    }
-#endif
-    return qemu_anon_ram_alloc(size);
 }
 
 void kvm_setup_guest_memory(void *start, size_t size)
@@ -1933,7 +1969,7 @@ int kvm_insert_breakpoint(CPUState *cpu, target_ulong addr,
         }
     }
 
-    for (cpu = first_cpu; cpu != NULL; cpu = cpu->next_cpu) {
+    CPU_FOREACH(cpu) {
         err = kvm_update_guest_debug(cpu, 0);
         if (err) {
             return err;
@@ -1973,7 +2009,7 @@ int kvm_remove_breakpoint(CPUState *cpu, target_ulong addr,
         }
     }
 
-    for (cpu = first_cpu; cpu != NULL; cpu = cpu->next_cpu) {
+    CPU_FOREACH(cpu) {
         err = kvm_update_guest_debug(cpu, 0);
         if (err) {
             return err;
@@ -1990,7 +2026,7 @@ void kvm_remove_all_breakpoints(CPUState *cpu)
     QTAILQ_FOREACH_SAFE(bp, &s->kvm_sw_breakpoints, entry, next) {
         if (kvm_arch_remove_sw_breakpoint(cpu, bp) != 0) {
             /* Try harder to find a CPU that currently sees the breakpoint. */
-            for (cpu = first_cpu; cpu != NULL; cpu = cpu->next_cpu) {
+            CPU_FOREACH(cpu) {
                 if (kvm_arch_remove_sw_breakpoint(cpu, bp) == 0) {
                     break;
                 }
@@ -2001,7 +2037,7 @@ void kvm_remove_all_breakpoints(CPUState *cpu)
     }
     kvm_arch_remove_all_hw_breakpoints();
 
-    for (cpu = first_cpu; cpu != NULL; cpu = cpu->next_cpu) {
+    CPU_FOREACH(cpu) {
         kvm_update_guest_debug(cpu, 0);
     }
 }
@@ -2056,4 +2092,25 @@ int kvm_on_sigbus_vcpu(CPUState *cpu, int code, void *addr)
 int kvm_on_sigbus(int code, void *addr)
 {
     return kvm_arch_on_sigbus(code, addr);
+}
+
+int kvm_create_device(KVMState *s, uint64_t type, bool test)
+{
+    int ret;
+    struct kvm_create_device create_dev;
+
+    create_dev.type = type;
+    create_dev.fd = -1;
+    create_dev.flags = test ? KVM_CREATE_DEVICE_TEST : 0;
+
+    if (!kvm_check_extension(s, KVM_CAP_DEVICE_CTRL)) {
+        return -ENOTSUP;
+    }
+
+    ret = kvm_vm_ioctl(s, KVM_CREATE_DEVICE, &create_dev);
+    if (ret) {
+        return ret;
+    }
+
+    return test ? 0 : create_dev.fd;
 }

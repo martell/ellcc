@@ -28,7 +28,65 @@
   'data': [ 'GenericError', 'CommandNotFound', 'DeviceEncrypted',
             'DeviceNotActive', 'DeviceNotFound', 'KVMMissingCap' ] }
 
+
 ##
+# LostTickPolicy:
+#
+# Policy for handling lost ticks in timer devices.
+#
+# @discard: throw away the missed tick(s) and continue with future injection
+#           normally.  Guest time may be delayed, unless the OS has explicit
+#           handling of lost ticks
+#
+# @delay: continue to deliver ticks at the normal rate.  Guest time will be
+#         delayed due to the late tick
+#
+# @merge: merge the missed tick(s) into one tick and inject.  Guest time
+#         may be delayed, depending on how the OS reacts to the merging
+#         of ticks
+#
+# @slew: deliver ticks at a higher rate to catch up with the missed tick. The
+#        guest time should not be delayed once catchup is complete.
+#
+# Since: 2.0
+##
+{ 'enum': 'LostTickPolicy',
+  'data': ['discard', 'delay', 'merge', 'slew' ] }
+
+##
+# BiosAtaTranslation:
+#
+# Policy that BIOS should use to interpret cylinder/head/sector
+# addresses.  Note that Bochs BIOS and SeaBIOS will not actually
+# translate logical CHS to physical; instead, they will use logical
+# block addressing.
+#
+# @auto: If cylinder/heads/sizes are passed, choose between none and LBA
+#        depending on the size of the disk.  If they are not passed,
+#        choose none if QEMU can guess that the disk had 16 or fewer
+#        heads, large if QEMU can guess that the disk had 131072 or
+#        fewer tracks across all heads (i.e. cylinders*heads<131072),
+#        otherwise LBA.
+#
+# @none: The physical disk geometry is equal to the logical geometry.
+#
+# @lba: Assume 63 sectors per track and one of 16, 32, 64, 128 or 255
+#       heads (if fewer than 255 are enough to cover the whole disk
+#       with 1024 cylinders/head).  The number of cylinders/head is
+#       then computed based on the number of sectors and heads.
+#
+# @large: The number of cylinders per head is scaled down to 1024
+#         by correspondingly scaling up the number of heads.
+#
+# @rechs: Same as @large, but first convert a 16-head geometry to
+#         15-head, by proportionally scaling up the number of
+#         cylinders/head.
+#
+# Since: 2.0
+##
+{ 'enum': 'BiosAtaTranslation',
+  'data': ['auto', 'none', 'lba', 'large', 'rechs']}
+
 # @add_client
 #
 # Allow client connections for VNC, Spice and socket based
@@ -210,6 +268,56 @@
             'vm-clock-sec': 'int', 'vm-clock-nsec': 'int' } }
 
 ##
+# @ImageInfoSpecificQCow2:
+#
+# @compat: compatibility level
+#
+# @lazy-refcounts: #optional on or off; only valid for compat >= 1.1
+#
+# Since: 1.7
+##
+{ 'type': 'ImageInfoSpecificQCow2',
+  'data': {
+      'compat': 'str',
+      '*lazy-refcounts': 'bool'
+  } }
+
+##
+# @ImageInfoSpecificVmdk:
+#
+# @create-type: The create type of VMDK image
+#
+# @cid: Content id of image
+#
+# @parent-cid: Parent VMDK image's cid
+#
+# @extents: List of extent files
+#
+# Since: 1.7
+##
+{ 'type': 'ImageInfoSpecificVmdk',
+  'data': {
+      'create-type': 'str',
+      'cid': 'int',
+      'parent-cid': 'int',
+      'extents': ['ImageInfo']
+  } }
+
+##
+# @ImageInfoSpecific:
+#
+# A discriminated record of image format specific information structures.
+#
+# Since: 1.7
+##
+
+{ 'union': 'ImageInfoSpecific',
+  'data': {
+      'qcow2': 'ImageInfoSpecificQCow2',
+      'vmdk': 'ImageInfoSpecificVmdk'
+  } }
+
+##
 # @ImageInfo:
 #
 # Information about a QEMU image file
@@ -228,6 +336,8 @@
 #
 # @encrypted: #optional true if the image is encrypted
 #
+# @compressed: #optional true if the image is compressed (Since 1.7)
+#
 # @backing-filename: #optional name of the backing file
 #
 # @full-backing-filename: #optional full path of the backing file
@@ -238,6 +348,9 @@
 #
 # @backing-image: #optional info of the backing image (since 1.6)
 #
+# @format-specific: #optional structure supplying additional format-specific
+# information (since 1.7)
+#
 # Since: 1.3
 #
 ##
@@ -245,10 +358,11 @@
 { 'type': 'ImageInfo',
   'data': {'filename': 'str', 'format': 'str', '*dirty-flag': 'bool',
            '*actual-size': 'int', 'virtual-size': 'int',
-           '*cluster-size': 'int', '*encrypted': 'bool',
+           '*cluster-size': 'int', '*encrypted': 'bool', '*compressed': 'bool',
            '*backing-filename': 'str', '*full-backing-filename': 'str',
            '*backing-filename-format': 'str', '*snapshots': ['SnapshotInfo'],
-           '*backing-image': 'ImageInfo' } }
+           '*backing-image': 'ImageInfo',
+           '*format-specific': 'ImageInfoSpecific' } }
 
 ##
 # @ImageCheck:
@@ -379,6 +493,28 @@
 # Since: 0.14.0
 ##
 { 'command': 'query-chardev', 'returns': ['ChardevInfo'] }
+
+##
+# @ChardevBackendInfo:
+#
+# Information about a character device backend
+#
+# @name: The backend name
+#
+# Since: 2.0
+##
+{ 'type': 'ChardevBackendInfo', 'data': {'name': 'str'} }
+
+##
+# @query-chardev-backends:
+#
+# Returns information about character device backends.
+#
+# Returns: a list of @ChardevBackendInfo
+#
+# Since: 2.0
+##
+{ 'command': 'query-chardev-backends', 'returns': ['ChardevBackendInfo'] }
 
 ##
 # @DataFormat:
@@ -615,10 +751,9 @@
 #          This feature allows us to minimize migration traffic for certain work
 #          loads, by sending compressed difference of the pages
 #
-# @x-rdma-pin-all: Controls whether or not the entire VM memory footprint is
+# @rdma-pin-all: Controls whether or not the entire VM memory footprint is
 #          mlock()'d on demand or all at once. Refer to docs/rdma.txt for usage.
-#          Disabled by default. Experimental: may (or may not) be renamed after
-#          further testing is complete. (since 1.6)
+#          Disabled by default. (since 2.0)
 #
 # @zero-blocks: During storage migration encode blocks of zeroes efficiently. This
 #          essentially saves 1MB of zeroes per block on the wire. Enabling requires
@@ -632,7 +767,7 @@
 # Since: 1.2
 ##
 { 'enum': 'MigrationCapability',
-  'data': ['xbzrle', 'x-rdma-pin-all', 'auto-converge', 'zero-blocks'] }
+  'data': ['xbzrle', 'rdma-pin-all', 'auto-converge', 'zero-blocks'] }
 
 ##
 # @MigrationCapabilityStatus
@@ -748,11 +883,42 @@
 { 'command': 'query-cpus', 'returns': ['CpuInfo'] }
 
 ##
+# @IOThreadInfo:
+#
+# Information about an iothread
+#
+# @id: the identifier of the iothread
+#
+# @thread-id: ID of the underlying host thread
+#
+# Since: 2.0
+##
+{ 'type': 'IOThreadInfo',
+  'data': {'id': 'str', 'thread-id': 'int'} }
+
+##
+# @query-iothreads:
+#
+# Returns a list of information about each iothread.
+#
+# Note this list excludes the QEMU main loop thread, which is not declared
+# using the -object iothread command-line option.  It is always the main thread
+# of the process.
+#
+# Returns: a list of @IOThreadInfo for each iothread
+#
+# Since: 2.0
+##
+{ 'command': 'query-iothreads', 'returns': ['IOThreadInfo'] }
+
+##
 # @BlockDeviceInfo:
 #
 # Information about the backing device for a block device.
 #
 # @file: the filename of the backing device
+#
+# @node-name: #optional the name of the block driver node (Since 2.0)
 #
 # @ro: true if the backing device was open read-only
 #
@@ -785,17 +951,34 @@
 #
 # @image: the info of image used (since: 1.6)
 #
+# @bps_max: #optional total max in bytes (Since 1.7)
+#
+# @bps_rd_max: #optional read max in bytes (Since 1.7)
+#
+# @bps_wr_max: #optional write max in bytes (Since 1.7)
+#
+# @iops_max: #optional total I/O operations max (Since 1.7)
+#
+# @iops_rd_max: #optional read I/O operations max (Since 1.7)
+#
+# @iops_wr_max: #optional write I/O operations max (Since 1.7)
+#
+# @iops_size: #optional an I/O size in bytes (Since 1.7)
+#
 # Since: 0.14.0
 #
-# Notes: This interface is only found in @BlockInfo.
 ##
 { 'type': 'BlockDeviceInfo',
-  'data': { 'file': 'str', 'ro': 'bool', 'drv': 'str',
+  'data': { 'file': 'str', '*node-name': 'str', 'ro': 'bool', 'drv': 'str',
             '*backing_file': 'str', 'backing_file_depth': 'int',
             'encrypted': 'bool', 'encryption_key_missing': 'bool',
             'bps': 'int', 'bps_rd': 'int', 'bps_wr': 'int',
             'iops': 'int', 'iops_rd': 'int', 'iops_wr': 'int',
-            'image': 'ImageInfo' } }
+            'image': 'ImageInfo',
+            '*bps_max': 'int', '*bps_rd_max': 'int',
+            '*bps_wr_max': 'int', '*iops_max': 'int',
+            '*iops_rd_max': 'int', '*iops_wr_max': 'int',
+            '*iops_size': 'int' } }
 
 ##
 # @BlockDeviceIoStatus:
@@ -811,6 +994,35 @@
 # Since: 1.0
 ##
 { 'enum': 'BlockDeviceIoStatus', 'data': [ 'ok', 'failed', 'nospace' ] }
+
+##
+# @BlockDeviceMapEntry:
+#
+# Entry in the metadata map of the device (returned by "qemu-img map")
+#
+# @start: Offset in the image of the first byte described by this entry
+#         (in bytes)
+#
+# @length: Length of the range described by this entry (in bytes)
+#
+# @depth: Number of layers (0 = top image, 1 = top image's backing file, etc.)
+#         before reaching one for which the range is allocated.  The value is
+#         in the range 0 to the depth of the image chain - 1.
+#
+# @zero: the sectors in this range read as zeros
+#
+# @data: reading the image will actually read data from a file (in particular,
+#        if @offset is present this means that the sectors are not simply
+#        preallocated, but contain actual data in raw format)
+#
+# @offset: if present, the image file stores the data for this range in
+#          raw format at the given offset.
+#
+# Since 1.7
+##
+{ 'type': 'BlockDeviceMapEntry',
+  'data': { 'start': 'int', 'length': 'int', 'depth': 'int', 'zero': 'bool',
+            'data': 'bool', '*offset': 'int' } }
 
 ##
 # @BlockDirtyInfo:
@@ -845,8 +1057,8 @@
 # @tray_open: #optional True if the device has a tray and it is open
 #             (only present if removable is true)
 #
-# @dirty: #optional dirty bitmap information (only present if the dirty
-#         bitmap is enabled)
+# @dirty-bitmaps: #optional dirty bitmaps information (only present if the
+#                 driver has one or more dirty bitmaps) (Since 2.0)
 #
 # @io-status: #optional @BlockDeviceIoStatus. Only present if the device
 #             supports it and the VM is configured to stop on errors
@@ -860,7 +1072,7 @@
   'data': {'device': 'str', 'type': 'str', 'removable': 'bool',
            'locked': 'bool', '*inserted': 'BlockDeviceInfo',
            '*tray_open': 'bool', '*io-status': 'BlockDeviceIoStatus',
-           '*dirty': 'BlockDirtyInfo' } }
+           '*dirty-bitmaps': ['BlockDirtyInfo'] } }
 
 ##
 # @query-block:
@@ -919,15 +1131,17 @@
 #
 # @stats:  A @BlockDeviceStats for the device.
 #
-# @parent: #optional This may point to the backing block device if this is a
-#          a virtual block device.  If it's a backing block, this will point
-#          to the backing file is one is present.
+# @parent: #optional This describes the file block device if it has one.
+#
+# @backing: #optional This describes the backing block device if it has one.
+#           (Since 2.0)
 #
 # Since: 0.14.0
 ##
 { 'type': 'BlockStats',
   'data': {'*device': 'str', 'stats': 'BlockDeviceStats',
-           '*parent': 'BlockStats'} }
+           '*parent': 'BlockStats',
+           '*backing': 'BlockStats'} }
 
 ##
 # @query-blockstats:
@@ -1319,6 +1533,24 @@
   'data': ['top', 'full', 'none'] }
 
 ##
+# @BlockJobType:
+#
+# Type of a block job.
+#
+# @commit: block commit job type, see "block-commit"
+#
+# @stream: block stream job type, see "block-stream"
+#
+# @mirror: drive mirror job type, see "drive-mirror"
+#
+# @backup: drive backup job type, see "drive-backup"
+#
+# Since: 1.7
+##
+{ 'enum': 'BlockJobType',
+  'data': ['commit', 'stream', 'mirror', 'backup'] }
+
+##
 # @BlockJobInfo:
 #
 # Information about a long-running block device operation.
@@ -1554,7 +1786,11 @@
 # determine which ones are encrypted, set the passwords with this command, and
 # then start the guest with the @cont command.
 #
-# @device:   the name of the device to set the password on
+# Either @device or @node-name must be set but not both.
+#
+# @device: #optional the name of the block backend device to set the password on
+#
+# @node-name: #optional graph node name to set the password on (Since 2.0)
 #
 # @password: the password to use for the device
 #
@@ -1568,7 +1804,8 @@
 #
 # Since: 0.14.0
 ##
-{ 'command': 'block_passwd', 'data': {'device': 'str', 'password': 'str'} }
+{ 'command': 'block_passwd', 'data': {'*device': 'str',
+                                      '*node-name': 'str', 'password': 'str'} }
 
 ##
 # @balloon:
@@ -1595,7 +1832,11 @@
 #
 # Resize a block image while a guest is running.
 #
-# @device:  the name of the device to get the image resized
+# Either @device or @node-name must be set but not both.
+#
+# @device: #optional the name of the device to get the image resized
+#
+# @node-name: #optional graph node name to get the image resized (Since 2.0)
 #
 # @size:  new image size in bytes
 #
@@ -1604,7 +1845,9 @@
 #
 # Since: 0.14.0
 ##
-{ 'command': 'block_resize', 'data': { 'device': 'str', 'size': 'int' }}
+{ 'command': 'block_resize', 'data': { '*device': 'str',
+                                       '*node-name': 'str',
+                                       'size': 'int' }}
 
 ##
 # @NewImageMode
@@ -1615,7 +1858,8 @@
 # @existing: QEMU should look for an existing image file.
 #
 # @absolute-paths: QEMU should create a new image with absolute paths
-# for the backing file.
+# for the backing file. If there is no backing file available, the new
+# image will not be backed either.
 #
 # Since: 1.1
 ##
@@ -1625,9 +1869,15 @@
 ##
 # @BlockdevSnapshot
 #
-# @device:  the name of the device to generate the snapshot from.
+# Either @device or @node-name must be set but not both.
+#
+# @device: #optional the name of the device to generate the snapshot from.
+#
+# @node-name: #optional graph node name to generate the snapshot from (Since 2.0)
 #
 # @snapshot-file: the target of the new image. A new file will be created.
+#
+# @snapshot-node-name: #optional the graph node name of the new image (Since 2.0)
 #
 # @format: #optional the format of the snapshot image, default is 'qcow2'.
 #
@@ -1635,8 +1885,25 @@
 #        'absolute-paths'.
 ##
 { 'type': 'BlockdevSnapshot',
-  'data': { 'device': 'str', 'snapshot-file': 'str', '*format': 'str',
-            '*mode': 'NewImageMode' } }
+  'data': { '*device': 'str', '*node-name': 'str',
+            'snapshot-file': 'str', '*snapshot-node-name': 'str',
+            '*format': 'str', '*mode': 'NewImageMode' } }
+
+##
+# @BlockdevSnapshotInternal
+#
+# @device: the name of the device to generate the snapshot from
+#
+# @name: the name of the internal snapshot to be created
+#
+# Notes: In transaction, if @name is empty, or any snapshot matching @name
+#        exists, the operation will fail. Only some image formats support it,
+#        for example, qcow2, rbd, and sheepdog.
+#
+# Since: 1.7
+##
+{ 'type': 'BlockdevSnapshotInternal',
+  'data': { 'device': 'str', 'name': 'str' } }
 
 ##
 # @DriveBackup
@@ -1700,7 +1967,8 @@
   'data': {
        'blockdev-snapshot-sync': 'BlockdevSnapshot',
        'drive-backup': 'DriveBackup',
-       'abort': 'Abort'
+       'abort': 'Abort',
+       'blockdev-snapshot-internal-sync': 'BlockdevSnapshotInternal'
    } }
 
 ##
@@ -1741,6 +2009,53 @@
   'data': 'BlockdevSnapshot' }
 
 ##
+# @blockdev-snapshot-internal-sync
+#
+# Synchronously take an internal snapshot of a block device, when the format
+# of the image used supports it.
+#
+# For the arguments, see the documentation of BlockdevSnapshotInternal.
+#
+# Returns: nothing on success
+#          If @device is not a valid block device, DeviceNotFound
+#          If any snapshot matching @name exists, or @name is empty,
+#          GenericError
+#          If the format of the image used does not support it,
+#          BlockFormatFeatureNotSupported
+#
+# Since 1.7
+##
+{ 'command': 'blockdev-snapshot-internal-sync',
+  'data': 'BlockdevSnapshotInternal' }
+
+##
+# @blockdev-snapshot-delete-internal-sync
+#
+# Synchronously delete an internal snapshot of a block device, when the format
+# of the image used support it. The snapshot is identified by name or id or
+# both. One of the name or id is required. Return SnapshotInfo for the
+# successfully deleted snapshot.
+#
+# @device: the name of the device to delete the snapshot from
+#
+# @id: optional the snapshot's ID to be deleted
+#
+# @name: optional the snapshot's name to be deleted
+#
+# Returns: SnapshotInfo on success
+#          If @device is not a valid block device, DeviceNotFound
+#          If snapshot not found, GenericError
+#          If the format of the image used does not support it,
+#          BlockFormatFeatureNotSupported
+#          If @id and @name are both not specified, GenericError
+#
+# Since 1.7
+##
+{ 'command': 'blockdev-snapshot-delete-internal-sync',
+  'data': { 'device': 'str', '*id': 'str', '*name': 'str'},
+  'returns': 'SnapshotInfo' }
+
+##
 # @human-monitor-command:
 #
 # Execute a command on the human monitor and return the output.
@@ -1753,7 +2068,7 @@
 #
 # Since: 0.14.0
 #
-# Notes: This command only exists as a stop-gap.  It's use is highly
+# Notes: This command only exists as a stop-gap.  Its use is highly
 #        discouraged.  The semantics of this command are not guaranteed.
 #
 #        Known limitations:
@@ -1781,9 +2096,18 @@
 #
 # @top:              The file name of the backing image within the image chain,
 #                    which contains the topmost data to be committed down.
-#                    Note, the active layer as 'top' is currently unsupported.
 #
 #                    If top == base, that is an error.
+#                    If top == active, the job will not be completed by itself,
+#                    user needs to complete the job with the block-job-complete
+#                    command after getting the ready event. (Since 2.0)
+#
+#                    If the base image is smaller than top, then the base image
+#                    will be resized to be the same size as top.  If top is
+#                    smaller than the base image, the base will not be
+#                    truncated.  If you want the base image size to match the
+#                    size of the smaller top, you can safely truncate it
+#                    yourself once the commit operation successfully completes.
 #
 #
 # @speed:  #optional the maximum speed, in bytes per second
@@ -1793,7 +2117,6 @@
 #          If @device does not exist, DeviceNotFound
 #          If image commit is not supported by this device, NotSupported
 #          If @base or @top is invalid, a generic error is returned
-#          If @top is the active layer, or omitted, a generic error is returned
 #          If @speed is invalid, InvalidParameter
 #
 # Since: 1.3
@@ -1820,6 +2143,17 @@
 # Since 1.6
 ##
 { 'command': 'drive-backup', 'data': 'DriveBackup' }
+
+##
+# @query-named-block-nodes
+#
+# Get the named block driver list
+#
+# Returns: the list of BlockDeviceInfo
+#
+# Since 2.0
+##
+{ 'command': 'query-named-block-nodes', 'returns': [ 'BlockDeviceInfo' ] }
 
 ##
 # @drive-mirror
@@ -2174,6 +2508,20 @@
 #
 # @iops_wr: write I/O operations per second
 #
+# @bps_max: #optional total max in bytes (Since 1.7)
+#
+# @bps_rd_max: #optional read max in bytes (Since 1.7)
+#
+# @bps_wr_max: #optional write max in bytes (Since 1.7)
+#
+# @iops_max: #optional total I/O operations max (Since 1.7)
+#
+# @iops_rd_max: #optional read I/O operations max (Since 1.7)
+#
+# @iops_wr_max: #optional write I/O operations max (Since 1.7)
+#
+# @iops_size: #optional an I/O size in bytes (Since 1.7)
+#
 # Returns: Nothing on success
 #          If @device is not a valid block device, DeviceNotFound
 #
@@ -2181,7 +2529,11 @@
 ##
 { 'command': 'block_set_io_throttle',
   'data': { 'device': 'str', 'bps': 'int', 'bps_rd': 'int', 'bps_wr': 'int',
-            'iops': 'int', 'iops_rd': 'int', 'iops_wr': 'int' } }
+            'iops': 'int', 'iops_rd': 'int', 'iops_wr': 'int',
+            '*bps_max': 'int', '*bps_rd_max': 'int',
+            '*bps_wr_max': 'int', '*iops_max': 'int',
+            '*iops_rd_max': 'int', '*iops_wr_max': 'int',
+            '*iops_size': 'int' } }
 
 ##
 # @block-stream:
@@ -2472,6 +2824,24 @@
 { 'command': 'device_del', 'data': {'id': 'str'} }
 
 ##
+# @DumpGuestMemoryFormat:
+#
+# An enumeration of guest-memory-dump's format.
+#
+# @elf: elf format
+#
+# @kdump-zlib: kdump-compressed format with zlib-compressed
+#
+# @kdump-lzo: kdump-compressed format with lzo-compressed
+#
+# @kdump-snappy: kdump-compressed format with snappy-compressed
+#
+# Since: 2.0
+##
+{ 'enum': 'DumpGuestMemoryFormat',
+  'data': [ 'elf', 'kdump-zlib', 'kdump-lzo', 'kdump-snappy' ] }
+
+##
 # @dump-guest-memory
 #
 # Dump guest's memory to vmcore. It is a synchronous operation that can take
@@ -2507,13 +2877,42 @@
 #          want to dump all guest's memory, please specify the start @begin
 #          and @length
 #
+# @format: #optional if specified, the format of guest memory dump. But non-elf
+#          format is conflict with paging and filter, ie. @paging, @begin and
+#          @length is not allowed to be specified with non-elf @format at the
+#          same time (since 2.0)
+#
 # Returns: nothing on success
 #
 # Since: 1.2
 ##
 { 'command': 'dump-guest-memory',
   'data': { 'paging': 'bool', 'protocol': 'str', '*begin': 'int',
-            '*length': 'int' } }
+            '*length': 'int', '*format': 'DumpGuestMemoryFormat' } }
+
+##
+# @DumpGuestMemoryCapability:
+#
+# A list of the available formats for dump-guest-memory
+#
+# Since: 2.0
+##
+{ 'type': 'DumpGuestMemoryCapability',
+  'data': {
+      'formats': ['DumpGuestMemoryFormat'] } }
+
+##
+# @query-dump-guest-memory-capability:
+#
+# Returns the available formats for dump-guest-memory
+#
+# Returns:  A @DumpGuestMemoryCapability object listing available formats for
+#           dump-guest-memory
+#
+# Since: 2.0
+##
+{ 'command': 'query-dump-guest-memory-capability',
+  'returns': 'DumpGuestMemoryCapability' }
 
 ##
 # @netdev_add:
@@ -2553,6 +2952,40 @@
 # Since: 0.14.0
 ##
 { 'command': 'netdev_del', 'data': {'id': 'str'} }
+
+##
+# @object-add:
+#
+# Create a QOM object.
+#
+# @qom-type: the class name for the object to be created
+#
+# @id: the name of the new object
+#
+# @props: #optional a dictionary of properties to be passed to the backend
+#
+# Returns: Nothing on success
+#          Error if @qom-type is not a valid class name
+#
+# Since: 2.0
+##
+{ 'command': 'object-add',
+  'data': {'qom-type': 'str', 'id': 'str', '*props': 'dict'},
+  'gen': 'no' }
+
+##
+# @object-del:
+#
+# Remove a QOM object.
+#
+# @id: the name of the QOM object to remove
+#
+# Returns: Nothing on success
+#          Error if @id is not a valid id for a QOM object
+#
+# Since: 2.0
+##
+{ 'command': 'object-del', 'data': {'id': 'str'} }
 
 ##
 # @NetdevNoneOptions
@@ -2805,6 +3238,27 @@
     'hubid':     'int32' } }
 
 ##
+# @NetdevNetmapOptions
+#
+# Connect a client to a netmap-enabled NIC or to a VALE switch port
+#
+# @ifname: Either the name of an existing network interface supported by
+#          netmap, or the name of a VALE port (created on the fly).
+#          A VALE port name is in the form 'valeXXX:YYY', where XXX and
+#          YYY are non-negative integers. XXX identifies a switch and
+#          YYY identifies a port of the switch. VALE ports having the
+#          same XXX are therefore connected to the same switch.
+#
+# @devname: #optional path of the netmap device (default: '/dev/netmap').
+#
+# Since 2.0
+##
+{ 'type': 'NetdevNetmapOptions',
+  'data': {
+    'ifname':     'str',
+    '*devname':    'str' } }
+
+##
 # @NetClientOptions
 #
 # A discriminated record of network device traits.
@@ -2821,7 +3275,8 @@
     'vde':      'NetdevVdeOptions',
     'dump':     'NetdevDumpOptions',
     'bridge':   'NetdevBridgeOptions',
-    'hubport':  'NetdevHubPortOptions' } }
+    'hubport':  'NetdevHubPortOptions',
+    'netmap':   'NetdevNetmapOptions' } }
 
 ##
 # @NetLegacy
@@ -3129,9 +3584,12 @@
 # This is used by the send-key command.
 #
 # Since: 1.3.0
+#
+# 'unmapped' and 'pause' since 2.0
 ##
 { 'enum': 'QKeyCode',
-  'data': [ 'shift', 'shift_r', 'alt', 'alt_r', 'altgr', 'altgr_r', 'ctrl',
+  'data': [ 'unmapped',
+            'shift', 'shift_r', 'alt', 'alt_r', 'altgr', 'altgr_r', 'ctrl',
             'ctrl_r', 'menu', 'esc', '1', '2', '3', '4', '5', '6', '7', '8',
             '9', '0', 'minus', 'equal', 'backspace', 'tab', 'q', 'w', 'e',
             'r', 't', 'y', 'u', 'i', 'o', 'p', 'bracket_left', 'bracket_right',
@@ -3145,7 +3603,7 @@
             'kp_9', 'less', 'f11', 'f12', 'print', 'home', 'pgup', 'pgdn', 'end',
             'left', 'up', 'down', 'right', 'insert', 'delete', 'stop', 'again',
             'props', 'undo', 'front', 'copy', 'open', 'paste', 'find', 'cut',
-             'lf', 'help', 'meta_l', 'meta_r', 'compose' ] }
+             'lf', 'help', 'meta_l', 'meta_r', 'compose', 'pause' ] }
 
 ##
 # @KeyValue
@@ -3726,6 +4184,8 @@
 #
 # @unicast: unicast receive state
 #
+# @vlan: vlan receive state (Since 2.0)
+#
 # @broadcast-allowed: whether to receive broadcast
 #
 # @multicast-overflow: multicast table is overflowed or not
@@ -3749,6 +4209,7 @@
     'promiscuous':        'bool',
     'multicast':          'RxState',
     'unicast':            'RxState',
+    'vlan':               'RxState',
     'broadcast-allowed':  'bool',
     'multicast-overflow': 'bool',
     'unicast-overflow':   'bool',
@@ -3773,3 +4234,458 @@
 ##
 { 'command': 'query-rx-filter', 'data': { '*name': 'str' },
   'returns': ['RxFilterInfo'] }
+
+
+##
+# @BlockdevDiscardOptions
+#
+# Determines how to handle discard requests.
+#
+# @ignore:      Ignore the request
+# @unmap:       Forward as an unmap request
+#
+# Since: 1.7
+##
+{ 'enum': 'BlockdevDiscardOptions',
+  'data': [ 'ignore', 'unmap' ] }
+
+##
+# @BlockdevAioOptions
+#
+# Selects the AIO backend to handle I/O requests
+#
+# @threads:     Use qemu's thread pool
+# @native:      Use native AIO backend (only Linux and Windows)
+#
+# Since: 1.7
+##
+{ 'enum': 'BlockdevAioOptions',
+  'data': [ 'threads', 'native' ] }
+
+##
+# @BlockdevCacheOptions
+#
+# Includes cache-related options for block devices
+#
+# @writeback:   #optional enables writeback mode for any caches (default: true)
+# @direct:      #optional enables use of O_DIRECT (bypass the host page cache;
+#               default: false)
+# @no-flush:    #optional ignore any flush requests for the device (default:
+#               false)
+#
+# Since: 1.7
+##
+{ 'type': 'BlockdevCacheOptions',
+  'data': { '*writeback': 'bool',
+            '*direct': 'bool',
+            '*no-flush': 'bool' } }
+
+##
+# @BlockdevDriver
+#
+# Drivers that are supported in block device operations.
+#
+# Since: 2.0
+##
+{ 'enum': 'BlockdevDriver',
+  'data': [ 'file', 'http', 'https', 'ftp', 'ftps', 'tftp', 'vvfat', 'blkdebug',
+            'blkverify', 'bochs', 'cloop', 'cow', 'dmg', 'parallels', 'qcow',
+            'qcow2', 'qed', 'raw', 'vdi', 'vhdx', 'vmdk', 'vpc', 'quorum' ] }
+
+##
+# @BlockdevOptionsBase
+#
+# Options that are available for all block devices, independent of the block
+# driver.
+#
+# @driver:      block driver name
+# @id:          #optional id by which the new block device can be referred to.
+#               This is a required option on the top level of blockdev-add, and
+#               currently not allowed on any other level.
+# @node-name:   #optional the name of a block driver state node (Since 2.0)
+# @discard:     #optional discard-related options (default: ignore)
+# @cache:       #optional cache-related options
+# @aio:         #optional AIO backend (default: threads)
+# @rerror:      #optional how to handle read errors on the device
+#               (default: report)
+# @werror:      #optional how to handle write errors on the device
+#               (default: enospc)
+# @read-only:   #optional whether the block device should be read-only
+#               (default: false)
+#
+# Since: 1.7
+##
+{ 'type': 'BlockdevOptionsBase',
+  'data': { 'driver': 'BlockdevDriver',
+            '*id': 'str',
+            '*node-name': 'str',
+            '*discard': 'BlockdevDiscardOptions',
+            '*cache': 'BlockdevCacheOptions',
+            '*aio': 'BlockdevAioOptions',
+            '*rerror': 'BlockdevOnError',
+            '*werror': 'BlockdevOnError',
+            '*read-only': 'bool' } }
+
+##
+# @BlockdevOptionsFile
+#
+# Driver specific block device options for the file backend and similar
+# protocols.
+#
+# @filename:    path to the image file
+#
+# Since: 1.7
+##
+{ 'type': 'BlockdevOptionsFile',
+  'data': { 'filename': 'str' } }
+
+##
+# @BlockdevOptionsVVFAT
+#
+# Driver specific block device options for the vvfat protocol.
+#
+# @dir:         directory to be exported as FAT image
+# @fat-type:    #optional FAT type: 12, 16 or 32
+# @floppy:      #optional whether to export a floppy image (true) or
+#               partitioned hard disk (false; default)
+# @rw:          #optional whether to allow write operations (default: false)
+#
+# Since: 1.7
+##
+{ 'type': 'BlockdevOptionsVVFAT',
+  'data': { 'dir': 'str', '*fat-type': 'int', '*floppy': 'bool',
+            '*rw': 'bool' } }
+
+##
+# @BlockdevOptionsGenericFormat
+#
+# Driver specific block device options for image format that have no option
+# besides their data source.
+#
+# @file:        reference to or definition of the data source block device
+#
+# Since: 1.7
+##
+{ 'type': 'BlockdevOptionsGenericFormat',
+  'data': { 'file': 'BlockdevRef' } }
+
+##
+# @BlockdevOptionsGenericCOWFormat
+#
+# Driver specific block device options for image format that have no option
+# besides their data source and an optional backing file.
+#
+# @backing:     #optional reference to or definition of the backing file block
+#               device (if missing, taken from the image file content). It is
+#               allowed to pass an empty string here in order to disable the
+#               default backing file.
+#
+# Since: 1.7
+##
+{ 'type': 'BlockdevOptionsGenericCOWFormat',
+  'base': 'BlockdevOptionsGenericFormat',
+  'data': { '*backing': 'BlockdevRef' } }
+
+##
+# @BlockdevOptionsQcow2
+#
+# Driver specific block device options for qcow2.
+#
+# @lazy-refcounts:        #optional whether to enable the lazy refcounts
+#                         feature (default is taken from the image file)
+#
+# @pass-discard-request:  #optional whether discard requests to the qcow2
+#                         device should be forwarded to the data source
+#
+# @pass-discard-snapshot: #optional whether discard requests for the data source
+#                         should be issued when a snapshot operation (e.g.
+#                         deleting a snapshot) frees clusters in the qcow2 file
+#
+# @pass-discard-other:    #optional whether discard requests for the data source
+#                         should be issued on other occasions where a cluster
+#                         gets freed
+#
+# Since: 1.7
+##
+{ 'type': 'BlockdevOptionsQcow2',
+  'base': 'BlockdevOptionsGenericCOWFormat',
+  'data': { '*lazy-refcounts': 'bool',
+            '*pass-discard-request': 'bool',
+            '*pass-discard-snapshot': 'bool',
+            '*pass-discard-other': 'bool' } }
+
+##
+# @BlkdebugEvent
+#
+# Trigger events supported by blkdebug.
+##
+{ 'enum': 'BlkdebugEvent',
+  'data': [ 'l1_update', 'l1_grow.alloc_table', 'l1_grow.write_table',
+            'l1_grow.activate_table', 'l2_load', 'l2_update',
+            'l2_update_compressed', 'l2_alloc.cow_read', 'l2_alloc.write',
+            'read_aio', 'read_backing_aio', 'read_compressed', 'write_aio',
+            'write_compressed', 'vmstate_load', 'vmstate_save', 'cow_read',
+            'cow_write', 'reftable_load', 'reftable_grow', 'reftable_update',
+            'refblock_load', 'refblock_update', 'refblock_update_part',
+            'refblock_alloc', 'refblock_alloc.hookup', 'refblock_alloc.write',
+            'refblock_alloc.write_blocks', 'refblock_alloc.write_table',
+            'refblock_alloc.switch_table', 'cluster_alloc',
+            'cluster_alloc_bytes', 'cluster_free', 'flush_to_os',
+            'flush_to_disk' ] }
+
+##
+# @BlkdebugInjectErrorOptions
+#
+# Describes a single error injection for blkdebug.
+#
+# @event:       trigger event
+#
+# @state:       #optional the state identifier blkdebug needs to be in to
+#               actually trigger the event; defaults to "any"
+#
+# @errno:       #optional error identifier (errno) to be returned; defaults to
+#               EIO
+#
+# @sector:      #optional specifies the sector index which has to be affected
+#               in order to actually trigger the event; defaults to "any
+#               sector"
+#
+# @once:        #optional disables further events after this one has been
+#               triggered; defaults to false
+#
+# @immediately: #optional fail immediately; defaults to false
+#
+# Since: 2.0
+##
+{ 'type': 'BlkdebugInjectErrorOptions',
+  'data': { 'event': 'BlkdebugEvent',
+            '*state': 'int',
+            '*errno': 'int',
+            '*sector': 'int',
+            '*once': 'bool',
+            '*immediately': 'bool' } }
+
+##
+# @BlkdebugSetStateOptions
+#
+# Describes a single state-change event for blkdebug.
+#
+# @event:       trigger event
+#
+# @state:       #optional the current state identifier blkdebug needs to be in;
+#               defaults to "any"
+#
+# @new_state:   the state identifier blkdebug is supposed to assume if
+#               this event is triggered
+#
+# Since: 2.0
+##
+{ 'type': 'BlkdebugSetStateOptions',
+  'data': { 'event': 'BlkdebugEvent',
+            '*state': 'int',
+            'new_state': 'int' } }
+
+##
+# @BlockdevOptionsBlkdebug
+#
+# Driver specific block device options for blkdebug.
+#
+# @image:           underlying raw block device (or image file)
+#
+# @config:          #optional filename of the configuration file
+#
+# @align:           #optional required alignment for requests in bytes
+#
+# @inject-error:    #optional array of error injection descriptions
+#
+# @set-state:       #optional array of state-change descriptions
+#
+# Since: 2.0
+##
+{ 'type': 'BlockdevOptionsBlkdebug',
+  'data': { 'image': 'BlockdevRef',
+            '*config': 'str',
+            '*align': 'int',
+            '*inject-error': ['BlkdebugInjectErrorOptions'],
+            '*set-state': ['BlkdebugSetStateOptions'] } }
+
+##
+# @BlockdevOptionsBlkverify
+#
+# Driver specific block device options for blkverify.
+#
+# @test:    block device to be tested
+#
+# @raw:     raw image used for verification
+#
+# Since: 2.0
+##
+{ 'type': 'BlockdevOptionsBlkverify',
+  'data': { 'test': 'BlockdevRef',
+            'raw': 'BlockdevRef' } }
+
+##
+# @BlockdevOptionsQuorum
+#
+# Driver specific block device options for Quorum
+#
+# @blkverify:      #optional true if the driver must print content mismatch
+#                  set to false by default
+#
+# @children:       the children block devices to use
+#
+# @vote-threshold: the vote limit under which a read will fail
+#
+# Since: 2.0
+##
+{ 'type': 'BlockdevOptionsQuorum',
+  'data': { '*blkverify': 'bool',
+            'children': [ 'BlockdevRef' ],
+            'vote-threshold': 'int' } }
+
+##
+# @BlockdevOptions
+#
+# Options for creating a block device.
+#
+# Since: 1.7
+##
+{ 'union': 'BlockdevOptions',
+  'base': 'BlockdevOptionsBase',
+  'discriminator': 'driver',
+  'data': {
+      'file':       'BlockdevOptionsFile',
+      'http':       'BlockdevOptionsFile',
+      'https':      'BlockdevOptionsFile',
+      'ftp':        'BlockdevOptionsFile',
+      'ftps':       'BlockdevOptionsFile',
+      'tftp':       'BlockdevOptionsFile',
+# TODO gluster: Wait for structured options
+# TODO iscsi: Wait for structured options
+# TODO nbd: Should take InetSocketAddress for 'host'?
+# TODO nfs: Wait for structured options
+# TODO rbd: Wait for structured options
+# TODO sheepdog: Wait for structured options
+# TODO ssh: Should take InetSocketAddress for 'host'?
+      'vvfat':      'BlockdevOptionsVVFAT',
+      'blkdebug':   'BlockdevOptionsBlkdebug',
+      'blkverify':  'BlockdevOptionsBlkverify',
+      'bochs':      'BlockdevOptionsGenericFormat',
+      'cloop':      'BlockdevOptionsGenericFormat',
+      'cow':        'BlockdevOptionsGenericCOWFormat',
+      'dmg':        'BlockdevOptionsGenericFormat',
+      'parallels':  'BlockdevOptionsGenericFormat',
+      'qcow':       'BlockdevOptionsGenericCOWFormat',
+      'qcow2':      'BlockdevOptionsQcow2',
+      'qed':        'BlockdevOptionsGenericCOWFormat',
+      'raw':        'BlockdevOptionsGenericFormat',
+      'vdi':        'BlockdevOptionsGenericFormat',
+      'vhdx':       'BlockdevOptionsGenericFormat',
+      'vmdk':       'BlockdevOptionsGenericCOWFormat',
+      'vpc':        'BlockdevOptionsGenericFormat',
+      'quorum':     'BlockdevOptionsQuorum'
+  } }
+
+##
+# @BlockdevRef
+#
+# Reference to a block device.
+#
+# @definition:      defines a new block device inline
+# @reference:       references the ID of an existing block device. An
+#                   empty string means that no block device should be
+#                   referenced.
+#
+# Since: 1.7
+##
+{ 'union': 'BlockdevRef',
+  'discriminator': {},
+  'data': { 'definition': 'BlockdevOptions',
+            'reference': 'str' } }
+
+##
+# @blockdev-add:
+#
+# Creates a new block device.
+#
+# @options: block device options for the new device
+#
+# Since: 1.7
+##
+{ 'command': 'blockdev-add', 'data': { 'options': 'BlockdevOptions' } }
+
+##
+# @InputButton
+#
+# Button of a pointer input device (mouse, tablet).
+#
+# Since: 2.0
+##
+{ 'enum'  : 'InputButton',
+  'data'  : [ 'Left', 'Middle', 'Right', 'WheelUp', 'WheelDown' ] }
+
+##
+# @InputButton
+#
+# Position axis of a pointer input device (mouse, tablet).
+#
+# Since: 2.0
+##
+{ 'enum'  : 'InputAxis',
+  'data'  : [ 'X', 'Y' ] }
+
+##
+# @InputKeyEvent
+#
+# Keyboard input event.
+#
+# @key:    Which key this event is for.
+# @down:   True for key-down and false for key-up events.
+#
+# Since: 2.0
+##
+{ 'type'  : 'InputKeyEvent',
+  'data'  : { 'key'     : 'KeyValue',
+              'down'    : 'bool' } }
+
+##
+# @InputBtnEvent
+#
+# Pointer button input event.
+#
+# @button: Which button this event is for.
+# @down:   True for key-down and false for key-up events.
+#
+# Since: 2.0
+##
+{ 'type'  : 'InputBtnEvent',
+  'data'  : { 'button'  : 'InputButton',
+              'down'    : 'bool' } }
+
+##
+# @InputMoveEvent
+#
+# Pointer motion input event.
+#
+# @axis:   Which axis is referenced by @value.
+# @value:  Pointer position.  For absolute coordinates the
+#          valid range is 0 -> 0x7ffff
+#
+# Since: 2.0
+##
+{ 'type'  : 'InputMoveEvent',
+  'data'  : { 'axis'    : 'InputAxis',
+              'value'   : 'int' } }
+
+##
+# @InputEvent
+#
+# Input event union.
+#
+# Since: 2.0
+##
+{ 'union' : 'InputEvent',
+  'data'  : { 'key'     : 'InputKeyEvent',
+              'btn'     : 'InputBtnEvent',
+              'rel'     : 'InputMoveEvent',
+              'abs'     : 'InputMoveEvent' } }

@@ -229,7 +229,7 @@ static const USBDescDevice desc_device_bluetooth = {
         {
             .bNumInterfaces        = 2,
             .bConfigurationValue   = 1,
-            .bmAttributes          = 0xc0,
+            .bmAttributes          = USB_CFG_ATT_ONE | USB_CFG_ATT_SELFPOWER,
             .bMaxPower             = 0,
             .nif = ARRAY_SIZE(desc_iface_bluetooth),
             .ifs = desc_iface_bluetooth,
@@ -511,10 +511,17 @@ static int usb_bt_initfn(USBDevice *dev)
     return 0;
 }
 
-USBDevice *usb_bt_init(USBBus *bus, HCIInfo *hci)
+static USBDevice *usb_bt_init(USBBus *bus, const char *cmdline)
 {
     USBDevice *dev;
     struct USBBtState *s;
+    HCIInfo *hci;
+
+    if (*cmdline) {
+        hci = hci_init(cmdline);
+    } else {
+        hci = bt_new_hci(qemu_find_bt_vlan(0));
+    }
 
     if (!hci)
         return NULL;
@@ -566,6 +573,7 @@ static const TypeInfo bt_info = {
 static void usb_bt_register_types(void)
 {
     type_register_static(&bt_info);
+    usb_legacy_register("usb-bt-dongle", "bt", usb_bt_init);
 }
 
 type_init(usb_bt_register_types)

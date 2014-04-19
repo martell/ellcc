@@ -1,7 +1,7 @@
 OS=linux
 TARGET=arm
 CFLAGS+=-g -MD -MP -Werror -Wall -Wno-unused-function
-QEMUFLAGS=-cpu any -M versatilepb -m 128M
+QEMUFLAGS=-cpu cortex-a8 -M versatilepb -m 128M
 KERNEL=kernel
 SRCS=init.S main.c simple_console.c simple_memman.c scheduler.c
 NAMES:=$(basename $(filter %.c %.cpp %.S, $(SRCS)))
