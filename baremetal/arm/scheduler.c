@@ -17,7 +17,7 @@ Queue scheduler_queue;
 static Thread *ready;                   // The ready to run list.
 static Thread main_thread;              // The main thread.
 static Thread idle_thread;              // The idle thread.
-#define IDLE_STACK 1024
+#define IDLE_STACK 4096
 static char *idle_stack[IDLE_STACK];    // The idle thread stack.
 
 static intptr_t idle(intptr_t arg1, intptr_t arg2)
