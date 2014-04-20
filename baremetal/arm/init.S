@@ -255,15 +255,19 @@ __aeabi_read_tp:
 // Unhandled system calls.
 Unhandled_SVC:
     stmfd   sp!, {r12, lr}
-    push    {r2-r5}                 // Push extra arguments.
+    ldr     r12, SVC_TablePtr   // Get the system call table.
+    ldr     r12, [r12, #-4]     // Have entries been made?
+    cmp     r12, #0
+    beq     1f                  // If not, too soon for printf.
+    push    {r2-r5}             // Push extra arguments.
     mov     r3, r1
     mov     r2, r0
-    ldr     r1, SysCallPtr          // And the system call number.
+    ldr     r1, SysCallPtr      // And the system call number.
     ldr     r1, [r1]
-    ldr     r0, stringPtr           // Get the format string.
+    ldr     r0, stringPtr       // Get the format string.
     bl      printf
-    add     sp, #16                 // clean up the stack.
-
+    add     sp, #16             // clean up the stack.
+1:
     mov     r0, #-ENOSYS       
     ldmfd   sp!, {r12, pc}
 
@@ -277,8 +281,9 @@ stringPtr:
     .global     __set_syscall
 __set_syscall:
     cmp     r0, #512
-    ldrlo   r2, SVC_TablePtr       // Get the system call table.
-    strlo    r1, [r2, r0, lsl #2]  // Set the stystem call entry.
+    ldrlo   r2, SVC_TablePtr    // Get the system call table.
+    strlo   r2, [r2, #-4]       // Set the called flag to non-zero.     
+    strlo   r1, [r2, r0, lsl #2]  // Set the stystem call entry.
     movhs   r0, #-1
     movlo   r0, #0
     bx      lr
@@ -295,6 +300,7 @@ SysCall:
     .word   0
 
 // Create the system call table with room for 512 entries.
+    .word       0               // != 0 if a system call has been defined.
 SVC_Table:
     .rep        512
     .word       Unhandled_SVC

@@ -1,6 +1,7 @@
+#include <bits/syscall.h>       // For syscall numbers.
+#include <stdlib.h>
 #include "arm.h"
 #include "kernel.h"
-#include <stdlib.h>
 
 // scheduler.h
 struct ready_msg
@@ -22,26 +23,13 @@ static Thread idle_thread;              // The idle thread.
 #define IDLE_STACK 4096
 static char *idle_stack[IDLE_STACK];    // The idle thread stack.
 
+/** The idle thread.
+ */
 static intptr_t idle(intptr_t arg1, intptr_t arg2)
 {
     for ( ;; ) {
+        // Do stuff, but nothing that will block.
     }
-}
-
-/* Initialize the scheduler.
- */
-static void init(void)
-    __attribute__((__constructor__, __used__));
-
-static void init(void)
-{
-        // Set up the main and idle threads.
-        idle_thread.saved_sp = (Context *)&idle_stack[IDLE_STACK];
-        __new_context(&idle_thread.saved_sp, idle, Mode_SYS, NULL,
-                      0, 0);
-        // The main thread is what's running right now.
-        main_thread.next = &idle_thread;
-        ready = &main_thread;
 }
 
 /* A bare-bones scheduler. Just shove threads onto the ready list.
@@ -159,3 +147,36 @@ void scheduler(int saved)
     if (message) {
     }
 }
+
+/* Set pointer to thread ID.
+ * @param tidptr Where to put the thread ID.
+ * @return The PID of the calling process.
+ *
+ * Stub for now.
+ */
+static long sys_set_tid_address(int *tidptr)
+{
+    *tidptr = 1;
+    return 1;
+}
+
+/* Initialize the scheduler.
+ */
+static void init(void)
+    __attribute__((__constructor__, __used__));
+
+static void init(void)
+{
+    // Set up the main and idle threads.
+    idle_thread.saved_sp = (Context *)&idle_stack[IDLE_STACK];
+    __new_context(&idle_thread.saved_sp, idle, Mode_SYS, NULL,
+                  0, 0);
+ 
+    // The main thread is what's running right now.
+    main_thread.next = &idle_thread;
+    ready = &main_thread;
+
+    // Set up a simple set_tid_address system call.
+    __set_syscall(SYS_set_tid_address, sys_set_tid_address);
+}
+

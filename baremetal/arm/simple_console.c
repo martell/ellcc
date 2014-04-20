@@ -9,17 +9,7 @@
 #include <sys/ioctl.h>
 
 #include "kernel.h"
-#include "simple_console.h"
 #include "arm_pl011.h"
-
-static void init(void)
-    __attribute__((__constructor__, __used__));
-
-static void init(void)
-{
-    // Set up the simple console for polled serial I/O.
-    simple_console();
-}
 
 static int sys_ioctl(int d, int request, ...)
 {
@@ -114,10 +104,13 @@ static ssize_t sys_readv(int fd, const struct iovec *iov, int iovcount)
     return count;
 }
 
-/* Initialize the simple console.
- */
-void simple_console(void)
+static void init(void)
+    __attribute__((__constructor__, __used__));
+
+static void init(void)
 {
+    // Set up the simple console for polled serial I/O.
+ 
     // Set up a simple ioctl system call.
     __set_syscall(SYS_ioctl, sys_ioctl);
     // Set up a simple write system call.
