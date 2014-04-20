@@ -65,7 +65,8 @@ static inline void lock_release(Lock *lock)
 // queue.h
 typedef struct entry
 {
-    struct entry *next;
+    struct entry *next;         // The next entry in the queue.
+    size_t size;                // The entry size.
 } Entry;
 
 struct thread;

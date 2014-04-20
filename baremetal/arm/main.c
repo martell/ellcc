@@ -56,7 +56,7 @@ int main(int argc, char **argv)
 
 #if defined(CONTEXT)
     new_thread(context, 4096, 42, 0);
-    Message msg = { { NULL }, 3 };
+    Message msg = { { NULL, sizeof(msg) }, 3 };
     send_message(&queue, &msg);
     msg.code = 6809;
     send_message(&queue, &msg);
