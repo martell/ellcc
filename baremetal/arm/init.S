@@ -185,10 +185,11 @@ __dispatch:                     // Dispatch to the given context.
 /* Handle a system call.
  * On the ARM, this is entered with an SVC instruction.
  */
+#define SAVED_REGS r7, r8, r9, r11, r12, lr
 SVC_Handler:
     srsfd   sp!, #Mode_SYS      // Save LR_svc and SPSR_svc on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
-    push    {r2, r3, r12, lr}   // Save registers.
+    push    {SAVED_REGS}        // Save registers.
     
     // In a system call.
     // r7 is the call number.
@@ -200,7 +201,7 @@ __in_syscall:                   // The stack frame is valid here.
     ldr     r8, SVC_TablePtr    // Get the system call table.
     ldr     r7, [r8, r7, lsl #2]// Get the stystem call entry.
     blx     r7                  // Dispatch. Return value is in r0/r1
-    pop     {r2, r3, r12, lr}   // Restore registers.
+    pop     {SAVED_REGS}        // Restore registers.
     rfeia   sp!                 // And return.
 
 SysCallPtr:
@@ -219,7 +220,7 @@ check_arm_syscall:
     adr     r8, ARM_SVC_Table   // Get the system call table.
     ldr     r7, [r8, r7, lsl #2]// Get the stystem call entry.
     blx     r7                  // Dispatch. Return value is in r0/r1
-    pop     {r4-r12, lr}        // Restore registers.
+    pop     {SAVED_REGS}        // Restore registers.
     rfeia   sp!                 // And return.
 
 low:
