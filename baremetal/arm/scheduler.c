@@ -35,9 +35,11 @@ static void init(void)
 
 static void init(void)
 {
+        // Set up the main and idle threads.
         idle_thread.saved_sp = (Context *)&idle_stack[IDLE_STACK];
         __new_context(&idle_thread.saved_sp, idle, Mode_SYS, NULL,
                       0, 0);
+        // The main thread is what's running right now.
         main_thread.next = &idle_thread;
         ready = &main_thread;
 }
