@@ -5,6 +5,7 @@
 #define _kernel_h_
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifndef NULL
 #define NULL 0
@@ -30,8 +31,9 @@ int __set_syscall(int nr, void *fn);
  * @param arg1 The first argument ro the entry point.
  * @param arg2 The second argument to the entry point.
  */
-void __new_context(Context **savearea,
-                   intptr_t (*entry)(intptr_t, intptr_t),
+typedef intptr_t (*ThreadFunction)(intptr_t, intptr_t);
+
+void __new_context(Context **savearea, ThreadFunction entry,
                    int mode, void *ret, intptr_t arg1, intptr_t arg2);
 
 /** Switch to a new context.
@@ -76,8 +78,8 @@ typedef struct queue
 } Queue;
 
 void send_queue(Queue *queue, Entry *entry);
+Entry *get_queue_nowait(Queue *queue);
 Entry *get_queue(Queue *queue);
-Entry *get_queue_wait(Queue *queue);
 
 // thread.h
 typedef struct thread
@@ -85,6 +87,16 @@ typedef struct thread
     struct thread *next;        // Next thread in any list.
     Context *saved_sp;          // The thread's saved stack pointer.
 } Thread;
+
+/** Create a new thread and make it run-able.
+ * @param entry The thread entry point.
+ * @param stack The thread stack size.
+ * @param arg1 The first parameter.
+ * @param arg2 The second parameter.
+ * @return The thread ID.
+ */
+Thread *new_thread(ThreadFunction entry, size_t stack, 
+                  intptr_t arg1, intptr_t arg2);
 
 // message.h
 typedef struct message
@@ -101,6 +113,11 @@ static inline void send_message(Queue *queue, Message *message)
 static inline Message *get_message(Queue *queue)
 {
     return (Message *)get_queue(queue);
+}
+
+static inline Message *get_message_nowait(Queue *queue)
+{
+    return (Message *)get_queue_nowait(queue);
 }
 
 #endif // _kernel_h_

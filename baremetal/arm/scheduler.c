@@ -1,5 +1,6 @@
 #include "arm.h"
 #include "kernel.h"
+#include <stdlib.h>
 
 // scheduler.h
 struct ready_msg
@@ -54,13 +55,32 @@ void schedule(Thread *list)
         list = next;
     }
     lock_release(&ready_lock);
-    // RICH: hole here.
-    __dispatch(ready->saved_sp);
+    // RICH: hole here. Keep interrupts disabled? SMP?
+    __switch(ready->saved_sp, &ready->next->saved_sp);
+}
+
+Thread *new_thread(ThreadFunction entry, size_t stack, 
+    intptr_t arg1, intptr_t arg2)
+{
+    Thread *thread = malloc(sizeof(Thread));    // RICH: bin.
+    if (!thread) return NULL;
+    thread->next = NULL;
+    if (stack == 0) stack = 4096;
+    char *p = malloc(stack);
+    if (p == NULL) {
+        free(thread);
+        return NULL;
+    }
+    thread->saved_sp = (Context *)(p + stack);
+    __new_context(&thread->saved_sp, entry, Mode_SYS, NULL, arg1, arg2);
+    schedule(thread);
+    return thread;
 }
 
 void send_queue(Queue *queue, Entry *entry)
 {
     Thread *wakeup = NULL;
+    entry->next = NULL;
     lock_aquire(&queue->lock);
     // Queue a message.
     if (queue->head) {
@@ -81,7 +101,7 @@ void send_queue(Queue *queue, Entry *entry)
     }
 }
 
-Entry *get_queue(Queue *queue)
+Entry *get_queue_nowait(Queue *queue)
 {
     Entry *entry = NULL;
     lock_aquire(&queue->lock);
@@ -97,7 +117,7 @@ Entry *get_queue(Queue *queue)
     return entry;
 }
 
-Entry *get_queue_wait(Queue *queue)
+Entry *get_queue(Queue *queue)
 {
     Entry *entry = NULL;
     do {
@@ -115,7 +135,7 @@ Entry *get_queue_wait(Queue *queue)
             // Remove me from the ready list.
             lock_aquire(&ready_lock);
             Thread *me = ready;
-            ready = ready->next;
+            ready = me->next;
             lock_release(&ready_lock);
  
             // Add me to the waiter list.

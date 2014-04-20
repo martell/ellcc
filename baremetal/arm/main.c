@@ -23,16 +23,13 @@ long __syscall(long, ...);
 
 #define CONTEXT
 #if defined(CONTEXT)
-static Context *main_sa;
-static Context *context1_sa;
-static Context *context2_sa;
 
+Queue queue = {};
 static intptr_t context(intptr_t arg1, intptr_t arg2)
 {
-    Context **context_sa = (Context **)arg2;
     for ( ;; ) {
-      printf("hello from context %" PRIdPTR "\n", arg1);
-      __switch(main_sa, context_sa);
+      Message *msg = get_message(&queue);
+      printf("hello from context %" PRIdPTR " code = %d\n", arg1, msg->code);
     }
     return 0;
 }
@@ -56,20 +53,13 @@ int main(int argc, char **argv)
     if (s != 0)
         printf("pthread_create: %s\n", strerror(errno));
 #endif
-#if defined(CONTEXT)
-    char *p = malloc(4096);
-    context1_sa = (Context *)(p + 4096);
-    __new_context(&context1_sa, context, Mode_SYS, NULL, 42, (intptr_t)&context1_sa);
-    p = malloc(4096);
-    context2_sa = (Context *)(p + 4096);
-    __new_context(&context2_sa, context, Mode_SYS, NULL, 6809, (intptr_t)&context2_sa);
-    // Let's do some context switching.
-    __switch(context1_sa, &main_sa);
-    __switch(context2_sa, &main_sa);
-    __switch(context1_sa, &main_sa);
-    __switch(context2_sa, &main_sa);
-    __switch(context2_sa, &main_sa);
 
+#if defined(CONTEXT)
+    new_thread(context, 4096, 42, 0);
+    Message msg = { { NULL }, 3 };
+    send_message(&queue, &msg);
+    msg.code = 6809;
+    send_message(&queue, &msg);
 #endif
 
     for ( ;; ) {
