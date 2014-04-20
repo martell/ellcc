@@ -6,7 +6,7 @@
 #define BASE 0x0101F1000
 #elif defined (VEXPRESS_A9)
 #define BASE 0x10009000
-#else
+#else // Newer cores.
 #define BASE 0x1c090000
 #endif
 
