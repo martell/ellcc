@@ -1,3 +1,4 @@
+#define __ASSEMBLER__
 #include <bits/errno.h>
 #include "arm.h"
 

@@ -14,6 +14,7 @@
 #define I_bit 0x80
 
 
+#if !defined(__ASSEMBLER__)
 static inline uint32_t __update_cpsr(uint32_t clear, uint32_t eor) __attribute__((__unused__));
 
 static inline uint32_t __update_cpsr(uint32_t clear, uint32_t set)
@@ -53,5 +54,6 @@ static inline void splx(int s)
 {
     __update_cpsr(F_bit | I_bit, s & (F_bit | I_bit));
 }
+#endif // !defined(__ASSEMBLER__)
 
 #endif // _arm_h_
