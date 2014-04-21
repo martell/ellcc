@@ -60,7 +60,7 @@ static inline void insert_thread(ThreadQueue *queue, Thread *thread)
     queue->head = thread;
 }
 
-/* A bare-bones scheduler. Just shove threads onto the ready list.
+/* Schedule a list of threads.
  */
 void schedule(Thread *list)
 {
