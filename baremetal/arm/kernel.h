@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "arm.h"
 
 #ifndef NULL
 #define NULL 0
@@ -36,30 +37,24 @@ typedef intptr_t (*ThreadFunction)(intptr_t, intptr_t);
 void __new_context(Context **savearea, ThreadFunction entry,
                    int mode, void *ret, intptr_t arg1, intptr_t arg2);
 
-/** Switch to a new context.
- * @param to The new context.
- * @param from A place to store the current context.
- */
-void __switch(Context *to, Context **from);
-
-/** Dispatch to a context.
- * @param to The context.
- */
-void __dispatch(Context *to);
-
 // sync.h
-typedef char Lock;
+typedef struct lock
+{
+    char lock;
+    int level;
+} Lock;
+
 static inline void lock_aquire(Lock *lock)
 {
-    // RICH: interrupts.
-    while(!__atomic_test_and_set(lock, __ATOMIC_SEQ_CST))
+    lock->level = splhigh();
+    while(!__atomic_test_and_set(&lock->lock, __ATOMIC_SEQ_CST))
         continue;
 }
 
 static inline void lock_release(Lock *lock)
 {
-    // RICH: interrupts.
-    __atomic_clear(lock, __ATOMIC_SEQ_CST);
+    __atomic_clear(&lock->lock, __ATOMIC_SEQ_CST);
+    splx(lock->level);
 }
 
 // queue.h
@@ -120,5 +115,11 @@ static inline Message *get_message_nowait(Queue *queue)
 {
     return (Message *)get_queue_nowait(queue);
 }
+
+/** Switch to a new context.
+ * @param to The new context.
+ * @param from A place to store the current context.
+ */
+void __switch(Context *to, Context **from, void (*)(Lock *), Lock *);
 
 #endif // _kernel_h_

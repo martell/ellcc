@@ -157,28 +157,22 @@ __new_context:
     bx      lr
 
 
-/* Switch from one context to the next.
+/* Switch from one context to the next and unlock the queue.
  * void __switch(Context **to, Context *from);
  * On entry:
  * r0 points to the next save area.
  * r1 points to the current save area.
+ * r2 points to the unlock function.
+ * r3 points to the lock
  */
     .global __switch
 __switch:
     srsfd   sp!, #Mode_SYS      // Save LR_sys and SPSR_sys on the sys stack.
     push    {r0-r12, lr}        // Store other registers.
     str     sp, [r1]            // Save the current frame.
-    // Fall through.
-
-/* Switch to a context.
- * void __switch(Context *to);
- * On entry:
- * r0 points to the next save area.
- * r1 points to the current save area.
- */
-    .global __dispatch
-__dispatch:                     // Dispatch to the given context.
     mov     sp, r0              // Get the next frame.
+    mov     r0, r3              // Get the lock pointer.
+    blx     r2                  //  Call the unlock function.
     pop     {r0-r12, lr}        // Restore registers
     rfeia   sp!                 // And dispatch.
 

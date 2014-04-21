@@ -18,6 +18,8 @@ Queue scheduler_queue;
 
 static Lock ready_lock;
 static Thread *ready;                   // The ready to run list.
+static Thread *current;                 // The current running thread.
+
 static Thread main_thread;              // The main thread.
 static Thread idle_thread;              // The idle thread.
 #define IDLE_STACK 4096
@@ -44,9 +46,17 @@ void schedule(Thread *list)
         ready = list;
         list = next;
     }
-    lock_release(&ready_lock);
-    // RICH: hole here. Keep interrupts disabled? SMP?
-    __switch(ready->saved_sp, &ready->next->saved_sp);
+
+    if (current == ready) {
+        // The curent thread continues.
+        lock_release(&ready_lock);
+        return;
+    }
+
+    // Switch to the new thread.
+    Thread *me = current;
+    current = ready;
+    __switch(ready->saved_sp, &me->saved_sp, lock_release, &ready_lock);
 }
 
 Thread *new_thread(ThreadFunction entry, size_t stack, 
@@ -125,15 +135,14 @@ Entry *get_queue(Queue *queue)
             // Remove me from the ready list.
             lock_aquire(&ready_lock);
             Thread *me = ready;
-            ready = me->next;
-            lock_release(&ready_lock);
+            current = ready = me->next;
  
             // Add me to the waiter list.
             me->next = queue->waiter;
             queue->waiter = me;
             lock_release(&queue->lock);
             // Run the next entry in the ready list.
-            __switch(ready->saved_sp, &me->saved_sp);
+            __switch(ready->saved_sp, &me->saved_sp, lock_release, &ready_lock);
         } else {
             lock_release(&queue->lock);
         }
@@ -174,7 +183,7 @@ static void init(void)
  
     // The main thread is what's running right now.
     main_thread.next = &idle_thread;
-    ready = &main_thread;
+    current = ready = &main_thread;
 
     // Set up a simple set_tid_address system call.
     __set_syscall(SYS_set_tid_address, sys_set_tid_address);
