@@ -16,8 +16,24 @@ typedef enum {
 
 Queue scheduler_queue;
 
+/* The ready_lock protects both the ready to run list and the current thread.
+ */
 static Lock ready_lock;
-static Thread *ready;                   // The ready to run list.
+
+typedef struct thread_queue {
+    Thread *head;
+    Thread *tail;
+} ThreadQueue;
+
+#if 0
+ReadyQueue ready[PRIORITIES];
+
+static Thread *current[PROCESSORS];
+static Thread idle_thread[PROCESSORS];   // The idle threads.
+static char *idle_stack[PROCESSORS][IDLE_STACK];
+#endif
+
+static ThreadQueue ready;               // The ready to run list.
 static Thread *current;                 // The current running thread.
 
 static Thread main_thread;              // The main thread.
@@ -27,11 +43,21 @@ static char *idle_stack[IDLE_STACK];    // The idle thread stack.
 
 /** The idle thread.
  */
+#include <stdio.h>
 static intptr_t idle(intptr_t arg1, intptr_t arg2)
 {
     for ( ;; ) {
         // Do stuff, but nothing that will block.
     }
+}
+
+/* Insert a thread in a thread queue.
+ */
+static inline void insert_thread(ThreadQueue *queue, Thread *thread)
+{
+    // A simple LIFO insertion.
+    thread->next = queue->head;
+    queue->head = thread;
 }
 
 /* A bare-bones scheduler. Just shove threads onto the ready list.
@@ -40,14 +66,20 @@ void schedule(Thread *list)
 {
     Thread *next;
     lock_aquire(&ready_lock);
+
+    // Insert the thread list and the current thread in the ready list.
+    current->next = list;
+    list = current;
+
     while (list) {
         next = list->next;
-        list->next = ready;
-        ready = list;
+        insert_thread(&ready, list);
         list = next;
     }
 
-    if (current == ready) {
+    if (current == ready.head) {
+        ready.head = current->next;
+        current->next = NULL;
         // The curent thread continues.
         lock_release(&ready_lock);
         return;
@@ -55,8 +87,14 @@ void schedule(Thread *list)
 
     // Switch to the new thread.
     Thread *me = current;
-    current = ready;
-    __switch(ready->saved_sp, &me->saved_sp, lock_release, &ready_lock);
+    current = ready.head;
+    if (current == NULL) {
+        current = &idle_thread;
+    } else {
+        ready.head = ready.head->next;
+    }
+    current->next = NULL;
+    __switch(current->saved_sp, &me->saved_sp, lock_release, &ready_lock);
 }
 
 Thread *new_thread(ThreadFunction entry, size_t stack, 
@@ -134,15 +172,21 @@ Entry *get_queue(Queue *queue)
             // Sleep until something becomes available.
             // Remove me from the ready list.
             lock_aquire(&ready_lock);
-            Thread *me = ready;
-            current = ready = me->next;
+            Thread *me = current;
+            current = ready.head;
+            if (current == NULL) {
+                current = &idle_thread;
+            } else {
+                ready.head = ready.head->next;
+            }
+            current->next = NULL;
  
             // Add me to the waiter list.
             me->next = queue->waiter;
             queue->waiter = me;
             lock_release(&queue->lock);
             // Run the next entry in the ready list.
-            __switch(ready->saved_sp, &me->saved_sp, lock_release, &ready_lock);
+            __switch(current->saved_sp, &me->saved_sp, lock_release, &ready_lock);
         } else {
             lock_release(&queue->lock);
         }
@@ -182,8 +226,8 @@ static void init(void)
                   0, 0);
  
     // The main thread is what's running right now.
-    main_thread.next = &idle_thread;
-    current = ready = &main_thread;
+    ready.head = NULL;
+    current = &main_thread;
 
     // Set up a simple set_tid_address system call.
     __set_syscall(SYS_set_tid_address, sys_set_tid_address);
