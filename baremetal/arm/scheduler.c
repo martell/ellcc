@@ -188,4 +188,3 @@ static void init(void)
     // Set up a simple set_tid_address system call.
     __set_syscall(SYS_set_tid_address, sys_set_tid_address);
 }
-

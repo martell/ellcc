@@ -122,4 +122,3 @@ static void init(void)
     // Set up a simple readv system call.
     __set_syscall(SYS_readv, sys_readv);
 }
-
