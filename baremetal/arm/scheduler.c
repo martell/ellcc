@@ -26,7 +26,7 @@ typedef struct thread_queue {
 } ThreadQueue;
 
 #if 0
-ReadyQueue ready[PRIORITIES];
+static ThreadQueue ready[PRIORITIES];
 
 static Thread *current[PROCESSORS];
 static Thread idle_thread[PROCESSORS];   // The idle threads.
@@ -51,13 +51,30 @@ static intptr_t idle(intptr_t arg1, intptr_t arg2)
     }
 }
 
-/* Insert a thread in a thread queue.
+/* Insert a thread in the ready queue.
  */
-static inline void insert_thread(ThreadQueue *queue, Thread *thread)
+static inline void insert_thread(Thread *thread)
 {
-    // A simple LIFO insertion.
-    thread->next = queue->head;
-    queue->head = thread;
+    // A simple FIFO insertion.
+    if (ready.tail) {
+        ready.tail->next = thread;
+    } else {
+        ready.head = thread;
+    }
+    ready.tail = thread;
+    thread->next = NULL;
+}
+
+/* Remove the head of the ready list.
+ */
+static inline void remove_thread(void)
+{
+    if (ready.head) {
+        ready.head = ready.head->next;
+        if (!ready.head) {
+            ready.tail = NULL;
+        }
+    }
 }
 
 /* Schedule a list of threads.
@@ -73,12 +90,12 @@ void schedule(Thread *list)
 
     while (list) {
         next = list->next;
-        insert_thread(&ready, list);
+        insert_thread(list);
         list = next;
     }
 
     if (current == ready.head) {
-        ready.head = current->next;
+        remove_thread();
         current->next = NULL;
         // The curent thread continues.
         lock_release(&ready_lock);
@@ -91,12 +108,22 @@ void schedule(Thread *list)
     if (current == NULL) {
         current = &idle_thread;
     } else {
-        ready.head = ready.head->next;
+        remove_thread();
     }
     current->next = NULL;
     __switch(current->saved_sp, &me->saved_sp, lock_release, &ready_lock);
 }
 
+/* Give up the remaining time slice.
+ */
+static int sys_sched_yield(void)
+{
+    schedule(current);
+    return 0;
+}
+
+/* Create a new thread.
+ */
 Thread *new_thread(ThreadFunction entry, size_t stack, 
     intptr_t arg1, intptr_t arg2)
 {
@@ -177,7 +204,7 @@ Entry *get_queue(Queue *queue)
             if (current == NULL) {
                 current = &idle_thread;
             } else {
-                ready.head = ready.head->next;
+                remove_thread();
             }
             current->next = NULL;
  
@@ -226,9 +253,12 @@ static void init(void)
                   0, 0);
  
     // The main thread is what's running right now.
-    ready.head = NULL;
+    ready.head = ready.tail = NULL;
     current = &main_thread;
 
     // Set up a simple set_tid_address system call.
     __set_syscall(SYS_set_tid_address, sys_set_tid_address);
+ 
+    // Set up the sched_yield system call.
+    __set_syscall(SYS_sched_yield, sys_sched_yield);
 }

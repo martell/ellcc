@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 #include <pthread.h>
+#include <sched.h>
 #include "kernel.h"
 #include "arm.h"
 
@@ -58,8 +59,10 @@ int main(int argc, char **argv)
     new_thread(context, 4096, 42, 0);
     Message msg = { { NULL, sizeof(msg) }, 3 };
     send_message(&queue, &msg);
+    sched_yield();      // Let the other thread run.
     msg.code = 6809;
     send_message(&queue, &msg);
+    sched_yield();      // Let the other thread run.
 #endif
 
     for ( ;; ) {
