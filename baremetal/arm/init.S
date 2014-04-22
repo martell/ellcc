@@ -134,26 +134,25 @@ identify_irq:
     bx      lr
 
 /* Set up a context for execution.
- * void __new_context(Context **savearea,
- *                    int (*entry)(intptr_t, intptr_t), uint32_t spsr,
- *                    void *ret, intptr_t arg1, intptr_t arg2)
+ * int __new_context(Context **savearea,
+ *                   int (*entry)(intptr_t, intptr_t), uint32_t spsr,
+ *                   void *ret, intptr_t arg1, intptr_t arg2)
  * On entry:
  * r0 points to the new context's save area, initialized to the top of the stack, aligned to 8 bytes.
  * r1 is the new context's start address
  * r2 is the new context's SPSR.
- * r3 is the new context's return  address.
  * [sp, #0] is the first argument to the context.
  * [sp, #4] is the second argument to the context.
  */
     .global __new_context
 __new_context:
-    ldr     r5, [r0]            // Get the new stack pointer.
-    stmfd   r5!, {r1, r2}       // Save the new pc and SPSR.
-    stmfd   r5!, {r2-r12, lr}   // Store other registers.
+    ldr     r7, [r0]            // Get the new stack pointer.
+    stmfd   r7!, {r1, r2}       // Save the new pc and SPSR.
+    sub     r7, #12 * 4         // Room for registers r2-r12, lr.
     ldr     r1, [sp, #0]        // Get the first argument.
     ldr     r2, [sp, #4]        // Get the second argument.
-    stmfd   r5!, {r1, r2}       // Save the arguments.
-    str     r5, [r0]            // Update the stack pointer.
+    stmfd   r7!, {r1-r2}        // Save the arguments as r0, r1.
+    str     r7, [r0]            // Update the stack pointer.
     bx      lr
 
 
@@ -165,25 +164,26 @@ __new_context:
  * r2 points to the unlock function.
  * r3 points to the lock
  */
+#define SAVED_REGS r0-r12, lr
     .global __switch
 __switch:
     srsfd   sp!, #Mode_SYS      // Save LR_sys and SPSR_sys on the sys stack.
-    push    {r0-r12, lr}        // Store other registers.
+    push    {SAVED_REGS}        // Store other registers.
     str     sp, [r1]            // Save the current frame.
     mov     sp, r0              // Get the next frame.
     mov     r0, r3              // Get the lock pointer.
-    blx     r2                  //  Call the unlock function.
-    pop     {r0-r12, lr}        // Restore registers
+    blx     r2                  // Call the unlock function.
+    pop     {SAVED_REGS}        // Restore registers
     rfeia   sp!                 // And dispatch.
 
 /* Handle a system call.
  * On the ARM, this is entered with an SVC instruction.
  */
-#define SAVED_REGS r7, r8, r9, r11, r12, lr
+#define SYS_SAVED r7, r8, r12, lr
 SVC_Handler:
     srsfd   sp!, #Mode_SYS      // Save LR_svc and SPSR_svc on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
-    push    {SAVED_REGS}        // Save registers.
+    push    {SYS_SAVED}         // Save registers.
     
     // In a system call.
     // r7 is the call number.
@@ -193,9 +193,12 @@ __in_syscall:                   // The stack frame is valid here.
     str     r7, [r8]            // Save call number for error reporting.
     bhs     check_arm_syscall   // Jump if too big for a syscall.
     ldr     r8, SVC_TablePtr    // Get the system call table.
-    ldr     r7, [r8, r7, lsl #2]// Get the stystem call entry.
-    blx     r7                  // Dispatch. Return value is in r0/r1
-    pop     {SAVED_REGS}        // Restore registers.
+    ldr     r8, [r8, r7, lsl #2]// Get the system call entry.
+    ldr     r7, [sp, #4 * 8]    // Get the syscall return address for clone().
+    push    { r4, r5, r6, r7 }  // put extra arguments on the stack.
+    blx     r8                  // Dispatch. Return value is in r0/r1
+    pop     { r4, r5, r6, r7 }  // pull extra arguments from the stack.
+    pop     {SYS_SAVED}         // Restore registers.
     rfeia   sp!                 // And return.
 
 SysCallPtr:
@@ -206,7 +209,7 @@ SysCallPtr:
 check_arm_syscall:
     ldr     r8, low
     cmp     r7, r8
-    blo     Unhandled_SVC
+    blo     Unhandled_SVC       // RICH: Incorrect
     ldr     r8, high
     cmp     r7, r8
     bhi     Unhandled_SVC
@@ -214,7 +217,7 @@ check_arm_syscall:
     adr     r8, ARM_SVC_Table   // Get the system call table.
     ldr     r7, [r8, r7, lsl #2]// Get the stystem call entry.
     blx     r7                  // Dispatch. Return value is in r0/r1
-    pop     {SAVED_REGS}        // Restore registers.
+    pop     {SYS_SAVED}         // Restore registers.
     rfeia   sp!                 // And return.
 
 low:
@@ -294,10 +297,10 @@ SysCall:
     .word   0
 
 // Create the system call table with room for 512 entries.
-    .word       0               // != 0 if a system call has been defined.
+    .word   0                   // != 0 if a system call has been defined.
 SVC_Table:
-    .rep        512
-    .word       Unhandled_SVC
+    .rep    512
+    .word   Unhandled_SVC
     .endr
 
 string:

@@ -1,4 +1,5 @@
 #include <bits/syscall.h>       // For syscall numbers.
+#include <string.h>
 #include <stdlib.h>
 #include <errno.h>
 #include "arm.h"
@@ -45,7 +46,7 @@ static char *idle_stack[IDLE_STACK];    // The idle thread stack.
 /** The idle thread.
  */
 #include <stdio.h>
-static intptr_t idle(intptr_t arg1, intptr_t arg2)
+static long idle(long arg1, long arg2)
 {
     for ( ;; ) {
         // Do stuff, but nothing that will block.
@@ -86,8 +87,10 @@ void schedule(Thread *list)
     lock_aquire(&ready_lock);
 
     // Insert the thread list and the current thread in the ready list.
-    current->next = list;
-    list = current;
+    if (list != current) {
+        current->next = list;
+        list = current;
+    }
 
     while (list) {
         next = list->next;
@@ -125,21 +128,34 @@ static int sys_sched_yield(void)
 
 /* Create a new thread.
  */
-Thread *new_thread(ThreadFunction entry, size_t stack, 
-    intptr_t arg1, intptr_t arg2)
+Thread *new_thread(ThreadFunction entry, void *stack, size_t size, 
+                   long arg1, long arg2, long r5, long r6, int *status)
 {
+    char *p;
+    if (stack == 0) {
+        if (size == 0) size = 4096;     // RICH: #define
+        p = malloc(size);
+
+        if (p == NULL) {
+            return NULL;
+        }
+    } else {
+        p = stack + size;
+    }
+
     Thread *thread = malloc(sizeof(Thread));    // RICH: bin.
-    if (!thread) return NULL;
     thread->next = NULL;
-    if (stack == 0) stack = 4096;
-    char *p = malloc(stack);
-    if (p == NULL) {
-        free(thread);
+    if (!thread) {
+        if (!stack) free(p);
         return NULL;
     }
-    thread->saved_sp = (Context *)(p + stack);
-    __new_context(&thread->saved_sp, entry, Mode_SYS, NULL, arg1, arg2);
+
+    thread->saved_sp = (Context *)(p + size);
+    (thread->saved_sp - 1)->r5 = r5;
+    (thread->saved_sp - 1)->r6 = r6;
+    __new_context(&thread->saved_sp, entry, Mode_SYS, arg1, arg2);
     schedule(thread);
+    *status = 0;
     return thread;
 }
 
@@ -241,19 +257,25 @@ static long sys_set_tid_address(int *tidptr)
     return 1;
 }
 
-static int sys_clone(unsigned long flags, void *stack, void *ptid, 
+static long sys_clone(unsigned long flags, void *stack, void *ptid, 
 #if defined(__arm__) || defined(__microblaze__) || defined(__ppc__) || \
     defined(__mips__)
-                     void *regs, void *ctid
+                      void *regs, void *ctid,
 #elif defined(__i386__) || defined(__x86_64__)
-                     void *ctid, void *regs
+                      void *ctid, void *regs,
 #else
   #error clone arguemnts not defined
 #endif
-                    )
+                      long start, long data, long ret)
 {       
-    printf("in clone\n");
-    return -ENOSYS;
+    int status;
+    Thread * new = new_thread((ThreadFunction)ret, stack, 0,
+                              0, 0, start, data, &status);
+    if (status < 0) {
+        return status;
+    }
+
+    return (int)new;
 }
 
 /* Initialize the scheduler.
@@ -265,8 +287,7 @@ static void init(void)
 {
     // Set up the main and idle threads.
     idle_thread.saved_sp = (Context *)&idle_stack[IDLE_STACK];
-    __new_context(&idle_thread.saved_sp, idle, Mode_SYS, NULL,
-                  0, 0);
+    __new_context(&idle_thread.saved_sp, idle, Mode_SYS, 0, 0);
  
     // The main thread is what's running right now.
     ready.head = ready.tail = NULL;

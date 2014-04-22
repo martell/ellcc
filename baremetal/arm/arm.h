@@ -15,6 +15,26 @@
 
 
 #if !defined(__ASSEMBLER__)
+
+typedef struct context
+{
+    uint32_t r0;
+    uint32_t r1;
+    uint32_t r2;
+    uint32_t r3;
+    uint32_t r4;
+    uint32_t r5;
+    uint32_t r6;
+    uint32_t r7;
+    uint32_t r8;
+    uint32_t r9;
+    uint32_t r10;
+    uint32_t r11;
+    uint32_t r12;
+    uint32_t lr;
+    uint32_t cpsr;
+} Context;
+
 static inline uint32_t __update_cpsr(uint32_t clear, uint32_t eor) __attribute__((__unused__));
 
 static inline uint32_t __update_cpsr(uint32_t clear, uint32_t set)

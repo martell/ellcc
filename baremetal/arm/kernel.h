@@ -12,11 +12,6 @@
 #define NULL 0
 #endif
 
-// arm.h
-typedef struct context
-{
-} Context;
-
 /** Set a system call handler.
  * @param nr The system call number.
  * @param fn The system call handling function.
@@ -26,16 +21,17 @@ int __set_syscall(int nr, void *fn);
 
 /** Set up a new context.
  * @param savearea Where to put the finished stack pointer.
- * @param entry The context entry point.
+ * @param entry The context entry point (0 if return to caller).
  * @param mode The context execution mode.
- * @param ret The context return address.
- * @param arg1 The first argument ro the entry point.
+ * @param arg1 The first argument to the entry point.
  * @param arg2 The second argument to the entry point.
+ * @return 1 to indicate non-clone, else arg1.
  */
-typedef intptr_t (*ThreadFunction)(intptr_t, intptr_t);
+typedef long (*ThreadFunction)(long, long);
 
-void __new_context(Context **savearea, ThreadFunction entry,
-                   int mode, void *ret, intptr_t arg1, intptr_t arg2);
+
+int __new_context(Context **savearea, ThreadFunction entry, int mode,
+                  long arg1, long arg2);
 
 // sync.h
 typedef struct lock
@@ -80,19 +76,22 @@ Entry *get_queue(Queue *queue);
 // thread.h
 typedef struct thread
 {
-    struct thread *next;        // Next thread in any list.
+    // The saved_sp field must be first in the thread struct.
     Context *saved_sp;          // The thread's saved stack pointer.
+    struct thread *next;        // Next thread in any list.
 } Thread;
 
 /** Create a new thread and make it run-able.
  * @param entry The thread entry point.
- * @param stack The thread stack size.
+ * @param stack A preallocated stack, or NULL.
+ * @param size The stack size.
  * @param arg1 The first parameter.
  * @param arg2 The second parameter.
+ * @param status A place to put any generated errno values.
  * @return The thread ID.
  */
-Thread *new_thread(ThreadFunction entry, size_t stack, 
-                  intptr_t arg1, intptr_t arg2);
+Thread *new_thread(ThreadFunction entry, void *stack, size_t size, 
+                   long arg1, long arg2, long r5, long r6, int *status);
 
 // message.h
 typedef struct message
