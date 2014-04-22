@@ -55,6 +55,7 @@ SECTIONS
     }
 
     .data : { *(.data) }
+    . = ALIGN(8);
     __bss_start__ = .;
     .bss : { *(.bss) }
     __bss_end__ = .;

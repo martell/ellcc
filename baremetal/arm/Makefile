@@ -35,7 +35,7 @@ $(KERNEL).bin: Makefile kernel.ld $(OBJS)
 run: $(KERNEL).bin
 	$(ELLCC)/bin/qemu-system-$(TARGET) $(QEMUFLAGS) -nographic -kernel $(KERNEL).bin
 
-debug:
+debug: $(KERNEL).bin
 	$(ELLCC)/bin/qemu-system-$(TARGET) -s -S $(QEMUFLAGS) -nographic -kernel $(KERNEL).bin
 
 clean:

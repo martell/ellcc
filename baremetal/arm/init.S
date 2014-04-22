@@ -1,4 +1,3 @@
-#define __ASSEMBLER__
 #include <bits/errno.h>
 #include "arm.h"
 
@@ -236,7 +235,7 @@ ARM_SVC_Table:
 /* Set thread area.
  */
 set_tls:
-    mcr     p15, 0, r7, c13, c0, 3
+    mcr     p15, 0, r0, c13, c0, 3
     mov     r0, #0
     bx      lr
 

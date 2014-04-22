@@ -1,5 +1,6 @@
 #include <bits/syscall.h>       // For syscall numbers.
 #include <stdlib.h>
+#include <errno.h>
 #include "arm.h"
 #include "kernel.h"
 
@@ -240,6 +241,21 @@ static long sys_set_tid_address(int *tidptr)
     return 1;
 }
 
+static int sys_clone(unsigned long flags, void *stack, void *ptid, 
+#if defined(__arm__) || defined(__microblaze__) || defined(__ppc__) || \
+    defined(__mips__)
+                     void *regs, void *ctid
+#elif defined(__i386__) || defined(__x86_64__)
+                     void *ctid, void *regs
+#else
+  #error clone arguemnts not defined
+#endif
+                    )
+{       
+    printf("in clone\n");
+    return -ENOSYS;
+}
+
 /* Initialize the scheduler.
  */
 static void init(void)
@@ -261,4 +277,6 @@ static void init(void)
  
     // Set up the sched_yield system call.
     __set_syscall(SYS_sched_yield, sys_sched_yield);
+    // Set up the clone system call.
+    __set_syscall(SYS_clone, sys_clone);
 }

@@ -11,7 +11,7 @@
 #include "kernel.h"
 #include "arm.h"
 
-#undef THREAD   // This doesn't work yet.
+#define THREAD   // This doesn't work yet.
 #if defined(THREAD)
 static void *thread(void *arg)
 {
@@ -50,6 +50,10 @@ int main(int argc, char **argv)
     pthread_t id;
     if (s != 0)
         printf("pthread_attr_init: %s\n", strerror(errno));
+    void *sp = malloc(4096);
+    s = pthread_attr_setstack(&attr, sp, 4096);
+    if (s != 0)
+        printf("pthread_attr_setstack %s\n", strerror(errno));
     s = pthread_create(&id, &attr, &thread, NULL);
     if (s != 0)
         printf("pthread_create: %s\n", strerror(errno));
