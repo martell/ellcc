@@ -32,6 +32,7 @@ typedef struct context
     uint32_t r11;
     uint32_t r12;
     uint32_t lr;
+    uint32_t pc;
     uint32_t cpsr;
 } Context;
 

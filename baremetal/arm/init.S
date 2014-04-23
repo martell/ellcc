@@ -194,8 +194,8 @@ __in_syscall:                   // The stack frame is valid here.
     bhs     check_arm_syscall   // Jump if too big for a syscall.
     ldr     r8, SVC_TablePtr    // Get the system call table.
     ldr     r8, [r8, r7, lsl #2]// Get the system call entry.
-    ldr     r7, [sp, #4 * 8]    // Get the syscall return address for clone().
-    push    { r4, r5, r6, r7 }  // put extra arguments on the stack.
+    ldr     r7, [sp, #4 * 4]    // Get the syscall return address for clone().
+    push    { r4, r5, r6, r7 }  // Put extra arguments on the stack.
     blx     r8                  // Dispatch. Return value is in r0/r1
     pop     { r4, r5, r6, r7 }  // pull extra arguments from the stack.
     pop     {SYS_SAVED}         // Restore registers.

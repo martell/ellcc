@@ -11,16 +11,17 @@
 #include "kernel.h"
 #include "arm.h"
 
-#undef THREAD   // This doesn't work yet.
+#define THREAD
 #if defined(THREAD)
+Queue thread_queue = {};
 static void *thread(void *arg)
 {
     printf ("thread started\n");
-    // Go to sleep.
-    sched_yield();      // Let the other thread run.
-    Queue queue = {};
-    get_message(&queue);
-    printf ("thread ending\n");
+    for ( ;; ) {
+        // Go to sleep.
+        get_message(&thread_queue);
+        printf ("thread running\n");
+    }
 
     return NULL;
 }
@@ -84,5 +85,10 @@ int main(int argc, char **argv)
         fflush(stdout);
         fgets(buffer, sizeof(buffer), stdin);
         printf("got: %s", buffer);
+#if defined(THREAD)
+        Message msg = { { NULL, sizeof(msg) }, 3 };
+        send_message(&thread_queue, &msg);
+        sched_yield();      // Let the other thread run.
+#endif
     }
 }
