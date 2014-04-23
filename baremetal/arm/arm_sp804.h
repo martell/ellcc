@@ -1,7 +1,17 @@
 /* Definitions for the ARM SP804 Dual-Timer.
  * http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.ddi0271d/Babehiha.html
  */
+#define VEXPRESS_A9
+#if defined (VERSATILEPB)
 #define BASE 0x0101E2000
+#elif defined (VEXPRESS_A9)
+#define BASE 0x10011000
+#define CLOCK 45000000
+#else // Newer cores.
+#define BASE 0x1c110000
+#define CLOCK 40000000
+#endif
+
 #define REG(reg) (*(unsigned int *)(address + (reg)))
 
 static volatile unsigned char * const address = (unsigned char *)BASE;
@@ -13,7 +23,7 @@ static volatile unsigned char * const address = (unsigned char *)BASE;
   #define TimerMode 0x0040      // 0 = free running, 1 = periodic.
   #define IntEnable 0x0020      // 0 = disabled, 1 = enabled.
   #define TimerPre  0x000C      // Prescale 00 = clk/1   01 = clk/16
-                                //          01 = clk/236 11 = undefined
+                                //          01 = clk/256 11 = undefined
   #define TimerSize 0x0002      // 0 = 16-bit, 1 = 32-bit.
   #define OneShot   0x0001      // 0 = wrapping, 1 = one-shot.
 

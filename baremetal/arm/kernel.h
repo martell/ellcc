@@ -121,4 +121,15 @@ static inline Message *get_message_nowait(Queue *queue)
  */
 void __switch(Context *to, Context **from, void (*)(Lock *), Lock *);
 
+/* RICH: Validate a system call address argument.
+ */
+enum {
+    VALID_RD = 0x01,
+    VALID_WR = 0x02,
+    VALID_RW = 0x03,
+    VALID_EX = 0x04
+};
+
+#define VALIDATE_ADDRESS(addr, size, access)
+
 #endif // _kernel_h_

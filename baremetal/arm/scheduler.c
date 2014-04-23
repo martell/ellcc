@@ -264,7 +264,7 @@ static long sys_clone(unsigned long flags, void *stack, void *ptid,
 #elif defined(__i386__) || defined(__x86_64__)
                       void *ctid, void *regs,
 #else
-  #error clone arguemnts not defined
+  #error clone arguments not defined
 #endif
                       long start, long data, long ret)
 {       

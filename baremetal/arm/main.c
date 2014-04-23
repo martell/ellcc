@@ -90,5 +90,11 @@ int main(int argc, char **argv)
         send_message(&thread_queue, &msg);
         sched_yield();      // Let the other thread run.
 #endif
+        struct timespec req = { 1, 0 };
+        struct timespec rem;
+
+        s = nanosleep(&req, &rem);
+        if (s != 0)
+            printf("nanosleep: %s\n", strerror(errno));
     }
 }
