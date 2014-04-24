@@ -9,9 +9,16 @@ static long resolution;         // The clock divisor.
 static long accumulated_error;  // Accumulated error in nanoseconds.
 static void (*handler)(void);   // The timeout handler.
 
-/* Get the timer resolution.
+/* Get the monotonic timer resolution.
  */
-long timer_getres(void)
+long timer_monotonic_getres(void)
+{
+    return resolution; 
+}
+
+/* Get the realtime timer resolution.
+ */
+long timer_realtime_getres(void)
 {
     return resolution; 
 }
@@ -24,8 +31,7 @@ void timer_set_handler(void (*fn)(void))
     handler = fn;
 }
 
-/** Set timeout.
- * Set the next timeout.
+/** Set the next timeout.
  * @param value The timeout period in nanoseconds.
  */
 void timer_set_timeout(long value)

@@ -17,8 +17,27 @@ static int sys_clock_getres(clockid_t clock, struct timespec *res)
         VALIDATE_ADDRESS(res, sizeof(*res), VALID_WR);
     }
 
-    res->tv_sec = 0;
-    res->tv_nsec = timer_getres();
+    switch (clock) {
+    case CLOCK_REALTIME:
+        if (res) {
+            res->tv_sec = 0;
+            res->tv_nsec = timer_realtime_getres();
+        }
+        break;
+
+    case CLOCK_MONOTONIC:
+        if (res) {
+            res->tv_sec = 0;
+            res->tv_nsec = timer_monotonic_getres();
+        }
+        break;
+
+    case CLOCK_PROCESS_CPUTIME_ID:
+    case CLOCK_THREAD_CPUTIME_ID:
+    default:
+        return -EINVAL;
+    }
+
     return 0;
 }
 
