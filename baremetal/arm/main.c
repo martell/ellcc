@@ -16,7 +16,7 @@
 Queue thread_queue = {};
 static void *thread(void *arg)
 {
-    printf ("thread started\n");
+    printf ("thread started %s\n", (char *)arg);
     for ( ;; ) {
         // Go to sleep.
         get_message(&thread_queue);
@@ -30,20 +30,6 @@ static void *thread(void *arg)
 long __syscall_ret(unsigned long r);
 long __syscall(long, ...);
 
-#define CONTEXT
-#if defined(CONTEXT)
-
-Queue queue = {};
-static long context(long arg1, long arg2)
-{
-    for ( ;; ) {
-      Message *msg = get_message(&queue);
-      printf("hello from context %ld code = %d\n", arg1, msg->code);
-    }
-    return 0;
-}
-#endif
-
 int main(int argc, char **argv)
 {
     printf("%s: hello world\n", argv[0]);
@@ -51,17 +37,6 @@ int main(int argc, char **argv)
     int i = __syscall_ret(__syscall(0, 1, 2, 3, 4, 5, 6));
     printf("__syscall(0) = %d, %s\n", i, strerror(errno));
     
-#if defined(CONTEXT)
-    int status;
-    new_thread(context, NULL, 4096, 42, 0, 0, 0, &status);
-    Message msg = { { NULL, sizeof(msg) }, 3 };
-    send_message(&queue, &msg);
-    sched_yield();      // Let the other thread run.
-    msg.code = 6809;
-    send_message(&queue, &msg);
-    sched_yield();      // Let the other thread run.
-#endif
-
 #if defined(THREAD)
     int s;
     pthread_attr_t attr;
@@ -73,7 +48,7 @@ int main(int argc, char **argv)
     if (s != 0)
         printf("pthread_attr_setstack %s\n", strerror(errno));
     pthread_t id;
-    s = pthread_create(&id, &attr, &thread, NULL);
+    s = pthread_create(&id, &attr, &thread, "foo");
     if (s != 0)
         printf("pthread_create: %s\n", strerror(errno));
     sched_yield();      // Let the other thread run.
