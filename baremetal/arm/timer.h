@@ -5,18 +5,21 @@
  */
 long timer_getres(void);
 
-/** Get the current number of nanoseconds left in the current second.
+/** Get the realtime timer.
  */
-long timer_getns(void);
+long long timer_get_realtime(void);
 
-/** Set the nanosecond timeout function.
+/** Set the realtime timer.
+ */
+void timer_set_realtime(long long value);
+
+/** Get the monotonic timer.
+ */
+long long timer_get_monotonic(void);
+
+/** Set the timeout function.
  * This function is called by the interrupt handler when the timer expires.
  */
-void timer_set_ns_handler(void (*fn)(void));
-
-/** Set the second timeout function.
- * This function is called by the interrupt handler when the timer expires.
- */
-void timer_set_sec_handler(void (*fn)(void));
+void timer_set_handler(void (*fn)(long long monotonic));
 
 #endif // _timer_h_

@@ -1,14 +1,18 @@
 /* Initialize the ARM SP804 dual timer.
  */
 
+#include <time.h>
 #include "kernel.h"
 #include "timer.h"
 #include "arm_sp804.h"
 
-static long resolution;                 // The clock divisor.
-static long accumulated_error;          // Accumulated error in nanoseconds.
-static void (*ns_handler)(void);        // The nanosecond timeout handler.
-static void (*sec_handler)(void);       // The second timeout handler.
+static long resolution;                     // The clock divisor.
+static long accumulated_error;              // Accumulated error in nanoseconds.
+static Lock lock;
+static volatile time_t monotonic_seconds;   // The monotonic timer.
+static long long realtime_offset;           // The realtime timer offset.
+static void (*ns_handler)(void);            // The nanosecond timeout handler.
+static void (*sec_handler)(void);           // The second timeout handler.
 
 /* Get the timer resolution.
  */
@@ -17,11 +21,41 @@ long timer_getres(void)
     return resolution; 
 }
 
-/** Get the number of nanoseconds left in the current second.
+/** Get the monotonic timer.
  */
-long timer_getns(void)
+long long timer_get_monotonic(void)
 {
-    return REG(Timer2Value) * resolution;
+    time_t secs;
+    long nsecs;
+    do {
+        secs = monotonic_seconds;
+        nsecs = REG(Timer2Value) * resolution;
+    } while (secs != monotonic_seconds);        // Take care of a seconds update.
+
+    long long value = secs * 1000000000LL + nsecs;
+    return value;
+}
+
+/** Get the realtime timer.
+ */
+long long timer_get_realtime(void)
+{
+    long long value = timer_get_monotonic();
+    lock_aquire(&lock);
+    value += realtime_offset;
+    lock_release(&lock);
+    return value;
+}
+
+/** Set the realtime timer.
+ */
+#include <stdio.h>
+void timer_set_realtime(long long value)
+{
+    lock_aquire(&lock);
+    realtime_offset = value - timer_get_monotonic();
+    printf("offset = 0x%016llx\n", realtime_offset);
+    lock_release(&lock);
 }
 
 /** Set the nanosecond timeout function.

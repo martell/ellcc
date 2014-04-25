@@ -54,6 +54,7 @@ int main(int argc, char **argv)
     sched_yield();      // Let the other thread run.
 #endif
 
+    struct timespec real = { 12345, 0 };
     for ( ;; ) {
         char buffer[100];
         fputs("prompt: ", stdout);
@@ -72,9 +73,16 @@ int main(int argc, char **argv)
         if (s != 0)
             printf("nanosleep: %s\n", strerror(errno));
         
+        clock_settime(CLOCK_REALTIME, &real);
+        s = clock_gettime(CLOCK_MONOTONIC, &req);
+        printf("current monotonic: %ld.%09ld\n", req.tv_sec, req.tv_nsec);
+        if (s != 0)
+            printf("clock_gettime: %s\n", strerror(errno));
         s = clock_gettime(CLOCK_REALTIME, &req);
         if (s != 0)
             printf("clock_gettime: %s\n", strerror(errno));
-        printf("current time: %ld.%09ld\n", req.tv_sec, req.tv_nsec);
+        printf("current realtime: %ld.%09ld\n", req.tv_sec, req.tv_nsec);
+        real.tv_sec++;
+        real.tv_nsec = 0;
     }
 }

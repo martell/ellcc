@@ -4,15 +4,6 @@
 #include "kernel.h"
 #include "timer.h"
 
-/* Define the system clocks.
- */
-Lock realtime_lock;
-static struct timespec realtime;
-static long realtime_ns_offset;
-
-Lock monotonic_lock;
-static struct timespec monotonic;
-
 static int sys_clock_getres(clockid_t clock, struct timespec *res)
 {
     if (res) {
@@ -42,20 +33,19 @@ static int sys_clock_gettime(clockid_t clock, struct timespec *tp)
     VALIDATE_ADDRESS(tp, sizeof(*tp), VALID_WR);
 
     switch (clock) {
-    case CLOCK_REALTIME:
-        lock_aquire(&realtime_lock);
-        // Get the current nanoseconds.
-        realtime.tv_nsec = timer_getns() + realtime_ns_offset;
-        *tp = realtime;
-        lock_release(&realtime_lock);
+    case CLOCK_REALTIME: {
+        long long realtime = timer_get_realtime();
+        tp->tv_sec = realtime / 1000000000;
+        tp->tv_nsec = realtime % 1000000000;
         break;
+    }
 
-    case CLOCK_MONOTONIC:
-        lock_aquire(&monotonic_lock);
-        realtime.tv_nsec = timer_getns();
-        *tp = monotonic;
-        lock_release(&monotonic_lock);
+    case CLOCK_MONOTONIC: {
+        long long monotonic = timer_get_monotonic();
+        tp->tv_sec = monotonic / 1000000000;
+        tp->tv_nsec = monotonic % 1000000000;
         break;
+    }
 
     case CLOCK_PROCESS_CPUTIME_ID:
     case CLOCK_THREAD_CPUTIME_ID:
@@ -77,18 +67,8 @@ static int sys_clock_settime(clockid_t clock, const struct timespec *tp)
     switch (clock) {
     case CLOCK_REALTIME: {
         // RICH: Permissions.
-        // Truncate the time value to the timer resolution.
-        struct timespec ts = *tp;
-        ts.tv_nsec = ts.tv_nsec - (ts.tv_nsec % timer_getres());
-        lock_aquire(&realtime_lock);
-        long nsec = timer_getns();
-        realtime = ts;
-        realtime_ns_offset = nsec - ts.tv_nsec;
-        if (realtime_ns_offset < 0) {
-            // Make sure the offset is always >= 0.
-            realtime_ns_offset = 1000000000 - realtime_ns_offset;
-        }
-        lock_release(&realtime_lock);
+        long long realtime = tp->tv_sec * 1000000000LL + tp->tv_nsec;
+        timer_set_realtime(realtime);
         break;
     }
 
