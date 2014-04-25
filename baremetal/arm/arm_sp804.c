@@ -77,6 +77,8 @@ const IRQHandler timer_irq =
     }
 };
 
+/** RICH: A temporary interrupt handler.
+ */
 void identify_irq(void)
 {
     printf("identify_irq()\n");
