@@ -96,5 +96,10 @@ int main(int argc, char **argv)
         s = nanosleep(&req, &rem);
         if (s != 0)
             printf("nanosleep: %s\n", strerror(errno));
+        
+        s = clock_gettime(CLOCK_REALTIME, &req);
+        if (s != 0)
+            printf("clock_gettime: %s\n", strerror(errno));
+        printf("current time: %ld.%09ld\n", req.tv_sec, req.tv_nsec);
     }
 }

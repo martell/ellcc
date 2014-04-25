@@ -8,6 +8,8 @@
  */
 Lock realtime_lock;
 static struct timespec realtime;
+static long realtime_ns_offset;
+
 Lock monotonic_lock;
 static struct timespec monotonic;
 
@@ -18,17 +20,11 @@ static int sys_clock_getres(clockid_t clock, struct timespec *res)
     }
 
     switch (clock) {
+    case CLOCK_MONOTONIC:
     case CLOCK_REALTIME:
         if (res) {
             res->tv_sec = 0;
-            res->tv_nsec = timer_realtime_getres();
-        }
-        break;
-
-    case CLOCK_MONOTONIC:
-        if (res) {
-            res->tv_sec = 0;
-            res->tv_nsec = timer_monotonic_getres();
+            res->tv_nsec = timer_getres();
         }
         break;
 
@@ -48,12 +44,15 @@ static int sys_clock_gettime(clockid_t clock, struct timespec *tp)
     switch (clock) {
     case CLOCK_REALTIME:
         lock_aquire(&realtime_lock);
+        // Get the current nanoseconds.
+        realtime.tv_nsec = timer_getns() + realtime_ns_offset;
         *tp = realtime;
         lock_release(&realtime_lock);
         break;
 
     case CLOCK_MONOTONIC:
         lock_aquire(&monotonic_lock);
+        realtime.tv_nsec = timer_getns();
         *tp = monotonic;
         lock_release(&monotonic_lock);
         break;
@@ -70,13 +69,28 @@ static int sys_clock_gettime(clockid_t clock, struct timespec *tp)
 static int sys_clock_settime(clockid_t clock, const struct timespec *tp)
 {
     VALIDATE_ADDRESS(tp, sizeof(*tp), VALID_RD);
+
+    if (tp->tv_nsec < 0 || tp->tv_nsec >= 1000000000) {
+        return -EINVAL;
+    }
+
     switch (clock) {
-    case CLOCK_REALTIME:
+    case CLOCK_REALTIME: {
         // RICH: Permissions.
+        // Truncate the time value to the timer resolution.
+        struct timespec ts = *tp;
+        ts.tv_nsec = ts.tv_nsec - (ts.tv_nsec % timer_getres());
         lock_aquire(&realtime_lock);
-        realtime = *tp;
+        long nsec = timer_getns();
+        realtime = ts;
+        realtime_ns_offset = nsec - ts.tv_nsec;
+        if (realtime_ns_offset < 0) {
+            // Make sure the offset is always >= 0.
+            realtime_ns_offset = 1000000000 - realtime_ns_offset;
+        }
         lock_release(&realtime_lock);
         break;
+    }
 
     case CLOCK_MONOTONIC:
         // Can't change this clock.
@@ -99,7 +113,7 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
         VALIDATE_ADDRESS(rem, sizeof(*rem), VALID_WR);
     }
 
-    if (req->tv_nsec < 0 || req->tv_nsec > 999999999 ||
+    if (req->tv_nsec < 0 || req->tv_nsec >= 1000000000 ||
         req->tv_sec < 0) {
         return -EINVAL;
     }

@@ -57,7 +57,7 @@ Reset_Handler:
     mov     sp, r0
     sub     r0, #Stack_SVC
     // Finally, set up the SYS mode stack pointer and stay in SYS mode.
-    msr     cpsr_c, #Mode_SYS|I_bit|F_bit
+    msr     cpsr_c, #Mode_SYS // |I_bit|F_bit
     mov     sp, r0
     sub     r0, #Stack_SYS
     ldr     r1, heap_end
@@ -124,14 +124,14 @@ IRQ_Handler:
     push    {r0-r12, lr}        // Store other registers.
     bl      identify_irq        // Clear interrupt and get irq handler in r0.
     cpsie   i                   // Enable IRQ
-    blx     r0                  // Call the handler.
-    cpsid   i                   // Disable IRQ
+//    blx     r0                  // Call the handler.
+//    cpsid   i                   // Disable IRQ
     pop     {r0-r12, lr}        // Restore registers
     rfeia   sp!                 // And return.
 
-identify_irq:
-    adr     r0, identify_irq    // RICH: for now.
-    bx      lr
+//identify_irq:
+    //adr     r0, identify_irq    // RICH: for now.
+    //bx      lr
 
 /* Set up a context for execution.
  * int __new_context(Context **savearea,
