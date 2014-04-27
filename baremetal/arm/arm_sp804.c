@@ -57,10 +57,9 @@ void timer_set_realtime(long long value)
     lock_release(&lock);
 }
 
-/** This is the second timer interupt handler.
- */
 /** Check to see if a timeout interrupt is needed.
  */
+#include <stdio.h>
 void check_timeout()
 {
     if (!timeout_active) {
@@ -85,6 +84,8 @@ void check_timeout()
     REG(Timer1Control) = TimerEn|TimerSize|IntEnable|OneShot;
 }
 
+/** This is the second timer interupt handler.
+ */
 static void sec_interrupt(void)
 {
     lock_aquire(&lock);
