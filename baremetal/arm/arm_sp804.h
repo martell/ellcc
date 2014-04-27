@@ -6,11 +6,12 @@
 #define BASE 0x0101E2000
 #elif defined (VEXPRESS_A9)
 #define BASE 0x10011000
-#define CLOCK 45000000
 #else // Newer cores.
 #define BASE 0x1C110000
-#define CLOCK 40000000
 #endif
+
+#define IRQ 2
+#define CLOCK 1000000
 
 #define REG(reg) (*(unsigned int *)(address + (reg)))
 #define ADR(reg) ((unsigned int *)(BASE + (reg)))

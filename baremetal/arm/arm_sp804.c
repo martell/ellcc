@@ -4,15 +4,15 @@
 #include <time.h>
 #include "kernel.h"
 #include "timer.h"
+#include "irq.h"
 #include "arm_sp804.h"
 
 static long resolution;                     // The clock divisor.
-static long accumulated_error;              // Accumulated error in nanoseconds.
 static Lock lock;
 static volatile time_t monotonic_seconds;   // The monotonic timer.
 static long long realtime_offset;           // The realtime timer offset.
-static void (*ns_handler)(void);            // The nanosecond timeout handler.
-static void (*sec_handler)(void);           // The second timeout handler.
+static int timeout_active;                  // Set if a timeout is active.
+static long long timeout;                   // When the next timeout occurs.
 
 /* Get the timer resolution.
  */
@@ -29,8 +29,8 @@ long long timer_get_monotonic(void)
     long nsecs;
     do {
         secs = monotonic_seconds;
-        nsecs = REG(Timer2Value) * resolution;
-    } while (secs != monotonic_seconds);        // Take care of a seconds update.
+        nsecs = 1000000000 - (REG(Timer2Value) * resolution);
+    } while (secs != monotonic_seconds);    // Take care of a seconds update.
 
     long long value = secs * 1000000000LL + nsecs;
     return value;
@@ -49,98 +49,94 @@ long long timer_get_realtime(void)
 
 /** Set the realtime timer.
  */
-#include <stdio.h>
 void timer_set_realtime(long long value)
 {
+    long long mt = timer_get_monotonic();
     lock_aquire(&lock);
-    realtime_offset = value - timer_get_monotonic();
-    printf("offset = 0x%016llx\n", realtime_offset);
+    realtime_offset = value - mt;
     lock_release(&lock);
-}
-
-/** Set the nanosecond timeout function.
- * This function is called by the interrupt handler when the timer expires.
- */
-void timer_set_ns_handler(void (*fn)(void))
-{
-    ns_handler = fn;
-}
-
-/** Set the second timeout function.
- * This function is called by the interrupt handler when the timer expires.
- */
-void timer_set_sec_handler(void (*fn)(void))
-{
-    sec_handler = fn;
 }
 
 /** This is the second timer interupt handler.
  */
-#include <stdio.h>
-static void sec_interrupt()
+/** Check to see if a timeout interrupt is needed.
+ */
+void check_timeout()
 {
-    printf("sec_handler()\n");
-    if (sec_handler) {
-        sec_handler();
+    if (!timeout_active) {
+        return;
     }
+
+    long long mt = timer_get_monotonic();
+    if (timeout - mt > 1000000000) {
+        // More than a second away.
+        return;
+    }
+
+    // In the same second. Set up the interrupt.
+    timeout_active = 0;
+
+    // Set up Timer 1 as the short term timer.
+    mt = timeout - mt;
+    mt = mt * CLOCK / 1000000000;
+    if (mt < 0) mt = 0;
+    REG(Timer1Load) = mt;
+    // Enable timer, 32 bit, Divide by 1 clock, oneshot.
+    REG(Timer1Control) = TimerEn|TimerSize|IntEnable|OneShot;
 }
 
-typedef struct irq_handler
+static void sec_interrupt(void)
 {
-    int vector;                 // The interrupt vector, if any.
-    int sources;                // The number of sources in this vector.
-    struct {
-        volatile uint32_t *irq_status;  // The interrupt status register.
-        uint32_t irq_value;             // The interrupt active mask.
-        volatile uint32_t *irq_clear;   // The interrupt clear register.
-        uint32_t clear_value;           // The value to clear the interrupt.
-        void (*handler)();              // The interrupt handler funcrion.
-        void *unused1;
-        void *unused2;
-        void *unused3;
-    } entries[];
-} IRQHandler;
+    lock_aquire(&lock);
+    monotonic_seconds++;
+    check_timeout();
+    lock_release(&lock);
+}
 
-const IRQHandler timer_irq =
+/** Start the sleep timer.
+ */
+void timer_start(long long when)
 {
-    .vector = 4,
+    long long mt;
+    do {
+        mt = timer_get_monotonic();
+        if (when <= mt) {
+            when = timer_expired(mt);
+            if (when == 0) {
+                timeout_active = 0;
+                return;
+            }
+        }
+    } while (when <= mt);
+    lock_aquire(&lock);
+    timeout_active = 1;
+    timeout = when;
+    check_timeout();
+    lock_release(&lock);
+}
+
+static void short_interrupt(void)
+{
+    long long mt = timer_get_monotonic();
+    mt = timer_expired(mt);
+    if (mt == 0) {
+        lock_aquire(&lock);
+        timeout_active = 0;
+        lock_release(&lock);
+        return;
+    }
+    timer_start(mt);
+}
+
+static const IRQHandler timer_irq =
+{
+    .irq = IRQ,
     .sources = 2,
     {
-        { ADR(Timer1MIS), TimerInt, ADR(Timer1IntClr), 0, NULL },
+        { ADR(Timer1MIS), TimerInt, ADR(Timer1IntClr), 0, short_interrupt },
         { ADR(Timer2MIS), TimerInt, ADR(Timer2IntClr), 0, sec_interrupt },
     }
 };
-
-/** RICH: A temporary interrupt handler.
- */
-void identify_irq(void)
-{
-    printf("identify_irq()\n");
-    for (int i = 0; i < timer_irq.sources; ++i) {
-        if (*timer_irq.entries[i].irq_status & timer_irq.entries[i].irq_value) {
-            *timer_irq.entries[i].irq_clear = timer_irq.entries[i].clear_value;
-            if (timer_irq.entries[i].handler) {
-                timer_irq.entries[i].handler();
-            }
-        }
-    }
-}
-
-/** Set the next timeout.
- * @param value The timeout period in nanoseconds.
- */
-void timer_set_timeout(long value)
-{
-    long timeout = value / resolution;
-    long remainder = value % resolution;    // How many nanoseconds are we losing?
-    timeout /= resolution;
-    accumulated_error += remainder;         // Accumulate the error.
-    if (accumulated_error >= resolution) {
-        // Have accumulated enough error to bump the time.
-        timeout += 1;
-        accumulated_error -= resolution;
-    }
-}
 
 static void init(void)
     __attribute__((__constructor__, __used__));
@@ -154,4 +150,7 @@ static void init(void)
     REG(Timer2BGLoad) = CLOCK;
     // Enable timer, 32 bit, Divide by 1 clock, periodic.
     REG(Timer2Control) = TimerEn|TimerSize|TimerMode|IntEnable;
+
+    irq_register(&timer_irq);
+
 }

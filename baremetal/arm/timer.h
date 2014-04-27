@@ -17,9 +17,13 @@ void timer_set_realtime(long long value);
  */
 long long timer_get_monotonic(void);
 
-/** Set the timeout function.
- * This function is called by the interrupt handler when the timer expires.
+/** Start the sleep timer.
  */
-void timer_set_handler(void (*fn)(long long monotonic));
+void timer_start(long long when);
+
+/** Timer expired handler.
+ * This function is called in an interrupt context.
+ */
+long long timer_expired(long long when);
 
 #endif // _timer_h_

@@ -117,21 +117,31 @@ Abort_Handler:
 FIQ_Handler:
     b       .
 
+#define SAVED_REGS r0-r12, lr   // Registers saved in thread context.
+
 IRQ_Handler:
     sub     lr, lr, #4          // Adjust return address.
     srsfd   sp!, #Mode_SYS      // Save LR_irq and SPSR_irq on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
-    push    {r0-r12, lr}        // Store other registers.
-    bl      identify_irq        // Clear interrupt and get irq handler in r0.
+    push    {SAVED_REGS}        // Store other registers.
+    bl      __enter_irq         // Enter the IRQ state.
+    cmp     r0, #0              // Have a context pointer?
+    strne   sp, [r0]            // Save the context if so.
+    mrcne   p15, 0, r1, c13, c0, 3  // Get the TLS.
+    strne   r1, [r0, #4]        // Save the TLS.
+    bl      __unlock_ready      // Clear the ready lock.
+    bl      __identify_irq      // Clear interrupt and get irq handler in r0.
     cpsie   i                   // Enable IRQ
-//    blx     r0                  // Call the handler.
-//    cpsid   i                   // Disable IRQ
-    pop     {r0-r12, lr}        // Restore registers
+    cmp     r0, #0              // Handler?
+    blxne   r0                  // Handle it.
+    bl      __leave_irq         // Leave the IRQ state.
+    cmp     r0, #0              // Leaving?
+    ldrne   sp, [r0]            // Get the new stack pointer.
+    ldrne   r1, [r0, #4]        // Get the new TLS.
+    mcrne   p15, 0, r1, c13, c0, 3 // Set the TLS.
+    bl      __unlock_ready      // Clear the ready lock.
+    pop     {SAVED_REGS}        // Restore registers
     rfeia   sp!                 // And return.
-
-//identify_irq:
-    //adr     r0, identify_irq    // RICH: for now.
-    //bx      lr
 
 /* Set up a context for execution.
  * int __new_context(Context **savearea,
@@ -157,33 +167,34 @@ __new_context:
 
 
 /* Switch from one context to the next and unlock the queue.
- * void __switch(Context **to, Context *from);
+ * void __switch(Context **to, Context **from);
  * On entry:
+ * The ready list is locked.
  * r0 points to the next save area.
  * r1 points to the current save area.
- * r2 points to the unlock function.
- * r3 points to the lock
  */
-#define SAVED_REGS r0-r12, lr
     .global __switch
 __switch:
     srsfd   sp!, #Mode_SYS      // Save LR_sys and SPSR_sys on the sys stack.
     push    {SAVED_REGS}        // Store other registers.
     str     sp, [r1]            // Save the current frame.
-    mov     sp, r0              // Get the next frame.
-    mov     r0, r3              // Get the lock pointer.
-    blx     r2                  // Call the unlock function.
+    ldr     sp, [r0]            // Get the new stack pointer.
+    ldr     r1, [r0, #4]        // Get the new TLS.
+    mcr     p15, 0, r1, c13, c0, 3      // Set the TLS.
+    bl      __unlock_ready      // Unlock the ready list.
     pop     {SAVED_REGS}        // Restore registers
     rfeia   sp!                 // And dispatch.
 
 /* Handle a system call.
  * On the ARM, this is entered with an SVC instruction.
  */
-#define SYS_SAVED r7, r8, r12, lr
+#define SYS_SAVED r4-r12, lr // r7, r8, r12, lr
+#define NUM_SAVED 10 // 4
 SVC_Handler:
     srsfd   sp!, #Mode_SYS      // Save LR_svc and SPSR_svc on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
     push    {SYS_SAVED}         // Save registers.
+    cpsie   i                   // Enable IRQ
     
     // In a system call.
     // r7 is the call number.
@@ -194,7 +205,7 @@ __in_syscall:                   // The stack frame is valid here.
     bhs     check_arm_syscall   // Jump if too big for a syscall.
     ldr     r8, SVC_TablePtr    // Get the system call table.
     ldr     r8, [r8, r7, lsl #2]// Get the system call entry.
-    ldr     r7, [sp, #4 * 4]    // Get the syscall return address for clone().
+    ldr     r7, [sp, #4 * NUM_SAVED] // Get the SVC return address for clone().
     push    { r4, r5, r6, r7 }  // Put extra arguments on the stack.
     blx     r8                  // Dispatch. Return value is in r0/r1
     pop     { r4, r5, r6, r7 }  // pull extra arguments from the stack.
@@ -238,14 +249,20 @@ ARM_SVC_Table:
 /* Set thread area.
  */
 set_tls:
+    push    { r1, lr }
     mcr     p15, 0, r0, c13, c0, 3
+    mov     r1, r0
+    bl      =__get_self
+    str     r1, [r0, #4]        // Save the TLS in the current Thread.
     mov     r0, #0
+    pop     { r1, lr }
     bx      lr
 
 /* Get thread area.
  */
     .global __aeabi_read_tp
 __aeabi_read_tp:
+    .global __get_tls
     mrc     p15, 0, r0, c13, c0, 3
     bx      lr
 

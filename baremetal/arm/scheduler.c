@@ -1,32 +1,25 @@
 #include <bits/syscall.h>       // For syscall numbers.
+#define _GNU_SOURCE
+#include <sched.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <inttypes.h>
 #include "arm.h"
 #include "kernel.h"
+#include "scheduler.h"
 
-// scheduler.h
-struct ready_msg
-{
-    Message header;
-    Thread *thread;
-};
-extern Queue scheduler_queue;
-typedef enum {
-    SCHEDULER_READY
-} SchedulerCode;
-
-Queue scheduler_queue;
-
-/* The ready_lock protects both the ready to run list and the current thread.
- */
-static Lock ready_lock;
 
 typedef struct thread_queue {
     Thread *head;
     Thread *tail;
 } ThreadQueue;
 
+/* The ready_lock protects the following variables..
+ */
+static Lock ready_lock;
+
+#define IDLE_STACK 4096                 // The idle thread stack size.
 #if 0
 static ThreadQueue ready[PRIORITIES];
 
@@ -37,20 +30,54 @@ static char *idle_stack[PROCESSORS][IDLE_STACK];
 
 static ThreadQueue ready;               // The ready to run list.
 static Thread *current;                 // The current running thread.
+static long irq_state;                  // Set if an IRQ is active.
+/**** End of ready lock protected variables. ****/
 
 static Thread main_thread;              // The main thread.
 static Thread idle_thread;              // The idle thread.
-#define IDLE_STACK 4096
-static char *idle_stack[IDLE_STACK];    // The idle thread stack.
+static char idle_stack[IDLE_STACK];     // The idle thread stack.
+
+
+/** Enter the IRQ state.
+ */
+void *__enter_irq(void)
+{
+    lock_aquire(&ready_lock);
+    long state = irq_state++;
+    if (state) return 0;                // Already in IRQ state.
+    return current;                     // To save context.
+}
+
+void __unlock_ready(void)
+{
+    lock_release(&ready_lock);
+}
+
+/** Leave the IRQ state.
+ */
+void *__leave_irq(void)
+{
+    lock_aquire(&ready_lock);
+    long state = --irq_state;
+    if (state) return 0;                // Still in IRQ state.
+    return current;                     // Next context.
+}
 
 /** The idle thread.
  */
-#include <stdio.h>
 static long idle(long arg1, long arg2)
 {
     for ( ;; ) {
         // Do stuff, but nothing that will block.
+        // ARM should do WFI here.
     }
+}
+
+/** Get the current thread pointer.
+ */
+Thread *__get_self()
+{
+    return current;
 }
 
 /* Insert a thread in the ready queue.
@@ -87,7 +114,7 @@ void schedule(Thread *list)
     lock_aquire(&ready_lock);
 
     // Insert the thread list and the current thread in the ready list.
-    if (list != current) {
+    if (list != current && current != &idle_thread) {
         current->next = list;
         list = current;
     }
@@ -96,6 +123,16 @@ void schedule(Thread *list)
         next = list->next;
         insert_thread(list);
         list = next;
+    }
+
+    if (irq_state) {
+        // Just be ready to run later.
+        if (ready.head) {
+            current = ready.head;
+        } else {
+            current = &idle_thread;
+        }
+        return;
     }
 
     if (current == ready.head) {
@@ -115,7 +152,7 @@ void schedule(Thread *list)
         remove_thread();
     }
     current->next = NULL;
-    __switch(current->saved_sp, &me->saved_sp, lock_release, &ready_lock);
+    __switch(&current->saved_sp, &me->saved_sp);
 }
 
 /* Give up the remaining time slice.
@@ -144,11 +181,14 @@ Thread *new_thread(ThreadFunction entry, void *stack, size_t size,
     }
 
     Thread *thread = malloc(sizeof(Thread));    // RICH: bin.
-    thread->next = NULL;
     if (!thread) {
         if (!stack) free(p);
         return NULL;
     }
+
+    thread->next = NULL;
+    thread->tls = NULL;
+    thread->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
 
     thread->saved_sp = (Context *)(p + size);
     (thread->saved_sp - 1)->r5 = r5;
@@ -159,18 +199,29 @@ Thread *new_thread(ThreadFunction entry, void *stack, size_t size,
     return thread;
 }
 
-void send_queue(Queue *queue, Entry *entry)
+/** Send a message to a message queue.
+ */
+int send_message(MsgQueue *queue, Message msg)
 {
-    Thread *wakeup = NULL;
-    entry->next = NULL;
-    lock_aquire(&queue->lock);
-    // Queue a message.
-    if (queue->head) {
-        queue->tail->next = entry;
-    } else {
-        queue->head = entry;
+    if (queue == NULL) {
+        queue = &__get_self()->queue;
     }
-    queue->tail = entry;
+    Envelope *envelope = (Envelope *)malloc(sizeof(Envelope));
+    if (!envelope) {
+        return -ENOMEM;
+    }
+    envelope->message = msg;
+
+    Thread *wakeup = NULL;
+    envelope->next = NULL;
+    lock_aquire(&queue->lock);
+    // Queue a envelope.
+    if (queue->head) {
+        queue->tail->next = envelope;
+    } else {
+        queue->head = envelope;
+    }
+    queue->tail = envelope;
     if (queue->waiter) {
         // Wake up sleeping threads.
         wakeup = queue->waiter;
@@ -181,38 +232,27 @@ void send_queue(Queue *queue, Entry *entry)
         // Schedule the sleeping threads.
         schedule(wakeup);
     }
+    return 0;
 }
 
-Entry *get_queue_nowait(Queue *queue)
+Message get_message(MsgQueue *queue)
 {
-    Entry *entry = NULL;
-    lock_aquire(&queue->lock);
-    // Check for queued items.
-    if (queue->head) {
-        entry = queue->head;
-        queue->head = entry->next;
-        if (!queue->head) {
-            queue->tail = NULL;
-        }
+    if (queue == NULL) {
+        queue = &__get_self()->queue;
     }
-    lock_release(&queue->lock);
-    return entry;
-}
 
-Entry *get_queue(Queue *queue)
-{
-    Entry *entry = NULL;
+    Envelope *envelope = NULL;;
     do {
         lock_aquire(&queue->lock);
         // Check for queued items.
         if (queue->head) {
-            entry = queue->head;
-            queue->head = entry->next;
+            envelope = queue->head;
+            queue->head = envelope->next;
             if (!queue->head) {
                 queue->tail = NULL;
             }
         }
-        if (!entry) {
+        if (!envelope) {
             // Sleep until something becomes available.
             // Remove me from the ready list.
             lock_aquire(&ready_lock);
@@ -230,19 +270,43 @@ Entry *get_queue(Queue *queue)
             queue->waiter = me;
             lock_release(&queue->lock);
             // Run the next entry in the ready list.
-            __switch(current->saved_sp, &me->saved_sp, lock_release, &ready_lock);
+            __switch(&current->saved_sp, &me->saved_sp);
         } else {
             lock_release(&queue->lock);
         }
-    } while(entry == NULL);
-    return entry;
+    } while(envelope == NULL);
+
+    Message msg = envelope->message;
+    free(envelope);
+    return msg;
 }
 
-void scheduler(int saved)
+Message get_message_nowait(MsgQueue *queue)
 {
-    Message *message = get_message(&scheduler_queue);
-    if (message) {
+    if (queue == NULL) {
+        queue = &__get_self()->queue;
     }
+
+    Envelope *envelope = NULL;
+    lock_aquire(&queue->lock);
+    // Check for queued items.
+    if (queue->head) {
+        envelope = queue->head;
+        queue->head = envelope->next;
+        if (!queue->head) {
+            queue->tail = NULL;
+        }
+    }
+    lock_release(&queue->lock);
+    Message msg;
+    if (envelope) {
+        msg = envelope->message;
+        free(envelope);
+    } else {
+        // No messages available.
+        msg  = (Message){ MSG_NONE };
+    }
+    return msg;
 }
 
 /* Set pointer to thread ID.
@@ -257,25 +321,38 @@ static long sys_set_tid_address(int *tidptr)
     return 1;
 }
 
-static long sys_clone(unsigned long flags, void *stack, void *ptid, 
+static long sys_clone(unsigned long flags, void *stack, intptr_t *ptid, 
 #if defined(__arm__) || defined(__microblaze__) || defined(__ppc__) || \
     defined(__mips__)
-                      void *regs, void *ctid,
+                      void *regs, intptr_t *ctid,
 #elif defined(__i386__) || defined(__x86_64__)
-                      void *ctid, void *regs,
+                      intptr_t *ctid, void *regs,
 #else
   #error clone arguments not defined
 #endif
                       long start, long data, long ret)
 {       
     int status;
-    Thread * new = new_thread((ThreadFunction)ret, stack, 0,
+    Thread *new = new_thread((ThreadFunction)ret, stack, 0,
                               0, 0, start, data, &status);
     if (status < 0) {
         return status;
     }
 
-    return (int)new;
+    // Record the TLS.
+    new->tls = (void *)data;
+
+    if (flags & CLONE_PARENT_SETTID) {
+        VALIDATE_ADDRESS(ptid, sizeof(*ptid), VALID_WR);
+        *ptid = (intptr_t)new;
+    }
+
+    if (flags & CLONE_CHILD_SETTID) {
+        VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
+        *ctid = (intptr_t)new;
+    }
+
+    return 1;
 }
 
 /* Initialize the scheduler.
