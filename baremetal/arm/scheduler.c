@@ -67,11 +67,9 @@ void *__leave_irq(void)
  */
 static long idle(long arg1, long arg2)
 {
-    int i = 0;
     for ( ;; ) {
         // Do stuff, but nothing that will block.
         // ARM should do WFI here.
-        ++i;
     }
 }
 

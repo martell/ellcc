@@ -59,7 +59,6 @@ void timer_set_realtime(long long value)
 
 /** Check to see if a timeout interrupt is needed.
  */
-#include <stdio.h>
 void check_timeout()
 {
     if (!timeout_active) {

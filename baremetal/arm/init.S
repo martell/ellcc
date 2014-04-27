@@ -129,11 +129,16 @@ IRQ_Handler:
     strne   sp, [r0]            // Save the context if so.
     mrcne   p15, 0, r1, c13, c0, 3  // Get the TLS.
     strne   r1, [r0, #4]        // Save the TLS.
+    and     r0, sp, #4          // Test stack alignment.
+    sub     sp, sp, r0          // Adjust the stack if needed.
+    push    { r0, r1 }          // Save the adjustment.
     bl      __unlock_ready      // Clear the ready lock.
     bl      __identify_irq      // Clear interrupt and get irq handler in r0.
     cpsie   i                   // Enable IRQ
     cmp     r0, #0              // Handler?
     blxne   r0                  // Handle it.
+    pop     { r0, r1 }          // Restore the adjustment.
+    add     sp, sp, r0          // And adjust.
     bl      __leave_irq         // Leave the IRQ state.
     cmp     r0, #0              // Leaving?
     ldrne   sp, [r0]            // Get the new stack pointer.
