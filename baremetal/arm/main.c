@@ -28,6 +28,17 @@ static void *thread(void *arg)
 
     return NULL;
 }
+static void *thread2(void *arg)
+{
+    printf ("thread2 started\n");
+    for ( ;; ) {
+        // Go to sleep.
+        sleep(10);
+        printf ("thread2 still running\n");
+    }
+
+    return NULL;
+}
 #endif
 
 long __syscall_ret(unsigned long r);
@@ -41,7 +52,6 @@ int main(int argc, char **argv)
     int i = __syscall_ret(__syscall(0, 1, 2, 3, 4, 5, 6));
     printf("__syscall(0) = %d, %s\n", i, strerror(errno));
 #endif
-    
     int s;
 #if defined(THREAD)
     pthread_attr_t attr;
@@ -58,6 +68,17 @@ int main(int argc, char **argv)
         printf("pthread_create: %s\n", strerror(errno));
     printf("thread id = 0x%08X\n", (unsigned) id);
     sched_yield();      // Let the other thread run.
+    s = pthread_attr_init(&attr);
+    if (s != 0)
+        printf("pthread_attr_init: %s\n", strerror(errno));
+    sp = malloc(4096);
+    s = pthread_attr_setstack(&attr, sp, 4096);
+    if (s != 0)
+        printf("pthread_attr_setstack %s\n", strerror(errno));
+    pthread_t id2;
+    s = pthread_create(&id2, &attr, &thread2, NULL);
+    if (s != 0)
+        printf("pthread_create: %s\n", strerror(errno));
     Message msg = { 3 };
 #endif
 
@@ -70,9 +91,6 @@ int main(int argc, char **argv)
         fflush(stdout);
         fgets(buffer, sizeof(buffer), stdin);
         printf("got: %s", buffer);
-    extern long long timer_get_monotonic();
-    long long mt = timer_get_monotonic();
-    s = printf("mt = %lld\n", mt);
 #if 1
 #if defined(THREAD)
         send_message(&my_thread->queue, msg);
