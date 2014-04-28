@@ -40,6 +40,7 @@ static int yieldCommand(int argc, char **argv)
 /** A simple thread.
  */
 static Thread *my_thread;
+static pthread_t id1;
 static void *thread1(void *arg)
 {
     my_thread = __get_self();
@@ -69,11 +70,9 @@ static int thread1Command(int argc, char **argv)
     s = pthread_attr_setstack(&attr, sp, 4096);
     if (s != 0)
         printf("pthread_attr_setstack %s\n", strerror(errno));
-    pthread_t id;
-    s = pthread_create(&id, &attr, &thread1, "foo");
+    s = pthread_create(&id1, &attr, &thread1, "foo");
     if (s != 0)
         printf("pthread_create: %s\n", strerror(errno));
-    sched_yield();
 
     return COMMAND_OK;
 }
@@ -88,8 +87,21 @@ static int send1Command(int argc, char **argv)
     static Message msg = { 3 };
     send_message(&my_thread->queue, msg);
     msg.code++;
-    sched_yield();
     return COMMAND_OK;
+}
+
+static int cancel1Command(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("cancel the thread1 test thread.\n");
+        return COMMAND_OK;
+    }
+
+    if (pthread_cancel(id1) == 0) {
+        return COMMAND_OK;
+    } else {
+        return COMMAND_ERROR;
+    }
 }
 
 static void *thread2(void *arg)
@@ -123,7 +135,6 @@ static int thread2Command(int argc, char **argv)
     s = pthread_create(&id2, &attr, &thread2, NULL);
     if (s != 0)
         printf("pthread_create: %s\n", strerror(errno));
-    sched_yield();
     return COMMAND_OK;
 }
 
@@ -147,5 +158,6 @@ static void init(void)
     command_insert("yield", yieldCommand);
     command_insert("thread1", thread1Command);
     command_insert("send1", send1Command);
+    command_insert("cancel1", cancel1Command);
     command_insert("thread2", thread2Command);
 }

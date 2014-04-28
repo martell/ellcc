@@ -114,15 +114,19 @@ void schedule(Thread *list)
     lock_aquire(&ready_lock);
 
     // Insert the thread list and the current thread in the ready list.
+    int sched_current = 0;
     if (list != current && current != &idle_thread) {
-        current->next = list;
-        list = current;
+        sched_current = 1;
     }
 
     while (list) {
         next = list->next;
         insert_thread(list);
         list = next;
+    }
+    if (sched_current) {
+        // Insert the current thread in the ready list.
+        insert_thread(current);
     }
 
     if (irq_state) {
