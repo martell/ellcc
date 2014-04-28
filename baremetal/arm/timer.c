@@ -1,10 +1,13 @@
 #include <bits/syscall.h>       // For syscall numbers.
+#include <sys/time.h>
 #include <time.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "kernel.h"
 #include "timer.h"
 #include "scheduler.h"
+#include "command.h"
 
 /** The timeout list.
  * This list is kept in order of expire times.
@@ -34,7 +37,7 @@ static int sleep_until(long long when)
         timeouts = tmo;
     } else {
         struct timeout *p, *q;
-        for (p = timeouts, q = NULL; p && p->when > when; q = p, p = p->next)
+        for (p = timeouts, q = NULL; p && p->when < when; q = p, p = p->next)
             continue;
         if (p) {
             // Insert befor p.
@@ -196,6 +199,30 @@ static int sys_clock_settime(clockid_t clock, const struct timespec *tp)
     return 0;
 }
 
+static int sys_settimeofday(struct timeval *tv)
+{
+    VALIDATE_ADDRESS(tv, sizeof(*tv), VALID_WR);
+    struct timespec ts;
+    ts.tv_sec = tv->tv_sec;
+    ts.tv_nsec = tv->tv_usec * 1000;
+    return sys_clock_settime(CLOCK_REALTIME, &ts);
+
+}
+
+static int sys_gettimeofday(struct timeval *tv)
+{
+    VALIDATE_ADDRESS(tv, sizeof(*tv), VALID_RD);
+    struct timespec ts;
+    int s = sys_clock_gettime(CLOCK_REALTIME, &ts);
+    if (s < 0) {
+        return s;
+    }
+
+    tv->tv_sec = ts.tv_sec;
+    tv->tv_usec = ts.tv_nsec / 1000;
+    return 0;
+}
+
 static int sys_clock_nanosleep(clockid_t clock, int flags,
                                const struct timespec *req, struct timespec *rem)
 {
@@ -250,6 +277,104 @@ static int sys_nanosleep(const struct timespec *req, struct timespec *rem)
     return sys_clock_nanosleep(CLOCK_MONOTONIC, 0, req, rem);
 }
 
+static int dateCommand(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("show/set the realtime timer.\n");
+        return COMMAND_OK;
+    }
+
+    if (argc > 1) {
+        // Set the time.
+        struct tm tm;
+        time_t t = time(NULL);
+        localtime_r(&t, &tm);
+
+        char *p = argv[1];          // Point to the date string.
+
+        // Find seconds.
+        char *s = strchr(p, '.');
+        if (s) {
+            // Seconds here. Terminate p and point to them.
+            *s++ = '\0';
+        }
+
+        int left = strlen(p);       // Number of characters in non-second string.
+
+#define TODEC(v) if (*(p)) { v = 0; v += *p - '0'; ++p; --left; } \
+                 if (*(p)) { v *= 10; v += *p - '0'; ++p; --left; }
+
+        TODEC(tm.tm_mon)
+        if (tm.tm_mon < 1 || tm.tm_mon > 12) {
+            printf("invalid month: %d\n", tm.tm_mon);
+            return COMMAND_ERROR;
+        }
+        --tm.tm_mon;    // In the range of 0 .. 11.
+
+        TODEC(tm.tm_mday)
+        if (tm.tm_mday < 1 || tm.tm_mday > 31) {
+            printf("invalid day of month: %d\n", tm.tm_mday);
+            return COMMAND_ERROR;
+        }
+        
+        TODEC(tm.tm_hour)
+        if (tm.tm_hour < 0 || tm.tm_hour > 23) {
+            printf("invalid hour: %d\n", tm.tm_hour);
+            return COMMAND_ERROR;
+        }
+
+        TODEC(tm.tm_min)
+        if (tm.tm_min < 0 || tm.tm_min > 59) {
+            printf("invalid minute: %d\n", tm.tm_min);
+            return COMMAND_ERROR;
+        }
+
+        if (left >= 2) {
+            int year = 0;
+            if (left >= 4) {
+                // Have a four digit year.
+                TODEC(year)
+                year = year * 100;
+            } else {
+                year = 1900;
+            }
+
+            int tens = 0;
+            TODEC(tens)
+            year += tens;
+            if (year < 1900) {
+                printf("invalid year: %d\n", year);
+                return COMMAND_ERROR;
+            }
+
+            tm.tm_year = year - 1900;
+        }
+
+        if (s) {
+            // Have seconds.
+            p = s;
+            TODEC(tm.tm_sec);
+            if (tm.tm_sec < 0 || tm.tm_sec > 59) {
+                printf("invalid seconds: %d\n", tm.tm_sec);
+                return COMMAND_ERROR;
+            }
+        }
+
+        time_t sec = mktime(&tm);
+        if (sec == (time_t)-1) {
+            printf("mktime failed %s\n", asctime(&tm));
+            return COMMAND_ERROR;
+        }
+        struct timeval tv = { sec, 0 };
+        return settimeofday(&tv, NULL) == 0 ? COMMAND_OK : COMMAND_ERROR;
+    }
+
+    time_t t = time(NULL);
+    char date[26];
+    fputs(ctime_r(&t, date), stdout);
+    return COMMAND_OK;
+}
+
 static void init(void)
     __attribute__((__constructor__, __used__));
 
@@ -263,5 +388,9 @@ static void init(void)
     __set_syscall(SYS_clock_settime, sys_clock_settime);
     __set_syscall(SYS_clock_nanosleep, sys_clock_nanosleep);
     __set_syscall(SYS_nanosleep, sys_nanosleep);
+    __set_syscall(SYS_settimeofday, sys_settimeofday);
+    __set_syscall(SYS_gettimeofday, sys_gettimeofday);
+
+    command_insert("date", dateCommand);
 }
 

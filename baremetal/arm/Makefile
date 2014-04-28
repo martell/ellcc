@@ -4,7 +4,7 @@ CFLAGS+=-g -MD -MP -Werror -Wall -Wno-unused-function
 QEMUFLAGS=-M vexpress-a9 -m 128M
 KERNEL=kernel
 SRCS=init.S main.c simple_console.c simple_memman.c scheduler.c timer.c \
-     arm_sp804.c irq.c
+     arm_sp804.c irq.c command.c test.c
 NAMES:=$(basename $(filter %.c %.cpp %.S, $(SRCS)))
 OBJS:=$(NAMES:%=%.o)
 DEPENDS:=$(NAMES:%=%.d)
