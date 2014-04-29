@@ -126,12 +126,21 @@ static void get_running(void)
  * something besides READY or RUNNING.
  * The ready list must be locked on entry.
  */
-static void change_state(State new_state)
+static void nolock_change_state(State new_state)
 {
     Thread *me = current;
     me->state = new_state;
     get_running();
     __switch(&current->saved_sp, &me->saved_sp);
+}
+
+/** Change the current thread's state to
+ * something besides READY or RUNNING.
+ */
+void change_state(State new_state)
+{
+    lock_aquire(&ready_lock);
+    nolock_change_state(new_state);
 }
 
 /* Schedule a list of threads.
@@ -157,17 +166,7 @@ void schedule(Thread *list)
         insert_thread(current);
     }
 
-    if (irq_state) {
-        // Just be ready to run later.
-        if (ready.head) {
-            current = ready.head;
-        } else {
-            current = &idle_thread;
-        }
-        return;
-    }
-
-    if (current == ready.head) {
+    if (irq_state || current == ready.head) {
         // The curent thread continues.
         get_running();
         lock_release(&ready_lock);
@@ -286,7 +285,7 @@ Message get_message(MsgQueue *queue)
             me->next = queue->waiter;
             queue->waiter = me;
             lock_release(&queue->lock);
-            change_state(MSGWAIT);          // Never returns.
+            nolock_change_state(MSGWAIT);
         } else {
             lock_release(&queue->lock);
         }

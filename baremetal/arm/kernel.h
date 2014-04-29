@@ -96,6 +96,11 @@ typedef struct thread
     MsgQueue queue;             // The thread's message queue.
 } Thread;
 
+/** Change the current thread's state to
+ * something besides READY or RUNNING.
+ */
+void change_state(State new_state);
+
 /* Schedule a list of threads.
  */
 void schedule(Thread *list);

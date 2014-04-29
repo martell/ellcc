@@ -54,19 +54,8 @@ static int sleep_until(long long when)
     // Set up the timeout.
     timer_start(timeouts->when);
     lock_release(&timeout_lock);
-    int s = 0;
-    do {
-        Message msg = get_message(NULL);    // Wait for a message.
-        switch (msg.code) {
-        case MSG_TIMEOUT:                   // The timeout occured.
-            return 0;
-
-        default:                            // Unexpected message.
-            break;
-        }
-    } while (s == 0);
-
-    return s;
+    change_state(TIMEOUT);
+    return 0;
 }
 
 /** Timer expired handler.
@@ -104,16 +93,8 @@ long long timer_expired(long long when)
 
     lock_release(&timeout_lock);
 
-    if (ready) {
-        // Start one or more threads.
-
-        while (ready) {
-            Thread *next = ready;
-            ready = ready->next;
-            next->next = NULL;
-            send_message(&next->queue, (Message){ MSG_TIMEOUT });
-        }
-    }
+    // Schedule the ready threads.
+    schedule(ready);
 
     return when;        // Schedule the next timeout, if any.
 }
@@ -397,4 +378,3 @@ static void init(void)
 
     command_insert("date", dateCommand);
 }
-
