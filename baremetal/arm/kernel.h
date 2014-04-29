@@ -77,14 +77,28 @@ Message get_message(MsgQueue *queue);
 Message get_message_nowait(MsgQueue *queue);
 
 // thread.h
+
+// Thread states.
+typedef enum state {
+    READY,                      // The thread is ready to run.
+    RUNNING,                    // The thread is running.
+    TIMEOUT,                    // The thread is waiting for a timeout.
+    MSGWAIT,                    // The thread is waiting for a message.
+} State;
+
 typedef struct thread
 {
     // The saved_sp and tls fields must be first in the thread struct.
     Context *saved_sp;          // The thread's saved stack pointer.
     void *tls;                  // The thread's user space storage.
     struct thread *next;        // Next thread in any list.
+    State state;                // The thread's state.
     MsgQueue queue;             // The thread's message queue.
 } Thread;
+
+/* Schedule a list of threads.
+ */
+void schedule(Thread *list);
 
 typedef long (*ThreadFunction)(long, long);
 

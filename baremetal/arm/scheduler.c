@@ -92,6 +92,7 @@ static inline void insert_thread(Thread *thread)
     }
     ready.tail = thread;
     thread->next = NULL;
+    thread->state = READY;
 }
 
 /* Remove the head of the ready list.
@@ -104,6 +105,33 @@ static inline void remove_thread(void)
             ready.tail = NULL;
         }
     }
+}
+
+/** Make the head of the ready list the runniing thread.
+ * The ready lock must be aquired before this call.
+ */
+static void get_running(void)
+{
+    current = ready.head;
+    if (current == NULL) {
+        current = &idle_thread;
+    } else {
+        remove_thread();
+    }
+    current->state = RUNNING;
+    current->next = NULL;
+}
+
+/** Change the current thread's state to
+ * something besides READY or RUNNING.
+ * The ready list must be locked on entry.
+ */
+static void change_state(State new_state)
+{
+    Thread *me = current;
+    me->state = new_state;
+    get_running();
+    __switch(&current->saved_sp, &me->saved_sp);
 }
 
 /* Schedule a list of threads.
@@ -140,22 +168,15 @@ void schedule(Thread *list)
     }
 
     if (current == ready.head) {
-        remove_thread();
-        current->next = NULL;
         // The curent thread continues.
+        get_running();
         lock_release(&ready_lock);
         return;
     }
 
     // Switch to the new thread.
     Thread *me = current;
-    current = ready.head;
-    if (current == NULL) {
-        current = &idle_thread;
-    } else {
-        remove_thread();
-    }
-    current->next = NULL;
+    get_running();
     __switch(&current->saved_sp, &me->saved_sp);
 }
 
@@ -261,20 +282,11 @@ Message get_message(MsgQueue *queue)
             // Remove me from the ready list.
             lock_aquire(&ready_lock);
             Thread *me = current;
-            current = ready.head;
-            if (current == NULL) {
-                current = &idle_thread;
-            } else {
-                remove_thread();
-            }
-            current->next = NULL;
- 
             // Add me to the waiter list.
             me->next = queue->waiter;
             queue->waiter = me;
             lock_release(&queue->lock);
-            // Run the next entry in the ready list.
-            __switch(&current->saved_sp, &me->saved_sp);
+            change_state(MSGWAIT);          // Never returns.
         } else {
             lock_release(&queue->lock);
         }
