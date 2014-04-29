@@ -280,7 +280,11 @@ static int sys_nanosleep(const struct timespec *req, struct timespec *rem)
 static int dateCommand(int argc, char **argv)
 {
     if (argc <= 0) {
-        printf("show/set the realtime timer.\n");
+        printf("show/set the system clock.\n");
+        if (argc < 0) {
+            printf("%sThe argument used to set the time, if given,\n", *argv);
+            printf("%sis in the form [MMDDhhmm[[CC]YY][.ss]].\n", *argv);
+        }
         return COMMAND_OK;
     }
 
