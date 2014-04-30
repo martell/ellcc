@@ -16,20 +16,30 @@
 struct timeout {
     struct timeout *next;
     long long when;             // When the timeout will expire.
-    Thread *waiter;             // The waiting thread.
+    Thread *waiter;             // The waiting thread...
+    TimerCallback callback;     // ... or the callback function.
+    intptr_t arg;               // The callback function argument.
 };
 
 static Lock timeout_lock;
 static struct timeout *timeouts;
 
-/** Make an entry in the sleeping list and sleep.
+/** Make an entry in the sleeping list and sleep
+ * or schedule a callback.
  */
-static int sleep_until(long long when)
+void *timer_wake_at(long long when, TimerCallback callback, intptr_t arg)
 {
     struct timeout *tmo = malloc(sizeof(struct timeout));
     tmo->next = NULL;
     tmo->when = when;
-    tmo->waiter = __get_self();
+    tmo->callback = callback;
+    tmo->arg = arg;
+    if (callback == NULL) {
+        // Put myself to sleep and wake me when it's over.
+        tmo->waiter = __get_self();
+    } else {
+        tmo->waiter = NULL;
+    }
 
     lock_aquire(&timeout_lock);
     // Search the list.
@@ -54,8 +64,50 @@ static int sleep_until(long long when)
     // Set up the timeout.
     timer_start(timeouts->when);
     lock_release(&timeout_lock);
-    change_state(TIMEOUT);
-    return 0;
+    if (tmo->callback == NULL) {
+        // Put myself to sleep.
+        change_state(TIMEOUT);
+    }
+    return tmo;         // Return the timeout identifier (opaque).
+}
+
+/** Cancel a previously scheduled wakeup.
+ * This function will cancel a previously scheduled wakeup.
+ * If the wakeup caused the caller to sleep, it will be rescheduled.
+ * @param id The timer id.
+ * @return 0 if cancelled, else the timer has probably already expired.
+ */
+int timer_cancel_wake_at(void *id)
+{
+    int s = 0;
+    lock_aquire(&timeout_lock);
+    struct timeout *p, *q;
+    for (p = timeouts, q = NULL; p; q = p, p = p->next) {
+        if (p == id) {
+            break;
+        }
+    }
+
+    if (p) {
+        // Found it.
+        if (q) {
+            q->next = p->next;
+        } else {
+            timeouts = p->next;
+        }
+
+        if (p->waiter) {
+            // Wake up the sleeping thread.
+            p->waiter->next = NULL;
+            schedule(p->waiter);
+        }
+
+        free(p);
+    } else {
+        s = -1;                 // Not found.
+    }
+    lock_release(&timeout_lock);
+    return s;
 }
 
 /** Timer expired handler.
@@ -249,7 +301,8 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
         return 0;
     }
 
-    return sleep_until(when);
+    timer_wake_at(when, NULL, 0);
+    return 0;
 }
 
 static int sys_nanosleep(const struct timespec *req, struct timespec *rem)

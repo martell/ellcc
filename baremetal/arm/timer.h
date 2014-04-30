@@ -26,4 +26,18 @@ void timer_start(long long when);
  */
 long long timer_expired(long long when);
 
+/** Make an entry in the sleeping list and sleep
+ * or schedule a callback.
+ */
+typedef void (*TimerCallback)(intptr_t);
+void *timer_wake_at(long long when, TimerCallback callback, intptr_t arg);
+
+/** Cancel a previously scheduled wakeup.
+ * This function will cancel a previously scheduled wakeup.
+ * If the wakeup caused the caller to sleep, it will be rescheduled.
+ * @param id The timer id.
+ * @return 0 if cancelled, else the timer has probably already expired.
+ */
+int timer_cancel_wake_at(void *id);
+
 #endif // _timer_h_

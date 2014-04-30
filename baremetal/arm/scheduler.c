@@ -112,8 +112,15 @@ static inline void remove_thread(void)
  */
 static void get_running(void)
 {
+    int timeslice = 0;
+    if (current != ready.head) {
+        // Need to set up for time slicing.
+        timeslice = 1;
+    }
+
     current = ready.head;
     if (current == NULL) {
+        timeslice = 0;          // No need to timeslice for the idle thread.
         current = &idle_thread;
     } else {
         remove_thread();
