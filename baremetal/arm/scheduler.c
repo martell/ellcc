@@ -65,6 +65,7 @@ static Thread *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
 
+#define priority 0
 #define current current[processor()]
 #define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
