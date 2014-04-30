@@ -10,7 +10,9 @@
 #include "timer.h"
 #include "scheduler.h"
 
-#define PRIORITIES 0                    // The number of priorities to support (0..PRIORITIES).
+#define PRIORITIES 1                    // The number of priorities to support:
+                                        // (0..PRIORITIES - 1). 0 is highest.
+#define DEFAULT_PRIORITY ((PRIORITIES)/2)
 #define PROCESSORS 1                    // The number of processors to support.
 
 typedef struct thread_queue {
@@ -46,7 +48,7 @@ static void create_idle_threads(void)
  */
 static Lock ready_lock;
 
-#if PRIORITIES && PROCESSORS > 1
+#if PRIORITIES > 1 && PROCESSORS > 1
 // Multiple priorities and processors.
 static int priority;                    // The current highest priority.
 static int processor();                 // The current processor number.        
@@ -57,7 +59,8 @@ static ThreadQueue ready[PRIORITIES];   // The ready to run list.
 #define current current[processor()]
 #define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
-#define ready ready[priority]
+#define ready_head(pri) ready[pri].head
+#define ready_tail(pri) ready[pri].tail
 
 #elif PROCESSORS > 1
 // Multiple processors, one priority.
@@ -65,13 +68,13 @@ static Thread *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
 
-#define priority 0
 #define current current[processor()]
 #define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
-#define ready ready
+#define ready_head(pri) ready.head
+#define ready_tail(pri) ready.tail
 
-#elif PRIORITIES
+#elif PRIORITIES > 1
 // One processor, multiple priorities.
 static int priority;                    // The current highest priority.
 static Thread *current;                 // The current running thread.
@@ -82,7 +85,8 @@ static ThreadQueue ready[PRIORITIES];
 #define current current
 #define idle_thread idle_thread[0]
 #define slice_tmo slice_tmo
-#define ready ready[priority]
+#define ready_head(pri) ready[pri].head
+#define ready_tail(pri) ready[pri].tail
 
 #else
 // One processor, one priority.
@@ -90,12 +94,12 @@ static Thread *current;                 // The current running thread.
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
 
-#define priority 0
 #define processor() 0
 #define current current
 #define idle_thread idle_thread[0]
 #define slice_tmo slice_tmo
-#define ready ready
+#define ready_head(pri) ready.head
+#define ready_tail(pri) ready.tail
 
 #endif
 
@@ -142,26 +146,14 @@ Thread *__get_self()
 static inline void insert_thread(Thread *thread)
 {
     // A simple FIFO insertion.
-    if (ready.tail) {
-        ready.tail->next = thread;
+    if (ready_tail(thread->priority)) {
+        ready_tail(thread->priority)->next = thread;
     } else {
-        ready.head = thread;
+        ready_head(thread->priority) = thread;
     }
-    ready.tail = thread;
+    ready_tail(thread->priority) = thread;
     thread->next = NULL;
     thread->state = READY;
-}
-
-/* Remove the head of the ready list.
- */
-static inline void remove_thread(void)
-{
-    if (ready.head) {
-        ready.head = ready.head->next;
-        if (!ready.head) {
-            ready.tail = NULL;
-        }
-    }
 }
 
 /** The callback for time slice expiration.
@@ -179,19 +171,25 @@ static void slice_callback(intptr_t arg)
 static void get_running(void)
 {
     int timeslice = 0;
-    if (current != ready.head) {
+    if (current != ready_head(priority)) {
         // Need to set up for time slicing.
         timeslice = 1;
     }
 
-    current = ready.head;
+    current = ready_head(priority);
     if (current == NULL) {
         timeslice = 0;          // No need to timeslice for the idle thread.
         current = &idle_thread;
     } else {
-        remove_thread();
+        // Remove the head of the ready list.
+        if (ready_head(priority)) {
+            ready_head(priority) = ready_head(priority)->next;
+            if (!ready_head(priority)) {
+                ready_tail(priority) = NULL;
+            }
+        }
     }
-    if (ready.head == NULL) {
+    if (ready_head(priority) == NULL) {
         // No time slicing needed.
         timeslice = 0;
     }
@@ -254,7 +252,7 @@ void schedule(Thread *list)
         insert_thread(current);
     }
 
-    if (irq_state || current == ready.head) {
+    if (irq_state || current == ready_head(current->priority)) {
         // The curent thread continues.
         get_running();
         lock_release(&ready_lock);
@@ -277,7 +275,8 @@ static int sys_sched_yield(void)
 
 /* Create a new thread.
  */
-Thread *new_thread(ThreadFunction entry, void *stack, size_t size, 
+Thread *new_thread(ThreadFunction entry, int priority,
+                   void *stack, size_t size, 
                    long arg1, long arg2, long r5, long r6, int *status)
 {
     char *p;
@@ -300,6 +299,10 @@ Thread *new_thread(ThreadFunction entry, void *stack, size_t size,
 
     thread->next = NULL;
     thread->tls = NULL;
+    if (priority == 0) {
+        priority = DEFAULT_PRIORITY;
+    }
+    thread->priority = priority;
     thread->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
 
     thread->saved_sp = (Context *)(p + size);
@@ -436,7 +439,7 @@ static long sys_clone(unsigned long flags, void *stack, intptr_t *ptid,
                       long start, long data, long ret)
 {       
     int status;
-    Thread *new = new_thread((ThreadFunction)ret, stack, 0,
+    Thread *new = new_thread((ThreadFunction)ret, 0, stack, 0,
                               0, 0, start, data, &status);
     if (status < 0) {
         return status;
@@ -470,7 +473,8 @@ static void init(void)
     create_idle_threads();
  
     // The main thread is what's running right now.
-    ready.head = ready.tail = NULL;
+    main_thread.priority = DEFAULT_PRIORITY;
+    ready_head(main_thread.priority) = ready_tail(main_thread.priority) = NULL;
     current = &main_thread;
 
     // Set up a simple set_tid_address system call.

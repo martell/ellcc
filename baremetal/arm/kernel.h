@@ -93,6 +93,7 @@ typedef struct thread
     void *tls;                  // The thread's user space storage.
     struct thread *next;        // Next thread in any list.
     State state;                // The thread's state.
+    int priority;               // The thread's priority. 0 is highest.
     MsgQueue queue;             // The thread's message queue.
 } Thread;
 
@@ -144,6 +145,7 @@ int __new_context(Context **savearea, ThreadFunction entry, int mode,
                   long arg1, long arg2);
 /** Create a new thread and make it run-able.
  * @param entry The thread entry point.
+ * @param priority The thread priority. 0 is default.
  * @param stack A preallocated stack, or NULL.
  * @param size The stack size.
  * @param arg1 The first parameter.
@@ -151,7 +153,8 @@ int __new_context(Context **savearea, ThreadFunction entry, int mode,
  * @param status A place to put any generated errno values.
  * @return The thread ID.
  */
-Thread *new_thread(ThreadFunction entry, void *stack, size_t size, 
+Thread *new_thread(ThreadFunction entry, int priority,
+                   void *stack, size_t size, 
                    long arg1, long arg2, long r5, long r6, int *status);
 
 /** Get the current threead pointer.
