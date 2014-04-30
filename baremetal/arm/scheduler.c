@@ -125,6 +125,14 @@ static void get_running(void)
     } else {
         remove_thread();
     }
+    if (ready.head == NULL) {
+        // No time slicing needed.
+        timeslice = 0;
+    }
+
+    if(timeslice) {
+        // Someone is waiting in the ready queue. Lets be fair.
+    }
     current->state = RUNNING;
     current->next = NULL;
 }
