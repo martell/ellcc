@@ -10,36 +10,99 @@
 #include "timer.h"
 #include "scheduler.h"
 
+#define PRIORITIES 0                    // The number of priorities to support (0..PRIORITIES).
+#define PROCESSORS 1                    // The number of processors to support.
 
 typedef struct thread_queue {
     Thread *head;
     Thread *tail;
 } ThreadQueue;
 
-/* The ready_lock protects the following variables..
+#define IDLE_STACK 4096                 // The idle thread stack size.
+static Thread idle_thread[PROCESSORS];  // The idle threads.
+static char *idle_stack[PROCESSORS][IDLE_STACK];
+
+/** The idle thread.
+ */
+static long idle(long arg1, long arg2)
+{
+    for ( ;; ) {
+        // Do stuff, but nothing that will block.
+        // ARM should do WFI here.
+    }
+}
+
+/** Create an idle thread for each processor.
+ */
+static void create_idle_threads(void)
+{
+    for (int i = 0; i < PROCESSORS; ++i) {
+        idle_thread[i].saved_sp = (Context *)&idle_stack[i][IDLE_STACK];
+        __new_context(&idle_thread[i].saved_sp, idle, Mode_SYS, 0, 0);
+    }
+}
+
+/* The ready_lock protects the following variables.
  */
 static Lock ready_lock;
 
-#define IDLE_STACK 4096                 // The idle thread stack size.
-#if 0
+#if PRIORITIES && PROCESSORS > 1
+// Multiple priorities and processors.
+static int priority;                    // The current highest priority.
+static int processor();                 // The current processor number.        
+static Thread *current[PROCESSORS];
+static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
+static ThreadQueue ready[PRIORITIES];   // The ready to run list.
+
+#define current current[processor()]
+#define idle_thread idle_thread[processor()]
+#define slice_tmo slice_tmo[processor()]
+#define ready ready[priority]
+
+#elif PROCESSORS > 1
+// Multiple processors, one priority.
+static Thread *current[PROCESSORS];
+static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
+static ThreadQueue ready;               // The ready to run list.
+
+#define current current[processor()]
+#define idle_thread idle_thread[processor()]
+#define slice_tmo slice_tmo[processor()]
+#define ready ready
+
+#elif PRIORITIES
+// One processor, multiple priorities.
+static int priority;                    // The current highest priority.
+static Thread *current;                 // The current running thread.
+static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];
 
-static Thread *current[PROCESSORS];
-static Thread idle_thread[PROCESSORS];   // The idle threads.
-static char *idle_stack[PROCESSORS][IDLE_STACK];
+#define processor() 0
+#define current current
+#define idle_thread idle_thread[0]
+#define slice_tmo slice_tmo
+#define ready ready[priority]
+
+#else
+// One processor, one priority.
+static Thread *current;                 // The current running thread.
+static void *slice_tmo;                 // Time slice timeout ID.
+static ThreadQueue ready;               // The ready to run list.
+
+#define priority 0
+#define processor() 0
+#define current current
+#define idle_thread idle_thread[0]
+#define slice_tmo slice_tmo
+#define ready ready
+
 #endif
 
-static ThreadQueue ready;               // The ready to run list.
-static Thread *current;                 // The current running thread.
 static long irq_state;                  // Set if an IRQ is active.
-static void *slice_tmo;                 // Time slice timeout ID.
 static long long slice_time = 5000000;  // The time slice period (ns).
 /**** End of ready lock protected variables. ****/
 
 static Thread main_thread;              // The main thread.
-static Thread idle_thread;              // The idle thread.
-static char idle_stack[IDLE_STACK];     // The idle thread stack.
-
 
 /** Enter the IRQ state.
  */
@@ -64,16 +127,6 @@ void *__leave_irq(void)
     long state = --irq_state;
     if (state) return 0;                // Still in IRQ state.
     return current;                     // Next context.
-}
-
-/** The idle thread.
- */
-static long idle(long arg1, long arg2)
-{
-    for ( ;; ) {
-        // Do stuff, but nothing that will block.
-        // ARM should do WFI here.
-    }
 }
 
 /** Get the current thread pointer.
@@ -411,9 +464,9 @@ static void init(void)
 
 static void init(void)
 {
+
     // Set up the main and idle threads.
-    idle_thread.saved_sp = (Context *)&idle_stack[IDLE_STACK];
-    __new_context(&idle_thread.saved_sp, idle, Mode_SYS, 0, 0);
+    create_idle_threads();
  
     // The main thread is what's running right now.
     ready.head = ready.tail = NULL;
