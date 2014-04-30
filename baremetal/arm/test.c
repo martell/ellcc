@@ -77,7 +77,7 @@ static int thread1Command(int argc, char **argv)
     return COMMAND_OK;
 }
 
-static int send1Command(int argc, char **argv)
+static int test1Command(int argc, char **argv)
 {
     if (argc <= 0) {
         printf("send a message to the thread1 test thread.\n");
@@ -138,6 +138,51 @@ static int thread2Command(int argc, char **argv)
     return COMMAND_OK;
 }
 
+static int counter;
+static void *thread3(void *arg)
+{
+    printf ("thread3 started\n");
+    for ( ;; ) {
+        // Very busy.
+        ++counter;
+    }
+
+    return NULL;
+}
+
+static int thread3Command(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("start the thread3 test case.\n");
+        return COMMAND_OK;
+    }
+
+    pthread_attr_t attr;
+    int s = pthread_attr_init(&attr);
+    if (s != 0)
+        printf("pthread_attr_init: %s\n", strerror(errno));
+    char *sp = malloc(4096);
+    s = pthread_attr_setstack(&attr, sp, 4096);
+    if (s != 0)
+        printf("pthread_attr_setstack %s\n", strerror(errno));
+    pthread_t id3;
+    s = pthread_create(&id3, &attr, &thread3, NULL);
+    if (s != 0)
+        printf("pthread_create: %s\n", strerror(errno));
+    return COMMAND_OK;
+}
+
+static int test3Command(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("test the thread3 test case.\n");
+        return COMMAND_OK;
+    }
+
+    printf("counter = %d\n", counter);
+    return COMMAND_OK;
+}
+
 int sectionCommand(int argc, char **argv)
 {
     if (argc <= 0 ) {
@@ -157,7 +202,9 @@ static void init(void)
     command_insert("syscall", syscallCommand);
     command_insert("yield", yieldCommand);
     command_insert("thread1", thread1Command);
-    command_insert("send1", send1Command);
+    command_insert("test1", test1Command);
     command_insert("cancel1", cancel1Command);
     command_insert("thread2", thread2Command);
+    command_insert("thread3", thread3Command);
+    command_insert("test3", test3Command);
 }
