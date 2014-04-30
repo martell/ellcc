@@ -79,6 +79,7 @@ void *timer_wake_at(long long when, TimerCallback callback, intptr_t arg)
  */
 int timer_cancel_wake_at(void *id)
 {
+    if (id == NULL) return 0;           // Nothing pending.
     int s = 0;
     lock_aquire(&timeout_lock);
     struct timeout *p, *q;

@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include "arm.h"
 #include "kernel.h"
+#include "timer.h"
 #include "scheduler.h"
 
 
@@ -31,6 +32,8 @@ static char *idle_stack[PROCESSORS][IDLE_STACK];
 static ThreadQueue ready;               // The ready to run list.
 static Thread *current;                 // The current running thread.
 static long irq_state;                  // Set if an IRQ is active.
+static void *slice_tmo;                 // Time slice timeout ID.
+static long long slice_time = 5000000;  // The time slice period (ns).
 /**** End of ready lock protected variables. ****/
 
 static Thread main_thread;              // The main thread.
@@ -107,6 +110,15 @@ static inline void remove_thread(void)
     }
 }
 
+/** The callback for time slice expiration.
+ * @param arg The thread being timed.
+ */
+#include <stdio.h>
+static void slice_callback(intptr_t arg)
+{
+    printf("slice_callback\n");
+}
+
 /** Make the head of the ready list the runniing thread.
  * The ready lock must be aquired before this call.
  */
@@ -132,6 +144,13 @@ static void get_running(void)
 
     if(timeslice) {
         // Someone is waiting in the ready queue. Lets be fair.
+        if (slice_tmo) {
+            timer_cancel_wake_at(slice_tmo);    // Cancel any existing.
+        }
+        long long when = timer_get_monotonic(); // Get the current time.
+        when += slice_time;                     // Add the slice time.
+        slice_tmo = timer_wake_at(when, slice_callback, (intptr_t)current);
+
     }
     current->state = RUNNING;
     current->next = NULL;
