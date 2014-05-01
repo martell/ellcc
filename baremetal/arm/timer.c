@@ -133,6 +133,11 @@ long long timer_expired(long long when)
                 next = ready;
             }
             next->next = NULL;
+        } 
+
+        if (tmo->callback) {
+            // Call the callback function.
+            tmo->callback(tmo->arg);
         }
 
         free(tmo);
@@ -146,8 +151,10 @@ long long timer_expired(long long when)
 
     lock_release(&timeout_lock);
 
-    // Schedule the ready threads.
-    schedule(ready);
+    if (ready) {
+        // Schedule the ready threads.
+        schedule(ready);
+    }
 
     return when;        // Schedule the next timeout, if any.
 }

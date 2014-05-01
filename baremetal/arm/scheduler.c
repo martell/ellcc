@@ -6,7 +6,6 @@
 #include <errno.h>
 #include <inttypes.h>
 #include "arm.h"
-#include "kernel.h"
 #include "timer.h"
 #include "scheduler.h"
 
@@ -23,6 +22,8 @@ typedef struct thread_queue {
 #define IDLE_STACK 4096                 // The idle thread stack size.
 static Thread idle_thread[PROCESSORS];  // The idle threads.
 static char *idle_stack[PROCESSORS][IDLE_STACK];
+
+static void schedule_nolock(Thread *list);
 
 /** The idle thread.
  */
@@ -159,10 +160,14 @@ static inline void insert_thread(Thread *thread)
 /** The callback for time slice expiration.
  * @param arg The thread being timed.
  */
-#include <stdio.h>
 static void slice_callback(intptr_t arg)
 {
-    printf("slice_callback\n");
+    lock_aquire(&ready_lock);
+    if ((Thread *)arg == current) {
+        schedule_nolock((Thread *)arg);
+        return;
+    }
+    lock_release(&ready_lock);
 }
 
 /** Make the head of the ready list the runniing thread.
@@ -208,33 +213,12 @@ static void get_running(void)
     current->next = NULL;
 }
 
-/** Change the current thread's state to
- * something besides READY or RUNNING.
- * The ready list must be locked on entry.
- */
-static void nolock_change_state(State new_state)
-{
-    Thread *me = current;
-    me->state = new_state;
-    get_running();
-    __switch(&current->saved_sp, &me->saved_sp);
-}
-
-/** Change the current thread's state to
- * something besides READY or RUNNING.
- */
-void change_state(State new_state)
-{
-    lock_aquire(&ready_lock);
-    nolock_change_state(new_state);
-}
-
 /* Schedule a list of threads.
+ * The ready lock has been aquired.
  */
-void schedule(Thread *list)
+static void schedule_nolock(Thread *list)
 {
     Thread *next;
-    lock_aquire(&ready_lock);
 
     // Insert the thread list and the current thread in the ready list.
     int sched_current = 0;
@@ -263,6 +247,35 @@ void schedule(Thread *list)
     Thread *me = current;
     get_running();
     __switch(&current->saved_sp, &me->saved_sp);
+}
+
+/* Schedule a list of threads.
+ */
+void schedule(Thread *list)
+{
+    lock_aquire(&ready_lock);
+    schedule_nolock(list);
+}
+
+/** Change the current thread's state to
+ * something besides READY or RUNNING.
+ * The ready list must be locked on entry.
+ */
+static void nolock_change_state(State new_state)
+{
+    Thread *me = current;
+    me->state = new_state;
+    get_running();
+    __switch(&current->saved_sp, &me->saved_sp);
+}
+
+/** Change the current thread's state to
+ * something besides READY or RUNNING.
+ */
+void change_state(State new_state)
+{
+    lock_aquire(&ready_lock);
+    nolock_change_state(new_state);
 }
 
 /* Give up the remaining time slice.

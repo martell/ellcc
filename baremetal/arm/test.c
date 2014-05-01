@@ -9,7 +9,7 @@
 #include <sched.h>
 #include <unistd.h>
 #include "command.h"
-#include "kernel.h"
+#include "scheduler.h"
 
 long __syscall_ret(unsigned long r);
 long __syscall(long, ...);
