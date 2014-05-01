@@ -1,5 +1,6 @@
 #include <bits/syscall.h>       // For syscall numbers.
 #define _GNU_SOURCE
+#include <stdio.h>
 #include <sched.h>
 #include <string.h>
 #include <stdlib.h>
@@ -7,9 +8,11 @@
 #include <inttypes.h>
 #include "arm.h"
 #include "timer.h"
+#define DEFINE_STRINGS
 #include "scheduler.h"
+#include "command.h"
 
-#define PRIORITIES 1                    // The number of priorities to support:
+#define PRIORITIES 3                    // The number of priorities to support:
                                         // (0..PRIORITIES - 1). 0 is highest.
 #define DEFAULT_PRIORITY ((PRIORITIES)/2)
 #define PROCESSORS 1                    // The number of processors to support.
@@ -24,6 +27,7 @@ static Thread idle_thread[PROCESSORS];  // The idle threads.
 static char *idle_stack[PROCESSORS][IDLE_STACK];
 
 static void schedule_nolock(Thread *list);
+static void insert_all(Thread *thread);
 
 /** The idle thread.
  */
@@ -41,6 +45,12 @@ static void create_idle_threads(void)
 {
     for (int i = 0; i < PROCESSORS; ++i) {
         idle_thread[i].saved_sp = (Context *)&idle_stack[i][IDLE_STACK];
+        idle_thread[i].priority = PRIORITIES;   // The lowest priority.
+        idle_thread[i].state = IDLE;
+        char name[10];
+        snprintf(name, 10, "idle%d", i);
+        idle_thread[i].name = strdup(name);
+        insert_all(&idle_thread[i]);
         __new_context(&idle_thread[i].saved_sp, idle, Mode_SYS, 0, 0);
     }
 }
@@ -53,34 +63,40 @@ static int priority;                    // The current highest priority.
 
 #if PRIORITIES > 1 && PROCESSORS > 1
 // Multiple priorities and processors.
-static int processor();                 // The current processor number.        
+static int processor() { return 0; }    // RICH: For now.
 static Thread *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];   // The ready to run list.
+static long irq_state[PROCESSORS];      // Set if an IRQ is active.
 
 #define current current[processor()]
 #define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
 #define ready_head(pri) ready[pri].head
 #define ready_tail(pri) ready[pri].tail
+#define irq_state irq_state[processor()]
 
 #elif PROCESSORS > 1
 // Multiple processors, one priority.
+static int processor() { return 0; }    // RICH: For now.
 static Thread *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
+static long irq_state[PROCESSORS];      // Set if an IRQ is active.
 
 #define current current[processor()]
 #define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
 #define ready_head(pri) ready.head
 #define ready_tail(pri) ready.tail
+#define irq_state irq_state[processor()]
 
 #elif PRIORITIES > 1
 // One processor, multiple priorities.
 static Thread *current;                 // The current running thread.
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];
+static long irq_state;                  // Set if an IRQ is active.
 
 #define processor() 0
 #define current current
@@ -94,6 +110,7 @@ static ThreadQueue ready[PRIORITIES];
 static Thread *current;                 // The current running thread.
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
+static long irq_state;                  // Set if an IRQ is active.
 
 #define processor() 0
 #define current current
@@ -104,11 +121,21 @@ static ThreadQueue ready;               // The ready to run list.
 
 #endif
 
-static long irq_state;                  // Set if an IRQ is active.
 static long long slice_time = 5000000;  // The time slice period (ns).
+static ThreadQueue all_threads;         // The all thread list.
 /**** End of ready lock protected variables. ****/
 
 static Thread main_thread;              // The main thread.
+
+/** Insert a thread into the all thread list.
+ */
+void insert_all(Thread *thread)
+{
+    thread->all_next = NULL;
+    all_threads.tail->all_next = thread;
+    thread->all_prev = all_threads.tail;
+    all_threads.tail = thread;
+}
 
 /** Enter the IRQ state.
  */
@@ -182,6 +209,15 @@ static void get_running(void)
     }
 
     current = ready_head(priority);
+
+#if PRIORITIES > 1
+    // Check for lower priority things to run.
+    while (current == NULL && priority < PRIORITIES) {
+        ++priority;
+        current = ready_head(priority);
+    }
+#endif
+
     if (current == NULL) {
         timeslice = 0;          // No need to timeslice for the idle thread.
         current = &idle_thread;
@@ -245,6 +281,9 @@ static void schedule_nolock(Thread *list)
 
     // Switch to the new thread.
     Thread *me = current;
+    if (me == &idle_thread) {
+        me->state = IDLE;
+    }
     get_running();
     __switch(&current->saved_sp, &me->saved_sp);
 }
@@ -288,7 +327,7 @@ static int sys_sched_yield(void)
 
 /* Create a new thread.
  */
-Thread *new_thread(ThreadFunction entry, int priority,
+Thread *new_thread(const char *name, ThreadFunction entry, int priority,
                    void *stack, size_t size, 
                    long arg1, long arg2, long r5, long r6, int *status)
 {
@@ -314,9 +353,17 @@ Thread *new_thread(ThreadFunction entry, int priority,
     thread->tls = NULL;
     if (priority == 0) {
         priority = DEFAULT_PRIORITY;
+    } else if (priority >= PRIORITIES) {
+        priority = PRIORITIES - 1;
     }
     thread->priority = priority;
     thread->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
+    if (name) {
+        thread->name = strdup(name);
+    } else {
+        thread->name = NULL;
+    }
+    insert_all(thread);
 
     thread->saved_sp = (Context *)(p + size);
     (thread->saved_sp - 1)->r5 = r5;
@@ -452,7 +499,7 @@ static long sys_clone(unsigned long flags, void *stack, intptr_t *ptid,
                       long start, long data, long ret)
 {       
     int status;
-    Thread *new = new_thread((ThreadFunction)ret, 0, stack, 0,
+    Thread *new = new_thread(NULL, (ThreadFunction)ret, 0, stack, 0,
                               0, 0, start, data, &status);
     if (status < 0) {
         return status;
@@ -474,6 +521,25 @@ static long sys_clone(unsigned long flags, void *stack, intptr_t *ptid,
     return 1;
 }
 
+static int tsCommand(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("show thread information.\n");
+        return COMMAND_OK;
+    }
+
+    printf("%8.8s  %-10.10s %5.5s %-10.10s \n", "TID", "STATE", "PRI", "NAME");
+    for (Thread *t = all_threads.head; t; t = t->all_next) {
+        printf("%8p: ", t);
+        printf("%-10.10s ", state_names[t->state]);
+        printf("%5d ", t->priority);
+        printf("%-10.10s ", t->name ? t->name : "");
+        printf("\n");
+    }
+
+    return COMMAND_OK;
+}
+
 /* Initialize the scheduler.
  */
 static void init(void)
@@ -481,16 +547,24 @@ static void init(void)
 
 static void init(void)
 {
-
     // Set up the main and idle threads.
-    create_idle_threads();
  
     // The main thread is what's running right now.
     main_thread.priority = DEFAULT_PRIORITY;
+    main_thread.state = RUNNING;
+    main_thread.next = NULL;
+    main_thread.name = "kernel";
+    main_thread.all_next = NULL;
+    main_thread.all_prev = NULL;
     ready_head(main_thread.priority) = ready_tail(main_thread.priority) = NULL;
     priority = main_thread.priority;
+    all_threads.head = &main_thread;
+    all_threads.tail = &main_thread;
     current = &main_thread;
+    command_insert("ts", tsCommand);
 
+    create_idle_threads();
+ 
     // Set up a simple set_tid_address system call.
     __set_syscall(SYS_set_tid_address, sys_set_tid_address);
  

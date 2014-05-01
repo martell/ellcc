@@ -46,11 +46,25 @@ Message get_message_nowait(MsgQueue *queue);
 
 // Thread states.
 typedef enum state {
+    IDLE,                       // This is an idle thread.
     READY,                      // The thread is ready to run.
     RUNNING,                    // The thread is running.
     TIMEOUT,                    // The thread is waiting for a timeout.
     MSGWAIT,                    // The thread is waiting for a message.
+
+    LASTSTATE                   // To get the number of states.
 } State;
+
+#if defined(DEFINE_STRINGS)
+static const char *state_names[LASTSTATE] =
+{
+    [IDLE] = "IDLE",
+    [READY] = "READY",
+    [RUNNING] = "RUNNING",
+    [TIMEOUT] = "TIMEOUT",
+    [MSGWAIT] = "MSGWAIT",
+};
+#endif
 
 typedef struct thread
 {
@@ -61,6 +75,9 @@ typedef struct thread
     State state;                // The thread's state.
     int priority;               // The thread's priority. 0 is highest.
     MsgQueue queue;             // The thread's message queue.
+    const char *name;           // The thread's name.
+    struct thread *all_next;    // Next thread in the all thread list.
+    struct thread *all_prev;    // Previous thread in the all thread list.
 } Thread;
 
 /* Schedule a list of threads.
@@ -92,6 +109,7 @@ void __switch(Context **to, Context **from);
 int __new_context(Context **savearea, ThreadFunction entry, int mode,
                   long arg1, long arg2);
 /** Create a new thread and make it run-able.
+ * @param name The name of the thread.
  * @param entry The thread entry point.
  * @param priority The thread priority. 0 is default.
  * @param stack A preallocated stack, or NULL.
@@ -101,7 +119,7 @@ int __new_context(Context **savearea, ThreadFunction entry, int mode,
  * @param status A place to put any generated errno values.
  * @return The thread ID.
  */
-Thread *new_thread(ThreadFunction entry, int priority,
+Thread *new_thread(const char *name, ThreadFunction entry, int priority,
                    void *stack, size_t size, 
                    long arg1, long arg2, long r5, long r6, int *status);
 
