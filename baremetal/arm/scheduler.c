@@ -48,9 +48,10 @@ static void create_idle_threads(void)
  */
 static Lock ready_lock;
 
+static int priority;                    // The current highest priority.
+
 #if PRIORITIES > 1 && PROCESSORS > 1
 // Multiple priorities and processors.
-static int priority;                    // The current highest priority.
 static int processor();                 // The current processor number.        
 static Thread *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
@@ -76,7 +77,6 @@ static ThreadQueue ready;               // The ready to run list.
 
 #elif PRIORITIES > 1
 // One processor, multiple priorities.
-static int priority;                    // The current highest priority.
 static Thread *current;                 // The current running thread.
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];
@@ -475,6 +475,7 @@ static void init(void)
     // The main thread is what's running right now.
     main_thread.priority = DEFAULT_PRIORITY;
     ready_head(main_thread.priority) = ready_tail(main_thread.priority) = NULL;
+    priority = main_thread.priority;
     current = &main_thread;
 
     // Set up a simple set_tid_address system call.
