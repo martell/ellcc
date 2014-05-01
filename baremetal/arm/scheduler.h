@@ -89,7 +89,7 @@ void schedule(Thread *list);
  */
 void change_state(State new_state);
 
-typedef long (*ThreadFunction)(long, long);
+typedef intptr_t (*ThreadFunction)(intptr_t, intptr_t);
 
 /** Switch to a new context.
  * @param to The new context.
@@ -110,18 +110,17 @@ int __new_context(Context **savearea, ThreadFunction entry, int mode,
                   long arg1, long arg2);
 /** Create a new thread and make it run-able.
  * @param name The name of the thread.
+ * @param id The new thread ID.
  * @param entry The thread entry point.
  * @param priority The thread priority. 0 is default.
  * @param stack A preallocated stack, or NULL.
  * @param size The stack size.
  * @param arg1 The first parameter.
  * @param arg2 The second parameter.
- * @param status A place to put any generated errno values.
- * @return The thread ID.
+ * @return 0 on success, < 0 on error.
  */
-Thread *new_thread(const char *name, ThreadFunction entry, int priority,
-                   void *stack, size_t size, 
-                   long arg1, long arg2, long r5, long r6, int *status);
+int new_thread(const char *name, void **id, ThreadFunction entry, int priority,
+               void *stack, size_t size, long arg1, long arg2);
 
 /** Get the current threead pointer.
  */

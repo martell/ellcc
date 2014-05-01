@@ -39,20 +39,17 @@ static int yieldCommand(int argc, char **argv)
 
 /** A simple thread.
  */
-static Thread *my_thread;
-static pthread_t id1;
-static void *thread1(void *arg)
+static void *id1;
+static intptr_t thread1(intptr_t arg1, intptr_t arg2)
 {
-    my_thread = __get_self();
-    printf ("thread started %s\n", (char *)arg);
-    printf("thread self = 0x%08X\n", (unsigned)__get_self());
+    printf ("thread started %s\n", (char *)arg1);
     for ( ;; ) {
         // Go to sleep.
         Message msg = get_message(NULL);
         printf ("thread running %d\n", msg.code);
     }
 
-    return NULL;
+    return 0;
 }
 
 static int thread1Command(int argc, char **argv)
@@ -62,17 +59,14 @@ static int thread1Command(int argc, char **argv)
         return COMMAND_OK;
     }
 
-    pthread_attr_t attr;
-    int s = pthread_attr_init(&attr);
-    if (s != 0)
-        printf("pthread_attr_init: %s\n", strerror(errno));
-    void *sp = malloc(4096);
-    s = pthread_attr_setstack(&attr, sp, 4096);
-    if (s != 0)
-        printf("pthread_attr_setstack %s\n", strerror(errno));
-    s = pthread_create(&id1, &attr, &thread1, "foo");
-    if (s != 0)
-        printf("pthread_create: %s\n", strerror(errno));
+    new_thread("thread1",       // name
+               &id1,            // id
+               thread1,         // entry
+               0,               // priority
+               NULL,            // stack
+               4096,            // stack size
+               (intptr_t)"foo", // arg1
+               0);              // arg2
 
     return COMMAND_OK;
 }
@@ -85,7 +79,7 @@ static int test1Command(int argc, char **argv)
     }
 
     static Message msg = { 3 };
-    send_message(&my_thread->queue, msg);
+    send_message(&((Thread *)id1)->queue, msg);
     msg.code++;
     return COMMAND_OK;
 }
@@ -104,7 +98,7 @@ static int cancel1Command(int argc, char **argv)
     }
 }
 
-static void *thread2(void *arg)
+static intptr_t thread2(intptr_t arg1, intptr_t arg2)
 {
     printf ("thread2 started\n");
     for ( ;; ) {
@@ -113,7 +107,7 @@ static void *thread2(void *arg)
         printf ("thread2 still running\n");
     }
 
-    return NULL;
+    return 0;
 }
 
 static int thread2Command(int argc, char **argv)
@@ -123,18 +117,15 @@ static int thread2Command(int argc, char **argv)
         return COMMAND_OK;
     }
 
-    pthread_attr_t attr;
-    int s = pthread_attr_init(&attr);
-    if (s != 0)
-        printf("pthread_attr_init: %s\n", strerror(errno));
-    char *sp = malloc(4096);
-    s = pthread_attr_setstack(&attr, sp, 4096);
-    if (s != 0)
-        printf("pthread_attr_setstack %s\n", strerror(errno));
-    pthread_t id2;
-    s = pthread_create(&id2, &attr, &thread2, NULL);
-    if (s != 0)
-        printf("pthread_create: %s\n", strerror(errno));
+    void *id2;
+    new_thread("thread2",       // name
+               &id2,            // id
+               thread2,         // entry
+               0,               // priority
+               NULL,            // stack
+               4096,            // stack size
+               0,               // arg1
+               0);              // arg2
     return COMMAND_OK;
 }
 

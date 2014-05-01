@@ -156,16 +156,16 @@ IRQ_Handler:
  * r0 points to the new context's save area, initialized to the top of the stack, aligned to 8 bytes.
  * r1 is the new context's start address
  * r2 is the new context's SPSR.
- * [sp, #0] is the first argument to the context.
- * [sp, #4] is the second argument to the context.
+ * r3 is the first argument to the context.
+ * [sp] is the second argument to the context.
  */
     .global __new_context
 __new_context:
     ldr     r7, [r0]            // Get the new stack pointer.
     stmfd   r7!, {r1, r2}       // Save the new pc and SPSR.
     sub     r7, #12 * 4         // Room for registers r2-r12, lr.
-    ldr     r1, [sp, #0]        // Get the first argument.
-    ldr     r2, [sp, #4]        // Get the second argument.
+    mov     r1, r3              // Get the first argument.
+    ldr     r2, [sp]            // Get the second argument.
     stmfd   r7!, {r1-r2}        // Save the arguments as r0, r1.
     str     r7, [r0]            // Update the stack pointer.
     bx      lr

@@ -31,7 +31,7 @@ static void insert_all(Thread *thread);
 
 /** The idle thread.
  */
-static long idle(long arg1, long arg2)
+static intptr_t idle(intptr_t arg1, intptr_t arg2)
 {
     for ( ;; ) {
         // Do stuff, but nothing that will block.
@@ -327,9 +327,9 @@ static int sys_sched_yield(void)
 
 /* Create a new thread.
  */
-Thread *new_thread(const char *name, ThreadFunction entry, int priority,
-                   void *stack, size_t size, 
-                   long arg1, long arg2, long r5, long r6, int *status)
+static Thread *new_thread_int(const char *name, ThreadFunction entry, int priority,
+                          void *stack, size_t size, 
+                          intptr_t arg1, intptr_t arg2, long r5, long r6, int *status)
 {
     char *p;
     if (stack == 0) {
@@ -372,6 +372,29 @@ Thread *new_thread(const char *name, ThreadFunction entry, int priority,
     schedule(thread);
     *status = 0;
     return thread;
+}
+
+/** Create a new thread and make it run-able.
+ * @param name The name of the thread.
+ * @param id The new thread ID.
+ * @param entry The thread entry point.
+ * @param priority The thread priority. 0 is default.
+ * @param stack A preallocated stack, or NULL.
+ * @param size The stack size.
+ * @param arg1 The first parameter.
+ * @param arg2 The second parameter.
+ * @return 0 on success, < 0 on error.
+ */
+int new_thread(const char *name, void **id, ThreadFunction entry, int priority,
+               void *stack, size_t size, long arg1, long arg2)
+{
+    int s;
+    Thread *new = new_thread_int(name, entry, priority, stack, size, arg1, arg2,
+                                 0, 0, &s);
+    if (id) {
+        *id = new;
+    }
+    return s;
 }
 
 /** Send a message to a message queue.
@@ -499,8 +522,8 @@ static long sys_clone(unsigned long flags, void *stack, intptr_t *ptid,
                       long start, long data, long ret)
 {       
     int status;
-    Thread *new = new_thread(NULL, (ThreadFunction)ret, 0, stack, 0,
-                              0, 0, start, data, &status);
+    Thread *new = new_thread_int(NULL, (ThreadFunction)ret, 0, stack, 0,
+                                0, 0, start, data, &status);
     if (status < 0) {
         return status;
     }
