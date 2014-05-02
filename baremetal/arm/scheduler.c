@@ -329,7 +329,7 @@ static int sys_sched_yield(void)
  */
 static Thread *new_thread_int(const char *name, ThreadFunction entry, int priority,
                           void *stack, size_t size, 
-                          intptr_t arg1, intptr_t arg2, long r5, long r6, int *status)
+                          intptr_t arg1, intptr_t arg2, int *status)
 {
     char *p;
     if (stack == 0) {
@@ -339,6 +339,8 @@ static Thread *new_thread_int(const char *name, ThreadFunction entry, int priori
         if (p == NULL) {
             return NULL;
         }
+
+        p += size;
     } else {
         p = stack + size;
     }
@@ -365,9 +367,17 @@ static Thread *new_thread_int(const char *name, ThreadFunction entry, int priori
     }
     insert_all(thread);
 
-    thread->saved_sp = (Context *)(p + size);
+#if 0
+    thread->saved_sp = (Context *)p;
     (thread->saved_sp - 1)->r5 = r5;
     (thread->saved_sp - 1)->r6 = r6;
+#else
+    Context *cp = (Context *)p;
+    thread->saved_sp = cp;
+    // Copy registers for clone();
+    *(cp - 1) = *current->saved_sp;
+
+#endif
     __new_context(&thread->saved_sp, entry, Mode_SYS, arg1, arg2);
     schedule(thread);
     *status = 0;
@@ -389,8 +399,8 @@ int new_thread(const char *name, void **id, ThreadFunction entry, int priority,
                void *stack, size_t size, long arg1, long arg2)
 {
     int s;
-    Thread *new = new_thread_int(name, entry, priority, stack, size, arg1, arg2,
-                                 0, 0, &s);
+    Thread *new = new_thread_int(name, entry, priority, stack, size,
+                                 arg1, arg2, &s);
     if (id) {
         *id = new;
     }
@@ -519,11 +529,11 @@ static long sys_clone(unsigned long flags, void *stack, intptr_t *ptid,
 #else
   #error clone arguments not defined
 #endif
-                      long start, long data, long ret)
+                      long arg5, long data, long ret)
 {       
     int status;
     Thread *new = new_thread_int(NULL, (ThreadFunction)ret, 0, stack, 0,
-                                0, 0, start, data, &status);
+                                 0, 0, &status);
     if (status < 0) {
         return status;
     }

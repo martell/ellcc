@@ -118,6 +118,7 @@ FIQ_Handler:
     b       .
 
 #define SAVED_REGS r0-r12, lr   // Registers saved in thread context.
+#define NUM_SAVED 14            // The number of saved registers.
 
 IRQ_Handler:
     sub     lr, lr, #4          // Adjust return address.
@@ -193,13 +194,16 @@ __switch:
 /* Handle a system call.
  * On the ARM, this is entered with an SVC instruction.
  */
-#define SYS_SAVED r4-r12, lr // r7, r8, r12, lr
-#define NUM_SAVED 10 // 4
 SVC_Handler:
     srsfd   sp!, #Mode_SYS      // Save LR_svc and SPSR_svc on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
-    push    {SYS_SAVED}         // Save registers.
+    push    { SAVED_REGS }      // Save registers.
     cpsie   i                   // Enable IRQ
+    mov     r8, sp              // Save the sp.
+    push    { r0, r1 }
+    bl      __get_self          // Get the current context.
+    str     r8, [r0]            // Save context pointer for clone().
+    pop     { r0, r1 }
     
     // In a system call.
     // r7 is the call number.
@@ -213,8 +217,9 @@ __in_syscall:                   // The stack frame is valid here.
     ldr     r7, [sp, #4 * NUM_SAVED] // Get the SVC return address for clone().
     push    { r4, r5, r6, r7 }  // Put extra arguments on the stack.
     blx     r8                  // Dispatch. Return value is in r0/r1
-    pop     { r4, r5, r6, r7 }  // pull extra arguments from the stack.
-    pop     {SYS_SAVED}         // Restore registers.
+    // pop     { r4, r5, r6, r7 }  // pull extra arguments from the stack.
+    add     sp, #6 * 4          // Deallocate args and r0-r1 from SAVED_REGS.
+    pop     { r2-r12, lr }      // SAVED_REGS - r0-r1
     rfeia   sp!                 // And return.
 
 SysCallPtr:
@@ -233,7 +238,7 @@ check_arm_syscall:
     adr     r8, ARM_SVC_Table   // Get the system call table.
     ldr     r7, [r8, r7, lsl #2]// Get the stystem call entry.
     blx     r7                  // Dispatch. Return value is in r0/r1
-    pop     {SYS_SAVED}         // Restore registers.
+    pop     { SAVED_REGS }      // Restore registers.
     rfeia   sp!                 // And return.
 
 low:
