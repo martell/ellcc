@@ -8,6 +8,9 @@
 typedef struct irq_handler
 {
     int irq;                    // The interrupt identifier.
+    int edge;                   // 1 = edge sensitive 0 = level.
+    int priority;               // The priority level of the interruupt.
+    int cpus;                   // A bit mask of CPUs to send the IRQ to.
     int sources;                // The number of sources in this vector.
     struct irq_entry {
         volatile uint32_t *irq_status;  // The interrupt status register.
@@ -29,5 +32,11 @@ void irq_register(const IRQHandler *handler);
  * This is called from the interrupt handler in init.S.
  */
 void *__identify_irq(void);
+
+/** Setup to handle an interrupt.
+ * @param irq The interupptt number.
+ * @param edge != 0 if edge sensitive.
+ */
+void irq_setup(const IRQHandler *handler);
 
 #endif // _irq_h_

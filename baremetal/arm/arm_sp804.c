@@ -131,6 +131,9 @@ static void short_interrupt(void)
 static const IRQHandler timer_irq =
 {
     .irq = IRQ,
+    .edge = 0,
+    .priority = 0,
+    .cpus = 0xFFFFFFFF,         // Send to all CPUs.
     .sources = 2,
     {
         { ADR(Timer1MIS), TimerInt, ADR(Timer1IntClr), 0, short_interrupt },
