@@ -17,6 +17,8 @@
 #define DEFAULT_PRIORITY ((PRIORITIES)/2)
 #define PROCESSORS 1                    // The number of processors to support.
 
+#define MIN_STACK   4096                // The minimum stack size for a thread.
+
 typedef struct thread_queue {
     Thread *head;
     Thread *tail;
@@ -333,7 +335,10 @@ static int new_thread_int(const char *name, Thread **id, ThreadFunction entry, i
 {
     char *p;
     if (stack == 0) {
-        if (size == 0) size = 4096;     // RICH: #define
+        if (size < MIN_SIZE) {
+            size = MIN_SIZE;
+        }
+
         p = malloc(size);
 
         if (p == NULL) {
