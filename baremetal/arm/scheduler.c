@@ -47,8 +47,8 @@ static void create_idle_threads(void)
         idle_thread[i].saved_sp = (Context *)&idle_stack[i][IDLE_STACK];
         idle_thread[i].priority = PRIORITIES;   // The lowest priority.
         idle_thread[i].state = IDLE;
-        char name[10];
-        snprintf(name, 10, "idle%d", i);
+        char name[20];
+        snprintf(name, 20, "idle%d", i);
         idle_thread[i].name = strdup(name);
         insert_all(&idle_thread[i]);
         __new_context(&idle_thread[i].saved_sp, idle, Mode_SYS, 0, 0);
@@ -327,9 +327,9 @@ static int sys_sched_yield(void)
 
 /* Create a new thread.
  */
-static Thread *new_thread_int(const char *name, ThreadFunction entry, int priority,
-                          void *stack, size_t size, 
-                          intptr_t arg1, intptr_t arg2, int *status)
+static int new_thread_int(const char *name, Thread **id, ThreadFunction entry, int priority,
+                          int cloning, void *stack, size_t size, 
+                          intptr_t arg1, intptr_t arg2)
 {
     char *p;
     if (stack == 0) {
@@ -337,7 +337,7 @@ static Thread *new_thread_int(const char *name, ThreadFunction entry, int priori
         p = malloc(size);
 
         if (p == NULL) {
-            return NULL;
+            return -ENOMEM;
         }
 
         p += size;
@@ -348,7 +348,7 @@ static Thread *new_thread_int(const char *name, ThreadFunction entry, int priori
     Thread *thread = malloc(sizeof(Thread));    // RICH: bin.
     if (!thread) {
         if (!stack) free(p);
-        return NULL;
+        return -ENOMEM;
     }
 
     thread->next = NULL;
@@ -367,21 +367,17 @@ static Thread *new_thread_int(const char *name, ThreadFunction entry, int priori
     }
     insert_all(thread);
 
-#if 0
-    thread->saved_sp = (Context *)p;
-    (thread->saved_sp - 1)->r5 = r5;
-    (thread->saved_sp - 1)->r6 = r6;
-#else
     Context *cp = (Context *)p;
     thread->saved_sp = cp;
-    // Copy registers for clone();
-    *(cp - 1) = *current->saved_sp;
+    if (cloning) {
+        // Copy registers for clone();
+        *(cp - 1) = *current->saved_sp;
+    }
 
-#endif
     __new_context(&thread->saved_sp, entry, Mode_SYS, arg1, arg2);
     schedule(thread);
-    *status = 0;
-    return thread;
+    *id = thread;
+    return 0;
 }
 
 /** Create a new thread and make it run-able.
@@ -398,12 +394,13 @@ static Thread *new_thread_int(const char *name, ThreadFunction entry, int priori
 int new_thread(const char *name, void **id, ThreadFunction entry, int priority,
                void *stack, size_t size, long arg1, long arg2)
 {
-    int s;
-    Thread *new = new_thread_int(name, entry, priority, stack, size,
-                                 arg1, arg2, &s);
+    Thread *new;
+    int s = new_thread_int(name, &new, entry, priority, 
+                           0, stack, size, arg1, arg2);
     if (id) {
         *id = new;
     }
+
     return s;
 }
 
@@ -531,11 +528,15 @@ static long sys_clone(unsigned long flags, void *stack, intptr_t *ptid,
 #endif
                       long arg5, long data, long ret)
 {       
-    int status;
-    Thread *new = new_thread_int(NULL, (ThreadFunction)ret, 0, stack, 0,
-                                 0, 0, &status);
-    if (status < 0) {
-        return status;
+    // Create a new thread, copying context.
+    static int number = 1;
+    char name[20];
+    snprintf(name, 20, "clone%d", number++);
+    Thread *new;
+    int s = new_thread_int(name, &new, (ThreadFunction)ret, 0, 1, stack, 0,
+                                 0, 0);
+    if (s < 0) {
+        return s;
     }
 
     // Record the TLS.
@@ -589,15 +590,16 @@ static void init(void)
     main_thread.name = "kernel";
     main_thread.all_next = NULL;
     main_thread.all_prev = NULL;
-    ready_head(main_thread.priority) = ready_tail(main_thread.priority) = NULL;
     priority = main_thread.priority;
     all_threads.head = &main_thread;
     all_threads.tail = &main_thread;
     current = &main_thread;
-    command_insert("ts", tsCommand);
 
     create_idle_threads();
- 
+
+    // Add the "ts" command.
+    command_insert("ts", tsCommand);
+
     // Set up a simple set_tid_address system call.
     __set_syscall(SYS_set_tid_address, sys_set_tid_address);
  
