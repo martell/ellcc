@@ -12,6 +12,7 @@ static int irq_index;
 void irq_register(const IRQHandler *handler)
 {
     handlers[irq_index] = handler;
+    // Set up the IRQ hardware.
     irq_setup(handler);
     ++irq_index;
 }
