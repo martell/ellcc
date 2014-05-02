@@ -13,7 +13,7 @@ void irq_setup(const IRQHandler *handler)
     int id = handler->irq + 32;
     int mask, value;
 
-    *ICDDCR = 0x00;             // Disable the CPU interface and distributer.
+    *ICDDCR = 0x00;             // Disable the CPU interface and distributor.
  
     // Set level or edge sensitive.
     mask = 0x3 << (id % 16);
