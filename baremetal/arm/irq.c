@@ -18,6 +18,7 @@ void irq_register(const IRQHandler *handler)
 }
 
 /** Identify an interrupt source, disable it, return a handler.
+ * RICH: For the ARM this needs to be replaced with GIC supported handling.
  */
 void *__identify_irq(void)
 {
@@ -37,4 +38,3 @@ void *__identify_irq(void)
     // No interrupt handler found. Panic?
     return NULL;
 }
-

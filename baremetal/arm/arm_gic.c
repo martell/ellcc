@@ -26,7 +26,7 @@ void irq_setup(const IRQHandler *handler)
     ICDIPRn[id / 4] &= ~mask;
     ICDIPRn[id / 4] |= value;
 
-    // Set the processor(s)s to send the interrupt to.
+    // Set the processor(s) to send the interrupt to.
     mask = 0xFF << (id % 4);
     value = (handler->cpus & 0xFF) << (id % 4);
     ICDIPTRn[id / 4] &= ~mask;

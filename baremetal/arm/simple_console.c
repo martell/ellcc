@@ -1,7 +1,7 @@
 /* Initialize a simple set of input/output handlers.
  *
  * Define a few core (and soon to be superceeded) system call
- * implimentaions.
+ * implementaions.
  */
 #include <unistd.h>
 #include <bits/syscall.h>       // For syscall numbers.
