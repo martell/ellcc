@@ -5,8 +5,7 @@
 #include "irq.h"
 
 /** Setup to handle an interrupt.
- * @param irq The interupptt number.
- * @param edge != 0 if edge sensitive.
+ * @param handler The IRQ handler descriptor.
  */
 void irq_setup(const IRQHandler *handler)
 {
