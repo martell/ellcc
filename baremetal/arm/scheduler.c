@@ -335,8 +335,8 @@ static int new_thread_int(const char *name, Thread **id, ThreadFunction entry, i
 {
     char *p;
     if (stack == 0) {
-        if (size < MIN_SIZE) {
-            size = MIN_SIZE;
+        if (size < MIN_STACK) {
+            size = MIN_STACK;
         }
 
         p = malloc(size);
