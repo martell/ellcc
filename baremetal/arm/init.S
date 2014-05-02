@@ -217,7 +217,6 @@ __in_syscall:                   // The stack frame is valid here.
     ldr     r7, [sp, #4 * NUM_SAVED] // Get the SVC return address for clone().
     push    { r4, r5, r6, r7 }  // Put extra arguments on the stack.
     blx     r8                  // Dispatch. Return value is in r0/r1
-    // pop     { r4, r5, r6, r7 }  // pull extra arguments from the stack.
     add     sp, #6 * 4          // Deallocate args and r0-r1 from SAVED_REGS.
     pop     { r2-r12, lr }      // SAVED_REGS - r0-r1
     rfeia   sp!                 // And return.
