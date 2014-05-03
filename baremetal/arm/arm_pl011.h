@@ -10,7 +10,7 @@
 #define BASE 0x1c090000
 #endif
 
-#define REG(reg) (*(unsigned int *)(address + (reg)))
+#define REG(reg) (*(volatile unsigned int *)(address + (reg)))
 
 static volatile unsigned char * const address = (unsigned char *)BASE;
 

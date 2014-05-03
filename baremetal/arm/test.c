@@ -78,6 +78,11 @@ static int test1Command(int argc, char **argv)
         return COMMAND_OK;
     }
 
+    if (!id1) {
+        printf("thread1 has not been started.\n");
+        return COMMAND_ERROR;
+    }
+
     static Message msg = { 3 };
     send_message(&((Thread *)id1)->queue, msg);
     msg.code++;

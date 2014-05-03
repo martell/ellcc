@@ -13,8 +13,8 @@
 #define IRQ 2
 #define CLOCK 1000000
 
-#define REG(reg) (*(unsigned int *)(address + (reg)))
-#define ADR(reg) ((unsigned int *)(BASE + (reg)))
+#define REG(reg) (*(volatile unsigned int *)(address + (reg)))
+#define ADR(reg) ((volatile unsigned int *)(BASE + (reg)))
 
 static volatile unsigned char * const address = (unsigned char *)BASE;
 
