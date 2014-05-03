@@ -36,6 +36,11 @@ typedef struct context
     uint32_t cpsr;
 } Context;
 
+static inline void context_set_return(Context *cp, int value)
+{
+    cp->r0 = value;
+}
+
 static inline uint32_t __update_cpsr(uint32_t clear, uint32_t eor) __attribute__((__unused__));
 
 static inline uint32_t __update_cpsr(uint32_t clear, uint32_t set)

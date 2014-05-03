@@ -190,11 +190,9 @@ int sectionCommand(int argc, char **argv)
     return COMMAND_OK;
 }
 
-/** A pthread thread.
- */
 static sem_t sem4;
-static pthread_t id4;
-static void *thread4(void *arg)
+static void *id4;
+static intptr_t thread4(intptr_t arg1, intptr_t arg2)
 {
     printf ("thread4 started\n");
     for ( ;; ) {
@@ -202,7 +200,7 @@ static void *thread4(void *arg)
         printf("thread4 running\n");
     }
 
-    return NULL;
+    return 0;
 }
 
 static int thread4Command(int argc, char **argv)
@@ -216,17 +214,14 @@ static int thread4Command(int argc, char **argv)
     if (s != 0)
         printf("sem_init: %s\n", strerror(errno));
 
-    pthread_attr_t attr;
-    s = pthread_attr_init(&attr);
-    if (s != 0)
-        printf("pthread_attr_init: %s\n", strerror(errno));
-    char *sp = malloc(4096);
-    s = pthread_attr_setstack(&attr, sp, 4096);
-    if (s != 0)
-        printf("pthread_attr_setstack %s\n", strerror(errno));
-    s = pthread_create(&id4, &attr, &thread4, NULL);
-    if (s != 0)
-        printf("pthread_create: %s\n", strerror(errno));
+    new_thread("thread4",       // name
+               &id4,            // id
+               thread4,         // entry
+               0,               // priority
+               NULL,            // stack
+               4096,            // stack size
+               0,               // arg1
+               0);              // arg2
 
     return COMMAND_OK;
 }
@@ -234,7 +229,7 @@ static int thread4Command(int argc, char **argv)
 static int test4Command(int argc, char **argv)
 {
     if (argc <= 0) {
-        printf("test the thread3 test case.\n");
+        printf("test the thread4 test case.\n");
         return COMMAND_OK;
     }
 
@@ -244,6 +239,67 @@ static int test4Command(int argc, char **argv)
     }
 
     sem_post(&sem4);
+    return COMMAND_OK;
+}
+
+static sem_t sem5;
+static void *id5;
+static intptr_t thread5(intptr_t arg1, intptr_t arg2)
+{
+    printf ("thread5 started\n");
+    for ( ;; ) {
+        struct timespec ts = { 10, 0 };
+        struct timespec now;
+        clock_gettime(CLOCK_REALTIME, &now);
+        ts.tv_sec += now.tv_sec;
+        ts.tv_nsec += now.tv_nsec;
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec += 1;
+            ts.tv_nsec -= 1000000000;
+        }
+        sem_timedwait(&sem5, &ts);
+        printf("thread5 running\n");
+    }
+
+    return 0;
+}
+
+static int thread5Command(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("start the thread5 test case.\n");
+        return COMMAND_OK;
+    }
+
+    int s = sem_init(&sem5, 0, 0);
+    if (s != 0)
+        printf("sem_init: %s\n", strerror(errno));
+
+    new_thread("thread5",       // name
+               &id5,             // id
+               thread5,         // entry
+               0,               // priority
+               NULL,            // stack
+               4096,            // stack size
+               0,               // arg1
+               0);              // arg2
+
+    return COMMAND_OK;
+}
+
+static int test5Command(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("test the thread5 test case.\n");
+        return COMMAND_OK;
+    }
+
+    if (!id5) {
+        printf("thread5 has not been started.\n");
+        return COMMAND_ERROR;
+    }
+
+    sem_post(&sem5);
     return COMMAND_OK;
 }
 
@@ -265,4 +321,6 @@ static void init(void)
     command_insert("test3", test3Command);
     command_insert("thread4", thread4Command);
     command_insert("test4", test4Command);
+    command_insert("thread5", thread5Command);
+    command_insert("test5", test5Command);
 }

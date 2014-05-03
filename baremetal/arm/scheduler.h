@@ -51,6 +51,8 @@ typedef enum state {
     RUNNING,                    // The thread is running.
     TIMEOUT,                    // The thread is waiting for a timeout.
     SEMWAIT,                    // The thread is waiting on a semaphore.
+    SEMTMO,                     // The thread is waiting on a semaphore
+                                //     with a timeout.
     MSGWAIT,                    // The thread is waiting for a message.
 
     LASTSTATE                   // To get the number of states.
@@ -64,6 +66,7 @@ static const char *state_names[LASTSTATE] =
     [RUNNING] = "RUNNING",
     [TIMEOUT] = "TIMEOUT",
     [SEMWAIT] = "SEMWAIT",
+    [SEMTMO] = "SEMTMO",
     [MSGWAIT] = "MSGWAIT",
 };
 #endif
@@ -89,7 +92,7 @@ void schedule(Thread *list);
 /** Change the current thread's state to
  * something besides READY or RUNNING.
  */
-void change_state(State new_state);
+int change_state(State new_state);
 
 typedef intptr_t (*ThreadFunction)(intptr_t, intptr_t);
 
@@ -97,7 +100,7 @@ typedef intptr_t (*ThreadFunction)(intptr_t, intptr_t);
  * @param to The new context.
  * @param from A place to store the current context.
  */
-void __switch(Context **to, Context **from);
+int __switch(Context **to, Context **from);
 
 /** Set up a new context.
  * @param savearea Where to put the finished stack pointer.

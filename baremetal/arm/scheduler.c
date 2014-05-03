@@ -302,21 +302,21 @@ void schedule(Thread *list)
  * something besides READY or RUNNING.
  * The ready list must be locked on entry.
  */
-static void nolock_change_state(State new_state)
+static int nolock_change_state(State new_state)
 {
     Thread *me = current;
     me->state = new_state;
     get_running();
-    __switch(&current->saved_sp, &me->saved_sp);
+    return __switch(&current->saved_sp, &me->saved_sp);
 }
 
 /** Change the current thread's state to
  * something besides READY or RUNNING.
  */
-void change_state(State new_state)
+int change_state(State new_state)
 {
     lock_aquire(&ready_lock);
-    nolock_change_state(new_state);
+    return nolock_change_state(new_state);
 }
 
 /* Give up the remaining time slice.

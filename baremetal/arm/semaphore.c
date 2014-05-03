@@ -33,18 +33,27 @@ int sem_init(sem_t *sem, int pshared, unsigned int value)
  */
 int sem_wait(sem_t *sem)
 {
+    int s = 0;
     lock_aquire(&sem->lock);
-    if (sem->count) {
-        --sem->count;
-        lock_release(&sem->lock);
-    } else {
-        Thread *me = __get_self();
-        me->next = sem->waiters;
-        sem->waiters = me;
-        lock_release(&sem->lock);
-        change_state(SEMWAIT);
+    for ( ;; ) {
+        if (sem->count) {
+            --sem->count;
+            lock_release(&sem->lock);
+            break;
+        } else {
+            Thread *me = __get_self();
+            me->next = sem->waiters;
+            sem->waiters = me;
+            lock_release(&sem->lock);
+            s = change_state(SEMWAIT);
+            if (s < 0) {
+                errno = -s;
+                s = -1;
+                break;
+            }
+        }
     }
-    return 0;
+    return s;
 }
 
 /** Try to take a semaphore.
@@ -65,9 +74,28 @@ int sem_try_wait(sem_t *sem)
     return s;
 }
 
+/** This callback occurs when a sem_timedwait timeout expires.
+ */
 static void callback(intptr_t arg1, intptr_t arg2)
 {
-    // RICH: cancel wait.
+    sem_t *sem = (sem_t *)arg1;
+    Thread *thread = (Thread *)arg2;
+    lock_aquire(&sem->lock);
+    Thread *p, *q;
+    for (p = sem->waiters, q = NULL; p; q = p, p = p->next) {
+        if (p == thread) {
+            // This thread timed out.
+            if (q) {
+                q->next = p->next;
+            } else {
+                sem->waiters = p->next;
+            }
+            p->next = NULL;
+            context_set_return(p->saved_sp, -ETIMEDOUT);
+            schedule(p);
+        }
+    }
+    lock_release(&sem->lock);
 }
 
 /** Wait on a semaphore with a timeout.
@@ -76,29 +104,42 @@ static void callback(intptr_t arg1, intptr_t arg2)
  */
 int sem_timedwait(sem_t *sem, struct timespec *abs_timeout)
 {
+    int s = 0;
     lock_aquire(&sem->lock);
-    if (sem->count) {
-        --sem->count;
-        lock_release(&sem->lock);
-    } else {
-        long long when;
-        when = abs_timeout->tv_sec * 1000000000LL + abs_timeout->tv_nsec;
-        long long now = timer_get_realtime();
-        if (now > when) {
-            // Already expired.
-            errno = ETIMEDOUT;
+    for ( ;; ) {
+        if (sem->count) {
+            --sem->count;
             lock_release(&sem->lock);
+            break;
         } else {
-            Thread *me = __get_self();
-            me->next = sem->waiters;
-            sem->waiters = me;
-            lock_release(&sem->lock);
-            when -= timer_get_realtime_offset();
-            timer_wake_at(when, callback, (intptr_t) sem, (intptr_t) me);
-            change_state(SEMWAIT);
+            long long when;
+            when = abs_timeout->tv_sec * 1000000000LL + abs_timeout->tv_nsec;
+            long long now = timer_get_realtime();
+            if (now > when) {
+                // Already expired.
+                lock_release(&sem->lock);
+                errno = ETIMEDOUT;
+                s = -1;
+            } else {
+                Thread *me = __get_self();
+                me->next = sem->waiters;
+                sem->waiters = me;
+                lock_release(&sem->lock);
+                when -= timer_get_realtime_offset();
+                void *t = timer_wake_at(when, callback,
+                                        (intptr_t) sem, (intptr_t) me);
+                context_set_return(me->saved_sp, 0);
+                s = change_state(SEMTMO);
+                timer_cancel_wake_at(t);
+                if (s < 0) {
+                    errno = -s;
+                    s = -1;
+                    break;
+                }
+            }
         }
     }
-    return 0;
+    return s;
 }
 
 /** Unlock a semaphore.
