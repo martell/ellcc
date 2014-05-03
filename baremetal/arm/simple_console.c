@@ -1,17 +1,17 @@
-/* Initialize a simple set of input/output handlers.
+/* Setup a simple set of input/output handlers.
  *
  * Define a few core (and soon to be superceeded) system call
  * implementaions.
  */
 #include <unistd.h>
 #include <bits/syscall.h>       // For syscall numbers.
-#include <sys/uio.h>            // For writev (used by printf().
+#include <sys/uio.h>            // For writev (used by printf()).
 #include <sys/ioctl.h>
 
 #include "kernel.h"
 #include "arm_pl011.h"
 
-static int sys_ioctl(int d, int request, ...)
+static int sys_ioctl(int fd, int request, ...)
 {
     switch (request) {
     case TCGETS:

@@ -4,12 +4,40 @@
 #include "arm_gic.h"
 #include "irq.h"
 
+/** Can we identify IRQs by ID?
+ */
+int irq_canid(void)
+{
+    return 1;           // Yes.
+}
+
+/** Get the interrupt ID of the current pending interrupt.
+ */
+int irq_getid(int *ack)
+{
+    int id = *ICCIAR;
+    *ack = id;                  // The acknowledge word.
+    id &= 0x3FF;                // Trim off the ID bits.
+    if (id == 0x3FF) {
+        return -1;
+    }
+
+    return id;
+}
+
+/** Acknowledge an interrupt.
+ */
+void irq_ack(int ack)
+{
+    *ICCEOIR = ack;
+}
+
 /** Setup to handle an interrupt.
  * @param handler The IRQ handler descriptor.
  */
 void irq_setup(const IRQHandler *handler)
 {
-    int id = handler->irq + 32;
+    int id = handler->id;
     int mask, value;
 
     *ICDDCR = 0x00;             // Disable the CPU interface and distributor.

@@ -120,11 +120,26 @@ FIQ_Handler:
 #define SAVED_REGS r0-r12, lr   // Registers saved in thread context.
 #define NUM_SAVED 14            // The number of saved registers.
 
+/** Handle an interrupt.
+ * 1. Enter SYS mode and save register.
+ * 2. Inform the kernel that we are in the IRQ state.
+ * 3. Save the user thread context if necessary.
+ * 4. Save the thread local storage.
+ * 5. Make sure the stack is aligned.
+ * 6. Unlock the ready data (locked by #2).
+ * 7. Clear the interrupt and get the handler.
+ * 8. Enable interrupts.
+ * 9. Get the handler function and private data pointer.
+ * 10. Call the interrupt handler with the private data pointer.
+ * 11. Restore the previous stack alignment.
+ * 12. Inform the kernel that we may be leaving the IRQ state.
+ * 13. Restore the user thread context if necessary.
+ */
 IRQ_Handler:
     sub     lr, lr, #4          // Adjust return address.
     srsfd   sp!, #Mode_SYS      // Save LR_irq and SPSR_irq on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
-    push    {SAVED_REGS}        // Store other registers.
+    push    { SAVED_REGS }      // Store other registers.
     bl      __enter_irq         // Enter the IRQ state.
     cmp     r0, #0              // Have a context pointer?
     strne   sp, [r0]            // Save the context if so.
@@ -136,9 +151,13 @@ IRQ_Handler:
     bl      __unlock_ready      // Clear the ready lock.
     bl      __identify_irq      // Clear interrupt and get irq handler in r0.
     cpsie   i                   // Enable IRQ
-    cmp     r0, #0              // Handler?
-    blxne   r0                  // Handle it.
-    pop     { r0, r1 }          // Restore the adjustment.
+    ldr     r1, [r0]            // Get the handler function.
+    ldr     r0, [r0, #4]        // And the private data pointer.
+    cmp     r0, #0              // Has private data?
+    ldrne   r0, [r0]            // Get the pointer.
+    cmp     r1, #0              // Handler function?
+    blxne   r1                  // Call it.
+    pop     { r0, r1 }          // Restore the stack adjustment.
     add     sp, sp, r0          // And adjust.
     bl      __leave_irq         // Leave the IRQ state.
     cmp     r0, #0              // Leaving?
@@ -146,7 +165,7 @@ IRQ_Handler:
     ldrne   r1, [r0, #4]        // Get the new TLS.
     mcrne   p15, 0, r1, c13, c0, 3 // Set the TLS.
     bl      __unlock_ready      // Clear the ready lock.
-    pop     {SAVED_REGS}        // Restore registers
+    pop     { SAVED_REGS }      // Restore registers
     rfeia   sp!                 // And return.
 
 /* Set up a context for execution.
@@ -182,13 +201,13 @@ __new_context:
     .global __switch
 __switch:
     srsfd   sp!, #Mode_SYS      // Save LR_sys and SPSR_sys on the sys stack.
-    push    {SAVED_REGS}        // Store other registers.
+    push    { SAVED_REGS }      // Store other registers.
     str     sp, [r1]            // Save the current frame.
     ldr     sp, [r0]            // Get the new stack pointer.
     ldr     r1, [r0, #4]        // Get the new TLS.
     mcr     p15, 0, r1, c13, c0, 3      // Set the TLS.
     bl      __unlock_ready      // Unlock the ready list.
-    pop     {SAVED_REGS}        // Restore registers
+    pop     { SAVED_REGS }      // Restore registers
     rfeia   sp!                 // And dispatch.
 
 /* Handle a system call.

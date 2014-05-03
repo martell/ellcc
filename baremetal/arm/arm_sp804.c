@@ -85,7 +85,7 @@ void check_timeout()
 
 /** This is the second timer interupt handler.
  */
-static void sec_interrupt(void)
+static void sec_interrupt(void *arg)
 {
     lock_aquire(&lock);
     monotonic_seconds++;
@@ -115,7 +115,7 @@ void timer_start(long long when)
     lock_release(&lock);
 }
 
-static void short_interrupt(void)
+static void short_interrupt(void *arg)
 {
     long long mt = timer_get_monotonic();
     mt = timer_expired(mt);
@@ -130,14 +130,16 @@ static void short_interrupt(void)
 
 static const IRQHandler timer_irq =
 {
-    .irq = IRQ,
+    .id = IRQ + 32,
     .edge = 0,
     .priority = 0,
     .cpus = 0xFFFFFFFF,         // Send to all CPUs.
     .sources = 2,
     {
-        { ADR(Timer1MIS), TimerInt, ADR(Timer1IntClr), 0, short_interrupt },
-        { ADR(Timer2MIS), TimerInt, ADR(Timer2IntClr), 0, sec_interrupt },
+        { ADR(Timer1MIS), TimerInt, ADR(Timer1IntClr), 0,
+            { short_interrupt, NULL }},
+        { ADR(Timer2MIS), TimerInt, ADR(Timer2IntClr), 0,
+            { sec_interrupt, NULL }},
     }
 };
 
