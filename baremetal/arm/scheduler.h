@@ -50,6 +50,7 @@ typedef enum state {
     READY,                      // The thread is ready to run.
     RUNNING,                    // The thread is running.
     TIMEOUT,                    // The thread is waiting for a timeout.
+    SEMWAIT,                    // The thread is waiting on a semaphore.
     MSGWAIT,                    // The thread is waiting for a message.
 
     LASTSTATE                   // To get the number of states.
@@ -62,6 +63,7 @@ static const char *state_names[LASTSTATE] =
     [READY] = "READY",
     [RUNNING] = "RUNNING",
     [TIMEOUT] = "TIMEOUT",
+    [SEMWAIT] = "SEMWAIT",
     [MSGWAIT] = "MSGWAIT",
 };
 #endif

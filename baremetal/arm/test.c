@@ -6,11 +6,11 @@
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
-#include <semaphore.h>
 #include <sched.h>
 #include <unistd.h>
 #include "command.h"
 #include "scheduler.h"
+#include "semaphore.h"
 
 long __syscall_ret(unsigned long r);
 long __syscall(long, ...);
@@ -212,8 +212,12 @@ static int thread4Command(int argc, char **argv)
         return COMMAND_OK;
     }
 
+    int s = sem_init(&sem4, 0, 0);
+    if (s != 0)
+        printf("sem_init: %s\n", strerror(errno));
+
     pthread_attr_t attr;
-    int s = pthread_attr_init(&attr);
+    s = pthread_attr_init(&attr);
     if (s != 0)
         printf("pthread_attr_init: %s\n", strerror(errno));
     char *sp = malloc(4096);
@@ -224,9 +228,6 @@ static int thread4Command(int argc, char **argv)
     if (s != 0)
         printf("pthread_create: %s\n", strerror(errno));
 
-    s = sem_init(&sem4, 0, 0);
-    if (s != 0)
-        printf("sem_init: %s\n", strerror(errno));
     return COMMAND_OK;
 }
 
@@ -242,7 +243,7 @@ static int test4Command(int argc, char **argv)
         return COMMAND_ERROR;
     }
 
-    printf("counter = %d\n", counter);
+    sem_post(&sem4);
     return COMMAND_OK;
 }
 
