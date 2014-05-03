@@ -1,7 +1,7 @@
 /** The ARM Generic Interrupt Controller.
  */
 
-#include "arm_gic.h"
+#include "arm_priv.h"
 #include "irq.h"
 
 /** Can we identify IRQs by ID?
