@@ -6,6 +6,7 @@
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <sched.h>
 #include <unistd.h>
 #include "command.h"
@@ -134,6 +135,8 @@ static int thread2Command(int argc, char **argv)
     return COMMAND_OK;
 }
 
+/** A pthread thread.
+ */
 static int counter;
 static void *thread3(void *arg)
 {
@@ -187,6 +190,62 @@ int sectionCommand(int argc, char **argv)
     return COMMAND_OK;
 }
 
+/** A pthread thread.
+ */
+static sem_t sem4;
+static pthread_t id4;
+static void *thread4(void *arg)
+{
+    printf ("thread4 started\n");
+    for ( ;; ) {
+        sem_wait(&sem4);
+        printf("thread4 running\n");
+    }
+
+    return NULL;
+}
+
+static int thread4Command(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("start the thread4 test case.\n");
+        return COMMAND_OK;
+    }
+
+    pthread_attr_t attr;
+    int s = pthread_attr_init(&attr);
+    if (s != 0)
+        printf("pthread_attr_init: %s\n", strerror(errno));
+    char *sp = malloc(4096);
+    s = pthread_attr_setstack(&attr, sp, 4096);
+    if (s != 0)
+        printf("pthread_attr_setstack %s\n", strerror(errno));
+    s = pthread_create(&id4, &attr, &thread4, NULL);
+    if (s != 0)
+        printf("pthread_create: %s\n", strerror(errno));
+
+    s = sem_init(&sem4, 0, 0);
+    if (s != 0)
+        printf("sem_init: %s\n", strerror(errno));
+    return COMMAND_OK;
+}
+
+static int test4Command(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("test the thread3 test case.\n");
+        return COMMAND_OK;
+    }
+
+    if (!id4) {
+        printf("thread4 has not been started.\n");
+        return COMMAND_ERROR;
+    }
+
+    printf("counter = %d\n", counter);
+    return COMMAND_OK;
+}
+
 /* Initialize the test cases.
  */
 static void init(void)
@@ -203,4 +262,6 @@ static void init(void)
     command_insert("thread2", thread2Command);
     command_insert("thread3", thread3Command);
     command_insert("test3", test3Command);
+    command_insert("thread4", thread4Command);
+    command_insert("test4", test4Command);
 }
