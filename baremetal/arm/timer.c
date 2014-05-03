@@ -18,7 +18,8 @@ struct timeout {
     long long when;             // When the timeout will expire.
     Thread *waiter;             // The waiting thread...
     TimerCallback callback;     // ... or the callback function.
-    intptr_t arg;               // The callback function argument.
+    intptr_t arg1;              // The callback function arguments.
+    intptr_t arg2;
 };
 
 static Lock timeout_lock;
@@ -26,14 +27,17 @@ static struct timeout *timeouts;
 
 /** Make an entry in the sleeping list and sleep
  * or schedule a callback.
+ * RICH: Mark realtime timers.
  */
-void *timer_wake_at(long long when, TimerCallback callback, intptr_t arg)
+void *timer_wake_at(long long when,
+                    TimerCallback callback, intptr_t arg1, intptr_t arg2)
 {
     struct timeout *tmo = malloc(sizeof(struct timeout));
     tmo->next = NULL;
     tmo->when = when;
     tmo->callback = callback;
-    tmo->arg = arg;
+    tmo->arg1 = arg1;
+    tmo->arg2 = arg2;
     if (callback == NULL) {
         // Put myself to sleep and wake me when it's over.
         tmo->waiter = __get_self();
@@ -137,7 +141,7 @@ long long timer_expired(long long when)
 
         if (tmo->callback) {
             // Call the callback function.
-            tmo->callback(tmo->arg);
+            tmo->callback(tmo->arg1, tmo->arg2);
         }
 
         free(tmo);
@@ -285,6 +289,7 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
     switch (clock) {
     case CLOCK_REALTIME: {
         now = timer_get_realtime();
+        // RICH: need to adjust.
         break;
     }
 
@@ -309,7 +314,7 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
         return 0;
     }
 
-    timer_wake_at(when, NULL, 0);
+    timer_wake_at(when, NULL, 0, 0);
     return 0;
 }
 

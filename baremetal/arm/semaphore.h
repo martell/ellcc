@@ -4,6 +4,7 @@
 #ifndef _semaphore_h
 #define _semaphore_h
 
+#include <time.h>
 #include "kernel.h"
 
 typedef struct {
@@ -24,6 +25,17 @@ int sem_init(sem_t *sem, int pshared, unsigned int value);
  * @param sem A pointer to the semaphore.
  */
 int sem_wait(sem_t *sem);
+
+/** Try to take a semaphore.
+ * @param sem A pointer to the semaphore.
+ */
+int sem_try_wait(sem_t *sem);
+
+/** Wait on a semaphore with a timeout.
+ * @param sem A pointer to the semaphore.
+ * @param abs_timeout The timeout.
+ */
+int sem_timedwait(sem_t *sem, struct timespec *abs_timeout);
 
 /** Unlock a semaphore.
  * @param sem A pointer to the semaphore.

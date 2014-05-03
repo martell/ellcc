@@ -189,11 +189,11 @@ static inline void insert_thread(Thread *thread)
 /** The callback for time slice expiration.
  * @param arg The thread being timed.
  */
-static void slice_callback(intptr_t arg)
+static void slice_callback(intptr_t arg1, intptr_t arg2)
 {
     lock_aquire(&ready_lock);
-    if ((Thread *)arg == current) {
-        schedule_nolock((Thread *)arg);
+    if ((Thread *)arg1 == current) {
+        schedule_nolock((Thread *)arg1);
         return;
     }
     lock_release(&ready_lock);
@@ -244,7 +244,7 @@ static void get_running(void)
         }
         long long when = timer_get_monotonic(); // Get the current time.
         when += slice_time;                     // Add the slice time.
-        slice_tmo = timer_wake_at(when, slice_callback, (intptr_t)current);
+        slice_tmo = timer_wake_at(when, slice_callback, (intptr_t)current, 0);
 
     }
     current->state = RUNNING;

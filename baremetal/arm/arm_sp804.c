@@ -21,6 +21,13 @@ long timer_getres(void)
     return resolution; 
 }
 
+/* Get the realtime offset.
+ */
+long long timer_get_realtime_offset(void)
+{
+    return realtime_offset; 
+}
+
 /** Get the monotonic timer.
  */
 long long timer_get_monotonic(void)
