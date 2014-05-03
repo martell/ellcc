@@ -1,6 +1,6 @@
 OS=linux
 TARGET=arm
-CFLAGS+=-g -MD -MP -Werror -Wall -Wno-unused-function
+CFLAGS+=-I. -g -MD -MP -Werror -Wall -Wno-unused-function
 QEMUFLAGS=-M vexpress-a9 -m 128M
 KERNEL=kernel
 SRCS=init.S main.c simple_console.c simple_memman.c scheduler.c timer.c \

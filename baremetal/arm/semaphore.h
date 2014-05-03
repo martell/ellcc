@@ -10,7 +10,7 @@
 typedef struct {
     Lock lock;
     unsigned count;
-    Thread *waiters;
+    struct thread *waiters;
 } sem_t;
 
 /** Initialize a semaphore.
@@ -33,7 +33,7 @@ int sem_try_wait(sem_t *sem);
 
 /** Wait on a semaphore with a timeout.
  * @param sem A pointer to the semaphore.
- * @param abs_timeout The timeout.
+ * @param abs_timeout The timeout based on CLOCK_REALTIME.
  */
 int sem_timedwait(sem_t *sem, struct timespec *abs_timeout);
 
