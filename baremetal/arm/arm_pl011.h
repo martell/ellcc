@@ -1,6 +1,10 @@
 /* Definitions for the ARM PL011 UART.
  * http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.ddi0183g/index.html
  */
+
+#ifndef _arm_pl011_h_
+#define _arm_pl011_h_
+
 #define VEXPRESS_A9
 #if defined (VERSATILEPB)
 #define BASE 0x0101F1000
@@ -10,25 +14,25 @@
 #define BASE 0x1c090000
 #endif
 
-#define REG(reg) (*(volatile unsigned int *)(address + (reg)))
+#define IRQ 5
 
-static volatile unsigned char * const address = (unsigned char *)BASE;
+#define UART(offset) ((volatile unsigned int *)((BASE + (offset))))
 
-#define UARTDR          0x000   // Data register.
+#define UARTDR     UART(0x000)  // Data register.
   #define DOE      0x0800       // Overrun error.
   #define DBE      0x0400       // Break error.
   #define DPE      0x0200       // Parity error.
   #define DFE      0x0100       // Framing error.
   #define DATA     0x00FF       // Transmit/receive data.
 
-#define UARTRSR         0x004   // Receive status register.
-#define UARTECR         0x004   // Error clear register.
+#define UARTRSR    UART(0x004)  // Receive status register.
+#define UARTECR    UART(0x004)  // Error clear register.
   #define OE       0x0008       // Overrun error.
   #define BE       0x0004       // Break error.
   #define PE       0x0002       // Parity error.
   #define FE       0x0001       // Framing error.
 
-#define UARTFR          0x018   // Flag register.
+#define UARTFR     UART(0x018)  // Flag register.
   #define RI       0x0100       // Ring indicator.   
   #define TXFE     0x0080       // Transmit FIFO empty.
   #define RXFF     0x0040       // Receive FIFO full.
@@ -39,11 +43,11 @@ static volatile unsigned char * const address = (unsigned char *)BASE;
   #define DSR      0x0002       // Data set ready.
   #define CTS      0x0001       // Clear to send.
 
-#define UARTILPR        0x020   // IrDA low-power counter register.
-#define UARTIBRD        0x024   // Integer baud rate register.
-#define UARTFBRD        0x028   // Fractional baud rate register.
+#define UARTILPR   UART(0x020)  // IrDA low-power counter register.
+#define UARTIBRD   UART(0x024)  // Integer baud rate register.
+#define UARTFBRD   UART(0x028)  // Fractional baud rate register.
 
-#define UARTCR_H        0x02C   // Line control register.
+#define UARTCR_H   UART(0x02C)  // Line control register.
   #define SPS      0x0080       // Stick parity select.
   #define WLEN     0x0060       // Word length.
   #define FEN      0x0010       // Enable FIFOs.
@@ -52,7 +56,7 @@ static volatile unsigned char * const address = (unsigned char *)BASE;
   #define PEN      0x0002       // Parity enable.
   #define BRK      0x0001       // Send break.
 
-#define UARTCR          0x030   // Control register.
+#define UARTCR     UART(0x030)  // Control register.
   #define CTSEn    0x8000       // CTS hardware flow control enable.
   #define RTSEn    0x4000       // RTS hardware flow control enable.
   #define Out2     0x2000       // UART Out2.
@@ -66,14 +70,14 @@ static volatile unsigned char * const address = (unsigned char *)BASE;
   #define SIREN    0x0002       // SIR enable.
   #define UARTEN   0x0001       // UART enable.
 
-#define UARTIFLS        0x034   // Interupt FIFO level select register.
+#define UARTIFLS   UART(0x034)  // Interupt FIFO level select register.
   #define RXIFLSEL 0x0038       // Receive interrupt FIFO level select.
   #define TXIFLSEL 0x0007       // Transmit interrupt FIFO level select
 
-#define UARTIMSC        0x038   // Interrupt mask register.
-#define UARTRIS         0x03C   // Raw interrupt status register.
-#define UARTMIS         0x040   // Masked interrupt status register.
-#define UARTICR         0x044   // Interrupt clear register.
+#define UARTIMSC   UART(0x038)  // Interrupt mask register.
+#define UARTRIS    UART(0x03C)  // Raw interrupt status register.
+#define UARTMIS    UART(0x040)  // Masked interrupt status register.
+#define UARTICR    UART(0x044)  // Interrupt clear register.
   #define OEI      0x0400       // Overrun error interrupt bit.
   #define BEI      0x0200       // Break error interrupt bit.
   #define PEI      0x0100       // Parity error interrupt bit.
@@ -86,9 +90,9 @@ static volatile unsigned char * const address = (unsigned char *)BASE;
   #define CTSMI    0x0002       // nUARTCTS modem interrupt bit.
   #define RIMI     0x0002       // nUARTRI modem interrupt bit.
 
-#define UARTDMACR       0x048   // DMA control register.
+#define UARTDMACR  UART(0x048)  // DMA control register.
   #define DMAONERR 0x0004       // DMA on error.
   #define TXDMAE   0x0002       // Transmit DMA enable.
   #define RXDMAE   0x0001       // Receive DMA enable.
 
-
+#endif // _arm_pl011_h_

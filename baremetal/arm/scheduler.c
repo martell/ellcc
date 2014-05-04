@@ -184,6 +184,10 @@ static inline void insert_thread(Thread *thread)
     ready_tail(thread->priority) = thread;
     thread->next = NULL;
     thread->state = READY;
+    if (priority > thread->priority) {
+        // A higher priority is ready.
+        priority = thread->priority;
+    }
 }
 
 /** The callback for time slice expiration.
@@ -199,18 +203,15 @@ static void slice_callback(intptr_t arg1, intptr_t arg2)
     lock_release(&ready_lock);
 }
 
-/** Make the head of the ready list the runniing thread.
+/** Make the head of the ready list the running thread.
  * The ready lock must be aquired before this call.
  */
 static void get_running(void)
 {
-    int timeslice = 0;
-    if (current != ready_head(priority)) {
-        // Need to set up for time slicing.
-        timeslice = 1;
-    }
+    int timeslice = 1;  // Assume a time slice is needed.
 
-    current = ready_head(priority);
+    // Find the highest priority thread to run.
+    current = priority < PRIORITIES ? ready_head(priority) : NULL;
 
 #if PRIORITIES > 1
     // Check for lower priority things to run.
@@ -223,30 +224,29 @@ static void get_running(void)
     if (current == NULL) {
         timeslice = 0;          // No need to timeslice for the idle thread.
         current = &idle_thread;
+        priority = PRIORITIES;
     } else {
+        idle_thread.state = IDLE;
         // Remove the head of the ready list.
-        if (ready_head(priority)) {
-            ready_head(priority) = ready_head(priority)->next;
-            if (!ready_head(priority)) {
-                ready_tail(priority) = NULL;
-            }
+        ready_head(priority) = ready_head(priority)->next;
+        if (ready_head(priority) == NULL) {
+            ready_tail(priority) = NULL;
+            // No time slicing needed.
+            timeslice = 0;
         }
-    }
-    if (ready_head(priority) == NULL) {
-        // No time slicing needed.
-        timeslice = 0;
     }
 
-    if(timeslice) {
+    if (slice_tmo) {
+        timer_cancel_wake_at(slice_tmo);    // Cancel any existing.
+        slice_tmo = NULL;
+    }
+    if (timeslice) {
         // Someone is waiting in the ready queue. Lets be fair.
-        if (slice_tmo) {
-            timer_cancel_wake_at(slice_tmo);    // Cancel any existing.
-        }
         long long when = timer_get_monotonic(); // Get the current time.
         when += slice_time;                     // Add the slice time.
         slice_tmo = timer_wake_at(when, slice_callback, (intptr_t)current, 0);
-
     }
+
     current->state = RUNNING;
     current->next = NULL;
 }
@@ -274,7 +274,7 @@ static void schedule_nolock(Thread *list)
         insert_thread(current);
     }
 
-    if (irq_state || current == ready_head(current->priority)) {
+    if (irq_state) {
         // The curent thread continues.
         get_running();
         lock_release(&ready_lock);
@@ -283,9 +283,6 @@ static void schedule_nolock(Thread *list)
 
     // Switch to the new thread.
     Thread *me = current;
-    if (me == &idle_thread) {
-        me->state = IDLE;
-    }
     get_running();
     __switch(&current->saved_sp, &me->saved_sp);
 }

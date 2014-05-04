@@ -160,9 +160,8 @@ static void init(void)
 
     // Set up Timer 2 as the second timer.
     REG(Timer2BGLoad) = CLOCK;
+    // Register the interrupt handler.
+    irq_register(&timer_irq);
     // Enable timer, 32 bit, Divide by 1 clock, periodic.
     REG(Timer2Control) = TimerEn|TimerSize|TimerMode|IntEnable;
-
-    irq_register(&timer_irq);
-
 }

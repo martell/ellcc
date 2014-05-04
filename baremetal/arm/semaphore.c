@@ -45,6 +45,7 @@ int sem_wait(sem_t *sem)
             me->next = sem->waiters;
             sem->waiters = me;
             lock_release(&sem->lock);
+            context_set_return(me->saved_sp, 0);
             s = change_state(SEMWAIT);
             if (s < 0) {
                 errno = -s;

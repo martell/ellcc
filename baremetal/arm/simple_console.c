@@ -23,9 +23,9 @@ static int sys_ioctl(int fd, int request, ...)
 
 static void send_char(int ch)
 {
-    while (REG(UARTFR) & TXFF)
+    while (*UARTFR & TXFF)
         continue;           // Wait while TX FIFO is full.
-    REG(UARTDR) = ch;
+    *UARTDR = ch;
 }
 
 static ssize_t sys_write(int fd, const void *buf, size_t count)
@@ -57,9 +57,9 @@ static ssize_t sys_read(int fd, void *buf, size_t count)
     unsigned char *s = buf;
     size_t i = 0;
     for ( ; i < count; ) {
-        while (REG(UARTFR) & RXFE)
+        while (*UARTFR & RXFE)
             continue;           // Wait while RX FIFO is empty.
-        int ch = REG(UARTDR);
+        int ch = *UARTDR;
         ++i;                    // Count the character.
         switch (ch) {
             // Some simple line handling.
