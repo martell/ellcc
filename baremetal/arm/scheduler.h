@@ -1,8 +1,11 @@
+/** Scheduler definitions.
+ */
 #ifndef _scheduler_h_
 #define _scheduler_h_
 
 #include "kernel.h"
 
+// RICH: Should messages go away?
 typedef struct message
 {
     int code;                   // The message code.
@@ -41,8 +44,6 @@ int send_message(MsgQueue *queue, Message message);
 
 Message get_message(MsgQueue *queue);
 Message get_message_nowait(MsgQueue *queue);
-
-// thread.h
 
 // Thread states.
 typedef enum state {
@@ -113,6 +114,7 @@ int __switch(Context **to, Context **from);
 
 int __new_context(Context **savearea, ThreadFunction entry, int mode,
                   long arg1, long arg2);
+
 /** Create a new thread and make it run-able.
  * @param name The name of the thread.
  * @param id The new thread ID.
@@ -127,7 +129,7 @@ int __new_context(Context **savearea, ThreadFunction entry, int mode,
 int new_thread(const char *name, void **id, ThreadFunction entry, int priority,
                void *stack, size_t size, long arg1, long arg2);
 
-/** Get the current threead pointer.
+/** Get the current thread pointer.
  */
 Thread *__get_self(void);
 

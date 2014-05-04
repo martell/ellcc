@@ -1,4 +1,4 @@
-/** A simple semaphore implementaion.
+/** Semaphore implementaion.
  */
 
 #include <errno.h>

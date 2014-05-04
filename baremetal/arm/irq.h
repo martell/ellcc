@@ -1,3 +1,5 @@
+/** Interrupt registration and handling.
+ */
 #ifndef _irq_h_
 #define _irq_h_
 

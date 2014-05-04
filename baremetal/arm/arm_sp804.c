@@ -1,4 +1,5 @@
-/* Initialize the ARM SP804 dual timer.
+/* Initialize the ARM SP804 dual timer for use as the system clock.
+ * RICH: This should be renamed to something a little less generic.
  */
 
 #include <time.h>
@@ -36,7 +37,7 @@ long long timer_get_monotonic(void)
     long nsecs;
     do {
         secs = monotonic_seconds;
-        nsecs = 1000000000 - (REG(Timer2Value) * resolution);
+        nsecs = 1000000000 - (*Timer2Value * resolution);
     } while (secs != monotonic_seconds);    // Take care of a seconds update.
 
     long long value = secs * 1000000000LL + nsecs;
@@ -85,9 +86,9 @@ void check_timeout()
     mt = timeout - mt;
     mt = mt * CLOCK / 1000000000;
     if (mt < 0) mt = 0;
-    REG(Timer1Load) = mt;
+    *Timer1Load = mt;
     // Enable timer, 32 bit, Divide by 1 clock, oneshot.
-    REG(Timer1Control) = TimerEn|TimerSize|IntEnable|OneShot;
+    *Timer1Control = TimerEn|TimerSize|IntEnable|OneShot;
 }
 
 /** This is the second timer interupt handler.
@@ -143,9 +144,9 @@ static const IRQHandler timer_irq =
     .cpus = 0xFFFFFFFF,         // Send to all CPUs.
     .sources = 2,
     {
-        { ADR(Timer1MIS), TimerInt, ADR(Timer1IntClr), 0,
+        { Timer1MIS, TimerInt, Timer1IntClr, 0,
             { short_interrupt, NULL }},
-        { ADR(Timer2MIS), TimerInt, ADR(Timer2IntClr), 0,
+        { Timer2MIS, TimerInt, Timer2IntClr, 0,
             { sec_interrupt, NULL }},
     }
 };
@@ -159,9 +160,9 @@ static void init(void)
     resolution = 1000000000 / (CLOCK / 1); 
 
     // Set up Timer 2 as the second timer.
-    REG(Timer2BGLoad) = CLOCK;
+    *Timer2BGLoad = CLOCK;
     // Register the interrupt handler.
     irq_register(&timer_irq);
     // Enable timer, 32 bit, Divide by 1 clock, periodic.
-    REG(Timer2Control) = TimerEn|TimerSize|TimerMode|IntEnable;
+    *Timer2Control = TimerEn|TimerSize|TimerMode|IntEnable;
 }

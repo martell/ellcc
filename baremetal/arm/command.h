@@ -1,8 +1,10 @@
+/** The command processor interface.
+ */
 #ifndef _command_h_
 #define _command_h_
 
-enum { COMMAND_OK, COMMAND_ERROR };                 // Callback return values.
-typedef int (*CommandFn)(int, char **argv);         // A command callback function.
+typedef int (*CommandFn)(int, char **argv);     // A command callback function.
+enum { COMMAND_OK, COMMAND_ERROR };             // Callback return values.
 
 /** Insert a command into the command table.
  */

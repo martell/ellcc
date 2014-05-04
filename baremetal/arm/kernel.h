@@ -15,7 +15,6 @@
 #define NULL 0
 #endif
 
-// sync.h
 typedef struct lock
 {
     char lock;

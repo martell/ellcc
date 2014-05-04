@@ -1,3 +1,5 @@
+/** Schedule threads for execution.
+ */
 #include <bits/syscall.h>       // For syscall numbers.
 #define _GNU_SOURCE
 #include <stdio.h>

@@ -1,4 +1,4 @@
-/** A simple semaphore implementaion.
+/** Semaphore interface.
  */
 
 #ifndef _semaphore_h

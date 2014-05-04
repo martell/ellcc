@@ -13,14 +13,11 @@
 #define IRQ 2
 #define CLOCK 1000000
 
-#define REG(reg) (*(volatile unsigned int *)(address + (reg)))
-#define ADR(reg) ((volatile unsigned int *)(BASE + (reg)))
+#define T(offset) ((volatile unsigned int *)((BASE + (offset))))
 
-static volatile unsigned char * const address = (unsigned char *)BASE;
-
-#define Timer1Load      0x000   // Timer 1 load register.
-#define Timer1Value     0x004   // Current value register.
-#define Timer1Control   0x008   // Timer 1 control register.
+#define Timer1Load    T(0x000)  // Timer 1 load register.
+#define Timer1Value   T(0x004)  // Current value register.
+#define Timer1Control T(0x008)  // Timer 1 control register.
   #define TimerEn   0x0080      // 0 = disabled, 1 = enabled.
   #define TimerMode 0x0040      // 0 = free running, 1 = periodic.
   #define IntEnable 0x0020      // 0 = disabled, 1 = enabled.
@@ -29,18 +26,18 @@ static volatile unsigned char * const address = (unsigned char *)BASE;
   #define TimerSize 0x0002      // 0 = 16-bit, 1 = 32-bit.
   #define OneShot   0x0001      // 0 = wrapping, 1 = one-shot.
 
-#define Timer1IntClr    0x00C   // Interrupt clear register.
-#define Timer1RIS       0x010   // Raw interrupt status register.
-#define Timer1MIS       0x014   // Masked interrupt status register.
+#define Timer1IntClr  T(0x00C)  // Interrupt clear register.
+#define Timer1RIS     T(0x010)  // Raw interrupt status register.
+#define Timer1MIS     T(0x014)  // Masked interrupt status register.
   #define TimerInt  0x0001      // Timer interrupt bit.
 
-#define Timer1BGLoad    0x018   // Background load register.
+#define Timer1BGLoad  T(0x018)  // Background load register.
 
-#define Timer2Load      0x020   // Timer 2 load register.
-#define Timer2Value     0x024   // Current value register.
-#define Timer2Control   0x028   // Timer 2 control register.
-#define Timer2IntClr    0x02C   // Interrupt clear register.
-#define Timer2RIS       0x030   // Raw interrupt status register.
-#define Timer2MIS       0x034   // Masked interrupt status register.
-#define Timer2BGLoad    0x038   // Background load register.
+#define Timer2Load    T(0x020)  // Timer 2 load register.
+#define Timer2Value   T(0x024)  // Current value register.
+#define Timer2Control T(0x028)  // Timer 2 control register.
+#define Timer2IntClr  T(0x02C)  // Interrupt clear register.
+#define Timer2RIS     T(0x030)  // Raw interrupt status register.
+#define Timer2MIS     T(0x034)  // Masked interrupt status register.
+#define Timer2BGLoad  T(0x038)  // Background load register.
 

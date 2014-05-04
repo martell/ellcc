@@ -1,3 +1,5 @@
+/** System timer handling.
+ */
 #ifndef _timer_h_
 #define _timer_h_
 

@@ -1,7 +1,4 @@
-/* Setup a simple set of input/output handlers.
- *
- * Define a few core (and soon to be superceeded) system call
- * implementaions.
+/* A very simple non-interrupt driven console.
  */
 #include <unistd.h>
 #include <bits/syscall.h>       // For syscall numbers.

@@ -1,5 +1,5 @@
 /** Some test cases.
- * This file adds command to test functionality of the kernel.
+ * This file adds commands to test functionality of the kernel.
  */
 
 #include <stdio.h>
@@ -8,9 +8,9 @@
 #include <pthread.h>
 #include <sched.h>
 #include <unistd.h>
+#include <semaphore.h>
 #include "command.h"
 #include "scheduler.h"
-#include "semaphore.h"
 
 long __syscall_ret(unsigned long r);
 long __syscall(long, ...);

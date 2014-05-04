@@ -1,4 +1,4 @@
-/* Initialize a simple set of memory allocation handlers.
+/* Initialize a simple memory allocation handler.
  */
 #include <unistd.h>
 #include <bits/syscall.h>       // For syscall numbers.
@@ -12,7 +12,6 @@ extern char *__heap_end;        // The bottom of the allocated stacks.
 
 static char *brk_ptr = __end;
 
-#include <stdio.h>
 static char *sys_brk(char *addr)
 {
     if (addr == 0) {
