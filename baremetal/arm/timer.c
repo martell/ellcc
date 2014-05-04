@@ -42,7 +42,7 @@ void *timer_wake_at(long long when,
     tmo->arg2 = arg2;
     if (callback == NULL) {
         // Put myself to sleep and wake me when it's over.
-        tmo->waiter = __get_self();
+        tmo->waiter = thread_self();
     } else {
         tmo->waiter = NULL;
     }

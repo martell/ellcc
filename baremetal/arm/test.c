@@ -60,14 +60,14 @@ static int thread1Command(int argc, char **argv)
         return COMMAND_OK;
     }
 
-    new_thread("thread1",       // name
-               &id1,            // id
-               thread1,         // entry
-               0,               // priority
-               NULL,            // stack
-               4096,            // stack size
-               (intptr_t)"foo", // arg1
-               0);              // arg2
+    thread_create("thread1",            // name
+                  &id1,                 // id
+                  thread1,              // entry
+                  0,                    // priority
+                  NULL,                 // stack
+                  4096,                 // stack size
+                  (intptr_t)"foo",      // arg1
+                  0);                   // arg2
 
     return COMMAND_OK;
 }
@@ -124,14 +124,14 @@ static int thread2Command(int argc, char **argv)
     }
 
     void *id2;
-    new_thread("thread2",       // name
-               &id2,            // id
-               thread2,         // entry
-               0,               // priority
-               NULL,            // stack
-               4096,            // stack size
-               0,               // arg1
-               0);              // arg2
+    thread_create("thread2",            // name
+                  &id2,                 // id
+                  thread2,              // entry
+                  0,                    // priority
+                  NULL,                 // stack
+                  4096,                 // stack size
+                  0,                    // arg1
+                  0);                   // arg2
     return COMMAND_OK;
 }
 
@@ -214,14 +214,14 @@ static int thread4Command(int argc, char **argv)
     if (s != 0)
         printf("sem_init: %s\n", strerror(errno));
 
-    new_thread("thread4",       // name
-               &id4,            // id
-               thread4,         // entry
-               0,               // priority
-               NULL,            // stack
-               4096,            // stack size
-               0,               // arg1
-               0);              // arg2
+    thread_create("thread4",            // name
+                  &id4,                 // id
+                  thread4,              // entry
+                  0,                    // priority
+                  NULL,                 // stack
+                  4096,                 // stack size
+                  0,                    // arg1
+                  0);                   // arg2
 
     return COMMAND_OK;
 }
@@ -275,14 +275,14 @@ static int thread5Command(int argc, char **argv)
     if (s != 0)
         printf("sem_init: %s\n", strerror(errno));
 
-    new_thread("thread5",       // name
-               &id5,             // id
-               thread5,         // entry
-               0,               // priority
-               NULL,            // stack
-               4096,            // stack size
-               0,               // arg1
-               0);              // arg2
+    thread_create("thread5",            // name
+                  &id5,                 // id
+                  thread5,              // entry
+                  0,                    // priority
+                  NULL,                 // stack
+                  4096,                 // stack size
+                  0,                    // arg1
+                  0);                   // arg2
 
     return COMMAND_OK;
 }

@@ -41,7 +41,7 @@ int sem_wait(sem_t *sem)
             lock_release(&sem->lock);
             break;
         } else {
-            Thread *me = __get_self();
+            Thread *me = thread_self();
             me->next = sem->waiters;
             sem->waiters = me;
             lock_release(&sem->lock);
@@ -122,7 +122,7 @@ int sem_timedwait(sem_t *sem, struct timespec *abs_timeout)
                 errno = ETIMEDOUT;
                 s = -1;
             } else {
-                Thread *me = __get_self();
+                Thread *me = thread_self();
                 me->next = sem->waiters;
                 sem->waiters = me;
                 lock_release(&sem->lock);

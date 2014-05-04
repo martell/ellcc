@@ -126,11 +126,22 @@ int __new_context(Context **savearea, ThreadFunction entry, int mode,
  * @param arg2 The second parameter.
  * @return 0 on success, < 0 on error.
  */
-int new_thread(const char *name, void **id, ThreadFunction entry, int priority,
-               void *stack, size_t size, long arg1, long arg2);
+int thread_create(const char *name, void **id, ThreadFunction entry,
+                  int priority, void *stack, size_t size, long arg1, long arg2);
+
+/** Send a signal to a thread.
+ *  * @param id The thread id.
+ *   * @param sig The signal to send.
+ *    */ 
+int thread_kill(void *id, int sig);
+
+/** Send a cancellation request to a thread.
+ * @param id The thread id.
+ */
+int thread_cancel(void *id);
 
 /** Get the current thread pointer.
  */
-Thread *__get_self(void);
+Thread *thread_self(void);
 
 #endif

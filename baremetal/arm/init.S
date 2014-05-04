@@ -220,7 +220,7 @@ SVC_Handler:
     cpsie   i                   // Enable IRQ
     mov     r8, sp              // Save the sp.
     push    { r0, r1 }
-    bl      __get_self          // Get the current context.
+    bl      thread_self         // Get the current context.
     str     r8, [r0]            // Save context pointer for clone().
     pop     { r0, r1 }
     
@@ -280,7 +280,7 @@ set_tls:
     push    { r1, lr }
     mcr     p15, 0, r0, c13, c0, 3
     mov     r1, r0
-    bl      =__get_self
+    bl      =thread_self
     str     r1, [r0, #4]        // Save the TLS in the current Thread.
     mov     r0, #0
     pop     { r1, lr }

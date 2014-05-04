@@ -168,7 +168,7 @@ void *__leave_irq(void)
 
 /** Get the current thread pointer.
  */
-Thread *__get_self()
+Thread *thread_self()
 {
     return current;
 }
@@ -328,9 +328,9 @@ static int sys_sched_yield(void)
 
 /* Create a new thread.
  */
-static int new_thread_int(const char *name, Thread **id, ThreadFunction entry, int priority,
-                          int cloning, void *stack, size_t size, 
-                          intptr_t arg1, intptr_t arg2)
+static int thread_create_int(const char *name, Thread **id, ThreadFunction entry, int priority,
+                             int cloning, void *stack, size_t size, 
+                             intptr_t arg1, intptr_t arg2)
 {
     char *p;
     if (stack == 0) {
@@ -395,17 +395,40 @@ static int new_thread_int(const char *name, Thread **id, ThreadFunction entry, i
  * @param arg2 The second parameter.
  * @return 0 on success, < 0 on error.
  */
-int new_thread(const char *name, void **id, ThreadFunction entry, int priority,
-               void *stack, size_t size, long arg1, long arg2)
+int thread_create(const char *name, void **id, ThreadFunction entry,
+                  int priority, void *stack, size_t size, long arg1, long arg2)
 {
     Thread *new;
-    int s = new_thread_int(name, &new, entry, priority, 
-                           0, stack, size, arg1, arg2);
+    int s = thread_create_int(name, &new, entry, priority, 
+                              0, stack, size, arg1, arg2);
     if (id) {
         *id = new;
     }
 
+    if (s < 0) {
+        errno = -s;
+        s = -1;
+    }
     return s;
+}
+
+/** Send a signal to a thread.
+ * @param id The thread id.
+ * @param sig The signal to send.
+ */
+int thread_kill(void *id, int sig)
+{
+    errno = ESRCH;
+    return -1;
+}
+
+/** Send a cancellation request to a thread.
+ * @param id The thread id.
+ */
+int thread_cancel(void *id)
+{
+    errno = ESRCH;
+    return -1;
 }
 
 /** Send a message to a message queue.
@@ -413,7 +436,7 @@ int new_thread(const char *name, void **id, ThreadFunction entry, int priority,
 int send_message(MsgQueue *queue, Message msg)
 {
     if (queue == NULL) {
-        queue = &__get_self()->queue;
+        queue = &thread_self()->queue;
     }
     Envelope *envelope = (Envelope *)malloc(sizeof(Envelope));
     if (!envelope) {
@@ -447,7 +470,7 @@ int send_message(MsgQueue *queue, Message msg)
 Message get_message(MsgQueue *queue)
 {
     if (queue == NULL) {
-        queue = &__get_self()->queue;
+        queue = &thread_self()->queue;
     }
 
     Envelope *envelope = NULL;;
@@ -484,7 +507,7 @@ Message get_message(MsgQueue *queue)
 Message get_message_nowait(MsgQueue *queue)
 {
     if (queue == NULL) {
-        queue = &__get_self()->queue;
+        queue = &thread_self()->queue;
     }
 
     Envelope *envelope = NULL;
@@ -537,8 +560,8 @@ static long sys_clone(unsigned long flags, void *stack, intptr_t *ptid,
     char name[20];
     snprintf(name, 20, "clone%d", number++);
     Thread *new;
-    int s = new_thread_int(name, &new, (ThreadFunction)ret, 0, 1, stack, 0,
-                                 0, 0);
+    int s = thread_create_int(name, &new, (ThreadFunction)ret, 0, 1, stack, 0,
+                              0, 0);
     if (s < 0) {
         return s;
     }
