@@ -11,23 +11,40 @@
 #include "arm_pl011.h"
 #include "irq.h"
 
+/* The following input and output semaphores are used to insure
+ * a the read, readv, write, and writev system calls complete
+ * completely before another thread can do input or output.
+ */
 static sem_t sem_output;        // The output semaphore.
 static sem_t sem_input;         // The input semaphore.
+
 static sem_t sem_ibuffer;       // The input buffer semaphore.
 #define IBUFFER_SIZE 256
 static char ibuffer[IBUFFER_SIZE];
 static char *ibuffer_in;        // The input buffer input pointer.
 static char *ibuffer_out;       // The input buffer output pointer.
 
+static sem_t sem_obuffer;       // The output buffer semaphore.
+#define OBUFFER_SIZE 256
+static char obuffer[OBUFFER_SIZE];
+static char *obuffer_in;        // The output buffer input pointer.
+static char *obuffer_out;       // The output buffer output pointer.
+
 /** Handle a received character interrupt.
  */
 static void rx_interrupt(void *arg)
 {
     int ch = *UARTDR;
-    *ibuffer_in++ = ch;
-    if (ibuffer_in >= &ibuffer[IBUFFER_SIZE]) {
-        ibuffer_in = ibuffer;
+    char *next = ibuffer_in + 1;
+    if (next >= &ibuffer[IBUFFER_SIZE]) {
+        next = ibuffer;
     }
+    if (next == ibuffer_out) {
+        // The buffer is full.
+        return;                 // RICH: Deal with multiple buffers.
+    }
+    *ibuffer_in = ch;
+    ibuffer_in = next;
 
     sem_post(&sem_ibuffer);
 }
@@ -44,13 +61,72 @@ static int next_char(void)
     return ch;
 }
 
+/** Handle a transmiter empty interrupt.
+ */
+static void tx_interrupt(void *arg)
+{
+    // Check for a previously full buffer.
+    char *next = obuffer_in + 1;
+    if (next >= &obuffer[OBUFFER_SIZE]) {
+        next = obuffer;
+    }
+    if (next == obuffer_out) {
+        sem_post(&sem_obuffer); // The buffer is not full any more.
+    }
+
+    next = obuffer_out + 1;
+    if (next >= &obuffer[OBUFFER_SIZE]) {
+        next = obuffer;
+    }
+    if (next == obuffer_in) {
+        // The buffer is empty.
+        // Disable the transmit interrupt.
+        *UARTIMSC &= ~TXI;
+    }
+
+    // Send the next character.
+    *UARTDR = *obuffer_out;
+    obuffer_out = next;
+}
+
 /** Send the next character.
  */
 static void send_char(int ch)
 {
-    while (*UARTFR & TXFF)
-        continue;           // Wait while TX FIFO is full.
-    *UARTDR = ch;
+    /* Under QEMU the transmit FIFO is never full so for testing
+     * just ignore it and set up for sending a character through
+     * the output buffer.
+     */
+#undef TEST
+#ifndef TEST
+    if ((*UARTFR & TXFF) == 0) {
+        // The transmit buffer is empty. Send the character.
+        *UARTDR = ch;
+        return;
+    }
+#endif
+
+    char *next = obuffer_in + 1;
+    if (next >= &obuffer[OBUFFER_SIZE]) {
+        next = obuffer;
+    }
+    if (next == obuffer_out) {
+        // The buffer is full.
+        sem_wait(&sem_obuffer);         // RICH: Deal with multiple buffers.
+    }
+
+    *obuffer_in = ch;
+    obuffer_in = next;
+
+#ifdef TEST
+    /* Unfortunanately, the TXI interrupt will not be asserted
+     * unless at least one character leaves it. Send a nul byte
+     * to prime the pump.
+     */
+    *UARTDR = '\0';
+#endif
+    // Enable the transmit interrupt.
+    *UARTIMSC |= TXI;
 }
 
 static ssize_t do_write(int fd, const void *buf, size_t count)
@@ -167,14 +243,12 @@ static const IRQHandler serial_irq =
     .edge = 0,
     .priority = 0,
     .cpus = 0xFFFFFFFF,         // Send to all CPUs.
-    .sources = 1,
+    .sources = 2,
     {
         { UARTMIS, RXI, UARTICR, RXI,
             { rx_interrupt, NULL }},
-#if RICH
         { UARTMIS, TXI, UARTICR, TXI,
             { tx_interrupt, NULL }},
-#endif
     }
 };
 
@@ -187,8 +261,9 @@ static void init(void)
 
     sem_init(&sem_output, 0, 1);
     sem_init(&sem_input, 0, 1);
-    sem_init(&sem_ibuffer, 0, 0);
     ibuffer_in = ibuffer_out = ibuffer;
+    sem_init(&sem_obuffer, 0, 0);
+    obuffer_in = obuffer_out = obuffer;
  
     // Set up a simple ioctl system call.
     __set_syscall(SYS_ioctl, sys_ioctl);

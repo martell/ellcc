@@ -1,3 +1,5 @@
+/** Generic ARM specific definitions.
+ */
 #ifndef _arm_h_
 #define _arm_h_
 
