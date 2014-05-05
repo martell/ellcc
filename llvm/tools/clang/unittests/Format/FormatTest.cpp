@@ -7,12 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "format-test"
-
 #include "FormatTestUtils.h"
 #include "clang/Format/Format.h"
 #include "llvm/Support/Debug.h"
 #include "gtest/gtest.h"
+
+#define DEBUG_TYPE "format-test"
 
 namespace clang {
 namespace format {
@@ -618,6 +618,10 @@ TEST_F(FormatTest, FormatsSwitchStatement) {
                "    break;\n"
                "  }\n"
                "});");
+  verifyFormat("switch (a) {\n"
+               "case (b):\n"
+               "  return;\n"
+               "}");
 }
 
 TEST_F(FormatTest, CaseRanges) {
@@ -832,6 +836,17 @@ TEST_F(FormatTest, UnderstandsSingleLineComments) {
                    " // first\n"
                    "// at start\n"
                    "otherLine();"));
+
+  verifyFormat(
+      "#define A                                                  \\\n"
+      "  int i; /* iiiiiiiiiiiiiiiiiiiii */                       \\\n"
+      "  int jjjjjjjjjjjjjjjjjjjjjjjj; /* */",
+      getLLVMStyleWithColumns(60));
+  verifyFormat(
+      "#define A                                                   \\\n"
+      "  int i;                        /* iiiiiiiiiiiiiiiiiiiii */ \\\n"
+      "  int jjjjjjjjjjjjjjjjjjjjjjjj; /* */",
+      getLLVMStyleWithColumns(61));
 }
 
 TEST_F(FormatTest, KeepsParameterWithTrailingCommentsOnTheirOwnLine) {
@@ -4508,6 +4523,7 @@ TEST_F(FormatTest, UnderstandsUsesOfStarAndAmp) {
   verifyIndependentOfContext("a * [self dostuff];");
   verifyIndependentOfContext("int x = a * (a + b);");
   verifyIndependentOfContext("(a *)(a + b);");
+  verifyIndependentOfContext("*(int *)(p & ~3UL) = 0;");
   verifyIndependentOfContext("int *pa = (int *)&a;");
   verifyIndependentOfContext("return sizeof(int **);");
   verifyIndependentOfContext("return sizeof(int ******);");
@@ -5837,6 +5853,16 @@ TEST_F(FormatTest, FormatObjCInterface) {
                "}\n"
                "+ (id)init;\n"
                "@end");
+
+  FormatStyle OnePerLine = getGoogleStyle();
+  OnePerLine.BinPackParameters = false;
+  verifyFormat("@interface aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ()<\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa> {\n"
+               "}",
+               OnePerLine);
 }
 
 TEST_F(FormatTest, FormatObjCImplementation) {
@@ -7418,6 +7444,14 @@ TEST_F(FormatTest, AllmanBraceBreaking) {
                "}\n",
                BreakBeforeBrace);
 
+  verifyFormat("@interface BSApplicationController ()\n"
+               "{\n"
+               "@private\n"
+               "  id _extraIvar;\n"
+               "}\n"
+               "@end\n",
+               BreakBeforeBrace);
+
   BreakBeforeBrace.ColumnLimit = 19;
   verifyFormat("void f() { int i; }", BreakBeforeBrace);
   BreakBeforeBrace.ColumnLimit = 18;
@@ -7537,6 +7571,14 @@ TEST_F(FormatTest, GNUBraceBreaking) {
                "{\n"
                "  Y = 0,\n"
                "}\n",
+               GNUBraceStyle);
+
+  verifyFormat("@interface BSApplicationController ()\n"
+               "{\n"
+               "@private\n"
+               "  id _extraIvar;\n"
+               "}\n"
+               "@end\n",
                GNUBraceStyle);
 }
 TEST_F(FormatTest, CatchExceptionReferenceBinding) {
@@ -8171,6 +8213,9 @@ TEST_F(FormatTest, FormatsWithWebKitStyle) {
           "return;\n"
           "}",
           Style));
+
+  // Allow functions on a single line.
+  verifyFormat("void f() { return; }", Style);
 
   // Constructor initializers are formatted one per line with the "," on the
   // new line.

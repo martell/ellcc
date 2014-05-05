@@ -39,6 +39,8 @@
 #include <mach/machine.h>
 #endif
 
+#define DEBUG_TYPE "host-detection"
+
 //===----------------------------------------------------------------------===//
 //
 //  Implementations of the CPU detection routines
@@ -433,6 +435,8 @@ StringRef sys::getHostCPUName() {
       case 21:
         if (!HasAVX) // If the OS doesn't support AVX provide a sane fallback.
           return "btver1";
+        if (Model >= 0x50)
+          return "bdver4"; // 50h-6Fh: Excavator
         if (Model >= 0x30)
           return "bdver3"; // 30h-3Fh: Steamroller
         if (Model >= 0x10)

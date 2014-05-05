@@ -82,10 +82,6 @@ protected:
   // HasCondMov - Conditional mov (MOVZ, MOVN) instructions.
   bool HasCondMov;
 
-  // HasMulDivAdd - Multiply add and sub (MADD, MADDu, MSUB, MSUBu)
-  // instructions.
-  bool HasMulDivAdd;
-
   // HasSwap - Byte and half swap instructions.
   bool HasSwap;
 
@@ -134,9 +130,9 @@ protected:
 
   Triple TargetTriple;
 public:
-  virtual bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
-                                     AntiDepBreakMode& Mode,
-                                     RegClassVector& CriticalPathRCs) const;
+  bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
+                             AntiDepBreakMode& Mode,
+                             RegClassVector& CriticalPathRCs) const override;
 
   /// Only O32 and EABI supported right now.
   bool isABI_EABI() const { return MipsABI == EABI; }
@@ -207,7 +203,6 @@ public:
   /// Features related to the presence of specific instructions.
   bool hasSEInReg()   const { return HasSEInReg; }
   bool hasCondMov()   const { return HasCondMov; }
-  bool hasMulDivAdd() const { return HasMulDivAdd; }
   bool hasSwap()      const { return HasSwap; }
   bool hasBitCount()  const { return HasBitCount; }
   bool hasFPIdx()     const { return HasFPIdx; }

@@ -1612,6 +1612,15 @@ static void getAArch64TargetFeatures(const Driver &D, const ArgList &Args,
     Features.push_back("-crypto");
     Features.push_back("-neon");
   }
+
+  // En/disable crc
+  if (Arg *A = Args.getLastArg(options::OPT_mcrc,
+                               options::OPT_mnocrc)) {
+    if (A->getOption().matches(options::OPT_mcrc))
+      Features.push_back("+crc");
+    else
+      Features.push_back("-crc");
+  }
 }
 
 static void getTargetFeatures(const Driver &D, const llvm::Triple &Triple,
@@ -1803,19 +1812,6 @@ static bool ShouldDisableAutolink(const ArgList &Args,
     Default = TC.useIntegratedAs();
   }
   return !Args.hasFlag(options::OPT_fautolink, options::OPT_fno_autolink,
-                       Default);
-}
-
-static bool ShouldDisableCFI(const ArgList &Args,
-                             const ToolChain &TC) {
-  bool Default = true;
-  if (TC.getTriple().isOSDarwin()) {
-    // The native darwin assembler doesn't support cfi directives, so
-    // we disable them if we think the .s file will be passed to it.
-    Default = TC.useIntegratedAs();
-  }
-  return !Args.hasFlag(options::OPT_fdwarf2_cfi_asm,
-                       options::OPT_fno_dwarf2_cfi_asm,
                        Default);
 }
 
@@ -2223,7 +2219,8 @@ static void SplitDebugInfo(const ToolChain &TC, Compilation &C,
 }
 
 /// \brief Vectorize at all optimization levels greater than 1 except for -Oz.
-static bool shouldEnableVectorizerAtOLevel(const ArgList &Args) {
+/// For -Oz the loop vectorizer is disable, while the slp vectorizer is enabled.
+static bool shouldEnableVectorizerAtOLevel(const ArgList &Args, bool isSlpVec) {
   if (Arg *A = Args.getLastArg(options::OPT_O_Group)) {
     if (A->getOption().matches(options::OPT_O4) ||
         A->getOption().matches(options::OPT_Ofast))
@@ -2239,9 +2236,9 @@ static bool shouldEnableVectorizerAtOLevel(const ArgList &Args) {
     if (S == "s")
       return true;
 
-    // Don't vectorize -Oz.
+    // Don't vectorize -Oz, unless it's the slp vectorizer.
     if (S == "z")
-      return false;
+      return isSlpVec;
 
     unsigned OptLevel = 0;
     if (S.getAsInteger(10, OptLevel))
@@ -2455,6 +2452,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     case llvm::Triple::armeb:
     case llvm::Triple::thumb:
     case llvm::Triple::thumbeb:
+    case llvm::Triple::aarch64:
+    case llvm::Triple::arm64:
     case llvm::Triple::mips:
     case llvm::Triple::mipsel:
     case llvm::Triple::mips64:
@@ -3217,9 +3216,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     else
       CmdArgs.push_back("-fno-gnu-keywords");
   }
-
-  if (ShouldDisableCFI(Args, getToolChain()))
-    CmdArgs.push_back("-fno-dwarf2-cfi-asm");
 
   if (ShouldDisableDwarfDirectory(Args, getToolChain()))
     CmdArgs.push_back("-fno-dwarf-directory-asm");
@@ -3986,16 +3982,19 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // Enable vectorization per default according to the optimization level
   // selected. For optimization levels that want vectorization we use the alias
   // option to simplify the hasFlag logic.
-  bool EnableVec = shouldEnableVectorizerAtOLevel(Args);
+  bool EnableVec = shouldEnableVectorizerAtOLevel(Args, false);
   OptSpecifier VectorizeAliasOption = EnableVec ? options::OPT_O_Group :
     options::OPT_fvectorize;
   if (Args.hasFlag(options::OPT_fvectorize, VectorizeAliasOption,
                    options::OPT_fno_vectorize, EnableVec))
     CmdArgs.push_back("-vectorize-loops");
 
-  // -fslp-vectorize is default.
-  if (Args.hasFlag(options::OPT_fslp_vectorize,
-                   options::OPT_fno_slp_vectorize, true))
+  // -fslp-vectorize is enabled based on the optimization level selected.
+  bool EnableSLPVec = shouldEnableVectorizerAtOLevel(Args, true);
+  OptSpecifier SLPVectAliasOption = EnableSLPVec ? options::OPT_O_Group :
+    options::OPT_fslp_vectorize;
+  if (Args.hasFlag(options::OPT_fslp_vectorize, SLPVectAliasOption,
+                   options::OPT_fno_slp_vectorize, EnableSLPVec))
     CmdArgs.push_back("-vectorize-slp");
 
   // -fno-slp-vectorize-aggressive is default.
@@ -4147,7 +4146,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // Finally add the compile command to the compilation.
   if (Args.hasArg(options::OPT__SLASH_fallback) &&
-      Output.getType() == types::TY_Object) {
+      Output.getType() == types::TY_Object &&
+      (InputType == types::TY_C || InputType == types::TY_CXX)) {
     tools::visualstudio::Compile CL(getToolChain());
     Command *CLCommand = CL.GetCommand(C, JA, Output, Inputs, Args,
                                        LinkingOutput);
@@ -6995,7 +6995,12 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
     ToolChain.getTriple().getEnvironment() == llvm::Triple::Android;
   const bool IsPIE =
     !Args.hasArg(options::OPT_shared) &&
-    (Args.hasArg(options::OPT_pie) || ToolChain.isPIEDefault());
+    !Args.hasArg(options::OPT_static) &&
+    (Args.hasArg(options::OPT_pie) || ToolChain.isPIEDefault() ||
+     // On Android every code is PIC so every executable is PIE
+     // Cannot use isPIEDefault here since otherwise
+     // PIE only logic will be enabled during compilation
+     isAndroid);
 
   ArgStringList CmdArgs;
 
@@ -7854,6 +7859,10 @@ void visualstudio::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   CmdArgs.push_back("-nologo");
 
+  if (Args.hasArg(options::OPT_g_Group)) {
+    CmdArgs.push_back("-debug");
+  }
+
   bool DLL = Args.hasArg(options::OPT__SLASH_LD, options::OPT__SLASH_LDd);
 
   if (DLL) {
@@ -8043,8 +8052,9 @@ void XCore::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT_v))
     CmdArgs.push_back("-v");
 
-  if (Args.hasArg(options::OPT_g_Group))
-    CmdArgs.push_back("-g");
+  if (Arg *A = Args.getLastArg(options::OPT_g_Group))
+    if (!A->getOption().matches(options::OPT_g0))
+      CmdArgs.push_back("-g");
 
   if (Args.hasFlag(options::OPT_fverbose_asm, options::OPT_fno_verbose_asm,
                    false))

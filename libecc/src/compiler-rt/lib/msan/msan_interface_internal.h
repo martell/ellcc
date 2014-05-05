@@ -115,7 +115,7 @@ void __msan_set_expect_umr(int expect_umr);
 SANITIZER_INTERFACE_ATTRIBUTE
 void __msan_print_shadow(const void *x, uptr size);
 SANITIZER_INTERFACE_ATTRIBUTE
-void __msan_print_param_shadow();
+void __msan_dump_shadow(const void *x, uptr size);
 SANITIZER_INTERFACE_ATTRIBUTE
 int  __msan_has_dynamic_component();
 

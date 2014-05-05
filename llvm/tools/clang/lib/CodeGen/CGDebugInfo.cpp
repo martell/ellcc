@@ -722,7 +722,6 @@ llvm::DIType CGDebugInfo::CreateType(const BlockPointerType *Ty,
 llvm::DIType CGDebugInfo::CreateType(const TemplateSpecializationType *Ty, llvm::DIFile Unit) {
   assert(Ty->isTypeAlias());
   llvm::DIType Src = getOrCreateType(Ty->getAliasedType(), Unit);
-  assert(Src);
 
   SmallString<128> NS;
   llvm::raw_svector_ostream OS(NS);
@@ -749,8 +748,6 @@ llvm::DIType CGDebugInfo::CreateType(const TypedefType *Ty, llvm::DIFile Unit) {
   // Typedefs are derived from some other type.  If we have a typedef of a
   // typedef, make sure to emit the whole chain.
   llvm::DIType Src = getOrCreateType(Ty->getDecl()->getUnderlyingType(), Unit);
-  if (!Src)
-    return llvm::DIType();
   // We don't set size information, but do specify where the typedef was
   // declared.
   SourceLocation Loc = Ty->getDecl()->getLocation();
@@ -2907,7 +2904,6 @@ llvm::DIType CGDebugInfo::CreateSelfType(const QualType &QualTy,
                                          llvm::DIType Ty) {
   llvm::DIType CachedTy = getTypeOrNull(QualTy);
   if (CachedTy) Ty = CachedTy;
-  else DEBUG(llvm::dbgs() << "No cached type for self.");
   return DBuilder.createObjectPointerType(Ty);
 }
 

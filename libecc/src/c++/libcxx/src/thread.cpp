@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if !defined(__microblaze__)    // RICH: Broken.
+
 #include "thread"
 #include "exception"
 #include "vector"
@@ -221,3 +223,5 @@ __thread_struct::__make_ready_at_thread_exit(__assoc_sub_state* __s)
 }
 
 _LIBCPP_END_NAMESPACE_STD
+
+#endif  // __microblaze__

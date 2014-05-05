@@ -42,10 +42,10 @@ int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv)
 
 #ifndef SHARED
 	_init();
+	__init_libc(envp, argv[0]);
 	uintptr_t a = (uintptr_t)&__init_array_start;
 	for (; a<(uintptr_t)&__init_array_end; a+=sizeof(void(*)()))
 		(*(void (**)())a)();
-	__init_libc(envp, argv[0]);
 #endif
 
 	/* Pass control to to application */

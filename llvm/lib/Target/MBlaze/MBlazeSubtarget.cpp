@@ -17,6 +17,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/TargetRegistry.h"
 
+#define DEBUG_TYPE "mb-subtarget"
 #define GET_SUBTARGETINFO_TARGET_DESC
 #define GET_SUBTARGETINFO_CTOR
 #include "MBlazeGenSubtargetInfo.inc"

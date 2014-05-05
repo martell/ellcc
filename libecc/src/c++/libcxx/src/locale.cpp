@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if !defined(__microblaze__)    // RICH: Broken.
+
 #define _LIBCPP_EXTERN_TEMPLATE(...) extern template __VA_ARGS__;
 
 // On Solaris, we need to define something to make the C99 parts of localeconv
@@ -6161,3 +6163,5 @@ template class codecvt_byname<char32_t, char, mbstate_t>;
 template class __vector_base_common<true>;
 
 _LIBCPP_END_NAMESPACE_STD
+
+#endif  // __microblaze__

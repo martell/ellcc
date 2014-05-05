@@ -7,9 +7,9 @@ tablegen(LLVM MipsGenCodeEmitter.inc -gen-emitter)
 tablegen(LLVM MipsGenMCCodeEmitter.inc -gen-emitter -mc-emitter)
 tablegen(LLVM MipsGenAsmWriter.inc -gen-asm-writer)
 tablegen(LLVM MipsGenDAGISel.inc -gen-dag-isel)
+tablegen(LLVM MipsGenFastISel.inc -gen-fast-isel)
 tablegen(LLVM MipsGenCallingConv.inc -gen-callingconv)
 tablegen(LLVM MipsGenSubtargetInfo.inc -gen-subtarget)
-tablegen(MipsGenIntrinsics.inc -gen-tgt-intrinsic)
 tablegen(LLVM MipsGenAsmMatcher.inc -gen-asm-matcher)
 tablegen(LLVM MipsGenMCPseudoLowering.inc -gen-pseudo-lowering)
 add_public_tablegen_target(MipsCommonTableGen)
@@ -49,7 +49,6 @@ add_llvm_target(MipsCodeGen
   MipsTargetMachine.cpp
   MipsTargetObjectFile.cpp
   MipsSelectionDAGInfo.cpp
-  MipsIntrinsicInfo.cpp
   )
 
 add_subdirectory(InstPrinter)

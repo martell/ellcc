@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if !defined(__microblaze__)    // RICH: Broken.
+
 #define _LIBCPP_EXTERN_TEMPLATE(...) extern template __VA_ARGS__;
 
 #include "ios"
@@ -467,3 +469,5 @@ ios_base::sync_with_stdio(bool sync)
 }
 
 _LIBCPP_END_NAMESPACE_STD
+
+#endif  // __microblaze__

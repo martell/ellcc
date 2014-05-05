@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if !defined(__microblaze__)    // RICH: Broken.
+
 #define _LIBCPP_BUILDING_MEMORY
 #include "memory"
 #include "mutex"
@@ -221,3 +223,5 @@ align(size_t alignment, size_t size, void*& ptr, size_t& space)
 }
 
 _LIBCPP_END_NAMESPACE_STD
+
+#endif  // __microblaze__

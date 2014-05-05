@@ -367,6 +367,7 @@ private:
 
 class _LIBUNWIND_HIDDEN AbstractUnwindCursor {
 public:
+  virtual             ~AbstractUnwindCursor() {}
   virtual bool        validReg(int) = 0;
   virtual unw_word_t  getReg(int) = 0;
   virtual void        setReg(int, unw_word_t) = 0;
@@ -882,8 +883,9 @@ bool UnwindCursor<A, R>::getInfoFromCompactEncodingSection(pint_t pc,
                             sectionHeader.personalityArrayCount());
       return false;
     }
-    uint32_t personalityDelta = _addressSpace.get32(
-        sects.compact_unwind_section + sectionHeader.personalityArraySectionOffset() +
+    int32_t personalityDelta = (int32_t)_addressSpace.get32(
+        sects.compact_unwind_section +
+        sectionHeader.personalityArraySectionOffset() +
         personalityIndex * sizeof(uint32_t));
     pint_t personalityPointer = sects.dso_base + (pint_t)personalityDelta;
     personality = _addressSpace.getP(personalityPointer);

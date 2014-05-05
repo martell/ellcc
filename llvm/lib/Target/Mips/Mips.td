@@ -21,7 +21,6 @@ include "llvm/Target/Target.td"
 
 include "MipsRegisterInfo.td"
 include "MipsSchedule.td"
-include "MipsIntrinsics.td"
 include "MipsInstrInfo.td"
 include "MipsCallingConv.td"
 
@@ -53,8 +52,6 @@ def FeatureSEInReg     : SubtargetFeature<"seinreg", "HasSEInReg", "true",
                                 "Enable 'signext in register' instructions.">;
 def FeatureCondMov     : SubtargetFeature<"condmov", "HasCondMov", "true",
                                 "Enable 'conditional move' instructions.">;
-def FeatureMulDivAdd   : SubtargetFeature<"muldivadd", "HasMulDivAdd", "true",
-                                "Enable 'multiply add/sub' instructions.">;
 def FeatureSwap        : SubtargetFeature<"swap", "HasSwap", "true",
                                 "Enable 'byte/half swap' instructions.">;
 def FeatureBitCount    : SubtargetFeature<"bitcount", "HasBitCount", "true",
@@ -63,8 +60,7 @@ def FeatureFPIdx       : SubtargetFeature<"fpidx", "HasFPIdx", "true",
                                 "Enable 'FP indexed load/store' instructions.">;
 def FeatureMips32      : SubtargetFeature<"mips32", "MipsArchVersion", "Mips32",
                                 "Mips32 ISA Support",
-                                [FeatureCondMov, FeatureBitCount,
-                                 FeatureMulDivAdd]>;
+                                [FeatureCondMov, FeatureBitCount]>;
 def FeatureMips32r2    : SubtargetFeature<"mips32r2", "MipsArchVersion",
                                 "Mips32r2", "Mips32r2 ISA Support",
                                 [FeatureMips32, FeatureSEInReg, FeatureSwap,

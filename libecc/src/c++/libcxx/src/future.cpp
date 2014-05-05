@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if !defined(__microblaze__)    // RICH: Broken.
+
 #include "future"
 #include "string"
 
@@ -298,3 +300,5 @@ shared_future<void>::operator=(const shared_future& __rhs)
 }
 
 _LIBCPP_END_NAMESPACE_STD
+
+#endif  // __microblaze__

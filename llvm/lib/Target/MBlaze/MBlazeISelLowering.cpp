@@ -778,8 +778,7 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // Transform all store nodes into one single node because all store
   // nodes are independent of each other.
   if (!MemOpChains.empty())
-    Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other,
-                        &MemOpChains[0], MemOpChains.size());
+    Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, MemOpChains);
 
   // Build a sequence of copy-to-reg nodes chained together with token
   // chain and flag operands which copy the outgoing args into registers.
@@ -821,7 +820,7 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
   if (InFlag.getNode())
     Ops.push_back(InFlag);
 
-  Chain  = DAG.getNode(MBlazeISD::JmpLink, dl, NodeTys, &Ops[0], Ops.size());
+  Chain  = DAG.getNode(MBlazeISD::JmpLink, dl, NodeTys, Ops);
   InFlag = Chain.getValue(1);
 
   // Create the CALLSEQ_END node.
@@ -999,8 +998,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
   // the size of Ins and InVals. This only happens when on varg functions
   if (!OutChains.empty()) {
     OutChains.push_back(Chain);
-    Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other,
-                        &OutChains[0], OutChains.size());
+    Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, OutChains);
   }
 
   return Chain;
@@ -1058,7 +1056,7 @@ LowerReturn(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
   if (Flag.getNode())
     RetOps.push_back(Flag);
 
-  return DAG.getNode(Ret, dl, MVT::Other, &RetOps[0], RetOps.size());
+  return DAG.getNode(Ret, dl, MVT::Other, RetOps);
 }
 
 //===----------------------------------------------------------------------===//

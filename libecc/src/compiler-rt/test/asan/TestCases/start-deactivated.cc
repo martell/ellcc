@@ -6,7 +6,7 @@
 // RUN:     -fPIC -shared -o %t-so.so
 // RUN: %clangxx -O0 %s -c -o %t.o
 // RUN: %clangxx_asan -O0 %t.o -o %t
-// RUN: ASAN_OPTIONS=start_deactivated=1 not %t 2>&1 | FileCheck %s
+// RUN: ASAN_OPTIONS=start_deactivated=1 not %run %t 2>&1 | FileCheck %s
 
 #include <dlfcn.h>
 #include <stdio.h>

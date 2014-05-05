@@ -34,12 +34,12 @@
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/APSInt.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Bitcode/BitstreamReader.h"
 #include "llvm/Support/DataTypes.h"
 #include <deque>
@@ -133,8 +133,9 @@ public:
   ///
   /// \returns true to indicate the diagnostic options are invalid, or false
   /// otherwise.
-  virtual bool ReadDiagnosticOptions(const DiagnosticOptions &DiagOpts,
-                                     bool Complain) {
+  virtual bool
+  ReadDiagnosticOptions(IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts,
+                        bool Complain) {
     return false;
   }
 
@@ -211,7 +212,7 @@ public:
   bool ReadLanguageOptions(const LangOptions &LangOpts, bool Complain) override;
   bool ReadTargetOptions(const TargetOptions &TargetOpts,
                          bool Complain) override;
-  bool ReadDiagnosticOptions(const DiagnosticOptions &DiagOpts,
+  bool ReadDiagnosticOptions(IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts,
                              bool Complain) override;
   bool ReadFileSystemOptions(const FileSystemOptions &FSOpts,
                              bool Complain) override;
@@ -244,6 +245,8 @@ public:
                            bool Complain) override;
   bool ReadTargetOptions(const TargetOptions &TargetOpts,
                          bool Complain) override;
+  bool ReadDiagnosticOptions(IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts,
+                             bool Complain) override;
   bool ReadPreprocessorOptions(const PreprocessorOptions &PPOpts, bool Complain,
                                std::string &SuggestedPredefines) override;
   void ReadCounter(const serialization::ModuleFile &M, unsigned Value) override;
@@ -962,7 +965,7 @@ private:
   llvm::SmallVector<NamedDecl *, 16> PendingOdrMergeChecks;
 
   /// \brief Record definitions in which we found an ODR violation.
-  llvm::SmallDenseMap<CXXRecordDecl*, llvm::SmallVector<CXXRecordDecl*, 1>, 2>
+  llvm::SmallDenseMap<CXXRecordDecl *, llvm::TinyPtrVector<CXXRecordDecl *>, 2>
       PendingOdrMergeFailures;
 
   /// \brief DeclContexts in which we have diagnosed an ODR violation.
@@ -1383,6 +1386,12 @@ public:
 
   /// \brief Determine whether this AST reader has a global index.
   bool hasGlobalIndex() const { return (bool)GlobalIndex; }
+
+  /// \brief Return global module index.
+  GlobalModuleIndex *getGlobalIndex() { return GlobalIndex.get(); }
+
+  /// \brief Reset reader for a reload try.
+  void resetForReload() { TriedLoadingGlobalIndex = false; }
 
   /// \brief Attempts to load the global index.
   ///
@@ -1817,7 +1826,7 @@ public:
   void installImportedMacro(IdentifierInfo *II, ModuleMacroInfo *MMI,
                             Module *Owner);
 
-  typedef llvm::SmallVector<DefMacroDirective*, 1> AmbiguousMacros;
+  typedef llvm::TinyPtrVector<DefMacroDirective *> AmbiguousMacros;
   llvm::DenseMap<IdentifierInfo*, AmbiguousMacros> AmbiguousMacroDefs;
 
   void
