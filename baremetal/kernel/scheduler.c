@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <inttypes.h>
-#include "arm.h"
 #include "timer.h"
 #define DEFINE_STRINGS
 #include "scheduler.h"
@@ -48,14 +47,14 @@ static intptr_t idle(intptr_t arg1, intptr_t arg2)
 static void create_idle_threads(void)
 {
     for (int i = 0; i < PROCESSORS; ++i) {
-        idle_thread[i].saved_sp = (Context *)&idle_stack[i][IDLE_STACK];
+        idle_thread[i].saved_ctx = (Context *)&idle_stack[i][IDLE_STACK];
         idle_thread[i].priority = PRIORITIES;   // The lowest priority.
         idle_thread[i].state = IDLE;
         char name[20];
         snprintf(name, 20, "idle%d", i);
         idle_thread[i].name = strdup(name);
         insert_all(&idle_thread[i]);
-        __new_context(&idle_thread[i].saved_sp, idle, Mode_SYS, 0, 0);
+        __new_context(&idle_thread[i].saved_ctx, idle, INITIAL_PSR, 0, 0);
     }
 }
 
@@ -286,7 +285,7 @@ static void schedule_nolock(Thread *list)
     // Switch to the new thread.
     Thread *me = current;
     get_running();
-    __switch(&current->saved_sp, &me->saved_sp);
+    __switch(&current->saved_ctx, &me->saved_ctx);
 }
 
 /* Schedule a list of threads.
@@ -301,21 +300,21 @@ void schedule(Thread *list)
  * something besides READY or RUNNING.
  * The ready list must be locked on entry.
  */
-static int nolock_change_state(State new_state)
+static int nolock_change_state(int arg, State new_state)
 {
     Thread *me = current;
     me->state = new_state;
     get_running();
-    return __switch(&current->saved_sp, &me->saved_sp);
+    return __switch_arg(arg, &current->saved_ctx, &me->saved_ctx);
 }
 
 /** Change the current thread's state to
  * something besides READY or RUNNING.
  */
-int change_state(State new_state)
+int change_state(int arg, State new_state)
 {
     lock_aquire(&ready_lock);
-    return nolock_change_state(new_state);
+    return nolock_change_state(arg, new_state);
 }
 
 /* Give up the remaining time slice.
@@ -372,13 +371,13 @@ static int thread_create_int(const char *name, Thread **id, ThreadFunction entry
     insert_all(thread);
 
     Context *cp = (Context *)p;
-    thread->saved_sp = cp;
+    thread->saved_ctx = cp;
     if (cloning) {
         // Copy registers for clone();
-        *(cp - 1) = *current->saved_sp;
+        *(cp - 1) = *current->saved_ctx;
     }
 
-    __new_context(&thread->saved_sp, entry, Mode_SYS, arg1, arg2);
+    __new_context(&thread->saved_ctx, entry, INITIAL_PSR, arg1, arg2);
     schedule(thread);
     *id = thread;
     return 0;
@@ -493,7 +492,17 @@ Message get_message(MsgQueue *queue)
             me->next = queue->waiter;
             queue->waiter = me;
             lock_release(&queue->lock);
-            nolock_change_state(MSGWAIT);
+            int s = nolock_change_state(0, MSGWAIT);
+            if (s != 0) {
+                if (s < 0) {
+                    // An error (like EINTR) has occured.
+                    errno = -s;
+                } else {
+                    // Another system event has occured, handle it.
+                }
+                s = -1;
+                return (Message){};
+            }
         } else {
             lock_release(&queue->lock);
         }

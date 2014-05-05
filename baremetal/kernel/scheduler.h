@@ -74,8 +74,8 @@ static const char *state_names[LASTSTATE] =
 
 typedef struct thread
 {
-    // The saved_sp and tls fields must be first in the thread struct.
-    Context *saved_sp;          // The thread's saved stack pointer.
+    // The saved_ctx and tls fields must be first in the thread struct.
+    Context *saved_ctx;         // The thread's saved context.
     void *tls;                  // The thread's user space storage.
     struct thread *next;        // Next thread in any list.
     State state;                // The thread's state.
@@ -92,8 +92,10 @@ void schedule(Thread *list);
 
 /** Change the current thread's state to
  * something besides READY or RUNNING.
+ * @param arg The tennative value returned. 
+ * @param state Then new state to enter. 
  */
-int change_state(State new_state);
+int change_state(int arg, State new_state);
 
 typedef intptr_t (*ThreadFunction)(intptr_t, intptr_t);
 
@@ -102,6 +104,13 @@ typedef intptr_t (*ThreadFunction)(intptr_t, intptr_t);
  * @param from A place to store the current context.
  */
 int __switch(Context **to, Context **from);
+
+/** Switch to a new context.
+ * @param arg The tenative return value when the context is restarted.
+ * @param to The new context.
+ * @param from A place to store the current context.
+ */
+int __switch_arg(int arg, Context **to, Context **from);
 
 /** Set up a new context.
  * @param savearea Where to put the finished stack pointer.

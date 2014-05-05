@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include "arm.h"
+#include "target.h"
 
 #ifndef NULL
 #define NULL 0

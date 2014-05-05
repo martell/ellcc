@@ -45,10 +45,14 @@ int sem_wait(sem_t *sem)
             me->next = sem->waiters;
             sem->waiters = me;
             lock_release(&sem->lock);
-            context_set_return(me->saved_sp, 0);
-            s = change_state(SEMWAIT);
-            if (s < 0) {
-                errno = -s;
+            s = change_state(0, SEMWAIT);
+            if (s != 0) {
+                if (s < 0) {
+                    // An error (like EINTR) has occured.
+                    errno = -s;
+                } else {
+                    // Another system event has occured, handle it.
+                }
                 s = -1;
                 break;
             }
@@ -92,7 +96,7 @@ static void callback(intptr_t arg1, intptr_t arg2)
                 sem->waiters = p->next;
             }
             p->next = NULL;
-            context_set_return(p->saved_sp, -ETIMEDOUT);
+            context_set_return(p->saved_ctx, -ETIMEDOUT);
             schedule(p);
         }
     }
@@ -129,11 +133,15 @@ int sem_timedwait(sem_t *sem, struct timespec *abs_timeout)
                 when -= timer_get_realtime_offset();
                 void *t = timer_wake_at(when, callback,
                                         (intptr_t) sem, (intptr_t) me);
-                context_set_return(me->saved_sp, 0);
-                s = change_state(SEMTMO);
+                s = change_state(0, SEMTMO);
                 timer_cancel_wake_at(t);
-                if (s < 0) {
-                    errno = -s;
+                if (s != 0) {
+                    if (s < 0) {
+                        // An error (like EINTR) has occured.
+                        errno = -s;
+                    } else {
+                        // Another system event has occured, handle it.
+                    }
                     s = -1;
                     break;
                 }

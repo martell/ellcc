@@ -1,5 +1,5 @@
 #include <bits/errno.h>
-#include "arm.h"
+#include "target.h"
 
     .global _start
     .global _Reset
@@ -170,19 +170,19 @@ IRQ_Handler:
 
 /* Set up a context for execution.
  * int __new_context(Context **savearea,
- *                   int (*entry)(intptr_t, intptr_t), uint32_t spsr,
+ *                   int (*entry)(intptr_t, intptr_t), uint32_t psr,
  *                   void *ret, intptr_t arg1, intptr_t arg2)
  * On entry:
  * r0 points to the new context's save area, initialized to the top of the stack, aligned to 8 bytes.
  * r1 is the new context's start address
- * r2 is the new context's SPSR.
+ * r2 is the new context's PSR.
  * r3 is the first argument to the context.
  * [sp] is the second argument to the context.
  */
     .global __new_context
 __new_context:
     ldr     r7, [r0]            // Get the new stack pointer.
-    stmfd   r7!, {r1, r2}       // Save the new pc and SPSR.
+    stmfd   r7!, {r1, r2}       // Save the new pc and PSR.
     sub     r7, #12 * 4         // Room for registers r2-r12, lr.
     mov     r1, r3              // Get the first argument.
     ldr     r2, [sp]            // Get the second argument.
@@ -205,6 +205,26 @@ __switch:
     str     sp, [r1]            // Save the current frame.
     ldr     sp, [r0]            // Get the new stack pointer.
     ldr     r1, [r0, #4]        // Get the new TLS.
+    mcr     p15, 0, r1, c13, c0, 3      // Set the TLS.
+    bl      __unlock_ready      // Unlock the ready list.
+    pop     { SAVED_REGS }      // Restore registers
+    rfeia   sp!                 // And dispatch.
+
+/* Switch from one context to the next and unlock the queue.
+ * void __switch_arg(int arg, Context **to, Context **from);
+ * On entry:
+ * The ready list is locked.
+ * r0 is the tenative return value when the context is restarted.
+ * r1 points to the next save area.
+ * r2 points to the current save area.
+ */
+    .global __switch_arg
+__switch_arg:
+    srsfd   sp!, #Mode_SYS      // Save LR_sys and SPSR_sys on the sys stack.
+    push    { SAVED_REGS }      // Store other registers.
+    str     sp, [r2]            // Save the current frame.
+    ldr     sp, [r1]            // Get the new stack pointer.
+    ldr     r1, [r1, #4]        // Get the new TLS.
     mcr     p15, 0, r1, c13, c0, 3      // Set the TLS.
     bl      __unlock_ready      // Unlock the ready list.
     pop     { SAVED_REGS }      // Restore registers

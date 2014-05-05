@@ -72,7 +72,16 @@ void *timer_wake_at(long long when,
     lock_release(&timeout_lock);
     if (tmo->callback == NULL) {
         // Put myself to sleep.
-        change_state(TIMEOUT);
+        int s = change_state(0, TIMEOUT);
+        if (s != 0) {
+            if (s < 0) {
+                // An error (like EINTR) has occured.
+                errno = -s;
+            } else {
+                // Another system event has occured, handle it.
+            }
+            tmo  = NULL;
+        }
     }
     return tmo;         // Return the timeout identifier (opaque).
 }
