@@ -1,16 +1,10 @@
-/* Simple Bare metal program - linker script
- * *
- * * Note: This is written for QEMU
- * * QEMU loads the kernel address at 0x00010000
- * * The emulator starts at 0x00000000 and peripheral interrupts
- * * are disabled at startup.
- * *
- * * The code must be compiled and linked to be placed at
- * * 0x00010000
- * *
- * */
+/* Linker script.
+ *
+ * Note: This is written for QEMU
+ * QEMU loads the kernel address at 0x00010000
+ */
 
-ENTRY(_Reset)
+ENTRY(_start)
 SECTIONS
 {
     . = 0x10000;

@@ -2,9 +2,7 @@
 #include "target.h"
 
     .global _start
-    .global _Reset
 _start:
-_Reset:
     ldr     pc, Reset_Addr
     ldr     pc, Undefined_Addr
     ldr     pc, SVC_Addr
@@ -27,7 +25,7 @@ IRQ_Addr:
     .word IRQ_Handler
 FIQ_Addr:
     .word FIQ_Handler
-_ResetEnd:
+_start_end:
 
 #define Stack_FIQ   4096        // Size of the FIQ stack.
 #define Stack_IRQ   4096        // Size of the IRQ stack.
@@ -66,8 +64,8 @@ Reset_Handler:
     // Copy the exception handlers to low memory.
     // RICH: Is this necessary? Change the vector address?
     mov     a1, #0
-    adr     a2, _Reset
-    adr     a3, _ResetEnd
+    adr     a2, _start
+    adr     a3, _start_end
     sub     a3, a3, a2
     bl      memcpy
 

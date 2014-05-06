@@ -6,6 +6,8 @@ CFLAGS+=-I. -I../kernel -g -MD -MP -Werror -Wall -Wno-unused-function
 NAMES:=$(basename $(filter %.c %.cpp %.S, $(SRCS)))
 OBJS:=$(NAMES:%=%.o)
 DEPENDS:=$(NAMES:%=%.d)
+KERNEL_EXE?=$(KERNEL).bin
+
 clean:
 	rm -f *.o *.d $(KERNEL).elf $(KERNEL).bin
 
@@ -23,20 +25,22 @@ include $(ELLCC)/libecc/mkscripts/targets/$(TARGET)/setup.mk
 .c.o:
 	$(CC) $(CFLAGS.$(TARGET)) -c $<
 
-all: $(KERNEL).bin
+all: $(KERNEL_EXE)
 
-$(KERNEL).bin: Makefile kernel.ld $(OBJS)
+$(KERNEL).elf: Makefile kernel.ld $(OBJS)
 	$(LD) $(LDFLAGS) -nostartfiles -T $(KERNEL).ld \
 	    $(ELLCC)/libecc/lib/$(TARGET)/$(OS)/crtbegin.o \
 	    $(OBJS) \
 	    $(ELLCC)/libecc/lib/$(TARGET)/$(OS)/crtend.o \
 	    -o $(KERNEL).elf -Wl,--build-id=none
+
+$(KERNEL).bin: $(KERNEL).elf
 	$(OBJCOPY) -O binary $(KERNEL).elf $(KERNEL).bin
 
-run: $(KERNEL).bin
+run: $(KERNEL_EXE)
 	$(ELLCC)/bin/qemu-system-$(TARGET) $(QEMUARGS)
 
-debug: $(KERNEL).bin
+debug: $(KERNEL_EXE)
 	$(ELLCC)/bin/qemu-system-$(TARGET) -s -S $(QEMUARGS)
 
 -include $(DEPENDS)
