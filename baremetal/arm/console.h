@@ -4,17 +4,36 @@
 #define _console_h_
 
 #include "arm_pl011.h"
+#include "irq.h"
 
 /** Send a character to the serial port.
  */
-static inline void send_char_now(int ch)
+static void console_send_char(int ch)
+{
+    while (*UARTFR & TXFF)
+        continue;           // Wait while TX FIFO is full.
+    *UARTDR = ch;
+}
+
+/** Get a character from the serial port.
+ */
+static int console_get_char(void)
+{
+    while (*UARTFR & RXFE)
+        continue;           // Wait while RX FIFO is empty.
+    return *UARTDR;
+}
+
+/** Send a character to the serial port. The transmit buffer is empty.
+ */
+static inline void console_send_char_now(int ch)
 {
     *UARTDR = ch;
 }
 
 /** Send a character to the serial port if the transmit buffer is empty.
  */
-static inline int send_char_nowait(int ch)
+static inline int console_send_char_nowait(int ch)
 {
     if ((*UARTFR & TXFF) == 0) {
         // The transmit buffer is empty. Send the character.
@@ -25,30 +44,30 @@ static inline int send_char_nowait(int ch)
     return 0;
 }
 
-/** Get a character from the serial port.
+/** Get a character from the serial port. The receive buffer is full.
  */
-static inline int get_char_now(void)
+static inline int console_get_char_now(void)
 {
     return *UARTDR;
 }
 
 /** Enable the transmit interrupt.
  */
-static inline void enable_tx_interrupt(void)
+static inline void console_enable_tx_interrupt(void)
 {
     *UARTIMSC |= TXI;
 }
 
 /** Disable the transmit interrupt.
  */
-static inline void disable_tx_interrupt(void)
+static inline void console_disable_tx_interrupt(void)
 {
     *UARTIMSC &= ~TXI;
 }
 
 /** Enable the receive interrupt.
  */
-static inline void enable_rx_interrupt(void)
+static inline void console_enable_rx_interrupt(void)
 {
     *UARTIMSC = RXI;
 }

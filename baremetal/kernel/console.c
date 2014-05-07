@@ -33,7 +33,7 @@ static char *obuffer_out;       // The output buffer output pointer.
  */
 static void rx_interrupt(void *arg)
 {
-    int ch = get_char_now();
+    int ch = console_get_char_now();
     char *next = ibuffer_in + 1;
     if (next >= &ibuffer[IBUFFER_SIZE]) {
         next = ibuffer;
@@ -80,11 +80,11 @@ static void tx_interrupt(void *arg)
     if (next == obuffer_in) {
         // The buffer is empty.
         // Disable the transmit interrupt.
-        disable_tx_interrupt();
+        console_disable_tx_interrupt();
     }
 
     // Send the next character.
-    send_char_now(*obuffer_out);
+    console_send_char_now(*obuffer_out);
     obuffer_out = next;
 }
 
@@ -98,7 +98,7 @@ static void send_char(int ch)
      */
 #undef TEST
 #ifndef TEST
-    if (send_char_nowait(ch)) {
+    if (console_send_char_nowait(ch)) {
         return;                 // The character was sent.
     }
 #endif
@@ -120,10 +120,10 @@ static void send_char(int ch)
      * unless at least one character leaves it. Send a nul byte
      * to prime the pump.
      */
-    send_char_now('\0');
+    console_send_char_now('\0');
 #endif
     // Enable the transmit interrupt.
-    enable_tx_interrupt();
+    console_enable_tx_interrupt();
 }
 
 static ssize_t do_write(int fd, const void *buf, size_t count)
@@ -262,5 +262,5 @@ static void init(void)
     console_interrupt_register(rx_interrupt, tx_interrupt);
 
     // Enable the receive interrupt.
-    enable_rx_interrupt();
+    console_enable_rx_interrupt();
 }

@@ -6,20 +6,7 @@
 #include <sys/ioctl.h>
 #include "kernel.h"
 #include "arm_pl011.h"
-
-static void send_char(int ch)
-{
-    while (*UARTFR & TXFF)
-        continue;           // Wait while TX FIFO is full.
-    *UARTDR = ch;
-}
-
-static int get_char(void)
-{
-    while (*UARTFR & RXFE)
-        continue;           // Wait while RX FIFO is empty.
-    return *UARTDR;
-}
+#include "console.h"
 
 static int sys_ioctl(int fd, int request, ...)
 {
@@ -36,7 +23,7 @@ static ssize_t sys_write(int fd, const void *buf, size_t count)
     const unsigned char *s = buf;
     size_t i = 0;
     for ( ; i < count; ++i) {
-        send_char(*s++);
+        console_send_char(*s++);
     }
     return i;
 }
@@ -60,7 +47,8 @@ static ssize_t sys_read(int fd, void *buf, size_t count)
     unsigned char *s = buf;
     size_t i = 0;
     for ( ; i < count; ) {
-        int ch = get_char();    // Get the next character.
+        // Get the next character.
+        int ch = console_get_char();
         ++i;                    // Count the character.
         switch (ch) {
             // Some simple line handling.
@@ -69,9 +57,9 @@ static ssize_t sys_read(int fd, void *buf, size_t count)
             // Simple backspace handling.
             --i;
             if (i) {
-              send_char('\b');
-              send_char(' ');
-              send_char('\b');
+              console_send_char('\b');
+              console_send_char(' ');
+              console_send_char('\b');
               --s;
               --i;
             }
@@ -79,11 +67,12 @@ static ssize_t sys_read(int fd, void *buf, size_t count)
         case '\n':
         case '\r':
             // Make sure we send both a CR and LF.
-            send_char(ch == '\r' ? '\n' : '\r');
+            console_send_char(ch == '\r' ? '\n' : '\r');
             *s = '\n';          // and send a newline back.
             return i;           // This read is done.
         default:
-            send_char(ch);      // Echo input.
+            // Echo input.
+            console_send_char(ch);
             *s++ = ch;          // and send it back.
             break;
         }
