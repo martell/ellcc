@@ -6,10 +6,9 @@
 #include <bits/syscall.h>       // For syscall numbers.
 #include <sys/uio.h>            // For writev (used by printf()).
 #include <sys/ioctl.h>
-
 #include "kernel.h"
-#include "arm_pl011.h"
 #include "irq.h"
+#include "console.h"
 
 /* The following input and output semaphores are used to insure
  * a the read, readv, write, and writev system calls complete
@@ -34,7 +33,7 @@ static char *obuffer_out;       // The output buffer output pointer.
  */
 static void rx_interrupt(void *arg)
 {
-    int ch = *UARTDR;
+    int ch = get_char_now();
     char *next = ibuffer_in + 1;
     if (next >= &ibuffer[IBUFFER_SIZE]) {
         next = ibuffer;
@@ -81,11 +80,11 @@ static void tx_interrupt(void *arg)
     if (next == obuffer_in) {
         // The buffer is empty.
         // Disable the transmit interrupt.
-        *UARTIMSC &= ~TXI;
+        disable_tx_interrupt();
     }
 
     // Send the next character.
-    *UARTDR = *obuffer_out;
+    send_char_now(*obuffer_out);
     obuffer_out = next;
 }
 
@@ -99,10 +98,8 @@ static void send_char(int ch)
      */
 #undef TEST
 #ifndef TEST
-    if ((*UARTFR & TXFF) == 0) {
-        // The transmit buffer is empty. Send the character.
-        *UARTDR = ch;
-        return;
+    if (send_char_nowait(ch)) {
+        return;                 // The character was sent.
     }
 #endif
 
@@ -119,14 +116,14 @@ static void send_char(int ch)
     obuffer_in = next;
 
 #ifdef TEST
-    /* Unfortunanately, the TXI interrupt will not be asserted
+    /* Unfortunanately, an ARM pl011 UART will not assert a TXI interrupt
      * unless at least one character leaves it. Send a nul byte
      * to prime the pump.
      */
-    *UARTDR = '\0';
+    send_char_now('\0');
 #endif
     // Enable the transmit interrupt.
-    *UARTIMSC |= TXI;
+    enable_tx_interrupt();
 }
 
 static ssize_t do_write(int fd, const void *buf, size_t count)
@@ -237,21 +234,6 @@ static int sys_ioctl(int fd, int request, ...)
     }
 }
 
-static const IRQHandler serial_irq =
-{
-    .id = IRQ + 32,
-    .edge = 0,
-    .priority = 0,
-    .cpus = 0xFFFFFFFF,         // Send to all CPUs.
-    .sources = 2,
-    {
-        { UARTMIS, RXI, UARTICR, RXI,
-            { rx_interrupt, NULL }},
-        { UARTMIS, TXI, UARTICR, TXI,
-            { tx_interrupt, NULL }},
-    }
-};
-
 static void init(void)
     __attribute__((__constructor__, __used__));
 
@@ -277,8 +259,8 @@ static void init(void)
     __set_syscall(SYS_readv, sys_readv);
 
     // Register the interrupt handler.
-    irq_register(&serial_irq);
+    console_interrupt_register(rx_interrupt, tx_interrupt);
 
     // Enable the receive interrupt.
-    *UARTIMSC = RXI;
+    enable_rx_interrupt();
 }

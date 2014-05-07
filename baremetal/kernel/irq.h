@@ -7,6 +7,8 @@
 
 #define IRQ_MAX_IDS     256     // The maximum number of interrupt IDs.
 
+typedef void (*InterruptFn)(void *);
+
 typedef struct irq_handler
 {
     int id;                     // The interrupt identifier.
@@ -20,7 +22,7 @@ typedef struct irq_handler
         volatile uint32_t *irq_clear;   // The interrupt clear register.
         uint32_t clear_value;           // The value to clear the interrupt.
         struct {
-            void (*fn)(void *);         // The interrupt handler function.
+            InterruptFn fn;             // The interrupt handler function.
             void **arg;                 // The handler argument pointer.
         } handler;
         void *unused1;

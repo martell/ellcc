@@ -4,9 +4,22 @@
 #include <bits/syscall.h>       // For syscall numbers.
 #include <sys/uio.h>            // For writev (used by printf()).
 #include <sys/ioctl.h>
-
 #include "kernel.h"
 #include "arm_pl011.h"
+
+static void send_char(int ch)
+{
+    while (*UARTFR & TXFF)
+        continue;           // Wait while TX FIFO is full.
+    *UARTDR = ch;
+}
+
+static int get_char(void)
+{
+    while (*UARTFR & RXFE)
+        continue;           // Wait while RX FIFO is empty.
+    return *UARTDR;
+}
 
 static int sys_ioctl(int fd, int request, ...)
 {
@@ -16,13 +29,6 @@ static int sys_ioctl(int fd, int request, ...)
     default:
         return -EINVAL;
     }
-}
-
-static void send_char(int ch)
-{
-    while (*UARTFR & TXFF)
-        continue;           // Wait while TX FIFO is full.
-    *UARTDR = ch;
 }
 
 static ssize_t sys_write(int fd, const void *buf, size_t count)
@@ -54,9 +60,7 @@ static ssize_t sys_read(int fd, void *buf, size_t count)
     unsigned char *s = buf;
     size_t i = 0;
     for ( ; i < count; ) {
-        while (*UARTFR & RXFE)
-            continue;           // Wait while RX FIFO is empty.
-        int ch = *UARTDR;
+        int ch = get_char();    // Get the next character.
         ++i;                    // Count the character.
         switch (ch) {
             // Some simple line handling.
