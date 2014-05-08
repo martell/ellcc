@@ -8,7 +8,7 @@ ENTRY(_start)
 SECTIONS
 {
     . = 0x80100400;
-    .init . : { init.o(.text) *(.init) }
+    .init . : { init.o(.text) }
     .text : { *(.text) }
     /* Handle constructors and destructors. */
     .preinit_array : {
@@ -48,6 +48,8 @@ SECTIONS
       KEEP (*(.dtors))
     }
 
+    HIDDEN (_gp = ALIGN (16) + 0x7ff0);
+    .got : { *(.got) }
     .data : { *(.data) }
     . = ALIGN(8);
     __bss_start__ = .;

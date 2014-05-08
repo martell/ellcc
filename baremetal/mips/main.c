@@ -35,10 +35,11 @@ static void printf(const char *s)
     }
 }
 
-void _startup()
+int main(int argc, char **argv)
 {
     init_serial();
 
-    printf("hello world\n");
+    printf(argv[0]);
+    printf(": hello world\n");
     printf("type control-A x to get out of QEMU\n");
 }

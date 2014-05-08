@@ -1,40 +1,47 @@
 #include <bits/errno.h>
 #include "target.h"
 
+    .section .text, "x"
+    .align  4
     .global _start
 _start:
-    ldr     pc, Reset_Addr
-    ldr     pc, Undefined_Addr
-    ldr     pc, SVC_Addr
-    ldr     pc, Prefetch_Addr
-    ldr     pc, Abort_Addr
+    ldr     pc, reset_p
+    ldr     pc, undefined_p
+    ldr     pc, swi_p
+    ldr     pc, prefetch_p
+    ldr     pc, abort_p
     nop                         // Reserved. 
-    ldr     pc, IRQ_Addr
-    ldr     pc, FIQ_Addr
-Reset_Addr:
-    .word Reset_Handler
-Undefined_Addr:
-    .word Undefined_Handler
-SVC_Addr:
-    .word SVC_Handler
-Prefetch_Addr:
-    .word Prefetch_Handler
-Abort_Addr:
-    .word Abort_Handler
-IRQ_Addr:
-    .word IRQ_Handler
-FIQ_Addr:
-    .word FIQ_Handler
-_start_end:
+    ldr     pc, irq_p
+// The FIQ interrupt starts here.
+    b       .
 
-#define Stack_FIQ   4096        // Size of the FIQ stack.
-#define Stack_IRQ   4096        // Size of the IRQ stack.
-#define Stack_SVC   4096        // Size of the SVC stack.
-#define Stack_ABT   4096        // Size of the ABT stack.
-#define Stack_UND   4096        // Size of the UND stack.
+reset_p:
+    .word reset
+undefined_p:
+    .word undefined
+swi_p:
+    .word swi
+prefetch_p:
+    .word prefetch
+abort_p:
+    .word abort
+irq_p:
+    .word irq
+
+    .text
+/* Defined the size of the stacks.
+ * Currently, only the SYS mode needs its own stack.
+ */
+#define Stack_FIQ   0           // Size of the FIQ stack.
+#define Stack_IRQ   0           // Size of the IRQ stack.
+#define Stack_SVC   0           // Size of the SVC stack.
+#define Stack_ABT   0           // Size of the ABT stack.
+#define Stack_UND   0           // Size of the UND stack.
 #define Stack_SYS   4096        // Size of the SYS stack.
 
-Reset_Handler:
+/** The reset entry point.
+ */
+reset:
     /* Set up the various stack pointers by setting the correct mode
      * and initializing the stack pointers.
      */
@@ -58,16 +65,13 @@ Reset_Handler:
     msr     cpsr_c, #Mode_SYS // |I_bit|F_bit
     mov     sp, r0
     sub     r0, #Stack_SYS
-    ldr     r1, heap_end
+    // Set up the end of the heap.
+    ldr     r1, heap_end_p
     str     r0, [r1]
 
-    // Copy the exception handlers to low memory.
-    // RICH: Is this necessary? Change the vector address?
-    mov     a1, #0
-    adr     a2, _start
-    adr     a3, _start_end
-    sub     a3, a3, a2
-    bl      memcpy
+    // Point to the vectors.
+    ldr     r0, =_start
+    mcr     p15, 0, r0, c12, c0, 0
 
     // Clear the bss area.
     ldr     a1, bss_start
@@ -87,7 +91,7 @@ Reset_Handler:
     bl      __libc_start_main
     b       .
 
-heap_end:
+heap_end_p:
     .word   __heap_end
 bss_start:
     .word   __bss_start__
@@ -103,17 +107,17 @@ argv:
     .word   0                   // Auxv
     .endr
 
-Undefined_Handler:
-    b       .
+undefined:
+    b   .
 
-Prefetch_Handler:
-    b       .
+prefetch:
+    b   .
 
-Abort_Handler:
-    b       .
+abort:
+    b   .
 
-FIQ_Handler:
-    b       .
+fiq:
+    b   .
 
 #define SAVED_REGS r0-r12, lr   // Registers saved in thread context.
 #define NUM_SAVED 14            // The number of saved registers.
@@ -133,7 +137,7 @@ FIQ_Handler:
  * 12. Inform the kernel that we may be leaving the IRQ state.
  * 13. Restore the user thread context if necessary.
  */
-IRQ_Handler:
+irq:
     sub     lr, lr, #4          // Adjust return address.
     srsfd   sp!, #Mode_SYS      // Save LR_irq and SPSR_irq on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
@@ -231,7 +235,7 @@ __switch_arg:
 /* Handle a system call.
  * On the ARM, this is entered with an SVC instruction.
  */
-SVC_Handler:
+swi:
     srsfd   sp!, #Mode_SYS      // Save LR_svc and SPSR_svc on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
     push    { SAVED_REGS }      // Save registers.
@@ -246,10 +250,10 @@ SVC_Handler:
     // r7 is the call number.
 __in_syscall:                   // The stack frame is valid here.
     cmp     r7, #512
-    ldr     r8, SysCallPtr      // Point to the syscall save area.
+    ldr     r8, syscall_p       // Point to the syscall save area.
     str     r7, [r8]            // Save call number for error reporting.
     bhs     check_arm_syscall   // Jump if too big for a syscall.
-    ldr     r8, SVC_TablePtr    // Get the system call table.
+    ldr     r8, swi_table_p     // Get the system call table.
     ldr     r8, [r8, r7, lsl #2]// Get the system call entry.
     ldr     r7, [sp, #4 * NUM_SAVED] // Get the SVC return address for clone().
     push    { r4, r5, r6, r7 }  // Put extra arguments on the stack.
@@ -258,18 +262,18 @@ __in_syscall:                   // The stack frame is valid here.
     pop     { r2-r12, lr }      // SAVED_REGS - r0-r1
     rfeia   sp!                 // And return.
 
-SysCallPtr:
-    .word   SysCall
+syscall_p:
+    .word   syscall
 
 /* ARM has a few "hidden" system calls.
  */
 check_arm_syscall:
     ldr     r8, low
     cmp     r7, r8
-    blo     Unhandled_SVC       // RICH: Incorrect
+    blo     unhandled_swi       // RICH: Incorrect
     ldr     r8, high
     cmp     r7, r8
-    bhi     Unhandled_SVC
+    bhi     unhandled_swi
     and     r7, r7, #0x7
     adr     r8, ARM_SVC_Table   // Get the system call table.
     ldr     r7, [r8, r7, lsl #2]// Get the stystem call entry.
@@ -283,14 +287,14 @@ high:
     .word   0xF0007
 
 ARM_SVC_Table:
-    .word   Unhandled_SVC
-    .word   Unhandled_SVC
-    .word   Unhandled_SVC
-    .word   Unhandled_SVC
-    .word   Unhandled_SVC
+    .word   unhandled_swi
+    .word   unhandled_swi
+    .word   unhandled_swi
+    .word   unhandled_swi
+    .word   unhandled_swi
     .word   set_tls
-    .word   Unhandled_SVC
-    .word   Unhandled_SVC
+    .word   unhandled_swi
+    .word   unhandled_swi
 
 /* Set thread area.
  */
@@ -313,57 +317,56 @@ __aeabi_read_tp:
     bx      lr
 
 // Unhandled system calls.
-Unhandled_SVC:
+unhandled_swi:
     stmfd   sp!, {r12, lr}
-    ldr     r12, SVC_TablePtr   // Get the system call table.
+    ldr     r12, swi_table_p    // Get the system call table.
     ldr     r12, [r12, #-4]     // Have entries been made?
     cmp     r12, #0
     beq     1f                  // If not, too soon for printf.
     push    {r2-r5}             // Push extra arguments.
     mov     r3, r1
     mov     r2, r0
-    ldr     r1, SysCallPtr      // And the system call number.
+    ldr     r1, syscall_p       // And the system call number.
     ldr     r1, [r1]
-    ldr     r0, stringPtr       // Get the format string.
+    ldr     r0, string_p        // Get the format string.
     bl      printf
     add     sp, #16             // clean up the stack.
 1:
     mov     r0, #-ENOSYS       
     ldmfd   sp!, {r12, pc}
 
-stringPtr:
+string_p:
     .word   string
 
 // Set a system call entry.
 // r0 = the entry number.
 // r1 - the handling function.
-
     .global     __set_syscall
 __set_syscall:
     cmp     r0, #512
-    ldrlo   r2, SVC_TablePtr    // Get the system call table.
+    ldrlo   r2, swi_table_p     // Get the system call table.
     strlo   r2, [r2, #-4]       // Set the called flag to non-zero.     
     strlo   r1, [r2, r0, lsl #2]  // Set the stystem call entry.
     movhs   r0, #-1
     movlo   r0, #0
     bx      lr
 
-SVC_TablePtr:
-    .word   SVC_Table
+swi_table_p:
+    .word   swi_table
 
     .data
     .global __heap_end
 __heap_end:
     .word   0
 
-SysCall:
+syscall:
     .word   0
 
 // Create the system call table with room for 512 entries.
     .word   0                   // != 0 if a system call has been defined.
-SVC_Table:
+swi_table:
     .rep    512
-    .word   Unhandled_SVC
+    .word   unhandled_swi
     .endr
 
 string:
