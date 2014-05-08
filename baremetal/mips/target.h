@@ -6,41 +6,41 @@
 #define INITIAL_PSR RICH
 
 // Saved context register offsets.
-#define CXT_R1  0
-#define CXT_R2  4
-#define CXT_R3  8
-#define CXT_R4  12
-#define CXT_R5  16
-#define CXT_R6  20
-#define CXT_R7  24
-#define CXT_R8  28
-#define CXT_R9  32
-#define CXT_R10 36
-#define CXT_R11 40
-#define CXT_R12 44
-#define CXT_R13 48
-#define CXT_R14 52
-#define CXT_R15 56
-#define CXT_R16 60
-#define CXT_R17 64
-#define CXT_R18 68
-#define CXT_R19 72
-#define CXT_R20 76
-#define CXT_R21 80
-#define CXT_R22 84
-#define CXT_R23 88
-#define CXT_R24 92
-#define CXT_R25 96
-#define CXT_GP  100
-#define CXT_SP  104
-#define CXT_FP  108
-#define CXT_RA  112
-#define CXT_LO  116
-#define CXT_HI  120
-#define CXT_CP0_STATUS 124
-#define CXT_PC  128
+#define CTX_R1  0
+#define CTX_R2  4
+#define CTX_R3  8
+#define CTX_R4  12
+#define CTX_R5  16
+#define CTX_R6  20
+#define CTX_R7  24
+#define CTX_R8  28
+#define CTX_R9  32
+#define CTX_R10 36
+#define CTX_R11 40
+#define CTX_R12 44
+#define CTX_R13 48
+#define CTX_R14 52
+#define CTX_R15 56
+#define CTX_R16 60
+#define CTX_R17 64
+#define CTX_R18 68
+#define CTX_R19 72
+#define CTX_R20 76
+#define CTX_R21 80
+#define CTX_R22 84
+#define CTX_R23 88
+#define CTX_R24 92
+#define CTX_R25 96
+#define CTX_GP  100
+#define CTX_SP  104
+#define CTX_FP  108
+#define CTX_RA  112
+#define CTX_LO  116
+#define CTX_HI  120
+#define CTX_CP0_STATUS 124
+#define CTX_PC  128
 
-#define CTX_SIZE 123            // Size of the saved context.
+#define CTX_SIZE 132            // Size of the saved context.
 
 #if !defined(__ASSEMBLER__)
 

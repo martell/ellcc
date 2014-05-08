@@ -243,7 +243,7 @@ swi:
     mov     r8, sp              // Save the sp.
     push    { r0, r1 }
     bl      thread_self         // Get the current context.
-    str     r8, [r0]            // Save context pointer for clone().
+    str     r8, [r0]            // Save sp for clone().
     pop     { r0, r1 }
     
     // In a system call.
