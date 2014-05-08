@@ -1,7 +1,7 @@
 /** Generic ARM specific definitions.
  */
-#ifndef _arm_h_
-#define _arm_h_
+#ifndef _target_h_
+#define _target_h_
 
 #define Mode_USR    0x10
 #define Mode_FIQ    0x11
@@ -22,27 +22,73 @@
 
 typedef struct context
 {
-    uint32_t r0;
-    uint32_t r1;
-    uint32_t r2;
-    uint32_t r3;
-    uint32_t r4;
-    uint32_t r5;
-    uint32_t r6;
-    uint32_t r7;
-    uint32_t r8;
-    uint32_t r9;
-    uint32_t r10;
-    uint32_t r11;
-    uint32_t r12;
-    uint32_t lr;
-    uint32_t pc;
+    union {
+        uint32_t r0;
+        uint32_t a1;
+    };
+    union {
+        uint32_t r1;
+        uint32_t a2;
+    };
+    union {
+        uint32_t r2;
+        uint32_t a3;
+    };
+    union {
+        uint32_t r3;
+        uint32_t a4;
+    };
+    union {
+        uint32_t r4;
+        uint32_t v1;
+    };
+    union {
+        uint32_t r5;
+        uint32_t v2;
+    };
+    union {
+        uint32_t r6;
+        uint32_t v3;
+    };
+    union {
+        uint32_t r7;
+        uint32_t v4;
+    };
+    union {
+        uint32_t r8;
+        uint32_t v5;
+    };
+    union {
+        uint32_t r9;
+        uint32_t v6;
+    };
+    union {
+        uint32_t r10;
+        uint32_t v7;
+    };
+    union {
+        uint32_t r11;
+        uint32_t v8;
+    };
+    union {
+        uint32_t r12;
+        uint32_t ip;
+    };
+    // r13 is sp. Not saved here.
+    union {
+        uint32_t r14;
+        uint32_t lr;
+    };
+    union {
+        uint32_t r15;
+        uint32_t pc;
+    };
     uint32_t cpsr;
 } Context;
 
 static inline void context_set_return(Context *cp, int value)
 {
-    cp->r0 = value;
+    cp->a1 = value;
 }
 
 static inline uint32_t __update_cpsr(uint32_t clear, uint32_t eor) __attribute__((__unused__));
@@ -86,4 +132,4 @@ static inline void splx(int s)
 }
 #endif // !defined(__ASSEMBLER__)
 
-#endif // _arm_h_
+#endif // _target_h_

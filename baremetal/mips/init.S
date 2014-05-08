@@ -6,11 +6,13 @@ _start:
     jr      $k0
     nop
 
-// The exception vector
+/** The exception handler.
+ * This has to be small. It is limited to 128 bytes.
+ */
     . = _start + 0x180
 exception:
     .set    mips3
-    mfc0    $k0, $14            // Get address of trapping instruction.
+    mfc0    $k0, $14            // Get address of traping instruction.
     addi    $k0, $k0, 4         // Point to the next instruction.
     mtc0    $k0, $14            // Put the new address back.
     eret                        // And return from the exception.
@@ -18,8 +20,10 @@ exception:
 _start_end:
 
 // Define the system stack size.
-#define Stack_Size      4096
+#define Stack_Size 4096
 
+/** The reset entry point.
+ */
 start:
     move    $fp, $zero
     la      $sp, __mem_top
