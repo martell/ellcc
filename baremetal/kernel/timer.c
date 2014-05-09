@@ -437,6 +437,62 @@ static int dateCommand(int argc, char **argv)
     return COMMAND_OK;
 }
 
+/* Time a command.
+ */
+static int timeCommand(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("time the specified command with arguments.\n");
+        return COMMAND_OK;
+    }
+
+    if (argc < 2) {
+        printf("no command specified\n");
+        return COMMAND_ERROR;
+    }
+
+    long long t = timer_get_monotonic();
+    int s = run_command(argc - 1, argv + 1);
+    t = timer_get_monotonic() - t;
+    printf("elapsed time: %ld.%09ld sec\n", (long)(t / 1000000000), (long)(t % 1000000000));
+    return s;
+}
+
+/* Sleep for a time period.
+ */
+static int sleepCommand(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("sleep for a time period.\n");
+        return COMMAND_OK;
+    }
+
+    if (argc < 2) {
+        printf("no period specified\n");
+        return COMMAND_ERROR;
+    }
+
+    long sec = 0;
+    long nsec = 0;
+    char *p = strchr(argv[1], '.');
+    if (p) {
+        // Have a decimal point.
+        // (Remember, no floating point in the kernel for now.)
+        char *end;
+        nsec = strtol(p + 1, &end, 10);
+        int digits = end - (p + 1) - 1;
+        if (digits > 8) digits = 8;
+        static const int powers[9] = { 100000000, 10000000, 1000000, 100000, 10000, 1000, 100, 10, 1 };
+        nsec *= powers[digits];
+        *p = '\0';
+    }
+    sec = strtol(argv[1], NULL, 10);
+
+    struct timespec ts = { sec, nsec };
+    nanosleep(&ts, NULL);
+    return COMMAND_ERROR;
+}
+
 static void init(void)
     __attribute__((__constructor__, __used__));
 
@@ -454,4 +510,6 @@ static void init(void)
     __set_syscall(SYS_gettimeofday, sys_gettimeofday);
 
     command_insert("date", dateCommand);
+    command_insert("time", timeCommand);
+    command_insert("sleep", sleepCommand);
 }

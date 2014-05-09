@@ -10,6 +10,10 @@ enum { COMMAND_OK, COMMAND_ERROR };             // Callback return values.
  */
 void command_insert(const  char *name, CommandFn fn);
 
+/** Find and run a command.
+ */
+int run_command(int argc, char **argv);
+
 /** The kernel command handling loop.
  * This never returns.
  */

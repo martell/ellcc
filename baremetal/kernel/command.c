@@ -7,7 +7,6 @@
 #include <time.h>
 #include "kernel.h"
 #include "command.h"
-#include "timer.h"
 
 #define MAXLINE 1024        // The maximum command line length.
 #define MAXCOMMANDS 128     // The maximum number of commands supported.
@@ -167,6 +166,21 @@ static int parse_args(const char *string, char ***av)
     return count;
 }
 
+/** Find and run a command.
+ */
+int run_command(int argc, char **argv)
+{
+    for (int i = 0; i < commands; ++i) {
+        if (strcmp(argv[0], command_table[i].name) == 0) {
+            int s = command_table[i].fn(argc, argv);
+            return s;
+        }
+    }
+
+    printf("unrecognized command: %s\n", argv[0]);
+    return COMMAND_ERROR;
+}
+
 static int do_command(const char *string)
 {
     char **argv;
@@ -174,16 +188,12 @@ static int do_command(const char *string)
     if (argc <= 0) {
         return COMMAND_OK;
     }
-
-    for (int i = 0; i < commands; ++i) {
-        if (strcmp(argv[0], command_table[i].name) == 0) {
-            int s = command_table[i].fn(argc, argv);
-            free_args(argv);
-            return s;
-        }
+    int s = run_command(argc, argv);
+    if (s == COMMAND_OK) {
+        free_args(argv);
+        return s;
     }
 
-    printf("unrecognized command: %s\n", argv[0]);
     free_args(argv);
     return COMMAND_ERROR;
 }
@@ -236,69 +246,6 @@ static int helpCommand(int argc, char **argv)
     return COMMAND_OK;
 }
 
-/* Time a command.
- */
-static int timeCommand(int argc, char **argv)
-{
-    if (argc <= 0) {
-        printf("time the specified command with arguments.\n");
-        return COMMAND_OK;
-    }
-
-    if (argc < 2) {
-        printf("no command specified\n");
-        return COMMAND_ERROR;
-    }
-
-    for (int i = 0; i < commands; ++i) {
-        if (strcmp(argv[1], command_table[i].name) == 0) {
-            long long t = timer_get_monotonic();
-            int s = command_table[i].fn(argc - 1, argv + 1);
-            t = timer_get_monotonic() - t;
-            printf("elapsed time: %ld.%09ld sec\n", (long)(t / 1000000000), (long)(t % 1000000000));
-            return s;
-        }
-    }
-
-    printf("%s is not a recognized command\n", argv[1]);
-    return COMMAND_ERROR;
-}
-
-/* Sleep for a time period.
- */
-static int sleepCommand(int argc, char **argv)
-{
-    if (argc <= 0) {
-        printf("sleep for a time period.\n");
-        return COMMAND_OK;
-    }
-
-    if (argc < 2) {
-        printf("no period specified\n");
-        return COMMAND_ERROR;
-    }
-
-    long sec = 0;
-    long nsec = 0;
-    char *p = strchr(argv[1], '.');
-    if (p) {
-        // Have a decimal point.
-        // (Remember, no floating point in the kernel for now.)
-        char *end;
-        nsec = strtol(p + 1, &end, 10);
-        int digits = end - (p + 1) - 1;
-        if (digits > 8) digits = 8;
-        static const int powers[9] = { 100000000, 10000000, 1000000, 100000, 10000, 1000, 100, 10, 1 };
-        nsec *= powers[digits];
-        *p = '\0';
-    }
-    sec = strtol(argv[1], NULL, 10);
-
-    struct timespec ts = { sec, nsec };
-    nanosleep(&ts, NULL);
-    return COMMAND_ERROR;
-}
-
 /* Initialize the command processor.
  */
 static void init(void)
@@ -308,6 +255,4 @@ static void init(void)
 {
     // The help command is the first in the table.
     command_table[0] = (Command){ "help", helpCommand };
-    command_insert("time", timeCommand);
-    command_insert("sleep", sleepCommand);
 }

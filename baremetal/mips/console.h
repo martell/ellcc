@@ -1,27 +1,48 @@
-/** Console definitions specific to the ARM Pl011 UART.
- */
 #ifndef _console_h_
 #define _console_h_
 
-#include "arm_pl011.h"
 #include "irq.h"
+
+#define BASE_ADDRESS 0xB8000000
+#define UART0_BASE (BASE_ADDRESS + 0x3f8)
+#define UART_REG(n) ((volatile char *)((UART0_BASE) + ((n))))
+#define RXTX    UART_REG(0)
+#define INTEN   UART_REG(1)
+#define IIFIFO  UART_REG(2)
+#define LCRTL   UART_REG(3)
+#define MCRTL   UART_REG(4)
+#define LSTAT   UART_REG(5)
+#define MSTAT   UART_REG(6)
+#define SCRATCH UART_REG(7)
+
+#if 0
+static void init() {
+    *INTEN  = 0x00;             // Disable interrupts.
+    *LCRTL  = 0x80;             // Set DLAB on.
+    *RXTX   = 0x03;             // Set baud rate.
+    *INTEN  = 0x00;
+    *LCRTL  = 0x03;
+    *IIFIFO = 0xc7;
+    *MCRTL  = 0x0b;
+}
+#endif
 
 /** Send a character to the serial port.
  */
 static void console_send_char(int ch)
 {
-    while (*UARTFR & TXFF)
-        continue;           // Wait while TX FIFO is full.
-    *UARTDR = ch;
+    while ((*LSTAT & 0x20) == 0)
+        continue;           // Wait while TX FIFO is not empty.
+    *RXTX = ch;
 }
 
 /** Get a character from the serial port.
  */
 static int console_get_char(void)
 {
-    while (*UARTFR & RXFE)
+    while ((*LSTAT & 0x01) == 0)
         continue;           // Wait while RX FIFO is empty.
-    return *UARTDR;
+    return *RXTX;
 }
 
 #ifndef SIMPLE_CONSOLE

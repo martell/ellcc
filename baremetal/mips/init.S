@@ -1,3 +1,4 @@
+#include <bits/errno.h>
 #include "target.h"
 
     .section .text
@@ -105,12 +106,16 @@ exception:
     sw      $ra, CTX_RA($sp)
     mfc0    $k0, $12            // Get the CP0 status register.
     sw      $k0, CTX_CP0_STATUS($sp)
+    nop
     mfhi    $k0
     sw      $k0, CTX_HI($sp)
+    nop
     mflo    $k0
     sw      $k0, CTX_LO($sp)
+    nop
     mfc0    $k0, $14            // Get address of traping instruction.
     sw      $k0, CTX_PC($sp)
+    nop
     lw      $k0, exception_table($k1)
     nop
     jalr    $k0                 /// Handle the exception.
@@ -148,12 +153,16 @@ exception:
     lw      $fp, CTX_FP($sp)
     lw      $ra, CTX_RA($sp)
     lw      $k0, CTX_CP0_STATUS($sp)
+    nop
     mtc0    $k0, $12            // Get the CP0 status register.
     lw      $k0, CTX_HI($sp)
+    nop
     mthi    $k0
     lw      $k0, CTX_LO($sp)
+    nop
     mtlo    $k0
     lw      $k0, CTX_PC($sp)
+    nop
     mtc0    $k0, $14            // Set the return pc.
     .set    push
     .set    mips3
@@ -162,42 +171,132 @@ exception:
 
 // Unhandled exceptions.
 unhandled_exception:
-    lw      $k0, CTX_PC($sp)
-    addi    $k0, $k0, 4         // Point to the next instruction.
-    sw      $k0, CTX_PC($sp)
+    addi    $sp, $sp, -24
+    sw      $ra, 20($sp)
+    la      $a0, exception_string
+    jal     puts
+    nop
+    lw      $ra, 20($sp)
+    addi    $sp, $sp, 24
     jr      $ra
+    nop
 
 // Unhandled system calls.
 unhandled_swi:
-    b       .
+    addi    $sp, $sp, -24
+    sw      $ra, 20($sp)
+    lw      $a0, swi_table - 4  // Get the call set flag.
+    beqz    $a0, 1f             // Branch if not.
+    la      $a0, swi_string
+    jal     puts
+    nop
+1:
+    lw      $ra, 20($sp)
+    addi    $sp, $sp, 24
+    addi    $v0, $zero, -ENOSYS
+    jr      $ra
+    nop
 
 /** Handle an interrupt exception.
  */
 irq_exception:
     lw      $k0, CTX_PC($sp)
+    nop
     addi    $k0, $k0, 4         // Point to the next instruction.
     sw      $k0, CTX_PC($sp)
+    // RICH: Handle it.
     jr      $ra
+    nop
 
 /** Handle a system call exception.
  * v0 - the system call number.
  */
 swi_exception:
+    lw      $k0, CTX_PC($sp)
+    nop
+    addi    $k0, $k0, 4         // Point to the next instruction.
+    sw      $k0, CTX_PC($sp)
+
     // RICH: Enable interrupts.
-    move    $s0, $k0            // Save the system call.
+
+    move    $s0, $v0            // Save the system call.
     move    $s1, $sp            // Save the current sp.
     move    $s2, $ra            // Save the return address.
     // jal     thread_self         // Get the current context.
     // sw      $s1, ($v0)          // Save sp for clone().
 
 __in_syscall:
+    lw      $a0, CTX_R4($sp)    // Restore the system call arguments.
+    lw      $a1, CTX_R5($sp)
+    lw      $a2, CTX_R6($sp)
+    lw      $a3, CTX_R7($sp)
+    lw      $s3, CTX_SIZE + (4 * 0)($sp)
+    lw      $s4, CTX_SIZE + (4 * 1)($sp)
+    lw      $s5, CTX_SIZE + (4 * 2)($sp)
+    lw      $s6, CTX_SIZE + (4 * 3)($sp)
+    
     addi    $sp, $sp, -4 * 4    // Allocate stack space for four arguments.
-
+    sw      $s4, (4 * 0)($sp)
+    sw      $s5, (4 * 1)($sp)
+    sw      $s6, (4 * 2)($sp)
+    sw      $s7, (4 * 3)($sp)
+    addi    $s4, $s0, -4000     // Subtract the offset.
+    sltiu   $s5, $s4, 512       // Check for the maximum call number.
+    beqz    $s5, invalid
+    la      $s5, swi_table
+    sll     $s4, $s4, 2         // Multiply by 4.
+    add     $s5, $s5, $s4
+    lw      $s5, ($s5)          // Get the function pointer.
+    nop
+    jalr    $s5                 // Call the handler.
+    nop
+back:
     addi    $sp, $sp, 4 * 4     // Deallocate the aguments.
-    lw      $k0, CTX_PC($sp)
-    addi    $k0, $k0, 4         // Point to the next instruction.
-    sw      $k0, CTX_PC($sp)
+    move    $s5, $zero          // No error flag.
+    bgez    $v0, noerror        // Check for an error return
+    slti    $s6, $v0, -4096     // Check for the maximum errno number.
+    bnez    $s6, noerror
+    addi    $s5, $zero, 1       // Error return (errno is -1 .. -4096).
+noerror:
+    sw      $s5, CTX_R7($sp)    // The error flag.
+    sw      $v0, CTX_R2($sp)    // The syscall return values.
+    sw      $v1, CTX_R3($sp)
+
     jr      $s2
+    nop
+
+invalid:
+    jal     unhandled_swi
+    nop
+    b       back
+    nop
+
+// Set a system call entry.
+// a0 = the entry number.
+// a1 - the handling function.
+    .global     __set_syscall
+__set_syscall:
+    addi    $sp, $sp, -8
+    sw      $s0, 4($sp)
+    addi    $a0, $a0, -4000     // Subtract the offset.
+    sltiu   $s0, $a0, 513       // Check for the maximum call number.
+    bnez    $s0, 1f
+    addi    $v0, $zero, -1      // Return -1.
+    lw      $s0, 4($sp)
+    addi    $sp, $sp, 8
+    jr      $ra
+    nop
+
+1:
+    la      $s0, swi_table
+    sll     $a0, $a0, 2         // Multiply by 4.
+    sw      $s0, -4($s0)        // Set the called flag to non-zero.
+    add     $s0, $s0, $a0
+    sw      $a1, ($s0)          // Set the function pointer.
+    lw      $s0, 4($sp)
+    addi    $sp, $sp, 8
+    jr      $ra
+    nop
 
     .data
     .global __heap_end
@@ -226,9 +325,10 @@ swi_table:
     .word   unhandled_swi
     .endr
 
-string:
+exception_string:
+    .asciz "unhandled exception (%d)\n"
+swi_string:
     .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
 name:
     .asciz "kernel"
-
 

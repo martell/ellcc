@@ -5,7 +5,8 @@
 #include <sys/uio.h>            // For writev (used by printf()).
 #include <sys/ioctl.h>
 #include "kernel.h"
-#include "arm_pl011.h"
+
+#define SIMPLE_CONSOLE          // No interrupt support needed.
 #include "console.h"
 
 static int sys_ioctl(int fd, int request, ...)

@@ -1,5 +1,9 @@
-/** The simplest hello world.
+/* A simple bare metal main.
  */
+
+#include <stdio.h>
+#include <command.h>
+#if 0
 #define BASE_ADDRESS 0xB8000000
 #define UART0_BASE (BASE_ADDRESS + 0x3f8)
 #define UART_REG(n) ((volatile char *)((UART0_BASE) + ((n))))
@@ -28,18 +32,34 @@ void send_char(char a)
     *RXTX = a;
 }
 
-static void printf(const char *s)
+int puts(const char *s)
 {
     while(*s != '\0') {
         send_char(*s++);
     }
+    return 0;
 }
+
+#else
+#define SIMPLE_CONSOLE
+#include "console.h"
+static void init_serial() {
+    *INTEN  = 0x00;             // Disable interrupts.
+    *LCRTL  = 0x80;             // Set DLAB on.
+    *RXTX   = 0x03;             // Set baud rate.
+    *INTEN  = 0x00;
+    *LCRTL  = 0x03;
+    *IIFIFO = 0xc7;
+    *MCRTL  = 0x0b;
+}
+#endif
 
 int main(int argc, char **argv)
 {
     init_serial();
 
-    printf(argv[0]);
-    printf(": hello world\n");
-    printf("type control-A x to get out of QEMU\n");
+    puts("type control-A x to get out of QEMU");
+    printf("%s started. Type \"help\" for a list of commands.\n", argv[0]);
+    // Enter the kernel command processor.
+    do_commands(argv[0]);
 }
