@@ -12,21 +12,6 @@
 #include "command.h"
 #include "scheduler.h"
 
-long __syscall_ret(unsigned long r);
-long __syscall(long, ...);
-
-static int syscallCommand(int argc, char **argv)
-{
-    if (argc <= 0) {
-        printf("test the syscall interface with an unhandled system call.\n");
-        return COMMAND_OK;
-    }
-
-    int i = __syscall_ret(__syscall(0, 1, 2, 3, 4, 5, 6));
-    printf("__syscall(0) = %d, %s\n", i, strerror(errno));
-    return COMMAND_OK;
-}
-
 static int yieldCommand(int argc, char **argv)
 {
     if (argc <= 0) {
@@ -311,7 +296,6 @@ static void init(void)
 static void init(void)
 {
     command_insert(NULL, sectionCommand);
-    command_insert("syscall", syscallCommand);
     command_insert("yield", yieldCommand);
     command_insert("thread1", thread1Command);
     command_insert("test1", test1Command);

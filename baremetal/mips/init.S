@@ -182,17 +182,45 @@ unhandled_exception:
     nop
 
 // Unhandled system calls.
+// Four additional arguments are at ($sp)
 unhandled_swi:
-    addi    $sp, $sp, -24
-    sw      $ra, 20($sp)
     lw      $a0, swi_table - 4  // Get the call set flag.
-    beqz    $a0, 1f             // Branch if not.
-    la      $a0, swi_string
-    jal     puts
+    beqz    $a0, 1f             // If not, too soon for printf.
+
+    addi    $sp, $sp, -4 * 8
+    sw      $ra, 28($sp)
+    sw      $s0, 24($sp)
+    // Get the additional arguments.
+    lw      $s0, (4 * 8) + (4 * 0)($sp)
     nop
+    sw      $s0, (4 * 2)($sp)
+    nop
+    lw      $s0, (4 * 8) + (4 * 1)($sp)
+    nop
+    sw      $s0, (4 * 3)($sp)
+    nop
+    lw      $s0, (4 * 8) + (4 * 2)($sp)
+    nop
+    sw      $s0, (4 * 4)($sp)
+    nop
+    lw      $s0, (4 * 8) + (4 * 3)($sp)
+    nop
+    sw      $s0, (4 * 5)($sp)
+    nop
+
+    sw      $a2, (4 * 0)($sp)
+    sw      $a3, (4 * 1)($sp)
+    move    $a3, $a1
+    move    $a2, $a0
+    lw      $a1, syscall
+    la      $a0, swi_string
+    jal     printf
+    nop
+    lw      $s0, 24($sp)
+    lw      $ra, 28($sp)
+    addi    $sp, $sp, 4 * 8
+
 1:
-    lw      $ra, 20($sp)
-    addi    $sp, $sp, 24
     addi    $v0, $zero, -ENOSYS
     jr      $ra
     nop
@@ -240,6 +268,7 @@ __in_syscall:
     sw      $s5, (4 * 1)($sp)
     sw      $s6, (4 * 2)($sp)
     sw      $s7, (4 * 3)($sp)
+    sw      $s0, syscall        // Save call number for error reporting.
     addi    $s4, $s0, -4000     // Subtract the offset.
     sltiu   $s5, $s4, 512       // Check for the maximum call number.
     beqz    $s5, invalid

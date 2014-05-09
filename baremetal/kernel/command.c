@@ -246,6 +246,21 @@ static int helpCommand(int argc, char **argv)
     return COMMAND_OK;
 }
 
+long __syscall_ret(unsigned long r);
+long __syscall(long, ...);
+
+static int syscallCommand(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("test the syscall interface with an unhandled system call.\n");
+        return COMMAND_OK;
+    }
+
+    int i = __syscall_ret(__syscall(0, 1, 2, 3, 4, 5, 6));
+    printf("__syscall(0) = %d, %s\n", i, strerror(errno));
+    return COMMAND_OK;
+}
+
 /* Initialize the command processor.
  */
 static void init(void)
@@ -255,4 +270,5 @@ static void init(void)
 {
     // The help command is the first in the table.
     command_table[0] = (Command){ "help", helpCommand };
+    command_insert("syscall", syscallCommand);
 }

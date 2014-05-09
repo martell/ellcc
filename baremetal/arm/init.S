@@ -320,7 +320,7 @@ __aeabi_read_tp:
 unhandled_swi:
     stmfd   sp!, {r12, lr}
     ldr     r12, swi_table_p    // Get the system call table.
-    ldr     r12, [r12, #-4]     // Have entries been made?
+    ldr     r12, [r12, #-4]     // Get the call set flag.
     cmp     r12, #0
     beq     1f                  // If not, too soon for printf.
     push    {r2-r5}             // Push extra arguments.
