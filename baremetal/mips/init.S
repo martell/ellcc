@@ -60,13 +60,15 @@ start:
     nop
 
 // main()'s pseudo arguments.
+#define AT_PAGESZ 6
 argv:
     .word   name
     .word   0                   // End of argv.
     .word   0                   // End of envp.
-    .rept   32
-    .word   0                   // Auxv
-    .endr
+    // Auxv
+    .word   AT_PAGESZ
+    .word   4096                // Page size.
+    .word   0
 
 /** Handle an exception.
  * k1 contains the exception number * 4.
@@ -184,43 +186,44 @@ unhandled_exception:
 // Unhandled system calls.
 // Four additional arguments are at ($sp)
 unhandled_swi:
-    lw      $a0, swi_table - 4  // Get the call set flag.
-    beqz    $a0, 1f             // If not, too soon for printf.
 
-    addi    $sp, $sp, -4 * 8
-    sw      $ra, 28($sp)
-    sw      $s0, 24($sp)
+#define SAVE (4 * 12)
+    addi    $sp, $sp, -SAVE
+    sw      $ra, (4 * 11)($sp)
+    sw      $s0, (4 * 10)($sp)
     // Get the additional arguments.
-    lw      $s0, (4 * 8) + (4 * 0)($sp)
+    lw      $s0, SAVE + (4 * 4)($sp)
     nop
-    sw      $s0, (4 * 2)($sp)
+    sw      $s0, (4 * 6)($sp)
     nop
-    lw      $s0, (4 * 8) + (4 * 1)($sp)
+    lw      $s0, SAVE + (4 * 5)($sp)
     nop
-    sw      $s0, (4 * 3)($sp)
+    sw      $s0, (4 * 7)($sp)
     nop
-    lw      $s0, (4 * 8) + (4 * 2)($sp)
+    lw      $s0, SAVE + (4 * 6)($sp)
     nop
-    sw      $s0, (4 * 4)($sp)
+    sw      $s0, (4 * 8)($sp)
     nop
-    lw      $s0, (4 * 8) + (4 * 3)($sp)
+    lw      $s0, SAVE + (4 * 7)($sp)
     nop
-    sw      $s0, (4 * 5)($sp)
-    nop
+    sw      $s0, (4 * 9)($sp)
 
-    sw      $a2, (4 * 0)($sp)
-    sw      $a3, (4 * 1)($sp)
+    sw      $a2, (4 * 4)($sp)
+    sw      $a3, (4 * 5)($sp)
     move    $a3, $a1
     move    $a2, $a0
+    lw      $a0, swi_table - 4  // Get the call set flag.
+    nop
+    beqz    $a0, 1f             // If not, too soon for printf.
     lw      $a1, syscall
     la      $a0, swi_string
     jal     printf
     nop
-    lw      $s0, 24($sp)
-    lw      $ra, 28($sp)
-    addi    $sp, $sp, 4 * 8
-
 1:
+    lw      $ra, (4 * 11)($sp)
+    lw      $s0, (4 * 10)($sp)
+    addi    $sp, $sp, SAVE
+
     addi    $v0, $zero, -ENOSYS
     jr      $ra
     nop
@@ -258,16 +261,16 @@ __in_syscall:
     lw      $a1, CTX_R5($sp)
     lw      $a2, CTX_R6($sp)
     lw      $a3, CTX_R7($sp)
-    lw      $s3, CTX_SIZE + (4 * 0)($sp)
-    lw      $s4, CTX_SIZE + (4 * 1)($sp)
-    lw      $s5, CTX_SIZE + (4 * 2)($sp)
-    lw      $s6, CTX_SIZE + (4 * 3)($sp)
+    lw      $s4, CTX_SIZE + (4 * 4)($sp)
+    lw      $s5, CTX_SIZE + (4 * 5)($sp)
+    lw      $s7, CTX_SIZE + (4 * 6)($sp)
+    lw      $s7, CTX_SIZE + (4 * 7)($sp)
     
-    addi    $sp, $sp, -4 * 4    // Allocate stack space for four arguments.
-    sw      $s4, (4 * 0)($sp)
-    sw      $s5, (4 * 1)($sp)
-    sw      $s6, (4 * 2)($sp)
-    sw      $s7, (4 * 3)($sp)
+    addi    $sp, $sp, -4 * 8    // Allocate stack space for four arguments.
+    sw      $s4, (4 * 4)($sp)
+    sw      $s5, (4 * 5)($sp)
+    sw      $s6, (4 * 6)($sp)
+    sw      $s7, (4 * 7)($sp)
     sw      $s0, syscall        // Save call number for error reporting.
     addi    $s4, $s0, -4000     // Subtract the offset.
     sltiu   $s5, $s4, 512       // Check for the maximum call number.
@@ -280,12 +283,13 @@ __in_syscall:
     jalr    $s5                 // Call the handler.
     nop
 back:
-    addi    $sp, $sp, 4 * 4     // Deallocate the aguments.
+    addi    $sp, $sp, 4 * 8     // Deallocate the aguments.
     move    $s5, $zero          // No error flag.
     bgez    $v0, noerror        // Check for an error return
     slti    $s6, $v0, -4096     // Check for the maximum errno number.
     bnez    $s6, noerror
     addi    $s5, $zero, 1       // Error return (errno is -1 .. -4096).
+    sub     $v0, $zero, $v0     // Return errno as a positive number.
 noerror:
     sw      $s5, CTX_R7($sp)    // The error flag.
     sw      $v0, CTX_R2($sp)    // The syscall return values.

@@ -103,9 +103,8 @@ argv:
     .word   name
     .word   0                   // End of argv.
     .word   0                   // End of envp.
-    .rept   32
-    .word   0                   // Auxv
-    .endr
+    // Auxv
+    .word   0
 
 undefined:
     b   .
