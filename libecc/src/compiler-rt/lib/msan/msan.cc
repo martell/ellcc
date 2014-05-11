@@ -133,6 +133,8 @@ static void InitializeFlags(Flags *f, const char *options) {
   cf->external_symbolizer_path = GetEnv("MSAN_SYMBOLIZER_PATH");
   cf->malloc_context_size = 20;
   cf->handle_ioctl = true;
+  // FIXME: test and enable.
+  cf->check_printf = false;
 
   internal_memset(f, 0, sizeof(*f));
   f->poison_heap_with_zeroes = false;
@@ -236,7 +238,8 @@ const char *GetOriginDescrIfStack(u32 id, uptr *pc) {
 }
 
 u32 ChainOrigin(u32 id, StackTrace *stack) {
-  if (GetCurrentThread()->InSignalHandler())
+  MsanThread *t = GetCurrentThread();
+  if (t && t->InSignalHandler())
     return id;
   uptr idx = Min(stack->size, kStackTraceMax - 1);
   stack->trace[idx] = TRACE_MAKE_CHAINED(id);
@@ -412,6 +415,23 @@ sptr __msan_test_shadow(const void *x, uptr size) {
     if (s[i])
       return i;
   return -1;
+}
+
+void __msan_check_mem_is_initialized(const void *x, uptr size) {
+  if (!__msan::flags()->report_umrs) return;
+  sptr offset = __msan_test_shadow(x, size);
+  if (offset < 0)
+    return;
+
+  GET_CALLER_PC_BP_SP;
+  (void)sp;
+  ReportUMRInsideAddressRange(__func__, x, size, offset);
+  __msan::PrintWarningWithOrigin(pc, bp,
+                                 __msan_get_origin(((char *)x) + offset));
+  if (__msan::flags()->halt_on_error) {
+    Printf("Exiting\n");
+    Die();
+  }
 }
 
 int __msan_set_poison_in_malloc(int do_poison) {
