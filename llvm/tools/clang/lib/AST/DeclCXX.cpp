@@ -1011,7 +1011,7 @@ void CXXRecordDecl::getCaptureFields(
 
   LambdaDefinitionData &Lambda = getLambdaData();
   RecordDecl::field_iterator Field = field_begin();
-  for (LambdaExpr::Capture *C = Lambda.Captures, *CEnd = C + Lambda.NumCaptures;
+  for (const LambdaCapture *C = Lambda.Captures, *CEnd = C + Lambda.NumCaptures;
        C != CEnd; ++C, ++Field) {
     if (C->capturesThis())
       ThisCapture = *Field;
@@ -1946,8 +1946,8 @@ NamespaceDecl *NamespaceDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
                                    0, 0);
 }
 
-NamespaceDecl *NamespaceDecl::getNextRedeclaration() {
-  return RedeclLink.getNext();
+NamespaceDecl *NamespaceDecl::getNextRedeclarationImpl() {
+  return getNextRedeclaration();
 }
 NamespaceDecl *NamespaceDecl::getPreviousDeclImpl() {
   return getPreviousDecl();

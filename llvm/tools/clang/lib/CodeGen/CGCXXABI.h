@@ -19,23 +19,23 @@
 #include "clang/Basic/LLVM.h"
 
 namespace llvm {
-  class Constant;
-  class Type;
-  class Value;
+class Constant;
+class Type;
+class Value;
 }
 
 namespace clang {
-  class CastExpr;
-  class CXXConstructorDecl;
-  class CXXDestructorDecl;
-  class CXXMethodDecl;
-  class CXXRecordDecl;
-  class FieldDecl;
-  class MangleContext;
+class CastExpr;
+class CXXConstructorDecl;
+class CXXDestructorDecl;
+class CXXMethodDecl;
+class CXXRecordDecl;
+class FieldDecl;
+class MangleContext;
 
 namespace CodeGen {
-  class CodeGenFunction;
-  class CodeGenModule;
+class CodeGenFunction;
+class CodeGenModule;
 
 /// \brief Implements C++ ABI-specific code generation functions.
 class CGCXXABI {
@@ -113,6 +113,10 @@ public:
 
   /// Returns how an argument of the given record type should be passed.
   virtual RecordArgABI getRecordArgABI(const CXXRecordDecl *RD) const = 0;
+
+  /// Returns true if the implicit 'sret' parameter comes after the implicit
+  /// 'this' parameter of C++ instance methods.
+  virtual bool isSRetParameterAfterThis() const { return false; }
 
   /// Find the LLVM type used to represent the given member pointer
   /// type.

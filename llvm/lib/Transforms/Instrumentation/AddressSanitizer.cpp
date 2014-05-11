@@ -846,8 +846,29 @@ void AddressSanitizer::instrumentAddress(Instruction *OrigIns,
 
 void AddressSanitizerModule::createInitializerPoisonCalls(
     Module &M, GlobalValue *ModuleName) {
-  // We do all of our poisoning and unpoisoning within _GLOBAL__I_a.
-  Function *GlobalInit = M.getFunction("_GLOBAL__I_a");
+  // We do all of our poisoning and unpoisoning within a global constructor.
+  // These are called _GLOBAL__(sub_)?I_.*.
+  // TODO: Consider looking through the functions in
+  // M.getGlobalVariable("llvm.global_ctors") instead of using this stringly
+  // typed approach.
+  Function *GlobalInit = nullptr;
+  for (auto &F : M.getFunctionList()) {
+    StringRef FName = F.getName();
+
+    const char kGlobalPrefix[] = "_GLOBAL__";
+    if (!FName.startswith(kGlobalPrefix))
+      continue;
+    FName = FName.substr(strlen(kGlobalPrefix));
+
+    const char kOptionalSub[] = "sub_";
+    if (FName.startswith(kOptionalSub))
+      FName = FName.substr(strlen(kOptionalSub));
+
+    if (FName.startswith("I_")) {
+      GlobalInit = &F;
+      break;
+    }
+  }
   // If that function is not present, this TU contains no globals, or they have
   // all been optimized away
   if (!GlobalInit)
@@ -862,7 +883,7 @@ void AddressSanitizerModule::createInitializerPoisonCalls(
 
   // Add calls to unpoison all globals before each return instruction.
   for (Function::iterator I = GlobalInit->begin(), E = GlobalInit->end();
-      I != E; ++I) {
+       I != E; ++I) {
     if (ReturnInst *RI = dyn_cast<ReturnInst>(I->getTerminator())) {
       CallInst::Create(AsanUnpoisonGlobals, "", RI);
     }
@@ -906,8 +927,8 @@ bool AddressSanitizerModule::ShouldInstrumentGlobal(GlobalVariable *G) {
     // Ignore the globals from the __OBJC section. The ObjC runtime assumes
     // those conform to /usr/lib/objc/runtime.h, so we can't add redzones to
     // them.
-    if ((Section.find("__OBJC,") == 0) ||
-        (Section.find("__DATA, __objc_") == 0)) {
+    if (Section.startswith("__OBJC,") ||
+        Section.startswith("__DATA, __objc_")) {
       DEBUG(dbgs() << "Ignoring ObjC runtime global: " << *G << "\n");
       return false;
     }
@@ -919,16 +940,26 @@ bool AddressSanitizerModule::ShouldInstrumentGlobal(GlobalVariable *G) {
     //     is placed into __DATA,__cfstring
     // Therefore there's no point in placing redzones into __DATA,__cfstring.
     // Moreover, it causes the linker to crash on OS X 10.7
-    if (Section.find("__DATA,__cfstring") == 0) {
+    if (Section.startswith("__DATA,__cfstring")) {
       DEBUG(dbgs() << "Ignoring CFString: " << *G << "\n");
       return false;
     }
     // The linker merges the contents of cstring_literals and removes the
     // trailing zeroes.
-    if (Section.find("__TEXT,__cstring,cstring_literals") == 0) {
+    if (Section.startswith("__TEXT,__cstring,cstring_literals")) {
       DEBUG(dbgs() << "Ignoring a cstring literal: " << *G << "\n");
       return false;
     }
+
+    // Callbacks put into the CRT initializer/terminator sections
+    // should not be instrumented.
+    // See https://code.google.com/p/address-sanitizer/issues/detail?id=305
+    // and http://msdn.microsoft.com/en-US/en-en/library/bb918180(v=vs.120).aspx
+    if (Section.startswith(".CRT")) {
+      DEBUG(dbgs() << "Ignoring a global initializer callback: " << *G << "\n");
+      return false;
+    }
+
     // Globals from llvm.metadata aren't emitted, do not instrument them.
     if (Section == "llvm.metadata") return false;
   }

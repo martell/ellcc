@@ -539,6 +539,50 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
       MIB.addOperand(MI->getOperand(i));
 
     MI->eraseFromParent();
+    break;
+  }
+  case AMDGPU::FABS_SI: {
+    MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
+    const SIInstrInfo *TII =
+      static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+    unsigned Reg = MRI.createVirtualRegister(&AMDGPU::VReg_32RegClass);
+    BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::V_MOV_B32_e32),
+            Reg)
+            .addImm(0x7fffffff);
+    BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::V_AND_B32_e32),
+            MI->getOperand(0).getReg())
+            .addReg(MI->getOperand(1).getReg())
+            .addReg(Reg);
+    MI->eraseFromParent();
+    break;
+  }
+  case AMDGPU::FNEG_SI: {
+    MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
+    const SIInstrInfo *TII =
+      static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+    unsigned Reg = MRI.createVirtualRegister(&AMDGPU::VReg_32RegClass);
+    BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::V_MOV_B32_e32),
+            Reg)
+            .addImm(0x80000000);
+    BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::V_XOR_B32_e32),
+            MI->getOperand(0).getReg())
+            .addReg(MI->getOperand(1).getReg())
+            .addReg(Reg);
+    MI->eraseFromParent();
+    break;
+  }
+  case AMDGPU::FCLAMP_SI: {
+    const SIInstrInfo *TII =
+      static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+    BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::V_ADD_F32_e64),
+            MI->getOperand(0).getReg())
+            .addImm(0) // SRC0 modifiers
+            .addOperand(MI->getOperand(1))
+            .addImm(0) // SRC1 modifiers
+            .addImm(0) // SRC1
+            .addImm(1) // CLAMP
+            .addImm(0); // OMOD
+    MI->eraseFromParent();
   }
   }
   return BB;
@@ -901,12 +945,6 @@ SDValue SITargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const {
   SDValue CC = Op.getOperand(4);
   EVT VT = Op.getValueType();
   SDLoc DL(Op);
-
-  // Possible Min/Max pattern
-  SDValue MinMax = LowerMinMax(Op, DAG);
-  if (MinMax.getNode()) {
-    return MinMax;
-  }
 
   SDValue Cond = DAG.getNode(ISD::SETCC, DL, MVT::i1, LHS, RHS, CC);
   return DAG.getNode(ISD::SELECT, DL, VT, Cond, True, False);
@@ -1285,9 +1323,9 @@ SDNode *SITargetLowering::foldOperands(MachineSDNode *Node,
   // e64 version if available, -1 otherwise
   int OpcodeE64 = AMDGPU::getVOPe64(Opcode);
   const MCInstrDesc *DescE64 = OpcodeE64 == -1 ? nullptr : &TII->get(OpcodeE64);
+  int InputModifiers[3] = {0};
 
   assert(!DescE64 || DescE64->getNumDefs() == NumDefs);
-  assert(!DescE64 || DescE64->getNumOperands() == (NumOps + 4));
 
   int32_t Immediate = Desc->getSize() == 4 ? 0 : -1;
   bool HaveVSrc = false, HaveSSrc = false;
@@ -1362,7 +1400,10 @@ SDNode *SITargetLowering::foldOperands(MachineSDNode *Node,
       }
     }
 
-    if (DescE64 && !Immediate) {
+    if (Immediate)
+      continue;
+
+    if (DescE64) {
 
       // Test if it makes sense to switch to e64 encoding
       unsigned OtherRegClass = DescE64->OpInfo[Op].RegClass;
@@ -1381,11 +1422,43 @@ SDNode *SITargetLowering::foldOperands(MachineSDNode *Node,
         DescE64 = nullptr;
       }
     }
+
+    if (!DescE64 && !Promote2e64)
+      continue;
+    if (!Operand.isMachineOpcode())
+      continue;
+    if (Operand.getMachineOpcode() == AMDGPU::FNEG_SI) {
+      Ops.pop_back();
+      Ops.push_back(Operand.getOperand(0));
+      InputModifiers[i] = 1;
+      Promote2e64 = true;
+      if (!DescE64)
+        continue;
+      Desc = DescE64;
+      DescE64 = 0;
+    }
+    else if (Operand.getMachineOpcode() == AMDGPU::FABS_SI) {
+      Ops.pop_back();
+      Ops.push_back(Operand.getOperand(0));
+      InputModifiers[i] = 2;
+      Promote2e64 = true;
+      if (!DescE64)
+        continue;
+      Desc = DescE64;
+      DescE64 = 0;
+    }
   }
 
   if (Promote2e64) {
+    std::vector<SDValue> OldOps(Ops);
+    Ops.clear();
+    for (unsigned i = 0; i < OldOps.size(); ++i) {
+      // src_modifier
+      Ops.push_back(DAG.getTargetConstant(InputModifiers[i], MVT::i32));
+      Ops.push_back(OldOps[i]);
+    }
     // Add the modifier flags while promoting
-    for (unsigned i = 0; i < 4; ++i)
+    for (unsigned i = 0; i < 2; ++i)
       Ops.push_back(DAG.getTargetConstant(0, MVT::i32));
   }
 

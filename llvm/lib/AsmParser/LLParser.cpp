@@ -622,6 +622,11 @@ bool LLParser::ParseStandaloneMetadata() {
   return false;
 }
 
+static bool isValidVisibilityForLinkage(unsigned V, unsigned L) {
+  return !GlobalValue::isLocalLinkage((GlobalValue::LinkageTypes)L) ||
+         (GlobalValue::VisibilityTypes)V == GlobalValue::DefaultVisibility;
+}
+
 /// ParseAlias:
 ///   ::= GlobalVar '=' OptionalVisibility OptionalDLLStorageClass 'alias'
 ///                     OptionalLinkage Aliasee
@@ -646,6 +651,10 @@ bool LLParser::ParseAlias(const std::string &Name, LocTy NameLoc,
   if(!GlobalAlias::isValidLinkage(Linkage))
     return Error(LinkageLoc, "invalid linkage type for alias");
 
+  if (!isValidVisibilityForLinkage(Visibility, L))
+    return Error(LinkageLoc,
+                 "symbol with local linkage must have default visibility");
+
   Constant *Aliasee;
   LocTy AliaseeLoc = Lex.getLoc();
   if (Lex.getKind() != lltok::kw_bitcast &&
@@ -664,9 +673,8 @@ bool LLParser::ParseAlias(const std::string &Name, LocTy NameLoc,
     return Error(AliaseeLoc, "alias must have pointer type");
 
   // Okay, create the alias but do not insert it into the module yet.
-  GlobalAlias* GA = new GlobalAlias(Aliasee->getType(),
-                                    (GlobalValue::LinkageTypes)Linkage, Name,
-                                    Aliasee);
+  std::unique_ptr<GlobalAlias> GA(new GlobalAlias(
+      Aliasee->getType(), (GlobalValue::LinkageTypes)Linkage, Name, Aliasee));
   GA->setVisibility((GlobalValue::VisibilityTypes)Visibility);
   GA->setDLLStorageClass((GlobalValue::DLLStorageClassTypes)DLLStorageClass);
 
@@ -688,14 +696,17 @@ bool LLParser::ParseAlias(const std::string &Name, LocTy NameLoc,
 
     // If they agree, just RAUW the old value with the alias and remove the
     // forward ref info.
-    Val->replaceAllUsesWith(GA);
+    Val->replaceAllUsesWith(GA.get());
     Val->eraseFromParent();
     ForwardRefVals.erase(I);
   }
 
   // Insert into the module, we know its name won't collide now.
-  M->getAliasList().push_back(GA);
+  M->getAliasList().push_back(GA.get());
   assert(GA->getName() == Name && "Should not be a name conflict!");
+
+  // The module owns this now
+  GA.release();
 
   return false;
 }
@@ -714,6 +725,10 @@ bool LLParser::ParseAlias(const std::string &Name, LocTy NameLoc,
 bool LLParser::ParseGlobal(const std::string &Name, LocTy NameLoc,
                            unsigned Linkage, bool HasLinkage,
                            unsigned Visibility, unsigned DLLStorageClass) {
+  if (!isValidVisibilityForLinkage(Visibility, Linkage))
+    return Error(NameLoc,
+                 "symbol with local linkage must have default visibility");
+
   unsigned AddrSpace;
   bool IsConstant, UnnamedAddr, IsExternallyInitialized;
   GlobalVariable::ThreadLocalMode TLM;
@@ -1366,7 +1381,6 @@ bool LLParser::ParseOptionalDLLStorageClass(unsigned &Res) {
 ///   ::= 'x86_stdcallcc'
 ///   ::= 'x86_fastcallcc'
 ///   ::= 'x86_thiscallcc'
-///   ::= 'x86_cdeclmethodcc'
 ///   ::= 'arm_apcscc'
 ///   ::= 'arm_aapcscc'
 ///   ::= 'arm_aapcs_vfpcc'
@@ -1392,7 +1406,6 @@ bool LLParser::ParseOptionalCallingConv(CallingConv::ID &CC) {
   case lltok::kw_x86_stdcallcc:  CC = CallingConv::X86_StdCall; break;
   case lltok::kw_x86_fastcallcc: CC = CallingConv::X86_FastCall; break;
   case lltok::kw_x86_thiscallcc: CC = CallingConv::X86_ThisCall; break;
-  case lltok::kw_x86_cdeclmethodcc:CC = CallingConv::X86_CDeclMethod; break;
   case lltok::kw_arm_apcscc:     CC = CallingConv::ARM_APCS; break;
   case lltok::kw_arm_aapcscc:    CC = CallingConv::ARM_AAPCS; break;
   case lltok::kw_arm_aapcs_vfpcc:CC = CallingConv::ARM_AAPCS_VFP; break;
@@ -3013,6 +3026,10 @@ bool LLParser::ParseFunctionHeader(Function *&Fn, bool isDefine) {
   case GlobalValue::CommonLinkage:
     return Error(LinkageLoc, "invalid function linkage type");
   }
+
+  if (!isValidVisibilityForLinkage(Visibility, Linkage))
+    return Error(LinkageLoc,
+                 "symbol with local linkage must have default visibility");
 
   if (!FunctionType::isValidReturnType(RetType))
     return Error(RetTypeLoc, "invalid function return type");

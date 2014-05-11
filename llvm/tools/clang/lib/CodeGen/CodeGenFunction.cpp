@@ -15,6 +15,7 @@
 #include "CGCUDARuntime.h"
 #include "CGCXXABI.h"
 #include "CGDebugInfo.h"
+#include "CGOpenMPRuntime.h"
 #include "CodeGenModule.h"
 #include "CodeGenPGO.h"
 #include "TargetInfo.h"
@@ -72,6 +73,10 @@ CodeGenFunction::~CodeGenFunction() {
   // something.
   if (FirstBlockInfo)
     destroyBlockInfos(FirstBlockInfo);
+
+  if (getLangOpts().OpenMP) {
+    CGM.getOpenMPRuntime().FunctionFinished(*this);
+  }
 }
 
 
@@ -617,7 +622,10 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
              !hasScalarEvaluationKind(CurFnInfo->getReturnType())) {
     // Indirect aggregate return; emit returned value directly into sret slot.
     // This reduces code size, and affects correctness in C++.
-    ReturnValue = CurFn->arg_begin();
+    auto AI = CurFn->arg_begin();
+    if (CurFnInfo->getReturnInfo().isSRetAfterThis())
+      ++AI;
+    ReturnValue = AI;
   } else if (CurFnInfo->getReturnInfo().getKind() == ABIArgInfo::InAlloca &&
              !hasScalarEvaluationKind(CurFnInfo->getReturnType())) {
     // Load the sret pointer from the argument struct and return into that.

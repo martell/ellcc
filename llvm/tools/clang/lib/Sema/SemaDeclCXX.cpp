@@ -4413,7 +4413,8 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
   // Warn if the class has virtual methods but non-virtual public destructor.
   if (Record->isPolymorphic() && !Record->isDependentType()) {
     CXXDestructorDecl *dtor = Record->getDestructor();
-    if (!dtor || (!dtor->isVirtual() && dtor->getAccess() == AS_public))
+    if ((!dtor || (!dtor->isVirtual() && dtor->getAccess() == AS_public)) &&
+        !Record->hasAttr<FinalAttr>())
       Diag(dtor ? dtor->getLocation() : Record->getLocation(),
            diag::warn_non_virtual_dtor) << Context.getRecordType(Record);
   }
@@ -6251,13 +6252,6 @@ bool Sema::CheckDestructor(CXXDestructorDecl *Destructor) {
   return false;
 }
 
-static inline bool
-FTIHasSingleVoidArgument(DeclaratorChunk::FunctionTypeInfo &FTI) {
-  return (FTI.NumParams == 1 && !FTI.isVariadic && FTI.Params[0].Ident == 0 &&
-          FTI.Params[0].Param &&
-          cast<ParmVarDecl>(FTI.Params[0].Param)->getType()->isVoidType());
-}
-
 /// CheckDestructorDeclarator - Called by ActOnDeclarator to check
 /// the well-formednes of the destructor declarator @p D with type @p
 /// R. If there are any errors in the declarator, this routine will
@@ -6336,7 +6330,7 @@ QualType Sema::CheckDestructorDeclarator(Declarator &D, QualType R,
   }
   
   // Make sure we don't have any parameters.
-  if (FTI.NumParams > 0 && !FTIHasSingleVoidArgument(FTI)) {
+  if (FTIHasNonVoidParameters(FTI)) {
     Diag(D.getIdentifierLoc(), diag::err_destructor_with_params);
 
     // Delete the parameters.
@@ -11390,9 +11384,10 @@ FriendDecl *Sema::CheckFriendTypeDecl(SourceLocation LocStart,
       // a tag in front.
       if (const RecordType *RT = T->getAs<RecordType>()) {
         RecordDecl *RD = RT->getDecl();
-      
-        std::string InsertionText = std::string(" ") + RD->getKindName();
-      
+
+        SmallString<16> InsertionText(" ");
+        InsertionText += RD->getKindName();
+
         Diag(TypeRange.getBegin(),
              getLangOpts().CPlusPlus11 ?
                diag::warn_cxx98_compat_unelaborated_friend_type :

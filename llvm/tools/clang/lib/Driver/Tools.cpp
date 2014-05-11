@@ -1077,8 +1077,14 @@ static void getMIPSTargetFeatures(const Driver &D, const ArgList &Args,
   }
 
   if (Arg *A = Args.getLastArg(options::OPT_mnan_EQ)) {
-    if (StringRef(A->getValue()) == "2008")
+    StringRef Val = StringRef(A->getValue());
+    if (Val == "2008")
       Features.push_back("+nan2008");
+    else if (Val == "legacy")
+      Features.push_back("-nan2008");
+    else
+      D.Diag(diag::err_drv_unsupported_option_argument)
+          << A->getOption().getName() << Val;
   }
 
   AddTargetFeature(Args, Features, options::OPT_msingle_float,
@@ -1713,7 +1719,8 @@ namespace {
   };
 } // end anonymous namespace.
 
-// exceptionSettings() exists to share the logic between -cc1 and linker invocations.
+// exceptionSettings() exists to share the logic between -cc1 and linker
+// invocations.
 static ExceptionSettings exceptionSettings(const ArgList &Args,
                                            const llvm::Triple &Triple) {
   ExceptionSettings ES;
@@ -2185,7 +2192,8 @@ static const char *SplitDebugName(const ArgList &Args,
     return Args.MakeArgString(T);
   } else {
     // Use the compilation dir.
-    SmallString<128> T(Args.getLastArgValue(options::OPT_fdebug_compilation_dir));
+    SmallString<128> T(
+        Args.getLastArgValue(options::OPT_fdebug_compilation_dir));
     SmallString<128> F(llvm::sys::path::stem(Inputs[0].getBaseInput()));
     llvm::sys::path::replace_extension(F, "dwo");
     T += F;
@@ -2276,7 +2284,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   ArgStringList CmdArgs;
 
   bool IsWindowsGNU = getToolChain().getTriple().isWindowsGNUEnvironment();
-  bool IsWindowsCygnus = getToolChain().getTriple().isWindowsCygwinEnvironment();
+  bool IsWindowsCygnus =
+      getToolChain().getTriple().isWindowsCygwinEnvironment();
   bool IsWindowsMSVC = getToolChain().getTriple().isWindowsMSVCEnvironment();
 
   assert(Inputs.size() == 1 && "Unable to handle multiple inputs.");
@@ -2298,7 +2307,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     unsigned Version;
     TT.getArchName().substr(Offset).getAsInteger(10, Version);
     if (Version < 7)
-      D.Diag(diag::err_target_unsupported_arch) << TT.getArchName() << TripleStr;
+      D.Diag(diag::err_target_unsupported_arch) << TT.getArchName()
+                                                << TripleStr;
   }
 
   // Push all default warning arguments that are specific to
@@ -2413,8 +2423,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       if (types::isCXX(Inputs[0].getType()))
         CmdArgs.push_back("-analyzer-checker=cplusplus");
 
-      // Enable the following experimental checkers for testing. 
-      CmdArgs.push_back("-analyzer-checker=security.insecureAPI.UncheckedReturn");
+      // Enable the following experimental checkers for testing.
+      CmdArgs.push_back(
+          "-analyzer-checker=security.insecureAPI.UncheckedReturn");
       CmdArgs.push_back("-analyzer-checker=security.insecureAPI.getpw");
       CmdArgs.push_back("-analyzer-checker=security.insecureAPI.gets");
       CmdArgs.push_back("-analyzer-checker=security.insecureAPI.mktemp");      
@@ -2742,7 +2753,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                                options::OPT_fno_fast_math))
       if (!A->getOption().matches(options::OPT_fno_fast_math))
         CmdArgs.push_back("-ffast-math");
-  if (Arg *A = Args.getLastArg(options::OPT_ffinite_math_only, options::OPT_fno_fast_math))
+  if (Arg *A = Args.getLastArg(options::OPT_ffinite_math_only,
+                               options::OPT_fno_fast_math))
     if (A->getOption().matches(options::OPT_ffinite_math_only))
       CmdArgs.push_back("-ffinite-math-only");
 
@@ -3472,10 +3484,18 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                                  options::OPT_munaligned_access)) {
       if (A->getOption().matches(options::OPT_mno_unaligned_access)) {
         CmdArgs.push_back("-backend-option");
-        CmdArgs.push_back("-arm-strict-align");
+        if (getToolChain().getTriple().getArch() == llvm::Triple::arm64 ||
+            getToolChain().getTriple().getArch() == llvm::Triple::arm64_be)
+          CmdArgs.push_back("-arm64-strict-align");
+        else
+          CmdArgs.push_back("-arm-strict-align");
       } else {
         CmdArgs.push_back("-backend-option");
-        CmdArgs.push_back("-arm-no-strict-align");
+        if (getToolChain().getTriple().getArch() == llvm::Triple::arm64 ||
+            getToolChain().getTriple().getArch() == llvm::Triple::arm64_be)
+          CmdArgs.push_back("-arm64-no-strict-align");
+        else
+          CmdArgs.push_back("-arm-no-strict-align");
       }
     }
   }
@@ -4970,63 +4990,49 @@ const char *arm::getARMCPUForMArch(const ArgList &Args,
     break;
   }
 
-  const char *result = llvm::StringSwitch<const char *>(MArch)
-    .Cases("armv2", "armv2a","arm2")
-    .Case("armv3", "arm6")
-    .Case("armv3m", "arm7m")
-    .Case("armv4", "strongarm")
-    .Case("armv4t", "arm7tdmi")
-    .Case("thumbv4t", "arm7tdmi")
-    .Cases("armv5", "armv5t", "arm10tdmi")
-    .Cases("thumbv5", "thumbv5t", "arm10tdmi")
-    .Cases("armv5e", "armv5te", "arm1022e")
-    .Cases("thumbv5e", "thumbv5te", "arm1022e")
-    .Case("armv5tej", "arm926ej-s")
-    .Case("thumbv5tej", "arm926ej-s")
-    .Cases("armv6", "armv6k", "arm1136jf-s")
-    .Cases("thumbv6", "thumbv6k", "arm1136jf-s")
-    .Case("armv6j", "arm1136j-s")
-    .Case("thumbv6j", "arm1136j-s")
-    .Cases("armv6z", "armv6zk", "arm1176jzf-s")
-    .Cases("thumbv6z", "thumbv6zk", "arm1176jzf-s")
-    .Case("armv6t2", "arm1156t2-s")
-    .Case("thumbv6t2", "arm1156t2-s")
-    .Cases("armv6m", "armv6-m", "cortex-m0")
-    .Case("thumbv6m", "cortex-m0")
-    .Cases("armv7", "armv7a", "armv7-a", "cortex-a8")
-    .Cases("armebv7", "armebv7a", "armebv7-a", "cortex-a8")
-    .Cases("thumbv7", "thumbv7a", "cortex-a8")
-    .Cases("thumbebv7", "thumbebv7a", "cortex-a8")
-    .Cases("armv7l", "armv7-l", "cortex-a8")
-    .Cases("armebv7l", "armebv7-l", "cortex-a8")
-    .Cases("armv7s", "armv7-s", "swift")
-    .Cases("armebv7s", "armebv7-s", "swift")
-    .Cases("armv7r", "armv7-r", "cortex-r4")
-    .Cases("armebv7r", "armebv7-r", "cortex-r4")
-    .Case("thumbv7r", "cortex-r4")
-    .Case("thumbebv7r", "cortex-r4")
-    .Cases("armv7m", "armv7-m", "cortex-m3")
-    .Cases("armebv7m", "armebv7-m", "cortex-m3")
-    .Case("thumbv7m", "cortex-m3")
-    .Case("thumbebv7m", "cortex-m3")
-    .Cases("armv7em", "armv7e-m", "cortex-m4")
-    .Cases("armebv7em", "armebv7e-m", "cortex-m4")
-    .Cases("thumbv7em", "thumbv7e-m", "cortex-m4")
-    .Cases("thumbebv7em", "thumbebv7e-m", "cortex-m4")
-    .Cases("armv8", "armv8a", "armv8-a", "cortex-a53")
-    .Cases("armebv8", "armebv8a", "armebv8-a", "cortex-a53")
-    .Cases("thumbv8", "thumbv8a", "cortex-a53")
-    .Cases("thumbebv8", "thumbebv8a", "cortex-a53")
-    .Case("ep9312", "ep9312")
-    .Case("iwmmxt", "iwmmxt")
-    .Case("xscale", "xscale")
-    // If all else failed, return the most base CPU with thumb interworking
-    // supported by LLVM.
-    .Default(0);
+  const char *result = nullptr;
+  size_t offset = StringRef::npos;
+  if (MArch.startswith("arm"))
+    offset = 3;
+  if (MArch.startswith("thumb"))
+    offset = 5;
+  if (offset != StringRef::npos && MArch.substr(offset, 2) == "eb")
+    offset += 2;
+  if (offset != StringRef::npos)
+    result = llvm::StringSwitch<const char *>(MArch.substr(offset))
+      .Cases("v2", "v2a", "arm2")
+      .Case("v3", "arm6")
+      .Case("v3m", "arm7m")
+      .Case("v4", "strongarm")
+      .Case("v4t", "arm7tdmi")
+      .Cases("v5", "v5t", "arm10tdmi")
+      .Cases("v5e", "v5te", "arm1022e")
+      .Case("v5tej", "arm926ej-s")
+      .Cases("v6", "v6k", "arm1136jf-s")
+      .Case("v6j", "arm1136j-s")
+      .Cases("v6z", "v6zk", "arm1176jzf-s")
+      .Case("v6t2", "arm1156t2-s")
+      .Cases("v6m", "v6-m", "cortex-m0")
+      .Cases("v7", "v7a", "v7-a", "v7l", "v7-l", "cortex-a8")
+      .Cases("v7s", "v7-s", "swift")
+      .Cases("v7r", "v7-r", "cortex-r4")
+      .Cases("v7m", "v7-m", "cortex-m3")
+      .Cases("v7em", "v7e-m", "cortex-m4")
+      .Cases("v8", "v8a", "v8-a", "cortex-a53")
+      .Default(nullptr);
+  else
+    result = llvm::StringSwitch<const char *>(MArch)
+      .Case("ep9312", "ep9312")
+      .Case("iwmmxt", "iwmmxt")
+      .Case("xscale", "xscale")
+      .Default(nullptr);
 
   if (result)
     return result;
 
+  // If all else failed, return the most base CPU with thumb interworking
+  // supported by LLVM.
+  // FIXME: Should warn once that we're falling back.
   switch (Triple.getOS()) {
   case llvm::Triple::NetBSD:
     switch (Triple.getEnvironment()) {
@@ -6695,8 +6701,12 @@ void netbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
   unsigned Major, Minor, Micro;
   getToolChain().getTriple().getOSVersion(Major, Minor, Micro);
   bool useLibgcc = true;
-  if (Major >= 7 || (Major == 6 && Minor == 99 && Micro >= 23) || Major == 0) {
+  if (Major >= 7 || (Major == 6 && Minor == 99 && Micro >= 40) || Major == 0) {
     switch(getToolChain().getArch()) {
+    case llvm::Triple::arm:
+    case llvm::Triple::armeb:
+    case llvm::Triple::thumb:
+    case llvm::Triple::thumbeb:
     case llvm::Triple::x86:
     case llvm::Triple::x86_64:
       useLibgcc = false;

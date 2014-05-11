@@ -1092,9 +1092,15 @@ void ASTDeclReader::VisitBlockDecl(BlockDecl *BD) {
 
 void ASTDeclReader::VisitCapturedDecl(CapturedDecl *CD) {
   VisitDecl(CD);
+  unsigned ContextParamPos = Record[Idx++];
+  CD->setNothrow(Record[Idx++] != 0);
   // Body is set by VisitCapturedStmt.
-  for (unsigned i = 0; i < CD->NumParams; ++i)
-    CD->setParam(i, ReadDeclAs<ImplicitParamDecl>(Record, Idx));
+  for (unsigned I = 0; I < CD->NumParams; ++I) {
+    if (I != ContextParamPos)
+      CD->setParam(I, ReadDeclAs<ImplicitParamDecl>(Record, Idx));
+    else
+      CD->setContextParam(I, ReadDeclAs<ImplicitParamDecl>(Record, Idx));
+  }
 }
 
 void ASTDeclReader::VisitLinkageSpecDecl(LinkageSpecDecl *D) {
@@ -1241,7 +1247,7 @@ void ASTDeclReader::ReadCXXDefinitionData(
   Data.FirstFriend = ReadDeclID(Record, Idx);
 
   if (Data.IsLambda) {
-    typedef LambdaExpr::Capture Capture;
+    typedef LambdaCapture Capture;
     CXXRecordDecl::LambdaDefinitionData &Lambda
       = static_cast<CXXRecordDecl::LambdaDefinitionData &>(Data);
     Lambda.Dependent = Record[Idx++];

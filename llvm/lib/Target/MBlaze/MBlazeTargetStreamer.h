@@ -23,7 +23,6 @@ public:
 
 // This part is for ascii assembly output
 class MBlazeTargetAsmStreamer : public MBlazeTargetStreamer {
-  formatted_raw_ostream &OS;
 
 public:
   MBlazeTargetAsmStreamer(MCStreamer &S, formatted_raw_ostream &OS);

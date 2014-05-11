@@ -2658,7 +2658,7 @@ bool Sema::MergeFunctionDecl(FunctionDecl *New, NamedDecl *&OldD,
       New->setType(NewQType);
       New->setHasInheritedPrototype();
 
-      // Synthesize a parameter for each argument type.
+      // Synthesize parameters with the same types.
       SmallVector<ParmVarDecl*, 16> Params;
       for (const auto &ParamType : OldProto->param_types()) {
         ParmVarDecl *Param = ParmVarDecl::Create(Context, New, SourceLocation(),
@@ -6992,11 +6992,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     // single void argument.
     // We let through "const void" here because Sema::GetTypeForDeclarator
     // already checks for that case.
-    if (FTI.NumParams == 1 && !FTI.isVariadic && FTI.Params[0].Ident == 0 &&
-        FTI.Params[0].Param &&
-        cast<ParmVarDecl>(FTI.Params[0].Param)->getType()->isVoidType()) {
-      // Empty arg list, don't push any params.
-    } else if (FTI.NumParams > 0 && FTI.Params[0].Param != 0) {
+    if (FTIHasNonVoidParameters(FTI) && FTI.Params[0].Param) {
       for (unsigned i = 0, e = FTI.NumParams; i != e; ++i) {
         ParmVarDecl *Param = cast<ParmVarDecl>(FTI.Params[i].Param);
         assert(Param->getDeclContext() != NewFD && "Was set before ?");
@@ -9997,8 +9993,6 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
     
     // Verify that gotos and switch cases don't jump into scopes illegally.
     if (getCurFunction()->NeedsScopeChecking() &&
-        !dcl->isInvalidDecl() &&
-        !hasAnyUnrecoverableErrorsInThisFunction() &&
         !PP.isCodeCompletionEnabled())
       DiagnoseInvalidJumps(Body);
 
@@ -13142,6 +13136,13 @@ DeclResult Sema::ActOnModuleImport(SourceLocation AtLoc,
 
   checkModuleImportContext(*this, Mod, ImportLoc, CurContext);
 
+  // FIXME: we should support importing a submodule within a different submodule
+  // of the same top-level module. Until we do, make it an error rather than
+  // silently ignoring the import.
+  if (Mod->getTopLevelModuleName() == getLangOpts().CurrentModule)
+    Diag(ImportLoc, diag::err_module_self_import)
+        << Mod->getFullModuleName() << getLangOpts().CurrentModule;
+
   SmallVector<SourceLocation, 2> IdentifierLocs;
   Module *ModCheck = Mod;
   for (unsigned I = 0, N = Path.size(); I != N; ++I) {
@@ -13170,7 +13171,12 @@ void Sema::ActOnModuleInclude(SourceLocation DirectiveLoc, Module *Mod) {
                                       /*Complain=*/true);
 }
 
-void Sema::createImplicitModuleImport(SourceLocation Loc, Module *Mod) {
+void Sema::createImplicitModuleImportForErrorRecovery(SourceLocation Loc,
+                                                      Module *Mod) {
+  // Bail if we're not allowed to implicitly import a module here.
+  if (isSFINAEContext() || !getLangOpts().ModulesErrorRecovery)
+    return;
+
   // Create the implicit import declaration.
   TranslationUnitDecl *TU = getASTContext().getTranslationUnitDecl();
   ImportDecl *ImportD = ImportDecl::CreateImplicit(getASTContext(), TU,

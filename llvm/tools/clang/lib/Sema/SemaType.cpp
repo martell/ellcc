@@ -2330,7 +2330,7 @@ static void checkQualifiedFunction(Sema &S, QualType T,
     << getFunctionQualifiersAsString(T->castAs<FunctionProtoType>());
 }
 
-/// Produce an approprioate diagnostic for an ambiguity between a function
+/// Produce an appropriate diagnostic for an ambiguity between a function
 /// declarator and a C++ direct-initializer.
 static void warnAboutAmbiguousFunction(Sema &S, Declarator &D,
                                        DeclaratorChunk &DeclType, QualType RT) {
@@ -2868,7 +2868,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
           }
 
           if (!Overloadable)
-            S.Diag(FTI.getEllipsisLoc(), diag::err_ellipsis_first_arg);
+            S.Diag(FTI.getEllipsisLoc(), diag::err_ellipsis_first_param);
         }
 
         if (FTI.NumParams && FTI.Params[0].Param == 0) {
@@ -2891,10 +2891,10 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
                     : FTI.RefQualifierIsLValueRef? RQ_LValue
                     : RQ_RValue;
 
-        // Otherwise, we have a function with an argument list that is
+        // Otherwise, we have a function with a parameter list that is
         // potentially variadic.
-        SmallVector<QualType, 16> ArgTys;
-        ArgTys.reserve(FTI.NumParams);
+        SmallVector<QualType, 16> ParamTys;
+        ParamTys.reserve(FTI.NumParams);
 
         SmallVector<bool, 16> ConsumedParameters;
         ConsumedParameters.reserve(FTI.NumParams);
@@ -2902,40 +2902,40 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
 
         for (unsigned i = 0, e = FTI.NumParams; i != e; ++i) {
           ParmVarDecl *Param = cast<ParmVarDecl>(FTI.Params[i].Param);
-          QualType ArgTy = Param->getType();
-          assert(!ArgTy.isNull() && "Couldn't parse type?");
+          QualType ParamTy = Param->getType();
+          assert(!ParamTy.isNull() && "Couldn't parse type?");
 
-          // Look for 'void'.  void is allowed only as a single argument to a
+          // Look for 'void'.  void is allowed only as a single parameter to a
           // function with no other parameters (C99 6.7.5.3p10).  We record
-          // int(void) as a FunctionProtoType with an empty argument list.
-          if (ArgTy->isVoidType()) {
+          // int(void) as a FunctionProtoType with an empty parameter list.
+          if (ParamTy->isVoidType()) {
             // If this is something like 'float(int, void)', reject it.  'void'
             // is an incomplete type (C99 6.2.5p19) and function decls cannot
-            // have arguments of incomplete type.
+            // have parameters of incomplete type.
             if (FTI.NumParams != 1 || FTI.isVariadic) {
               S.Diag(DeclType.Loc, diag::err_void_only_param);
-              ArgTy = Context.IntTy;
-              Param->setType(ArgTy);
+              ParamTy = Context.IntTy;
+              Param->setType(ParamTy);
             } else if (FTI.Params[i].Ident) {
               // Reject, but continue to parse 'int(void abc)'.
               S.Diag(FTI.Params[i].IdentLoc, diag::err_param_with_void_type);
-              ArgTy = Context.IntTy;
-              Param->setType(ArgTy);
+              ParamTy = Context.IntTy;
+              Param->setType(ParamTy);
             } else {
               // Reject, but continue to parse 'float(const void)'.
-              if (ArgTy.hasQualifiers())
+              if (ParamTy.hasQualifiers())
                 S.Diag(DeclType.Loc, diag::err_void_param_qualified);
 
-              // Do not add 'void' to the ArgTys list.
+              // Do not add 'void' to the list.
               break;
             }
-          } else if (ArgTy->isHalfType()) {
-            // Disallow half FP arguments.
+          } else if (ParamTy->isHalfType()) {
+            // Disallow half FP parameters.
             // FIXME: This really should be in BuildFunctionType.
             if (S.getLangOpts().OpenCL) {
               if (!S.getOpenCLOptions().cl_khr_fp16) {
                 S.Diag(Param->getLocation(),
-                  diag::err_opencl_half_argument) << ArgTy;
+                  diag::err_opencl_half_param) << ParamTy;
                 D.setInvalidType();
                 Param->setInvalidDecl();
               }
@@ -2945,12 +2945,12 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
               D.setInvalidType();
             }
           } else if (!FTI.hasPrototype) {
-            if (ArgTy->isPromotableIntegerType()) {
-              ArgTy = Context.getPromotedIntegerType(ArgTy);
+            if (ParamTy->isPromotableIntegerType()) {
+              ParamTy = Context.getPromotedIntegerType(ParamTy);
               Param->setKNRPromoted(true);
-            } else if (const BuiltinType* BTy = ArgTy->getAs<BuiltinType>()) {
+            } else if (const BuiltinType* BTy = ParamTy->getAs<BuiltinType>()) {
               if (BTy->getKind() == BuiltinType::Float) {
-                ArgTy = Context.DoubleTy;
+                ParamTy = Context.DoubleTy;
                 Param->setKNRPromoted(true);
               }
             }
@@ -2962,7 +2962,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
             HasAnyConsumedParameters |= Consumed;
           }
 
-          ArgTys.push_back(ArgTy);
+          ParamTys.push_back(ParamTy);
         }
 
         if (HasAnyConsumedParameters)
@@ -2994,7 +2994,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
                                       Exceptions,
                                       EPI);
 
-        T = Context.getFunctionType(T, ArgTys, EPI);
+        T = Context.getFunctionType(T, ParamTys, EPI);
       }
 
       break;
@@ -5076,6 +5076,69 @@ bool Sema::RequireCompleteType(SourceLocation Loc, QualType T,
   return false;
 }
 
+/// \brief Determine whether there is any declaration of \p D that was ever a
+///        definition (perhaps before module merging) and is currently visible.
+/// \param D The definition of the entity.
+/// \param Suggested Filled in with the declaration that should be made visible
+///        in order to provide a definition of this entity.
+static bool hasVisibleDefinition(Sema &S, NamedDecl *D, NamedDecl **Suggested) {
+  // Easy case: if we don't have modules, all declarations are visible.
+  if (!S.getLangOpts().Modules)
+    return true;
+
+  // If this definition was instantiated from a template, map back to the
+  // pattern from which it was instantiated.
+  //
+  // FIXME: There must be a better place for this to live.
+  if (auto *RD = dyn_cast<CXXRecordDecl>(D)) {
+    if (auto *TD = dyn_cast<ClassTemplateSpecializationDecl>(RD)) {
+      auto From = TD->getInstantiatedFrom();
+      if (auto *CTD = From.dyn_cast<ClassTemplateDecl*>()) {
+        while (auto *NewCTD = CTD->getInstantiatedFromMemberTemplate()) {
+          if (NewCTD->isMemberSpecialization())
+            break;
+          CTD = NewCTD;
+        }
+        RD = CTD->getTemplatedDecl();
+      } else if (auto *CTPSD = From.dyn_cast<
+                     ClassTemplatePartialSpecializationDecl *>()) {
+        while (auto *NewCTPSD = CTPSD->getInstantiatedFromMember()) {
+          if (NewCTPSD->isMemberSpecialization())
+            break;
+          CTPSD = NewCTPSD;
+        }
+        RD = CTPSD;
+      }
+    } else if (isTemplateInstantiation(RD->getTemplateSpecializationKind())) {
+      while (auto *NewRD = RD->getInstantiatedFromMemberClass())
+        RD = NewRD;
+    }
+    D = RD->getDefinition();
+  } else if (auto *ED = dyn_cast<EnumDecl>(D)) {
+    while (auto *NewED = ED->getInstantiatedFromMemberEnum())
+      ED = NewED;
+    if (ED->isFixed()) {
+      // If the enum has a fixed underlying type, any declaration of it will do.
+      *Suggested = 0;
+      for (auto *Redecl : ED->redecls()) {
+        if (LookupResult::isVisible(S, Redecl))
+          return true;
+        if (Redecl->isThisDeclarationADefinition() ||
+            (Redecl->isCanonicalDecl() && !*Suggested))
+          *Suggested = Redecl;
+      }
+      return false;
+    }
+    D = ED->getDefinition();
+  }
+  assert(D && "missing definition for pattern of instantiated definition");
+
+  // FIXME: If we merged any other decl into D, and that declaration is visible,
+  // then we should consider a definition to be visible.
+  *Suggested = D;
+  return LookupResult::isVisible(S, D);
+}
+
 /// \brief The implementation of RequireCompleteType
 bool Sema::RequireCompleteTypeImpl(SourceLocation Loc, QualType T,
                                    TypeDiagnoser &Diagnoser) {
@@ -5091,21 +5154,21 @@ bool Sema::RequireCompleteTypeImpl(SourceLocation Loc, QualType T,
   NamedDecl *Def = 0;
   if (!T->isIncompleteType(&Def)) {
     // If we know about the definition but it is not visible, complain.
-    if (!Diagnoser.Suppressed && Def && !LookupResult::isVisible(*this, Def)) {
+    NamedDecl *SuggestedDef = 0;
+    if (!Diagnoser.Suppressed && Def &&
+        !hasVisibleDefinition(*this, Def, &SuggestedDef)) {
       // Suppress this error outside of a SFINAE context if we've already
       // emitted the error once for this type. There's no usefulness in
       // repeating the diagnostic.
       // FIXME: Add a Fix-It that imports the corresponding module or includes
       // the header.
-      Module *Owner = Def->getOwningModule();
+      Module *Owner = SuggestedDef->getOwningModule();
       Diag(Loc, diag::err_module_private_definition)
         << T << Owner->getFullModuleName();
-      Diag(Def->getLocation(), diag::note_previous_definition);
+      Diag(SuggestedDef->getLocation(), diag::note_previous_definition);
 
-      if (!isSFINAEContext()) {
-        // Recover by implicitly importing this module.
-        createImplicitModuleImport(Loc, Owner);
-      }
+      // Try to recover by implicitly importing this module.
+      createImplicitModuleImportForErrorRecovery(Loc, Owner);
     }
 
     // We lock in the inheritance model once somebody has asked us to ensure
