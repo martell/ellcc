@@ -202,9 +202,9 @@ unhandled_swi:
     addi    $sp, $sp, -SAVE
     sw      $ra, (4 * 11)($sp)
     sw      $s0, (4 * 10)($sp)
-    lw      $a0, swi_table - 4  // Has a system call been set up?
+    lw      $s0, swi_table - 4  // Has a system call been set up?
     nop
-    bnez    $a0, nosetup
+    bnez    $s0, nosetup
     weak_call(__setup_console)  // If not, set up the console.
 nosetup:
     // Get the additional arguments.
