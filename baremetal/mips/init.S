@@ -1,6 +1,17 @@
 #include <bits/errno.h>
 #include "target.h"
 
+/** Call a function only if it exists.
+ * Act as if it returned 0 or NULL if it's not defined.
+ */
+#define weak_call(name)                 \
+    .weak name          ;               \
+    la     $v0, name    ;               \
+    beqz   $v0, 1f      ;               \
+    jalr   $v0          ;               \
+    nop                 ;               \
+1:
+
     .section .text
     .align  4
     .global _start
@@ -191,6 +202,11 @@ unhandled_swi:
     addi    $sp, $sp, -SAVE
     sw      $ra, (4 * 11)($sp)
     sw      $s0, (4 * 10)($sp)
+    lw      $a0, swi_table - 4  // Has a system call been set up?
+    nop
+    bnez    $a0, nosetup
+    weak_call(__setup_console)  // If not, set up the console.
+nosetup:
     // Get the additional arguments.
     lw      $s0, SAVE + (4 * 4)($sp)
     nop
@@ -212,14 +228,10 @@ unhandled_swi:
     sw      $a3, (4 * 5)($sp)
     move    $a3, $a1
     move    $a2, $a0
-    lw      $a0, swi_table - 4  // Get the call set flag.
-    nop
-    beqz    $a0, 1f             // If not, too soon for printf.
     lw      $a1, syscall
     la      $a0, swi_string
     jal     printf
     nop
-1:
     lw      $ra, (4 * 11)($sp)
     lw      $s0, (4 * 10)($sp)
     addi    $sp, $sp, SAVE
@@ -253,8 +265,9 @@ swi_exception:
     move    $s0, $v0            // Save the system call.
     move    $s1, $sp            // Save the current sp.
     move    $s2, $ra            // Save the return address.
-    // jal     thread_self         // Get the current context.
-    // sw      $s1, ($v0)          // Save sp for clone().
+    weak_call(thread_self)      // Get the current context.
+    beqz    $v0, __in_syscall   // Jump if none.
+    sw      $s1, ($v0)          // Save sp for clone().
 
 __in_syscall:
     lw      $a0, CTX_R4($sp)    // Restore the system call arguments.

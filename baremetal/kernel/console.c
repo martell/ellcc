@@ -234,10 +234,10 @@ static int sys_ioctl(int fd, int request, ...)
     }
 }
 
-static void init(void)
+void __setup_console(void)
     __attribute__((__constructor__, __used__));
 
-static void init(void)
+void __setup_console(void)
 {
     // Set up the console for interrupt serial I/O.
 

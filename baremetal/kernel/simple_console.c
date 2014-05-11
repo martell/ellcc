@@ -95,10 +95,10 @@ static ssize_t sys_readv(int fd, const struct iovec *iov, int iovcount)
     return count;
 }
 
-static void init(void)
+void __setup_console(void)
     __attribute__((__constructor__, __used__));
 
-static void init(void)
+void __setup_console(void)
 {
     // Set up the simple console for polled serial I/O.
  

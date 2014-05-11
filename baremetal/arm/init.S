@@ -1,6 +1,15 @@
 #include <bits/errno.h>
 #include "target.h"
 
+/** Call a function only if it exists.
+ * Act as if it returned 0 or NULL if it's not defined.
+ */
+#define weak_call(name)                 \
+    .weak name          ;               \
+    ldr    r0, =name    ;               \
+    cmp    r0, #0       ;               \
+    blxne  r0
+
     .section .text, "x"
     .align  4
     .global _start
@@ -141,7 +150,7 @@ irq:
     srsfd   sp!, #Mode_SYS      // Save LR_irq and SPSR_irq on the sys stack.
     cpsid   i, #Mode_SYS        // Switch to sys mode.
     push    { SAVED_REGS }      // Store other registers.
-    bl      __enter_irq         // Enter the IRQ state.
+    weak_call(__enter_irq)      // Enter the IRQ state.
     cmp     r0, #0              // Have a context pointer?
     strne   sp, [r0]            // Save the context if so.
     mrcne   p15, 0, r1, c13, c0, 3  // Get the TLS.
@@ -149,23 +158,26 @@ irq:
     and     r0, sp, #4          // Test stack alignment.
     sub     sp, sp, r0          // Adjust the stack if needed.
     push    { r0, r1 }          // Save the adjustment.
-    bl      __unlock_ready      // Clear the ready lock.
-    bl      __identify_irq      // Clear interrupt and get irq handler in r0.
+    weak_call(__unlock_ready)   // Clear the ready lock.
+    weak_call(__identify_irq)   // Clear interrupt and get irq handler in r0.
     cpsie   i                   // Enable IRQ
+    cmp     r0, #0
+    beq     1f                  // Jump if no handler.
     ldr     r1, [r0]            // Get the handler function.
     ldr     r0, [r0, #4]        // And the private data pointer.
     cmp     r0, #0              // Has private data?
     ldrne   r0, [r0]            // Get the pointer.
     cmp     r1, #0              // Handler function?
     blxne   r1                  // Call it.
+1:
     pop     { r0, r1 }          // Restore the stack adjustment.
     add     sp, sp, r0          // And adjust.
-    bl      __leave_irq         // Leave the IRQ state.
+    weak_call(__leave_irq)      // Leave the IRQ state.
     cmp     r0, #0              // Leaving?
     ldrne   sp, [r0]            // Get the new stack pointer.
     ldrne   r1, [r0, #4]        // Get the new TLS.
     mcrne   p15, 0, r1, c13, c0, 3 // Set the TLS.
-    bl      __unlock_ready      // Clear the ready lock.
+    weak_call(__unlock_ready)   // Clear the ready lock.
     pop     { SAVED_REGS }      // Restore registers
     rfeia   sp!                 // And return.
 
@@ -207,7 +219,7 @@ __switch:
     ldr     sp, [r0]            // Get the new stack pointer.
     ldr     r1, [r0, #4]        // Get the new TLS.
     mcr     p15, 0, r1, c13, c0, 3      // Set the TLS.
-    bl      __unlock_ready      // Unlock the ready list.
+    weak_call(__unlock_ready)   // Clear the ready lock.
     pop     { SAVED_REGS }      // Restore registers
     rfeia   sp!                 // And dispatch.
 
@@ -227,7 +239,7 @@ __switch_arg:
     ldr     sp, [r1]            // Get the new stack pointer.
     ldr     r1, [r1, #4]        // Get the new TLS.
     mcr     p15, 0, r1, c13, c0, 3      // Set the TLS.
-    bl      __unlock_ready      // Unlock the ready list.
+    weak_call(__unlock_ready)   // Clear the ready lock.
     pop     { SAVED_REGS }      // Restore registers
     rfeia   sp!                 // And dispatch.
 
@@ -241,8 +253,9 @@ swi:
     cpsie   i                   // Enable IRQ
     mov     r8, sp              // Save the sp.
     push    { r0, r1 }
-    bl      thread_self         // Get the current context.
-    str     r8, [r0]            // Save sp for clone().
+    weak_call(thread_self)      // Get the current context.
+    cmp     r0, #0
+    strne   r8, [r0]            // Save sp for clone().
     pop     { r0, r1 }
     
     // In a system call.
@@ -301,7 +314,7 @@ set_tls:
     push    { r1, lr }
     mcr     p15, 0, r0, c13, c0, 3
     mov     r1, r0
-    bl      =thread_self
+    weak_call(thread_self)      // Get the current context.
     str     r1, [r0, #4]        // Save the TLS in the current Thread.
     mov     r0, #0
     pop     { r1, lr }
@@ -320,8 +333,10 @@ unhandled_swi:
     stmfd   sp!, {r12, lr}
     ldr     r12, swi_table_p    // Get the system call table.
     ldr     r12, [r12, #-4]     // Get the call set flag.
-    cmp     r12, #0
-    beq     1f                  // If not, too soon for printf.
+    cmp     r12, #0             // Has a system call been set up?
+    bne     1f
+    weak_call(__setup_console)  // If not, set up the console.
+1:
     push    {r2-r5}             // Push extra arguments.
     mov     r3, r1
     mov     r2, r0
@@ -330,7 +345,6 @@ unhandled_swi:
     ldr     r0, string_p        // Get the format string.
     bl      printf
     add     sp, #16             // clean up the stack.
-1:
     mov     r0, #-ENOSYS       
     ldmfd   sp!, {r12, pc}
 
@@ -340,7 +354,7 @@ string_p:
 // Set a system call entry.
 // r0 = the entry number.
 // r1 - the handling function.
-    .global     __set_syscall
+    .global __set_syscall
 __set_syscall:
     cmp     r0, #512
     ldrlo   r2, swi_table_p     // Get the system call table.

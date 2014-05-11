@@ -54,4 +54,8 @@ enum {
  */
 int __set_syscall(int nr, void *fn);
 
+#undef weak_alias
+#define weak_alias(old, new) \
+    extern __typeof(old) new __attribute__((weak, alias(#old)))
+
 #endif // _kernel_h_

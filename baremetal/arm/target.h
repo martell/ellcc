@@ -17,7 +17,6 @@
 #define F_bit 0x40
 #define I_bit 0x80
 
-
 #if !defined(__ASSEMBLER__)
 
 typedef struct context
