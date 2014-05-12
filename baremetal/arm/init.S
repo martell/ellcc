@@ -12,18 +12,25 @@
 
     .section .text, "x"
     .align  4
+/** This is the reset start point.
+ * For ARM this is a set of eight vectors, four bytes apart.
+ * Use the vector to load the pc from a nearby handler function
+ * address.
+ */
     .global _start
 _start:
-    ldr     pc, reset_p
-    ldr     pc, undefined_p
-    ldr     pc, swi_p
-    ldr     pc, prefetch_p
-    ldr     pc, abort_p
+    ldr     pc, reset_p         // Reset.
+    ldr     pc, undefined_p     // Undefined opcode.
+    ldr     pc, swi_p           // Syscall.
+    ldr     pc, prefetch_p      // Prefetch.
+    ldr     pc, abort_p         // Abort.
     nop                         // Reserved. 
-    ldr     pc, irq_p
+    ldr     pc, irq_p           // Interrupt.
 // The FIQ interrupt starts here.
+// Enter the FIQ handler directly to save  cycles.
     b       .
 
+// The addresses of the actual exception handlers.
 reset_p:
     .word reset
 undefined_p:
