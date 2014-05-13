@@ -43,5 +43,8 @@ run: $(KERNEL_EXE)
 debug: $(KERNEL_EXE)
 	$(ELLCC)/bin/qemu-system-$(TARGET) -s -S $(QEMUARGS)
 
+gdb:
+	$(ELLCC)/bin/ecc-gdb -x ../kernel/gdb.init $(KERNEL).elf
+
 -include $(DEPENDS)
 

@@ -7,7 +7,7 @@
 ENTRY(_start)
 SECTIONS
 {
-    . = 0x80100400;
+    . = 0x00003000;
     .init . : { init.o(.text) }
     .text : { *(.text) }
     /* Handle constructors and destructors. */

@@ -18,6 +18,9 @@
     .align  4
     .global _start
 _start:
+    b       .
+
+#if RICH
     la      $k0, reset
     jr      $k0
     nop
@@ -447,4 +450,4 @@ swi_string:
     .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
 name:
     .asciz "kernel"
-
+#endif // RICH
