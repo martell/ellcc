@@ -15,8 +15,12 @@
 #define MSTAT   UART_REG(6)
 #define SCRATCH UART_REG(7)
 
-#if 0
-static void init() {
+// RICH: Put this here until proper UART support is inplemented.
+static void init(void)
+    __attribute__((__constructor__, __used__));
+
+static void init(void)
+{
     *INTEN  = 0x00;             // Disable interrupts.
     *LCRTL  = 0x80;             // Set DLAB on.
     *RXTX   = 0x03;             // Set baud rate.
@@ -25,7 +29,6 @@ static void init() {
     *IIFIFO = 0xc7;
     *MCRTL  = 0x0b;
 }
-#endif
 
 /** Send a character to the serial port.
  */
