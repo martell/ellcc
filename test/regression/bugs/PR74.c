@@ -1,4 +1,3 @@
-// XFAIL: *
 // RUN: %mipsecc -o %t %s && %mipsrun %t
 #include "../ecc_test.h"
 #include <stdarg.h>

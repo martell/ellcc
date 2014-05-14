@@ -1,4 +1,3 @@
-// XFAIL: *
 // RUN: %mipsecc -o %t %s -lm && %mipsrun %t
 // RUN: %mipselecc -o %t %s -lm && %mipselrun %t
 #include <math.h>

@@ -1,4 +1,3 @@
-// XFAIL: *
 // RUN: %mipselecc -o %t %s && %mipselrun %t
 #include "../ecc_test.h"
 #include <stdarg.h>

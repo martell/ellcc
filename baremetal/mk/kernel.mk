@@ -46,5 +46,7 @@ debug: $(KERNEL_EXE)
 gdb:
 	$(ELLCC)/bin/ecc-gdb -x ../kernel/gdb.init $(KERNEL).elf
 
+tui:
+	$(ELLCC)/bin/ecc-gdb -tui -x ../kernel/gdb.init $(KERNEL).elf
 -include $(DEPENDS)
 
