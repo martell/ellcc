@@ -363,3 +363,45 @@ define <4 x i32> @shuffle_17mulsplat(<4 x i32> %v) {
                       <4 x i32> <i32 1, i32 1, i32 1, i32 1>
   ret <4 x i32> %s2
 }
+
+; Do not reorder shuffle and binop if LHS of shuffles are of different size
+define <2 x i32> @pr19717(<4 x i32> %in0, <2 x i32> %in1) {
+; CHECK-LABEL: @pr19717(
+; CHECK: shufflevector
+; CHECK: shufflevector
+; CHECK: mul
+  %shuffle = shufflevector <4 x i32> %in0, <4 x i32> %in0, <2 x i32> zeroinitializer
+  %shuffle4 = shufflevector <2 x i32> %in1, <2 x i32> %in1, <2 x i32> zeroinitializer
+  %mul = mul <2 x i32> %shuffle, %shuffle4
+  ret <2 x i32> %mul
+}
+
+define <4 x i16> @pr19717a(<8 x i16> %in0, <8 x i16> %in1) {
+; CHECK-LABEL: @pr19717a(
+; CHECK: [[VAR1:%[a-zA-Z0-9.]+]] = mul <8 x i16> %in0, %in1
+; CHECK: [[VAR2:%[a-zA-Z0-9.]+]] = shufflevector <8 x i16> [[VAR1]], <8 x i16> undef, <4 x i32> <i32 5, i32 5, i32 5, i32 5>
+; CHECK: ret <4 x i16> [[VAR2]]
+  %shuffle = shufflevector <8 x i16> %in0, <8 x i16> %in0, <4 x i32> <i32 5, i32 5, i32 5, i32 5>
+  %shuffle1 = shufflevector <8 x i16> %in1, <8 x i16> %in1, <4 x i32> <i32 5, i32 5, i32 5, i32 5>
+  %mul = mul <4 x i16> %shuffle, %shuffle1
+  ret <4 x i16> %mul
+}
+
+define <8 x i8> @pr19730(<16 x i8> %in0) {
+; CHECK-LABEL: @pr19730(
+; CHECK: shufflevector
+  %shuffle = shufflevector <16 x i8> %in0, <16 x i8> undef, <8 x i32> <i32 7, i32 6, i32 5, i32 4, i32 3, i32 2, i32 1, i32 0>
+  %shuffle1 = shufflevector <8 x i8> %shuffle, <8 x i8> undef, <8 x i32> <i32 7, i32 6, i32 5, i32 4, i32 3, i32 2, i32 1, i32 0>
+  ret <8 x i8> %shuffle1
+}
+
+define i32 @pr19737(<4 x i32> %in0) {
+; CHECK-LABEL: @pr19737(
+; CHECK: [[VAR:%[a-zA-Z0-9.]+]] = extractelement <4 x i32> %in0, i32 0
+; CHECK: ret i32 [[VAR]]
+  %shuffle.i = shufflevector <4 x i32> zeroinitializer, <4 x i32> %in0, <4 x i32> <i32 0, i32 4, i32 2, i32 6>
+  %neg.i = xor <4 x i32> %shuffle.i, <i32 -1, i32 -1, i32 -1, i32 -1>
+  %and.i = and <4 x i32> %in0, %neg.i
+  %rv = extractelement <4 x i32> %and.i, i32 0
+  ret i32 %rv
+}

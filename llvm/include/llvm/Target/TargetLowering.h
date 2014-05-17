@@ -1943,11 +1943,11 @@ public:
 
   /// Determine which of the bits specified in Mask are known to be either zero
   /// or one and return them in the KnownZero/KnownOne bitsets.
-  virtual void computeMaskedBitsForTargetNode(const SDValue Op,
-                                              APInt &KnownZero,
-                                              APInt &KnownOne,
-                                              const SelectionDAG &DAG,
-                                              unsigned Depth = 0) const;
+  virtual void computeKnownBitsForTargetNode(const SDValue Op,
+                                             APInt &KnownZero,
+                                             APInt &KnownOne,
+                                             const SelectionDAG &DAG,
+                                             unsigned Depth = 0) const;
 
   /// This method can be implemented by targets that want to expose additional
   /// information about sign bits to the DAG Combiner.
@@ -2217,7 +2217,7 @@ public:
   /// Return the register ID of the name passed in. Used by named register
   /// global variables extension. There is no target-independent behaviour
   /// so the default action is to bail.
-  virtual unsigned getRegisterByName(const char* RegName) const {
+  virtual unsigned getRegisterByName(const char* RegName, EVT VT) const {
     report_fatal_error("Named registers not implemented for this target");
   }
 

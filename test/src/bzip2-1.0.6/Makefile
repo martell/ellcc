@@ -18,33 +18,25 @@ SHELL=/bin/sh
 all: ecc arm armeb i386 ppc x86_64 \
      mips mipsel microblaze # ppc64
 
-i386 microblaze mips mipsel nios2 sparc x86_64:
+arm armeb i386 microblaze mips mipsel nios2 ppc ppc64 sparc x86_64:
 	$(MAKE) clean
-	$(MAKE) EXT=.$@ TARGET="-target $@-ellcc-linux" \
-	        RUN=../../../bin/qemu-$@ bzip2all
-
-arm armeb:
-	$(MAKE) clean
-	$(MAKE) EXT=.$@ TARGET="-target $@-ellcc-linux -march=armv7 -mfpu=vfp -mfloat-abi=softfp -no-integrated-as" \
-	        RUN=../../../bin/qemu-$@ bzip2all
-ppc ppc64:
-	$(MAKE) clean
-		# -mcpu=440
-	$(MAKE) EXT=.$@ TARGET="-target $@-ellcc-linux" \
+	$(MAKE) EXT=.$@ TARGET=$@ \
 	        RUN=../../../bin/qemu-$@ bzip2all
 
 ecc:
 	$(MAKE) clean
 	$(MAKE) bzip2all
 
-CC=../../../bin/ecc $(TARGET)
+OS=linux
+-include ../../../libecc/mkscripts/targets/$(TARGET)/setup.mk
+CC=../../../bin/ecc
 AR=../../../bin/ecc-ar
 RANLIB=../../../bin/ecc-ranlib
 LDFLAGS= 
 
 BIGFILES=-D_FILE_OFFSET_BITS=64
 #CFLAGS=-Wall -Winline -O2 $(BIGFILES)
-CFLAGS=-Wall -Winline -g $(BIGFILES) -D_XOPEN_SOURCE
+CFLAGS=$(CFLAGS.$(TARGET)) -Wall -Winline -g $(BIGFILES) -D_XOPEN_SOURCE
 
 # Where you want it installed when you do 'make install'
 PREFIX=/usr/local

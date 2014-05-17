@@ -277,7 +277,7 @@ getGlobalAddressWrapper(SDValue GA, const GlobalValue *GV,
   const GlobalValue *UnderlyingGV = GV;
   // If GV is an alias then use the aliasee to determine the wrapper type
   if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(GV))
-    UnderlyingGV = GA->getAliasedGlobal();
+    UnderlyingGV = GA->getAliasee();
   if (const GlobalVariable *GVar = dyn_cast<GlobalVariable>(UnderlyingGV)) {
     if (  ( GVar->isConstant() &&
             UnderlyingGV->isLocalLinkage(GV->getLinkage()) )
@@ -434,7 +434,7 @@ lowerLoadWordFromAlignedBasePlusOffset(SDLoc DL, SDValue Chain, SDValue Base,
 static bool isWordAligned(SDValue Value, SelectionDAG &DAG)
 {
   APInt KnownZero, KnownOne;
-  DAG.ComputeMaskedBits(Value, KnownZero, KnownOne);
+  DAG.computeKnownBits(Value, KnownZero, KnownOne);
   return KnownZero.countTrailingOnes() >= 2;
 }
 
@@ -1699,7 +1699,7 @@ SDValue XCoreTargetLowering::PerformDAGCombine(SDNode *N,
       APInt KnownZero, KnownOne;
       APInt Mask = APInt::getHighBitsSet(VT.getSizeInBits(),
                                          VT.getSizeInBits() - 1);
-      DAG.ComputeMaskedBits(N2, KnownZero, KnownOne);
+      DAG.computeKnownBits(N2, KnownZero, KnownOne);
       if ((KnownZero & Mask) == Mask) {
         SDValue Carry = DAG.getConstant(0, VT);
         SDValue Result = DAG.getNode(ISD::ADD, dl, VT, N0, N2);
@@ -1722,7 +1722,7 @@ SDValue XCoreTargetLowering::PerformDAGCombine(SDNode *N,
       APInt KnownZero, KnownOne;
       APInt Mask = APInt::getHighBitsSet(VT.getSizeInBits(),
                                          VT.getSizeInBits() - 1);
-      DAG.ComputeMaskedBits(N2, KnownZero, KnownOne);
+      DAG.computeKnownBits(N2, KnownZero, KnownOne);
       if ((KnownZero & Mask) == Mask) {
         SDValue Borrow = N2;
         SDValue Result = DAG.getNode(ISD::SUB, dl, VT,
@@ -1738,7 +1738,7 @@ SDValue XCoreTargetLowering::PerformDAGCombine(SDNode *N,
       APInt KnownZero, KnownOne;
       APInt Mask = APInt::getHighBitsSet(VT.getSizeInBits(),
                                          VT.getSizeInBits() - 1);
-      DAG.ComputeMaskedBits(N2, KnownZero, KnownOne);
+      DAG.computeKnownBits(N2, KnownZero, KnownOne);
       if ((KnownZero & Mask) == Mask) {
         SDValue Borrow = DAG.getConstant(0, VT);
         SDValue Result = DAG.getNode(ISD::SUB, dl, VT, N0, N2);
@@ -1860,11 +1860,11 @@ SDValue XCoreTargetLowering::PerformDAGCombine(SDNode *N,
   return SDValue();
 }
 
-void XCoreTargetLowering::computeMaskedBitsForTargetNode(const SDValue Op,
-                                                         APInt &KnownZero,
-                                                         APInt &KnownOne,
-                                                         const SelectionDAG &DAG,
-                                                         unsigned Depth) const {
+void XCoreTargetLowering::computeKnownBitsForTargetNode(const SDValue Op,
+                                                        APInt &KnownZero,
+                                                        APInt &KnownOne,
+                                                        const SelectionDAG &DAG,
+                                                        unsigned Depth) const {
   KnownZero = KnownOne = APInt(KnownZero.getBitWidth(), 0);
   switch (Op.getOpcode()) {
   default: break;

@@ -34,9 +34,10 @@ protected:
         M, ST, false, GlobalValue::ExternalLinkage, 0, Name);
   }
 
-  GlobalAlias *makeAlias(StringRef Name, GlobalValue *Aliasee) {
-    return new GlobalAlias(Aliasee->getType(), GlobalValue::ExternalLinkage,
-                           Name, Aliasee, Aliasee->getParent());
+  GlobalAlias *makeAlias(StringRef Name, GlobalObject *Aliasee) {
+    return new GlobalAlias(Aliasee->getType()->getElementType(),
+                           GlobalValue::ExternalLinkage, Name, Aliasee,
+                           Aliasee->getParent());
   }
 
   SpecialCaseList *makeSpecialCaseList(StringRef List, std::string &Error) {

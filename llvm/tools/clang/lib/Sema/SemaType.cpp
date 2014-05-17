@@ -1311,6 +1311,59 @@ static QualType inferARCLifetimeForPointee(Sema &S, QualType type,
   return S.Context.getQualifiedType(type, qs);
 }
 
+static std::string getFunctionQualifiersAsString(const FunctionProtoType *FnTy){
+  std::string Quals =
+    Qualifiers::fromCVRMask(FnTy->getTypeQuals()).getAsString();
+
+  switch (FnTy->getRefQualifier()) {
+  case RQ_None:
+    break;
+
+  case RQ_LValue:
+    if (!Quals.empty())
+      Quals += ' ';
+    Quals += '&';
+    break;
+
+  case RQ_RValue:
+    if (!Quals.empty())
+      Quals += ' ';
+    Quals += "&&";
+    break;
+  }
+
+  return Quals;
+}
+
+namespace {
+/// Kinds of declarator that cannot contain a qualified function type.
+///
+/// C++98 [dcl.fct]p4 / C++11 [dcl.fct]p6:
+///     a function type with a cv-qualifier or a ref-qualifier can only appear
+///     at the topmost level of a type.
+///
+/// Parens and member pointers are permitted. We don't diagnose array and
+/// function declarators, because they don't allow function types at all.
+///
+/// The values of this enum are used in diagnostics.
+enum QualifiedFunctionKind { QFK_BlockPointer, QFK_Pointer, QFK_Reference };
+}
+
+/// Check whether the type T is a qualified function type, and if it is,
+/// diagnose that it cannot be contained within the given kind of declarator.
+static bool checkQualifiedFunction(Sema &S, QualType T, SourceLocation Loc,
+                                   QualifiedFunctionKind QFK) {
+  // Does T refer to a function type with a cv-qualifier or a ref-qualifier?
+  const FunctionProtoType *FPT = T->getAs<FunctionProtoType>();
+  if (!FPT || (FPT->getTypeQuals() == 0 && FPT->getRefQualifier() == RQ_None))
+    return false;
+
+  S.Diag(Loc, diag::err_compound_qualified_function_type)
+    << QFK << isa<FunctionType>(T.IgnoreParens()) << T
+    << getFunctionQualifiersAsString(FPT);
+  return true;
+}
+
 /// \brief Build a pointer type.
 ///
 /// \param T The type to which we'll be building a pointer.
@@ -1332,6 +1385,9 @@ QualType Sema::BuildPointerType(QualType T,
       << getPrintableNameForEntity(Entity) << T;
     return QualType();
   }
+
+  if (checkQualifiedFunction(*this, T, Loc, QFK_Pointer))
+    return QualType();
 
   assert(!T->isObjCObjectType() && "Should build ObjCObjectPointerType");
 
@@ -1391,6 +1447,9 @@ QualType Sema::BuildReferenceType(QualType T, bool SpelledAsLValue,
     Diag(Loc, diag::err_reference_to_void);
     return QualType();
   }
+
+  if (checkQualifiedFunction(*this, T, Loc, QFK_Reference))
+    return QualType();
 
   // In ARC, it is forbidden to build references to unqualified pointers.
   if (getLangOpts().ObjCAutoRefCount)
@@ -1802,6 +1861,9 @@ QualType Sema::BuildBlockPointerType(QualType T,
     Diag(Loc, diag::err_nonfunction_block_type);
     return QualType();
   }
+
+  if (checkQualifiedFunction(*this, T, Loc, QFK_BlockPointer))
+    return QualType();
 
   return Context.getBlockPointerType(T);
 }
@@ -2270,66 +2332,6 @@ static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
   return T;
 }
 
-static std::string getFunctionQualifiersAsString(const FunctionProtoType *FnTy){
-  std::string Quals =
-    Qualifiers::fromCVRMask(FnTy->getTypeQuals()).getAsString();
-
-  switch (FnTy->getRefQualifier()) {
-  case RQ_None:
-    break;
-
-  case RQ_LValue:
-    if (!Quals.empty())
-      Quals += ' ';
-    Quals += '&';
-    break;
-
-  case RQ_RValue:
-    if (!Quals.empty())
-      Quals += ' ';
-    Quals += "&&";
-    break;
-  }
-
-  return Quals;
-}
-
-/// Check that the function type T, which has a cv-qualifier or a ref-qualifier,
-/// can be contained within the declarator chunk DeclType, and produce an
-/// appropriate diagnostic if not.
-static void checkQualifiedFunction(Sema &S, QualType T,
-                                   DeclaratorChunk &DeclType) {
-  // C++98 [dcl.fct]p4 / C++11 [dcl.fct]p6: a function type with a
-  // cv-qualifier or a ref-qualifier can only appear at the topmost level
-  // of a type.
-  int DiagKind = -1;
-  switch (DeclType.Kind) {
-  case DeclaratorChunk::Paren:
-  case DeclaratorChunk::MemberPointer:
-    // These cases are permitted.
-    return;
-  case DeclaratorChunk::Array:
-  case DeclaratorChunk::Function:
-    // These cases don't allow function types at all; no need to diagnose the
-    // qualifiers separately.
-    return;
-  case DeclaratorChunk::BlockPointer:
-    DiagKind = 0;
-    break;
-  case DeclaratorChunk::Pointer:
-    DiagKind = 1;
-    break;
-  case DeclaratorChunk::Reference:
-    DiagKind = 2;
-    break;
-  }
-
-  assert(DiagKind != -1);
-  S.Diag(DeclType.Loc, diag::err_compound_qualified_function_type)
-    << DiagKind << isa<FunctionType>(T.IgnoreParens()) << T
-    << getFunctionQualifiersAsString(T->castAs<FunctionProtoType>());
-}
-
 /// Produce an appropriate diagnostic for an ambiguity between a function
 /// declarator and a C++ direct-initializer.
 static void warnAboutAmbiguousFunction(Sema &S, Declarator &D,
@@ -2546,10 +2548,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     unsigned chunkIndex = e - i - 1;
     state.setCurrentChunkIndex(chunkIndex);
     DeclaratorChunk &DeclType = D.getTypeObject(chunkIndex);
-    if (IsQualifiedFunction) {
-      checkQualifiedFunction(S, T, DeclType);
-      IsQualifiedFunction = DeclType.Kind == DeclaratorChunk::Paren;
-    }
+    IsQualifiedFunction &= DeclType.Kind == DeclaratorChunk::Paren;
     switch (DeclType.Kind) {
     case DeclaratorChunk::Paren:
       T = S.BuildParenType(T);
@@ -3093,6 +3092,13 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
     //    alias-declaration,
     //  - the type-id in the default argument of a type-parameter, or
     //  - the type-id of a template-argument for a type-parameter
+    //
+    // FIXME: Checking this here is insufficient. We accept-invalid on:
+    //
+    //   template<typename T> struct S { void f(T); };
+    //   S<int() const> s;
+    //
+    // ... for instance.
     if (IsQualifiedFunction &&
         !(!FreeFunction &&
           D.getDeclSpec().getStorageClassSpec() != DeclSpec::SCS_static) &&
@@ -5214,39 +5220,36 @@ bool Sema::RequireCompleteTypeImpl(SourceLocation Loc, QualType T,
     return false;
   }
 
-  // FIXME: If there's an unimported definition of this type in a module (for
+  const TagType *Tag = T->getAs<TagType>();
+  const ObjCInterfaceType *IFace = T->getAs<ObjCInterfaceType>();
+
+  // If there's an unimported definition of this type in a module (for
   // instance, because we forward declared it, then imported the definition),
   // import that definition now.
+  //
   // FIXME: What about other cases where an import extends a redeclaration
   // chain for a declaration that can be accessed through a mechanism other
   // than name lookup (eg, referenced in a template, or a variable whose type
   // could be completed by the module)?
+  if (Tag || IFace) {
+    NamedDecl *D =
+        Tag ? static_cast<NamedDecl *>(Tag->getDecl()) : IFace->getDecl();
 
-  const TagType *Tag = T->getAs<TagType>();
-  const ObjCInterfaceType *IFace = 0;
-
-  if (Tag) {
     // Avoid diagnosing invalid decls as incomplete.
-    if (Tag->getDecl()->isInvalidDecl())
+    if (D->isInvalidDecl())
       return true;
 
     // Give the external AST source a chance to complete the type.
-    if (Tag->getDecl()->hasExternalLexicalStorage()) {
-      Context.getExternalSource()->CompleteType(Tag->getDecl());
-      if (!Tag->isIncompleteType())
-        return false;
-    }
-  }
-  else if ((IFace = T->getAs<ObjCInterfaceType>())) {
-    // Avoid diagnosing invalid decls as incomplete.
-    if (IFace->getDecl()->isInvalidDecl())
-      return true;
+    if (auto *Source = Context.getExternalSource()) {
+      if (Tag)
+        Source->CompleteType(Tag->getDecl());
+      else
+        Source->CompleteType(IFace->getDecl());
 
-    // Give the external AST source a chance to complete the type.
-    if (IFace->getDecl()->hasExternalLexicalStorage()) {
-      Context.getExternalSource()->CompleteType(IFace->getDecl());
-      if (!IFace->isIncompleteType())
-        return false;
+      // If the external source completed the type, go through the motions
+      // again to ensure we're allowed to use the completed type.
+      if (!T->isIncompleteType())
+        return RequireCompleteTypeImpl(Loc, T, Diagnoser);
     }
   }
 

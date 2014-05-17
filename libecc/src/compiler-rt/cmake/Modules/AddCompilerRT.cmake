@@ -14,7 +14,7 @@ macro(add_compiler_rt_object_library name arch)
     parse_arguments(LIB "SOURCES;CFLAGS;DEFS" "" ${ARGN})
     add_library(${name}.${arch} OBJECT ${LIB_SOURCES})
     set_target_compile_flags(${name}.${arch}
-      ${TARGET_${arch}_CFLAGS} ${LIB_CFLAGS})
+      ${CMAKE_CXX_FLAGS} ${TARGET_${arch}_CFLAGS} ${LIB_CFLAGS})
     set_property(TARGET ${name}.${arch} APPEND PROPERTY
       COMPILE_DEFINITIONS ${LIB_DEFS})
   else()
@@ -128,8 +128,20 @@ macro(add_compiler_rt_test test_suite test_name)
   if(NOT COMPILER_RT_STANDALONE_BUILD)
     list(APPEND TEST_DEPS clang)
   endif()
+  # If we're not on MSVC, include the linker flags from CMAKE but override them
+  # with the provided link flags. This ensures that flags which are required to
+  # link programs at all are included, but the changes needed for the test
+  # trump. With MSVC we can't do that because CMake is set up to run link.exe
+  # when linking, not the compiler. Here, we hack it to use the compiler
+  # because we want to use -fsanitize flags.
+  if(NOT MSVC)
+    set(TEST_LINK_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${TEST_LINK_FLAGS}")
+    separate_arguments(TEST_LINK_FLAGS)
+  endif()
   add_custom_target(${test_name}
-    COMMAND ${COMPILER_RT_TEST_COMPILER} ${TEST_OBJECTS} -o "${output_bin}"
+    # MSVS CL doesn't allow a space between -Fe and the output file name.
+    COMMAND ${COMPILER_RT_TEST_COMPILER} ${TEST_OBJECTS}
+            ${COMPILER_RT_TEST_COMPILER_EXE}"${output_bin}"
             ${TEST_LINK_FLAGS}
     DEPENDS ${TEST_DEPS})
   # Make the test suite depend on the binary.
@@ -190,6 +202,9 @@ macro(add_custom_libcxx name prefix)
                -DCMAKE_CXX_FLAGS=${LIBCXX_CFLAGS}
                -DCMAKE_BUILD_TYPE=Release
                -DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>
+    LOG_BUILD 1
+    LOG_CONFIGURE 1
+    LOG_INSTALL 1
     )
 
   ExternalProject_Add_Step(${name} force-reconfigure

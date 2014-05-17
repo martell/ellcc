@@ -38,10 +38,11 @@ public:
   void *operator new(size_t s) {
     return User::operator new(s, 1);
   }
-  /// GlobalAlias ctor - If a parent module is specified, the alias is
-  /// automatically inserted into the end of the specified module's alias list.
+  /// If a parent module is specified, the alias is automatically inserted into
+  /// the end of the specified module's alias list.
   GlobalAlias(Type *Ty, LinkageTypes Linkage, const Twine &Name = "",
-              Constant* Aliasee = nullptr, Module *Parent = nullptr);
+              GlobalObject *Aliasee = nullptr, Module *Parent = nullptr,
+              unsigned AddressSpace = 0);
 
   /// Provide fast operand accessors
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
@@ -57,20 +58,13 @@ public:
   void eraseFromParent() override;
 
   /// set/getAliasee - These methods retrive and set alias target.
-  void setAliasee(Constant *GV);
-  const Constant *getAliasee() const {
-    return getOperand(0);
-  }
-  Constant *getAliasee() {
-    return getOperand(0);
+  void setAliasee(GlobalObject *GO);
+  const GlobalObject *getAliasee() const {
+    return const_cast<GlobalAlias *>(this)->getAliasee();
   }
 
-  /// This method tries to ultimately resolve the alias by going through the
-  /// aliasing chain and trying to find the very last global. Returns NULL if a
-  /// cycle was found.
-  GlobalValue *getAliasedGlobal();
-  const GlobalValue *getAliasedGlobal() const {
-    return const_cast<GlobalAlias *>(this)->getAliasedGlobal();
+  GlobalObject *getAliasee() {
+    return cast_or_null<GlobalObject>(getOperand(0));
   }
 
   static bool isValidLinkage(LinkageTypes L) {

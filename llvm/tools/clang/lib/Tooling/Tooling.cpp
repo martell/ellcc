@@ -54,10 +54,8 @@ FrontendActionFactory::~FrontendActionFactory() {}
 /// \brief Builds a clang driver initialized for running clang tools.
 static clang::driver::Driver *newDriver(clang::DiagnosticsEngine *Diagnostics,
                                         const char *BinaryName) {
-  const char *DefaultOutputName = "a.out";
   clang::driver::Driver *CompilerDriver = new clang::driver::Driver(
-    BinaryName, llvm::sys::getDefaultTargetTriple(),
-    DefaultOutputName, *Diagnostics);
+      BinaryName, llvm::sys::getDefaultTargetTriple(), *Diagnostics);
   CompilerDriver->setTitle("clang_based_tool");
   return CompilerDriver;
 }
@@ -258,7 +256,7 @@ bool FrontendActionFactory::runInvocation(CompilerInvocation *Invocation,
   // pass it to an std::unique_ptr declared after the Compiler variable.
   std::unique_ptr<FrontendAction> ScopedToolAction(create());
 
-  // Create the compilers actual diagnostics engine.
+  // Create the compiler's actual diagnostics engine.
   Compiler.createDiagnostics(DiagConsumer, /*ShouldOwnClient=*/false);
   if (!Compiler.hasDiagnostics())
     return false;
@@ -292,7 +290,7 @@ ClangTool::ClangTool(const CompilationDatabase &Compilations,
       // about the .cc files that were not found, and the use case where I
       // specify all files I want to run over explicitly, where this should
       // be an error. We'll want to add an option for this.
-      llvm::outs() << "Skipping " << File << ". Command line not found.\n";
+      llvm::errs() << "Skipping " << File << ". Compile command not found.\n";
     }
   }
 }

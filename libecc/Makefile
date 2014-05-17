@@ -160,7 +160,7 @@ clean:
 	make -C src/musl distclean
 	make -C src/compiler-rt clean
 	make -C obj clean
-	rm -fr src/musl/musl.last
+	rm -fr src/musl/musl.last *-build
 
 veryclean: clean
 	make -C obj veryclean

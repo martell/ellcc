@@ -1085,18 +1085,18 @@ Value *InstCombiner::Descale(Value *Val, APInt Scale, bool &NoSignedWrap) {
 
 /// \brief Creates node of binary operation with the same attributes as the
 /// specified one but with other operands.
-static BinaryOperator *CreateBinOpAsGiven(BinaryOperator &Inst, Value *LHS,
-                                          Value *RHS,
-                                          InstCombiner::BuilderTy *B) {
-  BinaryOperator *NewBO = cast<BinaryOperator>(B->CreateBinOp(Inst.getOpcode(),
-                                                              LHS, RHS));
-  if (isa<OverflowingBinaryOperator>(NewBO)) {
-    NewBO->setHasNoSignedWrap(Inst.hasNoSignedWrap());
-    NewBO->setHasNoUnsignedWrap(Inst.hasNoUnsignedWrap());
+static Value *CreateBinOpAsGiven(BinaryOperator &Inst, Value *LHS, Value *RHS,
+                                 InstCombiner::BuilderTy *B) {
+  Value *BORes = B->CreateBinOp(Inst.getOpcode(), LHS, RHS);
+  if (BinaryOperator *NewBO = dyn_cast<BinaryOperator>(BORes)) {
+    if (isa<OverflowingBinaryOperator>(NewBO)) {
+      NewBO->setHasNoSignedWrap(Inst.hasNoSignedWrap());
+      NewBO->setHasNoUnsignedWrap(Inst.hasNoUnsignedWrap());
+    }
+    if (isa<PossiblyExactOperator>(NewBO))
+      NewBO->setIsExact(Inst.isExact());
   }
-  if (isa<PossiblyExactOperator>(NewBO))
-    NewBO->setIsExact(Inst.isExact());
-  return NewBO;
+  return BORes;
 }
 
 /// \brief Makes transformation of binary operation specific for vector types.
@@ -1120,11 +1120,12 @@ Value *InstCombiner::SimplifyVectorOp(BinaryOperator &Inst) {
     ShuffleVectorInst *RShuf = cast<ShuffleVectorInst>(RHS);
     if (isa<UndefValue>(LShuf->getOperand(1)) &&
         isa<UndefValue>(RShuf->getOperand(1)) &&
+        LShuf->getOperand(0)->getType() == RShuf->getOperand(0)->getType() &&
         LShuf->getMask() == RShuf->getMask()) {
-      BinaryOperator *NewBO = CreateBinOpAsGiven(Inst, LShuf->getOperand(0),
+      Value *NewBO = CreateBinOpAsGiven(Inst, LShuf->getOperand(0),
           RShuf->getOperand(0), Builder);
       Value *Res = Builder->CreateShuffleVector(NewBO,
-          UndefValue::get(Inst.getType()), LShuf->getMask());
+          UndefValue::get(NewBO->getType()), LShuf->getMask());
       return Res;
     }
   }
@@ -1167,7 +1168,7 @@ Value *InstCombiner::SimplifyVectorOp(BinaryOperator &Inst) {
         NewLHS = Shuffle->getOperand(0);
         NewRHS = C2;
       }
-      BinaryOperator *NewBO = CreateBinOpAsGiven(Inst, NewLHS, NewRHS, Builder);
+      Value *NewBO = CreateBinOpAsGiven(Inst, NewLHS, NewRHS, Builder);
       Value *Res = Builder->CreateShuffleVector(NewBO,
           UndefValue::get(Inst.getType()), Shuffle->getMask());
       return Res;
@@ -1217,6 +1218,72 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
       }
     }
     if (MadeChange) return &GEP;
+  }
+
+  // Check to see if the inputs to the PHI node are getelementptr instructions.
+  if (PHINode *PN = dyn_cast<PHINode>(PtrOp)) {
+    GetElementPtrInst *Op1 = dyn_cast<GetElementPtrInst>(PN->getOperand(0));
+    if (!Op1)
+      return nullptr;
+
+    signed DI = -1;
+
+    for (auto I = PN->op_begin()+1, E = PN->op_end(); I !=E; ++I) {
+      GetElementPtrInst *Op2 = dyn_cast<GetElementPtrInst>(*I);
+      if (!Op2 || Op1->getNumOperands() != Op2->getNumOperands())
+        return nullptr;
+
+      for (unsigned J = 0, F = Op1->getNumOperands(); J != F; ++J) {
+        if (Op1->getOperand(J)->getType() != Op2->getOperand(J)->getType())
+          return nullptr;
+
+        if (Op1->getOperand(J) != Op2->getOperand(J)) {
+          if (DI == -1) {
+            // We have not seen any differences yet in the GEPs feeding the
+            // PHI yet, so we record this one.
+            DI = J;
+          } else {
+            // The GEP is different by more than one input. While this could be
+            // extended to support GEPs that vary by more than one variable it
+            // doesn't make sense since it greatly increases the complexity and
+            // would result in an R+R+R addressing mode which no backend
+            // directly supports and would need to be broken into several
+            // simpler instructions anyway.
+            return nullptr;
+          }
+        }
+      }
+    }
+
+    GetElementPtrInst *NewGEP = dyn_cast<GetElementPtrInst>(Op1->clone());
+
+    if (DI == -1) {
+      // All the GEPs feeding the PHI are identical. Clone one down into our
+      // BB so that it can be merged with the current GEP.
+      GEP.getParent()->getInstList().insert(GEP.getParent()->getFirstNonPHI(),
+                                            NewGEP);
+    } else {
+      // All the GEPs feeding the PHI differ at a single offset. Clone a GEP
+      // into the current block so it can be merged, and create a new PHI to
+      // set that index.
+      Instruction *InsertPt = Builder->GetInsertPoint();
+      Builder->SetInsertPoint(PN);
+      PHINode *NewPN = Builder->CreatePHI(Op1->getOperand(DI)->getType(),
+                                          PN->getNumOperands());
+      Builder->SetInsertPoint(InsertPt);
+
+      for (auto &I : PN->operands())
+        NewPN->addIncoming(dyn_cast<GEPOperator>(I)->getOperand(DI),
+                           PN->getIncomingBlock(I));
+
+      NewGEP->setOperand(DI, NewPN);
+      GEP.getParent()->getInstList().insert(GEP.getParent()->getFirstNonPHI(),
+                                            NewGEP);
+      NewGEP->setOperand(DI, NewPN);
+    }
+
+    GEP.setOperand(0, NewGEP);
+    PtrOp = NewGEP;
   }
 
   // Combine Indices - If the source pointer to this getelementptr instruction

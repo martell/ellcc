@@ -825,6 +825,19 @@ bool ARM64InstrInfo::optimizeCompareInstr(
   return true;
 }
 
+/// Return true if this is this instruction has a non-zero immediate
+bool ARM64InstrInfo::hasNonZeroImm(const MachineInstr *MI) const {
+  switch (MI->getOpcode()) {
+  default:
+    if (MI->getOperand(3).isImm()) {
+      unsigned val = MI->getOperand(3).getImm();
+      return (val != 0);
+    }
+    break;
+  }
+  return false;
+}
+
 // Return true if this instruction simply sets its single destination register
 // to zero. This is equivalent to a register rename of the zero-register.
 bool ARM64InstrInfo::isGPRZero(const MachineInstr *MI) const {
@@ -975,7 +988,7 @@ bool ARM64InstrInfo::isScaledAddr(const MachineInstr *MI) const {
   case ARM64::STRWro:
   case ARM64::STRXro:
     unsigned Val = MI->getOperand(3).getImm();
-    ARM64_AM::ExtendType ExtType = ARM64_AM::getMemExtendType(Val);
+    ARM64_AM::ShiftExtendType ExtType = ARM64_AM::getMemExtendType(Val);
     return (ExtType != ARM64_AM::UXTX) || ARM64_AM::getMemDoShift(Val);
   }
   return false;

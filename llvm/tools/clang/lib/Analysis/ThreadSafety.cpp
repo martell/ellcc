@@ -849,44 +849,37 @@ public:
     return false;
   }
 
-  // Returns an iterator
   iterator findLockIter(FactManager &FM, const SExpr &M) {
-    for (iterator I = begin(), E = end(); I != E; ++I) {
-      const SExpr &Exp = FM[*I].MutID;
-      if (Exp.matches(M))
-        return I;
-    }
-    return end();
+    return std::find_if(begin(), end(), [&](FactID ID) {
+      return FM[ID].MutID.matches(M);
+    });
   }
 
-  LockData* findLock(FactManager &FM, const SExpr &M) const {
-    for (const_iterator I = begin(), E = end(); I != E; ++I) {
-      const SExpr &Exp = FM[*I].MutID;
-      if (Exp.matches(M))
-        return &FM[*I].LDat;
-    }
-    return 0;
+  LockData *findLock(FactManager &FM, const SExpr &M) const {
+    auto I = std::find_if(begin(), end(), [&](FactID ID) {
+      return FM[ID].MutID.matches(M);
+    });
+
+    return I != end() ? &FM[*I].LDat : nullptr;
   }
 
-  LockData* findLockUniv(FactManager &FM, const SExpr &M) const {
-    for (const_iterator I = begin(), E = end(); I != E; ++I) {
-      const SExpr &Exp = FM[*I].MutID;
-      if (Exp.matches(M) || Exp.isUniversal())
-        return &FM[*I].LDat;
-    }
-    return 0;
+  LockData *findLockUniv(FactManager &FM, const SExpr &M) const {
+    auto I = std::find_if(begin(), end(), [&](FactID ID) -> bool {
+      const SExpr &Expr = FM[ID].MutID;
+      return Expr.isUniversal() || Expr.matches(M);
+    });
+
+    return I != end() ? &FM[*I].LDat : nullptr;
   }
 
-  FactEntry* findPartialMatch(FactManager &FM, const SExpr &M) const {
-    for (const_iterator I=begin(), E=end(); I != E; ++I) {
-      const SExpr& Exp = FM[*I].MutID;
-      if (Exp.partiallyMatches(M)) return &FM[*I];
-    }
-    return 0;
+  FactEntry *findPartialMatch(FactManager &FM, const SExpr &M) const {
+    auto I = std::find_if(begin(), end(), [&](FactID ID) {
+      return FM[ID].MutID.partiallyMatches(M);
+    });
+
+    return I != end() ? &FM[*I] : nullptr;
   }
 };
-
-
 
 /// A Lockset maps each SExpr (defined above) to information about how it has
 /// been locked.
@@ -1084,7 +1077,7 @@ protected:
 
   // Adds a new definition to the given context, and returns a new context.
   // This method should be called when declaring a new variable.
-  Context addDefinition(const NamedDecl *D, Expr *Exp, Context Ctx) {
+  Context addDefinition(const NamedDecl *D, const Expr *Exp, Context Ctx) {
     assert(!Ctx.contains(D));
     unsigned newID = VarDefinitions.size();
     Context NewCtx = ContextFactory.add(Ctx, D, newID);
@@ -1165,9 +1158,9 @@ public:
 void VarMapBuilder::VisitDeclStmt(DeclStmt *S) {
   bool modifiedCtx = false;
   DeclGroupRef DGrp = S->getDeclGroup();
-  for (DeclGroupRef::iterator I = DGrp.begin(), E = DGrp.end(); I != E; ++I) {
-    if (VarDecl *VD = dyn_cast_or_null<VarDecl>(*I)) {
-      Expr *E = VD->getInit();
+  for (const auto *D : DGrp) {
+    if (const auto *VD = dyn_cast_or_null<VarDecl>(D)) {
+      const Expr *E = VD->getInit();
 
       // Add local variables with trivial type to the variable map
       QualType T = VD->getType();
@@ -1209,13 +1202,12 @@ void VarMapBuilder::VisitBinaryOperator(BinaryOperator *BO) {
 LocalVariableMap::Context
 LocalVariableMap::intersectContexts(Context C1, Context C2) {
   Context Result = C1;
-  for (Context::iterator I = C1.begin(), E = C1.end(); I != E; ++I) {
-    const NamedDecl *Dec = I.getKey();
-    unsigned i1 = I.getData();
+  for (const auto &P : C1) {
+    const NamedDecl *Dec = P.first;
     const unsigned *i2 = C2.lookup(Dec);
     if (!i2)             // variable doesn't exist on second path
       Result = removeDefinition(Dec, Result);
-    else if (*i2 != i1)  // variable exists, but has different definition
+    else if (*i2 != P.second)  // variable exists, but has different definition
       Result = clearDefinition(Dec, Result);
   }
   return Result;
@@ -1226,11 +1218,8 @@ LocalVariableMap::intersectContexts(Context C1, Context C2) {
 // (We use this for a naive implementation of SSA on loop back-edges.)
 LocalVariableMap::Context LocalVariableMap::createReferenceContext(Context C) {
   Context Result = getEmptyContext();
-  for (Context::iterator I = C.begin(), E = C.end(); I != E; ++I) {
-    const NamedDecl *Dec = I.getKey();
-    unsigned i = I.getData();
-    Result = addReference(Dec, i, Result);
-  }
+  for (const auto &P : C)
+    Result = addReference(P.first, P.second, Result);
   return Result;
 }
 
@@ -1238,13 +1227,12 @@ LocalVariableMap::Context LocalVariableMap::createReferenceContext(Context C) {
 // altering the VarDefinitions.  C1 must be the result of an earlier call to
 // createReferenceContext.
 void LocalVariableMap::intersectBackEdge(Context C1, Context C2) {
-  for (Context::iterator I = C1.begin(), E = C1.end(); I != E; ++I) {
-    const NamedDecl *Dec = I.getKey();
-    unsigned i1 = I.getData();
+  for (const auto &P : C1) {
+    unsigned i1 = P.second;
     VarDefinition *VDef = &VarDefinitions[i1];
     assert(VDef->isReference());
 
-    const unsigned *i2 = C2.lookup(Dec);
+    const unsigned *i2 = C2.lookup(P.first);
     if (!i2 || (*i2 != i1))
       VDef->Ref = 0;    // Mark this variable as undefined
   }
@@ -1643,23 +1631,22 @@ void ThreadSafetyAnalyzer::getMutexIDs(MutexIDList &Mtxs, AttrType *Attr,
                                        const CFGBlock *CurrBlock,
                                        Expr *BrE, bool Neg) {
   // Find out which branch has the lock
-  bool branch = 0;
-  if (CXXBoolLiteralExpr *BLE = dyn_cast_or_null<CXXBoolLiteralExpr>(BrE)) {
+  bool branch = false;
+  if (CXXBoolLiteralExpr *BLE = dyn_cast_or_null<CXXBoolLiteralExpr>(BrE))
     branch = BLE->getValue();
-  }
-  else if (IntegerLiteral *ILE = dyn_cast_or_null<IntegerLiteral>(BrE)) {
+  else if (IntegerLiteral *ILE = dyn_cast_or_null<IntegerLiteral>(BrE))
     branch = ILE->getValue().getBoolValue();
-  }
+
   int branchnum = branch ? 0 : 1;
-  if (Neg) branchnum = !branchnum;
+  if (Neg)
+    branchnum = !branchnum;
 
   // If we've taken the trylock branch, then add the lock
   int i = 0;
   for (CFGBlock::const_succ_iterator SI = PredBlock->succ_begin(),
        SE = PredBlock->succ_end(); SI != SE && i < 2; ++SI, ++i) {
-    if (*SI == CurrBlock && i == branchnum) {
+    if (*SI == CurrBlock && i == branchnum)
       getMutexIDs(Mtxs, Attr, Exp, D);
-    }
   }
 }
 
@@ -1774,9 +1761,7 @@ void ThreadSafetyAnalyzer::getEdgeLockset(FactSet& Result,
   MutexIDList SharedLocksToAdd;
 
   // If the condition is a call to a Trylock function, then grab the attributes
-  AttrVec &ArgAttrs = FunDecl->getAttrs();
-  for (unsigned i = 0; i < ArgAttrs.size(); ++i) {
-    Attr *Attr = ArgAttrs[i];
+  for (auto *Attr : FunDecl->getAttrs()) {
     switch (Attr->getKind()) {
       case attr::ExclusiveTrylockFunction: {
         ExclusiveTrylockFunctionAttr *A =
@@ -2225,9 +2210,7 @@ void BuildLockset::VisitDeclStmt(DeclStmt *S) {
   // adjust the context
   LVarCtx = Analyzer->LocalVarMap.getNextContext(CtxIndex, S, LVarCtx);
 
-  DeclGroupRef DGrp = S->getDeclGroup();
-  for (DeclGroupRef::iterator I = DGrp.begin(), E = DGrp.end(); I != E; ++I) {
-    Decl *D = *I;
+  for (auto *D : S->getDeclGroup()) {
     if (VarDecl *VD = dyn_cast_or_null<VarDecl>(D)) {
       Expr *E = VD->getInit();
       // handle constructors that involve temporaries
@@ -2269,10 +2252,9 @@ void ThreadSafetyAnalyzer::intersectAndWarn(FactSet &FSet1,
   FactSet FSet1Orig = FSet1;
 
   // Find locks in FSet2 that conflict or are not in FSet1, and warn.
-  for (FactSet::const_iterator I = FSet2.begin(), E = FSet2.end();
-       I != E; ++I) {
-    const SExpr &FSet2Mutex = FactMan[*I].MutID;
-    const LockData &LDat2 = FactMan[*I].LDat;
+  for (const auto &Fact : FSet2) {
+    const SExpr &FSet2Mutex = FactMan[Fact].MutID;
+    const LockData &LDat2 = FactMan[Fact].LDat;
     FactSet::iterator I1 = FSet1.findLockIter(FactMan, FSet2Mutex);
 
     if (I1 != FSet1.end()) {
@@ -2282,12 +2264,12 @@ void ThreadSafetyAnalyzer::intersectAndWarn(FactSet &FSet1,
                                          LDat2.AcquireLoc, LDat1->AcquireLoc);
         if (Modify && LDat1->LKind != LK_Exclusive) {
           // Take the exclusive lock, which is the one in FSet2.
-          *I1 = *I;
+          *I1 = Fact;
         }
       }
       else if (LDat1->Asserted && !LDat2.Asserted) {
         // The non-asserted lock in FSet2 is the one we want to track.
-        *I1 = *I;
+        *I1 = Fact;
       }
     } else {
       if (LDat2.UnderlyingMutex.isValid()) {
@@ -2307,10 +2289,9 @@ void ThreadSafetyAnalyzer::intersectAndWarn(FactSet &FSet1,
   }
 
   // Find locks in FSet1 that are not in FSet2, and remove them.
-  for (FactSet::const_iterator I = FSet1Orig.begin(), E = FSet1Orig.end();
-       I != E; ++I) {
-    const SExpr &FSet1Mutex = FactMan[*I].MutID;
-    const LockData &LDat1 = FactMan[*I].LDat;
+  for (const auto &Fact : FSet1Orig) {
+    const SExpr &FSet1Mutex = FactMan[Fact].MutID;
+    const LockData &LDat1 = FactMan[Fact].LDat;
 
     if (!FSet2.findLock(FactMan, FSet1Mutex)) {
       if (LDat1.UnderlyingMutex.isValid()) {

@@ -266,6 +266,64 @@ namespace __sanitizer {
   typedef unsigned __sanitizer_pthread_key_t;
 #endif
 
+#if SANITIZER_LINUX && !SANITIZER_ANDROID
+
+  struct __sanitizer_XDR {
+    int x_op;
+    void *x_ops;
+    uptr x_public;
+    uptr x_private;
+    uptr x_base;
+    unsigned x_handy;
+  };
+
+  const int __sanitizer_XDR_ENCODE = 0;
+  const int __sanitizer_XDR_DECODE = 1;
+  const int __sanitizer_XDR_FREE = 2;
+#endif
+
+  struct __sanitizer_passwd {
+    char *pw_name;
+    char *pw_passwd;
+    int pw_uid;
+    int pw_gid;
+#if SANITIZER_MAC || SANITIZER_FREEBSD
+    long pw_change;
+    char *pw_class;
+#endif
+#if !SANITIZER_ANDROID
+    char *pw_gecos;
+#endif
+    char *pw_dir;
+    char *pw_shell;
+#if SANITIZER_MAC || SANITIZER_FREEBSD
+    long pw_expire;
+#endif
+#if SANITIZER_FREEBSD
+    int pw_fields;
+#endif
+  };
+
+  struct __sanitizer_group {
+    char *gr_name;
+    char *gr_passwd;
+    int gr_gid;
+    char **gr_mem;
+  };
+
+#if defined(__x86_64__) && !defined(_LP64)
+  typedef long long __sanitizer_time_t;
+#else
+  typedef long __sanitizer_time_t;
+#endif
+
+  struct __sanitizer_timeb {
+    __sanitizer_time_t time;
+    unsigned short millitm;
+    short timezone;
+    short dstflag;
+  };
+
   struct __sanitizer_ether_addr {
     u8 octet[6];
   };
@@ -587,6 +645,10 @@ namespace __sanitizer {
     __sanitizer_FILE *_chain;
     int _fileno;
   };
+# define SANITIZER_HAS_STRUCT_FILE 1
+#else
+  typedef void __sanitizer_FILE;
+# define SANITIZER_HAS_STRUCT_FILE 0
 #endif
 
 #if SANITIZER_LINUX && !SANITIZER_ANDROID && \

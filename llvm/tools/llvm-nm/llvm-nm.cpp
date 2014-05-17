@@ -182,19 +182,19 @@ static bool compareSymbolName(const NMSymbol &A, const NMSymbol &B) {
 }
 
 static char isSymbolList64Bit(SymbolicFile *Obj) {
-  if (dyn_cast<IRObjectFile>(Obj))
+  if (isa<IRObjectFile>(Obj))
     return false;
-  else if (dyn_cast<COFFObjectFile>(Obj))
+  else if (isa<COFFObjectFile>(Obj))
     return false;
   else if (MachOObjectFile *MachO = dyn_cast<MachOObjectFile>(Obj))
     return MachO->is64Bit();
-  else if (dyn_cast<ELF32LEObjectFile>(Obj))
+  else if (isa<ELF32LEObjectFile>(Obj))
     return false;
-  else if (dyn_cast<ELF64LEObjectFile>(Obj))
+  else if (isa<ELF64LEObjectFile>(Obj))
     return true;
-  else if (dyn_cast<ELF32BEObjectFile>(Obj))
+  else if (isa<ELF32BEObjectFile>(Obj))
     return false;
-  else if(dyn_cast<ELF64BEObjectFile>(Obj))
+  else if(isa<ELF64BEObjectFile>(Obj))
     return true;
   else
     return false;
@@ -420,7 +420,7 @@ static char getSymbolNMTypeChar(const GlobalValue &GV) {
   if (isa<GlobalVariable>(GV))
     return 'd';
   const GlobalAlias *GA = cast<GlobalAlias>(&GV);
-  const GlobalValue *AliasedGV = GA->getAliasedGlobal();
+  const GlobalValue *AliasedGV = GA->getAliasee();
   return getSymbolNMTypeChar(*AliasedGV);
 }
 
@@ -595,9 +595,23 @@ static void dumpSymbolNamesFromFile(std::string &Filename) {
                                                E = UB->end_objects();
          I != E; ++I) {
       std::unique_ptr<ObjectFile> Obj;
+      std::unique_ptr<Archive> A;
       if (!I->getAsObjectFile(Obj)) {
         outs() << Obj->getFileName() << ":\n";
         dumpSymbolNamesFromObject(Obj.get());
+      }
+      else if (!I->getAsArchive(A)) {
+        for (Archive::child_iterator AI = A->child_begin(), AE = A->child_end();
+             AI != AE; ++AI) {
+          std::unique_ptr<Binary> Child;
+          if (AI->getAsBinary(Child, &Context))
+            continue;
+          if (SymbolicFile *O = dyn_cast<SymbolicFile>(Child.get())) {
+            outs() << A->getFileName() << ":";
+            outs() << O->getFileName() << ":\n";
+            dumpSymbolNamesFromObject(O);
+          }
+        }
       }
     }
     return;

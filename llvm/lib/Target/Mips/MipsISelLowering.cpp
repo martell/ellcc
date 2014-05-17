@@ -352,20 +352,21 @@ MipsTargetLowering::MipsTargetLowering(MipsTargetMachine &TM)
 
   setInsertFencesForAtomic(true);
 
-  if (!Subtarget->hasSEInReg()) {
+  if (!Subtarget->hasMips32r2()) {
     setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i8,  Expand);
     setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i16, Expand);
   }
 
-  if (!Subtarget->hasBitCount()) {
+  // MIPS16 lacks MIPS32's clz and clo instructions.
+  if (!Subtarget->hasMips32() || Subtarget->inMips16Mode())
     setOperationAction(ISD::CTLZ, MVT::i32, Expand);
+  if (!Subtarget->hasMips64())
     setOperationAction(ISD::CTLZ, MVT::i64, Expand);
-  }
 
-  if (!Subtarget->hasSwap()) {
+  if (!Subtarget->hasMips32r2())
     setOperationAction(ISD::BSWAP, MVT::i32, Expand);
+  if (!Subtarget->hasMips64r2())
     setOperationAction(ISD::BSWAP, MVT::i64, Expand);
-  }
 
   if (isGP64bit()) {
     setLoadExtAction(ISD::SEXTLOAD, MVT::i32, Custom);
@@ -2659,20 +2660,22 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
       InVals.push_back(Load);
       OutChains.push_back(Load.getValue(1));
     }
+  }
 
+  for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
     // The mips ABIs for returning structs by value requires that we copy
     // the sret argument into $v0 for the return. Save the argument into
     // a virtual register so that we can access it from the return points.
-    if (Flags.isSRet()) {
+    if (Ins[i].Flags.isSRet()) {
       unsigned Reg = MipsFI->getSRetReturnReg();
       if (!Reg) {
         Reg = MF.getRegInfo().createVirtualRegister(
             getRegClassFor(isN64() ? MVT::i64 : MVT::i32));
         MipsFI->setSRetReturnReg(Reg);
       }
-      SDValue Copy =
-          DAG.getCopyToReg(DAG.getEntryNode(), DL, Reg, InVals.back());
+      SDValue Copy = DAG.getCopyToReg(DAG.getEntryNode(), DL, Reg, InVals[i]);
       Chain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other, Copy, Chain);
+      break;
     }
   }
 

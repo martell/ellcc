@@ -33,7 +33,6 @@ using namespace llvm;
 //
 
 namespace llvm {
-  bool HasDivModLibcall;
   bool AsmVerbosityDefault(false);
 }
 
@@ -55,11 +54,6 @@ TargetMachine::TargetMachine(const Target &T,
                              const TargetOptions &Options)
   : TheTarget(T), TargetTriple(TT), TargetCPU(CPU), TargetFS(FS),
     CodeGenInfo(nullptr), AsmInfo(nullptr),
-    MCRelaxAll(false),
-    MCNoExecStack(false),
-    MCSaveTempLabels(false),
-    MCUseCFI(true),
-    MCUseDwarfDirectory(false),
     RequireStructuredCFG(false),
     Options(Options) {
 }
@@ -132,7 +126,7 @@ TLSModel::Model TargetMachine::getTLSModel(const GlobalValue *GV) const {
   // If GV is an alias then use the aliasee for determining
   // thread-localness.
   if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(GV))
-    GV = GA->getAliasedGlobal();
+    GV = GA->getAliasee();
   const GlobalVariable *Var = cast<GlobalVariable>(GV);
 
   bool isLocal = Var->hasLocalLinkage();

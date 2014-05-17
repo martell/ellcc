@@ -821,10 +821,6 @@ private:
   /// \brief Whether we have tried loading the global module index yet.
   bool TriedLoadingGlobalIndex;
 
-  /// \brief The current "generation" of the module file import stack, which 
-  /// indicates how many separate module file load operations have occurred.
-  unsigned CurrentGeneration;
-
   typedef llvm::DenseMap<unsigned, SwitchCase *> SwitchCaseMapTy;
   /// \brief Mapping from switch-case IDs in the chain to switch-case statements
   ///
@@ -1155,13 +1151,10 @@ private:
   RecordLocation getLocalBitOffset(uint64_t GlobalOffset);
   uint64_t getGlobalBitOffset(ModuleFile &M, uint32_t LocalOffset);
 
-  /// \brief Returns the first preprocessed entity ID that ends after BLoc.
+  /// \brief Returns the first preprocessed entity ID that begins or ends after
+  /// \arg Loc.
   serialization::PreprocessedEntityID
-    findBeginPreprocessedEntity(SourceLocation BLoc) const;
-
-  /// \brief Returns the first preprocessed entity ID that begins after ELoc.
-  serialization::PreprocessedEntityID
-    findEndPreprocessedEntity(SourceLocation ELoc) const;
+  findPreprocessedEntity(SourceLocation Loc, bool EndsAfter) const;
 
   /// \brief Find the next module that contains entities and return the ID
   /// of the first entry.
@@ -1643,6 +1636,11 @@ public:
   T *ReadDeclAs(ModuleFile &F, const RecordData &R, unsigned &I) {
     return cast_or_null<T>(GetDecl(ReadDeclID(F, R, I)));
   }
+
+  /// \brief If any redeclarations of \p D have been imported since it was
+  /// last checked, this digs out those redeclarations and adds them to the
+  /// redeclaration chain for \p D.
+  void CompleteRedeclChain(const Decl *D) override;
 
   /// \brief Read a CXXBaseSpecifiers ID form the given record and
   /// return its global bit offset.

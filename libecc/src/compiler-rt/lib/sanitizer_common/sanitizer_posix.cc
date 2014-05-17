@@ -22,6 +22,10 @@
 
 #include <sys/mman.h>
 
+#if SANITIZER_LINUX && !SANITIZER_ANDROID
+#include <sys/personality.h>
+#endif
+
 namespace __sanitizer {
 
 // ------------- sanitizer_common.h
@@ -30,16 +34,38 @@ uptr GetMmapGranularity() {
 }
 
 #if SANITIZER_WORDSIZE == 32
-// Take care of unusable kernel area in top gigabyte
-static uptr GetKernelStartAddress() {
-#if 0  // SANITIZER_LINUX
-  // FIXME: this code is too naive. We have a situation where the machine is a
-  // true x8_64, but under schroot uname returns i686.
-  // 64-bit Linux provides 32-bit apps with full address space
+// Take care of unusable kernel area in top gigabyte.
+static uptr GetKernelAreaSize() {
+#if SANITIZER_LINUX
+  const uptr gbyte = 1UL << 30;
+
+  // Firstly check if there are writable segments
+  // mapped to top gigabyte (e.g. stack).
+  MemoryMappingLayout proc_maps(/*cache_enabled*/true);
+  uptr end, prot;
+  while (proc_maps.Next(/*start*/0, &end,
+                        /*offset*/0, /*filename*/0,
+                        /*filename_size*/0, &prot)) {
+    if ((end >= 3 * gbyte)
+        && (prot & MemoryMappingLayout::kProtectionWrite) != 0)
+      return 0;
+  }
+
+#if !SANITIZER_ANDROID
+  // Even if nothing is mapped, top Gb may still be accessible
+  // if we are running on 64-bit kernel.
+  // Uname may report misleading results if personality type
+  // is modified (e.g. under schroot) so check this as well.
   struct utsname uname_info;
-  return 0 == uname(&uname_info) && !internal_strstr(uname_info.machine, "64")
-    ? 1ULL << 30
-    : 0;
+  int pers = personality(0xffffffffUL);
+  if (!(pers & PER_MASK)
+      && uname(&uname_info) == 0
+      && internal_strstr(uname_info.machine, "64"))
+    return 0;
+#endif  // SANITIZER_ANDROID
+
+  // Top gigabyte is reserved for kernel.
+  return gbyte;
 #else
   return 0;
 #endif  // SANITIZER_LINUX
@@ -61,8 +87,11 @@ uptr GetMaxVirtualAddress() {
   return (1ULL << 47) - 1;  // 0x00007fffffffffffUL;
 # endif
 #else  // SANITIZER_WORDSIZE == 32
-  // FIXME: We can probably lower this on Android?
-  return (1ULL << 32) - 1;  // 0xffffffff;
+  uptr res = (1ULL << 32) - 1;  // 0xffffffff;
+  if (!common_flags()->full_address_space)
+    res -= GetKernelAreaSize();
+  CHECK_LT(reinterpret_cast<uptr>(&res), res);
+  return res;
 #endif  // SANITIZER_WORDSIZE
 }
 
