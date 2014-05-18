@@ -770,7 +770,7 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
   // Select the ABI to use.
   //
   // FIXME: Support -meabi.
-  const char *ABIName = 0;
+  const char *ABIName = nullptr;
   if (Arg *A = Args.getLastArg(options::OPT_mabi_EQ)) {
     ABIName = A->getValue();
   } else if (Triple.isOSDarwin()) {
@@ -906,7 +906,7 @@ void Clang::AddARM64TargetArgs(const ArgList &Args,
                     options::OPT_mno_implicit_float, true))
     CmdArgs.push_back("-no-implicit-float");
 
-  const char *ABIName = 0;
+  const char *ABIName = nullptr;
   if (Arg *A = Args.getLastArg(options::OPT_mabi_EQ))
     ABIName = A->getValue();
   else if (Triple.isOSDarwin())
@@ -1376,7 +1376,7 @@ static const char *getX86TargetCPU(const ArgList &Args,
 
   if (Triple.getArch() != llvm::Triple::x86_64 &&
       Triple.getArch() != llvm::Triple::x86)
-    return 0; // This routine is only handling x86 targets.
+    return nullptr; // This routine is only handling x86 targets.
 
   bool Is64Bit = Triple.getArch() == llvm::Triple::x86_64;
 
@@ -6422,7 +6422,7 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
-    const char *crt1 = NULL;
+    const char *crt1 = nullptr;
     if (!Args.hasArg(options::OPT_shared)) {
       if (Args.hasArg(options::OPT_pg))
         crt1 = "gcrt1.o";
@@ -6436,7 +6436,7 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
     CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crti.o")));
 
-    const char *crtbegin = NULL;
+    const char *crtbegin = nullptr;
     if (Args.hasArg(options::OPT_static))
       crtbegin = "crtbeginT.o";
     else if (Args.hasArg(options::OPT_shared) || IsPIE)
@@ -7152,7 +7152,7 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
     if (!isAndroid) {
-      const char *crt1 = NULL;
+      const char *crt1 = nullptr;
       if (!Args.hasArg(options::OPT_shared)){
         if (Args.hasArg(options::OPT_pg))
           crt1 = "gcrt1.o";
