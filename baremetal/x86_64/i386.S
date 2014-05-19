@@ -124,6 +124,7 @@ code = . - GDT64
         .byte   0                       // Base (high).
 
         // The data descriptor.
+data = . - GDT64
         .word   0                       // Limit (low).
         .word   0                       // Base (low).
         .byte   0                       // Base (middle).
@@ -138,4 +139,11 @@ pointer:
 
         .code64
 there:
+        cli
+        mov     $data, %ax              // Set up the segment registers.
+        mov     %ax, %ds
+        mov     %ax, %es
+        mov     %ax, %fs
+        mov     %ax, %gs
+
         jmp     .
