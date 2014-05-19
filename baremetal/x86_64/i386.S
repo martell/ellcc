@@ -105,6 +105,7 @@ ready:
 
         jmp     .
 
+        .align 16
 GDT64:
         // The null descriptor.
         .word   0                       // Limit (low).
