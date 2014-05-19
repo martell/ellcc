@@ -73,7 +73,7 @@ rich:
         movl    $0x4003, (%edi)
         add     $0x1000, %edi
         
-        // Make PT point to 0x00000000 to 0x00200000.
+        // Make PT point to 0x00000000 .. 0x00200000.
         mov     $0x00000003, %ebx       // Page present and writable.
         mov     $512, %ecx              // Number of entries.
 1:
@@ -100,8 +100,8 @@ ready:
         mov     %eax, %cr0
 
         // Enter the 64 bit submode.
-        lgdt    pointer
-        ljmp    $0x0008, $there
+        lgdt    [pointer]
+        jmp     $code, $there
 
         jmp     .
 
@@ -115,7 +115,7 @@ GDT64:
         .byte   0                       // Base (high).
 
         // The code descriptor.
-code:
+code = . - GDT64
         .word   0                       // Limit (low).
         .word   0                       // Base (low).
         .byte   0                       // Base (middle).
@@ -132,7 +132,7 @@ code:
         .byte   0                       // Base (high).
 
 pointer:
-        .long   . - GDT64 - 1           // Limit.
+        .word   . - GDT64 - 1           // Limit.
         .long   GDT64                   // Low address.
         .long   0                       // High address.
 
