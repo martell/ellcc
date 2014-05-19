@@ -4,7 +4,7 @@ VPATH=../kernel
 OS=linux
 CFLAGS+=-I. -I../kernel -g -MD -MP -Werror -Wall -Wno-unused-function
 NAMES:=$(basename $(filter %.c %.cpp %.S, $(SRCS)))
-OBJS:=$(NAMES:%=%.o)
+OBJS:=$(NAMES:%=%.o) $(filter %.o, $(SRCS))
 DEPENDS:=$(NAMES:%=%.d)
 KERNEL_EXE?=$(KERNEL).bin
 

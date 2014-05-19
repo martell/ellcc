@@ -18,7 +18,7 @@
     .align  4
     .global _start
 _start:
-    b       .
+    brai    .
 
 #if RICH
     la      $k0, reset
