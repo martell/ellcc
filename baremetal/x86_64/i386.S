@@ -2,8 +2,8 @@
 /** This is the reset start point.
  * Start in i386 mode. Switch to long mode.
  */
-    .section .text
-    .align  4
+        .section .text
+        .align  4
 // Multiboot header.
 /* The magic number for the Multiboot header. */
 #define MULTIBOOT_HEADER_MAGIC      0x1BADB002
