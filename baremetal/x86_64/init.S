@@ -12,51 +12,56 @@
     nop                 ;               \
 1:
 
-/** This is the reset start point.
+        .data
+        .align 16
+GDT64:
+        // The null descriptor.
+        .word   0                       // Limit (low).
+        .word   0                       // Base (low).
+        .byte   0                       // Base (middle).
+        .byte   0                       // Access.
+        .byte   0                       // Granularity.
+        .byte   0                       // Base (high).
+
+        // The code descriptor.
+code = . - GDT64
+        .word   0                       // Limit (low).
+        .word   0                       // Base (low).
+        .byte   0                       // Base (middle).
+        .byte   0x98                    // Access.
+        .byte   0x20                    // Granularity.
+        .byte   0                       // Base (high).
+
+        // The data descriptor.
+data = . - GDT64
+        .word   0                       // Limit (low).
+        .word   0                       // Base (low).
+        .byte   0                       // Base (middle).
+        .byte   0x90                    // Access.
+        .byte   0x00                    // Granularity.
+        .byte   0                       // Base (high).
+
+pointer:
+        .word   . - GDT64 - 1           // Limit.
+        .long   GDT64                   // Low address.
+        .long   0                       // High address.
+
+/** This is the 64 bit start point.
  */
-    .section .text
-    .align  4
-// Multiboot header.
-/* The magic number for the Multiboot header. */
-#define MULTIBOOT_HEADER_MAGIC      0x1BADB002
-
-/* The magic number passed by a Multiboot-compliant boot loader. It's placed into EBX register by loader */
-#define MULTIBOOT_BOOTLOADER_MAGIC  0x2BADB002
-
-/* The flags for the Multiboot header. */
-#define MULTIBOOT_MUSTKNOW          0x0000ffff
-/* Align all boot modules on page (4KB) boundaries. */
-#define MULTIBOOT_PAGE_ALIGN        0x00000001
-/* Must be provided memory information in multiboot_info structure */
-#define MULTIBOOT_MEMORY_INFO       0x00000002
-/* Must be provided information about the video mode table */
-#define MULTIBOOT_VIDEO_INFO        0x00000004
-/* If bit 16 in the ‘flags’ word is set, then the fields at offsets 12-28 in the Multiboot header are valid.
- * his information does not need to be provided if the kernel image is in elf format,
- * but it must be provided if the images is in a.out format or in some other format
- */
-#define MULTIBOOT_AOUT_KLUDGE       0x00010000
-
-
-#define MULTIBOOT_HEADER_FLAGS     MULTIBOOT_MEMORY_INFO | MULTIBOOT_PAGE_ALIGN
-
-    .long   MULTIBOOT_HEADER_MAGIC
-    .long   MULTIBOOT_HEADER_FLAGS
-    .long   -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    
-
-    .global _start
+        .text
+        .align  4
+        .global _start
 _start:
-    jmp     .
+        // Set up the GDT..
+        lgdt    [pointer]
+
+        cli
+        mov     $data, %ax              // Set up the segment registers.
+        mov     %ax, %ds
+        mov     %ax, %es
+        mov     %ax, %fs
+        mov     %ax, %gs
+        jmp     _start                  // RICH: For now.
 
 #if RICH
     la      $k0, reset
@@ -455,7 +460,7 @@ __set_syscall:
     jr      $ra
     nop
 
-    .data
+        .data
     .global __heap_end
 __heap_end:
     .word   0

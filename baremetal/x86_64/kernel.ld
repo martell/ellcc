@@ -7,8 +7,8 @@
 ENTRY(_start)
 SECTIONS
 {
-    . = 0x00100000;
-    .init . : { i386.o(.text) }
+    . = 0x00110000;
+    .init . : { init.o(.text) }
     .text : { *(.text) }
     /* Handle constructors and destructors. */
     .preinit_array : {

@@ -101,7 +101,7 @@ ready:
 
         // Enter the 64 bit submode.
         lgdt    [pointer]
-        jmp     $code, $there
+        jmp     $code, $start
 
         jmp     .
 
@@ -138,13 +138,3 @@ pointer:
         .long   GDT64                   // Low address.
         .long   0                       // High address.
 
-        .code64
-there:
-        cli
-        mov     $data, %ax              // Set up the segment registers.
-        mov     %ax, %ds
-        mov     %ax, %es
-        mov     %ax, %fs
-        mov     %ax, %gs
-
-        jmp     .
