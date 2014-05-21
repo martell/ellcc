@@ -509,6 +509,10 @@ error_code MachOObjectFile::getSymbolSize(DataRefImpl DRI,
   nlist_base Entry = getSymbolTableEntryBase(this, DRI);
   uint64_t Value;
   getSymbolAddress(DRI, Value);
+  if (Value == UnknownAddressOrSize) {
+    Result = UnknownAddressOrSize;
+    return object_error::success;
+  }
 
   BeginOffset = Value;
 
@@ -527,6 +531,8 @@ error_code MachOObjectFile::getSymbolSize(DataRefImpl DRI,
     DataRefImpl DRI = Symbol.getRawDataRefImpl();
     Entry = getSymbolTableEntryBase(this, DRI);
     getSymbolAddress(DRI, Value);
+    if (Value == UnknownAddressOrSize)
+      continue;
     if (Entry.n_sect == SectionIndex && Value > BeginOffset)
       if (!EndOffset || Value < EndOffset)
         EndOffset = Value;
@@ -586,7 +592,7 @@ uint32_t MachOObjectFile::getSymbolFlags(DataRefImpl DRI) const {
     if ((MachOType & MachO::N_TYPE) == MachO::N_UNDF) {
       uint64_t Value;
       getSymbolAddress(DRI, Value);
-      if (Value)
+      if (Value && Value != UnknownAddressOrSize)
         Result |= SymbolRef::SF_Common;
     }
   }

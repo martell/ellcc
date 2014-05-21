@@ -240,7 +240,15 @@ public:
   /// \brief Recursively visit a lambda capture.
   ///
   /// \returns false if the visitation was terminated early, true otherwise.
-  bool TraverseLambdaCapture(LambdaCapture C);
+  bool TraverseLambdaCapture(LambdaExpr *LE, const LambdaCapture *C);
+
+  /// \brief Recursively visit the body of a lambda expression.
+  ///
+  /// This provides a hook for visitors that need more context when visiting
+  /// \c LE->getBody().
+  ///
+  /// \returns false if the visitation was terminated early, true otherwise.
+  bool TraverseLambdaBody(LambdaExpr *LE);
 
   // ---- Methods on Attrs ----
 
@@ -349,7 +357,7 @@ public:
 // ---- Methods on TypeLocs ----
 // FIXME: this currently just calls the matching Type methods
 
-// Declare Traverse*() for all concrete Type classes.
+// Declare Traverse*() for all concrete TypeLoc classes.
 #define ABSTRACT_TYPELOC(CLASS, BASE)
 #define TYPELOC(CLASS, BASE) bool Traverse##CLASS##TypeLoc(CLASS##TypeLoc TL);
 #include "clang/AST/TypeLocNodes.def"
@@ -530,6 +538,8 @@ bool RecursiveASTVisitor<Derived>::TraverseStmt(Stmt *S) {
 
   return true;
 }
+
+#undef DISPATCH_STMT
 
 template <typename Derived>
 bool RecursiveASTVisitor<Derived>::TraverseType(QualType T) {
@@ -775,7 +785,18 @@ bool RecursiveASTVisitor<Derived>::TraverseConstructorInitializer(
 }
 
 template <typename Derived>
-bool RecursiveASTVisitor<Derived>::TraverseLambdaCapture(LambdaCapture C) {
+bool
+RecursiveASTVisitor<Derived>::TraverseLambdaCapture(LambdaExpr *LE,
+                                                    const LambdaCapture *C) {
+  if (C->isInitCapture())
+    TRY_TO(TraverseDecl(C->getCapturedVar()));
+  return true;
+}
+
+template <typename Derived>
+bool RecursiveASTVisitor<Derived>::TraverseLambdaBody(LambdaExpr *LE) {
+  StmtQueueAction StmtQueue(*this);
+  StmtQueue.queue(LE->getBody());
   return true;
 }
 
@@ -2088,7 +2109,7 @@ bool RecursiveASTVisitor<Derived>::TraverseLambdaExpr(LambdaExpr *S) {
   for (LambdaExpr::capture_iterator C = S->explicit_capture_begin(),
                                     CEnd = S->explicit_capture_end();
        C != CEnd; ++C) {
-    TRY_TO(TraverseLambdaCapture(*C));
+    TRY_TO(TraverseLambdaCapture(S, C));
   }
 
   if (S->hasExplicitParameters() || S->hasExplicitResultType()) {
@@ -2108,8 +2129,7 @@ bool RecursiveASTVisitor<Derived>::TraverseLambdaExpr(LambdaExpr *S) {
     }
   }
 
-  StmtQueueAction StmtQueue(*this);
-  StmtQueue.queue(S->getBody());
+  TRY_TO(TraverseLambdaBody(S));
   return true;
 }
 

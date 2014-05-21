@@ -16,6 +16,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "msan.h"
+#include "msan_chained_origin_depot.h"
+#include "msan_origin.h"
+#include "msan_thread.h"
 #include "sanitizer_common/sanitizer_platform_limits_posix.h"
 #include "sanitizer_common/sanitizer_allocator.h"
 #include "sanitizer_common/sanitizer_allocator_internal.h"
@@ -792,9 +795,9 @@ void __msan_allocated_memory(const void* data, uptr size) {
     __msan_poison(data, size);
   if (__msan_get_track_origins()) {
     u32 stack_id = StackDepotPut(stack.trace, stack.size);
-    CHECK(stack_id);
-    CHECK_EQ((stack_id >> 31), 0);  // Higher bit is occupied by stack origins.
-    __msan_set_origin(data, size, stack_id);
+    u32 id;
+    ChainedOriginDepotPut(stack_id, Origin::kHeapRoot, &id);
+    __msan_set_origin(data, size, Origin(id, 1).raw_id());
   }
 }
 
