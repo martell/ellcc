@@ -301,12 +301,10 @@ void CodeGenModule::Release() {
     getModule().addModuleFlag(llvm::Module::Warning, "Dwarf Version",
                               CodeGenOpts.DwarfVersion);
   if (DebugInfo)
-    // We support a single version in the linked module: error out when
-    // modules do not have the same version. We are going to implement dropping
-    // debug info when the version number is not up-to-date. Once that is
-    // done, the bitcode linker is not going to see modules with different
-    // version numbers.
-    getModule().addModuleFlag(llvm::Module::Error, "Debug Info Version",
+    // We support a single version in the linked module. The LLVM
+    // parser will drop debug info with a different version number
+    // (and warn about it, too).
+    getModule().addModuleFlag(llvm::Module::Warning, "Debug Info Version",
                               llvm::DEBUG_METADATA_VERSION);
 
   SimplifyPersonality();
@@ -2269,10 +2267,10 @@ void CodeGenModule::EmitAliasDefinition(GlobalDecl GD) {
                                     llvm::PointerType::getUnqual(DeclTy), 0);
 
   // Create the new alias itself, but don't set a name yet.
-  auto *GA = new llvm::GlobalAlias(
-      cast<llvm::PointerType>(Aliasee->getType())->getElementType(),
+  auto *GA = llvm::GlobalAlias::create(
+      cast<llvm::PointerType>(Aliasee->getType())->getElementType(), 0,
       llvm::Function::ExternalLinkage, "",
-      &getGlobalObjectInExpr(Diags, AA, Aliasee), &getModule());
+      &getGlobalObjectInExpr(Diags, AA, Aliasee));
 
   if (Entry) {
     if (GA->getAliasee() == Entry) {
@@ -3197,9 +3195,8 @@ void CodeGenModule::EmitStaticExternCAliases() {
     IdentifierInfo *Name = I->first;
     llvm::GlobalValue *Val = I->second;
     if (Val && !getModule().getNamedValue(Name->getName()))
-      addUsedGlobal(new llvm::GlobalAlias(
-          Val->getType()->getElementType(), Val->getLinkage(), Name->getName(),
-          cast<llvm::GlobalObject>(Val), &getModule()));
+      addUsedGlobal(llvm::GlobalAlias::create(Name->getName(),
+                                              cast<llvm::GlobalObject>(Val)));
   }
 }
 

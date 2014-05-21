@@ -1117,7 +1117,8 @@ void CodeGenModule::ConstructAttributeList(const CGFunctionInfo &FI,
     FuncAttrs.addAttribute(llvm::Attribute::NoRedZone);
   if (CodeGenOpts.NoImplicitFloat)
     FuncAttrs.addAttribute(llvm::Attribute::NoImplicitFloat);
-  if (CodeGenOpts.EnableSegmentedStacks)
+  if (CodeGenOpts.EnableSegmentedStacks &&
+      !(TargetDecl && TargetDecl->hasAttr<NoSplitStackAttr>()))
     FuncAttrs.addAttribute("split-stack");
 
   if (AttrOnCallSite) {
@@ -2933,6 +2934,12 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   }
   if (callOrInvoke)
     *callOrInvoke = CS.getInstruction();
+
+  if (CurCodeDecl && CurCodeDecl->hasAttr<FlattenAttr>() &&
+      !CS.hasFnAttr(llvm::Attribute::NoInline))
+    Attrs =
+        Attrs.addAttribute(getLLVMContext(), llvm::AttributeSet::FunctionIndex,
+                           llvm::Attribute::AlwaysInline);
 
   CS.setAttributes(Attrs);
   CS.setCallingConv(static_cast<llvm::CallingConv::ID>(CallingConv));

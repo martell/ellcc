@@ -923,8 +923,8 @@ bool ModuleLinker::linkAliasProto(GlobalAlias *SGA) {
   // bring over SGA.
   auto *PTy = cast<PointerType>(TypeMap.get(SGA->getType()));
   auto *NewDA =
-      new GlobalAlias(PTy->getElementType(), SGA->getLinkage(), SGA->getName(),
-                      /*aliasee*/ nullptr, DstM, PTy->getAddressSpace());
+      GlobalAlias::create(PTy->getElementType(), PTy->getAddressSpace(),
+                          SGA->getLinkage(), SGA->getName(), DstM);
   copyGVAttributes(NewDA, SGA);
   if (NewVisibility)
     NewDA->setVisibility(*NewVisibility);

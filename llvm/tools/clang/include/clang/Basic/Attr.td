@@ -669,6 +669,12 @@ def MinSize : InheritableAttr {
   let Documentation = [Undocumented];
 }
 
+def Flatten : InheritableAttr {
+  let Spellings = [GCC<"flatten">];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [FlattenDocs];
+}
+
 def Format : InheritableAttr {
   let Spellings = [GCC<"format">];
   let Args = [IdentifierArgument<"Type">, IntArgument<"FormatIdx">,
@@ -834,6 +840,12 @@ def NoMips16 : InheritableAttr, TargetSpecificAttr<TargetMips> {
   let Spellings = [GCC<"nomips16">];
   let Subjects = SubjectList<[Function], ErrorDiag>;
   let Documentation = [Undocumented];
+}
+
+def NoSplitStack : InheritableAttr {
+  let Spellings = [GCC<"no_split_stack">];
+  let Subjects = SubjectList<[Function], ErrorDiag>;
+  let Documentation = [NoSplitStackDocs];
 }
 
 def NonNull : InheritableAttr {
@@ -1269,21 +1281,21 @@ def X86ForceAlignArgPointer : InheritableAttr, TargetSpecificAttr<TargetX86> {
 def NoSanitizeAddress : InheritableAttr {
   let Spellings = [GCC<"no_address_safety_analysis">,
                    GCC<"no_sanitize_address">];
-  let Subjects = SubjectList<[Function, FunctionTemplate], ErrorDiag>;
+  let Subjects = SubjectList<[Function], ErrorDiag>;
   let Documentation = [NoSanitizeAddressDocs];
 }
 
 // Attribute to disable ThreadSanitizer checks.
 def NoSanitizeThread : InheritableAttr {
   let Spellings = [GNU<"no_sanitize_thread">];
-  let Subjects = SubjectList<[Function, FunctionTemplate], ErrorDiag>;
+  let Subjects = SubjectList<[Function], ErrorDiag>;
   let Documentation = [NoSanitizeThreadDocs];
 }
 
 // Attribute to disable MemorySanitizer checks.
 def NoSanitizeMemory : InheritableAttr {
   let Spellings = [GNU<"no_sanitize_memory">];
-  let Subjects = SubjectList<[Function, FunctionTemplate], ErrorDiag>;
+  let Subjects = SubjectList<[Function], ErrorDiag>;
   let Documentation = [NoSanitizeMemoryDocs];
 }
 
@@ -1338,7 +1350,7 @@ def AssertCapability : InheritableAttr {
                    CXX11<"clang", "assert_capability">,
                    GNU<"assert_shared_capability">,
                    CXX11<"clang", "assert_shared_capability">];
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
@@ -1357,7 +1369,7 @@ def AcquireCapability : InheritableAttr {
                    CXX11<"clang", "acquire_shared_capability">,
                    GNU<"exclusive_lock_function">,
                    GNU<"shared_lock_function">];
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
@@ -1375,7 +1387,7 @@ def TryAcquireCapability : InheritableAttr {
                    CXX11<"clang", "try_acquire_capability">,
                    GNU<"try_acquire_shared_capability">,
                    CXX11<"clang", "try_acquire_shared_capability">];
-  let Subjects = SubjectList<[Function, FunctionTemplate],
+  let Subjects = SubjectList<[Function],
                              ErrorDiag>;
   let LateParsed = 1;
   let TemplateDependent = 1;
@@ -1396,7 +1408,7 @@ def ReleaseCapability : InheritableAttr {
                    GNU<"release_generic_capability">,
                    CXX11<"clang", "release_generic_capability">,
                    GNU<"unlock_function">];
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
@@ -1424,7 +1436,7 @@ def RequiresCapability : InheritableAttr {
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
   let DuplicatesAllowedWhileMerging = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let Accessors = [Accessor<"isShared", [GNU<"requires_shared_capability">,
                                          GNU<"shared_locks_required">,
                                 CXX11<"clang","requires_shared_capability">]>];
@@ -1433,7 +1445,7 @@ def RequiresCapability : InheritableAttr {
 
 def NoThreadSafetyAnalysis : InheritableAttr {
   let Spellings = [GNU<"no_thread_safety_analysis">];
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
 }
 
@@ -1492,7 +1504,7 @@ def AssertExclusiveLock : InheritableAttr {
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
   let DuplicatesAllowedWhileMerging = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
 }
 
@@ -1503,7 +1515,7 @@ def AssertSharedLock : InheritableAttr {
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
   let DuplicatesAllowedWhileMerging = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
 }
 
@@ -1516,7 +1528,7 @@ def ExclusiveTrylockFunction : InheritableAttr {
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
   let DuplicatesAllowedWhileMerging = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
 }
 
@@ -1529,7 +1541,7 @@ def SharedTrylockFunction : InheritableAttr {
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
   let DuplicatesAllowedWhileMerging = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
 }
 
@@ -1539,7 +1551,7 @@ def LockReturned : InheritableAttr {
   let LateParsed = 1;
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
 }
 
@@ -1550,7 +1562,7 @@ def LocksExcluded : InheritableAttr {
   let TemplateDependent = 1;
   let ParseArgumentsAsUnevaluated = 1;
   let DuplicatesAllowedWhileMerging = 1;
-  let Subjects = SubjectList<[Function, FunctionTemplate]>;
+  let Subjects = SubjectList<[Function]>;
   let Documentation = [Undocumented];
 }
 

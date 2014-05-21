@@ -167,10 +167,11 @@ else()
     endif()
 
     if (WIN32)
-      add_compiler_rt_static_runtime(clang_rt.asan_dll_thunk-${arch} ${arch}
-      SOURCES asan_dll_thunk.cc
-      CFLAGS ${ASAN_CFLAGS} -DASAN_DLL_THUNK
-      DEFS ${ASAN_COMMON_DEFINITIONS})
+      add_compiler_rt_runtime(clang_rt.asan_dll_thunk-${arch} ${arch} STATIC
+        SOURCES asan_dll_thunk.cc
+                $<TARGET_OBJECTS:RTInterception.${arch}>
+        CFLAGS ${ASAN_CFLAGS} -DASAN_DLL_THUNK
+        DEFS ${ASAN_COMMON_DEFINITIONS})
       add_dependencies(asan clang_rt.asan_dll_thunk-${arch})
     endif()
   endforeach()

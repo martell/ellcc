@@ -520,6 +520,8 @@ AArch64TargetLowering::AArch64TargetLowering(AArch64TargetMachine &TM)
       setOperationAction(ISD::SMUL_LOHI, VT, Expand);
       setOperationAction(ISD::MULHU, VT, Expand);
       setOperationAction(ISD::UMUL_LOHI, VT, Expand);
+
+      setOperationAction(ISD::BSWAP, VT, Expand);
     }
 
     // There is no v1i64/v2i64 multiply, expand v1i64/v2i64 to GPR i64 multiply.
@@ -2229,11 +2231,11 @@ AArch64TargetLowering::LowerF128ToCall(SDValue Op, SelectionDAG &DAG,
   if (isTailCall)
     InChain = TCChain;
 
-  TargetLowering::
-  CallLoweringInfo CLI(InChain, RetTy, false, false, false, false,
-                    0, getLibcallCallingConv(Call), isTailCall,
-                    /*doesNotReturn=*/false, /*isReturnValueUsed=*/true,
-                    Callee, Args, DAG, SDLoc(Op));
+  TargetLowering::CallLoweringInfo CLI(DAG);
+  CLI.setDebugLoc(SDLoc(Op)).setChain(InChain)
+    .setCallee(getLibcallCallingConv(Call), RetTy, Callee, &Args, 0)
+    .setTailCall(isTailCall);
+
   std::pair<SDValue, SDValue> CallInfo = LowerCallTo(CLI);
 
   if (!CallInfo.second.getNode())

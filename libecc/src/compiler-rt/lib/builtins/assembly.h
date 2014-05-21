@@ -24,13 +24,13 @@
 #endif
 
 #if defined(__APPLE__)
-#define HIDDEN_DIRECTIVE .private_extern
+#define HIDDEN(name) .private_extern name
 #define LOCAL_LABEL(name) L_##name
 // tell linker it can break up file at label boundaries
 #define FILE_LEVEL_DIRECTIVE .subsections_via_symbols
 #define SYMBOL_IS_FUNC(name)
-#else
-#define HIDDEN_DIRECTIVE .hidden
+#elif defined(__ELF__)
+#define HIDDEN(name) .hidden name
 #define LOCAL_LABEL(name) .L_##name
 #define FILE_LEVEL_DIRECTIVE
 #if defined(__arm__)
@@ -38,6 +38,15 @@
 #else
 #define SYMBOL_IS_FUNC(name) .type name,@function
 #endif
+#else
+#define HIDDEN_DIRECTIVE(name)
+#define LOCAL_LABEL(name) .L ## name
+#define SYMBOL_IS_FUNC(name)                                                   \
+  .def name SEPARATOR                                                          \
+    .scl 3 SEPARATOR                                                           \
+    .type 32 SEPARATOR                                                         \
+  .endef
+#define FILE_LEVEL_DIRECTIVE
 #endif
 
 #if defined(__arm__)
@@ -91,7 +100,7 @@
 
 #ifdef VISIBILITY_HIDDEN
 #define DECLARE_SYMBOL_VISIBILITY(name)                                        \
-  HIDDEN_DIRECTIVE SYMBOL_NAME(name) SEPARATOR
+  HIDDEN(SYMBOL_NAME(name)) SEPARATOR
 #else
 #define DECLARE_SYMBOL_VISIBILITY(name)
 #endif
@@ -107,13 +116,13 @@
   FILE_LEVEL_DIRECTIVE SEPARATOR                                               \
   .globl SYMBOL_NAME(name) SEPARATOR                                           \
   SYMBOL_IS_FUNC(SYMBOL_NAME(name)) SEPARATOR                                  \
-  HIDDEN_DIRECTIVE SYMBOL_NAME(name) SEPARATOR                                 \
+  HIDDEN(SYMBOL_NAME(name)) SEPARATOR                                          \
   SYMBOL_NAME(name):
 
 #define DEFINE_COMPILERRT_PRIVATE_FUNCTION_UNMANGLED(name)                     \
   .globl name SEPARATOR                                                        \
   SYMBOL_IS_FUNC(name) SEPARATOR                                               \
-  HIDDEN_DIRECTIVE name SEPARATOR                                              \
+  HIDDEN(name) SEPARATOR                                                       \
   name:
 
 #define DEFINE_COMPILERRT_FUNCTION_ALIAS(name, target)                         \

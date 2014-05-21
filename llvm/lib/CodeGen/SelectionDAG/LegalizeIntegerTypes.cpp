@@ -268,9 +268,9 @@ SDValue DAGTypeLegalizer::PromoteIntRes_BSWAP(SDNode *N) {
   EVT NVT = Op.getValueType();
   SDLoc dl(N);
 
-  unsigned DiffBits = NVT.getSizeInBits() - OVT.getSizeInBits();
+  unsigned DiffBits = NVT.getScalarSizeInBits() - OVT.getScalarSizeInBits();
   return DAG.getNode(ISD::SRL, dl, NVT, DAG.getNode(ISD::BSWAP, dl, NVT, Op),
-                     DAG.getConstant(DiffBits, TLI.getPointerTy()));
+                     DAG.getConstant(DiffBits, TLI.getShiftAmountTy(NVT)));
 }
 
 SDValue DAGTypeLegalizer::PromoteIntRes_BUILD_PAIR(SDNode *N) {
@@ -2298,12 +2298,12 @@ void DAGTypeLegalizer::ExpandIntRes_XMULO(SDNode *N,
   Args.push_back(Entry);
 
   SDValue Func = DAG.getExternalSymbol(TLI.getLibcallName(LC), PtrVT);
-  TargetLowering::
-  CallLoweringInfo CLI(Chain, RetTy, true, false, false, false,
-                       0, TLI.getLibcallCallingConv(LC),
-                       /*isTailCall=*/false,
-                       /*doesNotReturn=*/false, /*isReturnValueUsed=*/true,
-                       Func, Args, DAG, dl);
+
+  TargetLowering::CallLoweringInfo CLI(DAG);
+  CLI.setDebugLoc(dl).setChain(Chain)
+    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Func, &Args, 0)
+    .setSExtResult();
+
   std::pair<SDValue, SDValue> CallInfo = TLI.LowerCallTo(CLI);
 
   SplitInteger(CallInfo.first, Lo, Hi);

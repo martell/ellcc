@@ -569,6 +569,8 @@ static Attribute::AttrKind GetAttrFromCode(uint64_t Code) {
     return Attribute::NoInline;
   case bitc::ATTR_KIND_NON_LAZY_BIND:
     return Attribute::NonLazyBind;
+  case bitc::ATTR_KIND_NON_NULL:
+    return Attribute::NonNull;
   case bitc::ATTR_KIND_NO_RED_ZONE:
     return Attribute::NoRedZone;
   case bitc::ATTR_KIND_NO_RETURN:
@@ -2004,8 +2006,8 @@ error_code BitcodeReader::ParseModule(bool Resume) {
         return Error(InvalidTypeForValue);
 
       auto *NewGA =
-          new GlobalAlias(PTy->getElementType(), GetDecodedLinkage(Record[2]),
-                          "", nullptr, TheModule, PTy->getAddressSpace());
+          GlobalAlias::create(PTy->getElementType(), PTy->getAddressSpace(),
+                              GetDecodedLinkage(Record[2]), "", TheModule);
       // Old bitcode files didn't have visibility field.
       // Local linkage must have default visibility.
       if (Record.size() > 3 && !NewGA->hasLocalLinkage())

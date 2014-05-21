@@ -326,28 +326,6 @@ DIE &DwarfDebug::updateSubprogramScopeDIE(DwarfCompileUnit &SPCU,
     // Pick up abstract subprogram DIE.
     SPDie = &SPCU.createAndAddDIE(dwarf::DW_TAG_subprogram, SPCU.getUnitDie());
     SPCU.addDIEEntry(*SPDie, dwarf::DW_AT_abstract_origin, *AbsSPDIE);
-  } else if (!SP.getFunctionDeclaration()) {
-    // There is not any need to generate specification DIE for a function
-    // defined at compile unit level. If a function is defined inside another
-    // function then gdb prefers the definition at top level and but does not
-    // expect specification DIE in parent function. So avoid creating
-    // specification DIE for a function defined inside a function.
-    DIScope SPContext = resolve(SP.getContext());
-    if (SP.isDefinition() && !SPContext.isCompileUnit() &&
-        !SPContext.isFile() && !isSubprogramContext(SPContext)) {
-      SPCU.addFlag(*SPDie, dwarf::DW_AT_declaration);
-
-      // Add arguments.
-      DICompositeType SPTy = SP.getType();
-      DIArray Args = SPTy.getTypeArray();
-      uint16_t SPTag = SPTy.getTag();
-      if (SPTag == dwarf::DW_TAG_subroutine_type)
-        SPCU.constructSubprogramArguments(*SPDie, Args);
-      DIE *SPDeclDie = SPDie;
-      SPDie =
-          &SPCU.createAndAddDIE(dwarf::DW_TAG_subprogram, SPCU.getUnitDie());
-      SPCU.addDIEEntry(*SPDie, dwarf::DW_AT_specification, *SPDeclDie);
-    }
   }
 
   attachLowHighPC(SPCU, *SPDie, FunctionBeginSym, FunctionEndSym);
@@ -468,7 +446,6 @@ DwarfDebug::constructInlinedScopeDIE(DwarfCompileUnit &TheCU,
   attachRangesOrLowHighPC(TheCU, *ScopeDIE, Scope->getRanges());
 
   InlinedSubprogramDIEs.insert(OriginDIE);
-  TheCU.addUInt(*OriginDIE, dwarf::DW_AT_inline, None, dwarf::DW_INL_inlined);
 
   // Add the call site information to the DIE.
   DILocation DL(Scope->getInlinedAt());
@@ -553,11 +530,11 @@ void DwarfDebug::constructAbstractSubprogramScopeDIE(DwarfCompileUnit &TheCU,
   if (!ProcessedSPNodes.insert(Sub))
     return;
 
-  if (DIE *ScopeDIE = TheCU.getDIE(Sub)) {
-    AbstractSPDies.insert(std::make_pair(Sub, ScopeDIE));
-    TheCU.addUInt(*ScopeDIE, dwarf::DW_AT_inline, None, dwarf::DW_INL_inlined);
-    createAndAddScopeChildren(TheCU, Scope, *ScopeDIE);
-  }
+  DIE *ScopeDIE = TheCU.getDIE(Sub);
+  assert(ScopeDIE);
+  AbstractSPDies.insert(std::make_pair(Sub, ScopeDIE));
+  TheCU.addUInt(*ScopeDIE, dwarf::DW_AT_inline, None, dwarf::DW_INL_inlined);
+  createAndAddScopeChildren(TheCU, Scope, *ScopeDIE);
 }
 
 DIE &DwarfDebug::constructSubprogramScopeDIE(DwarfCompileUnit &TheCU,
@@ -597,7 +574,7 @@ std::unique_ptr<DIE> DwarfDebug::constructScopeDIE(DwarfCompileUnit &TheCU,
   // avoid creating un-used children then removing them later when we find out
   // the scope DIE is null.
   std::unique_ptr<DIE> ScopeDIE;
-  if (DS.getContext() && DS.isSubprogram()) {
+  if (Scope->getParent() && DS.isSubprogram()) {
     ScopeDIE = constructInlinedScopeDIE(TheCU, Scope);
     if (!ScopeDIE)
       return nullptr;
@@ -1224,10 +1201,10 @@ DwarfDebug::collectVariableInfo(SmallPtrSet<const MDNode *, 16> &Processed) {
         const MachineInstr *End = HI[1];
         DEBUG(dbgs() << "DotDebugLoc Pair:\n"
                      << "\t" << *Begin << "\t" << *End << "\n");
-        if (End->isDebugValue())
+        if (End->isDebugValue() && End->getDebugVariable() == DV)
           SLabel = getLabelBeforeInsn(End);
         else {
-          // End is a normal instruction clobbering the range.
+          // End is clobbering the range.
           SLabel = getLabelAfterInsn(End);
           assert(SLabel && "Forgot label after clobber instruction");
           ++HI;
@@ -1438,7 +1415,7 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
       LabelsBeforeInsn[History.front()] = FunctionBeginSym;
 
     for (const MachineInstr *MI : History) {
-      if (MI->isDebugValue())
+      if (MI->isDebugValue() && MI->getDebugVariable() == DV)
         requestLabelBeforeInsn(MI);
       else
         requestLabelAfterInsn(MI);
