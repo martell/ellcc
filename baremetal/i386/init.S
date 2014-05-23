@@ -1,21 +1,21 @@
-#include <bits/errno.h>
+#include <bits/errno.h>                 // Get main's address.
 #include "target.h"
 
 /** Call a function only if it exists.
  * Act as if it returned 0 or NULL if it's not defined.
  */
-#define weak_call(name)                 \
-    .weak name          ;               \
-    la     $v0, name    ;               \
-    beqz   $v0, 1f      ;               \
-    jalr   $v0          ;               \
-    nop                 ;               \
+#define weak_call(name)                         \
+        .weak name          ;                   \
+        la     $v0, name    ;                   \
+        beqz   $v0, 1f      ;                   \
+        jalr   $v0          ;                   \
+        nop                 ;                   \
 1:
 
 /** This is the reset start point.
  */
-    .section .text
-    .align  4
+        .section .text
+        .align  4
 // Multiboot header.
 /* The magic number for the Multiboot header. */
 #define MULTIBOOT_HEADER_MAGIC      0x1BADB002
@@ -40,89 +40,61 @@
 
 #define MULTIBOOT_HEADER_FLAGS     MULTIBOOT_MEMORY_INFO | MULTIBOOT_PAGE_ALIGN
 
-    .long   MULTIBOOT_HEADER_MAGIC
-    .long   MULTIBOOT_HEADER_FLAGS
-    .long   -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    .long   0
-    .long   0
+        .long   MULTIBOOT_HEADER_MAGIC
+        .long   MULTIBOOT_HEADER_FLAGS
+        .long   -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
+        .long   0
+        .long   0
+        .long   0
+        .long   0
+        .long   0
+        .long   0
+        .long   0
+        .long   0
+        .long   0
     
-
-    .global _start
-_start:
-    jmp     .
-
-#if RICH
-    la      $k0, reset
-    jr      $k0
-    nop
-
-/** The exception handler.
- * This has to be small. It is limited to 128 bytes.
- */
-    . = _start + 0x180
-    mfc0    $k1, $13            // Get the exception cause.
-    andi    $k1, $k1, 0x7C      // Get the exception number.
-    j       exception           // Handle the exception.
-_start_end:
 
 // Define the system stack size.
 #define Stack_Size 4096
 
-/** The reset entry point.
- */
-reset:
-    move    $fp, $zero
-    la      $sp, __mem_top
-    // Set up the end of the heap.
-    la      $t9, __mem_top - Stack_Size
-    la      $t8, __heap_end
-    sw      $t9, ($t8)
-    la      $gp, _gp
+        .global _start
+_start:
+        cli                             // Disable interrupts.
+        cld
+        movl    $__mem_top, %esp        // Set up the stack.
 
-    // Clear the bss area.
-    la      $a0, __bss_start__
-    move    $a1, $zero
-    la      $a2, __bss_end__
-    sub     $a2, $a2, $a0
-    jal     memset
-    nop
+        // Set up the end of the heap.
+        movl    $__mem_top - Stack_Size, __heap_end
 
-    // Copy the vectors.
-    la      $a0, 0x80000000
-    la      $a1, _start
-    la      $a2, _start_end
-    sub     $a2, $a2, $a1
-    jal     memcpy
-    nop
-    
-    and     $sp, $sp, -8                // Align the stack.
-    addi    $sp, $sp , -4 * 4           // ABI requirement.
-    addi    $a1, $zero, 1               // Get argc.
-    la      $a2, argv                   // And argv.
-    la      $a0, main                   // Get main's address.
-    la      $t9, __libc_start_main
-    jalr    $t9
-    nop
-    b       .
-    nop
+        // Clear the bss area.
+        movl   $__bss_end__, %eax
+        sub    $__bss_start__, %eax
+        pushl   %eax
+        pushl   $0
+        pushl   $__bss_start__
+        call    memset
+        add     $12, %esp
+
+        // RICH: Initialize GDT.
+
+        // Initialize the C library.
+        pushl   $argv                   // Get argv.
+        pushl   $1                      // And argc.
+        pushl   $main                   // Get main's address.
+        call    __libc_start_main
+
+done:   hlt
+        jmp     done
 
 // main()'s pseudo arguments.
-#define AT_PAGESZ 6
 argv:
-    .word   name
-    .word   0                   // End of argv.
-    .word   0                   // End of envp.
-    // Auxv
-    .word   AT_PAGESZ
-    .word   4096                // Page size.
-    .word   0
+        .long   name
+        .long   0                       // End of argv.
+        .long   0                       // End of envp.
+        // Auxv
+        .long   0
+        
+#if RICH
 
 /** Handle an exception.
  * k1 contains the exception number * 4.
@@ -482,10 +454,16 @@ swi_table:
     .word   unhandled_swi
     .endr
 
+#endif // RICH
+
+    .data
+    .global __heap_end
+__heap_end:
+    .long   0
+
 exception_string:
     .asciz "unhandled exception (%d)\n"
 swi_string:
     .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
 name:
     .asciz "kernel"
-#endif // RICH

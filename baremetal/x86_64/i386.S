@@ -58,7 +58,6 @@ _start:
         call    memset
         add     $12, %esp
 
-rich:
         // Set up cr3.
         mov     $0x1000, %edi
         mov     %edi, %cr3              // Set the control register.
@@ -87,7 +86,6 @@ rich:
         or      $0x020, %eax            // Set the PAE bit.
         mov     %eax, %cr4
 
-ready:
         // Switch to long mode.
         mov     $0xC0000080, %ecx       // Set the EFER MSR.
         rdmsr                           // Read the model specific register.
