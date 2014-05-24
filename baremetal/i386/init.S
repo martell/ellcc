@@ -8,11 +8,11 @@
  * Act as if it returned 0 or NULL if it's not defined.
  */
 #define weak_call(name)                         \
-        .weak name          ;                   \
-        la     $v0, name    ;                   \
-        beqz   $v0, 1f      ;                   \
-        jalr   $v0          ;                   \
-        nop                 ;                   \
+        .weak   name            ;               \
+        movl    $name, %eax     ;               \
+        cmp     $0, %eax        ;               \
+        jz      1f              ;               \
+        call    *%eax           ;               \
 1:
 
 /** This is the reset start point.
@@ -76,7 +76,7 @@ _start:
         pushl   $0
         pushl   $__bss_start__
         call    memset
-        add     $12, %esp
+        add     $3 * 4, %esp
 
         call    gdt_init                // Initialize the GDT.
         call    idt_init                // Initialize the IDT.
@@ -196,13 +196,31 @@ syscall_trap:
 syscall_stub:
         SAVE_ALL
 
-        call     *swi_table(, %eax, 4)
+        movl    %eax, syscall           // Save the system call number.
+        call    *swi_table(, %eax, 4)
 
         mov     %eax, (PT_EAX*4)(%esp)  /* Save the return value */
         RESTORE_ALL
 
+// Unhandled system calls.
+// The arguments are at 4($esp)
 unhandled_swi:
-        mov     $-1,%eax
+        cmpl    $0, swi_table - 4       // Has a system call been defined?
+        jnz     nosetup                 // Jump if so.
+        weak_call(__setup_console)      // If not, set up the console.
+nosetup:
+        mov     %esp, %eax              // Get the current stack pointer.
+        pushl   24(%eax)
+        pushl   20(%eax)
+        pushl   16(%eax)
+        pushl   12(%eax)
+        pushl   8(%eax)
+        pushl   4(%eax)
+        pushl   syscall                 // Send the system call number.
+        pushl   $swi_string
+        call    printf
+        add     $8 * 4, %esp
+        mov     $-ENOSYS, %eax
         ret
 
 // Set a system call entry.
@@ -212,10 +230,14 @@ unhandled_swi:
 __set_syscall:
         mov     4(%esp), %eax           // Get the system call number.
         cmp     $512, %eax
-        ja      unhandled_swi           // Jump if too big.
+        ja      bad_call                // Jump if too big.
         mov     8(%esp), %ebx           // Get the system call handler.
         mov     %ebx, swi_table(, %eax, 4)
         xor     %eax,%eax               // Return zero.
+        ret
+
+bad_call:
+        mov     $-ENOSYS,%eax
         ret
 
 #if RICH
@@ -333,50 +355,6 @@ unhandled_exception:
     jr      $ra
     nop
 
-// Unhandled system calls.
-// Four additional arguments are at ($sp)
-
-#define SAVE (4 * 12)
-    addi    $sp, $sp, -SAVE
-    sw      $ra, (4 * 11)($sp)
-    sw      $s0, (4 * 10)($sp)
-    lw      $s0, swi_table - 4  // Has a system call been set up?
-    nop
-    bnez    $s0, nosetup
-    weak_call(__setup_console)  // If not, set up the console.
-nosetup:
-    // Get the additional arguments.
-    lw      $s0, SAVE + (4 * 4)($sp)
-    nop
-    sw      $s0, (4 * 6)($sp)
-    nop
-    lw      $s0, SAVE + (4 * 5)($sp)
-    nop
-    sw      $s0, (4 * 7)($sp)
-    nop
-    lw      $s0, SAVE + (4 * 6)($sp)
-    nop
-    sw      $s0, (4 * 8)($sp)
-    nop
-    lw      $s0, SAVE + (4 * 7)($sp)
-    nop
-    sw      $s0, (4 * 9)($sp)
-
-    sw      $a2, (4 * 4)($sp)
-    sw      $a3, (4 * 5)($sp)
-    move    $a3, $a1
-    move    $a2, $a0
-    lw      $a1, syscall
-    la      $a0, swi_string
-    jal     printf
-    nop
-    lw      $ra, (4 * 11)($sp)
-    lw      $s0, (4 * 10)($sp)
-    addi    $sp, $sp, SAVE
-
-    addi    $v0, $zero, -ENOSYS
-    jr      $ra
-    nop
 
 /** Handle an interrupt exception.
  */
@@ -551,9 +529,6 @@ __set_syscall:
     nop
 
     .data
-    .global __heap_end
-__heap_end:
-    .word   0
 
 // Create the exception table with room for 32 entries.
 exception_table:
@@ -568,25 +543,25 @@ exception_table:
 
 #endif // RICH
 
-    .data
-    .global __heap_end
+        .data
+        .global __heap_end
 __heap_end:
-    .long   0
+        .long   0
 
 // The current system call number.
 syscall:
-    .long   0
+        .long   0
 
 // Create the system call table with room for 512 entries.
-    .long   0                   // != 0 if a system call has been defined.
+        .long   0               // != 0 if a system call has been defined.
 swi_table:
-    .rep    512
-    .long   unhandled_swi
-    .endr
+        .rep    512
+        .long   unhandled_swi
+        .endr
 
 exception_string:
-    .asciz "unhandled exception (%d)\n"
+        .asciz "unhandled exception (%d)\n"
 swi_string:
-    .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
+        .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
 name:
-    .asciz "kernel"
+        .asciz "kernel"

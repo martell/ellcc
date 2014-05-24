@@ -3,7 +3,7 @@
 TARGET=x86_64
 KERNEL=kernel
 KERNEL_EXE=kernel.elf
-SRCS= init.S # simple_console.c command.c simple_memman.c
+SRCS= init.S idt.c main.c # simple_console.c command.c simple_memman.c
 QEMUARGS=-M pc -nographic -kernel $(KERNEL_EXE)
 
 all:
