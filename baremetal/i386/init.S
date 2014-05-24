@@ -1,4 +1,7 @@
 #include <bits/errno.h>                 // Get main's address.
+#include "gdt.h"
+#include "traps.h"
+#include "entry.h"
 #include "target.h"
 
 /** Call a function only if it exists.
@@ -75,7 +78,8 @@ _start:
         call    memset
         add     $12, %esp
 
-        // RICH: Initialize GDT.
+        call    gdt_init                // Initialize the GDT.
+        call    idt_init                // Initialize the IDT.
 
         // Initialize the C library.
         pushl   $argv                   // Get argv.
@@ -94,6 +98,126 @@ argv:
         // Auxv
         .long   0
         
+        .global gdt_flush
+gdt_flush:
+        movl 4(%esp), %eax
+        lgdt (%eax) 
+    
+        movw $(__KERNEL_DS), %ax
+        movw %ax, %ds
+        movw %ax, %es
+        movw %ax, %fs
+        movw %ax, %gs
+        movw %ax, %ss
+        ljmp  $(__KERNEL_CS), $flush
+flush:
+        ret
+
+/** Set up the exception handlers.
+ */
+    EXCEPTION(0x00, t_excep0)  /* Divide By Zero Exception */
+    EXCEPTION(0x01, t_excep1)  /* Debug Exception */
+    EXCEPTION(0x02, t_excep2)  /* Non Maskable Interrupt Exception */
+    EXCEPTION(0x03, t_excep3)  /* Breakpoint Exception */
+    EXCEPTION(0x04, t_excep4)  /* Into Detected Overflow Exception */
+    EXCEPTION(0x05, t_excep5)  /* Out of Bounds Exception */
+    EXCEPTION(0x06, t_excep6)  /* Invalid Opcode Exception */
+    EXCEPTION(0x07, t_excep7)  /* No Coprocessor Exception */
+EXCEPTION_ERR(0x08, t_excep8)  /* Double Fault Exception */
+    EXCEPTION(0x09, t_excep9)  /* Coprocessor Segment Overrun Exception */
+EXCEPTION_ERR(0x0a, t_excep10) /* Bad TSS Exception */
+EXCEPTION_ERR(0x0b, t_excep11) /* Segment Not Present Exception */
+EXCEPTION_ERR(0x0c, t_excep12) /* Stack Fault Exception */
+EXCEPTION_ERR(0x0d, t_excep13) /* General Protection Fault Exception */
+EXCEPTION_ERR(0x0e, t_excep14) /* Page Fault Exception */
+    EXCEPTION(0x0f, t_excep15) /* Unknown Interrupt Exception */
+    EXCEPTION(0x10, t_excep16) /* Coprocessor Fault Exception */
+EXCEPTION_ERR(0x11, t_excep17) /* Alignment Check Exception */
+    EXCEPTION(0x12, t_excep18) /* Machine Check Exception */
+    EXCEPTION(0x13, t_excep19) /* Reserved Exception */
+    EXCEPTION(0x14, t_excep20) /* Reserved Exception */
+    EXCEPTION(0x15, t_excep21) /* Reserved Exception */
+    EXCEPTION(0x16, t_excep22) /* Reserved Exception */
+    EXCEPTION(0x17, t_excep23) /* Reserved Exception */
+    EXCEPTION(0x18, t_excep24) /* Reserved Exception */
+    EXCEPTION(0x19, t_excep25) /* Reserved Exception */
+    EXCEPTION(0x1a, t_excep26) /* Reserved Exception */
+    EXCEPTION(0x1b, t_excep27) /* Reserved Exception */
+    EXCEPTION(0x1c, t_excep28) /* Reserved Exception */
+    EXCEPTION(0x1d, t_excep29) /* Reserved Exception */
+    EXCEPTION(0x1e, t_excep30) /* Reserved Exception */
+    EXCEPTION(0x1f, t_excep31) /* Reserved Exception */
+
+excep_stub:
+        SAVE_ALL
+
+        mov     %esp, %eax     /* Used for fastcall of handler */
+// RICH:        call    exception_handler
+        jmp     .
+
+        RESTORE_ALL
+
+/** Set up the interrupt handlers.
+ */
+IRQ_ENTRY(0) /* system timer (cannot be changed) */
+IRQ_ENTRY(1) /* keyboard controller (cannot be changed) */
+IRQ_ENTRY(2) /* cascaded signals from IRQs 8–15 */
+IRQ_ENTRY(3) /* serial port controller for COM2(shared with COM4, if present) */
+IRQ_ENTRY(4) /* serial port controller for COM1(shared with COM3, if present) */
+IRQ_ENTRY(5) /* LPT port 2  or  sound card */
+IRQ_ENTRY(6) /* floppy disk controller */
+IRQ_ENTRY(7) /* LPT port 1 or sound card(8-bit Sound Blaster and compatibles) */
+        
+IRQ_ENTRY(8)  /* real-time clock */
+IRQ_ENTRY(9)  /* open interrupt/available or SCSI host adapter */
+IRQ_ENTRY(10) /* open interrupt / available  or  SCSI  or  NIC */
+IRQ_ENTRY(11) /* open interrupt / available  or  SCSI  or  NIC */
+IRQ_ENTRY(12) /* mouse on PS/2 connector */
+IRQ_ENTRY(13) /* math co-processor/integrated FPU/inter-processor interrupt(use depends on OS) */
+IRQ_ENTRY(14) /* primary ATA channel */
+IRQ_ENTRY(15) /* secondary ATA channel */
+
+irq_stub:
+        SAVE_ALL
+
+        mov     %esp, %eax     /* Used for fastcall of handler */
+// RICH:         call    irq_handler
+
+        RESTORE_ALL
+
+/** Set up the syscall handler.
+ */
+        .global syscall_trap
+syscall_trap:
+        pushl   $(0)
+        pushl   $(0x80)
+        jmp     syscall_stub
+
+syscall_stub:
+        SAVE_ALL
+
+        call     *swi_table(, %eax, 4)
+
+        mov     %eax, (PT_EAX*4)(%esp)  /* Save the return value */
+        RESTORE_ALL
+
+unhandled_swi:
+        mov     $-1,%eax
+        ret
+
+// Set a system call entry.
+// 4(%esp) = the entry number.
+// 8(%esp) - the handling function.
+        .global     __set_syscall
+__set_syscall:
+        mov     4(%esp), %eax           // Get the system call number.
+        cmp     $512, %eax
+        ja      unhandled_swi           // Jump if too big.
+        mov     8(%esp), %ebx           // Get the system call handler.
+        mov     %ebx, swi_table(, %eax, 4)
+        xor     %eax,%eax               // Return zero.
+        ret
+
 #if RICH
 
 /** Handle an exception.
@@ -211,7 +335,6 @@ unhandled_exception:
 
 // Unhandled system calls.
 // Four additional arguments are at ($sp)
-unhandled_swi:
 
 #define SAVE (4 * 12)
     addi    $sp, $sp, -SAVE
@@ -443,23 +566,23 @@ exception_table:
     .word   unhandled_exception
     .endr
 
-// The current system call number.
-syscall:
-    .word   0
-
-// Create the system call table with room for 512 entries.
-    .word   0                   // != 0 if a system call has been defined.
-swi_table:
-    .rep    512
-    .word   unhandled_swi
-    .endr
-
 #endif // RICH
 
     .data
     .global __heap_end
 __heap_end:
     .long   0
+
+// The current system call number.
+syscall:
+    .long   0
+
+// Create the system call table with room for 512 entries.
+    .long   0                   // != 0 if a system call has been defined.
+swi_table:
+    .rep    512
+    .long   unhandled_swi
+    .endr
 
 exception_string:
     .asciz "unhandled exception (%d)\n"

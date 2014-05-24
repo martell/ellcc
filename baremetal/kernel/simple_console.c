@@ -100,8 +100,6 @@ void __setup_console(void)
 
 void __setup_console(void)
 {
-    // Set up the simple console for polled serial I/O.
- 
     // Set up a simple ioctl system call.
     __set_syscall(SYS_ioctl, sys_ioctl);
     // Set up a simple write system call.
