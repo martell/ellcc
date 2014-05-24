@@ -15,15 +15,15 @@
 #define MSTAT   UART_REG(6)
 #define SCRATCH UART_REG(7)
 
-#if 0
+#if 1
 static void init() {
-    outb(INTEN, 0x00);                  // Disable interrupts.
-    outb(LCRTL, 0x80);                  // Set DLAB on.
-    outb(RXTX, 0x03);                   // Set baud rate.
-    outb(INTEN, 0x00);
-    outb(LCRTL, 0x03);
-//    outb(IIFIFO, 0xc7);
-//    outb(MCRTL, 0x0b);
+    outb(0x00, INTEN);                  // Disable interrupts.
+    outb(0x80, LCRTL);                  // Set DLAB on.
+    outb(0x03, RXTX);                   // Set baud rate.
+    outb(0x00, INTEN);
+    outb(0x03, LCRTL);
+    outb(0xC7, IIFIFO);
+    outb(0x0B, MCRTL);
 }
 #endif
 
@@ -33,7 +33,7 @@ static void console_send_char(int ch)
 {
     while ((inb(LSTAT) & 0x20) == 0)
         continue;           // Wait while TX FIFO is not empty.
-    outb(RXTX, ch);
+    outb(ch, RXTX);
 }
 
 /** Get a character from the serial port.
