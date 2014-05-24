@@ -23,9 +23,9 @@ int main() {
   call_memcpy(&memcpy, buff2, buff1, 6);
 // CHECK: AddressSanitizer: stack-buffer-overflow on address [[ADDR:0x[0-9a-f]+]]
 // CHECK: WRITE of size 6 at [[ADDR]] thread T0
-// CHECK:   __asan_memcpy
-// CHECK-NEXT:   call_memcpy
-// CHECK:   main {{.*}}intercept_memcpy.cc:[[@LINE-5]]
+// CHECK-NEXT:  __asan_memcpy
+// CHECK-NEXT:  call_memcpy
+// CHECK-NEXT:  main {{.*}}intercept_memcpy.cc:[[@LINE-5]]
 // CHECK: Address [[ADDR]] is located in stack of thread T0 at offset {{.*}} in frame
 // CHECK-NEXT:   #0 {{.*}} main
 // CHECK: 'buff2' <== Memory access at offset {{.*}} overflows this variable

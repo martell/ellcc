@@ -338,6 +338,11 @@ void UnwrappedLineParser::calculateBraceTypes() {
           if (Style.Language == FormatStyle::LK_Proto) {
             ProbablyBracedList = NextTok->isOneOf(tok::comma, tok::r_square);
           } else {
+            // Using OriginalColumn to distinguish between ObjC methods and
+            // binary operators is a bit hacky.
+            bool NextIsObjCMethod = NextTok->isOneOf(tok::plus, tok::minus) &&
+                                    NextTok->OriginalColumn == 0;
+
             // If there is a comma, semicolon or right paren after the closing
             // brace, we assume this is a braced initializer list.  Note that
             // regardless how we mark inner braces here, we will overwrite the
@@ -348,9 +353,9 @@ void UnwrappedLineParser::calculateBraceTypes() {
             // We exclude + and - as they can be ObjC visibility modifiers.
             ProbablyBracedList =
                 NextTok->isOneOf(tok::comma, tok::semi, tok::period, tok::colon,
-                                 tok::r_paren, tok::r_square, tok::l_brace) ||
-                (NextTok->isBinaryOperator() &&
-                 !NextTok->isOneOf(tok::plus, tok::minus));
+                                 tok::r_paren, tok::r_square, tok::l_brace,
+                                 tok::l_paren) ||
+                (NextTok->isBinaryOperator() && !NextIsObjCMethod);
           }
           if (ProbablyBracedList) {
             Tok->BlockKind = BK_BracedInit;
@@ -605,7 +610,9 @@ bool tokenCanStartNewLine(clang::Token Tok) {
          // Colon is used in labels, base class lists, initializer lists,
          // range-based for loops, ternary operator, but should never be the
          // first token in an unwrapped line.
-         Tok.isNot(tok::colon);
+         Tok.isNot(tok::colon) &&
+         // 'noexcept' is a trailing annotation.
+         Tok.isNot(tok::kw_noexcept);
 }
 
 void UnwrappedLineParser::parseStructuralElement() {

@@ -378,6 +378,11 @@ TEST_F(FormatTest, FormatShortBracedStatements) {
                "}",
                AllowSimpleBracedStatements);
 
+  verifyFormat("template <int> struct A2 {\n"
+               "  struct B {};\n"
+               "};",
+               AllowSimpleBracedStatements);
+
   AllowSimpleBracedStatements.AllowShortIfStatementsOnASingleLine = false;
   verifyFormat("if (true) {\n"
                "  f();\n"
@@ -2557,6 +2562,7 @@ TEST_F(FormatTest, MacroCallsWithoutTrailingSemicolon) {
                    "}\n"));
   EXPECT_EQ("class A {\n"
             "  A() : t(0) {}\n"
+            "  A(int i) noexcept() : {}\n"
             "  A(X x)\n" // FIXME: function-level try blocks are broken.
             "  try : t(0) {\n"
             "  } catch (...) {\n"
@@ -2564,6 +2570,7 @@ TEST_F(FormatTest, MacroCallsWithoutTrailingSemicolon) {
             "};",
             format("class A {\n"
                    "  A()\n : t(0) {}\n"
+                   "  A(int i)\n noexcept() : {}\n"
                    "  A(X x)\n"
                    "  try : t(0) {} catch (...) {}\n"
                    "};"));
@@ -4692,6 +4699,7 @@ TEST_F(FormatTest, UnderstandsUsesOfStarAndAmp) {
   verifyFormat("auto PointerBinding = [](const char *S) {};");
   verifyFormat("typedef typeof(int(int, int)) *MyFunc;");
   verifyIndependentOfContext("typedef void (*f)(int *a);");
+  verifyIndependentOfContext("int i{a * b};");
 
   verifyIndependentOfContext("InvalidRegions[*R] = 0;");
 
@@ -5259,6 +5267,11 @@ TEST_F(FormatTest, LayoutCxx11BraceInitializers) {
                "  T member = {arg1, arg2};\n"
                "};");
   verifyFormat("vector<int> foo = {::SomeGlobalFunction()};");
+  verifyFormat("static_assert(std::is_integral<int>{} + 0, \"\");");
+  verifyFormat("int a = std::is_integral<int>{} + 0;");
+
+  verifyFormat("int foo(int i) { return fo1{}(i); }");
+  verifyFormat("int foo(int i) { return fo1{}(i); }");
 
   // In combination with BinPackParameters = false.
   FormatStyle NoBinPacking = getLLVMStyle();
@@ -6082,10 +6095,14 @@ TEST_F(FormatTest, FormatObjCImplementation) {
                "@implementation Bar\n"
                "@end");
 
-  verifyFormat("@implementation Foo : Bar\n"
-               "+ (id)init {\n}\n"
-               "- (void)foo {\n}\n"
-               "@end");
+  EXPECT_EQ("@implementation Foo : Bar\n"
+            "+ (id)init {\n}\n"
+            "- (void)foo {\n}\n"
+            "@end",
+            format("@implementation Foo : Bar\n"
+                   "+(id)init{}\n"
+                   "-(void)foo{}\n"
+                   "@end"));
 
   verifyFormat("@implementation Foo {\n"
                "  int _i;\n"
@@ -7042,9 +7059,7 @@ TEST_F(FormatTest, DoNotCreateUnreasonableUnwrappedLines) {
 
 TEST_F(FormatTest, DoNotPrematurelyEndUnwrappedLineForReturnStatements) {
   verifyFormat(
-      "void f() {\n"
-      "  return C{param1, param2}.SomeCall(param1, param2);\n"
-      "}\n");
+      "void f() { return C{param1, param2}.SomeCall(param1, param2); }");
 }
 
 TEST_F(FormatTest, FormatsClosingBracesInEmptyNestedBlocks) {
@@ -7682,6 +7697,16 @@ TEST_F(FormatTest, AllmanBraceBreaking) {
                "void bar() { foobar(); }\n"
                "#endif",
                BreakBeforeBrace);
+
+  // This shouldn't affect ObjC blocks.
+  verifyFormat("[self doSomeThingWithACompletionHandler:^{\n"
+               "    // ...\n"
+               "    int i;\n"
+               "}];");
+  verifyFormat("void (^block)(void) = ^{\n"
+               "    // ...\n"
+               "    int i;\n"
+               "};");
 
   BreakBeforeBrace.ColumnLimit = 19;
   verifyFormat("void f() { int i; }", BreakBeforeBrace);
@@ -8584,21 +8609,11 @@ TEST_F(FormatTest, FormatsWithWebKitStyle) {
 }
 
 TEST_F(FormatTest, FormatsLambdas) {
-  verifyFormat("int c = [b]() mutable {\n"
-               "  return [&b] { return b++; }();\n"
-               "}();\n");
-  verifyFormat("int c = [&] {\n"
-               "  [=] { return b++; }();\n"
-               "}();\n");
-  verifyFormat("int c = [&, &a, a] {\n"
-               "  [=, c, &d] { return b++; }();\n"
-               "}();\n");
-  verifyFormat("int c = [&a, &a, a] {\n"
-               "  [=, a, b, &c] { return b++; }();\n"
-               "}();\n");
-  verifyFormat("auto c = {[&a, &a, a] {\n"
-               "  [=, a, b, &c] { return b++; }();\n"
-               "}}\n");
+  verifyFormat("int c = [b]() mutable { return [&b] { return b++; }(); }();\n");
+  verifyFormat("int c = [&] { [=] { return b++; }(); }();\n");
+  verifyFormat("int c = [&, &a, a] { [=, c, &d] { return b++; }(); }();\n");
+  verifyFormat("int c = [&a, &a, a] { [=, a, b, &c] { return b++; }(); }();\n");
+  verifyFormat("auto c = {[&a, &a, a] { [=, a, b, &c] { return b++; }(); }}\n");
   verifyFormat("auto c = {[&a, &a, a] { [=, a, b, &c] {}(); }}\n");
   verifyFormat("void f() {\n"
                "  other(x.begin(), x.end(), [&](int, int) { return 1; });\n"
@@ -8674,7 +8689,7 @@ TEST_F(FormatTest, FormatsBlocks) {
   verifyFormat("int a = [operation block:^int(int *i) { return 1; }];");
   verifyFormat("[myObject doSomethingWith:arg1\n"
                "                      aaa:^int(int *a) { return 1; }\n"
-               "                      bbb:f(a * b)];");
+               "                      bbb:f(a * bbbbbbbb)];");
 
   verifyFormat("[operation setCompletionBlock:^{\n"
                "    [self.delegate newDataAvailable];\n"

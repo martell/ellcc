@@ -45,7 +45,7 @@ class ARM64DAGToDAGISel : public SelectionDAGISel {
 public:
   explicit ARM64DAGToDAGISel(ARM64TargetMachine &tm, CodeGenOpt::Level OptLevel)
       : SelectionDAGISel(tm, OptLevel), TM(tm),
-        Subtarget(&TM.getSubtarget<ARM64Subtarget>()), ForCodeSize(false) {}
+        Subtarget(nullptr), ForCodeSize(false) {}
 
   const char *getPassName() const override {
     return "ARM64 Instruction Selection";
@@ -57,6 +57,7 @@ public:
         FnAttrs.hasAttribute(AttributeSet::FunctionIndex,
                              Attribute::OptimizeForSize) ||
         FnAttrs.hasAttribute(AttributeSet::FunctionIndex, Attribute::MinSize);
+    Subtarget = &TM.getSubtarget<ARM64Subtarget>();
     return SelectionDAGISel::runOnMachineFunction(MF);
   }
 
@@ -110,27 +111,18 @@ public:
     return SelectAddrModeUnscaled(N, 16, Base, OffImm);
   }
 
-  bool SelectAddrModeRO8(SDValue N, SDValue &Base, SDValue &Offset,
-                         SDValue &Imm) {
-    return SelectAddrModeRO(N, 1, Base, Offset, Imm);
+  template<int Width>
+  bool SelectAddrModeWRO(SDValue N, SDValue &Base, SDValue &Offset,
+                         SDValue &SignExtend, SDValue &DoShift) {
+    return SelectAddrModeWRO(N, Width / 8, Base, Offset, SignExtend, DoShift);
   }
-  bool SelectAddrModeRO16(SDValue N, SDValue &Base, SDValue &Offset,
-                          SDValue &Imm) {
-    return SelectAddrModeRO(N, 2, Base, Offset, Imm);
+
+  template<int Width>
+  bool SelectAddrModeXRO(SDValue N, SDValue &Base, SDValue &Offset,
+                         SDValue &SignExtend, SDValue &DoShift) {
+    return SelectAddrModeXRO(N, Width / 8, Base, Offset, SignExtend, DoShift);
   }
-  bool SelectAddrModeRO32(SDValue N, SDValue &Base, SDValue &Offset,
-                          SDValue &Imm) {
-    return SelectAddrModeRO(N, 4, Base, Offset, Imm);
-  }
-  bool SelectAddrModeRO64(SDValue N, SDValue &Base, SDValue &Offset,
-                          SDValue &Imm) {
-    return SelectAddrModeRO(N, 8, Base, Offset, Imm);
-  }
-  bool SelectAddrModeRO128(SDValue N, SDValue &Base, SDValue &Offset,
-                           SDValue &Imm) {
-    return SelectAddrModeRO(N, 16, Base, Offset, Imm);
-  }
-  bool SelectAddrModeNoIndex(SDValue N, SDValue &Val);
+
 
   /// Form sequences of consecutive 64/128-bit registers for use in NEON
   /// instructions making use of a vector-list (e.g. ldN, tbl). Vecs must have
@@ -178,11 +170,15 @@ private:
                              SDValue &OffImm);
   bool SelectAddrModeUnscaled(SDValue N, unsigned Size, SDValue &Base,
                               SDValue &OffImm);
-  bool SelectAddrModeRO(SDValue N, unsigned Size, SDValue &Base,
-                        SDValue &Offset, SDValue &Imm);
+  bool SelectAddrModeWRO(SDValue N, unsigned Size, SDValue &Base,
+                         SDValue &Offset, SDValue &SignExtend,
+                         SDValue &DoShift);
+  bool SelectAddrModeXRO(SDValue N, unsigned Size, SDValue &Base,
+                         SDValue &Offset, SDValue &SignExtend,
+                         SDValue &DoShift);
   bool isWorthFolding(SDValue V) const;
-  bool SelectExtendedSHL(SDValue N, unsigned Size, SDValue &Offset,
-                         SDValue &Imm);
+  bool SelectExtendedSHL(SDValue N, unsigned Size, bool WantExtend,
+                         SDValue &Offset, SDValue &SignExtend);
 
   template<unsigned RegWidth>
   bool SelectCVTFixedPosOperand(SDValue N, SDValue &FixedPos) {
@@ -216,14 +212,6 @@ static bool isOpcWithIntImmediate(const SDNode *N, unsigned Opc,
                                   uint64_t &Imm) {
   return N->getOpcode() == Opc &&
          isIntImmediate(N->getOperand(1).getNode(), Imm);
-}
-
-bool ARM64DAGToDAGISel::SelectAddrModeNoIndex(SDValue N, SDValue &Val) {
-  EVT ValTy = N.getValueType();
-  if (ValTy != MVT::i64)
-    return false;
-  Val = N;
-  return true;
 }
 
 bool ARM64DAGToDAGISel::SelectInlineAsmMemoryOperand(
@@ -368,8 +356,7 @@ getExtendTypeForNode(SDValue N, bool IsLoadStore = false) {
       return ARM64_AM::SXTH;
     else if (SrcVT == MVT::i32)
       return ARM64_AM::SXTW;
-    else if (SrcVT == MVT::i64)
-      return ARM64_AM::SXTX;
+    assert(SrcVT != MVT::i64 && "extend from 64-bits?");
 
     return ARM64_AM::InvalidShiftExtend;
   } else if (N.getOpcode() == ISD::ZERO_EXTEND ||
@@ -381,8 +368,7 @@ getExtendTypeForNode(SDValue N, bool IsLoadStore = false) {
       return ARM64_AM::UXTH;
     else if (SrcVT == MVT::i32)
       return ARM64_AM::UXTW;
-    else if (SrcVT == MVT::i64)
-      return ARM64_AM::UXTX;
+    assert(SrcVT != MVT::i64 && "extend from 64-bits?");
 
     return ARM64_AM::InvalidShiftExtend;
   } else if (N.getOpcode() == ISD::AND) {
@@ -531,6 +517,21 @@ SDNode *ARM64DAGToDAGISel::SelectMULLV64LaneV128(unsigned IntNo, SDNode *N) {
   return CurDAG->getMachineNode(SMULLOpc, SDLoc(N), N->getValueType(0), Ops);
 }
 
+/// Instructions that accept extend modifiers like UXTW expect the register
+/// being extended to be a GPR32, but the incoming DAG might be acting on a
+/// GPR64 (either via SEXT_INREG or AND). Extract the appropriate low bits if
+/// this is the case.
+static SDValue narrowIfNeeded(SelectionDAG *CurDAG, SDValue N) {
+  if (N.getValueType() == MVT::i32)
+    return N;
+
+  SDValue SubReg = CurDAG->getTargetConstant(ARM64::sub_32, MVT::i32);
+  MachineSDNode *Node = CurDAG->getMachineNode(TargetOpcode::EXTRACT_SUBREG,
+                                               SDLoc(N), MVT::i32, N, SubReg);
+  return SDValue(Node, 0);
+}
+
+
 /// SelectArithExtendedRegister - Select a "extended register" operand.  This
 /// operand folds in an extend followed by an optional left shift.
 bool ARM64DAGToDAGISel::SelectArithExtendedRegister(SDValue N, SDValue &Reg,
@@ -564,14 +565,8 @@ bool ARM64DAGToDAGISel::SelectArithExtendedRegister(SDValue N, SDValue &Reg,
   // if we're folding a (sext i8), we need the RHS to be a GPR32, even though
   // there might not be an actual 32-bit value in the program.  We can
   // (harmlessly) synthesize one by injected an EXTRACT_SUBREG here.
-  if (Reg.getValueType() == MVT::i64 && Ext != ARM64_AM::UXTX &&
-      Ext != ARM64_AM::SXTX) {
-    SDValue SubReg = CurDAG->getTargetConstant(ARM64::sub_32, MVT::i32);
-    MachineSDNode *Node = CurDAG->getMachineNode(
-        TargetOpcode::EXTRACT_SUBREG, SDLoc(N), MVT::i32, Reg, SubReg);
-    Reg = SDValue(Node, 0);
-  }
-
+  assert(Ext != ARM64_AM::UXTX && Ext != ARM64_AM::SXTX);
+  Reg = narrowIfNeeded(CurDAG, Reg);
   Shift = CurDAG->getTargetConstant(getArithExtendImm(Ext, ShiftVal), MVT::i32);
   return isWorthFolding(N);
 }
@@ -676,47 +671,44 @@ static SDValue Widen(SelectionDAG *CurDAG, SDValue N) {
   return SDValue(Node, 0);
 }
 
-static SDValue WidenIfNeeded(SelectionDAG *CurDAG, SDValue N) {
-  if (N.getValueType() == MVT::i32) {
-    return Widen(CurDAG, N);
-  }
-
-  return N;
-}
-
 /// \brief Check if the given SHL node (\p N), can be used to form an
 /// extended register for an addressing mode.
 bool ARM64DAGToDAGISel::SelectExtendedSHL(SDValue N, unsigned Size,
-                                          SDValue &Offset, SDValue &Imm) {
+                                          bool WantExtend, SDValue &Offset,
+                                          SDValue &SignExtend) {
   assert(N.getOpcode() == ISD::SHL && "Invalid opcode.");
   ConstantSDNode *CSD = dyn_cast<ConstantSDNode>(N.getOperand(1));
-  if (CSD && (CSD->getZExtValue() & 0x7) == CSD->getZExtValue()) {
+  if (!CSD || (CSD->getZExtValue() & 0x7) != CSD->getZExtValue())
+    return false;
 
+  if (WantExtend) {
     ARM64_AM::ShiftExtendType Ext = getExtendTypeForNode(N.getOperand(0), true);
-    if (Ext == ARM64_AM::InvalidShiftExtend) {
-      Ext = ARM64_AM::UXTX;
-      Offset = WidenIfNeeded(CurDAG, N.getOperand(0));
-    } else {
-      Offset = WidenIfNeeded(CurDAG, N.getOperand(0).getOperand(0));
-    }
-
-    unsigned LegalShiftVal = Log2_32(Size);
-    unsigned ShiftVal = CSD->getZExtValue();
-
-    if (ShiftVal != 0 && ShiftVal != LegalShiftVal)
+    if (Ext == ARM64_AM::InvalidShiftExtend)
       return false;
 
-    Imm = CurDAG->getTargetConstant(
-        ARM64_AM::getMemExtendImm(Ext, ShiftVal != 0), MVT::i32);
-    if (isWorthFolding(N))
-      return true;
+    Offset = narrowIfNeeded(CurDAG, N.getOperand(0).getOperand(0));
+    SignExtend = CurDAG->getTargetConstant(Ext == ARM64_AM::SXTW, MVT::i32);
+  } else {
+    Offset = N.getOperand(0);
+    SignExtend = CurDAG->getTargetConstant(0, MVT::i32);
   }
+
+  unsigned LegalShiftVal = Log2_32(Size);
+  unsigned ShiftVal = CSD->getZExtValue();
+
+  if (ShiftVal != 0 && ShiftVal != LegalShiftVal)
+    return false;
+
+  if (isWorthFolding(N))
+    return true;
+
   return false;
 }
 
-bool ARM64DAGToDAGISel::SelectAddrModeRO(SDValue N, unsigned Size,
+bool ARM64DAGToDAGISel::SelectAddrModeWRO(SDValue N, unsigned Size,
                                          SDValue &Base, SDValue &Offset,
-                                         SDValue &Imm) {
+                                         SDValue &SignExtend,
+                                         SDValue &DoShift) {
   if (N.getOpcode() != ISD::ADD)
     return false;
   SDValue LHS = N.getOperand(0);
@@ -741,26 +733,30 @@ bool ARM64DAGToDAGISel::SelectAddrModeRO(SDValue N, unsigned Size,
 
   // Try to match a shifted extend on the RHS.
   if (IsExtendedRegisterWorthFolding && RHS.getOpcode() == ISD::SHL &&
-      SelectExtendedSHL(RHS, Size, Offset, Imm)) {
+      SelectExtendedSHL(RHS, Size, true, Offset, SignExtend)) {
     Base = LHS;
+    DoShift = CurDAG->getTargetConstant(true, MVT::i32);
     return true;
   }
 
   // Try to match a shifted extend on the LHS.
   if (IsExtendedRegisterWorthFolding && LHS.getOpcode() == ISD::SHL &&
-      SelectExtendedSHL(LHS, Size, Offset, Imm)) {
+      SelectExtendedSHL(LHS, Size, true, Offset, SignExtend)) {
     Base = RHS;
+    DoShift = CurDAG->getTargetConstant(true, MVT::i32);
     return true;
   }
 
-  ARM64_AM::ShiftExtendType Ext = ARM64_AM::UXTX;
+  // There was no shift, whatever else we find.
+  DoShift = CurDAG->getTargetConstant(false, MVT::i32);
+
+  ARM64_AM::ShiftExtendType Ext = ARM64_AM::InvalidShiftExtend;
   // Try to match an unshifted extend on the LHS.
   if (IsExtendedRegisterWorthFolding &&
       (Ext = getExtendTypeForNode(LHS, true)) != ARM64_AM::InvalidShiftExtend) {
     Base = RHS;
-    Offset = WidenIfNeeded(CurDAG, LHS.getOperand(0));
-    Imm = CurDAG->getTargetConstant(ARM64_AM::getMemExtendImm(Ext, false),
-                                    MVT::i32);
+    Offset = narrowIfNeeded(CurDAG, LHS.getOperand(0));
+    SignExtend = CurDAG->getTargetConstant(Ext == ARM64_AM::SXTW, MVT::i32);
     if (isWorthFolding(LHS))
       return true;
   }
@@ -769,19 +765,62 @@ bool ARM64DAGToDAGISel::SelectAddrModeRO(SDValue N, unsigned Size,
   if (IsExtendedRegisterWorthFolding &&
       (Ext = getExtendTypeForNode(RHS, true)) != ARM64_AM::InvalidShiftExtend) {
     Base = LHS;
-    Offset = WidenIfNeeded(CurDAG, RHS.getOperand(0));
-    Imm = CurDAG->getTargetConstant(ARM64_AM::getMemExtendImm(Ext, false),
-                                    MVT::i32);
+    Offset = narrowIfNeeded(CurDAG, RHS.getOperand(0));
+    SignExtend = CurDAG->getTargetConstant(Ext == ARM64_AM::SXTW, MVT::i32);
     if (isWorthFolding(RHS))
       return true;
   }
 
+  return false;
+}
+
+bool ARM64DAGToDAGISel::SelectAddrModeXRO(SDValue N, unsigned Size,
+                                          SDValue &Base, SDValue &Offset,
+                                          SDValue &SignExtend,
+                                          SDValue &DoShift) {
+  if (N.getOpcode() != ISD::ADD)
+    return false;
+  SDValue LHS = N.getOperand(0);
+  SDValue RHS = N.getOperand(1);
+
+  // We don't want to match immediate adds here, because they are better lowered
+  // to the register-immediate addressing modes.
+  if (isa<ConstantSDNode>(LHS) || isa<ConstantSDNode>(RHS))
+    return false;
+
+  // Check if this particular node is reused in any non-memory related
+  // operation.  If yes, do not try to fold this node into the address
+  // computation, since the computation will be kept.
+  const SDNode *Node = N.getNode();
+  for (SDNode *UI : Node->uses()) {
+    if (!isa<MemSDNode>(*UI))
+      return false;
+  }
+
+  // Remember if it is worth folding N when it produces extended register.
+  bool IsExtendedRegisterWorthFolding = isWorthFolding(N);
+
+  // Try to match a shifted extend on the RHS.
+  if (IsExtendedRegisterWorthFolding && RHS.getOpcode() == ISD::SHL &&
+      SelectExtendedSHL(RHS, Size, false, Offset, SignExtend)) {
+    Base = LHS;
+    DoShift = CurDAG->getTargetConstant(true, MVT::i32);
+    return true;
+  }
+
+  // Try to match a shifted extend on the LHS.
+  if (IsExtendedRegisterWorthFolding && LHS.getOpcode() == ISD::SHL &&
+      SelectExtendedSHL(LHS, Size, false, Offset, SignExtend)) {
+    Base = RHS;
+    DoShift = CurDAG->getTargetConstant(true, MVT::i32);
+    return true;
+  }
+
   // Match any non-shifted, non-extend, non-immediate add expression.
   Base = LHS;
-  Offset = WidenIfNeeded(CurDAG, RHS);
-  Ext = ARM64_AM::UXTX;
-  Imm = CurDAG->getTargetConstant(ARM64_AM::getMemExtendImm(Ext, false),
-                                  MVT::i32);
+  Offset = RHS;
+  SignExtend = CurDAG->getTargetConstant(false, MVT::i32);
+  DoShift = CurDAG->getTargetConstant(false, MVT::i32);
   // Reg1 + Reg2 is free: no check needed.
   return true;
 }
@@ -871,14 +910,14 @@ SDNode *ARM64DAGToDAGISel::SelectIndexedLoad(SDNode *N, bool &Done) {
   ISD::LoadExtType ExtType = LD->getExtensionType();
   bool InsertTo64 = false;
   if (VT == MVT::i64)
-    Opcode = IsPre ? ARM64::LDRXpre_isel : ARM64::LDRXpost_isel;
+    Opcode = IsPre ? ARM64::LDRXpre : ARM64::LDRXpost;
   else if (VT == MVT::i32) {
     if (ExtType == ISD::NON_EXTLOAD)
-      Opcode = IsPre ? ARM64::LDRWpre_isel : ARM64::LDRWpost_isel;
+      Opcode = IsPre ? ARM64::LDRWpre : ARM64::LDRWpost;
     else if (ExtType == ISD::SEXTLOAD)
-      Opcode = IsPre ? ARM64::LDRSWpre_isel : ARM64::LDRSWpost_isel;
+      Opcode = IsPre ? ARM64::LDRSWpre : ARM64::LDRSWpost;
     else {
-      Opcode = IsPre ? ARM64::LDRWpre_isel : ARM64::LDRWpost_isel;
+      Opcode = IsPre ? ARM64::LDRWpre : ARM64::LDRWpost;
       InsertTo64 = true;
       // The result of the load is only i32. It's the subreg_to_reg that makes
       // it into an i64.
@@ -887,11 +926,11 @@ SDNode *ARM64DAGToDAGISel::SelectIndexedLoad(SDNode *N, bool &Done) {
   } else if (VT == MVT::i16) {
     if (ExtType == ISD::SEXTLOAD) {
       if (DstVT == MVT::i64)
-        Opcode = IsPre ? ARM64::LDRSHXpre_isel : ARM64::LDRSHXpost_isel;
+        Opcode = IsPre ? ARM64::LDRSHXpre : ARM64::LDRSHXpost;
       else
-        Opcode = IsPre ? ARM64::LDRSHWpre_isel : ARM64::LDRSHWpost_isel;
+        Opcode = IsPre ? ARM64::LDRSHWpre : ARM64::LDRSHWpost;
     } else {
-      Opcode = IsPre ? ARM64::LDRHHpre_isel : ARM64::LDRHHpost_isel;
+      Opcode = IsPre ? ARM64::LDRHHpre : ARM64::LDRHHpost;
       InsertTo64 = DstVT == MVT::i64;
       // The result of the load is only i32. It's the subreg_to_reg that makes
       // it into an i64.
@@ -900,22 +939,22 @@ SDNode *ARM64DAGToDAGISel::SelectIndexedLoad(SDNode *N, bool &Done) {
   } else if (VT == MVT::i8) {
     if (ExtType == ISD::SEXTLOAD) {
       if (DstVT == MVT::i64)
-        Opcode = IsPre ? ARM64::LDRSBXpre_isel : ARM64::LDRSBXpost_isel;
+        Opcode = IsPre ? ARM64::LDRSBXpre : ARM64::LDRSBXpost;
       else
-        Opcode = IsPre ? ARM64::LDRSBWpre_isel : ARM64::LDRSBWpost_isel;
+        Opcode = IsPre ? ARM64::LDRSBWpre : ARM64::LDRSBWpost;
     } else {
-      Opcode = IsPre ? ARM64::LDRBBpre_isel : ARM64::LDRBBpost_isel;
+      Opcode = IsPre ? ARM64::LDRBBpre : ARM64::LDRBBpost;
       InsertTo64 = DstVT == MVT::i64;
       // The result of the load is only i32. It's the subreg_to_reg that makes
       // it into an i64.
       DstVT = MVT::i32;
     }
   } else if (VT == MVT::f32) {
-    Opcode = IsPre ? ARM64::LDRSpre_isel : ARM64::LDRSpost_isel;
+    Opcode = IsPre ? ARM64::LDRSpre : ARM64::LDRSpost;
   } else if (VT == MVT::f64 || VT.is64BitVector()) {
-    Opcode = IsPre ? ARM64::LDRDpre_isel : ARM64::LDRDpost_isel;
+    Opcode = IsPre ? ARM64::LDRDpre : ARM64::LDRDpost;
   } else if (VT.is128BitVector()) {
-    Opcode = IsPre ? ARM64::LDRQpre_isel : ARM64::LDRQpost_isel;
+    Opcode = IsPre ? ARM64::LDRQpre : ARM64::LDRQpost;
   } else
     return nullptr;
   SDValue Chain = LD->getChain();
@@ -924,21 +963,25 @@ SDNode *ARM64DAGToDAGISel::SelectIndexedLoad(SDNode *N, bool &Done) {
   int OffsetVal = (int)OffsetOp->getZExtValue();
   SDValue Offset = CurDAG->getTargetConstant(OffsetVal, MVT::i64);
   SDValue Ops[] = { Base, Offset, Chain };
-  SDNode *Res = CurDAG->getMachineNode(Opcode, SDLoc(N), DstVT, MVT::i64,
+  SDNode *Res = CurDAG->getMachineNode(Opcode, SDLoc(N), MVT::i64, DstVT,
                                        MVT::Other, Ops);
   // Either way, we're replacing the node, so tell the caller that.
   Done = true;
+  SDValue LoadedVal = SDValue(Res, 1);
   if (InsertTo64) {
     SDValue SubReg = CurDAG->getTargetConstant(ARM64::sub_32, MVT::i32);
-    SDNode *Sub = CurDAG->getMachineNode(
-        ARM64::SUBREG_TO_REG, SDLoc(N), MVT::i64,
-        CurDAG->getTargetConstant(0, MVT::i64), SDValue(Res, 0), SubReg);
-    ReplaceUses(SDValue(N, 0), SDValue(Sub, 0));
-    ReplaceUses(SDValue(N, 1), SDValue(Res, 1));
-    ReplaceUses(SDValue(N, 2), SDValue(Res, 2));
-    return nullptr;
+    LoadedVal =
+        SDValue(CurDAG->getMachineNode(ARM64::SUBREG_TO_REG, SDLoc(N), MVT::i64,
+                                       CurDAG->getTargetConstant(0, MVT::i64),
+                                       LoadedVal, SubReg),
+                0);
   }
-  return Res;
+
+  ReplaceUses(SDValue(N, 0), LoadedVal);
+  ReplaceUses(SDValue(N, 1), SDValue(Res, 0));
+  ReplaceUses(SDValue(N, 2), SDValue(Res, 2));
+
+  return nullptr;
 }
 
 SDNode *ARM64DAGToDAGISel::SelectLoad(SDNode *N, unsigned NumVecs, unsigned Opc,

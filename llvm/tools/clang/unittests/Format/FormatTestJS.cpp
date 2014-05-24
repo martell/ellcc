@@ -92,6 +92,11 @@ TEST_F(FormatTestJS, SpacesInContainerLiterals) {
   verifyFormat("var arr = [1, 2, 3];");
   verifyFormat("var obj = {a: 1, b: 2, c: 3};");
 
+  verifyFormat("var object_literal_with_long_name = {\n"
+               "  a: 'aaaaaaaaaaaaaaaaaa',\n"
+               "  b: 'bbbbbbbbbbbbbbbbbb'\n"
+               "};");
+
   verifyFormat("var obj = {a: 1, b: 2, c: 3};",
                getChromiumStyle(FormatStyle::LK_JavaScript));
   verifyFormat("someVariable = {'a': [{}]};");
@@ -120,6 +125,25 @@ TEST_F(FormatTestJS, Closures) {
                "};");
   EXPECT_EQ("abc = xyz ? function() { return 1; } : function() { return -1; };",
             format("abc=xyz?function(){return 1;}:function(){return -1;};"));
+
+  verifyFormat("var closure = goog.bind(\n"
+               "    function() {  // comment\n"
+               "      foo();\n"
+               "      bar();\n"
+               "    },\n"
+               "    this, arg1IsReallyLongAndNeeedsLineBreaks,\n"
+               "    arg3IsReallyLongAndNeeedsLineBreaks);");
+  verifyFormat("var closure = goog.bind(function() {  // comment\n"
+               "  foo();\n"
+               "  bar();\n"
+               "}, this);");
+
+  verifyFormat("var x = {a: function() { return 1; }};",
+               getGoogleJSStyleWithColumns(38));
+  verifyFormat("var x = {\n"
+               "  a: function() { return 1; }\n"
+               "};",
+               getGoogleJSStyleWithColumns(37));
 }
 
 TEST_F(FormatTestJS, ReturnStatements) {
@@ -138,6 +162,11 @@ TEST_F(FormatTestJS, TryCatch) {
                "} finally {\n"
                "  h();\n"
                "}");
+}
+
+TEST_F(FormatTestJS, StringLiteralConcatenation) {
+  verifyFormat("var literal = 'hello ' +\n"
+               "              'world';");
 }
 
 TEST_F(FormatTestJS, RegexLiteralClassification) {

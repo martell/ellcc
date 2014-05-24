@@ -25,8 +25,6 @@ include "Mips32r6InstrFormats.td"
 // Reencoded: sdbbp
 // Reencoded: sdc2
 // Reencoded: swc2
-// Removed: /.ps$/, cvt.ps.s, cvt.ps.pw
-// Removed: addi
 // Removed: bc1any2, bc1any4
 // Removed: bc2[ft]
 // Removed: bc2f, bc2t
@@ -37,7 +35,6 @@ include "Mips32r6InstrFormats.td"
 // Removed: jalx
 // Removed: ldxc1
 // Removed: luxc1
-// Removed: lwl, lwr, lwle, lwre, swl, swr, swle, swre
 // Removed: lwxc1
 // Removed: madd.[ds], nmadd.[ds], nmsub.[ds], sub.[ds]
 // Removed: mfhi, mflo, mthi, mtlo, madd, maddu, msub, msubu, mul
@@ -49,7 +46,6 @@ include "Mips32r6InstrFormats.td"
 // Removed: sdxc1
 // Removed: suxc1
 // Removed: swxc1
-// Removed: teqi, tgei, tgeiu, tlti, tltiu, tnei
 // Rencoded: [ls][wd]c2
 
 def brtarget21 : Operand<OtherVT> {
@@ -90,28 +86,47 @@ class AUIPC_ENC  : PCREL16_FM<OPCODE5_AUIPC>;
 
 class BALC_ENC  : BRANCH_OFF26_FM<0b111010>;
 class BC_ENC    : BRANCH_OFF26_FM<0b110010>;
-class BEQC_ENC  : CMP_BRANCH_OFF16_FM<0b001000>;
-class BEQZALC_ENC : CMP_BRANCH_RT_OFF16_FM<0b001000>;
-class BNEC_ENC  : CMP_BRANCH_OFF16_FM<0b011000>;
-class BNEZALC_ENC : CMP_BRANCH_RT_OFF16_FM<0b011000>;
+class BEQC_ENC  : CMP_BRANCH_2R_OFF16_FM<OPGROUP_ADDI>,
+                  DecodeDisambiguates<"AddiGroupBranch">;
+class BEQZALC_ENC : CMP_BRANCH_1R_RT_OFF16_FM<OPGROUP_ADDI>,
+                    DecodeDisambiguatedBy<"DaddiGroupBranch">;
+class BNEC_ENC  : CMP_BRANCH_2R_OFF16_FM<OPGROUP_DADDI>,
+                  DecodeDisambiguates<"DaddiGroupBranch">;
+class BNEZALC_ENC : CMP_BRANCH_1R_RT_OFF16_FM<OPGROUP_DADDI>,
+                    DecodeDisambiguatedBy<"DaddiGroupBranch">;
 
-class BLTZC_ENC : CMP_BRANCH_OFF16_FM<0b010111>;
-class BGEZC_ENC : CMP_BRANCH_OFF16_FM<0b010110>;
-class BGTZALC_ENC : CMP_BRANCH_RT_OFF16_FM<0b000111>;
+class BLTZC_ENC : CMP_BRANCH_1R_BOTH_OFF16_FM<OPGROUP_BGTZL>,
+                  DecodeDisambiguates<"BgtzlGroupBranch">;
+class BGEZC_ENC : CMP_BRANCH_1R_BOTH_OFF16_FM<OPGROUP_BLEZL>,
+                  DecodeDisambiguates<"BlezlGroupBranch">;
+class BGTZALC_ENC : CMP_BRANCH_1R_RT_OFF16_FM<OPGROUP_BGTZ>,
+                    DecodeDisambiguatedBy<"BgtzGroupBranch">;
 
-class BLEZC_ENC : CMP_BRANCH_RT_OFF16_FM<0b010110>;
-class BLTZALC_ENC : CMP_BRANCH_OFF16_FM<0b000111>;
-class BGTZC_ENC : CMP_BRANCH_RT_OFF16_FM<0b010111>;
+class BLEZC_ENC : CMP_BRANCH_1R_RT_OFF16_FM<OPGROUP_BLEZL>,
+                  DecodeDisambiguatedBy<"BlezlGroupBranch">;
+class BLTZALC_ENC : CMP_BRANCH_1R_BOTH_OFF16_FM<OPGROUP_BGTZ>,
+                    DecodeDisambiguates<"BgtzGroupBranch">;
+class BGTZC_ENC : CMP_BRANCH_1R_RT_OFF16_FM<OPGROUP_BGTZL>,
+                  DecodeDisambiguatedBy<"BgtzlGroupBranch">;
 
 class BEQZC_ENC : CMP_BRANCH_OFF21_FM<0b110110>;
-class BGEZALC_ENC : CMP_BRANCH_OFF16_FM<0b000110>;
+class BGEZALC_ENC : CMP_BRANCH_1R_BOTH_OFF16_FM<OPGROUP_BLEZ>;
 class BNEZC_ENC : CMP_BRANCH_OFF21_FM<0b111110>;
+
+class BC1EQZ_ENC : COP1_BCCZ_FM<OPCODE5_BC1EQZ>;
+class BC1NEZ_ENC : COP1_BCCZ_FM<OPCODE5_BC1NEZ>;
+class BC2EQZ_ENC : COP2_BCCZ_FM<OPCODE5_BC2EQZ>;
+class BC2NEZ_ENC : COP2_BCCZ_FM<OPCODE5_BC2NEZ>;
 
 class JIALC_ENC : JMP_IDX_COMPACT_FM<0b111110>;
 class JIC_ENC   : JMP_IDX_COMPACT_FM<0b110110>;
 
 class BITSWAP_ENC : SPECIAL3_2R_FM<OPCODE6_BITSWAP>;
-class BLEZALC_ENC : CMP_BRANCH_RT_OFF16_FM<0b000110>;
+class BLEZALC_ENC : CMP_BRANCH_1R_RT_OFF16_FM<OPGROUP_BLEZ>;
+class BNVC_ENC   : CMP_BRANCH_2R_OFF16_FM<OPGROUP_DADDI>,
+                   DecodeDisambiguatedBy<"DaddiGroupBranch">;
+class BOVC_ENC   : CMP_BRANCH_2R_OFF16_FM<OPGROUP_ADDI>,
+                   DecodeDisambiguatedBy<"AddiGroupBranch">;
 class DIV_ENC    : SPECIAL_3R_FM<0b00010, 0b011010>;
 class DIVU_ENC   : SPECIAL_3R_FM<0b00010, 0b011011>;
 class MOD_ENC    : SPECIAL_3R_FM<0b00011, 0b011010>;
@@ -297,7 +312,7 @@ class CMP_CBR_EQNE_Z_DESC_BASE<string instr_asm, DAGOperand opnd,
 
 class CMP_CBR_RT_Z_DESC_BASE<string instr_asm, DAGOperand opnd,
                              RegisterOperand GPROpnd> : BRANCH_DESC_BASE {
-  dag InOperandList = (ins GPROpnd:$rs, GPROpnd:$rt, opnd:$offset);
+  dag InOperandList = (ins GPROpnd:$rt, opnd:$offset);
   dag OutOperandList = (outs);
   string AsmString = !strconcat(instr_asm, "\t$rt, $offset");
   list<Register> Defs = [AT];
@@ -312,19 +327,37 @@ class BC_DESC : BC_DESC_BASE<"bc", brtarget26>;
 class BEQC_DESC : CMP_BC_DESC_BASE<"beqc", brtarget, GPR32Opnd>;
 class BNEC_DESC : CMP_BC_DESC_BASE<"bnec", brtarget, GPR32Opnd>;
 
-class BLTZC_DESC : CMP_CBR_RT_Z_DESC_BASE<"bltzc", brtarget, GPR32Opnd> {
-  string Constraints = "$rs = $rt";
-}
-
-class BGEZC_DESC : CMP_CBR_RT_Z_DESC_BASE<"bgezc", brtarget, GPR32Opnd> {
-  string Constraints = "$rs = $rt";
-}
+class BLTZC_DESC : CMP_CBR_RT_Z_DESC_BASE<"bltzc", brtarget, GPR32Opnd>;
+class BGEZC_DESC : CMP_CBR_RT_Z_DESC_BASE<"bgezc", brtarget, GPR32Opnd>;
 
 class BLEZC_DESC : CMP_CBR_RT_Z_DESC_BASE<"blezc", brtarget, GPR32Opnd>;
 class BGTZC_DESC : CMP_CBR_RT_Z_DESC_BASE<"bgtzc", brtarget, GPR32Opnd>;
 
 class BEQZC_DESC : CMP_CBR_EQNE_Z_DESC_BASE<"beqzc", brtarget21, GPR32Opnd>;
 class BNEZC_DESC : CMP_CBR_EQNE_Z_DESC_BASE<"bnezc", brtarget21, GPR32Opnd>;
+
+class COP1_BCCZ_DESC_BASE<string instr_asm> : BRANCH_DESC_BASE {
+  dag InOperandList = (ins FGR64Opnd:$ft, brtarget:$offset);
+  dag OutOperandList = (outs);
+  string AsmString = instr_asm;
+  bit hasDelaySlot = 1;
+}
+
+class BC1EQZ_DESC : COP1_BCCZ_DESC_BASE<"bc1eqz $ft, $offset">;
+class BC1NEZ_DESC : COP1_BCCZ_DESC_BASE<"bc1nez $ft, $offset">;
+
+class COP2_BCCZ_DESC_BASE<string instr_asm> : BRANCH_DESC_BASE {
+  dag InOperandList = (ins COP2Opnd:$ct, brtarget:$offset);
+  dag OutOperandList = (outs);
+  string AsmString = instr_asm;
+  bit hasDelaySlot = 1;
+}
+
+class BC2EQZ_DESC : COP2_BCCZ_DESC_BASE<"bc2eqz $ct, $offset">;
+class BC2NEZ_DESC : COP2_BCCZ_DESC_BASE<"bc2nez $ct, $offset">;
+
+class BOVC_DESC   : CMP_BC_DESC_BASE<"bovc", brtarget, GPR32Opnd>;
+class BNVC_DESC   : CMP_BC_DESC_BASE<"bnvc", brtarget, GPR32Opnd>;
 
 class JMP_IDX_COMPACT_DESC_BASE<string opstr, DAGOperand opnd,
                                 RegisterOperand GPROpnd> {
@@ -373,7 +406,6 @@ class BEQZALC_DESC : CMP_CBR_RT_Z_DESC_BASE<"beqzalc", brtarget, GPR32Opnd> {
 }
 
 class BGEZALC_DESC : CMP_CBR_RT_Z_DESC_BASE<"bgezalc", brtarget, GPR32Opnd> {
-  string Constraints = "$rs = $rt";
   list<Register> Defs = [RA];
 }
 
@@ -386,7 +418,6 @@ class BLEZALC_DESC : CMP_CBR_RT_Z_DESC_BASE<"blezalc", brtarget, GPR32Opnd> {
 }
 
 class BLTZALC_DESC : CMP_CBR_RT_Z_DESC_BASE<"bltzalc", brtarget, GPR32Opnd> {
-  string Constraints = "$rs = $rt";
   list<Register> Defs = [RA];
 }
 
@@ -484,10 +515,10 @@ def ALUIPC : ALUIPC_ENC, ALUIPC_DESC, ISA_MIPS32R6;
 def AUI : AUI_ENC, AUI_DESC, ISA_MIPS32R6;
 def AUIPC : AUIPC_ENC, AUIPC_DESC, ISA_MIPS32R6;
 def BALC : BALC_ENC, BALC_DESC, ISA_MIPS32R6;
-def BC1EQZ;
-def BC1NEZ;
-def BC2EQZ;
-def BC2NEZ;
+def BC1EQZ : BC1EQZ_ENC, BC1EQZ_DESC, ISA_MIPS32R6;
+def BC1NEZ : BC1NEZ_ENC, BC1NEZ_DESC, ISA_MIPS32R6;
+def BC2EQZ : BC2EQZ_ENC, BC2EQZ_DESC, ISA_MIPS32R6;
+def BC2NEZ : BC2NEZ_ENC, BC2NEZ_DESC, ISA_MIPS32R6;
 def BC : BC_ENC, BC_DESC, ISA_MIPS32R6;
 def BEQC : BEQC_ENC, BEQC_DESC, ISA_MIPS32R6;
 def BEQZALC : BEQZALC_ENC, BEQZALC_DESC, ISA_MIPS32R6;
@@ -508,8 +539,8 @@ def BLTZC : BLTZC_ENC, BLTZC_DESC, ISA_MIPS32R6;
 def BNEC : BNEC_ENC, BNEC_DESC, ISA_MIPS32R6;
 def BNEZALC : BNEZALC_ENC, BNEZALC_DESC, ISA_MIPS32R6;
 def BNEZC : BNEZC_ENC, BNEZC_DESC, ISA_MIPS32R6;
-def BNVC;
-def BOVC;
+def BNVC : BNVC_ENC, BNVC_DESC, ISA_MIPS32R6;
+def BOVC : BOVC_ENC, BOVC_DESC, ISA_MIPS32R6;
 def CLASS_D : CLASS_D_ENC, CLASS_D_DESC, ISA_MIPS32R6;
 def CLASS_S : CLASS_S_ENC, CLASS_S_DESC, ISA_MIPS32R6;
 defm S : CMP_CC_M<FIELD_CMP_FORMAT_S, "s", FGR32Opnd>;

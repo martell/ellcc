@@ -298,6 +298,8 @@ private:
 
       ScopedContextCreator ContextCreator(*this, tok::l_brace, 1);
       Contexts.back().ColonIsDictLiteral = true;
+      if (Left->BlockKind == BK_BracedInit)
+        Contexts.back().IsExpression = true;
 
       while (CurrentToken) {
         if (CurrentToken->is(tok::r_brace)) {
@@ -1178,6 +1180,12 @@ void TokenAnnotator::annotate(AnnotatedLine &Line) {
 }
 
 void TokenAnnotator::calculateFormattingInformation(AnnotatedLine &Line) {
+  for (SmallVectorImpl<AnnotatedLine *>::iterator I = Line.Children.begin(),
+                                                  E = Line.Children.end();
+       I != E; ++I) {
+    calculateFormattingInformation(**I);
+  }
+
   Line.First->TotalLength =
       Line.First->IsMultiline ? Style.ColumnLimit : Line.First->ColumnWidth;
   if (!Line.First->Next)
@@ -1222,12 +1230,18 @@ void TokenAnnotator::calculateFormattingInformation(AnnotatedLine &Line) {
 
     Current->CanBreakBefore =
         Current->MustBreakBefore || canBreakBefore(Line, *Current);
-    if (Current->MustBreakBefore || !Current->Children.empty() ||
+    unsigned ChildSize = 0;
+    if (Current->Previous->Children.size() == 1) {
+      FormatToken &LastOfChild = *Current->Previous->Children[0]->Last;
+      ChildSize = LastOfChild.isTrailingComment() ? Style.ColumnLimit
+                                                  : LastOfChild.TotalLength + 1;
+    }
+    if (Current->MustBreakBefore || Current->Previous->Children.size() > 1 ||
         Current->IsMultiline)
       Current->TotalLength = Current->Previous->TotalLength + Style.ColumnLimit;
     else
       Current->TotalLength = Current->Previous->TotalLength +
-                             Current->ColumnWidth +
+                             Current->ColumnWidth + ChildSize +
                              Current->SpacesRequiredBefore;
 
     if (Current->Type == TT_CtorInitializerColon)
@@ -1249,12 +1263,6 @@ void TokenAnnotator::calculateFormattingInformation(AnnotatedLine &Line) {
   }
 
   DEBUG({ printDebugInfo(Line); });
-
-  for (SmallVectorImpl<AnnotatedLine *>::iterator I = Line.Children.begin(),
-                                                  E = Line.Children.end();
-       I != E; ++I) {
-    calculateFormattingInformation(**I);
-  }
 }
 
 void TokenAnnotator::calculateUnbreakableTailLengths(AnnotatedLine &Line) {
@@ -1587,7 +1595,8 @@ bool TokenAnnotator::mustBreakBefore(const AnnotatedLine &Line,
              Style.BreakConstructorInitializersBeforeComma &&
              !Style.ConstructorInitializerAllOnOneLineOrOnePerLine) {
     return true;
-  } else if (Right.is(tok::l_brace) && (Right.BlockKind == BK_Block)) {
+  } else if (Right.is(tok::l_brace) && Right.BlockKind == BK_Block &&
+             Right.Type != TT_ObjCBlockLBrace) {
     return Style.BreakBeforeBraces == FormatStyle::BS_Allman ||
            Style.BreakBeforeBraces == FormatStyle::BS_GNU;
   } else if (Right.is(tok::string_literal) &&
@@ -1613,6 +1622,13 @@ bool TokenAnnotator::mustBreakBefore(const AnnotatedLine &Line,
   if (BeforeClosingBrace &&
       BeforeClosingBrace->isOneOf(tok::comma, tok::comment))
     return true;
+
+  if (Style.Language == FormatStyle::LK_JavaScript) {
+    // FIXME: This might apply to other languages and token kinds.
+    if (Right.is(tok::char_constant) && Left.is(tok::plus) && Left.Previous &&
+        Left.Previous->is(tok::char_constant))
+      return true;
+  }
 
   return false;
 }

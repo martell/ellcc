@@ -773,7 +773,7 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
   const char *ABIName = nullptr;
   if (Arg *A = Args.getLastArg(options::OPT_mabi_EQ)) {
     ABIName = A->getValue();
-  } else if (Triple.isOSDarwin()) {
+  } else if (Triple.isOSBinFormatMachO()) {
     // The backend is hardwired to assume AAPCS for M-class processors, ensure
     // the frontend matches that.
     if (Triple.getEnvironment() == llvm::Triple::EABI ||
@@ -1964,14 +1964,15 @@ static SmallString<128> getCompilerRTLibDir(const ToolChain &TC) {
   return Res;
 }
 
-// This adds the static libclang_rt.arch.a directly to the command line
+// This adds the static libclang_rt.builtins-arch.a directly to the command line
 // FIXME: Make sure we can also emit shared objects if they're requested
 // and available, check for possible errors, etc.
 static void addClangRTLinux(
     const ToolChain &TC, const ArgList &Args, ArgStringList &CmdArgs) {
   SmallString<128> LibClangRT = getCompilerRTLibDir(TC);
-  llvm::sys::path::append(LibClangRT,
-      Twine("libclang_rt.") + getArchNameForCompilerRTLib(TC) + ".a");
+  llvm::sys::path::append(LibClangRT, Twine("libclang_rt.builtins-") +
+                                          getArchNameForCompilerRTLib(TC) +
+                                          ".a");
 
   CmdArgs.push_back(Args.MakeArgString(LibClangRT));
   CmdArgs.push_back("-lgcc_s");
@@ -3459,9 +3460,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                                options::OPT_fstack_protector_all,
                                options::OPT_fstack_protector_strong,
                                options::OPT_fstack_protector)) {
-    if (A->getOption().matches(options::OPT_fstack_protector))
-      StackProtectorLevel = LangOptions::SSPOn;
-    else if (A->getOption().matches(options::OPT_fstack_protector_strong))
+    if (A->getOption().matches(options::OPT_fstack_protector)) {
+      StackProtectorLevel = std::max<unsigned>(LangOptions::SSPOn,
+        getToolChain().GetDefaultStackProtectorLevel(KernelOrKext));
+    } else if (A->getOption().matches(options::OPT_fstack_protector_strong))
       StackProtectorLevel = LangOptions::SSPStrong;
     else if (A->getOption().matches(options::OPT_fstack_protector_all))
       StackProtectorLevel = LangOptions::SSPReq;

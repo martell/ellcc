@@ -1201,6 +1201,24 @@ const SCEV *ScalarEvolution::getSignExtendExpr(const SCEV *Op,
       return getTruncateOrSignExtend(X, Ty);
   }
 
+  // sext(C1 + (C2 * x)) --> C1 + sext(C2 * x) if C1 < C2
+  if (auto SA = dyn_cast<SCEVAddExpr>(Op)) {
+    if (SA->getNumOperands() == 2) {
+      auto SC1 = dyn_cast<SCEVConstant>(SA->getOperand(0));
+      auto SMul = dyn_cast<SCEVMulExpr>(SA->getOperand(1));
+      if (SMul && SC1) {
+        if (auto SC2 = dyn_cast<SCEVConstant>(SMul->getOperand(0))) {
+          APInt C1 = SC1->getValue()->getValue();
+          APInt C2 = SC2->getValue()->getValue();
+          APInt CDiff = C2 - C1;
+          if (C1.isStrictlyPositive() && C2.isStrictlyPositive() &&
+              CDiff.isStrictlyPositive() && C2.isPowerOf2())
+            return getAddExpr(getSignExtendExpr(SC1, Ty),
+                              getSignExtendExpr(SMul, Ty));
+        }
+      }
+    }
+  }
   // If the input value is a chrec scev, and we can prove that the value
   // did not overflow the old, smaller, value, we can sign extend all of the
   // operands (often constants).  This allows analysis of something like
@@ -1290,6 +1308,23 @@ const SCEV *ScalarEvolution::getSignExtendExpr(const SCEV *Op,
           return getAddRecExpr(getSignExtendAddRecStart(AR, Ty, this),
                                getSignExtendExpr(Step, Ty),
                                L, AR->getNoWrapFlags());
+        }
+      }
+      // If Start and Step are constants, check if we can apply this
+      // transformation:
+      // sext{C1,+,C2} --> C1 + sext{0,+,C2} if C1 < C2
+      auto SC1 = dyn_cast<SCEVConstant>(Start);
+      auto SC2 = dyn_cast<SCEVConstant>(Step);
+      if (SC1 && SC2) {
+        APInt C1 = SC1->getValue()->getValue();
+        APInt C2 = SC2->getValue()->getValue();
+        APInt CDiff = C2 - C1;
+        if (C1.isStrictlyPositive() && C2.isStrictlyPositive() &&
+            CDiff.isStrictlyPositive() && C2.isPowerOf2()) {
+          Start = getSignExtendExpr(Start, Ty);
+          const SCEV *NewAR = getAddRecExpr(getConstant(AR->getType(), 0), Step,
+                                            L, AR->getNoWrapFlags());
+          return getAddExpr(Start, getSignExtendExpr(NewAR, Ty));
         }
       }
     }
@@ -4409,38 +4444,63 @@ ScalarEvolution::ComputeBackedgeTakenCount(const Loop *L) {
   SmallVector<BasicBlock *, 8> ExitingBlocks;
   L->getExitingBlocks(ExitingBlocks);
 
-  // Examine all exits and pick the most conservative values.
-  const SCEV *MaxBECount = getCouldNotCompute();
+  SmallVector<std::pair<BasicBlock *, const SCEV *>, 4> ExitCounts;
   bool CouldComputeBECount = true;
   BasicBlock *Latch = L->getLoopLatch(); // may be NULL.
-  const SCEV *LatchMaxCount = nullptr;
-  SmallVector<std::pair<BasicBlock *, const SCEV *>, 4> ExitCounts;
+  const SCEV *MustExitMaxBECount = nullptr;
+  const SCEV *MayExitMaxBECount = nullptr;
+
+  // Compute the ExitLimit for each loop exit. Use this to populate ExitCounts
+  // and compute maxBECount.
   for (unsigned i = 0, e = ExitingBlocks.size(); i != e; ++i) {
-    ExitLimit EL = ComputeExitLimit(L, ExitingBlocks[i]);
+    BasicBlock *ExitBB = ExitingBlocks[i];
+    ExitLimit EL = ComputeExitLimit(L, ExitBB);
+
+    // 1. For each exit that can be computed, add an entry to ExitCounts.
+    // CouldComputeBECount is true only if all exits can be computed.
     if (EL.Exact == getCouldNotCompute())
       // We couldn't compute an exact value for this exit, so
       // we won't be able to compute an exact value for the loop.
       CouldComputeBECount = false;
     else
-      ExitCounts.push_back(std::make_pair(ExitingBlocks[i], EL.Exact));
+      ExitCounts.push_back(std::make_pair(ExitBB, EL.Exact));
 
-    if (MaxBECount == getCouldNotCompute())
-      MaxBECount = EL.Max;
-    else if (EL.Max != getCouldNotCompute()) {
-      // We cannot take the "min" MaxBECount, because non-unit stride loops may
-      // skip some loop tests. Taking the max over the exits is sufficiently
-      // conservative.  TODO: We could do better taking into consideration
-      // non-latch exits that dominate the latch.
-      if (EL.MustExit && ExitingBlocks[i] == Latch)
-        LatchMaxCount = EL.Max;
-      else
-        MaxBECount = getUMaxFromMismatchedTypes(MaxBECount, EL.Max);
+    // 2. Derive the loop's MaxBECount from each exit's max number of
+    // non-exiting iterations. Partition the loop exits into two kinds:
+    // LoopMustExits and LoopMayExits.
+    //
+    // A LoopMustExit meets two requirements:
+    //
+    // (a) Its ExitLimit.MustExit flag must be set which indicates that the exit
+    // test condition cannot be skipped (the tested variable has unit stride or
+    // the test is less-than or greater-than, rather than a strict inequality).
+    //
+    // (b) It must dominate the loop latch, hence must be tested on every loop
+    // iteration.
+    //
+    // If any computable LoopMustExit is found, then MaxBECount is the minimum
+    // EL.Max of computable LoopMustExits. Otherwise, MaxBECount is
+    // conservatively the maximum EL.Max, where CouldNotCompute is considered
+    // greater than any computable EL.Max.
+    if (EL.MustExit && EL.Max != getCouldNotCompute() && Latch &&
+        DT->dominates(ExitBB, Latch)) {
+      if (!MustExitMaxBECount)
+        MustExitMaxBECount = EL.Max;
+      else {
+        MustExitMaxBECount =
+          getUMinFromMismatchedTypes(MustExitMaxBECount, EL.Max);
+      }
+    } else if (MayExitMaxBECount != getCouldNotCompute()) {
+      if (!MayExitMaxBECount || EL.Max == getCouldNotCompute())
+        MayExitMaxBECount = EL.Max;
+      else {
+        MayExitMaxBECount =
+          getUMaxFromMismatchedTypes(MayExitMaxBECount, EL.Max);
+      }
     }
   }
-  // Be more precise in the easy case of a loop latch that must exit.
-  if (LatchMaxCount) {
-    MaxBECount = getUMinFromMismatchedTypes(MaxBECount, LatchMaxCount);
-  }
+  const SCEV *MaxBECount = MustExitMaxBECount ? MustExitMaxBECount :
+    (MayExitMaxBECount ? MayExitMaxBECount : getCouldNotCompute());
   return BackedgeTakenInfo(ExitCounts, CouldComputeBECount, MaxBECount);
 }
 
@@ -6137,18 +6197,30 @@ bool ScalarEvolution::isKnownPredicate(ICmpInst::Predicate Pred,
 
   // If LHS or RHS is an addrec, check to see if the condition is true in
   // every iteration of the loop.
-  if (const SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(LHS))
-    if (isLoopEntryGuardedByCond(
-          AR->getLoop(), Pred, AR->getStart(), RHS) &&
-        isLoopBackedgeGuardedByCond(
-          AR->getLoop(), Pred, AR->getPostIncExpr(*this), RHS))
-      return true;
-  if (const SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(RHS))
-    if (isLoopEntryGuardedByCond(
-          AR->getLoop(), Pred, LHS, AR->getStart()) &&
-        isLoopBackedgeGuardedByCond(
-          AR->getLoop(), Pred, LHS, AR->getPostIncExpr(*this)))
-      return true;
+  // If LHS and RHS are both addrec, both conditions must be true in
+  // every iteration of the loop.
+  const SCEVAddRecExpr *LAR = dyn_cast<SCEVAddRecExpr>(LHS);
+  const SCEVAddRecExpr *RAR = dyn_cast<SCEVAddRecExpr>(RHS);
+  bool LeftGuarded = false;
+  bool RightGuarded = false;
+  if (LAR) {
+    const Loop *L = LAR->getLoop();
+    if (isLoopEntryGuardedByCond(L, Pred, LAR->getStart(), RHS) &&
+        isLoopBackedgeGuardedByCond(L, Pred, LAR->getPostIncExpr(*this), RHS)) {
+      if (!RAR) return true;
+      LeftGuarded = true;
+    }
+  }
+  if (RAR) {
+    const Loop *L = RAR->getLoop();
+    if (isLoopEntryGuardedByCond(L, Pred, LHS, RAR->getStart()) &&
+        isLoopBackedgeGuardedByCond(L, Pred, LHS, RAR->getPostIncExpr(*this))) {
+      if (!LAR) return true;
+      RightGuarded = true;
+    }
+  }
+  if (LeftGuarded && RightGuarded)
+    return true;
 
   // Otherwise see what can be done with known constant ranges.
   return isKnownPredicateWithRanges(Pred, LHS, RHS);
