@@ -14,13 +14,9 @@ CFLAGS := -g -Qunused-arguments \
 	  -Wno-int-to-pointer-cast
 -include $(INCLUDES)
 
-# Get the clang version.
-VERSION := $(shell $(ELLCC)/bin/ecc -v 2>&1 | grep version 2>&1 | sed "s/.*version \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/")
-
 OBJ := $(PWD)/musl-build
-install:header.install \
-	$(Configs) \
-	other-libs
+install: $(Configs) \
+	 other-libs
 
 all:
 
@@ -159,7 +155,7 @@ $(Configs)::
 clean:
 	make -C src/musl distclean
 	make -C src/compiler-rt clean
-	make -C obj clean
+	make -C obj veryclean
 	rm -fr src/musl/musl.last *-build
 
 veryclean: clean
@@ -167,12 +163,6 @@ veryclean: clean
 	rm -fr $(OBJ)
 
 install:
-
-header.install:
-	@echo Installing ecc header files for version $(VERSION) ; \
-	rm -fr clang ; \
-	mkdir -p clang ; \
-	cp ../lib/clang/$(VERSION)/include/* clang
 
 musl.install:
 	@cd musl-build ; \
@@ -209,6 +199,5 @@ other-libs:
 	cp src/c++/libcxx/include/* include/c++ ; \
 	mkdir -p include/c++/ext ; \
 	cp src/c++/libcxx/include/ext/* include/c++/ext ; \
-	cp clang/unwind.h include/c++
 	cp src/c++/libcxxabi/include/* include/c++ ; \
 	make -C obj install

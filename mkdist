@@ -7,6 +7,8 @@ name=ellcc-$1-`date +%Y-%b-%d-%H-%M-%S`.tgz
 
 mv bin bin.save
 ln -s bin-$1 bin
+make -C libecc clean
+make -C baremetal clean
 cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files; cd -
 rm bin
 mv bin.save bin
