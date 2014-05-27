@@ -65,7 +65,6 @@
 	pop   %rdi;      \
 	pop   %rbp;      \
 	pop   %rax;      \
-	add   $16, %rsp; \
 	sysret;
 /*
  *  The order in which registers are stored in the pt_regs structure

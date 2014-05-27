@@ -89,7 +89,7 @@ _start:
         // Switch to long mode.
         mov     $0xC0000080, %ecx       // Set the EFER MSR.
         rdmsr                           // Read the model specific register.
-        or      $0x100, %eax            // Set the LM bit.
+        or      $0x101, %eax            // Set the LM and SCE bits.
         wrmsr                           // Write the model specific register.
 
         // Enable paging.

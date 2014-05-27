@@ -44,6 +44,13 @@ data = . - GDT64
         .byte   0x00                    // Granularity.
         .byte   0                       // Base (high).
 
+        .word   0                       // Limit (low).
+        .word   0                       // Base (low).
+        .byte   0                       // Base (middle).
+        .byte   0x98                    // Access.
+        .byte   0x20                    // Granularity.
+        .byte   0                       // Base (high).
+
 pointer:
         .word   . - GDT64 - 1           // Limit.
         .long   GDT64                   // Low address.
@@ -84,21 +91,23 @@ nowgo:
         call    memset
         add     $3 * 8, %rsp
 
-        // Set up the GDT..
+        // Set up the GDT.
         // RICH: call    gdt_init                // Initialize the GDT.
         call    idt_init                // Initialize the IDT.
 
         // Set up the syscall instruction.
         mov     $0xC0000081, %rcx       // Set the STAR.
         // movq    $((code + 3) << 48) | (code << 32), %rax
-        movq    $0x000B000800000000, %rax
+        movq    $0x00000000, %rax
+        movq    $0x00080008, %rdx
         wrmsr
         mov     $0xC0000082, %rcx       // Set the LSTAR.
-        mov     $syscall, %rax
+        mov     $syscall, %rdx          // Get the syscal address.
+        mov     %rdx, %rax              // Low part in %rax.
+        shrq    $32, %rdx               // Hi part in %rdx.
         wrmsr
         mov     $0xC0000083, %rcx       // Set the CSTAR.
-        mov     $syscall, %rax
-        wrmsr
+        wrmsr                           // Set the syscall address.
         mov     $0xC0000084, %rcx       // Set the SFMASK.
         // EF_TF|EF_DF|EF_IE|0x3000
 #define EF_TF 0x00000100
@@ -106,6 +115,15 @@ nowgo:
 #define EF_IE 0x00000200
         mov     $EF_TF|EF_DF|EF_IE|0x3000, %rax       // RICH: Check flags.
         wrmsr
+
+        // Enable SSE. RICH: For now.
+        mov     %cr0, %rax
+        and     $0xFFFB, %ax            // Clear coprocessor emulation.
+        or      $0x0002, %ax            // Set coprocessor monitoring.
+        mov     %rax, %cr0
+        mov     %cr4, %rax
+        or      $3 << 9, %ax            // Set OSFXSR and OSXMMEXCPT
+        mov     %rax, %cr4
 
         // Initialize the C library.
         movq    $argv, %rdx             // Get argv.
@@ -226,20 +244,52 @@ syscall_stub:
 1:
         call    *swi_table(, %rax, 8)
 
-        mov     %rax, (PT_EAX*8)(%rsp)  /* Save the return value */
+        // mov     %rax, (PT_EAX*8)(%rsp)  /* Save the return value */
         RESTORE_ALL
 
 /** The 64 bit mode system call handler.
  */
 syscall:
-        SAVE_ALL
+	pushq   %rax                    // Save all the registers.
+	pushq   %rbp
+	pushq   %rdi
+	pushq   %rsi
+	pushq   %rdx
+	pushq   %rcx
+	pushq   %rbx
+	pushq   %r8
+	pushq   %r9
+	pushq   %r10
+	pushq   %r11
+	pushq   %r12
+	pushq   %r13
+	pushq   %r14
+	pushq   %r15
+
         movq    %rax, callnum           // Save the system call number.
         cmp     $512, %rax
         jb      1f                      // Jump if too big.
         xor     %rax, %rax              // Illegal call number.
 1:
         call    *swi_table(, %rax, 8)
-        RESTORE_ALL_64
+
+	pop     %r15
+	pop     %r14
+	pop     %r13
+	pop     %r12
+	pop     %r11
+	pop     %r10
+	pop     %r9
+	pop     %r8
+	pop     %rbx
+	pop     %rcx
+	pop     %rdx
+	pop     %rsi
+	pop     %rdi
+	pop     %rbp
+	pop     %rax
+        mov     $0x0200, %r15           // Enable interrupts.
+	sysretq
 
 // Unhandled system calls.
 // The arguments are at 4($esp)
@@ -268,7 +318,7 @@ nosetup:
 __set_syscall:
         cmp     $511, %rdi
         ja      bad_call                // Jump if too big.
-        mov     %rsi, swi_table(, %rax, 8)
+        mov     %rsi, swi_table(, %rdi, 8)
         xor     %rax,%rax               // Return zero.
         ret
 
