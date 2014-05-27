@@ -1,4 +1,4 @@
-#include <bits/errno.h>                 // Get main's address.
+#include <bits/errno.h>
 #include "gdt.h"
 #include "traps.h"
 #include "entry.h"

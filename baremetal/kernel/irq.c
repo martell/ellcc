@@ -31,7 +31,6 @@ void irq_register(const IRQHandler *handler)
 /** Identify an interrupt source, disable it, return a handler.
  * This is called from the interrupt handler in init.S.
  */
-#include <stdio.h>
 const void *__identify_irq(void)
 {
     int ack;
