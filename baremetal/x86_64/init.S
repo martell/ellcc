@@ -47,7 +47,7 @@ data = . - GDT64
         .word   0                       // Limit (low).
         .word   0                       // Base (low).
         .byte   0                       // Base (middle).
-        .byte   0x98                    // Access.
+        .byte   0xF8                    // Access.
         .byte   0x20                    // Granularity.
         .byte   0                       // Base (high).
 
@@ -288,7 +288,7 @@ syscall:
 	pop     %rdi
 	pop     %rbp
 	pop     %rax
-        mov     $0x0200, %r15           // Enable interrupts.
+        mov     $0x0200, %r11           // Enable interrupts.
 	sysretq
 
 // Unhandled system calls.
