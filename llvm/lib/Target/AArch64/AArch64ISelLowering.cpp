@@ -14,7 +14,6 @@
 #include "AArch64ISelLowering.h"
 #include "AArch64PerfectShuffle.h"
 #include "AArch64Subtarget.h"
-#include "AArch64CallingConv.h"
 #include "AArch64MachineFunctionInfo.h"
 #include "AArch64TargetMachine.h"
 #include "AArch64TargetObjectFile.h"
@@ -68,15 +67,15 @@ EnableAArch64SlrGeneration("aarch64-shift-insert-generation", cl::Hidden,
 //===----------------------------------------------------------------------===//
 // AArch64 Lowering public interface.
 //===----------------------------------------------------------------------===//
-static TargetLoweringObjectFile *createTLOF(TargetMachine &TM) {
-  if (TM.getSubtarget<AArch64Subtarget>().isTargetDarwin())
+static TargetLoweringObjectFile *createTLOF(const Triple &TT) {
+  if (TT.isOSBinFormatMachO())
     return new AArch64_MachoTargetObjectFile();
 
   return new AArch64_ELFTargetObjectFile();
 }
 
 AArch64TargetLowering::AArch64TargetLowering(AArch64TargetMachine &TM)
-    : TargetLowering(TM, createTLOF(TM)) {
+    : TargetLowering(TM, createTLOF(Triple(TM.getTargetTriple()))) {
   Subtarget = &TM.getSubtarget<AArch64Subtarget>();
 
   // AArch64 doesn't have comparisons which set GPRs or setcc instructions, so
@@ -1681,15 +1680,14 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
     EVT ActualVT = getValueType(CurOrigArg->getType(), /*AllowUnknown*/ true);
     MVT ActualMVT = ActualVT.isSimple() ? ActualVT.getSimpleVT() : MVT::Other;
     // If ActualMVT is i1/i8/i16, we should set LocVT to i8/i8/i16.
-    MVT LocVT = ValVT;
     if (ActualMVT == MVT::i1 || ActualMVT == MVT::i8)
-      LocVT = MVT::i8;
+      ValVT = MVT::i8;
     else if (ActualMVT == MVT::i16)
-      LocVT = MVT::i16;
+      ValVT = MVT::i16;
 
     CCAssignFn *AssignFn = CCAssignFnForCall(CallConv, /*IsVarArg=*/false);
     bool Res =
-        AssignFn(i, ValVT, LocVT, CCValAssign::Full, Ins[i].Flags, CCInfo);
+        AssignFn(i, ValVT, ValVT, CCValAssign::Full, Ins[i].Flags, CCInfo);
     assert(!Res && "Call operand has unhandled type");
     (void)Res;
   }
@@ -1748,15 +1746,12 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
       case CCValAssign::BCvt:
         ArgValue = DAG.getNode(ISD::BITCAST, DL, VA.getValVT(), ArgValue);
         break;
+      case CCValAssign::AExt:
       case CCValAssign::SExt:
-        ArgValue = DAG.getNode(ISD::AssertSext, DL, RegVT, ArgValue,
-                               DAG.getValueType(VA.getValVT()));
-        ArgValue = DAG.getNode(ISD::TRUNCATE, DL, VA.getValVT(), ArgValue);
-        break;
       case CCValAssign::ZExt:
-        ArgValue = DAG.getNode(ISD::AssertZext, DL, RegVT, ArgValue,
-                               DAG.getValueType(VA.getValVT()));
-        ArgValue = DAG.getNode(ISD::TRUNCATE, DL, VA.getValVT(), ArgValue);
+        // SelectionDAGBuilder will insert appropriate AssertZExt & AssertSExt
+        // nodes after our lowering.
+        assert(RegVT == Ins[i].VT && "incorrect register location selected");
         break;
       }
 
@@ -1777,20 +1772,25 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
       SDValue FIN = DAG.getFrameIndex(FI, getPointerTy());
       SDValue ArgValue;
 
-      // If the loc type and val type are not the same, create an anyext load.
-      if (VA.getLocVT().getSizeInBits() != VA.getValVT().getSizeInBits()) {
-        // We should only get here if this is a pure integer.
-        assert(!VA.getValVT().isVector() && VA.getValVT().isInteger() &&
-               "Only integer extension supported!");
-        ArgValue = DAG.getExtLoad(ISD::EXTLOAD, DL, VA.getValVT(), Chain, FIN,
-                                  MachinePointerInfo::getFixedStack(FI),
-                                  VA.getLocVT(),
-                                  false, false, false, 0);
-      } else {
-        ArgValue = DAG.getLoad(VA.getValVT(), DL, Chain, FIN,
-                               MachinePointerInfo::getFixedStack(FI), false,
-                               false, false, 0);
+      ISD::LoadExtType ExtType = ISD::NON_EXTLOAD;
+      switch (VA.getLocInfo()) {
+      default:
+        break;
+      case CCValAssign::SExt:
+        ExtType = ISD::SEXTLOAD;
+        break;
+      case CCValAssign::ZExt:
+        ExtType = ISD::ZEXTLOAD;
+        break;
+      case CCValAssign::AExt:
+        ExtType = ISD::EXTLOAD;
+        break;
       }
+
+      ArgValue = DAG.getExtLoad(ExtType, DL, VA.getValVT(), Chain, FIN,
+                                MachinePointerInfo::getFixedStack(FI),
+                                VA.getLocVT(),
+                                false, false, false, 0);
 
       InVals.push_back(ArgValue);
     }
@@ -2184,14 +2184,13 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
       MVT ActualMVT = ActualVT.isSimple() ? ActualVT.getSimpleVT() : ValVT;
       ISD::ArgFlagsTy ArgFlags = Outs[i].Flags;
       // If ActualMVT is i1/i8/i16, we should set LocVT to i8/i8/i16.
-      MVT LocVT = ValVT;
       if (ActualMVT == MVT::i1 || ActualMVT == MVT::i8)
-        LocVT = MVT::i8;
+        ValVT = MVT::i8;
       else if (ActualMVT == MVT::i16)
-        LocVT = MVT::i16;
+        ValVT = MVT::i16;
 
       CCAssignFn *AssignFn = CCAssignFnForCall(CallConv, /*IsVarArg=*/false);
-      bool Res = AssignFn(i, ValVT, LocVT, CCValAssign::Full, ArgFlags, CCInfo);
+      bool Res = AssignFn(i, ValVT, ValVT, CCValAssign::Full, ArgFlags, CCInfo);
       assert(!Res && "Call operand has unhandled type");
       (void)Res;
     }
@@ -2264,6 +2263,11 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
       Arg = DAG.getNode(ISD::ZERO_EXTEND, DL, VA.getLocVT(), Arg);
       break;
     case CCValAssign::AExt:
+      if (Outs[realArgIdx].ArgVT == MVT::i1) {
+        // AAPCS requires i1 to be zero-extended to 8-bits by the caller.
+        Arg = DAG.getNode(ISD::TRUNCATE, DL, MVT::i1, Arg);
+        Arg = DAG.getNode(ISD::ZERO_EXTEND, DL, MVT::i8, Arg);
+      }
       Arg = DAG.getNode(ISD::ANY_EXTEND, DL, VA.getLocVT(), Arg);
       break;
     case CCValAssign::BCvt:
@@ -2504,6 +2508,13 @@ AArch64TargetLowering::LowerReturn(SDValue Chain, CallingConv::ID CallConv,
     default:
       llvm_unreachable("Unknown loc info!");
     case CCValAssign::Full:
+      if (Outs[i].ArgVT == MVT::i1) {
+        // AAPCS requires i1 to be zero-extended to i8 by the producer of the
+        // value. This is strictly redundant on Darwin (which uses "zeroext
+        // i1"), but will be optimised out before ISel.
+        Arg = DAG.getNode(ISD::TRUNCATE, DL, MVT::i1, Arg);
+        Arg = DAG.getNode(ISD::ZERO_EXTEND, DL, VA.getLocVT(), Arg);
+      }
       break;
     case CCValAssign::BCvt:
       Arg = DAG.getNode(ISD::BITCAST, DL, VA.getLocVT(), Arg);
@@ -6036,18 +6047,14 @@ bool AArch64TargetLowering::isTruncateFree(Type *Ty1, Type *Ty2) const {
     return false;
   unsigned NumBits1 = Ty1->getPrimitiveSizeInBits();
   unsigned NumBits2 = Ty2->getPrimitiveSizeInBits();
-  if (NumBits1 <= NumBits2)
-    return false;
-  return true;
+  return NumBits1 > NumBits2;
 }
 bool AArch64TargetLowering::isTruncateFree(EVT VT1, EVT VT2) const {
-  if (!VT1.isInteger() || !VT2.isInteger())
+  if (VT1.isVector() || VT2.isVector() || !VT1.isInteger() || !VT2.isInteger())
     return false;
   unsigned NumBits1 = VT1.getSizeInBits();
   unsigned NumBits2 = VT2.getSizeInBits();
-  if (NumBits1 <= NumBits2)
-    return false;
-  return true;
+  return NumBits1 > NumBits2;
 }
 
 // All 32-bit GPR operations implicitly zero the high-half of the corresponding
@@ -6057,18 +6064,14 @@ bool AArch64TargetLowering::isZExtFree(Type *Ty1, Type *Ty2) const {
     return false;
   unsigned NumBits1 = Ty1->getPrimitiveSizeInBits();
   unsigned NumBits2 = Ty2->getPrimitiveSizeInBits();
-  if (NumBits1 == 32 && NumBits2 == 64)
-    return true;
-  return false;
+  return NumBits1 == 32 && NumBits2 == 64;
 }
 bool AArch64TargetLowering::isZExtFree(EVT VT1, EVT VT2) const {
-  if (!VT1.isInteger() || !VT2.isInteger())
+  if (VT1.isVector() || VT2.isVector() || !VT1.isInteger() || !VT2.isInteger())
     return false;
   unsigned NumBits1 = VT1.getSizeInBits();
   unsigned NumBits2 = VT2.getSizeInBits();
-  if (NumBits1 == 32 && NumBits2 == 64)
-    return true;
-  return false;
+  return NumBits1 == 32 && NumBits2 == 64;
 }
 
 bool AArch64TargetLowering::isZExtFree(SDValue Val, EVT VT2) const {
@@ -6081,8 +6084,9 @@ bool AArch64TargetLowering::isZExtFree(SDValue Val, EVT VT2) const {
     return false;
 
   // 8-, 16-, and 32-bit integer loads all implicitly zero-extend.
-  return (VT1.isSimple() && VT1.isInteger() && VT2.isSimple() &&
-          VT2.isInteger() && VT1.getSizeInBits() <= 32);
+  return (VT1.isSimple() && !VT1.isVector() && VT1.isInteger() &&
+          VT2.isSimple() && !VT2.isVector() && VT2.isInteger() &&
+          VT1.getSizeInBits() <= 32);
 }
 
 bool AArch64TargetLowering::hasPairedLoad(Type *LoadedType,

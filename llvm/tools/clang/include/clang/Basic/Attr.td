@@ -1101,10 +1101,10 @@ def InitPriority : InheritableAttr {
 def Section : InheritableAttr {
   let Spellings = [GCC<"section">, Declspec<"allocate">];
   let Args = [StringArgument<"Name">];
-  let Subjects = SubjectList<[Function, GlobalVar, 
+  let Subjects = SubjectList<[Function, GlobalVar,
                               ObjCMethod, ObjCProperty], ErrorDiag,
                              "ExpectedFunctionGlobalVarMethodOrProperty">;
-  let Documentation = [Undocumented];
+  let Documentation = [SectionDocs];
 }
 
 def Sentinel : InheritableAttr {
@@ -1672,13 +1672,13 @@ def MsStruct : InheritableAttr {
 
 def DLLExport : InheritableAttr, TargetSpecificAttr<TargetWindows> {
   let Spellings = [Declspec<"dllexport">, GCC<"dllexport">];
-  let Subjects = SubjectList<[Function, Var]>;
+  let Subjects = SubjectList<[Function, Var, CXXRecord]>;
   let Documentation = [Undocumented];
 }
 
 def DLLImport : InheritableAttr, TargetSpecificAttr<TargetWindows> {
   let Spellings = [Declspec<"dllimport">, GCC<"dllimport">];
-  let Subjects = SubjectList<[Function, Var]>;
+  let Subjects = SubjectList<[Function, Var, CXXRecord]>;
   let Documentation = [Undocumented];
 }
 
@@ -1727,7 +1727,6 @@ def MSInheritance : InheritableAttr {
                    Keyword<"__multiple_inheritance">,
                    Keyword<"__virtual_inheritance">,
                    Keyword<"__unspecified_inheritance">];
-  let Documentation = [SectionDocs];
   let AdditionalMembers = [{
   static bool hasVBPtrOffsetField(Spelling Inheritance) {
     return Inheritance == Keyword_unspecified_inheritance;

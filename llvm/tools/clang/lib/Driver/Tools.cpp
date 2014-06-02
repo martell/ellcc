@@ -905,6 +905,14 @@ void Clang::AddAArch64TargetArgs(const ArgList &Args,
     CmdArgs.push_back("-backend-option");
     CmdArgs.push_back("-aarch64-strict-align");
   }
+
+  // Setting -mno-global-merge disables the codegen global merge pass. Setting
+  // -mglobal-merge has no effect as the pass is enabled by default.
+  if (Arg *A = Args.getLastArg(options::OPT_mglobal_merge,
+                               options::OPT_mno_global_merge)) {
+    if (A->getOption().matches(options::OPT_mno_global_merge))
+      CmdArgs.push_back("-mno-global-merge");
+  }
 }
 
 void Clang::AddMBlazeTargetArgs(const ArgList &Args,
@@ -3540,6 +3548,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   if (Arg *A = Args.getLastArg(options::OPT_Rpass_EQ))
+    A->render(Args, CmdArgs);
+
+  if (Arg *A = Args.getLastArg(options::OPT_Rpass_missed_EQ))
+    A->render(Args, CmdArgs);
+
+  if (Arg *A = Args.getLastArg(options::OPT_Rpass_analysis_EQ))
     A->render(Args, CmdArgs);
 
   if (Args.hasArg(options::OPT_mkernel)) {
@@ -7250,8 +7264,9 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
       }
       AddRunTimeLibs(ToolChain, D, CmdArgs, Args);
 
-      if (Args.hasArg(options::OPT_pthread) ||
-          Args.hasArg(options::OPT_pthreads) || UsedOpenMPLib != LibUnknown)
+      if (!isAndroid &&
+          (Args.hasArg(options::OPT_pthread) ||
+           Args.hasArg(options::OPT_pthreads) || UsedOpenMPLib != LibUnknown))
         CmdArgs.push_back("-lpthread");
 
       CmdArgs.push_back("-lc");

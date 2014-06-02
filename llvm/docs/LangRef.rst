@@ -443,7 +443,7 @@ styles:
 A symbol with ``internal`` or ``private`` linkage must have ``default``
 visibility.
 
-.. _namedtypes:
+.. _dllstorageclass:
 
 DLL Storage Classes
 -------------------
@@ -463,6 +463,36 @@ DLL storage class:
     ``__imp_`` and the function or variable name. Since this storage class
     exists for defining a dll interface, the compiler, assembler and linker know
     it is externally referenced and must refrain from deleting the symbol.
+
+.. _tls_model:
+
+Thread Local Storage Models
+---------------------------
+
+A variable may be defined as ``thread_local``, which means that it will
+not be shared by threads (each thread will have a separated copy of the
+variable). Not all targets support thread-local variables. Optionally, a
+TLS model may be specified:
+
+``localdynamic``
+    For variables that are only used within the current shared library.
+``initialexec``
+    For variables in modules that will not be loaded dynamically.
+``localexec``
+    For variables defined in the executable and only used within it.
+
+If no explicit model is given, the "general dynamic" model is used.
+
+The models correspond to the ELF TLS models; see `ELF Handling For
+Thread-Local Storage <http://people.redhat.com/drepper/tls.pdf>`_ for
+more information on under which circumstances the different models may
+be used. The target may choose a different TLS model if the specified
+model is not supported, or if a better choice of model can be made.
+
+A model can also be specified in a alias, but then it only governs how
+the alias is accessed. It will not have any effect in the aliasee.
+
+.. _namedtypes:
 
 Structure Types
 ---------------
@@ -494,24 +524,6 @@ to be placed in, and may have an optional explicit alignment specified.
 
 Global variables in other translation units can also be declared, in which
 case they don't have an initializer.
-
-A variable may be defined as ``thread_local``, which means that it will
-not be shared by threads (each thread will have a separated copy of the
-variable). Not all targets support thread-local variables. Optionally, a
-TLS model may be specified:
-
-``localdynamic``
-    For variables that are only used within the current shared library.
-``initialexec``
-    For variables in modules that will not be loaded dynamically.
-``localexec``
-    For variables defined in the executable and only used within it.
-
-The models correspond to the ELF TLS models; see `ELF Handling For
-Thread-Local Storage <http://people.redhat.com/drepper/tls.pdf>`_ for
-more information on under which circumstances the different models may
-be used. The target may choose a different TLS model if the specified
-model is not supported, or if a better choice of model can be made.
 
 A variable may be defined as a global ``constant``, which indicates that
 the contents of the variable will **never** be modified (enabling better
@@ -569,6 +581,9 @@ iterate over them as an array, alignment padding would break this
 iteration.
 
 Globals can also have a :ref:`DLL storage class <dllstorageclass>`.
+
+Variables and aliasaes can have a
+:ref:`Thread Local Storage Model <tls_model>`.
 
 Syntax::
 
@@ -672,7 +687,7 @@ Aliases may have an optional :ref:`linkage type <linkage>`, an optional
 
 Syntax::
 
-    @<Name> = [Visibility] [DLLStorageClass] alias [Linkage] <AliaseeTy> @<Aliasee>
+    @<Name> = [Visibility] [DLLStorageClass] [ThreadLocal] alias [Linkage] <AliaseeTy> @<Aliasee>
 
 The linkage must be one of ``private``, ``internal``, ``linkonce``, ``weak``,
 ``linkonce_odr``, ``weak_odr``, ``external``. Note that some system linkers
@@ -3199,7 +3214,7 @@ The '``llvm.global_dtors``' Global Variable
 The ``@llvm.global_dtors`` array contains a list of destructor
 functions, priorities, and an optional associated global or function.
 The functions referenced by this array will be called in descending
-order of priority (i.e. highest first) when the module is loaded. The
+order of priority (i.e. highest first) when the module is unloaded. The
 order of functions with the same priority is not defined.
 
 If the third field is present, non-null, and points to a global variable

@@ -683,6 +683,13 @@ TEST_F(FormatTest, FormatsSwitchStatement) {
                "case (b):\n"
                "  return;\n"
                "}");
+
+  verifyFormat("switch (a) {\n"
+               "case some_namespace::\n"
+               "    some_constant:\n"
+               "  return;\n"
+               "}",
+               getLLVMStyleWithColumns(34));
 }
 
 TEST_F(FormatTest, CaseRanges) {
@@ -6491,6 +6498,12 @@ TEST_F(FormatTest, ObjCDictLiterals) {
       "  @\"dte\" : [NSDate date],\n"
       "  @\"processInfo\" : [NSProcessInfo processInfo]\n"
       "};");
+  verifyFormat("NSMutableDictionary *dictionary =\n"
+               "    [NSMutableDictionary dictionaryWithDictionary:@{\n"
+               "      aaaaaaaaaaaaaaaaaaaaa : aaaaaaaaaaaaa,\n"
+               "      bbbbbbbbbbbbbbbbbb : bbbbb,\n"
+               "      cccccccccccccccc : ccccccccccccccc\n"
+               "    }];");
 }
 
 TEST_F(FormatTest, ObjCArrayLiterals) {
@@ -7698,15 +7711,23 @@ TEST_F(FormatTest, AllmanBraceBreaking) {
                "#endif",
                BreakBeforeBrace);
 
-  // This shouldn't affect ObjC blocks.
+  // This shouldn't affect ObjC blocks..
   verifyFormat("[self doSomeThingWithACompletionHandler:^{\n"
                "    // ...\n"
                "    int i;\n"
-               "}];");
+               "}];",
+               BreakBeforeBrace);
   verifyFormat("void (^block)(void) = ^{\n"
                "    // ...\n"
                "    int i;\n"
-               "};");
+               "};",
+               BreakBeforeBrace);
+  // .. or dict literals.
+  verifyFormat("void f()\n"
+               "{\n"
+               "  [object someMethod:@{ @\"a\" : @\"b\" }];\n"
+               "}",
+               BreakBeforeBrace);
 
   BreakBeforeBrace.ColumnLimit = 19;
   verifyFormat("void f() { int i; }", BreakBeforeBrace);
@@ -8166,20 +8187,19 @@ TEST_F(FormatTest, ParsesConfigurationWithLanguages) {
   Style.IndentWidth = 234;
   Style.BreakBeforeBraces = FormatStyle::BS_Linux;
   Style.TabWidth = 345;
-  EXPECT_EQ(llvm::errc::success,
-            parseConfiguration("---\n"
-                               "IndentWidth: 456\n"
-                               "BreakBeforeBraces: Allman\n"
-                               "---\n"
-                               "Language: JavaScript\n"
-                               "IndentWidth: 111\n"
-                               "TabWidth: 111\n"
-                               "---\n"
-                               "Language: Cpp\n"
-                               "BreakBeforeBraces: Stroustrup\n"
-                               "TabWidth: 789\n"
-                               "...\n",
-                               &Style));
+  EXPECT_FALSE(parseConfiguration("---\n"
+                                  "IndentWidth: 456\n"
+                                  "BreakBeforeBraces: Allman\n"
+                                  "---\n"
+                                  "Language: JavaScript\n"
+                                  "IndentWidth: 111\n"
+                                  "TabWidth: 111\n"
+                                  "---\n"
+                                  "Language: Cpp\n"
+                                  "BreakBeforeBraces: Stroustrup\n"
+                                  "TabWidth: 789\n"
+                                  "...\n",
+                                  &Style));
   EXPECT_EQ(123u, Style.ColumnLimit);
   EXPECT_EQ(456u, Style.IndentWidth);
   EXPECT_EQ(FormatStyle::BS_Stroustrup, Style.BreakBeforeBraces);
@@ -8582,10 +8602,12 @@ TEST_F(FormatTest, FormatsWithWebKitStyle) {
             format("NSArray*a=[[NSArray alloc]initWithArray:@[ @\"a\" ]\n"
                    "             copyItems:YES];",
                    Style));
+  // FIXME: This does not seem right, there should be more indentation before
+  // the array literal's entries. Nested blocks have the same problem.
   EXPECT_EQ("NSArray* a = [[NSArray alloc] initWithArray:@[\n"
-            "                                               @\"a\",\n"
-            "                                               @\"a\"\n"
-            "                                            ]\n"
+            "    @\"a\",\n"
+            "    @\"a\"\n"
+            "]\n"
             "                                  copyItems:YES];",
             format("NSArray* a = [[NSArray alloc] initWithArray:@[\n"
                    "     @\"a\",\n"
