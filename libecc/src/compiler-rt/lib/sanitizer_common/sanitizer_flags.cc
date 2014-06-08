@@ -54,6 +54,8 @@ void SetCommonFlagsDefaults(CommonFlags *f) {
   f->color = "auto";
   f->legacy_pthread_cond = false;
   f->coverage = false;
+  f->coverage_direct = SANITIZER_ANDROID;
+  f->coverage_dir = ".";
   f->full_address_space = false;
 }
 

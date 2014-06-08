@@ -151,8 +151,7 @@ public:
 };
 
 class SelectionDAG;
-void checkForCycles(const SDNode *N);
-void checkForCycles(const SelectionDAG *DAG);
+void checkForCycles(const SelectionDAG *DAG, bool force = false);
 
 /// SelectionDAG class - This is used to represent a portion of an LLVM function
 /// in a low-level Data Dependence DAG representation suitable for instruction
@@ -335,7 +334,7 @@ public:
     assert((!N.getNode() || N.getValueType() == MVT::Other) &&
            "DAG root value is not a chain!");
     if (N.getNode())
-      checkForCycles(N.getNode());
+      checkForCycles(N.getNode(), this);
     Root = N;
     if (N.getNode())
       checkForCycles(this);

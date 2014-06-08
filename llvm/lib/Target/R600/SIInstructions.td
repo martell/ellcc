@@ -1017,12 +1017,16 @@ defm V_RSQ_LEGACY_F32 : VOP1_32 <
   0x0000002d, "V_RSQ_LEGACY_F32",
   [(set f32:$dst, (int_AMDGPU_rsq f32:$src0))]
 >;
-defm V_RSQ_F32 : VOP1_32 <0x0000002e, "V_RSQ_F32", []>;
+defm V_RSQ_F32 : VOP1_32 <0x0000002e, "V_RSQ_F32",
+  [(set f32:$dst, (fdiv FP_ONE, (fsqrt f32:$src0)))]
+>;
 defm V_RCP_F64 : VOP1_64 <0x0000002f, "V_RCP_F64",
   [(set f64:$dst, (fdiv FP_ONE, f64:$src0))]
 >;
 defm V_RCP_CLAMP_F64 : VOP1_64 <0x00000030, "V_RCP_CLAMP_F64", []>;
-defm V_RSQ_F64 : VOP1_64 <0x00000031, "V_RSQ_F64", []>;
+defm V_RSQ_F64 : VOP1_64 <0x00000031, "V_RSQ_F64",
+  [(set f64:$dst, (fdiv FP_ONE, (fsqrt f64:$src0)))]
+>;
 defm V_RSQ_CLAMP_F64 : VOP1_64 <0x00000032, "V_RSQ_CLAMP_F64", []>;
 defm V_SQRT_F32 : VOP1_32 <0x00000033, "V_SQRT_F32",
   [(set f32:$dst, (fsqrt f32:$src0))]
@@ -2391,20 +2395,6 @@ defm : SI_INDIRECT_Pattern <v2i32, i32, SI_INDIRECT_DST_V2>;
 defm : SI_INDIRECT_Pattern <v4i32, i32, SI_INDIRECT_DST_V4>;
 defm : SI_INDIRECT_Pattern <v8i32, i32, SI_INDIRECT_DST_V8>;
 defm : SI_INDIRECT_Pattern <v16i32, i32, SI_INDIRECT_DST_V16>;
-
-/********** =============== **********/
-/**********   Conditions    **********/
-/********** =============== **********/
-
-def : Pat<
-  (i1 (setcc f32:$src0, f32:$src1, SETO)),
-  (V_CMP_O_F32_e64 $src0, $src1)
->;
-
-def : Pat<
-  (i1 (setcc f32:$src0, f32:$src1, SETUO)),
-  (V_CMP_U_F32_e64 $src0, $src1)
->;
 
 //===----------------------------------------------------------------------===//
 // Conversion Patterns

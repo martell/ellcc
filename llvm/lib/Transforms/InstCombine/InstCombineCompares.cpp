@@ -2318,6 +2318,32 @@ static bool swapMayExposeCSEOpportunities(const Value * Op0,
   return GlobalSwapBenefits > 0;
 }
 
+// Helper function to check whether Op represents a lshr/ashr exact
+// instruction. For example:
+// (icmp (ashr exact const2, A), const1) -> icmp A, Log2(const2/const1)
+// Here if Op represents -> (ashr exact const2, A), and CI represents
+// const1, we compute Quotient as const2/const1.
+
+static bool checkShrExact(Value *Op, APInt &Quotient, const ConstantInt *CI,
+                          Value *&A) {
+
+  ConstantInt *CI2;
+  if (match(Op, m_AShr(m_ConstantInt(CI2), m_Value(A))) &&
+      (cast<BinaryOperator>(Op)->isExact())) {
+    Quotient = CI2->getValue().sdiv(CI->getValue());
+    return true;
+  }
+
+  // Handle the case for lhsr.
+  if (match(Op, m_LShr(m_ConstantInt(CI2), m_Value(A))) &&
+      (cast<BinaryOperator>(Op)->isExact())) {
+    Quotient = CI2->getValue().udiv(CI->getValue());
+    return true;
+  }
+
+  return false;
+}
+
 Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
   bool Changed = false;
   Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
@@ -2443,13 +2469,10 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
     // (icmp (ashr exact const2, A), const1) -> icmp A, Log2(const2/const1)
     // Cases where const1 doesn't divide const2 exactly or Quotient is not
     // exact of log2 are handled by SimplifyICmpInst call above where we
-    // return false.
-    // TODO: Handle this for lshr exact with udiv.
+    // return false. Similar for lshr.
     {
-      ConstantInt *CI2;
-      if (match(Op0, m_AShr(m_ConstantInt(CI2), m_Value(A))) &&
-          (cast<BinaryOperator>(Op0)->isExact())) {
-        APInt Quotient = CI2->getValue().sdiv(CI->getValue());
+      APInt Quotient;
+      if (checkShrExact(Op0, Quotient, CI, A)) {
         unsigned shift = Quotient.logBase2();
         return new ICmpInst(I.getPredicate(), A,
                             ConstantInt::get(A->getType(), shift));
@@ -2540,7 +2563,7 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
       // bit is set.   If the comparison is against zero, then this is a check
       // to see if *that* bit is set.
       APInt Op0KnownZeroInverted = ~Op0KnownZero;
-      if (~Op1KnownZero == 0 && Op0KnownZeroInverted.isPowerOf2()) {
+      if (~Op1KnownZero == 0) {
         // If the LHS is an AND with the same constant, look through it.
         Value *LHS = nullptr;
         ConstantInt *LHSC = nullptr;
@@ -2550,11 +2573,19 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
 
         // If the LHS is 1 << x, and we know the result is a power of 2 like 8,
         // then turn "((1 << x)&8) == 0" into "x != 3".
+        // or turn "((1 << x)&7) == 0" into "x > 2".
         Value *X = nullptr;
         if (match(LHS, m_Shl(m_One(), m_Value(X)))) {
-          unsigned CmpVal = Op0KnownZeroInverted.countTrailingZeros();
-          return new ICmpInst(ICmpInst::ICMP_NE, X,
-                              ConstantInt::get(X->getType(), CmpVal));
+          APInt ValToCheck = Op0KnownZeroInverted;
+          if (ValToCheck.isPowerOf2()) {
+            unsigned CmpVal = ValToCheck.countTrailingZeros();
+            return new ICmpInst(ICmpInst::ICMP_NE, X,
+                                ConstantInt::get(X->getType(), CmpVal));
+          } else if ((++ValToCheck).isPowerOf2()) {
+            unsigned CmpVal = ValToCheck.countTrailingZeros() - 1;
+            return new ICmpInst(ICmpInst::ICMP_UGT, X,
+                                ConstantInt::get(X->getType(), CmpVal));
+          }
         }
 
         // If the LHS is 8 >>u x, and we know the result is a power of 2 like 1,
@@ -2577,7 +2608,7 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
       // bit is set.   If the comparison is against zero, then this is a check
       // to see if *that* bit is set.
       APInt Op0KnownZeroInverted = ~Op0KnownZero;
-      if (~Op1KnownZero == 0 && Op0KnownZeroInverted.isPowerOf2()) {
+      if (~Op1KnownZero == 0) {
         // If the LHS is an AND with the same constant, look through it.
         Value *LHS = nullptr;
         ConstantInt *LHSC = nullptr;
@@ -2587,11 +2618,19 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
 
         // If the LHS is 1 << x, and we know the result is a power of 2 like 8,
         // then turn "((1 << x)&8) != 0" into "x == 3".
+        // or turn "((1 << x)&7) != 0" into "x < 3".
         Value *X = nullptr;
         if (match(LHS, m_Shl(m_One(), m_Value(X)))) {
-          unsigned CmpVal = Op0KnownZeroInverted.countTrailingZeros();
-          return new ICmpInst(ICmpInst::ICMP_EQ, X,
-                              ConstantInt::get(X->getType(), CmpVal));
+          APInt ValToCheck = Op0KnownZeroInverted;
+          if (ValToCheck.isPowerOf2()) {
+            unsigned CmpVal = ValToCheck.countTrailingZeros();
+            return new ICmpInst(ICmpInst::ICMP_EQ, X,
+                                ConstantInt::get(X->getType(), CmpVal));
+          } else if ((++ValToCheck).isPowerOf2()) {
+            unsigned CmpVal = ValToCheck.countTrailingZeros();
+            return new ICmpInst(ICmpInst::ICMP_ULT, X,
+                                ConstantInt::get(X->getType(), CmpVal));
+          }
         }
 
         // If the LHS is 8 >>u x, and we know the result is a power of 2 like 1,

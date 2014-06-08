@@ -86,7 +86,7 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective() {
   SmallVector<OMPClause *, 5> Clauses;
   SmallVector<llvm::PointerIntPair<OMPClause *, 1, bool>, OMPC_unknown + 1>
   FirstClauses(OMPC_unknown + 1);
-  const unsigned ScopeFlags =
+  unsigned ScopeFlags =
       Scope::FnScope | Scope::DeclScope | Scope::OpenMPDirectiveScope;
   SourceLocation Loc = ConsumeToken(), EndLoc;
   OpenMPDirectiveKind DKind = Tok.isAnnotation()
@@ -142,6 +142,9 @@ StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective() {
 
     StmtResult AssociatedStmt;
     bool CreateDirective = true;
+    if (DKind == OMPD_simd)
+      ScopeFlags |=
+          Scope::OpenMPLoopDirectiveScope | Scope::OpenMPSimdDirectiveScope;
     ParseScope OMPDirectiveScope(this, ScopeFlags);
     {
       // The body is a block scope like in Lambdas and Blocks.
@@ -255,7 +258,7 @@ bool Parser::ParseOpenMPSimpleVarList(OpenMPDirectiveKind Kind,
 ///    clause:
 ///       if-clause | num_threads-clause | safelen-clause | default-clause |
 ///       private-clause | firstprivate-clause | shared-clause | linear-clause |
-///       aligned-clause | collapse-clause
+///       aligned-clause | collapse-clause | lastprivate-clause
 ///
 OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
                                      OpenMPClauseKind CKind, bool FirstClause) {
@@ -302,6 +305,7 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
     break;
   case OMPC_private:
   case OMPC_firstprivate:
+  case OMPC_lastprivate:
   case OMPC_shared:
   case OMPC_linear:
   case OMPC_aligned:
@@ -390,13 +394,15 @@ OMPClause *Parser::ParseOpenMPSimpleClause(OpenMPClauseKind Kind) {
                                          Tok.getLocation());
 }
 
-/// \brief Parsing of OpenMP clause 'private', 'firstprivate',
+/// \brief Parsing of OpenMP clause 'private', 'firstprivate', 'lastprivate',
 /// 'shared', 'copyin', or 'reduction'.
 ///
 ///    private-clause:
 ///       'private' '(' list ')'
 ///    firstprivate-clause:
 ///       'firstprivate' '(' list ')'
+///    lastprivate-clause:
+///       'lastprivate' '(' list ')'
 ///    shared-clause:
 ///       'shared' '(' list ')'
 ///    linear-clause:

@@ -679,11 +679,15 @@ Syntax::
 Aliases
 -------
 
-Aliases act as "second name" for the aliasee value (which can be either
-function, global variable, another alias or bitcast of global value).
+Aliases, unlike function or variables, don't create any new data. They
+are just a new symbol and metadata for an existing position.
+
+Aliases have a name and an aliasee that is either a global value or a
+constant expression.
+
 Aliases may have an optional :ref:`linkage type <linkage>`, an optional
-:ref:`visibility style <visibility>`, and an optional :ref:`DLL storage class
-<dllstorageclass>`.
+:ref:`visibility style <visibility>`, an optional :ref:`DLL storage class
+<dllstorageclass>` and an optional :ref:`tls model <tls_model>`.
 
 Syntax::
 
@@ -691,17 +695,24 @@ Syntax::
 
 The linkage must be one of ``private``, ``internal``, ``linkonce``, ``weak``,
 ``linkonce_odr``, ``weak_odr``, ``external``. Note that some system linkers
-might not correctly handle dropping a weak symbol that is aliased by a non-weak
-alias.
+might not correctly handle dropping a weak symbol that is aliased.
 
 Alias that are not ``unnamed_addr`` are guaranteed to have the same address as
-the aliasee.
+the aliasee expression. ``unnamed_addr`` ones are only guaranteed to point
+to the same content.
 
-The aliasee must be a definition.
+Since aliases are only a second name, some restrictions apply, of which
+some can only be checked when producing an object file:
 
-Aliases are not allowed to point to aliases with linkages that can be
-overridden. Since they are only a second name, the possibility of the
-intermediate alias being overridden cannot be represented in an object file.
+* The expression defining the aliasee must be computable at assembly
+  time. Since it is just a name, no relocations can be used.
+
+* No alias in the expression can be weak as the possibility of the
+  intermediate alias being overridden cannot be represented in an
+  object file.
+
+* No global value in the expression can be a declaration, since that
+  would require a relocation, which is not possible.
 
 .. _namedmetadatastructure:
 
@@ -1010,6 +1021,14 @@ example:
     inlining this function is desirable (such as the "inline" keyword in
     C/C++). It is just a hint; it imposes no requirements on the
     inliner.
+``jumptable``
+    This attribute indicates that the function should be added to a
+    jump-instruction table at code-generation time, and that all address-taken
+    references to this function should be replaced with a reference to the
+    appropriate jump-instruction-table function pointer. Note that this creates
+    a new pointer for the original function, which means that code that depends
+    on function-pointer identity can break. So, any function annotated with
+    ``jumptable`` must also be ``unnamed_addr``.
 ``minsize``
     This attribute suggests that optimization passes and code generator
     passes make choices that keep the code size of this function as small

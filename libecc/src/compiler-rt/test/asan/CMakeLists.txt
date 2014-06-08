@@ -6,10 +6,10 @@ if(CAN_TARGET_arm_android)
   # This is only true if we are cross-compiling.
   # Build all tests with host compiler and use host tools.
   set(ASAN_TEST_TARGET_CC ${CMAKE_C_COMPILER})
+  set(ASAN_TEST_TARGET_CFLAGS ${COMPILER_RT_TEST_COMPILER_CFLAGS})
   get_filename_component(ASAN_TEST_LLVM_TOOLS_DIR ${CMAKE_C_COMPILER} PATH)
   set(ASAN_TEST_CONFIG_SUFFIX "-arm-android")
   set(ASAN_TEST_BITS "32")
-  get_target_flags_for_arch(arm_android ASAN_TEST_TARGET_CFLAGS)
   configure_lit_site_cfg(
     ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.in
     ${CMAKE_CURRENT_BINARY_DIR}/ARMAndroidConfig/lit.site.cfg
@@ -61,7 +61,7 @@ configure_lit_site_cfg(
   )
 endif()
 
-set(ASAN_TEST_DEPS ${SANITIZER_COMMON_LIT_TEST_DEPS})
+set(ASAN_TEST_DEPS ${SANITIZER_COMMON_LIT_TEST_DEPS} asan)
 if(NOT COMPILER_RT_STANDALONE_BUILD)
   list(APPEND ASAN_TEST_DEPS asan)
 endif()

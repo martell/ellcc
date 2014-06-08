@@ -1711,7 +1711,9 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
       InVals.push_back(FrameIdxN);
 
       continue;
-    } if (VA.isRegLoc()) {
+    }
+    
+    if (VA.isRegLoc()) {
       // Arguments stored in registers.
       EVT RegVT = VA.getLocVT();
 
@@ -1772,9 +1774,15 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
       SDValue FIN = DAG.getFrameIndex(FI, getPointerTy());
       SDValue ArgValue;
 
+      // For NON_EXTLOAD, generic code in getLoad assert(ValVT == MemVT)
       ISD::LoadExtType ExtType = ISD::NON_EXTLOAD;
+      MVT MemVT = VA.getValVT();
+
       switch (VA.getLocInfo()) {
       default:
+        break;
+      case CCValAssign::BCvt:
+        MemVT = VA.getLocVT();
         break;
       case CCValAssign::SExt:
         ExtType = ISD::SEXTLOAD;
@@ -1787,10 +1795,9 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
         break;
       }
 
-      ArgValue = DAG.getExtLoad(ExtType, DL, VA.getValVT(), Chain, FIN,
+      ArgValue = DAG.getExtLoad(ExtType, DL, VA.getLocVT(), Chain, FIN,
                                 MachinePointerInfo::getFixedStack(FI),
-                                VA.getLocVT(),
-                                false, false, false, 0);
+                                MemVT, false, false, false, 0);
 
       InVals.push_back(ArgValue);
     }
@@ -2339,11 +2346,9 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
         // Since we pass i1/i8/i16 as i1/i8/i16 on stack and Arg is already
         // promoted to a legal register type i32, we should truncate Arg back to
         // i1/i8/i16.
-        if (Arg.getValueType().isSimple() &&
-            Arg.getValueType().getSimpleVT() == MVT::i32 &&
-            (VA.getLocVT() == MVT::i1 || VA.getLocVT() == MVT::i8 ||
-             VA.getLocVT() == MVT::i16))
-          Arg = DAG.getNode(ISD::TRUNCATE, DL, VA.getLocVT(), Arg);
+        if (VA.getValVT() == MVT::i1 || VA.getValVT() == MVT::i8 ||
+            VA.getValVT() == MVT::i16)
+          Arg = DAG.getNode(ISD::TRUNCATE, DL, VA.getValVT(), Arg);
 
         SDValue Store =
             DAG.getStore(Chain, DL, Arg, DstAddr, DstInfo, false, false, 0);

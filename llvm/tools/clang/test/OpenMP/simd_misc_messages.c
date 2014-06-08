@@ -290,6 +290,17 @@ void test_linear()
   // expected-warning@+1 {{zero linear step (x and other variables in clause should probably be const)}}
   #pragma omp simd linear(x,y:0)
   for (i = 0; i < 16; ++i) ;
+
+  // expected-note@+2 {{defined as linear}}
+  // expected-error@+1 {{linear variable cannot be lastprivate}}
+  #pragma omp simd linear(x) lastprivate(x)
+  for (i = 0; i < 16; ++i) ;
+
+  // expected-note@+2 {{defined as lastprivate}}
+  // expected-error@+1 {{lastprivate variable cannot be linear}}
+  #pragma omp simd lastprivate(x) linear(x) 
+  for (i = 0; i < 16; ++i) ;
+
 }
 
 void test_aligned()
@@ -412,5 +423,54 @@ void test_firstprivate()
   // expected-error@+1 {{expected expression}}
   #pragma omp simd firstprivate(
   for (i = 0; i < 16; ++i) ;
+}
+
+void test_lastprivate()
+{
+  int i;
+  // expected-error@+2 {{expected ')'}} expected-note@+2 {{to match this '('}}
+  // expected-error@+1 {{expected expression}}
+  #pragma omp simd lastprivate(
+  for (i = 0; i < 16; ++i) ;
+
+  // expected-error@+2 {{expected ')'}} expected-note@+2 {{to match this '('}}
+  // expected-error@+1 2 {{expected expression}}
+  #pragma omp simd lastprivate(,
+  for (i = 0; i < 16; ++i) ;
+  // expected-error@+1 2 {{expected expression}}
+  #pragma omp simd lastprivate(,)
+  for (i = 0; i < 16; ++i) ;
+  // expected-error@+1 {{expected expression}}
+  #pragma omp simd lastprivate()
+  for (i = 0; i < 16; ++i) ;
+  // expected-error@+1 {{expected expression}}
+  #pragma omp simd lastprivate(int)
+  for (i = 0; i < 16; ++i) ;
+  // expected-error@+1 {{expected variable name}}
+  #pragma omp simd lastprivate(0)
+  for (i = 0; i < 16; ++i) ;
+
+  int x, y, z;
+  #pragma omp simd lastprivate(x)
+  for (i = 0; i < 16; ++i) ;
+  #pragma omp simd lastprivate(x, y)
+  for (i = 0; i < 16; ++i) ;
+  #pragma omp simd lastprivate(x, y, z)
+  for (i = 0; i < 16; ++i) ;
+}
+
+void test_loop_messages()
+{
+  float a[100], b[100], c[100];
+  // expected-error@+2 {{variable must be of integer or pointer type}}
+  #pragma omp simd
+  for (float fi = 0; fi < 10.0; fi++) {
+    c[(int)fi] = a[(int)fi] + b[(int)fi];
+  }
+  // expected-error@+2 {{variable must be of integer or pointer type}}
+  #pragma omp simd
+  for (double fi = 0; fi < 10.0; fi++) {
+    c[(int)fi] = a[(int)fi] + b[(int)fi];
+  }
 }
 

@@ -549,6 +549,8 @@ static Attribute::AttrKind GetAttrFromCode(uint64_t Code) {
     return Attribute::InlineHint;
   case bitc::ATTR_KIND_IN_REG:
     return Attribute::InReg;
+  case bitc::ATTR_KIND_JUMP_TABLE:
+    return Attribute::JumpTable;
   case bitc::ATTR_KIND_MIN_SIZE:
     return Attribute::MinSize;
   case bitc::ATTR_KIND_NAKED:
@@ -1094,28 +1096,6 @@ uint64_t BitcodeReader::decodeSignRotatedValue(uint64_t V) {
   return 1ULL << 63;
 }
 
-// FIXME: Delete this in LLVM 4.0 and just assert that the aliasee is a
-// GlobalObject.
-static GlobalObject &
-getGlobalObjectInExpr(const DenseMap<GlobalAlias *, Constant *> &Map,
-                      Constant &C) {
-  auto *GO = dyn_cast<GlobalObject>(&C);
-  if (GO)
-    return *GO;
-
-  auto *GA = dyn_cast<GlobalAlias>(&C);
-  if (GA)
-    return getGlobalObjectInExpr(Map, *Map.find(GA)->second);
-
-  auto &CE = cast<ConstantExpr>(C);
-  assert(CE.getOpcode() == Instruction::BitCast ||
-         CE.getOpcode() == Instruction::GetElementPtr ||
-         CE.getOpcode() == Instruction::AddrSpaceCast);
-  if (CE.getOpcode() == Instruction::GetElementPtr)
-    assert(cast<GEPOperator>(CE).hasAllZeroIndices());
-  return getGlobalObjectInExpr(Map, *CE.getOperand(0));
-}
-
 /// ResolveGlobalAndAliasInits - Resolve all of the initializers for global
 /// values and aliases that we can.
 error_code BitcodeReader::ResolveGlobalAndAliasInits() {
@@ -1141,28 +1121,17 @@ error_code BitcodeReader::ResolveGlobalAndAliasInits() {
     GlobalInitWorklist.pop_back();
   }
 
-  // FIXME: Delete this in LLVM 4.0
-  // Older versions of llvm could write an alias pointing to another. We cannot
-  // construct those aliases, so we first collect an alias to aliasee expression
-  // and then compute the actual aliasee.
-  DenseMap<GlobalAlias *, Constant *> AliasInit;
-
   while (!AliasInitWorklist.empty()) {
     unsigned ValID = AliasInitWorklist.back().second;
     if (ValID >= ValueList.size()) {
       AliasInits.push_back(AliasInitWorklist.back());
     } else {
       if (Constant *C = dyn_cast_or_null<Constant>(ValueList[ValID]))
-        AliasInit.insert(std::make_pair(AliasInitWorklist.back().first, C));
+        AliasInitWorklist.back().first->setAliasee(C);
       else
         return Error(ExpectedConstant);
     }
     AliasInitWorklist.pop_back();
-  }
-
-  for (auto &Pair : AliasInit) {
-    auto &GO = getGlobalObjectInExpr(AliasInit, *Pair.second);
-    Pair.first->setAliasee(&GO);
   }
 
   while (!FunctionPrefixWorklist.empty()) {
@@ -2019,6 +1988,8 @@ error_code BitcodeReader::ParseModule(bool Resume) {
         UpgradeDLLImportExportLinkage(NewGA, Record[2]);
       if (Record.size() > 5)
 	NewGA->setThreadLocalMode(GetDecodedThreadLocalMode(Record[5]));
+      if (Record.size() > 6)
+	NewGA->setUnnamedAddr(Record[6]);
       ValueList.push_back(NewGA);
       AliasInits.push_back(std::make_pair(NewGA, Record[1]));
       break;
@@ -2859,7 +2830,7 @@ error_code BitcodeReader::ParseFunctionBody(Function *F) {
         assert((CT != LandingPadInst::Filter ||
                 isa<ArrayType>(Val->getType())) &&
                "Filter clause has invalid type!");
-        LP->addClause(Val);
+        LP->addClause(cast<Constant>(Val));
       }
 
       I = LP;

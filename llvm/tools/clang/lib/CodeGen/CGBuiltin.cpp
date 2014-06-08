@@ -1508,6 +1508,12 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
   }
   case Builtin::BI__builtin_addressof:
     return RValue::get(EmitLValue(E->getArg(0)).getAddress());
+  case Builtin::BI__builtin_operator_new:
+    return EmitBuiltinNewDeleteCall(FD->getType()->castAs<FunctionProtoType>(),
+                                    E->getArg(0), false);
+  case Builtin::BI__builtin_operator_delete:
+    return EmitBuiltinNewDeleteCall(FD->getType()->castAs<FunctionProtoType>(),
+                                    E->getArg(0), true);
   case Builtin::BI__noop:
     return RValue::get(nullptr);
   case Builtin::BI_InterlockedCompareExchange: {
@@ -5232,7 +5238,7 @@ Value *CodeGenFunction::EmitAArch64BuiltinExpr(unsigned BuiltinID,
     Ty = llvm::PointerType::getUnqual(VTy->getElementType());
     Ops[0] = Builder.CreateBitCast(Ops[0], Ty);
     Ops[0] = Builder.CreateLoad(Ops[0]);
-    llvm::Constant *CI = ConstantInt::get(SizeTy, 0);
+    llvm::Constant *CI = ConstantInt::get(Int32Ty, 0);
     Ops[0] = Builder.CreateInsertElement(V, Ops[0], CI);
     return EmitNeonSplat(Ops[0], CI);
   }

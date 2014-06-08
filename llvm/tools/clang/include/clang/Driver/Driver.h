@@ -21,7 +21,7 @@
 #include "llvm/Support/Path.h" // FIXME: Kill when CompilationInfo
 #include <memory>
                               // lands.
-#include "llvm/Config/config.h"
+#include "clang/Config/config.h"
 #include "clang/Basic/Version.h"
 #include <list>
 #include <set>

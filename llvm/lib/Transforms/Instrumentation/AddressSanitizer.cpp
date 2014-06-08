@@ -307,14 +307,11 @@ static size_t RedzoneSizeForScale(int MappingScale) {
 struct AddressSanitizer : public FunctionPass {
   AddressSanitizer(bool CheckInitOrder = true,
                    bool CheckUseAfterReturn = false,
-                   bool CheckLifetime = false,
-                   StringRef BlacklistFile = StringRef())
+                   bool CheckLifetime = false)
       : FunctionPass(ID),
         CheckInitOrder(CheckInitOrder || ClInitializers),
         CheckUseAfterReturn(CheckUseAfterReturn || ClUseAfterReturn),
-        CheckLifetime(CheckLifetime || ClCheckLifetime),
-        BlacklistFile(BlacklistFile.empty() ? ClBlacklistFile
-                                            : BlacklistFile) {}
+        CheckLifetime(CheckLifetime || ClCheckLifetime) {}
   const char *getPassName() const override {
     return "AddressSanitizerFunctionPass";
   }
@@ -346,7 +343,6 @@ struct AddressSanitizer : public FunctionPass {
   bool CheckInitOrder;
   bool CheckUseAfterReturn;
   bool CheckLifetime;
-  SmallString<64> BlacklistFile;
 
   LLVMContext *C;
   const DataLayout *DL;
@@ -358,7 +354,6 @@ struct AddressSanitizer : public FunctionPass {
   Function *AsanHandleNoReturnFunc;
   Function *AsanCovFunction;
   Function *AsanPtrCmpFunction, *AsanPtrSubFunction;
-  std::unique_ptr<SpecialCaseList> BL;
   // This array is indexed by AccessIsWrite and log2(AccessSize).
   Function *AsanErrorCallback[2][kNumberOfAccessSizes];
   Function *AsanMemoryAccessCallback[2][kNumberOfAccessSizes];
@@ -389,6 +384,7 @@ class AddressSanitizerModule : public ModulePass {
  private:
   void initializeCallbacks(Module &M);
 
+  bool InstrumentGlobals(IRBuilder<> &IRB, Module &M);
   bool ShouldInstrumentGlobal(GlobalVariable *G);
   void poisonOneInitializer(Function &GlobalInit, GlobalValue *ModuleName);
   void createInitializerPoisonCalls(Module &M, GlobalValue *ModuleName);
@@ -553,10 +549,9 @@ INITIALIZE_PASS(AddressSanitizer, "asan",
     "AddressSanitizer: detects use-after-free and out-of-bounds bugs.",
     false, false)
 FunctionPass *llvm::createAddressSanitizerFunctionPass(
-    bool CheckInitOrder, bool CheckUseAfterReturn, bool CheckLifetime,
-    StringRef BlacklistFile) {
+    bool CheckInitOrder, bool CheckUseAfterReturn, bool CheckLifetime) {
   return new AddressSanitizer(CheckInitOrder, CheckUseAfterReturn,
-                              CheckLifetime, BlacklistFile);
+                              CheckLifetime);
 }
 
 char AddressSanitizerModule::ID = 0;
@@ -989,21 +984,7 @@ void AddressSanitizerModule::initializeCallbacks(Module &M) {
 // This function replaces all global variables with new variables that have
 // trailing redzones. It also creates a function that poisons
 // redzones and inserts this function into llvm.global_ctors.
-bool AddressSanitizerModule::runOnModule(Module &M) {
-  if (!ClGlobals) return false;
-
-  DataLayoutPass *DLP = getAnalysisIfAvailable<DataLayoutPass>();
-  if (!DLP)
-    return false;
-  DL = &DLP->getDataLayout();
-
-  BL.reset(SpecialCaseList::createOrDie(BlacklistFile));
-  if (BL->isIn(M)) return false;
-  C = &(M.getContext());
-  int LongSize = DL->getPointerSizeInBits();
-  IntptrTy = Type::getIntNTy(*C, LongSize);
-  Mapping = getShadowMapping(M, LongSize);
-  initializeCallbacks(M);
+bool AddressSanitizerModule::InstrumentGlobals(IRBuilder<> &IRB, Module &M) {
   DynamicallyInitializedGlobals.Init(M);
 
   SmallVector<GlobalVariable *, 16> GlobalsToChange;
@@ -1011,16 +992,6 @@ bool AddressSanitizerModule::runOnModule(Module &M) {
   for (auto &G : M.globals()) {
     if (ShouldInstrumentGlobal(&G))
       GlobalsToChange.push_back(&G);
-  }
-
-  Function *CtorFunc = M.getFunction(kAsanModuleCtorName);
-  assert(CtorFunc);
-  IRBuilder<> IRB(CtorFunc->getEntryBlock().getTerminator());
-
-  if (ClCoverage > 0) {
-    Function *CovFunc = M.getFunction(kAsanCovName);
-    int nCov = CovFunc ? CovFunc->getNumUses() : 0;
-    IRB.CreateCall(AsanCovModuleInit, ConstantInt::get(IntptrTy, nCov));
   }
 
   size_t n = GlobalsToChange.size();
@@ -1140,6 +1111,36 @@ bool AddressSanitizerModule::runOnModule(Module &M) {
   return true;
 }
 
+bool AddressSanitizerModule::runOnModule(Module &M) {
+  DataLayoutPass *DLP = getAnalysisIfAvailable<DataLayoutPass>();
+  if (!DLP)
+    return false;
+  DL = &DLP->getDataLayout();
+  BL.reset(SpecialCaseList::createOrDie(BlacklistFile));
+  C = &(M.getContext());
+  int LongSize = DL->getPointerSizeInBits();
+  IntptrTy = Type::getIntNTy(*C, LongSize);
+  Mapping = getShadowMapping(M, LongSize);
+  initializeCallbacks(M);
+
+  bool Changed = false;
+
+  Function *CtorFunc = M.getFunction(kAsanModuleCtorName);
+  assert(CtorFunc);
+  IRBuilder<> IRB(CtorFunc->getEntryBlock().getTerminator());
+
+  if (ClCoverage > 0) {
+    Function *CovFunc = M.getFunction(kAsanCovName);
+    int nCov = CovFunc ? CovFunc->getNumUses() : 0;
+    IRB.CreateCall(AsanCovModuleInit, ConstantInt::get(IntptrTy, nCov));
+    Changed = true;
+  }
+
+  if (ClGlobals && !BL->isIn(M)) Changed |= InstrumentGlobals(IRB, M);
+
+  return Changed;
+}
+
 void AddressSanitizer::initializeCallbacks(Module &M) {
   IRBuilder<> IRB(*C);
   // Create __asan_report* callbacks.
@@ -1203,7 +1204,6 @@ bool AddressSanitizer::doInitialization(Module &M) {
     report_fatal_error("data layout missing");
   DL = &DLP->getDataLayout();
 
-  BL.reset(SpecialCaseList::createOrDie(BlacklistFile));
   DynamicallyInitializedGlobals.Init(M);
 
   C = &(M.getContext());
@@ -1254,7 +1254,9 @@ void AddressSanitizer::InjectCoverageAtBlock(Function &F, BasicBlock &BB) {
       break;
   }
 
+  DebugLoc EntryLoc = IP->getDebugLoc().getFnDebugLoc(*C);
   IRBuilder<> IRB(IP);
+  IRB.SetCurrentDebugLocation(EntryLoc);
   Type *Int8Ty = IRB.getInt8Ty();
   GlobalVariable *Guard = new GlobalVariable(
       *F.getParent(), Int8Ty, false, GlobalValue::PrivateLinkage,
@@ -1266,10 +1268,10 @@ void AddressSanitizer::InjectCoverageAtBlock(Function &F, BasicBlock &BB) {
   Instruction *Ins = SplitBlockAndInsertIfThen(
       Cmp, IP, false, MDBuilder(*C).createBranchWeights(1, 100000));
   IRB.SetInsertPoint(Ins);
+  IRB.SetCurrentDebugLocation(EntryLoc);
   // We pass &F to __sanitizer_cov. We could avoid this and rely on
   // GET_CALLER_PC, but having the PC of the first instruction is just nice.
-  Instruction *Call = IRB.CreateCall(AsanCovFunction);
-  Call->setDebugLoc(IP->getDebugLoc());
+  IRB.CreateCall(AsanCovFunction);
   StoreInst *Store = IRB.CreateStore(ConstantInt::get(Int8Ty, 1), Guard);
   Store->setAtomic(Monotonic);
   Store->setAlignment(1);
@@ -1318,7 +1320,7 @@ bool AddressSanitizer::runOnFunction(Function &F) {
   // If needed, insert __asan_init before checking for SanitizeAddress attr.
   maybeInsertAsanInitAtFunctionEntry(F);
 
-  if (!F.hasFnAttribute(Attribute::SanitizeAddress) || BL->isIn(F))
+  if (!F.hasFnAttribute(Attribute::SanitizeAddress))
     return false;
 
   if (!ClDebugFunc.empty() && ClDebugFunc != F.getName())

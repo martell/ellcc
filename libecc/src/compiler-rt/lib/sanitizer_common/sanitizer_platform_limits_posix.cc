@@ -44,6 +44,7 @@
 
 #if !SANITIZER_ANDROID
 #include <sys/mount.h>
+#include <sys/timeb.h>
 #endif
 
 #if SANITIZER_LINUX
@@ -1080,6 +1081,43 @@ CHECK_SIZE_AND_OFFSET(ifaddrs, ifa_dstaddr);
 #endif  // SANITIZER_LINUX
 CHECK_SIZE_AND_OFFSET(ifaddrs, ifa_data);
 #endif
+
+#if SANITIZER_LINUX
+COMPILER_CHECK(sizeof(__sanitizer_mallinfo) == sizeof(struct mallinfo));
+#endif
+
+#if !SANITIZER_ANDROID
+CHECK_TYPE_SIZE(timeb);
+CHECK_SIZE_AND_OFFSET(timeb, time);
+CHECK_SIZE_AND_OFFSET(timeb, millitm);
+CHECK_SIZE_AND_OFFSET(timeb, timezone);
+CHECK_SIZE_AND_OFFSET(timeb, dstflag);
+#endif
+
+CHECK_TYPE_SIZE(passwd);
+CHECK_SIZE_AND_OFFSET(passwd, pw_name);
+CHECK_SIZE_AND_OFFSET(passwd, pw_passwd);
+CHECK_SIZE_AND_OFFSET(passwd, pw_uid);
+CHECK_SIZE_AND_OFFSET(passwd, pw_gid);
+CHECK_SIZE_AND_OFFSET(passwd, pw_dir);
+CHECK_SIZE_AND_OFFSET(passwd, pw_shell);
+
+#if !SANITIZER_ANDROID
+CHECK_SIZE_AND_OFFSET(passwd, pw_gecos);
+#endif
+
+#if SANITIZER_MAC
+CHECK_SIZE_AND_OFFSET(passwd, pw_change);
+CHECK_SIZE_AND_OFFSET(passwd, pw_expire);
+CHECK_SIZE_AND_OFFSET(passwd, pw_class);
+#endif
+
+
+CHECK_TYPE_SIZE(group);
+CHECK_SIZE_AND_OFFSET(group, gr_name);
+CHECK_SIZE_AND_OFFSET(group, gr_passwd);
+CHECK_SIZE_AND_OFFSET(group, gr_gid);
+CHECK_SIZE_AND_OFFSET(group, gr_mem);
 
 #if SANITIZER_LINUX && !SANITIZER_ANDROID
 CHECK_TYPE_SIZE(XDR);
