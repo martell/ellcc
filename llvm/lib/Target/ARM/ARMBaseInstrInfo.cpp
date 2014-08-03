@@ -103,14 +103,15 @@ ARMBaseInstrInfo::ARMBaseInstrInfo(const ARMSubtarget& STI)
 
 // Use a ScoreboardHazardRecognizer for prepass ARM scheduling. TargetInstrImpl
 // currently defaults to no prepass hazard recognizer.
-ScheduleHazardRecognizer *ARMBaseInstrInfo::
-CreateTargetHazardRecognizer(const TargetMachine *TM,
-                             const ScheduleDAG *DAG) const {
+ScheduleHazardRecognizer *
+ARMBaseInstrInfo::CreateTargetHazardRecognizer(const TargetSubtargetInfo *STI,
+                                               const ScheduleDAG *DAG) const {
   if (usePreRAHazardRecognizer()) {
-    const InstrItineraryData *II = TM->getInstrItineraryData();
+    const InstrItineraryData *II =
+        &static_cast<const ARMSubtarget *>(STI)->getInstrItineraryData();
     return new ScoreboardHazardRecognizer(II, DAG, "pre-RA-sched");
   }
-  return TargetInstrInfo::CreateTargetHazardRecognizer(TM, DAG);
+  return TargetInstrInfo::CreateTargetHazardRecognizer(STI, DAG);
 }
 
 ScheduleHazardRecognizer *ARMBaseInstrInfo::
@@ -1886,7 +1887,8 @@ bool llvm::tryFoldSPUpdateIntoPushPop(const ARMSubtarget &Subtarget,
                                       unsigned NumBytes) {
   // This optimisation potentially adds lots of load and store
   // micro-operations, it's only really a great benefit to code-size.
-  if (!Subtarget.isMinSize())
+  if (!MF.getFunction()->getAttributes().hasAttribute(
+          AttributeSet::FunctionIndex, Attribute::MinSize))
     return false;
 
   // If only one register is pushed/popped, LLVM can use an LDR/STR

@@ -500,6 +500,16 @@ public:
                                 (unsigned)V);
   }
 
+  /// Return true if this cmpxchg may spuriously fail.
+  bool isWeak() const {
+    return getSubclassDataFromInstruction() & 0x100;
+  }
+
+  void setWeak(bool IsWeak) {
+    setInstructionSubclassData((getSubclassDataFromInstruction() & ~0x100) |
+                               (IsWeak << 8));
+  }
+
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Value);
 
@@ -2651,6 +2661,9 @@ public:
       assert(RHS.SI == SI && "Incompatible operators.");
       return RHS.Index != Index;
     }
+    Self &operator*() {
+      return *this;
+    }
   };
 
   typedef CaseIteratorT<const SwitchInst, const ConstantInt, const BasicBlock>
@@ -2731,6 +2744,17 @@ public:
   ConstCaseIt case_end() const {
     return ConstCaseIt(this, getNumCases());
   }
+
+  /// cases - iteration adapter for range-for loops.
+  iterator_range<CaseIt> cases() {
+    return iterator_range<CaseIt>(case_begin(), case_end());
+  }
+
+  /// cases - iteration adapter for range-for loops.
+  iterator_range<ConstCaseIt> cases() const {
+    return iterator_range<ConstCaseIt>(case_begin(), case_end());
+  }
+
   /// Returns an iterator that points to the default case.
   /// Note: this iterator allows to resolve successor only. Attempt
   /// to resolve case value causes an assertion.

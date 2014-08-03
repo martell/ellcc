@@ -102,13 +102,12 @@ u32 ChainOrigin(u32 id, StackTrace *stack);
         StackTrace::GetCurrentPc(), GET_CURRENT_FRAME(),           \
         common_flags()->fast_unwind_on_malloc)
 
-#define GET_STORE_STACK_TRACE                                      \
-  StackTrace stack;                                                \
-  stack.size = 0;                                                  \
-  if (__msan_get_track_origins() > 1 && msan_inited)               \
-    GetStackTrace(&stack, common_flags()->malloc_context_size,     \
-        StackTrace::GetCurrentPc(), GET_CURRENT_FRAME(),           \
-        common_flags()->fast_unwind_on_malloc)
+#define GET_STORE_STACK_TRACE_PC_BP(pc, bp)                  \
+  StackTrace stack;                                          \
+  stack.size = 0;                                            \
+  if (__msan_get_track_origins() > 1 && msan_inited)         \
+  GetStackTrace(&stack, flags()->store_context_size, pc, bp, \
+                common_flags()->fast_unwind_on_malloc)
 
 class ScopedThreadLocalStateBackup {
  public:
@@ -122,9 +121,11 @@ class ScopedThreadLocalStateBackup {
 }  // namespace __msan
 
 #define MSAN_MALLOC_HOOK(ptr, size) \
-  if (&__msan_malloc_hook) __msan_malloc_hook(ptr, size)
+  if (&__msan_malloc_hook) __msan_malloc_hook(ptr, size); \
+  if (&__sanitizer_malloc_hook) __sanitizer_malloc_hook(ptr, size)
 #define MSAN_FREE_HOOK(ptr) \
-  if (&__msan_free_hook) __msan_free_hook(ptr)
+  if (&__msan_free_hook) __msan_free_hook(ptr); \
+  if (&__sanitizer_free_hook) __sanitizer_free_hook(ptr)
 
 struct MsanStackBounds {
   uptr stack_addr, stack_size;

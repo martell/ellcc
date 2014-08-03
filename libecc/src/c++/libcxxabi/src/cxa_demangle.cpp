@@ -4892,8 +4892,8 @@ struct Db
 
 }  // unnamed namespace
 
-__attribute__ ((__visibility__("default")))
 extern "C"
+__attribute__ ((__visibility__("default")))
 char*
 __cxa_demangle(const char* mangled_name, char* buf, size_t* n, int* status)
 {

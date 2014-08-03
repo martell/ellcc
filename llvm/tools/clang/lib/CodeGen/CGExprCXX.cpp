@@ -1615,21 +1615,7 @@ void CodeGenFunction::EmitCXXDeleteExpr(const CXXDeleteExpr *E) {
   EmitBlock(DeleteEnd);
 }
 
-static llvm::Constant *getBadTypeidFn(CodeGenFunction &CGF) {
-  // void __cxa_bad_typeid();
-  llvm::FunctionType *FTy = llvm::FunctionType::get(CGF.VoidTy, false);
-  
-  return CGF.CGM.CreateRuntimeFunction(FTy, "__cxa_bad_typeid");
-}
-
-static void EmitBadTypeidCall(CodeGenFunction &CGF) {
-  llvm::Value *Fn = getBadTypeidFn(CGF);
-  CGF.EmitRuntimeCallOrInvoke(Fn).setDoesNotReturn();
-  CGF.Builder.CreateUnreachable();
-}
-
-static llvm::Value *EmitTypeidFromVTable(CodeGenFunction &CGF,
-                                         const Expr *E, 
+static llvm::Value *EmitTypeidFromVTable(CodeGenFunction &CGF, const Expr *E,
                                          llvm::Type *StdTypeInfoPtrTy) {
   // Get the vtable pointer.
   llvm::Value *ThisPtr = CGF.EmitLValue(E).getAddress();
@@ -1638,28 +1624,27 @@ static llvm::Value *EmitTypeidFromVTable(CodeGenFunction &CGF,
   //   If the glvalue expression is obtained by applying the unary * operator to
   //   a pointer and the pointer is a null pointer value, the typeid expression
   //   throws the std::bad_typeid exception.
-  if (const UnaryOperator *UO = dyn_cast<UnaryOperator>(E->IgnoreParens())) {
-    if (UO->getOpcode() == UO_Deref) {
-      llvm::BasicBlock *BadTypeidBlock = 
+  bool IsDeref = false;
+  if (const UnaryOperator *UO = dyn_cast<UnaryOperator>(E->IgnoreParens()))
+    if (UO->getOpcode() == UO_Deref)
+      IsDeref = true;
+
+  QualType SrcRecordTy = E->getType();
+  if (CGF.CGM.getCXXABI().shouldTypeidBeNullChecked(IsDeref, SrcRecordTy)) {
+    llvm::BasicBlock *BadTypeidBlock =
         CGF.createBasicBlock("typeid.bad_typeid");
-      llvm::BasicBlock *EndBlock =
-        CGF.createBasicBlock("typeid.end");
+    llvm::BasicBlock *EndBlock = CGF.createBasicBlock("typeid.end");
 
-      llvm::Value *IsNull = CGF.Builder.CreateIsNull(ThisPtr);
-      CGF.Builder.CreateCondBr(IsNull, BadTypeidBlock, EndBlock);
+    llvm::Value *IsNull = CGF.Builder.CreateIsNull(ThisPtr);
+    CGF.Builder.CreateCondBr(IsNull, BadTypeidBlock, EndBlock);
 
-      CGF.EmitBlock(BadTypeidBlock);
-      EmitBadTypeidCall(CGF);
-      CGF.EmitBlock(EndBlock);
-    }
+    CGF.EmitBlock(BadTypeidBlock);
+    CGF.CGM.getCXXABI().EmitBadTypeidCall(CGF);
+    CGF.EmitBlock(EndBlock);
   }
 
-  llvm::Value *Value = CGF.GetVTablePtr(ThisPtr, 
-                                        StdTypeInfoPtrTy->getPointerTo());
-
-  // Load the type info.
-  Value = CGF.Builder.CreateConstInBoundsGEP1_64(Value, -1ULL);
-  return CGF.Builder.CreateLoad(Value);
+  return CGF.CGM.getCXXABI().EmitTypeid(CGF, SrcRecordTy, ThisPtr,
+                                        StdTypeInfoPtrTy);
 }
 
 llvm::Value *CodeGenFunction::EmitCXXTypeidExpr(const CXXTypeidExpr *E) {
@@ -1686,173 +1671,6 @@ llvm::Value *CodeGenFunction::EmitCXXTypeidExpr(const CXXTypeidExpr *E) {
                                StdTypeInfoPtrTy);
 }
 
-static llvm::Constant *getDynamicCastFn(CodeGenFunction &CGF) {
-  // void *__dynamic_cast(const void *sub,
-  //                      const abi::__class_type_info *src,
-  //                      const abi::__class_type_info *dst,
-  //                      std::ptrdiff_t src2dst_offset);
-  
-  llvm::Type *Int8PtrTy = CGF.Int8PtrTy;
-  llvm::Type *PtrDiffTy = 
-    CGF.ConvertType(CGF.getContext().getPointerDiffType());
-
-  llvm::Type *Args[4] = { Int8PtrTy, Int8PtrTy, Int8PtrTy, PtrDiffTy };
-
-  llvm::FunctionType *FTy = llvm::FunctionType::get(Int8PtrTy, Args, false);
-
-  // Mark the function as nounwind readonly.
-  llvm::Attribute::AttrKind FuncAttrs[] = { llvm::Attribute::NoUnwind,
-                                            llvm::Attribute::ReadOnly };
-  llvm::AttributeSet Attrs = llvm::AttributeSet::get(
-      CGF.getLLVMContext(), llvm::AttributeSet::FunctionIndex, FuncAttrs);
-
-  return CGF.CGM.CreateRuntimeFunction(FTy, "__dynamic_cast", Attrs);
-}
-
-static llvm::Constant *getBadCastFn(CodeGenFunction &CGF) {
-  // void __cxa_bad_cast();
-  llvm::FunctionType *FTy = llvm::FunctionType::get(CGF.VoidTy, false);
-  return CGF.CGM.CreateRuntimeFunction(FTy, "__cxa_bad_cast");
-}
-
-static void EmitBadCastCall(CodeGenFunction &CGF) {
-  llvm::Value *Fn = getBadCastFn(CGF);
-  CGF.EmitRuntimeCallOrInvoke(Fn).setDoesNotReturn();
-  CGF.Builder.CreateUnreachable();
-}
-
-/// \brief Compute the src2dst_offset hint as described in the
-/// Itanium C++ ABI [2.9.7]
-static CharUnits computeOffsetHint(ASTContext &Context,
-                                   const CXXRecordDecl *Src,
-                                   const CXXRecordDecl *Dst) {
-  CXXBasePaths Paths(/*FindAmbiguities=*/true, /*RecordPaths=*/true,
-                     /*DetectVirtual=*/false);
-
-  // If Dst is not derived from Src we can skip the whole computation below and
-  // return that Src is not a public base of Dst.  Record all inheritance paths.
-  if (!Dst->isDerivedFrom(Src, Paths))
-    return CharUnits::fromQuantity(-2ULL);
-
-  unsigned NumPublicPaths = 0;
-  CharUnits Offset;
-
-  // Now walk all possible inheritance paths.
-  for (CXXBasePaths::paths_iterator I = Paths.begin(), E = Paths.end();
-       I != E; ++I) {
-    if (I->Access != AS_public) // Ignore non-public inheritance.
-      continue;
-
-    ++NumPublicPaths;
-
-    for (CXXBasePath::iterator J = I->begin(), JE = I->end(); J != JE; ++J) {
-      // If the path contains a virtual base class we can't give any hint.
-      // -1: no hint.
-      if (J->Base->isVirtual())
-        return CharUnits::fromQuantity(-1ULL);
-
-      if (NumPublicPaths > 1) // Won't use offsets, skip computation.
-        continue;
-
-      // Accumulate the base class offsets.
-      const ASTRecordLayout &L = Context.getASTRecordLayout(J->Class);
-      Offset += L.getBaseClassOffset(J->Base->getType()->getAsCXXRecordDecl());
-    }
-  }
-
-  // -2: Src is not a public base of Dst.
-  if (NumPublicPaths == 0)
-    return CharUnits::fromQuantity(-2ULL);
-
-  // -3: Src is a multiple public base type but never a virtual base type.
-  if (NumPublicPaths > 1)
-    return CharUnits::fromQuantity(-3ULL);
-
-  // Otherwise, the Src type is a unique public nonvirtual base type of Dst.
-  // Return the offset of Src from the origin of Dst.
-  return Offset;
-}
-
-static llvm::Value *
-EmitDynamicCastCall(CodeGenFunction &CGF, llvm::Value *Value,
-                    QualType SrcTy, QualType DestTy,
-                    llvm::BasicBlock *CastEnd) {
-  llvm::Type *PtrDiffLTy = 
-    CGF.ConvertType(CGF.getContext().getPointerDiffType());
-  llvm::Type *DestLTy = CGF.ConvertType(DestTy);
-
-  if (const PointerType *PTy = DestTy->getAs<PointerType>()) {
-    if (PTy->getPointeeType()->isVoidType()) {
-      // C++ [expr.dynamic.cast]p7:
-      //   If T is "pointer to cv void," then the result is a pointer to the
-      //   most derived object pointed to by v.
-
-      // Get the vtable pointer.
-      llvm::Value *VTable = CGF.GetVTablePtr(Value, PtrDiffLTy->getPointerTo());
-
-      // Get the offset-to-top from the vtable.
-      llvm::Value *OffsetToTop = 
-        CGF.Builder.CreateConstInBoundsGEP1_64(VTable, -2ULL);
-      OffsetToTop = CGF.Builder.CreateLoad(OffsetToTop, "offset.to.top");
-
-      // Finally, add the offset to the pointer.
-      Value = CGF.EmitCastToVoidPtr(Value);
-      Value = CGF.Builder.CreateInBoundsGEP(Value, OffsetToTop);
-
-      return CGF.Builder.CreateBitCast(Value, DestLTy);
-    }
-  }
-
-  QualType SrcRecordTy;
-  QualType DestRecordTy;
-  
-  if (const PointerType *DestPTy = DestTy->getAs<PointerType>()) {
-    SrcRecordTy = SrcTy->castAs<PointerType>()->getPointeeType();
-    DestRecordTy = DestPTy->getPointeeType();
-  } else {
-    SrcRecordTy = SrcTy;
-    DestRecordTy = DestTy->castAs<ReferenceType>()->getPointeeType();
-  }
-
-  assert(SrcRecordTy->isRecordType() && "source type must be a record type!");
-  assert(DestRecordTy->isRecordType() && "dest type must be a record type!");
-
-  llvm::Value *SrcRTTI =
-    CGF.CGM.GetAddrOfRTTIDescriptor(SrcRecordTy.getUnqualifiedType());
-  llvm::Value *DestRTTI =
-    CGF.CGM.GetAddrOfRTTIDescriptor(DestRecordTy.getUnqualifiedType());
-
-  // Compute the offset hint.
-  const CXXRecordDecl *SrcDecl = SrcRecordTy->getAsCXXRecordDecl();
-  const CXXRecordDecl *DestDecl = DestRecordTy->getAsCXXRecordDecl();
-  llvm::Value *OffsetHint =
-    llvm::ConstantInt::get(PtrDiffLTy,
-                           computeOffsetHint(CGF.getContext(), SrcDecl,
-                                             DestDecl).getQuantity());
-
-  // Emit the call to __dynamic_cast.
-  Value = CGF.EmitCastToVoidPtr(Value);
-
-  llvm::Value *args[] = { Value, SrcRTTI, DestRTTI, OffsetHint };
-  Value = CGF.EmitNounwindRuntimeCall(getDynamicCastFn(CGF), args);
-  Value = CGF.Builder.CreateBitCast(Value, DestLTy);
-
-  /// C++ [expr.dynamic.cast]p9:
-  ///   A failed cast to reference type throws std::bad_cast
-  if (DestTy->isReferenceType()) {
-    llvm::BasicBlock *BadCastBlock = 
-      CGF.createBasicBlock("dynamic_cast.bad_cast");
-
-    llvm::Value *IsNull = CGF.Builder.CreateIsNull(Value);
-    CGF.Builder.CreateCondBr(IsNull, BadCastBlock, CastEnd);
-
-    CGF.EmitBlock(BadCastBlock);
-    EmitBadCastCall(CGF);
-  }
-
-  return Value;
-}
-
 static llvm::Value *EmitDynamicCastToNull(CodeGenFunction &CGF,
                                           QualType DestTy) {
   llvm::Type *DestLTy = CGF.ConvertType(DestTy);
@@ -1861,7 +1679,8 @@ static llvm::Value *EmitDynamicCastToNull(CodeGenFunction &CGF,
 
   /// C++ [expr.dynamic.cast]p9:
   ///   A failed cast to reference type throws std::bad_cast
-  EmitBadCastCall(CGF);
+  if (!CGF.CGM.getCXXABI().EmitBadCastCall(CGF))
+    return nullptr;
 
   CGF.EmitBlock(CGF.createBasicBlock("dynamic_cast.end"));
   return llvm::UndefValue::get(DestLTy);
@@ -1872,14 +1691,37 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(llvm::Value *Value,
   QualType DestTy = DCE->getTypeAsWritten();
 
   if (DCE->isAlwaysNull())
-    return EmitDynamicCastToNull(*this, DestTy);
+    if (llvm::Value *T = EmitDynamicCastToNull(*this, DestTy))
+      return T;
 
   QualType SrcTy = DCE->getSubExpr()->getType();
+
+  // C++ [expr.dynamic.cast]p7:
+  //   If T is "pointer to cv void," then the result is a pointer to the most
+  //   derived object pointed to by v.
+  const PointerType *DestPTy = DestTy->getAs<PointerType>();
+
+  bool isDynamicCastToVoid;
+  QualType SrcRecordTy;
+  QualType DestRecordTy;
+  if (DestPTy) {
+    isDynamicCastToVoid = DestPTy->getPointeeType()->isVoidType();
+    SrcRecordTy = SrcTy->castAs<PointerType>()->getPointeeType();
+    DestRecordTy = DestPTy->getPointeeType();
+  } else {
+    isDynamicCastToVoid = false;
+    SrcRecordTy = SrcTy;
+    DestRecordTy = DestTy->castAs<ReferenceType>()->getPointeeType();
+  }
+
+  assert(SrcRecordTy->isRecordType() && "source type must be a record type!");
 
   // C++ [expr.dynamic.cast]p4: 
   //   If the value of v is a null pointer value in the pointer case, the result
   //   is the null pointer value of type T.
-  bool ShouldNullCheckSrcValue = SrcTy->isPointerType();
+  bool ShouldNullCheckSrcValue =
+      CGM.getCXXABI().shouldDynamicCastCallBeNullChecked(SrcTy->isPointerType(),
+                                                         SrcRecordTy);
 
   llvm::BasicBlock *CastNull = nullptr;
   llvm::BasicBlock *CastNotNull = nullptr;
@@ -1894,7 +1736,15 @@ llvm::Value *CodeGenFunction::EmitDynamicCast(llvm::Value *Value,
     EmitBlock(CastNotNull);
   }
 
-  Value = EmitDynamicCastCall(*this, Value, SrcTy, DestTy, CastEnd);
+  if (isDynamicCastToVoid) {
+    Value = CGM.getCXXABI().EmitDynamicCastToVoid(*this, Value, SrcRecordTy,
+                                                  DestTy);
+  } else {
+    assert(DestRecordTy->isRecordType() &&
+           "destination type must be a record type!");
+    Value = CGM.getCXXABI().EmitDynamicCastCall(*this, Value, SrcRecordTy,
+                                                DestTy, DestRecordTy, CastEnd);
+  }
 
   if (ShouldNullCheckSrcValue) {
     EmitBranch(CastEnd);

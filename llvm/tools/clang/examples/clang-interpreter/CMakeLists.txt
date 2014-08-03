@@ -3,7 +3,7 @@ set(LLVM_LINK_COMPONENTS
   ExecutionEngine
   JIT
   Support
-  nativecodegen
+  native
   )
 
 add_clang_executable(clang-interpreter

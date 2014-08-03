@@ -7,8 +7,15 @@
 
 // Alias options:
 
-// RUN: %clang_cl /c -### -- %s 2>&1 | FileCheck -check-prefix=C %s
-// C: -c
+// RUN: %clang_cl /c -### -- %s 2>&1 | FileCheck -check-prefix=c %s
+// c: -c
+
+// RUN: %clang_cl /C -### -- %s 2>&1 | FileCheck -check-prefix=C %s
+// C: error: invalid argument '-C' only allowed with '/E, /P or /EP'
+
+// RUN: %clang_cl /C /P -### -- %s 2>&1 | FileCheck -check-prefix=C_P %s
+// C_P: "-E"
+// C_P: "-C"
 
 // RUN: %clang_cl /Dfoo=bar -### -- %s 2>&1 | FileCheck -check-prefix=D %s
 // RUN: %clang_cl /D foo=bar -### -- %s 2>&1 | FileCheck -check-prefix=D %s
@@ -17,6 +24,11 @@
 // RUN: %clang_cl /E -### -- %s 2>&1 | FileCheck -check-prefix=E %s
 // E: "-E"
 // E: "-o" "-"
+
+// RUN: %clang_cl /EP -### -- %s 2>&1 | FileCheck -check-prefix=EP %s
+// EP: "-E"
+// EP: "-P"
+// EP: "-o" "-"
 
 // RTTI is on by default; just check that we don't error.
 // RUN: %clang_cl /Zs /GR -- %s 2>&1
@@ -166,6 +178,8 @@
 // RUN:    /wd1234 \
 // RUN:    /Zc:forScope \
 // RUN:    /Zc:wchar_t \
+// RUN:    /Zc:inline \
+// RUN:    /Zc:rvalueCast \
 // RUN:    -### -- %s 2>&1 | FileCheck -check-prefix=IGNORED %s
 // IGNORED-NOT: argument unused during compilation
 
@@ -184,12 +198,10 @@
 // (/Zs is for syntax-only)
 // RUN: %clang_cl /Zs \
 // RUN:     /AIfoo \
-// RUN:     /arch:sse2 \
 // RUN:     /clr:pure \
 // RUN:     /docname \
 // RUN:     /d2Zi+ \
 // RUN:     /EHsc \
-// RUN:     /EP \
 // RUN:     /F \
 // RUN:     /FA \
 // RUN:     /FAc \
@@ -272,15 +284,25 @@
 // Xclang: "-cc1"
 // Xclang: "hellocc1"
 
-// We support -m32 and -m64.
-// RUN: %clang_cl /Zs /WX -m32 -m64 -### -- 2>&1 %s | FileCheck -check-prefix=MFLAGS %s
-// MFLAGS-NOT: argument unused during compilation
-
-// Use -fno-rtti by default.
-// RUN: %clang_cl /c -### -- %s 2>&1 | FileCheck -check-prefix=NoRTTI %s
-// NoRTTI: "-fno-rtti"
+// RTTI is on by default. /GR- controls -fno-rtti-data.
+// RUN: %clang_cl /c /GR- -### -- %s 2>&1 | FileCheck -check-prefix=NoRTTI %s
+// NoRTTI: "-fno-rtti-data"
+// NoRTTI-NOT: "-fno-rtti"
 // RUN: %clang_cl /c /GR -### -- %s 2>&1 | FileCheck -check-prefix=RTTI %s
+// RTTI-NOT: "-fno-rtti-data"
 // RTTI-NOT: "-fno-rtti"
+
+// Accept "core" clang options.
+// (/Zs is for syntax-only)
+// RUN: %clang_cl \
+// RUN:     --driver-mode=cl \
+// RUN:     -ferror-limit=10 \
+// RUN:     -fmsc-version=1800 \
+// RUN:     -fno-strict-aliasing \
+// RUN:     -fstrict-aliasing \
+// RUN:     -mllvm -disable-llvm-optzns \
+// RUN:     -Wunused-variables \
+// RUN:     /Zs -- %s 2>&1
 
 
 void f() { }

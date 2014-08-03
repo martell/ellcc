@@ -701,7 +701,10 @@ Value *ScalarExprEmitter::EmitScalarConversion(Value *Src, QualType SrcType,
 
   // If casting to/from storage-only half FP, use special intrinsics.
   if (SrcType->isHalfType() && !CGF.getContext().getLangOpts().NativeHalfType) {
-    Src = Builder.CreateCall(CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_from_fp16), Src);
+    Src = Builder.CreateCall(
+        CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_from_fp16,
+                             CGF.CGM.FloatTy),
+        Src);
     SrcType = CGF.getContext().FloatTy;
     SrcTy = CGF.FloatTy;
   }
@@ -797,7 +800,9 @@ Value *ScalarExprEmitter::EmitScalarConversion(Value *Src, QualType SrcType,
 
   if (DstTy != ResTy) {
     assert(ResTy->isIntegerTy(16) && "Only half FP requires extra conversion");
-    Res = Builder.CreateCall(CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_to_fp16), Res);
+    Res = Builder.CreateCall(
+        CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_to_fp16, CGF.CGM.FloatTy),
+        Res);
   }
 
   return Res;
@@ -1325,7 +1330,7 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
 
     // C++11 [expr.static.cast]p11: Behavior is undefined if a downcast is
     // performed and the object is not of the derived type.
-    if (CGF.SanitizePerformTypeCheck)
+    if (CGF.sanitizePerformTypeCheck())
       CGF.EmitTypeCheck(CodeGenFunction::TCK_DowncastPointer, CE->getExprLoc(),
                         Derived, DestTy->getPointeeType());
 
@@ -1615,12 +1620,11 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
 
     // Note that signed integer inc/dec with width less than int can't
     // overflow because of promotion rules; we're just eliding a few steps here.
-    if (value->getType()->getPrimitiveSizeInBits() >=
-            CGF.IntTy->getBitWidth() &&
-        type->isSignedIntegerOrEnumerationType()) {
+    bool CanOverflow = value->getType()->getIntegerBitWidth() >=
+                       CGF.IntTy->getIntegerBitWidth();
+    if (CanOverflow && type->isSignedIntegerOrEnumerationType()) {
       value = EmitAddConsiderOverflowBehavior(E, value, amt, isInc);
-    } else if (value->getType()->getPrimitiveSizeInBits() >=
-               CGF.IntTy->getBitWidth() && type->isUnsignedIntegerType() &&
+    } else if (CanOverflow && type->isUnsignedIntegerType() &&
                CGF.SanOpts->UnsignedIntegerOverflow) {
       BinOpInfo BinOp;
       BinOp.LHS = value;
@@ -1687,9 +1691,10 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
 
     if (type->isHalfType() && !CGF.getContext().getLangOpts().NativeHalfType) {
       // Another special case: half FP increment should be done via float
-      value =
-    Builder.CreateCall(CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_from_fp16),
-                       input);
+      value = Builder.CreateCall(
+          CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_from_fp16,
+                               CGF.CGM.FloatTy),
+          input);
     }
 
     if (value->getType()->isFloatTy())
@@ -1708,9 +1713,10 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
     value = Builder.CreateFAdd(value, amt, isInc ? "inc" : "dec");
 
     if (type->isHalfType() && !CGF.getContext().getLangOpts().NativeHalfType)
-      value =
-       Builder.CreateCall(CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_to_fp16),
-                          value);
+      value = Builder.CreateCall(
+          CGF.CGM.getIntrinsic(llvm::Intrinsic::convert_to_fp16,
+                               CGF.CGM.FloatTy),
+          value);
 
   // Objective-C pointer types.
   } else {
@@ -1732,11 +1738,12 @@ ScalarExprEmitter::EmitScalarPrePostIncDec(const UnaryOperator *E, LValue LV,
   if (atomicPHI) {
     llvm::BasicBlock *opBB = Builder.GetInsertBlock();
     llvm::BasicBlock *contBB = CGF.createBasicBlock("atomic_cont", CGF.CurFn);
-    llvm::Value *old = Builder.CreateAtomicCmpXchg(
+    llvm::Value *pair = Builder.CreateAtomicCmpXchg(
         LV.getAddress(), atomicPHI, CGF.EmitToMemory(value, type),
         llvm::SequentiallyConsistent, llvm::SequentiallyConsistent);
+    llvm::Value *old = Builder.CreateExtractValue(pair, 0);
+    llvm::Value *success = Builder.CreateExtractValue(pair, 1);
     atomicPHI->addIncoming(old, opBB);
-    llvm::Value *success = Builder.CreateICmpEQ(old, atomicPHI);
     Builder.CreateCondBr(success, contBB, opBB);
     Builder.SetInsertPoint(contBB);
     return isPre ? value : input;
@@ -2075,11 +2082,12 @@ LValue ScalarExprEmitter::EmitCompoundAssignLValue(
   if (atomicPHI) {
     llvm::BasicBlock *opBB = Builder.GetInsertBlock();
     llvm::BasicBlock *contBB = CGF.createBasicBlock("atomic_cont", CGF.CurFn);
-    llvm::Value *old = Builder.CreateAtomicCmpXchg(
+    llvm::Value *pair = Builder.CreateAtomicCmpXchg(
         LHSLV.getAddress(), atomicPHI, CGF.EmitToMemory(Result, LHSTy),
         llvm::SequentiallyConsistent, llvm::SequentiallyConsistent);
+    llvm::Value *old = Builder.CreateExtractValue(pair, 0);
+    llvm::Value *success = Builder.CreateExtractValue(pair, 1);
     atomicPHI->addIncoming(old, opBB);
-    llvm::Value *success = Builder.CreateICmpEQ(old, atomicPHI);
     Builder.CreateCondBr(success, contBB, opBB);
     Builder.SetInsertPoint(contBB);
     return LHSLV;
@@ -2938,12 +2946,13 @@ Value *ScalarExprEmitter::VisitBinLAnd(const BinaryOperator *E) {
   // Reaquire the RHS block, as there may be subblocks inserted.
   RHSBlock = Builder.GetInsertBlock();
 
-  // Emit an unconditional branch from this block to ContBlock.  Insert an entry
-  // into the phi node for the edge with the value of RHSCond.
-  if (CGF.getDebugInfo())
+  // Emit an unconditional branch from this block to ContBlock.
+  {
     // There is no need to emit line number for unconditional branch.
-    Builder.SetCurrentDebugLocation(llvm::DebugLoc());
-  CGF.EmitBlock(ContBlock);
+    SuppressDebugLocation S(Builder);
+    CGF.EmitBlock(ContBlock);
+  }
+  // Insert an entry into the phi node for the edge with the value of RHSCond.
   PN->addIncoming(RHSCond, RHSBlock);
 
   // ZExt result to int.

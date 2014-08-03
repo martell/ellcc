@@ -537,6 +537,14 @@ public:
     return 2;
   }
 
+  virtual bool IsIntegratedAssemblerDefault() const {
+    if (getTriple().getArch() == llvm::Triple::ppc ||
+        getTriple().getArch() == llvm::Triple::sparc ||
+        getTriple().getArch() == llvm::Triple::sparcv9)
+      return true;
+    return Generic_ELF::IsIntegratedAssemblerDefault();
+  }
+
 protected:
   Tool *buildAssembler() const override;
   Tool *buildLinker() const override;

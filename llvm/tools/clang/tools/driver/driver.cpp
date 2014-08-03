@@ -45,8 +45,8 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/system_error.h"
 #include <memory>
+#include <system_error>
 using namespace clang;
 using namespace clang::driver;
 using namespace llvm::opt;
@@ -215,17 +215,17 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
     const char *ModeFlag;
     bool IsELLCC;
   } suffixes [] = {
-    { "clang",     0 },
+    { "clang",     nullptr },
     { "clang++",   "--driver-mode=g++" },
     { "clang-c++", "--driver-mode=g++" },
-    { "clang-cc",  0 },
+    { "clang-cc",  nullptr },
     { "clang-cpp", "--driver-mode=cpp" },
     { "clang-g++", "--driver-mode=g++" },
-    { "clang-gcc", 0 },
+    { "clang-gcc", nullptr },
     { "ecc",       0, true },
     { "ecc++",     "--driver-mode=g++", true },
     { "clang-cl",  "--driver-mode=cl"  },
-    { "cc",        0 },
+    { "cc",        nullptr },
     { "cpp",       "--driver-mode=cpp" },
     { "cl" ,       "--driver-mode=cl"  },
     { "++",        "--driver-mode=g++" },
@@ -319,8 +319,8 @@ int main(int argc_, const char **argv_) {
 
   SmallVector<const char *, 256> argv;
   llvm::SpecificBumpPtrAllocator<char> ArgAllocator;
-  llvm::error_code EC = llvm::sys::Process::GetArgumentVector(
-      argv, llvm::ArrayRef<const char *>(argv_, argc_), ArgAllocator);
+  std::error_code EC = llvm::sys::Process::GetArgumentVector(
+      argv, ArrayRef<const char *>(argv_, argc_), ArgAllocator);
   if (EC) {
     llvm::errs() << "error: couldn't get arguments: " << EC.message() << '\n';
     return 1;
@@ -444,7 +444,7 @@ int main(int argc_, const char **argv_) {
   // Force a crash to test the diagnostics.
   if (::getenv("FORCE_CLANG_DIAGNOSTICS_CRASH")) {
     Diags.Report(diag::err_drv_force_crash) << "FORCE_CLANG_DIAGNOSTICS_CRASH";
-    const Command *FailingCommand = 0;
+    const Command *FailingCommand = nullptr;
     FailingCommands.push_back(std::make_pair(-1, FailingCommand));
   }
 
@@ -457,8 +457,13 @@ int main(int argc_, const char **argv_) {
 
     // If result status is < 0, then the driver command signalled an error.
     // If result status is 70, then the driver command reported a fatal error.
-    // In these cases, generate additional diagnostic information if possible.
-    if (CommandRes < 0 || CommandRes == 70) {
+    // On Windows, abort will return an exit code of 3.  In these cases,
+    // generate additional diagnostic information if possible.
+    bool DiagnoseCrash = CommandRes < 0 || CommandRes == 70;
+#ifdef LLVM_ON_WIN32
+    DiagnoseCrash |= CommandRes == 3;
+#endif
+    if (DiagnoseCrash) {
       TheDriver.generateCompilationDiagnostics(*C, FailingCommand);
       break;
     }

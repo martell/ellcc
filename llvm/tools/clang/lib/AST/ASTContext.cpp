@@ -1309,13 +1309,14 @@ CharUnits ASTContext::getDeclAlign(const Decl *D, bool ForAlignof) const {
 
   } else if (const ValueDecl *VD = dyn_cast<ValueDecl>(D)) {
     QualType T = VD->getType();
-    if (const ReferenceType* RT = T->getAs<ReferenceType>()) {
+    if (const ReferenceType *RT = T->getAs<ReferenceType>()) {
       if (ForAlignof)
         T = RT->getPointeeType();
       else
         T = getPointerType(RT->getPointeeType());
     }
-    if (!T->isIncompleteType() && !T->isFunctionType()) {
+    QualType BaseT = getBaseElementType(T);
+    if (!BaseT->isIncompleteType() && !T->isFunctionType()) {
       // Adjust alignments of declarations with array type by the
       // large-array alignment on the target.
       if (const ArrayType *arrayType = getAsArrayType(T)) {
@@ -1327,11 +1328,6 @@ CharUnits ASTContext::getDeclAlign(const Decl *D, bool ForAlignof) const {
                    MinWidth <= getTypeSize(cast<ConstantArrayType>(arrayType)))
             Align = std::max(Align, Target->getLargeArrayAlign());
         }
-
-        // Keep track of extra alignment requirements on the array itself, then
-        // work with the element type.
-        Align = std::max(Align, getPreferredTypeAlign(T.getTypePtr()));
-        T = getBaseElementType(arrayType);
       }
       Align = std::max(Align, getPreferredTypeAlign(T.getTypePtr()));
       if (const VarDecl *VD = dyn_cast<VarDecl>(D)) {
@@ -1783,6 +1779,7 @@ unsigned ASTContext::getPreferredTypeAlign(const Type *T) const {
   const TypedefType *TT = T->getAs<TypedefType>();
 
   // Double and long long should be naturally aligned if possible.
+  T = T->getBaseElementTypeUnsafe();
   if (const ComplexType *CT = T->getAs<ComplexType>())
     T = CT->getElementType().getTypePtr();
   if (T->isSpecificBuiltinType(BuiltinType::Double) ||
@@ -3063,11 +3060,9 @@ QualType ASTContext::getSubstTemplateTypeParmPackType(
                                           const TemplateTypeParmType *Parm,
                                               const TemplateArgument &ArgPack) {
 #ifndef NDEBUG
-  for (TemplateArgument::pack_iterator P = ArgPack.pack_begin(), 
-                                    PEnd = ArgPack.pack_end();
-       P != PEnd; ++P) {
-    assert(P->getKind() == TemplateArgument::Type &&"Pack contains a non-type");
-    assert(P->getAsType().isCanonical() && "Pack contains non-canonical type");
+  for (const auto &P : ArgPack.pack_elements()) {
+    assert(P.getKind() == TemplateArgument::Type &&"Pack contains a non-type");
+    assert(P.getAsType().isCanonical() && "Pack contains non-canonical type");
   }
 #endif
   
@@ -3318,8 +3313,6 @@ QualType ASTContext::getDependentNameType(ElaboratedTypeKeyword Keyword,
                                           NestedNameSpecifier *NNS,
                                           const IdentifierInfo *Name,
                                           QualType Canon) const {
-  assert(NNS->isDependent() && "nested-name-specifier must be dependent");
-
   if (Canon.isNull()) {
     NestedNameSpecifier *CanonNNS = getCanonicalNestedNameSpecifier(NNS);
     ElaboratedTypeKeyword CanonKeyword = Keyword;
@@ -3433,7 +3426,7 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
     // contains an alias template specialization which ignores one of its
     // parameters.
     if (Canon->containsUnexpandedParameterPack()) {
-      Canon = getPackExpansionType(getCanonicalType(Pattern), NumExpansions);
+      Canon = getPackExpansionType(Canon, NumExpansions);
 
       // Find the insert position again, in case we inserted an element into
       // PackExpansionTypes and invalidated our insert position.
@@ -3444,7 +3437,7 @@ QualType ASTContext::getPackExpansionType(QualType Pattern,
   T = new (*this) PackExpansionType(Pattern, Canon, NumExpansions);
   Types.push_back(T);
   PackExpansionTypes.InsertNode(T, InsertPos);
-  return QualType(T, 0);  
+  return QualType(T, 0);
 }
 
 /// CmpProtocolNames - Comparison predicate for sorting protocols
@@ -5027,9 +5020,7 @@ void ASTContext::getObjCEncodingForPropertyDecl(const ObjCPropertyDecl *PD,
   // Encode result type.
   // GCC has some special rules regarding encoding of properties which
   // closely resembles encoding of ivars.
-  getObjCEncodingForTypeImpl(PD->getType(), S, true, true, nullptr,
-                             true /* outermost type */,
-                             true /* encoding for property */);
+  getObjCEncodingForPropertyType(PD->getType(), S);
 
   if (PD->isReadOnly()) {
     S += ",R";
@@ -5100,6 +5091,16 @@ void ASTContext::getObjCEncodingForType(QualType T, std::string& S,
   // same type.
   getObjCEncodingForTypeImpl(T, S, true, true, Field,
                              true /* outermost type */);
+}
+
+void ASTContext::getObjCEncodingForPropertyType(QualType T,
+                                                std::string& S) const {
+  // Encode result type.
+  // GCC has some special rules regarding encoding of properties which
+  // closely resembles encoding of ivars.
+  getObjCEncodingForTypeImpl(T, S, true, true, nullptr,
+                             true /* outermost type */,
+                             true /* encoding property */);
 }
 
 static char getObjCEncodingForPrimitiveKind(const ASTContext *C,
@@ -7848,14 +7849,6 @@ static GVALinkage basicGVALinkageForVariable(const ASTContext &Context,
                                                : StaticLocalLinkage;
   }
 
-  // On Darwin, the backing variable for a C++11 thread_local variable always
-  // has internal linkage; all accesses should just be calls to the
-  // Itanium-specified entry point, which has the normal linkage of the
-  // variable.
-  if (VD->getTLSKind() == VarDecl::TLS_Dynamic &&
-      Context.getTargetInfo().getTriple().isMacOSX())
-    return GVA_Internal;
-
   switch (VD->getTemplateSpecializationKind()) {
   case TSK_Undeclared:
   case TSK_ExplicitSpecialization:
@@ -8172,10 +8165,12 @@ namespace {
       if (!Node)
         return true;
       if (ParentStack.size() > 0) {
-        // FIXME: Currently we add the same parent multiple times, for example
-        // when we visit all subexpressions of template instantiations; this is
-        // suboptimal, bug benign: the only way to visit those is with
-        // hasAncestor / hasParent, and those do not create new matches.
+        // FIXME: Currently we add the same parent multiple times, but only
+        // when no memoization data is available for the type.
+        // For example when we visit all subexpressions of template
+        // instantiations; this is suboptimal, but benign: the only way to
+        // visit those is with hasAncestor / hasParent, and those do not create
+        // new matches.
         // The plan is to enable DynTypedNode to be storable in a map or hash
         // map. The main problem there is to implement hash functions /
         // comparison operators for all types that DynTypedNode supports that
@@ -8183,18 +8178,27 @@ namespace {
         auto &NodeOrVector = (*Parents)[Node];
         if (NodeOrVector.isNull()) {
           NodeOrVector = new ast_type_traits::DynTypedNode(ParentStack.back());
-        } else if (NodeOrVector
-                       .template is<ast_type_traits::DynTypedNode *>()) {
-          auto *Node =
-              NodeOrVector.template get<ast_type_traits::DynTypedNode *>();
-          auto *Vector = new ASTContext::ParentVector(1, *Node);
-          Vector->push_back(ParentStack.back());
-          NodeOrVector = Vector;
-          delete Node;
         } else {
+          if (NodeOrVector.template is<ast_type_traits::DynTypedNode *>()) {
+            auto *Node =
+                NodeOrVector.template get<ast_type_traits::DynTypedNode *>();
+            auto *Vector = new ASTContext::ParentVector(1, *Node);
+            NodeOrVector = Vector;
+            delete Node;
+          }
           assert(NodeOrVector.template is<ASTContext::ParentVector *>());
-          NodeOrVector.template get<ASTContext::ParentVector *>()->push_back(
-              ParentStack.back());
+
+          auto *Vector =
+              NodeOrVector.template get<ASTContext::ParentVector *>();
+          // Skip duplicates for types that have memoization data.
+          // We must check that the type has memoization data before calling
+          // std::find() because DynTypedNode::operator== can't compare all
+          // types.
+          bool Found = ParentStack.back().getMemoizationData() &&
+                       std::find(Vector->begin(), Vector->end(),
+                                 ParentStack.back()) != Vector->end();
+          if (!Found)
+            Vector->push_back(ParentStack.back());
         }
       }
       ParentStack.push_back(ast_type_traits::DynTypedNode::create(*Node));

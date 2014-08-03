@@ -13,6 +13,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPUSubtarget.h"
+#include "R600InstrInfo.h"
+#include "SIInstrInfo.h"
+#include "llvm/ADT/SmallString.h"
+
+#include "llvm/ADT/SmallString.h"
 
 using namespace llvm;
 
@@ -23,90 +28,62 @@ using namespace llvm;
 #define GET_SUBTARGETINFO_CTOR
 #include "AMDGPUGenSubtargetInfo.inc"
 
-AMDGPUSubtarget::AMDGPUSubtarget(StringRef TT, StringRef CPU, StringRef FS) :
-  AMDGPUGenSubtargetInfo(TT, CPU, FS), DumpCode(false) {
-    InstrItins = getInstrItineraryForCPU(CPU);
+AMDGPUSubtarget::AMDGPUSubtarget(StringRef TT, StringRef GPU, StringRef FS) :
+  AMDGPUGenSubtargetInfo(TT, GPU, FS),
+  DevName(GPU),
+  Is64bit(false),
+  DumpCode(false),
+  R600ALUInst(false),
+  HasVertexCache(false),
+  TexVTXClauseSize(0),
+  Gen(AMDGPUSubtarget::R600),
+  FP64(false),
+  FP64Denormals(false),
+  FP32Denormals(false),
+  CaymanISA(false),
+  EnableIRStructurizer(true),
+  EnablePromoteAlloca(false),
+  EnableIfCvt(true),
+  WavefrontSize(0),
+  CFALUBug(false),
+  LocalMemorySize(0),
+  InstrItins(getInstrItineraryForCPU(GPU)) {
+  // On SI+, we want FP64 denormals to be on by default. FP32 denormals can be
+  // enabled, but some instructions do not respect them and they run at the
+  // double precision rate, so don't enable by default.
+  //
+  // We want to be able to turn these off, but making this a subtarget feature
+  // for SI has the unhelpful behavior that it unsets everything else if you
+  // disable it.
 
-  // Default card
-  StringRef GPU = CPU;
-  Is64bit = false;
-  HasVertexCache = false;
-  TexVTXClauseSize = 0;
-  Gen = AMDGPUSubtarget::R600;
-  FP64 = false;
-  CaymanISA = false;
-  EnableIRStructurizer = true;
-  EnableIfCvt = true;
-  WavefrontSize = 0;
-  CFALUBug = false;
-  ParseSubtargetFeatures(GPU, FS);
-  DevName = GPU;
+  SmallString<256> FullFS("+promote-alloca,+fp64-denormals,");
+  FullFS += FS;
+
+  ParseSubtargetFeatures(GPU, FullFS);
+
+  if (getGeneration() <= AMDGPUSubtarget::NORTHERN_ISLANDS) {
+    InstrInfo.reset(new R600InstrInfo(*this));
+
+    // FIXME: I don't think think Evergreen has any useful support for
+    // denormals, but should be checked. Should we issue a warning somewhere if
+    // someone tries to enable these?
+    FP32Denormals = false;
+    FP64Denormals = false;
+  } else {
+    InstrInfo.reset(new SIInstrInfo(*this));
+  }
 }
 
-bool
-AMDGPUSubtarget::is64bit() const  {
-  return Is64bit;
-}
-bool
-AMDGPUSubtarget::hasVertexCache() const {
-  return HasVertexCache;
-}
-short
-AMDGPUSubtarget::getTexVTXClauseSize() const {
-  return TexVTXClauseSize;
-}
-enum AMDGPUSubtarget::Generation
-AMDGPUSubtarget::getGeneration() const {
-  return Gen;
-}
-bool
-AMDGPUSubtarget::hasHWFP64() const {
-  return FP64;
-}
-bool
-AMDGPUSubtarget::hasCaymanISA() const {
-  return CaymanISA;
-}
-bool
-AMDGPUSubtarget::IsIRStructurizerEnabled() const {
-  return EnableIRStructurizer;
-}
-bool
-AMDGPUSubtarget::isIfCvtEnabled() const {
-  return EnableIfCvt;
-}
-unsigned
-AMDGPUSubtarget::getWavefrontSize() const {
-  return WavefrontSize;
-}
-unsigned
-AMDGPUSubtarget::getStackEntrySize() const {
+unsigned AMDGPUSubtarget::getStackEntrySize() const {
   assert(getGeneration() <= NORTHERN_ISLANDS);
   switch(getWavefrontSize()) {
   case 16:
     return 8;
   case 32:
-    if (hasCaymanISA())
-      return 4;
-    else
-      return 8;
+    return hasCaymanISA() ? 4 : 8;
   case 64:
     return 4;
   default:
     llvm_unreachable("Illegal wavefront size.");
   }
-}
-bool
-AMDGPUSubtarget::hasCFAluBug() const {
-  assert(getGeneration() <= NORTHERN_ISLANDS);
-  return CFALUBug;
-}
-bool
-AMDGPUSubtarget::isTargetELF() const {
-  return false;
-}
-
-std::string
-AMDGPUSubtarget::getDeviceName() const {
-  return DevName;
 }

@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares several CodeGen-specific LLVM IR analysis utilties.
+// This file declares several CodeGen-specific LLVM IR analysis utilities.
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,10 +24,11 @@
 namespace llvm {
 class GlobalVariable;
 class TargetLoweringBase;
+class TargetLowering;
+class TargetMachine;
 class SDNode;
 class SDValue;
 class SelectionDAG;
-class TargetLowering;
 struct EVT;
 
 /// ComputeLinearIndex - Given an LLVM IR aggregate type and a sequence
@@ -86,7 +87,7 @@ ISD::CondCode getICmpCondCode(ICmpInst::Predicate Pred);
 /// between it and the return.
 ///
 /// This function only tests target-independent requirements.
-bool isInTailCallPosition(ImmutableCallSite CS, const TargetLowering &TLI);
+bool isInTailCallPosition(ImmutableCallSite CS, const TargetMachine &TM);
 
 /// Test if given that the input instruction is in the tail call position if the
 /// return type or any attributes of the function will inhibit tail call

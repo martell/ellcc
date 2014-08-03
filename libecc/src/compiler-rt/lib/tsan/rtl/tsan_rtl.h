@@ -123,11 +123,7 @@ struct MBlock {
 };
 
 #ifndef TSAN_GO
-#if defined(TSAN_COMPAT_SHADOW) && TSAN_COMPAT_SHADOW
 const uptr kAllocatorSpace = 0x7d0000000000ULL;
-#else
-const uptr kAllocatorSpace = 0x7d0000000000ULL;
-#endif
 const uptr kAllocatorSize  =  0x10000000000ULL;  // 1T.
 
 struct MapUnmapCallback;

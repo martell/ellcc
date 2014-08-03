@@ -524,6 +524,35 @@ static unsigned getEncodedThreadLocalMode(const GlobalValue &GV) {
   llvm_unreachable("Invalid TLS model");
 }
 
+static unsigned getEncodedComdatSelectionKind(const Comdat &C) {
+  switch (C.getSelectionKind()) {
+  case Comdat::Any:
+    return bitc::COMDAT_SELECTION_KIND_ANY;
+  case Comdat::ExactMatch:
+    return bitc::COMDAT_SELECTION_KIND_EXACT_MATCH;
+  case Comdat::Largest:
+    return bitc::COMDAT_SELECTION_KIND_LARGEST;
+  case Comdat::NoDuplicates:
+    return bitc::COMDAT_SELECTION_KIND_NO_DUPLICATES;
+  case Comdat::SameSize:
+    return bitc::COMDAT_SELECTION_KIND_SAME_SIZE;
+  }
+  llvm_unreachable("Invalid selection kind");
+}
+
+static void writeComdats(const ValueEnumerator &VE, BitstreamWriter &Stream) {
+  SmallVector<uint8_t, 64> Vals;
+  for (const Comdat *C : VE.getComdats()) {
+    // COMDAT: [selection_kind, name]
+    Vals.push_back(getEncodedComdatSelectionKind(*C));
+    Vals.push_back(C->getName().size());
+    for (char Chr : C->getName())
+      Vals.push_back((unsigned char)Chr);
+    Stream.EmitRecord(bitc::MODULE_CODE_COMDAT, Vals, /*AbbrevToUse=*/0);
+    Vals.clear();
+  }
+}
+
 // Emit top-level description of module, including target triple, inline asm,
 // descriptors for global variables, and function prototype info.
 static void WriteModuleInfo(const Module *M, const ValueEnumerator &VE,
@@ -625,12 +654,14 @@ static void WriteModuleInfo(const Module *M, const ValueEnumerator &VE,
     if (GV.isThreadLocal() ||
         GV.getVisibility() != GlobalValue::DefaultVisibility ||
         GV.hasUnnamedAddr() || GV.isExternallyInitialized() ||
-        GV.getDLLStorageClass() != GlobalValue::DefaultStorageClass) {
+        GV.getDLLStorageClass() != GlobalValue::DefaultStorageClass ||
+        GV.hasComdat()) {
       Vals.push_back(getEncodedVisibility(GV));
       Vals.push_back(getEncodedThreadLocalMode(GV));
       Vals.push_back(GV.hasUnnamedAddr());
       Vals.push_back(GV.isExternallyInitialized());
       Vals.push_back(getEncodedDLLStorageClass(GV));
+      Vals.push_back(GV.hasComdat() ? VE.getComdatID(GV.getComdat()) : 0);
     } else {
       AbbrevToUse = SimpleGVarAbbrev;
     }
@@ -656,6 +687,7 @@ static void WriteModuleInfo(const Module *M, const ValueEnumerator &VE,
     Vals.push_back(F.hasPrefixData() ? (VE.getValueID(F.getPrefixData()) + 1)
                                       : 0);
     Vals.push_back(getEncodedDLLStorageClass(F));
+    Vals.push_back(F.hasComdat() ? VE.getComdatID(F.getComdat()) : 0);
 
     unsigned AbbrevToUse = 0;
     Stream.EmitRecord(bitc::MODULE_CODE_FUNCTION, Vals, AbbrevToUse);
@@ -1399,13 +1431,20 @@ static void WriteInstruction(const Instruction &I, unsigned InstID,
     break;
   }
 
-  case Instruction::Alloca:
+  case Instruction::Alloca: {
     Code = bitc::FUNC_CODE_INST_ALLOCA;
     Vals.push_back(VE.getTypeID(I.getType()));
     Vals.push_back(VE.getTypeID(I.getOperand(0)->getType()));
     Vals.push_back(VE.getValueID(I.getOperand(0))); // size.
-    Vals.push_back(Log2_32(cast<AllocaInst>(I).getAlignment())+1);
+    const AllocaInst &AI = cast<AllocaInst>(I);
+    unsigned AlignRecord = Log2_32(AI.getAlignment()) + 1;
+    assert(Log2_32(Value::MaximumAlignment) + 1 < 1 << 5 &&
+           "not enough bits for maximum alignment");
+    assert(AlignRecord < 1 << 5 && "alignment greater than 1 << 64");
+    AlignRecord |= AI.isUsedWithInAlloca() << 5;
+    Vals.push_back(AlignRecord);
     break;
+  }
 
   case Instruction::Load:
     if (cast<LoadInst>(I).isAtomic()) {
@@ -1449,6 +1488,7 @@ static void WriteInstruction(const Instruction &I, unsigned InstID,
                      cast<AtomicCmpXchgInst>(I).getSynchScope()));
     Vals.push_back(GetEncodedOrdering(
                      cast<AtomicCmpXchgInst>(I).getFailureOrdering()));
+    Vals.push_back(cast<AtomicCmpXchgInst>(I).isWeak());
     break;
   case Instruction::AtomicRMW:
     Code = bitc::FUNC_CODE_INST_ATOMICRMW;
@@ -1913,6 +1953,8 @@ static void WriteModule(const Module *M, BitstreamWriter &Stream) {
 
   // Emit information describing all of the types in the module.
   WriteTypeTable(VE, Stream);
+
+  writeComdats(VE, Stream);
 
   // Emit top-level description of module, including target triple, inline asm,
   // descriptors for global variables, and function prototype info.

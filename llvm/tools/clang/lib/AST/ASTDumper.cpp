@@ -807,6 +807,12 @@ void ASTDumper::dumpDecl(const Decl *D) {
       OS << " hidden";
   if (D->isImplicit())
     OS << " implicit";
+  if (D->isUsed())
+    OS << " used";
+  else if (D->isReferenced())
+    OS << " referenced";
+  if (D->isInvalidDecl())
+    OS << " invalid";
 
   bool HasAttrs = D->hasAttrs();
   const FullComment *Comment =
@@ -829,9 +835,6 @@ void ASTDumper::dumpDecl(const Decl *D) {
   setMoreChildren(HasDeclContext);
   lastChild();
   dumpFullComment(Comment);
-
-  if (D->isInvalidDecl())
-    OS << " invalid";
 
   setMoreChildren(false);
   if (HasDeclContext)
@@ -1021,6 +1024,11 @@ void ASTDumper::VisitVarDecl(const VarDecl *D) {
   if (D->isNRVOVariable())
     OS << " nrvo";
   if (D->hasInit()) {
+    switch (D->getInitStyle()) {
+    case VarDecl::CInit: OS << " cinit"; break;
+    case VarDecl::CallInit: OS << " callinit"; break;
+    case VarDecl::ListInit: OS << " listinit"; break;
+    }
     lastChild();
     dumpStmt(D->getInit());
   }

@@ -38,7 +38,7 @@ protected:
       TargetOpts(new TargetOptions)
   {
     TargetOpts->Triple = "x86_64-apple-darwin11.1.0";
-    Target = TargetInfo::CreateTargetInfo(Diags, &*TargetOpts);
+    Target = TargetInfo::CreateTargetInfo(Diags, TargetOpts);
   }
 
   FileSystemOptions FileMgrOpts;
@@ -47,7 +47,7 @@ protected:
   DiagnosticsEngine Diags;
   SourceManager SourceMgr;
   LangOptions LangOpts;
-  IntrusiveRefCntPtr<TargetOptions> TargetOpts;
+  std::shared_ptr<TargetOptions> TargetOpts;
   IntrusiveRefCntPtr<TargetInfo> Target;
 };
 
@@ -65,7 +65,7 @@ class VoidModuleLoader : public ModuleLoader {
                          bool Complain) override { }
 
   GlobalModuleIndex *loadGlobalModuleIndex(SourceLocation TriggerLoc) override
-    { return 0; }
+    { return nullptr; }
   bool lookupMissingImports(StringRef Name, SourceLocation TriggerLoc) override
     { return 0; };
 };
@@ -95,10 +95,10 @@ TEST_F(PPConditionalDirectiveRecordTest, PPRecAPI) {
 
   VoidModuleLoader ModLoader;
   HeaderSearch HeaderInfo(new HeaderSearchOptions, SourceMgr, Diags, LangOpts, 
-                          Target.getPtr());
+                          Target.get());
   Preprocessor PP(new PreprocessorOptions(), Diags, LangOpts, SourceMgr,
                   HeaderInfo, ModLoader,
-                  /*IILookup =*/0,
+                  /*IILookup =*/nullptr,
                   /*OwnsHeaderSearch =*/false);
   PP.Initialize(*Target);
   PPConditionalDirectiveRecord *

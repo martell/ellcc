@@ -238,15 +238,16 @@ namespace clang {
     /// \brief Specialized handlers for optimization remarks.
     /// Note that these handlers only accept remarks and they always handle
     /// them.
-    void
-    EmitOptimizationRemark(const llvm::DiagnosticInfoOptimizationRemarkBase &D,
-                           unsigned DiagID);
+    void EmitOptimizationMessage(const llvm::DiagnosticInfoOptimizationBase &D,
+                                 unsigned DiagID);
     void
     OptimizationRemarkHandler(const llvm::DiagnosticInfoOptimizationRemark &D);
     void OptimizationRemarkHandler(
         const llvm::DiagnosticInfoOptimizationRemarkMissed &D);
     void OptimizationRemarkHandler(
         const llvm::DiagnosticInfoOptimizationRemarkAnalysis &D);
+    void OptimizationWarningHandler(
+        const llvm::DiagnosticInfoOptimizationWarning &D);
   };
   
   void BackendConsumer::anchor() {}
@@ -267,13 +268,15 @@ static FullSourceLoc ConvertBackendLocation(const llvm::SMDiagnostic &D,
   LSM.getMemoryBuffer(LSM.FindBufferContainingLoc(D.getLoc()));
 
   // Create the copy and transfer ownership to clang::SourceManager.
+  // TODO: Avoid copying files into memory.
   llvm::MemoryBuffer *CBuf =
   llvm::MemoryBuffer::getMemBufferCopy(LBuf->getBuffer(),
                                        LBuf->getBufferIdentifier());
+  // FIXME: Keep a file ID map instead of creating new IDs for each location.
   FileID FID = CSM.createFileID(CBuf);
 
   // Translate the offset into the file.
-  unsigned Offset = D.getLoc().getPointer()  - LBuf->getBufferStart();
+  unsigned Offset = D.getLoc().getPointer() - LBuf->getBufferStart();
   SourceLocation NewLoc =
   CSM.getLocForStartOfFile(FID).getLocWithOffset(Offset);
   return FullSourceLoc(NewLoc, CSM);
@@ -414,10 +417,11 @@ BackendConsumer::StackSizeDiagHandler(const llvm::DiagnosticInfoStackSize &D) {
   return false;
 }
 
-void BackendConsumer::EmitOptimizationRemark(
-    const llvm::DiagnosticInfoOptimizationRemarkBase &D, unsigned DiagID) {
-  // We only support remarks.
-  assert(D.getSeverity() == llvm::DS_Remark);
+void BackendConsumer::EmitOptimizationMessage(
+    const llvm::DiagnosticInfoOptimizationBase &D, unsigned DiagID) {
+  // We only support warnings and remarks.
+  assert(D.getSeverity() == llvm::DS_Remark ||
+         D.getSeverity() == llvm::DS_Warning);
 
   SourceManager &SourceMgr = Context->getSourceManager();
   FileManager &FileMgr = SourceMgr.getFileManager();
@@ -440,18 +444,14 @@ void BackendConsumer::EmitOptimizationRemark(
     if (const Decl *FD = Gen->GetDeclForMangledName(D.getFunction().getName()))
       Loc = FD->getASTContext().getFullLoc(FD->getBodyRBrace());
 
-  Diags.Report(Loc, DiagID) << AddFlagValue(D.getPassName())
-                            << D.getMsg().str();
+  // Flag value not used by all optimization messages.
+  if (D.getPassName())
+    Diags.Report(Loc, DiagID) << AddFlagValue(D.getPassName())
+                              << D.getMsg().str();
+  else
+    Diags.Report(Loc, DiagID) << D.getMsg().str();
 
-  if (Line == 0)
-    // If we could not extract a source location for the diagnostic,
-    // inform the user how they can get source locations back.
-    //
-    // FIXME: We should really be generating !srcloc annotations when
-    // -Rpass is used. !srcloc annotations need to be emitted in
-    // approximately the same spots as !dbg nodes.
-    Diags.Report(Loc, diag::note_fe_backend_optimization_remark_missing_loc);
-  else if (DILoc.isInvalid())
+  if (DILoc.isInvalid())
     // If we were not able to translate the file:line:col information
     // back to a SourceLocation, at least emit a note stating that
     // we could not translate this location. This can happen in the
@@ -466,7 +466,7 @@ void BackendConsumer::OptimizationRemarkHandler(
   // expression that matches the name of the pass name in \p D.
   if (CodeGenOpts.OptimizationRemarkPattern &&
       CodeGenOpts.OptimizationRemarkPattern->match(D.getPassName()))
-    EmitOptimizationRemark(D, diag::remark_fe_backend_optimization_remark);
+    EmitOptimizationMessage(D, diag::remark_fe_backend_optimization_remark);
 }
 
 void BackendConsumer::OptimizationRemarkHandler(
@@ -476,8 +476,8 @@ void BackendConsumer::OptimizationRemarkHandler(
   // name in \p D.
   if (CodeGenOpts.OptimizationRemarkMissedPattern &&
       CodeGenOpts.OptimizationRemarkMissedPattern->match(D.getPassName()))
-    EmitOptimizationRemark(D,
-                           diag::remark_fe_backend_optimization_remark_missed);
+    EmitOptimizationMessage(D,
+                            diag::remark_fe_backend_optimization_remark_missed);
 }
 
 void BackendConsumer::OptimizationRemarkHandler(
@@ -487,8 +487,13 @@ void BackendConsumer::OptimizationRemarkHandler(
   // name in \p D.
   if (CodeGenOpts.OptimizationRemarkAnalysisPattern &&
       CodeGenOpts.OptimizationRemarkAnalysisPattern->match(D.getPassName()))
-    EmitOptimizationRemark(
+    EmitOptimizationMessage(
         D, diag::remark_fe_backend_optimization_remark_analysis);
+}
+
+void BackendConsumer::OptimizationWarningHandler(
+    const llvm::DiagnosticInfoOptimizationWarning &D) {
+  EmitOptimizationMessage(D, diag::warn_fe_backend_optimization_warning);
 }
 
 /// \brief This function is invoked when the backend needs
@@ -523,6 +528,11 @@ void BackendConsumer::DiagnosticHandlerImpl(const DiagnosticInfo &DI) {
     // handler. There is no generic way of emitting them.
     OptimizationRemarkHandler(
         cast<DiagnosticInfoOptimizationRemarkAnalysis>(DI));
+    return;
+  case llvm::DK_OptimizationWarning:
+    // Optimization warnings are always handled completely by this
+    // handler.
+    OptimizationWarningHandler(cast<DiagnosticInfoOptimizationWarning>(DI));
     return;
   default:
     // Plugin IDs are not bound to any value as they are set dynamically.
@@ -621,7 +631,7 @@ ASTConsumer *CodeGenAction::CreateASTConsumer(CompilerInstance &CI,
 
     ErrorOr<llvm::Module *> ModuleOrErr =
         getLazyBitcodeModule(BCBuf, *VMContext);
-    if (error_code EC = ModuleOrErr.getError()) {
+    if (std::error_code EC = ModuleOrErr.getError()) {
       CI.getDiagnostics().Report(diag::err_cannot_open_file)
         << LinkBCFile << EC.message();
       return nullptr;
@@ -647,23 +657,23 @@ void CodeGenAction::ExecuteAction() {
 
     bool Invalid;
     SourceManager &SM = CI.getSourceManager();
-    const llvm::MemoryBuffer *MainFile = SM.getBuffer(SM.getMainFileID(),
-                                                      &Invalid);
+    FileID FID = SM.getMainFileID();
+    llvm::MemoryBuffer *MainFile = SM.getBuffer(FID, &Invalid);
     if (Invalid)
       return;
 
-    // FIXME: This is stupid, IRReader shouldn't take ownership.
-    llvm::MemoryBuffer *MainFileCopy =
-      llvm::MemoryBuffer::getMemBufferCopy(MainFile->getBuffer(),
-                                           getCurrentFile());
-
     llvm::SMDiagnostic Err;
-    TheModule.reset(ParseIR(MainFileCopy, Err, *VMContext));
+    TheModule.reset(ParseIR(MainFile, Err, *VMContext));
     if (!TheModule) {
-      // Translate from the diagnostic info to the SourceManager location.
-      SourceLocation Loc = SM.translateFileLineCol(
-        SM.getFileEntryForID(SM.getMainFileID()), Err.getLineNo(),
-        Err.getColumnNo() + 1);
+      // Translate from the diagnostic info to the SourceManager location if
+      // available.
+      // TODO: Unify this with ConvertBackendLocation()
+      SourceLocation Loc;
+      if (Err.getLineNo() > 0) {
+        assert(Err.getColumnNo() >= 0);
+        Loc = SM.translateFileLineCol(SM.getFileEntryForID(FID),
+                                      Err.getLineNo(), Err.getColumnNo() + 1);
+      }
 
       // Strip off a leading diagnostic code if there is one.
       StringRef Msg = Err.getMessage();

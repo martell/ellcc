@@ -190,6 +190,9 @@ class CXX11<string namespace, string name> : Spelling<name, "CXX11"> {
   string Namespace = namespace;
 }
 class Keyword<string name> : Spelling<name, "Keyword">;
+class Pragma<string namespace, string name> : Spelling<name, "Pragma"> {
+  string Namespace = namespace;
+}
 
 // The GCC spelling implies GNU<name, "GNU"> and CXX11<"gnu", name> and also
 // sets KnownToGCC to 1. This spelling should be used for any GCC-compatible
@@ -865,7 +868,7 @@ def NonNull : InheritableAttr {
 
 def ReturnsNonNull : InheritableAttr {
   let Spellings = [GCC<"returns_nonnull">];
-  let Subjects = SubjectList<[ObjCMethod, HasFunctionProto], WarnDiag,
+  let Subjects = SubjectList<[ObjCMethod, Function], WarnDiag,
                              "ExpectedFunctionOrMethod">;
   let Documentation = [Undocumented];
 }
@@ -997,6 +1000,13 @@ def ObjCDesignatedInitializer : Attr {
   let Subjects = SubjectList<[ObjCInterfaceDeclInitMethod], ErrorDiag,
                              "ExpectedObjCInterfaceDeclInitMethod">;
   let Documentation = [Undocumented];
+}
+
+def ObjCRuntimeName : Attr {
+  let Spellings = [GNU<"objc_runtime_name">];
+  let Subjects = SubjectList<[ObjCInterface, ObjCProtocol], ErrorDiag>;
+  let Args = [StringArgument<"MetadataName">];
+  let Documentation = [ObjCRuntimeNameDocs];
 }
 
 def OptimizeNone : InheritableAttr {
@@ -1772,4 +1782,55 @@ def MSVtorDisp : InheritableAttr {
 
 def Unaligned : IgnoredAttr {
   let Spellings = [Keyword<"__unaligned">];
+}
+
+def LoopHint : Attr {
+  /// vectorize: vectorizes loop operations if 'value != 0'.
+  /// vectorize_width: vectorize loop operations with width 'value'.
+  /// interleave: interleave multiple loop iterations if 'value != 0'.
+  /// interleave_count: interleaves 'value' loop interations.
+  /// unroll: unroll loop if 'value != 0'.
+  /// unroll_count: unrolls loop 'value' times.
+
+  let Spellings = [Pragma<"clang", "loop">];
+
+  /// State of the loop optimization specified by the spelling.
+  let Args = [EnumArgument<"Option", "OptionType",
+                          ["vectorize", "vectorize_width", "interleave", "interleave_count",
+                           "unroll", "unroll_count"],
+                          ["Vectorize", "VectorizeWidth", "Interleave", "InterleaveCount",
+                           "Unroll", "UnrollCount"]>,
+              DefaultIntArgument<"Value", 1>];
+
+  let AdditionalMembers = [{
+  static StringRef getOptionName(int Option) {
+    switch(Option) {
+    case Vectorize: return "vectorize";
+    case VectorizeWidth: return "vectorize_width";
+    case Interleave: return "interleave";
+    case InterleaveCount: return "interleave_count";
+    case Unroll: return "unroll";
+    case UnrollCount: return "unroll_count";
+    }
+    llvm_unreachable("Unhandled LoopHint option.");
+  }
+
+  static StringRef getValueName(int Value) {
+    if (Value)
+      return "enable";
+    return "disable";
+  }
+
+  void printPrettyPragma(raw_ostream &OS, const PrintingPolicy &Policy) const {
+    OS << getOptionName(option) << "(";
+    if (option == VectorizeWidth || option == InterleaveCount ||
+        option == UnrollCount)
+      OS << value;
+    else
+      OS << getValueName(value);
+    OS << ")\n";
+  }
+  }];
+
+  let Documentation = [LoopHintDocs];
 }

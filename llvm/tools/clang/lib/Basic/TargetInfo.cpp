@@ -52,7 +52,6 @@ TargetInfo::TargetInfo(const llvm::Triple &T) : TargetOpts(), Triple(T) {
   SizeType = UnsignedLong;
   PtrDiffType = SignedLong;
   IntMaxType = SignedLongLong;
-  UIntMaxType = UnsignedLongLong;
   IntPtrType = SignedLong;
   WCharType = SignedInt;
   WIntType = SignedInt;
@@ -135,6 +134,25 @@ const char *TargetInfo::getTypeConstantSuffix(IntType T) {
   }
 }
 
+/// getTypeFormatModifier - Return the printf format modifier for the
+/// specified integer type enum. For example, SignedLong -> "l".
+
+const char *TargetInfo::getTypeFormatModifier(IntType T) {
+  switch (T) {
+  default: llvm_unreachable("not an integer!");
+  case SignedChar:
+  case UnsignedChar:     return "hh";
+  case SignedShort:
+  case UnsignedShort:    return "h";
+  case SignedInt:
+  case UnsignedInt:      return "";
+  case SignedLong:
+  case UnsignedLong:     return "l";
+  case SignedLongLong:
+  case UnsignedLongLong: return "ll";
+  }
+}
+
 /// getTypeWidth - Return the width (in bits) of the specified integer type
 /// enum. For example, SignedInt -> getIntWidth().
 unsigned TargetInfo::getTypeWidth(IntType T) const {
@@ -164,6 +182,21 @@ TargetInfo::IntType TargetInfo::getIntTypeByWidth(
   if (getLongWidth() == BitWidth)
     return IsSigned ? SignedLong : UnsignedLong;
   if (getLongLongWidth() == BitWidth)
+    return IsSigned ? SignedLongLong : UnsignedLongLong;
+  return NoInt;
+}
+
+TargetInfo::IntType TargetInfo::getLeastIntTypeByWidth(unsigned BitWidth,
+                                                       bool IsSigned) const {
+  if (getCharWidth() >= BitWidth)
+    return IsSigned ? SignedChar : UnsignedChar;
+  if (getShortWidth() >= BitWidth)
+    return IsSigned ? SignedShort : UnsignedShort;
+  if (getIntWidth() >= BitWidth)
+    return IsSigned ? SignedInt : UnsignedInt;
+  if (getLongWidth() >= BitWidth)
+    return IsSigned ? SignedLong : UnsignedLong;
+  if (getLongLongWidth() >= BitWidth)
     return IsSigned ? SignedLongLong : UnsignedLongLong;
   return NoInt;
 }
@@ -227,10 +260,10 @@ bool TargetInfo::isTypeSigned(IntType T) {
   };
 }
 
-/// setForcedLangOptions - Set forced language options.
+/// adjust - Set forced language options.
 /// Apply changes to the target information with respect to certain
 /// language options which change the target configuration.
-void TargetInfo::setForcedLangOptions(LangOptions &Opts) {
+void TargetInfo::adjust(const LangOptions &Opts) {
   if (Opts.NoBitFieldTypeAlign)
     UseBitFieldTypeAlignment = false;
   if (Opts.ShortWChar)
@@ -263,7 +296,6 @@ void TargetInfo::setForcedLangOptions(LangOptions &Opts) {
     IntPtrType = Is32BitArch ? SignedInt : SignedLong;
 
     IntMaxType = SignedLongLong;
-    UIntMaxType = UnsignedLongLong;
     Int64Type = SignedLong;
 
     HalfFormat = &llvm::APFloat::IEEEhalf;

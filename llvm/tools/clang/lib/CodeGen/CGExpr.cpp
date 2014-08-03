@@ -407,7 +407,7 @@ CodeGenFunction::EmitReferenceBindingToExpr(const Expr *E) {
   assert(LV.isSimple());
   llvm::Value *Value = LV.getAddress();
 
-  if (SanitizePerformTypeCheck && !E->getType()->isFunctionType()) {
+  if (sanitizePerformTypeCheck() && !E->getType()->isFunctionType()) {
     // C++11 [dcl.ref]p5 (as amended by core issue 453):
     //   If a glvalue to which a reference is directly bound designates neither
     //   an existing object or function of an appropriate type nor a region of
@@ -441,10 +441,15 @@ static llvm::Value *emitHash16Bytes(CGBuilderTy &Builder, llvm::Value *Low,
   return Builder.CreateMul(B1, KMul);
 }
 
+bool CodeGenFunction::sanitizePerformTypeCheck() const {
+  return SanOpts->Null | SanOpts->Alignment | SanOpts->ObjectSize |
+         SanOpts->Vptr;
+}
+
 void CodeGenFunction::EmitTypeCheck(TypeCheckKind TCK, SourceLocation Loc,
                                     llvm::Value *Address,
                                     QualType Ty, CharUnits Alignment) {
-  if (!SanitizePerformTypeCheck)
+  if (!sanitizePerformTypeCheck())
     return;
 
   // Don't check pointers outside the default address space. The null check
@@ -539,44 +544,48 @@ void CodeGenFunction::EmitTypeCheck(TypeCheckKind TCK, SourceLocation Loc,
     llvm::raw_svector_ostream Out(MangledName);
     CGM.getCXXABI().getMangleContext().mangleCXXRTTI(Ty.getUnqualifiedType(),
                                                      Out);
-    llvm::hash_code TypeHash = hash_value(Out.str());
 
-    // Load the vptr, and compute hash_16_bytes(TypeHash, vptr).
-    llvm::Value *Low = llvm::ConstantInt::get(Int64Ty, TypeHash);
-    llvm::Type *VPtrTy = llvm::PointerType::get(IntPtrTy, 0);
-    llvm::Value *VPtrAddr = Builder.CreateBitCast(Address, VPtrTy);
-    llvm::Value *VPtrVal = Builder.CreateLoad(VPtrAddr);
-    llvm::Value *High = Builder.CreateZExt(VPtrVal, Int64Ty);
+    // Blacklist based on the mangled type.
+    if (!CGM.getSanitizerBlacklist().isBlacklistedType(Out.str())) {
+      llvm::hash_code TypeHash = hash_value(Out.str());
 
-    llvm::Value *Hash = emitHash16Bytes(Builder, Low, High);
-    Hash = Builder.CreateTrunc(Hash, IntPtrTy);
+      // Load the vptr, and compute hash_16_bytes(TypeHash, vptr).
+      llvm::Value *Low = llvm::ConstantInt::get(Int64Ty, TypeHash);
+      llvm::Type *VPtrTy = llvm::PointerType::get(IntPtrTy, 0);
+      llvm::Value *VPtrAddr = Builder.CreateBitCast(Address, VPtrTy);
+      llvm::Value *VPtrVal = Builder.CreateLoad(VPtrAddr);
+      llvm::Value *High = Builder.CreateZExt(VPtrVal, Int64Ty);
 
-    // Look the hash up in our cache.
-    const int CacheSize = 128;
-    llvm::Type *HashTable = llvm::ArrayType::get(IntPtrTy, CacheSize);
-    llvm::Value *Cache = CGM.CreateRuntimeVariable(HashTable,
-                                                   "__ubsan_vptr_type_cache");
-    llvm::Value *Slot = Builder.CreateAnd(Hash,
-                                          llvm::ConstantInt::get(IntPtrTy,
-                                                                 CacheSize-1));
-    llvm::Value *Indices[] = { Builder.getInt32(0), Slot };
-    llvm::Value *CacheVal =
-      Builder.CreateLoad(Builder.CreateInBoundsGEP(Cache, Indices));
+      llvm::Value *Hash = emitHash16Bytes(Builder, Low, High);
+      Hash = Builder.CreateTrunc(Hash, IntPtrTy);
 
-    // If the hash isn't in the cache, call a runtime handler to perform the
-    // hard work of checking whether the vptr is for an object of the right
-    // type. This will either fill in the cache and return, or produce a
-    // diagnostic.
-    llvm::Constant *StaticData[] = {
-      EmitCheckSourceLocation(Loc),
-      EmitCheckTypeDescriptor(Ty),
-      CGM.GetAddrOfRTTIDescriptor(Ty.getUnqualifiedType()),
-      llvm::ConstantInt::get(Int8Ty, TCK)
-    };
-    llvm::Value *DynamicData[] = { Address, Hash };
-    EmitCheck(Builder.CreateICmpEQ(CacheVal, Hash),
-              "dynamic_type_cache_miss", StaticData, DynamicData,
-              CRK_AlwaysRecoverable);
+      // Look the hash up in our cache.
+      const int CacheSize = 128;
+      llvm::Type *HashTable = llvm::ArrayType::get(IntPtrTy, CacheSize);
+      llvm::Value *Cache = CGM.CreateRuntimeVariable(HashTable,
+                                                     "__ubsan_vptr_type_cache");
+      llvm::Value *Slot = Builder.CreateAnd(Hash,
+                                            llvm::ConstantInt::get(IntPtrTy,
+                                                                   CacheSize-1));
+      llvm::Value *Indices[] = { Builder.getInt32(0), Slot };
+      llvm::Value *CacheVal =
+        Builder.CreateLoad(Builder.CreateInBoundsGEP(Cache, Indices));
+
+      // If the hash isn't in the cache, call a runtime handler to perform the
+      // hard work of checking whether the vptr is for an object of the right
+      // type. This will either fill in the cache and return, or produce a
+      // diagnostic.
+      llvm::Constant *StaticData[] = {
+        EmitCheckSourceLocation(Loc),
+        EmitCheckTypeDescriptor(Ty),
+        CGM.GetAddrOfRTTIDescriptor(Ty.getUnqualifiedType()),
+        llvm::ConstantInt::get(Int8Ty, TCK)
+      };
+      llvm::Value *DynamicData[] = { Address, Hash };
+      EmitCheck(Builder.CreateICmpEQ(CacheVal, Hash),
+                "dynamic_type_cache_miss", StaticData, DynamicData,
+                CRK_AlwaysRecoverable);
+    }
   }
 
   if (Done) {
@@ -2101,7 +2110,7 @@ llvm::Constant *CodeGenFunction::EmitCheckTypeDescriptor(QualType T) {
   SmallString<32> Buffer;
   CGM.getDiags().ConvertArgToString(DiagnosticsEngine::ak_qualtype,
                                     (intptr_t)T.getAsOpaquePtr(),
-                                    nullptr, 0, nullptr, 0, nullptr, 0, Buffer,
+                                    StringRef(), StringRef(), None, Buffer,
                                     ArrayRef<intptr_t>());
 
   llvm::Constant *Components[] = {
@@ -2276,7 +2285,7 @@ static const Expr *isSimpleArrayDecayOperand(const Expr *E) {
   // If this isn't just an array->pointer decay, bail out.
   const auto *CE = dyn_cast<CastExpr>(E);
   if (!CE || CE->getCastKind() != CK_ArrayToPointerDecay)
-    return 0;
+    return nullptr;
 
   // If this is a decay from variable width array, bail out.
   const Expr *SubExpr = CE->getSubExpr();
@@ -2684,6 +2693,19 @@ LValue CodeGenFunction::EmitInitListLValue(const InitListExpr *E) {
   return EmitLValue(E->getInit(0));
 }
 
+/// Emit the operand of a glvalue conditional operator. This is either a glvalue
+/// or a (possibly-parenthesized) throw-expression. If this is a throw, no
+/// LValue is returned and the current block has been terminated.
+static Optional<LValue> EmitLValueOrThrowExpression(CodeGenFunction &CGF,
+                                                    const Expr *Operand) {
+  if (auto *ThrowExpr = dyn_cast<CXXThrowExpr>(Operand->IgnoreParens())) {
+    CGF.EmitCXXThrowExpr(ThrowExpr, /*KeepInsertionPoint*/false);
+    return None;
+  }
+
+  return CGF.EmitLValue(Operand);
+}
+
 LValue CodeGenFunction::
 EmitConditionalOperatorLValue(const AbstractConditionalOperator *expr) {
   if (!expr->isGLValue()) {
@@ -2721,31 +2743,40 @@ EmitConditionalOperatorLValue(const AbstractConditionalOperator *expr) {
   EmitBlock(lhsBlock);
   Cnt.beginRegion(Builder);
   eval.begin(*this);
-  LValue lhs = EmitLValue(expr->getTrueExpr());
+  Optional<LValue> lhs =
+      EmitLValueOrThrowExpression(*this, expr->getTrueExpr());
   eval.end(*this);
 
-  if (!lhs.isSimple())
+  if (lhs && !lhs->isSimple())
     return EmitUnsupportedLValue(expr, "conditional operator");
 
   lhsBlock = Builder.GetInsertBlock();
-  Builder.CreateBr(contBlock);
+  if (lhs)
+    Builder.CreateBr(contBlock);
 
   // Any temporaries created here are conditional.
   EmitBlock(rhsBlock);
   eval.begin(*this);
-  LValue rhs = EmitLValue(expr->getFalseExpr());
+  Optional<LValue> rhs =
+      EmitLValueOrThrowExpression(*this, expr->getFalseExpr());
   eval.end(*this);
-  if (!rhs.isSimple())
+  if (rhs && !rhs->isSimple())
     return EmitUnsupportedLValue(expr, "conditional operator");
   rhsBlock = Builder.GetInsertBlock();
 
   EmitBlock(contBlock);
 
-  llvm::PHINode *phi = Builder.CreatePHI(lhs.getAddress()->getType(), 2,
-                                         "cond-lvalue");
-  phi->addIncoming(lhs.getAddress(), lhsBlock);
-  phi->addIncoming(rhs.getAddress(), rhsBlock);
-  return MakeAddrLValue(phi, expr->getType());
+  if (lhs && rhs) {
+    llvm::PHINode *phi = Builder.CreatePHI(lhs->getAddress()->getType(),
+                                           2, "cond-lvalue");
+    phi->addIncoming(lhs->getAddress(), lhsBlock);
+    phi->addIncoming(rhs->getAddress(), rhsBlock);
+    return MakeAddrLValue(phi, expr->getType());
+  } else {
+    assert((lhs || rhs) &&
+           "both operands of glvalue conditional are throw-expressions?");
+    return lhs ? *lhs : *rhs;
+  }
 }
 
 /// EmitCastLValue - Casts are never lvalues unless that cast is to a reference
@@ -2855,7 +2886,7 @@ LValue CodeGenFunction::EmitCastLValue(const CastExpr *E) {
 
     // C++11 [expr.static.cast]p2: Behavior is undefined if a downcast is
     // performed and the object is not of the derived type.
-    if (SanitizePerformTypeCheck)
+    if (sanitizePerformTypeCheck())
       EmitTypeCheck(TCK_DowncastReference, E->getExprLoc(),
                     Derived, E->getType());
 

@@ -22,7 +22,7 @@ class MBlazeTargetMachine;
 
 class MBlazeSelectionDAGInfo : public TargetSelectionDAGInfo {
 public:
-  explicit MBlazeSelectionDAGInfo(const MBlazeTargetMachine &TM);
+  explicit MBlazeSelectionDAGInfo(const DataLayout &DL);
   ~MBlazeSelectionDAGInfo();
 };
 

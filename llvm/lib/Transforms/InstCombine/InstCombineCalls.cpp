@@ -421,6 +421,21 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
         return InsertValueInst::Create(Struct, II->getArgOperand(0), 0);
       }
     }
+
+    // We can strength reduce reduce this signed add into a regular add if we
+    // can prove that it will never overflow.
+    if (II->getIntrinsicID() == Intrinsic::sadd_with_overflow) {
+      Value *LHS = II->getArgOperand(0), *RHS = II->getArgOperand(1);
+      if (WillNotOverflowSignedAdd(LHS, RHS)) {
+        Value *Add = Builder->CreateNSWAdd(LHS, RHS);
+        Add->takeName(&CI);
+        Constant *V[] = {UndefValue::get(Add->getType()), Builder->getFalse()};
+        StructType *ST = cast<StructType>(II->getType());
+        Constant *Struct = ConstantStruct::get(ST, V);
+        return InsertValueInst::Create(Struct, Add, 0);
+      }
+    }
+
     break;
   case Intrinsic::usub_with_overflow:
   case Intrinsic::ssub_with_overflow:
@@ -922,6 +937,20 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
     break;
   }
 
+  case Intrinsic::AMDGPU_rcp: {
+    if (const ConstantFP *C = dyn_cast<ConstantFP>(II->getArgOperand(0))) {
+      const APFloat &ArgVal = C->getValueAPF();
+      APFloat Val(ArgVal.getSemantics(), 1.0);
+      APFloat::opStatus Status = Val.divide(ArgVal,
+                                            APFloat::rmNearestTiesToEven);
+      // Only do this if it was exact and therefore not dependent on the
+      // rounding mode.
+      if (Status == APFloat::opOK)
+        return ReplaceInstUsesWith(CI, ConstantFP::get(II->getContext(), Val));
+    }
+
+    break;
+  }
   case Intrinsic::stackrestore: {
     // If the save is right next to the restore, remove the restore.  This can
     // happen when variable allocas are DCE'd.

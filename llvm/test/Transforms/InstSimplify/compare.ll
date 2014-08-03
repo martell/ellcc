@@ -883,3 +883,55 @@ define i1 @returns_nonnull() {
 ; CHECK: ret i1 false
 }
 
+; If a bit is known to be zero for A and known to be one for B,
+; then A and B cannot be equal.
+define i1 @icmp_eq_const(i32 %a) nounwind {
+  %b = mul nsw i32 %a, -2
+  %c = icmp eq i32 %b, 1
+  ret i1 %c
+
+; CHECK-LABEL: @icmp_eq_const
+; CHECK-NEXT: ret i1 false 
+}
+
+define i1 @icmp_ne_const(i32 %a) nounwind {
+  %b = mul nsw i32 %a, -2
+  %c = icmp ne i32 %b, 1
+  ret i1 %c
+
+; CHECK-LABEL: @icmp_ne_const
+; CHECK-NEXT: ret i1 true
+}
+
+define i1 @icmp_sdiv_int_min(i32 %a) {
+  %div = sdiv i32 -2147483648, %a
+  %cmp = icmp ne i32 %div, -1073741824
+  ret i1 %cmp
+
+; CHECK-LABEL: @icmp_sdiv_int_min
+; CHECK-NEXT: [[DIV:%.*]] = sdiv i32 -2147483648, %a
+; CHECK-NEXT: [[CMP:%.*]] = icmp ne i32 [[DIV]], -1073741824
+; CHECK-NEXT: ret i1 [[CMP]]
+}
+
+define i1 @icmp_sdiv_pr20288(i64 %a) {
+   %div = sdiv i64 %a, -8589934592
+   %cmp = icmp ne i64 %div, 1073741824
+   ret i1 %cmp
+
+; CHECK-LABEL: @icmp_sdiv_pr20288
+; CHECK-NEXT: [[DIV:%.*]] = sdiv i64 %a, -8589934592
+; CHECK-NEXT: [[CMP:%.*]] = icmp ne i64 [[DIV]], 1073741824
+; CHECK-NEXT: ret i1 [[CMP]]
+}
+
+define i1 @icmp_sdiv_neg1(i64 %a) {
+ %div = sdiv i64 %a, -1
+ %cmp = icmp ne i64 %div, 1073741824
+ ret i1 %cmp
+
+; CHECK-LABEL: @icmp_sdiv_neg1
+; CHECK-NEXT: [[DIV:%.*]] = sdiv i64 %a, -1
+; CHECK-NEXT: [[CMP:%.*]] = icmp ne i64 [[DIV]], 1073741824
+; CHECK-NEXT: ret i1 [[CMP]]
+}

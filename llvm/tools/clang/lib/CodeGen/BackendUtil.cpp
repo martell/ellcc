@@ -180,16 +180,8 @@ static void addBoundsCheckingPass(const PassManagerBuilder &Builder,
 
 static void addAddressSanitizerPasses(const PassManagerBuilder &Builder,
                                       PassManagerBase &PM) {
-  const PassManagerBuilderWrapper &BuilderWrapper =
-      static_cast<const PassManagerBuilderWrapper&>(Builder);
-  const CodeGenOptions &CGOpts = BuilderWrapper.getCGOpts();
-  const LangOptions &LangOpts = BuilderWrapper.getLangOpts();
-  PM.add(createAddressSanitizerFunctionPass(LangOpts.Sanitize.InitOrder,
-                                            LangOpts.Sanitize.UseAfterReturn,
-                                            LangOpts.Sanitize.UseAfterScope));
-  PM.add(createAddressSanitizerModulePass(
-      LangOpts.Sanitize.InitOrder,
-      CGOpts.SanitizerBlacklistFile));
+  PM.add(createAddressSanitizerFunctionPass());
+  PM.add(createAddressSanitizerModulePass());
 }
 
 static void addMemorySanitizerPass(const PassManagerBuilder &Builder,

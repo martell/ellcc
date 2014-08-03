@@ -78,7 +78,8 @@ public:
     le32,       // le32: generic little-endian 32-bit CPU (PNaCl / Emscripten)
     amdil,      // amdil: amd IL
     spir,       // SPIR: standard portable IR for OpenCL 32-bit version
-    spir64      // SPIR: standard portable IR for OpenCL 64-bit version
+    spir64,     // SPIR: standard portable IR for OpenCL 64-bit version
+    kalimba     // Kalimba: generic kalimba
   };
   enum VendorType {
     UnknownVendor,
@@ -91,7 +92,9 @@ public:
     BGQ,
     Freescale,
     IBM,
-    NVIDIA
+    ImaginationTechnologies,
+    NVIDIA,
+    CSR
   };
   enum OSType {
     UnknownOS,
@@ -354,6 +357,10 @@ public:
     return getOS() == Triple::Win32 && getEnvironment() == Triple::MSVC;
   }
 
+  bool isWindowsItaniumEnvironment() const {
+    return getOS() == Triple::Win32 && getEnvironment() == Triple::Itanium;
+  }
+
   bool isWindowsCygwinEnvironment() const {
     return getOS() == Triple::Cygwin ||
            (getOS() == Triple::Win32 && getEnvironment() == Triple::Cygnus);
@@ -473,6 +480,12 @@ public:
   /// \returns A new triple with a 64-bit architecture or an unknown
   ///          architecture if no such variant can be found.
   llvm::Triple get64BitArchVariant() const;
+
+  /// Get the (LLVM) name of the minimum ARM CPU for the arch we are targeting.
+  ///
+  /// \param Arch the architecture name (e.g., "armv7s"). If it is an empty
+  /// string then the triple's arch name is used.
+  const char* getARMCPUForArch(StringRef Arch = StringRef()) const;
 
   /// @}
   /// @name Static helpers for IDs.

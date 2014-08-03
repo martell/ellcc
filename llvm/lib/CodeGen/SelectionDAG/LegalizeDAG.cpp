@@ -270,7 +270,7 @@ SelectionDAGLegalize::ExpandConstantFP(ConstantFPSDNode *CFP, bool UseCP) {
 
   EVT OrigVT = VT;
   EVT SVT = VT;
-  while (SVT != MVT::f32) {
+  while (SVT != MVT::f32 && SVT != MVT::f16) {
     SVT = (MVT::SimpleValueType)(SVT.getSimpleVT().SimpleTy - 1);
     if (ConstantFPSDNode::isValueValidForType(SVT, CFP->getValueAPF()) &&
         // Only do this if the target has a native EXTLOAD instruction from
@@ -1186,6 +1186,7 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
     if (Action != TargetLowering::Promote)
       Action = TLI.getOperationAction(Node->getOpcode(), MVT::Other);
     break;
+  case ISD::FP_TO_FP16:
   case ISD::SINT_TO_FP:
   case ISD::UINT_TO_FP:
   case ISD::EXTRACT_VECTOR_ELT:
@@ -2060,7 +2061,7 @@ SDValue SelectionDAGLegalize::ExpandLibCall(RTLIB::Libcall LC, SDNode *Node,
 
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(SDLoc(Node)).setChain(InChain)
-    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Callee, &Args, 0)
+    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Callee, std::move(Args), 0)
     .setTailCall(isTailCall).setSExtResult(isSigned).setZExtResult(!isSigned);
 
   std::pair<SDValue, SDValue> CallInfo = TLI.LowerCallTo(CLI);
@@ -2095,7 +2096,7 @@ SDValue SelectionDAGLegalize::ExpandLibCall(RTLIB::Libcall LC, EVT RetVT,
 
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(dl).setChain(DAG.getEntryNode())
-    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Callee, &Args, 0)
+    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Callee, std::move(Args), 0)
     .setSExtResult(isSigned).setZExtResult(!isSigned);
 
   std::pair<SDValue,SDValue> CallInfo = TLI.LowerCallTo(CLI);
@@ -2129,7 +2130,7 @@ SelectionDAGLegalize::ExpandChainLibCall(RTLIB::Libcall LC,
 
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(SDLoc(Node)).setChain(InChain)
-    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Callee, &Args, 0)
+    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Callee, std::move(Args), 0)
     .setSExtResult(isSigned).setZExtResult(!isSigned);
 
   std::pair<SDValue, SDValue> CallInfo = TLI.LowerCallTo(CLI);
@@ -2266,7 +2267,7 @@ SelectionDAGLegalize::ExpandDivRemLibCall(SDNode *Node,
   SDLoc dl(Node);
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(dl).setChain(InChain)
-    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Callee, &Args, 0)
+    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Callee, std::move(Args), 0)
     .setSExtResult(isSigned).setZExtResult(!isSigned);
 
   std::pair<SDValue, SDValue> CallInfo = TLI.LowerCallTo(CLI);
@@ -2381,7 +2382,7 @@ SelectionDAGLegalize::ExpandSinCosLibCall(SDNode *Node,
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(dl).setChain(InChain)
     .setCallee(TLI.getLibcallCallingConv(LC),
-               Type::getVoidTy(*DAG.getContext()), Callee, &Args, 0);
+               Type::getVoidTy(*DAG.getContext()), Callee, std::move(Args), 0);
 
   std::pair<SDValue, SDValue> CallInfo = TLI.LowerCallTo(CLI);
 
@@ -2650,12 +2651,15 @@ SDValue SelectionDAGLegalize::PromoteLegalFP_TO_INT(SDValue LegalOp,
     NewOutTy = (MVT::SimpleValueType)(NewOutTy.getSimpleVT().SimpleTy+1);
     assert(NewOutTy.isInteger() && "Ran out of possibilities!");
 
+    // A larger signed type can hold all unsigned values of the requested type,
+    // so using FP_TO_SINT is valid
     if (TLI.isOperationLegalOrCustom(ISD::FP_TO_SINT, NewOutTy)) {
       OpToUse = ISD::FP_TO_SINT;
       break;
     }
 
-    if (TLI.isOperationLegalOrCustom(ISD::FP_TO_UINT, NewOutTy)) {
+    // However, if the value may be < 0.0, we *must* use some FP_TO_SINT.
+    if (!isSigned && TLI.isOperationLegalOrCustom(ISD::FP_TO_UINT, NewOutTy)) {
       OpToUse = ISD::FP_TO_UINT;
       break;
     }
@@ -2996,8 +3000,8 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     TargetLowering::CallLoweringInfo CLI(DAG);
     CLI.setDebugLoc(dl).setChain(Node->getOperand(0))
       .setCallee(CallingConv::C, Type::getVoidTy(*DAG.getContext()),
-                 DAG.getExternalSymbol("__sync_synchronize", TLI.getPointerTy()),
-                 &Args, 0);
+                 DAG.getExternalSymbol("__sync_synchronize",
+                 TLI.getPointerTy()), std::move(Args), 0);
 
     std::pair<SDValue, SDValue> CallResult = TLI.LowerCallTo(CLI);
 
@@ -3007,14 +3011,14 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
   case ISD::ATOMIC_LOAD: {
     // There is no libcall for atomic load; fake it with ATOMIC_CMP_SWAP.
     SDValue Zero = DAG.getConstant(0, Node->getValueType(0));
-    SDValue Swap = DAG.getAtomic(ISD::ATOMIC_CMP_SWAP, dl,
-                                 cast<AtomicSDNode>(Node)->getMemoryVT(),
-                                 Node->getOperand(0),
-                                 Node->getOperand(1), Zero, Zero,
-                                 cast<AtomicSDNode>(Node)->getMemOperand(),
-                                 cast<AtomicSDNode>(Node)->getOrdering(),
-                                 cast<AtomicSDNode>(Node)->getOrdering(),
-                                 cast<AtomicSDNode>(Node)->getSynchScope());
+    SDVTList VTs = DAG.getVTList(Node->getValueType(0), MVT::Other);
+    SDValue Swap = DAG.getAtomicCmpSwap(
+        ISD::ATOMIC_CMP_SWAP, dl, cast<AtomicSDNode>(Node)->getMemoryVT(), VTs,
+        Node->getOperand(0), Node->getOperand(1), Zero, Zero,
+        cast<AtomicSDNode>(Node)->getMemOperand(),
+        cast<AtomicSDNode>(Node)->getOrdering(),
+        cast<AtomicSDNode>(Node)->getOrdering(),
+        cast<AtomicSDNode>(Node)->getSynchScope());
     Results.push_back(Swap.getValue(0));
     Results.push_back(Swap.getValue(1));
     break;
@@ -3051,6 +3055,27 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     Results.push_back(Tmp.second);
     break;
   }
+  case ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS: {
+    // Expanding an ATOMIC_CMP_SWAP_WITH_SUCCESS produces an ATOMIC_CMP_SWAP and
+    // splits out the success value as a comparison. Expanding the resulting
+    // ATOMIC_CMP_SWAP will produce a libcall.
+    SDVTList VTs = DAG.getVTList(Node->getValueType(0), MVT::Other);
+    SDValue Res = DAG.getAtomicCmpSwap(
+        ISD::ATOMIC_CMP_SWAP, dl, cast<AtomicSDNode>(Node)->getMemoryVT(), VTs,
+        Node->getOperand(0), Node->getOperand(1), Node->getOperand(2),
+        Node->getOperand(3), cast<MemSDNode>(Node)->getMemOperand(),
+        cast<AtomicSDNode>(Node)->getSuccessOrdering(),
+        cast<AtomicSDNode>(Node)->getFailureOrdering(),
+        cast<AtomicSDNode>(Node)->getSynchScope());
+
+    SDValue Success = DAG.getSetCC(SDLoc(Node), Node->getValueType(1),
+                                   Res, Node->getOperand(2), ISD::SETEQ);
+
+    Results.push_back(Res.getValue(0));
+    Results.push_back(Success);
+    Results.push_back(Res.getValue(1));
+    break;
+  }
   case ISD::DYNAMIC_STACKALLOC:
     ExpandDYNAMIC_STACKALLOC(Node, Results);
     break;
@@ -3074,7 +3099,8 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     TargetLowering::CallLoweringInfo CLI(DAG);
     CLI.setDebugLoc(dl).setChain(Node->getOperand(0))
       .setCallee(CallingConv::C, Type::getVoidTy(*DAG.getContext()),
-                 DAG.getExternalSymbol("abort", TLI.getPointerTy()), &Args, 0);
+                 DAG.getExternalSymbol("abort", TLI.getPointerTy()),
+                 std::move(Args), 0);
     std::pair<SDValue, SDValue> CallResult = TLI.LowerCallTo(CLI);
 
     Results.push_back(CallResult.second);
@@ -3127,6 +3153,10 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     Tmp1 = ExpandLegalINT_TO_FP(Node->getOpcode() == ISD::SINT_TO_FP,
                                 Node->getOperand(0), Node->getValueType(0), dl);
     Results.push_back(Tmp1);
+    break;
+  case ISD::FP_TO_SINT:
+    if (TLI.expandFP_TO_SINT(Node, Tmp1, DAG))
+      Results.push_back(Tmp1);
     break;
   case ISD::FP_TO_UINT: {
     SDValue True, False;
@@ -3484,12 +3514,28 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
                                       RTLIB::FMA_F80, RTLIB::FMA_F128,
                                       RTLIB::FMA_PPCF128));
     break;
-  case ISD::FP16_TO_FP32:
-    Results.push_back(ExpandLibCall(RTLIB::FPEXT_F16_F32, Node, false));
+  case ISD::FP16_TO_FP: {
+    if (Node->getValueType(0) == MVT::f32) {
+      Results.push_back(ExpandLibCall(RTLIB::FPEXT_F16_F32, Node, false));
+      break;
+    }
+
+    // We can extend to types bigger than f32 in two steps without changing the
+    // result. Since "f16 -> f32" is much more commonly available, give CodeGen
+    // the option of emitting that before resorting to a libcall.
+    SDValue Res =
+        DAG.getNode(ISD::FP16_TO_FP, dl, MVT::f32, Node->getOperand(0));
+    Results.push_back(
+        DAG.getNode(ISD::FP_EXTEND, dl, Node->getValueType(0), Res));
     break;
-  case ISD::FP32_TO_FP16:
-    Results.push_back(ExpandLibCall(RTLIB::FPROUND_F32_F16, Node, false));
+  }
+  case ISD::FP_TO_FP16: {
+    RTLIB::Libcall LC =
+        RTLIB::getFPROUND(Node->getOperand(0).getValueType(), MVT::f16);
+    assert(LC != RTLIB::UNKNOWN_LIBCALL && "Unable to expand fp_to_fp16");
+    Results.push_back(ExpandLibCall(LC, Node, false));
     break;
+  }
   case ISD::ConstantFP: {
     ConstantFPSDNode *CFP = cast<ConstantFPSDNode>(Node);
     // Check to see if this FP immediate is already legal.
@@ -3677,7 +3723,7 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     SDValue SumSignNE = DAG.getSetCC(dl, OType, LHSSign, SumSign, ISD::SETNE);
 
     SDValue Cmp = DAG.getNode(ISD::AND, dl, OType, SignsMatch, SumSignNE);
-    Results.push_back(DAG.getBoolExtOrTrunc(Cmp, dl, ResultType));
+    Results.push_back(DAG.getBoolExtOrTrunc(Cmp, dl, ResultType, ResultType));
     break;
   }
   case ISD::UADDO:
@@ -3695,7 +3741,7 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
       = Node->getOpcode() == ISD::UADDO ? ISD::SETULT : ISD::SETUGT;
     SDValue SetCC = DAG.getSetCC(dl, SetCCType, Sum, LHS, CC);
 
-    Results.push_back(DAG.getBoolExtOrTrunc(SetCC, dl, ResultType));
+    Results.push_back(DAG.getBoolExtOrTrunc(SetCC, dl, ResultType, ResultType));
     break;
   }
   case ISD::UMULO:
@@ -3885,7 +3931,7 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     // illegal; expand it into a SELECT_CC.
     EVT VT = Node->getValueType(0);
     int TrueValue;
-    switch (TLI.getBooleanContents(VT.isVector())) {
+    switch (TLI.getBooleanContents(Tmp1->getValueType(0))) {
     case TargetLowering::ZeroOrOneBooleanContent:
     case TargetLowering::UndefinedBooleanContent:
       TrueValue = 1;
@@ -3905,13 +3951,29 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     Tmp2 = Node->getOperand(1);   // RHS
     Tmp3 = Node->getOperand(2);   // True
     Tmp4 = Node->getOperand(3);   // False
+    EVT VT = Node->getValueType(0);
     SDValue CC = Node->getOperand(4);
+    ISD::CondCode CCOp = cast<CondCodeSDNode>(CC)->get();
 
+    if (TLI.isCondCodeLegal(CCOp, Tmp1.getSimpleValueType())) {
+      // If the condition code is legal, then we need to expand this
+      // node using SETCC and SELECT.
+      EVT CmpVT = Tmp1.getValueType();
+      assert(!TLI.isOperationExpand(ISD::SELECT, VT) &&
+             "Cannot expand ISD::SELECT_CC when ISD::SELECT also needs to be "
+             "expanded.");
+      EVT CCVT = TLI.getSetCCResultType(*DAG.getContext(), CmpVT);
+      SDValue Cond = DAG.getNode(ISD::SETCC, dl, CCVT, Tmp1, Tmp2, CC);
+      Results.push_back(DAG.getSelect(dl, VT, Cond, Tmp3, Tmp4));
+      break;
+    }
+
+    // SELECT_CC is legal, so the condition code must not be.
     bool Legalized = false;
     // Try to legalize by inverting the condition.  This is for targets that
     // might support an ordered version of a condition, but not the unordered
     // version (or vice versa).
-    ISD::CondCode InvCC = ISD::getSetCCInverse(cast<CondCodeSDNode>(CC)->get(),
+    ISD::CondCode InvCC = ISD::getSetCCInverse(CCOp,
                                                Tmp1.getValueType().isInteger());
     if (TLI.isCondCodeLegal(InvCC, Tmp1.getSimpleValueType())) {
       // Use the new condition code and swap true and false

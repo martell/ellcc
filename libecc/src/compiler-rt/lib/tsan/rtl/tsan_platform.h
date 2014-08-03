@@ -22,18 +22,6 @@ C++ linux memory layout:
 7d00 0000 0000 - 7e00 0000 0000: heap
 7e00 0000 0000 - 7fff ffff ffff: modules and main thread stack
 
-C++ COMPAT linux memory layout:
-0000 0000 0000 - 0400 0000 0000: protected
-0400 0000 0000 - 1000 0000 0000: shadow
-1000 0000 0000 - 2900 0000 0000: protected
-2900 0000 0000 - 2c00 0000 0000: modules
-2c00 0000 0000 - 6000 0000 0000: -
-6000 0000 0000 - 6200 0000 0000: traces
-6200 0000 0000 - 7d00 0000 0000: -
-7d00 0000 0000 - 7e00 0000 0000: heap
-7e00 0000 0000 - 7f00 0000 0000: -
-7f00 0000 0000 - 7fff ffff ffff: main thread stack
-
 Go linux and darwin memory layout:
 0000 0000 0000 - 0000 1000 0000: executable
 0000 1000 0000 - 00f8 0000 0000: -
@@ -70,16 +58,6 @@ static const uptr kLinuxAppMemEnd = 0x04dfffffffffULL;
 static const uptr kLinuxShadowMsk = 0x010000000000ULL;
 # else
 static const uptr kLinuxShadowMsk = 0x200000000000ULL;
-# endif
-// TSAN_COMPAT_SHADOW is intended for COMPAT virtual memory layout,
-// when memory addresses are of the 0x2axxxxxxxxxx form.
-// The option is enabled with 'setarch x86_64 -L'.
-#elif defined(TSAN_COMPAT_SHADOW) && TSAN_COMPAT_SHADOW
-static const uptr kLinuxAppMemBeg = 0x290000000000ULL;
-static const uptr kLinuxAppMemEnd = 0x7fffffffffffULL;
-static const uptr kAppMemGapBeg   = 0x2c0000000000ULL;
-static const uptr kAppMemGapEnd   = 0x7d0000000000ULL;
-#else
 static const uptr kLinuxAppMemBeg = 0x7cf000000000ULL;
 static const uptr kLinuxAppMemEnd = 0x7fffffffffffULL;
 #endif
@@ -107,9 +85,8 @@ static const uptr kLinuxShadowEnd =
     MemToShadow(kLinuxAppMemEnd) | 0xff;
 
 static inline bool IsAppMem(uptr mem) {
-#if defined(TSAN_COMPAT_SHADOW) && TSAN_COMPAT_SHADOW
-  return (mem >= kLinuxAppMemBeg && mem < kAppMemGapBeg) ||
-         (mem >= kAppMemGapEnd   && mem <= kLinuxAppMemEnd);
+#if defined(TSAN_GO)
+  return mem <= kLinuxAppMemEnd;
 #else
   return mem >= kLinuxAppMemBeg && mem <= kLinuxAppMemEnd;
 #endif
@@ -125,17 +102,6 @@ static inline uptr ShadowToMem(uptr shadow) {
   return (shadow & ~kLinuxShadowMsk) / kShadowCnt;
 #else
   return (shadow / kShadowCnt) | kLinuxAppMemMsk;
-#endif
-}
-
-// For COMPAT mapping returns an alternative address
-// that mapped to the same shadow address.
-// COMPAT mapping is not quite one-to-one.
-static inline uptr AlternativeAddress(uptr addr) {
-#if defined(TSAN_COMPAT_SHADOW) && TSAN_COMPAT_SHADOW
-  return (addr & ~kLinuxAppMemMsk) | 0x280000000000ULL;
-#else
-  return 0;
 #endif
 }
 

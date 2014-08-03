@@ -8,7 +8,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/MBlazeBaseInfo.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/MC/MCExpr.h"
@@ -37,19 +36,19 @@ class MBlazeAsmParser : public MCTargetAsmParser {
   void Warning(SMLoc L, const Twine &Msg) { Parser.Warning(L, Msg); }
   bool Error(SMLoc L, const Twine &Msg) { return Parser.Error(L, Msg); }
 
-  MBlazeOperand *ParseMemory(SmallVectorImpl<MCParsedAsmOperand*> &Operands);
-  MBlazeOperand *ParseRegister();
-  MBlazeOperand *ParseRegister(SMLoc &StartLoc, SMLoc &EndLoc);
-  MBlazeOperand *ParseImmediate();
-  MBlazeOperand *ParseFsl();
-  MBlazeOperand* ParseOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands);
+  bool ParseMemory(OperandVector &Operands);
+  std::unique_ptr<MBlazeOperand> ParseRegister();
+  std::unique_ptr<MBlazeOperand> ParseRegister(SMLoc &StartLoc, SMLoc &EndLoc);
+  std::unique_ptr<MBlazeOperand> ParseImmediate();
+  std::unique_ptr<MBlazeOperand> ParseFsl();
+  std::unique_ptr<MBlazeOperand> ParseOperand(OperandVector &Operands);
 
   virtual bool ParseRegister(unsigned &RegNo, SMLoc &StartLoc, SMLoc &EndLoc);
 
   bool ParseDirectiveWord(unsigned Size, SMLoc L);
 
   bool MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
-                               SmallVectorImpl<MCParsedAsmOperand*> &Operands,
+                               OperandVector &Operands,
                                MCStreamer &Out, unsigned &ErrorInfo,
                                bool MatchingInlineAsm);
 
@@ -70,8 +69,7 @@ public:
   }
 
   virtual bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
-                                SMLoc NameLoc,
-                                SmallVectorImpl<MCParsedAsmOperand*> &Operands);
+                                SMLoc NameLoc, OperandVector &Operands);
 
   virtual bool ParseDirective(AsmToken DirectiveID);
 };
@@ -122,7 +120,8 @@ struct MBlazeOperand : public MCParsedAsmOperand {
 
   MBlazeOperand(KindTy K) : MCParsedAsmOperand(), Kind(K) {}
 public:
-  MBlazeOperand(const MBlazeOperand &o) : MCParsedAsmOperand() {
+  MBlazeOperand(const MBlazeOperand &o, MBlazeAsmParser &Parser)
+      : MCParsedAsmOperand() {
     Kind = o.Kind;
     StartLoc = o.StartLoc;
     EndLoc = o.EndLoc;
@@ -231,8 +230,9 @@ public:
 
   virtual void print(raw_ostream &OS) const;
 
-  static MBlazeOperand *CreateToken(StringRef Str, SMLoc S) {
-    MBlazeOperand *Op = new MBlazeOperand(Token);
+  static std::unique_ptr<MBlazeOperand>
+  CreateToken(StringRef Str, SMLoc S, MBlazeAsmParser &Parser) {
+    auto Op = make_unique<MBlazeOperand>(Token, Parser);
     Op->Tok.Data = Str.data();
     Op->Tok.Length = Str.size();
     Op->StartLoc = S;
@@ -240,33 +240,37 @@ public:
     return Op;
   }
 
-  static MBlazeOperand *CreateReg(unsigned RegNum, SMLoc S, SMLoc E) {
-    MBlazeOperand *Op = new MBlazeOperand(Register);
+  static std::unique_ptr<MBlazeOperand>
+  CreateReg(unsigned RegNum, SMLoc S, SMLoc E, MBlazeAsmParser &Parser) {
+    auto Op = make_unique<MBlazeOperand>(Register, Parser);
     Op->Reg.RegNum = RegNum;
     Op->StartLoc = S;
     Op->EndLoc = E;
     return Op;
   }
 
-  static MBlazeOperand *CreateImm(const MCExpr *Val, SMLoc S, SMLoc E) {
-    MBlazeOperand *Op = new MBlazeOperand(Immediate);
+  static std::unique_ptr<MBlazeOperand>
+  CreateImm(const MCExpr *Val, SMLoc S, SMLoc E, MBlazeAsmParser &Parser) {
+    auto Op = make_unique<MBlazeOperand>(Immediate, Parser);
     Op->Imm.Val = Val;
     Op->StartLoc = S;
     Op->EndLoc = E;
     return Op;
   }
 
-  static MBlazeOperand *CreateFslImm(const MCExpr *Val, SMLoc S, SMLoc E) {
-    MBlazeOperand *Op = new MBlazeOperand(Fsl);
+  static std::unique_ptr<MBlazeOperand>
+  CreateFslImm(const MCExpr *Val, SMLoc S, SMLoc E, MBlazeAsmParser &Parser) {
+    auto Op = make_unique<MBlazeOperand>(Fsl, Parser);
     Op->Imm.Val = Val;
     Op->StartLoc = S;
     Op->EndLoc = E;
     return Op;
   }
 
-  static MBlazeOperand *CreateMem(unsigned Base, const MCExpr *Off, SMLoc S,
-                                  SMLoc E) {
-    MBlazeOperand *Op = new MBlazeOperand(Memory);
+  static std::unique_ptr<MBlazeOperand>
+  CreateMem(unsigned Base, const MCExpr *Off, SMLoc S,
+            SMLoc E, MBlazeAsmParser &Parser) {
+    auto Op = make_unique<MBlazeOperand>(Memory, Parser);
     Op->Mem.Base = Base;
     Op->Mem.Off = Off;
     Op->Mem.OffReg = 0;
@@ -275,9 +279,10 @@ public:
     return Op;
   }
 
-  static MBlazeOperand *CreateMem(unsigned Base, unsigned Off, SMLoc S,
-                                  SMLoc E) {
-    MBlazeOperand *Op = new MBlazeOperand(Memory);
+  static std::unique_ptr<MBlazeOperand>
+  CreateMem(unsigned Base, unsigned Off, SMLoc S,
+            SMLoc E, MBlazeAsmParser &Parser) {
+    auto Op = make_unique<MBlazeOperand>(Memory, Parser);
     Op->Mem.Base = Base;
     Op->Mem.OffReg = Off;
     Op->Mem.Off = 0;
@@ -329,27 +334,30 @@ static unsigned MatchRegisterName(StringRef Name);
 //
 bool MBlazeAsmParser::
 MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
-                        SmallVectorImpl<MCParsedAsmOperand*> &Operands,
+                        OperandVector &Operands,
                         MCStreamer &Out, unsigned &ErrorInfo,
                         bool MatchingInlineAsm) {
   MCInst Inst;
-  switch (MatchInstructionImpl(Operands, Inst, ErrorInfo,
-                               MatchingInlineAsm)) {
-  default: break;
+  unsigned MatchResult =
+      MatchInstructionImpl(Operands, Inst, ErrorInfo, MatchingInlineAsm);
+
+  switch (MatchResult) {
+  default:
+    break;
   case Match_Success:
     Out.EmitInstruction(Inst, STI);
     return false;
   case Match_MissingFeature:
     return Error(IDLoc, "instruction use requires an option to be enabled");
   case Match_MnemonicFail:
-      return Error(IDLoc, "unrecognized instruction mnemonic");
+    return Error(IDLoc, "unrecognized instruction mnemonic");
   case Match_InvalidOperand: {
     SMLoc ErrorLoc = IDLoc;
     if (ErrorInfo != ~0U) {
       if (ErrorInfo >= Operands.size())
         return Error(IDLoc, "too few operands for instruction");
 
-      ErrorLoc = ((MBlazeOperand*)Operands[ErrorInfo])->getStartLoc();
+      ErrorLoc = ((MBlazeOperand &)*Operands[ErrorInfo]).getStartLoc();
       if (ErrorLoc == SMLoc()) ErrorLoc = IDLoc;
     }
 
@@ -360,13 +368,12 @@ MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   llvm_unreachable("Implement any new match types added!");
 }
 
-MBlazeOperand *MBlazeAsmParser::
-ParseMemory(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
+bool MBlazeAsmParser::ParseMemory(OperandVector &Operands) {
   if (Operands.size() != 4)
-    return 0;
+    return false;
 
-  MBlazeOperand &Base = *(MBlazeOperand*)Operands[2];
-  MBlazeOperand &Offset = *(MBlazeOperand*)Operands[3];
+  MBlazeOperand &Base = (MBlazeOperand &)*Operands[2];
+  MBlazeOperand &Offset = (MBlazeOperand &)*Operands[3];
 
   SMLoc S = Base.getStartLoc();
   SMLoc O = Offset.getStartLoc();
@@ -374,42 +381,40 @@ ParseMemory(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
 
   if (!Base.isReg()) {
     Error(S, "base address must be a register");
-    return 0;
+    return false;
   }
 
   if (!Offset.isReg() && !Offset.isImm()) {
     Error(O, "offset must be a register or immediate");
-    return 0;
+    return false;
   }
 
-  MBlazeOperand *Op;
   if (Offset.isReg())
-    Op = MBlazeOperand::CreateMem(Base.getReg(), Offset.getReg(), S, E);
+    Operands.push_back(
+        MBlazeOperand::CreateMem(Base.getReg(), Offset.getReg(), S, E, *this));
   else
-    Op = MBlazeOperand::CreateMem(Base.getReg(), Offset.getImm(), S, E);
+    Operands.push_back(
+        MBlazeOperand::CreateMem(Base.getReg(), Offset.getImm(), S, E, *this));
 
-  delete Operands.pop_back_val();
-  delete Operands.pop_back_val();
-  Operands.push_back(Op);
-
-  return Op;
+  return true;
 }
 
 bool MBlazeAsmParser::ParseRegister(unsigned &RegNo,
                                     SMLoc &StartLoc, SMLoc &EndLoc) {
-  MBlazeOperand *Reg = ParseRegister(StartLoc, EndLoc);
+  std::unique_ptr<MBlazeOperand> Reg = ParseRegister(StartLoc, EndLoc);
   if (!Reg)
     return true;
   RegNo = Reg->getReg();
   return false;
 }
 
-MBlazeOperand *MBlazeAsmParser::ParseRegister() {
+std::unique_ptr<MBlazeOperand> MBlazeAsmParser::ParseRegister() {
   SMLoc S, E;
   return ParseRegister(S, E);
 }
 
-MBlazeOperand *MBlazeAsmParser::ParseRegister(SMLoc &StartLoc, SMLoc &EndLoc) {
+std::unique_ptr<MBlazeOperand>
+MBlazeAsmParser::ParseRegister(SMLoc &StartLoc, SMLoc &EndLoc) {
   StartLoc = Parser.getTok().getLoc();
   EndLoc = Parser.getTok().getEndLoc();
 
@@ -421,7 +426,7 @@ MBlazeOperand *MBlazeAsmParser::ParseRegister(SMLoc &StartLoc, SMLoc &EndLoc) {
     return 0;
 
   getLexer().Lex();
-  return MBlazeOperand::CreateReg(RegNo, StartLoc, EndLoc);
+  return MBlazeOperand::CreateReg(RegNo, StartLoc, EndLoc, *this);
 }
 
 static unsigned MatchFslRegister(StringRef String) {
@@ -435,7 +440,7 @@ static unsigned MatchFslRegister(StringRef String) {
   return regNum;
 }
 
-MBlazeOperand *MBlazeAsmParser::ParseFsl() {
+std::unique_ptr<MBlazeOperand> MBlazeAsmParser::ParseFsl() {
   SMLoc S = Parser.getTok().getLoc();
   SMLoc E = Parser.getTok().getEndLoc();
 
@@ -448,11 +453,11 @@ MBlazeOperand *MBlazeAsmParser::ParseFsl() {
 
     getLexer().Lex();
     const MCExpr *EVal = MCConstantExpr::Create(reg,getContext());
-    return MBlazeOperand::CreateFslImm(EVal,S,E);
+    return MBlazeOperand::CreateFslImm(EVal, S, E, *this);
   }
 }
 
-MBlazeOperand *MBlazeAsmParser::ParseImmediate() {
+std::unique_ptr<MBlazeOperand> MBlazeAsmParser::ParseImmediate() {
   SMLoc S = Parser.getTok().getLoc();
   SMLoc E = Parser.getTok().getEndLoc();
 
@@ -467,13 +472,13 @@ MBlazeOperand *MBlazeAsmParser::ParseImmediate() {
     if (getParser().parseExpression(EVal))
       return 0;
 
-    return MBlazeOperand::CreateImm(EVal, S, E);
+    return MBlazeOperand::CreateImm(EVal, S, E, *this);
   }
 }
 
-MBlazeOperand *MBlazeAsmParser::
-ParseOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
-  MBlazeOperand *Op;
+std::unique_ptr<MBlazeOperand>
+MBlazeAsmParser::ParseOperand(OperandVector &Operands) {
+  std::unique_ptr<MBlazeOperand> Op;
 
   // Attempt to parse the next token as a register name
   Op = ParseRegister();
@@ -493,19 +498,21 @@ ParseOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   }
 
   // Push the parsed operand into the list of operands
-  Operands.push_back(Op);
+  Operands.push_back(std::move(Op));
   return Op;
 }
 
 /// Parse an mblaze instruction mnemonic followed by its operands.
 bool MBlazeAsmParser::
 ParseInstruction(ParseInstructionInfo &Info, StringRef Name, SMLoc NameLoc,
-                 SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
+                 OperandVector &Operands) {
   // The first operands is the token for the instruction name
   size_t dotLoc = Name.find('.');
-  Operands.push_back(MBlazeOperand::CreateToken(Name.substr(0,dotLoc),NameLoc));
+  Operands.push_back(
+      MBlazeOperand::CreateToken(Name.substr(0, dotLoc), NameLoc, *this));
   if (dotLoc < Name.size())
-    Operands.push_back(MBlazeOperand::CreateToken(Name.substr(dotLoc),NameLoc));
+    Operands.push_back(
+      MBlazeOperand::CreateToken(Name.substr(dotLoc), NameLoc, *this));
 
   // If there are no more operands then finish
   if (getLexer().is(AsmToken::EndOfStatement))
@@ -531,7 +538,7 @@ ParseInstruction(ParseInstructionInfo &Info, StringRef Name, SMLoc NameLoc,
   if (Name.startswith("lw") || Name.startswith("sw") ||
       Name.startswith("lh") || Name.startswith("sh") ||
       Name.startswith("lb") || Name.startswith("sb"))
-    return (ParseMemory(Operands) == NULL);
+    return ParseMemory(Operands) == false;
 
   return false;
 }

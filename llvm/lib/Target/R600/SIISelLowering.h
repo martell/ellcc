@@ -27,10 +27,11 @@ class SITargetLowering : public AMDGPUTargetLowering {
                                SelectionDAG &DAG) const;
   SDValue LowerLOAD(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerSELECT(SDValue Op, SelectionDAG &DAG) const;
-  SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;
-  SDValue LowerSIGN_EXTEND(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerFastFDIV(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerFDIV32(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerFDIV64(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerFDIV(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerSTORE(SDValue Op, SelectionDAG &DAG) const;
-  SDValue LowerZERO_EXTEND(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerBRCOND(SDValue Op, SelectionDAG &DAG) const;
 
   bool foldImm(SDValue &Operand, int32_t &Immediate,
@@ -46,11 +47,16 @@ class SITargetLowering : public AMDGPUTargetLowering {
   void adjustWritemask(MachineSDNode *&N, SelectionDAG &DAG) const;
   MachineSDNode *AdjustRegClass(MachineSDNode *N, SelectionDAG &DAG) const;
 
+  static SDValue performUCharToFloatCombine(SDNode *N,
+                                            DAGCombinerInfo &DCI);
+
 public:
   SITargetLowering(TargetMachine &tm);
   bool allowsUnalignedMemoryAccesses(EVT VT, unsigned AS,
                                      bool *IsFast) const override;
-  bool shouldSplitVectorType(EVT VT) const override;
+
+  TargetLoweringBase::LegalizeTypeAction
+  getPreferredVectorAction(EVT VT) const override;
 
   bool shouldConvertConstantLoadToIntImm(const APInt &Imm,
                                         Type *Ty) const override;

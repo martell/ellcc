@@ -2009,8 +2009,8 @@ public:
                                      tuple<_Args2...> __second_args,
                                      __tuple_indices<_I1...>,
                                      __tuple_indices<_I2...>)
-            : __first_(_VSTD::forward<_Args1>(get<_I1>(__first_args))...),
-              __second_(_VSTD::forward<_Args2>(get<_I2>(__second_args))...)
+            : __first_(_VSTD::forward<_Args1>(_VSTD::get<_I1>(__first_args))...),
+              __second_(_VSTD::forward<_Args2>(_VSTD::get<_I2>(__second_args))...)
             {}
 
 #endif  // _LIBCPP_HAS_NO_VARIADICS
@@ -2023,7 +2023,7 @@ public:
 
     _LIBCPP_INLINE_VISIBILITY void swap(__libcpp_compressed_pair_imp& __x)
         _NOEXCEPT_(__is_nothrow_swappable<_T1>::value &&
-                   __is_nothrow_swappable<_T1>::value)
+                   __is_nothrow_swappable<_T2>::value)
     {
         using _VSTD::swap;
         swap(__first_, __x.__first_);
@@ -2104,8 +2104,8 @@ public:
                                      tuple<_Args2...> __second_args,
                                      __tuple_indices<_I1...>,
                                      __tuple_indices<_I2...>)
-            : _T1(_VSTD::forward<_Args1>(get<_I1>(__first_args))...),
-              __second_(_VSTD::forward<_Args2>(get<_I2>(__second_args))...)
+            : _T1(_VSTD::forward<_Args1>(_VSTD::get<_I1>(__first_args))...),
+              __second_(_VSTD::forward<_Args2>(_VSTD::get<_I2>(__second_args))...)
             {}
 
 #endif  // _LIBCPP_HAS_NO_VARIADICS
@@ -2118,7 +2118,7 @@ public:
 
     _LIBCPP_INLINE_VISIBILITY void swap(__libcpp_compressed_pair_imp& __x)
         _NOEXCEPT_(__is_nothrow_swappable<_T1>::value &&
-                   __is_nothrow_swappable<_T1>::value)
+                   __is_nothrow_swappable<_T2>::value)
     {
         using _VSTD::swap;
         swap(__second_, __x.__second_);
@@ -2200,8 +2200,8 @@ public:
                                      tuple<_Args2...> __second_args,
                                      __tuple_indices<_I1...>,
                                      __tuple_indices<_I2...>)
-            : _T2(_VSTD::forward<_Args2>(get<_I2>(__second_args))...),
-              __first_(_VSTD::forward<_Args1>(get<_I1>(__first_args))...)
+            : _T2(_VSTD::forward<_Args2>(_VSTD::get<_I2>(__second_args))...),
+              __first_(_VSTD::forward<_Args1>(_VSTD::get<_I1>(__first_args))...)
               
             {}
 
@@ -2215,7 +2215,7 @@ public:
 
     _LIBCPP_INLINE_VISIBILITY void swap(__libcpp_compressed_pair_imp& __x)
         _NOEXCEPT_(__is_nothrow_swappable<_T1>::value &&
-                   __is_nothrow_swappable<_T1>::value)
+                   __is_nothrow_swappable<_T2>::value)
     {
         using _VSTD::swap;
         swap(__first_, __x.__first_);
@@ -2294,8 +2294,8 @@ public:
                                      tuple<_Args2...> __second_args,
                                      __tuple_indices<_I1...>,
                                      __tuple_indices<_I2...>)
-            : _T1(_VSTD::forward<_Args1>(get<_I1>(__first_args))...),
-              _T2(_VSTD::forward<_Args2>(get<_I2>(__second_args))...)
+            : _T1(_VSTD::forward<_Args1>(_VSTD::get<_I1>(__first_args))...),
+              _T2(_VSTD::forward<_Args2>(_VSTD::get<_I2>(__second_args))...)
             {}
 
 #endif  // _LIBCPP_HAS_NO_VARIADICS
@@ -2308,7 +2308,7 @@ public:
 
     _LIBCPP_INLINE_VISIBILITY void swap(__libcpp_compressed_pair_imp&)
         _NOEXCEPT_(__is_nothrow_swappable<_T1>::value &&
-                   __is_nothrow_swappable<_T1>::value)
+                   __is_nothrow_swappable<_T2>::value)
     {
     }
 };
@@ -2394,7 +2394,7 @@ public:
 
     _LIBCPP_INLINE_VISIBILITY void swap(__compressed_pair& __x)
         _NOEXCEPT_(__is_nothrow_swappable<_T1>::value &&
-                   __is_nothrow_swappable<_T1>::value)
+                   __is_nothrow_swappable<_T2>::value)
         {base::swap(__x);}
 };
 
@@ -2403,7 +2403,7 @@ inline _LIBCPP_INLINE_VISIBILITY
 void
 swap(__compressed_pair<_T1, _T2>& __x, __compressed_pair<_T1, _T2>& __y)
         _NOEXCEPT_(__is_nothrow_swappable<_T1>::value &&
-                   __is_nothrow_swappable<_T1>::value)
+                   __is_nothrow_swappable<_T2>::value)
     {__x.swap(__y);}
 
 // __same_or_less_cv_qualified

@@ -7,9 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the pass which will find  instructions  which
-// can be re-written as LEA instructions in order to reduce pipeline
-// delays for some models of the Intel Atom family.
+// This file defines the pass that finds instructions that can be
+// re-written as LEA instructions in order to reduce pipeline delays.
 //
 //===----------------------------------------------------------------------===//
 
@@ -40,7 +39,7 @@ class FixupLEAPass : public MachineFunctionPass {
   /// where appropriate.
   bool processBasicBlock(MachineFunction &MF, MachineFunction::iterator MFI);
 
-  const char *getPassName() const override { return "X86 Atom LEA Fixup"; }
+  const char *getPassName() const override { return "X86 LEA Fixup"; }
 
   /// \brief Given a machine register, look for the instruction
   /// which writes it in the current basic block. If found,
@@ -300,7 +299,7 @@ void FixupLEAPass::processInstructionForSLM(MachineBasicBlock::iterator &I,
   }
   DEBUG(dbgs() << "FixLEA: Candidate to replace:"; I->dump(););
   DEBUG(dbgs() << "FixLEA: Replaced by: ";);
-  MachineInstr *NewMI = 0;
+  MachineInstr *NewMI = nullptr;
   const MachineOperand &Dst = MI->getOperand(0);
   // Make ADD instruction for two registers writing to LEA's destination
   if (SrcR1 != 0 && SrcR2 != 0) {

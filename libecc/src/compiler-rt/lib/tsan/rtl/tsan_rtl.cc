@@ -214,6 +214,32 @@ void MapShadow(uptr addr, uptr size) {
   // so we can get away with unaligned mapping.
   // CHECK_EQ(addr, addr & ~((64 << 10) - 1));  // windows wants 64K alignment
   MmapFixedNoReserve(MemToShadow(addr), size * kShadowMultiplier);
+
+  // Meta shadow is 2:1, so tread carefully.
+  static bool data_mapped = false;
+  static uptr mapped_meta_end = 0;
+  uptr meta_begin = (uptr)MemToMeta(addr);
+  uptr meta_end = (uptr)MemToMeta(addr + size);
+  meta_begin = RoundDownTo(meta_begin, 64 << 10);
+  meta_end = RoundUpTo(meta_end, 64 << 10);
+  if (!data_mapped) {
+    // First call maps data+bss.
+    data_mapped = true;
+    MmapFixedNoReserve(meta_begin, meta_end - meta_begin);
+  } else {
+    // Mapping continous heap.
+    // Windows wants 64K alignment.
+    meta_begin = RoundDownTo(meta_begin, 64 << 10);
+    meta_end = RoundUpTo(meta_end, 64 << 10);
+    if (meta_end <= mapped_meta_end)
+      return;
+    if (meta_begin < mapped_meta_end)
+      meta_begin = mapped_meta_end;
+    MmapFixedNoReserve(meta_begin, meta_end - meta_begin);
+    mapped_meta_end = meta_end;
+  }
+  VPrintf(2, "mapped meta shadow for (%p-%p) at (%p-%p)\n",
+      addr, addr+size, meta_begin, meta_end);
 }
 
 void MapThreadTrace(uptr addr, uptr size) {
@@ -368,16 +394,37 @@ void ForkChildAfter(ThreadState *thr, uptr pc) {
 }
 #endif
 
+#ifdef TSAN_GO
+NOINLINE
+void GrowShadowStack(ThreadState *thr) {
+  const int sz = thr->shadow_stack_end - thr->shadow_stack;
+  const int newsz = 2 * sz;
+  uptr *newstack = (uptr*)internal_alloc(MBlockShadowStack,
+      newsz * sizeof(uptr));
+  internal_memcpy(newstack, thr->shadow_stack, sz * sizeof(uptr));
+  internal_free(thr->shadow_stack);
+  thr->shadow_stack = newstack;
+  thr->shadow_stack_pos = newstack + sz;
+  thr->shadow_stack_end = newstack + newsz;
+}
+#endif
+
 u32 CurrentStackId(ThreadState *thr, uptr pc) {
   if (thr->shadow_stack_pos == 0)  // May happen during bootstrap.
     return 0;
-  if (pc) {
+  if (pc != 0) {
+#ifndef TSAN_GO
+    DCHECK_LT(thr->shadow_stack_pos, thr->shadow_stack_end);
+#else
+    if (thr->shadow_stack_pos == thr->shadow_stack_end)
+      GrowShadowStack(thr);
+#endif
     thr->shadow_stack_pos[0] = pc;
     thr->shadow_stack_pos++;
   }
   u32 id = StackDepotPut(thr->shadow_stack,
                          thr->shadow_stack_pos - thr->shadow_stack);
-  if (pc)
+  if (pc != 0)
     thr->shadow_stack_pos--;
   return id;
 }
@@ -575,7 +622,7 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   }
 #endif
 
-  if (*shadow_mem == kShadowRodata) {
+  if (kCppMode && *shadow_mem == kShadowRodata) {
     // Access to .rodata section, no races here.
     // Measurements show that it can be 10-20% of all memory accesses.
     StatInc(thr, StatMop);
@@ -601,7 +648,41 @@ void MemoryAccess(ThreadState *thr, uptr pc, uptr addr,
   cur.SetWrite(kAccessIsWrite);
   cur.SetAtomic(kIsAtomic);
 
-  MemoryAccessImpl(thr, addr, kAccessSizeLog, kAccessIsWrite, kIsAtomic,
+  if (LIKELY(ContainsSameAccess(shadow_mem, cur.raw(),
+      thr->fast_synch_epoch, kAccessIsWrite))) {
+    StatInc(thr, StatMop);
+    StatInc(thr, kAccessIsWrite ? StatMopWrite : StatMopRead);
+    StatInc(thr, (StatType)(StatMop1 + kAccessSizeLog));
+    StatInc(thr, StatMopSame);
+    return;
+  }
+
+  if (kCollectHistory) {
+    fast_state.IncrementEpoch();
+    thr->fast_state = fast_state;
+    TraceAddEvent(thr, fast_state, EventTypeMop, pc);
+    cur.IncrementEpoch();
+  }
+
+  MemoryAccessImpl1(thr, addr, kAccessSizeLog, kAccessIsWrite, kIsAtomic,
+      shadow_mem, cur);
+}
+
+// Called by MemoryAccessRange in tsan_rtl_thread.cc
+ALWAYS_INLINE USED
+void MemoryAccessImpl(ThreadState *thr, uptr addr,
+    int kAccessSizeLog, bool kAccessIsWrite, bool kIsAtomic,
+    u64 *shadow_mem, Shadow cur) {
+  if (LIKELY(ContainsSameAccess(shadow_mem, cur.raw(),
+      thr->fast_synch_epoch, kAccessIsWrite))) {
+    StatInc(thr, StatMop);
+    StatInc(thr, kAccessIsWrite ? StatMopWrite : StatMopRead);
+    StatInc(thr, (StatType)(StatMop1 + kAccessSizeLog));
+    StatInc(thr, StatMopSame);
+    return;
+  }
+
+  MemoryAccessImpl1(thr, addr, kAccessSizeLog, kAccessIsWrite, kIsAtomic,
       shadow_mem, cur);
 }
 
@@ -719,17 +800,8 @@ void FuncEntry(ThreadState *thr, uptr pc) {
 #ifndef TSAN_GO
   DCHECK_LT(thr->shadow_stack_pos, thr->shadow_stack_end);
 #else
-  if (thr->shadow_stack_pos == thr->shadow_stack_end) {
-    const int sz = thr->shadow_stack_end - thr->shadow_stack;
-    const int newsz = 2 * sz;
-    uptr *newstack = (uptr*)internal_alloc(MBlockShadowStack,
-        newsz * sizeof(uptr));
-    internal_memcpy(newstack, thr->shadow_stack, sz * sizeof(uptr));
-    internal_free(thr->shadow_stack);
-    thr->shadow_stack = newstack;
-    thr->shadow_stack_pos = newstack + sz;
-    thr->shadow_stack_end = newstack + newsz;
-  }
+  if (thr->shadow_stack_pos == thr->shadow_stack_end)
+    GrowShadowStack(thr);
 #endif
   thr->shadow_stack_pos[0] = pc;
   thr->shadow_stack_pos++;

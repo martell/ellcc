@@ -158,6 +158,15 @@ bool JumpThreading::runOnFunction(Function &F) {
   TLI = &getAnalysis<TargetLibraryInfo>();
   LVI = &getAnalysis<LazyValueInfo>();
 
+  // Remove unreachable blocks from function as they may result in infinite
+  // loop. We do threading if we found something profitable. Jump threading a
+  // branch can create other opportunities. If these opportunities form a cycle
+  // i.e. if any jump treading is undoing previous threading in the path, then
+  // we will loop forever. We take care of this issue by not jump threading for
+  // back edges. This works for normal cases but not for unreachable blocks as
+  // they may have cycle with no back edge.
+  removeUnreachableBlocks(F);
+
   FindLoopHeaders(F);
 
   bool Changed, EverChanged = false;
@@ -660,14 +669,9 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
       if (LoopHeaders.erase(SinglePred))
         LoopHeaders.insert(BB);
 
-      // Remember if SinglePred was the entry block of the function.  If so, we
-      // will need to move BB back to the entry position.
-      bool isEntry = SinglePred == &SinglePred->getParent()->getEntryBlock();
       LVI->eraseBlock(SinglePred);
       MergeBasicBlockIntoOnlyPred(BB);
 
-      if (isEntry && BB != &BB->getParent()->getEntryBlock())
-        BB->moveBefore(&BB->getParent()->getEntryBlock());
       return true;
     }
   }

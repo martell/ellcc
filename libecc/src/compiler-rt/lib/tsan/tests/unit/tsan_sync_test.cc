@@ -61,4 +61,16 @@ TEST(Sync, Table) {
   }
 }
 
+TEST(MetaMap, ResetSync) {
+  ThreadState *thr = cur_thread();
+  MetaMap *m = &ctx->metamap;
+  u64 block[1] = {};  // fake malloc block
+  m->AllocBlock(thr, 0, (uptr)&block[0], 1 * sizeof(u64));
+  SyncVar *s = m->GetOrCreateAndLock(thr, 0, (uptr)&block[0], true);
+  s->Reset();
+  s->mtx.Unlock();
+  uptr sz = m->FreeBlock(thr, 0, (uptr)&block[0]);
+  EXPECT_EQ(sz, 1 * sizeof(u64));
+}
+
 }  // namespace __tsan

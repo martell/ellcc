@@ -27,7 +27,7 @@ namespace {
 }
 
 MBlazeELFObjectWriter::MBlazeELFObjectWriter(uint8_t OSABI)
-  : MCELFObjectTargetWriter(/*Is64Bit*/ false, OSABI, ELF::EM_MBLAZE,
+  : MCELFObjectTargetWriter(/*Is64Bit*/ false, OSABI, ELF::EM_MICROBLAZE,
                             /*HasRelocationAddend*/ false) {}
 
 MBlazeELFObjectWriter::~MBlazeELFObjectWriter() {

@@ -110,7 +110,13 @@ public:
     /// \brief This is the scope of some OpenMP simd directive.
     /// For example, it is used for 'omp simd', 'omp for simd'.
     /// This flag is propagated to children scopes.
-    OpenMPSimdDirectiveScope = 0x20000
+    OpenMPSimdDirectiveScope = 0x20000,
+
+    /// This scope corresponds to an enum.
+    EnumScope = 0x40000,
+
+    /// This scope corresponds to a SEH try.
+    SEHTryScope = 0x80000,
   };
 private:
   /// The parent scope for this scope.  This is null for the translation-unit
@@ -394,6 +400,9 @@ public:
 
   /// \brief Determine whether this scope is a C++ 'try' block.
   bool isTryScope() const { return getFlags() & Scope::TryScope; }
+
+  /// \brief Determine whether this scope is a SEH '__try' block.
+  bool isSEHTryScope() const { return getFlags() & Scope::SEHTryScope; }
 
   /// containedInPrototypeScope - Return true if this or a parent scope
   /// is a FunctionPrototypeScope.

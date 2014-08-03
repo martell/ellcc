@@ -518,9 +518,7 @@ public:
     return Queue.begin() + idx;
   }
 
-#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
   void dump();
-#endif
 };
 
 /// Summarize the unscheduled region.
@@ -624,9 +622,9 @@ private:
   SmallVector<unsigned, 16> ReservedCycles;
 
 #ifndef NDEBUG
-  // Remember the greatest operand latency as an upper bound on the number of
+  // Remember the greatest possible stall as an upper bound on the number of
   // times we should retry the pending queue because of a hazard.
-  unsigned MaxObservedLatency;
+  unsigned MaxObservedStall;
 #endif
 
 public:

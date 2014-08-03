@@ -87,11 +87,8 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
       NSConcreteStackBlock(nullptr), BlockObjectAssign(nullptr),
       BlockObjectDispose(nullptr), BlockDescriptorType(nullptr),
       GenericBlockLiteralType(nullptr), LifetimeStartFn(nullptr),
-      LifetimeEndFn(nullptr),
-      SanitizerBlacklist(
-          llvm::SpecialCaseList::createOrDie(CGO.SanitizerBlacklistFile)),
-      SanOpts(SanitizerBlacklist->isIn(M) ? SanitizerOptions::Disabled
-                                          : LangOpts.Sanitize) {
+      LifetimeEndFn(nullptr), SanitizerBL(llvm::SpecialCaseList::createOrDie(
+                                  CGO.SanitizerBlacklistFile)) {
 
   // Initialize the type cache.
   llvm::LLVMContext &LLVMContext = M.getContext();
@@ -122,7 +119,7 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
     createCUDARuntime();
 
   // Enable TBAA unless it's suppressed. ThreadSanitizer needs TBAA even at O0.
-  if (SanOpts.Thread ||
+  if (LangOpts.Sanitize.Thread ||
       (!CodeGenOpts.RelaxedAliasing && CodeGenOpts.OptimizationLevel > 0))
     TBAA = new CodeGenTBAA(Context, VMContext, CodeGenOpts, getLangOpts(),
                            getCXXABI().getMangleContext());
@@ -141,7 +138,7 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
   RRData = new RREntrypoints();
 
   if (!CodeGenOpts.InstrProfileInput.empty()) {
-    if (llvm::error_code EC = llvm::IndexedInstrProfReader::create(
+    if (std::error_code EC = llvm::IndexedInstrProfReader::create(
             CodeGenOpts.InstrProfileInput, PGOReader)) {
       unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
                                               "Could not read profile: %0");
@@ -314,6 +311,19 @@ void CodeGenModule::clear() {
   DeferredDeclsToEmit.clear();
 }
 
+void InstrProfStats::reportDiagnostics(DiagnosticsEngine &Diags,
+                                       StringRef MainFile) {
+  if (!hasDiagnostics())
+    return;
+  if (VisitedInMainFile > 0 && VisitedInMainFile == MissingInMainFile) {
+    if (MainFile.empty())
+      MainFile = "<stdin>";
+    Diags.Report(diag::warn_profile_data_unprofiled) << MainFile;
+  } else
+    Diags.Report(diag::warn_profile_data_out_of_date) << Visited << Missing
+                                                      << Mismatched;
+}
+
 void CodeGenModule::Release() {
   EmitDeferred();
   applyReplacements();
@@ -327,9 +337,8 @@ void CodeGenModule::Release() {
   if (getCodeGenOpts().ProfileInstrGenerate)
     if (llvm::Function *PGOInit = CodeGenPGO::emitInitialization(*this))
       AddGlobalCtor(PGOInit, 0);
-  if (PGOReader && PGOStats.isOutOfDate())
-    getDiags().Report(diag::warn_profile_data_out_of_date)
-        << PGOStats.Visited << PGOStats.Missing << PGOStats.Mismatched;
+  if (PGOReader && PGOStats.hasDiagnostics())
+    PGOStats.reportDiagnostics(getDiags(), getCodeGenOpts().MainFileName);
   EmitCtorList(GlobalCtors, "llvm.global_ctors");
   EmitCtorList(GlobalDtors, "llvm.global_dtors");
   EmitGlobalAnnotations();
@@ -352,6 +361,23 @@ void CodeGenModule::Release() {
     getModule().addModuleFlag(llvm::Module::Warning, "Debug Info Version",
                               llvm::DEBUG_METADATA_VERSION);
 
+  // We need to record the widths of enums and wchar_t, so that we can generate
+  // the correct build attributes in the ARM backend.
+  llvm::Triple::ArchType Arch = Context.getTargetInfo().getTriple().getArch();
+  if (   Arch == llvm::Triple::arm
+      || Arch == llvm::Triple::armeb
+      || Arch == llvm::Triple::thumb
+      || Arch == llvm::Triple::thumbeb) {
+    // Width of wchar_t in bytes
+    uint64_t WCharWidth =
+        Context.getTypeSizeInChars(Context.getWideCharType()).getQuantity();
+    getModule().addModuleFlag(llvm::Module::Error, "wchar_size", WCharWidth);
+
+    // The minimum width of an enum in bytes
+    uint64_t EnumWidth = Context.getLangOpts().ShortEnums ? 1 : 4;
+    getModule().addModuleFlag(llvm::Module::Error, "min_enum_size", EnumWidth);
+  }
+
   SimplifyPersonality();
 
   if (getCodeGenOpts().EmitDeclMetadata)
@@ -364,6 +390,8 @@ void CodeGenModule::Release() {
     DebugInfo->finalize();
 
   EmitVersionIdentMetadata();
+
+  EmitTargetMetadata();
 }
 
 void CodeGenModule::UpdateCompletedType(const TagDecl *TD) {
@@ -563,7 +591,7 @@ void CodeGenModule::AddGlobalCtor(llvm::Function *Ctor, int Priority,
 /// when the module is unloaded.
 void CodeGenModule::AddGlobalDtor(llvm::Function *Dtor, int Priority) {
   // FIXME: Type coercion of void()* types.
-  GlobalDtors.push_back(Structor(Priority, Dtor, 0));
+  GlobalDtors.push_back(Structor(Priority, Dtor, nullptr));
 }
 
 void CodeGenModule::EmitCtorList(const CtorList &Fns, const char *GlobalName) {
@@ -701,17 +729,16 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
     B.addAttribute(llvm::Attribute::StackProtectReq);
 
   // Add sanitizer attributes if function is not blacklisted.
-  if (!SanitizerBlacklist->isIn(*F)) {
+  if (!SanitizerBL.isIn(*F)) {
     // When AddressSanitizer is enabled, set SanitizeAddress attribute
     // unless __attribute__((no_sanitize_address)) is used.
-    if (SanOpts.Address && !D->hasAttr<NoSanitizeAddressAttr>())
+    if (LangOpts.Sanitize.Address && !D->hasAttr<NoSanitizeAddressAttr>())
       B.addAttribute(llvm::Attribute::SanitizeAddress);
     // Same for ThreadSanitizer and __attribute__((no_sanitize_thread))
-    if (SanOpts.Thread && !D->hasAttr<NoSanitizeThreadAttr>()) {
+    if (LangOpts.Sanitize.Thread && !D->hasAttr<NoSanitizeThreadAttr>())
       B.addAttribute(llvm::Attribute::SanitizeThread);
-    }
     // Same for MemorySanitizer and __attribute__((no_sanitize_memory))
-    if (SanOpts.Memory && !D->hasAttr<NoSanitizeMemoryAttr>())
+    if (LangOpts.Sanitize.Memory && !D->hasAttr<NoSanitizeMemoryAttr>())
       B.addAttribute(llvm::Attribute::SanitizeMemory);
   }
 
@@ -1505,8 +1532,6 @@ CodeGenModule::GetOrCreateLLVMFunction(StringRef MangledName,
     }
   }
 
-  getTargetCodeGenInfo().emitTargetMD(D, F, *this);
-
   // Make sure the result is of the requested type.
   if (!IsIncompleteFunction) {
     assert(F->getType()->getElementType() == Ty);
@@ -1655,8 +1680,6 @@ CodeGenModule::GetOrCreateLLVMGlobal(StringRef MangledName,
 
   if (AddrSpace != Ty->getAddressSpace())
     return llvm::ConstantExpr::getAddrSpaceCast(GV, Ty);
-
-  getTargetCodeGenInfo().emitTargetMD(D, GV, *this);
 
   return GV;
 }
@@ -1903,6 +1926,16 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
   // Set the llvm linkage type as appropriate.
   llvm::GlobalValue::LinkageTypes Linkage =
       getLLVMLinkageVarDefinition(D, GV->isConstant());
+
+  // On Darwin, the backing variable for a C++11 thread_local variable always
+  // has internal linkage; all accesses should just be calls to the
+  // Itanium-specified entry point, which has the normal linkage of the
+  // variable.
+  if (const auto *VD = dyn_cast<VarDecl>(D))
+    if (!VD->isStaticLocal() && VD->getTLSKind() == VarDecl::TLS_Dynamic &&
+        Context.getTargetInfo().getTriple().isMacOSX())
+      Linkage = llvm::GlobalValue::InternalLinkage;
+
   GV->setLinkage(Linkage);
   if (D->hasAttr<DLLImportAttr>())
     GV->setDLLStorageClass(llvm::GlobalVariable::DLLImportStorageClass);
@@ -1919,21 +1952,71 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
   if (NeedsGlobalCtor || NeedsGlobalDtor)
     EmitCXXGlobalVarDeclInitFunc(D, GV, NeedsGlobalCtor);
 
-  // If we are compiling with ASan, add metadata indicating dynamically
-  // initialized (and not blacklisted) globals.
-  if (SanOpts.Address && NeedsGlobalCtor &&
-      !SanitizerBlacklist->isIn(*GV, "init")) {
-    llvm::NamedMDNode *DynamicInitializers = TheModule.getOrInsertNamedMetadata(
-        "llvm.asan.dynamically_initialized_globals");
-    llvm::Value *GlobalToAdd[] = { GV };
-    llvm::MDNode *ThisGlobal = llvm::MDNode::get(VMContext, GlobalToAdd);
-    DynamicInitializers->addOperand(ThisGlobal);
-  }
+  reportGlobalToASan(GV, *D, NeedsGlobalCtor);
 
   // Emit global variable debug information.
   if (CGDebugInfo *DI = getModuleDebugInfo())
     if (getCodeGenOpts().getDebugInfo() >= CodeGenOptions::LimitedDebugInfo)
       DI->EmitGlobalVariable(GV, D);
+}
+
+void CodeGenModule::reportGlobalToASan(llvm::GlobalVariable *GV,
+                                       SourceLocation Loc, StringRef Name,
+                                       bool IsDynInit) {
+  if (!LangOpts.Sanitize.Address)
+    return;
+  IsDynInit &= !SanitizerBL.isIn(*GV, "init");
+  bool IsBlacklisted = SanitizerBL.isIn(*GV);
+
+  llvm::GlobalVariable *LocDescr = nullptr;
+  llvm::GlobalVariable *GlobalName = nullptr;
+  if (!IsBlacklisted) {
+    // Don't generate source location and global name if it is blacklisted -
+    // it won't be instrumented anyway.
+    PresumedLoc PLoc = Context.getSourceManager().getPresumedLoc(Loc);
+    if (PLoc.isValid()) {
+      llvm::Constant *LocData[] = {
+          GetAddrOfConstantCString(PLoc.getFilename()),
+          llvm::ConstantInt::get(llvm::Type::getInt32Ty(VMContext),
+                                 PLoc.getLine()),
+          llvm::ConstantInt::get(llvm::Type::getInt32Ty(VMContext),
+                                 PLoc.getColumn()),
+      };
+      auto LocStruct = llvm::ConstantStruct::getAnon(LocData);
+      LocDescr = new llvm::GlobalVariable(TheModule, LocStruct->getType(), true,
+                                          llvm::GlobalValue::PrivateLinkage,
+                                          LocStruct, ".asan_loc_descr");
+      LocDescr->setUnnamedAddr(true);
+      // Add LocDescr to llvm.compiler.used, so that it won't be removed by
+      // the optimizer before the ASan instrumentation pass.
+      addCompilerUsedGlobal(LocDescr);
+    }
+    if (!Name.empty()) {
+      GlobalName = GetAddrOfConstantCString(Name);
+      // GlobalName shouldn't be removed by the optimizer.
+      addCompilerUsedGlobal(GlobalName);
+    }
+  }
+
+  llvm::Value *GlobalMetadata[] = {
+      GV, LocDescr, GlobalName,
+      llvm::ConstantInt::get(llvm::Type::getInt1Ty(VMContext), IsDynInit),
+      llvm::ConstantInt::get(llvm::Type::getInt1Ty(VMContext), IsBlacklisted)};
+
+  llvm::MDNode *ThisGlobal = llvm::MDNode::get(VMContext, GlobalMetadata);
+  llvm::NamedMDNode *AsanGlobals =
+      TheModule.getOrInsertNamedMetadata("llvm.asan.globals");
+  AsanGlobals->addOperand(ThisGlobal);
+}
+
+void CodeGenModule::reportGlobalToASan(llvm::GlobalVariable *GV,
+                                       const VarDecl &D, bool IsDynInit) {
+  if (!LangOpts.Sanitize.Address)
+    return;
+  std::string QualName;
+  llvm::raw_string_ostream OS(QualName);
+  D.printQualifiedName(OS);
+  reportGlobalToASan(GV, D.getLocation(), OS.str(), IsDynInit);
 }
 
 static bool isVarDeclStrongDefinition(const VarDecl *D, bool NoCommon) {
@@ -2701,7 +2784,7 @@ GenerateStringLiteral(llvm::Constant *C, llvm::GlobalValue::LinkageTypes LT,
 
 /// GetAddrOfConstantStringFromLiteral - Return a pointer to a
 /// constant array for the given string literal.
-llvm::Constant *
+llvm::GlobalVariable *
 CodeGenModule::GetAddrOfConstantStringFromLiteral(const StringLiteral *S) {
   auto Alignment =
       getContext().getAlignOfGlobalVarInChars(S->getType()).getQuantity();
@@ -2723,7 +2806,7 @@ CodeGenModule::GetAddrOfConstantStringFromLiteral(const StringLiteral *S) {
   // Mangle the string literal if the ABI allows for it.  However, we cannot
   // do this if  we are compiling with ASan or -fwritable-strings because they
   // rely on strings having normal linkage.
-  if (!LangOpts.WritableStrings && !SanOpts.Address &&
+  if (!LangOpts.WritableStrings && !LangOpts.Sanitize.Address &&
       getCXXABI().getMangleContext().shouldMangleStringLiteral(S)) {
     llvm::raw_svector_ostream Out(MangledNameBuffer);
     getCXXABI().getMangleContext().mangleStringLiteral(S, Out);
@@ -2740,12 +2823,14 @@ CodeGenModule::GetAddrOfConstantStringFromLiteral(const StringLiteral *S) {
   auto GV = GenerateStringLiteral(C, LT, *this, GlobalVariableName, Alignment);
   if (Entry)
     Entry->setValue(GV);
+
+  reportGlobalToASan(GV, S->getStrTokenLoc(0), "<string literal>");
   return GV;
 }
 
 /// GetAddrOfConstantStringFromObjCEncode - Return a pointer to a constant
 /// array for the given ObjCEncodeExpr node.
-llvm::Constant *
+llvm::GlobalVariable *
 CodeGenModule::GetAddrOfConstantStringFromObjCEncode(const ObjCEncodeExpr *E) {
   std::string Str;
   getContext().getObjCEncodingForType(E->getEncodedType(), Str);
@@ -2776,9 +2861,8 @@ llvm::StringMapEntry<llvm::GlobalVariable *> *CodeGenModule::getConstantStringMa
 /// GetAddrOfConstantCString - Returns a pointer to a character array containing
 /// the literal and a terminating '\0' character.
 /// The result has pointer to array type.
-llvm::Constant *CodeGenModule::GetAddrOfConstantCString(const std::string &Str,
-                                                        const char *GlobalName,
-                                                        unsigned Alignment) {
+llvm::GlobalVariable *CodeGenModule::GetAddrOfConstantCString(
+    const std::string &Str, const char *GlobalName, unsigned Alignment) {
   StringRef StrWithNull(Str.c_str(), Str.size() + 1);
   if (Alignment == 0) {
     Alignment = getContext()
@@ -3220,11 +3304,9 @@ void CodeGenModule::EmitDeclMetadata() {
   llvm::NamedMDNode *GlobalMetadata = nullptr;
 
   // StaticLocalDeclMap
-  for (llvm::DenseMap<GlobalDecl,StringRef>::iterator
-         I = MangledDeclNames.begin(), E = MangledDeclNames.end();
-       I != E; ++I) {
-    llvm::GlobalValue *Addr = getModule().getNamedValue(I->second);
-    EmitGlobalDeclMetadata(*this, GlobalMetadata, I->first, Addr);
+  for (auto &I : MangledDeclNames) {
+    llvm::GlobalValue *Addr = getModule().getNamedValue(I.second);
+    EmitGlobalDeclMetadata(*this, GlobalMetadata, I.first, Addr);
   }
 }
 
@@ -3240,11 +3322,9 @@ void CodeGenFunction::EmitDeclMetadata() {
 
   llvm::NamedMDNode *GlobalMetadata = nullptr;
 
-  for (llvm::DenseMap<const Decl*, llvm::Value*>::iterator
-         I = LocalDeclMap.begin(), E = LocalDeclMap.end(); I != E; ++I) {
-    const Decl *D = I->first;
-    llvm::Value *Addr = I->second;
-
+  for (auto &I : LocalDeclMap) {
+    const Decl *D = I.first;
+    llvm::Value *Addr = I.second;
     if (auto *Alloca = dyn_cast<llvm::AllocaInst>(Addr)) {
       llvm::Value *DAddr = GetPointerConstant(getLLVMContext(), D);
       Alloca->setMetadata(DeclPtrKind, llvm::MDNode::get(Context, DAddr));
@@ -3265,6 +3345,14 @@ void CodeGenModule::EmitVersionIdentMetadata() {
     llvm::MDString::get(Ctx, Version)
   };
   IdentMetadata->addOperand(llvm::MDNode::get(Ctx, IdentNode));
+}
+
+void CodeGenModule::EmitTargetMetadata() {
+  for (auto &I : MangledDeclNames) {
+    const Decl *D = I.first.getDecl()->getMostRecentDecl();
+    llvm::GlobalValue *GV = GetGlobalValue(I.second);
+    getTargetCodeGenInfo().emitTargetMD(D, GV, *this);
+  }
 }
 
 void CodeGenModule::EmitCoverageFile() {
@@ -3310,3 +3398,19 @@ llvm::Constant *CodeGenModule::EmitUuidofInitializer(StringRef Uuid,
 
   return llvm::ConstantStruct::getAnon(Fields);
 }
+
+llvm::Constant *CodeGenModule::GetAddrOfRTTIDescriptor(QualType Ty,
+                                                       bool ForEH) {
+  // Return a bogus pointer if RTTI is disabled, unless it's for EH.
+  // FIXME: should we even be calling this method if RTTI is disabled
+  // and it's not for EH?
+  if (!ForEH && !getLangOpts().RTTI)
+    return llvm::Constant::getNullValue(Int8PtrTy);
+  
+  if (ForEH && Ty->isObjCObjectPointerType() &&
+      LangOpts.ObjCRuntime.isGNUFamily())
+    return ObjCRuntime->GetEHType(Ty);
+
+  return getCXXABI().getAddrOfRTTIDescriptor(Ty);
+}
+

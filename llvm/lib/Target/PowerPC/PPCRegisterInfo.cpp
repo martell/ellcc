@@ -885,16 +885,6 @@ bool PPCRegisterInfo::
 needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const {
   assert(Offset < 0 && "Local offset must be negative");
 
-  unsigned FIOperandNum = 0;
-  while (!MI->getOperand(FIOperandNum).isFI()) {
-    ++FIOperandNum;
-    assert(FIOperandNum < MI->getNumOperands() &&
-           "Instr doesn't have FrameIndex operand!");
-  }
-
-  unsigned OffsetOperandNo = getOffsetONFromFION(*MI, FIOperandNum);
-  Offset += MI->getOperand(OffsetOperandNo).getImm();
-
   // It's the load/store FI references that cause issues, as it can be difficult
   // to materialize the offset if it won't fit in the literal field. Estimate
   // based on the size of the local frame and some conservative assumptions
@@ -973,10 +963,28 @@ void PPCRegisterInfo::resolveFrameIndex(MachineInstr &MI, unsigned BaseReg,
   unsigned OffsetOperandNo = getOffsetONFromFION(MI, FIOperandNum);
   Offset += MI.getOperand(OffsetOperandNo).getImm();
   MI.getOperand(OffsetOperandNo).ChangeToImmediate(Offset);
+
+  MachineBasicBlock &MBB = *MI.getParent();
+  MachineFunction &MF = *MBB.getParent();
+  const TargetInstrInfo &TII = *MF.getTarget().getInstrInfo();
+  const MCInstrDesc &MCID = MI.getDesc();
+  MachineRegisterInfo &MRI = MF.getRegInfo();
+  MRI.constrainRegClass(BaseReg,
+                        TII.getRegClass(MCID, FIOperandNum, this, MF));
 }
 
 bool PPCRegisterInfo::isFrameOffsetLegal(const MachineInstr *MI,
                                          int64_t Offset) const {
+  unsigned FIOperandNum = 0;
+  while (!MI->getOperand(FIOperandNum).isFI()) {
+    ++FIOperandNum;
+    assert(FIOperandNum < MI->getNumOperands() &&
+           "Instr doesn't have FrameIndex operand!");
+  }
+
+  unsigned OffsetOperandNo = getOffsetONFromFION(*MI, FIOperandNum);
+  Offset += MI->getOperand(OffsetOperandNo).getImm();
+
   return MI->getOpcode() == PPC::DBG_VALUE || // DBG_VALUE is always Reg+Imm
          (isInt<16>(Offset) && (!usesIXAddr(*MI) || (Offset & 3) == 0));
 }

@@ -37,19 +37,21 @@ SyncTab::Part::Part()
   : mtx(MutexTypeSyncTab, StatMtxSyncTab)
   , val() {
 }
+  this->next = 0;
 
 SyncTab::SyncTab() {
 }
 
-SyncTab::~SyncTab() {
-  for (int i = 0; i < kPartCount; i++) {
-    while (tab_[i].val) {
-      SyncVar *tmp = tab_[i].val;
-      tab_[i].val = tmp->next;
-      DestroyAndFree(tmp);
-    }
-  }
-}
+void SyncVar::Reset() {
+  uid = 0;
+  creation_stack_id = 0;
+  owner_tid = kInvalidTid;
+  last_lock = 0;
+  recursion = 0;
+  is_rw = 0;
+  is_recursive = 0;
+  is_broken = 0;
+  is_linker_init = 0;
 
 SyncVar* SyncTab::GetOrCreateAndLock(ThreadState *thr, uptr pc,
                                      uptr addr, bool write_lock) {
@@ -199,6 +201,18 @@ SyncVar* SyncTab::GetAndRemove(ThreadState *thr, uptr pc, uptr addr) {
           return 0;
         *prev = res->next;
         break;
+      if (idx & kFlagBlock) {
+        block_alloc_.Free(&thr->block_cache, idx & ~kFlagMask);
+        break;
+      } else if (idx & kFlagSync) {
+        DCHECK(idx & kFlagSync);
+        SyncVar *s = sync_alloc_.Map(idx & ~kFlagMask);
+        u32 next = s->next;
+        s->Reset();
+        sync_alloc_.Free(&thr->sync_cache, idx & ~kFlagMask);
+        idx = next;
+      } else {
+        CHECK(0);
       }
       prev = &res->next;
       res = *prev;
@@ -230,9 +244,40 @@ StackTrace::StackTrace(uptr *buf, uptr cnt)
   CHECK_NE(cnt, 0);
 }
 
-StackTrace::~StackTrace() {
-  Reset();
-}
+SyncVar* MetaMap::GetAndLock(ThreadState *thr, uptr pc,
+                             uptr addr, bool write_lock, bool create) {
+  u32 *meta = MemToMeta(addr);
+  u32 idx0 = *meta;
+  u32 myidx = 0;
+  SyncVar *mys = 0;
+  for (;;) {
+    u32 idx = idx0;
+    for (;;) {
+      if (idx == 0)
+        break;
+      if (idx & kFlagBlock)
+        break;
+      DCHECK(idx & kFlagSync);
+      SyncVar * s = sync_alloc_.Map(idx & ~kFlagMask);
+      if (s->addr == addr) {
+        if (myidx != 0) {
+          mys->Reset();
+          sync_alloc_.Free(&thr->sync_cache, myidx);
+        }
+        if (write_lock)
+          s->mtx.Lock();
+        else
+          s->mtx.ReadLock();
+        return s;
+      }
+      idx = s->next;
+    }
+    if (!create)
+      return 0;
+    if (*meta != idx0) {
+      idx0 = *meta;
+      continue;
+    }
 
 void StackTrace::Reset() {
   if (s_ && !c_) {
@@ -243,31 +288,35 @@ void StackTrace::Reset() {
   n_ = 0;
 }
 
-void StackTrace::Init(const uptr *pcs, uptr cnt) {
-  Reset();
-  if (cnt == 0)
-    return;
-  if (c_) {
-    CHECK_NE(s_, 0);
-    CHECK_LE(cnt, c_);
-  } else {
-    s_ = (uptr*)internal_alloc(MBlockStackTrace, cnt * sizeof(s_[0]));
+void MetaMap::MoveMemory(uptr src, uptr dst, uptr sz) {
+  // src and dst can overlap,
+  // there are no concurrent accesses to the regions (e.g. stop-the-world).
+  CHECK_NE(src, dst);
+  CHECK_NE(sz, 0);
+  uptr diff = dst - src;
+  u32 *src_meta = MemToMeta(src);
+  u32 *dst_meta = MemToMeta(dst);
+  u32 *src_meta_end = MemToMeta(src + sz);
+  uptr inc = 1;
+  if (dst > src) {
+    src_meta = MemToMeta(src + sz) - 1;
+    dst_meta = MemToMeta(dst + sz) - 1;
+    src_meta_end = MemToMeta(src) - 1;
+    inc = -1;
   }
-  n_ = cnt;
-  internal_memcpy(s_, pcs, cnt * sizeof(s_[0]));
-}
-
-void StackTrace::ObtainCurrent(ThreadState *thr, uptr toppc) {
-  Reset();
-  n_ = thr->shadow_stack_pos - thr->shadow_stack;
-  if (n_ + !!toppc == 0)
-    return;
-  uptr start = 0;
-  if (c_) {
-    CHECK_NE(s_, 0);
-    if (n_ + !!toppc > c_) {
-      start = n_ - c_ + !!toppc;
-      n_ = c_ - !!toppc;
+  for (; src_meta != src_meta_end; src_meta += inc, dst_meta += inc) {
+    CHECK_EQ(*dst_meta, 0);
+    u32 idx = *src_meta;
+    *src_meta = 0;
+    *dst_meta = idx;
+    // Patch the addresses in sync objects.
+    while (idx != 0) {
+      if (idx & kFlagBlock)
+        break;
+      CHECK(idx & kFlagSync);
+      SyncVar *s = sync_alloc_.Map(idx & ~kFlagMask);
+      s->addr += diff;
+      idx = s->next;
     }
   } else {
     // Cap potentially huge stacks.

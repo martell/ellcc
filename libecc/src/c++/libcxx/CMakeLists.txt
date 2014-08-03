@@ -71,52 +71,60 @@ get_target_triple(LIBCXX_TARGET_TRIPLE
   )
 set(LIBCXX_TARGET_TRIPLE ${LIBCXX_TARGET_TRIPLE} CACHE STRING "Target triple.")
 
-if ("${LIBCXX_CXX_ABI}" STREQUAL "libsupc++")
-  set(LIBCXX_LIBSUPCXX_INCLUDE_PATHS "${LIBCXX_LIBSUPCXX_INCLUDE_PATHS}"
-      CACHE STRINGS
-      "Paths to libsupc++ include directories separate by ';'.")
-  set(LIBCXX_CXX_ABI_LIBRARIES supc++)
-  set(LIBCXX_LIBSUPCXX_FILES
-      cxxabi.h
-      bits/c++config.h
-      bits/os_defines.h
-      bits/cpu_defines.h
-      bits/cxxabi_tweaks.h
-      bits/cxxabi_forced.h
-      )
-  # Create include directories.
+#===============================================================================
+# Add an ABI library if appropriate
+#===============================================================================
+
+#
+# _setup_abi: Set up the build to use an ABI library
+#
+# Parameters:
+#   abidefines: A list of defines needed to compile libc++ with the ABI library
+#   abilibs   : A list of libraries to link against
+#   abifiles  : A list of files (which may be relative paths) to copy into the
+#               libc++ build tree for the build.  These files will also be
+#               installed alongside the libc++ headers.
+#   abidirs   : A list of relative paths to create under an include directory
+#               in the libc++ build directory.
+#
+macro(setup_abi_lib abipathvar abidefines abilibs abifiles abidirs)
+  list(APPEND LIBCXX_CXX_FEATURE_FLAGS ${abidefines})
+  set(${abipathvar} "${${abipathvar}}"
+    CACHE PATH
+    "Paths to C++ ABI header directories separated by ';'." FORCE
+    )
+  set(LIBCXX_CXX_ABI_LIBRARIES ${abilibs})
+  set(LIBCXX_ABILIB_FILES ${abifiles})
+
   file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include")
-  file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include/bits")
-  set(LIBCXX_LIBSUPCXX_FILE_PATHS)
-  foreach(path ${LIBCXX_LIBSUPCXX_FILES})
+  foreach(_d ${abidirs})
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include/${_d}")
+  endforeach()
+
+  foreach(fpath ${LIBCXX_ABILIB_FILES})
     set(found FALSE)
     foreach(incpath ${LIBCXX_LIBSUPCXX_INCLUDE_PATHS})
       if (EXISTS "${incpath}/${path}")
         set(found TRUE)
         get_filename_component(dstdir ${path} PATH)
         get_filename_component(file ${path} NAME)
-        add_custom_command(
-          OUTPUT "${CMAKE_BINARY_DIR}/include/${dstdir}/${file}"
-          COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${incpath}/${fpath}"
-            "${CMAKE_BINARY_DIR}/include/${dstdir}"
-          MAIN_DEPENDENCY "${incpath}/${fpath}"
+        file(COPY "${incpath}/${fpath}"
+          DESTINATION "${CMAKE_BINARY_DIR}/include/${dstdir}"
           )
-        list(APPEND LIBCXX_CXX_ABI_DEPS
-                    "${CMAKE_BINARY_DIR}/include/${dstdir}/${file}")
+        list(APPEND abilib_headers "${CMAKE_BINARY_DIR}/include/${fpath}")
       endif()
     endforeach()
     if (NOT found)
       message(FATAL_ERROR "Failed to find ${path}")
     endif()
   endforeach()
-  add_custom_target(supcxx_headers DEPENDS ${LIBCXX_CXX_ABI_DEPS})
-  set(LIBCXX_CXX_ABI_DEPS supcxx_headers)
+
+  add_custom_target(LIBCXX_CXX_ABI_DEPS DEPENDS ${abilib_headers})
   include_directories("${CMAKE_BINARY_DIR}/include")
-  install(DIRECTORY "${CMAKE_BINARY_DIR}/include/"
+
+  install(FILES ${abilib_headers}
     DESTINATION include/c++/v1
-    FILES_MATCHING
-    PATTERN "*"
+    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
     )
 endmacro()
 
@@ -168,6 +176,7 @@ if (MSVC)
 else()
   if (LIBCXX_HAS_NOSTDINCXX_FLAG)
     list(APPEND LIBCXX_CXX_REQUIRED_FLAGS -nostdinc++)
+    string(REPLACE "-stdlib=libc++" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
   endif()
   if (LIBCXX_ENABLE_CXX0X AND LIBCXX_HAS_STDCXX0X_FLAG)
     list(APPEND LIBCXX_CXX_REQUIRED_FLAGS -std=c++0x)

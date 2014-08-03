@@ -15,8 +15,8 @@
 #include "MBlazeTargetMachine.h"
 using namespace llvm;
 
-MBlazeSelectionDAGInfo::MBlazeSelectionDAGInfo(const MBlazeTargetMachine &TM)
-  : TargetSelectionDAGInfo(TM) {
+MBlazeSelectionDAGInfo::MBlazeSelectionDAGInfo(const DataLayout &DL)
+  : TargetSelectionDAGInfo(&DL) {
 }
 
 MBlazeSelectionDAGInfo::~MBlazeSelectionDAGInfo() {
