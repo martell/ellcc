@@ -356,7 +356,7 @@ public:
 #elif defined(EMSCRIPTEN) ||  defined(__NetBSD__)
     typedef unsigned short mask;
 #elif defined(__ANDROID__)
-    typedef char mask;
+    typedef unsigned char mask;
 #endif
     static const mask space  = _CTYPE_S;
     static const mask print  = _CTYPE_R;
@@ -366,7 +366,12 @@ public:
     static const mask alpha  = _CTYPE_A;
     static const mask digit  = _CTYPE_D;
     static const mask punct  = _CTYPE_P;
+# if defined(__ANDROID__)
+    static const mask xdigit = _CTYPE_X | _CTYPE_D;
+# else
     static const mask xdigit = _CTYPE_X;
+# endif
+
 # if defined(__NetBSD__)
     static const mask blank  = _CTYPE_BL;
 # else

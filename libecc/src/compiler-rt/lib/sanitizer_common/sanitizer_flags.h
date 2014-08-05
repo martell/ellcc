@@ -54,6 +54,8 @@ struct CommonFlags {
   uptr mmap_limit_mb;
   bool coverage;
   bool full_address_space;
+  const char *suppressions;
+  bool print_suppressions;
 };
 
 inline CommonFlags *common_flags() {

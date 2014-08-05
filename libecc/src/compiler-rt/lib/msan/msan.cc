@@ -404,8 +404,7 @@ void __msan_init() {
     Die();
   }
 
-  Symbolizer::Init(common_flags()->external_symbolizer_path);
-  Symbolizer::Get()->AddHooks(EnterSymbolizer, ExitSymbolizer);
+  Symbolizer::GetOrInit()->AddHooks(EnterSymbolizer, ExitSymbolizer);
 
   GetThreadStackAndTls(/* main */ true, &msan_stack_bounds.stack_addr,
                        &msan_stack_bounds.stack_size,

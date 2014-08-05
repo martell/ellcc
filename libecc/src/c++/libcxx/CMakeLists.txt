@@ -46,7 +46,13 @@ option(LIBCXX_INSTALL_SUPPORT_HEADERS "Install libc++ support headers." ON)
 
 set(CXXABIS none libcxxabi libcxxrt libstdc++ libsupc++)
 if (NOT DEFINED LIBCXX_CXX_ABI)
-  set(LIBCXX_CXX_ABI "none")
+  if (NOT DEFINED LIBCXX_BUILT_STANDALONE AND IS_DIRECTORY "${CMAKE_SOURCE_DIR}/projects/libcxxabi")
+    set(LIBCXX_CXX_ABI "libcxxabi")
+    set(LIBCXX_LIBCXXABI_INCLUDE_PATHS "${CMAKE_SOURCE_DIR}/projects/libcxxabi/include")
+    set(LIBCXX_CXX_ABI_INTREE 1)
+  else ()
+    set(LIBCXX_CXX_ABI "none")
+  endif ()
 endif()
 set(LIBCXX_CXX_ABI "${LIBCXX_CXX_ABI}" CACHE STRING
     "Specify C++ ABI library to use." FORCE)
@@ -146,8 +152,15 @@ if ("${LIBCXX_CXX_ABI}" STREQUAL "libstdc++" OR
     "${_LIBSUPCXX_LIBNAME}" "${_LIBSUPCXX_INCLUDE_FILES}" "bits"
     )
 elseif ("${LIBCXX_CXX_ABI}" STREQUAL "libcxxabi")
+  if (LIBCXX_CXX_ABI_INTREE)
+    # Link against just-built "cxxabi" target.
+    set(CXXABI_LIBNAME cxxabi)
+  else()
+    # Assume c++abi is installed in the system, rely on -lc++abi link flag.
+    set(CXXABI_LIBNAME "c++abi")
+  endif()
   setup_abi_lib("LIBCXX_LIBCXXABI_INCLUDE_PATHS" ""
-    "c++abi" "cxxabi.h" ""
+    ${CXXABI_LIBNAME} "cxxabi.h" ""
     )
 elseif ("${LIBCXX_CXX_ABI}" STREQUAL "libcxxrt")
   setup_abi_lib("LIBCXX_LIBCXXRT_INCLUDE_PATHS" "-DLIBCXXRT"

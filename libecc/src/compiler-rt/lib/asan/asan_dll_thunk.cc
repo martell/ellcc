@@ -232,6 +232,20 @@ INTERFACE_FUNCTION(__asan_report_load8)
 INTERFACE_FUNCTION(__asan_report_load16)
 INTERFACE_FUNCTION(__asan_report_load_n)
 
+INTERFACE_FUNCTION(__asan_store1)
+INTERFACE_FUNCTION(__asan_store2)
+INTERFACE_FUNCTION(__asan_store4)
+INTERFACE_FUNCTION(__asan_store8)
+INTERFACE_FUNCTION(__asan_store16)
+INTERFACE_FUNCTION(__asan_storeN)
+
+INTERFACE_FUNCTION(__asan_load1)
+INTERFACE_FUNCTION(__asan_load2)
+INTERFACE_FUNCTION(__asan_load4)
+INTERFACE_FUNCTION(__asan_load8)
+INTERFACE_FUNCTION(__asan_load16)
+INTERFACE_FUNCTION(__asan_loadN)
+
 INTERFACE_FUNCTION(__asan_memcpy);
 INTERFACE_FUNCTION(__asan_memset);
 INTERFACE_FUNCTION(__asan_memmove);
@@ -247,6 +261,9 @@ INTERFACE_FUNCTION(__asan_unpoison_stack_memory)
 
 INTERFACE_FUNCTION(__asan_poison_memory_region)
 INTERFACE_FUNCTION(__asan_unpoison_memory_region)
+
+INTERFACE_FUNCTION(__asan_address_is_poisoned)
+INTERFACE_FUNCTION(__asan_region_is_poisoned)
 
 INTERFACE_FUNCTION(__asan_get_current_fake_stack)
 INTERFACE_FUNCTION(__asan_addr_is_in_fake_stack)
@@ -297,6 +314,7 @@ WRAP_W_W(_msize)
 
 INTERCEPT_LIBRARY_FUNCTION(atoi);
 INTERCEPT_LIBRARY_FUNCTION(atol);
+INTERCEPT_LIBRARY_FUNCTION(_except_handler3);
 INTERCEPT_LIBRARY_FUNCTION(frexp);
 INTERCEPT_LIBRARY_FUNCTION(longjmp);
 INTERCEPT_LIBRARY_FUNCTION(memchr);
