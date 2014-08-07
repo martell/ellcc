@@ -725,11 +725,13 @@ void MipsAsmPrinter::EmitStartOfAsmFile(Module &M) {
 #endif
 
   getTargetStreamer().updateABIInfo(*Subtarget);
+#if RICH    // What is the .module directive?
   getTargetStreamer().emitDirectiveModuleFP();
 
   if (Subtarget->isABI_O32())
     getTargetStreamer().emitDirectiveModuleOddSPReg(Subtarget->useOddSPReg(),
                                                     Subtarget->isABI_O32());
+#endif
 }
 
 void MipsAsmPrinter::EmitJal(MCSymbol *Symbol) {
