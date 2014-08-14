@@ -46,6 +46,12 @@ const char *clang::getOpenMPDirectiveName(OpenMPDirectiveKind Kind) {
 }
 
 OpenMPClauseKind clang::getOpenMPClauseKind(StringRef Str) {
+  // 'flush' clause cannot be specified explicitly, because this is an implicit
+  // clause for 'flush' directive. If the 'flush' clause is explicitly specified
+  // the Parser should generate a warning about extra tokens at the end of the
+  // directive.
+  if (Str == "flush")
+    return OMPC_unknown;
   return llvm::StringSwitch<OpenMPClauseKind>(Str)
 #define OPENMP_CLAUSE(Name, Class) .Case(#Name, OMPC_##Name)
 #include "clang/Basic/OpenMPKinds.def"
@@ -103,6 +109,14 @@ unsigned clang::getOpenMPSimpleClauseType(OpenMPClauseKind Kind,
   case OMPC_copyprivate:
   case OMPC_ordered:
   case OMPC_nowait:
+  case OMPC_untied:
+  case OMPC_mergeable:
+  case OMPC_flush:
+  case OMPC_read:
+  case OMPC_write:
+  case OMPC_update:
+  case OMPC_capture:
+  case OMPC_seq_cst:
     break;
   }
   llvm_unreachable("Invalid OpenMP simple clause kind");
@@ -159,6 +173,14 @@ const char *clang::getOpenMPSimpleClauseTypeName(OpenMPClauseKind Kind,
   case OMPC_copyprivate:
   case OMPC_ordered:
   case OMPC_nowait:
+  case OMPC_untied:
+  case OMPC_mergeable:
+  case OMPC_flush:
+  case OMPC_read:
+  case OMPC_write:
+  case OMPC_update:
+  case OMPC_capture:
+  case OMPC_seq_cst:
     break;
   }
   llvm_unreachable("Invalid OpenMP simple clause kind");
@@ -249,10 +271,28 @@ bool clang::isAllowedClauseForDirective(OpenMPDirectiveKind DKind,
       break;
     }
     break;
+  case OMPD_flush:
+    return CKind == OMPC_flush;
+    break;
+  case OMPD_atomic:
+    switch (CKind) {
+#define OPENMP_ATOMIC_CLAUSE(Name)                                             \
+  case OMPC_##Name:                                                            \
+    return true;
+#include "clang/Basic/OpenMPKinds.def"
+    default:
+      break;
+    }
+    break;
   case OMPD_unknown:
   case OMPD_threadprivate:
   case OMPD_section:
   case OMPD_master:
+  case OMPD_critical:
+  case OMPD_taskyield:
+  case OMPD_barrier:
+  case OMPD_taskwait:
+  case OMPD_ordered:
     break;
   }
   return false;

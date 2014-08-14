@@ -94,6 +94,10 @@ void CodeGenFunction::EmitOMPMasterDirective(const OMPMasterDirective &) {
   llvm_unreachable("CodeGen for 'omp master' is not supported yet.");
 }
 
+void CodeGenFunction::EmitOMPCriticalDirective(const OMPCriticalDirective &) {
+  llvm_unreachable("CodeGen for 'omp critical' is not supported yet.");
+}
+
 void
 CodeGenFunction::EmitOMPParallelForDirective(const OMPParallelForDirective &) {
   llvm_unreachable("CodeGen for 'omp parallel for' is not supported yet.");
@@ -106,5 +110,29 @@ void CodeGenFunction::EmitOMPParallelSectionsDirective(
 
 void CodeGenFunction::EmitOMPTaskDirective(const OMPTaskDirective &) {
   llvm_unreachable("CodeGen for 'omp task' is not supported yet.");
+}
+
+void CodeGenFunction::EmitOMPTaskyieldDirective(const OMPTaskyieldDirective &) {
+  llvm_unreachable("CodeGen for 'omp taskyield' is not supported yet.");
+}
+
+void CodeGenFunction::EmitOMPBarrierDirective(const OMPBarrierDirective &) {
+  llvm_unreachable("CodeGen for 'omp barrier' is not supported yet.");
+}
+
+void CodeGenFunction::EmitOMPTaskwaitDirective(const OMPTaskwaitDirective &) {
+  llvm_unreachable("CodeGen for 'omp taskwait' is not supported yet.");
+}
+
+void CodeGenFunction::EmitOMPFlushDirective(const OMPFlushDirective &) {
+  llvm_unreachable("CodeGen for 'omp flush' is not supported yet.");
+}
+
+void CodeGenFunction::EmitOMPOrderedDirective(const OMPOrderedDirective &) {
+  llvm_unreachable("CodeGen for 'omp ordered' is not supported yet.");
+}
+
+void CodeGenFunction::EmitOMPAtomicDirective(const OMPAtomicDirective &) {
+  llvm_unreachable("CodeGen for 'omp atomic' is not supported yet.");
 }
 

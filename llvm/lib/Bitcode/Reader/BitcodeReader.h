@@ -138,7 +138,6 @@ class BitcodeReader : public GVMaterializer {
   BitcodeReaderMDValueList MDValueList;
   std::vector<Comdat *> ComdatList;
   SmallVector<Instruction *, 64> InstructionList;
-  SmallVector<SmallVector<uint64_t, 64>, 64> UseListRecords;
 
   std::vector<std::pair<GlobalVariable*, unsigned> > GlobalInits;
   std::vector<std::pair<GlobalAlias*, unsigned> > AliasInits;
@@ -180,10 +179,10 @@ class BitcodeReader : public GVMaterializer {
   /// stream.
   DenseMap<Function*, uint64_t> DeferredFunctionInfo;
 
-  /// BlockAddrFwdRefs - These are blockaddr references to basic blocks.  These
-  /// are resolved lazily when functions are loaded.
-  typedef std::pair<unsigned, GlobalVariable*> BlockAddrRefTy;
-  DenseMap<Function*, std::vector<BlockAddrRefTy> > BlockAddrFwdRefs;
+  /// These are basic blocks forward-referenced by block addresses.  They are
+  /// inserted lazily into functions when they're loaded.
+  typedef std::pair<unsigned, BasicBlock *> BasicBlockRefTy;
+  DenseMap<Function *, std::vector<BasicBlockRefTy>> BasicBlockFwdRefs;
 
   /// UseRelativeIDs - Indicates that we are using a new encoding for
   /// instruction operands where most operands in the current
@@ -194,47 +193,29 @@ class BitcodeReader : public GVMaterializer {
   /// not need this flag.
   bool UseRelativeIDs;
 
-  static const std::error_category &BitcodeErrorCategory();
+  /// True if all functions will be materialized, negating the need to process
+  /// (e.g.) blockaddress forward references.
+  bool WillMaterializeAllForwardRefs;
+
+  /// Functions that have block addresses taken.  This is usually empty.
+  SmallPtrSet<const Function *, 4> BlockAddressesTaken;
 
 public:
-  enum ErrorType {
-    BitcodeStreamInvalidSize,
-    ConflictingMETADATA_KINDRecords,
-    CouldNotFindFunctionInStream,
-    ExpectedConstant,
-    InsufficientFunctionProtos,
-    InvalidBitcodeSignature,
-    InvalidBitcodeWrapperHeader,
-    InvalidConstantReference,
-    InvalidID, // A read identifier is not found in the table it should be in.
-    InvalidInstructionWithNoBB,
-    InvalidRecord, // A read record doesn't have the expected size or structure
-    InvalidTypeForValue, // Type read OK, but is invalid for its use
-    InvalidTYPETable,
-    InvalidType, // We were unable to read a type
-    MalformedBlock, // We are unable to advance in the stream.
-    MalformedGlobalInitializerSet,
-    InvalidMultipleBlocks, // We found multiple blocks of a kind that should
-                           // have only one
-    NeverResolvedValueFoundInFunction,
-    InvalidValue // Invalid version, inst number, attr number, etc
-  };
-
-  std::error_code Error(ErrorType E) {
-    return std::error_code(E, BitcodeErrorCategory());
-  }
+  std::error_code Error(BitcodeError E) { return make_error_code(E); }
 
   explicit BitcodeReader(MemoryBuffer *buffer, LLVMContext &C)
       : Context(C), TheModule(nullptr), Buffer(buffer), LazyStreamer(nullptr),
         NextUnreadBit(0), SeenValueSymbolTable(false), ValueList(C),
-        MDValueList(C), SeenFirstFunctionBody(false), UseRelativeIDs(false) {}
+        MDValueList(C), SeenFirstFunctionBody(false), UseRelativeIDs(false),
+        WillMaterializeAllForwardRefs(false) {}
   explicit BitcodeReader(DataStreamer *streamer, LLVMContext &C)
       : Context(C), TheModule(nullptr), Buffer(nullptr), LazyStreamer(streamer),
         NextUnreadBit(0), SeenValueSymbolTable(false), ValueList(C),
-        MDValueList(C), SeenFirstFunctionBody(false), UseRelativeIDs(false) {}
+        MDValueList(C), SeenFirstFunctionBody(false), UseRelativeIDs(false),
+        WillMaterializeAllForwardRefs(false) {}
   ~BitcodeReader() { FreeState(); }
 
-  void materializeForwardReferencedFunctions();
+  std::error_code materializeForwardReferencedFunctions();
 
   void FreeState();
 

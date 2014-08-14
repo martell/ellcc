@@ -48,8 +48,6 @@ public:
 
     arm,        // ARM (little endian): arm, armv.*, xscale
     armeb,      // ARM (big endian): armeb
-    arm64,      // ARM64 (little endian): arm64
-    arm64_be,   // ARM64 (big endian): arm64_be
     aarch64,    // AArch64 (little endian): aarch64
     aarch64_be, // AArch64 (big endian): aarch64_be
     hexagon,    // Hexagon: hexagon
@@ -81,6 +79,21 @@ public:
     spir64,     // SPIR: standard portable IR for OpenCL 64-bit version
     kalimba     // Kalimba: generic kalimba
   };
+  enum SubArchType {
+    NoSubArch,
+
+    ARMSubArch_v8,
+    ARMSubArch_v7,
+    ARMSubArch_v7em,
+    ARMSubArch_v7m,
+    ARMSubArch_v7s,
+    ARMSubArch_v6,
+    ARMSubArch_v6m,
+    ARMSubArch_v6t2,
+    ARMSubArch_v5,
+    ARMSubArch_v5te,
+    ARMSubArch_v4t
+  };
   enum VendorType {
     UnknownVendor,
 
@@ -93,6 +106,7 @@ public:
     Freescale,
     IBM,
     ImaginationTechnologies,
+    MipsTechnologies,
     NVIDIA,
     CSR
   };
@@ -155,6 +169,9 @@ private:
   /// The parsed arch type.
   ArchType Arch;
 
+  /// The parsed subarchitecture type.
+  SubArchType SubArch;
+
   /// The parsed vendor type.
   VendorType Vendor;
 
@@ -196,6 +213,9 @@ public:
 
   /// getArch - Get the parsed architecture type of this triple.
   ArchType getArch() const { return Arch; }
+
+  /// getSubArch - get the parsed subarchitecture type for this triple.
+  SubArchType getSubArch() const { return SubArch; }
 
   /// getVendor - Get the parsed vendor type of this triple.
   VendorType getVendor() const { return Vendor; }
@@ -456,10 +476,6 @@ public:
   /// setOSAndEnvironmentName - Set the operating system and optional
   /// environment components with a single string.
   void setOSAndEnvironmentName(StringRef Str);
-
-  /// getArchNameForAssembler - Get an architecture name that is understood by
-  /// the target assembler.
-  const char *getArchNameForAssembler();
 
   /// @}
   /// @name Helpers to build variants of a particular triple.

@@ -87,6 +87,10 @@
 // RUN: %clang_cl /showIncludes -### -- %s 2>&1 | FileCheck -check-prefix=showIncludes %s
 // showIncludes: --show-includes
 
+// RUN: %clang_cl /E /showIncludes -### -- %s 2>&1 | FileCheck -check-prefix=showIncludes_E %s
+// RUN: %clang_cl /EP /showIncludes -### -- %s 2>&1 | FileCheck -check-prefix=showIncludes_E %s
+// showIncludes_E: warning: argument unused during compilation: '--show-includes'
+
 // RUN: %clang_cl /Umymacro -### -- %s 2>&1 | FileCheck -check-prefix=U %s
 // RUN: %clang_cl /U mymacro -### -- %s 2>&1 | FileCheck -check-prefix=U %s
 // U: "-U" "mymacro"
@@ -130,6 +134,12 @@
 
 // RUN: %clang_cl /w -### -- %s 2>&1 | FileCheck -check-prefix=w %s
 // w: -w
+
+// RUN: %clang_cl /Zp -### -- %s 2>&1 | FileCheck -check-prefix=ZP %s
+// ZP: -fpack-struct=1
+
+// RUN: %clang_cl /Zp2 -### -- %s 2>&1 | FileCheck -check-prefix=ZP2 %s
+// ZP2: -fpack-struct=2
 
 // RUN: %clang_cl /Zs -### -- %s 2>&1 | FileCheck -check-prefix=Zs %s
 // Zs: -fsyntax-only
@@ -274,8 +284,6 @@
 // RUN:     /Zi \
 // RUN:     /ZI \
 // RUN:     /Zl \
-// RUN:     /Zp \
-// RUN:     /Zp1 \
 // RUN:     /ZW:nostdlib \
 // RUN:     -- %s 2>&1
 

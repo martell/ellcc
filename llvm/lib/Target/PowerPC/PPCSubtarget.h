@@ -109,6 +109,12 @@ protected:
   /// OptLevel - What default optimization level we're emitting code for.
   CodeGenOpt::Level OptLevel;
 
+  enum {
+    PPC_ABI_UNKNOWN,
+    PPC_ABI_ELFv1,
+    PPC_ABI_ELFv2
+  } TargetABI;
+
   PPCFrameLowering FrameLowering;
   const DataLayout DL;
   PPCInstrInfo InstrInfo;
@@ -222,8 +228,12 @@ public:
   /// isBGQ - True if this is a BG/Q platform.
   bool isBGQ() const { return TargetTriple.getVendor() == Triple::BGQ; }
 
+  bool isTargetELF() const { return TargetTriple.isOSBinFormatELF(); }
+  bool isTargetMachO() const { return TargetTriple.isOSBinFormatMachO(); }
+
   bool isDarwinABI() const { return isDarwin(); }
   bool isSVR4ABI() const { return !isDarwin(); }
+  bool isELFv2ABI() const { return TargetABI == PPC_ABI_ELFv2; }
 
   bool enableEarlyIfConversion() const override { return hasISEL(); }
 

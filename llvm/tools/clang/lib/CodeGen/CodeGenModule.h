@@ -17,6 +17,7 @@
 #include "CGVTables.h"
 #include "CodeGenTypes.h"
 #include "SanitizerBlacklist.h"
+#include "SanitizerMetadata.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/DeclObjC.h"
@@ -361,9 +362,7 @@ class CodeGenModule : public CodeGenTypeCache {
 
   llvm::StringMap<llvm::Constant*> CFConstantStringMap;
 
-  llvm::StringMap<llvm::GlobalVariable *> Constant1ByteStringMap;
-  llvm::StringMap<llvm::GlobalVariable *> Constant2ByteStringMap;
-  llvm::StringMap<llvm::GlobalVariable *> Constant4ByteStringMap;
+  llvm::DenseMap<llvm::Constant *, llvm::GlobalVariable *> ConstantStringMap;
   llvm::DenseMap<const Decl*, llvm::Constant *> StaticLocalDeclMap;
   llvm::DenseMap<const Decl*, llvm::GlobalVariable*> StaticLocalDeclGuardMap;
   llvm::DenseMap<const Expr*, llvm::Constant *> MaterializedGlobalTemporaryMap;
@@ -474,6 +473,8 @@ class CodeGenModule : public CodeGenTypeCache {
   GlobalDecl initializedGlobalDecl;
 
   SanitizerBlacklist SanitizerBL;
+
+  std::unique_ptr<SanitizerMetadata> SanitizerMD;
 
   /// @}
 public:
@@ -1015,10 +1016,9 @@ public:
     return SanitizerBL;
   }
 
-  void reportGlobalToASan(llvm::GlobalVariable *GV, const VarDecl &D,
-                          bool IsDynInit = false);
-  void reportGlobalToASan(llvm::GlobalVariable *GV, SourceLocation Loc,
-                          StringRef Name, bool IsDynInit = false);
+  SanitizerMetadata *getSanitizerMetadata() {
+    return SanitizerMD.get();
+  }
 
   void addDeferredVTable(const CXXRecordDecl *RD) {
     DeferredVTables.push_back(RD);
@@ -1039,9 +1039,6 @@ private:
   llvm::Constant *GetOrCreateLLVMGlobal(StringRef MangledName,
                                         llvm::PointerType *PTy,
                                         const VarDecl *D);
-
-  llvm::StringMapEntry<llvm::GlobalVariable *> *
-  getConstantStringMapEntry(StringRef Str, int CharByteWidth);
 
   /// Set attributes which are common to any form of a global definition (alias,
   /// Objective-C method, function, global variable).
@@ -1098,6 +1095,9 @@ private:
   void EmitCXXGlobalVarDeclInitFunc(const VarDecl *D,
                                     llvm::GlobalVariable *Addr,
                                     bool PerformInit);
+
+  void EmitPointerToInitFunc(const VarDecl *VD, llvm::GlobalVariable *Addr,
+                             llvm::Function *InitFunc, InitSegAttr *ISA);
 
   // FIXME: Hardcoding priority here is gross.
   void AddGlobalCtor(llvm::Function *Ctor, int Priority = 65535,

@@ -1,11 +1,11 @@
 set(files
-  machine/_stdint.h
-  machine/_types.h
   altivec.h
   ammintrin.h
   arm_acle.h
   avxintrin.h
   avx2intrin.h
+  avx512fintrin.h
+  avx512erintrin.h
   bmiintrin.h
   bmi2intrin.h
   emmintrin.h

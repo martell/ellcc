@@ -22,10 +22,12 @@
 #include "CXType.h"
 #include "CursorVisitor.h"
 #include "clang/AST/Attr.h"
+#include "clang/AST/Mangle.h"
 #include "clang/AST/StmtVisitor.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticCategories.h"
 #include "clang/Basic/DiagnosticIDs.h"
+#include "clang/Basic/TargetInfo.h"
 #include "clang/Basic/Version.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -40,6 +42,8 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Config/llvm-config.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/CrashRecoveryContext.h"
 #include "llvm/Support/Format.h"
@@ -1784,6 +1788,8 @@ public:
       return cast<CXXDependentScopeMemberExpr>(S)->getMemberNameInfo();
     case Stmt::DependentScopeDeclRefExprClass:
       return cast<DependentScopeDeclRefExpr>(S)->getNameInfo();
+    case Stmt::OMPCriticalDirectiveClass:
+      return cast<OMPCriticalDirective>(S)->getDirectiveName();
     }
   }
 };
@@ -1861,9 +1867,16 @@ public:
   void VisitOMPSectionDirective(const OMPSectionDirective *D);
   void VisitOMPSingleDirective(const OMPSingleDirective *D);
   void VisitOMPMasterDirective(const OMPMasterDirective *D);
+  void VisitOMPCriticalDirective(const OMPCriticalDirective *D);
   void VisitOMPParallelForDirective(const OMPParallelForDirective *D);
   void VisitOMPParallelSectionsDirective(const OMPParallelSectionsDirective *D);
   void VisitOMPTaskDirective(const OMPTaskDirective *D);
+  void VisitOMPTaskyieldDirective(const OMPTaskyieldDirective *D);
+  void VisitOMPBarrierDirective(const OMPBarrierDirective *D);
+  void VisitOMPTaskwaitDirective(const OMPTaskwaitDirective *D);
+  void VisitOMPFlushDirective(const OMPFlushDirective *D);
+  void VisitOMPOrderedDirective(const OMPOrderedDirective *D);
+  void VisitOMPAtomicDirective(const OMPAtomicDirective *D);
 
 private:
   void AddDeclarationNameInfo(const Stmt *S);
@@ -1968,6 +1981,20 @@ void OMPClauseEnqueue::VisitOMPOrderedClause(const OMPOrderedClause *) {}
 
 void OMPClauseEnqueue::VisitOMPNowaitClause(const OMPNowaitClause *) {}
 
+void OMPClauseEnqueue::VisitOMPUntiedClause(const OMPUntiedClause *) {}
+
+void OMPClauseEnqueue::VisitOMPMergeableClause(const OMPMergeableClause *) {}
+
+void OMPClauseEnqueue::VisitOMPReadClause(const OMPReadClause *) {}
+
+void OMPClauseEnqueue::VisitOMPWriteClause(const OMPWriteClause *) {}
+
+void OMPClauseEnqueue::VisitOMPUpdateClause(const OMPUpdateClause *) {}
+
+void OMPClauseEnqueue::VisitOMPCaptureClause(const OMPCaptureClause *) {}
+
+void OMPClauseEnqueue::VisitOMPSeqCstClause(const OMPSeqCstClause *) {}
+
 template<typename T>
 void OMPClauseEnqueue::VisitOMPClauseList(T *Node) {
   for (const auto *I : Node->varlists())
@@ -2004,6 +2031,9 @@ void OMPClauseEnqueue::VisitOMPCopyinClause(const OMPCopyinClause *C) {
 }
 void
 OMPClauseEnqueue::VisitOMPCopyprivateClause(const OMPCopyprivateClause *C) {
+  VisitOMPClauseList(C);
+}
+void OMPClauseEnqueue::VisitOMPFlushClause(const OMPFlushClause *C) {
   VisitOMPClauseList(C);
 }
 }
@@ -2323,6 +2353,11 @@ void EnqueueVisitor::VisitOMPMasterDirective(const OMPMasterDirective *D) {
   VisitOMPExecutableDirective(D);
 }
 
+void EnqueueVisitor::VisitOMPCriticalDirective(const OMPCriticalDirective *D) {
+  VisitOMPExecutableDirective(D);
+  AddDeclarationNameInfo(D);
+}
+
 void
 EnqueueVisitor::VisitOMPParallelForDirective(const OMPParallelForDirective *D) {
   VisitOMPExecutableDirective(D);
@@ -2334,6 +2369,31 @@ void EnqueueVisitor::VisitOMPParallelSectionsDirective(
 }
 
 void EnqueueVisitor::VisitOMPTaskDirective(const OMPTaskDirective *D) {
+  VisitOMPExecutableDirective(D);
+}
+
+void
+EnqueueVisitor::VisitOMPTaskyieldDirective(const OMPTaskyieldDirective *D) {
+  VisitOMPExecutableDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPBarrierDirective(const OMPBarrierDirective *D) {
+  VisitOMPExecutableDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPTaskwaitDirective(const OMPTaskwaitDirective *D) {
+  VisitOMPExecutableDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPFlushDirective(const OMPFlushDirective *D) {
+  VisitOMPExecutableDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPOrderedDirective(const OMPOrderedDirective *D) {
+  VisitOMPExecutableDirective(D);
+}
+
+void EnqueueVisitor::VisitOMPAtomicDirective(const OMPAtomicDirective *D) {
   VisitOMPExecutableDirective(D);
 }
 
@@ -3611,6 +3671,37 @@ CXSourceRange clang_Cursor_getSpellingNameRange(CXCursor C,
   return cxloc::translateSourceRange(Ctx, Loc);
 }
 
+CXString clang_Cursor_getMangling(CXCursor C) {
+  if (clang_isInvalid(C.kind) || !clang_isDeclaration(C.kind))
+    return cxstring::createEmpty();
+
+  // Mangling only works for functions and variables.
+  const Decl *D = getCursorDecl(C);
+  if (!D || !(isa<FunctionDecl>(D) || isa<VarDecl>(D)))
+    return cxstring::createEmpty();
+
+  // First apply frontend mangling.
+  const NamedDecl *ND = cast<NamedDecl>(D);
+  ASTContext &Ctx = ND->getASTContext();
+  std::unique_ptr<MangleContext> MC(Ctx.createMangleContext());
+
+  std::string FrontendBuf;
+  llvm::raw_string_ostream FrontendBufOS(FrontendBuf);
+  MC->mangleName(ND, FrontendBufOS);
+
+  // Now apply backend mangling.
+  std::unique_ptr<llvm::DataLayout> DL(
+      new llvm::DataLayout(Ctx.getTargetInfo().getTargetDescription()));
+  llvm::Mangler BackendMangler(DL.get());
+
+  std::string FinalBuf;
+  llvm::raw_string_ostream FinalBufOS(FinalBuf);
+  BackendMangler.getNameWithPrefix(FinalBufOS,
+                                   llvm::Twine(FrontendBufOS.str()));
+
+  return cxstring::createDup(FinalBufOS.str());
+}
+
 CXString clang_getCursorDisplayName(CXCursor C) {
   if (!clang_isDeclaration(C.kind))
     return clang_getCursorSpelling(C);
@@ -4023,12 +4114,26 @@ CXString clang_getCursorKindSpelling(enum CXCursorKind Kind) {
     return cxstring::createRef("OMPSingleDirective");
   case CXCursor_OMPMasterDirective:
     return cxstring::createRef("OMPMasterDirective");
+  case CXCursor_OMPCriticalDirective:
+    return cxstring::createRef("OMPCriticalDirective");
   case CXCursor_OMPParallelForDirective:
     return cxstring::createRef("OMPParallelForDirective");
   case CXCursor_OMPParallelSectionsDirective:
     return cxstring::createRef("OMPParallelSectionsDirective");
   case CXCursor_OMPTaskDirective:
     return cxstring::createRef("OMPTaskDirective");
+  case CXCursor_OMPTaskyieldDirective:
+    return cxstring::createRef("OMPTaskyieldDirective");
+  case CXCursor_OMPBarrierDirective:
+    return cxstring::createRef("OMPBarrierDirective");
+  case CXCursor_OMPTaskwaitDirective:
+    return cxstring::createRef("OMPTaskwaitDirective");
+  case CXCursor_OMPFlushDirective:
+    return cxstring::createRef("OMPFlushDirective");
+  case CXCursor_OMPOrderedDirective:
+    return cxstring::createRef("OMPOrderedDirective");
+  case CXCursor_OMPAtomicDirective:
+    return cxstring::createRef("OMPAtomicDirective");
   }
 
   llvm_unreachable("Unhandled CXCursorKind");

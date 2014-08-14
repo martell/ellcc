@@ -657,6 +657,30 @@ void OMPClausePrinter::VisitOMPNowaitClause(OMPNowaitClause *) {
   OS << "nowait";
 }
 
+void OMPClausePrinter::VisitOMPUntiedClause(OMPUntiedClause *) {
+  OS << "untied";
+}
+
+void OMPClausePrinter::VisitOMPMergeableClause(OMPMergeableClause *) {
+  OS << "mergeable";
+}
+
+void OMPClausePrinter::VisitOMPReadClause(OMPReadClause *) { OS << "read"; }
+
+void OMPClausePrinter::VisitOMPWriteClause(OMPWriteClause *) { OS << "write"; }
+
+void OMPClausePrinter::VisitOMPUpdateClause(OMPUpdateClause *) {
+  OS << "update";
+}
+
+void OMPClausePrinter::VisitOMPCaptureClause(OMPCaptureClause *) {
+  OS << "capture";
+}
+
+void OMPClausePrinter::VisitOMPSeqCstClause(OMPSeqCstClause *) {
+  OS << "seq_cst";
+}
+
 template<typename T>
 void OMPClausePrinter::VisitOMPClauseList(T *Node, char StartSym) {
   for (typename T::varlist_iterator I = Node->varlist_begin(),
@@ -767,6 +791,12 @@ void OMPClausePrinter::VisitOMPCopyprivateClause(OMPCopyprivateClause *Node) {
   }
 }
 
+void OMPClausePrinter::VisitOMPFlushClause(OMPFlushClause *Node) {
+  if (!Node->varlist_empty()) {
+    VisitOMPClauseList(Node, '(');
+    OS << ")";
+  }
+}
 }
 
 //===----------------------------------------------------------------------===//
@@ -783,7 +813,7 @@ void StmtPrinter::PrintOMPExecutableDirective(OMPExecutableDirective *S) {
       OS << ' ';
     }
   OS << "\n";
-  if (S->getAssociatedStmt()) {
+  if (S->hasAssociatedStmt() && S->getAssociatedStmt()) {
     assert(isa<CapturedStmt>(S->getAssociatedStmt()) &&
            "Expected captured statement!");
     Stmt *CS = cast<CapturedStmt>(S->getAssociatedStmt())->getCapturedStmt();
@@ -826,6 +856,16 @@ void StmtPrinter::VisitOMPMasterDirective(OMPMasterDirective *Node) {
   PrintOMPExecutableDirective(Node);
 }
 
+void StmtPrinter::VisitOMPCriticalDirective(OMPCriticalDirective *Node) {
+  Indent() << "#pragma omp critical";
+  if (Node->getDirectiveName().getName()) {
+    OS << " (";
+    Node->getDirectiveName().printName(OS);
+    OS << ")";
+  }
+  PrintOMPExecutableDirective(Node);
+}
+
 void StmtPrinter::VisitOMPParallelForDirective(OMPParallelForDirective *Node) {
   Indent() << "#pragma omp parallel for ";
   PrintOMPExecutableDirective(Node);
@@ -839,6 +879,36 @@ void StmtPrinter::VisitOMPParallelSectionsDirective(
 
 void StmtPrinter::VisitOMPTaskDirective(OMPTaskDirective *Node) {
   Indent() << "#pragma omp task ";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPTaskyieldDirective(OMPTaskyieldDirective *Node) {
+  Indent() << "#pragma omp taskyield";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPBarrierDirective(OMPBarrierDirective *Node) {
+  Indent() << "#pragma omp barrier";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPTaskwaitDirective(OMPTaskwaitDirective *Node) {
+  Indent() << "#pragma omp taskwait";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPFlushDirective(OMPFlushDirective *Node) {
+  Indent() << "#pragma omp flush ";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPOrderedDirective(OMPOrderedDirective *Node) {
+  Indent() << "#pragma omp ordered";
+  PrintOMPExecutableDirective(Node);
+}
+
+void StmtPrinter::VisitOMPAtomicDirective(OMPAtomicDirective *Node) {
+  Indent() << "#pragma omp atomic ";
   PrintOMPExecutableDirective(Node);
 }
 

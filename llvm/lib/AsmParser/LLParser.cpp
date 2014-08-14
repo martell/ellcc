@@ -254,8 +254,6 @@ bool LLParser::ParseTopLevelEntities() {
     //               ('constant'|'global') ...
     case lltok::kw_private:             // OptionalLinkage
     case lltok::kw_internal:            // OptionalLinkage
-    case lltok::kw_linker_private:      // Obsolete OptionalLinkage
-    case lltok::kw_linker_private_weak: // Obsolete OptionalLinkage
     case lltok::kw_weak:                // OptionalLinkage
     case lltok::kw_weak_odr:            // OptionalLinkage
     case lltok::kw_linkonce:            // OptionalLinkage
@@ -483,10 +481,10 @@ bool LLParser::ParseUnnamedGlobal() {
       parseOptionalUnnamedAddr(UnnamedAddr))
     return true;
 
-  if (HasLinkage || Lex.getKind() != lltok::kw_alias)
+  if (Lex.getKind() != lltok::kw_alias)
     return ParseGlobal(Name, NameLoc, Linkage, HasLinkage, Visibility,
                        DLLStorageClass, TLM, UnnamedAddr);
-  return ParseAlias(Name, NameLoc, Visibility, DLLStorageClass, TLM,
+  return ParseAlias(Name, NameLoc, Linkage, Visibility, DLLStorageClass, TLM,
                     UnnamedAddr);
 }
 
@@ -512,10 +510,11 @@ bool LLParser::ParseNamedGlobal() {
       parseOptionalUnnamedAddr(UnnamedAddr))
     return true;
 
-  if (HasLinkage || Lex.getKind() != lltok::kw_alias)
+  if (Lex.getKind() != lltok::kw_alias)
     return ParseGlobal(Name, NameLoc, Linkage, HasLinkage, Visibility,
                        DLLStorageClass, TLM, UnnamedAddr);
-  return ParseAlias(Name, NameLoc, Visibility, DLLStorageClass, TLM,
+
+  return ParseAlias(Name, NameLoc, Linkage, Visibility, DLLStorageClass, TLM,
                     UnnamedAddr);
 }
 
@@ -693,33 +692,29 @@ static bool isValidVisibilityForLinkage(unsigned V, unsigned L) {
 }
 
 /// ParseAlias:
-///   ::= GlobalVar '=' OptionalVisibility OptionalDLLStorageClass
-///                     OptionalThreadLocal OptionalUnNammedAddr 'alias'
-///                     OptionalLinkage Aliasee
+///   ::= GlobalVar '=' OptionalLinkage OptionalVisibility
+///                     OptionalDLLStorageClass OptionalThreadLocal
+///                     OptionalUnNammedAddr 'alias' Aliasee
 ///
 /// Aliasee
 ///   ::= TypeAndValue
 ///
 /// Everything through OptionalUnNammedAddr has already been parsed.
 ///
-bool LLParser::ParseAlias(const std::string &Name, LocTy NameLoc,
+bool LLParser::ParseAlias(const std::string &Name, LocTy NameLoc, unsigned L,
                           unsigned Visibility, unsigned DLLStorageClass,
                           GlobalVariable::ThreadLocalMode TLM,
                           bool UnnamedAddr) {
   assert(Lex.getKind() == lltok::kw_alias);
   Lex.Lex();
-  LocTy LinkageLoc = Lex.getLoc();
-  unsigned L;
-  if (ParseOptionalLinkage(L))
-    return true;
 
   GlobalValue::LinkageTypes Linkage = (GlobalValue::LinkageTypes) L;
 
   if(!GlobalAlias::isValidLinkage(Linkage))
-    return Error(LinkageLoc, "invalid linkage type for alias");
+    return Error(NameLoc, "invalid linkage type for alias");
 
   if (!isValidVisibilityForLinkage(Visibility, L))
-    return Error(LinkageLoc,
+    return Error(NameLoc,
                  "symbol with local linkage must have default visibility");
 
   Constant *Aliasee;
@@ -1052,6 +1047,7 @@ bool LLParser::ParseFnAttributeValuePairs(AttrBuilder &B,
               "invalid use of attribute on a function");
       break;
     case lltok::kw_byval:
+    case lltok::kw_dereferenceable:
     case lltok::kw_inalloca:
     case lltok::kw_nest:
     case lltok::kw_noalias:
@@ -1212,6 +1208,16 @@ bool LLParser::ParseUInt32(unsigned &Val) {
   return false;
 }
 
+/// ParseUInt64
+///   ::= uint64
+bool LLParser::ParseUInt64(uint64_t &Val) {
+  if (Lex.getKind() != lltok::APSInt || Lex.getAPSIntVal().isSigned())
+    return TokError("expected integer");
+  Val = Lex.getAPSIntVal().getLimitedValue();
+  Lex.Lex();
+  return false;
+}
+
 /// ParseTLSModel
 ///   := 'localdynamic'
 ///   := 'initialexec'
@@ -1284,6 +1290,13 @@ bool LLParser::ParseOptionalParamAttrs(AttrBuilder &B) {
       continue;
     }
     case lltok::kw_byval:           B.addAttribute(Attribute::ByVal); break;
+    case lltok::kw_dereferenceable: {
+      uint64_t Bytes;
+      if (ParseOptionalDereferenceableBytes(Bytes))
+        return true;
+      B.addDereferenceableAttr(Bytes);
+      continue;
+    }
     case lltok::kw_inalloca:        B.addAttribute(Attribute::InAlloca); break;
     case lltok::kw_inreg:           B.addAttribute(Attribute::InReg); break;
     case lltok::kw_nest:            B.addAttribute(Attribute::Nest); break;
@@ -1341,6 +1354,13 @@ bool LLParser::ParseOptionalReturnAttrs(AttrBuilder &B) {
     switch (Token) {
     default:  // End of attributes.
       return HaveError;
+    case lltok::kw_dereferenceable: {
+      uint64_t Bytes;
+      if (ParseOptionalDereferenceableBytes(Bytes))
+        return true;
+      B.addDereferenceableAttr(Bytes);
+      continue;
+    }
     case lltok::kw_inreg:           B.addAttribute(Attribute::InReg); break;
     case lltok::kw_noalias:         B.addAttribute(Attribute::NoAlias); break;
     case lltok::kw_nonnull:         B.addAttribute(Attribute::NonNull); break;
@@ -1409,10 +1429,6 @@ bool LLParser::ParseOptionalReturnAttrs(AttrBuilder &B) {
 ///   ::= 'common'
 ///   ::= 'extern_weak'
 ///   ::= 'external'
-///
-///   Deprecated Values:
-///     ::= 'linker_private'
-///     ::= 'linker_private_weak'
 bool LLParser::ParseOptionalLinkage(unsigned &Res, bool &HasLinkage) {
   HasLinkage = false;
   switch (Lex.getKind()) {
@@ -1430,15 +1446,6 @@ bool LLParser::ParseOptionalLinkage(unsigned &Res, bool &HasLinkage) {
   case lltok::kw_common:         Res = GlobalValue::CommonLinkage;        break;
   case lltok::kw_extern_weak:    Res = GlobalValue::ExternalWeakLinkage;  break;
   case lltok::kw_external:       Res = GlobalValue::ExternalLinkage;      break;
-
-  case lltok::kw_linker_private:
-  case lltok::kw_linker_private_weak:
-    Lex.Warning("'" + Lex.getStrVal() + "' is deprecated, treating as"
-                " PrivateLinkage");
-    Lex.Lex();
-    // treat linker_private and linker_private_weak as PrivateLinkage
-    Res = GlobalValue::PrivateLinkage;
-    return false;
   }
   Lex.Lex();
   HasLinkage = true;
@@ -1603,6 +1610,26 @@ bool LLParser::ParseOptionalAlignment(unsigned &Alignment) {
     return Error(AlignLoc, "alignment is not a power of two");
   if (Alignment > Value::MaximumAlignment)
     return Error(AlignLoc, "huge alignments are not supported yet");
+  return false;
+}
+
+/// ParseOptionalDereferenceableBytes
+///   ::= /* empty */
+///   ::= 'dereferenceable' '(' 4 ')'
+bool LLParser::ParseOptionalDereferenceableBytes(uint64_t &Bytes) {
+  Bytes = 0;
+  if (!EatIfPresent(lltok::kw_dereferenceable))
+    return false;
+  LocTy ParenLoc = Lex.getLoc();
+  if (!EatIfPresent(lltok::lparen))
+    return Error(ParenLoc, "expected '('");
+  LocTy DerefLoc = Lex.getLoc();
+  if (ParseUInt64(Bytes)) return true;
+  ParenLoc = Lex.getLoc();
+  if (!EatIfPresent(lltok::rparen))
+    return Error(ParenLoc, "expected ')'");
+  if (!Bytes)
+    return Error(DerefLoc, "dereferenceable bytes must be non-zero");
   return false;
 }
 

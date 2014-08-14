@@ -36,17 +36,18 @@ using namespace CodeGen;
 CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
     : CodeGenTypeCache(cgm), CGM(cgm), Target(cgm.getTarget()),
       Builder(cgm.getModule().getContext(), llvm::ConstantFolder(),
-              CGBuilderInserterTy(this)), CapturedStmtInfo(nullptr),
-      SanOpts(&CGM.getLangOpts().Sanitize), AutoreleaseResult(false), BlockInfo(nullptr),
-      BlockPointer(nullptr), LambdaThisCaptureField(nullptr),
-      NormalCleanupDest(nullptr), NextCleanupDestIndex(1),
-      FirstBlockInfo(nullptr), EHResumeBlock(nullptr), ExceptionSlot(nullptr),
-      EHSelectorSlot(nullptr), DebugInfo(CGM.getModuleDebugInfo()),
-      DisableDebugInfo(false), DidCallStackSave(false), IndirectBranch(nullptr),
-      PGO(cgm), SwitchInsn(nullptr), SwitchWeights(nullptr),
-      CaseRangeBlock(nullptr), UnreachableBlock(nullptr), NumReturnExprs(0),
-      NumSimpleReturnExprs(0), CXXABIThisDecl(nullptr),
-      CXXABIThisValue(nullptr), CXXThisValue(nullptr),
+              CGBuilderInserterTy(this)),
+      CapturedStmtInfo(nullptr), SanOpts(&CGM.getLangOpts().Sanitize),
+      IsSanitizerScope(false), CurFuncIsThunk(false), AutoreleaseResult(false),
+      BlockInfo(nullptr), BlockPointer(nullptr),
+      LambdaThisCaptureField(nullptr), NormalCleanupDest(nullptr),
+      NextCleanupDestIndex(1), FirstBlockInfo(nullptr), EHResumeBlock(nullptr),
+      ExceptionSlot(nullptr), EHSelectorSlot(nullptr),
+      DebugInfo(CGM.getModuleDebugInfo()), DisableDebugInfo(false),
+      DidCallStackSave(false), IndirectBranch(nullptr), PGO(cgm),
+      SwitchInsn(nullptr), SwitchWeights(nullptr), CaseRangeBlock(nullptr),
+      UnreachableBlock(nullptr), NumReturnExprs(0), NumSimpleReturnExprs(0),
+      CXXABIThisDecl(nullptr), CXXABIThisValue(nullptr), CXXThisValue(nullptr),
       CXXDefaultInitExprThis(nullptr), CXXStructorImplicitParamDecl(nullptr),
       CXXStructorImplicitParamValue(nullptr), OutermostConditional(nullptr),
       CurLexicalScope(nullptr), TerminateLandingPad(nullptr),
@@ -357,6 +358,11 @@ static void GenOpenCLArgMetadata(const FunctionDecl *FD, llvm::Function *Fn,
   SmallVector<llvm::Value*, 8> argTypeNames;
   argTypeNames.push_back(llvm::MDString::get(Context, "kernel_arg_type"));
 
+  // MDNode for the kernel argument base type names.
+  SmallVector<llvm::Value*, 8> argBaseTypeNames;
+  argBaseTypeNames.push_back(
+      llvm::MDString::get(Context, "kernel_arg_base_type"));
+
   // MDNode for the kernel argument type qualifiers.
   SmallVector<llvm::Value*, 8> argTypeQuals;
   argTypeQuals.push_back(llvm::MDString::get(Context, "kernel_arg_type_qual"));
@@ -383,10 +389,22 @@ static void GenOpenCLArgMetadata(const FunctionDecl *FD, llvm::Function *Fn,
 
       // Turn "unsigned type" to "utype"
       std::string::size_type pos = typeName.find("unsigned");
-      if (pos != std::string::npos)
+      if (pointeeTy.isCanonical() && pos != std::string::npos)
         typeName.erase(pos+1, 8);
 
       argTypeNames.push_back(llvm::MDString::get(Context, typeName));
+
+      std::string baseTypeName =
+          pointeeTy.getUnqualifiedType().getCanonicalType().getAsString(
+              Policy) +
+          "*";
+
+      // Turn "unsigned type" to "utype"
+      pos = baseTypeName.find("unsigned");
+      if (pos != std::string::npos)
+        baseTypeName.erase(pos+1, 8);
+
+      argBaseTypeNames.push_back(llvm::MDString::get(Context, baseTypeName));
 
       // Get argument type qualifiers:
       if (ty.isRestrictQualified())
@@ -409,10 +427,20 @@ static void GenOpenCLArgMetadata(const FunctionDecl *FD, llvm::Function *Fn,
 
       // Turn "unsigned type" to "utype"
       std::string::size_type pos = typeName.find("unsigned");
-      if (pos != std::string::npos)
+      if (ty.isCanonical() && pos != std::string::npos)
         typeName.erase(pos+1, 8);
 
       argTypeNames.push_back(llvm::MDString::get(Context, typeName));
+
+      std::string baseTypeName =
+          ty.getUnqualifiedType().getCanonicalType().getAsString(Policy);
+
+      // Turn "unsigned type" to "utype"
+      pos = baseTypeName.find("unsigned");
+      if (pos != std::string::npos)
+        baseTypeName.erase(pos+1, 8);
+
+      argBaseTypeNames.push_back(llvm::MDString::get(Context, baseTypeName));
 
       // Get argument type qualifiers:
       if (ty.isConstQualified())
@@ -441,6 +469,7 @@ static void GenOpenCLArgMetadata(const FunctionDecl *FD, llvm::Function *Fn,
   kernelMDArgs.push_back(llvm::MDNode::get(Context, addressQuals));
   kernelMDArgs.push_back(llvm::MDNode::get(Context, accessQuals));
   kernelMDArgs.push_back(llvm::MDNode::get(Context, argTypeNames));
+  kernelMDArgs.push_back(llvm::MDNode::get(Context, argBaseTypeNames));
   kernelMDArgs.push_back(llvm::MDNode::get(Context, argTypeQuals));
   kernelMDArgs.push_back(llvm::MDNode::get(Context, argNames));
 }
@@ -843,11 +872,12 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
   //   function call is used by the caller, the behavior is undefined.
   if (getLangOpts().CPlusPlus && !FD->hasImplicitReturnZero() &&
       !FD->getReturnType()->isVoidType() && Builder.GetInsertBlock()) {
-    if (SanOpts->Return)
+    if (SanOpts->Return) {
+      SanitizerScope SanScope(this);
       EmitCheck(Builder.getFalse(), "missing_return",
                 EmitCheckSourceLocation(FD->getLocation()),
                 ArrayRef<llvm::Value *>(), CRK_Unrecoverable);
-    else if (CGM.getCodeGenOpts().OptimizationLevel == 0)
+    } else if (CGM.getCodeGenOpts().OptimizationLevel == 0)
       Builder.CreateCall(CGM.getIntrinsic(llvm::Intrinsic::trap));
     Builder.CreateUnreachable();
     Builder.ClearInsertionPoint();
@@ -1499,6 +1529,7 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
           //   greater than zero.
           if (SanOpts->VLABound &&
               size->getType()->isSignedIntegerType()) {
+            SanitizerScope SanScope(this);
             llvm::Value *Zero = llvm::Constant::getNullValue(Size->getType());
             llvm::Constant *StaticArgs[] = {
               EmitCheckSourceLocation(size->getLocStart()),
@@ -1637,11 +1668,26 @@ llvm::Value *CodeGenFunction::EmitFieldAnnotations(const FieldDecl *D,
 
 CodeGenFunction::CGCapturedStmtInfo::~CGCapturedStmtInfo() { }
 
+CodeGenFunction::SanitizerScope::SanitizerScope(CodeGenFunction *CGF)
+    : CGF(CGF) {
+  assert(!CGF->IsSanitizerScope);
+  CGF->IsSanitizerScope = true;
+}
+
+CodeGenFunction::SanitizerScope::~SanitizerScope() {
+  CGF->IsSanitizerScope = false;
+}
+
 void CodeGenFunction::InsertHelper(llvm::Instruction *I,
                                    const llvm::Twine &Name,
                                    llvm::BasicBlock *BB,
                                    llvm::BasicBlock::iterator InsertPt) const {
   LoopStack.InsertHelper(I);
+  if (IsSanitizerScope) {
+    I->setMetadata(
+        CGM.getModule().getMDKindID("nosanitize"),
+        llvm::MDNode::get(CGM.getLLVMContext(), ArrayRef<llvm::Value *>()));
+  }
 }
 
 template <bool PreserveNames>

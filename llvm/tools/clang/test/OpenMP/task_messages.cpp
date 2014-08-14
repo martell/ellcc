@@ -97,6 +97,12 @@ int foo() {
 // expected-error@+1 {{region cannot be closely nested inside 'task' region; perhaps you forget to enclose 'omp for' directive into a parallel region?}}
 #pragma omp for reduction(+ : r)
   ++r;
+// expected-error@+1 {{directive '#pragma omp task' cannot contain more than one 'untied' clause}}
+#pragma omp task untied untied
+  ++r;
+// expected-error@+1 {{directive '#pragma omp task' cannot contain more than one 'mergeable' clause}}
+#pragma omp task mergeable mergeable
+  ++r;
   return a + b;
 }
 
@@ -255,6 +261,12 @@ L2:
 // expected-error@+2 {{reduction variable must be shared}}
 // expected-error@+1 {{region cannot be closely nested inside 'task' region; perhaps you forget to enclose 'omp for' directive into a parallel region?}}
 #pragma omp for reduction(+ : r)
+  ++r;
+// expected-error@+1 {{directive '#pragma omp task' cannot contain more than one 'untied' clause}}
+#pragma omp task untied untied
+  ++r;
+// expected-error@+1 {{directive '#pragma omp task' cannot contain more than one 'mergeable' clause}}
+#pragma omp task mergeable mergeable
   ++r;
   // expected-note@+2 {{in instantiation of function template specialization 'foo<int>' requested here}}
   // expected-note@+1 {{in instantiation of function template specialization 'foo<S>' requested here}}

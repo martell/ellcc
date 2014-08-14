@@ -181,6 +181,10 @@ namespace llvm {
       /// on PPC32.
       PPC32_GOT,
 
+      /// GPRC = address of _GLOBAL_OFFSET_TABLE_. Used by general dynamic and
+      /// local dynamic TLS  on PPC32.
+      PPC32_PICGOT,
+
       /// G8RC = ADDIS_GOT_TPREL_HA %X2, Symbol - Used by the initial-exec
       /// TLS model, produces an ADDIS8 instruction that adds the GOT
       /// base to sym\@got\@tprel\@ha.
@@ -308,12 +312,12 @@ namespace llvm {
     /// isVMRGLShuffleMask - Return true if this is a shuffle mask suitable for
     /// a VRGL* instruction with the specified unit size (1,2 or 4 bytes).
     bool isVMRGLShuffleMask(ShuffleVectorSDNode *N, unsigned UnitSize,
-                            bool isUnary, SelectionDAG &DAG);
+                            unsigned ShuffleKind, SelectionDAG &DAG);
 
     /// isVMRGHShuffleMask - Return true if this is a shuffle mask suitable for
     /// a VRGH* instruction with the specified unit size (1,2 or 4 bytes).
     bool isVMRGHShuffleMask(ShuffleVectorSDNode *N, unsigned UnitSize,
-                            bool isUnary, SelectionDAG &DAG);
+                            unsigned ShuffleKind, SelectionDAG &DAG);
 
     /// isVSLDOIShuffleMask - If this is a vsldoi shuffle mask, return the shift
     /// amount, otherwise return -1.
@@ -490,9 +494,10 @@ namespace llvm {
 
     /// Is unaligned memory access allowed for the given type, and is it fast
     /// relative to software emulation.
-    bool allowsUnalignedMemoryAccesses(EVT VT,
-                                       unsigned AddrSpace,
-                                       bool *Fast = nullptr) const override;
+    bool allowsMisalignedMemoryAccesses(EVT VT,
+                                        unsigned AddrSpace,
+                                        unsigned Align = 1,
+                                        bool *Fast = nullptr) const override;
 
     /// isFMAFasterThanFMulAndFAdd - Return true if an FMA operation is faster
     /// than a pair of fmul and fadd instructions. fmuladd intrinsics will be
@@ -509,6 +514,20 @@ namespace llvm {
     /// or null if the target does not support "fast" instruction selection.
     FastISel *createFastISel(FunctionLoweringInfo &FuncInfo,
                              const TargetLibraryInfo *LibInfo) const override;
+
+    /// \brief Returns true if an argument of type Ty needs to be passed in a
+    /// contiguous block of registers in calling convention CallConv.
+    bool functionArgumentNeedsConsecutiveRegisters(
+      Type *Ty, CallingConv::ID CallConv, bool isVarArg) const override {
+      // We support any array type as "consecutive" block in the parameter
+      // save area.  The element type defines the alignment requirement and
+      // whether the argument should go in GPRs, FPRs, or VRs if available.
+      //
+      // Note that clang uses this capability both to implement the ELFv2
+      // homogeneous float/vector aggregate ABI, and to avoid having to use
+      // "byval" when passing aggregates that might fully fit in registers.
+      return Ty->isArrayTy();
+    }
 
   private:
     SDValue getFramePointerFrameIndex(SelectionDAG & DAG) const;

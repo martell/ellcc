@@ -56,6 +56,7 @@ namespace {
       (void) llvm::createLibCallAliasAnalysisPass(nullptr);
       (void) llvm::createScalarEvolutionAliasAnalysisPass();
       (void) llvm::createTypeBasedAliasAnalysisPass();
+      (void) llvm::createScopedNoAliasAAPass();
       (void) llvm::createBoundsCheckingPass();
       (void) llvm::createBreakCriticalEdgesPass();
       (void) llvm::createCallGraphPrinterPass();
@@ -134,6 +135,7 @@ namespace {
       (void) llvm::createConstantHoistingPass();
       (void) llvm::createCodeGenPreparePass();
       (void) llvm::createEarlyCSEPass();
+      (void)llvm::createMergedLoadStoreMotionPass();
       (void) llvm::createGVNPass();
       (void) llvm::createMemCpyOptPass();
       (void) llvm::createLoopDeletionPass();

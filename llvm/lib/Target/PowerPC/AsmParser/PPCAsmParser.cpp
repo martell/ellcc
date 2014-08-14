@@ -15,6 +15,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrInfo.h"
@@ -244,6 +245,8 @@ class PPCAsmParser : public MCTargetAsmParser {
   bool ParseDirectiveTC(unsigned Size, SMLoc L);
   bool ParseDirectiveMachine(SMLoc L);
   bool ParseDarwinDirectiveMachine(SMLoc L);
+  bool ParseDirectiveAbiVersion(SMLoc L);
+  bool ParseDirectiveLocalEntry(SMLoc L);
 
   bool MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                OperandVector &Operands, MCStreamer &Out,
@@ -406,6 +409,7 @@ public:
   bool isToken() const override { return Kind == Token; }
   bool isImm() const override { return Kind == Immediate || Kind == Expression; }
   bool isU2Imm() const { return Kind == Immediate && isUInt<2>(getImm()); }
+  bool isU4Imm() const { return Kind == Immediate && isUInt<4>(getImm()); }
   bool isU5Imm() const { return Kind == Immediate && isUInt<5>(getImm()); }
   bool isS5Imm() const { return Kind == Immediate && isInt<5>(getImm()); }
   bool isU6Imm() const { return Kind == Immediate && isUInt<6>(getImm()); }
@@ -1412,6 +1416,10 @@ bool PPCAsmParser::ParseDirective(AsmToken DirectiveID) {
       return ParseDirectiveTC(isPPC64()? 8 : 4, DirectiveID.getLoc());
     if (IDVal == ".machine")
       return ParseDirectiveMachine(DirectiveID.getLoc());
+    if (IDVal == ".abiversion")
+      return ParseDirectiveAbiVersion(DirectiveID.getLoc());
+    if (IDVal == ".localentry")
+      return ParseDirectiveLocalEntry(DirectiveID.getLoc());
   } else {
     if (IDVal == ".machine")
       return ParseDarwinDirectiveMachine(DirectiveID.getLoc());
@@ -1534,6 +1542,64 @@ bool PPCAsmParser::ParseDarwinDirectiveMachine(SMLoc L) {
   return false;
 }
 
+/// ParseDirectiveAbiVersion
+///  ::= .abiversion constant-expression
+bool PPCAsmParser::ParseDirectiveAbiVersion(SMLoc L) {
+  int64_t AbiVersion;
+  if (getParser().parseAbsoluteExpression(AbiVersion)){
+    Error(L, "expected constant expression");
+    return false;
+  }
+  if (getLexer().isNot(AsmToken::EndOfStatement)) {
+    Error(L, "unexpected token in directive");
+    return false;
+  }
+
+  PPCTargetStreamer &TStreamer =
+      *static_cast<PPCTargetStreamer *>(
+           getParser().getStreamer().getTargetStreamer());
+  TStreamer.emitAbiVersion(AbiVersion);
+
+  return false;
+}
+
+/// ParseDirectiveLocalEntry
+///  ::= .localentry symbol, expression
+bool PPCAsmParser::ParseDirectiveLocalEntry(SMLoc L) {
+  StringRef Name;
+  if (getParser().parseIdentifier(Name)) {
+    Error(L, "expected identifier in directive");
+    return false;
+  }
+  MCSymbol *Sym = getContext().GetOrCreateSymbol(Name);
+
+  if (getLexer().isNot(AsmToken::Comma)) {
+    Error(L, "unexpected token in directive");
+    return false;
+  }
+  Lex();
+
+  const MCExpr *Expr;
+  if (getParser().parseExpression(Expr)) {
+    Error(L, "expected expression");
+    return false;
+  }
+
+  if (getLexer().isNot(AsmToken::EndOfStatement)) {
+    Error(L, "unexpected token in directive");
+    return false;
+  }
+
+  PPCTargetStreamer &TStreamer =
+      *static_cast<PPCTargetStreamer *>(
+           getParser().getStreamer().getTargetStreamer());
+  TStreamer.emitLocalEntry(Sym, Expr);
+
+  return false;
+}
+
+
+
 /// Force static initialization.
 extern "C" void LLVMInitializePowerPCAsmParser() {
   RegisterMCAsmParser<PPCAsmParser> A(ThePPC32Target);
@@ -1558,6 +1624,10 @@ unsigned PPCAsmParser::validateTargetOperandClass(MCParsedAsmOperand &AsmOp,
     case MCK_1: ImmVal = 1; break;
     case MCK_2: ImmVal = 2; break;
     case MCK_3: ImmVal = 3; break;
+    case MCK_4: ImmVal = 4; break;
+    case MCK_5: ImmVal = 5; break;
+    case MCK_6: ImmVal = 6; break;
+    case MCK_7: ImmVal = 7; break;
     default: return Match_InvalidOperand;
   }
 

@@ -238,10 +238,8 @@ static void DefineExactWidthIntType(TargetInfo::IntType Ty,
   DefineType(Prefix + Twine(TypeWidth) + "_TYPE__", Ty, Builder);
   DefineFmt(Prefix + Twine(TypeWidth), Ty, TI, Builder);
 
-  StringRef ConstSuffix(TargetInfo::getTypeConstantSuffix(Ty));
-  if (!ConstSuffix.empty())
-    Builder.defineMacro(Prefix + Twine(TypeWidth) + "_C_SUFFIX__", ConstSuffix);
-
+  StringRef ConstSuffix(TI.getTypeConstantSuffix(Ty));
+  Builder.defineMacro(Prefix + Twine(TypeWidth) + "_C_SUFFIX__", ConstSuffix);
 }
 
 static void DefineExactWidthIntTypeSize(TargetInfo::IntType Ty,
@@ -661,11 +659,11 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   DefineType("__INTMAX_TYPE__", TI.getIntMaxType(), Builder);
   DefineFmt("__INTMAX", TI.getIntMaxType(), TI, Builder);
   Builder.defineMacro("__INTMAX_C_SUFFIX__",
-                      TargetInfo::getTypeConstantSuffix(TI.getIntMaxType()));
+                      TI.getTypeConstantSuffix(TI.getIntMaxType()));
   DefineType("__UINTMAX_TYPE__", TI.getUIntMaxType(), Builder);
   DefineFmt("__UINTMAX", TI.getUIntMaxType(), TI, Builder);
   Builder.defineMacro("__UINTMAX_C_SUFFIX__",
-                      TargetInfo::getTypeConstantSuffix(TI.getUIntMaxType()));
+                      TI.getTypeConstantSuffix(TI.getUIntMaxType()));
   DefineTypeWidth("__INTMAX_WIDTH__",  TI.getIntMaxType(), TI, Builder);
   DefineType("__PTRDIFF_TYPE__", TI.getPtrDiffType(0), Builder);
   DefineFmt("__PTRDIFF", TI.getPtrDiffType(0), TI, Builder);
@@ -681,6 +679,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
   DefineType("__WINT_TYPE__", TI.getWIntType(), Builder);
   DefineTypeWidth("__WINT_WIDTH__", TI.getWIntType(), TI, Builder);
   DefineTypeWidth("__SIG_ATOMIC_WIDTH__", TI.getSigAtomicType(), TI, Builder);
+  DefineTypeSize("__SIG_ATOMIC_MAX__", TI.getSigAtomicType(), TI, Builder);
   DefineType("__CHAR16_TYPE__", TI.getChar16Type(), Builder);
   DefineType("__CHAR32_TYPE__", TI.getChar32Type(), Builder);
 
@@ -709,9 +708,7 @@ static void InitializePredefinedMacros(const TargetInfo &TI,
     Builder.defineMacro("__WINT_UNSIGNED__");
 
   // Define exact-width integer types for stdint.h
-  Builder.defineMacro("__INT" + Twine(TI.getCharWidth()) + "_TYPE__",
-                      "char");
-  DefineFmt("__INT" + Twine(TI.getCharWidth()), TargetInfo::SignedChar, TI, Builder);
+  DefineExactWidthIntType(TargetInfo::SignedChar, TI, Builder);
 
   if (TI.getShortWidth() > TI.getCharWidth())
     DefineExactWidthIntType(TargetInfo::SignedShort, TI, Builder);

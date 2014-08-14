@@ -62,6 +62,10 @@ public:
     return RI;
   }
 
+  bool getLdStBaseRegImmOfs(MachineInstr *LdSt,
+                            unsigned &BaseReg, unsigned &Offset,
+                            const TargetRegisterInfo *TRI) const final;
+
   void copyPhysReg(MachineBasicBlock &MBB,
                    MachineBasicBlock::iterator MI, DebugLoc DL,
                    unsigned DestReg, unsigned SrcReg,
@@ -89,10 +93,6 @@ public:
   bool isTriviallyReMaterializable(const MachineInstr *MI,
                                    AliasAnalysis *AA = nullptr) const;
 
-  unsigned getIEQOpcode() const override {
-    llvm_unreachable("Unimplemented");
-  }
-
   MachineInstr *buildMovInstr(MachineBasicBlock *MBB,
                               MachineBasicBlock::iterator I,
                               unsigned DstReg, unsigned SrcReg) const override;
@@ -100,8 +100,10 @@ public:
 
   bool isSafeToMoveRegClassDefs(const TargetRegisterClass *RC) const override;
   bool isDS(uint16_t Opcode) const;
-  int isMIMG(uint16_t Opcode) const;
-  int isSMRD(uint16_t Opcode) const;
+  bool isMIMG(uint16_t Opcode) const;
+  bool isSMRD(uint16_t Opcode) const;
+  bool isMUBUF(uint16_t Opcode) const;
+  bool isMTBUF(uint16_t Opcode) const;
   bool isVOP1(uint16_t Opcode) const;
   bool isVOP2(uint16_t Opcode) const;
   bool isVOP3(uint16_t Opcode) const;
@@ -110,6 +112,16 @@ public:
   bool isInlineConstant(const MachineOperand &MO) const;
   bool isLiteralConstant(const MachineOperand &MO) const;
 
+  bool isImmOperandLegal(const MachineInstr *MI, unsigned OpNo,
+                         const MachineOperand &MO) const;
+
+  /// \brief Return true if this 64-bit VALU instruction has a 32-bit encoding.
+  /// This function will return false if you pass it a 32-bit instruction.
+  bool hasVALU32BitEncoding(unsigned Opcode) const;
+
+  /// \brief Return true if this instruction has any modifiers.
+  ///  e.g. src[012]_mod, omod, clamp.
+  bool hasModifiers(unsigned Opcode) const;
   bool verifyInstruction(const MachineInstr *MI,
                          StringRef &ErrInfo) const override;
 
@@ -140,6 +152,11 @@ public:
   /// If the operand being legalized is a register, then a COPY will be used
   /// instead of MOV.
   void legalizeOpWithMove(MachineInstr *MI, unsigned OpIdx) const;
+
+  /// \brief Check if \p MO is a legal operand if it was the \p OpIdx Operand
+  /// for \p MI.
+  bool isOperandLegal(const MachineInstr *MI, unsigned OpIdx,
+                      const MachineOperand *MO = nullptr) const;
 
   /// \brief Legalize all operands in this instruction.  This function may
   /// create new instruction and insert them before \p MI.
@@ -175,17 +192,22 @@ public:
               unsigned SavReg, unsigned IndexReg) const;
 
   void insertNOPs(MachineBasicBlock::iterator MI, int Count) const;
+
+  /// \brief Returns the operand named \p Op.  If \p MI does not have an
+  /// operand named \c Op, this function returns nullptr.
+  MachineOperand *getNamedOperand(MachineInstr &MI, unsigned OperandName) const;
 };
 
 namespace AMDGPU {
 
   int getVOPe64(uint16_t Opcode);
+  int getVOPe32(uint16_t Opcode);
   int getCommuteRev(uint16_t Opcode);
   int getCommuteOrig(uint16_t Opcode);
   int getMCOpcode(uint16_t Opcode, unsigned Gen);
 
   const uint64_t RSRC_DATA_FORMAT = 0xf00000000000LL;
-
+  const uint64_t RSRC_TID_ENABLE = 1LL << 55;
 
 } // End namespace AMDGPU
 
@@ -197,6 +219,13 @@ namespace SIInstrFlags {
     VM_CNT = 1 << 0,
     EXP_CNT = 1 << 1,
     LGKM_CNT = 1 << 2
+  };
+}
+
+namespace SISrcMods {
+  enum {
+   NEG = 1 << 0,
+   ABS = 1 << 1
   };
 }
 

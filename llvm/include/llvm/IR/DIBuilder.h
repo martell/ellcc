@@ -38,7 +38,6 @@ namespace llvm {
   class DIFile;
   class DIEnumerator;
   class DIType;
-  class DIArray;
   class DIGlobalVariable;
   class DIImportedEntity;
   class DINameSpace;
@@ -86,7 +85,7 @@ namespace llvm {
 
     public:
     explicit DIBuilder(Module &M);
-    enum ComplexAddrKind { OpPlus=1, OpDeref };
+    enum ComplexAddrKind { OpPlus=1, OpDeref, OpPiece };
     enum DebugEmissionKind { FullDebug=1, LineTablesOnly };
 
     /// finalize - Construct any deferred debug info descriptors.
@@ -435,8 +434,9 @@ namespace llvm {
     ///                        includes return type at 0th index.
     /// @param Flags           E.g.: LValueReference.
     ///                        These flags are used to emit dwarf attributes.
-    DICompositeType createSubroutineType(DIFile File, DIArray ParameterTypes,
-                                         unsigned Flags = 0);
+    DISubroutineType createSubroutineType(DIFile File,
+                                          DITypeArray ParameterTypes,
+                                          unsigned Flags = 0);
 
     /// createArtificialType - Create a new DIType with "artificial" flag set.
     DIType createArtificialType(DIType Ty);
@@ -463,12 +463,15 @@ namespace llvm {
     /// through debug info anchors.
     void retainType(DIType T);
 
-    /// createUnspecifiedParameter - Create unspecified type descriptor
+    /// createUnspecifiedParameter - Create unspecified parameter type
     /// for a subroutine type.
-    DIDescriptor createUnspecifiedParameter();
+    DIBasicType createUnspecifiedParameter();
 
     /// getOrCreateArray - Get a DIArray, create one if required.
     DIArray getOrCreateArray(ArrayRef<Value *> Elements);
+
+    /// getOrCreateTypeArray - Get a DITypeArray, create one if required.
+    DITypeArray getOrCreateTypeArray(ArrayRef<Value *> Elements);
 
     /// getOrCreateSubrange - Create a descriptor for a value range.  This
     /// implicitly uniques the values returned.
@@ -557,6 +560,16 @@ namespace llvm {
                                      StringRef Name, DIFile F, unsigned LineNo,
                                      DITypeRef Ty, ArrayRef<Value *> Addr,
                                      unsigned ArgNo = 0);
+
+    /// createVariablePiece - Create a descriptor to describe one part
+    /// of aggregate variable that is fragmented across multiple Values.
+    ///
+    /// @param Variable      Variable that is partially represented by this.
+    /// @param OffsetInBytes Offset of the piece in bytes.
+    /// @param SizeInBytes   Size of the piece in bytes.
+    DIVariable createVariablePiece(DIVariable Variable,
+                                   unsigned OffsetInBytes,
+                                   unsigned SizeInBytes);
 
     /// createFunction - Create a new descriptor for the specified subprogram.
     /// See comments in DISubprogram for descriptions of these fields.

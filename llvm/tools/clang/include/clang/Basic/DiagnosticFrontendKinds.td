@@ -41,8 +41,8 @@ def remark_fe_backend_optimization_remark_missed : Remark<"%0">, BackendInfo,
     InGroup<BackendOptimizationRemarkMissed>, DefaultRemark;
 def remark_fe_backend_optimization_remark_analysis : Remark<"%0">, BackendInfo,
     InGroup<BackendOptimizationRemarkAnalysis>, DefaultRemark;
-def warn_fe_backend_optimization_warning : Warning<"%0">, BackendInfo,
-    InGroup<BackendOptimizationWarnings>, DefaultWarn;
+def warn_fe_backend_optimization_failure : Warning<"%0">, BackendInfo,
+    InGroup<BackendOptimizationFailure>, DefaultWarn;
 def note_fe_backend_optimization_remark_invalid_loc : Note<"could "
   "not determine the original source location for %0:%1:%2">;
 
@@ -177,6 +177,10 @@ def note_module_def_undef_here : Note<
   "macro was %select{defined|#undef'd}0 here">;
 def remark_module_build : Remark<"building module '%0' as '%1'">,
   InGroup<DiagGroup<"module-build">>, DefaultIgnore;
+
+def err_conflicting_module_names : Error<
+  "conflicting module names specified: '-fmodule-name=%0' and "
+  "'-fmodule-implementation-of %1'">;
 
 def err_missing_vfs_overlay_file : Error<
   "virtual filesystem overlay file '%0' not found">, DefaultFatal;

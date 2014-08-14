@@ -103,7 +103,7 @@ TargetInfo::~TargetInfo() {}
 const char *TargetInfo::getTypeName(IntType T) {
   switch (T) {
   default: llvm_unreachable("not an integer!");
-  case SignedChar:       return "char";
+  case SignedChar:       return "signed char";
   case UnsignedChar:     return "unsigned char";
   case SignedShort:      return "short";
   case UnsignedShort:    return "unsigned short";
@@ -118,7 +118,7 @@ const char *TargetInfo::getTypeName(IntType T) {
 
 /// getTypeConstantSuffix - Return the constant suffix for the specified
 /// integer type enum. For example, SignedLong -> "L".
-const char *TargetInfo::getTypeConstantSuffix(IntType T) {
+const char *TargetInfo::getTypeConstantSuffix(IntType T) const {
   switch (T) {
   default: llvm_unreachable("not an integer!");
   case SignedChar:
@@ -127,7 +127,11 @@ const char *TargetInfo::getTypeConstantSuffix(IntType T) {
   case SignedLong:       return "L";
   case SignedLongLong:   return "LL";
   case UnsignedChar:
+    if (getCharWidth() < getIntWidth())
+      return "";
   case UnsignedShort:
+    if (getShortWidth() < getIntWidth())
+      return "";
   case UnsignedInt:      return "U";
   case UnsignedLong:     return "UL";
   case UnsignedLongLong: return "ULL";

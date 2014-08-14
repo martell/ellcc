@@ -312,6 +312,7 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
       // Conversions between floating types.
       // RTABI chapter 4.1.2, Table 7
       { RTLIB::FPROUND_F64_F32, "__aeabi_d2f", CallingConv::ARM_AAPCS, ISD::SETCC_INVALID },
+      { RTLIB::FPROUND_F64_F16, "__aeabi_d2h", CallingConv::ARM_AAPCS, ISD::SETCC_INVALID },
       { RTLIB::FPEXT_F32_F64,   "__aeabi_f2d", CallingConv::ARM_AAPCS, ISD::SETCC_INVALID },
 
       // Integer to floating-point conversions.
@@ -396,8 +397,6 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     addRegisterClass(MVT::f32, &ARM::SPRRegClass);
     if (!Subtarget->isFPOnlySP())
       addRegisterClass(MVT::f64, &ARM::DPRRegClass);
-
-    setTruncStoreAction(MVT::f64, MVT::f32, Expand);
   }
 
   for (unsigned VT = (unsigned)MVT::FIRST_VECTOR_VALUETYPE;
@@ -582,8 +581,14 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
 
   computeRegisterProperties();
 
-  // ARM does not have f32 extending load.
+  // ARM does not have floating-point extending loads.
   setLoadExtAction(ISD::EXTLOAD, MVT::f32, Expand);
+  setLoadExtAction(ISD::EXTLOAD, MVT::f16, Expand);
+
+  // ... or truncating stores
+  setTruncStoreAction(MVT::f64, MVT::f32, Expand);
+  setTruncStoreAction(MVT::f32, MVT::f16, Expand);
+  setTruncStoreAction(MVT::f64, MVT::f16, Expand);
 
   // ARM does not have i1 sign extending load.
   setLoadExtAction(ISD::SEXTLOAD, MVT::i1, Promote);
@@ -5740,7 +5745,7 @@ static SDValue SkipLoadExtensionForVMULL(LoadSDNode *LD, SelectionDAG& DAG) {
   // operation legalization where we can't create illegal types.
   return DAG.getExtLoad(LD->getExtensionType(), SDLoc(LD), ExtendedTy,
                         LD->getChain(), LD->getBasePtr(), LD->getPointerInfo(),
-                        LD->getMemoryVT(), LD->isVolatile(),
+                        LD->getMemoryVT(), LD->isVolatile(), LD->isInvariant(),
                         LD->isNonTemporal(), LD->getAlignment());
 }
 
@@ -7223,8 +7228,7 @@ ARMTargetLowering::EmitLowered__chkstk(MachineInstr *MI,
 
   AddDefaultCC(AddDefaultPred(BuildMI(*MBB, MI, DL, TII.get(ARM::t2SUBrr),
                                       ARM::SP)
-                              .addReg(ARM::SP, RegState::Define)
-                              .addReg(ARM::R4, RegState::Kill)));
+                              .addReg(ARM::SP).addReg(ARM::R4)));
 
   MI->eraseFromParent();
   return MBB;
@@ -8439,8 +8443,6 @@ static SDValue PerformVMOVRRDCombine(SDNode *N,
     if (DCI.DAG.getTargetLoweringInfo().isBigEndian())
       std::swap (NewLD1, NewLD2);
     SDValue Result = DCI.CombineTo(N, NewLD1, NewLD2);
-    DCI.RemoveFromWorklist(LD);
-    DAG.DeleteNode(LD);
     return Result;
   }
 
@@ -8603,7 +8605,7 @@ static SDValue PerformSTORECombine(SDNode *N,
   return DAG.getStore(St->getChain(), dl, V, St->getBasePtr(),
                       St->getPointerInfo(), St->isVolatile(),
                       St->isNonTemporal(), St->getAlignment(),
-                      St->getTBAAInfo());
+                      St->getAAInfo());
 }
 
 /// hasNormalLoadOperand - Check if any of the operands of a BUILD_VECTOR node
@@ -9693,8 +9695,10 @@ bool ARMTargetLowering::isDesirableToTransformToIntegerOp(unsigned Opc,
   return (VT == MVT::f32) && (Opc == ISD::LOAD || Opc == ISD::STORE);
 }
 
-bool ARMTargetLowering::allowsUnalignedMemoryAccesses(EVT VT, unsigned,
-                                                      bool *Fast) const {
+bool ARMTargetLowering::allowsMisalignedMemoryAccesses(EVT VT,
+                                                       unsigned,
+                                                       unsigned,
+                                                       bool *Fast) const {
   // The AllowsUnaliged flag models the SCTLR.A setting in ARM cpus
   bool AllowsUnaligned = Subtarget->allowsUnalignedMem();
 
@@ -9748,11 +9752,12 @@ EVT ARMTargetLowering::getOptimalMemOpType(uint64_t Size,
     bool Fast;
     if (Size >= 16 &&
         (memOpAlign(SrcAlign, DstAlign, 16) ||
-         (allowsUnalignedMemoryAccesses(MVT::v2f64, 0, &Fast) && Fast))) {
+         (allowsMisalignedMemoryAccesses(MVT::v2f64, 0, 1, &Fast) && Fast))) {
       return MVT::v2f64;
     } else if (Size >= 8 &&
                (memOpAlign(SrcAlign, DstAlign, 8) ||
-                (allowsUnalignedMemoryAccesses(MVT::f64, 0, &Fast) && Fast))) {
+                (allowsMisalignedMemoryAccesses(MVT::f64, 0, 1, &Fast) &&
+                 Fast))) {
       return MVT::f64;
     }
   }
@@ -10618,7 +10623,7 @@ ARMTargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op, SelectionDAG &DAG) const 
   Chain = DAG.getCopyToReg(Chain, DL, ARM::R4, Words, Flag);
   Flag = Chain.getValue(1);
 
-  SDVTList NodeTys = DAG.getVTList(MVT::i32, MVT::Glue);
+  SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
   Chain = DAG.getNode(ARMISD::WIN__CHKSTK, DL, NodeTys, Chain, Flag);
 
   SDValue NewSP = DAG.getCopyFromReg(Chain, DL, ARM::SP, MVT::i32);
@@ -10799,6 +10804,11 @@ bool ARMTargetLowering::shouldExpandAtomicInIR(Instruction *Inst) const {
   // and up to 64 bits on the non-M profiles
   unsigned AtomicLimit = IsMClass ? 32 : 64;
   return Inst->getType()->getPrimitiveSizeInBits() <= AtomicLimit;
+}
+
+// This has so far only been implemented for MachO.
+bool ARMTargetLowering::useLoadStackGuardNode() const {
+  return Subtarget->getTargetTriple().getObjectFormat() == Triple::MachO;
 }
 
 Value *ARMTargetLowering::emitLoadLinked(IRBuilder<> &Builder, Value *Addr,

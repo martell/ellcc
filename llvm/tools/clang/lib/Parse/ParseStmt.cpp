@@ -345,7 +345,7 @@ Retry:
 
   case tok::annot_pragma_openmp:
     ProhibitAttributes(Attrs);
-    return ParseOpenMPDeclarativeOrExecutableDirective();
+    return ParseOpenMPDeclarativeOrExecutableDirective(!OnlyStatement);
 
   case tok::annot_pragma_ms_pointers_to_members:
     ProhibitAttributes(Attrs);
@@ -804,7 +804,6 @@ StmtResult Parser::ParseCompoundStatement(bool isStmtExpr) {
 ///         declaration
 /// [GNU]   '__extension__' declaration
 ///         statement
-/// [OMP]   openmp-directive            [TODO]
 ///
 /// [GNU] label-declarations:
 /// [GNU]   label-declaration
@@ -812,10 +811,6 @@ StmtResult Parser::ParseCompoundStatement(bool isStmtExpr) {
 ///
 /// [GNU] label-declaration:
 /// [GNU]   '__label__' identifier-list ';'
-///
-/// [OMP] openmp-directive:             [TODO]
-/// [OMP]   barrier-directive
-/// [OMP]   flush-directive
 ///
 StmtResult Parser::ParseCompoundStatement(bool isStmtExpr,
                                           unsigned ScopeFlags) {
@@ -1820,18 +1815,17 @@ StmtResult Parser::ParsePragmaLoopHint(StmtVector &Stmts, bool OnlyStatement,
   // Create temporary attribute list.
   ParsedAttributesWithRange TempAttrs(AttrFactory);
 
-  // Get vectorize hints and consume annotated token.
+  // Get loop hints and consume annotated token.
   while (Tok.is(tok::annot_pragma_loop_hint)) {
-    LoopHint Hint = HandlePragmaLoopHint();
-    ConsumeToken();
-
-    if (!Hint.LoopLoc || !Hint.OptionLoc || !Hint.ValueLoc)
+    LoopHint Hint;
+    if (!HandlePragmaLoopHint(Hint))
       continue;
 
-    ArgsUnion ArgHints[] = {Hint.OptionLoc, Hint.ValueLoc,
+    ArgsUnion ArgHints[] = {Hint.PragmaNameLoc, Hint.OptionLoc, Hint.StateLoc,
                             ArgsUnion(Hint.ValueExpr)};
-    TempAttrs.addNew(Hint.LoopLoc->Ident, Hint.Range, nullptr,
-                     Hint.LoopLoc->Loc, ArgHints, 3, AttributeList::AS_Pragma);
+    TempAttrs.addNew(Hint.PragmaNameLoc->Ident, Hint.Range, nullptr,
+                     Hint.PragmaNameLoc->Loc, ArgHints, 4,
+                     AttributeList::AS_Pragma);
   }
 
   // Get the next statement.

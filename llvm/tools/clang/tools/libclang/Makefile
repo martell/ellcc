@@ -18,7 +18,7 @@ ifeq ($(ENABLE_SHARED),1)
 endif
 
 include $(CLANG_LEVEL)/../../Makefile.config
-LINK_COMPONENTS := $(TARGETS_TO_BUILD) asmparser bitreader support mc option
+LINK_COMPONENTS := AsmParser BitReader Core MC MCParser Option Support
 USEDLIBS = clangIndex.a clangARCMigrate.a \
 	   clangRewriteFrontend.a \
 	   clangFormat.a \

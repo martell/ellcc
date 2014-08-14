@@ -686,6 +686,9 @@ class PPCTargetInfo : public TargetInfo {
   // Target cpu features.
   bool HasVSX;
 
+protected:
+  std::string ABI;
+
 public:
   PPCTargetInfo(const llvm::Triple &Triple)
       : TargetInfo(Triple), HasVSX(false) {
@@ -773,6 +776,9 @@ public:
 
     return CPUKnown;
   }
+
+
+  StringRef getABI() const override { return ABI; }
 
   void getTargetBuiltins(const Builtin::Info *&Records,
                          unsigned &NumRecords) const override {
@@ -937,7 +943,6 @@ const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
 /// configured set of features.
 bool PPCTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
                                          DiagnosticsEngine &Diags) {
-  // Remember the maximum enabled sselevel.
   for (unsigned i = 0, e = Features.size(); i !=e; ++i) {
     // Ignore disabled features.
     if (Features[i][0] == '-')
@@ -978,12 +983,17 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
   // Target properties.
   if (getTriple().getArch() == llvm::Triple::ppc64le) {
     Builder.defineMacro("_LITTLE_ENDIAN");
-    Builder.defineMacro("_CALL_ELF","2");
   } else {
     if (getTriple().getOS() != llvm::Triple::NetBSD &&
         getTriple().getOS() != llvm::Triple::OpenBSD)
       Builder.defineMacro("_BIG_ENDIAN");
   }
+
+  // ABI options.
+  if (ABI == "elfv1")
+    Builder.defineMacro("_CALL_ELF", "1");
+  if (ABI == "elfv2")
+    Builder.defineMacro("_CALL_ELF", "2");
 
   // Subtarget options.
   Builder.defineMacro("__NATURAL_ALIGNMENT__");
@@ -1134,6 +1144,9 @@ void PPCTargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     .Default(false);
 
   Features["qpx"] = (CPU == "a2q");
+
+  if (!ABI.empty())
+    Features[ABI] = true;
 }
 
 bool PPCTargetInfo::hasFeature(StringRef Feature) const {
@@ -1298,15 +1311,25 @@ public:
     } else {
       if ((Triple.getArch() == llvm::Triple::ppc64le)) {
         DescriptionString = "e-m:e-i64:64-n32:64";
+        ABI = "elfv2";
       } else {
         DescriptionString = "E-m:e-i64:64-n32:64";
+        ABI = "elfv1";
       }
-}
+    }
     // PPC64 supports atomics up to 8 bytes.
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
   }
   BuiltinVaListKind getBuiltinVaListKind() const override {
     return TargetInfo::CharPtrBuiltinVaList;
+  }
+  // PPC64 Linux-specifc ABI options.
+  bool setABI(const std::string &Name) override {
+    if (Name == "elfv1" || Name == "elfv2") {
+      ABI = Name;
+      return true;
+    }
+    return false;
   }
 };
 } // end anonymous namespace.
@@ -1580,6 +1603,7 @@ public:
       .Case("kabini",   GK_SEA_ISLANDS)
       .Case("kaveri",   GK_SEA_ISLANDS)
       .Case("hawaii",   GK_SEA_ISLANDS)
+      .Case("mullins",  GK_SEA_ISLANDS)
       .Default(GK_NONE);
 
     if (GPU == GK_NONE) {
@@ -1827,7 +1851,7 @@ class X86TargetInfo : public TargetInfo {
   bool HasTBM;
   bool HasFMA;
   bool HasF16C;
-  bool HasAVX512CD, HasAVX512ER, HasAVX512PF;
+  bool HasAVX512CD, HasAVX512ER, HasAVX512PF, HasAVX512DQ, HasAVX512BW, HasAVX512VL;
   bool HasSHA;
   bool HasCX16;
 
@@ -1919,6 +1943,10 @@ class X86TargetInfo : public TargetInfo {
     /// Knights Landing processor.
     CK_KNL,
 
+    /// \name Skylake Server
+    /// Skylake server processor.
+    CK_SKX,
+
     /// \name K6
     /// K6 architecture processors.
     //@{
@@ -1992,7 +2020,8 @@ public:
         HasRDRND(false), HasBMI(false), HasBMI2(false), HasPOPCNT(false),
         HasRTM(false), HasPRFCHW(false), HasRDSEED(false), HasTBM(false),
         HasFMA(false), HasF16C(false), HasAVX512CD(false), HasAVX512ER(false),
-        HasAVX512PF(false), HasSHA(false), HasCX16(false), CPU(CK_Generic),
+        HasAVX512PF(false), HasAVX512DQ(false), HasAVX512BW(false), HasAVX512VL(false),
+        HasSHA(false), HasCX16(false), CPU(CK_Generic),
         FPMath(FP_Default) {
     BigEndian = false;
     LongDoubleFormat = &llvm::APFloat::x87DoubleExtended;
@@ -2086,6 +2115,7 @@ public:
       .Case("core-avx-i", CK_CoreAVXi)
       .Case("core-avx2", CK_CoreAVX2)
       .Case("knl", CK_KNL)
+      .Case("skx", CK_SKX)
       .Case("k6", CK_K6)
       .Case("k6-2", CK_K6_2)
       .Case("k6-3", CK_K6_3)
@@ -2164,6 +2194,7 @@ public:
     case CK_CoreAVXi:
     case CK_CoreAVX2:
     case CK_KNL:
+    case CK_SKX:
     case CK_Athlon64:
     case CK_Athlon64SSE3:
     case CK_AthlonFX:
@@ -2302,6 +2333,22 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     setFeatureEnabledImpl(Features, "avx512cd", true);
     setFeatureEnabledImpl(Features, "avx512er", true);
     setFeatureEnabledImpl(Features, "avx512pf", true);
+    setFeatureEnabledImpl(Features, "aes", true);
+    setFeatureEnabledImpl(Features, "pclmul", true);
+    setFeatureEnabledImpl(Features, "lzcnt", true);
+    setFeatureEnabledImpl(Features, "rdrnd", true);
+    setFeatureEnabledImpl(Features, "f16c", true);
+    setFeatureEnabledImpl(Features, "bmi", true);
+    setFeatureEnabledImpl(Features, "bmi2", true);
+    setFeatureEnabledImpl(Features, "rtm", true);
+    setFeatureEnabledImpl(Features, "fma", true);
+    break;
+  case CK_SKX:
+    setFeatureEnabledImpl(Features, "avx512f", true);
+    setFeatureEnabledImpl(Features, "avx512cd", true);
+    setFeatureEnabledImpl(Features, "avx512dq", true);
+    setFeatureEnabledImpl(Features, "avx512bw", true);
+    setFeatureEnabledImpl(Features, "avx512vl", true);
     setFeatureEnabledImpl(Features, "aes", true);
     setFeatureEnabledImpl(Features, "pclmul", true);
     setFeatureEnabledImpl(Features, "lzcnt", true);
@@ -2453,8 +2500,8 @@ void X86TargetInfo::setSSELevel(llvm::StringMap<bool> &Features,
   case AVX2:
     Features["avx2"] = false;
   case AVX512F:
-    Features["avx512f"] = Features["avx512cd"] = Features["avx512er"] =
-      Features["avx512pf"] = false;
+    Features["avx512f"] = Features["avx512cd"] = Features["avx512er"] = Features["avx512pf"] =
+    Features["avx512dq"] = Features["avx512bw"] = Features["avx512vl"] = false;
   }
 }
 
@@ -2553,7 +2600,8 @@ void X86TargetInfo::setFeatureEnabledImpl(llvm::StringMap<bool> &Features,
     setSSELevel(Features, AVX2, Enabled);
   } else if (Name == "avx512f") {
     setSSELevel(Features, AVX512F, Enabled);
-  } else if (Name == "avx512cd" || Name == "avx512er" || Name == "avx512pf") {
+  } else if (Name == "avx512cd" || Name == "avx512er" || Name == "avx512pf"
+          || Name == "avx512dq" || Name == "avx512bw" || Name == "avx512vl") {
     if (Enabled)
       setSSELevel(Features, AVX512F, Enabled);
   } else if (Name == "fma") {
@@ -2663,6 +2711,21 @@ bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
 
     if (Feature == "avx512pf") {
       HasAVX512PF = true;
+      continue;
+    }
+
+    if (Feature == "avx512dq") {
+      HasAVX512DQ = true;
+      continue;
+    }
+
+    if (Feature == "avx512bw") {
+      HasAVX512BW = true;
+      continue;
+    }
+
+    if (Feature == "avx512vl") {
+      HasAVX512VL = true;
       continue;
     }
 
@@ -2832,6 +2895,9 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   case CK_KNL:
     defineCPUMacros(Builder, "knl");
     break;
+  case CK_SKX:
+    defineCPUMacros(Builder, "skx");
+    break;
   case CK_K6_2:
     Builder.defineMacro("__k6_2__");
     Builder.defineMacro("__tune_k6_2__");
@@ -2959,6 +3025,12 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
     Builder.defineMacro("__AVX512ER__");
   if (HasAVX512PF)
     Builder.defineMacro("__AVX512PF__");
+  if (HasAVX512DQ)
+    Builder.defineMacro("__AVX512DQ__");
+  if (HasAVX512BW)
+    Builder.defineMacro("__AVX512BW__");
+  if (HasAVX512VL)
+    Builder.defineMacro("__AVX512VL__");
 
   if (HasSHA)
     Builder.defineMacro("__SHA__");
@@ -3042,6 +3114,9 @@ bool X86TargetInfo::hasFeature(StringRef Feature) const {
       .Case("avx512cd", HasAVX512CD)
       .Case("avx512er", HasAVX512ER)
       .Case("avx512pf", HasAVX512PF)
+      .Case("avx512dq", HasAVX512DQ)
+      .Case("avx512bw", HasAVX512BW)
+      .Case("avx512vl", HasAVX512VL)
       .Case("bmi", HasBMI)
       .Case("bmi2", HasBMI2)
       .Case("cx16", HasCX16)
@@ -3088,6 +3163,13 @@ X86TargetInfo::validateAsmConstraint(const char *&Name,
     case 'm':  // any MMX register, when inter-unit moves enabled.
       break;   // falls through to setAllowsRegister.
   }
+  case 'f': // any x87 floating point stack register.
+    // Constraint 'f' cannot be used for output operands.
+    if (Info.ConstraintStr[0] == '=')
+      return false;
+
+    Info.setAllowsRegister();
+    return true;
   case 'a': // eax.
   case 'b': // ebx.
   case 'c': // ecx.
@@ -3096,7 +3178,6 @@ X86TargetInfo::validateAsmConstraint(const char *&Name,
   case 'B': // ebp.
   case 'D': // edi.
   case 'A': // edx:eax.
-  case 'f': // any x87 floating point stack register.
   case 't': // top of floating point stack.
   case 'u': // second from top of floating point stack.
   case 'q': // Any register accessible as [r]l: a, b, c, and d.
@@ -4491,7 +4572,6 @@ class AArch64TargetInfo : public TargetInfo {
     NeonMode
   };
 
-  std::string CPU;
   unsigned FPU;
   unsigned CRC;
   unsigned Crypto;
@@ -4549,8 +4629,6 @@ public:
                         .Cases("cortex-a53", "cortex-a57", true)
                         .Case("cyclone", true)
                         .Default(false);
-    if (CPUKnown)
-      CPU = Name;
     return CPUKnown;
   }
 
@@ -4622,23 +4700,6 @@ public:
       (Feature == "neon" && FPU == NeonMode);
   }
 
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override {
-
-  if (CPU == "cyclone") {
-    Features["fp-armv8"] = true;
-    Features["neon"] = true;
-    Features["crypto"] = true;
-    Features["crc"] = true;
-    Features["zcm"] = true;
-    Features["zcz"] = true;
-  } else if (CPU == "cortex-a53" || CPU == "cortex-a57") {
-    Features["fp-armv8"] = true;
-    Features["neon"] = true;
-    Features["crypto"] = true;
-    Features["crc"] = true;
-  }
-}
-
   bool handleTargetFeatures(std::vector<std::string> &Features,
                             DiagnosticsEngine &Diags) override {
     FPU = FPUMode;
@@ -4706,6 +4767,33 @@ public:
       return true;
     }
     return false;
+  }
+
+  virtual bool validateConstraintModifier(StringRef Constraint,
+                                          const char Modifier,
+                                          unsigned Size) const {
+    // Strip off constraint modifiers.
+    while (Constraint[0] == '=' || Constraint[0] == '+' || Constraint[0] == '&')
+      Constraint = Constraint.substr(1);
+
+    switch (Constraint[0]) {
+    default:
+      return true;
+    case 'z':
+    case 'r': {
+      switch (Modifier) {
+      case 'x':
+      case 'w':
+        // For now assume that the person knows what they're
+        // doing with the modifier.
+        return true;
+      default:
+        // By default an 'r' constraint will be in the 'x'
+        // registers.
+        return Size == 64;
+      }
+    }
+    }
   }
 
   virtual const char *getClobbers() const { return ""; }
@@ -6248,7 +6336,6 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
     return new HexagonTargetInfo(Triple);
 
   case llvm::Triple::aarch64:
-  case llvm::Triple::arm64:
     if (Triple.isOSDarwin())
       return new DarwinAArch64TargetInfo(Triple);
 
@@ -6262,7 +6349,6 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
     }
 
   case llvm::Triple::aarch64_be:
-  case llvm::Triple::arm64_be:
     switch (os) {
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<AArch64beTargetInfo>(Triple);

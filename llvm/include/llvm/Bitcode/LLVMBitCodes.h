@@ -330,7 +330,8 @@ namespace bitc {
   };
 
   enum UseListCodes {
-    USELIST_CODE_ENTRY = 1   // USELIST_CODE_ENTRY: TBD.
+    USELIST_CODE_DEFAULT = 1, // DEFAULT: [index..., value-id]
+    USELIST_CODE_BB      = 2  // BB: [index..., bb-id]
   };
 
   enum AttributeKindCodes {
@@ -374,7 +375,8 @@ namespace bitc {
     ATTR_KIND_OPTIMIZE_NONE = 37,
     ATTR_KIND_IN_ALLOCA = 38,
     ATTR_KIND_NON_NULL = 39,
-    ATTR_KIND_JUMP_TABLE = 40
+    ATTR_KIND_JUMP_TABLE = 40,
+    ATTR_KIND_DEREFERENCEABLE = 41
   };
 
   enum ComdatSelectionKindCodes {

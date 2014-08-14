@@ -633,6 +633,8 @@ def imm32 : Operand<i32>, ImmLeaf<i32, [{ return Imm == 32; }]> {
   let ParserMatchClass = Imm32AsmOperand;
 }
 
+def imm8_or_16 : ImmLeaf<i32, [{ return Imm == 8 || Imm == 16;}]>;
+
 /// imm1_7 predicate - Immediate in the range [1,7].
 def Imm1_7AsmOperand: ImmAsmOperand { let Name = "Imm1_7"; }
 def imm1_7 : Operand<i32>, ImmLeaf<i32, [{ return Imm > 0 && Imm < 8; }]> {
@@ -2708,7 +2710,8 @@ multiclass AI2_stridx<bit isByte, string opc,
   def _PRE_IMM : AI2ldstidx<0, isByte, 1, (outs GPR:$Rn_wb),
                             (ins GPR:$Rt, addrmode_imm12_pre:$addr), IndexModePre,
                             StFrm, iii,
-                            opc, "\t$Rt, $addr!", "$addr.base = $Rn_wb", []> {
+                            opc, "\t$Rt, $addr!",
+                            "$addr.base = $Rn_wb,@earlyclobber $Rn_wb", []> {
     bits<17> addr;
     let Inst{25} = 0;
     let Inst{23}    = addr{12};     // U (add = ('U' == 1))
@@ -2720,7 +2723,8 @@ multiclass AI2_stridx<bit isByte, string opc,
   def _PRE_REG  : AI2ldstidx<0, isByte, 1, (outs GPR:$Rn_wb),
                       (ins GPR:$Rt, ldst_so_reg:$addr),
                       IndexModePre, StFrm, iir,
-                      opc, "\t$Rt, $addr!", "$addr.base = $Rn_wb", []> {
+                      opc, "\t$Rt, $addr!",
+                      "$addr.base = $Rn_wb,@earlyclobber $Rn_wb", []> {
     bits<17> addr;
     let Inst{25} = 1;
     let Inst{23}    = addr{12};    // U (add = ('U' == 1))
@@ -2733,7 +2737,7 @@ multiclass AI2_stridx<bit isByte, string opc,
                 (ins GPR:$Rt, addr_offset_none:$addr, am2offset_reg:$offset),
                 IndexModePost, StFrm, iir,
                 opc, "\t$Rt, $addr, $offset",
-                "$addr.base = $Rn_wb", []> {
+                "$addr.base = $Rn_wb,@earlyclobber $Rn_wb", []> {
      // {12}     isAdd
      // {11-0}   imm12/Rm
      bits<14> offset;
@@ -2751,7 +2755,7 @@ multiclass AI2_stridx<bit isByte, string opc,
                 (ins GPR:$Rt, addr_offset_none:$addr, am2offset_imm:$offset),
                 IndexModePost, StFrm, iii,
                 opc, "\t$Rt, $addr, $offset",
-                "$addr.base = $Rn_wb", []> {
+                "$addr.base = $Rn_wb,@earlyclobber $Rn_wb", []> {
     // {12}     isAdd
     // {11-0}   imm12/Rm
     bits<14> offset;
@@ -2828,7 +2832,8 @@ def STRH_preidx: ARMPseudoInst<(outs GPR:$Rn_wb),
 def STRH_PRE  : AI3ldstidx<0b1011, 0, 1, (outs GPR:$Rn_wb),
                            (ins GPR:$Rt, addrmode3_pre:$addr), IndexModePre,
                            StMiscFrm, IIC_iStore_bh_ru,
-                           "strh", "\t$Rt, $addr!", "$addr.base = $Rn_wb", []> {
+                           "strh", "\t$Rt, $addr!",
+                           "$addr.base = $Rn_wb,@earlyclobber $Rn_wb", []> {
   bits<14> addr;
   let Inst{23}    = addr{8};      // U bit
   let Inst{22}    = addr{13};     // 1 == imm8, 0 == Rm
@@ -2841,7 +2846,8 @@ def STRH_PRE  : AI3ldstidx<0b1011, 0, 1, (outs GPR:$Rn_wb),
 def STRH_POST : AI3ldstidx<0b1011, 0, 0, (outs GPR:$Rn_wb),
                        (ins GPR:$Rt, addr_offset_none:$addr, am3offset:$offset),
                        IndexModePost, StMiscFrm, IIC_iStore_bh_ru,
-                       "strh", "\t$Rt, $addr, $offset", "$addr.base = $Rn_wb",
+                       "strh", "\t$Rt, $addr, $offset",
+                       "$addr.base = $Rn_wb,@earlyclobber $Rn_wb",
                    [(set GPR:$Rn_wb, (post_truncsti16 GPR:$Rt,
                                                       addr_offset_none:$addr,
                                                       am3offset:$offset))]> {
@@ -4111,7 +4117,7 @@ def UDIV : ADivA1I<0b011, (outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm), IIC_iDIV,
 //  Misc. Arithmetic Instructions.
 //
 
-def CLZ  : AMiscA1I<0b000010110, 0b0001, (outs GPR:$Rd), (ins GPR:$Rm),
+def CLZ  : AMiscA1I<0b00010110, 0b0001, (outs GPR:$Rd), (ins GPR:$Rm),
               IIC_iUNAr, "clz", "\t$Rd, $Rm",
               [(set GPR:$Rd, (ctlz GPR:$Rm))]>, Requires<[IsARM, HasV5T]>,
            Sched<[WriteALU]>;

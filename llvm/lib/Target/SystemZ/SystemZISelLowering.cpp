@@ -339,9 +339,10 @@ bool SystemZTargetLowering::isFPImmLegal(const APFloat &Imm, EVT VT) const {
   return Imm.isZero() || Imm.isNegZero();
 }
 
-bool SystemZTargetLowering::allowsUnalignedMemoryAccesses(EVT VT,
-                                                          unsigned,
-                                                          bool *Fast) const {
+bool SystemZTargetLowering::allowsMisalignedMemoryAccesses(EVT VT,
+                                                           unsigned,
+                                                           unsigned,
+                                                           bool *Fast) const {
   // Unaligned accesses should never be slower than the expanded version.
   // We check specifically for aligned accesses in the few cases where
   // they are required.
@@ -1191,7 +1192,7 @@ static void adjustSubwordCmp(SelectionDAG &DAG, Comparison &C) {
                            Load->getChain(), Load->getBasePtr(),
                            Load->getPointerInfo(), Load->getMemoryVT(),
                            Load->isVolatile(), Load->isNonTemporal(),
-                           Load->getAlignment());
+                           Load->isInvariant(), Load->getAlignment());
 
   // Make sure that the second operand is an i32 with the right value.
   if (C.Op1.getValueType() != MVT::i32 ||

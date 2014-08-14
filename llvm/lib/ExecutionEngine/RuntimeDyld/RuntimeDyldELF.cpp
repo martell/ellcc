@@ -911,8 +911,6 @@ void RuntimeDyldELF::resolveRelocation(const SectionEntry &Section,
     break;
   case Triple::aarch64:
   case Triple::aarch64_be:
-  case Triple::arm64:
-  case Triple::arm64_be:
     resolveAArch64Relocation(Section, Offset, Value, Type, Addend);
     break;
   case Triple::arm: // Fall through.
@@ -1018,8 +1016,7 @@ relocation_iterator RuntimeDyldELF::processRelocationRef(
 
   DEBUG(dbgs() << "\t\tSectionID: " << SectionID << " Offset: " << Offset
                << "\n");
-  if ((Arch == Triple::aarch64 || Arch == Triple::aarch64_be ||
-       Arch == Triple::arm64 || Arch == Triple::arm64_be) &&
+  if ((Arch == Triple::aarch64 || Arch == Triple::aarch64_be) &&
       (RelType == ELF::R_AARCH64_CALL26 || RelType == ELF::R_AARCH64_JUMP26)) {
     // This is an AArch64 branch relocation, need to use a stub function.
     DEBUG(dbgs() << "\t\tThis is an AArch64 branch relocation.");
@@ -1141,6 +1138,10 @@ relocation_iterator RuntimeDyldELF::processRelocationRef(
     }
   } else if (Arch == Triple::ppc64 || Arch == Triple::ppc64le) {
     if (RelType == ELF::R_PPC64_REL24) {
+      // Determine ABI variant in use for this object.
+      unsigned AbiVariant;
+      Obj.getObjectFile()->getPlatformFlags(AbiVariant);
+      AbiVariant &= ELF::EF_PPC64_ABI;
       // A PPC branch relocation will need a stub function if the target is
       // an external symbol (Symbol::ST_Unknown) or if the target address
       // is not within the signed 24-bits branch address.
@@ -1148,10 +1149,18 @@ relocation_iterator RuntimeDyldELF::processRelocationRef(
       uint8_t *Target = Section.Address + Offset;
       bool RangeOverflow = false;
       if (SymType != SymbolRef::ST_Unknown) {
-        // A function call may points to the .opd entry, so the final symbol
-        // value
-        // in calculated based in the relocation values in .opd section.
-        findOPDEntrySection(Obj, ObjSectionToID, Value);
+        if (AbiVariant != 2) {
+          // In the ELFv1 ABI, a function call may point to the .opd entry,
+          // so the final symbol value is calculated based on the relocation
+          // values in the .opd section.
+          findOPDEntrySection(Obj, ObjSectionToID, Value);
+        } else {
+          // In the ELFv2 ABI, a function symbol may provide a local entry
+          // point, which must be used for direct calls.
+          uint8_t SymOther;
+          Symbol->getOther(SymOther);
+          Value.Addend += ELF::decodePPC64LocalEntryOffset(SymOther);
+        }
         uint8_t *RelocTarget = Sections[Value.SectionID].Address + Value.Addend;
         int32_t delta = static_cast<int32_t>(Target - RelocTarget);
         // If it is within 24-bits branch range, just set the branch target
@@ -1179,7 +1188,8 @@ relocation_iterator RuntimeDyldELF::processRelocationRef(
           DEBUG(dbgs() << " Create a new stub function\n");
           Stubs[Value] = Section.StubOffset;
           uint8_t *StubTargetAddr =
-              createStubFunction(Section.Address + Section.StubOffset);
+              createStubFunction(Section.Address + Section.StubOffset,
+                                 AbiVariant);
           RelocationEntry RE(SectionID, StubTargetAddr - Section.Address,
                              ELF::R_PPC64_ADDR64, Value.Addend);
 
@@ -1217,9 +1227,13 @@ relocation_iterator RuntimeDyldELF::processRelocationRef(
                             RelType, 0);
           Section.StubOffset += getMaxStubSize();
         }
-        if (SymType == SymbolRef::ST_Unknown)
+        if (SymType == SymbolRef::ST_Unknown) {
           // Restore the TOC for external calls
-          writeInt32BE(Target + 4, 0xE8410028); // ld r2,40(r1)
+          if (AbiVariant == 2)
+            writeInt32BE(Target + 4, 0xE8410018); // ld r2,28(r1)
+          else
+            writeInt32BE(Target + 4, 0xE8410028); // ld r2,40(r1)
+        }
       }
     } else if (RelType == ELF::R_PPC64_TOC16 ||
                RelType == ELF::R_PPC64_TOC16_DS ||
@@ -1414,8 +1428,6 @@ size_t RuntimeDyldELF::getGOTEntrySize() {
   case Triple::x86_64:
   case Triple::aarch64:
   case Triple::aarch64_be:
-  case Triple::arm64:
-  case Triple::arm64_be:
   case Triple::ppc64:
   case Triple::ppc64le:
   case Triple::systemz:

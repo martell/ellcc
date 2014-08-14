@@ -852,11 +852,12 @@ static InputKind getSourceInputKindFromOptions(const LangOptions &LangOpts) {
 }
 
 /// \brief Compile a module file for the given module, using the options 
-/// provided by the importing compiler instance.
-static void compileModuleImpl(CompilerInstance &ImportingInstance,
-                          SourceLocation ImportLoc,
-                          Module *Module,
-                          StringRef ModuleFileName) {
+/// provided by the importing compiler instance. Returns true if the module
+/// was built without errors.
+static bool compileModuleImpl(CompilerInstance &ImportingInstance,
+                              SourceLocation ImportLoc,
+                              Module *Module,
+                              StringRef ModuleFileName) {
   ModuleMap &ModMap 
     = ImportingInstance.getPreprocessor().getHeaderSearchInfo().getModuleMap();
     
@@ -979,13 +980,20 @@ static void compileModuleImpl(CompilerInstance &ImportingInstance,
   if (ImportingInstance.getFrontendOpts().GenerateGlobalModuleIndex) {
     ImportingInstance.setBuildGlobalModuleIndex(true);
   }
+
+  return !Instance.getDiagnostics().hasErrorOccurred();
 }
 
 static bool compileAndLoadModule(CompilerInstance &ImportingInstance,
                                  SourceLocation ImportLoc,
-                                 SourceLocation ModuleNameLoc,
-                                 Module *Module,
+                                 SourceLocation ModuleNameLoc, Module *Module,
                                  StringRef ModuleFileName) {
+  auto diagnoseBuildFailure = [&] {
+    ImportingInstance.getDiagnostics().Report(ModuleNameLoc,
+                                              diag::err_module_not_built)
+        << Module->Name << SourceRange(ImportLoc, ModuleNameLoc);
+  };
+
   // FIXME: have LockFileManager return an error_code so that we can
   // avoid the mkdir when the directory already exists.
   StringRef Dir = llvm::sys::path::parent_path(ModuleFileName);
@@ -1000,9 +1008,11 @@ static bool compileAndLoadModule(CompilerInstance &ImportingInstance,
 
     case llvm::LockFileManager::LFS_Owned:
       // We're responsible for building the module ourselves.
-      // FIXME: if there are errors, don't attempt to load the module.
-      compileModuleImpl(ImportingInstance, ModuleNameLoc, Module,
-                        ModuleFileName);
+      if (!compileModuleImpl(ImportingInstance, ModuleNameLoc, Module,
+                             ModuleFileName)) {
+        diagnoseBuildFailure();
+        return false;
+      }
       break;
 
     case llvm::LockFileManager::LFS_Shared:
@@ -1027,9 +1037,7 @@ static bool compileAndLoadModule(CompilerInstance &ImportingInstance,
       // consistent with this ImportingInstance.  Try again...
       continue;
     } else if (ReadResult == ASTReader::Missing) {
-      ImportingInstance.getDiagnostics().Report(ModuleNameLoc,
-                                                diag::err_module_not_built)
-          << Module->Name << SourceRange(ImportLoc, ModuleNameLoc);
+      diagnoseBuildFailure();
     }
     return ReadResult == ASTReader::Success;
   }
@@ -1257,7 +1265,8 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
   // when both the preprocessor and parser see the same import declaration.
   if (!ImportLoc.isInvalid() && LastModuleImportLoc == ImportLoc) {
     // Make the named module visible.
-    if (LastModuleImportResult && ModuleName != getLangOpts().CurrentModule)
+    if (LastModuleImportResult && ModuleName != getLangOpts().CurrentModule &&
+        ModuleName != getLangOpts().ImplementationOfModule)
       ModuleManager->makeModuleVisible(LastModuleImportResult, Visibility,
                                        ImportLoc, /*Complain=*/false);
     return LastModuleImportResult;
@@ -1271,7 +1280,8 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
   if (Known != KnownModules.end()) {
     // Retrieve the cached top-level module.
     Module = Known->second;    
-  } else if (ModuleName == getLangOpts().CurrentModule) {
+  } else if (ModuleName == getLangOpts().CurrentModule ||
+             ModuleName == getLangOpts().ImplementationOfModule) {
     // This is the module we're building. 
     Module = PP->getHeaderSearchInfo().lookupModule(ModuleName);
     Known = KnownModules.insert(std::make_pair(Path[0].first, Module)).first;
@@ -1440,6 +1450,10 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
       Module = Sub;
     }
   }
+
+  // Don't make the module visible if we are in the implementation.
+  if (ModuleName == getLangOpts().ImplementationOfModule)
+    return ModuleLoadResult(Module, false);
   
   // Make the named module visible, if it's not already part of the module
   // we are parsing.

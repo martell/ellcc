@@ -21,7 +21,6 @@
 #include "AMDGPUSubtarget.h"
 #include "R600MachineFunctionInfo.h"
 #include "SIMachineFunctionInfo.h"
-#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
@@ -242,10 +241,16 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM) :
     setOperationAction(ISD::FCOPYSIGN, MVT::f64, Expand);
   }
 
+  setOperationAction(ISD::FP16_TO_FP, MVT::f64, Expand);
+
+  setLoadExtAction(ISD::EXTLOAD, MVT::f16, Expand);
+  setTruncStoreAction(MVT::f32, MVT::f16, Expand);
+  setTruncStoreAction(MVT::f64, MVT::f16, Expand);
+
   const MVT ScalarIntVTs[] = { MVT::i32, MVT::i64 };
   for (MVT VT : ScalarIntVTs) {
     setOperationAction(ISD::SREM, VT, Expand);
-    setOperationAction(ISD::SDIV, VT, Expand);
+    setOperationAction(ISD::SDIV, VT, Custom);
 
     // GPU does not have divrem function for signed or unsigned.
     setOperationAction(ISD::SDIVREM, VT, Custom);
@@ -818,8 +823,8 @@ SDValue AMDGPUTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
       SDValue Denominator = Op.getOperand(2);
       SDValue Src0 = Param->isAllOnesValue() ? Numerator : Denominator;
 
-      return DAG.getNode(AMDGPUISD::DIV_SCALE, DL, VT,
-                         Src0, Denominator, Numerator);
+      return DAG.getNode(AMDGPUISD::DIV_SCALE, DL, Op->getVTList(), Src0,
+                         Denominator, Numerator);
     }
 
     case Intrinsic::AMDGPU_div_fmas:
@@ -1006,12 +1011,14 @@ SDValue AMDGPUTargetLowering::CombineMinMax(SDNode *N,
   return SDValue();
 }
 
-SDValue AMDGPUTargetLowering::SplitVectorLoad(const SDValue &Op,
-                                              SelectionDAG &DAG) const {
-  LoadSDNode *Load = dyn_cast<LoadSDNode>(Op);
-  EVT MemEltVT = Load->getMemoryVT().getVectorElementType();
+SDValue AMDGPUTargetLowering::ScalarizeVectorLoad(const SDValue Op,
+                                                  SelectionDAG &DAG) const {
+  LoadSDNode *Load = cast<LoadSDNode>(Op);
+  EVT MemVT = Load->getMemoryVT();
+  EVT MemEltVT = MemVT.getVectorElementType();
+
   EVT LoadVT = Op.getValueType();
-  EVT EltVT = Op.getValueType().getVectorElementType();
+  EVT EltVT = LoadVT.getVectorElementType();
   EVT PtrVT = Load->getBasePtr().getValueType();
 
   unsigned NumElts = Load->getMemoryVT().getVectorNumElements();
@@ -1019,17 +1026,19 @@ SDValue AMDGPUTargetLowering::SplitVectorLoad(const SDValue &Op,
   SmallVector<SDValue, 8> Chains;
 
   SDLoc SL(Op);
+  unsigned MemEltSize = MemEltVT.getStoreSize();
+  MachinePointerInfo SrcValue(Load->getMemOperand()->getValue());
 
-  for (unsigned i = 0, e = NumElts; i != e; ++i) {
+  for (unsigned i = 0; i < NumElts; ++i) {
     SDValue Ptr = DAG.getNode(ISD::ADD, SL, PtrVT, Load->getBasePtr(),
-                    DAG.getConstant(i * (MemEltVT.getSizeInBits() / 8), PtrVT));
+                              DAG.getConstant(i * MemEltSize, PtrVT));
 
     SDValue NewLoad
       = DAG.getExtLoad(Load->getExtensionType(), SL, EltVT,
                        Load->getChain(), Ptr,
-                       MachinePointerInfo(Load->getMemOperand()->getValue()),
+                       SrcValue.getWithOffset(i * MemEltSize),
                        MemEltVT, Load->isVolatile(), Load->isNonTemporal(),
-                       Load->getAlignment());
+                       Load->isInvariant(), Load->getAlignment());
     Loads.push_back(NewLoad.getValue(0));
     Chains.push_back(NewLoad.getValue(1));
   }
@@ -1037,6 +1046,55 @@ SDValue AMDGPUTargetLowering::SplitVectorLoad(const SDValue &Op,
   SDValue Ops[] = {
     DAG.getNode(ISD::BUILD_VECTOR, SL, LoadVT, Loads),
     DAG.getNode(ISD::TokenFactor, SL, MVT::Other, Chains)
+  };
+
+  return DAG.getMergeValues(Ops, SL);
+}
+
+SDValue AMDGPUTargetLowering::SplitVectorLoad(const SDValue Op,
+                                              SelectionDAG &DAG) const {
+  EVT VT = Op.getValueType();
+
+  // If this is a 2 element vector, we really want to scalarize and not create
+  // weird 1 element vectors.
+  if (VT.getVectorNumElements() == 2)
+    return ScalarizeVectorLoad(Op, DAG);
+
+  LoadSDNode *Load = cast<LoadSDNode>(Op);
+  SDValue BasePtr = Load->getBasePtr();
+  EVT PtrVT = BasePtr.getValueType();
+  EVT MemVT = Load->getMemoryVT();
+  SDLoc SL(Op);
+  MachinePointerInfo SrcValue(Load->getMemOperand()->getValue());
+
+  EVT LoVT, HiVT;
+  EVT LoMemVT, HiMemVT;
+  SDValue Lo, Hi;
+
+  std::tie(LoVT, HiVT) = DAG.GetSplitDestVTs(VT);
+  std::tie(LoMemVT, HiMemVT) = DAG.GetSplitDestVTs(MemVT);
+  std::tie(Lo, Hi) = DAG.SplitVector(Op, SL, LoVT, HiVT);
+  SDValue LoLoad
+    = DAG.getExtLoad(Load->getExtensionType(), SL, LoVT,
+                     Load->getChain(), BasePtr,
+                     SrcValue,
+                     LoMemVT, Load->isVolatile(), Load->isNonTemporal(),
+                     Load->isInvariant(), Load->getAlignment());
+
+  SDValue HiPtr = DAG.getNode(ISD::ADD, SL, PtrVT, BasePtr,
+                              DAG.getConstant(LoMemVT.getStoreSize(), PtrVT));
+
+  SDValue HiLoad
+    = DAG.getExtLoad(Load->getExtensionType(), SL, HiVT,
+                     Load->getChain(), HiPtr,
+                     SrcValue.getWithOffset(LoMemVT.getStoreSize()),
+                     HiMemVT, Load->isVolatile(), Load->isNonTemporal(),
+                     Load->isInvariant(), Load->getAlignment());
+
+  SDValue Ops[] = {
+    DAG.getNode(ISD::CONCAT_VECTORS, SL, VT, LoLoad, HiLoad),
+    DAG.getNode(ISD::TokenFactor, SL, MVT::Other,
+                LoLoad.getValue(1), HiLoad.getValue(1))
   };
 
   return DAG.getMergeValues(Ops, SL);
@@ -1100,8 +1158,8 @@ SDValue AMDGPUTargetLowering::MergeVectorStore(const SDValue &Op,
                       Store->getAlignment());
 }
 
-SDValue AMDGPUTargetLowering::SplitVectorStore(SDValue Op,
-                                            SelectionDAG &DAG) const {
+SDValue AMDGPUTargetLowering::ScalarizeVectorStore(SDValue Op,
+                                                   SelectionDAG &DAG) const {
   StoreSDNode *Store = cast<StoreSDNode>(Op);
   EVT MemEltVT = Store->getMemoryVT().getVectorElementType();
   EVT EltVT = Store->getValue().getValueType().getVectorElementType();
@@ -1111,20 +1169,76 @@ SDValue AMDGPUTargetLowering::SplitVectorStore(SDValue Op,
 
   SmallVector<SDValue, 8> Chains;
 
+  unsigned EltSize = MemEltVT.getStoreSize();
+  MachinePointerInfo SrcValue(Store->getMemOperand()->getValue());
+
   for (unsigned i = 0, e = NumElts; i != e; ++i) {
     SDValue Val = DAG.getNode(ISD::EXTRACT_VECTOR_ELT, SL, EltVT,
-                              Store->getValue(), DAG.getConstant(i, MVT::i32));
-    SDValue Ptr = DAG.getNode(ISD::ADD, SL, PtrVT,
-                              Store->getBasePtr(),
-                            DAG.getConstant(i * (MemEltVT.getSizeInBits() / 8),
-                                            PtrVT));
-    Chains.push_back(DAG.getTruncStore(Store->getChain(), SL, Val, Ptr,
-                         MachinePointerInfo(Store->getMemOperand()->getValue()),
-                         MemEltVT, Store->isVolatile(), Store->isNonTemporal(),
-                         Store->getAlignment()));
+                              Store->getValue(),
+                              DAG.getConstant(i, MVT::i32));
+
+    SDValue Offset = DAG.getConstant(i * MemEltVT.getStoreSize(), PtrVT);
+    SDValue Ptr = DAG.getNode(ISD::ADD, SL, PtrVT, Store->getBasePtr(), Offset);
+    SDValue NewStore =
+      DAG.getTruncStore(Store->getChain(), SL, Val, Ptr,
+                        SrcValue.getWithOffset(i * EltSize),
+                        MemEltVT, Store->isNonTemporal(), Store->isVolatile(),
+                        Store->getAlignment());
+    Chains.push_back(NewStore);
   }
+
   return DAG.getNode(ISD::TokenFactor, SL, MVT::Other, Chains);
 }
+
+SDValue AMDGPUTargetLowering::SplitVectorStore(SDValue Op,
+                                               SelectionDAG &DAG) const {
+  StoreSDNode *Store = cast<StoreSDNode>(Op);
+  SDValue Val = Store->getValue();
+  EVT VT = Val.getValueType();
+
+  // If this is a 2 element vector, we really want to scalarize and not create
+  // weird 1 element vectors.
+  if (VT.getVectorNumElements() == 2)
+    return ScalarizeVectorStore(Op, DAG);
+
+  EVT MemVT = Store->getMemoryVT();
+  SDValue Chain = Store->getChain();
+  SDValue BasePtr = Store->getBasePtr();
+  SDLoc SL(Op);
+
+  EVT LoVT, HiVT;
+  EVT LoMemVT, HiMemVT;
+  SDValue Lo, Hi;
+
+  std::tie(LoVT, HiVT) = DAG.GetSplitDestVTs(VT);
+  std::tie(LoMemVT, HiMemVT) = DAG.GetSplitDestVTs(MemVT);
+  std::tie(Lo, Hi) = DAG.SplitVector(Val, SL, LoVT, HiVT);
+
+  EVT PtrVT = BasePtr.getValueType();
+  SDValue HiPtr = DAG.getNode(ISD::ADD, SL, PtrVT, BasePtr,
+                              DAG.getConstant(LoMemVT.getStoreSize(), PtrVT));
+
+  MachinePointerInfo SrcValue(Store->getMemOperand()->getValue());
+  SDValue LoStore
+    = DAG.getTruncStore(Chain, SL, Lo,
+                        BasePtr,
+                        SrcValue,
+                        LoMemVT,
+                        Store->isNonTemporal(),
+                        Store->isVolatile(),
+                        Store->getAlignment());
+  SDValue HiStore
+    = DAG.getTruncStore(Chain, SL, Hi,
+                        HiPtr,
+                        SrcValue.getWithOffset(LoMemVT.getStoreSize()),
+                        HiMemVT,
+                        Store->isNonTemporal(),
+                        Store->isVolatile(),
+                        Store->getAlignment());
+
+  return DAG.getNode(ISD::TokenFactor, SL, MVT::Other, LoStore, HiStore);
+}
+
 
 SDValue AMDGPUTargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
   SDLoc DL(Op);
@@ -1169,21 +1283,6 @@ SDValue AMDGPUTargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
     };
 
     return DAG.getMergeValues(Ops, DL);
-  }
-
-  // Lower loads constant address space global variable loads
-  if (Load->getAddressSpace() == AMDGPUAS::CONSTANT_ADDRESS &&
-      isa<GlobalVariable>(
-          GetUnderlyingObject(Load->getMemOperand()->getValue()))) {
-
-
-    SDValue Ptr = DAG.getZExtOrTrunc(Load->getBasePtr(), DL,
-        getPointerTy(AMDGPUAS::PRIVATE_ADDRESS));
-    Ptr = DAG.getNode(ISD::SRL, DL, MVT::i32, Ptr,
-        DAG.getConstant(2, MVT::i32));
-    return DAG.getNode(AMDGPUISD::REGISTER_LOAD, DL, Op->getVTList(),
-                       Load->getChain(), Ptr,
-                       DAG.getTargetConstant(0, MVT::i32), Op.getOperand(2));
   }
 
   if (Load->getAddressSpace() != AMDGPUAS::PRIVATE_ADDRESS ||
@@ -1237,7 +1336,7 @@ SDValue AMDGPUTargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
   if ((Store->getAddressSpace() == AMDGPUAS::LOCAL_ADDRESS ||
        Store->getAddressSpace() == AMDGPUAS::PRIVATE_ADDRESS) &&
       Store->getValue().getValueType().isVector()) {
-    return SplitVectorStore(Op, DAG);
+    return ScalarizeVectorStore(Op, DAG);
   }
 
   EVT MemVT = Store->getMemoryVT();
@@ -1282,85 +1381,83 @@ SDValue AMDGPUTargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
   return SDValue();
 }
 
+// This is a shortcut for integer division because we have fast i32<->f32
+// conversions, and fast f32 reciprocal instructions. The fractional part of a
+// float is enough to accurately represent up to a 24-bit integer.
 SDValue AMDGPUTargetLowering::LowerSDIV24(SDValue Op, SelectionDAG &DAG) const {
   SDLoc DL(Op);
-  EVT OVT = Op.getValueType();
+  EVT VT = Op.getValueType();
   SDValue LHS = Op.getOperand(0);
   SDValue RHS = Op.getOperand(1);
-  MVT INTTY;
-  MVT FLTTY;
-  if (!OVT.isVector()) {
-    INTTY = MVT::i32;
-    FLTTY = MVT::f32;
-  } else if (OVT.getVectorNumElements() == 2) {
-    INTTY = MVT::v2i32;
-    FLTTY = MVT::v2f32;
-  } else if (OVT.getVectorNumElements() == 4) {
-    INTTY = MVT::v4i32;
-    FLTTY = MVT::v4f32;
+  MVT IntVT = MVT::i32;
+  MVT FltVT = MVT::f32;
+
+  if (VT.isVector()) {
+    unsigned NElts = VT.getVectorNumElements();
+    IntVT = MVT::getVectorVT(MVT::i32, NElts);
+    FltVT = MVT::getVectorVT(MVT::f32, NElts);
   }
-  unsigned bitsize = OVT.getScalarType().getSizeInBits();
+
+  unsigned BitSize = VT.getScalarType().getSizeInBits();
+
   // char|short jq = ia ^ ib;
-  SDValue jq = DAG.getNode(ISD::XOR, DL, OVT, LHS, RHS);
+  SDValue jq = DAG.getNode(ISD::XOR, DL, VT, LHS, RHS);
 
   // jq = jq >> (bitsize - 2)
-  jq = DAG.getNode(ISD::SRA, DL, OVT, jq, DAG.getConstant(bitsize - 2, OVT));
+  jq = DAG.getNode(ISD::SRA, DL, VT, jq, DAG.getConstant(BitSize - 2, VT));
 
   // jq = jq | 0x1
-  jq = DAG.getNode(ISD::OR, DL, OVT, jq, DAG.getConstant(1, OVT));
+  jq = DAG.getNode(ISD::OR, DL, VT, jq, DAG.getConstant(1, VT));
 
   // jq = (int)jq
-  jq = DAG.getSExtOrTrunc(jq, DL, INTTY);
+  jq = DAG.getSExtOrTrunc(jq, DL, IntVT);
 
   // int ia = (int)LHS;
-  SDValue ia = DAG.getSExtOrTrunc(LHS, DL, INTTY);
+  SDValue ia = DAG.getSExtOrTrunc(LHS, DL, IntVT);
 
   // int ib, (int)RHS;
-  SDValue ib = DAG.getSExtOrTrunc(RHS, DL, INTTY);
+  SDValue ib = DAG.getSExtOrTrunc(RHS, DL, IntVT);
 
   // float fa = (float)ia;
-  SDValue fa = DAG.getNode(ISD::SINT_TO_FP, DL, FLTTY, ia);
+  SDValue fa = DAG.getNode(ISD::SINT_TO_FP, DL, FltVT, ia);
 
   // float fb = (float)ib;
-  SDValue fb = DAG.getNode(ISD::SINT_TO_FP, DL, FLTTY, ib);
+  SDValue fb = DAG.getNode(ISD::SINT_TO_FP, DL, FltVT, ib);
 
   // float fq = native_divide(fa, fb);
-  SDValue fq = DAG.getNode(ISD::FMUL, DL, FLTTY,
-                           fa, DAG.getNode(AMDGPUISD::RCP, DL, FLTTY, fb));
+  SDValue fq = DAG.getNode(ISD::FMUL, DL, FltVT,
+                           fa, DAG.getNode(AMDGPUISD::RCP, DL, FltVT, fb));
 
   // fq = trunc(fq);
-  fq = DAG.getNode(ISD::FTRUNC, DL, FLTTY, fq);
+  fq = DAG.getNode(ISD::FTRUNC, DL, FltVT, fq);
 
   // float fqneg = -fq;
-  SDValue fqneg = DAG.getNode(ISD::FNEG, DL, FLTTY, fq);
+  SDValue fqneg = DAG.getNode(ISD::FNEG, DL, FltVT, fq);
 
   // float fr = mad(fqneg, fb, fa);
-  SDValue fr = DAG.getNode(ISD::FADD, DL, FLTTY,
-      DAG.getNode(ISD::MUL, DL, FLTTY, fqneg, fb), fa);
+  SDValue fr = DAG.getNode(ISD::FADD, DL, FltVT,
+                           DAG.getNode(ISD::FMUL, DL, FltVT, fqneg, fb), fa);
 
   // int iq = (int)fq;
-  SDValue iq = DAG.getNode(ISD::FP_TO_SINT, DL, INTTY, fq);
+  SDValue iq = DAG.getNode(ISD::FP_TO_SINT, DL, IntVT, fq);
 
   // fr = fabs(fr);
-  fr = DAG.getNode(ISD::FABS, DL, FLTTY, fr);
+  fr = DAG.getNode(ISD::FABS, DL, FltVT, fr);
 
   // fb = fabs(fb);
-  fb = DAG.getNode(ISD::FABS, DL, FLTTY, fb);
+  fb = DAG.getNode(ISD::FABS, DL, FltVT, fb);
+
+  EVT SetCCVT = getSetCCResultType(*DAG.getContext(), VT);
 
   // int cv = fr >= fb;
-  SDValue cv;
-  if (INTTY == MVT::i32) {
-    cv = DAG.getSetCC(DL, INTTY, fr, fb, ISD::SETOGE);
-  } else {
-    cv = DAG.getSetCC(DL, INTTY, fr, fb, ISD::SETOGE);
-  }
+  SDValue cv = DAG.getSetCC(DL, SetCCVT, fr, fb, ISD::SETOGE);
+
   // jq = (cv ? jq : 0);
-  jq = DAG.getNode(ISD::SELECT, DL, OVT, cv, jq,
-      DAG.getConstant(0, OVT));
+  jq = DAG.getNode(ISD::SELECT, DL, VT, cv, jq, DAG.getConstant(0, VT));
+
   // dst = iq + jq;
-  iq = DAG.getSExtOrTrunc(iq, DL, OVT);
-  iq = DAG.getNode(ISD::ADD, DL, OVT, iq, jq);
-  return iq;
+  iq = DAG.getSExtOrTrunc(iq, DL, VT);
+  return DAG.getNode(ISD::ADD, DL, VT, iq, jq);
 }
 
 SDValue AMDGPUTargetLowering::LowerSDIV32(SDValue Op, SelectionDAG &DAG) const {
@@ -1435,19 +1532,20 @@ SDValue AMDGPUTargetLowering::LowerSDIV64(SDValue Op, SelectionDAG &DAG) const {
 SDValue AMDGPUTargetLowering::LowerSDIV(SDValue Op, SelectionDAG &DAG) const {
   EVT OVT = Op.getValueType().getScalarType();
 
-  if (OVT == MVT::i64)
-    return LowerSDIV64(Op, DAG);
+  if (OVT == MVT::i32) {
+    if (DAG.ComputeNumSignBits(Op.getOperand(0)) > 8 &&
+        DAG.ComputeNumSignBits(Op.getOperand(1)) > 8) {
+      // TODO: We technically could do this for i64, but shouldn't that just be
+      // handled by something generally reducing 64-bit division on 32-bit
+      // values to 32-bit?
+      return LowerSDIV24(Op, DAG);
+    }
 
-  if (OVT.getScalarType() == MVT::i32)
     return LowerSDIV32(Op, DAG);
-
-  if (OVT == MVT::i16 || OVT == MVT::i8) {
-    // FIXME: We should be checking for the masked bits. This isn't reached
-    // because i8 and i16 are not legal types.
-    return LowerSDIV24(Op, DAG);
   }
 
-  return SDValue(Op.getNode(), 0);
+  assert(OVT == MVT::i64);
+  return LowerSDIV64(Op, DAG);
 }
 
 SDValue AMDGPUTargetLowering::LowerSREM32(SDValue Op, SelectionDAG &DAG) const {
@@ -2216,6 +2314,7 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(CVT_F32_UBYTE2)
   NODE_NAME_CASE(CVT_F32_UBYTE3)
   NODE_NAME_CASE(BUILD_VERTICAL_VECTOR)
+  NODE_NAME_CASE(CONST_DATA_PTR)
   NODE_NAME_CASE(STORE_MSKOR)
   NODE_NAME_CASE(TBUFFER_STORE_FORMAT)
   }

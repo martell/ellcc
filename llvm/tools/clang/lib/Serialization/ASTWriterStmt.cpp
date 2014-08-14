@@ -635,6 +635,10 @@ ASTStmtWriter::VisitBinaryConditionalOperator(BinaryConditionalOperator *E) {
 
 void ASTStmtWriter::VisitImplicitCastExpr(ImplicitCastExpr *E) {
   VisitCastExpr(E);
+
+  if (E->path_size() == 0)
+    AbbrevToUse = Writer.getExprImplicitCastAbbrev();
+
   Code = serialization::EXPR_IMPLICIT_CAST;
 }
 
@@ -1731,6 +1735,20 @@ void OMPClauseWriter::VisitOMPOrderedClause(OMPOrderedClause *) {}
 
 void OMPClauseWriter::VisitOMPNowaitClause(OMPNowaitClause *) {}
 
+void OMPClauseWriter::VisitOMPUntiedClause(OMPUntiedClause *) {}
+
+void OMPClauseWriter::VisitOMPMergeableClause(OMPMergeableClause *) {}
+
+void OMPClauseWriter::VisitOMPReadClause(OMPReadClause *) {}
+
+void OMPClauseWriter::VisitOMPWriteClause(OMPWriteClause *) {}
+
+void OMPClauseWriter::VisitOMPUpdateClause(OMPUpdateClause *) {}
+
+void OMPClauseWriter::VisitOMPCaptureClause(OMPCaptureClause *) {}
+
+void OMPClauseWriter::VisitOMPSeqCstClause(OMPSeqCstClause *) {}
+
 void OMPClauseWriter::VisitOMPPrivateClause(OMPPrivateClause *C) {
   Record.push_back(C->varlist_size());
   Writer->Writer.AddSourceLocation(C->getLParenLoc(), Record);
@@ -1801,6 +1819,13 @@ void OMPClauseWriter::VisitOMPCopyprivateClause(OMPCopyprivateClause *C) {
     Writer->Writer.AddStmt(VE);
 }
 
+void OMPClauseWriter::VisitOMPFlushClause(OMPFlushClause *C) {
+  Record.push_back(C->varlist_size());
+  Writer->Writer.AddSourceLocation(C->getLParenLoc(), Record);
+  for (auto *VE : C->varlists())
+    Writer->Writer.AddStmt(VE);
+}
+
 //===----------------------------------------------------------------------===//
 // OpenMP Directives.
 //===----------------------------------------------------------------------===//
@@ -1811,7 +1836,8 @@ void ASTStmtWriter::VisitOMPExecutableDirective(OMPExecutableDirective *E) {
   for (unsigned i = 0; i < E->getNumClauses(); ++i) {
     ClauseWriter.writeClause(E->getClause(i));
   }
-  Writer.AddStmt(E->getAssociatedStmt());
+  if (E->hasAssociatedStmt())
+    Writer.AddStmt(E->getAssociatedStmt());
 }
 
 void ASTStmtWriter::VisitOMPParallelDirective(OMPParallelDirective *D) {
@@ -1863,6 +1889,13 @@ void ASTStmtWriter::VisitOMPMasterDirective(OMPMasterDirective *D) {
   Code = serialization::STMT_OMP_MASTER_DIRECTIVE;
 }
 
+void ASTStmtWriter::VisitOMPCriticalDirective(OMPCriticalDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+  Writer.AddDeclarationNameInfo(D->getDirectiveName(), Record);
+  Code = serialization::STMT_OMP_CRITICAL_DIRECTIVE;
+}
+
 void ASTStmtWriter::VisitOMPParallelForDirective(OMPParallelForDirective *D) {
   VisitStmt(D);
   Record.push_back(D->getNumClauses());
@@ -1884,6 +1917,44 @@ void ASTStmtWriter::VisitOMPTaskDirective(OMPTaskDirective *D) {
   Record.push_back(D->getNumClauses());
   VisitOMPExecutableDirective(D);
   Code = serialization::STMT_OMP_TASK_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPAtomicDirective(OMPAtomicDirective *D) {
+  VisitStmt(D);
+  Record.push_back(D->getNumClauses());
+  VisitOMPExecutableDirective(D);
+  Code = serialization::STMT_OMP_ATOMIC_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPTaskyieldDirective(OMPTaskyieldDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+  Code = serialization::STMT_OMP_TASKYIELD_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPBarrierDirective(OMPBarrierDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+  Code = serialization::STMT_OMP_BARRIER_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPTaskwaitDirective(OMPTaskwaitDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+  Code = serialization::STMT_OMP_TASKWAIT_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPFlushDirective(OMPFlushDirective *D) {
+  VisitStmt(D);
+  Record.push_back(D->getNumClauses());
+  VisitOMPExecutableDirective(D);
+  Code = serialization::STMT_OMP_FLUSH_DIRECTIVE;
+}
+
+void ASTStmtWriter::VisitOMPOrderedDirective(OMPOrderedDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+  Code = serialization::STMT_OMP_ORDERED_DIRECTIVE;
 }
 
 //===----------------------------------------------------------------------===//

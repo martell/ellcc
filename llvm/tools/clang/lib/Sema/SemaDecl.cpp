@@ -1893,7 +1893,7 @@ void Sema::MergeTypedefNameDecl(TypedefNameDecl *New, LookupResult &OldDecls) {
        Context.getSourceManager().isInSystemHeader(New->getLocation())))
     return;
 
-  Diag(New->getLocation(), diag::warn_redefinition_of_typedef)
+  Diag(New->getLocation(), diag::ext_redefinition_of_typedef)
     << New->getDeclName();
   Diag(Old->getLocation(), diag::note_previous_definition);
   return;
@@ -2075,6 +2075,8 @@ static bool mergeDeclAttribute(Sema &S, NamedDecl *D,
   else if (isa<AlignedAttr>(Attr))
     // AlignedAttrs are handled separately, because we need to handle all
     // such attributes on a declaration at the same time.
+    NewAttr = nullptr;
+  else if (isa<DeprecatedAttr>(Attr) && Override)
     NewAttr = nullptr;
   else if (Attr->duplicatesAllowed() || !DeclHasAttr(D, Attr))
     NewAttr = cast<InheritableAttr>(Attr->clone(S.Context));
@@ -5045,7 +5047,7 @@ static void checkDLLAttributeRedeclaration(Sema &S, NamedDecl *OldDecl,
   }
 
   // A redeclaration is not allowed to drop a dllimport attribute, the only
-  // exception being inline function definitions.
+  // exceptions being inline function definitions and local extern declarations.
   // NB: MSVC converts such a declaration to dllexport.
   bool IsInline = false, IsStaticDataMember = false;
   if (const auto *VD = dyn_cast<VarDecl>(NewDecl))
@@ -5055,7 +5057,8 @@ static void checkDLLAttributeRedeclaration(Sema &S, NamedDecl *OldDecl,
   else if (const auto *FD = dyn_cast<FunctionDecl>(NewDecl))
     IsInline = FD->isInlined();
 
-  if (OldImportAttr && !HasNewAttr && !IsInline && !IsStaticDataMember) {
+  if (OldImportAttr && !HasNewAttr && !IsInline && !IsStaticDataMember &&
+      !NewDecl->isLocalExternDecl()) {
     S.Diag(NewDecl->getLocation(),
            diag::warn_redeclaration_without_attribute_prev_attribute_ignored)
       << NewDecl << OldImportAttr;
@@ -7107,12 +7110,10 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     const FunctionProtoType *FPT = R->getAs<FunctionProtoType>();
     if ((Name.getCXXOverloadedOperator() == OO_Delete ||
          Name.getCXXOverloadedOperator() == OO_Array_Delete) &&
-        getLangOpts().CPlusPlus11 && FPT && !FPT->hasExceptionSpec()) {
-      FunctionProtoType::ExtProtoInfo EPI = FPT->getExtProtoInfo();
-      EPI.ExceptionSpecType = EST_BasicNoexcept;
-      NewFD->setType(Context.getFunctionType(FPT->getReturnType(),
-                                             FPT->getParamTypes(), EPI));
-    }
+        getLangOpts().CPlusPlus11 && FPT && !FPT->hasExceptionSpec())
+      NewFD->setType(Context.getFunctionType(
+          FPT->getReturnType(), FPT->getParamTypes(),
+          FPT->getExtProtoInfo().withExceptionSpec(EST_BasicNoexcept)));
   }
 
   // Filter out previous declarations that don't match the scope.
@@ -7819,6 +7820,18 @@ bool Sema::CheckFunctionDeclaration(Scope *S, FunctionDecl *NewFD,
   }
 
   // Semantic checking for this function declaration (in isolation).
+
+  // Diagnose the use of X86 fastcall on unprototyped functions.
+  QualType NewQType = Context.getCanonicalType(NewFD->getType());
+  const FunctionType *NewType = cast<FunctionType>(NewQType);
+  if (isa<FunctionNoProtoType>(NewType)) {
+    FunctionType::ExtInfo NewTypeInfo = NewType->getExtInfo();
+    if (NewTypeInfo.getCC() == CC_X86FastCall)
+      Diag(NewFD->getLocation(), diag::err_cconv_knr)
+          << FunctionType::getNameForCallConv(CC_X86FastCall);
+    // TODO: Also diagnose unprototyped stdcall functions?
+  }
+
   if (getLangOpts().CPlusPlus) {
     // C++-specific checks.
     if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(NewFD)) {
@@ -9123,6 +9136,13 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
     if (const SectionAttr *SA = var->getAttr<SectionAttr>())
       if (UnifySection(SA->getName(), SectionFlags, var))
         var->dropAttr<SectionAttr>();
+
+    // Apply the init_seg attribute if this has an initializer.  If the
+    // initializer turns out to not be dynamic, we'll end up ignoring this
+    // attribute.
+    if (CurInitSeg && var->getInit())
+      var->addAttr(InitSegAttr::CreateImplicit(Context, CurInitSeg->getString(),
+                                               CurInitSegLoc));
   }
 
   // All the following checks are C++ only.
@@ -10119,7 +10139,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
     // MSVC permits the use of pure specifier (=0) on function definition,
     // defined at class scope, warn about this non-standard construct.
     if (getLangOpts().MicrosoftExt && FD->isPure() && FD->isCanonicalDecl())
-      Diag(FD->getLocation(), diag::warn_pure_function_definition);
+      Diag(FD->getLocation(), diag::ext_pure_function_definition);
 
     if (!FD->isInvalidDecl()) {
       // Don't diagnose unused parameters of defaulted or deleted functions.
@@ -13429,6 +13449,9 @@ DeclResult Sema::ActOnModuleImport(SourceLocation AtLoc,
   if (Mod->getTopLevelModuleName() == getLangOpts().CurrentModule)
     Diag(ImportLoc, diag::err_module_self_import)
         << Mod->getFullModuleName() << getLangOpts().CurrentModule;
+  else if (Mod->getTopLevelModuleName() == getLangOpts().ImplementationOfModule)
+    Diag(ImportLoc, diag::err_module_import_in_implementation)
+        << Mod->getFullModuleName() << getLangOpts().ImplementationOfModule;
 
   SmallVector<SourceLocation, 2> IdentifierLocs;
   Module *ModCheck = Mod;

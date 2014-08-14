@@ -19,6 +19,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/JumpInstrTableInfo.h"
+#include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/GCMetadataPrinter.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -49,7 +50,6 @@
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
-#include "llvm/Transforms/Utils/GlobalStatus.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "asm-printer"
@@ -253,33 +253,10 @@ bool AsmPrinter::doInitialization(Module &M) {
 }
 
 static bool canBeHidden(const GlobalValue *GV, const MCAsmInfo &MAI) {
-  GlobalValue::LinkageTypes Linkage = GV->getLinkage();
-  if (Linkage != GlobalValue::LinkOnceODRLinkage)
-    return false;
-
   if (!MAI.hasWeakDefCanBeHiddenDirective())
     return false;
 
-  if (GV->hasUnnamedAddr())
-    return true;
-
-  // This is only used for MachO, so right now it doesn't really matter how
-  // we handle alias. Revisit this once the MachO linker implements aliases.
-  if (isa<GlobalAlias>(GV))
-    return false;
-
-  // If it is a non constant variable, it needs to be uniqued across shared
-  // objects.
-  if (const GlobalVariable *Var = dyn_cast<GlobalVariable>(GV)) {
-    if (!Var->isConstant())
-      return false;
-  }
-
-  GlobalStatus GS;
-  if (!GlobalStatus::analyzeGlobal(GV, GS) && !GS.IsCompared)
-    return true;
-
-  return false;
+  return canBeOmittedFromSymbolTable(GV);
 }
 
 void AsmPrinter::EmitLinkage(const GlobalValue *GV, MCSymbol *GVSym) const {
@@ -641,7 +618,11 @@ static bool emitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
     if (!Name.empty())
       OS << Name << ":";
   }
-  OS << V.getName() << " <- ";
+  OS << V.getName();
+  if (V.isVariablePiece())
+    OS << " [piece offset=" << V.getPieceOffset()
+       << " size="<<V.getPieceSize()<<"]";
+  OS << " <- ";
 
   // The second operand is only an offset if it's an immediate.
   bool Deref = MI->getOperand(0).isReg() && MI->getOperand(1).isImm();
@@ -804,6 +785,8 @@ void AsmPrinter::EmitFunctionBody() {
         }
       }
     }
+
+    EmitBasicBlockEnd(MBB);
   }
 
   // If the last instruction was a prolog label, then we have a situation where

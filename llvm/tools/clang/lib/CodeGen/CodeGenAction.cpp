@@ -246,8 +246,8 @@ namespace clang {
         const llvm::DiagnosticInfoOptimizationRemarkMissed &D);
     void OptimizationRemarkHandler(
         const llvm::DiagnosticInfoOptimizationRemarkAnalysis &D);
-    void OptimizationWarningHandler(
-        const llvm::DiagnosticInfoOptimizationWarning &D);
+    void OptimizationFailureHandler(
+        const llvm::DiagnosticInfoOptimizationFailure &D);
   };
   
   void BackendConsumer::anchor() {}
@@ -444,12 +444,9 @@ void BackendConsumer::EmitOptimizationMessage(
     if (const Decl *FD = Gen->GetDeclForMangledName(D.getFunction().getName()))
       Loc = FD->getASTContext().getFullLoc(FD->getBodyRBrace());
 
-  // Flag value not used by all optimization messages.
-  if (D.getPassName())
-    Diags.Report(Loc, DiagID) << AddFlagValue(D.getPassName())
-                              << D.getMsg().str();
-  else
-    Diags.Report(Loc, DiagID) << D.getMsg().str();
+  Diags.Report(Loc, DiagID)
+      << AddFlagValue(D.getPassName() ? D.getPassName() : "")
+      << D.getMsg().str();
 
   if (DILoc.isInvalid())
     // If we were not able to translate the file:line:col information
@@ -491,9 +488,9 @@ void BackendConsumer::OptimizationRemarkHandler(
         D, diag::remark_fe_backend_optimization_remark_analysis);
 }
 
-void BackendConsumer::OptimizationWarningHandler(
-    const llvm::DiagnosticInfoOptimizationWarning &D) {
-  EmitOptimizationMessage(D, diag::warn_fe_backend_optimization_warning);
+void BackendConsumer::OptimizationFailureHandler(
+    const llvm::DiagnosticInfoOptimizationFailure &D) {
+  EmitOptimizationMessage(D, diag::warn_fe_backend_optimization_failure);
 }
 
 /// \brief This function is invoked when the backend needs
@@ -529,10 +526,10 @@ void BackendConsumer::DiagnosticHandlerImpl(const DiagnosticInfo &DI) {
     OptimizationRemarkHandler(
         cast<DiagnosticInfoOptimizationRemarkAnalysis>(DI));
     return;
-  case llvm::DK_OptimizationWarning:
-    // Optimization warnings are always handled completely by this
+  case llvm::DK_OptimizationFailure:
+    // Optimization failures are always handled completely by this
     // handler.
-    OptimizationWarningHandler(cast<DiagnosticInfoOptimizationWarning>(DI));
+    OptimizationFailureHandler(cast<DiagnosticInfoOptimizationFailure>(DI));
     return;
   default:
     // Plugin IDs are not bound to any value as they are set dynamically.

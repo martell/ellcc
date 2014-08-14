@@ -69,12 +69,8 @@ private:
       // parameters.
       // FIXME: This is getting out of hand, write a decent parser.
       if (CurrentToken->Previous->isOneOf(tok::pipepipe, tok::ampamp) &&
-          ((CurrentToken->Previous->Type == TT_BinaryOperator &&
-            // Toplevel bool expressions do not make lots of sense;
-            // If we're on the top level, it contains only the base context and
-            // the context for the current opening angle bracket.
-            Contexts.size() > 2) ||
-           Contexts[Contexts.size() - 2].IsExpression) &&
+          CurrentToken->Previous->Type == TT_BinaryOperator &&
+          Contexts[Contexts.size() - 2].IsExpression &&
           Line.First->isNot(tok::kw_template))
         return false;
       updateParameterCount(Left, CurrentToken);
@@ -315,8 +311,7 @@ private:
         if (CurrentToken->isOneOf(tok::r_paren, tok::r_square))
           return false;
         updateParameterCount(Left, CurrentToken);
-        if (CurrentToken->is(tok::colon) &&
-            Style.Language != FormatStyle::LK_Proto) {
+        if (CurrentToken->is(tok::colon)) {
           if (CurrentToken->getPreviousNonComment()->is(tok::identifier))
             CurrentToken->getPreviousNonComment()->Type = TT_SelectorName;
           Left->Type = TT_DictLiteral;
@@ -627,8 +622,7 @@ private:
         CurrentToken->Type != TT_RegexLiteral &&
         CurrentToken->Type != TT_TrailingReturnArrow)
       CurrentToken->Type = TT_Unknown;
-    if (CurrentToken->Role)
-      CurrentToken->Role.reset(nullptr);
+    CurrentToken->Role.reset();
     CurrentToken->FakeLParens.clear();
     CurrentToken->FakeRParens = 0;
   }
@@ -699,7 +693,8 @@ private:
            Previous = Previous->Previous) {
         if (Previous->isOneOf(tok::r_square, tok::r_paren))
           Previous = Previous->MatchingParen;
-        if (Previous->Type == TT_BinaryOperator &&
+        if ((Previous->Type == TT_BinaryOperator ||
+             Previous->Type == TT_UnaryOperator) &&
             Previous->isOneOf(tok::star, tok::amp)) {
           Previous->Type = TT_PointerOrReference;
         }
@@ -756,7 +751,7 @@ private:
           Contexts.back().CaretFound = true;
       } else if (Current.isOneOf(tok::minusminus, tok::plusplus)) {
         Current.Type = determineIncrementUsage(Current);
-      } else if (Current.is(tok::exclaim)) {
+      } else if (Current.isOneOf(tok::exclaim, tok::tilde)) {
         Current.Type = TT_UnaryOperator;
       } else if (Current.is(tok::question)) {
         Current.Type = TT_ConditionalExpr;
@@ -843,6 +838,10 @@ private:
       LeftOfParens = Tok.MatchingParen->getPreviousNonComment();
     if (LeftOfParens && LeftOfParens->is(tok::r_paren))
       return false;
+    if (LeftOfParens && LeftOfParens->is(tok::r_square) &&
+        LeftOfParens->MatchingParen &&
+        LeftOfParens->MatchingParen->Type == TT_LambdaLSquare)
+      return false;
     bool IsCast = false;
     bool ParensAreEmpty = Tok.Previous == Tok.MatchingParen;
     bool ParensAreType = !Tok.Previous ||
@@ -920,7 +919,7 @@ private:
 
     if (NextToken->is(tok::l_square) && NextToken->Type != TT_LambdaLSquare)
       return TT_PointerOrReference;
-    if (NextToken->is(tok::kw_operator))
+    if (NextToken->isOneOf(tok::kw_operator, tok::comma))
       return TT_PointerOrReference;
 
     if (PrevToken->is(tok::r_paren) && PrevToken->MatchingParen &&
@@ -1140,7 +1139,7 @@ private:
     if (!Current || !Current->is(tok::question))
       return;
     next();
-    parse(prec::LogicalOr);
+    parseConditionalExpr();
     if (!Current || Current->Type != TT_ConditionalExpr)
       return;
     next();
@@ -1481,7 +1480,7 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
   if (Right.isOneOf(tok::semi, tok::comma))
     return false;
   if (Right.is(tok::less) &&
-      (Left.is(tok::kw_template) ||
+      (Left.isOneOf(tok::kw_template, tok::r_paren) ||
        (Line.Type == LT_ObjCDecl && Style.ObjCSpaceBeforeProtocolList)))
     return true;
   if (Left.is(tok::arrow) || Right.is(tok::arrow))
@@ -1510,13 +1509,14 @@ bool TokenAnnotator::spaceRequiredBetween(const AnnotatedLine &Line,
            ((Left.Type != TT_PointerOrReference) && Left.isNot(tok::l_paren) &&
             Style.PointerAlignment != FormatStyle::PAS_Left);
   if (Right.Type == TT_FunctionTypeLParen && Left.isNot(tok::l_paren) &&
-      (Left.Type != TT_PointerOrReference || Style.PointerAlignment != FormatStyle::PAS_Right))
+      (Left.Type != TT_PointerOrReference ||
+       Style.PointerAlignment != FormatStyle::PAS_Right))
     return true;
   if (Left.Type == TT_PointerOrReference)
     return Right.Tok.isLiteral() || Right.Type == TT_BlockComment ||
            ((Right.Type != TT_PointerOrReference) &&
-            Right.isNot(tok::l_paren) && Style.PointerAlignment != FormatStyle::PAS_Right &&
-            Left.Previous &&
+            Right.isNot(tok::l_paren) &&
+            Style.PointerAlignment != FormatStyle::PAS_Right && Left.Previous &&
             !Left.Previous->isOneOf(tok::l_paren, tok::coloncolon));
   if (Right.is(tok::star) && Left.is(tok::l_paren))
     return false;
@@ -1683,6 +1683,9 @@ bool TokenAnnotator::mustBreakBefore(const AnnotatedLine &Line,
   } else if (isAllmanBrace(Left) || isAllmanBrace(Right)) {
     return Style.BreakBeforeBraces == FormatStyle::BS_Allman ||
            Style.BreakBeforeBraces == FormatStyle::BS_GNU;
+  } else if (Style.Language == FormatStyle::LK_Proto &&
+             Left.isNot(tok::l_brace) && Right.Type == TT_SelectorName) {
+    return true;
   }
 
   // If the last token before a '}' is a comma or a comment, the intention is to
@@ -1809,7 +1812,8 @@ bool TokenAnnotator::canBreakBefore(const AnnotatedLine &Line,
          Left.isOneOf(tok::comma, tok::coloncolon, tok::semi, tok::l_brace,
                       tok::kw_class, tok::kw_struct) ||
          Right.isMemberAccess() ||
-         Right.isOneOf(tok::lessless, tok::colon, tok::l_square, tok::at) ||
+         Right.isOneOf(tok::lessless, tok::colon, tok::l_square, tok::at,
+                       tok::kw_typename) ||
          (Left.is(tok::r_paren) &&
           Right.isOneOf(tok::identifier, tok::kw_const)) ||
          (Left.is(tok::l_paren) && !Right.is(tok::r_paren));

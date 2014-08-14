@@ -426,7 +426,9 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
   assert(LD->getExtensionType() == ISD::NON_EXTLOAD &&
          "Unexpected extension type");
   assert(LD->getMemoryVT() == MVT::i32 && "Unexpected load EVT");
-  if (allowsUnalignedMemoryAccesses(LD->getMemoryVT()))
+  if (allowsMisalignedMemoryAccesses(LD->getMemoryVT(),
+                                     LD->getAddressSpace(),
+                                     LD->getAlignment()))
     return SDValue();
 
   unsigned ABIAlignment = getDataLayout()->
@@ -461,14 +463,15 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
   if (LD->getAlignment() == 2) {
     SDValue Low = DAG.getExtLoad(ISD::ZEXTLOAD, DL, MVT::i32, Chain,
                                  BasePtr, LD->getPointerInfo(), MVT::i16,
-                                 LD->isVolatile(), LD->isNonTemporal(), 2);
+                                 LD->isVolatile(), LD->isNonTemporal(),
+                                 LD->isInvariant(), 2);
     SDValue HighAddr = DAG.getNode(ISD::ADD, DL, MVT::i32, BasePtr,
                                    DAG.getConstant(2, MVT::i32));
     SDValue High = DAG.getExtLoad(ISD::EXTLOAD, DL, MVT::i32, Chain,
                                   HighAddr,
                                   LD->getPointerInfo().getWithOffset(2),
                                   MVT::i16, LD->isVolatile(),
-                                  LD->isNonTemporal(), 2);
+                                  LD->isNonTemporal(), LD->isInvariant(), 2);
     SDValue HighShifted = DAG.getNode(ISD::SHL, DL, MVT::i32, High,
                                       DAG.getConstant(16, MVT::i32));
     SDValue Result = DAG.getNode(ISD::OR, DL, MVT::i32, Low, HighShifted);
@@ -504,7 +507,9 @@ LowerSTORE(SDValue Op, SelectionDAG &DAG) const
   StoreSDNode *ST = cast<StoreSDNode>(Op);
   assert(!ST->isTruncatingStore() && "Unexpected store type");
   assert(ST->getMemoryVT() == MVT::i32 && "Unexpected store EVT");
-  if (allowsUnalignedMemoryAccesses(ST->getMemoryVT())) {
+  if (allowsMisalignedMemoryAccesses(ST->getMemoryVT(),
+                                     ST->getAddressSpace(),
+                                     ST->getAlignment())) {
     return SDValue();
   }
   unsigned ABIAlignment = getDataLayout()->
@@ -969,7 +974,7 @@ LowerATOMIC_LOAD(SDValue Op, SelectionDAG &DAG) const {
                        N->getBasePtr(), N->getPointerInfo(),
                        N->isVolatile(), N->isNonTemporal(),
                        N->isInvariant(), N->getAlignment(),
-                       N->getTBAAInfo(), N->getRanges());
+                       N->getAAInfo(), N->getRanges());
   }
   if (N->getMemoryVT() == MVT::i16) {
     if (N->getAlignment() < 2)
@@ -977,13 +982,13 @@ LowerATOMIC_LOAD(SDValue Op, SelectionDAG &DAG) const {
     return DAG.getExtLoad(ISD::EXTLOAD, SDLoc(Op), MVT::i32, N->getChain(),
                           N->getBasePtr(), N->getPointerInfo(), MVT::i16,
                           N->isVolatile(), N->isNonTemporal(),
-                          N->getAlignment(), N->getTBAAInfo());
+                          N->isInvariant(), N->getAlignment(), N->getAAInfo());
   }
   if (N->getMemoryVT() == MVT::i8)
     return DAG.getExtLoad(ISD::EXTLOAD, SDLoc(Op), MVT::i32, N->getChain(),
                           N->getBasePtr(), N->getPointerInfo(), MVT::i8,
                           N->isVolatile(), N->isNonTemporal(),
-                          N->getAlignment(), N->getTBAAInfo());
+                          N->isInvariant(), N->getAlignment(), N->getAAInfo());
   return SDValue();
 }
 
@@ -999,7 +1004,7 @@ LowerATOMIC_STORE(SDValue Op, SelectionDAG &DAG) const {
     return DAG.getStore(N->getChain(), SDLoc(Op), N->getVal(),
                         N->getBasePtr(), N->getPointerInfo(),
                         N->isVolatile(), N->isNonTemporal(),
-                        N->getAlignment(), N->getTBAAInfo());
+                        N->getAlignment(), N->getAAInfo());
   }
   if (N->getMemoryVT() == MVT::i16) {
     if (N->getAlignment() < 2)
@@ -1007,13 +1012,13 @@ LowerATOMIC_STORE(SDValue Op, SelectionDAG &DAG) const {
     return DAG.getTruncStore(N->getChain(), SDLoc(Op), N->getVal(),
                              N->getBasePtr(), N->getPointerInfo(), MVT::i16,
                              N->isVolatile(), N->isNonTemporal(),
-                             N->getAlignment(), N->getTBAAInfo());
+                             N->getAlignment(), N->getAAInfo());
   }
   if (N->getMemoryVT() == MVT::i8)
     return DAG.getTruncStore(N->getChain(), SDLoc(Op), N->getVal(),
                              N->getBasePtr(), N->getPointerInfo(), MVT::i8,
                              N->isVolatile(), N->isNonTemporal(),
-                             N->getAlignment(), N->getTBAAInfo());
+                             N->getAlignment(), N->getAAInfo());
   return SDValue();
 }
 
@@ -1803,7 +1808,9 @@ SDValue XCoreTargetLowering::PerformDAGCombine(SDNode *N,
     // Replace unaligned store of unaligned load with memmove.
     StoreSDNode *ST  = cast<StoreSDNode>(N);
     if (!DCI.isBeforeLegalize() ||
-        allowsUnalignedMemoryAccesses(ST->getMemoryVT()) ||
+        allowsMisalignedMemoryAccesses(ST->getMemoryVT(),
+                                       ST->getAddressSpace(),
+                                       ST->getAlignment()) ||
         ST->isVolatile() || ST->isIndexed()) {
       break;
     }

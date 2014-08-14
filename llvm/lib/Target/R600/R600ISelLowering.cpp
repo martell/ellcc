@@ -19,6 +19,7 @@
 #include "R600Defines.h"
 #include "R600InstrInfo.h"
 #include "R600MachineFunctionInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -1526,10 +1527,23 @@ SDValue R600TargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const
     return DAG.getMergeValues(Ops, DL);
   }
 
+  // Lower loads constant address space global variable loads
+  if (LoadNode->getAddressSpace() == AMDGPUAS::CONSTANT_ADDRESS &&
+      isa<GlobalVariable>(
+          GetUnderlyingObject(LoadNode->getMemOperand()->getValue()))) {
+
+    SDValue Ptr = DAG.getZExtOrTrunc(LoadNode->getBasePtr(), DL,
+        getPointerTy(AMDGPUAS::PRIVATE_ADDRESS));
+    Ptr = DAG.getNode(ISD::SRL, DL, MVT::i32, Ptr,
+        DAG.getConstant(2, MVT::i32));
+    return DAG.getNode(AMDGPUISD::REGISTER_LOAD, DL, Op->getVTList(),
+                       LoadNode->getChain(), Ptr,
+                       DAG.getTargetConstant(0, MVT::i32), Op.getOperand(2));
+  }
 
   if (LoadNode->getAddressSpace() == AMDGPUAS::LOCAL_ADDRESS && VT.isVector()) {
     SDValue MergedValues[2] = {
-      SplitVectorLoad(Op, DAG),
+      ScalarizeVectorLoad(Op, DAG),
       Chain
     };
     return DAG.getMergeValues(MergedValues, DL);
@@ -1599,6 +1613,7 @@ SDValue R600TargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const
                                   LoadNode->getPointerInfo(), MemVT,
                                   LoadNode->isVolatile(),
                                   LoadNode->isNonTemporal(),
+                                  LoadNode->isInvariant(),
                                   LoadNode->getAlignment());
     SDValue Shl = DAG.getNode(ISD::SHL, DL, VT, NewLoad, ShiftAmount);
     SDValue Sra = DAG.getNode(ISD::SRA, DL, VT, Shl, ShiftAmount);
@@ -1718,7 +1733,7 @@ SDValue R600TargetLowering::LowerFormalArguments(
     SDValue Arg = DAG.getExtLoad(Ext, DL, VT, Chain,
                                  DAG.getConstant(36 + VA.getLocMemOffset(), MVT::i32),
                                  MachinePointerInfo(UndefValue::get(PtrTy)),
-                                 MemVT, false, false, 4);
+                                 MemVT, false, false, false, 4);
 
     // 4 is the preferred alignment for the CONSTANT memory space.
     InVals.push_back(Arg);

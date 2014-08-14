@@ -1709,6 +1709,27 @@ OMPClause *OMPClauseReader::readClause() {
   case OMPC_nowait:
     C = new (Context) OMPNowaitClause();
     break;
+  case OMPC_untied:
+    C = new (Context) OMPUntiedClause();
+    break;
+  case OMPC_mergeable:
+    C = new (Context) OMPMergeableClause();
+    break;
+  case OMPC_read:
+    C = new (Context) OMPReadClause();
+    break;
+  case OMPC_write:
+    C = new (Context) OMPWriteClause();
+    break;
+  case OMPC_update:
+    C = new (Context) OMPUpdateClause();
+    break;
+  case OMPC_capture:
+    C = new (Context) OMPCaptureClause();
+    break;
+  case OMPC_seq_cst:
+    C = new (Context) OMPSeqCstClause();
+    break;
   case OMPC_private:
     C = OMPPrivateClause::CreateEmpty(Context, Record[Idx++]);
     break;
@@ -1735,6 +1756,9 @@ OMPClause *OMPClauseReader::readClause() {
     break;
   case OMPC_copyprivate:
     C = OMPCopyprivateClause::CreateEmpty(Context, Record[Idx++]);
+    break;
+  case OMPC_flush:
+    C = OMPFlushClause::CreateEmpty(Context, Record[Idx++]);
     break;
   }
   Visit(C);
@@ -1795,6 +1819,20 @@ void OMPClauseReader::VisitOMPScheduleClause(OMPScheduleClause *C) {
 void OMPClauseReader::VisitOMPOrderedClause(OMPOrderedClause *) {}
 
 void OMPClauseReader::VisitOMPNowaitClause(OMPNowaitClause *) {}
+
+void OMPClauseReader::VisitOMPUntiedClause(OMPUntiedClause *) {}
+
+void OMPClauseReader::VisitOMPMergeableClause(OMPMergeableClause *) {}
+
+void OMPClauseReader::VisitOMPReadClause(OMPReadClause *) {}
+
+void OMPClauseReader::VisitOMPWriteClause(OMPWriteClause *) {}
+
+void OMPClauseReader::VisitOMPUpdateClause(OMPUpdateClause *) {}
+
+void OMPClauseReader::VisitOMPCaptureClause(OMPCaptureClause *) {}
+
+void OMPClauseReader::VisitOMPSeqCstClause(OMPSeqCstClause *) {}
 
 void OMPClauseReader::VisitOMPPrivateClause(OMPPrivateClause *C) {
   C->setLParenLoc(Reader->ReadSourceLocation(Record, Idx));
@@ -1898,6 +1936,16 @@ void OMPClauseReader::VisitOMPCopyprivateClause(OMPCopyprivateClause *C) {
   C->setVarRefs(Vars);
 }
 
+void OMPClauseReader::VisitOMPFlushClause(OMPFlushClause *C) {
+  C->setLParenLoc(Reader->ReadSourceLocation(Record, Idx));
+  unsigned NumVars = C->varlist_size();
+  SmallVector<Expr *, 16> Vars;
+  Vars.reserve(NumVars);
+  for (unsigned i = 0; i != NumVars; ++i)
+    Vars.push_back(Reader->Reader.ReadSubExpr());
+  C->setVarRefs(Vars);
+}
+
 //===----------------------------------------------------------------------===//
 // OpenMP Directives.
 //===----------------------------------------------------------------------===//
@@ -1909,7 +1957,8 @@ void ASTStmtReader::VisitOMPExecutableDirective(OMPExecutableDirective *E) {
   for (unsigned i = 0; i < E->getNumClauses(); ++i)
     Clauses.push_back(ClauseReader.readClause());
   E->setClauses(Clauses);
-  E->setAssociatedStmt(Reader.ReadSubStmt());
+  if (E->hasAssociatedStmt())
+    E->setAssociatedStmt(Reader.ReadSubStmt());
 }
 
 void ASTStmtReader::VisitOMPParallelDirective(OMPParallelDirective *D) {
@@ -1957,6 +2006,12 @@ void ASTStmtReader::VisitOMPMasterDirective(OMPMasterDirective *D) {
   VisitOMPExecutableDirective(D);
 }
 
+void ASTStmtReader::VisitOMPCriticalDirective(OMPCriticalDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+  ReadDeclarationNameInfo(D->DirName, Record, Idx);
+}
+
 void ASTStmtReader::VisitOMPParallelForDirective(OMPParallelForDirective *D) {
   VisitStmt(D);
   // Two fields (NumClauses and CollapsedNum) were read in ReadStmtFromStream.
@@ -1973,6 +2028,40 @@ void ASTStmtReader::VisitOMPParallelSectionsDirective(
 }
 
 void ASTStmtReader::VisitOMPTaskDirective(OMPTaskDirective *D) {
+  VisitStmt(D);
+  // The NumClauses field was read in ReadStmtFromStream.
+  ++Idx;
+  VisitOMPExecutableDirective(D);
+}
+
+void ASTStmtReader::VisitOMPTaskyieldDirective(OMPTaskyieldDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+}
+
+void ASTStmtReader::VisitOMPBarrierDirective(OMPBarrierDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+}
+
+void ASTStmtReader::VisitOMPTaskwaitDirective(OMPTaskwaitDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+}
+
+void ASTStmtReader::VisitOMPFlushDirective(OMPFlushDirective *D) {
+  VisitStmt(D);
+  // The NumClauses field was read in ReadStmtFromStream.
+  ++Idx;
+  VisitOMPExecutableDirective(D);
+}
+
+void ASTStmtReader::VisitOMPOrderedDirective(OMPOrderedDirective *D) {
+  VisitStmt(D);
+  VisitOMPExecutableDirective(D);
+}
+
+void ASTStmtReader::VisitOMPAtomicDirective(OMPAtomicDirective *D) {
   VisitStmt(D);
   // The NumClauses field was read in ReadStmtFromStream.
   ++Idx;
@@ -2495,6 +2584,10 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = OMPMasterDirective::CreateEmpty(Context, Empty);
       break;
 
+    case STMT_OMP_CRITICAL_DIRECTIVE:
+      S = OMPCriticalDirective::CreateEmpty(Context, Empty);
+      break;
+
     case STMT_OMP_PARALLEL_FOR_DIRECTIVE: {
       unsigned NumClauses = Record[ASTStmtReader::NumStmtFields];
       unsigned CollapsedNum = Record[ASTStmtReader::NumStmtFields + 1];
@@ -2510,6 +2603,32 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
 
     case STMT_OMP_TASK_DIRECTIVE:
       S = OMPTaskDirective::CreateEmpty(
+          Context, Record[ASTStmtReader::NumStmtFields], Empty);
+      break;
+
+    case STMT_OMP_TASKYIELD_DIRECTIVE:
+      S = OMPTaskyieldDirective::CreateEmpty(Context, Empty);
+      break;
+
+    case STMT_OMP_BARRIER_DIRECTIVE:
+      S = OMPBarrierDirective::CreateEmpty(Context, Empty);
+      break;
+
+    case STMT_OMP_TASKWAIT_DIRECTIVE:
+      S = OMPTaskwaitDirective::CreateEmpty(Context, Empty);
+      break;
+
+    case STMT_OMP_FLUSH_DIRECTIVE:
+      S = OMPFlushDirective::CreateEmpty(
+          Context, Record[ASTStmtReader::NumStmtFields], Empty);
+      break;
+
+    case STMT_OMP_ORDERED_DIRECTIVE:
+      S = OMPOrderedDirective::CreateEmpty(Context, Empty);
+      break;
+
+    case STMT_OMP_ATOMIC_DIRECTIVE:
+      S = OMPAtomicDirective::CreateEmpty(
           Context, Record[ASTStmtReader::NumStmtFields], Empty);
       break;
 

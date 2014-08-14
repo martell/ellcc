@@ -189,7 +189,7 @@ static void CheckStringInit(Expr *Str, QualType &DeclT, const ArrayType *AT,
     // C99 6.7.8p14.
     if (StrLength-1 > CAT->getSize().getZExtValue())
       S.Diag(Str->getLocStart(),
-             diag::warn_initializer_string_for_char_array_too_long)
+             diag::ext_initializer_string_for_char_array_too_long)
         << Str->getSourceRange();
   }
 
@@ -788,7 +788,7 @@ void InitListChecker::CheckExplicitInitList(const InitializedEntity &Entity,
     if (StructuredIndex == 1 &&
         IsStringInit(StructuredList->getInit(0), T, SemaRef.Context) ==
             SIF_None) {
-      unsigned DK = diag::warn_excess_initializers_in_char_array_initializer;
+      unsigned DK = diag::ext_excess_initializers_in_char_array_initializer;
       if (SemaRef.getLangOpts().CPlusPlus) {
         DK = diag::err_excess_initializers_in_char_array_initializer;
         hadError = true;
@@ -807,7 +807,7 @@ void InitListChecker::CheckExplicitInitList(const InitializedEntity &Entity,
         CurrentObjectType->isUnionType()? 3 :
         4;
 
-      unsigned DK = diag::warn_excess_initializers;
+      unsigned DK = diag::ext_excess_initializers;
       if (SemaRef.getLangOpts().CPlusPlus) {
         DK = diag::err_excess_initializers;
         hadError = true;
@@ -914,6 +914,15 @@ void InitListChecker::CheckSubElementType(const InitializedEntity &Entity,
     assert(SemaRef.getLangOpts().CPlusPlus &&
            "non-aggregate records are only possible in C++");
     // C++ initialization is handled later.
+  } else if (isa<ImplicitValueInitExpr>(expr)) {
+    // This happens during template instantiation when we see an InitListExpr
+    // that we've already checked once.
+    assert(SemaRef.Context.hasSameType(expr->getType(), ElemType) &&
+           "found implicit initialization for the wrong type");
+    if (!VerifyOnly)
+      UpdateStructuredListElement(StructuredList, StructuredIndex, expr);
+    ++Index;
+    return;
   }
 
   // FIXME: Need to handle atomic aggregate types with implicit init lists.
@@ -2758,6 +2767,7 @@ void InitializationSequence::Step::Destroy() {
   case SK_QualificationConversionRValue:
   case SK_QualificationConversionXValue:
   case SK_QualificationConversionLValue:
+  case SK_AtomicConversion:
   case SK_LValueToRValue:
   case SK_ListInitialization:
   case SK_UnwrapInitList:
@@ -2906,6 +2916,13 @@ void InitializationSequence::AddQualificationConversionStep(QualType Ty,
     S.Kind = SK_QualificationConversionLValue;
     break;
   }
+  S.Type = Ty;
+  Steps.push_back(S);
+}
+
+void InitializationSequence::AddAtomicConversionStep(QualType Ty) {
+  Step S;
+  S.Kind = SK_AtomicConversion;
   S.Type = Ty;
   Steps.push_back(S);
 }
@@ -4165,12 +4182,11 @@ static void TryDefaultInitialization(Sema &S,
 /// which enumerates all conversion functions and performs overload resolution
 /// to select the best.
 static void TryUserDefinedConversion(Sema &S,
-                                     const InitializedEntity &Entity,
+                                     QualType DestType,
                                      const InitializationKind &Kind,
                                      Expr *Initializer,
                                      InitializationSequence &Sequence,
                                      bool TopLevelOfInitList) {
-  QualType DestType = Entity.getType();
   assert(!DestType->isReferenceType() && "References are handled elsewhere");
   QualType SourceType = Initializer->getType();
   assert((DestType->isRecordType() || SourceType->isRecordType()) &&
@@ -4587,7 +4603,6 @@ void InitializationSequence::InitializeFrom(Sema &S,
                                               Initializer) ||
           S.ConversionToObjCStringLiteralCheck(DestType, Initializer))
         Args[0] = Initializer;
-        
     }
     if (!isa<InitListExpr>(Initializer))
       SourceType = Initializer->getType();
@@ -4732,7 +4747,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
          (Context.hasSameUnqualifiedType(SourceType, DestType) ||
           S.IsDerivedFrom(SourceType, DestType))))
       TryConstructorInitialization(S, Entity, Kind, Args,
-                                   Entity.getType(), *this);
+                                   DestType, *this);
     //     - Otherwise (i.e., for the remaining copy-initialization cases),
     //       user-defined conversion sequences that can convert from the source
     //       type to the destination type or (when a conversion function is
@@ -4740,7 +4755,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
     //       13.3.1.4, and the best one is chosen through overload resolution
     //       (13.3).
     else
-      TryUserDefinedConversion(S, Entity, Kind, Initializer, *this,
+      TryUserDefinedConversion(S, DestType, Kind, Initializer, *this,
                                TopLevelOfInitList);
     return;
   }
@@ -4754,9 +4769,22 @@ void InitializationSequence::InitializeFrom(Sema &S,
   //    - Otherwise, if the source type is a (possibly cv-qualified) class
   //      type, conversion functions are considered.
   if (!SourceType.isNull() && SourceType->isRecordType()) {
-    TryUserDefinedConversion(S, Entity, Kind, Initializer, *this,
+    // For a conversion to _Atomic(T) from either T or a class type derived
+    // from T, initialize the T object then convert to _Atomic type.
+    bool NeedAtomicConversion = false;
+    if (const AtomicType *Atomic = DestType->getAs<AtomicType>()) {
+      if (Context.hasSameUnqualifiedType(SourceType, Atomic->getValueType()) ||
+          S.IsDerivedFrom(SourceType, Atomic->getValueType())) {
+        DestType = Atomic->getValueType();
+        NeedAtomicConversion = true;
+      }
+    }
+
+    TryUserDefinedConversion(S, DestType, Kind, Initializer, *this,
                              TopLevelOfInitList);
     MaybeProduceObjCObject(S, *this, Entity);
+    if (!Failed() && NeedAtomicConversion)
+      AddAtomicConversionStep(Entity.getType());
     return;
   }
 
@@ -4765,16 +4793,16 @@ void InitializationSequence::InitializeFrom(Sema &S,
   //      conversions (Clause 4) will be used, if necessary, to convert the
   //      initializer expression to the cv-unqualified version of the
   //      destination type; no user-defined conversions are considered.
-      
+
   ImplicitConversionSequence ICS
-    = S.TryImplicitConversion(Initializer, Entity.getType(),
+    = S.TryImplicitConversion(Initializer, DestType,
                               /*SuppressUserConversions*/true,
                               /*AllowExplicitConversions*/ false,
                               /*InOverloadResolution*/ false,
                               /*CStyle=*/Kind.isCStyleOrFunctionalCast(),
                               allowObjCWritebackConversion);
-      
-  if (ICS.isStandard() && 
+
+  if (ICS.isStandard() &&
       ICS.Standard.Second == ICK_Writeback_Conversion) {
     // Objective-C ARC writeback conversion.
     
@@ -4795,7 +4823,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
       AddConversionSequenceStep(LvalueICS, ICS.Standard.getToType(0));
     }
     
-    AddPassByIndirectCopyRestoreStep(Entity.getType(), ShouldCopy);
+    AddPassByIndirectCopyRestoreStep(DestType, ShouldCopy);
   } else if (ICS.isBad()) {
     DeclAccessPair dap;
     if (isLibstdcxxPointerReturnFalseHack(S, Entity, Initializer)) {
@@ -4807,7 +4835,7 @@ void InitializationSequence::InitializeFrom(Sema &S,
     else
       SetFailed(InitializationSequence::FK_ConversionFailed);
   } else {
-    AddConversionSequenceStep(ICS, Entity.getType(), TopLevelOfInitList);
+    AddConversionSequenceStep(ICS, DestType, TopLevelOfInitList);
 
     MaybeProduceObjCObject(S, *this, Entity);
   }
@@ -5763,6 +5791,7 @@ InitializationSequence::Perform(Sema &S,
   case SK_QualificationConversionLValue:
   case SK_QualificationConversionXValue:
   case SK_QualificationConversionRValue:
+  case SK_AtomicConversion:
   case SK_LValueToRValue:
   case SK_ConversionSequence:
   case SK_ConversionSequenceNoNarrowing:
@@ -6050,6 +6079,13 @@ InitializationSequence::Perform(Sema &S,
                    VK_XValue :
                    VK_RValue);
       CurInit = S.ImpCastExprToType(CurInit.get(), Step->Type, CK_NoOp, VK);
+      break;
+    }
+
+    case SK_AtomicConversion: {
+      assert(CurInit.get()->isRValue() && "cannot convert glvalue to atomic");
+      CurInit = S.ImpCastExprToType(CurInit.get(), Step->Type,
+                                    CK_NonAtomicToAtomic, VK_RValue);
       break;
     }
 
@@ -6446,6 +6482,26 @@ static void diagnoseListInit(Sema &S, const InitializedEntity &Entity,
          "Inconsistent init list check result.");
 }
 
+/// Prints a fixit for adding a null initializer for |Entity|. Call this only
+/// right after emitting a diagnostic.
+static void maybeEmitZeroInitializationFixit(Sema &S,
+                                             InitializationSequence &Sequence,
+                                             const InitializedEntity &Entity) {
+  if (Entity.getKind() != InitializedEntity::EK_Variable)
+    return;
+
+  VarDecl *VD = cast<VarDecl>(Entity.getDecl());
+  if (VD->getInit() || VD->getLocEnd().isMacroID())
+    return;
+
+  QualType VariableTy = VD->getType().getCanonicalType();
+  SourceLocation Loc = S.getLocForEndOfToken(VD->getLocEnd());
+  std::string Init = S.getFixItZeroInitializerForType(VariableTy, Loc);
+
+  S.Diag(Loc, diag::note_add_initializer)
+      << VD << FixItHint::CreateInsertion(Loc, Init);
+}
+
 bool InitializationSequence::Diagnose(Sema &S,
                                       const InitializedEntity &Entity,
                                       const InitializationKind &Kind,
@@ -6776,7 +6832,8 @@ bool InitializationSequence::Diagnose(Sema &S,
         << Entity.getName();
     } else {
       S.Diag(Kind.getLocation(), diag::err_default_init_const)
-        << DestType << (bool)DestType->getAs<RecordType>();
+          << DestType << (bool)DestType->getAs<RecordType>();
+      maybeEmitZeroInitializationFixit(S, *this, Entity);
     }
     break;
 
@@ -7001,6 +7058,10 @@ void InitializationSequence::dump(raw_ostream &OS) const {
 
     case SK_QualificationConversionLValue:
       OS << "qualification conversion (lvalue)";
+      break;
+
+    case SK_AtomicConversion:
+      OS << "non-atomic-to-atomic conversion";
       break;
 
     case SK_LValueToRValue:

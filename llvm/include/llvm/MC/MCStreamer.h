@@ -97,7 +97,7 @@ public:
   /// Callback used to implement the ldr= pseudo.
   /// Add a new entry to the constant pool for the current section and return an
   /// MCExpr that can be used to refer to the constant pool location.
-  const MCExpr *addConstantPoolEntry(const MCExpr *);
+  const MCExpr *addConstantPoolEntry(const MCExpr *, unsigned Size);
 
   /// Callback used to implemnt the .ltorg directive.
   /// Emit contents of constant pool for the current section.
@@ -181,8 +181,8 @@ class MCStreamer {
 
   MCSymbol *EmitCFICommon();
 
-  std::vector<MCWinFrameInfo *> WinFrameInfos;
-  MCWinFrameInfo *CurrentWinFrameInfo;
+  std::vector<WinEH::FrameInfo *> WinFrameInfos;
+  WinEH::FrameInfo *CurrentWinFrameInfo;
   void EnsureValidWinFrameInfo();
 
   // SymbolOrdering - Tracks an index to represent the order
@@ -204,11 +204,11 @@ protected:
   virtual void EmitCFIStartProcImpl(MCDwarfFrameInfo &Frame);
   virtual void EmitCFIEndProcImpl(MCDwarfFrameInfo &CurFrame);
 
-  MCWinFrameInfo *getCurrentWinFrameInfo() {
+  WinEH::FrameInfo *getCurrentWinFrameInfo() {
     return CurrentWinFrameInfo;
   }
 
-  void EmitWindowsUnwindTables();
+  virtual void EmitWindowsUnwindTables();
 
   virtual void EmitRawTextImpl(StringRef String);
 
@@ -238,7 +238,7 @@ public:
   }
 
   unsigned getNumWinFrameInfos() { return WinFrameInfos.size(); }
-  ArrayRef<MCWinFrameInfo *> getWinFrameInfos() const {
+  ArrayRef<WinEH::FrameInfo *> getWinFrameInfos() const {
     return WinFrameInfos;
   }
 
@@ -572,7 +572,8 @@ public:
 
   /// EmitSymbolValue - Special case of EmitValue that avoids the client
   /// having to pass in a MCExpr for MCSymbols.
-  void EmitSymbolValue(const MCSymbol *Sym, unsigned Size);
+  void EmitSymbolValue(const MCSymbol *Sym, unsigned Size,
+                       bool IsSectionRelative = false);
 
   /// EmitGPRel64Value - Emit the expression @p Value into the output as a
   /// gprel64 (64-bit GP relative) value.

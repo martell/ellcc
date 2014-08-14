@@ -27,6 +27,8 @@ namespace llvm {
 namespace object {
 
 class ObjectFile;
+class COFFObjectFile;
+class MachOObjectFile;
 
 class SymbolRef;
 class symbol_iterator;
@@ -149,6 +151,7 @@ public:
   std::error_code getAlignment(uint32_t &Result) const;
   std::error_code getSize(uint64_t &Result) const;
   std::error_code getType(SymbolRef::Type &Result) const;
+  std::error_code getOther(uint8_t &Result) const;
 
   /// @brief Get section this symbol is defined in reference to. Result is
   /// end_sections() if it is undefined or is an absolute symbol.
@@ -237,6 +240,10 @@ protected:
                                         SymbolRef::Type &Res) const = 0;
   virtual std::error_code getSymbolSection(DataRefImpl Symb,
                                            section_iterator &Res) const = 0;
+  virtual std::error_code getSymbolOther(DataRefImpl Symb,
+                                         uint8_t &Res) const {
+    return object_error::invalid_file_type;
+  }
 
   // Same as above for SectionRef.
   friend class SectionRef;
@@ -328,15 +335,23 @@ public:
   /// LC_ID_DYLIB (install name) on MachO.
   virtual StringRef getLoadName() const = 0;
 
+  /// Returns platform-specific object flags, if any.
+  virtual std::error_code getPlatformFlags(unsigned &Result) const {
+    Result = 0;
+    return object_error::invalid_file_type;
+  }
+
   /// @returns Pointer to ObjectFile subclass to handle this type of object.
   /// @param ObjectPath The path to the object file. ObjectPath.isObject must
   ///        return true.
   /// @brief Create ObjectFile from path.
-  static ErrorOr<ObjectFile *> createObjectFile(StringRef ObjectPath);
-  static ErrorOr<ObjectFile *>
+  static ErrorOr<std::unique_ptr<ObjectFile>>
+  createObjectFile(StringRef ObjectPath);
+
+  static ErrorOr<std::unique_ptr<ObjectFile>>
   createObjectFile(std::unique_ptr<MemoryBuffer> &Object,
                    sys::fs::file_magic Type);
-  static ErrorOr<ObjectFile *>
+  static ErrorOr<std::unique_ptr<ObjectFile>>
   createObjectFile(std::unique_ptr<MemoryBuffer> &Object) {
     return createObjectFile(Object, sys::fs::file_magic::unknown);
   }
@@ -347,11 +362,13 @@ public:
   }
 
 public:
-  static ErrorOr<ObjectFile *>
+  static ErrorOr<std::unique_ptr<COFFObjectFile>>
   createCOFFObjectFile(std::unique_ptr<MemoryBuffer> Object);
-  static ErrorOr<ObjectFile *>
+
+  static ErrorOr<std::unique_ptr<ObjectFile>>
   createELFObjectFile(std::unique_ptr<MemoryBuffer> &Object);
-  static ErrorOr<ObjectFile *>
+
+  static ErrorOr<std::unique_ptr<MachOObjectFile>>
   createMachOObjectFile(std::unique_ptr<MemoryBuffer> &Object);
 };
 
@@ -381,6 +398,10 @@ inline std::error_code SymbolRef::getSection(section_iterator &Result) const {
 
 inline std::error_code SymbolRef::getType(SymbolRef::Type &Result) const {
   return getObject()->getSymbolType(getRawDataRefImpl(), Result);
+}
+
+inline std::error_code SymbolRef::getOther(uint8_t &Result) const {
+  return getObject()->getSymbolOther(getRawDataRefImpl(), Result);
 }
 
 inline const ObjectFile *SymbolRef::getObject() const {

@@ -458,10 +458,12 @@ void CodeGenFunction::EmitTypeCheck(TypeCheckKind TCK, SourceLocation Loc,
   if (Address->getType()->getPointerAddressSpace())
     return;
 
+  SanitizerScope SanScope(this);
+
   llvm::Value *Cond = nullptr;
   llvm::BasicBlock *Done = nullptr;
 
-  if (SanOpts->Null) {
+  if (SanOpts->Null || TCK == TCK_DowncastPointer) {
     // The glvalue must not be an empty glvalue.
     Cond = Builder.CreateICmpNE(
         Address, llvm::Constant::getNullValue(Address->getType()));
@@ -654,6 +656,7 @@ void CodeGenFunction::EmitBoundsCheck(const Expr *E, const Expr *Base,
                                       bool Accessed) {
   assert(SanOpts->ArrayBounds &&
          "should not be called unless adding bounds checks");
+  SanitizerScope SanScope(this);
 
   QualType IndexedType;
   llvm::Value *Bound = getArrayIndexingBound(*this, Base, IndexedType);
@@ -1129,6 +1132,7 @@ llvm::Value *CodeGenFunction::EmitLoadOfScalar(llvm::Value *Addr, bool Volatile,
 
   if ((SanOpts->Bool && hasBooleanRepresentation(Ty)) ||
       (SanOpts->Enum && Ty->getAs<EnumType>())) {
+    SanitizerScope SanScope(this);
     llvm::APInt Min, End;
     if (getRangeForType(*this, Ty, Min, End, true)) {
       --End;
@@ -2123,6 +2127,7 @@ llvm::Constant *CodeGenFunction::EmitCheckTypeDescriptor(QualType T) {
       CGM.getModule(), Descriptor->getType(),
       /*isConstant=*/true, llvm::GlobalVariable::PrivateLinkage, Descriptor);
   GV->setUnnamedAddr(true);
+  CGM.getSanitizerMetadata()->disableSanitizerForGlobal(GV);
 
   // Remember the descriptor for this type.
   CGM.setTypeDescriptorInMap(T, GV);
@@ -2166,14 +2171,23 @@ llvm::Value *CodeGenFunction::EmitCheckValue(llvm::Value *V) {
 /// \endcode
 /// For an invalid SourceLocation, the Filename pointer is null.
 llvm::Constant *CodeGenFunction::EmitCheckSourceLocation(SourceLocation Loc) {
-  PresumedLoc PLoc = getContext().getSourceManager().getPresumedLoc(Loc);
+  llvm::Constant *Filename;
+  int Line, Column;
 
-  llvm::Constant *Data[] = {
-    PLoc.isValid() ? CGM.GetAddrOfConstantCString(PLoc.getFilename(), ".src")
-                   : llvm::Constant::getNullValue(Int8PtrTy),
-    Builder.getInt32(PLoc.isValid() ? PLoc.getLine() : 0),
-    Builder.getInt32(PLoc.isValid() ? PLoc.getColumn() : 0)
-  };
+  PresumedLoc PLoc = getContext().getSourceManager().getPresumedLoc(Loc);
+  if (PLoc.isValid()) {
+    auto FilenameGV = CGM.GetAddrOfConstantCString(PLoc.getFilename(), ".src");
+    CGM.getSanitizerMetadata()->disableSanitizerForGlobal(FilenameGV);
+    Filename = FilenameGV;
+    Line = PLoc.getLine();
+    Column = PLoc.getColumn();
+  } else {
+    Filename = llvm::Constant::getNullValue(Int8PtrTy);
+    Line = Column = 0;
+  }
+
+  llvm::Constant *Data[] = {Filename, Builder.getInt32(Line),
+                            Builder.getInt32(Column)};
 
   return llvm::ConstantStruct::getAnon(Data);
 }
@@ -2183,6 +2197,7 @@ void CodeGenFunction::EmitCheck(llvm::Value *Checked, StringRef CheckName,
                                 ArrayRef<llvm::Value *> DynamicArgs,
                                 CheckRecoverableKind RecoverKind) {
   assert(SanOpts != &SanitizerOptions::Disabled);
+  assert(IsSanitizerScope);
 
   if (CGM.getCodeGenOpts().SanitizeUndefinedTrapOnError) {
     assert (RecoverKind != CRK_AlwaysRecoverable &&
@@ -2209,6 +2224,7 @@ void CodeGenFunction::EmitCheck(llvm::Value *Checked, StringRef CheckName,
       new llvm::GlobalVariable(CGM.getModule(), Info->getType(), false,
                                llvm::GlobalVariable::PrivateLinkage, Info);
   InfoPtr->setUnnamedAddr(true);
+  CGM.getSanitizerMetadata()->disableSanitizerForGlobal(InfoPtr);
 
   SmallVector<llvm::Value *, 4> Args;
   SmallVector<llvm::Type *, 4> ArgTypes;
@@ -3231,6 +3247,7 @@ RValue CodeGenFunction::EmitCall(QualType CalleeType, llvm::Value *Callee,
       (!TargetDecl || !isa<FunctionDecl>(TargetDecl))) {
     if (llvm::Constant *PrefixSig =
             CGM.getTargetCodeGenInfo().getUBSanFunctionSignature(CGM)) {
+      SanitizerScope SanScope(this);
       llvm::Constant *FTRTTIConst =
           CGM.GetAddrOfRTTIDescriptor(QualType(FnType, 0), /*ForEH=*/true);
       llvm::Type *PrefixStructTyElems[] = {
