@@ -306,6 +306,12 @@ INTERCEPTOR(int, _except_handler3, void *a, void *b, void *c, void *d) {
   __asan_handle_no_return();
   return REAL(_except_handler3)(a, b, c, d);
 }
+
+INTERCEPTOR(int, _except_handler4, void *a, void *b, void *c, void *d) {
+  CHECK(REAL(_except_handler4));
+  __asan_handle_no_return();
+  return REAL(_except_handler4)(a, b, c, d);
+}
 #endif
 
 #if ASAN_INTERCEPT_MLOCKX
@@ -545,7 +551,7 @@ INTERCEPTOR(char*, strdup, const char *s) {
 }
 #endif
 
-INTERCEPTOR(uptr, strlen, const char *s) {
+INTERCEPTOR(unsigned, strlen, const char *s) {
   if (UNLIKELY(!asan_inited)) return internal_strlen(s);
   // strlen is called from malloc_default_purgeable_zone()
   // in __asan::ReplaceSystemAlloc() on Mac.
@@ -553,15 +559,15 @@ INTERCEPTOR(uptr, strlen, const char *s) {
     return REAL(strlen)(s);
   }
   ENSURE_ASAN_INITED();
-  uptr length = REAL(strlen)(s);
+  unsigned length = REAL(strlen)(s);
   if (flags()->replace_str) {
     ASAN_READ_RANGE(s, length + 1);
   }
   return length;
 }
 
-INTERCEPTOR(uptr, wcslen, const wchar_t *s) {
-  uptr length = REAL(wcslen)(s);
+INTERCEPTOR(unsigned, wcslen, const wchar_t *s) {
+  unsigned length = REAL(wcslen)(s);
   if (!asan_init_is_running) {
     ENSURE_ASAN_INITED();
     ASAN_READ_RANGE(s, (length + 1) * sizeof(wchar_t));
@@ -746,6 +752,7 @@ void InitializeWindowsInterceptors() {
   ASAN_INTERCEPT_FUNC(CreateThread);
   ASAN_INTERCEPT_FUNC(RaiseException);
   ASAN_INTERCEPT_FUNC(_except_handler3);
+  ASAN_INTERCEPT_FUNC(_except_handler4);
 }
 
 }  // namespace __asan

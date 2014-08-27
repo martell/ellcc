@@ -808,8 +808,12 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
       CmdArgs.push_back("-backend-option");
       if (A->getOption().matches(options::OPT_mno_unaligned_access))
         CmdArgs.push_back("-arm-strict-align");
-      else
+      else {
+        if (getToolChain().getTriple().getSubArch() ==
+            llvm::Triple::SubArchType::ARMSubArch_v6m)
+          D.Diag(diag::err_target_unsupported_unaligned) << "v6m";
         CmdArgs.push_back("-arm-no-strict-align");
+      }
     }
   }
 
@@ -1079,6 +1083,9 @@ static void getMIPSTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   Features.push_back("-o32");
   Features.push_back("-n64");
   Features.push_back(Args.MakeArgString(ABIFeature));
+
+  AddTargetFeature(Args, Features, options::OPT_mno_abicalls,
+                   options::OPT_mabicalls, "noabicalls");
 
   StringRef FloatABI = getMipsFloatABI(D, Args);
   if (FloatABI == "soft") {
@@ -2178,7 +2185,8 @@ static void addClangRTLinux(
 
 static void addProfileRT(
     const ToolChain &TC, const ArgList &Args, ArgStringList &CmdArgs) {
-  if (!(Args.hasArg(options::OPT_fprofile_arcs) ||
+  if (!(Args.hasFlag(options::OPT_fprofile_arcs, options::OPT_fno_profile_arcs,
+                     false) ||
         Args.hasArg(options::OPT_fprofile_generate) ||
         Args.hasArg(options::OPT_fprofile_instr_generate) ||
         Args.hasArg(options::OPT_fcreate_profile) ||
@@ -2342,13 +2350,13 @@ static void addDfsanRT(const ToolChain &TC, const ArgList &Args,
 static void addSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
                                  ArgStringList &CmdArgs) {
   const SanitizerArgs &Sanitize = TC.getSanitizerArgs();
-  const Driver &D = TC.getDriver();
   if (Sanitize.needsUbsanRt())
-    addUbsanRT(TC, Args, CmdArgs, D.CCCIsCXX(),
-                    Sanitize.needsAsanRt() || Sanitize.needsTsanRt() ||
-                    Sanitize.needsMsanRt() || Sanitize.needsLsanRt());
+    addUbsanRT(TC, Args, CmdArgs, Sanitize.linkCXXRuntimes(),
+               Sanitize.needsAsanRt() || Sanitize.needsTsanRt() ||
+                   Sanitize.needsMsanRt() || Sanitize.needsLsanRt());
   if (Sanitize.needsAsanRt())
-    addAsanRT(TC, Args, CmdArgs, Sanitize.needsSharedAsanRt(), D.CCCIsCXX());
+    addAsanRT(TC, Args, CmdArgs, Sanitize.needsSharedAsanRt(),
+              Sanitize.linkCXXRuntimes());
   if (Sanitize.needsTsanRt())
     addTsanRT(TC, Args, CmdArgs);
   if (Sanitize.needsMsanRt())
@@ -3307,9 +3315,18 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT_ftest_coverage) ||
       Args.hasArg(options::OPT_coverage))
     CmdArgs.push_back("-femit-coverage-notes");
-  if (Args.hasArg(options::OPT_fprofile_arcs) ||
+  if (Args.hasFlag(options::OPT_fprofile_arcs, options::OPT_fno_profile_arcs,
+                   false) ||
       Args.hasArg(options::OPT_coverage))
     CmdArgs.push_back("-femit-coverage-data");
+
+  if (Args.hasArg(options::OPT_fcoverage_mapping) &&
+      !Args.hasArg(options::OPT_fprofile_instr_generate))
+    D.Diag(diag::err_drv_argument_only_allowed_with)
+      << "-fcoverage-mapping" << "-fprofile-instr-generate";
+
+  if (Args.hasArg(options::OPT_fcoverage_mapping))
+    CmdArgs.push_back("-fcoverage-mapping");
 
   if (C.getArgs().hasArg(options::OPT_c) ||
       C.getArgs().hasArg(options::OPT_S)) {
@@ -3447,6 +3464,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // precompiling.
   Args.ClaimAllArgs(options::OPT_flto);
 
+  Args.AddAllArgs(CmdArgs, options::OPT_R_Group);
   Args.AddAllArgs(CmdArgs, options::OPT_W_Group);
   if (Args.hasFlag(options::OPT_pedantic, options::OPT_no_pedantic, false))
     CmdArgs.push_back("-pedantic");
@@ -3807,15 +3825,6 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     else
       A->render(Args, CmdArgs);
   }
-
-  if (Arg *A = Args.getLastArg(options::OPT_Rpass_EQ))
-    A->render(Args, CmdArgs);
-
-  if (Arg *A = Args.getLastArg(options::OPT_Rpass_missed_EQ))
-    A->render(Args, CmdArgs);
-
-  if (Arg *A = Args.getLastArg(options::OPT_Rpass_analysis_EQ))
-    A->render(Args, CmdArgs);
 
   if (Args.hasArg(options::OPT_mkernel)) {
     if (!Args.hasArg(options::OPT_fapple_kext) && types::isCXX(InputType))
@@ -4207,6 +4216,21 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fpack-struct=1");
   }
 
+  // Handle -fmax-type-align=N and -fno-type-align
+  bool SkipMaxTypeAlign = Args.hasArg(options::OPT_fno_max_type_align);
+  if (Arg *A = Args.getLastArg(options::OPT_fmax_type_align_EQ)) {
+    if (!SkipMaxTypeAlign) {
+      std::string MaxTypeAlignStr = "-fmax-type-align=";
+      MaxTypeAlignStr += A->getValue();
+      CmdArgs.push_back(Args.MakeArgString(MaxTypeAlignStr));
+    }
+  } else if (getToolChain().getTriple().isOSDarwin()) {
+    if (!SkipMaxTypeAlign) {
+      std::string MaxTypeAlignStr = "-fmax-type-align=16";
+      CmdArgs.push_back(Args.MakeArgString(MaxTypeAlignStr));
+    }
+  }
+
   if (KernelOrKext || isNoCommonDefault(getToolChain().getTriple())) {
     if (!Args.hasArg(options::OPT_fcommon))
       CmdArgs.push_back("-fno-common");
@@ -4236,6 +4260,14 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       StringRef value = inputCharset->getValue();
       if (value != "UTF-8")
           D.Diag(diag::err_drv_invalid_value) << inputCharset->getAsString(Args) << value;
+  }
+
+  // -fexec_charset=UTF-8 is default. Reject others
+  if (Arg *execCharset = Args.getLastArg(
+          options::OPT_fexec_charset_EQ)) {
+      StringRef value = execCharset->getValue();
+      if (value != "UTF-8")
+          D.Diag(diag::err_drv_invalid_value) << execCharset->getAsString(Args) << value;
   }
 
   // -fcaret-diagnostics is default.
@@ -5424,6 +5456,11 @@ const char *arm::getLLVMArchSuffixForARM(StringRef CPU) {
 bool mips::hasMipsAbiArg(const ArgList &Args, const char *Value) {
   Arg *A = Args.getLastArg(options::OPT_mabi_EQ);
   return A && (A->getValue() == StringRef(Value));
+}
+
+bool mips::isUCLibc(const ArgList &Args) {
+  Arg *A = Args.getLastArg(options::OPT_m_libc_Group);
+  return A && A->getOption().matches(options::OPT_muclibc);
 }
 
 bool mips::isNaN2008(const ArgList &Args, const llvm::Triple &Triple) {
@@ -6971,6 +7008,16 @@ void netbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
        CmdArgs.push_back("elf64ltsmip");
    }
    break;
+  case llvm::Triple::ppc:
+    CmdArgs.push_back("-m");
+    CmdArgs.push_back("elf32ppc_nbsd");
+    break;
+
+  case llvm::Triple::ppc64:
+  case llvm::Triple::ppc64le:
+    CmdArgs.push_back("-m");
+    CmdArgs.push_back("elf64ppc");
+    break;
 
   case llvm::Triple::sparc:
     CmdArgs.push_back("-m");
@@ -7025,11 +7072,14 @@ void netbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
   bool useLibgcc = true;
   if (Major >= 7 || (Major == 6 && Minor == 99 && Micro >= 49) || Major == 0) {
     switch(getToolChain().getArch()) {
+    case llvm::Triple::aarch64:
     case llvm::Triple::arm:
     case llvm::Triple::armeb:
     case llvm::Triple::thumb:
     case llvm::Triple::thumbeb:
     case llvm::Triple::ppc:
+    case llvm::Triple::ppc64:
+    case llvm::Triple::ppc64le:
     case llvm::Triple::x86:
     case llvm::Triple::x86_64:
       useLibgcc = false;
@@ -7298,8 +7348,8 @@ static void AddLibgcc(const llvm::Triple &Triple, const Driver &D,
     CmdArgs.push_back("-ldl");
 }
 
-static StringRef getLinuxDynamicLinker(const ArgList &Args,
-                                       const toolchains::Linux &ToolChain) {
+static std::string getLinuxDynamicLinker(const ArgList &Args,
+                                         const toolchains::Linux &ToolChain) {
   if (ToolChain.getTriple().getEnvironment() == llvm::Triple::Android) {
     if (ToolChain.getTriple().isArch64Bit())
       return "/system/bin/linker64";
@@ -7325,17 +7375,26 @@ static StringRef getLinuxDynamicLinker(const ArgList &Args,
     else
       return "/lib/ld-linux.so.3";              /* TODO: check which dynamic linker name.  */
   } else if (ToolChain.getArch() == llvm::Triple::mips ||
-             ToolChain.getArch() == llvm::Triple::mipsel) {
-    if (mips::isNaN2008(Args, ToolChain.getTriple()))
-      return "/lib/ld-linux-mipsn8.so.1";
-    return "/lib/ld.so.1";
-  } else if (ToolChain.getArch() == llvm::Triple::mips64 ||
+             ToolChain.getArch() == llvm::Triple::mipsel ||
+             ToolChain.getArch() == llvm::Triple::mips64 ||
              ToolChain.getArch() == llvm::Triple::mips64el) {
-    if (mips::hasMipsAbiArg(Args, "n32"))
-      return mips::isNaN2008(Args, ToolChain.getTriple())
-                 ? "/lib32/ld-linux-mipsn8.so.1" : "/lib32/ld.so.1";
-    return mips::isNaN2008(Args, ToolChain.getTriple())
-               ? "/lib64/ld-linux-mipsn8.so.1" : "/lib64/ld.so.1";
+    StringRef CPUName;
+    StringRef ABIName;
+    mips::getMipsCPUAndABI(Args, ToolChain.getTriple(), CPUName, ABIName);
+    bool IsNaN2008 = mips::isNaN2008(Args, ToolChain.getTriple());
+
+    StringRef LibDir = llvm::StringSwitch<llvm::StringRef>(ABIName)
+                           .Case("o32", "/lib")
+                           .Case("n32", "/lib32")
+                           .Case("n64", "/lib64")
+                           .Default("/lib");
+    StringRef LibName;
+    if (mips::isUCLibc(Args))
+      LibName = IsNaN2008 ? "ld-uClibc-mipsn8.so.0" : "ld-uClibc.so.0";
+    else
+      LibName = IsNaN2008 ? "ld-linux-mipsn8.so.1" : "ld.so.1";
+
+    return (LibDir + "/" + LibName).str();
   } else if (ToolChain.getArch() == llvm::Triple::ppc)
     return "/lib/ld.so.1";
   else if (ToolChain.getArch() == llvm::Triple::ppc64) {

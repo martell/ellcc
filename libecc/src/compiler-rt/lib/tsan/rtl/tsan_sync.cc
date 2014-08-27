@@ -19,18 +19,9 @@ namespace __tsan {
 
 void DDMutexInit(ThreadState *thr, uptr pc, SyncVar *s);
 
-SyncVar::SyncVar(uptr addr, u64 uid)
-  : mtx(MutexTypeSyncVar, StatMtxSyncVar)
-  , addr(addr)
-  , uid(uid)
-  , creation_stack_id()
-  , owner_tid(kInvalidTid)
-  , last_lock()
-  , recursion()
-  , is_rw()
-  , is_recursive()
-  , is_broken()
-  , is_linker_init() {
+SyncVar::SyncVar()
+    : mtx(MutexTypeSyncVar, StatMtxSyncVar) {
+  Reset(0);
 }
 
 SyncTab::Part::Part()
@@ -42,7 +33,7 @@ SyncTab::Part::Part()
 SyncTab::SyncTab() {
 }
 
-void SyncVar::Reset() {
+void SyncVar::Reset(ThreadState *thr) {
   uid = 0;
   creation_stack_id = 0;
   owner_tid = kInvalidTid;
@@ -53,9 +44,13 @@ void SyncVar::Reset() {
   is_broken = 0;
   is_linker_init = 0;
 
-SyncVar* SyncTab::GetOrCreateAndLock(ThreadState *thr, uptr pc,
-                                     uptr addr, bool write_lock) {
-  return GetAndLock(thr, pc, addr, write_lock, true);
+  if (thr == 0) {
+    CHECK_EQ(clock.size(), 0);
+    CHECK_EQ(read_clock.size(), 0);
+  } else {
+    clock.Reset(&thr->clock_cache);
+    read_clock.Reset(&thr->clock_cache);
+  }
 }
 
 SyncVar* SyncTab::GetIfExistsAndLock(uptr addr, bool write_lock) {
@@ -208,7 +203,7 @@ SyncVar* SyncTab::GetAndRemove(ThreadState *thr, uptr pc, uptr addr) {
         DCHECK(idx & kFlagSync);
         SyncVar *s = sync_alloc_.Map(idx & ~kFlagMask);
         u32 next = s->next;
-        s->Reset();
+        s->Reset(thr);
         sync_alloc_.Free(&thr->sync_cache, idx & ~kFlagMask);
         idx = next;
       } else {
@@ -261,7 +256,7 @@ SyncVar* MetaMap::GetAndLock(ThreadState *thr, uptr pc,
       SyncVar * s = sync_alloc_.Map(idx & ~kFlagMask);
       if (s->addr == addr) {
         if (myidx != 0) {
-          mys->Reset();
+          mys->Reset(thr);
           sync_alloc_.Free(&thr->sync_cache, myidx);
         }
         if (write_lock)

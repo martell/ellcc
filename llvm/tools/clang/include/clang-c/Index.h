@@ -13,8 +13,8 @@
 |*                                                                            *|
 \*===----------------------------------------------------------------------===*/
 
-#ifndef CLANG_C_INDEX_H
-#define CLANG_C_INDEX_H
+#ifndef LLVM_CLANG_C_INDEX_H
+#define LLVM_CLANG_C_INDEX_H
 
 #include <time.h>
 
@@ -2236,7 +2236,8 @@ enum CXCursorKind {
   CXCursor_CUDADeviceAttr                = 413,
   CXCursor_CUDAGlobalAttr                = 414,
   CXCursor_CUDAHostAttr                  = 415,
-  CXCursor_LastAttr                      = CXCursor_CUDAHostAttr,
+  CXCursor_CUDASharedAttr                = 416,
+  CXCursor_LastAttr                      = CXCursor_CUDASharedAttr,
 
   /* Preprocessing */
   CXCursor_PreprocessingDirective        = 500,

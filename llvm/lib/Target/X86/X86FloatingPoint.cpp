@@ -44,6 +44,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 #include <algorithm>
 using namespace llvm;
 
@@ -310,7 +311,7 @@ bool FPS::runOnMachineFunction(MachineFunction &MF) {
   if (!FPIsUsed) return false;
 
   Bundles = &getAnalysis<EdgeBundles>();
-  TII = MF.getTarget().getInstrInfo();
+  TII = MF.getSubtarget().getInstrInfo();
 
   // Prepare cross-MBB liveness.
   bundleCFG(MF);
@@ -946,7 +947,7 @@ void FPS::handleCall(MachineBasicBlock::iterator &I) {
 
   // FP registers used for function return must be consecutive starting at
   // FP0.
-  assert(STReturns == 0 || isMask_32(STReturns) && N <= 2);
+  assert(STReturns == 0 || (isMask_32(STReturns) && N <= 2));
 
   for (unsigned I = 0; I < N; ++I)
     pushReg(N - I - 1);
@@ -1296,11 +1297,11 @@ void FPS::handleCondMovFP(MachineBasicBlock::iterator &I) {
 /// floating point instructions.  This is primarily intended for use by pseudo
 /// instructions.
 ///
-void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
-  MachineInstr *MI = I;
+void FPS::handleSpecialFP(MachineBasicBlock::iterator &Inst) {
+  MachineInstr *MI = Inst;
 
   if (MI->isCall()) {
-    handleCall(I);
+    handleCall(Inst);
     return;
   }
 
@@ -1325,7 +1326,7 @@ void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
     } else {
       // For COPY we just duplicate the specified value to a new stack slot.
       // This could be made better, but would require substantial changes.
-      duplicateToTop(SrcFP, DstFP, I);
+      duplicateToTop(SrcFP, DstFP, Inst);
     }
     break;
   }
@@ -1334,7 +1335,7 @@ void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
     // All FP registers must be explicitly defined, so load a 0 instead.
     unsigned Reg = MI->getOperand(0).getReg() - X86::FP0;
     DEBUG(dbgs() << "Emitting LD_F0 for implicit FP" << Reg << '\n');
-    BuildMI(*MBB, I, MI->getDebugLoc(), TII->get(X86::LD_F0));
+    BuildMI(*MBB, Inst, MI->getDebugLoc(), TII->get(X86::LD_F0));
     pushReg(Reg);
     break;
   }
@@ -1476,7 +1477,7 @@ void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
     for (unsigned I = 0; I < NumSTUses; ++I)
       STUsesArray[I] = I;
 
-    shuffleStackTop(STUsesArray, NumSTUses, I);
+    shuffleStackTop(STUsesArray, NumSTUses, Inst);
     DEBUG({dbgs() << "Before asm: "; dumpStack();});
 
     // With the stack layout fixed, rewrite the FP registers.
@@ -1511,7 +1512,7 @@ void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
     while (FPKills) {
       unsigned FPReg = countTrailingZeros(FPKills);
       if (isLive(FPReg))
-        freeStackSlotAfter(I, FPReg);
+        freeStackSlotAfter(Inst, FPReg);
       FPKills &= ~(1U << FPReg);
     }
 
@@ -1527,12 +1528,12 @@ void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
       Op.getReg() >= X86::FP0 && Op.getReg() <= X86::FP6);
     unsigned FPReg = getFPReg(Op);
     if (Op.isKill())
-      moveToTop(FPReg, I);
+      moveToTop(FPReg, Inst);
     else
-      duplicateToTop(FPReg, FPReg, I);
+      duplicateToTop(FPReg, FPReg, Inst);
 
     // Emit the call. This will pop the operand.
-    BuildMI(*MBB, I, MI->getDebugLoc(), TII->get(X86::CALLpcrel32))
+    BuildMI(*MBB, Inst, MI->getDebugLoc(), TII->get(X86::CALLpcrel32))
       .addExternalSymbol("_ftol2")
       .addReg(X86::ST0, RegState::ImplicitKill)
       .addReg(X86::ECX, RegState::ImplicitDefine)
@@ -1633,20 +1634,20 @@ void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
     return;
   }
 
-  I = MBB->erase(I);  // Remove the pseudo instruction
+  Inst = MBB->erase(Inst);  // Remove the pseudo instruction
 
   // We want to leave I pointing to the previous instruction, but what if we
   // just erased the first instruction?
-  if (I == MBB->begin()) {
+  if (Inst == MBB->begin()) {
     DEBUG(dbgs() << "Inserting dummy KILL\n");
-    I = BuildMI(*MBB, I, DebugLoc(), TII->get(TargetOpcode::KILL));
+    Inst = BuildMI(*MBB, Inst, DebugLoc(), TII->get(TargetOpcode::KILL));
   } else
-    --I;
+    --Inst;
 }
 
 void FPS::setKillFlags(MachineBasicBlock &MBB) const {
-  const TargetRegisterInfo *TRI = MBB.getParent()->getTarget()
-    .getRegisterInfo();
+  const TargetRegisterInfo *TRI =
+      MBB.getParent()->getSubtarget().getRegisterInfo();
   LivePhysRegs LPR(TRI);
 
   LPR.addLiveOuts(&MBB);

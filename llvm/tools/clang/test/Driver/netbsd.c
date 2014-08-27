@@ -13,18 +13,15 @@
 // RUN: %clang -no-canonical-prefixes -target aarch64--netbsd7.0.0 \
 // RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=AARCH64-7 %s
-// RUN: %clang -no-canonical-prefixes -target arm64--netbsd \
-// RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
-// RUN: | FileCheck -check-prefix=ARM64 %s
-// RUN: %clang -no-canonical-prefixes -target arm64--netbsd7.0.0 \
-// RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
-// RUN: | FileCheck -check-prefix=ARM64-7 %s
 // RUN: %clang -no-canonical-prefixes -target arm--netbsd-eabi \
 // RUN: -no-integrated-as --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=ARM %s
 // RUN: %clang -no-canonical-prefixes -target arm--netbsd \
 // RUN: -no-integrated-as --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=ARM-APCS %s
+// RUN: %clang -no-canonical-prefixes -target arm--netbsd-eabihf \
+// RUN: -no-integrated-as --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
+// RUN: | FileCheck -check-prefix=ARM-HF %s
 // RUN: %clang -no-canonical-prefixes -target thumb--netbsd-eabi \
 // RUN: -no-integrated-as --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=THUMB %s
@@ -34,9 +31,6 @@
 // RUN: %clang -no-canonical-prefixes -target arm--netbsd6.0.0-eabi \
 // RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=ARM-6 %s
-// RUN: %clang -no-canonical-prefixes -target arm--netbsd-eabihf \
-// RUN: -no-integrated-as --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
-// RUN: | FileCheck -check-prefix=ARM-HF %s
 // RUN: %clang -no-canonical-prefixes -target sparc--netbsd \
 // RUN: -no-integrated-as --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=SPARC %s
@@ -44,8 +38,11 @@
 // RUN: -no-integrated-as --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=SPARC64 %s
 // RUN: %clang -no-canonical-prefixes -target powerpc--netbsd \
-// RUN: -no-integrated-as --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
+// RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=POWERPC %s
+// RUN: %clang -no-canonical-prefixes -target powerpc64--netbsd \
+// RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
+// RUN: | FileCheck -check-prefix=POWERPC64 %s
 
 // RUN: %clang -no-canonical-prefixes -target x86_64--netbsd -static \
 // RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
@@ -62,12 +59,6 @@
 // RUN: %clang -no-canonical-prefixes -target aarch64--netbsd7.0.0 -static \
 // RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=S-AARCH64-7 %s
-// RUN: %clang -no-canonical-prefixes -target arm64--netbsd -static \
-// RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
-// RUN: | FileCheck -check-prefix=S-ARM64 %s
-// RUN: %clang -no-canonical-prefixes -target arm64--netbsd7.0.0 -static \
-// RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
-// RUN: | FileCheck -check-prefix=S-ARM64-7 %s
 // RUN: %clang -no-canonical-prefixes -target arm--netbsd-eabi -static \
 // RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=S-ARM %s
@@ -86,6 +77,9 @@
 // RUN: %clang -no-canonical-prefixes -target powerpc--netbsd -static \
 // RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
 // RUN: | FileCheck -check-prefix=S-POWERPC %s
+// RUN: %clang -no-canonical-prefixes -target powerpc64--netbsd -static \
+// RUN: --sysroot=%S/Inputs/basic_netbsd_tree %s -### 2>&1 \
+// RUN: | FileCheck -check-prefix=S-POWERPC64 %s
 
 // X86_64: clang{{.*}}" "-cc1" "-triple" "x86_64--netbsd"
 // X86_64: ld{{.*}}" "--eh-frame-hdr" "-dynamic-linker" "/libexec/ld.elf_so"
@@ -109,29 +103,13 @@
 // AARCH64: ld{{.*}}" "--eh-frame-hdr" "-dynamic-linker" "/libexec/ld.elf_so"
 // AARCH64: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o" "{{.*}}/usr/lib{{/|\\\\}}crti.o"
 // AARCH64: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
-// AARCH64: "-lgcc" "--as-needed" "-lgcc_s" "--no-as-needed"
 // AARCH64: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
 
 // AARCH64-7: clang{{.*}}" "-cc1" "-triple" "aarch64--netbsd7.0.0"
 // AARCH64-7: ld{{.*}}" "--eh-frame-hdr" "-dynamic-linker" "/libexec/ld.elf_so"
 // AARCH64-7: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o" "{{.*}}/usr/lib{{/|\\\\}}crti.o"
 // AARCH64-7:  "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
-// AARCH64-7: "-lgcc" "--as-needed" "-lgcc_s" "--no-as-needed"
 // AARCH64-7: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
-
-// ARM64: clang{{.*}}" "-cc1" "-triple" "arm64--netbsd"
-// ARM64: ld{{.*}}" "--eh-frame-hdr" "-dynamic-linker" "/libexec/ld.elf_so"
-// ARM64: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o" "{{.*}}/usr/lib{{/|\\\\}}crti.o"
-// ARM64: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
-// ARM64: "-lgcc" "--as-needed" "-lgcc_s" "--no-as-needed"
-// ARM64: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
-
-// ARM64-7: clang{{.*}}" "-cc1" "-triple" "arm64--netbsd7.0.0"
-// ARM64-7: ld{{.*}}" "--eh-frame-hdr" "-dynamic-linker" "/libexec/ld.elf_so"
-// ARM64-7: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o" "{{.*}}/usr/lib{{/|\\\\}}crti.o"
-// ARM64-7:  "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
-// ARM64-7: "-lgcc" "--as-needed" "-lgcc_s" "--no-as-needed"
-// ARM64-7: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
 
 // ARM: clang{{.*}}" "-cc1" "-triple" "armv5e--netbsd-eabi"
 // ARM: as{{.*}}" "-mcpu=arm926ej-s" "-o"
@@ -150,6 +128,15 @@
 // ARM-APCS: "{{.*}}/usr/lib{{/|\\\\}}oabi{{/|\\\\}}crti.o"
 // ARM-APCS: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
 // ARM-APCS: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
+
+// ARM-HF: clang{{.*}}" "-cc1" "-triple" "armv5e--netbsd-eabihf"
+// ARM-HF: as{{.*}}" "-mcpu=arm926ej-s" "-o"
+// ARM-HF: ld{{.*}}" "--eh-frame-hdr" "-dynamic-linker" "/libexec/ld.elf_so"
+// ARM-HF: "-m" "armelf_nbsd_eabihf"
+// ARM-HF: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o"
+// ARM-HF: "{{.*}}/usr/lib{{/|\\\\}}eabihf{{/|\\\\}}crti.o"
+// ARM-HF: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
+// ARM-HF: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
 
 // THUMB: clang{{.*}}" "-cc1" "-triple" "armv5e--netbsd-eabi"
 // THUMB: as{{.*}}" "-mcpu=arm926ej-s" "-o"
@@ -176,9 +163,6 @@
 // ARM-6: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
 // ARM-6: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
 
-// ARM-HF: clang{{.*}}" "-cc1" "-triple" "armv5e--netbsd-eabihf"
-// ARM-HF: ld{{.*}}" "-m" "armelf_nbsd_eabihf"
-
 // SPARC: clang{{.*}}" "-cc1" "-triple" "sparc--netbsd"
 // SPARC: as{{.*}}" "-32" "-o"
 // SPARC: ld{{.*}}" "--eh-frame-hdr" "-dynamic-linker" "/libexec/ld.elf_so"
@@ -198,10 +182,19 @@
 
 // POWERPC: clang{{.*}}" "-cc1" "-triple" "powerpc--netbsd"
 // POWERPC: ld{{.*}}" "--eh-frame-hdr" "-dynamic-linker" "/libexec/ld.elf_so"
+// POWERPC: "-m" "elf32ppc_nbsd"
 // POWERPC: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o"
-// POWERPC: "{{.*}}/usr/lib{{/|\\\\}}crti.o"
+// POWERPC: "{{.*}}/usr/lib{{/|\\\\}}powerpc{{/|\\\\}}crti.o"
 // POWERPC: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
 // POWERPC: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
+
+// POWERPC64: clang{{.*}}" "-cc1" "-triple" "powerpc64--netbsd"
+// POWERPC64: ld{{.*}}" "--eh-frame-hdr" "-dynamic-linker" "/libexec/ld.elf_so"
+// POWERPC64: "-m" "elf64ppc"
+// POWERPC64: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o"
+// POWERPC64: "{{.*}}/usr/lib{{/|\\\\}}crti.o"
+// POWERPC64: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
+// POWERPC64: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
 
 // S-X86_64: clang{{.*}}" "-cc1" "-triple" "x86_64--netbsd"
 // S-X86_64: ld{{.*}}" "--eh-frame-hdr" "-Bstatic"
@@ -226,29 +219,13 @@
 // S-AARCH64: ld{{.*}}" "--eh-frame-hdr" "-Bstatic"
 // S-AARCH64: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o" "{{.*}}/usr/lib{{/|\\\\}}crti.o"
 // S-AARCH64: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
-// S-AARCH64: "-lgcc_eh" "-lc" "-lgcc"
 // S-AARCH64: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
 
 // S-AARCH64-7: clang{{.*}}" "-cc1" "-triple" "aarch64--netbsd7.0.0"
 // S-AARCH64-7: ld{{.*}}" "--eh-frame-hdr" "-Bstatic"
 // S-AARCH64-7: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o" "{{.*}}/usr/lib{{/|\\\\}}crti.o"
 // S-AARCH64-7: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
-// S-AARCH64-7: "-lgcc_eh" "-lc" "-lgcc"
 // S-AARCH64-7: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
-
-// S-ARM64: clang{{.*}}" "-cc1" "-triple" "arm64--netbsd"
-// S-ARM64: ld{{.*}}" "--eh-frame-hdr" "-Bstatic"
-// S-ARM64: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o" "{{.*}}/usr/lib{{/|\\\\}}crti.o"
-// S-ARM64: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
-// S-ARM64: "-lgcc_eh" "-lc" "-lgcc"
-// S-ARM64: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
-
-// S-ARM64-7: clang{{.*}}" "-cc1" "-triple" "arm64--netbsd7.0.0"
-// S-ARM64-7: ld{{.*}}" "--eh-frame-hdr" "-Bstatic"
-// S-ARM64-7: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o" "{{.*}}/usr/lib{{/|\\\\}}crti.o"
-// S-ARM64-7: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
-// S-ARM64-7: "-lgcc_eh" "-lc" "-lgcc"
-// S-ARM64-7: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
 
 // S-ARM: clang{{.*}}" "-cc1" "-triple" "armv5e--netbsd-eabi"
 // S-ARM: ld{{.*}}" "--eh-frame-hdr" "-Bstatic"
@@ -294,7 +271,16 @@
 
 // S-POWERPC: clang{{.*}}" "-cc1" "-triple" "powerpc--netbsd"
 // S-POWERPC: ld{{.*}}" "--eh-frame-hdr" "-Bstatic"
+// S-POWERPC: "-m" "elf32ppc_nbsd"
 // S-POWERPC: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o"
-// S-POWERPC: "{{.*}}/usr/lib{{/|\\\\}}crti.o"
+// S-POWERPC: "{{.*}}/usr/lib{{/|\\\\}}powerpc{{/|\\\\}}crti.o"
 // S-POWERPC: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
 // S-POWERPC: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"
+
+// S-POWERPC64: clang{{.*}}" "-cc1" "-triple" "powerpc64--netbsd"
+// S-POWERPC64: ld{{.*}}" "--eh-frame-hdr" "-Bstatic"
+// S-POWERPC64: "-m" "elf64ppc"
+// S-POWERPC64: "-o" "a.out" "{{.*}}/usr/lib{{/|\\\\}}crt0.o"
+// S-POWERPC64: "{{.*}}/usr/lib{{/|\\\\}}crti.o"
+// S-POWERPC64: "{{.*}}/usr/lib{{/|\\\\}}crtbegin.o" "{{.*}}.o" "-lc"
+// S-POWERPC64: "{{.*}}/usr/lib{{/|\\\\}}crtend.o" "{{.*}}/usr/lib{{/|\\\\}}crtn.o"

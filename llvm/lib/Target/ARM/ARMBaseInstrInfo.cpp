@@ -108,7 +108,7 @@ ARMBaseInstrInfo::CreateTargetHazardRecognizer(const TargetSubtargetInfo *STI,
                                                const ScheduleDAG *DAG) const {
   if (usePreRAHazardRecognizer()) {
     const InstrItineraryData *II =
-        &static_cast<const ARMSubtarget *>(STI)->getInstrItineraryData();
+        static_cast<const ARMSubtarget *>(STI)->getInstrItineraryData();
     return new ScoreboardHazardRecognizer(II, DAG, "pre-RA-sched");
   }
   return TargetInstrInfo::CreateTargetHazardRecognizer(STI, DAG);
@@ -518,11 +518,50 @@ bool ARMBaseInstrInfo::DefinesPredicate(MachineInstr *MI,
   return Found;
 }
 
+static bool isCPSRDefined(const MachineInstr *MI) {
+  for (const auto &MO : MI->operands())
+    if (MO.isReg() && MO.getReg() == ARM::CPSR && MO.isDef())
+      return true;
+  return false;
+}
+
+static bool isEligibleForITBlock(const MachineInstr *MI) {
+  switch (MI->getOpcode()) {
+  default: return true;
+  case ARM::tADC:   // ADC (register) T1
+  case ARM::tADDi3: // ADD (immediate) T1
+  case ARM::tADDi8: // ADD (immediate) T2
+  case ARM::tADDrr: // ADD (register) T1
+  case ARM::tAND:   // AND (register) T1
+  case ARM::tASRri: // ASR (immediate) T1
+  case ARM::tASRrr: // ASR (register) T1
+  case ARM::tBIC:   // BIC (register) T1
+  case ARM::tEOR:   // EOR (register) T1
+  case ARM::tLSLri: // LSL (immediate) T1
+  case ARM::tLSLrr: // LSL (register) T1
+  case ARM::tLSRri: // LSR (immediate) T1
+  case ARM::tLSRrr: // LSR (register) T1
+  case ARM::tMUL:   // MUL T1
+  case ARM::tMVN:   // MVN (register) T1
+  case ARM::tORR:   // ORR (register) T1
+  case ARM::tROR:   // ROR (register) T1
+  case ARM::tRSB:   // RSB (immediate) T1
+  case ARM::tSBC:   // SBC (register) T1
+  case ARM::tSUBi3: // SUB (immediate) T1
+  case ARM::tSUBi8: // SUB (immediate) T2
+  case ARM::tSUBrr: // SUB (register) T1
+    return !isCPSRDefined(MI);
+  }
+}
+
 /// isPredicable - Return true if the specified instruction can be predicated.
 /// By default, this returns true for every instruction with a
 /// PredicateOperand.
 bool ARMBaseInstrInfo::isPredicable(MachineInstr *MI) const {
   if (!MI->isPredicable())
+    return false;
+
+  if (!isEligibleForITBlock(MI))
     return false;
 
   ARMFunctionInfo *AFI =

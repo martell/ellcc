@@ -597,6 +597,31 @@ ExprResult Sema::BuildObjCBoxedExpr(SourceRange SR, Expr *ValueExpr) {
   return MaybeBindToTemporary(BoxedExpr);
 }
 
+static ObjCMethodDecl *FindAllocMethod(Sema &S, ObjCInterfaceDecl *NSClass) {
+  ObjCMethodDecl *Method = nullptr;
+  ASTContext &Context = S.Context;
+    
+  // Find +[NSClass alloc] method.
+  IdentifierInfo *II = &Context.Idents.get("alloc");
+  Selector AllocSel = Context.Selectors.getSelector(0, &II);
+  Method = NSClass->lookupClassMethod(AllocSel);
+  if (!Method && S.getLangOpts().DebuggerObjCLiteral) {
+    Method = ObjCMethodDecl::Create(Context,
+    SourceLocation(), SourceLocation(), AllocSel,
+    Context.getObjCIdType(),
+    nullptr /*TypeSourceInfo */,
+    Context.getTranslationUnitDecl(),
+    false /*Instance*/, false/*isVariadic*/,
+    /*isPropertyAccessor=*/false,
+    /*isImplicitlyDeclared=*/true, /*isDefined=*/false,
+    ObjCMethodDecl::Required,
+    false);
+    SmallVector<ParmVarDecl *, 1> Params;
+    Method->setMethodParams(Context, Params, None);
+  }
+  return Method;
+}
+
 /// Build an ObjC subscript pseudo-object expression, given that
 /// that's supported by the runtime.
 ExprResult Sema::BuildObjCSubscriptExpression(SourceLocation RB, Expr *BaseExpr,
@@ -630,6 +655,7 @@ ExprResult Sema::BuildObjCSubscriptExpression(SourceLocation RB, Expr *BaseExpr,
 }
 
 ExprResult Sema::BuildObjCArrayLiteral(SourceRange SR, MultiExprArg Elements) {
+  bool Arc = getLangOpts().ObjCAutoRefCount;
   // Look up the NSArray class, if we haven't done so already.
   if (!NSArrayDecl) {
     NamedDecl *IF = LookupSingleName(TUScope,
@@ -649,18 +675,29 @@ ExprResult Sema::BuildObjCArrayLiteral(SourceRange SR, MultiExprArg Elements) {
       return ExprError();
     }
   }
-  
+  if (Arc && !ArrayAllocObjectsMethod) {
+    // Find +[NSArray alloc] method.
+    ArrayAllocObjectsMethod = FindAllocMethod(*this, NSArrayDecl);
+    if (!ArrayAllocObjectsMethod) {
+      Diag(SR.getBegin(), diag::err_undeclared_alloc);
+      return ExprError();
+    }
+  }
   // Find the arrayWithObjects:count: method, if we haven't done so already.
   QualType IdT = Context.getObjCIdType();
   if (!ArrayWithObjectsMethod) {
     Selector
-      Sel = NSAPIObj->getNSArraySelector(NSAPI::NSArr_arrayWithObjectsCount);
-    ObjCMethodDecl *Method = NSArrayDecl->lookupClassMethod(Sel);
+      Sel = NSAPIObj->getNSArraySelector(
+        Arc? NSAPI::NSArr_initWithObjectsCount : NSAPI::NSArr_arrayWithObjectsCount);
+      ObjCMethodDecl *Method =
+        Arc? NSArrayDecl->lookupInstanceMethod(Sel)
+           : NSArrayDecl->lookupClassMethod(Sel);
     if (!Method && getLangOpts().DebuggerObjCLiteral) {
       TypeSourceInfo *ReturnTInfo = nullptr;
       Method = ObjCMethodDecl::Create(
           Context, SourceLocation(), SourceLocation(), Sel, IdT, ReturnTInfo,
-          Context.getTranslationUnitDecl(), false /*Instance*/,
+          Context.getTranslationUnitDecl(),
+          Arc /*Instance for Arc, Class for MRR*/,
           false /*isVariadic*/,
           /*isPropertyAccessor=*/false,
           /*isImplicitlyDeclared=*/true, /*isDefined=*/false,
@@ -740,12 +777,14 @@ ExprResult Sema::BuildObjCArrayLiteral(SourceRange SR, MultiExprArg Elements) {
 
   return MaybeBindToTemporary(
            ObjCArrayLiteral::Create(Context, Elements, Ty,
-                                    ArrayWithObjectsMethod, SR));
+                                    ArrayWithObjectsMethod,
+                                    ArrayAllocObjectsMethod, SR));
 }
 
 ExprResult Sema::BuildObjCDictionaryLiteral(SourceRange SR, 
                                             ObjCDictionaryElement *Elements,
                                             unsigned NumElements) {
+  bool Arc = getLangOpts().ObjCAutoRefCount;
   // Look up the NSDictionary class, if we haven't done so already.
   if (!NSDictionaryDecl) {
     NamedDecl *IF = LookupSingleName(TUScope,
@@ -765,20 +804,32 @@ ExprResult Sema::BuildObjCDictionaryLiteral(SourceRange SR,
     }
   }
   
-  // Find the dictionaryWithObjects:forKeys:count: method, if we haven't done
-  // so already.
+  if (Arc && !DictAllocObjectsMethod) {
+    // Find +[NSDictionary alloc] method.
+    DictAllocObjectsMethod = FindAllocMethod(*this, NSDictionaryDecl);
+    if (!DictAllocObjectsMethod) {
+      Diag(SR.getBegin(), diag::err_undeclared_alloc);
+      return ExprError();
+    }
+  }
+    
+  // Find the dictionaryWithObjects:forKeys:count: or initWithObjects:forKeys:count:
+  // (for arc) method, if we haven't done so already.
   QualType IdT = Context.getObjCIdType();
   if (!DictionaryWithObjectsMethod) {
-    Selector Sel = NSAPIObj->getNSDictionarySelector(
-                               NSAPI::NSDict_dictionaryWithObjectsForKeysCount);
-    ObjCMethodDecl *Method = NSDictionaryDecl->lookupClassMethod(Sel);
+    Selector Sel =
+      NSAPIObj->getNSDictionarySelector(Arc? NSAPI::NSDict_initWithObjectsForKeysCount
+                                           : NSAPI::NSDict_dictionaryWithObjectsForKeysCount);
+      ObjCMethodDecl *Method =
+        Arc ? NSDictionaryDecl->lookupInstanceMethod(Sel)
+            : NSDictionaryDecl->lookupClassMethod(Sel);
     if (!Method && getLangOpts().DebuggerObjCLiteral) {
       Method = ObjCMethodDecl::Create(Context,  
                            SourceLocation(), SourceLocation(), Sel,
                            IdT,
                            nullptr /*TypeSourceInfo */,
                            Context.getTranslationUnitDecl(),
-                           false /*Instance*/, false/*isVariadic*/,
+                           Arc /*Instance for Arc, Class for MRR*/, false/*isVariadic*/,
                            /*isPropertyAccessor=*/false,
                            /*isImplicitlyDeclared=*/true, /*isDefined=*/false,
                            ObjCMethodDecl::Required,
@@ -925,7 +976,7 @@ ExprResult Sema::BuildObjCDictionaryLiteral(SourceRange SR,
                                 Context.getObjCInterfaceType(NSDictionaryDecl));
   return MaybeBindToTemporary(ObjCDictionaryLiteral::Create(
       Context, makeArrayRef(Elements, NumElements), HasPackExpansions, Ty,
-      DictionaryWithObjectsMethod, SR));
+      DictionaryWithObjectsMethod, DictAllocObjectsMethod, SR));
 }
 
 ExprResult Sema::BuildObjCEncodeExpression(SourceLocation AtLoc,
@@ -1315,9 +1366,12 @@ bool Sema::CheckMessageArgumentTypes(QualType ReceiverType,
                                   : diag::warn_instance_method_not_found_with_typo;
         Selector MatchedSel = OMD->getSelector();
         SourceRange SelectorRange(SelectorLocs.front(), SelectorLocs.back());
-        Diag(SelLoc, DiagID)
-          << Sel<< isClassMessage << MatchedSel
-          << FixItHint::CreateReplacement(SelectorRange, MatchedSel.getAsString());
+        if (MatchedSel.isUnarySelector())
+          Diag(SelLoc, DiagID)
+            << Sel<< isClassMessage << MatchedSel
+            << FixItHint::CreateReplacement(SelectorRange, MatchedSel.getAsString());
+        else
+          Diag(SelLoc, DiagID) << Sel<< isClassMessage << MatchedSel;
       }
       else
         Diag(SelLoc, DiagID)
@@ -1648,6 +1702,18 @@ HandleExprPropertyRefExpr(const ObjCObjectPointerType *OPT,
     
   if (Setter && DiagnoseUseOfDecl(Setter, MemberLoc))
     return ExprError();
+
+  // Special warning if member name used in a property-dot for a setter accessor
+  // does not use a property with same name; e.g. obj.X = ... for a property with
+  // name 'x'.
+  if (Setter && Setter->isImplicit() && Setter->isPropertyAccessor()
+      && !IFace->FindPropertyDeclaration(Member)) {
+      if (const ObjCPropertyDecl *PDecl = Setter->findPropertyDecl())
+          Diag(MemberLoc,
+               diag::warn_property_access_suggest)
+          << MemberName << QualType(OPT, 0) << PDecl->getName()
+          << FixItHint::CreateReplacement(MemberLoc, PDecl->getName());
+  }
 
   if (Getter || Setter) {
     if (Super)
@@ -2352,6 +2418,10 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
         Method = LookupFactoryMethodInGlobalPool(Sel, 
                                                  SourceRange(LBracLoc,RBracLoc),
                                                  receiverIsId);
+      if (Method)
+        if (ObjCMethodDecl *BestMethod =
+              SelectBestMethod(Sel, ArgsIn, Method->isInstanceMethod()))
+          Method = BestMethod;
     } else if (ReceiverType->isObjCClassType() ||
                ReceiverType->isObjCQualifiedClassType()) {
       // Handle messages to Class.
@@ -2403,6 +2473,10 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
                       << Sel << SourceRange(LBracLoc, RBracLoc);
                   }
             }
+            if (Method)
+              if (ObjCMethodDecl *BestMethod =
+                  SelectBestMethod(Sel, ArgsIn, Method->isInstanceMethod()))
+                Method = BestMethod;
           }
         }
       }

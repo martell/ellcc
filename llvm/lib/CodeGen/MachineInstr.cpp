@@ -39,6 +39,7 @@
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -265,7 +266,8 @@ void MachineOperand::print(raw_ostream &OS, const TargetMachine *TM) const {
       if (const MachineBasicBlock *MBB = MI->getParent())
         if (const MachineFunction *MF = MBB->getParent())
           TM = &MF->getTarget();
-  const TargetRegisterInfo *TRI = TM ? TM->getRegisterInfo() : nullptr;
+  const TargetRegisterInfo *TRI =
+      TM ? TM->getSubtargetImpl()->getRegisterInfo() : nullptr;
 
   switch (getType()) {
   case MachineOperand::MO_Register:
@@ -893,6 +895,27 @@ void MachineInstr::eraseFromParent() {
   getParent()->erase(this);
 }
 
+void MachineInstr::eraseFromParentAndMarkDBGValuesForRemoval() {
+  assert(getParent() && "Not embedded in a basic block!");
+  MachineBasicBlock *MBB = getParent();
+  MachineFunction *MF = MBB->getParent();
+  assert(MF && "Not embedded in a function!");
+
+  MachineInstr *MI = (MachineInstr *)this;
+  MachineRegisterInfo &MRI = MF->getRegInfo();
+
+  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
+    const MachineOperand &MO = MI->getOperand(i);
+    if (!MO.isReg() || !MO.isDef())
+      continue;
+    unsigned Reg = MO.getReg();
+    if (!TargetRegisterInfo::isVirtualRegister(Reg))
+      continue;
+    MRI.markUsesInDebugValueAsUndef(Reg);
+  }
+  MI->eraseFromParent();
+}
+
 void MachineInstr::eraseFromBundle() {
   assert(getParent() && "Not embedded in a basic block!");
   getParent()->erase_instr(this);
@@ -1517,8 +1540,8 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM,
     OS << " = ";
 
   // Print the opcode name.
-  if (TM && TM->getInstrInfo())
-    OS << TM->getInstrInfo()->getName(getOpcode());
+  if (TM && TM->getSubtargetImpl()->getInstrInfo())
+    OS << TM->getSubtargetImpl()->getInstrInfo()->getName(getOpcode());
   else
     OS << "UNKNOWN";
 
@@ -1573,7 +1596,8 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM,
         const MachineRegisterInfo &MRI = MF->getRegInfo();
         if (MRI.use_empty(Reg)) {
           bool HasAliasLive = false;
-          for (MCRegAliasIterator AI(Reg, TM->getRegisterInfo(), true);
+          for (MCRegAliasIterator AI(
+                   Reg, TM->getSubtargetImpl()->getRegisterInfo(), true);
                AI.isValid(); ++AI) {
             unsigned AliasReg = *AI;
             if (!MRI.use_empty(AliasReg)) {
@@ -1606,7 +1630,8 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM,
       else
         MO.print(OS, TM);
     } else if (TM && (isInsertSubreg() || isRegSequence()) && MO.isImm()) {
-      OS << TM->getRegisterInfo()->getSubRegIndexName(MO.getImm());
+      OS << TM->getSubtargetImpl()->getRegisterInfo()->getSubRegIndexName(
+          MO.getImm());
     } else if (i == AsmDescOp && MO.isImm()) {
       // Pretty print the inline asm operand descriptor.
       OS << '$' << AsmOpCount++;
@@ -1624,7 +1649,11 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM,
       unsigned RCID = 0;
       if (InlineAsm::hasRegClassConstraint(Flag, RCID)) {
         if (TM)
-          OS << ':' << TM->getRegisterInfo()->getRegClass(RCID)->getName();
+          OS << ':'
+             << TM->getSubtargetImpl()
+                    ->getRegisterInfo()
+                    ->getRegClass(RCID)
+                    ->getName();
         else
           OS << ":RC" << RCID;
       }

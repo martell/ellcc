@@ -165,9 +165,6 @@ uptr __sanitizer_get_current_allocated_bytes() {
   u64 f = stats[AllocatorStatFreed];
   return m >= f ? m - f : 1;
 }
-uptr __msan_get_current_allocated_bytes() {
-  return __sanitizer_get_current_allocated_bytes();
-}
 
 uptr __sanitizer_get_heap_size() {
   u64 stats[AllocatorStatCount];
@@ -176,31 +173,13 @@ uptr __sanitizer_get_heap_size() {
   u64 f = stats[AllocatorStatUnmapped];
   return m >= f ? m - f : 1;
 }
-uptr __msan_get_heap_size() {
-  return __sanitizer_get_heap_size();
-}
 
 uptr __sanitizer_get_free_bytes() { return 1; }
-uptr __msan_get_free_bytes() {
-  return __sanitizer_get_free_bytes();
-}
 
 uptr __sanitizer_get_unmapped_bytes() { return 1; }
-uptr __msan_get_unmapped_bytes() {
-  return __sanitizer_get_unmapped_bytes();
-}
 
 uptr __sanitizer_get_estimated_allocated_size(uptr size) { return size; }
-uptr __msan_get_estimated_allocated_size(uptr size) {
-  return __sanitizer_get_estimated_allocated_size(size);
-}
 
 int __sanitizer_get_ownership(const void *p) { return AllocationSize(p) != 0; }
-int __msan_get_ownership(const void *p) {
-  return __sanitizer_get_ownership(p);
-}
 
 uptr __sanitizer_get_allocated_size(const void *p) { return AllocationSize(p); }
-uptr __msan_get_allocated_size(const void *p) {
-  return __sanitizer_get_allocated_size(p);
-}

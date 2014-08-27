@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TARGET_POWERPC_PPC32ISELLOWERING_H
-#define LLVM_TARGET_POWERPC_PPC32ISELLOWERING_H
+#ifndef LLVM_LIB_TARGET_POWERPC_PPCISELLOWERING_H
+#define LLVM_LIB_TARGET_POWERPC_PPCISELLOWERING_H
 
 #include "PPC.h"
 #include "PPCInstrInfo.h"
@@ -301,12 +301,12 @@ namespace llvm {
   namespace PPC {
     /// isVPKUHUMShuffleMask - Return true if this is the shuffle mask for a
     /// VPKUHUM instruction.
-    bool isVPKUHUMShuffleMask(ShuffleVectorSDNode *N, bool isUnary,
+    bool isVPKUHUMShuffleMask(ShuffleVectorSDNode *N, unsigned ShuffleKind,
                               SelectionDAG &DAG);
 
     /// isVPKUWUMShuffleMask - Return true if this is the shuffle mask for a
     /// VPKUWUM instruction.
-    bool isVPKUWUMShuffleMask(ShuffleVectorSDNode *N, bool isUnary,
+    bool isVPKUWUMShuffleMask(ShuffleVectorSDNode *N, unsigned ShuffleKind,
                               SelectionDAG &DAG);
 
     /// isVMRGLShuffleMask - Return true if this is a shuffle mask suitable for
@@ -319,9 +319,10 @@ namespace llvm {
     bool isVMRGHShuffleMask(ShuffleVectorSDNode *N, unsigned UnitSize,
                             unsigned ShuffleKind, SelectionDAG &DAG);
 
-    /// isVSLDOIShuffleMask - If this is a vsldoi shuffle mask, return the shift
-    /// amount, otherwise return -1.
-    int isVSLDOIShuffleMask(SDNode *N, bool isUnary, SelectionDAG &DAG);
+    /// isVSLDOIShuffleMask - If this is a vsldoi shuffle mask, return the
+    /// shift amount, otherwise return -1.
+    int isVSLDOIShuffleMask(SDNode *N, unsigned ShuffleKind,
+                            SelectionDAG &DAG);
 
     /// isSplatShuffleMask - Return true if the specified VECTOR_SHUFFLE operand
     /// specifies a splat of a single element that is suitable for input to
@@ -475,6 +476,10 @@ namespace llvm {
                                            Type *Ty) const override;
 
     bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const override;
+
+    bool getTgtMemIntrinsic(IntrinsicInfo &Info,
+                            const CallInst &I,
+                            unsigned Intrinsic) const override;
 
     /// getOptimalMemOpType - Returns the target specific optimal type for load
     /// and store operations as a result of memset, memcpy, and memmove

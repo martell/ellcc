@@ -25,7 +25,7 @@
 #include "clang/Lex/Pragma.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/SaveAndRestore.h"
 using namespace clang;
 
@@ -88,13 +88,6 @@ VisibilityMacroDirective *
 Preprocessor::AllocateVisibilityMacroDirective(SourceLocation Loc,
                                                bool isPublic) {
   return new (BP) VisibilityMacroDirective(Loc, isPublic);
-}
-
-/// \brief Clean up a MacroInfo that was allocated but not used due to an
-/// error in the macro definition.
-void Preprocessor::ReleaseMacroInfo(MacroInfo *MI) {
-  // Don't try to reuse the storage; this only happens on error paths.
-  MI->~MacroInfo();
 }
 
 /// \brief Read and discard all tokens remaining on the current line until
@@ -548,7 +541,8 @@ const FileEntry *Preprocessor::LookupFile(
     bool SkipCache) {
   // If the header lookup mechanism may be relative to the current inclusion
   // stack, record the parent #includes.
-  SmallVector<const FileEntry *, 16> Includers;
+  SmallVector<std::pair<const FileEntry *, const DirectoryEntry *>, 16>
+      Includers;
   if (!FromDir) {
     FileID FID = getCurrentFileLexer()->getFileID();
     const FileEntry *FileEnt = SourceMgr.getFileEntryForID(FID);
@@ -557,13 +551,15 @@ const FileEntry *Preprocessor::LookupFile(
     // predefines buffer.  Any other file is not lexed with a normal lexer, so
     // it won't be scanned for preprocessor directives.   If we have the
     // predefines buffer, resolve #include references (which come from the
-    // -include command line argument) as if they came from the main file, this
-    // affects file lookup etc.
-    if (!FileEnt)
+    // -include command line argument) from the current working directory
+    // instead of relative to the main file.
+    if (!FileEnt) {
       FileEnt = SourceMgr.getFileEntryForID(SourceMgr.getMainFileID());
-
-    if (FileEnt)
-      Includers.push_back(FileEnt);
+      if (FileEnt)
+        Includers.push_back(std::make_pair(FileEnt, FileMgr.getDirectory(".")));
+    } else {
+      Includers.push_back(std::make_pair(FileEnt, FileEnt->getDir()));
+    }
 
     // MSVC searches the current include stack from top to bottom for
     // headers included by quoted include directives.
@@ -574,7 +570,7 @@ const FileEntry *Preprocessor::LookupFile(
         if (IsFileLexer(ISEntry))
           if ((FileEnt = SourceMgr.getFileEntryForID(
                    ISEntry.ThePPLexer->getFileID())))
-            Includers.push_back(FileEnt);
+            Includers.push_back(std::make_pair(FileEnt, FileEnt->getDir()));
       }
     }
   }
@@ -1448,7 +1444,9 @@ void Preprocessor::HandleIncludeDirective(SourceLocation HashLoc,
   SmallString<128> NormalizedPath;
   if (LangOpts.MSVCCompat) {
     NormalizedPath = Filename.str();
-    llvm::sys::fs::normalize_separators(NormalizedPath);
+#ifndef LLVM_ON_WIN32
+    llvm::sys::path::native(NormalizedPath);
+#endif
   }
   const FileEntry *File = LookupFile(
       FilenameLoc, LangOpts.MSVCCompat ? NormalizedPath.c_str() : Filename,
@@ -1902,8 +1900,6 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
     // This is a function-like macro definition.  Read the argument list.
     MI->setIsFunctionLike();
     if (ReadMacroDefinitionArgList(MI, LastTok)) {
-      // Forget about MI.
-      ReleaseMacroInfo(MI);
       // Throw away the rest of the line.
       if (CurPPLexer->ParsingPreprocessorDirective)
         DiscardUntilEndOfDirective();
@@ -2028,7 +2024,6 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
           continue;
         } else {
           Diag(Tok, diag::err_pp_stringize_not_parameter);
-          ReleaseMacroInfo(MI);
 
           // Disable __VA_ARGS__ again.
           Ident__VA_ARGS__->setIsPoisoned(true);
@@ -2056,12 +2051,10 @@ void Preprocessor::HandleDefineDirective(Token &DefineTok,
   if (NumTokens != 0) {
     if (MI->getReplacementToken(0).is(tok::hashhash)) {
       Diag(MI->getReplacementToken(0), diag::err_paste_at_start);
-      ReleaseMacroInfo(MI);
       return;
     }
     if (MI->getReplacementToken(NumTokens-1).is(tok::hashhash)) {
       Diag(MI->getReplacementToken(NumTokens-1), diag::err_paste_at_end);
-      ReleaseMacroInfo(MI);
       return;
     }
   }

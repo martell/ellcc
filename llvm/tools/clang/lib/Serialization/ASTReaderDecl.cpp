@@ -2391,8 +2391,14 @@ static DeclContext *getPrimaryContextForMerging(DeclContext *DC) {
   if (NamespaceDecl *ND = dyn_cast<NamespaceDecl>(DC))
     return ND->getOriginalNamespace();
 
+  // There is one tricky case here: if DC is a class with no definition, then
+  // we're merging a declaration whose definition is added by an update record,
+  // but we've not yet loaded that update record. In this case, we use the
+  // canonical declaration for merging until we get a real definition.
+  // FIXME: When we add a definition, we may need to move the partial lookup
+  // information from the canonical declaration onto the chosen definition.
   if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(DC))
-    return RD->getDefinition();
+    return RD->getPrimaryContext();
 
   if (EnumDecl *ED = dyn_cast<EnumDecl>(DC))
     return ED->getASTContext().getLangOpts().CPlusPlus? ED->getDefinition()
@@ -2619,11 +2625,11 @@ ASTReader::combineStoredMergedDecls(Decl *Canon, GlobalDeclID CanonID) {
   // Append the stored merged declarations to the merged declarations set.
   MergedDeclsMap::iterator Pos = MergedDecls.find(Canon);
   if (Pos == MergedDecls.end())
-    Pos = MergedDecls.insert(std::make_pair(Canon, 
+    Pos = MergedDecls.insert(std::make_pair(Canon,
                                             SmallVector<DeclID, 2>())).first;
   Pos->second.append(StoredPos->second.begin(), StoredPos->second.end());
   StoredMergedDecls.erase(StoredPos);
-  
+
   // Sort and uniquify the set of merged declarations.
   llvm::array_pod_sort(Pos->second.begin(), Pos->second.end());
   Pos->second.erase(std::unique(Pos->second.begin(), Pos->second.end()),
@@ -3208,9 +3214,11 @@ public:
   DeclT *operator*() { return Current; }
 
   MergedRedeclIterator &operator++() {
-    if (Current->isFirstDecl())
+    if (Current->isFirstDecl()) {
       Canonical = Current;
-    Current = Current->getPreviousDecl();
+      Current = Current->getMostRecentDecl();
+    } else
+      Current = Current->getPreviousDecl();
 
     // If we started in the merged portion, we'll reach our start position
     // eventually. Otherwise, we'll never reach it, but the second declaration
@@ -3234,11 +3242,34 @@ llvm::iterator_range<MergedRedeclIterator<DeclT>> merged_redecls(DeclT *D) {
       MergedRedeclIterator<DeclT>());
 }
 
+template<typename DeclT, typename Fn>
+static void forAllLaterRedecls(DeclT *D, Fn F) {
+  F(D);
+
+  // Check whether we've already merged D into its redeclaration chain.
+  // MostRecent may or may not be nullptr if D has not been merged. If
+  // not, walk the merged redecl chain and see if it's there.
+  auto *MostRecent = D->getMostRecentDecl();
+  bool Found = false;
+  for (auto *Redecl = MostRecent; Redecl && !Found;
+       Redecl = Redecl->getPreviousDecl())
+    Found = (Redecl == D);
+
+  // If this declaration is merged, apply the functor to all later decls.
+  if (Found) {
+    for (auto *Redecl = MostRecent; Redecl != D;
+         Redecl = Redecl->getPreviousDecl())
+      F(Redecl);
+  }
+}
+
 void ASTDeclReader::UpdateDecl(Decl *D, ModuleFile &ModuleFile,
                                const RecordData &Record) {
   while (Idx < Record.size()) {
     switch ((DeclUpdateKind)Record[Idx++]) {
     case UPD_CXX_ADDED_IMPLICIT_MEMBER: {
+      // FIXME: If we also have an update record for instantiating the
+      // definition of D, we need that to happen before we get here.
       Decl *MD = Reader.ReadDecl(ModuleFile, Record, Idx);
       assert(MD && "couldn't read decl from update record");
       // FIXME: We should call addHiddenDecl instead, to add the member
@@ -3273,7 +3304,7 @@ void ASTDeclReader::UpdateDecl(Decl *D, ModuleFile &ModuleFile,
           Reader.ReadSourceLocation(ModuleFile, Record, Idx));
       break;
 
-    case UPD_CXX_INSTANTIATED_FUNCTION_DEFINITION: {
+    case UPD_CXX_ADDED_FUNCTION_DEFINITION: {
       FunctionDecl *FD = cast<FunctionDecl>(D);
       if (Reader.PendingBodies[FD]) {
         // FIXME: Maybe check for ODR violations.
@@ -3285,17 +3316,18 @@ void ASTDeclReader::UpdateDecl(Decl *D, ModuleFile &ModuleFile,
         // Maintain AST consistency: any later redeclarations of this function
         // are inline if this one is. (We might have merged another declaration
         // into this one.)
-        for (auto *D = FD->getMostRecentDecl(); /**/;
-             D = D->getPreviousDecl()) {
-          D->setImplicitlyInline();
-          if (D == FD)
-            break;
-        }
+        forAllLaterRedecls(FD, [](FunctionDecl *FD) {
+          FD->setImplicitlyInline();
+        });
       }
       FD->setInnerLocStart(Reader.ReadSourceLocation(ModuleFile, Record, Idx));
       if (auto *CD = dyn_cast<CXXConstructorDecl>(FD))
         std::tie(CD->CtorInitializers, CD->NumCtorInitializers) =
             Reader.ReadCXXCtorInitializers(ModuleFile, Record, Idx);
+      if (auto *DD = dyn_cast<CXXDestructorDecl>(FD))
+        // FIXME: Check consistency.
+        DD->setOperatorDelete(Reader.ReadDeclAs<FunctionDecl>(ModuleFile,
+                                                              Record, Idx));
       // Store the offset of the body so we can lazily load it later.
       Reader.PendingBodies[FD] = GetCurrentCursorOffset();
       HasPendingBody = true;
@@ -3335,7 +3367,12 @@ void ASTDeclReader::UpdateDecl(Decl *D, ModuleFile &ModuleFile,
           Reader.ReadTemplateArgumentList(TemplArgs, F, Record, Idx);
           auto *TemplArgList = TemplateArgumentList::CreateCopy(
               Reader.getContext(), TemplArgs.data(), TemplArgs.size());
-          Spec->setInstantiationOf(PartialSpec, TemplArgList);
+
+          // FIXME: If we already have a partial specialization set,
+          // check that it matches.
+          if (!Spec->getSpecializedTemplateOrPartial()
+                   .is<ClassTemplatePartialSpecializationDecl *>())
+            Spec->setInstantiationOf(PartialSpec, TemplArgList);
         }
       }
 
@@ -3375,9 +3412,13 @@ void ASTDeclReader::UpdateDecl(Decl *D, ModuleFile &ModuleFile,
     }
 
     case UPD_CXX_DEDUCED_RETURN_TYPE: {
-      FunctionDecl *FD = cast<FunctionDecl>(D);
-      Reader.Context.adjustDeducedFunctionResultType(
-          FD, Reader.readType(ModuleFile, Record, Idx));
+      // FIXME: Also do this when merging redecls.
+      QualType DeducedResultType = Reader.readType(ModuleFile, Record, Idx);
+      for (auto *Redecl : merged_redecls(D)) {
+        // FIXME: If the return type is already deduced, check that it matches.
+        FunctionDecl *FD = cast<FunctionDecl>(Redecl);
+        Reader.Context.adjustDeducedFunctionResultType(FD, DeducedResultType);
+      }
       break;
     }
 
@@ -3385,17 +3426,8 @@ void ASTDeclReader::UpdateDecl(Decl *D, ModuleFile &ModuleFile,
       // FIXME: This doesn't send the right notifications if there are
       // ASTMutationListeners other than an ASTWriter.
 
-      // FIXME: We can't both pull in declarations (and thus create new pending
-      // redeclaration chains) *and* walk redeclaration chains in this function.
-      // We should defer the updates that require walking redecl chains.
-
       // Maintain AST consistency: any later redeclarations are used too.
-      for (auto *Redecl = D->getMostRecentDecl(); /**/;
-           Redecl = Redecl->getPreviousDecl()) {
-        Redecl->Used = true;
-        if (Redecl == D)
-          break;
-      }
+      forAllLaterRedecls(D, [](Decl *D) { D->Used = true; });
       break;
     }
 

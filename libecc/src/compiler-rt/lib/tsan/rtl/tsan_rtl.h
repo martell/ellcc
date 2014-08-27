@@ -453,6 +453,10 @@ struct ThreadState {
   bool in_signal_handler;
   SignalContext *signal_ctx;
 
+  DenseSlabAllocCache block_cache;
+  DenseSlabAllocCache sync_cache;
+  DenseSlabAllocCache clock_cache;
+
 #ifndef TSAN_GO
   u32 last_sleep_stack_id;
   ThreadClock last_sleep_clock;
@@ -495,6 +499,7 @@ class ThreadContext : public ThreadContextBase {
   void OnStarted(void *arg);
   void OnCreated(void *arg);
   void OnReset();
+  void OnDetached(void *arg);
 };
 
 struct RacyStacks {
@@ -542,6 +547,8 @@ struct Context {
   // Number of fired suppressions may be large enough.
   InternalMmapVector<FiredSuppression> fired_suppressions;
   DDetector *dd;
+
+  ClockAlloc clock_alloc;
 
   Flags flags;
 

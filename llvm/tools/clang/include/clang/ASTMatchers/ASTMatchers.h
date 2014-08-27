@@ -42,8 +42,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_AST_MATCHERS_AST_MATCHERS_H
-#define LLVM_CLANG_AST_MATCHERS_AST_MATCHERS_H
+#ifndef LLVM_CLANG_ASTMATCHERS_ASTMATCHERS_H
+#define LLVM_CLANG_ASTMATCHERS_ASTMATCHERS_H
 
 #include "clang/AST/DeclFriend.h"
 #include "clang/AST/DeclTemplate.h"
@@ -1844,7 +1844,7 @@ AST_MATCHER_P(CallExpr, callee, internal::Matcher<Stmt>,
 /// Example matches y.x() (matcher = callExpr(callee(methodDecl(hasName("x")))))
 /// \code
 ///   class Y { public: void x(); };
-///   void z() { Y y; y.x();
+///   void z() { Y y; y.x(); }
 /// \endcode
 AST_MATCHER_P_OVERLOAD(CallExpr, callee, internal::Matcher<Decl>, InnerMatcher,
                        1) {
@@ -1952,6 +1952,7 @@ AST_MATCHER_P_OVERLOAD(QualType, pointsTo, internal::Matcher<Decl>,
 ///     void a(X b) {
 ///       X &x = b;
 ///       const X &y = b;
+///     }
 ///   };
 /// \endcode
 AST_MATCHER_P(QualType, references, internal::Matcher<QualType>,
@@ -3094,6 +3095,7 @@ AST_TYPE_MATCHER(IncompleteArrayType, incompleteArrayType);
 ///     int a[] = { 2, 3 }
 ///     int b[42];
 ///     int c[a[0]];
+///   }
 /// \endcode
 /// variableArrayType()
 ///   matches "int c[a[0]]"
@@ -3643,7 +3645,49 @@ AST_MATCHER_P(CaseStmt, hasCaseConstant, internal::Matcher<Expr>,
   return InnerMatcher.matches(*Node.getLHS(), Finder, Builder);
 }
 
+/// \brief Matches CUDA kernel call expression.
+///
+/// Example matches,
+/// \code
+///   kernel<<<i,j>>>();
+/// \endcode
+const internal::VariadicDynCastAllOfMatcher<Stmt, CUDAKernelCallExpr>
+    CUDAKernelCallExpr;
+
+/// \brief Matches declaration that has CUDA device attribute.
+///
+/// Given
+/// \code
+///   __attribute__((device)) void f() { ... }
+/// \endcode
+/// matches the function declaration of f.
+AST_MATCHER(Decl, hasCudaDeviceAttr) {
+  return Node.hasAttr<clang::CUDADeviceAttr>();
+}
+
+/// \brief Matches declaration that has CUDA host attribute.
+///
+/// Given
+/// \code
+///   __attribute__((host)) void f() { ... }
+/// \endcode
+/// matches the function declaration of f.
+AST_MATCHER(Decl, hasCudaHostAttr) {
+  return Node.hasAttr<clang::CUDAHostAttr>();
+}
+
+/// \brief  Matches declaration that has CUDA global attribute.
+///
+/// Given
+/// \code
+///   __attribute__((global)) void f() { ... }
+/// \endcode
+/// matches the function declaration of f.
+AST_MATCHER(Decl, hasCudaGlobalAttr) {
+  return Node.hasAttr<clang::CUDAGlobalAttr>();
+}
+
 } // end namespace ast_matchers
 } // end namespace clang
 
-#endif // LLVM_CLANG_AST_MATCHERS_AST_MATCHERS_H
+#endif

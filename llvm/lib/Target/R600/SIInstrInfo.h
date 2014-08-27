@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 
-#ifndef SIINSTRINFO_H
-#define SIINSTRINFO_H
+#ifndef LLVM_LIB_TARGET_R600_SIINSTRINFO_H
+#define LLVM_LIB_TARGET_R600_SIINSTRINFO_H
 
 #include "AMDGPUInstrInfo.h"
 #include "SIRegisterInfo.h"
@@ -61,6 +61,10 @@ public:
   const SIRegisterInfo &getRegisterInfo() const override {
     return RI;
   }
+
+  bool areLoadsFromSameBasePtr(SDNode *Load1, SDNode *Load2,
+                               int64_t &Offset1,
+                               int64_t &Offset2) const override;
 
   bool getLdStBaseRegImmOfs(MachineInstr *LdSt,
                             unsigned &BaseReg, unsigned &Offset,
@@ -205,6 +209,7 @@ namespace AMDGPU {
   int getCommuteRev(uint16_t Opcode);
   int getCommuteOrig(uint16_t Opcode);
   int getMCOpcode(uint16_t Opcode, unsigned Gen);
+  int getAddr64Inst(uint16_t Opcode);
 
   const uint64_t RSRC_DATA_FORMAT = 0xf00000000000LL;
   const uint64_t RSRC_TID_ENABLE = 1LL << 55;
@@ -229,4 +234,4 @@ namespace SISrcMods {
   };
 }
 
-#endif //SIINSTRINFO_H
+#endif

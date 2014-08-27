@@ -28,6 +28,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/MutexGuard.h"
 #include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 
 using namespace llvm;
 
@@ -59,7 +60,7 @@ MCJIT::MCJIT(Module *m, TargetMachine *tm, RTDyldMemoryManager *MM)
     ObjCache(nullptr) {
 
   OwnedModules.addModule(m);
-  setDataLayout(TM->getDataLayout());
+  setDataLayout(TM->getSubtargetImpl()->getDataLayout());
 }
 
 MCJIT::~MCJIT() {
@@ -133,7 +134,7 @@ ObjectBufferStream* MCJIT::emitObject(Module *M) {
 
   PassManager PM;
 
-  M->setDataLayout(TM->getDataLayout());
+  M->setDataLayout(TM->getSubtargetImpl()->getDataLayout());
   PM.add(new DataLayoutPass(M));
 
   // The RuntimeDyld will take ownership of this shortly
@@ -251,7 +252,7 @@ void *MCJIT::getPointerToBasicBlock(BasicBlock *BB) {
 }
 
 uint64_t MCJIT::getExistingSymbolAddress(const std::string &Name) {
-  Mangler Mang(TM->getDataLayout());
+  Mangler Mang(TM->getSubtargetImpl()->getDataLayout());
   SmallString<128> FullName;
   Mang.getNameWithPrefix(FullName, Name);
   return Dyld.getSymbolLoadAddress(FullName);
@@ -315,13 +316,19 @@ uint64_t MCJIT::getSymbolAddress(const std::string &Name,
 
   // If it hasn't already been generated, see if it's in one of our modules.
   Module *M = findModuleForSymbol(Name, CheckFunctionsOnly);
-  if (!M)
-    return 0;
+  if (M) {
+    generateCodeForModule(M);
 
-  generateCodeForModule(M);
+    // Check the RuntimeDyld table again, it should be there now.
+    return getExistingSymbolAddress(Name);
+  }
 
-  // Check the RuntimeDyld table again, it should be there now.
-  return getExistingSymbolAddress(Name);
+  // If a LazyFunctionCreator is installed, use it to get/create the function.
+  // FIXME: Should we instead have a LazySymbolCreator callback?
+  if (LazyFunctionCreator)
+    Addr = (uint64_t)LazyFunctionCreator(Name);
+
+  return Addr;
 }
 
 uint64_t MCJIT::getGlobalValueAddress(const std::string &Name) {
@@ -365,7 +372,7 @@ void *MCJIT::getPointerToFunction(Function *F) {
   //
   // This is the accessor for the target address, so make sure to check the
   // load address of the symbol, not the local address.
-  Mangler Mang(TM->getDataLayout());
+  Mangler Mang(TM->getSubtargetImpl()->getDataLayout());
   SmallString<128> Name;
   TM->getNameWithPrefix(Name, F, Mang);
   return (void*)Dyld.getSymbolLoadAddress(Name);
@@ -577,5 +584,7 @@ uint64_t LinkingMemoryManager::getSymbolAddress(const std::string &Name) {
     Result = ParentEngine->getSymbolAddress(Name.substr(1), false);
   if (Result)
     return Result;
+  if (ParentEngine->isSymbolSearchingDisabled())
+    return 0;
   return ClientMM->getSymbolAddress(Name);
 }

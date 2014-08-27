@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef AMDGPU_TARGET_MACHINE_H
-#define AMDGPU_TARGET_MACHINE_H
+#ifndef LLVM_LIB_TARGET_R600_AMDGPUTARGETMACHINE_H
+#define LLVM_LIB_TARGET_R600_AMDGPUTARGETMACHINE_H
 
 #include "AMDGPUFrameLowering.h"
 #include "AMDGPUInstrInfo.h"
@@ -25,38 +25,18 @@
 namespace llvm {
 
 class AMDGPUTargetMachine : public LLVMTargetMachine {
-
   AMDGPUSubtarget Subtarget;
+  AMDGPUIntrinsicInfo IntrinsicInfo;
 
 public:
   AMDGPUTargetMachine(const Target &T, StringRef TT, StringRef FS,
                       StringRef CPU, TargetOptions Options, Reloc::Model RM,
                       CodeModel::Model CM, CodeGenOpt::Level OL);
   ~AMDGPUTargetMachine();
-  const AMDGPUFrameLowering *getFrameLowering() const override {
-    return getSubtargetImpl()->getFrameLowering();
-  }
-  const AMDGPUIntrinsicInfo *getIntrinsicInfo() const override {
-    return getSubtargetImpl()->getIntrinsicInfo();
-  }
-  const AMDGPUInstrInfo *getInstrInfo() const override {
-    return getSubtargetImpl()->getInstrInfo();
-  }
   const AMDGPUSubtarget *getSubtargetImpl() const override {
     return &Subtarget;
   }
-  const AMDGPURegisterInfo *getRegisterInfo() const override {
-    return getSubtargetImpl()->getRegisterInfo();
-  }
-  AMDGPUTargetLowering *getTargetLowering() const override {
-    return getSubtargetImpl()->getTargetLowering();
-  }
-  const InstrItineraryData *getInstrItineraryData() const override {
-    return &getSubtargetImpl()->getInstrItineraryData();
-  }
-  const DataLayout *getDataLayout() const override {
-    return getSubtargetImpl()->getDataLayout();
-  }
+  const AMDGPUIntrinsicInfo *getIntrinsicInfo() const { return &IntrinsicInfo; }
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
 
   /// \brief Register R600 analysis passes with a pass manager.
@@ -65,4 +45,4 @@ public:
 
 } // End namespace llvm
 
-#endif // AMDGPU_TARGET_MACHINE_H
+#endif

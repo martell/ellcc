@@ -173,11 +173,6 @@ static void ParseFlagsFromString(Flags *f, const char *str) {
       "If set, prints ASan exit stats even after program terminates "
       "successfully.");
 
-  ParseFlag(str, &f->disable_core, "disable_core",
-      "Disable core dumping. By default, disable_core=1 on 64-bit to avoid "
-      "dumping a 16T+ core file. "
-      "Ignored on OSes that don't dump core by default.");
-
   ParseFlag(str, &f->allow_reexec, "allow_reexec",
       "Allow the tool to re-exec the program. This may interfere badly with "
       "the debugger.");
@@ -190,6 +185,9 @@ static void ParseFlagsFromString(Flags *f, const char *str) {
   ParseFlag(str, &f->poison_heap, "poison_heap",
       "Poison (or not) the heap memory on [de]allocation. Zero value is useful "
       "for benchmarking the allocator or instrumentator.");
+
+  ParseFlag(str, &f->poison_array_cookie, "poison_array_cookie",
+      "Poison (or not) the array cookie after operator new[].");
 
   ParseFlag(str, &f->poison_partial, "poison_partial",
       "If true, poison partially addressable 8-byte aligned words "
@@ -267,10 +265,10 @@ void InitializeFlags(Flags *f, const char *env) {
   f->print_stats = false;
   f->print_legend = true;
   f->atexit = false;
-  f->disable_core = (SANITIZER_WORDSIZE == 64);
   f->allow_reexec = true;
   f->print_full_thread_history = true;
   f->poison_heap = true;
+  f->poison_array_cookie = true;
   f->poison_partial = true;
   // Turn off alloc/dealloc mismatch checker on Mac and Windows for now.
   // https://code.google.com/p/address-sanitizer/issues/detail?id=131
@@ -463,13 +461,6 @@ static NOINLINE void force_interface_symbols() {
     case 15: __asan_set_error_report_callback(0); break;
     case 16: __asan_handle_no_return(); break;
     case 17: __asan_address_is_poisoned(0); break;
-    case 18: __asan_get_allocated_size(0); break;
-    case 19: __asan_get_current_allocated_bytes(); break;
-    case 20: __asan_get_estimated_allocated_size(0); break;
-    case 21: __asan_get_free_bytes(); break;
-    case 22: __asan_get_heap_size(); break;
-    case 23: __asan_get_ownership(0); break;
-    case 24: __asan_get_unmapped_bytes(); break;
     case 25: __asan_poison_memory_region(0, 0); break;
     case 26: __asan_unpoison_memory_region(0, 0); break;
     case 27: __asan_set_error_exit_code(0); break;
@@ -619,9 +610,7 @@ static void AsanInitInternal() {
   if (common_flags()->verbosity)
     PrintAddressSpaceLayout();
 
-  if (flags()->disable_core) {
-    DisableCoreDumper();
-  }
+  DisableCoreDumperIfNecessary();
 
   if (full_shadow_is_available) {
     // mmap the low shadow plus at least one page at the left.

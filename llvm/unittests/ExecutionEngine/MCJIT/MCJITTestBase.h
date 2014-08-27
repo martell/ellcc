@@ -14,8 +14,8 @@
 //===----------------------------------------------------------------------===//
 
 
-#ifndef MCJIT_TEST_BASE_H
-#define MCJIT_TEST_BASE_H
+#ifndef LLVM_UNITTESTS_EXECUTIONENGINE_MCJIT_MCJITTESTBASE_H
+#define LLVM_UNITTESTS_EXECUTIONENGINE_MCJIT_MCJITTESTBASE_H
 
 #include "MCJITTestAPICommon.h"
 #include "llvm/Config/config.h"
@@ -302,7 +302,6 @@ protected:
     // The operating systems below are known to be incompatible with MCJIT as
     // they are copied from the test/ExecutionEngine/MCJIT/lit.local.cfg and
     // should be kept in sync.
-    UnsupportedOSs.push_back(Triple::Cygwin);
     UnsupportedOSs.push_back(Triple::Darwin);
 
     UnsupportedEnvironments.push_back(Triple::Cygnus);
@@ -345,4 +344,4 @@ protected:
 
 } // namespace llvm
 
-#endif // MCJIT_TEST_H
+#endif

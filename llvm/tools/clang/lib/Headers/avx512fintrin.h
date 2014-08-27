@@ -117,6 +117,24 @@ _mm512_set1_epi64(long long __d)
   return (__m512i)(__v8di){ __d, __d, __d, __d, __d, __d, __d, __d };
 }
 
+static __inline__ __m512 __attribute__((__always_inline__, __nodebug__))
+_mm512_broadcastss_ps(__m128 __X)
+{
+  float __f = __X[0];
+  return (__v16sf){ __f, __f, __f, __f,
+                    __f, __f, __f, __f,
+                    __f, __f, __f, __f,
+                    __f, __f, __f, __f };
+}
+
+static __inline__ __m512d __attribute__((__always_inline__, __nodebug__))
+_mm512_broadcastsd_pd(__m128d __X)
+{
+  double __d = __X[0];
+  return (__v8df){ __d, __d, __d, __d,
+                   __d, __d, __d, __d };
+}
+
 /* Cast between vector types */
 
 static __inline __m512d __attribute__((__always_inline__, __nodebug__))
@@ -527,6 +545,26 @@ _mm512_permutex2var_ps(__m512 __A, __m512i __I, __m512 __B)
                                                        (__v16sf) __A,
                                                        (__v16sf) __B,
                                                        (__mmask16) -1);
+}
+
+static __inline __m512i __attribute__ ((__always_inline__, __nodebug__))
+_mm512_valign_epi64(__m512i __A, __m512i __B, const int __I)
+{
+  return (__m512i) __builtin_ia32_alignq512_mask((__v8di)__A,
+                                                 (__v8di)__B,
+                                                 __I,
+                                                 (__v8di)_mm512_setzero_si512(),
+                                                 (__mmask8) -1);
+}
+
+static __inline __m512i __attribute__ ((__always_inline__, __nodebug__))
+_mm512_valign_epi32(__m512i __A, __m512i __B, const int __I)
+{
+  return (__m512i)__builtin_ia32_alignd512_mask((__v16si)__A,
+                                                (__v16si)__B,
+                                                __I,
+                                                (__v16si)_mm512_setzero_si512(),
+                                                (__mmask16) -1);
 }
 
 /* Vector Blend */

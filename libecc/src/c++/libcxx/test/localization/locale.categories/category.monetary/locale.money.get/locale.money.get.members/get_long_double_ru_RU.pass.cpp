@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+// REQUIRES: locale.ru_RU.UTF-8
+
 // <locale>
 
 // class money_get<charT, InputIterator>

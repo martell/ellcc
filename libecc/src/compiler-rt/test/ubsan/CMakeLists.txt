@@ -5,10 +5,13 @@ configure_lit_site_cfg(
   ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.in
   ${CMAKE_CURRENT_BINARY_DIR}/UbsanConfig/lit.site.cfg)
 
-set(UBSAN_LIT_TEST_MODE "AddressSanitizer")
-configure_lit_site_cfg(
-  ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.in
-  ${CMAKE_CURRENT_BINARY_DIR}/AsanConfig/lit.site.cfg)
+if(COMPILER_RT_HAS_ASAN)
+  set(UBSAN_LIT_TEST_MODE "AddressSanitizer")
+  configure_lit_site_cfg(
+    ${CMAKE_CURRENT_SOURCE_DIR}/lit.site.cfg.in
+    ${CMAKE_CURRENT_BINARY_DIR}/AsanConfig/lit.site.cfg)
+  list(APPEND UBSAN_TESTSUITES ${CMAKE_CURRENT_BINARY_DIR}/AsanConfig)
+endif()
 
 set(UBSAN_TEST_DEPS ${SANITIZER_COMMON_LIT_TEST_DEPS})
 if(NOT COMPILER_RT_STANDALONE_BUILD)

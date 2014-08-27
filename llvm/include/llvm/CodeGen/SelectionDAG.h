@@ -20,6 +20,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/ilist.h"
 #include "llvm/CodeGen/DAGCombine.h"
+#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/Support/RecyclingAllocator.h"
 #include "llvm/Target/TargetMachine.h"
@@ -276,6 +277,7 @@ public:
 
   MachineFunction &getMachineFunction() const { return *MF; }
   const TargetMachine &getTarget() const { return TM; }
+  const TargetSubtargetInfo &getSubtarget() const { return MF->getSubtarget(); }
   const TargetLowering &getTargetLoweringInfo() const { return *TLI; }
   const TargetSelectionDAGInfo &getSelectionDAGInfo() const { return TSI; }
   LLVMContext *getContext() const {return Context; }
@@ -800,7 +802,8 @@ public:
                               ArrayRef<SDValue> Ops,
                               EVT MemVT, MachinePointerInfo PtrInfo,
                               unsigned Align = 0, bool Vol = false,
-                              bool ReadMem = true, bool WriteMem = true);
+                              bool ReadMem = true, bool WriteMem = true,
+                              unsigned Size = 0);
 
   SDValue getMemIntrinsicNode(unsigned Opcode, SDLoc dl, SDVTList VTList,
                               ArrayRef<SDValue> Ops,

@@ -1066,6 +1066,8 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::comma:              // __builtin_offsetof(struct foo{...} ,
   case tok::kw_operator:        // struct foo       operator  ++() {...}
   case tok::kw___declspec:      // struct foo {...} __declspec(...)
+  case tok::l_square:           // void f(struct f  [         3])
+  case tok::ellipsis:           // void f(struct f  ...       [Ns])
     return true;
   case tok::colon:
     return CouldBeBitfield;     // enum E { ... }   :         2;
@@ -1073,6 +1075,7 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::kw_const:           // struct foo {...} const     x;
   case tok::kw_volatile:        // struct foo {...} volatile  x;
   case tok::kw_restrict:        // struct foo {...} restrict  x;
+  case tok::kw__Atomic:         // struct foo {...} _Atomic   x;
   // Function specifiers
   // Note, no 'explicit'. An explicit function must be either a conversion
   // operator or a constructor. Either way, it can't have a return type.
@@ -1111,10 +1114,6 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
     if (!getLangOpts().CPlusPlus)
       return true;
     break;
-    // C++11 attributes
-  case tok::l_square: // enum E [[]] x
-    // Note, no tok::kw_alignas here; alignas cannot appertain to a type.
-    return getLangOpts().CPlusPlus11 && NextToken().is(tok::l_square);
   case tok::greater:
     // template<class T = class X>
     return getLangOpts().CPlusPlus;
@@ -1669,7 +1668,11 @@ void Parser::ParseClassSpecifier(tok::TokenKind TagTokKind,
   // Also enforce C++ [temp]p3:
   //   In a template-declaration which defines a class, no declarator
   //   is permitted.
+  //
+  // After a type-specifier, we don't expect a semicolon. This only happens in
+  // C, since definitions are not permitted in this context in C++.
   if (TUK == Sema::TUK_Definition &&
+      (getLangOpts().CPlusPlus || !isTypeSpecifier(DSC)) &&
       (TemplateInfo.Kind || !isValidAfterTypeSpecifier(false))) {
     if (Tok.isNot(tok::semi)) {
       const PrintingPolicy &PPol = Actions.getASTContext().getPrintingPolicy();
@@ -1879,11 +1882,21 @@ VirtSpecifiers::Specifier Parser::isCXX11VirtSpecifier(const Token &Tok) const {
 ///         virt-specifier
 ///         virt-specifier-seq virt-specifier
 void Parser::ParseOptionalCXX11VirtSpecifierSeq(VirtSpecifiers &VS,
-                                                bool IsInterface) {
+                                                bool IsInterface,
+                                                SourceLocation FriendLoc) {
   while (true) {
     VirtSpecifiers::Specifier Specifier = isCXX11VirtSpecifier();
     if (Specifier == VirtSpecifiers::VS_None)
       return;
+
+    if (FriendLoc.isValid()) {
+      Diag(Tok.getLocation(), diag::err_friend_decl_spec)
+        << VirtSpecifiers::getSpecifierName(Specifier)
+        << FixItHint::CreateRemoval(Tok.getLocation())
+        << SourceRange(FriendLoc, FriendLoc);
+      ConsumeToken();
+      continue;
+    }
 
     // C++ [class.mem]p8:
     //   A virt-specifier-seq shall contain at most one of each virt-specifier.
@@ -1929,13 +1942,19 @@ void Parser::ParseCXXMemberDeclaratorBeforeInitializer(
   //   identifier[opt] ':' constant-expression
   if (Tok.isNot(tok::colon))
     ParseDeclarator(DeclaratorInfo);
+  else
+    DeclaratorInfo.SetIdentifier(nullptr, Tok.getLocation());
 
   if (!DeclaratorInfo.isFunctionDeclarator() && TryConsumeToken(tok::colon)) {
+    assert(DeclaratorInfo.isPastIdentifier() &&
+           "don't know where identifier would go yet?");
     BitfieldSize = ParseConstantExpression();
     if (BitfieldSize.isInvalid())
       SkipUntil(tok::comma, StopAtSemi | StopBeforeMatch);
   } else
-    ParseOptionalCXX11VirtSpecifierSeq(VS, getCurrentClass().IsInterface);
+    ParseOptionalCXX11VirtSpecifierSeq(
+        VS, getCurrentClass().IsInterface,
+        DeclaratorInfo.getDeclSpec().getFriendSpecLoc());
 
   // If a simple-asm-expr is present, parse it.
   if (Tok.is(tok::kw_asm)) {
@@ -1953,10 +1972,21 @@ void Parser::ParseCXXMemberDeclaratorBeforeInitializer(
 
   // For compatibility with code written to older Clang, also accept a
   // virt-specifier *after* the GNU attributes.
-  // FIXME: If we saw any attributes that are known to GCC followed by a
-  // virt-specifier, issue a GCC-compat warning.
-  if (BitfieldSize.isUnset() && VS.isUnset())
-    ParseOptionalCXX11VirtSpecifierSeq(VS, getCurrentClass().IsInterface);
+  if (BitfieldSize.isUnset() && VS.isUnset()) {
+    ParseOptionalCXX11VirtSpecifierSeq(
+        VS, getCurrentClass().IsInterface,
+        DeclaratorInfo.getDeclSpec().getFriendSpecLoc());
+    if (!VS.isUnset()) {
+      // If we saw any GNU-style attributes that are known to GCC followed by a
+      // virt-specifier, issue a GCC-compat warning.
+      const AttributeList *Attr = DeclaratorInfo.getAttributes();
+      while (Attr) {
+        if (Attr->isKnownToGCC() && !Attr->isCXX11Attribute())
+          Diag(Attr->getLoc(), diag::warn_gcc_attribute_location);
+        Attr = Attr->getNext();
+      }
+    }
+  }
 }
 
 /// ParseCXXClassMemberDeclaration - Parse a C++ class member declaration.
@@ -2066,9 +2096,10 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
     }
   }
 
-  // static_assert-declaration
-  if (Tok.is(tok::kw_static_assert) || Tok.is(tok::kw__Static_assert)) {
-    // FIXME: Check for templates
+  // static_assert-declaration. A templated static_assert declaration is
+  // diagnosed in Parser::ParseSingleDeclarationAfterTemplate.
+  if (!TemplateInfo.Kind &&
+      (Tok.is(tok::kw_static_assert) || Tok.is(tok::kw__Static_assert))) {
     SourceLocation DeclEnd;
     ParseStaticAssertDeclaration(DeclEnd);
     return;
@@ -2309,7 +2340,6 @@ void Parser::ParseCXXClassMemberDeclaration(AccessSpecifier AS,
            E = Ranges.end(); I != E; ++I)
         Diag((*I).getBegin(), diag::err_attributes_not_allowed) << *I;
 
-      // TODO: handle initializers, VS, bitfields, 'delete'
       ThisDecl = Actions.ActOnFriendFunctionDecl(getCurScope(), DeclaratorInfo,
                                                  TemplateParams);
     } else {

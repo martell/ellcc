@@ -114,7 +114,6 @@ public:
     UnknownOS,
 
     AuroraUX,
-    Cygwin,
     Darwin,
     DragonFly,
     FreeBSD,
@@ -123,7 +122,6 @@ public:
     Linux,
     Lv2,        // PS3
     MacOSX,
-    MinGW32,    // i*86-pc-mingw32, *-w64-mingw32
     NetBSD,
     OpenBSD,
     Solaris,
@@ -382,13 +380,11 @@ public:
   }
 
   bool isWindowsCygwinEnvironment() const {
-    return getOS() == Triple::Cygwin ||
-           (getOS() == Triple::Win32 && getEnvironment() == Triple::Cygnus);
+    return getOS() == Triple::Win32 && getEnvironment() == Triple::Cygnus;
   }
 
   bool isWindowsGNUEnvironment() const {
-    return getOS() == Triple::MinGW32 ||
-           (getOS() == Triple::Win32 && getEnvironment() == Triple::GNU);
+    return getOS() == Triple::Win32 && getEnvironment() == Triple::GNU;
   }
 
   /// \brief Tests for either Cygwin or MinGW OS

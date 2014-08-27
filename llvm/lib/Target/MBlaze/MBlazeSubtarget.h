@@ -62,7 +62,7 @@ public:
   Triple TargetTriple;
 
   /// getInstrItins - Return the instruction itineraies based on subtarget.
-  const InstrItineraryData &getInstrItineraryData() const { return InstrItins; }
+  const InstrItineraryData *getInstrItineraryData() const { return &InstrItins; }
 
   bool hasItin()   const { return HasItin; }
   bool hasPCMP()   const { return HasPatCmp; }

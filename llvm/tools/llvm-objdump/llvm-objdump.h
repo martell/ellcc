@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_OBJDUMP_H
-#define LLVM_OBJDUMP_H
+#ifndef LLVM_TOOLS_LLVM_OBJDUMP_LLVM_OBJDUMP_H
+#define LLVM_TOOLS_LLVM_OBJDUMP_LLVM_OBJDUMP_H
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
@@ -25,6 +25,8 @@ namespace object {
 
 extern cl::opt<std::string> TripleName;
 extern cl::opt<std::string> ArchName;
+extern cl::opt<std::string> MCPU;
+extern cl::list<std::string> MAttrs;
 
 // Various helper functions.
 bool error(std::error_code ec);

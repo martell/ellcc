@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef CODEGEN_ASMPRINTER_DWARFDEBUG_H__
-#define CODEGEN_ASMPRINTER_DWARFDEBUG_H__
+#ifndef LLVM_LIB_CODEGEN_ASMPRINTER_DWARFDEBUG_H
+#define LLVM_LIB_CODEGEN_ASMPRINTER_DWARFDEBUG_H
 
 #include "DwarfFile.h"
 #include "AsmPrinterHandler.h"
@@ -538,8 +538,7 @@ class DwarfDebug : public AsmPrinterHandler {
   /// \brief Build the location list for all DBG_VALUEs in the
   /// function that describe the same variable.
   void buildLocationList(SmallVectorImpl<DebugLocEntry> &DebugLoc,
-                         const DbgValueHistoryMap::InstrRanges &Ranges,
-                         DwarfCompileUnit *TheCU);
+                         const DbgValueHistoryMap::InstrRanges &Ranges);
 
   /// \brief Collect variable information from the side table maintained
   /// by MMI.

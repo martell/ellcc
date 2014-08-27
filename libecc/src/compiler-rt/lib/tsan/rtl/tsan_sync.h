@@ -69,6 +69,9 @@ struct SyncVar {
   SyncVar *next;  // In SyncTab hashtable.
   DDMutex dd;
 
+  void Init(ThreadState *thr, uptr pc, uptr addr, u64 uid);
+  void Reset(ThreadState *thr);
+
   u64 GetId() const {
     // 47 lsb is addr, then 14 bits is low part of uid, then 3 zero bits.
     return GetLsb((u64)addr | (uid << 47), 61);

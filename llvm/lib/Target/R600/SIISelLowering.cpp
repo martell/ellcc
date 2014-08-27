@@ -196,9 +196,11 @@ SITargetLowering::SITargetLowering(TargetMachine &TM) :
       case ISD::BITCAST:
       case ISD::EXTRACT_VECTOR_ELT:
       case ISD::INSERT_VECTOR_ELT:
-      case ISD::CONCAT_VECTORS:
       case ISD::INSERT_SUBVECTOR:
       case ISD::EXTRACT_SUBVECTOR:
+        break;
+      case ISD::CONCAT_VECTORS:
+        setOperationAction(Op, VT, Custom);
         break;
       default:
         setOperationAction(Op, VT, Expand);
@@ -304,8 +306,8 @@ SITargetLowering::getPreferredVectorAction(EVT VT) const {
 
 bool SITargetLowering::shouldConvertConstantLoadToIntImm(const APInt &Imm,
                                                          Type *Ty) const {
-  const SIInstrInfo *TII =
-    static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+  const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+      getTargetMachine().getSubtargetImpl()->getInstrInfo());
   return TII->isInlineConstant(Imm);
 }
 
@@ -341,7 +343,8 @@ SDValue SITargetLowering::LowerFormalArguments(
                                       SDLoc DL, SelectionDAG &DAG,
                                       SmallVectorImpl<SDValue> &InVals) const {
 
-  const TargetRegisterInfo *TRI = getTargetMachine().getRegisterInfo();
+  const TargetRegisterInfo *TRI =
+      getTargetMachine().getSubtargetImpl()->getRegisterInfo();
 
   MachineFunction &MF = DAG.getMachineFunction();
   FunctionType *FType = MF.getFunction()->getFunctionType();
@@ -394,8 +397,8 @@ SDValue SITargetLowering::LowerFormalArguments(
   }
 
   SmallVector<CCValAssign, 16> ArgLocs;
-  CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(),
-                 getTargetMachine(), ArgLocs, *DAG.getContext());
+  CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(), ArgLocs,
+                 *DAG.getContext());
 
   // At least one interpolation mode must be enabled or else the GPU will hang.
   if (Info->getShaderType() == ShaderType::PIXEL &&
@@ -496,8 +499,8 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
     MachineInstr * MI, MachineBasicBlock * BB) const {
 
   MachineBasicBlock::iterator I = *MI;
-  const SIInstrInfo *TII =
-    static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+  const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+      getTargetMachine().getSubtargetImpl()->getInstrInfo());
   MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
 
   switch (MI->getOpcode()) {
@@ -585,9 +588,8 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
   }
   case AMDGPU::FABS_SI: {
     MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
-    const SIInstrInfo *TII =
-      static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
-
+    const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+        getTargetMachine().getSubtargetImpl()->getInstrInfo());
     DebugLoc DL = MI->getDebugLoc();
     unsigned DestReg = MI->getOperand(0).getReg();
     unsigned Reg = MRI.createVirtualRegister(&AMDGPU::VReg_32RegClass);
@@ -602,9 +604,8 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
   }
   case AMDGPU::FNEG_SI: {
     MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
-    const SIInstrInfo *TII =
-      static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
-
+    const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+        getTargetMachine().getSubtargetImpl()->getInstrInfo());
     DebugLoc DL = MI->getDebugLoc();
     unsigned DestReg = MI->getOperand(0).getReg();
     unsigned Reg = MRI.createVirtualRegister(&AMDGPU::VReg_32RegClass);
@@ -618,9 +619,8 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
     break;
   }
   case AMDGPU::FCLAMP_SI: {
-    const SIInstrInfo *TII =
-      static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
-
+    const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+        getTargetMachine().getSubtargetImpl()->getInstrInfo());
     DebugLoc DL = MI->getDebugLoc();
     unsigned DestReg = MI->getOperand(0).getReg();
     BuildMI(*BB, I, DL, TII->get(AMDGPU::V_ADD_F32_e64), DestReg)
@@ -718,8 +718,8 @@ static SDNode *findUser(SDValue Value, unsigned Opcode) {
 SDValue SITargetLowering::LowerFrameIndex(SDValue Op, SelectionDAG &DAG) const {
 
   MachineFunction &MF = DAG.getMachineFunction();
-  const SIInstrInfo *TII =
-    static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+  const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+      getTargetMachine().getSubtargetImpl()->getInstrInfo());
   const SIRegisterInfo &TRI = TII->getRegisterInfo();
   FrameIndexSDNode *FINode = cast<FrameIndexSDNode>(Op);
   unsigned FrameIndex = FINode->getIndex();
@@ -1360,8 +1360,8 @@ bool SITargetLowering::foldImm(SDValue &Operand, int32_t &Immediate,
                                bool &ScalarSlotUsed) const {
 
   MachineSDNode *Mov = dyn_cast<MachineSDNode>(Operand);
-  const SIInstrInfo *TII =
-    static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+  const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+      getTargetMachine().getSubtargetImpl()->getInstrInfo());
   if (!Mov || !TII->isMov(Mov->getMachineOpcode()))
     return false;
 
@@ -1395,8 +1395,8 @@ bool SITargetLowering::foldImm(SDValue &Operand, int32_t &Immediate,
 
 const TargetRegisterClass *SITargetLowering::getRegClassForNode(
                                    SelectionDAG &DAG, const SDValue &Op) const {
-  const SIInstrInfo *TII =
-    static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+  const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+      getTargetMachine().getSubtargetImpl()->getInstrInfo());
   const SIRegisterInfo &TRI = TII->getRegisterInfo();
 
   if (!Op->isMachineOpcode()) {
@@ -1448,7 +1448,8 @@ const TargetRegisterClass *SITargetLowering::getRegClassForNode(
 /// \brief Does "Op" fit into register class "RegClass" ?
 bool SITargetLowering::fitsRegClass(SelectionDAG &DAG, const SDValue &Op,
                                     unsigned RegClass) const {
-  const TargetRegisterInfo *TRI = getTargetMachine().getRegisterInfo();
+  const TargetRegisterInfo *TRI =
+      getTargetMachine().getSubtargetImpl()->getRegisterInfo();
   const TargetRegisterClass *RC = getRegClassForNode(DAG, Op);
   if (!RC) {
     return false;
@@ -1514,8 +1515,8 @@ SDNode *SITargetLowering::foldOperands(MachineSDNode *Node,
 
   // Original encoding (either e32 or e64)
   int Opcode = Node->getMachineOpcode();
-  const SIInstrInfo *TII =
-    static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+  const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+      getTargetMachine().getSubtargetImpl()->getInstrInfo());
   const MCInstrDesc *Desc = &TII->get(Opcode);
 
   unsigned NumDefs = Desc->getNumDefs();
@@ -1770,8 +1771,8 @@ void SITargetLowering::adjustWritemask(MachineSDNode *&Node,
 /// \brief Fold the instructions after selecting them.
 SDNode *SITargetLowering::PostISelFolding(MachineSDNode *Node,
                                           SelectionDAG &DAG) const {
-  const SIInstrInfo *TII =
-      static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+  const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+      getTargetMachine().getSubtargetImpl()->getInstrInfo());
   Node = AdjustRegClass(Node, DAG);
 
   if (TII->isMIMG(Node->getMachineOpcode()))
@@ -1784,8 +1785,8 @@ SDNode *SITargetLowering::PostISelFolding(MachineSDNode *Node,
 /// bits set in the writemask
 void SITargetLowering::AdjustInstrPostInstrSelection(MachineInstr *MI,
                                                      SDNode *Node) const {
-  const SIInstrInfo *TII =
-      static_cast<const SIInstrInfo*>(getTargetMachine().getInstrInfo());
+  const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
+      getTargetMachine().getSubtargetImpl()->getInstrInfo());
   if (!TII->isMIMG(MI->getOpcode()))
     return;
 

@@ -1351,14 +1351,15 @@ class BaseMulAccum<bit isSub, bits<3> opc, RegisterClass multype,
 }
 
 multiclass MulAccum<bit isSub, string asm, SDNode AccNode> {
+  // MADD/MSUB generation is decided by MachineCombiner.cpp
   def Wrrr : BaseMulAccum<isSub, 0b000, GPR32, GPR32, asm,
-      [(set GPR32:$Rd, (AccNode GPR32:$Ra, (mul GPR32:$Rn, GPR32:$Rm)))]>,
+      [/*(set GPR32:$Rd, (AccNode GPR32:$Ra, (mul GPR32:$Rn, GPR32:$Rm)))*/]>,
       Sched<[WriteIM32, ReadIM, ReadIM, ReadIMA]> {
     let Inst{31} = 0;
   }
 
   def Xrrr : BaseMulAccum<isSub, 0b000, GPR64, GPR64, asm,
-      [(set GPR64:$Rd, (AccNode GPR64:$Ra, (mul GPR64:$Rn, GPR64:$Rm)))]>,
+      [/*(set GPR64:$Rd, (AccNode GPR64:$Ra, (mul GPR64:$Rn, GPR64:$Rm)))*/]>,
       Sched<[WriteIM64, ReadIM, ReadIM, ReadIMA]> {
     let Inst{31} = 1;
   }
@@ -2997,7 +2998,7 @@ class LoadPreIdx<bits<2> sz, bit V, bits<2> opc, RegisterClass regtype,
     : BaseLoadStorePreIdx<sz, V, opc,
                      (outs GPR64sp:$wback, regtype:$Rt),
                      (ins GPR64sp:$Rn, simm9:$offset), asm,
-                     "$Rn = $wback", []>,
+                     "$Rn = $wback,@earlyclobber $wback", []>,
       Sched<[WriteLD, WriteAdr]>;
 
 let mayStore = 1, mayLoad = 0 in
@@ -3006,7 +3007,7 @@ class StorePreIdx<bits<2> sz, bit V, bits<2> opc, RegisterClass regtype,
     : BaseLoadStorePreIdx<sz, V, opc,
                       (outs GPR64sp:$wback),
                       (ins regtype:$Rt, GPR64sp:$Rn, simm9:$offset),
-                      asm, "$Rn = $wback",
+                      asm, "$Rn = $wback,@earlyclobber $wback",
       [(set GPR64sp:$wback,
             (storeop (Ty regtype:$Rt), GPR64sp:$Rn, simm9:$offset))]>,
       Sched<[WriteAdr, WriteST]>;
@@ -3016,7 +3017,6 @@ class StorePreIdx<bits<2> sz, bit V, bits<2> opc, RegisterClass regtype,
 // Load/store post-indexed
 //---
 
-// (pre-index) load/stores.
 class BaseLoadStorePostIdx<bits<2> sz, bit V, bits<2> opc, dag oops, dag iops,
                           string asm, string cstr, list<dag> pat>
     : I<oops, iops, asm, "\t$Rt, [$Rn], $offset", cstr, pat> {
@@ -3044,7 +3044,7 @@ class LoadPostIdx<bits<2> sz, bit V, bits<2> opc, RegisterClass regtype,
     : BaseLoadStorePostIdx<sz, V, opc,
                       (outs GPR64sp:$wback, regtype:$Rt),
                       (ins GPR64sp:$Rn, simm9:$offset),
-                      asm, "$Rn = $wback", []>,
+                      asm, "$Rn = $wback,@earlyclobber $wback", []>,
       Sched<[WriteLD, WriteI]>;
 
 let mayStore = 1, mayLoad = 0 in
@@ -3053,7 +3053,7 @@ class StorePostIdx<bits<2> sz, bit V, bits<2> opc, RegisterClass regtype,
     : BaseLoadStorePostIdx<sz, V, opc,
                       (outs GPR64sp:$wback),
                       (ins regtype:$Rt, GPR64sp:$Rn, simm9:$offset),
-                       asm, "$Rn = $wback",
+                       asm, "$Rn = $wback,@earlyclobber $wback",
       [(set GPR64sp:$wback,
             (storeop (Ty regtype:$Rt), GPR64sp:$Rn, simm9:$offset))]>,
     Sched<[WriteAdr, WriteST, ReadAdrBase]>;
@@ -3117,7 +3117,7 @@ multiclass StorePairOffset<bits<2> opc, bit V, RegisterClass regtype,
 // (pre-indexed)
 class BaseLoadStorePairPreIdx<bits<2> opc, bit V, bit L, dag oops, dag iops,
                               string asm>
-    : I<oops, iops, asm, "\t$Rt, $Rt2, [$Rn, $offset]!", "$Rn = $wback", []> {
+    : I<oops, iops, asm, "\t$Rt, $Rt2, [$Rn, $offset]!", "$Rn = $wback,@earlyclobber $wback", []> {
   bits<5> Rt;
   bits<5> Rt2;
   bits<5> Rn;
@@ -3158,7 +3158,7 @@ class StorePairPreIdx<bits<2> opc, bit V, RegisterClass regtype,
 
 class BaseLoadStorePairPostIdx<bits<2> opc, bit V, bit L, dag oops, dag iops,
                               string asm>
-    : I<oops, iops, asm, "\t$Rt, $Rt2, [$Rn], $offset", "$Rn = $wback", []> {
+    : I<oops, iops, asm, "\t$Rt, $Rt2, [$Rn], $offset", "$Rn = $wback,@earlyclobber $wback", []> {
   bits<5> Rt;
   bits<5> Rt2;
   bits<5> Rn;

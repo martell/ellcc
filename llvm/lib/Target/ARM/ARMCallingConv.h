@@ -12,14 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef ARMCALLINGCONV_H
-#define ARMCALLINGCONV_H
+#ifndef LLVM_LIB_TARGET_ARM_ARMCALLINGCONV_H
+#define LLVM_LIB_TARGET_ARM_ARMCALLINGCONV_H
 
 #include "ARM.h"
 #include "ARMBaseInstrInfo.h"
 #include "ARMSubtarget.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/IR/DataLayout.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/Target/TargetInstrInfo.h"
@@ -105,15 +103,9 @@ static bool f64AssignAAPCS(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
   (void)T;
   assert(T == LoRegList[i] && "Could not allocate register");
 
-  if (State.getTarget().getDataLayout()->isBigEndian()) {
-    State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, LoRegList[i],
-                                           LocVT, LocInfo));
-    State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, Reg, LocVT, LocInfo));
-  } else {
-    State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, Reg, LocVT, LocInfo));
-    State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, LoRegList[i],
-                                           LocVT, LocInfo));
-  }
+  State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, Reg, LocVT, LocInfo));
+  State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, LoRegList[i],
+                                         LocVT, LocInfo));
   return true;
 }
 
@@ -143,15 +135,9 @@ static bool f64RetAssign(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
     if (HiRegList[i] == Reg)
       break;
 
-  if (State.getTarget().getDataLayout()->isBigEndian()) {
-    State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, LoRegList[i],
-                                             LocVT, LocInfo));
-    State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, Reg, LocVT, LocInfo));
-  } else {
-    State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, Reg, LocVT, LocInfo));
-    State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, LoRegList[i],
-                                             LocVT, LocInfo));
-  }
+  State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, Reg, LocVT, LocInfo));
+  State.addLoc(CCValAssign::getCustomReg(ValNo, ValVT, LoRegList[i],
+                                         LocVT, LocInfo));
   return true;
 }
 

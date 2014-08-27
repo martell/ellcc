@@ -218,6 +218,10 @@ void ThreadRegistry::SetThreadNameByUserId(uptr user_id, const char *name) {
 }
 
 void ThreadRegistry::DetachThread(u32 tid) {
+  DetachThread(tid, 0);
+}
+
+void ThreadRegistry::DetachThread(u32 tid, void *arg) {
   BlockingMutexLock l(&mtx_);
   CHECK_LT(tid, n_contexts_);
   ThreadContextBase *tctx = threads_[tid];
@@ -226,6 +230,7 @@ void ThreadRegistry::DetachThread(u32 tid) {
     Report("%s: Detach of non-existent thread\n", SanitizerToolName);
     return;
   }
+  tctx->OnDetached(arg);
   if (tctx->status == ThreadStatusFinished) {
     tctx->SetDead();
     QuarantinePush(tctx);

@@ -130,3 +130,24 @@ __mmask16 test_mm512_knot(__mmask16 a)
   // CHECK: @llvm.x86.avx512.knot.w
   return _mm512_knot(a);
 }
+
+__m512i test_mm512_valign_epi64(__m512i a, __m512i b)
+{
+  // CHECK-LABEL: @test_mm512_valign_epi64
+  // CHECK: @llvm.x86.avx512.mask.valign.q.512
+  return _mm512_valign_epi64(a, b, 2);
+}
+
+__m512d test_mm512_broadcastsd_pd(__m128d a)
+{
+  // CHECK-LABEL: @test_mm512_broadcastsd_pd
+  // CHECK: insertelement <8 x double> {{.*}}, i32 0
+  // CHECK: insertelement <8 x double> {{.*}}, i32 1
+  // CHECK: insertelement <8 x double> {{.*}}, i32 2
+  // CHECK: insertelement <8 x double> {{.*}}, i32 3
+  // CHECK: insertelement <8 x double> {{.*}}, i32 4
+  // CHECK: insertelement <8 x double> {{.*}}, i32 5
+  // CHECK: insertelement <8 x double> {{.*}}, i32 6
+  // CHECK: insertelement <8 x double> {{.*}}, i32 7
+  return _mm512_broadcastsd_pd(a);
+}

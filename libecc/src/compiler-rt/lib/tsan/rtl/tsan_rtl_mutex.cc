@@ -109,6 +109,14 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
       && s->owner_tid != SyncVar::kInvalidTid
       && !s->is_broken) {
     s->is_broken = true;
+    unlock_locked = true;
+  }
+  u64 mid = s->GetId();
+  u32 last_lock = s->last_lock;
+  if (!unlock_locked)
+    s->Reset(thr);  // must not reset it before the report is printed
+  s->mtx.Unlock();
+  if (unlock_locked) {
     ThreadRegistryLock l(ctx->thread_registry);
     ScopedReport rep(ReportTypeMutexDestroyLocked);
     rep.AddMutex(s);
@@ -121,8 +129,15 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
     rep.AddLocation(s->addr, 1);
     OutputReport(ctx, rep, rep.GetReport()->stacks[0]);
   }
-  thr->mset.Remove(s->GetId());
-  DestroyAndFree(s);
+  if (unlock_locked) {
+    SyncVar *s = ctx->metamap.GetIfExistsAndLock(addr);
+    if (s != 0) {
+      s->Reset(thr);
+      s->mtx.Unlock();
+    }
+  }
+  thr->mset.Remove(mid);
+  // s will be destroyed and freed in MetaMap::FreeBlock.
 }
 
 void MutexLock(ThreadState *thr, uptr pc, uptr addr, int rec, bool try_lock) {
@@ -410,7 +425,7 @@ void AcquireImpl(ThreadState *thr, uptr pc, SyncClock *c) {
   if (thr->ignore_sync)
     return;
   thr->clock.set(thr->tid, thr->fast_state.epoch());
-  thr->clock.acquire(c);
+  thr->clock.acquire(&thr->clock_cache, c);
   StatInc(thr, StatSyncAcquire);
 }
 
@@ -419,7 +434,7 @@ void ReleaseImpl(ThreadState *thr, uptr pc, SyncClock *c) {
     return;
   thr->clock.set(thr->tid, thr->fast_state.epoch());
   thr->fast_synch_epoch = thr->fast_state.epoch();
-  thr->clock.release(c);
+  thr->clock.release(&thr->clock_cache, c);
   StatInc(thr, StatSyncRelease);
 }
 
@@ -428,7 +443,7 @@ void ReleaseStoreImpl(ThreadState *thr, uptr pc, SyncClock *c) {
     return;
   thr->clock.set(thr->tid, thr->fast_state.epoch());
   thr->fast_synch_epoch = thr->fast_state.epoch();
-  thr->clock.ReleaseStore(c);
+  thr->clock.ReleaseStore(&thr->clock_cache, c);
   StatInc(thr, StatSyncRelease);
 }
 
@@ -437,7 +452,7 @@ void AcquireReleaseImpl(ThreadState *thr, uptr pc, SyncClock *c) {
     return;
   thr->clock.set(thr->tid, thr->fast_state.epoch());
   thr->fast_synch_epoch = thr->fast_state.epoch();
-  thr->clock.acq_rel(c);
+  thr->clock.acq_rel(&thr->clock_cache, c);
   StatInc(thr, StatSyncAcquire);
   StatInc(thr, StatSyncRelease);
 }
