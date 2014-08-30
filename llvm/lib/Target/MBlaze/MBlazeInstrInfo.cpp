@@ -288,7 +288,7 @@ unsigned MBlazeInstrInfo::getGlobalBaseReg(MachineFunction *MF) const {
   MachineBasicBlock &FirstMBB = MF->front();
   MachineBasicBlock::iterator MBBI = FirstMBB.begin();
   MachineRegisterInfo &RegInfo = MF->getRegInfo();
-  const TargetInstrInfo *TII = MF->getTarget().getInstrInfo();
+  const TargetInstrInfo *TII = MF->getSubtarget().getInstrInfo();
 
   GlobalBaseReg = RegInfo.createVirtualRegister(&MBlaze::GPRRegClass);
   BuildMI(FirstMBB, MBBI, DebugLoc(), TII->get(TargetOpcode::COPY),

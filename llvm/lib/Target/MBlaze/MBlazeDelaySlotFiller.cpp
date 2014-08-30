@@ -236,7 +236,8 @@ bool Filler::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
       Changed = true;
 
       if (D == MBB.end() || D->isDebugValue())
-        BuildMI(MBB, ++J, I->getDebugLoc(), MF->getSubtarget().getInstrInfo()->get(MBlaze::NOP));
+        BuildMI(MBB, ++J, I->getDebugLoc(),
+            MBB.getParent()->getSubtarget().getInstrInfo()->get(MBlaze::NOP));
       else
         MBB.splice(++J, &MBB, D);
     }

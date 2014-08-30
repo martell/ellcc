@@ -70,7 +70,8 @@ IsGlobalInSmallSection(const GlobalValue *GV, const TargetMachine &TM,
     return false;
 
   Type *Ty = GV->getType()->getElementType();
-  return IsInSmallSection(TM.getDataLayout()->getTypeAllocSize(Ty));
+  return IsInSmallSection(
+    TM.getSubtargetImpl()->getDataLayout()->getTypeAllocSize(Ty));
 }
 
 const MCSection *MBlazeTargetObjectFile::

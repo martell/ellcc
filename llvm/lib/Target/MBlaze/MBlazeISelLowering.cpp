@@ -250,7 +250,8 @@ MBlazeTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
 MachineBasicBlock*
 MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
                                       MachineBasicBlock *MBB) const {
-  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  const TargetInstrInfo *TII = 
+    getTargetMachine().getSubtargetImpl()->getInstrInfo();
   DebugLoc dl = MI->getDebugLoc();
 
   // To "insert" a shift left instruction, we actually have to insert a
@@ -349,7 +350,8 @@ MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
 MachineBasicBlock*
 MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
                                        MachineBasicBlock *MBB) const {
-  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  const TargetInstrInfo *TII =
+    getTargetMachine().getSubtargetImpl()->getInstrInfo();
   DebugLoc dl = MI->getDebugLoc();
 
   // To "insert" a SELECT_CC instruction, we actually have to insert the
@@ -413,7 +415,8 @@ MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
 MachineBasicBlock*
 MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
                                        MachineBasicBlock *MBB) const {
-  const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
+  const TargetInstrInfo *TII =
+    getTargetMachine().getSubtargetImpl()->getInstrInfo();
   DebugLoc dl = MI->getDebugLoc();
 
   // All atomic instructions on the Microblaze are implemented using the
@@ -701,12 +704,13 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
 
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo *MFI = MF.getFrameInfo();
-  const TargetFrameLowering &TFI = *MF.getTarget().getFrameLowering();
+  const TargetFrameLowering &TFI = *MF.getSubtarget().getFrameLowering();
 
   // Analyze operands of the call, assigning locations to each operand.
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(),
-                 getTargetMachine(), ArgLocs, *DAG.getContext());
+                 ArgLocs, *DAG.getContext());
+
   CCInfo.AnalyzeCallOperands(Outs, CC_MBlaze);
 
   // Get a count of how many bytes are to be pushed on the stack.
@@ -845,7 +849,7 @@ LowerCallResult(SDValue Chain, SDValue InFlag, CallingConv::ID CallConv,
   // Assign locations to each value returned by this call.
   SmallVector<CCValAssign, 16> RVLocs;
   CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(),
-                 getTargetMachine(), RVLocs, *DAG.getContext());
+                 RVLocs, *DAG.getContext());
 
   CCInfo.AnalyzeCallResult(Ins, RetCC_MBlaze);
 
@@ -876,7 +880,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
   MachineFrameInfo *MFI = MF.getFrameInfo();
   MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
 
-  unsigned StackReg = MF.getTarget().getRegisterInfo()->getFrameRegister(MF);
+  unsigned StackReg = MF.getSubtarget().getRegisterInfo()->getFrameRegister(MF);
   MBlazeFI->setVarArgsFrameIndex(0);
 
   // Used with vargs to acumulate store chains.
@@ -888,7 +892,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
   // Assign locations to all of the incoming arguments.
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(),
-                 getTargetMachine(), ArgLocs, *DAG.getContext());
+                 ArgLocs, *DAG.getContext());
 
   CCInfo.AnalyzeFormalArguments(Ins, CC_MBlaze);
   SDValue StackPtr;
@@ -1019,7 +1023,7 @@ LowerReturn(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
 
   // CCState - Info about the registers and stack slot.
   CCState CCInfo(CallConv, isVarArg, DAG.getMachineFunction(),
-                 getTargetMachine(), RVLocs, *DAG.getContext());
+                 RVLocs, *DAG.getContext());
 
   // Analize return values.
   CCInfo.AnalyzeReturn(Outs, RetCC_MBlaze);

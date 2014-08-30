@@ -227,7 +227,7 @@ static void interruptFrameLayout(MachineFunction &MF) {
   MachineFrameInfo *MFI = MF.getFrameInfo();
   const MachineRegisterInfo &MRI = MF.getRegInfo();
   const MBlazeInstrInfo &TII =
-    *static_cast<const MBlazeInstrInfo*>(MF.getTarget().getInstrInfo());
+    *static_cast<const MBlazeInstrInfo*>(MF.getSubtarget().getInstrInfo());
 
   // Determine if the calling convention is the interrupt_handler
   // calling convention. Some pieces of the prologue and epilogue
@@ -317,7 +317,7 @@ static void determineFrameLayout(MachineFunction &MF) {
   // Get the alignments provided by the target, and the maximum alignment
   // (if any) of the fixed frame objects.
   // unsigned MaxAlign = MFI->getMaxAlignment();
-  unsigned TargetAlign = MF.getTarget().getFrameLowering()->getStackAlignment();
+  unsigned TargetAlign = MF.getSubtarget().getFrameLowering()->getStackAlignment();
   unsigned AlignMask = TargetAlign - 1;
 
   // Make sure the frame is aligned.
@@ -347,7 +347,7 @@ void MBlazeFrameLowering::emitPrologue(MachineFunction &MF) const {
   MachineBasicBlock &MBB   = MF.front();
   MachineFrameInfo *MFI    = MF.getFrameInfo();
   const MBlazeInstrInfo &TII =
-    *static_cast<const MBlazeInstrInfo*>(MF.getTarget().getInstrInfo());
+    *static_cast<const MBlazeInstrInfo*>(MF.getSubtarget().getInstrInfo());
   MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
   MachineBasicBlock::iterator MBBI = MBB.begin();
   DebugLoc DL = MBBI != MBB.end() ? MBBI->getDebugLoc() : DebugLoc();
@@ -394,7 +394,7 @@ void MBlazeFrameLowering::emitEpilogue(MachineFunction &MF,
   MachineFrameInfo *MFI            = MF.getFrameInfo();
   MBlazeFunctionInfo *MBlazeFI     = MF.getInfo<MBlazeFunctionInfo>();
   const MBlazeInstrInfo &TII =
-    *static_cast<const MBlazeInstrInfo*>(MF.getTarget().getInstrInfo());
+    *static_cast<const MBlazeInstrInfo*>(MF.getSubtarget().getInstrInfo());
 
   DebugLoc dl = MBBI->getDebugLoc();
 
@@ -436,7 +436,7 @@ void MBlazeFrameLowering::
 eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
                               MachineBasicBlock::iterator I) const {
   const MBlazeInstrInfo &TII =
-    *static_cast<const MBlazeInstrInfo*>(MF.getTarget().getInstrInfo());
+    *static_cast<const MBlazeInstrInfo*>(MF.getSubtarget().getInstrInfo());
   if (!hasReservedCallFrame(MF)) {
     // If we have a frame pointer, turn the adjcallstackup instruction into a
     // 'addi r1, r1, -<amt>' and the adjcallstackdown instruction into

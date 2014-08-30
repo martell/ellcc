@@ -60,7 +60,7 @@ MBlazeTargetMachine(const Target &T, StringRef TT,
     InstrInfo(*this),
     FrameLowering(Subtarget),
     TLInfo(*this), TSInfo(DL),
-    InstrItins(Subtarget.getInstrItineraryData()) {
+    InstrItins(*Subtarget.getInstrItineraryData()) {
   initAsmInfo();
 }
 

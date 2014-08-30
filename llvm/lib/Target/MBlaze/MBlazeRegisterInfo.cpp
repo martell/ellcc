@@ -139,7 +139,7 @@ processFunctionBeforeFrameFinalized(MachineFunction &MF, RegScavenger *) const {
 }
 
 unsigned MBlazeRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
-  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
+  const TargetFrameLowering *TFI = MF.getSubtarget().getFrameLowering();
 
   return TFI->hasFP(MF) ? MBlaze::R19 : MBlaze::R1;
 }
