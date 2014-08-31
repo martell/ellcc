@@ -168,10 +168,12 @@ namespace MBlaze {
 
 class MBlazeInstrInfo : public MBlazeGenInstrInfo {
   virtual void anchor();
-  MBlazeTargetMachine &TM;
+  MBlazeSubtarget &Subtarget;
   const MBlazeRegisterInfo RI;
 public:
-  explicit MBlazeInstrInfo(MBlazeTargetMachine &TM);
+  explicit MBlazeInstrInfo(MBlazeSubtarget &STI);
+
+  static const MBlazeInstrInfo *create(MBlazeSubtarget &STI);
 
   /// getRegisterInfo - TargetInstrInfo is a superset of MRegister info.  As
   /// such, whenever a client has an instance of instruction info, it should

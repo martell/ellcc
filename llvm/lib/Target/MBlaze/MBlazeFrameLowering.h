@@ -29,6 +29,8 @@ public:
     : TargetFrameLowering(TargetFrameLowering::StackGrowsUp, 4, 0), STI(sti) {
   }
 
+  static const MBlazeFrameLowering *create(const MBlazeSubtarget &ST);
+
   /// targetHandlesStackFrameRounding - Returns true if the target is
   /// responsible for rounding up the stack frame (probably at emitPrologue
   /// time).

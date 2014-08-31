@@ -491,3 +491,8 @@ processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
   interruptFrameLayout(MF);
   analyzeFrameIndexes(MF);
 }
+
+const MBlazeFrameLowering *MBlazeFrameLowering::
+create(const MBlazeSubtarget &ST) {
+  return new MBlazeFrameLowering(ST);
+}

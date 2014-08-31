@@ -75,7 +75,7 @@ private:
   /// getInstrInfo - Return a reference to the TargetInstrInfo, casted
   /// to the target-specific type.
   const MBlazeInstrInfo *getInstrInfo() {
-    return getTargetMachine().getInstrInfo();
+    return getTargetMachine().getSubtargetImpl()->getInstrInfo();
   }
 
   SDNode *getGlobalBaseReg();
@@ -169,7 +169,8 @@ SelectAddrRegImm(SDValue N, SDValue &Base, SDValue &Disp) {
     return true;
   }
 
-  Disp = CurDAG->getTargetConstant(0, TM.getTargetLowering()->getPointerTy());
+  Disp = CurDAG->getTargetConstant(0,
+                    TM.getSubtargetImpl()->getTargetLowering()->getPointerTy());
   if (FrameIndexSDNode *FI = dyn_cast<FrameIndexSDNode>(N))
     Base = CurDAG->getTargetFrameIndex(FI->getIndex(), N.getValueType());
   else

@@ -24,13 +24,36 @@
 
 using namespace llvm;
 
+static std::string computeDataLayout(MBlazeSubtarget &ST, bool BigEndian=true) {
+  // Endian.
+  std::string Ret = BigEndian ? "E" : "e";
+
+  Ret += DataLayout::getManglingComponent(ST.getTargetTriple());
+
+  // Pointers are 32 bits and aligned to 32 bits.
+  Ret += "-p:32:32";
+
+  // Integer registers are 32 bits.
+  Ret += "-n32";
+
+  // The stack is 32 bit aligned.
+  Ret += "-S32";
+
+  return Ret;
+}
+
 MBlazeSubtarget::MBlazeSubtarget(const std::string &TT,
                                  const std::string &CPU,
-                                 const std::string &FS):
+                                 const std::string &FS,
+                                 MBlazeTargetMachine *TM):
   MBlazeGenSubtargetInfo(TT, CPU, FS),
   HasBarrel(false), HasDiv(false), HasMul(false), HasPatCmp(false),
   HasFPU(false), HasMul64(false), HasSqrt(false),
-  TargetTriple(TT)
+  TargetTriple(TT),
+  DL(computeDataLayout(*this)), TSInfo(DL),
+  InstrInfo(MBlazeInstrInfo::create(*this)),
+  FrameLowering(MBlazeFrameLowering::create(*this)),
+  TLInfo(MBlazeTargetLowering::create(*TM, *this))
 {
   // Parse features string.
   std::string CPUName = CPU;

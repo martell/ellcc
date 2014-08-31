@@ -14,13 +14,8 @@
 #ifndef MBLAZE_TARGETMACHINE_H
 #define MBLAZE_TARGETMACHINE_H
 
-#include "MBlazeFrameLowering.h"
-#include "MBlazeISelLowering.h"
-#include "MBlazeInstrInfo.h"
 #include "MBlazeIntrinsicInfo.h"
-#include "MBlazeSelectionDAGInfo.h"
 #include "MBlazeSubtarget.h"
-#include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetMachine.h"
@@ -29,14 +24,9 @@ namespace llvm {
   class formatted_raw_ostream;
 
   class MBlazeTargetMachine : public LLVMTargetMachine {
-    MBlazeSubtarget        Subtarget;
-    const DataLayout       DL; // Calculates type size & alignment
-    MBlazeInstrInfo        InstrInfo;
-    MBlazeFrameLowering    FrameLowering;
-    MBlazeTargetLowering   TLInfo;
-    MBlazeSelectionDAGInfo TSInfo;
+    MBlazeSubtarget        *Subtarget;
+    MBlazeSubtarget        DefaultSubtarget;
     MBlazeIntrinsicInfo    IntrinsicInfo;
-    InstrItineraryData     InstrItins;
 
   public:
     MBlazeTargetMachine(const Target &T, StringRef TT,
@@ -45,29 +35,18 @@ namespace llvm {
                         Reloc::Model RM, CodeModel::Model CM,
                         CodeGenOpt::Level OL);
 
-    virtual const MBlazeInstrInfo *getInstrInfo() const
-    { return &InstrInfo; }
 
-    virtual const InstrItineraryData *getInstrItineraryData() const
-    {  return &InstrItins; }
 
-    virtual const TargetFrameLowering *getFrameLowering() const
-    { return &FrameLowering; }
 
-    virtual const MBlazeSubtarget *getSubtargetImpl() const
-    { return &Subtarget; }
+    virtual const MBlazeSubtarget *getSubtargetImpl() const {
+      if (Subtarget)
+        return Subtarget;
+      return &DefaultSubtarget;
+    }
+    MBlazeSubtarget *getSubtargetImpl() {
+      return static_cast<MBlazeSubtarget *>(TargetMachine::getSubtargetImpl());
+    }
 
-    virtual const DataLayout *getDataLayout() const
-    { return &DL;}
-
-    virtual const MBlazeRegisterInfo *getRegisterInfo() const
-    { return &InstrInfo.getRegisterInfo(); }
-
-    virtual const MBlazeTargetLowering *getTargetLowering() const
-    { return &TLInfo; }
-
-    virtual const MBlazeSelectionDAGInfo* getSelectionDAGInfo() const
-    { return &TSInfo; }
 
     const TargetIntrinsicInfo *getIntrinsicInfo() const
     { return &IntrinsicInfo; }

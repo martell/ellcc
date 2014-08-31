@@ -30,9 +30,9 @@ using namespace llvm;
 // Pin the vtable to this file.
 void MBlazeInstrInfo::anchor() {}
 
-MBlazeInstrInfo::MBlazeInstrInfo(MBlazeTargetMachine &tm)
+MBlazeInstrInfo::MBlazeInstrInfo(MBlazeSubtarget &STI)
   : MBlazeGenInstrInfo(MBlaze::ADJCALLSTACKDOWN, MBlaze::ADJCALLSTACKUP),
-    TM(tm), RI(*TM.getSubtargetImpl()) {}
+    Subtarget(STI), RI(STI) {}
 
 static bool isZeroImm(const MachineOperand &op) {
   return op.isImm() && op.getImm() == 0;
@@ -297,4 +297,9 @@ unsigned MBlazeInstrInfo::getGlobalBaseReg(MachineFunction *MF) const {
 
   MBlazeFI->setGlobalBaseReg(GlobalBaseReg);
   return GlobalBaseReg;
+}
+
+const MBlazeInstrInfo *MBlazeInstrInfo::
+create(MBlazeSubtarget &ST) {
+  return new MBlazeInstrInfo(ST);
 }

@@ -52,9 +52,9 @@ const char *MBlazeTargetLowering::getTargetNodeName(unsigned Opcode) const {
   }
 }
 
-MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM)
-  : TargetLowering(TM, new MBlazeTargetObjectFile()) {
-  Subtarget = &TM.getSubtarget<MBlazeSubtarget>();
+MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM,
+                                           const MBlazeSubtarget &STI)
+  : TargetLowering(TM, new MBlazeTargetObjectFile()), Subtarget(STI) {
 
   // MBlaze does not have i1 type, so use i32 for
   // setcc operations results (slt, sgt, ...).
@@ -63,7 +63,7 @@ MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM)
 
   // Set up the register classes
   addRegisterClass(MVT::i32, &MBlaze::GPRRegClass);
-  if (Subtarget->hasFPU()) {
+  if (Subtarget.hasFPU()) {
     addRegisterClass(MVT::f32, &MBlaze::GPRRegClass);
     setOperationAction(ISD::ConstantFP, MVT::f32, Legal);
   }
@@ -105,12 +105,12 @@ MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM)
   setOperationAction(ISD::UDIVREM, MVT::i32, Expand);
 
   // If the processor doesn't support multiply then expand it
-  if (!Subtarget->hasMul()) {
+  if (!Subtarget.hasMul()) {
     setOperationAction(ISD::MUL, MVT::i32, Expand);
   }
 
   // If the processor doesn't support 64-bit multiply then expand
-  if (!Subtarget->hasMul() || !Subtarget->hasMul64()) {
+  if (!Subtarget.hasMul() || !Subtarget.hasMul64()) {
     setOperationAction(ISD::MULHS, MVT::i32, Expand);
     setOperationAction(ISD::MULHS, MVT::i64, Expand);
     setOperationAction(ISD::MULHU, MVT::i32, Expand);
@@ -118,7 +118,7 @@ MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM)
   }
 
   // If the processor doesn't support division then expand
-  if (!Subtarget->hasDiv()) {
+  if (!Subtarget.hasDiv()) {
     setOperationAction(ISD::UDIV, MVT::i32, Expand);
     setOperationAction(ISD::SDIV, MVT::i32, Expand);
   }
@@ -1151,3 +1151,9 @@ isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const {
 bool MBlazeTargetLowering::isFPImmLegal(const APFloat &Imm, EVT VT) const {
   return VT != MVT::f32;
 }
+
+const MBlazeTargetLowering *MBlazeTargetLowering::
+create(MBlazeTargetMachine &TM, const MBlazeSubtarget &STI) {
+  return new MBlazeTargetLowering(TM, STI);
+}
+

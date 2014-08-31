@@ -16,7 +16,6 @@
 #define MBlazeISELLOWERING_H
 
 #include "MBlaze.h"
-#include "MBlazeSubtarget.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Target/TargetLowering.h"
@@ -93,9 +92,15 @@ namespace llvm {
   // TargetLowering Implementation
   //===--------------------------------------------------------------------===//
 
+  class MBlazeSubtarget;
+
   class MBlazeTargetLowering : public TargetLowering  {
   public:
-    explicit MBlazeTargetLowering(MBlazeTargetMachine &TM);
+    explicit MBlazeTargetLowering(MBlazeTargetMachine &TM,
+                                  const MBlazeSubtarget &STI);
+
+    static const MBlazeTargetLowering *create(MBlazeTargetMachine &TM,
+                                              const MBlazeSubtarget &STI);
 
     /// LowerOperation - Provide custom lowering hooks for some operations.
     virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
@@ -109,7 +114,7 @@ namespace llvm {
 
   private:
     // Subtarget Info
-    const MBlazeSubtarget *Subtarget;
+    const MBlazeSubtarget &Subtarget;
 
 
     // Lower Operand helpers
