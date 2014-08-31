@@ -950,10 +950,7 @@ void DwarfDebug::finalizeModuleInfo() {
                     0);
         } else {
           RangeSpan &Range = TheU->getRanges().back();
-          U.addLocalLabelAddress(U.getUnitDie(), dwarf::DW_AT_low_pc,
-                                 Range.getStart());
-          U.addLabelDelta(U.getUnitDie(), dwarf::DW_AT_high_pc, Range.getEnd(),
-                          Range.getStart());
+          attachLowHighPC(U, U.getUnitDie(), Range.getStart(), Range.getEnd());
         }
       }
     }
@@ -1149,7 +1146,7 @@ bool DwarfDebug::addCurrentFnArgument(DbgVariable *Var, LexicalScope *Scope) {
 
 // Collect variable information from side table maintained by MMI.
 void DwarfDebug::collectVariableInfoFromMMITable(
-    SmallPtrSet<const MDNode *, 16> &Processed) {
+    SmallPtrSetImpl<const MDNode *> &Processed) {
   for (const auto &VI : MMI->getVariableDbgInfo()) {
     if (!VI.Var)
       continue;
@@ -1308,7 +1305,7 @@ DwarfDebug::buildLocationList(SmallVectorImpl<DebugLocEntry> &DebugLoc,
 
 // Find variables for each lexical scope.
 void
-DwarfDebug::collectVariableInfo(SmallPtrSet<const MDNode *, 16> &Processed) {
+DwarfDebug::collectVariableInfo(SmallPtrSetImpl<const MDNode *> &Processed) {
   LexicalScope *FnScope = LScopes.getCurrentFunctionScope();
   DwarfCompileUnit *TheCU = SPMap.lookup(FnScope->getScopeNode());
 
@@ -1722,8 +1719,8 @@ void DwarfDebug::recordSourceLine(unsigned Line, unsigned Col, const MDNode *S,
     assert(Scope.isScope());
     Fn = Scope.getFilename();
     Dir = Scope.getDirectory();
-    if (Scope.isLexicalBlock())
-      Discriminator = DILexicalBlock(S).getDiscriminator();
+    if (Scope.isLexicalBlockFile())
+      Discriminator = DILexicalBlockFile(S).getDiscriminator();
 
     unsigned CUID = Asm->OutStreamer.getContext().getDwarfCompileUnitID();
     Src = static_cast<DwarfCompileUnit &>(*InfoHolder.getUnits()[CUID])
@@ -2481,24 +2478,6 @@ DwarfCompileUnit &DwarfDebug::constructSkeletonCU(const DwarfCompileUnit &CU) {
   return NewCU;
 }
 
-// This DIE has the following attributes: DW_AT_comp_dir, DW_AT_dwo_name,
-// DW_AT_addr_base.
-DwarfTypeUnit &DwarfDebug::constructSkeletonTU(DwarfTypeUnit &TU) {
-  DwarfCompileUnit &CU = static_cast<DwarfCompileUnit &>(
-      *SkeletonHolder.getUnits()[TU.getCU().getUniqueID()]);
-
-  auto OwnedUnit = make_unique<DwarfTypeUnit>(TU.getUniqueID(), CU, Asm, this,
-                                              &SkeletonHolder);
-  DwarfTypeUnit &NewTU = *OwnedUnit;
-  NewTU.setTypeSignature(TU.getTypeSignature());
-  NewTU.setType(nullptr);
-  NewTU.initSection(
-      Asm->getObjFileLowering().getDwarfTypesSection(TU.getTypeSignature()));
-
-  initSkeletonUnit(TU, NewTU.getUnitDie(), std::move(OwnedUnit));
-  return NewTU;
-}
-
 // Emit the .debug_info.dwo section for separated dwarf. This contains the
 // compile units that would normally be in debug_info.
 void DwarfDebug::emitDebugInfoDWO() {
@@ -2621,17 +2600,14 @@ void DwarfDebug::addDwarfTypeUnitType(DwarfCompileUnit &CU,
 
     // If the type wasn't dependent on fission addresses, finish adding the type
     // and all its dependent types.
-    for (auto &TU : TypeUnitsToAdd) {
-      if (useSplitDwarf())
-        TU.first->setSkeleton(constructSkeletonTU(*TU.first));
+    for (auto &TU : TypeUnitsToAdd)
       InfoHolder.addUnit(std::move(TU.first));
-    }
   }
   CU.addDIETypeSignature(RefDie, NewTU);
 }
 
 void DwarfDebug::attachLowHighPC(DwarfCompileUnit &Unit, DIE &D,
-                                 MCSymbol *Begin, MCSymbol *End) {
+                                 const MCSymbol *Begin, const MCSymbol *End) {
   assert(Begin && "Begin label should not be null!");
   assert(End && "End label should not be null!");
   assert(Begin->isDefined() && "Invalid starting label");

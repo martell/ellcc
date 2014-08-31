@@ -87,7 +87,7 @@ protected:
   bool HasMachoTBSSDirective;
 
   /// True if the compiler should emit a ".reference .constructors_used" or
-  /// ".reference .destructors_used" directive after the a static ctor/dtor
+  /// ".reference .destructors_used" directive after the static ctor/dtor
   /// list.  This directive is only emitted in Static relocation model.  Default
   /// is false.
   bool HasStaticCtorDtorReferenceInStaticMode;
@@ -295,9 +295,6 @@ protected:
 
   //===--- Dwarf Emission Directives -----------------------------------===//
 
-  /// True if target asm supports leb128 directives.  Defaults to false.
-  bool HasLEB128;
-
   /// True if target supports emission of debugging information.  Defaults to
   /// false.
   bool SupportsDebugInformation;
@@ -471,7 +468,6 @@ public:
   MCSymbolAttr getProtectedVisibilityAttr() const {
     return ProtectedVisibilityAttr;
   }
-  bool hasLEB128() const { return HasLEB128; }
   bool doesSupportDebugInformation() const { return SupportsDebugInformation; }
   bool doesSupportExceptionHandling() const {
     return ExceptionsType != ExceptionHandling::None;

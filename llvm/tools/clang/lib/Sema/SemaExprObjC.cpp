@@ -995,7 +995,11 @@ ExprResult Sema::BuildObjCEncodeExpression(SourceLocation AtLoc,
         return ExprError();
 
     std::string Str;
-    Context.getObjCEncodingForType(EncodedType, Str);
+    QualType NotEncodedT;
+    Context.getObjCEncodingForType(EncodedType, Str, nullptr, &NotEncodedT);
+    if (!NotEncodedT.isNull())
+      Diag(AtLoc, diag::warn_incomplete_encoded_type)
+        << EncodedType << NotEncodedT;
 
     // The type of @encode is the same as the type of the corresponding string,
     // which is an array type.
@@ -1137,6 +1141,7 @@ ExprResult Sema::ParseObjCSelectorExpression(Selector Sel,
     case OMF_mutableCopy:
     case OMF_new:
     case OMF_self:
+    case OMF_initialize:
     case OMF_performSelector:
       break;
     }
@@ -1325,6 +1330,7 @@ bool Sema::CheckMessageArgumentTypes(QualType ReceiverType,
                                      ObjCMethodDecl *Method,
                                      bool isClassMessage, bool isSuperMessage,
                                      SourceLocation lbrac, SourceLocation rbrac,
+                                     SourceRange RecRange,
                                      QualType &ReturnType, ExprValueKind &VK) {
   SourceLocation SelLoc;
   if (!SelectorLocs.empty() && SelectorLocs.front().isValid())
@@ -1379,9 +1385,15 @@ bool Sema::CheckMessageArgumentTypes(QualType ReceiverType,
                                                 SelectorLocs.back());
       // Find the class to which we are sending this message.
       if (ReceiverType->isObjCObjectPointerType()) {
-        if (ObjCInterfaceDecl *Class =
-              ReceiverType->getAs<ObjCObjectPointerType>()->getInterfaceDecl())
-          Diag(Class->getLocation(), diag::note_receiver_class_declared);
+        if (ObjCInterfaceDecl *ThisClass =
+            ReceiverType->getAs<ObjCObjectPointerType>()->getInterfaceDecl()) {
+          Diag(ThisClass->getLocation(), diag::note_receiver_class_declared);
+          if (!RecRange.isInvalid())
+            if (ThisClass->lookupClassMethod(Sel))
+              Diag(RecRange.getBegin(),diag::note_receiver_expr_here)
+                << FixItHint::CreateReplacement(RecRange,
+                                                ThisClass->getNameAsString());
+        }
       }
     }
 
@@ -1486,7 +1498,7 @@ bool Sema::CheckMessageArgumentTypes(QualType ReceiverType,
 
   // Do additional checkings on method.
   IsError |= CheckObjCMethodCall(
-      Method, SelLoc, makeArrayRef<const Expr *>(Args.data(), Args.size()));
+      Method, SelLoc, makeArrayRef(Args.data(), Args.size()));
 
   return IsError;
 }
@@ -1708,11 +1720,15 @@ HandleExprPropertyRefExpr(const ObjCObjectPointerType *OPT,
   // name 'x'.
   if (Setter && Setter->isImplicit() && Setter->isPropertyAccessor()
       && !IFace->FindPropertyDeclaration(Member)) {
-      if (const ObjCPropertyDecl *PDecl = Setter->findPropertyDecl())
+      if (const ObjCPropertyDecl *PDecl = Setter->findPropertyDecl()) {
+        // Do not warn if user is using property-dot syntax to make call to
+        // user named setter.
+        if (!(PDecl->getPropertyAttributes() & ObjCPropertyDecl::OBJC_PR_setter))
           Diag(MemberLoc,
                diag::warn_property_access_suggest)
           << MemberName << QualType(OPT, 0) << PDecl->getName()
           << FixItHint::CreateReplacement(MemberLoc, PDecl->getName());
+      }
   }
 
   if (Getter || Setter) {
@@ -2210,7 +2226,8 @@ ExprResult Sema::BuildClassMessage(TypeSourceInfo *ReceiverTypeInfo,
   if (CheckMessageArgumentTypes(ReceiverType, MultiExprArg(Args, NumArgs),
                                 Sel, SelectorLocs,
                                 Method, true,
-                                SuperLoc.isValid(), LBracLoc, RBracLoc, 
+                                SuperLoc.isValid(), LBracLoc, RBracLoc,
+                                SourceRange(),
                                 ReturnType, VK))
     return ExprError();
 
@@ -2218,6 +2235,29 @@ ExprResult Sema::BuildClassMessage(TypeSourceInfo *ReceiverTypeInfo,
       RequireCompleteType(LBracLoc, Method->getReturnType(),
                           diag::err_illegal_message_expr_incomplete_type))
     return ExprError();
+  
+  // Warn about explicit call of +initialize on its own class. But not on 'super'.
+  if (Method && Method->getMethodFamily() == OMF_initialize) {
+    if (!SuperLoc.isValid()) {
+      const ObjCInterfaceDecl *ID =
+        dyn_cast<ObjCInterfaceDecl>(Method->getDeclContext());
+      if (ID == Class) {
+        Diag(Loc, diag::warn_direct_initialize_call);
+        Diag(Method->getLocation(), diag::note_method_declared_at)
+          << Method->getDeclName();
+      }
+    }
+    else if (ObjCMethodDecl *CurMeth = getCurMethodDecl()) {
+      // [super initialize] is allowed only within an +initialize implementation
+      if (CurMeth->getMethodFamily() != OMF_initialize) {
+        Diag(Loc, diag::warn_direct_super_initialize_call);
+        Diag(Method->getLocation(), diag::note_method_declared_at)
+          << Method->getDeclName();
+        Diag(CurMeth->getLocation(), diag::note_method_declared_at)
+        << CurMeth->getDeclName();
+      }
+    }
+  }
 
   // Construct the appropriate ObjCMessageExpr.
   ObjCMessageExpr *Result;
@@ -2615,7 +2655,7 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
   if (CheckMessageArgumentTypes(ReceiverType, MultiExprArg(Args, NumArgs),
                                 Sel, SelectorLocs, Method,
                                 ClassMessage, SuperLoc.isValid(), 
-                                LBracLoc, RBracLoc, ReturnType, VK))
+                                LBracLoc, RBracLoc, RecRange, ReturnType, VK))
     return ExprError();
 
   if (Method && !Method->getReturnType()->isVoidType() &&
@@ -2640,6 +2680,7 @@ ExprResult Sema::BuildInstanceMessage(Expr *Receiver,
     case OMF_mutableCopy:
     case OMF_new:
     case OMF_self:
+    case OMF_initialize:
       break;
 
     case OMF_dealloc:

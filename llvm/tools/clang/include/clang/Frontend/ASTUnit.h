@@ -423,16 +423,28 @@ private:
   explicit ASTUnit(bool MainFileIsAST);
 
   void CleanTemporaryFiles();
-  bool Parse(llvm::MemoryBuffer *OverrideMainBuffer);
-  
-  std::pair<llvm::MemoryBuffer *, std::pair<unsigned, bool> >
-  ComputePreamble(CompilerInvocation &Invocation, 
-                  unsigned MaxLines, bool &CreatedBuffer);
-  
-  llvm::MemoryBuffer *getMainBufferWithPrecompiledPreamble(
-                               const CompilerInvocation &PreambleInvocationIn,
-                                                     bool AllowRebuild = true,
-                                                        unsigned MaxLines = 0);
+  bool Parse(std::unique_ptr<llvm::MemoryBuffer> OverrideMainBuffer);
+
+  struct ComputedPreamble {
+    llvm::MemoryBuffer *Buffer;
+    std::unique_ptr<llvm::MemoryBuffer> Owner;
+    unsigned Size;
+    bool PreambleEndsAtStartOfLine;
+    ComputedPreamble(llvm::MemoryBuffer *Buffer,
+                     std::unique_ptr<llvm::MemoryBuffer> Owner, unsigned Size,
+                     bool PreambleEndsAtStartOfLine)
+        : Buffer(Buffer), Owner(std::move(Owner)), Size(Size),
+          PreambleEndsAtStartOfLine(PreambleEndsAtStartOfLine) {}
+    ComputedPreamble(ComputedPreamble &&C)
+        : Buffer(C.Buffer), Owner(std::move(C.Owner)), Size(C.Size),
+          PreambleEndsAtStartOfLine(C.PreambleEndsAtStartOfLine) {}
+  };
+  ComputedPreamble ComputePreamble(CompilerInvocation &Invocation,
+                                   unsigned MaxLines);
+
+  std::unique_ptr<llvm::MemoryBuffer> getMainBufferWithPrecompiledPreamble(
+      const CompilerInvocation &PreambleInvocationIn, bool AllowRebuild = true,
+      unsigned MaxLines = 0);
   void RealizeTopLevelDeclsFromPreamble();
 
   /// \brief Transfers ownership of the objects (like SourceManager) from
@@ -684,8 +696,8 @@ public:
   /// module file.
   bool isModuleFile();
 
-  llvm::MemoryBuffer *getBufferForFile(StringRef Filename,
-                                       std::string *ErrorStr = nullptr);
+  std::unique_ptr<llvm::MemoryBuffer>
+  getBufferForFile(StringRef Filename, std::string *ErrorStr = nullptr);
 
   /// \brief Determine what kind of translation unit this AST represents.
   TranslationUnitKind getTranslationUnitKind() const { return TUKind; }

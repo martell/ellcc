@@ -1224,9 +1224,9 @@ bool ASTReader::ReadSLocEntry(int ID) {
         return true;
       }
       
-      llvm::MemoryBuffer *Buffer
+      std::unique_ptr<llvm::MemoryBuffer> Buffer
         = llvm::MemoryBuffer::getMemBuffer(Blob.drop_back(1), File->getName());
-      SourceMgr.overrideFileContents(File, Buffer);
+      SourceMgr.overrideFileContents(File, std::move(Buffer));
     }
 
     break;
@@ -1251,10 +1251,10 @@ bool ASTReader::ReadSLocEntry(int ID) {
       return true;
     }
 
-    llvm::MemoryBuffer *Buffer
-      = llvm::MemoryBuffer::getMemBuffer(Blob.drop_back(1), Name);
-    SourceMgr.createFileID(Buffer, FileCharacter, ID, BaseOffset + Offset,
-                           IncludeLoc);
+    std::unique_ptr<llvm::MemoryBuffer> Buffer =
+        llvm::MemoryBuffer::getMemBuffer(Blob.drop_back(1), Name);
+    SourceMgr.createFileID(std::move(Buffer), FileCharacter, ID,
+                           BaseOffset + Offset, IncludeLoc);
     break;
   }
 
@@ -2620,9 +2620,9 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
         F.TypeRemap.insertOrReplace(
           std::make_pair(LocalBaseTypeIndex, 
                          F.BaseTypeIndex - LocalBaseTypeIndex));
-        
-        TypesLoaded.resize(TypesLoaded.size() + F.LocalNumTypes);
       }
+      // Increase size by >= 1 so we get a unique base index in the next module.
+      TypesLoaded.resize(TypesLoaded.size() + std::max(F.LocalNumTypes, 1U));
       break;
     }
         
@@ -2650,9 +2650,10 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
         // Introduce the global -> local mapping for declarations within this
         // module.
         F.GlobalToLocalDeclIDs[&F] = LocalBaseDeclID;
-        
-        DeclsLoaded.resize(DeclsLoaded.size() + F.LocalNumDecls);
       }
+
+      // Increase size by >= 1 so we get a unique base index in the next module.
+      DeclsLoaded.resize(DeclsLoaded.size() + std::max(F.LocalNumDecls, 1U));
       break;
     }
         
@@ -2720,10 +2721,11 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
         F.IdentifierRemap.insertOrReplace(
           std::make_pair(LocalBaseIdentifierID,
                          F.BaseIdentifierID - LocalBaseIdentifierID));
-        
-        IdentifiersLoaded.resize(IdentifiersLoaded.size() 
-                                 + F.LocalNumIdentifiers);
       }
+
+      // Increase size by >= 1 so we get a unique base index in the next module.
+      IdentifiersLoaded.resize(IdentifiersLoaded.size() +
+                               std::max(F.LocalNumIdentifiers, 1U));
       break;
     }
 
@@ -2813,9 +2815,10 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
         F.SelectorRemap.insertOrReplace(
           std::make_pair(LocalBaseSelectorID,
                          F.BaseSelectorID - LocalBaseSelectorID));
-
-        SelectorsLoaded.resize(SelectorsLoaded.size() + F.LocalNumSelectors);        
       }
+      // Increase size by >= 1 so we get a unique base index in the next module.
+      SelectorsLoaded.resize(SelectorsLoaded.size() +
+                             std::max(F.LocalNumSelectors, 1U));
       break;
     }
         
@@ -2855,8 +2858,10 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
       F.SLocEntryOffsets = (const uint32_t *)Blob.data();
       F.LocalNumSLocEntries = Record[0];
       unsigned SLocSpaceSize = Record[1];
+
+      // Increase size by >= 1 so we get a unique base index in the next module.
       std::tie(F.SLocEntryBaseID, F.SLocEntryBaseOffset) =
-          SourceMgr.AllocateLoadedSLocEntries(F.LocalNumSLocEntries,
+          SourceMgr.AllocateLoadedSLocEntries(std::max(F.LocalNumSLocEntries, 1U),
                                               SLocSpaceSize);
       // Make our entry in the range map. BaseID is negative and growing, so
       // we invert it. Because we invert it, though, we need the other end of
@@ -3049,9 +3054,11 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
         PP.createPreprocessingRecord();
       if (!PP.getPreprocessingRecord()->getExternalSource())
         PP.getPreprocessingRecord()->SetExternalSource(*this);
+
+      // Increase size by >= 1 so we get a unique base index in the next module.
       StartingID 
         = PP.getPreprocessingRecord()
-            ->allocateLoadedEntities(F.NumPreprocessedEntities);
+            ->allocateLoadedEntities(std::max(F.NumPreprocessedEntities, 1U));
       F.BasePreprocessedEntityID = StartingID;
 
       if (F.NumPreprocessedEntities > 0) {
@@ -3255,9 +3262,9 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
         F.MacroRemap.insertOrReplace(
           std::make_pair(LocalBaseMacroID,
                          F.BaseMacroID - LocalBaseMacroID));
-
-        MacrosLoaded.resize(MacrosLoaded.size() + F.LocalNumMacros);
       }
+      // Increase size by >= 1 so we get a unique base index in the next module.
+      MacrosLoaded.resize(MacrosLoaded.size() + std::max(F.LocalNumMacros, 1U));
       break;
     }
 
@@ -3514,10 +3521,9 @@ bool ASTReader::isGlobalIndexUnavailable() const {
 static void updateModuleTimestamp(ModuleFile &MF) {
   // Overwrite the timestamp file contents so that file's mtime changes.
   std::string TimestampFilename = MF.getTimestampFilename();
-  std::string ErrorInfo;
-  llvm::raw_fd_ostream OS(TimestampFilename.c_str(), ErrorInfo,
-                          llvm::sys::fs::F_Text);
-  if (!ErrorInfo.empty())
+  std::error_code EC;
+  llvm::raw_fd_ostream OS(TimestampFilename, EC, llvm::sys::fs::F_Text);
+  if (EC)
     return;
   OS << "Timestamp file\n";
 }
@@ -4024,8 +4030,8 @@ std::string ASTReader::getOriginalSourceFile(const std::string &ASTFileName,
                                              DiagnosticsEngine &Diags) {
   // Open the AST file.
   std::string ErrStr;
-  std::unique_ptr<llvm::MemoryBuffer> Buffer;
-  Buffer.reset(FileMgr.getBufferForFile(ASTFileName, &ErrStr));
+  std::unique_ptr<llvm::MemoryBuffer> Buffer =
+      FileMgr.getBufferForFile(ASTFileName, &ErrStr);
   if (!Buffer) {
     Diags.Report(diag::err_fe_unable_to_read_pch_file) << ASTFileName << ErrStr;
     return std::string();
@@ -4113,8 +4119,8 @@ bool ASTReader::readASTFileControlBlock(StringRef Filename,
                                         ASTReaderListener &Listener) {
   // Open the AST file.
   std::string ErrStr;
-  std::unique_ptr<llvm::MemoryBuffer> Buffer;
-  Buffer.reset(FileMgr.getBufferForFile(Filename, &ErrStr));
+  std::unique_ptr<llvm::MemoryBuffer> Buffer =
+      FileMgr.getBufferForFile(Filename, &ErrStr);
   if (!Buffer) {
     return true;
   }
@@ -4509,9 +4515,11 @@ ASTReader::ReadSubmoduleBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
         F.SubmoduleRemap.insertOrReplace(
           std::make_pair(LocalBaseSubmoduleID,
                          F.BaseSubmoduleID - LocalBaseSubmoduleID));
-        
-        SubmodulesLoaded.resize(SubmodulesLoaded.size() + F.LocalNumSubmodules);
-      }      
+      }
+
+      // Increase size by >= 1 so we get a unique base index in the next module.
+      SubmodulesLoaded.resize(SubmodulesLoaded.size() +
+                              std::max(F.LocalNumSubmodules, 1U));
       break;
     }
         
@@ -6057,9 +6065,7 @@ void ASTReader::CompleteRedeclChain(const Decl *D) {
   // If this is a named declaration, complete it by looking it up
   // within its context.
   //
-  // FIXME: We don't currently handle the cases where we can't do this;
-  // merging a class definition that contains unnamed entities should merge
-  // those entities. Likewise, merging a function definition should merge
+  // FIXME: Merging a function definition should merge
   // all mergeable entities within it.
   if (isa<TranslationUnitDecl>(DC) || isa<NamespaceDecl>(DC) ||
       isa<CXXRecordDecl>(DC) || isa<EnumDecl>(DC)) {
@@ -6072,6 +6078,9 @@ void ASTReader::CompleteRedeclChain(const Decl *D) {
           updateOutOfDateIdentifier(*II);
       } else
         DC->lookup(Name);
+    } else if (needsAnonymousDeclarationNumber(cast<NamedDecl>(D))) {
+      // FIXME: It'd be nice to do something a bit more targeted here.
+      D->getDeclContext()->decls_begin();
     }
   }
 }
@@ -8200,24 +8209,25 @@ void ASTReader::finishPendingActions() {
   // Objective-C protocol definitions, or any redeclarable templates, make sure
   // that all redeclarations point to the definitions. Note that this can only 
   // happen now, after the redeclaration chains have been fully wired.
-  for (llvm::SmallPtrSet<Decl *, 4>::iterator D = PendingDefinitions.begin(),
-                                           DEnd = PendingDefinitions.end();
-       D != DEnd; ++D) {
-    if (TagDecl *TD = dyn_cast<TagDecl>(*D)) {
+  for (Decl *D : PendingDefinitions) {
+    if (TagDecl *TD = dyn_cast<TagDecl>(D)) {
       if (const TagType *TagT = dyn_cast<TagType>(TD->getTypeForDecl())) {
         // Make sure that the TagType points at the definition.
         const_cast<TagType*>(TagT)->decl = TD;
       }
       
-      if (auto RD = dyn_cast<CXXRecordDecl>(*D)) {
-        for (auto R : RD->redecls())
+      if (auto RD = dyn_cast<CXXRecordDecl>(D)) {
+        for (auto R : RD->redecls()) {
+          assert((R == D) == R->isThisDeclarationADefinition() &&
+                 "declaration thinks it's the definition but it isn't");
           cast<CXXRecordDecl>(R)->DefinitionData = RD->DefinitionData;
+        }
       }
 
       continue;
     }
     
-    if (auto ID = dyn_cast<ObjCInterfaceDecl>(*D)) {
+    if (auto ID = dyn_cast<ObjCInterfaceDecl>(D)) {
       // Make sure that the ObjCInterfaceType points at the definition.
       const_cast<ObjCInterfaceType *>(cast<ObjCInterfaceType>(ID->TypeForDecl))
         ->Decl = ID;
@@ -8228,14 +8238,14 @@ void ASTReader::finishPendingActions() {
       continue;
     }
     
-    if (auto PD = dyn_cast<ObjCProtocolDecl>(*D)) {
+    if (auto PD = dyn_cast<ObjCProtocolDecl>(D)) {
       for (auto R : PD->redecls())
         R->Data = PD->Data;
       
       continue;
     }
     
-    auto RTD = cast<RedeclarableTemplateDecl>(*D)->getCanonicalDecl();
+    auto RTD = cast<RedeclarableTemplateDecl>(D)->getCanonicalDecl();
     for (auto R : RTD->redecls())
       R->Common = RTD->Common;
   }
@@ -8301,12 +8311,21 @@ void ASTReader::diagnoseOdrViolations() {
       continue;
 
     DeclContext *CanonDef = D->getDeclContext();
-    DeclContext::lookup_result R = CanonDef->lookup(D->getDeclName());
 
     bool Found = false;
     const Decl *DCanon = D->getCanonicalDecl();
 
+    for (auto RI : D->redecls()) {
+      if (RI->getLexicalDeclContext() == CanonDef) {
+        Found = true;
+        break;
+      }
+    }
+    if (Found)
+      continue;
+
     llvm::SmallVector<const NamedDecl*, 4> Candidates;
+    DeclContext::lookup_result R = CanonDef->lookup(D->getDeclName());
     for (DeclContext::lookup_iterator I = R.begin(), E = R.end();
          !Found && I != E; ++I) {
       for (auto RI : (*I)->redecls()) {
@@ -8323,7 +8342,10 @@ void ASTReader::diagnoseOdrViolations() {
     }
 
     if (!Found) {
-      D->setInvalidDecl();
+      // The AST doesn't like TagDecls becoming invalid after they've been
+      // completed. We only really need to mark FieldDecls as invalid here.
+      if (!isa<TagDecl>(D))
+        D->setInvalidDecl();
 
       std::string CanonDefModule =
           getOwningModuleNameForDiagnostic(cast<Decl>(CanonDef));

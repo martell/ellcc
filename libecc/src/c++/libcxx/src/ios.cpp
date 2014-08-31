@@ -9,8 +9,6 @@
 
 #if !defined(__microblaze__)    // RICH: Broken.
 
-#define _LIBCPP_EXTERN_TEMPLATE(...) extern template __VA_ARGS__;
-
 #include "ios"
 #include "streambuf"
 #include "istream"

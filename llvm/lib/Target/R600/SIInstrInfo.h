@@ -119,6 +119,10 @@ public:
   bool isImmOperandLegal(const MachineInstr *MI, unsigned OpNo,
                          const MachineOperand &MO) const;
 
+  /// \brief Return true if the given offset Size in bytes can be folded into
+  /// the immediate offsets of a memory instruction for the given address space.
+  static bool canFoldOffset(unsigned OffsetSize, unsigned AS) LLVM_READNONE;
+
   /// \brief Return true if this 64-bit VALU instruction has a 32-bit encoding.
   /// This function will return false if you pass it a 32-bit instruction.
   bool hasVALU32BitEncoding(unsigned Opcode) const;
@@ -165,6 +169,12 @@ public:
   /// \brief Legalize all operands in this instruction.  This function may
   /// create new instruction and insert them before \p MI.
   void legalizeOperands(MachineInstr *MI) const;
+
+  /// \brief Split an SMRD instruction into two smaller loads of half the
+  //  size storing the results in \p Lo and \p Hi.
+  void splitSMRD(MachineInstr *MI, const TargetRegisterClass *HalfRC,
+                 unsigned HalfImmOp, unsigned HalfSGPROp,
+                 MachineInstr *&Lo, MachineInstr *&Hi) const;
 
   void moveSMRDToVALU(MachineInstr *MI, MachineRegisterInfo &MRI) const;
 

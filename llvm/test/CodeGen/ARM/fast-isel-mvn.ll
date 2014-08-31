@@ -2,6 +2,7 @@
 ; RUN: llc -O0 -verify-machineinstrs -fast-isel-abort -relocation-model=dynamic-no-pic -arm-use-movt=false -mtriple=armv7-linux-gnueabi < %s | FileCheck %s --check-prefix=CHECK --check-prefix=ARM
 ; RUN: llc -O0 -verify-machineinstrs -fast-isel-abort -relocation-model=dynamic-no-pic -arm-use-movt=false -mtriple=thumbv7-apple-ios   < %s | FileCheck %s --check-prefix=CHECK --check-prefix=ARM
 ; RUN: llc -O0 -verify-machineinstrs -fast-isel-abort -relocation-model=dynamic-no-pic -arm-use-movt=true  -mtriple=thumbv7-apple-ios   < %s | FileCheck %s --check-prefix=CHECK --check-prefix=THUMB
+; RUN: llc -O0 -verify-machineinstrs -fast-isel-abort -relocation-model=dynamic-no-pic -arm-use-movt=true  -mtriple=armv7-apple-ios     < %s | FileCheck %s --check-prefix=MOVT
 ; rdar://10412592
 
 define void @t1() nounwind {
@@ -81,3 +82,12 @@ entry:
   call void @foo(i32 -2130706433)
   ret void
 }
+
+; Load from constant pool.
+define i32 @t10(i32 %a) {
+; MOVT-LABEL: t10
+; MOVT:       ldr
+  %1 = xor i32 -1998730207, %a
+  ret i32 %1
+}
+

@@ -194,7 +194,7 @@ ObjCMigrateAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
   Consumers.push_back(WrapperFrontendAction::CreateASTConsumer(CI, InFile));
   Consumers.push_back(llvm::make_unique<ObjCMigrateASTConsumer>(
       MigrateDir, ObjCMigAction, Remapper, CompInst->getFileManager(), PPRec,
-      CompInst->getPreprocessor(), false, ArrayRef<std::string>()));
+      CompInst->getPreprocessor(), false, None));
   return llvm::make_unique<MultiplexConsumer>(std::move(Consumers));
 }
 
@@ -700,11 +700,9 @@ void ObjCMigrateASTConsumer::migrateProtocolConformance(ASTContext &Ctx,
   Ctx.CollectInheritedProtocols(IDecl, ExplicitProtocols);
   llvm::SmallVector<ObjCProtocolDecl *, 8> PotentialImplicitProtocols;
   
-  for (llvm::SmallPtrSet<ObjCProtocolDecl*, 32>::iterator I =
-       ObjCProtocolDecls.begin(),
-       E = ObjCProtocolDecls.end(); I != E; ++I)
-    if (!ExplicitProtocols.count(*I))
-      PotentialImplicitProtocols.push_back(*I);
+  for (ObjCProtocolDecl *ProtDecl : ObjCProtocolDecls)
+    if (!ExplicitProtocols.count(ProtDecl))
+      PotentialImplicitProtocols.push_back(ProtDecl);
   
   if (PotentialImplicitProtocols.empty())
     return;
@@ -1793,12 +1791,12 @@ void ObjCMigrateASTConsumer::HandleTranslationUnit(ASTContext &Ctx) {
   }
   
  if (IsOutputFile) {
-   std::string Error;
-   llvm::raw_fd_ostream OS(MigrateDir.c_str(), Error, llvm::sys::fs::F_None);
-    if (!Error.empty()) {
+   std::error_code EC;
+   llvm::raw_fd_ostream OS(MigrateDir, EC, llvm::sys::fs::F_None);
+   if (EC) {
       DiagnosticsEngine &Diags = Ctx.getDiagnostics();
       Diags.Report(Diags.getCustomDiagID(DiagnosticsEngine::Error, "%0"))
-          << Error;
+          << EC.message();
       return;
     }
 
@@ -1821,11 +1819,12 @@ void ObjCMigrateASTConsumer::HandleTranslationUnit(ASTContext &Ctx) {
     llvm::raw_svector_ostream vecOS(newText);
     buf.write(vecOS);
     vecOS.flush();
-    llvm::MemoryBuffer *memBuf = llvm::MemoryBuffer::getMemBufferCopy(
-                   StringRef(newText.data(), newText.size()), file->getName());
+    std::unique_ptr<llvm::MemoryBuffer> memBuf(
+        llvm::MemoryBuffer::getMemBufferCopy(
+            StringRef(newText.data(), newText.size()), file->getName()));
     SmallString<64> filePath(file->getName());
     FileMgr.FixupRelativePath(filePath);
-    Remapper.remap(filePath.str(), memBuf);
+    Remapper.remap(filePath.str(), std::move(memBuf));
   }
 
   if (IsOutputFile) {
@@ -1939,7 +1938,7 @@ public:
       return true;
 
     llvm::SourceMgr SM;
-    Stream YAMLStream(FileBufOrErr.get().release(), SM);
+    Stream YAMLStream(FileBufOrErr.get()->getMemBufferRef(), SM);
     document_iterator I = YAMLStream.begin();
     if (I == YAMLStream.end())
       return true;

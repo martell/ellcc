@@ -180,6 +180,7 @@ enum {
   DWORDADDR,
   FRACT,
   CLAMP,
+  MAD, // Multiply + add with same result as the separate operations.
 
   // SIN_HW, COS_HW - f32 for SI, 1 ULP max error, valid from -100 pi to 100 pi.
   // Denormals handled on some parts.
@@ -203,6 +204,7 @@ enum {
   RSQ,
   RSQ_LEGACY,
   RSQ_CLAMPED,
+  LDEXP,
   DOT4,
   BFE_U32, // Extract range of bits with zero extension to 32-bits.
   BFE_I32, // Extract range of bits with sign extension to 32-bits.

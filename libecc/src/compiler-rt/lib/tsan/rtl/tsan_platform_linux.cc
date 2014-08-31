@@ -323,7 +323,7 @@ static void InitDataSeg() {
 
 #endif  // #ifndef TSAN_GO
 
-const char *InitializePlatform() {
+void InitializePlatform() {
   DisableCoreDumperIfNecessary();
 
   // Go maps shadow memory lazily and works fine with limited address space.
@@ -360,7 +360,6 @@ const char *InitializePlatform() {
   InitTlsSize();
   InitDataSeg();
 #endif
-  return GetEnv(kTsanOptionsEnv);
 }
 
 bool IsGlobalVar(uptr addr) {

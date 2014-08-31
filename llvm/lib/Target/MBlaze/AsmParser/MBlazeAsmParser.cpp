@@ -49,7 +49,7 @@ class MBlazeAsmParser : public MCTargetAsmParser {
 
   bool MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                OperandVector &Operands,
-                               MCStreamer &Out, unsigned &ErrorInfo,
+                               MCStreamer &Out, uint64_t &ErrorInfo,
                                bool MatchingInlineAsm);
 
   /// @name Auto-generated Match Functions
@@ -335,7 +335,7 @@ static unsigned MatchRegisterName(StringRef Name);
 bool MBlazeAsmParser::
 MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                         OperandVector &Operands,
-                        MCStreamer &Out, unsigned &ErrorInfo,
+                        MCStreamer &Out, uint64_t &ErrorInfo,
                         bool MatchingInlineAsm) {
   MCInst Inst;
   unsigned MatchResult =

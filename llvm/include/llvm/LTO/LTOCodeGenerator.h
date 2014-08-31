@@ -122,9 +122,9 @@ private:
   bool generateObjectFile(raw_ostream &out, bool disableOpt, bool disableInline,
                           bool disableGVNLoadPRE, std::string &errMsg);
   void applyScopeRestrictions();
-  void applyRestriction(GlobalValue &GV, const ArrayRef<StringRef> &Libcalls,
+  void applyRestriction(GlobalValue &GV, ArrayRef<StringRef> Libcalls,
                         std::vector<const char *> &MustPreserveList,
-                        SmallPtrSet<GlobalValue *, 8> &AsmUsed,
+                        SmallPtrSetImpl<GlobalValue *> &AsmUsed,
                         Mangler &Mangler);
   bool determineTarget(std::string &errMsg);
 

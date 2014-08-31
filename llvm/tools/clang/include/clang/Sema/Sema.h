@@ -129,7 +129,6 @@ namespace clang {
   class ModuleLoader;
   class MultiLevelTemplateArgumentList;
   class NamedDecl;
-  class NonNullAttr;
   class ObjCCategoryDecl;
   class ObjCCategoryImplDecl;
   class ObjCCompatibleAliasDecl;
@@ -2706,6 +2705,9 @@ public:
 
   void checkUnusedDeclAttributes(Declarator &D);
 
+  /// Determine if type T is a valid subject for a nonnull attribute.
+  bool isValidNonNullAttrType(QualType T);
+
   bool CheckRegparmAttr(const AttributeList &attr, unsigned &value);
   bool CheckCallingConvAttr(const AttributeList &attr, CallingConv &CC, 
                             const FunctionDecl *FD = nullptr);
@@ -3291,7 +3293,8 @@ public:
   // needs to be delayed for some constant variables when we build one of the
   // named expressions.
   void MarkAnyDeclReferenced(SourceLocation Loc, Decl *D, bool OdrUse);
-  void MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func);
+  void MarkFunctionReferenced(SourceLocation Loc, FunctionDecl *Func,
+                              bool OdrUse = true);
   void MarkVariableReferenced(SourceLocation Loc, VarDecl *Var);
   void MarkDeclRefReferenced(DeclRefExpr *E);
   void MarkMemberReferenced(MemberExpr *E);
@@ -6568,6 +6571,31 @@ public:
   /// but have not yet been performed.
   std::deque<PendingImplicitInstantiation> PendingInstantiations;
 
+  class SavePendingInstantiationsAndVTableUsesRAII {
+  public:
+    SavePendingInstantiationsAndVTableUsesRAII(Sema &S): S(S) {
+      SavedPendingInstantiations.swap(S.PendingInstantiations);
+      SavedVTableUses.swap(S.VTableUses);
+    }
+
+    ~SavePendingInstantiationsAndVTableUsesRAII() {
+      // Restore the set of pending vtables.
+      assert(S.VTableUses.empty() &&
+             "VTableUses should be empty before it is discarded.");
+      S.VTableUses.swap(SavedVTableUses);
+
+      // Restore the set of pending implicit instantiations.
+      assert(S.PendingInstantiations.empty() &&
+             "PendingInstantiations should be empty before it is discarded.");
+      S.PendingInstantiations.swap(SavedPendingInstantiations);
+    }
+
+  private:
+    Sema &S;
+    SmallVector<VTableUse, 16> SavedVTableUses;
+    std::deque<PendingImplicitInstantiation> SavedPendingInstantiations;
+  };
+
   /// \brief The queue of implicit template instantiations that are required
   /// and must be performed within the current local scope.
   ///
@@ -7185,10 +7213,10 @@ public:
   };
 
   llvm::StringMap<SectionInfo> SectionInfos;
-  bool UnifySection(const StringRef &SectionName, 
+  bool UnifySection(StringRef SectionName,
                     int SectionFlags,
                     DeclaratorDecl *TheDecl);
-  bool UnifySection(const StringRef &SectionName,
+  bool UnifySection(StringRef SectionName,
                     int SectionFlags,
                     SourceLocation PragmaSectionLocation);
 
@@ -8020,6 +8048,7 @@ public:
                                  ObjCMethodDecl *Method, bool isClassMessage,
                                  bool isSuperMessage,
                                  SourceLocation lbrac, SourceLocation rbrac,
+                                 SourceRange RecRange,
                                  QualType &ReturnType, ExprValueKind &VK);
 
   /// \brief Determine the result of a message send expression based on

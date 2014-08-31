@@ -71,6 +71,10 @@ void *AsanDoesNotSupportStaticLinkage() {
   return 0;
 }
 
+void AsanCheckDynamicRTPrereqs() {}
+
+void AsanCheckIncompatibleRT() {}
+
 void AsanPlatformThreadInit() {
   // Nothing here for now.
 }

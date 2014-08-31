@@ -94,7 +94,7 @@ class MipsAsmParser : public MCTargetAsmParser {
 
   bool MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                OperandVector &Operands, MCStreamer &Out,
-                               unsigned &ErrorInfo,
+                               uint64_t &ErrorInfo,
                                bool MatchingInlineAsm) override;
 
   /// Parse a register as used in CFI directives
@@ -163,6 +163,7 @@ class MipsAsmParser : public MCTargetAsmParser {
   const MCExpr *evaluateRelocExpr(const MCExpr *Expr, StringRef RelocStr);
 
   bool isEvaluated(const MCExpr *Expr);
+  bool parseSetArchDirective();
   bool parseSetFeature(uint64_t Feature);
   bool parseDirectiveCPLoad(SMLoc Loc);
   bool parseDirectiveCPSetup();
@@ -1518,7 +1519,7 @@ unsigned MipsAsmParser::checkTargetMatchPredicate(MCInst &Inst) {
 bool MipsAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                             OperandVector &Operands,
                                             MCStreamer &Out,
-                                            unsigned &ErrorInfo,
+                                            uint64_t &ErrorInfo,
                                             bool MatchingInlineAsm) {
 
   MCInst Inst;
@@ -1541,7 +1542,7 @@ bool MipsAsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
     return true;
   case Match_InvalidOperand: {
     SMLoc ErrorLoc = IDLoc;
-    if (ErrorInfo != ~0U) {
+    if (ErrorInfo != ~0ULL) {
       if (ErrorInfo >= Operands.size())
         return Error(IDLoc, "too few operands for instruction");
 
@@ -2080,7 +2081,7 @@ bool MipsAsmParser::searchSymbolAlias(OperandVector &Operands) {
       return false;
     if (Expr->getKind() == MCExpr::SymbolRef) {
       const MCSymbolRefExpr *Ref = static_cast<const MCSymbolRefExpr *>(Expr);
-      const StringRef DefSymbol = Ref->getSymbol().getName();
+      StringRef DefSymbol = Ref->getSymbol().getName();
       if (DefSymbol.startswith("$")) {
         OperandMatchResultTy ResTy =
             MatchAnyRegisterNameWithoutDollar(Operands, DefSymbol.substr(1), S);
@@ -2667,6 +2668,41 @@ bool MipsAsmParser::parseSetAssignment() {
   return false;
 }
 
+bool MipsAsmParser::parseSetArchDirective() {
+  Parser.Lex();
+  if (getLexer().isNot(AsmToken::Equal))
+    return reportParseError("unexpected token, expected equals sign");
+
+  Parser.Lex();
+  StringRef Arch;
+  if (Parser.parseIdentifier(Arch))
+    return reportParseError("expected arch identifier");
+
+  StringRef ArchFeatureName =
+      StringSwitch<StringRef>(Arch)
+          .Case("mips1", "mips1")
+          .Case("mips2", "mips2")
+          .Case("mips3", "mips3")
+          .Case("mips4", "mips4")
+          .Case("mips5", "mips5")
+          .Case("mips32", "mips32")
+          .Case("mips32r2", "mips32r2")
+          .Case("mips32r6", "mips32r6")
+          .Case("mips64", "mips64")
+          .Case("mips64r2", "mips64r2")
+          .Case("mips64r6", "mips64r6")
+          .Case("cnmips", "cnmips")
+          .Case("r4000", "mips3") // This is an implementation of Mips3.
+          .Default("");
+
+  if (ArchFeatureName.empty())
+    return reportParseError("unsupported architecture");
+
+  selectArch(ArchFeatureName);
+  getTargetStreamer().emitDirectiveSetArch(Arch);
+  return false;
+}
+
 bool MipsAsmParser::parseSetFeature(uint64_t Feature) {
   Parser.Lex();
   if (getLexer().isNot(AsmToken::EndOfStatement))
@@ -2856,6 +2892,8 @@ bool MipsAsmParser::parseDirectiveSet() {
     return parseSetNoAtDirective();
   } else if (Tok.getString() == "at") {
     return parseSetAtDirective();
+  } else if (Tok.getString() == "arch") {
+    return parseSetArchDirective();
   } else if (Tok.getString() == "fp") {
     return parseSetFpDirective();
   } else if (Tok.getString() == "reorder") {

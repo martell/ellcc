@@ -1120,7 +1120,6 @@ bool X86_32TargetCodeGenInfo::isStructReturnInRegABI(
     return true;
 
   switch (Triple.getOS()) {
-  case llvm::Triple::AuroraUX:
   case llvm::Triple::DragonFly:
   case llvm::Triple::FreeBSD:
   case llvm::Triple::OpenBSD:
@@ -2774,7 +2773,10 @@ ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty, bool IsReturnType) const {
     return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(), Size));
   }
 
-  if (Ty->isPromotableIntegerType())
+  // Bool type is always extended to the ABI, other builtin types are not
+  // extended.
+  const BuiltinType *BT = Ty->getAs<BuiltinType>();
+  if (BT && BT->getKind() == BuiltinType::Bool)
     return ABIArgInfo::getExtend();
 
   return ABIArgInfo::getDirect();
@@ -3612,8 +3614,9 @@ public:
 };
 }
 
-static bool isHomogeneousAggregate(QualType Ty, const Type *&Base,
+static bool isARMHomogeneousAggregate(QualType Ty, const Type *&Base,
                                    ASTContext &Context,
+                                   bool isAArch64,
                                    uint64_t *HAMembers = nullptr);
 
 ABIArgInfo AArch64ABIInfo::classifyArgumentType(QualType Ty,
@@ -3695,7 +3698,7 @@ ABIArgInfo AArch64ABIInfo::classifyArgumentType(QualType Ty,
   // Homogeneous Floating-point Aggregates (HFAs) need to be expanded.
   const Type *Base = nullptr;
   uint64_t Members = 0;
-  if (isHomogeneousAggregate(Ty, Base, getContext(), &Members)) {
+  if (isARMHomogeneousAggregate(Ty, Base, getContext(), true, &Members)) {
     IsHA = true;
     if (!IsNamedArg && isDarwinPCS()) {
       // With the Darwin ABI, variadic arguments are always passed on the stack
@@ -3753,7 +3756,7 @@ ABIArgInfo AArch64ABIInfo::classifyReturnType(QualType RetTy) const {
     return ABIArgInfo::getIgnore();
 
   const Type *Base = nullptr;
-  if (isHomogeneousAggregate(RetTy, Base, getContext()))
+  if (isARMHomogeneousAggregate(RetTy, Base, getContext(), true))
     // Homogeneous Floating-point Aggregates (HFAs) are returned directly.
     return ABIArgInfo::getDirect();
 
@@ -3890,7 +3893,7 @@ static llvm::Value *EmitAArch64VAArg(llvm::Value *VAListAddr, QualType Ty,
 
   const Type *Base = nullptr;
   uint64_t NumMembers;
-  bool IsHFA = isHomogeneousAggregate(Ty, Base, Ctx, &NumMembers);
+  bool IsHFA = isARMHomogeneousAggregate(Ty, Base, Ctx, true, &NumMembers);
   if (IsHFA && NumMembers > 1) {
     // Homogeneous aggregates passed in registers will have their elements split
     // and stored 16-bytes apart regardless of size (they're notionally in qN,
@@ -4033,7 +4036,7 @@ llvm::Value *AArch64ABIInfo::EmitDarwinVAArg(llvm::Value *VAListAddr, QualType T
   uint64_t Align = CGF.getContext().getTypeAlign(Ty) / 8;
 
   const Type *Base = nullptr;
-  bool isHA = isHomogeneousAggregate(Ty, Base, getContext());
+  bool isHA = isARMHomogeneousAggregate(Ty, Base, getContext(), true);
 
   bool isIndirect = false;
   // Arguments bigger than 16 bytes which aren't homogeneous aggregates should
@@ -4237,6 +4240,9 @@ void ARMABIInfo::computeInfo(CGFunctionInfo &FI) const {
   // unallocated are marked as unavailable. 
   resetAllocatedRegs();
 
+  const bool isAAPCS_VFP =
+      getABIKind() == ARMABIInfo::AAPCS_VFP && !FI.isVariadic();
+
   if (getCXXABI().classifyReturnType(FI)) {
     if (FI.getReturnInfo().isIndirect())
       markAllocatedGPRs(1, 1);
@@ -4267,10 +4273,10 @@ void ARMABIInfo::computeInfo(CGFunctionInfo &FI) const {
           llvm::Type::getInt32Ty(getVMContext()), NumGPRs - PreAllocationGPRs);
       if (I.info.canHaveCoerceToType()) {
         I.info = ABIArgInfo::getDirect(I.info.getCoerceToType() /* type */, 0 /* offset */,
-                                       PaddingTy);
+                                       PaddingTy, !isAAPCS_VFP);
       } else {
         I.info = ABIArgInfo::getDirect(nullptr /* type */, 0 /* offset */,
-                                       PaddingTy);
+                                       PaddingTy, !isAAPCS_VFP);
       }
     }
   }
@@ -4316,15 +4322,16 @@ void ARMABIInfo::setRuntimeCC() {
     RuntimeCC = abiCC;
 }
 
-/// isHomogeneousAggregate - Return true if a type is an AAPCS-VFP homogeneous
+/// isARMHomogeneousAggregate - Return true if a type is an AAPCS-VFP homogeneous
 /// aggregate.  If HAMembers is non-null, the number of base elements
 /// contained in the type is returned through it; this is used for the
 /// recursive calls that check aggregate component types.
-static bool isHomogeneousAggregate(QualType Ty, const Type *&Base,
-                                   ASTContext &Context, uint64_t *HAMembers) {
+static bool isARMHomogeneousAggregate(QualType Ty, const Type *&Base,
+                                   ASTContext &Context, bool isAArch64,
+                                   uint64_t *HAMembers) {
   uint64_t Members = 0;
   if (const ConstantArrayType *AT = Context.getAsConstantArrayType(Ty)) {
-    if (!isHomogeneousAggregate(AT->getElementType(), Base, Context, &Members))
+    if (!isARMHomogeneousAggregate(AT->getElementType(), Base, Context, isAArch64, &Members))
       return false;
     Members *= AT->getSize().getZExtValue();
   } else if (const RecordType *RT = Ty->getAs<RecordType>()) {
@@ -4335,7 +4342,7 @@ static bool isHomogeneousAggregate(QualType Ty, const Type *&Base,
     Members = 0;
     for (const auto *FD : RD->fields()) {
       uint64_t FldMembers;
-      if (!isHomogeneousAggregate(FD->getType(), Base, Context, &FldMembers))
+      if (!isARMHomogeneousAggregate(FD->getType(), Base, Context, isAArch64, &FldMembers))
         return false;
 
       Members = (RD->isUnion() ?
@@ -4349,12 +4356,22 @@ static bool isHomogeneousAggregate(QualType Ty, const Type *&Base,
     }
 
     // Homogeneous aggregates for AAPCS-VFP must have base types of float,
-    // double, or 64-bit or 128-bit vectors.
+    // double, or 64-bit or 128-bit vectors. "long double" has the same machine
+    // type as double, so it is also allowed as a base type.
+    // Homogeneous aggregates for AAPCS64 must have base types of a floating
+    // point type or a short-vector type. This is the same as the 32-bit ABI,
+    // but with the difference that any floating-point type is allowed,
+    // including __fp16.
     if (const BuiltinType *BT = Ty->getAs<BuiltinType>()) {
-      if (BT->getKind() != BuiltinType::Float && 
-          BT->getKind() != BuiltinType::Double &&
-          BT->getKind() != BuiltinType::LongDouble)
-        return false;
+      if (isAArch64) {
+        if (!BT->isFloatingPoint())
+          return false;
+      } else {
+        if (BT->getKind() != BuiltinType::Float &&
+            BT->getKind() != BuiltinType::Double &&
+            BT->getKind() != BuiltinType::LongDouble)
+          return false;
+      }
     } else if (const VectorType *VT = Ty->getAs<VectorType>()) {
       unsigned VecSize = Context.getTypeSize(VT);
       if (VecSize != 64 && VecSize != 128)
@@ -4466,6 +4483,9 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
   //   64-bit containerized vectors or 128-bit containerized vectors with one
   //   to four Elements.
 
+  const bool isAAPCS_VFP =
+      getABIKind() == ARMABIInfo::AAPCS_VFP && !isVariadic;
+
   // Handle illegal vector types here.
   if (isIllegalVectorType(Ty)) {
     uint64_t Size = getContext().getTypeSize(Ty);
@@ -4473,7 +4493,7 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
       llvm::Type *ResType =
           llvm::Type::getInt32Ty(getVMContext());
       markAllocatedGPRs(1, 1);
-      return ABIArgInfo::getDirect(ResType);
+      return ABIArgInfo::getDirect(ResType, 0, nullptr, !isAAPCS_VFP);
     }
     if (Size == 64) {
       llvm::Type *ResType = llvm::VectorType::get(
@@ -4484,7 +4504,7 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
         markAllocatedVFPs(2, 2);
         IsCPRC = true;
       }
-      return ABIArgInfo::getDirect(ResType);
+      return ABIArgInfo::getDirect(ResType, 0, nullptr, !isAAPCS_VFP);
     }
     if (Size == 128) {
       llvm::Type *ResType = llvm::VectorType::get(
@@ -4495,7 +4515,7 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
         markAllocatedVFPs(4, 4);
         IsCPRC = true;
       }
-      return ABIArgInfo::getDirect(ResType);
+      return ABIArgInfo::getDirect(ResType, 0, nullptr, !isAAPCS_VFP);
     }
     markAllocatedGPRs(1, 1);
     return ABIArgInfo::getIndirect(0, /*ByVal=*/false);
@@ -4534,8 +4554,9 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
     unsigned Size = getContext().getTypeSize(Ty);
     if (!IsCPRC)
       markAllocatedGPRs(Size > 32 ? 2 : 1, (Size + 31) / 32);
-    return (Ty->isPromotableIntegerType() ?
-            ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
+    return (Ty->isPromotableIntegerType()
+                ? ABIArgInfo::getExtend()
+                : ABIArgInfo::getDirect(nullptr, 0, nullptr, !isAAPCS_VFP));
   }
 
   if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI())) {
@@ -4547,12 +4568,12 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
   if (isEmptyRecord(getContext(), Ty, true))
     return ABIArgInfo::getIgnore();
 
-  if (getABIKind() == ARMABIInfo::AAPCS_VFP && !isVariadic) {
+  if (isAAPCS_VFP) {
     // Homogeneous Aggregates need to be expanded when we can fit the aggregate
     // into VFP registers.
     const Type *Base = nullptr;
     uint64_t Members = 0;
-    if (isHomogeneousAggregate(Ty, Base, getContext(), &Members)) {
+    if (isARMHomogeneousAggregate(Ty, Base, getContext(), false, &Members)) {
       assert(Base && "Base class should be set for homogeneous aggregate");
       // Base can be a floating-point or a vector.
       if (Base->isVectorType()) {
@@ -4568,7 +4589,7 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
         markAllocatedVFPs(2, Members * 2);
       }
       IsCPRC = true;
-      return ABIArgInfo::getDirect();
+      return ABIArgInfo::getDirect(nullptr, 0, nullptr, !isAAPCS_VFP);
     }
   }
 
@@ -4608,7 +4629,7 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
 
   llvm::Type *STy =
     llvm::StructType::get(llvm::ArrayType::get(ElemTy, SizeRegs), NULL);
-  return ABIArgInfo::getDirect(STy);
+  return ABIArgInfo::getDirect(STy, 0, nullptr, !isAAPCS_VFP);
 }
 
 static bool isIntegerLikeType(QualType Ty, ASTContext &Context,
@@ -4698,6 +4719,9 @@ static bool isIntegerLikeType(QualType Ty, ASTContext &Context,
 
 ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy,
                                           bool isVariadic) const {
+  const bool isAAPCS_VFP =
+      getABIKind() == ARMABIInfo::AAPCS_VFP && !isVariadic;
+
   if (RetTy->isVoidType())
     return ABIArgInfo::getIgnore();
 
@@ -4712,8 +4736,9 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy,
     if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
       RetTy = EnumTy->getDecl()->getIntegerType();
 
-    return (RetTy->isPromotableIntegerType() ?
-            ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
+    return (RetTy->isPromotableIntegerType()
+                ? ABIArgInfo::getExtend()
+                : ABIArgInfo::getDirect(nullptr, 0, nullptr, !isAAPCS_VFP));
   }
 
   // Are we following APCS?
@@ -4726,8 +4751,8 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy,
     // FIXME: Consider using 2 x vector types if the back end handles them
     // correctly.
     if (RetTy->isAnyComplexType())
-      return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(),
-                                              getContext().getTypeSize(RetTy)));
+      return ABIArgInfo::getDirect(llvm::IntegerType::get(
+          getVMContext(), getContext().getTypeSize(RetTy)));
 
     // Integer like structures are returned in r0.
     if (isIntegerLikeType(RetTy, getContext(), getVMContext())) {
@@ -4753,10 +4778,10 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy,
   // Check for homogeneous aggregates with AAPCS-VFP.
   if (getABIKind() == AAPCS_VFP && !isVariadic) {
     const Type *Base = nullptr;
-    if (isHomogeneousAggregate(RetTy, Base, getContext())) {
+    if (isARMHomogeneousAggregate(RetTy, Base, getContext(), false)) {
       assert(Base && "Base class should be set for homogeneous aggregate");
       // Homogeneous Aggregates are returned directly.
-      return ABIArgInfo::getDirect();
+      return ABIArgInfo::getDirect(nullptr, 0, nullptr, !isAAPCS_VFP);
     }
   }
 
@@ -4766,14 +4791,18 @@ ABIArgInfo ARMABIInfo::classifyReturnType(QualType RetTy,
   if (Size <= 32) {
     if (getDataLayout().isBigEndian())
       // Return in 32 bit integer integer type (as if loaded by LDR, AAPCS 5.4)
-      return ABIArgInfo::getDirect(llvm::Type::getInt32Ty(getVMContext()));
+      return ABIArgInfo::getDirect(llvm::Type::getInt32Ty(getVMContext()), 0,
+                                   nullptr, !isAAPCS_VFP);
 
     // Return in the smallest viable integer type.
     if (Size <= 8)
-      return ABIArgInfo::getDirect(llvm::Type::getInt8Ty(getVMContext()));
+      return ABIArgInfo::getDirect(llvm::Type::getInt8Ty(getVMContext()), 0,
+                                   nullptr, !isAAPCS_VFP);
     if (Size <= 16)
-      return ABIArgInfo::getDirect(llvm::Type::getInt16Ty(getVMContext()));
-    return ABIArgInfo::getDirect(llvm::Type::getInt32Ty(getVMContext()));
+      return ABIArgInfo::getDirect(llvm::Type::getInt16Ty(getVMContext()), 0,
+                                   nullptr, !isAAPCS_VFP);
+    return ABIArgInfo::getDirect(llvm::Type::getInt32Ty(getVMContext()), 0,
+                                 nullptr, !isAAPCS_VFP);
   }
 
   markAllocatedGPRs(1, 1);
@@ -6659,26 +6688,25 @@ static bool extractFieldType(SmallVectorImpl<FieldEncoding> &FE,
                              const RecordDecl *RD,
                              const CodeGen::CodeGenModule &CGM,
                              TypeStringCache &TSC) {
-  for (RecordDecl::field_iterator I = RD->field_begin(), E = RD->field_end();
-       I != E; ++I) {
+  for (const auto *Field : RD->fields()) {
     SmallStringEnc Enc;
     Enc += "m(";
-    Enc += I->getName();
+    Enc += Field->getName();
     Enc += "){";
-    if (I->isBitField()) {
+    if (Field->isBitField()) {
       Enc += "b(";
       llvm::raw_svector_ostream OS(Enc);
       OS.resync();
-      OS << I->getBitWidthValue(CGM.getContext());
+      OS << Field->getBitWidthValue(CGM.getContext());
       OS.flush();
       Enc += ':';
     }
-    if (!appendType(Enc, I->getType(), CGM, TSC))
+    if (!appendType(Enc, Field->getType(), CGM, TSC))
       return false;
-    if (I->isBitField())
+    if (Field->isBitField())
       Enc += ')';
     Enc += '}';
-    FE.push_back(FieldEncoding(!I->getName().empty(), Enc));
+    FE.push_back(FieldEncoding(!Field->getName().empty(), Enc));
   }
   return true;
 }

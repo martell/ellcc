@@ -692,7 +692,7 @@ Decl *Parser::ParseStaticAssertDeclaration(SourceLocation &DeclEnd){
   ExprResult AssertMessage;
   if (Tok.is(tok::r_paren)) {
     Diag(Tok, getLangOpts().CPlusPlus1z
-                  ? diag::warn_cxx1y_compat_static_assert_no_message
+                  ? diag::warn_cxx14_compat_static_assert_no_message
                   : diag::ext_static_assert_no_message)
       << (getLangOpts().CPlusPlus1z
               ? FixItHint()
@@ -769,7 +769,7 @@ SourceLocation Parser::ParseDecltypeSpecifier(DeclSpec &DS) {
       // because the typename-specifier in a function-style cast operation can't
       // be 'auto'.
       Diag(Tok.getLocation(),
-           getLangOpts().CPlusPlus1y
+           getLangOpts().CPlusPlus14
              ? diag::warn_cxx11_compat_decltype_auto_type_specifier
              : diag::ext_decltype_auto_type_specifier);
       ConsumeToken();
@@ -1068,6 +1068,9 @@ bool Parser::isValidAfterTypeSpecifier(bool CouldBeBitfield) {
   case tok::kw___declspec:      // struct foo {...} __declspec(...)
   case tok::l_square:           // void f(struct f  [         3])
   case tok::ellipsis:           // void f(struct f  ...       [Ns])
+  // FIXME: we should emit semantic diagnostic when declaration
+  // attribute is in type attribute position.
+  case tok::kw___attribute:     // struct foo __attribute__((used)) x;
     return true;
   case tok::colon:
     return CouldBeBitfield;     // enum E { ... }   :         2;

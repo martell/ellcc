@@ -67,7 +67,7 @@ static TargetLoweringObjectFile *createTLOF(const Triple &TT) {
 PPCTargetLowering::PPCTargetLowering(PPCTargetMachine &TM)
     : TargetLowering(TM, createTLOF(Triple(TM.getTargetTriple()))),
       Subtarget(*TM.getSubtargetImpl()) {
-  setPow2DivIsCheap();
+  setPow2SDivIsCheap();
 
   // Use _setjmp/_longjmp instead of setjmp/longjmp.
   setUseUnderscoreSetJmp(true);
@@ -2700,7 +2700,7 @@ PPCTargetLowering::LowerFormalArguments_64SVR4(
       int FI;
       if (HasParameterArea ||
           ArgSize + ArgOffset > LinkageSize + Num_GPR_Regs * PtrByteSize)
-        FI = MFI->CreateFixedObject(ArgSize, ArgOffset, false);
+        FI = MFI->CreateFixedObject(ArgSize, ArgOffset, false, true);
       else
         FI = MFI->CreateStackObject(ArgSize, Align, false);
       SDValue FIN = DAG.getFrameIndex(FI, PtrVT);
@@ -3066,7 +3066,7 @@ PPCTargetLowering::LowerFormalArguments_Darwin(
         CurArgOffset = CurArgOffset + (4 - ObjSize);
       }
       // The value of the object is its address.
-      int FI = MFI->CreateFixedObject(ObjSize, CurArgOffset, true);
+      int FI = MFI->CreateFixedObject(ObjSize, CurArgOffset, false, true);
       SDValue FIN = DAG.getFrameIndex(FI, PtrVT);
       InVals.push_back(FIN);
       if (ObjSize==1 || ObjSize==2) {

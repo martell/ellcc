@@ -65,17 +65,18 @@ DumpType("debug-dump", cl::init(DIDT_All),
         clEnumValN(DIDT_StrOffsetsDwo, "str_offsets.dwo", ".debug_str_offsets.dwo"),
         clEnumValEnd));
 
-static void DumpInput(const StringRef &Filename) {
-  ErrorOr<std::unique_ptr<MemoryBuffer>> Buff =
+static void DumpInput(StringRef Filename) {
+  ErrorOr<std::unique_ptr<MemoryBuffer>> BuffOrErr =
       MemoryBuffer::getFileOrSTDIN(Filename);
 
-  if (std::error_code EC = Buff.getError()) {
+  if (std::error_code EC = BuffOrErr.getError()) {
     errs() << Filename << ": " << EC.message() << "\n";
     return;
   }
+  std::unique_ptr<MemoryBuffer> Buff = std::move(BuffOrErr.get());
 
   ErrorOr<std::unique_ptr<ObjectFile>> ObjOrErr =
-      ObjectFile::createObjectFile(Buff.get());
+      ObjectFile::createObjectFile(Buff->getMemBufferRef());
   if (std::error_code EC = ObjOrErr.getError()) {
     errs() << Filename << ": " << EC.message() << '\n';
     return;

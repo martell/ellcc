@@ -1558,7 +1558,7 @@ AST_MATCHER_P(NamedDecl, matchesName, std::string, RegExp) {
 inline internal::PolymorphicMatcherWithParam1<
     internal::HasOverloadedOperatorNameMatcher, StringRef,
     AST_POLYMORPHIC_SUPPORTED_TYPES_2(CXXOperatorCallExpr, FunctionDecl)>
-hasOverloadedOperatorName(const StringRef Name) {
+hasOverloadedOperatorName(StringRef Name) {
   return internal::PolymorphicMatcherWithParam1<
       internal::HasOverloadedOperatorNameMatcher, StringRef,
       AST_POLYMORPHIC_SUPPORTED_TYPES_2(CXXOperatorCallExpr, FunctionDecl)>(
@@ -2285,7 +2285,7 @@ AST_POLYMORPHIC_MATCHER_P(hasAnyArgument, AST_POLYMORPHIC_SUPPORTED_TYPES_2(
     BoundNodesTreeBuilder Result(*Builder);
     if (InnerMatcher.matches(*Node.getArg(I)->IgnoreParenImpCasts(), Finder,
                              &Result)) {
-      *Builder = Result;
+      *Builder = std::move(Result);
       return true;
     }
   }
@@ -2371,6 +2371,19 @@ AST_MATCHER_P(FunctionDecl, returns,
 ///   matches the declaration of f and g, but not the declaration h
 AST_MATCHER(FunctionDecl, isExternC) {
   return Node.isExternC();
+}
+
+/// \brief Matches deleted function declarations.
+///
+/// Given:
+/// \code
+///   void Func();
+///   void DeletedFunc() = delete;
+/// \endcode
+/// functionDecl(isDeleted())
+///   matches the declaration of DeletedFunc, but not Func.
+AST_MATCHER(FunctionDecl, isDeleted) {
+  return Node.isDeleted();
 }
 
 /// \brief Matches the condition expression of an if statement, for loop,
@@ -3601,7 +3614,7 @@ AST_MATCHER_P(SwitchStmt, forEachSwitchCase, internal::Matcher<SwitchCase>,
       Result.addMatch(CaseBuilder);
     }
   }
-  *Builder = Result;
+  *Builder = std::move(Result);
   return Matched;
 }
 
@@ -3624,7 +3637,7 @@ AST_MATCHER_P(CXXConstructorDecl, forEachConstructorInitializer,
       Result.addMatch(InitBuilder);
     }
   }
-  *Builder = Result;
+  *Builder = std::move(Result);
   return Matched;
 }
 
@@ -3645,6 +3658,22 @@ AST_MATCHER_P(CaseStmt, hasCaseConstant, internal::Matcher<Expr>,
   return InnerMatcher.matches(*Node.getLHS(), Finder, Builder);
 }
 
+/// \brief Matches declaration that has a given attribute.
+///
+/// Given
+/// \code
+///   __attribute__((device)) void f() { ... }
+/// \endcode
+/// decl(hasAttr(clang::attr::CUDADevice)) matches the function declaration of
+/// f.
+AST_MATCHER_P(Decl, hasAttr, attr::Kind, AttrKind) {
+  for (const auto *Attr : Node.attrs()) {
+    if (Attr->getKind() == AttrKind)
+      return true;
+  }
+  return false;
+}
+
 /// \brief Matches CUDA kernel call expression.
 ///
 /// Example matches,
@@ -3653,39 +3682,6 @@ AST_MATCHER_P(CaseStmt, hasCaseConstant, internal::Matcher<Expr>,
 /// \endcode
 const internal::VariadicDynCastAllOfMatcher<Stmt, CUDAKernelCallExpr>
     CUDAKernelCallExpr;
-
-/// \brief Matches declaration that has CUDA device attribute.
-///
-/// Given
-/// \code
-///   __attribute__((device)) void f() { ... }
-/// \endcode
-/// matches the function declaration of f.
-AST_MATCHER(Decl, hasCudaDeviceAttr) {
-  return Node.hasAttr<clang::CUDADeviceAttr>();
-}
-
-/// \brief Matches declaration that has CUDA host attribute.
-///
-/// Given
-/// \code
-///   __attribute__((host)) void f() { ... }
-/// \endcode
-/// matches the function declaration of f.
-AST_MATCHER(Decl, hasCudaHostAttr) {
-  return Node.hasAttr<clang::CUDAHostAttr>();
-}
-
-/// \brief  Matches declaration that has CUDA global attribute.
-///
-/// Given
-/// \code
-///   __attribute__((global)) void f() { ... }
-/// \endcode
-/// matches the function declaration of f.
-AST_MATCHER(Decl, hasCudaGlobalAttr) {
-  return Node.hasAttr<clang::CUDAGlobalAttr>();
-}
 
 } // end namespace ast_matchers
 } // end namespace clang

@@ -386,7 +386,7 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM) :
   // There are no integer divide instructions, and these expand to a pretty
   // large sequence of instructions.
   setIntDivIsCheap(false);
-  setPow2DivIsCheap(false);
+  setPow2SDivIsCheap(false);
 
   // TODO: Investigate this when 64-bit divides are implemented.
   addBypassSlowDiv(64, 32);
@@ -441,12 +441,12 @@ bool AMDGPUTargetLowering::isLoadBitCastBeneficial(EVT LoadTy,
 
 bool AMDGPUTargetLowering::isFAbsFree(EVT VT) const {
   assert(VT.isFloatingPoint());
-  return VT == MVT::f32;
+  return VT == MVT::f32 || VT == MVT::f64;
 }
 
 bool AMDGPUTargetLowering::isFNegFree(EVT VT) const {
   assert(VT.isFloatingPoint());
-  return VT == MVT::f32;
+  return VT == MVT::f32 || VT == MVT::f64;
 }
 
 bool AMDGPUTargetLowering::isTruncateFree(EVT Source, EVT Dest) const {
@@ -852,6 +852,10 @@ SDValue AMDGPUTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
 
     case Intrinsic::AMDGPU_rsq_clamped:
       return DAG.getNode(AMDGPUISD::RSQ_CLAMPED, DL, VT, Op.getOperand(1));
+
+    case Intrinsic::AMDGPU_ldexp:
+      return DAG.getNode(AMDGPUISD::LDEXP, DL, VT, Op.getOperand(1),
+                                                   Op.getOperand(2));
 
     case AMDGPUIntrinsic::AMDGPU_imax:
       return DAG.getNode(AMDGPUISD::SMAX, DL, VT, Op.getOperand(1),
@@ -2153,6 +2157,7 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(DWORDADDR)
   NODE_NAME_CASE(FRACT)
   NODE_NAME_CASE(CLAMP)
+  NODE_NAME_CASE(MAD)
   NODE_NAME_CASE(FMAX)
   NODE_NAME_CASE(SMAX)
   NODE_NAME_CASE(UMAX)
@@ -2168,6 +2173,7 @@ const char* AMDGPUTargetLowering::getTargetNodeName(unsigned Opcode) const {
   NODE_NAME_CASE(RSQ)
   NODE_NAME_CASE(RSQ_LEGACY)
   NODE_NAME_CASE(RSQ_CLAMPED)
+  NODE_NAME_CASE(LDEXP)
   NODE_NAME_CASE(DOT4)
   NODE_NAME_CASE(BFE_U32)
   NODE_NAME_CASE(BFE_I32)

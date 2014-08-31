@@ -150,7 +150,7 @@ struct FunctionTypeKeyInfo {
       ReturnType(R), Params(P), isVarArg(V) {}
     KeyTy(const FunctionType* FT) :
       ReturnType(FT->getReturnType()),
-      Params(ArrayRef<Type*>(FT->param_begin(), FT->param_end())),
+      Params(makeArrayRef(FT->param_begin(), FT->param_end())),
       isVarArg(FT->isVarArg()) {}
     bool operator==(const KeyTy& that) const {
       if (ReturnType != that.ReturnType)
@@ -272,13 +272,13 @@ public:
   
   DenseMap<Type*, ConstantAggregateZero*> CAZConstants;
 
-  typedef ConstantAggrUniqueMap<ArrayType, ConstantArray> ArrayConstantsTy;
+  typedef ConstantUniqueMap<ConstantArray> ArrayConstantsTy;
   ArrayConstantsTy ArrayConstants;
   
-  typedef ConstantAggrUniqueMap<StructType, ConstantStruct> StructConstantsTy;
+  typedef ConstantUniqueMap<ConstantStruct> StructConstantsTy;
   StructConstantsTy StructConstants;
   
-  typedef ConstantAggrUniqueMap<VectorType, ConstantVector> VectorConstantsTy;
+  typedef ConstantUniqueMap<ConstantVector> VectorConstantsTy;
   VectorConstantsTy VectorConstants;
   
   DenseMap<PointerType*, ConstantPointerNull*> CPNConstants;
@@ -289,12 +289,10 @@ public:
 
   DenseMap<std::pair<const Function *, const BasicBlock *>, BlockAddress *>
     BlockAddresses;
-  ConstantUniqueMap<ExprMapKeyType, const ExprMapKeyType&, Type, ConstantExpr>
-    ExprConstants;
+  ConstantUniqueMap<ConstantExpr> ExprConstants;
 
-  ConstantUniqueMap<InlineAsmKeyType, const InlineAsmKeyType&, PointerType,
-                    InlineAsm> InlineAsms;
-  
+  ConstantUniqueMap<InlineAsm> InlineAsms;
+
   ConstantInt *TheTrueVal;
   ConstantInt *TheFalseVal;
   

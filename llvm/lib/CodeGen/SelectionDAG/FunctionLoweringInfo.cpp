@@ -138,6 +138,21 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf,
         }
       }
 
+      // Look for calls to the @llvm.va_start intrinsic. We can omit some
+      // prologue boilerplate for variadic functions that don't examine their
+      // arguments.
+      if (const auto *II = dyn_cast<IntrinsicInst>(I)) {
+        if (II->getIntrinsicID() == Intrinsic::vastart)
+          MF->getFrameInfo()->setHasVAStart(true);
+      }
+
+      // If we have a musttail call in a variadic funciton, we need to ensure we
+      // forward implicit register parameters.
+      if (const auto *CI = dyn_cast<CallInst>(I)) {
+        if (CI->isMustTailCall() && Fn->isVarArg())
+          MF->getFrameInfo()->setHasMustTailInVarArgFunc(true);
+      }
+
       // Mark values used outside their block as exported, by allocating
       // a virtual register for them.
       if (isUsedOutsideOfDefiningBlock(I))

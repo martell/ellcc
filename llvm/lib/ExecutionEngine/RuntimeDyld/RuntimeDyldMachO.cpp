@@ -28,12 +28,10 @@ using namespace llvm::object;
 namespace llvm {
 
 int64_t RuntimeDyldMachO::memcpyAddend(const RelocationEntry &RE) const {
-  const SectionEntry &Section = Sections[RE.SectionID];
-  uint8_t *LocalAddress = Section.Address + RE.Offset;
   unsigned NumBytes = 1 << RE.Size;
-  int64_t Addend = 0;
-  memcpy(&Addend, LocalAddress, NumBytes);
-  return Addend;
+  uint8_t *Src = Sections[RE.SectionID].Address + RE.Offset;
+
+  return static_cast<int64_t>(readBytesUnaligned(Src, NumBytes));
 }
 
 RelocationValueRef RuntimeDyldMachO::getRelocationValueRef(
@@ -104,20 +102,10 @@ void RuntimeDyldMachO::dumpRelocationToResolve(const RelocationEntry &RE,
 
   dbgs() << "resolveRelocation Section: " << RE.SectionID
          << " LocalAddress: " << format("%p", LocalAddress)
-         << " FinalAddress: " << format("%p", FinalAddress)
-         << " Value: " << format("%p", Value) << " Addend: " << RE.Addend
+         << " FinalAddress: " << format("0x%016" PRIx64, FinalAddress)
+         << " Value: " << format("0x%016" PRIx64, Value) << " Addend: " << RE.Addend
          << " isPCRel: " << RE.IsPCRel << " MachoType: " << RE.RelType
          << " Size: " << (1 << RE.Size) << "\n";
-}
-
-bool RuntimeDyldMachO::writeBytesUnaligned(uint8_t *Addr, uint64_t Value,
-                                           unsigned Size) {
-  for (unsigned i = 0; i < Size; ++i) {
-    *Addr++ = (uint8_t)Value;
-    Value >>= 8;
-  }
-
-  return false;
 }
 
 bool

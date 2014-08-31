@@ -518,27 +518,6 @@ public:
   }
 };
 
-// AuroraUX target
-template<typename Target>
-class AuroraUXTargetInfo : public OSTargetInfo<Target> {
-protected:
-  void getOSDefines(const LangOptions &Opts, const llvm::Triple &Triple,
-                    MacroBuilder &Builder) const override {
-    DefineStd(Builder, "sun", Opts);
-    DefineStd(Builder, "unix", Opts);
-    Builder.defineMacro("__ELF__");
-    Builder.defineMacro("__svr4__");
-    Builder.defineMacro("__SVR4");
-  }
-public:
-  AuroraUXTargetInfo(const llvm::Triple &Triple)
-      : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-    this->WCharType = this->SignedLong;
-    // FIXME: WIntType should be SignedLong
-  }
-};
-
 // Solaris target
 template<typename Target>
 class SolarisTargetInfo : public OSTargetInfo<Target> {
@@ -1504,6 +1483,9 @@ static const unsigned R600AddrSpaceMap[] = {
   3     // cuda_shared
 };
 
+// If you edit the description strings, make sure you update
+// getPointerWidthV().
+
 static const char *DescriptionStringR600 =
   "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128"
   "-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64";
@@ -1541,6 +1523,20 @@ public:
     DescriptionString = DescriptionStringR600;
     AddrSpaceMap = &R600AddrSpaceMap;
     UseAddrSpaceMapMangling = true;
+  }
+
+  uint64_t getPointerWidthV(unsigned AddrSpace) const override {
+    if (GPU <= GK_CAYMAN)
+      return 32;
+
+    switch(AddrSpace) {
+      default:
+        return 64;
+      case 0:
+      case 3:
+      case 5:
+        return 32;
+    }
   }
 
   const char * getClobbers() const override {
@@ -1610,6 +1606,7 @@ public:
       .Case("pitcairn", GK_SOUTHERN_ISLANDS)
       .Case("verde",    GK_SOUTHERN_ISLANDS)
       .Case("oland",    GK_SOUTHERN_ISLANDS)
+      .Case("hainan",   GK_SOUTHERN_ISLANDS)
       .Case("bonaire",  GK_SEA_ISLANDS)
       .Case("kabini",   GK_SEA_ISLANDS)
       .Case("kaveri",   GK_SEA_ISLANDS)
@@ -4339,8 +4336,9 @@ public:
     }
     return R;
   }
-  bool validateConstraintModifier(StringRef Constraint, const char Modifier,
-                                  unsigned Size) const override {
+  bool
+  validateConstraintModifier(StringRef Constraint, char Modifier, unsigned Size,
+                             std::string &SuggestedModifier) const override {
     bool isOutput = (Constraint[0] == '=');
     bool isInOut = (Constraint[0] == '+');
 
@@ -4786,9 +4784,9 @@ public:
     return false;
   }
 
-  virtual bool validateConstraintModifier(StringRef Constraint,
-                                          const char Modifier,
-                                          unsigned Size) const {
+  bool
+  validateConstraintModifier(StringRef Constraint, char Modifier, unsigned Size,
+                             std::string &SuggestedModifier) const override {
     // Strip off constraint modifiers.
     while (Constraint[0] == '=' || Constraint[0] == '+' || Constraint[0] == '&')
       Constraint = Constraint.substr(1);
@@ -4807,7 +4805,11 @@ public:
       default:
         // By default an 'r' constraint will be in the 'x'
         // registers.
-        return Size == 64;
+        if (Size == 64)
+          return true;
+
+        SuggestedModifier = "w";
+        return false;
       }
     }
     }
@@ -5274,10 +5276,8 @@ public:
     SparcTargetInfo::getTargetDefines(Opts, Builder);
     Builder.defineMacro("__sparcv9");
     Builder.defineMacro("__arch64__");
-    // Solaris and its derivative AuroraUX don't need these variants, but the
-    // BSDs do.
-    if (getTriple().getOS() != llvm::Triple::Solaris &&
-        getTriple().getOS() != llvm::Triple::AuroraUX) {
+    // Solaris doesn't need these variants, but the BSDs do.
+    if (getTriple().getOS() != llvm::Triple::Solaris) {
       Builder.defineMacro("__sparc64__");
       Builder.defineMacro("__sparc_v9__");
       Builder.defineMacro("__sparcv9__");
@@ -5304,14 +5304,6 @@ public:
 } // end anonymous namespace.
 
 namespace {
-class AuroraUXSparcV8TargetInfo : public AuroraUXTargetInfo<SparcV8TargetInfo> {
-public:
-  AuroraUXSparcV8TargetInfo(const llvm::Triple &Triple)
-      : AuroraUXTargetInfo<SparcV8TargetInfo>(Triple) {
-    SizeType = UnsignedInt;
-    PtrDiffType = SignedInt;
-  }
-};
 class SolarisSparcV8TargetInfo : public SolarisTargetInfo<SparcV8TargetInfo> {
 public:
   SolarisSparcV8TargetInfo(const llvm::Triple &Triple)
@@ -6573,8 +6565,6 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
     switch (os) {
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<SparcV8TargetInfo>(Triple);
-    case llvm::Triple::AuroraUX:
-      return new AuroraUXSparcV8TargetInfo(Triple);
     case llvm::Triple::Solaris:
       return new SolarisSparcV8TargetInfo(Triple);
     case llvm::Triple::NetBSD:
@@ -6591,8 +6581,6 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
     switch (os) {
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<SparcV9TargetInfo>(Triple);
-    case llvm::Triple::AuroraUX:
-      return new AuroraUXTargetInfo<SparcV9TargetInfo>(Triple);
     case llvm::Triple::Solaris:
       return new SolarisTargetInfo<SparcV9TargetInfo>(Triple);
     case llvm::Triple::NetBSD:
@@ -6621,8 +6609,6 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
       return new DarwinI386TargetInfo(Triple);
 
     switch (os) {
-    case llvm::Triple::AuroraUX:
-      return new AuroraUXTargetInfo<X86_32TargetInfo>(Triple);
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<X86_32TargetInfo>(Triple);
     case llvm::Triple::DragonFly:
@@ -6669,8 +6655,6 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
       return new DarwinX86_64TargetInfo(Triple);
 
     switch (os) {
-    case llvm::Triple::AuroraUX:
-      return new AuroraUXTargetInfo<X86_64TargetInfo>(Triple);
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<X86_64TargetInfo>(Triple);
     case llvm::Triple::DragonFly:

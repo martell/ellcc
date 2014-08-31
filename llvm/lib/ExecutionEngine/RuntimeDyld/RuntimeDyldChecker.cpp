@@ -207,7 +207,7 @@ private:
     size_t FirstNonSymbol = Expr.find_first_not_of("0123456789"
                                                    "abcdefghijklmnopqrstuvwxyz"
                                                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                                                   ":_.");
+                                                   ":_.$");
     return std::make_pair(Expr.substr(0, FirstNonSymbol),
                           Expr.substr(FirstNonSymbol).ltrim());
   }
@@ -703,10 +703,8 @@ uint64_t RuntimeDyldCheckerImpl::readMemoryAtAddr(uint64_t SrcAddr,
                                                   unsigned Size) const {
   uintptr_t PtrSizedAddr = static_cast<uintptr_t>(SrcAddr);
   assert(PtrSizedAddr == SrcAddr && "Linker memory pointer out-of-range.");
-  uint8_t *Src = reinterpret_cast<uint8_t *>(PtrSizedAddr);
-  uint64_t Result = 0;
-  memcpy(&Result, Src, Size);
-  return Result;
+  uint8_t *Src = reinterpret_cast<uint8_t*>(PtrSizedAddr);
+  return getRTDyld().readBytesUnaligned(Src, Size);
 }
 
 std::pair<uint64_t, std::string> RuntimeDyldCheckerImpl::getStubAddrFor(
