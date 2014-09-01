@@ -67,6 +67,7 @@ binutils.configure:
     cd binutils ; \
     ../../src/binutils/configure \
         CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
+        CPP="$(CC) -E $(CFLAGS)" \
         AR=$(AR) --enable-64-bit-bfd \
         --bindir=$(bindir) $(HOST) --enable-targets=$(targetlist) \
         --program-prefix=ecc- --prefix=$(prefix)/lib --enable-plugins=no \
@@ -78,6 +79,7 @@ gas.configure:
 	cd binutils/$(target) ; \
     ../../../src/binutils/gas/configure \
       CC=$(CC) CFLAGS="$(CFLAGS)" CXX="$cxx" CXXFLAGS="$(CXXFLAGS)" AR=$(AR) \
+      CPP="$(CC) -E $(CFLAGS)" \
       --bindir=$(bindir) --target=$(target) --program-prefix=${target}- \
       $(HOST) --prefix=$(prefix)/lib --datadir=$(prefix)/lib/share
 
@@ -87,6 +89,7 @@ gdb.configure:
     cd gdb ; \
     ../../src/gdb/configure \
         CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
+        CPP="$(CC) -E $(CFLAGS)" \
 	--enable-64-bit-bfd --enable-targets=$(targetlist) \
 	--program-prefix=ecc- --prefix=$(prefix)/lib --bindir=$(bindir) \
 	$(HOST) --datadir=$(prefix)/lib/share --enable-gdbserver=no \

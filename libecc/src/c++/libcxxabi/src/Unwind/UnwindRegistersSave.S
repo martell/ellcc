@@ -331,7 +331,7 @@ DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
 @
   .p2align 2
 DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm16saveVFPWithFSTMDEPy)
-  stc p11, cr0, [r0], {#0x20}  @ fstmiad r0, {d0-d15}
+  stc p11, cr0, [r0], {0x20}  @ fstmiad r0, {d0-d15}
   mov pc, lr
 
 @
@@ -342,7 +342,7 @@ DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm16saveVFPWithFSTMD
 @
   .p2align 2
 DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm16saveVFPWithFSTMXEPy)
-  stc p11, cr0, [r0], {#0x21}  @ fstmiax r0, {d0-d15}
+  stc p11, cr0, [r0], {0x21}  @ fstmiax r0, {d0-d15}
   mov pc, lr
 
 @
@@ -360,7 +360,7 @@ DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm9saveVFPv3EPy)
   @ these registers implies they are, actually, available on the target, so
   @ it's ok to execute.
   @ So, generate the instructions using the corresponding coprocessor mnemonic.
-  stcl p11, cr0, [r0], {#0x20}  @ vldm r0, {d16-d31}
+  stcl p11, cr0, [r0], {0x20}  @ vldm r0, {d16-d31}
   mov pc, lr
 
 @

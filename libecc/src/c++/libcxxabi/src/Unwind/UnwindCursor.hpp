@@ -500,9 +500,9 @@ private:
     }
     return false;
   }
-#endif // _LIBUNWIND_SUPPORT_COMPACT_UNWIND
+// RICH: #endif // _LIBUNWIND_SUPPORT_COMPACT_UNWIND
 
-#if _LIBUNWIND_SUPPORT_DWARF_UNWIND
+// RICH: #if _LIBUNWIND_SUPPORT_DWARF_UNWIND
   compact_unwind_encoding_t dwarfEncoding() const {
     R dummy;
     return dwarfEncoding(dummy);

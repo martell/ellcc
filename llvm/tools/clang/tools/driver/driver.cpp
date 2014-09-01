@@ -285,8 +285,8 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
       if (it != ArgVector.end())
         ++it;
       const char* Strings[] =
-        { SaveStringInSet(SavedStrings, std::string("-target")),
-          SaveStringInSet(SavedStrings, std::string(ELLCC_ARG0)) };
+        { GetStableCStr(SavedStrings, std::string("-target")),
+          GetStableCStr(SavedStrings, std::string(ELLCC_ARG0)) };
       ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
       return;
     }

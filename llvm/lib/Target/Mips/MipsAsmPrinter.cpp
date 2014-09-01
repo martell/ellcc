@@ -715,7 +715,7 @@ void MipsAsmPrinter::EmitStartOfAsmFile(Module &M) {
                                    SectionKind::getDataRel()));
   }
 
-#if RICH
+  // RICH: Need to tell the assembler which processor we're using.
   MipsTargetStreamer &TS = getTargetStreamer();
   if (Subtarget->hasMips64r2()) {
     TS.emitDirectiveSetMips64R2();
@@ -724,7 +724,6 @@ void MipsAsmPrinter::EmitStartOfAsmFile(Module &M) {
   } else if (Subtarget->hasMips32r2()) {
     TS.emitDirectiveSetMips32R2();
   }
-#endif
 
   getTargetStreamer().updateABIInfo(*Subtarget);
 

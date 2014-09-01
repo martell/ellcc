@@ -15,8 +15,7 @@ CFLAGS := -g -Qunused-arguments \
 -include $(INCLUDES)
 
 OBJ := $(PWD)/musl-build
-install: $(Configs) \
-	 other-libs
+install: $(Configs) other-libs clang-headers
 
 all:
 
@@ -201,3 +200,7 @@ other-libs:
 	cp src/c++/libcxx/include/ext/* include/c++/ext ; \
 	cp src/c++/libcxxabi/include/* include/c++ ; \
 	make -C obj install
+
+clang-headers:
+	mkdir -p clang ; \
+	cp ../llvm/tools/clang/lib/Headers/* clang
