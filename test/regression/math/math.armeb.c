@@ -1,14 +1,6 @@
-// Compile and run for every target.
-// RUN: %ecc -o %t %s -lm && %t
-// RUN: %armecc -o %t %s -lm && %armrun %t
-// FAIL: %armebecc -o %t %s -lm && %armebrun %t
-// RUN: %i386ecc -o %t %s -lm && %i386run %t
-// RUN: %microblazeecc -o %t %s -lm && %microblazerun %t
-// RUN: %mipsecc -o %t %s -lm && %mipsrun %t
-// RUN: %mipselecc -o %t %s -lm && %mipselrun %t
-// RUN: %ppcecc -o %t %s -lm && %ppcrun %t
-// FAIL: %ppc64ecc -o %t %s -lm && %ppc64run %t
-// RUN: %x86_64ecc -o %t %s -lm && %x86_64run %t
+// BUG 83
+// XFAIL: *
+// RUN: %armebecc -o %t %s -lm && %armebrun %t
 #include "../ecc_test.h"
 #include <math.h>
 #include <limits.h>
