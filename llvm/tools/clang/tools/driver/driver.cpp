@@ -198,6 +198,12 @@ extern int cc1_main(ArrayRef<const char *> Argv, const char *Argv0,
 extern int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0,
                       void *MainAddr);
 
+static void ReadConfig(llvm::MemoryBuffer &Buffer,
+                       SmallVectorImpl<const char *>::iterator ib)
+{
+    llvm::outs() << Buffer.getBufferStart();
+}
+
 static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
                           std::set<std::string> &SavedStrings,
                           Driver &TheDriver)
@@ -278,6 +284,8 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
   }
 
   if (TheDriver.CCCIsELLCC) {
+    // Set the ResourceDir correctly for ELLCC.
+    TheDriver.setResourceDir();
 #if defined(ELLCC_ARG0)
     // Override the default target for a cross compiler.
     if (Prefix.empty()) {
@@ -288,22 +296,51 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
         { GetStableCStr(SavedStrings, std::string("-target")),
           GetStableCStr(SavedStrings, std::string(ELLCC_ARG0)) };
       ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
-      return;
     }
 #endif
+  } else {
+    // Use the exectable name to form the -target option.
+    if (!Prefix.empty()) {
+      std::string IgnoredError;
+      if (llvm::TargetRegistry::lookupTarget(Prefix, IgnoredError)) {
+        SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
+        if (it != ArgVector.end())
+          ++it;
+        const char* Strings[] =
+          { GetStableCStr(SavedStrings, std::string("-target")),
+            GetStableCStr(SavedStrings, Prefix) };
+        ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
+      }
+    }
   }
-  if (Prefix.empty())
-    return;
 
-  std::string IgnoredError;
-  if (llvm::TargetRegistry::lookupTarget(Prefix, IgnoredError)) {
-    SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
-    if (it != ArgVector.end())
+  // Check for and process a -target option which specifies a config file.
+  for (SmallVectorImpl<const char *>::iterator it = ArgVector.begin(),
+       ie = ArgVector.end(); it != ie; ++it) {
+    if (strcmp(*it, "-target") == 0) {
+      SmallVectorImpl<const char *>::iterator ib = it;
       ++it;
-    const char* Strings[] =
-      { GetStableCStr(SavedStrings, std::string("-target")),
-        GetStableCStr(SavedStrings, Prefix) };
-    ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
+      if (it == ie) {
+        // No target specified, just ignore it for now.
+        break;
+      }
+
+      // Attempt to open the argument as a config file.
+      llvm::SmallString<128> P(TheDriver.ResourceDir);
+      llvm::sys::path::append(P, "config", *it);
+      llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> BufferOrErr =
+          llvm::MemoryBuffer::getFile(P.str());
+      if (BufferOrErr.getError()) {
+        // Can't open as a file. Leave as an argument to -target.
+        break;
+      }
+
+      // Replace -target and its argument with the contents of the file.
+      ++it;
+      ArgVector.erase(ib, it);
+      ReadConfig(*BufferOrErr.get(), ib);
+      break;
+    }
   }
 }
 
@@ -469,10 +506,6 @@ int main(int argc_, const char **argv_) {
 
   llvm::InitializeAllTargets();
   ParseProgName(argv, SavedStrings, TheDriver);
-  if (TheDriver.CCCIsELLCC) {
-    // Set the ResourceDir correctly for ELLCC.
-    TheDriver.setResourceDir();
-  }
 
   SetBackdoorDriverOutputsFromEnvVars(TheDriver);
 
