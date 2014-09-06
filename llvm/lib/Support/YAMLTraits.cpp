@@ -54,6 +54,18 @@ Input::Input(StringRef InputContent,
   DocIterator = Strm->begin();
 }
 
+Input::Input(MemoryBufferRef InputContent,
+             void *Ctxt,
+             SourceMgr::DiagHandlerTy DiagHandler,
+             void *DiagHandlerCtxt)
+  : IO(Ctxt),
+    Strm(new Stream(InputContent, SrcMgr)),
+    CurrentNode(nullptr) {
+  if (DiagHandler)
+    SrcMgr.setDiagHandler(DiagHandler, DiagHandlerCtxt);
+  DocIterator = Strm->begin();
+}
+
 Input::~Input() {
 }
 

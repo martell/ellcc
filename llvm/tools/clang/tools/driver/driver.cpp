@@ -200,153 +200,84 @@ extern int cc1_main(ArrayRef<const char *> Argv, const char *Argv0,
 extern int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0,
                       void *MainAddr);
 
-#if RICH
 struct Opt {
   std::string name;
   std::string value;
 };
-
-using llvm::yaml::SequenceTraits;
-
-template<>
-struct SequenceTraits< std::vector<Opt> > {
-  static size_t size(IO &io, std::vector<Opt> &seq) {
-    return seq.size();
-  }
-  static Opt& element(IO &, std::vector<Opt> &seq, size_t index) {
-    if ( index >= seq.size() )
-      seq.resize(index+1);
-    return seq[index];
-  }
-};
+typedef std::vector<Opt> OptSequence;
+LLVM_YAML_IS_SEQUENCE_VECTOR(Opt)
 
 struct Compiler {
-  struct SequenceTraits< std::vector<Opt> >  options;
+  OptSequence  options;
 };
+
+#if RICH
+struct Assembler {
+};
+
+struct Linker {
+};
+#endif
 
 struct Config {
   Compiler compiler;
-#if RICH
-  struct Assembler {
-  } assembler;
-  struct Linker {
-  } linker;
-#endif
+  // RICH: Assembler assembler;
+  // RICH: Linker linker;
 };
 
-using llvm::yaml::MappingTraits;
 
-
+namespace llvm {
+namespace yaml {
 template <>
 struct MappingTraits<Opt> {
   static void mapping(llvm::yaml::IO &io, Opt &option) {
-      io.mapRequired("name", option.name);
-      io.mapOptional("value", option.value);
+    io.mapOptional("value", option.value);
   }
 };
 
 template <>
 struct MappingTraits<Compiler> {
   static void mapping(llvm::yaml::IO &io, Compiler &compiler) {
-      io.mapOptional("options", compiler.options);
+    io.mapOptional("options", compiler.options);
   }
 };
 
 template <>
 struct MappingTraits<Config> {
   static void mapping(llvm::yaml::IO &io, Config &config) {
-      io.mapRequired("compiler", config.compiler);
+    io.mapRequired("compiler", config.compiler);
+    // RICH: io.mapRequired("assembler", config.assembler);
+    // RICH: io.mapRequired("linker", config.linker);
   }
 };
-#endif
+}
+}
 
 static void ReadConfig(llvm::MemoryBuffer &Buffer,
-                       SmallVectorImpl<const char *>::iterator ib,
+                       SmallVectorImpl<const char *> &ArgVector,
+                       SmallVectorImpl<const char *>::iterator it,
+                       std::set<std::string> &SavedStrings,
                        Driver &TheDriver)
 {
-  llvm::yaml::Input yin(Buffer.getBuffer());
-#if RICH
-  llvm::SourceMgr SM;
-  llvm::yaml::Stream YAMLStream(Buffer.getMemBufferRef(), SM);
-  for (llvm::yaml::document_iterator I = YAMLStream.begin();
-       I != YAMLStream.end(); ++I) {
-    llvm::yaml::Node *Root = I->getRoot();
-    llvm::yaml::MappingNode *Tools = dyn_cast<llvm::yaml::MappingNode>(Root);
-    if (!Tools) {
-      YAMLStream.printError(Tools, "Expected object");
-      return;
-    }
-    for (llvm::yaml::MappingNode::iterator KVI = Tools->begin(),
-       KVE = Tools->end();
-       KVI != KVE; ++KVI) {
-      llvm::yaml::Node *Value = (*KVI).getValue();
-      if (!Value) {
-        YAMLStream.printError(Value, "Expected value");
-        return;
-      }
-      llvm::yaml::MappingNode *Tool = dyn_cast<llvm::yaml::MappingNode>(Value);
-      if (!Tool) {
-        YAMLStream.printError(Value, "Expected tool object");
-        return;
-      }
-      llvm::yaml::ScalarNode *KeyString =
-          dyn_cast<llvm::yaml::ScalarNode>((*KVI).getKey());
-      if (!KeyString) {
-        YAMLStream.printError(&*KVI, "Expected string as key");
-        return;
-      }
-      SmallString<8> KeyStorage;
-      if (KeyString->getValue(KeyStorage) == "compiler") {
-        llvm::yaml::MappingNode *Settings = 
-            dyn_cast<llvm::yaml::MappingNode>((*KVI).getValue());
-        for (llvm::yaml::MappingNode::iterator TKVI = Settings->begin(),
-           KVE = Settings->end();
-           TKVI != KVE; ++TKVI) {
-          llvm::yaml::ScalarNode *KeyString =
-              dyn_cast<llvm::yaml::ScalarNode>((*TKVI).getKey());
-          if (!KeyString) {
-            YAMLStream.printError(&*TKVI, "Expected string as key");
-            return;
-          }
-          if (KeyString->getValue(KeyStorage) == "options") {
-            if (!(*TKVI).getValue()) {
-              continue;
-            }
-            llvm::yaml::SequenceNode *List =
-                dyn_cast<llvm::yaml::SequenceNode>((*TKVI).getValue());
-            if (!List) {
-                YAMLStream.printError(&*TKVI, "Expected a list of one or more options");
-            }
-            for (llvm::yaml::SequenceNode::iterator OKVI = List->begin(),
-               KVE = List->end();
-               OKVI != KVE; ++OKVI) {
-              llvm::yaml::MappingNode *Object =
-                  dyn_cast<llvm::yaml::MappingNode>(&*OKVI);
-              llvm::yaml::ScalarNode *KeyString =
-                dyn_cast<llvm::yaml::ScalarNode>(Object->getKey());
-              if (!KeyString) {
-                YAMLStream.printError(&*OKVI, "Expected string as option name");
-                return;
-              }
-              llvm::yaml::ScalarNode *ValueString =
-                dyn_cast<llvm::yaml::ScalarNode>(Object.getValue());
-              if (!ValueString) {
-                YAMLStream.printError(&*OKVI, "Expected string as option value");
-                return;
-              }
-            }
-          } else {
-            YAMLStream.printError(&*TKVI,
-                ("Unknown configuration name \"" + KeyString->getRawValue() + "\"").str());
-          }
-        }
-      } else {
-        YAMLStream.printError(&*KVI,
-            ("Unknown tool name \"" + KeyString->getRawValue() + "\"").str());
-      }
+  Config config;
+  llvm::yaml::Input yin(Buffer.getMemBufferRef());
+  yin >> config;
+  for (size_t i = 0; i < config.compiler.options.size(); ++i) {
+    size_t space =
+        config.compiler.options[i].value.find_first_of(" \t");
+    ArgVector.insert(it,
+        GetStableCStr(SavedStrings,
+                      config.compiler.options[i].value.substr(0, space)));
+    ++it;
+    size_t nonspace =
+        config.compiler.options[i].value.find_first_not_of(" \t", space);
+    if (nonspace !=  std::string::npos) {
+      ArgVector.insert(it,
+          GetStableCStr(SavedStrings,
+                        config.compiler.options[i].value.substr(nonspace)));
+      ++it;
     }
   }
-#endif
 }
 
 static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
@@ -431,9 +362,9 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
   if (TheDriver.CCCIsELLCC) {
     // Set the ResourceDir correctly for ELLCC.
     TheDriver.setResourceDir();
+    if (Prefix.empty()) {
 #if defined(ELLCC_ARG0)
     // Override the default target for a cross compiler.
-    if (Prefix.empty()) {
       SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
       if (it != ArgVector.end())
         ++it;
@@ -441,8 +372,17 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
         { GetStableCStr(SavedStrings, std::string("-target")),
           GetStableCStr(SavedStrings, std::string(ELLCC_ARG0)) };
       ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
-    }
 #endif
+    } else {
+      SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
+      if (it != ArgVector.end())
+        ++it;
+      // Set up the target.
+      const char* Strings[] =
+        { GetStableCStr(SavedStrings, std::string("-target")),
+          GetStableCStr(SavedStrings, Prefix) };
+      ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
+    }
   } else {
     // Use the exectable name to form the -target option.
     if (!Prefix.empty()) {
@@ -483,7 +423,7 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
       // Replace -target and its argument with the contents of the file.
       ++it;
       ArgVector.erase(ib, it);
-      ReadConfig(*BufferOrErr.get(), ib,  TheDriver);
+      ReadConfig(*BufferOrErr.get(), ArgVector, ib,  SavedStrings, TheDriver);
       break;
     }
   }

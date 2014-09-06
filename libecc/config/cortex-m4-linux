@@ -1,0 +1,7 @@
+compiler:
+  options:
+    - value: -target arm-ellcc-linux-eabi5
+    - value: -mcpu=cortex-m4
+    - value: -g
+assembler:
+  exe: $E/arm-elf-as
