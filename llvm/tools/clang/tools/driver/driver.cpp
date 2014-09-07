@@ -18,6 +18,7 @@
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/Options.h"
+#include "clang/Driver/CompilationInfo.h"
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Frontend/Utils.h"
@@ -200,57 +201,51 @@ extern int cc1_main(ArrayRef<const char *> Argv, const char *Argv0,
 extern int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0,
                       void *MainAddr);
 
-struct Opt {
-  std::string name;
-  std::string value;
-};
-typedef std::vector<Opt> OptSequence;
-LLVM_YAML_IS_SEQUENCE_VECTOR(Opt)
-
-struct Compiler {
-  OptSequence  options;
-};
-
-#if RICH
-struct Assembler {
-};
-
-struct Linker {
-};
-#endif
-
-struct Config {
-  Compiler compiler;
-  // RICH: Assembler assembler;
-  // RICH: Linker linker;
-};
-
-
-namespace llvm {
-namespace yaml {
-template <>
-struct MappingTraits<Opt> {
-  static void mapping(llvm::yaml::IO &io, Opt &option) {
-    io.mapOptional("value", option.value);
+void ExpandArg(std::string &option, const char *sub, const std::string &value)
+{
+  // Expand sub into value.
+  size_t index = 0;
+  while ((index = option.find(sub, index)) != std::string::npos) {
+    if (index > 0 && option[index - 1] == '\\') {
+      // An escaped sub start character. Remove the escape
+      option.erase(index - 1, 1);
+      continue;
+    }
+    // Make the substitution.
+    option.replace(index, strlen(sub), value);
   }
-};
-
-template <>
-struct MappingTraits<Compiler> {
-  static void mapping(llvm::yaml::IO &io, Compiler &compiler) {
-    io.mapOptional("options", compiler.options);
-  }
-};
-
-template <>
-struct MappingTraits<Config> {
-  static void mapping(llvm::yaml::IO &io, Config &config) {
-    io.mapRequired("compiler", config.compiler);
-    // RICH: io.mapRequired("assembler", config.assembler);
-    // RICH: io.mapRequired("linker", config.linker);
-  }
-};
 }
+
+void ExpandArgWithAll(std::string &option, Driver &TheDriver)
+{
+  ExpandArg(option, "$E", TheDriver.Dir);
+  ExpandArg(option, "$R", TheDriver.ResourceDir);
+}
+
+void ExpandArgs(llvm::compilationinfo::StrSequence &options, Driver &TheDriver)
+{
+  // Expand "-option value" into two entries.
+  for (llvm::compilationinfo::StrSequence::iterator it = options.begin(),
+       ie = options.end(); it != ie; ++it) {
+    // Find the first option terminator.
+    size_t space = it->find_first_of(" \t='\"");
+    if (space != std::string::npos && isspace((*it)[space])) {
+      // Have a terminated option. Ignore trailing spaces.
+      size_t nonspace = it->find_first_not_of(" \t", space);
+      if (nonspace !=  std::string::npos) {
+        // Need to split the option into two arguments.
+        std::string s(it->substr(nonspace));
+        *it = it->substr(0, space);
+        ++it;
+        options.insert(it, s);
+      }
+    }
+  }
+
+  // Expand $E and $R into the executable and resource path.
+  for (auto &i : options) {
+    ExpandArgWithAll(i, TheDriver);
+  }
 }
 
 static void ReadConfig(llvm::MemoryBuffer &Buffer,
@@ -259,25 +254,41 @@ static void ReadConfig(llvm::MemoryBuffer &Buffer,
                        std::set<std::string> &SavedStrings,
                        Driver &TheDriver)
 {
-  Config config;
+  std::unique_ptr<llvm::compilationinfo::CompilationInfo>
+      Info(new llvm::compilationinfo::CompilationInfo);
   llvm::yaml::Input yin(Buffer.getMemBufferRef());
-  yin >> config;
-  for (size_t i = 0; i < config.compiler.options.size(); ++i) {
-    size_t space =
-        config.compiler.options[i].value.find_first_of(" \t");
-    ArgVector.insert(it,
-        GetStableCStr(SavedStrings,
-                      config.compiler.options[i].value.substr(0, space)));
-    ++it;
-    size_t nonspace =
-        config.compiler.options[i].value.find_first_not_of(" \t", space);
-    if (nonspace !=  std::string::npos) {
-      ArgVector.insert(it,
-          GetStableCStr(SavedStrings,
-                        config.compiler.options[i].value.substr(nonspace)));
-      ++it;
-    }
+  yin >> *Info;
+  if (yin.error()) {
+    TheDriver.Diag(diag::err_drv_malformed_compilation_info) <<
+        Buffer.getBufferIdentifier();
+    return;
   }
+  ExpandArgs(Info->compiler.options, TheDriver);
+  ExpandArgs(Info->assembler.options, TheDriver);
+  ExpandArgWithAll(Info->assembler.exe, TheDriver);
+  ExpandArgs(Info->linker.options, TheDriver);
+  ExpandArgWithAll(Info->linker.exe, TheDriver);
+  ExpandArgWithAll(Info->linker.static_crt1, TheDriver);
+  ExpandArgWithAll(Info->linker.dynamic_crt1, TheDriver);
+  ExpandArgWithAll(Info->linker.crtbegin, TheDriver);
+  ExpandArgWithAll(Info->linker.crtend, TheDriver);
+  ExpandArgWithAll(Info->linker.library_path, TheDriver);
+
+  // Process the compiler options immediately.
+  for (size_t i = 0; i < Info->compiler.options.size(); ++i) {
+    ArgVector.insert(it,
+                     GetStableCStr(SavedStrings, Info->compiler.options[i]));
+    ++it;
+  }
+
+#if RICH
+  // Look at the info.
+  llvm::yaml::Output yout(llvm::outs());
+  yout << *Info;
+#endif
+
+  // Give the info to the driver.
+  TheDriver.Info = std::move(Info);
 }
 
 static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
@@ -421,8 +432,7 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
       }
 
       // Replace -target and its argument with the contents of the file.
-      ++it;
-      ArgVector.erase(ib, it);
+      ArgVector.erase(ib, ++it);
       ReadConfig(*BufferOrErr.get(), ArgVector, ib,  SavedStrings, TheDriver);
       break;
     }

@@ -15,6 +15,7 @@
 #include "clang/Basic/Version.h"
 #include "clang/Driver/Action.h"
 #include "clang/Driver/Compilation.h"
+#include "clang/Driver/CompilationInfo.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/Job.h"
@@ -7856,28 +7857,40 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 
   CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());
+  const Driver &D = getToolChain().getDriver();
+  std::string As;
+  if (D.Info) {
+    // Use the compilation info suppled.
+    As = D.Info->assembler.exe;
+    // Add the assembler options.
+    for (auto &i : D.Info->linker.options) {
+      CmdArgs.push_back(Args.MakeArgString(i));
+    }
+  } else {
+    llvm::Triple Triple = getToolChain().getTriple();
+    As = Triple.getArchTypeName(Triple.getArch());
+    switch (Triple.getArch()) {
+      case llvm::Triple::armeb:
+        CmdArgs.push_back("-EB");
+        As = "arm";
+        break;
+      case llvm::Triple::mipsel:
+        CmdArgs.push_back("-EL");
+        As = "mips";
+        break;
+      case llvm::Triple::ppc:
+        CmdArgs.push_back("-a32");
+        CmdArgs.push_back("-many");
+        break;
+      case llvm::Triple::ppc64:
+        CmdArgs.push_back("-a64");
+        CmdArgs.push_back("-many");
+        break;
+      default:
+        break;
+    }
 
-  llvm::Triple Triple = getToolChain().getTriple();
-  std::string As = Triple.getArchTypeName(Triple.getArch());
-  switch (Triple.getArch()) {
-    case llvm::Triple::armeb:
-      CmdArgs.push_back("-EB");
-      As = "arm";
-      break;
-    case llvm::Triple::mipsel:
-      CmdArgs.push_back("-EL");
-      As = "mips";
-      break;
-    case llvm::Triple::ppc:
-      CmdArgs.push_back("-a32");
-      CmdArgs.push_back("-many");
-      break;
-    case llvm::Triple::ppc64:
-      CmdArgs.push_back("-a64");
-      CmdArgs.push_back("-many");
-      break;
-    default:
-      break;
+    As += "-elf-as";
   }
 
   for (InputInfoList::const_iterator
@@ -7886,7 +7899,6 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(II.getFilename());
   }
 
-  As += "-elf-as";
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath(As.c_str()));
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
@@ -7899,172 +7911,17 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
                                  const char *LinkingOutput) const {
   const Driver &D = getToolChain().getDriver();
   ArgStringList CmdArgs;
-  // Choose linker arguments based on the triple.
-  llvm::Triple Triple = getToolChain().getTriple();
-  StringRef ArchName = Args.MakeArgString(getToolChain().getArchName());
-  StringRef emulation = "";
-  bool hash = true;
-  bool buildID = true;
-  bool eh_frame_hdr = true;
-
-  switch (Triple.getArch()) {
-    case llvm::Triple::x86: emulation = "elf_i386"; break;
-
-    case llvm::Triple::aarch64:
-      switch (Triple.getOS()) {
-        case llvm::Triple::Linux: 
-          emulation = "aarch64linux";
-          break;
-        default: emulation = "aarch64elf"; break;
-      }
-      break;
-
-    case llvm::Triple::arm:
-    case llvm::Triple::thumb:
-      switch (Triple.getOS()) {
-        case llvm::Triple::Linux: 
-          switch (Triple.getEnvironment()) {
-            case llvm::Triple::EABI:
-            case llvm::Triple::GNUEABI:
-              emulation = "armelf_linux_eabi"; break;
-            default: emulation = "armelf_linux"; break;
-          }
-          break;
-        case llvm::Triple::NetBSD: emulation = "armelf_nbsd"; break;
-        case llvm::Triple::FreeBSD: emulation = "armelf_fbsd"; break;
-        default: emulation = "armelf"; break;
-      }
-      break;
-
-    case llvm::Triple::armeb:
-      switch (Triple.getOS()) {
-        case llvm::Triple::Linux: 
-          switch (Triple.getEnvironment()) {
-            case llvm::Triple::EABI:
-            case llvm::Triple::GNUEABI:
-              emulation = "armelfb_linux_eabi"; break;
-            default: emulation = "armelfb_linux"; break;
-          }
-          break;
-        case llvm::Triple::NetBSD: emulation = "armelfb_nbsd"; break;
-        case llvm::Triple::FreeBSD: emulation = "armelfb_fbsd"; break;
-        default: emulation = "armelfb"; break;
-      }
-      break;
-
-    case llvm::Triple::ppc:
-      switch (Triple.getOS()) {
-        case llvm::Triple::Linux: 
-          emulation = "elf32ppclinux";
-          break;
-        case llvm::Triple::FreeBSD: 
-          emulation = "elf32ppc_fbsd";
-          break;
-        default: emulation = "elf32ppc"; break;
-      }
-      break;
-
-    case llvm::Triple::ppc64:
-      switch (Triple.getOS()) {
-        case llvm::Triple::Linux: 
-          emulation = "elf64ppclinux";
-          break;
-        case llvm::Triple::FreeBSD: 
-          emulation = "elf64ppc_fbsd";
-          break;
-        default: emulation = "elf64ppc"; break;
-      }
-      break;
-
-    case llvm::Triple::sparc: emulation = "elf32_sparc"; break;
-
-    case llvm::Triple::sparcv9:
-      switch (Triple.getOS()) {
-        case llvm::Triple::FreeBSD: 
-          emulation = "elf64_sparc_fbsd";
-          break;
-        default: emulation = "elf64_sparc"; break;
-      }
-      break;
-
-    case llvm::Triple::mips:
-      hash = false;
-      switch (Triple.getOS()) {
-        case llvm::Triple::FreeBSD: 
-          emulation = "elf32btsmip_fbsd";
-          break;
-        default: emulation = "elf32ebmip";
-      }
-      break;
-
-    case llvm::Triple::mipsel:
-      hash = false;
-      switch (Triple.getOS()) {
-        case llvm::Triple::FreeBSD: 
-          emulation = "elf32ltsmip_fbsd";
-          break;
-        default: emulation = "elf32elmip";
-      }
-      break;
-
-    case llvm::Triple::mips64:
-      hash = false;
-      switch (Triple.getOS()) {
-        case llvm::Triple::FreeBSD: 
-          if (mips::hasMipsAbiArg(Args, "n32"))
-            emulation = "elf32btsmipn32_fbsd";
-          else
-            emulation = "elf64btsmip_fbsd";
-          break;
-        default:
-          if (mips::hasMipsAbiArg(Args, "n32"))
-            emulation = "elf32bmipn32";
-          else
-            emulation = "elf64bmip";
-          break;
-      }
-      break;
-
-    case llvm::Triple::mips64el:
-      hash = false;
-      switch (Triple.getOS()) {
-        case llvm::Triple::FreeBSD: 
-          if (mips::hasMipsAbiArg(Args, "n32"))
-            emulation = "elf32ltsmipn32_fbsd";
-          else
-            emulation = "elf64ltsmip_fbsd";
-          break;
-        default:
-          if (mips::hasMipsAbiArg(Args, "n32"))
-            emulation = "elf32lmipn32";
-          else
-            emulation = "elf64lmip";
-          break;
-      }
-      break;
-
-    case llvm::Triple::msp430: emulation = "msp430"; break;
-
-    case llvm::Triple::nios2: emulation = "nios2elf"; break;
-
-    case llvm::Triple::x86_64: emulation = "elf_x86_64"; break;
-
-    case llvm::Triple::mblaze:
-      emulation = "elf32mb_linux";
-      hash = false;
-      buildID = false;
-      eh_frame_hdr = false;
-      break;
-    default: emulation = "unknown";
-  }
-  CmdArgs.push_back("-m");
-  CmdArgs.push_back(Args.MakeArgString(emulation));
-
-  if (buildID) {
-      CmdArgs.push_back("--build-id");
-  }
-  if (hash) {
-    CmdArgs.push_back("--hash-style=gnu");
+  std::string Ld;
+  std::string static_crt1;
+  std::string dynamic_crt1;
+  std::string crtbegin;
+  std::string crtend;
+  std::string library_path;
+  if (Output.isFilename()) {
+    CmdArgs.push_back("-o");
+    CmdArgs.push_back(Output.getFilename());
+  } else {
+    assert(Output.isNothing() && "Invalid output.");
   }
 
   if ((!Args.hasArg(options::OPT_nostdlib)) &&
@@ -8073,14 +7930,207 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("_start");
   }
 
+  if (D.Info) {
+    // Use the compilation info suppled.
+    Ld = D.Info->linker.exe;
+    static_crt1 = D.Info->linker.static_crt1;
+    dynamic_crt1 = D.Info->linker.dynamic_crt1;
+    crtbegin = D.Info->linker.crtbegin;
+    crtend = D.Info->linker.crtend;
+    library_path = D.Info->linker.library_path;
+    // Add the linker options.
+    for (auto &i : D.Info->linker.options) {
+      CmdArgs.push_back(Args.MakeArgString(i));
+    }
+  } else {
+    // Choose linker arguments based on the triple.
+    StringRef ArchName = Args.MakeArgString(getToolChain().getArchName());
+    llvm::Triple Triple = getToolChain().getTriple();
+    StringRef emulation = "";
+    bool hash = true;
+    bool buildID = true;
+    bool eh_frame_hdr = true;
+    Ld = getToolChain().GetProgramPath("ecc-ld");
+
+    switch (Triple.getArch()) {
+      case llvm::Triple::x86: emulation = "elf_i386"; break;
+
+      case llvm::Triple::aarch64:
+        switch (Triple.getOS()) {
+          case llvm::Triple::Linux: 
+            emulation = "aarch64linux";
+            break;
+          default: emulation = "aarch64elf"; break;
+        }
+        break;
+
+      case llvm::Triple::arm:
+      case llvm::Triple::thumb:
+        switch (Triple.getOS()) {
+          case llvm::Triple::Linux: 
+            switch (Triple.getEnvironment()) {
+              case llvm::Triple::EABI:
+              case llvm::Triple::GNUEABI:
+                emulation = "armelf_linux_eabi"; break;
+              default: emulation = "armelf_linux"; break;
+            }
+            break;
+          case llvm::Triple::NetBSD: emulation = "armelf_nbsd"; break;
+          case llvm::Triple::FreeBSD: emulation = "armelf_fbsd"; break;
+          default: emulation = "armelf"; break;
+        }
+        break;
+
+      case llvm::Triple::armeb:
+        switch (Triple.getOS()) {
+          case llvm::Triple::Linux: 
+            switch (Triple.getEnvironment()) {
+              case llvm::Triple::EABI:
+              case llvm::Triple::GNUEABI:
+                emulation = "armelfb_linux_eabi"; break;
+              default: emulation = "armelfb_linux"; break;
+            }
+            break;
+          case llvm::Triple::NetBSD: emulation = "armelfb_nbsd"; break;
+          case llvm::Triple::FreeBSD: emulation = "armelfb_fbsd"; break;
+          default: emulation = "armelfb"; break;
+        }
+        break;
+
+      case llvm::Triple::ppc:
+        switch (Triple.getOS()) {
+          case llvm::Triple::Linux: 
+            emulation = "elf32ppclinux";
+            break;
+          case llvm::Triple::FreeBSD: 
+            emulation = "elf32ppc_fbsd";
+            break;
+          default: emulation = "elf32ppc"; break;
+        }
+        break;
+
+      case llvm::Triple::ppc64:
+        switch (Triple.getOS()) {
+          case llvm::Triple::Linux: 
+            emulation = "elf64ppclinux";
+            break;
+          case llvm::Triple::FreeBSD: 
+            emulation = "elf64ppc_fbsd";
+            break;
+          default: emulation = "elf64ppc"; break;
+        }
+        break;
+
+      case llvm::Triple::sparc: emulation = "elf32_sparc"; break;
+
+      case llvm::Triple::sparcv9:
+        switch (Triple.getOS()) {
+          case llvm::Triple::FreeBSD: 
+            emulation = "elf64_sparc_fbsd";
+            break;
+          default: emulation = "elf64_sparc"; break;
+        }
+        break;
+
+      case llvm::Triple::mips:
+        hash = false;
+        switch (Triple.getOS()) {
+          case llvm::Triple::FreeBSD: 
+            emulation = "elf32btsmip_fbsd";
+            break;
+          default: emulation = "elf32ebmip";
+        }
+        break;
+
+      case llvm::Triple::mipsel:
+        hash = false;
+        switch (Triple.getOS()) {
+          case llvm::Triple::FreeBSD: 
+            emulation = "elf32ltsmip_fbsd";
+            break;
+          default: emulation = "elf32elmip";
+        }
+        break;
+
+      case llvm::Triple::mips64:
+        hash = false;
+        switch (Triple.getOS()) {
+          case llvm::Triple::FreeBSD: 
+            if (mips::hasMipsAbiArg(Args, "n32"))
+              emulation = "elf32btsmipn32_fbsd";
+            else
+              emulation = "elf64btsmip_fbsd";
+            break;
+          default:
+            if (mips::hasMipsAbiArg(Args, "n32"))
+              emulation = "elf32bmipn32";
+            else
+              emulation = "elf64bmip";
+            break;
+        }
+        break;
+
+      case llvm::Triple::mips64el:
+        hash = false;
+        switch (Triple.getOS()) {
+          case llvm::Triple::FreeBSD: 
+            if (mips::hasMipsAbiArg(Args, "n32"))
+              emulation = "elf32ltsmipn32_fbsd";
+            else
+              emulation = "elf64ltsmip_fbsd";
+            break;
+          default:
+            if (mips::hasMipsAbiArg(Args, "n32"))
+              emulation = "elf32lmipn32";
+            else
+              emulation = "elf64lmip";
+            break;
+        }
+        break;
+
+      case llvm::Triple::msp430: emulation = "msp430"; break;
+
+      case llvm::Triple::nios2: emulation = "nios2elf"; break;
+
+      case llvm::Triple::x86_64: emulation = "elf_x86_64"; break;
+
+      case llvm::Triple::mblaze:
+        emulation = "elf32mb_linux";
+        hash = false;
+        buildID = false;
+        eh_frame_hdr = false;
+        break;
+      default: emulation = "unknown";
+    }
+    CmdArgs.push_back("-m");
+    CmdArgs.push_back(Args.MakeArgString(emulation));
+
+    if (buildID) {
+        CmdArgs.push_back("--build-id");
+    }
+    if (hash) {
+      CmdArgs.push_back("--hash-style=gnu");
+    }
+    if (!Args.hasArg(options::OPT_static) && eh_frame_hdr) {
+      CmdArgs.push_back("--eh-frame-hdr");
+    }
+    static_crt1 = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
+      + Triple.getOSTypeName(Triple.getOS()) + "/crt1.o");
+    dynamic_crt1 = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
+      + Triple.getOSTypeName(Triple.getOS()) + "/Scrt1.o");
+    crtbegin = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
+      + Triple.getOSTypeName(Triple.getOS()) + "/crtbegin.o");
+    crtend = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
+      + Triple.getOSTypeName(Triple.getOS()) + "/crtend.o");
+    library_path = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
+      + Triple.getOSTypeName(Triple.getOS()));
+  }
+
   if (Args.hasArg(options::OPT_static)) {
     CmdArgs.push_back("-Bstatic");
   } else {
     if (Args.hasArg(options::OPT_rdynamic))
       CmdArgs.push_back("-export-dynamic");
-    if (eh_frame_hdr) {
-      CmdArgs.push_back("--eh-frame-hdr");
-    }
     CmdArgs.push_back("-Bdynamic");
     if (Args.hasArg(options::OPT_shared)) {
       CmdArgs.push_back("-shared");
@@ -8090,46 +8140,25 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  if (Output.isFilename()) {
-    CmdArgs.push_back("-o");
-    CmdArgs.push_back(Output.getFilename());
-  } else {
-    assert(Output.isNothing() && "Invalid output.");
-  }
-
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
     if (!Args.hasArg(options::OPT_shared)) {
-      CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
-        + ArchName + "/"
-        + Triple.getOSTypeName(Triple.getOS()) + "/crt1.o"));
+      if (static_crt1.size()) {
+        CmdArgs.push_back(Args.MakeArgString(static_crt1));
+      }
     } else {
-      CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
-        + ArchName + "/"
-        + Triple.getOSTypeName(Triple.getOS()) + "/Scrt1.o"));
+      if (dynamic_crt1.size()) {
+        CmdArgs.push_back(Args.MakeArgString(dynamic_crt1));
+      }
     }
-    CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
-      + ArchName + "/"
-      + Triple.getOSTypeName(Triple.getOS()) + "/crtbegin.o"));
+    if (crtbegin.size()) {
+      CmdArgs.push_back(Args.MakeArgString(crtbegin));
+    }
   }
 
-  // Find the relative path to the libraries and linker scripts:
-#if RICH
-  // <bindir>/../ldscripts/<os>
-#endif
-  // <bindir>/../lib/<arch>/<os>
-  // <bindir>/../lib/<arch>
   CmdArgs.push_back("-nostdlib");
-#if RICH
-  CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/ldscripts/"
-    + Triple.getOSTypeName(Triple.getOS())));
-#endif
   if (!Args.hasArg(options::OPT_nostdlib)) {
-    CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
-      + ArchName + "/"
-      + Triple.getOSTypeName(Triple.getOS())));
-    CmdArgs.push_back(Args.MakeArgString("-L" + D.Dir + "/../libecc/lib/"
-      + ArchName));
+    CmdArgs.push_back(Args.MakeArgString("-L" + library_path));
   }
 
   Args.AddAllArgs(CmdArgs, options::OPT_L);
@@ -8137,15 +8166,6 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddAllArgs(CmdArgs, options::OPT_e);
 
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
-
-#if RICH
-  if (!Args.hasArg(options::OPT_T)) {
-    // RICH: Other linker command files choices.
-    StringRef extension = ".x";
-    CmdArgs.push_back(Args.MakeArgString("-T" + 
-      emulation + extension));
-  }
-#endif
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nodefaultlibs)) {
@@ -8170,15 +8190,13 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-)");
   }
 
-  if (!Args.hasArg(options::OPT_nostdlib) &&
+  if (crtend.size() &&
+      !Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
-    CmdArgs.push_back(Args.MakeArgString(D.Dir + "/../libecc/lib/"
-      + ArchName + "/"
-      + Triple.getOSTypeName(Triple.getOS()) + "/crtend.o"));
+    CmdArgs.push_back(Args.MakeArgString(crtend));
   }
 
-  const char *Exec =
-    Args.MakeArgString(getToolChain().GetProgramPath("ecc-ld"));
+  const char *Exec = Args.MakeArgString(Ld);
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 

@@ -3,7 +3,9 @@
 compiler:
   options:
     - -target arm-ellcc-linux-eabi5
-    - -mcpu=cortex-m4
+    - -march=armv7
+    - -mfpu=vfp
+    - -mfloat-abi=softfp
 assembler:
   exe: $E/arm-elf-as
   options:

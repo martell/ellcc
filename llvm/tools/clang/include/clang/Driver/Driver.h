@@ -15,6 +15,7 @@
 #include "clang/Driver/Phases.h"
 #include "clang/Driver/Types.h"
 #include "clang/Driver/Util.h"
+#include "clang/Driver/CompilationInfo.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
@@ -70,6 +71,9 @@ public:
 
   // FIXME: Privatize once interface is stable.
 public:
+  /// Compilation Information.
+  std::unique_ptr<llvm::compilationinfo::CompilationInfo> Info;
+
   /// The name the driver was invoked as.
   std::string Name;
 
