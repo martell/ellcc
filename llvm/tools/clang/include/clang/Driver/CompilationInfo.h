@@ -12,7 +12,13 @@
 
 #include "llvm/MC/YAML.h"
 
-namespace llvm {
+namespace clang {
+namespace driver {
+  class Driver;
+}
+}
+
+namespace clang {
 namespace compilationinfo {
 
   typedef std::vector<std::string> StrSequence;
@@ -39,44 +45,55 @@ namespace compilationinfo {
     Compiler compiler;
     Assembler assembler;
     Linker linker;
+
+    /// ExpandArg - Perform a substitution on an argument.
+    static void ExpandArg(std::string &arg, const char *sub,
+                          const std::string &value);
+    /// ExpandArgWithAll - Perform all expansions on an argument.
+    static void ExpandArgWithAll(std::string &arg, driver:: Driver &TheDriver);
+
+    /// ExpandArgs - Expand arguments.
+    /// Expand "-option value" into two entries.
+    /// Make argument substitutions.
+    static void ExpandArgs(StrSequence &options, driver::Driver &TheDriver);
+
+    /// ReadInfo - Read a YAML memory buffer into the CompilerInfo object.
+    static void ReadInfo(llvm::MemoryBuffer &Buffer, driver::Driver &TheDriver);
+
+    // CheckForAndReadInfo - Check for and read compilation info if available.
+    static bool CheckForAndReadInfo(const char *target,
+                                    driver::Driver &TheDriver);
   };
+
 } // end namespace compilationinfo
-} // end namespace llvm
+} // end namespace clang
 
 LLVM_YAML_IS_SEQUENCE_VECTOR(std::string)
 
 namespace llvm {
 namespace yaml {
-#if RICH
-template <>
-struct MappingTraits<llvm::compilationinfo::Opt> {
-  static void mapping(llvm::yaml::IO &io, llvm::compilationinfo::Opt &option) {
-    io.mapOptional("value", option.value);
-  }
-};
-#endif
 
 template <>
-struct MappingTraits<llvm::compilationinfo::Compiler> {
+struct MappingTraits<clang::compilationinfo::Compiler> {
   static void mapping(llvm::yaml::IO &io,
-                      llvm::compilationinfo::Compiler &compiler) {
+                      clang::compilationinfo::Compiler &compiler) {
     io.mapRequired("options", compiler.options);
   }
 };
 
 template <>
-struct MappingTraits<llvm::compilationinfo::Assembler> {
+struct MappingTraits<clang::compilationinfo::Assembler> {
   static void mapping(llvm::yaml::IO &io,
-                      llvm::compilationinfo::Assembler &assembler) {
+                      clang::compilationinfo::Assembler &assembler) {
     io.mapOptional("exe", assembler.exe);
     io.mapOptional("options", assembler.options);
   }
 };
 
 template <>
-struct MappingTraits<llvm::compilationinfo::Linker> {
+struct MappingTraits<clang::compilationinfo::Linker> {
   static void mapping(llvm::yaml::IO &io,
-                      llvm::compilationinfo::Linker &linker) {
+                      clang::compilationinfo::Linker &linker) {
     io.mapRequired("exe", linker.exe);
     io.mapOptional("options", linker.options);
     io.mapOptional("static_crt1", linker.static_crt1);
@@ -88,9 +105,9 @@ struct MappingTraits<llvm::compilationinfo::Linker> {
 };
 
 template <>
-struct MappingTraits<llvm::compilationinfo::CompilationInfo> {
+struct MappingTraits<clang::compilationinfo::CompilationInfo> {
   static void mapping(llvm::yaml::IO &io,
-                      llvm::compilationinfo::CompilationInfo &config) {
+                      clang::compilationinfo::CompilationInfo &config) {
     io.mapRequired("compiler", config.compiler);
     io.mapRequired("assembler", config.assembler);
     io.mapRequired("linker", config.linker);

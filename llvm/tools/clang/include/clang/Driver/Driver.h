@@ -72,7 +72,7 @@ public:
   // FIXME: Privatize once interface is stable.
 public:
   /// Compilation Information.
-  std::unique_ptr<llvm::compilationinfo::CompilationInfo> Info;
+  std::unique_ptr<clang::compilationinfo::CompilationInfo> Info;
 
   /// The name the driver was invoked as.
   std::string Name;
