@@ -45,6 +45,7 @@ namespace compilationinfo {
     Compiler compiler;
     Assembler assembler;
     Linker linker;
+    static std::map<const char *, const char *> InfoMap;
 
     /// ExpandArg - Perform a substitution on an argument.
     static void ExpandArg(std::string &arg, const char *sub,
@@ -60,9 +61,12 @@ namespace compilationinfo {
     /// ReadInfo - Read a YAML memory buffer into the CompilerInfo object.
     static void ReadInfo(llvm::MemoryBuffer &Buffer, driver::Driver &TheDriver);
 
-    // CheckForAndReadInfo - Check for and read compilation info if available.
+    /// CheckForAndReadInfo - Check for and read compilation info if available.
     static bool CheckForAndReadInfo(const char *target,
                                     driver::Driver &TheDriver);
+    /// DefineInfo - Statically define info for a target.
+    static void DefineInfo(const char *target, const char *info)
+    { InfoMap[target] = info; }
   };
 
 } // end namespace compilationinfo

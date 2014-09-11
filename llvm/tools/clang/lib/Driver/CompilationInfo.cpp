@@ -92,15 +92,22 @@ void CompilationInfo::ReadInfo(llvm::MemoryBuffer &Buffer,
 bool CompilationInfo::CheckForAndReadInfo(const char *target,
                                           driver::Driver &TheDriver)
 {
-  llvm::SmallString<128> P(TheDriver.ResourceDir);
-  llvm::sys::path::append(P, "config", target);
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> BufferOrErr =
-      llvm::MemoryBuffer::getFile(P.str());
-  if (BufferOrErr.getError()) {
-    // Can't open as a file. Leave as an argument to -target.
-    return false;
-   }
-  compilationinfo::CompilationInfo::ReadInfo(*BufferOrErr.get(), TheDriver);
+  std::map<const char *, const char *>::iterator it;
+  it = InfoMap.find(target);
+  if (it != InfoMap.end()) {
+    // Predefined info exists for this target.
+  } else {
+    // Look for a file that contains info for this target.
+    llvm::SmallString<128> P(TheDriver.ResourceDir);
+    llvm::sys::path::append(P, "config", target);
+    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> BufferOrErr =
+        llvm::MemoryBuffer::getFile(P.str());
+    if (BufferOrErr.getError()) {
+      // Can't open as a file. Leave as an argument to -target.
+      return false;
+     }
+    compilationinfo::CompilationInfo::ReadInfo(*BufferOrErr.get(), TheDriver);
+  }
   return true;
 }
 
