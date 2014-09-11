@@ -45,6 +45,8 @@ namespace compilationinfo {
     Compiler compiler;
     Assembler assembler;
     Linker linker;
+
+    /// The target info database.
     static std::map<const char *, const char *> InfoMap;
 
     /// ExpandArg - Perform a substitution on an argument.

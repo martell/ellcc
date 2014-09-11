@@ -4,6 +4,9 @@
 
 using namespace clang::compilationinfo;
 
+// The target info database.
+std::map<const char *, const char *> CompilationInfo::InfoMap;
+
 void CompilationInfo::ExpandArg(std::string &arg, const char *sub,
                       const std::string &value)
 {
@@ -96,6 +99,9 @@ bool CompilationInfo::CheckForAndReadInfo(const char *target,
   it = InfoMap.find(target);
   if (it != InfoMap.end()) {
     // Predefined info exists for this target.
+    std::unique_ptr<llvm::MemoryBuffer> Buffer =
+        llvm::MemoryBuffer::getMemBuffer(it->second, target);
+    ReadInfo(*Buffer.get(), TheDriver);
   } else {
     // Look for a file that contains info for this target.
     llvm::SmallString<128> P(TheDriver.ResourceDir);
@@ -105,8 +111,8 @@ bool CompilationInfo::CheckForAndReadInfo(const char *target,
     if (BufferOrErr.getError()) {
       // Can't open as a file. Leave as an argument to -target.
       return false;
-     }
-    compilationinfo::CompilationInfo::ReadInfo(*BufferOrErr.get(), TheDriver);
+    }
+    ReadInfo(*BufferOrErr.get(), TheDriver);
   }
   return true;
 }
