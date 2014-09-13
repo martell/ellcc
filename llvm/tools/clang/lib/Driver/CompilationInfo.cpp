@@ -5,10 +5,10 @@
 using namespace clang::compilationinfo;
 
 // The target info database.
-std::map<const char *, const char *> CompilationInfo::InfoMap;
+std::map<std::string, const char *> CompilationInfo::InfoMap;
 
-void CompilationInfo::ExpandArg(std::string &arg, const char *sub,
-                      const std::string &value)
+void clang::compilationinfo::ExpandArg(std::string &arg, const char *sub,
+                                       const std::string &value)
 {
   // Expand sub into value.
   size_t index = 0;
@@ -23,20 +23,32 @@ void CompilationInfo::ExpandArg(std::string &arg, const char *sub,
   }
 }
 
-void CompilationInfo::ExpandArgWithAll(std::string &arg,
-                                       driver::Driver &TheDriver)
+void clang::compilationinfo::ExpandArgWithAll(std::string &arg,
+                                         const clang::driver::Driver &TheDriver,
+                                         const char *Output)
 {
+  if (arg.find_first_of('$') == std::string::npos) {
+    // No expansions to do.
+    return;
+  }
+
+  // Perform expansions.
   ExpandArg(arg, "$E", TheDriver.Dir);
   ExpandArg(arg, "$R", TheDriver.ResourceDir);
+  if (Output) {
+    ExpandArg(arg, "$O", Output);
+  }
 }
 
-    /// ExpandArgs - Expand arguments.
-    /// Expand "-option value" into two entries.
-    /// Make argument substitutions.
-void CompilationInfo::ExpandArgs(StrSequence &options,
-                                 driver::Driver &TheDriver)
+/// ExpandArgs - Expand arguments.
+/// Expand "-option value" into two entries.
+/// Make argument substitutions.
+void clang::compilationinfo::ExpandArgs(StrSequence &options,
+                                        const clang::driver::Driver &TheDriver,
+                                        const char *Output)
 {
   // Expand "-option value" into two entries.
+  StrSequence newOptions;
   for (StrSequence::iterator it = options.begin(),
        ie = options.end(); it != ie; ++it) {
     // Find the first option terminator.
@@ -46,21 +58,24 @@ void CompilationInfo::ExpandArgs(StrSequence &options,
       size_t nonspace = it->find_first_not_of(" \t", space);
       if (nonspace !=  std::string::npos) {
         // Need to split the option into two arguments.
-        std::string s(it->substr(nonspace));
-        *it = it->substr(0, space);
-        ++it;
-        options.insert(it, s);
+        newOptions.push_back(it->substr(0, space));
+        newOptions.push_back(it->substr(nonspace));
+      } else {
+        newOptions.push_back(*it);
       }
+    } else {
+      newOptions.push_back(*it);
     }
   }
 
-  // Expand $E and $R into the executable and resource path.
+  options = newOptions;
+  // Expand $X substitutions.
   for (auto &i : options) {
-    ExpandArgWithAll(i, TheDriver);
+    ExpandArgWithAll(i, TheDriver, Output);
   }
 }
 
-void CompilationInfo::ReadInfo(llvm::MemoryBuffer &Buffer,
+bool CompilationInfo::ReadInfo(llvm::MemoryBuffer &Buffer,
                                driver::Driver &TheDriver)
 {
   std::unique_ptr<CompilationInfo> Info(new CompilationInfo);
@@ -69,18 +84,8 @@ void CompilationInfo::ReadInfo(llvm::MemoryBuffer &Buffer,
   if (yin.error()) {
     TheDriver.Diag(diag::err_drv_malformed_compilation_info) <<
         Buffer.getBufferIdentifier();
-    return;
+    return false;
   }
-  ExpandArgs(Info->compiler.options, TheDriver);
-  ExpandArgs(Info->assembler.options, TheDriver);
-  ExpandArgWithAll(Info->assembler.exe, TheDriver);
-  ExpandArgs(Info->linker.options, TheDriver);
-  ExpandArgWithAll(Info->linker.exe, TheDriver);
-  ExpandArgWithAll(Info->linker.static_crt1, TheDriver);
-  ExpandArgWithAll(Info->linker.dynamic_crt1, TheDriver);
-  ExpandArgWithAll(Info->linker.crtbegin, TheDriver);
-  ExpandArgWithAll(Info->linker.crtend, TheDriver);
-  ExpandArgWithAll(Info->linker.library_path, TheDriver);
 
 #if RICH
   // Look at the info.
@@ -90,6 +95,7 @@ void CompilationInfo::ReadInfo(llvm::MemoryBuffer &Buffer,
 
   // Give the info to the driver.
   TheDriver.Info = std::move(Info);
+  return true;
 }
 
 bool CompilationInfo::CheckForAndReadInfo(const char *target,
@@ -100,8 +106,7 @@ bool CompilationInfo::CheckForAndReadInfo(const char *target,
       llvm::MemoryBuffer::getFile(target);
   if (!BufferOrErr.getError()) {
     // Get info from the file.
-    ReadInfo(*BufferOrErr.get(), TheDriver);
-    return true;
+    return ReadInfo(*BufferOrErr.get(), TheDriver);
   }
 
   // Look in the config directory.
@@ -110,19 +115,17 @@ bool CompilationInfo::CheckForAndReadInfo(const char *target,
   BufferOrErr = llvm::MemoryBuffer::getFile(P.str());
   if (!BufferOrErr.getError()) {
     // Get info from the file.
-    ReadInfo(*BufferOrErr.get(), TheDriver);
-    return true;
+    return ReadInfo(*BufferOrErr.get(), TheDriver);
   }
 
   // Can't open as a file. Look for predefined info.
-  std::map<const char *, const char *>::iterator it;
+  std::map<std::string, const char *>::iterator it;
   it = InfoMap.find(target);
   if (it != InfoMap.end()) {
     // Predefined info exists for this target.
     std::unique_ptr<llvm::MemoryBuffer> Buffer =
         llvm::MemoryBuffer::getMemBuffer(it->second, target);
-    ReadInfo(*Buffer.get(), TheDriver);
-    return true;
+    return ReadInfo(*Buffer.get(), TheDriver);
   }
 
   // No info exists. Leave as an argument to -target.

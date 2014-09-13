@@ -5146,6 +5146,170 @@ void gcc::Link::RenderExtraToolArgs(const JobAction &JA,
   // The types are (hopefully) good enough.
 }
 
+// CompilerInfo helpers.
+static void ConstructAssembleJobFromInfo(Compilation &C, const JobAction &JA,
+                                     const InputInfo &Output,
+                                     const InputInfoList &Inputs,
+                                     const ArgList &Args,
+                                     const char *LinkingOutput,
+                                     const Tool &T) {
+  const Driver &D = T.getToolChain().getDriver();
+  ArgStringList CmdArgs;
+  clang::compilationinfo::Assembler &assembler = D.Info->assembler;
+  // Expand the assembler information.
+  assembler.Expand(D, Output.getFilename());
+  if (Output.isFilename()) {
+    for (auto &i : assembler.output) {
+      CmdArgs.push_back(Args.MakeArgString(i));
+    }
+  } else {
+    assert(Output.isNothing() && "Invalid output.");
+  }
+
+  // Add the assembler options.
+  for (auto &i : assembler.options) {
+    CmdArgs.push_back(Args.MakeArgString(i));
+  }
+
+  Args.AddAllArgValues(CmdArgs, options::OPT_Wa_COMMA,
+                       options::OPT_Xassembler);
+
+  for (InputInfoList::const_iterator
+         it = Inputs.begin(), ie = Inputs.end(); it != ie; ++it) {
+    const InputInfo &II = *it;
+    CmdArgs.push_back(II.getFilename());
+  }
+
+  const char *Exec = Args.MakeArgString(assembler.exe);
+  C.addCommand(new Command(JA, T, Exec, CmdArgs));
+}
+
+static void ConstructLinkJobFromInfo(Compilation &C, const JobAction &JA,
+                                     const InputInfo &Output,
+                                     const InputInfoList &Inputs,
+                                     const ArgList &Args,
+                                     const char *LinkingOutput,
+                                     const Tool &T) {
+  const Driver &D = T.getToolChain().getDriver();
+  ArgStringList CmdArgs;
+  clang::compilationinfo::Linker &linker = D.Info->linker;
+  // Expand the linker information.
+  linker.Expand(D, Output.getFilename());
+  if (Output.isFilename()) {
+    for (auto &i : linker.output) {
+      CmdArgs.push_back(Args.MakeArgString(i));
+    }
+  } else {
+    assert(Output.isNothing() && "Invalid output.");
+  }
+
+  if ((!Args.hasArg(options::OPT_nostdlib)) &&
+      (!Args.hasArg(options::OPT_shared))) {
+    for (auto &i : linker.start) {
+      CmdArgs.push_back(Args.MakeArgString(i));
+    }
+  }
+
+  // Add the linker options.
+  for (auto &i : linker.options) {
+    CmdArgs.push_back(Args.MakeArgString(i));
+  }
+
+  if ((D.Info->global.static_default &&
+       !Args.hasArg(options::OPT_dynamic)) ||
+      Args.hasArg(options::OPT_static)) {
+    for (auto &i : linker.opt_static) {
+      CmdArgs.push_back(Args.MakeArgString(i));
+    }
+  } else {
+    if (Args.hasArg(options::OPT_rdynamic)) {
+      for (auto &i : linker.opt_rdynamic) {
+        CmdArgs.push_back(Args.MakeArgString(i));
+      }
+    }
+    if (Args.hasArg(options::OPT_dynamic)) {
+      for (auto &i : linker.opt_dynamic) {
+        CmdArgs.push_back(Args.MakeArgString(i));
+      }
+    }
+    if (Args.hasArg(options::OPT_shared)) {
+      for (auto &i : linker.opt_shared) {
+        CmdArgs.push_back(Args.MakeArgString(i));
+      }
+    } else {
+      for (auto &i : linker.opt_notshared) {
+        CmdArgs.push_back(Args.MakeArgString(i));
+      }
+    }
+  }
+
+  if (!Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nostartfiles)) {
+    if (!Args.hasArg(options::OPT_shared)) {
+      if (linker.static_crt1.size()) {
+        CmdArgs.push_back(Args.MakeArgString(linker.static_crt1));
+      }
+    } else {
+      if (linker.dynamic_crt1.size()) {
+        CmdArgs.push_back(Args.MakeArgString(linker.dynamic_crt1));
+      }
+    }
+    if (linker.crtbegin.size()) {
+      CmdArgs.push_back(Args.MakeArgString(linker.crtbegin));
+    }
+  }
+
+  CmdArgs.push_back("-nostdlib");
+  if (!Args.hasArg(options::OPT_nostdlib)) {
+    for (auto &i : linker.library_paths) {
+      CmdArgs.push_back(Args.MakeArgString(i));
+    }
+  }
+
+  Args.AddAllArgs(CmdArgs, options::OPT_L);
+  Args.AddAllArgs(CmdArgs, options::OPT_T_Group);
+  Args.AddAllArgs(CmdArgs, options::OPT_e);
+
+  AddLinkerInputs(T.getToolChain(), Inputs, Args, CmdArgs);
+
+  if (!Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nodefaultlibs)) {
+    if (D.CCCIsCXX()) {
+      for (auto &i : linker.cxx_libraries) {
+        CmdArgs.push_back(Args.MakeArgString(i));
+      }
+    }
+
+    if (Args.hasArg(options::OPT_fprofile_arcs) ||
+        Args.hasArg(options::OPT_fprofile_generate) ||
+        Args.hasArg(options::OPT_fcreate_profile) ||
+        Args.hasArg(options::OPT_coverage)) {
+      for (auto &i : linker.profile_libraries) {
+        CmdArgs.push_back(Args.MakeArgString(i));
+      }
+    }
+
+    if (Args.hasArg(options::OPT_pthread)) {
+      for (auto &i : linker.opt_pthread) {
+        CmdArgs.push_back(Args.MakeArgString(i));
+      }
+    }
+
+    for (auto &i : linker.c_libraries) {
+      CmdArgs.push_back(Args.MakeArgString(i));
+    }
+  }
+
+  if (linker.crtend.size() &&
+      !Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nostartfiles)) {
+    CmdArgs.push_back(Args.MakeArgString(linker.crtend));
+  }
+
+  const char *Exec = Args.MakeArgString(linker.exe);
+  C.addCommand(new Command(JA, T, Exec, CmdArgs));
+}
+
 // Hexagon tools start.
 void hexagon::Assemble::RenderExtraToolArgs(const JobAction &JA,
                                         ArgStringList &CmdArgs) const {
@@ -7845,11 +8009,85 @@ void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
   C.addCommand(new Command(JA, *this, Exec, CmdArgs));
 }
 
+namespace {
+const char ellcc_linux[] =
+  "global:\n"
+  "  static_default: true\n"
+  "assembler:\n"
+  "  output:\n"
+  "    - -o $O\n"
+  "linker:\n"
+  "  exe: $E/ecc-ld\n"
+  "  output:\n"
+  "    - -o $O\n"
+  "  start:\n"
+  "    - -e _start\n"
+  "  opt_static:\n"
+  "    - -Bstatic\n"
+  "  opt_rdynamic:\n"
+  "    - -export-dynamic\n"
+  "  opt_dynamic:\n"
+  "    - -Bdynamic\n"
+  "  opt_shared:\n"
+  "    - -shared\n"
+  "  opt_notshared:\n"
+  "    - -dynamic-linker /usr/libexec/ld.so\n"
+  "  opt_pthread:\n"
+  "    - -pthread\n"
+  "\n"
+  "  cxx_libraries:\n"
+  "    - -lc++\n"
+  "    - -lm\n"
+  "  profile_libraries:\n"
+  "    - -lprofile_rt\n"
+  "  c_libraries:\n"
+  "    - -lc\n"
+  "    - -lcompiler_rt\n"
+  "";
+
+const char arm_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "assembler:\n"
+  "  exe: $E/arm-elf-as\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m armelf_linux_eabi\n"
+  "    - --build-id\n"
+  "    - --hash-style=gnu\n"
+  "    - --eh-frame-hdr\n"
+  "\n"
+  "  static_crt1: $R/lib/arm/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/arm/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/arm/linux/crtbegin.o\n"
+  "  crtend: $R/lib/arm/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/arm/linux\n"
+  "";
+
+using namespace clang::compilationinfo;
+  class ELLCC {
+  public:
+    ELLCC()
+      { 
+        CompilationInfo::DefineInfo("ellcc-linux", ellcc_linux);
+        CompilationInfo::DefineInfo("arm-ellcc-linux", arm_ellcc_linux);
+      }
+  } ELLCC;
+}
+
 void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
                                      const InputInfo &Output,
                                      const InputInfoList &Inputs,
                                      const ArgList &Args,
                                      const char *LinkingOutput) const {
+  const Driver &D = getToolChain().getDriver();
+  if (D.Info) {
+    // Use compilation info to set up for assembling.
+    ConstructAssembleJobFromInfo(C, JA, Output, Inputs, Args, LinkingOutput,
+                                 *this);
+    return;
+  }
+
   ArgStringList CmdArgs;
 
   Args.AddAllArgValues(CmdArgs, options::OPT_Wa_COMMA,
@@ -7857,13 +8095,13 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 
   CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());
-  const Driver &D = getToolChain().getDriver();
   std::string As;
   if (D.Info) {
+    D.Info->assembler.Expand(D, Output.getFilename());
     // Use the compilation info suppled.
     As = D.Info->assembler.exe;
     // Add the assembler options.
-    for (auto &i : D.Info->linker.options) {
+    for (auto &i : D.Info->assembler.options) {
       CmdArgs.push_back(Args.MakeArgString(i));
     }
   } else {
@@ -7905,11 +8143,17 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 }
 
 void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
-                                 const InputInfo &Output,
-                                 const InputInfoList &Inputs,
-                                 const ArgList &Args,
-                                 const char *LinkingOutput) const {
+                               const InputInfo &Output,
+                               const InputInfoList &Inputs,
+                               const ArgList &Args,
+                               const char *LinkingOutput) const {
   const Driver &D = getToolChain().getDriver();
+  if (D.Info) {
+    // Use compilation info to set up for linking.
+    ConstructLinkJobFromInfo(C, JA, Output, Inputs, Args, LinkingOutput, *this);
+    return;
+  }
+
   ArgStringList CmdArgs;
   std::string Ld;
   std::string static_crt1;
@@ -7930,201 +8174,187 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("_start");
   }
 
-  if (D.Info) {
-    // Use the compilation info suppled.
-    Ld = D.Info->linker.exe;
-    static_crt1 = D.Info->linker.static_crt1;
-    dynamic_crt1 = D.Info->linker.dynamic_crt1;
-    crtbegin = D.Info->linker.crtbegin;
-    crtend = D.Info->linker.crtend;
-    library_path = D.Info->linker.library_path;
-    // Add the linker options.
-    for (auto &i : D.Info->linker.options) {
-      CmdArgs.push_back(Args.MakeArgString(i));
-    }
-  } else {
-    // Choose linker arguments based on the triple.
-    StringRef ArchName = Args.MakeArgString(getToolChain().getArchName());
-    llvm::Triple Triple = getToolChain().getTriple();
-    StringRef emulation = "";
-    bool hash = true;
-    bool buildID = true;
-    bool eh_frame_hdr = true;
-    Ld = getToolChain().GetProgramPath("ecc-ld");
+  // Choose linker arguments based on the triple.
+  StringRef ArchName = Args.MakeArgString(getToolChain().getArchName());
+  llvm::Triple Triple = getToolChain().getTriple();
+  StringRef emulation = "";
+  bool hash = true;
+  bool buildID = true;
+  bool eh_frame_hdr = true;
+  Ld = getToolChain().GetProgramPath("ecc-ld");
 
-    switch (Triple.getArch()) {
-      case llvm::Triple::x86: emulation = "elf_i386"; break;
+  switch (Triple.getArch()) {
+    case llvm::Triple::x86: emulation = "elf_i386"; break;
 
-      case llvm::Triple::aarch64:
-        switch (Triple.getOS()) {
-          case llvm::Triple::Linux: 
-            emulation = "aarch64linux";
-            break;
-          default: emulation = "aarch64elf"; break;
-        }
-        break;
+    case llvm::Triple::aarch64:
+      switch (Triple.getOS()) {
+        case llvm::Triple::Linux: 
+          emulation = "aarch64linux";
+          break;
+        default: emulation = "aarch64elf"; break;
+      }
+      break;
 
-      case llvm::Triple::arm:
-      case llvm::Triple::thumb:
-        switch (Triple.getOS()) {
-          case llvm::Triple::Linux: 
-            switch (Triple.getEnvironment()) {
-              case llvm::Triple::EABI:
-              case llvm::Triple::GNUEABI:
-                emulation = "armelf_linux_eabi"; break;
-              default: emulation = "armelf_linux"; break;
-            }
-            break;
-          case llvm::Triple::NetBSD: emulation = "armelf_nbsd"; break;
-          case llvm::Triple::FreeBSD: emulation = "armelf_fbsd"; break;
-          default: emulation = "armelf"; break;
-        }
-        break;
+    case llvm::Triple::arm:
+    case llvm::Triple::thumb:
+      switch (Triple.getOS()) {
+        case llvm::Triple::Linux: 
+          switch (Triple.getEnvironment()) {
+            case llvm::Triple::EABI:
+            case llvm::Triple::GNUEABI:
+              emulation = "armelf_linux_eabi"; break;
+            default: emulation = "armelf_linux"; break;
+          }
+          break;
+        case llvm::Triple::NetBSD: emulation = "armelf_nbsd"; break;
+        case llvm::Triple::FreeBSD: emulation = "armelf_fbsd"; break;
+        default: emulation = "armelf"; break;
+      }
+      break;
 
-      case llvm::Triple::armeb:
-        switch (Triple.getOS()) {
-          case llvm::Triple::Linux: 
-            switch (Triple.getEnvironment()) {
-              case llvm::Triple::EABI:
-              case llvm::Triple::GNUEABI:
-                emulation = "armelfb_linux_eabi"; break;
-              default: emulation = "armelfb_linux"; break;
-            }
-            break;
-          case llvm::Triple::NetBSD: emulation = "armelfb_nbsd"; break;
-          case llvm::Triple::FreeBSD: emulation = "armelfb_fbsd"; break;
-          default: emulation = "armelfb"; break;
-        }
-        break;
+    case llvm::Triple::armeb:
+      switch (Triple.getOS()) {
+        case llvm::Triple::Linux: 
+          switch (Triple.getEnvironment()) {
+            case llvm::Triple::EABI:
+            case llvm::Triple::GNUEABI:
+              emulation = "armelfb_linux_eabi"; break;
+            default: emulation = "armelfb_linux"; break;
+          }
+          break;
+        case llvm::Triple::NetBSD: emulation = "armelfb_nbsd"; break;
+        case llvm::Triple::FreeBSD: emulation = "armelfb_fbsd"; break;
+        default: emulation = "armelfb"; break;
+      }
+      break;
 
-      case llvm::Triple::ppc:
-        switch (Triple.getOS()) {
-          case llvm::Triple::Linux: 
-            emulation = "elf32ppclinux";
-            break;
-          case llvm::Triple::FreeBSD: 
-            emulation = "elf32ppc_fbsd";
-            break;
-          default: emulation = "elf32ppc"; break;
-        }
-        break;
+    case llvm::Triple::ppc:
+      switch (Triple.getOS()) {
+        case llvm::Triple::Linux: 
+          emulation = "elf32ppclinux";
+          break;
+        case llvm::Triple::FreeBSD: 
+          emulation = "elf32ppc_fbsd";
+          break;
+        default: emulation = "elf32ppc"; break;
+      }
+      break;
 
-      case llvm::Triple::ppc64:
-        switch (Triple.getOS()) {
-          case llvm::Triple::Linux: 
-            emulation = "elf64ppclinux";
-            break;
-          case llvm::Triple::FreeBSD: 
-            emulation = "elf64ppc_fbsd";
-            break;
-          default: emulation = "elf64ppc"; break;
-        }
-        break;
+    case llvm::Triple::ppc64:
+      switch (Triple.getOS()) {
+        case llvm::Triple::Linux: 
+          emulation = "elf64ppclinux";
+          break;
+        case llvm::Triple::FreeBSD: 
+          emulation = "elf64ppc_fbsd";
+          break;
+        default: emulation = "elf64ppc"; break;
+      }
+      break;
 
-      case llvm::Triple::sparc: emulation = "elf32_sparc"; break;
+    case llvm::Triple::sparc: emulation = "elf32_sparc"; break;
 
-      case llvm::Triple::sparcv9:
-        switch (Triple.getOS()) {
-          case llvm::Triple::FreeBSD: 
-            emulation = "elf64_sparc_fbsd";
-            break;
-          default: emulation = "elf64_sparc"; break;
-        }
-        break;
+    case llvm::Triple::sparcv9:
+      switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD: 
+          emulation = "elf64_sparc_fbsd";
+          break;
+        default: emulation = "elf64_sparc"; break;
+      }
+      break;
 
-      case llvm::Triple::mips:
-        hash = false;
-        switch (Triple.getOS()) {
-          case llvm::Triple::FreeBSD: 
-            emulation = "elf32btsmip_fbsd";
-            break;
-          default: emulation = "elf32ebmip";
-        }
-        break;
+    case llvm::Triple::mips:
+      hash = false;
+      switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD: 
+          emulation = "elf32btsmip_fbsd";
+          break;
+        default: emulation = "elf32ebmip";
+      }
+      break;
 
-      case llvm::Triple::mipsel:
-        hash = false;
-        switch (Triple.getOS()) {
-          case llvm::Triple::FreeBSD: 
-            emulation = "elf32ltsmip_fbsd";
-            break;
-          default: emulation = "elf32elmip";
-        }
-        break;
+    case llvm::Triple::mipsel:
+      hash = false;
+      switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD: 
+          emulation = "elf32ltsmip_fbsd";
+          break;
+        default: emulation = "elf32elmip";
+      }
+      break;
 
-      case llvm::Triple::mips64:
-        hash = false;
-        switch (Triple.getOS()) {
-          case llvm::Triple::FreeBSD: 
-            if (mips::hasMipsAbiArg(Args, "n32"))
-              emulation = "elf32btsmipn32_fbsd";
-            else
-              emulation = "elf64btsmip_fbsd";
-            break;
-          default:
-            if (mips::hasMipsAbiArg(Args, "n32"))
-              emulation = "elf32bmipn32";
-            else
-              emulation = "elf64bmip";
-            break;
-        }
-        break;
+    case llvm::Triple::mips64:
+      hash = false;
+      switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD: 
+          if (mips::hasMipsAbiArg(Args, "n32"))
+            emulation = "elf32btsmipn32_fbsd";
+          else
+            emulation = "elf64btsmip_fbsd";
+          break;
+        default:
+          if (mips::hasMipsAbiArg(Args, "n32"))
+            emulation = "elf32bmipn32";
+          else
+            emulation = "elf64bmip";
+          break;
+      }
+      break;
 
-      case llvm::Triple::mips64el:
-        hash = false;
-        switch (Triple.getOS()) {
-          case llvm::Triple::FreeBSD: 
-            if (mips::hasMipsAbiArg(Args, "n32"))
-              emulation = "elf32ltsmipn32_fbsd";
-            else
-              emulation = "elf64ltsmip_fbsd";
-            break;
-          default:
-            if (mips::hasMipsAbiArg(Args, "n32"))
-              emulation = "elf32lmipn32";
-            else
-              emulation = "elf64lmip";
-            break;
-        }
-        break;
+    case llvm::Triple::mips64el:
+      hash = false;
+      switch (Triple.getOS()) {
+        case llvm::Triple::FreeBSD: 
+          if (mips::hasMipsAbiArg(Args, "n32"))
+            emulation = "elf32ltsmipn32_fbsd";
+          else
+            emulation = "elf64ltsmip_fbsd";
+          break;
+        default:
+          if (mips::hasMipsAbiArg(Args, "n32"))
+            emulation = "elf32lmipn32";
+          else
+            emulation = "elf64lmip";
+          break;
+      }
+      break;
 
-      case llvm::Triple::msp430: emulation = "msp430"; break;
+    case llvm::Triple::msp430: emulation = "msp430"; break;
 
-      case llvm::Triple::nios2: emulation = "nios2elf"; break;
+    case llvm::Triple::nios2: emulation = "nios2elf"; break;
 
-      case llvm::Triple::x86_64: emulation = "elf_x86_64"; break;
+    case llvm::Triple::x86_64: emulation = "elf_x86_64"; break;
 
-      case llvm::Triple::mblaze:
-        emulation = "elf32mb_linux";
-        hash = false;
-        buildID = false;
-        eh_frame_hdr = false;
-        break;
-      default: emulation = "unknown";
-    }
-    CmdArgs.push_back("-m");
-    CmdArgs.push_back(Args.MakeArgString(emulation));
-
-    if (buildID) {
-        CmdArgs.push_back("--build-id");
-    }
-    if (hash) {
-      CmdArgs.push_back("--hash-style=gnu");
-    }
-    if (!Args.hasArg(options::OPT_static) && eh_frame_hdr) {
-      CmdArgs.push_back("--eh-frame-hdr");
-    }
-    static_crt1 = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
-      + Triple.getOSTypeName(Triple.getOS()) + "/crt1.o");
-    dynamic_crt1 = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
-      + Triple.getOSTypeName(Triple.getOS()) + "/Scrt1.o");
-    crtbegin = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
-      + Triple.getOSTypeName(Triple.getOS()) + "/crtbegin.o");
-    crtend = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
-      + Triple.getOSTypeName(Triple.getOS()) + "/crtend.o");
-    library_path = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
-      + Triple.getOSTypeName(Triple.getOS()));
+    case llvm::Triple::mblaze:
+      emulation = "elf32mb_linux";
+      hash = false;
+      buildID = false;
+      eh_frame_hdr = false;
+      break;
+    default: emulation = "unknown";
   }
+  CmdArgs.push_back("-m");
+  CmdArgs.push_back(Args.MakeArgString(emulation));
+
+  if (buildID) {
+      CmdArgs.push_back("--build-id");
+  }
+  if (hash) {
+    CmdArgs.push_back("--hash-style=gnu");
+  }
+  if (!Args.hasArg(options::OPT_static) && eh_frame_hdr) {
+    CmdArgs.push_back("--eh-frame-hdr");
+  }
+  static_crt1 = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
+    + Triple.getOSTypeName(Triple.getOS()) + "/crt1.o");
+  dynamic_crt1 = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
+    + Triple.getOSTypeName(Triple.getOS()) + "/Scrt1.o");
+  crtbegin = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
+    + Triple.getOSTypeName(Triple.getOS()) + "/crtbegin.o");
+  crtend = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
+    + Triple.getOSTypeName(Triple.getOS()) + "/crtend.o");
+  library_path = Args.MakeArgString(D.ResourceDir + "/lib/" + ArchName + "/"
+    + Triple.getOSTypeName(Triple.getOS()));
 
   if (Args.hasArg(options::OPT_static)) {
     CmdArgs.push_back("-Bstatic");

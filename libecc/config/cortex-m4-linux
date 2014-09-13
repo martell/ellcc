@@ -19,4 +19,5 @@ linker:
   dynamic_crt1: $R/lib/arm/linux/Scrt1.o
   crtbegin: $R/lib/arm/linux/crtbegin.o
   crtend: $R/lib/arm/linux/crtend.o
-  library_path: $R/lib/arm/linux
+  library_paths:
+    - $R/lib/arm/linux

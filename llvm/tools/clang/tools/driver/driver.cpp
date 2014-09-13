@@ -332,10 +332,11 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
       }
 
       if (clang::compilationinfo::CompilationInfo::CheckForAndReadInfo(*it,
-                                                                       TheDriver)) {
+                                                                 TheDriver)) {
         // Replace -target and its argument with the contents of the file.
         ArgVector.erase(ib, ++it);
         // Process the compiler options immediately.
+        TheDriver.Info->compiler.Expand(TheDriver);
         for (size_t i = 0; i < TheDriver.Info->compiler.options.size(); ++i) {
           ArgVector.insert(ib,
                            GetStableCStr(SavedStrings,
