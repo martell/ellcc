@@ -78,7 +78,7 @@ void clang::compilationinfo::ExpandArgs(StrSequence &options,
 bool CompilationInfo::ReadInfo(llvm::MemoryBuffer &Buffer,
                                driver::Driver &TheDriver)
 {
-  std::unique_ptr<CompilationInfo> Info(new CompilationInfo);
+  std::unique_ptr<CompilationInfo> Info(new CompilationInfo(TheDriver));
   llvm::yaml::Input yin(Buffer.getMemBufferRef());
   yin >> *Info;
   if (yin.error()) {
@@ -87,11 +87,11 @@ bool CompilationInfo::ReadInfo(llvm::MemoryBuffer &Buffer,
     return false;
   }
 
-#if RICH
-  // Look at the info.
-  llvm::yaml::Output yout(llvm::outs());
-  yout << *Info;
-#endif
+  if (Info->dump) {
+    // Look at the info.
+    llvm::yaml::Output yout(llvm::outs());
+    yout << *Info;
+  }
 
   // Give the info to the driver.
   TheDriver.Info = std::move(Info);
@@ -131,3 +131,83 @@ bool CompilationInfo::CheckForAndReadInfo(const char *target,
   // No info exists. Leave as an argument to -target.
   return false;
 }
+
+void CompilationInfo::HandleBasedOn(CompilationInfo &config)
+{
+  if (config.based_on.empty()) {
+    return;
+  }
+
+  if (++config.nesting > 10) {
+    // Nesting level exceeded.
+    config.TheDriver.Diag(diag::err_drv_compilation_info_nesting)
+      << config.nesting << config.based_on;
+    --config.nesting;
+    return;
+  }
+
+  if (config.dump) {
+    llvm::outs() << "# based_on `" << config.based_on << "'\n";
+  }
+
+  // Look for a file that contains info for this target.
+  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> BufferOrErr =
+      llvm::MemoryBuffer::getFile(config.based_on);
+  if (!BufferOrErr.getError()) {
+    // Get info from the file.
+    llvm::yaml::Input yin(BufferOrErr.get()->getMemBufferRef());
+    std::string name = config.based_on;
+    config.based_on.erase();
+    yin >> config;
+    if (yin.error()) {
+      // Failed.
+      config.TheDriver.Diag(diag::err_drv_malformed_compilation_info) << name;
+    }
+    --config.nesting;
+    return;
+  }
+
+  // Look in the config directory.
+  llvm::SmallString<128> P(config.TheDriver.ResourceDir);
+  llvm::sys::path::append(P, "config", config.based_on);
+  BufferOrErr = llvm::MemoryBuffer::getFile(P.str());
+  if (!BufferOrErr.getError()) {
+    // Get info from the file.
+    llvm::yaml::Input yin(BufferOrErr.get()->getMemBufferRef());
+    std::string name = config.based_on;
+    config.based_on.erase();
+    yin >> config;
+    if (yin.error()) {
+      // Failed.
+      config.TheDriver.Diag(diag::err_drv_malformed_compilation_info) << name;
+    }
+    --config.nesting;
+    return;
+  }
+
+  // Look for predefined info.
+  std::map<std::string, const char *>::iterator it;
+  it = clang::compilationinfo::CompilationInfo::
+      InfoMap.find(config.based_on.c_str());
+  if (it != clang::compilationinfo::CompilationInfo::InfoMap.end()) {
+    // Predefined info exists for this target.
+    std::unique_ptr<llvm::MemoryBuffer> Buffer =
+        llvm::MemoryBuffer::getMemBuffer(it->second, config.based_on);
+    llvm::yaml::Input yin(Buffer->getMemBufferRef());
+    std::string name = config.based_on;
+    config.based_on.erase();
+    yin >> config;
+    if (yin.error()) {
+      // Failed.
+      config.TheDriver.Diag(diag::err_drv_malformed_compilation_info) << name;
+    }
+    --config.nesting;
+    return;
+  } else {
+    // Can't find info. Failed.
+    config.TheDriver.Diag(diag::err_drv_invalid_based_on) << config.based_on;
+    --config.nesting;
+    return;
+  }
+}
+

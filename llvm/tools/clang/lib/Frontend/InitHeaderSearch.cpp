@@ -224,26 +224,23 @@ void InitHeaderSearch::AddMinGW64CXXPaths(StringRef Base,
 void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
                                             const HeaderSearchOptions &HSOpts) {
   llvm::Triple::OSType os = triple.getOS();
-  if (triple.getVendor() != llvm::Triple::ELLCC) {
-    if (HSOpts.UseStandardSystemIncludes) {
-      switch (os) {
-      case llvm::Triple::FreeBSD:
-      case llvm::Triple::NetBSD:
-      case llvm::Triple::OpenBSD:
-      case llvm::Triple::Bitrig:
-        break;
-      default:
-        // FIXME: temporary hack: hard-coded paths.
-        AddPath("/usr/local/include", System, false);
-        break;
-      }
+  if (HSOpts.UseStandardSystemIncludes) {
+    switch (os) {
+    case llvm::Triple::FreeBSD:
+    case llvm::Triple::NetBSD:
+    case llvm::Triple::OpenBSD:
+    case llvm::Triple::Bitrig:
+      break;
+    default:
+      // FIXME: temporary hack: hard-coded paths.
+      AddPath("/usr/local/include", System, false);
+      break;
     }
   }
 
   // Builtin includes use #include_next directives and should be positioned
   // just prior C include dirs.
-  if (triple.getVendor() != llvm::Triple::ELLCC &&
-      HSOpts.UseBuiltinIncludes) {
+  if (HSOpts.UseBuiltinIncludes) {
     // Ignore the sys root, we *always* look for clang headers relative to
     // supplied path.
     SmallString<128> P = StringRef(HSOpts.ResourceDir);
@@ -270,9 +267,6 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
 
   switch (os) {
   case llvm::Triple::Linux:
-    if (triple.getVendor() == llvm::Triple::ELLCC) {
-      break;
-    }
     llvm_unreachable("Include management is handled in the driver.");
 
   case llvm::Triple::Haiku:
@@ -345,43 +339,9 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
     break;
   }
 
-  if (triple.getVendor() != llvm::Triple::ELLCC) {
-    // FIXME: temporary hack: hard-coded paths.
-    if ( os != llvm::Triple::RTEMS )
-      AddPath("/usr/include", ExternCSystem, false);
-  } else {
-      // Set up ELLCC specific include paths.
-      // include/<arch>/<os>
-      // include/<arch>
-      // include/<os>
-      // include
-      // RICH: This seems like a hack. May need to revisit.
-      StringRef arch = triple.getArchTypeName(triple.getArch());
-      if (arch.startswith("mips")) {
-        arch = "mips";
-      } else if (arch.startswith("arm")) {
-        arch = "arm";
-      }
-      SmallString<128> P0(HSOpts.ResourceDir);
-      llvm::sys::path::append(P0, "include");
-      llvm::sys::path::append(P0, arch);
-      llvm::sys::path::append(P0, triple.getOSTypeName(triple.getOS()));
-      AddPath(P0.str(), System, false);
-
-      SmallString<128> P1(HSOpts.ResourceDir);
-      llvm::sys::path::append(P1, "include");
-      llvm::sys::path::append(P1, arch);
-      AddPath(P1.str(), System, false);
-
-      SmallString<128> P2(HSOpts.ResourceDir);
-      llvm::sys::path::append(P2, "include");
-      llvm::sys::path::append(P2, triple.getOSTypeName(triple.getOS()));
-      AddPath(P2.str(), System, false);
-
-      SmallString<128> P3(HSOpts.ResourceDir);
-      llvm::sys::path::append(P3, "include");
-      AddPath(P3.str(), System, false);
-  }
+  // FIXME: temporary hack: hard-coded paths.
+  if ( os != llvm::Triple::RTEMS )
+    AddPath("/usr/include", ExternCSystem, false);
 }
 
 void InitHeaderSearch::
@@ -425,14 +385,6 @@ AddDefaultCPlusPlusIncludePaths(const llvm::Triple &triple, const HeaderSearchOp
       break;
     }
     return;
-  }
-
-  if (triple.getVendor() == llvm::Triple::ELLCC) {
-      // RICH: Add C++ specific paths.
-      SmallString<128> P(HSOpts.ResourceDir);
-      llvm::sys::path::append(P, "include/c++");
-      AddPath(P.str(), System, false);
-      return;
   }
 
   switch (os) {
@@ -505,21 +457,23 @@ void InitHeaderSearch::AddDefaultIncludePaths(const LangOptions &Lang,
   // driver which has the information necessary to do target-specific
   // selections of default include paths. Each target which moves there will be
   // exempted from this logic here until we can delete the entire pile of code.
-  if (triple.getVendor() != llvm::Triple::ELLCC) {
-    switch (triple.getOS()) {
-    default:
-      break; // Everything else continues to use this routine's logic.
+  if (triple.getVendor() == llvm::Triple::ELLCC) {
+    return;
+  }
 
-    case llvm::Triple::Linux:
+  switch (triple.getOS()) {
+  default:
+    break; // Everything else continues to use this routine's logic.
+
+  case llvm::Triple::Linux:
+    return;
+
+  case llvm::Triple::Win32:
+    if (triple.getEnvironment() == llvm::Triple::MSVC ||
+      triple.getEnvironment() == llvm::Triple::Itanium ||
+      triple.getObjectFormat() == llvm::Triple::MachO)
       return;
-
-    case llvm::Triple::Win32:
-      if (triple.getEnvironment() == llvm::Triple::MSVC ||
-        triple.getEnvironment() == llvm::Triple::Itanium ||
-        triple.getObjectFormat() == llvm::Triple::MachO)
-        return;
-      break;
-    }
+    break;
   }
 
   if (Lang.CPlusPlus && HSOpts.UseStandardCXXIncludes &&

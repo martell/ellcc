@@ -38,13 +38,18 @@ namespace compilationinfo {
 
   struct Global {
     bool static_default;
+    Global() : static_default(false) { }
   };
 
   struct Compiler {
     StrSequence options;
+    StrSequence c_include_dirs;
+    StrSequence cxx_include_dirs;
 
     void Expand(const driver::Driver &TheDriver) {
       ExpandArgs(options, TheDriver);
+      ExpandArgs(c_include_dirs, TheDriver);
+      ExpandArgs(cxx_include_dirs, TheDriver);
     }
   };
 
@@ -103,11 +108,18 @@ namespace compilationinfo {
   };
 
   struct CompilationInfo {
+    bool dump;
     std::string based_on;
     Global global;
     Compiler compiler;
     Assembler assembler;
     Linker linker;
+    driver::Driver &TheDriver;
+    /// nesting - Current nesting level for compilation info.
+    int nesting;
+
+    CompilationInfo(driver::Driver &TheDriver)
+      : dump(false), TheDriver(TheDriver), nesting(0) { }
 
     /// The target info database.
     static std::map<std::string, const char *> InfoMap;
@@ -121,6 +133,9 @@ namespace compilationinfo {
     /// DefineInfo - Statically define info for a target.
     static void DefineInfo(const char *target, const char *info)
     { InfoMap[target] = info; }
+
+    /// HandleBasedOn - Handle nested info files.
+    static void HandleBasedOn(CompilationInfo &config);
   };
 
 } // end namespace compilationinfo
@@ -144,6 +159,8 @@ struct MappingTraits<clang::compilationinfo::Compiler> {
   static void mapping(llvm::yaml::IO &io,
                       clang::compilationinfo::Compiler &compiler) {
     io.mapOptional("options", compiler.options);
+    io.mapOptional("c_include_dirs", compiler.c_include_dirs);
+    io.mapOptional("cxx_include_dirs", compiler.cxx_include_dirs);
   }
 };
 
@@ -186,36 +203,10 @@ template <>
 struct MappingTraits<clang::compilationinfo::CompilationInfo> {
   static void mapping(llvm::yaml::IO &io,
                       clang::compilationinfo::CompilationInfo &config) {
+    io.mapOptional("dump", config.dump);
     io.mapOptional("based_on", config.based_on);
-    while (config.based_on.size()) {
-      std::map<std::string, const char *>::iterator it;
-      it = clang::compilationinfo::CompilationInfo::
-          InfoMap.find(config.based_on.c_str());
-      if (it != clang::compilationinfo::CompilationInfo::InfoMap.end()) {
-        // Predefined info exists for this target.
-        std::unique_ptr<llvm::MemoryBuffer> Buffer =
-            llvm::MemoryBuffer::getMemBuffer(it->second, config.based_on);
-        llvm::yaml::Input yin(Buffer->getMemBufferRef());
-        std::string name = config.based_on;
-        config.based_on.erase();
-        yin >> config;
-#if RICH
-        // Look at the info.
-        llvm::yaml::Output yout(llvm::outs());
-        yout << config;
-#endif
-
-        if (yin.error()) {
-          // RICH: info error. Failed.
-          break;
-        }
-
-      } else {
-        // RICH: Can't find info. Failed.
-        llvm::outs() << "Can't find info for \"" << config.based_on << "\"\n";
-        break;
-      }
-    }
+    // Check for nested config files.
+    config.HandleBasedOn(config);
     io.mapOptional("global", config.global);
     io.mapOptional("compiler", config.compiler);
     io.mapOptional("assembler", config.assembler);

@@ -729,14 +729,27 @@ public:
   bool isPICDefaultForced() const override;
 };
 
-class LLVM_LIBRARY_VISIBILITY ELLCC : public Generic_ELF {
+class LLVM_LIBRARY_VISIBILITY ELLCC : public ToolChain {
 public:
   ELLCC(const Driver &D, const llvm::Triple &Triple,
         const llvm::opt::ArgList &Args);
 
+  bool IsIntegratedAssemblerDefault() const override;
+  bool isPICDefault() const override;
+  bool isPIEDefault() const override;
+  bool isPICDefaultForced() const override;
+
+  void
+  AddClangSystemIncludeArgs(const llvm::opt::ArgList &DriverArgs,
+                            llvm::opt::ArgStringList &CC1Args) const override;
+  void
+  AddClangCXXStdlibIncludeArgs(const llvm::opt::ArgList &DriverArgs,
+                               llvm::opt::ArgStringList &CC1Args) const override;
 protected:
-  virtual Tool *buildAssembler() const;
-  virtual Tool *buildLinker() const;
+  Tool *buildAssembler() const override;
+  Tool *buildLinker() const override;
+
+  const Driver &D;
 };
 
 class LLVM_LIBRARY_VISIBILITY Windows : public ToolChain {

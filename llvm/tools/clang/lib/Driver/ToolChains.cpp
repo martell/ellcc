@@ -3497,11 +3497,13 @@ Tool *DragonFly::buildLinker() const {
   return new tools::dragonfly::Link(*this);
 }
 
-/// ELLCC - ELLCC tool chain which can call as(1) and ld(1) directly.
-
+/// ELLCC tool chain
 ELLCC::ELLCC(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
-  : Generic_ELF(D, Triple, Args) {
+  : ToolChain(D, Triple, Args), D(D) {
   getFilePaths().push_back(getDriver().Dir + "/../libecc");
+  getProgramPaths().push_back(getDriver().getInstalledDir());
+  if (getDriver().getInstalledDir() != getDriver().Dir)
+    getProgramPaths().push_back(getDriver().Dir);
 }
 
 Tool *ELLCC::buildAssembler() const {
@@ -3510,6 +3512,56 @@ Tool *ELLCC::buildAssembler() const {
 
 Tool *ELLCC::buildLinker() const {
   return new tools::ellcc::Link(*this);
+}
+
+bool ELLCC::isPICDefault() const {
+  return false;
+}
+
+bool ELLCC::isPIEDefault() const {
+  return false;
+}
+
+bool ELLCC::isPICDefaultForced() const {
+  return false;
+}
+
+bool ELLCC::IsIntegratedAssemblerDefault() const {
+  return getTriple().getArch() == llvm::Triple::x86 ||
+         getTriple().getArch() == llvm::Triple::x86_64 ||
+         getTriple().getArch() == llvm::Triple::aarch64 ||
+         getTriple().getArch() == llvm::Triple::aarch64_be ||
+         getTriple().getArch() == llvm::Triple::arm ||
+         getTriple().getArch() == llvm::Triple::armeb ||
+         getTriple().getArch() == llvm::Triple::thumb ||
+         getTriple().getArch() == llvm::Triple::thumbeb;
+}
+
+void ELLCC::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
+                                      ArgStringList &CC1Args) const {
+  if (D.Info == NULL ||
+      DriverArgs.hasArg(options::OPT_nostdinc) ||
+      DriverArgs.hasArg(options::OPT_nostdlibinc))
+    return;
+
+  for (auto &i : D.Info->compiler.c_include_dirs) {
+    CC1Args.push_back("-internal-isystem");
+    CC1Args.push_back(i.c_str());
+  }
+}
+
+void ELLCC::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
+                                         ArgStringList &CC1Args) const {
+  if (D.Info == NULL ||
+      DriverArgs.hasArg(options::OPT_nostdinc) ||
+      DriverArgs.hasArg(options::OPT_nostdlibinc) ||
+      DriverArgs.hasArg(options::OPT_nostdincxx))
+    return;
+
+  for (auto &i : D.Info->compiler.cxx_include_dirs) {
+    CC1Args.push_back("-internal-isystem");
+    CC1Args.push_back(i.c_str());
+  }
 }
 
 /// XCore tool chain
