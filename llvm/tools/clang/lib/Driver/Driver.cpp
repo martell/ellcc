@@ -364,6 +364,19 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   // Owned by the host.
   const ToolChain &TC = getToolChain(*Args);
 
+  llvm::Triple Target(llvm::Triple::normalize(DefaultTargetTriple));
+  if (Target.getVendor() == llvm::Triple::ELLCC && Info == NULL) {
+    // Need to get compilation info.
+    std::string target = (Target.getArchName() + "-ellcc-" +
+                         Target.getOSName()).str();
+    compilationinfo::CompilationInfo::CheckForAndReadInfo(target.c_str(),
+                                                          *this);
+    if (Info) {
+      // Expand the compiler information
+      Info->compiler.Expand(*this);
+    }
+  }
+
   // The compilation takes ownership of Args.
   Compilation *C = new Compilation(*this, TC, Args, TranslatedArgs);
 
