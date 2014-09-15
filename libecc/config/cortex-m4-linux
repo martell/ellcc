@@ -3,7 +3,7 @@
 based_on: arm-ellcc-linux
 compiler:
   options:
-    - -target arm-ellcc-linux-eabi5
+    - -target arm-ellcc-linux
     - -mcpu=cortex-m4
 linker:
   exe: $E/ecc-ld

@@ -26,6 +26,7 @@ ellcc/bin/ecc-ld.bfd
 ellcc/bin/microblaze-elf-as
 ellcc/bin/ecc-nm
 ellcc/bin/ecc-elfedit
+ellcc/libecc/config
 ellcc/libecc/include
 ellcc/libecc/mkscripts
 ellcc/libecc/lib
