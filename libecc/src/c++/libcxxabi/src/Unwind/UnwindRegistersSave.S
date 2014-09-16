@@ -317,7 +317,7 @@ DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   str lr, [r0, #56]
   str lr, [r0, #60]  @ store return address as pc
   mov r0, #0         @ return UNW_ESUCCESS
-#if _ARM_ARCH > 4
+#if __ARM_ARCH > 4
   bx lr
 #else
   mov pc, lr
@@ -331,7 +331,11 @@ DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
 @
   .p2align 2
 DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm16saveVFPWithFSTMDEPy)
+#if __ARM_ARCH < 7
   stc p11, cr0, [r0], {0x20}  @ fstmiad r0, {d0-d15}
+#else
+  vstmia r0, {d0-d15}
+#endif
   mov pc, lr
 
 @
@@ -342,7 +346,11 @@ DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm16saveVFPWithFSTMD
 @
   .p2align 2
 DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm16saveVFPWithFSTMXEPy)
+#if __ARM_ARCH < 7
   stc p11, cr0, [r0], {0x21}  @ fstmiax r0, {d0-d15}
+#else
+  vstmia r0, {d0-d15} @ fstmiax is deprecated in ARMv7+ and now behaves like vstmia
+#endif
   mov pc, lr
 
 @
@@ -360,7 +368,11 @@ DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm9saveVFPv3EPy)
   @ these registers implies they are, actually, available on the target, so
   @ it's ok to execute.
   @ So, generate the instructions using the corresponding coprocessor mnemonic.
-  stcl p11, cr0, [r0], {0x20}  @ vldm r0, {d16-d31}
+#if __ARM_ARCH < 7
+  stcl p11, cr0, [r0], {0x20}  @ vstm r0, {d16-d31}
+#else
+  vstmia r0, {d16-d31}
+#endif
   mov pc, lr
 
 @

@@ -9,6 +9,9 @@
 
 #if !defined(__microblaze__)    // RICH: Broken.
 
+#include "__config"
+#ifndef _LIBCPP_HAS_NO_THREADS
+
 #include "thread"
 #include "exception"
 #include "vector"
@@ -226,4 +229,5 @@ __thread_struct::__make_ready_at_thread_exit(__assoc_sub_state* __s)
 
 _LIBCPP_END_NAMESPACE_STD
 
+#endif // !_LIBCPP_HAS_NO_THREADS
 #endif  // __microblaze__

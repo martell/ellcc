@@ -507,7 +507,7 @@ static void getARMHWDivFeatures(const Driver &D, const Arg *A,
   } else
     D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
 }
- 
+
 // Handle -mfpu=.
 //
 // FIXME: Centralize feature selection, defaulting shouldn't be also in the
@@ -758,8 +758,13 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
       break;
     case llvm::Triple::EABIHF:
     case llvm::Triple::EABI:
-    default:
       ABIName = "aapcs";
+      break;
+    default:
+      if (Triple.getOS() == llvm::Triple::NetBSD)
+        ABIName = "apcs-gnu";
+      else
+        ABIName = "aapcs";
       break;
     }
   }
@@ -2222,155 +2227,114 @@ static SmallString<128> getSanitizerRTLibName(const ToolChain &TC,
   return LibSanitizer;
 }
 
-static void addSanitizerRTLinkFlags(const ToolChain &TC, const ArgList &Args,
-                                    ArgStringList &CmdArgs,
-                                    StringRef Sanitizer,
-                                    bool ExportSymbols, bool LinkDeps) {
-  SmallString<128> LibSanitizer =
-      getSanitizerRTLibName(TC, Sanitizer, /*Shared*/ false);
-
-  // Sanitizer runtime may need to come before -lstdc++ (or -lc++, libstdc++.a,
-  // etc.) so that the linker picks custom versions of the global 'operator
-  // new' and 'operator delete' symbols. We take the extreme (but simple)
-  // strategy of inserting it at the front of the link command. It also
-  // needs to be forced to end up in the executable, so wrap it in
+static void addSanitizerRuntime(const ToolChain &TC, const ArgList &Args,
+                                ArgStringList &CmdArgs, StringRef Sanitizer,
+                                bool IsShared) {
+  SmallString<128> LibSanitizer = getSanitizerRTLibName(TC, Sanitizer, IsShared);
+  // Static runtimes must be forced into executable, so we wrap them in
   // whole-archive.
-  SmallVector<const char *, 8> LibSanitizerArgs;
-  LibSanitizerArgs.push_back("-whole-archive");
-  LibSanitizerArgs.push_back(Args.MakeArgString(LibSanitizer));
-  LibSanitizerArgs.push_back("-no-whole-archive");
-  if (LinkDeps) {
-    // Link sanitizer dependencies explicitly. These libraries should be added
-    // at the front of the link command, so that they will definitely
-    // participate in link even if user specified -Wl,-as-needed (see PR15823).
-    LibSanitizerArgs.push_back("-lpthread");
-    LibSanitizerArgs.push_back("-lrt");
-    LibSanitizerArgs.push_back("-lm");
-    // There's no libdl on FreeBSD.
-    if (TC.getTriple().getOS() != llvm::Triple::FreeBSD)
-      LibSanitizerArgs.push_back("-ldl");
-  }
-  // If possible, use a dynamic symbols file to export the symbols from the
-  // runtime library. If we can't do so, use -export-dynamic instead to export
-  // all symbols from the binary.
-  if (ExportSymbols) {
-    if (llvm::sys::fs::exists(LibSanitizer + ".syms"))
-      LibSanitizerArgs.push_back(
-          Args.MakeArgString("--dynamic-list=" + LibSanitizer + ".syms"));
-    else
-      LibSanitizerArgs.push_back("-export-dynamic");
-  }
-
-  CmdArgs.insert(CmdArgs.begin(), LibSanitizerArgs.begin(),
-                 LibSanitizerArgs.end());
+  if (!IsShared)
+    CmdArgs.push_back("-whole-archive");
+  CmdArgs.push_back(Args.MakeArgString(LibSanitizer));
+  if (!IsShared)
+    CmdArgs.push_back("-no-whole-archive");
 }
 
-/// If AddressSanitizer is enabled, add appropriate linker flags (Linux).
-/// This needs to be called before we add the C run-time (malloc, etc).
-static void addAsanRT(const ToolChain &TC, const ArgList &Args,
-                      ArgStringList &CmdArgs, bool Shared, bool IsCXX) {
-  if (Shared) {
-    // Link dynamic runtime if necessary.
-    SmallString<128> LibSanitizer = getSanitizerRTLibName(TC, "asan", Shared);
-    CmdArgs.insert(CmdArgs.begin(), Args.MakeArgString(LibSanitizer));
+// Tries to use a file with the list of dynamic symbols that need to be exported
+// from the runtime library. Returns true if the file was found.
+static bool addSanitizerDynamicList(const ToolChain &TC, const ArgList &Args,
+                                    ArgStringList &CmdArgs,
+                                    StringRef Sanitizer) {
+  SmallString<128> LibSanitizer = getSanitizerRTLibName(TC, Sanitizer, false);
+  if (llvm::sys::fs::exists(LibSanitizer + ".syms")) {
+    CmdArgs.push_back(
+        Args.MakeArgString("--dynamic-list=" + LibSanitizer + ".syms"));
+    return true;
+  }
+  return false;
+}
+
+static void linkSanitizerRuntimeDeps(const ToolChain &TC,
+                                     ArgStringList &CmdArgs) {
+  // Force linking against the system libraries sanitizers depends on
+  // (see PR15823 why this is necessary).
+  CmdArgs.push_back("--no-as-needed");
+  CmdArgs.push_back("-lpthread");
+  CmdArgs.push_back("-lrt");
+  CmdArgs.push_back("-lm");
+  // There's no libdl on FreeBSD.
+  if (TC.getTriple().getOS() != llvm::Triple::FreeBSD)
+    CmdArgs.push_back("-ldl");
+}
+
+static void
+collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
+                         SmallVectorImpl<StringRef> &SharedRuntimes,
+                         SmallVectorImpl<StringRef> &StaticRuntimes,
+                         SmallVectorImpl<StringRef> &HelperStaticRuntimes) {
+  const SanitizerArgs &SanArgs = TC.getSanitizerArgs();
+  // Collect shared runtimes.
+  if (SanArgs.needsAsanRt() && SanArgs.needsSharedAsanRt()) {
+    SharedRuntimes.push_back("asan");
   }
 
-  // Do not link static runtime to DSOs or if compiling for Android.
+  // Collect static runtimes.
   if (Args.hasArg(options::OPT_shared) ||
-      (TC.getTriple().getEnvironment() == llvm::Triple::Android))
+      (TC.getTriple().getEnvironment() == llvm::Triple::Android)) {
+    // Don't link static runtimes into DSOs or if compiling for Android.
     return;
-
-  if (Shared) {
-    addSanitizerRTLinkFlags(TC, Args, CmdArgs, "asan-preinit",
-                            /*ExportSymbols*/ false,
-                            /*LinkDeps*/ false);
-  } else {
-    addSanitizerRTLinkFlags(TC, Args, CmdArgs, "asan", /*ExportSymbols*/ true,
-                            /*LinkDeps*/ true);
-    if (IsCXX)
-      addSanitizerRTLinkFlags(TC, Args, CmdArgs, "asan_cxx",
-                              /*ExportSymbols*/ true, /*LinkDeps*/ false);
+  }
+  if (SanArgs.needsAsanRt()) {
+    if (SanArgs.needsSharedAsanRt()) {
+      HelperStaticRuntimes.push_back("asan-preinit");
+    } else {
+      StaticRuntimes.push_back("asan");
+      if (SanArgs.linkCXXRuntimes())
+        StaticRuntimes.push_back("asan_cxx");
+    }
+  }
+  if (SanArgs.needsDfsanRt())
+    StaticRuntimes.push_back("dfsan");
+  if (SanArgs.needsLsanRt())
+    StaticRuntimes.push_back("lsan");
+  if (SanArgs.needsMsanRt())
+    StaticRuntimes.push_back("msan");
+  if (SanArgs.needsTsanRt())
+    StaticRuntimes.push_back("tsan");
+  // WARNING: UBSan should always go last.
+  if (SanArgs.needsUbsanRt()) {
+    // If UBSan is not combined with another sanitizer, we need to pull in
+    // sanitizer_common explicitly.
+    if (StaticRuntimes.empty())
+      HelperStaticRuntimes.push_back("san");
+    StaticRuntimes.push_back("ubsan");
+    if (SanArgs.linkCXXRuntimes())
+      StaticRuntimes.push_back("ubsan_cxx");
   }
 }
 
-/// If ThreadSanitizer is enabled, add appropriate linker flags (Linux).
-/// This needs to be called before we add the C run-time (malloc, etc).
-static void addTsanRT(const ToolChain &TC, const ArgList &Args,
-                      ArgStringList &CmdArgs) {
-  if (!Args.hasArg(options::OPT_shared))
-    addSanitizerRTLinkFlags(TC, Args, CmdArgs, "tsan", /*ExportSymbols*/ true,
-                            /*LinkDeps*/ true);
-}
-
-/// If MemorySanitizer is enabled, add appropriate linker flags (Linux).
-/// This needs to be called before we add the C run-time (malloc, etc).
-static void addMsanRT(const ToolChain &TC, const ArgList &Args,
-                      ArgStringList &CmdArgs) {
-  if (!Args.hasArg(options::OPT_shared))
-    addSanitizerRTLinkFlags(TC, Args, CmdArgs, "msan", /*ExportSymbols*/ true,
-                            /*LinkDeps*/ true);
-}
-
-/// If LeakSanitizer is enabled, add appropriate linker flags (Linux).
-/// This needs to be called before we add the C run-time (malloc, etc).
-static void addLsanRT(const ToolChain &TC, const ArgList &Args,
-                      ArgStringList &CmdArgs) {
-  if (!Args.hasArg(options::OPT_shared))
-    addSanitizerRTLinkFlags(TC, Args, CmdArgs, "lsan", /*ExportSymbols */ true,
-                            /*LinkDeps*/ true);
-}
-
-/// If UndefinedBehaviorSanitizer is enabled, add appropriate linker flags
-/// (Linux).
-static void addUbsanRT(const ToolChain &TC, const ArgList &Args,
-                       ArgStringList &CmdArgs, bool IsCXX,
-                       bool HasOtherSanitizerRt) {
-  // Do not link runtime into shared libraries.
-  if (Args.hasArg(options::OPT_shared))
-    return;
-
-  // Need a copy of sanitizer_common. This could come from another sanitizer
-  // runtime; if we're not including one, include our own copy.
-  if (!HasOtherSanitizerRt)
-    addSanitizerRTLinkFlags(TC, Args, CmdArgs, "san", /*ExportSymbols*/ false,
-                            /*LinkDeps*/ false);
-
-  addSanitizerRTLinkFlags(TC, Args, CmdArgs, "ubsan", /*ExportSymbols*/ true,
-                          /*LinkDeps*/ true);
-
-  // Only include the bits of the runtime which need a C++ ABI library if
-  // we're linking in C++ mode.
-  if (IsCXX)
-    addSanitizerRTLinkFlags(TC, Args, CmdArgs, "ubsan_cxx",
-                            /*ExportSymbols*/ true, /*LinkDeps*/ false);
-}
-
-static void addDfsanRT(const ToolChain &TC, const ArgList &Args,
-                       ArgStringList &CmdArgs) {
-  if (!Args.hasArg(options::OPT_shared))
-    addSanitizerRTLinkFlags(TC, Args, CmdArgs, "dfsan", /*ExportSymbols*/ true,
-                            /*LinkDeps*/ true);
-}
-
-// Should be called before we add C++ ABI library.
-static void addSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
+// Should be called before we add system libraries (C++ ABI, libstdc++/libc++,
+// C runtime, etc). Returns true if sanitizer system deps need to be linked in.
+static bool addSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
                                  ArgStringList &CmdArgs) {
-  const SanitizerArgs &Sanitize = TC.getSanitizerArgs();
-  if (Sanitize.needsUbsanRt())
-    addUbsanRT(TC, Args, CmdArgs, Sanitize.linkCXXRuntimes(),
-               Sanitize.needsAsanRt() || Sanitize.needsTsanRt() ||
-                   Sanitize.needsMsanRt() || Sanitize.needsLsanRt());
-  if (Sanitize.needsAsanRt())
-    addAsanRT(TC, Args, CmdArgs, Sanitize.needsSharedAsanRt(),
-              Sanitize.linkCXXRuntimes());
-  if (Sanitize.needsTsanRt())
-    addTsanRT(TC, Args, CmdArgs);
-  if (Sanitize.needsMsanRt())
-    addMsanRT(TC, Args, CmdArgs);
-  if (Sanitize.needsLsanRt())
-    addLsanRT(TC, Args, CmdArgs);
-  if (Sanitize.needsDfsanRt())
-    addDfsanRT(TC, Args, CmdArgs);
+  SmallVector<StringRef, 4> SharedRuntimes, StaticRuntimes,
+      HelperStaticRuntimes;
+  collectSanitizerRuntimes(TC, Args, SharedRuntimes, StaticRuntimes,
+                           HelperStaticRuntimes);
+  for (auto RT : SharedRuntimes)
+    addSanitizerRuntime(TC, Args, CmdArgs, RT, true);
+  for (auto RT : HelperStaticRuntimes)
+    addSanitizerRuntime(TC, Args, CmdArgs, RT, false);
+  bool AddExportDynamic = false;
+  for (auto RT : StaticRuntimes) {
+    addSanitizerRuntime(TC, Args, CmdArgs, RT, false);
+    AddExportDynamic |= !addSanitizerDynamicList(TC, Args, CmdArgs, RT);
+  }
+  // If there is a static runtime with no dynamic list, force all the symbols
+  // to be dynamic to be sure we export sanitizer interface functions.
+  if (AddExportDynamic)
+    CmdArgs.push_back("-export-dynamic");
+  return !StaticRuntimes.empty();
 }
 
 static bool shouldUseFramePointerForTarget(const ArgList &Args,
@@ -2460,10 +2424,10 @@ static void SplitDebugInfo(const ToolChain &TC, Compilation &C,
     Args.MakeArgString(TC.GetProgramPath("objcopy"));
 
   // First extract the dwo sections.
-  C.addCommand(new Command(JA, T, Exec, ExtractArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, T, Exec, ExtractArgs));
 
   // Then remove them from the original .o file.
-  C.addCommand(new Command(JA, T, Exec, StripArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, T, Exec, StripArgs));
 }
 
 /// \brief Vectorize at all optimization levels greater than 1 except for -Oz.
@@ -4189,6 +4153,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (getToolChain().UseSjLjExceptions())
     CmdArgs.push_back("-fsjlj-exceptions");
+  else if (getToolChain().UseSEHExceptions())
+    CmdArgs.push_back("-fseh-exceptions");
 
   // C++ "sane" operator new.
   if (!Args.hasFlag(options::OPT_fassume_sane_operator_new,
@@ -4552,11 +4518,12 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT__SLASH_fallback) &&
       Output.getType() == types::TY_Object &&
       (InputType == types::TY_C || InputType == types::TY_CXX)) {
-    Command *CLCommand = getCLFallback()->GetCommand(C, JA, Output, Inputs,
-                                                     Args, LinkingOutput);
-    C.addCommand(new FallbackCommand(JA, *this, Exec, CmdArgs, CLCommand));
+    auto CLCommand =
+        getCLFallback()->GetCommand(C, JA, Output, Inputs, Args, LinkingOutput);
+    C.addCommand(llvm::make_unique<FallbackCommand>(JA, *this, Exec, CmdArgs,
+                                                    std::move(CLCommand)));
   } else {
-    C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+    C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
   }
 
 
@@ -4991,7 +4958,7 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back(Input.getFilename());
 
   const char *Exec = getToolChain().getDriver().getClangProgramPath();
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 
   // Handle the debug info splitting at object creation time if we're
   // creating an object.
@@ -5001,6 +4968,8 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
     SplitDebugInfo(getToolChain(), C, *this, JA, Args, Output,
                    SplitDebugName(Args, Inputs));
 }
+
+void GnuTool::anchor() {}
 
 void gcc::Common::ConstructJob(Compilation &C, const JobAction &JA,
                                const InputInfo &Output,
@@ -5116,7 +5085,7 @@ void gcc::Common::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath(GCCName));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void gcc::Preprocess::RenderExtraToolArgs(const JobAction &JA,
@@ -5181,7 +5150,7 @@ static void ConstructAssembleJobFromInfo(Compilation &C, const JobAction &JA,
   }
 
   const char *Exec = Args.MakeArgString(assembler.exe);
-  C.addCommand(new Command(JA, T, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, T, Exec, CmdArgs));
 }
 
 static void ConstructLinkJobFromInfo(Compilation &C, const JobAction &JA,
@@ -5307,7 +5276,7 @@ static void ConstructLinkJobFromInfo(Compilation &C, const JobAction &JA,
   }
 
   const char *Exec = Args.MakeArgString(linker.exe);
-  C.addCommand(new Command(JA, T, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, T, Exec, CmdArgs));
 }
 
 // Hexagon tools start.
@@ -5376,7 +5345,7 @@ void hexagon::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *GCCName = "hexagon-as";
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath(GCCName));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void hexagon::Link::RenderExtraToolArgs(const JobAction &JA,
@@ -5542,7 +5511,8 @@ void hexagon::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   std::string Linker = ToolChain.GetProgramPath("hexagon-ld");
-  C.addCommand(new Command(JA, *this, Args.MakeArgString(Linker), CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Args.MakeArgString(Linker),
+                                          CmdArgs));
 }
 // Hexagon tools end.
 
@@ -5803,7 +5773,7 @@ void darwin::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath("as"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void darwin::MachOTool::anchor() {}
@@ -6019,6 +5989,12 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
                                 const char *LinkingOutput) const {
   assert(Output.getType() == types::TY_Image && "Invalid linker output type.");
 
+  // If the number of arguments surpasses the system limits, we will encode the
+  // input files in a separate file, shortening the command line. To this end,
+  // build a list of input file names that can be passed via a file with the
+  // -filelist linker option.
+  llvm::opt::ArgStringList InputFileList;
+
   // The logic here is derived from gcc's behavior; most of which
   // comes from specs (starting with link_command). Consult gcc for
   // more information.
@@ -6032,7 +6008,7 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
     const char *Exec =
       Args.MakeArgString(getToolChain().GetProgramPath("touch"));
     CmdArgs.push_back(Output.getFilename());
-    C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+    C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
     return;
   }
 
@@ -6087,7 +6063,23 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
-  
+  // Build the input file for -filelist (list of linker input files) in case we
+  // need it later
+  for (const auto &II : Inputs) {
+    if (!II.isFilename()) {
+      // This is a linker input argument.
+      // We cannot mix input arguments and file names in a -filelist input, thus
+      // we prematurely stop our list (remaining files shall be passed as
+      // arguments).
+      if (InputFileList.size() > 0)
+        break;
+
+      continue;
+    }
+
+    InputFileList.push_back(II.getFilename());
+  }
+
   if (isObjCRuntimeLinked(Args) &&
       !Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nodefaultlibs)) {
@@ -6130,7 +6122,10 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetLinkerPath());
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  std::unique_ptr<Command> Cmd =
+    llvm::make_unique<Command>(JA, *this, Exec, CmdArgs);
+  Cmd->setInputFileList(std::move(InputFileList));
+  C.addCommand(std::move(Cmd));
 }
 
 void darwin::Lipo::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6152,7 +6147,7 @@ void darwin::Lipo::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("lipo"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void darwin::Dsymutil::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6172,7 +6167,7 @@ void darwin::Dsymutil::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath("dsymutil"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void darwin::VerifyDebug::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6195,7 +6190,7 @@ void darwin::VerifyDebug::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath("dwarfdump"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void solaris::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6215,7 +6210,7 @@ void solaris::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(II.getFilename());
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("as"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void solaris::Link::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6320,7 +6315,7 @@ void solaris::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetLinkerPath());
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void openbsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6390,7 +6385,7 @@ void openbsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath("as"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void openbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6522,7 +6517,7 @@ void openbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetLinkerPath());
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void bitrig::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6542,7 +6537,7 @@ void bitrig::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(II.getFilename());
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("as"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void bitrig::Link::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6658,7 +6653,7 @@ void bitrig::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetLinkerPath());
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void freebsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6739,7 +6734,7 @@ void freebsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(II.getFilename());
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("as"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6838,7 +6833,7 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   Args.AddAllArgs(CmdArgs, options::OPT_L);
-  const ToolChain::path_list Paths = ToolChain.getFilePaths();
+  const ToolChain::path_list &Paths = ToolChain.getFilePaths();
   for (const auto &Path : Paths)
     CmdArgs.push_back(Args.MakeArgString(StringRef("-L") + Path));
   Args.AddAllArgs(CmdArgs, options::OPT_T_Group);
@@ -6851,6 +6846,7 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
   if (D.IsUsingLTO(Args))
     AddGoldPlugin(ToolChain, Args, CmdArgs);
 
+  bool NeedsSanitizerDeps = addSanitizerRuntimes(ToolChain, Args, CmdArgs);
   AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs);
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
@@ -6862,6 +6858,8 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
       else
         CmdArgs.push_back("-lm");
     }
+    if (NeedsSanitizerDeps)
+      linkSanitizerRuntimeDeps(ToolChain, CmdArgs);
     // FIXME: For some reason GCC passes -lgcc and -lgcc_s before adding
     // the default system libraries. Just mimic this for now.
     if (Args.hasArg(options::OPT_pg))
@@ -6916,13 +6914,11 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crtn.o")));
   }
 
-  addSanitizerRuntimes(getToolChain(), Args, CmdArgs);
-
   addProfileRT(ToolChain, Args, CmdArgs);
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetLinkerPath());
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void netbsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
@@ -6996,7 +6992,7 @@ void netbsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(II.getFilename());
 
   const char *Exec = Args.MakeArgString((getToolChain().GetProgramPath("as")));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void netbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
@@ -7204,7 +7200,7 @@ void netbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
   addProfileRT(getToolChain(), Args, CmdArgs);
 
   const char *Exec = Args.MakeArgString(getToolChain().GetLinkerPath());
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void gnutools::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
@@ -7377,7 +7373,7 @@ void gnutools::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(II.getFilename());
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("as"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 
   // Handle the debug info splitting at object creation time if we're
   // creating an object.
@@ -7664,7 +7660,7 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddAllArgs(CmdArgs, options::OPT_L);
   Args.AddAllArgs(CmdArgs, options::OPT_u);
 
-  const ToolChain::path_list Paths = ToolChain.getFilePaths();
+  const ToolChain::path_list &Paths = ToolChain.getFilePaths();
 
   for (const auto &Path : Paths)
     CmdArgs.push_back(Args.MakeArgString(StringRef("-L") + Path));
@@ -7675,9 +7671,8 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT_Z_Xlinker__no_demangle))
     CmdArgs.push_back("--no-demangle");
 
+  bool NeedsSanitizerDeps = addSanitizerRuntimes(ToolChain, Args, CmdArgs);
   AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs);
-
-  addSanitizerRuntimes(getToolChain(), Args, CmdArgs);
   // The profile runtime also needs access to system libraries.
   addProfileRT(getToolChain(), Args, CmdArgs);
 
@@ -7698,6 +7693,9 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
     if (!Args.hasArg(options::OPT_nodefaultlibs)) {
       if (Args.hasArg(options::OPT_static))
         CmdArgs.push_back("--start-group");
+
+      if (NeedsSanitizerDeps)
+        linkSanitizerRuntimeDeps(ToolChain, CmdArgs);
 
       LibOpenMP UsedOpenMPLib = LibUnknown;
       if (Args.hasArg(options::OPT_fopenmp)) {
@@ -7755,7 +7753,8 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  C.addCommand(new Command(JA, *this, ToolChain.Linker.c_str(), CmdArgs));
+  C.addCommand(
+      llvm::make_unique<Command>(JA, *this, ToolChain.Linker.c_str(), CmdArgs));
 }
 
 void minix::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
@@ -7774,7 +7773,7 @@ void minix::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(II.getFilename());
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("as"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void minix::Link::ConstructJob(Compilation &C, const JobAction &JA,
@@ -7828,7 +7827,7 @@ void minix::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   const char *Exec = Args.MakeArgString(getToolChain().GetLinkerPath());
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 /// DragonFly Tools
@@ -7856,7 +7855,7 @@ void dragonfly::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(II.getFilename());
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("as"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
@@ -7864,12 +7863,9 @@ void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
                                    const InputInfoList &Inputs,
                                    const ArgList &Args,
                                    const char *LinkingOutput) const {
-  bool UseGCC47 = false;
   const Driver &D = getToolChain().getDriver();
   ArgStringList CmdArgs;
-
-  if (llvm::sys::fs::exists("/usr/lib/gcc47", UseGCC47))
-    UseGCC47 = false;
+  bool UseGCC47 = llvm::sys::fs::exists("/usr/lib/gcc47");
 
   if (!D.SysRoot.empty())
     CmdArgs.push_back(Args.MakeArgString("--sysroot=" + D.SysRoot));
@@ -8006,7 +8002,7 @@ void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
   addProfileRT(getToolChain(), Args, CmdArgs);
 
   const char *Exec = Args.MakeArgString(getToolChain().GetLinkerPath());
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 namespace {
@@ -8379,7 +8375,7 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath(As.c_str()));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
@@ -8667,7 +8663,7 @@ void ellcc::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   const char *Exec = Args.MakeArgString(Ld);
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 static void addSanitizerRTWindows(const ToolChain &TC, const ArgList &Args,
@@ -8722,7 +8718,11 @@ void visualstudio::Link::ConstructJob(Compilation &C, const JobAction &JA,
     // FIXME: Handle 64-bit.
     if (Args.hasArg(options::OPT__SLASH_MD, options::OPT__SLASH_MDd)) {
       addSanitizerRTWindows(getToolChain(), Args, CmdArgs, "asan_dynamic-i386");
-      addSanitizerRTWindows(getToolChain(), Args, CmdArgs, "asan_uar_thunk-i386");
+      addSanitizerRTWindows(getToolChain(), Args, CmdArgs,
+                            "asan_dynamic_runtime_thunk-i386");
+      // Make sure the dynamic runtime thunk is not optimized out at link time
+      // to ensure proper SEH handling.
+      CmdArgs.push_back(Args.MakeArgString("-include:___asan_seh_interceptor"));
     } else if (DLL) {
       addSanitizerRTWindows(getToolChain(), Args, CmdArgs,
                             "asan_dll_thunk-i386");
@@ -8744,7 +8744,7 @@ void visualstudio::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   const char *Exec =
     Args.MakeArgString(getToolChain().GetProgramPath("link.exe"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void visualstudio::Compile::ConstructJob(Compilation &C, const JobAction &JA,
@@ -8784,11 +8784,10 @@ static std::string FindFallback(const char *FallbackName,
   return FallbackName;
 }
 
-Command *visualstudio::Compile::GetCommand(Compilation &C, const JobAction &JA,
-                                           const InputInfo &Output,
-                                           const InputInfoList &Inputs,
-                                           const ArgList &Args,
-                                           const char *LinkingOutput) const {
+std::unique_ptr<Command> visualstudio::Compile::GetCommand(
+    Compilation &C, const JobAction &JA, const InputInfo &Output,
+    const InputInfoList &Inputs, const ArgList &Args,
+    const char *LinkingOutput) const {
   ArgStringList CmdArgs;
   CmdArgs.push_back("/nologo");
   CmdArgs.push_back("/c"); // Compile only.
@@ -8867,7 +8866,8 @@ Command *visualstudio::Compile::GetCommand(Compilation &C, const JobAction &JA,
 
   const Driver &D = getToolChain().getDriver();
   std::string Exec = FindFallback("cl.exe", D.getClangProgramPath());
-  return new Command(JA, *this, Args.MakeArgString(Exec), CmdArgs);
+  return llvm::make_unique<Command>(JA, *this, Args.MakeArgString(Exec),
+                                    CmdArgs);
 }
 
 
@@ -8904,7 +8904,7 @@ void XCore::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(II.getFilename());
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("xcc"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 void XCore::Link::ConstructJob(Compilation &C, const JobAction &JA,
@@ -8931,5 +8931,5 @@ void XCore::Link::ConstructJob(Compilation &C, const JobAction &JA,
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
 
   const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("xcc"));
-  C.addCommand(new Command(JA, *this, Exec, CmdArgs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }

@@ -25,9 +25,6 @@ if(NOT LLVM_FORCE_USE_OLD_TOOLCHAIN)
       set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
       set(OLD_CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES})
       set(CMAKE_REQUIRED_FLAGS "-std=c++0x")
-      if (ANDROID)
-        set(CMAKE_REQUIRED_LIBRARIES "atomic")
-      endif()
       check_cxx_source_compiles("
 #include <atomic>
 std::atomic<float> x(0.0f);
@@ -365,7 +362,7 @@ if(LLVM_USE_SANITIZER)
       endif()
     elseif (LLVM_USE_SANITIZER STREQUAL "Undefined")
       append_common_sanitizer_flags()
-      append("-fsanitize=undefined -fno-sanitize=vptr -fno-sanitize-recover"
+      append("-fsanitize=undefined -fno-sanitize=vptr,function -fno-sanitize-recover"
               CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
     else()
       message(WARNING "Unsupported value of LLVM_USE_SANITIZER: ${LLVM_USE_SANITIZER}")

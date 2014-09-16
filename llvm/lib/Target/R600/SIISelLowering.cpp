@@ -1641,7 +1641,8 @@ void SITargetLowering::ensureSRegLimit(SelectionDAG &DAG, SDValue &Operand,
 
   SDNode *Node;
   // We can't use COPY_TO_REGCLASS with FrameIndex arguments.
-  if (isa<FrameIndexSDNode>(Operand)) {
+  if (isa<FrameIndexSDNode>(Operand) ||
+      isa<GlobalAddressSDNode>(Operand)) {
     unsigned Opcode = Operand.getValueType() == MVT::i32 ?
                       AMDGPU::S_MOV_B32 : AMDGPU::S_MOV_B64;
     Node = DAG.getMachineNode(Opcode, SDLoc(), Operand.getValueType(),
@@ -1943,27 +1944,39 @@ void SITargetLowering::AdjustInstrPostInstrSelection(MachineInstr *MI,
                                                      SDNode *Node) const {
   const SIInstrInfo *TII = static_cast<const SIInstrInfo *>(
       getTargetMachine().getSubtargetImpl()->getInstrInfo());
-  if (!TII->isMIMG(MI->getOpcode()))
+
+  if (TII->isMIMG(MI->getOpcode())) {
+    unsigned VReg = MI->getOperand(0).getReg();
+    unsigned Writemask = MI->getOperand(1).getImm();
+    unsigned BitsSet = 0;
+    for (unsigned i = 0; i < 4; ++i)
+      BitsSet += Writemask & (1 << i) ? 1 : 0;
+
+    const TargetRegisterClass *RC;
+    switch (BitsSet) {
+    default: return;
+    case 1:  RC = &AMDGPU::VReg_32RegClass; break;
+    case 2:  RC = &AMDGPU::VReg_64RegClass; break;
+    case 3:  RC = &AMDGPU::VReg_96RegClass; break;
+    }
+
+    unsigned NewOpcode = TII->getMaskedMIMGOp(MI->getOpcode(), BitsSet);
+    MI->setDesc(TII->get(NewOpcode));
+    MachineRegisterInfo &MRI = MI->getParent()->getParent()->getRegInfo();
+    MRI.setRegClass(VReg, RC);
     return;
-
-  unsigned VReg = MI->getOperand(0).getReg();
-  unsigned Writemask = MI->getOperand(1).getImm();
-  unsigned BitsSet = 0;
-  for (unsigned i = 0; i < 4; ++i)
-    BitsSet += Writemask & (1 << i) ? 1 : 0;
-
-  const TargetRegisterClass *RC;
-  switch (BitsSet) {
-  default: return;
-  case 1:  RC = &AMDGPU::VReg_32RegClass; break;
-  case 2:  RC = &AMDGPU::VReg_64RegClass; break;
-  case 3:  RC = &AMDGPU::VReg_96RegClass; break;
   }
 
-  unsigned NewOpcode = TII->getMaskedMIMGOp(MI->getOpcode(), BitsSet);
-  MI->setDesc(TII->get(NewOpcode));
-  MachineRegisterInfo &MRI = MI->getParent()->getParent()->getRegInfo();
-  MRI.setRegClass(VReg, RC);
+  // Replace unused atomics with the no return version.
+  int NoRetAtomicOp = AMDGPU::getAtomicNoRetOp(MI->getOpcode());
+  if (NoRetAtomicOp != -1) {
+    if (!Node->hasAnyUseOfValue(0)) {
+      MI->setDesc(TII->get(NoRetAtomicOp));
+      MI->RemoveOperand(0);
+    }
+
+    return;
+  }
 }
 
 MachineSDNode *SITargetLowering::AdjustRegClass(MachineSDNode *N,
@@ -1991,12 +2004,20 @@ MachineSDNode *SITargetLowering::AdjustRegClass(MachineSDNode *N,
       return N;
     }
     ConstantSDNode *Offset = cast<ConstantSDNode>(N->getOperand(1));
-    SDValue Ops[] = {
-      SDValue(DAG.getMachineNode(AMDGPU::SI_ADDR64_RSRC, DL, MVT::i128,
-                                 DAG.getConstant(0, MVT::i64)), 0),
-      N->getOperand(0),
-      DAG.getConstant(Offset->getSExtValue() << 2, MVT::i32)
-    };
+    MachineSDNode *RSrc = DAG.getMachineNode(AMDGPU::SI_ADDR64_RSRC, DL,
+                                             MVT::i128,
+                                             DAG.getConstant(0, MVT::i64));
+
+    SmallVector<SDValue, 8> Ops;
+    Ops.push_back(SDValue(RSrc, 0));
+    Ops.push_back(N->getOperand(0));
+    Ops.push_back(DAG.getConstant(Offset->getSExtValue() << 2, MVT::i32));
+
+    // Copy remaining operands so we keep any chain and glue nodes that follow
+    // the normal operands.
+    for (unsigned I = 2, E = N->getNumOperands(); I != E; ++I)
+      Ops.push_back(N->getOperand(I));
+
     return DAG.getMachineNode(NewOpcode, DL, N->getVTList(), Ops);
   }
   }

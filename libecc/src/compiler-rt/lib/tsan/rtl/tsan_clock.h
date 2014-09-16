@@ -49,6 +49,7 @@ class SyncClock {
     return elem(tid).epoch;
   }
 
+  void Resize(ClockCache *c, uptr nclk);
   void Reset(ClockCache *c);
 
   void DebugDump(int(*printf)(const char *s, ...));
@@ -110,7 +111,6 @@ struct ThreadClock {
  private:
   uptr nclk_;
   u64 clk_[kMaxTidInClock];
-  void Resize(ClockCache *c, SyncClock *dst) const;
 };
 
 }  // namespace __tsan

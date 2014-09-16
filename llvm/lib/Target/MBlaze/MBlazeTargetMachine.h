@@ -35,18 +35,11 @@ namespace llvm {
                         Reloc::Model RM, CodeModel::Model CM,
                         CodeGenOpt::Level OL);
 
-
-
-
     virtual const MBlazeSubtarget *getSubtargetImpl() const {
       if (Subtarget)
         return Subtarget;
       return &DefaultSubtarget;
     }
-    MBlazeSubtarget *getSubtargetImpl() {
-      return static_cast<MBlazeSubtarget *>(TargetMachine::getSubtargetImpl());
-    }
-
 
     const TargetIntrinsicInfo *getIntrinsicInfo() const
     { return &IntrinsicInfo; }

@@ -566,6 +566,12 @@ namespace references {
   int &e = d ?: e; // expected-warning{{reference 'e' is not yet bound to a value when used within its own initialization}}
   int &f = f ?: d; // expected-warning{{reference 'f' is not yet bound to a value when used within its own initialization}}
 
+  int &return_ref1(int);
+  int &return_ref2(int&);
+
+  int &g = return_ref1(g); // expected-warning{{reference 'g' is not yet bound to a value when used within its own initialization}}
+  int &h = return_ref2(h); // expected-warning{{reference 'h' is not yet bound to a value when used within its own initialization}}
+
   struct S {
     S() : a(a) {} // expected-warning{{reference 'a' is not yet bound to a value when used here}}
     int &a;
@@ -853,5 +859,21 @@ namespace base_class {
     int x;
     int y;
     C() : A(y = 4), x(y) {}
+  };
+}
+
+namespace delegating_constructor {
+  struct A {
+    A(int);
+    A(int&, int);
+
+    A(char (*)[1]) : A(x) {}
+    // expected-warning@-1 {{field 'x' is uninitialized when used here}}
+    A(char (*)[2]) : A(x, x) {}
+    // expected-warning@-1 {{field 'x' is uninitialized when used here}}
+
+    A(char (*)[3]) : A(x, 0) {}
+
+    int x;
   };
 }

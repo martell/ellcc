@@ -3285,6 +3285,12 @@ ASTReader::ReadASTBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
       }
       OptimizeOffPragmaLocation = ReadSourceLocation(F, Record[0]);
       break;
+
+    case UNUSED_LOCAL_TYPEDEF_NAME_CANDIDATES:
+      for (unsigned I = 0, N = Record.size(); I != N; ++I)
+        UnusedLocalTypedefNameCandidates.push_back(
+            getGlobalDeclID(F, Record[I]));
+      break;
     }
   }
 }
@@ -6887,11 +6893,11 @@ void ASTReader::InitializeSema(Sema &S) {
 
   // Makes sure any declarations that were deserialized "too early"
   // still get added to the identifier's declaration chains.
-  for (unsigned I = 0, N = PreloadedDecls.size(); I != N; ++I) {
-    pushExternalDeclIntoScope(PreloadedDecls[I],
-                              PreloadedDecls[I]->getDeclName());
+  for (uint64_t ID : PreloadedDeclIDs) {
+    NamedDecl *D = cast<NamedDecl>(GetDecl(ID));
+    pushExternalDeclIntoScope(D, D->getDeclName());
   }
-  PreloadedDecls.clear();
+  PreloadedDeclIDs.clear();
 
   // FIXME: What happens if these are changed by a module import?
   if (!FPPragmaOptions.empty()) {
@@ -7196,6 +7202,18 @@ void ASTReader::ReadDynamicClasses(SmallVectorImpl<CXXRecordDecl *> &Decls) {
   DynamicClasses.clear();
 }
 
+void ASTReader::ReadUnusedLocalTypedefNameCandidates(
+    llvm::SmallSetVector<const TypedefNameDecl *, 4> &Decls) {
+  for (unsigned I = 0, N = UnusedLocalTypedefNameCandidates.size(); I != N;
+       ++I) {
+    TypedefNameDecl *D = dyn_cast_or_null<TypedefNameDecl>(
+        GetDecl(UnusedLocalTypedefNameCandidates[I]));
+    if (D)
+      Decls.insert(D);
+  }
+  UnusedLocalTypedefNameCandidates.clear();
+}
+
 void 
 ASTReader::ReadLocallyScopedExternCDecls(SmallVectorImpl<NamedDecl *> &Decls) {
   for (unsigned I = 0, N = LocallyScopedExternCDecls.size(); I != N; ++I) {
@@ -7331,24 +7349,26 @@ ASTReader::SetGloballyVisibleDecls(IdentifierInfo *II,
   }
 
   for (unsigned I = 0, N = DeclIDs.size(); I != N; ++I) {
-    NamedDecl *D = cast<NamedDecl>(GetDecl(DeclIDs[I]));
-    if (SemaObj) {
-      // If we're simply supposed to record the declarations, do so now.
-      if (Decls) {
-        Decls->push_back(D);
-        continue;
-      }
-
-      // Introduce this declaration into the translation-unit scope
-      // and add it to the declaration chain for this identifier, so
-      // that (unqualified) name lookup will find it.
-      pushExternalDeclIntoScope(D, II);
-    } else {
+    if (!SemaObj) {
       // Queue this declaration so that it will be added to the
       // translation unit scope and identifier's declaration chain
       // once a Sema object is known.
-      PreloadedDecls.push_back(D);
+      PreloadedDeclIDs.push_back(DeclIDs[I]);
+      continue;
     }
+
+    NamedDecl *D = cast<NamedDecl>(GetDecl(DeclIDs[I]));
+
+    // If we're simply supposed to record the declarations, do so now.
+    if (Decls) {
+      Decls->push_back(D);
+      continue;
+    }
+
+    // Introduce this declaration into the translation-unit scope
+    // and add it to the declaration chain for this identifier, so
+    // that (unqualified) name lookup will find it.
+    pushExternalDeclIntoScope(D, II);
   }
 }
 

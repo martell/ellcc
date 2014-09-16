@@ -44,6 +44,7 @@ private:
   /// \returns The resulting chain.
 
   SDValue LowerUDIVREM(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerFREM(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFCEIL(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFTRUNC(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFRINT(SDValue Op, SelectionDAG &DAG) const;
@@ -153,10 +154,8 @@ public:
                                      const SelectionDAG &DAG,
                                      unsigned Depth = 0) const override;
 
-  virtual unsigned ComputeNumSignBitsForTargetNode(
-    SDValue Op,
-    const SelectionDAG &DAG,
-    unsigned Depth = 0) const override;
+  unsigned ComputeNumSignBitsForTargetNode(SDValue Op, const SelectionDAG &DAG,
+                                           unsigned Depth = 0) const override;
 
   /// \brief Helper function that adds Reg to the LiveIn list of the DAG's
   /// MachineFunction.

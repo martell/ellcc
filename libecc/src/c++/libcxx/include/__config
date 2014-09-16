@@ -19,6 +19,11 @@
 #define _GNUC_VER (__GNUC__ * 100 + __GNUC_MINOR__)
 #endif
 
+#if !_WIN32
+#include <unistd.h>
+#include <errno.h>  // for ELAST on FreeBSD
+#endif
+
 #define _LIBCPP_VERSION 1101
 
 #define _LIBCPP_ABI_VERSION 1
@@ -633,6 +638,19 @@ template <unsigned> struct __static_assert_check {};
 #define _LIBCPP_WCTYPE_IS_MASK
 #endif
 
+#if defined(ELAST)
+#define _LIBCPP_ELAST ELAST
+#elif defined(__linux__)
+#define _LIBCPP_ELAST 4095
+#elif defined(_NEWLIB_VERSION)
+#define _LIBCPP_ELAST __ELASTERROR
+#elif defined(__APPLE__)
+// Not _LIBCPP_ELAST needed on Apple
+#else
+// Warn here so that the person doing the libcxx port has an easier time:
+#warning This platform's ELAST hasn't been ported yet
+#endif
+
 #ifndef _LIBCPP_TRIVIAL_PAIR_COPY_CTOR
 #  define _LIBCPP_TRIVIAL_PAIR_COPY_CTOR 1
 #endif
@@ -676,8 +694,8 @@ extern "C" void __sanitizer_annotate_contiguous_container(
 // g++ and cl.exe have RTTI on by default and define a macro when it is.
 // g++ only defines the macro in 4.3.2 and onwards.
 #if !defined(_LIBCPP_NO_RTTI)
-#  if defined(__GNUG__) && (__GNUC__ >= 4 && \
-   (__GNUC_MINOR__ >= 3 || __GNUC_PATCHLEVEL__ >= 2)) && !defined(__GXX_RTTI)
+#  if defined(__GNUG__) && ((__GNUC__ >= 5) || (__GNUC__ == 4 && \
+   (__GNUC_MINOR__ >= 3 || __GNUC_PATCHLEVEL__ >= 2))) && !defined(__GXX_RTTI)
 #    define _LIBCPP_NO_RTTI
 #  elif (defined(_MSC_VER) && !defined(__clang__)) && !defined(_CPPRTTI)
 #    define _LIBCPP_NO_RTTI

@@ -633,7 +633,7 @@ CodeGenAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
     }
 
     ErrorOr<llvm::Module *> ModuleOrErr =
-        getLazyBitcodeModule(BCBuf, *VMContext);
+        getLazyBitcodeModule(std::move(BCBuf), *VMContext);
     if (std::error_code EC = ModuleOrErr.getError()) {
       CI.getDiagnostics().Report(diag::err_cannot_open_file)
         << LinkBCFile << EC.message();
@@ -646,7 +646,8 @@ CodeGenAction::CreateASTConsumer(CompilerInstance &CI, StringRef InFile) {
   // Add the preprocessor callback only when the coverage mapping is generated.
   if (CI.getCodeGenOpts().CoverageMapping) {
     CoverageInfo = new CoverageSourceInfo;
-    CI.getPreprocessor().addPPCallbacks(CoverageInfo);
+    CI.getPreprocessor().addPPCallbacks(
+                                    std::unique_ptr<PPCallbacks>(CoverageInfo));
   }
   std::unique_ptr<BackendConsumer> Result(new BackendConsumer(
       BA, CI.getDiagnostics(), CI.getCodeGenOpts(), CI.getTargetOpts(),

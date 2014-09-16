@@ -24,13 +24,16 @@ SyncVar::SyncVar()
   Reset(0);
 }
 
-SyncTab::Part::Part()
-  : mtx(MutexTypeSyncTab, StatMtxSyncTab)
-  , val() {
-}
+void SyncVar::Init(ThreadState *thr, uptr pc, uptr addr, u64 uid) {
+  this->addr = addr;
+  this->uid = uid;
   this->next = 0;
 
-SyncTab::SyncTab() {
+  creation_stack_id = 0;
+  if (kCppMode)  // Go does not use them
+    creation_stack_id = CurrentStackId(thr, pc);
+  if (common_flags()->detect_deadlocks)
+    DDMutexInit(thr, pc, this);
 }
 
 void SyncVar::Reset(ThreadState *thr) {

@@ -114,6 +114,27 @@ set(COMPILER_RT_GTEST_INCLUDE_CFLAGS
   -I${COMPILER_RT_GTEST_PATH}
 )
 
+if(MSVC)
+  # clang doesn't support exceptions on Windows yet.
+  list(APPEND COMPILER_RT_TEST_CFLAGS
+       -D_HAS_EXCEPTIONS=0)
+
+  # We should teach clang to understand "#pragma intrinsic", see PR19898.
+  list(APPEND COMPILER_RT_TEST_CFLAGS -Wno-undefined-inline)
+
+  # Clang doesn't support SEH on Windows yet.
+  list(APPEND COMPILER_RT_GTEST_CFLAGS -DGTEST_HAS_SEH=0)
+
+  # gtest use a lot of stuff marked as deprecated on Windows.
+  list(APPEND COMPILER_RT_GTEST_CFLAGS -Wno-deprecated-declarations)
+
+  # Visual Studio 2012 only supports up to 8 template parameters in
+  # std::tr1::tuple by default, but gtest requires 10
+  if(MSVC_VERSION EQUAL 1700)
+    add_definitions(-D_VARIADIC_MAX=10)
+  endif()
+endif()
+
 # Link objects into a single executable with COMPILER_RT_TEST_COMPILER,
 # using specified link flags. Make executable a part of provided
 # test_suite.

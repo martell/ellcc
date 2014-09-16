@@ -1008,6 +1008,59 @@ INTERCEPTOR(int, ioctl, int d, unsigned request, void *arg) {
 #define INIT_IOCTL
 #endif
 
+#if SANITIZER_INTERCEPT_GETPWNAM_AND_FRIENDS || \
+    SANITIZER_INTERCEPT_GETPWENT || SANITIZER_INTERCEPT_FGETPWENT || \
+    SANITIZER_INTERCEPT_GETPWENT_R || SANITIZER_INTERCEPT_GETPWNAM_R_AND_FRIENDS
+static void unpoison_passwd(void *ctx, __sanitizer_passwd *pwd) {
+  if (pwd) {
+    COMMON_INTERCEPTOR_WRITE_RANGE(ctx, pwd, sizeof(*pwd));
+    if (pwd->pw_name)
+      COMMON_INTERCEPTOR_INITIALIZE_RANGE(pwd->pw_name,
+                                          REAL(strlen)(pwd->pw_name) + 1);
+    if (pwd->pw_passwd)
+      COMMON_INTERCEPTOR_INITIALIZE_RANGE(pwd->pw_passwd,
+                                          REAL(strlen)(pwd->pw_passwd) + 1);
+#if !SANITIZER_ANDROID
+    if (pwd->pw_gecos)
+      COMMON_INTERCEPTOR_INITIALIZE_RANGE(pwd->pw_gecos,
+                                          REAL(strlen)(pwd->pw_gecos) + 1);
+#endif
+#if SANITIZER_MAC
+    if (pwd->pw_class)
+      COMMON_INTERCEPTOR_INITIALIZE_RANGE(pwd->pw_class,
+                                          REAL(strlen)(pwd->pw_class) + 1);
+#endif
+    if (pwd->pw_dir)
+      COMMON_INTERCEPTOR_INITIALIZE_RANGE(pwd->pw_dir,
+                                          REAL(strlen)(pwd->pw_dir) + 1);
+    if (pwd->pw_shell)
+      COMMON_INTERCEPTOR_INITIALIZE_RANGE(pwd->pw_shell,
+                                          REAL(strlen)(pwd->pw_shell) + 1);
+  }
+}
+
+static void unpoison_group(void *ctx, __sanitizer_group *grp) {
+  if (grp) {
+    COMMON_INTERCEPTOR_WRITE_RANGE(ctx, grp, sizeof(*grp));
+    if (grp->gr_name)
+      COMMON_INTERCEPTOR_INITIALIZE_RANGE(grp->gr_name,
+                                          REAL(strlen)(grp->gr_name) + 1);
+    if (grp->gr_passwd)
+      COMMON_INTERCEPTOR_INITIALIZE_RANGE(grp->gr_passwd,
+                                          REAL(strlen)(grp->gr_passwd) + 1);
+    char **p = grp->gr_mem;
+    for (; *p; ++p) {
+      COMMON_INTERCEPTOR_INITIALIZE_RANGE(*p, REAL(strlen)(*p) + 1);
+    }
+    COMMON_INTERCEPTOR_INITIALIZE_RANGE(grp->gr_mem,
+                                        (p - grp->gr_mem + 1) * sizeof(*p));
+  }
+}
+#endif  // SANITIZER_INTERCEPT_GETPWNAM_AND_FRIENDS ||
+        // SANITIZER_INTERCEPT_GETPWENT || SANITIZER_INTERCEPT_FGETPWENT ||
+        // SANITIZER_INTERCEPT_GETPWENT_R ||
+        // SANITIZER_INTERCEPT_GETPWNAM_R_AND_FRIENDS
+
 #if SANITIZER_INTERCEPT_GETPWNAM_AND_FRIENDS
 INTERCEPTOR(void *, getpwnam, const char *name) {
   void *ctx;

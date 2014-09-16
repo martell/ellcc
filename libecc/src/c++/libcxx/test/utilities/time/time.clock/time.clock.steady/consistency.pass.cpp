@@ -6,6 +6,7 @@
 // Source Licenses. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+// UNSUPPORTED: libcpp-has-no-monotonic-clock
 
 // <chrono>
 

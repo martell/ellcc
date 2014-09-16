@@ -75,6 +75,8 @@ std::error_code Input::error() { return EC; }
 void Input::HNode::anchor() {}
 void Input::EmptyHNode::anchor() {}
 void Input::ScalarHNode::anchor() {}
+void Input::MapHNode::anchor() {}
+void Input::SequenceHNode::anchor() {}
 
 bool Input::outputting() {
   return false;
@@ -94,7 +96,7 @@ bool Input::setCurrentDocument() {
       ++DocIterator;
       return setCurrentDocument();
     }
-    TopNode.reset(this->createHNodes(N));
+    TopNode = this->createHNodes(N);
     CurrentNode = TopNode.get();
     return true;
   }
@@ -145,7 +147,7 @@ bool Input::preflightKey(const char *Key, bool Required, bool, bool &UseDefault,
     return false;
   }
   MN->ValidKeys.push_back(Key);
-  HNode *Value = MN->Mapping[Key];
+  HNode *Value = MN->Mapping[Key].get();
   if (!Value) {
     if (Required)
       setError(CurrentNode, Twine("missing required key '") + Key + "'");
@@ -171,7 +173,7 @@ void Input::endMapping() {
     return;
   for (const auto &NN : MN->Mapping) {
     if (!MN->isValidKey(NN.first())) {
-      setError(NN.second, Twine("unknown key '") + NN.first() + "'");
+      setError(NN.second.get(), Twine("unknown key '") + NN.first() + "'");
       break;
     }
   }
@@ -192,7 +194,7 @@ bool Input::preflightElement(unsigned Index, void *&SaveInfo) {
     return false;
   if (SequenceHNode *SQ = dyn_cast<SequenceHNode>(CurrentNode)) {
     SaveInfo = CurrentNode;
-    CurrentNode = SQ->Entries[Index];
+    CurrentNode = SQ->Entries[Index].get();
     return true;
   }
   return false;
@@ -214,7 +216,7 @@ bool Input::preflightFlowElement(unsigned index, void *&SaveInfo) {
     return false;
   if (SequenceHNode *SQ = dyn_cast<SequenceHNode>(CurrentNode)) {
     SaveInfo = CurrentNode;
-    CurrentNode = SQ->Entries[index];
+    CurrentNode = SQ->Entries[index].get();
     return true;
   }
   return false;
@@ -265,8 +267,8 @@ bool Input::bitSetMatch(const char *Str, bool) {
     return false;
   if (SequenceHNode *SQ = dyn_cast<SequenceHNode>(CurrentNode)) {
     unsigned Index = 0;
-    for (HNode *N : SQ->Entries) {
-      if (ScalarHNode *SN = dyn_cast<ScalarHNode>(N)) {
+    for (auto &N : SQ->Entries) {
+      if (ScalarHNode *SN = dyn_cast<ScalarHNode>(N.get())) {
         if (SN->value().equals(Str)) {
           BitValuesUsed[Index] = true;
           return true;
@@ -289,7 +291,7 @@ void Input::endBitSetScalar() {
     assert(BitValuesUsed.size() == SQ->Entries.size());
     for (unsigned i = 0; i < SQ->Entries.size(); ++i) {
       if (!BitValuesUsed[i]) {
-        setError(SQ->Entries[i], "unknown bit value");
+        setError(SQ->Entries[i].get(), "unknown bit value");
         return;
       }
     }
@@ -314,7 +316,7 @@ void Input::setError(Node *node, const Twine &message) {
   EC = make_error_code(errc::invalid_argument);
 }
 
-Input::HNode *Input::createHNodes(Node *N) {
+std::unique_ptr<Input::HNode> Input::createHNodes(Node *N) {
   SmallString<128> StringStorage;
   if (ScalarNode *SN = dyn_cast<ScalarNode>(N)) {
     StringRef KeyStr = SN->getValue(StringStorage);
@@ -325,18 +327,18 @@ Input::HNode *Input::createHNodes(Node *N) {
       memcpy(Buf, &StringStorage[0], Len);
       KeyStr = StringRef(Buf, Len);
     }
-    return new ScalarHNode(N, KeyStr);
+    return llvm::make_unique<ScalarHNode>(N, KeyStr);
   } else if (SequenceNode *SQ = dyn_cast<SequenceNode>(N)) {
-    SequenceHNode *SQHNode = new SequenceHNode(N);
+    auto SQHNode = llvm::make_unique<SequenceHNode>(N);
     for (Node &SN : *SQ) {
-      HNode *Entry = this->createHNodes(&SN);
+      auto Entry = this->createHNodes(&SN);
       if (EC)
         break;
-      SQHNode->Entries.push_back(Entry);
+      SQHNode->Entries.push_back(std::move(Entry));
     }
-    return SQHNode;
+    return std::move(SQHNode);
   } else if (MappingNode *Map = dyn_cast<MappingNode>(N)) {
-    MapHNode *mapHNode = new MapHNode(N);
+    auto mapHNode = llvm::make_unique<MapHNode>(N);
     for (KeyValueNode &KVN : *Map) {
       Node *KeyNode = KVN.getKey();
       ScalarNode *KeyScalar = dyn_cast<ScalarNode>(KeyNode);
@@ -353,14 +355,14 @@ Input::HNode *Input::createHNodes(Node *N) {
         memcpy(Buf, &StringStorage[0], Len);
         KeyStr = StringRef(Buf, Len);
       }
-      HNode *ValueHNode = this->createHNodes(KVN.getValue());
+      auto ValueHNode = this->createHNodes(KVN.getValue());
       if (EC)
         break;
-      mapHNode->Mapping[KeyStr] = ValueHNode;
+      mapHNode->Mapping[KeyStr] = std::move(ValueHNode);
     }
-    return mapHNode;
+    return std::move(mapHNode);
   } else if (isa<NullNode>(N)) {
-    return new EmptyHNode(N);
+    return llvm::make_unique<EmptyHNode>(N);
   } else {
     setError(N, "unknown node kind");
     return nullptr;
@@ -382,18 +384,6 @@ void Input::setError(const Twine &Message) {
 bool Input::canElideEmptySequence() {
   return false;
 }
-
-Input::MapHNode::~MapHNode() {
-  for (auto &N : Mapping)
-    delete N.second;
-}
-
-Input::SequenceHNode::~SequenceHNode() {
-  for (HNode *N : Entries)
-    delete N;
-}
-
-
 
 //===----------------------------------------------------------------------===//
 //  Output

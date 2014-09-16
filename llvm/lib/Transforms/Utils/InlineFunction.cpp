@@ -18,6 +18,7 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/AssumptionTracker.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/InstructionSimplify.h"
@@ -42,7 +43,7 @@
 using namespace llvm;
 
 static cl::opt<bool>
-EnableNoAliasConversion("enable-noalias-to-md-conversion", cl::init(false),
+EnableNoAliasConversion("enable-noalias-to-md-conversion", cl::init(true),
   cl::Hidden,
   cl::desc("Convert noalias attributes to metadata during inlining."));
 
@@ -394,7 +395,7 @@ static void CloneAliasScopeMetadata(CallSite CS, ValueToValueMapTy &VMap) {
 /// parameters with noalias metadata specifying the new scope, and tag all
 /// non-derived loads, stores and memory intrinsics with the new alias scopes.
 static void AddAliasScopeMetadata(CallSite CS, ValueToValueMapTy &VMap,
-                                  const DataLayout *DL) {
+                                  const DataLayout *DL, AliasAnalysis *AA) {
   if (!EnableNoAliasConversion)
     return;
 
@@ -458,6 +459,7 @@ static void AddAliasScopeMetadata(CallSite CS, ValueToValueMapTy &VMap,
       if (!NI)
         continue;
 
+      bool IsArgMemOnlyCall = false, IsFuncCall = false;
       SmallVector<const Value *, 2> PtrArgs;
 
       if (const LoadInst *LI = dyn_cast<LoadInst>(I))
@@ -477,21 +479,33 @@ static void AddAliasScopeMetadata(CallSite CS, ValueToValueMapTy &VMap,
         if (ICS.doesNotAccessMemory())
           continue;
 
+        IsFuncCall = true;
+        if (AA) {
+          AliasAnalysis::ModRefBehavior MRB = AA->getModRefBehavior(ICS);
+          if (MRB == AliasAnalysis::OnlyAccessesArgumentPointees ||
+              MRB == AliasAnalysis::OnlyReadsArgumentPointees)
+            IsArgMemOnlyCall = true;
+        }
+
         for (ImmutableCallSite::arg_iterator AI = ICS.arg_begin(),
-             AE = ICS.arg_end(); AI != AE; ++AI)
+             AE = ICS.arg_end(); AI != AE; ++AI) {
           // We need to check the underlying objects of all arguments, not just
           // the pointer arguments, because we might be passing pointers as
           // integers, etc.
-          // FIXME: If we know that the call only accesses pointer arguments,
+          // However, if we know that the call only accesses pointer arguments,
           // then we only need to check the pointer arguments.
+          if (IsArgMemOnlyCall && !(*AI)->getType()->isPointerTy())
+            continue;
+
           PtrArgs.push_back(*AI);
+        }
       }
 
       // If we found no pointers, then this instruction is not suitable for
       // pairing with an instruction to receive aliasing metadata.
       // However, if this is a call, this we might just alias with none of the
       // noalias arguments.
-      if (PtrArgs.empty() && !isa<CallInst>(I) && !isa<InvokeInst>(I))
+      if (PtrArgs.empty() && !IsFuncCall)
         continue;
 
       // It is possible that there is only one underlying object, but you
@@ -520,21 +534,41 @@ static void AddAliasScopeMetadata(CallSite CS, ValueToValueMapTy &VMap,
         bool IsNonPtrConst = isa<ConstantInt>(V) || isa<ConstantFP>(V) ||
                              isa<ConstantPointerNull>(V) ||
                              isa<ConstantDataVector>(V) || isa<UndefValue>(V);
-        if (!IsNonPtrConst &&
-            !isIdentifiedFunctionLocal(const_cast<Value*>(V))) {
+        if (IsNonPtrConst)
+          continue;
+
+        // If this is anything other than a noalias argument, then we cannot
+        // completely describe the aliasing properties using alias.scope
+        // metadata (and, thus, won't add any).
+        if (const Argument *A = dyn_cast<Argument>(V)) {
+          if (!A->hasNoAliasAttr())
+            UsesAliasingPtr = true;
+        } else {
           UsesAliasingPtr = true;
-          if (!isa<Argument>(V)) {
-            CanDeriveViaCapture = true;
-            break;
-          }
         }
+
+        // If this is not some identified function-local object (which cannot
+        // directly alias a noalias argument), or some other argument (which,
+        // by definition, also cannot alias a noalias argument), then we could
+        // alias a noalias argument that has been captured).
+        if (!isa<Argument>(V) &&
+            !isIdentifiedFunctionLocal(const_cast<Value*>(V)))
+          CanDeriveViaCapture = true;
       }
-  
+
+      // A function call can always get captured noalias pointers (via other
+      // parameters, globals, etc.).
+      if (IsFuncCall && !IsArgMemOnlyCall)
+        CanDeriveViaCapture = true;
+
       // First, we want to figure out all of the sets with which we definitely
       // don't alias. Iterate over all noalias set, and add those for which:
       //   1. The noalias argument is not in the set of objects from which we
       //      definitely derive.
       //   2. The noalias argument has not yet been captured.
+      // An arbitrary function that might load pointers could see captured
+      // noalias arguments via other noalias arguments or globals, and so we
+      // must always check for prior capture.
       for (const Argument *A : NoAliasArgs) {
         if (!ObjSet.count(A) && (!CanDeriveViaCapture ||
                                  // It might be tempting to skip the
@@ -565,13 +599,8 @@ static void AddAliasScopeMetadata(CallSite CS, ValueToValueMapTy &VMap,
       // scopes to arbitrary functions unless we know they don't access any
       // non-parameter pointer-values.
       bool CanAddScopes = !UsesAliasingPtr;
-      if (CanAddScopes && (isa<CallInst>(I) || isa<InvokeInst>(I))) {
-        // FIXME: We should have a way to access the
-        // IntrReadArgMem/IntrReadWriteArgMem properties of intrinsics, and we
-        // should have a way to determine that for regular functions too. For
-        // now, just do this for the memory intrinsics we understand.
-        CanAddScopes = isa<MemIntrinsic>(I);
-      }
+      if (CanAddScopes && IsFuncCall)
+        CanAddScopes = IsArgMemOnlyCall;
 
       if (CanAddScopes)
         for (const Argument *A : NoAliasArgs) {
@@ -654,31 +683,19 @@ static void UpdateCallGraphAfterInlining(CallSite CS,
 static void HandleByValArgumentInit(Value *Dst, Value *Src, Module *M,
                                     BasicBlock *InsertBlock,
                                     InlineFunctionInfo &IFI) {
-  LLVMContext &Context = Src->getContext();
-  Type *VoidPtrTy = Type::getInt8PtrTy(Context);
   Type *AggTy = cast<PointerType>(Src->getType())->getElementType();
-  Type *Tys[3] = { VoidPtrTy, VoidPtrTy, Type::getInt64Ty(Context) };
-  Function *MemCpyFn = Intrinsic::getDeclaration(M, Intrinsic::memcpy, Tys);
-  IRBuilder<> builder(InsertBlock->begin());
-  Value *DstCast = builder.CreateBitCast(Dst, VoidPtrTy, "tmp");
-  Value *SrcCast = builder.CreateBitCast(Src, VoidPtrTy, "tmp");
+  IRBuilder<> Builder(InsertBlock->begin());
 
   Value *Size;
   if (IFI.DL == nullptr)
     Size = ConstantExpr::getSizeOf(AggTy);
   else
-    Size = ConstantInt::get(Type::getInt64Ty(Context),
-                            IFI.DL->getTypeStoreSize(AggTy));
+    Size = Builder.getInt64(IFI.DL->getTypeStoreSize(AggTy));
 
   // Always generate a memcpy of alignment 1 here because we don't know
   // the alignment of the src pointer.  Other optimizations can infer
   // better alignment.
-  Value *CallArgs[] = {
-    DstCast, SrcCast, Size,
-    ConstantInt::get(Type::getInt32Ty(Context), 1),
-    ConstantInt::getFalse(Context) // isVolatile
-  };
-  builder.CreateCall(MemCpyFn, CallArgs);
+  Builder.CreateMemCpy(Dst, Src, Size, /*Align=*/1);
 }
 
 /// HandleByValArgument - When inlining a call site that has a byval argument,
@@ -703,7 +720,7 @@ static Value *HandleByValArgument(Value *Arg, Instruction *TheCall,
     // If the pointer is already known to be sufficiently aligned, or if we can
     // round it up to a larger alignment, then we don't need a temporary.
     if (getOrEnforceKnownAlignment(Arg, ByValAlignment,
-                                   IFI.DL) >= ByValAlignment)
+                                   IFI.DL, IFI.AT, TheCall) >= ByValAlignment)
       return Arg;
     
     // Otherwise, we have to make a memcpy to get a safe alignment.  This is bad
@@ -953,7 +970,12 @@ bool llvm::InlineFunction(CallSite CS, InlineFunctionInfo &IFI,
     CloneAliasScopeMetadata(CS, VMap);
 
     // Add noalias metadata if necessary.
-    AddAliasScopeMetadata(CS, VMap, IFI.DL);
+    AddAliasScopeMetadata(CS, VMap, IFI.DL, IFI.AA);
+
+    // FIXME: We could register any cloned assumptions instead of clearing the
+    // whole function's cache.
+    if (IFI.AT)
+      IFI.AT->forgetCachedAssumptions(Caller);
   }
 
   // If there are any alloca instructions in the block that used to be the entry
@@ -1324,7 +1346,7 @@ bool llvm::InlineFunction(CallSite CS, InlineFunctionInfo &IFI,
   // the entries are the same or undef).  If so, remove the PHI so it doesn't
   // block other optimizations.
   if (PHI) {
-    if (Value *V = SimplifyInstruction(PHI, IFI.DL)) {
+    if (Value *V = SimplifyInstruction(PHI, IFI.DL, nullptr, nullptr, IFI.AT)) {
       PHI->replaceAllUsesWith(V);
       PHI->eraseFromParent();
     }

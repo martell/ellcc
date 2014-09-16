@@ -148,8 +148,7 @@ static void BackgroundThread(void *arg) {
     // Flush memory if requested.
     if (flags()->flush_memory_ms > 0) {
       if (last_flush + flags()->flush_memory_ms * kMs2Ns < now) {
-        if (flags()->verbosity > 0)
-          Printf("ThreadSanitizer: periodic memory flush\n");
+        VPrintf(1, "ThreadSanitizer: periodic memory flush\n");
         FlushShadowMemory();
         last_flush = NanoTime();
       }
@@ -158,18 +157,14 @@ static void BackgroundThread(void *arg) {
     if (flags()->memory_limit_mb > 0) {
       uptr rss = GetRSS();
       uptr limit = uptr(flags()->memory_limit_mb) << 20;
-      if (flags()->verbosity > 0) {
-        Printf("ThreadSanitizer: memory flush check"
-               " RSS=%llu LAST=%llu LIMIT=%llu\n",
-               (u64)rss>>20, (u64)last_rss>>20, (u64)limit>>20);
-      }
+      VPrintf(1, "ThreadSanitizer: memory flush check"
+                 " RSS=%llu LAST=%llu LIMIT=%llu\n",
+              (u64)rss >> 20, (u64)last_rss >> 20, (u64)limit >> 20);
       if (2 * rss > limit + last_rss) {
-        if (flags()->verbosity > 0)
-          Printf("ThreadSanitizer: flushing memory due to RSS\n");
+        VPrintf(1, "ThreadSanitizer: flushing memory due to RSS\n");
         FlushShadowMemory();
         rss = GetRSS();
-        if (flags()->verbosity > 0)
-          Printf("ThreadSanitizer: memory flushed RSS=%llu\n", (u64)rss>>20);
+        VPrintf(1, "ThreadSanitizer: memory flushed RSS=%llu\n", (u64)rss>>20);
       }
       last_rss = rss;
     }
@@ -282,7 +277,7 @@ void Initialize(ThreadState *thr) {
   InitializeShadowMemory();
 #endif
   // Setup correct file descriptor for error reports.
-  __sanitizer_set_report_path(flags()->log_path);
+  __sanitizer_set_report_path(common_flags()->log_path);
   InitializeSuppressions();
 #ifndef TSAN_GO
   InitializeLibIgnore();
@@ -290,12 +285,11 @@ void Initialize(ThreadState *thr) {
 #endif
   StartBackgroundThread();
   SetSandboxingCallback(StopBackgroundThread);
-  if (flags()->detect_deadlocks)
+  if (common_flags()->detect_deadlocks)
     ctx->dd = DDetector::Create(flags());
 
-  if (ctx->flags.verbosity)
-    Printf("***** Running under ThreadSanitizer v2 (pid %d) *****\n",
-           (int)internal_getpid());
+  VPrintf(1, "***** Running under ThreadSanitizer v2 (pid %d) *****\n",
+          (int)internal_getpid());
 
   // Initialize thread 0.
   int tid = ThreadCreate(thr, 0, 0, true);
@@ -326,7 +320,7 @@ int Finalize(ThreadState *thr) {
   ctx->report_mtx.Unlock();
 
 #ifndef TSAN_GO
-  if (ctx->flags.verbosity)
+  if (common_flags()->verbosity)
     AllocatorPrintStats();
 #endif
 
@@ -347,7 +341,7 @@ int Finalize(ThreadState *thr) {
         ctx->nmissed_expected);
   }
 
-  if (flags()->print_suppressions)
+  if (common_flags()->print_suppressions)
     PrintMatchedSuppressions();
 #ifndef TSAN_GO
   if (flags()->print_benign)

@@ -325,7 +325,7 @@ DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm20restoreCoreAndJu
   ldm lr, {r0-r12}
   ldr sp, [lr, #52]
   ldr lr, [lr, #60]  @ restore pc into lr
-#if _ARM_ARCH > 4
+#if __ARM_ARCH > 4
   bx lr
 #else
   mov pc, lr
@@ -346,7 +346,11 @@ DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm19restoreVFPWithFL
   @ these registers implies they are, actually, available on the target, so
   @ it's ok to execute.
   @ So, generate the instruction using the corresponding coprocessor mnemonic.
+#if __ARM_ARCH < 7
   ldc p11, cr0, [r0], {0x20}  @ fldmiad r0, {d0-d15}
+#else
+  vldmia r0, {d0-d15}
+#endif
   mov pc, lr
 
 @
@@ -357,7 +361,11 @@ DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm19restoreVFPWithFL
 @
   .p2align 2
 DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm19restoreVFPWithFLDMXEPy)
+#if __ARM_ARCH < 7
   ldc p11, cr0, [r0], {0x21}  @ fldmiax r0, {d0-d15}
+#else
+  vldmia r0, {d0-d15} @ fldmiax is deprecated in ARMv7+ and now behaves like vldmia
+#endif
   mov pc, lr
 
 @
@@ -368,7 +376,11 @@ DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm19restoreVFPWithFL
 @
   .p2align 2
 DEFINE_LIBUNWIND_PRIVATE_FUNCTION(_ZN9libunwind13Registers_arm12restoreVFPv3EPy)
+#if __ARM_ARCH < 7
   ldcl p11, cr0, [r0], {0x20}  @ vldm r0, {d16-d31}
+#else
+  vldmia r0, {d16-d31}
+#endif
   mov pc, lr
 
 @
