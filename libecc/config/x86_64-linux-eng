@@ -1,0 +1,4 @@
+based_on: x86_64-ellcc-linux
+compiler:
+  options:
+    - -target x86_64-ellcc-linux

@@ -1,0 +1,7 @@
+based_on: armeb-ellcc-linux
+compiler:
+  options:
+    - -target armeb-ellcc-linux
+    - -march=armv7
+    - -mfpu=vfp
+    - -mfloat-abi=softfp

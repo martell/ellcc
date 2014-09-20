@@ -1,0 +1,6 @@
+based_on: arm-ellcc-linux
+compiler:
+  options:
+    - -target arm-ellcc-linux
+    - -march=armv7tdtmi
+    - -mfloat-abi=softfp

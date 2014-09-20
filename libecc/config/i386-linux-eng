@@ -1,0 +1,4 @@
+based_on: i386-ellcc-linux
+compiler:
+  options:
+    - -target i386-ellcc-linux

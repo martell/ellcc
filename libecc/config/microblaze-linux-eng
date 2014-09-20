@@ -1,0 +1,4 @@
+based_on: microblaze-ellcc-linux
+compiler:
+  options:
+    - -target microblaze-ellcc-linux

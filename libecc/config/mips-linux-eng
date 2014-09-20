@@ -1,0 +1,5 @@
+based_on: mips-ellcc-linux
+compiler:
+  options:
+    - -target mips-ellcc-linux
+    - -mcpu=mips32r2
