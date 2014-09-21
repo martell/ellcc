@@ -59,8 +59,7 @@ $(Configs)::
 	echo Installing ncurses for $* ; \
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/linux/lib/*.a ../lib/$*/linux ; \
-	mkdir -p ../include/$*/linux ; \
-	cp $*/linux/include/*.h ../include/linux ; \
+	cp $*/linux/include/*.h ../include ; \
 	make -C $*/linux/misc install
 
 $(Configs)::
@@ -87,9 +86,8 @@ $(Configs)::
 	echo Installing zlib for $* ; \
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/linux/*.a ../lib/$*/linux ; \
-	mkdir -p ../include/$*/linux ; \
-	cp $*/linux/zlib.h ../include/linux ; \
-	cp $*/linux/zconf.h ../include/$*/linux
+	cp $*/linux/zlib.h ../include ; \
+	cp $*/linux/zconf.h ../include
 
 $(Configs)::
 	make $@.expat.configure && \
@@ -116,9 +114,8 @@ $(Configs)::
 	echo Installing expat for $* ; \
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/linux/.libs/*.a ../lib/$*/linux ; \
-	mkdir -p ../include/$*/linux ; \
-	cp ../src/expat/lib/expat.h ../include/linux ; \
-	cp ../src/expat/lib/expat_external.h ../include/linux
+	cp ../src/expat/lib/expat.h ../include ; \
+	cp ../src/expat/lib/expat_external.h ../include
 
 $(Configs)::
 	make $@.libedit.configure && \
@@ -146,10 +143,8 @@ $(Configs)::
 	echo Installing libedit for $* ; \
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/linux/src/.libs/*.a ../lib/$*/linux ; \
-	mkdir -p ../include/$*/linux ; \
-	mkdir -p ../include/$*/linux/ ; \
-	cp $*/linux/src/histedit.h ../include/linux ; \
-	cp $*/linux/src/editline/readline.h ../include/$*/linux
+	cp $*/linux/src/histedit.h ../include ; \
+	cp $*/linux/src/editline/readline.h ../include
 
 clean:
 	make -C src/musl distclean
@@ -172,13 +167,13 @@ musl.install:
 %.musl.install:
 	@cd musl-build ; \
 	echo Installing libecc for $* ; \
-	mkdir -p ../include/linux ; \
-	cp -r $*/include/* ../include/linux ; \
-	ln -sf ../endian.h ../include/linux/sys ; \
-	mkdir -p ../include/$*/linux ; \
-	rm -fr ../include/$*/linux/bits ; \
-	mv ../include/linux/bits ../include/$*/linux/bits ; \
-	(cd ../include/$*/linux; rm -rf machine; ln -sf bits machine) ; \
+	mkdir -p ../include ; \
+	cp -r $*/include/* ../include ; \
+	ln -sf ../endian.h ../include/sys ; \
+	mkdir -p ../include/`../getarch $*` ; \
+	rm -fr ../include/`../getarch $*`/bits ; \
+	mv ../include/bits ../include/`../getarch $*`/bits ; \
+	(cd ../include/`../getarch $*`; rm -rf machine; ln -sf bits machine) ; \
 	mkdir -p ../lib/$*/linux ; \
 	cp $*/lib/*.a $*/lib/*.o ../lib/$*/linux
 
