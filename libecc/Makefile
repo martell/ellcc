@@ -19,7 +19,6 @@ all:
 $(Configs)::
 	@echo Making libecc for $@ in musl-build/$@
 	mkdir -p $(OBJ)/$@
-	#RICH: ./config.musl "$(CFLAGS.$@)" $@ $(ELLCC) || exit 1
 	./config.musl "-target $@ $(CFLAGS)" $@ $(ELLCC) || exit 1
 	make -C src/musl || exit 1
 	make -C src/musl install || exit 1
@@ -171,7 +170,7 @@ musl.install:
 	mkdir -p ../include/`../getincarch $*` ; \
 	rm -fr ../include/`../getincarch $*`/bits ; \
 	mv ../include/bits ../include/`../getincarch $*`/bits ; \
-	(cd ../include/`../getincarch $*`; rm -rf machine; ln -sf bits machine)
+	(cd ../include/`../getincarch $*`; rm -rf machine; ln -sf bits machine) \
 	mkdir -p ../lib/$* ; \
 	cp $*/lib/*.a $*/lib/*.o ../lib/$*
 
