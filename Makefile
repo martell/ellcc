@@ -70,18 +70,19 @@ endif
 
 ifneq ($(CC),gcc)
   ifeq ($(haslibs),yes)
-    CFLAGS=-target $(TUPLE) $(ELLCC_ARG0)
-    CXXFLAGS=-target $(TUPLE) $(ELLCC_ARG0)
+    CFLAGS=$(ELLCC_ARG0)
+    CXXFLAGS=$(ELLCC_ARG0)
+    TARGETTUPLE=-target $(TUPLE)
   endif
 endif
 
 llvm.configure:
 	cd $(DIR) ; \
 	../llvm/configure \
-        CC=$(CC) CFLAGS="$(CFLAGS)" \
-        CPP="$(CC) -E $(CFLAGS)" \
-        CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
-        CXXCPP="$(CXX) -E $(CFLAGS)" \
+        CC="$(CC) $(TARGETTUPLE)" CFLAGS="$(CFLAGS)" \
+        CPP="$(CC) $(TARGETTUPLE) -E $(CFLAGS)" \
+        CXX="$(CXX) $(TARGETTUPLE)" CXXFLAGS="$(CXXFLAGS)" \
+        CXXCPP="$(CXX) $(TARGETTUPLE) -E $(CFLAGS)" \
         AR=$(AR) RANLIB=$(RANLIB) \
         --bindir=$(bindir) --prefix=$(prefix) \
         $(HOST) $(BUILD) $(TARGETS) \
