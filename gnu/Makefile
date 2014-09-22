@@ -40,7 +40,7 @@ install::
 	  $(MAKE) -C $$dir install-html || exit 1; \
 	done
 
--include $(prefix)/libecc/mkscripts/targets/$(TARGET)/setup.mk
+#RICH: -include $(prefix)/libecc/mkscripts/targets/$(TARGET)/setup.mk
 
 ifneq ($(TARGET),$(build))
   HOST=--host=$(TARGET)-$(OS)
@@ -50,8 +50,8 @@ endif
 
 ifneq ($(CC),gcc)
   ifeq ($(haslibs),yes)
-    CFLAGS=$(CFLAGS.$(TARGET))
-    CXXFLAGS=$(CXXFLAGS.$(TARGET))
+    CFLAGS=-target $(TUPLE)
+    CXXFLAGS=-target $(TUPLE)
   endif
 endif
 

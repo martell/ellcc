@@ -1,5 +1,5 @@
 # This file determins the target list and compilers to use.
-# Get the supported targets.
+# Get the supported targets for the GNU tools.
 targets=`cat $prefix/targets`
 targetlist=`echo $targets | sed -e "s/ /,/g"`
 
@@ -17,13 +17,15 @@ target=$build
 os=linux
 arg1=
 hostos=`uname -s`
+tuple=
 
 if [ $# -ge 1 ] ; then
-  # The first argument is the desired cross host.
-  host=$1
+  # The first argument is the desired cross host tuple.
+  host=`$(prefix)/libecc/getarch $1`
   arg1=$host
-  bindir=$bindir-$host-$os
+  bindir=$bindir-$1
   hostos=Linux
+  tuple=$1
   shift
 fi
 
@@ -41,7 +43,11 @@ fi
 
 if [ "x$ecc" != "x" ] ; then
   # An ecc exists, use it to compile.
-  if [ -e $prefix/libecc/lib/$host/$os/libc.a ]; then
+  if [ "$tuple" == "" ] ; then
+    # Find a tuple for this host.
+    tuple=`cd $prefix/libecc/config; echo $host*`
+  fi
+  if [ -e $prefix/libecc/lib/$tuple/libc.a ]; then
     # To build for host with libecc:
     cc=$ecc
     cxx=$ecc++
@@ -54,7 +60,7 @@ if [ "x$ecc" != "x" ] ; then
       ar=ar
       ranlib=ranlib
     fi
-    builddir="-$host-$os"
+    builddir="-$tuple"
     haslibs=yes
     WHY="build for $host with libecc using ecc"
   else

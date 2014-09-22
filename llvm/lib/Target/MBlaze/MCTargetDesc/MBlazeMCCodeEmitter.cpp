@@ -43,14 +43,15 @@ public:
 
   // getBinaryCodeForInstr - TableGen'erated function for getting the
   // binary encoding for an instruction.
-  uint64_t getBinaryCodeForInstr(const MCInst &MI) const;
+  uint64_t getBinaryCodeForInstr(const MCInst &MI,
+                                 SmallVectorImpl<MCFixup> &Fixups,
+                                 const MCSubtargetInfo &STI) const;
 
   /// getMachineOpValue - Return binary encoding of operand. If the machine
   /// operand requires relocation, record the relocation and return zero.
-  unsigned getMachineOpValue(const MCInst &MI,const MCOperand &MO) const;
-  unsigned getMachineOpValue(const MCInst &MI, unsigned OpIdx) const {
-    return getMachineOpValue(MI, MI.getOperand(OpIdx));
-  }
+  unsigned getMachineOpValue(const MCInst &MI,const MCOperand &MO,
+                                   SmallVectorImpl<MCFixup> &Fixups,
+                                   const MCSubtargetInfo &STI) const;
 
   static unsigned GetMBlazeRegNum(const MCOperand &MO) {
     // FIXME: getMBlazeRegisterNumbering() is sufficient?
@@ -108,7 +109,9 @@ MCCodeEmitter *llvm::createMBlazeMCCodeEmitter(const MCInstrInfo &MCII,
 /// getMachineOpValue - Return binary encoding of operand. If the machine
 /// operand requires relocation, record the relocation and return zero.
 unsigned MBlazeMCCodeEmitter::getMachineOpValue(const MCInst &MI,
-                                             const MCOperand &MO) const {
+                                            const MCOperand &MO,
+                                            SmallVectorImpl<MCFixup> &Fixups,
+                                            const MCSubtargetInfo &STI) const {
   if (MO.isReg())
     return getMBlazeRegisterNumbering(MO.getReg());
   if (MO.isImm())
@@ -210,7 +213,7 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
   }
 
   ++MCNumEmitted;  // Keep track of the # of mi's emitted
-  unsigned Value = getBinaryCodeForInstr(MI);
+  unsigned Value = getBinaryCodeForInstr(MI, Fixups, STI);
   EmitConstant(Value, 4, CurByte, OS);
 }
 
@@ -219,6 +222,6 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
 // does for the AsmWriter.
 #define MBlazeCodeEmitter MBlazeMCCodeEmitter
 #define MachineInstr MCInst
-#include "MBlazeGenCodeEmitter.inc"
+#include "MBlazeGenMCCodeEmitter.inc"
 #undef MBlazeCodeEmitter
 #undef MachineInstr

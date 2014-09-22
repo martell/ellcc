@@ -11,7 +11,7 @@ prefix=`pwd`
 mkdir -p llvm-build$builddir
 
 make DIR=llvm-build$builddir CC="$cc" CXX="$cxx" AR="$ar" RANLIB="$ranlib" \
-     TARGET=$host OS=$os \
+     TARGET=$host OS=$os TUPLE=$tuple \
      bindir=$bindir prefix=$prefix build=$build haslibs=$haslibs \
      llvm.configure || exit 1
 

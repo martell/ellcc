@@ -49,7 +49,7 @@ docs:
 	./share/doc/qemu \
 	libecc/doc
 
--include libecc/mkscripts/targets/$(TARGET)/setup.mk
+#RICH: -include libecc/mkscripts/targets/$(TARGET)/setup.mk
 ifeq ($(filter arm%, $(TARGET)),)
   # Default to all targets.
   TARGETS=
@@ -61,7 +61,7 @@ endif
 ifneq ($(TARGET),$(build))
   HOST=--host=$(TARGET)-$(OS)
   BUILD=--build=$(build)-$(OS)
-  ELLCC_ARG0=-DELLCC_ARG0=\\\"$(Triple.$(TARGET))\\\"
+  ELLCC_ARG0=-DELLCC_ARG0=\\\"$(TUPLE)\\\"
 else
   HOST=
   BUILD=
@@ -70,8 +70,8 @@ endif
 
 ifneq ($(CC),gcc)
   ifeq ($(haslibs),yes)
-    CFLAGS=$(CFLAGS.$(TARGET)) $(ELLCC_ARG0)
-    CXXFLAGS=$(CXXFLAGS.$(TARGET)) $(ELLCC_ARG0)
+    CFLAGS=-target $(TUPLE) $(ELLCC_ARG0)
+    CXXFLAGS=-target $(TUPLE) $(ELLCC_ARG0)
   endif
 endif
 
