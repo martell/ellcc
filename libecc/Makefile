@@ -170,7 +170,7 @@ musl.install:
 	mkdir -p ../include/`../getincarch $*` ; \
 	rm -fr ../include/`../getincarch $*`/bits ; \
 	mv ../include/bits ../include/`../getincarch $*`/bits ; \
-	(cd ../include/`../getincarch $*`; rm -rf machine; ln -sf bits machine) \
+	(cd ../include/`../getincarch $*`; rm -rf machine; ln -sf bits machine) ;\
 	mkdir -p ../lib/$* ; \
 	cp $*/lib/*.a $*/lib/*.o ../lib/$*
 
