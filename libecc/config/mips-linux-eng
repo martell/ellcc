@@ -3,3 +3,10 @@ compiler:
   options:
     - -target mips-ellcc-linux
     - -mcpu=mips32r2
+linker:
+  static_crt1: $R/lib/mips-linux-eng/crt1.o
+  dynamic_crt1: $R/lib/mips-linux-eng/Scrt1.o
+  crtbegin: $R/lib/mips-linux-eng/crtbegin.o
+  crtend: $R/lib/mips-linux-eng/crtend.o
+  library_paths:
+    - -L $R/lib/mips-linux-eng

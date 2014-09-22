@@ -5,3 +5,10 @@ compiler:
     - -march=armv7
     - -mfpu=vfp
     - -mfloat-abi=softfp
+linker:
+  static_crt1: $R/lib/armeb-linux-engeabihf/crt1.o
+  dynamic_crt1: $R/lib/armeb-linux-engeabihf/Scrt1.o
+  crtbegin: $R/lib/armeb-linux-engeabihf/crtbegin.o
+  crtend: $R/lib/armeb-linux-engeabihf/crtend.o
+  library_paths:
+    - -L $R/lib/armeb-linux-engeabihf

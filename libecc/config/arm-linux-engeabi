@@ -4,3 +4,10 @@ compiler:
     - -target arm-ellcc-linux
     - -march=armv7tdtmi
     - -mfloat-abi=softfp
+linker:
+  static_crt1: $R/lib/arm-linux-engeabi/crt1.o
+  dynamic_crt1: $R/lib/arm-linux-engeabi/Scrt1.o
+  crtbegin: $R/lib/arm-linux-engeabi/crtbegin.o
+  crtend: $R/lib/arm-linux-engeabi/crtend.o
+  library_paths:
+    - -L $R/lib/arm-linux-engeabi

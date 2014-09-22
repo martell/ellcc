@@ -2,3 +2,10 @@ based_on: microblaze-ellcc-linux
 compiler:
   options:
     - -target microblaze-ellcc-linux
+linker:
+  static_crt1: $R/lib/microblaze-linux-eng/crt1.o
+  dynamic_crt1: $R/lib/microblaze-linux-eng/Scrt1.o
+  crtbegin: $R/lib/microblaze-linux-eng/crtbegin.o
+  crtend: $R/lib/microblaze-linux-eng/crtend.o
+  library_paths:
+    - -L $R/lib/microblaze-linux-eng

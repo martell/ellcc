@@ -1,0 +1,49 @@
+# Build rules for a library.
+TUPLE = $(shell basename `pwd`)
+LIB = $(patsubst %-build,%,$(shell basename `cd ..; pwd`))
+LIBNAME = lib$(LIB).a
+SRCPATH := ../../src
+VPATH :=
+CC = ../../../bin/ecc
+CXX = ../../../bin/ecc++
+include $(SRCPATH)/$(LIB)/sources.mk
+
+.SUFFIXES: .c .cpp .cxx .S .o
+.c.o:
+	${CC} -target $(TUPLE) -c ${CFLAGS} $<
+.cpp.o:
+	${CXX} -target $(TUPLE) -c ${CXXFLAGS} $<
+.cxx.o:
+	${CXX} -target $(TUPLE) -c ${CXXFLAGS} $<
+.S.o:
+	${CC} -target $(TUPLE) -c ${CFLAGS} $<
+
+
+# Build the library.
+
+BASENAMES := $(basename $(filter %.c %.cxx %.cpp %.S, $(SRCS)))
+OBJS := $(BASENAMES:%=%.o)
+
+CRTBASENAMES := $(basename $(filter %.c, $(CRTSRCS)))
+CRTOBJS := $(CRTBASENAMES:%=%.o)
+
+DEPENDSRCS := $(basename $(filter %.c %.cxx %.cpp %.S, $(SRCS) $(CRTSRCS)))
+DEPENDFILES := $(DEPENDSRCS:%=%.d)
+
+all: $(LIBNAME) $(CRTOBJS)
+
+$(LIBNAME): $(OBJS)
+	$(AR) cr $(LIBNAME) $(OBJS)
+
+install: all
+	mkdir -p $(LIBDIR)
+	cp $(LIBNAME) $(CRTOBJS) $(LIBDIR)
+
+clean:
+	rm -f *.o *.d *.gcda *.gcno
+
+veryclean: clean
+	rm -f $(LIBNAME)
+
+-include $(DEPENDFILES) ""
+

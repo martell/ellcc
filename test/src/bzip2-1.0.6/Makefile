@@ -14,21 +14,24 @@
 
 SHELL=/bin/sh
 
-# FIXED: http://ellcc.org/bugzilla/show_bug.cgi?id=46 Remove ppc64
-all: ecc arm armeb i386 ppc x86_64 \
-     mips mipsel microblaze # ppc64
+# Get all linux configurations.
+ELLCC = ../../..
+LIBECC = $(ELLCC)/libecc
+Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
 
-arm armeb i386 microblaze mips mipsel nios2 ppc ppc64 sparc x86_64:
+all: ecc $(Configs)
+
+$(Configs):
 	$(MAKE) clean
-	$(MAKE) EXT=.$@ TARGET=$@ \
-	        RUN=../../../bin/qemu-$@ bzip2all
+	$(MAKE) EXT=.$@ TARGET="-target $@" \
+	        RUN=../../../bin/qemu-`$(LIBECC)/getarch $@` bzip2all
 
 ecc:
 	$(MAKE) clean
 	$(MAKE) bzip2all
 
 OS=linux
--include ../../../libecc/mkscripts/targets/$(TARGET)/setup.mk
+#RICH: -include ../../../libecc/mkscripts/targets/$(TARGET)/setup.mk
 CC=../../../bin/ecc
 AR=../../../bin/ecc-ar
 RANLIB=../../../bin/ecc-ranlib
@@ -36,7 +39,7 @@ LDFLAGS=
 
 BIGFILES=-D_FILE_OFFSET_BITS=64
 #CFLAGS=-Wall -Winline -O2 $(BIGFILES)
-CFLAGS=$(CFLAGS.$(TARGET)) -Wall -Winline -g $(BIGFILES) -D_XOPEN_SOURCE
+CFLAGS=$(TARGET) -Wall -Winline -g $(BIGFILES) -D_XOPEN_SOURCE
 
 # Where you want it installed when you do 'make install'
 PREFIX=/usr/local
