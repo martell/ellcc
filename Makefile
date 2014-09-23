@@ -49,7 +49,6 @@ docs:
 	./share/doc/qemu \
 	libecc/doc
 
-#RICH: -include libecc/mkscripts/targets/$(TARGET)/setup.mk
 ifeq ($(filter arm%, $(TARGET)),)
   # Default to all targets.
   TARGETS=

@@ -69,8 +69,8 @@ $(Configs)::
 	mkdir -p zlib-build/$*
 	cp -fr src/zlib/* zlib-build/$*
 	cd zlib-build/$* ; \
-	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
-	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+	CC="$(ELLCC)/bin/ecc $(CFLAGS)" \
+	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS)" \
         AR=$(ELLCC)/bin/ecc-ar \
         RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	    ./configure --static --prefix=$(ELLCC)
@@ -95,8 +95,8 @@ $(Configs)::
 	@echo Configuring expat for $* in expat-build/$*
 	mkdir -p expat-build/$*
 	cd expat-build/$* ; \
-	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
-	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+	CC="$(ELLCC)/bin/ecc $(CFLAGS)" \
+	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS)" \
         AR=$(ELLCC)/bin/ecc-ar \
         RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	    ../../src/expat/configure \
@@ -124,8 +124,8 @@ $(Configs)::
 	mkdir -p libedit-build/$*
 	cp -fr src/libedit/* libedit-build/$*
 	cd libedit-build/$* ; \
-	CC="$(ELLCC)/bin/ecc $(CFLAGS.$*)" \
-	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS.$*)" \
+	CC="$(ELLCC)/bin/ecc $(CFLAGS)" \
+	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS)" \
         AR=$(ELLCC)/bin/ecc-ar \
         RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	    ../../src/libedit/configure \

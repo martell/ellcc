@@ -40,8 +40,6 @@ install::
 	  $(MAKE) -C $$dir install-html || exit 1; \
 	done
 
-#RICH: -include $(prefix)/libecc/mkscripts/targets/$(TARGET)/setup.mk
-
 ifneq ($(TARGET),$(build))
   HOST=--host=$(TARGET)-$(OS)
 else
@@ -50,9 +48,12 @@ endif
 
 ifneq ($(CC),gcc)
   ifeq ($(haslibs),yes)
-    CFLAGS=-target $(TUPLE)
-    CXXFLAGS=-target $(TUPLE)
+    override CPP := "$(CC) -target $(TUPLE) -E"
+    override CC := "$(CC) -target $(TUPLE)"
+    override CXX := "$(CXX) -target $(TUPLE)"
   endif
+else
+    override CPP := "$(CC) -E"
 endif
 
 # binutils fails on Mac OS X Mavericks on calls to sbrk() because
@@ -67,7 +68,7 @@ binutils.configure:
     cd binutils ; \
     ../../src/binutils/configure \
         CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
-        CPP="$(CC) -E $(CFLAGS)" \
+        CPP=$(CPP) \
         AR=$(AR) --enable-64-bit-bfd \
         --bindir=$(bindir) $(HOST) --enable-targets=$(targetlist) \
         --program-prefix=ecc- --prefix=$(prefix)/lib --enable-plugins=no \
@@ -78,8 +79,8 @@ gas.configure:
 	mkdir -p binutils/$(target) ; \
 	cd binutils/$(target) ; \
     ../../../src/binutils/gas/configure \
-      CC=$(CC) CFLAGS="$(CFLAGS)" CXX="$cxx" CXXFLAGS="$(CXXFLAGS)" AR=$(AR) \
-      CPP="$(CC) -E $(CFLAGS)" \
+      CC=$(CC) CFLAGS="$(CFLAGS)" CXX="$(CXX)" CXXFLAGS="$(CXXFLAGS)" AR=$(AR) \
+      CPP=$(CCP) \
       --bindir=$(bindir) --target=$(target) --program-prefix=${target}- \
       $(HOST) --prefix=$(prefix)/lib --datadir=$(prefix)/lib/share
 
@@ -89,7 +90,7 @@ gdb.configure:
     cd gdb ; \
     ../../src/gdb/configure \
         CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" \
-        CPP="$(CC) -E $(CFLAGS)" \
+        CPP=$(CPP) \
 	--enable-64-bit-bfd --enable-targets=$(targetlist) \
 	--program-prefix=ecc- --prefix=$(prefix)/lib --bindir=$(bindir) \
 	$(HOST) --datadir=$(prefix)/lib/share --enable-gdbserver=no \

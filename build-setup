@@ -21,8 +21,8 @@ tuple=
 
 if [ $# -ge 1 ] ; then
   # The first argument is the desired cross host tuple.
-  host=`$(prefix)/libecc/getarch $1`
-  arg1=$host
+  host=`$prefix/libecc/getarch $1`
+  arg1=$1
   bindir=$bindir-$1
   hostos=Linux
   tuple=$1
