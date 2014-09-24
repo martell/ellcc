@@ -2,7 +2,8 @@ based_on: arm-ellcc-linux
 compiler:
   options:
     - -target arm-ellcc-linux
-    - -march=armv7tdtmi
+    - -march=armv7a
+    - -mfpu=none
     - -mfloat-abi=softfp
 linker:
   static_crt1: $R/lib/arm-linux-engeabi/crt1.o

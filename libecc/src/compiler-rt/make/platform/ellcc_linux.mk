@@ -57,6 +57,7 @@ FUNCTIONS.arm := $(CommonFunctions) \
 		 aeabi_memmove \
 		 aeabi_memcpy \
 		 aeabi_dcmp \
+		 aeabi_fcmp \
 		 $(THUMB2_FUNCTIONS)
 
 #FUNCTIONS.armeb := $(call set_difference, $(CommonFunctions), clear_cache) \
@@ -71,6 +72,7 @@ FUNCTIONS.armeb := $(CommonFunctions) \
 		 aeabi_memmove \
 		 aeabi_memcpy \
 		 aeabi_dcmp \
+		 aeabi_fcmp \
 		 $(THUMB2_FUNCTIONS)
 
 FUNCTIONS.i386 := $(CommonFunctions) $(ArchFunctions.i386)
