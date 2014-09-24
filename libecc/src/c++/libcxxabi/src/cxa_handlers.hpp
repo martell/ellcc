@@ -13,7 +13,9 @@
 #ifndef _CXA_HANDLERS_H
 #define _CXA_HANDLERS_H
 
+#include <atomic>
 #include <exception>
+#include <new>
 
 namespace std
 {
@@ -28,27 +30,8 @@ __terminate(terminate_handler func) _NOEXCEPT;
 
 }  // std
 
-extern "C"
-{
-
-extern void (*__cxa_terminate_handler)();
-extern void (*__cxa_unexpected_handler)();
-extern void (*__cxa_new_handler)();
-
-/*
-
-    At some point in the future these three symbols will become
-    C++11 atomic variables:
-
-    extern std::atomic<std::terminate_handler>  __cxa_terminate_handler;
-    extern std::atomic<std::unexpected_handler> __cxa_unexpected_handler;
-    extern std::atomic<std::new_handler>        __cxa_new_handler;
-
-    This change will not impact their ABI.  But it will allow for a
-    portable performance optimization.
-
-*/
-
-} // extern "C"
+extern std::atomic<std::terminate_handler>  __cxa_terminate_handler;
+extern std::atomic<std::unexpected_handler> __cxa_unexpected_handler;
+extern std::atomic<std::new_handler>        __cxa_new_handler;
 
 #endif  // _CXA_HANDLERS_H

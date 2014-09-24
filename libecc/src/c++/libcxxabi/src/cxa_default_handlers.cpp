@@ -9,11 +9,13 @@
 // This file implements the default terminate_handler and unexpected_handler.
 //===----------------------------------------------------------------------===//
 
+// RICH: For now.
+#if !defined(__microblaze__)
+
 #include <stdexcept>
 #include <new>
 #include <exception>
 #include "abort_message.h"
-#include "config.h" // For __sync_swap
 #include "cxxabi.h"
 #include "cxa_handlers.hpp"
 #include "cxa_exception.hpp"
@@ -88,12 +90,10 @@ static void default_unexpected_handler()
 //
 // Global variables that hold the pointers to the current handler
 //
-std::terminate_handler  __cxa_terminate_handler = default_terminate_handler;
-std::unexpected_handler __cxa_unexpected_handler = default_unexpected_handler;
-
-// In the future these will become:
-// std::atomic<std::terminate_handler>  __cxa_terminate_handler(default_terminate_handler);
-// std::atomic<std::unexpected_handler> __cxa_unexpected_handler(default_unexpected_handler);
+std::atomic<std::terminate_handler>
+__cxa_terminate_handler(default_terminate_handler);
+std::atomic<std::unexpected_handler>
+__cxa_unexpected_handler(default_unexpected_handler);
 
 namespace std
 {
@@ -101,21 +101,18 @@ namespace std
 unexpected_handler
 set_unexpected(unexpected_handler func) _NOEXCEPT
 {
-	if (func == 0)
-		func = default_unexpected_handler;
-	return __sync_swap(&__cxa_unexpected_handler, func);
-//  Using of C++11 atomics this should be rewritten
-//  return __cxa_unexpected_handler.exchange(func, memory_order_acq_rel);
+  if (func == 0)
+    func = default_unexpected_handler;
+  return __cxa_unexpected_handler.exchange(func, memory_order_acq_rel);
 }
 
 terminate_handler
 set_terminate(terminate_handler func) _NOEXCEPT
 {
-	if (func == 0)
-		func = default_terminate_handler;
-	return __sync_swap(&__cxa_terminate_handler, func);
-//  Using of C++11 atomics this should be rewritten
-//  return __cxa_terminate_handler.exchange(func, memory_order_acq_rel);
+  if (func == 0)
+    func = default_terminate_handler;
+  return __cxa_terminate_handler.exchange(func, memory_order_acq_rel);
 }
 
 }
+#endif // RICH: !defined(__microblaze__)

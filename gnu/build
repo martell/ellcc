@@ -74,9 +74,10 @@ if [ `uname` = "Linux" ] ; then
     ppc-linux-user ppc64-linux-user ppc64abi32-linux-user sparc-linux-user"
 fi
 echo Configuring package qemu for $targets
+# haslibs is no until we can build qemu statically.
 qemu_target_list=`echo $qemu_target_list | sed -e "s/ /,/g"`
 make DIR=src/qemu CC=$cc HCC=$hcc AR=$ar TARGET=$host OS=$os \
-    targetlist=$qemu_target_list haslibs=$haslibs \
+    targetlist=$qemu_target_list haslibs=no \
     bindir=$bindir prefix=$prefix build=$build \
     qemu.configure || exit 1
 

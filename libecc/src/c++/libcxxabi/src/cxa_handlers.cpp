@@ -10,11 +10,14 @@
 //   unexpected_handler, and new_handler.
 //===----------------------------------------------------------------------===//
 
+// RICH: For now.
+#if !defined(__microblaze__)
+
 #include <stdexcept>
 #include <new>
 #include <exception>
 #include "abort_message.h"
-#include "config.h"
+// RICH: #include "config.h"
 #include "cxxabi.h"
 #include "cxa_handlers.hpp"
 #include "cxa_exception.hpp"
@@ -26,10 +29,7 @@ namespace std
 unexpected_handler
 get_unexpected() _NOEXCEPT
 {
-    return __sync_fetch_and_add(&__cxa_unexpected_handler, (unexpected_handler)0);
-//  The above is safe but overkill on x86
-//  Using of C++11 atomics this should be rewritten
-//  return __cxa_unexpected_handler.load(memory_order_acq);
+  return __cxa_unexpected_handler.load(memory_order_acquire);
 }
 
 __attribute__((visibility("hidden"), noreturn))
@@ -51,10 +51,7 @@ unexpected()
 terminate_handler
 get_terminate() _NOEXCEPT
 {
-    return __sync_fetch_and_add(&__cxa_terminate_handler, (terminate_handler)0);
-//  The above is safe but overkill on x86
-//  Using of C++11 atomics this should be rewritten
-//  return __cxa_terminate_handler.load(memory_order_acq);
+  return __cxa_terminate_handler.load(memory_order_acquire);
 }
 
 __attribute__((visibility("hidden"), noreturn))
@@ -102,25 +99,19 @@ terminate() _NOEXCEPT
     __terminate(get_terminate());
 }
 
-extern "C" new_handler __cxa_new_handler = 0;
-// In the future these will become:
-// std::atomic<std::new_handler>  __cxa_new_handler(0);
+std::atomic<std::new_handler>  __cxa_new_handler(0);
 
 new_handler
 set_new_handler(new_handler handler) _NOEXCEPT
 {
-    return __sync_swap(&__cxa_new_handler, handler);
-//  Using of C++11 atomics this should be rewritten
-//  return __cxa_new_handler.exchange(handler, memory_order_acq_rel);
+  return __cxa_new_handler.exchange(handler, memory_order_acq_rel);
 }
 
 new_handler
 get_new_handler() _NOEXCEPT
 {
-    return __sync_fetch_and_add(&__cxa_new_handler, (new_handler)0);
-//  The above is safe but overkill on x86
-//  Using of C++11 atomics this should be rewritten
-//  return __cxa_new_handler.load(memory_order_acq);
+  return __cxa_new_handler.load(memory_order_acquire);
 }
 
 }  // std
+#endif // RICH: !defined(__microblaze__)
