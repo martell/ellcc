@@ -320,31 +320,36 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
     }
   }
 
-  // Check for and process a -target option which specifies a config file.
-  for (SmallVectorImpl<const char *>::iterator it = ArgVector.begin(),
-       ie = ArgVector.end(); it != ie; ++it) {
+  // Check for and process the last -target option which specifies a config
+  // file.
+  SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
+  SmallVectorImpl<const char *>::iterator ie = ArgVector.end();
+  SmallVectorImpl<const char *>::iterator target = ie;
+  for ( ; it != ie; ++it) {
     if (strcmp(*it, "-target") == 0) {
-      SmallVectorImpl<const char *>::iterator ib = it;
-      ++it;
-      if (it == ie) {
-        // No target specified, just ignore it for now.
-        break;
-      }
+      // Remember the last one.
+      target = it;
+    }
+  }
 
-      if (clang::compilationinfo::CompilationInfo::CheckForAndReadInfo(*it,
+  if (target == ie || target + 1 == ie) {
+    // No -target or no argument to -target.
+    return;
+  }
+
+  SmallVectorImpl<const char *>::iterator ib = target;
+  ++target;
+  if (clang::compilationinfo::CompilationInfo::CheckForAndReadInfo(*target,
                                                                  TheDriver)) {
-        // Replace -target and its argument with the contents of the file.
-        ArgVector.erase(ib, ++it);
-        // Process the compiler options immediately.
-        TheDriver.Info->compiler.Expand(TheDriver);
-        for (size_t i = 0; i < TheDriver.Info->compiler.options.size(); ++i) {
-          ArgVector.insert(ib,
-                           GetStableCStr(SavedStrings,
-                                         TheDriver.Info->compiler.options[i]));
-          ++ib;
-        }
-      }
-      break;
+    // Remove the -target and its argument.
+    ArgVector.erase(ib, ++target);
+    // Process the compiler options immediately.
+    TheDriver.Info->compiler.Expand(TheDriver);
+    for (size_t i = 0; i < TheDriver.Info->compiler.options.size(); ++i) {
+      const char *opt = GetStableCStr(SavedStrings,
+                                      TheDriver.Info->compiler.options[i]);
+      ArgVector.insert(ib, GetStableCStr(SavedStrings, opt));
+      ++ib;
     }
   }
 }
