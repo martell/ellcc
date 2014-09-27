@@ -5977,6 +5977,15 @@ Sema::AddMethodCandidate(CXXMethodDecl *Method, DeclAccessPair FoundDecl,
     }
   }
 
+  // (CUDA B.1): Check for invalid calls between targets.
+  if (getLangOpts().CUDA)
+    if (const FunctionDecl *Caller = dyn_cast<FunctionDecl>(CurContext))
+      if (CheckCUDATarget(Caller, Method)) {
+        Candidate.Viable = false;
+        Candidate.FailureKind = ovl_fail_bad_target;
+        return;
+      }
+
   // Determine the implicit conversion sequences for each of the
   // arguments.
   for (unsigned ArgIdx = 0; ArgIdx < Args.size(); ++ArgIdx) {
@@ -11031,10 +11040,13 @@ Sema::CreateOverloadedBinOp(SourceLocation OpLoc,
   // Add operator candidates that are member functions.
   AddMemberOperatorCandidates(Op, OpLoc, Args, CandidateSet);
 
-  // Add candidates from ADL.
-  AddArgumentDependentLookupCandidates(OpName, OpLoc, Args,
-                                       /*ExplicitTemplateArgs*/ nullptr,
-                                       CandidateSet);
+  // Add candidates from ADL. Per [over.match.oper]p2, this lookup is not
+  // performed for an assignment operator (nor for operator[] nor operator->,
+  // which don't get here).
+  if (Opc != BO_Assign)
+    AddArgumentDependentLookupCandidates(OpName, OpLoc, Args,
+                                         /*ExplicitTemplateArgs*/ nullptr,
+                                         CandidateSet);
 
   // Add builtin operator candidates.
   AddBuiltinOperatorCandidates(Op, OpLoc, Args, CandidateSet);
@@ -11594,6 +11606,18 @@ Sema::BuildCallToMemberFunction(Scope *S, Expr *MemExprE,
   CXXMemberCallExpr *TheCall =
     new (Context) CXXMemberCallExpr(Context, MemExprE, Args,
                                     ResultType, VK, RParenLoc);
+
+  // (CUDA B.1): Check for invalid calls between targets.
+  if (getLangOpts().CUDA) {
+    if (const FunctionDecl *Caller = dyn_cast<FunctionDecl>(CurContext)) {
+      if (CheckCUDATarget(Caller, Method)) {
+        Diag(MemExpr->getMemberLoc(), diag::err_ref_bad_target)
+            << IdentifyCUDATarget(Method) << Method->getIdentifier()
+            << IdentifyCUDATarget(Caller);
+        return ExprError();
+      }
+    }
+  }
 
   // Check for a valid return type.
   if (CheckCallReturnType(Method->getReturnType(), MemExpr->getMemberLoc(),

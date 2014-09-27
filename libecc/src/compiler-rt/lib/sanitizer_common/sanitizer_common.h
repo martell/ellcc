@@ -162,6 +162,8 @@ uptr ReadFileToBuffer(const char *file_name, char **buff,
 // in '*buff_size'.
 void *MapFileToMemory(const char *file_name, uptr *buff_size);
 
+bool IsAccessibleMemoryRange(uptr beg, uptr size);
+
 // Error report formatting.
 const char *StripPathPrefix(const char *filepath,
                             const char *strip_file_prefix);
@@ -243,7 +245,7 @@ const int kMaxSummaryLength = 1024;
 // and pass it to __sanitizer_report_error_summary.
 void ReportErrorSummary(const char *error_message);
 // Same as above, but construct error_message as:
-//   error_type: file:line function
+//   error_type file:line function
 void ReportErrorSummary(const char *error_type, const char *file,
                         int line, const char *function);
 void ReportErrorSummary(const char *error_type, StackTrace *trace);
