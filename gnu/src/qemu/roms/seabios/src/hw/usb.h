@@ -22,6 +22,7 @@ struct usb_pipe {
 struct usbdevice_s {
     struct usbhub_s *hub;
     struct usb_pipe *defpipe;
+    u32 slotid;
     u32 port;
     struct usb_config_descriptor *config;
     struct usb_interface_descriptor *iface;
@@ -35,7 +36,6 @@ struct usb_s {
     struct usb_pipe *freelist;
     struct mutex_s resetlock;
     struct pci_device *pci;
-    int busid;
     u8 type;
     u8 maxaddr;
 };
@@ -228,6 +228,7 @@ struct usb_pipe *usb_alloc_pipe(struct usbdevice_s *usbdev
                                 , struct usb_endpoint_descriptor *epdesc);
 int usb_send_bulk(struct usb_pipe *pipe, int dir, void *data, int datasize);
 int usb_poll_intr(struct usb_pipe *pipe, void *data);
+int usb_32bit_pipe(struct usb_pipe *pipe_fl);
 int send_default_control(struct usb_pipe *pipe, const struct usb_ctrlrequest *req
                          , void *data);
 void free_pipe(struct usb_pipe *pipe);

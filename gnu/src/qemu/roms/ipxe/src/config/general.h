@@ -28,11 +28,22 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define PRODUCT_SHORT_NAME "iPXE"
 
 /*
- * Timer configuration
+ * Banner timeout configuration
  *
+ * This controls the timeout for the "Press Ctrl-B for the iPXE
+ * command line" banner displayed when iPXE starts up.  The value is
+ * specified in tenths of a second for which the banner should appear.
+ * A value of 0 disables the banner.
+ *
+ * ROM_BANNER_TIMEOUT controls the "Press Ctrl-B to configure iPXE"
+ * banner displayed only by ROM builds of iPXE during POST.  This
+ * defaults to being twice the length of BANNER_TIMEOUT, to allow for
+ * BIOSes that switch video modes immediately before calling the
+ * initialisation vector, thus rendering the banner almost invisible
+ * to the user.
  */
-#define BANNER_TIMEOUT	20	/* Tenths of a second for which the shell
-				   banner should appear */
+#define BANNER_TIMEOUT		20
+#define ROM_BANNER_TIMEOUT	( 2 * BANNER_TIMEOUT )
 
 /*
  * Network protocols
@@ -40,6 +51,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
  */
 
 #define	NET_PROTO_IPV4		/* IPv4 protocol */
+#undef	NET_PROTO_IPV6		/* IPv6 protocol */
 #undef	NET_PROTO_FCOE		/* Fibre Channel over Ethernet protocol */
 
 /*
@@ -59,6 +71,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #undef	DOWNLOAD_PROTO_HTTPS	/* Secure Hypertext Transfer Protocol */
 #undef	DOWNLOAD_PROTO_FTP	/* File Transfer Protocol */
 #undef	DOWNLOAD_PROTO_SLAM	/* Scalable Local Area Multicast */
+#undef	DOWNLOAD_PROTO_NFS	/* Network File System Protocol */
 
 /*
  * SAN boot protocols
@@ -101,6 +114,8 @@ FILE_LICENCE ( GPL2_OR_LATER );
 //#define	IMAGE_COMBOOT		/* SYSLINUX COMBOOT image support */
 //#define	IMAGE_EFI		/* EFI image support */
 //#define	IMAGE_SDI		/* SDI image support */
+//#define	IMAGE_PNM		/* PNM image support */
+//#define	IMAGE_PNG		/* PNG image support */
 
 /*
  * Command-line commands to include
@@ -126,7 +141,15 @@ FILE_LICENCE ( GPL2_OR_LATER );
 //#define VLAN_CMD		/* VLAN commands */
 //#define PXE_CMD		/* PXE commands */
 //#define REBOOT_CMD		/* Reboot command */
+//#define POWEROFF_CMD		/* Power off command */
 //#define IMAGE_TRUST_CMD	/* Image trust management commands */
+//#define PCI_CMD		/* PCI commands */
+//#define PARAM_CMD		/* Form parameter commands */
+//#define NEIGHBOUR_CMD		/* Neighbour management commands */
+//#define PING_CMD		/* Ping command */
+//#define CONSOLE_CMD		/* Console command */
+//#define IPSTAT_CMD		/* IP statistics commands */
+//#define PROFSTAT_CMD		/* Profiling commands */
 
 /*
  * ROM-specific options

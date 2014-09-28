@@ -34,6 +34,7 @@
 
 #define PCI_DEVICE_ID_VMWARE_VMXNET3_REVISION 0x1
 #define VMXNET3_MSIX_BAR_SIZE 0x2000
+#define MIN_BUF_SIZE 60
 
 #define VMXNET3_BAR0_IDX      (0)
 #define VMXNET3_BAR1_IDX      (1)
@@ -1871,10 +1872,19 @@ vmxnet3_receive(NetClientState *nc, const uint8_t *buf, size_t size)
 {
     VMXNET3State *s = qemu_get_nic_opaque(nc);
     size_t bytes_indicated;
+    uint8_t min_buf[MIN_BUF_SIZE];
 
     if (!vmxnet3_can_receive(nc)) {
         VMW_PKPRN("Cannot receive now");
         return -1;
+    }
+
+    /* Pad to minimum Ethernet frame length */
+    if (size < sizeof(min_buf)) {
+        memcpy(min_buf, buf, size);
+        memset(&min_buf[size], 0, sizeof(min_buf) - size);
+        buf = min_buf;
+        size = sizeof(min_buf);
     }
 
     if (s->peer_has_vhdr) {
@@ -2050,7 +2060,7 @@ vmxnet3_cleanup_msix(VMXNET3State *s)
     PCIDevice *d = PCI_DEVICE(s);
 
     if (s->msix_used) {
-        msix_vector_unuse(d, VMXNET3_MAX_INTRS);
+        vmxnet3_unuse_msix_vectors(s, VMXNET3_MAX_INTRS);
         msix_uninit(d, &s->msix_bar, &s->msix_bar);
     }
 }
@@ -2223,7 +2233,6 @@ static const VMStateDescription vmxstate_vmxnet3_mcast_list = {
     .name = "vmxnet3/mcast_list",
     .version_id = 1,
     .minimum_version_id = 1,
-    .minimum_version_id_old = 1,
     .pre_load = vmxnet3_mcast_list_pre_load,
     .fields = (VMStateField[]) {
         VMSTATE_VBUFFER_UINT32(mcast_list, VMXNET3State, 0, NULL, 0,
@@ -2305,7 +2314,7 @@ static void vmxnet3_put_txq_descr(QEMUFile *f, void *pv, size_t size)
     vmxnet3_put_tx_stats_to_file(f, &r->txq_stats);
 }
 
-const VMStateInfo txq_descr_info = {
+static const VMStateInfo txq_descr_info = {
     .name = "txq_descr",
     .get = vmxnet3_get_txq_descr,
     .put = vmxnet3_put_txq_descr
@@ -2397,7 +2406,7 @@ static int vmxnet3_post_load(void *opaque, int version_id)
     return 0;
 }
 
-const VMStateInfo rxq_descr_info = {
+static const VMStateInfo rxq_descr_info = {
     .name = "rxq_descr",
     .get = vmxnet3_get_rxq_descr,
     .put = vmxnet3_put_rxq_descr
@@ -2423,7 +2432,7 @@ static void vmxnet3_put_int_state(QEMUFile *f, void *pv, size_t size)
     qemu_put_byte(f, r->is_asserted);
 }
 
-const VMStateInfo int_state_info = {
+static const VMStateInfo int_state_info = {
     .name = "int_state",
     .get = vmxnet3_get_int_state,
     .put = vmxnet3_put_int_state
@@ -2433,10 +2442,9 @@ static const VMStateDescription vmstate_vmxnet3 = {
     .name = "vmxnet3",
     .version_id = 1,
     .minimum_version_id = 1,
-    .minimum_version_id_old = 1,
     .pre_save = vmxnet3_pre_save,
     .post_load = vmxnet3_post_load,
-    .fields      = (VMStateField[]) {
+    .fields = (VMStateField[]) {
             VMSTATE_PCI_DEVICE(parent_obj, VMXNET3State),
             VMSTATE_BOOL(rx_packets_compound, VMXNET3State),
             VMSTATE_BOOL(rx_vlan_stripping, VMXNET3State),

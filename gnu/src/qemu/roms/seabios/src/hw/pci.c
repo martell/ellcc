@@ -5,18 +5,14 @@
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
-#include "config.h" // CONFIG_*
-#include "farptr.h" // MAKE_FLATPTR
 #include "malloc.h" // malloc_tmp
 #include "output.h" // dprintf
 #include "pci.h" // pci_config_writel
-#include "pci_ids.h" // PCI_CLASS_DISPLAY_VGA
 #include "pci_regs.h" // PCI_VENDOR_ID
 #include "romfile.h" // romfile_loadint
-#include "stacks.h" // call32
 #include "string.h" // memset
 #include "util.h" // udelay
-#include "x86.h" // readl
+#include "x86.h" // outl
 
 void pci_config_writel(u16 bdf, u32 addr, u32 val)
 {
@@ -225,6 +221,51 @@ pci_find_init_device(const struct pci_device_id *ids, void *arg)
     return NULL;
 }
 
+u8 pci_find_capability(struct pci_device *pci, u8 cap_id)
+{
+    int i;
+    u8 cap;
+    u16 status = pci_config_readw(pci->bdf, PCI_STATUS);
+
+    if (!(status & PCI_STATUS_CAP_LIST))
+        return 0;
+
+    cap = pci_config_readb(pci->bdf, PCI_CAPABILITY_LIST);
+    for (i = 0; cap && i <= 0xff; i++) {
+        if (pci_config_readb(pci->bdf, cap + PCI_CAP_LIST_ID) == cap_id)
+            return cap;
+        cap = pci_config_readb(pci->bdf, cap + PCI_CAP_LIST_NEXT);
+    }
+
+    return 0;
+}
+
+/* Test whether bridge support forwarding of transactions
+ * of a specific type.
+ * Note: disables bridge's window registers as a side effect.
+ */
+int pci_bridge_has_region(struct pci_device *pci,
+        enum pci_region_type region_type)
+{
+    u8 base;
+
+    switch (region_type) {
+        case PCI_REGION_TYPE_IO:
+            base = PCI_IO_BASE;
+            break;
+        case PCI_REGION_TYPE_PREFMEM:
+            base = PCI_PREF_MEMORY_BASE;
+            break;
+        default:
+            /* Regular memory support is mandatory */
+            return 1;
+    }
+
+    pci_config_writeb(pci->bdf, base, 0xFF);
+
+    return pci_config_readb(pci->bdf, base) != 0;
+}
+
 void
 pci_reboot(void)
 {
@@ -233,50 +274,4 @@ pci_reboot(void)
     udelay(50);
     outb(v|6, PORT_PCI_REBOOT); /* Actually do the reset */
     udelay(50);
-}
-
-// helper functions to access pci mmio bars from real mode
-
-u32 VISIBLE32FLAT
-pci_readl_32(u32 addr)
-{
-    dprintf(9, "32: pci read : %x\n", addr);
-    return readl((void*)addr);
-}
-
-u32 pci_readl(u32 addr)
-{
-    if (MODESEGMENT) {
-        dprintf(9, "16: pci read : %x\n", addr);
-        extern void _cfunc32flat_pci_readl_32(u32 addr);
-        return call32(_cfunc32flat_pci_readl_32, addr, -1);
-    } else {
-        return pci_readl_32(addr);
-    }
-}
-
-struct reg32 {
-    u32 addr;
-    u32 data;
-};
-
-void VISIBLE32FLAT
-pci_writel_32(struct reg32 *reg32)
-{
-    dprintf(9, "32: pci write: %x, %x (%p)\n", reg32->addr, reg32->data, reg32);
-    writel((void*)(reg32->addr), reg32->data);
-}
-
-void pci_writel(u32 addr, u32 val)
-{
-    struct reg32 reg32 = { .addr = addr, .data = val };
-    if (MODESEGMENT) {
-        dprintf(9, "16: pci write: %x, %x (%x:%p)\n",
-                reg32.addr, reg32.data, GET_SEG(SS), &reg32);
-        void *flatptr = MAKE_FLATPTR(GET_SEG(SS), &reg32);
-        extern void _cfunc32flat_pci_writel_32(struct reg32 *reg32);
-        call32(_cfunc32flat_pci_writel_32, (u32)flatptr, -1);
-    } else {
-        pci_writel_32(&reg32);
-    }
 }

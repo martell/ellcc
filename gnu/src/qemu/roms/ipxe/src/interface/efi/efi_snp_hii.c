@@ -126,6 +126,7 @@ static void efi_snp_hii_questions ( struct efi_snp_device *snpdev,
 				    struct efi_ifr_builder *ifr,
 				    unsigned int varstore_id ) {
 	struct setting *setting;
+	struct setting *previous = NULL;
 	unsigned int name_id;
 	unsigned int prompt_id;
 	unsigned int help_id;
@@ -135,6 +136,9 @@ static void efi_snp_hii_questions ( struct efi_snp_device *snpdev,
 	for_each_table_entry ( setting, SETTINGS ) {
 		if ( ! efi_snp_hii_setting_applies ( snpdev, setting ) )
 			continue;
+		if ( previous && ( setting_cmp ( setting, previous ) == 0 ) )
+			continue;
+		previous = setting;
 		name_id = efi_ifr_string ( ifr, "%s", setting->name );
 		prompt_id = efi_ifr_string ( ifr, "%s", setting->description );
 		help_id = efi_ifr_string ( ifr, "http://ipxe.org/cfg/%s",
@@ -276,7 +280,9 @@ static int efi_snp_hii_fetch ( struct efi_snp_device *snpdev,
 			       const char *key, const char *value,
 			       wchar_t **results, int *have_setting ) {
 	struct settings *settings = efi_snp_hii_settings ( snpdev );
+	struct settings *origin;
 	struct setting *setting;
+	struct setting fetched;
 	int len;
 	char *buf;
 	char *encoded;
@@ -311,7 +317,8 @@ static int efi_snp_hii_fetch ( struct efi_snp_device *snpdev,
 	if ( setting_exists ( settings, setting ) ) {
 
 		/* Calculate formatted length */
-		len = fetchf_setting ( settings, setting, NULL, 0 );
+		len = fetchf_setting ( settings, setting, &origin, &fetched,
+				       NULL, 0 );
 		if ( len < 0 ) {
 			rc = len;
 			DBGC ( snpdev, "SNPDEV %p could not fetch %s: %s\n",
@@ -328,7 +335,8 @@ static int efi_snp_hii_fetch ( struct efi_snp_device *snpdev,
 		encoded = ( buf + len + 1 /* NUL */ );
 
 		/* Format value */
-		fetchf_setting ( settings, setting, buf, ( len + 1 /* NUL */ ));
+		fetchf_setting ( origin, &fetched, NULL, NULL, buf,
+				 ( len + 1 /* NUL */ ) );
 		for ( i = 0 ; i < len ; i++ ) {
 			sprintf ( ( encoded + ( 4 * i ) ), "%04x",
 				  *( ( uint8_t * ) buf + i ) );
@@ -544,7 +552,7 @@ efi_snp_hii_extract_config ( const EFI_HII_CONFIG_ACCESS_PROTOCOL *hii,
 		if ( ( rc = efi_snp_hii_process ( snpdev, pos, progress,
 						  results, &have_setting,
 						  efi_snp_hii_fetch ) ) != 0 ) {
-			return RC_TO_EFIRC ( rc );
+			return EFIRC ( rc );
 		}
 	}
 
@@ -558,7 +566,7 @@ efi_snp_hii_extract_config ( const EFI_HII_CONFIG_ACCESS_PROTOCOL *hii,
 			if ( ( rc = efi_snp_hii_fetch ( snpdev, setting->name,
 							NULL, results,
 							NULL ) ) != 0 ) {
-				return RC_TO_EFIRC ( rc );
+				return EFIRC ( rc );
 			}
 		}
 	}
@@ -592,7 +600,7 @@ efi_snp_hii_route_config ( const EFI_HII_CONFIG_ACCESS_PROTOCOL *hii,
 		if ( ( rc = efi_snp_hii_process ( snpdev, pos, progress,
 						  NULL, NULL,
 						  efi_snp_hii_store ) ) != 0 ) {
-			return RC_TO_EFIRC ( rc );
+			return EFIRC ( rc );
 		}
 	}
 
@@ -657,9 +665,9 @@ int efi_snp_hii_install ( struct efi_snp_device *snpdev ) {
 	if ( ( efirc = efihii->NewPackageList ( efihii, snpdev->package_list,
 						snpdev->handle,
 						&snpdev->hii_handle ) ) != 0 ) {
+		rc = -EEFI ( efirc );
 		DBGC ( snpdev, "SNPDEV %p could not add HII packages: %s\n",
-		       snpdev, efi_strerror ( efirc ) );
-		rc = EFIRC_TO_RC ( efirc );
+		       snpdev, strerror ( rc ) );
 		goto err_new_package_list;
 	}
 
@@ -668,9 +676,9 @@ int efi_snp_hii_install ( struct efi_snp_device *snpdev ) {
 			 &snpdev->handle,
 			 &efi_hii_config_access_protocol_guid, &snpdev->hii,
 			 NULL ) ) != 0 ) {
+		rc = -EEFI ( efirc );
 		DBGC ( snpdev, "SNPDEV %p could not install HII protocol: %s\n",
-		       snpdev, efi_strerror ( efirc ) );
-		rc = EFIRC_TO_RC ( efirc );
+		       snpdev, strerror ( rc ) );
 		goto err_install_protocol;
 	}
 

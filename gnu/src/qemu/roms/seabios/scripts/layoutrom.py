@@ -5,6 +5,7 @@
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
+import operator
 import sys
 
 # LD script headers/trailers
@@ -46,7 +47,7 @@ def setSectionsStart(sections, endaddr, minalign=1, segoffset=0):
         if section.align > minalign:
             minalign = section.align
         totspace = alignpos(totspace, section.align) + section.size
-    startaddr = (endaddr - totspace) / minalign * minalign
+    startaddr = int((endaddr - totspace) / minalign) * minalign
     curaddr = startaddr
     for section in sections:
         curaddr = alignpos(curaddr, section.align)
@@ -76,10 +77,10 @@ def fitSections(sections, fillsections):
             section.finalsegloc = addr
             fixedsections.append((addr, section))
             if section.align != 1:
-                print "Error: Fixed section %s has non-zero alignment (%d)" % (
-                    section.name, section.align)
+                print("Error: Fixed section %s has non-zero alignment (%d)" % (
+                    section.name, section.align))
                 sys.exit(1)
-    fixedsections.sort()
+    fixedsections.sort(key=operator.itemgetter(0))
     firstfixed = fixedsections[0][0]
 
     # Find freespace in fixed address area
@@ -94,7 +95,7 @@ def fitSections(sections, fillsections):
             nextaddr = fixedsections[i+1][0]
         avail = nextaddr - addr - section.size
         fixedAddr.append((avail, section))
-    fixedAddr.sort()
+    fixedAddr.sort(key=operator.itemgetter(0))
 
     # Attempt to fit other sections into fixed area
     canrelocate = [(section.size, section.align, section.name, section)
@@ -106,8 +107,8 @@ def fitSections(sections, fillsections):
         addpos = fixedsection.finalsegloc + fixedsection.size
         totalused += fixedsection.size
         nextfixedaddr = addpos + freespace
-#        print "Filling section %x uses %d, next=%x, available=%d" % (
-#            fixedsection.finalloc, fixedsection.size, nextfixedaddr, freespace)
+#        print("Filling section %x uses %d, next=%x, available=%d" % (
+#            fixedsection.finalloc, fixedsection.size, nextfixedaddr, freespace))
         while 1:
             canfit = None
             for fitsection in canrelocate:
@@ -115,8 +116,8 @@ def fitSections(sections, fillsections):
                     # Can't fit and nothing else will fit.
                     break
                 fitnextaddr = alignpos(addpos, fitsection.align) + fitsection.size
-#                print "Test %s - %x vs %x" % (
-#                    fitsection.name, fitnextaddr, nextfixedaddr)
+#                print("Test %s - %x vs %x" % (
+#                    fitsection.name, fitnextaddr, nextfixedaddr))
                 if fitnextaddr > nextfixedaddr:
                     # This item can't fit.
                     continue
@@ -130,9 +131,9 @@ def fitSections(sections, fillsections):
             fitsection.finalsegloc = addpos
             addpos = fitnextaddr
             totalused += fitsection.size
-#            print "    Adding %s (size %d align %d) pos=%x avail=%d" % (
+#            print("    Adding %s (size %d align %d) pos=%x avail=%d" % (
 #                fitsection[2], fitsection[0], fitsection[1]
-#                , fitnextaddr, nextfixedaddr - fitnextaddr)
+#                , fitnextaddr, nextfixedaddr - fitnextaddr))
 
     # Report stats
     total = BUILD_BIOS_SIZE-firstfixed
@@ -273,12 +274,12 @@ def doLayout(sections, config, genreloc):
     size32flat = li.sec32fseg_start - li.sec32flat_start
     size32init = li.sec32flat_start - li.sec32init_start
     sizelow = sec32low_end - li.sec32low_start
-    print "16bit size:           %d" % size16
-    print "32bit segmented size: %d" % size32seg
-    print "32bit flat size:      %d" % size32flat
-    print "32bit flat init size: %d" % size32init
-    print "Lowmem size:          %d" % sizelow
-    print "f-segment var size:   %d" % size32fseg
+    print("16bit size:           %d" % size16)
+    print("32bit segmented size: %d" % size32seg)
+    print("32bit flat size:      %d" % size32flat)
+    print("32bit flat init size: %d" % size32init)
+    print("Lowmem size:          %d" % sizelow)
+    print("f-segment var size:   %d" % size32fseg)
     return li
 
 
@@ -308,7 +309,7 @@ def outXRefs(sections, useseg=0, exportsyms=[], forcedelta=0):
 def outRelSections(sections, startsym, useseg=0):
     sections = [(section.finalloc, section) for section in sections
                 if section.finalloc is not None]
-    sections.sort()
+    sections.sort(key=operator.itemgetter(0))
     out = ""
     for addr, section in sections:
         loc = section.finalloc
@@ -359,10 +360,10 @@ def writeLinkerScripts(li, out16, out32seg, out32flat):
 %s
     }
 """ % (li.zonelow_base,
-       li.zonelow_base / 16,
+       int(li.zonelow_base / 16),
        li.sec16_start - BUILD_BIOS_ADDR,
        outRelSections(li.sections16, 'code16_start', useseg=1))
-    outfile = open(out16, 'wb')
+    outfile = open(out16, 'w')
     outfile.write(COMMONHEADER + out + COMMONTRAILER)
     outfile.close()
 
@@ -374,7 +375,7 @@ def writeLinkerScripts(li, out16, out32seg, out32flat):
     }
 """ % (li.sec32seg_start - BUILD_BIOS_ADDR,
        outRelSections(li.sections32seg, 'code32seg_start', useseg=1))
-    outfile = open(out32seg, 'wb')
+    outfile = open(out32seg, 'w')
     outfile.write(COMMONHEADER + out + COMMONTRAILER)
     outfile.close()
 
@@ -444,7 +445,7 @@ PHDRS
         text PT_LOAD AT ( code32flat_start ) ;
 }
 """
-    outfile = open(out32flat, 'wb')
+    outfile = open(out32flat, 'w')
     outfile.write(out)
     outfile.close()
 
@@ -458,8 +459,8 @@ def markRuntime(section, sections, chain=[]):
         or '.init.' in section.name or section.fileid != '32flat'):
         return
     if '.data.varinit.' in section.name:
-        print "ERROR: %s is VARVERIFY32INIT but used from %s" % (
-            section.name, chain)
+        print("ERROR: %s is VARVERIFY32INIT but used from %s" % (
+            section.name, chain))
         sys.exit(1)
     section.category = '32flat'
     # Recursively mark all sections this section points to
@@ -643,7 +644,7 @@ def parseObjDump(file, fileid):
 
 # Parser for constants in simple C header files.
 def scanconfig(file):
-    f = open(file, 'rb')
+    f = open(file, 'r')
     opts = {}
     for l in f.readlines():
         parts = l.split()
@@ -662,9 +663,9 @@ def main():
     in16, in32seg, in32flat, cfgfile, out16, out32seg, out32flat = sys.argv[1:]
 
     # Read in the objdump information
-    infile16 = open(in16, 'rb')
-    infile32seg = open(in32seg, 'rb')
-    infile32flat = open(in32flat, 'rb')
+    infile16 = open(in16, 'r')
+    infile32seg = open(in32seg, 'r')
+    infile32flat = open(in32flat, 'r')
 
     # infoX = (sections, symbols)
     info16 = parseObjDump(infile16, '16')

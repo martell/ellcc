@@ -442,15 +442,11 @@ static ucell find_area( ucell align, ucell size, range_t *r,
 	if( (align & (align-1)) ) {
 	
 		/* As per IEEE1275 specification, round up to the nearest power of 2 */
-		if (old_align <= PAGE_SIZE) {
-			align = PAGE_SIZE;
-		} else {
-			align--;
-			for (i = 1; i < sizeof(ucell) * 8; i<<=1) {
-				align |= align >> i;
-			}
-			align++;
+		align--;
+		for (i = 1; i < sizeof(ucell) * 8; i<<=1) {
+			align |= align >> i;
 		}
+		align++;
 		
 		OFMEM_TRACE("warning: bad alignment " FMT_ucellx " rounded up to " FMT_ucellx "\n", old_align, align);
 	}
@@ -521,7 +517,7 @@ static phys_addr_t ofmem_claim_phys_( phys_addr_t phys, ucell size, ucell align,
 /* if align != 0, phys is ignored. Returns -1 on error */
 phys_addr_t ofmem_claim_phys( phys_addr_t phys, ucell size, ucell align )
 {
-    OFMEM_TRACE("ofmem_claim phys=" FMT_plx " size=" FMT_ucellx
+    OFMEM_TRACE("ofmem_claim_phys phys=" FMT_plx " size=" FMT_ucellx
                 " align=" FMT_ucellx "\n",
                 phys, size, align);
 
@@ -791,7 +787,7 @@ int ofmem_map( phys_addr_t phys, ucell virt, ucell size, ucell mode )
 	if( (phys & (PAGE_SIZE - 1)) || (virt & (PAGE_SIZE - 1)) || (size & (PAGE_SIZE - 1)) ) {
 
 		OFMEM_TRACE("ofmem_map: Bad parameters ("
-				FMT_plx " " FMT_ucellX " " FMT_ucellX ")\n",
+				FMT_plx " " FMT_ucellx " " FMT_ucellx ")\n",
 				phys, virt, size );
 
 		phys &= PAGE_MASK;
@@ -885,23 +881,37 @@ phys_addr_t ofmem_translate( ucell virt, ucell *mode )
 
 static void remove_range_( phys_addr_t ea, ucell size, range_t **r )
 {
-	range_t *cr;
+	range_t **t, *u;
 
-	/* Handle special case if we're removing the first entry */
-	if ((**r).start >= ea) {
-		cr = *r;
-		*r = (**r).next;
-		free(cr);
+	/* If not an exact match then split the range */
+	for (t = r; *t; t = &(**t).next) {
+		if (ea > (**t).start && ea < (**t).start + (**t).size - 1) {
+			u = (range_t*)malloc(sizeof(range_t));
+			u->start = ea;
+			u->size = size;
+			u->next = (**t).next;
 
-		return;
+			OFMEM_TRACE("remove_range_ splitting range with addr=" FMT_plx
+					" size=" FMT_ucellx " -> addr=" FMT_plx " size=" FMT_ucellx ", "
+					"addr=" FMT_plx " size=" FMT_ucellx "\n",
+					(**t).start, (**t).size, (**t).start, (**t).size - size,
+					u->start, u->size);
+
+			(**t).size = (**t).size - size;
+			(**t).next = u;
+		}
 	}
 
-	for( ; *r && ((**r).next)->start < ea; r=&(**r).next ) {
+	for (t = r; *t; t = &(**t).next) {
+		if (ea >= (**t).start && ea + size <= (**t).start + (**t).size) {
+			OFMEM_TRACE("remove_range_ freeing range with addr=" FMT_plx
+					" size=" FMT_ucellx "\n", (**t).start, (**t).size);
+			u = *t;
+			*t = (**t).next;
+			free(u);
+			break;
+		}
 	}
-
-	cr = (**r).next;
-	(**r).next = cr->next;
-	free(cr);
 }
 
 static int remove_range( phys_addr_t ea, ucell size, range_t **r )

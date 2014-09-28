@@ -94,7 +94,6 @@ process_virtio_blk_op(struct disk_op_s *op)
     case CMD_SEEK:
         return DISK_RET_SUCCESS;
     default:
-        op->count = 0;
         return DISK_RET_EPARAM;
     }
 }
@@ -154,6 +153,7 @@ init_virtio_blk(struct pci_device *pci)
     return;
 
 fail:
+    vp_reset(ioaddr);
     free(vdrive->vq);
     free(vdrive);
 }

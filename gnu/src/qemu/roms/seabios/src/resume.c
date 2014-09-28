@@ -17,15 +17,11 @@
 #include "string.h" // memset
 #include "util.h" // dma_setup
 
-// Indicator if POST phase has been run.
-int HaveRunPost VARFSEG;
-
 // Handler for post calls that look like a resume.
 void VISIBLE16
 handle_resume(void)
 {
     ASSERT16();
-    debug_preinit();
     int status = rtc_read(CMOS_RESET_CODE);
     rtc_write(CMOS_RESET_CODE, 0);
     dprintf(1, "In resume (status=%d)\n", status);
@@ -100,6 +96,8 @@ s3_resume(void)
 
     pic_setup();
     smm_setup();
+
+    pci_resume();
 
     s3_resume_vga();
 

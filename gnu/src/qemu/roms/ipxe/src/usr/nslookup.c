@@ -46,7 +46,7 @@ struct nslookup {
 	struct interface resolver;
 
 	/** Setting name */
-	const char *setting_name;
+	char *setting_name;
 };
 
 /**
@@ -71,7 +71,10 @@ static void nslookup_close ( struct nslookup *nslookup, int rc ) {
 static void nslookup_resolv_done ( struct nslookup *nslookup,
 				   struct sockaddr *sa ) {
 	struct sockaddr_in *sin;
-	struct setting_type *type;
+	struct sockaddr_in6 *sin6;
+	const struct setting_type *default_type;
+	struct settings *settings;
+	struct setting setting;
 	void *data;
 	size_t len;
 	int rc;
@@ -82,16 +85,31 @@ static void nslookup_resolv_done ( struct nslookup *nslookup,
 		sin = ( ( struct sockaddr_in * ) sa );
 		data = &sin->sin_addr;
 		len = sizeof ( sin->sin_addr );
-		type = &setting_type_ipv4;
+		default_type = &setting_type_ipv4;
+		break;
+	case AF_INET6:
+		sin6 = ( ( struct sockaddr_in6 * ) sa );
+		data = &sin6->sin6_addr;
+		len = sizeof ( sin6->sin6_addr );
+		default_type = &setting_type_ipv6;
 		break;
 	default:
 		rc = -ENOTSUP;
 		goto err;
 	}
 
-	/* Save in specified setting */
-	if ( ( rc = store_named_setting ( nslookup->setting_name, type,
-					  data, len ) ) != 0 )
+	/* Parse specified setting name */
+	if ( ( rc = parse_setting_name ( nslookup->setting_name,
+					 autovivify_child_settings, &settings,
+					 &setting ) ) != 0 )
+		goto err;
+
+	/* Apply default type if necessary */
+	if ( ! setting.type )
+		setting.type = default_type;
+
+	/* Store in specified setting */
+	if ( ( rc = store_setting ( settings, &setting, data, len ) ) != 0 )
 		goto err;
 
  err:
@@ -175,7 +193,7 @@ int nslookup ( const char *name, const char *setting_name ) {
 
 	/* Perform name resolution */
 	if ( ( rc = resolv_setting ( &monojob, name, setting_name ) ) == 0 )
-		rc = monojob_wait ( NULL );
+		rc = monojob_wait ( NULL, 0 );
 	if ( rc != 0 ) {
 		printf ( "Could not resolve %s: %s\n", name, strerror ( rc ) );
 		return rc;

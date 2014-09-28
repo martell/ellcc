@@ -347,12 +347,23 @@ static void bzimage_parse_cpio_cmdline ( struct image *image,
 }
 
 /**
+ * Align initrd length
+ *
+ * @v len		Length
+ * @ret len		Length rounded up to INITRD_ALIGN
+ */
+static inline size_t bzimage_align ( size_t len ) {
+
+	return ( ( len + INITRD_ALIGN - 1 ) & ~( INITRD_ALIGN - 1 ) );
+}
+
+/**
  * Load initrd
  *
  * @v image		bzImage image
  * @v initrd		initrd image
  * @v address		Address at which to load, or UNULL
- * @ret len		Length of loaded image, rounded up to INITRD_ALIGN
+ * @ret len		Length of loaded image, excluding zero-padding
  */
 static size_t bzimage_load_initrd ( struct image *image,
 				    struct image *initrd,
@@ -360,7 +371,7 @@ static size_t bzimage_load_initrd ( struct image *image,
 	char *filename = initrd->cmdline;
 	char *cmdline;
 	struct cpio_header cpio;
-        size_t offset = 0;
+	size_t offset;
 	size_t name_len;
 	size_t pad_len;
 
@@ -368,7 +379,7 @@ static size_t bzimage_load_initrd ( struct image *image,
 	if ( initrd == image )
 		return 0;
 
-	/* Create cpio header before non-prebuilt images */
+	/* Create cpio header for non-prebuilt images */
 	if ( filename && filename[0] ) {
 		cmdline = strchr ( filename, ' ' );
 		name_len = ( ( cmdline ? ( ( size_t ) ( cmdline - filename ) )
@@ -383,24 +394,21 @@ static size_t bzimage_load_initrd ( struct image *image,
 			bzimage_parse_cpio_cmdline ( image, &cpio,
 						     ( cmdline + 1 /* ' ' */ ));
 		}
-		if ( address ) {
-			copy_to_user ( address, offset, &cpio,
-				       sizeof ( cpio ) );
-		}
-		offset += sizeof ( cpio );
-		if ( address ) {
-			memset_user ( address, offset, 0, name_len );
-			copy_to_user ( address, offset, filename,
-				       ( name_len - 1 /* NUL (or space) */ ) );
-		}
-		offset += name_len;
-		offset = ( ( offset + 0x03 ) & ~0x03 );
+		offset = ( ( sizeof ( cpio ) + name_len + 0x03 ) & ~0x03 );
+	} else {
+		offset = 0;
+		name_len = 0;
 	}
 
-	/* Copy in initrd image body */
-	if ( address )
-		memmove_user ( address, offset, initrd->data, 0, initrd->len );
+	/* Copy in initrd image body (and cpio header if applicable) */
 	if ( address ) {
+		memmove_user ( address, offset, initrd->data, 0, initrd->len );
+		if ( offset ) {
+			memset_user ( address, 0, 0, offset );
+			copy_to_user ( address, 0, &cpio, sizeof ( cpio ) );
+			copy_to_user ( address, sizeof ( cpio ), filename,
+				       ( name_len - 1 /* NUL (or space) */ ) );
+		}
 		DBGC ( image, "bzImage %p initrd %p [%#08lx,%#08lx,%#08lx)"
 		       "%s%s\n", image, initrd, user_to_phys ( address, 0 ),
 		       user_to_phys ( address, offset ),
@@ -411,11 +419,10 @@ static size_t bzimage_load_initrd ( struct image *image,
 	}
 	offset += initrd->len;
 
-	/* Round up to multiple of INITRD_ALIGN and zero-pad */
+	/* Zero-pad to next INITRD_ALIGN boundary */
 	pad_len = ( ( -offset ) & ( INITRD_ALIGN - 1 ) );
 	if ( address )
 		memset_user ( address, offset, 0, pad_len );
-	offset += pad_len;
 
 	return offset;
 }
@@ -443,6 +450,7 @@ static int bzimage_check_initrds ( struct image *image,
 
 		/* Calculate length */
 		len += bzimage_load_initrd ( image, initrd, UNULL );
+		len = bzimage_align ( len );
 
 		DBGC ( image, "bzImage %p initrd %p from [%#08lx,%#08lx)%s%s\n",
 		       image, initrd, user_to_phys ( initrd->data, 0 ),
@@ -490,6 +498,7 @@ static void bzimage_load_initrds ( struct image *image,
 	struct image *other;
 	userptr_t top;
 	userptr_t dest;
+	size_t offset;
 	size_t len;
 
 	/* Reshuffle initrds into desired order */
@@ -508,9 +517,7 @@ static void bzimage_load_initrds ( struct image *image,
 		return;
 
 	/* Find highest usable address */
-	top = userptr_add ( highest->data,
-			    ( ( highest->len + INITRD_ALIGN - 1 ) &
-			      ~( INITRD_ALIGN - 1 ) ) );
+	top = userptr_add ( highest->data, bzimage_align ( highest->len ) );
 	if ( user_to_phys ( top, 0 ) > bzimg->mem_limit )
 		top = phys_to_user ( bzimg->mem_limit );
 	DBGC ( image, "bzImage %p loading initrds from %#08lx downwards\n",
@@ -522,23 +529,27 @@ static void bzimage_load_initrds ( struct image *image,
 		/* Calculate cumulative length of following
 		 * initrds (including padding).
 		 */
-		len = 0;
+		offset = 0;
 		for_each_image ( other ) {
 			if ( other == initrd )
-				len = 0;
-			len += bzimage_load_initrd ( image, other, UNULL );
+				offset = 0;
+			offset += bzimage_load_initrd ( image, other, UNULL );
+			offset = bzimage_align ( offset );
 		}
 
 		/* Load initrd at this address */
-		dest = userptr_add ( top, -len );
-		bzimage_load_initrd ( image, initrd, dest );
+		dest = userptr_add ( top, -offset );
+		len = bzimage_load_initrd ( image, initrd, dest );
 
 		/* Record initrd location */
-		if ( ! bzimg->ramdisk_image ) {
+		if ( ! bzimg->ramdisk_image )
 			bzimg->ramdisk_image = user_to_phys ( dest, 0 );
-			bzimg->ramdisk_size = len;
-		}
+		bzimg->ramdisk_size = ( user_to_phys ( dest, len ) -
+					bzimg->ramdisk_image );
 	}
+	DBGC ( image, "bzImage %p initrds at [%#08lx,%#08lx)\n",
+	       image, bzimg->ramdisk_image,
+	       ( bzimg->ramdisk_image + bzimg->ramdisk_size ) );
 }
 
 /**

@@ -30,7 +30,7 @@
 #define PROM_ADDR 0x1fff0000000
 #define SER_ADDR 0x1fe020003f8
 #define TICK_INT_DIS 0x8000000000000000
-#define TICK_INTERVAL 10*1000*1000
+#define TICK_INTERVAL 1*1000*1000
 
         .section ".text.vectors", "ax"
         .align 16384
@@ -276,7 +276,7 @@ tl1_resv1f0:	BTRAPS(0x1f0) BTRAPS(0x1f8)
 
 	.section ".data"
 	.align 8
-	.globl tlb_handler_stack_top, tlb_handler_stack_pointer
+	.globl tlb_handler_stack_top, tlb_handler_stack_pointer, obp_ticks_pointer
 
 	! Stack for the tlb MMU trap handlers
 tlb_handler_stack_bottom:
@@ -287,6 +287,10 @@ tlb_handler_stack_top:
 	! MMU trap handler stack pointer
 tlb_handler_stack_pointer:
 	.xword tlb_handler_stack_top
+
+	! Pointer to current tick value
+obp_ticks_pointer:
+	.xword 0
 
         .section ".text", "ax"
 
@@ -618,6 +622,18 @@ softint_irq:
         and     %g1, %g2, %g1
         brnz,pn %g1, tick_compare_disabled
          nop
+
+        /* update tick value if pointer set */
+        setx    obp_ticks_pointer, %g3, %g1
+        ldx     [%g1], %g3
+        brz     %g3, tick_rearm
+         nop
+
+        ldx     [%g3], %g1
+        add     %g1, 10, %g1    ! 100Hz = 10ms
+        stx     %g1, [%g3]
+         
+tick_rearm:         
         set     TICK_INTERVAL, %g1
         add     %g1, %g2, %g1
         wr      %g1, 0, %tick_cmpr

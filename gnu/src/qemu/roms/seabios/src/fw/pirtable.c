@@ -1,4 +1,5 @@
 // PIR table generation (for emulators)
+// DO NOT ADD NEW FEATURES HERE.  (See paravirt.c / biostables.c instead.)
 //
 // Copyright (C) 2008  Kevin O'Connor <kevin@koconnor.net>
 // Copyright (C) 2002  MandrakeSoft S.A.
@@ -9,17 +10,14 @@
 #include "output.h" // dprintf
 #include "std/pirtable.h" // struct pir_header
 #include "string.h" // checksum
-
-struct pir_header *PirAddr VARFSEG;
+#include "util.h" // PirAddr
 
 struct pir_table {
     struct pir_header pir;
     struct pir_slot slots[6];
 } PACKED;
 
-extern struct pir_table PIR_TABLE;
-#if CONFIG_PIRTABLE
-struct pir_table PIR_TABLE __aligned(16) VARFSEG = {
+static struct pir_table PIR_TABLE = {
     .pir = {
         .version = 0x0100,
         .size = sizeof(struct pir_table),
@@ -90,7 +88,6 @@ struct pir_table PIR_TABLE __aligned(16) VARFSEG = {
         },
     }
 };
-#endif // CONFIG_PIRTABLE
 
 void
 pirtable_setup(void)
@@ -102,5 +99,5 @@ pirtable_setup(void)
 
     PIR_TABLE.pir.signature = PIR_SIGNATURE;
     PIR_TABLE.pir.checksum -= checksum(&PIR_TABLE, sizeof(PIR_TABLE));
-    PirAddr = &PIR_TABLE.pir;
+    copy_pir(&PIR_TABLE);
 }

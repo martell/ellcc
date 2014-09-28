@@ -338,7 +338,7 @@ struct saveVideoHardware {
     u8 grdc_regs[9];
     u16 crtc_addr;
     u8 plane_latch[4];
-};
+} PACKED;
 
 static void
 stdvga_save_hw_state(u16 seg, struct saveVideoHardware *info)
@@ -412,7 +412,7 @@ struct saveDACcolors {
     u8 pelmask;
     u8 dac[768];
     u8 color_select;
-};
+} PACKED;
 
 static void
 stdvga_save_dac_state(u16 seg, struct saveDACcolors *info)
@@ -434,48 +434,25 @@ stdvga_restore_dac_state(u16 seg, struct saveDACcolors *info)
 }
 
 int
-stdvga_size_state(int states)
+stdvga_save_restore(int cmd, u16 seg, void *data)
 {
-    int size = 0;
-    if (states & 1)
-        size += sizeof(struct saveVideoHardware);
-    if (states & 2)
-        size += sizeof(struct saveBDAstate);
-    if (states & 4)
-        size += sizeof(struct saveDACcolors);
-    return size;
-}
-
-int
-stdvga_save_state(u16 seg, void *data, int states)
-{
-    if (states & 1) {
-        stdvga_save_hw_state(seg, data);
-        data += sizeof(struct saveVideoHardware);
+    void *pos = data;
+    if (cmd & SR_HARDWARE) {
+        if (cmd & SR_SAVE)
+            stdvga_save_hw_state(seg, pos);
+        if (cmd & SR_RESTORE)
+            stdvga_restore_hw_state(seg, pos);
+        pos += sizeof(struct saveVideoHardware);
     }
-    if (states & 2) {
-        save_bda_state(seg, data);
-        data += sizeof(struct saveBDAstate);
+    pos += bda_save_restore(cmd, seg, pos);
+    if (cmd & SR_DAC) {
+        if (cmd & SR_SAVE)
+            stdvga_save_dac_state(seg, pos);
+        if (cmd & SR_RESTORE)
+            stdvga_restore_dac_state(seg, pos);
+        pos += sizeof(struct saveDACcolors);
     }
-    if (states & 4)
-        stdvga_save_dac_state(seg, data);
-    return 0;
-}
-
-int
-stdvga_restore_state(u16 seg, void *data, int states)
-{
-    if (states & 1) {
-        stdvga_restore_hw_state(seg, data);
-        data += sizeof(struct saveVideoHardware);
-    }
-    if (states & 2) {
-        restore_bda_state(seg, data);
-        data += sizeof(struct saveBDAstate);
-    }
-    if (states & 4)
-        stdvga_restore_dac_state(seg, data);
-    return 0;
+    return pos - data;
 }
 
 

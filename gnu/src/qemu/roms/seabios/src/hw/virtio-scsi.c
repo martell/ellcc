@@ -164,6 +164,7 @@ init_virtio_scsi(struct pci_device *pci)
     return;
 
 fail:
+    vp_reset(ioaddr);
     free(vq);
 }
 

@@ -245,30 +245,9 @@ bochsvga_set_dacformat(struct vgamode_s *vmode_g, int val)
     return 0;
 }
 
-int
-bochsvga_size_state(int states)
+static int
+bochsvga_save_state(u16 seg, u16 *info)
 {
-    int size = stdvga_size_state(states);
-    if (size < 0)
-        return size;
-    if (GET_GLOBAL(dispi_found) && (states & 8))
-        size += (VBE_DISPI_INDEX_Y_OFFSET-VBE_DISPI_INDEX_XRES+1)*sizeof(u16);
-    return size;
-}
-
-int
-bochsvga_save_state(u16 seg, void *data, int states)
-{
-    int ret = stdvga_save_state(seg, data, states);
-    if (ret < 0)
-        return ret;
-
-    if (!GET_GLOBAL(dispi_found))
-        return 0;
-    if (!(states & 8))
-        return 0;
-
-    u16 *info = (data + stdvga_size_state(states));
     u16 en = dispi_read(VBE_DISPI_INDEX_ENABLE);
     SET_FARVAR(seg, *info, en);
     info++;
@@ -284,19 +263,9 @@ bochsvga_save_state(u16 seg, void *data, int states)
     return 0;
 }
 
-int
-bochsvga_restore_state(u16 seg, void *data, int states)
+static int
+bochsvga_restore_state(u16 seg, u16 *info)
 {
-    int ret = stdvga_restore_state(seg, data, states);
-    if (ret < 0)
-        return ret;
-
-    if (!GET_GLOBAL(dispi_found))
-        return 0;
-    if (!(states & 8))
-        return 0;
-
-    u16 *info = (data + stdvga_size_state(states));
     u16 en = GET_FARVAR(seg, *info);
     info++;
     if (!(en & VBE_DISPI_ENABLED)) {
@@ -312,6 +281,21 @@ bochsvga_restore_state(u16 seg, void *data, int states)
             info++;
         }
     return 0;
+}
+
+int
+bochsvga_save_restore(int cmd, u16 seg, void *data)
+{
+    int ret = stdvga_save_restore(cmd, seg, data);
+    if (ret < 0 || !(cmd & SR_REGISTERS) || !GET_GLOBAL(dispi_found))
+        return ret;
+
+    u16 *info = (data + ret);
+    if (cmd & SR_SAVE)
+        bochsvga_save_state(seg, info);
+    if (cmd & SR_RESTORE)
+        bochsvga_restore_state(seg, info);
+    return ret + (VBE_DISPI_INDEX_Y_OFFSET-VBE_DISPI_INDEX_XRES+1)*sizeof(u16);
 }
 
 
@@ -402,12 +386,20 @@ bochsvga_setup(void)
     u32 lfb_addr = VBE_DISPI_LFB_PHYSICAL_ADDRESS;
     int bdf = GET_GLOBAL(VgaBDF);
     if (CONFIG_VGA_PCI && bdf >= 0) {
-        int barid = 0;
-        u32 bar = pci_config_readl(bdf, PCI_BASE_ADDRESS_0);
-        if ((bar & PCI_BASE_ADDRESS_SPACE) != PCI_BASE_ADDRESS_SPACE_MEMORY) {
+        u16 vendor = pci_config_readw(bdf, PCI_VENDOR_ID);
+        int barid;
+        switch (vendor) {
+        case 0x15ad: /* qemu vmware vga */
             barid = 1;
-            bar = pci_config_readl(bdf, PCI_BASE_ADDRESS_1);
+            break;
+        case 0x1af4: /* virtio-vga */
+            barid = 2;
+            break;
+        default: /* stdvga, qxl */
+            barid = 0;
+            break;
         }
+        u32 bar = pci_config_readl(bdf, PCI_BASE_ADDRESS_0 + barid * 4);
         lfb_addr = bar & PCI_BASE_ADDRESS_MEM_MASK;
         dprintf(1, "VBE DISPI: bdf %02x:%02x.%x, bar %d\n", pci_bdf_to_bus(bdf)
                 , pci_bdf_to_dev(bdf), pci_bdf_to_fn(bdf), barid);

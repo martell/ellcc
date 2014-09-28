@@ -10,6 +10,7 @@
 #include "list.h" // hlist_node
 #include "malloc.h" // free
 #include "output.h" // dprintf
+#include "romfile.h" // romfile_loadint
 #include "stacks.h" // struct mutex_s
 #include "util.h" // useRTC
 
@@ -271,6 +272,24 @@ getCurThread(void)
     return (void*)ALIGN_DOWN(esp, THREADSTACKSIZE);
 }
 
+static int ThreadControl;
+
+// Initialize the support for internal threads.
+void
+thread_init(void)
+{
+    if (! CONFIG_THREADS)
+        return;
+    ThreadControl = romfile_loadint("etc/threads", 1);
+}
+
+// Should hardware initialization threads run during optionrom execution.
+int
+threads_during_optionroms(void)
+{
+    return CONFIG_THREADS && ThreadControl == 2;
+}
+
 // Switch to next thread stack.
 static void
 switch_next(struct thread_info *cur)
@@ -293,13 +312,13 @@ switch_next(struct thread_info *cur)
         : "ebx", "edx", "esi", "edi", "cc", "memory");
 }
 
-// Last thing called from a thread (called on "next" stack).
+// Last thing called from a thread (called on MainThread stack).
 static void
 __end_thread(struct thread_info *old)
 {
     hlist_del(&old->node);
-    free(old);
     dprintf(DEBUG_thread, "\\%08x/ End thread\n", (u32)old);
+    free(old);
     if (!have_threads())
         dprintf(1, "All threads complete.\n");
 }
@@ -309,18 +328,17 @@ void
 run_thread(void (*func)(void*), void *data)
 {
     ASSERT32FLAT();
-    if (! CONFIG_THREADS)
+    if (! CONFIG_THREADS || ! ThreadControl)
         goto fail;
     struct thread_info *thread;
     thread = memalign_tmphigh(THREADSTACKSIZE, THREADSTACKSIZE);
     if (!thread)
         goto fail;
 
+    dprintf(DEBUG_thread, "/%08x\\ Start thread\n", (u32)thread);
     thread->stackpos = (void*)thread + THREADSTACKSIZE;
     struct thread_info *cur = getCurThread();
     hlist_add_after(&thread->node, &cur->node);
-
-    dprintf(DEBUG_thread, "/%08x\\ Start thread\n", (u32)thread);
     asm volatile(
         // Start thread
         "  pushl $1f\n"                 // store return pc
@@ -330,15 +348,16 @@ run_thread(void (*func)(void*), void *data)
         "  calll *%%ecx\n"              // Call func
 
         // End thread
-        "  movl 4(%%ebx), %%ecx\n"      // %ecx = thread->node.next
-        "  movl -4(%%ecx), %%esp\n"     // %esp = next->stackpos
-        "  movl %%ebx, %%eax\n"
+        "  movl %%ebx, %%eax\n"         // %eax = thread
+        "  movl 4(%%ebx), %%ebx\n"      // %ebx = thread->node.next
+        "  movl (%5), %%esp\n"          // %esp = MainThread.stackpos
         "  calll %4\n"                  // call __end_thread(thread)
+        "  movl -4(%%ebx), %%esp\n"     // %esp = next->stackpos
         "  popl %%ebp\n"                // restore %ebp
         "  retl\n"                      // restore pc
         "1:\n"
         : "+a"(data), "+c"(func), "+b"(thread), "+d"(cur)
-        : "m"(*(u8*)__end_thread)
+        : "m"(*(u8*)__end_thread), "m"(MainThread)
         : "esi", "edi", "cc", "memory");
     return;
 
@@ -452,7 +471,7 @@ static u32 PreemptCount;
 void
 start_preempt(void)
 {
-    if (! CONFIG_THREAD_OPTIONROMS)
+    if (! threads_during_optionroms())
         return;
     CanPreempt = 1;
     PreemptCount = 0;
@@ -463,7 +482,7 @@ start_preempt(void)
 void
 finish_preempt(void)
 {
-    if (! CONFIG_THREAD_OPTIONROMS) {
+    if (! threads_during_optionroms()) {
         yield();
         return;
     }
@@ -477,7 +496,7 @@ finish_preempt(void)
 int
 wait_preempt(void)
 {
-    if (MODESEGMENT || !CONFIG_THREAD_OPTIONROMS || !CanPreempt
+    if (MODESEGMENT || !CONFIG_THREADS || !CanPreempt
         || getesp() < MAIN_STACK_MAX)
         return 0;
     while (CanPreempt)
@@ -498,6 +517,33 @@ void
 check_preempt(void)
 {
     extern void _cfunc32flat_yield_preempt(void);
-    if (CONFIG_THREAD_OPTIONROMS && GET_GLOBAL(CanPreempt) && have_threads())
+    if (CONFIG_THREADS && GET_GLOBAL(CanPreempt) && have_threads())
         call32(_cfunc32flat_yield_preempt, 0, 0);
+}
+
+
+/****************************************************************
+ * call32 helper
+ ****************************************************************/
+
+struct call32_params_s {
+    void *func;
+    u32 eax, edx, ecx;
+};
+
+u32 VISIBLE32FLAT
+call32_params_helper(struct call32_params_s *params)
+{
+    return ((u32 (*)(u32, u32, u32))params->func)(
+        params->eax, params->edx, params->ecx);
+}
+
+u32
+call32_params(void *func, u32 eax, u32 edx, u32 ecx, u32 errret)
+{
+    ASSERT16();
+    struct call32_params_s params = {func, eax, edx, ecx};
+    extern void _cfunc32flat_call32_params_helper(void);
+    return call32(_cfunc32flat_call32_params_helper
+                  , (u32)MAKE_FLATPTR(GET_SEG(SS), &params), errret);
 }

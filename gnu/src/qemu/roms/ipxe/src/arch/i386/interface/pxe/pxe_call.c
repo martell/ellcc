@@ -21,6 +21,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <ipxe/uaccess.h>
 #include <ipxe/init.h>
+#include <ipxe/profile.h>
 #include <setjmp.h>
 #include <registers.h>
 #include <biosint.h>
@@ -32,6 +33,12 @@ FILE_LICENCE ( GPL2_OR_LATER );
  * PXE API entry point
  */
 
+/* Disambiguate the various error causes */
+#define EINFO_EPXENBP							\
+	__einfo_uniqify ( EINFO_EPLATFORM, 0x01,			\
+			  "External PXE NBP error" )
+#define EPXENBP( status ) EPLATFORM ( EINFO_EPXENBP, status )
+
 /** Vector for chaining INT 1A */
 extern struct segoff __text16 ( pxe_int_1a_vector );
 #define pxe_int_1a_vector __use_text16 ( pxe_int_1a_vector )
@@ -41,6 +48,26 @@ extern void pxe_int_1a ( void );
 
 /** INT 1A hooked flag */
 static int int_1a_hooked = 0;
+
+/** PXENV_UNDI_TRANSMIT API call profiler */
+static struct profiler pxe_api_tx_profiler __profiler =
+	{ .name = "pxeapi.tx" };
+
+/** PXENV_UNDI_ISR API call profiler */
+static struct profiler pxe_api_isr_profiler __profiler =
+	{ .name = "pxeapi.isr" };
+
+/** PXE unknown API call profiler
+ *
+ * This profiler can be used to measure the overhead of a dummy PXE
+ * API call.
+ */
+static struct profiler pxe_api_unknown_profiler __profiler =
+	{ .name = "pxeapi.unknown" };
+
+/** Miscellaneous PXE API call profiler */
+static struct profiler pxe_api_misc_profiler __profiler =
+	{ .name = "pxeapi.misc" };
 
 /**
  * Handle an unknown PXE API call
@@ -75,6 +102,27 @@ static struct pxe_api_call * find_pxe_api_call ( uint16_t opcode ) {
 }
 
 /**
+ * Determine applicable profiler (for debugging)
+ *
+ * @v opcode		PXE opcode
+ * @ret profiler	Profiler
+ */
+static struct profiler * pxe_api_profiler ( unsigned int opcode ) {
+
+	/* Determine applicable profiler */
+	switch ( opcode ) {
+	case PXENV_UNDI_TRANSMIT:
+		return &pxe_api_tx_profiler;
+	case PXENV_UNDI_ISR:
+		return &pxe_api_isr_profiler;
+	case PXENV_UNKNOWN:
+		return &pxe_api_unknown_profiler;
+	default:
+		return &pxe_api_misc_profiler;
+	}
+}
+
+/**
  * Dispatch PXE API call
  *
  * @v bx		PXE opcode
@@ -84,9 +132,13 @@ static struct pxe_api_call * find_pxe_api_call ( uint16_t opcode ) {
 __asmcall void pxe_api_call ( struct i386_all_regs *ix86 ) {
 	uint16_t opcode = ix86->regs.bx;
 	userptr_t uparams = real_to_user ( ix86->segs.es, ix86->regs.di );
+	struct profiler *profiler = pxe_api_profiler ( opcode );
 	struct pxe_api_call *call;
 	union u_PXENV_ANY params;
 	PXENV_EXIT_t ret;
+
+	/* Start profiling */
+	profile_start ( profiler );
 
 	/* Locate API call */
 	call = find_pxe_api_call ( opcode );
@@ -107,6 +159,9 @@ __asmcall void pxe_api_call ( struct i386_all_regs *ix86 ) {
 	/* Copy modified parameter block back to caller and return */
 	copy_to_user ( uparams, 0, &params, call->params_len );
 	ix86->regs.ax = ret;
+
+	/* Stop profiling, if applicable */
+	profile_stop ( profiler );
 }
 
 /**
@@ -257,7 +312,7 @@ rmjmp_buf pxe_restart_nbp;
 int pxe_start_nbp ( void ) {
 	int jmp;
 	int discard_b, discard_c, discard_d, discard_D;
-	uint16_t rc;
+	uint16_t status;
 
 	/* Allow restarting NBP via PXENV_RESTART_TFTP */
 	jmp = rmsetjmp ( pxe_restart_nbp );
@@ -265,22 +320,26 @@ int pxe_start_nbp ( void ) {
 		DBG ( "Restarting NBP (%x)\n", jmp );
 
 	/* Far call to PXE NBP */
-	__asm__ __volatile__ ( REAL_CODE ( "movw %%cx, %%es\n\t"
+	__asm__ __volatile__ ( REAL_CODE ( "pushl %%ebp\n\t" /* gcc bug */
+					   "movw %%cx, %%es\n\t"
 					   "pushw %%es\n\t"
 					   "pushw %%di\n\t"
 					   "sti\n\t"
 					   "lcall $0, $0x7c00\n\t"
-					   "addw $4, %%sp\n\t" )
-			       : "=a" ( rc ), "=b" ( discard_b ),
+					   "popl %%ebp\n\t" /* discard */
+					   "popl %%ebp\n\t" /* gcc bug */ )
+			       : "=a" ( status ), "=b" ( discard_b ),
 				 "=c" ( discard_c ), "=d" ( discard_d ),
 				 "=D" ( discard_D )
 			       : "a" ( 0 ), "b" ( __from_text16 ( &pxenv ) ),
 			         "c" ( rm_cs ),
 			         "d" ( virt_to_phys ( &pxenv ) ),
 				 "D" ( __from_text16 ( &ppxe ) )
-			       : "esi", "ebp", "memory" );
+			       : "esi", "memory" );
+	if ( status )
+		return -EPXENBP ( status );
 
-	return rc;
+	return 0;
 }
 
 REQUIRE_OBJECT ( pxe_preboot );

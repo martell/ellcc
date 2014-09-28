@@ -37,6 +37,7 @@ FILE_LICENCE ( BSD2 );
 #include <ipxe/in.h>
 #include <ipxe/netdevice.h>
 #include <ipxe/ethernet.h>
+#include <ipxe/vlan.h>
 #include <ipxe/dhcp.h>
 #include <ipxe/iscsi.h>
 #include <ipxe/ibft.h>
@@ -106,7 +107,7 @@ static void ibft_set_ipaddr ( struct ibft_ipaddr *ipaddr, struct in_addr in ) {
  * @v count		Maximum number of IP addresses
  */
 static void ibft_set_ipaddr_setting ( struct ibft_ipaddr *ipaddr,
-				      struct setting *setting,
+				      const struct setting *setting,
 				      unsigned int count ) {
 	struct in_addr in[count];
 	unsigned int i;
@@ -182,11 +183,13 @@ static int ibft_set_string ( struct ibft_strings *strings,
  */
 static int ibft_set_string_setting ( struct ibft_strings *strings,
 				     struct ibft_string *string,
-				     struct setting *setting ) {
+				     const struct setting *setting ) {
+	struct settings *origin;
+	struct setting fetched;
 	int len;
 	char *dest;
 
-	len = fetch_setting_len ( NULL, setting );
+	len = fetch_setting ( NULL, setting, &origin, &fetched, NULL, 0 );
 	if ( len < 0 ) {
 		string->offset = 0;
 		string->len = 0;
@@ -196,7 +199,7 @@ static int ibft_set_string_setting ( struct ibft_strings *strings,
 	dest = ibft_alloc_string ( strings, string, len );
 	if ( ! dest )
 		return -ENOBUFS;
-	fetch_string_setting ( NULL, setting, dest, ( len + 1 ) );
+	fetch_string_setting ( origin, &fetched, dest, ( len + 1 ));
 
 	return 0;
 }
@@ -264,6 +267,8 @@ static int ibft_fill_nic ( struct ibft_nic *nic,
 	DBG ( "iBFT NIC subnet = /%d\n", nic->subnet_mask_prefix );
 
 	/* Extract values from net-device configuration */
+	nic->vlan = cpu_to_le16 ( vlan_tag ( netdev ) );
+	DBG ( "iBFT NIC VLAN = %02x\n", le16_to_cpu ( nic->vlan ) );
 	if ( ( rc = ll_protocol->eth_addr ( netdev->ll_addr,
 					    nic->mac_address ) ) != 0 ) {
 		DBG ( "Could not determine iBFT MAC: %s\n", strerror ( rc ) );

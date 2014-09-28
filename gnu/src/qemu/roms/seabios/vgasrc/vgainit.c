@@ -9,6 +9,7 @@
 #include "bregs.h" // struct bregs
 #include "hw/pci.h" // pci_config_readw
 #include "hw/pci_regs.h" // PCI_VENDOR_ID
+#include "hw/serialio.h" // serial_debug_preinit
 #include "output.h" // dprintf
 #include "std/optionrom.h" // struct pci_data
 #include "std/pmm.h" // struct pmmheader
@@ -30,6 +31,9 @@ struct VideoSavePointer_s {
 struct VideoSavePointer_s video_save_pointer_table VAR16;
 
 struct VideoParam_s video_param_table[29] VAR16;
+
+// Type of emulator platform - for dprintf with certain compile options.
+int PlatformRunningOn VAR16;
 
 
 /****************************************************************
@@ -59,14 +63,14 @@ allocate_extra_stack(void)
 {
     if (!CONFIG_VGA_ALLOCATE_EXTRA_STACK)
         return;
-    void *pmmscan = (void*)BUILD_BIOS_ADDR;
-    for (; pmmscan < (void*)BUILD_BIOS_ADDR+BUILD_BIOS_SIZE; pmmscan+=16) {
-        struct pmmheader *pmm = pmmscan;
-        if (pmm->signature != PMM_SIGNATURE)
+    u32 pmmscan;
+    for (pmmscan=0; pmmscan < BUILD_BIOS_SIZE; pmmscan+=16) {
+        struct pmmheader *pmm = (void*)pmmscan;
+        if (GET_FARVAR(SEG_BIOS, pmm->signature) != PMM_SIGNATURE)
             continue;
-        if (checksum_far(0, pmm, pmm->length))
+        if (checksum_far(SEG_BIOS, pmm, GET_FARVAR(SEG_BIOS, pmm->length)))
             continue;
-        struct segoff_s entry = pmm->entry;
+        struct segoff_s entry = GET_FARVAR(SEG_BIOS, pmm->entry);
         dprintf(1, "Attempting to allocate VGA stack via pmm call to %04x:%04x\n"
                 , entry.seg, entry.offset);
         u16 res1, res2;
@@ -74,7 +78,7 @@ allocate_extra_stack(void)
             "pushl %0\n"
             "pushw $(8|1)\n"            // Permanent low memory request
             "pushl $0xffffffff\n"       // Anonymous handle
-            "pushl $" __stringify(CONFIG_VGA_EXTRA_STACK_SIZE) "\n"
+            "pushl $" __stringify(CONFIG_VGA_EXTRA_STACK_SIZE/16) "\n"
             "pushw $0x00\n"             // PMM allocation request
             "lcallw *12(%%esp)\n"
             "addl $16, %%esp\n"
@@ -126,7 +130,7 @@ int HaveRunInit VAR16;
 void VISIBLE16
 vga_post(struct bregs *regs)
 {
-    debug_preinit();
+    serial_debug_preinit();
     dprintf(1, "Start SeaVGABIOS (version %s)\n", VERSION);
     debug_enter(regs, DEBUG_VGA_POST);
 
@@ -152,7 +156,8 @@ vga_post(struct bregs *regs)
 
     SET_VGA(video_save_pointer_table.videoparam
             , SEGOFF(get_global_seg(), (u32)video_param_table));
-    stdvga_build_video_param();
+    if (CONFIG_VGA_STDVGA_PORTS)
+        stdvga_build_video_param();
 
     extern void entry_10(void);
     SET_IVT(0x10, SEGOFF(get_global_seg(), (u32)entry_10));

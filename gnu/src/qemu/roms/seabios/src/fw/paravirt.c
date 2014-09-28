@@ -18,6 +18,7 @@
 #include "output.h" // dprintf
 #include "paravirt.h" // qemu_cfg_preinit
 #include "romfile.h" // romfile_loadint
+#include "romfile_loader.h" // romfile_loader_execute
 #include "string.h" // memset
 #include "util.h" // pci_setup
 #include "x86.h" // cpuid
@@ -147,6 +148,27 @@ qemu_platform_setup(void)
     pirtable_setup();
     mptable_setup();
     smbios_setup();
+
+    if (CONFIG_FW_ROMFILE_LOAD) {
+        int loader_err;
+
+        dprintf(3, "load ACPI tables\n");
+
+        loader_err = romfile_loader_execute("etc/table-loader");
+
+        RsdpAddr = find_acpi_rsdp();
+
+        if (RsdpAddr)
+            return;
+
+        /* If present, loader should have installed an RSDP.
+         * Not installed? We might still be able to continue
+         * using the builtin RSDP.
+         */
+        if (!loader_err)
+            warn_internalerror();
+    }
+
     acpi_setup();
 }
 
@@ -418,4 +440,9 @@ void qemu_cfg_init(void)
     }
 
     qemu_cfg_e820();
+
+    if (romfile_find("etc/table-loader")) {
+        acpi_pm_base = 0x0600;
+        dprintf(1, "Moving pm_base to 0x%x\n", acpi_pm_base);
+    }
 }

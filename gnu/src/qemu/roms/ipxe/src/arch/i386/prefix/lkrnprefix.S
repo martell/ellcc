@@ -127,7 +127,7 @@ realmode_swtch:
 start_sys:
 	.word	0
 kernel_version:
-	.word	0
+	.word	version_string - 0x200
 type_of_loader:
 	.byte	0
 loadflags:
@@ -165,6 +165,9 @@ hardware_subarch:
 	.long	0
 hardware_subarch_data:
 	.byte	0, 0, 0, 0, 0, 0, 0, 0
+
+version_string:
+	.asciz	VERSION
 
 /*
 	We don't need to do too much setup.
@@ -231,9 +234,12 @@ run_ipxe:
 	movzwl	%sp, %edx
 no_cmd_line:
 
-	/* Retrieve initrd pointer and size */
-	movl	%ds:ramdisk_image, %ebp
-	movl	%ds:ramdisk_size, %ecx
+	/* Calculate maximum relocation address */
+	movl	ramdisk_image, %ebp
+	testl	%ebp, %ebp
+	jnz	1f
+	orl	$0xffffffff, %ebp /* Allow arbitrary relocation if no initrd */
+1:
 
 	/* Install iPXE */
 	call	alloc_basemem
@@ -251,6 +257,10 @@ no_cmd_line:
 	lret
 	.section ".text16", "awx", @progbits
 1:
+	/* Retrieve initrd pointer and size */
+	movl	ramdisk_image, %ebp
+	movl	ramdisk_size, %ecx
+
 	/* Set up %ds for access to .data16 */
 	movw	%bx, %ds
 

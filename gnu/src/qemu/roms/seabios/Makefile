@@ -24,21 +24,22 @@ STRIP=$(CROSS_PREFIX)strip
 PYTHON=python
 CPP=cpp
 IASL:=iasl
+LD32BIT_FLAG:=-melf_i386
 
 # Source files
 SRCBOTH=misc.c stacks.c output.c string.c x86.c block.c cdrom.c mouse.c kbd.c \
     serial.c clock.c resume.c pnpbios.c vgahooks.c pcibios.c apm.c \
     fw/smp.c \
     hw/pci.c hw/timer.c hw/rtc.c hw/dma.c hw/pic.c hw/ps2port.c hw/serialio.c \
-    hw/usb.c hw/usb-uhci.c hw/usb-ohci.c hw/usb-ehci.c hw/usb-xhci.c \
+    hw/usb.c hw/usb-uhci.c hw/usb-ohci.c hw/usb-ehci.c \
     hw/usb-hid.c hw/usb-msc.c hw/usb-uas.c \
     hw/blockcmd.c hw/floppy.c hw/ata.c hw/ramdisk.c \
     hw/virtio-ring.c hw/virtio-pci.c hw/virtio-blk.c hw/virtio-scsi.c \
-    hw/lsi-scsi.c hw/esp-scsi.c hw/megasas.c hw/pvscsi.c
+    hw/lsi-scsi.c hw/esp-scsi.c hw/megasas.c
 SRC16=$(SRCBOTH) system.c disk.c font.c
 SRC32FLAT=$(SRCBOTH) post.c memmap.c malloc.c pmm.c romfile.c optionroms.c \
     boot.c bootsplash.c jpeg.c bmp.c \
-    hw/ahci.c hw/usb-hub.c \
+    hw/ahci.c hw/pvscsi.c hw/usb-xhci.c hw/usb-hub.c \
     fw/coreboot.c fw/lzmadecode.c fw/csm.c fw/biostables.c \
     fw/paravirt.c fw/shadow.c fw/pciinit.c fw/smm.c fw/mtrr.c fw/xen.c \
     fw/acpi.c fw/mptable.c fw/pirtable.c fw/smbios.c fw/romfile_loader.c
@@ -146,7 +147,7 @@ $(OUT)code32seg.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)src/%.o,$(SRC32SEG)) ;
 
 $(OUT)ccode32flat.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)src/%.o,$(SRC32FLAT)) ; $(call whole-compile, $(CFLAGS32FLAT), $(addprefix src/, $(SRC32FLAT)),$@)
 
-$(OUT)romlayout.o: src/romlayout.S $(OUT)asm-offsets.h
+$(OUT)romlayout.o: src/romlayout.S $(OUT)autoconf.h $(OUT)asm-offsets.h
 	@echo "  Compiling (16bit) $@"
 	$(Q)$(CC) $(CFLAGS16) -c -D__ASSEMBLY__ $< -o $@
 
@@ -154,8 +155,8 @@ $(OUT)romlayout16.lds: $(OUT)ccode32flat.o $(OUT)code32seg.o $(OUT)ccode16.o $(O
 	@echo "  Building ld scripts"
 	$(Q)./scripts/buildversion.sh $(OUT)version.c
 	$(Q)$(CC) $(CFLAGS32FLAT) -c $(OUT)version.c -o $(OUT)version.o
-	$(Q)$(LD) -melf_i386 -r $(OUT)ccode32flat.o $(OUT)version.o -o $(OUT)code32flat.o
-	$(Q)$(LD) -melf_i386 -r $(OUT)ccode16.o $(OUT)romlayout.o -o $(OUT)code16.o
+	$(Q)$(LD) $(LD32BIT_FLAG) -r $(OUT)ccode32flat.o $(OUT)version.o -o $(OUT)code32flat.o
+	$(Q)$(LD) $(LD32BIT_FLAG) -r $(OUT)ccode16.o $(OUT)romlayout.o -o $(OUT)code16.o
 	$(Q)$(OBJDUMP) -thr $(OUT)code32flat.o > $(OUT)code32flat.o.objdump
 	$(Q)$(OBJDUMP) -thr $(OUT)code32seg.o > $(OUT)code32seg.o.objdump
 	$(Q)$(OBJDUMP) -thr $(OUT)code16.o > $(OUT)code16.o.objdump
@@ -182,8 +183,7 @@ $(OUT)bios.bin.prep: $(OUT)rom.o scripts/checkrom.py
 	$(Q)rm -f $(OUT)bios.bin $(OUT)Csm16.bin $(OUT)bios.bin.elf
 	$(Q)$(OBJDUMP) -thr $< > $<.objdump
 	$(Q)$(OBJCOPY) -O binary $< $(OUT)bios.bin.raw
-	$(Q)$(PYTHON) ./scripts/checkrom.py $<.objdump $(CONFIG_ROM_SIZE) \
-		$(OUT)bios.bin.raw $(OUT)bios.bin.prep
+	$(Q)$(PYTHON) ./scripts/checkrom.py $<.objdump $(CONFIG_ROM_SIZE) $(OUT)bios.bin.raw $(OUT)bios.bin.prep
 
 $(OUT)bios.bin: $(OUT)bios.bin.prep
 	@echo "  Creating $@"
@@ -205,7 +205,8 @@ SRCVGA=src/output.c src/string.c src/hw/pci.c src/hw/serialio.c \
     vgasrc/vgainit.c vgasrc/vgabios.c vgasrc/vgafb.c \
     vgasrc/vgafonts.c vgasrc/vbe.c \
     vgasrc/stdvga.c vgasrc/stdvgamodes.c vgasrc/stdvgaio.c \
-    vgasrc/clext.c vgasrc/bochsvga.c vgasrc/geodevga.c
+    vgasrc/clext.c vgasrc/bochsvga.c vgasrc/geodevga.c \
+    src/fw/coreboot.c vgasrc/cbvga.c
 
 CFLAGS16VGA = $(CFLAGS16INC) -Isrc
 
@@ -260,7 +261,7 @@ $(Q)$(MAKE) -C $(OUT) -f $(CURDIR)/scripts/kconfig/Makefile srctree=$(CURDIR) sr
 endef
 
 $(OUT)autoconf.h : $(KCONFIG_CONFIG) ; $(call do-kconfig, silentoldconfig)
-$(KCONFIG_CONFIG): src/Kconfig vgasrc/Kconfig ; $(call do-kconfig, defconfig)
+$(KCONFIG_CONFIG): src/Kconfig vgasrc/Kconfig ; $(call do-kconfig, olddefconfig)
 %onfig: ; $(call do-kconfig, $@)
 help: ; $(call do-kconfig, $@)
 

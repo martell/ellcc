@@ -1,6 +1,6 @@
 // Main code for handling USB controllers and devices.
 //
-// Copyright (C) 2009  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2009-2013  Kevin O'Connor <kevin@koconnor.net>
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
@@ -8,9 +8,6 @@
 #include "config.h" // CONFIG_*
 #include "malloc.h" // free
 #include "output.h" // dprintf
-#include "pci.h" // foreachpci
-#include "pci_ids.h" // PCI_CLASS_SERIAL_USB_UHCI
-#include "pci_regs.h" // PCI_CLASS_REVISION
 #include "string.h" // memset
 #include "usb.h" // struct usb_s
 #include "usb-ehci.h" // ehci_setup
@@ -92,6 +89,8 @@ usb_send_bulk(struct usb_pipe *pipe_fl, int dir, void *data, int datasize)
     case USB_TYPE_EHCI:
         return ehci_send_bulk(pipe_fl, dir, data, datasize);
     case USB_TYPE_XHCI:
+        if (MODESEGMENT)
+            return -1;
         return xhci_send_bulk(pipe_fl, dir, data, datasize);
     }
 }
@@ -99,6 +98,7 @@ usb_send_bulk(struct usb_pipe *pipe_fl, int dir, void *data, int datasize)
 int
 usb_poll_intr(struct usb_pipe *pipe_fl, void *data)
 {
+    ASSERT16();
     switch (GET_LOWFLAT(pipe_fl->type)) {
     default:
     case USB_TYPE_UHCI:
@@ -107,11 +107,17 @@ usb_poll_intr(struct usb_pipe *pipe_fl, void *data)
         return ohci_poll_intr(pipe_fl, data);
     case USB_TYPE_EHCI:
         return ehci_poll_intr(pipe_fl, data);
-    case USB_TYPE_XHCI:
-        return xhci_poll_intr(pipe_fl, data);
+    case USB_TYPE_XHCI: ;
+        extern void _cfunc32flat_xhci_poll_intr(void);
+        return call32_params(_cfunc32flat_xhci_poll_intr, (u32)pipe_fl
+                             , (u32)MAKE_FLATPTR(GET_SEG(SS), (u32)data), 0, -1);
     }
 }
 
+int usb_32bit_pipe(struct usb_pipe *pipe_fl)
+{
+    return CONFIG_USB_XHCI && GET_LOWFLAT(pipe_fl->type) == USB_TYPE_XHCI;
+}
 
 /****************************************************************
  * Helper functions
@@ -255,6 +261,13 @@ set_configuration(struct usb_pipe *pipe, u16 val)
  * Initialization and enumeration
  ****************************************************************/
 
+static const int speed_to_ctlsize[] = {
+    [ USB_FULLSPEED  ] = 8,
+    [ USB_LOWSPEED   ] = 8,
+    [ USB_HIGHSPEED  ] = 64,
+    [ USB_SUPERSPEED ] = 512,
+};
+
 // Assign an address to a device in the default state on the given
 // controller.
 static int
@@ -266,16 +279,16 @@ usb_set_address(struct usbdevice_s *usbdev)
     if (cntl->maxaddr >= USB_MAXADDR)
         return -1;
 
+    msleep(USB_TIME_RSTRCY);
+
     // Create a pipe for the default address.
     struct usb_endpoint_descriptor epdesc = {
-        .wMaxPacketSize = 8,
+        .wMaxPacketSize = speed_to_ctlsize[usbdev->speed],
         .bmAttributes = USB_ENDPOINT_XFER_CONTROL,
     };
     usbdev->defpipe = usb_alloc_pipe(usbdev, &epdesc);
     if (!usbdev->defpipe)
         return -1;
-
-    msleep(USB_TIME_RSTRCY);
 
     // Send set_address command.
     struct usb_ctrlrequest req;
@@ -313,13 +326,16 @@ configure_usb_device(struct usbdevice_s *usbdev)
     int ret = get_device_info8(usbdev->defpipe, &dinfo);
     if (ret)
         return 0;
-    dprintf(3, "device rev=%04x cls=%02x sub=%02x proto=%02x size=%02x\n"
+    u16 maxpacket = dinfo.bMaxPacketSize0;
+    if (dinfo.bcdUSB >= 0x0300)
+        maxpacket = 1 << dinfo.bMaxPacketSize0;
+    dprintf(3, "device rev=%04x cls=%02x sub=%02x proto=%02x size=%d\n"
             , dinfo.bcdUSB, dinfo.bDeviceClass, dinfo.bDeviceSubClass
-            , dinfo.bDeviceProtocol, dinfo.bMaxPacketSize0);
-    if (dinfo.bMaxPacketSize0 < 8 || dinfo.bMaxPacketSize0 > 64)
+            , dinfo.bDeviceProtocol, maxpacket);
+    if (maxpacket < 8)
         return 0;
     struct usb_endpoint_descriptor epdesc = {
-        .wMaxPacketSize = dinfo.bMaxPacketSize0,
+        .wMaxPacketSize = maxpacket,
         .bmAttributes = USB_ENDPOINT_XFER_CONTROL,
     };
     usbdev->defpipe = usb_update_pipe(usbdev, usbdev->defpipe, &epdesc);
@@ -439,52 +455,20 @@ usb_enumerate(struct usbhub_s *hub)
 }
 
 void
+__usb_setup(void *data)
+{
+    dprintf(3, "init usb\n");
+    xhci_setup();
+    ehci_setup();
+    uhci_setup();
+    ohci_setup();
+}
+
+void
 usb_setup(void)
 {
     ASSERT32FLAT();
     if (! CONFIG_USB)
         return;
-
-    dprintf(3, "init usb\n");
-
-    // Look for USB controllers
-    int count = 0;
-    struct pci_device *pci, *ehcipci = NULL;
-    foreachpci(pci) {
-        if (pci->class != PCI_CLASS_SERIAL_USB)
-            continue;
-
-        if (!ehcipci || pci->bdf >= ehcipci->bdf) {
-            // Check to see if this device has an ehci controller
-            int found = 0;
-            ehcipci = pci;
-            for (;;) {
-                if (pci_classprog(ehcipci) == PCI_CLASS_SERIAL_USB_EHCI) {
-                    // Found an ehci controller.
-                    int ret = ehci_setup(ehcipci, count++, pci);
-                    if (ret)
-                        // Error
-                        break;
-                    count += found;
-                    pci = ehcipci;
-                    break;
-                }
-                if (ehcipci->class == PCI_CLASS_SERIAL_USB)
-                    found++;
-                ehcipci = container_of_or_null(
-                    ehcipci->node.next, struct pci_device, node);
-                if (!ehcipci || (pci_bdf_to_busdev(ehcipci->bdf)
-                                 != pci_bdf_to_busdev(pci->bdf)))
-                    // No ehci controller found.
-                    break;
-            }
-        }
-
-        if (pci_classprog(pci) == PCI_CLASS_SERIAL_USB_UHCI)
-            uhci_setup(pci, count++);
-        else if (pci_classprog(pci) == PCI_CLASS_SERIAL_USB_OHCI)
-            ohci_setup(pci, count++);
-        else if (pci_classprog(pci) == PCI_CLASS_SERIAL_USB_XHCI)
-            xhci_setup(pci, count++);
-    }
+    run_thread(__usb_setup, NULL);
 }

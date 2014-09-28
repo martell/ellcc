@@ -283,6 +283,23 @@ struct net_protocol vlan_protocol __net_protocol = {
 };
 
 /**
+ * Get the VLAN tag
+ *
+ * @v netdev		Network device
+ * @ret tag		VLAN tag, or 0 if device is not a VLAN device
+ */
+unsigned int vlan_tag ( struct net_device *netdev ) {
+	struct vlan_device *vlan;
+
+	if ( netdev->op == &vlan_operations ) {
+		vlan = netdev->priv;
+		return vlan->tag;
+	} else {
+		return 0;
+	}
+}
+
+/**
  * Check if network device can be used as a VLAN trunk device
  *
  * @v trunk		Trunk network device
@@ -423,16 +440,6 @@ int vlan_destroy ( struct net_device *netdev ) {
 }
 
 /**
- * Do nothing
- *
- * @v trunk		Trunk network device
- * @ret rc		Return status code
- */
-static int vlan_probe ( struct net_device *trunk __unused ) {
-	return 0;
-}
-
-/**
  * Handle trunk network device link state change
  *
  * @v trunk		Trunk network device
@@ -488,7 +495,6 @@ static void vlan_remove ( struct net_device *trunk ) {
 /** VLAN driver */
 struct net_driver vlan_driver __net_driver = {
 	.name = "VLAN",
-	.probe = vlan_probe,
 	.notify = vlan_notify,
 	.remove = vlan_remove,
 };

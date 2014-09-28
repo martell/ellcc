@@ -7,7 +7,6 @@
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
-#include "biosvar.h" // GET_GLOBALFLAT
 #include "block.h" // struct drive_s
 #include "blockcmd.h" // scsi_drive_setup
 #include "config.h" // CONFIG_*
@@ -16,11 +15,12 @@
 #include "pci.h" // foreachpci
 #include "pci_ids.h" // PCI_DEVICE_ID_VMWARE_PVSCSI
 #include "pci_regs.h" // PCI_VENDOR_ID
+#include "pvscsi.h" // pvscsi_setup
 #include "std/disk.h" // DISK_RET_SUCCESS
 #include "string.h" // memset
 #include "util.h" // usleep
-#include "pvscsi.h"
 #include "virtio-ring.h" // PAGE_SHIFT, virt_to_phys
+#include "x86.h" // writel
 
 #define MASK(n) ((1 << (n)) - 1)
 
@@ -129,42 +129,40 @@ struct pvscsi_ring_dsc_s {
 
 struct pvscsi_lun_s {
     struct drive_s drive;
-    struct pci_device *pci;
-    u32 iobase;
+    void *iobase;
     u8 target;
     u8 lun;
     struct pvscsi_ring_dsc_s *ring_dsc;
 };
 
 static void
-pvscsi_write_cmd_desc(u32 iobase, u32 cmd, const void *desc, size_t len)
+pvscsi_write_cmd_desc(void *iobase, u32 cmd, const void *desc, size_t len)
 {
     const u32 *ptr = desc;
     size_t i;
 
     len /= sizeof(*ptr);
-    pci_writel(iobase + PVSCSI_REG_OFFSET_COMMAND, cmd);
+    writel(iobase + PVSCSI_REG_OFFSET_COMMAND, cmd);
     for (i = 0; i < len; i++)
-        pci_writel(iobase + PVSCSI_REG_OFFSET_COMMAND_DATA, ptr[i]);
+        writel(iobase + PVSCSI_REG_OFFSET_COMMAND_DATA, ptr[i]);
 }
 
 static void
-pvscsi_kick_rw_io(u32 iobase)
+pvscsi_kick_rw_io(void *iobase)
 {
-    pci_writel(iobase + PVSCSI_REG_OFFSET_KICK_RW_IO, 0);
+    writel(iobase + PVSCSI_REG_OFFSET_KICK_RW_IO, 0);
 }
 
 static void
-pvscsi_wait_intr_cmpl(u32 iobase)
+pvscsi_wait_intr_cmpl(void *iobase)
 {
-    while (!(pci_readl(iobase + PVSCSI_REG_OFFSET_INTR_STATUS) & PVSCSI_INTR_CMPL_MASK))
+    while (!(readl(iobase + PVSCSI_REG_OFFSET_INTR_STATUS) & PVSCSI_INTR_CMPL_MASK))
         usleep(5);
-    pci_writel(iobase + PVSCSI_REG_OFFSET_INTR_STATUS, PVSCSI_INTR_CMPL_MASK);
-
+    writel(iobase + PVSCSI_REG_OFFSET_INTR_STATUS, PVSCSI_INTR_CMPL_MASK);
 }
 
 static void
-pvscsi_init_rings(u32 iobase, struct pvscsi_ring_dsc_s **ring_dsc)
+pvscsi_init_rings(void *iobase, struct pvscsi_ring_dsc_s **ring_dsc)
 {
     struct PVSCSICmdDescSetupRings cmd = {0,};
 
@@ -204,60 +202,58 @@ static void pvscsi_fill_req(struct PVSCSIRingsState *s,
                             u16 target, u16 lun, void *cdbcmd, u16 blocksize,
                             struct disk_op_s *op)
 {
-    SET_LOWFLAT(req->bus, 0);
-    SET_LOWFLAT(req->target, target);
-    memset(LOWFLAT2LOW(&req->lun[0]), 0, sizeof(req->lun));
-    SET_LOWFLAT(req->lun[1], lun);
-    SET_LOWFLAT(req->senseLen, 0);
-    SET_LOWFLAT(req->senseAddr, 0);
-    SET_LOWFLAT(req->cdbLen, 16);
-    SET_LOWFLAT(req->vcpuHint, 0);
-    memcpy(LOWFLAT2LOW(&req->cdb[0]), cdbcmd, 16);
-    SET_LOWFLAT(req->tag, SIMPLE_QUEUE_TAG);
-    SET_LOWFLAT(req->flags,
-                cdb_is_read(cdbcmd, blocksize) ?
-                PVSCSI_FLAG_CMD_DIR_TOHOST : PVSCSI_FLAG_CMD_DIR_TODEVICE);
+    req->bus = 0;
+    req->target = target;
+    memset(req->lun, 0, sizeof(req->lun));
+    req->lun[1] = lun;
+    req->senseLen = 0;
+    req->senseAddr = 0;
+    req->cdbLen = 16;
+    req->vcpuHint = 0;
+    memcpy(req->cdb, cdbcmd, 16);
+    req->tag = SIMPLE_QUEUE_TAG;
+    req->flags = cdb_is_read(cdbcmd, blocksize) ?
+        PVSCSI_FLAG_CMD_DIR_TOHOST : PVSCSI_FLAG_CMD_DIR_TODEVICE;
 
-    SET_LOWFLAT(req->dataLen, op->count * blocksize);
-    SET_LOWFLAT(req->dataAddr, (u32)op->buf_fl);
-    SET_LOWFLAT(s->reqProdIdx, GET_LOWFLAT(s->reqProdIdx) + 1);
-
+    req->dataLen = op->count * blocksize;
+    req->dataAddr = (u32)op->buf_fl;
+    s->reqProdIdx = s->reqProdIdx + 1;
 }
 
 static u32
 pvscsi_get_rsp(struct PVSCSIRingsState *s,
                struct PVSCSIRingCmpDesc *rsp)
 {
-    u32 status = GET_LOWFLAT(rsp->hostStatus);
-    SET_LOWFLAT(s->cmpConsIdx, GET_LOWFLAT(s->cmpConsIdx)+1);
+    u32 status = rsp->hostStatus;
+    s->cmpConsIdx = s->cmpConsIdx + 1;
     return status;
 }
 
 static int
-pvscsi_cmd(struct pvscsi_lun_s *plun_gf, struct disk_op_s *op,
+pvscsi_cmd(struct pvscsi_lun_s *plun, struct disk_op_s *op,
            void *cdbcmd, u16 target, u16 lun, u16 blocksize)
 {
-    struct pvscsi_ring_dsc_s *ring_dsc = GET_GLOBALFLAT(plun_gf->ring_dsc);
-    struct PVSCSIRingsState *s = GET_LOWFLAT(ring_dsc->ring_state);
-    u32 req_entries = GET_LOWFLAT(s->reqNumEntriesLog2);
-    u32 cmp_entries = GET_LOWFLAT(s->cmpNumEntriesLog2);
+    struct pvscsi_ring_dsc_s *ring_dsc = plun->ring_dsc;
+    struct PVSCSIRingsState *s = ring_dsc->ring_state;
+    u32 req_entries = s->reqNumEntriesLog2;
+    u32 cmp_entries = s->cmpNumEntriesLog2;
     struct PVSCSIRingReqDesc *req;
     struct PVSCSIRingCmpDesc *rsp;
     u32 status;
 
-    if (GET_LOWFLAT(s->reqProdIdx) - GET_LOWFLAT(s->cmpConsIdx) >= 1 << req_entries) {
+    if (s->reqProdIdx - s->cmpConsIdx >= 1 << req_entries) {
         dprintf(1, "pvscsi: ring full: reqProdIdx=%d cmpConsIdx=%d\n",
-                GET_LOWFLAT(s->reqProdIdx), GET_LOWFLAT(s->cmpConsIdx));
+                s->reqProdIdx, s->cmpConsIdx);
         return DISK_RET_EBADTRACK;
     }
 
-    req = GET_LOWFLAT(ring_dsc->ring_reqs) + (GET_LOWFLAT(s->reqProdIdx) & MASK(req_entries));
+    req = ring_dsc->ring_reqs + (s->reqProdIdx & MASK(req_entries));
     pvscsi_fill_req(s, req, target, lun, cdbcmd, blocksize, op);
 
-    pvscsi_kick_rw_io(GET_GLOBALFLAT(plun_gf->iobase));
-    pvscsi_wait_intr_cmpl(GET_GLOBALFLAT(plun_gf->iobase));
+    pvscsi_kick_rw_io(plun->iobase);
+    pvscsi_wait_intr_cmpl(plun->iobase);
 
-    rsp = GET_LOWFLAT(ring_dsc->ring_cmps) + (GET_LOWFLAT(s->cmpConsIdx) & MASK(cmp_entries));
+    rsp = ring_dsc->ring_cmps + (s->cmpConsIdx & MASK(cmp_entries));
     status = pvscsi_get_rsp(s, rsp);
 
     return status == 0 ? DISK_RET_SUCCESS : DISK_RET_EBADTRACK;
@@ -269,18 +265,14 @@ pvscsi_cmd_data(struct disk_op_s *op, void *cdbcmd, u16 blocksize)
     if (!CONFIG_PVSCSI)
         return DISK_RET_EBADTRACK;
 
-    struct pvscsi_lun_s *plun_gf =
+    struct pvscsi_lun_s *plun =
         container_of(op->drive_gf, struct pvscsi_lun_s, drive);
 
-    return pvscsi_cmd(plun_gf, op, cdbcmd,
-                      GET_GLOBALFLAT(plun_gf->target),
-                      GET_GLOBALFLAT(plun_gf->lun),
-                      blocksize);
-
+    return pvscsi_cmd(plun, op, cdbcmd, plun->target, plun->lun, blocksize);
 }
 
 static int
-pvscsi_add_lun(struct pci_device *pci, u32 iobase,
+pvscsi_add_lun(struct pci_device *pci, void *iobase,
                struct pvscsi_ring_dsc_s *ring_dsc, u8 target, u8 lun)
 {
     struct pvscsi_lun_s *plun = malloc_fseg(sizeof(*plun));
@@ -291,7 +283,6 @@ pvscsi_add_lun(struct pci_device *pci, u32 iobase,
     memset(plun, 0, sizeof(*plun));
     plun->drive.type = DTYPE_PVSCSI;
     plun->drive.cntl_id = pci->bdf;
-    plun->pci = pci;
     plun->target = target;
     plun->lun = lun;
     plun->iobase = iobase;
@@ -313,7 +304,7 @@ fail:
 }
 
 static void
-pvscsi_scan_target(struct pci_device *pci, u32 iobase,
+pvscsi_scan_target(struct pci_device *pci, void *iobase,
                    struct pvscsi_ring_dsc_s *ring_dsc, u8 target)
 {
     /* TODO: send REPORT LUNS.  For now, only LUN 0 is recognized.  */
@@ -326,12 +317,12 @@ init_pvscsi(struct pci_device *pci)
     struct pvscsi_ring_dsc_s *ring_dsc = NULL;
     int i;
     u16 bdf = pci->bdf;
-    u32 iobase = pci_config_readl(pci->bdf, PCI_BASE_ADDRESS_0)
-        & PCI_BASE_ADDRESS_MEM_MASK;
+    void *iobase = (void*)(pci_config_readl(pci->bdf, PCI_BASE_ADDRESS_0)
+                           & PCI_BASE_ADDRESS_MEM_MASK);
 
     pci_config_maskw(bdf, PCI_COMMAND, 0, PCI_COMMAND_MASTER);
 
-    dprintf(1, "found pvscsi at %02x:%02x.%x, io @ %x\n",
+    dprintf(1, "found pvscsi at %02x:%02x.%x, io @ %p\n",
             pci_bdf_to_bus(bdf), pci_bdf_to_dev(bdf),
             pci_bdf_to_fn(bdf), iobase);
 
@@ -342,7 +333,6 @@ init_pvscsi(struct pci_device *pci)
         pvscsi_scan_target(pci, iobase, ring_dsc, i);
 
     return;
-
 }
 
 void

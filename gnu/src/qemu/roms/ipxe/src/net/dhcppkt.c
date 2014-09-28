@@ -226,11 +226,12 @@ int dhcppkt_fetch ( struct dhcp_packet *dhcppkt, unsigned int tag,
  * @ret applies		Setting applies within this settings block
  */
 static int dhcppkt_settings_applies ( struct settings *settings,
-				      struct setting *setting ) {
+				      const struct setting *setting ) {
 	struct dhcp_packet *dhcppkt =
 		container_of ( settings, struct dhcp_packet, settings );
 
-	return dhcppkt_applies ( dhcppkt, setting->tag );
+	return ( ( setting->scope == NULL ) &&
+		 dhcppkt_applies ( dhcppkt, setting->tag ) );
 }
 
 /**
@@ -243,7 +244,7 @@ static int dhcppkt_settings_applies ( struct settings *settings,
  * @ret rc		Return status code
  */
 static int dhcppkt_settings_store ( struct settings *settings,
-				    struct setting *setting,
+				    const struct setting *setting,
 				    const void *data, size_t len ) {
 	struct dhcp_packet *dhcppkt =
 		container_of ( settings, struct dhcp_packet, settings );
@@ -299,6 +300,6 @@ void dhcppkt_init ( struct dhcp_packet *dhcppkt, struct dhcphdr *data,
 	dhcpopt_init ( &dhcppkt->options, &dhcppkt->dhcphdr->options,
 		       ( len - offsetof ( struct dhcphdr, options ) ),
 		       dhcpopt_no_realloc );
-	settings_init ( &dhcppkt->settings,
-			&dhcppkt_settings_operations, &dhcppkt->refcnt, 0 );
+	settings_init ( &dhcppkt->settings, &dhcppkt_settings_operations,
+			&dhcppkt->refcnt, NULL );
 }

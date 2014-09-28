@@ -103,12 +103,12 @@ void ofmem_arch_create_translation_entry(ucell *transentry, translation_t *t)
 
 		virtual address
 		length
-		mode 
+		mode (valid TTE for start of translation region)
 	*/
 
 	transentry[0] = t->virt;
 	transentry[1] = t->size;
-	transentry[2] = t->mode;
+	transentry[2] = t->phys | t->mode | SPITFIRE_TTE_VALID;
 }
 
 /* Return the size of a memory available entry given the phandle in cells */
@@ -215,14 +215,14 @@ int ofmem_arch_encode_physaddr(ucell *p, phys_addr_t value)
 ucell ofmem_arch_default_translation_mode( phys_addr_t phys )
 {
 	/* Writable, cacheable */
-	/* not privileged and not locked */
-	return SPITFIRE_TTE_CP | SPITFIRE_TTE_CV | SPITFIRE_TTE_WRITABLE;
+	/* Privileged and not locked */
+	return SPITFIRE_TTE_CP | SPITFIRE_TTE_CV | SPITFIRE_TTE_WRITABLE | SPITFIRE_TTE_PRIVILEGED;
 }
 
 ucell ofmem_arch_io_translation_mode( phys_addr_t phys )
 {
-	/* Writable, not privileged and not locked */
-	return SPITFIRE_TTE_CV | SPITFIRE_TTE_WRITABLE;
+	/* Writable, privileged and not locked */
+	return SPITFIRE_TTE_CV | SPITFIRE_TTE_WRITABLE | SPITFIRE_TTE_PRIVILEGED;
 }
 
 /* Architecture-specific OFMEM helpers */
@@ -366,7 +366,7 @@ void ofmem_init( void )
 	ofmem_walk_boot_map(remap_page_range);
 
         /* Map the memory */
-        ofmem_map_page_range(0, 0, qemu_mem_size, 0x36);
+        ofmem_map_page_range(PAGE_SIZE, PAGE_SIZE, 0x800000, 0x36);
 
 	if (!(retained->magic == RETAIN_MAGIC)) {
 		OFMEM_TRACE("ofmem_init: no retained magic found, creating\n");

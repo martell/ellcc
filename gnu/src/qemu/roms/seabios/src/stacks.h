@@ -21,6 +21,8 @@ extern struct thread_info MainThread;
 struct thread_info *getCurThread(void);
 void yield(void);
 void yield_toirq(void);
+void thread_init(void);
+int threads_during_optionroms(void);
 void run_thread(void (*func)(void*), void *data);
 void wait_threads(void);
 struct mutex_s { u32 isLocked; };
@@ -30,5 +32,6 @@ void start_preempt(void);
 void finish_preempt(void);
 int wait_preempt(void);
 void check_preempt(void);
+u32 call32_params(void *func, u32 eax, u32 edx, u32 ecx, u32 errret);
 
 #endif // stacks.h

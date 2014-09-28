@@ -8,7 +8,7 @@ struct usb_pipe;
 // --------------------------------------------------------------
 
 // usb-xhci.c
-int xhci_setup(struct pci_device *pci, int busid);
+void xhci_setup(void);
 struct usb_pipe *xhci_alloc_pipe(struct usbdevice_s *usbdev
                                  , struct usb_endpoint_descriptor *epdesc);
 struct usb_pipe *xhci_update_pipe(struct usbdevice_s *usbdev
@@ -104,12 +104,6 @@ struct xhci_epctx {
     u32 reserved_01[3];
 } PACKED;
 
-// device context
-struct xhci_devctx {
-    struct xhci_slotctx slot;
-    struct xhci_epctx   ep[31];
-} PACKED;
-
 // device context array element
 struct xhci_devlist {
     u32 ptr_low;
@@ -121,8 +115,6 @@ struct xhci_inctx {
     u32 del;
     u32 add;
     u32 reserved_01[6];
-    struct xhci_slotctx slot;
-    struct xhci_epctx   ep[31];
 } PACKED;
 
 // transfer block (ring element)

@@ -45,34 +45,9 @@ ASM32FLAT(
 
 extern u8 smm_code_start, smm_code_end;
 ASM32FLAT(
-    /* minimal SMM code to enable or disable ACPI */
     ".global smm_code_start, smm_code_end\n"
     "  .code16gcc\n"
     "smm_code_start:\n"
-    "  movw $" __stringify(PORT_SMI_CMD) ", %dx\n"
-    "  inb %dx, %al\n"
-    "  cmpb $0xf0, %al\n"
-    "  jne 1f\n"
-
-    /* ACPI disable */
-    "  movw $" __stringify(PORT_ACPI_PM_BASE) " + 0x04, %dx\n" /* PMCNTRL */
-    "  inw %dx, %ax\n"
-    "  andw $~1, %ax\n"
-    "  outw %ax, %dx\n"
-
-    "  jmp 2f\n"
-
-    "1:\n"
-    "  cmpb $0xf1, %al\n"
-    "  jne 2f\n"
-
-    /* ACPI enable */
-    "  movw $" __stringify(PORT_ACPI_PM_BASE) " + 0x04, %dx\n" /* PMCNTRL */
-    "  inw %dx, %ax\n"
-    "  orw $1, %ax\n"
-    "  outw %ax, %dx\n"
-
-    "2:\n"
     "  rsm\n"
     "smm_code_end:\n"
     "  .code32\n"
@@ -141,7 +116,7 @@ static void piix4_apmc_smm_setup(int isabdf, int i440_bdf)
 void ich9_lpc_apmc_smm_setup(int isabdf, int mch_bdf)
 {
     /* check if SMM init is already done */
-    u32 value = inl(PORT_ACPI_PM_BASE + ICH9_PMIO_SMI_EN);
+    u32 value = inl(acpi_pm_base + ICH9_PMIO_SMI_EN);
     if (value & ICH9_PMIO_SMI_EN_APMC_EN)
         return;
 
@@ -152,7 +127,7 @@ void ich9_lpc_apmc_smm_setup(int isabdf, int mch_bdf)
 
     /* enable SMI generation when writing to the APMC register */
     outl(value | ICH9_PMIO_SMI_EN_APMC_EN,
-         PORT_ACPI_PM_BASE + ICH9_PMIO_SMI_EN);
+         acpi_pm_base + ICH9_PMIO_SMI_EN);
 
     smm_relocate_and_restore();
 
@@ -166,7 +141,7 @@ void
 smm_device_setup(void)
 {
     if (!CONFIG_USE_SMM)
-	return;
+        return;
 
     struct pci_device *isapci, *pmpci;
     isapci = pci_find_device(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82371AB_3);
@@ -188,7 +163,7 @@ void
 smm_setup(void)
 {
     if (!CONFIG_USE_SMM || SMMISADeviceBDF < 0)
-	return;
+        return;
 
     dprintf(3, "init smm\n");
     u16 device = pci_config_readw(SMMISADeviceBDF, PCI_DEVICE_ID);

@@ -1454,11 +1454,8 @@ static struct net_device_operations phantom_operations = {
  *
  */
 
-/** Phantom CLP settings tag magic */
-#define PHN_CLP_TAG_MAGIC 0xc19c1900UL
-
-/** Phantom CLP settings tag magic mask */
-#define PHN_CLP_TAG_MAGIC_MASK 0xffffff00UL
+/** Phantom CLP settings scope */
+static const struct settings_scope phantom_settings_scope;
 
 /** Phantom CLP data
  *
@@ -1659,7 +1656,7 @@ static int phantom_clp_fetch ( struct phantom_nic *phantom, unsigned int port,
 /** A Phantom CLP setting */
 struct phantom_clp_setting {
 	/** iPXE setting */
-	struct setting *setting;
+	const struct setting *setting;
 	/** Setting number */
 	unsigned int clp_setting;
 };
@@ -1676,7 +1673,8 @@ static struct phantom_clp_setting clp_settings[] = {
  * @v clp_setting	Setting number, or 0 if not found
  */
 static unsigned int
-phantom_clp_setting ( struct phantom_nic *phantom, struct setting *setting ) {
+phantom_clp_setting ( struct phantom_nic *phantom,
+		      const struct setting *setting ) {
 	struct phantom_clp_setting *clp_setting;
 	unsigned int i;
 
@@ -1689,8 +1687,8 @@ phantom_clp_setting ( struct phantom_nic *phantom, struct setting *setting ) {
 	}
 
 	/* Allow for use of numbered settings */
-	if ( ( setting->tag & PHN_CLP_TAG_MAGIC_MASK ) == PHN_CLP_TAG_MAGIC )
-		return ( setting->tag & ~PHN_CLP_TAG_MAGIC_MASK );
+	if ( setting->scope == &phantom_settings_scope )
+		return setting->tag;
 
 	DBGC2 ( phantom, "Phantom %p has no \"%s\" setting\n",
 		phantom, setting->name );
@@ -1706,7 +1704,7 @@ phantom_clp_setting ( struct phantom_nic *phantom, struct setting *setting ) {
  * @ret applies		Setting applies within this settings block
  */
 static int phantom_setting_applies ( struct settings *settings,
-				     struct setting *setting ) {
+				     const struct setting *setting ) {
 	struct phantom_nic *phantom =
 		container_of ( settings, struct phantom_nic, settings );
 	unsigned int clp_setting;
@@ -1726,7 +1724,7 @@ static int phantom_setting_applies ( struct settings *settings,
  * @ret rc		Return status code
  */
 static int phantom_store_setting ( struct settings *settings,
-				   struct setting *setting,
+				   const struct setting *setting,
 				   const void *data, size_t len ) {
 	struct phantom_nic *phantom =
 		container_of ( settings, struct phantom_nic, settings );
@@ -2075,7 +2073,7 @@ static int phantom_probe ( struct pci_device *pci ) {
 	assert ( phantom->port < PHN_MAX_NUM_PORTS );
 	settings_init ( &phantom->settings,
 			&phantom_settings_operations,
-			&netdev->refcnt, PHN_CLP_TAG_MAGIC );
+			&netdev->refcnt, &phantom_settings_scope );
 
 	/* Fix up PCI device */
 	adjust_pci_device ( pci );

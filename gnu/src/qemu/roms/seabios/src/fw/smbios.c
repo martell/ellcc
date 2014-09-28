@@ -1,4 +1,5 @@
 // smbios table generation (on emulators)
+// DO NOT ADD NEW FEATURES HERE.  (See paravirt.c / biostables.c instead.)
 //
 // Copyright (C) 2008,2009  Kevin O'Connor <kevin@koconnor.net>
 // Copyright (C) 2006 Fabrice Bellard
@@ -15,15 +16,12 @@
 #include "util.h" // MaxCountCPUs
 #include "x86.h" // cpuid
 
-struct smbios_entry_point *SMBiosAddr;
-
 static void
 smbios_entry_point_setup(u16 max_structure_size,
                          u16 structure_table_length,
                          void *structure_table_address,
                          u16 number_of_structures)
 {
-    struct smbios_entry_point *ep = malloc_fseg(sizeof(*ep));
     void *finaltable;
     if (structure_table_length <= BUILD_MAX_SMBIOS_FSEG)
         // Table is small enough for f-seg - allocate there.  This
@@ -31,35 +29,31 @@ smbios_entry_point_setup(u16 max_structure_size,
         finaltable = malloc_fseg(structure_table_length);
     else
         finaltable = malloc_high(structure_table_length);
-    if (!ep || !finaltable) {
+    if (!finaltable) {
         warn_noalloc();
-        free(ep);
-        free(finaltable);
         return;
     }
     memcpy(finaltable, structure_table_address, structure_table_length);
 
-    memcpy(ep->anchor_string, "_SM_", 4);
-    ep->length = 0x1f;
-    ep->smbios_major_version = 2;
-    ep->smbios_minor_version = 4;
-    ep->max_structure_size = max_structure_size;
-    ep->entry_point_revision = 0;
-    memset(ep->formatted_area, 0, 5);
-    memcpy(ep->intermediate_anchor_string, "_DMI_", 5);
+    struct smbios_entry_point ep;
+    memset(&ep, 0, sizeof(ep));
+    memcpy(ep.anchor_string, "_SM_", 4);
+    ep.length = 0x1f;
+    ep.smbios_major_version = 2;
+    ep.smbios_minor_version = 4;
+    ep.max_structure_size = max_structure_size;
+    memcpy(ep.intermediate_anchor_string, "_DMI_", 5);
 
-    ep->structure_table_length = structure_table_length;
-    ep->structure_table_address = (u32)finaltable;
-    ep->number_of_structures = number_of_structures;
-    ep->smbios_bcd_revision = 0x24;
+    ep.structure_table_length = structure_table_length;
+    ep.structure_table_address = (u32)finaltable;
+    ep.number_of_structures = number_of_structures;
+    ep.smbios_bcd_revision = 0x24;
 
-    ep->checksum -= checksum(ep, 0x10);
+    ep.checksum -= checksum(&ep, 0x10);
 
-    ep->intermediate_checksum -= checksum((void*)ep + 0x10, ep->length - 0x10);
+    ep.intermediate_checksum -= checksum((void*)&ep + 0x10, ep.length - 0x10);
 
-    SMBiosAddr = ep;
-    dprintf(1, "SMBIOS ptr=%p table=%p size=%d\n"
-            , ep, finaltable, structure_table_length);
+    copy_smbios(&ep);
 }
 
 static int
@@ -133,20 +127,24 @@ get_external(int type, char **p, unsigned *nr_structs,
     do {                                                                \
         size = get_field(type, offsetof(struct smbios_type_##type,      \
                                         field), end);                   \
-        if (size > 0) {                                                 \
+        if (size == 1) {                                                \
+            /* zero-length string, skip to avoid bogus end marker */    \
+            p->field = 0;                                               \
+        } else if (size > 1) {                                          \
             end += size;                                                \
+            p->field = ++str_index;                                     \
         } else {                                                        \
             memcpy(end, def, sizeof(def));                              \
             end += sizeof(def);                                         \
+            p->field = ++str_index;                                     \
         }                                                               \
-        p->field = ++str_index;                                         \
     } while (0)
 
 #define load_str_field_or_skip(type, field)                             \
     do {                                                                \
         size = get_field(type, offsetof(struct smbios_type_##type,      \
                                         field), end);                   \
-        if (size > 0) {                                                 \
+        if (size > 1) {                                                 \
             end += size;                                                \
             p->field = ++str_index;                                     \
         } else {                                                        \
@@ -506,7 +504,7 @@ smbios_init_type_127(void *start)
 #define TEMPSMBIOSSIZE (32 * 1024)
 
 void
-smbios_setup(void)
+smbios_legacy_setup(void)
 {
     if (! CONFIG_SMBIOS)
         return;
@@ -518,6 +516,7 @@ smbios_setup(void)
         warn_noalloc();
         return;
     }
+    memset(start, 0, TEMPSMBIOSSIZE);
 
     u32 nr_structs = 0, max_struct_size = 0;
     char *q, *p = start;
@@ -583,72 +582,4 @@ smbios_setup(void)
 
     smbios_entry_point_setup(max_struct_size, p - start, start, nr_structs);
     free(start);
-}
-
-void
-display_uuid(void)
-{
-    u32 addr, end;
-    u8 *uuid;
-    u8 empty_uuid[16] = { 0 };
-
-    if (SMBiosAddr == NULL)
-        return;
-
-    addr =        SMBiosAddr->structure_table_address;
-    end  = addr + SMBiosAddr->structure_table_length;
-
-    /* the following takes care of any initial wraparound too */
-    while (addr < end) {
-        const struct smbios_structure_header *hdr;
-
-        /* partial structure header */
-        if (end - addr < sizeof(struct smbios_structure_header))
-            return;
-
-        hdr = (struct smbios_structure_header *)addr;
-
-        /* partial structure */
-        if (end - addr < hdr->length)
-            return;
-
-        /* any Type 1 structure version will do that has the UUID */
-        if (hdr->type == 1 &&
-            hdr->length >= offsetof(struct smbios_type_1, uuid) + 16)
-            break;
-
-        /* done with formatted area, skip string-set */
-        addr += hdr->length;
-
-        while (end - addr >= 2 &&
-               (*(u8 *)addr     != '\0' ||
-                *(u8 *)(addr+1) != '\0'))
-            ++addr;
-
-        /* structure terminator not found */
-        if (end - addr < 2)
-            return;
-
-        addr += 2;
-    }
-
-    /* parsing finished or skipped entirely, UUID not found */
-    if (addr >= end)
-        return;
-
-    uuid = (u8 *)(addr + offsetof(struct smbios_type_1, uuid));
-    if (memcmp(uuid, empty_uuid, sizeof empty_uuid) == 0)
-        return;
-
-    printf("Machine UUID"
-             " %02x%02x%02x%02x"
-             "-%02x%02x"
-             "-%02x%02x"
-             "-%02x%02x"
-             "-%02x%02x%02x%02x%02x%02x\n"
-           , uuid[ 0], uuid[ 1], uuid[ 2], uuid[ 3]
-           , uuid[ 4], uuid[ 5]
-           , uuid[ 6], uuid[ 7]
-           , uuid[ 8], uuid[ 9]
-           , uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15]);
 }

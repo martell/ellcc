@@ -19,6 +19,7 @@
 #include "hw/pic.h" // pic_setup
 #include "hw/ps2port.h" // ps2port_setup
 #include "hw/rtc.h" // rtc_write
+#include "hw/serialio.h" // serial_debug_preinit
 #include "hw/usb.h" // usb_setup
 #include "hw/virtio-blk.h" // virtio_blk_setup
 #include "hw/virtio-scsi.h" // virtio_scsi_setup
@@ -60,7 +61,7 @@ ivt_init(void)
     SET_IVT(0x12, FUNC16(entry_12));
     SET_IVT(0x13, FUNC16(entry_13_official));
     SET_IVT(0x14, FUNC16(entry_14));
-    SET_IVT(0x15, FUNC16(entry_15));
+    SET_IVT(0x15, FUNC16(entry_15_official));
     SET_IVT(0x16, FUNC16(entry_16));
     SET_IVT(0x17, FUNC16(entry_17));
     SET_IVT(0x18, FUNC16(entry_18));
@@ -121,6 +122,7 @@ interface_init(void)
     bda_init();
 
     // Other interfaces
+    thread_init();
     boot_init();
     bios32_init();
     pmm_init();
@@ -183,6 +185,8 @@ prepareboot(void)
     malloc_prepboot();
     memmap_prepboot();
 
+    HaveRunPost = 2;
+
     // Setup bios checksum.
     BiosChecksum -= checksum((u8*)BUILD_BIOS_ADDR, BUILD_BIOS_SIZE);
 }
@@ -211,15 +215,15 @@ maininit(void)
     // Setup platform devices.
     platform_hardware_setup();
 
-    // Start hardware initialization (if optionrom threading)
-    if (CONFIG_THREAD_OPTIONROMS)
+    // Start hardware initialization (if threads allowed during optionroms)
+    if (threads_during_optionroms())
         device_hardware_setup();
 
     // Run vga option rom
     vgarom_setup();
 
     // Do hardware initialization (if running synchronously)
-    if (!CONFIG_THREAD_OPTIONROMS) {
+    if (!threads_during_optionroms()) {
         device_hardware_setup();
         wait_threads();
     }
@@ -317,8 +321,8 @@ handle_post(void)
     if (!CONFIG_QEMU && !CONFIG_COREBOOT)
         return;
 
-    debug_preinit();
-    dprintf(1, "Start bios (version %s)\n", VERSION);
+    serial_debug_preinit();
+    debug_banner();
 
     // Check if we are running under Xen.
     xen_preinit();

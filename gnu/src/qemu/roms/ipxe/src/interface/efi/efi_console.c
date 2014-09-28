@@ -20,6 +20,8 @@
 FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <stddef.h>
+#include <string.h>
+#include <errno.h>
 #include <assert.h>
 #include <ipxe/efi/efi.h>
 #include <ipxe/ansiesc.h>
@@ -62,11 +64,13 @@ static unsigned int efi_attr = ATTR_DEFAULT;
 /**
  * Handle ANSI CUP (cursor position)
  *
+ * @v ctx		ANSI escape sequence context
  * @v count		Parameter count
  * @v params[0]		Row (1 is top)
  * @v params[1]		Column (1 is left)
  */
-static void efi_handle_cup ( unsigned int count __unused, int params[] ) {
+static void efi_handle_cup ( struct ansiesc_context *ctx __unused,
+			     unsigned int count __unused, int params[] ) {
 	EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *conout = efi_systab->ConOut;
 	int cx = ( params[1] - 1 );
 	int cy = ( params[0] - 1 );
@@ -82,11 +86,13 @@ static void efi_handle_cup ( unsigned int count __unused, int params[] ) {
 /**
  * Handle ANSI ED (erase in page)
  *
+ * @v ctx		ANSI escape sequence context
  * @v count		Parameter count
  * @v params[0]		Region to erase
  */
-static void efi_handle_ed ( unsigned int count __unused,
-			     int params[] __unused ) {
+static void efi_handle_ed ( struct ansiesc_context *ctx __unused,
+			    unsigned int count __unused,
+			    int params[] __unused ) {
 	EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *conout = efi_systab->ConOut;
 
 	/* We assume that we always clear the whole screen */
@@ -98,10 +104,12 @@ static void efi_handle_ed ( unsigned int count __unused,
 /**
  * Handle ANSI SGR (set graphics rendition)
  *
+ * @v ctx		ANSI escape sequence context
  * @v count		Parameter count
  * @v params		List of graphic rendition aspects
  */
-static void efi_handle_sgr ( unsigned int count, int params[] ) {
+static void efi_handle_sgr ( struct ansiesc_context *ctx __unused,
+			     unsigned int count, int params[] ) {
 	EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *conout = efi_systab->ConOut;
 	static const uint8_t efi_attr_fcols[10] = {
 		ATTR_FCOL_BLACK, ATTR_FCOL_RED, ATTR_FCOL_GREEN,
@@ -227,6 +235,7 @@ static int efi_getchar ( void ) {
 	const char *ansi_seq;
 	EFI_INPUT_KEY key;
 	EFI_STATUS efirc;
+	int rc;
 
 	/* If we are mid-sequence, pass out the next byte */
 	if ( *ansi_input )
@@ -234,8 +243,8 @@ static int efi_getchar ( void ) {
 
 	/* Read key from real EFI console */
 	if ( ( efirc = conin->ReadKeyStroke ( conin, &key ) ) != 0 ) {
-		DBG ( "EFI could not read keystroke: %s\n",
-		      efi_strerror ( efirc ) );
+		rc = -EEFI ( efirc );
+		DBG ( "EFI could not read keystroke: %s\n", strerror ( rc ) );
 		return 0;
 	}
 	DBG2 ( "EFI read key stroke with unicode %04x scancode %04x\n",

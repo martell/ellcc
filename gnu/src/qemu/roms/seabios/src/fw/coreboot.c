@@ -80,9 +80,9 @@ struct cb_cbmem_ref {
 #define CB_TAG_CBMEM_CONSOLE 0x17
 
 struct cbmem_console {
-	u32 buffer_size;
-	u32 buffer_cursor;
-	u8  buffer_body[0];
+    u32 buffer_size;
+    u32 buffer_cursor;
+    u8  buffer_body[0];
 } PACKED;
 static struct cbmem_console *cbcon = NULL;
 
@@ -92,11 +92,12 @@ ipchksum(char *buf, int count)
     u16 *p = (u16*)buf;
     u32 sum = 0;
     while (count > 1) {
-        sum += *p++;
+        sum += GET_FARVAR(0, *p);
+        p++;
         count -= 2;
     }
     if (count)
-        sum += *(u8*)p;
+        sum += GET_FARVAR(0, *(u8*)p);
     sum = (sum >> 16) + (sum & 0xffff);
     sum += (sum >> 16);
     return ~sum;
@@ -104,19 +105,20 @@ ipchksum(char *buf, int count)
 
 // Try to locate the coreboot header in a given address range.
 static struct cb_header *
-find_cb_header(char *addr, int len)
+find_cb_header(u32 addr, int len)
 {
-    char *end = addr + len;
+    u32 end = addr + len;
     for (; addr < end; addr += 16) {
-        struct cb_header *cbh = (struct cb_header *)addr;
-        if (cbh->signature != CB_SIGNATURE)
+        struct cb_header *cbh = (void*)addr;
+        if (GET_FARVAR(0, cbh->signature) != CB_SIGNATURE)
             continue;
-        if (! cbh->table_bytes)
+        u32 tsize = GET_FARVAR(0, cbh->table_bytes);
+        if (! tsize)
             continue;
-        if (ipchksum(addr, sizeof(*cbh)) != 0)
+        if (ipchksum((void*)addr, sizeof(*cbh)) != 0)
             continue;
-        if (ipchksum(addr + sizeof(*cbh), cbh->table_bytes)
-            != cbh->table_checksum)
+        if (ipchksum((void*)addr + sizeof(*cbh), tsize)
+            != GET_FARVAR(0, cbh->table_checksum))
             continue;
         return cbh;
     }
@@ -124,18 +126,35 @@ find_cb_header(char *addr, int len)
 }
 
 // Try to find the coreboot memory table in the given coreboot table.
-static void *
+void *
 find_cb_subtable(struct cb_header *cbh, u32 tag)
 {
     char *tbl = (char *)cbh + sizeof(*cbh);
+    u32 count = GET_FARVAR(0, cbh->table_entries);
     int i;
-    for (i=0; i<cbh->table_entries; i++) {
-        struct cb_memory *cbm = (struct cb_memory *)tbl;
-        tbl += cbm->size;
-        if (cbm->tag == tag)
+    for (i=0; i<count; i++) {
+        struct cb_memory *cbm = (void*)tbl;
+        tbl += GET_FARVAR(0, cbm->size);
+        if (GET_FARVAR(0, cbm->tag) == tag)
             return cbm;
     }
     return NULL;
+}
+
+struct cb_header *
+find_cb_table(void)
+{
+    struct cb_header *cbh = find_cb_header(0, 0x1000);
+    if (!cbh)
+        return NULL;
+    struct cb_forward *cbf = find_cb_subtable(cbh, CB_TAG_FORWARD);
+    if (cbf) {
+        dprintf(3, "Found coreboot table forwarder.\n");
+        cbh = find_cb_header(GET_FARVAR(0, cbf->forward), 0x100);
+        if (!cbh)
+            return NULL;
+    }
+    return cbh;
 }
 
 static struct cb_memory *CBMemTable;
@@ -151,16 +170,9 @@ coreboot_preinit(void)
     dprintf(3, "Attempting to find coreboot table\n");
 
     // Find coreboot table.
-    struct cb_header *cbh = find_cb_header(0, 0x1000);
+    struct cb_header *cbh = find_cb_table();
     if (!cbh)
         goto fail;
-    struct cb_forward *cbf = find_cb_subtable(cbh, CB_TAG_FORWARD);
-    if (cbf) {
-        dprintf(3, "Found coreboot table forwarder.\n");
-        cbh = find_cb_header((char *)((u32)cbf->forward), 0x100);
-        if (!cbh)
-            goto fail;
-    }
     dprintf(3, "Now attempting to find coreboot memory map\n");
     struct cb_memory *cbm = CBMemTable = find_cb_subtable(cbh, CB_TAG_MEMORY);
     if (!cbm)
@@ -182,7 +194,7 @@ coreboot_preinit(void)
     struct cb_cbmem_ref *cbref = find_cb_subtable(cbh, CB_TAG_CBMEM_CONSOLE);
     if (cbref) {
         cbcon = (void*)(u32)cbref->cbmem_addr;
-        dprintf(1, "----- [ SeaBIOS %s ] -----\n", VERSION);
+        debug_banner();
         dprintf(1, "Found coreboot cbmem console @ %llx\n", cbref->cbmem_addr);
     }
 
@@ -297,7 +309,6 @@ ulzma(u8 *dst, u32 maxlen, const u8 *src, u32 srclen)
  ****************************************************************/
 
 #define CBFS_HEADER_MAGIC 0x4F524243
-#define CBFS_HEADPTR_ADDR 0xFFFFFFFc
 #define CBFS_VERSION1 0x31313131
 
 struct cbfs_header {
@@ -363,13 +374,53 @@ cbfs_copyfile(struct romfile_s *file, void *dst, u32 maxlen)
     return size;
 }
 
+// Process CBFS links file.  The links file is a newline separated
+// file where each line has a "link name" and a "destination name"
+// separated by a space character.
+static void
+process_links_file(void)
+{
+    char *links = romfile_loadfile("links", NULL), *next = links;
+    while (next) {
+        // Parse out linkname and destname
+        char *linkname = next;
+        next = strchr(linkname, '\n');
+        if (next)
+            *next++ = '\0';
+        char *comment = strchr(linkname, '#');
+        if (comment)
+            *comment = '\0';
+        linkname = nullTrailingSpace(linkname);
+        char *destname = strchr(linkname, ' ');
+        if (!destname)
+            continue;
+        *destname++ = '\0';
+        destname = nullTrailingSpace(destname);
+        // Lookup destname and create new romfile entry for linkname
+        struct romfile_s *ufile = romfile_find(destname);
+        if (!ufile)
+            continue;
+        struct cbfs_romfile_s *cufile
+            = container_of(ufile, struct cbfs_romfile_s, file);
+        struct cbfs_romfile_s *cfile = malloc_tmp(sizeof(*cfile));
+        if (!cfile) {
+            warn_noalloc();
+            break;
+        }
+        memcpy(cfile, cufile, sizeof(*cfile));
+        strtcpy(cfile->file.name, linkname, sizeof(cfile->file.name));
+        romfile_add(&cfile->file);
+    }
+    free(links);
+}
+
 void
 coreboot_cbfs_init(void)
 {
     if (!CONFIG_COREBOOT_FLASH)
         return;
 
-    struct cbfs_header *hdr = *(void **)CBFS_HEADPTR_ADDR;
+    struct cbfs_header *hdr = *(void **)(CONFIG_CBFS_LOCATION - 4);
     if (hdr->magic != cpu_to_be32(CBFS_HEADER_MAGIC)) {
         dprintf(1, "Unable to find CBFS (ptr=%p; got %x not %x)\n"
                 , hdr, hdr->magic, cpu_to_be32(CBFS_HEADER_MAGIC));
@@ -377,10 +428,11 @@ coreboot_cbfs_init(void)
     }
     dprintf(1, "Found CBFS header at %p\n", hdr);
 
-    struct cbfs_file *fhdr = (void *)(0 - be32_to_cpu(hdr->romsize)
-                                      + be32_to_cpu(hdr->offset));
+    u32 romsize = be32_to_cpu(hdr->romsize);
+    u32 romstart = CONFIG_CBFS_LOCATION - romsize;
+    struct cbfs_file *fhdr = (void*)romstart + be32_to_cpu(hdr->offset);
     for (;;) {
-        if (fhdr < (struct cbfs_file *)(0xFFFFFFFF - be32_to_cpu(hdr->romsize)))
+        if ((u32)fhdr - romstart > romsize)
             break;
         u64 magic = fhdr->magic;
         if (magic != CBFS_FILE_MAGIC)
@@ -408,6 +460,8 @@ coreboot_cbfs_init(void)
         fhdr = (void*)ALIGN((u32)cfile->data + cfile->rawsize
                             , be32_to_cpu(hdr->align));
     }
+
+    process_links_file();
 }
 
 struct cbfs_payload_segment {

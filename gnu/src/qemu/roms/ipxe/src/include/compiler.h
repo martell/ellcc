@@ -60,11 +60,15 @@
 /** Provide a symbol within this object file */
 #ifdef ASSEMBLY
 #define PROVIDE_SYMBOL( _sym )				\
+	.section ".provided", "a", @nobits ;		\
+	.hidden _sym ;					\
 	.globl	_sym ;					\
-	.comm	_sym, 0
+	_sym: ;						\
+	.previous
 #else /* ASSEMBLY */
 #define PROVIDE_SYMBOL( _sym )				\
-	char _sym[0]
+	char _sym[0]					\
+	  __attribute__ (( section ( ".provided" ) ))
 #endif /* ASSEMBLY */
 
 /** Require a symbol within this object file
@@ -246,16 +250,9 @@ REQUEST_EXPANDED ( CONFIG_SYMBOL );
  *
  */
 
-/*
- * If debug_OBJECT is set to a true value, the macro DBG(...) will
- * expand to printf(...) when compiling OBJECT, and the symbol
- * DEBUG_LEVEL will be inserted into the object file.
- *
- */
-#define DEBUG_SYMBOL PREFIX_OBJECT ( debug_ )
-
-#if DEBUG_SYMBOL == 0
+#ifndef DBGLVL_MAX
 #define NDEBUG
+#define DBGLVL_MAX 0
 #endif
 
 #ifndef ASSEMBLY
@@ -271,12 +268,6 @@ extern void dbg_md5_da ( unsigned long dispaddr,
 			 const void *data, unsigned long len );
 extern void dbg_pause ( void );
 extern void dbg_more ( void );
-
-#if DEBUG_SYMBOL
-#define DBGLVL_MAX DEBUG_SYMBOL
-#else
-#define DBGLVL_MAX 0
-#endif
 
 /* Allow for selective disabling of enabled debug levels */
 #if DBGLVL_MAX
@@ -651,7 +642,7 @@ int __debug_disable;
  * be in the public domain.
  */
 #define FILE_LICENCE_PUBLIC_DOMAIN \
-	PROVIDE_SYMBOL ( __licence_public_domain )
+	PROVIDE_SYMBOL ( PREFIX_OBJECT ( __licence__public_domain__ ) )
 
 /** Declare a file as being under version 2 (or later) of the GNU GPL
  *
@@ -660,7 +651,7 @@ int __debug_disable;
  * (at your option) any later version".
  */
 #define FILE_LICENCE_GPL2_OR_LATER \
-	PROVIDE_SYMBOL ( __licence_gpl2_or_later )
+	PROVIDE_SYMBOL ( PREFIX_OBJECT ( __licence__gpl2_or_later__ ) )
 
 /** Declare a file as being under version 2 of the GNU GPL
  *
@@ -669,7 +660,7 @@ int __debug_disable;
  * "or, at your option, any later version" clause.
  */
 #define FILE_LICENCE_GPL2_ONLY \
-	PROVIDE_SYMBOL ( __licence_gpl2_only )
+	PROVIDE_SYMBOL ( PREFIX_OBJECT ( __licence__gpl2_only__ ) )
 
 /** Declare a file as being under any version of the GNU GPL
  *
@@ -681,7 +672,7 @@ int __debug_disable;
  * version ever published by the Free Software Foundation".
  */
 #define FILE_LICENCE_GPL_ANY \
-	PROVIDE_SYMBOL ( __licence_gpl_any )
+	PROVIDE_SYMBOL ( PREFIX_OBJECT ( __licence__gpl_any__ ) )
 
 /** Declare a file as being under the three-clause BSD licence
  *
@@ -706,7 +697,7 @@ int __debug_disable;
  * functionally equivalent to the standard three-clause BSD licence.
  */
 #define FILE_LICENCE_BSD3 \
-	PROVIDE_SYMBOL ( __licence_bsd3 )
+	PROVIDE_SYMBOL ( PREFIX_OBJECT ( __licence__bsd3__ ) )
 
 /** Declare a file as being under the two-clause BSD licence
  *
@@ -727,7 +718,7 @@ int __debug_disable;
  * functionally equivalent to the standard two-clause BSD licence.
  */
 #define FILE_LICENCE_BSD2 \
-	PROVIDE_SYMBOL ( __licence_bsd2 )
+	PROVIDE_SYMBOL ( PREFIX_OBJECT ( __licence__bsd2__ ) )
 
 /** Declare a file as being under the one-clause MIT-style licence
  *
@@ -737,7 +728,7 @@ int __debug_disable;
  * permission notice appear in all copies.
  */
 #define FILE_LICENCE_MIT \
-	PROVIDE_SYMBOL ( __licence_mit )
+	PROVIDE_SYMBOL ( PREFIX_OBJECT ( __licence__mit__ ) )
 
 /** Declare a particular licence as applying to a file */
 #define FILE_LICENCE( _licence ) FILE_LICENCE_ ## _licence

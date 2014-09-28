@@ -115,12 +115,13 @@ handle_1587(struct bregs *regs)
     SET_FARVAR(gdt_seg, gdt_far[1], GDT_DATA | GDT_LIMIT((6*sizeof(u64))-1)
                | GDT_BASE(loc));
     // Initialize CS descriptor
-    SET_FARVAR(gdt_seg, gdt_far[4], GDT_CODE | GDT_LIMIT(BUILD_BIOS_SIZE-1)
-               | GDT_BASE(BUILD_BIOS_ADDR));
+    u64 lim = GDT_LIMIT(0x0ffff);
+    if (in_post())
+        lim = GDT_GRANLIMIT(0xffffffff);
+    SET_FARVAR(gdt_seg, gdt_far[4], GDT_CODE | lim | GDT_BASE(BUILD_BIOS_ADDR));
     // Initialize SS descriptor
     loc = (u32)MAKE_FLATPTR(GET_SEG(SS), 0);
-    SET_FARVAR(gdt_seg, gdt_far[5], GDT_DATA | GDT_LIMIT(0x0ffff)
-               | GDT_BASE(loc));
+    SET_FARVAR(gdt_seg, gdt_far[5], GDT_DATA | lim | GDT_BASE(loc));
 
     u16 count = regs->cx;
     asm volatile(
@@ -190,9 +191,10 @@ handle_1588(struct bregs *regs)
 }
 
 // Switch to protected mode
-static void
+void VISIBLE16
 handle_1589(struct bregs *regs)
 {
+    debug_enter(regs, DEBUG_HDL_15);
     set_a20(1);
 
     pic_reset(regs->bl, regs->bh);
@@ -354,7 +356,6 @@ handle_15(struct bregs *regs)
     case 0x86: handle_1586(regs); break;
     case 0x87: handle_1587(regs); break;
     case 0x88: handle_1588(regs); break;
-    case 0x89: handle_1589(regs); break;
     case 0x90: handle_1590(regs); break;
     case 0x91: handle_1591(regs); break;
     case 0xc0: handle_15c0(regs); break;

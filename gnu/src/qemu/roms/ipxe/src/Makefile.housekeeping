@@ -115,6 +115,18 @@ endif
 
 ###############################################################################
 #
+# Check if $(eval ...) is available to use
+#
+
+HAVE_EVAL :=
+ifndef NO_EVAL
+$(eval HAVE_EVAL := yes)
+endif
+eval :
+	@$(ECHO) $(HAVE_EVAL)
+
+###############################################################################
+#
 # Check for various tool workarounds
 #
 
@@ -128,13 +140,11 @@ WORKAROUND_LDFLAGS :=
 COMMA	:= ,
 EMPTY	:=
 SPACE	:= $(EMPTY) $(EMPTY)
+HASH	:= \#
+define NEWLINE
 
-# Check for an old version of gas (binutils 2.9.1)
-#
-OLDGAS	:= $(shell $(AS) --version | grep -q '2\.9\.1' && $(ECHO) -DGAS291)
-WORKAROUND_CFLAGS += $(OLDGAS)
-oldgas :
-	@$(ECHO) $(oldgas)
+
+endef
 
 # Some widespread patched versions of gcc include -fstack-protector by
 # default, even when -ffreestanding is specified.  We therefore need
@@ -198,6 +208,16 @@ QM := @\#
 else
 Q := @
 QM := @
+endif
+
+###############################################################################
+#
+# Checker
+#
+ifeq ($(C),1)
+export REAL_CC := $(CC)
+CC := cgcc
+CFLAGS += -Wno-decl
 endif
 
 ###############################################################################
@@ -473,9 +493,14 @@ CFLAGS		+= $(FS_FLAGS) $(DS_FLAGS)
 endif
 LDFLAGS		+= --gc-sections
 
+# Force creation of static binaries (required for OpenBSD, does no
+# harm on other platforms).
+#
+LDFLAGS		+= -static
+
 # compiler.h is needed for our linking and debugging system
 #
-CFLAGS		+= -include compiler.h
+CFLAGS		+= -include include/compiler.h
 
 # CFLAGS for specific object types
 #
@@ -508,14 +533,14 @@ endif
 #
 COMPILE_c	= $(CC) $(CFLAGS) $(CFLAGS_c) $(OBJ_CFLAGS)
 RULE_c		= $(Q)$(COMPILE_c) -c $< -o $@ $(POST_O)
-RULE_c_to_dbg%.o = $(Q)$(COMPILE_c) -Ddebug_$(subst -,_,$(OBJECT))=$* -c $< -o $@ $(POST_O)
+RULE_c_to_dbg%.o = $(Q)$(COMPILE_c) -DDBGLVL_MAX=$* -c $< -o $@ $(POST_O)
 RULE_c_to_c	= $(Q)$(COMPILE_c) -E -c $< > $@
 RULE_c_to_s	= $(Q)$(COMPILE_c) -S -g0 -c $< -o $@
 
 PREPROCESS_S	= $(CPP) $(CFLAGS) $(CFLAGS_S) $(OBJ_CFLAGS)
 ASSEMBLE_S	= $(AS) $(ASFLAGS)
 RULE_S		= $(Q)$(PREPROCESS_S) $< | $(ASSEMBLE_S) -o $@
-RULE_S_to_dbg%.o = $(Q)$(PREPROCESS_S) -Ddebug_$(subst -,_,$(OBJECT))=$* $< | $(ASSEMBLE_S) -o $@
+RULE_S_to_dbg%.o = $(Q)$(PREPROCESS_S) -DDBGLVL_MAX=$* $< | $(ASSEMBLE_S) -o $@
 RULE_S_to_s	= $(Q)$(PREPROCESS_S) $< > $@
 
 DEBUG_TARGETS	+= dbg%.o c s
@@ -535,7 +560,7 @@ ifneq ($(EMBED_OLD),$(EMBED))
 $(shell $(ECHO) "$(EMBED)" > $(EMBEDDED_LIST))
 endif
 
-$(EMBEDDED_LIST) :
+$(EMBEDDED_LIST) : $(MAKEDEPS)
 
 VERYCLEANUP	+= $(EMBEDDED_LIST)
 
@@ -560,7 +585,7 @@ ifneq ($(TRUST_OLD),$(TRUST))
 $(shell $(ECHO) "$(TRUST)" > $(TRUSTED_LIST))
 endif
 
-$(TRUSTED_LIST) :
+$(TRUSTED_LIST) : $(MAKEDEPS)
 
 VERYCLEANUP	+= $(TRUSTED_LIST)
 
@@ -576,7 +601,7 @@ rootcert_DEPS += $(TRUSTED_FILES) $(TRUSTED_LIST)
 
 CFLAGS_rootcert = $(if $(TRUSTED_FPS),-DTRUSTED="$(TRUSTED_FPS)")
 
-# (Single-element) list of client certificates
+# List of embedded certificates
 #
 CERT_LIST := $(BIN)/.certificate.list
 ifeq ($(wildcard $(CERT_LIST)),)
@@ -588,28 +613,47 @@ ifneq ($(CERT_OLD),$(CERT))
 $(shell $(ECHO) "$(CERT)" > $(CERT_LIST))
 endif
 
-$(CERT_LIST) :
+$(CERT_LIST) : $(MAKEDEPS)
 
 VERYCLEANUP += $(CERT_LIST)
 
-# Embedded client certificate
+# Embedded certificates concatenated and then split into one file per
+# certificate (even if original files contained certificate chains)
 #
-CERT_INC := $(BIN)/.certificate.der
+CERT_FILES := $(subst $(COMMA), ,$(CERT))
+CERT_CONCAT := $(BIN)/.certificates.pem
 
-ifdef CERT
-$(CERT_INC) : $(CERT) $(CERT_LIST)
+ifneq ($(CERT),)
+
+CERT_COUNT := $(shell grep "BEGIN CERTIFICATE" $(CERT_FILES) | wc -l)
+
+$(CERT_CONCAT) : $(CERT_FILES) $(CERT_LIST)
+	$(Q)cat $(CERT_FILES) > $@
+
+# We must use an (otherwise unnecessary) pattern rule here to encode
+# the fact that one "csplit" command generates multiple targets
+CERT_PEMS := $(foreach i,$(call seq,1,$(CERT_COUNT)),\
+	       $(BIN)/.certificate.pem.$(i))
+$(subst .pem.,.%.,$(CERT_PEMS)) : $(BIN)/.certificates.%
+	$(Q)$(CSPLIT) -q -n 1 -f $(BIN)/.certificate.pem. $< \
+		'/BEGIN CERTIFICATE/' '{*}'
+
+CERT_DERS := $(subst .certificate.pem.,.certificate.der.,$(CERT_PEMS))
+$(BIN)/.certificate.der.% : $(BIN)/.certificate.pem.%
 	$(Q)$(OPENSSL) x509 -in $< -outform DER -out $@
 
-clientcert_DEPS += $(CERT_INC)
+CERT_ALL := $(foreach i,$(call seq,1,$(CERT_COUNT)),\
+	      CERT ( $(i), \"$(word $(i),$(CERT_DERS))\" ))
+
 endif
 
-CLEANUP += $(CERT_INC)
+certstore_DEPS += $(CERT_LIST) $(CERT_FILES) $(CERT_PEMS) $(CERT_DERS)
 
-clientcert_DEPS += $(CERT_LIST)
+CFLAGS_certstore += -DCERT_ALL="$(CERT_ALL)"
 
-CFLAGS_clientcert += $(if $(CERT),-DCERTIFICATE="\"$(CERT_INC)\"")
+CLEANUP += $(BIN)/.certificate.* $(BIN)/.certificates.*
 
-# (Single-element) list of client private keys
+# (Single-element) list of private keys
 #
 ifdef KEY
 PRIVKEY	:= $(KEY) # Maintain backwards compatibility
@@ -624,11 +668,11 @@ ifneq ($(PRIVKEY_OLD),$(PRIVKEY))
 $(shell $(ECHO) "$(PRIVKEY)" > $(PRIVKEY_LIST))
 endif
 
-$(PRIVKEY_LIST) :
+$(PRIVKEY_LIST) : $(MAKEDEPS)
 
 VERYCLEANUP += $(PRIVKEY_LIST)
 
-# Embedded client private key
+# Embedded private key
 #
 PRIVKEY_INC := $(BIN)/.private_key.der
 
@@ -636,22 +680,22 @@ ifdef PRIVKEY
 $(PRIVKEY_INC) : $(PRIVKEY) $(PRIVKEY_LIST)
 	$(Q)$(OPENSSL) rsa -in $< -outform DER -out $@
 
-clientcert_DEPS += $(PRIVKEY_INC)
+privkey_DEPS += $(PRIVKEY_INC)
 endif
 
-CLEANUP += $(PRIVKEY_INC)
+CLEANUP += $(BIN)/.private_key.*
 
-clientcert_DEPS += $(PRIVKEY_LIST)
+privkey_DEPS += $(PRIVKEY_LIST)
 
-CFLAGS_clientcert += $(if $(PRIVKEY),-DPRIVATE_KEY="\"$(PRIVKEY_INC)\"")
+CFLAGS_privkey += $(if $(PRIVKEY),-DPRIVATE_KEY="\"$(PRIVKEY_INC)\"")
 
 # These files use .incbin inline assembly to include a binary file.
 # Unfortunately ccache does not detect this dependency and caches
 # builds even when the binary file has changed.
 #
-$(BIN)/embedded.o : override CC := env CCACHE_DISABLE=1 $(CC)
-
-$(BIN)/clientcert.o : override CC := env CCACHE_DISABLE=1 $(CC)
+$(BIN)/embedded.% : override CC := env CCACHE_DISABLE=1 $(CC)
+$(BIN)/certstore.% : override CC := env CCACHE_DISABLE=1 $(CC)
+$(BIN)/privkey.% : override CC := env CCACHE_DISABLE=1 $(CC)
 
 # Version number
 #
@@ -661,87 +705,122 @@ CFLAGS_version += -DVERSION_MAJOR=$(VERSION_MAJOR) \
 		  -DVERSION="\"$(VERSION)\""
 # Make sure the version number gets updated on every git checkout
 ifneq ($(GITVERSION),)
-$(BIN)/version.o : ../.git/index
+$(BIN)/version.% : ../.git/index
 endif
 
 # We automatically generate rules for any file mentioned in AUTO_SRCS
-# using the following set of templates.  It would be cleaner to use
-# $(eval ...), but this function exists only in GNU make >= 3.80.
+# using the following set of templates.  We use $(eval ...) if
+# available, otherwise we generate separate Makefile fragments and
+# include them.
 
 # deps_template : generate dependency list for a given source file
+#
+# $(1) is the full path to the source file (e.g. "drivers/net/rtl8139.c")
+#
+define deps_template_file
+$(call deps_template_parts,$(1),$(subst .,,$(suffix $(1))),$(basename $(notdir $(1))))
+endef
 #
 # $(1) is the full path to the source file (e.g. "drivers/net/rtl8139.c")
 # $(2) is the source type (e.g. "c")
 # $(3) is the source base name (e.g. "rtl8139")
 #
-define deps_template
+define deps_template_parts
 	@$(ECHO) "  [DEPS] $(1)"
 	@$(MKDIR) -p $(BIN)/deps/$(dir $(1))
 	$(Q)$(CPP) $(CFLAGS) $(CFLAGS_$(2)) $(CFLAGS_$(3)) -DOBJECT=$(3) \
 		-Wno-error -M $(1) -MG -MP | \
 		sed 's/\.o\s*:/_DEPS +=/' > $(BIN)/deps/$(1).d
+	$(Q)$(if $(findstring drivers/,$(1)),\
+	   $(PERL) $(PARSEROM) $(1) >> $(BIN)/deps/$(1).d)
 endef
 
 # rules_template : generate rules for a given source file
 #
 # $(1) is the full path to the source file (e.g. "drivers/net/rtl8139.c")
+#
+define rules_template
+$(call rules_template_parts,$(1),$(subst .,,$(suffix $(1))),$(basename $(notdir $(1))))
+endef
+#
+# $(1) is the full path to the source file (e.g. "drivers/net/rtl8139.c")
 # $(2) is the source type (e.g. "c")
 # $(3) is the source base name (e.g. "rtl8139")
 #
-define rules_template
+define rules_template_parts
+$$(BIN)/$(3).o : $(1) $$(MAKEDEPS) $$(POST_O_DEPS) $$($(3)_DEPS)
+	$$(QM)$(ECHO) "  [BUILD] $$@"
+	$$(RULE_$(2))
+BOBJS += $$(BIN)/$(3).o
+$(foreach TGT,$(DEBUG_TARGETS),$(if $(RULE_$(2)_to_$(TGT)),$(NEWLINE)$(call rules_template_target,$(1),$(2),$(3),$(TGT))))
+$$(BIN)/deps/$(1).d : $$($(3)_DEPS)
+TAGS : $$($(3)_DEPS)
+endef
+#
+# $(1) is the full path to the source file (e.g. "drivers/net/rtl8139.c")
+# $(2) is the source type (e.g. "c")
+# $(3) is the source base name (e.g. "rtl8139")
+# $(4) is the destination type (e.g. "dbg%.o")
+#
+define rules_template_target
+$$(BIN)/$(3).$(4) : $(1) $$(MAKEDEPS) $$(POST_O_DEPS) $$($(3)_DEPS)
+	$$(QM)$(ECHO) "  [BUILD] $$@"
+	$$(RULE_$(2)_to_$(4))
+$(TGT)_OBJS += $$(BIN)/$(3).$(4)
+endef
+#
+# $(1) is the full path to the source file (e.g. "drivers/net/rtl8139.c")
+#
+define rules_template_file
 	@$(ECHO) "  [RULES] $(1)"
 	@$(MKDIR) -p $(BIN)/rules/$(dir $(1))
-	@$(ECHO_E) '\n$$(BIN)/$(3).o :' \
-		 '$(1) $$(MAKEDEPS) $$(POST_O_DEPS) $$($(3)_DEPS)' \
-		 '\n\t$$(QM)$(ECHO) "  [BUILD] $$@"' \
-		 '\n\t$$(RULE_$(2))\n' \
-		 '\nBOBJS += $$(BIN)/$(3).o\n' \
-		 $(foreach TGT,$(DEBUG_TARGETS), \
-		    $(if $(RULE_$(2)_to_$(TGT)), \
-		    '\n$$(BIN)/$(3).$(TGT) :' \
-		    '$(1) $$(MAKEDEPS) $$(POST_O_DEPS) $$($(3)_DEPS)' \
-		    '\n\t$$(QM)$(ECHO) "  [BUILD] $$@"' \
-		    '\n\t$$(RULE_$(2)_to_$(TGT))\n' \
-		    '\n$(TGT)_OBJS += $$(BIN)/$(3).$(TGT)\n' ) ) \
-		 '\n$(BIN)/deps/$(1).d : $$($(3)_DEPS)\n' \
-		 '\nTAGS : $$($(3)_DEPS)\n' > $(BIN)/rules/$(1).r
-	@$(if $(findstring drivers/,$(1)),\
-	   $(PERL) $(PARSEROM) $(1) >> $(BIN)/rules/$(1).r)
+	@$(ECHO_E) '$(subst $(NEWLINE),\n,$(call rules_template,$(1)))' \
+		 > $(BIN)/rules/$(1).r
 endef
 
-# Rule to generate the dependency list file
+# Generate the dependency files
 #
-$(BIN)/deps/%.d : % $(MAKEDEPS)
-	$(call deps_template,$<,$(subst .,,$(suffix $<)),$(basename $(notdir $<)))
+$(BIN)/deps/%.d : % $(MAKEDEPS) $(PARSEROM)
+	$(call deps_template_file,$<)
 
-# Calculate and include the list of dependency list files
+# Calculate list of dependency files
 #
 AUTO_DEPS	= $(patsubst %,$(BIN)/deps/%.d,$(AUTO_SRCS))
+autodeps :
+	@$(ECHO) $(AUTO_DEPS)
+VERYCLEANUP	+= $(BIN)/deps
+
+# Include dependency files
+#
 ifdef NEED_DEPS
 ifneq ($(AUTO_DEPS),)
 -include $(AUTO_DEPS)
 endif
 endif
-autodeps :
-	@$(ECHO) $(AUTO_DEPS)
-VERYCLEANUP	+= $(BIN)/deps
 
-# Rule to generate the rules file
+# Generate the rules files
 #
-$(BIN)/rules/%.r : % $(MAKEDEPS) $(PARSEROM)
-	$(call rules_template,$<,$(subst .,,$(suffix $<)),$(basename $(notdir $<)))
+$(BIN)/rules/%.r : % $(MAKEDEPS)
+	$(call rules_template_file,$<)
 
-# Calculate and include the list of rules files
+# Calculate list of rules files
 #
 AUTO_RULES	= $(patsubst %,$(BIN)/rules/%.r,$(AUTO_SRCS))
-ifdef NEED_DEPS
-ifneq ($(AUTO_RULES),)
--include $(AUTO_RULES)
-endif
-endif
 autorules :
 	@$(ECHO) $(AUTO_RULES)
 VERYCLEANUP	+= $(BIN)/rules
+
+# Evaluate rules (or include rules files)
+#
+ifdef NEED_DEPS
+ifneq ($(AUTO_RULES),)
+ifneq ($(HAVE_EVAL),)
+$(foreach SRC,$(AUTO_SRCS),$(eval $(call rules_template,$(SRC))))
+else
+-include $(AUTO_RULES)
+endif
+endif
+endif
 
 # The following variables are created by the rules files
 #
@@ -879,7 +958,7 @@ ifneq ($(BLIB_OBJS_OLD),$(BLIB_OBJS))
 $(shell $(ECHO) "$(BLIB_OBJS)" > $(BLIB_LIST))
 endif
 
-$(BLIB_LIST) :
+$(BLIB_LIST) : $(MAKEDEPS)
 
 VERYCLEANUP	+= $(BLIB_LIST)
 
@@ -949,15 +1028,20 @@ $(BIN)/%.nodeps : $(BIN)/%.tmp
 # Get licensing verdict for the specified target
 #
 define licensable_deps_list
-	$(filter-out config/local/%.h,$(call deps_list,$(1)))
+	$(filter-out config/local/%.h,\
+	  $(filter-out $(BIN)/.%.list,\
+	    $(call deps_list,$(1))))
 endef
 define unlicensed_deps_list
 	$(shell grep -L FILE_LICENCE $(call licensable_deps_list,$(1)))
 endef
 define licence_list
-	$(patsubst __licence_%,%,\
-	  $(filter __licence_%,$(shell $(NM) $(1) | cut -d" " -f3)))
+	$(sort $(foreach LICENCE,\
+		 $(filter __licence__%,$(shell $(NM) $(1) | cut -d" " -f3)),\
+		 $(word 2,$(subst __, ,$(LICENCE)))))
 endef
+$(BIN)/%.licence_list : $(BIN)/%.tmp
+	$(Q)$(ECHO) $(call licence_list,$<)
 $(BIN)/%.licence : $(BIN)/%.tmp
 	$(QM)$(ECHO) "  [LICENCE] $@"
 	$(Q)$(if $(strip $(call unlicensed_deps_list,$<)),\
@@ -1018,51 +1102,61 @@ AUTO_MEDIA	= $(filter-out $(NON_AUTO_MEDIA),$(MEDIA))
 automedia :
 	@$(ECHO) $(AUTO_MEDIA)
 
-# media_template : create Makefile rules for specified media
+# media_template : create media rules
 #
 # $(1) is the media name (e.g. "rom")
 #
 define media_template
+$(if $(filter $(1),$(AUTO_MEDIA)),$(call auto_media_template,$(1)))
+LIST_$(1) := $$(if $$(LIST_NAME_$(1)),$$($$(LIST_NAME_$(1))),$$(DRIVERS))
+ALL_$(1) = $$(foreach ITEM,$$(LIST_$(1)),$$(BIN)/$$(ITEM).$(1))
+$$(BIN)/all$(1)s : $$(ALL_$(1))
+$$(BIN)/allall : $$(BIN)/all$(1)s
+all$(1)s : $$(BIN)/all$(1)s
+allall : $$(BIN)/allall
+endef
+#
+# $(1) is the media name (e.g. "rom")
+#
+define auto_media_template
+$$(BIN)/%.$(1) : $$(BIN)/%.$(1).zbin
+	$$(QM)echo "  [FINISH] $$@"
+	$$(Q)$$(CP) $$< $$@
+	$$(Q)$$(if $$(PAD_$(1)),$$(PAD_$(1)) $$@)
+	$$(Q)$$(if $$(FINALISE_$(1)),$$(FINALISE_$(1)) $$@)
+endef
+#
+# $(1) is the media name (e.g. "rom")
+#
+define media_template_file
 	@$(ECHO) "  [MEDIARULES] $(1)"
 	@$(MKDIR) -p $(BIN)/rules/$(dir $(1))
-	@$(ECHO_E) '$$(BIN)/%.$(1) : $$(BIN)/%.$(1).zbin' \
-		  '\n\t$$(QM)$(ECHO) "  [FINISH] $$@"' \
-		  '\n\t$$(Q)$$(CP) $$< $$@' \
-		  '\n\t$$(Q)$$(PAD_$(1))' \
-		  '\n\t$$(Q)$$(FINALISE_$(1))' \
+	@$(ECHO_E) '$(subst $(NEWLINE),\n,$(call media_template,$(1)))' \
 		> $(BIN)/rules/$(1).media.r
 endef
 
-# Rule to generate the Makefile rules to be included
+# Generate media rules files
 #
 $(BIN)/rules/%.media.r : $(MAKEDEPS)
-	$(call media_template,$*)
+	$(call media_template_file,$*)
 
-# Calculate and include the list of Makefile rules files
+# Calculate list of media rules files
 #
-MEDIA_RULES		= $(patsubst %,$(BIN)/rules/%.media.r,$(AUTO_MEDIA))
+MEDIA_RULES		= $(patsubst %,$(BIN)/rules/%.media.r,$(MEDIA))
 mediarules :
 	@$(ECHO) $(MEDIA_RULES)
+
+# Evaluate media rules (or include media rules files)
+#
 ifdef NEED_DEPS
 ifneq ($(MEDIA_RULES),)
+ifneq ($(HAVE_EVAL),)
+$(foreach MEDIUM,$(MEDIA),$(eval $(call media_template,$(MEDIUM))))
+else
 -include $(MEDIA_RULES)
 endif
 endif
-
-# Wrap up binary blobs (for embedded images)
-#
-$(BIN)/%.o : payload/%.img
-	$(QM)echo "  [WRAP] $@"
-	$(Q)$(LD) -b binary -r -o $@ $< --undefined obj_payload \
-		--defsym obj_$*=0
-
-BOBJS += $(patsubst payload/%.img,$(BIN)/%.o,$(wildcard payload/*.img))
-
-# The "allXXXs" targets for each suffix
-#
-allall: allroms allmroms allpxes allisos alldsks
-allroms allmroms : all%s : $(foreach ROM,$(ROMS),$(BIN)/$(ROM).%)
-allpxes allisos alldsks : all%s : $(foreach DRIVER,$(DRIVERS),$(BIN)/$(DRIVER).%)
+endif
 
 # Alias for ipxe.%
 #

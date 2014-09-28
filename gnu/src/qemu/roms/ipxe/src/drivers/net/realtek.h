@@ -140,6 +140,7 @@ enum realtek_legacy_status {
 
 /** Receive (Rx) Configuration Register (dword) */
 #define RTL_RCR 0x44
+#define RTL_RCR_STOP_WORKING	0x01000000UL /**< Here be dragons */
 #define RTL_RCR_RXFTH(x)	( (x) << 13 ) /**< Receive FIFO threshold */
 #define RTL_RCR_RXFTH_MASK	RTL_RCR_RXFTH ( 0x7 )
 #define RTL_RCR_RXFTH_DEFAULT	RTL_RCR_RXFTH ( 0x7 /* Whole packet */ )
@@ -166,6 +167,12 @@ enum realtek_legacy_status {
 #define RTL_9346CR_EEDI		0x02	/**< Data in */
 #define RTL_9346CR_EEDO		0x01	/**< Data out */
 
+/** Word offset of ID code word within EEPROM */
+#define RTL_EEPROM_ID ( 0x00 / 2 )
+
+/** EEPROM code word magic value */
+#define RTL_EEPROM_ID_MAGIC 0x8129
+
 /** Word offset of MAC address within EEPROM */
 #define RTL_EEPROM_MAC ( 0x0e / 2 )
 
@@ -181,7 +188,13 @@ enum realtek_legacy_status {
 
 /** Media Status Register (byte, 8139 only) */
 #define RTL_MSR 0x58
+#define RTL_MSR_TXFCE		0x80	/**< TX flow control enabled */
+#define RTL_MSR_RXFCE		0x40	/**< RX flow control enabled */
+#define RTL_MSR_AUX_STATUS	0x10	/**< Aux power present */
+#define RTL_MSR_SPEED_10	0x08	/**< 10Mbps */
 #define RTL_MSR_LINKB		0x04	/**< Inverse of link status */
+#define RTL_MSR_TXPF		0x02	/**< TX pause flag */
+#define RTL_MSR_RXPF		0x01	/**< RX pause flag */
 
 /** PHY Access Register (dword, 8169 only) */
 #define RTL_PHYAR 0x60
@@ -198,7 +211,14 @@ enum realtek_legacy_status {
 
 /** PHY (GMII, MII, or TBI) Status Register (byte, 8169 only) */
 #define RTL_PHYSTATUS 0x6c
+#define RTL_PHYSTATUS_ENTBI	0x80	/**< TBI / GMII mode */
+#define RTL_PHYSTATUS_TXFLOW	0x40	/**< TX flow control enabled */
+#define RTL_PHYSTATUS_RXFLOW	0x20	/**< RX flow control enabled */
+#define RTL_PHYSTATUS_1000MF	0x10	/**< 1000Mbps full-duplex */
+#define RTL_PHYSTATUS_100M	0x08	/**< 100Mbps */
+#define RTL_PHYSTATUS_10M	0x04	/**< 10Mbps */
 #define RTL_PHYSTATUS_LINKSTS	0x02	/**< Link ok */
+#define RTL_PHYSTATUS_FULLDUP	0x01	/**< Full duplex */
 
 /** Transmit Priority Polling Register (byte, 8139C+ only) */
 #define RTL_TPPOLL_8139CP 0xd9
@@ -220,7 +240,8 @@ enum realtek_legacy_status {
 #define RTL_NUM_RX_DESC 4
 
 /** Receive buffer length */
-#define RTL_RX_MAX_LEN ( ETH_FRAME_LEN + 4 /* VLAN */ + 4 /* CRC */ )
+#define RTL_RX_MAX_LEN \
+	( ETH_FRAME_LEN + 4 /* VLAN */ + 4 /* CRC */ + 4 /* extra space */ )
 
 /** A Realtek descriptor ring */
 struct realtek_ring {

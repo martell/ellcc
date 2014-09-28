@@ -91,14 +91,18 @@ struct cpudef {
 /*
   ( addr -- ? )
 */
+
+extern volatile uint64_t client_tba;
+
 static void
 set_trap_table(void)
 {
     unsigned long addr;
 
     addr = POP();
-    asm("wrpr %0, %%tba\n"
-        : : "r" (addr));
+
+    /* Update client_tba to be updated on CIF exit */
+    client_tba = addr;
 }
 
 /* Reset control register is defined in 17.2.7.3 of US IIi User Manual */
@@ -561,6 +565,8 @@ static void init_memory(void)
     PUSH(virt + MEMORY_SIZE);
 }
 
+extern volatile uint64_t *obp_ticks_pointer;
+
 static void
 arch_init( void )
 {
@@ -571,6 +577,10 @@ arch_init( void )
 #endif
         nvconf_init();
         device_end();
+
+        /* Point to the Forth obp-ticks variable */
+        fword("obp-ticks");
+        obp_ticks_pointer = cell2pointer(POP());
 
 	bind_func("platform-boot", boot );
 	bind_func("(go)", go);

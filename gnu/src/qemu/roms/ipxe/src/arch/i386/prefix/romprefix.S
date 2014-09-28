@@ -23,13 +23,10 @@ FILE_LICENCE ( GPL2_OR_LATER )
 	( PMM_HANDLE_BASE | 0x00001000 )
 #define PMM_HANDLE_BASE_DECOMPRESS_TO \
 	( PMM_HANDLE_BASE | 0x00002000 )
+#define PCI_FUNC_MASK 0x07
 
-/* ROM banner timeout.  Based on the configurable BANNER_TIMEOUT in
- * config.h, but converted to a number of (18Hz) timer ticks, and
- * doubled to allow for BIOSes that switch video modes immediately
- * beforehand, so rendering the message almost invisible to the user.
- */
-#define ROM_BANNER_TIMEOUT ( 2 * ( 18 * BANNER_TIMEOUT ) / 10 )
+/* ROM banner timeout, converted to a number of (18Hz) timer ticks. */
+#define ROM_BANNER_TIMEOUT_TICKS ( ( 18 * ROM_BANNER_TIMEOUT ) / 10 )
 
 /* Allow payload to be excluded from ROM size
  */
@@ -422,6 +419,9 @@ no_pmm:
 	xorw	%di, %di
 	cs rep	movsb
 
+	/* Skip prompt if this is not the first PCI function */
+	testb	$PCI_FUNC_MASK, init_pci_busdevfn
+	jnz	no_shell
 	/* Prompt for POST-time shell */
 	movw	$init_message_prompt, %si
 	xorw	%di, %di
@@ -440,15 +440,19 @@ no_pmm:
 	movw	$init_message_done, %si
 	call	print_message
 	popf
-	jnz	2f
+	jnz	no_shell
 	/* Ctrl-B was pressed: invoke iPXE.  The keypress will be
 	 * picked up by the initial shell prompt, and we will drop
 	 * into a shell.
 	 */
-	movl	$0xa0000, %ebp	/* Inhibit relocation during POST */
+	xorl	%ebp, %ebp	/* Inhibit use of INT 15,e820 and INT 15,e801 */
 	pushw	%cs
 	call	exec
-2:
+no_shell:
+	movb	$( '\n' ), %al
+	xorw	%di, %di
+	call	print_character
+
 	/* Restore registers */
 	popw	%gs
 	popw	%fs
@@ -595,7 +599,7 @@ init_message_done:
  *
  */
 init_pci_busdevfn:
-	.word	0xffff
+	.word	0
 	.size	init_pci_busdevfn, . - init_pci_busdevfn
 
 /* Image source area
@@ -630,7 +634,7 @@ decompress_to:
  * Called by the PnP BIOS when it wants to boot us.
  */
 bev_entry:
-	xorl	%ebp, %ebp	/* Allow relocation */
+	orl	$0xffffffff, %ebp	/* Allow arbitrary relocation */
 	pushw	%cs
 	call	exec
 	lret
@@ -665,7 +669,7 @@ int19_entry:
 	/* Leave keypress in buffer and start iPXE.  The keypress will
 	 * cause the usual initial Ctrl-B prompt to be skipped.
 	 */
-	xorl	%ebp, %ebp	/* Allow relocation */
+	orl	$0xffffffff, %ebp	/* Allow arbitrary relocation */
 	pushw	%cs
 	call	exec
 1:	/* Try to call original INT 19 vector */
@@ -734,11 +738,24 @@ exec:	/* Set %ds = %cs */
 	pushw	$1f
 	lret
 	.section ".text16", "awx", @progbits
-1:	/* Call main() */
+1:
+	/* Retrieve PCI bus:dev.fn */
+	movw	init_pci_busdevfn, %ax
+
+	/* Set up %ds for access to .data16 */
+	movw	%bx, %ds
+
+	/* Store PCI bus:dev.fn */
+	movw	%ax, autoboot_busdevfn
+
+	/* Call main() */
 	pushl	$main
 	pushw	%cs
 	call	prot_call
 	popl	%eax /* discard */
+
+	/* Set up flat real mode for return to BIOS */
+	call	flatten_real_mode
 
 	/* Uninstall iPXE */
 	call	uninstall
@@ -783,7 +800,7 @@ wait_for_key:
 	int	$0x16
 	jmp	1b
 2:	/* Wait for a key press */
-	movw	$ROM_BANNER_TIMEOUT, %cx
+	movw	$ROM_BANNER_TIMEOUT_TICKS, %cx
 3:	decw	%cx
 	js	99f		/* Exit with ZF clear */
 	/* Wait for timer tick to be updated */

@@ -39,7 +39,11 @@ FILE_LICENCE ( GPL2_OR_LATER );
  *
  */
 
-#define LINK_WAIT_MS 15000
+/** Loopback testing in progress flag */
+static int lotest_active;
+
+/** Loopback testing received packets */
+static LIST_HEAD ( lotest_queue );
 
 /**
  * Process received packet
@@ -56,8 +60,32 @@ static int lotest_rx ( struct io_buffer *iobuf,
 		       const void *ll_dest __unused,
 		       const void *ll_source __unused,
 		       unsigned int flags __unused ) {
-	free_iob ( iobuf );
-	return -ENOTSUP;
+
+	/* Add to received packet queue if currently performing a test */
+	if ( lotest_active ) {
+		list_add_tail ( &iobuf->list, &lotest_queue );
+	} else {
+		free_iob ( iobuf );
+	}
+
+	return 0;
+}
+
+/**
+ * Dequeue received packet
+ *
+ * @ret iobuf		I/O buffer, or NULL
+ */
+static struct io_buffer * lotest_dequeue ( void ) {
+	struct io_buffer *iobuf;
+
+	/* Remove first packet (if any) from received packet queue */
+	iobuf = list_first_entry ( &lotest_queue, struct io_buffer, list );
+	if ( ! iobuf )
+		return NULL;
+	list_del ( &iobuf->list );
+
+	return iobuf;
 }
 
 /**
@@ -86,22 +114,25 @@ static struct net_protocol lotest_protocol __net_protocol = {
 };
 
 /**
+ * Discard all received loopback test packets
+ *
+ */
+static void lotest_flush ( void ) {
+	struct io_buffer *iobuf;
+
+	while ( ( iobuf = lotest_dequeue() ) != NULL )
+		free_iob ( iobuf );
+}
+
+/**
  * Wait for packet to be received
  *
- * @v receiver		Receiving network device*
  * @v data		Expected data
  * @v len		Expected data length
  * @ret rc		Return status code
  */
-static int loopback_wait ( struct net_device *receiver, void *data,
-			   size_t len ) {
-	struct ll_protocol *ll_protocol = receiver->ll_protocol;
+static int loopback_wait ( void *data, size_t len ) {
 	struct io_buffer *iobuf;
-	const void *ll_dest;
-	const void *ll_source;
-	uint16_t net_proto;
-	unsigned int flags;
-	int rc;
 
 	/* Poll until packet arrives */
 	while ( 1 ) {
@@ -114,27 +145,9 @@ static int loopback_wait ( struct net_device *receiver, void *data,
 		net_poll();
 
 		/* Dequeue packet, if available */
-		iobuf = netdev_rx_dequeue ( receiver );
+		iobuf = lotest_dequeue();
 		if ( ! iobuf )
 			continue;
-
-		/* Strip link-layer header */
-		if ( ( rc = ll_protocol->pull ( receiver, iobuf, &ll_dest,
-						&ll_source, &net_proto,
-						&flags ) ) != 0 ) {
-			printf ( "\nFailed to strip link-layer header: %s",
-				 strerror ( rc ) );
-			free_iob ( iob_disown ( iobuf ) );
-			return rc;
-		}
-
-		/* Ignore non-loopback packets */
-		if ( net_proto != lotest_protocol.net_proto ) {
-			printf ( "\nReceived spurious packet type %04x\n",
-				 ntohs ( net_proto ) );
-			free_iob ( iob_disown ( iobuf ) );
-			continue;
-		}
 
 		/* Check packet length */
 		if ( iob_len ( iobuf ) != len ) {
@@ -175,7 +188,8 @@ static int loopback_wait ( struct net_device *receiver, void *data,
  */
 int loopback_test ( struct net_device *sender, struct net_device *receiver,
 		    size_t mtu ) {
-	uint8_t buf[mtu];
+	uint8_t *buf;
+	uint32_t *seq;
 	struct io_buffer *iobuf;
 	unsigned int i;
 	unsigned int successes;
@@ -188,10 +202,18 @@ int loopback_test ( struct net_device *sender, struct net_device *receiver,
 		return rc;
 
 	/* Wait for link-up */
-	if ( ( rc = iflinkwait ( sender, LINK_WAIT_MS ) ) != 0 )
+	if ( ( rc = iflinkwait ( sender, 0 ) ) != 0 )
 		return rc;
-	if ( ( rc = iflinkwait ( receiver, LINK_WAIT_MS ) ) != 0 )
+	if ( ( rc = iflinkwait ( receiver, 0 ) ) != 0 )
 		return rc;
+
+	/* Allocate data buffer */
+	if ( mtu < sizeof ( *seq ) )
+		mtu = sizeof ( *seq );
+	buf = malloc ( mtu );
+	if ( ! buf )
+		return -ENOMEM;
+	seq = ( ( void * ) buf );
 
 	/* Print initial statistics */
 	printf ( "Performing loopback test from %s to %s with %zd byte MTU\n",
@@ -199,10 +221,9 @@ int loopback_test ( struct net_device *sender, struct net_device *receiver,
 	ifstat ( sender );
 	ifstat ( receiver );
 
-	/* Freeze receive queue processing on the receiver, so that we
-	 * can extract all received packets.
-	 */
-	netdev_rx_freeze ( receiver );
+	/* Start loopback test */
+	lotest_flush();
+	lotest_active = 1;
 
 	/* Perform loopback test */
 	for ( successes = 0 ; ; successes++ ) {
@@ -211,17 +232,17 @@ int loopback_test ( struct net_device *sender, struct net_device *receiver,
 		printf ( "\r%d", successes );
 
 		/* Generate random packet */
-		for ( i = 0 ; i < sizeof ( buf ) ; i++ )
+		*seq = htonl ( successes );
+		for ( i = sizeof ( *seq ) ; i < mtu ; i++ )
 			buf[i] = random();
-		iobuf = alloc_iob ( MAX_LL_HEADER_LEN + sizeof ( buf ) );
+		iobuf = alloc_iob ( MAX_LL_HEADER_LEN + mtu );
 		if ( ! iobuf ) {
 			printf ( "\nFailed to allocate I/O buffer" );
 			rc = -ENOMEM;
 			break;
 		}
 		iob_reserve ( iobuf, MAX_LL_HEADER_LEN );
-		memcpy ( iob_put ( iobuf, sizeof ( buf ) ),
-			 buf, sizeof ( buf ) );
+		memcpy ( iob_put ( iobuf, mtu ), buf, mtu );
 
 		/* Transmit packet */
 		if ( ( rc = net_tx ( iob_disown ( iobuf ), sender,
@@ -233,18 +254,22 @@ int loopback_test ( struct net_device *sender, struct net_device *receiver,
 		}
 
 		/* Wait for received packet */
-		if ( ( rc = loopback_wait ( receiver, buf,
-					    sizeof ( buf ) ) ) != 0 ) {
+		if ( ( rc = loopback_wait ( buf, mtu ) ) != 0 )
 			break;
-		}
 	}
 
 	printf ( "\n");
-	netdev_rx_unfreeze ( receiver );
+
+	/* Stop loopback testing */
+	lotest_active = 0;
+	lotest_flush();
 
 	/* Dump final statistics */
 	ifstat ( sender );
 	ifstat ( receiver );
+
+	/* Free buffer */
+	free ( buf );
 
 	return 0;
 }

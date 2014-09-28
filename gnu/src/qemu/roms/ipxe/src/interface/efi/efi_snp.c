@@ -34,6 +34,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <ipxe/efi/efi_strings.h>
 #include <ipxe/efi/efi_snp.h>
 #include <config/general.h>
+#include <usr/autoboot.h>
 
 /** EFI simple network protocol GUID */
 static EFI_GUID efi_simple_network_protocol_guid
@@ -57,12 +58,45 @@ static EFI_GUID efi_nii31_protocol_guid = {
 	{ 0xBC, 0x81, 0x76, 0x7F, 0x1F, 0x97, 0x7A, 0x89 }
 };
 
-/** EFI component name protocol */
+/** EFI component name protocol GUID */
 static EFI_GUID efi_component_name2_protocol_guid
 	= EFI_COMPONENT_NAME2_PROTOCOL_GUID;
 
+/** EFI load file protocol GUID */
+static EFI_GUID efi_load_file_protocol_guid
+	= EFI_LOAD_FILE_PROTOCOL_GUID;
+
 /** List of SNP devices */
 static LIST_HEAD ( efi_snp_devices );
+
+/**
+ * Set EFI SNP mode state
+ *
+ * @v snp		SNP interface
+ */
+static void efi_snp_set_state ( struct efi_snp_device *snpdev ) {
+	struct net_device *netdev = snpdev->netdev;
+	EFI_SIMPLE_NETWORK_MODE *mode = &snpdev->mode;
+
+	/* Calculate state */
+	if ( ! snpdev->started ) {
+		/* Start() method not called; report as Stopped */
+		mode->State = EfiSimpleNetworkStopped;
+	} else if ( ! netdev_is_open ( netdev ) ) {
+		/* Network device not opened; report as Started */
+		mode->State = EfiSimpleNetworkStarted;
+	} else if ( ! netdev_rx_frozen ( netdev ) ) {
+		/* Network device opened but claimed for use by iPXE; report
+		 * as Started to inhibit receive polling.
+		 */
+		mode->State = EfiSimpleNetworkStarted;
+	} else {
+		/* Network device opened and available for use via SNP; report
+		 * as Initialized.
+		 */
+		mode->State = EfiSimpleNetworkInitialized;
+	}
+}
 
 /**
  * Set EFI SNP mode based on iPXE net device parameters
@@ -129,7 +163,12 @@ efi_snp_start ( EFI_SIMPLE_NETWORK_PROTOCOL *snp ) {
 
 	DBGC2 ( snpdev, "SNPDEV %p START\n", snpdev );
 
-	snpdev->mode.State = EfiSimpleNetworkStarted;
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
+
+	snpdev->started = 1;
+	efi_snp_set_state ( snpdev );
 	return 0;
 }
 
@@ -146,7 +185,12 @@ efi_snp_stop ( EFI_SIMPLE_NETWORK_PROTOCOL *snp ) {
 
 	DBGC2 ( snpdev, "SNPDEV %p STOP\n", snpdev );
 
-	snpdev->mode.State = EfiSimpleNetworkStopped;
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
+
+	snpdev->started = 0;
+	efi_snp_set_state ( snpdev );
 	return 0;
 }
 
@@ -169,13 +213,17 @@ efi_snp_initialize ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 		snpdev, ( ( unsigned long ) extra_rx_bufsize ),
 		( ( unsigned long ) extra_tx_bufsize ) );
 
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
+
 	if ( ( rc = netdev_open ( snpdev->netdev ) ) != 0 ) {
 		DBGC ( snpdev, "SNPDEV %p could not open %s: %s\n",
 		       snpdev, snpdev->netdev->name, strerror ( rc ) );
-		return RC_TO_EFIRC ( rc );
+		return EFIRC ( rc );
 	}
+	efi_snp_set_state ( snpdev );
 
-	snpdev->mode.State = EfiSimpleNetworkInitialized;
 	return 0;
 }
 
@@ -195,16 +243,20 @@ efi_snp_reset ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN ext_verify ) {
 	DBGC2 ( snpdev, "SNPDEV %p RESET (%s extended verification)\n",
 		snpdev, ( ext_verify ? "with" : "without" ) );
 
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
+
 	netdev_close ( snpdev->netdev );
-	snpdev->mode.State = EfiSimpleNetworkStarted;
+	efi_snp_set_state ( snpdev );
 
 	if ( ( rc = netdev_open ( snpdev->netdev ) ) != 0 ) {
 		DBGC ( snpdev, "SNPDEV %p could not reopen %s: %s\n",
 		       snpdev, snpdev->netdev->name, strerror ( rc ) );
-		return RC_TO_EFIRC ( rc );
+		return EFIRC ( rc );
 	}
+	efi_snp_set_state ( snpdev );
 
-	snpdev->mode.State = EfiSimpleNetworkInitialized;
 	return 0;
 }
 
@@ -221,8 +273,13 @@ efi_snp_shutdown ( EFI_SIMPLE_NETWORK_PROTOCOL *snp ) {
 
 	DBGC2 ( snpdev, "SNPDEV %p SHUTDOWN\n", snpdev );
 
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
+
 	netdev_close ( snpdev->netdev );
-	snpdev->mode.State = EfiSimpleNetworkStarted;
+	efi_snp_set_state ( snpdev );
+
 	return 0;
 }
 
@@ -253,6 +310,10 @@ efi_snp_receive_filters ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, UINT32 enable,
 			    snpdev->netdev->ll_protocol->ll_addr_len );
 	}
 
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
+
 	/* Lie through our teeth, otherwise MNP refuses to accept us */
 	return 0;
 }
@@ -274,6 +335,10 @@ efi_snp_station_address ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN reset,
 
 	DBGC2 ( snpdev, "SNPDEV %p STATION_ADDRESS %s\n", snpdev,
 		( reset ? "reset" : ll_protocol->ntoa ( new ) ) );
+
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
 
 	/* Set the MAC address */
 	if ( reset )
@@ -307,6 +372,10 @@ efi_snp_statistics ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN reset,
 
 	DBGC2 ( snpdev, "SNPDEV %p STATISTICS%s", snpdev,
 		( reset ? " reset" : "" ) );
+
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
 
 	/* Gather statistics */
 	memset ( &stats_buf, 0, sizeof ( stats_buf ) );
@@ -356,12 +425,16 @@ efi_snp_mcast_ip_to_mac ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN ipv6,
 		   inet_ntoa ( *( ( struct in_addr * ) ip ) ) );
 	DBGC2 ( snpdev, "SNPDEV %p MCAST_IP_TO_MAC %s\n", snpdev, ip_str );
 
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
+
 	/* Try to hash the address */
 	if ( ( rc = ll_protocol->mc_hash ( ( ipv6 ? AF_INET6 : AF_INET ),
 					   ip, mac ) ) != 0 ) {
 		DBGC ( snpdev, "SNPDEV %p could not hash %s: %s\n",
 		       snpdev, ip_str, strerror ( rc ) );
-		return RC_TO_EFIRC ( rc );
+		return EFIRC ( rc );
 	}
 
 	return 0;
@@ -389,6 +462,10 @@ efi_snp_nvdata ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN read,
 	if ( ! read )
 		DBGC2_HDA ( snpdev, offset, data, len );
 
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
+
 	return EFI_UNSUPPORTED;
 }
 
@@ -407,6 +484,10 @@ efi_snp_get_status ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 		container_of ( snp, struct efi_snp_device, snp );
 
 	DBGC2 ( snpdev, "SNPDEV %p GET_STATUS", snpdev );
+
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
 
 	/* Poll the network device */
 	efi_snp_poll ( snpdev );
@@ -485,7 +566,6 @@ efi_snp_transmit ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 	struct io_buffer *iobuf;
 	size_t payload_len;
 	int rc;
-	EFI_STATUS efirc;
 
 	DBGC2 ( snpdev, "SNPDEV %p TRANSMIT %p+%lx", snpdev, data,
 		( ( unsigned long ) len ) );
@@ -504,31 +584,35 @@ efi_snp_transmit ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 	}
 	DBGC2 ( snpdev, "\n" );
 
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
+
 	/* Sanity checks */
 	if ( ll_header_len ) {
 		if ( ll_header_len != ll_protocol->ll_header_len ) {
 			DBGC ( snpdev, "SNPDEV %p TX invalid header length "
 			       "%ld\n", snpdev,
 			       ( ( unsigned long ) ll_header_len ) );
-			efirc = EFI_INVALID_PARAMETER;
+			rc = -EINVAL;
 			goto err_sanity;
 		}
 		if ( len < ll_header_len ) {
 			DBGC ( snpdev, "SNPDEV %p invalid packet length %ld\n",
 			       snpdev, ( ( unsigned long ) len ) );
-			efirc = EFI_BUFFER_TOO_SMALL;
+			rc = -EINVAL;
 			goto err_sanity;
 		}
 		if ( ! ll_dest ) {
 			DBGC ( snpdev, "SNPDEV %p TX missing destination "
 			       "address\n", snpdev );
-			efirc = EFI_INVALID_PARAMETER;
+			rc = -EINVAL;
 			goto err_sanity;
 		}
 		if ( ! net_proto ) {
 			DBGC ( snpdev, "SNPDEV %p TX missing network "
 			       "protocol\n", snpdev );
-			efirc = EFI_INVALID_PARAMETER;
+			rc = -EINVAL;
 			goto err_sanity;
 		}
 		if ( ! ll_src )
@@ -542,7 +626,7 @@ efi_snp_transmit ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 	if ( ! iobuf ) {
 		DBGC ( snpdev, "SNPDEV %p TX could not allocate %ld-byte "
 		       "buffer\n", snpdev, ( ( unsigned long ) len ) );
-		efirc = EFI_DEVICE_ERROR;
+		rc = -ENOMEM;
 		goto err_alloc_iob;
 	}
 	iob_reserve ( iobuf, ( MAX_LL_HEADER_LEN -
@@ -557,7 +641,6 @@ efi_snp_transmit ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 						htons ( *net_proto ) )) != 0 ){
 			DBGC ( snpdev, "SNPDEV %p TX could not construct "
 			       "header: %s\n", snpdev, strerror ( rc ) );
-			efirc = RC_TO_EFIRC ( rc );
 			goto err_ll_push;
 		}
 	}
@@ -566,7 +649,6 @@ efi_snp_transmit ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 	if ( ( rc = netdev_tx ( snpdev->netdev, iob_disown ( iobuf ) ) ) != 0){
 		DBGC ( snpdev, "SNPDEV %p TX could not transmit: %s\n",
 		       snpdev, strerror ( rc ) );
-		efirc = RC_TO_EFIRC ( rc );
 		goto err_tx;
 	}
 
@@ -581,7 +663,7 @@ efi_snp_transmit ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 	free_iob ( iobuf );
  err_alloc_iob:
  err_sanity:
-	return efirc;
+	return EFIRC ( rc );
 }
 
 /**
@@ -610,10 +692,13 @@ efi_snp_receive ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 	uint16_t iob_net_proto;
 	unsigned int iob_flags;
 	int rc;
-	EFI_STATUS efirc;
 
 	DBGC2 ( snpdev, "SNPDEV %p RECEIVE %p(+%lx)", snpdev, data,
 		( ( unsigned long ) *len ) );
+
+	/* Fail if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+		return EFI_NOT_READY;
 
 	/* Poll the network device */
 	efi_snp_poll ( snpdev );
@@ -622,7 +707,7 @@ efi_snp_receive ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 	iobuf = netdev_rx_dequeue ( snpdev->netdev );
 	if ( ! iobuf ) {
 		DBGC2 ( snpdev, "\n" );
-		efirc = EFI_NOT_READY;
+		rc = -EAGAIN;
 		goto out_no_packet;
 	}
 	DBGC2 ( snpdev, "+%zx\n", iob_len ( iobuf ) );
@@ -637,7 +722,6 @@ efi_snp_receive ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 					&iob_flags ) ) != 0 ) {
 		DBGC ( snpdev, "SNPDEV %p could not parse header: %s\n",
 		       snpdev, strerror ( rc ) );
-		efirc = RC_TO_EFIRC ( rc );
 		goto out_bad_ll_header;
 	}
 
@@ -651,12 +735,12 @@ efi_snp_receive ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 	if ( net_proto )
 		*net_proto = ntohs ( iob_net_proto );
 
-	efirc = 0;
+	rc = 0;
 
  out_bad_ll_header:
 	free_iob ( iobuf );
-out_no_packet:
-	return efirc;
+ out_no_packet:
+	return EFIRC ( rc );
 }
 
 /**
@@ -674,6 +758,10 @@ static VOID EFIAPI efi_snp_wait_for_packet ( EFI_EVENT event,
 
 	/* Do nothing unless the net device is open */
 	if ( ! netdev_is_open ( snpdev->netdev ) )
+		return;
+
+	/* Do nothing if net device is currently claimed for use by iPXE */
+	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
 		return;
 
 	/* Poll the network device */
@@ -756,6 +844,55 @@ efi_snp_get_controller_name ( EFI_COMPONENT_NAME2_PROTOCOL *name2,
 
 /******************************************************************************
  *
+ * Load file protocol
+ *
+ ******************************************************************************
+ */
+
+/**
+ * Load file
+ *
+ * @v loadfile		Load file protocol
+ * @v path		File path
+ * @v booting		Loading as part of a boot attempt
+ * @ret efirc		EFI status code
+ */
+static EFI_STATUS EFIAPI
+efi_snp_load_file ( EFI_LOAD_FILE_PROTOCOL *load_file,
+		    EFI_DEVICE_PATH_PROTOCOL *path __unused,
+		    BOOLEAN booting, UINTN *len __unused,
+		    VOID *data __unused ) {
+	struct efi_snp_device *snpdev =
+		container_of ( load_file, struct efi_snp_device, load_file );
+	struct net_device *netdev = snpdev->netdev;
+
+	/* Fail unless this is a boot attempt */
+	if ( ! booting ) {
+		DBGC ( snpdev, "SNPDEV %p cannot load non-boot file\n",
+		       snpdev );
+		return EFI_UNSUPPORTED;
+	}
+
+	/* Claim network devices for use by iPXE */
+	efi_snp_claim();
+
+	/* Boot from network device */
+	ipxe ( netdev );
+
+	/* Release network devices for use via SNP */
+	efi_snp_release();
+
+	/* Assume boot process was aborted */
+	return EFI_ABORTED;
+}
+
+/** Load file protocol */
+static EFI_LOAD_FILE_PROTOCOL efi_snp_load_file_protocol = {
+	.LoadFile	= efi_snp_load_file,
+};
+
+/******************************************************************************
+ *
  * iPXE network driver
  *
  ******************************************************************************
@@ -831,9 +968,9 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 	if ( ( efirc = bs->CreateEvent ( EVT_NOTIFY_WAIT, TPL_NOTIFY,
 					 efi_snp_wait_for_packet, snpdev,
 					 &snpdev->snp.WaitForPacket ) ) != 0 ){
+		rc = -EEFI ( efirc );
 		DBGC ( snpdev, "SNPDEV %p could not create event: %s\n",
-		       snpdev, efi_strerror ( efirc ) );
-		rc = EFIRC_TO_RC ( efirc );
+		       snpdev, strerror ( rc ) );
 		goto err_create_event;
 	}
 
@@ -860,6 +997,10 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 	snpdev->name2.GetDriverName = efi_snp_get_driver_name;
 	snpdev->name2.GetControllerName = efi_snp_get_controller_name;
 	snpdev->name2.SupportedLanguages = "en";
+
+	/* Populate the load file protocol structure */
+	memcpy ( &snpdev->load_file, &efi_snp_load_file_protocol,
+		 sizeof ( snpdev->load_file ) );
 
 	/* Populate the device name */
 	efi_snprintf ( snpdev->name, ( sizeof ( snpdev->name ) /
@@ -890,19 +1031,19 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 			&efi_nii_protocol_guid, &snpdev->nii,
 			&efi_nii31_protocol_guid, &snpdev->nii,
 			&efi_component_name2_protocol_guid, &snpdev->name2,
+			&efi_load_file_protocol_guid, &snpdev->load_file,
 			NULL ) ) != 0 ) {
+		rc = -EEFI ( efirc );
 		DBGC ( snpdev, "SNPDEV %p could not install protocols: "
-		       "%s\n", snpdev, efi_strerror ( efirc ) );
-		rc = EFIRC_TO_RC ( efirc );
+		       "%s\n", snpdev, strerror ( rc ) );
 		goto err_install_protocol_interface;
 	}
 
 	/* Add as child of PCI device */
-	if ( ( efirc = efipci_child_add ( efipci, snpdev->handle ) ) != 0 ) {
+	if ( ( rc = efipci_child_add ( efipci, snpdev->handle ) ) != 0 ) {
 		DBGC ( snpdev, "SNPDEV %p could not become child of " PCI_FMT
 		       ": %s\n", snpdev, PCI_ARGS ( &efipci->pci ),
-		       efi_strerror ( efirc ) );
-		rc = EFIRC_TO_RC ( efirc );
+		       strerror ( rc ) );
 		goto err_efipci_child_add;
 	}
 
@@ -931,6 +1072,7 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 			&efi_nii_protocol_guid, &snpdev->nii,
 			&efi_nii31_protocol_guid, &snpdev->nii,
 			&efi_component_name2_protocol_guid, &snpdev->name2,
+			&efi_load_file_protocol_guid, &snpdev->load_file,
 			NULL );
  err_install_protocol_interface:
 	bs->CloseEvent ( snpdev->snp.WaitForPacket );
@@ -963,6 +1105,9 @@ static void efi_snp_notify ( struct net_device *netdev ) {
 		( netdev_link_ok ( netdev ) ? TRUE : FALSE );
 	DBGC ( snpdev, "SNPDEV %p link is %s\n", snpdev,
 	       ( snpdev->mode.MediaPresent ? "up" : "down" ) );
+
+	/* Update mode state */
+	efi_snp_set_state ( snpdev );
 }
 
 /**
@@ -992,6 +1137,7 @@ static void efi_snp_remove ( struct net_device *netdev ) {
 			&efi_nii_protocol_guid, &snpdev->nii,
 			&efi_nii31_protocol_guid, &snpdev->nii,
 			&efi_component_name2_protocol_guid, &snpdev->name2,
+			&efi_load_file_protocol_guid, &snpdev->load_file,
 			NULL );
 	bs->CloseEvent ( snpdev->snp.WaitForPacket );
 	netdev_put ( snpdev->netdev );
@@ -1005,3 +1151,40 @@ struct net_driver efi_snp_driver __net_driver = {
 	.notify = efi_snp_notify,
 	.remove = efi_snp_remove,
 };
+
+/**
+ * Get most recently opened SNP device
+ *
+ * @ret snpdev		Most recently opened SNP device, or NULL
+ */
+struct efi_snp_device * last_opened_snpdev ( void ) {
+	struct net_device *netdev;
+
+	netdev = last_opened_netdev();
+	if ( ! netdev )
+		return NULL;
+
+	return efi_snp_demux ( netdev );
+}
+
+/**
+ * Claim network devices for use by iPXE
+ *
+ */
+void efi_snp_claim ( void ) {
+	struct net_device *netdev;
+
+	for_each_netdev ( netdev )
+		netdev_rx_unfreeze ( netdev );
+}
+
+/**
+ * Release network devices for use via SNP
+ *
+ */
+void efi_snp_release ( void ) {
+	struct net_device *netdev;
+
+	for_each_netdev ( netdev )
+		netdev_rx_freeze ( netdev );
+}

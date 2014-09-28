@@ -33,6 +33,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <ipxe/netdevice.h>
 #include <ipxe/if_ether.h>
 #include <ipxe/ethernet.h>
+#include <ipxe/profile.h>
 #include <undi.h>
 #include <undinet.h>
 #include <pxeparent.h>
@@ -71,6 +72,9 @@ struct undi_nic {
 /** Delay between retries of PXENV_UNDI_INITIALIZE */
 #define UNDI_INITIALIZE_RETRY_DELAY_MS 200
 
+/** Maximum number of calls to PXENV_UNDI_ISR per poll */
+#define UNDI_POLL_QUOTA 4
+
 /** Alignment of received frame payload */
 #define UNDI_RX_ALIGN 16
 
@@ -78,6 +82,26 @@ static void undinet_close ( struct net_device *netdev );
 
 /** Address of UNDI entry point */
 static SEGOFF16_t undinet_entry;
+
+/** Transmit profiler */
+static struct profiler undinet_tx_profiler __profiler =
+	{ .name = "undinet.tx" };
+
+/** Transmit call profiler */
+static struct profiler undinet_tx_call_profiler __profiler =
+	{ .name = "undinet.tx_call" };
+
+/** IRQ profiler */
+static struct profiler undinet_irq_profiler __profiler =
+	{ .name = "undinet.irq" };
+
+/** ISR call profiler */
+static struct profiler undinet_isr_call_profiler __profiler =
+	{ .name = "undinet.isr_call" };
+
+/** Receive profiler */
+static struct profiler undinet_rx_profiler __profiler =
+	{ .name = "undinet.rx" };
 
 /*****************************************************************************
  *
@@ -194,6 +218,9 @@ static int undinet_transmit ( struct net_device *netdev,
 	size_t len;
 	int rc;
 
+	/* Start profiling */
+	profile_start ( &undinet_tx_profiler );
+
 	/* Technically, we ought to make sure that the previous
 	 * transmission has completed before we re-use the buffer.
 	 * However, many PXE stacks (including at least some Intel PXE
@@ -256,14 +283,16 @@ static int undinet_transmit ( struct net_device *netdev,
 	undinet_tbd.Xmit.offset = __from_data16 ( basemem_packet );
 
 	/* Issue PXE API call */
+	profile_start ( &undinet_tx_call_profiler );
 	if ( ( rc = pxeparent_call ( undinet_entry, PXENV_UNDI_TRANSMIT,
 				     &undi_transmit,
 				     sizeof ( undi_transmit ) ) ) != 0 )
 		goto done;
+	profile_stop ( &undinet_tx_call_profiler );
 
 	/* Free I/O buffer */
 	netdev_tx_complete ( netdev, iobuf );
-
+	profile_stop ( &undinet_tx_profiler );
  done:
 	return rc;
 }
@@ -302,6 +331,7 @@ static void undinet_poll ( struct net_device *netdev ) {
 	struct undi_nic *undinic = netdev->priv;
 	struct s_PXENV_UNDI_ISR undi_isr;
 	struct io_buffer *iobuf = NULL;
+	unsigned int quota = UNDI_POLL_QUOTA;
 	size_t len;
 	size_t reserve_len;
 	size_t frag_len;
@@ -316,10 +346,12 @@ static void undinet_poll ( struct net_device *netdev ) {
 		 */
 		if ( ! undinet_isr_triggered() ) {
 			/* Allow interrupt to occur */
-			__asm__ __volatile__ ( REAL_CODE ( "sti\n\t"
-							   "nop\n\t"
-							   "nop\n\t"
-							   "cli\n\t" ) : : );
+			profile_start ( &undinet_irq_profiler );
+			__asm__ __volatile__ ( "sti\n\t"
+					       "nop\n\t"
+					       "nop\n\t"
+					       "cli\n\t" );
+			profile_stop ( &undinet_irq_profiler );
 
 			/* If interrupts are known to be supported,
 			 * then do nothing on this poll; wait for the
@@ -338,17 +370,22 @@ static void undinet_poll ( struct net_device *netdev ) {
 	}
 
 	/* Run through the ISR loop */
-	while ( 1 ) {
+	while ( quota-- ) {
+		profile_start ( &undinet_isr_call_profiler );
 		if ( ( rc = pxeparent_call ( undinet_entry, PXENV_UNDI_ISR,
 					     &undi_isr,
-					     sizeof ( undi_isr ) ) ) != 0 )
+					     sizeof ( undi_isr ) ) ) != 0 ) {
+			netdev_rx_err ( netdev, NULL, rc );
 			break;
+		}
+		profile_stop ( &undinet_isr_call_profiler );
 		switch ( undi_isr.FuncFlag ) {
 		case PXENV_UNDI_ISR_OUT_TRANSMIT:
 			/* We don't care about transmit completions */
 			break;
 		case PXENV_UNDI_ISR_OUT_RECEIVE:
 			/* Packet fragment received */
+			profile_start ( &undinet_rx_profiler );
 			len = undi_isr.FrameLength;
 			frag_len = undi_isr.BufferLength;
 			reserve_len = ( -undi_isr.FrameHeaderLength &
@@ -393,6 +430,7 @@ static void undinet_poll ( struct net_device *netdev ) {
 				if ( undinic->hacks & UNDI_HACK_EB54 )
 					--last_trigger_count;
 			}
+			profile_stop ( &undinet_rx_profiler );
 			break;
 		case PXENV_UNDI_ISR_OUT_DONE:
 			/* Processing complete */
@@ -531,6 +569,53 @@ static struct net_device_operations undinet_operations = {
 	.irq   		= undinet_irq,
 };
 
+/** A device with broken support for generating interrupts */
+struct undinet_irq_broken {
+	/** PCI vendor ID */
+	uint16_t pci_vendor;
+	/** PCI device ID */
+	uint16_t pci_device;
+};
+
+/**
+ * List of devices with broken support for generating interrupts
+ *
+ * Some PXE stacks are known to claim that IRQs are supported, but
+ * then never generate interrupts.  No satisfactory solution has been
+ * found to this problem; the workaround is to add the PCI vendor and
+ * device IDs to this list.  This is something of a hack, since it
+ * will generate false positives for identical devices with a working
+ * PXE stack (e.g. those that have been reflashed with iPXE), but it's
+ * an improvement on the current situation.
+ */
+static const struct undinet_irq_broken undinet_irq_broken_list[] = {
+	/* HP XX70x laptops */
+	{ .pci_vendor = 0x8086, .pci_device = 0x1502 },
+	{ .pci_vendor = 0x8086, .pci_device = 0x1503 },
+};
+
+/**
+ * Check for devices with broken support for generating interrupts
+ *
+ * @v undi		UNDI device
+ * @ret irq_is_broken	Interrupt support is broken; no interrupts are generated
+ */
+static int undinet_irq_is_broken ( struct undi_device *undi ) {
+	const struct undinet_irq_broken *broken;
+	unsigned int i;
+
+	for ( i = 0 ; i < ( sizeof ( undinet_irq_broken_list ) /
+			    sizeof ( undinet_irq_broken_list[0] ) ) ; i++ ) {
+		broken = &undinet_irq_broken_list[i];
+		if ( ( undi->dev.desc.bus_type == BUS_TYPE_PCI ) &&
+		     ( undi->dev.desc.vendor == broken->pci_vendor ) &&
+		     ( undi->dev.desc.device == broken->pci_device ) ) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
 /**
  * Probe UNDI device
  *
@@ -646,6 +731,11 @@ int undinet_probe ( struct undi_device *undi ) {
 		DBGC ( undinic, "UNDINIC %p Etherboot 5.4 workaround enabled\n",
 		       undinic );
 		undinic->hacks |= UNDI_HACK_EB54;
+	}
+	if ( undinet_irq_is_broken ( undi ) ) {
+		DBGC ( undinic, "UNDINIC %p forcing polling mode due to "
+		       "broken interrupts\n", undinic );
+		undinic->irq_supported = 0;
 	}
 
 	/* Register network device */

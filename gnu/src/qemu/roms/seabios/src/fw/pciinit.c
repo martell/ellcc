@@ -5,6 +5,7 @@
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
+#include "byteorder.h" // le64_to_cpu
 #include "config.h" // CONFIG_*
 #include "dev-q35.h" // Q35_HOST_BRIDGE_PCIEXBAR_ADDR
 #include "hw/ata.h" // PORT_ATA1_CMD_BASE
@@ -16,22 +17,14 @@
 #include "memmap.h" // add_e820
 #include "output.h" // dprintf
 #include "paravirt.h" // RamSize
+#include "romfile.h" // romfile_loadint
 #include "string.h" // memset
 #include "util.h" // pci_setup
 #include "x86.h" // outb
-#include "byteorder.h" // le64_to_cpu
-#include "romfile.h" // romfile_loadint
 
 #define PCI_DEVICE_MEM_MIN    (1<<12)  // 4k == page size
 #define PCI_BRIDGE_MEM_MIN    (1<<21)  // 2M == hugepage size
 #define PCI_BRIDGE_IO_MIN      0x1000  // mandated by pci bridge spec
-
-enum pci_region_type {
-    PCI_REGION_TYPE_IO,
-    PCI_REGION_TYPE_MEM,
-    PCI_REGION_TYPE_PREFMEM,
-    PCI_REGION_TYPE_COUNT,
-};
 
 static const char *region_type_name[] = {
     [ PCI_REGION_TYPE_IO ]      = "io",
@@ -43,6 +36,7 @@ u64 pcimem_start   = BUILD_PCIMEM_START;
 u64 pcimem_end     = BUILD_PCIMEM_END;
 u64 pcimem64_start = BUILD_PCIMEM64_START;
 u64 pcimem64_end   = BUILD_PCIMEM64_END;
+u64 pci_io_low_end = 0xa000;
 
 struct pci_region_entry {
     struct pci_device *dev;
@@ -165,7 +159,7 @@ static void piix_isa_bridge_setup(struct pci_device *pci, void *arg)
 
 /* ICH9 LPC PCI to ISA bridge */
 /* PCI_VENDOR_ID_INTEL && PCI_DEVICE_ID_INTEL_ICH9_LPC */
-void mch_isa_bridge_setup(struct pci_device *dev, void *arg)
+static void mch_isa_bridge_setup(struct pci_device *dev, void *arg)
 {
     u16 bdf = dev->bdf;
     int i, irq;
@@ -192,13 +186,13 @@ void mch_isa_bridge_setup(struct pci_device *dev, void *arg)
 
     /* pm io base */
     pci_config_writel(bdf, ICH9_LPC_PMBASE,
-                      PORT_ACPI_PM_BASE | ICH9_LPC_PMBASE_RTE);
+                      acpi_pm_base | ICH9_LPC_PMBASE_RTE);
 
     /* acpi enable, SCI: IRQ9 000b = irq9*/
     pci_config_writeb(bdf, ICH9_LPC_ACPI_CTRL, ICH9_LPC_ACPI_CTRL_ACPI_EN);
 
-    acpi_pm1a_cnt = PORT_ACPI_PM_BASE + 0x04;
-    pmtimer_setup(PORT_ACPI_PM_BASE + 0x08);
+    acpi_pm1a_cnt = acpi_pm_base + 0x04;
+    pmtimer_setup(acpi_pm_base + 0x08);
 }
 
 static void storage_ide_setup(struct pci_device *pci, void *arg)
@@ -230,30 +224,37 @@ static void apple_macio_setup(struct pci_device *pci, void *arg)
     pci_set_io_region_addr(pci, 0, 0x80800000, 0);
 }
 
-/* PIIX4 Power Management device (for ACPI) */
-static void piix4_pm_setup(struct pci_device *pci, void *arg)
+static void piix4_pm_config_setup(u16 bdf)
 {
-    u16 bdf = pci->bdf;
     // acpi sci is hardwired to 9
     pci_config_writeb(bdf, PCI_INTERRUPT_LINE, 9);
 
-    pci_config_writel(bdf, 0x40, PORT_ACPI_PM_BASE | 1);
+    pci_config_writel(bdf, 0x40, acpi_pm_base | 1);
     pci_config_writeb(bdf, 0x80, 0x01); /* enable PM io space */
-    pci_config_writel(bdf, 0x90, PORT_SMB_BASE | 1);
+    pci_config_writel(bdf, 0x90, (acpi_pm_base + 0x100) | 1);
     pci_config_writeb(bdf, 0xd2, 0x09); /* enable SMBus io space */
+}
 
-    acpi_pm1a_cnt = PORT_ACPI_PM_BASE + 0x04;
-    pmtimer_setup(PORT_ACPI_PM_BASE + 0x08);
+static int PiixPmBDF = -1;
+
+/* PIIX4 Power Management device (for ACPI) */
+static void piix4_pm_setup(struct pci_device *pci, void *arg)
+{
+    PiixPmBDF = pci->bdf;
+    piix4_pm_config_setup(pci->bdf);
+
+    acpi_pm1a_cnt = acpi_pm_base + 0x04;
+    pmtimer_setup(acpi_pm_base + 0x08);
 }
 
 /* ICH9 SMBUS */
 /* PCI_VENDOR_ID_INTEL && PCI_DEVICE_ID_INTEL_ICH9_SMBUS */
-void ich9_smbus_setup(struct pci_device *dev, void *arg)
+static void ich9_smbus_setup(struct pci_device *dev, void *arg)
 {
     u16 bdf = dev->bdf;
     /* map smbus into io space */
     pci_config_writel(bdf, ICH9_SMB_SMB_BASE,
-                      PORT_SMB_BASE | PCI_BASE_ADDRESS_SPACE_IO);
+                      (acpi_pm_base + 0x100) | PCI_BASE_ADDRESS_SPACE_IO);
 
     /* enable SMBus */
     pci_config_writeb(bdf, ICH9_SMB_HOSTC, ICH9_SMB_HOSTC_HST_EN);
@@ -294,6 +295,17 @@ static const struct pci_device_id pci_device_tbl[] = {
 
     PCI_DEVICE_END,
 };
+
+void pci_resume(void)
+{
+    if (!CONFIG_QEMU) {
+        return;
+    }
+
+    if (PiixPmBDF >= 0) {
+        piix4_pm_config_setup(PiixPmBDF);
+    }
+}
 
 static void pci_bios_init_device(struct pci_device *pci)
 {
@@ -365,7 +377,7 @@ static void pci_enable_default_vga(void)
  * Platform device initialization
  ****************************************************************/
 
-void i440fx_mem_addr_setup(struct pci_device *dev, void *arg)
+static void i440fx_mem_addr_setup(struct pci_device *dev, void *arg)
 {
     if (RamSize <= 0x80000000)
         pcimem_start = 0x80000000;
@@ -375,7 +387,7 @@ void i440fx_mem_addr_setup(struct pci_device *dev, void *arg)
     pci_slot_get_irq = piix_pci_slot_get_irq;
 }
 
-void mch_mem_addr_setup(struct pci_device *dev, void *arg)
+static void mch_mem_addr_setup(struct pci_device *dev, void *arg)
 {
     u64 addr = Q35_HOST_BRIDGE_PCIEXBAR_ADDR;
     u32 size = Q35_HOST_BRIDGE_PCIEXBAR_SIZE;
@@ -393,6 +405,12 @@ void mch_mem_addr_setup(struct pci_device *dev, void *arg)
     pcimem_start = addr + size;
 
     pci_slot_get_irq = mch_pci_slot_get_irq;
+
+    /* setup io address space */
+    if (acpi_pm_base < 0x1000)
+        pci_io_low_end = 0x10000;
+    else
+        pci_io_low_end = acpi_pm_base;
 }
 
 static const struct pci_device_id pci_platform_tbl[] = {
@@ -659,12 +677,17 @@ static int pci_bios_check_devices(struct pci_bus *busses)
             continue;
         struct pci_bus *parent = &busses[pci_bdf_to_bus(s->bus_dev->bdf)];
         int type;
+        u8 shpc_cap = pci_find_capability(s->bus_dev, PCI_CAP_ID_SHPC);
         for (type = 0; type < PCI_REGION_TYPE_COUNT; type++) {
             u64 align = (type == PCI_REGION_TYPE_IO) ?
                 PCI_BRIDGE_IO_MIN : PCI_BRIDGE_MEM_MIN;
+            if (!pci_bridge_has_region(s->bus_dev, type))
+                continue;
             if (pci_region_align(&s->r[type]) > align)
                  align = pci_region_align(&s->r[type]);
             u64 sum = pci_region_sum(&s->r[type]);
+            if (!sum && shpc_cap)
+                sum = align; /* reserve min size for hot-plug */
             u64 size = ALIGN(sum, align);
             int is64 = pci_bios_bridge_region_is64(&s->r[type],
                                             s->bus_dev, type);
@@ -687,10 +710,37 @@ static int pci_bios_check_devices(struct pci_bus *busses)
  ****************************************************************/
 
 // Setup region bases (given the regions' size and alignment)
-static int pci_bios_init_root_regions(struct pci_bus *bus)
+static int pci_bios_init_root_regions_io(struct pci_bus *bus)
 {
-    bus->r[PCI_REGION_TYPE_IO].base = 0xc000;
+    /*
+     * QEMU I/O address space usage:
+     *   0000 - 0fff    legacy isa, pci config, pci root bus, ...
+     *   1000 - 9fff    free
+     *   a000 - afff    hotplug (cpu, pci via acpi, i440fx/piix only)
+     *   b000 - bfff    power management (PORT_ACPI_PM_BASE)
+     *                  [ qemu 1.4+ implements pci config registers
+     *                    properly so guests can place the registers
+     *                    where they want, on older versions its fixed ]
+     *   c000 - ffff    free, traditionally used for pci io
+     */
+    struct pci_region *r_io = &bus->r[PCI_REGION_TYPE_IO];
+    u64 sum = pci_region_sum(r_io);
+    if (sum < 0x4000) {
+        /* traditional region is big enougth, use it */
+        r_io->base = 0xc000;
+    } else if (sum < pci_io_low_end - 0x1000) {
+        /* use the larger region at 0x1000 */
+        r_io->base = 0x1000;
+    } else {
+        /* not enouth io address space -> error out */
+        return -1;
+    }
+    dprintf(1, "PCI: IO: %4llx - %4llx\n", r_io->base, r_io->base + sum - 1);
+    return 0;
+}
 
+static int pci_bios_init_root_regions_mem(struct pci_bus *bus)
+{
     struct pci_region *r_end = &bus->r[PCI_REGION_TYPE_PREFMEM];
     struct pci_region *r_start = &bus->r[PCI_REGION_TYPE_MEM];
 
@@ -768,8 +818,11 @@ static void pci_region_map_entries(struct pci_bus *busses, struct pci_region *r)
 
 static void pci_bios_map_devices(struct pci_bus *busses)
 {
+    if (pci_bios_init_root_regions_io(busses))
+        panic("PCI: out of I/O address space\n");
+
     dprintf(1, "PCI: 32: %016llx - %016llx\n", pcimem_start, pcimem_end);
-    if (pci_bios_init_root_regions(busses)) {
+    if (pci_bios_init_root_regions_mem(busses)) {
         struct pci_region r64_mem, r64_pref;
         r64_mem.list.first = NULL;
         r64_pref.list.first = NULL;
@@ -778,7 +831,7 @@ static void pci_bios_map_devices(struct pci_bus *busses)
         pci_region_migrate_64bit_entries(&busses[0].r[PCI_REGION_TYPE_PREFMEM],
                                          &r64_pref);
 
-        if (pci_bios_init_root_regions(busses))
+        if (pci_bios_init_root_regions_mem(busses))
             panic("PCI: out of 32bit address space\n");
 
         u64 sum_mem = pci_region_sum(&r64_mem);

@@ -61,19 +61,25 @@ int irqtimer_check(u32 end);
 void handle_1586(struct bregs *regs);
 
 // fw/acpi.c
-extern struct rsdp_descriptor *RsdpAddr;
-extern u32 acpi_pm1a_cnt;
 void acpi_setup(void);
-u32 find_resume_vector(void);
-void find_acpi_features(void);
-struct acpi_20_generic_address;
-void acpi_set_reset_reg(struct acpi_20_generic_address *reg, u8 val);
-void acpi_reboot(void);
 
 // fw/biostable.c
-void copy_smbios(void *pos);
-void copy_table(void *pos);
+void copy_pir(void *pos);
+void copy_mptable(void *pos);
+extern struct pir_header *PirAddr;
+void copy_acpi_rsdp(void *pos);
+extern struct rsdp_descriptor *RsdpAddr;
+extern u32 acpi_pm1a_cnt;
+extern u16 acpi_pm_base;
 void *find_acpi_rsdp(void);
+u32 find_resume_vector(void);
+void acpi_reboot(void);
+void find_acpi_features(void);
+extern struct smbios_entry_point *SMBiosAddr;
+void copy_smbios(void *pos);
+void display_uuid(void);
+void copy_table(void *pos);
+void smbios_setup(void);
 
 // fw/coreboot.c
 extern const char *CBvendor, *CBpart;
@@ -84,6 +90,9 @@ void coreboot_platform_setup(void);
 void cbfs_payload_setup(void);
 void coreboot_preinit(void);
 void coreboot_cbfs_init(void);
+struct cb_header;
+void *find_cb_subtable(struct cb_header *cbh, u32 tag);
+struct cb_header *find_cb_table(void);
 
 // fw/csm.c
 int csm_bootprio_fdc(struct pci_device *pci, int port, int fdid);
@@ -99,9 +108,9 @@ void mtrr_setup(void);
 // fw/pciinit.c
 extern const u8 pci_irqs[4];
 void pci_setup(void);
+void pci_resume(void);
 
 // fw/pirtable.c
-extern struct pir_header *PirAddr;
 void pirtable_setup(void);
 
 // fw/shadow.c
@@ -110,9 +119,7 @@ void make_bios_readonly(void);
 void qemu_prep_reset(void);
 
 // fw/smbios.c
-extern struct smbios_entry_point *SMBiosAddr;
-void smbios_setup(void);
-void display_uuid(void);
+void smbios_legacy_setup(void);
 
 // fw/smm.c
 void smm_device_setup(void);
@@ -172,6 +179,7 @@ void process_key(u8 key);
 // misc.c
 extern struct bios_config_table_s BIOS_CONFIG_TABLE __aligned(1);
 extern u8 BiosChecksum;
+int in_post(void);
 void mathcp_setup(void);
 
 // mouse.c

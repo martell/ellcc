@@ -193,9 +193,10 @@ static int nvo_save ( struct nvo_block *nvo ) {
  * @ret applies		Setting applies within this settings block
  */
 int nvo_applies ( struct settings *settings __unused,
-		  struct setting *setting ) {
+		  const struct setting *setting ) {
 
-	return dhcpopt_applies ( setting->tag );
+	return ( ( setting->scope == NULL ) &&
+		 dhcpopt_applies ( setting->tag ) );
 }
 
 /**
@@ -207,7 +208,7 @@ int nvo_applies ( struct settings *settings __unused,
  * @v len		Length of setting data
  * @ret rc		Return status code
  */
-static int nvo_store ( struct settings *settings, struct setting *setting,
+static int nvo_store ( struct settings *settings, const struct setting *setting,
 		       const void *data, size_t len ) {
 	struct nvo_block *nvo =
 		container_of ( settings, struct nvo_block, settings );
@@ -274,7 +275,8 @@ void nvo_init ( struct nvo_block *nvo, struct nvs_device *nvs,
 	nvo->len = len;
 	nvo->resize = resize;
 	dhcpopt_init ( &nvo->dhcpopts, NULL, 0, nvo_realloc_dhcpopt );
-	settings_init ( &nvo->settings, &nvo_settings_operations, refcnt, 0 );
+	settings_init ( &nvo->settings, &nvo_settings_operations,
+			refcnt, NULL );
 }
 
 /**

@@ -44,7 +44,7 @@ struct cpudef {
     int icache_size, dcache_size;
     int icache_sets, dcache_sets;
     int icache_block_size, dcache_block_size;
-    int clock_frequency;
+    int tlb_sets, tlb_size;
     void (*initfn)(const struct cpudef *cpu);
 };
 
@@ -220,6 +220,9 @@ push_physaddr(phys_addr_t value)
 #endif
 }
 
+/* From drivers/timer.c */
+extern unsigned long timer_freq;
+
 static void
 cpu_generic_init(const struct cpudef *cpu)
 {
@@ -269,7 +272,18 @@ cpu_generic_init(const struct cpudef *cpu)
     push_str("i-cache-block-size");
     fword("property");
 
-    PUSH(fw_cfg_read_i32(FW_CFG_PPC_TBFREQ));
+    PUSH(cpu->tlb_sets);
+    fword("encode-int");
+    push_str("tlb-sets");
+    fword("property");
+
+    PUSH(cpu->tlb_size);
+    fword("encode-int");
+    push_str("tlb-size");
+    fword("property");
+
+    timer_freq = fw_cfg_read_i32(FW_CFG_PPC_TBFREQ);
+    PUSH(timer_freq);
     fword("encode-int");
     push_str("timebase-frequency");
     fword("property");
@@ -277,6 +291,11 @@ cpu_generic_init(const struct cpudef *cpu)
     PUSH(fw_cfg_read_i32(FW_CFG_PPC_CLOCKFREQ));
     fword("encode-int");
     push_str("clock-frequency");
+    fword("property");
+
+    PUSH(fw_cfg_read_i32(FW_CFG_PPC_BUSFREQ));
+    fword("encode-int");
+    push_str("bus-frequency");
     fword("property");
 
     push_str("running");
@@ -391,7 +410,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x20,
         .dcache_block_size = 0x20,
-        .clock_frequency = 0x07de2900,
+        .tlb_sets = 0x40,
+        .tlb_size = 0x80,
         .initfn = cpu_604_init,
     },
     { // XXX find out real values
@@ -403,7 +423,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x20,
         .dcache_block_size = 0x20,
-        .clock_frequency = 0x07de2900,
+        .tlb_sets = 0x40,
+        .tlb_size = 0x80,
         .initfn = cpu_604_init,
     },
     { // XXX find out real values
@@ -415,7 +436,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x20,
         .dcache_block_size = 0x20,
-        .clock_frequency = 0x07de2900,
+        .tlb_sets = 0x40,
+        .tlb_size = 0x80,
         .initfn = cpu_604_init,
     },
     { // XXX find out real values
@@ -427,7 +449,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x20,
         .dcache_block_size = 0x20,
-        .clock_frequency = 0x14dc9380,
+        .tlb_sets = 0x40,
+        .tlb_size = 0x80,
         .initfn = cpu_750_init,
     },
     {
@@ -439,7 +462,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x20,
         .dcache_block_size = 0x20,
-        .clock_frequency = 0x14dc9380,
+        .tlb_sets = 0x40,
+        .tlb_size = 0x80,
         .initfn = cpu_750_init,
     },
     { // XXX find out real values
@@ -451,7 +475,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x20,
         .dcache_block_size = 0x20,
-        .clock_frequency = 0x14dc9380,
+        .tlb_sets = 0x40,
+        .tlb_size = 0x80,
         .initfn = cpu_750_init,
     },
     { // XXX find out real values
@@ -463,7 +488,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x20,
         .dcache_block_size = 0x20,
-        .clock_frequency = 0x14dc9380,
+        .tlb_sets = 0x40,
+        .tlb_size = 0x80,
         .initfn = cpu_750_init,
     },
     { // XXX find out real values
@@ -475,7 +501,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x20,
         .dcache_block_size = 0x20,
-        .clock_frequency = 0x14dc9380,
+        .tlb_sets = 0x40,
+        .tlb_size = 0x80,
         .initfn = cpu_750_init,
     },
     { // XXX find out real values
@@ -487,7 +514,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x20,
         .dcache_block_size = 0x20,
-        .clock_frequency = 0x14dc9380,
+        .tlb_sets = 0x40,
+        .tlb_size = 0x80,
         .initfn = cpu_750_init,
     },
     {
@@ -499,7 +527,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x20,
         .dcache_block_size = 0x20,
-        .clock_frequency = 0x1dcd6500,
+        .tlb_sets = 0x40,
+        .tlb_size = 0x80,
         .initfn = cpu_g4_init,
     },
     {
@@ -511,7 +540,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x80,
         .dcache_block_size = 0x80,
-        .clock_frequency = 0x5f5e1000,
+        .tlb_sets = 0x100,
+        .tlb_size = 0x1000,
         .initfn = cpu_970_init,
     },
     { // XXX find out real values
@@ -523,7 +553,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x80,
         .icache_block_size = 0x80,
         .dcache_block_size = 0x80,
-        .clock_frequency = 0x1dcd6500,
+        .tlb_sets = 0x100,
+        .tlb_size = 0x1000,
         .initfn = cpu_970_init,
     },
     {
@@ -535,7 +566,8 @@ static const struct cpudef ppc_defs[] = {
         .dcache_sets = 0x40,
         .icache_block_size = 0x80,
         .dcache_block_size = 0x80,
-        .clock_frequency = 0x629b4940,
+        .tlb_sets = 0x100,
+        .tlb_size = 0x1000,
         .initfn = cpu_970_init,
     },
 };
@@ -659,7 +691,7 @@ arch_of_init(void)
     char buf[64], qemu_uuid[16];
     const char *stdin_path, *stdout_path, *boot_path;
     uint32_t temp = 0;
-
+    char *boot_device;
     ofmem_t *ofmem = ofmem_arch_get_private();
 
     openbios_init();
@@ -867,23 +899,27 @@ arch_of_init(void)
     push_str("/options");
     fword("find-device");
 
-    uint16_t boot_device = fw_cfg_read_i16(FW_CFG_BOOT_DEVICE);
-    switch (boot_device) {
-        case 'c':
-            boot_path = "hd";
-            break;
-        default:
-        case 'd':
-            boot_path = "cd";
-            break;
-    }
+    /* Setup default boot devices (not overriding user settings) */
+    fword("boot-device");
+    boot_device = pop_fstr_copy();
+    if (boot_device && strcmp(boot_device, "disk") == 0) {
+        switch (fw_cfg_read_i16(FW_CFG_BOOT_DEVICE)) {
+            case 'c':
+                boot_path = "hd";
+                break;
+            default:
+            case 'd':
+                boot_path = "cd";
+                break;
+        }
 
-    /* Setup default boot devices */
-    snprintf(buf, sizeof(buf), "%s:,\\\\:tbxi %s:,\\ppc\\bootinfo.txt %s:,%%BOOT", boot_path, boot_path, boot_path);
-    push_str(buf);
-    fword("encode-string");
-    push_str("boot-device");
-    fword("property");
+        snprintf(buf, sizeof(buf), "%s:,\\\\:tbxi %s:,\\ppc\\bootinfo.txt %s:,%%BOOT", boot_path, boot_path, boot_path);
+        push_str(buf);
+        fword("encode-string");
+        push_str("boot-device");
+        fword("property");
+    }
+    free(boot_device);
 
     /* Set up other properties */
 

@@ -204,11 +204,11 @@ struct settings_applicator net80211_applicator __settings_applicator = {
  * If this is blank, we scan for all networks and use the one with the
  * greatest signal strength.
  */
-struct setting net80211_ssid_setting __setting ( SETTING_NETDEV_EXTRA ) = {
+const struct setting net80211_ssid_setting __setting ( SETTING_NETDEV_EXTRA,
+						       ssid ) = {
 	.name = "ssid",
 	.description = "Wireless SSID",
 	.type = &setting_type_string,
-	.tag = NET80211_SETTING_TAG_SSID,
 };
 
 /** Whether to use active scanning
@@ -217,11 +217,11 @@ struct setting net80211_ssid_setting __setting ( SETTING_NETDEV_EXTRA ) = {
  * active scan (send probe packets). If this setting is nonzero, an
  * active scan on the 2.4GHz band will be used to associate.
  */
-struct setting net80211_active_setting __setting ( SETTING_NETDEV_EXTRA ) = {
+const struct setting net80211_active_setting __setting ( SETTING_NETDEV_EXTRA,
+							 active-scan ) = {
 	.name = "active-scan",
 	.description = "Actively scan for wireless networks",
 	.type = &setting_type_int8,
-	.tag = NET80211_SETTING_TAG_ACTIVE_SCAN,
 };
 
 /** The cryptographic key to use
@@ -230,11 +230,11 @@ struct setting net80211_active_setting __setting ( SETTING_NETDEV_EXTRA ) = {
  * normal iPXE method for entering hex settings; an ASCII string of
  * hex characters will not behave as expected.
  */
-struct setting net80211_key_setting __setting ( SETTING_NETDEV_EXTRA ) = {
+const struct setting net80211_key_setting __setting ( SETTING_NETDEV_EXTRA,
+						      key ) = {
 	.name = "key",
 	.description = "Wireless encryption key",
 	.type = &setting_type_string,
-	.tag = NET80211_SETTING_TAG_KEY,
 };
 
 /** @} */
@@ -602,6 +602,7 @@ static struct ll_protocol net80211_ll_protocol __ll_protocol = {
 	.ntoa = eth_ntoa,
 	.mc_hash = eth_mc_hash,
 	.eth_addr = eth_eth_addr,
+	.eui64 = eth_eui64,
 	.ll_proto = htons ( ARPHRD_ETHER ),	/* "encapsulated Ethernet" */
 	.hw_addr_len = ETH_ALEN,
 	.ll_addr_len = ETH_ALEN,

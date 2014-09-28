@@ -17,7 +17,7 @@
 // Maximum number of map entries in the e820 map
 #define BUILD_MAX_E820 32
 // Space to reserve in high-memory for tables
-#define BUILD_MAX_HIGHTABLE (64*1024)
+#define BUILD_MAX_HIGHTABLE (256*1024)
 // Largest supported externaly facing drive id
 #define BUILD_MAX_EXTDRIVE 16
 // Number of bytes the smbios may be and still live in the f-segment
@@ -54,7 +54,7 @@
 #define BUILD_APIC_ADDR           0xfee00000
 
 // PCI IRQS
-#define BUILD_PCI_IRQS	        ((1<<5) | (1<<9) | (1<<10) | (1<<11))
+#define BUILD_PCI_IRQS            ((1<<5) | (1<<9) | (1<<10) | (1<<11))
 
 // Important real-mode segments
 #define SEG_IVT      0x0000
