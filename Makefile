@@ -49,13 +49,10 @@ docs:
 	./share/doc/qemu \
 	libecc/doc
 
-ifeq ($(filter arm%, $(TARGET)),)
-  # Default to all targets.
-  TARGETS=
-else
-  # Limit ARM targets to keep the ecc executable small enough to link.
-  TARGETS=--enable-targets=arm
-endif
+# Default to all targets.
+TARGETS=
+# Limit targets to keep the ecc executable smaller, e.g.:
+#TARGETS=--enable-targets=arm
 
 ifneq ($(TARGET),$(build))
   HOST=--host=$(TARGET)-$(OS)
