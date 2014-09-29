@@ -5,6 +5,7 @@
 #include <locale.h>
 #include <time.h>
 #include <limits.h>
+#include "locale_impl.h"
 #include "libc.h"
 #include "time_impl.h"
 
@@ -126,6 +127,7 @@ const char *__strftime_fmt_1(char (*s)[100], size_t *l, int f, const struct tm *
 		goto recu_strftime;
 	case 's':
 		val = __tm_to_secs(tm) + tm->__tm_gmtoff;
+		width = 1;
 		goto number;
 	case 'S':
 		val = tm->tm_sec;
@@ -262,7 +264,7 @@ size_t __strftime_l(char *restrict s, size_t n, const char *restrict f, const st
 
 size_t strftime(char *restrict s, size_t n, const char *restrict f, const struct tm *restrict tm)
 {
-	return __strftime_l(s, n, f, tm, 0);
+	return __strftime_l(s, n, f, tm, CURRENT_LOCALE);
 }
 
 weak_alias(__strftime_l, strftime_l);

@@ -8,9 +8,10 @@
 
 char *strptime(const char *restrict s, const char *restrict f, struct tm *restrict tm)
 {
-	int i, w, neg, adj, min, range, *dest;
+	int i, w, neg, adj, min, range, *dest, dummy;
 	const char *ex;
 	size_t len;
+	int want_century = 0, century = 0;
 	while (*f) {
 		if (*f != '%') {
 			if (isspace(*f)) for (; *s && isspace(*s); s++);
@@ -40,6 +41,10 @@ char *strptime(const char *restrict s, const char *restrict f, struct tm *restri
 			if (!s) return 0;
 			break;
 		case 'C':
+			dest = &century;
+			if (w<0) w=2;
+			want_century |= 2;
+			goto numeric_digits;
 		case 'd': case 'e':
 			dest = &tm->tm_mday;
 			min = 1;
@@ -112,8 +117,11 @@ char *strptime(const char *restrict s, const char *restrict f, struct tm *restri
 			break;
 		case 'U':
 		case 'W':
-			//FIXME
-			return 0;
+			/* Throw away result, for now. (FIXME?) */
+			dest = &dummy;
+			min = 0;
+			range = 54;
+			goto numeric_range;
 		case 'w':
 			dest = &tm->tm_wday;
 			min = 0;
@@ -128,16 +136,21 @@ char *strptime(const char *restrict s, const char *restrict f, struct tm *restri
 			if (!s) return 0;
 			break;
 		case 'y':
-			//FIXME
-			return 0;
+			dest = &tm->tm_year;
+			w = 2;
+			want_century |= 1;
+			goto numeric_digits;
 		case 'Y':
 			dest = &tm->tm_year;
 			if (w<0) w=4;
 			adj = 1900;
+			want_century = 0;
 			goto numeric_digits;
 		case '%':
 			if (*s++ != '%') return 0;
 			break;
+		default:
+			return 0;
 		numeric_range:
 			if (!isdigit(*s)) return 0;
 			*dest = 0;
@@ -175,6 +188,10 @@ char *strptime(const char *restrict s, const char *restrict f, struct tm *restri
 			//FIXME
 			;
 		}
+	}
+	if (want_century) {
+		if (want_century & 2) tm->tm_year += century * 100 - 1900;
+		else if (tm->tm_year <= 68) tm->tm_year += 100;
 	}
 	return (char *)s;
 }

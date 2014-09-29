@@ -4,6 +4,14 @@
 #include <sys/syscall.h>
 #include "syscall_arch.h"
 
+#ifndef SYSCALL_RLIM_INFINITY
+#define SYSCALL_RLIM_INFINITY (~0ULL)
+#endif
+
+#ifndef SYSCALL_MMAP2_UNIT
+#define SYSCALL_MMAP2_UNIT 4096ULL
+#endif
+
 #ifndef __scc
 #define __scc(X) ((long) (X))
 typedef long syscall_arg_t;
@@ -122,14 +130,26 @@ long __syscall_ret(unsigned long), __syscall(syscall_arg_t, ...),
 
 #ifdef SYS_stat64
 #undef SYS_stat
-#undef SYS_fstat
-#undef SYS_lstat
-#undef SYS_statfs
-#undef SYS_fstatfs
 #define SYS_stat SYS_stat64
+#endif
+
+#ifdef SYS_fstat64
+#undef SYS_fstat
 #define SYS_fstat SYS_fstat64
+#endif
+
+#ifdef SYS_lstat64
+#undef SYS_lstat
 #define SYS_lstat SYS_lstat64
+#endif
+
+#ifdef SYS_statfs64
+#undef SYS_statfs
 #define SYS_statfs SYS_statfs64
+#endif
+
+#ifdef SYS_fstatfs64
+#undef SYS_fstatfs
 #define SYS_fstatfs SYS_fstatfs64
 #endif
 
@@ -162,5 +182,51 @@ long __syscall_ret(unsigned long), __syscall(syscall_arg_t, ...),
 #undef SYS_fadvise
 #define SYS_fadvise SYS_fadvise64_64
 #endif
+
+#ifdef SYS_sendfile64
+#undef SYS_sendfile
+#define SYS_sendfile SYS_sendfile64
+#endif
+
+/* socketcall calls */
+
+#define __SC_socket      1
+#define __SC_bind        2
+#define __SC_connect     3
+#define __SC_listen      4
+#define __SC_accept      5
+#define __SC_getsockname 6
+#define __SC_getpeername 7
+#define __SC_socketpair  8
+#define __SC_send        9
+#define __SC_recv        10
+#define __SC_sendto      11
+#define __SC_recvfrom    12
+#define __SC_shutdown    13
+#define __SC_setsockopt  14
+#define __SC_getsockopt  15
+#define __SC_sendmsg     16
+#define __SC_recvmsg     17
+#define __SC_accept4     18
+#define __SC_recvmmsg    19
+#define __SC_sendmmsg    20
+
+#ifdef SYS_open
+#define __sys_open2(x,pn,fl) __syscall2(SYS_open, pn, (fl)|O_LARGEFILE)
+#define __sys_open3(x,pn,fl,mo) __syscall3(SYS_open, pn, (fl)|O_LARGEFILE, mo)
+#define __sys_open_cp2(x,pn,fl) __syscall_cp2(SYS_open, pn, (fl)|O_LARGEFILE)
+#define __sys_open_cp3(x,pn,fl,mo) __syscall_cp3(SYS_open, pn, (fl)|O_LARGEFILE, mo)
+#else
+#define __sys_open2(x,pn,fl) __syscall3(SYS_openat, AT_FDCWD, pn, (fl)|O_LARGEFILE)
+#define __sys_open3(x,pn,fl,mo) __syscall4(SYS_openat, AT_FDCWD, pn, (fl)|O_LARGEFILE, mo)
+#define __sys_open_cp2(x,pn,fl) __syscall_cp3(SYS_openat, AT_FDCWD, pn, (fl)|O_LARGEFILE)
+#define __sys_open_cp3(x,pn,fl,mo) __syscall_cp4(SYS_openat, AT_FDCWD, pn, (fl)|O_LARGEFILE, mo)
+#endif
+
+#define __sys_open(...) __SYSCALL_DISP(__sys_open,,__VA_ARGS__)
+#define sys_open(...) __syscall_ret(__sys_open(__VA_ARGS__))
+
+#define __sys_open_cp(...) __SYSCALL_DISP(__sys_open_cp,,__VA_ARGS__)
+#define sys_open_cp(...) __syscall_ret(__sys_open_cp(__VA_ARGS__))
 
 #endif

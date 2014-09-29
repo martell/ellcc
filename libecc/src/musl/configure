@@ -123,8 +123,9 @@ target=
 optimize=auto
 debug=no
 warnings=no
-shared=yes
+shared=auto
 static=yes
+wrapper=auto
 
 for arg ; do
 case "$arg" in
@@ -189,24 +190,43 @@ trycc ${CROSS_COMPILE}cc
 printf "%s\n" "$CC"
 test -n "$CC" || { echo "$0: cannot find a C compiler" ; exit 1 ; }
 
+printf "checking whether C compiler works... "
+echo "typedef int x;" > "$tmpc"
+if output=$($CC $CPPFLAGS $CFLAGS -c -o /dev/null "$tmpc" 2>&1) ; then
+printf "yes\n"
+else
+printf "no; compiler output follows:\n%s\n" "$output"
+exit 1
+fi
+
+#
+# Need to know if the compiler is gcc to decide whether to build the
+# musl-gcc wrapper, and for critical bug detection in some gcc versions.
+#
+printf "checking whether compiler is gcc... "
+if fnmatch '*gcc\ version*' "$($CC -v 2>&1)" ; then
+cc_is_gcc=yes
+else
+cc_is_gcc=no
+fi
+echo "$cc_is_gcc"
+
 #
 # Only build musl-gcc wrapper if toolchain does not already target musl
 #
-if test -z "$wrapper" ; then
-printf "checking whether compiler is gcc... "
-if fnmatch '*gcc\ version*' "$($CC -v 2>&1)" ; then
-echo yes
+if test "$wrapper" = auto ; then
 printf "checking whether to build musl-gcc wrapper... "
+if test "$cc_is_gcc" = yes ; then
 wrapper=yes
 while read line ; do
 case "$line" in */ld-musl-*) wrapper=no ;; esac
 done <<EOF
 $($CC -dumpspecs)
 EOF
-echo $wrapper
 else
-echo no
+wrapper=no
 fi
+echo "$wrapper"
 fi
 
 
@@ -230,6 +250,7 @@ x86_64-x32*|x32*|x86_64*x32) ARCH=x32 ;;
 x86_64*) ARCH=x86_64 ;;
 mips*|mipsel*) ARCH=mips ;;
 microblaze*) ARCH=microblaze ;;
+or1k*) ARCH=or1k ;;
 powerpc*) ARCH=powerpc ;;
 sh[1-9bel-]*|sh|superh*) ARCH=sh ;;
 ppc*) ARCH=powerpc ;;
@@ -279,12 +300,9 @@ fi
 tryflag CFLAGS_MEMOPS -fno-tree-loop-distribute-patterns
 
 #
-# If debugging is explicitly enabled, don't auto-enable optimizations
+# Enable debugging if requessted.
 #
-if test "$debug" = yes ; then
-CFLAGS_AUTO=-g
-test "$optimize" = auto && optimize=no
-fi
+test "$debug" = yes && CFLAGS_AUTO=-g
 
 #
 # Possibly add a -O option to CFLAGS and select modules to optimize with
@@ -393,11 +411,14 @@ fi
 tryflag CFLAGS_AUTO -fno-stack-protector
 tryldflag LDFLAGS_AUTO -Wl,--hash-style=both
 
+test "$shared" = "no" || {
 # Disable dynamic linking if ld is broken and can't do -Bsymbolic-functions
 LDFLAGS_DUMMY=
 tryldflag LDFLAGS_DUMMY -Wl,-Bsymbolic-functions || {
+test "$shared" = "yes" && fail "$0: error: linker cannot build shared library"
 printf "warning: disabling dynamic linking support\n"
 shared=no
+}
 }
 
 # Find compiler runtime library
@@ -430,7 +451,7 @@ test "$ARCH" = "microblaze" && trycppif __MICROBLAZEEL__ "$t" \
 
 if test "$ARCH" = "sh" ; then
 trycppif __BIG_ENDIAN__ "$t" && SUBARCH=${SUBARCH}eb
-if trycppif __SH_FPU_ANY__ "$t" ; then
+if trycppif "__SH_FPU_ANY__ || __SH4__" "$t" ; then
 # Some sh configurations are broken and replace double with float
 # rather than using softfloat when the fpu is present but only
 # supports single precision. Reject them.
@@ -498,7 +519,7 @@ libdir = $libdir
 includedir = $includedir
 syslibdir = $syslibdir
 CC = $CC
-CFLAGS= $CFLAGS_AUTO $CFLAGS
+CFLAGS = $CFLAGS_AUTO $CFLAGS
 CFLAGS_C99FSE = $CFLAGS_C99FSE
 CFLAGS_MEMOPS = $CFLAGS_MEMOPS
 CPPFLAGS = $CPPFLAGS

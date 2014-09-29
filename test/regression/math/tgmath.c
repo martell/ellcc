@@ -3,7 +3,7 @@
 // RUN: %armecc -o %t %s -lm && %armrun %t
 // RUN: %armebecc -o %t %s -lm && %armebrun %t
 // RUN: %i386ecc -o %t %s -lm && %i386run %t
-// RUN: %microblazeecc -o %t %s -lm && %microblazerun %t
+// FAIL: %microblazeecc -o %t %s -lm && %microblazerun %t
 // RUN: %mipsecc -o %t %s -lm && %mipsrun %t
 // RUN: %mipselecc -o %t %s -lm && %mipselrun %t
 // RUN: %ppcecc -o %t %s -lm && %ppcrun %t

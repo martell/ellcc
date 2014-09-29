@@ -1,5 +1,5 @@
 // BUG 90
-// XFAIL: 8
+// XFAIL: *
 // RUN: %armebecc -o %t %s && %armebrun %t
 #include "../ecc_test.h"
 #include <wchar.h>

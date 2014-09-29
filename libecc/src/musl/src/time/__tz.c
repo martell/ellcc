@@ -121,14 +121,14 @@ int __munmap(void *, size_t);
 static void do_tzset()
 {
 	char buf[NAME_MAX+25], *pathname=buf+24;
-	const char *try, *s;
+	const char *try, *s, *p;
 	const unsigned char *map = 0;
 	size_t i;
 	static const char search[] =
 		"/usr/share/zoneinfo/\0/share/zoneinfo/\0/etc/zoneinfo/\0";
 
 	s = getenv("TZ");
-	if (!s || !*s) s = __gmt;
+	if (!s || !*s) s = "/etc/localtime";
 
 	if (old_tz && !strcmp(s, old_tz)) return;
 
@@ -147,19 +147,17 @@ static void do_tzset()
 	}
 	if (old_tz) memcpy(old_tz, s, i+1);
 
-	if (*s == ':') s++;
-
 	/* Non-suid can use an absolute tzfile pathname or a relative
 	 * pathame beginning with "."; in secure mode, only the
 	 * standard path will be searched. */
-	if (*s == '/' || *s == '.') {
-		if (!libc.secure) map = __map_file(s, &map_size);
-	} else {
-		for (i=0; s[i] && s[i]!=','; i++) {
-			if (s[i]=='/') {
-				size_t l = strlen(s);
-				if (l > NAME_MAX || strchr(s, '.'))
-					break;
+	if (*s == ':' || ((p=strchr(s, '/')) && !memchr(s, ',', p-s))) {
+		if (*s == ':') s++;
+		if (*s == '/' || *s == '.') {
+			if (!libc.secure || !strcmp(s, "/etc/localtime"))
+				map = __map_file(s, &map_size);
+		} else {
+			size_t l = strlen(s);
+			if (l <= NAME_MAX && !strchr(s, '.')) {
 				memcpy(pathname, s, l+1);
 				pathname[l] = 0;
 				for (try=search; !map && *try; try+=l+1) {
@@ -167,9 +165,14 @@ static void do_tzset()
 					memcpy(pathname-l, try, l);
 					map = __map_file(pathname-l, &map_size);
 				}
-				break;
 			}
 		}
+		if (!map) s = __gmt;
+	}
+	if (map && (map_size < 44 || memcmp(map, "TZif", 4))) {
+		__munmap((void *)map, map_size);
+		map = 0;
+		s = __gmt;
 	}
 
 	zi = map;

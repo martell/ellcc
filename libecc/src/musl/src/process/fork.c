@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <string.h>
+#include <signal.h>
 #include "syscall.h"
 #include "libc.h"
 #include "pthread_impl.h"
@@ -16,10 +17,14 @@ pid_t fork(void)
 	sigset_t set;
 	__fork_handler(-1);
 	__block_all_sigs(&set);
+#ifdef SYS_fork
 	ret = syscall(SYS_fork);
+#else
+	ret = syscall(SYS_clone, SIGCHLD, 0);
+#endif
 	if (libc.has_thread_pointer && !ret) {
 		pthread_t self = __pthread_self();
-		self->tid = self->pid = __syscall(SYS_getpid);
+		self->tid = __syscall(SYS_gettid);
 		memset(&self->robust_list, 0, sizeof self->robust_list);
 		libc.threads_minus_1 = 0;
 	}
