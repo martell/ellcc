@@ -63,6 +63,10 @@ public:
     return Kind == Other.Kind && ID == Other.ID;
   }
 
+  friend bool operator<(const Counter &LHS, const Counter &RHS) {
+    return std::tie(LHS.Kind, LHS.ID) < std::tie(RHS.Kind, RHS.ID);
+  }
+
   /// \brief Return the counter that represents the number zero.
   static Counter getZero() { return Counter(); }
 
@@ -228,9 +232,13 @@ struct FunctionRecord {
   std::vector<std::string> Filenames;
   /// \brief Regions in the function along with their counts.
   std::vector<CountedRegion> CountedRegions;
+  /// \brief The number of times this function was executed.
+  uint64_t ExecutionCount;
 
-  FunctionRecord(StringRef Name, ArrayRef<StringRef> Filenames)
-      : Name(Name), Filenames(Filenames.begin(), Filenames.end()) {}
+  FunctionRecord(StringRef Name, ArrayRef<StringRef> Filenames,
+                 uint64_t ExecutionCount)
+      : Name(Name), Filenames(Filenames.begin(), Filenames.end()),
+        ExecutionCount(ExecutionCount) {}
 };
 
 /// \brief Coverage information for a macro expansion or #included file.

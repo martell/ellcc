@@ -607,16 +607,20 @@ void DwarfUnit::addComplexAddress(const DbgVariable &DV, DIE &Die,
   unsigned N = DV.getNumAddrElements();
   unsigned i = 0;
   if (Location.isReg()) {
-    if (N >= 2 && DV.getAddrElement(0) == DIBuilder::OpPlus) {
+    if (N >= 2 && DV.getAddrElement(0) == dwarf::DW_OP_plus) {
+      assert(!DV.getVariable().isIndirect() &&
+             "double indirection not handled");
       // If first address element is OpPlus then emit
       // DW_OP_breg + Offset instead of DW_OP_reg + Offset.
       addRegisterOffset(*Loc, Location.getReg(), DV.getAddrElement(1));
       i = 2;
-    } else if (N >= 2 && DV.getAddrElement(0) == DIBuilder::OpDeref) {
-        addRegisterOpPiece(*Loc, Location.getReg(),
-                           DV.getVariable().getPieceSize(),
-                           DV.getVariable().getPieceOffset());
-        i = 3;
+    } else if (N >= 2 && DV.getAddrElement(0) == dwarf::DW_OP_deref) {
+      assert(!DV.getVariable().isIndirect() &&
+             "double indirection not handled");
+      addRegisterOpPiece(*Loc, Location.getReg(),
+                         DV.getExpression().getPieceSize(),
+                         DV.getExpression().getPieceOffset());
+      i = 3;
     } else
       addRegisterOpPiece(*Loc, Location.getReg());
   } else
@@ -624,15 +628,15 @@ void DwarfUnit::addComplexAddress(const DbgVariable &DV, DIE &Die,
 
   for (; i < N; ++i) {
     uint64_t Element = DV.getAddrElement(i);
-    if (Element == DIBuilder::OpPlus) {
+    if (Element == dwarf::DW_OP_plus) {
       addUInt(*Loc, dwarf::DW_FORM_data1, dwarf::DW_OP_plus_uconst);
       addUInt(*Loc, dwarf::DW_FORM_udata, DV.getAddrElement(++i));
 
-    } else if (Element == DIBuilder::OpDeref) {
+    } else if (Element == dwarf::DW_OP_deref) {
       if (!Location.isReg())
         addUInt(*Loc, dwarf::DW_FORM_data1, dwarf::DW_OP_deref);
 
-    } else if (Element == DIBuilder::OpPiece) {
+    } else if (Element == dwarf::DW_OP_piece) {
       const unsigned SizeOfByte = 8;
       unsigned PieceOffsetInBits = DV.getAddrElement(++i)*SizeOfByte;
       unsigned PieceSizeInBits = DV.getAddrElement(++i)*SizeOfByte;
@@ -1748,9 +1752,7 @@ void DwarfUnit::constructSubrangeDIE(DIE &Buffer, DISubrange SR, DIE *IndexTy) {
   // The LowerBound value defines the lower bounds which is typically zero for
   // C/C++. The Count value is the number of elements.  Values are 64 bit. If
   // Count == -1 then the array is unbounded and we do not emit
-  // DW_AT_lower_bound and DW_AT_upper_bound attributes. If LowerBound == 0 and
-  // Count == 0, then the array has zero elements in which case we do not emit
-  // an upper bound.
+  // DW_AT_lower_bound and DW_AT_count attributes.
   int64_t LowerBound = SR.getLo();
   int64_t DefaultLowerBound = getDefaultLowerBound();
   int64_t Count = SR.getCount();
@@ -1758,11 +1760,10 @@ void DwarfUnit::constructSubrangeDIE(DIE &Buffer, DISubrange SR, DIE *IndexTy) {
   if (DefaultLowerBound == -1 || LowerBound != DefaultLowerBound)
     addUInt(DW_Subrange, dwarf::DW_AT_lower_bound, None, LowerBound);
 
-  if (Count != -1 && Count != 0)
+  if (Count != -1)
     // FIXME: An unbounded array should reference the expression that defines
     // the array.
-    addUInt(DW_Subrange, dwarf::DW_AT_upper_bound, None,
-            LowerBound + Count - 1);
+    addUInt(DW_Subrange, dwarf::DW_AT_count, None, Count);
 }
 
 /// constructArrayTypeDIE - Construct array type DIE from DICompositeType.
@@ -1864,7 +1865,7 @@ std::unique_ptr<DIE> DwarfUnit::constructVariableDIEImpl(const DbgVariable &DV,
 
   // Check if variable is described by a DBG_VALUE instruction.
   if (const MachineInstr *DVInsn = DV.getMInsn()) {
-    assert(DVInsn->getNumOperands() == 3);
+    assert(DVInsn->getNumOperands() == 4);
     if (DVInsn->getOperand(0).isReg()) {
       const MachineOperand RegOp = DVInsn->getOperand(0);
       // If the second operand is an immediate, this is an indirect value.

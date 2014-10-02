@@ -9,8 +9,8 @@ define i32 @func() nounwind uwtable ssp {
 entry:
   %my_foo = alloca %struct.foo, align 4
   %my_bar = alloca %struct.bar, align 4
-  call void @llvm.dbg.declare(metadata !{%struct.foo* %my_foo}, metadata !10), !dbg !19
-  call void @llvm.dbg.declare(metadata !{%struct.bar* %my_bar}, metadata !20), !dbg !28
+  call void @llvm.dbg.declare(metadata !{%struct.foo* %my_foo}, metadata !10, metadata !{i32 786690}), !dbg !19
+  call void @llvm.dbg.declare(metadata !{%struct.bar* %my_bar}, metadata !20, metadata !{i32 786690}), !dbg !28
   %a = getelementptr inbounds %struct.foo* %my_foo, i32 0, i32 0, !dbg !29
   store i32 3, i32* %a, align 4, !dbg !29
   %a1 = getelementptr inbounds %struct.bar* %my_bar, i32 0, i32 0, !dbg !30
@@ -23,10 +23,7 @@ entry:
   ret i32 %add, !dbg !31
 }
 
-declare void @llvm.dbg.declare(metadata, metadata) nounwind readnone
-
-; An empty array should not have an AT_upper_bound attribute. But an array of 1
-; should.
+declare void @llvm.dbg.declare(metadata, metadata, metadata) nounwind readnone
 
 ; CHECK:      DW_TAG_base_type
 ; CHECK-NEXT: DW_AT_name [DW_FORM_strp]  ( .debug_str[{{.*}}] = "int")
@@ -46,7 +43,7 @@ declare void @llvm.dbg.declare(metadata, metadata) nounwind readnone
 ; CHECK-NEXT: DW_AT_type [DW_FORM_ref4]
 ; CHECK:      DW_TAG_subrange_type [{{.*}}]
 ; CHECK-NEXT: DW_AT_type [DW_FORM_ref4]
-; CHECK-NEXT: DW_AT_upper_bound [DW_FORM_data1]  (0x00)
+; CHECK-NEXT: DW_AT_count [DW_FORM_data1]  (0x01)
 
 ; int bar::b[0]:
 ; CHECK: DW_TAG_structure_type
@@ -59,9 +56,9 @@ declare void @llvm.dbg.declare(metadata, metadata) nounwind readnone
 ; int[0]:
 ; CHECK:      DW_TAG_array_type [{{.*}}] *
 ; CHECK-NEXT: DW_AT_type [DW_FORM_ref4]
-; CHECK:      DW_TAG_subrange_type [11]
+; CHECK:      DW_TAG_subrange_type
 ; CHECK-NEXT: DW_AT_type [DW_FORM_ref4]
-; CHECK-NOT:  DW_AT_upper_bound
+; CHECK:      DW_AT_count [DW_FORM_data1]  (0x00)
 
 !llvm.dbg.cu = !{!0}
 !llvm.module.flags = !{!33}

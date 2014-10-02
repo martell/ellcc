@@ -9858,6 +9858,17 @@ SDValue DAGCombiner::visitSTORE(SDNode *N) {
     }
   }
 
+  // If this is a store followed by a store with the same value to the same
+  // location, then the store is dead/noop.
+  if (StoreSDNode *ST1 = dyn_cast<StoreSDNode>(Chain)) {
+    if (ST1->getBasePtr() == Ptr && ST->getMemoryVT() == ST1->getMemoryVT() &&
+        ST1->getValue() == Value && ST->isUnindexed() && !ST->isVolatile() &&
+        ST1->isUnindexed() && !ST1->isVolatile()) {
+      // The store is dead, remove it.
+      return Chain;
+    }
+  }
+
   // If this is an FP_ROUND or TRUNC followed by a store, fold this into a
   // truncating store.  We can do this even if this is already a truncstore.
   if ((Value.getOpcode() == ISD::FP_ROUND || Value.getOpcode() == ISD::TRUNCATE)
@@ -10412,6 +10423,10 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
   // operations.  If so, and if the EXTRACT_VECTOR_ELT vector inputs come from
   // at most two distinct vectors, turn this into a shuffle node.
 
+  // Only type-legal BUILD_VECTOR nodes are converted to shuffle nodes.
+  if (!isTypeLegal(VT))
+    return SDValue();
+
   // May only combine to shuffle after legalize if shuffle is legal.
   if (LegalOperations && !TLI.isOperationLegal(ISD::VECTOR_SHUFFLE, VT))
     return SDValue();
@@ -10502,10 +10517,6 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
     if (VecIn2.getValueType() != VecIn1.getValueType() ||
         VecIn1.getValueType() != VT)
           return SDValue();
-
-    // Only type-legal BUILD_VECTOR nodes are converted to shuffle nodes.
-    if (!isTypeLegal(VT))
-      return SDValue();
 
     // Return the new VECTOR_SHUFFLE node.
     SDValue Ops[2];
@@ -11767,35 +11778,36 @@ SDValue DAGCombiner::BuildReciprocalEstimate(SDValue Op) {
   // Expose the DAG combiner to the target combiner implementations.
   TargetLowering::DAGCombinerInfo DCI(DAG, Level, false, this);
 
-  unsigned Iterations;
-  if (SDValue Est = TLI.getEstimate(ISD::FDIV, Op, DCI, Iterations)) {
-    // Newton iteration for a function: F(X) is X_{i+1} = X_i - F(X_i)/F'(X_i)
-    // For the reciprocal, we need to find the zero of the function:
-    //   F(X) = A X - 1 [which has a zero at X = 1/A]
-    //     =>
-    //   X_{i+1} = X_i (2 - A X_i) = X_i + X_i (1 - A X_i) [this second form
-    //     does not require additional intermediate precision]
-    EVT VT = Op.getValueType();
-    SDLoc DL(Op);
-    SDValue FPOne = DAG.getConstantFP(1.0, VT);
+  unsigned Iterations = 0;
+  if (SDValue Est = TLI.getRecipEstimate(Op, DCI, Iterations)) {
+    if (Iterations) {
+      // Newton iteration for a function: F(X) is X_{i+1} = X_i - F(X_i)/F'(X_i)
+      // For the reciprocal, we need to find the zero of the function:
+      //   F(X) = A X - 1 [which has a zero at X = 1/A]
+      //     =>
+      //   X_{i+1} = X_i (2 - A X_i) = X_i + X_i (1 - A X_i) [this second form
+      //     does not require additional intermediate precision]
+      EVT VT = Op.getValueType();
+      SDLoc DL(Op);
+      SDValue FPOne = DAG.getConstantFP(1.0, VT);
 
-    AddToWorklist(Est.getNode());
-
-    // Newton iterations: Est = Est + Est (1 - Arg * Est)
-    for (unsigned i = 0; i < Iterations; ++i) {
-      SDValue NewEst = DAG.getNode(ISD::FMUL, DL, VT, Op, Est);
-      AddToWorklist(NewEst.getNode());
-
-      NewEst = DAG.getNode(ISD::FSUB, DL, VT, FPOne, NewEst);
-      AddToWorklist(NewEst.getNode());
-
-      NewEst = DAG.getNode(ISD::FMUL, DL, VT, Est, NewEst);
-      AddToWorklist(NewEst.getNode());
-
-      Est = DAG.getNode(ISD::FADD, DL, VT, Est, NewEst);
       AddToWorklist(Est.getNode());
-    }
 
+      // Newton iterations: Est = Est + Est (1 - Arg * Est)
+      for (unsigned i = 0; i < Iterations; ++i) {
+        SDValue NewEst = DAG.getNode(ISD::FMUL, DL, VT, Op, Est);
+        AddToWorklist(NewEst.getNode());
+
+        NewEst = DAG.getNode(ISD::FSUB, DL, VT, FPOne, NewEst);
+        AddToWorklist(NewEst.getNode());
+
+        NewEst = DAG.getNode(ISD::FMUL, DL, VT, Est, NewEst);
+        AddToWorklist(NewEst.getNode());
+
+        Est = DAG.getNode(ISD::FADD, DL, VT, Est, NewEst);
+        AddToWorklist(Est.getNode());
+      }
+    }
     return Est;
   }
 
@@ -11808,43 +11820,44 @@ SDValue DAGCombiner::BuildRsqrtEstimate(SDValue Op) {
 
   // Expose the DAG combiner to the target combiner implementations.
   TargetLowering::DAGCombinerInfo DCI(DAG, Level, false, this);
-  unsigned Iterations;
-  if (SDValue Est = TLI.getEstimate(ISD::FSQRT, Op, DCI, Iterations)) {
-    // Newton iteration for a function: F(X) is X_{i+1} = X_i - F(X_i)/F'(X_i)
-    // For the reciprocal sqrt, we need to find the zero of the function:
-    //   F(X) = 1/X^2 - A [which has a zero at X = 1/sqrt(A)]
-    //     =>
-    //   X_{i+1} = X_i (1.5 - A X_i^2 / 2)
-    // As a result, we precompute A/2 prior to the iteration loop.
-    EVT VT = Op.getValueType();
-    SDLoc DL(Op);
-    SDValue FPThreeHalves = DAG.getConstantFP(1.5, VT);
+  unsigned Iterations = 0;
+  if (SDValue Est = TLI.getRsqrtEstimate(Op, DCI, Iterations)) {
+    if (Iterations) {
+      // Newton iteration for a function: F(X) is X_{i+1} = X_i - F(X_i)/F'(X_i)
+      // For the reciprocal sqrt, we need to find the zero of the function:
+      //   F(X) = 1/X^2 - A [which has a zero at X = 1/sqrt(A)]
+      //     =>
+      //   X_{i+1} = X_i (1.5 - A X_i^2 / 2)
+      // As a result, we precompute A/2 prior to the iteration loop.
+      EVT VT = Op.getValueType();
+      SDLoc DL(Op);
+      SDValue FPThreeHalves = DAG.getConstantFP(1.5, VT);
 
-    AddToWorklist(Est.getNode());
-
-    // We now need 0.5 * Arg which we can write as (1.5 * Arg - Arg) so that
-    // this entire sequence requires only one FP constant.
-    SDValue HalfArg = DAG.getNode(ISD::FMUL, DL, VT, FPThreeHalves, Op);
-    AddToWorklist(HalfArg.getNode());
-
-    HalfArg = DAG.getNode(ISD::FSUB, DL, VT, HalfArg, Op);
-    AddToWorklist(HalfArg.getNode());
-
-    // Newton iterations: Est = Est * (1.5 - HalfArg * Est * Est)
-    for (unsigned i = 0; i < Iterations; ++i) {
-      SDValue NewEst = DAG.getNode(ISD::FMUL, DL, VT, Est, Est);
-      AddToWorklist(NewEst.getNode());
-
-      NewEst = DAG.getNode(ISD::FMUL, DL, VT, HalfArg, NewEst);
-      AddToWorklist(NewEst.getNode());
-
-      NewEst = DAG.getNode(ISD::FSUB, DL, VT, FPThreeHalves, NewEst);
-      AddToWorklist(NewEst.getNode());
-
-      Est = DAG.getNode(ISD::FMUL, DL, VT, Est, NewEst);
       AddToWorklist(Est.getNode());
-    }
 
+      // We now need 0.5 * Arg which we can write as (1.5 * Arg - Arg) so that
+      // this entire sequence requires only one FP constant.
+      SDValue HalfArg = DAG.getNode(ISD::FMUL, DL, VT, FPThreeHalves, Op);
+      AddToWorklist(HalfArg.getNode());
+
+      HalfArg = DAG.getNode(ISD::FSUB, DL, VT, HalfArg, Op);
+      AddToWorklist(HalfArg.getNode());
+
+      // Newton iterations: Est = Est * (1.5 - HalfArg * Est * Est)
+      for (unsigned i = 0; i < Iterations; ++i) {
+        SDValue NewEst = DAG.getNode(ISD::FMUL, DL, VT, Est, Est);
+        AddToWorklist(NewEst.getNode());
+
+        NewEst = DAG.getNode(ISD::FMUL, DL, VT, HalfArg, NewEst);
+        AddToWorklist(NewEst.getNode());
+
+        NewEst = DAG.getNode(ISD::FSUB, DL, VT, FPThreeHalves, NewEst);
+        AddToWorklist(NewEst.getNode());
+
+        Est = DAG.getNode(ISD::FMUL, DL, VT, Est, NewEst);
+        AddToWorklist(Est.getNode());
+      }
+    }
     return Est;
   }
 
