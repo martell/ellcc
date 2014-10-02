@@ -5180,6 +5180,12 @@ static void ConstructLinkJobFromInfo(Compilation &C, const JobAction &JA,
   clang::compilationinfo::Linker &linker = D.Info->linker;
   // Expand the linker information.
   linker.Expand(D, Output.getFilename());
+
+  // Add the linker options.
+  for (auto &i : linker.options) {
+    CmdArgs.push_back(Args.MakeArgString(i));
+  }
+
   if (Output.isFilename()) {
     for (auto &i : linker.output) {
       CmdArgs.push_back(Args.MakeArgString(i));
@@ -5193,11 +5199,6 @@ static void ConstructLinkJobFromInfo(Compilation &C, const JobAction &JA,
     for (auto &i : linker.start) {
       CmdArgs.push_back(Args.MakeArgString(i));
     }
-  }
-
-  // Add the linker options.
-  for (auto &i : linker.options) {
-    CmdArgs.push_back(Args.MakeArgString(i));
   }
 
   if ((D.Info->global.static_default &&
