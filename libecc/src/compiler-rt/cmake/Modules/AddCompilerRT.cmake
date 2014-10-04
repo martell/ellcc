@@ -38,14 +38,13 @@ macro(add_compiler_rt_darwin_object_library name os)
     COMPILE_DEFINITIONS ${LIB_DEFS})
 endmacro()
 
-# Adds static or shared runtime for a given architecture and puts it in the
-# proper directory in the build and install trees.
-# add_compiler_rt_runtime(<name> <arch> {STATIC,SHARED}
-#                         SOURCES <source files>
-#                         CFLAGS <compile flags>
-#                         DEFS <compile definitions>
-#                         OUTPUT_NAME <output library name>)
-macro(add_compiler_rt_runtime name arch type)
+# Adds static runtime for a given architecture and puts it in the proper
+# directory in the build and install trees.
+# add_compiler_rt_static_runtime(<name> <arch>
+#                                SOURCES <source files>
+#                                CFLAGS <compile flags>
+#                                DEFS <compile definitions>)
+macro(add_compiler_rt_static_runtime name arch)
   if(CAN_TARGET_${arch})
     parse_arguments(LIB "SOURCES;CFLAGS;DEFS" "" ${ARGN})
     add_library(${name} STATIC ${LIB_SOURCES})
@@ -56,15 +55,7 @@ macro(add_compiler_rt_runtime name arch type)
       COMPILE_DEFINITIONS ${LIB_DEFS})
     # Setup correct output directory in the build tree.
     set_target_properties(${name} PROPERTIES
-      ARCHIVE_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
-      LIBRARY_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
-    if ("${LIB_OUTPUT_NAME}" STREQUAL "")
-      set_target_properties(${name} PROPERTIES
-        OUTPUT_NAME ${name}${COMPILER_RT_OS_SUFFIX})
-    else()
-      set_target_properties(${name} PROPERTIES
-        OUTPUT_NAME ${LIB_OUTPUT_NAME})
-    endif()
+      ARCHIVE_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
     # Add installation command.
     install(TARGETS ${name}
       ARCHIVE DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR})

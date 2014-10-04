@@ -198,18 +198,17 @@ void AsanThread::ClearShadowForThreadStackAndTLS() {
     PoisonShadow(tls_begin_, tls_end_ - tls_begin_, 0);
 }
 
-bool AsanThread::GetStackFrameAccessByAddr(uptr addr,
-                                           StackFrameAccess *access) {
+const char *AsanThread::GetFrameNameByAddr(uptr addr, uptr *offset,
+                                           uptr *frame_pc) {
   uptr bottom = 0;
   if (AddrIsInStack(addr)) {
     bottom = stack_bottom();
   } else if (has_fake_stack()) {
     bottom = fake_stack()->AddrIsInFakeStack(addr);
     CHECK(bottom);
-    access->offset = addr - bottom;
-    access->frame_pc = ((uptr*)bottom)[2];
-    access->frame_descr = (const char *)((uptr*)bottom)[1];
-    return true;
+    *offset = addr - bottom;
+    *frame_pc = ((uptr*)bottom)[2];
+    return  (const char *)((uptr*)bottom)[1];
   }
   uptr aligned_addr = addr & ~(SANITIZER_WORDSIZE/8 - 1);  // align addr.
   u8 *shadow_ptr = (u8*)MemToShadow(aligned_addr);
@@ -226,15 +225,15 @@ bool AsanThread::GetStackFrameAccessByAddr(uptr addr,
   }
 
   if (shadow_ptr < shadow_bottom) {
-    return false;
+    *offset = 0;
+    return "UNKNOWN";
   }
 
   uptr* ptr = (uptr*)SHADOW_TO_MEM((uptr)(shadow_ptr + 1));
   CHECK(ptr[0] == kCurrentStackFrameMagic);
-  access->offset = addr - (uptr)ptr;
-  access->frame_pc = ptr[2];
-  access->frame_descr = (const char*)ptr[1];
-  return true;
+  *offset = addr - (uptr)ptr;
+  *frame_pc = ptr[2];
+  return (const char*)ptr[1];
 }
 
 static bool ThreadStackContainsAddress(ThreadContextBase *tctx_base,

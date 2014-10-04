@@ -25,7 +25,7 @@ if(APPLE)
       SOURCES ${LSAN_COMMON_SOURCES}
       CFLAGS ${LSAN_CFLAGS})
   endforeach()
-else()
+elseif(NOT ANDROID)
   foreach(arch ${LSAN_COMMON_SUPPORTED_ARCH})
     add_compiler_rt_object_library(RTLSanCommon ${arch}
       SOURCES ${LSAN_COMMON_SOURCES}

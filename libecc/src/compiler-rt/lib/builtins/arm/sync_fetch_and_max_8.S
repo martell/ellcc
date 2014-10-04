@@ -14,8 +14,6 @@
 
 #include "sync-ops.h"
 
-#if __ARM_ARCH_PROFILE != 'M'
 #define max_8(rD_LO, rD_HI, rN_LO, rN_HI, rM_LO, rM_HI)         MINMAX_8(rD_LO, rD_HI, rN_LO, rN_HI, rM_LO, rM_HI, gt)
 
 SYNC_OP_8(max_8)
-#endif
