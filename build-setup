@@ -13,7 +13,7 @@ case "${build}" in
     ;;
 esac
 host=$build
-target=$build 
+target=$build
 os=linux
 arg1=
 hostos=`uname -s`
@@ -26,6 +26,13 @@ if [ $# -ge 1 ] ; then
   bindir=$bindir-$1
   hostos=Linux
   tuple=$1
+  libtuple=$tuple
+  shift
+fi
+
+if [ $# -ge 1 ] ; then
+  # The second argument is the desired library tuple.
+  libtuple=$1
   shift
 fi
 
@@ -47,7 +54,7 @@ if [ "x$ecc" != "x" ] ; then
     # Find a tuple for this host.
     tuple=`cd $prefix/libecc/config; echo $host*`
   fi
-  if [ -e $prefix/libecc/lib/$tuple/libc.a ]; then
+  if [ -e $prefix/libecc/lib/$libtuple/libc.a ]; then
     # To build for host with libecc:
     cc=$ecc
     cxx=$ecc++

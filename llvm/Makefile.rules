@@ -641,7 +641,7 @@ ifndef NO_DEAD_STRIP
     LD.Flags += -Wl,-dead_strip
   else
     ifneq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW))
-      LD.Flags += -Wl,--gc-sections
+      # RICH: LD.Flags += -Wl,--gc-sections
     endif
   endif
 endif
@@ -653,7 +653,7 @@ ifneq ($(HOST_OS), $(filter $(HOST_OS), Cygwin MingW))
   endif
   ifneq ($(HOST_OS), Darwin)
     ifdef TOOLNAME
-      LD.Flags += $(RPATH) -Wl,'$$ORIGIN/../lib'
+      # RICH: LD.Flags += $(RPATH) -Wl,'$$ORIGIN/../lib'
     endif
   else
     ifneq ($(DARWIN_MAJVERS),4)
@@ -1356,7 +1356,7 @@ endif
 ifeq ($(HOST_OS), $(filter $(HOST_OS), DragonFly Linux NetBSD FreeBSD GNU/kFreeBSD GNU))
 ifneq ($(shell uname -s),Darwin)
 ifneq ($(ARCH), Mips)
-  LD.Flags += -Wl,--version-script=$(LLVM_SRC_ROOT)/autoconf/ExportMap.map
+  # RICH: LD.Flags += -Wl,--version-script=$(LLVM_SRC_ROOT)/autoconf/ExportMap.map
 endif
 endif
 endif

@@ -1,10 +1,10 @@
-# Build the ELLCC libraries.
+# Build the ELLCC Linux libraries.
 
 # RICH: TODO: Check out the warnings.
 PWD := $(shell pwd)
 ELLCC := $(PWD)/..
 LIBECC := $(ELLCC)/libecc
-Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *))
+Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
 CFLAGS := -g -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
