@@ -28,6 +28,8 @@ def macosx_version_min : Separate<["-"], "macosx_version_min">,
 def ios_version_min : Separate<["-"], "ios_version_min">,
      MetaVarName<"<version>">,
      HelpText<"Minimum iOS version">, Group<grp_opts>;
+def iphoneos_version_min : Separate<["-"], "iphoneos_version_min">,
+     Alias<ios_version_min>;
 def ios_simulator_version_min : Separate<["-"], "ios_simulator_version_min">,
      MetaVarName<"<version>">,
      HelpText<"Minimum iOS simulator version">, Group<grp_opts>;
@@ -146,6 +148,9 @@ def image_base : Separate<["-"], "image_base">;
 def seg1addr : Separate<["-"], "seg1addr">, Alias<image_base>;
 def demangle : Flag<["-"], "demangle">,
      HelpText<"Demangles symbol names in errors and warnings">;
+def dependency_info : Separate<["-"], "dependency_info">,
+     MetaVarName<"<file>">,
+     HelpText<"Write binary list of files used during link">;
 
 def t : Flag<["-"], "t">,
      HelpText<"Print the names of the input files as ld processes them">;

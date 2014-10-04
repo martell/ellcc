@@ -20,6 +20,7 @@
 #include "sanitizer_common/sanitizer_libc.h"
 #include "sanitizer_common/sanitizer_procmaps.h"
 #include "sanitizer_common/sanitizer_stoptheworld.h"
+#include "sanitizer_common/sanitizer_stackdepot.h"
 #include "tsan_platform.h"
 #include "tsan_rtl.h"
 #include "tsan_flags.h"
@@ -64,38 +65,50 @@ namespace __tsan {
 
 const uptr kPageSize = 4096;
 
+enum {
+  MemTotal  = 0,
+  MemShadow = 1,
+  MemMeta   = 2,
+  MemFile   = 3,
+  MemMmap   = 4,
+  MemTrace  = 5,
+  MemHeap   = 6,
+  MemOther  = 7,
+  MemCount  = 8,
+};
+
 void FillProfileCallback(uptr start, uptr rss, bool file,
                          uptr *mem, uptr stats_size) {
-  CHECK_EQ(7, stats_size);
-  mem[6] += rss;  // total
+  mem[MemTotal] += rss;
   start >>= 40;
-  if (start < 0x10)  // shadow
-    mem[0] += rss;
-  else if (start >= 0x20 && start < 0x30)  // compat modules
-    mem[file ? 1 : 2] += rss;
-  else if (start >= 0x7e)  // modules
-    mem[file ? 1 : 2] += rss;
-  else if (start >= 0x60 && start < 0x62)  // traces
-    mem[3] += rss;
-  else if (start >= 0x7d && start < 0x7e)  // heap
-    mem[4] += rss;
-  else  // other
-    mem[5] += rss;
+  if (start < 0x10)
+    mem[MemShadow] += rss;
+  else if (start >= 0x20 && start < 0x30)
+    mem[file ? MemFile : MemMmap] += rss;
+  else if (start >= 0x30 && start < 0x40)
+    mem[MemMeta] += rss;
+  else if (start >= 0x7e)
+    mem[file ? MemFile : MemMmap] += rss;
+  else if (start >= 0x60 && start < 0x62)
+    mem[MemTrace] += rss;
+  else if (start >= 0x7d && start < 0x7e)
+    mem[MemHeap] += rss;
+  else
+    mem[MemOther] += rss;
 }
 
-void WriteMemoryProfile(char *buf, uptr buf_size) {
-  uptr mem[7] = {};
+void WriteMemoryProfile(char *buf, uptr buf_size, uptr nthread, uptr nlive) {
+  uptr mem[MemCount] = {};
   __sanitizer::GetMemoryProfile(FillProfileCallback, mem, 7);
-  char *buf_pos = buf;
-  char *buf_end = buf + buf_size;
-  buf_pos += internal_snprintf(buf_pos, buf_end - buf_pos,
-      "RSS %zd MB: shadow:%zd file:%zd mmap:%zd trace:%zd heap:%zd other:%zd\n",
-      mem[6] >> 20, mem[0] >> 20, mem[1] >> 20, mem[2] >> 20,
-      mem[3] >> 20, mem[4] >> 20, mem[5] >> 20);
-  struct mallinfo mi = __libc_mallinfo();
-  buf_pos += internal_snprintf(buf_pos, buf_end - buf_pos,
-      "mallinfo: arena=%d mmap=%d fordblks=%d keepcost=%d\n",
-      mi.arena >> 20, mi.hblkhd >> 20, mi.fordblks >> 20, mi.keepcost >> 20);
+  StackDepotStats *stacks = StackDepotGetStats();
+  internal_snprintf(buf, buf_size,
+      "RSS %zd MB: shadow:%zd meta:%zd file:%zd mmap:%zd"
+      " trace:%zd heap:%zd other:%zd stacks=%zd[%zd] nthr=%zd/%zd\n",
+      mem[MemTotal] >> 20, mem[MemShadow] >> 20, mem[MemMeta] >> 20,
+      mem[MemFile] >> 20, mem[MemMmap] >> 20, mem[MemTrace] >> 20,
+      mem[MemHeap] >> 20, mem[MemOther] >> 20,
+      stacks->allocated >> 20, stacks->n_uniq_ids,
+      nlive, nthread);
 }
 
 uptr GetRSS() {
@@ -150,9 +163,7 @@ static void ProtectRange(uptr beg, uptr end) {
     Die();
   }
 }
-#endif
 
-#ifndef TSAN_GO
 // Mark shadow for .rodata sections with the special kShadowRodata marker.
 // Accesses to .rodata can't race, so this saves time, memory and trace space.
 static void MapRodata() {
@@ -177,7 +188,8 @@ static void MapRodata() {
   // Fill the file with kShadowRodata.
   const uptr kMarkerSize = 512 * 1024 / sizeof(u64);
   InternalScopedBuffer<u64> marker(kMarkerSize);
-  for (u64 *p = marker.data(); p < marker.data() + kMarkerSize; p++)
+  // volatile to prevent insertion of memset
+  for (volatile u64 *p = marker.data(); p < marker.data() + kMarkerSize; p++)
     *p = kShadowRodata;
   internal_write(fd, marker.data(), marker.size());
   // Map the file into memory.
@@ -210,6 +222,7 @@ static void MapRodata() {
 }
 
 void InitializeShadowMemory() {
+  // Map memory shadow.
   uptr shadow = (uptr)MmapFixedNoReserve(kLinuxShadowBeg,
     kLinuxShadowEnd - kLinuxShadowBeg);
   if (shadow != kLinuxShadowBeg) {
@@ -255,20 +268,19 @@ void InitializeShadowMemory() {
   const uptr kClosedLowBeg  = 0x200000;
   const uptr kClosedLowEnd  = kLinuxShadowBeg - 1;
   const uptr kClosedMidBeg = kLinuxShadowEnd + 1;
-  const uptr kClosedMidEnd = min(kLinuxAppMemBeg, kTraceMemBegin);
+  const uptr kClosedMidEnd = min(min(kLinuxAppMemBeg, kTraceMemBegin),
+      kMetaShadow);
+
   ProtectRange(kClosedLowBeg, kClosedLowEnd);
   ProtectRange(kClosedMidBeg, kClosedMidEnd);
-  DPrintf("kClosedLow   %zx-%zx (%zuGB)\n",
+  VPrintf(2, "kClosedLow   %zx-%zx (%zuGB)\n",
       kClosedLowBeg, kClosedLowEnd, (kClosedLowEnd - kClosedLowBeg) >> 30);
-  DPrintf("kLinuxShadow %zx-%zx (%zuGB)\n",
-      kLinuxShadowBeg, kLinuxShadowEnd,
-      (kLinuxShadowEnd - kLinuxShadowBeg) >> 30);
-  DPrintf("kClosedMid   %zx-%zx (%zuGB)\n",
+  VPrintf(2, "kClosedMid   %zx-%zx (%zuGB)\n",
       kClosedMidBeg, kClosedMidEnd, (kClosedMidEnd - kClosedMidBeg) >> 30);
-  DPrintf("kLinuxAppMem %zx-%zx (%zuGB)\n",
+  VPrintf(2, "app mem: %zx-%zx (%zuGB)\n",
       kLinuxAppMemBeg, kLinuxAppMemEnd,
       (kLinuxAppMemEnd - kLinuxAppMemBeg) >> 30);
-  DPrintf("stack        %zx\n", (uptr)&shadow);
+  VPrintf(2, "stack: %zx\n", (uptr)&shadow);
 
   MapRodata();
 }
