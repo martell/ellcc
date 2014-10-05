@@ -52,7 +52,7 @@ if [ "x$ecc" != "x" ] ; then
   # An ecc exists, use it to compile.
   if [ "$tuple" == "" ] ; then
     # Find a tuple for this host.
-    tuple=`cd $prefix/libecc/config; echo $host*`
+    tuple=`cd $prefix/libecc/config; echo $host*-linux-*`
   fi
   if [ -e $prefix/libecc/lib/$libtuple/libc.a ]; then
     # To build for host with libecc:
