@@ -56,7 +56,7 @@ $(Configs)::
 	echo Installing ncurses for $* ; \
 	mkdir -p ../lib/$* ; \
 	cp $*/lib/*.a ../lib/$* ; \
-	cp $*/include/*.h ../include ; \
+	cp -p $*/include/*.h ../include ; \
 	make -C $*/misc install
 
 $(Configs)::
@@ -67,10 +67,10 @@ $(Configs)::
 %.zlib.configure:
 	@echo Configuring zlib for $* in zlib-build/$*
 	mkdir -p zlib-build/$*
-	cp -fr src/zlib/* zlib-build/$*
+	cp -pfr src/zlib/* zlib-build/$*
 	cd zlib-build/$* ; \
-	CC="$(ELLCC)/bin/ecc $(CFLAGS)" \
-	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS)" \
+	CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
         AR=$(ELLCC)/bin/ecc-ar \
         RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	    ./configure --static --prefix=$(ELLCC)
@@ -83,8 +83,8 @@ $(Configs)::
 	echo Installing zlib for $* ; \
 	mkdir -p ../lib/$* ; \
 	cp $*/*.a ../lib/$* ; \
-	cp $*/zlib.h ../include ; \
-	cp $*/zconf.h ../include
+	cp -p $*/zlib.h ../include ; \
+	cp -p $*/zconf.h ../include
 
 $(Configs)::
 	make $@.expat.configure && \
@@ -95,8 +95,8 @@ $(Configs)::
 	@echo Configuring expat for $* in expat-build/$*
 	mkdir -p expat-build/$*
 	cd expat-build/$* ; \
-	CC="$(ELLCC)/bin/ecc $(CFLAGS)" \
-	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS)" \
+	CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
         AR=$(ELLCC)/bin/ecc-ar \
         RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	    ../../src/expat/configure \
@@ -111,8 +111,8 @@ $(Configs)::
 	echo Installing expat for $* ; \
 	mkdir -p ../lib/$* ; \
 	cp $*/.libs/*.a ../lib/$* ; \
-	cp ../src/expat/lib/expat.h ../include ; \
-	cp ../src/expat/lib/expat_external.h ../include
+	cp -p ../src/expat/lib/expat.h ../include ; \
+	cp -p ../src/expat/lib/expat_external.h ../include
 
 $(Configs)::
 	make $@.libedit.configure && \
@@ -122,12 +122,12 @@ $(Configs)::
 %.libedit.configure:
 	@echo Configuring libedit for $* in libedit-build/$*
 	mkdir -p libedit-build/$*
-	cp -fr src/libedit/* libedit-build/$*
+	cp -pfr src/libedit/* libedit-build/$*
 	cd libedit-build/$* ; \
-	CC="$(ELLCC)/bin/ecc $(CFLAGS)" \
-	CXX="$(ELLCC)/bin/ecc++ $(CXXFLAGS)" \
-        AR=$(ELLCC)/bin/ecc-ar \
         RANLIB=$(ELLCC)/bin/ecc-ranlib \
+	CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
+        AR=$(ELLCC)/bin/ecc-ar \
 	    ../../src/libedit/configure \
 	    --enable-shared=no  --prefix=$(ELLCC) \
             --host=`../../getarch $*`-`../../getos $*`
@@ -140,8 +140,8 @@ $(Configs)::
 	echo Installing libedit for $* ; \
 	mkdir -p ../lib/$* ; \
 	cp $*/src/.libs/*.a ../lib/$* ; \
-	cp $*/src/histedit.h ../include ; \
-	cp $*/src/editline/readline.h ../include
+	cp -p $*/src/histedit.h ../include ; \
+	cp -p $*/src/editline/readline.h ../include
 
 clean:
 	make -C src/musl distclean
@@ -165,7 +165,7 @@ musl.install:
 	@cd musl-build ; \
 	echo Installing libecc for $* ; \
 	mkdir -p ../include ; \
-	cp -r $*/include/* ../include ; \
+	cp -pr $*/include/* ../include ; \
 	ln -sf ../endian.h ../include/sys ; \
 	mkdir -p ../include/`../getincarch $*` ; \
 	rm -fr ../include/`../getincarch $*`/bits ; \
@@ -187,8 +187,8 @@ musl.install:
 
 c++-headers:
 	mkdir -p include/c++ ; \
-	cp -r src/c++/libcxx/include/* include/c++ ; \
-	cp -r src/c++/libcxxabi/include/* include/c++
+	cp -pr src/c++/libcxx/include/* include/c++ ; \
+	cp -pr src/c++/libcxxabi/include/* include/c++
 
 $(Configs)::
 	@echo Making libc++ for $@ in c++-build/$@
@@ -199,4 +199,4 @@ $(Configs)::
 
 clang-headers:
 	mkdir -p clang ; \
-	cp ../llvm/tools/clang/lib/Headers/* clang
+	cp -p ../llvm/tools/clang/lib/Headers/* clang
