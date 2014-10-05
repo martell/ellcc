@@ -122,20 +122,20 @@ namespace compilationinfo {
       : dump(false), TheDriver(TheDriver), nesting(0) { }
 
     /// The target info database.
-    static std::map<std::string, const char *> InfoMap;
+    std::map<std::string, const char *> InfoMap;
 
     /// ReadInfo - Read a YAML memory buffer into the CompilerInfo object.
-    static bool ReadInfo(llvm::MemoryBuffer &Buffer, driver::Driver &TheDriver);
+    bool ReadInfo(llvm::MemoryBuffer &Buffer);
 
     /// CheckForAndReadInfo - Check for and read compilation info if available.
     static bool CheckForAndReadInfo(const char *target,
                                     driver::Driver &TheDriver);
     /// DefineInfo - Statically define info for a target.
-    static void DefineInfo(const char *target, const char *info)
+    void DefineInfo(const char *target, const char *info)
     { InfoMap[target] = info; }
 
     /// HandleBasedOn - Handle nested info files.
-    static void HandleBasedOn(CompilationInfo &config);
+    void HandleBasedOn(CompilationInfo &config);
   };
 
 } // end namespace compilationinfo

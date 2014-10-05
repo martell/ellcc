@@ -4,8 +4,294 @@
 
 using namespace clang::compilationinfo;
 
-// The target info database.
-std::map<std::string, const char *> CompilationInfo::InfoMap;
+namespace {
+const char ellcc_linux[] =
+  "global:\n"
+  "  static_default: true\n"
+  "compiler:\n"
+  "  cxx_include_dirs:\n"
+  "    - $R/include/c++\n"
+  "assembler:\n"
+  "  output:\n"
+  "    - -o $O\n"
+  "linker:\n"
+  "  exe: $E/ecc-ld\n"
+  "  output:\n"
+  "    - -o $O\n"
+  "  start:\n"
+  "    - -e _start\n"
+  "  opt_static:\n"
+  "    - -Bstatic\n"
+  "  opt_rdynamic:\n"
+  "    - -export-dynamic\n"
+  "  opt_dynamic:\n"
+  "    - -Bdynamic\n"
+  "  opt_shared:\n"
+  "    - -shared\n"
+  "  opt_notshared:\n"
+  "    - -dynamic-linker /usr/libexec/ld.so\n"
+  "  opt_pthread:\n"
+  "    - -pthread\n"
+  "  cxx_libraries:\n"
+  "    - -lc++\n"
+  "    - -lm\n"
+  "  profile_libraries:\n"
+  "    - -lprofile_rt\n"
+  "  c_libraries:\n"
+  "    - -lc\n"
+  "    - -lcompiler_rt\n"
+  "";
+
+const char arm_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "compiler:\n"
+  "  options:\n"
+  "    - -target arm-ellcc-linux\n"
+  "  c_include_dirs:\n"
+  "    - $R/include/arm\n"
+  "    - $R/include\n"
+  "assembler:\n"
+  "  exe: $E/arm-elf-as\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m armelf_linux_eabi\n"
+  "    - --build-id\n"
+  "    - --hash-style=gnu\n"
+  "    - --eh-frame-hdr\n"
+  "  static_crt1: $R/lib/arm/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/arm/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/arm/linux/crtbegin.o\n"
+  "  crtend: $R/lib/arm/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/arm/linux\n"
+  "  c_libraries:\n"
+  "    - -(\n"                  // This is needed for the ARM.
+  "    - -lc\n"
+  "    - -lcompiler_rt\n"
+  "    - -)\n"
+  "";
+
+const char armeb_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "compiler:\n"
+  "  options:\n"
+  "    - -target armeb-ellcc-linux\n"
+  "  c_include_dirs:\n"
+  "    - $R/include/arm\n"
+  "    - $R/include\n"
+  "assembler:\n"
+  "  exe: $E/arm-elf-as\n"
+  "  options:\n"
+  "    - -EB\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m armelfb_linux_eabi\n"
+  "    - --build-id\n"
+  "    - --hash-style=gnu\n"
+  "    - --eh-frame-hdr\n"
+  "  static_crt1: $R/lib/armeb/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/armeb/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/armeb/linux/crtbegin.o\n"
+  "  crtend: $R/lib/armeb/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/armeb/linux\n"
+  "  c_libraries:\n"
+  "    - -(\n"                  // This is needed for the ARM.
+  "    - -lc\n"
+  "    - -lcompiler_rt\n"
+  "    - -)\n"
+  "";
+
+const char i386_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "compiler:\n"
+  "  options:\n"
+  "    - -target i386-ellcc-linux\n"
+  "  c_include_dirs:\n"
+  "    - $R/include/i386\n"
+  "    - $R/include\n"
+  "assembler:\n"
+  "  exe: $E/i386-elf-as\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m elf_i386\n"
+  "    - --build-id\n"
+  "    - --hash-style=gnu\n"
+  "    - --eh-frame-hdr\n"
+  "  static_crt1: $R/lib/i386/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/i386/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/i386/linux/crtbegin.o\n"
+  "  crtend: $R/lib/i386/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/i386/linux\n"
+  "";
+
+const char microblaze_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "compiler:\n"
+  "  options:\n"
+  "    - -target microblaze-ellcc-linux\n"
+  "  c_include_dirs:\n"
+  "    - $R/include/microblaze\n"
+  "    - $R/include\n"
+  "assembler:\n"
+  "  exe: $E/microblaze-elf-as\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m elf32mb_linux\n"
+  "  static_crt1: $R/lib/microblaze/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/microblaze/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/microblaze/linux/crtbegin.o\n"
+  "  crtend: $R/lib/microblaze/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/microblaze/linux\n"
+  "";
+
+const char mips_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "compiler:\n"
+  "  options:\n"
+  "    - -target mips-ellcc-linux\n"
+  "  c_include_dirs:\n"
+  "    - $R/include/mips\n"
+  "    - $R/include\n"
+  "assembler:\n"
+  "  exe: $E/mips-elf-as\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m elf32ebmip\n"
+  "    - --build-id\n"
+  "    - --eh-frame-hdr\n"
+  "  static_crt1: $R/lib/mips/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/mips/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/mips/linux/crtbegin.o\n"
+  "  crtend: $R/lib/mips/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/mips/linux\n"
+  "";
+
+const char mipsel_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "compiler:\n"
+  "  options:\n"
+  "    - -target mipsel-ellcc-linux\n"
+  "  c_include_dirs:\n"
+  "    - $R/include/mips\n"
+  "    - $R/include\n"
+  "assembler:\n"
+  "  exe: $E/mips-elf-as\n"
+  "  options:\n"
+  "    - -EL\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m elf32elmip\n"
+  "    - --build-id\n"
+  "    - --eh-frame-hdr\n"
+  "  static_crt1: $R/lib/mipsel/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/mipsel/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/mipsel/linux/crtbegin.o\n"
+  "  crtend: $R/lib/mipsel/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/mipsel/linux\n"
+  "";
+
+const char ppc_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "compiler:\n"
+  "  options:\n"
+  "    - -target ppc-ellcc-linux\n"
+  "  c_include_dirs:\n"
+  "    - $R/include/ppc\n"
+  "    - $R/include\n"
+  "assembler:\n"
+  "  exe: $E/ppc-elf-as\n"
+  "  options:\n"
+  "    - -a32\n"
+  "    - -many\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m elf32ppc\n"
+  "    - --build-id\n"
+  "    - --hash-style=gnu\n"
+  "    - --eh-frame-hdr\n"
+  "  static_crt1: $R/lib/ppc/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/ppc/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/ppc/linux/crtbegin.o\n"
+  "  crtend: $R/lib/ppc/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/ppc/linux\n"
+  "";
+
+const char ppc64_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "compiler:\n"
+  "  options:\n"
+  "    - -target ppc64-ellcc-linux\n"
+  "  c_include_dirs:\n"
+  "    - $R/include/ppc\n"
+  "    - $R/include\n"
+  "assembler:\n"
+  "  exe: $E/ppc-elf-as\n"
+  "  options:\n"
+  "    - -a64\n"
+  "    - -many\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m elf64ppc\n"
+  "    - --build-id\n"
+  "    - --hash-style=gnu\n"
+  "    - --eh-frame-hdr\n"
+  "  static_crt1: $R/lib/ppc64/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/ppc64/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/ppc64/linux/crtbegin.o\n"
+  "  crtend: $R/lib/ppc64/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/ppc64/linux\n"
+  "";
+
+const char x86_64_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "compiler:\n"
+  "  options:\n"
+  "    - -target x86_64-ellcc-linux\n"
+  "  c_include_dirs:\n"
+  "    - $R/include/x86_64\n"
+  "    - $R/include\n"
+  "assembler:\n"
+  "  exe: $E/x86_64-elf-as\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m elf_x86_64\n"
+  "    - --build-id\n"
+  "    - --hash-style=gnu\n"
+  "    - --eh-frame-hdr\n"
+  "  static_crt1: $R/lib/x86_64/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/x86_64/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/x86_64/linux/crtbegin.o\n"
+  "  crtend: $R/lib/x86_64/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/x86_64/linux\n"
+  "";
+
+using namespace clang::compilationinfo;
+
+void PredefinedInfo(CompilationInfo &Info)
+{
+    if (Info.InfoMap.size() == 0) {
+      Info.DefineInfo("ellcc-linux", ellcc_linux);
+      Info.DefineInfo("arm-ellcc-linux", arm_ellcc_linux);
+      Info.DefineInfo("armeb-ellcc-linux", armeb_ellcc_linux);
+      Info.DefineInfo("i386-ellcc-linux", i386_ellcc_linux);
+      Info.DefineInfo("microblaze-ellcc-linux",
+                                  microblaze_ellcc_linux);
+      Info.DefineInfo("mips-ellcc-linux", mips_ellcc_linux);
+      Info.DefineInfo("mipsel-ellcc-linux", mipsel_ellcc_linux);
+      Info.DefineInfo("ppc-ellcc-linux", ppc_ellcc_linux);
+      Info.DefineInfo("ppc64-ellcc-linux", ppc64_ellcc_linux);
+      Info.DefineInfo("x86_64-ellcc-linux", x86_64_ellcc_linux);
+  }
+}
+}
 
 void clang::compilationinfo::ExpandArg(std::string &arg, const char *sub,
                                        const std::string &value)
@@ -75,26 +361,22 @@ void clang::compilationinfo::ExpandArgs(StrSequence &options,
   }
 }
 
-bool CompilationInfo::ReadInfo(llvm::MemoryBuffer &Buffer,
-                               driver::Driver &TheDriver)
+bool CompilationInfo::ReadInfo(llvm::MemoryBuffer &Buffer)
 {
-  std::unique_ptr<CompilationInfo> Info(new CompilationInfo(TheDriver));
   llvm::yaml::Input yin(Buffer.getMemBufferRef());
-  yin >> *Info;
+  yin >> *this;
   if (yin.error()) {
     TheDriver.Diag(diag::err_drv_malformed_compilation_info) <<
         Buffer.getBufferIdentifier();
     return false;
   }
 
-  if (Info->dump) {
+  if (this->dump) {
     // Look at the info.
     llvm::yaml::Output yout(llvm::outs());
-    yout << *Info;
+    yout << *this;
   }
 
-  // Give the info to the driver.
-  TheDriver.Info = std::move(Info);
   return true;
 }
 
@@ -102,34 +384,45 @@ bool CompilationInfo::CheckForAndReadInfo(const char *target,
                                           driver::Driver &TheDriver)
 {
   // Look for a file that contains info for this target.
+  std::unique_ptr<CompilationInfo> Info(new CompilationInfo(TheDriver));
   llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> BufferOrErr =
       llvm::MemoryBuffer::getFile(target);
+  bool valid = false;
   if (!BufferOrErr.getError()) {
     // Get info from the file.
-    return ReadInfo(*BufferOrErr.get(), TheDriver);
+    valid = Info->ReadInfo(*BufferOrErr.get());
+  } 
+
+  if (!valid) {
+    // Look in the config directory.
+    llvm::SmallString<128> P(TheDriver.ResourceDir);
+    llvm::sys::path::append(P, "config", target);
+    BufferOrErr = llvm::MemoryBuffer::getFile(P.str());
+    if (!BufferOrErr.getError()) {
+      // Get info from the file.
+      valid = Info->ReadInfo(*BufferOrErr.get());
+    }
   }
 
-  // Look in the config directory.
-  llvm::SmallString<128> P(TheDriver.ResourceDir);
-  llvm::sys::path::append(P, "config", target);
-  BufferOrErr = llvm::MemoryBuffer::getFile(P.str());
-  if (!BufferOrErr.getError()) {
-    // Get info from the file.
-    return ReadInfo(*BufferOrErr.get(), TheDriver);
+  if (!valid) {
+    // Can't open as a file. Look for predefined info.
+    PredefinedInfo(*Info);
+    std::map<std::string, const char *>::iterator it;
+    it =  Info->InfoMap.find(target);
+    if (it !=  Info->InfoMap.end()) {
+      // Predefined info exists for this target.
+      std::unique_ptr<llvm::MemoryBuffer> Buffer =
+          llvm::MemoryBuffer::getMemBuffer(it->second, target);
+      valid =  Info->ReadInfo(*Buffer.get());
+    }
   }
 
-  // Can't open as a file. Look for predefined info.
-  std::map<std::string, const char *>::iterator it;
-  it = InfoMap.find(target);
-  if (it != InfoMap.end()) {
-    // Predefined info exists for this target.
-    std::unique_ptr<llvm::MemoryBuffer> Buffer =
-        llvm::MemoryBuffer::getMemBuffer(it->second, target);
-    return ReadInfo(*Buffer.get(), TheDriver);
+  if (valid) {
+    // Give the info to the driver.
+    TheDriver.Info = std::move(Info);
   }
 
-  // No info exists. Leave as an argument to -target.
-  return false;
+  return valid;
 }
 
 void CompilationInfo::HandleBasedOn(CompilationInfo &config)
@@ -186,6 +479,7 @@ void CompilationInfo::HandleBasedOn(CompilationInfo &config)
   }
 
   // Look for predefined info.
+  PredefinedInfo(config);
   std::map<std::string, const char *>::iterator it;
   it = clang::compilationinfo::CompilationInfo::
       InfoMap.find(config.based_on.c_str());

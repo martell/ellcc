@@ -8028,294 +8028,6 @@ void dragonfly::Link::ConstructJob(Compilation &C, const JobAction &JA,
   C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
-namespace {
-const char ellcc_linux[] =
-  "global:\n"
-  "  static_default: true\n"
-  "compiler:\n"
-  "  cxx_include_dirs:\n"
-  "    - $R/include/c++\n"
-  "assembler:\n"
-  "  output:\n"
-  "    - -o $O\n"
-  "linker:\n"
-  "  exe: $E/ecc-ld\n"
-  "  output:\n"
-  "    - -o $O\n"
-  "  start:\n"
-  "    - -e _start\n"
-  "  opt_static:\n"
-  "    - -Bstatic\n"
-  "  opt_rdynamic:\n"
-  "    - -export-dynamic\n"
-  "  opt_dynamic:\n"
-  "    - -Bdynamic\n"
-  "  opt_shared:\n"
-  "    - -shared\n"
-  "  opt_notshared:\n"
-  "    - -dynamic-linker /usr/libexec/ld.so\n"
-  "  opt_pthread:\n"
-  "    - -pthread\n"
-  "  cxx_libraries:\n"
-  "    - -lc++\n"
-  "    - -lm\n"
-  "  profile_libraries:\n"
-  "    - -lprofile_rt\n"
-  "  c_libraries:\n"
-  "    - -lc\n"
-  "    - -lcompiler_rt\n"
-  "";
-
-const char arm_ellcc_linux[] =
-  "based_on: ellcc-linux\n"
-  "compiler:\n"
-  "  options:\n"
-  "    - -target arm-ellcc-linux\n"
-  "  c_include_dirs:\n"
-  "    - $R/include/arm\n"
-  "    - $R/include\n"
-  "assembler:\n"
-  "  exe: $E/arm-elf-as\n"
-  "linker:\n"
-  "  options:\n"
-  "    - -m armelf_linux_eabi\n"
-  "    - --build-id\n"
-  "    - --hash-style=gnu\n"
-  "    - --eh-frame-hdr\n"
-  "  static_crt1: $R/lib/arm/linux/crt1.o\n"
-  "  dynamic_crt1: $R/lib/arm/linux/Scrt1.o\n"
-  "  crtbegin: $R/lib/arm/linux/crtbegin.o\n"
-  "  crtend: $R/lib/arm/linux/crtend.o\n"
-  "  library_paths:\n"
-  "    - -L $R/lib/arm/linux\n"
-  "  c_libraries:\n"
-  "    - -(\n"                  // This is needed for the ARM.
-  "    - -lc\n"
-  "    - -lcompiler_rt\n"
-  "    - -)\n"
-  "";
-
-const char armeb_ellcc_linux[] =
-  "based_on: ellcc-linux\n"
-  "compiler:\n"
-  "  options:\n"
-  "    - -target armeb-ellcc-linux\n"
-  "  c_include_dirs:\n"
-  "    - $R/include/arm\n"
-  "    - $R/include\n"
-  "assembler:\n"
-  "  exe: $E/arm-elf-as\n"
-  "  options:\n"
-  "    - -EB\n"
-  "linker:\n"
-  "  options:\n"
-  "    - -m armelfb_linux_eabi\n"
-  "    - --build-id\n"
-  "    - --hash-style=gnu\n"
-  "    - --eh-frame-hdr\n"
-  "  static_crt1: $R/lib/armeb/linux/crt1.o\n"
-  "  dynamic_crt1: $R/lib/armeb/linux/Scrt1.o\n"
-  "  crtbegin: $R/lib/armeb/linux/crtbegin.o\n"
-  "  crtend: $R/lib/armeb/linux/crtend.o\n"
-  "  library_paths:\n"
-  "    - -L $R/lib/armeb/linux\n"
-  "  c_libraries:\n"
-  "    - -(\n"                  // This is needed for the ARM.
-  "    - -lc\n"
-  "    - -lcompiler_rt\n"
-  "    - -)\n"
-  "";
-
-const char i386_ellcc_linux[] =
-  "based_on: ellcc-linux\n"
-  "compiler:\n"
-  "  options:\n"
-  "    - -target i386-ellcc-linux\n"
-  "  c_include_dirs:\n"
-  "    - $R/include/i386\n"
-  "    - $R/include\n"
-  "assembler:\n"
-  "  exe: $E/i386-elf-as\n"
-  "linker:\n"
-  "  options:\n"
-  "    - -m elf_i386\n"
-  "    - --build-id\n"
-  "    - --hash-style=gnu\n"
-  "    - --eh-frame-hdr\n"
-  "  static_crt1: $R/lib/i386/linux/crt1.o\n"
-  "  dynamic_crt1: $R/lib/i386/linux/Scrt1.o\n"
-  "  crtbegin: $R/lib/i386/linux/crtbegin.o\n"
-  "  crtend: $R/lib/i386/linux/crtend.o\n"
-  "  library_paths:\n"
-  "    - -L $R/lib/i386/linux\n"
-  "";
-
-const char microblaze_ellcc_linux[] =
-  "based_on: ellcc-linux\n"
-  "compiler:\n"
-  "  options:\n"
-  "    - -target microblaze-ellcc-linux\n"
-  "  c_include_dirs:\n"
-  "    - $R/include/microblaze\n"
-  "    - $R/include\n"
-  "assembler:\n"
-  "  exe: $E/microblaze-elf-as\n"
-  "linker:\n"
-  "  options:\n"
-  "    - -m elf32mb_linux\n"
-  "  static_crt1: $R/lib/microblaze/linux/crt1.o\n"
-  "  dynamic_crt1: $R/lib/microblaze/linux/Scrt1.o\n"
-  "  crtbegin: $R/lib/microblaze/linux/crtbegin.o\n"
-  "  crtend: $R/lib/microblaze/linux/crtend.o\n"
-  "  library_paths:\n"
-  "    - -L $R/lib/microblaze/linux\n"
-  "";
-
-const char mips_ellcc_linux[] =
-  "based_on: ellcc-linux\n"
-  "compiler:\n"
-  "  options:\n"
-  "    - -target mips-ellcc-linux\n"
-  "  c_include_dirs:\n"
-  "    - $R/include/mips\n"
-  "    - $R/include\n"
-  "assembler:\n"
-  "  exe: $E/mips-elf-as\n"
-  "linker:\n"
-  "  options:\n"
-  "    - -m elf32ebmip\n"
-  "    - --build-id\n"
-  "    - --eh-frame-hdr\n"
-  "  static_crt1: $R/lib/mips/linux/crt1.o\n"
-  "  dynamic_crt1: $R/lib/mips/linux/Scrt1.o\n"
-  "  crtbegin: $R/lib/mips/linux/crtbegin.o\n"
-  "  crtend: $R/lib/mips/linux/crtend.o\n"
-  "  library_paths:\n"
-  "    - -L $R/lib/mips/linux\n"
-  "";
-
-const char mipsel_ellcc_linux[] =
-  "based_on: ellcc-linux\n"
-  "compiler:\n"
-  "  options:\n"
-  "    - -target mipsel-ellcc-linux\n"
-  "  c_include_dirs:\n"
-  "    - $R/include/mips\n"
-  "    - $R/include\n"
-  "assembler:\n"
-  "  exe: $E/mips-elf-as\n"
-  "  options:\n"
-  "    - -EL\n"
-  "linker:\n"
-  "  options:\n"
-  "    - -m elf32elmip\n"
-  "    - --build-id\n"
-  "    - --eh-frame-hdr\n"
-  "  static_crt1: $R/lib/mipsel/linux/crt1.o\n"
-  "  dynamic_crt1: $R/lib/mipsel/linux/Scrt1.o\n"
-  "  crtbegin: $R/lib/mipsel/linux/crtbegin.o\n"
-  "  crtend: $R/lib/mipsel/linux/crtend.o\n"
-  "  library_paths:\n"
-  "    - -L $R/lib/mipsel/linux\n"
-  "";
-
-const char ppc_ellcc_linux[] =
-  "based_on: ellcc-linux\n"
-  "compiler:\n"
-  "  options:\n"
-  "    - -target ppc-ellcc-linux\n"
-  "  c_include_dirs:\n"
-  "    - $R/include/ppc\n"
-  "    - $R/include\n"
-  "assembler:\n"
-  "  exe: $E/ppc-elf-as\n"
-  "  options:\n"
-  "    - -a32\n"
-  "    - -many\n"
-  "linker:\n"
-  "  options:\n"
-  "    - -m elf32ppc\n"
-  "    - --build-id\n"
-  "    - --hash-style=gnu\n"
-  "    - --eh-frame-hdr\n"
-  "  static_crt1: $R/lib/ppc/linux/crt1.o\n"
-  "  dynamic_crt1: $R/lib/ppc/linux/Scrt1.o\n"
-  "  crtbegin: $R/lib/ppc/linux/crtbegin.o\n"
-  "  crtend: $R/lib/ppc/linux/crtend.o\n"
-  "  library_paths:\n"
-  "    - -L $R/lib/ppc/linux\n"
-  "";
-
-const char ppc64_ellcc_linux[] =
-  "based_on: ellcc-linux\n"
-  "compiler:\n"
-  "  options:\n"
-  "    - -target ppc64-ellcc-linux\n"
-  "  c_include_dirs:\n"
-  "    - $R/include/ppc\n"
-  "    - $R/include\n"
-  "assembler:\n"
-  "  exe: $E/ppc-elf-as\n"
-  "  options:\n"
-  "    - -a64\n"
-  "    - -many\n"
-  "linker:\n"
-  "  options:\n"
-  "    - -m elf64ppc\n"
-  "    - --build-id\n"
-  "    - --hash-style=gnu\n"
-  "    - --eh-frame-hdr\n"
-  "  static_crt1: $R/lib/ppc64/linux/crt1.o\n"
-  "  dynamic_crt1: $R/lib/ppc64/linux/Scrt1.o\n"
-  "  crtbegin: $R/lib/ppc64/linux/crtbegin.o\n"
-  "  crtend: $R/lib/ppc64/linux/crtend.o\n"
-  "  library_paths:\n"
-  "    - -L $R/lib/ppc64/linux\n"
-  "";
-
-const char x86_64_ellcc_linux[] =
-  "based_on: ellcc-linux\n"
-  "compiler:\n"
-  "  options:\n"
-  "    - -target x86_64-ellcc-linux\n"
-  "  c_include_dirs:\n"
-  "    - $R/include/x86_64\n"
-  "    - $R/include\n"
-  "assembler:\n"
-  "  exe: $E/x86_64-elf-as\n"
-  "linker:\n"
-  "  options:\n"
-  "    - -m elf_x86_64\n"
-  "    - --build-id\n"
-  "    - --hash-style=gnu\n"
-  "    - --eh-frame-hdr\n"
-  "  static_crt1: $R/lib/x86_64/linux/crt1.o\n"
-  "  dynamic_crt1: $R/lib/x86_64/linux/Scrt1.o\n"
-  "  crtbegin: $R/lib/x86_64/linux/crtbegin.o\n"
-  "  crtend: $R/lib/x86_64/linux/crtend.o\n"
-  "  library_paths:\n"
-  "    - -L $R/lib/x86_64/linux\n"
-  "";
-
-using namespace clang::compilationinfo;
-class ELLCC {
-public:
-  ELLCC() {
-    CompilationInfo::DefineInfo("ellcc-linux", ellcc_linux);
-    CompilationInfo::DefineInfo("arm-ellcc-linux", arm_ellcc_linux);
-    CompilationInfo::DefineInfo("armeb-ellcc-linux", armeb_ellcc_linux);
-    CompilationInfo::DefineInfo("i386-ellcc-linux", i386_ellcc_linux);
-    CompilationInfo::DefineInfo("microblaze-ellcc-linux",
-                                microblaze_ellcc_linux);
-    CompilationInfo::DefineInfo("mips-ellcc-linux", mips_ellcc_linux);
-    CompilationInfo::DefineInfo("mipsel-ellcc-linux", mipsel_ellcc_linux);
-    CompilationInfo::DefineInfo("ppc-ellcc-linux", ppc_ellcc_linux);
-    CompilationInfo::DefineInfo("ppc64-ellcc-linux", ppc64_ellcc_linux);
-    CompilationInfo::DefineInfo("x86_64-ellcc-linux", x86_64_ellcc_linux);
-  }
-} ELLCC;
-}
-
 void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
                                      const InputInfo &Output,
                                      const InputInfoList &Inputs,
@@ -8337,40 +8049,30 @@ void ellcc::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());
   std::string As;
-  if (D.Info) {
-    D.Info->assembler.Expand(D, Output.getFilename());
-    // Use the compilation info suppled.
-    As = D.Info->assembler.exe;
-    // Add the assembler options.
-    for (auto &i : D.Info->assembler.options) {
-      CmdArgs.push_back(Args.MakeArgString(i));
-    }
-  } else {
-    llvm::Triple Triple = getToolChain().getTriple();
-    As = Triple.getArchTypeName(Triple.getArch());
-    switch (Triple.getArch()) {
-      case llvm::Triple::armeb:
-        CmdArgs.push_back("-EB");
-        As = "arm";
-        break;
-      case llvm::Triple::mipsel:
-        CmdArgs.push_back("-EL");
-        As = "mips";
-        break;
-      case llvm::Triple::ppc:
-        CmdArgs.push_back("-a32");
-        CmdArgs.push_back("-many");
-        break;
-      case llvm::Triple::ppc64:
-        CmdArgs.push_back("-a64");
-        CmdArgs.push_back("-many");
-        break;
-      default:
-        break;
-    }
-
-    As += "-elf-as";
+  llvm::Triple Triple = getToolChain().getTriple();
+  As = Triple.getArchTypeName(Triple.getArch());
+  switch (Triple.getArch()) {
+    case llvm::Triple::armeb:
+      CmdArgs.push_back("-EB");
+      As = "arm";
+      break;
+    case llvm::Triple::mipsel:
+      CmdArgs.push_back("-EL");
+      As = "mips";
+      break;
+    case llvm::Triple::ppc:
+      CmdArgs.push_back("-a32");
+      CmdArgs.push_back("-many");
+      break;
+    case llvm::Triple::ppc64:
+      CmdArgs.push_back("-a64");
+      CmdArgs.push_back("-many");
+      break;
+    default:
+      break;
   }
+
+  As += "-elf-as";
 
   for (InputInfoList::const_iterator
          it = Inputs.begin(), ie = Inputs.end(); it != ie; ++it) {
