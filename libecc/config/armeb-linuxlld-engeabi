@@ -6,6 +6,10 @@ compiler:
     - -mfpu=none
     - -mfloat-abi=softfp
 linker:
+  exe: $E/lld
+  options:
+    - -flavor gnu
+    - -target armeb-ellcc-linux
   static_crt1: $R/lib/armeb-linux-engeabi/crt1.o
   dynamic_crt1: $R/lib/armeb-linux-engeabi/Scrt1.o
   crtbegin: $R/lib/armeb-linux-engeabi/crtbegin.o

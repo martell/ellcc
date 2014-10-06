@@ -3,6 +3,10 @@ compiler:
   options:
     - -target ppc-ellcc-linux
 linker:
+  exe: $E/lld
+  options:
+    - -flavor gnu
+    - -target ppc-ellcc-linux
   static_crt1: $R/lib/ppc-linux-eng/crt1.o
   dynamic_crt1: $R/lib/ppc-linux-eng/Scrt1.o
   crtbegin: $R/lib/ppc-linux-eng/crtbegin.o

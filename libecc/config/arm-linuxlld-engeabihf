@@ -6,6 +6,10 @@ compiler:
     - -mfpu=vfp
     - -mfloat-abi=softfp
 linker:
+  exe: $E/lld
+  options:
+    - -flavor gnu
+    - -target arm-ellcc-linux
   static_crt1: $R/lib/arm-linux-engeabihf/crt1.o
   dynamic_crt1: $R/lib/arm-linux-engeabihf/Scrt1.o
   crtbegin: $R/lib/arm-linux-engeabihf/crtbegin.o

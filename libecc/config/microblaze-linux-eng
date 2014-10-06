@@ -8,4 +8,4 @@ linker:
   crtbegin: $R/lib/microblaze-linux-eng/crtbegin.o
   crtend: $R/lib/microblaze-linux-eng/crtend.o
   library_paths:
-    - -L $R/lib/microblaze-linux-eng
+    - -L$R/lib/microblaze-linux-eng

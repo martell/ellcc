@@ -6,6 +6,7 @@ linker:
   exe: $E/lld
   options:
     - -flavor gnu
+    - -target x86_64-ellcc-linux
   static_crt1: $R/lib/x86_64-linux-eng/crt1.o
   dynamic_crt1: $R/lib/x86_64-linux-eng/Scrt1.o
   crtbegin: $R/lib/x86_64-linux-eng/crtbegin.o

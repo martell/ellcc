@@ -5,6 +5,10 @@ compiler:
     - -msoft-float
     - -mcpu=mips32r2
 linker:
+  exe: $E/lld
+  options:
+    - -flavor gnu
+    - -target mipsel-ellcc-linux
   static_crt1: $R/lib/mipsel-linux-engsf/crt1.o
   dynamic_crt1: $R/lib/mipsel-linux-engsf/Scrt1.o
   crtbegin: $R/lib/mipsel-linux-engsf/crtbegin.o

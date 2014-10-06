@@ -8,4 +8,4 @@ linker:
   crtbegin: $R/lib/x86_64-linux-eng/crtbegin.o
   crtend: $R/lib/x86_64-linux-eng/crtend.o
   library_paths:
-    - -L $R/lib/x86_64-linux-eng
+    - -L$R/lib/x86_64-linux-eng
