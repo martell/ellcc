@@ -79,7 +79,7 @@ gas.configure:
 	mkdir -p binutils/$(target) ; \
 	cd binutils/$(target) ; \
     ../../../src/binutils/gas/configure \
-      CC=$(CC) CFLAGS="$(CFLAGS)" CXX="$(CXX)" CXXFLAGS="$(CXXFLAGS)" AR=$(AR) \
+      CC=$(CC) CFLAGS="$(CFLAGS)" CXX=$(CXX) CXXFLAGS="$(CXXFLAGS)" AR=$(AR) \
       CPP=$(CPP) \
       --bindir=$(bindir) --target=$(target) --program-prefix=${target}- \
       $(HOST) --prefix=$(prefix)/lib --datadir=$(prefix)/lib/share

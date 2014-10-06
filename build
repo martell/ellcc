@@ -1,6 +1,14 @@
 #!/bin/sh
 # toplevel ELLCC distribution build script
 
+# OG: Debug feature to find out where the errors come from...
+bailout () {
+  echo $1
+  echo "Error: leaving module $cwd"
+  exit 1
+}
+
+
 # Get the staging directory.
 prefix=`pwd`
 
@@ -10,21 +18,21 @@ prefix=`pwd`
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 
-make DIR=llvm-build$builddir CC="$cc" CXX="$cxx" AR="$ar" RANLIB="$ranlib" \
+${MAKE} DIR=llvm-build$builddir CC="$cc" CXX="$cxx" AR="$ar" RANLIB="$ranlib" \
      TARGET=$host OS=$os TUPLE=$tuple \
      bindir=$bindir prefix=$prefix build=$build haslibs=$haslibs \
-     llvm.configure || exit 1
+     llvm.configure || bailout "Configure failed for llvm"
 
 # Build the LLVM tools.
-make -C llvm-build$builddir -j 6 || exit 1
+${MAKE} -C llvm-build$builddir -j ${maxjobs} || bailout "Make failed for llvm"
 
 # Build the GNU tools.
 cd gnu
-./build $arg1 || exit 1
+./build $arg1 || bailout "Build failed for gnu"
 cd ..
 
 # Now install the ELLCC tools.
-make -j 6 -C llvm-build$builddir install || exit 1
+${MAKE} -j ${maxjobs} -C llvm-build$builddir install || bailout "Install failed for llvm"
 
 if [ "$host" != "$build" ] ; then
   # The host system is not the build system.
@@ -39,8 +47,8 @@ fi
 
 # Build libecc.
 cd libecc
-make clean
-make || exit 1
+${MAKE} clean
+${MAKE} || bailout "Make failed for libecc"
 cd ..
 
 if [ "x$hostos" = "xLinux" ] ; then

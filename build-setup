@@ -1,10 +1,16 @@
-# This file determins the target list and compilers to use.
+# ELLCC build environment
+# Original file: Rich Pennington
+# Patches for MinGW and FreeBSD support: Olivier Gautherot
+#
+# This file determines the target list and compilers to use.
 # Get the supported targets for the GNU tools.
-targets=`cat $prefix/targets`
-targetlist=`echo $targets | sed -e "s/ /,/g"`
+targets=`cat ${prefix}/targets`
+targetlist=`echo ${targets} | sed -e "s/ /,/g"`
 
-bin=$prefix/bin
-bindir=$bin
+# ???OG: Is ${prefix}/bin always in PATH?
+# RICH: I don't assume that yet. I haven't put it in my path.
+bin=${prefix}/bin
+bindir=${bin}
 # Get the build processor. For now it is also the host and target processor.
 build=`uname -m`
 case "${build}" in
@@ -12,85 +18,151 @@ case "${build}" in
     build=i386
     ;;
 esac
-host=$build
-target=$build
+
+# Let's find out about the host. The make command will be fixed when necessary (FreeBSD)
+host=${build}
+target=${build}
+# ???OG: Is the target OS always Linux?
+# RICH: For now.
 os=linux
 arg1=
 hostos=`uname -s`
 tuple=
+MAKE=make
 
+# OG: Set default compiler (the most likely at first sight, depending on
+# the environment...)
+cc=gcc
+cxx=g++
+hcc=gcc
+hcxx=g++
+ar=ar
+builddir=""
+haslibs=no
+ranlib=ranlib
+WHY="build for $host with host libraries using gcc"
+
+# OG: Assume 2 jobs if we can't work out the number of CPUs on the host
+# Note: this is meant to protect the building host, as the original
+# 6 threads were deadly on the machine I used for the first test...
+# It will be limited to 1 job per detected CPU
+maxjobs=2
+
+# OG: Check for important dependencies
+if [ ! `which python` ] ; then
+  echo "Error: Missing Python"
+  exit 1
+fi
+
+# Check for cross-compiler definition
 if [ $# -ge 1 ] ; then
   # The first argument is the desired cross host tuple.
-  host=`$prefix/libecc/getarch $1`
+  host=`${prefix}/libecc/getarch $1`
   arg1=$1
-  bindir=$bindir-$1
-  hostos=Linux
+  bindir=${bindir}-$1
+  # OG: The host OS may be something else.... let ${hostos} find out
+  #hostos=Linux
   tuple=$1
-  libtuple=$tuple
+  libtuple=${tuple}
   shift
 fi
 
+echo Processing ${hostos} 
+case "x${hostos}" in
+  xLinux)
+    # ELLCC can currently build itself only for Linux... 
+    if [ `which ecc` ] ; then
+      # ecc exists, and is in the PATH.
+      ecc=ecc
+    fi
+
+    if [ -e ${bin}/ecc ]; then
+      ecc=${bin}/ecc
+    fi
+    maxjobs=`grep processor /proc/cpuinfo | wc -l`
+    ;;
+  xMINGW*)
+    # MinGW is a Linux clone environment, keep default compilers
+    echo MinGW detected
+    builddir=""
+    haslibs=no
+    WHY="build for ${host} with host libraries using gcc"
+    ;;
+  xFreeBSD)
+    # OG: GNU make is in the port - standard FreeBSD make just won't work...
+    # and the default compiler is clang
+    echo FreeBSD detected
+    MAKE=gmake
+    cc=cc
+    cxx=c++
+    hcc=cc
+    hcxx=c++
+    ar=ar
+    builddir=""
+    haslibs=no
+    WHY="build for ${host} with host libraries using gcc"
+
+    # FreeBSD has a Linux emulation package, which supports /proc in a
+    # different location
+    if [ -d /compat/linux/proc ] ; then
+      maxjobs=`grep processor /compat/linux/proc/cpuinfo | wc -l`
+    else
+      echo "Error: Missing Linux emulation, please install"
+      exit 1
+    fi
+    ;;
+esac
+
+# Check for an additional tuple specifying the library to use.
 if [ $# -ge 1 ] ; then
   # The second argument is the desired library tuple.
   libtuple=$1
   shift
 fi
 
-if [ "x$hostos" = "xLinux" ] ; then
-  # ELLCC can currently build itself only for Linux.
-  if [ `which ecc` ] ; then
-    # ecc exists, and is in the PATH.
-    ecc=ecc
-  fi
-
-  if [ -e $bin/ecc ]; then
-    ecc=$bin/ecc
-  fi
-fi
-
-if [ "x$ecc" != "x" ] ; then
+# OG: Trimmed down to detect specific case to be supported
+if [ "x${ecc}" != "x" ] ; then
   # An ecc exists, use it to compile.
-  if [ "$tuple" == "" ] ; then
+  if [ "${tuple}" == "" ] ; then
     # Find a tuple for this host.
-    tuple=`cd $prefix/libecc/config; echo $host*-linux-*`
+    tuple=`cd ${prefix}/libecc/config; echo ${host}*-linux-*`
+    libtuple=${tuple}
   fi
-  if [ -e $prefix/libecc/lib/$libtuple/libc.a ]; then
-    # To build for host with libecc:
-    cc=$ecc
-    cxx=$ecc++
-    hcc=$ecc
-    hcxx=$ecc++
-    if [ -e $ecc-ar ]; then
-      ar=$ecc-ar
-      ranlib=$ecc-ranlib
-    else
-      ar=ar
-      ranlib=ranlib
-    fi
-    builddir="-$tuple"
-    haslibs=yes
-    WHY="build for $host with libecc using ecc"
-  else
-    # libecc has not been built, use the host's libraries.
-    cc=$ecc
-    cxx=$ecc++
-    hcc=$ecc
-    hcxx=$ecc++
-    ar=ar
-    ranlib=ranlib
-    builddir=""
-    haslibs=no
-    WHY="build for $host with host libraries using ecc"
-  fi
-else
-  # Build with the gcc compiler
-  cc=gcc
-  cxx=g++
-  hcc=gcc
-  hcxx=g++
+
+  cc=${ecc}
+  cxx=${ecc}++
+  hcc=${ecc}
+  hcxx=${ecc}++
   ar=ar
+  ranlib=ranlib
   builddir=""
   haslibs=no
-  WHY="build for $host with host libraries using gcc"
+  WHY="build for $host with host libraries using ecc"
+
+  if [ -e ${prefix}/libecc/lib/${libtuple}/libc.a ]; then
+    # To build for host with libecc:
+    if [ -e ${ecc}-ar ]; then
+      ar=${ecc}-ar
+      ranlib=${ecc}-ranlib
+    fi
+    builddir="-${tuple}"
+    haslibs=yes
+    WHY="build for ${host} with libecc using ecc"
+  fi
 fi
 
+export host
+export target
+export os
+export hostos
+export cc
+export cxx
+export hcc
+export hcxx
+export ar
+export builddir
+export haslibs
+export ranlib
+export maxjobs
+export ecc
+export MAKE
