@@ -5,11 +5,16 @@ if [ $# -ne 1 ] ; then
 fi
 name=ellcc-$1-`date +%Y-%b-%d-%H-%M-%S`.tgz
 
-mv bin bin.save
-ln -s bin-$1 bin
+if [ -e bin-$1 ] ; then
+  # The non-native bin directory exists.
+  mv bin bin.save
+  ln -s bin-$1 bin
+fi
 make -C libecc clean
 make -C baremetal clean
 cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files; cd -
-rm bin
-mv bin.save bin
+if [ -e bin-$1 ] ; then
+  rm bin
+  mv bin.save bin
+fi
 echo created $name
