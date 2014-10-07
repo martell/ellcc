@@ -5,6 +5,7 @@ PWD := $(shell pwd)
 ELLCC := $(PWD)/..
 LIBECC := $(ELLCC)/libecc
 Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
+ElkConfigs := $(patsubst *-elk-*,,$(shell cd $(LIBECC)/config; echo *-elk-*))
 CFLAGS := -g -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
@@ -12,7 +13,9 @@ CFLAGS := -g -Qunused-arguments \
 	  -Wno-int-to-pointer-cast
 
 OBJ := $(PWD)/musl-build
-install: c++-headers $(Configs) clang-headers
+install: c++-headers clang-headers $(Configs) $(ElkConfigs)
+
+elk: $(ElkConfigs)
 
 all:
 
@@ -202,3 +205,10 @@ $(Configs)::
 clang-headers:
 	mkdir -p clang ; \
 	cp -p ../llvm/tools/clang/lib/Headers/* clang
+
+$(ElkConfigs)::
+	@echo Making libelk for $@ in elk-build/$@
+	mkdir -p elk-build/$@
+	cp Makefile.lib elk-build/$@/Makefile
+	make -C elk-build/$@ || exit 1
+	make LIBDIR=`pwd`/lib/$@ -C elk-build/$@ install || exit 1
