@@ -4,6 +4,11 @@ compiler:
     - -target mips-ellcc-linux
     - -msoft-float
     - -mcpu=mips32r2
+  c_include_dirs:
+    - '$R/include/elk/mips'
+    - '$R/include/elk'
+    - '$R/include/mips'
+    - '$R/include'
 linker:
   static_crt1: $R/lib/mips-elk-engsf/crt1.o
   dynamic_crt1: $R/lib/mips-elk-engsf/Scrt1.o

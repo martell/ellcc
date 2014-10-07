@@ -2,6 +2,11 @@ based_on: i386-ellcc-linux
 compiler:
   options:
     - -target i386-ellcc-linux
+  c_include_dirs:
+    - '$R/include/elk/i386'
+    - '$R/include/elk'
+    - '$R/include/i386'
+    - '$R/include'
 linker:
   static_crt1: $R/lib/i386-elk-eng/crt1.o
   dynamic_crt1: $R/lib/i386-elk-eng/Scrt1.o

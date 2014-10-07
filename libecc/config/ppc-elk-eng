@@ -2,6 +2,11 @@ based_on: ppc-ellcc-linux
 compiler:
   options:
     - -target ppc-ellcc-linux
+  c_include_dirs:
+    - '$R/include/elk/ppc'
+    - '$R/include/elk'
+    - '$R/include/ppc'
+    - '$R/include'
 linker:
   static_crt1: $R/lib/ppc-elk-eng/crt1.o
   dynamic_crt1: $R/lib/ppc-elk-eng/Scrt1.o

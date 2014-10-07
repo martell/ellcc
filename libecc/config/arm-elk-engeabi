@@ -5,6 +5,11 @@ compiler:
     - -march=armv7a
     - -mfpu=none
     - -mfloat-abi=softfp
+  c_include_dirs:
+    - '$R/include/elk/arm'
+    - '$R/include/elk'
+    - '$R/include/arm'
+    - '$R/include'
 linker:
   static_crt1: $R/lib/arm-elk-engeabi/crt1.o
   dynamic_crt1: $R/lib/arm-elk-engeabi/Scrt1.o
