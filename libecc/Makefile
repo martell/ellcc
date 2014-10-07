@@ -18,10 +18,12 @@ all:
 
 $(Configs)::
 	@echo Making libecc for $@ in musl-build/$@
-	mkdir -p $(OBJ)/$@
-	./config.musl "-target $@ $(CFLAGS)" $@ $(ELLCC) || exit 1
-	make -C src/musl || exit 1
-	make -C src/musl install || exit 1
+	mkdir -p $(OBJ)/$@/musl
+	mkdir -p $(OBJ)/$@/install
+	cp -pr src/musl $(OBJ)/$@
+	./config.musl "-target $@ $(CFLAGS)" $@ $(ELLCC) $(OBJ)/$@/musl || exit 1
+	make -C $(OBJ)/$@/musl || exit 1
+	make -C $(OBJ)/$@/musl install || exit 1
 	make $@.musl.install
 	@echo Making libcompiler-rt for $@ in src/compiler-rt
 	make -C src/compiler-rt ellcc_linux-`./getarch $@`
@@ -151,7 +153,7 @@ clean:
 
 veryclean: clean
 	rm -fr $(OBJ)
-	rm -fr libc++-build
+	rm -fr c++-build
 
 install:
 
@@ -165,14 +167,14 @@ musl.install:
 	@cd musl-build ; \
 	echo Installing libecc for $* ; \
 	mkdir -p ../include ; \
-	cp -pr $*/include/* ../include ; \
+	cp -pr $*/install/include/* ../include ; \
 	ln -sf ../endian.h ../include/sys ; \
 	mkdir -p ../include/`../getincarch $*` ; \
 	rm -fr ../include/`../getincarch $*`/bits ; \
 	mv ../include/bits ../include/`../getincarch $*`/bits ; \
 	(cd ../include/`../getincarch $*`; rm -rf machine; ln -sf bits machine) ;\
 	mkdir -p ../lib/$* ; \
-	cp $*/lib/*.a $*/lib/*.o ../lib/$*
+	cp $*/install/lib/*.a $*/install/lib/*.o ../lib/$*
 
 %.compiler-rt.install:
 	cd src/compiler-rt/ellcc_linux ; \

@@ -1,5 +1,7 @@
 __asm__("\n\
 .set push\n\
+.text \n\
+.option pic2\n\
 .set noreorder\n\
 .global __start\n\
 .global _start\n\

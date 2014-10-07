@@ -14,5 +14,5 @@ void __cstart(long *p)
 {
 	int argc = p[0];
 	char **argv = (void *)(p+1);
-	// RICH: __libc_start_main(main, argc, argv, _init, _fini, 0);
+	__libc_start_main(main, argc, argv, _init, _fini, 0);
 }

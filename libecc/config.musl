@@ -1,6 +1,6 @@
 #! /bin/sh
-# $1 = CFLAGS, $2 = TARGET, $3 = ELLCC
-cd src/musl
+# $1 = CFLAGS, $2 = TARGET, $3 = ELLCC, $4 = SRC
+cd $4
 echo $2 >musl.new
 cmp musl.new musl.last && exit 0
 make clean
@@ -8,10 +8,10 @@ export CC=$3/bin/ecc
 export CROSS_COMPILE=$3/bin/ecc-
 export CFLAGS="$1"
 export LIBCC=-lcompiler-rt
-./configure --prefix=$3/libecc/musl-build/$2 \
+./configure --prefix=$3/libecc/musl-build/$2/install \
   --target=$2 \
-  --syslibdir=$3/libecc/musl-build/$2 \
-  --exec-prefix=$3/libecc/musl-build/$2 \
+  --syslibdir=$3/libecc/musl-build/$2/install \
+  --exec-prefix=$3/libecc/musl-build/$2/install \
   --enable-warnings \
   --enable-debug \
   --disable-shared || exit 1
