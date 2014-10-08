@@ -91,6 +91,13 @@ reset:
         ldr     r0, =_start
         mcr     p15, 0, r0, c12, c0, 0
 
+        // Copy the data area.
+        ldr     a1, data_start 
+        ldr     a2, text_end
+        ldr     a3, data_end
+        sub     a3, a3, a1
+        bl      memcpy
+
         // Clear the bss area.
         ldr     a1, bss_start
         mov     a2, #0
@@ -115,10 +122,17 @@ done:
 
 heap_end_p:
         .word   __heap_end
+text_end:
+        .word   __text_end__
+data_start:
+        .word   __data_start__
+data_end:
+        .word   __data_end__
 bss_start:
         .word   __bss_start__
 bss_end:
         .word   __bss_end__
+
 
 // main()'s pseudo arguments.
 argv:

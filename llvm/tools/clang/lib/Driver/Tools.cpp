@@ -5187,6 +5187,15 @@ static void ConstructLinkJobFromInfo(Compilation &C, const JobAction &JA,
   // Expand the linker information.
   linker.Expand(D, Output.getFilename());
 
+  // Add library search paths. Add the paths before options are
+  // added so the search path for any -T options can be defined.
+  CmdArgs.push_back("-nostdlib");
+  if (!Args.hasArg(options::OPT_nostdlib)) {
+    for (auto &i : linker.library_paths) {
+      CmdArgs.push_back(Args.MakeArgString(i));
+    }
+  }
+
   // Add the linker options.
   for (auto &i : linker.options) {
     CmdArgs.push_back(Args.MakeArgString(i));
@@ -5248,13 +5257,6 @@ static void ConstructLinkJobFromInfo(Compilation &C, const JobAction &JA,
     }
     if (linker.crtbegin.size()) {
       CmdArgs.push_back(Args.MakeArgString(linker.crtbegin));
-    }
-  }
-
-  CmdArgs.push_back("-nostdlib");
-  if (!Args.hasArg(options::OPT_nostdlib)) {
-    for (auto &i : linker.library_paths) {
-      CmdArgs.push_back(Args.MakeArgString(i));
     }
   }
 

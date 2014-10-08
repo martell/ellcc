@@ -11,6 +11,12 @@ compiler:
     - '$R/include/arm'
     - '$R/include'
 linker:
+  options:
+    - -Telk.ld
+    - -m armelf_linux_eabi
+    - --build-id
+    - '--hash-style=gnu'
+    - --eh-frame-hdr
   static_crt1: $R/lib/arm-elk-engeabi/crt1.o
   dynamic_crt1: $R/lib/arm-elk-engeabi/Scrt1.o
   crtbegin: $R/lib/arm-linux-engeabi/crtbegin.o
