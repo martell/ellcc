@@ -44,6 +44,9 @@ install: all
 	  cp -rp $(SRCPATH)/$(LIB)/include/$(ARCH)/* \
 		 ../../include/$(LIB)/$(ARCH) ; \
 	fi
+	if [ -d $(SRCPATH)/$(LIB)/ldscripts/$(ARCH) ] ; then \
+	  cp -rp $(SRCPATH)/$(LIB)/ldscripts/$(ARCH)/* $(LIBDIR) ; \
+	fi
 
 clean:
 	rm -f *.o *.d *.gcda *.gcno
