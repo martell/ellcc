@@ -377,7 +377,7 @@ unhandled_swi:
         ldr     r0, string_p            // Get the format string.
         bl      printf
         add     sp, #16                 // clean up the stack.
-        mov     r0, #-ENOSYS       
+        mov     r0, #-ENOSYS
         ldmfd   sp!, {r12, pc}
 
 string_p:

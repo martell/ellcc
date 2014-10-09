@@ -10,12 +10,18 @@ compiler:
     - '$R/include/mips'
     - '$R/include'
 linker:
+  options:
+    - -Telk.ld
+    - -m elf32ebmip
+    - --build-id
+    - --eh-frame-hdr
   static_crt1: $R/lib/mips-elk-engsf/crt1.o
   dynamic_crt1: $R/lib/mips-elk-engsf/Scrt1.o
   crtbegin: $R/lib/mips-linux-engsf/crtbegin.o
   crtend: $R/lib/mips-linux-engsf/crtend.o
   library_paths:
     - -L$R/lib/mips-elk-engsf
+    - -L$R/lib/elk
     - -L$R/lib/mips-linux-engsf
   c_libraries:
     - -lelk

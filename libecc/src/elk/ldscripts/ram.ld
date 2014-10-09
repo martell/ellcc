@@ -1,15 +1,16 @@
 ENTRY(_start)
 SECTIONS
 {
+  . = load_address;
   /* Program code goes here. */
-  .text : { *(.text) } > rom
+  .text : { *(.text) }
 
   /* Handle constructors and destructors. */
   .preinit_array : {
     PROVIDE_HIDDEN(__preinit_array_start = .);
     KEEP(*(.preinit_array))
     PROVIDE_HIDDEN(__preinit_array_end = .);
-  } > rom
+  }
 
   .init_array : {
     PROVIDE_HIDDEN(__init_array_start = .);
@@ -18,7 +19,7 @@ SECTIONS
     KEEP(*(.init_array
       EXCLUDE_FILE(*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .ctors))
     PROVIDE_HIDDEN(__init_array_end = .);
-  } > rom
+  }
   .fini_array  : {
     PROVIDE_HIDDEN(__fini_array_start = .);
     KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)
@@ -26,7 +27,7 @@ SECTIONS
     KEEP(*(.fini_array
       EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .dtors))
     PROVIDE_HIDDEN(__fini_array_end = .);
-  } > rom
+  }
 
   .ctors : {
     KEEP(*crtbegin.o(.ctors))
@@ -34,32 +35,38 @@ SECTIONS
     KEEP(*(EXCLUDE_FILE(*crtend.o *crtend?.o) .ctors))
     KEEP(*(SORT(.ctors.*)))
     KEEP(*(.ctors))
-  } > rom
+  }
   .dtors : {
     KEEP(*crtbegin.o(.dtors))
     KEEP(*crtbegin?.o(.dtors))
     KEEP(*(EXCLUDE_FILE(*crtend.o *crtend?.o) .dtors))
     KEEP(*(SORT(.dtors.*)))
     KEEP(*(.dtors))
-  } > rom
-  __text_end__ = . ;
+  }
 
-  /* Set up a copy of R/W data in ROM. */
-  .data : AT(__text_end__) {
+  HIDDEN (_gp = ALIGN (16) + 0x7ff0);
+  .got : { *(.got) }
+  .sdata          :
+  {
+    PROVIDE (_SDA_BASE_ = 32768);
+    *(.sdata .sdata.* .gnu.linkonce.s.*)
+  }
+  .data : {
     PROVIDE_HIDDEN(__data_start__ = .);
     *(.data)
     PROVIDE_HIDDEN(__data_end__ = .);
-  } > ram
+  }
   . = ALIGN(8);
   /* Define the uninitialized data area. */
   .bss : { 
     PROVIDE_HIDDEN(__bss_start__ = .);
     *(.bss)
     PROVIDE_HIDDEN(__bss_end__ = .);
-  } > ram
+  }
   . = ALIGN(8);
-  __end = .;                            /* The kernel heap grows from here. */
-  __mem_top = ORIGIN(ram) + LENGTH(ram);/* Point to the top of memory. */
+  __end = .;                    /* The kernel heap grows from here. */
+  . = . + stack_heap_size;
+  __mem_top = .;                /* Allocate 4MB for the stack and heap. */
 }
 
 

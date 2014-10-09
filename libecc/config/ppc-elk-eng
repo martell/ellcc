@@ -8,12 +8,19 @@ compiler:
     - '$R/include/ppc'
     - '$R/include'
 linker:
+  options:
+    - -Telk.ld
+    - -m elf32ppc
+    - --build-id
+    - --hash-style=gnu
+    - --eh-frame-hdr
   static_crt1: $R/lib/ppc-elk-eng/crt1.o
   dynamic_crt1: $R/lib/ppc-elk-eng/Scrt1.o
   crtbegin: $R/lib/ppc-linux-eng/crtbegin.o
   crtend: $R/lib/ppc-linux-eng/crtend.o
   library_paths:
     - -L$R/lib/ppc-elk-eng
+    - -L$R/lib/elk
     - -L$R/lib/ppc-linux-eng
   c_libraries:
     - -lelk

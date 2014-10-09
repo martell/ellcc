@@ -96,13 +96,15 @@ static inline uint32_t __update_cpsr(uint32_t clear, uint32_t set)
 {
     uint32_t       old, new;
 
-    asm volatile("mrs   %0, cpsr\n"     // Get the cpsr.
-                 "bic   %1, %0, %2\n"   // Clear the affected bits.
-                 "eor   %1, %1, %3\n"   // Set the desited bits.
-                 "msr   cpsr_c, %1\n"   // Update the cpsr
-                                        // The old value is in r0.
-                 : "=&r" (old), "=&r" (new) : "r" (clear), "r" (set) : "memory");
-    
+    __asm__ volatile("mrs   %0, cpsr\n"     // Get the cpsr.
+                     "bic   %1, %0, %2\n"   // Clear the affected bits.
+                     "eor   %1, %1, %3\n"   // Set the desited bits.
+                     "msr   cpsr_c, %1\n"   // Update the cpsr
+                                            // The old value is in r0.
+                     : "=&r" (old), "=&r" (new)
+                     : "r" (clear), "r" (set)
+                     : "memory");
+
     return old;
 }
 

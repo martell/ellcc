@@ -6,8 +6,8 @@
  */
 MEMORY
 {
-  rom (rx)  : ORIGIN = 0x00000000, LENGTH = 64M
-  ram (!rx) : ORIGIN = 0x48000000, LENGTH = 32M
+  rom (rx) : ORIGIN = 0x00000000, LENGTH = 64M
+  ram (! rx) : ORIGIN = 0x48000000, LENGTH = 32M
 }
 
-INCLUDE sections.ld
+INCLUDE romram.ld

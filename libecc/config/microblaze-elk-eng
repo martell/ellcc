@@ -8,12 +8,16 @@ compiler:
     - '$R/include/microblaze'
     - '$R/include'
 linker:
+  options:
+    - -Telk.ld
+    - -m elf32mb_linux
   static_crt1: $R/lib/microblaze-elk-eng/crt1.o
   dynamic_crt1: $R/lib/microblaze-elk-eng/Scrt1.o
   crtbegin: $R/lib/microblaze-linux-eng/crtbegin.o
   crtend: $R/lib/microblaze-linux-eng/crtend.o
   library_paths:
     - -L$R/lib/microblaze-elk-eng
+    - -L$R/lib/elk
     - -L$R/lib/microblaze-linux-eng
   c_libraries:
     - -lelk

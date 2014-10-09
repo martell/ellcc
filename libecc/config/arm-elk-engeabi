@@ -23,6 +23,7 @@ linker:
   crtend: $R/lib/arm-linux-engeabi/crtend.o
   library_paths:
     - -L$R/lib/arm-elk-engeabi
+    - -L$R/lib/elk
     - -L$R/lib/arm-linux-engeabi
   c_libraries:
     - -lelk

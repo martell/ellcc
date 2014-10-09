@@ -40,9 +40,13 @@ install: all
 	mkdir -p $(LIBDIR)
 	cp $(LIBNAME) $(CRTOBJS) $(LIBDIR)
 	if [ -d $(SRCPATH)/$(LIB)/include/$(ARCH) ] ; then \
-	  mkdir -p ../../include/$(LIB)/$(ARCH) ; \
-	  cp -rp $(SRCPATH)/$(LIB)/include/$(ARCH)/* \
-		 ../../include/$(LIB)/$(ARCH) ; \
+	  mkdir -p ../../include/$(LIB) ; \
+	  cp -rp $(SRCPATH)/$(LIB)/include/* \
+		 ../../include/$(LIB) ; \
+	fi
+	if [ -e $(SRCPATH)/$(LIB)/ldscripts/$(LIB).ld ] ; then \
+	  mkdir -p $(LIBDIR)/../$(LIB) ; \
+	  cp -rp $(SRCPATH)/$(LIB)/ldscripts/*.ld $(LIBDIR)/../$(LIB) ; \
 	fi
 	if [ -d $(SRCPATH)/$(LIB)/ldscripts/$(ARCH) ] ; then \
 	  cp -rp $(SRCPATH)/$(LIB)/ldscripts/$(ARCH)/* $(LIBDIR) ; \

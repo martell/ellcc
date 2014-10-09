@@ -8,12 +8,19 @@ compiler:
     - '$R/include/x86_64'
     - '$R/include'
 linker:
+  options:
+    - -Telk.ld
+    - -m elf_x86_64
+    - --build-id
+    - --hash-style=gnu
+    - --eh-frame-hdr
   static_crt1: $R/lib/x86_64-elk-eng/crt1.o
   dynamic_crt1: $R/lib/x86_64-elk-eng/Scrt1.o
   crtbegin: $R/lib/x86_64-linux-eng/crtbegin.o
   crtend: $R/lib/x86_64-linux-eng/crtend.o
   library_paths:
     - -L$R/lib/x86_64-elk-eng
+    - -L$R/lib/elk
     - -L$R/lib/x86_64-linux-eng
   c_libraries:
     - -lelk
