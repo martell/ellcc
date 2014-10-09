@@ -53,7 +53,7 @@ SECTIONS
     PROVIDE(_SDA_BASE_ = 32768);
     *(.sdata .sdata.* .gnu.linkonce.s.*)
     PROVIDE_HIDDEN(__data_end__ = .);
-  }
+  } >ram
   . = ALIGN(8);
   /* Define the uninitialized data area. */
   .bss : { 

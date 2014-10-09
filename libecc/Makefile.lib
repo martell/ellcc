@@ -8,6 +8,8 @@ VPATH :=
 CC = ../../../bin/ecc
 CXX = ../../../bin/ecc++
 include $(SRCPATH)/$(LIB)/sources.mk
+CFLAGS += -MD -MP
+CXXFLAGS += -MD -MP
 
 .SUFFIXES: .c .cpp .cxx .S .o
 .c.o:

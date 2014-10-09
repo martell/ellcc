@@ -15,6 +15,34 @@
 #define NULL 0
 #endif
 
+#undef weak_alias
+#define weak_alias(old, new) \
+    extern __typeof(old) new __attribute__((weak, alias(#old)))
+
+#undef alias
+#define alias(old, new) \
+    extern __typeof(old) new __attribute__((alias(#old)))
+
+#define FEATURE(feature, function) \
+char __elk_ ## feature = 0; \
+alias(__elk_ ## feature, __elk_feature_ ## function);
+
+#define USE_FEATURE(feature) do \
+{ \
+ extern char __elk_ ## feature; \
+ __elk_ ## feature = 1; \
+} while (0)
+
+#define CONSTRUCTOR() \
+static void __elk_init(void) \
+    __attribute__((__constructor__, __used__)); \
+static void __elk_init(void)
+
+#define CONSTRUCTOR_BY_NAME(returns, name) \
+returns name(void) \
+    __attribute__((__constructor__, __used__)); \
+returns name(void)
+
 typedef struct lock
 {
     char lock;
@@ -53,9 +81,5 @@ enum {
  * @return 0 on success, -1 on  error.
  */
 int __set_syscall(int nr, void *fn);
-
-#undef weak_alias
-#define weak_alias(old, new) \
-    extern __typeof(old) new __attribute__((weak, alias(#old)))
 
 #endif // _kernel_h_

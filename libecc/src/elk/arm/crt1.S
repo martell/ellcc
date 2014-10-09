@@ -368,6 +368,8 @@ unhandled_swi:
         cmp     r12, #0                 // Has a system call been set up?
         bne     1f
         weak_call(__setup_console)      // If not, set up the console.
+        cmp     r0, #0                  // Has the console been set up?
+        beq     2f                      // Jump if not.
 1:
         push    {r2-r5}                 // Push extra arguments.
         mov     r3, r1
@@ -377,6 +379,7 @@ unhandled_swi:
         ldr     r0, string_p            // Get the format string.
         bl      printf
         add     sp, #16                 // clean up the stack.
+2:
         mov     r0, #-ENOSYS
         ldmfd   sp!, {r12, pc}
 

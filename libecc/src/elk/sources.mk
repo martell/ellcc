@@ -8,6 +8,6 @@ CRTSRCS += crt1.S
 # Target specific code.
 SRCS +=
 
-VPATH := $(VPATH):$(SRCPATH)/$(LIB)/simple
+VPATH := $(VPATH):$(SRCPATH)/$(LIB)/kernel
 # Target independent code.
-SRCS += simple_console.c
+SRCS += simple_console.c exit.c

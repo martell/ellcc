@@ -6,6 +6,9 @@
 #include <sys/ioctl.h>
 #include "kernel.h"
 
+// Make the simple console a loadable feature.
+FEATURE(simple_console, console)
+
 #define SIMPLE_CONSOLE          // No interrupt support needed.
 #include "console.h"
 
@@ -95,10 +98,7 @@ static ssize_t sys_readv(int fd, const struct iovec *iov, int iovcount)
     return count;
 }
 
-void __setup_console(void)
-    __attribute__((__constructor__, __used__));
-
-void __setup_console(void)
+CONSTRUCTOR_BY_NAME(int, __setup_console)
 {
     // Set up a simple ioctl system call.
     __set_syscall(SYS_ioctl, sys_ioctl);
@@ -110,4 +110,5 @@ void __setup_console(void)
     __set_syscall(SYS_read, sys_read);
     // Set up a simple readv system call.
     __set_syscall(SYS_readv, sys_readv);
+    return 1;
 }

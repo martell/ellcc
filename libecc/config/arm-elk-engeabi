@@ -14,7 +14,6 @@ linker:
   options:
     - -Telk.ld
     - -m armelf_linux_eabi
-    - --build-id
     - '--hash-style=gnu'
     - --eh-frame-hdr
   static_crt1: $R/lib/arm-elk-engeabi/crt1.o
