@@ -4,7 +4,7 @@
 #include <bits/syscall.h>       // For syscall numbers.
 #include <sys/uio.h>            // For writev (used by printf()).
 #include <sys/ioctl.h>
-#include "kernel.h"
+#include <kernel.h>
 
 // Make the simple console a loadable feature.
 FEATURE(simple_console, console)

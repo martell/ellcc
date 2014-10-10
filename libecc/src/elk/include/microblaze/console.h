@@ -27,6 +27,7 @@ static void init() {
 }
 #endif
 
+#ifdef SIMPLE_CONSOLE
 /** Send a character to the serial port.
  */
 static void console_send_char(int ch)
@@ -45,25 +46,29 @@ static int console_get_char(void)
     return *RXTX;
 }
 
-#ifndef SIMPLE_CONSOLE
+#else
 
 /** Send a character to the serial port. The transmit buffer is empty.
  */
 static inline void console_send_char_now(int ch)
 {
+#if RICH
     *UARTDR = ch;
+#endif
 }
 
 /** Send a character to the serial port if the transmit buffer is empty.
  */
 static inline int console_send_char_nowait(int ch)
 {
+#if RICH
     if ((*UARTFR & TXFF) == 0) {
         // The transmit buffer is empty. Send the character.
         *UARTDR = ch;
         return 1;
     }
 
+#endif
     return 0;
 }
 
@@ -71,34 +76,45 @@ static inline int console_send_char_nowait(int ch)
  */
 static inline int console_get_char_now(void)
 {
+#if RICH
     return *UARTDR;
+#else
+    return 0;
+#endif
 }
 
 /** Enable the transmit interrupt.
  */
 static inline void console_enable_tx_interrupt(void)
 {
+#if RICH
     *UARTIMSC |= TXI;
+#endif
 }
 
 /** Disable the transmit interrupt.
  */
 static inline void console_disable_tx_interrupt(void)
 {
+#if RICH
     *UARTIMSC &= ~TXI;
+#endif
 }
 
 /** Enable the receive interrupt.
  */
 static inline void console_enable_rx_interrupt(void)
 {
+#if RICH
     *UARTIMSC = RXI;
+#endif
 }
 
 /** Register the console interrupt handler.
  */
 static void console_interrupt_register(InterruptFn rx, InterruptFn tx)
 {
+#if RICH
     static IRQHandler serial_irq =
     {
         .id = IRQ + 32,
@@ -117,8 +133,8 @@ static void console_interrupt_register(InterruptFn rx, InterruptFn tx)
     serial_irq.entries[0].handler.fn = rx;
     serial_irq.entries[1].handler.fn = tx;
     irq_register(&serial_irq);
+#endif
 }
 
 #endif // SIMPLE_CONSOLE
-
 #endif // _console_h_

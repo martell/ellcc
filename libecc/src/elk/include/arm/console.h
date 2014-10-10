@@ -6,6 +6,7 @@
 #include "arm_pl011.h"
 #include "irq.h"
 
+#ifdef SIMPLE_CONSOLE
 /** Send a character to the serial port.
  */
 static void console_send_char(int ch)
@@ -24,7 +25,7 @@ static int console_get_char(void)
     return *UARTDR;
 }
 
-#ifndef SIMPLE_CONSOLE
+#else
 
 /** Send a character to the serial port. The transmit buffer is empty.
  */

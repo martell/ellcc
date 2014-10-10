@@ -3,7 +3,7 @@
 #ifndef _target_h_
 #define _target_h_
 
-#define INITIAL_PSR RICH
+#define INITIAL_PSR 0 // RICH
 
 // Saved context register offsets.
 #define CTX_R1  0

@@ -85,14 +85,14 @@ reset:
         sub     r0, #Stack_SYS
         // Set up the end of the heap.
         ldr     r1, heap_end_p
-        str     r0, [r1]
+	push	{ r0, r1 }		// Preserve the heap end.
 
         // Point to the vectors.
         ldr     r0, =_start
         mcr     p15, 0, r0, c12, c0, 0
 
-        // Copy the data area.
-        ldr     a1, data_start 
+        // Copy the initialized data area.
+        ldr     a1, data_start
         ldr     a2, text_end
         ldr     a3, data_end
         sub     a3, a3, a1
@@ -104,6 +104,9 @@ reset:
         ldr     a3, bss_end
         sub     a3, a3, a1
         bl      memset
+
+	pop	{ r0, r1 }
+        str     r0, [r1]		// Save the end of the heap.
 
         // Now start up the system by initializing the library and
         // calling main.
@@ -405,6 +408,9 @@ swi_table_p:
         .data
         .global __heap_end
 __heap_end:
+        .word   0
+        .global __dso_handle
+__dso_handle:
         .word   0
 
 syscall:

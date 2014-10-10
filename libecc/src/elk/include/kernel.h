@@ -45,7 +45,7 @@ returns name(void)
 
 typedef struct lock
 {
-    char lock;
+    int lock;
     int level;
 } Lock;
 
@@ -53,15 +53,21 @@ typedef struct lock
 
 static inline void lock_aquire(Lock *lock)
 {
+// RICH:
+#if !defined(__microblaze__)
     while(!__atomic_test_and_set(&lock->lock, __ATOMIC_SEQ_CST))
         continue;
+#endif
     lock->level = splhigh();
 }
 
 static inline void lock_release(Lock *lock)
 {
     splx(lock->level);
+// RICH:
+#if !defined(__microblaze__)
     __atomic_clear(&lock->lock, __ATOMIC_SEQ_CST);
+#endif
 }
 
 /* RICH: Validate a system call address argument.
