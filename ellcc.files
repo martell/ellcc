@@ -30,7 +30,6 @@ ellcc/libecc/config
 ellcc/libecc/include
 ellcc/libecc/mkscripts
 ellcc/libecc/lib
-ellcc/libecc/obj
 ellcc/libecc/doc
 ellcc/libecc/doc/index.html
 ellcc/libecc/doc/menu.css

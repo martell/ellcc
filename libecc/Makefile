@@ -149,12 +149,11 @@ $(Configs)::
 	cp -p $*/src/editline/readline.h ../include
 
 clean:
-	make -C src/musl distclean
 	make -C src/compiler-rt clean
-	make -C obj veryclean
-	rm -fr src/musl/musl.last *-build
 
 veryclean: clean
+	make -C src/musl distclean
+	rm -fr src/musl/musl.last *-build
 	rm -fr $(OBJ)
 	rm -fr c++-build
 
