@@ -11,6 +11,13 @@ CFLAGS := -g -Qunused-arguments \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
 	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else \
 	  -Wno-int-to-pointer-cast
+ifeq ($(VERBOSE),)
+  MFLAGS=--no-print-directory
+  OUT=@
+else
+  MFLAGS=
+  OUT=
+endif
 
 OBJ := $(PWD)/musl-build
 install: c++-headers clang-headers $(Configs) $(ElkConfigs)
@@ -21,70 +28,78 @@ all:
 
 $(Configs)::
 	@echo Making libecc for $@ in musl-build/$@
-	mkdir -p $(OBJ)/$@/musl
-	mkdir -p $(OBJ)/$@/install
-	cp -pr src/musl $(OBJ)/$@
-	./config.musl "-target $@ $(CFLAGS)" $@ $(ELLCC) $(OBJ)/$@/musl || exit 1
-	make -C $(OBJ)/$@/musl || exit 1
-	make -C $(OBJ)/$@/musl install || exit 1
-	make $@.musl.install
+	$(OUT)mkdir -p $(OBJ)/$@/musl
+	$(OUT)mkdir -p $(OBJ)/$@/install
+	$(OUT)cp -pr src/musl $(OBJ)/$@
+	$(OUT)./config.musl "-target $@ $(CFLAGS)" $@ $(ELLCC) $(OBJ)/$@/musl || exit 1
+	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$@/musl || exit 1
+	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$@/musl install || exit 1
+	$(OUT)$(MAKE) $(MFLAGS) $@.musl.install
 	@echo Making libcompiler-rt for $@ in src/compiler-rt
-	make -C src/compiler-rt ellcc_linux-`./getarch $@`
-	make $@.compiler-rt.install
+	$(OUT)$(MAKE) $(MFLAGS) -C src/compiler-rt ellcc_linux-`./getarch $@`
+	$(OUT)$(MAKE) $(MFLAGS) $@.compiler-rt.install
 
 $(Configs)::
-	make $@.ncurses.configure && \
-	make $@.ncurses.build && \
-	make $@.ncurses.install
+	$(OUT)$(MAKE) $(MFLAGS) $@.ncurses.configure && \
+	$(MAKE) $(MFLAGS) $@.ncurses.build && \
+	$(MAKE) $(MFLAGS) $@.ncurses.install
 
 # RICH: NOCXX added below because of a Microblaze C++ error.
 # Remove when fixed or if Microblaze is removed.
 
 %.ncurses.configure:
-	@echo Configuring ncurses for $* in ncurses-build/$*
-	mkdir -p ncurses-build/$*
-	cd ncurses-build/$* ; \
-	NOCXX="--without-cxx-binding" ; \
-	../../src/ncurses/configure \
-	    CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
-	    CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
-            AR=$(ELLCC)/bin/ecc-ar \
-            RANLIB=$(ELLCC)/bin/ecc-ranlib \
-            --host=`../../getarch $*`-`../../getos $*` \
-	    --prefix=$(ELLCC) $$NOCXX
+	$(OUT)if [ -e ncurses-build/$*/Makefile ] ; then \
+	  echo Configuring ncurses for $* aready done ; \
+	else  \
+	  echo Configuring ncurses for $* in ncurses-build/$* ; \
+	  mkdir -p ncurses-build/$* ; \
+	  cd ncurses-build/$* ; \
+	  NOCXX="--without-cxx-binding" ; \
+	  ../../src/ncurses/configure \
+	      CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	      CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
+	      --host=`../../getarch $*`-`../../getos $*` \
+	      --prefix=$(ELLCC) $$NOCXX ; \
+	fi
 
 %.ncurses.build:
-	make -C ncurses-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) -C ncurses-build/$*
 
 %.ncurses.install:
-	@cd ncurses-build ; \
+	$(OUT)cd ncurses-build ; \
 	echo Installing ncurses for $* ; \
 	mkdir -p ../lib/$* ; \
 	cp $*/lib/*.a ../lib/$* ; \
 	cp -p $*/include/*.h ../include ; \
-	make -C $*/misc install
+	$(MAKE) $(MFLAGS) -C $*/misc install
 
 $(Configs)::
-	make $@.zlib.configure && \
-	make $@.zlib.build && \
-	make $@.zlib.install
+	$(OUT)$(MAKE) $(MFLAGS) $@.zlib.configure && \
+	$(MAKE) $(MFLAGS) $@.zlib.build && \
+	$(MAKE) $(MFLAGS) $@.zlib.install
 
 %.zlib.configure:
-	@echo Configuring zlib for $* in zlib-build/$*
-	mkdir -p zlib-build/$*
-	cp -pfr src/zlib/* zlib-build/$*
-	cd zlib-build/$* ; \
-	CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
-	CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
-        AR=$(ELLCC)/bin/ecc-ar \
-        RANLIB=$(ELLCC)/bin/ecc-ranlib \
-	    ./configure --static --prefix=$(ELLCC)
+	$(OUT)if [ -e zlib-build/$*/Makefile ] ; then \
+	  echo Configuring zlib for $* aready done ; \
+	else  \
+	  echo Configuring zlib for $* in zlib-build/$* ; \
+	  mkdir -p zlib-build/$* ; \
+	  cp -pfr src/zlib/* zlib-build/$* ; \
+	  cd zlib-build/$* ; \
+	  CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	  CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
+	  AR=$(ELLCC)/bin/ecc-ar \
+	  RANLIB=$(ELLCC)/bin/ecc-ranlib \
+	      ./configure --static --prefix=$(ELLCC) ; \
+	fi
 
 %.zlib.build:
-	make -C zlib-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) -C zlib-build/$*
 
 %.zlib.install:
-	@cd zlib-build ; \
+	$(OUT)cd zlib-build ; \
 	echo Installing zlib for $* ; \
 	mkdir -p ../lib/$* ; \
 	cp $*/*.a ../lib/$* ; \
@@ -92,27 +107,31 @@ $(Configs)::
 	cp -p $*/zconf.h ../include
 
 $(Configs)::
-	make $@.expat.configure && \
-	make $@.expat.build && \
-	make $@.expat.install
+	$(OUT)$(MAKE) $(MFLAGS) $@.expat.configure && \
+	$(MAKE) $(MFLAGS) $@.expat.build && \
+	$(MAKE) $(MFLAGS) $@.expat.install
 
 %.expat.configure:
-	@echo Configuring expat for $* in expat-build/$*
-	mkdir -p expat-build/$*
-	cd expat-build/$* ; \
-	CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
-	CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
-        AR=$(ELLCC)/bin/ecc-ar \
-        RANLIB=$(ELLCC)/bin/ecc-ranlib \
-	    ../../src/expat/configure \
-            --host=`../../getarch $*`-`../../getos $*` \
-	    --prefix=$(ELLCC) --enable-shared=no
+	$(OUT)if [ -e expat-build/$*/Makefile ] ; then \
+	  echo Configuring expat for $* aready done ; \
+	else \
+	  echo Configuring expat for $* in expat-build/$* ; \
+	  mkdir -p expat-build/$* ; \
+	  cd expat-build/$* ; \
+	  CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	  CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
+	  AR=$(ELLCC)/bin/ecc-ar \
+	  RANLIB=$(ELLCC)/bin/ecc-ranlib \
+	      ../../src/expat/configure \
+	      --host=`../../getarch $*`-`../../getos $*` \
+	      --prefix=$(ELLCC) --enable-shared=no ; \
+	fi
 
 %.expat.build:
-	make -C expat-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) -C expat-build/$*
 
 %.expat.install:
-	@cd expat-build ; \
+	$(OUT)cd expat-build ; \
 	echo Installing expat for $* ; \
 	mkdir -p ../lib/$* ; \
 	cp $*/.libs/*.a ../lib/$* ; \
@@ -120,28 +139,32 @@ $(Configs)::
 	cp -p ../src/expat/lib/expat_external.h ../include
 
 $(Configs)::
-	make $@.libedit.configure && \
-	make $@.libedit.build && \
-	make $@.libedit.install
+	$(OUT)$(MAKE) $(MFLAGS) $@.libedit.configure && \
+	$(MAKE) $(MFLAGS) $@.libedit.build && \
+	$(MAKE) $(MFLAGS) $@.libedit.install
 
 %.libedit.configure:
-	@echo Configuring libedit for $* in libedit-build/$*
-	mkdir -p libedit-build/$*
-	cp -pfr src/libedit/* libedit-build/$*
-	cd libedit-build/$* ; \
-        RANLIB=$(ELLCC)/bin/ecc-ranlib \
-	CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
-	CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
-        AR=$(ELLCC)/bin/ecc-ar \
-	    ../../src/libedit/configure \
-	    --enable-shared=no  --prefix=$(ELLCC) \
-            --host=`../../getarch $*`-`../../getos $*`
+	$(OUT)if [ -e libedit-build/$*/Makefile ] ; then \
+	  echo Configuring libedit for $* aready done ; \
+	else \
+	  echo Configuring libedit for $* in libedit-build/$* ; \
+	  mkdir -p libedit-build/$* ; \
+	  cp -pfr src/libedit/* libedit-build/$* ; \
+	  cd libedit-build/$* ; \
+	  RANLIB=$(ELLCC)/bin/ecc-ranlib \
+	  CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	  CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
+	  AR=$(ELLCC)/bin/ecc-ar \
+	      ../../src/libedit/configure \
+	      --enable-shared=no  --prefix=$(ELLCC) \
+	      --host=`../../getarch $*`-`../../getos $*` ; \
+	fi
 
 %.libedit.build:
-	make -C libedit-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) -C libedit-build/$*
 
 %.libedit.install:
-	@cd libedit-build ; \
+	$(OUT)cd libedit-build ; \
 	echo Installing libedit for $* ; \
 	mkdir -p ../lib/$* ; \
 	cp $*/src/.libs/*.a ../lib/$* ; \
@@ -149,24 +172,19 @@ $(Configs)::
 	cp -p $*/src/editline/readline.h ../include
 
 clean:
-	make -C src/compiler-rt clean
-
-veryclean: clean
-	make -C src/musl distclean
-	rm -fr src/musl/musl.last *-build
-	rm -fr $(OBJ)
-	rm -fr c++-build
+	$(OUT)$(MAKE) $(MFLAGS) -C src/compiler-rt clean
+	$(OUT)rm -fr *-build
 
 install:
 
 musl.install:
-	@cd musl-build ; \
+	$(OUT)cd musl-build ; \
 	for target in `echo *` ; do \
-	  make -C .. $$target.musl.install ; \
+	  $(MAKE) $(MFLAGS) -C .. $$target.musl.install ; \
 	done
 
 %.musl.install:
-	@cd musl-build ; \
+	$(OUT)cd musl-build ; \
 	echo Installing libecc for $* ; \
 	mkdir -p ../include ; \
 	cp -pr $*/install/include/* ../include ; \
@@ -179,7 +197,7 @@ musl.install:
 	cp $*/install/lib/*.a $*/install/lib/*.o ../lib/$*
 
 %.compiler-rt.install:
-	cd src/compiler-rt/ellcc_linux ; \
+	$(OUT)cd src/compiler-rt/ellcc_linux ; \
 	for target in `echo *` ; do \
 	  echo Installing libcompiler-rt for $* ; \
 	  mkdir -p ../../../lib/$* ; \
@@ -190,24 +208,26 @@ musl.install:
 	done
 
 c++-headers:
+	$(OUT)echo Installing C++ headers ; \
 	mkdir -p include/c++ ; \
 	cp -pr src/c++/libcxx/include/* include/c++ ; \
 	cp -pr src/c++/libcxxabi/include/* include/c++
 
 $(Configs)::
-	@echo Making libc++ for $@ in c++-build/$@
-	mkdir -p c++-build/$@
-	cp Makefile.lib c++-build/$@/Makefile
-	make -C c++-build/$@ || exit 1
-	cp c++-build/$@/libc++.a lib/$@
+	$(OUT)echo Making libc++ for $@ in c++-build/$@
+	$(OUT)mkdir -p c++-build/$@
+	$(OUT)cp Makefile.lib c++-build/$@/Makefile
+	$(OUT)$(MAKE) $(MFLAGS) -C c++-build/$@ || exit 1
+	$(OUT)cp c++-build/$@/libc++.a lib/$@
 
 clang-headers:
+	$(OUT)echo Installing clang headers ; \
 	mkdir -p clang ; \
 	cp -p ../llvm/tools/clang/lib/Headers/* clang
 
 $(ElkConfigs)::
-	@echo Making libelk for $@ in elk-build/$@
-	@mkdir -p elk-build/$@
-	@cp Makefile.lib elk-build/$@/Makefile
-	@make -C elk-build/$@ || exit 1
-	@make LIBDIR=`pwd`/lib/$@ -C elk-build/$@ install || exit 1
+	$(OUT)echo Making libelk for $@ in elk-build/$@
+	$(OUT)mkdir -p elk-build/$@
+	$(OUT)cp Makefile.lib elk-build/$@/Makefile
+	$(OUT)$(MAKE) $(MFLAGS) -C elk-build/$@ || exit 1
+	$(OUT)$(MAKE) $(MFLAGS) LIBDIR=`pwd`/lib/$@ -C elk-build/$@ install || exit 1
