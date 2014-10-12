@@ -11,7 +11,7 @@ if [ -e bin-$1 ] ; then
   ln -s bin-$1 bin
 fi
 make -C baremetal clean
-cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files -T ellcc/ellcc.bin.file; cd -
+cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files -T ellcc/ellcc.bin.files; cd -
 if [ -e bin-$1 ] ; then
   rm bin
   mv bin.save bin

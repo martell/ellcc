@@ -17,6 +17,7 @@ ellcc/bin/ppc-elf-as
 ellcc/bin/x86_64-elf-as
 ellcc/bin/arm-elf-as
 ellcc/bin/ecc
+ellcc/bin/ecc++
 ellcc/bin/mips-elf-as
 ellcc/bin/ecc-gdb
 ellcc/bin/ecc-strip
