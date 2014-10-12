@@ -14,12 +14,31 @@ prefix=`pwd`
 
 # Figure out the compilers to use.
 . ./build-setup $*
+if [ $debug -ne 0 ] ; then
+  echo $WHY
+  echo host=$host
+  echo build=$build
+  echo os=$os
+  echo hostos=$hostos
+  echo tuple=$tuple
+  echo libtuple=$libtuple
+  echo cc=$cc
+  echo cxx=$cxx
+  echo hcc=$hcc
+  echo hcxx=$hcxx
+  echo ar=$ar
+  echo ranlib=$ranlib
+  echo builddir=$builddir
+  echo haslibs=$haslibs
+  echo maxjobs=$maxjobs
+  exit 0
+fi
 
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 
 ${MAKE} DIR=llvm-build$builddir CC="$cc" CXX="$cxx" AR="$ar" RANLIB="$ranlib" \
-     TARGET=$host OS=$os TUPLE=$tuple \
+     TARGET=$host OS=$os HOSTOS=$hostos TUPLE=$tuple MINGW=$mingw \
      bindir=$bindir prefix=$prefix build=$build haslibs=$haslibs \
      llvm.configure || bailout "Configure failed for llvm"
 
@@ -28,7 +47,11 @@ ${MAKE} -C llvm-build$builddir -j ${maxjobs} || bailout "Make failed for llvm"
 
 # Build the GNU tools.
 cd gnu
-./build $arg1 || bailout "Build failed for gnu"
+  if [ $mingw -eq 1 ] ; then 
+    ./build -m -mt $mingwtriple $arg1 || bailout "Build failed for gnu"
+  else
+    ./build $arg1 || bailout "Build failed for gnu"
+  fi
 cd ..
 
 # Now install the ELLCC tools.
@@ -51,7 +74,7 @@ ${MAKE} clean
 ${MAKE} || bailout "Make failed for libecc"
 cd ..
 
-if [ "x$hostos" = "xLinux" ] ; then
+if [ "x$hostos" = "xlinux" ] ; then
   if [ "$haslibs" != "yes" ] ; then
     echo "Please run the build script again to bootstrap ecc."
     echo "This may be done a few times:"

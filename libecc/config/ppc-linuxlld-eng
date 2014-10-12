@@ -3,7 +3,7 @@ compiler:
   options:
     - -target ppc-ellcc-linux
 linker:
-  exe: $E/lld
+  exe: $E/lld$X
   options:
     - -flavor gnu
     - -target ppc-ellcc-linux

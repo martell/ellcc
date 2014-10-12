@@ -11,6 +11,7 @@ CFLAGS := -g -Qunused-arguments \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
 	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else \
 	  -Wno-int-to-pointer-cast
+
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
   OUT=@

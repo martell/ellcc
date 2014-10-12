@@ -6,7 +6,7 @@ compiler:
     - -mfpu=vfp
     - -mfloat-abi=softfp
 linker:
-  exe: $E/lld
+  exe: $E/lld$X
   options:
     - -flavor gnu
     - -target armeb-ellcc-linux

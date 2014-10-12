@@ -21,7 +21,11 @@ endif
 
 # Build LLD and LLDB if present. Note LLDB must be built last as it depends on
 # the wider LLVM infrastructure (including Clang).
-OPTIONAL_DIRS := lld lldb
+ifeq ($(HOST_OS),MingW)
+  OPTIONAL_DIRS := lldb		# RICH: lld doesn't compile yet.
+else
+  OPTIONAL_DIRS := lld lldb
+endif
 
 # NOTE: The tools are organized into five groups of four consisting of one
 # large and three small executables. This is done to minimize memory load

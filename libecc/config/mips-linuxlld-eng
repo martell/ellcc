@@ -4,7 +4,7 @@ compiler:
     - -target mips-ellcc-linux
     - -mcpu=mips32r2
 linker:
-  exe: $E/lld
+  exe: $E/lld$X
   options:
     - -flavor gnu
     - -target mips-ellcc-linux

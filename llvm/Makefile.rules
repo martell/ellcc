@@ -446,7 +446,8 @@ ifeq ($(HOST_OS),MingW)
   ifeq ($(LLVM_CROSS_COMPILING),1)
     # Work around http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=525016
     ifdef TOOLNAME
-      LD.Flags += -Wl,--allow-multiple-definition
+      # RICH: Added -static
+      LD.Flags += -Wl,--allow-multiple-definition -static
     endif
   endif
 endif

@@ -10,9 +10,8 @@ if [ -e bin-$1 ] ; then
   mv bin bin.save
   ln -s bin-$1 bin
 fi
-make -C libecc clean
 make -C baremetal clean
-cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files; cd -
+cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files -T ellcc/ellcc.bin.file; cd -
 if [ -e bin-$1 ] ; then
   rm bin
   mv bin.save bin

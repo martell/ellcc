@@ -1,13 +1,21 @@
 # Build ELLCC.
 VERSION=0.0.2
 
+ifeq ($(VERBOSE),)
+  MFLAGS=--no-print-directory
+  OUT=@
+else
+  MFLAGS=
+  OUT=
+endif
+
 # Get the names of the subdirectories.
 SUBDIRS := llvm-build gnu libecc
 
 all install clean veryclean check:: llvm-build gnu/gnu-build
-	@for dir in $(SUBDIRS) ; do \
+	$(OUT)for dir in $(SUBDIRS) ; do \
 	  echo Making $@ in $$dir ; \
-	  $(MAKE) CLANG_VENDOR="ellcc $(VERSION)svn based on" -C $$dir $@ || exit 1 ; \
+	  $(MAKE) $(MFLAGS) CLANG_VENDOR="ellcc $(VERSION)svn based on" -C $$dir $@ || exit 1 ; \
 	done
 
 install:: docs
@@ -17,32 +25,32 @@ llvm-build gnu/gnu-build:
 
 .PHONY: buildrelease
 buildrelease:
-	$(MAKE) -C llvm-build clean
-	$(MAKE) CLANG_VENDOR="ellcc $(VERSION) based on" -C llvm-build install || exit 1 ; \
+	$(OUT)$(MAKE) $(MFLAGS) -C llvm-build clean
+	$(OUT)$(MAKE) $(MFLAGS) CLANG_VENDOR="ellcc $(VERSION) based on" -C llvm-build install || exit 1 ; \
 
 .PHONY: release
 release:
-	mkdir -p release
-	rm -fr ellcc-$(VERSION)
-	mkdir -p ellcc-$(VERSION)
-	make -C libecc veryclean
-	make -C workspace veryclean
-	tar --exclude "*.svn*" --exclude "*/test/*" -cvp -f- bin libecc workspace | \
+	$(OUT)mkdir -p release
+	$(OUT)rm -fr ellcc-$(VERSION)
+	$(OUT)mkdir -p ellcc-$(VERSION)
+	$(OUT)$(MAKE) $(MFLAGS) $(MFLAGS) -C libecc veryclean
+	$(OUT)$(MAKE) $(MFLAGS) $(MFLAGS) -C workspace veryclean
+	$(OUT)tar --exclude "*.svn*" --exclude "*/test/*" -cvp -f- bin libecc workspace | \
 	    (cd ellcc-$(VERSION); tar xfp -)
-	(cd ellcc-$(VERSION); tree -T "ELLCC Release Directory Tree" -H ellcc --nolinks > ../tree.html)
-	tar -cvpz -frelease/ellcc-$(VERSION)-linux-x86_64.tgz ellcc-$(VERSION)
+	$(OUT)(cd ellcc-$(VERSION); tree -T "ELLCC Release Directory Tree" -H ellcc --nolinks > ../tree.html)
+	$(OUT)tar -cvpz -frelease/ellcc-$(VERSION)-linux-x86_64.tgz ellcc-$(VERSION)
 
 .PHONY: tagrelease
 tagrelease:
-	svn cp -m "Tag release $(VERSION)." http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+	$(OUT)svn cp -m "Tag release $(VERSION)." http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
 
 .PHONY: untagrelease
 untagrelease:
-	svn rm http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+	$(OUT)svn rm http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
 
 .PHONY: docs
 docs:
-	cp -r ./lib/share/doc/ld.html \
+	$(OUT)cp -r ./lib/share/doc/ld.html \
 	./lib/share/doc/gdb \
 	./lib/share/doc/binutils.html \
 	./lib/share/doc/as.html \
@@ -55,9 +63,16 @@ TARGETS=
 #TARGETS=--enable-targets=arm
 
 ifneq ($(TARGET),$(build))
-  HOST=--host=$(TARGET)-$(OS)
-  BUILD=--build=$(build)-$(OS)
-  ELLCC_ARG0=-DELLCC_ARG0=\\\"$(TUPLE)\\\"
+  BUILD=--build=$(build)-$(HOSTOS)
+  ifeq ($(MINGW),1)
+    HOST=--host=$(TARGET)
+    TRGT=--target=$(TARGET)
+    ELLCC_ARG0=-DELLCC_ARG0=\\\"x86_64-ellcc-linux\\\"
+  else
+    HOST=--host=$(TARGET)-$(OS)
+    TRGT=--target=$(TARGET)-$(OS)
+    ELLCC_ARG0=-DELLCC_ARG0=\\\"$(TUPLE)\\\"
+  endif
 else
   HOST=
   BUILD=
@@ -73,14 +88,19 @@ ifneq ($(CC),gcc)
 endif
 
 llvm.configure:
-	cd $(DIR) ; \
-	../llvm/configure \
-        CC="$(CC) $(TARGETTUPLE)" CFLAGS="$(CFLAGS)" \
-        CPP="$(CC) $(TARGETTUPLE) -E $(CFLAGS)" \
-        CXX="$(CXX) $(TARGETTUPLE)" CXXFLAGS="$(CXXFLAGS)" \
-        CXXCPP="$(CXX) $(TARGETTUPLE) -E $(CFLAGS)" \
-        AR=$(AR) RANLIB=$(RANLIB) \
-        --bindir=$(bindir) --prefix=$(prefix) \
-        $(HOST) $(BUILD) $(TARGETS) \
-        --enable-shared=no -enable-pic=no --enable-keep-symbols \
-        --enable-optimized
+	$(OUT)if [ -e $(DIR)/Makefile ] ; then \
+          echo Configuring LLVM for $(TUPLE) aready done ; \
+        else  \
+          echo Configuring LLVM for $(TUPLE) in $(DIR) ; \
+	  cd $(DIR) ; \
+	    ../llvm/configure \
+	    CC="$(CC) $(TARGETTUPLE)" CFLAGS="$(CFLAGS)" \
+	    CPP="$(CC) $(TARGETTUPLE) -E $(CFLAGS)" \
+	    CXX="$(CXX) $(TARGETTUPLE)" CXXFLAGS="$(CXXFLAGS)" \
+	    CXXCPP="$(CXX) $(TARGETTUPLE) -E $(CFLAGS)" \
+	    AR=$(AR) RANLIB=$(RANLIB) \
+	    --bindir=$(bindir) --prefix=$(prefix) \
+	    $(HOST) $(BUILD) $(TRGT) $(TARGETS) \
+	    --enable-shared=no -enable-pic=no --enable-keep-symbols \
+	    --enable-optimized --program-prefix= ; \
+	fi

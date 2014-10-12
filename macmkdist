@@ -2,7 +2,6 @@
 OSX=Mac_OS_X_`sw_vers -productVersion`
 name=ellcc-$OSX-`date +%Y-%b-%d-%H-%M-%S`.tgz
 
-make -C libecc clean
 make -C baremetal clean
-cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files; cd -
+cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files -T ellcc/ellcc.bin.files; cd -
 echo created $name

@@ -19,6 +19,41 @@ case "${build}" in
     ;;
 esac
 
+# Get build options.
+mingw=0
+debug=0
+libtuple=
+mingwtriple=i686-w64-mingw32 # RICH: x86_64-w64-mingw32 for 64 bit
+mingwprefix=${mingwtriple}-
+while [ $# > 0 ] ; do
+case $1 in
+  -l)
+    # Use a different tuple to find libraries.
+    shift
+    libtuple=$1
+    shift
+    ;;
+  -m)
+    # Cross build for MinGW
+    mingw=1
+    shift
+    ;;
+  -mt)
+    # Set the MinGW triple.
+    shift
+    mingwtriple=$1
+    shift
+    ;;
+  -d)
+    debug=1
+    shift
+    ;;
+  *)
+    break
+    ;;
+esac
+done
+
 # Let's find out about the host. The make command will be fixed when necessary (FreeBSD)
 host=${build}
 target=${build}
@@ -32,15 +67,31 @@ MAKE=make
 
 # OG: Set default compiler (the most likely at first sight, depending on
 # the environment...)
-cc=gcc
-cxx=g++
-hcc=gcc
-hcxx=g++
-ar=ar
-builddir=""
-haslibs=no
-ranlib=ranlib
-WHY="build for $host with host libraries using gcc"
+if [ $mingw -ne 0 ] ; then
+  cc=${mingwprefix}gcc
+  cxx=${mingwprefix}g++
+  hcc=${mingwprefix}gcc
+  hcxx=${mingwprefix}g++
+  ar=${mingwprefix}ar
+  builddir=-MinGW
+  bindir=${bindir}-MinGW
+  haslibs=no
+  ranlib=${mingwprefix}ranlib
+  host=${mingwtriple}
+  os=mingw32
+  hostos=Linux
+  WHY="cross build for MinGW"
+else
+  cc=gcc
+  cxx=g++
+  hcc=gcc
+  hcxx=g++
+  ar=ar
+  builddir=""
+  haslibs=no
+  ranlib=ranlib
+  WHY="build for $host with host libraries using gcc"
+fi
 
 # OG: Assume 2 jobs if we can't work out the number of CPUs on the host
 # Note: this is meant to protect the building host, as the original
@@ -63,23 +114,28 @@ if [ $# -ge 1 ] ; then
   # OG: The host OS may be something else.... let ${hostos} find out
   #hostos=Linux
   tuple=$1
-  libtuple=${tuple}
+  if [ -z "$libtuple" ] ; then
+    libtuple=${tuple}
+  fi
   shift
 fi
 
 echo Processing ${hostos} 
 case "x${hostos}" in
   xLinux)
-    # ELLCC can currently build itself only for Linux... 
-    if [ `which ecc` ] ; then
-      # ecc exists, and is in the PATH.
-      ecc=ecc
-    fi
+    if [ $mingw -eq 0 ] ; then
+      # ELLCC can currently build itself only for Linux...
+      if [ `which ecc` ] ; then
+        # ecc exists, and is in the PATH.
+        ecc=ecc
+      fi
 
-    if [ -e ${bin}/ecc ]; then
-      ecc=${bin}/ecc
+      if [ -e ${bin}/ecc ]; then
+        ecc=${bin}/ecc
+      fi
     fi
     maxjobs=`grep processor /proc/cpuinfo | wc -l`
+    hostos=linux
     ;;
   xMINGW*)
     # MinGW is a Linux clone environment, keep default compilers
@@ -87,20 +143,24 @@ case "x${hostos}" in
     builddir=""
     haslibs=no
     WHY="build for ${host} with host libraries using gcc"
+    hostos=mingw
     ;;
   xFreeBSD)
     # OG: GNU make is in the port - standard FreeBSD make just won't work...
     # and the default compiler is clang
     echo FreeBSD detected
-    MAKE=gmake
-    cc=cc
-    cxx=c++
-    hcc=cc
-    hcxx=c++
-    ar=ar
-    builddir=""
-    haslibs=no
-    WHY="build for ${host} with host libraries using gcc"
+    if [ $mingw -eq 0 ] ; then
+      MAKE=gmake
+      cc=cc
+      cxx=c++
+      hcc=cc
+      hcxx=c++
+      ar=ar
+      builddir=""
+      haslibs=no
+      WHY="build for ${host} with host libraries using gcc"
+    fi
+    hostos=freebsd
 
     # FreeBSD has a Linux emulation package, which supports /proc in a
     # different location
@@ -112,13 +172,6 @@ case "x${hostos}" in
     fi
     ;;
 esac
-
-# Check for an additional tuple specifying the library to use.
-if [ $# -ge 1 ] ; then
-  # The second argument is the desired library tuple.
-  libtuple=$1
-  shift
-fi
 
 # OG: Trimmed down to detect specific case to be supported
 if [ "x${ecc}" != "x" ] ; then

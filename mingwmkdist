@@ -1,0 +1,21 @@
+#! /bin/sh
+MINGW=MinGW
+name=ellcc-$MINGW-`date +%Y-%b-%d-%H-%M-%S`.tgz
+
+make -C baremetal clean
+
+if [ ! -e bin-$MINGW ] ; then
+  echo "The MinGW bin directory doesn't exist."
+  exit 1;
+fi
+
+mv bin bin.save
+ln -s bin-$MINGW bin
+
+cd ..; exefiles=`sed -e "s:\(.*/bin/.*\):\1.exe:" ellcc/ellcc.bin.files`; cd -
+rm -fr bin/ecc++.exe
+cp bin/ecc.exe bin/ecc++.exe
+cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files $exefiles; cd -
+rm bin
+mv bin.save bin
+echo created $name

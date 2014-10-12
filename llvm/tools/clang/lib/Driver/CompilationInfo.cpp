@@ -15,7 +15,7 @@ const char ellcc_linux[] =
   "  output:\n"
   "    - -o $O\n"
   "linker:\n"
-  "  exe: $E/ecc-ld\n"
+  "  exe: $E/ecc-ld$X\n"
   "  output:\n"
   "    - -o $O\n"
   "  start:\n"
@@ -51,7 +51,7 @@ const char arm_ellcc_linux[] =
   "    - $R/include/arm\n"
   "    - $R/include\n"
   "assembler:\n"
-  "  exe: $E/arm-elf-as\n"
+  "  exe: $E/arm-elf-as$X\n"
   "linker:\n"
   "  options:\n"
   "    - -m armelf_linux_eabi\n"
@@ -80,7 +80,7 @@ const char armeb_ellcc_linux[] =
   "    - $R/include/arm\n"
   "    - $R/include\n"
   "assembler:\n"
-  "  exe: $E/arm-elf-as\n"
+  "  exe: $E/arm-elf-as$X\n"
   "  options:\n"
   "    - -EB\n"
   "linker:\n"
@@ -111,7 +111,7 @@ const char i386_ellcc_linux[] =
   "    - $R/include/i386\n"
   "    - $R/include\n"
   "assembler:\n"
-  "  exe: $E/i386-elf-as\n"
+  "  exe: $E/i386-elf-as$X\n"
   "linker:\n"
   "  options:\n"
   "    - -m elf_i386\n"
@@ -135,7 +135,7 @@ const char microblaze_ellcc_linux[] =
   "    - $R/include/microblaze\n"
   "    - $R/include\n"
   "assembler:\n"
-  "  exe: $E/microblaze-elf-as\n"
+  "  exe: $E/microblaze-elf-as$X\n"
   "linker:\n"
   "  options:\n"
   "    - -m elf32mb_linux\n"
@@ -156,7 +156,7 @@ const char mips_ellcc_linux[] =
   "    - $R/include/mips\n"
   "    - $R/include\n"
   "assembler:\n"
-  "  exe: $E/mips-elf-as\n"
+  "  exe: $E/mips-elf-as$X\n"
   "linker:\n"
   "  options:\n"
   "    - -m elf32ebmip\n"
@@ -179,7 +179,7 @@ const char mipsel_ellcc_linux[] =
   "    - $R/include/mips\n"
   "    - $R/include\n"
   "assembler:\n"
-  "  exe: $E/mips-elf-as\n"
+  "  exe: $E/mips-elf-as$X\n"
   "  options:\n"
   "    - -EL\n"
   "linker:\n"
@@ -204,7 +204,7 @@ const char ppc_ellcc_linux[] =
   "    - $R/include/ppc\n"
   "    - $R/include\n"
   "assembler:\n"
-  "  exe: $E/ppc-elf-as\n"
+  "  exe: $E/ppc-elf-as$X\n"
   "  options:\n"
   "    - -a32\n"
   "    - -many\n"
@@ -231,7 +231,7 @@ const char ppc64_ellcc_linux[] =
   "    - $R/include/ppc\n"
   "    - $R/include\n"
   "assembler:\n"
-  "  exe: $E/ppc-elf-as\n"
+  "  exe: $E/ppc-elf-as$X\n"
   "  options:\n"
   "    - -a64\n"
   "    - -many\n"
@@ -258,7 +258,7 @@ const char x86_64_ellcc_linux[] =
   "    - $R/include/x86_64\n"
   "    - $R/include\n"
   "assembler:\n"
-  "  exe: $E/x86_64-elf-as\n"
+  "  exe: $E/x86_64-elf-as$X\n"
   "linker:\n"
   "  options:\n"
   "    - -m elf_x86_64\n"
@@ -321,6 +321,11 @@ void clang::compilationinfo::ExpandArgWithAll(std::string &arg,
   // Perform expansions.
   ExpandArg(arg, "$E", TheDriver.Dir);
   ExpandArg(arg, "$R", TheDriver.ResourceDir);
+#if defined(LLVM_ON_WIN32)
+  ExpandArg(arg, "$X", ".exe");
+#else
+  ExpandArg(arg, "$X", "");
+#endif
   if (Output) {
     ExpandArg(arg, "$O", Output);
   }
