@@ -70,7 +70,6 @@ fi
 
 # Build libecc.
 cd libecc
-${MAKE} clean
 ${MAKE} || bailout "Make failed for libecc"
 cd ..
 
