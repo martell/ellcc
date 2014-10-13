@@ -32,7 +32,12 @@ $(Configs)::
 	$(OUT)mkdir -p $(OBJ)/$@/musl
 	$(OUT)mkdir -p $(OBJ)/$@/install
 	$(OUT)cp -pr src/musl $(OBJ)/$@
-	$(OUT)./config.musl "-target $@ $(CFLAGS)" $@ $(ELLCC) $(OBJ)/$@/musl || exit 1
+	$(OUT)if [ -e $(OBJ)/$@/musl/Makefile ] ; then \
+          echo Configuring musl for $(TUPLE) aready done ; \
+        else  \
+          echo Configuring musl for $(TUPLE) in $(OBJ)/$@/musl ; \
+	  $(OUT)./config.musl "-target $@ $(CFLAGS)" $@ $(ELLCC) $(OBJ)/$@/musl || exit 1 ; \
+        fi
 	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$@/musl || exit 1
 	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$@/musl install || exit 1
 	$(OUT)$(MAKE) $(MFLAGS) $@.musl.install
