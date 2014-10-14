@@ -1,6 +1,10 @@
 #! /bin/sh
 MINGW=MinGW
-name=ellcc-$MINGW-`date +%Y-%b-%d-%H-%M-%S`.tgz
+if [ $# -ne 1 ] ; then
+    echo "$0: <configuration-version>"
+    exit 1
+fi
+name=ellcc-$1.tgz
 
 make -C baremetal clean
 
