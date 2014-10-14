@@ -12,6 +12,27 @@ bailout () {
 # Get the staging directory.
 prefix=`pwd`
 
+all=0
+package=""
+while [ $# > 0 ] ; do
+  case $1 in
+    -a)
+      # Build all configurations except host.
+      all=1
+      shift
+      ;;
+    -p)
+      # package all configurations.
+      shift
+      package=$1
+      shift
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
 # Figure out the compilers to use.
 . ./build-setup $*
 if [ $debug -ne 0 ] ; then
@@ -34,6 +55,39 @@ if [ $debug -ne 0 ] ; then
   exit 0
 fi
 
+if [ $all -eq 1 ] ; then
+  # Build all configurations except host.
+  BldConfigs=`cd libecc/config; echo *-linux-*`
+  for config in $BldConfigs ; do
+    # Don't rebuild the host.
+    if [ `libecc/getarch $config` = $host ] ; then
+      continue
+    fi
+    # The microblaze can't self host.
+    if [ `libecc/getarch $config` = microblaze ] ; then
+      continue
+    fi
+    ./build $config || bailout "Build failed for $config"
+  done
+  exit 0
+fi
+
+if [ $package != "" ] ; then
+  # Package all configurations.
+  BldConfigs=`cd libecc/config; echo *-linux-*`
+  for config in $BldConfigs ; do
+    # The microblaze can't self host.
+    if [ `libecc/getarch $config` = microblaze ] ; then
+      continue
+    fi
+    if [ ! -e llvm-build-$config ] ; then
+      echo "Skipping $config packaging because it hasn't been built."
+    else
+      ./mkdist $config-$package || bailout "Packaging failed for $config"
+    fi
+  done
+  exit 0
+fi
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 

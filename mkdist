@@ -1,9 +1,9 @@
 #! /bin/sh
 if [ $# -ne 1 ] ; then
-    echo "$0: <target-os>"
+    echo "$0: <configuration-version>"
     exit 1
 fi
-name=ellcc-$1-`date +%Y-%b-%d-%H-%M-%S`.tgz
+name=ellcc-$1.tgz
 
 if [ -e bin-$1 ] ; then
   # The non-native bin directory exists.

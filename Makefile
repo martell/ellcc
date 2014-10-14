@@ -1,5 +1,5 @@
 # Build ELLCC.
-VERSION=0.0.2
+VERSION=0.1.0
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
@@ -9,36 +9,42 @@ else
   OUT=
 endif
 
-# Get the names of the subdirectories.
-SUBDIRS := llvm-build gnu libecc
+.PHONY: me
+me:
+	$(OUT)echo "Building ELLCC for this host."
+	$(OUT)./build
 
-all install clean veryclean check:: llvm-build gnu/gnu-build
-	$(OUT)for dir in $(SUBDIRS) ; do \
-	  echo Making $@ in $$dir ; \
-	  $(MAKE) $(MFLAGS) CLANG_VENDOR="ellcc $(VERSION)svn based on" -C $$dir $@ || exit 1 ; \
-	done
-
-install:: docs
-
-llvm-build gnu/gnu-build:
-	./build
-
-.PHONY: buildrelease
-buildrelease:
-	$(OUT)$(MAKE) $(MFLAGS) -C llvm-build clean
-	$(OUT)$(MAKE) $(MFLAGS) CLANG_VENDOR="ellcc $(VERSION) based on" -C llvm-build install || exit 1 ; \
+.PHONY: all
+all: me
+	$(OUT)./build -a
 
 .PHONY: release
 release:
-	$(OUT)mkdir -p release
-	$(OUT)rm -fr ellcc-$(VERSION)
-	$(OUT)mkdir -p ellcc-$(VERSION)
-	$(OUT)$(MAKE) $(MFLAGS) $(MFLAGS) -C libecc veryclean
-	$(OUT)$(MAKE) $(MFLAGS) $(MFLAGS) -C workspace veryclean
-	$(OUT)tar --exclude "*.svn*" --exclude "*/test/*" -cvp -f- bin libecc workspace | \
-	    (cd ellcc-$(VERSION); tar xfp -)
-	$(OUT)(cd ellcc-$(VERSION); tree -T "ELLCC Release Directory Tree" -H ellcc --nolinks > ../tree.html)
-	$(OUT)tar -cvpz -frelease/ellcc-$(VERSION)-linux-x86_64.tgz ellcc-$(VERSION)
+	$(OUT)echo "Building and packaging ELLCC release $(VERSION)."
+	$(OUT)find llvm-build* -name Version.o | xargs rm -f
+	$(OUT)svn update
+	$(OUT)$(MAKE) $(MFLAGS) \
+	  CLANG_VENDOR="ecc $(VERSION) based on" all || exit 1
+	$(OUT)./build -p $(VERSION)
+
+.PHONY: clean
+clean:
+	$(OUT)rm -fr llvm-build* gnu/gnu-build* libecc/*-build
+	$(OUT)$(MAKE) $(MFLAGS) -C gnu/src/qemu clean
+
+install:: docs
+
+#.PHONY: release
+#release:
+#	$(OUT)mkdir -p release
+#	$(OUT)rm -fr ellcc-$(VERSION)
+#	$(OUT)mkdir -p ellcc-$(VERSION)
+#	$(OUT)$(MAKE) $(MFLAGS) $(MFLAGS) -C libecc veryclean
+#	$(OUT)$(MAKE) $(MFLAGS) $(MFLAGS) -C workspace veryclean
+#	$(OUT)tar --exclude "*.svn*" --exclude "*/test/*" -cvp -f- bin libecc workspace | \
+#	    (cd ellcc-$(VERSION); tar xfp -)
+#	$(OUT)(cd ellcc-$(VERSION); tree -T "ELLCC Release Directory Tree" -H ellcc --nolinks > ../tree.html)
+#	$(OUT)tar -cvpz -frelease/ellcc-$(VERSION)-linux-x86_64.tgz ellcc-$(VERSION)
 
 .PHONY: tagrelease
 tagrelease:
