@@ -29,42 +29,14 @@ release:
 	$(OUT)svn cp -m "Tag release $(VERSION)." \
 	  http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
 
+.PHONY: untagrelease
+untagrelease:
+	$(OUT)svn rm http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
 
 .PHONY: clean
 clean:
 	$(OUT)rm -fr llvm-build* gnu/gnu-build* libecc/*-build
 	$(OUT)$(MAKE) $(MFLAGS) -C gnu/src/qemu clean
-
-install:: docs
-
-#.PHONY: release
-#release:
-#	$(OUT)mkdir -p release
-#	$(OUT)rm -fr ellcc-$(VERSION)
-#	$(OUT)mkdir -p ellcc-$(VERSION)
-#	$(OUT)$(MAKE) $(MFLAGS) $(MFLAGS) -C libecc veryclean
-#	$(OUT)$(MAKE) $(MFLAGS) $(MFLAGS) -C workspace veryclean
-#	$(OUT)tar --exclude "*.svn*" --exclude "*/test/*" -cvp -f- bin libecc workspace | \
-#	    (cd ellcc-$(VERSION); tar xfp -)
-#	$(OUT)(cd ellcc-$(VERSION); tree -T "ELLCC Release Directory Tree" -H ellcc --nolinks > ../tree.html)
-#	$(OUT)tar -cvpz -frelease/ellcc-$(VERSION)-linux-x86_64.tgz ellcc-$(VERSION)
-
-.PHONY: tagrelease
-tagrelease:
-	$(OUT)svn cp -m "Tag release $(VERSION)." http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
-
-.PHONY: untagrelease
-untagrelease:
-	$(OUT)svn rm http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
-
-.PHONY: docs
-docs:
-	$(OUT)cp -r ./lib/share/doc/ld.html \
-	./lib/share/doc/gdb \
-	./lib/share/doc/binutils.html \
-	./lib/share/doc/as.html \
-	./share/doc/qemu \
-	libecc/doc
 
 # Default to all targets.
 TARGETS=
