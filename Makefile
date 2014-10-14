@@ -25,7 +25,10 @@ release:
 	$(OUT)svn update
 	$(OUT)$(MAKE) $(MFLAGS) \
 	  CLANG_VENDOR="ecc $(VERSION) based on" all || exit 1
-	$(OUT)./build -p $(VERSION)
+	$(OUT)./build -p $(VERSION) || exit 1
+	$(OUT)svn cp -m "Tag release $(VERSION)." \
+	  http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+
 
 .PHONY: clean
 clean:
