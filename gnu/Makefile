@@ -128,7 +128,7 @@ gdb.configure:
 	fi
 
 qemu.configure:
-	$(OUT)if [ -e $(DIR)/Makefile ] ; then \
+	$(OUT)if [ -e $(DIR)/config.status ] ; then \
           echo Configuring qemu for $(TUPLE) aready done ; \
         else  \
           echo Configuring qemu for $(TUPLE) in $(DIR) ; \
