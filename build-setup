@@ -19,13 +19,16 @@ case "${build}" in
     ;;
 esac
 
+# Make sure ecc isn't defined.
+ecc=
+
 # Get build options.
 mingw=0
 debug=0
 libtuple=
 mingwtriple=i686-w64-mingw32 # RICH: x86_64-w64-mingw32 for 64 bit
 mingwprefix=${mingwtriple}-
-while [ $# > 0 ] ; do
+while [ $# -gt 0 ] ; do
   case $1 in
     -l)
       # Use a different tuple to find libraries.

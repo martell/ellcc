@@ -1,5 +1,5 @@
 # Build ELLCC.
-VERSION=0.1.0
+VERSION=0.1.1
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
@@ -15,7 +15,7 @@ me:
 	$(OUT)./build
 
 .PHONY: all
-all: me
+all: # me
 	$(OUT)./build -a
 
 .PHONY: release
@@ -26,8 +26,12 @@ release:
 	$(OUT)$(MAKE) $(MFLAGS) \
 	  CLANG_VENDOR="ecc $(VERSION) based on" all || exit 1
 	$(OUT)./build -p $(VERSION) || exit 1
+	$(OUT)echo Enter the ellc.org svn password
 	$(OUT)svn cp -m "Tag release $(VERSION)." \
 	  http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+	$(OUT)echo Enter the main password
+	$(OUT)scp ChangeLog ellcc-* main:/var/ftp/pub
+	$(OUT)ssh main chmod oug+r /var/ftp/pub/\*
 
 .PHONY: untagrelease
 untagrelease:

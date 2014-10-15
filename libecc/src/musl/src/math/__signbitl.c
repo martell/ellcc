@@ -6,10 +6,9 @@ int __signbitl(long double x)
 	union ldshape u = {x};
 	return u.i.se >> 15;
 }
-#else
-// FIXME: Never called, just to resolve link error.
+#elif LDBL_MANT_DIG == 53 && LDBL_MAX_EXP == 1024
 int __signbitl(long double x)
 {
-    return 0;
+	return __signbit(x);
 }
 #endif

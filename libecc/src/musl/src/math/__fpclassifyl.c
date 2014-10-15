@@ -1,12 +1,10 @@
 #include "libm.h"
 
 #if LDBL_MANT_DIG == 53 && LDBL_MAX_EXP == 1024
-// FIXME: Never called, just to resolve link error.
 int __fpclassifyl(long double x)
 {
-    return 0;
+	return __fpclassify(x);
 }
-
 #elif LDBL_MANT_DIG == 64 && LDBL_MAX_EXP == 16384
 int __fpclassifyl(long double x)
 {

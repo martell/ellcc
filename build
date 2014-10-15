@@ -14,7 +14,7 @@ prefix=`pwd`
 
 all=0
 package=""
-while [ $# > 0 ] ; do
+while [ $# -gt 0 ] ; do
   case $1 in
     -a)
       # Build all configurations except host.
@@ -82,7 +82,8 @@ if [ "$package" != "" ] ; then
       continue
     fi
     if [ ! -e llvm-build-$config ] ; then
-      echo "Skipping $config packaging because it hasn't been built."
+      echo "$config packaging failed because it hasn't been built"
+      bailout "Packaging failed for $config"
     else
       ./mkdist $config-$package || bailout "Packaging failed for $config"
     fi
@@ -106,7 +107,7 @@ ${MAKE} -C llvm-build$builddir -j ${maxjobs} || bailout "Make failed for llvm"
 # Build the GNU tools.
 cd gnu
   if [ $mingw -eq 1 ] ; then 
-    ./build -m -mt $mingwtriple $arg1 || bailout "Build failed for gnu"
+    ./build -m -mt $mingwtriple || bailout "MinGW build failed for gnu"
   else
     ./build $arg1 || bailout "Build failed for gnu"
   fi
