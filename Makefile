@@ -15,7 +15,7 @@ me:
 	$(OUT)./build
 
 .PHONY: all
-all: # me
+all: me
 	$(OUT)./build -a
 
 .PHONY: release
