@@ -227,9 +227,14 @@ $(Configs)::
 	$(OUT)cp c++-build/$@/libc++.a lib/$@
 
 clang-headers:
-	$(OUT)echo Installing clang headers ; \
-	mkdir -p clang ; \
-	cp -p ../llvm/tools/clang/lib/Headers/* clang
+	$(OUT)echo Installing clang headers
+	$(OUT)mkdir -p clang
+	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/* clang
+	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/altivec.h include
+	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/emmintrin.h include
+	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/mmintrin.h include
+	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/mm_malloc.h include
+	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/xmmintrin.h include
 
 $(ElkConfigs)::
 	$(OUT)echo Making libelk for $@ in elk-build/$@
