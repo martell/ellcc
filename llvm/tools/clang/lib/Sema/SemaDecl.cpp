@@ -702,11 +702,7 @@ Sema::NameClassification Sema::ClassifyName(Scope *S,
   }
 
   LookupResult Result(*this, Name, NameLoc, LookupOrdinaryName);
-  NestedNameSpecifier *NNS = SS.getScopeRep();
-  if (NNS && NNS->getKind() == NestedNameSpecifier::Super)
-    LookupInSuper(Result, NNS->getAsRecordDecl());
-  else
-    LookupParsedName(Result, S, &SS, !CurMethod);
+  LookupParsedName(Result, S, &SS, !CurMethod);
 
   // For unqualified lookup in a class template in MSVC mode, look into
   // dependent base classes where the primary class template is known.
@@ -3727,10 +3723,12 @@ static bool InjectAnonymousStructOrUnionMembers(Sema &SemaRef, Scope *S,
         for (unsigned i = 0; i < Chaining.size(); i++)
           NamedChain[i] = Chaining[i];
 
-        IndirectFieldDecl* IndirectField =
-          IndirectFieldDecl::Create(SemaRef.Context, Owner, VD->getLocation(),
-                                    VD->getIdentifier(), VD->getType(),
-                                    NamedChain, Chaining.size());
+        IndirectFieldDecl *IndirectField = IndirectFieldDecl::Create(
+            SemaRef.Context, Owner, VD->getLocation(), VD->getIdentifier(),
+            VD->getType(), NamedChain, Chaining.size());
+
+        for (const auto *Attr : VD->attrs())
+          IndirectField->addAttr(Attr->clone(SemaRef.Context));
 
         IndirectField->setAccess(AS);
         IndirectField->setImplicit();
@@ -7336,7 +7334,9 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
                                     CodeSegStack.CurrentValue->getString(),
                                     CodeSegStack.CurrentPragmaLocation));
     if (UnifySection(CodeSegStack.CurrentValue->getString(),
-                     PSF_Implicit | PSF_Execute | PSF_Read, NewFD))
+                     ASTContext::PSF_Implicit | ASTContext::PSF_Execute |
+                         ASTContext::PSF_Read,
+                     NewFD))
       NewFD->dropAttr<SectionAttr>();
   }
 
@@ -9405,15 +9405,15 @@ void Sema::CheckCompleteVariableDeclaration(VarDecl *var) {
   if (var->isThisDeclarationADefinition() &&
       ActiveTemplateInstantiations.empty()) {
     PragmaStack<StringLiteral *> *Stack = nullptr;
-    int SectionFlags = PSF_Implicit | PSF_Read;
+    int SectionFlags = ASTContext::PSF_Implicit | ASTContext::PSF_Read;
     if (var->getType().isConstQualified())
       Stack = &ConstSegStack;
     else if (!var->getInit()) {
       Stack = &BSSSegStack;
-      SectionFlags |= PSF_Write;
+      SectionFlags |= ASTContext::PSF_Write;
     } else {
       Stack = &DataSegStack;
-      SectionFlags |= PSF_Write;
+      SectionFlags |= ASTContext::PSF_Write;
     }
     if (!var->hasAttr<SectionAttr>() && Stack->CurrentValue)
       var->addAttr(
@@ -10414,8 +10414,7 @@ Decl *Sema::ActOnFinishFunctionBody(Decl *dcl, Stmt *Body,
         FD->setInvalidDecl();
       } else {
         // Substitute 'void' for the 'auto' in the type.
-        TypeLoc ResultType = FD->getTypeSourceInfo()->getTypeLoc().
-            IgnoreParens().castAs<FunctionProtoTypeLoc>().getReturnLoc();
+        TypeLoc ResultType = getReturnTypeLoc(FD);
         Context.adjustDeducedFunctionResultType(
             FD, SubstAutoType(ResultType.getType(), Context.VoidTy));
       }

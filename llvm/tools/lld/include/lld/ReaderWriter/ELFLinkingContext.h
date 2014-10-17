@@ -90,6 +90,15 @@ public:
                                    const Reference &) const {
     return false;
   }
+
+  /// \brief Is this a copy relocation?
+  ///
+  /// If this is a copy relocation, its target must be an ObjectAtom. We must
+  /// include in DT_NEEDED the name of the library where this object came from.
+  virtual bool isCopyRelocation(const Reference &) const {
+    return false;
+  }
+
   bool validateImpl(raw_ostream &diagnostics) override;
 
   /// \brief Does the linker allow dynamic libraries to be linked with?
@@ -152,10 +161,13 @@ public:
 
   void setTriple(llvm::Triple trip) { _triple = trip; }
   void setNoInhibitExec(bool v) { _noInhibitExec = v; }
+  void setExportDynamic(bool v) { _exportDynamic = v; }
   void setIsStaticExecutable(bool v) { _isStaticExecutable = v; }
   void setMergeCommonStrings(bool v) { _mergeCommonStrings = v; }
   void setUseShlibUndefines(bool use) { _useShlibUndefines = use; }
   void setOutputELFType(uint32_t type) { _outputELFType = type; }
+
+  bool shouldExportDynamic() const { return _exportDynamic; }
 
   void createInternalFiles(std::vector<std::unique_ptr<File>> &) const override;
 
@@ -283,6 +295,7 @@ protected:
   uint64_t _baseAddress;
   bool _isStaticExecutable;
   bool _noInhibitExec;
+  bool _exportDynamic;
   bool _mergeCommonStrings;
   bool _runLayoutPass;
   bool _useShlibUndefines;

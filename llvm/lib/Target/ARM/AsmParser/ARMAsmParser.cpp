@@ -9264,7 +9264,7 @@ bool ARMAsmParser::parseDirectiveEven(SMLoc L) {
   }
 
   if (!Section) {
-    getStreamer().InitSections();
+    getStreamer().InitSections(false);
     Section = getStreamer().getCurrentSection().first;
   }
 

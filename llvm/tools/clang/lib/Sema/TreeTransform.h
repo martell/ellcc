@@ -327,6 +327,27 @@ public:
   /// \returns the transformed OpenMP clause.
   OMPClause *TransformOMPClause(OMPClause *S);
 
+  /// \brief Transform the given attribute.
+  ///
+  /// By default, this routine transforms a statement by delegating to the
+  /// appropriate TransformXXXAttr function to transform a specific kind
+  /// of attribute. Subclasses may override this function to transform
+  /// attributed statements using some other mechanism.
+  ///
+  /// \returns the transformed attribute
+  const Attr *TransformAttr(const Attr *S);
+
+/// \brief Transform the specified attribute.
+///
+/// Subclasses should override the transformation of attributes with a pragma
+/// spelling to transform expressions stored within the attribute.
+///
+/// \returns the transformed attribute.
+#define ATTR(X)
+#define PRAGMA_SPELLING_ATTR(X)                                                \
+  const X##Attr *Transform##X##Attr(const X##Attr *R) { return R; }
+#include "clang/Basic/AttrList.inc"
+
   /// \brief Transform the given expression.
   ///
   /// By default, this routine transforms an expression by delegating to the
@@ -542,10 +563,17 @@ public:
   QualType Transform##CLASS##Type(TypeLocBuilder &TLB, CLASS##TypeLoc T);
 #include "clang/AST/TypeLocNodes.def"
 
+  template<typename Fn>
   QualType TransformFunctionProtoType(TypeLocBuilder &TLB,
                                       FunctionProtoTypeLoc TL,
                                       CXXRecordDecl *ThisContext,
-                                      unsigned ThisTypeQuals);
+                                      unsigned ThisTypeQuals,
+                                      Fn TransformExceptionSpec);
+
+  bool TransformExceptionSpec(SourceLocation Loc,
+                              FunctionProtoType::ExceptionSpecInfo &ESI,
+                              SmallVectorImpl<QualType> &Exceptions,
+                              bool &Changed);
 
   StmtResult TransformSEHHandler(Stmt *Handler);
 
@@ -1675,6 +1703,15 @@ public:
 
   StmtResult RebuildSEHFinallyStmt(SourceLocation Loc, Stmt *Block) {
     return getSema().ActOnSEHFinallyBlock(Loc, Block);
+  }
+
+  /// \brief Build a new predefined expression.
+  ///
+  /// By default, performs semantic analysis to build the new expression.
+  /// Subclasses may override this routine to provide different behavior.
+  ExprResult RebuildPredefinedExpr(SourceLocation Loc,
+                                   PredefinedExpr::IdentType IT) {
+    return getSema().BuildPredefinedExpr(Loc, IT);
   }
 
   /// \brief Build a new expression that references a declaration.
@@ -4520,15 +4557,19 @@ template<typename Derived>
 QualType
 TreeTransform<Derived>::TransformFunctionProtoType(TypeLocBuilder &TLB,
                                                    FunctionProtoTypeLoc TL) {
-  return getDerived().TransformFunctionProtoType(TLB, TL, nullptr, 0);
+  SmallVector<QualType, 4> ExceptionStorage;
+  return getDerived().TransformFunctionProtoType(
+      TLB, TL, nullptr, 0,
+      [&](FunctionProtoType::ExceptionSpecInfo &ESI, bool &Changed) {
+        return TransformExceptionSpec(TL.getBeginLoc(), ESI, ExceptionStorage,
+                                      Changed);
+      });
 }
 
-template<typename Derived>
-QualType
-TreeTransform<Derived>::TransformFunctionProtoType(TypeLocBuilder &TLB,
-                                                   FunctionProtoTypeLoc TL,
-                                                   CXXRecordDecl *ThisContext,
-                                                   unsigned ThisTypeQuals) {
+template<typename Derived> template<typename Fn>
+QualType TreeTransform<Derived>::TransformFunctionProtoType(
+    TypeLocBuilder &TLB, FunctionProtoTypeLoc TL, CXXRecordDecl *ThisContext,
+    unsigned ThisTypeQuals, Fn TransformExceptionSpec) {
   // Transform the parameters and return type.
   //
   // We are required to instantiate the params and return type in source order.
@@ -4573,15 +4614,21 @@ TreeTransform<Derived>::TransformFunctionProtoType(TypeLocBuilder &TLB,
       return QualType();
   }
 
-  // FIXME: Need to transform the exception-specification too.
+  FunctionProtoType::ExtProtoInfo EPI = T->getExtProtoInfo();
+
+  bool EPIChanged = false;
+  if (TransformExceptionSpec(EPI.ExceptionSpec, EPIChanged))
+    return QualType();
+
+  // FIXME: Need to transform ConsumedParameters for variadic template
+  // expansion.
 
   QualType Result = TL.getType();
   if (getDerived().AlwaysRebuild() || ResultType != T->getReturnType() ||
       T->getNumParams() != ParamTypes.size() ||
       !std::equal(T->param_type_begin(), T->param_type_end(),
-                  ParamTypes.begin())) {
-    Result = getDerived().RebuildFunctionProtoType(ResultType, ParamTypes,
-                                                   T->getExtProtoInfo());
+                  ParamTypes.begin()) || EPIChanged) {
+    Result = getDerived().RebuildFunctionProtoType(ResultType, ParamTypes, EPI);
     if (Result.isNull())
       return QualType();
   }
@@ -4595,6 +4642,107 @@ TreeTransform<Derived>::TransformFunctionProtoType(TypeLocBuilder &TLB,
     NewTL.setParam(i, ParamDecls[i]);
 
   return Result;
+}
+
+template<typename Derived>
+bool TreeTransform<Derived>::TransformExceptionSpec(
+    SourceLocation Loc, FunctionProtoType::ExceptionSpecInfo &ESI,
+    SmallVectorImpl<QualType> &Exceptions, bool &Changed) {
+  assert(ESI.Type != EST_Uninstantiated && ESI.Type != EST_Unevaluated);
+
+  // Instantiate a dynamic noexcept expression, if any.
+  if (ESI.Type == EST_ComputedNoexcept) {
+    EnterExpressionEvaluationContext Unevaluated(getSema(),
+                                                 Sema::ConstantEvaluated);
+    ExprResult NoexceptExpr = getDerived().TransformExpr(ESI.NoexceptExpr);
+    if (NoexceptExpr.isInvalid())
+      return true;
+
+    NoexceptExpr = getSema().CheckBooleanCondition(
+        NoexceptExpr.get(), NoexceptExpr.get()->getLocStart());
+    if (NoexceptExpr.isInvalid())
+      return true;
+
+    if (!NoexceptExpr.get()->isValueDependent()) {
+      NoexceptExpr = getSema().VerifyIntegerConstantExpression(
+          NoexceptExpr.get(), nullptr,
+          diag::err_noexcept_needs_constant_expression,
+          /*AllowFold*/false);
+      if (NoexceptExpr.isInvalid())
+        return true;
+    }
+
+    if (ESI.NoexceptExpr != NoexceptExpr.get())
+      Changed = true;
+    ESI.NoexceptExpr = NoexceptExpr.get();
+  }
+
+  if (ESI.Type != EST_Dynamic)
+    return false;
+
+  // Instantiate a dynamic exception specification's type.
+  for (QualType T : ESI.Exceptions) {
+    if (const PackExpansionType *PackExpansion =
+            T->getAs<PackExpansionType>()) {
+      Changed = true;
+
+      // We have a pack expansion. Instantiate it.
+      SmallVector<UnexpandedParameterPack, 2> Unexpanded;
+      SemaRef.collectUnexpandedParameterPacks(PackExpansion->getPattern(),
+                                              Unexpanded);
+      assert(!Unexpanded.empty() && "Pack expansion without parameter packs?");
+
+      // Determine whether the set of unexpanded parameter packs can and
+      // should
+      // be expanded.
+      bool Expand = false;
+      bool RetainExpansion = false;
+      Optional<unsigned> NumExpansions = PackExpansion->getNumExpansions();
+      // FIXME: Track the location of the ellipsis (and track source location
+      // information for the types in the exception specification in general).
+      if (getDerived().TryExpandParameterPacks(
+              Loc, SourceRange(), Unexpanded, Expand,
+              RetainExpansion, NumExpansions))
+        return true;
+
+      if (!Expand) {
+        // We can't expand this pack expansion into separate arguments yet;
+        // just substitute into the pattern and create a new pack expansion
+        // type.
+        Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), -1);
+        QualType U = getDerived().TransformType(PackExpansion->getPattern());
+        if (U.isNull())
+          return true;
+
+        U = SemaRef.Context.getPackExpansionType(U, NumExpansions);
+        Exceptions.push_back(U);
+        continue;
+      }
+
+      // Substitute into the pack expansion pattern for each slice of the
+      // pack.
+      for (unsigned ArgIdx = 0; ArgIdx != *NumExpansions; ++ArgIdx) {
+        Sema::ArgumentPackSubstitutionIndexRAII SubstIndex(getSema(), ArgIdx);
+
+        QualType U = getDerived().TransformType(PackExpansion->getPattern());
+        if (U.isNull() || SemaRef.CheckSpecifiedExceptionType(U, Loc))
+          return true;
+
+        Exceptions.push_back(U);
+      }
+    } else {
+      QualType U = getDerived().TransformType(T);
+      if (U.isNull() || SemaRef.CheckSpecifiedExceptionType(U, Loc))
+        return true;
+      if (T != U)
+        Changed = true;
+
+      Exceptions.push_back(U);
+    }
+  }
+
+  ESI.Exceptions = Exceptions;
+  return false;
 }
 
 template<typename Derived>
@@ -5534,19 +5682,43 @@ TreeTransform<Derived>::TransformLabelStmt(LabelStmt *S) {
                                        SubStmt.get());
 }
 
-template<typename Derived>
-StmtResult
-TreeTransform<Derived>::TransformAttributedStmt(AttributedStmt *S) {
+template <typename Derived>
+const Attr *TreeTransform<Derived>::TransformAttr(const Attr *R) {
+  if (!R)
+    return R;
+
+  switch (R->getKind()) {
+// Transform attributes with a pragma spelling by calling TransformXXXAttr.
+#define ATTR(X)
+#define PRAGMA_SPELLING_ATTR(X)                                                \
+  case attr::X:                                                                \
+    return getDerived().Transform##X##Attr(cast<X##Attr>(R));
+#include "clang/Basic/AttrList.inc"
+  default:
+    return R;
+  }
+}
+
+template <typename Derived>
+StmtResult TreeTransform<Derived>::TransformAttributedStmt(AttributedStmt *S) {
+  bool AttrsChanged = false;
+  SmallVector<const Attr *, 1> Attrs;
+
+  // Visit attributes and keep track if any are transformed.
+  for (const auto *I : S->getAttrs()) {
+    const Attr *R = getDerived().TransformAttr(I);
+    AttrsChanged |= (I != R);
+    Attrs.push_back(R);
+  }
+
   StmtResult SubStmt = getDerived().TransformStmt(S->getSubStmt());
   if (SubStmt.isInvalid())
     return StmtError();
 
-  // TODO: transform attributes
-  if (SubStmt.get() == S->getSubStmt() /* && attrs are the same */)
+  if (SubStmt.get() == S->getSubStmt() && !AttrsChanged)
     return S;
 
-  return getDerived().RebuildAttributedStmt(S->getAttrLoc(),
-                                            S->getAttrs(),
+  return getDerived().RebuildAttributedStmt(S->getAttrLoc(), Attrs,
                                             SubStmt.get());
 }
 
@@ -6693,6 +6865,17 @@ TreeTransform<Derived>::TransformOMPTargetDirective(OMPTargetDirective *D) {
   return Res;
 }
 
+template <typename Derived>
+StmtResult
+TreeTransform<Derived>::TransformOMPTeamsDirective(OMPTeamsDirective *D) {
+  DeclarationNameInfo DirName;
+  getDerived().getSema().StartOpenMPDSABlock(OMPD_teams, DirName, nullptr,
+                                             D->getLocStart());
+  StmtResult Res = getDerived().TransformOMPExecutableDirective(D);
+  getDerived().getSema().EndOpenMPDSABlock(Res.get());
+  return Res;
+}
+
 //===----------------------------------------------------------------------===//
 // OpenMP clause transformation
 //===----------------------------------------------------------------------===//
@@ -7005,7 +7188,11 @@ OMPClause *TreeTransform<Derived>::TransformOMPFlushClause(OMPFlushClause *C) {
 template<typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformPredefinedExpr(PredefinedExpr *E) {
-  return E;
+  if (!E->isTypeDependent())
+    return E;
+
+  return getDerived().RebuildPredefinedExpr(E->getLocation(),
+                                            E->getIdentType());
 }
 
 template<typename Derived>
@@ -8936,9 +9123,13 @@ TreeTransform<Derived>::TransformLambdaExpr(LambdaExpr *E) {
     // transformed parameters.
 
     TypeLocBuilder NewCallOpTLBuilder;
-    QualType NewCallOpType = TransformFunctionProtoType(NewCallOpTLBuilder, 
-                                                        OldCallOpFPTL, 
-                                                        nullptr, 0);
+    SmallVector<QualType, 4> ExceptionStorage;
+    QualType NewCallOpType = TransformFunctionProtoType(
+        NewCallOpTLBuilder, OldCallOpFPTL, nullptr, 0,
+        [&](FunctionProtoType::ExceptionSpecInfo &ESI, bool &Changed) {
+          return TransformExceptionSpec(OldCallOpFPTL.getBeginLoc(), ESI,
+                                        ExceptionStorage, Changed);
+        });
     NewCallOpTSI = NewCallOpTLBuilder.getTypeSourceInfo(getSema().Context,
                                                         NewCallOpType);
   }
@@ -10441,9 +10632,16 @@ TreeTransform<Derived>::RebuildCXXPseudoDestructorExpr(Expr *Base,
 
   // The scope type is now known to be a valid nested name specifier
   // component. Tack it on to the end of the nested name specifier.
-  if (ScopeType)
-    SS.Extend(SemaRef.Context, SourceLocation(),
-              ScopeType->getTypeLoc(), CCLoc);
+  if (ScopeType) {
+    if (!ScopeType->getType()->getAs<TagType>()) {
+      getSema().Diag(ScopeType->getTypeLoc().getBeginLoc(),
+                     diag::err_expected_class_or_namespace)
+          << ScopeType->getType() << getSema().getLangOpts().CPlusPlus;
+      return ExprError();
+    }
+    SS.Extend(SemaRef.Context, SourceLocation(), ScopeType->getTypeLoc(),
+              CCLoc);
+  }
 
   SourceLocation TemplateKWLoc; // FIXME: retrieve it from caller.
   return getSema().BuildMemberReferenceExpr(Base, BaseType,

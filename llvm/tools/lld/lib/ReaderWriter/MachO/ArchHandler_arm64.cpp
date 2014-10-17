@@ -74,6 +74,10 @@ public:
   const StubInfo &stubInfo() override { return _sStubInfo; }
 
   bool isCallSite(const Reference &) override;
+  bool isNonCallBranch(const Reference &) override {
+    return false;
+  }
+
   bool isPointer(const Reference &) override;
   bool isPairedReloc(const normalized::Relocation &) override;
 
@@ -85,6 +89,23 @@ public:
   }
   Reference::KindValue imageOffsetKindIndirect() override {
     return invalid;
+  }
+
+  Reference::KindValue unwindRefToCIEKind() override {
+    return invalid;
+  }
+
+  Reference::KindValue unwindRefToFunctionKind() override {
+    return invalid;
+  }
+
+  Reference::KindValue unwindRefToEhFrameKind() override {
+    return invalid;
+  }
+
+  uint32_t dwarfCompactUnwindType() override {
+    // FIXME
+    return -1;
   }
 
   std::error_code getReferenceInfo(const normalized::Relocation &reloc,
@@ -114,6 +135,7 @@ public:
 
   void generateAtomContent(const DefinedAtom &atom, bool relocatable,
                            FindAddressForAtom findAddress,
+                           FindAddressForAtom findSectionAddress,
                            uint64_t imageBaseAddress,
                            uint8_t *atomContentBuffer) override;
 
@@ -449,11 +471,10 @@ std::error_code ArchHandler_arm64::getPairReferenceInfo(
   }
 }
 
-void ArchHandler_arm64::generateAtomContent(const DefinedAtom &atom,
-                                            bool relocatable,
-                                            FindAddressForAtom findAddress,
-                                            uint64_t imageBaseAddress,
-                                            uint8_t *atomContentBuffer) {
+void ArchHandler_arm64::generateAtomContent(
+    const DefinedAtom &atom, bool relocatable, FindAddressForAtom findAddress,
+    FindAddressForAtom findSectionAddress, uint64_t imageBaseAddress,
+    uint8_t *atomContentBuffer) {
   // Copy raw bytes.
   memcpy(atomContentBuffer, atom.rawContent().data(), atom.size());
   // Apply fix-ups.

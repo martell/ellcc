@@ -91,12 +91,47 @@ public:
     return CGF.EmitLoadOfLValue(LV, Loc).getScalarVal();
   }
 
+  void EmitLValueAlignmentAssumption(const Expr *E, Value *V) {
+    const AlignValueAttr *AVAttr = nullptr;
+    if (const auto *DRE = dyn_cast<DeclRefExpr>(E)) {
+      const ValueDecl *VD = DRE->getDecl();
+
+      if (VD->getType()->isReferenceType()) {
+        if (const auto *TTy =
+            dyn_cast<TypedefType>(VD->getType().getNonReferenceType()))
+          AVAttr = TTy->getDecl()->getAttr<AlignValueAttr>();
+      } else {
+        // Assumptions for function parameters are emitted at the start of the
+        // function, so there is no need to repeat that here.
+        if (isa<ParmVarDecl>(VD))
+          return;
+
+        AVAttr = VD->getAttr<AlignValueAttr>();
+      }
+    }
+
+    if (!AVAttr)
+      if (const auto *TTy =
+          dyn_cast<TypedefType>(E->getType()))
+        AVAttr = TTy->getDecl()->getAttr<AlignValueAttr>();
+
+    if (!AVAttr)
+      return;
+
+    Value *AlignmentValue = CGF.EmitScalarExpr(AVAttr->getAlignment());
+    llvm::ConstantInt *AlignmentCI = cast<llvm::ConstantInt>(AlignmentValue);
+    CGF.EmitAlignmentAssumption(V, AlignmentCI->getZExtValue());
+  }
+
   /// EmitLoadOfLValue - Given an expression with complex type that represents a
   /// value l-value, this method emits the address of the l-value, then loads
   /// and returns the result.
   Value *EmitLoadOfLValue(const Expr *E) {
-    return EmitLoadOfLValue(EmitCheckedLValue(E, CodeGenFunction::TCK_Load),
-                            E->getExprLoc());
+    Value *V = EmitLoadOfLValue(EmitCheckedLValue(E, CodeGenFunction::TCK_Load),
+                                E->getExprLoc());
+
+    EmitLValueAlignmentAssumption(E, V);
+    return V;
   }
 
   /// EmitConversionToBool - Convert the specified expression value to a
@@ -286,7 +321,10 @@ public:
     if (E->getCallReturnType()->isReferenceType())
       return EmitLoadOfLValue(E);
 
-    return CGF.EmitCallExpr(E).getScalarVal();
+    Value *V = CGF.EmitCallExpr(E).getScalarVal();
+
+    EmitLValueAlignmentAssumption(E, V);
+    return V;
   }
 
   Value *VisitStmtExpr(const StmtExpr *E);
@@ -1350,9 +1388,9 @@ Value *ScalarExprEmitter::VisitCastExpr(CastExpr *CE) {
       E->getType()->getPointeeCXXRecordDecl();
     assert(DerivedClassDecl && "DerivedToBase arg isn't a C++ object pointer!");
 
-    return CGF.GetAddressOfBaseClass(Visit(E), DerivedClassDecl,
-                                     CE->path_begin(), CE->path_end(),
-                                     ShouldNullCheckClassCastValue(CE));
+    return CGF.GetAddressOfBaseClass(
+        Visit(E), DerivedClassDecl, CE->path_begin(), CE->path_end(),
+        ShouldNullCheckClassCastValue(CE), CE->getExprLoc());
   }
   case CK_Dynamic: {
     Value *V = Visit(const_cast<Expr*>(E));
@@ -2716,6 +2754,7 @@ Value *ScalarExprEmitter::EmitCompare(const BinaryOperator *E,unsigned UICmpOpc,
   TestAndClearIgnoreResultAssign();
   Value *Result;
   QualType LHSTy = E->getLHS()->getType();
+  QualType RHSTy = E->getRHS()->getType();
   if (const MemberPointerType *MPT = LHSTy->getAs<MemberPointerType>()) {
     assert(E->getOpcode() == BO_EQ ||
            E->getOpcode() == BO_NE);
@@ -2723,7 +2762,7 @@ Value *ScalarExprEmitter::EmitCompare(const BinaryOperator *E,unsigned UICmpOpc,
     Value *RHS = CGF.EmitScalarExpr(E->getRHS());
     Result = CGF.CGM.getCXXABI().EmitMemberPointerComparison(
                    CGF, LHS, RHS, MPT, E->getOpcode() == BO_NE);
-  } else if (!LHSTy->isAnyComplexType()) {
+  } else if (!LHSTy->isAnyComplexType() && !RHSTy->isAnyComplexType()) {
     Value *LHS = Visit(E->getLHS());
     Value *RHS = Visit(E->getRHS());
 
@@ -2811,10 +2850,28 @@ Value *ScalarExprEmitter::EmitCompare(const BinaryOperator *E,unsigned UICmpOpc,
 
   } else {
     // Complex Comparison: can only be an equality comparison.
-    CodeGenFunction::ComplexPairTy LHS = CGF.EmitComplexExpr(E->getLHS());
-    CodeGenFunction::ComplexPairTy RHS = CGF.EmitComplexExpr(E->getRHS());
-
-    QualType CETy = LHSTy->getAs<ComplexType>()->getElementType();
+    CodeGenFunction::ComplexPairTy LHS, RHS;
+    QualType CETy;
+    if (auto *CTy = LHSTy->getAs<ComplexType>()) {
+      LHS = CGF.EmitComplexExpr(E->getLHS());
+      CETy = CTy->getElementType();
+    } else {
+      LHS.first = Visit(E->getLHS());
+      LHS.second = llvm::Constant::getNullValue(LHS.first->getType());
+      CETy = LHSTy;
+    }
+    if (auto *CTy = RHSTy->getAs<ComplexType>()) {
+      RHS = CGF.EmitComplexExpr(E->getRHS());
+      assert(CGF.getContext().hasSameUnqualifiedType(CETy,
+                                                     CTy->getElementType()) &&
+             "The element types must always match.");
+      (void)CTy;
+    } else {
+      RHS.first = Visit(E->getRHS());
+      RHS.second = llvm::Constant::getNullValue(RHS.first->getType());
+      assert(CGF.getContext().hasSameUnqualifiedType(CETy, RHSTy) &&
+             "The element types must always match.");
+    }
 
     Value *ResultR, *ResultI;
     if (CETy->isRealFloatingType()) {

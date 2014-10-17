@@ -12,11 +12,12 @@ add_lld_library(lldMachO
   MachONormalizedFileFromAtoms.cpp
   MachONormalizedFileToAtoms.cpp
   MachONormalizedFileYAML.cpp
+  ShimPass.cpp
   StubsPass.cpp
   WriterMachO.cpp
   )
 
-target_link_libraries(lldMachO
+target_link_libraries(lldMachO ${cmake_2_8_12_INTERFACE}
   lldReaderWriter
   lldPasses
   )

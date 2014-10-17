@@ -30,10 +30,16 @@ public:
         _runtimeFile(new CRuntimeFile<ELFT>(context)) {}
 
 protected:
+  virtual void buildDynamicSymbolTable(const File &file);
   virtual void addDefaultAtoms();
   virtual bool createImplicitFiles(std::vector<std::unique_ptr<File> > &);
   virtual void finalizeDefaultAtomValues();
   virtual void createDefaultSections();
+
+  virtual bool isNeededTagRequired(const SharedLibraryAtom *sla) const {
+    return this->_layout.isCopied(sla);
+  }
+
   LLD_UNIQUE_BUMP_PTR(InterpSection<ELFT>) _interpSection;
   std::unique_ptr<CRuntimeFile<ELFT> > _runtimeFile;
 };
@@ -41,6 +47,34 @@ protected:
 //===----------------------------------------------------------------------===//
 //  ExecutableWriter
 //===----------------------------------------------------------------------===//
+template<class ELFT>
+void ExecutableWriter<ELFT>::buildDynamicSymbolTable(const File &file) {
+  for (auto sec : this->_layout.sections())
+    if (auto section = dyn_cast<AtomSection<ELFT>>(sec))
+      for (const auto &atom : section->atoms()) {
+        const DefinedAtom *da = dyn_cast<const DefinedAtom>(atom->_atom);
+        if (!da)
+          continue;
+        if (da->dynamicExport() != DefinedAtom::dynamicExportAlways &&
+            !this->_context.isDynamicallyExportedSymbol(da->name()) &&
+            !(this->_context.shouldExportDynamic() &&
+              da->scope() == Atom::Scope::scopeGlobal))
+          continue;
+        this->_dynamicSymbolTable->addSymbol(atom->_atom, section->ordinal(),
+                                             atom->_virtualAddr, atom);
+      }
+
+  // Put weak symbols in the dynamic symbol table.
+  if (this->_context.isDynamic()) {
+    for (const UndefinedAtom *a : file.undefined()) {
+      if (this->_layout.isReferencedByDefinedAtom(a) &&
+          a->canBeNull() != UndefinedAtom::canBeNullNever)
+        this->_dynamicSymbolTable->addSymbol(a, ELF::SHN_UNDEF);
+    }
+  }
+
+  OutputELFWriter<ELFT>::buildDynamicSymbolTable(file);
+}
 
 /// \brief Add absolute symbols by default. These are linker added
 /// absolute symbols

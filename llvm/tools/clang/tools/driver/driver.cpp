@@ -231,7 +231,7 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
     { "clang-cpp", "--driver-mode=cpp" },
     { "clang-g++", "--driver-mode=g++" },
     { "clang-gcc", nullptr },
-    { "ecc",       0, true },
+    { "ecc",       nullptr, true },
     { "ecc++",     "--driver-mode=g++", true },
     { "clang-cl",  "--driver-mode=cl"  },
     { "cc",        nullptr },
@@ -249,26 +249,22 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
   StringRef Prefix;
 
   for (int Components = 2; Components; --Components) {
-    bool FoundMatch = false;
-    size_t i;
+    auto I = std::find_if(std::begin(suffixes), std::end(suffixes),
+                          [&](decltype(suffixes[0]) &suffix) {
+      return ProgNameRef.endswith(suffix.Suffix);
+    });
 
-    for (i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); ++i) {
-      if (ProgNameRef.endswith(suffixes[i].Suffix)) {
-        FoundMatch = true;
-        SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
+    if (I != std::end(suffixes)) {
+      if (I->ModeFlag) {
+        auto it = ArgVector.begin();
         if (it != ArgVector.end())
           ++it;
-        if (suffixes[i].ModeFlag)
-          ArgVector.insert(it, suffixes[i].ModeFlag);
-        if (suffixes[i].IsELLCC)
-          TheDriver.CCCIsELLCC = true;
-        break;
+        ArgVector.insert(it, I->ModeFlag);
       }
-    }
-
-    if (FoundMatch) {
+      if (I->IsELLCC)
+        TheDriver.CCCIsELLCC = true;
       StringRef::size_type LastComponent = ProgNameRef.rfind('-',
-        ProgNameRef.size() - strlen(suffixes[i].Suffix));
+        ProgNameRef.size() - strlen(I->Suffix));
       if (LastComponent != StringRef::npos)
         Prefix = ProgNameRef.slice(0, LastComponent);
       break;
@@ -286,45 +282,45 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
     if (Prefix.empty()) {
 #if defined(ELLCC_ARG0)
     // Override the default target for a cross compiler.
-      SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
+      auto it = ArgVector.begin();
       if (it != ArgVector.end())
         ++it;
       const char* Strings[] =
         { GetStableCStr(SavedStrings, std::string("-target")),
           GetStableCStr(SavedStrings, std::string(ELLCC_ARG0)) };
-      ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
+      ArgVector.insert(it, std::begin(Strings), std::end(Strings));
 #endif
     } else {
-      SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
+      auto it = ArgVector.begin();
       if (it != ArgVector.end())
         ++it;
       // Set up the target.
       const char* Strings[] =
         { GetStableCStr(SavedStrings, std::string("-target")),
           GetStableCStr(SavedStrings, Prefix) };
-      ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
+      ArgVector.insert(it, std::begin(Strings), std::end(Strings));
     }
   } else {
-    // Use the exectable name to form the -target option.
+    // Use the executable name to form the -target option.
     if (!Prefix.empty()) {
       std::string IgnoredError;
       if (llvm::TargetRegistry::lookupTarget(Prefix, IgnoredError)) {
-        SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
+        auto it = ArgVector.begin();
         if (it != ArgVector.end())
           ++it;
         const char* Strings[] =
           { GetStableCStr(SavedStrings, std::string("-target")),
             GetStableCStr(SavedStrings, Prefix) };
-        ArgVector.insert(it, Strings, Strings + llvm::array_lengthof(Strings));
+        ArgVector.insert(it, std::begin(Strings), std::end(Strings));
       }
     }
   }
 
   // Check for and process the last -target option which specifies a config
   // file.
-  SmallVectorImpl<const char *>::iterator it = ArgVector.begin();
-  SmallVectorImpl<const char *>::iterator ie = ArgVector.end();
-  SmallVectorImpl<const char *>::iterator target = ie;
+  auto it = ArgVector.begin();
+  auto ie = ArgVector.end();
+  auto target = ie;
   for ( ; it != ie; ++it) {
     if (strcmp(*it, "-target") == 0) {
       // Remember the last one.
@@ -337,7 +333,7 @@ static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
     return;
   }
 
-  SmallVectorImpl<const char *>::iterator ib = target;
+  auto ib = target;
   ++target;
   if (clang::compilationinfo::CompilationInfo::CheckForAndReadInfo(*target,
                                                                  TheDriver)) {
@@ -444,6 +440,9 @@ static int ExecuteCC1Tool(ArrayRef<const char *> argv, StringRef Tool) {
 int main(int argc_, const char **argv_) {
   llvm::sys::PrintStackTraceOnErrorSignal();
   llvm::PrettyStackTraceProgram X(argc_, argv_);
+
+  if (llvm::sys::Process::FixupStandardFileDescriptors())
+    return 1;
 
   SmallVector<const char *, 256> argv;
   llvm::SpecificBumpPtrAllocator<char> ArgAllocator;

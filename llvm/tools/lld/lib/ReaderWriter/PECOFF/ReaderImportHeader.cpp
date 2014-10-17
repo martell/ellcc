@@ -148,32 +148,58 @@ namespace lld {
 
 namespace {
 
-uint8_t FuncAtomContent[] = { 0xff, 0x25, 0x00, 0x00, 0x00, 0x00, // jmp *0x0
-                              0xcc, 0xcc // int 3; int 3
+// This code is valid both in x86 and x64.
+const uint8_t FuncAtomContentX86[] = {
+    0xff, 0x25, 0x00, 0x00, 0x00, 0x00, // JMP *0x0
+    0xcc, 0xcc                          // INT 3; INT 3
 };
+
+static void setJumpInstTarget(COFFLinkerInternalAtom *src, const Atom *dst,
+                              int off, MachineTypes machine) {
+  COFFReference *ref;
+  switch (machine) {
+  case llvm::COFF::IMAGE_FILE_MACHINE_I386:
+    ref = new COFFReference(dst, off, llvm::COFF::IMAGE_REL_I386_DIR32,
+                            Reference::KindArch::x86);
+    break;
+  case llvm::COFF::IMAGE_FILE_MACHINE_AMD64:
+    ref = new COFFReference(dst, off, llvm::COFF::IMAGE_REL_AMD64_REL32,
+                            Reference::KindArch::x86_64);
+    break;
+  default:
+    llvm::report_fatal_error("unsupported machine type");
+  }
+  src->addReference(std::unique_ptr<COFFReference>(ref));
+}
 
 /// The defined atom for jump table.
 class FuncAtom : public COFFLinkerInternalAtom {
 public:
-  FuncAtom(const File &file, StringRef symbolName)
-      : COFFLinkerInternalAtom(
-            file, /*oridnal*/ 0,
-            std::vector<uint8_t>(FuncAtomContent,
-                                 FuncAtomContent + sizeof(FuncAtomContent)),
-            symbolName) {}
+  FuncAtom(const File &file, StringRef symbolName,
+           const COFFSharedLibraryAtom *impAtom, MachineTypes machine)
+      : COFFLinkerInternalAtom(file, /*oridnal*/ 0, createContent(),
+                               symbolName) {
+    setJumpInstTarget(this, impAtom, 2, machine);
+  }
 
   uint64_t ordinal() const override { return 0; }
   Scope scope() const override { return scopeGlobal; }
   ContentType contentType() const override { return typeCode; }
   Alignment alignment() const override { return Alignment(1); }
   ContentPermissions permissions() const override { return permR_X; }
+
+private:
+  std::vector<uint8_t> createContent() const {
+    return std::vector<uint8_t>(
+        FuncAtomContentX86, FuncAtomContentX86 + sizeof(FuncAtomContentX86));
+  }
 };
 
 class FileImportLibrary : public File {
 public:
   FileImportLibrary(std::unique_ptr<MemoryBuffer> mb, std::error_code &ec,
-                    bool is64)
-      : File(mb->getBufferIdentifier(), kindSharedLibrary), _is64(is64) {
+                    MachineTypes machine)
+      : File(mb->getBufferIdentifier(), kindSharedLibrary), _machine(machine) {
     const char *buf = mb->getBufferStart();
     const char *end = mb->getBufferEnd();
 
@@ -207,7 +233,7 @@ public:
     const COFFSharedLibraryAtom *dataAtom =
         addSharedLibraryAtom(hint, symbolName, importName, dllName);
     if (type == llvm::COFF::IMPORT_CODE)
-      addDefinedAtom(symbolName, dllName, dataAtom);
+      addFuncAtom(symbolName, dllName, dataAtom);
 
     ec = std::error_code();
   }
@@ -239,18 +265,9 @@ private:
     return atom;
   }
 
-  void addDefinedAtom(StringRef symbolName, StringRef dllName,
-                      const COFFSharedLibraryAtom *dataAtom) {
-    auto *atom = new (_alloc) FuncAtom(*this, symbolName);
-    COFFReference *ref;
-    if (_is64) {
-      ref = new COFFReference(dataAtom, 2, llvm::COFF::IMAGE_REL_AMD64_REL32,
-                              Reference::KindArch::x86_64);
-    } else {
-      ref = new COFFReference(dataAtom, 2, llvm::COFF::IMAGE_REL_I386_DIR32,
-                              Reference::KindArch::x86);
-    }
-    atom->addReference(std::unique_ptr<COFFReference>(ref));
+  void addFuncAtom(StringRef symbolName, StringRef dllName,
+                   const COFFSharedLibraryAtom *impAtom) {
+    auto *atom = new (_alloc) FuncAtom(*this, symbolName, impAtom, _machine);
     _definedAtoms._atoms.push_back(atom);
   }
 
@@ -292,12 +309,12 @@ private:
     return *str;
   }
 
-  bool _is64;
+  MachineTypes _machine;
 };
 
 class COFFImportLibraryReader : public Reader {
 public:
-  COFFImportLibraryReader(bool is64) : _is64(is64) {}
+  COFFImportLibraryReader(MachineTypes machine) : _machine(machine) {}
 
   bool canParse(file_magic magic, StringRef,
                 const MemoryBuffer &mb) const override {
@@ -310,8 +327,8 @@ public:
   parseFile(std::unique_ptr<MemoryBuffer> &mb, const class Registry &,
             std::vector<std::unique_ptr<File> > &result) const override {
     std::error_code ec;
-    auto file =
-        std::unique_ptr<File>(new FileImportLibrary(std::move(mb), ec, _is64));
+    auto file = std::unique_ptr<File>(
+        new FileImportLibrary(std::move(mb), ec, _machine));
     if (ec)
       return ec;
     result.push_back(std::move(file));
@@ -319,13 +336,14 @@ public:
   }
 
 private:
-  bool _is64;
+  MachineTypes _machine;
 };
 
 } // end anonymous namespace
 
 void Registry::addSupportCOFFImportLibraries(PECOFFLinkingContext &ctx) {
-  add(std::unique_ptr<Reader>(new COFFImportLibraryReader(ctx.is64Bit())));
+  MachineTypes machine = ctx.getMachineType();
+  add(llvm::make_unique<COFFImportLibraryReader>(machine));
 }
 
 } // end namespace lld

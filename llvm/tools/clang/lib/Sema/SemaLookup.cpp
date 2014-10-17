@@ -1175,21 +1175,8 @@ static Module *getDefiningModule(Decl *Entity) {
     if (FunctionDecl *Pattern = FD->getTemplateInstantiationPattern())
       Entity = Pattern;
   } else if (CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(Entity)) {
-    // If it's a class template specialization, find the template or partial
-    // specialization from which it was instantiated.
-    if (ClassTemplateSpecializationDecl *SpecRD =
-            dyn_cast<ClassTemplateSpecializationDecl>(RD)) {
-      llvm::PointerUnion<ClassTemplateDecl*,
-                         ClassTemplatePartialSpecializationDecl*> From =
-          SpecRD->getInstantiatedFrom();
-      if (ClassTemplateDecl *FromTemplate = From.dyn_cast<ClassTemplateDecl*>())
-        Entity = FromTemplate->getTemplatedDecl();
-      else if (From)
-        Entity = From.get<ClassTemplatePartialSpecializationDecl*>();
-      // Otherwise, it's an explicit specialization.
-    } else if (MemberSpecializationInfo *MSInfo =
-                   RD->getMemberSpecializationInfo())
-      Entity = getInstantiatedFrom(RD, MSInfo);
+    if (CXXRecordDecl *Pattern = RD->getTemplateInstantiationPattern())
+      Entity = Pattern;
   } else if (EnumDecl *ED = dyn_cast<EnumDecl>(Entity)) {
     if (MemberSpecializationInfo *MSInfo = ED->getMemberSpecializationInfo())
       Entity = getInstantiatedFrom(ED, MSInfo);
@@ -1782,7 +1769,8 @@ bool Sema::LookupQualifiedName(LookupResult &R, DeclContext *LookupCtx,
 /// contexts that receive a name and an optional C++ scope specifier
 /// (e.g., "N::M::x"). It will then perform either qualified or
 /// unqualified name lookup (with LookupQualifiedName or LookupName,
-/// respectively) on the given name and return those results.
+/// respectively) on the given name and return those results. It will
+/// perform a special type of lookup for "__super::" scope specifier.
 ///
 /// @param S        The scope from which unqualified name lookup will
 /// begin.
@@ -1802,6 +1790,10 @@ bool Sema::LookupParsedName(LookupResult &R, Scope *S, CXXScopeSpec *SS,
   }
 
   if (SS && SS->isSet()) {
+    NestedNameSpecifier *NNS = SS->getScopeRep();
+    if (NNS->getKind() == NestedNameSpecifier::Super)
+      return LookupInSuper(R, NNS->getAsRecordDecl());
+
     if (DeclContext *DC = computeDeclContext(*SS, EnteringContext)) {
       // We have resolved the scope specifier to a particular declaration
       // contex, and will perform name lookup in that context.
@@ -1831,7 +1823,9 @@ bool Sema::LookupParsedName(LookupResult &R, Scope *S, CXXScopeSpec *SS,
 ///
 /// \param Class The context in which qualified name lookup will
 /// search. Name lookup will search in all base classes merging the results.
-void Sema::LookupInSuper(LookupResult &R, CXXRecordDecl *Class) {
+///
+/// @returns True if any decls were found (but possibly ambiguous)
+bool Sema::LookupInSuper(LookupResult &R, CXXRecordDecl *Class) {
   for (const auto &BaseSpec : Class->bases()) {
     CXXRecordDecl *RD = cast<CXXRecordDecl>(
         BaseSpec.getType()->castAs<RecordType>()->getDecl());
@@ -1843,6 +1837,8 @@ void Sema::LookupInSuper(LookupResult &R, CXXRecordDecl *Class) {
   }
 
   R.resolveKind();
+
+  return !R.empty();
 }
 
 /// \brief Produce a diagnostic describing the ambiguity that resulted

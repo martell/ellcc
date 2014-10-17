@@ -114,10 +114,9 @@ MBlazeTargetELFStreamer(MCStreamer &S, const MCSubtargetInfo &STI)
 static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
                                     MCContext &Ctx, MCAsmBackend &MAB,
                                     raw_ostream &OS, MCCodeEmitter *Emitter,
-                                    const MCSubtargetInfo &STI,
-                                    bool RelaxAll, bool NoExecStack) {
+                                    const MCSubtargetInfo &STI, bool RelaxAll) {
   MCStreamer *S =
-    createELFStreamer(Ctx, MAB, OS, Emitter, RelaxAll, NoExecStack);
+    createELFStreamer(Ctx, MAB, OS, Emitter, RelaxAll);
   new MBlazeTargetELFStreamer(*S, STI);
   return S;
 }

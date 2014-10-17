@@ -16,8 +16,6 @@
 #include "lld/Core/Reference.h"
 #include "lld/Core/SharedLibraryFile.h"
 
-#include "lld/ReaderWriter/MachOLinkingContext.h"
-
 namespace lld {
 
 /// \brief Parse the input file to lld::File.
@@ -34,36 +32,46 @@ std::error_code MachOFileNode::parse(const LinkingContext &ctx,
   if (ctx.logInputFiles())
     diagnostics << *filePath << "\n";
 
+  narrowFatBuffer(*filePath);
+
   std::vector<std::unique_ptr<File>> parsedFiles;
-  if (_isWholeArchive) {
-    std::error_code ec = ctx.registry().parseFile(_buffer, parsedFiles);
-    if (ec)
-      return ec;
-    assert(parsedFiles.size() == 1);
-    std::unique_ptr<File> f(parsedFiles[0].release());
-    if (auto archive =
-            reinterpret_cast<const ArchiveLibraryFile *>(f.get())) {
-      // FIXME: something needs to own archive File
-      //_files.push_back(std::move(archive));
-      return archive->parseAllMembers(_files);
-    } else {
-      // if --whole-archive is around non-archive, just use it as normal.
-      _files.push_back(std::move(f));
-      return std::error_code();
-    }
-  }
   if (std::error_code ec = ctx.registry().parseFile(_buffer, parsedFiles))
     return ec;
   for (std::unique_ptr<File> &pf : parsedFiles) {
-    // If a dylib was parsed, inform LinkingContext about it.
+    // If file is a dylib, inform LinkingContext about it.
     if (SharedLibraryFile *shl = dyn_cast<SharedLibraryFile>(pf.get())) {
-      _context.registerDylib(reinterpret_cast<mach_o::MachODylibFile*>(shl));
+      _context.registerDylib(reinterpret_cast<mach_o::MachODylibFile*>(shl),
+                             _upwardDylib);
+    }
+    // If file is an archive and -all_load, then add all members.
+    if (ArchiveLibraryFile *archive = dyn_cast<ArchiveLibraryFile>(pf.get())) {
+      if (_isWholeArchive) {
+        // Note: the members are added to _files, but the archive is not.
+        return archive->parseAllMembers(_files);
+      }
     }
     _files.push_back(std::move(pf));
   }
   return std::error_code();
 }
 
+
+/// If buffer contains a fat file, find required arch in fat buffer and
+/// switch buffer to point to just that required slice.
+void MachOFileNode::narrowFatBuffer(StringRef filePath) {
+  // Check if buffer is a "fat" file that contains needed arch.
+  uint32_t offset;
+  uint32_t size;
+  if (!_context.sliceFromFatFile(*_buffer, offset, size)) {
+    return;
+  }
+  // Create new buffer containing just the needed slice.
+  auto subuf = MemoryBuffer::getFileSlice(filePath, size, offset);
+  if (subuf.getError())
+    return;
+  // The assignment to _buffer will release previous buffer.
+  _buffer = std::move(subuf.get());
+}
 
 
 } // end namesapce lld

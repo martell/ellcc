@@ -216,14 +216,18 @@ public:
   void appendAtom(const DefinedAtom *atom);
   void buildAtomRvaMap(std::map<const Atom *, uint64_t> &atomRva) const;
 
-  void applyRelocations32(uint8_t *buffer,
-                          std::map<const Atom *, uint64_t> &atomRva,
-                          std::vector<uint64_t> &sectionRva,
-                          uint64_t imageBaseAddress);
-  void applyRelocations64(uint8_t *buffer,
-                          std::map<const Atom *, uint64_t> &atomRva,
-                          std::vector<uint64_t> &sectionRva,
-                          uint64_t imageBaseAddress);
+  void applyRelocationsARM(uint8_t *buffer,
+                           std::map<const Atom *, uint64_t> &atomRva,
+                           std::vector<uint64_t> &sectionRva,
+                           uint64_t imageBaseAddress);
+  void applyRelocationsX86(uint8_t *buffer,
+                           std::map<const Atom *, uint64_t> &atomRva,
+                           std::vector<uint64_t> &sectionRva,
+                           uint64_t imageBaseAddress);
+  void applyRelocationsX64(uint8_t *buffer,
+                           std::map<const Atom *, uint64_t> &atomRva,
+                           std::vector<uint64_t> &sectionRva,
+                           uint64_t imageBaseAddress);
 
   void printAtomAddresses(uint64_t baseAddr) const;
   void addBaseRelocations(std::vector<uint64_t> &relocSites) const;
@@ -501,10 +505,16 @@ static uint32_t getSectionStartAddr(uint64_t targetAddr,
   llvm_unreachable("Section missing");
 }
 
-void AtomChunk::applyRelocations32(uint8_t *buffer,
-                                   std::map<const Atom *, uint64_t> &atomRva,
-                                   std::vector<uint64_t> &sectionRva,
-                                   uint64_t imageBaseAddress) {
+void AtomChunk::applyRelocationsARM(uint8_t *buffer,
+                                    std::map<const Atom *, uint64_t> &atomRva,
+                                    std::vector<uint64_t> &sectionRva,
+                                    uint64_t imageBaseAddress) {
+}
+
+void AtomChunk::applyRelocationsX86(uint8_t *buffer,
+                                    std::map<const Atom *, uint64_t> &atomRva,
+                                    std::vector<uint64_t> &sectionRva,
+                                    uint64_t imageBaseAddress) {
   buffer += _fileOffset;
   for (const auto *layout : _atomLayouts) {
     const DefinedAtom *atom = cast<DefinedAtom>(layout->_atom);
@@ -548,16 +558,16 @@ void AtomChunk::applyRelocations32(uint8_t *buffer,
             targetAddr - getSectionStartAddr(targetAddr, sectionRva);
         break;
       default:
-        llvm_unreachable("Unsupported relocation kind");
+        llvm::report_fatal_error("Unsupported relocation kind");
       }
     }
   }
 }
 
-void AtomChunk::applyRelocations64(uint8_t *buffer,
-                                   std::map<const Atom *, uint64_t> &atomRva,
-                                   std::vector<uint64_t> &sectionRva,
-                                   uint64_t imageBase) {
+void AtomChunk::applyRelocationsX64(uint8_t *buffer,
+                                    std::map<const Atom *, uint64_t> &atomRva,
+                                    std::vector<uint64_t> &sectionRva,
+                                    uint64_t imageBase) {
   buffer += _fileOffset;
   for (const auto *layout : _atomLayouts) {
     const DefinedAtom *atom = cast<DefinedAtom>(layout->_atom);
@@ -608,7 +618,7 @@ void AtomChunk::applyRelocations64(uint8_t *buffer,
         break;
       default:
         llvm::errs() << "Kind: " << (int)ref->kindValue() << "\n";
-        llvm_unreachable("Unsupported relocation kind");
+        llvm::report_fatal_error("Unsupported relocation kind");
       }
     }
   }
@@ -924,7 +934,7 @@ StringRef chooseSectionByContent(const DefinedAtom *atom) {
   }
   llvm::errs() << "Atom: contentType=" << atom->contentType()
                << " permission=" << atom->permissions() << "\n";
-  llvm_unreachable("Failed to choose section based on content");
+  llvm::report_fatal_error("Failed to choose section based on content");
 }
 
 typedef std::map<StringRef, std::vector<const DefinedAtom *> > AtomVectorMap;
@@ -1020,26 +1030,24 @@ void PECOFFWriter::build(const File &linkedFile) {
         peHeader->setAddressOfEntryPoint(0);
       }
     }
-    if (section->getSectionName() == ".data")
+    StringRef name = section->getSectionName();
+    if (name == ".data") {
       peHeader->setBaseOfData(section->getVirtualAddress());
-    if (section->getSectionName() == ".pdata")
-      dataDirectory->setField(DataDirectoryIndex::EXCEPTION_TABLE,
-                              section->getVirtualAddress(), section->size());
-    if (section->getSectionName() == ".rsrc")
-      dataDirectory->setField(DataDirectoryIndex::RESOURCE_TABLE,
-                              section->getVirtualAddress(), section->size());
-    if (section->getSectionName() == ".idata.a")
-      dataDirectory->setField(DataDirectoryIndex::IAT,
-                              section->getVirtualAddress(), section->size());
-    if (section->getSectionName() == ".idata.d")
-      dataDirectory->setField(DataDirectoryIndex::IMPORT_TABLE,
-                              section->getVirtualAddress(), section->size());
-    if (section->getSectionName() == ".edata")
-      dataDirectory->setField(DataDirectoryIndex::EXPORT_TABLE,
-                              section->getVirtualAddress(), section->size());
-    if (section->getSectionName() == ".loadcfg")
-      dataDirectory->setField(DataDirectoryIndex::LOAD_CONFIG_TABLE,
-                              section->getVirtualAddress(), section->size());
+      continue;
+    }
+    DataDirectoryIndex ignore = DataDirectoryIndex(-1);
+    DataDirectoryIndex idx = llvm::StringSwitch<DataDirectoryIndex>(name)
+        .Case(".pdata", DataDirectoryIndex::EXCEPTION_TABLE)
+        .Case(".rsrc", DataDirectoryIndex::RESOURCE_TABLE)
+        .Case(".idata.a", DataDirectoryIndex::IAT)
+        .Case(".idata.d", DataDirectoryIndex::IMPORT_TABLE)
+        .Case(".edata", DataDirectoryIndex::EXPORT_TABLE)
+        .Case(".loadcfg", DataDirectoryIndex::LOAD_CONFIG_TABLE)
+        .Case(".didat.d", DataDirectoryIndex::DELAY_IMPORT_DESCRIPTOR)
+        .Default(ignore);
+    if (idx == ignore)
+      continue;
+    dataDirectory->setField(idx, section->getVirtualAddress(), section->size());
   }
 
   if (const DefinedAtom *atom = findTLSUsedSymbol(_ctx, linkedFile)) {
@@ -1100,10 +1108,17 @@ void PECOFFWriter::applyAllRelocations(uint8_t *bufferStart) {
   uint64_t base = _ctx.getBaseAddress();
   for (auto &cp : _chunks) {
     if (AtomChunk *chunk = dyn_cast<AtomChunk>(&*cp)) {
-      if (_ctx.is64Bit()) {
-        chunk->applyRelocations64(bufferStart, _atomRva, sectionRva, base);
-      } else {
-        chunk->applyRelocations32(bufferStart, _atomRva, sectionRva, base);
+      switch (_ctx.getMachineType()) {
+      default: llvm_unreachable("unsupported machine type");
+      case llvm::COFF::IMAGE_FILE_MACHINE_ARMNT:
+        chunk->applyRelocationsARM(bufferStart, _atomRva, sectionRva, base);
+        break;
+      case llvm::COFF::IMAGE_FILE_MACHINE_I386:
+        chunk->applyRelocationsX86(bufferStart, _atomRva, sectionRva, base);
+        break;
+      case llvm::COFF::IMAGE_FILE_MACHINE_AMD64:
+        chunk->applyRelocationsX64(bufferStart, _atomRva, sectionRva, base);
+        break;
       }
     }
   }

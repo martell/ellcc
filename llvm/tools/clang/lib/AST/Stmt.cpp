@@ -1198,19 +1198,31 @@ OMPPrivateClause *OMPPrivateClause::CreateEmpty(const ASTContext &C,
   return new (Mem) OMPPrivateClause(N);
 }
 
-OMPFirstprivateClause *OMPFirstprivateClause::Create(const ASTContext &C,
-                                                     SourceLocation StartLoc,
-                                                     SourceLocation LParenLoc,
-                                                     SourceLocation EndLoc,
-                                                     ArrayRef<Expr *> VL) {
+void OMPFirstprivateClause::setPrivateCopies(ArrayRef<Expr *> VL) {
+  assert(VL.size() == varlist_size() &&
+         "Number of private copies is not the same as the preallocated buffer");
+  std::copy(VL.begin(), VL.end(), varlist_end());
+}
+
+void OMPFirstprivateClause::setInits(ArrayRef<Expr *> VL) {
+  assert(VL.size() == varlist_size() &&
+         "Number of inits is not the same as the preallocated buffer");
+  std::copy(VL.begin(), VL.end(), getPrivateCopies().end());
+}
+
+OMPFirstprivateClause *
+OMPFirstprivateClause::Create(const ASTContext &C, SourceLocation StartLoc,
+                              SourceLocation LParenLoc, SourceLocation EndLoc,
+                              ArrayRef<Expr *> VL, ArrayRef<Expr *> PrivateVL,
+                              ArrayRef<Expr *> InitVL) {
   void *Mem = C.Allocate(llvm::RoundUpToAlignment(sizeof(OMPFirstprivateClause),
                                                   llvm::alignOf<Expr *>()) +
-                         sizeof(Expr *) * VL.size());
-  OMPFirstprivateClause *Clause = new (Mem) OMPFirstprivateClause(StartLoc,
-                                                                  LParenLoc,
-                                                                  EndLoc,
-                                                                  VL.size());
+                         3 * sizeof(Expr *) * VL.size());
+  OMPFirstprivateClause *Clause =
+      new (Mem) OMPFirstprivateClause(StartLoc, LParenLoc, EndLoc, VL.size());
   Clause->setVarRefs(VL);
+  Clause->setPrivateCopies(PrivateVL);
+  Clause->setInits(InitVL);
   return Clause;
 }
 
@@ -1218,7 +1230,7 @@ OMPFirstprivateClause *OMPFirstprivateClause::CreateEmpty(const ASTContext &C,
                                                           unsigned N) {
   void *Mem = C.Allocate(llvm::RoundUpToAlignment(sizeof(OMPFirstprivateClause),
                                                   llvm::alignOf<Expr *>()) +
-                         sizeof(Expr *) * N);
+                         3 * sizeof(Expr *) * N);
   return new (Mem) OMPFirstprivateClause(N);
 }
 
@@ -1420,6 +1432,21 @@ OMPFlushClause *OMPFlushClause::CreateEmpty(const ASTContext &C, unsigned N) {
                                                   llvm::alignOf<Expr *>()) +
                          sizeof(Expr *) * N);
   return new (Mem) OMPFlushClause(N);
+}
+
+const OMPClause *
+OMPExecutableDirective::getSingleClause(OpenMPClauseKind K) const {
+  auto ClauseFilter =
+      [=](const OMPClause *C) -> bool { return C->getClauseKind() == K; };
+  OMPExecutableDirective::filtered_clause_iterator<decltype(ClauseFilter)> I(
+      clauses(), ClauseFilter);
+
+  if (I) {
+    auto *Clause = *I;
+    assert(!++I && "There are at least 2 clauses of the specified kind");
+    return Clause;
+  }
+  return nullptr;
 }
 
 OMPParallelDirective *OMPParallelDirective::Create(
@@ -1940,5 +1967,31 @@ OMPTargetDirective *OMPTargetDirective::CreateEmpty(const ASTContext &C,
   void *Mem =
       C.Allocate(Size + sizeof(OMPClause *) * NumClauses + sizeof(Stmt *));
   return new (Mem) OMPTargetDirective(NumClauses);
+}
+
+OMPTeamsDirective *OMPTeamsDirective::Create(const ASTContext &C,
+                                             SourceLocation StartLoc,
+                                             SourceLocation EndLoc,
+                                             ArrayRef<OMPClause *> Clauses,
+                                             Stmt *AssociatedStmt) {
+  unsigned Size = llvm::RoundUpToAlignment(sizeof(OMPTeamsDirective),
+                                           llvm::alignOf<OMPClause *>());
+  void *Mem =
+      C.Allocate(Size + sizeof(OMPClause *) * Clauses.size() + sizeof(Stmt *));
+  OMPTeamsDirective *Dir =
+      new (Mem) OMPTeamsDirective(StartLoc, EndLoc, Clauses.size());
+  Dir->setClauses(Clauses);
+  Dir->setAssociatedStmt(AssociatedStmt);
+  return Dir;
+}
+
+OMPTeamsDirective *OMPTeamsDirective::CreateEmpty(const ASTContext &C,
+                                                  unsigned NumClauses,
+                                                  EmptyShell) {
+  unsigned Size = llvm::RoundUpToAlignment(sizeof(OMPTeamsDirective),
+                                           llvm::alignOf<OMPClause *>());
+  void *Mem =
+      C.Allocate(Size + sizeof(OMPClause *) * NumClauses + sizeof(Stmt *));
+  return new (Mem) OMPTeamsDirective(NumClauses);
 }
 

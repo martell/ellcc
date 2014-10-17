@@ -136,6 +136,12 @@ bool MachOLinkingContext::isThinObjectFile(StringRef path, Arch &arch) {
   return mach_o::normalized::isThinObjectFile(path, arch);
 }
 
+bool MachOLinkingContext::sliceFromFatFile(const MemoryBuffer &mb,
+                                           uint32_t &offset,
+                                           uint32_t &size) {
+  return mach_o::normalized::sliceFromFatFile(mb, _arch, offset, size);
+}
+
 MachOLinkingContext::MachOLinkingContext()
     : _outputMachOType(MH_EXECUTE), _outputMachOTypeStatic(false),
       _doNothing(false), _pie(false), _arch(arch_unknown), _os(OS::macOSX),
@@ -153,6 +159,26 @@ void MachOLinkingContext::configure(HeaderFileType type, Arch arch, OS os,
   _arch = arch;
   _os = os;
   _osMinVersion = minOSVersion;
+
+  // If min OS not specified on command line, use reasonable defaults.
+  if (minOSVersion == 0) {
+    switch (_arch) {
+    case arch_x86_64:
+    case arch_x86:
+      parsePackedVersion("10.8", _osMinVersion);
+      _os = MachOLinkingContext::OS::macOSX;
+      break;
+    case arch_armv6:
+    case arch_armv7:
+    case arch_armv7s:
+    case arch_arm64:
+      parsePackedVersion("7.0", _osMinVersion);
+      _os = MachOLinkingContext::OS::iOS;
+      break;
+    default:
+      break;
+    }
+  }
 
   switch (_outputMachOType) {
   case llvm::MachO::MH_EXECUTE:
@@ -293,6 +319,21 @@ bool MachOLinkingContext::needsCompactUnwindPass() const {
   case MH_DYLIB:
   case MH_BUNDLE:
     return archHandler().needsCompactUnwind();
+  default:
+    return false;
+  }
+}
+
+bool MachOLinkingContext::needsShimPass() const {
+  // Shim pass only used in final executables.
+  if (_outputMachOType == MH_OBJECT)
+    return false;
+  // Only 32-bit arm arches use Shim pass.
+  switch (_arch) {
+  case arch_armv6:
+  case arch_armv7:
+  case arch_armv7s:
+    return true;
   default:
     return false;
   }
@@ -546,6 +587,8 @@ void MachOLinkingContext::addPasses(PassManager &pm) {
     mach_o::addCompactUnwindPass(pm, *this);
   if (needsGOTPass())
     mach_o::addGOTPass(pm, *this);
+  if (needsShimPass())
+    mach_o::addShimPass(pm, *this); // Shim pass must run after stubs pass.
 }
 
 Writer &MachOLinkingContext::writer() const {
@@ -555,7 +598,7 @@ Writer &MachOLinkingContext::writer() const {
 }
 
 MachODylibFile* MachOLinkingContext::loadIndirectDylib(StringRef path) {
-  std::unique_ptr<MachOFileNode> node(new MachOFileNode(path, false, *this));
+  std::unique_ptr<MachOFileNode> node(new MachOFileNode(path, *this));
   std::error_code ec = node->parse(*this, llvm::errs());
   if (ec)
     return nullptr;
@@ -625,14 +668,25 @@ bool MachOLinkingContext::createImplicitFiles(
 }
 
 
-void MachOLinkingContext::registerDylib(MachODylibFile *dylib) {
+void MachOLinkingContext::registerDylib(MachODylibFile *dylib,
+                                        bool upward) const {
   _allDylibs.insert(dylib);
   _pathToDylibMap[dylib->installName()] = dylib;
   // If path is different than install name, register path too.
   if (!dylib->path().equals(dylib->installName()))
     _pathToDylibMap[dylib->path()] = dylib;
+  if (upward)
+    _upwardDylibs.insert(dylib);
 }
 
+
+bool MachOLinkingContext::isUpwardDylib(StringRef installName) const {
+  for (MachODylibFile *dylib : _upwardDylibs) {
+    if (dylib->installName().equals(installName))
+      return true;
+  }
+  return false;
+}
 
 ArchHandler &MachOLinkingContext::archHandler() const {
   if (!_archHandler)

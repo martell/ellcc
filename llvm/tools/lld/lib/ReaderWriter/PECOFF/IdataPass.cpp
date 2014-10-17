@@ -21,19 +21,21 @@
 #include <cstddef>
 #include <cstring>
 #include <map>
+#include <vector>
+
+using llvm::object::delay_import_directory_table_entry;
 
 namespace lld {
 namespace pecoff {
 namespace idata {
 
-IdataAtom::IdataAtom(Context &context, std::vector<uint8_t> data)
+IdataAtom::IdataAtom(IdataContext &context, std::vector<uint8_t> data)
     : COFFLinkerInternalAtom(context.dummyFile,
-                             context.dummyFile.getNextOrdinal(), data),
-      _is64(context.is64) {
+                             context.dummyFile.getNextOrdinal(), data) {
   context.file.addAtom(*this);
 }
 
-HintNameAtom::HintNameAtom(Context &context, uint16_t hint,
+HintNameAtom::HintNameAtom(IdataContext &context, uint16_t hint,
                            StringRef importName)
     : IdataAtom(context, assembleRawContent(hint, importName)),
       _importName(importName) {}
@@ -64,58 +66,166 @@ ImportTableEntryAtom::assembleRawContent(uint64_t rva, bool is64) {
   return ret;
 }
 
-// Creates atoms for an import lookup table. The import lookup table is an
-// array of pointers to hint/name atoms. The array needs to be terminated with
-// the NULL entry.
-void ImportDirectoryAtom::addRelocations(
-    Context &context, StringRef loadName,
-    const std::vector<COFFSharedLibraryAtom *> &sharedAtoms) {
-  // Create parallel arrays. The contents of the two are initially the
-  // same. The PE/COFF loader overwrites the import address tables with the
-  // pointers to the referenced items after loading the executable into
-  // memory.
-  std::vector<ImportTableEntryAtom *> importLookupTables =
-      createImportTableAtoms(context, sharedAtoms, false, ".idata.t");
-  std::vector<ImportTableEntryAtom *> importAddressTables =
-      createImportTableAtoms(context, sharedAtoms, true, ".idata.a");
-
-  addDir32NBReloc(this, importLookupTables[0], _is64,
-                  offsetof(ImportDirectoryTableEntry, ImportLookupTableRVA));
-  addDir32NBReloc(this, importAddressTables[0], _is64,
-                  offsetof(ImportDirectoryTableEntry, ImportAddressTableRVA));
-  auto *atom = new (_alloc)
-      COFFStringAtom(context.dummyFile, context.dummyFile.getNextOrdinal(),
-                     ".idata", loadName);
-  context.file.addAtom(*atom);
-  addDir32NBReloc(this, atom, _is64,
-                  offsetof(ImportDirectoryTableEntry, NameRVA));
-}
-
-std::vector<ImportTableEntryAtom *> ImportDirectoryAtom::createImportTableAtoms(
-    Context &context, const std::vector<COFFSharedLibraryAtom *> &sharedAtoms,
-    bool shouldAddReference, StringRef sectionName) const {
+static std::vector<ImportTableEntryAtom *>
+createImportTableAtoms(IdataContext &context,
+                       const std::vector<COFFSharedLibraryAtom *> &sharedAtoms,
+                       bool shouldAddReference, StringRef sectionName,
+                       llvm::BumpPtrAllocator &alloc) {
   std::vector<ImportTableEntryAtom *> ret;
   for (COFFSharedLibraryAtom *atom : sharedAtoms) {
     ImportTableEntryAtom *entry = nullptr;
     if (atom->importName().empty()) {
       // Import by ordinal
       uint64_t hint = atom->hint();
-      hint |= _is64 ? (uint64_t(1) << 63) : (uint64_t(1) << 31);
-      entry = new (_alloc) ImportTableEntryAtom(context, hint, sectionName);
+      hint |= context.ctx.is64Bit() ? (uint64_t(1) << 63) : (uint64_t(1) << 31);
+      entry = new (alloc) ImportTableEntryAtom(context, hint, sectionName);
     } else {
       // Import by name
-      entry = new (_alloc) ImportTableEntryAtom(context, 0, sectionName);
+      entry = new (alloc) ImportTableEntryAtom(context, 0, sectionName);
       HintNameAtom *hintName =
-          new (_alloc) HintNameAtom(context, atom->hint(), atom->importName());
-      addDir32NBReloc(entry, hintName, _is64, 0);
+          new (alloc) HintNameAtom(context, atom->hint(), atom->importName());
+      addDir32NBReloc(entry, hintName, context.ctx.getMachineType(), 0);
     }
     ret.push_back(entry);
     if (shouldAddReference)
       atom->setImportTableEntry(entry);
   }
   // Add the NULL entry.
-  ret.push_back(new (_alloc) ImportTableEntryAtom(context, 0, sectionName));
+  ret.push_back(new (alloc) ImportTableEntryAtom(context, 0, sectionName));
   return ret;
+}
+
+// Creates atoms for an import lookup table. The import lookup table is an
+// array of pointers to hint/name atoms. The array needs to be terminated with
+// the NULL entry.
+void ImportDirectoryAtom::addRelocations(
+    IdataContext &context, StringRef loadName,
+    const std::vector<COFFSharedLibraryAtom *> &sharedAtoms) {
+  // Create parallel arrays. The contents of the two are initially the
+  // same. The PE/COFF loader overwrites the import address tables with the
+  // pointers to the referenced items after loading the executable into
+  // memory.
+  std::vector<ImportTableEntryAtom *> importLookupTables =
+      createImportTableAtoms(context, sharedAtoms, false, ".idata.t", _alloc);
+  std::vector<ImportTableEntryAtom *> importAddressTables =
+      createImportTableAtoms(context, sharedAtoms, true, ".idata.a", _alloc);
+
+  addDir32NBReloc(this, importLookupTables[0], context.ctx.getMachineType(),
+                  offsetof(ImportDirectoryTableEntry, ImportLookupTableRVA));
+  addDir32NBReloc(this, importAddressTables[0], context.ctx.getMachineType(),
+                  offsetof(ImportDirectoryTableEntry, ImportAddressTableRVA));
+  auto *atom = new (_alloc)
+      COFFStringAtom(context.dummyFile, context.dummyFile.getNextOrdinal(),
+                     ".idata", loadName);
+  context.file.addAtom(*atom);
+  addDir32NBReloc(this, atom, context.ctx.getMachineType(),
+                  offsetof(ImportDirectoryTableEntry, NameRVA));
+}
+
+// Create the contents for the delay-import table.
+std::vector<uint8_t> DelayImportDirectoryAtom::createContent() {
+  std::vector<uint8_t> r(sizeof(delay_import_directory_table_entry), 0);
+  auto entry = reinterpret_cast<delay_import_directory_table_entry *>(&r[0]);
+  // link.exe seems to set 1 to Attributes field, so do we.
+  entry->Attributes = 1;
+  return r;
+}
+
+// Find "___delayLoadHelper2@8" (or "__delayLoadHelper2" on x64).
+// This is not efficient but should be OK for now.
+static const Atom *
+findDelayLoadHelper(MutableFile &file, const PECOFFLinkingContext &ctx) {
+  StringRef sym = ctx.getDelayLoadHelperName();
+  for (const DefinedAtom *atom : file.defined())
+    if (atom->name() == sym)
+      return atom;
+  std::string msg = (sym + " was not found").str();
+  llvm_unreachable(msg.c_str());
+}
+
+// Create the data referred by the delay-import table.
+void DelayImportDirectoryAtom::addRelocations(
+    IdataContext &context, StringRef loadName,
+    const std::vector<COFFSharedLibraryAtom *> &sharedAtoms) {
+  // "ModuleHandle" field. This points to an array of pointer-size data
+  // in ".data" section. Initially the array is initialized with zero.
+  // The delay-load import helper will set DLL base address at runtime.
+  auto *hmodule = new (_alloc) DelayImportAddressAtom(context);
+  addDir32NBReloc(this, hmodule, context.ctx.getMachineType(),
+                  offsetof(delay_import_directory_table_entry, ModuleHandle));
+
+  // "NameTable" field. The data structure of this field is the same
+  // as (non-delay) import table's Import Lookup Table. Contains
+  // imported function names. This is a parallel array of AddressTable
+  // field.
+  std::vector<ImportTableEntryAtom *> nameTable =
+      createImportTableAtoms(context, sharedAtoms, false, ".didat", _alloc);
+  addDir32NBReloc(
+      this, nameTable[0], context.ctx.getMachineType(),
+      offsetof(delay_import_directory_table_entry, DelayImportNameTable));
+
+  // "Name" field. This points to the NUL-terminated DLL name string.
+  auto *name = new (_alloc)
+      COFFStringAtom(context.dummyFile, context.dummyFile.getNextOrdinal(),
+                     ".didat", loadName);
+  context.file.addAtom(*name);
+  addDir32NBReloc(this, name, context.ctx.getMachineType(),
+                  offsetof(delay_import_directory_table_entry, Name));
+
+  // "AddressTable" field. This points to an array of pointers, which
+  // in turn pointing to delay-load functions.
+  std::vector<DelayImportAddressAtom *> addrTable;
+  for (int i = 0, e = sharedAtoms.size() + 1; i < e; ++i)
+    addrTable.push_back(new (_alloc) DelayImportAddressAtom(context));
+  for (int i = 0, e = sharedAtoms.size(); i < e; ++i)
+    sharedAtoms[i]->setImportTableEntry(addrTable[i]);
+  addDir32NBReloc(
+      this, addrTable[0], context.ctx.getMachineType(),
+      offsetof(delay_import_directory_table_entry, DelayImportAddressTable));
+
+  const Atom *delayLoadHelper = findDelayLoadHelper(context.file, context.ctx);
+  for (int i = 0, e = sharedAtoms.size(); i < e; ++i) {
+    const DefinedAtom *loader = new (_alloc) DelayLoaderAtom(
+        context, addrTable[i], this, delayLoadHelper);
+    addDir32Reloc(addrTable[i], loader, context.ctx.getMachineType(), 0);
+  }
+}
+
+DelayLoaderAtom::DelayLoaderAtom(IdataContext &context, const Atom *impAtom,
+                                 const Atom *descAtom, const Atom *delayLoadHelperAtom)
+    : IdataAtom(context, createContent()) {
+  MachineTypes machine = context.ctx.getMachineType();
+  addDir32Reloc(this, impAtom, machine, 3);
+  addDir32Reloc(this, descAtom, machine, 8);
+  addRel32Reloc(this, delayLoadHelperAtom, machine, 13);
+}
+
+// DelayLoaderAtom contains a wrapper function for __delayLoadHelper2.
+//
+// __delayLoadHelper2 takes two pointers: a pointer to the delay-load
+// table descripter and a pointer to _imp_ symbol for the function
+// to be resolved.
+//
+// __delayLoadHelper2 looks at the table descriptor to know the DLL
+// name, calls dlopen()-like function to load it, resolves all
+// imported symbols, and then writes the resolved addresses to the
+// import address table. It returns a pointer to the resolved
+// function.
+//
+// __delayLoadHelper2 is defined in delayimp.lib.
+std::vector<uint8_t> DelayLoaderAtom::createContent() const {
+  // NB: x86 only for now. ECX and EDX are caller-save.
+  static const uint8_t array[] = {
+    0x51,              // push  ecx
+    0x52,              // push  edx
+    0x68, 0, 0, 0, 0,  // push  offset ___imp__<FUNCNAME>
+    0x68, 0, 0, 0, 0,  // push  offset ___DELAY_IMPORT_DESCRIPTOR_<DLLNAME>_dll
+    0xE8, 0, 0, 0, 0,  // call  ___delayLoadHelper2@8
+    0x5A,              // pop   edx
+    0x59,              // pop   ecx
+    0xFF, 0xE0,        // jmp   eax
+  };
+  return std::vector<uint8_t>(array, array + sizeof(array));
 }
 
 } // namespace idata
@@ -124,20 +234,37 @@ void IdataPass::perform(std::unique_ptr<MutableFile> &file) {
   if (file->sharedLibrary().empty())
     return;
 
-  idata::Context context(*file, _dummyFile, _is64);
-  std::map<StringRef, std::vector<COFFSharedLibraryAtom *> > sharedAtoms =
+  idata::IdataContext context(*file, _dummyFile, _ctx);
+  std::map<StringRef, std::vector<COFFSharedLibraryAtom *>> sharedAtoms =
       groupByLoadName(*file);
+  bool hasImports = false;
+  bool hasDelayImports = false;
+
+  // Create the import table and terminate it with the null entry.
   for (auto i : sharedAtoms) {
     StringRef loadName = i.first;
+    if (_ctx.isDelayLoadDLL(loadName))
+      continue;
+    hasImports = true;
     std::vector<COFFSharedLibraryAtom *> &atoms = i.second;
     new (_alloc) idata::ImportDirectoryAtom(context, loadName, atoms);
   }
+  if (hasImports)
+    new (_alloc) idata::NullImportDirectoryAtom(context);
 
-  // All atoms, including those of tyep NullImportDirectoryAtom, are added to
-  // context.file in the IdataAtom's constructor.
-  new (_alloc) idata::NullImportDirectoryAtom(context);
+  // Create the delay import table and terminate it with the null entry.
+  for (auto i : sharedAtoms) {
+    StringRef loadName = i.first;
+    if (!_ctx.isDelayLoadDLL(loadName))
+      continue;
+    hasDelayImports = true;
+    std::vector<COFFSharedLibraryAtom *> &atoms = i.second;
+    new (_alloc) idata::DelayImportDirectoryAtom(context, loadName, atoms);
+  }
+  if (hasDelayImports)
+    new (_alloc) idata::DelayNullImportDirectoryAtom(context);
 
-  replaceSharedLibraryAtoms(context);
+  replaceSharedLibraryAtoms(*file);
 }
 
 std::map<StringRef, std::vector<COFFSharedLibraryAtom *> >
@@ -155,8 +282,8 @@ IdataPass::groupByLoadName(MutableFile &file) {
 }
 
 /// Transforms a reference to a COFFSharedLibraryAtom to a real reference.
-void IdataPass::replaceSharedLibraryAtoms(idata::Context &context) {
-  for (const DefinedAtom *atom : context.file.defined()) {
+void IdataPass::replaceSharedLibraryAtoms(MutableFile &file) {
+  for (const DefinedAtom *atom : file.defined()) {
     for (const Reference *ref : *atom) {
       const Atom *target = ref->target();
       auto *sharedAtom = dyn_cast<SharedLibraryAtom>(target);

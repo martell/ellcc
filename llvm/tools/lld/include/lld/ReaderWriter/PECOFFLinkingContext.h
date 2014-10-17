@@ -226,6 +226,13 @@ public:
   void setOutputImportLibraryPath(const std::string &val) { _implib = val; }
   std::string getOutputImportLibraryPath() const;
 
+  void addDelayLoadDLL(StringRef dll) {
+    _delayLoadDLLs.insert(dll.lower());
+  }
+  bool isDelayLoadDLL(StringRef dll) const {
+    return _delayLoadDLLs.count(dll.lower()) == 1;
+  }
+
   StringRef getOutputSectionName(StringRef sectionName) const;
   bool addSectionRenaming(raw_ostream &diagnostics,
                           StringRef from, StringRef to);
@@ -254,6 +261,10 @@ public:
   void addDllExport(ExportDesc &desc);
   std::vector<ExportDesc> &getDllExports() { return _dllExports; }
   const std::vector<ExportDesc> &getDllExports() const { return _dllExports; }
+
+  StringRef getDelayLoadHelperName() const {
+    return is64Bit() ? "__delayLoadHelper2" : "___delayLoadHelper2@8";
+  }
 
   StringRef allocate(StringRef ref) const {
     _allocMutex.lock();
@@ -365,6 +376,9 @@ private:
 
   // /IMPLIB command line option.
   std::string _implib;
+
+  // /DELAYLOAD option.
+  std::set<std::string> _delayLoadDLLs;
 
   // The set to store /nodefaultlib arguments.
   std::set<std::string> _noDefaultLibs;

@@ -273,8 +273,16 @@ private:
       }
       if (CurrentToken->isOneOf(tok::r_paren, tok::r_brace))
         return false;
-      if (CurrentToken->is(tok::colon))
+      if (CurrentToken->is(tok::colon)) {
+        if (Left->Type == TT_ArraySubscriptLSquare) {
+          Left->Type = TT_ObjCMethodExpr;
+          StartsObjCMethodExpr = true;
+          Contexts.back().ColonIsObjCMethodExpr = true;
+          if (Parent && Parent->is(tok::r_paren))
+            Parent->Type = TT_CastRParen;
+        }
         ColonFound = true;
+      }
       if (CurrentToken->is(tok::comma) &&
           Style.Language != FormatStyle::LK_Proto &&
           (Left->Type == TT_ArraySubscriptLSquare ||
@@ -902,8 +910,9 @@ private:
         if (Prev && Tok.Next && Tok.Next->Next) {
           bool NextIsUnary = Tok.Next->isUnaryOperator() ||
                              Tok.Next->isOneOf(tok::amp, tok::star);
-          IsCast = NextIsUnary && Tok.Next->Next->isOneOf(
-                                      tok::identifier, tok::numeric_constant);
+          IsCast =
+              NextIsUnary && !Tok.Next->is(tok::plus) &&
+              Tok.Next->Next->isOneOf(tok::identifier, tok::numeric_constant);
         }
 
         for (; Prev != Tok.MatchingParen; Prev = Prev->Previous) {
@@ -1165,6 +1174,9 @@ private:
   }
 
   void parseConditionalExpr() {
+    while (Current && Current->isTrailingComment()) {
+      next();
+    }
     FormatToken *Start = Current;
     parse(prec::LogicalOr);
     if (!Current || !Current->is(tok::question))
@@ -1431,6 +1443,11 @@ unsigned TokenAnnotator::splitPenalty(const AnnotatedLine &Line,
 
   if (Right.Type == TT_TrailingAnnotation &&
       (!Right.Next || Right.Next->isNot(tok::l_paren))) {
+    // Moving trailing annotations to the next line is fine for ObjC method
+    // declarations.
+    if (Line.First->Type == TT_ObjCMethodSpecifier)
+
+      return 10;
     // Generally, breaking before a trailing annotation is bad unless it is
     // function-like. It seems to be especially preferable to keep standard
     // annotations (i.e. "const", "final" and "override") on the same line.

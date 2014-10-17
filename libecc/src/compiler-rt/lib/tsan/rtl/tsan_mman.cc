@@ -102,7 +102,7 @@ static void SignalUnsafeCall(ThreadState *thr, uptr pc) {
   }
 }
 
-void *user_alloc(ThreadState *thr, uptr pc, uptr sz, uptr align) {
+void *user_alloc(ThreadState *thr, uptr pc, uptr sz, uptr align, bool signal) {
   if ((sz >= (1ull << 40)) || (align >= (1ull << 40)))
     return AllocatorReturnNull();
   void *p = allocator()->Allocate(&thr->alloc_cache, sz, align);
@@ -117,11 +117,12 @@ void *user_alloc(ThreadState *thr, uptr pc, uptr sz, uptr align) {
       MemoryResetRange(thr, pc, (uptr)p, sz);
   }
   DPrintf("#%d: alloc(%zu) = %p\n", thr->tid, sz, p);
-  SignalUnsafeCall(thr, pc);
+  if (signal)
+    SignalUnsafeCall(thr, pc);
   return p;
 }
 
-void user_free(ThreadState *thr, uptr pc, void *p) {
+void user_free(ThreadState *thr, uptr pc, void *p, bool signal) {
   CHECK_NE(p, (void*)0);
   DPrintf("#%d: free(%p)\n", thr->tid, p);
   MBlock *b = (MBlock*)allocator()->GetMetaData(p);
@@ -142,7 +143,8 @@ void user_free(ThreadState *thr, uptr pc, void *p) {
       MemoryRangeFreed(thr, pc, (uptr)p, b->Size());
   }
   allocator()->Deallocate(&thr->alloc_cache, p);
-  SignalUnsafeCall(thr, pc);
+  if (signal)
+    SignalUnsafeCall(thr, pc);
 }
 
 void *user_realloc(ThreadState *thr, uptr pc, void *p, uptr sz) {

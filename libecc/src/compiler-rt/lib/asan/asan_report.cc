@@ -94,6 +94,8 @@ class Decorator: public __sanitizer::SanitizerCommonDecorator {
         return Red();
       case kAsanInternalHeapMagic:
         return Yellow();
+      case kAsanIntraObjectRedzone:
+        return Yellow();
       default:
         return Default();
     }
@@ -168,6 +170,8 @@ static void PrintLegend(InternalScopedString *str) {
                   kAsanContiguousContainerOOBMagic);
   PrintShadowByte(str, "  Array cookie:            ",
                   kAsanArrayCookieMagic);
+  PrintShadowByte(str, "  Intra object redzone:    ",
+                  kAsanIntraObjectRedzone);
   PrintShadowByte(str, "  ASan internal:           ", kAsanInternalHeapMagic);
 }
 
@@ -437,7 +441,13 @@ bool DescribeAddressIfStack(uptr addr, uptr access_size) {
   // especially given that the alloca may be from entirely different place
   // (e.g. use-after-scope, or different thread's stack).
   StackTrace alloca_stack;
-  alloca_stack.trace[0] = frame_pc + 16;
+#if defined(__powerpc64__) and defined(__BIG_ENDIAN__)
+  // On PowerPC64 ELFv1, the address of a function actually points to a
+  // three-doubleword data structure with the first field containing
+  // the address of the function's code.
+  access.frame_pc = *reinterpret_cast<uptr *>(access.frame_pc);
+#endif
+  alloca_stack.trace[0] = access.frame_pc + 16;
   alloca_stack.size = 1;
   Printf("%s", d.EndLocation());
   alloca_stack.Print();
@@ -978,6 +988,9 @@ void __asan_report_error(uptr pc, uptr bp, uptr sp, uptr addr, int is_write,
         break;
       case kAsanGlobalRedzoneMagic:
         bug_descr = "global-buffer-overflow";
+        break;
+      case kAsanIntraObjectRedzone:
+        bug_descr = "intra-object-overflow";
         break;
     }
   }

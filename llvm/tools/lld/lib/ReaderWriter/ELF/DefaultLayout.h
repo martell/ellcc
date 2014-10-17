@@ -10,6 +10,7 @@
 #ifndef LLD_READER_WRITER_ELF_DEFAULT_LAYOUT_H
 #define LLD_READER_WRITER_ELF_DEFAULT_LAYOUT_H
 
+#include "Atoms.h"
 #include "Chunk.h"
 #include "HeaderChunks.h"
 #include "Layout.h"
@@ -170,6 +171,8 @@ public:
 
   typedef typename std::vector<lld::AtomLayout *>::iterator AbsoluteAtomIterT;
 
+  typedef llvm::DenseSet<const Atom *> AtomSetT;
+
   DefaultLayout(const ELFLinkingContext &context) : _context(context) {}
 
   /// \brief Return the section order for a input section
@@ -297,8 +300,12 @@ public:
     return 0;
   }
 
-  bool isReferencedByDefinedAtom(const SharedLibraryAtom *sla) const {
-    return _referencedDynAtoms.count(sla);
+  bool isReferencedByDefinedAtom(const Atom *a) const {
+    return _referencedDynAtoms.count(a);
+  }
+
+  bool isCopied(const SharedLibraryAtom *sla) const {
+    return _copiedDynSymNames.count(sla->name());
   }
 
 protected:
@@ -322,7 +329,8 @@ protected:
   LLD_UNIQUE_BUMP_PTR(RelocationTable<ELFT>) _dynamicRelocationTable;
   LLD_UNIQUE_BUMP_PTR(RelocationTable<ELFT>) _pltRelocationTable;
   std::vector<lld::AtomLayout *> _absoluteAtoms;
-  llvm::DenseSet<const SharedLibraryAtom *> _referencedDynAtoms;
+  AtomSetT _referencedDynAtoms;
+  llvm::StringSet<> _copiedDynSymNames;
   const ELFLinkingContext &_context;
 };
 
@@ -561,15 +569,33 @@ ErrorOr<const lld::AtomLayout &> DefaultLayout<ELFT>::addAtom(const Atom *atom) 
     StringRef sectionName = getSectionName(definedAtom);
     AtomSection<ELFT> *section =
         getSection(sectionName, contentType, permissions);
+
     // Add runtime relocations to the .rela section.
     for (const auto &reloc : *definedAtom) {
-      if (_context.isDynamicRelocation(*definedAtom, *reloc))
+      bool isLocalReloc = true;
+      if (_context.isDynamicRelocation(*definedAtom, *reloc)) {
         getDynamicRelocationTable()->addRelocation(*definedAtom, *reloc);
-      else if (_context.isPLTRelocation(*definedAtom, *reloc))
+        isLocalReloc = false;
+      } else if (_context.isPLTRelocation(*definedAtom, *reloc)) {
         getPLTRelocationTable()->addRelocation(*definedAtom, *reloc);
-      if (const auto *sla = dyn_cast<SharedLibraryAtom>(reloc->target()))
-        _referencedDynAtoms.insert(sla);
+        isLocalReloc = false;
+      }
+
+      if (!reloc->target())
+        continue;
+
+      //Ignore undefined atoms that are not target of dynamic relocations
+      if (isa<UndefinedAtom>(reloc->target()) && isLocalReloc)
+        continue;
+
+      if (_context.isCopyRelocation(*reloc)) {
+        _copiedDynSymNames.insert(definedAtom->name());
+        continue;
+      }
+
+      _referencedDynAtoms.insert(reloc->target());
     }
+
     return section->appendAtom(atom);
   } else if (const AbsoluteAtom *absoluteAtom = dyn_cast<AbsoluteAtom>(atom)) {
     // Absolute atoms are not part of any section, they are global for the whole

@@ -34,6 +34,10 @@ public:
 
   const StubInfo &stubInfo() override { return _sStubInfo; }
   bool isCallSite(const Reference &) override;
+  bool isNonCallBranch(const Reference &) override {
+    return false;
+  }
+
   bool isPointer(const Reference &) override;
   bool isPairedReloc(const normalized::Relocation &) override;
 
@@ -45,6 +49,23 @@ public:
   }
   Reference::KindValue imageOffsetKindIndirect() override {
     return invalid;
+  }
+
+  Reference::KindValue unwindRefToCIEKind() override {
+    return negDelta32;
+  }
+
+  Reference::KindValue unwindRefToFunctionKind() override{
+    return delta32;
+  }
+
+  Reference::KindValue unwindRefToEhFrameKind() override {
+    return invalid;
+  }
+
+
+  uint32_t dwarfCompactUnwindType() override {
+    return 0x04000000U;
   }
 
   std::error_code getReferenceInfo(const normalized::Relocation &reloc,
@@ -70,6 +91,7 @@ public:
 
   void generateAtomContent(const DefinedAtom &atom, bool relocatable,
                            FindAddressForAtom findAddress,
+                           FindAddressForAtom findSectionAddress,
                            uint64_t imageBaseAddress,
                            uint8_t *atomContentBuffer) override;
 
@@ -378,6 +400,7 @@ ArchHandler_x86::getPairReferenceInfo(const normalized::Relocation &reloc1,
 void ArchHandler_x86::generateAtomContent(const DefinedAtom &atom,
                                           bool relocatable,
                                           FindAddressForAtom findAddress,
+                                          FindAddressForAtom findSectionAddress,
                                           uint64_t imageBaseAddress,
                                           uint8_t *atomContentBuffer) {
   // Copy raw bytes.
