@@ -1,10 +1,10 @@
 #! /bin/sh
 MINGW=MinGW
-if [ $# -ne 1 ] ; then
-    echo "$0: <configuration-version>"
+if [ $# -ne 2 ] ; then
+    echo "$0: <configuration> <version>"
     exit 1
 fi
-name=ellcc-$1.tgz
+name=ellcc-$1-$2.tgz
 
 make -C baremetal clean
 
