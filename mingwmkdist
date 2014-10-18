@@ -19,7 +19,7 @@ ln -s bin-$MINGW bin
 rm -fr bin/ecc++.exe
 cp bin/ecc.exe bin/ecc++.exe
 rm -fr bin/llvm-ranlib.exe
-cp bin/llvm-ranlib.exe bin/llvm-ranlib.exe
+cp bin/llvm-ar.exe bin/llvm-ranlib.exe
 pwd=`pwd`
 pwd=`basename $pwd`
 files=`sed -e "s:\(.*\):$pwd/\1:" ellcc.files`
