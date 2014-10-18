@@ -85,11 +85,11 @@ if [ "$package" != "" ] ; then
       echo "$config packaging failed because it hasn't been built"
       bailout "Packaging failed for $config"
     else
-      ./mkdist $config-$package || bailout "Packaging failed for $config"
+      ./mkdist $config $package || bailout "Packaging failed for $config"
     fi
   done
   # Package for Windows.
-  ./mingwmkdist Win32-$package || bailout "Packaging failed for MinGW"
+  ./mingwmkdist Win32 $package || bailout "Packaging failed for MinGW"
   exit 0
 fi
 
