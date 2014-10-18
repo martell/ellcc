@@ -1,5 +1,7 @@
 latest SVN:
 
+* Include all LLVM binaries with binary distribution.
+* Update to LLVM r220032.
 * Fixed missing clang headers for i386.
 
 version 0.1.1:

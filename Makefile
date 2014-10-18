@@ -26,12 +26,23 @@ release:
 	$(OUT)$(MAKE) $(MFLAGS) \
 	  CLANG_VENDOR="ecc $(VERSION) based on" all || exit 1
 	$(OUT)./build -p $(VERSION) || exit 1
-	$(OUT)echo Enter the ellc.org svn password
+	$(OUT)echo Enter the ellcc.org svn password
 	$(OUT)svn cp -m "Tag release $(VERSION)." \
 	  http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
 	$(OUT)echo Enter the main password
 	$(OUT)scp ChangeLog ellcc-* main:/var/ftp/pub
 	$(OUT)ssh main chmod oug+r /var/ftp/pub/\*
+
+.PHONY: macrelease
+macrelease:
+	$(OUT)echo "Building and packaging Mac OS X ELLCC release $(VERSION)."
+	$(OUT)find llvm-build -name Version.o | xargs rm -f
+	$(OUT)svn update
+	$(OUT)$(MAKE) $(MFLAGS) \
+	  CLANG_VENDOR="ecc $(VERSION) based on" || exit 1
+	$(OUT)./macmkdist $(VERSION) || exit 1
+	$(OUT)echo Enter the main.pennware.com password
+	$(OUT)scp ellcc-Mac* main:ellcc-release
 
 .PHONY: untagrelease
 untagrelease:

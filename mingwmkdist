@@ -16,10 +16,11 @@ fi
 mv bin bin.save
 ln -s bin-$MINGW bin
 
-cd ..; exefiles=`sed -e "s:\(.*/bin/.*\):\1.exe:" ellcc/ellcc.bin.files`; cd -
 rm -fr bin/ecc++.exe
 cp bin/ecc.exe bin/ecc++.exe
-cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files $exefiles; cd -
+rm -fr bin/llvm-ranlib.exe
+cp bin/llvm-ranlib.exe bin/llvm-ranlib.exe
+cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files; cd -
 rm bin
 mv bin.save bin
 echo created $name

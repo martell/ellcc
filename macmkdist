@@ -1,7 +1,11 @@
 #! /bin/sh
+if [ $# -ne 1 ] ; then
+    echo "$0: <version>"
+    exit 1
+fi
 OSX=Mac_OS_X_`sw_vers -productVersion`
-name=ellcc-$OSX-`date +%Y-%b-%d-%H-%M-%S`.tgz
+name=ellcc-$OSX-$1.tgz
 
 make -C baremetal clean
-cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files -T ellcc/ellcc.bin.files; cd -
+cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files ; cd -
 echo created $name
