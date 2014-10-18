@@ -1,4 +1,4 @@
-bin
+bin/*
 libecc/config
 libecc/include
 libecc/mkscripts

@@ -11,6 +11,7 @@ if [ -e bin-$1 ] ; then
   ln -s bin-$1 bin
 fi
 pwd=`pwd`
+pwd=`basename $pwd`
 make -C baremetal clean
 files=`sed -e "s:\(.*\):$pwd/\1:" ellcc.files`
 cd ..; tar cvfpz $pwd/$name $files ; cd -
