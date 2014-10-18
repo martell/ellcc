@@ -30,8 +30,9 @@ release:
 	$(OUT)svn cp -m "Tag release $(VERSION)." \
 	  http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
 	$(OUT)echo Enter the main password
-	$(OUT)scp ChangeLog ellcc-* main:/var/ftp/pub
+	$(OUT)scp ../README.txt ChangeLog ellcc-* main:/var/ftp/pub
 	$(OUT)ssh main chmod oug+r /var/ftp/pub/\*
+	$(OUT)scp ../README.txt ChangeLog ellcc-* main:web/ellcc/releases
 
 .PHONY: macrelease
 macrelease:
