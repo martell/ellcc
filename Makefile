@@ -1,5 +1,5 @@
 # Build ELLCC.
-VERSION=0.1.2
+VERSION=0.1.3
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
@@ -28,7 +28,12 @@ release:
 	$(OUT)./build -p $(VERSION) || exit 1
 	$(OUT)echo Enter the ellcc.org svn password
 	$(OUT)svn cp -m "Tag release $(VERSION)." \
-	  http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+	  http://ellcc.org/svn/ellcc/trunk \
+	  http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+	$(OUT)echo Enter the ellcc.org svn password
+	$(OUT)svn cp -m "Tag current release." \
+	  http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION) \
+	  http://ellcc.org/svn/ellcc/tags/current
 	$(OUT)echo Enter the main password
 	$(OUT)scp ../README.txt ChangeLog ellcc-* main:/var/ftp/pub
 	$(OUT)ssh main chmod oug+r /var/ftp/pub/\*
@@ -47,7 +52,7 @@ macrelease:
 
 .PHONY: untagrelease
 untagrelease:
-	$(OUT)svn rm http://ellcc.org/svn/ellcc/trunk http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+	$(OUT)svn rm http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
 
 .PHONY: clean
 clean:

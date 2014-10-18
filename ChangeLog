@@ -1,3 +1,7 @@
+current SVN:
+
+* Fixed and cleaned up the release process.
+
 version 0.1.2:
 
 * Include the correct binaries for targets. Version 0.1.1 was packaged
