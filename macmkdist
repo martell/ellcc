@@ -10,5 +10,5 @@ make -C baremetal clean
 pwd=`pwd`
 pwd=`basename $pwd`
 files=`sed -e "s:\(.*\):$pwd/\1:" ellcc.files`
-cd ..; tar --transform="s:$pwd/:ellcc/:" -cvfpz $pwd/$name $files ; cd -
+cd ..; tar --transform="s:$pwd/:ellcc/:" -cvpz -f $pwd/$name $files ; cd -
 echo created $name
