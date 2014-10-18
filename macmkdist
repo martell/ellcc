@@ -7,5 +7,6 @@ OSX=Mac_OS_X_`sw_vers -productVersion`
 name=ellcc-$OSX-$1.tgz
 
 make -C baremetal clean
-cd ..; tar cvfpz ellcc/$name -T ellcc/ellcc.files ; cd -
+pwd=`pwd`
+cd ..; tar cvfpz $pwd/$name -T $pwd/ellcc.files ; cd -
 echo created $name
