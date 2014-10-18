@@ -21,7 +21,8 @@ cp bin/ecc.exe bin/ecc++.exe
 rm -fr bin/llvm-ranlib.exe
 cp bin/llvm-ranlib.exe bin/llvm-ranlib.exe
 pwd=`pwd`
-cd ..; tar cvfpz $pwd/$name -T $pwd/ellcc.files; cd -
+files=`sed -e "s:\(.*\):$pwd/\1:" ellcc.files`
+cd ..; tar cvfpz $pwd/$name $files; cd -
 rm bin
 mv bin.save bin
 echo created $name

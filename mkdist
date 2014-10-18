@@ -12,7 +12,8 @@ if [ -e bin-$1 ] ; then
 fi
 pwd=`pwd`
 make -C baremetal clean
-cd ..; tar cvfpz $pwd/$name -T $pwd/ellcc.files ; cd -
+files=`sed -e "s:\(.*\):$pwd/\1:" ellcc.files`
+cd ..; tar cvfpz $pwd/$name $files ; cd -
 if [ -e bin-$1 ] ; then
   rm bin
   mv bin.save bin
