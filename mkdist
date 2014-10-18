@@ -14,7 +14,7 @@ pwd=`pwd`
 pwd=`basename $pwd`
 make -C baremetal clean
 files=`sed -e "s:\(.*\):$pwd/\1:" ellcc.files`
-cd ..; tar --transform="s:$pwd/:ellcc/:" -cvfpz $pwd/$name $files ; cd -
+cd ..; tar --transform="s:$pwd/:ellcc/:" -cvpz -f $pwd/$name $files ; cd -
 if [ -e bin-$1 ] ; then
   rm bin
   mv bin.save bin
