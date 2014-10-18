@@ -1,5 +1,7 @@
-latest SVN:
+version 0.1.2:
 
+* Include the correct binaries for targets. Version 0.1.1 was packaged
+  incorrectly.
 * Include all LLVM binaries with binary distribution.
 * Update to LLVM r220032.
 * Fixed missing clang headers for i386.
