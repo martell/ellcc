@@ -41,14 +41,16 @@ release:
 
 .PHONY: macrelease
 macrelease:
-	$(OUT)echo "Building and packaging Mac OS X ELLCC release $(VERSION)."
-	$(OUT)find llvm-build -name Version.o | xargs rm -f
-	$(OUT)svn update
-	$(OUT)$(MAKE) $(MFLAGS) \
+	#$(OUT)echo "Building and packaging Mac OS X ELLCC release $(VERSION)."
+	#$(OUT)find llvm-build -name Version.o | xargs rm -f
+	#$(OUT)svn update
+	#$(OUT)$(MAKE) $(MFLAGS) \
 	  CLANG_VENDOR="ecc $(VERSION) based on" || exit 1
-	$(OUT)./macmkdist $(VERSION) || exit 1
+	#$(OUT)./macmkdist $(VERSION) || exit 1
 	$(OUT)echo Enter the main.pennware.com password
-	$(OUT)scp ellcc-Mac* main:ellcc-release
+	$(OUT)scp ellcc-Mac* main.pennware.com:/var/ftp/pub
+	$(OUT)ssh main.pennware.com chmod oug+r /var/ftp/pub/\*
+	$(OUT)scp ellcc-Mac* main.pennware.com:web/ellcc/releases
 
 .PHONY: untagrelease
 untagrelease:
