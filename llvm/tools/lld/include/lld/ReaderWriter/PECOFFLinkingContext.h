@@ -13,13 +13,11 @@
 #include "lld/Core/LinkingContext.h"
 #include "lld/ReaderWriter/Reader.h"
 #include "lld/ReaderWriter/Writer.h"
-
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/COFF.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileUtilities.h"
-
 #include <map>
 #include <mutex>
 #include <set>
@@ -63,8 +61,15 @@ public:
   struct ExportDesc {
     ExportDesc()
         : ordinal(-1), noname(false), isData(false), isPrivate(false) {}
+
     bool operator<(const ExportDesc &other) const {
-      return name.compare(other.name) < 0;
+      return getExternalName().compare(other.getExternalName()) < 0;
+    }
+
+    StringRef getExternalName() const {
+      if (!externalName.empty())
+        return externalName;
+      return name;
     }
 
     std::string name;
@@ -243,9 +248,17 @@ public:
   }
   void setAlternateName(StringRef def, StringRef weak);
 
-  void addNoDefaultLib(StringRef path) { _noDefaultLibs.insert(path); }
+  void addNoDefaultLib(StringRef path) {
+    if (path.endswith_lower(".lib"))
+      _noDefaultLibs.insert(path.drop_back(4).lower());
+    else
+      _noDefaultLibs.insert(path.lower());
+  }
+
   bool hasNoDefaultLib(StringRef path) const {
-    return _noDefaultLibs.count(path) == 1;
+    if (path.endswith_lower(".lib"))
+      return _noDefaultLibs.count(path.drop_back(4).lower()) > 0;
+    return _noDefaultLibs.count(path.lower()) > 0;
   }
 
   void setNoDefaultLibAll(bool val) { _noDefaultLibAll = val; }

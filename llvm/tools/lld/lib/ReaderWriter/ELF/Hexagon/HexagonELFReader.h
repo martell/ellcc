@@ -16,6 +16,8 @@
 namespace lld {
 namespace elf {
 
+typedef llvm::object::ELFType<llvm::support::little, 2, false> HexagonELFType;
+
 struct HexagonDynamicFileCreateELFTraits {
   typedef llvm::ErrorOr<std::unique_ptr<lld::SharedLibraryFile>> result_type;
 
@@ -38,43 +40,20 @@ struct HexagonELFFileCreateELFTraits {
   }
 };
 
-class HexagonELFObjectReader : public ELFObjectReader {
+class HexagonELFObjectReader
+    : public ELFObjectReader<HexagonELFType, HexagonELFFileCreateELFTraits> {
 public:
   HexagonELFObjectReader(bool atomizeStrings)
-      : ELFObjectReader(atomizeStrings) {}
-
-  std::error_code
-  parseFile(std::unique_ptr<MemoryBuffer> &mb, const class Registry &,
-            std::vector<std::unique_ptr<File>> &result) const override {
-    std::size_t maxAlignment =
-        1ULL << llvm::countTrailingZeros(uintptr_t(mb->getBufferStart()));
-    auto f = createELF<HexagonELFFileCreateELFTraits>(
-        llvm::object::getElfArchType(mb->getBuffer()), maxAlignment,
-        std::move(mb), _atomizeStrings);
-    if (std::error_code ec = f.getError())
-      return ec;
-    result.push_back(std::move(*f));
-    return std::error_code();
-  }
+      : ELFObjectReader<HexagonELFType, HexagonELFFileCreateELFTraits>(
+            atomizeStrings, llvm::ELF::EM_HEXAGON) {}
 };
 
-class HexagonELFDSOReader : public ELFDSOReader {
+class HexagonELFDSOReader
+    : public ELFDSOReader<HexagonELFType, HexagonDynamicFileCreateELFTraits> {
 public:
-  HexagonELFDSOReader(bool useUndefines) : ELFDSOReader(useUndefines) {}
-
-  std::error_code
-  parseFile(std::unique_ptr<MemoryBuffer> &mb, const class Registry &,
-            std::vector<std::unique_ptr<File>> &result) const override {
-    std::size_t maxAlignment =
-        1ULL << llvm::countTrailingZeros(uintptr_t(mb->getBufferStart()));
-    auto f = createELF<HexagonDynamicFileCreateELFTraits>(
-        llvm::object::getElfArchType(mb->getBuffer()), maxAlignment,
-        std::move(mb), _useUndefines);
-    if (std::error_code ec = f.getError())
-      return ec;
-    result.push_back(std::move(*f));
-    return std::error_code();
-  }
+  HexagonELFDSOReader(bool useUndefines)
+      : ELFDSOReader<HexagonELFType, HexagonDynamicFileCreateELFTraits>(
+            useUndefines, llvm::ELF::EM_HEXAGON) {}
 };
 
 } // namespace elf

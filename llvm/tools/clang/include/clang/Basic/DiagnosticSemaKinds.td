@@ -2500,6 +2500,10 @@ def warn_impcast_pointer_to_bool : Warning<
     "address of%select{| function| array}0 '%1' will always evaluate to "
     "'true'">,
     InGroup<PointerBoolConversion>;
+def warn_cast_nonnull_to_bool : Warning<
+    "nonnull parameter '%0' will always evaluate to "
+    "'true'">,
+    InGroup<PointerBoolConversion>;
 def warn_this_bool_conversion : Warning<
   "'this' pointer cannot be null in well-defined C++ code; pointer may be "
   "assumed to always convert to true">, InGroup<UndefinedBoolConversion>;
@@ -2511,6 +2515,10 @@ def warn_address_of_reference_bool_conversion : Warning<
 def warn_null_pointer_compare : Warning<
     "comparison of %select{address of|function|array}0 '%1' %select{not |}2"
     "equal to a null pointer is always %select{true|false}2">,
+    InGroup<TautologicalPointerCompare>;
+def warn_nonnull_parameter_compare : Warning<
+    "comparison of nonnull parameter '%0' %select{not |}1"
+    "equal to a null pointer is always %select{true|false}1">,
     InGroup<TautologicalPointerCompare>;
 def warn_this_null_compare : Warning<
   "'this' pointer cannot be null in well-defined C++ code; comparison may be "
@@ -5314,12 +5322,13 @@ def note_add_initializer : Note<
   "add an explicit initializer to initialize %0">;
 def err_delete_operand : Error<"cannot delete expression of type %0">;
 def ext_delete_void_ptr_operand : ExtWarn<
-  "cannot delete expression with pointer-to-'void' type %0">;
+  "cannot delete expression with pointer-to-'void' type %0">,
+  InGroup<DeleteIncomplete>;
 def err_ambiguous_delete_operand : Error<
   "ambiguous conversion of delete expression of type %0 to a pointer">;
 def warn_delete_incomplete : Warning<
   "deleting pointer to incomplete type %0 may cause undefined behavior">,
-  InGroup<DiagGroup<"delete-incomplete">>;
+  InGroup<DeleteIncomplete>;
 def err_delete_incomplete_class_type : Error<
   "deleting incomplete class type %0; no conversions to pointer type">;
 def err_delete_explicit_conversion : Error<

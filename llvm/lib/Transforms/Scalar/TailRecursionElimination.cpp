@@ -63,6 +63,7 @@
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
@@ -86,6 +87,7 @@ STATISTIC(NumAccumAdded, "Number of accumulators introduced");
 namespace {
   struct TailCallElim : public FunctionPass {
     const TargetTransformInfo *TTI;
+    const DataLayout *DL;
 
     static char ID; // Pass identification, replacement for typeid
     TailCallElim() : FunctionPass(ID) {
@@ -156,6 +158,8 @@ static bool CanTRE(Function &F) {
 bool TailCallElim::runOnFunction(Function &F) {
   if (skipOptnoneFunction(F))
     return false;
+
+  DL = F.getParent()->getDataLayout();
 
   bool AllCallsAreTailCalls = false;
   bool Modified = markTails(F, AllCallsAreTailCalls);
@@ -249,7 +253,12 @@ bool TailCallElim::markTails(Function &F, bool &AllCallsAreTailCalls) {
     return false;
   AllCallsAreTailCalls = true;
 
+  // The local stack holds all alloca instructions and all byval arguments.
   AllocaDerivedValueTracker Tracker;
+  for (Argument &Arg : F.args()) {
+    if (Arg.hasByValAttr())
+      Tracker.walk(&Arg);
+  }
   for (auto &BB : F) {
     for (auto &I : BB)
       if (AllocaInst *AI = dyn_cast<AllocaInst>(&I))
@@ -305,8 +314,9 @@ bool TailCallElim::markTails(Function &F, bool &AllCallsAreTailCalls) {
         for (auto &Arg : CI->arg_operands()) {
           if (isa<Constant>(Arg.getUser()))
             continue;
-          if (isa<Argument>(Arg.getUser()))
-            continue;
+          if (Argument *A = dyn_cast<Argument>(Arg.getUser()))
+            if (!A->hasByValAttr())
+              continue;
           SafeToTail = false;
           break;
         }
@@ -444,7 +454,7 @@ bool TailCallElim::CanMoveAboveCall(Instruction *I, CallInst *CI) {
       // being loaded from.
       if (CI->mayWriteToMemory() ||
           !isSafeToLoadUnconditionally(L->getPointerOperand(), L,
-                                       L->getAlignment()))
+                                       L->getAlignment(), DL))
         return false;
     }
   }

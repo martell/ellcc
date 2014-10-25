@@ -1,4 +1,4 @@
-//===- lib/ReaderWriter/ELF/PPCELFReader.h ------------------------------===//
+//===- lib/ReaderWriter/ELF/PPC/PPCELFReader.h ----------------------------===//
 //
 //                             The LLVM Linker
 //
@@ -7,14 +7,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLD_READER_WRITER_PPC_ELF_READER_H
-#define LLD_READER_WRITER_PPC_ELF_READER_H
+#ifndef LLD_READER_WRITER_PPC_PPC_ELF_READER_H
+#define LLD_READER_WRITER_PPC_PPC_ELF_READER_H
 
 #include "ELFReader.h"
 #include "PPCELFFile.h"
 
 namespace lld {
 namespace elf {
+
+typedef llvm::object::ELFType<llvm::support::big, 2, false> PPCELFType;
 
 struct PPCDynamicFileCreateELFTraits {
   typedef llvm::ErrorOr<std::unique_ptr<lld::SharedLibraryFile>> result_type;
@@ -36,46 +38,23 @@ struct PPCELFFileCreateELFTraits {
   }
 };
 
-class PPCELFObjectReader : public ELFObjectReader {
+class PPCELFObjectReader
+    : public ELFObjectReader<PPCELFType, PPCELFFileCreateELFTraits> {
 public:
-  PPCELFObjectReader(bool atomizeStrings) : ELFObjectReader(atomizeStrings) {}
-
-  virtual error_code
-  parseFile(std::unique_ptr<MemoryBuffer> &mb, const class Registry &,
-            std::vector<std::unique_ptr<File>> &result) const {
-    error_code ec;
-    std::size_t maxAlignment =
-        1ULL << llvm::countTrailingZeros(uintptr_t(mb->getBufferStart()));
-    auto f = createELF<PPCELFFileCreateELFTraits>(
-        llvm::object::getElfArchType(&*mb), maxAlignment, std::move(mb),
-        _atomizeStrings);
-    if (!f)
-      return f;
-    result.push_back(std::move(*f));
-    return error_code();
-  }
+  PPCELFObjectReader(bool atomizeStrings)
+      : ELFObjectReader<PPCELFType, PPCELFFileCreateELFTraits>(
+            atomizeStrings, llvm::ELF::EM_PPC) {}
 };
 
-class PPCELFDSOReader : public ELFDSOReader {
+class PPCELFDSOReader
+    : public ELFDSOReader<PPCELFType, PPCDynamicFileCreateELFTraits> {
 public:
-  PPCELFDSOReader(bool useUndefines) : ELFDSOReader(useUndefines) {}
-
-  virtual error_code
-  parseFile(std::unique_ptr<MemoryBuffer> &mb, const class Registry &,
-            std::vector<std::unique_ptr<File>> &result) const {
-    std::size_t maxAlignment =
-        1ULL << llvm::countTrailingZeros(uintptr_t(mb->getBufferStart()));
-    auto f = createELF<PPCDynamicFileCreateELFTraits>(
-        llvm::object::getElfArchType(&*mb), maxAlignment, std::move(mb),
-        _useUndefines);
-    if (!f)
-      return f;
-    result.push_back(std::move(*f));
-    return error_code();
-  }
+  PPCELFDSOReader(bool useUndefines)
+      : ELFDSOReader<PPCELFType, PPCDynamicFileCreateELFTraits>(
+            useUndefines, llvm::ELF::EM_PPC) {}
 };
 
 } // namespace elf
 } // namespace lld
 
-#endif // LLD_READER_WRITER_ELF_READER_H
+#endif // LLD_READER_WRITER_PPC_PPC_ELF_READER_H

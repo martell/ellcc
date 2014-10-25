@@ -9,8 +9,8 @@
 #ifndef AARCH64_DYNAMIC_LIBRARY_WRITER_H
 #define AARCH64_DYNAMIC_LIBRARY_WRITER_H
 
-#include "DynamicLibraryWriter.h"
 #include "AArch64LinkingContext.h"
+#include "DynamicLibraryWriter.h"
 
 namespace lld {
 namespace elf {

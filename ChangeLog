@@ -1,5 +1,7 @@
 current SVN:
 
+* Update to LLVM r220554.
+* Build compiler-rt with soft floating point for ARM and Mips.
 * Fixed and cleaned up the release process.
 
 version 0.1.2:

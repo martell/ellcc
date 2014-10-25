@@ -15,7 +15,6 @@
 
 #include "lld/Driver/Driver.h"
 #include "lld/Driver/GnuLdInputGraph.h"
-
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/STLExtras.h"
@@ -30,9 +29,8 @@
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Signals.h"
-
+#include "llvm/Support/raw_ostream.h"
 #include <cstring>
 #include <tuple>
 
@@ -306,6 +304,14 @@ bool GnuLdDriver::parse(int argc, const char *argv[],
 
   if (!parsedArgs->hasArg(OPT_nostdlib))
     addPlatformSearchDirs(*ctx, triple, baseTriple);
+
+  // Handle --demangle option(For compatibility)
+  if (parsedArgs->getLastArg(OPT_demangle))
+    ctx->setDemangleSymbols(true);
+
+  // Handle --no-demangle option.
+  if (parsedArgs->getLastArg(OPT_no_demangle))
+    ctx->setDemangleSymbols(false);
 
   // Figure out output kind ( -r, -static, -shared)
   if (llvm::opt::Arg *kind =

@@ -492,6 +492,14 @@ public:
     return RegIdx.RegInfo->getRegClass(ClassID).getRegister(RegIdx.Index);
   }
 
+  /// Coerce the register to GPR32 and return the real register for the current
+  /// target.
+  unsigned getGPRMM16Reg() const {
+    assert(isRegIdx() && (RegIdx.Kind & RegKind_GPR) && "Invalid access!");
+    unsigned ClassID = Mips::GPR32RegClassID;
+    return RegIdx.RegInfo->getRegClass(ClassID).getRegister(RegIdx.Index);
+  }
+
   /// Coerce the register to GPR64 and return the real register for the current
   /// target.
   unsigned getGPR64Reg() const {
@@ -638,6 +646,11 @@ public:
   void addGPR32AsmRegOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     Inst.addOperand(MCOperand::CreateReg(getGPR32Reg()));
+  }
+
+  void addGPRMM16AsmRegOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    Inst.addOperand(MCOperand::CreateReg(getGPRMM16Reg()));
   }
 
   /// Render the operand to an MCInst as a GPR64
@@ -900,6 +913,12 @@ public:
   bool isGPRAsmReg() const {
     return isRegIdx() && RegIdx.Kind & RegKind_GPR && RegIdx.Index <= 31;
   }
+  bool isMM16AsmReg() const {
+    if (!(isRegIdx() && RegIdx.Kind))
+      return false;
+    return ((RegIdx.Index >= 2 && RegIdx.Index <= 7)
+            || RegIdx.Index == 16 || RegIdx.Index == 17);
+  }
   bool isFGRAsmReg() const {
     // AFGR64 is $0-$15 but we handle this in getAFGR64()
     return isRegIdx() && RegIdx.Kind & RegKind_FGR && RegIdx.Index <= 31;
@@ -1140,6 +1159,42 @@ bool MipsAsmParser::processInstruction(MCInst &Inst, SMLoc IDLoc,
         Imm = Opnd.getImm();
         if (Imm < -1032 || Imm > 1028 || (Imm < 8 && Imm > -12) ||
             Imm % 4 != 0)
+          return Error(IDLoc, "immediate operand value out of range");
+        break;
+      case Mips::SLL16_MM:
+      case Mips::SRL16_MM:
+        Opnd = Inst.getOperand(2);
+        if (!Opnd.isImm())
+          return Error(IDLoc, "expected immediate operand kind");
+        Imm = Opnd.getImm();
+        if (Imm < 1 || Imm > 8)
+          return Error(IDLoc, "immediate operand value out of range");
+        break;
+      case Mips::LI16_MM:
+        Opnd = Inst.getOperand(1);
+        if (!Opnd.isImm())
+          return Error(IDLoc, "expected immediate operand kind");
+        Imm = Opnd.getImm();
+        if (Imm < -1 || Imm > 126)
+          return Error(IDLoc, "immediate operand value out of range");
+        break;
+      case Mips::ADDIUR2_MM:
+        Opnd = Inst.getOperand(2);
+        if (!Opnd.isImm())
+          return Error(IDLoc, "expected immediate operand kind");
+        Imm = Opnd.getImm();
+        if (!(Imm == 1 || Imm == -1 ||
+              ((Imm % 4 == 0) && Imm < 28 && Imm > 0)))
+          return Error(IDLoc, "immediate operand value out of range");
+        break;
+      case Mips::ADDIUR1SP_MM:
+        Opnd = Inst.getOperand(1);
+        if (!Opnd.isImm())
+          return Error(IDLoc, "expected immediate operand kind");
+        Imm = Opnd.getImm();
+        if (OffsetToAlignment(Imm, 4LL))
+          return Error(IDLoc, "misaligned immediate operand value");
+        if (Imm < 0 || Imm > 255)
           return Error(IDLoc, "immediate operand value out of range");
         break;
     }

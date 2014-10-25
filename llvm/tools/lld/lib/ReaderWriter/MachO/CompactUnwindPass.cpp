@@ -15,15 +15,13 @@
 
 #include "ArchHandler.h"
 #include "File.h"
-#include "MachOPasses.h"
 #include "MachONormalizedFileBinaryUtils.h"
-
+#include "MachOPasses.h"
 #include "lld/Core/DefinedAtom.h"
 #include "lld/Core/File.h"
 #include "lld/Core/LLVM.h"
 #include "lld/Core/Reference.h"
 #include "lld/Core/Simple.h"
-
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Endian.h"
@@ -137,7 +135,7 @@ public:
     _contents.resize(_commonEncodingsOffset +
                      commonEncodings.size() * sizeof(uint32_t));
     int32_t *commonEncodingsArea =
-        (int32_t *)&_contents[_commonEncodingsOffset];
+        reinterpret_cast<int32_t *>(_contents.data() + _commonEncodingsOffset);
 
     for (uint32_t encoding : commonEncodings)
       write32(*commonEncodingsArea++, _swap, encoding);

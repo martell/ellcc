@@ -136,6 +136,19 @@ will be automatically mapped to an import of the module ``std.io``. Even with sp
 
   The automatic mapping of ``#include`` to ``import`` also solves an implementation problem: importing a module with a definition of some entity (say, a ``struct Point``) and then parsing a header containing another definition of ``struct Point`` would cause a redefinition error, even if it is the same ``struct Point``. By mapping ``#include`` to ``import``, the compiler can guarantee that it always sees just the already-parsed definition from the module.
 
+While building a module, ``#include_next`` is also supported, with one caveat.
+The usual behavior of ``#include_next`` is to search for the specified filename
+in the list of include paths, starting from the path *after* the one
+in which the current file was found.
+Because files listed in module maps are not found through include paths, a
+different strategy is used for ``#include_next`` directives in such files: the
+list of include paths is searched for the specified header name, to find the
+first include path that would refer to the current file. ``#include_next`` is
+interpreted as if the current file had been found in that path.
+If this search finds a file named by a module map, the ``#include_next``
+directive is translated into an import, just like for a ``#include``
+directive.``
+
 Module maps
 -----------
 The crucial link between modules and headers is described by a *module map*, which describes how a collection of existing headers maps on to the (logical) structure of a module. For example, one could imagine a module ``std`` covering the C standard library. Each of the C standard library headers (``<stdio.h>``, ``<stdlib.h>``, ``<math.h>``, etc.) would contribute to the ``std`` module, by placing their respective APIs into the corresponding submodule (``std.io``, ``std.lib``, ``std.math``, etc.). Having a list of the headers that are part of the ``std`` module allows the compiler to build the ``std`` module as a standalone entity, and having the mapping from header names to (sub)modules allows the automatic translation of ``#include`` directives to module imports.
@@ -254,6 +267,12 @@ As an example, the module map file for the C standard library might look a bit l
 .. parsed-literal::
 
   module std [system] [extern_c] {
+    module assert {
+      textual header "assert.h"
+      header "bits/assert-decls.h"
+      export *
+    }
+
     module complex {
       header "complex.h"
       export *
@@ -286,11 +305,11 @@ Module map files use a simplified form of the C99 lexer, with the same rules for
 
 .. parsed-literal::
 
-  ``config_macros`` ``export``     ``module``
+  ``config_macros`` ``export``     ``private``
   ``conflict``      ``framework``  ``requires``
-  ``exclude``       ``header``     ``private``
+  ``exclude``       ``header``     ``textual``
   ``explicit``      ``link``       ``umbrella``
-  ``extern``        ``use``
+  ``extern``        ``module``     ``use``
 
 Module map file
 ---------------
@@ -318,7 +337,7 @@ A module declaration describes a module, including the headers that contribute t
     ``explicit``:sub:`opt` ``framework``:sub:`opt` ``module`` *module-id* *attributes*:sub:`opt` '{' *module-member** '}'
     ``extern`` ``module`` *module-id* *string-literal*
 
-The *module-id* should consist of only a single *identifier*, which provides the name of the module being defined. Each module shall have a single definition. 
+The *module-id* should consist of only a single *identifier*, which provides the name of the module being defined. Each module shall have a single definition.
 
 The ``explicit`` qualifier can only be applied to a submodule, i.e., a module that is nested within another module. The contents of explicit submodules are only made available when the submodule itself was explicitly named in an import declaration or was re-exported from an imported module.
 
@@ -428,9 +447,10 @@ A header declaration specifies that a particular header is associated with the e
   *header-declaration*:
     ``umbrella``:sub:`opt` ``header`` *string-literal*
     ``private`` ``header`` *string-literal*
+    ``textual`` ``header`` *string-literal*
     ``exclude`` ``header`` *string-literal*
 
-A header declaration that does not contain ``exclude`` specifies a header that contributes to the enclosing module. Specifically, when the module is built, the named header will be parsed and its declarations will be (logically) placed into the enclosing submodule.
+A header declaration that does not contain ``exclude`` nor ``textual`` specifies a header that contributes to the enclosing module. Specifically, when the module is built, the named header will be parsed and its declarations will be (logically) placed into the enclosing submodule.
 
 A header with the ``umbrella`` specifier is called an umbrella header. An umbrella header includes all of the headers within its directory (and any subdirectories), and is typically used (in the ``#include`` world) to easily access the full API provided by a particular library. With modules, an umbrella header is a convenient shortcut that eliminates the need to write out ``header`` declarations for every library header. A given directory can only contain a single umbrella header.
 
@@ -441,6 +461,8 @@ A header with the ``umbrella`` specifier is called an umbrella header. An umbrel
     about headers not covered by the umbrella header or the module map.
 
 A header with the ``private`` specifier may not be included from outside the module itself.
+
+A header with the ``textual`` specifier will not be included when the module is built, and will be textually included if it is named by a ``#include`` directive. However, it is considered to be part of the module for the purpose of checking *use-declaration*\s.
 
 A header with the ``exclude`` specifier is excluded from the module. It will not be included when the module is built, nor will it be considered to be part of the module.
 

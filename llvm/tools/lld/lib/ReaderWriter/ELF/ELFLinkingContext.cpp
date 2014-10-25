@@ -8,21 +8,25 @@
 //===----------------------------------------------------------------------===//
 
 #include "lld/ReaderWriter/ELFLinkingContext.h"
-
 #include "ArrayOrderPass.h"
 #include "ELFFile.h"
 #include "TargetHandler.h"
 #include "Targets.h"
-
 #include "lld/Core/Instrumentation.h"
 #include "lld/Passes/LayoutPass.h"
 #include "lld/Passes/RoundTripYAMLPass.h"
-
 #include "llvm/ADT/Triple.h"
-#include "llvm/Support/Errc.h"
+#include "llvm/Config/config.h"
 #include "llvm/Support/ELF.h"
+#include "llvm/Support/Errc.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
+
+// FreeBSD 10.0 has cxxabi.h but fails to define HAVE_CXXABI_H due to
+// header dependency issues.
+#if defined(HAVE_CXXABI_H) || defined (__FreeBSD__)
+#include <cxxabi.h>
+#endif
 
 namespace lld {
 
@@ -56,12 +60,11 @@ ELFLinkingContext::ELFLinkingContext(
     llvm::Triple triple, std::unique_ptr<TargetHandlerBase> targetHandler)
     : _outputELFType(elf::ET_EXEC), _triple(triple),
       _targetHandler(std::move(targetHandler)), _baseAddress(0),
-      _isStaticExecutable(false), _noInhibitExec(false),
-      _exportDynamic(false), _mergeCommonStrings(false),
-      _runLayoutPass(true), _useShlibUndefines(true),
-      _dynamicLinkerArg(false), _noAllowDynamicLibraries(false),
-      _mergeRODataToTextSegment(true), _outputMagic(OutputMagic::DEFAULT),
-      _sysrootPath("") {}
+      _isStaticExecutable(false), _noInhibitExec(false), _exportDynamic(false),
+      _mergeCommonStrings(false), _runLayoutPass(true),
+      _useShlibUndefines(true), _dynamicLinkerArg(false),
+      _noAllowDynamicLibraries(false), _mergeRODataToTextSegment(true),
+      _demangle(true), _outputMagic(OutputMagic::DEFAULT), _sysrootPath("") {}
 
 bool ELFLinkingContext::is64Bits() const { return getTriple().isArch64Bit(); }
 
@@ -261,6 +264,31 @@ void ELFLinkingContext::notifySymbolTableCoalesce(const Atom *existingAtom,
     // in the shared object the strong atom needs to be dynamically exported.
     // Save its name.
     _dynamicallyExportedSymbols.insert(ua->name());
+}
+
+std::string ELFLinkingContext::demangle(StringRef symbolName) const {
+  if (!_demangle)
+    return symbolName;
+
+  // Only try to demangle symbols that look like C++ symbols
+  if (!symbolName.startswith("_Z"))
+    return symbolName;
+
+#if defined(HAVE_CXXABI_H) || defined (__FreeBSD__)
+  SmallString<256> symBuff;
+  StringRef nullTermSym = Twine(symbolName).toNullTerminatedStringRef(symBuff);
+  const char *cstr = nullTermSym.data();
+  int status;
+  char *demangled = abi::__cxa_demangle(cstr, nullptr, nullptr, &status);
+  if (demangled != NULL) {
+    std::string result(demangled);
+    // __cxa_demangle() always uses a malloc'ed buffer to return the result.
+    free(demangled);
+    return result;
+  }
+#endif
+
+  return symbolName;
 }
 
 } // end namespace lld

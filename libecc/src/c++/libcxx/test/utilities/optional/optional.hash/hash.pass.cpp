@@ -23,6 +23,8 @@
 int main()
 {
 #if _LIBCPP_STD_VER > 11
+    using std::experimental::optional;
+
     {
         typedef int T;
         std::optional<T> opt;

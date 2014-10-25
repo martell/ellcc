@@ -20,6 +20,8 @@
 #include "clang/Driver/Options.h"
 #include "clang/Driver/CompilationInfo.h"
 #include "clang/Frontend/CompilerInvocation.h"
+#include "clang/Frontend/ChainedDiagnosticConsumer.h"
+#include "clang/Frontend/SerializedDiagnosticPrinter.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Frontend/Utils.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -201,151 +203,154 @@ extern int cc1_main(ArrayRef<const char *> Argv, const char *Argv0,
 extern int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0,
                       void *MainAddr);
 
+struct DriverSuffix {
+  const char *Suffix;
+  const char *ModeFlag;
+  bool IsELLCC;
+};
+
+static const DriverSuffix *FindDriverSuffix(StringRef ProgName) {
+  // A list of known driver suffixes. Suffixes are compared against the
+  // program name in order. If there is a match, the frontend type if updated as
+  // necessary by applying the ModeFlag.
+  static const DriverSuffix DriverSuffixes[] = {
+      {"clang", nullptr},
+      {"clang++", "--driver-mode=g++"},
+      {"clang-c++", "--driver-mode=g++"},
+      {"clang-cc", nullptr},
+      {"clang-cpp", "--driver-mode=cpp"},
+      {"clang-g++", "--driver-mode=g++"},
+      {"clang-gcc", nullptr},
+      { "ecc",   nullptr, true },
+      { "ecc++", "--driver-mode=g++", true },
+      {"clang-cl", "--driver-mode=cl"},
+      {"cc", nullptr},
+      {"cpp", "--driver-mode=cpp"},
+      {"cl", "--driver-mode=cl"},
+      {"++", "--driver-mode=g++"},
+  };
+
+  for (size_t i = 0; i < llvm::array_lengthof(DriverSuffixes); ++i)
+    if (ProgName.endswith(DriverSuffixes[i].Suffix))
+      return &DriverSuffixes[i];
+  return nullptr;
+}
+
 static void ParseProgName(SmallVectorImpl<const char *> &ArgVector,
                           std::set<std::string> &SavedStrings,
-                          Driver &TheDriver)
-{
-  // Try to infer frontend type and default target from the program name.
+                          Driver &TheDriver) {
+  // Try to infer frontend type and default target from the program name by
+  // comparing it against DriverSuffixes in order.
 
-  // suffixes[] contains the list of known driver suffixes.
-  // Suffixes are compared against the program name in order.
-  // If there is a match, the frontend type is updated as necessary (CPP/C++).
-  // If there is no match, a second round is done after stripping the last
-  // hyphen and everything following it. This allows using something like
-  // "clang++-2.9".
+  // If there is a match, the function tries to identify a target as prefix.
+  // E.g. "x86_64-linux-clang" as interpreted as suffix "clang" with target
+  // prefix "x86_64-linux". If such a target prefix is found, is gets added via
+  // -target as implicit first argument.
 
-  // If there is a match in either the first or second round,
-  // the function tries to identify a target as prefix. E.g.
-  // "x86_64-linux-clang" as interpreted as suffix "clang" with
-  // target prefix "x86_64-linux". If such a target prefix is found,
-  // is gets added via -target as implicit first argument.
-  static const struct {
-    const char *Suffix;
-    const char *ModeFlag;
-    bool IsELLCC;
-  } suffixes [] = {
-    { "clang",     nullptr },
-    { "clang++",   "--driver-mode=g++" },
-    { "clang-c++", "--driver-mode=g++" },
-    { "clang-cc",  nullptr },
-    { "clang-cpp", "--driver-mode=cpp" },
-    { "clang-g++", "--driver-mode=g++" },
-    { "clang-gcc", nullptr },
-    { "ecc",       nullptr, true },
-    { "ecc++",     "--driver-mode=g++", true },
-    { "clang-cl",  "--driver-mode=cl"  },
-    { "cc",        nullptr },
-    { "cpp",       "--driver-mode=cpp" },
-    { "cl" ,       "--driver-mode=cl"  },
-    { "++",        "--driver-mode=g++" },
-  };
-  std::string ProgName(llvm::sys::path::stem(ArgVector[0]));
+  std::string ProgName =llvm::sys::path::stem(ArgVector[0]);
 #ifdef LLVM_ON_WIN32
   // Transform to lowercase for case insensitive file systems.
-  std::transform(ProgName.begin(), ProgName.end(), ProgName.begin(),
-                 toLowercase);
+  ProgName = StringRef(ProgName).lower();
 #endif
-  StringRef ProgNameRef(ProgName);
-  StringRef Prefix;
 
-  for (int Components = 2; Components; --Components) {
-    auto I = std::find_if(std::begin(suffixes), std::end(suffixes),
-                          [&](decltype(suffixes[0]) &suffix) {
-      return ProgNameRef.endswith(suffix.Suffix);
-    });
+  StringRef ProgNameRef = ProgName;
+  const DriverSuffix *DS = FindDriverSuffix(ProgNameRef);
 
-    if (I != std::end(suffixes)) {
-      if (I->ModeFlag) {
-        auto it = ArgVector.begin();
-        if (it != ArgVector.end())
-          ++it;
-        ArgVector.insert(it, I->ModeFlag);
-      }
-      if (I->IsELLCC)
-        TheDriver.CCCIsELLCC = true;
-      StringRef::size_type LastComponent = ProgNameRef.rfind('-',
-        ProgNameRef.size() - strlen(I->Suffix));
-      if (LastComponent != StringRef::npos)
-        Prefix = ProgNameRef.slice(0, LastComponent);
-      break;
-    }
-
-    StringRef::size_type LastComponent = ProgNameRef.rfind('-');
-    if (LastComponent == StringRef::npos)
-      break;
-    ProgNameRef = ProgNameRef.slice(0, LastComponent);
+  if (!DS) {
+    // Try again after stripping any trailing version number:
+    // clang++3.5 -> clang++
+    ProgNameRef = ProgNameRef.rtrim("0123456789.");
+    DS = FindDriverSuffix(ProgNameRef);
   }
 
-  if (TheDriver.CCCIsELLCC) {
-    // Set the ResourceDir correctly for ELLCC.
-    TheDriver.setResourceDir();
-    if (Prefix.empty()) {
-#if defined(ELLCC_ARG0)
-    // Override the default target for a cross compiler.
+  if (!DS) {
+    // Try again after stripping trailing -component.
+    // clang++-tot -> clang++
+    ProgNameRef = ProgNameRef.slice(0, ProgNameRef.rfind('-'));
+    DS = FindDriverSuffix(ProgNameRef);
+  }
+
+  if (DS) {
+    if (DS->IsELLCC) {
+      TheDriver.CCCIsELLCC = true;
+      // Set the ResourceDir correctly for ELLCC.
+      TheDriver.setResourceDir();
+    }
+    if (const char *Flag = DS->ModeFlag) {
+      // Add Flag to the arguments.
       auto it = ArgVector.begin();
       if (it != ArgVector.end())
         ++it;
-      const char* Strings[] =
-        { GetStableCStr(SavedStrings, std::string("-target")),
-          GetStableCStr(SavedStrings, std::string(ELLCC_ARG0)) };
-      ArgVector.insert(it, std::begin(Strings), std::end(Strings));
+      ArgVector.insert(it, Flag);
+    }
+
+    StringRef::size_type LastComponent = ProgNameRef.rfind(
+        '-', ProgNameRef.size() - strlen(DS->Suffix));
+    if (LastComponent == StringRef::npos) {
+#if defined(ELLCC_ARG0)
+      // Override the default target for a cross compiler.
+      auto it = ArgVector.begin();
+      if (it != ArgVector.end())
+        ++it;
+      const char* arr[] = { "-target", ELLCC_ARG0 };
+      ArgVector.insert(it, std::begin(arr), std::end(arr));
 #endif
     } else {
-      auto it = ArgVector.begin();
-      if (it != ArgVector.end())
-        ++it;
-      // Set up the target.
-      const char* Strings[] =
-        { GetStableCStr(SavedStrings, std::string("-target")),
-          GetStableCStr(SavedStrings, Prefix) };
-      ArgVector.insert(it, std::begin(Strings), std::end(Strings));
-    }
-  } else {
-    // Use the executable name to form the -target option.
-    if (!Prefix.empty()) {
-      std::string IgnoredError;
-      if (llvm::TargetRegistry::lookupTarget(Prefix, IgnoredError)) {
+      // Infer target from the prefix.
+      StringRef Prefix = ProgNameRef.slice(0, LastComponent);
+
+      if (TheDriver.CCCIsELLCC) {
         auto it = ArgVector.begin();
         if (it != ArgVector.end())
           ++it;
-        const char* Strings[] =
-          { GetStableCStr(SavedStrings, std::string("-target")),
-            GetStableCStr(SavedStrings, Prefix) };
-        ArgVector.insert(it, std::begin(Strings), std::end(Strings));
+        // Set up the target. ELLCC allows arbitrary names.
+        const char* arr[] = { "-target", GetStableCStr(SavedStrings, Prefix) };
+        ArgVector.insert(it, std::begin(arr), std::end(arr));
+      } else {
+        // Use the executable name to form the -target option.
+        std::string IgnoredError;
+        if (llvm::TargetRegistry::lookupTarget(Prefix, IgnoredError)) {
+          auto it = ArgVector.begin();
+          if (it != ArgVector.end())
+            ++it;
+          const char *arr[] = { "-target",
+                                GetStableCStr(SavedStrings, Prefix) };
+          ArgVector.insert(it, std::begin(arr), std::end(arr));
+        }
       }
     }
-  }
 
-  // Check for and process the last -target option which specifies a config
-  // file.
-  auto it = ArgVector.begin();
-  auto ie = ArgVector.end();
-  auto target = ie;
-  for ( ; it != ie; ++it) {
-    if (strcmp(*it, "-target") == 0) {
-      // Remember the last one.
-      target = it;
+    // Check for and process the last -target option which specifies a config
+    // file.
+    auto it = ArgVector.begin();
+    auto ie = ArgVector.end();
+    auto target = ie;
+    for ( ; it != ie; ++it) {
+      if (strcmp(*it, "-target") == 0) {
+        // Remember the last one.
+        target = it;
+      }
     }
-  }
 
-  if (target == ie || target + 1 == ie) {
-    // No -target or no argument to -target.
-    return;
-  }
+    if (target == ie || target + 1 == ie) {
+      // No -target or no argument to -target.
+      return;
+    }
 
-  auto ib = target;
-  ++target;
-  if (clang::compilationinfo::CompilationInfo::CheckForAndReadInfo(*target,
+    auto ib = target;
+    ++target;
+    if (clang::compilationinfo::CompilationInfo::CheckForAndReadInfo(*target,
                                                                  TheDriver)) {
-    // Remove the -target and its argument.
-    ArgVector.erase(ib, ++target);
-    // Process the compiler options immediately.
-    TheDriver.Info->compiler.Expand(TheDriver);
-    for (size_t i = 0; i < TheDriver.Info->compiler.options.size(); ++i) {
-      const char *opt = GetStableCStr(SavedStrings,
-                                      TheDriver.Info->compiler.options[i]);
-      ArgVector.insert(ib, GetStableCStr(SavedStrings, opt));
-      ++ib;
+      // Remove the -target and its argument.
+      ArgVector.erase(ib, ++target);
+      // Process the compiler options immediately.
+      TheDriver.Info->compiler.Expand(TheDriver);
+      for (size_t i = 0; i < TheDriver.Info->compiler.options.size(); ++i) {
+        const char *opt = GetStableCStr(SavedStrings,
+                                        TheDriver.Info->compiler.options[i]);
+        ArgVector.insert(ib, GetStableCStr(SavedStrings, opt));
+        ++ib;
+      }
     }
   }
 }
@@ -507,6 +512,16 @@ int main(int argc_, const char **argv_) {
   IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());
 
   DiagnosticsEngine Diags(DiagID, &*DiagOpts, DiagClient);
+
+  if (!DiagOpts->DiagnosticSerializationFile.empty()) {
+    auto SerializedConsumer =
+        clang::serialized_diags::create(DiagOpts->DiagnosticSerializationFile,
+                                        &*DiagOpts, /*MergeChildRecords=*/true);
+    Diags.setClient(new ChainedDiagnosticConsumer(
+        std::unique_ptr<DiagnosticConsumer>(Diags.takeClient()),
+        std::move(SerializedConsumer)));
+  }
+
   ProcessWarningOptions(Diags, *DiagOpts, /*ReportDiags=*/false);
 
   Driver TheDriver(Path, llvm::sys::getDefaultTargetTriple(), Diags);
@@ -526,8 +541,12 @@ int main(int argc_, const char **argv_) {
   // Force a crash to test the diagnostics.
   if (::getenv("FORCE_CLANG_DIAGNOSTICS_CRASH")) {
     Diags.Report(diag::err_drv_force_crash) << "FORCE_CLANG_DIAGNOSTICS_CRASH";
-    const Command *FailingCommand = nullptr;
-    FailingCommands.push_back(std::make_pair(-1, FailingCommand));
+
+    // Pretend that every command failed.
+    FailingCommands.clear();
+    for (const auto &J : C->getJobs())
+      if (const Command *C = dyn_cast<Command>(&J))
+        FailingCommands.push_back(std::make_pair(-1, C));
   }
 
   for (const auto &P : FailingCommands) {
@@ -545,15 +564,17 @@ int main(int argc_, const char **argv_) {
     DiagnoseCrash |= CommandRes == 3;
 #endif
     if (DiagnoseCrash) {
-      TheDriver.generateCompilationDiagnostics(*C, FailingCommand);
+      TheDriver.generateCompilationDiagnostics(*C, *FailingCommand);
       break;
     }
   }
 
+  Diags.getClient()->finish();
+
   // If any timers were active but haven't been destroyed yet, print their
   // results now.  This happens in -disable-free mode.
   llvm::TimerGroup::printAll(llvm::errs());
-  
+
   llvm::llvm_shutdown();
 
 #ifdef LLVM_ON_WIN32

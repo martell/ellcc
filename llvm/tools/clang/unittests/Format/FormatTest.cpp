@@ -111,6 +111,7 @@ TEST_F(FormatTest, NestedNameSpecifiers) {
   verifyFormat("vector<::Type> v;");
   verifyFormat("::ns::SomeFunction(::ns::SomeOtherFunction())");
   verifyFormat("static constexpr bool Bar = decltype(bar())::value;");
+  verifyFormat("bool a = 2 < ::SomeFunction();");
 }
 
 TEST_F(FormatTest, OnlyGeneratesNecessaryReplacements) {
@@ -2311,6 +2312,16 @@ TEST_F(FormatTest, NestedStaticInitializers) {
       "                 {kOsWin, \"Windows\"},\n"
       "                 {kOsLinux, \"Linux\"},\n"
       "                 {kOsCrOS, \"Chrome OS\"}};");
+  verifyFormat(
+      "struct {\n"
+      "  unsigned bit;\n"
+      "  const char *const name;\n"
+      "} kBitsToOs[] = {\n"
+      "    {kOsMac, \"Mac\"},\n"
+      "    {kOsWin, \"Windows\"},\n"
+      "    {kOsLinux, \"Linux\"},\n"
+      "    {kOsCrOS, \"Chrome OS\"},\n"
+      "};");
 }
 
 TEST_F(FormatTest, FormatsSmallMacroDefinitionsInSingleLine) {
@@ -3514,6 +3525,9 @@ TEST_F(FormatTest, TrailingReturnType) {
   verifyFormat("template <size_t Order, typename T>\n"
                "auto load_img(const std::string &filename)\n"
                "    -> alias::tensor<Order, T, mem::tag::cpu> {}");
+  verifyFormat("auto SomeFunction(A aaaaaaaaaaaaaaaaaaaaa) const\n"
+               "    -> decltype(f(aaaaaaaaaaaaaaaaaaaaa)) {}");
+  verifyFormat("auto doSomething(Aaaaaa *aaaaaa) -> decltype(aaaaaa->f()) {}");
 
   // Not trailing return types.
   verifyFormat("void f() { auto a = b->c(); }");
@@ -4832,6 +4846,7 @@ TEST_F(FormatTest, UnderstandsOverloadedOperators) {
                "  return left.group < right.group;\n"
                "}");
   verifyFormat("SomeType &operator=(const SomeType &S);");
+  verifyFormat("f.template operator()<int>();");
 
   verifyGoogleFormat("operator void*();");
   verifyGoogleFormat("operator SomeType<SomeType<int>>();");
@@ -6527,6 +6542,7 @@ TEST_F(FormatTest, FormatObjCMethodExpr) {
   verifyFormat("return in[42];");
   verifyFormat("for (id foo in [self getStuffFor:bla]) {\n"
                "}");
+  verifyFormat("[self aaaaa:MACRO(a, b:, c:)];");
 
   verifyFormat("[self stuffWithInt:(4 + 2) float:4.5];");
   verifyFormat("[self stuffWithInt:a ? b : c float:4.5];");
@@ -8910,6 +8926,11 @@ TEST_F(FormatTest, BreakConstructorInitializersBeforeComma) {
                Style);
 }
 
+TEST_F(FormatTest, Destructors) {
+  verifyFormat("void F(int &i) { i.~int(); }");
+  verifyFormat("void F(int &i) { i->~int(); }");
+}
+
 TEST_F(FormatTest, FormatsWithWebKitStyle) {
   FormatStyle Style = getWebKitStyle();
 
@@ -9134,23 +9155,35 @@ TEST_F(FormatTest, FormatsLambdas) {
 }
 
 TEST_F(FormatTest, FormatsBlocks) {
-  verifyFormat("int (^Block)(int, int);");
-  verifyFormat("int (^Block1)(int, int) = ^(int i, int j)");
-  verifyFormat("void (^block)(int) = ^(id test) { int i; };");
-  verifyFormat("void (^block)(int) = ^(int test) { int i; };");
-  verifyFormat("void (^block)(int) = ^id(int test) { int i; };");
-  verifyFormat("void (^block)(int) = ^int(int test) { int i; };");
+  FormatStyle ShortBlocks = getLLVMStyle();
+  ShortBlocks.AllowShortBlocksOnASingleLine = true;
+  verifyFormat("int (^Block)(int, int);", ShortBlocks);
+  verifyFormat("int (^Block1)(int, int) = ^(int i, int j)", ShortBlocks);
+  verifyFormat("void (^block)(int) = ^(id test) { int i; };", ShortBlocks);
+  verifyFormat("void (^block)(int) = ^(int test) { int i; };", ShortBlocks);
+  verifyFormat("void (^block)(int) = ^id(int test) { int i; };", ShortBlocks);
+  verifyFormat("void (^block)(int) = ^int(int test) { int i; };", ShortBlocks);
 
-  verifyFormat("foo(^{ bar(); });");
-  verifyFormat("foo(a, ^{ bar(); });");
+  verifyFormat("foo(^{ bar(); });", ShortBlocks);
+  verifyFormat("foo(a, ^{ bar(); });", ShortBlocks);
+  verifyFormat("{ void (^block)(Object *x); }", ShortBlocks);
 
-  verifyFormat("[operation setCompletionBlock:^{ [self onOperationDone]; }];");
-  verifyFormat("int i = {[operation setCompletionBlock:^{ [self "
-               "onOperationDone]; }]};");
-  verifyFormat("[operation setCompletionBlock:^(int *i) { f(); }];");
-  verifyFormat("int a = [operation block:^int(int *i) { return 1; }];");
+  verifyFormat("[operation setCompletionBlock:^{\n"
+               "    [self onOperationDone];\n"
+               "}];");
+  verifyFormat("int i = {[operation setCompletionBlock:^{\n"
+               "    [self onOperationDone];\n"
+               "}]};");
+  verifyFormat("[operation setCompletionBlock:^(int *i) {\n"
+               "    f();\n"
+               "}];");
+  verifyFormat("int a = [operation block:^int(int *i) {\n"
+               "    return 1;\n"
+               "}];");
   verifyFormat("[myObject doSomethingWith:arg1\n"
-               "                      aaa:^int(int *a) { return 1; }\n"
+               "                      aaa:^int(int *a) {\n"
+               "                          return 1;\n"
+               "                      }\n"
                "                      bbb:f(a * bbbbbbbb)];");
 
   verifyFormat("[operation setCompletionBlock:^{\n"

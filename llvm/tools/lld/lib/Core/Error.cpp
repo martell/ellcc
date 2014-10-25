@@ -8,11 +8,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "lld/Core/Error.h"
-
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Mutex.h"
-
 #include <string>
 #include <vector>
 
@@ -160,6 +158,8 @@ namespace lld {
 /// other than error_code.
 class dynamic_error_category : public std::error_category {
 public:
+  ~dynamic_error_category() LLVM_NOEXCEPT {}
+
   const char *name() const LLVM_NOEXCEPT override {
     return "lld.dynamic_error";
   }

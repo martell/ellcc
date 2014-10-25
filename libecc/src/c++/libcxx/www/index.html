@@ -152,9 +152,6 @@
    <!--======================================================================-->
    <p>These are the libc++ build bots</p>
    <ul>
-      <li><a href="http://lab.llvm.org:8013/builders/libcxx_clang-x86_64-darwin11-RA">
-        clang-libcxxabi-x86_64-darwin11
-      </a></li>
       <li><a href="http://llvm-amd64.freebsd.your.org/b/builders/libcxx-amd64-freebsd">
         clang-libcxxrt-x86_64-freebsd10
       </a></li>
@@ -447,6 +444,37 @@ End of search list.
           <li><code>clang++ -stdlib=libc++ helloworld.cpp -lcxxrt</code></li>
         </ul>
      </p>
+  </p>
+
+  <!--=====================================================================-->
+  <h2 id="local-abi">Using a local ABI library</h2>
+  <!--=====================================================================-->
+  <p>
+    <strong>Note: This is not recommended in almost all cases.</strong><br>
+    Generally these instructions should only be used when you can't install
+    your ABI library.
+  </p>
+  <p>
+    Normally you must link libc++ against a ABI shared library that the
+    linker can find.  If you want to build and test libc++ against an ABI
+    library not in the linker's path you need to set
+    <code>-DLIBCXX_CXX_ABI_LIBRARY_PATH=/path/to/abi/lib</code> when
+    configuring CMake.
+  </p>
+  <p>
+    An example build using libc++abi would look like:
+    <ul>
+    <li><code>CC=clang CXX=clang++ cmake
+              -DLIBCXX_CXX_ABI=libc++abi
+              -DLIBCXX_LIBCXXABI_INCLUDE_PATHS="/path/to/libcxxabi/include"
+              -DLIBCXX_CXX_ABI_LIBRARY_PATH="/path/to/libcxxabi-build/lib"
+              path/to/libcxx</code></li>
+    <li><code>make</code></li>
+    </ul>
+  </p>
+  <p>
+    When testing libc++ LIT will automatically link against the proper ABI
+    library.
   </p>
 
   <!--=====================================================================-->

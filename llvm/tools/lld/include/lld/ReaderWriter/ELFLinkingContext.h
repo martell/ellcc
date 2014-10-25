@@ -11,19 +11,16 @@
 #define LLD_READER_WRITER_ELF_LINKER_CONTEXT_H
 
 #include "lld/Core/LinkingContext.h"
-#include "lld/Core/PassManager.h"
 #include "lld/Core/Pass.h"
-#include "lld/Core/range.h"
+#include "lld/Core/PassManager.h"
 #include "lld/Core/STDExtras.h"
-
+#include "lld/Core/range.h"
 #include "lld/ReaderWriter/Reader.h"
 #include "lld/ReaderWriter/Writer.h"
-
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Object/ELF.h"
 #include "llvm/Support/ELF.h"
-
 #include <map>
 #include <memory>
 
@@ -278,6 +275,11 @@ public:
     return _dynamicallyExportedSymbols.count(name) != 0;
   }
 
+  /// \brief Demangle symbols.
+  std::string demangle(StringRef symbolName) const override;
+  bool demangleSymbols() const { return _demangle; }
+  void setDemangleSymbols(bool d) { _demangle = d; }
+
 private:
   ELFLinkingContext() LLVM_DELETED_FUNCTION;
 
@@ -302,6 +304,7 @@ protected:
   bool _dynamicLinkerArg;
   bool _noAllowDynamicLibraries;
   bool _mergeRODataToTextSegment;
+  bool _demangle;
   OutputMagic _outputMagic;
   StringRefVector _inputSearchPaths;
   std::unique_ptr<Writer> _writer;

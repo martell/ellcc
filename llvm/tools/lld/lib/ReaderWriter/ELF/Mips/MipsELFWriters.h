@@ -15,6 +15,8 @@
 namespace lld {
 namespace elf {
 
+template <class ELFT> class MipsRuntimeFile;
+
 template <class ELFT> class MipsTargetLayout;
 
 template <typename ELFT> class MipsELFWriter {

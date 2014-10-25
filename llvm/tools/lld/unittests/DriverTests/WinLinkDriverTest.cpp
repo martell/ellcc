@@ -13,11 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "DriverTest.h"
-
 #include "lld/ReaderWriter/PECOFFLinkingContext.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/Support/COFF.h"
-
 #include <set>
 #include <vector>
 
@@ -412,6 +410,15 @@ TEST_F(WinLinkParserTest, DefaultLibDuplicates) {
 TEST_F(WinLinkParserTest, NoDefaultLib) {
   EXPECT_TRUE(parse("link.exe", "/defaultlib:user32.lib",
                     "/defaultlib:kernel32", "/nodefaultlib:user32.lib", "a.obj",
+                    nullptr));
+  EXPECT_EQ(3, inputFileCount());
+  EXPECT_EQ("a.obj", inputFile(0));
+  EXPECT_EQ("kernel32.lib", inputFile(2, 0));
+}
+
+TEST_F(WinLinkParserTest, NoDefaultLibCase) {
+  EXPECT_TRUE(parse("link.exe", "/defaultlib:user32",
+                    "/defaultlib:kernel32", "/nodefaultlib:USER32.LIB", "a.obj",
                     nullptr));
   EXPECT_EQ(3, inputFileCount());
   EXPECT_EQ("a.obj", inputFile(0));

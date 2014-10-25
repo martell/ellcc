@@ -90,6 +90,11 @@ SITargetLowering::SITargetLowering(TargetMachine &TM) :
   setOperationAction(ISD::FSIN, MVT::f32, Custom);
   setOperationAction(ISD::FCOS, MVT::f32, Custom);
 
+  setOperationAction(ISD::FMINNUM, MVT::f32, Legal);
+  setOperationAction(ISD::FMAXNUM, MVT::f32, Legal);
+  setOperationAction(ISD::FMINNUM, MVT::f64, Legal);
+  setOperationAction(ISD::FMAXNUM, MVT::f64, Legal);
+
   // We need to custom lower vector stores from local memory
   setOperationAction(ISD::LOAD, MVT::v4i32, Custom);
   setOperationAction(ISD::LOAD, MVT::v8i32, Custom);
@@ -116,6 +121,8 @@ SITargetLowering::SITargetLowering(TargetMachine &TM) :
 
   setOperationAction(ISD::SETCC, MVT::v2i1, Expand);
   setOperationAction(ISD::SETCC, MVT::v4i1, Expand);
+
+  setOperationAction(ISD::BSWAP, MVT::i32, Legal);
 
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i1, Legal);
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::v2i1, Custom);
@@ -256,6 +263,13 @@ SITargetLowering::SITargetLowering(TargetMachine &TM) :
 //===----------------------------------------------------------------------===//
 // TargetLowering queries
 //===----------------------------------------------------------------------===//
+
+bool SITargetLowering::isShuffleMaskLegal(const SmallVectorImpl<int> &,
+                                          EVT) const {
+  // SI has some legal vector types, but no legal vector operations. Say no
+  // shuffles are legal in order to prefer scalarizing some vector operations.
+  return false;
+}
 
 // FIXME: This really needs an address space argument. The immediate offset
 // size is different for different sets of memory instruction sets.
@@ -620,36 +634,6 @@ MachineBasicBlock * SITargetLowering::EmitInstrWithCustomInserter(
             .addImm(AMDGPU::sub0_sub1)
             .addReg(SubRegHi)
             .addImm(AMDGPU::sub2_sub3);
-    MI->eraseFromParent();
-    break;
-  }
-  case AMDGPU::SI_BUFFER_RSRC: {
-    unsigned SuperReg = MI->getOperand(0).getReg();
-    unsigned Args[4];
-    for (unsigned i = 0, e = 4; i < e; ++i) {
-      MachineOperand &Arg = MI->getOperand(i + 1);
-
-      if (Arg.isReg()) {
-        Args[i] = Arg.getReg();
-        continue;
-      }
-
-      assert(Arg.isImm());
-      unsigned Reg = MRI.createVirtualRegister(&AMDGPU::SGPR_32RegClass);
-      BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::S_MOV_B32), Reg)
-              .addImm(Arg.getImm());
-      Args[i] = Reg;
-    }
-    BuildMI(*BB, I, MI->getDebugLoc(), TII->get(AMDGPU::REG_SEQUENCE),
-            SuperReg)
-            .addReg(Args[0])
-            .addImm(AMDGPU::sub0)
-            .addReg(Args[1])
-            .addImm(AMDGPU::sub1)
-            .addReg(Args[2])
-            .addImm(AMDGPU::sub2)
-            .addReg(Args[3])
-            .addImm(AMDGPU::sub3);
     MI->eraseFromParent();
     break;
   }

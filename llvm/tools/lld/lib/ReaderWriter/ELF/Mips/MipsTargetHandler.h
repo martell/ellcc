@@ -15,7 +15,6 @@
 #include "MipsRelocationHandler.h"
 #include "MipsSectionChunks.h"
 #include "TargetLayout.h"
-
 #include "llvm/ADT/DenseSet.h"
 
 namespace lld {
@@ -110,6 +109,10 @@ public:
 
   std::unique_ptr<Reader> getObjReader(bool atomizeStrings) override {
     return std::unique_ptr<Reader>(new MipsELFObjectReader(atomizeStrings));
+  }
+
+  std::unique_ptr<Reader> getDSOReader(bool useShlibUndefines) override {
+    return std::unique_ptr<Reader>(new MipsELFDSOReader(useShlibUndefines));
   }
 
   const MipsTargetRelocationHandler &getRelocationHandler() const override {

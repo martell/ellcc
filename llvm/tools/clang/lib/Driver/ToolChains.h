@@ -742,7 +742,8 @@ public:
                             llvm::opt::ArgStringList &CC1Args) const override;
   void
   AddClangCXXStdlibIncludeArgs(const llvm::opt::ArgList &DriverArgs,
-                               llvm::opt::ArgStringList &CC1Args) const override;
+                               llvm::opt::ArgStringList &CC1Args)
+                                const override;
 protected:
   Tool *buildAssembler() const override;
   Tool *buildLinker() const override;
@@ -750,10 +751,10 @@ protected:
   const Driver &D;
 };
 
-class LLVM_LIBRARY_VISIBILITY Windows : public ToolChain {
+class LLVM_LIBRARY_VISIBILITY MSVCToolChain : public ToolChain {
 public:
-  Windows(const Driver &D, const llvm::Triple &Triple,
-          const llvm::opt::ArgList &Args);
+  MSVCToolChain(const Driver &D, const llvm::Triple &Triple,
+                const llvm::opt::ArgList &Args);
 
   bool IsIntegratedAssemblerDefault() const override;
   bool IsUnwindTablesDefault() const override;
@@ -768,11 +769,50 @@ public:
   AddClangCXXStdlibIncludeArgs(const llvm::opt::ArgList &DriverArgs,
                                llvm::opt::ArgStringList &CC1Args) const override;
 
+  bool getWindowsSDKDir(std::string &path, int &major, int &minor) const;
+  bool getWindowsSDKLibraryPath(std::string &path) const;
+  bool getVisualStudioInstallDir(std::string &path) const;
+  bool getVisualStudioBinariesFolder(const char *clangProgramPath,
+                                     std::string &path) const;
+
 protected:
+  void AddSystemIncludeWithSubfolder(const llvm::opt::ArgList &DriverArgs,
+                                     llvm::opt::ArgStringList &CC1Args,
+                                     const std::string &folder,
+                                     const char *subfolder) const;
+
   Tool *buildLinker() const override;
   Tool *buildAssembler() const override;
 };
 
+class LLVM_LIBRARY_VISIBILITY CrossWindowsToolChain : public Generic_GCC {
+public:
+  CrossWindowsToolChain(const Driver &D, const llvm::Triple &T,
+                        const llvm::opt::ArgList &Args);
+
+  bool IsIntegratedAssemblerDefault() const override { return true; }
+  bool IsUnwindTablesDefault() const override;
+  bool isPICDefault() const override;
+  bool isPIEDefault() const override;
+  bool isPICDefaultForced() const override;
+
+  unsigned int GetDefaultStackProtectorLevel(bool KernelOrKext) const override {
+    return 0;
+  }
+
+  void AddClangSystemIncludeArgs(const llvm::opt::ArgList &DriverArgs,
+                                 llvm::opt::ArgStringList &CC1Args)
+      const override;
+  void AddClangCXXStdlibIncludeArgs(const llvm::opt::ArgList &DriverArgs,
+                                    llvm::opt::ArgStringList &CC1Args)
+      const override;
+  void AddCXXStdlibLibArgs(const llvm::opt::ArgList &Args,
+                           llvm::opt::ArgStringList &CmdArgs) const override;
+
+protected:
+  Tool *buildLinker() const override;
+  Tool *buildAssembler() const override;
+};
 
 class LLVM_LIBRARY_VISIBILITY XCore : public ToolChain {
 public:

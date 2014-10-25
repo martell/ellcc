@@ -10,11 +10,9 @@
 #include "ArchHandler.h"
 #include "Atoms.h"
 #include "MachONormalizedFileBinaryUtils.h"
-
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Triple.h"
-
 #include "llvm/Support/ErrorHandling.h"
 
 using namespace llvm::MachO;
@@ -124,7 +122,7 @@ public:
                            const normalized::Relocation &reloc2,
                            const DefinedAtom *inAtom,
                            uint32_t offsetInAtom,
-                           uint64_t fixupAddress, bool swap,
+                           uint64_t fixupAddress, bool swap, bool scatterable,
                            FindAtomBySectionAndAddress atomFromAddress,
                            FindAtomBySymbolIndex atomFromSymbolIndex,
                            Reference::KindValue *kind, 
@@ -403,6 +401,7 @@ ArchHandler_x86_64::getPairReferenceInfo(const normalized::Relocation &reloc1,
                                    const DefinedAtom *inAtom,
                                    uint32_t offsetInAtom,
                                    uint64_t fixupAddress, bool swap,
+                                   bool scatterable,
                                    FindAtomBySectionAndAddress atomFromAddress,
                                    FindAtomBySymbolIndex atomFromSymbolIndex,
                                    Reference::KindValue *kind, 

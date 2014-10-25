@@ -3245,6 +3245,18 @@ static bool isFloatingPointZero(SDValue Op) {
         if (const ConstantFP *CFP = dyn_cast<ConstantFP>(CP->getConstVal()))
           return CFP->getValueAPF().isPosZero();
     }
+  } else if (Op->getOpcode() == ISD::BITCAST &&
+             Op->getValueType(0) == MVT::f64) {
+    // Handle (ISD::BITCAST (ARMISD::VMOVIMM (ISD::TargetConstant 0)) MVT::f64)
+    // created by LowerConstantFP().
+    SDValue BitcastOp = Op->getOperand(0);
+    if (BitcastOp->getOpcode() == ARMISD::VMOVIMM) {
+      SDValue MoveOp = BitcastOp->getOperand(0);
+      if (MoveOp->getOpcode() == ISD::TargetConstant &&
+          cast<ConstantSDNode>(MoveOp)->getZExtValue() == 0) {
+        return true;
+      }
+    }
   }
   return false;
 }
@@ -6571,9 +6583,9 @@ SetupEntryBlockForSjLj(MachineInstr *MI, MachineBasicBlock *MBB,
                    .addReg(NewVReg2, RegState::Kill)
                    .addReg(NewVReg3, RegState::Kill));
     unsigned NewVReg5 = MRI->createVirtualRegister(TRC);
-    AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::tADDrSPi), NewVReg5)
-                   .addFrameIndex(FI)
-                   .addImm(36)); // &jbuf[1] :: pc
+    BuildMI(*MBB, MI, dl, TII->get(ARM::tADDframe), NewVReg5)
+            .addFrameIndex(FI)
+            .addImm(36); // &jbuf[1] :: pc
     AddDefaultPred(BuildMI(*MBB, MI, dl, TII->get(ARM::tSTRi))
                    .addReg(NewVReg4, RegState::Kill)
                    .addReg(NewVReg5, RegState::Kill)

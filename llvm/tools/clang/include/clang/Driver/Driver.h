@@ -327,7 +327,7 @@ public:
   /// including preprocessed source file(s).
   /// 
   void generateCompilationDiagnostics(Compilation &C,
-                                      const Command *FailingCommand);
+                                      const Command &FailingCommand);
 
   /// @}
   /// @name Helper Methods

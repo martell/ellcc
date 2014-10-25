@@ -8,12 +8,12 @@
 //===----------------------------------------------------------------------===//
 
 #include "lld/Core/InputGraph.h"
-
 #include "lld/Core/Resolver.h"
-
 #include <memory>
 
 using namespace lld;
+
+InputGraph::~InputGraph() { }
 
 ErrorOr<File &> InputGraph::getNextFile() {
   // Try to get the next file of _currentInputElement. If the current input

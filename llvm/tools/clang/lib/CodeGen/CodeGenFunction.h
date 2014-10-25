@@ -2012,6 +2012,8 @@ public:
                               const VarDecl *VDInit);
   void EmitOMPFirstprivateClause(const OMPExecutableDirective &D,
                                  OMPPrivateScope &PrivateScope);
+  void EmitOMPPrivateClause(const OMPExecutableDirective &D,
+                            OMPPrivateScope &PrivateScope);
 
   void EmitOMPParallelDirective(const OMPParallelDirective &S);
   void EmitOMPSimdDirective(const OMPSimdDirective &S);

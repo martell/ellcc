@@ -16,7 +16,9 @@
 int main()
 {
 #if _LIBCPP_STD_VER > 11
-    std::optional<const void> opt;
+    using std::experimental::optional;
+
+    optional<const void> opt;
 #else
 #error
 #endif  // _LIBCPP_STD_VER > 11
