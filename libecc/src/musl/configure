@@ -27,6 +27,7 @@ Optional features:
   --enable-optimize=...   optimize listed components for speed over size [auto]
   --enable-debug          build with debugging information [disabled]
   --enable-warnings       build with recommended warnings flags [disabled]
+  --enable-depends        build with include dependency information [disabled]
   --enable-gcc-wrapper    build musl-gcc toolchain wrapper [auto]
   --disable-shared        inhibit building shared library [enabled]
   --disable-static        inhibit building static library [enabled]
@@ -122,6 +123,7 @@ syslibdir='/lib'
 target=
 optimize=auto
 debug=no
+depends=no
 warnings=no
 shared=auto
 static=yes
@@ -145,6 +147,8 @@ case "$arg" in
 --disable-optimize) optimize=no ;;
 --enable-debug|--enable-debug=yes) debug=yes ;;
 --disable-debug|--enable-debug=no) debug=no ;;
+--enable-depends|--enable-depends=yes) depends=yes ;;
+--disable-depends|--enable-depends=no) depends=no ;;
 --enable-warnings|--enable-warnings=yes) warnings=yes ;;
 --disable-warnings|--enable-warnings=no) warnings=no ;;
 --enable-gcc-wrapper|--enable-gcc-wrapper=yes) wrapper=yes ;;
@@ -496,6 +500,11 @@ else
 printf "no\n"
 fail "$0: error: unsupported long double type"
 fi
+
+#
+# Enable depends if requessted.
+#
+test "$depends" = yes && CFLAGS_AUTO="$CFLAGS_AUTO -MD -MP"
 
 printf "creating config.mak... "
 

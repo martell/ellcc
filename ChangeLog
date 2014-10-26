@@ -1,5 +1,6 @@
 current SVN:
 
+* Create #include dependencies for musl.
 * Update to LLVM r220554.
 * Build compiler-rt with soft floating point for ARM and Mips.
 * Fixed and cleaned up the release process.

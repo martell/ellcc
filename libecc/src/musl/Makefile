@@ -19,6 +19,7 @@ syslibdir = /lib
 SRCS = $(sort $(wildcard src/*/*.c arch/$(ARCH)/src/*.c))
 OBJS = $(SRCS:.c=.o)
 LOBJS = $(OBJS:.o=.lo)
+DEPS = $(OBJS:.o=.d)
 GENH = include/bits/alltypes.h
 GENH_INT = src/internal/version.h
 IMPH = src/internal/stdio_impl.h src/internal/pthread_impl.h src/internal/libc.h
@@ -63,6 +64,7 @@ clean:
 	rm -f crt/*.o
 	rm -f $(OBJS)
 	rm -f $(LOBJS)
+	rm -f $(DEPS)
 	rm -f $(ALL_LIBS) lib/*.[ao] lib/*.so
 	rm -f $(ALL_TOOLS)
 	rm -f $(GENH) $(GENH_INT)
@@ -176,6 +178,8 @@ musl-git-%.tar.gz: .git
 
 musl-%.tar.gz: .git
 	 git archive --format=tar.gz --prefix=$(patsubst %.tar.gz,%,$@)/ -o $@ v$(patsubst musl-%.tar.gz,%,$@)
+
+-include $(DEPS)
 
 .PRECIOUS: $(CRT_LIBS:lib/%=crt/%)
 

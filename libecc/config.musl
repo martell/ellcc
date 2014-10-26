@@ -11,4 +11,5 @@ export LIBCC=-lcompiler-rt
   --exec-prefix=$3/libecc/musl-build/$2/install \
   --enable-warnings \
   --enable-debug \
+  --enable-depends \
   --disable-shared || exit 1
