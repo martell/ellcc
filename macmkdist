@@ -6,7 +6,7 @@ fi
 OSX=Mac_OS_X_`sw_vers -productVersion`
 name=ellcc-$OSX-$1.tgz
 
-make -C baremetal clean
+make -C examples distclean
 files=`sed -e "s:\(.*\):ellcc/\1:" ellcc.files`
 cd ..; tar cvfpz ellcc/$name $files ; cd -
 echo created $name

@@ -12,7 +12,7 @@ if [ -e bin-$1 ] ; then
 fi
 pwd=`pwd`
 pwd=`basename $pwd`
-make -C baremetal clean
+make -C examples distclean
 files=`sed -e "s:\(.*\):$pwd/\1:" ellcc.files`
 cd ..; tar --transform="s:$pwd/:ellcc/:" -cvpz -f $pwd/$name $files ; cd -
 if [ -e bin-$1 ] ; then

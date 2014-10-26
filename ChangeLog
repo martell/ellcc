@@ -1,5 +1,6 @@
 current SVN:
 
+* Create the first example in the examples directory.
 * Create #include dependencies for musl.
 * Update to LLVM r220554.
 * Build compiler-rt with soft floating point for ARM and Mips.

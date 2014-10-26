@@ -6,7 +6,7 @@ if [ $# -ne 2 ] ; then
 fi
 name=ellcc-$1-$2.tgz
 
-make -C baremetal clean
+make -C examples distclean
 
 if [ ! -e bin-$MINGW ] ; then
   echo "The MinGW bin directory doesn't exist."

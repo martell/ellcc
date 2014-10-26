@@ -1,0 +1,20 @@
+#! /bin/sh
+# This script returns the base arch for a tuple.
+# This is used for include paths, etc. where endian-ness,
+# for example, doesn't matter.
+#
+case "$1" in
+# Catch these early to simplify matching for 32-bit archs
+mips64*|powerpc64*) echo unknown && exit 1 ;;
+arm*) ARCH=arm ;;
+i?86*) ARCH=i386 ;;
+x86_64-x32*|x32*|x86_64*x32) ARCH=x32 ;;
+x86_64*) ARCH=x86_64 ;;
+mips*|mipsel*) ARCH=mips ;;
+microblaze*) ARCH=microblaze ;;
+powerpc*) ARCH=ppc ;;
+sh[1-9bel-]*|sh|superh*) ARCH=sh ;;
+ppc*) ARCH=ppc ;;
+*) echo unknown && exit 1 ;;
+esac
+echo $ARCH
