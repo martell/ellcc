@@ -1,6 +1,7 @@
 This is a simple "hello world" example. This example can be built for
 several Linux and standalone targets. Type "make help" to see the
 available target configurations.
+
 Currently supported configuration(s):
 Linux:
   armeb-linux-engeabi armeb-linux-engeabihf arm-linux-engeabi
