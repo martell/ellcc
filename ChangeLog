@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.3:
+
 * Create the first examples in the examples directory.
 * Create #include dependencies for musl.
 * Update to LLVM r220554.
