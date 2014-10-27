@@ -1,5 +1,7 @@
 current SVN:
 
+* Fix missing ecc-getarch, ecc-getinarch, and ecc-lit scripts for all targets.
+
 version 0.1.3:
 
 * Create the first examples in the examples directory.

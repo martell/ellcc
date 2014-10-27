@@ -93,6 +93,10 @@ if [ "$package" != "" ] ; then
   exit 0
 fi
 
+# Copy extra bin scripts.
+mkdir -p $bindir
+cp -p bin-extra/* $bindir
+
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 
