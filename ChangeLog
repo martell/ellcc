@@ -1,5 +1,6 @@
 current SVN:
 
+* Added simple main() example.
 * Fix missing ecc-getarch, ecc-getinarch, and ecc-lit scripts for all targets.
 
 version 0.1.3:
