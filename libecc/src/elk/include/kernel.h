@@ -33,6 +33,7 @@ alias(__elk_ ## feature, __elk_feature_ ## function);
  __elk_ ## feature = 1; \
 } while (0)
 
+#if 1
 #define CONSTRUCTOR() \
 static void __elk_init(void) \
     __attribute__((__constructor__, __used__)); \
@@ -42,6 +43,19 @@ static void __elk_init(void)
 returns name(void) \
     __attribute__((__constructor__, __used__)); \
 returns name(void)
+#else
+#define CONSTRUCTOR() \
+static void __elk_init(void); \
+static void (*__elk_init_p)(void) __attribute((section (".ctors"), __used__)) \
+     = __elk_init; \
+static void __elk_init(void)
+
+#define CONSTRUCTOR_BY_NAME(returns, name) \
+static returns name(void); \
+static returns (*name ## _p)(void) __attribute((section (".ctors"), __used__)) \
+     = name; \
+returns name(void)
+#endif
 
 typedef struct lock
 {
