@@ -3,12 +3,13 @@
 
 /** Call a function only if it exists.
  * Act as if it returned 0 or NULL if it's not defined.
+ * Preserve r0-r3 since they might be arguments.
  */
-#define weak_call(name)                         \
-        .weak name          ;                   \
-        ldr    r0, =name    ;                   \
-        cmp    r0, #0       ;                   \
-        blxne  r0
+#define weak_call(name)           \
+        .weak name              ; \
+        ldr     r12, =name      ; \
+        cmp     r12, #0         ; \
+        blxne   r12
 
         .section .text, "x"
         .align  4
@@ -70,7 +71,7 @@ reset:
         mov     sp, r0
         sub     r0, #Stack_SYS
         // Set up the end of the heap.
-        ldr     r1, =heap_end
+        ldr     r1, =__heap_end
 	push	{ r0, r1 }		// Preserve the heap end.
 
         // Point to the vectors.
@@ -320,13 +321,15 @@ ARM_SVC_Table:
  */
         .global __set_thread_area
 __set_thread_area:
-        push    { r1, lr }
+        push    { r1, r11, r12, lr }
         mcr     p15, 0, r0, c13, c0, 3
         mov     r1, r0
         weak_call(thread_self)          // Get the current context.
-        str     r1, [r0, #4]            // Save the TLS in the current Thread.
-        mov     r0, #0
-        pop     { r1, lr }
+        cmp     r0, #0                  // Have a context?
+        strne   r1, [r0, #4]            // Save the TLS in the current Thread.
+        movne   r0, #0
+        moveq   r0, #-1
+        pop     { r1, r11, r12, lr }
         bx      lr
 
 /* Get thread area.
