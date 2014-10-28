@@ -239,8 +239,12 @@ static int sys_ioctl(int fd, int request, ...)
 
 CONSTRUCTOR_BY_NAME(int, __setup_console)
 {
-    // Set up the console for interrupt serial I/O.
+    static int setup;
+    if (setup) {
+      return 1;
+    }
 
+    // Set up the console for interrupt serial I/O.
     sem_init(&sem_output, 0, 1);
     sem_init(&sem_input, 0, 1);
     ibuffer_in = ibuffer_out = ibuffer;
@@ -263,5 +267,6 @@ CONSTRUCTOR_BY_NAME(int, __setup_console)
 
     // Enable the receive interrupt.
     console_enable_rx_interrupt();
+    setup = 1;
     return 1;
 }

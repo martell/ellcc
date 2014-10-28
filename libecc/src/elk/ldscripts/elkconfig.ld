@@ -7,5 +7,5 @@ EXTERN(__elk_command)
 EXTERN(__elk_scheduler)
 EXTERN(__elk_timer)
 EXTERN(__elk_test_commands)
-EXTERN(__elk_exit)
+EXTERN(__elk_simple_exit)
 

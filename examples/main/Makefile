@@ -34,7 +34,8 @@ else
   ifneq ($(ecc),)
     ELLCCBIN=$(shell dirname $(ecc))/
   else
-    $(error ELLCC (the ELLCC installation directory) is not defined)
+    # Make a guess.
+    ELLCCBIN=~/ellcc/bin/
   endif
 endif
 

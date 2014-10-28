@@ -16,5 +16,5 @@ SRCS += $(SRCS.$(ARCH))
 
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/kernel
 # Target independent code.
-SRCS += simple_console.c console.c exit.c simple_memman.c semaphore.c \
+SRCS += simple_console.c console.c simple_exit.c simple_memman.c semaphore.c \
 	command.c test.c timer.c irq.c scheduler.c
