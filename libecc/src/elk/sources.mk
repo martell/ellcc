@@ -7,11 +7,11 @@ VPATH := $(VPATH):$(SRCPATH)/$(LIB)/$(ARCH)
 CRTSRCS += crt1.S
 # Target specific code.
 SRCS.arm += arm_gic.c arm_sp804.c
-SRCS.i386 +=
+SRCS.i386 += gdt.c idt.c i8259.c
 SRCS.microblaze +=
 SRCS.mips +=
 SRCS.ppc +=
-SRCS.x86_64 +=
+SRCS.x86_64 += idt.c
 SRCS += $(SRCS.$(ARCH))
 
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/kernel
