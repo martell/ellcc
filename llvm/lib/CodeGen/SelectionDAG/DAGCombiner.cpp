@@ -331,6 +331,8 @@ namespace {
     SDValue BuildUDIV(SDNode *N);
     SDValue BuildReciprocalEstimate(SDValue Op);
     SDValue BuildRsqrtEstimate(SDValue Op);
+    SDValue BuildRsqrtNROneConst(SDValue Op, SDValue Est, unsigned Iterations);
+    SDValue BuildRsqrtNRTwoConst(SDValue Op, SDValue Est, unsigned Iterations);
     SDValue MatchBSwapHWordLow(SDNode *N, SDValue N0, SDValue N1,
                                bool DemandHighBits = true);
     SDValue MatchBSwapHWord(SDNode *N, SDValue N0, SDValue N1);
@@ -4676,7 +4678,7 @@ SDValue DAGCombiner::visitSELECT(SDNode *N) {
   if (N0.getOpcode() == ISD::SETCC) {
     if ((!LegalOperations &&
          TLI.isOperationLegalOrCustom(ISD::SELECT_CC, VT)) ||
-	TLI.isOperationLegal(ISD::SELECT_CC, VT))
+        TLI.isOperationLegal(ISD::SELECT_CC, VT))
       return DAG.getNode(ISD::SELECT_CC, SDLoc(N), VT,
                          N0.getOperand(0), N0.getOperand(1),
                          N1, N2, N0.getOperand(2));
@@ -6569,7 +6571,7 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
   ConstantFPSDNode *N1CFP = dyn_cast<ConstantFPSDNode>(N1);
   EVT VT = N->getValueType(0);
   const TargetOptions &Options = DAG.getTarget().Options;
-  
+
   // fold vector ops
   if (VT.isVector()) {
     SDValue FoldedVOp = SimplifyVBinOp(N);
@@ -6589,7 +6591,7 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
       isNegatibleForFree(N1, LegalOperations, TLI, &Options) == 2)
     return DAG.getNode(ISD::FSUB, SDLoc(N), VT, N0,
                        GetNegatedExpression(N1, DAG, LegalOperations));
-  
+
   // fold (fadd (fneg A), B) -> (fsub B, A)
   if ((!LegalOperations || TLI.isOperationLegalOrCustom(ISD::FSUB, VT)) &&
       isNegatibleForFree(N0, LegalOperations, TLI, &Options) == 2)
@@ -6601,7 +6603,7 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
     // No FP constant should be created after legalization as Instruction
     // Selection pass has a hard time dealing with FP constants.
     bool AllowNewConst = (Level < AfterLegalizeDAG);
-    
+
     // fold (fadd A, 0) -> A
     if (N1CFP && N1CFP->getValueAPF().isZero())
       return N0;
@@ -6612,15 +6614,15 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
       return DAG.getNode(ISD::FADD, SDLoc(N), VT, N0.getOperand(0),
                          DAG.getNode(ISD::FADD, SDLoc(N), VT,
                                      N0.getOperand(1), N1));
-    
+
     // If allowed, fold (fadd (fneg x), x) -> 0.0
     if (AllowNewConst && N0.getOpcode() == ISD::FNEG && N0.getOperand(0) == N1)
       return DAG.getConstantFP(0.0, VT);
-    
+
     // If allowed, fold (fadd x, (fneg x)) -> 0.0
     if (AllowNewConst && N1.getOpcode() == ISD::FNEG && N1.getOperand(0) == N0)
       return DAG.getConstantFP(0.0, VT);
-    
+
     // We can fold chains of FADD's of the same value into multiplications.
     // This transform is not safe in general because we are reducing the number
     // of rounding steps.
@@ -6628,7 +6630,7 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
       if (N0.getOpcode() == ISD::FMUL) {
         ConstantFPSDNode *CFP00 = dyn_cast<ConstantFPSDNode>(N0.getOperand(0));
         ConstantFPSDNode *CFP01 = dyn_cast<ConstantFPSDNode>(N0.getOperand(1));
-        
+
         // (fadd (fmul x, c), x) -> (fmul x, c+1)
         if (CFP01 && !CFP00 && N0.getOperand(0) == N1) {
           SDValue NewCFP = DAG.getNode(ISD::FADD, SDLoc(N), VT,
@@ -6636,7 +6638,7 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
                                        DAG.getConstantFP(1.0, VT));
           return DAG.getNode(ISD::FMUL, SDLoc(N), VT, N1, NewCFP);
         }
-        
+
         // (fadd (fmul x, c), (fadd x, x)) -> (fmul x, c+2)
         if (CFP01 && !CFP00 && N1.getOpcode() == ISD::FADD &&
             N1.getOperand(0) == N1.getOperand(1) &&
@@ -6648,11 +6650,11 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
                              N0.getOperand(0), NewCFP);
         }
       }
-      
+
       if (N1.getOpcode() == ISD::FMUL) {
         ConstantFPSDNode *CFP10 = dyn_cast<ConstantFPSDNode>(N1.getOperand(0));
         ConstantFPSDNode *CFP11 = dyn_cast<ConstantFPSDNode>(N1.getOperand(1));
-        
+
         // (fadd x, (fmul x, c)) -> (fmul x, c+1)
         if (CFP11 && !CFP10 && N1.getOperand(0) == N0) {
           SDValue NewCFP = DAG.getNode(ISD::FADD, SDLoc(N), VT,
@@ -6680,7 +6682,7 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
           return DAG.getNode(ISD::FMUL, SDLoc(N), VT,
                              N1, DAG.getConstantFP(3.0, VT));
       }
-      
+
       if (N1.getOpcode() == ISD::FADD && AllowNewConst) {
         ConstantFPSDNode *CFP10 = dyn_cast<ConstantFPSDNode>(N1.getOperand(0));
         // (fadd x, (fadd x, x)) -> (fmul x, 3.0)
@@ -6689,7 +6691,7 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
           return DAG.getNode(ISD::FMUL, SDLoc(N), VT,
                              N0, DAG.getConstantFP(3.0, VT));
       }
-      
+
       // (fadd (fadd x, x), (fadd x, x)) -> (fmul x, 4.0)
       if (AllowNewConst &&
           N0.getOpcode() == ISD::FADD && N1.getOpcode() == ISD::FADD &&
@@ -6700,7 +6702,7 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
                            N0.getOperand(0), DAG.getConstantFP(4.0, VT));
     }
   } // enable-unsafe-fp-math
-  
+
   // FADD -> FMA combines:
   if ((Options.AllowFPOpFusion == FPOpFusion::Fast || Options.UnsafeFPMath) &&
       TLI.isFMAFasterThanFMulAndFAdd(VT) &&
@@ -7028,18 +7030,16 @@ SDValue DAGCombiner::visitFDIV(SDNode *N) {
         return DAG.getNode(ISD::FMUL, SDLoc(N), VT, N0,
                            DAG.getConstantFP(Recip, VT));
     }
-    
+
     // If this FDIV is part of a reciprocal square root, it may be folded
     // into a target-specific square root estimate instruction.
     if (N1.getOpcode() == ISD::FSQRT) {
       if (SDValue RV = BuildRsqrtEstimate(N1.getOperand(0))) {
-        AddToWorklist(RV.getNode());
         return DAG.getNode(ISD::FMUL, DL, VT, N0, RV);
       }
     } else if (N1.getOpcode() == ISD::FP_EXTEND &&
                N1.getOperand(0).getOpcode() == ISD::FSQRT) {
       if (SDValue RV = BuildRsqrtEstimate(N1.getOperand(0).getOperand(0))) {
-        AddToWorklist(RV.getNode());
         RV = DAG.getNode(ISD::FP_EXTEND, SDLoc(N1), VT, RV);
         AddToWorklist(RV.getNode());
         return DAG.getNode(ISD::FMUL, DL, VT, N0, RV);
@@ -7047,7 +7047,6 @@ SDValue DAGCombiner::visitFDIV(SDNode *N) {
     } else if (N1.getOpcode() == ISD::FP_ROUND &&
                N1.getOperand(0).getOpcode() == ISD::FSQRT) {
       if (SDValue RV = BuildRsqrtEstimate(N1.getOperand(0).getOperand(0))) {
-        AddToWorklist(RV.getNode());
         RV = DAG.getNode(ISD::FP_ROUND, SDLoc(N1), VT, RV, N1.getOperand(1));
         AddToWorklist(RV.getNode());
         return DAG.getNode(ISD::FMUL, DL, VT, N0, RV);
@@ -7068,14 +7067,13 @@ SDValue DAGCombiner::visitFDIV(SDNode *N) {
         // We found a FSQRT, so try to make this fold:
         // x / (y * sqrt(z)) -> x * (rsqrt(z) / y)
         if (SDValue RV = BuildRsqrtEstimate(SqrtOp.getOperand(0))) {
-          AddToWorklist(RV.getNode());
           RV = DAG.getNode(ISD::FDIV, SDLoc(N1), VT, RV, OtherOp);
           AddToWorklist(RV.getNode());
           return DAG.getNode(ISD::FMUL, DL, VT, N0, RV);
         }
       }
     }
-    
+
     // Fold into a reciprocal estimate and multiply instead of a real divide.
     if (SDValue RV = BuildReciprocalEstimate(N1)) {
       AddToWorklist(RV.getNode());
@@ -7116,7 +7114,6 @@ SDValue DAGCombiner::visitFSQRT(SDNode *N) {
   if (DAG.getTarget().Options.UnsafeFPMath) {
     // Compute this as X * (1/sqrt(X)) = X * (X ** -0.5)
     if (SDValue RV = BuildRsqrtEstimate(N->getOperand(0))) {
-      AddToWorklist(RV.getNode());
       EVT VT = RV.getValueType();
       RV = DAG.getNode(ISD::FMUL, SDLoc(N), VT, N->getOperand(0), RV);
       AddToWorklist(RV.getNode());
@@ -7551,7 +7548,7 @@ SDValue DAGCombiner::visitFABS(SDNode *N) {
   // fold (fabs c1) -> fabs(c1)
   if (isa<ConstantFPSDNode>(N0))
     return DAG.getNode(ISD::FABS, SDLoc(N), VT, N0);
-  
+
   // fold (fabs (fabs x)) -> (fabs x)
   if (N0.getOpcode() == ISD::FABS)
     return N->getOperand(0);
@@ -11073,7 +11070,7 @@ SDValue DAGCombiner::visitVECTOR_SHUFFLE(SDNode *N) {
 
     if (isUndefMask)
       return DAG.getUNDEF(VT);
-    
+
     bool CommuteOperands = false;
     if (N0.getOperand(1).getOpcode() != ISD::UNDEF) {
       // To be valid, the combine shuffle mask should only reference elements
@@ -11112,12 +11109,12 @@ SDValue DAGCombiner::visitVECTOR_SHUFFLE(SDNode *N) {
       // The combined shuffle must map each index to itself.
       IsIdentityMask = (unsigned)Mask[i] == i + BaseMaskIndex;
     }
-    
+
     if (IsIdentityMask) {
       if (CommuteOperands)
         // optimize shuffle(shuffle(x, y), undef) -> y.
         return OtherSV->getOperand(1);
-      
+
       // optimize shuffle(shuffle(x, undef), undef) -> x
       // optimize shuffle(shuffle(x, y), undef) -> x
       return OtherSV->getOperand(0);
@@ -11985,6 +11982,75 @@ SDValue DAGCombiner::BuildReciprocalEstimate(SDValue Op) {
   return SDValue();
 }
 
+/// Newton iteration for a function: F(X) is X_{i+1} = X_i - F(X_i)/F'(X_i)
+/// For the reciprocal sqrt, we need to find the zero of the function:
+///   F(X) = 1/X^2 - A [which has a zero at X = 1/sqrt(A)]
+///     =>
+///   X_{i+1} = X_i (1.5 - A X_i^2 / 2)
+/// As a result, we precompute A/2 prior to the iteration loop.
+SDValue DAGCombiner::BuildRsqrtNROneConst(SDValue Arg, SDValue Est,
+                                          unsigned Iterations) {
+  EVT VT = Arg.getValueType();
+  SDLoc DL(Arg);
+  SDValue ThreeHalves = DAG.getConstantFP(1.5, VT);
+
+  // We now need 0.5 * Arg which we can write as (1.5 * Arg - Arg) so that
+  // this entire sequence requires only one FP constant.
+  SDValue HalfArg = DAG.getNode(ISD::FMUL, DL, VT, ThreeHalves, Arg);
+  AddToWorklist(HalfArg.getNode());
+
+  HalfArg = DAG.getNode(ISD::FSUB, DL, VT, HalfArg, Arg);
+  AddToWorklist(HalfArg.getNode());
+
+  // Newton iterations: Est = Est * (1.5 - HalfArg * Est * Est)
+  for (unsigned i = 0; i < Iterations; ++i) {
+    SDValue NewEst = DAG.getNode(ISD::FMUL, DL, VT, Est, Est);
+    AddToWorklist(NewEst.getNode());
+
+    NewEst = DAG.getNode(ISD::FMUL, DL, VT, HalfArg, NewEst);
+    AddToWorklist(NewEst.getNode());
+
+    NewEst = DAG.getNode(ISD::FSUB, DL, VT, ThreeHalves, NewEst);
+    AddToWorklist(NewEst.getNode());
+
+    Est = DAG.getNode(ISD::FMUL, DL, VT, Est, NewEst);
+    AddToWorklist(Est.getNode());
+  }
+  return Est;
+}
+
+/// Newton iteration for a function: F(X) is X_{i+1} = X_i - F(X_i)/F'(X_i)
+/// For the reciprocal sqrt, we need to find the zero of the function:
+///   F(X) = 1/X^2 - A [which has a zero at X = 1/sqrt(A)]
+///     =>
+///   X_{i+1} = (-0.5 * X_i) * (A * X_i * X_i + (-3.0))
+SDValue DAGCombiner::BuildRsqrtNRTwoConst(SDValue Arg, SDValue Est,
+                                          unsigned Iterations) {
+  EVT VT = Arg.getValueType();
+  SDLoc DL(Arg);
+  SDValue MinusThree = DAG.getConstantFP(-3.0, VT);
+  SDValue MinusHalf = DAG.getConstantFP(-0.5, VT);
+
+  // Newton iterations: Est = -0.5 * Est * (-3.0 + Arg * Est * Est)
+  for (unsigned i = 0; i < Iterations; ++i) {
+    SDValue HalfEst = DAG.getNode(ISD::FMUL, DL, VT, Est, MinusHalf);
+    AddToWorklist(HalfEst.getNode());
+
+    Est = DAG.getNode(ISD::FMUL, DL, VT, Est, Est);
+    AddToWorklist(Est.getNode());
+
+    Est = DAG.getNode(ISD::FMUL, DL, VT, Est, Arg);
+    AddToWorklist(Est.getNode());
+
+    Est = DAG.getNode(ISD::FADD, DL, VT, Est, MinusThree);
+    AddToWorklist(Est.getNode());
+
+    Est = DAG.getNode(ISD::FMUL, DL, VT, Est, HalfEst);
+    AddToWorklist(Est.getNode());
+  }
+  return Est;
+}
+
 SDValue DAGCombiner::BuildRsqrtEstimate(SDValue Op) {
   if (Level >= AfterLegalizeDAG)
     return SDValue();
@@ -11992,42 +12058,13 @@ SDValue DAGCombiner::BuildRsqrtEstimate(SDValue Op) {
   // Expose the DAG combiner to the target combiner implementations.
   TargetLowering::DAGCombinerInfo DCI(DAG, Level, false, this);
   unsigned Iterations = 0;
-  if (SDValue Est = TLI.getRsqrtEstimate(Op, DCI, Iterations)) {
+  bool UseOneConstNR = false;
+  if (SDValue Est = TLI.getRsqrtEstimate(Op, DCI, Iterations, UseOneConstNR)) {
+    AddToWorklist(Est.getNode());
     if (Iterations) {
-      // Newton iteration for a function: F(X) is X_{i+1} = X_i - F(X_i)/F'(X_i)
-      // For the reciprocal sqrt, we need to find the zero of the function:
-      //   F(X) = 1/X^2 - A [which has a zero at X = 1/sqrt(A)]
-      //     =>
-      //   X_{i+1} = X_i (1.5 - A X_i^2 / 2)
-      // As a result, we precompute A/2 prior to the iteration loop.
-      EVT VT = Op.getValueType();
-      SDLoc DL(Op);
-      SDValue FPThreeHalves = DAG.getConstantFP(1.5, VT);
-
-      AddToWorklist(Est.getNode());
-
-      // We now need 0.5 * Arg which we can write as (1.5 * Arg - Arg) so that
-      // this entire sequence requires only one FP constant.
-      SDValue HalfArg = DAG.getNode(ISD::FMUL, DL, VT, FPThreeHalves, Op);
-      AddToWorklist(HalfArg.getNode());
-
-      HalfArg = DAG.getNode(ISD::FSUB, DL, VT, HalfArg, Op);
-      AddToWorklist(HalfArg.getNode());
-
-      // Newton iterations: Est = Est * (1.5 - HalfArg * Est * Est)
-      for (unsigned i = 0; i < Iterations; ++i) {
-        SDValue NewEst = DAG.getNode(ISD::FMUL, DL, VT, Est, Est);
-        AddToWorklist(NewEst.getNode());
-
-        NewEst = DAG.getNode(ISD::FMUL, DL, VT, HalfArg, NewEst);
-        AddToWorklist(NewEst.getNode());
-
-        NewEst = DAG.getNode(ISD::FSUB, DL, VT, FPThreeHalves, NewEst);
-        AddToWorklist(NewEst.getNode());
-
-        Est = DAG.getNode(ISD::FMUL, DL, VT, Est, NewEst);
-        AddToWorklist(Est.getNode());
-      }
+      Est = UseOneConstNR ?
+        BuildRsqrtNROneConst(Op, Est, Iterations) :
+        BuildRsqrtNRTwoConst(Op, Est, Iterations);
     }
     return Est;
   }

@@ -1897,6 +1897,22 @@ void Sema::CheckOverrideControl(NamedDecl *D) {
       << MD->getDeclName();
 }
 
+void Sema::DiagnoseAbsenceOfOverrideControl(NamedDecl *D) {
+  if (D->isInvalidDecl() || D->hasAttr<OverrideAttr>())
+    return;
+  CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(D);
+  if (!MD || MD->isImplicit() || MD->hasAttr<FinalAttr>() ||
+      isa<CXXDestructorDecl>(MD))
+    return;
+
+  if (MD->size_overridden_methods() > 0) {
+    Diag(MD->getLocation(), diag::warn_function_marked_not_override_overriding)
+      << MD->getDeclName();
+    const CXXMethodDecl *OMD = *MD->begin_overridden_methods();
+    Diag(OMD->getLocation(), diag::note_overridden_virtual_function);
+  }
+}
+
 /// CheckIfOverriddenFunctionIsMarkedFinal - Checks whether a virtual member
 /// function overrides a virtual member function marked 'final', according to
 /// C++11 [class.virtual]p4.
@@ -2830,10 +2846,11 @@ Sema::BuildMemInitializer(Decl *ConstructorD,
 
       // If no results were found, try to correct typos.
       TypoCorrection Corr;
-      MemInitializerValidatorCCC Validator(ClassDecl);
       if (R.empty() && BaseType.isNull() &&
-          (Corr = CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), S, &SS,
-                              Validator, CTK_ErrorRecovery, ClassDecl))) {
+          (Corr = CorrectTypo(
+               R.getLookupNameInfo(), R.getLookupKind(), S, &SS,
+               llvm::make_unique<MemInitializerValidatorCCC>(ClassDecl),
+               CTK_ErrorRecovery, ClassDecl))) {
         if (FieldDecl *Member = Corr.getCorrectionDeclAs<FieldDecl>()) {
           // We have found a non-static data member with a similar
           // name to what was typed; complain and initialize that
@@ -4762,13 +4779,18 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
     }
   }
 
+  bool HasMethodWithOverrideControl = false,
+       HasOverridingMethodWithoutOverrideControl = false;
   if (!Record->isDependentType()) {
     for (auto *M : Record->methods()) {
       // See if a method overloads virtual methods in a base
       // class without overriding any.
       if (!M->isStatic())
         DiagnoseHiddenVirtualMethods(M);
-
+      if (M->hasAttr<OverrideAttr>())
+        HasMethodWithOverrideControl = true;
+      else if (M->size_overridden_methods() > 0)
+        HasOverridingMethodWithoutOverrideControl = true;
       // Check whether the explicitly-defaulted special members are valid.
       if (!M->isInvalidDecl() && M->isExplicitlyDefaulted())
         CheckExplicitlyDefaultedSpecialMember(M);
@@ -4787,6 +4809,13 @@ void Sema::CheckCompletedCXXClass(CXXRecordDecl *Record) {
     }
   }
 
+  if (HasMethodWithOverrideControl &&
+      HasOverridingMethodWithoutOverrideControl) {
+    // At least one method has the 'override' control declared.
+    // Diagnose all other overridden methods which do not have 'override' specified on them.
+    for (auto *M : Record->methods())
+      DiagnoseAbsenceOfOverrideControl(M);
+  }
   // C++11 [dcl.constexpr]p8: A constexpr specifier for a non-static member
   // function that is not a constructor declares that member function to be
   // const. [...] The class of which that function is a member shall be
@@ -7264,12 +7293,11 @@ static bool TryNamespaceTypoCorrection(Sema &S, LookupResult &R, Scope *Sc,
                                        CXXScopeSpec &SS,
                                        SourceLocation IdentLoc,
                                        IdentifierInfo *Ident) {
-  NamespaceValidatorCCC Validator;
   R.clear();
-  if (TypoCorrection Corrected = S.CorrectTypo(R.getLookupNameInfo(),
-                                               R.getLookupKind(), Sc, &SS,
-                                               Validator,
-                                               Sema::CTK_ErrorRecovery)) {
+  if (TypoCorrection Corrected =
+          S.CorrectTypo(R.getLookupNameInfo(), R.getLookupKind(), Sc, &SS,
+                        llvm::make_unique<NamespaceValidatorCCC>(),
+                        Sema::CTK_ErrorRecovery)) {
     if (DeclContext *DC = S.computeDeclContext(SS, false)) {
       std::string CorrectedStr(Corrected.getAsString(S.getLangOpts()));
       bool DroppedSpecifier = Corrected.WillReplaceSpecifier() &&
@@ -7895,11 +7923,12 @@ NamedDecl *Sema::BuildUsingDeclaration(Scope *S, AccessSpecifier AS,
 
   // Try to correct typos if possible.
   if (R.empty()) {
-    UsingValidatorCCC CCC(HasTypenameKeyword, IsInstantiation, SS.getScopeRep(),
-                          dyn_cast<CXXRecordDecl>(CurContext));
-    if (TypoCorrection Corrected = CorrectTypo(R.getLookupNameInfo(),
-                                               R.getLookupKind(), S, &SS, CCC,
-                                               CTK_ErrorRecovery)){
+    if (TypoCorrection Corrected = CorrectTypo(
+            R.getLookupNameInfo(), R.getLookupKind(), S, &SS,
+            llvm::make_unique<UsingValidatorCCC>(
+                HasTypenameKeyword, IsInstantiation, SS.getScopeRep(),
+                dyn_cast<CXXRecordDecl>(CurContext)),
+            CTK_ErrorRecovery)) {
       // We reject any correction for which ND would be NULL.
       NamedDecl *ND = Corrected.getCorrectionDecl();
 

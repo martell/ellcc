@@ -982,7 +982,7 @@ private:
 
     if (PrevToken->Tok.isLiteral() ||
         PrevToken->isOneOf(tok::r_paren, tok::r_square, tok::kw_true,
-                           tok::kw_false) ||
+                           tok::kw_false, tok::r_brace) ||
         NextToken->Tok.isLiteral() ||
         NextToken->isOneOf(tok::kw_true, tok::kw_false) ||
         NextToken->isUnaryOperator() ||
@@ -990,6 +990,10 @@ private:
         // declarations. Thus, having an identifier on the right-hand side
         // indicates a binary operator.
         (InTemplateArgument && NextToken->Tok.isAnyIdentifier()))
+      return TT_BinaryOperator;
+
+    // "&&(" is quite unlikely to be two successive unary "&".
+    if (Tok.is(tok::ampamp) && NextToken && NextToken->is(tok::l_paren))
       return TT_BinaryOperator;
 
     // This catches some cases where evaluation order is used as control flow:
@@ -1263,8 +1267,7 @@ void TokenAnnotator::annotate(AnnotatedLine &Line) {
 // function declaration.
 static bool isFunctionDeclarationName(const FormatToken &Current) {
   if (Current.Type != TT_StartOfName ||
-      Current.NestingLevel != 0 ||
-      Current.Previous->Type == TT_StartOfName)
+      Current.NestingLevel != 0)
     return false;
   const FormatToken *Next = Current.Next;
   for (; Next; Next = Next->Next) {
@@ -1362,13 +1365,15 @@ void TokenAnnotator::calculateFormattingInformation(AnnotatedLine &Line) {
       ChildSize = LastOfChild.isTrailingComment() ? Style.ColumnLimit
                                                   : LastOfChild.TotalLength + 1;
     }
-    if (Current->MustBreakBefore || Current->Previous->Children.size() > 1 ||
+    const FormatToken *Prev= Current->Previous;
+    if (Current->MustBreakBefore || Prev->Children.size() > 1 ||
+        (Prev->Children.size() == 1 &&
+         Prev->Children[0]->First->MustBreakBefore) ||
         Current->IsMultiline)
-      Current->TotalLength = Current->Previous->TotalLength + Style.ColumnLimit;
+      Current->TotalLength = Prev->TotalLength + Style.ColumnLimit;
     else
-      Current->TotalLength = Current->Previous->TotalLength +
-                             Current->ColumnWidth + ChildSize +
-                             Current->SpacesRequiredBefore;
+      Current->TotalLength = Prev->TotalLength + Current->ColumnWidth +
+                             ChildSize + Current->SpacesRequiredBefore;
 
     if (Current->Type == TT_CtorInitializerColon)
       InFunctionDecl = false;
@@ -1768,7 +1773,7 @@ bool TokenAnnotator::mustBreakBefore(const AnnotatedLine &Line,
     return Right.NewlinesBefore > 0;
   } else if (Right.Previous->is(tok::l_brace) && Right.NestingLevel == 1 &&
              Style.Language == FormatStyle::LK_Proto) {
-    // Don't enums onto single lines in protocol buffers.
+    // Don't put enums onto single lines in protocol buffers.
     return true;
   } else if (Style.Language == FormatStyle::LK_JavaScript &&
              Right.is(tok::r_brace) && Left.is(tok::l_brace) &&

@@ -1691,6 +1691,9 @@ def override_keyword_hides_virtual_member_function : Error<
   "%select{function|functions}1">;
 def err_function_marked_override_not_overriding : Error<
   "%0 marked 'override' but does not override any member functions">;
+def warn_function_marked_not_override_overriding : Warning <
+  "%0 overrides a member function but is not marked 'override'">,
+  InGroup<CXX11WarnOverrideMethod>;
 def err_class_marked_final_used_as_base : Error<
   "base %0 is marked '%select{final|sealed}1'">;
 def warn_abstract_final_class : Warning<
@@ -2043,8 +2046,6 @@ def err_undeclared_nsarray : Error<
 def err_undeclared_nsdictionary : Error<
   "NSDictionary must be available to use Objective-C dictionary "
   "literals">;
-def err_undeclared_alloc : Error<
-  "alloc must be available to use Objective-C literals">;
 def err_undeclared_boxing_method : Error<
   "declaration of %0 is missing in %1 class">;
 def err_objc_literal_method_sig : Error<
@@ -2255,9 +2256,9 @@ def err_cconv_change : Error<
 def warn_cconv_ignored : Warning<
   "calling convention %0 ignored for this target">, InGroup<IgnoredAttributes>;
 def err_cconv_knr : Error<
-  "function with no prototype cannot use the callee-cleanup %0 calling convention">;
+  "function with no prototype cannot use the %0 calling convention">;
 def warn_cconv_knr : Warning<
-  "function with no prototype cannot use the callee-cleanup %0 calling convention">,
+  err_cconv_knr.Text>,
   InGroup<DiagGroup<"missing-prototype-for-cc">>;
 def err_cconv_varargs : Error<
   "variadic function cannot use %0 calling convention">;
@@ -4639,7 +4640,7 @@ def warn_logical_and_in_logical_or : Warning<
   "'&&' within '||'">, InGroup<LogicalOpParentheses>;
 
 def warn_overloaded_shift_in_comparison :Warning<
-  "overloaded operator %select{>>|<<}0 has lower precedence than "
+  "overloaded operator %select{>>|<<}0 has higher precedence than "
   "comparison operator">,
   InGroup<OverloadedShiftOpParentheses>;
 def note_evaluate_comparison_first :Note<

@@ -1,5 +1,7 @@
 current SVN:
 
+* Added ELK constructors.
+* Update to LLVM r220904.
 * Added simple main() example.
 * Fix missing ecc-getarch, ecc-getinarch, and ecc-lit scripts for all targets.
 

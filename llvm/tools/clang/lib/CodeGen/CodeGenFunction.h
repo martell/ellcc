@@ -193,7 +193,7 @@ public:
            I != E; ++I, ++Field) {
         if (I->capturesThis())
           CXXThisFieldDecl = *Field;
-        else
+        else if (I->capturesVariable())
           CaptureFields[I->getCapturedVar()] = *Field;
       }
     }
@@ -2002,6 +2002,7 @@ public:
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = None);
 
+  LValue InitCapturedStruct(const CapturedStmt &S);
   llvm::Function *EmitCapturedStmt(const CapturedStmt &S, CapturedRegionKind K);
   void GenerateCapturedStmtFunctionProlog(const CapturedStmt &S);
   llvm::Function *GenerateCapturedStmtFunctionEpilog(const CapturedStmt &S);
@@ -2392,8 +2393,7 @@ public:
   llvm::Value *EmitObjCArrayLiteral(const ObjCArrayLiteral *E);
   llvm::Value *EmitObjCDictionaryLiteral(const ObjCDictionaryLiteral *E);
   llvm::Value *EmitObjCCollectionLiteral(const Expr *E,
-                                const ObjCMethodDecl *MethodWithObjects,
-                                const ObjCMethodDecl *AllocMethod);
+                                const ObjCMethodDecl *MethodWithObjects);
   llvm::Value *EmitObjCSelectorExpr(const ObjCSelectorExpr *E);
   RValue EmitObjCMessageExpr(const ObjCMessageExpr *E,
                              ReturnValueSlot Return = ReturnValueSlot());

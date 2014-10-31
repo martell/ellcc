@@ -159,9 +159,21 @@ TEST_F(FormatTest, FormatsCorrectRegionForLeadingWhitespace) {
                    25, 0, getLLVMStyleWithColumns(12)));
 }
 
+TEST_F(FormatTest, FormatLineWhenInvokedOnTrailingNewline) {
+  EXPECT_EQ("int  b;\n\nint a;",
+            format("int  b;\n\nint a;", 8, 0, getLLVMStyle()));
+  EXPECT_EQ("int b;\n\nint a;",
+            format("int  b;\n\nint a;", 7, 0, getLLVMStyle()));
+
+  // This might not strictly be correct, but is likely good in all practical
+  // cases.
+  EXPECT_EQ("int b;\nint a;",
+            format("int  b;int a;", 7, 0, getLLVMStyle()));
+}
+
 TEST_F(FormatTest, RemovesWhitespaceWhenTriggeredOnEmptyLine) {
   EXPECT_EQ("int  a;\n\n int b;",
-            format("int  a;\n  \n\n int b;", 7, 0, getLLVMStyle()));
+            format("int  a;\n  \n\n int b;", 8, 0, getLLVMStyle()));
   EXPECT_EQ("int  a;\n\n int b;",
             format("int  a;\n  \n\n int b;", 9, 0, getLLVMStyle()));
 }
@@ -1207,8 +1219,8 @@ TEST_F(FormatTest, CorrectlyHandlesLengthOfBlockComments) {
 }
 
 TEST_F(FormatTest, DontBreakNonTrailingBlockComments) {
-  EXPECT_EQ("void\n"
-            "ffffffffff(int aaaaa /* test */);",
+  EXPECT_EQ("void ffffffffff(\n"
+            "    int aaaaa /* test */);",
             format("void ffffffffff(int aaaaa /* test */);",
                    getLLVMStyleWithColumns(35)));
 }
@@ -1258,11 +1270,11 @@ TEST_F(FormatTest, SplitsLongCxxComments) {
             format("// A comment before a macro definition\n"
                    "#define a b",
                    getLLVMStyleWithColumns(20)));
-  EXPECT_EQ("void\n"
-            "ffffff(int aaaaaaaaa,  // wwww\n"
-            "       int bbbbbbbbbb, // xxxxxxx\n"
-            "                       // yyyyyyyyyy\n"
-            "       int c, int d, int e) {}",
+  EXPECT_EQ("void ffffff(\n"
+            "    int aaaaaaaaa,  // wwww\n"
+            "    int bbbbbbbbbb, // xxxxxxx\n"
+            "                    // yyyyyyyyyy\n"
+            "    int c, int d, int e) {}",
             format("void ffffff(\n"
                    "    int aaaaaaaaa, // wwww\n"
                    "    int bbbbbbbbbb, // xxxxxxx yyyyyyyyyy\n"
@@ -3538,8 +3550,8 @@ TEST_F(FormatTest, BreaksFunctionDeclarationsWithTrailingTokens) {
   // they are not function-like.
   FormatStyle Style = getGoogleStyle();
   Style.ColumnLimit = 47;
-  verifyFormat("void\n"
-               "someLongFunction(int someLongParameter) const {\n}",
+  verifyFormat("void someLongFunction(\n"
+               "    int someLoooooooooooooongParameter) const {\n}",
                getLLVMStyleWithColumns(47));
   verifyFormat("LoooooongReturnType\n"
                "someLoooooooongFunction() const {}",
@@ -5030,6 +5042,18 @@ TEST_F(FormatTest, UnderstandsUsesOfStarAndAmp) {
   verifyFormat("foo<b && false>();");
   verifyFormat("foo<b & 1>();");
   verifyFormat("decltype(*::std::declval<const T &>()) void F();");
+  verifyFormat(
+      "template <class T, class = typename std::enable_if<\n"
+      "                       std::is_integral<T>::value &&\n"
+      "                       (sizeof(T) > 1 || sizeof(T) < 8)>::type>\n"
+      "void F();",
+      getLLVMStyleWithColumns(76));
+  verifyFormat(
+      "template <class T,\n"
+      "          class = typename ::std::enable_if<\n"
+      "              ::std::is_array<T>{} && ::std::is_array<T>{}>::type>\n"
+      "void F();",
+      getGoogleStyleWithColumns(68));
 
   verifyIndependentOfContext("MACRO(int *i);");
   verifyIndependentOfContext("MACRO(auto *a);");
@@ -5268,6 +5292,8 @@ TEST_F(FormatTest, BreaksLongDeclarations) {
   verifyFormat("LoooooooooooooooooooooooooooooooooooooooongReturnType\n"
                "LoooooooooooooooooooooooooooooooongFunctionDeclaration();");
   verifyFormat("LoooooooooooooooooooooooooooooooooooooooongReturnType\n"
+               "LooooooooooooooooooooooooooooooooooongFunctionDefinition() {}");
+  verifyFormat("LoooooooooooooooooooooooooooooooooooooooongReturnType MACRO\n"
                "LooooooooooooooooooooooooooooooooooongFunctionDefinition() {}");
   verifyFormat("LoooooooooooooooooooooooooooooooooooooooongReturnType const\n"
                "LooooooooooooooooooooooooooooooooooongFunctionDefinition() {}");
@@ -7400,7 +7426,7 @@ TEST_F(FormatTest, ConfigurableIndentWidth) {
 }
 
 TEST_F(FormatTest, ConfigurableFunctionDeclarationIndentAfterType) {
-  verifyFormat("void\n"
+  verifyFormat("double\n"
                "f();",
                getLLVMStyleWithColumns(8));
 }
@@ -8119,13 +8145,13 @@ TEST_F(FormatTest, AllmanBraceBreaking) {
 
   // This shouldn't affect ObjC blocks..
   verifyFormat("[self doSomeThingWithACompletionHandler:^{\n"
-               "    // ...\n"
-               "    int i;\n"
+               "  // ...\n"
+               "  int i;\n"
                "}];",
                AllmanBraceStyle);
   verifyFormat("void (^block)(void) = ^{\n"
-               "    // ...\n"
-               "    int i;\n"
+               "  // ...\n"
+               "  int i;\n"
                "};",
                AllmanBraceStyle);
   // .. or dict literals.
@@ -8459,6 +8485,7 @@ TEST_F(FormatTest, ParsesConfiguration) {
   CHECK_PARSE("AccessModifierOffset: -1234", AccessModifierOffset, -1234);
   CHECK_PARSE("ConstructorInitializerIndentWidth: 1234",
               ConstructorInitializerIndentWidth, 1234u);
+  CHECK_PARSE("ObjCBlockIndentWidth: 1234", ObjCBlockIndentWidth, 1234u);
   CHECK_PARSE("ColumnLimit: 1234", ColumnLimit, 1234u);
   CHECK_PARSE("MaxEmptyLinesToKeep: 1234", MaxEmptyLinesToKeep, 1234u);
   CHECK_PARSE("PenaltyBreakBeforeFirstCallParameter: 1234",
@@ -9103,6 +9130,14 @@ TEST_F(FormatTest, FormatsLambdas) {
   verifyFormat("SomeFunction([]() { // A cool function...\n"
                "  return 43;\n"
                "});");
+  EXPECT_EQ("SomeFunction([]() {\n"
+            "#define A a\n"
+            "  return 43;\n"
+            "});",
+            format("SomeFunction([](){\n"
+                   "#define A a\n"
+                   "return 43;\n"
+                   "});"));
   verifyFormat("void f() {\n"
                "  SomeFunction([](decltype(x), A *a) {});\n"
                "}");
@@ -9169,82 +9204,89 @@ TEST_F(FormatTest, FormatsBlocks) {
   verifyFormat("{ void (^block)(Object *x); }", ShortBlocks);
 
   verifyFormat("[operation setCompletionBlock:^{\n"
-               "    [self onOperationDone];\n"
+               "  [self onOperationDone];\n"
                "}];");
   verifyFormat("int i = {[operation setCompletionBlock:^{\n"
-               "    [self onOperationDone];\n"
+               "  [self onOperationDone];\n"
                "}]};");
   verifyFormat("[operation setCompletionBlock:^(int *i) {\n"
-               "    f();\n"
+               "  f();\n"
                "}];");
   verifyFormat("int a = [operation block:^int(int *i) {\n"
-               "    return 1;\n"
+               "  return 1;\n"
                "}];");
   verifyFormat("[myObject doSomethingWith:arg1\n"
                "                      aaa:^int(int *a) {\n"
-               "                          return 1;\n"
+               "                        return 1;\n"
                "                      }\n"
                "                      bbb:f(a * bbbbbbbb)];");
 
   verifyFormat("[operation setCompletionBlock:^{\n"
-               "    [self.delegate newDataAvailable];\n"
+               "  [self.delegate newDataAvailable];\n"
                "}];",
                getLLVMStyleWithColumns(60));
   verifyFormat("dispatch_async(_fileIOQueue, ^{\n"
-               "    NSString *path = [self sessionFilePath];\n"
-               "    if (path) {\n"
-               "      // ...\n"
-               "    }\n"
+               "  NSString *path = [self sessionFilePath];\n"
+               "  if (path) {\n"
+               "    // ...\n"
+               "  }\n"
                "});");
   verifyFormat("[[SessionService sharedService]\n"
                "    loadWindowWithCompletionBlock:^(SessionWindow *window) {\n"
-               "        if (window) {\n"
-               "          [self windowDidLoad:window];\n"
-               "        } else {\n"
-               "          [self errorLoadingWindow];\n"
-               "        }\n"
+               "      if (window) {\n"
+               "        [self windowDidLoad:window];\n"
+               "      } else {\n"
+               "        [self errorLoadingWindow];\n"
+               "      }\n"
                "    }];");
   verifyFormat("void (^largeBlock)(void) = ^{\n"
-               "    // ...\n"
+               "  // ...\n"
                "};\n",
                getLLVMStyleWithColumns(40));
   verifyFormat("[[SessionService sharedService]\n"
                "    loadWindowWithCompletionBlock: //\n"
                "        ^(SessionWindow *window) {\n"
-               "            if (window) {\n"
-               "              [self windowDidLoad:window];\n"
-               "            } else {\n"
-               "              [self errorLoadingWindow];\n"
-               "            }\n"
+               "          if (window) {\n"
+               "            [self windowDidLoad:window];\n"
+               "          } else {\n"
+               "            [self errorLoadingWindow];\n"
+               "          }\n"
                "        }];",
                getLLVMStyleWithColumns(60));
   verifyFormat("[myObject doSomethingWith:arg1\n"
                "    firstBlock:^(Foo *a) {\n"
-               "        // ...\n"
-               "        int i;\n"
+               "      // ...\n"
+               "      int i;\n"
                "    }\n"
                "    secondBlock:^(Bar *b) {\n"
-               "        // ...\n"
-               "        int i;\n"
+               "      // ...\n"
+               "      int i;\n"
                "    }\n"
                "    thirdBlock:^Foo(Bar *b) {\n"
-               "        // ...\n"
-               "        int i;\n"
+               "      // ...\n"
+               "      int i;\n"
                "    }];");
   verifyFormat("[myObject doSomethingWith:arg1\n"
                "               firstBlock:-1\n"
                "              secondBlock:^(Bar *b) {\n"
-               "                  // ...\n"
-               "                  int i;\n"
+               "                // ...\n"
+               "                int i;\n"
                "              }];");
 
   verifyFormat("f(^{\n"
-               "    @autoreleasepool {\n"
-               "      if (a) {\n"
-               "        g();\n"
-               "      }\n"
+               "  @autoreleasepool {\n"
+               "    if (a) {\n"
+               "      g();\n"
                "    }\n"
+               "  }\n"
                "});");
+
+  FormatStyle FourIndent = getLLVMStyle();
+  FourIndent.ObjCBlockIndentWidth = 4;
+  verifyFormat("[operation setCompletionBlock:^{\n"
+               "    [self onOperationDone];\n"
+               "}];",
+               FourIndent);
 }
 
 TEST_F(FormatTest, SupportsCRLF) {

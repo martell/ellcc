@@ -2155,12 +2155,23 @@ InputFile ASTReader::getInputFile(ModuleFile &F, unsigned ID, bool Complain) {
   bool IsOutOfDate = false;
 
   // For an overridden file, there is nothing to validate.
-  if (!Overridden && (StoredSize != File->getSize()
-#if !defined(LLVM_ON_WIN32)
+  if (!Overridden && //
+      (StoredSize != File->getSize() ||
+#if defined(LLVM_ON_WIN32)
+       false
+#else
        // In our regression testing, the Windows file system seems to
        // have inconsistent modification times that sometimes
        // erroneously trigger this error-handling path.
-       || StoredTime != File->getModificationTime()
+       //
+       // This also happens in networked file systems, so disable this
+       // check if validation is disabled or if we have an explicitly
+       // built PCM file.
+       //
+       // FIXME: Should we also do this for PCH files? They could also
+       // reasonably get shared across a network during a distributed build.
+       (StoredTime != File->getModificationTime() && !DisableValidation &&
+        F.Kind != MK_ExplicitModule)
 #endif
        )) {
     if (Complain) {
@@ -2423,6 +2434,7 @@ ASTReader::ReadControlBlock(ModuleFile &F,
     case DIAGNOSTIC_OPTIONS: {
       bool Complain = (ClientLoadCapabilities & ARR_OutOfDate)==0;
       if (Listener && &F == *ModuleMgr.begin() &&
+          F.Kind != MK_ExplicitModule &&
           ParseDiagnosticOptions(Record, Complain, *Listener) &&
           !DisableValidation)
         return OutOfDate;
@@ -2432,6 +2444,7 @@ ASTReader::ReadControlBlock(ModuleFile &F,
     case FILE_SYSTEM_OPTIONS: {
       bool Complain = (ClientLoadCapabilities & ARR_ConfigurationMismatch)==0;
       if (Listener && &F == *ModuleMgr.begin() &&
+          F.Kind != MK_ExplicitModule &&
           ParseFileSystemOptions(Record, Complain, *Listener) &&
           !DisableValidation && !AllowConfigurationMismatch)
         return ConfigurationMismatch;
@@ -2441,6 +2454,7 @@ ASTReader::ReadControlBlock(ModuleFile &F,
     case HEADER_SEARCH_OPTIONS: {
       bool Complain = (ClientLoadCapabilities & ARR_ConfigurationMismatch)==0;
       if (Listener && &F == *ModuleMgr.begin() &&
+          F.Kind != MK_ExplicitModule &&
           ParseHeaderSearchOptions(Record, Complain, *Listener) &&
           !DisableValidation && !AllowConfigurationMismatch)
         return ConfigurationMismatch;
@@ -2450,6 +2464,7 @@ ASTReader::ReadControlBlock(ModuleFile &F,
     case PREPROCESSOR_OPTIONS: {
       bool Complain = (ClientLoadCapabilities & ARR_ConfigurationMismatch)==0;
       if (Listener && &F == *ModuleMgr.begin() &&
+          F.Kind != MK_ExplicitModule &&
           ParsePreprocessorOptions(Record, Complain, *Listener,
                                    SuggestedPredefines) &&
           !DisableValidation && !AllowConfigurationMismatch)
@@ -4074,19 +4089,18 @@ std::string ASTReader::getOriginalSourceFile(const std::string &ASTFileName,
                                              FileManager &FileMgr,
                                              DiagnosticsEngine &Diags) {
   // Open the AST file.
-  std::string ErrStr;
-  std::unique_ptr<llvm::MemoryBuffer> Buffer =
-      FileMgr.getBufferForFile(ASTFileName, &ErrStr);
+  auto Buffer = FileMgr.getBufferForFile(ASTFileName);
   if (!Buffer) {
-    Diags.Report(diag::err_fe_unable_to_read_pch_file) << ASTFileName << ErrStr;
+    Diags.Report(diag::err_fe_unable_to_read_pch_file)
+        << ASTFileName << Buffer.getError().message();
     return std::string();
   }
 
   // Initialize the stream
   llvm::BitstreamReader StreamFile;
   BitstreamCursor Stream;
-  StreamFile.init((const unsigned char *)Buffer->getBufferStart(),
-                  (const unsigned char *)Buffer->getBufferEnd());
+  StreamFile.init((const unsigned char *)(*Buffer)->getBufferStart(),
+                  (const unsigned char *)(*Buffer)->getBufferEnd());
   Stream.init(StreamFile);
 
   // Sniff for the signature.
@@ -4163,9 +4177,7 @@ bool ASTReader::readASTFileControlBlock(StringRef Filename,
                                         FileManager &FileMgr,
                                         ASTReaderListener &Listener) {
   // Open the AST file.
-  std::string ErrStr;
-  std::unique_ptr<llvm::MemoryBuffer> Buffer =
-      FileMgr.getBufferForFile(Filename, &ErrStr);
+  auto Buffer = FileMgr.getBufferForFile(Filename);
   if (!Buffer) {
     return true;
   }
@@ -4173,8 +4185,8 @@ bool ASTReader::readASTFileControlBlock(StringRef Filename,
   // Initialize the stream
   llvm::BitstreamReader StreamFile;
   BitstreamCursor Stream;
-  StreamFile.init((const unsigned char *)Buffer->getBufferStart(),
-                  (const unsigned char *)Buffer->getBufferEnd());
+  StreamFile.init((const unsigned char *)(*Buffer)->getBufferStart(),
+                  (const unsigned char *)(*Buffer)->getBufferEnd());
   Stream.init(StreamFile);
 
   // Sniff for the signature.
@@ -4191,6 +4203,7 @@ bool ASTReader::readASTFileControlBlock(StringRef Filename,
 
   bool NeedsInputFiles = Listener.needsInputFileVisitation();
   bool NeedsSystemInputFiles = Listener.needsSystemInputFileVisitation();
+  bool NeedsImports = Listener.needsImportVisitation();
   BitstreamCursor InputFilesCursor;
   if (NeedsInputFiles) {
     InputFilesCursor = Stream;
@@ -4305,6 +4318,23 @@ bool ASTReader::readASTFileControlBlock(StringRef Filename,
         }
         if (!shouldContinue)
           break;
+      }
+      break;
+    }
+
+    case IMPORTS: {
+      if (!NeedsImports)
+        break;
+
+      unsigned Idx = 0, N = Record.size();
+      while (Idx < N) {
+        // Read information about the AST file.
+        Idx += 5; // ImportLoc, Size, ModTime, Signature
+        unsigned Length = Record[Idx++];
+        SmallString<128> ImportedFile(Record.begin() + Idx,
+                                      Record.begin() + Idx + Length);
+        Idx += Length;
+        Listener.visitImport(ImportedFile);
       }
       break;
     }
@@ -4461,26 +4491,19 @@ ASTReader::ReadSubmoduleBlock(ModuleFile &F, unsigned ClientLoadCapabilities) {
       break;
     }
         
-    case SUBMODULE_HEADER: {
-      // We lazily associate headers with their modules via the HeaderInfoTable.
+    case SUBMODULE_HEADER:
+    case SUBMODULE_EXCLUDED_HEADER:
+    case SUBMODULE_PRIVATE_HEADER:
+      // We lazily associate headers with their modules via the HeaderInfo table.
       // FIXME: Re-evaluate this section; maybe only store InputFile IDs instead
       // of complete filenames or remove it entirely.
-      break;      
-    }
+      break;
 
-    case SUBMODULE_EXCLUDED_HEADER: {
-      // We lazily associate headers with their modules via the HeaderInfoTable.
-      // FIXME: Re-evaluate this section; maybe only store InputFile IDs instead
-      // of complete filenames or remove it entirely.
-      break;      
-    }
-
-    case SUBMODULE_PRIVATE_HEADER: {
-      // We lazily associate headers with their modules via the HeaderInfoTable.
-      // FIXME: Re-evaluate this section; maybe only store InputFile IDs instead
-      // of complete filenames or remove it entirely.
-      break;      
-    }
+    case SUBMODULE_TEXTUAL_HEADER:
+    case SUBMODULE_PRIVATE_TEXTUAL_HEADER:
+      // FIXME: Textual headers are not marked in the HeaderInfo table. Load
+      // them here.
+      break;
 
     case SUBMODULE_TOPHEADER: {
       CurrentModule->addTopHeaderFilename(Blob);

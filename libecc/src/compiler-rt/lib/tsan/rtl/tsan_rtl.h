@@ -123,11 +123,8 @@ struct MBlock {
 };
 
 #ifndef TSAN_GO
-const uptr kAllocatorSpace = 0x7d0000000000ULL;
-const uptr kAllocatorSize  =  0x10000000000ULL;  // 1T.
-
 struct MapUnmapCallback;
-typedef SizeClassAllocator64<kAllocatorSpace, kAllocatorSize, sizeof(MBlock),
+typedef SizeClassAllocator64<kHeapMemBeg, kHeapMemEnd - kHeapMemBeg, 0,
     DefaultSizeClassMap, MapUnmapCallback> PrimaryAllocator;
 typedef SizeClassAllocatorLocalCache<PrimaryAllocator> AllocatorCache;
 typedef LargeMmapAllocator<MapUnmapCallback> SecondaryAllocator;

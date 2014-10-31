@@ -3278,6 +3278,22 @@ PPC64_SVR4_ABIInfo::isHomogeneousAggregate(QualType Ty, const Type *&Base,
       return false;
 
     Members = 0;
+
+    // If this is a C++ record, check the bases first.
+    if (const CXXRecordDecl *CXXRD = dyn_cast<CXXRecordDecl>(RD)) {
+      for (const auto &I : CXXRD->bases()) {
+        // Ignore empty records.
+        if (isEmptyRecord(getContext(), I.getType(), true))
+          continue;
+
+        uint64_t FldMembers;
+        if (!isHomogeneousAggregate(I.getType(), Base, FldMembers))
+          return false;
+
+        Members += FldMembers;
+      }
+    }
+
     for (const auto *FD : RD->fields()) {
       // Ignore (non-zero arrays of) empty records.
       QualType FT = FD->getType();
@@ -5109,6 +5125,10 @@ ABIArgInfo NVPTXABIInfo::classifyArgumentType(QualType Ty) const {
   if (const EnumType *EnumTy = Ty->getAs<EnumType>())
     Ty = EnumTy->getDecl()->getIntegerType();
 
+  // Return aggregates type as indirect by value
+  if (isAggregateTypeForABI(Ty))
+    return ABIArgInfo::getIndirect(0, /* byval */ true);
+
   return (Ty->isPromotableIntegerType() ?
           ABIArgInfo::getExtend() : ABIArgInfo::getDirect());
 }
@@ -5808,15 +5828,19 @@ MipsABIInfo::classifyArgumentType(QualType Ty, uint64_t &Offset) const {
     // If we have reached here, aggregates are passed directly by coercing to
     // another structure type. Padding is inserted if the offset of the
     // aggregate is unaligned.
-    return ABIArgInfo::getDirect(HandleAggregates(Ty, TySize), 0,
-                                 getPaddingType(OrigOffset, CurrOffset));
+    ABIArgInfo ArgInfo =
+        ABIArgInfo::getDirect(HandleAggregates(Ty, TySize), 0,
+                              getPaddingType(OrigOffset, CurrOffset));
+    ArgInfo.setInReg(true);
+    return ArgInfo;
   }
 
   // Treat an enum type as its underlying type.
   if (const EnumType *EnumTy = Ty->getAs<EnumType>())
     Ty = EnumTy->getDecl()->getIntegerType();
 
-  if (Ty->isPromotableIntegerType())
+  // All integral types are promoted to the GPR width.
+  if (Ty->isIntegralOrEnumerationType())
     return ABIArgInfo::getExtend();
 
   return ABIArgInfo::getDirect(

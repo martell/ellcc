@@ -71,13 +71,19 @@ reset:
         mov     sp, r0
         sub     r0, #Stack_SYS
         // Set up the end of the heap.
-        ldr     r1, =__heap_end
+#define LIBC 0
+#if LIBC
+        ldr     r1, =__heap_end__
 	push	{ r0, r1 }		// Preserve the heap end.
+#else
+	mov	r8, r0			// Preserve the heap end.
+#endif
 
         // Point to the vectors.
         ldr     r0, =_start
         mcr     p15, 0, r0, c12, c0, 0
 
+#if LIBC
         // Copy the initialized data area.
         ldr     a1, =__data_start__
         ldr     a2, =__text_end__
@@ -105,12 +111,22 @@ reset:
         mov     a2, #1
         ldr     a1,=main
         bl      __libc_start_main
+#else
+        mov     fp, #0
+        mov     lr, #0
+	mov	a2, r8			// Get the end of the heap.
+        ldr     a1,=args
+	bic	sp, sp, #0xF		// Align the stack.
+        bl      __elk_start
+#endif
 
 done:
         wfi
         b       done
 
 // main()'s pseudo arguments.
+args:
+	.word	1			// argc
 argv:
         .word   name
         .word   0                       // End of argv.
@@ -371,12 +387,14 @@ __set_syscall:
         bx      lr
 
         .data
-        .global __heap_end
-__heap_end:
+        .global __heap_end__
+__heap_end__:
         .word   0
+#if RICH
         .global __dso_handle
 __dso_handle:
         .word   0
+#endif
 
 syscall:
         .word   0

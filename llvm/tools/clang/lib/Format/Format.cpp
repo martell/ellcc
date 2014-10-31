@@ -170,8 +170,6 @@ template <> struct MappingTraits<FormatStyle> {
     }
 
     IO.mapOptional("AccessModifierOffset", Style.AccessModifierOffset);
-    IO.mapOptional("ConstructorInitializerIndentWidth",
-                   Style.ConstructorInitializerIndentWidth);
     IO.mapOptional("AlignEscapedNewlinesLeft", Style.AlignEscapedNewlinesLeft);
     IO.mapOptional("AlignTrailingComments", Style.AlignTrailingComments);
     IO.mapOptional("AllowAllParametersOfDeclarationOnNextLine",
@@ -203,6 +201,8 @@ template <> struct MappingTraits<FormatStyle> {
     IO.mapOptional("ColumnLimit", Style.ColumnLimit);
     IO.mapOptional("ConstructorInitializerAllOnOneLineOrOnePerLine",
                    Style.ConstructorInitializerAllOnOneLineOrOnePerLine);
+    IO.mapOptional("ConstructorInitializerIndentWidth",
+                   Style.ConstructorInitializerIndentWidth);
     IO.mapOptional("DerivePointerAlignment", Style.DerivePointerAlignment);
     IO.mapOptional("ExperimentalAutoDetectBinPacking",
                    Style.ExperimentalAutoDetectBinPacking);
@@ -215,6 +215,7 @@ template <> struct MappingTraits<FormatStyle> {
     IO.mapOptional("KeepEmptyLinesAtTheStartOfBlocks",
                    Style.KeepEmptyLinesAtTheStartOfBlocks);
     IO.mapOptional("NamespaceIndentation", Style.NamespaceIndentation);
+    IO.mapOptional("ObjCBlockIndentWidth", Style.ObjCBlockIndentWidth);
     IO.mapOptional("ObjCSpaceAfterProperty", Style.ObjCSpaceAfterProperty);
     IO.mapOptional("ObjCSpaceBeforeProtocolList",
                    Style.ObjCSpaceBeforeProtocolList);
@@ -357,6 +358,7 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.MaxEmptyLinesToKeep = 1;
   LLVMStyle.KeepEmptyLinesAtTheStartOfBlocks = true;
   LLVMStyle.NamespaceIndentation = FormatStyle::NI_None;
+  LLVMStyle.ObjCBlockIndentWidth = 2;
   LLVMStyle.ObjCSpaceAfterProperty = false;
   LLVMStyle.ObjCSpaceBeforeProtocolList = true;
   LLVMStyle.PointerAlignment = FormatStyle::PAS_Right;
@@ -409,6 +411,7 @@ FormatStyle getGoogleStyle(FormatStyle::LanguageKind Language) {
   GoogleStyle.PenaltyBreakBeforeFirstCallParameter = 1;
 
   if (Language == FormatStyle::LK_Java) {
+    GoogleStyle.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_None;
     GoogleStyle.BreakBeforeBinaryOperators = FormatStyle::BOS_NonAssignment;
     GoogleStyle.ColumnLimit = 100;
     GoogleStyle.SpaceAfterCStyleCast = true;
@@ -462,6 +465,7 @@ FormatStyle getWebKitStyle() {
   Style.ColumnLimit = 0;
   Style.IndentWidth = 4;
   Style.NamespaceIndentation = FormatStyle::NI_Inner;
+  Style.ObjCBlockIndentWidth = 4;
   Style.ObjCSpaceAfterProperty = true;
   Style.PointerAlignment = FormatStyle::PAS_Left;
   Style.Standard = FormatStyle::LS_Cpp03;
@@ -1277,6 +1281,9 @@ private:
       return true;
     }
 
+    if (Previous.Children[0]->First->MustBreakBefore)
+      return false;
+
     // Cannot merge multiple statements into a single line.
     if (Previous.Children.size() > 1)
       return false;
@@ -1413,14 +1420,14 @@ private:
     if (Tokens.size() < 2)
       return false;
     FormatToken *Previous = Tokens[Tokens.size() - 2];
-    if (Previous->isNot(tok::unknown) || Previous->TokenText != "\\" ||
-        Tokens.back()->NewlinesBefore != 0)
+    if (Previous->isNot(tok::unknown) || Previous->TokenText != "\\")
       return false;
-    Previous->ColumnWidth += Tokens.back()->ColumnWidth;
+    ++Previous->ColumnWidth;
     StringRef Text = Previous->TokenText;
-    Previous->TokenText =
-        StringRef(Text.data(), Text.size() + Tokens.back()->TokenText.size());
+    Previous->TokenText = StringRef(Text.data(), Text.size() + 1);
+    resetLexer(SourceMgr.getFileOffset(Tokens.back()->Tok.getLocation()) + 1);
     Tokens.resize(Tokens.size() - 1);
+    Column = Previous->OriginalColumn + Previous->ColumnWidth;
     return true;
   }
 
@@ -1453,15 +1460,10 @@ private:
                          tok::question, tok::kw_return) ||
            I[1]->isBinaryOperator())) {
         if (MightEndWithEscapedSlash) {
-          StringRef Buffer = SourceMgr.getBufferData(ID);
           // This regex literal ends in '\//'. Skip past the '//' of the last
           // token and re-start lexing from there.
-          int offset =
-              SourceMgr.getFileOffset(Tokens.back()->Tok.getLocation()) + 2;
-          Lex.reset(new Lexer(SourceMgr.getLocForStartOfFile(ID),
-                              getFormattingLangOpts(Style), Buffer.begin(),
-                              Buffer.begin() + offset, Buffer.end()));
-          Lex->SetKeepWhitespaceMode(true);
+          SourceLocation Loc = Tokens.back()->Tok.getLocation();
+          resetLexer(SourceMgr.getFileOffset(Loc) + 2);
         }
         Tokens.resize(Tokens.size() - TokenCount);
         Tokens.back()->Tok.setKind(tok::unknown);
@@ -1757,6 +1759,14 @@ private:
       FormattingDisabled = true;
     }
   }
+
+  void resetLexer(unsigned Offset) {
+    StringRef Buffer = SourceMgr.getBufferData(ID);
+    Lex.reset(new Lexer(SourceMgr.getLocForStartOfFile(ID),
+                        getFormattingLangOpts(Style), Buffer.begin(),
+                        Buffer.begin() + Offset, Buffer.end()));
+    Lex->SetKeepWhitespaceMode(true);
+  }
 };
 
 static StringRef getLanguageName(FormatStyle::LanguageKind Language) {
@@ -1952,8 +1962,7 @@ private:
     if (!IncludeLeadingNewlines)
       Start = Start.getLocWithOffset(First.LastNewlineOffset);
     SourceLocation End = Last.getStartOfNonWhitespace();
-    if (Last.TokenText.size() > 0)
-      End = End.getLocWithOffset(Last.TokenText.size() - 1);
+    End = End.getLocWithOffset(Last.TokenText.size());
     CharSourceRange Range = CharSourceRange::getCharRange(Start, End);
     return affectsCharSourceRange(Range);
   }

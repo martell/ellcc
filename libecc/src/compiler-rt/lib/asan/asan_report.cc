@@ -440,16 +440,15 @@ bool DescribeAddressIfStack(uptr addr, uptr access_size) {
   // previously. That's unfortunate, but I have no better solution,
   // especially given that the alloca may be from entirely different place
   // (e.g. use-after-scope, or different thread's stack).
-  StackTrace alloca_stack;
 #if defined(__powerpc64__) && defined(__BIG_ENDIAN__)
   // On PowerPC64 ELFv1, the address of a function actually points to a
   // three-doubleword data structure with the first field containing
   // the address of the function's code.
   access.frame_pc = *reinterpret_cast<uptr *>(access.frame_pc);
 #endif
-  alloca_stack.trace[0] = access.frame_pc + 16;
-  alloca_stack.size = 1;
+  access.frame_pc += 16;
   Printf("%s", d.EndLocation());
+  StackTrace alloca_stack(&access.frame_pc, 1);
   alloca_stack.Print();
 
   InternalMmapVector<StackVarDescr> vars(16);
@@ -523,8 +522,7 @@ void DescribeHeapAddress(uptr addr, uptr access_size) {
   asanThreadRegistry().CheckLocked();
   AsanThreadContext *alloc_thread =
       GetThreadContextByTidLocked(chunk.AllocTid());
-  StackTrace alloc_stack;
-  chunk.GetAllocStack(&alloc_stack);
+  StackTrace alloc_stack = chunk.GetAllocStack();
   char tname[128];
   Decorator d;
   AsanThreadContext *free_thread = 0;
@@ -534,8 +532,7 @@ void DescribeHeapAddress(uptr addr, uptr access_size) {
            free_thread->tid,
            ThreadNameWithParenthesis(free_thread, tname, sizeof(tname)),
            d.EndAllocation());
-    StackTrace free_stack;
-    chunk.GetFreeStack(&free_stack);
+    StackTrace free_stack = chunk.GetFreeStack();
     free_stack.Print();
     Printf("%spreviously allocated by thread T%d%s here:%s\n",
            d.Allocation(), alloc_thread->tid,
@@ -585,9 +582,7 @@ void DescribeThread(AsanThreadContext *context) {
       " created by T%d%s here:\n", context->parent_tid,
       ThreadNameWithParenthesis(context->parent_tid, tname, sizeof(tname)));
   Printf("%s", str.data());
-  uptr stack_size;
-  const uptr *stack_trace = StackDepotGet(context->stack_id, &stack_size);
-  StackTrace::PrintStack(stack_trace, stack_size);
+  StackDepotGet(context->stack_id).Print();
   // Recursively described parent thread if needed.
   if (flags()->print_full_thread_history) {
     AsanThreadContext *parent_context =
@@ -688,7 +683,7 @@ void ReportSIGSEGV(const char *description, uptr pc, uptr sp, uptr bp,
   ReportErrorSummary("SEGV", &stack);
 }
 
-void ReportDoubleFree(uptr addr, StackTrace *free_stack) {
+void ReportDoubleFree(uptr addr, BufferedStackTrace *free_stack) {
   ScopedInErrorReport in_report;
   Decorator d;
   Printf("%s", d.Warning());
@@ -707,7 +702,7 @@ void ReportDoubleFree(uptr addr, StackTrace *free_stack) {
 }
 
 void ReportNewDeleteSizeMismatch(uptr addr, uptr delete_size,
-                                 StackTrace *free_stack) {
+                                 BufferedStackTrace *free_stack) {
   ScopedInErrorReport in_report;
   Decorator d;
   Printf("%s", d.Warning());
@@ -730,7 +725,7 @@ void ReportNewDeleteSizeMismatch(uptr addr, uptr delete_size,
          "ASAN_OPTIONS=new_delete_type_mismatch=0\n");
 }
 
-void ReportFreeNotMalloced(uptr addr, StackTrace *free_stack) {
+void ReportFreeNotMalloced(uptr addr, BufferedStackTrace *free_stack) {
   ScopedInErrorReport in_report;
   Decorator d;
   Printf("%s", d.Warning());
@@ -747,7 +742,7 @@ void ReportFreeNotMalloced(uptr addr, StackTrace *free_stack) {
   ReportErrorSummary("bad-free", &stack);
 }
 
-void ReportAllocTypeMismatch(uptr addr, StackTrace *free_stack,
+void ReportAllocTypeMismatch(uptr addr, BufferedStackTrace *free_stack,
                              AllocType alloc_type,
                              AllocType dealloc_type) {
   static const char *alloc_names[] =
@@ -770,7 +765,7 @@ void ReportAllocTypeMismatch(uptr addr, StackTrace *free_stack,
          "ASAN_OPTIONS=alloc_dealloc_mismatch=0\n");
 }
 
-void ReportMallocUsableSizeNotOwned(uptr addr, StackTrace *stack) {
+void ReportMallocUsableSizeNotOwned(uptr addr, BufferedStackTrace *stack) {
   ScopedInErrorReport in_report;
   Decorator d;
   Printf("%s", d.Warning());
@@ -783,7 +778,8 @@ void ReportMallocUsableSizeNotOwned(uptr addr, StackTrace *stack) {
   ReportErrorSummary("bad-malloc_usable_size", stack);
 }
 
-void ReportSanitizerGetAllocatedSizeNotOwned(uptr addr, StackTrace *stack) {
+void ReportSanitizerGetAllocatedSizeNotOwned(uptr addr,
+                                             BufferedStackTrace *stack) {
   ScopedInErrorReport in_report;
   Decorator d;
   Printf("%s", d.Warning());
@@ -796,9 +792,10 @@ void ReportSanitizerGetAllocatedSizeNotOwned(uptr addr, StackTrace *stack) {
   ReportErrorSummary("bad-__sanitizer_get_allocated_size", stack);
 }
 
-void ReportStringFunctionMemoryRangesOverlap(
-    const char *function, const char *offset1, uptr length1,
-    const char *offset2, uptr length2, StackTrace *stack) {
+void ReportStringFunctionMemoryRangesOverlap(const char *function,
+                                             const char *offset1, uptr length1,
+                                             const char *offset2, uptr length2,
+                                             BufferedStackTrace *stack) {
   ScopedInErrorReport in_report;
   Decorator d;
   char bug_type[100];
@@ -815,7 +812,7 @@ void ReportStringFunctionMemoryRangesOverlap(
 }
 
 void ReportStringFunctionSizeOverflow(uptr offset, uptr size,
-                                      StackTrace *stack) {
+                                      BufferedStackTrace *stack) {
   ScopedInErrorReport in_report;
   Decorator d;
   const char *bug_type = "negative-size-param";
@@ -829,7 +826,7 @@ void ReportStringFunctionSizeOverflow(uptr offset, uptr size,
 
 void ReportBadParamsToAnnotateContiguousContainer(uptr beg, uptr end,
                                                   uptr old_mid, uptr new_mid,
-                                                  StackTrace *stack) {
+                                                  BufferedStackTrace *stack) {
   ScopedInErrorReport in_report;
   Report("ERROR: AddressSanitizer: bad parameters to "
          "__sanitizer_annotate_contiguous_container:\n"
@@ -859,12 +856,9 @@ void ReportODRViolation(const __asan_global *g1, u32 stack_id1,
   if (stack_id1 && stack_id2) {
     Printf("These globals were registered at these points:\n");
     Printf("  [1]:\n");
-    uptr stack_size;
-    const uptr *stack_trace = StackDepotGet(stack_id1, &stack_size);
-    StackTrace::PrintStack(stack_trace, stack_size);
+    StackDepotGet(stack_id1).Print();
     Printf("  [2]:\n");
-    stack_trace = StackDepotGet(stack_id2, &stack_size);
-    StackTrace::PrintStack(stack_trace, stack_size);
+    StackDepotGet(stack_id2).Print();
   }
   Report("HINT: if you don't care about these warnings you may set "
          "ASAN_OPTIONS=detect_odr_violation=0\n");
@@ -904,8 +898,8 @@ static INLINE void CheckForInvalidPointerPair(void *p1, void *p2) {
 }
 // ----------------------- Mac-specific reports ----------------- {{{1
 
-void WarnMacFreeUnallocated(
-    uptr addr, uptr zone_ptr, const char *zone_name, StackTrace *stack) {
+void WarnMacFreeUnallocated(uptr addr, uptr zone_ptr, const char *zone_name,
+                            BufferedStackTrace *stack) {
   // Just print a warning here.
   Printf("free_common(%p) -- attempting to free unallocated memory.\n"
              "AddressSanitizer is ignoring this error on Mac OS now.\n",
@@ -915,8 +909,8 @@ void WarnMacFreeUnallocated(
   DescribeHeapAddress(addr, 1);
 }
 
-void ReportMacMzReallocUnknown(
-    uptr addr, uptr zone_ptr, const char *zone_name, StackTrace *stack) {
+void ReportMacMzReallocUnknown(uptr addr, uptr zone_ptr, const char *zone_name,
+                               BufferedStackTrace *stack) {
   ScopedInErrorReport in_report;
   Printf("mz_realloc(%p) -- attempting to realloc unallocated memory.\n"
              "This is an unrecoverable problem, exiting now.\n",
@@ -926,8 +920,8 @@ void ReportMacMzReallocUnknown(
   DescribeHeapAddress(addr, 1);
 }
 
-void ReportMacCfReallocUnknown(
-    uptr addr, uptr zone_ptr, const char *zone_name, StackTrace *stack) {
+void ReportMacCfReallocUnknown(uptr addr, uptr zone_ptr, const char *zone_name,
+                               BufferedStackTrace *stack) {
   ScopedInErrorReport in_report;
   Printf("cf_realloc(%p) -- attempting to realloc unallocated memory.\n"
              "This is an unrecoverable problem, exiting now.\n",

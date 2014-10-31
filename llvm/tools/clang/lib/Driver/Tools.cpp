@@ -460,6 +460,8 @@ static bool isSignedCharDefault(const llvm::Triple &Triple) {
   case llvm::Triple::aarch64_be:
   case llvm::Triple::arm:
   case llvm::Triple::armeb:
+  case llvm::Triple::thumb:
+  case llvm::Triple::thumbeb:
     if (Triple.isOSDarwin() || Triple.isOSWindows())
       return true;
     return false;
@@ -8846,7 +8848,7 @@ void CrossWindows::Link::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   // NOTE: deal with multiple definitions on Windows (e.g. COMDAT)
-  CmdArgs.push_back("--allow-multiple-definitions");
+  CmdArgs.push_back("--allow-multiple-definition");
 
   CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());

@@ -1609,7 +1609,7 @@ void ExportEntry::pushDownUntilBottom() {
 // string that is the accumulation of all edge strings along the parent chain
 // to this point.
 //
-// There is one “export” node for each exported symbol.  But because some
+// There is one "export" node for each exported symbol.  But because some
 // symbols may be a prefix of another symbol (e.g. _dup and _dup2), an export
 // node may have child nodes too.  
 //
@@ -2460,8 +2460,9 @@ ArrayRef<uint8_t> MachOObjectFile::getDyldInfoExportsTrie() const {
 ArrayRef<uint8_t> MachOObjectFile::getUuid() const {
   if (!UuidLoadCmd)
     return ArrayRef<uint8_t>();
-  MachO::uuid_command Uuid = getStruct<MachO::uuid_command>(this, UuidLoadCmd);
-  return ArrayRef<uint8_t>(Uuid.uuid, 16);
+  // Returning a pointer is fine as uuid doesn't need endian swapping.
+  const char *Ptr = UuidLoadCmd + offsetof(MachO::uuid_command, uuid);
+  return ArrayRef<uint8_t>(reinterpret_cast<const uint8_t *>(Ptr), 16);
 }
 
 StringRef MachOObjectFile::getStringTableData() const {

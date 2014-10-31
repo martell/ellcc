@@ -11,6 +11,21 @@ SECTIONS
     PROVIDE_HIDDEN(__preinit_array_end = .);
   } > rom
 
+  .elk_init_array : {
+    PROVIDE_HIDDEN(__elk_init_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.elk_init_array.*) 
+           SORT_BY_INIT_PRIORITY(.elk_ctors.*)))
+    KEEP(*(.elk_init_array .elk_ctors))
+    PROVIDE_HIDDEN(__elk_init_array_end = .);
+  } > rom
+  .elk_fini_array  : {
+    PROVIDE_HIDDEN(__elk_fini_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.elk_fini_array.*)
+           SORT_BY_INIT_PRIORITY(.elk_dtors.*)))
+    KEEP(*(.elk_fini_array .elk_dtors))
+    PROVIDE_HIDDEN(__elk_fini_array_end = .);
+  } > rom
+
   .init_array : {
     PROVIDE_HIDDEN(__init_array_start = .);
     KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*) 

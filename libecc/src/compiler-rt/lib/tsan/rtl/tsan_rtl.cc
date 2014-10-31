@@ -240,14 +240,36 @@ void MapShadow(uptr addr, uptr size) {
 
 void MapThreadTrace(uptr addr, uptr size) {
   DPrintf("#0: Mapping trace at %p-%p(0x%zx)\n", addr, addr + size, size);
-  CHECK_GE(addr, kTraceMemBegin);
-  CHECK_LE(addr + size, kTraceMemBegin + kTraceMemSize);
+  CHECK_GE(addr, kTraceMemBeg);
+  CHECK_LE(addr + size, kTraceMemEnd);
   CHECK_EQ(addr, addr & ~((64 << 10) - 1));  // windows wants 64K alignment
   uptr addr1 = (uptr)MmapFixedNoReserve(addr, size);
   if (addr1 != addr) {
     Printf("FATAL: ThreadSanitizer can not mmap thread trace (%p/%p->%p)\n",
         addr, size, addr1);
     Die();
+  }
+}
+
+static void CheckShadowMapping() {
+  for (uptr i = 0; i < ARRAY_SIZE(UserRegions); i += 2) {
+    const uptr beg = UserRegions[i];
+    const uptr end = UserRegions[i + 1];
+    VPrintf(3, "checking shadow region %p-%p\n", beg, end);
+    for (uptr p0 = beg; p0 <= end; p0 += (end - beg) / 4) {
+      for (int x = -1; x <= 1; x++) {
+        const uptr p = p0 + x;
+        if (p < beg || p >= end)
+          continue;
+        const uptr s = MemToShadow(p);
+        VPrintf(3, "  checking pointer %p -> %p\n", p, s);
+        CHECK(IsAppMem(p));
+        CHECK(IsShadowMem(s));
+        CHECK_EQ(p & ~(kShadowCell - 1), ShadowToMem(s));
+        const uptr m = (uptr)MemToMeta(p);
+        CHECK(IsMetaMem(m));
+      }
+    }
   }
 }
 
@@ -270,6 +292,7 @@ void Initialize(ThreadState *thr) {
   InitializeAllocator();
 #endif
   InitializeInterceptors();
+  CheckShadowMapping();
   InitializePlatform();
   InitializeMutex();
   InitializeDynamicAnnotations();
@@ -416,8 +439,8 @@ u32 CurrentStackId(ThreadState *thr, uptr pc) {
     thr->shadow_stack_pos[0] = pc;
     thr->shadow_stack_pos++;
   }
-  u32 id = StackDepotPut(thr->shadow_stack,
-                         thr->shadow_stack_pos - thr->shadow_stack);
+  u32 id = StackDepotPut(__sanitizer::StackTrace(
+      thr->shadow_stack, thr->shadow_stack_pos - thr->shadow_stack));
   if (pc != 0)
     thr->shadow_stack_pos--;
   return id;
@@ -593,6 +616,92 @@ void UnalignedMemoryAccess(ThreadState *thr, uptr pc, uptr addr,
     addr += size1;
     size -= size1;
   }
+}
+
+ALWAYS_INLINE
+bool ContainsSameAccessSlow(u64 *s, u64 a, u64 sync_epoch, bool is_write) {
+  Shadow cur(a);
+  for (uptr i = 0; i < kShadowCnt; i++) {
+    Shadow old(LoadShadow(&s[i]));
+    if (Shadow::Addr0AndSizeAreEqual(cur, old) &&
+        old.TidWithIgnore() == cur.TidWithIgnore() &&
+        old.epoch() > sync_epoch &&
+        old.IsAtomic() == cur.IsAtomic() &&
+        old.IsRead() <= cur.IsRead())
+      return true;
+  }
+  return false;
+}
+
+#if defined(__SSE3__) && TSAN_SHADOW_COUNT == 4
+#define SHUF(v0, v1, i0, i1, i2, i3) _mm_castps_si128(_mm_shuffle_ps( \
+    _mm_castsi128_ps(v0), _mm_castsi128_ps(v1), \
+    (i0)*1 + (i1)*4 + (i2)*16 + (i3)*64))
+ALWAYS_INLINE
+bool ContainsSameAccessFast(u64 *s, u64 a, u64 sync_epoch, bool is_write) {
+  // This is an optimized version of ContainsSameAccessSlow.
+  // load current access into access[0:63]
+  const m128 access     = _mm_cvtsi64_si128(a);
+  // duplicate high part of access in addr0:
+  // addr0[0:31]        = access[32:63]
+  // addr0[32:63]       = access[32:63]
+  // addr0[64:95]       = access[32:63]
+  // addr0[96:127]      = access[32:63]
+  const m128 addr0      = SHUF(access, access, 1, 1, 1, 1);
+  // load 4 shadow slots
+  const m128 shadow0    = _mm_load_si128((__m128i*)s);
+  const m128 shadow1    = _mm_load_si128((__m128i*)s + 1);
+  // load high parts of 4 shadow slots into addr_vect:
+  // addr_vect[0:31]    = shadow0[32:63]
+  // addr_vect[32:63]   = shadow0[96:127]
+  // addr_vect[64:95]   = shadow1[32:63]
+  // addr_vect[96:127]  = shadow1[96:127]
+  m128 addr_vect        = SHUF(shadow0, shadow1, 1, 3, 1, 3);
+  if (!is_write) {
+    // set IsRead bit in addr_vect
+    const m128 rw_mask1 = _mm_cvtsi64_si128(1<<15);
+    const m128 rw_mask  = SHUF(rw_mask1, rw_mask1, 0, 0, 0, 0);
+    addr_vect           = _mm_or_si128(addr_vect, rw_mask);
+  }
+  // addr0 == addr_vect?
+  const m128 addr_res   = _mm_cmpeq_epi32(addr0, addr_vect);
+  // epoch1[0:63]       = sync_epoch
+  const m128 epoch1     = _mm_cvtsi64_si128(sync_epoch);
+  // epoch[0:31]        = sync_epoch[0:31]
+  // epoch[32:63]       = sync_epoch[0:31]
+  // epoch[64:95]       = sync_epoch[0:31]
+  // epoch[96:127]      = sync_epoch[0:31]
+  const m128 epoch      = SHUF(epoch1, epoch1, 0, 0, 0, 0);
+  // load low parts of shadow cell epochs into epoch_vect:
+  // epoch_vect[0:31]   = shadow0[0:31]
+  // epoch_vect[32:63]  = shadow0[64:95]
+  // epoch_vect[64:95]  = shadow1[0:31]
+  // epoch_vect[96:127] = shadow1[64:95]
+  const m128 epoch_vect = SHUF(shadow0, shadow1, 0, 2, 0, 2);
+  // epoch_vect >= sync_epoch?
+  const m128 epoch_res  = _mm_cmpgt_epi32(epoch_vect, epoch);
+  // addr_res & epoch_res
+  const m128 res        = _mm_and_si128(addr_res, epoch_res);
+  // mask[0] = res[7]
+  // mask[1] = res[15]
+  // ...
+  // mask[15] = res[127]
+  const int mask        = _mm_movemask_epi8(res);
+  return mask != 0;
+}
+#endif
+
+ALWAYS_INLINE
+bool ContainsSameAccess(u64 *s, u64 a, u64 sync_epoch, bool is_write) {
+#if defined(__SSE3__) && TSAN_SHADOW_COUNT == 4
+  bool res = ContainsSameAccessFast(s, a, sync_epoch, is_write);
+  // NOTE: this check can fail if the shadow is concurrently mutated
+  // by other threads.
+  DCHECK_EQ(res, ContainsSameAccessSlow(s, a, sync_epoch, is_write));
+  return res;
+#else
+  return ContainsSameAccessSlow(s, a, sync_epoch, is_write);
+#endif
 }
 
 ALWAYS_INLINE USED
