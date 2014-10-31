@@ -17,25 +17,27 @@ _Noreturn int __libc_start_main(int (*)(), int, char **);
 
 void __elk_start(long *p, void *heap_end)
 {
-	// Grab argc, and argv.
-	int argc = p[0];
-	char **argv = (void *)(p+1);
+  // Grab argc, and argv.
+  int argc = p[0];
+  char **argv = (void *)(p+1);
 
-	// Copy initialized data from ROM.
-	memcpy(__data_start__, __text_end__, __data_end__ - __data_start__);
+  // Copy initialized data from ROM.
+  if ((uintptr_t)__data_start__ != (uintptr_t)__text_end__) {
+    memcpy(__data_start__, __text_end__, __data_end__ - __data_start__);
+  }
 
-	// Clear the bss area.
-	memset(__bss_start__, 0, __bss_end__ - __bss_start__);
+  // Clear the bss area.
+  memset(__bss_start__, 0, __bss_end__ - __bss_start__);
 
-	// Set up the end of the heap.
-	// This has to be done after the data area is initialized.
-	__heap_end__ = heap_end;
+  // Set up the end of the heap.
+  // This has to be done after the data area is initialized.
+  __heap_end__ = heap_end;
 
-	// Run the ELK constructors.
-        uintptr_t a = (uintptr_t)&__elk_init_array_start;
-        for (; a<(uintptr_t)&__elk_init_array_end; a+=sizeof(void(*)()))
-                (*(void (**)())a)();
+  // Run the ELK constructors.
+  uintptr_t a = (uintptr_t)&__elk_init_array_start;
+  for (; a<(uintptr_t)&__elk_init_array_end; a+=sizeof(void(*)()))
+          (*(void (**)())a)();
 
-	// Initialize the C run-time and call main().
-	__libc_start_main(main, argc, argv);
+  // Initialize the C run-time and call main().
+  __libc_start_main(main, argc, argv);
 }
