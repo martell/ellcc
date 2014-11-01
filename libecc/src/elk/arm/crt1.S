@@ -9,6 +9,7 @@
         .weak name              ; \
         ldr     r12, =name      ; \
         cmp     r12, #0         ; \
+        moveq   r0, #0          ; \
         blxne   r12
 
         .section .text, "x"

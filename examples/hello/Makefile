@@ -39,6 +39,25 @@ else
   endif
 endif
 
+CXXFLAGS += -MD -MP
+
+ifeq ($(VERBOSE),)
+  OUT=@
+  OUTC=@echo "Compiling $<";
+  OUTA=@echo "Assembling $<";
+  OUTL=@echo "Linking $(PROG)";
+  OUTAR=@echo "Making library $(LIBNAME)";
+  OUTR=@echo "Running $(PROG)"
+  OUTD=@echo "Debugging $(PROG)";
+else
+  OUT=
+  OUTC=
+  OUTA=
+  OUTL=
+  OUTAR=
+endif
+
+# Check for a new configuration.
 ifneq ("TARGET=$(TARGET)","$(shell cat config)")
   NEEDCLEAN=clean
 endif
@@ -78,16 +97,16 @@ else
 endif
 
 $(PROG): $(NEEDCLEAN) $(OBJS)
-	$(LD) $(LDFLAGS) -o $(PROG) $(OBJS)
+	$(OUTL)$(LD) $(LDFLAGS) -o $(PROG) $(OBJS)
 
 %.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(OUTC)$(CC) $(CFLAGS) -c -o $@ $<
 
 %.o: %.cxx
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(OUTC)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+	$(OUTC)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 # Find out how to run a program in the current configuration.
 ARCH=$(shell $(ELLCCBIN)ecc-getarch $(TARGET))
@@ -97,10 +116,10 @@ ifeq ($(findstring -linux-,$(TARGET)),-linux-)
 else
   # Otherwise, set up to run QEMU in system mode for ELK configurations.
   INCARCH=$(shell $(ELLCCBIN)ecc-getincarch $(TARGET))
-  QEMUINST=@echo "Enter 'control-A x' to exit QEMU";
+  QEMUINST=", enter 'control-A x' to exit QEMU";
   MAKEBIN=$(OBJCOPY) -O binary $(PROG) $(PROG).bin;
   ifeq ($(INCARCH),arm)
-    RUN=$(QEMUINST) $(ELLCCBIN)qemu-system-$(ARCH) $(QEMUDBG) -M vexpress-a9 \
+    RUN=$(QEMUINST)$(ELLCCBIN)qemu-system-$(ARCH) $(QEMUDBG) -M vexpress-a9 \
 	  -m 128M -nographic -kernel $(PROG)
   endif
   ifeq ($(INCARCH),i386)
@@ -126,11 +145,14 @@ else
 endif
 
 run: $(PROG)
-	$(RUN)
+	$(OUTR);$(RUN)
+
+log: $(PROG)
+	$(OUTR);$(RUN) -d in_asm,cpu -D $(PROG).log
 
 debug:
 	@echo "Type 'make gdb' or 'make tui' in another window"
-	$(MAKE) TARGET=$(TARGET) QEMUDBG="-s -S" run
+	$(OUTD)$(MAKE) TARGET=$(TARGET) QEMUDBG="-s -S" run
 
 gdb:
 	$(GDB) -ex "target remote :1234" $(PROG)

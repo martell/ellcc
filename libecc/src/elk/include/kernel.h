@@ -52,11 +52,11 @@ static void (*__elk_init_p)(void) \
 static void __elk_init(void)
 
 #define CONSTRUCTOR_BY_NAME(returns, name) \
-static returns name(void); \
+returns name(void); \
 static returns (*name ## _p)(void) \
   __attribute((section (".elk_init_array"), __used__)) \
      = name; \
-static returns name(void)
+returns name(void)
 #endif
 
 typedef struct lock
