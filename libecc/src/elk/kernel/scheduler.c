@@ -377,59 +377,11 @@ static int sys_sched_yield(void)
     return 0;
 }
 
-/* Send a signal to a thread.
- */
-#if RICH
-static int sys_tkill(int tid, int sig)
-{
-    if (tid < 1 || tid > PROCESSES) {
-        return -EINVAL;
-    }
-
-    Thread *thread = processes[tid - 1];
-    if (thread == NULL) {
-        // Invalid thread id.
-        return -ESRCH;
-    }
-
-    lock_aquire(&ready_lock);
-    if (thread == current) {
-        // The currently running thread is being signaled.
-    } else if (thread->state == READY) {
-        // Remove this thread from its ready list.
-        Thread *p, *l;
-        for (p = ready_head(thread->priority), l = NULL;
-             p != thread; l = p, p = p->next) {
-              continue;
-        }
-
-        if (p == NULL) {
-            // The thread wasn't found. This shouldn't happen.
-            lock_release(&ready_lock);
-            return -ESRCH;
-        }
-
-        // Remove thread from the ready list.
-        if (l) {
-            l->next = p->next;
-        } else {
-            ready_head(thread->priority) = p->next;
-        }
-    } else {
-      printf("RICH: need to handle non-current, non-ready threads\n");
-    }
-
-    // Get the next runnable thread.
-    get_running();
-    lock_release(&ready_lock);
-    return 0;
-}
-#endif
-
 /* Create a new thread.
  */
-static int thread_create_int(const char *name, Thread **id, ThreadFunction entry, int priority,
-                             int cloning, void *stack, size_t size, 
+static int thread_create_int(const char *name, Thread **id,
+                             ThreadFunction entry, int priority,
+                             int cloning, void *stack, size_t size,
                              intptr_t arg1, intptr_t arg2)
 {
     char *p;
@@ -488,7 +440,6 @@ static int thread_create_int(const char *name, Thread **id, ThreadFunction entry
     }
 
     __new_context(&thread->saved_ctx, entry, INITIAL_PSR, arg1, arg2);
-    schedule(thread);
     *id = thread;
     return 0;
 }
@@ -517,7 +468,10 @@ int thread_create(const char *name, void **id, ThreadFunction entry,
     if (s < 0) {
         errno = -s;
         s = -1;
+    } else {
+        schedule(new);
     }
+
     return s;
 }
 
@@ -686,7 +640,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     }
 
     // Record the TLS.
-    new->tls = (void *)data;
+    new->tls = regs;
 
     if (flags & CLONE_CHILD_CLEARTID) {
         VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_RD);
@@ -706,7 +660,84 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
         *ptid = new->pid;
     }
 
+    schedule(new);
     return new->pid;
+}
+
+/* Manipulate a futex.
+ */
+static int sys_futex(int *uaddr, int op, int val,
+                     const struct timespec *timeout, int *uaddr2, int val3)
+{
+    switch (op & 0x7F) {
+    default:
+    case FUTEX_WAKE:
+    case FUTEX_FD:
+    case FUTEX_REQUEUE:
+    case FUTEX_CMP_REQUEUE:
+    case FUTEX_WAKE_OP:
+    case FUTEX_LOCK_PI:
+    case FUTEX_UNLOCK_PI:
+    case FUTEX_TRYLOCK_PI:
+    case FUTEX_WAIT_BITSET:
+        printf("unhandled futex operation: %d\n", op);
+        return -ENOSYS;
+
+    case FUTEX_WAIT:
+        // RICH: Fake for now.
+        *uaddr = 0;
+        break;
+    }
+
+
+    return 0;
+}
+
+/* Send a signal to a thread.
+ */
+static int sys_tkill(int tid, int sig)
+{
+    if (tid < 1 || tid > PROCESSES) {
+        return -EINVAL;
+    }
+
+    Thread *thread = processes[tid - 1];
+    if (thread == NULL) {
+        // Invalid thread id.
+        return -ESRCH;
+    }
+
+    lock_aquire(&ready_lock);
+    if (thread == current) {
+        // The currently running thread is being signaled.
+    } else if (thread->state == READY) {
+        // Remove this thread from its ready list.
+        Thread *p, *l;
+        for (p = ready_head(thread->priority), l = NULL;
+             p != thread; l = p, p = p->next) {
+              continue;
+        }
+
+        if (p == NULL) {
+            // The thread wasn't found. This shouldn't happen.
+            lock_release(&ready_lock);
+            return -ESRCH;
+        }
+
+        // Remove thread from the ready list.
+        if (l) {
+            l->next = p->next;
+        } else {
+            ready_head(thread->priority) = p->next;
+        }
+    } else {
+        printf("RICH: need to handle non-current, non-ready threads\n");
+    }
+
+    // Get the next runnable thread.
+    // RICH: get_running();
+    lock_release(&ready_lock);
+    return 0;
 }
 
 static int tsCommand(int argc, char **argv)
@@ -716,7 +747,7 @@ static int tsCommand(int argc, char **argv)
         return COMMAND_OK;
     }
 
-    printf("%7s %10.10s  %-10.10s %5.5s %-10.10s \n",
+    printf("%6.6s %10.10s  %-10.10s %5.5s %-10.10s \n",
            "PID", "TID", "STATE", "PRI", "NAME");
     for (Thread *t = all_threads.head; t; t = t->all_next) {
         printf("%6d ", t->pid);
@@ -763,6 +794,8 @@ CONSTRUCTOR()
     __set_syscall(SYS_sched_yield, sys_sched_yield);
     // Set up the clone system call.
     __set_syscall(SYS_clone, sys_clone);
+    // Set up the futex system call.
+    __set_syscall(SYS_futex, sys_futex);
     // Set up the tkill system call.
-    // RICH: __set_syscall(SYS_tkill, sys_tkill);
+    __set_syscall(SYS_tkill, sys_tkill);
 }

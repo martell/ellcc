@@ -119,6 +119,8 @@ static void *thread3(void *arg)
     for ( ;; ) {
         // Very busy.
         ++counter;
+        // RICH: return (void*)0xdeadbeef;
+        pthread_exit((void*)0xdeadbeef);
     }
 
     return NULL;
@@ -146,6 +148,17 @@ static int thread3Command(int argc, char **argv)
     return COMMAND_OK;
 }
 
+static int test3Command(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("test the thread3 test case.\n");
+        return COMMAND_OK;
+    }
+
+    printf("counter = %d\n", counter);
+    return COMMAND_OK;
+}
+
 static int cancel3Command(int argc, char **argv)
 {
     if (argc <= 0) {
@@ -159,15 +172,23 @@ static int cancel3Command(int argc, char **argv)
         return COMMAND_ERROR;
     }
 }
-static int test3Command(int argc, char **argv)
+
+static int join3Command(int argc, char **argv)
 {
     if (argc <= 0) {
-        printf("test the thread3 test case.\n");
+        printf("join the thread3 test thread.\n");
         return COMMAND_OK;
     }
 
-    printf("counter = %d\n", counter);
-    return COMMAND_OK;
+    void *retval;
+    int s = pthread_join(id3, &retval);
+    if (s == 0) {
+        printf("joined with thread3: %p\n", retval);
+        return COMMAND_OK;
+    } else {
+        printf("pthread_join() failed: %s\n", strerror(s));
+        return COMMAND_ERROR;
+    }
 }
 
 int sectionCommand(int argc, char **argv)
@@ -300,6 +321,7 @@ CONSTRUCTOR()
     command_insert("thread1", thread1Command);
     command_insert("test1", test1Command);
     command_insert("cancel3", cancel3Command);
+    command_insert("join3", join3Command);
     command_insert("thread2", thread2Command);
     command_insert("thread3", thread3Command);
     command_insert("test3", test3Command);
