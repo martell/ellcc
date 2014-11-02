@@ -84,6 +84,9 @@ typedef struct thread
     const char *name;           // The thread's name.
     struct thread *all_next;    // Next thread in the all thread list.
     struct thread *all_prev;    // Previous thread in the all thread list.
+    int pid;                    // The process id.
+    int *set_child_tid;         // The set child thread id address.
+    int *clear_child_tid;       // The clear child thread id address.
 } Thread;
 
 /* Schedule a list of threads.

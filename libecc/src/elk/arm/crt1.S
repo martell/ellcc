@@ -71,55 +71,18 @@ reset:
         msr     cpsr_c, #Mode_SYS       // |I_bit|F_bit
         mov     sp, r0
         sub     r0, #Stack_SYS
-        // Set up the end of the heap.
-#define LIBC 0
-#if LIBC
-        ldr     r1, =__heap_end__
-	push	{ r0, r1 }		// Preserve the heap end.
-#else
 	mov	r8, r0			// Preserve the heap end.
-#endif
 
         // Point to the vectors.
         ldr     r0, =_start
         mcr     p15, 0, r0, c12, c0, 0
 
-#if LIBC
-        // Copy the initialized data area.
-        ldr     a1, =__data_start__
-        ldr     a2, =__text_end__
-        ldr     a3, =__data_end__
-        sub     a3, a3, a1
-        bl      memcpy
-
-        // Clear the bss area.
-        ldr     a1, =__bss_start__
-        mov     a2, #0
-        ldr     a3, =__bss_end__
-        sub     a3, a3, a1
-        bl      memset
-
-	pop	{ r0, r1 }
-        str     r0, [r1]		// Save the end of the heap.
-
-        // Now start up the system by initializing the library and
-        // calling main.
-        mov     fp, #0
-        mov     lr, #0
-        str     fp, [sp,#-4]!
-        str     a1, [sp,#-4]!
-        adr     a3, argv
-        mov     a2, #1
-        ldr     a1,=main
-        bl      __libc_start_main
-#else
         mov     fp, #0
         mov     lr, #0
 	mov	a2, r8			// Get the end of the heap.
         ldr     a1,=args
 	bic	sp, sp, #0xF		// Align the stack.
-        bl      __elk_start
-#endif
+        bl      __elk_start             // Enter ELK.
 
 done:
         wfi
@@ -135,12 +98,15 @@ argv:
         // Auxv
         .word   0
 
+// RICH: TODO
 undefined:
         b       undefined
 
+// RICH: TODO
 prefetch:
         b       prefetch
 
+// RICH: TODO
 abort:
         b       abort
 
@@ -360,8 +326,10 @@ __aeabi_read_tp:
 // Unhandled system calls.
 unhandled_swi:
         stmfd   sp!, {r12, lr}
+        push    { r0-r5 }
         weak_call(__setup_console)      // Make sure the console is ready.
         cmp     r0, #0                  // Has the console been set up?
+        pop     { r0-r5 }
         beq     2f                      // Jump if not.
         push    {r2-r5}                 // Push extra arguments.
         mov     r3, r1
@@ -387,16 +355,15 @@ __set_syscall:
         movlo   r0, #0
         bx      lr
 
+string:
+        .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
+name:
+        .asciz "kernel"
+
         .data
         .global __heap_end__
 __heap_end__:
         .word   0
-#if RICH
-        .global __dso_handle
-__dso_handle:
-        .word   0
-#endif
-
 syscall:
         .word   0
 
@@ -405,9 +372,3 @@ swi_table:
         .rep    512
         .word   unhandled_swi
         .endr
-
-string:
-        .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
-name:
-        .asciz "kernel"
-

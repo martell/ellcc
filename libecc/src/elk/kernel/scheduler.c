@@ -16,6 +16,8 @@
 // Make the scheduler a loadable feature.
 FEATURE(scheduler, scheduler)
 
+#define PROCESSES 1024                  // The number of processes supported.
+
 #define PRIORITIES 3                    // The number of priorities to support:
                                         // (0..PRIORITIES - 1). 0 is highest.
 #define DEFAULT_PRIORITY ((PRIORITIES)/2)
@@ -35,6 +37,51 @@ static char *idle_stack[PROCESSORS][IDLE_STACK];
 static void schedule_nolock(Thread *list);
 static void insert_all(Thread *thread);
 
+/* The process_lock protects the process map.
+ */
+static Lock process_lock;
+static int next_pid = 1;                // The next pid to use.
+static Thread *processes[PROCESSES];    // The process to thread mapping.
+
+/** Allocate a process id to a new thread.
+ */
+static int get_pid(Thread *tp)
+{
+    lock_aquire(&process_lock);
+    while (processes[next_pid - 1] != NULL) {
+        // Look for an open process id.
+        if (++next_pid == PROCESSES + 1) {
+            // No more process ids are available.
+            lock_release(&process_lock);
+            return -EAGAIN;
+        }
+    }
+
+    processes[next_pid - 1] = tp;
+    tp->pid = next_pid;
+    if (++next_pid == PROCESSES + 1) {
+        next_pid = 1;
+    }
+    lock_release(&process_lock);
+
+    return tp->pid;
+}
+
+#if RICH
+/** Deallocate a process id.
+ */
+static void release_pid(int pid)
+{
+    if (pid < 1 || pid > PROCESSES) {
+      return;
+    }
+    lock_aquire(&process_lock);
+    processes[pid - 1] = NULL;
+    next_pid = pid;
+    lock_release(&process_lock);
+}
+#endif
+
 /** The idle thread.
  */
 static intptr_t idle(intptr_t arg1, intptr_t arg2)
@@ -53,6 +100,7 @@ static void create_idle_threads(void)
         idle_thread[i].saved_ctx = (Context *)&idle_stack[i][IDLE_STACK];
         idle_thread[i].priority = PRIORITIES;   // The lowest priority.
         idle_thread[i].state = IDLE;
+        get_pid(&idle_thread[i]);
         char name[20];
         snprintf(name, 20, "idle%d", i);
         idle_thread[i].name = strdup(name);
@@ -273,6 +321,7 @@ static void schedule_nolock(Thread *list)
         insert_thread(list);
         list = next;
     }
+
     if (sched_current) {
         // Insert the current thread in the ready list.
         insert_thread(current);
@@ -328,6 +377,55 @@ static int sys_sched_yield(void)
     return 0;
 }
 
+/* Send a signal to a thread.
+ */
+#if RICH
+static int sys_tkill(int tid, int sig)
+{
+    if (tid < 1 || tid > PROCESSES) {
+        return -EINVAL;
+    }
+
+    Thread *thread = processes[tid - 1];
+    if (thread == NULL) {
+        // Invalid thread id.
+        return -ESRCH;
+    }
+
+    lock_aquire(&ready_lock);
+    if (thread == current) {
+        // The currently running thread is being signaled.
+    } else if (thread->state == READY) {
+        // Remove this thread from its ready list.
+        Thread *p, *l;
+        for (p = ready_head(thread->priority), l = NULL;
+             p != thread; l = p, p = p->next) {
+              continue;
+        }
+
+        if (p == NULL) {
+            // The thread wasn't found. This shouldn't happen.
+            lock_release(&ready_lock);
+            return -ESRCH;
+        }
+
+        // Remove thread from the ready list.
+        if (l) {
+            l->next = p->next;
+        } else {
+            ready_head(thread->priority) = p->next;
+        }
+    } else {
+      printf("RICH: need to handle non-current, non-ready threads\n");
+    }
+
+    // Get the next runnable thread.
+    get_running();
+    lock_release(&ready_lock);
+    return 0;
+}
+#endif
+
 /* Create a new thread.
  */
 static int thread_create_int(const char *name, Thread **id, ThreadFunction entry, int priority,
@@ -357,6 +455,12 @@ static int thread_create_int(const char *name, Thread **id, ThreadFunction entry
         return -ENOMEM;
     }
 
+    int s = get_pid(thread);
+    if (s < 0) {
+        if (!stack) free(p);
+        free(thread);
+    }
+
     thread->next = NULL;
     thread->tls = NULL;
     if (priority == 0) {
@@ -365,6 +469,9 @@ static int thread_create_int(const char *name, Thread **id, ThreadFunction entry
         priority = PRIORITIES - 1;
     }
     thread->priority = priority;
+    
+    thread->set_child_tid = NULL;
+    thread->clear_child_tid = NULL;
     thread->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
     if (name) {
         thread->name = strdup(name);
@@ -552,21 +659,21 @@ Message get_message_nowait(MsgQueue *queue)
  */
 static long sys_set_tid_address(int *tidptr)
 {
-    *tidptr = 1;
-    return 1;
+    current->clear_child_tid = tidptr;
+    return current->pid;
 }
 
-static long sys_clone(unsigned long flags, void *stack, intptr_t *ptid, 
+static long sys_clone(unsigned long flags, void *stack, int *ptid, 
 #if defined(__arm__) || defined(__microblaze__) || defined(__ppc__) || \
     defined(__mips__)
-                      void *regs, intptr_t *ctid,
+                      void *regs, int *ctid,
 #elif defined(__i386__) || defined(__x86_64__)
-                      intptr_t *ctid, void *regs,
+                      int *ctid, void *regs,
 #else
   #error clone arguments not defined
 #endif
                       long arg5, long data, long ret)
-{       
+{
     // Create a new thread, copying context.
     static int number = 1;
     char name[20];
@@ -581,17 +688,25 @@ static long sys_clone(unsigned long flags, void *stack, intptr_t *ptid,
     // Record the TLS.
     new->tls = (void *)data;
 
-    if (flags & CLONE_PARENT_SETTID) {
-        VALIDATE_ADDRESS(ptid, sizeof(*ptid), VALID_WR);
-        *ptid = (intptr_t)new;
+    if (flags & CLONE_CHILD_CLEARTID) {
+        VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_RD);
+        new->clear_child_tid = ctid;
     }
 
     if (flags & CLONE_CHILD_SETTID) {
         VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
-        *ctid = (intptr_t)new;
+        new->set_child_tid = ctid;
+        // RICH: This write should be in the child's address space.
+        *ctid = new->pid;
     }
 
-    return 1;
+    if (flags & CLONE_PARENT_SETTID) {
+        VALIDATE_ADDRESS(ptid, sizeof(*ptid), VALID_WR);
+        // RICH: This write should also be in the child's address space.
+        *ptid = new->pid;
+    }
+
+    return new->pid;
 }
 
 static int tsCommand(int argc, char **argv)
@@ -601,9 +716,10 @@ static int tsCommand(int argc, char **argv)
         return COMMAND_OK;
     }
 
-    printf("%10.10s  %-10.10s %5.5s %-10.10s \n",
-           "TID", "STATE", "PRI", "NAME");
+    printf("%7s %10.10s  %-10.10s %5.5s %-10.10s \n",
+           "PID", "TID", "STATE", "PRI", "NAME");
     for (Thread *t = all_threads.head; t; t = t->all_next) {
+        printf("%6d ", t->pid);
         printf("%8p: ", t);
         printf("%-10.10s ", state_names[t->state]);
         printf("%5d ", t->priority);
@@ -627,6 +743,9 @@ CONSTRUCTOR()
     main_thread.name = "kernel";
     main_thread.all_next = NULL;
     main_thread.all_prev = NULL;
+    get_pid(&main_thread);
+    main_thread.set_child_tid = NULL;
+    main_thread.clear_child_tid = NULL;
     priority = main_thread.priority;
     all_threads.head = &main_thread;
     all_threads.tail = &main_thread;
@@ -637,11 +756,13 @@ CONSTRUCTOR()
     // Add the "ts" command.
     command_insert("ts", tsCommand);
 
-    // Set up a simple set_tid_address system call.
+    // Set up a set_tid_address system call.
     __set_syscall(SYS_set_tid_address, sys_set_tid_address);
- 
+
     // Set up the sched_yield system call.
     __set_syscall(SYS_sched_yield, sys_sched_yield);
     // Set up the clone system call.
     __set_syscall(SYS_clone, sys_clone);
+    // Set up the tkill system call.
+    // RICH: __set_syscall(SYS_tkill, sys_tkill);
 }

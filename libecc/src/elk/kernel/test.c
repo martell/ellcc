@@ -78,19 +78,6 @@ static int test1Command(int argc, char **argv)
     return COMMAND_OK;
 }
 
-static int cancel1Command(int argc, char **argv)
-{
-    if (argc <= 0) {
-        printf("cancel the thread1 test thread.\n");
-        return COMMAND_OK;
-    }
-
-    if (pthread_cancel(id1) == 0) {
-        return COMMAND_OK;
-    } else {
-        return COMMAND_ERROR;
-    }
-}
 
 static intptr_t thread2(intptr_t arg1, intptr_t arg2)
 {
@@ -137,6 +124,7 @@ static void *thread3(void *arg)
     return NULL;
 }
 
+static pthread_t id3;
 static int thread3Command(int argc, char **argv)
 {
     if (argc <= 0) {
@@ -152,13 +140,25 @@ static int thread3Command(int argc, char **argv)
     s = pthread_attr_setstack(&attr, sp, 4096);
     if (s != 0)
         printf("pthread_attr_setstack %s\n", strerror(s));
-    pthread_t id3;
     s = pthread_create(&id3, &attr, &thread3, NULL);
     if (s != 0)
         printf("pthread_create: %s\n", strerror(s));
     return COMMAND_OK;
 }
 
+static int cancel3Command(int argc, char **argv)
+{
+    if (argc <= 0) {
+        printf("cancel the thread3 test thread.\n");
+        return COMMAND_OK;
+    }
+
+    if (pthread_cancel(id3) == 0) {
+        return COMMAND_OK;
+    } else {
+        return COMMAND_ERROR;
+    }
+}
 static int test3Command(int argc, char **argv)
 {
     if (argc <= 0) {
@@ -299,7 +299,7 @@ CONSTRUCTOR()
     command_insert("yield", yieldCommand);
     command_insert("thread1", thread1Command);
     command_insert("test1", test1Command);
-    command_insert("cancel1", cancel1Command);
+    command_insert("cancel3", cancel3Command);
     command_insert("thread2", thread2Command);
     command_insert("thread3", thread3Command);
     command_insert("test3", test3Command);
