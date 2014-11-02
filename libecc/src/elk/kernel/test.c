@@ -119,8 +119,7 @@ static void *thread3(void *arg)
     for ( ;; ) {
         // Very busy.
         ++counter;
-        // RICH: return (void*)0xdeadbeef;
-        pthread_exit((void*)0xdeadbeef);
+        return (void*)0xdeadbeef;
     }
 
     return NULL;
