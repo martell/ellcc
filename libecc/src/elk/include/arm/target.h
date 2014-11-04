@@ -21,91 +21,92 @@
 
 typedef struct context
 {
-    union {
-        uint32_t r0;
-        uint32_t a1;
-    };
-    union {
-        uint32_t r1;
-        uint32_t a2;
-    };
-    union {
-        uint32_t r2;
-        uint32_t a3;
-    };
-    union {
-        uint32_t r3;
-        uint32_t a4;
-    };
-    union {
-        uint32_t r4;
-        uint32_t v1;
-    };
-    union {
-        uint32_t r5;
-        uint32_t v2;
-    };
-    union {
-        uint32_t r6;
-        uint32_t v3;
-    };
-    union {
-        uint32_t r7;
-        uint32_t v4;
-    };
-    union {
-        uint32_t r8;
-        uint32_t v5;
-    };
-    union {
-        uint32_t r9;
-        uint32_t v6;
-    };
-    union {
-        uint32_t r10;
-        uint32_t v7;
-    };
-    union {
-        uint32_t r11;
-        uint32_t v8;
-    };
-    union {
-        uint32_t r12;
-        uint32_t ip;
-    };
-    // r13 is sp. Not saved here.
-    union {
-        uint32_t r14;
-        uint32_t lr;
-    };
-    union {
-        uint32_t r15;
-        uint32_t pc;
-    };
-    uint32_t cpsr;
-} Context;
+  union {
+    uint32_t r0;
+    uint32_t a1;
+  };
+  union {
+    uint32_t r1;
+    uint32_t a2;
+  };
+  union {
+    uint32_t r2;
+    uint32_t a3;
+  };
+  union {
+    uint32_t r3;
+    uint32_t a4;
+  };
+  union {
+    uint32_t r4;
+    uint32_t v1;
+  };
+  union {
+    uint32_t r5;
+    uint32_t v2;
+  };
+  union {
+    uint32_t r6;
+    uint32_t v3;
+  };
+  union {
+    uint32_t r7;
+    uint32_t v4;
+  };
+  union {
+    uint32_t r8;
+    uint32_t v5;
+  };
+  union {
+    uint32_t r9;
+    uint32_t v6;
+  };
+  union {
+    uint32_t r10;
+    uint32_t v7;
+  };
+  union {
+    uint32_t r11;
+    uint32_t v8;
+  };
+  union {
+    uint32_t r12;
+    uint32_t ip;
+  };
+  // r13 is sp. Not saved here.
+  union {
+    uint32_t r14;
+    uint32_t lr;
+  };
+  union {
+    uint32_t r15;
+    uint32_t pc;
+  };
+  uint32_t cpsr;
+} __elk_context;
 
-static inline void context_set_return(Context *cp, int value)
+static inline void context_set_return(__elk_context *cp, int value)
 {
-    cp->a1 = value;
+  cp->a1 = value;
 }
 
-static inline uint32_t __update_cpsr(uint32_t clear, uint32_t eor) __attribute__((__unused__));
+static inline uint32_t __update_cpsr(uint32_t clear, uint32_t eor)
+  __attribute__((__unused__));
 
 static inline uint32_t __update_cpsr(uint32_t clear, uint32_t set)
 {
-    uint32_t       old, new;
+  uint32_t       old, new;
 
-    __asm__ volatile("mrs   %0, cpsr\n"     // Get the cpsr.
-                     "bic   %1, %0, %2\n"   // Clear the affected bits.
-                     "eor   %1, %1, %3\n"   // Set the desited bits.
-                     "msr   cpsr_c, %1\n"   // Update the cpsr
-                                            // The old value is in r0.
-                     : "=&r" (old), "=&r" (new)
-                     : "r" (clear), "r" (set)
-                     : "memory");
+  __asm__ volatile("mrs   %0, cpsr\n"     // Get the cpsr.
+                   "bic   %1, %0, %2\n"   // Clear the affected bits.
+                   "eor   %1, %1, %3\n"   // Set the desited bits.
+                   "msr   cpsr_c, %1\n"   // Update the cpsr
+                                          // The old value is in r0.
+                   : "=&r" (old), "=&r" (new)
+                   : "r" (clear), "r" (set)
+                   : "memory");
 
-    return old;
+  return old;
 }
 
 /** Turn off all interrupts.
@@ -113,7 +114,7 @@ static inline uint32_t __update_cpsr(uint32_t clear, uint32_t set)
  */
 static inline int splhigh(void)
 {
-    return __update_cpsr(F_bit | I_bit, F_bit | I_bit);
+  return __update_cpsr(F_bit | I_bit, F_bit | I_bit);
 }
 
 /** Turn on all interrupts.
@@ -121,7 +122,7 @@ static inline int splhigh(void)
  */
 static inline int spl0(void)
 {
-    return __update_cpsr(F_bit | I_bit, 0);
+  return __update_cpsr(F_bit | I_bit, 0);
 }
 
 /** Set the interrupt level.
@@ -129,7 +130,7 @@ static inline int spl0(void)
  */
 static inline void splx(int s)
 {
-    __update_cpsr(F_bit | I_bit, s & (F_bit | I_bit));
+  __update_cpsr(F_bit | I_bit, s & (F_bit | I_bit));
 }
 #endif // !defined(__ASSEMBLER__)
 

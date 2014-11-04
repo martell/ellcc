@@ -20,7 +20,7 @@ typedef struct command {
 } Command;
 
 // The command lock.
-static Lock lock;
+static __elk_lock lock;
 static int commands = 1;                    // The number of commands defined.
 
 // The  command table.
@@ -34,10 +34,10 @@ void command_insert(const  char *name, CommandFn fn)
         return;
     }
 
-    lock_aquire(&lock);
+    __elk_lock_aquire(&lock);
     command_table[commands] = (Command){ name, fn };
     ++commands;
-    lock_release(&lock);
+    __elk_lock_release(&lock);
 }
 
 /** Parse a string for "words".

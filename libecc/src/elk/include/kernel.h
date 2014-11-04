@@ -59,40 +59,40 @@ static returns (*name ## _p)(void) \
 returns name(void)
 #endif
 
-typedef struct lock
+typedef struct
 {
-    int lock;
-    int level;
-} Lock;
+  int lock;
+  int level;
+} __elk_lock;
 
 #define LOCK_INITIALIZER { 0, 0 }
 
-static inline void lock_aquire(Lock *lock)
+static inline void __elk_lock_aquire(__elk_lock *lock)
 {
 // RICH:
 #if !defined(__microblaze__)
-    while(!__atomic_test_and_set(&lock->lock, __ATOMIC_SEQ_CST))
-        continue;
+  while(!__atomic_test_and_set(&lock->lock, __ATOMIC_SEQ_CST))
+      continue;
 #endif
-    lock->level = splhigh();
+  lock->level = splhigh();
 }
 
-static inline void lock_release(Lock *lock)
+static inline void __elk_lock_release(__elk_lock *lock)
 {
-    splx(lock->level);
+  splx(lock->level);
 // RICH:
 #if !defined(__microblaze__)
-    __atomic_clear(&lock->lock, __ATOMIC_SEQ_CST);
+  __atomic_clear(&lock->lock, __ATOMIC_SEQ_CST);
 #endif
 }
 
 /* RICH: Validate a system call address argument.
  */
 enum {
-    VALID_RD = 0x01,
-    VALID_WR = 0x02,
-    VALID_RW = 0x03,
-    VALID_EX = 0x04
+  VALID_RD = 0x01,
+  VALID_WR = 0x02,
+  VALID_RW = 0x03,
+  VALID_EX = 0x04
 };
 
 #define VALIDATE_ADDRESS(addr, size, access)
@@ -102,6 +102,6 @@ enum {
  * @param fn The system call handling function.
  * @return 0 on success, -1 on  error.
  */
-int __set_syscall(int nr, void *fn);
+int __elk_set_syscall(int nr, void *fn);
 
 #endif // _kernel_h_

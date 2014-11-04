@@ -98,7 +98,7 @@ static ssize_t sys_readv(int fd, const struct iovec *iov, int iovcount)
     return count;
 }
 
-CONSTRUCTOR_BY_NAME(int, __setup_console)
+CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
 {
     static int setup;
     if (setup) {
@@ -106,15 +106,15 @@ CONSTRUCTOR_BY_NAME(int, __setup_console)
     }
 
     // Set up a simple ioctl system call.
-    __set_syscall(SYS_ioctl, sys_ioctl);
+    __elk_set_syscall(SYS_ioctl, sys_ioctl);
     // Set up a simple write system call.
-    __set_syscall(SYS_write, sys_write);
+    __elk_set_syscall(SYS_write, sys_write);
     // Set up a simple writev system call.
-    __set_syscall(SYS_writev, sys_writev);
+    __elk_set_syscall(SYS_writev, sys_writev);
     // Set up a simple read system call.
-    __set_syscall(SYS_read, sys_read);
+    __elk_set_syscall(SYS_read, sys_read);
     // Set up a simple readv system call.
-    __set_syscall(SYS_readv, sys_readv);
+    __elk_set_syscall(SYS_readv, sys_readv);
     setup = 1;
     return 1;
 }

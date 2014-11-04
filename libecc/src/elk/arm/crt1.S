@@ -134,7 +134,7 @@ irq:
                                         // sys stack.
         cpsid   i, #Mode_SYS            // Switch to sys mode.
         push    { SAVED_REGS }          // Store other registers.
-        weak_call(__enter_irq)          // Enter the IRQ state.
+        weak_call(__elk_enter_irq)      // Enter the IRQ state.
         cmp     r0, #0                  // Have a context pointer?
         strne   sp, [r0]                // Save the context if so.
         mrcne   p15, 0, r1, c13, c0, 3  // Get the TLS.
@@ -142,8 +142,8 @@ irq:
         and     r0, sp, #4              // Test stack alignment.
         sub     sp, sp, r0              // Adjust the stack if needed.
         push    { r0, r1 }              // Save the adjustment.
-        weak_call(__unlock_ready)       // Clear the ready lock.
-        weak_call(__identify_irq)       // Clear interrupt and get irq
+        weak_call(__elk_unlock_ready)   // Clear the ready lock.
+        weak_call(__elk_identify_irq)   // Clear interrupt and get irq
                                         // handler in r0.
         cpsie   i                       // Enable IRQ
         cmp     r0, #0
@@ -157,19 +157,19 @@ irq:
 1:
         pop     { r0, r1 }              // Restore the stack adjustment.
         add     sp, sp, r0              // And adjust.
-        weak_call(__leave_irq)          // Leave the IRQ state.
+        weak_call(__elk_leave_irq)      // Leave the IRQ state.
         cmp     r0, #0                  // Leaving?
         ldrne   sp, [r0]                // Get the new stack pointer.
         ldrne   r1, [r0, #4]            // Get the new TLS.
         mcrne   p15, 0, r1, c13, c0, 3  // Set the TLS.
-        weak_call(__unlock_ready)       // Clear the ready lock.
+        weak_call(__elk_unlock_ready)   // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
         rfeia   sp!                     // And return.
 
 /* Set up a context for execution.
- * int __new_context(Context **savearea,
- *                   int (*entry)(intptr_t, intptr_t), uint32_t psr,
- *                   void *ret, intptr_t arg1, intptr_t arg2)
+ * int __elk_new_context(__elk_context **savearea,
+ *                       int (*entry)(intptr_t, intptr_t), uint32_t psr,
+ *                       void *ret, intptr_t arg1, intptr_t arg2)
  * On entry:
  * r0 points to the new context's save area, initialized to the top of
  *     the stack, aligned to 8 bytes.
@@ -178,8 +178,8 @@ irq:
  * r3 is the first argument to the context.
  * [sp] is the second argument to the context.
  */
-        .global __new_context
-__new_context:
+        .global __elk_new_context
+__elk_new_context:
         ldr     r7, [r0]                // Get the new stack pointer.
         stmfd   r7!, {r1, r2}           // Save the new pc and PSR.
         sub     r7, #12 * 4             // Room for registers r2-r12, lr.
@@ -190,14 +190,14 @@ __new_context:
         bx      lr
 
 /* Switch from one context to the next and unlock the queue.
- * void __switch(Context **to, Context **from);
+ * void __elk_switch(__elk_context **to, __elk_context **from);
  * On entry:
  * The ready list is locked.
  * r0 points to the next save area.
  * r1 points to the current save area.
  */
-        .global __switch
-__switch:
+        .global __elk_switch
+__elk_switch:
         srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
                                         // the sys stack.
         push    { SAVED_REGS }          // Store other registers.
@@ -205,20 +205,20 @@ __switch:
         ldr     sp, [r0]                // Get the new stack pointer.
         ldr     r1, [r0, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
-        weak_call(__unlock_ready)       // Clear the ready lock.
+        weak_call(__elk_unlock_ready)   // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
         rfeia   sp!                     // And dispatch.
 
 /* Switch from one context to the next and unlock the queue.
- * void __switch_arg(int arg, Context **to, Context **from);
+ * void __elk_switch_arg(int arg, __elk_context **to, __elk_context **from);
  * On entry:
  * The ready list is locked.
  * r0 is the tenative return value when the context is restarted.
  * r1 points to the next save area.
  * r2 points to the current save area.
  */
-        .global __switch_arg
-__switch_arg:
+        .global __elk_switch_arg
+__elk_switch_arg:
         srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
                                         // the sys stack.
         push    { SAVED_REGS }          // Store other registers.
@@ -226,7 +226,7 @@ __switch_arg:
         ldr     sp, [r1]                // Get the new stack pointer.
         ldr     r1, [r1, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
-        weak_call(__unlock_ready)       // Clear the ready lock.
+        weak_call(__elk_unlock_ready)   // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
         rfeia   sp!                     // And dispatch.
 
@@ -241,7 +241,7 @@ swi:
         cpsie   i                       // Enable IRQ
         mov     r8, sp                  // Save the sp.
         push    { r0, r1 }
-        weak_call(thread_self)          // Get the current context.
+        weak_call(__elk_thread_self)    // Get the current context.
         cmp     r0, #0
         strne   r8, [r0]                // Save sp for clone().
         pop     { r0, r1 }
@@ -307,7 +307,7 @@ __set_thread_area:
         push    { r1, r11, r12, lr }
         mcr     p15, 0, r0, c13, c0, 3
         mov     r1, r0
-        weak_call(thread_self)          // Get the current context.
+        weak_call(__elk_thread_self)    // Get the current context.
         cmp     r0, #0                  // Have a context?
         strne   r1, [r0, #4]            // Save the TLS in the current Thread.
         movne   r0, #0
@@ -327,7 +327,7 @@ __aeabi_read_tp:
 unhandled_swi:
         stmfd   sp!, {r12, lr}
         push    { r0-r5 }
-        weak_call(__setup_console)      // Make sure the console is ready.
+        weak_call(__elk_setup_console)  // Make sure the console is ready.
         cmp     r0, #0                  // Has the console been set up?
         pop     { r0-r5 }
         beq     2f                      // Jump if not.
@@ -346,8 +346,8 @@ unhandled_swi:
 // Set a system call entry.
 // r0 = the entry number.
 // r1 - the handling function.
-        .global __set_syscall
-__set_syscall:
+        .global __elk_set_syscall
+__elk_set_syscall:
         cmp     r0, #512
         ldrlo   r2, =swi_table          // Get the system call table.
         strlo   r1, [r2, r0, lsl #2]    // Set the stystem call entry.

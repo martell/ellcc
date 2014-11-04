@@ -9,13 +9,13 @@ FEATURE(simple_exit, exit)
 
 static int sys_exit(int status)
 {
-    for( ;; )
-      continue;
+  for( ;; )
+    continue;
 }
 
 CONSTRUCTOR()
 {
-    // Set up a simple exit system call.
-    __set_syscall(SYS_exit, sys_exit);
-    __set_syscall(SYS_exit_group, sys_exit);
+  // Set up a simple exit system call.
+  __elk_set_syscall(SYS_exit, sys_exit);
+  __elk_set_syscall(SYS_exit_group, sys_exit);
 }
