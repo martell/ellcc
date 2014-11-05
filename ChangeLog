@@ -1,5 +1,6 @@
 current SVN:
 
+* ELK _exit() implemented.
 * ELK threads now have process IDs.
 * Added ELK constructors.
 * Update to LLVM r220904.

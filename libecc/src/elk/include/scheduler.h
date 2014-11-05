@@ -57,6 +57,7 @@ typedef enum state {
   IDLE,                         // This is an idle thread.
   READY,                        // The thread is ready to run.
   RUNNING,                      // The thread is running.
+  EXITING,                      // The thread is exiting.
   TIMEOUT,                      // The thread is waiting for a timeout.
   SEMWAIT,                      // The thread is waiting on a semaphore.
   SEMTMO,                       // The thread is waiting on a semaphore
@@ -118,6 +119,12 @@ int __elk_switch(__elk_context **to, __elk_context **from);
  * @param from A place to store the current context.
  */
 int __elk_switch_arg(int arg, __elk_context **to, __elk_context **from);
+
+/** Enter a new context.
+ * @param arg The tenative return value when the context is restarted.
+ * @param to The new context.
+ */
+int __elk_enter(__elk_context **to);
 
 /** Set up a new context.
  * @param savearea Where to put the finished stack pointer.

@@ -85,7 +85,6 @@ static int alloc_tid(__elk_thread *tp)
   return tp->tid;
 }
 
-#if RICH
 /** Deallocate a thread id.
  */
 static void release_tid(int tid)
@@ -113,7 +112,6 @@ static void release_tid(int tid)
   threads[tid] = NULL;
   __elk_lock_release(&tid_lock);
 }
-#endif
 
 /** The idle thread.
  */
@@ -383,12 +381,32 @@ void __elk_schedule(__elk_thread *list)
   schedule_nolock(list);
 }
 
+/** Delete a thread.
+ * The thread has been removed from all lists.
+ */
+static void thread_delete(__elk_thread *id)
+{
+  release_tid(id->tid);
+  free(id);
+}
+
 /** Change the current thread's state to
  * something besides READY or RUNNING.
  * The ready list must be locked on entry.
  */
 static int nolock_change_state(int arg, __elk_state new_state)
 {
+  if (current->state == IDLE) {
+    // Idle threads can't change state.
+    return -EINVAL;
+  }
+
+  if (new_state == EXITING) {
+    thread_delete(current);
+    get_running();
+    return __elk_enter(&current->saved_ctx);
+  }
+
   __elk_thread *me = current;
   me->state = new_state;
   get_running();
@@ -730,6 +748,16 @@ static int sys_tkill(int tid, int sig)
   return 0;
 }
 
+static void sys_exit(int status)
+{
+  __elk_change_state(0, EXITING);
+}
+
+static int sys_exit_group(int status)
+{
+  return -ENOSYS;
+}
+
 static int tsCommand(int argc, char **argv)
 {
   if (argc <= 0) {
@@ -792,4 +820,7 @@ CONSTRUCTOR()
   __elk_set_syscall(SYS_futex, sys_futex);
   // Set up the tkill system call.
   __elk_set_syscall(SYS_tkill, sys_tkill);
+  // Set up the exit system calls.
+  __elk_set_syscall(SYS_exit, sys_exit);
+  __elk_set_syscall(SYS_exit_group, sys_exit_group);
 }

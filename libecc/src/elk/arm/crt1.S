@@ -228,6 +228,23 @@ __elk_switch_arg:
         pop     { SAVED_REGS }          // Restore registers
         rfeia   sp!                     // And dispatch.
 
+/* Enter a context and unlock the queue.
+ * void __elk_enter(__elk_context **new);
+ * On entry:
+ * The ready list is locked.
+ * r0 points to the next save area.
+ */
+        .global __elk_enter
+__elk_enter:
+        srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
+                                        // the sys stack.
+        ldr     sp, [r0]                // Get the new stack pointer.
+        ldr     r1, [r0, #4]            // Get the new TLS.
+        mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
+        weak_call(__elk_unlock_ready)   // Clear the ready lock.
+        pop     { SAVED_REGS }          // Restore registers
+        rfeia   sp!                     // And dispatch.
+
 /* Handle a system call.
  * On the ARM, this is entered with an SVC instruction.
  */
