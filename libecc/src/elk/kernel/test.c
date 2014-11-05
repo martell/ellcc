@@ -266,11 +266,19 @@ static int test4Command(int argc, char **argv)
   return COMMAND_OK;
 }
 
-static __elk_sem_t sem5;
 static pthread_t id5;
+static int me5;
 static void *thread5(void *arg)
 {
+  int me = (int)arg;
   printf ("thread5 started\n");
+  __elk_sem_t sem5;
+  int s = __elk_sem_init(&sem5, 0, 0);
+  if (s != 0) {
+    printf("__elk_sem_init: %s\n", strerror(errno));
+    return NULL;
+  }
+
   for ( ;; ) {
     struct timespec ts = { 10, 0 };
     struct timespec now;
@@ -282,7 +290,7 @@ static void *thread5(void *arg)
       ts.tv_nsec -= 1000000000;
     }
     __elk_sem_timedwait(&sem5, &ts);
-    printf("thread5 running\n");
+    printf("thread5 running %d\n", me);
   }
 
   return 0;
@@ -295,34 +303,15 @@ static int thread5Command(int argc, char **argv)
     return COMMAND_OK;
   }
 
-  int s = __elk_sem_init(&sem5, 0, 0);
-  if (s != 0)
-    printf("__elk_sem_init: %s\n", strerror(errno));
-
+  ++me5;
   thread_create("thread5",              // name
                 &id5,                   // id
                 thread5,                // entry
                 0,                      // priority
                 NULL,                   // stack
                 4096,                   // stack size
-                NULL);                  // arg
+                (void *)(intptr_t)me5); // arg
 
-  return COMMAND_OK;
-}
-
-static int test5Command(int argc, char **argv)
-{
-  if (argc <= 0) {
-    printf("test the thread5 test case.\n");
-    return COMMAND_OK;
-  }
-
-  if (!id5) {
-    printf("thread5 has not been started.\n");
-    return COMMAND_ERROR;
-  }
-
-  __elk_sem_post(&sem5);
   return COMMAND_OK;
 }
 
@@ -336,11 +325,27 @@ int sectionCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
+long __syscall_ret(unsigned long r);
+long __syscall(long, ...);
+
+static int syscallCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("test the syscall interface with an unhandled system call.\n");
+    return COMMAND_OK;
+  }
+
+  int i = __syscall_ret(__syscall(0, 10, 20, 30, 40, 50, 60));
+  printf("__syscall(0) = %d, %s\n", i, strerror(errno));
+  return COMMAND_OK;
+}
+
 /* Initialize the test commands.
  */
 CONSTRUCTOR()
 {
   command_insert(NULL, sectionCommand);
+  command_insert("syscall", syscallCommand);
   command_insert("yield", yieldCommand);
   command_insert("thread1", thread1Command);
   command_insert("test1", test1Command);
@@ -352,5 +357,4 @@ CONSTRUCTOR()
   command_insert("thread4", thread4Command);
   command_insert("test4", test4Command);
   command_insert("thread5", thread5Command);
-  command_insert("test5", test5Command);
 }
