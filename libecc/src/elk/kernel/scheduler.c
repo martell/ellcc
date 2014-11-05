@@ -1,4 +1,4 @@
-/** Schedule processes for execution.
+/** Schedule threads for execution.
  */
 #include <bits/syscall.h>       // For syscall numbers.
 #define _GNU_SOURCE
@@ -16,7 +16,7 @@
 // Make the scheduler a loadable feature.
 FEATURE(scheduler, scheduler)
 
-#define PROCESSES 1024                  // The number of processes supported.
+#define THREADS 1024                    // The number of threads supported.
 
 #define PRIORITIES 3                    // The number of priorities to support:
                                         // (0..PRIORITIES - 1). 0 is highest.
@@ -35,83 +35,83 @@ static __elk_thread idle_thread[PROCESSORS];  // The idle threads.
 static char *idle_stack[PROCESSORS][IDLE_STACK];
 
 static void schedule_nolock(__elk_thread *list);
-static void insert_all(__elk_thread *thread);
 
-/* The pid_lock protects the process id pool.
+/* The tid_lock protects the thread id pool.
  */
-static __elk_lock pid_lock;
-static int pids[PROCESSES];
-static int *pid_in;
-static int *pid_out;
+static __elk_lock tid_lock;
+static int tids[THREADS];
+static int *tid_in;
+static int *tid_out;
 
-/** The process to thread mapping.
+/** The thread id to thread mapping.
  */
-static __elk_thread *processes[PROCESSES];
+static __elk_thread *threads[THREADS];
 
-/** Initialize the pid pool.
+/** Initialize the tid pool.
  */
-static void pid_initialize(void)
+static void tid_initialize(void)
 {
-  for (int pid = 1; pid <= PROCESSES; ++pid) {
-    pids[pid - 1] = pid;
+  for (int tid = 0; tid < THREADS; ++tid) {
+    tids[tid] = tid;
   }
 
-  pid_in = &pids[PROCESSES];
-  pid_out = &pids[0];
+  tid_in = &tids[THREADS];
+  tid_out = &tids[0];
 }
 
-/** Allocate a process id to a new thread.
+/** Allocate a thread id to a new thread.
  */
-static int get_pid(__elk_thread *tp)
+static int alloc_tid(__elk_thread *tp)
 {
-  __elk_lock_aquire(&pid_lock);
-  if (pid_out == pid_in) {
-    // No more process ids are available.
-    __elk_lock_release(&pid_lock);
+  __elk_lock_aquire(&tid_lock);
+  if (tid_out == tid_in) {
+    // No more thread ids are available.
+    __elk_lock_release(&tid_lock);
     return -EAGAIN;
   }
-  tp->pid = *pid_out++;
-  if (pid_out == &pids[PROCESSES]) {
-    pid_out = pids;
+  tp->tid = *tid_out++;
+  if (tid_out == &tids[THREADS]) {
+    tid_out = tids;
   }
-  __elk_lock_release(&pid_lock);
+  __elk_lock_release(&tid_lock);
+  threads[tp->tid] = tp;
 
-  return tp->pid;
+  return tp->tid;
 }
 
 #if RICH
-/** Deallocate a process id.
+/** Deallocate a thread id.
  */
-static void release_pid(int pid)
+static void release_tid(int tid)
 {
-  if (pid < 1 || pid > PROCESSES) {
+  if (tid < 0 || tid >= THREADS) {
     // This should never happen.
     return;
   }
 
-  __elk_lock_aquire(&pid_lock);
-  if (pid_in == &pids[PROCESSES]) {
-    pid_in = pids;
+  __elk_lock_aquire(&tid_lock);
+  if (tid_in == &tids[THREADS]) {
+    tid_in = tids;
   } else {
-    ++pid_in;
+    ++tid_in;
   }
-  if (pid_in == pid_out) {
-    // The pid pool is full.
+  if (tid_in == tid_out) {
+    // The tid pool is full.
     // This should never happen.
-    __elk_lock_release(&pid_lock);
+    __elk_lock_release(&tid_lock);
     return;
   }
 
-  *pid_in = pid;
+  *tid_in = tid;
   // Clear the thread map entry.
-  processes[pid - 1] = NULL;
-  __elk_lock_release(&pid_lock);
+  threads[tid] = NULL;
+  __elk_lock_release(&tid_lock);
 }
 #endif
 
 /** The idle thread.
  */
-static intptr_t idle(intptr_t arg1, intptr_t arg2)
+static void idle(void)
 {
   for ( ;; ) {
     // Do stuff, but nothing that will block.
@@ -127,12 +127,11 @@ static void create_idle_threads(void)
     idle_thread[i].saved_ctx = (__elk_context *)&idle_stack[i][IDLE_STACK];
     idle_thread[i].priority = PRIORITIES;   // The lowest priority.
     idle_thread[i].state = IDLE;
-    get_pid(&idle_thread[i]);
+    alloc_tid(&idle_thread[i]);
     char name[20];
     snprintf(name, 20, "idle%d", i);
     idle_thread[i].name = strdup(name);
-    insert_all(&idle_thread[i]);
-    __elk_new_context(&idle_thread[i].saved_ctx, idle, INITIAL_PSR, 0, 0);
+    __elk_new_context(&idle_thread[i].saved_ctx, idle, INITIAL_PSR, 0);
   }
 }
 
@@ -203,19 +202,16 @@ static long irq_state;                  // Set if an IRQ is active.
 #endif
 
 static long long slice_time = 5000000;  // The time slice period (ns).
-static ThreadQueue all_threads;         // The all thread list.
+
 /**** End of ready lock protected variables. ****/
 
 static __elk_thread main_thread;        // The main thread.
 
-/** Insert a thread into the all thread list.
+/** Get the current thread id.
  */
-void insert_all(__elk_thread *thread)
+int gettid(void)
 {
-  thread->all_next = NULL;
-  all_threads.tail->all_next = thread;
-  thread->all_prev = all_threads.tail;
-  all_threads.tail = thread;
+  return current->tid;
 }
 
 /** Enter the IRQ state.
@@ -272,7 +268,7 @@ static inline void insert_thread(__elk_thread *thread)
 /** The callback for time slice expiration.
  * @param arg The thread being timed.
  */
-static void slice_callback(intptr_t arg1, intptr_t arg2)
+static void slice_callback(void *arg1, void *arg2)
 {
   __elk_lock_aquire(&ready_lock);
   if ((__elk_thread *)arg1 == current) {
@@ -323,7 +319,7 @@ static void get_running(void)
     // Someone is waiting in the ready queue. Lets be fair.
     long long when = timer_get_monotonic(); // Get the current time.
     when += slice_time;                     // Add the slice time.
-    slice_tmo = timer_wake_at(when, slice_callback, (intptr_t)current, 0);
+    slice_tmo = timer_wake_at(when, slice_callback, (void *)current, 0);
   }
 
   current->state = RUNNING;
@@ -379,7 +375,7 @@ void __elk_schedule(__elk_thread *list)
  * something besides READY or RUNNING.
  * The ready list must be locked on entry.
  */
-static int nolock_change_state(int arg, State new_state)
+static int nolock_change_state(int arg, __elk_state new_state)
 {
   __elk_thread *me = current;
   me->state = new_state;
@@ -390,7 +386,7 @@ static int nolock_change_state(int arg, State new_state)
 /** Change the current thread's state to
  * something besides READY or RUNNING.
  */
-int __elk_change_state(int arg, State new_state)
+int __elk_change_state(int arg, __elk_state new_state)
 {
   __elk_lock_aquire(&ready_lock);
   return nolock_change_state(arg, new_state);
@@ -407,9 +403,9 @@ static int sys_sched_yield(void)
 /* Create a new thread.
  */
 static int thread_create_int(const char *name, __elk_thread **id,
-                             __elk_thread_function entry, int priority,
+                             void (*entry)(void), int priority,
                              int cloning, void *stack, size_t size,
-                             intptr_t arg1, intptr_t arg2)
+                             intptr_t arg)
 {
   char *p;
   if (stack == 0) {
@@ -434,7 +430,7 @@ static int thread_create_int(const char *name, __elk_thread **id,
     return -ENOMEM;
   }
 
-  int s = get_pid(thread);
+  int s = alloc_tid(thread);
   if (s < 0) {
     if (!stack) free(p);
     free(thread);
@@ -457,7 +453,6 @@ static int thread_create_int(const char *name, __elk_thread **id,
   } else {
     thread->name = NULL;
   }
-  insert_all(thread);
 
   __elk_context *cp = (__elk_context *)p;
   thread->saved_ctx = cp;
@@ -466,72 +461,21 @@ static int thread_create_int(const char *name, __elk_thread **id,
     *(cp - 1) = *current->saved_ctx;
   }
 
-  __elk_new_context(&thread->saved_ctx, entry, INITIAL_PSR, arg1, arg2);
+  __elk_new_context(&thread->saved_ctx, entry, INITIAL_PSR, arg);
   *id = thread;
   return 0;
 }
 
-/** Create a new thread and make it run-able.
- * @param name The name of the thread.
- * @param id The new thread ID.
- * @param entry The thread entry point.
- * @param priority The thread priority. 0 is default.
- * @param stack A preallocated stack, or NULL.
- * @param size The stack size.
- * @param arg1 The first parameter.
- * @param arg2 The second parameter.
- * @return 0 on success, < 0 on error.
- */
-int __elk_thread_create(const char *name, void **id,
-                        __elk_thread_function entry, int priority,
-                        void *stack, size_t size, long arg1, long arg2)
-{
-  __elk_thread *new;
-  int s = thread_create_int(name, &new, entry, priority,
-                            0, stack, size, arg1, arg2);
-  if (id) {
-    *id = new;
-  }
-
-  if (s < 0) {
-    errno = -s;
-    s = -1;
-  } else {
-    __elk_schedule(new);
-  }
-
-  return s;
-}
-
-/** Send a signal to a thread.
- * @param id The thread id.
- * @param sig The signal to send.
- */
-int thread_kill(void *id, int sig)
-{
-  errno = ESRCH;
-  return -1;
-}
-
-/** Send a cancellation request to a thread.
- * @param id The thread id.
- */
-int thread_cancel(void *id)
-{
-  errno = ESRCH;
-  return -1;
-}
-
 /** Send a message to a message queue.
  */
-int send_message(MsgQueue *queue, Message msg)
+int __elk_send_message_q(MsgQueue *queue, Message msg)
 {
   if (queue == NULL) {
     queue = &__elk_thread_self()->queue;
   }
   Envelope *envelope = (Envelope *)malloc(sizeof(Envelope));
   if (!envelope) {
-    return -ENOMEM;
+    return ENOMEM;
   }
   envelope->message = msg;
 
@@ -556,6 +500,22 @@ int send_message(MsgQueue *queue, Message msg)
     __elk_schedule(wakeup);
   }
   return 0;
+}
+
+/** Send a message to a thread.
+ */
+int __elk_send_message(int tid, Message msg)
+{
+  if (tid < 0 || tid >= THREADS) {
+    return EINVAL;
+  }
+  __elk_thread *thread = threads[tid];
+
+  if (thread == NULL) {
+    return ESRCH;
+  }
+
+  return __elk_send_message_q(&thread->queue, msg);
 }
 
 Message get_message(MsgQueue *queue)
@@ -643,7 +603,7 @@ Message get_message_nowait(MsgQueue *queue)
 static long sys_set_tid_address(int *tidptr)
 {
   current->clear_child_tid = tidptr;
-  return current->pid;
+  return current->tid;
 }
 
 static long sys_clone(unsigned long flags, void *stack, int *ptid,
@@ -655,15 +615,14 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 #else
   #error clone arguments not defined
 #endif
-                      long arg5, long data, long ret)
+                      long arg5, long data, void (*entry)(void))
 {
   // Create a new thread, copying context.
   static int number = 1;
   char name[20];
   snprintf(name, 20, "clone%d", number++);
   __elk_thread *new;
-  int s = thread_create_int(name, &new, (__elk_thread_function)ret, 0, 1,
-                            stack, 0, 0, 0);
+  int s = thread_create_int(name, &new, entry, 0, 1, stack, 0, 0);
   if (s < 0) {
     return s;
   }
@@ -680,17 +639,17 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
     new->set_child_tid = ctid;
     // RICH: This write should be in the child's address space.
-    *ctid = new->pid;
+    *ctid = new->tid;
   }
 
   if (flags & CLONE_PARENT_SETTID) {
     VALIDATE_ADDRESS(ptid, sizeof(*ptid), VALID_WR);
     // RICH: This write should also be in the child's address space.
-    *ptid = new->pid;
+    *ptid = new->tid;
   }
 
   __elk_schedule(new);
-  return new->pid;
+  return new->tid;
 }
 
 /* Manipulate a futex.
@@ -725,11 +684,11 @@ static int sys_futex(int *uaddr, int op, int val,
  */
 static int sys_tkill(int tid, int sig)
 {
-  if (tid < 1 || tid > PROCESSES) {
+  if (tid < 0 || tid >= THREADS) {
     return -EINVAL;
   }
 
-  __elk_thread *thread = processes[tid - 1];
+  __elk_thread *thread = threads[tid];
   if (thread == NULL) {
     // Invalid thread id.
     return -ESRCH;
@@ -775,11 +734,16 @@ static int tsCommand(int argc, char **argv)
     return COMMAND_OK;
   }
 
-  printf("%6.6s %10.10s  %-10.10s %5.5s %-10.10s \n",
-         "PID", "TID", "STATE", "PRI", "NAME");
-  for (__elk_thread *t = all_threads.head; t; t = t->all_next) {
+  printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %-10.10s \n",
+         "PID", "TID", "TADR", "STATE", "PRI", "NAME");
+  for (int i = 0;  i < THREADS; ++i) {
+    __elk_thread *t =  threads[i];
+    if (t == NULL) {
+      continue;
+    }
     printf("%6d ", t->pid);
-    printf("%8p: ", t);
+    printf("%6d ", t->tid);
+    printf("%8p ", t);
     printf("%-10.10s ", state_names[t->state]);
     printf("%5d ", t->priority);
     printf("%-10.10s ", t->name ? t->name : "");
@@ -793,8 +757,8 @@ static int tsCommand(int argc, char **argv)
  */
 CONSTRUCTOR()
 {
-  // Set up the pid pool.
-  pid_initialize();
+  // Set up the tid pool.
+  tid_initialize();
 
   // Set up the main and idle threads.
 
@@ -803,14 +767,11 @@ CONSTRUCTOR()
   main_thread.state = RUNNING;
   main_thread.next = NULL;
   main_thread.name = "kernel";
-  main_thread.all_next = NULL;
-  main_thread.all_prev = NULL;
-  get_pid(&main_thread);
+  alloc_tid(&main_thread);
+  main_thread.pid = main_thread.tid;    // The main thread starts a group.
   main_thread.set_child_tid = NULL;
   main_thread.clear_child_tid = NULL;
   priority = main_thread.priority;
-  all_threads.head = &main_thread;
-  all_threads.tail = &main_thread;
   current = &main_thread;
 
   create_idle_threads();

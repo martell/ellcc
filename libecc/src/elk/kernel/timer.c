@@ -23,8 +23,8 @@ struct timeout {
   long long when;               // When the timeout will expire.
   __elk_thread *waiter;         // The waiting thread...
   TimerCallback callback;       // ... or the callback function.
-  intptr_t arg1;                // The callback function arguments.
-  intptr_t arg2;
+  void *arg1;                   // The callback function arguments.
+  void *arg2;
 };
 
 static __elk_lock timeout_lock;
@@ -35,7 +35,7 @@ static struct timeout *timeouts;
  * RICH: Mark realtime timers.
  */
 void *timer_wake_at(long long when,
-                    TimerCallback callback, intptr_t arg1, intptr_t arg2)
+                    TimerCallback callback, void *arg1, void *arg2)
 {
   struct timeout *tmo = malloc(sizeof(struct timeout));
   tmo->next = NULL;

@@ -26,12 +26,35 @@ static int yieldCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
+static int thread_create(const char *name, pthread_t *id,
+                         void *(*start)(void *), int pri,
+                         void *stack, size_t stack_size,
+                         void *arg)
+{
+  pthread_attr_t attr;
+  int s = pthread_attr_init(&attr);
+  if (s != 0)
+    printf("pthread_attr_init: %s\n", strerror(s));
+  if (stack == NULL) {
+    stack = malloc(stack_size);
+  }
+  s = pthread_attr_setstack(&attr, stack, stack_size);
+  if (s != 0)
+    printf("pthread_attr_setstack %s\n", strerror(s));
+  s = pthread_create(id, &attr, start, arg);
+  if (s != 0)
+    printf("pthread_create: %s\n", strerror(s));
+  return s;
+}
+
 /** A simple thread.
  */
-static void *id1;
-static intptr_t thread1(intptr_t arg1, intptr_t arg2)
+static int tid1;
+static pthread_t id1;
+static void *thread1(void *arg)
 {
-  printf ("thread started %s\n", (char *)arg1);
+  tid1 = gettid();
+  printf ("thread started %s\n", (char *)arg);
   for ( ;; ) {
     // Go to sleep.
     Message msg = get_message(NULL);
@@ -48,14 +71,13 @@ static int thread1Command(int argc, char **argv)
     return COMMAND_OK;
   }
 
-  __elk_thread_create("thread1",            // name
-                      &id1,                 // id
-                      thread1,              // entry
-                      0,                    // priority
-                      NULL,                 // stack
-                      4096,                 // stack size
-                      (intptr_t)"foo",      // arg1
-                      0);                   // arg2
+  thread_create("thread1",              // name
+                &id1,                   // id
+                thread1,                // entry
+                0,                      // priority
+                NULL,                   // stack
+                4096,                   // stack size
+                "foo");                 // arg
 
   return COMMAND_OK;
 }
@@ -73,13 +95,16 @@ static int test1Command(int argc, char **argv)
   }
 
   static Message msg = { 3 };
-  send_message(&((__elk_thread *)id1)->queue, msg);
+  int s = __elk_send_message(tid1, msg);
+  if (s != 0) {
+    printf("__elk_send_message to %d: %s\n", tid1, strerror(s));
+  }
   msg.code++;
   return COMMAND_OK;
 }
 
 
-static intptr_t thread2(intptr_t arg1, intptr_t arg2)
+static void *thread2(void *arg)
 {
   printf ("thread2 started\n");
   for ( ;; ) {
@@ -98,15 +123,15 @@ static int thread2Command(int argc, char **argv)
     return COMMAND_OK;
   }
 
-  void *id2;
-  __elk_thread_create("thread2",            // name
-                      &id2,                 // id
-                      thread2,              // entry
-                      0,                    // priority
-                      NULL,                 // stack
-                      4096,                 // stack size
-                      0,                    // arg1
-                      0);                   // arg2
+  pthread_t id2;
+  thread_create("thread2",              // name
+                &id2,                   // id
+                thread2,                // entry
+                0,                      // priority
+                NULL,                   // stack
+                4096,                   // stack size
+                NULL);                  // arg
+
   return COMMAND_OK;
 }
 
@@ -190,17 +215,9 @@ static int join3Command(int argc, char **argv)
   }
 }
 
-int sectionCommand(int argc, char **argv)
-{
-  if (argc <= 0 ) {
-    printf("Test Commands:\n");
-  }
-  return COMMAND_OK;
-}
-
 static __elk_sem_t sem4;
-static void *id4;
-static intptr_t thread4(intptr_t arg1, intptr_t arg2)
+static pthread_t id4;
+static void *thread4(void *arg)
 {
   printf ("thread4 started\n");
   for ( ;; ) {
@@ -222,14 +239,13 @@ static int thread4Command(int argc, char **argv)
   if (s != 0)
     printf("__elk_sem_init: %s\n", strerror(errno));
 
-  __elk_thread_create("thread4",            // name
-                      &id4,                 // id
-                      thread4,              // entry
-                      0,                    // priority
-                      NULL,                 // stack
-                      4096,                 // stack size
-                      0,                    // arg1
-                      0);                   // arg2
+  thread_create("thread4",              // name
+                &id4,                   // id
+                thread4,                // entry
+                0,                      // priority
+                NULL,                   // stack
+                4096,                   // stack size
+                NULL);                  // arg
 
   return COMMAND_OK;
 }
@@ -251,8 +267,8 @@ static int test4Command(int argc, char **argv)
 }
 
 static __elk_sem_t sem5;
-static void *id5;
-static intptr_t thread5(intptr_t arg1, intptr_t arg2)
+static pthread_t id5;
+static void *thread5(void *arg)
 {
   printf ("thread5 started\n");
   for ( ;; ) {
@@ -283,14 +299,13 @@ static int thread5Command(int argc, char **argv)
   if (s != 0)
     printf("__elk_sem_init: %s\n", strerror(errno));
 
-  __elk_thread_create("thread5",            // name
-                      &id5,                 // id
-                      thread5,              // entry
-                      0,                    // priority
-                      NULL,                 // stack
-                      4096,                 // stack size
-                      0,                    // arg1
-                      0);                   // arg2
+  thread_create("thread5",              // name
+                &id5,                   // id
+                thread5,                // entry
+                0,                      // priority
+                NULL,                   // stack
+                4096,                   // stack size
+                NULL);                  // arg
 
   return COMMAND_OK;
 }
@@ -308,6 +323,16 @@ static int test5Command(int argc, char **argv)
   }
 
   __elk_sem_post(&sem5);
+  return COMMAND_OK;
+}
+
+/** Create a section heading for the help command.
+ */
+int sectionCommand(int argc, char **argv)
+{
+  if (argc <= 0 ) {
+    printf("Test Commands:\n");
+  }
   return COMMAND_OK;
 }
 

@@ -81,7 +81,7 @@ int __elk_sem_try_wait(__elk_sem_t *sem)
 
 /** This callback occurs when a __elk_sem_timedwait timeout expires.
  */
-static void callback(intptr_t arg1, intptr_t arg2)
+static void callback(void *arg1, void *arg2)
 {
   __elk_sem_t *sem = (__elk_sem_t *)arg1;
   __elk_thread *thread = (__elk_thread *)arg2;
@@ -132,7 +132,7 @@ int __elk_sem_timedwait(__elk_sem_t *sem, struct timespec *abs_timeout)
         __elk_lock_release(&sem->lock);
         when -= timer_get_realtime_offset();
         void *t = timer_wake_at(when, callback,
-                                (intptr_t) sem, (intptr_t) me);
+                                (void *)sem, (void *)me);
         s = __elk_change_state(0, SEMTMO);
         timer_cancel_wake_at(t);
         if (s != 0) {

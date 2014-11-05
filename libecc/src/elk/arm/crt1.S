@@ -168,15 +168,14 @@ irq:
 
 /* Set up a context for execution.
  * int __elk_new_context(__elk_context **savearea,
- *                       int (*entry)(intptr_t, intptr_t), uint32_t psr,
- *                       void *ret, intptr_t arg1, intptr_t arg2)
+ *                       void * (*entry)(void *), uint32_t psr,
+ *                       void *ret, intptr_t arg)
  * On entry:
  * r0 points to the new context's save area, initialized to the top of
  *     the stack, aligned to 8 bytes.
  * r1 is the new context's start address
  * r2 is the new context's PSR.
- * r3 is the first argument to the context.
- * [sp] is the second argument to the context.
+ * r3 is the argument to the context.
  */
         .global __elk_new_context
 __elk_new_context:
@@ -184,8 +183,7 @@ __elk_new_context:
         stmfd   r7!, {r1, r2}           // Save the new pc and PSR.
         sub     r7, #12 * 4             // Room for registers r2-r12, lr.
         mov     r1, r3                  // Get the first argument.
-        ldr     r2, [sp]                // Get the second argument.
-        stmfd   r7!, {r1-r2}            // Save the arguments as r0, r1.
+        stmfd   r7!, {r1-r2}            // Save the argument.
         str     r7, [r0]                // Update the stack pointer.
         bx      lr
 
