@@ -51,8 +51,14 @@ static __elk_thread *threads[THREADS];
  */
 static void tid_initialize(void)
 {
+  int i = 0;
   for (int tid = 0; tid < THREADS; ++tid) {
-    tids[tid] = tid;
+    if (tid == 1) {
+      // Reserve tid 1 for a future spawn of init.
+      continue;
+    }
+
+    tids[i++] = tid;
   }
 
   tid_in = &tids[THREADS];
@@ -120,6 +126,7 @@ static void idle(void)
 }
 
 /** Create an idle thread for each processor.
+ * These threads can never exit.
  */
 static void create_idle_threads(void)
 {
@@ -205,7 +212,12 @@ static long long slice_time = 5000000;  // The time slice period (ns).
 
 /**** End of ready lock protected variables. ****/
 
-static __elk_thread main_thread;        // The main thread.
+// The main thread's initial values.
+static const __elk_thread main_thread = {
+  .name = "kernel",
+  .priority = DEFAULT_PRIORITY,
+  .state = RUNNING,
+};
 
 /** Get the current thread id.
  */
@@ -402,26 +414,22 @@ static int sys_sched_yield(void)
 
 /* Create a new thread.
  */
-static int thread_create_int(const char *name, __elk_thread **id,
-                             void (*entry)(void), int priority,
-                             int cloning, void *stack, size_t size,
-                             intptr_t arg)
+static int thread_create(__elk_thread **id,
+                         void (*entry)(void), int priority,
+                         void *tls, void *stack, unsigned long flags,
+                         int *ctid, int *ptid)
 {
   char *p;
   if (stack == 0) {
-    if (size < MIN_STACK) {
-      size = MIN_STACK;
-    }
-
-    p = malloc(size);
+    p = malloc(MIN_STACK);
 
     if (p == NULL) {
       return -ENOMEM;
     }
 
-    p += size;
+    p += MIN_STACK;
   } else {
-    p = stack + size;
+    p = stack;
   }
 
   __elk_thread *thread = malloc(sizeof(__elk_thread));    // RICH: bin.
@@ -430,14 +438,39 @@ static int thread_create_int(const char *name, __elk_thread **id,
     return -ENOMEM;
   }
 
+  // Inherit the parent's attributes.
+  *thread = *current;
+
   int s = alloc_tid(thread);
   if (s < 0) {
     if (!stack) free(p);
     free(thread);
+    return -EAGAIN;
+  }
+
+  // Record the TLS.
+  thread->tls = tls;
+  if (flags & CLONE_CHILD_CLEARTID) {
+    VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_RD);
+    thread->clear_child_tid = ctid;
+  }
+
+  if (flags & CLONE_CHILD_SETTID) {
+    VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
+    thread->set_child_tid = ctid;
+    // RICH: This write should be in the child's address space.
+    if (ctid) {
+      *ctid = thread->tid;
+    }
+  }
+
+  if (flags & CLONE_PARENT_SETTID) {
+    VALIDATE_ADDRESS(ptid, sizeof(*ptid), VALID_WR);
+    // RICH: This write should also be in the child's address space.
+    *ptid = thread->tid;
   }
 
   thread->next = NULL;
-  thread->tls = NULL;
   if (priority == 0) {
     priority = DEFAULT_PRIORITY;
   } else if (priority >= PRIORITIES) {
@@ -448,20 +481,13 @@ static int thread_create_int(const char *name, __elk_thread **id,
   thread->set_child_tid = NULL;
   thread->clear_child_tid = NULL;
   thread->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
-  if (name) {
-    thread->name = strdup(name);
-  } else {
-    thread->name = NULL;
-  }
 
   __elk_context *cp = (__elk_context *)p;
   thread->saved_ctx = cp;
-  if (cloning) {
-    // Copy registers for clone();
-    *(cp - 1) = *current->saved_ctx;
-  }
+  // Copy registers.
+  *(cp - 1) = *current->saved_ctx;
 
-  __elk_new_context(&thread->saved_ctx, entry, INITIAL_PSR, arg);
+  __elk_new_context(&thread->saved_ctx, entry, INITIAL_PSR, 0);
   *id = thread;
   return 0;
 }
@@ -618,36 +644,13 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
                       long arg5, long data, void (*entry)(void))
 {
   // Create a new thread, copying context.
-  static int number = 1;
-  char name[20];
-  snprintf(name, 20, "clone%d", number++);
   __elk_thread *new;
-  int s = thread_create_int(name, &new, entry, 0, 1, stack, 0, 0);
+  int s = thread_create(&new, entry, 0, regs, stack, flags, ctid, ptid);
   if (s < 0) {
     return s;
   }
 
-  // Record the TLS.
-  new->tls = regs;
-
-  if (flags & CLONE_CHILD_CLEARTID) {
-    VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_RD);
-    new->clear_child_tid = ctid;
-  }
-
-  if (flags & CLONE_CHILD_SETTID) {
-    VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
-    new->set_child_tid = ctid;
-    // RICH: This write should be in the child's address space.
-    *ctid = new->tid;
-  }
-
-  if (flags & CLONE_PARENT_SETTID) {
-    VALIDATE_ADDRESS(ptid, sizeof(*ptid), VALID_WR);
-    // RICH: This write should also be in the child's address space.
-    *ptid = new->tid;
-  }
-
+  // Schedule the thread.
   __elk_schedule(new);
   return new->tid;
 }
@@ -746,7 +749,7 @@ static int tsCommand(int argc, char **argv)
     printf("%8p ", t);
     printf("%-10.10s ", state_names[t->state]);
     printf("%5d ", t->priority);
-    printf("%-10.10s ", t->name ? t->name : "");
+    printf(t->pid == t->tid ? "%s" : "[%s]", t->name ? t->name : "");
     printf("\n");
   }
 
@@ -763,17 +766,16 @@ CONSTRUCTOR()
   // Set up the main and idle threads.
 
   // The main thread is what's running right now.
-  main_thread.priority = DEFAULT_PRIORITY;
-  main_thread.state = RUNNING;
-  main_thread.next = NULL;
-  main_thread.name = "kernel";
-  alloc_tid(&main_thread);
-  main_thread.pid = main_thread.tid;    // The main thread starts a group.
-  main_thread.set_child_tid = NULL;
-  main_thread.clear_child_tid = NULL;
-  priority = main_thread.priority;
-  current = &main_thread;
+  current = malloc(sizeof(__elk_thread));    // RICH: bin.
 
+  // The main thread initializer.
+  *current = main_thread;
+
+  alloc_tid(current);
+  current->pid = current->tid;          // The main thread starts a group.
+  priority = current->priority;
+
+  // Create the idle thread(s).
   create_idle_threads();
 
   // Add the "ts" command.
