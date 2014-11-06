@@ -145,7 +145,6 @@ irq:
         weak_call(__elk_unlock_ready)   // Clear the ready lock.
         weak_call(__elk_identify_irq)   // Clear interrupt and get irq
                                         // handler in r0.
-        cpsie   i                       // Enable IRQ
         cmp     r0, #0
         beq     1f                      // Jump if no handler.
         ldr     r1, [r0]                // Get the handler function.
@@ -155,6 +154,7 @@ irq:
         cmp     r1, #0                  // Handler function?
         blxne   r1                      // Call it.
 1:
+        cpsie   i                       // Enable IRQ
         pop     { r0, r1 }              // Restore the stack adjustment.
         add     sp, sp, r0              // And adjust.
         weak_call(__elk_leave_irq)      // Leave the IRQ state.
