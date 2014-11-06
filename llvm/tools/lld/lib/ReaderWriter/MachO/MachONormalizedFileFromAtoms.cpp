@@ -228,15 +228,10 @@ const MachOFinalSectionFromAtomType sectsToAtomType[] = {
                                                           typeInitializerPtr),
   ENTRY("__DATA", "__mod_term_func",  S_MOD_TERM_FUNC_POINTERS,
                                                           typeTerminatorPtr),
-  ENTRY("__DATA", "___got",           S_NON_LAZY_SYMBOL_POINTERS,
+  ENTRY("__DATA", "__got",            S_NON_LAZY_SYMBOL_POINTERS,
                                                           typeGOT),
-  ENTRY("__DATA", "___bss",           S_ZEROFILL,         typeZeroFill),
-
-  // FIXME: __compact_unwind actually needs to be processed by a pass and put
-  // into __TEXT,__unwind_info. For now, forwarding it back to
-  // __LD,__compact_unwind is harmless (it's ignored by the unwinder, which then
-  // proceeds to process __TEXT,__eh_frame for its instructions).
-  ENTRY("__LD",   "__compact_unwind", S_REGULAR,         typeCompactUnwindInfo),
+  ENTRY("__DATA", "__bss",            S_ZEROFILL,         typeZeroFill),
+  ENTRY("__DATA", "__interposing",    S_INTERPOSING,      typeInterposingTuples),
 };
 #undef ENTRY
 

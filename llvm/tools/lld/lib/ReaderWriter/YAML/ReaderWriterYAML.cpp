@@ -437,6 +437,8 @@ template <> struct ScalarEnumerationTraits<lld::DefinedAtom::ContentType> {
                                           DefinedAtom::typeObjC2CategoryList);
     io.enumCase(value, "objc-class1",     DefinedAtom::typeObjC1Class);
     io.enumCase(value, "dtraceDOF",       DefinedAtom::typeDTraceDOF);
+    io.enumCase(value, "interposing-tuples",
+                                          DefinedAtom::typeInterposingTuples);
     io.enumCase(value, "lto-temp",        DefinedAtom::typeTempLTO);
     io.enumCase(value, "compact-unwind",  DefinedAtom::typeCompactUnwindInfo);
     io.enumCase(value, "unwind-info",     DefinedAtom::typeProcessedUnwindInfo);
@@ -682,7 +684,7 @@ template <> struct MappingTraits<const lld::File *> {
     }
 
     IO                                  &_io;
-    RefNameBuilder                      *_rnb;
+    std::unique_ptr<RefNameBuilder> _rnb;
     StringRef                            _path;
     AtomList<lld::DefinedAtom>           _definedAtoms;
     AtomList<lld::UndefinedAtom>         _undefinedAtoms;
@@ -1231,9 +1233,9 @@ MappingTraits<const lld::Reference *>::NormalizedReference::targetName(
   assert(info != nullptr);
   typedef MappingTraits<const lld::File *>::NormalizedFile NormalizedFile;
   NormalizedFile *f = reinterpret_cast<NormalizedFile *>(info->_file);
-  RefNameBuilder *rnb = f->_rnb;
-  if (rnb->hasRefName(ref->target()))
-    return rnb->refName(ref->target());
+  RefNameBuilder &rnb = *f->_rnb;
+  if (rnb.hasRefName(ref->target()))
+    return rnb.refName(ref->target());
   return ref->target()->name();
 }
 

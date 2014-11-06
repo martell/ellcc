@@ -59,9 +59,9 @@ static void ReportMutexMisuse(ThreadState *thr, uptr pc, ReportType typ,
   ThreadRegistryLock l(ctx->thread_registry);
   ScopedReport rep(typ);
   rep.AddMutex(mid);
-  StackTrace trace;
-  trace.ObtainCurrent(thr, pc);
-  rep.AddStack(&trace);
+  VarSizeStackTrace trace;
+  ObtainCurrentStack(thr, pc, &trace);
+  rep.AddStack(trace, true);
   rep.AddLocation(addr, 1);
   OutputReport(ctx, rep, rep.GetReport()->stacks[0]);
 }
@@ -129,14 +129,14 @@ void MutexDestroy(ThreadState *thr, uptr pc, uptr addr) {
     ThreadRegistryLock l(ctx->thread_registry);
     ScopedReport rep(ReportTypeMutexDestroyLocked);
     rep.AddMutex(s);
-    StackTrace trace;
-    trace.ObtainCurrent(thr, pc);
-    rep.AddStack(&trace);
+    VarSizeStackTrace trace;
+    ObtainCurrentStack(thr, pc, &trace);
+    rep.AddStack(trace);
     FastState last(s->last_lock);
     RestoreStack(last.tid(), last.epoch(), &trace, 0);
-    rep.AddStack(&trace);
-    rep.AddLocation(s->addr, 1);
-    OutputReport(ctx, rep, rep.GetReport()->stacks[0]);
+    rep.AddStack(trace, true);
+    rep.AddLocation(addr, 1);
+    OutputReport(thr, rep);
   }
   if (unlock_locked) {
     SyncVar *s = ctx->metamap.GetIfExistsAndLock(addr);
@@ -477,20 +477,17 @@ void ReportDeadlock(ThreadState *thr, uptr pc, DDReport *r) {
     rep.AddUniqueTid((int)r->loop[i].thr_ctx);
     rep.AddThread((int)r->loop[i].thr_ctx);
   }
-  InternalScopedBuffer<StackTrace> stacks(2 * DDReport::kMaxLoopSize);
   uptr dummy_pc = 0x42;
   for (int i = 0; i < r->n; i++) {
     for (int j = 0; j < (flags()->second_deadlock_stack ? 2 : 1); j++) {
       u32 stk = r->loop[i].stk[j];
       if (stk) {
-        __sanitizer::StackTrace stack = StackDepotGet(stk);
-        stacks[i].Init(const_cast<uptr *>(stack.trace), stack.size);
+        rep.AddStack(StackDepotGet(stk), true);
       } else {
         // Sometimes we fail to extract the stack trace (FIXME: investigate),
         // but we should still produce some stack trace in the report.
-        stacks[i].Init(&dummy_pc, 1);
+        rep.AddStack(StackTrace(&dummy_pc, 1), true);
       }
-      rep.AddStack(&stacks[i]);
     }
   }
   // FIXME: use all stacks for suppressions, not just the second stack of the

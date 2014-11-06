@@ -290,17 +290,37 @@ void DarwinClang::AddLinkARCArgs(const ArgList &Args,
 }
 
 void MachO::AddLinkRuntimeLib(const ArgList &Args, ArgStringList &CmdArgs,
-                              StringRef DarwinStaticLib, bool AlwaysLink,
-                              bool IsEmbedded) const {
-  SmallString<128> P(getDriver().ResourceDir);
-  llvm::sys::path::append(P, "lib", IsEmbedded ? "macho_embedded" : "darwin",
-                          DarwinStaticLib);
+                              StringRef DarwinLibName, bool AlwaysLink,
+                              bool IsEmbedded, bool AddRPath) const {
+  SmallString<128> Dir(getDriver().ResourceDir);
+  llvm::sys::path::append(Dir, "lib", IsEmbedded ? "macho_embedded" : "darwin");
+
+  SmallString<128> P(Dir);
+  llvm::sys::path::append(P, DarwinLibName);
 
   // For now, allow missing resource libraries to support developers who may
   // not have compiler-rt checked out or integrated into their build (unless
   // we explicitly force linking with this library).
   if (AlwaysLink || llvm::sys::fs::exists(P.str()))
     CmdArgs.push_back(Args.MakeArgString(P.str()));
+
+  // Adding the rpaths might negatively interact when other rpaths are involved,
+  // so we should make sure we add the rpaths last, after all user-specified
+  // rpaths. This is currently true from this place, but we need to be
+  // careful if this function is ever called before user's rpaths are emitted.
+  if (AddRPath) {
+    assert(DarwinLibName.endswith(".dylib") && "must be a dynamic library");
+
+    // Add @executable_path to rpath to support having the dylib copied with
+    // the executable.
+    CmdArgs.push_back("-rpath");
+    CmdArgs.push_back("@executable_path");
+
+    // Add the path to the resource dir to rpath to support using the dylib
+    // from the default location without copying.
+    CmdArgs.push_back("-rpath");
+    CmdArgs.push_back(Args.MakeArgString(Dir.str()));
+  }
 }
 
 void DarwinClang::AddLinkRuntimeLibArgs(const ArgList &Args,
@@ -378,12 +398,14 @@ void DarwinClang::AddLinkRuntimeLibArgs(const ArgList &Args,
       if (isTargetMacOS()) {
         AddLinkRuntimeLib(Args, CmdArgs,
                           "libclang_rt.asan_osx_dynamic.dylib",
-                          true);
+                          /*AlwaysLink*/ true, /*IsEmbedded*/ false,
+                          /*AddRPath*/ true);
       } else {
         if (isTargetIOSSimulator()) {
           AddLinkRuntimeLib(Args, CmdArgs,
                             "libclang_rt.asan_iossim_dynamic.dylib",
-                            true);
+                            /*AlwaysLink*/ true, /*IsEmbedded*/ false,
+                            /*AddRPath*/ true);
         }
       }
     }
@@ -2088,8 +2110,8 @@ std::string Hexagon_TC::GetGnuDir(const std::string &InstalledDir) {
 
 static void GetHexagonLibraryPaths(
   const ArgList &Args,
-  const std::string Ver,
-  const std::string MarchString,
+  const std::string &Ver,
+  const std::string &MarchString,
   const std::string &InstalledDir,
   ToolChain::path_list *LibPaths)
 {

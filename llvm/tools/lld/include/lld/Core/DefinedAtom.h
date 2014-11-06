@@ -135,6 +135,7 @@ public:
     typeObjCClassPtr,       // pointer to ObjC class [Darwin]
     typeObjC2CategoryList,  // pointers to ObjC category [Darwin]
     typeDTraceDOF,          // runtime data for Dtrace [Darwin]
+    typeInterposingTuples,  // tuples of interposing info for dyld [Darwin]
     typeTempLTO,            // temporary atom for bitcode reader
     typeCompactUnwindInfo,  // runtime data for unwinder [Darwin]
     typeProcessedUnwindInfo,// compressed compact unwind info [Darwin]
@@ -318,7 +319,7 @@ public:
   static ContentPermissions permissions(ContentType type);
 
   /// Utility function to check if the atom occupies file space
-  virtual bool occupiesDiskSpace() const {
+  bool occupiesDiskSpace() const {
     ContentType atomContentType = contentType();
     return !(atomContentType == DefinedAtom::typeZeroFill ||
              atomContentType == DefinedAtom::typeZeroFillFast ||

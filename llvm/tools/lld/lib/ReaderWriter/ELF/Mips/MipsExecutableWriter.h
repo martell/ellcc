@@ -22,7 +22,8 @@ template <typename ELFT> class MipsTargetLayout;
 template <class ELFT>
 class MipsExecutableWriter : public ExecutableWriter<ELFT> {
 public:
-  MipsExecutableWriter(MipsLinkingContext &ctx, MipsTargetLayout<ELFT> &layout);
+  MipsExecutableWriter(MipsLinkingContext &ctx, MipsTargetLayout<ELFT> &layout,
+                       MipsELFFlagsMerger &elfFlagsMerger);
 
 protected:
   void buildDynamicSymbolTable(const File &file) override;
@@ -38,9 +39,10 @@ protected:
     return std::error_code();
   }
 
-  LLD_UNIQUE_BUMP_PTR(DynamicTable<ELFT>) createDynamicTable();
+  LLD_UNIQUE_BUMP_PTR(DynamicTable<ELFT>) createDynamicTable() override;
 
-  LLD_UNIQUE_BUMP_PTR(DynamicSymbolTable<ELFT>) createDynamicSymbolTable();
+  LLD_UNIQUE_BUMP_PTR(DynamicSymbolTable<ELFT>)
+      createDynamicSymbolTable() override;
 
 private:
   MipsELFWriter<ELFT> _writeHelper;
@@ -49,10 +51,12 @@ private:
 };
 
 template <class ELFT>
-MipsExecutableWriter<ELFT>::MipsExecutableWriter(MipsLinkingContext &ctx,
-                                                 MipsTargetLayout<ELFT> &layout)
-    : ExecutableWriter<ELFT>(ctx, layout), _writeHelper(ctx, layout),
-      _mipsContext(ctx), _mipsTargetLayout(layout) {}
+MipsExecutableWriter<ELFT>::MipsExecutableWriter(
+    MipsLinkingContext &ctx, MipsTargetLayout<ELFT> &layout,
+    MipsELFFlagsMerger &elfFlagsMerger)
+    : ExecutableWriter<ELFT>(ctx, layout),
+      _writeHelper(ctx, layout, elfFlagsMerger), _mipsContext(ctx),
+      _mipsTargetLayout(layout) {}
 
 template <class ELFT>
 void MipsExecutableWriter<ELFT>::buildDynamicSymbolTable(const File &file) {

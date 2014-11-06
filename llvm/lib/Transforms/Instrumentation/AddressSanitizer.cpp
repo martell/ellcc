@@ -60,7 +60,7 @@ static const uint64_t kIOSShadowOffset32 = 1ULL << 30;
 static const uint64_t kDefaultShadowOffset64 = 1ULL << 44;
 static const uint64_t kSmallX86_64ShadowOffset = 0x7FFF8000;  // < 2G.
 static const uint64_t kPPC64_ShadowOffset64 = 1ULL << 41;
-static const uint64_t kMIPS32_ShadowOffset32 = 0x0aaa8000;
+static const uint64_t kMIPS32_ShadowOffset32 = 0x0aaa0000;
 static const uint64_t kFreeBSD_ShadowOffset32 = 1ULL << 30;
 static const uint64_t kFreeBSD_ShadowOffset64 = 1ULL << 46;
 
@@ -256,7 +256,9 @@ class GlobalsMetadata {
     NamedMDNode *Globals = M.getNamedMetadata("llvm.asan.globals");
     if (!Globals)
       return;
-    for (auto MDN : Globals->operands()) {
+    for (const Value *MDV : Globals->operands()) {
+      const MDNode *MDN = cast<MDNode>(MDV);
+
       // Metadata node contains the global and the fields of "Entry".
       assert(MDN->getNumOperands() == 5);
       Value *V = MDN->getOperand(0);
@@ -1405,15 +1407,17 @@ void AddressSanitizer::InjectCoverageForIndirectCalls(
   const int kCacheSize = 16;
   const int kCacheAlignment = 64;  // Align for better performance.
   Type *Ty = ArrayType::get(IntptrTy, kCacheSize);
-  GlobalVariable *CalleeCache =
-      new GlobalVariable(*F.getParent(), Ty, false, GlobalValue::PrivateLinkage,
-                         Constant::getNullValue(Ty), "__asan_gen_callee_cache");
-  CalleeCache->setAlignment(kCacheAlignment);
   for (auto I : IndirCalls) {
     IRBuilder<> IRB(I);
     CallSite CS(I);
+    Value *Callee = CS.getCalledValue();
+    if (dyn_cast<InlineAsm>(Callee)) continue;
+    GlobalVariable *CalleeCache = new GlobalVariable(
+        *F.getParent(), Ty, false, GlobalValue::PrivateLinkage,
+        Constant::getNullValue(Ty), "__asan_gen_callee_cache");
+    CalleeCache->setAlignment(kCacheAlignment);
     IRB.CreateCall2(AsanCovIndirCallFunction,
-                    IRB.CreatePointerCast(CS.getCalledValue(), IntptrTy),
+                    IRB.CreatePointerCast(Callee, IntptrTy),
                     IRB.CreatePointerCast(CalleeCache, IntptrTy));
   }
 }

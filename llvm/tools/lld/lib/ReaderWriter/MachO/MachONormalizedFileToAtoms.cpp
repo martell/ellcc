@@ -72,11 +72,13 @@ const MachORelocatableSectionToAtomType sectsToAtomType[] = {
                                                           typeInitializerPtr),
   ENTRY("__DATA", "__mod_term_func",  S_MOD_TERM_FUNC_POINTERS,
                                                           typeTerminatorPtr),
-  ENTRY("__DATA", "___got",           S_NON_LAZY_SYMBOL_POINTERS,
+  ENTRY("__DATA", "__got",            S_NON_LAZY_SYMBOL_POINTERS,
                                                           typeGOT),
-  ENTRY("__DATA", "___bss",           S_ZEROFILL,         typeZeroFill),
+  ENTRY("__DATA", "__bss",            S_ZEROFILL,         typeZeroFill),
   ENTRY("",       "",                 S_NON_LAZY_SYMBOL_POINTERS,
                                                           typeGOT),
+  ENTRY("__DATA", "__interposing",    S_INTERPOSING,      typeInterposingTuples),
+  ENTRY("",       "",                 S_INTERPOSING,      typeInterposingTuples),
   ENTRY("__LD",   "__compact_unwind", S_REGULAR,
                                                          typeCompactUnwindInfo),
   ENTRY("",       "",                 S_REGULAR,          typeUnknown)
@@ -388,7 +390,6 @@ std::error_code processSection(DefinedAtom::ContentType atomType,
     return processSymboledSection(atomType, section, normalizedFile, file,
                                   scatterable, copyRefs);
   } else {
-    const uint32_t *cfi;
     unsigned int size;
     for (unsigned int offset = 0, e = section.content.size(); offset != e;) {
       switch (atomizeModel) {
@@ -422,7 +423,6 @@ std::error_code processSection(DefinedAtom::ContentType atomType,
         break;
       case atomizeCFI:
         // Break section up into dwarf unwind CFIs (FDE or CIE).
-        cfi = reinterpret_cast<const uint32_t *>(&section.content[offset]);
         size = read32(&section.content[offset], isBig) + 4;
         if (offset+size > section.content.size()) {
           return make_dynamic_error_code(Twine(Twine("Section ")

@@ -53,7 +53,7 @@ class ScopedAnnotation {
     StatInc(thr, StatAnnotation); \
     StatInc(thr, Stat##typ); \
     ScopedAnnotation sa(thr, __func__, f, l, caller_pc); \
-    const uptr pc = __sanitizer::StackTrace::GetCurrentPc(); \
+    const uptr pc = StackTrace::GetCurrentPc(); \
     (void)pc; \
 /**/
 

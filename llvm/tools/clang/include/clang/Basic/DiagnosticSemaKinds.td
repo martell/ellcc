@@ -2114,7 +2114,13 @@ def err_attribute_aligned_too_great : Error<
 def warn_redeclaration_without_attribute_prev_attribute_ignored : Warning<
   "%q0 redeclared without %1 attribute: previous %1 ignored">,
   InGroup<DiagGroup<"inconsistent-dllimport">>;
+def warn_dllimport_dropped_from_inline_function : Warning<
+  "%q0 redeclared inline; %1 attribute ignored">,
+  InGroup<IgnoredAttributes>;
 def warn_attribute_ignored : Warning<"%0 attribute ignored">,
+  InGroup<IgnoredAttributes>;
+def warn_attribute_ignored_on_inline :
+  Warning<"%0 attribute ignored on inline function">,
   InGroup<IgnoredAttributes>;
 def warn_attribute_after_definition_ignored : Warning<
   "attribute %0 after definition is ignored">,
@@ -2501,10 +2507,6 @@ def warn_impcast_pointer_to_bool : Warning<
     "address of%select{| function| array}0 '%1' will always evaluate to "
     "'true'">,
     InGroup<PointerBoolConversion>;
-def warn_cast_nonnull_to_bool : Warning<
-    "nonnull parameter '%0' will always evaluate to "
-    "'true'">,
-    InGroup<PointerBoolConversion>;
 def warn_this_bool_conversion : Warning<
   "'this' pointer cannot be null in well-defined C++ code; pointer may be "
   "assumed to always convert to true">, InGroup<UndefinedBoolConversion>;
@@ -2516,10 +2518,6 @@ def warn_address_of_reference_bool_conversion : Warning<
 def warn_null_pointer_compare : Warning<
     "comparison of %select{address of|function|array}0 '%1' %select{not |}2"
     "equal to a null pointer is always %select{true|false}2">,
-    InGroup<TautologicalPointerCompare>;
-def warn_nonnull_parameter_compare : Warning<
-    "comparison of nonnull parameter '%0' %select{not |}1"
-    "equal to a null pointer is always %select{true|false}1">,
     InGroup<TautologicalPointerCompare>;
 def warn_this_null_compare : Warning<
   "'this' pointer cannot be null in well-defined C++ code; comparison may be "
@@ -3660,6 +3658,11 @@ def err_invalid_var_template_spec_type : Error<"type %2 "
   "of %select{explicit instantiation|explicit specialization|"
   "partial specialization|redeclaration}0 of %1 does not match"
   " expected type %3">;
+def err_mismatched_exception_spec_explicit_instantiation : Error<
+  "exception specification in explicit instantiation does not match instantiated one">;
+def ext_mismatched_exception_spec_explicit_instantiation : ExtWarn<
+  "exception specification in explicit instantiation does not match instantiated one">,
+  InGroup<Microsoft>;
   
 // C++ typename-specifiers
 def err_typename_nested_not_found : Error<"no type named %0 in %1">;

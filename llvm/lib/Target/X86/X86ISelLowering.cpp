@@ -16158,7 +16158,8 @@ static SDValue getTargetVShiftNode(unsigned Opc, SDLoc dl, MVT VT,
   return DAG.getNode(Opc, dl, VT, SrcOp, ShAmt);
 }
 
-/// \brief Return (vselect \p Mask, \p Op, \p PreservedSrc) along with the
+/// \brief Return (and \p Op, \p Mask) for compare instructions or
+/// (vselect \p Mask, \p Op, \p PreservedSrc) for others along with the
 /// necessary casting for \p Mask when lowering masking intrinsics.
 static SDValue getVectorMaskingNode(SDValue Op, SDValue Mask,
                                     SDValue PreservedSrc, SelectionDAG &DAG) {
@@ -16179,6 +16180,16 @@ static SDValue getVectorMaskingNode(SDValue Op, SDValue Mask,
     SDValue VMask = DAG.getNode(ISD::EXTRACT_SUBVECTOR, dl, MaskVT,
                               DAG.getNode(ISD::BITCAST, dl, BitcastVT, Mask),
                               DAG.getIntPtrConstant(0));
+
+    switch (Op.getOpcode()) {
+      default: break;
+      case X86ISD::PCMPEQM:
+      case X86ISD::PCMPGTM:
+      case X86ISD::CMPM:
+      case X86ISD::CMPMU:
+        return DAG.getNode(ISD::AND, dl, VT, Op, VMask);
+    }
+
     return DAG.getNode(ISD::VSELECT, dl, VT, VMask, Op, PreservedSrc);
 }
 
@@ -16253,9 +16264,9 @@ static SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) {
       //             (v2i64 %a), (v2i64 %b), (i8 %mask))) ->
       // (i8 (bitcast
       //   (v8i1 (insert_subvector undef,
-      //           (v2i1 (vselect (extract_subvector
-      //                            (v8i1 (bitcast %mask)), 0),
-      //                          (PCMPEQM %a, %b), 0))))))
+      //           (v2i1 (and (PCMPEQM %a, %b),
+      //                      (extract_subvector
+      //                         (v8i1 (bitcast %mask)), 0))), 0))))
       EVT VT = Op.getOperand(1).getValueType();
       EVT MaskVT = EVT::getVectorVT(*DAG.getContext(), MVT::i1,
                                     VT.getVectorNumElements());
@@ -19014,6 +19025,7 @@ const char *X86TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case X86ISD::ANDNP:              return "X86ISD::ANDNP";
   case X86ISD::PSIGN:              return "X86ISD::PSIGN";
   case X86ISD::BLENDI:             return "X86ISD::BLENDI";
+  case X86ISD::SHRUNKBLEND:        return "X86ISD::SHRUNKBLEND";
   case X86ISD::SUBUS:              return "X86ISD::SUBUS";
   case X86ISD::HADD:               return "X86ISD::HADD";
   case X86ISD::HSUB:               return "X86ISD::HSUB";
@@ -19069,6 +19081,10 @@ const char *X86TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case X86ISD::SBB:                return "X86ISD::SBB";
   case X86ISD::SMUL:               return "X86ISD::SMUL";
   case X86ISD::UMUL:               return "X86ISD::UMUL";
+  case X86ISD::SMUL8:              return "X86ISD::SMUL8";
+  case X86ISD::UMUL8:              return "X86ISD::UMUL8";
+  case X86ISD::SDIVREM8_SEXT_HREG: return "X86ISD::SDIVREM8_SEXT_HREG";
+  case X86ISD::UDIVREM8_ZEXT_HREG: return "X86ISD::UDIVREM8_ZEXT_HREG";
   case X86ISD::INC:                return "X86ISD::INC";
   case X86ISD::DEC:                return "X86ISD::DEC";
   case X86ISD::OR:                 return "X86ISD::OR";
@@ -19368,7 +19384,9 @@ X86TargetLowering::isVectorClearMaskLegal(const SmallVectorImpl<int> &Mask,
     return (isMOVLMask(Mask, SVT)  ||
             isCommutedMOVLMask(Mask, SVT, true) ||
             isSHUFPMask(Mask, SVT) ||
-            isSHUFPMask(Mask, SVT, /* Commuted */ true));
+            isSHUFPMask(Mask, SVT, /* Commuted */ true) ||
+            isBlendMask(Mask, SVT, Subtarget->hasSSE41(),
+                        Subtarget->hasInt256()));
   }
   return false;
 }
@@ -22601,21 +22619,16 @@ static SDValue PerformSELECTCombine(SDNode *N, SelectionDAG &DAG,
       // build_vector of constants. This will be taken care in a later
       // condition.
       (TLI.isOperationLegalOrCustom(ISD::VSELECT, VT) && VT != MVT::v16i16 &&
-       VT != MVT::v8i16)) {
+       VT != MVT::v8i16) &&
+      // Don't optimize vector of constants. Those are handled by
+      // the generic code and all the bits must be properly set for
+      // the generic optimizer.
+      !ISD::isBuildVectorOfConstantSDNodes(Cond.getNode())) {
     unsigned BitWidth = Cond.getValueType().getScalarType().getSizeInBits();
 
     // Don't optimize vector selects that map to mask-registers.
     if (BitWidth == 1)
       return SDValue();
-
-    // Check all uses of that condition operand to check whether it will be
-    // consumed by non-BLEND instructions, which may depend on all bits are set
-    // properly.
-    for (SDNode::use_iterator I = Cond->use_begin(),
-                              E = Cond->use_end(); I != E; ++I)
-      if (I->getOpcode() != ISD::VSELECT)
-        // TODO: Add other opcodes eventually lowered into BLEND.
-        return SDValue();
 
     assert(BitWidth >= 8 && BitWidth <= 64 && "Invalid mask size");
     APInt DemandedMask = APInt::getHighBitsSet(BitWidth, 1);
@@ -22624,13 +22637,45 @@ static SDValue PerformSELECTCombine(SDNode *N, SelectionDAG &DAG,
     TargetLowering::TargetLoweringOpt TLO(DAG, DCI.isBeforeLegalize(),
                                           DCI.isBeforeLegalizeOps());
     if (TLO.ShrinkDemandedConstant(Cond, DemandedMask) ||
-        (TLI.SimplifyDemandedBits(Cond, DemandedMask, KnownZero, KnownOne,
-                                  TLO) &&
-         // Don't optimize vector of constants. Those are handled by
-         // the generic code and all the bits must be properly set for
-         // the generic optimizer.
-         !ISD::isBuildVectorOfConstantSDNodes(TLO.New.getNode())))
-      DCI.CommitTargetLoweringOpt(TLO);
+        TLI.SimplifyDemandedBits(Cond, DemandedMask, KnownZero, KnownOne,
+                                 TLO)) {
+      // If we changed the computation somewhere in the DAG, this change
+      // will affect all users of Cond.
+      // Make sure it is fine and update all the nodes so that we do not
+      // use the generic VSELECT anymore. Otherwise, we may perform
+      // wrong optimizations as we messed up with the actual expectation
+      // for the vector boolean values.
+      if (Cond != TLO.Old) {
+        // Check all uses of that condition operand to check whether it will be
+        // consumed by non-BLEND instructions, which may depend on all bits are
+        // set properly.
+        for (SDNode::use_iterator I = Cond->use_begin(), E = Cond->use_end();
+             I != E; ++I)
+          if (I->getOpcode() != ISD::VSELECT)
+            // TODO: Add other opcodes eventually lowered into BLEND.
+            return SDValue();
+
+        // Update all the users of the condition, before committing the change,
+        // so that the VSELECT optimizations that expect the correct vector
+        // boolean value will not be triggered.
+        for (SDNode::use_iterator I = Cond->use_begin(), E = Cond->use_end();
+             I != E; ++I)
+          DAG.ReplaceAllUsesOfValueWith(
+              SDValue(*I, 0),
+              DAG.getNode(X86ISD::SHRUNKBLEND, SDLoc(*I), I->getValueType(0),
+                          Cond, I->getOperand(1), I->getOperand(2)));
+        DCI.CommitTargetLoweringOpt(TLO);
+        return SDValue();
+      }
+      // At this point, only Cond is changed. Change the condition
+      // just for N to keep the opportunity to optimize all other
+      // users their own way.
+      DAG.ReplaceAllUsesOfValueWith(
+          SDValue(N, 0),
+          DAG.getNode(X86ISD::SHRUNKBLEND, SDLoc(N), N->getValueType(0),
+                      TLO.New, N->getOperand(1), N->getOperand(2)));
+      return SDValue();
+    }
   }
 
   // We should generate an X86ISD::BLENDI from a vselect if its argument
@@ -22644,7 +22689,9 @@ static SDValue PerformSELECTCombine(SDNode *N, SelectionDAG &DAG,
   // Iff we find this pattern and the build_vectors are built from
   // constants, we translate the vselect into a shuffle_vector that we
   // know will be matched by LowerVECTOR_SHUFFLEtoBlend.
-  if (N->getOpcode() == ISD::VSELECT && !DCI.isBeforeLegalize()) {
+  if ((N->getOpcode() == ISD::VSELECT ||
+       N->getOpcode() == X86ISD::SHRUNKBLEND) &&
+      !DCI.isBeforeLegalize()) {
     SDValue Shuffle = TransformVSELECTtoBlendVECTOR_SHUFFLE(N, DAG, Subtarget);
     if (Shuffle.getNode())
       return Shuffle;
@@ -24267,13 +24314,29 @@ static SDValue PerformSIGN_EXTEND_INREGCombine(SDNode *N, SelectionDAG &DAG,
 static SDValue PerformSExtCombine(SDNode *N, SelectionDAG &DAG,
                                   TargetLowering::DAGCombinerInfo &DCI,
                                   const X86Subtarget *Subtarget) {
+  SDValue N0 = N->getOperand(0);
+  EVT VT = N->getValueType(0);
+
+  // (i8,i32 sext (sdivrem (i8 x, i8 y)) ->
+  // (i8,i32 (sdivrem_sext_hreg (i8 x, i8 y)
+  // This exposes the sext to the sdivrem lowering, so that it directly extends
+  // from AH (which we otherwise need to do contortions to access).
+  if (N0.getOpcode() == ISD::SDIVREM && N0.getResNo() == 1 &&
+      N0.getValueType() == MVT::i8 && VT == MVT::i32) {
+    SDLoc dl(N);
+    SDVTList NodeTys = DAG.getVTList(MVT::i8, VT);
+    SDValue R = DAG.getNode(X86ISD::SDIVREM8_SEXT_HREG, dl, NodeTys,
+                            N0.getOperand(0), N0.getOperand(1));
+    DAG.ReplaceAllUsesOfValueWith(N0.getValue(0), R.getValue(0));
+    return R.getValue(1);
+  }
+
   if (!DCI.isBeforeLegalizeOps())
     return SDValue();
 
   if (!Subtarget->hasFp256())
     return SDValue();
 
-  EVT VT = N->getValueType(0);
   if (VT.isVector() && VT.getSizeInBits() == 256) {
     SDValue R = WidenMaskArithmetic(N, DAG, DCI, Subtarget);
     if (R.getNode())
@@ -24364,6 +24427,20 @@ static SDValue PerformZExtCombine(SDNode *N, SelectionDAG &DAG,
     SDValue R = WidenMaskArithmetic(N, DAG, DCI, Subtarget);
     if (R.getNode())
       return R;
+  }
+
+  // (i8,i32 zext (udivrem (i8 x, i8 y)) ->
+  // (i8,i32 (udivrem_zext_hreg (i8 x, i8 y)
+  // This exposes the zext to the udivrem lowering, so that it directly extends
+  // from AH (which we otherwise need to do contortions to access).
+  if (N0.getOpcode() == ISD::UDIVREM &&
+      N0.getResNo() == 1 && N0.getValueType() == MVT::i8 &&
+      (VT == MVT::i32 || VT == MVT::i64)) {
+    SDVTList NodeTys = DAG.getVTList(MVT::i8, VT);
+    SDValue R = DAG.getNode(X86ISD::UDIVREM8_ZEXT_HREG, dl, NodeTys,
+                            N0.getOperand(0), N0.getOperand(1));
+    DAG.ReplaceAllUsesOfValueWith(N0.getValue(0), R.getValue(0));
+    return R.getValue(1);
   }
 
   return SDValue();
@@ -24807,7 +24884,9 @@ SDValue X86TargetLowering::PerformDAGCombine(SDNode *N,
   case ISD::EXTRACT_VECTOR_ELT:
     return PerformEXTRACT_VECTOR_ELTCombine(N, DAG, DCI);
   case ISD::VSELECT:
-  case ISD::SELECT:         return PerformSELECTCombine(N, DAG, DCI, Subtarget);
+  case ISD::SELECT:
+  case X86ISD::SHRUNKBLEND:
+    return PerformSELECTCombine(N, DAG, DCI, Subtarget);
   case X86ISD::CMOV:        return PerformCMOVCombine(N, DAG, DCI, Subtarget);
   case ISD::ADD:            return PerformAddCombine(N, DAG, Subtarget);
   case ISD::SUB:            return PerformSubCombine(N, DAG, Subtarget);

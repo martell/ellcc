@@ -1,9 +1,9 @@
 current SVN:
 
+* Update to LLVM r221448.
 * ELK _exit() implemented.
 * ELK threads now have process IDs.
 * Added ELK constructors.
-* Update to LLVM r220904.
 * Added simple main() example.
 * Fix missing ecc-getarch, ecc-getinarch, and ecc-lit scripts for all targets.
 

@@ -190,6 +190,11 @@ namespace llvm {
       /// BLENDI - Blend where the selector is an immediate.
       BLENDI,
 
+      /// SHRUNKBLEND - Blend where the condition has been shrunk.
+      /// This is used to emphasize that the condition mask is
+      /// no more valid for generic VSELECT optimizations.
+      SHRUNKBLEND,
+
       /// ADDSUB - Combined add and sub on an FP vector.
       ADDSUB,
 
@@ -303,6 +308,10 @@ namespace llvm {
 
       // 8-bit SMUL/UMUL - AX, FLAGS = smul8/umul8 AL, RHS
       SMUL8, UMUL8,
+
+      // 8-bit divrem that zero-extend the high result (AH).
+      UDIVREM8_ZEXT_HREG,
+      SDIVREM8_SEXT_HREG,
 
       // MUL_IMM - X86 specific multiply by immediate.
       MUL_IMM,

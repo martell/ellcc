@@ -508,8 +508,8 @@ public:
       : PP(PP), Context(Context), LangOpt(LangOpt), TargetOpts(TargetOpts),
         Target(Target), Counter(Counter), InitializedLanguage(false) {}
 
-  bool ReadLanguageOptions(const LangOptions &LangOpts,
-                           bool Complain) override {
+  bool ReadLanguageOptions(const LangOptions &LangOpts, bool Complain,
+                           bool AllowCompatibleDifferences) override {
     if (InitializedLanguage)
       return false;
     
@@ -2325,6 +2325,10 @@ void ASTUnit::CodeComplete(StringRef File, unsigned Line, unsigned Column,
 
   // Set the language options appropriately.
   LangOpts = *CCInvocation->getLangOpts();
+
+  // Spell-checking and warnings are wasteful during code-completion.
+  LangOpts.SpellChecking = false;
+  CCInvocation->getDiagnosticOpts().IgnoreWarnings = true;
 
   std::unique_ptr<CompilerInstance> Clang(new CompilerInstance());
 

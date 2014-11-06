@@ -234,9 +234,10 @@ public:
 
   void AddLinkRuntimeLib(const llvm::opt::ArgList &Args,
                          llvm::opt::ArgStringList &CmdArgs,
-                         StringRef DarwinStaticLib,
+                         StringRef DarwinLibName,
                          bool AlwaysLink = false,
-                         bool IsEmbedded = false) const;
+                         bool IsEmbedded = false,
+                         bool AddRPath = false) const;
 
   /// }
   /// @name ToolChain Implementation

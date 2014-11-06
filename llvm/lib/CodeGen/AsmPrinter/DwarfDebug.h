@@ -173,11 +173,6 @@ class DwarfDebug : public AsmPrinterHandler {
   // Maps a CU DIE with its corresponding DwarfCompileUnit.
   DenseMap<const DIE *, DwarfCompileUnit *> CUDieMap;
 
-  /// Maps MDNodes for type system with the corresponding DIEs. These DIEs can
-  /// be shared across CUs, that is why we keep the map here instead
-  /// of in DwarfCompileUnit.
-  DenseMap<const MDNode *, DIE *> MDTypeNodeToDieMap;
-
   // List of all labels used in aranges generation.
   std::vector<SymbolCU> ArangeLabels;
 
@@ -189,9 +184,6 @@ class DwarfDebug : public AsmPrinterHandler {
   SectionMapType SectionMap;
 
   LexicalScopes LScopes;
-
-  // Collection of abstract subprogram DIEs.
-  DenseMap<const MDNode *, DIE *> AbstractSPDies;
 
   // Collection of abstract variables.
   DenseMap<const MDNode *, std::unique_ptr<DbgVariable>> AbstractVariables;
@@ -399,10 +391,9 @@ class DwarfDebug : public AsmPrinterHandler {
   /// index.
   void emitDebugPubTypes(bool GnuStyle = false);
 
-  void
-  emitDebugPubSection(bool GnuStyle, const MCSection *PSec, StringRef Name,
-                      const StringMap<const DIE *> &(DwarfUnit::*Accessor)()
-                      const);
+  void emitDebugPubSection(
+      bool GnuStyle, const MCSection *PSec, StringRef Name,
+      const StringMap<const DIE *> &(DwarfCompileUnit::*Accessor)() const);
 
   /// \brief Emit visible names into a debug str section.
   void emitDebugStr();
@@ -500,13 +491,6 @@ public:
   DwarfDebug(AsmPrinter *A, Module *M);
 
   ~DwarfDebug() override;
-
-  void insertDIE(const MDNode *TypeMD, DIE *Die) {
-    MDTypeNodeToDieMap.insert(std::make_pair(TypeMD, Die));
-  }
-  DIE *getDIE(const MDNode *TypeMD) {
-    return MDTypeNodeToDieMap.lookup(TypeMD);
-  }
 
   /// \brief Emit all Dwarf sections that should come prior to the
   /// content.
@@ -649,10 +633,6 @@ public:
   unsigned getNextRangeNumber() { return GlobalRangeCount++; }
 
   // FIXME: Sink these functions down into DwarfFile/Dwarf*Unit.
-
-  DenseMap<const MDNode *, DIE *> &getAbstractSPDies() {
-    return AbstractSPDies;
-  }
 
   SmallPtrSet<const MDNode *, 16> &getProcessedSPNodes() {
     return ProcessedSPNodes;

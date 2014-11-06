@@ -24,7 +24,8 @@ template <class ELFT>
 class MipsDynamicLibraryWriter : public DynamicLibraryWriter<ELFT> {
 public:
   MipsDynamicLibraryWriter(MipsLinkingContext &ctx,
-                           MipsTargetLayout<ELFT> &layout);
+                           MipsTargetLayout<ELFT> &layout,
+                           MipsELFFlagsMerger &elfFlagsMerger);
 
 protected:
   // Add any runtime files and their atoms to the output
@@ -38,9 +39,10 @@ protected:
     return std::error_code();
   }
 
-  LLD_UNIQUE_BUMP_PTR(DynamicTable<ELFT>) createDynamicTable();
+  LLD_UNIQUE_BUMP_PTR(DynamicTable<ELFT>) createDynamicTable() override;
 
-  LLD_UNIQUE_BUMP_PTR(DynamicSymbolTable<ELFT>) createDynamicSymbolTable();
+  LLD_UNIQUE_BUMP_PTR(DynamicSymbolTable<ELFT>)
+      createDynamicSymbolTable() override;
 
 private:
   MipsELFWriter<ELFT> _writeHelper;
@@ -50,9 +52,11 @@ private:
 
 template <class ELFT>
 MipsDynamicLibraryWriter<ELFT>::MipsDynamicLibraryWriter(
-    MipsLinkingContext &ctx, MipsTargetLayout<ELFT> &layout)
-    : DynamicLibraryWriter<ELFT>(ctx, layout), _writeHelper(ctx, layout),
-      _mipsContext(ctx), _mipsTargetLayout(layout) {}
+    MipsLinkingContext &ctx, MipsTargetLayout<ELFT> &layout,
+    MipsELFFlagsMerger &elfFlagsMerger)
+    : DynamicLibraryWriter<ELFT>(ctx, layout),
+      _writeHelper(ctx, layout, elfFlagsMerger), _mipsContext(ctx),
+      _mipsTargetLayout(layout) {}
 
 template <class ELFT>
 bool MipsDynamicLibraryWriter<ELFT>::createImplicitFiles(

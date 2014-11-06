@@ -448,6 +448,7 @@ X86InstrInfo::X86InstrInfo(X86Subtarget &STI)
     { X86::CVTSD2SIrr,      X86::CVTSD2SIrm,          0 },
     { X86::CVTSS2SI64rr,    X86::CVTSS2SI64rm,        0 },
     { X86::CVTSS2SIrr,      X86::CVTSS2SIrm,          0 },
+    { X86::CVTDQ2PSrr,      X86::CVTDQ2PSrm,          TB_ALIGN_16 },
     { X86::CVTTPD2DQrr,     X86::CVTTPD2DQrm,         TB_ALIGN_16 },
     { X86::CVTTPS2DQrr,     X86::CVTTPS2DQrm,         TB_ALIGN_16 },
     { X86::Int_CVTTSD2SI64rr,X86::Int_CVTTSD2SI64rm,  0 },
@@ -526,6 +527,7 @@ X86InstrInfo::X86InstrInfo(X86Subtarget &STI)
     { X86::VCVTSD2SIrr,     X86::VCVTSD2SIrm,         0 },
     { X86::VCVTSS2SI64rr,   X86::VCVTSS2SI64rm,       0 },
     { X86::VCVTSS2SIrr,     X86::VCVTSS2SIrm,         0 },
+    { X86::VCVTDQ2PSrr,     X86::VCVTDQ2PSrm,         0 },
     { X86::VMOV64toPQIrr,   X86::VMOVQI2PQIrm,        0 },
     { X86::VMOV64toSDrr,    X86::VMOV64toSDrm,        0 },
     { X86::VMOVAPDrr,       X86::VMOVAPDrm,           TB_ALIGN_16 },
@@ -559,6 +561,7 @@ X86InstrInfo::X86InstrInfo(X86Subtarget &STI)
     { X86::VBROADCASTSSrr,  X86::VBROADCASTSSrm,      TB_NO_REVERSE },
 
     // AVX 256-bit foldable instructions
+    { X86::VCVTDQ2PSYrr,    X86::VCVTDQ2PSYrm,        0 },
     { X86::VMOVAPDYrr,      X86::VMOVAPDYrm,          TB_ALIGN_32 },
     { X86::VMOVAPSYrr,      X86::VMOVAPSYrm,          TB_ALIGN_32 },
     { X86::VMOVDQAYrr,      X86::VMOVDQAYrm,          TB_ALIGN_32 },
@@ -2420,6 +2423,41 @@ X86InstrInfo::commuteInstruction(MachineInstr *MI, bool NewMI) const {
     MI->getOperand(3).setImm(Size-Amt);
     return TargetInstrInfo::commuteInstruction(MI, NewMI);
   }
+  case X86::BLENDPDrri:
+  case X86::BLENDPSrri:
+  case X86::PBLENDWrri:
+  case X86::VBLENDPDrri:
+  case X86::VBLENDPSrri:
+  case X86::VBLENDPDYrri:
+  case X86::VBLENDPSYrri:
+  case X86::VPBLENDDrri:
+  case X86::VPBLENDWrri:
+  case X86::VPBLENDDYrri:
+  case X86::VPBLENDWYrri:{
+    unsigned Mask;
+    switch (MI->getOpcode()) {
+    default: llvm_unreachable("Unreachable!");
+    case X86::BLENDPDrri:    Mask = 0x03; break;
+    case X86::BLENDPSrri:    Mask = 0x0F; break;
+    case X86::PBLENDWrri:    Mask = 0xFF; break;
+    case X86::VBLENDPDrri:   Mask = 0x03; break;
+    case X86::VBLENDPSrri:   Mask = 0x0F; break;
+    case X86::VBLENDPDYrri:  Mask = 0x0F; break;
+    case X86::VBLENDPSYrri:  Mask = 0xFF; break;
+    case X86::VPBLENDDrri:   Mask = 0x0F; break;
+    case X86::VPBLENDWrri:   Mask = 0xFF; break;
+    case X86::VPBLENDDYrri:  Mask = 0xFF; break;
+    case X86::VPBLENDWYrri:  Mask = 0xFF; break;
+    }
+    unsigned Imm = MI->getOperand(3).getImm();
+    if (NewMI) {
+      MachineFunction &MF = *MI->getParent()->getParent();
+      MI = MF.CloneMachineInstr(MI);
+      NewMI = false;
+    }
+    MI->getOperand(3).setImm(Mask ^ Imm);
+    return TargetInstrInfo::commuteInstruction(MI, NewMI);
+  }
   case X86::CMOVB16rr:  case X86::CMOVB32rr:  case X86::CMOVB64rr:
   case X86::CMOVAE16rr: case X86::CMOVAE32rr: case X86::CMOVAE64rr:
   case X86::CMOVE16rr:  case X86::CMOVE32rr:  case X86::CMOVE64rr:
@@ -2504,6 +2542,20 @@ X86InstrInfo::commuteInstruction(MachineInstr *MI, bool NewMI) const {
 bool X86InstrInfo::findCommutedOpIndices(MachineInstr *MI, unsigned &SrcOpIdx1,
                                          unsigned &SrcOpIdx2) const {
   switch (MI->getOpcode()) {
+    case X86::BLENDPDrri:
+    case X86::BLENDPSrri:
+    case X86::PBLENDWrri:
+    case X86::VBLENDPDrri:
+    case X86::VBLENDPSrri:
+    case X86::VBLENDPDYrri:
+    case X86::VBLENDPSYrri:
+    case X86::VPBLENDDrri:
+    case X86::VPBLENDDYrri:
+    case X86::VPBLENDWrri:
+    case X86::VPBLENDWYrri:
+      SrcOpIdx1 = 1;
+      SrcOpIdx2 = 2;
+      return true;
     case X86::VFMADDPDr231r:
     case X86::VFMADDPSr231r:
     case X86::VFMADDSDr231r:
@@ -3992,7 +4044,7 @@ static void expandLoadStackGuard(MachineInstrBuilder &MIB,
   unsigned Flag = MachineMemOperand::MOLoad | MachineMemOperand::MOInvariant;
   MachineMemOperand *MMO = MBB.getParent()->
       getMachineMemOperand(MachinePointerInfo::getGOT(), Flag, 8, 8);
-  MachineBasicBlock::iterator I = MIB;
+  MachineBasicBlock::iterator I = MIB.getInstr();
 
   BuildMI(MBB, I, DL, TII.get(X86::MOV64rm), Reg).addReg(X86::RIP).addImm(1)
       .addReg(0).addGlobalAddress(GV, 0, X86II::MO_GOTPCREL).addReg(0)

@@ -42,7 +42,6 @@ const unsigned kMaxTid = 1 << kTidBits;
 const unsigned kMaxTidInClock = kMaxTid * 2;  // This includes msb 'freed' bit.
 const int kClkBits = 42;
 const uptr kShadowStackSize = 64 * 1024;
-const uptr kTraceStackSize = 256;
 
 #ifdef TSAN_SHADOW_COUNT
 # if TSAN_SHADOW_COUNT == 2 \
@@ -165,7 +164,6 @@ struct Context;
 struct ReportStack;
 class ReportDesc;
 class RegionAlloc;
-class StackTrace;
 struct MBlock;
 
 }  // namespace __tsan

@@ -200,6 +200,7 @@ class MipsAsmParser : public MCTargetAsmParser {
   bool parseSetNoDspDirective();
   bool parseSetReorderDirective();
   bool parseSetNoReorderDirective();
+  bool parseSetMips16Directive();
   bool parseSetNoMips16Directive();
   bool parseSetFpDirective();
   bool parseSetPopDirective();
@@ -1195,6 +1196,16 @@ bool MipsAsmParser::processInstruction(MCInst &Inst, SMLoc IDLoc,
         if (OffsetToAlignment(Imm, 4LL))
           return Error(IDLoc, "misaligned immediate operand value");
         if (Imm < 0 || Imm > 255)
+          return Error(IDLoc, "immediate operand value out of range");
+        break;
+      case Mips::ANDI16_MM:
+        Opnd = Inst.getOperand(2);
+        if (!Opnd.isImm())
+          return Error(IDLoc, "expected immediate operand kind");
+        Imm = Opnd.getImm();
+        if (!(Imm == 128 || (Imm >= 1 && Imm <= 4) || Imm == 7 || Imm == 8 ||
+              Imm == 15 || Imm == 16 || Imm == 31 || Imm == 32 || Imm == 63 ||
+              Imm == 64 || Imm == 255 || Imm == 32768 || Imm == 65535))
           return Error(IDLoc, "immediate operand value out of range");
         break;
     }
@@ -2783,14 +2794,32 @@ bool MipsAsmParser::parseSetNoDspDirective() {
   return false;
 }
 
-bool MipsAsmParser::parseSetNoMips16Directive() {
-  Parser.Lex();
+bool MipsAsmParser::parseSetMips16Directive() {
+  Parser.Lex(); // Eat "mips16".
+
   // If this is not the end of the statement, report an error.
   if (getLexer().isNot(AsmToken::EndOfStatement)) {
     reportParseError("unexpected token, expected end of statement");
     return false;
   }
-  // For now do nothing.
+
+  setFeatureBits(Mips::FeatureMips16, "mips16");
+  getTargetStreamer().emitDirectiveSetMips16();
+  Parser.Lex(); // Consume the EndOfStatement.
+  return false;
+}
+
+bool MipsAsmParser::parseSetNoMips16Directive() {
+  Parser.Lex(); // Eat "nomips16".
+
+  // If this is not the end of the statement, report an error.
+  if (getLexer().isNot(AsmToken::EndOfStatement)) {
+    reportParseError("unexpected token, expected end of statement");
+    return false;
+  }
+
+  clearFeatureBits(Mips::FeatureMips16, "mips16");
+  getTargetStreamer().emitDirectiveSetNoMips16();
   Parser.Lex(); // Consume the EndOfStatement.
   return false;
 }
@@ -2940,9 +2969,6 @@ bool MipsAsmParser::parseSetFeature(uint64_t Feature) {
   case Mips::FeatureMicroMips:
     getTargetStreamer().emitDirectiveSetMicroMips();
     break;
-  case Mips::FeatureMips16:
-    getTargetStreamer().emitDirectiveSetMips16();
-    break;
   case Mips::FeatureMips1:
     selectArch("mips1");
     getTargetStreamer().emitDirectiveSetMips1();
@@ -3004,9 +3030,12 @@ bool MipsAsmParser::eatComma(StringRef ErrorStr) {
 
 bool MipsAsmParser::parseDirectiveCpLoad(SMLoc Loc) {
   if (AssemblerOptions.back()->isReorder())
-    Warning(Loc, ".cpload in reorder section");
+    Warning(Loc, ".cpload should be inside a noreorder section");
 
-  // FIXME: Warn if cpload is used in Mips16 mode.
+  if (inMips16Mode()) {
+    reportParseError(".cpload is not supported in Mips16 mode");
+    return false;
+  }
 
   SmallVector<std::unique_ptr<MCParsedAsmOperand>, 1> Reg;
   OperandMatchResultTy ResTy = parseAnyRegister(Reg);
@@ -3018,6 +3047,12 @@ bool MipsAsmParser::parseDirectiveCpLoad(SMLoc Loc) {
   MipsOperand &RegOpnd = static_cast<MipsOperand &>(*Reg[0]);
   if (!RegOpnd.isGPRAsmReg()) {
     reportParseError(RegOpnd.getStartLoc(), "invalid register");
+    return false;
+  }
+
+  // If this is not the end of the statement, report an error.
+  if (getLexer().isNot(AsmToken::EndOfStatement)) {
+    reportParseError("unexpected token, expected end of statement");
     return false;
   }
 
@@ -3131,7 +3166,7 @@ bool MipsAsmParser::parseDirectiveSet() {
   } else if (Tok.getString() == "nomacro") {
     return parseSetNoMacroDirective();
   } else if (Tok.getString() == "mips16") {
-    return parseSetFeature(Mips::FeatureMips16);
+    return parseSetMips16Directive();
   } else if (Tok.getString() == "nomips16") {
     return parseSetNoMips16Directive();
   } else if (Tok.getString() == "nomicromips") {

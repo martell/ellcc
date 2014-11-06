@@ -3995,7 +3995,7 @@ Decl *Sema::BuildAnonymousStructOrUnion(Scope *S, DeclSpec &DS,
       FieldCollector->Add(cast<FieldDecl>(Anon));
   } else {
     DeclSpec::SCS SCSpec = DS.getStorageClassSpec();
-    VarDecl::StorageClass SC = StorageClassSpecToVarDeclStorageClass(DS);
+    StorageClass SC = StorageClassSpecToVarDeclStorageClass(DS);
     if (SCSpec == DeclSpec::SCS_mutable) {
       // mutable can only appear on non-static class members, so it's always
       // an error here
@@ -5185,6 +5185,14 @@ static void checkDLLAttributeRedeclaration(Sema &S, NamedDecl *OldDecl,
     S.Diag(OldImportAttr->getLocation(), diag::note_previous_attribute);
     OldDecl->dropAttr<DLLImportAttr>();
     NewDecl->dropAttr<DLLImportAttr>();
+  } else if (IsInline && OldImportAttr &&
+             !S.Context.getTargetInfo().getCXXABI().isMicrosoft()) {
+    // In MinGW, seeing a function declared inline drops the dllimport attribute.
+    OldDecl->dropAttr<DLLImportAttr>();
+    NewDecl->dropAttr<DLLImportAttr>();
+    S.Diag(NewDecl->getLocation(),
+           diag::warn_dllimport_dropped_from_inline_function)
+        << NewDecl << OldImportAttr;
   }
 }
 
@@ -5325,8 +5333,7 @@ Sema::ActOnVariableDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   DeclarationName Name = GetNameForDeclarator(D).getName();
 
   DeclSpec::SCS SCSpec = D.getDeclSpec().getStorageClassSpec();
-  VarDecl::StorageClass SC =
-    StorageClassSpecToVarDeclStorageClass(D.getDeclSpec());
+  StorageClass SC = StorageClassSpecToVarDeclStorageClass(D.getDeclSpec());
 
   // dllimport globals without explicit storage class are treated as extern. We
   // have to change the storage class this early to get the right DeclContext.
@@ -6539,8 +6546,7 @@ static NamedDecl *DiagnoseInvalidRedeclaration(
   return nullptr;
 }
 
-static FunctionDecl::StorageClass getFunctionStorageClass(Sema &SemaRef, 
-                                                          Declarator &D) {
+static StorageClass getFunctionStorageClass(Sema &SemaRef, Declarator &D) {
   switch (D.getDeclSpec().getStorageClassSpec()) {
   default: llvm_unreachable("Unknown storage class!");
   case DeclSpec::SCS_auto:
@@ -6578,7 +6584,7 @@ static FunctionDecl::StorageClass getFunctionStorageClass(Sema &SemaRef,
 static FunctionDecl* CreateNewFunctionDecl(Sema &SemaRef, Declarator &D,
                                            DeclContext *DC, QualType &R,
                                            TypeSourceInfo *TInfo,
-                                           FunctionDecl::StorageClass SC,
+                                           StorageClass SC,
                                            bool &IsVirtualOkay) {
   DeclarationNameInfo NameInfo = SemaRef.GetNameForDeclarator(D);
   DeclarationName Name = NameInfo.getName();
@@ -6905,7 +6911,7 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
   // TODO: consider using NameInfo for diagnostic.
   DeclarationNameInfo NameInfo = GetNameForDeclarator(D);
   DeclarationName Name = NameInfo.getName();
-  FunctionDecl::StorageClass SC = getFunctionStorageClass(*this, D);
+  StorageClass SC = getFunctionStorageClass(*this, D);
 
   if (DeclSpec::TSCS TSCS = D.getDeclSpec().getThreadStorageClassSpec())
     Diag(D.getDeclSpec().getThreadStorageClassSpecLoc(),
@@ -7386,6 +7392,22 @@ Sema::ActOnFunctionDeclarator(Scope *S, Declarator &D, DeclContext *DC,
     assert((NewFD->isInvalidDecl() || !D.isRedeclaration() ||
             Previous.getResultKind() != LookupResult::FoundOverloaded) &&
            "previous declaration set still overloaded");
+
+    // Diagnose no-prototype function declarations with calling conventions that
+    // don't support variadic calls. Only do this in C and do it after merging
+    // possibly prototyped redeclarations.
+    const FunctionType *FT = NewFD->getType()->castAs<FunctionType>();
+    if (isa<FunctionNoProtoType>(FT) && !D.isFunctionDefinition()) {
+      CallingConv CC = FT->getExtInfo().getCC();
+      if (!supportsVariadicCall(CC)) {
+        // Windows system headers sometimes accidentally use stdcall without
+        // (void) parameters, so we relax this to a warning.
+        int DiagID =
+            CC == CC_X86StdCall ? diag::warn_cconv_knr : diag::err_cconv_knr;
+        Diag(NewFD->getLocation(), DiagID)
+            << FunctionType::getNameForCallConv(CC);
+      }
+    }
   } else {
     // C++11 [replacement.functions]p3:
     //  The program's definitions shall not be specified as inline.
@@ -7942,21 +7964,6 @@ bool Sema::CheckFunctionDeclaration(Scope *S, FunctionDecl *NewFD,
 
   // Semantic checking for this function declaration (in isolation).
 
-  // Diagnose calling conventions that don't support variadic calls.
-  QualType NewQType = Context.getCanonicalType(NewFD->getType());
-  const FunctionType *NewType = cast<FunctionType>(NewQType);
-  if (isa<FunctionNoProtoType>(NewType)) {
-    FunctionType::ExtInfo NewTypeInfo = NewType->getExtInfo();
-    if (!supportsVariadicCall(NewTypeInfo.getCC())) {
-      // Windows system headers sometimes accidentally use stdcall without
-      // (void) parameters, so use a default-error warning in this case :-/
-      int DiagID = NewTypeInfo.getCC() == CC_X86StdCall
-          ? diag::warn_cconv_knr : diag::err_cconv_knr;
-      Diag(NewFD->getLocation(), DiagID)
-          << FunctionType::getNameForCallConv(NewTypeInfo.getCC());
-    }
-  }
-
   if (getLangOpts().CPlusPlus) {
     // C++-specific checks.
     if (CXXConstructorDecl *Constructor = dyn_cast<CXXConstructorDecl>(NewFD)) {
@@ -8436,11 +8443,14 @@ namespace {
     }
 
     void VisitCXXOperatorCallExpr(CXXOperatorCallExpr *E) {
-      if (E->getNumArgs() > 0)
-        if (DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(E->getArg(0)))
-          HandleDeclRefExpr(DRE);
+      Expr *Callee = E->getCallee();
 
-      Inherited::VisitCXXOperatorCallExpr(E);
+      if (isa<UnresolvedLookupExpr>(Callee))
+        return Inherited::VisitCXXOperatorCallExpr(E);
+
+      Visit(Callee);
+      for (auto Arg: E->arguments())
+        HandleValue(Arg->IgnoreParenImpCasts());
     }
 
     void VisitUnaryOperator(UnaryOperator *E) {
@@ -9757,12 +9767,12 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
   // Verify C99 6.7.5.3p2: The only SCS allowed is 'register'.
 
   // C++03 [dcl.stc]p2 also permits 'auto'.
-  VarDecl::StorageClass StorageClass = SC_None;
+  StorageClass SC = SC_None;
   if (DS.getStorageClassSpec() == DeclSpec::SCS_register) {
-    StorageClass = SC_Register;
+    SC = SC_Register;
   } else if (getLangOpts().CPlusPlus &&
              DS.getStorageClassSpec() == DeclSpec::SCS_auto) {
-    StorageClass = SC_Auto;
+    SC = SC_Auto;
   } else if (DS.getStorageClassSpec() != DeclSpec::SCS_unspecified) {
     Diag(DS.getStorageClassSpecLoc(),
          diag::err_invalid_storage_class_in_func_decl);
@@ -9836,7 +9846,7 @@ Decl *Sema::ActOnParamDeclarator(Scope *S, Declarator &D) {
                                     D.getLocStart(),
                                     D.getIdentifierLoc(), II,
                                     parmDeclType, TInfo,
-                                    StorageClass);
+                                    SC);
 
   if (D.isInvalidType())
     New->setInvalidDecl();
@@ -9928,7 +9938,7 @@ void Sema::DiagnoseSizeOfParametersAndReturnValue(ParmVarDecl * const *Param,
 ParmVarDecl *Sema::CheckParameter(DeclContext *DC, SourceLocation StartLoc,
                                   SourceLocation NameLoc, IdentifierInfo *Name,
                                   QualType T, TypeSourceInfo *TSInfo,
-                                  VarDecl::StorageClass StorageClass) {
+                                  StorageClass SC) {
   // In ARC, infer a lifetime qualifier for appropriate parameter types.
   if (getLangOpts().ObjCAutoRefCount &&
       T.getObjCLifetime() == Qualifiers::OCL_None &&
@@ -9954,8 +9964,7 @@ ParmVarDecl *Sema::CheckParameter(DeclContext *DC, SourceLocation StartLoc,
 
   ParmVarDecl *New = ParmVarDecl::Create(Context, DC, StartLoc, NameLoc, Name,
                                          Context.getAdjustedParameterType(T), 
-                                         TSInfo,
-                                         StorageClass, nullptr);
+                                         TSInfo, SC, nullptr);
 
   // Parameters can not be abstract class types.
   // For record types, this is done by the AbstractClassUsageDiagnoser once

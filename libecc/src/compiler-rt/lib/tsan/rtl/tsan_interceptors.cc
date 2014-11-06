@@ -215,7 +215,7 @@ ScopedInterceptor::~ScopedInterceptor() {
     ThreadState *thr = cur_thread(); \
     const uptr caller_pc = GET_CALLER_PC(); \
     ScopedInterceptor si(thr, #func, caller_pc); \
-    const uptr pc = __sanitizer::StackTrace::GetCurrentPc(); \
+    const uptr pc = StackTrace::GetCurrentPc(); \
     (void)pc; \
 /**/
 
@@ -1883,13 +1883,13 @@ static void CallUserSignalHandler(ThreadState *thr, bool sync, bool acquire,
   // from rtl_generic_sighandler) we have not yet received the reraised
   // signal; and it looks too fragile to intercept all ways to reraise a signal.
   if (flags()->report_bugs && !sync && sig != SIGTERM && errno != 99) {
-    __tsan::StackTrace stack;
-    stack.ObtainCurrent(thr, pc);
+    VarSizeStackTrace stack;
+    ObtainCurrentStack(thr, pc, &stack);
     ThreadRegistryLock l(ctx->thread_registry);
     ScopedReport rep(ReportTypeErrnoInSignal);
     if (!IsFiredSuppression(ctx, rep, stack)) {
-      rep.AddStack(&stack);
-      OutputReport(ctx, rep, rep.GetReport()->stacks[0]);
+      rep.AddStack(stack, true);
+      OutputReport(thr, rep);
     }
   }
   errno = saved_errno;
