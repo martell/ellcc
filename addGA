@@ -30,6 +30,6 @@ for file in out.split('\n'):
             where = contents.find('</head>')
             if where != -1:
                 f = open(file, 'w')
-                newcontents = contents[0:where - 1] + GA + contents[where:]
+                newcontents = contents[0:where] + GA + contents[where:]
                 f.write(newcontents)
                 f.close()
