@@ -138,6 +138,8 @@ cd ..
 
 if [ "x$hostos" = "xlinux" ] ; then
   if [ "$haslibs" != "yes" ] ; then
+    # Make sure ELLCC_ARG0 is set in the next build.
+    find llvm-build* -name driver.o | xargs rm -f
     echo "Please run the build script again to bootstrap ecc."
     echo "This may be done a few times:"
     echo "1. ecc is built with itself (compiled with gcc) and libecc."
