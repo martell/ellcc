@@ -1,6 +1,6 @@
 /* Handle the exit system call.
  */
-#include <bits/syscall.h>       // For syscall numbers.
+#include <syscalls.h>           // For syscall numbers.
 #include <stdio.h>
 #include <kernel.h>
 

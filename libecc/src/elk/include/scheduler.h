@@ -3,7 +3,53 @@
 #ifndef _scheduler_h_
 #define _scheduler_h_
 
+#include <sys/types.h>
 #include "kernel.h"
+
+#define HAVE_CAPABILITY 1
+
+#if !defined(HAVE_CAPABILITY)
+// Define a simple capability check.
+#define CAPABLE(thread, capability) \
+  (!(thread)->euid)
+
+#else
+
+// Allow changing file and group ownership.
+#define CAP_CHOWN 0
+
+// Override DAC restrictions.
+#define CAP_DAC_OVERRIDE 1
+
+// Override DAC restrictions on read and search on files and directories.
+#define CAP_DAC_READ_SEARCH 2
+
+// Override file owenership restrictions except where CAP_FSETID is applicable.
+#define CAP_FOWNER 3
+
+// Override set[ug]id restrictions on files.
+#define CAP_FSETID 4
+
+// Override restrictions on sending signals.
+#define CAP_KILL 5
+
+// Override gid manipulation restrictions.
+#define CAP_SETGID 6
+
+// Override uid manipulation restrictions.
+#define CAP_SETUID 7
+
+// Set all capabilities for the superuser.
+#define SUPERUSER_CAPABILITIES (~(capability_t)0)
+#define NO_CAPABILITIES ((capability_t)0)
+
+#define CAPABILITY_TO_BIT(capability) (1 << (capability))
+#define CAPABLE(thread, capability) \
+  ((thread)->ecap & CAPABILITY_TO_BIT(capability))
+
+typedef int capability_t;
+
+#endif
 
 // RICH: Should messages go away?
 typedef struct message
@@ -88,12 +134,28 @@ typedef struct __elk_thread
   struct __elk_thread *next;    // Next thread in any list.
   __elk_state state;            // The thread's state.
   int priority;                 // The thread's priority. 0 is highest.
-  MsgQueue queue;               // The thread's message queue.
   const char *name;             // The thread's name.
-  int pid;                      // The process id.
-  int tid;                      // The thread id.
   int *set_child_tid;           // The set child thread id address.
   int *clear_child_tid;         // The clear child thread id address.
+  pid_t pid;                    // The process id.
+  pid_t tid;                    // The thread id.
+  pid_t ppid;                   // The thread's parent id.
+  uid_t uid;                    // The thread's user id.
+  uid_t euid;                   // The thread's effective user id.
+  uid_t suid;                   // The thread's saved user id.
+  uid_t fuid;                   // The thread's file user id.
+  gid_t gid;                    // The thread's group id.
+  gid_t egid;                   // The thread's effective group id.
+  gid_t sgid;                   // The thread's saved group id.
+  gid_t fgid;                   // The thread's file group id.
+  pid_t pgid;                   // The thread's process group.
+  pid_t sid;                    // The thread's session id.
+#if defined(HAVE_CAPABILITY)
+  capability_t cap;             // The thread's capabilities.
+  capability_t ecap;            // The thread's effective capabilities.
+  capability_t icap;            // The thread's inheritable capabilities.
+#endif
+  MsgQueue queue;               // The thread's message queue.
 } __elk_thread;
 
 /* Schedule a list of threads.
@@ -102,8 +164,8 @@ void __elk_schedule(__elk_thread *list);
 
 /** Change the current thread's state to
  * something besides READY or RUNNING.
- * @param arg The tennative value returned. 
- * @param state Then new state to enter. 
+ * @param arg The tennative value returned.
+ * @param state Then new state to enter.
  */
 int __elk_change_state(int arg, __elk_state new_state);
 

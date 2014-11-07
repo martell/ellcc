@@ -1,6 +1,6 @@
 /** Handle thread timeout callbacks and wakeups.
  */
-#include <bits/syscall.h>       // For syscall numbers.
+#include <syscalls.h>           // For syscall numbers.
 #include <sys/time.h>
 #include <time.h>
 #include <errno.h>

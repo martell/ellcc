@@ -1,6 +1,6 @@
 /** Schedule threads for execution.
  */
-#include <bits/syscall.h>       // For syscall numbers.
+#include <syscalls.h>                   // For syscall numbers.
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <sched.h>
@@ -215,6 +215,11 @@ static const __elk_thread main_thread = {
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
+#if defined(HAVE_CAPABILITY)
+  .cap = SUPERUSER_CAPABILITIES,
+  .ecap = SUPERUSER_CAPABILITIES,
+  .icap = SUPERUSER_CAPABILITIES,
+#endif
 };
 
 /** Get the current thread id.
@@ -458,6 +463,7 @@ static int thread_create(__elk_thread **id,
 
   // Inherit the parent's attributes.
   *thread = *current;
+  thread->ppid = thread->tid;
 
   int s = alloc_tid(thread);
   if (s < 0) {
@@ -758,6 +764,290 @@ static int sys_exit_group(int status)
   return -ENOSYS;
 }
 
+static gid_t sys_getegid(void)
+{
+  return current->egid;
+}
+
+static uid_t sys_geteuid(void)
+{
+  return current->euid;
+}
+
+static gid_t sys_getgid(void)
+{
+  return current->gid;
+}
+
+static pid_t sys_getpgid(pid_t pid)
+{
+  if (pid == 0) {
+    return current->pgid;
+  }
+
+  if (pid < 0 || pid >= THREADS || threads[pid] == NULL) {
+    return -ESRCH;
+  }
+
+  return threads[pid]->pgid;
+}
+
+static pid_t sys_getpgrp(void)
+{
+  return current->pgid;
+}
+
+static pid_t sys_getpid(void)
+{
+  return current->pid;
+}
+
+static pid_t sys_getppid(void)
+{
+  return current->ppid;
+}
+
+static pid_t sys_getsid(void)
+{
+  return current->sid;
+}
+
+static pid_t sys_gettid(void)
+{
+  return current->tid;
+}
+
+static uid_t sys_getuid(void)
+{
+  return current->uid;
+}
+
+static int sys_setpgid(pid_t pid, pid_t pgid)
+{
+  // Check for a valid pgid.
+  if (pgid < 0 || pgid >= THREADS) {
+    return -EINVAL;
+  }
+
+  // Check for a valid pid.
+  if (pid < 0 || pid >= THREADS) {
+    return -EINVAL;
+  }
+
+  if (pid == 0) {
+    // Use the caller's pid.
+    pid = current->tid;
+  }
+
+  __elk_thread *pid_thread = threads[pid];
+  if (pid_thread == NULL) {
+    // Not an active pid.
+    return -ESRCH;
+  }
+
+  if (pid != current->tid && current->tid != pid_thread->ppid) {
+    // Not the current process or a child of the current process.
+    return -ESRCH;
+  }
+
+  if (pgid == 0) {
+    // Use the pid as the pgid.
+    pgid = pid_thread->tid;
+  }
+
+  __elk_thread *pgid_thread = threads[pgid];
+  if (pgid_thread == NULL) {
+    // Not an active id.
+    return -ESRCH;
+  }
+
+  if (pid_thread->sid != pgid_thread->sid) {
+    // Can't move to a different session.
+    return -EPERM;
+  }
+
+  if (pgid_thread->pgid == pgid_thread->tid) {
+    // Can't change the pgid of a process group leader.
+    return -EPERM;
+  }
+
+#if RICH
+  if (pgid_thread-><thread has executed execve>) {
+    return -EACCES;
+  }
+#endif
+
+  pgid_thread->pgid = pid;
+  return 0;
+}
+
+static int sys_setresgid(gid_t rgid, gid_t egid, gid_t sgid)
+{
+  if (rgid != -1) {
+    // Changing the gid.
+    if (!CAPABLE(current, CAP_SETGID) &&
+        rgid != current->gid &&
+        rgid != current->egid &&
+        rgid != current->sgid) {
+      // An Unprivileged user can only set the gid to its gid, egid, or sgid.
+      return -EPERM;
+    }
+  }
+
+  if (egid != -1) {
+    // Changing the egid.
+    if (!CAPABLE(current, CAP_SETGID) &&
+        egid != current->gid &&
+        egid != current->egid &&
+        egid != current->sgid) {
+      // An Unprivileged user can only set the egid to its gid or egid.
+      return -EPERM;
+    }
+  }
+
+  if (sgid != -1) {
+    // Changing the egid.
+    if (!CAPABLE(current, CAP_SETGID) &&
+        sgid != current->gid &&
+        sgid != current->egid &&
+        sgid != current->sgid) {
+      // An Unprivileged user can only set the sgid to its gid or egid.
+      return -EPERM;
+    }
+  }
+
+  if (rgid != -1) {
+    current->gid = rgid;
+  }
+
+  if (egid != -1) {
+    current->egid = egid;
+    current->fgid = egid;
+  }
+
+  if (sgid != -1) {
+    current->sgid = sgid;
+  }
+  return 0;
+}
+
+static int sys_setregid(gid_t rgid, gid_t egid)
+{
+  return sys_setresgid(rgid, egid, -1);
+}
+
+static int sys_setgid(gid_t gid)
+{
+  if (!CAPABLE(current, CAP_SETGID)) {
+    // Set only the effective gid.
+    return sys_setresgid(-1, gid, -1);
+  }
+
+  // Set all the gids.
+  return sys_setresgid(gid, gid, gid);
+}
+
+static int sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
+{
+#if defined(HAVE_CAPABILITY)
+  int rzero = current->uid == 0;
+  int ezero = current->euid = 0;
+  int szero = current->euid = 0;
+#endif
+  if (ruid != -1) {
+    // Changing the uid.
+    if (!CAPABLE(current, CAP_SETUID) &&
+        ruid != current->uid &&
+        ruid != current->euid &&
+        ruid != current->suid) {
+      // An Unprivileged user can only set the uid to its uid, euid, or suid.
+      return -EPERM;
+    }
+  }
+
+  if (euid != -1) {
+    // Changing the uid.
+    if (!CAPABLE(current, CAP_SETUID) &&
+        euid != current->uid &&
+        euid != current->euid &&
+        euid != current->suid) {
+      // An Unprivileged user can only set the euid to its uid or euid.
+      return -EPERM;
+    }
+  }
+
+  if (suid != -1) {
+    // Changing the uid.
+    if (!CAPABLE(current, CAP_SETUID) &&
+        suid != current->uid &&
+        suid != current->euid &&
+        suid != current->suid) {
+      // An Unprivileged user can only set the suid to its uid, euid, or suid.
+      return -EPERM;
+    }
+  }
+
+  if (ruid != -1) {
+    current->uid = ruid;
+  }
+
+  if (euid != -1) {
+    current->euid = euid;
+    current->fuid = euid;
+  }
+
+  if (suid != -1) {
+    current->suid = suid;
+  }
+
+#if defined(HAVE_CAPABILITY)
+  if (rzero || ezero || szero) {
+    // One or both started as zero.
+    if (current->uid && current->euid && current->suid) {
+      // All are non-zero. Nor more capabilities.
+      current->cap = NO_CAPABILITIES;
+      current->ecap = NO_CAPABILITIES;
+    } else if (current->euid) {
+      // No more effective capabilities.
+      current->ecap = NO_CAPABILITIES;
+    }
+  } else if (!ezero && current->euid == 0) {
+    // The euid changed from non-zero to zero: restore capabilities.
+    current->ecap = current->cap;
+  }
+#endif
+
+  return 0;
+}
+
+static int sys_setreuid(uid_t ruid, uid_t euid)
+{
+  return sys_setresuid(ruid, euid, -1);
+}
+
+static int sys_setuid(uid_t uid)
+{
+  if (!CAPABLE(current, CAP_SETGID)) {
+    // Set only the effective uid.
+    return sys_setresuid(-1, uid, -1);
+  }
+
+  // Set all the uids.
+  return sys_setresuid(uid, uid, uid);
+}
+
+static int sys_setsid(void)
+{
+  if (current->tid == current->pgid) {
+    // This is currently a process group leader.
+    return -EPERM;
+  }
+
+  current->pgid = current->tid;
+  // Set all the uids.
+  return current->tid;
+}
+
 static int tsCommand(int argc, char **argv)
 {
   if (argc <= 0) {
@@ -794,7 +1084,7 @@ CONSTRUCTOR()
   // Set up the main and idle threads.
 
   // The main thread is what's running right now.
-  current = malloc(sizeof(__elk_thread));    // RICH: bin.
+  current = malloc(sizeof(__elk_thread));
 
   // The main thread initializer.
   *current = main_thread;
@@ -809,18 +1099,40 @@ CONSTRUCTOR()
   // Add the "ts" command.
   command_insert("ts", tsCommand);
 
+#define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)
   // Set up a set_tid_address system call.
-  __elk_set_syscall(SYS_set_tid_address, sys_set_tid_address);
+  SYSCALL(set_tid_address);
 
   // Set up the sched_yield system call.
-  __elk_set_syscall(SYS_sched_yield, sys_sched_yield);
+  SYSCALL(sched_yield);
   // Set up the clone system call.
-  __elk_set_syscall(SYS_clone, sys_clone);
+  SYSCALL(clone);
   // Set up the futex system call.
-  __elk_set_syscall(SYS_futex, sys_futex);
+  SYSCALL(futex);
   // Set up the tkill system call.
-  __elk_set_syscall(SYS_tkill, sys_tkill);
+  SYSCALL(tkill);
   // Set up the exit system calls.
-  __elk_set_syscall(SYS_exit, sys_exit);
-  __elk_set_syscall(SYS_exit_group, sys_exit_group);
+  SYSCALL(exit);
+  SYSCALL(exit_group);
+
+  // Various id system calls.
+  SYSCALL(getegid);
+  SYSCALL(geteuid);
+  SYSCALL(getgid);
+  SYSCALL(getpgid);
+  SYSCALL(getpgrp);
+  SYSCALL(getpid);
+  SYSCALL(getppid);
+  SYSCALL(getsid);
+  SYSCALL(gettid);
+  SYSCALL(getuid);
+  SYSCALL(setgid);
+  SYSCALL(setpgid);
+  SYSCALL(setresgid);
+  SYSCALL(setregid);
+  SYSCALL(setgid);
+  SYSCALL(setresuid);
+  SYSCALL(setreuid);
+  SYSCALL(setuid);
+  SYSCALL(setsid);
 }

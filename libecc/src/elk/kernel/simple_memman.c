@@ -1,7 +1,7 @@
 /* Initialize a simple memory allocation handler.
  */
 #include <unistd.h>
-#include <bits/syscall.h>       // For syscall numbers.
+#include <syscalls.h>           // For syscall numbers.
 #include <sys/uio.h>            // For writev (used by printf().
 #include <sys/ioctl.h>
 #include <kernel.h>
