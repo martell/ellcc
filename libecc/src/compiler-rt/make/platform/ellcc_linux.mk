@@ -14,7 +14,9 @@ OS := linux
 CFLAGS := -Wall -Werror -O3 -fomit-frame-pointer
 -include $(INCLUDES)
 
-CommonFunctions := GCDAProfiling $(CommonFunctions)
+PROFILING_FUNCTIONS := GCDAProfiling InstrProfiling InstrProfilingBuffer \
+                       InstrProfilingFile InstrProfilingPlatformOther \
+                       InstrProfilingRuntime
 
 ###
 
@@ -58,7 +60,8 @@ FUNCTIONS.arm := $(CommonFunctions) \
 		 aeabi_memcpy \
 		 aeabi_dcmp \
 		 aeabi_fcmp \
-		 $(THUMB2_FUNCTIONS)
+		 $(THUMB2_FUNCTIONS) \
+		 $(PROFILING_FUNCTIONS)
 
 #FUNCTIONS.armeb := $(call set_difference, $(CommonFunctions), clear_cache) \
 
@@ -73,15 +76,21 @@ FUNCTIONS.armeb := $(CommonFunctions) \
 		 aeabi_memcpy \
 		 aeabi_dcmp \
 		 aeabi_fcmp \
-		 $(THUMB2_FUNCTIONS)
+		 $(THUMB2_FUNCTIONS) \
+		 $(PROFILING_FUNCTIONS)
 
-FUNCTIONS.i386 := $(CommonFunctions) $(ArchFunctions.i386)
+FUNCTIONS.i386 := $(CommonFunctions) $(ArchFunctions.i386) \
+		  $(PROFILING_FUNCTIONS)
 FUNCTIONS.microblaze := $(CommonFunctions) $(ArchFunctions.microblaze)
-FUNCTIONS.mips := $(CommonFunctions) $(ArchFunctions.mips)
-FUNCTIONS.mipsel := $(CommonFunctions) $(ArchFunctions.mipsel)
-FUNCTIONS.ppc := $(CommonFunctions) $(ArchFunctions.ppc)
+FUNCTIONS.mips := $(CommonFunctions) $(ArchFunctions.mips) \
+		  $(PROFILING_FUNCTIONS)
+FUNCTIONS.mipsel := $(CommonFunctions) $(ArchFunctions.mipsel) \
+		  $(PROFILING_FUNCTIONS)
+FUNCTIONS.ppc := $(CommonFunctions) $(ArchFunctions.ppc) \
+		  $(PROFILING_FUNCTIONS)
 # RICH: FUNCTIONS.ppc64 := $(CommonFunctions) $(ArchFunctions.ppc64)
-FUNCTIONS.x86_64 := $(CommonFunctions) $(ArchFunctions.x86_64)
+FUNCTIONS.x86_64 := $(CommonFunctions) $(ArchFunctions.x86_64) \
+		  $(PROFILING_FUNCTIONS)
 
 # Always use optimized variants.
 OPTIMIZED := 1

@@ -21,5 +21,7 @@ linker:
     - -L$R/lib/microblaze-linux-eng
   c_libraries:
     - -lelk
+    - '-('
     - -lc
     - -lcompiler_rt
+    - '-)'

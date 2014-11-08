@@ -25,5 +25,7 @@ linker:
     - -L$R/lib/mips-linux-engsf
   c_libraries:
     - -lelk
+    - '-('
     - -lc
     - -lcompiler_rt
+    - '-)'

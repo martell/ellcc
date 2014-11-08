@@ -38,8 +38,10 @@ const char ellcc_linux[] =
   "  profile_libraries:\n"
   "    - -lprofile_rt\n"
   "  c_libraries:\n"
+  "    - -(\n"                  // This is need for ARM and profiling.
   "    - -lc\n"
   "    - -lcompiler_rt\n"
+  "    - -)\n"
   "";
 
 const char arm_ellcc_linux[] =
@@ -64,11 +66,6 @@ const char arm_ellcc_linux[] =
   "  crtend: $R/lib/arm/linux/crtend.o\n"
   "  library_paths:\n"
   "    - -L $R/lib/arm/linux\n"
-  "  c_libraries:\n"
-  "    - -(\n"                  // This is needed for the ARM.
-  "    - -lc\n"
-  "    - -lcompiler_rt\n"
-  "    - -)\n"
   "";
 
 const char armeb_ellcc_linux[] =
@@ -95,11 +92,6 @@ const char armeb_ellcc_linux[] =
   "  crtend: $R/lib/armeb/linux/crtend.o\n"
   "  library_paths:\n"
   "    - -L $R/lib/armeb/linux\n"
-  "  c_libraries:\n"
-  "    - -(\n"                  // This is needed for the ARM.
-  "    - -lc\n"
-  "    - -lcompiler_rt\n"
-  "    - -)\n"
   "";
 
 const char i386_ellcc_linux[] =

@@ -24,5 +24,7 @@ linker:
     - -L$R/lib/ppc-linux-eng
   c_libraries:
     - -lelk
+    - '-('
     - -lc
     - -lcompiler_rt
+    - '-)'

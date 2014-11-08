@@ -1,6 +1,7 @@
 current SVN:
 
-* Added capabilities and a bunch get and set functions to ELK.
+* Added code coverage support functions to compiler-rt build.
+* Added capabilities and a bunch of get and set syscalls to ELK.
 * Update to LLVM r221448.
 * ELK _exit() implemented.
 * ELK threads now have process IDs.
