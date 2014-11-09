@@ -7,6 +7,7 @@ SRCPATH := ../../src
 VPATH :=
 CC = ../../../bin/ecc
 CXX = ../../../bin/ecc++
+AR = ../../../bin/ecc-ar
 include $(SRCPATH)/$(LIB)/sources.mk
 CFLAGS += -MD -MP
 CXXFLAGS += -MD -MP
@@ -52,7 +53,8 @@ install: all
 	$(OUT)echo Installing the $(LIB) library for $(TUPLE)
 	$(OUT)mkdir -p $(LIBDIR)
 	$(OUT)cp $(LIBNAME) $(CRTOBJS) $(LIBDIR)
-	$(OUT)if [ -d $(SRCPATH)/$(LIB)/include/$(ARCH) ] ; then \
+	$(OUT)if [ -d $(SRCPATH)/$(LIB)/include ] ; then \
+	  rm -fr ../../include/$(LIB) ; \
 	  mkdir -p ../../include/$(LIB) ; \
 	  cp -rp $(SRCPATH)/$(LIB)/include/* \
 		 ../../include/$(LIB) ; \
