@@ -96,7 +96,7 @@ static void callback(void *arg1, void *arg2)
         sem->waiters = p->next;
       }
       p->next = NULL;
-      context_set_return(p->saved_ctx, -ETIMEDOUT);
+      __elk_context_set_return(p->saved_ctx, -ETIMEDOUT);
       __elk_schedule(p);
     }
   }

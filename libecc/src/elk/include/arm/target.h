@@ -85,7 +85,7 @@ typedef struct context
   uint32_t cpsr;
 } __elk_context;
 
-static inline void context_set_return(__elk_context *cp, int value)
+static inline void __elk_context_set_return(__elk_context *cp, int value)
 {
   cp->a1 = value;
 }
