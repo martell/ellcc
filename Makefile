@@ -50,7 +50,8 @@ macrelease:
 	$(OUT)echo Enter the main.pennware.com password
 	$(OUT)scp ellcc-Mac*-$(VERSION).tgz main.pennware.com:/var/ftp/pub
 	$(OUT)ssh main.pennware.com chmod oug+r /var/ftp/pub/\*
-	$(OUT)scp ellcc-Mac*-$(VERSION).tgz main.pennware.com:web/ellcc/releases
+	$(OUT)ssh main.pennware.com cp /var/ftp/pub/ellcc-Mac*-$(VERSION).tgz \
+                                       web/ellcc/releases
 
 .PHONY: untagrelease
 untagrelease:
