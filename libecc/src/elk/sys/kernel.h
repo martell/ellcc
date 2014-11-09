@@ -19,13 +19,13 @@
 #define weak_alias(old, new) \
     extern __typeof(old) new __attribute__((weak, alias(#old)))
 
-#undef alias
-#define alias(old, new) \
+#undef strong_alias
+#define strong_alias(old, new) \
     extern __typeof(old) new __attribute__((alias(#old)))
 
 #define FEATURE(feature, function) \
 char __elk_ ## feature = 0; \
-alias(__elk_ ## feature, __elk_feature_ ## function);
+strong_alias(__elk_ ## feature, __elk_feature_ ## function);
 
 #define USE_FEATURE(feature) do \
 { \
