@@ -450,6 +450,7 @@ static int thread_create(__elk_thread **id,
       return -ENOMEM;
     }
 
+    //
     p += MIN_STACK;
   } else {
     p = stack;
@@ -669,6 +670,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 {
   // Create a new thread, copying context.
   __elk_thread *new;
+  // RICH: Move thread_create code here? Non-cloned threads?
   int s = thread_create(&new, entry, 0, regs, stack, flags, ctid, ptid);
   if (s < 0) {
     return s;
@@ -900,7 +902,7 @@ static int sys_setresgid(gid_t rgid, gid_t egid, gid_t sgid)
         egid != current->gid &&
         egid != current->egid &&
         egid != current->sgid) {
-      // An Unprivileged user can only set the egid to its gid or egid.
+      // An Unprivileged user can only set the egid to its gid, egid, or sgid.
       return -EPERM;
     }
   }
@@ -911,7 +913,7 @@ static int sys_setresgid(gid_t rgid, gid_t egid, gid_t sgid)
         sgid != current->gid &&
         sgid != current->egid &&
         sgid != current->sgid) {
-      // An Unprivileged user can only set the sgid to its gid or egid.
+      // An Unprivileged user can only set the sgid to its gid, egid, or sgid.
       return -EPERM;
     }
   }
@@ -966,18 +968,18 @@ static int sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
   }
 
   if (euid != -1) {
-    // Changing the uid.
+    // Changing the euid.
     if (!CAPABLE(current, CAP_SETUID) &&
         euid != current->uid &&
         euid != current->euid &&
         euid != current->suid) {
-      // An Unprivileged user can only set the euid to its uid or euid.
+      // An Unprivileged user can only set the euid to its uid, euid, or suid.
       return -EPERM;
     }
   }
 
   if (suid != -1) {
-    // Changing the uid.
+    // Changing the suid.
     if (!CAPABLE(current, CAP_SETUID) &&
         suid != current->uid &&
         suid != current->euid &&
@@ -1044,7 +1046,6 @@ static int sys_setsid(void)
   }
 
   current->pgid = current->tid;
-  // Set all the uids.
   return current->tid;
 }
 
