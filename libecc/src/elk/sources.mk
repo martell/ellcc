@@ -1,5 +1,6 @@
 CFLAGS += -g -Werror -Wall -std=c99 -D_XOPEN_SOURCE=700 -D_BSD_SOURCE
-CFLAGS += -I$(SRCPATH)/$(LIB)/include/$(ARCH) \
+CFLAGS += -I$(SRCPATH)/$(LIB)/sys/$(ARCH) \
+          -I$(SRCPATH)/$(LIB)/sys \
           -I$(SRCPATH)/$(LIB)/include
 
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/$(ARCH)

@@ -180,4 +180,9 @@ clean:
 distclean: clean
 	rm config
 
+# Allow "make <config>".
+Configs := $(patsubst %.notyet,,$(shell cd $(ELLCCBIN)../libecc/config; echo *))
+$(Configs):
+	$(OUT)$(MAKE) TARGET=$@
+
 .PHONY: run help clean
