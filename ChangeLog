@@ -1,5 +1,7 @@
 current SVN:
 
+*
+
 version 0.1.4:
 
 * Added code coverage support functions to compiler-rt build.
