@@ -30,6 +30,10 @@ release:
 	$(OUT)svn cp -m "Tag release $(VERSION)." \
 	  http://ellcc.org/svn/ellcc/trunk \
 	  http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+	$(OUT)echo Run "make sendrelease" to update download sites"
+
+.PHONY: sendrelease
+sendrelease:
 	$(OUT)echo Enter the ellcc.org svn password
 	$(OUT)svn cp -m "Tag current release." \
 	  http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION) \
@@ -47,6 +51,10 @@ macrelease:
 	$(OUT)$(MAKE) $(MFLAGS) \
 	  CLANG_VENDOR="ecc $(VERSION) based on" || exit 1
 	$(OUT)./macmkdist $(VERSION) || exit 1
+	$(OUT)echo Run "make sendmacrelease" to update download sites"
+
+.PHONY: sendmacrelease
+sendmacrelease:
 	$(OUT)echo Enter the main.pennware.com password
 	$(OUT)scp ellcc-Mac*-$(VERSION).tgz main.pennware.com:/var/ftp/pub
 	$(OUT)ssh main.pennware.com chmod oug+r /var/ftp/pub/\*
