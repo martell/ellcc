@@ -183,7 +183,6 @@ int __elk_switch(__elk_context **to, __elk_context **from);
 int __elk_switch_arg(int arg, __elk_context **to, __elk_context **from);
 
 /** Enter a new context.
- * @param arg The tenative return value when the context is restarted.
  * @param to The new context.
  */
 int __elk_enter(__elk_context **to);
