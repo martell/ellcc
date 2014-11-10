@@ -11,173 +11,8 @@
 #include <scheduler.h>
 #include <command.h>
 
-// Make the simple console a loadable feature.
+// Make the time syscalls commands a loadable feature.
 FEATURE(timer, timer)
-
-/** The timeout list.
- * This list is kept in order of expire times.
- */
-
-struct timeout {
-  struct timeout *next;
-  long long when;               // When the timeout will expire.
-  __elk_thread *waiter;         // The waiting thread...
-  TimerCallback callback;       // ... or the callback function.
-  void *arg1;                   // The callback function arguments.
-  void *arg2;
-};
-
-static __elk_lock timeout_lock;
-static struct timeout *timeouts;
-
-/** Make an entry in the sleeping list and sleep
- * or schedule a callback.
- * RICH: Mark realtime timers.
- */
-void *timer_wake_at(long long when,
-                    TimerCallback callback, void *arg1, void *arg2)
-{
-  struct timeout *tmo = malloc(sizeof(struct timeout));
-  tmo->next = NULL;
-  tmo->when = when;
-  tmo->callback = callback;
-  tmo->arg1 = arg1;
-  tmo->arg2 = arg2;
-  if (callback == NULL) {
-    // Put myself to sleep and wake me when it's over.
-    tmo->waiter = __elk_thread_self();
-  } else {
-    tmo->waiter = NULL;
-  }
-
-  __elk_lock_aquire(&timeout_lock);
-  // Search the list.
-  if (timeouts == NULL) {
-    timeouts = tmo;
-  } else {
-    struct timeout *p, *q;
-    for (p = timeouts, q = NULL; p && p->when < when; q = p, p = p->next)
-      continue;
-    if (p) {
-      // Insert befor p.
-      tmo->next = p;
-    }
-    if (q) {
-      // Insert after q.
-      q->next = tmo;
-    } else {
-      // Insert at the head.
-      timeouts = tmo;
-    }
-  }
-
-  // Set up the timeout.
-  timer_start(timeouts->when);
-  __elk_lock_release(&timeout_lock);
-  if (tmo->callback == NULL) {
-    // Put myself to sleep.
-    int s = __elk_change_state(0, TIMEOUT);
-    if (s != 0) {
-      if (s < 0) {
-        // An error (like EINTR) has occured.
-        errno = -s;
-      } else {
-        // Another system event has occured, handle it.
-      }
-      tmo  = NULL;
-    }
-  }
-  return tmo;         // Return the timeout identifier (opaque).
-}
-
-/** Cancel a previously scheduled wakeup.
- * This function will cancel a previously scheduled wakeup.
- * If the wakeup caused the caller to sleep, it will be rescheduled.
- * @param id The timer id.
- * @return 0 if cancelled, else the timer has probably already expired.
- */
-int timer_cancel_wake_at(void *id)
-{
-  if (id == NULL) return 0;           // Nothing pending.
-  int s = 0;
-  __elk_lock_aquire(&timeout_lock);
-  struct timeout *p, *q;
-  for (p = timeouts, q = NULL; p; q = p, p = p->next) {
-    if (p == id) {
-      break;
-    }
-  }
-
-  if (p) {
-    // Found it.
-    if (q) {
-      q->next = p->next;
-    } else {
-      timeouts = p->next;
-    }
-
-    if (p->waiter) {
-      // Wake up the sleeping thread.
-      p->waiter->next = NULL;
-      __elk_schedule(p->waiter);
-    }
-
-    free(p);
-  } else {
-    s = -1;                 // Not found.
-  }
-
-  __elk_lock_release(&timeout_lock);
-  return s;
-}
-
-/** Timer expired handler.
- * This function is called in an interrupt context.
- */
-long long timer_expired(long long when)
-{
-  __elk_lock_aquire(&timeout_lock);
-  __elk_thread *ready = NULL;
-  __elk_thread *next = NULL;
-  while (timeouts && timeouts->when <= when) {
-    struct timeout *tmo = timeouts;
-    timeouts = timeouts->next;
-    // If the timeout hasn't been cancelled.
-    if (tmo->waiter) {
-      // Make sure the earliest are scheduled first.
-      if (next) {
-        next->next = tmo->waiter;
-        next = next->next;
-      } else {
-        ready = tmo->waiter;
-        next = ready;
-      }
-      next->next = NULL;
-    }
-
-    if (tmo->callback) {
-      // Call the callback function.
-      tmo->callback(tmo->arg1, tmo->arg2);
-    }
-
-    free(tmo);
-  }
-
-  if (timeouts == NULL) {
-    when = 0;
-  } else {
-    when = timeouts->when;
-  }
-
-  __elk_lock_release(&timeout_lock);
-
-  if (ready) {
-    // Schedule the ready threads.
-    __elk_schedule(ready);
-  }
-
-  return when;        // Schedule the next timeout, if any.
-}
 
 static int sys_clock_getres(clockid_t clock, struct timespec *res)
 {
@@ -190,7 +25,7 @@ static int sys_clock_getres(clockid_t clock, struct timespec *res)
   case CLOCK_REALTIME:
     if (res) {
       res->tv_sec = 0;
-      res->tv_nsec = timer_getres();
+      res->tv_nsec = __elk_timer_getres();
     }
     break;
 
@@ -209,14 +44,14 @@ static int sys_clock_gettime(clockid_t clock, struct timespec *tp)
 
   switch (clock) {
   case CLOCK_REALTIME: {
-    long long realtime = timer_get_realtime();
+    long long realtime = __elk_timer_get_realtime();
     tp->tv_sec = realtime / 1000000000;
     tp->tv_nsec = realtime % 1000000000;
     break;
   }
 
   case CLOCK_MONOTONIC: {
-    long long monotonic = timer_get_monotonic();
+    long long monotonic = __elk_timer_get_monotonic();
     tp->tv_sec = monotonic / 1000000000;
     tp->tv_nsec = monotonic % 1000000000;
     break;
@@ -243,7 +78,7 @@ static int sys_clock_settime(clockid_t clock, const struct timespec *tp)
   case CLOCK_REALTIME: {
     // RICH: Permissions.
     long long realtime = tp->tv_sec * 1000000000LL + tp->tv_nsec;
-    timer_set_realtime(realtime);
+    __elk_timer_set_realtime(realtime);
     break;
   }
 
@@ -304,13 +139,13 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
   long long now;
   switch (clock) {
   case CLOCK_REALTIME: {
-    now = timer_get_realtime();
+    now = __elk_timer_get_realtime();
     // RICH: need to adjust.
     break;
   }
 
   case CLOCK_MONOTONIC: {
-    now = timer_get_monotonic();
+    now = __elk_timer_get_monotonic();
     break;
   }
 
@@ -330,7 +165,7 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
     return 0;
   }
 
-  timer_wake_at(when, NULL, 0, 0);
+  __elk_timer_wake_at(when, NULL, 0, 0);
   return 0;
 }
 
@@ -455,9 +290,9 @@ static int timeCommand(int argc, char **argv)
     return COMMAND_ERROR;
   }
 
-  long long t = timer_get_monotonic();
+  long long t = __elk_timer_get_monotonic();
   int s = run_command(argc - 1, argv + 1);
-  t = timer_get_monotonic() - t;
+  t = __elk_timer_get_monotonic() - t;
   printf("elapsed time: %ld.%09ld sec\n", (long)(t / 1000000000),
          (long)(t % 1000000000));
   return s;

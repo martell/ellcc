@@ -63,12 +63,11 @@ typedef struct envelope {
   Message message;
 } Envelope;
 
-struct __elk_thread;
 typedef struct queue
 {
   Envelope *head;               // The head of the queue.
   Envelope *tail;               // The tail of the queue.
-  struct __elk_thread *waiter;  // Any threads waiting on the queue.
+  struct thread *waiter;        // Any threads waiting on the queue.
   __elk_lock lock;
 } MsgQueue;
 
@@ -126,83 +125,6 @@ static const char *state_names[LASTSTATE] =
 };
 #endif
 
-typedef struct __elk_thread
-{
-  // The saved_ctx and tls fields must be first in the thread struct.
-  __elk_context *saved_ctx;     // The thread's saved context.
-  void *tls;                    // The thread's user space storage.
-  struct __elk_thread *next;    // Next thread in any list.
-  __elk_state state;            // The thread's state.
-  int priority;                 // The thread's priority. 0 is highest.
-  const char *name;             // The thread's name.
-  int *set_child_tid;           // The set child thread id address.
-  int *clear_child_tid;         // The clear child thread id address.
-  pid_t pid;                    // The process id.
-  pid_t tid;                    // The thread id.
-  pid_t ppid;                   // The thread's parent id.
-  uid_t uid;                    // The thread's user id.
-  uid_t euid;                   // The thread's effective user id.
-  uid_t suid;                   // The thread's saved user id.
-  uid_t fuid;                   // The thread's file user id.
-  gid_t gid;                    // The thread's group id.
-  gid_t egid;                   // The thread's effective group id.
-  gid_t sgid;                   // The thread's saved group id.
-  gid_t fgid;                   // The thread's file group id.
-  pid_t pgid;                   // The thread's process group.
-  pid_t sid;                    // The thread's session id.
-#if defined(HAVE_CAPABILITY)
-  capability_t cap;             // The thread's capabilities.
-  capability_t ecap;            // The thread's effective capabilities.
-  capability_t icap;            // The thread's inheritable capabilities.
-#endif
-  MsgQueue queue;               // The thread's message queue.
-} __elk_thread;
-
-/* Schedule a list of threads.
- */
-void __elk_schedule(__elk_thread *list);
-
-/** Change the current thread's state to
- * something besides READY or RUNNING.
- * @param arg The tennative value returned.
- * @param state Then new state to enter.
- */
-int __elk_change_state(int arg, __elk_state new_state);
-
-/** Switch to a new context.
- * @param to The new context.
- * @param from A place to store the current context.
- */
-int __elk_switch(__elk_context **to, __elk_context **from);
-
-/** Switch to a new context.
- * @param arg The tenative return value when the context is restarted.
- * @param to The new context.
- * @param from A place to store the current context.
- */
-int __elk_switch_arg(int arg, __elk_context **to, __elk_context **from);
-
-/** Enter a new context.
- * @param to The new context.
- */
-int __elk_enter(__elk_context **to);
-
-/** Set up a new context.
- * @param savearea Where to put the finished stack pointer.
- * @param entry The context entry point (0 if return to caller).
- * @param mode The context execution mode.
- * @param arg1 The first argument to the entry point.
- * @param arg2 The second argument to the entry point.
- * @return 1 to indicate non-clone, else arg1.
- */
-
-int __elk_new_context(__elk_context **savearea, void (entry)(void),
-                      int mode, long arg);
-
-/** Get the current thread pointer.
- */
-__elk_thread *__elk_thread_self(void);
-
 /** futex operations.
  */
 #define FUTEX_WAIT              0
@@ -216,6 +138,18 @@ __elk_thread *__elk_thread_self(void);
 #define FUTEX_TRYLOCK_PI        8
 #define FUTEX_WAIT_BITSET       9
 #define FUTEX_CLOCK_REALTIME    256
+
+/** Timer expired handler.
+ * This function is called in an interrupt context.
+ */
+long long __elk_timer_expired(long long when);
+
+/** Make an entry in the sleeping list and sleep
+ * or schedule a callback.
+ */
+typedef void (*TimerCallback)(void *, void *);
+void *__elk_timer_wake_at(long long when,
+                    TimerCallback callback, void *arg1, void *arg2);
 
 /** Get the current thread id.
  */

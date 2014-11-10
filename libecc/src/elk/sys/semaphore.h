@@ -10,7 +10,7 @@
 typedef struct {
   __elk_lock lock;
   unsigned count;
-  struct __elk_thread *waiters;
+  struct thread *waiters;
 } __elk_sem_t;
 
 /** Initialize a semaphore.

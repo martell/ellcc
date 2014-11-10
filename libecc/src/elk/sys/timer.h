@@ -4,47 +4,33 @@
 #define _timer_h_
 
 /** Get the timer resolution in nanoseconds.
+ * This function is supplied by platform specific code. e.g. arm/arm_sp804.c
  */
-long timer_getres(void);
-
-/* Get the realtime offset.
- */
-long long timer_get_realtime_offset(void);
-
-/** Get the realtime timer.
- */
-long long timer_get_realtime(void);
+long __elk_timer_getres(void);
 
 /** Set the realtime timer.
+ * This function is supplied by platform specific code. e.g. arm/arm_sp804.c
  */
-void timer_set_realtime(long long value);
+void __elk_timer_set_realtime(long long value);
+
+/** Get the realtime timer.
+ * This function is supplied by platform specific code. e.g. arm/arm_sp804.c
+ */
+long long __elk_timer_get_realtime(void);
 
 /** Get the monotonic timer.
+ * This function is supplied by platform specific code. e.g. arm/arm_sp804.c
  */
-long long timer_get_monotonic(void);
+long long __elk_timer_get_monotonic(void);
+
+/* Get the realtime offset.
+ * This function is supplied by platform specific code. e.g. arm/arm_sp804.c
+ */
+long long __elk_timer_get_realtime_offset(void);
 
 /** Start the sleep timer.
+ * This function is supplied by platform specific code. e.g. arm/arm_sp804.c
  */
-void timer_start(long long when);
-
-/** Timer expired handler.
- * This function is called in an interrupt context.
- */
-long long timer_expired(long long when);
-
-/** Make an entry in the sleeping list and sleep
- * or schedule a callback.
- */
-typedef void (*TimerCallback)(void *, void *);
-void *timer_wake_at(long long when,
-                    TimerCallback callback, void *arg1, void *arg2);
-
-/** Cancel a previously scheduled wakeup.
- * This function will cancel a previously scheduled wakeup.
- * If the wakeup caused the caller to sleep, it will be rescheduled.
- * @param id The timer id.
- * @return 0 if cancelled, else the timer has probably already expired.
- */
-int timer_cancel_wake_at(void *id);
+void __elk_timer_start(long long when);
 
 #endif // _timer_h_

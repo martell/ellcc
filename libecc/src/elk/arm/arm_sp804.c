@@ -5,6 +5,7 @@
 #include <time.h>
 #include "kernel.h"
 #include "timer.h"
+#include "scheduler.h"
 #include "irq.h"
 #include "arm_sp804.h"
 
@@ -17,21 +18,21 @@ static long long timeout;                   // When the next timeout occurs.
 
 /* Get the timer resolution.
  */
-long timer_getres(void)
+long __elk_timer_getres(void)
 {
   return resolution;
 }
 
 /* Get the realtime offset.
  */
-long long timer_get_realtime_offset(void)
+long long __elk_timer_get_realtime_offset(void)
 {
   return realtime_offset;
 }
 
 /** Get the monotonic timer.
  */
-long long timer_get_monotonic(void)
+long long __elk_timer_get_monotonic(void)
 {
   time_t secs;
   long nsecs;
@@ -46,9 +47,9 @@ long long timer_get_monotonic(void)
 
 /** Get the realtime timer.
  */
-long long timer_get_realtime(void)
+long long __elk_timer_get_realtime(void)
 {
-  long long value = timer_get_monotonic();
+  long long value = __elk_timer_get_monotonic();
   __elk_lock_aquire(&lock);
   value += realtime_offset;
   __elk_lock_release(&lock);
@@ -57,9 +58,9 @@ long long timer_get_realtime(void)
 
 /** Set the realtime timer.
  */
-void timer_set_realtime(long long value)
+void __elk_timer_set_realtime(long long value)
 {
-  long long mt = timer_get_monotonic();
+  long long mt = __elk_timer_get_monotonic();
   __elk_lock_aquire(&lock);
   realtime_offset = value - mt;
   __elk_lock_release(&lock);
@@ -67,13 +68,13 @@ void timer_set_realtime(long long value)
 
 /** Check to see if a timeout interrupt is needed.
  */
-void check_timeout()
+static void check_timeout()
 {
   if (!timeout_active) {
     return;
   }
 
-  long long mt = timer_get_monotonic();
+  long long mt = __elk_timer_get_monotonic();
   if (timeout - mt > 1000000000) {
     // More than a second away.
     return;
@@ -103,13 +104,13 @@ static void sec_interrupt(void *arg)
 
 /** Start the sleep timer.
  */
-void timer_start(long long when)
+void __elk_timer_start(long long when)
 {
   long long mt;
   do {
-    mt = timer_get_monotonic();
+    mt = __elk_timer_get_monotonic();
     if (when <= mt) {
-      when = timer_expired(mt);
+      when = __elk_timer_expired(mt);
       if (when == 0) {
         timeout_active = 0;
         return;
@@ -125,15 +126,15 @@ void timer_start(long long when)
 
 static void short_interrupt(void *arg)
 {
-  long long mt = timer_get_monotonic();
-  mt = timer_expired(mt);
+  long long mt = __elk_timer_get_monotonic();
+  mt = __elk_timer_expired(mt);
   if (mt == 0) {
     __elk_lock_aquire(&lock);
     timeout_active = 0;
     __elk_lock_release(&lock);
     return;
   }
-  timer_start(mt);
+  __elk_timer_start(mt);
 }
 
 static const IRQHandler timer_irq =

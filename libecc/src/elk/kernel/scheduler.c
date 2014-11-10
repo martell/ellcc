@@ -11,6 +11,7 @@
 #include <timer.h>
 #define DEFINE_STRINGS
 #include <scheduler.h>
+#include <semaphore.h>
 #include <command.h>
 
 // Make the scheduler a loadable feature.
@@ -25,16 +26,96 @@ FEATURE(scheduler, scheduler)
 
 #define MIN_STACK   4096                // The minimum stack size for a thread.
 
+/** A thread is an indepenent executable context in ELK.
+ * A thread is identified by a unique identifier, the thread id (tid).
+ * Threads are grouped in to processes, identified by a process id (pid).
+ * The tid of the first thread in a process is the pid of a process.
+ * All threads have a parent id (ppid), which is the tid of the thread
+ * that created them.
+ * The threads in a process share all accessed system resources, e.g.
+ * memory space, file descriptors, etc. but they each have an independent
+ * thread structure, defined below, and each thread has a separate stack.
+ * The first process in ELK (with pid == 0) is the kernel process.
+ * Each thread has a user id (uid) associated with it. Except for uid
+ * 0, which in the Unix traditional is the "root" user, uids are arbitrary.
+ */
+typedef struct thread
+{
+  // The saved_ctx and tls fields must be first in the thread struct.
+  __elk_context *saved_ctx;     // The thread's saved context.
+  void *tls;                    // The thread's user space storage.
+  struct thread *next;          // Next thread in any list.
+  __elk_state state;            // The thread's state.
+  int priority;                 // The thread's priority. 0 is highest.
+  const char *name;             // The thread's name.
+  int *set_child_tid;           // The set child thread id address.
+  int *clear_child_tid;         // The clear child thread id address.
+  pid_t pid;                    // The process id.
+  pid_t tid;                    // The thread id.
+  pid_t ppid;                   // The thread's parent id.
+  uid_t uid;                    // The thread's user id.
+  uid_t euid;                   // The thread's effective user id.
+  uid_t suid;                   // The thread's saved user id.
+  uid_t fuid;                   // The thread's file user id.
+  gid_t gid;                    // The thread's group id.
+  gid_t egid;                   // The thread's effective group id.
+  gid_t sgid;                   // The thread's saved group id.
+  gid_t fgid;                   // The thread's file group id.
+  pid_t pgid;                   // The thread's process group.
+  pid_t sid;                    // The thread's session id.
+#if defined(HAVE_CAPABILITY)
+  capability_t cap;             // The thread's capabilities.
+  capability_t ecap;            // The thread's effective capabilities.
+  capability_t icap;            // The thread's inheritable capabilities.
+#endif
+  MsgQueue queue;               // The thread's message queue.
+} thread;
+
+static int timer_cancel_wake_at(void *id);
+
+/** Switch to a new context.
+ * @param to The new context.
+ * @param from A place to store the current context.
+ * This function is implemented in crt1.S.
+ */
+int __elk_switch(__elk_context **to, __elk_context **from);
+
+/** Switch to a new context.
+ * @param arg The tenative return value when the context is restarted.
+ * @param to The new context.
+ * @param from A place to store the current context.
+ * This function is implemented in crt1.S.
+ */
+int __elk_switch_arg(int arg, __elk_context **to, __elk_context **from);
+
+/** Enter a new context.
+ * @param to The new context.
+ * This function is implemented in crt1.S.
+ */
+int __elk_enter(__elk_context **to);
+
+/** Set up a new context.
+ * @param savearea Where to put the finished stack pointer.
+ * @param entry The context entry point (0 if return to caller).
+ * @param mode The context execution mode.
+ * @param arg1 The first argument to the entry point.
+ * @param arg2 The second argument to the entry point.
+ * @return 1 to indicate non-clone, else arg1.
+ * This function is implemented in crt1.S.
+ */
+int __elk_new_context(__elk_context **savearea, void (entry)(void),
+                      int mode, long arg);
+
 typedef struct thread_queue {
-    __elk_thread *head;
-    __elk_thread *tail;
+    thread *head;
+    thread *tail;
 } ThreadQueue;
 
 #define IDLE_STACK 4096                 // The idle thread stack size.
-static __elk_thread idle_thread[PROCESSORS];  // The idle threads.
+static thread idle_thread[PROCESSORS];  // The idle threads.
 static char *idle_stack[PROCESSORS][IDLE_STACK];
 
-static void schedule_nolock(__elk_thread *list);
+static void schedule_nolock(thread *list);
 
 /* The tid_lock protects the thread id pool.
  */
@@ -45,7 +126,7 @@ static int *tid_out;
 
 /** The thread id to thread mapping.
  */
-static __elk_thread *threads[THREADS];
+static thread *threads[THREADS];
 
 /** Initialize the tid pool.
  */
@@ -67,7 +148,7 @@ static void tid_initialize(void)
 
 /** Allocate a thread id to a new thread.
  */
-static int alloc_tid(__elk_thread *tp)
+static int alloc_tid(thread *tp)
 {
   __elk_lock_aquire(&tid_lock);
   if (tid_out == tid_in) {
@@ -149,7 +230,7 @@ static int priority;                    // The current highest priority.
 #if PRIORITIES > 1 && PROCESSORS > 1
 // Multiple priorities and processors.
 static int processor() { return 0; }    // RICH: For now.
-static __elk_thread *current[PROCESSORS];
+static thread *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];   // The ready to run list.
 static long irq_state[PROCESSORS];      // Set if an IRQ is active.
@@ -164,7 +245,7 @@ static long irq_state[PROCESSORS];      // Set if an IRQ is active.
 #elif PROCESSORS > 1
 // Multiple processors, one priority.
 static int processor() { return 0; }    // RICH: For now.
-static __elk_thread *current[PROCESSORS];
+static thread *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
 static long irq_state[PROCESSORS];      // Set if an IRQ is active.
@@ -178,7 +259,7 @@ static long irq_state[PROCESSORS];      // Set if an IRQ is active.
 
 #elif PRIORITIES > 1
 // One processor, multiple priorities.
-static __elk_thread *current;           // The current running thread.
+static thread *current;
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];
 static long irq_state;                  // Set if an IRQ is active.
@@ -192,7 +273,7 @@ static long irq_state;                  // Set if an IRQ is active.
 
 #else
 // One processor, one priority.
-static __elk_thread *current;           // The current running thread.
+static thread *current;
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
 static long irq_state;                  // Set if an IRQ is active.
@@ -211,7 +292,7 @@ static long long slice_time = 5000000;  // The time slice period (ns).
 /**** End of ready lock protected variables. ****/
 
 // The main thread's initial values.
-static const __elk_thread main_thread = {
+static const thread main_thread = {
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
@@ -230,6 +311,7 @@ int gettid(void)
 }
 
 /** Enter the IRQ state.
+ * This function is called from crt1.S.
  */
 void *__elk_enter_irq(void)
 {
@@ -245,6 +327,7 @@ void __elk_unlock_ready(void)
 }
 
 /** Leave the IRQ state.
+ * This function is called from crt1.S.
  */
 void *__elk_leave_irq(void)
 {
@@ -255,28 +338,29 @@ void *__elk_leave_irq(void)
 }
 
 /** Get the current thread pointer.
+ * This function is called from crt1.S.
  */
-__elk_thread *__elk_thread_self()
+thread *__elk_thread_self()
 {
   return current;
 }
 
 /* Insert a thread in the ready queue.
  */
-static inline void insert_thread(__elk_thread *thread)
+static inline void insert_thread(thread *tp)
 {
   // A simple FIFO insertion.
-  if (ready_tail(thread->priority)) {
-    ready_tail(thread->priority)->next = thread;
+  if (ready_tail(tp->priority)) {
+    ready_tail(tp->priority)->next = tp;
   } else {
-    ready_head(thread->priority) = thread;
+    ready_head(tp->priority) = tp;
   }
-  ready_tail(thread->priority) = thread;
-  thread->next = NULL;
-  thread->state = READY;
-  if (priority > thread->priority) {
+  ready_tail(tp->priority) = tp;
+  tp->next = NULL;
+  tp->state = READY;
+  if (priority > tp->priority) {
     // A higher priority is ready.
-    priority = thread->priority;
+    priority = tp->priority;
   }
 }
 
@@ -286,8 +370,8 @@ static inline void insert_thread(__elk_thread *thread)
 static void slice_callback(void *arg1, void *arg2)
 {
   __elk_lock_aquire(&ready_lock);
-  if ((__elk_thread *)arg1 == current) {
-    schedule_nolock((__elk_thread *)arg1);
+  if ((thread *)arg1 == current) {
+    schedule_nolock((thread *)arg1);
     return;
   }
   __elk_lock_release(&ready_lock);
@@ -332,9 +416,9 @@ static void get_running(void)
   }
   if (timeslice) {
     // Someone is waiting in the ready queue. Lets be fair.
-    long long when = timer_get_monotonic(); // Get the current time.
+    long long when = __elk_timer_get_monotonic(); // Get the current time.
     when += slice_time;                     // Add the slice time.
-    slice_tmo = timer_wake_at(when, slice_callback, (void *)current, 0);
+    slice_tmo = __elk_timer_wake_at(when, slice_callback, (void *)current, 0);
   }
 
   current->state = RUNNING;
@@ -344,9 +428,9 @@ static void get_running(void)
 /* Schedule a list of threads.
  * The ready lock has been aquired.
  */
-static void schedule_nolock(__elk_thread *list)
+static void schedule_nolock(thread *list)
 {
-  __elk_thread *next;
+  thread *next;
 
   // Insert the thread list and the current thread in the ready list.
   int sched_current = 0;
@@ -373,14 +457,14 @@ static void schedule_nolock(__elk_thread *list)
   }
 
   // Switch to the new thread.
-  __elk_thread *me = current;
+  thread *me = current;
   get_running();
   __elk_switch(&current->saved_ctx, &me->saved_ctx);
 }
 
 /* Schedule a list of threads.
  */
-void __elk_schedule(__elk_thread *list)
+static void schedule(thread *list)
 {
   __elk_lock_aquire(&ready_lock);
   schedule_nolock(list);
@@ -389,7 +473,7 @@ void __elk_schedule(__elk_thread *list)
 /** Delete a thread.
  * The thread has been removed from all lists.
  */
-static void thread_delete(__elk_thread *id)
+static void thread_delete(thread *id)
 {
   release_tid(id->tid);
   free(id);
@@ -412,7 +496,7 @@ static int nolock_change_state(int arg, __elk_state new_state)
     return __elk_enter(&current->saved_ctx);
   }
 
-  __elk_thread *me = current;
+  thread *me = current;
   me->state = new_state;
   get_running();
   return __elk_switch_arg(arg, &current->saved_ctx, &me->saved_ctx);
@@ -421,7 +505,7 @@ static int nolock_change_state(int arg, __elk_state new_state)
 /** Change the current thread's state to
  * something besides READY or RUNNING.
  */
-int __elk_change_state(int arg, __elk_state new_state)
+static int change_state(int arg, __elk_state new_state)
 {
   __elk_lock_aquire(&ready_lock);
   return nolock_change_state(arg, new_state);
@@ -431,13 +515,13 @@ int __elk_change_state(int arg, __elk_state new_state)
  */
 static int sys_sched_yield(void)
 {
-  __elk_schedule(current);
+  schedule(current);
   return 0;
 }
 
 /* Create a new thread.
  */
-static int thread_create(__elk_thread **id,
+static int thread_create(thread **id,
                          void (*entry)(void), int priority,
                          void *tls, void *stack, unsigned long flags,
                          int *ctid, int *ptid)
@@ -456,64 +540,64 @@ static int thread_create(__elk_thread **id,
     p = stack;
   }
 
-  __elk_thread *thread = malloc(sizeof(__elk_thread));    // RICH: bin.
-  if (!thread) {
+  thread *tp = malloc(sizeof(thread));    // RICH: bin.
+  if (!tp) {
     if (!stack) free(p);
     return -ENOMEM;
   }
 
   // Inherit the parent's attributes.
-  *thread = *current;
-  thread->ppid = thread->tid;
+  *tp = *current;
+  tp->ppid = tp->tid;
 
-  int s = alloc_tid(thread);
+  int s = alloc_tid(tp);
   if (s < 0) {
     if (!stack) free(p);
-    free(thread);
+    free(tp);
     return -EAGAIN;
   }
 
   // Record the TLS.
-  thread->tls = tls;
+  tp->tls = tls;
   if (flags & CLONE_CHILD_CLEARTID) {
     VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_RD);
-    thread->clear_child_tid = ctid;
+    tp->clear_child_tid = ctid;
   }
 
   if (flags & CLONE_CHILD_SETTID) {
     VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
-    thread->set_child_tid = ctid;
+    tp->set_child_tid = ctid;
     // RICH: This write should be in the child's address space.
     if (ctid) {
-      *ctid = thread->tid;
+      *ctid = tp->tid;
     }
   }
 
   if (flags & CLONE_PARENT_SETTID) {
     VALIDATE_ADDRESS(ptid, sizeof(*ptid), VALID_WR);
     // RICH: This write should also be in the child's address space.
-    *ptid = thread->tid;
+    *ptid = tp->tid;
   }
 
-  thread->next = NULL;
+  tp->next = NULL;
   if (priority == 0) {
     priority = DEFAULT_PRIORITY;
   } else if (priority >= PRIORITIES) {
     priority = PRIORITIES - 1;
   }
-  thread->priority = priority;
+  tp->priority = priority;
 
-  thread->set_child_tid = NULL;
-  thread->clear_child_tid = NULL;
-  thread->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
+  tp->set_child_tid = NULL;
+  tp->clear_child_tid = NULL;
+  tp->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
 
   __elk_context *cp = (__elk_context *)p;
-  thread->saved_ctx = cp;
+  tp->saved_ctx = cp;
   // Copy registers.
   *(cp - 1) = *current->saved_ctx;
 
-  __elk_new_context(&thread->saved_ctx, entry, INITIAL_PSR, 0);
-  *id = thread;
+  __elk_new_context(&tp->saved_ctx, entry, INITIAL_PSR, 0);
+  *id = tp;
   return 0;
 }
 
@@ -522,7 +606,7 @@ static int thread_create(__elk_thread **id,
 int __elk_send_message_q(MsgQueue *queue, Message msg)
 {
   if (queue == NULL) {
-    queue = &__elk_thread_self()->queue;
+    queue = &current->queue;
   }
   Envelope *envelope = (Envelope *)malloc(sizeof(Envelope));
   if (!envelope) {
@@ -530,7 +614,7 @@ int __elk_send_message_q(MsgQueue *queue, Message msg)
   }
   envelope->message = msg;
 
-  __elk_thread *wakeup = NULL;
+  thread *wakeup = NULL;
   envelope->next = NULL;
   __elk_lock_aquire(&queue->lock);
   // Queue a envelope.
@@ -548,7 +632,7 @@ int __elk_send_message_q(MsgQueue *queue, Message msg)
   __elk_lock_release(&queue->lock);
   if (wakeup) {
     // Schedule the sleeping threads.
-    __elk_schedule(wakeup);
+    schedule(wakeup);
   }
   return 0;
 }
@@ -560,19 +644,19 @@ int __elk_send_message(int tid, Message msg)
   if (tid < 0 || tid >= THREADS) {
     return EINVAL;
   }
-  __elk_thread *thread = threads[tid];
+  thread *tp = threads[tid];
 
-  if (thread == NULL) {
+  if (tp == NULL) {
     return ESRCH;
   }
 
-  return __elk_send_message_q(&thread->queue, msg);
+  return __elk_send_message_q(&tp->queue, msg);
 }
 
 Message get_message(MsgQueue *queue)
 {
   if (queue == NULL) {
-    queue = &__elk_thread_self()->queue;
+    queue = &current->queue;
   }
 
   Envelope *envelope = NULL;;
@@ -590,7 +674,7 @@ Message get_message(MsgQueue *queue)
       // Sleep until something becomes available.
       // Remove me from the ready list.
       __elk_lock_aquire(&ready_lock);
-      __elk_thread *me = current;
+      thread *me = current;
       // Add me to the waiter list.
       me->next = queue->waiter;
       queue->waiter = me;
@@ -620,7 +704,7 @@ Message get_message(MsgQueue *queue)
 Message get_message_nowait(MsgQueue *queue)
 {
   if (queue == NULL) {
-    queue = &__elk_thread_self()->queue;
+    queue = &current->queue;
   }
 
   Envelope *envelope = NULL;
@@ -669,7 +753,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
                       long arg5, long data, void (*entry)(void))
 {
   // Create a new thread, copying context.
-  __elk_thread *new;
+  thread *new;
   // RICH: Move thread_create code here? Non-cloned threads?
   int s = thread_create(&new, entry, 0, regs, stack, flags, ctid, ptid);
   if (s < 0) {
@@ -677,7 +761,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   }
 
   // Schedule the thread.
-  __elk_schedule(new);
+  schedule(new);
   return new->tid;
 }
 
@@ -717,20 +801,20 @@ static int sys_tkill(int tid, int sig)
     return -EINVAL;
   }
 
-  __elk_thread *thread = threads[tid];
-  if (thread == NULL) {
+  thread *tp = threads[tid];
+  if (tp == NULL) {
     // Invalid thread id.
     return -ESRCH;
   }
 
   __elk_lock_aquire(&ready_lock);
-  if (thread == current) {
+  if (tp == current) {
     // The currently running thread is being signaled.
-  } else if (thread->state == READY) {
+  } else if (tp->state == READY) {
     // Remove this thread from its ready list.
-    __elk_thread *p, *l;
-    for (p = ready_head(thread->priority), l = NULL;
-         p != thread; l = p, p = p->next) {
+    thread *p, *l;
+    for (p = ready_head(tp->priority), l = NULL;
+         p != tp; l = p, p = p->next) {
       continue;
     }
 
@@ -744,7 +828,7 @@ static int sys_tkill(int tid, int sig)
     if (l) {
       l->next = p->next;
     } else {
-      ready_head(thread->priority) = p->next;
+      ready_head(tp->priority) = p->next;
     }
   } else {
     printf("RICH: need to handle non-current, non-ready threads\n");
@@ -758,7 +842,7 @@ static int sys_tkill(int tid, int sig)
 
 static void sys_exit(int status)
 {
-  __elk_change_state(0, EXITING);
+  change_state(0, EXITING);
 }
 
 static int sys_exit_group(int status)
@@ -841,7 +925,7 @@ static int sys_setpgid(pid_t pid, pid_t pgid)
     pid = current->tid;
   }
 
-  __elk_thread *pid_thread = threads[pid];
+  thread *pid_thread = threads[pid];
   if (pid_thread == NULL) {
     // Not an active pid.
     return -ESRCH;
@@ -857,7 +941,7 @@ static int sys_setpgid(pid_t pid, pid_t pgid)
     pgid = pid_thread->tid;
   }
 
-  __elk_thread *pgid_thread = threads[pgid];
+  thread *pgid_thread = threads[pgid];
   if (pgid_thread == NULL) {
     // Not an active id.
     return -ESRCH;
@@ -1059,7 +1143,7 @@ static int tsCommand(int argc, char **argv)
   printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %-10.10s \n",
          "PID", "TID", "TADR", "STATE", "PRI", "NAME");
   for (int i = 0;  i < THREADS; ++i) {
-    __elk_thread *t =  threads[i];
+    thread *t =  threads[i];
     if (t == NULL) {
       continue;
     }
@@ -1075,6 +1159,340 @@ static int tsCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
+/** The timeout list.
+ * This list is kept in order of expire times.
+ */
+
+struct timeout {
+  struct timeout *next;
+  long long when;               // When the timeout will expire.
+  thread *waiter;               // The waiting thread...
+  TimerCallback callback;       // ... or the callback function.
+  void *arg1;                   // The callback function arguments.
+  void *arg2;
+};
+
+static __elk_lock timeout_lock;
+static struct timeout *timeouts;
+
+/** Make an entry in the sleeping list and sleep
+ * or schedule a callback.
+ * RICH: Mark realtime timers.
+ */
+void *__elk_timer_wake_at(long long when,
+                    TimerCallback callback, void *arg1, void *arg2)
+{
+  struct timeout *tmo = malloc(sizeof(struct timeout));
+  tmo->next = NULL;
+  tmo->when = when;
+  tmo->callback = callback;
+  tmo->arg1 = arg1;
+  tmo->arg2 = arg2;
+  if (callback == NULL) {
+    // Put myself to sleep and wake me when it's over.
+    tmo->waiter = current;
+  } else {
+    tmo->waiter = NULL;
+  }
+
+  __elk_lock_aquire(&timeout_lock);
+  // Search the list.
+  if (timeouts == NULL) {
+    timeouts = tmo;
+  } else {
+    struct timeout *p, *q;
+    for (p = timeouts, q = NULL; p && p->when < when; q = p, p = p->next)
+      continue;
+    if (p) {
+      // Insert befor p.
+      tmo->next = p;
+    }
+    if (q) {
+      // Insert after q.
+      q->next = tmo;
+    } else {
+      // Insert at the head.
+      timeouts = tmo;
+    }
+  }
+
+  // Set up the timeout.
+  __elk_timer_start(timeouts->when);
+  __elk_lock_release(&timeout_lock);
+  if (tmo->callback == NULL) {
+    // Put myself to sleep.
+    int s = change_state(0, TIMEOUT);
+    if (s != 0) {
+      if (s < 0) {
+        // An error (like EINTR) has occured.
+        errno = -s;
+      } else {
+        // Another system event has occured, handle it.
+      }
+      tmo  = NULL;
+    }
+  }
+  return tmo;         // Return the timeout identifier (opaque).
+}
+
+/** Cancel a previously scheduled wakeup.
+ * This function will cancel a previously scheduled wakeup.
+ * If the wakeup caused the caller to sleep, it will be rescheduled.
+ * @param id The timer id.
+ * @return 0 if cancelled, else the timer has probably already expired.
+ */
+static int timer_cancel_wake_at(void *id)
+{
+  if (id == NULL) return 0;           // Nothing pending.
+  int s = 0;
+  __elk_lock_aquire(&timeout_lock);
+  struct timeout *p, *q;
+  for (p = timeouts, q = NULL; p; q = p, p = p->next) {
+    if (p == id) {
+      break;
+    }
+  }
+
+  if (p) {
+    // Found it.
+    if (q) {
+      q->next = p->next;
+    } else {
+      timeouts = p->next;
+    }
+
+    if (p->waiter) {
+      // Wake up the sleeping thread.
+      p->waiter->next = NULL;
+      schedule(p->waiter);
+    }
+
+    free(p);
+  } else {
+    s = -1;                 // Not found.
+  }
+
+  __elk_lock_release(&timeout_lock);
+  return s;
+}
+
+/** Timer expired handler.
+ * This function is called in an interrupt context.
+ */
+long long __elk_timer_expired(long long when)
+{
+  __elk_lock_aquire(&timeout_lock);
+  thread *ready = NULL;
+  thread *next = NULL;
+  while (timeouts && timeouts->when <= when) {
+    struct timeout *tmo = timeouts;
+    timeouts = timeouts->next;
+    // If the timeout hasn't been cancelled.
+    if (tmo->waiter) {
+      // Make sure the earliest are scheduled first.
+      if (next) {
+        next->next = tmo->waiter;
+        next = next->next;
+      } else {
+        ready = tmo->waiter;
+        next = ready;
+      }
+      next->next = NULL;
+    }
+
+    if (tmo->callback) {
+      // Call the callback function.
+      tmo->callback(tmo->arg1, tmo->arg2);
+    }
+
+    free(tmo);
+  }
+
+  if (timeouts == NULL) {
+    when = 0;
+  } else {
+    when = timeouts->when;
+  }
+
+  __elk_lock_release(&timeout_lock);
+
+  if (ready) {
+    // Schedule the ready threads.
+    schedule(ready);
+  }
+
+  return when;        // Schedule the next timeout, if any.
+}
+
+/** Initialize a semaphore.
+ * @param sem A pointer to the semaphore.
+ * @param pshared != 0 if this semaphore is shared among processes.
+ *                     This is not implemented.
+ * @param value The initial semaphore value.
+ */
+int __elk_sem_init(__elk_sem_t *sem, int pshared, unsigned int value)
+{
+  if (pshared) {
+    // Not supported.
+    errno = ENOSYS;
+    return -1;
+  }
+
+  sem->lock = (__elk_lock)LOCK_INITIALIZER;
+  sem->count = value;
+  sem->waiters = NULL;
+  return 0;
+}
+
+/** Wait on a semaphore.
+ * @param sem A pointer to the semaphore.
+ */
+int __elk_sem_wait(__elk_sem_t *sem)
+{
+  int s = 0;
+  __elk_lock_aquire(&sem->lock);
+  for ( ;; ) {
+    if (sem->count) {
+      --sem->count;
+      __elk_lock_release(&sem->lock);
+      break;
+    } else {
+      thread *me = current;
+      me->next = sem->waiters;
+      sem->waiters = me;
+      __elk_lock_release(&sem->lock);
+      s = change_state(0, SEMWAIT);
+      if (s != 0) {
+        if (s < 0) {
+          // An error (like EINTR) has occured.
+          errno = -s;
+        } else {
+          // Another system event has occured, handle it.
+        }
+        s = -1;
+        break;
+      }
+    }
+  }
+  return s;
+}
+
+/** Try to take a semaphore.
+ * @param sem A pointer to the semaphore.
+ */
+int __elk_sem_try_wait(__elk_sem_t *sem)
+{
+  __elk_lock_aquire(&sem->lock);
+  int s = 0;
+  if (sem->count) {
+    --sem->count;
+  } else {
+    // Would have to wait.
+    errno = EAGAIN;
+    s = -1;
+  }
+  __elk_lock_release(&sem->lock);
+  return s;
+}
+
+/** This callback occurs when a __elk_sem_timedwait timeout expires.
+ */
+static void callback(void *arg1, void *arg2)
+{
+  __elk_sem_t *sem = (__elk_sem_t *)arg1;
+  thread *tp = (thread *)arg2;
+  __elk_lock_aquire(&sem->lock);
+  thread *p, *q;
+  for (p = sem->waiters, q = NULL; p; q = p, p = p->next) {
+    if (p == tp) {
+      // This thread timed out.
+      if (q) {
+        q->next = p->next;
+      } else {
+        sem->waiters = p->next;
+      }
+      p->next = NULL;
+      __elk_context_set_return(p->saved_ctx, -ETIMEDOUT);
+      schedule(p);
+    }
+  }
+  __elk_lock_release(&sem->lock);
+}
+
+/** Wait on a semaphore with a timeout.
+ * @param sem A pointer to the semaphore.
+ * @param abs_timeout The timeout.
+ */
+int __elk_sem_timedwait(__elk_sem_t *sem, struct timespec *abs_timeout)
+{
+  int s = 0;
+  __elk_lock_aquire(&sem->lock);
+  for ( ;; ) {
+    if (sem->count) {
+      --sem->count;
+      __elk_lock_release(&sem->lock);
+      break;
+    } else {
+      long long when;
+      when = abs_timeout->tv_sec * 1000000000LL + abs_timeout->tv_nsec;
+      long long now = __elk_timer_get_realtime();
+      if (now > when) {
+        // Already expired.
+        __elk_lock_release(&sem->lock);
+        errno = ETIMEDOUT;
+        s = -1;
+      } else {
+        thread *me = current;
+        me->next = sem->waiters;
+        sem->waiters = me;
+        __elk_lock_release(&sem->lock);
+        when -= __elk_timer_get_realtime_offset();
+        void *t = __elk_timer_wake_at(when, callback,
+                                (void *)sem, (void *)me);
+        s = change_state(0, SEMTMO);
+        timer_cancel_wake_at(t);
+        if (s != 0) {
+          if (s < 0) {
+            // An error (like EINTR) has occured.
+            errno = -s;
+          } else {
+            // Another system event has occured, handle it.
+          }
+          s = -1;
+          break;
+        }
+      }
+    }
+  }
+  return s;
+}
+
+/** Unlock a semaphore.
+ * @param sem A pointer to the semaphore.
+ */
+int __elk_sem_post(__elk_sem_t *sem)
+{
+  int s = 0;
+  thread *list = NULL;
+  __elk_lock_aquire(&sem->lock);
+  ++sem->count;
+  if (sem->count == 0) {
+    --sem->count;
+    errno = EOVERFLOW;
+    s = -1;
+  } else {
+    s = 0;
+    if (sem->waiters) {
+      list = sem->waiters;
+      sem->waiters = NULL;
+    }
+  }
+  __elk_lock_release(&sem->lock);
+  if (list) {
+    schedule(list);
+  }
+  return s;
+}
 /* Initialize the scheduler.
  */
 CONSTRUCTOR()
@@ -1085,7 +1503,7 @@ CONSTRUCTOR()
   // Set up the main and idle threads.
 
   // The main thread is what's running right now.
-  current = malloc(sizeof(__elk_thread));
+  current = malloc(sizeof(thread));
 
   // The main thread initializer.
   *current = main_thread;
