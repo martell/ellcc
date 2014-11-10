@@ -9,11 +9,13 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <timer.h>
+
+#include "timer.h"
 #define DEFINE_STRINGS
-#include <thread.h>
-#include <semaphore.h>
-#include <command.h>
+#include "thread.h"
+#include "file.h"
+#include "semaphore.h"
+#include "command.h"
 
 // Make threads a loadable feature.
 FEATURE(thread, thread)
@@ -41,7 +43,7 @@ FEATURE(thread, thread)
 typedef struct thread
 {
   // The saved_ctx and tls fields must be first in the thread struct.
-  __elk_context *saved_ctx;     // The thread's saved context.
+  context_t *saved_ctx;         // The thread's saved context.
   void *tls;                    // The thread's user space storage.
   struct thread *next;          // Next thread in any list.
   __elk_state state;            // The thread's state.
@@ -67,6 +69,7 @@ typedef struct thread
   capability_t ecap;            // The thread's effective capabilities.
   capability_t icap;            // The thread's inheritable capabilities.
 #endif
+  fdset_t fds;                   // File descriptors used by the thread.
   MsgQueue queue;               // The thread's message queue.
 } thread;
 
@@ -77,7 +80,7 @@ static int timer_cancel_wake_at(void *id);
  * @param from A place to store the current context.
  * This function is implemented in crt1.S.
  */
-int __elk_switch(__elk_context **to, __elk_context **from);
+int __elk_switch(context_t **to, context_t **from);
 
 /** Switch to a new context.
  * @param arg The tenative return value when the context is restarted.
@@ -85,13 +88,13 @@ int __elk_switch(__elk_context **to, __elk_context **from);
  * @param from A place to store the current context.
  * This function is implemented in crt1.S.
  */
-int __elk_switch_arg(int arg, __elk_context **to, __elk_context **from);
+int __elk_switch_arg(int arg, context_t **to, context_t **from);
 
 /** Enter a new context.
  * @param to The new context.
  * This function is implemented in crt1.S.
  */
-int __elk_enter(__elk_context **to);
+int __elk_enter(context_t **to);
 
 /** Set up a new context.
  * @param savearea Where to put the finished stack pointer.
@@ -102,7 +105,7 @@ int __elk_enter(__elk_context **to);
  * @return 1 to indicate non-clone, else arg1.
  * This function is implemented in crt1.S.
  */
-int __elk_new_context(__elk_context **savearea, void (entry)(void),
+int __elk_new_context(context_t **savearea, void (entry)(void),
                       int mode, long arg);
 
 typedef struct thread_queue {
@@ -118,7 +121,7 @@ static void schedule_nolock(thread *list);
 
 /* The tid_lock protects the thread id pool.
  */
-static __elk_lock tid_lock;
+static lock_t tid_lock;
 static int tids[THREADS];
 static int *tid_in;
 static int *tid_out;
@@ -209,7 +212,7 @@ static void idle(void)
 static void create_idle_threads(void)
 {
   for (int i = 0; i < PROCESSORS; ++i) {
-    idle_thread[i].saved_ctx = (__elk_context *)&idle_stack[i][IDLE_STACK];
+    idle_thread[i].saved_ctx = (context_t *)&idle_stack[i][IDLE_STACK];
     idle_thread[i].priority = PRIORITIES;   // The lowest priority.
     idle_thread[i].state = IDLE;
     alloc_tid(&idle_thread[i]);
@@ -222,7 +225,7 @@ static void create_idle_threads(void)
 
 /* The ready_lock protects the following variables.
  */
-static __elk_lock ready_lock;
+static lock_t ready_lock;
 
 static int priority;                    // The current highest priority.
 
@@ -472,10 +475,11 @@ static void schedule(thread *list)
 /** Delete a thread.
  * The thread has been removed from all lists.
  */
-static void thread_delete(thread *id)
+static void thread_delete(thread *tp)
 {
-  release_tid(id->tid);
-  free(id);
+  release_tid(tp->tid);
+  __elk_fdset_release(&tp->fds);
+  free(tp);
 }
 
 /** Change the current thread's state to
@@ -719,7 +723,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   tp->clear_child_tid = NULL;
   tp->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
 
-  __elk_context *cp = (__elk_context *)stack;
+  context_t *cp = (context_t *)stack;
   tp->saved_ctx = cp;
   // Copy registers.
   *(cp - 1) = *current->saved_ctx;
@@ -1138,7 +1142,7 @@ struct timeout {
   void *arg2;
 };
 
-static __elk_lock timeout_lock;
+static lock_t timeout_lock;
 static struct timeout *timeouts;
 
 /** Make an entry in the sleeping list and sleep
@@ -1304,7 +1308,7 @@ int __elk_sem_init(__elk_sem_t *sem, int pshared, unsigned int value)
     return -1;
   }
 
-  sem->lock = (__elk_lock)LOCK_INITIALIZER;
+  sem->lock = (lock_t)LOCK_INITIALIZER;
   sem->count = value;
   sem->waiters = NULL;
   return 0;

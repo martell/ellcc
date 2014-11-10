@@ -3,7 +3,7 @@
 #include "irq.h"
 #include "kernel.h"
 
-static __elk_lock lock;
+static lock_t lock;
 static const IRQHandler *handlers[IRQ_MAX_IDS];
 static int irq_index;
 

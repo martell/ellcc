@@ -19,4 +19,4 @@ VPATH := $(VPATH):$(SRCPATH)/$(LIB)/kernel
 # Target independent code.
 SRCS += __elk_start.c simple_console.c console.c simple_exit.c \
         simple_memman.c command.c test.c timer.c irq.c \
-	scheduler.c
+	thread.c file.c

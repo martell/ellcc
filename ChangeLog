@@ -1,6 +1,6 @@
 current SVN:
 
-*
+* Renamed the ELK scheduler module to thread.
 
 version 0.1.4:
 

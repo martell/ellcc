@@ -8,7 +8,7 @@
 #include "kernel.h"
 
 typedef struct {
-  __elk_lock lock;
+  lock_t lock;
   unsigned count;
   struct thread *waiters;
 } __elk_sem_t;

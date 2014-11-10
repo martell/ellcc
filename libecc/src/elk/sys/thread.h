@@ -64,13 +64,13 @@ typedef struct envelope {
 
 typedef struct queue
 {
+  lock_t lock;
   Envelope *head;               // The head of the queue.
   Envelope *tail;               // The tail of the queue.
   struct thread *waiter;        // Any threads waiting on the queue.
-  __elk_lock lock;
 } MsgQueue;
 
-#define MSG_QUEUE_INITIALIZER { NULL, NULL, NULL, LOCK_INITIALIZER }
+#define MSG_QUEUE_INITIALIZER { LOCK_INITIALIZER, NULL, NULL, NULL }
 
 /** System message codes.
  */

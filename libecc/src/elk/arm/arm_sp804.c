@@ -10,7 +10,7 @@
 #include "arm_sp804.h"
 
 static long resolution;                     // The clock divisor.
-static __elk_lock lock;
+static lock_t lock;
 static volatile time_t monotonic_seconds;   // The monotonic timer.
 static long long realtime_offset;           // The realtime timer offset.
 static int timeout_active;                  // Set if a timeout is active.

@@ -63,11 +63,11 @@ typedef struct
 {
   int lock;
   int level;
-} __elk_lock;
+} lock_t;
 
 #define LOCK_INITIALIZER { 0, 0 }
 
-static inline void __elk_lock_aquire(__elk_lock *lock)
+static inline void __elk_lock_aquire(lock_t *lock)
 {
 // RICH:
 #if !defined(__microblaze__)
@@ -77,7 +77,7 @@ static inline void __elk_lock_aquire(__elk_lock *lock)
   lock->level = splhigh();
 }
 
-static inline void __elk_lock_release(__elk_lock *lock)
+static inline void __elk_lock_release(lock_t *lock)
 {
   splx(lock->level);
 // RICH:

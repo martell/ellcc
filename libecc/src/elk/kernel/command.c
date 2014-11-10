@@ -20,7 +20,7 @@ typedef struct command {
 } Command;
 
 // The command lock.
-static __elk_lock lock;
+static lock_t lock;
 static int commands = 1;                // The number of commands defined.
 
 // The  command table.

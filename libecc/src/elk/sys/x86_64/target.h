@@ -154,9 +154,9 @@ typedef struct context
   uint32_t hi;
   uint32_t cp0_status;
   uint32_t pc;
-} __elk_context;
+} context_t;
 
-static inline void __elk_context_set_return(__elk_context *cp, int value)
+static inline void __elk_context_set_return(context_t *cp, int value)
 {
   cp->v0 = value;
 }
