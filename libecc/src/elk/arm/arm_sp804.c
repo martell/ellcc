@@ -5,7 +5,7 @@
 #include <time.h>
 #include "kernel.h"
 #include "timer.h"
-#include "scheduler.h"
+#include "thread.h"
 #include "irq.h"
 #include "arm_sp804.h"
 

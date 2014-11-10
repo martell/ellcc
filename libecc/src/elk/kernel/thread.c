@@ -1,6 +1,7 @@
 /** Schedule threads for execution.
  */
 #include <syscalls.h>                   // For syscall numbers.
+#include <sys/types.h>
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <sched.h>
@@ -10,12 +11,12 @@
 #include <inttypes.h>
 #include <timer.h>
 #define DEFINE_STRINGS
-#include <scheduler.h>
+#include <thread.h>
 #include <semaphore.h>
 #include <command.h>
 
-// Make the scheduler a loadable feature.
-FEATURE(scheduler, scheduler)
+// Make threads a loadable feature.
+FEATURE(thread, thread)
 
 #define THREADS 1024                    // The number of threads supported.
 
@@ -23,8 +24,6 @@ FEATURE(scheduler, scheduler)
                                         // (0..PRIORITIES - 1). 0 is highest.
 #define DEFAULT_PRIORITY ((PRIORITIES)/2)
 #define PROCESSORS 1                    // The number of processors to support.
-
-#define MIN_STACK   4096                // The minimum stack size for a thread.
 
 /** A thread is an indepenent executable context in ELK.
  * A thread is identified by a unique identifier, the thread id (tid).
@@ -519,88 +518,6 @@ static int sys_sched_yield(void)
   return 0;
 }
 
-/* Create a new thread.
- */
-static int thread_create(thread **id,
-                         void (*entry)(void), int priority,
-                         void *tls, void *stack, unsigned long flags,
-                         int *ctid, int *ptid)
-{
-  char *p;
-  if (stack == 0) {
-    p = malloc(MIN_STACK);
-
-    if (p == NULL) {
-      return -ENOMEM;
-    }
-
-    //
-    p += MIN_STACK;
-  } else {
-    p = stack;
-  }
-
-  thread *tp = malloc(sizeof(thread));    // RICH: bin.
-  if (!tp) {
-    if (!stack) free(p);
-    return -ENOMEM;
-  }
-
-  // Inherit the parent's attributes.
-  *tp = *current;
-  tp->ppid = tp->tid;
-
-  int s = alloc_tid(tp);
-  if (s < 0) {
-    if (!stack) free(p);
-    free(tp);
-    return -EAGAIN;
-  }
-
-  // Record the TLS.
-  tp->tls = tls;
-  if (flags & CLONE_CHILD_CLEARTID) {
-    VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_RD);
-    tp->clear_child_tid = ctid;
-  }
-
-  if (flags & CLONE_CHILD_SETTID) {
-    VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
-    tp->set_child_tid = ctid;
-    // RICH: This write should be in the child's address space.
-    if (ctid) {
-      *ctid = tp->tid;
-    }
-  }
-
-  if (flags & CLONE_PARENT_SETTID) {
-    VALIDATE_ADDRESS(ptid, sizeof(*ptid), VALID_WR);
-    // RICH: This write should also be in the child's address space.
-    *ptid = tp->tid;
-  }
-
-  tp->next = NULL;
-  if (priority == 0) {
-    priority = DEFAULT_PRIORITY;
-  } else if (priority >= PRIORITIES) {
-    priority = PRIORITIES - 1;
-  }
-  tp->priority = priority;
-
-  tp->set_child_tid = NULL;
-  tp->clear_child_tid = NULL;
-  tp->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
-
-  __elk_context *cp = (__elk_context *)p;
-  tp->saved_ctx = cp;
-  // Copy registers.
-  *(cp - 1) = *current->saved_ctx;
-
-  __elk_new_context(&tp->saved_ctx, entry, INITIAL_PSR, 0);
-  *id = tp;
-  return 0;
-}
-
 /** Send a message to a message queue.
  */
 int __elk_send_message_q(MsgQueue *queue, Message msg)
@@ -753,16 +670,65 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
                       long arg5, long data, void (*entry)(void))
 {
   // Create a new thread, copying context.
-  thread *new;
-  // RICH: Move thread_create code here? Non-cloned threads?
-  int s = thread_create(&new, entry, 0, regs, stack, flags, ctid, ptid);
-  if (s < 0) {
-    return s;
+  thread *tp = malloc(sizeof(thread));    // RICH: bin.
+  if (!tp) {
+    return -ENOMEM;
   }
 
+  // Inherit the parent's attributes.
+  *tp = *current;
+  tp->ppid = tp->tid;
+
+  int s = alloc_tid(tp);
+  if (s < 0) {
+    free(tp);
+    return -EAGAIN;
+  }
+
+  // Record the TLS.
+  tp->tls = regs;
+  if (flags & CLONE_CHILD_CLEARTID) {
+    VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_RD);
+    tp->clear_child_tid = ctid;
+  }
+
+  if (flags & CLONE_CHILD_SETTID) {
+    VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
+    tp->set_child_tid = ctid;
+    // RICH: This write should be in the child's address space.
+    if (ctid) {
+      *ctid = tp->tid;
+    }
+  }
+
+  if (flags & CLONE_PARENT_SETTID) {
+    VALIDATE_ADDRESS(ptid, sizeof(*ptid), VALID_WR);
+    // RICH: This write should also be in the child's address space.
+    *ptid = tp->tid;
+  }
+
+  tp->next = NULL;
+  if (priority == 0) {
+    priority = DEFAULT_PRIORITY;
+  } else if (priority >= PRIORITIES) {
+    priority = PRIORITIES - 1;
+  }
+  tp->priority = priority;
+
+  tp->set_child_tid = NULL;
+  tp->clear_child_tid = NULL;
+  tp->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
+
+  __elk_context *cp = (__elk_context *)stack;
+  tp->saved_ctx = cp;
+  // Copy registers.
+  *(cp - 1) = *current->saved_ctx;
+
+  __elk_new_context(&tp->saved_ctx, entry, INITIAL_PSR, 0);
+
   // Schedule the thread.
-  schedule(new);
-  return new->tid;
+  schedule(tp);
+  return tp->tid;
 }
 
 /* Manipulate a futex.
@@ -1493,7 +1459,7 @@ int __elk_sem_post(__elk_sem_t *sem)
   }
   return s;
 }
-/* Initialize the scheduler.
+/* Initialize the thread handling code.
  */
 CONSTRUCTOR()
 {

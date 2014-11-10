@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include <semaphore.h>
 #include <command.h>
-#include <scheduler.h>
+#include <thread.h>
 
 // Make the test commands a loadable feature.
 FEATURE(test_commands, test_commands)

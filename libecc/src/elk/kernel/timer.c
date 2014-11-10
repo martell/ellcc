@@ -8,7 +8,7 @@
 #include <stdio.h>
 #include <kernel.h>
 #include <timer.h>
-#include <scheduler.h>
+#include <thread.h>
 #include <command.h>
 
 // Make the time syscalls commands a loadable feature.

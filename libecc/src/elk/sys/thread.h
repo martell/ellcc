@@ -1,9 +1,8 @@
-/** Scheduler definitions.
+/** Thread definitions.
  */
-#ifndef _scheduler_h_
-#define _scheduler_h_
+#ifndef _thread_h_
+#define _thread_h_
 
-#include <sys/types.h>
 #include "kernel.h"
 
 #define HAVE_CAPABILITY 1
