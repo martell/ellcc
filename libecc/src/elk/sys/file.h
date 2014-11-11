@@ -19,16 +19,16 @@ struct file;
  */
 typedef struct fileops
 {
-  int (*read)(struct file *, off_t *, struct uio *);
-  int (*write)(struct file *, off_t *, struct uio *);
-  int (*ioctl)(struct file *, unsigned long, void *);
+  ssize_t (*read)(struct file *, off_t *, struct uio *);
+  ssize_t (*write)(struct file *, off_t *, struct uio *);
+  int (*ioctl)(struct file *, unsigned int, void *);
   int (*fcntl)(struct file *, unsigned int, void *);
   int (*poll)(struct file *, int);
   int (*stat)(struct file *, struct stat *);
   int (*close)(struct file *);
 } fileops_t;
 
-typedef enum 
+typedef enum
 {
   FTYPE_NONE,                   // Undefined.
   FTYPE_FILE,                   // File.
@@ -60,17 +60,17 @@ typedef struct file
 } file_t;
 
 // Some default fileops.
-int fbadop_read(file_t *, off_t *, struct uio *);
-int fbadop_write(file_t *, off_t *, struct uio *);
-int fbadop_ioctl(file_t *, unsigned long, void *);
+ssize_t fbadop_read(file_t *, off_t *, struct uio *);
+ssize_t fbadop_write(file_t *, off_t *, struct uio *);
+int fbadop_ioctl(file_t *, unsigned int, void *);
 int fbadop_fcntl(file_t *, unsigned int, void *);
 int fbadop_stat(file_t *, struct stat *);
 int fbadop_poll(file_t *, int);
 int fbadop_close(file_t *);
 
-int fnullop_read(file_t *, off_t *, struct uio *);
-int fnullop_write(file_t *, off_t *, struct uio *);
-int fnullop_ioctl(file_t *, unsigned long, void *);
+ssize_t fnullop_read(file_t *, off_t *, struct uio *);
+ssize_t fnullop_write(file_t *, off_t *, struct uio *);
+int fnullop_ioctl(file_t *, unsigned int, void *);
 int fnullop_fcntl(file_t *, unsigned int, void *);
 int fnullop_stat(file_t *, struct stat *);
 int fnullop_poll(file_t *, int);
@@ -93,5 +93,21 @@ int __elk_fdset_add(fdset_t *fdset, filetype_t type, const fileops_t *fileops);
 /** Remove a file descriptor from a set.
  */
 int __elk_fdset_remove(fdset_t *fdset, int fd);
+
+/** Dup a file descriptor in a set.
+ */
+int __elk_fdset_dup(fdset_t *fdset, int fd);
+
+/** Write to a file descriptor.
+ */
+size_t __elk_fdset_write(fdset_t fdset, int fd, struct uio *uio);
+
+/** Read from a file descriptor.
+ */
+size_t __elk_fdset_read(fdset_t fdset, int fd, struct uio *uio);
+
+/** Do an ioctl on a file descriptor.
+ */
+int __elk_fdset_ioctl(fdset_t fdset, int fd, int cmd, void *arg);
 
 #endif

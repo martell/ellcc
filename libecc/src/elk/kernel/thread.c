@@ -1,6 +1,7 @@
 /** Schedule threads for execution.
  */
 #include <syscalls.h>                   // For syscall numbers.
+#include <sys/uio.h>
 #include <sys/types.h>
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -16,6 +17,11 @@
 #include "file.h"
 #include "semaphore.h"
 #include "command.h"
+
+#define FDCONSOLE 1
+#if defined(FDCONSOLE)
+#include <stdarg.h>
+#endif
 
 // Make threads a loadable feature.
 FEATURE(thread, thread)
@@ -1472,6 +1478,51 @@ int __elk_sem_post(__elk_sem_t *sem)
   }
   return s;
 }
+
+#if defined(FDCONSOLE)
+static ssize_t sys_write(int fd, void *buf, size_t count)
+{
+  struct iovec iov = { .iov_base = buf, .iov_len = count };
+  struct uio uio = { .iovcnt = 1, .iov = &iov };
+  return __elk_fdset_write(current->fdset, fd, &uio);
+}
+
+static ssize_t sys_writev(int fd, const struct iovec *iov, int iovcount)
+{
+  struct uio uio = { .iovcnt = iovcount, .iov = iov };
+  return __elk_fdset_write(current->fdset, fd, &uio);
+}
+
+static ssize_t sys_read(int fd, void *buf, size_t count)
+{
+  struct iovec iov = { .iov_base = buf, .iov_len = count };
+  struct uio uio = { .iovcnt = 1, .iov = &iov };
+  return __elk_fdset_read(current->fdset, fd, &uio);
+}
+
+static ssize_t sys_readv(int fd, const struct iovec *iov, int iovcount)
+{
+  struct uio uio = { .iovcnt = iovcount, .iov = iov };
+  return __elk_fdset_read(current->fdset, fd, &uio);
+}
+
+static int sys_ioctl(int fd, int cmd, ...)
+{
+  va_list ap;
+  va_start(ap, cmd);
+  void *arg = va_arg(ap, void *);
+  int s = __elk_fdset_ioctl(current->fdset, fd, cmd, arg);
+  va_end(ap);
+  return s;
+}
+
+static int sys_dup(int fd)
+{
+  return __elk_fdset_dup(&current->fdset, fd);
+}
+
+#endif
+
 /* Initialize the thread handling code.
  */
 ELK_CONSTRUCTOR()
@@ -1520,6 +1571,16 @@ ELK_CONSTRUCTOR()
   SYSCALL(setreuid);
   SYSCALL(setuid);
   SYSCALL(setsid);
+
+#if defined(FDCONSOLE)
+  SYSCALL(dup);
+  SYSCALL(ioctl);
+  SYSCALL(write);
+  SYSCALL(writev);
+  SYSCALL(read);
+  SYSCALL(readv);
+#endif
+
 }
 
 C_CONSTRUCTOR()
@@ -1537,14 +1598,9 @@ C_CONSTRUCTOR()
   // Create the idle thread(s).
   create_idle_threads();
 
-#define RICH
-#ifdef RICH
-  // Create a file descriptor binding.
-  static const fileops_t fileops = {
-    fnullop_read, fnullop_write, fnullop_ioctl, fnullop_fcntl,
-    fnullop_poll, fnullop_stat, fnullop_close
-  };
-  __elk_fdset_add(&current->fdset, FTYPE_MISC, &fileops);
+#if defined(FDCONSOLE)
+  int __elk_fdconsole_open(fdset_t *fdset);
+  __elk_fdconsole_open(&current->fdset);
 #endif
 }
 

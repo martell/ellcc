@@ -36,6 +36,13 @@ int main(int argc, char **argv)
     printf("__elk_fdset_remove returned: %d\n", s);
   }
 
+  s = __elk_fdset_dup(&fdset, fd0);
+  if (s < 0) {
+    printf("__elk_fdset_dup error: %s\n", strerror(-s));
+  } else {
+    printf("__elk_fdset_dup returned: %d\n", s);
+  }
+
   s = __elk_fdset_remove(&fdset, fd0);
   if (s < 0) {
     printf("__elk_fdset_remove error: %s\n", strerror(-s));

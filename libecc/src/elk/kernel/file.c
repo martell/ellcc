@@ -258,9 +258,9 @@ static int newfd(fd_t **res)
   return 0;
 }
 
-/** Create a file descriptor and add it to a set.
+/** Allocate a new file descriptor.
  */
-static int fdset_add(fdset_t *fdset, file_t *file)
+static int fd_allocate(fdset_t *fdset)
 {
   int fd = fdset_grow(fdset);
   if (fd < 0) {
@@ -272,10 +272,22 @@ static int fdset_add(fdset_t *fdset, file_t *file)
     return s;
   }
 
+  return fd;
+}
+
+/** Create a file descriptor and add it to a set.
+ */
+static int fdset_add(fdset_t *fdset, file_t *file)
+{
+  int fd = fd_allocate(fdset);
+  if (fd < 0) {
+    return fd;
+  }
+
   (*fdset)->fds[fd]->file = file;
 
   for (int i = 0; i < (*fdset)->references; ++i) {
-    s = fd_reference((*fdset)->fds[fd]);
+    int s = fd_reference((*fdset)->fds[fd]);
     if (s >= 0) {
       continue;
     }
@@ -306,6 +318,17 @@ int __elk_fdset_add(fdset_t *fdset, filetype_t type, const fileops_t *fileops)
   return s;
 }
 
+/** Dup a file descriptor in a set.
+ */
+int __elk_fdset_dup(fdset_t *fdset, int fd)
+{
+  if (fd >= (*fdset)->count || (*fdset)->fds[fd] == NULL) {
+    return -EBADF;
+  }
+
+  return fdset_add(fdset, (*fdset)->fds[fd]->file);
+}
+
 /** Remove a file descriptor from a set.
  */
 int __elk_fdset_remove(fdset_t *fdset, int fd)
@@ -319,17 +342,54 @@ int __elk_fdset_remove(fdset_t *fdset, int fd)
   return 0;
 }
 
-int fbadop_read(file_t *file, off_t *off, struct uio *uiop)
+/** Read from a file descriptor.
+ */
+size_t __elk_fdset_read(fdset_t fdset, int fd, struct uio *uio)
+{
+  if (fd >= fdset->count || fdset->fds[fd] == NULL) {
+    return -EBADF;
+  }
+
+  file_t *file = fdset->fds[fd]->file;
+  return file->fileops->read(file, &file->offset, uio);
+}
+
+/** Write to a file descriptor.
+ */
+size_t __elk_fdset_write(fdset_t fdset, int fd, struct uio *uio)
+{
+  if (fd >= fdset->count || fdset->fds[fd] == NULL) {
+    return -EBADF;
+  }
+
+  file_t *file = fdset->fds[fd]->file;
+  return file->fileops->write(file, &file->offset, uio);
+}
+
+/** Do an ioctl on a file descriptor.
+ */
+int __elk_fdset_ioctl(fdset_t fdset, int fd, int cmd, void *arg)
+{
+  if (fd >= fdset->count || fdset->fds[fd] == NULL) {
+    return -EBADF;
+  }
+
+  file_t *file = fdset->fds[fd]->file;
+  return file->fileops->ioctl(file, cmd, arg);
+}
+
+
+ssize_t fbadop_read(file_t *file, off_t *off, struct uio *uiop)
 {
   return -ENOSYS;
 }
 
-int fbadop_write(file_t *file, off_t *off, struct uio *uiop)
+ssize_t fbadop_write(file_t *file, off_t *off, struct uio *uiop)
 {
   return -ENOSYS;
 }
 
-int fbadop_ioctl(file_t *file, unsigned long cmd, void *arg)
+int fbadop_ioctl(file_t *file, unsigned int cmd, void *arg)
 {
   return -ENOSYS;
 }
@@ -354,17 +414,17 @@ int fbadop_close(file_t *file)
   return -ENOSYS;
 }
 
-int fnullop_read(file_t *file, off_t *off, struct uio *uiop)
+ssize_t fnullop_read(file_t *file, off_t *off, struct uio *uiop)
 {
   return 0;
 }
 
-int fnullop_write(file_t *file, off_t *off, struct uio *uiop)
+ssize_t fnullop_write(file_t *file, off_t *off, struct uio *uiop)
 {
   return 0;
 }
 
-int fnullop_ioctl(file_t *file, unsigned long cmd, void *arg)
+int fnullop_ioctl(file_t *file, unsigned int cmd, void *arg)
 {
   return 0;
 }
