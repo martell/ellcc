@@ -98,7 +98,7 @@ static ssize_t sys_readv(int fd, const struct iovec *iov, int iovcount)
     return count;
 }
 
-CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
+ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
 {
     static int setup;
     if (setup) {

@@ -334,7 +334,7 @@ static int sleepCommand(int argc, char **argv)
   return COMMAND_ERROR;
 }
 
-CONSTRUCTOR()
+ELK_CONSTRUCTOR()
 {
   // Set up timer handling.
 

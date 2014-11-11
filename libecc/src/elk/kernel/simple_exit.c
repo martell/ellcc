@@ -13,7 +13,7 @@ static int sys_exit(int status)
     continue;
 }
 
-CONSTRUCTOR()
+ELK_CONSTRUCTOR()
 {
   // Set up a simple exit system call.
   __elk_set_syscall(SYS_exit, sys_exit);

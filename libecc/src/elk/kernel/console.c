@@ -237,7 +237,7 @@ static int sys_ioctl(int fd, int request, ...)
   }
 }
 
-CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
+ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
 {
   static int setup;
   if (setup) {

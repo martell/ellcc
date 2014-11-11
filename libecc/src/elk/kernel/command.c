@@ -280,7 +280,7 @@ static int repeatCommand(int argc, char **argv)
 
 /* Initialize the command processor.
  */
-CONSTRUCTOR()
+ELK_CONSTRUCTOR()
 {
     // The help command is the first in the table.
     command_table[0] = (Command){ "help", helpCommand };

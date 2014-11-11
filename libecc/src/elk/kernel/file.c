@@ -11,7 +11,7 @@ typedef struct fd
 } fd_t;
 
 // A set of file descriptors.
-struct fd_set
+struct fdset
 {
   lock_t lock;                  // The lock protecting the set.
   unsigned references;          // The number of references to this set.
@@ -181,7 +181,7 @@ static int newfile(file_t **res, filetype_t type, const fileops_t *fileops)
 {
   file_t *file = malloc(sizeof(file_t));
   if (file == NULL) {
-    return -errno;
+    return -ENOMEM;
   }
 
   file->lock = (lock_t)LOCK_INITIALIZER;
@@ -200,9 +200,9 @@ static int fdset_grow(fdset_t *fdset)
 {
   int s;
   if (*fdset == NULL) {
-    fdset_t newset = malloc(sizeof(fdset_t *) + (INITFDS * sizeof(fd_t *)));
+    fdset_t newset = malloc(sizeof(struct fdset) + (INITFDS * sizeof(fd_t *)));
     if (newset == NULL) {
-      return -errno;
+      return -ENOMEM;
     }
 
     newset->lock = (lock_t)LOCK_INITIALIZER;
@@ -226,7 +226,7 @@ static int fdset_grow(fdset_t *fdset)
       fdset_t newset = realloc(*fdset,
                                sizeof(fdset_t *) + (s * 2) * sizeof(fd_t *));
       if (newset == NULL) {
-        return -errno;
+        return -ENOMEM;
       }
 
       newset->count = s * 2;
@@ -248,7 +248,7 @@ static int newfd(fd_t **res)
 {
   fd_t *fd = malloc(sizeof(fd_t));
   if (fd == NULL) {
-    return -errno;
+    return -ENOMEM;
   }
 
   fd->lock = (lock_t)LOCK_INITIALIZER;
@@ -273,6 +273,7 @@ static int fdset_add(fdset_t *fdset, file_t *file)
   }
 
   (*fdset)->fds[fd]->file = file;
+
   for (int i = 0; i < (*fdset)->references; ++i) {
     s = fd_reference((*fdset)->fds[fd]);
     if (s >= 0) {

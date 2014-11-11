@@ -47,8 +47,8 @@ ifeq ($(VERBOSE),)
   OUTA=@echo "Assembling $<";
   OUTL=@echo "Linking $(PROG)";
   OUTAR=@echo "Making library $(LIBNAME)";
-  OUTR=@echo "Running $(PROG);"
-  OUTD=@echo "Debugging $(PROG);";
+  OUTR=@echo "Running $(PROG)";
+  OUTD=@echo "Debugging $(PROG)";
 else
   OUT=
   OUTC=
@@ -114,7 +114,7 @@ $(PROG): $(NEEDCLEAN) $(OBJS)
 ARCH=$(shell $(ELLCCBIN)ecc-getarch $(TARGET))
 # First, use QEMU Linux user mode for Linux targets.
 ifeq ($(findstring linux-,$(TARGET)),linux-)
-  RUN=$(ELLCCBIN)qemu-$(ARCH) $(PROG)
+  RUN=./$(PROG) #$(ELLCCBIN)qemu-$(ARCH) $(PROG)
 else
   # Otherwise, set up to run QEMU in system mode for ELK configurations.
   INCARCH=$(shell $(ELLCCBIN)ecc-getincarch $(TARGET))

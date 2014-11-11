@@ -1,5 +1,6 @@
 current SVN:
 
+* Differentiate between ELK and C constructors.
 * Started a framework for ELK unit tests.
 * Started file descriptor handling for ELK.
 * Renamed the ELK scheduler module to thread.

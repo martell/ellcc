@@ -43,7 +43,7 @@ fiq:
 #define Stack_SVC   0           // Size of the SVC stack.
 #define Stack_ABT   0           // Size of the ABT stack.
 #define Stack_UND   0           // Size of the UND stack.
-#define Stack_SYS   4096        // Size of the SYS stack.
+#define Stack_SYS   (4096*4)    // Size of the SYS stack.
 
 /** The reset entry point.
  */

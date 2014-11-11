@@ -14,7 +14,6 @@ extern char *__heap_end__;      // The bottom of the allocated stacks.
 
 static char *brk_ptr = __end;
 
-#include <stdio.h>
 static char *sys_brk(char *addr)
 {
   if (addr == 0) {
@@ -29,7 +28,7 @@ static char *sys_brk(char *addr)
 
 /* Initialize the simple memory allocator.
  */
-CONSTRUCTOR()
+ELK_CONSTRUCTOR()
 {
   // Set up a simple brk system call.
   __elk_set_syscall(SYS_brk, sys_brk);

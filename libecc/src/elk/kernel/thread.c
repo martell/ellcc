@@ -294,7 +294,7 @@ static long long slice_time = 5000000;  // The time slice period (ns).
 /**** End of ready lock protected variables. ****/
 
 // The main thread's initial values.
-static const thread main_thread = {
+static thread main_thread = {
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
@@ -1474,34 +1474,12 @@ int __elk_sem_post(__elk_sem_t *sem)
 }
 /* Initialize the thread handling code.
  */
-CONSTRUCTOR()
+ELK_CONSTRUCTOR()
 {
-  // Set up the tid pool.
-  tid_initialize();
-
-  // Set up the main and idle threads.
-
-  // The main thread is what's running right now.
-  current = malloc(sizeof(thread));
-
-  // The main thread initializer.
-  *current = main_thread;
-
-  alloc_tid(current);
-  current->pid = current->tid;          // The main thread starts a group.
-  priority = current->priority;
-
-#ifdef RICH
-  // Create a file descriptor binding.
-  static const fileops_t fileops = {
-    fnullop_read, fnullop_write, fnullop_ioctl, fnullop_fcntl,
-    fnullop_poll, fnullop_stat, fnullop_close
-  };
-  __elk_fdset_add(&current->fdset, FTYPE_MISC, &fileops);
-#endif
-
-  // Create the idle thread(s).
-  create_idle_threads();
+  /** We set up a thread_self pointer early to tell
+   * the C library that we support threading.
+   */
+  current = &main_thread;
 
   // Add the "ts" command.
   command_insert("ts", tsCommand);
@@ -1543,3 +1521,30 @@ CONSTRUCTOR()
   SYSCALL(setuid);
   SYSCALL(setsid);
 }
+
+C_CONSTRUCTOR()
+{
+  // Set up the tid pool.
+  tid_initialize();
+
+  // Set up the main and idle threads.
+
+  // The main thread is what's running right now.
+  alloc_tid(current);
+  current->pid = current->tid;          // The main thread starts a group.
+  priority = current->priority;
+
+  // Create the idle thread(s).
+  create_idle_threads();
+
+#define RICH
+#ifdef RICH
+  // Create a file descriptor binding.
+  static const fileops_t fileops = {
+    fnullop_read, fnullop_write, fnullop_ioctl, fnullop_fcntl,
+    fnullop_poll, fnullop_stat, fnullop_close
+  };
+  __elk_fdset_add(&current->fdset, FTYPE_MISC, &fileops);
+#endif
+}
+

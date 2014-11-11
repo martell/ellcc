@@ -342,7 +342,7 @@ static int syscallCommand(int argc, char **argv)
 
 /* Initialize the test commands.
  */
-CONSTRUCTOR()
+ELK_CONSTRUCTOR()
 {
   command_insert(NULL, sectionCommand);
   command_insert("syscall", syscallCommand);

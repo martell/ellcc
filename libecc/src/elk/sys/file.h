@@ -76,7 +76,7 @@ int fnullop_stat(file_t *, struct stat *);
 int fnullop_poll(file_t *, int);
 int fnullop_close(file_t *);
 
-typedef struct fd_set *fdset_t;
+typedef struct fdset *fdset_t;
 
 /** Release a set of file descriptors.
  */

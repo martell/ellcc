@@ -42,5 +42,9 @@ int main(int argc, char **argv)
   } else {
     printf("__elk_fdset_remove returned: %d\n", s);
   }
-}
 
+  __elk_fdset_release(&fdset);
+  if (fdset != NULL) {
+    printf("__elk_fdset_release failed.\n");
+  }
+}
