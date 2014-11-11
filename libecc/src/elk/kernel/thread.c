@@ -11,7 +11,7 @@
 #include <inttypes.h>
 
 #include "timer.h"
-#define DEFINE_STRINGS
+#define DEFINE_STATE_STRINGS
 #include "thread.h"
 #include "file.h"
 #include "semaphore.h"
@@ -69,7 +69,7 @@ typedef struct thread
   capability_t ecap;            // The thread's effective capabilities.
   capability_t icap;            // The thread's inheritable capabilities.
 #endif
-  fdset_t fds;                   // File descriptors used by the thread.
+  fdset_t fdset;                // File descriptors used by the thread.
   MsgQueue queue;               // The thread's message queue.
 } thread;
 
@@ -478,7 +478,7 @@ static void schedule(thread *list)
 static void thread_delete(thread *tp)
 {
   release_tid(tp->tid);
-  __elk_fdset_release(&tp->fds);
+  __elk_fdset_release(&tp->fdset);
   free(tp);
 }
 
@@ -681,12 +681,21 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 
   // Inherit the parent's attributes.
   *tp = *current;
+
+  // Mark the parent.
   tp->ppid = tp->tid;
 
   int s = alloc_tid(tp);
   if (s < 0) {
     free(tp);
     return -EAGAIN;
+  }
+
+  // Clone or copy the file descriptor set.
+  s = __elk_fdset_clone(&tp->fdset, flags & CLONE_FILES);
+  if (s < 0) {
+    free(tp);
+    return s;
   }
 
   // Record the TLS.
@@ -1481,6 +1490,15 @@ CONSTRUCTOR()
   alloc_tid(current);
   current->pid = current->tid;          // The main thread starts a group.
   priority = current->priority;
+
+#ifdef RICH
+  // Create a file descriptor binding.
+  static const fileops_t fileops = {
+    fnullop_read, fnullop_write, fnullop_ioctl, fnullop_fcntl,
+    fnullop_poll, fnullop_stat, fnullop_close
+  };
+  __elk_fdset_add(&current->fdset, FTYPE_MISC, &fileops);
+#endif
 
   // Create the idle thread(s).
   create_idle_threads();

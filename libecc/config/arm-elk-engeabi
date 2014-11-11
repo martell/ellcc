@@ -2,6 +2,7 @@ based_on: arm-ellcc-linux
 compiler:
   options:
     - -target arm-ellcc-linux
+    - -D__ELK__=1
     - -march=armv7a
     - -mfpu=none
     - -mfloat-abi=softfp

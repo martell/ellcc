@@ -111,7 +111,7 @@ typedef enum state {
   LASTSTATE                     // To get the number of states.
 } __elk_state;
 
-#if defined(DEFINE_STRINGS)
+#if defined(DEFINE_STATE_STRINGS)
 static const char *state_names[LASTSTATE] =
 {
   [IDLE] = "IDLE",

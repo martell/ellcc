@@ -4,6 +4,7 @@ compiler:
     - -target mips-ellcc-linux
     - -msoft-float
     - -mcpu=mips32r2
+    - -D__ELK__=1
   c_include_dirs:
     - '$R/include/elk/mips'
     - '$R/include/elk'
