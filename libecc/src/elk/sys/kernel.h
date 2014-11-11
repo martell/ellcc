@@ -33,7 +33,8 @@ strong_alias(__elk_ ## feature, __elk_feature_ ## function);
  __elk_ ## feature = 1; \
 } while (0)
 
-#if 0
+#if !defined(__ELK__)
+// Building ELK to run under Linux.
 #define CONSTRUCTOR() \
 static void __elk_init(void) \
     __attribute__((__constructor__, __used__)); \

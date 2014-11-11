@@ -5,7 +5,7 @@ PWD := $(shell pwd)
 ELLCC := $(PWD)/..
 LIBECC := $(ELLCC)/libecc
 Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
-ElkConfigs := $(patsubst *-elk-*,,$(shell cd $(LIBECC)/config; echo *-elk-*))
+ElkConfigs := $(patsubst *-elk-*,,$(shell cd $(LIBECC)/config; echo *-elk*))
 CFLAGS := -g -Qunused-arguments \
           -Wno-unneeded-internal-declaration -Wno-cast-align \
 	  -Wno-incompatible-pointer-types -Wno-string-plus-int \

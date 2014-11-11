@@ -4,6 +4,7 @@
 #define _file_h_
 
 #include <sys/types.h>
+#include "kernel.h"
 
 typedef struct uio
 {
@@ -88,5 +89,9 @@ int __elk_fdset_clone(fdset_t *fdset, int clone);
 /** Add a file descriptor to a set.
  */
 int __elk_fdset_add(fdset_t *fdset, filetype_t type, const fileops_t *fileops);
+
+/** Remove a file descriptor from a set.
+ */
+int __elk_fdset_remove(fdset_t *fdset, int fd);
 
 #endif

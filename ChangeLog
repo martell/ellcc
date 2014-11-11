@@ -1,5 +1,7 @@
 current SVN:
 
+* Started a framework for ELK unit tests.
+* Started file descriptor handling for ELK.
 * Renamed the ELK scheduler module to thread.
 
 version 0.1.4:

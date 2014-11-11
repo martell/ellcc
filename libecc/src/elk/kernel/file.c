@@ -305,6 +305,19 @@ int __elk_fdset_add(fdset_t *fdset, filetype_t type, const fileops_t *fileops)
   return s;
 }
 
+/** Remove a file descriptor from a set.
+ */
+int __elk_fdset_remove(fdset_t *fdset, int fd)
+{
+  if (fd >= (*fdset)->count || (*fdset)->fds[fd] == NULL) {
+    return -EBADF;
+  }
+
+  fd_release((*fdset)->fds[fd]);
+  (*fdset)->fds[fd] = NULL;
+  return 0;
+}
+
 int fbadop_read(file_t *file, off_t *off, struct uio *uiop)
 {
   return -ENOSYS;

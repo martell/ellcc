@@ -180,6 +180,7 @@ static inline uint32_t __update_cpsr(uint32_t clear, uint32_t set)
 }
 #endif
 
+#if defined(__ELK__)
 /** Turn off all interrupts.
  * @return The current interrupt level.
  */
@@ -203,6 +204,36 @@ static inline void splx(int s)
 {
   // RICH: __update_cpsr(F_bit | I_bit, s & (F_bit | I_bit));
 }
+#else
+
+// For testing under Linux.
+
+/** Turn off all interrupts.
+ * @return The current interrupt level.
+ */
+static inline int splhigh(void)
+{
+  return 0; // RICH: __update_cpsr(F_bit | I_bit, F_bit | I_bit);
+}
+
+/** Turn on all interrupts.
+ * @return The current interrupt level.
+ */
+static inline int spl0(void)
+{
+  return 0; // RICH: __update_cpsr(F_bit | I_bit, 0);
+}
+
+/** Set the interrupt level.
+ * @param level The level to set.
+ */
+static inline void splx(int s)
+{
+  // RICH: __update_cpsr(F_bit | I_bit, s & (F_bit | I_bit));
+}
+
+#endif
+
 #endif // !defined(__ASSEMBLER__)
 
 #endif // _target_h_
