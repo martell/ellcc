@@ -181,6 +181,8 @@ help:
 	@echo "make debug                 - debug the ELK program"
 	@echo "make gdb                   - debug twith gdb"
 	@echo "make tui                   - debug with gdb in TUI mode"
+	@echo "make covshow               - show coverage information"
+	@echo "make covreport             - report coverage results"
 	@echo "make clean                 - clean up the directory"
 	@echo "make distclean             - really clean up the directory"
 	@echo "Available Linux configurations:"
