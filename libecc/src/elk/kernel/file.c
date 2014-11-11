@@ -1,5 +1,6 @@
 /** File handling.
  */
+#include "config.h"
 #include "kernel.h"
 #include "file.h"
 
@@ -195,7 +196,6 @@ static int newfile(file_t **res, filetype_t type, const fileops_t *fileops)
 
 /** Get an available entry in an fdset.
  */
-#define INITFDS 4
 static int fdset_grow(fdset_t *fdset)
 {
   int s;
@@ -224,7 +224,8 @@ static int fdset_grow(fdset_t *fdset)
     if (s == (*fdset)->count) {
       // No open slot found, double the size of the fd array.
       fdset_t newset = realloc(*fdset,
-                               sizeof(fdset_t *) + (s * 2) * sizeof(fd_t *));
+                               sizeof(fdset_t *) + 
+                               (s * FDMULTIPLIER) * sizeof(fd_t *));
       if (newset == NULL) {
         return -ENOMEM;
       }

@@ -1,5 +1,6 @@
 /** Schedule threads for execution.
  */
+#include "config.h"                     // Configuration parameters.
 #include <syscalls.h>                   // For syscall numbers.
 #include <sys/uio.h>
 #include <sys/types.h>
@@ -18,7 +19,7 @@
 #include "semaphore.h"
 #include "command.h"
 
-#define FDCONSOLE 1
+
 #if defined(FDCONSOLE)
 #include <stdarg.h>
 #endif
@@ -26,12 +27,7 @@
 // Make threads a loadable feature.
 FEATURE(thread, thread)
 
-#define THREADS 1024                    // The number of threads supported.
-
-#define PRIORITIES 3                    // The number of priorities to support:
-                                        // (0..PRIORITIES - 1). 0 is highest.
 #define DEFAULT_PRIORITY ((PRIORITIES)/2)
-#define PROCESSORS 1                    // The number of processors to support.
 
 /** A thread is an indepenent executable context in ELK.
  * A thread is identified by a unique identifier, the thread id (tid).
@@ -1118,32 +1114,6 @@ static int sys_setsid(void)
   return current->tid;
 }
 
-static int tsCommand(int argc, char **argv)
-{
-  if (argc <= 0) {
-    printf("show thread information.\n");
-    return COMMAND_OK;
-  }
-
-  printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %-10.10s \n",
-         "PID", "TID", "TADR", "STATE", "PRI", "NAME");
-  for (int i = 0;  i < THREADS; ++i) {
-    thread *t =  threads[i];
-    if (t == NULL) {
-      continue;
-    }
-    printf("%6d ", t->pid);
-    printf("%6d ", t->tid);
-    printf("%8p ", t);
-    printf("%-10.10s ", state_names[t->state]);
-    printf("%5d ", t->priority);
-    printf(t->pid == t->tid ? "%s" : "[%s]", t->name ? t->name : "");
-    printf("\n");
-  }
-
-  return COMMAND_OK;
-}
-
 /** The timeout list.
  * This list is kept in order of expire times.
  */
@@ -1523,6 +1493,46 @@ static int sys_dup(int fd)
 
 #endif
 
+#if defined(THREAD_COMMANDS)
+
+static int tsCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("show thread information.\n");
+    return COMMAND_OK;
+  }
+
+  printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %-10.10s \n",
+         "PID", "TID", "TADR", "STATE", "PRI", "NAME");
+  for (int i = 0;  i < THREADS; ++i) {
+    thread *t =  threads[i];
+    if (t == NULL) {
+      continue;
+    }
+    printf("%6d ", t->pid);
+    printf("%6d ", t->tid);
+    printf("%8p ", t);
+    printf("%-10.10s ", state_names[t->state]);
+    printf("%5d ", t->priority);
+    printf(t->pid == t->tid ? "%s" : "[%s]", t->name ? t->name : "");
+    printf("\n");
+  }
+
+  return COMMAND_OK;
+}
+
+/** Create a section heading for the help command.
+ */
+static int sectionCommand(int argc, char **argv)
+{
+  if (argc <= 0 ) {
+    printf("Thread Commands:\n");
+  }
+  return COMMAND_OK;
+}
+
+#endif  // THREAD_COMMANDS
+
 /* Initialize the thread handling code.
  */
 ELK_CONSTRUCTOR()
@@ -1532,8 +1542,10 @@ ELK_CONSTRUCTOR()
    */
   current = &main_thread;
 
-  // Add the "ts" command.
+#if defined(THREAD_COMMANDS)
+  command_insert(NULL, sectionCommand);
   command_insert("ts", tsCommand);
+#endif
 
 #define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)
   // Set up a set_tid_address system call.

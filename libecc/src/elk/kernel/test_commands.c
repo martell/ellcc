@@ -315,16 +315,6 @@ static int thread5Command(int argc, char **argv)
   return COMMAND_OK;
 }
 
-/** Create a section heading for the help command.
- */
-int sectionCommand(int argc, char **argv)
-{
-  if (argc <= 0 ) {
-    printf("Test Commands:\n");
-  }
-  return COMMAND_OK;
-}
-
 long __syscall_ret(unsigned long r);
 long __syscall(long, ...);
 
@@ -337,6 +327,16 @@ static int syscallCommand(int argc, char **argv)
 
   int i = __syscall_ret(__syscall(0, 10, 20, 30, 40, 50, 60));
   printf("__syscall(0) = %d, %s\n", i, strerror(errno));
+  return COMMAND_OK;
+}
+
+/** Create a section heading for the help command.
+ */
+static int sectionCommand(int argc, char **argv)
+{
+  if (argc <= 0 ) {
+    printf("Test Commands:\n");
+  }
   return COMMAND_OK;
 }
 
