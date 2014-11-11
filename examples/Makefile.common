@@ -47,7 +47,7 @@ ifeq ($(VERBOSE),)
   OUTA=@echo "Assembling $<";
   OUTL=@echo "Linking $(PROG)";
   OUTAR=@echo "Making library $(LIBNAME)";
-  OUTR=@echo "Running $(PROG)"
+  OUTR=@echo "Running $(PROG)";
   OUTD=@echo "Debugging $(PROG)";
 else
   OUT=
@@ -116,7 +116,7 @@ ifeq ($(findstring -linux-,$(TARGET)),-linux-)
 else
   # Otherwise, set up to run QEMU in system mode for ELK configurations.
   INCARCH=$(shell $(ELLCCBIN)ecc-getincarch $(TARGET))
-  QEMUINST=", enter 'control-A x' to exit QEMU";
+  QEMUINST=echo "enter 'control-A x' to exit QEMU";
   MAKEBIN=$(OBJCOPY) -O binary $(PROG) $(PROG).bin;
   ifeq ($(INCARCH),arm)
     RUN=$(QEMUINST)$(ELLCCBIN)qemu-system-$(ARCH) $(QEMUDBG) -M vexpress-a9 \
@@ -145,7 +145,7 @@ else
 endif
 
 run: $(PROG)
-	$(OUTR);$(RUN)
+	$(OUTR)$(RUN)
 
 log: $(PROG)
 	$(OUTR);$(RUN) -d in_asm,cpu -D $(PROG).log
