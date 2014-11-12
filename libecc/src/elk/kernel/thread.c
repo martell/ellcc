@@ -300,6 +300,7 @@ static thread main_thread = {
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
+  .fdset = { .lock = LOCK_INITIALIZER },
 #if defined(HAVE_CAPABILITY)
   .cap = SUPERUSER_CAPABILITIES,
   .ecap = SUPERUSER_CAPABILITIES,
@@ -1454,26 +1455,26 @@ static ssize_t sys_write(int fd, void *buf, size_t count)
 {
   struct iovec iov = { .iov_base = buf, .iov_len = count };
   struct uio uio = { .iovcnt = 1, .iov = &iov };
-  return __elk_fdset_write(current->fdset, fd, &uio);
+  return __elk_fdset_write(&current->fdset, fd, &uio);
 }
 
 static ssize_t sys_writev(int fd, const struct iovec *iov, int iovcount)
 {
   struct uio uio = { .iovcnt = iovcount, .iov = iov };
-  return __elk_fdset_write(current->fdset, fd, &uio);
+  return __elk_fdset_write(&current->fdset, fd, &uio);
 }
 
 static ssize_t sys_read(int fd, void *buf, size_t count)
 {
   struct iovec iov = { .iov_base = buf, .iov_len = count };
   struct uio uio = { .iovcnt = 1, .iov = &iov };
-  return __elk_fdset_read(current->fdset, fd, &uio);
+  return __elk_fdset_read(&current->fdset, fd, &uio);
 }
 
 static ssize_t sys_readv(int fd, const struct iovec *iov, int iovcount)
 {
   struct uio uio = { .iovcnt = iovcount, .iov = iov };
-  return __elk_fdset_read(current->fdset, fd, &uio);
+  return __elk_fdset_read(&current->fdset, fd, &uio);
 }
 
 static int sys_ioctl(int fd, int cmd, ...)
@@ -1481,7 +1482,7 @@ static int sys_ioctl(int fd, int cmd, ...)
   va_list ap;
   va_start(ap, cmd);
   void *arg = va_arg(ap, void *);
-  int s = __elk_fdset_ioctl(current->fdset, fd, cmd, arg);
+  int s = __elk_fdset_ioctl(&current->fdset, fd, cmd, arg);
   va_end(ap);
   return s;
 }

@@ -4,6 +4,16 @@
 #include "kernel.h"
 #include "file.h"
 
+typedef struct file
+{
+  lock_t lock;                  // The lock protecting the file.
+  off_t offset;                 // The current file offset.
+  unsigned references;          // The number of references to this file.
+  const fileops_t *fileops;     // Operations on a file.
+  filetype_t type;              // Type of the file.
+  void *data;                   // Type specific data.
+} file_t;
+
 typedef struct fd
 {
   lock_t lock;                  // The lock protecting the file descriptor.
@@ -11,31 +21,23 @@ typedef struct fd
   file_t *file;                 // The file accessed by the file descriptor.
 } fd_t;
 
-// A set of file descriptors.
-struct fdset
-{
-  lock_t lock;                  // The lock protecting the set.
-  unsigned references;          // The number of references to this set.
-  unsigned count;               // Number of file descriptors in the set.
-  fd_t *fds[];                  // The file descriptor nodes.
-};
-
 /** Release a file.
  */
-static void file_release(file_t *file)
+static void file_release(file_t **file)
 {
-  if (file == NULL) {
+  if (file == NULL || *file == NULL) {
     return;
   }
 
-  __elk_lock_aquire(&file->lock);
-  if (--file->references == 0) {
+  __elk_lock_aquire(&(*file)->lock);
+  if (--(*file)->references == 0) {
     // Release the file.
-    __elk_lock_release(&file->lock);
-    free(file);
+    __elk_lock_release(&(*file)->lock);
+    free(*file);
+    *file = NULL;
     return;
   }
-  __elk_lock_release(&file->lock);
+  __elk_lock_release(&(*file)->lock);
 }
 
 /** Add a reference to a file.
@@ -60,20 +62,21 @@ static int file_reference(file_t *file)
 
 /** Release a file descriptor.
  */
-static void fd_release(fd_t *fd)
+static void fd_release(fd_t **fd)
 {
-  if (fd == NULL) {
+  if (fd == NULL || *fd == NULL) {
     return;
   }
 
-  __elk_lock_aquire(&fd->lock);
-  if (--fd->references == 0) {
-    file_release(fd->file);      // Release the file.
-    __elk_lock_release(&fd->lock);
-    free(fd);
+  __elk_lock_aquire(&(*fd)->lock);
+  if (--(*fd)->references == 0) {
+    file_release(&(*fd)->file);         // Release the file.
+    __elk_lock_release(&(*fd)->lock);
+    free(*fd);
+    *fd = NULL;
     return;
   }
-  __elk_lock_release(&fd->lock);
+  __elk_lock_release(&(*fd)->lock);
 }
 
 /** Add a reference to a file descriptor.
@@ -103,7 +106,7 @@ static int fd_reference(fd_t *fd)
 
 /** Add a reference to a set of file descriptors.
  */
-static int __elk_fdset_reference(fdset_t fdset)
+static int __elk_fdset_reference(fdset_t *fdset)
 {
   __elk_lock_aquire(&fdset->lock);
 
@@ -121,7 +124,7 @@ static int __elk_fdset_reference(fdset_t fdset)
 
       // Undo previous references.
       for (int j = 0; j < i; ++j) {
-        fd_release(fdset->fds[i]);
+        fd_release(&fdset->fds[i]);
       }
       break;
     }
@@ -135,40 +138,30 @@ static int __elk_fdset_reference(fdset_t fdset)
  */
 void __elk_fdset_release(fdset_t *fdset)
 {
-  if (*fdset == NULL) {
-    // No descriptors allocated.
-    return;
+  __elk_lock_aquire(&fdset->lock);
+
+  for (int i = 0; i < fdset->count; ++i) {
+    fd_release(&fdset->fds[i]);
   }
 
-  __elk_lock_aquire(&(*fdset)->lock);
-
-  if (--(*fdset)->references == 0) {
+  if (--fdset->references == 0) {
     // This set is done being used.
-    for (int i = 0; i < (*fdset)->count; ++i) {
-      fd_release((*fdset)->fds[i]);
-    }
-    __elk_lock_release(&(*fdset)->lock);
-    free(*fdset);
-    *fdset = NULL;
-    return;
+    free(fdset->fds);
+    fdset->fds = NULL;
+    fdset->count = 0;
   }
 
-  __elk_lock_release(&(*fdset)->lock);
+  __elk_lock_release(&fdset->lock);
 }
 
 /** Clone or copy the fdset.
  */
 int __elk_fdset_clone(fdset_t *fdset, int clone)
 {
-  if (*fdset == NULL) {
-    // No descriptors allocated.
-    return 0;
-  }
-
   if (clone) {
     // The parent and child are sharing the set.
 
-    return __elk_fdset_reference(*fdset);
+    return __elk_fdset_reference(fdset);
   }
 
   // Make a copy of the fdset.
@@ -178,7 +171,8 @@ int __elk_fdset_clone(fdset_t *fdset, int clone)
 
 /** Create a new file.
  */
-static int newfile(file_t **res, filetype_t type, const fileops_t *fileops)
+static int newfile(file_t **res,
+                   filetype_t type, const fileops_t *fileops, void *data)
 {
   file_t *file = malloc(sizeof(file_t));
   if (file == NULL) {
@@ -190,6 +184,7 @@ static int newfile(file_t **res, filetype_t type, const fileops_t *fileops)
   file->offset = 0;
   file->type = type;
   file->fileops = fileops;
+  file->data = data;
   *res = file;
   return 0;
 }
@@ -199,44 +194,40 @@ static int newfile(file_t **res, filetype_t type, const fileops_t *fileops)
 static int fdset_grow(fdset_t *fdset)
 {
   int s;
-  if (*fdset == NULL) {
-    fdset_t newset = malloc(sizeof(struct fdset) + (INITFDS * sizeof(fd_t *)));
-    if (newset == NULL) {
+  if (fdset->fds == NULL) {
+    fdset->fds = malloc(INITFDS * sizeof(fd_t *));
+    if (fdset->fds == NULL) {
       return -ENOMEM;
     }
 
-    newset->lock = (lock_t)LOCK_INITIALIZER;
-    newset->references = 1;
-    newset->count = INITFDS;
+    fdset->references = 1;
+    fdset->count = INITFDS;
     for (int i = 0; i < INITFDS; ++i) {
-      newset->fds[i] = NULL;
+      fdset->fds[i] = NULL;
     }
 
-    *fdset = newset;
-    s = 0;
+    s = 0;      // Allocate the first file descriptor.
   } else {
-    for (s = 0; s < (*fdset)->count; ++s) {
-      if ((*fdset)->fds[s] == NULL) {
+    for (s = 0; s < fdset->count; ++s) {
+      if (fdset->fds[s] == NULL) {
         break;
       }
     }
 
-    if (s == (*fdset)->count) {
+    if (s == fdset->count) {
       // No open slot found, double the size of the fd array.
-      fdset_t newset = realloc(*fdset,
-                               sizeof(fdset_t *) + 
-                               (s * FDMULTIPLIER) * sizeof(fd_t *));
-      if (newset == NULL) {
+      fd_t **newfds = realloc(fdset->fds,
+                              (s * FDMULTIPLIER) * sizeof(fd_t *));
+      if (newfds == NULL) {
         return -ENOMEM;
       }
 
-      newset->count = s * 2;
-
       for (int i = s; i < s * 2; ++i) {
-        newset->fds[i] = NULL;
+        newfds[i] = NULL;
       }
 
-      *fdset = newset;
+      fdset->fds = newfds;
+      fdset->count = s * FDMULTIPLIER;
     }
   }
 
@@ -268,7 +259,7 @@ static int fd_allocate(fdset_t *fdset)
     return fd;
   }
 
-  int s = newfd(&(*fdset)->fds[fd]);
+  int s = newfd(&fdset->fds[fd]);
   if (s < 0) {
     return s;
   }
@@ -285,16 +276,17 @@ static int fdset_add(fdset_t *fdset, file_t *file)
     return fd;
   }
 
-  (*fdset)->fds[fd]->file = file;
+  fdset->fds[fd]->file = file;
 
-  for (int i = 0; i < (*fdset)->references; ++i) {
-    int s = fd_reference((*fdset)->fds[fd]);
+  for (int i = 0; i < fdset->references; ++i) {
+    int s = fd_reference(fdset->fds[fd]);
     if (s >= 0) {
       continue;
     }
 
-    free((*fdset)->fds[fd]);
-    (*fdset)->fds[fd] = NULL;
+    // An error occured adding the reference.
+    free(fdset->fds[fd]);
+    fdset->fds[fd] = NULL;
     return s;
   }
 
@@ -303,10 +295,11 @@ static int fdset_add(fdset_t *fdset, file_t *file)
 
 /** Add a file descriptor to a set.
  */
-int __elk_fdset_add(fdset_t *fdset, filetype_t type, const fileops_t *fileops)
+int __elk_fdset_add(fdset_t *fdset,
+                    filetype_t type, const fileops_t *fileops, void *data)
 {
   file_t *file;
-  int s = newfile(&file, type, fileops);
+  int s = newfile(&file, type, fileops, data);
   if (s < 0) {
     return s;
   }
@@ -323,29 +316,28 @@ int __elk_fdset_add(fdset_t *fdset, filetype_t type, const fileops_t *fileops)
  */
 int __elk_fdset_dup(fdset_t *fdset, int fd)
 {
-  if (fd >= (*fdset)->count || (*fdset)->fds[fd] == NULL) {
+  if (fd >= fdset->count || fdset->fds[fd] == NULL) {
     return -EBADF;
   }
 
-  return fdset_add(fdset, (*fdset)->fds[fd]->file);
+  return fdset_add(fdset, fdset->fds[fd]->file);
 }
 
 /** Remove a file descriptor from a set.
  */
 int __elk_fdset_remove(fdset_t *fdset, int fd)
 {
-  if (fd >= (*fdset)->count || (*fdset)->fds[fd] == NULL) {
+  if (fd >= fdset->count || fdset->fds[fd] == NULL) {
     return -EBADF;
   }
 
-  fd_release((*fdset)->fds[fd]);
-  (*fdset)->fds[fd] = NULL;
+  fd_release(&fdset->fds[fd]);
   return 0;
 }
 
 /** Read from a file descriptor.
  */
-size_t __elk_fdset_read(fdset_t fdset, int fd, struct uio *uio)
+size_t __elk_fdset_read(fdset_t *fdset, int fd, struct uio *uio)
 {
   if (fd >= fdset->count || fdset->fds[fd] == NULL) {
     return -EBADF;
@@ -357,7 +349,7 @@ size_t __elk_fdset_read(fdset_t fdset, int fd, struct uio *uio)
 
 /** Write to a file descriptor.
  */
-size_t __elk_fdset_write(fdset_t fdset, int fd, struct uio *uio)
+size_t __elk_fdset_write(fdset_t *fdset, int fd, struct uio *uio)
 {
   if (fd >= fdset->count || fdset->fds[fd] == NULL) {
     return -EBADF;
@@ -369,7 +361,7 @@ size_t __elk_fdset_write(fdset_t fdset, int fd, struct uio *uio)
 
 /** Do an ioctl on a file descriptor.
  */
-int __elk_fdset_ioctl(fdset_t fdset, int fd, int cmd, void *arg)
+int __elk_fdset_ioctl(fdset_t *fdset, int fd, int cmd, void *arg)
 {
   if (fd >= fdset->count || fdset->fds[fd] == NULL) {
     return -EBADF;

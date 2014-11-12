@@ -12,17 +12,17 @@ int main(int argc, char **argv)
     fnullop_read, fnullop_write, fnullop_ioctl, fnullop_fcntl,
     fnullop_poll, fnullop_stat, fnullop_close
   };
-  static fdset_t fdset = NULL;
+  static fdset_t fdset;
   int s;
 
-  int fd0 = __elk_fdset_add(&fdset, FTYPE_MISC, &fileops);
+  int fd0 = __elk_fdset_add(&fdset, FTYPE_MISC, &fileops, NULL);
   if (fd0 < 0) {
     printf("__elk_fdset_add error: %s\n", strerror(-fd0));
   } else {
     printf("__elk_fdset_add returned: %d\n", fd0);
   }
 
-  int fd1 = __elk_fdset_add(&fdset, FTYPE_MISC, &fileops);
+  int fd1 = __elk_fdset_add(&fdset, FTYPE_MISC, &fileops, NULL);
   if (fd1 < 0) {
     printf("__elk_fdset_add error: %s\n", strerror(-fd1));
   } else {
@@ -51,7 +51,7 @@ int main(int argc, char **argv)
   }
 
   __elk_fdset_release(&fdset);
-  if (fdset != NULL) {
+  if (fdset.fds != NULL) {
     printf("__elk_fdset_release failed.\n");
   }
 }

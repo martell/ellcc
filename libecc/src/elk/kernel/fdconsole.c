@@ -140,7 +140,7 @@ static ssize_t do_write(const void *buf, size_t count)
   return s;
 }
 
-static ssize_t con_write(file_t *file, off_t *off, struct uio *uio)
+static ssize_t con_write(struct file *file, off_t *off, struct uio *uio)
 {
   ssize_t s = __elk_sem_wait(&sem_output);
   if (s < 0) return s;
@@ -194,7 +194,7 @@ static ssize_t do_read(void *buf, size_t count)
   return s;
 }
 
-static ssize_t con_read(file_t *file, off_t *off, struct uio *uio)
+static ssize_t con_read(struct file *file, off_t *off, struct uio *uio)
 {
   ssize_t s = __elk_sem_wait(&sem_input);
   if (s < 0) return s;
@@ -211,7 +211,7 @@ static ssize_t con_read(file_t *file, off_t *off, struct uio *uio)
   return s;
 }
 
-static int con_ioctl(file_t *file, unsigned int cmd, void *arg)
+static int con_ioctl(struct file *file, unsigned int cmd, void *arg)
 {
   switch (cmd) {
   case TCGETS:
@@ -230,7 +230,7 @@ static const fileops_t fileops = {
 int __elk_fdconsole_open(fdset_t *fdset)
 {
   // Create three file descriptors, the first is stdin.
-  int fd = __elk_fdset_add(fdset, FTYPE_MISC, &fileops);
+  int fd = __elk_fdset_add(fdset, FTYPE_MISC, &fileops, NULL);
   if (fd >= 0) {
     __elk_fdset_dup(fdset, fd);         // stdout.
     __elk_fdset_dup(fdset, fd);         // stderr.
