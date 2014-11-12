@@ -12,7 +12,7 @@ int main(int argc, char **argv)
     fnullop_read, fnullop_write, fnullop_ioctl, fnullop_fcntl,
     fnullop_poll, fnullop_stat, fnullop_close
   };
-  static fdset_t fdset;
+  static fdset_t fdset = { .lock = LOCK_INITIALIZER };
   int s;
 
   int fd0 = __elk_fdset_add(&fdset, FTYPE_MISC, &fileops, NULL);
