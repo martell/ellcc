@@ -4,6 +4,7 @@
 #include <syscalls.h>                   // For syscall numbers.
 #include <sys/uio.h>
 #include <sys/types.h>
+#include <sys/socket.h>
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <sched.h>
@@ -20,7 +21,7 @@
 #include "command.h"
 
 
-#if defined(FDCONSOLE)
+#if defined(ENABLEFDS)
 #include <stdarg.h>
 #endif
 
@@ -1450,18 +1451,25 @@ int __elk_sem_post(__elk_sem_t *sem)
   return s;
 }
 
-#if defined(FDCONSOLE)
-static ssize_t sys_write(int fd, void *buf, size_t count)
+#if defined(ENABLEFDS)
+static int sys_close(int fd)
 {
-  struct iovec iov = { .iov_base = buf, .iov_len = count };
-  struct uio uio = { .iovcnt = 1, .iov = &iov };
-  return __elk_fdset_write(&current->fdset, fd, &uio);
+  return -ENOSYS;
 }
 
-static ssize_t sys_writev(int fd, const struct iovec *iov, int iovcount)
+static int sys_dup(int fd)
 {
-  struct uio uio = { .iovcnt = iovcount, .iov = iov };
-  return __elk_fdset_write(&current->fdset, fd, &uio);
+  return __elk_fdset_dup(&current->fdset, fd);
+}
+
+static int sys_ioctl(int fd, int cmd, ...)
+{
+  va_list ap;
+  va_start(ap, cmd);
+  void *arg = va_arg(ap, void *);
+  int s = __elk_fdset_ioctl(&current->fdset, fd, cmd, arg);
+  va_end(ap);
+  return s;
 }
 
 static ssize_t sys_read(int fd, void *buf, size_t count)
@@ -1477,22 +1485,56 @@ static ssize_t sys_readv(int fd, const struct iovec *iov, int iovcount)
   return __elk_fdset_read(&current->fdset, fd, &uio);
 }
 
-static int sys_ioctl(int fd, int cmd, ...)
+static ssize_t sys_write(int fd, void *buf, size_t count)
 {
-  va_list ap;
-  va_start(ap, cmd);
-  void *arg = va_arg(ap, void *);
-  int s = __elk_fdset_ioctl(&current->fdset, fd, cmd, arg);
-  va_end(ap);
-  return s;
+  struct iovec iov = { .iov_base = buf, .iov_len = count };
+  struct uio uio = { .iovcnt = 1, .iov = &iov };
+  return __elk_fdset_write(&current->fdset, fd, &uio);
 }
 
-static int sys_dup(int fd)
+static ssize_t sys_writev(int fd, const struct iovec *iov, int iovcount)
 {
-  return __elk_fdset_dup(&current->fdset, fd);
+  struct uio uio = { .iovcnt = iovcount, .iov = iov };
+  return __elk_fdset_write(&current->fdset, fd, &uio);
 }
 
-#endif
+#endif // ENABLEFDS
+
+#if defined(ENABLENET)
+
+
+#if defined(SYS_socket)
+static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+  return -ENOSYS;
+}
+
+static int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
+                       int flags)
+{
+  return -ENOSYS;
+}
+
+static int sys_bind(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+  return -ENOSYS;
+}
+
+static int sys_connect(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+  return -ENOSYS;
+}
+
+#else
+
+static int sys_socketcall(int call, unsigned long *args)
+{
+  return -ENOSYS;
+}
+
+#endif // SYS_socket
+
+#endif // ENABLENET
 
 #if defined(THREAD_COMMANDS)
 
@@ -1585,14 +1627,28 @@ ELK_CONSTRUCTOR()
   SYSCALL(setuid);
   SYSCALL(setsid);
 
-#if defined(FDCONSOLE)
+#if defined(ENABLEFDS)
+  SYSCALL(close);
   SYSCALL(dup);
   SYSCALL(ioctl);
   SYSCALL(write);
   SYSCALL(writev);
   SYSCALL(read);
   SYSCALL(readv);
-#endif
+
+#if defined(ENABLENET)
+#if defined(SYS_socket)
+  SYSCALL(accept);
+  SYSCALL(accept4);
+  SYSCALL(bind);
+  SYSCALL(connect);
+#else
+  SYSCALL(socketcall);
+#endif // SYS_Socket
+
+#endif // ENABLENET
+
+#endif // ENABLEFDS
 
 }
 
@@ -1611,7 +1667,7 @@ C_CONSTRUCTOR()
   // Create the idle thread(s).
   create_idle_threads();
 
-#if defined(FDCONSOLE)
+#if defined(ENABLEFDS)
   int __elk_fdconsole_open(fdset_t *fdset);
   __elk_fdconsole_open(&current->fdset);
 #endif
