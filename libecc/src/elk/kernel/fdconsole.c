@@ -18,16 +18,16 @@ FEATURE(fdconsole, console)
  * a the read, readv, write, and writev system calls complete
  * completely before another thread can do input or output.
  */
-static __elk_sem_t sem_output;  // The output semaphore.
-static __elk_sem_t sem_input;   // The input semaphore.
+static sem_t sem_output;        // The output semaphore.
+static sem_t sem_input;         // The input semaphore.
 
-static __elk_sem_t sem_ibuffer; // The input buffer semaphore.
+static sem_t sem_ibuffer;       // The input buffer semaphore.
 #define IBUFFER_SIZE 256
 static char ibuffer[IBUFFER_SIZE];
 static char *ibuffer_in;        // The input buffer input pointer.
 static char *ibuffer_out;       // The input buffer output pointer.
 
-static __elk_sem_t sem_obuffer; // The output buffer semaphore.
+static sem_t sem_obuffer;       // The output buffer semaphore.
 #define OBUFFER_SIZE 256
 static char obuffer[OBUFFER_SIZE];
 static char *obuffer_in;        // The output buffer input pointer.
@@ -49,14 +49,14 @@ static void rx_interrupt(void *arg)
   *ibuffer_in = ch;
   ibuffer_in = next;
 
-  __elk_sem_post(&sem_ibuffer);
+  sem_post(&sem_ibuffer);
 }
 
 /** Get the next character from the input buffer.
  */
 static int next_char(void)
 {
-  __elk_sem_wait(&sem_ibuffer);     // Wait for input.
+  sem_wait(&sem_ibuffer);               // Wait for input.
   int ch = *ibuffer_out++;
   if (ibuffer_out >= &ibuffer[IBUFFER_SIZE]) {
     ibuffer_out = ibuffer;
@@ -74,7 +74,7 @@ static void tx_interrupt(void *arg)
     next = obuffer;
   }
   if (next == obuffer_out) {
-    __elk_sem_post(&sem_obuffer);       // The buffer is not full any more.
+    sem_post(&sem_obuffer);             // The buffer is not full any more.
   }
 
   next = obuffer_out + 1;
@@ -103,7 +103,7 @@ static void send_char(int ch)
 #undef TEST
 #ifndef TEST
   if (console_send_char_nowait(ch)) {
-    return;                     // The character was sent.
+    return;                             // The character was sent.
   }
 #endif
 
@@ -113,7 +113,7 @@ static void send_char(int ch)
   }
   if (next == obuffer_out) {
     // The buffer is full.
-    __elk_sem_wait(&sem_obuffer);       // RICH: Deal with multiple buffers.
+    sem_wait(&sem_obuffer);             // RICH: Deal with multiple buffers.
   }
 
   *obuffer_in = ch;
@@ -142,7 +142,7 @@ static ssize_t do_write(const void *buf, size_t count)
 
 static ssize_t con_write(struct file *file, off_t *off, struct uio *uio)
 {
-  ssize_t s = __elk_sem_wait(&sem_output);
+  ssize_t s = sem_wait(&sem_output);
   if (s < 0) return s;
   s = 0;
   for (int i = 0; i < uio->iovcnt; ++i) {
@@ -154,7 +154,7 @@ static ssize_t con_write(struct file *file, off_t *off, struct uio *uio)
       s += c;
   }
 
-  __elk_sem_post(&sem_output);
+  sem_post(&sem_output);
   return s;
 }
 
@@ -164,7 +164,7 @@ static ssize_t do_read(void *buf, size_t count)
   unsigned char *p = buf;
   for ( ; s < count; ) {
     int ch = next_char();
-    ++s;                        // Count the character.
+    ++s;                                // Count the character.
     switch (ch) {
       // Some simple line handling.
     case 0x7F:
@@ -183,11 +183,11 @@ static ssize_t do_read(void *buf, size_t count)
     case '\r':
       // Make sure we send both a CR and LF.
       send_char(ch == '\r' ? '\n' : '\r');
-      *p = '\n';                // and send a newline back.
-      return s;                 // This read is done.
+      *p = '\n';                        // and send a newline back.
+      return s;                         // This read is done.
     default:
-      send_char(ch);            // Echo input.
-      *p++ = ch;                // and send it back.
+      send_char(ch);                    // Echo input.
+      *p++ = ch;                        // and send it back.
       break;
     }
   }
@@ -196,7 +196,7 @@ static ssize_t do_read(void *buf, size_t count)
 
 static ssize_t con_read(struct file *file, off_t *off, struct uio *uio)
 {
-  ssize_t s = __elk_sem_wait(&sem_input);
+  ssize_t s = sem_wait(&sem_input);
   if (s < 0) return s;
   s = 0;
   for (int i = 0; i < uio->iovcnt; ++i) {
@@ -207,7 +207,7 @@ static ssize_t con_read(struct file *file, off_t *off, struct uio *uio)
     }
     s += c;
   }
-  __elk_sem_post(&sem_input);
+  sem_post(&sem_input);
   return s;
 }
 
@@ -215,7 +215,7 @@ static int con_ioctl(struct file *file, unsigned int cmd, void *arg)
 {
   switch (cmd) {
   case TCGETS:
-    return 0;                   // Yes sir, we are a serial port.
+    return 0;                           // Yes sir, we are a serial port.
   default:
     return -EINVAL;
   }
@@ -246,10 +246,10 @@ ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
   }
 
   // Set up the console for interrupt serial I/O.
-  __elk_sem_init(&sem_output, 0, 1);
-  __elk_sem_init(&sem_input, 0, 1);
+  sem_init(&sem_output, 0, 1);
+  sem_init(&sem_input, 0, 1);
   ibuffer_in = ibuffer_out = ibuffer;
-  __elk_sem_init(&sem_obuffer, 0, 0);
+  sem_init(&sem_obuffer, 0, 0);
   obuffer_in = obuffer_out = obuffer;
 
   // Register the interrupt handler.

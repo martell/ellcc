@@ -164,8 +164,9 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
     return 0;
   }
 
-  __elk_timer_wake_at(when, NULL, 0, 0);
-  return 0;
+  __elk_timer_wake_at(when, NULL, 0, 0, 0);
+  // RICH: Check for interrupted call, set rem.
+  return s;
 }
 
 static int sys_nanosleep(const struct timespec *req, struct timespec *rem)

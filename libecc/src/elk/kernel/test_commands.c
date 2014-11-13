@@ -144,6 +144,7 @@ static void *thread3(void *arg)
   for ( ;; ) {
     // Very busy.
     ++counter;
+    sleep(10);
     return (void*)0xdeadbeef;
   }
 
@@ -215,13 +216,13 @@ static int join3Command(int argc, char **argv)
   }
 }
 
-static __elk_sem_t sem4;
+static sem_t sem4;
 static pthread_t id4;
 static void *thread4(void *arg)
 {
   printf ("thread4 started\n");
   for ( ;; ) {
-    __elk_sem_wait(&sem4);
+    sem_wait(&sem4);
     printf("thread4 running\n");
   }
 
@@ -235,9 +236,9 @@ static int thread4Command(int argc, char **argv)
     return COMMAND_OK;
   }
 
-  int s = __elk_sem_init(&sem4, 0, 0);
+  int s = sem_init(&sem4, 0, 0);
   if (s != 0)
-    printf("__elk_sem_init: %s\n", strerror(errno));
+    printf("sem_init: %s\n", strerror(errno));
 
   thread_create("thread4",              // name
                 &id4,                   // id
@@ -262,7 +263,7 @@ static int test4Command(int argc, char **argv)
     return COMMAND_ERROR;
   }
 
-  __elk_sem_post(&sem4);
+  sem_post(&sem4);
   return COMMAND_OK;
 }
 
@@ -272,10 +273,10 @@ static void *thread5(void *arg)
 {
   int me = (int)arg;
   printf ("thread5 started\n");
-  __elk_sem_t sem5;
-  int s = __elk_sem_init(&sem5, 0, 0);
+  sem_t sem5;
+  int s = sem_init(&sem5, 0, 0);
   if (s != 0) {
-    printf("__elk_sem_init: %s\n", strerror(errno));
+    printf("sem_init: %s\n", strerror(errno));
     return NULL;
   }
 
@@ -289,7 +290,7 @@ static void *thread5(void *arg)
       ts.tv_sec += 1;
       ts.tv_nsec -= 1000000000;
     }
-    __elk_sem_timedwait(&sem5, &ts);
+    sem_timedwait(&sem5, &ts);
     printf("thread5 running %d\n", me);
   }
 

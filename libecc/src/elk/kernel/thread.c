@@ -17,7 +17,6 @@
 #define DEFINE_STATE_STRINGS
 #include "thread.h"
 #include "file.h"
-#include "semaphore.h"
 #include "command.h"
 
 
@@ -50,9 +49,9 @@ typedef struct thread
   void *tls;                    // The thread's user space storage.
   struct thread *next;          // Next thread in any list.
   __elk_state state;            // The thread's state.
+  unsigned flags;               // Flags associated with  this thread.
   int priority;                 // The thread's priority. 0 is highest.
   const char *name;             // The thread's name.
-  int *set_child_tid;           // The set child thread id address.
   int *clear_child_tid;         // The clear child thread id address.
   pid_t pid;                    // The process id.
   pid_t tid;                    // The thread id.
@@ -74,7 +73,7 @@ typedef struct thread
 #endif
   fdset_t fdset;                // File descriptors used by the thread.
   MsgQueue queue;               // The thread's message queue.
-} thread;
+} thread_t;
 
 static int timer_cancel_wake_at(void *id);
 
@@ -112,15 +111,15 @@ int __elk_new_context(context_t **savearea, void (entry)(void),
                       int mode, long arg);
 
 typedef struct thread_queue {
-    thread *head;
-    thread *tail;
+    thread_t *head;
+    thread_t *tail;
 } ThreadQueue;
 
-#define IDLE_STACK 4096                 // The idle thread stack size.
-static thread idle_thread[PROCESSORS];  // The idle threads.
+#define IDLE_STACK 4096                         // The idle thread stack size.
+static thread_t idle_thread[PROCESSORS];        // The idle threads.
 static char *idle_stack[PROCESSORS][IDLE_STACK];
 
-static void schedule_nolock(thread *list);
+static void schedule_nolock(thread_t *list);
 
 /* The tid_lock protects the thread id pool.
  */
@@ -131,7 +130,7 @@ static int *tid_out;
 
 /** The thread id to thread mapping.
  */
-static thread *threads[THREADS];
+static thread_t *threads[THREADS];
 
 /** Initialize the tid pool.
  */
@@ -153,7 +152,7 @@ static void tid_initialize(void)
 
 /** Allocate a thread id to a new thread.
  */
-static int alloc_tid(thread *tp)
+static int alloc_tid(thread_t *tp)
 {
   __elk_lock_aquire(&tid_lock);
   if (tid_out == tid_in) {
@@ -235,7 +234,7 @@ static int priority;                    // The current highest priority.
 #if PRIORITIES > 1 && PROCESSORS > 1
 // Multiple priorities and processors.
 static int processor() { return 0; }    // RICH: For now.
-static thread *current[PROCESSORS];
+static thread_t *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];   // The ready to run list.
 static long irq_state[PROCESSORS];      // Set if an IRQ is active.
@@ -250,7 +249,7 @@ static long irq_state[PROCESSORS];      // Set if an IRQ is active.
 #elif PROCESSORS > 1
 // Multiple processors, one priority.
 static int processor() { return 0; }    // RICH: For now.
-static thread *current[PROCESSORS];
+static thread_t *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
 static long irq_state[PROCESSORS];      // Set if an IRQ is active.
@@ -264,7 +263,7 @@ static long irq_state[PROCESSORS];      // Set if an IRQ is active.
 
 #elif PRIORITIES > 1
 // One processor, multiple priorities.
-static thread *current;
+static thread_t *current;
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];
 static long irq_state;                  // Set if an IRQ is active.
@@ -278,7 +277,7 @@ static long irq_state;                  // Set if an IRQ is active.
 
 #else
 // One processor, one priority.
-static thread *current;
+static thread_t *current;
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
 static long irq_state;                  // Set if an IRQ is active.
@@ -297,7 +296,7 @@ static long long slice_time = 5000000;  // The time slice period (ns).
 /**** End of ready lock protected variables. ****/
 
 // The main thread's initial values.
-static thread main_thread = {
+static thread_t main_thread = {
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
@@ -323,7 +322,7 @@ void *__elk_enter_irq(void)
 {
   __elk_lock_aquire(&ready_lock);
   long state = irq_state++;
-  if (state) return 0;                // Already in IRQ state.
+  if (state) return NULL;             // Already in IRQ state.
   return current;                     // To save context.
 }
 
@@ -339,21 +338,22 @@ void *__elk_leave_irq(void)
 {
   __elk_lock_aquire(&ready_lock);
   long state = --irq_state;
-  if (state) return 0;                // Still in IRQ state.
-  return current;                     // Next context.
+  if (state) return NULL;               // Still in IRQ state.
+  return current;                       // Next context.
 }
 
 /** Get the current thread pointer.
  * This function is called from crt1.S.
  */
-thread *__elk_thread_self()
+thread_t *__elk_thread_self()
 {
+  if (irq_state) return NULL;           // Nothing current if in an interrupt context.
   return current;
 }
 
 /* Insert a thread in the ready queue.
  */
-static inline void insert_thread(thread *tp)
+static inline void insert_thread(thread_t *tp)
 {
   // A simple FIFO insertion.
   if (ready_tail(tp->priority)) {
@@ -376,8 +376,8 @@ static inline void insert_thread(thread *tp)
 static void slice_callback(void *arg1, void *arg2)
 {
   __elk_lock_aquire(&ready_lock);
-  if ((thread *)arg1 == current) {
-    schedule_nolock((thread *)arg1);
+  if ((thread_t *)arg1 == current) {
+    schedule_nolock((thread_t *)arg1);
     return;
   }
   __elk_lock_release(&ready_lock);
@@ -424,7 +424,7 @@ static void get_running(void)
     // Someone is waiting in the ready queue. Lets be fair.
     long long when = __elk_timer_get_monotonic(); // Get the current time.
     when += slice_time;                     // Add the slice time.
-    slice_tmo = __elk_timer_wake_at(when, slice_callback, (void *)current, 0);
+    slice_tmo = __elk_timer_wake_at(when, slice_callback, (void *)current, 0, 0);
   }
 
   current->state = RUNNING;
@@ -434,9 +434,9 @@ static void get_running(void)
 /* Schedule a list of threads.
  * The ready lock has been aquired.
  */
-static void schedule_nolock(thread *list)
+static void schedule_nolock(thread_t *list)
 {
-  thread *next;
+  thread_t *next;
 
   // Insert the thread list and the current thread in the ready list.
   int sched_current = 0;
@@ -463,14 +463,14 @@ static void schedule_nolock(thread *list)
   }
 
   // Switch to the new thread.
-  thread *me = current;
+  thread_t *me = current;
   get_running();
   __elk_switch(&current->saved_ctx, &me->saved_ctx);
 }
 
 /* Schedule a list of threads.
  */
-static void schedule(thread *list)
+static void schedule(thread_t *list)
 {
   __elk_lock_aquire(&ready_lock);
   schedule_nolock(list);
@@ -479,7 +479,7 @@ static void schedule(thread *list)
 /** Delete a thread.
  * The thread has been removed from all lists.
  */
-static void thread_delete(thread *tp)
+static void thread_delete(thread_t *tp)
 {
   release_tid(tp->tid);
   __elk_fdset_release(&tp->fdset);
@@ -503,7 +503,7 @@ static int nolock_change_state(int arg, __elk_state new_state)
     return __elk_enter(&current->saved_ctx);
   }
 
-  thread *me = current;
+  thread_t *me = current;
   me->state = new_state;
   get_running();
   return __elk_switch_arg(arg, &current->saved_ctx, &me->saved_ctx);
@@ -539,7 +539,7 @@ int __elk_send_message_q(MsgQueue *queue, Message msg)
   }
   envelope->message = msg;
 
-  thread *wakeup = NULL;
+  thread_t *wakeup = NULL;
   envelope->next = NULL;
   __elk_lock_aquire(&queue->lock);
   // Queue a envelope.
@@ -569,7 +569,7 @@ int __elk_send_message(int tid, Message msg)
   if (tid < 0 || tid >= THREADS) {
     return EINVAL;
   }
-  thread *tp = threads[tid];
+  thread_t *tp = threads[tid];
 
   if (tp == NULL) {
     return ESRCH;
@@ -599,7 +599,7 @@ Message get_message(MsgQueue *queue)
       // Sleep until something becomes available.
       // Remove me from the ready list.
       __elk_lock_aquire(&ready_lock);
-      thread *me = current;
+      thread_t *me = current;
       // Add me to the waiter list.
       me->next = queue->waiter;
       queue->waiter = me;
@@ -656,7 +656,7 @@ Message get_message_nowait(MsgQueue *queue)
 
 /* Set pointer to thread ID.
  * @param tidptr Where to put the thread ID.
- * @return The PID of the calling process.
+ * @return The tid of the calling process.
  *
  * Stub for now.
  */
@@ -664,6 +664,216 @@ static long sys_set_tid_address(int *tidptr)
 {
   current->clear_child_tid = tidptr;
   return current->tid;
+}
+
+/** The timeout list.
+ * This list is kept in order of expire times.
+ */
+
+struct timeout {
+  struct timeout *next;
+  long long when;               // When the timeout will expire.
+  thread_t *waiter;             // The waiting thread...
+  TimerCallback callback;       // ... or the callback function.
+  void *arg1;                   // The callback function arguments.
+  void *arg2;
+};
+
+static lock_t timeout_lock;
+static struct timeout *timeouts;
+
+/** Make an entry in the sleeping list and sleep
+ * or schedule a callback.
+ * RICH: Mark realtime timers.
+ */
+void *__elk_timer_wake_at(long long when,
+                    TimerCallback callback, void *arg1, void *arg2, int retval)
+{
+  struct timeout *tmo = malloc(sizeof(struct timeout));
+  if (tmo == NULL) {
+    return NULL;
+  }
+  tmo->next = NULL;
+  tmo->when = when;
+  tmo->callback = callback;
+  tmo->arg1 = arg1;
+  tmo->arg2 = arg2;
+  if (callback == NULL) {
+    // Put myself to sleep and wake me when it's over.
+    tmo->waiter = current;
+  } else {
+    tmo->waiter = NULL;
+  }
+
+  __elk_lock_aquire(&timeout_lock);
+  // Search the list.
+  if (timeouts == NULL) {
+    timeouts = tmo;
+  } else {
+    struct timeout *p, *q;
+    for (p = timeouts, q = NULL; p && p->when <= when; q = p, p = p->next)
+      continue;
+    if (p) {
+      // Insert befor p.
+      tmo->next = p;
+    }
+    if (q) {
+      // Insert after q.
+      q->next = tmo;
+    } else {
+      // Insert at the head.
+      timeouts = tmo;
+    }
+  }
+
+  // Set up the timeout.
+  __elk_timer_start(timeouts->when);
+  __elk_lock_release(&timeout_lock);
+  if (tmo->callback == NULL) {
+    // Put myself to sleep.
+    int s = change_state(retval, SLEEPING);
+    if (s != 0) {
+      if (s < 0) {
+        // An error (like EINTR) has occured.
+        errno = -s;
+      } else {
+        // Another system event has occured, handle it.
+      }
+      tmo  = NULL;
+    }
+  }
+  return tmo;         // Return the timeout identifier (opaque).
+}
+
+/** Cancel a previously scheduled wakeup.
+ * This function will cancel a previously scheduled wakeup.
+ * If the wakeup caused the caller to sleep, it will be rescheduled.
+ * @param id The timer id.
+ * @return 0 if cancelled, else the timer has probably already expired.
+ */
+static int timer_cancel_wake_at(void *id)
+{
+  if (id == NULL) return 0;           // Nothing pending.
+  int s = 0;
+  __elk_lock_aquire(&timeout_lock);
+  struct timeout *p, *q;
+  for (p = timeouts, q = NULL; p; q = p, p = p->next) {
+    if (p == id) {
+      break;
+    }
+  }
+
+  if (p) {
+    // Found it.
+    if (q) {
+      q->next = p->next;
+    } else {
+      timeouts = p->next;
+    }
+
+    if (p->waiter) {
+      // Wake up the sleeping thread.
+      p->waiter->next = NULL;
+      schedule(p->waiter);
+    }
+
+    free(p);
+  } else {
+    s = -1;                 // Not found.
+  }
+
+  __elk_lock_release(&timeout_lock);
+  return s;
+}
+
+/** Cancel some previously scheduled wakeups.
+ * This function will cancel previously scheduled wakeups that have the given
+ * arguments.
+ * @param id The timer id.
+ * @param arg1 The first argument to match.
+ * @param arg2 The second argument to match.
+ * @return The number of threads that have been awoken.
+ */
+static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
+                                   int retval)
+{
+  int s = 0;
+  __elk_lock_aquire(&timeout_lock);
+  struct timeout *p, *q;
+  for (p = timeouts, q = NULL; p; q = p, p = p->next) {
+    if (p->arg1 == arg1 && p->arg2 == arg2) {
+      // Have a match.
+      if (q) {
+        q->next = p->next;
+      } else {
+        timeouts = p->next;
+      }
+
+      if (p->waiter) {
+        // Wake up the sleeping thread.
+        p->waiter->next = NULL;
+        __elk_context_set_return(p->waiter->saved_ctx, retval);
+        schedule(p->waiter);
+        ++s;
+      }
+
+      free(p);
+      if (s >= count) {
+        break;
+      }
+    }
+  }
+
+  __elk_lock_release(&timeout_lock);
+  return s;
+}
+
+/** Timer expired handler.
+ * This function is called in an interrupt context.
+ */
+long long __elk_timer_expired(long long when)
+{
+  __elk_lock_aquire(&timeout_lock);
+  thread_t *ready = NULL;
+  thread_t *next = NULL;
+  while (timeouts && timeouts->when <= when) {
+    struct timeout *tmo = timeouts;
+    timeouts = timeouts->next;
+    // If the timeout hasn't been cancelled.
+    if (tmo->waiter) {
+      // Make sure the earliest are scheduled first.
+      if (next) {
+        next->next = tmo->waiter;
+        next = next->next;
+      } else {
+        ready = tmo->waiter;
+        next = ready;
+      }
+      next->next = NULL;
+    }
+
+    if (tmo->callback) {
+      // Call the callback function.
+      tmo->callback(tmo->arg1, tmo->arg2);
+    }
+
+    free(tmo);
+  }
+
+  if (timeouts == NULL) {
+    when = 0;
+  } else {
+    when = timeouts->when;
+  }
+
+  __elk_lock_release(&timeout_lock);
+
+  if (ready) {
+    // Schedule the ready threads.
+    schedule(ready);
+  }
+
+  return when;        // Schedule the next timeout, if any.
 }
 
 static long sys_clone(unsigned long flags, void *stack, int *ptid,
@@ -678,13 +888,14 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
                       long arg5, long data, void (*entry)(void))
 {
   // Create a new thread, copying context.
-  thread *tp = malloc(sizeof(thread));    // RICH: bin.
+  thread_t *tp = malloc(sizeof(thread_t));    // RICH: bin.
   if (!tp) {
     return -ENOMEM;
   }
 
   // Inherit the parent's attributes.
   *tp = *current;
+  tp->clear_child_tid = NULL;
 
   // Mark the parent.
   tp->ppid = tp->tid;
@@ -704,14 +915,14 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 
   // Record the TLS.
   tp->tls = regs;
+
   if (flags & CLONE_CHILD_CLEARTID) {
-    VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_RD);
+    VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
     tp->clear_child_tid = ctid;
   }
 
   if (flags & CLONE_CHILD_SETTID) {
     VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
-    tp->set_child_tid = ctid;
     // RICH: This write should be in the child's address space.
     if (ctid) {
       *ctid = tp->tid;
@@ -732,8 +943,6 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   }
   tp->priority = priority;
 
-  tp->set_child_tid = NULL;
-  tp->clear_child_tid = NULL;
   tp->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
 
   context_t *cp = (context_t *)stack;
@@ -748,14 +957,17 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   return tp->tid;
 }
 
+#define FUTEX_MAGIC 0xbeadcafe
+
 /* Manipulate a futex.
  */
 static int sys_futex(int *uaddr, int op, int val,
                      const struct timespec *timeout, int *uaddr2, int val3)
 {
+  int s = 0;
+
   switch (op & 0x7F) {
   default:
-  case FUTEX_WAKE:
   case FUTEX_FD:
   case FUTEX_REQUEUE:
   case FUTEX_CMP_REQUEUE:
@@ -767,13 +979,28 @@ static int sys_futex(int *uaddr, int op, int val,
     printf("unhandled futex operation: %d\n", op);
     return -ENOSYS;
 
-  case FUTEX_WAIT:
-    // RICH: Fake for now.
-    *uaddr = 0;
+  case FUTEX_WAIT: {
+    long long when;
+    if (timeout == NULL) {
+      // RICH: Forever.
+      when = 0x7FFFFFFFFFFFLL;
+    } else {
+      when = timeout->tv_sec * 1000000000LL + timeout->tv_nsec;
+    }
+
+    if (__elk_timer_wake_at(when, NULL, (void *)FUTEX_MAGIC, uaddr,
+                            -ETIMEDOUT) == NULL) {
+      s = -ENOMEM;
+    }
     break;
   }
 
-  return 0;
+  case FUTEX_WAKE:
+    s = timer_cancel_wake_count(val, (void *)FUTEX_MAGIC, uaddr, 0);
+    break;
+  }
+
+  return s;
 }
 
 /* Send a signal to a thread.
@@ -784,7 +1011,7 @@ static int sys_tkill(int tid, int sig)
     return -EINVAL;
   }
 
-  thread *tp = threads[tid];
+  thread_t *tp = threads[tid];
   if (tp == NULL) {
     // Invalid thread id.
     return -ESRCH;
@@ -795,7 +1022,7 @@ static int sys_tkill(int tid, int sig)
     // The currently running thread is being signaled.
   } else if (tp->state == READY) {
     // Remove this thread from its ready list.
-    thread *p, *l;
+    thread_t *p, *l;
     for (p = ready_head(tp->priority), l = NULL;
          p != tp; l = p, p = p->next) {
       continue;
@@ -825,6 +1052,12 @@ static int sys_tkill(int tid, int sig)
 
 static void sys_exit(int status)
 {
+  if (current->clear_child_tid) {
+    *current->clear_child_tid = 0;
+    timer_cancel_wake_count(~0, (void *)FUTEX_MAGIC, current->clear_child_tid,
+                            0);
+  }
+
   change_state(0, EXITING);
 }
 
@@ -908,7 +1141,7 @@ static int sys_setpgid(pid_t pid, pid_t pgid)
     pid = current->tid;
   }
 
-  thread *pid_thread = threads[pid];
+  thread_t *pid_thread = threads[pid];
   if (pid_thread == NULL) {
     // Not an active pid.
     return -ESRCH;
@@ -924,7 +1157,7 @@ static int sys_setpgid(pid_t pid, pid_t pgid)
     pgid = pid_thread->tid;
   }
 
-  thread *pgid_thread = threads[pgid];
+  thread_t *pgid_thread = threads[pgid];
   if (pgid_thread == NULL) {
     // Not an active id.
     return -ESRCH;
@@ -1116,341 +1349,6 @@ static int sys_setsid(void)
   return current->tid;
 }
 
-/** The timeout list.
- * This list is kept in order of expire times.
- */
-
-struct timeout {
-  struct timeout *next;
-  long long when;               // When the timeout will expire.
-  thread *waiter;               // The waiting thread...
-  TimerCallback callback;       // ... or the callback function.
-  void *arg1;                   // The callback function arguments.
-  void *arg2;
-};
-
-static lock_t timeout_lock;
-static struct timeout *timeouts;
-
-/** Make an entry in the sleeping list and sleep
- * or schedule a callback.
- * RICH: Mark realtime timers.
- */
-void *__elk_timer_wake_at(long long when,
-                    TimerCallback callback, void *arg1, void *arg2)
-{
-  struct timeout *tmo = malloc(sizeof(struct timeout));
-  tmo->next = NULL;
-  tmo->when = when;
-  tmo->callback = callback;
-  tmo->arg1 = arg1;
-  tmo->arg2 = arg2;
-  if (callback == NULL) {
-    // Put myself to sleep and wake me when it's over.
-    tmo->waiter = current;
-  } else {
-    tmo->waiter = NULL;
-  }
-
-  __elk_lock_aquire(&timeout_lock);
-  // Search the list.
-  if (timeouts == NULL) {
-    timeouts = tmo;
-  } else {
-    struct timeout *p, *q;
-    for (p = timeouts, q = NULL; p && p->when < when; q = p, p = p->next)
-      continue;
-    if (p) {
-      // Insert befor p.
-      tmo->next = p;
-    }
-    if (q) {
-      // Insert after q.
-      q->next = tmo;
-    } else {
-      // Insert at the head.
-      timeouts = tmo;
-    }
-  }
-
-  // Set up the timeout.
-  __elk_timer_start(timeouts->when);
-  __elk_lock_release(&timeout_lock);
-  if (tmo->callback == NULL) {
-    // Put myself to sleep.
-    int s = change_state(0, TIMEOUT);
-    if (s != 0) {
-      if (s < 0) {
-        // An error (like EINTR) has occured.
-        errno = -s;
-      } else {
-        // Another system event has occured, handle it.
-      }
-      tmo  = NULL;
-    }
-  }
-  return tmo;         // Return the timeout identifier (opaque).
-}
-
-/** Cancel a previously scheduled wakeup.
- * This function will cancel a previously scheduled wakeup.
- * If the wakeup caused the caller to sleep, it will be rescheduled.
- * @param id The timer id.
- * @return 0 if cancelled, else the timer has probably already expired.
- */
-static int timer_cancel_wake_at(void *id)
-{
-  if (id == NULL) return 0;           // Nothing pending.
-  int s = 0;
-  __elk_lock_aquire(&timeout_lock);
-  struct timeout *p, *q;
-  for (p = timeouts, q = NULL; p; q = p, p = p->next) {
-    if (p == id) {
-      break;
-    }
-  }
-
-  if (p) {
-    // Found it.
-    if (q) {
-      q->next = p->next;
-    } else {
-      timeouts = p->next;
-    }
-
-    if (p->waiter) {
-      // Wake up the sleeping thread.
-      p->waiter->next = NULL;
-      schedule(p->waiter);
-    }
-
-    free(p);
-  } else {
-    s = -1;                 // Not found.
-  }
-
-  __elk_lock_release(&timeout_lock);
-  return s;
-}
-
-/** Timer expired handler.
- * This function is called in an interrupt context.
- */
-long long __elk_timer_expired(long long when)
-{
-  __elk_lock_aquire(&timeout_lock);
-  thread *ready = NULL;
-  thread *next = NULL;
-  while (timeouts && timeouts->when <= when) {
-    struct timeout *tmo = timeouts;
-    timeouts = timeouts->next;
-    // If the timeout hasn't been cancelled.
-    if (tmo->waiter) {
-      // Make sure the earliest are scheduled first.
-      if (next) {
-        next->next = tmo->waiter;
-        next = next->next;
-      } else {
-        ready = tmo->waiter;
-        next = ready;
-      }
-      next->next = NULL;
-    }
-
-    if (tmo->callback) {
-      // Call the callback function.
-      tmo->callback(tmo->arg1, tmo->arg2);
-    }
-
-    free(tmo);
-  }
-
-  if (timeouts == NULL) {
-    when = 0;
-  } else {
-    when = timeouts->when;
-  }
-
-  __elk_lock_release(&timeout_lock);
-
-  if (ready) {
-    // Schedule the ready threads.
-    schedule(ready);
-  }
-
-  return when;        // Schedule the next timeout, if any.
-}
-
-/** Initialize a semaphore.
- * @param sem A pointer to the semaphore.
- * @param pshared != 0 if this semaphore is shared among processes.
- *                     This is not implemented.
- * @param value The initial semaphore value.
- */
-int __elk_sem_init(__elk_sem_t *sem, int pshared, unsigned int value)
-{
-  if (pshared) {
-    // Not supported.
-    errno = ENOSYS;
-    return -1;
-  }
-
-  sem->lock = (lock_t)LOCK_INITIALIZER;
-  sem->count = value;
-  sem->waiters = NULL;
-  return 0;
-}
-
-/** Wait on a semaphore.
- * @param sem A pointer to the semaphore.
- */
-int __elk_sem_wait(__elk_sem_t *sem)
-{
-  int s = 0;
-  __elk_lock_aquire(&sem->lock);
-  for ( ;; ) {
-    if (sem->count) {
-      --sem->count;
-      __elk_lock_release(&sem->lock);
-      break;
-    } else {
-      thread *me = current;
-      me->next = sem->waiters;
-      sem->waiters = me;
-      __elk_lock_release(&sem->lock);
-      s = change_state(0, SEMWAIT);
-      if (s != 0) {
-        if (s < 0) {
-          // An error (like EINTR) has occured.
-          errno = -s;
-        } else {
-          // Another system event has occured, handle it.
-        }
-        s = -1;
-        break;
-      }
-    }
-  }
-  return s;
-}
-
-/** Try to take a semaphore.
- * @param sem A pointer to the semaphore.
- */
-int __elk_sem_try_wait(__elk_sem_t *sem)
-{
-  __elk_lock_aquire(&sem->lock);
-  int s = 0;
-  if (sem->count) {
-    --sem->count;
-  } else {
-    // Would have to wait.
-    errno = EAGAIN;
-    s = -1;
-  }
-  __elk_lock_release(&sem->lock);
-  return s;
-}
-
-/** This callback occurs when a __elk_sem_timedwait timeout expires.
- */
-static void callback(void *arg1, void *arg2)
-{
-  __elk_sem_t *sem = (__elk_sem_t *)arg1;
-  thread *tp = (thread *)arg2;
-  __elk_lock_aquire(&sem->lock);
-  thread *p, *q;
-  for (p = sem->waiters, q = NULL; p; q = p, p = p->next) {
-    if (p == tp) {
-      // This thread timed out.
-      if (q) {
-        q->next = p->next;
-      } else {
-        sem->waiters = p->next;
-      }
-      p->next = NULL;
-      __elk_context_set_return(p->saved_ctx, -ETIMEDOUT);
-      schedule(p);
-    }
-  }
-  __elk_lock_release(&sem->lock);
-}
-
-/** Wait on a semaphore with a timeout.
- * @param sem A pointer to the semaphore.
- * @param abs_timeout The timeout.
- */
-int __elk_sem_timedwait(__elk_sem_t *sem, struct timespec *abs_timeout)
-{
-  int s = 0;
-  __elk_lock_aquire(&sem->lock);
-  for ( ;; ) {
-    if (sem->count) {
-      --sem->count;
-      __elk_lock_release(&sem->lock);
-      break;
-    } else {
-      long long when;
-      when = abs_timeout->tv_sec * 1000000000LL + abs_timeout->tv_nsec;
-      long long now = __elk_timer_get_realtime();
-      if (now > when) {
-        // Already expired.
-        __elk_lock_release(&sem->lock);
-        errno = ETIMEDOUT;
-        s = -1;
-      } else {
-        thread *me = current;
-        me->next = sem->waiters;
-        sem->waiters = me;
-        __elk_lock_release(&sem->lock);
-        when -= __elk_timer_get_realtime_offset();
-        void *t = __elk_timer_wake_at(when, callback,
-                                (void *)sem, (void *)me);
-        s = change_state(0, SEMTMO);
-        timer_cancel_wake_at(t);
-        if (s != 0) {
-          if (s < 0) {
-            // An error (like EINTR) has occured.
-            errno = -s;
-          } else {
-            // Another system event has occured, handle it.
-          }
-          s = -1;
-          break;
-        }
-      }
-    }
-  }
-  return s;
-}
-
-/** Unlock a semaphore.
- * @param sem A pointer to the semaphore.
- */
-int __elk_sem_post(__elk_sem_t *sem)
-{
-  int s = 0;
-  thread *list = NULL;
-  __elk_lock_aquire(&sem->lock);
-  ++sem->count;
-  if (sem->count == 0) {
-    --sem->count;
-    errno = EOVERFLOW;
-    s = -1;
-  } else {
-    s = 0;
-    if (sem->waiters) {
-      list = sem->waiters;
-      sem->waiters = NULL;
-    }
-  }
-  __elk_lock_release(&sem->lock);
-  if (list) {
-    schedule(list);
-  }
-  return s;
-}
-
 #if defined(ENABLEFDS)
 static int sys_close(int fd)
 {
@@ -1548,7 +1446,7 @@ static int tsCommand(int argc, char **argv)
   printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %-10.10s \n",
          "PID", "TID", "TADR", "STATE", "PRI", "NAME");
   for (int i = 0;  i < THREADS; ++i) {
-    thread *t =  threads[i];
+    thread_t *t =  threads[i];
     if (t == NULL) {
       continue;
     }

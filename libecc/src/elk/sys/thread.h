@@ -102,10 +102,7 @@ typedef enum state {
   READY,                        // The thread is ready to run.
   RUNNING,                      // The thread is running.
   EXITING,                      // The thread is exiting.
-  TIMEOUT,                      // The thread is waiting for a timeout.
-  SEMWAIT,                      // The thread is waiting on a semaphore.
-  SEMTMO,                       // The thread is waiting on a semaphore
-                                //     with a timeout.
+  SLEEPING,                     // The thread is sleeping.
   MSGWAIT,                      // The thread is waiting for a message.
 
   LASTSTATE                     // To get the number of states.
@@ -117,9 +114,7 @@ static const char *state_names[LASTSTATE] =
   [IDLE] = "IDLE",
   [READY] = "READY",
   [RUNNING] = "RUNNING",
-  [TIMEOUT] = "TIMEOUT",
-  [SEMWAIT] = "SEMWAIT",
-  [SEMTMO] = "SEMTMO",
+  [SLEEPING] = "SLEEPING",
   [MSGWAIT] = "MSGWAIT",
 };
 #endif
@@ -148,7 +143,7 @@ long long __elk_timer_expired(long long when);
  */
 typedef void (*TimerCallback)(void *, void *);
 void *__elk_timer_wake_at(long long when,
-                    TimerCallback callback, void *arg1, void *arg2);
+                    TimerCallback callback, void *arg1, void *arg2, int retval);
 
 /** Get the current thread id.
  */
