@@ -1,6 +1,7 @@
 current SVN:
 
-* Added file descriptor support.
+* Added initial ELK futex support. sem_* and pthread_mutex_* work.
+* Added ELK file descriptor support.
 * Differentiate between ELK and C constructors.
 * Started a framework for ELK unit tests.
 * Started file descriptor handling for ELK.

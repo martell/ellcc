@@ -4,9 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <time.h>
-#include <kernel.h>
-#include <command.h>
+#include <pthread.h>
+#include "time.h"
+#include "kernel.h"
+#include "command.h"
 
 // Make the command processor a loadable feature.
 FEATURE(command, command)
@@ -19,8 +20,8 @@ typedef struct command {
   CommandFn fn;                         // The callback.
 } Command;
 
-// The command lock.
-static lock_t lock;
+// The command mutex.
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static int commands = 1;                // The number of commands defined.
 
 // The  command table.
@@ -34,10 +35,10 @@ void command_insert(const  char *name, CommandFn fn)
     return;
   }
 
-  __elk_lock_aquire(&lock);
+  pthread_mutex_lock(&mutex);
   command_table[commands] = (Command){ name, fn };
   ++commands;
-  __elk_lock_release(&lock);
+  pthread_mutex_unlock(&mutex);
 }
 
 /** Parse a string for "words".

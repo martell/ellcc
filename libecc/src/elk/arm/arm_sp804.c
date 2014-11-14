@@ -2,6 +2,7 @@
  * RICH: This should be renamed to something a little less generic.
  */
 
+#include <pthread.h>
 #include <time.h>
 #include "kernel.h"
 #include "timer.h"
@@ -10,7 +11,7 @@
 #include "arm_sp804.h"
 
 static long resolution;                     // The clock divisor.
-static lock_t lock;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static volatile time_t monotonic_seconds;   // The monotonic timer.
 static long long realtime_offset;           // The realtime timer offset.
 static int timeout_active;                  // Set if a timeout is active.
@@ -50,9 +51,9 @@ long long __elk_timer_get_monotonic(void)
 long long __elk_timer_get_realtime(void)
 {
   long long value = __elk_timer_get_monotonic();
-  __elk_lock_aquire(&lock);
+  pthread_mutex_lock(&mutex);
   value += realtime_offset;
-  __elk_lock_release(&lock);
+  pthread_mutex_unlock(&mutex);
   return value;
 }
 
@@ -61,9 +62,9 @@ long long __elk_timer_get_realtime(void)
 void __elk_timer_set_realtime(long long value)
 {
   long long mt = __elk_timer_get_monotonic();
-  __elk_lock_aquire(&lock);
+  pthread_mutex_lock(&mutex);
   realtime_offset = value - mt;
-  __elk_lock_release(&lock);
+  pthread_mutex_unlock(&mutex);
 }
 
 /** Check to see if a timeout interrupt is needed.
@@ -96,10 +97,8 @@ static void check_timeout()
  */
 static void sec_interrupt(void *arg)
 {
-  __elk_lock_aquire(&lock);
   monotonic_seconds++;
   check_timeout();
-  __elk_lock_release(&lock);
 }
 
 /** Start the sleep timer.
@@ -117,11 +116,11 @@ void __elk_timer_start(long long when)
       }
     }
   } while (when <= mt);
-  __elk_lock_aquire(&lock);
+  pthread_mutex_lock(&mutex);
   timeout_active = 1;
   timeout = when;
   check_timeout();
-  __elk_lock_release(&lock);
+  pthread_mutex_unlock(&mutex);
 }
 
 static void short_interrupt(void *arg)
@@ -129,9 +128,7 @@ static void short_interrupt(void *arg)
   long long mt = __elk_timer_get_monotonic();
   mt = __elk_timer_expired(mt);
   if (mt == 0) {
-    __elk_lock_aquire(&lock);
     timeout_active = 0;
-    __elk_lock_release(&lock);
     return;
   }
   __elk_timer_start(mt);

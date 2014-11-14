@@ -72,7 +72,7 @@ int fnullop_close(struct file *);
 // A set of file descriptors.
 typedef struct fdset
 {
-  lock_t lock;                  // The lock protecting the set.
+  pthread_mutex_t mutex;        // The mutex protecting the set.
   unsigned references;          // The number of references to this set.
   unsigned count;               // Number of file descriptors in the set.
   struct fd **fds;              // The file descriptor nodes.

@@ -1,11 +1,11 @@
 /** Schedule threads for execution.
  */
-#include "config.h"                     // Configuration parameters.
 #include <syscalls.h>                   // For syscall numbers.
 #include <sys/uio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #define _GNU_SOURCE
+#include <pthread.h>
 #include <stdio.h>
 #include <sched.h>
 #include <string.h>
@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <inttypes.h>
 
+#include "config.h"                     // Configuration parameters.
 #include "timer.h"
 #define DEFINE_STATE_STRINGS
 #include "thread.h"
@@ -121,9 +122,9 @@ static char *idle_stack[PROCESSORS][IDLE_STACK];
 
 static void schedule_nolock(thread_t *list);
 
-/* The tid_lock protects the thread id pool.
+/* The tid_mutex protects the thread id pool.
  */
-static lock_t tid_lock;
+static pthread_mutex_t tid_mutex = PTHREAD_MUTEX_INITIALIZER;
 static int tids[THREADS];
 static int *tid_in;
 static int *tid_out;
@@ -154,17 +155,17 @@ static void tid_initialize(void)
  */
 static int alloc_tid(thread_t *tp)
 {
-  __elk_lock_aquire(&tid_lock);
+  pthread_mutex_lock(&tid_mutex);
   if (tid_out == tid_in) {
     // No more thread ids are available.
-    __elk_lock_release(&tid_lock);
+    pthread_mutex_unlock(&tid_mutex);
     return -EAGAIN;
   }
   tp->tid = *tid_out++;
   if (tid_out == &tids[THREADS]) {
     tid_out = tids;
   }
-  __elk_lock_release(&tid_lock);
+  pthread_mutex_unlock(&tid_mutex);
   threads[tp->tid] = tp;
 
   return tp->tid;
@@ -179,7 +180,7 @@ static void release_tid(int tid)
     return;
   }
 
-  __elk_lock_aquire(&tid_lock);
+  pthread_mutex_lock(&tid_mutex);
   if (tid_in == &tids[THREADS]) {
     tid_in = tids;
   } else {
@@ -188,14 +189,14 @@ static void release_tid(int tid)
   if (tid_in == tid_out) {
     // The tid pool is full.
     // This should never happen.
-    __elk_lock_release(&tid_lock);
+    pthread_mutex_unlock(&tid_mutex);
     return;
   }
 
   *tid_in = tid;
   // Clear the thread map entry.
   threads[tid] = NULL;
-  __elk_lock_release(&tid_lock);
+  pthread_mutex_unlock(&tid_mutex);
 }
 
 /** The idle thread.
@@ -300,7 +301,7 @@ static thread_t main_thread = {
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
-  .fdset = { .lock = LOCK_INITIALIZER },
+  .fdset = { .mutex = PTHREAD_MUTEX_INITIALIZER },
 #if defined(HAVE_CAPABILITY)
   .cap = SUPERUSER_CAPABILITIES,
   .ecap = SUPERUSER_CAPABILITIES,
@@ -829,7 +830,7 @@ static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
 }
 
 /** Timer expired handler.
- * This function is called in an interrupt context.
+ * This function can be called in an interrupt context.
  */
 long long __elk_timer_expired(long long when)
 {
@@ -986,6 +987,8 @@ static int sys_futex(int *uaddr, int op, int val,
       when = 0x7FFFFFFFFFFFLL;
     } else {
       when = timeout->tv_sec * 1000000000LL + timeout->tv_nsec;
+      // Turn a relative time in to an absolute time.
+      when += __elk_timer_get_monotonic();
     }
 
     if (__elk_timer_wake_at(when, NULL, (void *)FUTEX_MAGIC, uaddr,
@@ -1436,10 +1439,10 @@ static int sys_socketcall(int call, unsigned long *args)
 
 #if defined(THREAD_COMMANDS)
 
-static int tsCommand(int argc, char **argv)
+static int psCommand(int argc, char **argv)
 {
   if (argc <= 0) {
-    printf("show thread information.\n");
+    printf("show process information.\n");
     return COMMAND_OK;
   }
 
@@ -1458,6 +1461,27 @@ static int tsCommand(int argc, char **argv)
     printf(t->pid == t->tid ? "%s" : "[%s]", t->name ? t->name : "");
     printf("\n");
   }
+
+  return COMMAND_OK;
+}
+
+static int ssCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("show sleeping thread information.\n");
+    return COMMAND_OK;
+  }
+
+  __elk_lock_aquire(&timeout_lock);
+  int i = 0;
+  for (struct timeout *tmo = timeouts; tmo; tmo = tmo->next) {
+    printf("%d %lld", i, tmo->when);
+    for (thread_t *tp = tmo->waiter; tp; tp = tp->next) {
+      printf(" %d", tp->tid);
+    }
+    printf("\n");
+  }
+  __elk_lock_release(&timeout_lock);
 
   return COMMAND_OK;
 }
@@ -1485,7 +1509,8 @@ ELK_CONSTRUCTOR()
 
 #if defined(THREAD_COMMANDS)
   command_insert(NULL, sectionCommand);
-  command_insert("ts", tsCommand);
+  command_insert("ps", psCommand);
+  command_insert("ss", ssCommand);
 #endif
 
 #define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)

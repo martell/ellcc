@@ -1,9 +1,9 @@
 /* Interrupt handling code.
  */
+#include <pthread.h>
 #include "irq.h"
-#include "kernel.h"
 
-static lock_t lock;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static const IRQHandler *handlers[IRQ_MAX_IDS];
 static int irq_index;
 
@@ -11,7 +11,7 @@ static int irq_index;
  */
 void irq_register(const IRQHandler *handler)
 {
-  __elk_lock_aquire(&lock);
+  pthread_mutex_lock(&mutex);
   if (irq_canid()) {
     // Interrupts are identified by the hardware.
     // Add to the list by ID.
@@ -25,7 +25,7 @@ void irq_register(const IRQHandler *handler)
 
   // Set up the IRQ hardware.
   irq_setup(handler);
-  __elk_lock_release(&lock);
+  pthread_mutex_unlock(&mutex);
 }
 
 /** Identify an interrupt source, disable it, return a handler.

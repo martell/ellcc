@@ -1,12 +1,13 @@
 /** File handling.
  */
+#include <pthread.h>
 #include "config.h"
 #include "kernel.h"
 #include "file.h"
 
 typedef struct file
 {
-  lock_t lock;                  // The lock protecting the file.
+  pthread_mutex_t mutex;        // The mutex protecting the file.
   off_t offset;                 // The current file offset.
   unsigned references;          // The number of references to this file.
   const fileops_t *fileops;     // Operations on a file.
@@ -16,7 +17,7 @@ typedef struct file
 
 typedef struct fd
 {
-  lock_t lock;                  // The lock protecting the file descriptor.
+  pthread_mutex_t mutex;        // The mutex protecting the file descriptor.
   unsigned references;          // The number of references to this descriptor.
   file_t *file;                 // The file accessed by the file descriptor.
 } fd_t;
@@ -29,15 +30,15 @@ static void file_release(file_t **file)
     return;
   }
 
-  __elk_lock_aquire(&(*file)->lock);
+  pthread_mutex_lock(&(*file)->mutex);
   if (--(*file)->references == 0) {
     // Release the file.
-    __elk_lock_release(&(*file)->lock);
+    pthread_mutex_unlock(&(*file)->mutex);
     free(*file);
     *file = NULL;
     return;
   }
-  __elk_lock_release(&(*file)->lock);
+  pthread_mutex_unlock(&(*file)->mutex);
 }
 
 /** Add a reference to a file.
@@ -48,7 +49,7 @@ static int file_reference(file_t *file)
     return 0;
   }
 
-  __elk_lock_aquire(&file->lock);
+  pthread_mutex_lock(&file->mutex);
   int s = 0;
   if (++file->references == 0) {
     // Too many references.
@@ -56,7 +57,7 @@ static int file_reference(file_t *file)
     s = -EAGAIN;
   }
 
-  __elk_lock_release(&file->lock);
+  pthread_mutex_unlock(&file->mutex);
   return s;
 }
 
@@ -68,15 +69,15 @@ static void fd_release(fd_t **fd)
     return;
   }
 
-  __elk_lock_aquire(&(*fd)->lock);
+  pthread_mutex_lock(&(*fd)->mutex);
   if (--(*fd)->references == 0) {
     file_release(&(*fd)->file);         // Release the file.
-    __elk_lock_release(&(*fd)->lock);
+    pthread_mutex_unlock(&(*fd)->mutex);
     free(*fd);
     *fd = NULL;
     return;
   }
-  __elk_lock_release(&(*fd)->lock);
+  pthread_mutex_unlock(&(*fd)->mutex);
 }
 
 /** Add a reference to a file descriptor.
@@ -87,7 +88,7 @@ static int fd_reference(fd_t *fd)
     return 0;
   }
 
-  __elk_lock_aquire(&fd->lock);
+  pthread_mutex_lock(&fd->mutex);
   int s = 0;
   if (++fd->references == 0) {
     // Too many references.
@@ -100,7 +101,7 @@ static int fd_reference(fd_t *fd)
     }
   }
 
-  __elk_lock_release(&fd->lock);
+  pthread_mutex_unlock(&fd->mutex);
   return s;
 }
 
@@ -108,7 +109,7 @@ static int fd_reference(fd_t *fd)
  */
 static int __elk_fdset_reference(fdset_t *fdset)
 {
-  __elk_lock_aquire(&fdset->lock);
+  pthread_mutex_lock(&fdset->mutex);
 
   int s = 0;
   if (++fdset->references == 0) {
@@ -130,7 +131,7 @@ static int __elk_fdset_reference(fdset_t *fdset)
     }
   }
 
-  __elk_lock_release(&fdset->lock);
+  pthread_mutex_unlock(&fdset->mutex);
   return s;
 }
 
@@ -138,7 +139,7 @@ static int __elk_fdset_reference(fdset_t *fdset)
  */
 void __elk_fdset_release(fdset_t *fdset)
 {
-  __elk_lock_aquire(&fdset->lock);
+  pthread_mutex_lock(&fdset->mutex);
 
   for (int i = 0; i < fdset->count; ++i) {
     fd_release(&fdset->fds[i]);
@@ -151,7 +152,7 @@ void __elk_fdset_release(fdset_t *fdset)
     fdset->count = 0;
   }
 
-  __elk_lock_release(&fdset->lock);
+  pthread_mutex_unlock(&fdset->mutex);
 }
 
 /** Clone or copy the fdset.
@@ -179,7 +180,7 @@ static int newfile(file_t **res,
     return -ENOMEM;
   }
 
-  file->lock = (lock_t)LOCK_INITIALIZER;
+  pthread_mutex_init(&file->mutex, NULL);
   file->references = 0;
   file->offset = 0;
   file->type = type;
@@ -243,7 +244,7 @@ static int newfd(fd_t **res)
     return -ENOMEM;
   }
 
-  fd->lock = (lock_t)LOCK_INITIALIZER;
+  pthread_mutex_init(&fd->mutex, NULL);
   fd->references = 0;
   fd->file = NULL;
   *res = fd;

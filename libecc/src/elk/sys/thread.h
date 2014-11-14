@@ -62,6 +62,33 @@ typedef struct envelope {
   Message message;
 } Envelope;
 
+typedef struct
+{
+  int lock;
+  int level;
+} lock_t;
+
+#define LOCK_INITIALIZER { 0, 0 }
+
+static inline void __elk_lock_aquire(lock_t *lock)
+{
+// RICH:
+#if !defined(__microblaze__)
+  while(!__atomic_test_and_set(&lock->lock, __ATOMIC_SEQ_CST))
+      continue;
+#endif
+  lock->level = splhigh();
+}
+
+static inline void __elk_lock_release(lock_t *lock)
+{
+  splx(lock->level);
+// RICH:
+#if !defined(__microblaze__)
+  __atomic_clear(&lock->lock, __ATOMIC_SEQ_CST);
+#endif
+}
+
 typedef struct queue
 {
   lock_t lock;
