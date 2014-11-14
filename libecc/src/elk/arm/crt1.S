@@ -269,14 +269,19 @@ __in_syscall:                           // The stack frame is valid here.
         str     r7, [r8]                // Save call number for error
                                         // reporting.
         bhs     check_arm_syscall       // Jump if too big for a syscall.
+        and     r8, sp, #4              // Test stack alignment.
+        sub     sp, sp, r8              // Adjust the stack if needed.
+        push    { r8, r9 }              // Save the adjustment.
         ldr     r8, =swi_table          // Get the system call table.
         ldr     r8, [r8, r7, lsl #2]    // Get the system call entry.
-        ldr     r7, [sp, #4 * NUM_SAVED]// Get the SVC return address
+        ldr     r7, [sp, #4 * (NUM_SAVED + 2)]// Get the SVC return address
                                         // for clone().
         push    { r4, r5, r6, r7 }      // Put extra arguments on the stack.
         blx     r8                      // Dispatch. Return value is in r0/r1
-        add     sp, #6 * 4              // Deallocate args and r0-r1
-                                        // from SAVED_REGS.
+        add     sp, #4 * 4              // Deallocate args.
+        pop     { r8, r9 }              // Restore the stack adjustment.
+        add     sp, sp, r8              // And adjust.
+        add     sp, #4 * 2              // Deallocate r0-r1.
         pop     { r2-r12, lr }          // SAVED_REGS - r0-r1
         rfeia   sp!                     // And return.
 
