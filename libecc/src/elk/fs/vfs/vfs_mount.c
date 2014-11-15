@@ -320,14 +320,14 @@ static int sys_umount2(char *path, int flags)
       break;
   }
   if (n == head) {
-    error = EINVAL;
+    error = -EINVAL;
     goto out;
   }
   /*
    * Root fs can not be unmounted.
    */
   if (mp->m_covered == NULL) {
-    error = EINVAL;
+    error = -EINVAL;
     goto out;
   }
   if ((error = VFS_UNMOUNT(mp)) != 0)
