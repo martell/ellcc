@@ -38,15 +38,14 @@
 // Override uid manipulation restrictions.
 #define CAP_SETUID 7
 
-// Set all capabilities for the superuser.
-#define SUPERUSER_CAPABILITIES (~(capability_t)0)
-#define NO_CAPABILITIES ((capability_t)0)
+// Allow raw I/O.
+#define CAP_SYS_RAWIO 17
 
 #define CAPABILITY_TO_BIT(capability) (1 << (capability))
-#define CAPABLE(thread, capability) \
-  ((thread)->ecap & CAPABILITY_TO_BIT(capability))
 
 typedef int capability_t;
+#define capable(arg) __elk_capable(arg)
+int capable(capability_t cap);
 
 #endif
 

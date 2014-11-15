@@ -10,9 +10,10 @@
 #include "irq.h"
 #include "console.h"
 #include "file.h"
+#include "device.h"
 
 // Make the simple console a loadable feature.
-FEATURE(fdconsole, console)
+FEATURE_CLASS(fdconsole, console)
 
 /* The following input and output semaphores are used to insure
  * a the read, readv, write, and writev system calls complete
@@ -257,6 +258,16 @@ ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
 
   // Enable the receive interrupt.
   console_enable_rx_interrupt();
+
   setup = 1;
   return 1;
+}
+
+C_CONSTRUCTOR()
+{
+#if RICH
+  // Set up console device.
+  static struct driver drv = { .flags = DS_ACTIVE };
+  __elk_device_create(&drv, "tty", D_CHR);
+#endif
 }

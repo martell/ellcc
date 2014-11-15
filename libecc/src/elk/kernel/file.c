@@ -5,33 +5,23 @@
 #include "kernel.h"
 #include "file.h"
 
-typedef struct file
-{
-  pthread_mutex_t mutex;        // The mutex protecting the file.
-  off_t offset;                 // The current file offset.
-  unsigned references;          // The number of references to this file.
-  const fileops_t *fileops;     // Operations on a file.
-  filetype_t type;              // Type of the file.
-  void *data;                   // Type specific data.
-} file_t;
-
 typedef struct fd
 {
   pthread_mutex_t mutex;        // The mutex protecting the file descriptor.
-  unsigned references;          // The number of references to this descriptor.
-  file_t *file;                 // The file accessed by the file descriptor.
+  unsigned refcnt;              // The number of references to this descriptor.
+  file_t file;                  // The file accessed by the file descriptor.
 } fd_t;
 
 /** Release a file.
  */
-static void file_release(file_t **file)
+static void file_release(file_t *file)
 {
   if (file == NULL || *file == NULL) {
     return;
   }
 
   pthread_mutex_lock(&(*file)->mutex);
-  if (--(*file)->references == 0) {
+  if (--(*file)->refcnt == 0) {
     // Release the file.
     pthread_mutex_unlock(&(*file)->mutex);
     free(*file);
@@ -43,7 +33,7 @@ static void file_release(file_t **file)
 
 /** Add a reference to a file.
  */
-static int file_reference(file_t *file)
+static int file_reference(file_t file)
 {
   if (file == NULL) {
     return 0;
@@ -51,9 +41,9 @@ static int file_reference(file_t *file)
 
   pthread_mutex_lock(&file->mutex);
   int s = 0;
-  if (++file->references == 0) {
+  if (++file->refcnt == 0) {
     // Too many references.
-    --file->references;
+    --file->refcnt;
     s = -EAGAIN;
   }
 
@@ -70,7 +60,7 @@ static void fd_release(fd_t **fd)
   }
 
   pthread_mutex_lock(&(*fd)->mutex);
-  if (--(*fd)->references == 0) {
+  if (--(*fd)->refcnt == 0) {
     file_release(&(*fd)->file);         // Release the file.
     pthread_mutex_unlock(&(*fd)->mutex);
     free(*fd);
@@ -90,14 +80,14 @@ static int fd_reference(fd_t *fd)
 
   pthread_mutex_lock(&fd->mutex);
   int s = 0;
-  if (++fd->references == 0) {
+  if (++fd->refcnt == 0) {
     // Too many references.
-    --fd->references;
+    --fd->refcnt;
     s = -EAGAIN;
   } else {
     s = file_reference(fd->file);
     if (s < 0) {
-      --fd->references;
+      --fd->refcnt;
     }
   }
 
@@ -112,9 +102,9 @@ static int __elk_fdset_reference(fdset_t *fdset)
   pthread_mutex_lock(&fdset->mutex);
 
   int s = 0;
-  if (++fdset->references == 0) {
+  if (++fdset->refcnt == 0) {
     // Too many references.
-    --fdset->references;
+    --fdset->refcnt;
     s = -EAGAIN;
   } else {
     for (int i = 0; i < fdset->count; ++i) {
@@ -145,7 +135,7 @@ void __elk_fdset_release(fdset_t *fdset)
     fd_release(&fdset->fds[i]);
   }
 
-  if (--fdset->references == 0) {
+  if (--fdset->refcnt == 0) {
     // This set is done being used.
     free(fdset->fds);
     fdset->fds = NULL;
@@ -172,17 +162,17 @@ int __elk_fdset_clone(fdset_t *fdset, int clone)
 
 /** Create a new file.
  */
-static int newfile(file_t **res,
+static int newfile(file_t *res,
                    filetype_t type, const fileops_t *fileops, void *data)
 {
-  file_t *file = malloc(sizeof(file_t));
+  file_t file = malloc(sizeof(*file));
   if (file == NULL) {
     return -ENOMEM;
   }
 
   pthread_mutex_init(&file->mutex, NULL);
-  file->references = 0;
-  file->offset = 0;
+  file->refcnt = 0;
+  file->f_offset = 0;
   file->type = type;
   file->fileops = fileops;
   file->data = data;
@@ -201,7 +191,7 @@ static int fdset_grow(fdset_t *fdset)
       return -ENOMEM;
     }
 
-    fdset->references = 1;
+    fdset->refcnt = 1;
     fdset->count = INITFDS;
     for (int i = 0; i < INITFDS; ++i) {
       fdset->fds[i] = NULL;
@@ -245,7 +235,7 @@ static int newfd(fd_t **res)
   }
 
   pthread_mutex_init(&fd->mutex, NULL);
-  fd->references = 0;
+  fd->refcnt = 0;
   fd->file = NULL;
   *res = fd;
   return 0;
@@ -270,7 +260,7 @@ static int fd_allocate(fdset_t *fdset)
 
 /** Create a file descriptor and add it to a set.
  */
-static int fdset_add(fdset_t *fdset, file_t *file)
+static int fdset_add(fdset_t *fdset, file_t file)
 {
   int fd = fd_allocate(fdset);
   if (fd < 0) {
@@ -279,7 +269,7 @@ static int fdset_add(fdset_t *fdset, file_t *file)
 
   fdset->fds[fd]->file = file;
 
-  for (int i = 0; i < fdset->references; ++i) {
+  for (int i = 0; i < fdset->refcnt; ++i) {
     int s = fd_reference(fdset->fds[fd]);
     if (s >= 0) {
       continue;
@@ -299,7 +289,7 @@ static int fdset_add(fdset_t *fdset, file_t *file)
 int __elk_fdset_add(fdset_t *fdset,
                     filetype_t type, const fileops_t *fileops, void *data)
 {
-  file_t *file;
+  file_t file;
   int s = newfile(&file, type, fileops, data);
   if (s < 0) {
     return s;
@@ -344,8 +334,8 @@ size_t __elk_fdset_read(fdset_t *fdset, int fd, struct uio *uio)
     return -EBADF;
   }
 
-  file_t *file = fdset->fds[fd]->file;
-  return file->fileops->read(file, &file->offset, uio);
+  file_t file = fdset->fds[fd]->file;
+  return file->fileops->read(file, &file->f_offset, uio);
 }
 
 /** Write to a file descriptor.
@@ -356,8 +346,8 @@ size_t __elk_fdset_write(fdset_t *fdset, int fd, struct uio *uio)
     return -EBADF;
   }
 
-  file_t *file = fdset->fds[fd]->file;
-  return file->fileops->write(file, &file->offset, uio);
+  file_t file = fdset->fds[fd]->file;
+  return file->fileops->write(file, &file->f_offset, uio);
 }
 
 /** Do an ioctl on a file descriptor.
@@ -368,77 +358,77 @@ int __elk_fdset_ioctl(fdset_t *fdset, int fd, int cmd, void *arg)
     return -EBADF;
   }
 
-  file_t *file = fdset->fds[fd]->file;
+  file_t file = fdset->fds[fd]->file;
   return file->fileops->ioctl(file, cmd, arg);
 }
 
 
-ssize_t fbadop_read(file_t *file, off_t *off, struct uio *uiop)
+ssize_t fbadop_read(file_t file, off_t *off, struct uio *uiop)
 {
   return -ENOSYS;
 }
 
-ssize_t fbadop_write(file_t *file, off_t *off, struct uio *uiop)
+ssize_t fbadop_write(file_t file, off_t *off, struct uio *uiop)
 {
   return -ENOSYS;
 }
 
-int fbadop_ioctl(file_t *file, unsigned int cmd, void *arg)
+int fbadop_ioctl(file_t file, unsigned int cmd, void *arg)
 {
   return -ENOSYS;
 }
 
-int fbadop_fcntl(file_t *file, unsigned int cmd, void *arg)
+int fbadop_fcntl(file_t file, unsigned int cmd, void *arg)
 {
   return -ENOSYS;
 }
 
-int fbadop_stat(file_t *file, struct stat *buf)
+int fbadop_stat(file_t file, struct stat *buf)
 {
   return -ENOSYS;
 }
 
-int fbadop_poll(file_t *file, int events)
+int fbadop_poll(file_t file, int events)
 {
   return -ENOSYS;
 }
 
-int fbadop_close(file_t *file)
+int fbadop_close(file_t file)
 {
   return -ENOSYS;
 }
 
-ssize_t fnullop_read(file_t *file, off_t *off, struct uio *uiop)
+ssize_t fnullop_read(file_t file, off_t *off, struct uio *uiop)
 {
   return 0;
 }
 
-ssize_t fnullop_write(file_t *file, off_t *off, struct uio *uiop)
+ssize_t fnullop_write(file_t file, off_t *off, struct uio *uiop)
 {
   return 0;
 }
 
-int fnullop_ioctl(file_t *file, unsigned int cmd, void *arg)
+int fnullop_ioctl(file_t file, unsigned int cmd, void *arg)
 {
   return 0;
 }
 
-int fnullop_fcntl(file_t *file, unsigned int cmd, void *arg)
+int fnullop_fcntl(file_t file, unsigned int cmd, void *arg)
 {
   return 0;
 }
 
-int fnullop_stat(file_t *file, struct stat *buf)
+int fnullop_stat(file_t file, struct stat *buf)
 {
   return 0;
 }
 
-int fnullop_poll(file_t *file, int events)
+int fnullop_poll(file_t file, int events)
 {
   return 0;
 }
 
-int fnullop_close(file_t *file)
+int fnullop_close(file_t file)
 {
   return 0;
 }

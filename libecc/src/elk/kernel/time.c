@@ -11,7 +11,7 @@
 #include <thread.h>
 
 // Make the time syscalls commands a loadable feature.
-FEATURE(time, time)
+FEATURE(time)
 
 static int sys_clock_getres(clockid_t clock, struct timespec *res)
 {

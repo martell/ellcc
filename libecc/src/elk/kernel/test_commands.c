@@ -13,7 +13,7 @@
 #include <thread.h>
 
 // Make the test commands a loadable feature.
-FEATURE(test_commands, test_commands)
+FEATURE(test_commands)
 
 static int yieldCommand(int argc, char **argv)
 {

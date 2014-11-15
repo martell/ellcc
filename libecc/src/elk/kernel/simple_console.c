@@ -7,7 +7,7 @@
 #include <kernel.h>
 
 // Make the simple console a loadable feature.
-FEATURE(simple_console, console)
+FEATURE_CLASS(simple_console, console)
 
 #define SIMPLE_CONSOLE          // No interrupt support needed.
 #include "console.h"
@@ -106,15 +106,15 @@ ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
     }
 
     // Set up a simple ioctl system call.
-    __elk_set_syscall(SYS_ioctl, sys_ioctl);
+    SYSCALL(ioctl);
     // Set up a simple write system call.
-    __elk_set_syscall(SYS_write, sys_write);
+    SYSCALL(write);
     // Set up a simple writev system call.
-    __elk_set_syscall(SYS_writev, sys_writev);
+    SYSCALL(writev);
     // Set up a simple read system call.
-    __elk_set_syscall(SYS_read, sys_read);
+    SYSCALL(read);
     // Set up a simple readv system call.
-    __elk_set_syscall(SYS_readv, sys_readv);
+    SYSCALL(readv);
     setup = 1;
     return 1;
 }

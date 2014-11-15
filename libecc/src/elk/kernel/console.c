@@ -11,7 +11,7 @@
 #include "console.h"
 
 // Make the simple console a loadable feature.
-FEATURE(console, console)
+FEATURE_CLASS(console, console)
 
 /* The following input and output semaphores are used to insure
  * a the read, readv, write, and writev system calls complete

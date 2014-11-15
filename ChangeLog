@@ -1,5 +1,8 @@
 current SVN:
 
+* Added virtual file system to ELK.
+* Added device file system to ELK.
+* Added device module to ELK.
 * Added initial ELK futex support. sem_* and pthread_mutex_* work.
 * Added ELK file descriptor support.
 * Differentiate between ELK and C constructors.

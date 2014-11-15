@@ -10,13 +10,13 @@
 #include "command.h"
 
 // Make the command processor a loadable feature.
-FEATURE(command, command)
+FEATURE_CLASS(command, command)
 
 #define MAXLINE 1024        // The maximum command line length.
 #define MAXCOMMANDS 128     // The maximum number of commands supported.
 
 typedef struct command {
-  const char *name;                   	// The command name.
+  const char *name;                     // The command name.
   CommandFn fn;                         // The callback.
 } Command;
 
@@ -49,8 +49,8 @@ void command_insert(const  char *name, CommandFn fn)
  */
 static int parse_words(char *string, char **argv)
 {
-  int count = 0;              // The word counter.
-  int delim = 0;              // The string deliminator.
+  int count = 0;                        // The word counter.
+  int delim = 0;                        // The string deliminator.
 
   // Skip leading whitespace.
   do {
@@ -59,7 +59,7 @@ static int parse_words(char *string, char **argv)
     }
 
     // Find the next word.
-    delim = 0;                      	// Default to whitespace.
+    delim = 0;                          // Default to whitespace.
     switch (*string) {
     case '\'':
       delim = '\'';
@@ -73,20 +73,20 @@ static int parse_words(char *string, char **argv)
 
     if (*string) {
       if (argv) {
-	argv[count] = string;   	// The beginning of the next word.
+        argv[count] = string;           // The beginning of the next word.
       }
-      ++count;                    	// Count the words.
+      ++count;                          // Count the words.
     }
 
     // Find the end of the word.
     while (*string) {
       if (delim) {
-	if (*string == delim) {
-	  delim = 0;
-	  break;
-	}
+        if (*string == delim) {
+          delim = 0;
+          break;
+        }
       } else if (isspace(*string)) {
-	  break;
+          break;
       }
 
       // Ignore everything else.
@@ -239,7 +239,7 @@ static int helpCommand(int argc, char **argv)
     // The simple case.
     for (int i = 1; i < commands; ++i) {
       if (command_table[i].name) {
-	printf("%20.20s: ", command_table[i].name);
+        printf("%20.20s: ", command_table[i].name);
       }
 
       command_table[i].fn(0, (char **)&spaces);
@@ -247,11 +247,11 @@ static int helpCommand(int argc, char **argv)
   } else {
     for (int count = 1; count < argc; ++count) {
       for (int i = 0; i < commands; ++i) {
-	if (command_table[i].name &&
-	  strcmp(argv[count], command_table[i].name) == 0) {
-	  printf("%20.20s: ", command_table[i].name);
-	  command_table[i].fn(-1, (char **)&spaces);
-	}
+        if (command_table[i].name &&
+            strcmp(argv[count], command_table[i].name) == 0) {
+          printf("%20.20s: ", command_table[i].name);
+          command_table[i].fn(-1, (char **)&spaces);
+        }
       }
     }
   }
@@ -283,7 +283,7 @@ static int repeatCommand(int argc, char **argv)
  */
 ELK_CONSTRUCTOR()
 {
-    // The help command is the first in the table.
-    command_table[0] = (Command){ "help", helpCommand };
-    command_insert("repeat", repeatCommand);
+  // The help command is the first in the table.
+  command_table[0] = (Command){ "help", helpCommand };
+  command_insert("repeat", repeatCommand);
 }

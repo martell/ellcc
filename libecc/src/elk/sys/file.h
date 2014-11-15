@@ -50,7 +50,16 @@ static const char *filetype_names[FTYPE_END] =
 };
 #endif
 
-struct file;
+typedef struct file
+{
+  pthread_mutex_t mutex;        // The mutex protecting the file.
+  off_t f_offset;               // The current file offset.
+  unsigned refcnt;              // The number of references to this file.
+  const fileops_t *fileops;     // Operations on a file.
+  filetype_t type;              // Type of the file.
+  void *data;                   // Type specific data.
+} *file_t;
+
 
 // Some default fileops.
 ssize_t fbadop_read(struct file *, off_t *, struct uio *);
@@ -73,7 +82,7 @@ int fnullop_close(struct file *);
 typedef struct fdset
 {
   pthread_mutex_t mutex;        // The mutex protecting the set.
-  unsigned references;          // The number of references to this set.
+  unsigned refcnt;              // The number of references to this set.
   unsigned count;               // Number of file descriptors in the set.
   struct fd **fds;              // The file descriptor nodes.
 } fdset_t;

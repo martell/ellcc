@@ -12,7 +12,7 @@
 #include <command.h>
 
 // Make the time syscalls commands a loadable feature.
-FEATURE(time_commands, time_commands)
+FEATURE(time_commands)
 
 static int dateCommand(int argc, char **argv)
 {

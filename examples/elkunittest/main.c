@@ -2,8 +2,10 @@
  */
 
 #include <stdio.h>
+#include <pthread.h>
 #include "command.h"
 #include "file.h"
+#include "device.h"
 
 int main(int argc, char **argv)
 {
@@ -12,7 +14,7 @@ int main(int argc, char **argv)
     fnullop_read, fnullop_write, fnullop_ioctl, fnullop_fcntl,
     fnullop_poll, fnullop_stat, fnullop_close
   };
-  static fdset_t fdset = { .lock = LOCK_INITIALIZER };
+  static fdset_t fdset = { .mutex = PTHREAD_MUTEX_INITIALIZER };
   int s;
 
   int fd0 = __elk_fdset_add(&fdset, FTYPE_MISC, &fileops, NULL);
@@ -54,4 +56,11 @@ int main(int argc, char **argv)
   if (fdset.fds != NULL) {
     printf("__elk_fdset_release failed.\n");
   }
+
+#if RICH
+  struct driver drv = {};
+  device_t devp = __elk_device_create(&drv, "/dev/tty", D_CHR);
+
+  do_commands(argv[0]);
+#endif
 }

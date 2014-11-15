@@ -7,7 +7,7 @@
 #include <kernel.h>
 
 // Make the simple console a loadable feature.
-FEATURE(simple_memman, memman)
+FEATURE_CLASS(simple_memman, memman)
 
 extern char __end[];            // The end of the .bss area.
 extern char *__heap_end__;      // The bottom of the allocated stacks.

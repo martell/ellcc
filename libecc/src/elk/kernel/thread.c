@@ -26,9 +26,18 @@
 #endif
 
 // Make threads a loadable feature.
-FEATURE(thread, thread)
+FEATURE(thread)
+
+#if defined(HAVE_CAPABILITY)
+// Set all capabilities for the superuser.
+#define SUPERUSER_CAPABILITIES (~(capability_t)0)
+#define NO_CAPABILITIES ((capability_t)0)
+
+#define CAPABLE(thread, capability) \
+  ((thread)->ecap & CAPABILITY_TO_BIT(capability))
 
 #define DEFAULT_PRIORITY ((PRIORITIES)/2)
+#endif
 
 /** A thread is an indepenent executable context in ELK.
  * A thread is identified by a unique identifier, the thread id (tid).
@@ -308,6 +317,13 @@ static thread_t main_thread = {
   .icap = SUPERUSER_CAPABILITIES,
 #endif
 };
+
+/** Check the current thread's capability.
+ */
+int __elk_capable(capability_t cap)
+{
+  return CAPABLE(current, cap);
+}
 
 /** Get the current thread id.
  */
@@ -1513,7 +1529,6 @@ ELK_CONSTRUCTOR()
   command_insert("ss", ssCommand);
 #endif
 
-#define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)
   // Set up a set_tid_address system call.
   SYSCALL(set_tid_address);
 

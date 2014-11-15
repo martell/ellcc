@@ -15,6 +15,18 @@
 #define NULL 0
 #endif
 
+#define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)
+
+// RICH: For now.
+#define ASSERT(arg)
+#define DPRINTF(arg) printf arg
+#define copyinstr(src, dst, len) strlcpy(dst, src, len)
+#define copyout(dst, src, len) (memcpy(dst, src, len), len)
+#define copyin(src, dst, len) (memcpy(dst, src, len), len)
+#define user_area(buf) 1
+extern int puts(const char *s);
+#define panic(arg) do { puts(arg); } while(1)
+
 #undef weak_alias
 #define weak_alias(old, new) \
     extern __typeof(old) new __attribute__((weak, alias(#old)))
@@ -23,7 +35,11 @@
 #define strong_alias(old, new) \
     extern __typeof(old) new __attribute__((alias(#old)))
 
-#define FEATURE(feature, function) \
+#define FEATURE(feature) \
+char __elk_ ## feature = 0; \
+strong_alias(__elk_ ## feature, __elk_feature_ ## feature);
+
+#define FEATURE_CLASS(feature, function) \
 char __elk_ ## feature = 0; \
 strong_alias(__elk_ ## feature, __elk_feature_ ## function);
 
