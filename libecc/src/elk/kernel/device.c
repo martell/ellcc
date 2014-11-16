@@ -296,7 +296,7 @@ int device_close(device_t dev)
  * Actual read count is set in "nbyte" as return.
  * Note: The size of one block is device dependent.
  */
-int device_read(device_t dev, void *buf, size_t *nbyte, int blkno)
+int device_read(device_t dev, struct uio *uio, size_t *nbyte, int blkno)
 {
   struct devops *ops;
   size_t count;
@@ -315,7 +315,7 @@ int device_read(device_t dev, void *buf, size_t *nbyte, int blkno)
 
   ops = dev->driver->devops;
   ASSERT(ops->read != NULL);
-  error = (*ops->read)(dev, buf, &count, blkno);
+  error = (*ops->read)(dev, uio, &count, blkno);
   if (!error)
     error = copyout(&count, nbyte, sizeof(count));
 

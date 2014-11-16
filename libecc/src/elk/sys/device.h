@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include "config.h"
 #include "kernel.h"
+#include "uio.h"
 
 typedef struct device *device_t;
 
@@ -68,7 +69,7 @@ static struct {
 struct devops {
   int (*open)(device_t, int);
   int (*close)(device_t);
-  int (*read)(device_t, char *, size_t *, int);
+  int (*read)(device_t, struct uio *, size_t *, int);
   int (*write)(device_t, char *, size_t *, int);
   int (*ioctl)(device_t, u_long, void *);
   int (*devctl)(device_t, u_long, void *);
@@ -182,7 +183,7 @@ int device_open(const char *, int, device_t *);
 #define DO_RWMASK       0x3
 
 int device_close(device_t);
-int device_read(device_t, void *, size_t *, int);
+int device_read(device_t, struct uio *, size_t *, int);
 int device_write(device_t, void *, size_t *, int);
 int device_ioctl(device_t, u_long, void *);
 int device_info(struct devinfo *);

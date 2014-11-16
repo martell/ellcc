@@ -37,7 +37,6 @@
  */
 
 #include <sys/param.h>
-
 #include <limits.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -233,7 +232,9 @@ bread(dev_t dev, int blkno, struct buf **bpp)
 
   if (!ISSET(bp->b_flags, (B_DONE | B_DELWRI))) {
     size = DEV_BSIZE;
-    error = device_read((device_t)dev, bp->b_data, &size, blkno);
+    struct iovec iovec = { .iov_base = bp->b_data, .iov_len = size };
+    struct uio uio = { .iovcnt = 1, .iov = &iovec };
+    error = device_read((device_t)dev, &uio, &size, blkno);
     if (error) {
       DPRINTF(VFSDB_BIO, ("bread: i/o error\n"));
       brelse(bp);

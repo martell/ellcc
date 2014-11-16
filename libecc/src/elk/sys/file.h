@@ -5,12 +5,7 @@
 
 #include <sys/types.h>
 #include "kernel.h"
-
-typedef struct uio
-{
-  int iovcnt;
-  const struct iovec *iov;
-} uio_t;
+#include "uio.h"
 
 struct stat;
 struct file;

@@ -446,7 +446,6 @@ static int vsCommand(int argc, char **argv)
         vp->v_path);
     }
   }
-  printf("\n");
   VNODE_UNLOCK();
 
   return COMMAND_OK;

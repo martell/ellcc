@@ -105,8 +105,8 @@ struct vattr {
 struct vnops {
   int (*vop_open)(vnode_t, int);
   int (*vop_close)(vnode_t, file_t);
-  int (*vop_read)(vnode_t, file_t, void *, size_t, size_t *);
-  int (*vop_write)(vnode_t, file_t, void *, size_t, size_t *);
+  int (*vop_read)(vnode_t, file_t, struct uio *, size_t *);
+  int (*vop_write)(vnode_t, file_t, struct uio *, size_t *);
   int (*vop_seek)(vnode_t, file_t, off_t, off_t);
   int (*vop_ioctl)(vnode_t, file_t, u_long, void *);
   int (*vop_fsync)(vnode_t, file_t);
@@ -125,7 +125,7 @@ struct vnops {
 
 typedef  int (*vnop_open_t)(vnode_t, int);
 typedef  int (*vnop_close_t)(vnode_t, file_t);
-typedef  int (*vnop_read_t)(vnode_t, file_t, void *, size_t, size_t *);
+typedef  int (*vnop_read_t)(vnode_t, file_t, struct uio *, size_t *);
 typedef  int (*vnop_write_t)(vnode_t, file_t, void *, size_t, size_t *);
 typedef  int (*vnop_seek_t)(vnode_t, file_t, off_t, off_t);
 typedef  int (*vnop_ioctl_t)(vnode_t, file_t, u_long, void *);

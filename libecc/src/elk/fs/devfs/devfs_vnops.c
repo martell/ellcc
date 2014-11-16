@@ -56,8 +56,8 @@ FEATURE(devfs)
 
 static int devfs_open  (vnode_t, int);
 static int devfs_close  (vnode_t, file_t);
-static int devfs_read  (vnode_t, file_t, void *, size_t, size_t *);
-static int devfs_write  (vnode_t, file_t, void *, size_t, size_t *);
+static int devfs_read  (vnode_t, file_t, struct uio *, size_t *);
+static int devfs_write  (vnode_t, file_t, struct uio *, size_t *);
 #define devfs_seek  ((vnop_seek_t)vop_nullop)
 static int devfs_ioctl  (vnode_t, file_t, u_long, void *);
 #define devfs_fsync  ((vnop_fsync_t)vop_nullop)
@@ -148,29 +148,23 @@ static int devfs_close(vnode_t vp, file_t fp)
   return device_close((device_t)vp->v_data);
 }
 
-static int devfs_read(vnode_t vp, file_t fp, void *buf, size_t size,
-                      size_t *result)
+static int devfs_read(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
 {
   int error;
   size_t len;
 
-  len = size;
-  error = device_read((device_t)vp->v_data, buf, &len,
-                                  fp->f_offset);
+  error = device_read((device_t)vp->v_data, uio, &len, fp->f_offset);
   if (!error)
     *result = len;
   return error;
 }
 
-static int devfs_write(vnode_t vp, file_t fp, void *buf, size_t size,
-                       size_t *result)
+static int devfs_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
 {
   int error;
   size_t len;
 
-  len = size;
-  error = device_write((device_t)vp->v_data, buf, &len,
-                                   fp->f_offset);
+  error = device_write((device_t)vp->v_data, uio, &len, fp->f_offset);
   if (!error)
     *result = len;
   DPRINTF(("devfs_write: error=%d len=%zd\n", error, len));
