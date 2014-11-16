@@ -16,6 +16,7 @@
 #include "NVPTX.h"
 #include "NVPTXAllocaHoisting.h"
 #include "NVPTXLowerAggrCopies.h"
+#include "NVPTXTargetObjectFile.h"
 #include "llvm/Analysis/Passes.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineFunctionAnalysis.h"
@@ -74,6 +75,7 @@ NVPTXTargetMachine::NVPTXTargetMachine(const Target &T, StringRef TT,
                                        Reloc::Model RM, CodeModel::Model CM,
                                        CodeGenOpt::Level OL, bool is64bit)
     : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
+      TLOF(make_unique<NVPTXTargetObjectFile>()),
       Subtarget(TT, CPU, FS, *this, is64bit) {
   initAsmInfo();
 }
@@ -119,6 +121,14 @@ public:
 TargetPassConfig *NVPTXTargetMachine::createPassConfig(PassManagerBase &PM) {
   NVPTXPassConfig *PassConfig = new NVPTXPassConfig(this, PM);
   return PassConfig;
+}
+
+void NVPTXTargetMachine::addAnalysisPasses(PassManagerBase &PM) {
+  // Add first the target-independent BasicTTI pass, then our NVPTX pass. This
+  // allows the NVPTX pass to delegate to the target independent layer when
+  // appropriate.
+  PM.add(createBasicTargetTransformInfoPass(this));
+  PM.add(createNVPTXTargetTransformInfoPass(this));
 }
 
 void NVPTXPassConfig::addIRPasses() {

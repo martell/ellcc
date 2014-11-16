@@ -276,8 +276,7 @@ getModuleFlagsMetadata(SmallVectorImpl<ModuleFlagEntry> &Flags) const {
   const NamedMDNode *ModFlags = getModuleFlagsMetadata();
   if (!ModFlags) return;
 
-  for (const Value *FlagMD : ModFlags->operands()) {
-    const MDNode *Flag = cast<MDNode>(FlagMD);
+  for (const MDNode *Flag : ModFlags->operands()) {
     ModFlagBehavior MFB;
     if (Flag->getNumOperands() >= 3 &&
         isValidModFlagBehavior(Flag->getOperand(0), MFB) &&
@@ -458,4 +457,17 @@ Comdat *Module::getOrInsertComdat(StringRef Name) {
       ComdatSymTab.GetOrCreateValue(Name, std::move(C));
   Entry.second.Name = &Entry;
   return &Entry.second;
+}
+
+PICLevel::Level Module::getPICLevel() const {
+  Value *Val = getModuleFlag("PIC Level");
+
+  if (Val == NULL)
+    return PICLevel::Default;
+
+  return static_cast<PICLevel::Level>(cast<ConstantInt>(Val)->getZExtValue());
+}
+
+void Module::setPICLevel(PICLevel::Level PL) {
+  addModuleFlag(ModFlagBehavior::Error, "PIC Level", PL);
 }

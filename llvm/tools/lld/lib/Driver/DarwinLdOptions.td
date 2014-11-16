@@ -51,6 +51,10 @@ def unexported_symbol : Separate<["-"], "unexported_symbol">,
 def keep_private_externs : Flag<["-"], "keep_private_externs">,
      HelpText<"Private extern (hidden) symbols should not be transformed "
               "into local symbols">, Group<grp_opts>;
+def order_file : Separate<["-"], "order_file">,
+     MetaVarName<"<file-path>">,
+     HelpText<"re-order and move specified symbols to start of their section">,
+     Group<grp_opts>;
 
 // main executable options
 def grp_main : OptionGroup<"opts">, HelpText<"MAIN EXECUTABLE OPTIONS">;
@@ -106,6 +110,10 @@ def Z : Flag<["-"], "Z">,
      HelpText<"Do not search standard directories for libraries or frameworks">;
 def all_load : Flag<["-"], "all_load">,
      HelpText<"Forces all members of all static libraries to be loaded">,
+     Group<grp_libs>;
+def force_load : Separate<["-"], "force_load">,
+     MetaVarName<"<library-path>">,
+     HelpText<"Forces all members of specified static libraries to be loaded">,
      Group<grp_libs>;
 def syslibroot : Separate<["-"], "syslibroot">, MetaVarName<"<dir>">,
      HelpText<"Add path to SDK to all absolute library search paths">,

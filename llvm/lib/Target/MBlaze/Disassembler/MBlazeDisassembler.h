@@ -18,16 +18,14 @@
 #include "llvm/MC/MCDisassembler.h"
 
 namespace llvm {
-  
+
 class MCInst;
 class MemoryObject;
 class raw_ostream;
 
-/// MBlazeDisassembler - Disassembler for all MBlaze platforms.
+/// Disassembler for all MBlaze platforms.
 class MBlazeDisassembler : public MCDisassembler {
 public:
-  /// Constructor     - Initializes the disassembler.
-  ///
   MBlazeDisassembler(const MCSubtargetInfo &STI, MCContext &Ctx) :
     MCDisassembler(STI, Ctx) {
   }
@@ -36,14 +34,12 @@ public:
   }
 
   /// getInstruction - See MCDisassembler.
-  MCDisassembler::DecodeStatus getInstruction(MCInst &instr,
-                      uint64_t &size,
-                      const MemoryObject &region,
-                      uint64_t address,
-                      raw_ostream &vStream,
-                      raw_ostream &cStream) const;
+  DecodeStatus getInstruction(MCInst &instr, uint64_t &Size,
+                              ArrayRef<uint8_t> Bytes, uint64_t Address,
+                              raw_ostream &VStream,
+                              raw_ostream &CStream) const override;
 };
 
 } // namespace llvm
-  
+
 #endif

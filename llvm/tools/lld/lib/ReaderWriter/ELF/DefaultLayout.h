@@ -359,6 +359,9 @@ Layout::SectionOrder DefaultLayout<ELFT>::getSectionOrder(
     return llvm::StringSwitch<Layout::SectionOrder>(name)
         .StartsWith(".init_array", ORDER_INIT_ARRAY)
         .StartsWith(".fini_array", ORDER_FINI_ARRAY)
+        .StartsWith(".dynamic", ORDER_DYNAMIC)
+        .StartsWith(".got.plt", ORDER_GOT_PLT)
+        .StartsWith(".got", ORDER_GOT)
         .Default(ORDER_DATA);
 
   case DefinedAtom::typeZeroFill:

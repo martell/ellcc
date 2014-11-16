@@ -167,6 +167,7 @@ private:
   DylibPathToInfo               _dylibInfo;
   const DefinedAtom            *_entryAtom;
   AtomToIndex                   _atomToSymbolIndex;
+  std::vector<const Atom *>     _machHeaderAliasAtoms;
 };
 
 
@@ -244,6 +245,7 @@ SectionInfo *Util::getFinalSection(DefinedAtom::ContentType atomType) {
     switch (atomType) {
     case DefinedAtom::typeCode:
     case DefinedAtom::typeStub:
+    case DefinedAtom::typeStubHelper:
       sectionAttrs = S_ATTR_PURE_INSTRUCTIONS;
       break;
     default:
@@ -330,7 +332,10 @@ void Util::appendAtom(SectionInfo *sect, const DefinedAtom *atom) {
 
 void Util::assignAtomsToSections(const lld::File &atomFile) {
   for (const DefinedAtom *atom : atomFile.defined()) {
-    appendAtom(sectionForAtom(atom), atom);
+    if (atom->contentType() == DefinedAtom::typeMachHeader)
+      _machHeaderAliasAtoms.push_back(atom);
+    else
+      appendAtom(sectionForAtom(atom), atom);
   }
 }
 
@@ -651,6 +656,14 @@ void Util::buildAtomToAddressMap() {
               << " atom=" << info.atom
               << " name=" << info.atom->name() << "\n");
     }
+  }
+  for (const Atom *atom : _machHeaderAliasAtoms) {
+    _atomToAddress[atom] = _context.baseAddress();
+    DEBUG_WITH_TYPE("WriterMachO-address", llvm::dbgs()
+              << "   address="
+              << llvm::format("0x%016X", _atomToAddress[atom])
+              << " atom=" << atom
+              << " name=" << atom->name() << "\n");
   }
 }
 

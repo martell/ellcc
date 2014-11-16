@@ -106,6 +106,9 @@ def no_whole_archive: Flag<["--"], "no-whole-archive">,
 def nostdlib : Flag<["-"], "nostdlib">,
      HelpText<"Disable default search path for libraries">,
      Group<grp_main>;
+def image_base : Separate<["--"], "image-base">,
+     HelpText<"Set the base address">,
+     Group<grp_main>;
 
 //===----------------------------------------------------------------------===//
 /// Static Executable Options
@@ -221,6 +224,9 @@ def rosegment: Flag<["--"], "rosegment">,
 def z : Separate<["-"], "z">,
      HelpText<"Linker Option extensions">,
      Group<grp_customopts>;
+def no_align_segments: Flag<["--"], "no-align-segments">,
+     HelpText<"Don't align ELF segments(virtualaddress/fileoffset) to page boundaries">,
+     Group<grp_customopts>;
 
 //===----------------------------------------------------------------------===//
 /// Symbol options
@@ -269,6 +275,21 @@ def output_filetype: Separate<["--"], "output-filetype">,
       Group<grp_extns>;
 def alias_output_filetype: Joined<["--"], "output-filetype=">,
       Alias<output_filetype>;
+
+//===----------------------------------------------------------------------===//
+/// Ignored options
+//===----------------------------------------------------------------------===//
+def grp_ignored: OptionGroup<"ignored">,
+     HelpText<"GNU Options ignored for Compatibility ">;
+def dashg : Flag<["-"], "g">,
+     HelpText<"Ignored.">,
+     Group<grp_ignored>;
+def Qy : Flag<["-"], "Qy">,
+     HelpText<"Ignored for SVR4 Compatibility">,
+     Group<grp_ignored>;
+def qmagic : Flag<["-"], "qmagic">,
+     HelpText<"Ignored for Linux Compatibility">,
+     Group<grp_ignored>;
 
 //===----------------------------------------------------------------------===//
 /// Help

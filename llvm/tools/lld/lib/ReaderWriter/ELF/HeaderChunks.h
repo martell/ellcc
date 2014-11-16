@@ -56,7 +56,16 @@ public:
 
   virtual void doPreFlight() {}
 
-  void finalize() {}
+  void finalize() {
+    _eh.e_ident[llvm::ELF::EI_CLASS] =
+        (ELFT::Is64Bits) ? llvm::ELF::ELFCLASS64 : llvm::ELF::ELFCLASS32;
+    _eh.e_ident[llvm::ELF::EI_DATA] =
+        (ELFT::TargetEndianness == llvm::support::little)
+            ? llvm::ELF::ELFDATA2LSB
+            : llvm::ELF::ELFDATA2MSB;
+    _eh.e_type = this->_context.getOutputELFType();
+    _eh.e_machine = this->_context.getOutputMachine();
+  }
 
 private:
   Elf_Ehdr _eh;
@@ -217,11 +226,18 @@ bool ProgramHeader<ELFT>::addSegment(Segment<ELFT> *segment) {
     phdr->p_filesz = slice->fileSize();
     phdr->p_memsz = slice->memSize();
     phdr->p_flags = segment->flags();
+    phdr->p_align = slice->align2();
+    uint64_t segPageSize = segment->pageSize();
+    uint64_t sliceAlign = slice->align2();
+    // Alignment of PT_LOAD segments are set to the page size, but if the
+    // alignment of the slice is greater than the page size, set the alignment
+    // of the segment appropriately.
     if (outputMagic != ELFLinkingContext::OutputMagic::NMAGIC &&
-        outputMagic != ELFLinkingContext::OutputMagic::OMAGIC)
-      phdr->p_align = (phdr->p_type == llvm::ELF::PT_LOAD) ? segment->pageSize()
-                                                           : slice->align2();
-    else
+        outputMagic != ELFLinkingContext::OutputMagic::OMAGIC) {
+      phdr->p_align = (phdr->p_type == llvm::ELF::PT_LOAD)
+          ? (segPageSize < sliceAlign) ? sliceAlign : segPageSize
+          : sliceAlign;
+    } else
       phdr->p_align = slice->align2();
   }
   this->_fsize = fileSize();

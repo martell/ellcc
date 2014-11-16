@@ -62,9 +62,8 @@ ELFLinkingContext::ELFLinkingContext(
       _mergeCommonStrings(false), _runLayoutPass(true),
       _useShlibUndefines(true), _dynamicLinkerArg(false),
       _noAllowDynamicLibraries(false), _mergeRODataToTextSegment(true),
-      _demangle(true), _outputMagic(OutputMagic::DEFAULT), _sysrootPath("") {}
-
-bool ELFLinkingContext::is64Bits() const { return getTriple().isArch64Bit(); }
+      _demangle(true), _alignSegments(true), _outputMagic(OutputMagic::DEFAULT),
+      _sysrootPath("") {}
 
 void ELFLinkingContext::addPasses(PassManager &pm) {
   if (_runLayoutPass)

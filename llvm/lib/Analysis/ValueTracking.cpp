@@ -862,7 +862,7 @@ void computeKnownBits(Value *V, APInt &KnownZero, APInt &KnownOne,
   switch (I->getOpcode()) {
   default: break;
   case Instruction::Load:
-    if (MDNode *MD = cast<LoadInst>(I)->getMDNode(LLVMContext::MD_range))
+    if (MDNode *MD = cast<LoadInst>(I)->getMetadata(LLVMContext::MD_range))
       computeKnownBitsFromRangeMetadata(*MD, KnownZero);
     break;
   case Instruction::And: {
@@ -1258,7 +1258,7 @@ void computeKnownBits(Value *V, APInt &KnownZero, APInt &KnownOne,
   }
   case Instruction::Call:
   case Instruction::Invoke:
-    if (MDNode *MD = cast<Instruction>(I)->getMDNode(LLVMContext::MD_range))
+    if (MDNode *MD = cast<Instruction>(I)->getMetadata(LLVMContext::MD_range))
       computeKnownBitsFromRangeMetadata(*MD, KnownZero);
     // If a range metadata is attached to this IntrinsicInst, intersect the
     // explicit range specified by the metadata and the implicit range of
@@ -1533,7 +1533,7 @@ bool isKnownNonZero(Value *V, const DataLayout *TD, unsigned Depth,
   }
 
   if (Instruction* I = dyn_cast<Instruction>(V)) {
-    if (MDNode *Ranges = I->getMDNode(LLVMContext::MD_range)) {
+    if (MDNode *Ranges = I->getMetadata(LLVMContext::MD_range)) {
       // If the possible ranges don't contain zero, then the value is
       // definitely non-zero.
       if (IntegerType* Ty = dyn_cast<IntegerType>(V->getType())) {
@@ -2581,44 +2581,44 @@ bool llvm::isSafeToSpeculativelyExecute(const Value *V,
     return LI->getPointerOperand()->isDereferenceablePointer(TD);
   }
   case Instruction::Call: {
-   if (const IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
-     switch (II->getIntrinsicID()) {
-       // These synthetic intrinsics have no side-effects and just mark
-       // information about their operands.
-       // FIXME: There are other no-op synthetic instructions that potentially
-       // should be considered at least *safe* to speculate...
-       case Intrinsic::dbg_declare:
-       case Intrinsic::dbg_value:
-         return true;
+    if (const IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
+      switch (II->getIntrinsicID()) {
+      // These synthetic intrinsics have no side-effects and just mark
+      // information about their operands.
+      // FIXME: There are other no-op synthetic instructions that potentially
+      // should be considered at least *safe* to speculate...
+      case Intrinsic::dbg_declare:
+      case Intrinsic::dbg_value:
+        return true;
 
-       case Intrinsic::bswap:
-       case Intrinsic::ctlz:
-       case Intrinsic::ctpop:
-       case Intrinsic::cttz:
-       case Intrinsic::objectsize:
-       case Intrinsic::sadd_with_overflow:
-       case Intrinsic::smul_with_overflow:
-       case Intrinsic::ssub_with_overflow:
-       case Intrinsic::uadd_with_overflow:
-       case Intrinsic::umul_with_overflow:
-       case Intrinsic::usub_with_overflow:
-         return true;
-       // Sqrt should be OK, since the llvm sqrt intrinsic isn't defined to set
-       // errno like libm sqrt would.
-       case Intrinsic::sqrt:
-       case Intrinsic::fma:
-       case Intrinsic::fmuladd:
-       case Intrinsic::fabs:
-       case Intrinsic::minnum:
-       case Intrinsic::maxnum:
-         return true;
-       // TODO: some fp intrinsics are marked as having the same error handling
-       // as libm. They're safe to speculate when they won't error.
-       // TODO: are convert_{from,to}_fp16 safe?
-       // TODO: can we list target-specific intrinsics here?
-       default: break;
-     }
-   }
+      case Intrinsic::bswap:
+      case Intrinsic::ctlz:
+      case Intrinsic::ctpop:
+      case Intrinsic::cttz:
+      case Intrinsic::objectsize:
+      case Intrinsic::sadd_with_overflow:
+      case Intrinsic::smul_with_overflow:
+      case Intrinsic::ssub_with_overflow:
+      case Intrinsic::uadd_with_overflow:
+      case Intrinsic::umul_with_overflow:
+      case Intrinsic::usub_with_overflow:
+        return true;
+      // Sqrt should be OK, since the llvm sqrt intrinsic isn't defined to set
+      // errno like libm sqrt would.
+      case Intrinsic::sqrt:
+      case Intrinsic::fma:
+      case Intrinsic::fmuladd:
+      case Intrinsic::fabs:
+      case Intrinsic::minnum:
+      case Intrinsic::maxnum:
+        return true;
+      // TODO: some fp intrinsics are marked as having the same error handling
+      // as libm. They're safe to speculate when they won't error.
+      // TODO: are convert_{from,to}_fp16 safe?
+      // TODO: can we list target-specific intrinsics here?
+      default: break;
+      }
+    }
     return false; // The called function could have undefined behavior or
                   // side-effects, even if marked readnone nounwind.
   }

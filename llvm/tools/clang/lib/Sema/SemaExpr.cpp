@@ -8618,6 +8618,17 @@ QualType Sema::CheckAssignmentOperands(Expr *LHSExpr, ExprResult &RHS,
                                        QualType CompoundType) {
   assert(!LHSExpr->hasPlaceholderType(BuiltinType::PseudoObject));
 
+  if (!getLangOpts().CPlusPlus) {
+    // C cannot handle TypoExpr nodes on either side of n assignment because it
+    // doesn't handle dependent types properly, so make sure any TypoExprs have
+    // been dealt with before checking the operands.
+    ExprResult Res = CorrectDelayedTyposInExpr(LHSExpr);
+    Expr *NewLHS = Res.isInvalid() ? LHSExpr : Res.get();
+    Res = CorrectDelayedTyposInExpr(RHS);
+    if (!Res.isInvalid() && (Res.get() != RHS.get() || NewLHS != LHSExpr))
+      return CheckAssignmentOperands(NewLHS, Res, Loc, CompoundType);
+  }
+
   // Verify that LHS is a modifiable lvalue, and emit error if not.
   if (CheckForModifiableLvalue(LHSExpr, Loc, *this))
     return QualType();
@@ -9164,8 +9175,7 @@ static QualType CheckIndirectionOperand(Sema &S, Expr *Op, ExprValueKind &VK,
   return Result;
 }
 
-static inline BinaryOperatorKind ConvertTokenKindToBinaryOpcode(
-  tok::TokenKind Kind) {
+BinaryOperatorKind Sema::ConvertTokenKindToBinaryOpcode(tok::TokenKind Kind) {
   BinaryOperatorKind Opc;
   switch (Kind) {
   default: llvm_unreachable("Unknown binop!");

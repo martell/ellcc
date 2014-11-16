@@ -132,7 +132,7 @@ static const char *GetArmArchForMCpu(StringRef Value) {
     .Case("xscale", "xscale")
     .Cases("arm1136j-s", "arm1136jf-s", "arm1176jz-s", "arm1176jzf-s", "armv6")
     .Case("cortex-m0", "armv6m")
-    .Cases("cortex-a5", "cortex-a7", "cortex-a8", "cortex-a9-mp", "armv7")
+    .Cases("cortex-a5", "cortex-a7", "cortex-a8", "armv7")
     .Cases("cortex-a9", "cortex-a12", "cortex-a15", "cortex-a17", "krait", "armv7")
     .Cases("cortex-r4", "cortex-r5", "armv7r")
     .Case("cortex-m3", "armv7m")
@@ -2091,11 +2091,14 @@ void Generic_ELF::addClangTargetOptions(const ArgList &DriverArgs,
 
 /// Hexagon Toolchain
 
-std::string Hexagon_TC::GetGnuDir(const std::string &InstalledDir) {
+std::string Hexagon_TC::GetGnuDir(const std::string &InstalledDir,
+                                  const ArgList &Args) {
 
   // Locate the rest of the toolchain ...
-  if (strlen(GCC_INSTALL_PREFIX))
-    return std::string(GCC_INSTALL_PREFIX);
+  std::string GccToolchain = getGCCToolchainDir(Args);
+
+  if (!GccToolchain.empty())
+    return GccToolchain;
 
   std::string InstallRelDir = InstalledDir + "/../../gnu";
   if (llvm::sys::fs::exists(InstallRelDir))
@@ -2135,7 +2138,7 @@ static void GetHexagonLibraryPaths(
   const std::string MarchSuffix = "/" + MarchString;
   const std::string G0Suffix = "/G0";
   const std::string MarchG0Suffix = MarchSuffix + G0Suffix;
-  const std::string RootDir = Hexagon_TC::GetGnuDir(InstalledDir) + "/";
+  const std::string RootDir = Hexagon_TC::GetGnuDir(InstalledDir, Args) + "/";
 
   // lib/gcc/hexagon/...
   std::string LibGCCHexagonDir = RootDir + "lib/gcc/hexagon/";
@@ -2163,7 +2166,7 @@ Hexagon_TC::Hexagon_TC(const Driver &D, const llvm::Triple &Triple,
                        const ArgList &Args)
   : Linux(D, Triple, Args) {
   const std::string InstalledDir(getDriver().getInstalledDir());
-  const std::string GnuDir = Hexagon_TC::GetGnuDir(InstalledDir);
+  const std::string GnuDir = Hexagon_TC::GetGnuDir(InstalledDir, Args);
 
   // Note: Generic_GCC::Generic_GCC adds InstalledDir and getDriver().Dir to
   // program paths
@@ -2218,7 +2221,7 @@ void Hexagon_TC::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
     return;
 
   std::string Ver(GetGCCLibAndIncVersion());
-  std::string GnuDir = Hexagon_TC::GetGnuDir(D.InstalledDir);
+  std::string GnuDir = Hexagon_TC::GetGnuDir(D.InstalledDir, DriverArgs);
   std::string HexagonDir(GnuDir + "/lib/gcc/hexagon/" + Ver);
   addExternCSystemInclude(DriverArgs, CC1Args, HexagonDir + "/include");
   addExternCSystemInclude(DriverArgs, CC1Args, HexagonDir + "/include-fixed");
@@ -2234,7 +2237,8 @@ void Hexagon_TC::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
 
   const Driver &D = getDriver();
   std::string Ver(GetGCCLibAndIncVersion());
-  SmallString<128> IncludeDir(Hexagon_TC::GetGnuDir(D.InstalledDir));
+  SmallString<128> IncludeDir(
+      Hexagon_TC::GetGnuDir(D.InstalledDir, DriverArgs));
 
   llvm::sys::path::append(IncludeDir, "hexagon/include/c++/");
   llvm::sys::path::append(IncludeDir, Ver);

@@ -151,6 +151,18 @@ static bool parseDefsymAsAlias(StringRef opt, StringRef &sym,
   return !target.empty();
 }
 
+// Parses dashz options for max-page-size.
+static bool parseZOption(StringRef opt, uint64_t &val) {
+  size_t equalPos = opt.find('=');
+  if (equalPos == 0 || equalPos == StringRef::npos)
+    return false;
+  StringRef value = opt.substr(equalPos + 1);
+  val = 0;
+  if (value.getAsInteger(0, val) || !val)
+    return false;
+  return true;
+}
+
 llvm::ErrorOr<StringRef> ELFFileNode::getPath(const LinkingContext &) const {
   if (_attributes._isDashlPrefix)
     return _elfLinkingContext.searchLibrary(_path);
@@ -471,7 +483,24 @@ bool GnuLdDriver::parse(int argc, const char *argv[],
       StringRef extOpt = inputArg->getValue();
       if (extOpt == "muldefs")
         ctx->setAllowDuplicates(true);
-      else
+      else if (extOpt.startswith("max-page-size")) {
+        // Parse -z max-page-size option.
+        // The default page size is considered the minimum page size the user
+        // can set, check the user input if its atleast the minimum page size
+        // and doesnot exceed the maximum page size allowed for the target.
+        uint64_t maxPageSize = 0;
+
+        // Error if the page size user set is less than the maximum page size
+        // and greather than the default page size and the user page size is a
+        // modulo of the default page size.
+        if ((!parseZOption(extOpt, maxPageSize)) ||
+            (maxPageSize < ctx->getPageSize()) ||
+            (maxPageSize % ctx->getPageSize())) {
+          diagnostics << "invalid option: " << extOpt << "\n";
+          return false;
+        }
+        ctx->setMaxPageSize(maxPageSize);
+      } else
         diagnostics << "warning: ignoring unknown argument for -z: " << extOpt
                     << "\n";
       break;
@@ -554,6 +583,22 @@ bool GnuLdDriver::parse(int argc, const char *argv[],
     case OPT_rosegment:
       ctx->setCreateSeparateROSegment();
       break;
+
+    case OPT_no_align_segments:
+      ctx->setAlignSegments(false);
+      break;
+
+    case OPT_image_base: {
+      uint64_t baseAddress = 0;
+      StringRef inputValue = inputArg->getValue();
+      if ((inputValue.getAsInteger(0, baseAddress)) || !baseAddress) {
+        diagnostics << "invalid value for image base " << inputValue
+                    << "\n";
+        return false;
+      }
+      ctx->setBaseAddress(baseAddress);
+      break;
+    }
 
     default:
       break;

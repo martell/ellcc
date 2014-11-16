@@ -18,7 +18,6 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrDesc.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/MemoryObject.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -29,7 +28,9 @@ namespace llvm {
 extern const MCInstrDesc MBlazeInsts[];
 }
 
+
 using namespace llvm;
+typedef MCDisassembler::DecodeStatus DecodeStatus;
 
 const uint16_t UNSUPPORTED = -1;
 
@@ -493,25 +494,22 @@ static unsigned getOPCODE(uint32_t insn) {
 // Public interface for the disassembler
 //
 
-MCDisassembler::DecodeStatus MBlazeDisassembler::getInstruction(MCInst &instr,
-                                        uint64_t &size,
-                                        const MemoryObject &region,
-                                        uint64_t address,
-                                        raw_ostream &vStream,
-                                        raw_ostream &cStream) const {
+DecodeStatus
+MBlazeDisassembler::getInstruction(MCInst &instr, uint64_t &Size,
+                                   ArrayRef<uint8_t> Bytes, uint64_t Address,
+                                   raw_ostream &VStream,
+                                   raw_ostream &CStream) const {
   // The machine instruction.
   uint32_t insn;
-  uint8_t bytes[4];
-
-  // By default we consume 1 byte on failure
-  size = 1;
 
   // We want to read exactly 4 bytes of data.
-  if (region.readBytes(address, 4, bytes) == -1)
+  if (Bytes.size() < 4) {
+    Size = 0;
     return Fail;
+  }
 
   // Encoded as a big-endian 32-bit word in the stream.
-  insn = (bytes[0]<<24) | (bytes[1]<<16) | (bytes[2]<< 8) | (bytes[3]<<0);
+  insn = (Bytes[0]<<24) | (Bytes[1]<<16) | (Bytes[2]<< 8) | (Bytes[3]<<0);
 
   // Get the MCInst opcode from the binary instruction and make sure
   // that it is a valid instruction.
@@ -528,7 +526,7 @@ MCDisassembler::DecodeStatus MBlazeDisassembler::getInstruction(MCInst &instr,
 
   uint64_t tsFlags = MBlazeInsts[opcode].TSFlags;
   switch ((tsFlags & MBlazeII::FormMask)) {
-  default: 
+  default:
     return Fail;
 
   case MBlazeII::FC:
@@ -701,7 +699,7 @@ MCDisassembler::DecodeStatus MBlazeDisassembler::getInstruction(MCInst &instr,
   }
 
   // We always consume 4 bytes of data on success
-  size = 4;
+  Size = 4;
 
   return Success;
 }

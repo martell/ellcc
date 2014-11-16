@@ -100,6 +100,9 @@ protected:
   // This is a hook for creating default dynamic entries
   virtual void createDefaultDynamicEntries() {}
 
+  /// \brief Create symbol table.
+  virtual LLD_UNIQUE_BUMP_PTR(SymbolTable<ELFT>) createSymbolTable();
+
   /// \brief create dynamic table.
   virtual LLD_UNIQUE_BUMP_PTR(DynamicTable<ELFT>) createDynamicTable();
 
@@ -284,8 +287,7 @@ template <class ELFT> void OutputELFWriter<ELFT>::createDefaultSections() {
   _layout.setHeader(_elfHeader.get());
   _layout.setProgramHeader(_programHeader.get());
 
-  _symtab.reset(new (_alloc) SymbolTable<ELFT>(
-      _context, ".symtab", DefaultLayout<ELFT>::ORDER_SYMBOL_TABLE));
+  _symtab = std::move(this->createSymbolTable());
   _strtab.reset(new (_alloc) StringTable<ELFT>(
       _context, ".strtab", DefaultLayout<ELFT>::ORDER_STRING_TABLE));
   _shstrtab.reset(new (_alloc) StringTable<ELFT>(
@@ -334,6 +336,13 @@ template <class ELFT> void OutputELFWriter<ELFT>::createDefaultSections() {
       _layout.getPLTRelocationTable()->setSymbolTable(
           _dynamicSymbolTable.get());
   }
+}
+
+template <class ELFT>
+LLD_UNIQUE_BUMP_PTR(SymbolTable<ELFT>)
+    OutputELFWriter<ELFT>::createSymbolTable() {
+  return LLD_UNIQUE_BUMP_PTR(SymbolTable<ELFT>)(new (_alloc) SymbolTable<ELFT>(
+      this->_context, ".symtab", DefaultLayout<ELFT>::ORDER_SYMBOL_TABLE));
 }
 
 /// \brief create dynamic table
@@ -405,11 +414,6 @@ std::error_code OutputELFWriter<ELFT>::buildOutput(const File &file) {
 }
 
 template <class ELFT> std::error_code OutputELFWriter<ELFT>::setELFHeader() {
-  _elfHeader->e_ident(ELF::EI_CLASS,
-                      _context.is64Bits() ? ELF::ELFCLASS64 : ELF::ELFCLASS32);
-  _elfHeader->e_ident(ELF::EI_DATA, _context.isLittleEndian()
-                                        ? ELF::ELFDATA2LSB
-                                        : ELF::ELFDATA2MSB);
   _elfHeader->e_type(_context.getOutputELFType());
   _elfHeader->e_machine(_context.getOutputMachine());
   _elfHeader->e_ident(ELF::EI_VERSION, 1);
@@ -450,6 +454,11 @@ std::error_code OutputELFWriter<ELFT>::writeOutput(const File &file,
   // HACK: We have to write out the header and program header here even though
   // they are a member of a segment because only sections are written in the
   // following loop.
+
+  // Finalize ELF Header / Program Headers.
+  _elfHeader->finalize();
+  _programHeader->finalize();
+
   _elfHeader->write(this, _layout, *buffer);
   _programHeader->write(this, _layout, *buffer);
 

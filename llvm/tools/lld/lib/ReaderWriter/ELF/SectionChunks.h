@@ -429,6 +429,10 @@ public:
 
   void setInfo(uint64_t info) { _shInfo = info; }
 
+  void setFlag(uint64_t flags) { _flags = flags; }
+
+  void setType(int16_t type) { _type = type; }
+
   inline range<ChunkIter> sections() { return _sections; }
 
   // The below functions returns the properties of the MergeSection
@@ -903,10 +907,7 @@ public:
     this->setOrder(order);
     this->_flags = SHF_ALLOC;
     // Set the alignment properly depending on the target architecture
-    if (context.is64Bits())
-      this->_align2 = 8;
-    else
-      this->_align2 = 4;
+    this->_align2 = ELFT::Is64Bits ? 8 : 4;
     if (context.isRelaOutputFormat()) {
       this->_entSize = sizeof(Elf_Rela);
       this->_type = SHT_RELA;
@@ -1067,10 +1068,6 @@ public:
     _dt_strsz = addEntry(dyn);
     dyn.d_tag = DT_SYMENT;
     _dt_syment = addEntry(dyn);
-    dyn.d_tag = DT_FINI_ARRAY;
-    _dt_fini_array = addEntry(dyn);
-    dyn.d_tag = DT_FINI_ARRAYSZ;
-    _dt_fini_arraysz = addEntry(dyn);
     if (_layout.hasDynamicRelocationTable()) {
       dyn.d_tag = isRela ? DT_RELA : DT_REL;
       _dt_rela = addEntry(dyn);
@@ -1098,6 +1095,25 @@ public:
     }
   }
 
+  virtual void doPreFlight() {
+    Elf_Dyn dyn;
+    dyn.d_un.d_val = 0;
+    auto initArray = _layout.findOutputSection(".init_array");
+    auto finiArray = _layout.findOutputSection(".fini_array");
+    if (initArray) {
+      dyn.d_tag = DT_INIT_ARRAY;
+      _dt_init_array = addEntry(dyn);
+      dyn.d_tag = DT_INIT_ARRAYSZ;
+      _dt_init_arraysz = addEntry(dyn);
+    }
+    if (finiArray) {
+      dyn.d_tag = DT_FINI_ARRAY;
+      _dt_fini_array = addEntry(dyn);
+      dyn.d_tag = DT_FINI_ARRAYSZ;
+      _dt_fini_arraysz = addEntry(dyn);
+    }
+  }
+
   /// \brief Dynamic table tag for .got.plt section referencing.
   /// Usually but not always targets use DT_PLTGOT for that.
   virtual int64_t getGotPltTag() { return DT_PLTGOT; }
@@ -1107,6 +1123,7 @@ public:
         _dynamicSymbolTable->getStringTable();
     this->_link = dynamicStringTable->ordinal();
     if (this->_parent) {
+      this->_parent->setType(this->_type);
       this->_parent->setInfo(this->_info);
       this->_parent->setLink(this->_link);
     }
@@ -1130,6 +1147,11 @@ public:
     _entries[_dt_symtab].d_un.d_val = _dynamicSymbolTable->virtualAddr();
     _entries[_dt_strsz].d_un.d_val = dynamicStringTable->memSize();
     _entries[_dt_syment].d_un.d_val = _dynamicSymbolTable->getEntSize();
+    auto initArray = _layout.findOutputSection(".init_array");
+    if (initArray) {
+      _entries[_dt_init_array].d_un.d_val = initArray->virtualAddr();
+      _entries[_dt_init_arraysz].d_un.d_val = initArray->memSize();
+    }
     auto finiArray = _layout.findOutputSection(".fini_array");
     if (finiArray) {
       _entries[_dt_fini_array].d_un.d_val = finiArray->virtualAddr();
@@ -1166,6 +1188,8 @@ private:
   std::size_t _dt_pltgot;
   std::size_t _dt_pltrel;
   std::size_t _dt_jmprel;
+  std::size_t _dt_init_array;
+  std::size_t _dt_init_arraysz;
   std::size_t _dt_fini_array;
   std::size_t _dt_fini_arraysz;
   std::size_t _dt_textrel;
@@ -1232,11 +1256,7 @@ public:
     this->_entSize = 4;
     this->_type = SHT_HASH;
     this->_flags = SHF_ALLOC;
-    // Set the alignment properly depending on the target architecture
-    if (context.is64Bits())
-      this->_align2 = 8;
-    else
-      this->_align2 = 4;
+    this->_align2 = ELFT::Is64Bits ? 8 : 4;
     this->_fsize = 0;
     this->_msize = 0;
   }
@@ -1340,11 +1360,7 @@ public:
     this->_entSize = 0;
     this->_type = SHT_PROGBITS;
     this->_flags = SHF_ALLOC;
-    // Set the alignment properly depending on the target architecture
-    if (context.is64Bits())
-      this->_align2 = 8;
-    else
-      this->_align2 = 4;
+    this->_align2 = ELFT::Is64Bits ? 8 : 4;
     // Minimum size for empty .eh_frame_hdr.
     this->_fsize = 1 + 1 + 1 + 1 + 4;
     this->_msize = this->_fsize;
