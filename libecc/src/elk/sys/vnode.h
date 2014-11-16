@@ -107,6 +107,7 @@ struct vnops {
   int (*vop_close)(vnode_t, file_t);
   int (*vop_read)(vnode_t, file_t, struct uio *, size_t *);
   int (*vop_write)(vnode_t, file_t, struct uio *, size_t *);
+  int (*vop_poll)(vnode_t, file_t, int);
   int (*vop_seek)(vnode_t, file_t, off_t, off_t);
   int (*vop_ioctl)(vnode_t, file_t, u_long, void *);
   int (*vop_fsync)(vnode_t, file_t);
@@ -126,7 +127,8 @@ struct vnops {
 typedef  int (*vnop_open_t)(vnode_t, int);
 typedef  int (*vnop_close_t)(vnode_t, file_t);
 typedef  int (*vnop_read_t)(vnode_t, file_t, struct uio *, size_t *);
-typedef  int (*vnop_write_t)(vnode_t, file_t, void *, size_t, size_t *);
+typedef  int (*vnop_write_t)(vnode_t, file_t, struct uio *, size_t, size_t *);
+typedef  int (*vnop_poll_t)(vnode_t, file_t, int);
 typedef  int (*vnop_seek_t)(vnode_t, file_t, off_t, off_t);
 typedef  int (*vnop_ioctl_t)(vnode_t, file_t, u_long, void *);
 typedef  int (*vnop_fsync_t)(vnode_t, file_t);
@@ -148,8 +150,8 @@ typedef  int (*vnop_truncate_t)(vnode_t, off_t);
  */
 #define VOP_OPEN(VP, F) ((VP)->v_op->vop_open)(VP, F)
 #define VOP_CLOSE(VP, FP) ((VP)->v_op->vop_close)(VP, FP)
-#define VOP_READ(VP, FP, B, S, C) ((VP)->v_op->vop_read)(VP, FP, B, S, C)
-#define VOP_WRITE(VP, FP, B, S, C) ((VP)->v_op->vop_write)(VP, FP, B, S, C)
+#define VOP_READ(VP, FP, U, S, C) ((VP)->v_op->vop_read)(VP, FP, U, C)
+#define VOP_WRITE(VP, FP, U, S, C) ((VP)->v_op->vop_write)(VP, FP, U, C)
 #define VOP_SEEK(VP, FP, OLD, NEW) ((VP)->v_op->vop_seek)(VP, FP, OLD, NEW)
 #define VOP_IOCTL(VP, FP, C, A) ((VP)->v_op->vop_ioctl)(VP, FP, C, A)
 #define VOP_FSYNC(VP, FP) ((VP)->v_op->vop_fsync)(VP, FP)

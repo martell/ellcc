@@ -356,6 +356,25 @@ int device_write(device_t dev, void *buf, size_t *nbyte, int blkno)
 }
 
 /*
+ * Poll a device.
+ */
+int device_poll(device_t dev, int flags)
+{
+  struct devops *ops;
+  int error;
+
+  if ((error = device_reference(dev)) != 0)
+    return error;
+
+  ops = dev->driver->devops;
+  ASSERT(ops->poll != NULL);
+  error = (*ops->poll)(dev, flags);
+
+  device_release(dev);
+  return error;
+}
+
+/*
  * I/O control request.
  *
  * A command and its argument are completely device dependent.

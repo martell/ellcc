@@ -48,21 +48,22 @@
 
 FEATURE(devfs)
 
-#define devfs_mount  ((vfsop_mount_t)vfs_nullop)
-#define devfs_unmount  ((vfsop_umount_t)vfs_nullop)
-#define devfs_sync  ((vfsop_sync_t)vfs_nullop)
-#define devfs_vget  ((vfsop_vget_t)vfs_nullop)
-#define devfs_statfs  ((vfsop_statfs_t)vfs_nullop)
+#define devfs_mount ((vfsop_mount_t)vfs_nullop)
+#define devfs_unmount ((vfsop_umount_t)vfs_nullop)
+#define devfs_sync ((vfsop_sync_t)vfs_nullop)
+#define devfs_vget ((vfsop_vget_t)vfs_nullop)
+#define devfs_statfs ((vfsop_statfs_t)vfs_nullop)
 
-static int devfs_open  (vnode_t, int);
-static int devfs_close  (vnode_t, file_t);
-static int devfs_read  (vnode_t, file_t, struct uio *, size_t *);
-static int devfs_write  (vnode_t, file_t, struct uio *, size_t *);
+static int devfs_open(vnode_t, int);
+static int devfs_close(vnode_t, file_t);
+static int devfs_read(vnode_t, file_t, struct uio *, size_t *);
+static int devfs_write(vnode_t, file_t, struct uio *, size_t *);
+static int devfs_poll(vnode_t, file_t, int);
 #define devfs_seek  ((vnop_seek_t)vop_nullop)
 static int devfs_ioctl  (vnode_t, file_t, u_long, void *);
 #define devfs_fsync  ((vnop_fsync_t)vop_nullop)
 static int devfs_readdir(vnode_t, file_t, struct dirent *);
-static int devfs_lookup  (vnode_t, char *, vnode_t);
+static int devfs_lookup(vnode_t, char *, vnode_t);
 #define devfs_create  ((vnop_create_t)vop_einval)
 #define devfs_remove  ((vnop_remove_t)vop_einval)
 #define devfs_rename  ((vnop_rename_t)vop_einval)
@@ -77,36 +78,37 @@ static int devfs_lookup  (vnode_t, char *, vnode_t);
  * vnode operations
  */
 static struct vnops devfs_vnops = {
-  devfs_open,    /* open */
-  devfs_close,    /* close */
-  devfs_read,    /* read */
-  devfs_write,    /* write */
-  devfs_seek,    /* seek */
-  devfs_ioctl,    /* ioctl */
-  devfs_fsync,    /* fsync */
-  devfs_readdir,    /* readdir */
-  devfs_lookup,    /* lookup */
-  devfs_create,    /* create */
-  devfs_remove,    /* remove */
-  devfs_rename,    /* remame */
-  devfs_mkdir,    /* mkdir */
-  devfs_rmdir,    /* rmdir */
-  devfs_getattr,    /* getattr */
-  devfs_setattr,    /* setattr */
-  devfs_inactive,    /* inactive */
-  devfs_truncate,    /* truncate */
+  devfs_open,           /* open */
+  devfs_close,          /* close */
+  devfs_read,           /* read */
+  devfs_write,          /* write */
+  devfs_poll,           /* poll */
+  devfs_seek,           /* seek */
+  devfs_ioctl,          /* ioctl */
+  devfs_fsync,          /* fsync */
+  devfs_readdir,        /* readdir */
+  devfs_lookup,         /* lookup */
+  devfs_create,         /* create */
+  devfs_remove,         /* remove */
+  devfs_rename,         /* remame */
+  devfs_mkdir,          /* mkdir */
+  devfs_rmdir,          /* rmdir */
+  devfs_getattr,        /* getattr */
+  devfs_setattr,        /* setattr */
+  devfs_inactive,       /* inactive */
+  devfs_truncate,       /* truncate */
 };
 
 /*
  * File system operations
  */
 static struct vfsops devfs_vfsops = {
-  devfs_mount,    /* mount */
-  devfs_unmount,    /* unmount */
-  devfs_sync,    /* sync */
-  devfs_vget,    /* vget */
-  devfs_statfs,    /* statfs */
-  &devfs_vnops,    /* vnops */
+  devfs_mount,          /* mount */
+  devfs_unmount,        /* unmount */
+  devfs_sync,           /* sync */
+  devfs_vget,           /* vget */
+  devfs_statfs,         /* statfs */
+  &devfs_vnops,         /* vnops */
 };
 
 static int devfs_open(vnode_t vp, int flags)
@@ -168,6 +170,15 @@ static int devfs_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
   if (!error)
     *result = len;
   DPRINTF(("devfs_write: error=%d len=%zd\n", error, len));
+  return error;
+}
+
+static int devfs_poll(vnode_t vp, file_t fp, int flags)
+{
+  int error;
+
+  error = device_poll((device_t)vp->v_data, flags);
+  DPRINTF(("devfs_poll: error=%d\n", error));
   return error;
 }
 

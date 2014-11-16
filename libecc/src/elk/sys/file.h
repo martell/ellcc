@@ -50,8 +50,9 @@ typedef struct file
   pthread_mutex_t mutex;        // The mutex protecting the file.
   off_t f_offset;               // The current file offset.
   unsigned refcnt;              // The number of references to this file.
+  filetype_t type;
   const fileops_t *fileops;     // Operations on a file.
-  filetype_t type;              // Type of the file.
+  struct vnode *vnode;          // The file's vnode.
   void *data;                   // Type specific data.
 } *file_t;
 

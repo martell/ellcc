@@ -222,7 +222,7 @@ static int con_ioctl(struct file *file, unsigned int cmd, void *arg)
   }
 }
 
-// Create a file descriptor binding.
+// Create file descriptor bindings.
 static const fileops_t fileops = {
   con_read, con_write, con_ioctl, fnullop_fcntl,
   fnullop_poll, fnullop_stat, fnullop_close

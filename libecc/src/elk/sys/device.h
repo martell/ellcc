@@ -71,6 +71,7 @@ struct devops {
   int (*close)(device_t);
   int (*read)(device_t, struct uio *, size_t *, int);
   int (*write)(device_t, char *, size_t *, int);
+  int (*poll)(device_t, int);
   int (*ioctl)(device_t, u_long, void *);
   int (*devctl)(device_t, u_long, void *);
 };
@@ -79,6 +80,7 @@ typedef int (*devop_open_t)(device_t, int);
 typedef int (*devop_close_t)(device_t);
 typedef int (*devop_read_t)(device_t, char *, size_t *, int);
 typedef int (*devop_write_t)(device_t, char *, size_t *, int);
+typedef int (*devop_poll_t)(device_t, int);
 typedef int (*devop_ioctl_t)(device_t, u_long, void *);
 typedef int (*devop_devctl_t)(device_t, u_long, void *);
 
@@ -86,6 +88,7 @@ typedef int (*devop_devctl_t)(device_t, u_long, void *);
 #define  no_close  ((devop_close_t)nullop)
 #define  no_read   ((devop_read_t)enodev)
 #define  no_write  ((devop_write_t)enodev)
+#define  no_poll   ((devop_poll_t)enodev)
 #define  no_ioctl  ((devop_ioctl_t)enodev)
 #define  no_devctl ((devop_devctl_t)nullop)
 
@@ -152,6 +155,7 @@ struct device
 #define device_close __elk_device_close
 #define device_read __elk_device_read
 #define device_write __elk_device_write
+#define device_poll __elk_device_poll
 #define device_ioctl __elk_device_ioctl
 #define device_info __elk_device_info
 
@@ -185,6 +189,7 @@ int device_open(const char *, int, device_t *);
 int device_close(device_t);
 int device_read(device_t, struct uio *, size_t *, int);
 int device_write(device_t, void *, size_t *, int);
+int device_poll(device_t, int);
 int device_ioctl(device_t, u_long, void *);
 int device_info(struct devinfo *);
 
