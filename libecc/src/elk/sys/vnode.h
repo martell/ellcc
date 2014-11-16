@@ -166,21 +166,6 @@ typedef  int (*vnop_truncate_t)(vnode_t, off_t);
 #define VOP_INACTIVE(VP) ((VP)->v_op->vop_inactive)(VP)
 #define VOP_TRUNCATE(VP, N) ((VP)->v_op->vop_truncate)(VP, N)
 
-int __elk_vop_nullop(void);
-int __elk_vop_einval(void);
-vnode_t __elk_vn_lookup(struct mount *, char *);
-void __elk_vn_lock(vnode_t);
-void __elk_vn_unlock(vnode_t);
-int __elk_vn_stat(vnode_t, struct stat *);
-int __elk_vn_access(vnode_t, int);
-vnode_t __elk_vget(struct mount *, char *);
-void __elk_vput(vnode_t);
-void __elk_vgone(vnode_t);
-void __elk_vref(vnode_t);
-void __elk_vrele(vnode_t);
-int __elk_vcount(vnode_t);
-void __elk_vflush(struct mount *);
-
 #define vop_nullop __elk_vop_nullop
 #define vop_einval __elk_vop_einval
 #define vn_lookup __elk_vn_lookup
@@ -195,5 +180,20 @@ void __elk_vflush(struct mount *);
 #define vrele __elk_vrele
 #define vcount __elk_vcount
 #define vflush __elk_vflush
+
+int vop_nullop(void);
+int vop_einval(void);
+vnode_t vn_lookup(struct mount *, char *);
+void vn_lock(vnode_t);
+void vn_unlock(vnode_t);
+int vn_stat(vnode_t, struct stat *);
+int vn_access(vnode_t, int);
+vnode_t vget(struct mount *, char *);
+void vput(vnode_t);
+void vgone(vnode_t);
+void vref(vnode_t);
+void vrele(vnode_t);
+int vcount(vnode_t);
+void vflush(struct mount *);
 
 #endif /* !_SYS_VNODE_H_ */
