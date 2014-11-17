@@ -8,7 +8,7 @@
 typedef struct fd
 {
   pthread_mutex_t mutex;        // The mutex protecting the file descriptor.
-  unsigned refcnt;              // The number of references to this descriptor.
+  unsigned f_count;             // The number of references to this descriptor.
   file_t file;                  // The file accessed by the file descriptor.
 } fd_t;
 
@@ -21,7 +21,7 @@ static void file_release(file_t *file)
   }
 
   pthread_mutex_lock(&(*file)->mutex);
-  if (--(*file)->refcnt == 0) {
+  if (--(*file)->f_count == 0) {
     // Release the file.
     pthread_mutex_unlock(&(*file)->mutex);
     free(*file);
@@ -41,9 +41,9 @@ static int file_reference(file_t file)
 
   pthread_mutex_lock(&file->mutex);
   int s = 0;
-  if (++file->refcnt == 0) {
+  if (++file->f_count == 0) {
     // Too many references.
-    --file->refcnt;
+    --file->f_count;
     s = -EAGAIN;
   }
 
@@ -60,7 +60,7 @@ static void fd_release(fd_t **fd)
   }
 
   pthread_mutex_lock(&(*fd)->mutex);
-  if (--(*fd)->refcnt == 0) {
+  if (--(*fd)->f_count == 0) {
     file_release(&(*fd)->file);         // Release the file.
     pthread_mutex_unlock(&(*fd)->mutex);
     free(*fd);
@@ -80,14 +80,14 @@ static int fd_reference(fd_t *fd)
 
   pthread_mutex_lock(&fd->mutex);
   int s = 0;
-  if (++fd->refcnt == 0) {
+  if (++fd->f_count == 0) {
     // Too many references.
-    --fd->refcnt;
+    --fd->f_count;
     s = -EAGAIN;
   } else {
     s = file_reference(fd->file);
     if (s < 0) {
-      --fd->refcnt;
+      --fd->f_count;
     }
   }
 
@@ -171,7 +171,7 @@ static int newfile(file_t *res,
   }
 
   pthread_mutex_init(&file->mutex, NULL);
-  file->refcnt = 0;
+  file->f_count = 0;
   file->f_offset = 0;
   file->type = type;
   file->fileops = fileops;
@@ -235,7 +235,7 @@ static int newfd(fd_t **res)
   }
 
   pthread_mutex_init(&fd->mutex, NULL);
-  fd->refcnt = 0;
+  fd->f_count = 0;
   fd->file = NULL;
   *res = fd;
   return 0;

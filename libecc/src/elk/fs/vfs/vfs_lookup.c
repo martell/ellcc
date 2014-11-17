@@ -46,8 +46,7 @@
  * @path: full path name.
  * @vpp:  vnode to be returned.
  */
-int
-namei(char *path, vnode_t *vpp)
+int namei(char *path, vnode_t *vpp)
 {
   char *p;
   char node[PATH_MAX];
@@ -63,7 +62,7 @@ namei(char *path, vnode_t *vpp)
    * the local node in the file system.
    */
   if (vfs_findroot(path, &mp, &p))
-    return ENOTDIR;
+    return -ENOTDIR;
   strlcpy(node, "/", sizeof(node));
   strlcat(node, p, sizeof(node));
   vp = vn_lookup(mp, node);
@@ -107,7 +106,7 @@ namei(char *path, vnode_t *vpp)
       vp = vget(mp, node);
       if (vp == NULL) {
         vput(dvp);
-        return ENOMEM;
+        return -ENOMEM;
       }
       /* Find a vnode in this directory. */
       error = VOP_LOOKUP(dvp, name, vp);
@@ -145,8 +144,7 @@ namei(char *path, vnode_t *vpp)
  *
  * This routine returns a locked directory vnode and file name.
  */
-int
-lookup(char *path, vnode_t *vpp, char **name)
+int lookup(char *path, vnode_t *vpp, char **name)
 {
   char buf[PATH_MAX];
   char root[] = "/";
@@ -162,7 +160,7 @@ lookup(char *path, vnode_t *vpp, char **name)
   strlcpy(buf, path, sizeof(buf));
   file = strrchr(buf, '/');
   if (!buf[0])
-    return ENOTDIR;
+    return -ENOTDIR;
   if (file == buf)
     dir = root;
   else {
@@ -176,7 +174,7 @@ lookup(char *path, vnode_t *vpp, char **name)
     return error;
   if (vp->v_type != VDIR) {
     vput(vp);
-    return ENOTDIR;
+    return -ENOTDIR;
   }
   *vpp = vp;
 

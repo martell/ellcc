@@ -359,7 +359,7 @@ int vn_stat(vnode_t vp, struct stat *st)
     mode |= S_IFIFO;
     break;
   default:
-    return EBADF;
+    return -EBADF;
   };
   st->st_mode = mode;
   st->st_blksize = DEV_BSIZE;
@@ -380,20 +380,20 @@ int vn_access(vnode_t vp, int flags)
   int error = 0;
 
   if ((flags & VEXEC) && (vp->v_mode & 0111) == 0) {
-    error = EACCES;
+    error = -EACCES;
     goto out;
   }
   if ((flags & VREAD) && (vp->v_mode & 0444) == 0) {
-    error = EACCES;
+    error = -EACCES;
     goto out;
   }
   if (flags & VWRITE) {
     if (vp->v_mount->m_flags & MNT_RDONLY) {
-      error = EROFS;
+      error = -EROFS;
       goto out;
     }
     if ((vp->v_mode & 0222) == 0) {
-      error = EACCES;
+      error = -EACCES;
       goto out;
     }
   }
@@ -408,7 +408,7 @@ int vop_nullop(void)
 
 int vop_einval(void)
 {
-  return EINVAL;
+  return -EINVAL;
 }
 
 #if defined(VFS_COMMANDS)

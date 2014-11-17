@@ -53,12 +53,10 @@
 
 FEATURE(vfs_syscalls)
 
-#if RICH
-int   sys_closedir(file_t fp);
-int   sys_readdir(file_t fp, struct dirent *dirent);
+// static int sys_closedir(file_t fp);
+// static int sys_readdir(file_t fp, struct dirent *dirent);
 
-int
-sys_open(char *path, int flags, mode_t mode, file_t *pfp)
+static int sys_open(char *path, int flags, mode_t mode)
 {
   vnode_t vp, dvp;
   file_t fp;
@@ -70,10 +68,10 @@ sys_open(char *path, int flags, mode_t mode, file_t *pfp)
 
   flags = FFLAGS(flags);
   if  ((flags & (FREAD | FWRITE)) == 0)
-    return EINVAL;
+    return -EINVAL;
   if (flags & O_CREAT) {
     error = namei(path, &vp);
-    if (error == ENOENT) {
+    if (error == -ENOENT) {
       /* Create new file. */
       if ((error = lookup(path, &dvp, &filename)) != 0)
         return error;
@@ -96,7 +94,7 @@ sys_open(char *path, int flags, mode_t mode, file_t *pfp)
       /* File already exits */
       if (flags & O_EXCL) {
         vput(vp);
-        return EEXIST;
+        return -EEXIST;
       }
       flags &= ~O_CREAT;
     }
@@ -114,7 +112,7 @@ sys_open(char *path, int flags, mode_t mode, file_t *pfp)
       if (vp->v_type == VDIR) {
         /* Openning directory with writable. */
         vput(vp);
-        return EISDIR;
+        return -EISDIR;
       }
     }
   }
@@ -122,7 +120,7 @@ sys_open(char *path, int flags, mode_t mode, file_t *pfp)
   if (flags & O_TRUNC) {
     if (!(flags & FWRITE) || (vp->v_type == VDIR)) {
       vput(vp);
-      return EINVAL;
+      return -EINVAL;
     }
     if ((error = VOP_TRUNCATE(vp, 0)) != 0) {
       vput(vp);
@@ -132,7 +130,7 @@ sys_open(char *path, int flags, mode_t mode, file_t *pfp)
   /* Setup file structure */
   if (!(fp = malloc(sizeof(struct file)))) {
     vput(vp);
-    return ENOMEM;
+    return -ENOMEM;
   }
   /* Request to file system */
   if ((error = VOP_OPEN(vp, flags)) != 0) {
@@ -145,11 +143,11 @@ sys_open(char *path, int flags, mode_t mode, file_t *pfp)
   fp->f_flags = flags;
   fp->f_offset = 0;
   fp->f_count = 1;
-  *pfp = fp;
   vn_unlock(vp);
   return 0;
 }
 
+#if RICH
 int
 sys_close(file_t fp)
 {
@@ -766,4 +764,5 @@ sys_fchdir(file_t fp, char *cwd)
 ELK_CONSTRUCTOR()
 {
   SYSCALL(mkdir);
+  SYSCALL(open);
 }

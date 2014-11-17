@@ -184,11 +184,11 @@ int sec_file_permission(task_t task, char *path, int acc)
      */
     if (acc & VREAD) {
       if (!capable(task, map->cap_read))
-        error = EACCES;
+        error = -EACCES;
     }
     if (acc & VWRITE) {
       if (!capable(task, map->cap_write))
-        error = EACCES;
+        error = -EACCES;
     }
     DPRINTF(VFSDB_CAP,
       ("sec_file_permission: known directory "
@@ -233,5 +233,5 @@ int sec_vnode_permission(char *path)
   if ((found == 1) && (map->cap_exec == ACC_OK)) {
     return 0;
   }
-  return EACCES;
+  return -EACCES;
 }

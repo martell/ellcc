@@ -143,7 +143,7 @@ static int ramfs_mount(mount_t mp, char *dev, int flags, void *data)
   /* Create a root node */
   np = ramfs_allocate_node("/", VDIR);
   if (np == NULL)
-    return ENOMEM;
+    return -ENOMEM;
   mp->m_root->v_data = np;
   return 0;
 }
@@ -157,7 +157,7 @@ static int ramfs_mount(mount_t mp, char *dev, int flags, void *data)
  */
 static int ramfs_unmount(mount_t mp)
 {
-  return EBUSY;
+  return -EBUSY;
 }
 
 static struct ramfs_node *ramfs_allocate_node(char *name, int type)
@@ -215,7 +215,7 @@ static int ramfs_remove_node(struct ramfs_node *dnp, struct ramfs_node *np)
   struct ramfs_node *prev;
 
   if (dnp->rn_child == NULL)
-    return EBUSY;
+    return -EBUSY;
 
   RAMFS_LOCK();
 
@@ -227,7 +227,7 @@ static int ramfs_remove_node(struct ramfs_node *dnp, struct ramfs_node *np)
          prev = prev->rn_next) {
       if (prev->rn_next == NULL) {
         RAMFS_UNLOCK();
-        return ENOENT;
+        return -ENOENT;
       }
     }
     prev->rn_next = np->rn_next;
@@ -251,7 +251,7 @@ static int ramfs_rename_node(struct ramfs_node *np, char *name)
     /* Expand name buffer */
     tmp = malloc(len + 1);
     if (tmp == NULL)
-      return ENOMEM;
+      return -ENOMEM;
     strlcpy(tmp, name, len + 1);
     free(np->rn_name);
     np->rn_name = tmp;
@@ -267,7 +267,7 @@ static int ramfs_lookup(vnode_t dvp, char *name, vnode_t vp)
   int found;
 
   if (*name == '\0')
-    return ENOENT;
+    return -ENOENT;
 
   RAMFS_LOCK();
 
@@ -283,7 +283,7 @@ static int ramfs_lookup(vnode_t dvp, char *name, vnode_t vp)
   }
   if (found == 0) {
     RAMFS_UNLOCK();
-    return ENOENT;
+    return -ENOENT;
   }
   vp->v_data = np;
   vp->v_mode = ALLPERMS;
@@ -300,11 +300,11 @@ static int ramfs_mkdir(vnode_t dvp, char *name, mode_t mode)
 
   DPRINTF(("mkdir %s\n", name));
   if (!S_ISDIR(mode))
-    return EINVAL;
+    return -EINVAL;
 
   np = ramfs_add_node(dvp->v_data, name, VDIR);
   if (np == NULL)
-    return ENOMEM;
+    return -ENOMEM;
   np->rn_size = 0;
   return 0;
 }
@@ -351,7 +351,7 @@ static int ramfs_truncate(vnode_t vp, off_t length)
   } else if (length > np->rn_bufsize) {
     new_size = round_page(length);
     if (vm_allocate(&new_buf, new_size, 1))
-      return EIO;
+      return -EIO;
     if (np->rn_size != 0) {
       memcpy(new_buf, np->rn_buf, vp->v_size);
       vm_free(np->rn_buf);
@@ -373,11 +373,11 @@ static int ramfs_create(vnode_t dvp, char *name, mode_t mode)
 
   DPRINTF(("create %s in %s\n", name, dvp->v_path));
   if (!S_ISREG(mode))
-    return EINVAL;
+    return -EINVAL;
 
   np = ramfs_add_node(dvp->v_data, name, VREG);
   if (np == NULL)
-    return ENOMEM;
+    return -ENOMEM;
   return 0;
 }
 
@@ -388,9 +388,9 @@ static int ramfs_read(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
 
   *result = 0;
   if (vp->v_type == VDIR)
-    return EISDIR;
+    return -EISDIR;
   if (vp->v_type != VREG)
-    return EINVAL;
+    return -EINVAL;
 
   off = fp->f_offset;
   size_t total = 0;
@@ -424,9 +424,9 @@ static int ramfs_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
 
   *result = 0;
   if (vp->v_type == VDIR)
-    return EISDIR;
+    return -EISDIR;
   if (vp->v_type != VREG)
-    return EINVAL;
+    return -EINVAL;
 
   np = vp->v_data;
   /* Check if the file position exceeds the end of file. */
@@ -450,7 +450,7 @@ static int ramfs_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
          */
         new_size = round_page(end_pos);
         if (vm_allocate(&new_buf, new_size, 1))
-          return EIO;
+          return -EIO;
         if (np->rn_size != 0) {
           memcpy(new_buf, np->rn_buf, vp->v_size);
           vm_free(np->rn_buf);
@@ -495,7 +495,7 @@ static int ramfs_rename(vnode_t dvp1, vnode_t vp1, char *name1,
     old_np = vp1->v_data;
     np = ramfs_add_node(dvp2->v_data, name2, VREG);
     if (np == NULL)
-      return ENOMEM;
+      return -ENOMEM;
 
     if (vp1->v_type == VREG) {
       /* Copy file data */
@@ -530,14 +530,14 @@ static int ramfs_readdir(vnode_t vp, file_t fp, struct dirent *dir)
     np = dnp->rn_child;
     if (np == NULL) {
       RAMFS_UNLOCK();
-      return ENOENT;
+      return -ENOENT;
     }
 
     for (i = 0; i != (fp->f_offset - 2); i++) {
       np = np->rn_next;
       if (np == NULL) {
         RAMFS_UNLOCK();
-        return ENOENT;
+        return -ENOENT;
       }
     }
     if (np->rn_type == VDIR)

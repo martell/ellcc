@@ -45,12 +45,22 @@ static const char *filetype_names[FTYPE_END] =
 };
 #endif
 
+/* Kernel encoding of open mode; separate read and write bits that are
+ * independently testable.
+ */
+#define FREAD           0x00000001
+#define FWRITE          0x00000002
+
+// Convert from open() flags to/from f_flags; convert O_RD/WR to FREAD/FWRITE.
+#define FFLAGS(oflags)  ((oflags) + 1)
+#define OFLAGS(fflags)  ((fflags) - 1)
+
 typedef struct file
 {
   off_t f_offset;               // The current file offset.
   int f_flags;                  // Open flags.
+  unsigned f_count;             // Reference count.
   struct vnode *f_vnode;        // The file's vnode.
-  unsigned refcnt;              // The number of references to this file.
   filetype_t type;
   const fileops_t *fileops;     // Operations on a file.
   void *data;                   // Type specific data.

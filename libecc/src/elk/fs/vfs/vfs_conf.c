@@ -59,7 +59,7 @@ int vfs_register(const char *name, int (*init)(void), struct vfsops *vfsops)
     vfssw[count].vs_op = vfsops;
     vfssw[++count].vs_name = NULL;
   } else {
-    s = EAGAIN;
+    s = -EAGAIN;
   }
   pthread_mutex_unlock(&mutex);
   return s;

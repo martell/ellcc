@@ -116,22 +116,22 @@ void	 task_init(void);
 int	 sec_file_permission(task_t task, char *path, int mode);
 #endif
 
-int	 sec_vnode_permission(char *path);
+#define sec_vnode_permission __elk_sec_vnode_permission
+#define namei __elk_namei
+#define lookup __elk_lookup
+#define vnode_init __elk_vnode_init
+#define vfs_findroot __elk_vfs_findroot
+#define vfs_busy __elk_vfs_busy
+#define vfs_unbusy __elk_vfs_unbusy
+#define fs_noop __elk_fs_noop
 
+int	 sec_vnode_permission(char *path);
 int	 namei(char *path, vnode_t *vpp);
 int	 lookup(char *path, vnode_t *vpp, char **name);
 void	 vnode_init(void);
-
 int	 vfs_findroot(char *path, mount_t *mp, char **root);
 void	 vfs_busy(mount_t mp);
 void	 vfs_unbusy(mount_t mp);
-
 int	 fs_noop(void);
-
-#ifdef DEBUG_VFS
-void	 task_dump(void);
-void	 vnode_dump(void);
-void	 mount_dump(void);
-#endif
 
 #endif /* !_VFS_H */

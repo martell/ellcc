@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include "command.h"
 
 int main(int argc, char **argv)
@@ -17,6 +18,10 @@ int main(int argc, char **argv)
   s = mount("", "/", "ramfs", 0, NULL);
   if (s) {
     printf("ramfs mount failed: %s\n", strerror(errno));
+  }
+  s = open("/foo", O_CREAT|O_WRONLY, 0777);
+  if (s) {
+    printf("open(/foo) failed: %s\n", strerror(errno));
   }
   s = mkdir("/dev", S_IRWXU);
   if (s) {

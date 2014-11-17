@@ -120,7 +120,7 @@ int device_destroy(device_t dev)
   pthread_mutex_lock(&mutex);
   if (!device_valid(dev)) {
     pthread_mutex_unlock(&mutex);
-    return ENODEV;
+    return -ENODEV;
   }
 
   dev->active = 0;
@@ -182,12 +182,12 @@ int device_reference(device_t dev)
   pthread_mutex_lock(&mutex);
   if (!device_valid(dev)) {
     pthread_mutex_unlock(&mutex);
-    return ENODEV;
+    return -ENODEV;
   }
 
   if (!capable(CAP_SYS_RAWIO)) {
     pthread_mutex_unlock(&mutex);
-    return EPERM;
+    return -EPERM;
   }
 
   dev->refcnt++;
@@ -247,7 +247,7 @@ int device_open(const char *name, int mode, device_t *devp)
   pthread_mutex_lock(&mutex);
   if ((dev = device_lookup(str)) == NULL) {
     pthread_mutex_unlock(&mutex);
-    return ENXIO;
+    return -ENXIO;
   }
 
   error = device_reference(dev);
@@ -303,14 +303,14 @@ int device_read(device_t dev, struct uio *uio, size_t *nbyte, int blkno)
   int error;
 
   if (!user_area(buf))
-    return EFAULT;
+    return -EFAULT;
 
   if ((error = device_reference(dev)) != 0)
     return error;
 
   if (copyin(nbyte, &count, sizeof(count))) {
     device_release(dev);
-    return EFAULT;
+    return -EFAULT;
   }
 
   ops = dev->driver->devops;
@@ -335,14 +335,14 @@ int device_write(device_t dev, void *buf, size_t *nbyte, int blkno)
   int error;
 
   if (!user_area(buf))
-    return EFAULT;
+    return -EFAULT;
 
   if ((error = device_reference(dev)) != 0)
     return error;
 
   if (copyin(nbyte, &count, sizeof(count))) {
     device_release(dev);
-    return EFAULT;
+    return -EFAULT;
   }
 
   ops = dev->driver->devops;
@@ -451,7 +451,7 @@ int device_broadcast(u_long cmd, void *arg, int force)
       DPRINTF(("%s returns error=%d for cmd=%ld\n",
          dev->name, error, cmd));
       if (force)
-        retval = EIO;
+        retval = -EIO;
       else {
         retval = error;
         break;
@@ -471,7 +471,7 @@ int device_info(struct devinfo *info)
   u_long target = info->cookie;
   u_long i = 0;
   device_t dev;
-  int error = ESRCH;
+  int error = -ESRCH;
 
   pthread_mutex_lock(&mutex);
   for (dev = device_list; dev != NULL; dev = dev->next) {

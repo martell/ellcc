@@ -125,7 +125,7 @@ static int devfs_open(vnode_t vp, int flags)
 
   if (vp->v_flags & VPROTDEV) {
     DPRINTF(("devfs_open: failed to open protected device.\n"));
-    return EPERM;
+    return -EPERM;
   }
   if (*path == '/')
     path++;
@@ -199,7 +199,7 @@ static int devfs_lookup(vnode_t dvp, char *name, vnode_t vp)
   DPRINTF(("devfs_lookup:%s\n", name));
 
   if (*name == '\0')
-    return ENOENT;
+    return -ENOENT;
 
   i = 0;
   error = 0;
@@ -207,7 +207,7 @@ static int devfs_lookup(vnode_t dvp, char *name, vnode_t vp)
   for (;;) {
     error = device_info(&info);
     if (error)
-      return ENOENT;
+      return -ENOENT;
     if (!strncmp(info.name, name, MAXDEVNAME))
       break;
     i++;
@@ -239,7 +239,7 @@ static int devfs_readdir(vnode_t vp, file_t fp, struct dirent *dir)
   do {
     error = device_info(&info);
     if (error)
-      return ENOENT;
+      return -ENOENT;
   } while (i++ != fp->f_offset);
 
   dir->d_type = 0;
