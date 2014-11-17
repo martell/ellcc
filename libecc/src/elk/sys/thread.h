@@ -3,6 +3,7 @@
 #ifndef _thread_h_
 #define _thread_h_
 
+#include <limits.h>
 #include "kernel.h"
 
 #define HAVE_CAPABILITY 1
@@ -174,5 +175,19 @@ void *__elk_timer_wake_at(long long when,
 /** Get the current thread id.
  */
 int gettid(void);
+
+#ifndef PAGE_SIZE
+#define PAGE_SIZE 4096
+#endif
+#define PAGE_MASK (~(PAGE_SIZE-1))
+#define round_page(x) (((x) + PAGE_MASK) & ~PAGE_MASK)
+
+/** Allocate and free memory.
+ */
+#define vm_allocate __elk_vm_allocate
+#define vm_free __elk_vm_free
+
+int vm_allocate(void **addr, size_t size, int anywhere);
+int vm_free(void *addr);
 
 #endif

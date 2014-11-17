@@ -8,5 +8,7 @@ EXTERN(__elk_thread)
 EXTERN(__elk_time)
 EXTERN(__elk_time_commands)
 EXTERN(__elk_test_commands)
+EXTERN(__elk_vfs_syscalls)
 EXTERN(__elk_devfs)
+EXTERN(__elk_ramfs)
 

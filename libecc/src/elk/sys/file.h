@@ -47,13 +47,14 @@ static const char *filetype_names[FTYPE_END] =
 
 typedef struct file
 {
-  pthread_mutex_t mutex;        // The mutex protecting the file.
   off_t f_offset;               // The current file offset.
+  int f_flags;                  // Open flags.
+  struct vnode *f_vnode;        // The file's vnode.
   unsigned refcnt;              // The number of references to this file.
   filetype_t type;
   const fileops_t *fileops;     // Operations on a file.
-  struct vnode *vnode;          // The file's vnode.
   void *data;                   // Type specific data.
+  pthread_mutex_t mutex;        // The mutex protecting the file.
 } *file_t;
 
 

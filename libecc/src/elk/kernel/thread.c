@@ -893,6 +893,20 @@ long long __elk_timer_expired(long long when)
   return when;        // Schedule the next timeout, if any.
 }
 
+// RICH: temporary definitions.
+int vm_allocate(void **addr, size_t size, int anywhere)
+{
+  if (!anywhere) return 1;      // Fail.
+  *addr = calloc(size, 1);
+  return *addr == NULL;
+}
+
+int vm_free(void *addr)
+{
+  free(addr);
+  return 0;
+}
+
 static long sys_clone(unsigned long flags, void *stack, int *ptid,
 #if defined(__arm__) || defined(__microblaze__) || defined(__ppc__) || \
     defined(__mips__)

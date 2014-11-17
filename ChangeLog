@@ -1,9 +1,10 @@
 current SVN:
 
+* Added a RAM file system to ELK.
 * Update to LLVM r221885.
-* Added virtual file system to ELK.
-* Added device file system to ELK.
-* Added device module to ELK.
+* Added a virtual file system to ELK.
+* Added a device file system to ELK.
+* Added a device module to ELK.
 * Added initial ELK futex support. sem_* and pthread_mutex_* work.
 * Added ELK file descriptor support.
 * Differentiate between ELK and C constructors.

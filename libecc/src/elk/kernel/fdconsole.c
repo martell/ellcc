@@ -267,7 +267,12 @@ C_CONSTRUCTOR()
 {
 #if RICH
   // Set up console device.
-  static struct driver drv = { .flags = DS_ACTIVE };
+  static const struct devops devops = {
+  };
+  static const struct driver drv = {
+    .name = "tty",
+    .devops = &devops;
+  };
   __elk_device_create(&drv, "tty", D_CHR);
 #endif
 }

@@ -73,8 +73,8 @@ static struct list vnode_table[VNODE_BUCKETS];
  * lock this global lock to access internal data.
  */
 static pthread_mutex_t vnode_lock = PTHREAD_MUTEX_INITIALIZER;
-#define VNODE_LOCK()  pthread_mutex_lock(&vnode_lock)
-#define VNODE_UNLOCK()  pthread_mutex_unlock(&vnode_lock)
+#define VNODE_LOCK() pthread_mutex_lock(&vnode_lock)
+#define VNODE_UNLOCK() pthread_mutex_unlock(&vnode_lock)
 
 #define VP_LOCK_INIT(vp) pthread_mutex_init(&(vp)->v_lock, NULL)
 #define VP_LOCK_DESTROY(vp) pthread_mutex_destroy(&(vp)->v_lock)

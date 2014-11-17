@@ -265,4 +265,3 @@ ELK_CONSTRUCTOR()
 {
   vfs_register("devfs", devfs_init, &devfs_vfsops);
 }
-

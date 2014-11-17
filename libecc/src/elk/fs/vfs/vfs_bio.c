@@ -43,6 +43,7 @@
 #include <string.h>
 #include <semaphore.h>
 
+#include "uio.h"
 #include "buf.h"
 #include "list.h"
 #include "vfs.h"
