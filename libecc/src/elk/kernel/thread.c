@@ -499,7 +499,7 @@ static void schedule(thread_t *list)
 static void thread_delete(thread_t *tp)
 {
   release_tid(tp->tid);
-  __elk_fdset_release(&tp->fdset);
+  fdset_release(&tp->fdset);
   free(tp);
 }
 
@@ -938,7 +938,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   }
 
   // Clone or copy the file descriptor set.
-  s = __elk_fdset_clone(&tp->fdset, flags & CLONE_FILES);
+  s = fdset_clone(&tp->fdset, flags & CLONE_FILES);
   if (s < 0) {
     free(tp);
     return s;
@@ -1383,89 +1383,43 @@ static int sys_setsid(void)
 }
 
 #if defined(ENABLEFDS)
-static int sys_close(int fd)
+/** Get a file pointer corresponding to a file descriptor.
+ */
+int getfile(int fd, file_t *filep)
 {
-  return -ENOSYS;
+  if (fd >= current->fdset.count || current->fdset.fds[fd] == NULL) {
+    return -EBADF;
+  }
+
+  *filep = current->fdset.fds[fd]->file;
+  return 0;
+}
+
+/** Get a file descriptor.
+ */
+int allocfd(void)
+{
+  return fdset_add(&current->fdset, NULL);
+}
+
+/** Set a file pointer corresponding to a file descriptor.
+ */
+int setfd(int fd, file_t file)
+{
+  if (fd >= current->fdset.count || current->fdset.fds[fd] == NULL) {
+    return -EBADF;
+  }
+
+  current->fdset.fds[fd]->file = file;
+  return fd;
 }
 
 static int sys_dup(int fd)
 {
-  return __elk_fdset_dup(&current->fdset, fd);
-}
-
-static int sys_ioctl(int fd, int cmd, ...)
-{
-  va_list ap;
-  va_start(ap, cmd);
-  void *arg = va_arg(ap, void *);
-  int s = __elk_fdset_ioctl(&current->fdset, fd, cmd, arg);
-  va_end(ap);
-  return s;
-}
-
-static ssize_t sys_read(int fd, void *buf, size_t count)
-{
-  struct iovec iov = { .iov_base = buf, .iov_len = count };
-  struct uio uio = { .iovcnt = 1, .iov = &iov };
-  return __elk_fdset_read(&current->fdset, fd, &uio);
-}
-
-static ssize_t sys_readv(int fd, const struct iovec *iov, int iovcount)
-{
-  struct uio uio = { .iovcnt = iovcount, .iov = iov };
-  return __elk_fdset_read(&current->fdset, fd, &uio);
-}
-
-static ssize_t sys_write(int fd, void *buf, size_t count)
-{
-  struct iovec iov = { .iov_base = buf, .iov_len = count };
-  struct uio uio = { .iovcnt = 1, .iov = &iov };
-  return __elk_fdset_write(&current->fdset, fd, &uio);
-}
-
-static ssize_t sys_writev(int fd, const struct iovec *iov, int iovcount)
-{
-  struct uio uio = { .iovcnt = iovcount, .iov = iov };
-  return __elk_fdset_write(&current->fdset, fd, &uio);
+  return fdset_dup(&current->fdset, fd);
 }
 
 #endif // ENABLEFDS
-
-#if defined(ENABLENET)
-
-
-#if defined(SYS_socket)
-static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
-                       int flags)
-{
-  return -ENOSYS;
-}
-
-static int sys_bind(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_connect(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-#else
-
-static int sys_socketcall(int call, unsigned long *args)
-{
-  return -ENOSYS;
-}
-
-#endif // SYS_socket
-
-#endif // ENABLENET
 
 #if defined(THREAD_COMMANDS)
 
@@ -1580,28 +1534,8 @@ ELK_CONSTRUCTOR()
   SYSCALL(setsid);
 
 #if defined(ENABLEFDS)
-  SYSCALL(close);
   SYSCALL(dup);
-  SYSCALL(ioctl);
-  SYSCALL(write);
-  SYSCALL(writev);
-  SYSCALL(read);
-  SYSCALL(readv);
-
-#if defined(ENABLENET)
-#if defined(SYS_socket)
-  SYSCALL(accept);
-  SYSCALL(accept4);
-  SYSCALL(bind);
-  SYSCALL(connect);
-#else
-  SYSCALL(socketcall);
-#endif // SYS_Socket
-
-#endif // ENABLENET
-
 #endif // ENABLEFDS
-
 }
 
 C_CONSTRUCTOR()
@@ -1620,8 +1554,13 @@ C_CONSTRUCTOR()
   create_idle_threads();
 
 #if defined(ENABLEFDS)
+  // RICH: Temporarily face a console.
   int __elk_fdconsole_open(fdset_t *fdset);
-  __elk_fdconsole_open(&current->fdset);
+  int fd = __elk_fdconsole_open(&current->fdset);
+  if (fd >= 0) {
+    sys_dup(fd);                        // stdout
+    sys_dup(fd);                        // stderr
+  }
 #endif
 }
 

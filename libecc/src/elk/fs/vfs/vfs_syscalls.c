@@ -49,6 +49,7 @@
 #include "mount.h"
 #include "list.h"
 #include "buf.h"
+#include "thread.h"
 #include "vfs.h"
 
 FEATURE(vfs_syscalls)
@@ -65,6 +66,11 @@ static int sys_open(char *path, int flags, mode_t mode)
 
   DPRINTF(VFSDB_SYSCALL, ("sys_open: path=%s flags=%x mode=%x\n",
         path, flags, mode));
+
+  int fd = allocfd();           // Get a file descriptor.
+  if (fd < 0) {
+    return fd;
+  }
 
   flags = FFLAGS(flags);
   if  ((flags & (FREAD | FWRITE)) == 0)
@@ -144,21 +150,26 @@ static int sys_open(char *path, int flags, mode_t mode)
   fp->f_offset = 0;
   fp->f_count = 1;
   vn_unlock(vp);
+  setfd(fd, fp);
   return 0;
 }
 
-#if RICH
-int
-sys_close(file_t fp)
+static int sys_close(int fd)
 {
   vnode_t vp;
   int error;
+  file_t fp;
+
+  error = getfile(fd, &fp);
+  if (error < 0) {
+    return error;
+  }
 
   DPRINTF(VFSDB_SYSCALL, ("sys_close: fp=%x count=%d\n",
         (u_int)fp, fp->f_count));
 
   if (fp->f_count <= 0)
-    sys_panic("sys_close");
+    panic("sys_close");
 
   vp = fp->f_vnode;
   if (--fp->f_count > 0) {
@@ -175,11 +186,16 @@ sys_close(file_t fp)
   return 0;
 }
 
-int
-sys_read(file_t fp, void *buf, size_t size, size_t *count)
+static ssize_t sys_read(int fd, void *buf, size_t size)
 {
   vnode_t vp;
   int error;
+  file_t fp;
+
+  error = getfile(fd, &fp);
+  if (error < 0) {
+    return error;
+  }
 
   DPRINTF(VFSDB_SYSCALL, ("sys_read: fp=%x buf=%x size=%d\n",
         (u_int)fp, (u_int)buf, size));
@@ -187,21 +203,62 @@ sys_read(file_t fp, void *buf, size_t size, size_t *count)
   if ((fp->f_flags & FREAD) == 0)
     return EBADF;
   if (size == 0) {
-    *count = 0;
     return 0;
   }
   vp = fp->f_vnode;
   vn_lock(vp);
-  error = VOP_READ(vp, fp, buf, size, count);
+  size_t count;
+  struct iovec iovec = { .iov_base = buf, .iov_len = size };
+  struct uio uio = { .iovcnt = 1, .iov = &iovec };
+  error = VOP_READ(vp, fp, &uio, &count);
   vn_unlock(vp);
-  return error;
+  if (error) {
+    return error;
+  }
+
+  return count;
 }
 
-int
-sys_write(file_t fp, void *buf, size_t size, size_t *count)
+static ssize_t sys_readv(int fd, struct iovec *iov, int iovcnt)
 {
   vnode_t vp;
   int error;
+  file_t fp;
+
+  error = getfile(fd, &fp);
+  if (error < 0) {
+    return error;
+  }
+
+  DPRINTF(VFSDB_SYSCALL, ("sys_read: fp=%x buf=%x size=%d\n",
+        (u_int)fp, (u_int)buf, size));
+
+  if ((fp->f_flags & FREAD) == 0)
+    return EBADF;
+
+  vp = fp->f_vnode;
+  vn_lock(vp);
+  size_t count;
+  struct uio uio = { .iovcnt = iovcnt, .iov = iov };
+  error = VOP_READ(vp, fp, &uio, &count);
+  vn_unlock(vp);
+  if (error) {
+    return error;
+  }
+
+  return count;
+}
+
+static ssize_t sys_write(int fd, void *buf, size_t size)
+{
+  vnode_t vp;
+  int error;
+  file_t fp;
+
+  error = getfile(fd, &fp);
+  if (error < 0) {
+    return error;
+  }
 
   DPRINTF(VFSDB_SYSCALL, ("sys_write: fp=%x buf=%x size=%d\n",
         (u_int)fp, (u_int)buf, size));
@@ -209,18 +266,53 @@ sys_write(file_t fp, void *buf, size_t size, size_t *count)
   if ((fp->f_flags & FWRITE) == 0)
     return EBADF;
   if (size == 0) {
-    *count = 0;
     return 0;
   }
   vp = fp->f_vnode;
   vn_lock(vp);
-  error = VOP_WRITE(vp, fp, buf, size, count);
+  size_t count;
+  struct iovec iovec = { .iov_base = buf, .iov_len = size };
+  struct uio uio = { .iovcnt = 1, .iov = &iovec };
+  error = VOP_WRITE(vp, fp, &uio, &count);
   vn_unlock(vp);
-  return error;
+  if (error) {
+    return error;
+  }
+
+  return count;
 }
 
-int
-sys_lseek(file_t fp, off_t off, int type, off_t *origin)
+static ssize_t sys_writev(int fd, struct iovec *iov, int iovcnt)
+{
+  vnode_t vp;
+  int error;
+  file_t fp;
+
+  error = getfile(fd, &fp);
+  if (error < 0) {
+    return error;
+  }
+
+  DPRINTF(VFSDB_SYSCALL, ("sys_write: fp=%x buf=%x size=%d\n",
+        (u_int)fp, (u_int)buf, size));
+
+  if ((fp->f_flags & FWRITE) == 0)
+    return EBADF;
+  vp = fp->f_vnode;
+  vn_lock(vp);
+  size_t count;
+  struct uio uio = { .iovcnt = iovcnt, .iov = iov };
+  error = VOP_WRITE(vp, fp, &uio, &count);
+  vn_unlock(vp);
+  if (error) {
+    return error;
+  }
+
+  return count;
+}
+
+#if RICH
+static int sys_lseek(file_t fp, off_t off, int type, off_t *origin)
 {
   vnode_t vp;
 
@@ -266,12 +358,18 @@ sys_lseek(file_t fp, off_t off, int type, off_t *origin)
   vn_unlock(vp);
   return 0;
 }
+#endif
 
-int
-sys_ioctl(file_t fp, u_long request, void *buf)
+static int sys_ioctl(int fd, u_long request, void *buf)
 {
   vnode_t vp;
   int error;
+  file_t fp;
+
+  error = getfile(fd, &fp);
+  if (error < 0) {
+    return error;
+  }
 
   DPRINTF(VFSDB_SYSCALL, ("sys_ioctl: fp=%x request=%x\n", fp, request));
 
@@ -286,6 +384,7 @@ sys_ioctl(file_t fp, u_long request, void *buf)
   return error;
 }
 
+#if RICH
 int
 sys_fsync(file_t fp)
 {
@@ -765,4 +864,10 @@ ELK_CONSTRUCTOR()
 {
   SYSCALL(mkdir);
   SYSCALL(open);
+  SYSCALL(close);
+  SYSCALL(read);
+  SYSCALL(readv);
+  SYSCALL(write);
+  SYSCALL(writev);
+  SYSCALL(ioctl);
 }

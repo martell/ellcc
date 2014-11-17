@@ -172,6 +172,22 @@ typedef void (*TimerCallback)(void *, void *);
 void *__elk_timer_wake_at(long long when,
                     TimerCallback callback, void *arg1, void *arg2, int retval);
 
+struct file;
+/** Get a file pointer corresponding to a file descriptor.
+ */
+#define getfile __elk_getfile
+int getfile(int fd, struct file **filep);
+
+/** Get a file descriptor.
+ */
+#define allocfd __elk_allocfd
+int allocfd(void);
+
+/** Set a file pointer corresponding to a file descriptor.
+ */
+#define setfd __elk_setfd
+int setfd(int fd, struct file *file);
+
 /** Get the current thread id.
  */
 int gettid(void);

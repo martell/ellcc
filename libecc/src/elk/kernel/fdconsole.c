@@ -2,6 +2,7 @@
  */
 
 #include <semaphore.h>
+#include <pthread.h>
 #include <unistd.h>
 #include <syscalls.h>           // For syscall numbers.
 #include <sys/uio.h>            // For writev (used by printf()).
@@ -10,7 +11,9 @@
 #include "irq.h"
 #include "console.h"
 #include "file.h"
+#include "vnode.h"
 #include "device.h"
+#include "thread.h"
 
 // Make the simple console a loadable feature.
 FEATURE_CLASS(fdconsole, console)
@@ -141,11 +144,11 @@ static ssize_t do_write(const void *buf, size_t count)
   return s;
 }
 
-static ssize_t con_write(struct file *file, off_t *off, struct uio *uio)
+static int con_write(vnode_t vnode, file_t file, struct uio *uio, size_t *size)
 {
-  ssize_t s = sem_wait(&sem_output);
-  if (s < 0) return s;
-  s = 0;
+  int ss = sem_wait(&sem_output);
+  if (ss < 0) return ss;
+  size_t s = 0;
   for (int i = 0; i < uio->iovcnt; ++i) {
       ssize_t c = do_write(uio->iov[i].iov_base, uio->iov[i].iov_len);
       if (c < 0) {
@@ -156,7 +159,8 @@ static ssize_t con_write(struct file *file, off_t *off, struct uio *uio)
   }
 
   sem_post(&sem_output);
-  return s;
+  *size = s;
+  return 0;
 }
 
 static ssize_t do_read(void *buf, size_t count)
@@ -195,11 +199,11 @@ static ssize_t do_read(void *buf, size_t count)
   return s;
 }
 
-static ssize_t con_read(struct file *file, off_t *off, struct uio *uio)
+static int con_read(vnode_t vnode, file_t file, struct uio *uio, size_t *size)
 {
-  ssize_t s = sem_wait(&sem_input);
-  if (s < 0) return s;
-  s = 0;
+  int ss = sem_wait(&sem_input);
+  if (ss < 0) return ss;
+  size_t s = 0;
   for (int i = 0; i < uio->iovcnt; ++i) {
     ssize_t c = do_read(uio->iov[i].iov_base, uio->iov[i].iov_len);
     if (c < 0) {
@@ -209,10 +213,11 @@ static ssize_t con_read(struct file *file, off_t *off, struct uio *uio)
     s += c;
   }
   sem_post(&sem_input);
-  return s;
+  *size = s;
+  return 0;
 }
 
-static int con_ioctl(struct file *file, unsigned int cmd, void *arg)
+static int con_ioctl(vnode_t vnode, file_t file, unsigned long cmd, void *arg)
 {
   switch (cmd) {
   case TCGETS:
@@ -222,20 +227,82 @@ static int con_ioctl(struct file *file, unsigned int cmd, void *arg)
   }
 }
 
-// Create file descriptor bindings.
-static const fileops_t fileops = {
-  con_read, con_write, con_ioctl, fnullop_fcntl,
-  fnullop_poll, fnullop_stat, fnullop_close
+// RICH: This is very temporary.
+#define con_mount ((vfsop_mount_t)vfs_nullop)
+#define con_unmount ((vfsop_umount_t)vfs_nullop)
+#define con_sync ((vfsop_sync_t)vfs_nullop)
+#define con_vget ((vfsop_vget_t)vfs_nullop)
+#define con_statfs ((vfsop_statfs_t)vfs_nullop)
+#define con_open ((vnop_open_t)vop_nullop)
+#define con_close ((vnop_close_t)vop_nullop)
+static int con_read(vnode_t, file_t, struct uio *, size_t *);
+static int con_write(vnode_t, file_t, struct uio *, size_t *);
+#define con_poll ((vnop_poll_t)vop_nullop)
+#define con_seek  ((vnop_seek_t)vop_nullop)
+static int con_ioctl  (vnode_t, file_t, u_long, void *);
+#define con_fsync  ((vnop_fsync_t)vop_nullop)
+#define con_readdir  ((vnop_readdir_t)vop_nullop)
+#define con_lookup  ((vnop_lookup_t)vop_nullop)
+#define con_create  ((vnop_create_t)vop_einval)
+#define con_remove  ((vnop_remove_t)vop_einval)
+#define con_rename  ((vnop_rename_t)vop_einval)
+#define con_mkdir  ((vnop_mkdir_t)vop_einval)
+#define con_rmdir  ((vnop_rmdir_t)vop_einval)
+#define con_getattr  ((vnop_getattr_t)vop_nullop)
+#define con_setattr  ((vnop_setattr_t)vop_nullop)
+#define con_inactive  ((vnop_inactive_t)vop_nullop)
+#define con_truncate  ((vnop_truncate_t)vop_nullop)
+
+struct vnops vnops = {
+  con_open,           /* open */
+  con_close,          /* close */
+  con_read,           /* read */
+  con_write,          /* write */
+  con_poll,           /* poll */
+  con_seek,           /* seek */
+  con_ioctl,          /* ioctl */
+  con_fsync,          /* fsync */
+  con_readdir,        /* readdir */
+  con_lookup,         /* lookup */
+  con_create,         /* create */
+  con_remove,         /* remove */
+  con_rename,         /* remame */
+  con_mkdir,          /* mkdir */
+  con_rmdir,          /* rmdir */
+  con_getattr,        /* getattr */
+  con_setattr,        /* setattr */
+  con_inactive,       /* inactive */
+  con_truncate,       /* truncate */
+};
+
+struct vnode vnode = {
+  .v_mount = NULL,              // Mounted vfs pointer.
+  .v_op = &vnops,               // Vnode operations.
+  .v_refcnt = 1,                // Reference count.
+  .v_type = VCHR,               // Vnode type.
+  .v_flags = 0,                 // Vnode flags.
+  .v_mode = VREAD|VWRITE,       // File mode.
+  .v_size = 0,                  // File size.
+  .v_lock = PTHREAD_MUTEX_INITIALIZER, // Lock for this vnode.
+  .v_nrlocks = 0,               // Lock count (for debug).
+  .v_blkno = 0,                 // Block number.
+  .v_path = "/tty",             // Pointer to path in fs.
+  .v_data = NULL,               // Private data for fs.
+
+};
+
+struct file file = {
+  .f_offset = 0,
+  .f_flags = FREAD|FWRITE,
+  .f_count = 1,
+  .f_vnode = &vnode,
 };
 
 int __elk_fdconsole_open(fdset_t *fdset)
 {
-  // Create three file descriptors, the first is stdin.
-  int fd = __elk_fdset_add(fdset, FTYPE_MISC, &fileops, NULL);
-  if (fd >= 0) {
-    __elk_fdset_dup(fdset, fd);         // stdout.
-    __elk_fdset_dup(fdset, fd);         // stderr.
-  }
+  // Create a file descriptor for the console.
+  int fd = allocfd();
+  fd = setfd(fd, &file);
   return fd;
 }
 
