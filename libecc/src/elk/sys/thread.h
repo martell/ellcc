@@ -42,6 +42,9 @@
 // Allow raw I/O.
 #define CAP_SYS_RAWIO 17
 
+// Allow mount, umount.
+#define CAP_SYS_ADMIN 21
+
 #define CAPABILITY_TO_BIT(capability) (1 << (capability))
 
 typedef int capability_t;

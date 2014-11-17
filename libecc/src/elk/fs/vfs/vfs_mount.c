@@ -50,6 +50,7 @@
 #include "device.h"
 #include "mount.h"
 #include "vfs.h"
+#include "thread.h"
 #include "command.h"
 
 /*
@@ -188,6 +189,10 @@ static int sys_mount(char *dev, char *dir, char *fsname, int flags,
   vnode_t vp, vp_covered;
   int error;
 
+  if (!capable(CAP_SYS_ADMIN)) {
+    return -EPERM;
+  }
+
 #ifdef DEBUG
   dprintf("VFS: mounting %s at %s\n", fsname, dir);
 #endif
@@ -309,6 +314,10 @@ static int sys_umount2(char *path, int flags)
   int error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_umount2: path=%s\n", path));
+
+  if (!capable(CAP_SYS_ADMIN)) {
+    return -EPERM;
+  }
 
   MOUNT_LOCK();
 

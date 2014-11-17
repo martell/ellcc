@@ -320,7 +320,7 @@ static thread_t main_thread = {
 
 /** Check the current thread's capability.
  */
-int __elk_capable(capability_t cap)
+int capable(capability_t cap)
 {
   return CAPABLE(current, cap);
 }
