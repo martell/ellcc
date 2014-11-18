@@ -155,7 +155,7 @@ static int fdset_grow(fdset_t *fdset)
   if (fdset->fds == NULL) {
     fdset->fds = malloc(INITFDS * sizeof(fd_t *));
     if (fdset->fds == NULL) {
-      return -ENOMEM;
+      return -EMFILE;
     }
 
     fdset->refcnt = 1;
@@ -177,7 +177,7 @@ static int fdset_grow(fdset_t *fdset)
       fd_t **newfds = realloc(fdset->fds,
                               (s * FDMULTIPLIER) * sizeof(fd_t *));
       if (newfds == NULL) {
-        return -ENOMEM;
+        return -EMFILE;
       }
 
       for (int i = s; i < s * 2; ++i) {
@@ -198,7 +198,7 @@ static int newfd(fd_t **res)
 {
   fd_t *fd = malloc(sizeof(fd_t));
   if (fd == NULL) {
-    return -ENOMEM;
+    return -EMFILE;
   }
 
   pthread_mutex_init(&fd->mutex, NULL);

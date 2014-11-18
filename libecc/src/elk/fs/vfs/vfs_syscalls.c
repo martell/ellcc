@@ -54,9 +54,7 @@
 
 FEATURE(vfs_syscalls)
 
-// static int sys_readdir(file_t fp, struct dirent *dirent);
-
-static int sys_open(char *path, int flags, mode_t mode)
+static int sys_open(char *name, int flags, mode_t mode)
 {
   vnode_t vp, dvp;
   file_t fp;
@@ -65,6 +63,29 @@ static int sys_open(char *path, int flags, mode_t mode)
 
   DPRINTF(VFSDB_SYSCALL, ("sys_open: path=%s flags=%x mode=%x\n",
         path, flags, mode));
+
+  // Find the full path name (may be relative to cwd).
+  char path[PATH_MAX];
+  if ((error = getpath(name, path)) != 0)
+    return error;
+
+  // Check to see whether the file as accessible.
+  int acc = 0;
+  switch (flags & O_ACCMODE) {
+  case O_RDONLY:
+    acc = VREAD;
+    break;
+  case O_WRONLY:
+    acc = VWRITE;
+    break;
+  case O_RDWR:
+    acc = VREAD | VWRITE;
+    break;
+  }
+
+  if ((error = sec_file_permission(path, acc))) {
+    return error;
+  }
 
   int fd = allocfd();           // Get a file descriptor.
   if (fd < 0) {
@@ -150,7 +171,7 @@ static int sys_open(char *path, int flags, mode_t mode)
   fp->f_count = 1;
   vn_unlock(vp);
   setfd(fd, fp);
-  return 0;
+  return fd;
 }
 
 static int sys_close(int fd)
@@ -182,7 +203,7 @@ static int sys_close(int fd)
   }
   vput(vp);
   free(fp);
-  return 0;
+  return setfd(fd, NULL);
 }
 
 static ssize_t sys_read(int fd, void *buf, size_t size)
@@ -502,13 +523,17 @@ static int check_dir_empty(char *path)
   return error;
 }
 
-static int sys_mkdir(char *path, mode_t mode)
+static int sys_mkdir(char *name, mode_t mode)
 {
-  char *name;
   vnode_t vp, dvp;
   int error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_mkdir: path=%s mode=%d\n",  path, mode));
+
+  // Find the full path name (may be relative to cwd).
+  char path[PATH_MAX];
+  if ((error = getpath(name, path)) != 0)
+    return error;
 
   if ((error = namei(path, &vp)) == 0) {
     /* File already exists */
@@ -532,13 +557,17 @@ static int sys_mkdir(char *path, mode_t mode)
   return error;
 }
 
-static int sys_rmdir(char *path)
+static int sys_rmdir(char *name)
 {
   vnode_t vp, dvp;
   int error;
-  char *name;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_rmdir: path=%s\n", path));
+
+  // Find the full path name (may be relative to cwd).
+  char path[PATH_MAX];
+  if ((error = getpath(name, path)) != 0)
+    return error;
 
   if ((error = check_dir_empty(path)) != 0)
     return error;
@@ -570,13 +599,17 @@ static int sys_rmdir(char *path)
   return error;
 }
 
-static int sys_mknod(char *path, mode_t mode)
+static int sys_mknod(char *name, mode_t mode)
 {
-  char *name;
   vnode_t vp, dvp;
   int error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_mknod: path=%s mode=%d\n",  path, mode));
+
+  // Find the full path name (may be relative to cwd).
+  char path[PATH_MAX];
+  if ((error = getpath(name, path)) != 0)
+    return error;
 
   switch (mode & S_IFMT) {
   case S_IFREG:
@@ -607,13 +640,20 @@ static int sys_mknod(char *path, mode_t mode)
   return error;
 }
 
-static int sys_rename(char *src, char *dest)
+static int sys_rename(char *srcname, char *destname)
 {
   vnode_t vp1, vp2 = 0, dvp1, dvp2;
   char *sname, *dname;
   int error;
   size_t len;
-  char root[] = "/";
+
+  // Find the full path names (may be relative to cwd).
+  char src[PATH_MAX];
+  char dest[PATH_MAX];
+  if ((error = getpath(srcname, src)) != 0)
+    return error;
+  if ((error = getpath(destname, dest)) != 0)
+    return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_rename: src=%s dest=%s\n", src, dest));
 
@@ -664,8 +704,9 @@ static int sys_rename(char *src, char *dest)
     error = -ENOTDIR;
     goto err2;
   }
+
   if (dname == dest)
-    dest = root;
+    strcpy(dest, "/");
 
   *dname = 0;
   dname++;

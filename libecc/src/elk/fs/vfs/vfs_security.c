@@ -87,8 +87,6 @@
  *
  *  /private   CAP_USERFILES  CAP_USERFILES  Not Allowed
  *
- *  /other     Any            Any            Not Allowed
- *
  */
 
 #include <fcntl.h>
@@ -99,20 +97,22 @@
 #include <errno.h>
 
 #include "list.h"
+#include "thread.h"
 #include "vfs.h"
 
-#define ACC_NG    -1    /* access is not allowed */
-#define ACC_OK    0    /* access is allowed */
+#define ACC_NG -1               // Access is not allowed.
+#define ACC_OK 0                // Access is allowed.
 
 /*
  * Capability mapping for path and file access
  */
-struct fscap_map {
-  char  *path;      /* directory name */
-  size_t  len;      /* length of directory name */
-  int  cap_read;    /* required capability to read */
-  int  cap_write;    /* required capability to write */
-  int  cap_exec;    /* required capability to execute */
+struct fscap_map
+{
+  char *path;                   // Directory name.
+  size_t len;                   // Length of directory name.
+  int cap_read;                 // Required capability to read.
+  int cap_write;                // Required capability to write.
+  int cap_exec;                 // Required capability to execute.
 };
 
 /*
@@ -120,7 +120,7 @@ struct fscap_map {
  */
 static const struct fscap_map fscap_table[] =
 {
-#if RICH
+#if RICH        // Need to figure out capabilities.
   /* path        len read           write          execute       */
   /* ----------- --- -------------- -------------- ------------- */
   { "/boot/",     6, CAP_SYSFILES,  ACC_NG,        ACC_OK       },
@@ -132,12 +132,10 @@ static const struct fscap_map fscap_table[] =
 };
 
 
-#if RICH
 /*
  * Return true if the task has specified capability.
  */
-static int
-capable(task_t task, cap_t cap)
+static int sec_capable(int cap)
 {
 
   if (cap == ACC_OK)
@@ -146,18 +144,56 @@ capable(task_t task, cap_t cap)
   if (cap == ACC_NG)
     return 0;
 
-  if (task_chkcap(task, cap) != 0) {
+  if (!capable(cap)) {
     /* No capability */
     return 0;
   }
+
   return 1;
+}
+
+/*
+ * Check if the file is executable.
+ */
+int sec_vnode_permission(char *path)
+{
+  const struct fscap_map *map;
+  int found = 0;
+
+  /*
+   * Look up capability mapping table.
+   */
+  map = &fscap_table[0];
+  while (map->path != NULL) {
+    if (!strncmp(path, map->path, map->len)) {
+      found = 1;
+      break;
+    }
+    map++;
+  }
+
+  if (!found) {
+    // Unprotected directories can run anything.
+    // RICH: Should this for no capabilities?
+    return 0;
+  }
+
+  /*
+   * We allow the file execution only with the file
+   * under specific directories.
+   */
+  if (map->cap_exec == ACC_OK) {
+    return 0;
+  }
+
+  return -EACCES;
 }
 
 /*
  * Check if the task has capability to access the file.
  * Return 0 if it has capability.
  */
-int sec_file_permission(task_t task, char *path, int acc)
+int sec_file_permission(char *path, int acc)
 {
   const struct fscap_map *map;
   int found = 0;
@@ -183,13 +219,20 @@ int sec_file_permission(task_t task, char *path, int acc)
      * File under known directory.
      */
     if (acc & VREAD) {
-      if (!capable(task, map->cap_read))
+      if (!sec_capable(map->cap_read))
         error = -EACCES;
     }
+
     if (acc & VWRITE) {
-      if (!capable(task, map->cap_write))
+      if (!sec_capable(map->cap_write))
         error = -EACCES;
     }
+
+    if (acc & VEXEC) {
+      if (!sec_capable(map->cap_exec))
+        error = -EACCES;
+    }
+
     DPRINTF(VFSDB_CAP,
       ("sec_file_permission: known directory "
        "path=%s read=%x write=%x execute=%d\n",
@@ -199,39 +242,9 @@ int sec_file_permission(task_t task, char *path, int acc)
   if (error != 0) {
     DPRINTF(VFSDB_CAP,
       ("sec_file_permission: no capability for %02x "
-       "task=%08x path=%s\n",
-       acc, task, path));
+       "path=%s\n",
+       acc, path));
   }
+
   return error;
-}
-#endif
-
-/*
- * Check if the file is executable.
- */
-int sec_vnode_permission(char *path)
-{
-  const struct fscap_map *map;
-  int found = 0;
-
-  /*
-   * Look up capability mapping table.
-   */
-  map = &fscap_table[0];
-  while (map->path != NULL) {
-    if (!strncmp(path, map->path, map->len)) {
-      found = 1;
-      break;
-    }
-    map++;
-  }
-
-  /*
-   * We allow the file execution only with the file
-   * under specific directories.
-   */
-  if ((found == 1) && (map->cap_exec == ACC_OK)) {
-    return 0;
-  }
-  return -EACCES;
 }

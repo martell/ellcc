@@ -191,6 +191,12 @@ int allocfd(void);
 #define setfd __elk_setfd
 int setfd(int fd, struct file *file);
 
+/** Get a file path.
+ * This function returns the full path name for the file name.
+ */
+#define getpath __elk_getpath
+int getpath(const char *name, char *path);
+
 /** Get the current thread id.
  */
 int gettid(void);

@@ -113,10 +113,10 @@ void	 task_delfd(struct task *t, int fd);
 int	 task_conv(struct task *t, char *path, int mode, char *full);
 void	 task_init(void);
 
-int	 sec_file_permission(task_t task, char *path, int mode);
 #endif
 
 #define sec_vnode_permission __elk_sec_vnode_permission
+#define sec_file_permission __elk_sec_file_permission
 #define namei __elk_namei
 #define lookup __elk_lookup
 #define vnode_init __elk_vnode_init
@@ -126,6 +126,7 @@ int	 sec_file_permission(task_t task, char *path, int mode);
 #define fs_noop __elk_fs_noop
 
 int	 sec_vnode_permission(char *path);
+int	 sec_file_permission(char *path, int mode);
 int	 namei(char *path, vnode_t *vpp);
 int	 lookup(char *path, vnode_t *vpp, char **name);
 void	 vnode_init(void);

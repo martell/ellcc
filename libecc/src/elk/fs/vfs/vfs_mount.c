@@ -179,7 +179,7 @@ int vfs_einval(void)
   return EINVAL;
 }
 
-static int sys_mount(char *dev, char *dir, char *fsname, int flags,
+static int sys_mount(char *dev, char *name, char *fsname, int flags,
                      void *data)
 {
   const struct vfssw *fs;
@@ -192,6 +192,11 @@ static int sys_mount(char *dev, char *dir, char *fsname, int flags,
   if (!capable(CAP_SYS_ADMIN)) {
     return -EPERM;
   }
+
+  // Find the full path name (may be relative to cwd).
+  char dir[PATH_MAX];
+  if ((error = getpath(name, dir)) != 0)
+    return error;
 
 #ifdef DEBUG
   dprintf("VFS: mounting %s at %s\n", fsname, dir);
@@ -307,7 +312,7 @@ static int sys_mount(char *dev, char *dir, char *fsname, int flags,
 }
 
 // RICH: use flags.
-static int sys_umount2(char *path, int flags)
+static int sys_umount2(char *name, int flags)
 {
   mount_t mp;
   list_t head, n;
@@ -318,6 +323,11 @@ static int sys_umount2(char *path, int flags)
   if (!capable(CAP_SYS_ADMIN)) {
     return -EPERM;
   }
+
+  // Find the full path name (may be relative to cwd).
+  char path[PATH_MAX];
+  if ((error = getpath(name, path)) != 0)
+    return error;
 
   MOUNT_LOCK();
 

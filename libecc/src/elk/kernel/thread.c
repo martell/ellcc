@@ -18,6 +18,7 @@
 #define DEFINE_STATE_STRINGS
 #include "thread.h"
 #include "file.h"
+#include "vnode.h"
 #include "command.h"
 
 
@@ -82,6 +83,7 @@ typedef struct thread
   capability_t icap;            // The thread's inheritable capabilities.
 #endif
   fdset_t fdset;                // File descriptors used by the thread.
+  file_t cwdfp;                 // The current working directory.
   MsgQueue queue;               // The thread's message queue.
 } thread_t;
 
@@ -1412,6 +1414,87 @@ int setfd(int fd, file_t file)
 
   current->fdset.fds[fd]->file = file;
   return fd;
+}
+
+/** Get a file path.
+ * This function returns the full path name for the file name.
+ */
+int getpath(const char *name, char *path)
+{
+  // Find the current directory name.
+  const char *cwd = current->cwdfp ? current->cwdfp->f_vnode->v_path : "/";
+  const char *src = name;
+  char *tgt = path;
+  int len = 0;
+  if (src[0] == '/') {
+    // The path starts at the root.
+    *tgt++ = *src++;
+    ++len;
+  } else {
+    // The current working directory starts the path.
+    strlcpy(tgt, cwd, PATH_MAX);
+    len = strlen(cwd);
+    tgt += len;
+    // If cwd is not the root directory and the name doesn't start with "."
+    // add a trailing "/" to the current directory.
+    if (len > 1 && *src != '.') {
+      if (++len >= PATH_MAX)
+        return -ENAMETOOLONG;
+      *tgt++ = '/';
+    }
+  }
+
+  // Copy the src in to the target, removing ./ and ../
+  while (*src) {
+    // Find the end of this component.
+    const char *p = src;
+    while (*p != '/' && *p != '\0')
+      ++p;
+    int count = p - src;                // The length of the component.
+    if (count == 2 && strncmp(src, "..", count) == 0) {
+      if (len >= 2) {
+        // Go back to the previous '/'.
+        len -= 2;
+        tgt -= 2;
+        while (*tgt != '/') {
+          --tgt;
+          --len;
+        }
+
+        if (len == 0) {
+          // At the initial '/'.
+          ++tgt;
+          ++len;
+        }
+      }
+    } else if (count == 1 && *src == '.') {
+      // Ignore '.' and './'.
+    } else {
+      while (src != p) {
+        if (++len >= PATH_MAX)
+          return -ENAMETOOLONG;
+        *tgt++ = *src++;
+      }
+    }
+
+    if (*p) {
+      // We are at a '/'. Add a slash to the target if it isn't redundant.
+      if (len > 0 && *(tgt - 1) != '/') {
+        if (++len >= PATH_MAX)
+          return -ENAMETOOLONG;
+        *tgt++ = '/';
+      }
+
+      src = p + 1;                      // Skip the '/'.
+    }
+  }
+
+  if (++len >= PATH_MAX)
+    return -ENAMETOOLONG;
+
+  *tgt = '\0';
+
+  return 0;
 }
 
 static int sys_dup(int fd)

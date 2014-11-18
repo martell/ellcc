@@ -288,7 +288,6 @@ struct vnode vnode = {
   .v_blkno = 0,                 // Block number.
   .v_path = "/tty",             // Pointer to path in fs.
   .v_data = NULL,               // Private data for fs.
-
 };
 
 struct file file = {
