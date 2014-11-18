@@ -52,6 +52,49 @@ int main(int argc, char **argv)
   if (s) {
     printf("devfs mount failed: %s\n", strerror(errno));
   }
+
+  char *p = getcwd(buffer, 100);
+  if (p) {
+    printf("getcwd got: %s\n", buffer);
+  } else {
+    printf("getcwd failed: %s\n", strerror(errno));
+  }
+
+  s = chdir("/");
+  if (s) {
+    printf("chdir /dev failed: %s\n", strerror(errno));
+  }
+
+  p = getcwd(buffer, 100);
+  if (p) {
+    printf("getcwd got: %s\n", buffer);
+  } else {
+    printf("getcwd failed: %s\n", strerror(errno));
+  }
+
+  s = mkdir("/fee", S_IRWXU);
+  s = chdir("/fee");
+  if (s) {
+    printf("chdir /fee failed: %s\n", strerror(errno));
+  }
+
+  p = getcwd(buffer, 100);
+  if (p) {
+    printf("getcwd got: %s\n", buffer);
+  } else {
+    printf("getcwd failed: %s\n", strerror(errno));
+  }
+  s = chdir("..//dev");
+  if (s) {
+    printf("chdir /dev failed: %s\n", strerror(errno));
+  }
+
+  p = getcwd(buffer, 100);
+  if (p) {
+    printf("getcwd got: %s\n", buffer);
+  } else {
+    printf("getcwd failed: %s\n", strerror(errno));
+  }
 #endif
 
   // Enter the kernel command processor.
