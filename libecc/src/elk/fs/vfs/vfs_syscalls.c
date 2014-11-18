@@ -195,6 +195,11 @@ static int sys_open(char *name, int flags, mode_t mode)
   return fd;
 }
 
+static int sys_creat(char *name, mode_t mode)
+{
+  return sys_open(name, O_CREAT|O_WRONLY|O_TRUNC, mode);
+}
+
 static int vfs_close(file_t fp)
 {
   vnode_t vp;
@@ -228,7 +233,7 @@ static int sys_close(int fd)
   DPRINTF(VFSDB_SYSCALL, ("sys_close: fp=%x count=%d\n",
         (u_int)fp, fp->f_count));
 
-  error = getfile(fd, &fp);
+  error = getfile(fd, &fp, 1);
   if (error < 0) {
     return error;
   }
@@ -244,7 +249,7 @@ static ssize_t sys_read(int fd, void *buf, size_t size)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp);
+  error = getfile(fd, &fp, 1);
   if (error < 0) {
     return error;
   }
@@ -279,7 +284,7 @@ static ssize_t sys_readv(int fd, struct iovec *iov, int iovcnt)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp);
+  error = getfile(fd, &fp, 1);
   if (error < 0) {
     return error;
   }
@@ -309,7 +314,7 @@ static ssize_t sys_write(int fd, void *buf, size_t size)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp);
+  error = getfile(fd, &fp, 1);
   if (error < 0) {
     return error;
   }
@@ -342,7 +347,7 @@ static ssize_t sys_writev(int fd, struct iovec *iov, int iovcnt)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp);
+  error = getfile(fd, &fp, 1);
   if (error < 0) {
     return error;
   }
@@ -371,7 +376,7 @@ static off_t sys_lseek(int fd, off_t off, int type)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp);
+  error = getfile(fd, &fp, 1);
   if (error < 0) {
     return error;
   }
@@ -427,7 +432,7 @@ static int sys_ioctl(int fd, u_long request, void *buf)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp);
+  error = getfile(fd, &fp, 1);
   if (error < 0) {
     return error;
   }
@@ -451,7 +456,7 @@ static int sys_fsync(int fd)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp);
+  error = getfile(fd, &fp, 1);
   if (error < 0) {
     return error;
   }
@@ -474,7 +479,7 @@ static int sys_fstat(int fd, struct stat *st)
   int error = 0;
   file_t fp;
 
-  error = getfile(fd, &fp);
+  error = getfile(fd, &fp, 1);
   if (error < 0) {
     return error;
   }
@@ -522,10 +527,10 @@ static int check_dir_empty(char *path)
   if ((fd = sys_open(path, O_RDONLY, 0)) != 0)
     return fd;
 
-  fd = getfile(fd, &fp);
-  if (fd < 0) {
+  int error = getfile(fd, &fp, 1);
+  if (error < 0) {
     sys_close(fd);
-    return fd;
+    return error;
   }
 
   vnode_t dvp = fp->f_vnode;
@@ -538,7 +543,6 @@ static int check_dir_empty(char *path)
 
   vn_unlock(dvp);
 
-  int error;
   do {
     error = i_readdir(fp, &dir);
     if (error != 0 && error != -EACCES)
@@ -813,7 +817,7 @@ static int sys_fchdir(int fd)
   file_t fp;
   int error;
 
-  if ((error = getfile(fd, &fp)) != 0) {
+  if ((error = getfile(fd, &fp, 1)) != 0) {
     return error;
   }
 
@@ -926,11 +930,129 @@ static int sys_ftruncate(int fd, off_t length)
   return 0;
 }
 
+static int sys_dup(int oldfd)
+{
+  file_t fp;
+  int newfd;
+  int error;
+
+  if ((error = getfile(oldfd, &fp, 1)) != 0) {
+    return error;
+  }
+
+  if ((newfd = allocfd()) < 0) {
+    return newfd;
+  }
+
+  setfile(newfd, fp);
+
+  // Increment file references.
+  vref(fp->f_vnode);
+  ++fp->f_count;
+
+  return newfd;
+}
+
+static int sys_dup2(int oldfd, int newfd)
+{
+  file_t fp, ofp;
+  int error;
+
+  if ((error = getfile(oldfd, &fp, 1)) != 0) {
+    return error;
+  }
+
+  if ((error = getfile(newfd, &ofp, 0)) < 0) {
+    return error;
+  }
+
+  if (ofp) {
+    // Close the old file, if any.
+    vfs_close(ofp);
+  }
+
+  setfile(newfd, fp);
+
+  // Increment file references.
+  vref(fp->f_vnode);
+  ++fp->f_count;
+
+  return newfd;
+}
+
+#if RICH
+static int sys_fcntl(int fd, int cmd, int arg)
+{
+  file_t fp;
+  int newfd;
+  int error;
+
+  if ((error = getfile(oldfd, &fp, 1)) != 0) {
+    return error;
+  }
+
+  switch (cmd) {
+  case F_DUPFD: {
+    file_t ofp;
+    if ((error = getfile(arg, &ofp, 0)) != 0) {
+      return error;
+    }
+
+    if (ofp) {
+      // Close the old file, if any.
+      vfs_close(ofp);
+    }
+
+    setfile(arg, fp);
+
+    // Increment file references.
+    vref(fp->f_vnode);
+    ++fp->f_count;
+
+    error = arg;
+    if (ifp) {
+
+          if (arg >= OPEN_MAX)
+                  return EINVAL;
+          /* Find smallest empty slot as new fd. */
+          if ((new_fd = task_newfd(t)) == -1)
+                  return EMFILE;
+          t->t_ofile[new_fd] = fp;
+
+          /* Increment file reference */
+          vref(fp->f_vnode);
+          fp->f_count++;
+          msg->arg = new_fd;
+          break;
+  case F_GETFD:
+          msg->arg = fp->f_flags & FD_CLOEXEC;
+          break;
+  case F_SETFD:
+          fp->f_flags = (fp->f_flags & ~FD_CLOEXEC) |
+                  (msg->arg & FD_CLOEXEC);
+          msg->arg = 0;
+          break;
+  case F_GETFL:
+  case F_SETFL:
+          msg->arg = -1;
+          break;
+  default:
+          msg->arg = -1;
+          break;
+  }
+
+  return error;
+}
+#endif
+
 ELK_CONSTRUCTOR()
 {
   SYSCALL(access);
   SYSCALL(chdir);
   SYSCALL(close);
+  SYSCALL(creat);
+  SYSCALL(dup);
+  SYSCALL(dup2);
   SYSCALL(fchdir);
   SYSCALL(fstat);
   SYSCALL(fsync);

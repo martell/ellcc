@@ -1385,23 +1385,37 @@ static int sys_setsid(void)
 }
 
 #if defined(ENABLEFDS)
-/** Get a file pointer corresponding to a file descriptor.
- */
-int getfile(int fd, file_t *filep)
-{
-  if (fd >= current->fdset.count || current->fdset.fds[fd] == NULL) {
-    return -EBADF;
-  }
-
-  *filep = current->fdset.fds[fd]->file;
-  return 0;
-}
-
 /** Get a file descriptor.
  */
 int allocfd(void)
 {
   return fdset_add(&current->fdset, NULL);
+}
+
+/** Get a file pointer corresponding to a file descriptor.
+ */
+int getfile(int fd, file_t *filep, int must)
+{
+  if (fd >= current->fdset.count || current->fdset.fds[fd] == NULL) {
+    if (!must) {
+      // Try to allocate a new file descriptor.
+      int error;
+      if ((error = fdset_addfd(&current->fdset, fd, NULL)) < 0) {
+        return error;
+      }
+      *filep = NULL;
+      return 0;
+    }
+    return -EBADF;
+  }
+
+  *filep = current->fdset.fds[fd]->file;
+  if (must && *filep == NULL) {
+    // Must have a file pointer associated with the descriptor.
+    return -EBADF;
+  }
+
+  return 0;
 }
 
 /** Set a file pointer corresponding to a file descriptor.
@@ -1415,6 +1429,7 @@ int setfile(int fd, file_t file)
   current->fdset.fds[fd]->file = file;
   return fd;
 }
+#endif
 
 /** Replace the old cwd fp with a new one.
  */
@@ -1505,13 +1520,6 @@ int getpath(const char *name, char *path)
 
   return 0;
 }
-
-static int sys_dup(int fd)
-{
-  return fdset_dup(&current->fdset, fd);
-}
-
-#endif // ENABLEFDS
 
 #if defined(THREAD_COMMANDS)
 
@@ -1624,11 +1632,12 @@ ELK_CONSTRUCTOR()
   SYSCALL(setreuid);
   SYSCALL(setuid);
   SYSCALL(setsid);
-
-#if defined(ENABLEFDS)
-  SYSCALL(dup);
-#endif // ENABLEFDS
 }
+
+// RICH: Temporary.
+#if defined(ENABLEFDS)
+#include <unistd.h>
+#endif
 
 C_CONSTRUCTOR()
 {
@@ -1650,8 +1659,8 @@ C_CONSTRUCTOR()
   int __elk_fdconsole_open(fdset_t *fdset);
   int fd = __elk_fdconsole_open(&current->fdset);
   if (fd >= 0) {
-    sys_dup(fd);                        // stdout
-    sys_dup(fd);                        // stderr
+    dup(fd);                            // stdout
+    dup(fd);                            // stderr
   }
 #endif
 }

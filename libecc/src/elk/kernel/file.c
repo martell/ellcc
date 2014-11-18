@@ -149,30 +149,37 @@ int fdset_clone(fdset_t *fdset, int clone)
 
 /** Get an available entry in an fdset.
  */
-static int fdset_grow(fdset_t *fdset)
+static int fdset_grow(fdset_t *fdset, int least)
 {
   int s;
+  int initfds = INITFDS;
+  if (least == -1) {
+    least = 0;
+  } else if (fdset->fds == NULL) {
+    initfds = least + 1;
+  }
+
   if (fdset->fds == NULL) {
-    fdset->fds = malloc(INITFDS * sizeof(fd_t *));
+    fdset->fds = malloc(initfds * sizeof(fd_t *));
     if (fdset->fds == NULL) {
       return -EMFILE;
     }
 
     fdset->refcnt = 1;
-    fdset->count = INITFDS;
-    for (int i = 0; i < INITFDS; ++i) {
+    fdset->count = initfds;
+    for (int i = 0; i < initfds; ++i) {
       fdset->fds[i] = NULL;
     }
 
     s = 0;      // Allocate the first file descriptor.
   } else {
-    for (s = 0; s < fdset->count; ++s) {
+    for (s = least; s < fdset->count; ++s) {
       if (fdset->fds[s] == NULL) {
         break;
       }
     }
 
-    if (s == fdset->count) {
+    if (s >= fdset->count) {
       // No open slot found, double the size of the fd array.
       fd_t **newfds = realloc(fdset->fds,
                               (s * FDMULTIPLIER) * sizeof(fd_t *));
@@ -210,9 +217,9 @@ static int newfd(fd_t **res)
 
 /** Allocate a new file descriptor.
  */
-static int fd_allocate(fdset_t *fdset)
+static int fd_allocate(fdset_t *fdset, int least)
 {
-  int fd = fdset_grow(fdset);
+  int fd = fdset_grow(fdset, least);
   if (fd < 0) {
     return fd;
   }
@@ -225,11 +232,11 @@ static int fd_allocate(fdset_t *fdset)
   return fd;
 }
 
-/** Create a file descriptor and add it to a set.
+/** Add a file specific file descriptor to a set.
  */
-int fdset_add(fdset_t *fdset, file_t file)
+int fdset_addfd(fdset_t *fdset, int spec, file_t file)
 {
-  int fd = fd_allocate(fdset);
+  int fd = fd_allocate(fdset, spec);
   if (fd < 0) {
     return fd;
   }
@@ -249,6 +256,13 @@ int fdset_add(fdset_t *fdset, file_t file)
   }
 
   return fd;
+}
+
+/** Create a file descriptor and add it to a set.
+ */
+int fdset_add(fdset_t *fdset, file_t file)
+{
+  return fdset_addfd(fdset, -1, file);
 }
 
 /** Dup a file descriptor in a set.
