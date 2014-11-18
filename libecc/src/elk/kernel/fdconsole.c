@@ -301,7 +301,7 @@ int __elk_fdconsole_open(fdset_t *fdset)
 {
   // Create a file descriptor for the console.
   int fd = allocfd();
-  fd = setfd(fd, &file);
+  fd = setfile(fd, &file);
   return fd;
 }
 

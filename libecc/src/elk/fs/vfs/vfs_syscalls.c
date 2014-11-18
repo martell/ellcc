@@ -54,10 +54,13 @@
 
 FEATURE(vfs_syscalls)
 
-static int sys_open(char *name, int flags, mode_t mode)
+/** The vnode is locked after this call.
+ * fp->f_vnode must be vn_unlocked or vput after this call.
+ */
+static int vfs_open(char *name, int flags, mode_t mode, file_t *fpp)
 {
-  vnode_t vp, dvp;
   file_t fp;
+  vnode_t vp, dvp;
   char *filename;
   int error;
 
@@ -85,11 +88,6 @@ static int sys_open(char *name, int flags, mode_t mode)
 
   if ((error = sec_file_permission(path, acc))) {
     return error;
-  }
-
-  int fd = allocfd();           // Get a file descriptor.
-  if (fd < 0) {
-    return fd;
   }
 
   flags = FFLAGS(flags);
@@ -153,30 +151,77 @@ static int sys_open(char *name, int flags, mode_t mode)
       return error;
     }
   }
+
   /* Setup file structure */
   if (!(fp = malloc(sizeof(struct file)))) {
     vput(vp);
     return -ENOMEM;
   }
+
   /* Request to file system */
   if ((error = VOP_OPEN(vp, flags)) != 0) {
     free(fp);
     vput(vp);
     return error;
   }
+
   memset(fp, 0, sizeof(struct file));
   fp->f_vnode = vp;
   fp->f_flags = flags;
   fp->f_offset = 0;
   fp->f_count = 1;
-  vn_unlock(vp);
-  setfd(fd, fp);
+  *fpp = fp;
+  return 0;
+}
+
+static int sys_open(char *name, int flags, mode_t mode)
+{
+  file_t fp;
+  int error;
+
+  if ((error = vfs_open(name, flags, mode, &fp)) != 0) {
+    return error;
+  }
+
+  int fd = allocfd();           // Get a file descriptor.
+  if (fd < 0) {
+    vput(fp->f_vnode);
+    free(fp);
+    return fd;
+  }
+
+  vn_unlock(fp->f_vnode);
+  setfile(fd, fp);
   return fd;
+}
+
+static int vfs_close(file_t fp)
+{
+  vnode_t vp;
+
+  if (fp->f_count <= 0)
+    panic("vfs_close");
+
+  vp = fp->f_vnode;
+  if (--fp->f_count > 0) {
+    vrele(vp);
+    return 0;
+  }
+
+  vn_lock(vp);
+  int error;
+  if ((error = VOP_CLOSE(vp, fp)) != 0) {
+    vn_unlock(vp);
+    return error;
+  }
+
+  vput(vp);
+  free(fp);
+  return 0;
 }
 
 static int sys_close(int fd)
 {
-  vnode_t vp;
   int error;
   file_t fp;
 
@@ -188,22 +233,9 @@ static int sys_close(int fd)
     return error;
   }
 
-  if (fp->f_count <= 0)
-    panic("sys_close");
-
-  vp = fp->f_vnode;
-  if (--fp->f_count > 0) {
-    vrele(vp);
-    return 0;
-  }
-  vn_lock(vp);
-  if ((error = VOP_CLOSE(vp, fp)) != 0) {
-    vn_unlock(vp);
-    return error;
-  }
-  vput(vp);
-  free(fp);
-  return setfd(fd, NULL);
+  error = vfs_close(fp);
+  setfile(fd, NULL);
+  return error;
 }
 
 static ssize_t sys_read(int fd, void *buf, size_t size)
@@ -735,11 +767,86 @@ static int sys_rename(char *srcname, char *destname)
   return error;
 }
 
-static int sys_unlink(char *path)
+static int sys_getcwd(char *buf, unsigned long size)
 {
-  char *name;
+  int error;
+  char path[PATH_MAX];
+  if ((error = getpath("", path)) != 0)
+    return error;
+
+  if (strlen(path) + 1 >= size) {
+    return -ERANGE;
+  }
+
+  strlcpy(buf, path, size);
+  return 0;
+}
+
+static int sys_chdir(char *name)
+{
+  file_t fp;
+  int error;
+
+  if ((error = vfs_open(name, O_RDONLY, 0, &fp)) != 0) {
+    return error;
+  }
+
+  vnode_t dvp;
+  dvp = fp->f_vnode;
+  if (dvp->v_type != VDIR) {
+    vn_unlock(dvp);
+    vfs_close(fp);
+    return -ENOTDIR;
+  }
+
+  vn_unlock(dvp);
+  fp = replacecwd(fp);          // Replace the current directory.
+  if (fp) {
+    vfs_close(fp);              // Close the old one.
+  }
+
+  return 0;
+}
+
+static int sys_fchdir(int fd)
+{
+  file_t fp;
+  int error;
+
+  if ((error = getfile(fd, &fp)) != 0) {
+    return error;
+  }
+
+  vnode_t dvp;
+  dvp = fp->f_vnode;
+  vn_lock(dvp);
+  if (dvp->v_type != VDIR) {
+    vn_unlock(dvp);
+    return -ENOTDIR;
+  }
+
+  vn_unlock(dvp);
+  fp = replacecwd(fp);          // Replace the current directory.
+  if (fp) {
+    vfs_close(fp);              // Close the old one.
+  }
+
+  return 0;
+}
+
+static int sys_link(char *oldname, char *newname)
+{
+  // RICH: Implement links.
+  return -EPERM;
+}
+
+static int sys_unlink(char *name)
+{
   vnode_t vp, dvp;
   int error;
+  char path[PATH_MAX];
+  if ((error = getpath(name, path)) != 0)
+    return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_unlink: path=%s\n", path));
 
@@ -819,52 +926,29 @@ static int sys_ftruncate(int fd, off_t length)
   return 0;
 }
 
-#if RICH
-static int sys_fchdir(int fd, char *cwd)
-{
-  vnode_t dvp;
-  file_t fp;
-  int error;
-
-  error = getfile(fd, &fp);
-  if (error < 0) {
-    return error;
-  }
-
-
-  dvp = fp->f_vnode;
-  vn_lock(dvp);
-  if (dvp->v_type != VDIR) {
-    vn_unlock(dvp);
-    return -EBADF;
-  }
-
-  strlcpy(cwd, dvp->v_path, PATH_MAX);
-  vn_unlock(dvp);
-  return 0;
-}
-#endif
-
 ELK_CONSTRUCTOR()
 {
-  SYSCALL(mkdir);
-  SYSCALL(rmdir);
-  SYSCALL(open);
+  SYSCALL(access);
+  SYSCALL(chdir);
   SYSCALL(close);
+  SYSCALL(fchdir);
+  SYSCALL(fstat);
+  SYSCALL(fsync);
+  SYSCALL(ftruncate);
+  SYSCALL(getcwd);
+  SYSCALL(ioctl);
+  SYSCALL(link);
+  SYSCALL(lseek);
+  SYSCALL(mkdir);
+  SYSCALL(mknod);
+  SYSCALL(open);
   SYSCALL(read);
   SYSCALL(readv);
-  SYSCALL(write);
-  SYSCALL(writev);
-  SYSCALL(lseek);
-  SYSCALL(ioctl);
-  SYSCALL(fsync);
-  SYSCALL(fstat);
-  SYSCALL(mknod);
+  SYSCALL(rmdir);
   SYSCALL(rename);
-  SYSCALL(unlink);
-  SYSCALL(access);
   SYSCALL(stat);
   SYSCALL(truncate);
-  SYSCALL(ftruncate);
-// RICH:  SYSCALL(fchdir);
+  SYSCALL(unlink);
+  SYSCALL(write);
+  SYSCALL(writev);
 }

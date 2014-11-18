@@ -120,7 +120,7 @@ static int devfs_open(vnode_t vp, int flags)
   DPRINTF(("devfs_open: path=%s\n", vp->v_path));
 
   path = vp->v_path;
-  if (!strcmp(path, "/"))  /* root ? */
+  if (strcmp(path, "/") == 0)   /* root ? */
     return 0;
 
   if (vp->v_flags & VPROTDEV) {

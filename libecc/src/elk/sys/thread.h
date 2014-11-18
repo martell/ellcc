@@ -4,6 +4,7 @@
 #define _thread_h_
 
 #include <limits.h>
+#include "file.h"
 #include "kernel.h"
 
 #define HAVE_CAPABILITY 1
@@ -188,8 +189,13 @@ int allocfd(void);
 
 /** Set a file pointer corresponding to a file descriptor.
  */
-#define setfd __elk_setfd
-int setfd(int fd, struct file *file);
+#define setfile __elk_setfile
+int setfile(int fd, struct file *file);
+
+/** Replace the old cwd fp with a new one.
+ */
+#define replacecwd __elk_replacecwd
+file_t replacecwd(file_t fp);
 
 /** Get a file path.
  * This function returns the full path name for the file name.

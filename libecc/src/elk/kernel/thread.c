@@ -1406,7 +1406,7 @@ int allocfd(void)
 
 /** Set a file pointer corresponding to a file descriptor.
  */
-int setfd(int fd, file_t file)
+int setfile(int fd, file_t file)
 {
   if (fd >= current->fdset.count || current->fdset.fds[fd] == NULL) {
     return -EBADF;
@@ -1414,6 +1414,15 @@ int setfd(int fd, file_t file)
 
   current->fdset.fds[fd]->file = file;
   return fd;
+}
+
+/** Replace the old cwd fp with a new one.
+ */
+file_t replacecwd(file_t fp)
+{
+  file_t oldfp = current->cwdfp;
+  current->cwdfp = fp;
+  return oldfp;
 }
 
 /** Get a file path.
@@ -1437,7 +1446,7 @@ int getpath(const char *name, char *path)
     tgt += len;
     // If cwd is not the root directory and the name doesn't start with "."
     // add a trailing "/" to the current directory.
-    if (len > 1 && *src != '.') {
+    if (len > 1 && *src != '\0' && *src != '.') {
       if (++len >= PATH_MAX)
         return -ENAMETOOLONG;
       *tgt++ = '/';
