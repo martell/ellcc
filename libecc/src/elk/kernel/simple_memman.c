@@ -4,7 +4,7 @@
 #include <syscalls.h>           // For syscall numbers.
 #include <sys/uio.h>            // For writev (used by printf().
 #include <sys/ioctl.h>
-#include <kernel.h>
+#include "kernel.h"
 
 // Make the simple console a loadable feature.
 FEATURE_CLASS(simple_memman, memman)
@@ -31,5 +31,5 @@ static char *sys_brk(char *addr)
 ELK_CONSTRUCTOR()
 {
   // Set up a simple brk system call.
-  __elk_set_syscall(SYS_brk, sys_brk);
+  SYSCALL(brk);
 }

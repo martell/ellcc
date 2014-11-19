@@ -665,12 +665,15 @@ static int sys_mknod(char *name, mode_t mode)
 
   if ((error = lookup(path, &dvp, &name)) != 0)
     return error;
+
   if ((error = vn_access(dvp, VWRITE)) != 0)
     goto out;
+
   if (S_ISDIR(mode))
     error = VOP_MKDIR(dvp, name, mode);
   else
     error = VOP_CREATE(dvp, name, mode);
+
  out:
   vput(dvp);
   return error;
@@ -980,22 +983,20 @@ static int sys_dup2(int oldfd, int newfd)
   return newfd;
 }
 
-#if RICH
 static int sys_fcntl(int fd, int cmd, int arg)
 {
   file_t fp;
-  int newfd;
-  int error;
+  int s;
 
-  if ((error = getfile(oldfd, &fp, 1, 0)) < 0) {
-    return error;
+  if ((s = getfile(fd, &fp, 1, 0)) < 0) {
+    return s;
   }
 
   switch (cmd) {
   case F_DUPFD: {
     file_t ofp;
-    if ((error = getfile(arg, &ofp, 0, 0)) < 0) {
-      return error;
+    if ((s = getfile(arg, &ofp, 0, 1)) < 0) {
+      return s;
     }
 
     if (ofp) {
@@ -1009,41 +1010,27 @@ static int sys_fcntl(int fd, int cmd, int arg)
     vref(fp->f_vnode);
     ++fp->f_count;
 
-    error = arg;
-    if (ifp) {
-
-          if (arg >= OPEN_MAX)
-                  return EINVAL;
-          /* Find smallest empty slot as new fd. */
-          if ((new_fd = task_newfd(t)) == -1)
-                  return EMFILE;
-          t->t_ofile[new_fd] = fp;
-
-          /* Increment file reference */
-          vref(fp->f_vnode);
-          fp->f_count++;
-          msg->arg = new_fd;
-          break;
+    s = arg;
+    break;
+  }
   case F_GETFD:
-          msg->arg = fp->f_flags & FD_CLOEXEC;
-          break;
+    s = fp->f_flags & FD_CLOEXEC;
+    break;
   case F_SETFD:
-          fp->f_flags = (fp->f_flags & ~FD_CLOEXEC) |
-                  (msg->arg & FD_CLOEXEC);
-          msg->arg = 0;
-          break;
+    fp->f_flags = (fp->f_flags & ~FD_CLOEXEC) | (arg & FD_CLOEXEC);
+    s = 0;
+    break;
   case F_GETFL:
   case F_SETFL:
-          msg->arg = -1;
-          break;
+    s = -EINVAL;
+    break;
   default:
-          msg->arg = -1;
-          break;
+    s = -EINVAL;
+    break;
   }
 
-  return error;
+  return s;
 }
-#endif
 
 ELK_CONSTRUCTOR()
 {
@@ -1054,6 +1041,7 @@ ELK_CONSTRUCTOR()
   SYSCALL(dup);
   SYSCALL(dup2);
   SYSCALL(fchdir);
+  SYSCALL(fcntl);
   SYSCALL(fstat);
   SYSCALL(fsync);
   SYSCALL(ftruncate);

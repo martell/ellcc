@@ -3,6 +3,12 @@
 #ifndef _target_h_
 #define _target_h_
 
+#include "config.h"
+
+#if ELK_NAMESPACE
+#define context_set_return __elk_context_set_return
+#endif
+
 #define INITIAL_PSR 0 // RICH
 
 // Saved context register offsets.
@@ -156,7 +162,7 @@ typedef struct context
   uint32_t pc;
 } context_t;
 
-static inline void __elk_context_set_return(context_t *cp, int value)
+static inline void context_set_return(context_t *cp, int value)
 {
   cp->v0 = value;
 }

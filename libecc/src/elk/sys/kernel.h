@@ -10,7 +10,9 @@
 #include <string.h>
 #include <errno.h>
 #include <stdio.h>
+#include "config.h"
 #include "target.h"
+
 
 #ifndef NULL
 #define NULL 0
@@ -118,6 +120,7 @@ enum {
  * @param nr The system call number.
  * @param fn The system call handling function.
  * @return 0 on success, -1 on  error.
+ * This function is defined in crt1.S.
  */
 int __elk_set_syscall(int nr, void *fn);
 

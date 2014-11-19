@@ -32,6 +32,7 @@
 
 #include <sys/types.h>
 #include <pthread.h>
+#include "config.h"
 #include "list.h"
 
 /*
@@ -55,6 +56,7 @@ struct buf {
 #define B_READ   0x00000008             // Read buffer.
 #define B_DONE   0x00000010             // I/O completed.
 
+#if ELK_NAMESPACE
 #define getblk __elk_getblk
 #define bread __elk_bread
 #define bwrite __elk_bwrite
@@ -64,6 +66,7 @@ struct buf {
 #define bflush __elk_bflush
 #define bio_sync __elk_bio_sync
 #define bio_init __elk_bio_init
+#endif
 
 struct buf *getblk(dev_t, int);
 int bread(dev_t, int, struct buf **);

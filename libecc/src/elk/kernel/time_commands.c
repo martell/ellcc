@@ -130,9 +130,9 @@ static int timeCommand(int argc, char **argv)
     return COMMAND_ERROR;
   }
 
-  long long t = __elk_timer_get_monotonic();
+  long long t = timer_get_monotonic();
   int s = run_command(argc - 1, argv + 1);
-  t = __elk_timer_get_monotonic() - t;
+  t = timer_get_monotonic() - t;
   printf("elapsed time: %ld.%09ld sec\n", (long)(t / 1000000000),
          (long)(t % 1000000000));
   return s;

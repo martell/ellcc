@@ -36,6 +36,26 @@
 #include "kernel.h"
 #include "uio.h"
 
+#if ELK_NAMESPACE
+#define device_create __elk_device_create
+#define device_destroy __elk_device_destroy
+#define device_lookup __elk_device_lookup
+#define device_valid __elk_device_valid
+#define device_reference __elk_device_reference
+#define device_release __elk_device_release
+#define device_private __elk_device_private
+#define device_control __elk_device_control
+#define device_broadcast __elk_device_broadcast
+#define device_info __elk_device_info
+#define device_open __elk_device_open
+#define device_close __elk_device_close
+#define device_read __elk_device_read
+#define device_write __elk_device_write
+#define device_poll __elk_device_poll
+#define device_ioctl __elk_device_ioctl
+#define device_info __elk_device_info
+#endif
+
 typedef struct device *device_t;
 
 /*
@@ -140,24 +160,6 @@ struct device
   int refcnt;                   // Reference count.
   void *private;                // Private storage.
 };
-
-#define device_create __elk_device_create
-#define device_destroy __elk_device_destroy
-#define device_lookup __elk_device_lookup
-#define device_valid __elk_device_valid
-#define device_reference __elk_device_reference
-#define device_release __elk_device_release
-#define device_private __elk_device_private
-#define device_control __elk_device_control
-#define device_broadcast __elk_device_broadcast
-#define device_info __elk_device_info
-#define device_open __elk_device_open
-#define device_close __elk_device_close
-#define device_read __elk_device_read
-#define device_write __elk_device_write
-#define device_poll __elk_device_poll
-#define device_ioctl __elk_device_ioctl
-#define device_info __elk_device_info
 
 device_t device_create(struct driver *, const char *, int);
 int device_destroy(device_t);

@@ -95,9 +95,9 @@ static int test1Command(int argc, char **argv)
   }
 
   static Message msg = { 3 };
-  int s = __elk_send_message(tid1, msg);
+  int s = send_message(tid1, msg);
   if (s != 0) {
-    printf("__elk_send_message to %d: %s\n", tid1, strerror(s));
+    printf("send_message to %d: %s\n", tid1, strerror(s));
   }
   msg.code++;
   return COMMAND_OK;

@@ -4,6 +4,7 @@
 #define _file_h_
 
 #include <sys/types.h>
+#include "config.h"
 #include "kernel.h"
 #include "uio.h"
 
@@ -44,12 +45,14 @@ typedef struct fdset
   struct fd **fds;              // The file descriptor nodes.
 } fdset_t;
 
+#if ELK_NAMESPACE
 #define fdset_release __elk_fdset_release
 #define fdset_clone __elk_fdset_clone
 #define fdset_add __elk_fdset_add
 #define fdset_addfd __elk_fdset_addfd
 #define fdset_remove __elk_fdset_remove
 #define fdset_dup __elk_fdset_dup
+#endif
 
 /** Release a set of file descriptors.
  */

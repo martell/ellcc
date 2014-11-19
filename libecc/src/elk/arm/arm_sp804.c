@@ -19,21 +19,21 @@ static long long timeout;                   // When the next timeout occurs.
 
 /* Get the timer resolution.
  */
-long __elk_timer_getres(void)
+long timer_getres(void)
 {
   return resolution;
 }
 
 /* Get the realtime offset.
  */
-long long __elk_timer_get_realtime_offset(void)
+long long timer_get_realtime_offset(void)
 {
   return realtime_offset;
 }
 
 /** Get the monotonic timer.
  */
-long long __elk_timer_get_monotonic(void)
+long long timer_get_monotonic(void)
 {
   time_t secs;
   long nsecs;
@@ -48,9 +48,9 @@ long long __elk_timer_get_monotonic(void)
 
 /** Get the realtime timer.
  */
-long long __elk_timer_get_realtime(void)
+long long timer_get_realtime(void)
 {
-  long long value = __elk_timer_get_monotonic();
+  long long value = timer_get_monotonic();
   pthread_mutex_lock(&mutex);
   value += realtime_offset;
   pthread_mutex_unlock(&mutex);
@@ -59,9 +59,9 @@ long long __elk_timer_get_realtime(void)
 
 /** Set the realtime timer.
  */
-void __elk_timer_set_realtime(long long value)
+void timer_set_realtime(long long value)
 {
-  long long mt = __elk_timer_get_monotonic();
+  long long mt = timer_get_monotonic();
   pthread_mutex_lock(&mutex);
   realtime_offset = value - mt;
   pthread_mutex_unlock(&mutex);
@@ -75,7 +75,7 @@ static void check_timeout()
     return;
   }
 
-  long long mt = __elk_timer_get_monotonic();
+  long long mt = timer_get_monotonic();
   if (timeout - mt > 1000000000) {
     // More than a second away.
     return;
@@ -103,13 +103,13 @@ static void sec_interrupt(void *arg)
 
 /** Start the sleep timer.
  */
-void __elk_timer_start(long long when)
+void timer_start(long long when)
 {
   long long mt;
   do {
-    mt = __elk_timer_get_monotonic();
+    mt = timer_get_monotonic();
     if (when <= mt) {
-      when = __elk_timer_expired(mt);
+      when = timer_expired(mt);
       if (when == 0) {
         timeout_active = 0;
         return;
@@ -125,13 +125,13 @@ void __elk_timer_start(long long when)
 
 static void short_interrupt(void *arg)
 {
-  long long mt = __elk_timer_get_monotonic();
-  mt = __elk_timer_expired(mt);
+  long long mt = timer_get_monotonic();
+  mt = timer_expired(mt);
   if (mt == 0) {
     timeout_active = 0;
     return;
   }
-  __elk_timer_start(mt);
+  timer_start(mt);
 }
 
 static const IRQHandler timer_irq =

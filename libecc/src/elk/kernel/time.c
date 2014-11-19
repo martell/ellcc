@@ -24,7 +24,7 @@ static int sys_clock_getres(clockid_t clock, struct timespec *res)
   case CLOCK_REALTIME:
     if (res) {
       res->tv_sec = 0;
-      res->tv_nsec = __elk_timer_getres();
+      res->tv_nsec = timer_getres();
     }
     break;
 
@@ -43,14 +43,14 @@ static int sys_clock_gettime(clockid_t clock, struct timespec *tp)
 
   switch (clock) {
   case CLOCK_REALTIME: {
-    long long realtime = __elk_timer_get_realtime();
+    long long realtime = timer_get_realtime();
     tp->tv_sec = realtime / 1000000000;
     tp->tv_nsec = realtime % 1000000000;
     break;
   }
 
   case CLOCK_MONOTONIC: {
-    long long monotonic = __elk_timer_get_monotonic();
+    long long monotonic = timer_get_monotonic();
     tp->tv_sec = monotonic / 1000000000;
     tp->tv_nsec = monotonic % 1000000000;
     break;
@@ -77,7 +77,7 @@ static int sys_clock_settime(clockid_t clock, const struct timespec *tp)
   case CLOCK_REALTIME: {
     // RICH: Permissions.
     long long realtime = tp->tv_sec * 1000000000LL + tp->tv_nsec;
-    __elk_timer_set_realtime(realtime);
+    timer_set_realtime(realtime);
     break;
   }
 
@@ -138,13 +138,13 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
   long long now;
   switch (clock) {
   case CLOCK_REALTIME: {
-    now = __elk_timer_get_realtime();
+    now = timer_get_realtime();
     // RICH: need to adjust.
     break;
   }
 
   case CLOCK_MONOTONIC: {
-    now = __elk_timer_get_monotonic();
+    now = timer_get_monotonic();
     break;
   }
 
@@ -164,7 +164,7 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
     return 0;
   }
 
-  __elk_timer_wake_at(when, NULL, 0, 0, 0);
+  timer_wake_at(when, NULL, 0, 0, 0);
   // RICH: Check for interrupted call, set rem.
   return 0;
 }
@@ -177,11 +177,11 @@ static int sys_nanosleep(const struct timespec *req, struct timespec *rem)
 ELK_CONSTRUCTOR()
 {
   // Set up time related system calls.
-  __elk_set_syscall(SYS_clock_getres, sys_clock_getres);
-  __elk_set_syscall(SYS_clock_gettime, sys_clock_gettime);
-  __elk_set_syscall(SYS_clock_settime, sys_clock_settime);
-  __elk_set_syscall(SYS_clock_nanosleep, sys_clock_nanosleep);
-  __elk_set_syscall(SYS_nanosleep, sys_nanosleep);
-  __elk_set_syscall(SYS_settimeofday, sys_settimeofday);
-  __elk_set_syscall(SYS_gettimeofday, sys_gettimeofday);
+  SYSCALL(clock_getres);
+  SYSCALL(clock_gettime);
+  SYSCALL(clock_settime);
+  SYSCALL(clock_nanosleep);
+  SYSCALL(nanosleep);
+  SYSCALL(settimeofday);
+  SYSCALL(gettimeofday);
 }

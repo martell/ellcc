@@ -3,6 +3,10 @@
 #ifndef _config_h_
 #define _config_h_
 
+#define ELK_NAMESPACE 1         // Use __elk_ prefaced symbols.
+
+#define HAVE_CAPABILITY 1       // Use capabilities.
+
 // General limits.
 #define MAX_INPUT 128           // max bytes in terminal input.
 #define OPEN_MAX CONFIG_OPEN_MAX// max open files per process.

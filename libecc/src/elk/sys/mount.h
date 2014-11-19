@@ -36,6 +36,15 @@
 #include "list.h"
 #include "vnode.h"
 
+#if ELK_NAMESPACE
+#define vfssw __elk_vfssw
+#define vfs_register __elk_vfs_register
+#define vfsop_mount __elk_vfsop_mount
+#define vfsop_umount __elk_vfsop_umount
+#define vfs_nullop __elk_vfs_nullop
+#define vfs_einval __elk_vfs_einval
+#endif
+
 typedef struct { int32_t val[2]; } fsid_t;  /* file system id type */
 
 
@@ -110,7 +119,6 @@ typedef struct mount
 /*
  * Filesystem type switch table.
  */
-#define vfssw __elk_vfssw
 struct vfssw
 {
   const char *vs_name;                  // Name of file system.
@@ -147,12 +155,6 @@ typedef int (*vfsop_statfs_t)(mount_t, struct statfs *);
 #define VFS_STATFS(MP, SFP)         ((MP)->m_op->vfs_statfs)(MP, SFP)
 
 #define VFS_NULL        ((void *)vfs_null)
-
-#define vfs_register __elk_vfs_register
-#define vfsop_mount __elk_vfsop_mount
-#define vfsop_umount __elk_vfsop_umount
-#define vfs_nullop __elk_vfs_nullop
-#define vfs_einval __elk_vfs_einval
 
 int vfs_register(const char *name, int (*init)(void),
                        struct vfsops *vfsops);

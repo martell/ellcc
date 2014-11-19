@@ -251,16 +251,12 @@ ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
   sem_init(&sem_obuffer, 0, 0);
   obuffer_in = obuffer_out = obuffer;
 
-  // Set up a simple ioctl system call.
-  __elk_set_syscall(SYS_ioctl, sys_ioctl);
-  // Set up a simple write system call.
-  __elk_set_syscall(SYS_write, sys_write);
-  // Set up a simple writev system call.
-  __elk_set_syscall(SYS_writev, sys_writev);
-  // Set up a simple read system call.
-  __elk_set_syscall(SYS_read, sys_read);
-  // Set up a simple readv system call.
-  __elk_set_syscall(SYS_readv, sys_readv);
+  // Set up the system calls.
+  SYSCALL(ioctl);
+  SYSCALL(write);
+  SYSCALL(writev);
+  SYSCALL(read);
+  SYSCALL(readv);
 
   // Register the interrupt handler.
   console_interrupt_register(rx_interrupt, tx_interrupt);

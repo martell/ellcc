@@ -3,6 +3,12 @@
 #ifndef _target_h_
 #define _target_h_
 
+#include "config.h"
+
+#if ELK_NAMESPACE
+#define context_set_return __elk_context_set_return
+#endif
+
 #define Mode_USR    0x10
 #define Mode_FIQ    0x11
 #define Mode_IRQ    0x12
@@ -85,7 +91,7 @@ typedef struct context
   uint32_t cpsr;
 } context_t;
 
-static inline void __elk_context_set_return(context_t *cp, int value)
+static inline void context_set_return(context_t *cp, int value)
 {
   cp->a1 = value;
 }

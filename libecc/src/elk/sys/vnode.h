@@ -34,6 +34,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <pthread.h>
+#include "config.h"
 #include "file.h"
 #include "list.h"
 
@@ -168,6 +169,8 @@ typedef  int (*vnop_truncate_t)(vnode_t, off_t);
 #define VOP_INACTIVE(VP) ((VP)->v_op->vop_inactive)(VP)
 #define VOP_TRUNCATE(VP, N) ((VP)->v_op->vop_truncate)(VP, N)
 
+
+#if ELK_NAMESPACE
 #define vop_nullop __elk_vop_nullop
 #define vop_einval __elk_vop_einval
 #define vn_lookup __elk_vn_lookup
@@ -182,6 +185,7 @@ typedef  int (*vnop_truncate_t)(vnode_t, off_t);
 #define vrele __elk_vrele
 #define vcount __elk_vcount
 #define vflush __elk_vflush
+#endif
 
 int vop_nullop(void);
 int vop_einval(void);

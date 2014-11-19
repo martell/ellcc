@@ -4,10 +4,26 @@
 #define _thread_h_
 
 #include <limits.h>
+#include "config.h"
 #include "file.h"
 #include "kernel.h"
 
-#define HAVE_CAPABILITY 1
+#if ELK_NAMESPACE
+#define capable(arg) __elk_capable(arg)
+#define lock_aquire __elk_lock_aquire
+#define lock_release __elk_lock_release
+#define send_message_q __elk_send_message_q
+#define send_message __elk_send_message
+#define timer_expired __elk_timer_expired
+#define timer_wake_at __elk_timer_wake_at
+#define getfile __elk_getfile
+#define allocfd __elk_allocfd
+#define setfile __elk_setfile
+#define replacecwd __elk_replacecwd
+#define getpath __elk_getpath
+#define vm_allocate __elk_vm_allocate
+#define vm_free __elk_vm_free
+#endif
 
 #if !defined(HAVE_CAPABILITY)
 // Define a simple capability check.
@@ -49,7 +65,7 @@
 #define CAPABILITY_TO_BIT(capability) (1 << (capability))
 
 typedef int capability_t;
-#define capable(arg) __elk_capable(arg)
+
 int capable(capability_t cap);
 
 #endif
@@ -74,7 +90,7 @@ typedef struct
 
 #define LOCK_INITIALIZER { 0, 0 }
 
-static inline void __elk_lock_aquire(lock_t *lock)
+static inline void lock_aquire(lock_t *lock)
 {
 // RICH:
 #if !defined(__microblaze__)
@@ -84,7 +100,7 @@ static inline void __elk_lock_aquire(lock_t *lock)
   lock->level = splhigh();
 }
 
-static inline void __elk_lock_release(lock_t *lock)
+static inline void lock_release(lock_t *lock)
 {
   splx(lock->level);
 // RICH:
@@ -115,14 +131,14 @@ enum {
  * @param message The message to send.
  * @return 0 on success, else -errno.
  */
-int __elk_send_message_q(MsgQueue *queue, Message message);
+int send_message_q(MsgQueue *queue, Message message);
 
 /** Send a message to a message queue.
  * @param queue The message queue.
  * @param message The message to send.
  * @return 0 on success, else -errno.
  */
-int __elk_send_message(int tid, Message message);
+int send_message(int tid, Message message);
 
 Message get_message(MsgQueue *queue);
 Message get_message_nowait(MsgQueue *queue);
@@ -137,7 +153,7 @@ typedef enum state {
   MSGWAIT,                      // The thread is waiting for a message.
 
   LASTSTATE                     // To get the number of states.
-} __elk_state;
+} state;
 
 #if defined(DEFINE_STATE_STRINGS)
 static const char *state_names[LASTSTATE] =
@@ -167,40 +183,35 @@ static const char *state_names[LASTSTATE] =
 /** Timer expired handler.
  * This function is called in an interrupt context.
  */
-long long __elk_timer_expired(long long when);
+long long timer_expired(long long when);
 
 /** Make an entry in the sleeping list and sleep
  * or schedule a callback.
  */
 typedef void (*TimerCallback)(void *, void *);
-void *__elk_timer_wake_at(long long when,
+void *timer_wake_at(long long when,
                     TimerCallback callback, void *arg1, void *arg2, int retval);
 
 struct file;
 /** Get a file pointer corresponding to a file descriptor.
  */
-#define getfile __elk_getfile
 int getfile(int fd, struct file **filep, int must, int free);
 
 /** Get a file descriptor.
  */
-#define allocfd __elk_allocfd
 int allocfd(void);
 
 /** Set a file pointer corresponding to a file descriptor.
  */
-#define setfile __elk_setfile
 int setfile(int fd, struct file *file);
 
 /** Replace the old cwd fp with a new one.
  */
-#define replacecwd __elk_replacecwd
 file_t replacecwd(file_t fp);
 
 /** Get a file path.
  * This function returns the full path name for the file name.
  */
-#define getpath __elk_getpath
 int getpath(const char *name, char *path);
 
 /** Get the current thread id.
@@ -215,9 +226,6 @@ int gettid(void);
 
 /** Allocate and free memory.
  */
-#define vm_allocate __elk_vm_allocate
-#define vm_free __elk_vm_free
-
 int vm_allocate(void **addr, size_t size, int anywhere);
 int vm_free(void *addr);
 
