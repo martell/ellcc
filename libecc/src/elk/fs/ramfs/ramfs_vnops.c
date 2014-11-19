@@ -28,7 +28,7 @@
  */
 
 /*
- * rmafs_vnops.c - vnode operations for RAM file system.
+ * ramfs_vnops.c - vnode operations for RAM file system.
  */
 
 #include <sys/stat.h>

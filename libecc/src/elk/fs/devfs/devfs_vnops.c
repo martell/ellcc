@@ -44,7 +44,6 @@
 #include "mount.h"
 #include "vnode.h"
 #include "file.h"
-#include "devfs.h"
 
 FEATURE(devfs)
 

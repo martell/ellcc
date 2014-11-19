@@ -11,4 +11,5 @@ EXTERN(__elk_test_commands)
 EXTERN(__elk_vfs_syscalls)
 EXTERN(__elk_devfs)
 EXTERN(__elk_ramfs)
+EXTERN(__elk_fifofs)
 

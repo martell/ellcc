@@ -46,23 +46,30 @@
  */
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-static int count;
 struct vfssw vfssw[FS_MAX + 1];
 
 int vfs_register(const char *name, int (*init)(void), struct vfsops *vfsops)
 {
-  int s = 0;
   pthread_mutex_lock(&mutex);
-  if (count < FS_MAX) {
-    vfssw[count].vs_name = name;
-    vfssw[count].vs_init = init;
-    vfssw[count].vs_op = vfsops;
-    vfssw[++count].vs_name = NULL;
-  } else {
-    s = -EAGAIN;
+  int i;
+  for (i = 0; i < FS_MAX; ++i) {
+    if (vfssw[i].vs_name != NULL)
+      continue;
+
+    vfssw[i].vs_name = name;
+    vfssw[i].vs_init = init;
+    vfssw[i].vs_op = vfsops;
+    break;
   }
+
+  if (i >= FS_MAX) {
+    i = -EAGAIN;
+  } else {
+    i = 0;
+  }
+
   pthread_mutex_unlock(&mutex);
-  return s;
+  return i;
 }
 
 #if defined(VFS_COMMANDS)
@@ -76,9 +83,37 @@ static int sectionCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
+/*
+ * List available file systems.
+ */
+static int fsCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("list all available file systems.\n");
+    return COMMAND_OK;
+  }
+
+  pthread_mutex_lock(&mutex);
+  int i;
+  int comma = 0;
+  for (i = 0; i < FS_MAX; ++i) {
+    if (vfssw[i].vs_name == NULL)
+      continue;
+
+    printf("%s%s", comma ? ", " : "", vfssw[i].vs_name);
+    comma = 1;
+  }
+
+  if (comma)
+    printf("\n");
+
+  pthread_mutex_unlock(&mutex);
+  return COMMAND_OK;
+}
 ELK_CONSTRUCTOR()
 {
   command_insert(NULL, sectionCommand);
+  command_insert("fs", fsCommand);
 }
 #endif
 

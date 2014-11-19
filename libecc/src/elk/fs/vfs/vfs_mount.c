@@ -389,12 +389,12 @@ static int sys_sync(void)
 
 #if defined(VFS_COMMANDS)
 /*
- * Dump mounts.
+ * List mounts.
  */
 static int mountCommand(int argc, char **argv)
 {
   if (argc <= 0) {
-    printf("dump all mounted file systems.\n");
+    printf("list all mounted file systems.\n");
     return COMMAND_OK;
   }
 

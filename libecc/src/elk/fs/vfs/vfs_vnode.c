@@ -413,12 +413,12 @@ int vop_einval(void)
 
 #if defined(VFS_COMMANDS)
 /*
- * Dump all vnodes.
+ * List all vnodes.
  */
 static int vsCommand(int argc, char **argv)
 {
   if (argc <= 0) {
-    printf("dump all vnodes.\n");
+    printf("list all vnodes.\n");
     return COMMAND_OK;
   }
 
