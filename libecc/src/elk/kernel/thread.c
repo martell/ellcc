@@ -1393,29 +1393,41 @@ int allocfd(void)
 }
 
 /** Get a file pointer corresponding to a file descriptor.
+ * If must, it must have an active file pointer.
+ * if free, it must be available (no active file pointer).
+ * This is messy because of the difference between dup(),
+ * dup2/3() and fcntl(F_DUPFD). dup() and because sometimes
+ * we want a file descriptor that has a file pointer.
  */
-int getfile(int fd, file_t *filep, int must)
+int getfile(int fd, file_t *filep, int must, int free)
 {
-  if (fd >= current->fdset.count || current->fdset.fds[fd] == NULL) {
-    if (!must) {
-      // Try to allocate a new file descriptor.
-      int error;
-      if ((error = fdset_addfd(&current->fdset, fd, NULL)) < 0) {
-        return error;
-      }
-      *filep = NULL;
-      return 0;
+  if (must) {
+    if (fd >= current->fdset.count || current->fdset.fds[fd] == NULL) {
+      // This is not an active file descriptor.
+      return -EBADF;
     }
-    return -EBADF;
+    *filep = current->fdset.fds[fd]->file;
+    return fd;
   }
 
-  *filep = current->fdset.fds[fd]->file;
-  if (must && *filep == NULL) {
-    // Must have a file pointer associated with the descriptor.
-    return -EBADF;
+  while (fd < current->fdset.count) {
+    if (current->fdset.fds[fd] == NULL || !free) {
+      // Have an available file descriptor.
+      *filep = current->fdset.fds[fd]->file;
+      return fd;
+    }
+
+    ++fd;
   }
 
-  return 0;
+  // Try to allocate a new file descriptor.
+  int error;
+  if ((error = fdset_addfd(&current->fdset, fd,  NULL)) < 0) {
+    return error;
+  }
+
+  *filep = NULL;
+  return fd;
 }
 
 /** Set a file pointer corresponding to a file descriptor.

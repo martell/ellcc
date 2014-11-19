@@ -180,7 +180,7 @@ struct file;
 /** Get a file pointer corresponding to a file descriptor.
  */
 #define getfile __elk_getfile
-int getfile(int fd, struct file **filep, int must);
+int getfile(int fd, struct file **filep, int must, int free);
 
 /** Get a file descriptor.
  */

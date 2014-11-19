@@ -233,7 +233,7 @@ static int sys_close(int fd)
   DPRINTF(VFSDB_SYSCALL, ("sys_close: fp=%x count=%d\n",
         (u_int)fp, fp->f_count));
 
-  error = getfile(fd, &fp, 1);
+  error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     return error;
   }
@@ -249,7 +249,7 @@ static ssize_t sys_read(int fd, void *buf, size_t size)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1);
+  error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     return error;
   }
@@ -284,7 +284,7 @@ static ssize_t sys_readv(int fd, struct iovec *iov, int iovcnt)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1);
+  error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     return error;
   }
@@ -314,7 +314,7 @@ static ssize_t sys_write(int fd, void *buf, size_t size)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1);
+  error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     return error;
   }
@@ -347,7 +347,7 @@ static ssize_t sys_writev(int fd, struct iovec *iov, int iovcnt)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1);
+  error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     return error;
   }
@@ -376,7 +376,7 @@ static off_t sys_lseek(int fd, off_t off, int type)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1);
+  error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     return error;
   }
@@ -432,7 +432,7 @@ static int sys_ioctl(int fd, u_long request, void *buf)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1);
+  error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     return error;
   }
@@ -456,7 +456,7 @@ static int sys_fsync(int fd)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1);
+  error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     return error;
   }
@@ -479,7 +479,7 @@ static int sys_fstat(int fd, struct stat *st)
   int error = 0;
   file_t fp;
 
-  error = getfile(fd, &fp, 1);
+  error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     return error;
   }
@@ -527,7 +527,7 @@ static int check_dir_empty(char *path)
   if ((fd = sys_open(path, O_RDONLY, 0)) != 0)
     return fd;
 
-  int error = getfile(fd, &fp, 1);
+  int error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     sys_close(fd);
     return error;
@@ -817,7 +817,7 @@ static int sys_fchdir(int fd)
   file_t fp;
   int error;
 
-  if ((error = getfile(fd, &fp, 1)) != 0) {
+  if ((error = getfile(fd, &fp, 1, 0)) < 0) {
     return error;
   }
 
@@ -936,7 +936,7 @@ static int sys_dup(int oldfd)
   int newfd;
   int error;
 
-  if ((error = getfile(oldfd, &fp, 1)) != 0) {
+  if ((error = getfile(oldfd, &fp, 1, 0)) < 0) {
     return error;
   }
 
@@ -958,11 +958,11 @@ static int sys_dup2(int oldfd, int newfd)
   file_t fp, ofp;
   int error;
 
-  if ((error = getfile(oldfd, &fp, 1)) != 0) {
+  if ((error = getfile(oldfd, &fp, 1, 0)) < 0) {
     return error;
   }
 
-  if ((error = getfile(newfd, &ofp, 0)) < 0) {
+  if ((error = getfile(newfd, &ofp, 0, 0)) < 0) {
     return error;
   }
 
@@ -987,14 +987,14 @@ static int sys_fcntl(int fd, int cmd, int arg)
   int newfd;
   int error;
 
-  if ((error = getfile(oldfd, &fp, 1)) != 0) {
+  if ((error = getfile(oldfd, &fp, 1, 0)) < 0) {
     return error;
   }
 
   switch (cmd) {
   case F_DUPFD: {
     file_t ofp;
-    if ((error = getfile(arg, &ofp, 0)) != 0) {
+    if ((error = getfile(arg, &ofp, 0, 0)) < 0) {
       return error;
     }
 

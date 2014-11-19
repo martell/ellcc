@@ -149,14 +149,14 @@ int fdset_clone(fdset_t *fdset, int clone)
 
 /** Get an available entry in an fdset.
  */
-static int fdset_grow(fdset_t *fdset, int least)
+static int fdset_grow(fdset_t *fdset, int spec)
 {
   int s;
   int initfds = INITFDS;
-  if (least == -1) {
-    least = 0;
+  if (spec == -1) {
+    spec = 0;
   } else if (fdset->fds == NULL) {
-    initfds = least + 1;
+    initfds = spec + 1;
   }
 
   if (fdset->fds == NULL) {
@@ -173,7 +173,7 @@ static int fdset_grow(fdset_t *fdset, int least)
 
     s = 0;      // Allocate the first file descriptor.
   } else {
-    for (s = least; s < fdset->count; ++s) {
+    for (s = spec; s < fdset->count; ++s) {
       if (fdset->fds[s] == NULL) {
         break;
       }
@@ -217,9 +217,9 @@ static int newfd(fd_t **res)
 
 /** Allocate a new file descriptor.
  */
-static int fd_allocate(fdset_t *fdset, int least)
+static int fd_allocate(fdset_t *fdset, int spec)
 {
-  int fd = fdset_grow(fdset, least);
+  int fd = fdset_grow(fdset, spec);
   if (fd < 0) {
     return fd;
   }
