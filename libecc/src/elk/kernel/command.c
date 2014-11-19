@@ -42,9 +42,9 @@ void command_insert(const  char *name, CommandFn fn)
   pthread_mutex_unlock(&mutex);
 }
 
-/** Insert a command into the command table.
+/** Insert an external command into the command table.
  */
-void command_insert_thread(const  char *name, CommandFn fn)
+void command_insert_external(const  char *name, CommandFn fn)
 {
   if (commands >= MAXCOMMANDS) {
     return;

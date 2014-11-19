@@ -67,7 +67,7 @@ $(OUT)echo "void exit(int s) __attribute__((noreturn));" >>stub.c
 $(OUT)echo "void exit(int s) { pthread_exit((void *)(intptr_t)s); };" >>stub.c
 $(OUT)echo "ELK_CONSTRUCTOR()" >>stub.c
 $(OUT)echo "{" >>stub.c
-$(OUT)echo "command_insert_thread(\"$(PROG)\", main);" >>stub.c
+$(OUT)echo "command_insert_external(\"$(PROG)\", main);" >>stub.c
 $(OUT)echo "}" >>stub.c
 endef
 
