@@ -1526,6 +1526,8 @@ int getpath(const char *name, char *path)
       }
 
       src = p + 1;                      // Skip the '/'.
+    } else {
+      src = p;
     }
   }
 

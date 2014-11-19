@@ -1,10 +1,13 @@
 /** File handling.
  */
+#include <errno.h>
 #include <pthread.h>
+#include <stdlib.h>
 #include "config.h"
 #include "kernel.h"
 #include "file.h"
 
+#if RICH
 /** Release a file.
  */
 static void file_release(file_t *file)
@@ -37,6 +40,7 @@ static int file_reference(file_t file)
 
   return s;
 }
+#endif
 
 /** Release a file descriptor.
  */
@@ -48,7 +52,7 @@ static void fd_release(fd_t **fd)
 
   pthread_mutex_lock(&(*fd)->mutex);
   if (--(*fd)->f_count == 0) {
-    file_release(&(*fd)->file);         // Release the file.
+    // RICH: file_release(&(*fd)->file);         // Release the file.
     pthread_mutex_unlock(&(*fd)->mutex);
     free(*fd);
     *fd = NULL;
@@ -72,10 +76,12 @@ static int fd_reference(fd_t *fd)
     --fd->f_count;
     s = -EAGAIN;
   } else {
+#if RICH
     s = file_reference(fd->file);
     if (s < 0) {
       --fd->f_count;
     }
+#endif
   }
 
   pthread_mutex_unlock(&fd->mutex);

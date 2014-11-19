@@ -18,6 +18,7 @@ FEATURE_CLASS(command, command)
 typedef struct command {
   const char *name;                     // The command name.
   CommandFn fn;                         // The callback.
+  int external;                         // An external command.
 } Command;
 
 // The command mutex.
@@ -37,6 +38,20 @@ void command_insert(const  char *name, CommandFn fn)
 
   pthread_mutex_lock(&mutex);
   command_table[commands] = (Command){ name, fn };
+  ++commands;
+  pthread_mutex_unlock(&mutex);
+}
+
+/** Insert a command into the command table.
+ */
+void command_insert_thread(const  char *name, CommandFn fn)
+{
+  if (commands >= MAXCOMMANDS) {
+    return;
+  }
+
+  pthread_mutex_lock(&mutex);
+  command_table[commands] = (Command){ name, fn, 1 };
   ++commands;
   pthread_mutex_unlock(&mutex);
 }
@@ -175,13 +190,53 @@ static int parse_args(const char *string, char ***av)
   return count;
 }
 
+struct cmd {
+  int (*main)(int, char **);
+  int argc;
+  char **argv;
+};
+
+static void *launch(void *arg)
+{
+  struct cmd *cmd = (struct cmd *)arg;
+  return (void *)(intptr_t)cmd->main(cmd->argc, cmd->argv);
+}
+
 /** Find and run a command.
  */
 int run_command(int argc, char **argv)
 {
   for (int i = 0; i < commands; ++i) {
     if (strcmp(argv[0], command_table[i].name) == 0) {
-      int s = command_table[i].fn(argc, argv);
+      int s;
+      if (command_table[i].external) {
+        struct cmd cmd = {
+          .main = command_table[i].fn,
+          .argc = argc,
+          .argv = argv
+        };
+        pthread_t id;
+        pthread_attr_t attr;
+        s = pthread_attr_init(&attr);
+        // RICH: remove when mmap is available.
+        char *sp = malloc(4096);
+        s = pthread_attr_setstack(&attr, sp, 4096 * 8);
+        s = pthread_create(&id, &attr, launch, &cmd);
+        if (s != 0) {
+          printf("pthread_create: %s\n", strerror(s));
+        } else {
+          void *retval;
+          s = (int)pthread_join(id, &retval);
+          if (s != 0)
+            printf("pthread_create: %s\n", strerror(s));
+          else
+            s = (int)retval;
+        }
+        free(sp);
+      } else {
+        s = command_table[i].fn(argc, argv);
+      }
+
       return s;
     }
   }
@@ -238,6 +293,11 @@ static int helpCommand(int argc, char **argv)
   if (argc == 1) {
     // The simple case.
     for (int i = 1; i < commands; ++i) {
+      if (command_table[i].external) {
+        // AN external command.
+        continue;
+      }
+
       if (command_table[i].name) {
         printf("%20.20s: ", command_table[i].name);
       }

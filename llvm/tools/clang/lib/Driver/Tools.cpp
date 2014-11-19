@@ -5320,6 +5320,7 @@ static void ConstructLinkJobFromInfo(Compilation &C, const JobAction &JA,
   Args.AddAllArgs(CmdArgs, options::OPT_L);
   Args.AddAllArgs(CmdArgs, options::OPT_T_Group);
   Args.AddAllArgs(CmdArgs, options::OPT_e);
+  Args.AddAllArgs(CmdArgs, options::OPT_r);
 
   AddLinkerInputs(T.getToolChain(), Inputs, Args, CmdArgs);
 

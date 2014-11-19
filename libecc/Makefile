@@ -239,6 +239,9 @@ clang-headers:
 $(ElkConfigs)::
 	$(OUT)echo Making libelk for $@ in elk-build/$@
 	$(OUT)mkdir -p elk-build/$@
+	$(OUT)mkdir -p elk-build/$@/bin
 	$(OUT)cp Makefile.lib elk-build/$@/Makefile
+	$(OUT)cp -pr src/elk/bin/* elk-build/$@/bin
 	$(OUT)$(MAKE) $(MFLAGS) -C elk-build/$@ || exit 1
+	$(OUT)$(MAKE) $(MFLAGS) -C elk-build/$@/bin || exit 1
 	$(OUT)$(MAKE) $(MFLAGS) LIBDIR=`pwd`/lib/$@ -C elk-build/$@ install || exit 1

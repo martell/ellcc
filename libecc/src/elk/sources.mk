@@ -40,3 +40,7 @@ SRCS += ramfs_vnops.c
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/fs/fifofs
 # FIFO file system.
 SRCS += fifo_vnops.c
+
+#VPATH := $(VPATH):$(SRCPATH)/$(LIB)/fs/binfs
+# bin file system.
+#SRCS += binfs_vnops.c

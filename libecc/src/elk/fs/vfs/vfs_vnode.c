@@ -451,6 +451,29 @@ static int vsCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
+/* Change directory.
+ */
+static int cdCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("change the current working directory\n");
+    return COMMAND_OK;
+  }
+
+  if (argc != 2) {
+    printf("usage: cd <directory>\n");
+    return COMMAND_ERROR;
+  }
+
+  int s;
+  if ((s = chdir(argv[1])) != 0) {
+    printf("cd failed: %s", strerror(errno));
+    return COMMAND_ERROR;
+  }
+
+  return COMMAND_OK;
+}
+
 #endif
 
 ELK_CONSTRUCTOR()
@@ -460,5 +483,6 @@ ELK_CONSTRUCTOR()
 
 #if defined(VFS_COMMANDS)
   command_insert("vs", vsCommand);
+  command_insert("cd", cdCommand);
 #endif
 }

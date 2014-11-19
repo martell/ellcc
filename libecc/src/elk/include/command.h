@@ -10,6 +10,10 @@ enum { COMMAND_OK, COMMAND_ERROR };             // Callback return values.
  */
 void command_insert(const  char *name, CommandFn fn);
 
+/** Insert a command into the command table that requires threading.
+ */
+void command_insert_thread(const  char *name, CommandFn fn);
+
 /** Find and run a command.
  */
 int run_command(int argc, char **argv);

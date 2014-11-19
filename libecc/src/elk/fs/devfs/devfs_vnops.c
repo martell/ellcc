@@ -77,37 +77,37 @@ static int devfs_lookup(vnode_t, char *, vnode_t);
  * vnode operations
  */
 static struct vnops devfs_vnops = {
-  devfs_open,           /* open */
-  devfs_close,          /* close */
-  devfs_read,           /* read */
-  devfs_write,          /* write */
-  devfs_poll,           /* poll */
-  devfs_seek,           /* seek */
-  devfs_ioctl,          /* ioctl */
-  devfs_fsync,          /* fsync */
-  devfs_readdir,        /* readdir */
-  devfs_lookup,         /* lookup */
-  devfs_create,         /* create */
-  devfs_remove,         /* remove */
-  devfs_rename,         /* remame */
-  devfs_mkdir,          /* mkdir */
-  devfs_rmdir,          /* rmdir */
-  devfs_getattr,        /* getattr */
-  devfs_setattr,        /* setattr */
-  devfs_inactive,       /* inactive */
-  devfs_truncate,       /* truncate */
+  devfs_open,
+  devfs_close,
+  devfs_read,
+  devfs_write,
+  devfs_poll,
+  devfs_seek,
+  devfs_ioctl,
+  devfs_fsync,
+  devfs_readdir,
+  devfs_lookup,
+  devfs_create,
+  devfs_remove,
+  devfs_rename,
+  devfs_mkdir,
+  devfs_rmdir,
+  devfs_getattr,
+  devfs_setattr,
+  devfs_inactive,
+  devfs_truncate,
 };
 
 /*
  * File system operations
  */
 static struct vfsops devfs_vfsops = {
-  devfs_mount,          /* mount */
-  devfs_unmount,        /* unmount */
-  devfs_sync,           /* sync */
-  devfs_vget,           /* vget */
-  devfs_statfs,         /* statfs */
-  &devfs_vnops,         /* vnops */
+  devfs_mount,
+  devfs_unmount,
+  devfs_sync,
+  devfs_vget,
+  devfs_statfs,
+  &devfs_vnops,
 };
 
 static int devfs_open(vnode_t vp, int flags)

@@ -37,7 +37,10 @@
  *  - Forward user I/O requests to the drivers with minimum check.
  */
 
+#include <errno.h>
 #include <pthread.h>
+#include <string.h>
+#include <stdlib.h>
 #define DEFINE_DEVICE_STRINGS
 #include "device.h"
 #include "thread.h"

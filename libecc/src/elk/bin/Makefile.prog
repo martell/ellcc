@@ -1,0 +1,98 @@
+# Build rules for a program.
+ELLCC=../../../../..
+PROG = $(shell basename `pwd`)
+TUPLE = $(shell cd ../..; basename `pwd`)
+LTUPLE = $(shell echo $(TUPLE) | sed -e "s/-elk-/-linux-/")
+ARCH = $(shell $(ELLCC)/bin/ecc-getincarch $(TUPLE))
+LIB = $(patsubst %-build,%,$(shell basename `cd ../../..; pwd`))
+LIBNAME = lib$(LIB).a
+PROGNAME = $(PROG)_bin.o
+CC = $(ELLCC)/bin/ecc
+CXX = $(ELLCC)/bin/ecc++
+AR = $(ELLCC)/bin/ecc-ar
+LD = $(ELLCC)/bin/ecc
+OBJCOPY = $(ELLCC)/bin/ecc-objcopy
+CFLAGS += -MD -MP
+CXXFLAGS += -MD -MP
+ifeq ($(VERBOSE),)
+  OUT=@
+  OUTC=@echo "Compiling $<";
+  OUTA=@echo "Assembling $<";
+  OUTLD=@echo "Making program $(PROGNAME)";
+else
+  OUT=
+  OUTC=
+  OUTA=
+  OUTLD=
+endif
+
+.SUFFIXES: .c .cpp .cxx .S .o
+.c.o:
+	$(OUTC)$(CC) -target $(TUPLE) -c $(CFLAGS) $<
+.cpp.o:
+	$(OUTC)$(CXX) -target $(TUPLE) -c $(CXXFLAGS) $<
+.cxx.o:
+	$(OUTC)$(CXX) -target $(TUPLE) -c $(CXXFLAGS) $<
+.S.o:
+	$(OUTA)$(CC) -target $(TUPLE) -c $(CFLAGS) $<
+
+
+# Build the program.
+
+SRCS = $(wildcard *.c *.cxx *.cpp *.S)
+BASENAMES := $(basename $(filter %.c %.cxx %.cpp %.S, $(SRCS)))
+BASENAMES := $(patsubst stub,,$(BASENAMES))
+OBJS := $(BASENAMES:%=%.o)
+
+CRTBASENAMES := $(basename $(filter %.c %.S, $(CRTSRCS)))
+CRTOBJS := $(CRTBASENAMES:%=%.o)
+
+DEPENDSRCS := $(basename $(filter %.c %.cxx %.cpp %.S, $(SRCS) $(CRTSRCS)))
+DEPENDFILES := $(DEPENDSRCS:%=%.d)
+
+all: strip
+
+$(PROGNAME): strip
+
+
+define STUBC=
+$(OUT)echo "#include <inttypes.h>" >stub.c
+$(OUT)echo "#include <pthread.h>" >>stub.c
+$(OUT)echo "#include \"constructor.h\"" >>stub.c
+$(OUT)echo "#include \"command.h\"" >>stub.c
+$(OUT)echo "FEATURE($(PROG)_bin)" >>stub.c
+$(OUT)echo "int main();" >>stub.c
+$(OUT)echo "void _exit(int s) __attribute__((noreturn));" >>stub.c
+$(OUT)echo "void exit(int s) __attribute__((noreturn));" >>stub.c
+$(OUT)echo "void exit(int s) { pthread_exit((void *)(intptr_t)s); };" >>stub.c
+$(OUT)echo "ELK_CONSTRUCTOR()" >>stub.c
+$(OUT)echo "{" >>stub.c
+$(OUT)echo "command_insert_thread(\"$(PROG)\", main);" >>stub.c
+$(OUT)echo "}" >>stub.c
+endef
+
+stub.c: Makefile
+	$(STUBC)
+
+INCDIR = $(ELLCC)/libecc/src/$(LIB)
+
+stub.o: stub.c
+	$(OUTCC)$(CC) -target $(TUPLE) -I$(INCDIR)/sys -I$(INCDIR)/include -c stub.c
+
+reloc: $(OBJS) stub.o
+	$(OUTCC)$(CC) -target $(LTUPLE) -o $(PROGNAME) -r $(OBJS) stub.o -nostdlib
+
+strip: reloc
+	$(OUT)$(OBJCOPY) -w -L* $(PROGNAME)
+	$(OUT)$(OBJCOPY) -w --globalize-symbol=__elk_$(PROG)_bin $(PROGNAME)
+	$(OUT)$(AR) cr ../../$(LIBNAME) $(PROGNAME)
+
+install:
+
+clean:
+	$(OUT)rm -f *.o *.d *.gcda *.gcno stub.c
+
+veryclean: clean
+	$(OUT)rm -f $(PROGNAME)
+
+-include $(DEPENDFILES) ""
