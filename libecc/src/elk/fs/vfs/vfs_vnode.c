@@ -76,10 +76,112 @@ static pthread_mutex_t vnode_lock = PTHREAD_MUTEX_INITIALIZER;
 #define VNODE_LOCK() pthread_mutex_lock(&vnode_lock)
 #define VNODE_UNLOCK() pthread_mutex_unlock(&vnode_lock)
 
-#define VP_LOCK_INIT(vp) pthread_mutex_init(&(vp)->v_lock, NULL)
-#define VP_LOCK_DESTROY(vp) pthread_mutex_destroy(&(vp)->v_lock)
-#define VP_LOCK(vp) pthread_mutex_lock(&(vp)->v_lock)
-#define VP_UNLOCK(vp) pthread_mutex_unlock(&(vp)->v_lock)
+#if 0
+// Simple locking.
+#define VP_LOCK_INIT(vp) ({ int s = pthread_mutex_init(&(vp)->v_interlock, NULL); \
+                            (vp)->v_nrlocks = 0; s; })
+#define VP_LOCK_DESTROY(vp) pthread_mutex_destroy(&(vp)->v_interlock)
+#define VP_LOCK(vp, flags) ({ int s = pthread_mutex_lock(&(vp)->v_interlock); \
+                              if (s == 0) ++(vp)->v_nrlocks; s; })
+#define VP_UNLOCK(vp) ({ int s = pthread_mutex_unlock(&(vp)->v_interlock); \
+                         if (s == 0) --(vp)->v_nrlocks; s; })
+#else
+
+static int VP_LOCK_INIT(vnode_t vp)
+{
+  int s = pthread_mutex_init(&vp->v_interlock, NULL);
+  if (s)
+    return -s;
+
+  s = sem_init(&vp->v_wait, 0, 0);
+  if (s)
+    return -errno;
+
+  vp->v_nrlocks = 0;
+  vp->v_flags &= ~VLOCKFLAGS;
+  return 0;
+}
+
+static int VP_LOCK_DESTROY(vnode_t vp)
+{
+  int s = pthread_mutex_destroy(&vp->v_interlock);
+  if (s)
+    return -s;
+
+  s = sem_destroy(&vp->v_wait);
+  if (s)
+    return -errno;
+
+  return 0;
+}
+
+static int VP_LOCK(vnode_t vp, int flags)
+{
+  // Check flags for validity.
+  if ((flags & (LK_SHARED|LK_EXCLUSIVE)) == (LK_SHARED|LK_EXCLUSIVE) ||
+      (flags & (LK_SHARED|LK_EXCLUSIVE)) == 0) {
+    // Need one and only one flag set.
+    return -EINVAL;
+  }
+
+  int s;
+  do {
+    s  = pthread_mutex_lock(&vp->v_interlock);
+    if (s)
+      return -s;
+
+    if ((vp->v_flags & (VSHARED|VEXCLUSIVE)) == 0 ||
+         ((vp->v_flags & VSHARED) && (flags & LK_SHARED))) {
+      // Not locked yet or currently sharable.
+      if (flags & LK_SHARED) {
+        vp->v_flags |= VSHARED;
+      } else {
+        // Exclusive use.
+        vp->v_flags |= VEXCLUSIVE;
+      }
+
+      ++vp->v_nrlocks;
+      pthread_mutex_unlock(&vp->v_interlock);
+      return 0;
+    }
+
+    pthread_mutex_unlock(&vp->v_interlock);
+    if (flags & LK_NOWAIT)
+      return -EAGAIN;           // Don't wait.
+
+    // The vnode is locked. Wait for it to be unlocked.
+    vp->v_flags |= VWAITER;
+    sem_wait(&vp->v_wait);
+  } while (1);
+}
+
+int VP_UNLOCK(vnode_t vp)
+{
+  int s  = pthread_mutex_lock(&vp->v_interlock);
+  if (s) {
+    return -s;
+  }
+
+  if (vp->v_nrlocks == 0) {
+    pthread_mutex_unlock(&(vp)->v_interlock);
+    return -EINVAL;
+  }
+
+  --vp->v_nrlocks;
+  if (vp->v_nrlocks == 0) {
+    // The last lock is gone.
+    vp->v_flags &= ~(VEXCLUSIVE|VSHARED);
+    if (vp->v_flags & VWAITER) {
+      vp->v_flags &= ~VWAITER;
+      sem_post(&vp->v_wait);
+    }
+  }
+
+  pthread_mutex_unlock(&(vp)->v_interlock);
+  return 0;
+}
+
+#endif
 
 /*
  * Get the hash value from the mount point and path name.
@@ -112,8 +214,7 @@ vnode_t vn_lookup(mount_t mp, char *path)
         !strncmp(vp->v_path, path, PATH_MAX)) {
       vp->v_refcnt++;
       VNODE_UNLOCK();
-      VP_LOCK(vp);
-      vp->v_nrlocks++;
+      VP_LOCK(vp, LK_EXCLUSIVE|LK_RETRY);
       return vp;
     }
   }
@@ -124,13 +225,12 @@ vnode_t vn_lookup(mount_t mp, char *path)
 /*
  * Lock vnode
  */
-void vn_lock(vnode_t vp)
+void vn_lock(vnode_t vp, int flags)
 {
   ASSERT(vp);
   ASSERT(vp->v_refcnt > 0);
 
-  VP_LOCK(vp);
-  vp->v_nrlocks++;
+  VP_LOCK(vp, flags);
   DPRINTF(VFSDB_VNODE, ("vn_lock:   %s\n", vp->v_path));
 }
 
@@ -144,7 +244,6 @@ void vn_unlock(vnode_t vp)
   ASSERT(vp->v_nrlocks > 0);
 
   DPRINTF(VFSDB_VNODE, ("vn_unlock: %s\n", vp->v_path));
-  vp->v_nrlocks--;
   VP_UNLOCK(vp);
 }
 
@@ -174,7 +273,6 @@ vnode_t vget(mount_t mp, char *path)
   vp->v_op = mp->m_op->vfs_vnops;
   strlcpy(vp->v_path, path, len);
   VP_LOCK_INIT(vp);
-  vp->v_nrlocks = 0;
 
   /*
    * Request to allocate fs specific data for vnode.
@@ -186,8 +284,7 @@ vnode_t vget(mount_t mp, char *path)
     return NULL;
   }
   vfs_busy(vp->v_mount);
-  VP_LOCK(vp);
-  vp->v_nrlocks++;
+  VP_LOCK(vp, LK_EXCLUSIVE|LK_RETRY);
 
   VNODE_LOCK();
   list_insert(&vnode_table[vn_hash(mp, path)], &vp->v_link);
@@ -220,9 +317,8 @@ void vput(vnode_t vp)
    */
   VOP_INACTIVE(vp);
   vfs_unbusy(vp->v_mount);
-  vp->v_nrlocks--;
-  ASSERT(vp->v_nrlocks == 0);
   VP_UNLOCK(vp);
+  ASSERT(vp->v_nrlocks == 0);
   VP_LOCK_DESTROY(vp);
   free(vp->v_path);
   free(vp);
@@ -299,7 +395,7 @@ int vcount(vnode_t vp)
 {
   int count;
 
-  vn_lock(vp);
+  vn_lock(vp, LK_SHARED|LK_RETRY);
   count = vp->v_refcnt;
   vn_unlock(vp);
   return count;
@@ -426,12 +522,12 @@ static int vsCommand(int argc, char **argv)
   list_t head, n;
   vnode_t vp;
   mount_t mp;
-  char type[][6] = { "VNON ", "VREG ", "VDIR ", "VBLK ", "VCHR ",
+  static const char type[][6] = { "VNON ", "VREG ", "VDIR ", "VBLK ", "VCHR ",
          "VLNK ", "VSOCK", "VFIFO" };
 
   VNODE_LOCK();
-  printf("vnode    mount    type  refcnt blkno    path\n");
-  printf("-------- -------- ----- ------ -------- ------------------------------\n");
+  printf("vnode    mount    type  refcnt blkno    flags    path\n");
+  printf("-------- -------- ----- ------ -------- -------- ------------------------------\n");
 
   for (i = 0; i < VNODE_BUCKETS; i++) {
     head = &vnode_table[i];

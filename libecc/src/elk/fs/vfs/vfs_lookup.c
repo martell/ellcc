@@ -80,7 +80,7 @@ int namei(char *path, vnode_t *vpp)
     panic("VFS: no root");
 
   vref(dvp);
-  vn_lock(dvp);
+  vn_lock(dvp, LK_EXCLUSIVE|LK_RETRY);
   node[0] = '\0';
 
   while (*p != '\0') {

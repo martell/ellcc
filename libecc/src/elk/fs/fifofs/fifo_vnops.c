@@ -484,7 +484,7 @@ static void wait_reader(vnode_t vp)
   pthread_mutex_lock(&np->fn_rmtx);
   pthread_cond_wait(&np->fn_rcond, &np->fn_rmtx);
   pthread_mutex_unlock(&np->fn_rmtx);
-  vn_lock(vp);
+  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
 }
 
 static void wakeup_writer(vnode_t vp)
@@ -504,7 +504,7 @@ static void wait_writer(vnode_t vp)
   pthread_mutex_lock(&np->fn_wmtx);
   pthread_cond_wait(&np->fn_wcond, &np->fn_wmtx);
   pthread_mutex_unlock(&np->fn_wmtx);
-  vn_lock(vp);
+  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
 }
 
 static void wakeup_reader(vnode_t vp)

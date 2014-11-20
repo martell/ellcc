@@ -34,6 +34,8 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <pthread.h>
+#include <semaphore.h>
+
 #include "config.h"
 #include "file.h"
 #include "list.h"
@@ -72,17 +74,29 @@ typedef struct vnode
   int v_flags;                  // Vnode flags.
   mode_t v_mode;                // File mode.
   size_t v_size;                // File size.
-  pthread_mutex_t v_lock;       // Lock for this vnode.
-  int v_nrlocks;                // Lock count (for debug).
+  pthread_mutex_t v_interlock;  // Interlock for this vnode.
+  sem_t v_wait;                 // The waiter semaphore.
+  int v_nrlocks;                // Lock count.
   int v_blkno;                  // Block number.
   char *v_path;                 // Pointer to path in fs.
   void *v_data;                 // Private data for fs.
 } *vnode_t;
 
-/* flags for vnode */
-#define VROOT     0x0001        // Root of its file system.
-#define VISTTY    0x0002        // Device is tty.
-#define VPROTDEV  0x0004        // Protected device.
+// vnode flags.
+#define VSHARED      0x0001     // Locked for shared read access.
+#define VEXCLUSIVE   0x0002     // Locked for exclusive read/write access.
+#define VWAITER      0x0004     // There is at least one waiter for the vnode.
+#define VLOCKFLAGS   0x000F     // All the lock flags.
+
+#define VROOT        0x0010     // Root of its file system.
+#define VISTTY       0x0020     // Device is tty.
+#define VPROTDEV     0x0040     // Protected device.
+
+// Locking flags.
+#define LK_SHARED    0x0001     // Locked shared and readonly.
+#define LK_EXCLUSIVE 0x0002     // Locked exclusive and read/write.
+#define LK_NOWAIT    0x0004     // Do not sleep to await lock.
+#define LK_RETRY     0x0008     // Retry lock operation until locked.
 
 /*
  * Vnode attribute
@@ -189,7 +203,7 @@ typedef  int (*vnop_truncate_t)(vnode_t, off_t);
 int vop_nullop(void);
 int vop_einval(void);
 vnode_t vn_lookup(struct mount *, char *);
-void vn_lock(vnode_t);
+void vn_lock(vnode_t, int flags);
 void vn_unlock(vnode_t);
 int vn_stat(vnode_t, struct stat *);
 int vn_access(vnode_t, int);

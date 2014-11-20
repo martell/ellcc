@@ -285,8 +285,8 @@ struct vnode vnode = {
   .v_flags = 0,                 // Vnode flags.
   .v_mode = VREAD|VWRITE,       // File mode.
   .v_size = 0,                  // File size.
-  .v_lock = PTHREAD_MUTEX_INITIALIZER, // Lock for this vnode.
-  .v_nrlocks = 0,               // Lock count (for debug).
+  .v_interlock = PTHREAD_MUTEX_INITIALIZER, // Lock for this vnode.
+  .v_nrlocks = 0,               // Lock count.
   .v_blkno = 0,                 // Block number.
   .v_path = "/tty",             // Pointer to path in fs.
   .v_data = NULL,               // Private data for fs.
@@ -302,6 +302,7 @@ struct file file = {
 int __elk_fdconsole_open(fdset_t *fdset)
 {
   // Create a file descriptor for the console.
+  sem_init(&vnode.v_wait, 0, 0);
   int fd = allocfd();
   fd = setfile(fd, &file);
   return fd;
