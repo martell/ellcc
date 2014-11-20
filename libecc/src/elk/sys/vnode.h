@@ -62,7 +62,7 @@ enum
  * Reading or writing any of these items requires holding the
  * appropriate lock.
  */
-struct vnode
+typedef struct vnode
 {
   struct list v_link;           // Link for hash list.
   struct mount *v_mount;        // Mounted vfs pointer.
@@ -77,8 +77,7 @@ struct vnode
   int v_blkno;                  // Block number.
   char *v_path;                 // Pointer to path in fs.
   void *v_data;                 // Private data for fs.
-};
-typedef struct vnode *vnode_t;
+} *vnode_t;
 
 /* flags for vnode */
 #define VROOT     0x0001        // Root of its file system.

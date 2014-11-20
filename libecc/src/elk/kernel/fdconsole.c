@@ -202,7 +202,9 @@ static ssize_t do_read(void *buf, size_t count)
 static int con_read(vnode_t vnode, file_t file, struct uio *uio, size_t *size)
 {
   int ss = sem_wait(&sem_input);
-  if (ss < 0) return ss;
+  if (ss < 0) {
+    return ss;
+  }
   size_t s = 0;
   for (int i = 0; i < uio->iovcnt; ++i) {
     ssize_t c = do_read(uio->iov[i].iov_base, uio->iov[i].iov_len);

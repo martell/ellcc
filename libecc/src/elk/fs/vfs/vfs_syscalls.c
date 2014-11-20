@@ -42,8 +42,8 @@
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <syscalls.h>
 
+#include "syscalls.h"
 #include "vnode.h"
 #include "file.h"
 #include "mount.h"
@@ -923,6 +923,21 @@ static int sys_stat(char *path, struct stat *st)
   return error;
 }
 
+// RICH: This should handle symbolic links.
+static int sys_lstat(char *path, struct stat *st)
+{
+  vnode_t vp;
+  int error;
+
+  DPRINTF(VFSDB_SYSCALL, ("sys_lstat: path=%s\n", path));
+
+  if ((error = namei(path, &vp)) != 0)
+    return error;
+  error = vn_stat(vp, st);
+  vput(vp);
+  return error;
+}
+
 static int sys_truncate(char *path, off_t length)
 {
   return 0;
@@ -1057,6 +1072,7 @@ ELK_CONSTRUCTOR()
   SYSCALL(rmdir);
   SYSCALL(rename);
   SYSCALL(stat);
+  SYSCALL(lstat);
   SYSCALL(truncate);
   SYSCALL(unlink);
   SYSCALL(write);

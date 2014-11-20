@@ -467,7 +467,7 @@ static int cdCommand(int argc, char **argv)
 
   int s;
   if ((s = chdir(argv[1])) != 0) {
-    printf("cd failed: %s", strerror(errno));
+    printf("cd failed: %s\n", strerror(errno));
     return COMMAND_ERROR;
   }
 
