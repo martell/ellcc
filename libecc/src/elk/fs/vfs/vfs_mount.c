@@ -318,7 +318,7 @@ static int sys_umount2(char *name, int flags)
   list_t head, n;
   int error;
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_umount2: path=%s\n", path));
+  DPRINTF(VFSDB_SYSCALL, ("sys_umount2: name=%s\n", name));
 
   if (!capable(CAP_SYS_ADMIN)) {
     return -EPERM;

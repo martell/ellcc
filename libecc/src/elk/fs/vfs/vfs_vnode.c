@@ -570,7 +570,29 @@ static int cdCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
+#if DEBUG_VFS
+int vfs_debug;
+
+/* Set debug level.
+ */
+static int vfsdbgCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("set the vfs debug level\n");
+    return COMMAND_OK;
+  }
+
+  if (argc != 2) {
+    printf("usage: vfsdbg <value>\n");
+    return COMMAND_ERROR;
+  }
+
+  vfs_debug = strtol(argv[1], 0, 0);
+  return COMMAND_OK;
+}
 #endif
+
+#endif // VFS_COMMANDS
 
 ELK_CONSTRUCTOR()
 {
@@ -579,6 +601,7 @@ ELK_CONSTRUCTOR()
 
 #if defined(VFS_COMMANDS)
   command_insert("vs", vsCommand);
+  command_insert("vfsdbg", vfsdbgCommand);
   command_insert("cd", cdCommand);
 #endif
 }

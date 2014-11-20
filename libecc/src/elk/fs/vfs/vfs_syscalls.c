@@ -64,13 +64,13 @@ static int vfs_open(char *name, int flags, mode_t mode, file_t *fpp)
   char *filename;
   int error;
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_open: path=%s flags=%x mode=%x\n",
-        path, flags, mode));
-
   // Find the full path name (may be relative to cwd).
   char path[PATH_MAX];
   if ((error = getpath(name, path)) != 0)
     return error;
+
+  DPRINTF(VFSDB_SYSCALL, ("sys_open: path=%s flags=%x mode=%x\n",
+                          path, flags, mode));
 
   // Check to see whether the file as accessible.
   int acc = 0;
@@ -230,13 +230,13 @@ static int sys_close(int fd)
   int error;
   file_t fp;
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_close: fp=%x count=%d\n",
-        (u_int)fp, fp->f_count));
-
   error = getfile(fd, &fp, 1, 0);
   if (error < 0) {
     return error;
   }
+
+  DPRINTF(VFSDB_SYSCALL, ("sys_close: fd=%d fp=%p count=%d\n",
+                          fd, fp, fp->f_count));
 
   error = vfs_close(fp);
   setfile(fd, NULL);
@@ -254,8 +254,8 @@ static ssize_t sys_read(int fd, void *buf, size_t size)
     return error;
   }
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_read: fp=%x buf=%x size=%d\n",
-        (u_int)fp, (u_int)buf, size));
+  DPRINTF(VFSDB_SYSCALL, ("sys_read: fd=%d fp=%p buf=%p size=%zd\n",
+                          fd, fp, buf, size));
 
   if ((fp->f_flags & FREAD) == 0)
     return -EBADF;
@@ -289,8 +289,9 @@ static ssize_t sys_readv(int fd, struct iovec *iov, int iovcnt)
     return error;
   }
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_read: fp=%x buf=%x size=%d\n",
-        (u_int)fp, (u_int)buf, size));
+  DPRINTF(VFSDB_SYSCALL, ("sys_read: fd=%d fp=%p iov->iov_base=%p "
+                          "iov->iov_len=%zd\n",
+                          fd, fp, iov->iov_base, iov->iov_len));
 
   if ((fp->f_flags & FREAD) == 0)
     return -EBADF;
@@ -319,8 +320,10 @@ static ssize_t sys_write(int fd, void *buf, size_t size)
     return error;
   }
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_write: fp=%x buf=%x size=%d\n",
-        (u_int)fp, (u_int)buf, size));
+#if RICH        // This doesn't work out well (recursion).
+  DPRINTF(VFSDB_SYSCALL, ("sys_write: fd=%d fp=%p buf=%p size=%zd\n",
+                          fd, fp, buf, size));
+#endif
 
   if ((fp->f_flags & FWRITE) == 0)
     return -EBADF;
@@ -352,8 +355,11 @@ static ssize_t sys_writev(int fd, struct iovec *iov, int iovcnt)
     return error;
   }
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_write: fp=%x buf=%x size=%d\n",
-        (u_int)fp, (u_int)buf, size));
+#if RICH        // This doesn't work out well (recursion).
+  DPRINTF(VFSDB_SYSCALL, ("sys_write: fd=%d fp=%p iov->iov_base=%p "
+                          "iov->iov_len=%zd\n",
+                          fd, fp, iov->iov_base, iov->iov_len));
+#endif
 
   if ((fp->f_flags & FWRITE) == 0)
     return -EBADF;
@@ -381,8 +387,8 @@ static off_t sys_lseek(int fd, off_t off, int type)
     return error;
   }
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_seek: fp=%x off=%d type=%d\n",
-        (u_int)fp, (u_int)off, type));
+  DPRINTF(VFSDB_SYSCALL, ("sys_seek: fd=%d fp=%p off=%lld type=%d\n",
+                          fd, fp, (long long)off, type));
 
   vp = fp->f_vnode;
   vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
@@ -437,7 +443,8 @@ static int sys_ioctl(int fd, u_long request, void *buf)
     return error;
   }
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_ioctl: fp=%x request=%x\n", fp, request));
+  DPRINTF(VFSDB_SYSCALL, ("sys_ioctl: fd=%d fp=%p request=%lx\n",
+                          fd, fp, request));
 
   if ((fp->f_flags & (FREAD | FWRITE)) == 0)
     return EBADF;
@@ -461,7 +468,7 @@ static int sys_fsync(int fd)
     return error;
   }
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_fsync: fp=%x\n", fp));
+  DPRINTF(VFSDB_SYSCALL, ("sys_fsync: fd=%d fp=%p\n", fd, fp));
 
   if ((fp->f_flags & FWRITE) == 0)
     return -EBADF;
@@ -484,7 +491,7 @@ static int sys_fstat(int fd, struct stat *st)
     return error;
   }
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_fstat: fp=%x\n", fp));
+  DPRINTF(VFSDB_SYSCALL, ("sys_fstat: fd=%d fp=%p\n", fd, fp));
 
   vp = fp->f_vnode;
   vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
@@ -498,7 +505,7 @@ static int i_readdir(file_t fp, struct dirent *dir)
   vnode_t dvp;
   int error;
 
-  DPRINTF(VFSDB_SYSCALL, ("i_readdir: fp=%x\n", fp));
+  DPRINTF(VFSDB_SYSCALL, ("i_readdir: fp=%p dirent=%p\n", fp, dir));
 
   dvp = fp->f_vnode;
   vn_lock(dvp, LK_EXCLUSIVE|LK_RETRY);
@@ -508,7 +515,7 @@ static int i_readdir(file_t fp, struct dirent *dir)
   }
   error = VOP_READDIR(dvp, fp, dir);
   DPRINTF(VFSDB_SYSCALL, ("i_readdir: error=%d path=%s\n",
-        error, dir->d_name));
+                          error, dir->d_name));
   vn_unlock(dvp);
   return error;
 }
@@ -564,12 +571,12 @@ static int sys_mkdir(char *name, mode_t mode)
   vnode_t vp, dvp;
   int error;
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_mkdir: path=%s mode=%d\n",  path, mode));
-
   // Find the full path name (may be relative to cwd).
   char path[PATH_MAX];
   if ((error = getpath(name, path)) != 0)
     return error;
+
+  DPRINTF(VFSDB_SYSCALL, ("sys_mkdir: path=%s mode=%d\n", path, mode));
 
   if ((error = namei(path, &vp)) == 0) {
     /* File already exists */
@@ -598,12 +605,12 @@ static int sys_rmdir(char *name)
   vnode_t vp, dvp;
   int error;
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_rmdir: path=%s\n", path));
-
   // Find the full path name (may be relative to cwd).
   char path[PATH_MAX];
   if ((error = getpath(name, path)) != 0)
     return error;
+
+  DPRINTF(VFSDB_SYSCALL, ("sys_rmdir: path=%s\n", path));
 
   if ((error = check_dir_empty(path)) != 0)
     return error;
@@ -640,12 +647,13 @@ static int sys_mknod(char *name, mode_t mode)
   vnode_t vp, dvp;
   int error;
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_mknod: path=%s mode=%d\n",  path, mode));
 
   // Find the full path name (may be relative to cwd).
   char path[PATH_MAX];
   if ((error = getpath(name, path)) != 0)
     return error;
+
+  DPRINTF(VFSDB_SYSCALL, ("sys_mknod: path=%s mode=%d\n",  path, mode));
 
   switch (mode & S_IFMT) {
   case S_IFREG:
@@ -909,10 +917,13 @@ static int sys_access(char *path, int mode)
   return error;
 }
 
-static int sys_stat(char *path, struct stat *st)
+static int sys_stat(char *name, struct stat *st)
 {
   vnode_t vp;
   int error;
+  char path[PATH_MAX];
+  if ((error = getpath(name, path)) != 0)
+    return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_stat: path=%s\n", path));
 
@@ -924,10 +935,13 @@ static int sys_stat(char *path, struct stat *st)
 }
 
 // RICH: This should handle symbolic links.
-static int sys_lstat(char *path, struct stat *st)
+static int sys_lstat(char *name, struct stat *st)
 {
   vnode_t vp;
   int error;
+  char path[PATH_MAX];
+  if ((error = getpath(name, path)) != 0)
+    return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_lstat: path=%s\n", path));
 

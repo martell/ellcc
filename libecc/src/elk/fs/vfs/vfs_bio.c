@@ -157,7 +157,7 @@ getblk(dev_t dev, int blkno)
 {
   struct buf *bp;
 
-  DPRINTF(VFSDB_BIO, ("getblk: dev=%x blkno=%d\n", dev, blkno));
+  DPRINTF(VFSDB_BIO, ("getblk: dev=%llx blkno=%d\n", (long long)dev, blkno));
  start:
   BIO_LOCK();
   bp = incore(dev, blkno);
@@ -188,7 +188,7 @@ getblk(dev_t dev, int blkno)
   }
   BUF_LOCK(bp);
   BIO_UNLOCK();
-  DPRINTF(VFSDB_BIO, ("getblk: done bp=%x\n", bp));
+  DPRINTF(VFSDB_BIO, ("getblk: done bp=%p\n", bp));
   return bp;
 }
 
@@ -199,8 +199,8 @@ void
 brelse(struct buf *bp)
 {
   ASSERT(ISSET(bp->b_flags, B_BUSY));
-  DPRINTF(VFSDB_BIO, ("brelse: bp=%x dev=%x blkno=%d\n",
-        bp, bp->b_dev, bp->b_blkno));
+  DPRINTF(VFSDB_BIO, ("brelse: bp=%p dev=%llx blkno=%d\n",
+        bp, (long long)bp->b_dev, bp->b_blkno));
 
   BIO_LOCK();
   CLR(bp->b_flags, B_BUSY);
@@ -228,7 +228,7 @@ bread(dev_t dev, int blkno, struct buf **bpp)
   size_t size;
   int error;
 
-  DPRINTF(VFSDB_BIO, ("bread: dev=%x blkno=%d\n", dev, blkno));
+  DPRINTF(VFSDB_BIO, ("bread: dev=%llx blkno=%d\n", (long long)dev, blkno));
   bp = getblk(dev, blkno);
 
   if (!ISSET(bp->b_flags, (B_DONE | B_DELWRI))) {
@@ -244,7 +244,7 @@ bread(dev_t dev, int blkno, struct buf **bpp)
   }
   CLR(bp->b_flags, B_INVAL);
   SET(bp->b_flags, (B_READ | B_DONE));
-  DPRINTF(VFSDB_BIO, ("bread: done bp=%x\n\n", bp));
+  DPRINTF(VFSDB_BIO, ("bread: done bp=%p\n\n", bp));
   *bpp = bp;
   return 0;
 }
@@ -263,7 +263,7 @@ bwrite(struct buf *bp)
   int error;
 
   ASSERT(ISSET(bp->b_flags, B_BUSY));
-  DPRINTF(VFSDB_BIO, ("bwrite: dev=%x blkno=%d\n", bp->b_dev,
+  DPRINTF(VFSDB_BIO, ("bwrite: dev=%llx blkno=%d\n", (long long)bp->b_dev,
           bp->b_blkno));
 
   BIO_LOCK();

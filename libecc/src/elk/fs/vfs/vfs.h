@@ -37,7 +37,7 @@
 
 #include <assert.h>
 
-/* #define DEBUG_VFS 1 */
+#define DEBUG_VFS 1
 
 /*
  * Tunable parameters
@@ -47,9 +47,13 @@
 #undef DPRINTF
 #undef ASSERT
 #ifdef DEBUG_VFS
+
+#include <stdio.h>
+
+#define vfs_debug __elk_vfs_debug
 extern int vfs_debug;
 
-#define	VFSDB_CORE	0x00000001
+#define	VFSDB_CORE	0x00000001      // Unused.
 #define	VFSDB_SYSCALL	0x00000002
 #define	VFSDB_VNODE	0x00000004
 #define	VFSDB_BIO	0x00000008
@@ -57,63 +61,15 @@ extern int vfs_debug;
 
 #define VFSDB_FLAGS	0x00000013
 
-#define	DPRINTF(_m,X)	if (vfs_debug & (_m)) dprintf X
-#define ASSERT(e)	dassert(e)
+#define	DPRINTF(_m,X)	if (vfs_debug & (_m)) printf X
+#define ASSERT(e)	assert(e)
 #else
 #define	DPRINTF(_m, X)
 #define ASSERT(e)
 #endif
 
+#define vfssw __elk_vfssw
 extern struct vfssw vfssw[];
-
-#if RICH
-int	 sys_open(char *path, int flags, mode_t mode, file_t *pfp);
-int	 sys_close(file_t fp);
-int	 sys_read(file_t fp, void *buf, size_t size, size_t *result);
-int	 sys_write(file_t fp, void *buf, size_t size, size_t *result);
-int	 sys_lseek(file_t fp, off_t off, int type, off_t * cur_off);
-int	 sys_ioctl(file_t fp, u_long request, void *buf);
-int	 sys_fstat(file_t fp, struct stat *st);
-int	 sys_fsync(file_t fp);
-int	 sys_ftruncate(file_t fp, off_t length);
-
-int	 sys_opendir(char *path, file_t * file);
-int	 sys_closedir(file_t fp);
-int	 sys_readdir(file_t fp, struct dirent *dirent);
-int	 sys_rewinddir(file_t fp);
-int	 sys_seekdir(file_t fp, long loc);
-int	 sys_telldir(file_t fp, long *loc);
-int	 sys_fchdir(file_t fp, char *path);
-
-int	 sys_mkdir(char *path, mode_t mode);
-int	 sys_rmdir(char *path);
-int	 sys_mknod(char *path, mode_t mode);
-int	 sys_rename(char *src, char *dest);
-int	 sys_unlink(char *path);
-int	 sys_access(char *path, int mode);
-int	 sys_stat(char *path, struct stat *st);
-int	 sys_truncate(char *path, off_t length);
-
-int	 sys_mount(char *dev, char *dir, char *fsname, int flags, void *data);
-int	 sys_umount(char *path);
-int	 sys_sync(void);
-
-
-struct task *task_lookup(task_t task);
-int	 task_alloc(task_t task, struct task **pt);
-void	 task_free(struct task *t);
-void	 task_setid(struct task *t, task_t task);
-void	 task_unlock(struct task *t);
-
-file_t	 task_getfp(struct task *t, int fd);
-void	 task_setfp(struct task *t, int fd, file_t fp);
-int	 task_newfd(struct task *t);
-void	 task_delfd(struct task *t, int fd);
-
-int	 task_conv(struct task *t, char *path, int mode, char *full);
-void	 task_init(void);
-
-#endif
 
 #define sec_vnode_permission __elk_sec_vnode_permission
 #define sec_file_permission __elk_sec_file_permission
@@ -125,14 +81,14 @@ void	 task_init(void);
 #define vfs_unbusy __elk_vfs_unbusy
 #define fs_noop __elk_fs_noop
 
-int	 sec_vnode_permission(char *path);
-int	 sec_file_permission(char *path, int mode);
-int	 namei(char *path, vnode_t *vpp);
-int	 lookup(char *path, vnode_t *vpp, char **name);
-void	 vnode_init(void);
-int	 vfs_findroot(char *path, mount_t *mp, char **root);
-void	 vfs_busy(mount_t mp);
-void	 vfs_unbusy(mount_t mp);
-int	 fs_noop(void);
+int sec_vnode_permission(char *path);
+int sec_file_permission(char *path, int mode);
+int namei(char *path, vnode_t *vpp);
+int lookup(char *path, vnode_t *vpp, char **name);
+void vnode_init(void);
+int vfs_findroot(char *path, mount_t *mp, char **root);
+void vfs_busy(mount_t mp);
+void vfs_unbusy(mount_t mp);
+int fs_noop(void);
 
 #endif /* !_VFS_H */
