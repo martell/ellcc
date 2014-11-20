@@ -131,7 +131,7 @@ static int VP_LOCK(vnode_t vp, int flags)
       return -s;
 
     if ((vp->v_flags & (VSHARED|VEXCLUSIVE)) == 0 ||
-         ((vp->v_flags & VSHARED) && (flags & LK_SHARED))) {
+        ((vp->v_flags & VSHARED) && (flags & LK_SHARED))) {
       // Not locked yet or currently sharable.
       if (flags & LK_SHARED) {
         vp->v_flags |= VSHARED;
