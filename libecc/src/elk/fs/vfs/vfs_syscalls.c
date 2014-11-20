@@ -320,10 +320,8 @@ static ssize_t sys_write(int fd, void *buf, size_t size)
     return error;
   }
 
-#if RICH        // This doesn't work out well (recursion).
   DPRINTF(VFSDB_SYSCALL, ("sys_write: fd=%d fp=%p buf=%p size=%zd\n",
                           fd, fp, buf, size));
-#endif
 
   if ((fp->f_flags & FWRITE) == 0)
     return -EBADF;
@@ -355,11 +353,9 @@ static ssize_t sys_writev(int fd, struct iovec *iov, int iovcnt)
     return error;
   }
 
-#if RICH        // This doesn't work out well (recursion).
   DPRINTF(VFSDB_SYSCALL, ("sys_write: fd=%d fp=%p iov->iov_base=%p "
                           "iov->iov_len=%zd\n",
                           fd, fp, iov->iov_base, iov->iov_len));
-#endif
 
   if ((fp->f_flags & FWRITE) == 0)
     return -EBADF;

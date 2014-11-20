@@ -78,8 +78,9 @@ static pthread_mutex_t vnode_lock = PTHREAD_MUTEX_INITIALIZER;
 
 #if 0
 // Simple locking.
-#define VP_LOCK_INIT(vp) ({ int s = pthread_mutex_init(&(vp)->v_interlock, NULL); \
-                            (vp)->v_nrlocks = 0; s; })
+#define VP_LOCK_INIT(vp) \
+  ({ int s = pthread_mutex_init(&(vp)->v_interlock, NULL); \
+     (vp)->v_nrlocks = 0; s; })
 #define VP_LOCK_DESTROY(vp) pthread_mutex_destroy(&(vp)->v_interlock)
 #define VP_LOCK(vp, flags) ({ int s = pthread_mutex_lock(&(vp)->v_interlock); \
                               if (s == 0) ++(vp)->v_nrlocks; s; })
@@ -145,12 +146,14 @@ static int VP_LOCK(vnode_t vp, int flags)
       return 0;
     }
 
-    pthread_mutex_unlock(&vp->v_interlock);
-    if (flags & LK_NOWAIT)
+    if (flags & LK_NOWAIT) {
+      pthread_mutex_unlock(&vp->v_interlock);
       return -EAGAIN;           // Don't wait.
+    }
 
     // The vnode is locked. Wait for it to be unlocked.
     vp->v_flags |= VWAITER;
+    pthread_mutex_unlock(&vp->v_interlock);
     sem_wait(&vp->v_wait);
   } while (1);
 }
@@ -601,7 +604,9 @@ ELK_CONSTRUCTOR()
 
 #if defined(VFS_COMMANDS)
   command_insert("vs", vsCommand);
-  command_insert("vfsdbg", vfsdbgCommand);
   command_insert("cd", cdCommand);
+#if DEBUG_VFS
+  command_insert("vfsdbg", vfsdbgCommand);
+#endif
 #endif
 }
