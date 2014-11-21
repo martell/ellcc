@@ -38,6 +38,7 @@
 #include <limits.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -518,10 +519,13 @@ static int i_readdir(file_t fp, struct dirent *dir)
   return error;
 }
 
-static int sys_getdents(int fd, struct dirent *dirp, size_t len)
+static int sys_getdents(int fd, char *buf, size_t len)
 {
   file_t fp;
   int error;
+
+  if (len < sizeof(struct dirent))
+    return -EINVAL;
 
   if ((error = getfile(fd, &fp, 1, 0)) < 0) {
     return error;
@@ -529,17 +533,44 @@ static int sys_getdents(int fd, struct dirent *dirp, size_t len)
 
   size_t size = 0;
   struct dirent dir;
-  // RICH: char *p = (char *)dirp;
-  for (int i = 0; i < 100; ++i) {
+  while (size + sizeof(struct dirent) < len) {
     error = i_readdir(fp, &dir);
     if (error)
       return error;
 
+    // dir.d_reclen is the length of the unterminated string.
+    // Translate it to the toal size.
+    struct ldirent
+    {
+      unsigned long d_ino;
+      unsigned long d_off;
+      unsigned short d_reclen;
+      char d_name[];
+    } ldir = {
+      .d_ino = dir.d_ino,
+      .d_off = dir.d_off,
+      .d_reclen = offsetof(struct ldirent, d_name)
+                           + dir.d_reclen + 1  // The string.
+                           + 1                 // The pad byte.
+                           + 1                 // The d_type byte.
+    };
+
 #if 1
-    printf("d_ino=%llu d_off=%llu d_reclen=%d d_type=%d d_name=%s\n",
-           (long long)dir.d_ino, (long long)dir.d_off, dir.d_reclen,
+    printf("d_ino=%llu d_off=%llu d_reclen=%d ldir.d_reclen=%d"
+           " d_type=%d d_name=%s\n",
+           (long long)dir.d_ino, (long long)dir.d_off,
+           dir.d_reclen, ldir.d_reclen,
            dir.d_type, dir.d_name);
 #endif
+
+    memcpy(buf, &ldir, offsetof(struct ldirent, d_name));
+    buf += offsetof(struct ldirent, d_name);
+    strcpy(buf, dir.d_name);
+    buf += dir.d_reclen + 1;
+    while ((uintptr_t)buf & 0x3)
+      *buf++ = 0;
+    *buf++ = dir.d_type;
+    size += ldir.d_reclen;
   }
 
   return size;

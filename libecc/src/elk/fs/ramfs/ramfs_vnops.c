@@ -553,6 +553,7 @@ static int ramfs_readdir(vnode_t vp, file_t fp, struct dirent *dir)
   }
   dir->d_fileno = (uint32_t)fp->f_offset;
   dir->d_namlen = (uint16_t)strlen(dir->d_name);
+  dir->d_off = fp->f_offset;
 
   fp->f_offset++;
 
