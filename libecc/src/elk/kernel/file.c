@@ -51,14 +51,11 @@ static void fd_reference(fd_t *fd)
 
 /** Add a reference to a set of file descriptors.
  */
-static int fdset_reference(fdset_t *fdset)
+static void fdset_reference(fdset_t *fdset)
 {
-  int s = 0;
   for (int i = 0; i < fdset->count; ++i) {
     fd_reference(fdset->fds[i]);
   }
-
-  return s;
 }
 
 /** Release a set of file descriptors.
@@ -90,6 +87,7 @@ int fdset_clone(fdset_t *fdset, int clone)
     if (newset == NULL) {
       return -EMFILE;
     }
+
     memcpy(newset, fdset->fds, size);
     fdset->fds = newset;
     fdset_reference(fdset);

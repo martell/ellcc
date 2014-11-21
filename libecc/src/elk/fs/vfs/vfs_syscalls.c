@@ -510,11 +510,39 @@ static int i_readdir(file_t fp, struct dirent *dir)
     vn_unlock(dvp);
     return -EBADF;
   }
+
   error = VOP_READDIR(dvp, fp, dir);
   DPRINTF(VFSDB_SYSCALL, ("i_readdir: error=%d path=%s\n",
                           error, dir->d_name));
   vn_unlock(dvp);
   return error;
+}
+
+static int sys_getdents(int fd, struct dirent *dirp, size_t len)
+{
+  file_t fp;
+  int error;
+
+  if ((error = getfile(fd, &fp, 1, 0)) < 0) {
+    return error;
+  }
+
+  size_t size = 0;
+  struct dirent dir;
+  // RICH: char *p = (char *)dirp;
+  for (int i = 0; i < 100; ++i) {
+    error = i_readdir(fp, &dir);
+    if (error)
+      return error;
+
+#if 1
+    printf("d_ino=%llu d_off=%llu d_reclen=%d d_type=%d d_name=%s\n",
+           (long long)dir.d_ino, (long long)dir.d_off, dir.d_reclen,
+           dir.d_type, dir.d_name);
+#endif
+  }
+
+  return size;
 }
 
 /*
@@ -1072,6 +1100,7 @@ ELK_CONSTRUCTOR()
   SYSCALL(fsync);
   SYSCALL(ftruncate);
   SYSCALL(getcwd);
+  SYSCALL(getdents);
   SYSCALL(ioctl);
   SYSCALL(link);
   SYSCALL(lseek);

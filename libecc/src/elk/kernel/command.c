@@ -219,8 +219,9 @@ int run_command(int argc, char **argv)
         pthread_attr_t attr;
         s = pthread_attr_init(&attr);
         // RICH: remove when mmap is available.
-        char *sp = malloc(4096);
-        s = pthread_attr_setstack(&attr, sp, 4096 * 8);
+#define STACK (4096 * 8)
+        char *sp = malloc(STACK);
+        s = pthread_attr_setstack(&attr, sp, STACK);
         s = pthread_create(&id, &attr, launch, &cmd);
         if (s != 0) {
           printf("pthread_create: %s\n", strerror(s));
