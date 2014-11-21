@@ -262,7 +262,7 @@ vnode_t vn_lookup(mount_t mp, char *path)
         !strncmp(vp->v_path, path, PATH_MAX)) {
       VN_RW_OVERRIDE(vp)->v_refcnt++;
       VNODE_UNLOCK();
-      VP_LOCK(vp, LK_EXCLUSIVE|LK_RETRY);
+      VP_LOCK(vp, LK_SHARED|LK_RETRY);
       return vp;
     }
   }
@@ -332,7 +332,7 @@ vnode_t vget(mount_t mp, char *path)
     return NULL;
   }
   vfs_busy(vp->v_mount);
-  VP_LOCK(vp, LK_EXCLUSIVE|LK_RETRY);
+  VP_LOCK(vp, LK_SHARED|LK_RETRY);
 
   VNODE_LOCK();
   list_insert(&vnode_table[vn_hash(mp, path)], &vp->v_link);

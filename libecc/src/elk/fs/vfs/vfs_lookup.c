@@ -52,7 +52,6 @@ int namei(char *path, vnode_t *vpp)
   char node[PATH_MAX];
   char name[PATH_MAX];
   mount_t mp;
-  vnode_t dvp, vp;
   int error, i;
 
   DPRINTF(VFSDB_VNODE, ("namei: path=%s\n", path));
@@ -65,6 +64,7 @@ int namei(char *path, vnode_t *vpp)
     return -ENOTDIR;
   strlcpy(node, "/", sizeof(node));
   strlcat(node, p, sizeof(node));
+  vnode_t vp;
   vp = vn_lookup(mp, node);
   if (vp) {
     /* vnode is already active. */
@@ -76,11 +76,12 @@ int namei(char *path, vnode_t *vpp)
    * This is done to attach the fs specific data to
    * the target vnode.
    */
+  vnode_t dvp;
   if ((dvp = mp->m_root) == NULL)
     panic("VFS: no root");
 
   vref(dvp);
-  vn_lock(dvp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(dvp, LK_SHARED|LK_RETRY);
   node[0] = '\0';
 
   while (*p != '\0') {

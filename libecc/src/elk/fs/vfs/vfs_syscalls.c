@@ -213,7 +213,7 @@ static int vfs_close(file_t fp)
     return 0;
   }
 
-  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(vp, LK_SHARED|LK_RETRY);
   int error;
   if ((error = VOP_CLOSE(vp, fp)) != 0) {
     vn_unlock(vp);
@@ -265,7 +265,7 @@ static ssize_t sys_read(int fd, void *buf, size_t size)
   }
 
   vp = fp->f_vnode;
-  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(vp, LK_SHARED|LK_RETRY);
   size_t count;
   struct iovec iovec = { .iov_base = buf, .iov_len = size };
   struct uio uio = { .iovcnt = 1, .iov = &iovec };
@@ -297,7 +297,7 @@ static ssize_t sys_readv(int fd, struct iovec *iov, int iovcnt)
     return -EBADF;
 
   vp = fp->f_vnode;
-  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(vp, LK_SHARED|LK_RETRY);
   size_t count;
   struct uio uio = { .iovcnt = iovcnt, .iov = iov };
   error = VOP_READ(vp, fp, &uio, &count);
@@ -329,7 +329,7 @@ static ssize_t sys_write(int fd, void *buf, size_t size)
     return 0;
   }
   vp = fp->f_vnode;
-  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(vp, LK_SHARED|LK_RETRY);
   size_t count;
   struct iovec iovec = { .iov_base = buf, .iov_len = size };
   struct uio uio = { .iovcnt = 1, .iov = &iovec };
@@ -360,7 +360,7 @@ static ssize_t sys_writev(int fd, struct iovec *iov, int iovcnt)
   if ((fp->f_flags & FWRITE) == 0)
     return -EBADF;
   vp = fp->f_vnode;
-  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(vp, LK_SHARED|LK_RETRY);
   size_t count;
   struct uio uio = { .iovcnt = iovcnt, .iov = iov };
   error = VOP_WRITE(vp, fp, &uio, &count);
@@ -387,7 +387,7 @@ static off_t sys_lseek(int fd, off_t off, int type)
                           fd, fp, (long long)off, type));
 
   vp = fp->f_vnode;
-  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(vp, LK_SHARED|LK_RETRY);
   switch (type) {
   case SEEK_SET:
     if (off < 0)
@@ -446,7 +446,7 @@ static int sys_ioctl(int fd, u_long request, void *buf)
     return EBADF;
 
   vp = fp->f_vnode;
-  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(vp, LK_SHARED|LK_RETRY);
   error = VOP_IOCTL(vp, fp, request, buf);
   vn_unlock(vp);
   DPRINTF(VFSDB_SYSCALL, ("sys_ioctl: comp error=%d\n", error));
@@ -470,7 +470,7 @@ static int sys_fsync(int fd)
     return -EBADF;
 
   vp = fp->f_vnode;
-  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(vp, LK_SHARED|LK_RETRY);
   error = VOP_FSYNC(vp, fp);
   vn_unlock(vp);
   return error;
@@ -490,7 +490,7 @@ static int sys_fstat(int fd, struct stat *st)
   DPRINTF(VFSDB_SYSCALL, ("sys_fstat: fd=%d fp=%p\n", fd, fp));
 
   vp = fp->f_vnode;
-  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(vp, LK_SHARED|LK_RETRY);
   error = vn_stat(vp, st);
   vn_unlock(vp);
   return error;
@@ -504,7 +504,7 @@ static int i_readdir(file_t fp, struct dirent *dir)
   DPRINTF(VFSDB_SYSCALL, ("i_readdir: fp=%p dirent=%p\n", fp, dir));
 
   dvp = fp->f_vnode;
-  vn_lock(dvp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(dvp, LK_SHARED|LK_RETRY);
   if (dvp->v_type != VDIR) {
     vn_unlock(dvp);
     return -EBADF;
@@ -537,7 +537,7 @@ static int check_dir_empty(char *path)
   }
 
   vnode_t dvp = fp->f_vnode;
-  vn_lock(dvp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(dvp, LK_SHARED|LK_RETRY);
   if (dvp->v_type != VDIR) {
     vn_unlock(dvp);
     sys_close(fd);
@@ -830,7 +830,7 @@ static int sys_fchdir(int fd)
 
   vnode_t dvp;
   dvp = fp->f_vnode;
-  vn_lock(dvp, LK_EXCLUSIVE|LK_RETRY);
+  vn_lock(dvp, LK_SHARED|LK_RETRY);
   if (dvp->v_type != VDIR) {
     vn_unlock(dvp);
     return -ENOTDIR;
