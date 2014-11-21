@@ -201,6 +201,7 @@ typedef  int (*vnop_truncate_t)(vnode_t, off_t);
 #define vrele __elk_vrele
 #define vcount __elk_vcount
 #define vflush __elk_vflush
+#define vfs_close  __elk_vfs_close 
 #endif
 
 int vop_nullop(void);
@@ -218,5 +219,6 @@ void vref(vnode_t);
 void vrele(vnode_t);
 int vcount(vnode_t);
 void vflush(struct mount *);
+int vfs_close(file_t fp);
 
 #endif /* !_SYS_VNODE_H_ */

@@ -3,44 +3,11 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <string.h>
 #include "config.h"
 #include "kernel.h"
 #include "file.h"
-
-#if RICH
-/** Release a file.
- */
-static void file_release(file_t *file)
-{
-  if (file == NULL || *file == NULL) {
-    return;
-  }
-
-  if (--(*file)->f_count == 0) {
-    // Release the file.
-    *file = NULL;
-    return;
-  }
-}
-
-/** Add a reference to a file.
- */
-static int file_reference(file_t file)
-{
-  if (file == NULL) {
-    return 0;
-  }
-
-  int s = 0;
-  if (++file->f_count == 0) {
-    // Too many references.
-    --file->f_count;
-    s = -EAGAIN;
-  }
-
-  return s;
-}
-#endif
+#include "vnode.h"
 
 /** Release a file descriptor.
  */
@@ -52,7 +19,9 @@ static void fd_release(fd_t **fd)
 
   pthread_mutex_lock(&(*fd)->mutex);
   if (--(*fd)->f_count == 0) {
-    // RICH: file_release(&(*fd)->file);         // Release the file.
+    file_t fp = (*fd)->file;
+    if (fp)
+      vfs_close(fp);
     pthread_mutex_unlock(&(*fd)->mutex);
     free(*fd);
     *fd = NULL;
@@ -63,58 +32,32 @@ static void fd_release(fd_t **fd)
 
 /** Add a reference to a file descriptor.
  */
-static int fd_reference(fd_t *fd)
+static void fd_reference(fd_t *fd)
 {
   if (fd == NULL) {
-    return 0;
+    return;
   }
 
   pthread_mutex_lock(&fd->mutex);
-  int s = 0;
-  if (++fd->f_count == 0) {
-    // Too many references.
-    --fd->f_count;
-    s = -EAGAIN;
-  } else {
-#if RICH
-    s = file_reference(fd->file);
-    if (s < 0) {
-      --fd->f_count;
-    }
-#endif
+  ++fd->f_count;
+  file_t fp = fd->file;
+  if (fp) {
+    vref(fp->f_vnode);
+    ++fp->f_count;
   }
 
   pthread_mutex_unlock(&fd->mutex);
-  return s;
 }
 
 /** Add a reference to a set of file descriptors.
  */
 static int fdset_reference(fdset_t *fdset)
 {
-  pthread_mutex_lock(&fdset->mutex);
-
   int s = 0;
-  if (++fdset->refcnt == 0) {
-    // Too many references.
-    --fdset->refcnt;
-    s = -EAGAIN;
-  } else {
-    for (int i = 0; i < fdset->count; ++i) {
-      s = fd_reference(fdset->fds[i]);
-      if (s >= 0) {
-        continue;
-      }
-
-      // Undo previous references.
-      for (int j = 0; j < i; ++j) {
-        fd_release(&fdset->fds[i]);
-      }
-      break;
-    }
+  for (int i = 0; i < fdset->count; ++i) {
+    fd_reference(fdset->fds[i]);
   }
 
-  pthread_mutex_unlock(&fdset->mutex);
   return s;
 }
 
@@ -122,30 +65,35 @@ static int fdset_reference(fdset_t *fdset)
  */
 void fdset_release(fdset_t *fdset)
 {
-  pthread_mutex_lock(&fdset->mutex);
 
   for (int i = 0; i < fdset->count; ++i) {
     fd_release(&fdset->fds[i]);
   }
 
-  if (--fdset->refcnt == 0) {
-    // This set is done being used.
-    free(fdset->fds);
-    fdset->fds = NULL;
-    fdset->count = 0;
-  }
-
-  pthread_mutex_unlock(&fdset->mutex);
+  free(fdset->fds);
+  fdset->fds = NULL;
+  fdset->count = 0;
 }
 
 /** Clone or copy the fdset.
  */
 int fdset_clone(fdset_t *fdset, int clone)
 {
+  if (fdset->count == 0) {
+    return 0;
+  }
+
   if (clone) {
     // The parent and child are sharing the set.
-
-    return fdset_reference(fdset);
+    size_t size = fdset->count * sizeof(fd_t *);
+    fd_t **newset = malloc(size);
+    if (newset == NULL) {
+      return -EMFILE;
+    }
+    memcpy(newset, fdset->fds, size);
+    fdset->fds = newset;
+    fdset_reference(fdset);
+    return 0;
   }
 
   // Make a copy of the fdset.
@@ -171,7 +119,6 @@ static int fdset_grow(fdset_t *fdset, int spec)
       return -EMFILE;
     }
 
-    fdset->refcnt = 1;
     fdset->count = initfds;
     for (int i = 0; i < initfds; ++i) {
       fdset->fds[i] = NULL;
@@ -248,18 +195,7 @@ int fdset_addfd(fdset_t *fdset, int spec, file_t file)
   }
 
   fdset->fds[fd]->file = file;
-
-  for (int i = 0; i < fdset->refcnt; ++i) {
-    int s = fd_reference(fdset->fds[fd]);
-    if (s >= 0) {
-      continue;
-    }
-
-    // An error occured adding the reference.
-    free(fdset->fds[fd]);
-    fdset->fds[fd] = NULL;
-    return s;
-  }
+  fd_reference(fdset->fds[fd]);
 
   return fd;
 }

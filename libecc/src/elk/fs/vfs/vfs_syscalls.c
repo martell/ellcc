@@ -200,10 +200,11 @@ static int sys_creat(char *name, mode_t mode)
   return sys_open(name, O_CREAT|O_WRONLY|O_TRUNC, mode);
 }
 
-static int vfs_close(file_t fp)
+int vfs_close(file_t fp)
 {
   vnode_t vp;
 
+  ASSERT(fp->f_count > 0);
   if (fp->f_count <= 0)
     panic("vfs_close");
 

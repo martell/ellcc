@@ -398,7 +398,7 @@ void vref(vnode_t vp_ro)
  */
 void vrele(vnode_t vp_ro)
 {
-  vnode_rw_t vp = vn_lock_rw(vp_ro);
+  vnode_rw_t vp = VN_RW_OVERRIDE(vp_ro);
   ASSERT(vp);
   ASSERT(vp->v_refcnt > 0);
 

@@ -39,8 +39,6 @@ typedef struct fd
 // A set of file descriptors.
 typedef struct fdset
 {
-  pthread_mutex_t mutex;        // The mutex protecting the set.
-  unsigned refcnt;              // The number of references to this set.
   unsigned count;               // Number of file descriptors in the set.
   struct fd **fds;              // The file descriptor nodes.
 } fdset_t;

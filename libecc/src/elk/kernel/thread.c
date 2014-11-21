@@ -82,8 +82,10 @@ typedef struct thread
   capability_t ecap;            // The thread's effective capabilities.
   capability_t icap;            // The thread's inheritable capabilities.
 #endif
+#if defined(ENABLEFDS)
   fdset_t fdset;                // File descriptors used by the thread.
   file_t cwdfp;                 // The current working directory.
+#endif
   MsgQueue queue;               // The thread's message queue.
 } thread_t;
 
@@ -312,7 +314,6 @@ static thread_t main_thread = {
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
-  .fdset = { .mutex = PTHREAD_MUTEX_INITIALIZER },
 #if defined(HAVE_CAPABILITY)
   .cap = SUPERUSER_CAPABILITIES,
   .ecap = SUPERUSER_CAPABILITIES,
@@ -505,7 +506,15 @@ static void schedule(thread_t *list)
 static void thread_delete(thread_t *tp)
 {
   release_tid(tp->tid);
+
+#if defined(ENABLEFDS)
   fdset_release(&tp->fdset);
+  file_t fp = tp->cwdfp;
+  if (fp) {
+    vfs_close(fp);
+  }
+#endif
+
   free(tp);
 }
 
@@ -943,12 +952,22 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     return -EAGAIN;
   }
 
+#if defined(ENABLEFDS)
   // Clone or copy the file descriptor set.
   s = fdset_clone(&tp->fdset, flags & CLONE_FILES);
   if (s < 0) {
     free(tp);
     return s;
   }
+
+  // Increment the current directory reference counts.
+  file_t fp = tp->cwdfp;
+  if (fp) {
+    vref(fp->f_vnode);
+    ++fp->f_count;
+  }
+
+#endif
 
   // Record the TLS.
   tp->tls = regs;
@@ -1445,7 +1464,6 @@ int setfile(int fd, file_t file)
   current->fdset.fds[fd]->file = file;
   return fd;
 }
-#endif
 
 /** Replace the old cwd fp with a new one.
  */
@@ -1453,6 +1471,10 @@ file_t replacecwd(file_t fp)
 {
   file_t oldfp = current->cwdfp;
   current->cwdfp = fp;
+  if (fp) {
+    vref(fp->f_vnode);
+    ++fp->f_count;
+  }
   return oldfp;
 }
 
@@ -1538,6 +1560,8 @@ int getpath(const char *name, char *path)
 
   return 0;
 }
+
+#endif // ENABLEFDS
 
 #if defined(THREAD_COMMANDS)
 
@@ -1673,7 +1697,7 @@ C_CONSTRUCTOR()
   create_idle_threads();
 
 #if defined(ENABLEFDS)
-  // RICH: Temporarily face a console.
+  // RICH: Temporarily fake a console.
   int __elk_fdconsole_open(fdset_t *fdset);
   int fd = __elk_fdconsole_open(&current->fdset);
   if (fd >= 0) {
