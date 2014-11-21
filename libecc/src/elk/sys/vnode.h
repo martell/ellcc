@@ -64,7 +64,7 @@ enum
  * Reading or writing any of these items requires holding the
  * appropriate lock.
  */
-typedef struct vnode
+const typedef struct vnode
 {
   struct list v_link;           // Link for hash list.
   struct mount *v_mount;        // Mounted vfs pointer.
@@ -81,6 +81,8 @@ typedef struct vnode
   char *v_path;                 // Pointer to path in fs.
   void *v_data;                 // Private data for fs.
 } *vnode_t;
+
+typedef struct vnode *vnode_rw_t; // A writeable vnode.
 
 // vnode flags.
 #define VSHARED      0x0001     // Locked for shared read access.
@@ -188,6 +190,7 @@ typedef  int (*vnop_truncate_t)(vnode_t, off_t);
 #define vop_einval __elk_vop_einval
 #define vn_lookup __elk_vn_lookup
 #define vn_lock __elk_vn_lock
+#define vn_lock_rw __elk_vn_lock_rw
 #define vn_unlock __elk_vn_unlock
 #define vn_stat __elk_vn_stat
 #define vn_access __elk_vn_access
@@ -204,6 +207,7 @@ int vop_nullop(void);
 int vop_einval(void);
 vnode_t vn_lookup(struct mount *, char *);
 void vn_lock(vnode_t, int flags);
+vnode_rw_t vn_lock_rw(vnode_t);
 void vn_unlock(vnode_t);
 int vn_stat(vnode_t, struct stat *);
 int vn_access(vnode_t, int);

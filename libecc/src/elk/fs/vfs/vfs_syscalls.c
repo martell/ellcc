@@ -265,7 +265,7 @@ static ssize_t sys_read(int fd, void *buf, size_t size)
   }
 
   vp = fp->f_vnode;
-  vn_lock(vp, LK_SHARED|LK_RETRY);
+  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
   size_t count;
   struct iovec iovec = { .iov_base = buf, .iov_len = size };
   struct uio uio = { .iovcnt = 1, .iov = &iovec };
@@ -297,7 +297,7 @@ static ssize_t sys_readv(int fd, struct iovec *iov, int iovcnt)
     return -EBADF;
 
   vp = fp->f_vnode;
-  vn_lock(vp, LK_SHARED|LK_RETRY);
+  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
   size_t count;
   struct uio uio = { .iovcnt = iovcnt, .iov = iov };
   error = VOP_READ(vp, fp, &uio, &count);
@@ -537,7 +537,7 @@ static int check_dir_empty(char *path)
   }
 
   vnode_t dvp = fp->f_vnode;
-  vn_lock(dvp, LK_SHARED|LK_RETRY);
+  vn_lock(dvp, LK_EXCLUSIVE|LK_RETRY);
   if (dvp->v_type != VDIR) {
     vn_unlock(dvp);
     sys_close(fd);
@@ -830,7 +830,7 @@ static int sys_fchdir(int fd)
 
   vnode_t dvp;
   dvp = fp->f_vnode;
-  vn_lock(dvp, LK_SHARED|LK_RETRY);
+  vn_lock(dvp, LK_EXCLUSIVE|LK_RETRY);
   if (dvp->v_type != VDIR) {
     vn_unlock(dvp);
     return -ENOTDIR;

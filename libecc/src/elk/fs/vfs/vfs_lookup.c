@@ -127,7 +127,7 @@ int namei(char *path, vnode_t *vpp)
    * Detemine X permission.
    */
   if (vp->v_type != VDIR && sec_vnode_permission(path) != 0) {
-    vp->v_mode &= ~(0111);
+    vn_lock_rw(vp)->v_mode &= ~(0111);
   }
 
   *vpp = vp;

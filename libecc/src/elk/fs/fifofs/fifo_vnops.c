@@ -324,7 +324,7 @@ static int fifo_ioctl(vnode_t vp, file_t fp, u_long cmd, void *arg)
   return EINVAL;
 }
 
-static int fifo_lookup(vnode_t dvp, char *name, vnode_t vp)
+static int fifo_lookup(vnode_t dvp, char *name, vnode_t vp_ro)
 {
   list_t head, n;
   struct fifo_node *np = NULL;
@@ -350,6 +350,8 @@ static int fifo_lookup(vnode_t dvp, char *name, vnode_t vp)
     pthread_mutex_unlock(&fifo_lock);
     return ENOENT;
   }
+
+  vnode_rw_t vp = vn_lock_rw(vp_ro);
   vp->v_data = np;
   vp->v_mode = ALLPERMS;
   vp->v_size = 0;
@@ -413,7 +415,7 @@ static void cleanup_fifo(vnode_t vp)
   free(np->fn_buf);
   free(np);
 
-  vp->v_data = NULL;
+  vn_lock_rw(vp)->v_data = NULL;
 }
 
 static int fifo_remove(vnode_t dvp, vnode_t vp, char *name)

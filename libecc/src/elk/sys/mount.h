@@ -76,8 +76,8 @@ typedef struct mount
   int m_count;                  // Reference count.
   char m_path[PATH_MAX];        // Mounted path.
   dev_t m_dev;                  // Mounted device.
-  struct vnode *m_root;         // Root vnode.
-  struct vnode *m_covered;      // Vnode covered on parent fs.
+  vnode_t m_root;               // Root vnode.
+  vnode_t m_covered;            // Vnode covered on parent fs.
   void *m_data;                 // Private data for fs.
 } *mount_t;
 

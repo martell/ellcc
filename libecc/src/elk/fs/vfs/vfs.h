@@ -45,7 +45,6 @@
 #define FSMAXNAMES	16		/* max length of 'file system' name */
 
 #undef DPRINTF
-#undef ASSERT
 #ifdef DEBUG_VFS
 
 #include <stdio.h>
@@ -62,10 +61,8 @@ extern int vfs_debug;
 #define VFSDB_FLAGS	0x00000013
 
 #define	DPRINTF(_m,X)	if (vfs_debug & (_m)) printf X
-#define ASSERT(e)	assert(e)
 #else
 #define	DPRINTF(_m, X)
-#define ASSERT(e)
 #endif
 
 #define vfssw __elk_vfssw

@@ -186,7 +186,6 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
   mount_t mp;
   list_t head, n;
   device_t device;
-  vnode_t vp, vp_covered;
   int error;
 
   if (!capable(CAP_SYS_ADMIN)) {
@@ -246,6 +245,7 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
   /*
    * Get vnode to be covered in the upper file system.
    */
+  vnode_t vp_covered;
   if (*dir == '/' && *(dir + 1) == '\0') {
     /* Ignore if it mounts to global root directory. */
     vp_covered = NULL;
@@ -265,12 +265,15 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
   /*
    * Create a root vnode for this file system.
    */
-  if ((vp = vget(mp, "/")) == NULL) {
+  vnode_t vp_ro;
+  if ((vp_ro = vget(mp, "/")) == NULL) {
     error = -ENOMEM;
     goto err3;
   }
+
+  vnode_rw_t vp = vn_lock_rw(vp_ro);
   vp->v_type = VDIR;
-  vp->v_flags = VROOT;
+  vp->v_flags |= VROOT;
   vp->v_mode = S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR;
   mp->m_root = vp;
 

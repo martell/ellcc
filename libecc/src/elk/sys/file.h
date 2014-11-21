@@ -26,7 +26,7 @@ typedef struct file
   off_t f_offset;               // The current file offset.
   int f_flags;                  // Open flags.
   unsigned f_count;             // Reference count.
-  struct vnode *f_vnode;        // The file's vnode.
+  const struct vnode *f_vnode;  // The file's vnode.
 } *file_t;
 
 typedef struct fd

@@ -67,6 +67,9 @@
  */
 static struct list vnode_table[VNODE_BUCKETS];
 
+// This should onle be used when the vnode is otherwise protected.
+#define VN_RW_OVERRIDE(vp) ((vnode_rw_t)(vp))
+
 /*
  * Global lock to access all vnodes and vnode table.
  * If a vnode is already locked, there is no need to
@@ -79,17 +82,25 @@ static pthread_mutex_t vnode_lock = PTHREAD_MUTEX_INITIALIZER;
 #if 0
 // Simple locking.
 #define VP_LOCK_INIT(vp) \
-  ({ int s = pthread_mutex_init(&(vp)->v_interlock, NULL); \
-     (vp)->v_nrlocks = 0; s; })
-#define VP_LOCK_DESTROY(vp) pthread_mutex_destroy(&(vp)->v_interlock)
-#define VP_LOCK(vp, flags) ({ int s = pthread_mutex_lock(&(vp)->v_interlock); \
-                              if (s == 0) ++(vp)->v_nrlocks; s; })
-#define VP_UNLOCK(vp) ({ int s = pthread_mutex_unlock(&(vp)->v_interlock); \
-                         if (s == 0) --(vp)->v_nrlocks; s; })
+  ({ int s = pthread_mutex_init(&VN_RW_OVERRIDE(vp)->v_interlock, NULL); \
+     VN_RW_OVERRIDE(vp)->v_nrlocks = 0; s; })
+#define VP_LOCK_DESTROY(vp) pthread_mutex_destroy(&VN_RW_OVERRIDE(vp)->v_interlock)
+#define VP_LOCK(vp, flags) ({ int s = pthread_mutex_lock(&VN_RW_OVERRIDE(vp)->v_interlock); \
+                              if (s == 0) ++VN_RW_OVERRIDE(vp)->v_nrlocks; s; })
+#define VP_UNLOCK(vp) ({ int s = pthread_mutex_unlock(&VN_RW_OVERRIDE(vp)->v_interlock); \
+                         if (s == 0) --VN_RW_OVERRIDE(vp)->v_nrlocks; s; })
+
+vnode_rw_t vn_lock_rw(vnode_t vp)
+{
+  // Vnodes are always R/W locked.
+  return (vnode_rw_t)vp;
+}
+
 #else
 
-static int VP_LOCK_INIT(vnode_t vp)
+static int VP_LOCK_INIT(vnode_t vp_ro)
 {
+  vnode_rw_t vp = VN_RW_OVERRIDE(vp_ro);
   int s = pthread_mutex_init(&vp->v_interlock, NULL);
   if (s)
     return -s;
@@ -103,8 +114,9 @@ static int VP_LOCK_INIT(vnode_t vp)
   return 0;
 }
 
-static int VP_LOCK_DESTROY(vnode_t vp)
+static int VP_LOCK_DESTROY(vnode_t vp_ro)
 {
+  vnode_rw_t vp = VN_RW_OVERRIDE(vp_ro);
   int s = pthread_mutex_destroy(&vp->v_interlock);
   if (s)
     return -s;
@@ -116,8 +128,10 @@ static int VP_LOCK_DESTROY(vnode_t vp)
   return 0;
 }
 
-static int VP_LOCK(vnode_t vp, int flags)
+static int VP_LOCK(vnode_t vp_ro, int flags)
 {
+  vnode_rw_t vp = VN_RW_OVERRIDE(vp_ro);
+
   // Check flags for validity.
   if ((flags & (LK_SHARED|LK_EXCLUSIVE)) == (LK_SHARED|LK_EXCLUSIVE) ||
       (flags & (LK_SHARED|LK_EXCLUSIVE)) == 0) {
@@ -158,8 +172,9 @@ static int VP_LOCK(vnode_t vp, int flags)
   } while (1);
 }
 
-int VP_UNLOCK(vnode_t vp)
+int VP_UNLOCK(vnode_t vp_ro)
 {
+  vnode_rw_t vp = VN_RW_OVERRIDE(vp_ro);
   int s  = pthread_mutex_lock(&vp->v_interlock);
   if (s) {
     return -s;
@@ -182,6 +197,36 @@ int VP_UNLOCK(vnode_t vp)
 
   pthread_mutex_unlock(&(vp)->v_interlock);
   return 0;
+}
+
+/** Transition a vnode from RO to RW.
+ * This function should be called on a vnode that is already locked.
+ * If the vnode is locked VEXCLUSIVE, this is a NOOP.
+ * If the vnode is locked VSHARED, it is transitioned to VEXCLUSIVE.
+ */
+vnode_rw_t vn_lock_rw(vnode_t vp_ro)
+{
+  vnode_rw_t vp = VN_RW_OVERRIDE(vp_ro);
+  ASSERT(vp->v_flags & (VEXCLUSIVE|VSHARED));
+  ASSERT(vp->v_nrlocks >= 1);
+  if (vp->v_flags & VEXCLUSIVE)
+    return vp;
+
+  int s = pthread_mutex_lock(&vp->v_interlock);
+  ASSERT(s == 0);
+
+  if (vp->v_nrlocks == 1) {
+    // Shared with only one lock.
+    vp->v_flags &= ~VSHARED;
+    vp->v_flags |= VEXCLUSIVE;
+    pthread_mutex_unlock(&(vp)->v_interlock);
+    return vp;
+  }
+
+  --vp->v_nrlocks;      // Remove the old shared lock.
+  pthread_mutex_unlock(&(vp)->v_interlock);
+  vn_lock(vp, LK_EXCLUSIVE|LK_RETRY);
+  return vp;
 }
 
 #endif
@@ -215,7 +260,7 @@ vnode_t vn_lookup(mount_t mp, char *path)
     vp = list_entry(n, struct vnode, v_link);
     if (vp->v_mount == mp &&
         !strncmp(vp->v_path, path, PATH_MAX)) {
-      vp->v_refcnt++;
+      VN_RW_OVERRIDE(vp)->v_refcnt++;
       VNODE_UNLOCK();
       VP_LOCK(vp, LK_EXCLUSIVE|LK_RETRY);
       return vp;
@@ -256,7 +301,7 @@ void vn_unlock(vnode_t vp)
  */
 vnode_t vget(mount_t mp, char *path)
 {
-  vnode_t vp;
+  vnode_rw_t vp;
   int error;
   size_t len;
 
@@ -298,8 +343,9 @@ vnode_t vget(mount_t mp, char *path)
 /*
  * Unlock vnode and decrement its reference count.
  */
-void vput(vnode_t vp)
+void vput(vnode_t vp_ro)
 {
+  vnode_rw_t vp = vn_lock_rw(vp_ro);
   ASSERT(vp);
   ASSERT(vp->v_nrlocks > 0);
   ASSERT(vp->v_refcnt > 0);
@@ -311,6 +357,7 @@ void vput(vnode_t vp)
     vn_unlock(vp);
     return;
   }
+
   VNODE_LOCK();
   list_remove(&vp->v_link);
   VNODE_UNLOCK();
@@ -330,8 +377,9 @@ void vput(vnode_t vp)
 /*
  * Increment the reference count on an active vnode.
  */
-void vref(vnode_t vp)
+void vref(vnode_t vp_ro)
 {
+  vnode_rw_t vp = VN_RW_OVERRIDE(vp_ro);
   ASSERT(vp);
   ASSERT(vp->v_refcnt > 0);  /* Need vget */
 
@@ -348,8 +396,9 @@ void vref(vnode_t vp)
  * when it is finished with the vnode.
  * If count drops to zero, call inactive routine and return to freelist.
  */
-void vrele(vnode_t vp)
+void vrele(vnode_t vp_ro)
 {
+  vnode_rw_t vp = vn_lock_rw(vp_ro);
   ASSERT(vp);
   ASSERT(vp->v_refcnt > 0);
 
@@ -377,8 +426,9 @@ void vrele(vnode_t vp)
 /*
  * vgone() is called when unlocked vnode is no longer valid.
  */
-void vgone(vnode_t vp)
+void vgone(vnode_t vp_ro)
 {
+  vnode_rw_t vp = VN_RW_OVERRIDE(vp_ro);
   ASSERT(vp->v_nrlocks == 0);
 
   VNODE_LOCK();

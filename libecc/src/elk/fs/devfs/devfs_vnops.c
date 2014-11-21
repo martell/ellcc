@@ -134,7 +134,8 @@ static int devfs_open(vnode_t vp, int flags)
        path, error));
     return error;
   }
-  vp->v_data = (void *)dev;  /* Store private data */
+
+  vn_lock_rw(vp)->v_data = (void *)dev; // Store private data.
   return 0;
 }
 
@@ -190,7 +191,7 @@ static int devfs_ioctl(vnode_t vp, file_t fp, u_long cmd, void *arg)
   return error;
 }
 
-static int devfs_lookup(vnode_t dvp, char *name, vnode_t vp)
+static int devfs_lookup(vnode_t dvp, char *name, vnode_t vp_ro)
 {
   struct devinfo info;
   int error, i;
@@ -211,6 +212,8 @@ static int devfs_lookup(vnode_t dvp, char *name, vnode_t vp)
       break;
     i++;
   }
+
+  vnode_rw_t vp = vn_lock_rw(vp_ro);
   vp->v_type = (info.flags & D_CHR) ? VCHR : VBLK;
   if (info.flags & D_TTY)
     vp->v_flags |= VISTTY;

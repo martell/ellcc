@@ -25,7 +25,8 @@
 #define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)
 
 // RICH: For now.
-#define ASSERT(arg)
+#include <assert.h>
+#define ASSERT(arg) assert(arg)
 #define DPRINTF(arg) printf arg
 #define copyinstr(src, dst, len) strlcpy(dst, src, len)
 #define copyout(dst, src, len) (memcpy(dst, src, len), len)

@@ -145,7 +145,8 @@ static int ramfs_mount(mount_t mp, char *dev, int flags, void *data)
   np = ramfs_allocate_node("/", VDIR);
   if (np == NULL)
     return -ENOMEM;
-  mp->m_root->v_data = np;
+  vnode_rw_t vp = vn_lock_rw(mp->m_root);
+  vp->v_data = np;
   return 0;
 }
 
@@ -261,7 +262,7 @@ static int ramfs_rename_node(struct ramfs_node *np, char *name)
   return 0;
 }
 
-static int ramfs_lookup(vnode_t dvp, char *name, vnode_t vp)
+static int ramfs_lookup(vnode_t dvp, char *name, vnode_t vp_ro)
 {
   struct ramfs_node *np, *dnp;
   size_t len;
@@ -286,6 +287,8 @@ static int ramfs_lookup(vnode_t dvp, char *name, vnode_t vp)
     RAMFS_UNLOCK();
     return -ENOENT;
   }
+
+  vnode_rw_t vp = vn_lock_rw(vp_ro);
   vp->v_data = np;
   vp->v_mode = ALLPERMS;
   vp->v_type = np->rn_type;
@@ -361,7 +364,7 @@ static int ramfs_truncate(vnode_t vp, off_t length)
     np->rn_bufsize = new_size;
   }
   np->rn_size = length;
-  vp->v_size = length;
+  vn_lock_rw(vp)->v_size = length;
   return 0;
 }
 
@@ -460,7 +463,7 @@ static int ramfs_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
         np->rn_bufsize = new_size;
       }
       np->rn_size = end_pos;
-      vp->v_size = end_pos;
+      vn_lock_rw(vp)->v_size = end_pos;
     }
     memcpy(np->rn_buf + file_pos, iov->iov_base, size);
     file_pos += size;
