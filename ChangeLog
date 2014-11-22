@@ -1,6 +1,6 @@
 current SVN:
 
-* Added lazy vnode R/W access.
+* Added lazy vnode R/W access to ELK.
 * Added a FIFO file system to ELK.
 * Added a bunch of ELK system calls for accessing the file system.
 * Added a RAM file system to ELK.
