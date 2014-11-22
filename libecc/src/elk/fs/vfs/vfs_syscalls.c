@@ -1043,11 +1043,11 @@ static int sys_dup(int oldfd)
     return newfd;
   }
 
-  setfile(newfd, fp);
-
   // Increment file references.
   vref(fp->f_vnode);
   ++fp->f_count;
+
+  setfile(newfd, fp);
 
   return newfd;
 }
@@ -1065,16 +1065,16 @@ static int sys_dup2(int oldfd, int newfd)
     return error;
   }
 
+  // Increment file references.
+  vref(fp->f_vnode);
+  ++fp->f_count;
+
   if (ofp) {
     // Close the old file, if any.
     vfs_close(ofp);
   }
 
   setfile(newfd, fp);
-
-  // Increment file references.
-  vref(fp->f_vnode);
-  ++fp->f_count;
 
   return newfd;
 }
@@ -1095,16 +1095,16 @@ static int sys_fcntl(int fd, int cmd, int arg)
       return s;
     }
 
+    // Increment file references.
+    vref(fp->f_vnode);
+    ++fp->f_count;
+
     if (ofp) {
       // Close the old file, if any.
       vfs_close(ofp);
     }
 
     setfile(arg, fp);
-
-    // Increment file references.
-    vref(fp->f_vnode);
-    ++fp->f_count;
 
     s = arg;
     break;

@@ -1,6 +1,7 @@
 /** Kernel command processing.
  */
 #include <ctype.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -198,6 +199,9 @@ struct cmd {
 
 static void *launch(void *arg)
 {
+  dup2(0, 0);
+  dup2(1, 1);
+  dup2(2, 2);
   struct cmd *cmd = (struct cmd *)arg;
   return (void *)(intptr_t)cmd->main(cmd->argc, cmd->argv);
 }

@@ -1433,14 +1433,23 @@ int getfile(int fd, file_t *filep, int must, int free)
     return fd;
   }
 
-  while (fd < current->fdset.count) {
-    if (current->fdset.fds[fd] == NULL || !free) {
-      // Have an available file descriptor.
+  if (!free) {
+    // We need a specific file descriptor (dup2).
+    if (fd < current->fdset.count) {
       *filep = current->fdset.fds[fd]->file;
       return fd;
     }
+  } else {
+    // We need the next open  file descriptor (fcntl(FD_DUPFD)).
+    while (fd < current->fdset.count) {
+      if (!free || current->fdset.fds[fd] == NULL) {
+        // Have an available file descriptor.
+        *filep = current->fdset.fds[fd]->file;
+        return fd;
+      }
 
-    ++fd;
+      ++fd;
+    }
   }
 
   // Try to allocate a new file descriptor.
