@@ -70,7 +70,7 @@ static int vfs_open(char *name, int flags, mode_t mode, file_t *fpp)
   if ((error = getpath(name, path)) != 0)
     return error;
 
-  DPRINTF(VFSDB_SYSCALL, ("sys_open: path=%s flags=%x mode=%x\n",
+  DPRINTF(VFSDB_SYSCALL, ("sys_open: path=%s flags=%o mode=%x\n",
                           path, flags, mode));
 
   // Check to see whether the file as accessible.
@@ -256,8 +256,10 @@ static ssize_t sys_read(int fd, void *buf, size_t size)
     return error;
   }
 
+#if RICH
   DPRINTF(VFSDB_SYSCALL, ("sys_read: fd=%d fp=%p buf=%p size=%zd\n",
                           fd, fp, buf, size));
+#endif
 
   if ((fp->f_flags & FREAD) == 0)
     return -EBADF;
@@ -291,9 +293,11 @@ static ssize_t sys_readv(int fd, struct iovec *iov, int iovcnt)
     return error;
   }
 
+#if RICH
   DPRINTF(VFSDB_SYSCALL, ("sys_read: fd=%d fp=%p iov->iov_base=%p "
                           "iov->iov_len=%zd\n",
                           fd, fp, iov->iov_base, iov->iov_len));
+#endif
 
   if ((fp->f_flags & FREAD) == 0)
     return -EBADF;
@@ -322,8 +326,10 @@ static ssize_t sys_write(int fd, void *buf, size_t size)
     return error;
   }
 
+#if RICH
   DPRINTF(VFSDB_SYSCALL, ("sys_write: fd=%d fp=%p buf=%p size=%zd\n",
                           fd, fp, buf, size));
+#endif
 
   if ((fp->f_flags & FWRITE) == 0)
     return -EBADF;
@@ -355,9 +361,11 @@ static ssize_t sys_writev(int fd, struct iovec *iov, int iovcnt)
     return error;
   }
 
+#if RICH
   DPRINTF(VFSDB_SYSCALL, ("sys_write: fd=%d fp=%p iov->iov_base=%p "
                           "iov->iov_len=%zd\n",
                           fd, fp, iov->iov_base, iov->iov_len));
+#endif
 
   if ((fp->f_flags & FWRITE) == 0)
     return -EBADF;
@@ -545,32 +553,35 @@ static int sys_getdents(int fd, char *buf, size_t len)
       unsigned long d_ino;
       unsigned long d_off;
       unsigned short d_reclen;
+      unsigned char d_type;
       char d_name[];
     } ldir = {
       .d_ino = dir.d_ino,
       .d_off = dir.d_off,
+      .d_type = dir.d_type,
       .d_reclen = offsetof(struct ldirent, d_name)
                            + dir.d_reclen + 1  // The string.
-                           + 1                 // The pad byte.
-                           + 1                 // The d_type byte.
     };
 
 #if 1
-    printf("d_ino=%llu d_off=%llu d_reclen=%d ldir.d_reclen=%d"
+    printf("dir: d_ino=%llu d_off=%llu d_reclen=%d"
            " d_type=%d d_name=%s\n",
            (long long)dir.d_ino, (long long)dir.d_off,
-           dir.d_reclen, ldir.d_reclen,
-           dir.d_type, dir.d_name);
+           dir.d_reclen,
+           dir.d_type,
+           dir.d_name);
+    printf("ldir: d_ino=%llu d_off=%llu d_reclen=%d"
+           " d_type=%d\n",
+           (long long)ldir.d_ino, (long long)ldir.d_off,
+           ldir.d_reclen,
+           ldir.d_type);
 #endif
 
     memcpy(buf, &ldir, offsetof(struct ldirent, d_name));
     buf += offsetof(struct ldirent, d_name);
     strcpy(buf, dir.d_name);
-    buf += dir.d_reclen + 1;
-    while ((uintptr_t)buf & 0x3)
-      *buf++ = 0;
-    *buf++ = dir.d_type;
     size += ldir.d_reclen;
+    buf += 32; // RICH: dir.d_reclen;
   }
 
   return size;

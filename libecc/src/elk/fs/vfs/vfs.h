@@ -37,7 +37,7 @@
 
 #include <assert.h>
 
-// #define DEBUG_VFS 1
+#define DEBUG_VFS 1
 
 /*
  * Tunable parameters
