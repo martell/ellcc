@@ -946,16 +946,17 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   // Mark the parent.
   tp->ppid = tp->tid;
 
-  int s = alloc_tid(tp);
-  if (s < 0) {
+  int tid = alloc_tid(tp);
+  if (tid < 0) {
     free(tp);
     return -EAGAIN;
   }
 
 #if defined(ENABLEFDS)
   // Clone or copy the file descriptor set.
-  s = fdset_clone(&tp->fdset, flags & CLONE_FILES);
+  int s = fdset_clone(&tp->fdset, flags & CLONE_FILES);
   if (s < 0) {
+    release_tid(tid);
     free(tp);
     return s;
   }
@@ -1410,68 +1411,31 @@ static int sys_setsid(void)
 #if defined(ENABLEFDS)
 /** Get a file descriptor.
  */
-int allocfd(void)
+int allocfd(file_t fp)
 {
-  return fdset_add(&current->fdset, NULL);
+  return fdset_add(current->fdset, fp);
 }
 
 /** Get a file pointer corresponding to a file descriptor.
- * If must, it must have an active file pointer.
- * if free, it must be available (no active file pointer).
- * This is messy because of the difference between dup(),
- * dup2/3() and fcntl(F_DUPFD, and because sometimes
- * we want a file descriptor that must have a file pointer.
  */
-int getfile(int fd, file_t *filep, int must, int free)
+int getfile(int fd, file_t *filep)
 {
-  if (must) {
-    if (fd >= current->fdset.count || current->fdset.fds[fd] == NULL) {
-      // This is not an active file descriptor.
-      return -EBADF;
-    }
-    *filep = current->fdset.fds[fd]->file;
-    return fd;
-  }
+  return fdset_getfile(current->fdset, fd, filep);
+}
 
-  if (!free) {
-    // We need a specific file descriptor (dup2).
-    if (fd < current->fdset.count) {
-      *filep = current->fdset.fds[fd]->file;
-      return fd;
-    }
-  } else {
-    // We need the next open  file descriptor (fcntl(FD_DUPFD)).
-    while (fd < current->fdset.count) {
-      if (!free || current->fdset.fds[fd] == NULL) {
-        // Have an available file descriptor.
-        *filep = current->fdset.fds[fd]->file;
-        return fd;
-      }
-
-      ++fd;
-    }
-  }
-
-  // Try to allocate a new file descriptor.
-  int error;
-  if ((error = fdset_addfd(&current->fdset, fd,  NULL)) < 0) {
-    return error;
-  }
-
-  *filep = NULL;
-  return fd;
+/** Get a file pointer corresponding to a file descriptor.
+ * If free, find the first available free file descriptor.
+ */
+int getdup(int fd, file_t *filep, int free)
+{
+  return fdset_getdup(current->fdset, fd, filep, free);
 }
 
 /** Set a file pointer corresponding to a file descriptor.
  */
 int setfile(int fd, file_t file)
 {
-  if (fd >= current->fdset.count || current->fdset.fds[fd] == NULL) {
-    return -EBADF;
-  }
-
-  current->fdset.fds[fd]->file = file;
-  return fd;
+  return fdset_setfile(current->fdset, fd, file);
 }
 
 /** Replace the old cwd fp with a new one.
@@ -1480,10 +1444,6 @@ file_t replacecwd(file_t fp)
 {
   file_t oldfp = current->cwdfp;
   current->cwdfp = fp;
-  if (fp) {
-    vref(fp->f_vnode);
-    ++fp->f_count;
-  }
   return oldfp;
 }
 
@@ -1699,6 +1659,12 @@ C_CONSTRUCTOR()
 
   // The main thread is what's running right now.
   alloc_tid(current);
+#if defined(ENABLEFDS)
+  int s = fdset_new(&current->fdset);
+  if (s != 0) {
+    printf("cannot allocate the initial fdset: %s\n", strerror(-s));
+  }
+#endif
   current->pid = current->tid;          // The main thread starts a group.
   priority = current->priority;
 

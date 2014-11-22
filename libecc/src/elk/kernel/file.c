@@ -9,52 +9,56 @@
 #include "file.h"
 #include "vnode.h"
 
+typedef struct fd
+{
+  file_t file;                  // The file accessed by the file descriptor.
+} fd_t;
+
+// A set of file descriptors.
+struct fdset
+{
+  pthread_mutex_t mutex;        // The mutex protecting the file descriptor set.
+  unsigned refcnt;              // The file descriptor set reference count.
+  unsigned count;               // Number of file descriptors in the set.
+  struct fd *fds;               // The file descriptor nodes.
+};
+
+/** Initialize a file descriptor.
+ */
+void init_fd(fd_t *fd)
+{
+  fd->file = NULL;
+}
+
 /** Release a file descriptor.
  */
-static void fd_release(fd_t **fd)
+static void fd_release(fd_t *fd)
 {
-  if (fd == NULL || *fd == NULL) {
-    return;
-  }
+  // Close the file.
+  file_t fp = fd->file;
+  if (fp)
+    vfs_close(fp);
 
-  pthread_mutex_lock(&(*fd)->mutex);
-  if (--(*fd)->f_count == 0) {
-    file_t fp = (*fd)->file;
-    if (fp)
-      vfs_close(fp);
-    pthread_mutex_unlock(&(*fd)->mutex);
-    free(*fd);
-    *fd = NULL;
-    return;
-  }
-  pthread_mutex_unlock(&(*fd)->mutex);
+  fd->file = NULL;
 }
 
 /** Add a reference to a file descriptor.
  */
 static void fd_reference(fd_t *fd)
 {
-  if (fd == NULL) {
-    return;
-  }
-
-  pthread_mutex_lock(&fd->mutex);
-  ++fd->f_count;
   file_t fp = fd->file;
   if (fp) {
     vref(fp->f_vnode);
     ++fp->f_count;
   }
-
-  pthread_mutex_unlock(&fd->mutex);
 }
 
 /** Add a reference to a set of file descriptors.
  */
-static void fdset_reference(fdset_t *fdset)
+static void fdset_reference(fdset_t fdset)
 {
   for (int i = 0; i < fdset->count; ++i) {
-    fd_reference(fdset->fds[i]);
+    fd_reference(&fdset->fds[i]);
   }
 }
 
@@ -62,46 +66,27 @@ static void fdset_reference(fdset_t *fdset)
  */
 void fdset_release(fdset_t *fdset)
 {
-
-  for (int i = 0; i < fdset->count; ++i) {
-    fd_release(&fdset->fds[i]);
+  pthread_mutex_lock(&(*fdset)->mutex);
+  fdset_t set = *fdset;
+  ASSERT(set->refcnt > 0);
+  *fdset = NULL;
+  if (--set->refcnt > 0) {
+    pthread_mutex_unlock(&set->mutex);
+    return;
   }
 
-  free(fdset->fds);
-  fdset->fds = NULL;
-  fdset->count = 0;
+  for (int i = 0; i < set->count; ++i) {
+    fd_release(&set->fds[i]);
+  }
+
+  free(set->fds);
+  pthread_mutex_unlock(&set->mutex);
+  free(set);
 }
 
-/** Clone or copy the fdset.
+/** Allocate a new file descriptor.
  */
-int fdset_clone(fdset_t *fdset, int clone)
-{
-  if (fdset->count == 0) {
-    return 0;
-  }
-
-  if (clone) {
-    // The parent and child are sharing the set.
-    size_t size = fdset->count * sizeof(fd_t *);
-    fd_t **newset = malloc(size);
-    if (newset == NULL) {
-      return -EMFILE;
-    }
-
-    memcpy(newset, fdset->fds, size);
-    fdset->fds = newset;
-    fdset_reference(fdset);
-    return 0;
-  }
-
-  // Make a copy of the fdset.
-  // RICH: fdset_t orig = *fdset;
-  return -ENOSYS;
-}
-
-/** Get an available entry in an fdset.
- */
-static int fdset_grow(fdset_t *fdset, int spec)
+static int fd_allocate(fdset_t fdset, int spec)
 {
   int s;
   int initfds = INITFDS;
@@ -112,34 +97,34 @@ static int fdset_grow(fdset_t *fdset, int spec)
   }
 
   if (fdset->fds == NULL) {
-    fdset->fds = malloc(initfds * sizeof(fd_t *));
+    fdset->fds = malloc(initfds * sizeof(fd_t));
     if (fdset->fds == NULL) {
       return -EMFILE;
     }
 
     fdset->count = initfds;
     for (int i = 0; i < initfds; ++i) {
-      fdset->fds[i] = NULL;
+      init_fd(&fdset->fds[i]);
     }
 
     s = 0;      // Allocate the first file descriptor.
   } else {
     for (s = spec; s < fdset->count; ++s) {
-      if (fdset->fds[s] == NULL) {
+      if (fdset->fds[s].file == NULL) {
         break;
       }
     }
 
     if (s >= fdset->count) {
       // No open slot found, double the size of the fd array.
-      fd_t **newfds = realloc(fdset->fds,
-                              (s * FDMULTIPLIER) * sizeof(fd_t *));
+      fd_t *newfds = realloc(fdset->fds,
+                             (s * FDMULTIPLIER) * sizeof(fd_t));
       if (newfds == NULL) {
         return -EMFILE;
       }
 
       for (int i = s; i < s * 2; ++i) {
-        newfds[i] = NULL;
+        init_fd(&newfds[i]);
       }
 
       fdset->fds = newfds;
@@ -150,81 +135,187 @@ static int fdset_grow(fdset_t *fdset, int spec)
   return s;
 }
 
-/** Create a new file descriptor entry.
- */
-static int newfd(fd_t **res)
-{
-  fd_t *fd = malloc(sizeof(fd_t));
-  if (fd == NULL) {
-    return -EMFILE;
-  }
-
-  pthread_mutex_init(&fd->mutex, NULL);
-  fd->f_count = 0;
-  fd->file = NULL;
-  *res = fd;
-  return 0;
-}
-
-/** Allocate a new file descriptor.
- */
-static int fd_allocate(fdset_t *fdset, int spec)
-{
-  int fd = fdset_grow(fdset, spec);
-  if (fd < 0) {
-    return fd;
-  }
-
-  int s = newfd(&fdset->fds[fd]);
-  if (s < 0) {
-    return s;
-  }
-
-  return fd;
-}
-
 /** Add a file specific file descriptor to a set.
  */
-int fdset_addfd(fdset_t *fdset, int spec, file_t file)
+static int addfd(fdset_t fdset, int spec, file_t file)
 {
   int fd = fd_allocate(fdset, spec);
   if (fd < 0) {
     return fd;
   }
 
-  fdset->fds[fd]->file = file;
-  fd_reference(fdset->fds[fd]);
+  fdset->fds[fd].file = file;
+  fd_reference(&fdset->fds[fd]);
+  return fd;
+}
 
+/** Clone or copy the fdset.
+ */
+int fdset_clone(fdset_t *fdset, int clone)
+{
+  pthread_mutex_lock(&(*fdset)->mutex);
+  fdset_t set = *fdset;
+  ASSERT(set->refcnt > 0);
+
+  if (clone) {
+    // The parent and child are sharing the set.
+    ++set->refcnt;
+    pthread_mutex_unlock(&set->mutex);
+    return 0;
+  }
+
+  fdset_t new;
+  int s = fdset_new(&new);
+  if (s != 0) {
+    pthread_mutex_unlock(&set->mutex);
+    return s;
+  }
+
+  s = addfd(new, set->count - 1, NULL);
+  if (s != 0) {
+    fdset_release(&new);
+    pthread_mutex_unlock(&set->mutex);
+    return s;
+  }
+
+  ASSERT(new->count == set->count);
+  size_t size = new->count * sizeof(fd_t);
+  memcpy(new->fds, set->fds, size);
+  pthread_mutex_unlock(&set->mutex);
+  fdset_reference(new);         // Add a reference to all the open files.
+  *fdset = new;
+  return 0;
+}
+
+/** Add a file specific file descriptor to a set.
+ */
+int fdset_addfd(fdset_t fdset, int spec, file_t file)
+{
+  pthread_mutex_lock(&fdset->mutex);
+  int fd = addfd(fdset, spec, file);
+  pthread_mutex_unlock(&fdset->mutex);
   return fd;
 }
 
 /** Create a file descriptor and add it to a set.
  */
-int fdset_add(fdset_t *fdset, file_t file)
+int fdset_add(fdset_t fdset, file_t file)
 {
   return fdset_addfd(fdset, -1, file);
 }
 
-/** Dup a file descriptor in a set.
- */
-int fdset_dup(fdset_t *fdset, int fd)
-{
-  if (fd >= fdset->count || fdset->fds[fd] == NULL) {
-    return -EBADF;
-  }
-
-  return fdset_add(fdset, fdset->fds[fd]->file);
-}
-
 /** Remove a file descriptor from a set.
  */
-int fdset_remove(fdset_t *fdset, int fd)
+int fdset_remove(fdset_t fdset, int fd)
 {
-  if (fd >= fdset->count || fdset->fds[fd] == NULL) {
+  pthread_mutex_lock(&fdset->mutex);
+  if (fd >= fdset->count || fdset->fds[fd].file == NULL) {
+    pthread_mutex_unlock(&fdset->mutex);
     return -EBADF;
   }
 
   fd_release(&fdset->fds[fd]);
+  pthread_mutex_unlock(&fdset->mutex);
   return 0;
 }
 
+/** Get a file pointer corresponding to a file descriptor.
+ */
+int fdset_getfile(fdset_t fdset, int fd, file_t *filep)
+{
+  pthread_mutex_lock(&fdset->mutex);
+  if (fd >= fdset->count || fdset->fds[fd].file == NULL) {
+    // This is not an active file descriptor.
+    pthread_mutex_unlock(&fdset->mutex);
+    return -EBADF;
+  }
+
+  *filep = fdset->fds[fd].file;
+  pthread_mutex_unlock(&fdset->mutex);
+  return fd;
+}
+
+/** Dup a file descriptor in a set.
+ */
+int fdset_dup(fdset_t fdset, int fd)
+{
+  pthread_mutex_lock(&fdset->mutex);
+  if (fd >= fdset->count || fdset->fds[fd].file == NULL) {
+    pthread_mutex_unlock(&fdset->mutex);
+    return -EBADF;
+  }
+
+  int newfd = addfd(fdset, -1, fdset->fds[fd].file);
+  pthread_mutex_unlock(&fdset->mutex);
+  return newfd;
+}
+
+/** Dup a specific file descriptor.
+ * If free, find the first available free file descriptor.
+ */
+int fdset_getdup(fdset_t fdset, int fd, file_t *filep, int free)
+{
+  pthread_mutex_lock(&fdset->mutex);
+  if (!free) {
+    // We need a specific file descriptor (dup2).
+    if (fd < fdset->count) {
+      *filep = fdset->fds[fd].file;
+      pthread_mutex_unlock(&fdset->mutex);
+      return fd;
+    }
+  } else {
+    // We need the next open  file descriptor (fcntl(FD_DUPFD)).
+    while (fd < fdset->count) {
+      if (!free || fdset->fds[fd].file == NULL) {
+        // Have an available file descriptor.
+        *filep = fdset->fds[fd].file;
+        pthread_mutex_unlock(&fdset->mutex);
+        return fd;
+      }
+
+      ++fd;
+    }
+  }
+
+  // Try to allocate a new file descriptor.
+  int error;
+  if ((error = addfd(fdset, fd,  NULL)) < 0) {
+    pthread_mutex_unlock(&fdset->mutex);
+    return error;
+  }
+
+  *filep = NULL;
+  pthread_mutex_unlock(&fdset->mutex);
+  return fd;
+}
+
+/** Set a file pointer corresponding to a file descriptor.
+ */
+int fdset_setfile(fdset_t fdset, int fd, file_t file)
+{
+  pthread_mutex_lock(&fdset->mutex);
+  if (fd >= fdset->count || fdset->fds[fd].file == NULL) {
+    pthread_mutex_unlock(&fdset->mutex);
+    return -EBADF;
+  }
+
+  fdset->fds[fd].file = file;
+  pthread_mutex_unlock(&fdset->mutex);
+  return fd;
+}
+
+/** Create a new fdset.
+ */
+int fdset_new(fdset_t *fdset)
+{
+  *fdset = malloc(sizeof(struct fdset));
+  if (*fdset == NULL) {
+    return -EMFILE;
+  }
+
+  pthread_mutex_init(&(*fdset)->mutex, NULL);
+  (*fdset)->refcnt = 1;
+  (*fdset)->count = 0;
+  (*fdset)->fds = NULL;
+  return 0;
+}

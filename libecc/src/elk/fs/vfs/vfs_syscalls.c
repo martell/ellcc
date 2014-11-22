@@ -184,7 +184,7 @@ static int sys_open(char *name, int flags, mode_t mode)
     return error;
   }
 
-  int fd = allocfd();           // Get a file descriptor.
+  int fd = allocfd(fp);         // Get a file descriptor.
   if (fd < 0) {
     vput(fp->f_vnode);
     free(fp);
@@ -192,7 +192,6 @@ static int sys_open(char *name, int flags, mode_t mode)
   }
 
   vn_unlock(fp->f_vnode);
-  setfile(fd, fp);
   return fd;
 }
 
@@ -232,7 +231,7 @@ static int sys_close(int fd)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1, 0);
+  error = getfile(fd, &fp);
   if (error < 0) {
     return error;
   }
@@ -251,7 +250,7 @@ static ssize_t sys_read(int fd, void *buf, size_t size)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1, 0);
+  error = getfile(fd, &fp);
   if (error < 0) {
     return error;
   }
@@ -288,7 +287,7 @@ static ssize_t sys_readv(int fd, struct iovec *iov, int iovcnt)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1, 0);
+  error = getfile(fd, &fp);
   if (error < 0) {
     return error;
   }
@@ -321,7 +320,7 @@ static ssize_t sys_write(int fd, void *buf, size_t size)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1, 0);
+  error = getfile(fd, &fp);
   if (error < 0) {
     return error;
   }
@@ -356,7 +355,7 @@ static ssize_t sys_writev(int fd, struct iovec *iov, int iovcnt)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1, 0);
+  error = getfile(fd, &fp);
   if (error < 0) {
     return error;
   }
@@ -388,7 +387,7 @@ static off_t sys_lseek(int fd, off_t off, int type)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1, 0);
+  error = getfile(fd, &fp);
   if (error < 0) {
     return error;
   }
@@ -444,7 +443,7 @@ static int sys_ioctl(int fd, u_long request, void *buf)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1, 0);
+  error = getfile(fd, &fp);
   if (error < 0) {
     return error;
   }
@@ -469,7 +468,7 @@ static int sys_fsync(int fd)
   int error;
   file_t fp;
 
-  error = getfile(fd, &fp, 1, 0);
+  error = getfile(fd, &fp);
   if (error < 0) {
     return error;
   }
@@ -492,7 +491,7 @@ static int sys_fstat(int fd, struct stat *st)
   int error = 0;
   file_t fp;
 
-  error = getfile(fd, &fp, 1, 0);
+  error = getfile(fd, &fp);
   if (error < 0) {
     return error;
   }
@@ -535,7 +534,7 @@ static int sys_getdents(int fd, char *buf, size_t len)
   if (len < sizeof(struct dirent))
     return -EINVAL;
 
-  if ((error = getfile(fd, &fp, 1, 0)) < 0) {
+  if ((error = getfile(fd, &fp)) < 0) {
     return error;
   }
 
@@ -543,8 +542,12 @@ static int sys_getdents(int fd, char *buf, size_t len)
   struct dirent dir;
   while (size + sizeof(struct dirent) < len) {
     error = i_readdir(fp, &dir);
-    if (error)
+    if (error) {
+      if (error == -ENOENT && size) {
+        return size;
+      }
       return error;
+    }
 
     // dir.d_reclen is the length of the unterminated string.
     // Translate it to the toal size.
@@ -601,7 +604,7 @@ static int check_dir_empty(char *path)
   if ((fd = sys_open(path, O_RDONLY, 0)) != 0)
     return fd;
 
-  int error = getfile(fd, &fp, 1, 0);
+  int error = getfile(fd, &fp);
   if (error < 0) {
     sys_close(fd);
     return error;
@@ -895,7 +898,7 @@ static int sys_fchdir(int fd)
   file_t fp;
   int error;
 
-  if ((error = getfile(fd, &fp, 1, 0)) < 0) {
+  if ((error = getfile(fd, &fp)) < 0) {
     return error;
   }
 
@@ -908,6 +911,8 @@ static int sys_fchdir(int fd)
   }
 
   vn_unlock(dvp);
+  vref(dvp);
+  ++fp->f_count;
   fp = replacecwd(fp);          // Replace the current directory.
   if (fp) {
     vfs_close(fp);              // Close the old one.
@@ -1035,19 +1040,17 @@ static int sys_dup(int oldfd)
   int newfd;
   int error;
 
-  if ((error = getfile(oldfd, &fp, 1, 0)) < 0) {
+  if ((error = getfile(oldfd, &fp)) < 0) {
     return error;
   }
 
-  if ((newfd = allocfd()) < 0) {
+  if ((newfd = allocfd(fp)) < 0) {
     return newfd;
   }
 
   // Increment file references.
   vref(fp->f_vnode);
   ++fp->f_count;
-
-  setfile(newfd, fp);
 
   return newfd;
 }
@@ -1057,11 +1060,11 @@ static int sys_dup2(int oldfd, int newfd)
   file_t fp, ofp;
   int error;
 
-  if ((error = getfile(oldfd, &fp, 1, 0)) < 0) {
+  if ((error = getfile(oldfd, &fp)) < 0) {
     return error;
   }
 
-  if ((error = getfile(newfd, &ofp, 0, 0)) < 0) {
+  if ((error = getdup(newfd, &ofp, 0)) < 0) {
     return error;
   }
 
@@ -1084,14 +1087,14 @@ static int sys_fcntl(int fd, int cmd, int arg)
   file_t fp;
   int s;
 
-  if ((s = getfile(fd, &fp, 1, 0)) < 0) {
+  if ((s = getfile(fd, &fp)) < 0) {
     return s;
   }
 
   switch (cmd) {
   case F_DUPFD: {
     file_t ofp;
-    if ((s = getfile(arg, &ofp, 0, 1)) < 0) {
+    if ((s = getdup(arg, &ofp, 1)) < 0) {
       return s;
     }
 

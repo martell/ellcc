@@ -17,6 +17,7 @@
 #define timer_expired __elk_timer_expired
 #define timer_wake_at __elk_timer_wake_at
 #define getfile __elk_getfile
+#define getdup __elk_getdup
 #define allocfd __elk_allocfd
 #define setfile __elk_setfile
 #define replacecwd __elk_replacecwd
@@ -193,13 +194,18 @@ void *timer_wake_at(long long when,
                     TimerCallback callback, void *arg1, void *arg2, int retval);
 
 struct file;
+
 /** Get a file pointer corresponding to a file descriptor.
  */
-int getfile(int fd, struct file **filep, int must, int free);
+int getfile(int fd, struct file **filep);
+
+/** Get a duplicate file descriptor.
+ */
+int getdup(int fd, struct file **filep, int free);
 
 /** Get a file descriptor.
  */
-int allocfd(void);
+int allocfd(file_t fp);
 
 /** Set a file pointer corresponding to a file descriptor.
  */

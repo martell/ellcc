@@ -303,9 +303,7 @@ int __elk_fdconsole_open(fdset_t *fdset)
 {
   // Create a file descriptor for the console.
   sem_init(&vnode.v_wait, 0, 0);
-  int fd = allocfd();
-  fd = setfile(fd, &file);
-  return fd;
+  return allocfd(&file);
 }
 
 ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)

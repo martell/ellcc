@@ -41,8 +41,12 @@ int main(int argc, char **argv)
     printf("read failed: %s\n", strerror(errno));
   } else {
     printf("read read: %d\n", s);
+    printf("I read %s", buffer);
   }
-  printf("I read %s", buffer);
+  s = close(fd);
+  if (s < 0) {
+    printf("close failed: %s\n", strerror(errno));
+  }
 
   s = mkdir("/dev", S_IRWXU);
   if (s) {
@@ -78,6 +82,7 @@ int main(int argc, char **argv)
     printf("chdir /fee failed: %s\n", strerror(errno));
   }
 
+
   p = getcwd(buffer, 100);
   if (p) {
     printf("getcwd got: %s\n", buffer);
@@ -95,6 +100,8 @@ int main(int argc, char **argv)
   } else {
     printf("getcwd failed: %s\n", strerror(errno));
   }
+
+  chdir("/");
 #endif
 
   // Enter the kernel command processor.
