@@ -1,5 +1,6 @@
 current SVN:
 
+* Support for user space programs in kernal space (e.g. ls, cat).
 * Added lazy vnode R/W access to ELK.
 * Added a FIFO file system to ELK.
 * Added a bunch of ELK system calls for accessing the file system.

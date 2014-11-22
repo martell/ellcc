@@ -35,13 +35,15 @@ endif
 	$(OUTC)$(CXX) -target $(TUPLE) -c $(CXXFLAGS) $<
 .S.o:
 	$(OUTA)$(CC) -target $(TUPLE) -c $(CFLAGS) $<
+.s.o:
+	$(OUTA)$(CC) -target $(TUPLE) -c $(CFLAGS) $<
 
 
 # Build the program.
 
-SRCS = $(wildcard *.c *.cxx *.cpp *.S)
+SRCS = $(wildcard *.c *.cxx *.cpp *.s *.S)
 BASENAMES := $(basename $(filter %.c %.cxx %.cpp %.S, $(SRCS)))
-BASENAMES := $(patsubst stub,,$(BASENAMES))
+BASENAMES := $(patsubst __stub%,,$(BASENAMES))
 OBJS := $(BASENAMES:%=%.o)
 
 CRTBASENAMES := $(basename $(filter %.c %.S, $(CRTSRCS)))
@@ -55,32 +57,52 @@ all: strip
 $(PROGNAME): strip
 
 
-define STUBC=
-$(OUT)echo "#include <inttypes.h>" >stub.c
-$(OUT)echo "#include <pthread.h>" >>stub.c
-$(OUT)echo "#include \"constructor.h\"" >>stub.c
-$(OUT)echo "#include \"command.h\"" >>stub.c
-$(OUT)echo "FEATURE($(PROG)_bin)" >>stub.c
-$(OUT)echo "int main();" >>stub.c
-$(OUT)echo "void _exit(int s) __attribute__((noreturn));" >>stub.c
-$(OUT)echo "void exit(int s) __attribute__((noreturn));" >>stub.c
-$(OUT)echo "void exit(int s) { pthread_exit((void *)(intptr_t)s); };" >>stub.c
-$(OUT)echo "ELK_CONSTRUCTOR()" >>stub.c
-$(OUT)echo "{" >>stub.c
-$(OUT)echo "command_insert_external(\"$(PROG)\", main);" >>stub.c
-$(OUT)echo "}" >>stub.c
+define STUBBEGIN=
+$(OUT)echo "#if defined(__ppc__)" >__stubbegin.S
+$(OUT)echo ".section .bss" >>__stubbegin.S
+$(OUT)echo "#else" >>__stubbegin.S
+$(OUT)echo ".bss" >>__stubbegin.S
+$(OUT)echo "#endif" >>__stubbegin.S
+$(OUT)echo ".global __bss_start" >>__stubbegin.S
+$(OUT)echo "__bss_start:" >>__stubbegin.S
 endef
 
-stub.c: Makefile
-	$(STUBC)
+define STUBEND=
+$(OUT)echo "#include <inttypes.h>" >__stubend.c
+$(OUT)echo "#include <pthread.h>" >>__stubend.c
+$(OUT)echo "#include <string.h>" >>__stubend.c
+$(OUT)echo "#include \"constructor.h\"" >>__stubend.c
+$(OUT)echo "#include \"command.h\"" >>__stubend.c
+$(OUT)echo "FEATURE($(PROG)_bin)" >>__stubend.c
+$(OUT)echo "int main();" >>__stubend.c
+$(OUT)echo "void _exit(int s) __attribute__((noreturn));" >>__stubend.c
+$(OUT)echo "void exit(int s) __attribute__((noreturn));" >>__stubend.c
+$(OUT)echo "void exit(int s) { pthread_exit((void *)(intptr_t)s); };" >>__stubend.c
+$(OUT)echo "static char __bss_end;" >>__stubend.c
+$(OUT)echo "ELK_CONSTRUCTOR()" >>__stubend.c
+$(OUT)echo "{" >>__stubend.c
+$(OUT)echo "extern char __bss_start[];" >>__stubend.c
+$(OUT)echo "memset(__bss_start, 0, &__bss_end - __bss_start);" >>__stubend.c
+$(OUT)echo "command_insert_external(\"$(PROG)\", main);" >>__stubend.c
+$(OUT)echo "}" >>__stubend.c
+endef
+
+__stubbegin.S: Makefile
+	$(STUBBEGIN)
+
+__stubend.c: Makefile
+	$(STUBEND)
 
 INCDIR = $(ELLCC)/libecc/src/$(LIB)
 
-stub.o: stub.c
-	$(OUTCC)$(CC) -target $(TUPLE) -I$(INCDIR)/sys -I$(INCDIR)/include -c stub.c
+__stubbegin.o: __stubbegin.S
+	$(OUTCC)$(CC) -target $(TUPLE) -c __stubbegin.S
 
-reloc: $(OBJS) stub.o
-	$(OUTCC)$(CC) -target $(LTUPLE) -o $(PROGNAME) -r $(OBJS) stub.o -nostdlib
+__stubend.o: __stubend.c
+	$(OUTCC)$(CC) -target $(TUPLE) -I$(INCDIR)/sys -I$(INCDIR)/include -c __stubend.c
+
+reloc: $(OBJS) __stubbegin.o __stubend.o
+	$(OUTCC)$(CC) -target $(LTUPLE) -o $(PROGNAME) -r __stubbegin.o $(OBJS) __stubend.o -nostdlib
 
 strip: reloc
 	$(OUT)$(OBJCOPY) -w -L* $(PROGNAME)
@@ -90,7 +112,7 @@ strip: reloc
 install:
 
 clean:
-	$(OUT)rm -f *.o *.d *.gcda *.gcno stub.c
+	$(OUT)rm -f *.o *.d *.gcda *.gcno __stubend.c
 
 veryclean: clean
 	$(OUT)rm -f $(PROGNAME)
