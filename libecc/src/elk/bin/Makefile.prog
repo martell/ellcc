@@ -12,8 +12,8 @@ CXX = $(ELLCC)/bin/ecc++
 AR = $(ELLCC)/bin/ecc-ar
 LD = $(ELLCC)/bin/ecc
 OBJCOPY = $(ELLCC)/bin/ecc-objcopy
-CFLAGS += -MD -MP
-CXXFLAGS += -MD -MP
+CFLAGS += -g -MD -MP
+CXXFLAGS += -g -MD -MP
 ifeq ($(VERBOSE),)
   OUT=@
   OUTC=@echo "Compiling $<";

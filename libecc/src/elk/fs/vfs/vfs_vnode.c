@@ -579,8 +579,8 @@ static int vsCommand(int argc, char **argv)
          "VLNK ", "VSOCK", "VFIFO" };
 
   VNODE_LOCK();
-  printf("vnode    mount    type  refcnt blkno    flags    path\n");
-  printf("-------- -------- ----- ------ -------- -------- ------------------------------\n");
+  printf("vnode    mount    type  refcnt blkno    path\n");
+  printf("-------- -------- ----- ------ -------- ------------------------------\n");
 
   for (i = 0; i < VNODE_BUCKETS; i++) {
     head = &vnode_table[i];
