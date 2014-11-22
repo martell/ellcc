@@ -584,7 +584,8 @@ static int sys_getdents(int fd, char *buf, size_t len)
     buf += offsetof(struct ldirent, d_name);
     strcpy(buf, dir.d_name);
     size += ldir.d_reclen;
-    buf += 32; // RICH: dir.d_reclen;
+    // Round up to the next 32 byte boundry.
+    buf = buf + (32 - ((uintptr_t)buf & 0x1F));
   }
 
   return size;
