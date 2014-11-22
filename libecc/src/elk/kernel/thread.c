@@ -77,6 +77,7 @@ typedef struct thread
   gid_t fgid;                   // The thread's file group id.
   pid_t pgid;                   // The thread's process group.
   pid_t sid;                    // The thread's session id.
+  mode_t umask;                 // The file creation mask.
 #if HAVE_CAPABILITY
   capability_t cap;             // The thread's capabilities.
   capability_t ecap;            // The thread's effective capabilities.
@@ -1408,6 +1409,13 @@ static int sys_setsid(void)
   return current->tid;
 }
 
+static mode_t sys_umask(mode_t new)
+{
+  mode_t old = current->umask;
+  current->umask = new;
+  return old;
+}
+
 #if ENABLEFDS
 /** Get a file descriptor.
  */
@@ -1668,6 +1676,7 @@ ELK_CONSTRUCTOR()
   SYSCALL(setreuid);
   SYSCALL(setuid);
   SYSCALL(setsid);
+  SYSCALL(umask);
 }
 
 // RICH: Temporary.

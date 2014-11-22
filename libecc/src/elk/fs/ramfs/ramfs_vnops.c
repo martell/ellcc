@@ -61,6 +61,7 @@ struct ramfs_node
   size_t rn_size;               // File size.
   char *rn_buf;                 // Buffer to the file data.
   size_t rn_bufsize;            // Allocated buffer size.
+  mode_t rn_mode;               // File access mode.
 };
 
 #define ramfs_open ((vnop_open_t)vop_nullop)
@@ -130,7 +131,8 @@ static struct vfsops ramfs_vfsops = {
   &ramfs_vnops,
 };
 
-static struct ramfs_node *ramfs_allocate_node(char *name, int type);
+static struct ramfs_node *ramfs_allocate_node(char *name, int type,
+                                              mode_t mode);
 
 /*
  * Mount a file system.
@@ -142,7 +144,7 @@ static int ramfs_mount(mount_t mp, char *dev, int flags, void *data)
   DPRINTF(AFSDB_CORE, ("ramfs_mount: dev=%s\n", dev));
 
   /* Create a root node */
-  np = ramfs_allocate_node("/", VDIR);
+  np = ramfs_allocate_node("/", VDIR, ACCESSPERMS);
   if (np == NULL)
     return -ENOMEM;
   vnode_rw_t vp = vn_lock_rw(mp->m_root);
@@ -162,7 +164,7 @@ static int ramfs_unmount(mount_t mp)
   return -EBUSY;
 }
 
-static struct ramfs_node *ramfs_allocate_node(char *name, int type)
+static struct ramfs_node *ramfs_allocate_node(char *name, int type, mode_t mode)
 {
   struct ramfs_node *np;
 
@@ -179,6 +181,7 @@ static struct ramfs_node *ramfs_allocate_node(char *name, int type)
   }
   strlcpy(np->rn_name, name, np->rn_namelen + 1);
   np->rn_type = type;
+  np->rn_mode = mode;
   return np;
 }
 
@@ -189,11 +192,11 @@ static void ramfs_free_node(struct ramfs_node *np)
 }
 
 static struct ramfs_node *ramfs_add_node(struct ramfs_node *dnp, char *name,
-                                         int type)
+                                         int type, mode_t mode)
 {
   struct ramfs_node *np, *prev;
 
-  np = ramfs_allocate_node(name, type);
+  np = ramfs_allocate_node(name, type, mode);
   if (np == NULL)
     return NULL;
 
@@ -290,7 +293,7 @@ static int ramfs_lookup(vnode_t dvp, char *name, vnode_t vp_ro)
 
   vnode_rw_t vp = vn_lock_rw(vp_ro);
   vp->v_data = np;
-  vp->v_mode = ALLPERMS;
+  vp->v_mode = np->rn_mode;
   vp->v_type = np->rn_type;
   vp->v_size = np->rn_size;
 
@@ -306,7 +309,7 @@ static int ramfs_mkdir(vnode_t dvp, char *name, mode_t mode)
   if (!S_ISDIR(mode))
     return -EINVAL;
 
-  np = ramfs_add_node(dvp->v_data, name, VDIR);
+  np = ramfs_add_node(dvp->v_data, name, VDIR, mode);
   if (np == NULL)
     return -ENOMEM;
   np->rn_size = 0;
@@ -379,7 +382,7 @@ static int ramfs_create(vnode_t dvp, char *name, mode_t mode)
   if (!S_ISREG(mode))
     return -EINVAL;
 
-  np = ramfs_add_node(dvp->v_data, name, VREG);
+  np = ramfs_add_node(dvp->v_data, name, VREG, mode);
   if (np == NULL)
     return -ENOMEM;
   return 0;
@@ -497,7 +500,7 @@ static int ramfs_rename(vnode_t dvp1, vnode_t vp1, char *name1,
   } else {
     /* Create new file or directory */
     old_np = vp1->v_data;
-    np = ramfs_add_node(dvp2->v_data, name2, VREG);
+    np = ramfs_add_node(dvp2->v_data, name2, VREG, old_np->rn_mode);
     if (np == NULL)
       return -ENOMEM;
 

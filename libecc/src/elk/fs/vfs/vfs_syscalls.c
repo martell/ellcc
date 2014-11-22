@@ -637,6 +637,7 @@ static int sys_mkdir(char *name, mode_t mode)
     vput(vp);
     return -EEXIST;
   }
+
   /* Notice: vp is invalid here! */
 
   if ((error = lookup(path, &dvp, &name)) != 0) {
