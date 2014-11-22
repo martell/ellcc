@@ -451,7 +451,7 @@ int device_broadcast(u_long cmd, void *arg, int force)
     ASSERT(ops->devctl != NULL);
     error = (*ops->devctl)(dev, cmd, arg);
     if (error) {
-      DPRINTF(("%s returns error=%d for cmd=%ld\n",
+      DPRINTF(DEVDB_CORE, ("%s returns error=%d for cmd=%ld\n",
          dev->name, error, cmd));
       if (force)
         retval = -EIO;

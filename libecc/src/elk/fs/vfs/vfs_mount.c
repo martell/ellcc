@@ -197,9 +197,7 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
   if ((error = getpath(name, dir)) != 0)
     return error;
 
-#ifdef DEBUG
-  dprintf("VFS: mounting %s at %s\n", fsname, dir);
-#endif
+  DPRINTF(VFSDB_CORE, ("VFS: mounting %s at %s\n", fsname, dir));
 
   if (!dir || *dir == '\0')
     return -ENOENT;
@@ -390,7 +388,7 @@ static int sys_sync(void)
   return 0;
 }
 
-#if defined(VFS_COMMANDS)
+#if VFS_COMMANDS
 /*
  * List mounts.
  */
@@ -425,7 +423,7 @@ ELK_CONSTRUCTOR()
   SYSCALL(umount2);
   SYSCALL(sync);
 
-#if defined(VFS_COMMANDS)
+#if VFS_COMMANDS
   command_insert("mount", mountCommand);
 #endif
 }

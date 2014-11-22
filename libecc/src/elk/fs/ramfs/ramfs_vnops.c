@@ -139,7 +139,7 @@ static int ramfs_mount(mount_t mp, char *dev, int flags, void *data)
 {
   struct ramfs_node *np;
 
-  DPRINTF(("ramfs_mount: dev=%s\n", dev));
+  DPRINTF(AFSDB_CORE, ("ramfs_mount: dev=%s\n", dev));
 
   /* Create a root node */
   np = ramfs_allocate_node("/", VDIR);
@@ -302,7 +302,7 @@ static int ramfs_mkdir(vnode_t dvp, char *name, mode_t mode)
 {
   struct ramfs_node *np;
 
-  DPRINTF(("mkdir %s\n", name));
+  DPRINTF(AFSDB_CORE, ("mkdir %s\n", name));
   if (!S_ISDIR(mode))
     return -EINVAL;
 
@@ -325,7 +325,7 @@ static int ramfs_remove(vnode_t dvp, vnode_t vp, char *name)
   struct ramfs_node *np;
   int error;
 
-  DPRINTF(("remove %s in %s\n", name, dvp->v_path));
+  DPRINTF(AFSDB_CORE, ("remove %s in %s\n", name, dvp->v_path));
   error = ramfs_remove_node(dvp->v_data, vp->v_data);
   if (error)
     return error;
@@ -343,7 +343,7 @@ static int ramfs_truncate(vnode_t vp, off_t length)
   void *new_buf;
   size_t new_size;
 
-  DPRINTF(("truncate %s length=%lld\n", vp->v_path, (long long)length));
+  DPRINTF(AFSDB_CORE, ("truncate %s length=%lld\n", vp->v_path, (long long)length));
   np = vp->v_data;
 
   if (length == 0) {
@@ -375,7 +375,7 @@ static int ramfs_create(vnode_t dvp, char *name, mode_t mode)
 {
   struct ramfs_node *np;
 
-  DPRINTF(("create %s in %s\n", name, dvp->v_path));
+  DPRINTF(AFSDB_CORE, ("create %s in %s\n", name, dvp->v_path));
   if (!S_ISREG(mode))
     return -EINVAL;
 

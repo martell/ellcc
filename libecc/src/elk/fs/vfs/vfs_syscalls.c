@@ -539,8 +539,8 @@ static int sys_getdents(int fd, char *buf, size_t len)
   }
 
   size_t size = 0;
-  struct dirent dir;
   while (size + sizeof(struct dirent) < len) {
+    struct dirent dir;
     error = i_readdir(fp, &dir);
     if (error) {
       if (error == -ENOENT && size) {
@@ -550,42 +550,25 @@ static int sys_getdents(int fd, char *buf, size_t len)
     }
 
     // dir.d_reclen is the length of the unterminated string.
-    // Translate it to the toal size.
-    struct ldirent
-    {
-      unsigned long d_ino;
-      unsigned long d_off;
-      unsigned short d_reclen;
-      unsigned char d_type;
-      char d_name[];
-    } ldir = {
-      .d_ino = dir.d_ino,
-      .d_off = dir.d_off,
-      .d_type = dir.d_type,
-      .d_reclen = offsetof(struct ldirent, d_name)
-                           + dir.d_reclen + 1  // The string.
-    };
+    // Translate it to the total size.
+    dir.d_reclen = offsetof(struct dirent, d_name)
+                   + dir.d_reclen + 1;  // The string.
 
-#if 1
-    printf("dir: d_ino=%llu d_off=%llu d_reclen=%d"
-           " d_type=%d d_name=%s\n",
-           (long long)dir.d_ino, (long long)dir.d_off,
-           dir.d_reclen,
-           dir.d_type,
-           dir.d_name);
-    printf("ldir: d_ino=%llu d_off=%llu d_reclen=%d"
-           " d_type=%d\n",
-           (long long)ldir.d_ino, (long long)ldir.d_off,
-           ldir.d_reclen,
-           ldir.d_type);
-#endif
+    DPRINTF(VFSDB_SYSCALL,
+            ("dir: d_ino=%llu d_off=%llu d_reclen=%d"
+             " d_type=%d d_name=%s\n",
+             (long long)dir.d_ino, (long long)dir.d_off,
+             dir.d_reclen,
+             dir.d_type,
+             dir.d_name));
 
-    memcpy(buf, &ldir, offsetof(struct ldirent, d_name));
-    buf += offsetof(struct ldirent, d_name);
-    strcpy(buf, dir.d_name);
-    size += ldir.d_reclen;
-    // Round up to the next 32 byte boundry.
-    buf = buf + (32 - ((uintptr_t)buf & 0x1F));
+    size_t reclen = dir.d_reclen;       // Total record length.
+    // Round up to the next 32 byte boundry. RICH: ?
+    dir.d_reclen += (32 - (dir.d_reclen & 0x1F));
+    memcpy(buf, &dir, reclen);
+    ASSERT((dir.d_reclen & 0x1F) == 0);
+    size += dir.d_reclen;
+    buf += dir.d_reclen;
   }
 
   return size;
@@ -1150,6 +1133,7 @@ ELK_CONSTRUCTOR()
   SYSCALL(ioctl);
   SYSCALL(link);
   SYSCALL(lseek);
+  SYSCALL(lstat);
   SYSCALL(mkdir);
   SYSCALL(mknod);
   SYSCALL(open);
@@ -1158,7 +1142,6 @@ ELK_CONSTRUCTOR()
   SYSCALL(rmdir);
   SYSCALL(rename);
   SYSCALL(stat);
-  SYSCALL(lstat);
   SYSCALL(truncate);
   SYSCALL(unlink);
   SYSCALL(write);

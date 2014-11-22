@@ -26,7 +26,7 @@
 #define vm_free __elk_vm_free
 #endif
 
-#if !defined(HAVE_CAPABILITY)
+#if !HAVE_CAPABILITY
 // Define a simple capability check.
 #define CAPABLE(thread, capability) \
   (!(thread)->euid)

@@ -116,21 +116,21 @@ static int devfs_open(vnode_t vp, int flags)
   device_t dev;
   int error;
 
-  DPRINTF(("devfs_open: path=%s\n", vp->v_path));
+  DPRINTF(AFSDB_CORE, ("devfs_open: path=%s\n", vp->v_path));
 
   path = vp->v_path;
   if (strcmp(path, "/") == 0)   /* root ? */
     return 0;
 
   if (vp->v_flags & VPROTDEV) {
-    DPRINTF(("devfs_open: failed to open protected device.\n"));
+    DPRINTF(AFSDB_CORE, ("devfs_open: failed to open protected device.\n"));
     return -EPERM;
   }
   if (*path == '/')
     path++;
   error = device_open(path, flags & DO_RWMASK, &dev);
   if (error) {
-    DPRINTF(("devfs_open: can not open device = %s error=%d\n",
+    DPRINTF(AFSDB_CORE, ("devfs_open: can not open device = %s error=%d\n",
        path, error));
     return error;
   }
@@ -142,7 +142,7 @@ static int devfs_open(vnode_t vp, int flags)
 static int devfs_close(vnode_t vp, file_t fp)
 {
 
-  DPRINTF(("devfs_close: fp=%p\n", fp));
+  DPRINTF(AFSDB_CORE, ("devfs_close: fp=%p\n", fp));
 
   if (!strcmp(vp->v_path, "/"))  /* root ? */
     return 0;
@@ -169,7 +169,7 @@ static int devfs_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
   error = device_write((device_t)vp->v_data, uio, &len, fp->f_offset);
   if (!error)
     *result = len;
-  DPRINTF(("devfs_write: error=%d len=%zd\n", error, len));
+  DPRINTF(AFSDB_CORE, ("devfs_write: error=%d len=%zd\n", error, len));
   return error;
 }
 
@@ -178,7 +178,7 @@ static int devfs_poll(vnode_t vp, file_t fp, int flags)
   int error;
 
   error = device_poll((device_t)vp->v_data, flags);
-  DPRINTF(("devfs_poll: error=%d\n", error));
+  DPRINTF(AFSDB_CORE, ("devfs_poll: error=%d\n", error));
   return error;
 }
 
@@ -187,7 +187,7 @@ static int devfs_ioctl(vnode_t vp, file_t fp, u_long cmd, void *arg)
   int error;
 
   error = device_ioctl((device_t)vp->v_data, cmd, arg);
-  DPRINTF(("devfs_ioctl: cmd=%lx\n", cmd));
+  DPRINTF(AFSDB_CORE, ("devfs_ioctl: cmd=%lx\n", cmd));
   return error;
 }
 
@@ -196,7 +196,7 @@ static int devfs_lookup(vnode_t dvp, char *name, vnode_t vp_ro)
   struct devinfo info;
   int error, i;
 
-  DPRINTF(("devfs_lookup:%s\n", name));
+  DPRINTF(AFSDB_CORE, ("devfs_lookup:%s\n", name));
 
   if (*name == '\0')
     return -ENOENT;
@@ -233,7 +233,7 @@ static int devfs_readdir(vnode_t vp, file_t fp, struct dirent *dir)
   struct devinfo info;
   int error, i;
 
-  DPRINTF(("devfs_readdir offset=%lld\n", (long long)fp->f_offset));
+  DPRINTF(AFSDB_CORE, ("devfs_readdir offset=%lld\n", (long long)fp->f_offset));
 
   i = 0;
   error = 0;
@@ -253,7 +253,7 @@ static int devfs_readdir(vnode_t vp, file_t fp, struct dirent *dir)
   dir->d_fileno = (uint32_t)fp->f_offset;
   dir->d_namlen = (uint16_t)strlen(dir->d_name);
 
-  DPRINTF(("devfs_readdir: %s\n", dir->d_name));
+  DPRINTF(AFSDB_CORE, ("devfs_readdir: %s\n", dir->d_name));
   fp->f_offset++;
   return 0;
 }

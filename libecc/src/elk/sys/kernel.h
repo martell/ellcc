@@ -25,13 +25,50 @@
 #define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)
 
 // RICH: For now.
-#include <assert.h>
-#define ASSERT(arg) assert(arg)
-#define DPRINTF(arg) printf arg
 #define copyinstr(src, dst, len) strlcpy(dst, src, len)
 #define copyout(dst, src, len) (memcpy(dst, src, len), len)
 #define copyin(src, dst, len) (memcpy(dst, src, len), len)
 #define user_area(buf) 1
+
+#define ELK_ASSERT 1
+#if ELK_ASSERT
+#include <assert.h>
+#define ASSERT(x) assert(x)
+#else
+#define ASSERT(x)
+#endif
+
+#define ELK_DEBUG 1
+#ifdef ELK_DEBUG
+#undef DPRINTF
+
+#include <stdio.h>
+
+#define debug __elk_debug
+extern int debug;
+
+// Thread debug flags.
+#define THRDB_CORE      0x00000001
+
+// Device debug flags.
+#define DEVDB_CORE      0x00000100
+
+// Virtual file system debug flags.
+#define	VFSDB_CORE	0x00010000
+#define	VFSDB_SYSCALL	0x00020000
+#define	VFSDB_VNODE	0x00040000
+#define	VFSDB_BIO	0x00080000
+#define	VFSDB_CAP	0x00100000
+#define VFSDB_FLAGS	0x00130000
+
+// Additional file system debug flags.
+#define AFSDB_CORE      0x01000000
+
+#define	DPRINTF(_m,X)	if (debug & (_m)) printf X
+#else
+#define	DPRINTF(_m, X)
+#endif
+
 extern int puts(const char *s);
 #define panic(arg) do { puts(arg); exit(1); } while(1)
 

@@ -146,7 +146,7 @@ static int fifo_open(vnode_t vp, int flags)
 {
   struct fifo_node *np = vp->v_data;
 
-  DPRINTF(("fifo_open: path=%s\n", vp->v_path));
+  DPRINTF(AFSDB_CORE, ("fifo_open: path=%s\n", vp->v_path));
 
   if (!strcmp(vp->v_path, "/"))  /* root ? */
     return 0;
@@ -194,7 +194,7 @@ static int fifo_close(vnode_t vp, file_t fp)
 {
   struct fifo_node *np = vp->v_data;
 
-  DPRINTF(("fifo_close: fp=%p\n", fp));
+  DPRINTF(AFSDB_CORE, ("fifo_close: fp=%p\n", fp));
 
   if (np == NULL)
     return 0;
@@ -216,7 +216,7 @@ static int fifo_close(vnode_t vp, file_t fp)
 
   /* Clearn up pipe */
   if (!strncmp(np->fn_name, "pipe", 4)) {
-    DPRINTF(("fifo_close: remove pipe\n"));
+    DPRINTF(AFSDB_CORE, ("fifo_close: remove pipe\n"));
     cleanup_fifo(vp);
   }
 
@@ -227,7 +227,7 @@ static int fifo_read(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
 {
   struct fifo_node *np = vp->v_data;
 
-  DPRINTF(("fifo_read\n"));
+  DPRINTF(AFSDB_CORE, ("fifo_read\n"));
 
   /*
    * If nothing in the pipe, wait.
@@ -273,7 +273,7 @@ static int fifo_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
 {
   struct fifo_node *np = vp->v_data;
 
-  DPRINTF(("fifo_write\n"));
+  DPRINTF(AFSDB_CORE, ("fifo_write\n"));
 
   size_t total = 0;
   const struct iovec *iov = uio->iov;
@@ -320,7 +320,7 @@ static int fifo_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
 
 static int fifo_ioctl(vnode_t vp, file_t fp, u_long cmd, void *arg)
 {
-  DPRINTF(("fifo_ioctl\n"));
+  DPRINTF(AFSDB_CORE, ("fifo_ioctl\n"));
   return EINVAL;
 }
 
@@ -330,7 +330,7 @@ static int fifo_lookup(vnode_t dvp, char *name, vnode_t vp_ro)
   struct fifo_node *np = NULL;
   int found;
 
-  DPRINTF(("fifo_lookup: %s\n", name));
+  DPRINTF(AFSDB_CORE, ("fifo_lookup: %s\n", name));
 
   if (*name == '\0')
     return ENOENT;
@@ -365,7 +365,7 @@ static int fifo_create(vnode_t dvp, char *name, mode_t mode)
   struct fifo_node *np;
   size_t len;
 
-  DPRINTF(("create %s in %s\n", name, dvp->v_path));
+  DPRINTF(AFSDB_CORE, ("create %s in %s\n", name, dvp->v_path));
 
 #if 0
   if (!S_ISFIFO(mode))
@@ -420,7 +420,7 @@ static void cleanup_fifo(vnode_t vp)
 
 static int fifo_remove(vnode_t dvp, vnode_t vp, char *name)
 {
-  DPRINTF(("remove %s in %s\n", name, dvp->v_path));
+  DPRINTF(AFSDB_CORE, ("remove %s in %s\n", name, dvp->v_path));
 
   cleanup_fifo(vp);
   return 0;
@@ -481,7 +481,7 @@ static void wait_reader(vnode_t vp)
 {
   struct fifo_node *np = vp->v_data;
 
-  DPRINTF(("wait_reader: %p\n", np));
+  DPRINTF(AFSDB_CORE, ("wait_reader: %p\n", np));
   vn_unlock(vp);
   pthread_mutex_lock(&np->fn_rmtx);
   pthread_cond_wait(&np->fn_rcond, &np->fn_rmtx);
@@ -493,7 +493,7 @@ static void wakeup_writer(vnode_t vp)
 {
   struct fifo_node *np = vp->v_data;
 
-  DPRINTF(("wakeup_writer: %p\n", np));
+  DPRINTF(AFSDB_CORE, ("wakeup_writer: %p\n", np));
   pthread_cond_broadcast(&np->fn_rcond);
 }
 
@@ -501,7 +501,7 @@ static void wait_writer(vnode_t vp)
 {
   struct fifo_node *np = vp->v_data;
 
-  DPRINTF(("wait_writer: %p\n", np));
+  DPRINTF(AFSDB_CORE, ("wait_writer: %p\n", np));
   vn_unlock(vp);
   pthread_mutex_lock(&np->fn_wmtx);
   pthread_cond_wait(&np->fn_wcond, &np->fn_wmtx);
@@ -513,7 +513,7 @@ static void wakeup_reader(vnode_t vp)
 {
   struct fifo_node *np = vp->v_data;
 
-  DPRINTF(("wakeup_reader: %p\n", np));
+  DPRINTF(AFSDB_CORE, ("wakeup_reader: %p\n", np));
   pthread_cond_broadcast(&np->fn_wcond);
 }
 

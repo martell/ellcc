@@ -560,7 +560,7 @@ int vop_einval(void)
   return -EINVAL;
 }
 
-#if defined(VFS_COMMANDS)
+#if VFS_COMMANDS
 /*
  * List all vnodes.
  */
@@ -623,28 +623,6 @@ static int cdCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
-#if DEBUG_VFS
-int vfs_debug;
-
-/* Set debug level.
- */
-static int vfsdbgCommand(int argc, char **argv)
-{
-  if (argc <= 0) {
-    printf("set the vfs debug level\n");
-    return COMMAND_OK;
-  }
-
-  if (argc != 2) {
-    printf("usage: vfsdbg <value>\n");
-    return COMMAND_ERROR;
-  }
-
-  vfs_debug = strtol(argv[1], 0, 0);
-  return COMMAND_OK;
-}
-#endif
-
 #endif // VFS_COMMANDS
 
 ELK_CONSTRUCTOR()
@@ -652,11 +630,8 @@ ELK_CONSTRUCTOR()
   for (int i = 0; i < VNODE_BUCKETS; i++)
     list_init(&vnode_table[i]);
 
-#if defined(VFS_COMMANDS)
+#if VFS_COMMANDS
   command_insert("vs", vsCommand);
   command_insert("cd", cdCommand);
-#if DEBUG_VFS
-  command_insert("vfsdbg", vfsdbgCommand);
-#endif
 #endif
 }

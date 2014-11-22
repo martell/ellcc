@@ -35,35 +35,10 @@
 #include "file.h"
 #include "mount.h"
 
-#include <assert.h>
-
-#define DEBUG_VFS 1
-
 /*
  * Tunable parameters
  */
 #define FSMAXNAMES	16		/* max length of 'file system' name */
-
-#undef DPRINTF
-#ifdef DEBUG_VFS
-
-#include <stdio.h>
-
-#define vfs_debug __elk_vfs_debug
-extern int vfs_debug;
-
-#define	VFSDB_CORE	0x00000001      // Unused.
-#define	VFSDB_SYSCALL	0x00000002
-#define	VFSDB_VNODE	0x00000004
-#define	VFSDB_BIO	0x00000008
-#define	VFSDB_CAP	0x00000010
-
-#define VFSDB_FLAGS	0x00000013
-
-#define	DPRINTF(_m,X)	if (vfs_debug & (_m)) printf X
-#else
-#define	DPRINTF(_m, X)
-#endif
 
 #define vfssw __elk_vfssw
 extern struct vfssw vfssw[];

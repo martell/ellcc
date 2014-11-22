@@ -22,14 +22,14 @@
 #include "command.h"
 
 
-#if defined(ENABLEFDS)
+#if ENABLEFDS
 #include <stdarg.h>
 #endif
 
 // Make threads a loadable feature.
 FEATURE(thread)
 
-#if defined(HAVE_CAPABILITY)
+#if HAVE_CAPABILITY
 // Set all capabilities for the superuser.
 #define SUPERUSER_CAPABILITIES (~(capability_t)0)
 #define NO_CAPABILITIES ((capability_t)0)
@@ -77,12 +77,12 @@ typedef struct thread
   gid_t fgid;                   // The thread's file group id.
   pid_t pgid;                   // The thread's process group.
   pid_t sid;                    // The thread's session id.
-#if defined(HAVE_CAPABILITY)
+#if HAVE_CAPABILITY
   capability_t cap;             // The thread's capabilities.
   capability_t ecap;            // The thread's effective capabilities.
   capability_t icap;            // The thread's inheritable capabilities.
 #endif
-#if defined(ENABLEFDS)
+#if ENABLEFDS
   fdset_t fdset;                // File descriptors used by the thread.
   file_t cwdfp;                 // The current working directory.
 #endif
@@ -314,7 +314,7 @@ static thread_t main_thread = {
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
-#if defined(HAVE_CAPABILITY)
+#if HAVE_CAPABILITY
   .cap = SUPERUSER_CAPABILITIES,
   .ecap = SUPERUSER_CAPABILITIES,
   .icap = SUPERUSER_CAPABILITIES,
@@ -507,7 +507,7 @@ static void thread_delete(thread_t *tp)
 {
   release_tid(tp->tid);
 
-#if defined(ENABLEFDS)
+#if ENABLEFDS
   fdset_release(&tp->fdset);
   file_t fp = tp->cwdfp;
   if (fp) {
@@ -952,7 +952,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     return -EAGAIN;
   }
 
-#if defined(ENABLEFDS)
+#if ENABLEFDS
   // Clone or copy the file descriptor set.
   int s = fdset_clone(&tp->fdset, flags & CLONE_FILES);
   if (s < 0) {
@@ -1310,7 +1310,7 @@ static int sys_setgid(gid_t gid)
 
 static int sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
 {
-#if defined(HAVE_CAPABILITY)
+#if HAVE_CAPABILITY
   int rzero = current->uid == 0;
   int ezero = current->euid = 0;
   int szero = current->euid = 0;
@@ -1361,7 +1361,7 @@ static int sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
     current->suid = suid;
   }
 
-#if defined(HAVE_CAPABILITY)
+#if HAVE_CAPABILITY
   if (rzero || ezero || szero) {
     // One or both started as zero.
     if (current->uid && current->euid && current->suid) {
@@ -1408,7 +1408,7 @@ static int sys_setsid(void)
   return current->tid;
 }
 
-#if defined(ENABLEFDS)
+#if ENABLEFDS
 /** Get a file descriptor.
  */
 int allocfd(file_t fp)
@@ -1532,7 +1532,7 @@ int getpath(const char *name, char *path)
 
 #endif // ENABLEFDS
 
-#if defined(THREAD_COMMANDS)
+#if THREAD_COMMANDS
 
 static int psCommand(int argc, char **argv)
 {
@@ -1593,6 +1593,28 @@ static int sectionCommand(int argc, char **argv)
 
 #endif  // THREAD_COMMANDS
 
+#if ELK_DEBUG
+int debug;
+
+/* Set debug level.
+ */
+static int dbgCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("set the debug level\n");
+    return COMMAND_OK;
+  }
+
+  if (argc != 2) {
+    printf("usage: dbg <value>\n");
+    return COMMAND_ERROR;
+  }
+
+  debug = strtol(argv[1], 0, 0);
+  return COMMAND_OK;
+}
+#endif
+
 /* Initialize the thread handling code.
  */
 ELK_CONSTRUCTOR()
@@ -1602,10 +1624,13 @@ ELK_CONSTRUCTOR()
    */
   current = &main_thread;
 
-#if defined(THREAD_COMMANDS)
+#if THREAD_COMMANDS
   command_insert(NULL, sectionCommand);
   command_insert("ps", psCommand);
   command_insert("ss", ssCommand);
+#endif
+#if ELK_DEBUG
+  command_insert("dbg", dbgCommand);
 #endif
 
   // Set up a set_tid_address system call.
@@ -1646,7 +1671,7 @@ ELK_CONSTRUCTOR()
 }
 
 // RICH: Temporary.
-#if defined(ENABLEFDS)
+#if ENABLEFDS
 #include <unistd.h>
 #endif
 
@@ -1659,7 +1684,7 @@ C_CONSTRUCTOR()
 
   // The main thread is what's running right now.
   alloc_tid(current);
-#if defined(ENABLEFDS)
+#if ENABLEFDS
   int s = fdset_new(&current->fdset);
   if (s != 0) {
     printf("cannot allocate the initial fdset: %s\n", strerror(-s));
@@ -1671,7 +1696,7 @@ C_CONSTRUCTOR()
   // Create the idle thread(s).
   create_idle_threads();
 
-#if defined(ENABLEFDS)
+#if ENABLEFDS
   // RICH: Temporarily fake a console.
   int __elk_fdconsole_open(fdset_t *fdset);
   int fd = __elk_fdconsole_open(&current->fdset);

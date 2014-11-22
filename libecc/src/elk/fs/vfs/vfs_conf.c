@@ -73,7 +73,7 @@ int vfs_register(const char *name, int (*init)(void), struct vfsops *vfsops)
   return i;
 }
 
-#if defined(VFS_COMMANDS)
+#if VFS_COMMANDS
 /** Create a section heading for the help command.
  */
 static int sectionCommand(int argc, char **argv)
