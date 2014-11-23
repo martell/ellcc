@@ -78,6 +78,8 @@ ifeq ($(shell uname),Darwin)
   CFLAGS += -Wno-error=deprecated-declarations
 endif
 
+CFLAGS += -Wno-error=pointer-bool-conversion
+
 binutils.configure:
 	$(OUT)if [ -e $(DIR)/binutils/Makefile ] ; then \
           echo Configuring binutils for $(TUPLE) aready done ; \
