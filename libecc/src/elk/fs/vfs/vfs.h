@@ -40,9 +40,6 @@
  */
 #define FSMAXNAMES	16		/* max length of 'file system' name */
 
-#define vfssw __elk_vfssw
-extern struct vfssw vfssw[];
-
 #define sec_vnode_permission __elk_sec_vnode_permission
 #define sec_file_permission __elk_sec_file_permission
 #define namei __elk_namei

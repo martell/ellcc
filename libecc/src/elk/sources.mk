@@ -26,7 +26,7 @@ SRCS += command.c test_commands.c time_commands.c \
 # File systems.
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/fs/vfs
 #Virtual file system.
-SRCS += vfs_conf.c vfs_bio.c vfs_lookup.c vfs_mount.c vfs_security.c \
+SRCS += vfs_mount.c vfs_bio.c vfs_lookup.c vfs_security.c \
         vfs_vnode.c vfs_syscalls.c
 
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/fs/devfs

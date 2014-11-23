@@ -59,6 +59,12 @@
 static struct list mount_list = LIST_INIT(mount_list);
 
 /*
+ * VFS switch table
+ */
+static pthread_mutex_t swmutex = PTHREAD_MUTEX_INITIALIZER;
+static struct vfssw vfssw[FS_MAX + 1];
+
+/*
  * Global lock to access mount point.
  */
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -71,8 +77,34 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 #define MOUNT_LOCK()  pthread_mutex_lock(&mutex)
 #define MOUNT_UNLOCK()  pthread_mutex_unlock(&mutex)
 
+/** Register a file system.
+ */
+int vfs_register(const char *name, int (*init)(void), struct vfsops *vfsops)
+{
+  pthread_mutex_lock(&swmutex);
+  int i;
+  for (i = 0; i < FS_MAX; ++i) {
+    if (vfssw[i].vs_name != NULL)
+      continue;
+
+    vfssw[i].vs_name = name;
+    vfssw[i].vs_init = init;
+    vfssw[i].vs_op = vfsops;
+    break;
+  }
+
+  if (i >= FS_MAX) {
+    i = -EAGAIN;
+  } else {
+    i = 0;
+  }
+
+  pthread_mutex_unlock(&swmutex);
+  return i;
+}
+
 /*
- * Lookup file system.
+ * Lookup a file system.
  */
 static const struct vfssw *fs_getfs(char *name)
 {
@@ -81,6 +113,9 @@ static const struct vfssw *fs_getfs(char *name)
     if (!strncmp(name, vfssw[i].vs_name, FSMAXNAMES))
       break;
   }
+
+  if (vfssw[i].vs_name == NULL)
+    return NULL;
 
   return &vfssw[i];
 }
@@ -389,6 +424,16 @@ static int sys_sync(void)
 }
 
 #if VFS_COMMANDS
+/** Create a section heading for the help command.
+ */
+static int sectionCommand(int argc, char **argv)
+{
+  if (argc <= 0 ) {
+    printf("File system Commands:\n");
+  }
+  return COMMAND_OK;
+}
+
 /*
  * List mounts.
  */
@@ -415,6 +460,35 @@ static int mountCommand(int argc, char **argv)
   MOUNT_UNLOCK();
   return COMMAND_OK;
 }
+
+/*
+ * List available file systems.
+ */
+static int fsCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("list all available file systems.\n");
+    return COMMAND_OK;
+  }
+
+  pthread_mutex_lock(&swmutex);
+  int i;
+  int comma = 0;
+  for (i = 0; i < FS_MAX; ++i) {
+    if (vfssw[i].vs_name == NULL)
+      continue;
+
+    printf("%s%s", comma ? ", " : "", vfssw[i].vs_name);
+    comma = 1;
+  }
+
+  if (comma)
+    printf("\n");
+
+  pthread_mutex_unlock(&swmutex);
+  return COMMAND_OK;
+}
+
 #endif
 
 ELK_CONSTRUCTOR()
@@ -424,6 +498,8 @@ ELK_CONSTRUCTOR()
   SYSCALL(sync);
 
 #if VFS_COMMANDS
+  command_insert(NULL, sectionCommand);
+  command_insert("fs", fsCommand);
   command_insert("mount", mountCommand);
 #endif
 }
@@ -431,4 +507,12 @@ ELK_CONSTRUCTOR()
 C_CONSTRUCTOR()
 {
   MOUNT_LOCK_INIT();
+
+  /** Initialize the file system systems.
+   * They have been registered during ELK constructor time.
+   */
+  for (int i = 0; vfssw[i].vs_name; ++i) {
+    printf("VFS: initializing %s\n", vfssw[i].vs_name);
+    vfssw[i].vs_init();
+  }
 }
