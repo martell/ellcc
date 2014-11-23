@@ -245,7 +245,7 @@ static const llvm::GlobalObject *getAliasedGlobal(const llvm::GlobalAlias &GA) {
     auto *GA2 = dyn_cast<llvm::GlobalAlias>(C);
     if (!GA2)
       return nullptr;
-    if (!Visited.insert(GA2))
+    if (!Visited.insert(GA2).second)
       return nullptr;
     C = GA2->getAliasee();
   }
@@ -389,6 +389,18 @@ void CodeGenModule::Release() {
     // The minimum width of an enum in bytes
     uint64_t EnumWidth = Context.getLangOpts().ShortEnums ? 1 : 4;
     getModule().addModuleFlag(llvm::Module::Error, "min_enum_size", EnumWidth);
+  }
+
+  if (uint32_t PLevel = Context.getLangOpts().PICLevel) {
+    llvm::PICLevel::Level PL = llvm::PICLevel::Default;
+    switch (PLevel) {
+    case 0: break;
+    case 1: PL = llvm::PICLevel::Small; break;
+    case 2: PL = llvm::PICLevel::Large; break;
+    default: llvm_unreachable("Invalid PIC Level");
+    }
+
+    getModule().setPICLevel(PL);
   }
 
   SimplifyPersonality();
@@ -962,13 +974,13 @@ static void addLinkOptionsPostorder(CodeGenModule &CGM,
                                     SmallVectorImpl<llvm::Value *> &Metadata,
                                     llvm::SmallPtrSet<Module *, 16> &Visited) {
   // Import this module's parent.
-  if (Mod->Parent && Visited.insert(Mod->Parent)) {
+  if (Mod->Parent && Visited.insert(Mod->Parent).second) {
     addLinkOptionsPostorder(CGM, Mod->Parent, Metadata, Visited);
   }
 
   // Import this module's dependencies.
   for (unsigned I = Mod->Imports.size(); I > 0; --I) {
-    if (Visited.insert(Mod->Imports[I-1]))
+    if (Visited.insert(Mod->Imports[I - 1]).second)
       addLinkOptionsPostorder(CGM, Mod->Imports[I-1], Metadata, Visited);
   }
 
@@ -1009,7 +1021,7 @@ void CodeGenModule::EmitModuleLinkOptions() {
   for (llvm::SetVector<clang::Module *>::iterator M = ImportedModules.begin(),
                                                MEnd = ImportedModules.end();
        M != MEnd; ++M) {
-    if (Visited.insert(*M))
+    if (Visited.insert(*M).second)
       Stack.push_back(*M);
   }
 
@@ -1029,7 +1041,7 @@ void CodeGenModule::EmitModuleLinkOptions() {
       if ((*Sub)->IsExplicit)
         continue;
 
-      if (Visited.insert(*Sub)) {
+      if (Visited.insert(*Sub).second) {
         Stack.push_back(*Sub);
         AnyChildren = true;
       }
@@ -1050,7 +1062,7 @@ void CodeGenModule::EmitModuleLinkOptions() {
   for (llvm::SetVector<clang::Module *>::iterator M = LinkModules.begin(),
                                                MEnd = LinkModules.end();
        M != MEnd; ++M) {
-    if (Visited.insert(*M))
+    if (Visited.insert(*M).second)
       addLinkOptionsPostorder(*this, *M, MetadataArgs, Visited);
   }
   std::reverse(MetadataArgs.begin(), MetadataArgs.end());
@@ -2458,7 +2470,7 @@ GetConstantCFStringEntry(llvm::StringMap<llvm::Constant*> &Map,
   // Check for simple case.
   if (!Literal->containsNonAsciiOrNull()) {
     StringLength = NumBytes;
-    return Map.GetOrCreateValue(String);
+    return *Map.insert(std::make_pair(String, nullptr)).first;
   }
 
   // Otherwise, convert the UTF8 literals into a string of shorts.
@@ -2477,9 +2489,10 @@ GetConstantCFStringEntry(llvm::StringMap<llvm::Constant*> &Map,
 
   // Add an explicit null.
   *ToPtr = 0;
-  return Map.
-    GetOrCreateValue(StringRef(reinterpret_cast<const char *>(ToBuf.data()),
-                               (StringLength + 1) * 2));
+  return *Map.insert(std::make_pair(
+                         StringRef(reinterpret_cast<const char *>(ToBuf.data()),
+                                   (StringLength + 1) * 2),
+                         nullptr)).first;
 }
 
 static llvm::StringMapEntry<llvm::Constant*> &
@@ -2488,7 +2501,7 @@ GetConstantStringEntry(llvm::StringMap<llvm::Constant*> &Map,
                        unsigned &StringLength) {
   StringRef String = Literal->getString();
   StringLength = String.size();
-  return Map.GetOrCreateValue(String);
+  return *Map.insert(std::make_pair(String, nullptr)).first;
 }
 
 llvm::Constant *
@@ -2500,7 +2513,7 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
                              getDataLayout().isLittleEndian(),
                              isUTF16, StringLength);
 
-  if (llvm::Constant *C = Entry.getValue())
+  if (auto *C = Entry.second)
     return C;
 
   llvm::Constant *Zero = llvm::Constant::getNullValue(Int32Ty);
@@ -2537,13 +2550,12 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
   // String pointer.
   llvm::Constant *C = nullptr;
   if (isUTF16) {
-    ArrayRef<uint16_t> Arr =
-      llvm::makeArrayRef<uint16_t>(reinterpret_cast<uint16_t*>(
-                                     const_cast<char *>(Entry.getKey().data())),
-                                   Entry.getKey().size() / 2);
+    ArrayRef<uint16_t> Arr = llvm::makeArrayRef<uint16_t>(
+        reinterpret_cast<uint16_t *>(const_cast<char *>(Entry.first().data())),
+        Entry.first().size() / 2);
     C = llvm::ConstantDataArray::get(VMContext, Arr);
   } else {
-    C = llvm::ConstantDataArray::getString(VMContext, Entry.getKey());
+    C = llvm::ConstantDataArray::getString(VMContext, Entry.first());
   }
 
   // Note: -fwritable-strings doesn't make the backing store strings of
@@ -2584,7 +2596,7 @@ CodeGenModule::GetAddrOfConstantCFString(const StringLiteral *Literal) {
                                 llvm::GlobalVariable::PrivateLinkage, C,
                                 "_unnamed_cfstring_");
   GV->setSection("__DATA,__cfstring");
-  Entry.setValue(GV);
+  Entry.second = GV;
 
   return GV;
 }
@@ -2594,8 +2606,8 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
   unsigned StringLength = 0;
   llvm::StringMapEntry<llvm::Constant*> &Entry =
     GetConstantStringEntry(CFConstantStringMap, Literal, StringLength);
-  
-  if (llvm::Constant *C = Entry.getValue())
+
+  if (auto *C = Entry.second)
     return C;
   
   llvm::Constant *Zero = llvm::Constant::getNullValue(Int32Ty);
@@ -2668,8 +2680,8 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
   
   // String pointer.
   llvm::Constant *C =
-    llvm::ConstantDataArray::getString(VMContext, Entry.getKey());
-  
+      llvm::ConstantDataArray::getString(VMContext, Entry.first());
+
   llvm::GlobalValue::LinkageTypes Linkage;
   bool isConstant;
   Linkage = llvm::GlobalValue::PrivateLinkage;
@@ -2700,8 +2712,8 @@ CodeGenModule::GetAddrOfConstantString(const StringLiteral *Literal) {
   GV->setSection(LangOpts.ObjCRuntime.isNonFragile()
                      ? NSStringNonFragileABISection
                      : NSStringSection);
-  Entry.setValue(GV);
-  
+  Entry.second = GV;
+
   return GV;
 }
 

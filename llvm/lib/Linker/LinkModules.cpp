@@ -152,7 +152,7 @@ bool TypeMapTy::areTypesIsomorphic(Type *DstTy, Type *SrcTy) {
     // same opaque type then we fail.
     if (cast<StructType>(DstTy)->isOpaque()) {
       // We can only map one source type onto the opaque destination type.
-      if (!DstResolvedOpaqueTypes.insert(cast<StructType>(DstTy)))
+      if (!DstResolvedOpaqueTypes.insert(cast<StructType>(DstTy)).second)
         return false;
       SrcDefinitionsToResolve.push_back(SSTy);
       Entry = DstTy;
@@ -1463,7 +1463,7 @@ bool ModuleLinker::run() {
   computeTypeMapping();
 
   ComdatsChosen.clear();
-  for (const StringMapEntry<llvm::Comdat> &SMEC : SrcM->getComdatSymbolTable()) {
+  for (const auto &SMEC : SrcM->getComdatSymbolTable()) {
     const Comdat &C = SMEC.getValue();
     if (ComdatsChosen.count(&C))
       continue;
@@ -1594,16 +1594,23 @@ bool ModuleLinker::run() {
   return false;
 }
 
-Linker::Linker(Module *M, DiagnosticHandlerFunction DiagnosticHandler)
-    : Composite(M), DiagnosticHandler(DiagnosticHandler) {}
+void Linker::init(Module *M, DiagnosticHandlerFunction DiagnosticHandler) {
+  this->Composite = M;
+  this->DiagnosticHandler = DiagnosticHandler;
 
-Linker::Linker(Module *M)
-    : Composite(M), DiagnosticHandler([this](const DiagnosticInfo &DI) {
-                      Composite->getContext().diagnose(DI);
-                    }) {
   TypeFinder StructTypes;
   StructTypes.run(*M, true);
   IdentifiedStructTypes.insert(StructTypes.begin(), StructTypes.end());
+}
+
+Linker::Linker(Module *M, DiagnosticHandlerFunction DiagnosticHandler) {
+  init(M, DiagnosticHandler);
+}
+
+Linker::Linker(Module *M) {
+  init(M, [this](const DiagnosticInfo &DI) {
+    Composite->getContext().diagnose(DI);
+  });
 }
 
 Linker::~Linker() {

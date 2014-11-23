@@ -507,7 +507,7 @@ public:
     return RD->hasAttr<MSInheritanceAttr>();
   }
 
-  virtual bool isTypeInfoCalculable(QualType Ty) const override {
+  bool isTypeInfoCalculable(QualType Ty) const override {
     if (!CGCXXABI::isTypeInfoCalculable(Ty))
       return false;
     if (const auto *MPT = Ty->getAs<MemberPointerType>()) {
@@ -1292,7 +1292,7 @@ llvm::GlobalVariable *MicrosoftCXXABI::getAddrOfVTable(const CXXRecordDecl *RD,
   MicrosoftVTableContext &VTContext = CGM.getMicrosoftVTableContext();
   const VPtrInfoVector &VFPtrs = VTContext.getVFPtrOffsets(RD);
 
-  if (DeferredVFTables.insert(RD)) {
+  if (DeferredVFTables.insert(RD).second) {
     // We haven't processed this record type before.
     // Queue up this v-table for possible deferred emission.
     CGM.addDeferredVTable(RD);
@@ -1304,7 +1304,7 @@ llvm::GlobalVariable *MicrosoftCXXABI::getAddrOfVTable(const CXXRecordDecl *RD,
     for (size_t J = 0, F = VFPtrs.size(); J != F; ++J) {
       SmallString<256> Name;
       mangleVFTableName(getMangleContext(), RD, VFPtrs[J], Name);
-      if (!ObservedMangledNames.insert(Name.str()))
+      if (!ObservedMangledNames.insert(Name.str()).second)
         llvm_unreachable("Already saw this mangling before?");
     }
 #endif
@@ -2784,11 +2784,11 @@ detectAmbiguousBases(SmallVectorImpl<MSRTTIClass> &Classes) {
   llvm::SmallPtrSet<const CXXRecordDecl *, 8> AmbiguousBases;
   for (MSRTTIClass *Class = &Classes.front(); Class <= &Classes.back();) {
     if ((Class->Flags & MSRTTIClass::IsVirtual) &&
-        !VirtualBases.insert(Class->RD)) {
+        !VirtualBases.insert(Class->RD).second) {
       Class = MSRTTIClass::getNextChild(Class);
       continue;
     }
-    if (!UniqueBases.insert(Class->RD))
+    if (!UniqueBases.insert(Class->RD).second)
       AmbiguousBases.insert(Class->RD);
     Class++;
   }

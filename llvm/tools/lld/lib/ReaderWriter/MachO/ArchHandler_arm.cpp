@@ -521,7 +521,7 @@ std::error_code ArchHandler_arm::getReferenceInfo(
   typedef std::error_code E;
   const uint8_t *fixupContent = &inAtom->rawContent()[offsetInAtom];
   uint64_t targetAddress;
-  uint32_t instruction = *(ulittle32_t *)fixupContent;
+  uint32_t instruction = *(const ulittle32_t *)fixupContent;
   int32_t displacement;
   switch (relocPattern(reloc)) {
   case ARM_THUMB_RELOC_BR22 | rPcRel | rExtern | rLength4:
@@ -781,7 +781,7 @@ ArchHandler_arm::getPairReferenceInfo(const normalized::Relocation &reloc1,
   }
   const uint8_t *fixupContent = &inAtom->rawContent()[offsetInAtom];
   std::error_code ec;
-  uint32_t instruction = *(ulittle32_t *)fixupContent;
+  uint32_t instruction = *(const ulittle32_t *)fixupContent;
   uint32_t value;
   uint32_t fromAddress;
   uint32_t toAddress;
@@ -1074,6 +1074,7 @@ void ArchHandler_arm::applyFixupRelocatable(const Reference &ref, uint8_t *loc,
   int32_t displacement;
   uint16_t value16;
   uint32_t value32;
+  bool targetIsUndef = isa<UndefinedAtom>(ref.target());
   switch (ref.kindValue()) {
   case modeThumbCode:
     thumbMode = true;
@@ -1091,7 +1092,8 @@ void ArchHandler_arm::applyFixupRelocatable(const Reference &ref, uint8_t *loc,
     else
       displacement = (targetAddress - (fixupAddress + 4)) + ref.addend();
     value32 = setDisplacementInThumbBranch(*loc32, fixupAddress,
-                                           displacement, targetIsThumb);
+                                           displacement,
+                                           targetIsUndef || targetIsThumb);
     *loc32 = value32;
     break;
   case thumb_movw:

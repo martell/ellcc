@@ -234,7 +234,7 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
 
   DPRINTF(VFSDB_CORE, ("VFS: mounting %s at %s\n", fsname, dir));
 
-  if (!dir || *dir == '\0')
+  if (*dir == '\0')
     return -ENOENT;
 
   /* Find a file system. */

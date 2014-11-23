@@ -39,9 +39,12 @@ public:
       name = name.copy(_allocator);
       content = content.copy(_allocator);
     }
+    DefinedAtom::Alignment align(
+        inSection->alignment,
+        sectionOffset % ((uint64_t)1 << inSection->alignment));
     MachODefinedAtom *atom =
         new (_allocator) MachODefinedAtom(*this, name, scope, type, merge,
-                                          thumb, noDeadStrip, content);
+                                          thumb, noDeadStrip, content, align);
     addAtomForSection(inSection, atom, sectionOffset);
   }
 
@@ -59,11 +62,14 @@ public:
       content = content.copy(_allocator);
       sectionName = sectionName.copy(_allocator);
     }
+    DefinedAtom::Alignment align(
+        inSection->alignment,
+        sectionOffset % ((uint64_t)1 << inSection->alignment));
     MachODefinedCustomSectionAtom *atom =
         new (_allocator) MachODefinedCustomSectionAtom(*this, name, scope, type,
                                                         merge, thumb,
                                                         noDeadStrip, content,
-                                                        sectionName);
+                                                        sectionName, align);
     addAtomForSection(inSection, atom, sectionOffset);
   }
 
@@ -75,8 +81,12 @@ public:
       // Make a copy of the atom's name and content that is owned by this file.
       name = name.copy(_allocator);
     }
+    DefinedAtom::Alignment align(
+        inSection->alignment,
+        sectionOffset % ((uint64_t)1 << inSection->alignment));
     MachODefinedAtom *atom =
-       new (_allocator) MachODefinedAtom(*this, name, scope, size, noDeadStrip);
+       new (_allocator) MachODefinedAtom(*this, name, scope, size, noDeadStrip,
+                                         align);
     addAtomForSection(inSection, atom, sectionOffset);
   }
 
@@ -108,13 +118,13 @@ public:
   MachODefinedAtom *findAtomCoveringAddress(const Section &section,
                                             uint64_t offsetInSect,
                                             uint32_t *foundOffsetAtom=nullptr) {
-    auto pos = _sectionAtoms.find(&section);
+    const auto &pos = _sectionAtoms.find(&section);
     if (pos == _sectionAtoms.end())
       return nullptr;
-    auto vec = pos->second;
+    const auto &vec = pos->second;
     assert(offsetInSect < section.content.size());
     // Vector of atoms for section are already sorted, so do binary search.
-    auto atomPos = std::lower_bound(vec.begin(), vec.end(), offsetInSect, 
+    const auto &atomPos = std::lower_bound(vec.begin(), vec.end(), offsetInSect,
         [offsetInSect](const SectionOffsetAndAtom &ao, 
                        uint64_t targetAddr) -> bool {
           // Each atom has a start offset of its slice of the
@@ -188,8 +198,10 @@ private:
 
 class MachODylibFile : public SharedLibraryFile {
 public:
-  MachODylibFile(StringRef path, StringRef installName)
-      : SharedLibraryFile(path), _installName(installName) {
+  MachODylibFile(StringRef path, StringRef installName, uint32_t compatVersion,
+                 uint32_t currentVersion)
+      : SharedLibraryFile(path), _installName(installName),
+        _currentVersion(currentVersion), _compatVersion(compatVersion) {
   }
 
   const SharedLibraryAtom *exports(StringRef name,
@@ -232,6 +244,10 @@ public:
   }
 
   StringRef installName() { return _installName; }
+
+  uint32_t currentVersion() { return _currentVersion; }
+
+  uint32_t compatVersion() { return _compatVersion; }
 
   typedef std::function<MachODylibFile *(StringRef)> FindDylib;
 
@@ -282,7 +298,9 @@ private:
     bool                      weakDef;
   };
 
-  StringRef _installName;
+  StringRef                                  _installName;
+  uint32_t                                   _currentVersion;
+  uint32_t                                   _compatVersion;
   atom_collection_vector<DefinedAtom>        _definedAtoms;
   atom_collection_vector<UndefinedAtom>      _undefinedAtoms;
   atom_collection_vector<SharedLibraryAtom>  _sharedLibraryAtoms;

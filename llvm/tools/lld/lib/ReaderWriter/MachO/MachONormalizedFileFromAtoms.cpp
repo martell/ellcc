@@ -573,11 +573,14 @@ void Util::copySectionContent(NormalizedFile &file) {
   };
 
   for (SectionInfo *si : _sectionInfos) {
-    if (si->type == llvm::MachO::S_ZEROFILL)
+    Section *normSect = &file.sections[si->normalizedSectionIndex];
+    if (si->type == llvm::MachO::S_ZEROFILL) {
+      const uint8_t *empty = nullptr;
+      normSect->content = llvm::makeArrayRef(empty, si->size);
       continue;
+    }
     // Copy content from atoms to content buffer for section.
     uint8_t *sectionContent = file.ownedAllocations.Allocate<uint8_t>(si->size);
-    Section *normSect = &file.sections[si->normalizedSectionIndex];
     normSect->content = llvm::makeArrayRef(sectionContent, si->size);
     for (AtomInfo &ai : si->atomsAndOffsets) {
       uint8_t *atomContent = reinterpret_cast<uint8_t*>
@@ -938,6 +941,8 @@ void Util::addDependentDylibs(const lld::File &atomFile,NormalizedFile &nFile) {
       DependentDylib depInfo;
       depInfo.path = loadPath;
       depInfo.kind = llvm::MachO::LC_LOAD_DYLIB;
+      depInfo.currentVersion = _context.dylibCurrentVersion(loadPath);
+      depInfo.compatVersion = _context.dylibCompatVersion(loadPath);
       nFile.dependentDylibs.push_back(depInfo);
     } else {
       if ( slAtom->canBeNullAtRuntime() )
@@ -1185,6 +1190,8 @@ normalizedFromAtoms(const lld::File &atomFile,
   normFile.fileType = context.outputMachOType();
   normFile.flags = util.fileFlags();
   normFile.installName = context.installName();
+  normFile.currentVersion = context.currentVersion();
+  normFile.compatVersion = context.compatibilityVersion();
   normFile.pageSize = context.pageSize();
   util.addDependentDylibs(atomFile, normFile);
   util.copySegmentInfo(normFile);

@@ -54,7 +54,7 @@ const char *MBlazeTargetLowering::getTargetNodeName(unsigned Opcode) const {
 
 MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM,
                                            const MBlazeSubtarget &STI)
-  : TargetLowering(TM, new MBlazeTargetObjectFile()), Subtarget(STI) {
+  : TargetLowering(TM), Subtarget(STI) {
 
   // MBlaze does not have i1 type, so use i32 for
   // setcc operations results (slt, sgt, ...).

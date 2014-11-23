@@ -1172,10 +1172,12 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
   if (LangStd == LangStandard::lang_opencl)
     Opts.OpenCLVersion = 100;
   else if (LangStd == LangStandard::lang_opencl11)
-      Opts.OpenCLVersion = 110;
+    Opts.OpenCLVersion = 110;
   else if (LangStd == LangStandard::lang_opencl12)
     Opts.OpenCLVersion = 120;
-  
+  else if (LangStd == LangStandard::lang_opencl20)
+    Opts.OpenCLVersion = 200;
+
   // OpenCL has some additional defaults.
   if (Opts.OpenCL) {
     Opts.AltiVec = 0;
@@ -1323,6 +1325,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
     .Case("CL", LangStandard::lang_opencl)
     .Case("CL1.1", LangStandard::lang_opencl11)
     .Case("CL1.2", LangStandard::lang_opencl12)
+    .Case("CL2.0", LangStandard::lang_opencl20)
     .Default(LangStandard::lang_unspecified);
     
     if (OpenCLLangStd == LangStandard::lang_unspecified) {
@@ -1448,7 +1451,6 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.ObjCExceptions = Args.hasArg(OPT_fobjc_exceptions);
   Opts.CXXExceptions = Args.hasArg(OPT_fcxx_exceptions);
   Opts.SjLjExceptions = Args.hasArg(OPT_fsjlj_exceptions);
-  Opts.SEHExceptions = Args.hasArg(OPT_fseh_exceptions);
   Opts.TraditionalCPP = Args.hasArg(OPT_traditional_cpp);
 
   Opts.RTTI = !Args.hasArg(OPT_fno_rtti);

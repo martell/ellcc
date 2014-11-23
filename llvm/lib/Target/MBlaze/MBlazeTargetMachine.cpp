@@ -13,6 +13,7 @@
 
 #include "MBlazeTargetMachine.h"
 #include "MBlaze.h"
+#include "MBlazeTargetObjectFile.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/PassManager.h"
 #include "llvm/Support/FormattedStream.h"
@@ -37,10 +38,13 @@ MBlazeTargetMachine(const Target &T, StringRef TT,
                     Reloc::Model RM, CodeModel::Model CM,
                     CodeGenOpt::Level OL)
   : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
+    TLOF(make_unique<MBlazeTargetObjectFile>()),
     Subtarget(nullptr), DefaultSubtarget(TT, CPU, FS, this) {
   Subtarget = &DefaultSubtarget;
   initAsmInfo();
 }
+
+MBlazeTargetMachine::~MBlazeTargetMachine() {}
 
 namespace {
 /// MBlaze Code Generator Pass Configuration Options.

@@ -65,6 +65,19 @@ static CGCXXABI::RecordArgABI getRecordArgABI(QualType T,
   return getRecordArgABI(RT, CXXABI);
 }
 
+/// Pass transparent unions as if they were the type of the first element. Sema
+/// should ensure that all elements of the union have the same "machine type".
+static QualType useFirstFieldIfTransparentUnion(QualType Ty) {
+  if (const RecordType *UT = Ty->getAsUnionType()) {
+    const RecordDecl *UD = UT->getDecl();
+    if (UD->hasAttr<TransparentUnionAttr>()) {
+      assert(!UD->field_empty() && "sema created an empty transparent union");
+      return UD->field_begin()->getType();
+    }
+  }
+  return Ty;
+}
+
 CGCXXABI &ABIInfo::getCXXABI() const {
   return CGT.getCXXABI();
 }
@@ -1005,6 +1018,8 @@ bool X86_32ABIInfo::shouldUseInReg(QualType Ty, CCState &State,
 ABIArgInfo X86_32ABIInfo::classifyArgumentType(QualType Ty,
                                                CCState &State) const {
   // FIXME: Set alignment on indirect arguments.
+
+  Ty = useFirstFieldIfTransparentUnion(Ty);
 
   // Check with the C++ ABI first.
   const RecordType *RT = Ty->getAs<RecordType>();
@@ -2543,6 +2558,8 @@ ABIArgInfo X86_64ABIInfo::classifyArgumentType(
   bool isNamedArg)
   const
 {
+  Ty = useFirstFieldIfTransparentUnion(Ty);
+
   X86_64ABIInfo::Class Lo, Hi;
   classify(Ty, 0, Lo, Hi, isNamedArg);
 
@@ -3590,6 +3607,8 @@ bool PPC64_SVR4_ABIInfo::isHomogeneousAggregateSmallEnough(
 
 ABIArgInfo
 PPC64_SVR4_ABIInfo::classifyArgumentType(QualType Ty) const {
+  Ty = useFirstFieldIfTransparentUnion(Ty);
+
   if (Ty->isAnyComplexType())
     return ABIArgInfo::getDirect();
 
@@ -3882,7 +3901,7 @@ private:
 
   bool isIllegalVectorType(QualType Ty) const;
 
-  virtual void computeInfo(CGFunctionInfo &FI) const override {
+  void computeInfo(CGFunctionInfo &FI) const override {
     // To correctly handle Homogeneous Aggregate, we need to keep track of the
     // number of SIMD and Floating-point registers allocated so far.
     // If the argument is an HFA or an HVA and there are sufficient unallocated
@@ -3981,6 +4000,8 @@ ABIArgInfo AArch64ABIInfo::classifyArgumentType(QualType Ty,
                                                 unsigned &AllocatedGPR,
                                                 bool &IsSmallAggr,
                                                 bool IsNamedArg) const {
+  Ty = useFirstFieldIfTransparentUnion(Ty);
+
   // Handle illegal vector types here.
   if (isIllegalVectorType(Ty)) {
     uint64_t Size = getContext().getTypeSize(Ty);
@@ -4761,6 +4782,8 @@ ABIArgInfo ARMABIInfo::classifyArgumentType(QualType Ty, bool isVariadic,
   //   64-bit containerized vectors or 128-bit containerized vectors with one
   //   to four Elements.
   bool IsEffectivelyAAPCS_VFP = getABIKind() == AAPCS_VFP && !isVariadic;
+
+  Ty = useFirstFieldIfTransparentUnion(Ty);
 
   // Handle illegal vector types here.
   if (isIllegalVectorType(Ty)) {
@@ -6095,6 +6118,14 @@ llvm::Value* MipsABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
                                     CodeGenFunction &CGF) const {
   llvm::Type *BP = CGF.Int8PtrTy;
   llvm::Type *BPP = CGF.Int8PtrPtrTy;
+
+  // Integer arguments are promoted 32-bit on O32 and 64-bit on N32/N64.
+  unsigned SlotSizeInBits = IsO32 ? 32 : 64;
+  if (Ty->isIntegerType() &&
+      CGF.getContext().getIntWidth(Ty) < SlotSizeInBits) {
+    Ty = CGF.getContext().getIntTypeForBitwidth(SlotSizeInBits,
+                                                Ty->isSignedIntegerType());
+  }
  
   CGBuilderTy &Builder = CGF.Builder;
   llvm::Value *VAListAddrAsBPP = Builder.CreateBitCast(VAListAddr, BPP, "ap");
@@ -6119,8 +6150,8 @@ llvm::Value* MipsABIInfo::EmitVAArg(llvm::Value *VAListAddr, QualType Ty,
 
   llvm::Value *AlignedAddr = Builder.CreateBitCast(AddrTyped, BP);
   TypeAlign = std::max((unsigned)TypeAlign, MinABIStackAlignInBytes);
-  uint64_t Offset =
-    llvm::RoundUpToAlignment(CGF.getContext().getTypeSize(Ty) / 8, TypeAlign);
+  unsigned ArgSizeInBits = CGF.getContext().getTypeSize(Ty);
+  uint64_t Offset = llvm::RoundUpToAlignment(ArgSizeInBits / 8, TypeAlign);
   llvm::Value *NextAddr =
     Builder.CreateGEP(AlignedAddr, llvm::ConstantInt::get(IntTy, Offset),
                       "ap.next");
@@ -7422,7 +7453,7 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
     bool IsDarwinVectorABI = Triple.isOSDarwin();
     bool IsSmallStructInRegABI =
         X86_32TargetCodeGenInfo::isStructReturnInRegABI(Triple, CodeGenOpts);
-    bool IsWin32FloatStructABI = Triple.isWindowsMSVCEnvironment();
+    bool IsWin32FloatStructABI = Triple.isOSWindows() && !Triple.isOSCygMing();
 
     if (Triple.getOS() == llvm::Triple::Win32) {
       return *(TheTargetCodeGenInfo =

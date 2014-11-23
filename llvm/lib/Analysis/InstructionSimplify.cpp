@@ -631,7 +631,7 @@ static Constant *stripAndComputeConstantOffsets(const DataLayout *DL,
     }
     assert(V->getType()->getScalarType()->isPointerTy() &&
            "Unexpected operand type!");
-  } while (Visited.insert(V));
+  } while (Visited.insert(V).second);
 
   Constant *OffsetIntPtr = ConstantInt::get(IntPtrTy, Offset);
   if (V->getType()->isVectorTy())
@@ -683,17 +683,9 @@ static Value *SimplifySubInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
   if (Op0 == Op1)
     return Constant::getNullValue(Op0->getType());
 
-  // X - (0 - Y) -> X if the second sub is NUW.
-  // If Y != 0, 0 - Y is a poison value.
-  // If Y == 0, 0 - Y simplifies to 0.
-  if (BinaryOperator::isNeg(Op1)) {
-    if (const auto *BO = dyn_cast<BinaryOperator>(Op1)) {
-      assert(BO->getOpcode() == Instruction::Sub &&
-             "Expected a subtraction operator!");
-      if (BO->hasNoUnsignedWrap())
-        return Op0;
-    }
-  }
+  // 0 - X -> 0 if the sub is NUW.
+  if (isNUW && match(Op0, m_Zero()))
+    return Op0;
 
   // (X + Y) - Z -> X + (Y - Z) or Y + (X - Z) if everything simplifies.
   // For example, (X + Y) - Y -> X; (Y + X) - Y -> X
@@ -2422,27 +2414,6 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
     }
   }
 
-  // If a bit is known to be zero for A and known to be one for B,
-  // then A and B cannot be equal.
-  if (ICmpInst::isEquality(Pred)) {
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(RHS)) {
-      uint32_t BitWidth = CI->getBitWidth();
-      APInt LHSKnownZero(BitWidth, 0);
-      APInt LHSKnownOne(BitWidth, 0);
-      computeKnownBits(LHS, LHSKnownZero, LHSKnownOne, Q.DL,
-                       0, Q.AT, Q.CxtI, Q.DT);
-      APInt RHSKnownZero(BitWidth, 0);
-      APInt RHSKnownOne(BitWidth, 0);
-      computeKnownBits(RHS, RHSKnownZero, RHSKnownOne, Q.DL,
-                       0, Q.AT, Q.CxtI, Q.DT);
-      if (((LHSKnownOne & RHSKnownZero) != 0) ||
-          ((LHSKnownZero & RHSKnownOne) != 0))
-        return (Pred == ICmpInst::ICMP_EQ)
-                   ? ConstantInt::getFalse(CI->getContext())
-                   : ConstantInt::getTrue(CI->getContext());
-    }
-  }
-
   // Special logic for binary operators.
   BinaryOperator *LBO = dyn_cast<BinaryOperator>(LHS);
   BinaryOperator *RBO = dyn_cast<BinaryOperator>(RHS);
@@ -2878,6 +2849,23 @@ static Value *SimplifyICmpInst(unsigned Predicate, Value *LHS, Value *RHS,
         Constant *NewRHS = ConstantExpr::getGetElementPtr(Null, IndicesRHS);
         return ConstantExpr::getICmp(Pred, NewLHS, NewRHS);
       }
+    }
+  }
+
+  // If a bit is known to be zero for A and known to be one for B,
+  // then A and B cannot be equal.
+  if (ICmpInst::isEquality(Pred)) {
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(RHS)) {
+      uint32_t BitWidth = CI->getBitWidth();
+      APInt LHSKnownZero(BitWidth, 0);
+      APInt LHSKnownOne(BitWidth, 0);
+      computeKnownBits(LHS, LHSKnownZero, LHSKnownOne, Q.DL, /*Depth=*/0, Q.AT,
+                       Q.CxtI, Q.DT);
+      const APInt &RHSVal = CI->getValue();
+      if (((LHSKnownZero & RHSVal) != 0) || ((LHSKnownOne & ~RHSVal) != 0))
+        return Pred == ICmpInst::ICMP_EQ
+                   ? ConstantInt::getFalse(CI->getContext())
+                   : ConstantInt::getTrue(CI->getContext());
     }
   }
 

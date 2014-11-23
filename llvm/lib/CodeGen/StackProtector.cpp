@@ -169,7 +169,7 @@ bool StackProtector::HasAddressTaken(const Instruction *AI) {
     } else if (const PHINode *PN = dyn_cast<PHINode>(U)) {
       // Keep track of what PHI nodes we have already visited to ensure
       // they are only visited once.
-      if (VisitedPHIs.insert(PN))
+      if (VisitedPHIs.insert(PN).second)
         if (HasAddressTaken(PN))
           return true;
     } else if (const GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(U)) {
@@ -480,12 +480,12 @@ BasicBlock *StackProtector::CreateFailBB() {
   if (Trip.getOS() == llvm::Triple::OpenBSD) {
     Constant *StackChkFail = M->getOrInsertFunction(
         "__stack_smash_handler", Type::getVoidTy(Context),
-        Type::getInt8PtrTy(Context), NULL);
+        Type::getInt8PtrTy(Context), nullptr);
 
     B.CreateCall(StackChkFail, B.CreateGlobalStringPtr(F->getName(), "SSH"));
   } else {
     Constant *StackChkFail = M->getOrInsertFunction(
-        "__stack_chk_fail", Type::getVoidTy(Context), NULL);
+        "__stack_chk_fail", Type::getVoidTy(Context), nullptr);
     B.CreateCall(StackChkFail);
   }
   B.CreateUnreachable();

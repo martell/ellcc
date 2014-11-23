@@ -56,7 +56,7 @@ cl::desc("disable unaligned load/store generation on PPC"), cl::Hidden);
 extern cl::opt<bool> ANDIGlueBug;
 
 PPCTargetLowering::PPCTargetLowering(const PPCTargetMachine &TM)
-    : TargetLowering(TM, TM.getObjFileLowering()),
+    : TargetLowering(TM),
       Subtarget(*TM.getSubtargetImpl()) {
   setPow2SDivIsCheap();
 
@@ -6621,9 +6621,8 @@ PPCTargetLowering::EmitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
 
   MachineRegisterInfo &RegInfo = F->getRegInfo();
   unsigned TmpReg = (!BinOpcode) ? incr :
-    RegInfo.createVirtualRegister(
-       is64bit ? (const TargetRegisterClass *) &PPC::G8RCRegClass :
-                 (const TargetRegisterClass *) &PPC::GPRCRegClass);
+    RegInfo.createVirtualRegister( is64bit ? &PPC::G8RCRegClass
+                                           : &PPC::GPRCRegClass);
 
   //  thisMBB:
   //   ...
@@ -6689,9 +6688,8 @@ PPCTargetLowering::EmitPartwordAtomicBinary(MachineInstr *MI,
   exitMBB->transferSuccessorsAndUpdatePHIs(BB);
 
   MachineRegisterInfo &RegInfo = F->getRegInfo();
-  const TargetRegisterClass *RC =
-    is64bit ? (const TargetRegisterClass *) &PPC::G8RCRegClass :
-              (const TargetRegisterClass *) &PPC::GPRCRegClass;
+  const TargetRegisterClass *RC = is64bit ? &PPC::G8RCRegClass
+                                          : &PPC::GPRCRegClass;
   unsigned PtrReg = RegInfo.createVirtualRegister(RC);
   unsigned Shift1Reg = RegInfo.createVirtualRegister(RC);
   unsigned ShiftReg = RegInfo.createVirtualRegister(RC);
@@ -7309,9 +7307,8 @@ PPCTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
     exitMBB->transferSuccessorsAndUpdatePHIs(BB);
 
     MachineRegisterInfo &RegInfo = F->getRegInfo();
-    const TargetRegisterClass *RC =
-      is64bit ? (const TargetRegisterClass *) &PPC::G8RCRegClass :
-                (const TargetRegisterClass *) &PPC::GPRCRegClass;
+    const TargetRegisterClass *RC = is64bit ? &PPC::G8RCRegClass
+                                            : &PPC::GPRCRegClass;
     unsigned PtrReg = RegInfo.createVirtualRegister(RC);
     unsigned Shift1Reg = RegInfo.createVirtualRegister(RC);
     unsigned ShiftReg = RegInfo.createVirtualRegister(RC);
@@ -7649,7 +7646,7 @@ static bool findConsecutiveLoad(LoadSDNode *LD, SelectionDAG &DAG) {
   // nodes just above the top-level loads and token factors.
   while (!Queue.empty()) {
     SDNode *ChainNext = Queue.pop_back_val();
-    if (!Visited.insert(ChainNext))
+    if (!Visited.insert(ChainNext).second)
       continue;
 
     if (MemSDNode *ChainLD = dyn_cast<MemSDNode>(ChainNext)) {
@@ -7680,7 +7677,7 @@ static bool findConsecutiveLoad(LoadSDNode *LD, SelectionDAG &DAG) {
        
     while (!Queue.empty()) {
       SDNode *LoadRoot = Queue.pop_back_val();
-      if (!Visited.insert(LoadRoot))
+      if (!Visited.insert(LoadRoot).second)
         continue;
 
       if (MemSDNode *ChainLD = dyn_cast<MemSDNode>(LoadRoot))
@@ -7810,7 +7807,7 @@ SDValue PPCTargetLowering::DAGCombineTruncBoolExt(SDNode *N,
     SDValue BinOp = BinOps.back();
     BinOps.pop_back();
 
-    if (!Visited.insert(BinOp.getNode()))
+    if (!Visited.insert(BinOp.getNode()).second)
       continue;
 
     PromOps.push_back(BinOp);
@@ -8024,7 +8021,7 @@ SDValue PPCTargetLowering::DAGCombineExtBoolTrunc(SDNode *N,
     SDValue BinOp = BinOps.back();
     BinOps.pop_back();
 
-    if (!Visited.insert(BinOp.getNode()))
+    if (!Visited.insert(BinOp.getNode()).second)
       continue;
 
     PromOps.push_back(BinOp);

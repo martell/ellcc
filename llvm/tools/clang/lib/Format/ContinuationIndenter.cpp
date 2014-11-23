@@ -117,9 +117,8 @@ bool ContinuationIndenter::canBreak(const LineState &State) {
 
   // Don't create a 'hanging' indent if there are multiple blocks in a single
   // statement.
-  if (Style.Language == FormatStyle::LK_JavaScript &&
-      Previous.is(tok::l_brace) && State.Stack.size() > 1 &&
-      State.Stack[State.Stack.size() - 2].JSFunctionInlined &&
+  if (Previous.is(tok::l_brace) && State.Stack.size() > 1 &&
+      State.Stack[State.Stack.size() - 2].NestedBlockInlined &&
       State.Stack[State.Stack.size() - 2].HasMultipleNestedBlocks)
     return false;
 
@@ -300,7 +299,8 @@ void ContinuationIndenter::addTokenOnCurrentLine(LineState &State, bool DryRun,
       State.Stack.back().ColonPos = State.Column + Spaces + Current.ColumnWidth;
   }
 
-  if (Previous.opensScope() && Previous.Type != TT_ObjCMethodExpr &&
+  if (Style.AlignAfterOpenBracket &&
+      Previous.opensScope() && Previous.Type != TT_ObjCMethodExpr &&
       (Current.Type != TT_LineComment || Previous.BlockKind == BK_BracedInit))
     State.Stack.back().Indent = State.Column + Spaces;
   if (State.Stack.back().AvoidBinPacking && startsNextParameter(Current, Style))
@@ -452,11 +452,10 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
 
   // Any break on this level means that the parent level has been broken
   // and we need to avoid bin packing there.
-  bool JavaScriptFormat = Style.Language == FormatStyle::LK_JavaScript &&
-                          Current.is(tok::r_brace) &&
-                          State.Stack.size() > 1 &&
-                          State.Stack[State.Stack.size() - 2].JSFunctionInlined;
-  if (!JavaScriptFormat) {
+  bool NestedBlockSpecialCase =
+      Current.is(tok::r_brace) && State.Stack.size() > 1 &&
+      State.Stack[State.Stack.size() - 2].NestedBlockInlined;
+  if (!NestedBlockSpecialCase) {
     for (unsigned i = 0, e = State.Stack.size() - 1; i != e; ++i) {
       State.Stack[i].BreakBeforeParameter = true;
     }
@@ -464,7 +463,8 @@ unsigned ContinuationIndenter::addTokenOnNewLine(LineState &State,
 
   if (PreviousNonComment &&
       !PreviousNonComment->isOneOf(tok::comma, tok::semi) &&
-      PreviousNonComment->Type != TT_TemplateCloser &&
+      (PreviousNonComment->Type != TT_TemplateCloser ||
+       Current.NestingLevel != 0) &&
       PreviousNonComment->Type != TT_BinaryOperator &&
       PreviousNonComment->Type != TT_JavaAnnotation &&
       PreviousNonComment->Type != TT_LeadingJavaAnnotation &&
@@ -518,7 +518,7 @@ unsigned ContinuationIndenter::getNewLineColumn(const LineState &State) {
                                      : State.Stack.back().Indent;
   if (Current.isOneOf(tok::r_brace, tok::r_square)) {
     if (State.Stack.size() > 1 &&
-        State.Stack[State.Stack.size() - 2].JSFunctionInlined)
+        State.Stack[State.Stack.size() - 2].NestedBlockInlined)
       return State.FirstIndent;
     if (Current.closesBlockTypeList(Style) ||
         (Current.MatchingParen &&
@@ -594,7 +594,7 @@ unsigned ContinuationIndenter::getNewLineColumn(const LineState &State) {
   if (NextNonComment->Type == TT_CtorInitializerComma)
     return State.Stack.back().Indent;
   if (Previous.is(tok::r_paren) && !Current.isBinaryOperator() &&
-      Current.isNot(tok::colon))
+      !Current.isOneOf(tok::colon, tok::comment))
     return ContinuationIndent;
   if (State.Stack.back().Indent == State.FirstIndent && PreviousNonComment &&
       PreviousNonComment->isNot(tok::r_brace))
@@ -664,22 +664,21 @@ unsigned ContinuationIndenter::moveStateToNextToken(LineState &State,
   //     foo();
   //     bar();
   //   }, a, b, c);
-  if (Style.Language == FormatStyle::LK_JavaScript) {
-    if (Current.isNot(tok::comment) && Previous && Previous->is(tok::l_brace) &&
-        State.Stack.size() > 1) {
-      if (State.Stack[State.Stack.size() - 2].JSFunctionInlined && Newline) {
-        for (unsigned i = 0, e = State.Stack.size() - 1; i != e; ++i) {
-          State.Stack[i].NoLineBreak = true;
-        }
+  if (Current.isNot(tok::comment) && Previous && Previous->is(tok::l_brace) &&
+      State.Stack.size() > 1) {
+    if (State.Stack[State.Stack.size() - 2].NestedBlockInlined && Newline) {
+      for (unsigned i = 0, e = State.Stack.size() - 1; i != e; ++i) {
+        State.Stack[i].NoLineBreak = true;
       }
-      State.Stack[State.Stack.size() - 2].JSFunctionInlined = false;
     }
-    if (Current.is(Keywords.kw_function))
-      State.Stack.back().JSFunctionInlined =
-          !Newline && Previous && Previous->Type != TT_DictLiteral &&
-          // If the unnamed function is the only parameter to another function,
-          // we can likely inline it and come up with a good format.
-          (Previous->isNot(tok::l_paren) || Previous->ParameterCount > 1);
+    State.Stack[State.Stack.size() - 2].NestedBlockInlined = false;
+  }
+  if (Previous && (Previous->isOneOf(tok::l_paren, tok::comma, tok::colon) ||
+                   Previous->isOneOf(TT_BinaryOperator, TT_ConditionalExpr)) &&
+      !Previous->isOneOf(TT_DictLiteral, TT_ObjCMethodExpr)) {
+    State.Stack.back().NestedBlockInlined =
+        !Newline &&
+        (Previous->isNot(tok::l_paren) || Previous->ParameterCount > 1) && !Newline;
   }
 
   moveStatePastFakeLParens(State, Newline);
@@ -734,11 +733,14 @@ void ContinuationIndenter::moveStatePastFakeLParens(LineState &State,
     ParenState NewParenState = State.Stack.back();
     NewParenState.ContainsLineBreak = false;
 
-    // Indent from 'LastSpace' unless this the fake parentheses encapsulating a
-    // builder type call after 'return'. If such a call is line-wrapped, we
-    // commonly just want to indent from the start of the line.
+    // Indent from 'LastSpace' unless these are fake parentheses encapsulating
+    // a builder type call after 'return' or, if the alignment after opening
+    // brackets is disabled.
     if (!Current.isTrailingComment() &&
-        (!Previous || Previous->isNot(tok::kw_return) || *I > 0))
+        (!Previous || Previous->isNot(tok::kw_return) ||
+         (Style.Language != FormatStyle::LK_Java && *I > 0)) &&
+        (Style.AlignAfterOpenBracket || *I != prec::Comma ||
+         Current.NestingLevel == 0))
       NewParenState.Indent =
           std::max(std::max(State.Column, NewParenState.Indent),
                    State.Stack.back().LastSpace);

@@ -43,14 +43,14 @@ class MBlazeAsmParser : public MCTargetAsmParser {
   std::unique_ptr<MBlazeOperand> ParseFsl();
   std::unique_ptr<MBlazeOperand> ParseOperand(OperandVector &Operands);
 
-  virtual bool ParseRegister(unsigned &RegNo, SMLoc &StartLoc, SMLoc &EndLoc);
+  bool ParseRegister(unsigned &RegNo, SMLoc &StartLoc, SMLoc &EndLoc) override;
 
   bool ParseDirectiveWord(unsigned Size, SMLoc L);
 
   bool MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                OperandVector &Operands,
                                MCStreamer &Out, uint64_t &ErrorInfo,
-                               bool MatchingInlineAsm);
+                               bool MatchingInlineAsm) override;
 
   /// @name Auto-generated Match Functions
   /// {
@@ -68,10 +68,10 @@ public:
       setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
   }
 
-  virtual bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
-                                SMLoc NameLoc, OperandVector &Operands);
+  bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
+                        SMLoc NameLoc, OperandVector &Operands) override;
 
-  virtual bool ParseDirective(AsmToken DirectiveID);
+  bool ParseDirective(AsmToken DirectiveID) override;
 };
 
 /// MBlazeOperand - Instances of this class represent a parsed MBlaze machine

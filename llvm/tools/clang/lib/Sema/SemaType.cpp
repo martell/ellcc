@@ -661,27 +661,27 @@ static void maybeSynthesizeBlockSignature(TypeProcessingState &state,
   // ...and *prepend* it to the declarator.
   SourceLocation NoLoc;
   declarator.AddInnermostTypeInfo(DeclaratorChunk::getFunction(
-                             /*HasProto=*/true,
-                             /*IsAmbiguous=*/false,
-                             /*LParenLoc=*/NoLoc,
-                             /*ArgInfo=*/nullptr,
-                             /*NumArgs=*/0,
-                             /*EllipsisLoc=*/NoLoc,
-                             /*RParenLoc=*/NoLoc,
-                             /*TypeQuals=*/0,
-                             /*RefQualifierIsLvalueRef=*/true,
-                             /*RefQualifierLoc=*/NoLoc,
-                             /*ConstQualifierLoc=*/NoLoc,
-                             /*VolatileQualifierLoc=*/NoLoc,
-                             /*RestrictQualifierLoc=*/NoLoc,
-                             /*MutableLoc=*/NoLoc,
-                             EST_None,
-                             /*ESpecLoc=*/NoLoc,
-                             /*Exceptions=*/nullptr,
-                             /*ExceptionRanges=*/nullptr,
-                             /*NumExceptions=*/0,
-                             /*NoexceptExpr=*/nullptr,
-                             loc, loc, declarator));
+      /*HasProto=*/true,
+      /*IsAmbiguous=*/false,
+      /*LParenLoc=*/NoLoc,
+      /*ArgInfo=*/nullptr,
+      /*NumArgs=*/0,
+      /*EllipsisLoc=*/NoLoc,
+      /*RParenLoc=*/NoLoc,
+      /*TypeQuals=*/0,
+      /*RefQualifierIsLvalueRef=*/true,
+      /*RefQualifierLoc=*/NoLoc,
+      /*ConstQualifierLoc=*/NoLoc,
+      /*VolatileQualifierLoc=*/NoLoc,
+      /*RestrictQualifierLoc=*/NoLoc,
+      /*MutableLoc=*/NoLoc, EST_None,
+      /*ESpecLoc=*/NoLoc,
+      /*Exceptions=*/nullptr,
+      /*ExceptionRanges=*/nullptr,
+      /*NumExceptions=*/0,
+      /*NoexceptExpr=*/nullptr,
+      /*ExceptionSpecTokens=*/nullptr,
+      loc, loc, declarator));
 
   // For consistency, make sure the state still has us as processing
   // the decl spec.
@@ -1035,7 +1035,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
       LSI->AutoTemplateParams.push_back(CorrespondingTemplateParam);
       // Replace the 'auto' in the function parameter with this invented 
       // template type parameter.
-      Result = QualType(CorrespondingTemplateParam->getTypeForDecl(), 0);  
+      Result = QualType(CorrespondingTemplateParam->getTypeForDecl(), 0);
     } else {
       Result = Context.getAutoType(QualType(), /*decltype(auto)*/false, false);
     }

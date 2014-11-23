@@ -170,6 +170,7 @@ template <> struct MappingTraits<FormatStyle> {
     }
 
     IO.mapOptional("AccessModifierOffset", Style.AccessModifierOffset);
+    IO.mapOptional("AlignAfterOpenBracket", Style.AlignAfterOpenBracket);
     IO.mapOptional("AlignEscapedNewlinesLeft", Style.AlignEscapedNewlinesLeft);
     IO.mapOptional("AlignTrailingComments", Style.AlignTrailingComments);
     IO.mapOptional("AllowAllParametersOfDeclarationOnNextLine",
@@ -324,6 +325,7 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.Language = FormatStyle::LK_Cpp;
   LLVMStyle.AccessModifierOffset = -2;
   LLVMStyle.AlignEscapedNewlinesLeft = false;
+  LLVMStyle.AlignAfterOpenBracket = true;
   LLVMStyle.AlignTrailingComments = true;
   LLVMStyle.AllowAllParametersOfDeclarationOnNextLine = true;
   LLVMStyle.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_All;
@@ -411,10 +413,12 @@ FormatStyle getGoogleStyle(FormatStyle::LanguageKind Language) {
   GoogleStyle.PenaltyBreakBeforeFirstCallParameter = 1;
 
   if (Language == FormatStyle::LK_Java) {
+    GoogleStyle.AlignAfterOpenBracket = false;
     GoogleStyle.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_None;
     GoogleStyle.BreakBeforeBinaryOperators = FormatStyle::BOS_NonAssignment;
     GoogleStyle.ColumnLimit = 100;
     GoogleStyle.SpaceAfterCStyleCast = true;
+    GoogleStyle.SpacesBeforeTrailingComments = 1;
   } else if (Language == FormatStyle::LK_JavaScript) {
     GoogleStyle.BreakBeforeTernaryOperators = false;
     GoogleStyle.MaxEmptyLinesToKeep = 3;
@@ -457,6 +461,7 @@ FormatStyle getMozillaStyle() {
 FormatStyle getWebKitStyle() {
   FormatStyle Style = getLLVMStyle();
   Style.AccessModifierOffset = -4;
+  Style.AlignAfterOpenBracket = false;
   Style.AlignTrailingComments = false;
   Style.BreakBeforeBinaryOperators = FormatStyle::BOS_All;
   Style.BreakBeforeBraces = FormatStyle::BS_Stroustrup;
@@ -573,6 +578,13 @@ std::string configurationAsText(const FormatStyle &Style) {
 }
 
 namespace {
+
+bool startsExternCBlock(const AnnotatedLine &Line) {
+  const FormatToken *Next = Line.First->getNextNonComment();
+  const FormatToken *NextNext = Next ? Next->getNextNonComment() : nullptr;
+  return Line.First->is(tok::kw_extern) && Next && Next->isStringLiteral() &&
+         NextNext && NextNext->is(tok::l_brace);
+}
 
 class NoColumnLimitFormatter {
 public:
@@ -738,7 +750,7 @@ private:
       if (Line->First->isOneOf(tok::kw_case, tok::kw_default, tok::r_brace))
         break;
       if (Line->First->isOneOf(tok::kw_if, tok::kw_for, tok::kw_switch,
-                               tok::kw_while))
+                               tok::kw_while, tok::comment))
         return 0;
       Length += I[1 + NumStmts]->Last->TotalLength + 1; // 1 for the space.
     }
@@ -785,7 +797,8 @@ private:
       Tok->SpacesRequiredBefore = 0;
       Tok->CanBreakBefore = true;
       return 1;
-    } else if (Limit != 0 && Line.First->isNot(tok::kw_namespace)) {
+    } else if (Limit != 0 && Line.First->isNot(tok::kw_namespace) &&
+               !startsExternCBlock(Line)) {
       // We don't merge short records.
       if (Line.First->isOneOf(tok::kw_class, tok::kw_union, tok::kw_struct))
         return 0;
@@ -1069,7 +1082,8 @@ private:
     // Remove empty lines after "{".
     if (!Style.KeepEmptyLinesAtTheStartOfBlocks && PreviousLine &&
         PreviousLine->Last->is(tok::l_brace) &&
-        PreviousLine->First->isNot(tok::kw_namespace))
+        PreviousLine->First->isNot(tok::kw_namespace) &&
+        !startsExternCBlock(*PreviousLine))
       Newlines = 1;
 
     // Insert extra new line before access specifiers.
@@ -1271,7 +1285,7 @@ private:
       int AdditionalIndent =
           State.FirstIndent - State.Line->Level * Style.IndentWidth;
       if (State.Stack.size() < 2 ||
-          !State.Stack[State.Stack.size() - 2].JSFunctionInlined) {
+          !State.Stack[State.Stack.size() - 2].NestedBlockInlined) {
         AdditionalIndent = State.Stack.back().Indent -
                            Previous.Children[0]->Level * Style.IndentWidth;
       }
@@ -1674,6 +1688,11 @@ private:
       IdentifierInfo &Info = IdentTable.get(FormatTok->TokenText);
       FormatTok->Tok.setIdentifierInfo(&Info);
       FormatTok->Tok.setKind(Info.getTokenID());
+      if (Style.Language == FormatStyle::LK_Java &&
+          FormatTok->isOneOf(tok::kw_struct, tok::kw_union, tok::kw_delete)) {
+        FormatTok->Tok.setKind(tok::identifier);
+        FormatTok->Tok.setIdentifierInfo(nullptr);
+      }
     } else if (FormatTok->Tok.is(tok::greatergreater)) {
       FormatTok->Tok.setKind(tok::greater);
       FormatTok->TokenText = FormatTok->TokenText.substr(0, 1);
@@ -2123,8 +2142,9 @@ LangOptions getFormattingLangOpts(const FormatStyle &Style) {
   LangOpts.CPlusPlus11 = Style.Standard == FormatStyle::LS_Cpp03 ? 0 : 1;
   LangOpts.CPlusPlus14 = Style.Standard == FormatStyle::LS_Cpp03 ? 0 : 1;
   LangOpts.LineComment = 1;
-  LangOpts.CXXOperatorNames =
-      Style.Language != FormatStyle::LK_JavaScript ? 1 : 0;
+  bool AlternativeOperators = Style.Language != FormatStyle::LK_JavaScript &&
+                              Style.Language != FormatStyle::LK_Java;
+  LangOpts.CXXOperatorNames = AlternativeOperators ? 1 : 0;
   LangOpts.Bool = 1;
   LangOpts.ObjC1 = 1;
   LangOpts.ObjC2 = 1;

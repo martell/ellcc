@@ -92,6 +92,92 @@ def HexagonWrapperCombineII :
 def HexagonWrapperCombineRR :
   SDNode<"HexagonISD::WrapperCombineRR", SDTHexagonI64I32I32>;
 
+let hasSideEffects = 0, hasNewValue = 1, InputType = "reg" in
+class T_ALU32_3op<string mnemonic, bits<3> MajOp, bits<3> MinOp, bit OpsRev,
+                  bit IsComm>
+  : ALU32_rr<(outs IntRegs:$Rd), (ins IntRegs:$Rs, IntRegs:$Rt),
+             "$Rd = "#mnemonic#"($Rs, $Rt)",
+             [], "", ALU32_3op_tc_1_SLOT0123>, ImmRegRel, PredRel {
+  let isCommutable = IsComm;
+  let BaseOpcode = mnemonic#_rr;
+  let CextOpcode = mnemonic;
+
+  bits<5> Rs;
+  bits<5> Rt;
+  bits<5> Rd;
+
+  let IClass = 0b1111;
+  let Inst{27} = 0b0;
+  let Inst{26-24} = MajOp;
+  let Inst{23-21} = MinOp;
+  let Inst{20-16} = !if(OpsRev,Rt,Rs);
+  let Inst{12-8} = !if(OpsRev,Rs,Rt);
+  let Inst{4-0} = Rd;
+}
+
+let hasSideEffects = 0, hasNewValue = 1 in
+class T_ALU32_3op_pred<string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                       bit OpsRev, bit PredNot, bit PredNew>
+  : ALU32_rr<(outs IntRegs:$Rd), (ins PredRegs:$Pu, IntRegs:$Rs, IntRegs:$Rt),
+             "if ("#!if(PredNot,"!","")#"$Pu"#!if(PredNew,".new","")#") "#
+             "$Rd = "#mnemonic#"($Rs, $Rt)",
+             [], "", ALU32_3op_tc_1_SLOT0123>, ImmRegRel, PredNewRel {
+  let isPredicated = 1;
+  let isPredicatedFalse = PredNot;
+  let isPredicatedNew = PredNew;
+  let BaseOpcode = mnemonic#_rr;
+  let CextOpcode = mnemonic;
+
+  bits<2> Pu;
+  bits<5> Rs;
+  bits<5> Rt;
+  bits<5> Rd;
+
+  let IClass = 0b1111;
+  let Inst{27} = 0b1;
+  let Inst{26-24} = MajOp;
+  let Inst{23-21} = MinOp;
+  let Inst{20-16} = !if(OpsRev,Rt,Rs);
+  let Inst{13} = PredNew;
+  let Inst{12-8} = !if(OpsRev,Rs,Rt);
+  let Inst{7} = PredNot;
+  let Inst{6-5} = Pu;
+  let Inst{4-0} = Rd;
+}
+
+multiclass T_ALU32_3op_p<string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                         bit OpsRev> {
+  def t    : T_ALU32_3op_pred<mnemonic, MajOp, MinOp, OpsRev, 0, 0>;
+  def f    : T_ALU32_3op_pred<mnemonic, MajOp, MinOp, OpsRev, 1, 0>;
+  def tnew : T_ALU32_3op_pred<mnemonic, MajOp, MinOp, OpsRev, 0, 1>;
+  def fnew : T_ALU32_3op_pred<mnemonic, MajOp, MinOp, OpsRev, 1, 1>;
+}
+
+multiclass T_ALU32_3op_A2<string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                          bit OpsRev, bit IsComm> {
+  let isPredicable = 1 in
+  def  A2_#NAME  : T_ALU32_3op  <mnemonic, MajOp, MinOp, OpsRev, IsComm>;
+  defm A2_p#NAME : T_ALU32_3op_p<mnemonic, MajOp, MinOp, OpsRev>;
+}
+
+let isCodeGenOnly = 0 in
+defm add : T_ALU32_3op_A2<"add", 0b011, 0b000, 0, 1>;
+defm and : T_ALU32_3op_A2<"and", 0b001, 0b000, 0, 1>;
+defm or  : T_ALU32_3op_A2<"or",  0b001, 0b001, 0, 1>;
+defm sub : T_ALU32_3op_A2<"sub", 0b011, 0b001, 1, 0>;
+defm xor : T_ALU32_3op_A2<"xor", 0b001, 0b011, 0, 1>;
+
+// Pats for instruction selection.
+class BinOp32_pat<SDNode Op, InstHexagon MI, ValueType ResT>
+  : Pat<(ResT (Op (i32 IntRegs:$Rs), (i32 IntRegs:$Rt))),
+        (ResT (MI IntRegs:$Rs, IntRegs:$Rt))>;
+
+def: BinOp32_pat<add, A2_add, i32>;
+def: BinOp32_pat<and, A2_and, i32>;
+def: BinOp32_pat<or,  A2_or,  i32>;
+def: BinOp32_pat<sub, A2_sub, i32>;
+def: BinOp32_pat<xor, A2_xor, i32>;
+
 multiclass ALU32_Pbase<string mnemonic, RegisterClass RC, bit isNot,
                        bit isPredNew> {
   let isPredicatedNew = isPredNew in
@@ -110,31 +196,77 @@ multiclass ALU32_Pred<string mnemonic, RegisterClass RC, bit PredNot> {
   }
 }
 
-let InputType = "reg" in
-multiclass ALU32_base<string mnemonic, string CextOp, SDNode OpNode> {
-  let CextOpcode = CextOp, BaseOpcode = CextOp#_rr in {
-    let isPredicable = 1 in
-    def NAME : ALU32_rr<(outs IntRegs:$dst),
-            (ins IntRegs:$src1, IntRegs:$src2),
-            "$dst = "#mnemonic#"($src1, $src2)",
-            [(set (i32 IntRegs:$dst), (OpNode (i32 IntRegs:$src1),
-                                              (i32 IntRegs:$src2)))]>;
+//===----------------------------------------------------------------------===//
+// template class for non-predicated alu32_2op instructions
+// - aslh, asrh, sxtb, sxth, zxth
+//===----------------------------------------------------------------------===//
+let hasNewValue = 1, opNewValue = 0 in
+class T_ALU32_2op <string mnemonic, bits<3> minOp> :
+    ALU32Inst < (outs IntRegs:$Rd), (ins IntRegs:$Rs),
+    "$Rd = "#mnemonic#"($Rs)", [] > {
+  bits<5> Rd;
+  bits<5> Rs;
 
-    let neverHasSideEffects = 1, isPredicated = 1 in {
-      defm Pt : ALU32_Pred<mnemonic, IntRegs, 0>;
-      defm NotPt : ALU32_Pred<mnemonic, IntRegs, 1>;
+  let IClass = 0b0111;
+
+  let Inst{27-24} = 0b0000;
+  let Inst{23-21} = minOp;
+  let Inst{13} = 0b0;
+  let Inst{4-0} = Rd;
+  let Inst{20-16} = Rs;
+}
+  
+//===----------------------------------------------------------------------===//
+// template class for predicated alu32_2op instructions
+// - aslh, asrh, sxtb, sxth, zxtb, zxth
+//===----------------------------------------------------------------------===//
+let hasSideEffects = 0, validSubTargets = HasV4SubT,
+    hasNewValue = 1, opNewValue = 0 in
+class T_ALU32_2op_Pred <string mnemonic, bits<3> minOp, bit isPredNot, 
+    bit isPredNew > :
+    ALU32Inst <(outs IntRegs:$Rd), (ins PredRegs:$Pu, IntRegs:$Rs),
+    !if(isPredNot, "if (!$Pu", "if ($Pu")
+    #!if(isPredNew, ".new) ",") ")#"$Rd = "#mnemonic#"($Rs)"> {
+  bits<5> Rd;
+  bits<2> Pu;
+  bits<5> Rs;
+
+  let IClass = 0b0111;
+
+  let Inst{27-24} = 0b0000;
+  let Inst{23-21} = minOp;
+  let Inst{13} = 0b1;
+  let Inst{11} = isPredNot;
+  let Inst{10} = isPredNew;
+  let Inst{4-0} = Rd;
+  let Inst{9-8} = Pu;
+  let Inst{20-16} = Rs;
+}
+
+multiclass ALU32_2op_Pred<string mnemonic, bits<3> minOp, bit PredNot> {
+  let isPredicatedFalse = PredNot in {
+    def NAME : T_ALU32_2op_Pred<mnemonic, minOp, PredNot, 0>;
+
+    // Predicate new
+    let isPredicatedNew = 1 in
+    def NAME#new : T_ALU32_2op_Pred<mnemonic, minOp, PredNot, 1>;
+  }
+}
+
+multiclass ALU32_2op_base<string mnemonic, bits<3> minOp> {
+  let BaseOpcode = mnemonic in {
+    let isPredicable = 1, hasSideEffects = 0 in
+    def A2_#NAME : T_ALU32_2op<mnemonic, minOp>;
+
+    let validSubTargets = HasV4SubT, isPredicated = 1, hasSideEffects = 0 in {
+      defm A4_p#NAME#t : ALU32_2op_Pred<mnemonic, minOp, 0>;
+      defm A4_p#NAME#f : ALU32_2op_Pred<mnemonic, minOp, 1>;
     }
   }
 }
 
-let isCommutable = 1 in {
-  defm ADD_rr : ALU32_base<"add", "ADD", add>, ImmRegRel, PredNewRel;
-  defm AND_rr : ALU32_base<"and", "AND", and>, ImmRegRel, PredNewRel;
-  defm XOR_rr : ALU32_base<"xor", "XOR", xor>, ImmRegRel, PredNewRel;
-  defm OR_rr  : ALU32_base<"or", "OR", or>, ImmRegRel, PredNewRel;
-}
-
-defm SUB_rr : ALU32_base<"sub", "SUB", sub>, ImmRegRel, PredNewRel;
+defm sxtb : ALU32_2op_base<"sxtb", 0b101>, PredNewRel;
+defm sxth : ALU32_2op_base<"sxth", 0b111>, PredNewRel;
 
 // Combines the two integer registers SRC1 and SRC2 into a double register.
 let isPredicable = 1 in
@@ -441,7 +573,7 @@ multiclass ALU32_2op_Pbase<string mnemonic, bit isNot, bit isPredNew> {
             Requires<[HasV4T]>;
 }
 
-multiclass ALU32_2op_Pred<string mnemonic, bit PredNot> {
+multiclass ALU32_2op_Pred2<string mnemonic, bit PredNot> {
   let isPredicatedFalse = PredNot in {
     defm _c#NAME : ALU32_2op_Pbase<mnemonic, PredNot, 0>;
     // Predicate new
@@ -449,7 +581,7 @@ multiclass ALU32_2op_Pred<string mnemonic, bit PredNot> {
   }
 }
 
-multiclass ALU32_2op_base<string mnemonic> {
+multiclass ALU32_2op_base2<string mnemonic> {
   let BaseOpcode = mnemonic in {
     let isPredicable = 1, neverHasSideEffects = 1 in
     def NAME : ALU32Inst<(outs IntRegs:$dst),
@@ -458,18 +590,16 @@ multiclass ALU32_2op_base<string mnemonic> {
 
     let Predicates = [HasV4T], validSubTargets = HasV4SubT, isPredicated = 1,
     neverHasSideEffects = 1 in {
-      defm Pt_V4    : ALU32_2op_Pred<mnemonic, 0>;
-      defm NotPt_V4 : ALU32_2op_Pred<mnemonic, 1>;
+      defm Pt_V4    : ALU32_2op_Pred2<mnemonic, 0>;
+      defm NotPt_V4 : ALU32_2op_Pred2<mnemonic, 1>;
     }
   }
 }
 
-defm ASLH : ALU32_2op_base<"aslh">, PredNewRel;
-defm ASRH : ALU32_2op_base<"asrh">, PredNewRel;
-defm SXTB : ALU32_2op_base<"sxtb">, PredNewRel;
-defm SXTH : ALU32_2op_base<"sxth">,  PredNewRel;
-defm ZXTB : ALU32_2op_base<"zxtb">, PredNewRel;
-defm ZXTH : ALU32_2op_base<"zxth">,  PredNewRel;
+defm ASLH : ALU32_2op_base2<"aslh">, PredNewRel;
+defm ASRH : ALU32_2op_base2<"asrh">, PredNewRel;
+defm ZXTB : ALU32_2op_base2<"zxtb">, PredNewRel;
+defm ZXTH : ALU32_2op_base2<"zxth">,  PredNewRel;
 
 def : Pat <(shl (i32 IntRegs:$src1), (i32 16)),
            (ASLH IntRegs:$src1)>;
@@ -478,10 +608,10 @@ def : Pat <(sra (i32 IntRegs:$src1), (i32 16)),
            (ASRH IntRegs:$src1)>;
 
 def : Pat <(sext_inreg (i32 IntRegs:$src1), i8),
-           (SXTB IntRegs:$src1)>;
+           (A2_sxtb IntRegs:$src1)>;
 
 def : Pat <(sext_inreg (i32 IntRegs:$src1), i16),
-           (SXTH IntRegs:$src1)>;
+           (A2_sxth IntRegs:$src1)>;
 
 //===----------------------------------------------------------------------===//
 // ALU32/PERM -
@@ -2212,7 +2342,7 @@ def : Pat <(i64 (zextloadi1 (HexagonCONST32 tglobaladdr:$global))),
 // Map from i1 loads to 32 bits. This assumes that the i1* is byte aligned.
 let AddedComplexity = 10 in
 def : Pat <(i32 (zextloadi1 ADDRriS11_0:$addr)),
-      (i32 (AND_rr (i32 (LDrib ADDRriS11_0:$addr)), (TFRI 0x1)))>;
+      (i32 (A2_and (i32 (LDrib ADDRriS11_0:$addr)), (TFRI 0x1)))>;
 
 // Map from Rdd = sign_extend_inreg(Rss, i32) -> Rdd = SXTW(Rss.lo).
 def : Pat <(i64 (sext_inreg (i64 DoubleRegs:$src1), i32)),
@@ -2220,12 +2350,12 @@ def : Pat <(i64 (sext_inreg (i64 DoubleRegs:$src1), i32)),
 
 // Map from Rdd = sign_extend_inreg(Rss, i16) -> Rdd = SXTW(SXTH(Rss.lo)).
 def : Pat <(i64 (sext_inreg (i64 DoubleRegs:$src1), i16)),
-      (i64 (SXTW (i32 (SXTH (i32 (EXTRACT_SUBREG (i64 DoubleRegs:$src1),
+      (i64 (SXTW (i32 (A2_sxth (i32 (EXTRACT_SUBREG (i64 DoubleRegs:$src1),
                                                  subreg_loreg))))))>;
 
 // Map from Rdd = sign_extend_inreg(Rss, i8) -> Rdd = SXTW(SXTB(Rss.lo)).
 def : Pat <(i64 (sext_inreg (i64 DoubleRegs:$src1), i8)),
-      (i64 (SXTW (i32 (SXTB (i32 (EXTRACT_SUBREG (i64 DoubleRegs:$src1),
+      (i64 (SXTW (i32 (A2_sxtb (i32 (EXTRACT_SUBREG (i64 DoubleRegs:$src1),
                                                  subreg_loreg))))))>;
 
 // We want to prevent emitting pnot's as much as possible.

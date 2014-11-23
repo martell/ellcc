@@ -401,7 +401,7 @@ void MCObjectFileInfo::InitELFMCObjectFileInfo(Triple T) {
   // platform.
   EHSectionType = ELF::SHT_PROGBITS;
   EHSectionFlags = ELF::SHF_ALLOC;
-  if (T.getOS() == Triple::Solaris) {
+  if (T.isOSSolaris()) {
     if (T.getArch() == Triple::x86_64)
       EHSectionType = ELF::SHT_X86_64_UNWIND;
     else
@@ -780,6 +780,27 @@ void MCObjectFileInfo::InitCOFFMCObjectFileInfo(Triple T) {
                         COFF::IMAGE_SCN_MEM_DISCARDABLE |
                         COFF::IMAGE_SCN_MEM_READ,
                         SectionKind::getMetadata());
+
+  DwarfAccelNamesSection =
+      Ctx->getCOFFSection(".apple_names",
+                          COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                          COFF::IMAGE_SCN_MEM_READ,
+                          SectionKind::getMetadata());
+  DwarfAccelNamespaceSection =
+      Ctx->getCOFFSection(".apple_namespaces",
+                          COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                          COFF::IMAGE_SCN_MEM_READ,
+                          SectionKind::getMetadata());
+  DwarfAccelTypesSection =
+      Ctx->getCOFFSection(".apple_types",
+                          COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                          COFF::IMAGE_SCN_MEM_READ,
+                          SectionKind::getMetadata());
+  DwarfAccelObjCSection =
+      Ctx->getCOFFSection(".apple_objc",
+                          COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                          COFF::IMAGE_SCN_MEM_READ,
+                          SectionKind::getMetadata());
 
   DrectveSection =
     Ctx->getCOFFSection(".drectve",

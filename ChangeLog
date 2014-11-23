@@ -1,11 +1,11 @@
 current SVN:
 
+* Update to LLVM r222635.
 * Support for user space programs in kernal space (e.g. ls, cat).
 * Added lazy vnode R/W access to ELK.
 * Added a FIFO file system to ELK.
 * Added a bunch of ELK system calls for accessing the file system.
 * Added a RAM file system to ELK.
-* Update to LLVM r221885.
 * Added a virtual file system to ELK.
 * Added a device file system to ELK.
 * Added a device module to ELK.

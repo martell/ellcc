@@ -191,7 +191,7 @@ private:
 
   void applyFixupRelocatable(const Reference &ref, uint8_t *location,
                              uint64_t fixupAddress, uint64_t targetAddress,
-                             uint64_t inAtomAddress);
+                             uint64_t inAtomAddress, bool targetUnnamed);
 
   // Utility functions for inspecting/updating instructions.
   static uint32_t setDisplacementInBranch26(uint32_t instr, int32_t disp);
@@ -226,7 +226,6 @@ const Registry::KindStrings ArchHandler_arm64::_sKindStrings[] = {
   LLD_KIND_STRING_ENTRY(addOffset12),
   LLD_KIND_STRING_ENTRY(lazyPointer),
   LLD_KIND_STRING_ENTRY(lazyImmediateLocation),
-  LLD_KIND_STRING_ENTRY(pointer64),
 
   LLD_KIND_STRING_END
 };
@@ -360,7 +359,7 @@ std::error_code ArchHandler_arm64::getReferenceInfo(
     return std::error_code();
   case ARM64_RELOC_PAGEOFF12                   | rExtern | rLength4:
     // ex: ldr x0, [x1, _foo@PAGEOFF]
-    *kind = offset12KindFromInstruction(*(little32_t *)fixupContent);
+    *kind = offset12KindFromInstruction(*(const little32_t *)fixupContent);
     if (auto ec = atomFromSymbolIndex(reloc.symbol, target))
       return ec;
     *addend = 0;
@@ -393,13 +392,18 @@ std::error_code ArchHandler_arm64::getReferenceInfo(
       return ec;
     *addend = 0;
     return std::error_code();
-  case X86_64_RELOC_UNSIGNED                   | rExtern | rLength8:
+  case ARM64_RELOC_UNSIGNED                    | rExtern | rLength8:
     // ex: .quad _foo + N
     *kind = pointer64;
     if (auto ec = atomFromSymbolIndex(reloc.symbol, target))
       return ec;
-    *addend = *(little64_t *)fixupContent;
+    *addend = *(const little64_t *)fixupContent;
     return std::error_code();
+  case ARM64_RELOC_UNSIGNED                              | rLength8:
+     // ex: .quad Lfoo + N
+     *kind = pointer64;
+     return atomFromAddress(reloc.symbol, *(const little64_t *)fixupContent,
+                            target, addend);
   case ARM64_RELOC_POINTER_TO_GOT              | rExtern | rLength8:
     // ex: .quad _foo@GOT
     *kind = pointer64ToGOT;
@@ -415,7 +419,7 @@ std::error_code ArchHandler_arm64::getReferenceInfo(
     *addend = 0;
     return std::error_code();
   default:
-    return make_dynamic_error_code(Twine("unsupported arm relocation type"));
+    return make_dynamic_error_code(Twine("unsupported arm64 relocation type"));
   }
 }
 
@@ -458,7 +462,7 @@ std::error_code ArchHandler_arm64::getPairReferenceInfo(
     *kind = delta64;
     if (auto ec = atomFromSymbolIndex(reloc2.symbol, target))
       return ec;
-    *addend = (int64_t)*(little64_t *)fixupContent + offsetInAtom;
+    *addend = (int64_t)*(const little64_t *)fixupContent + offsetInAtom;
     return std::error_code();
   case ((ARM64_RELOC_SUBTRACTOR                  | rExtern | rLength4) << 16 |
          ARM64_RELOC_UNSIGNED                    | rExtern | rLength4):
@@ -466,7 +470,7 @@ std::error_code ArchHandler_arm64::getPairReferenceInfo(
     *kind = delta32;
     if (auto ec = atomFromSymbolIndex(reloc2.symbol, target))
       return ec;
-    *addend = (int32_t)*(little32_t *)fixupContent + offsetInAtom;
+    *addend = (int32_t)*(const little32_t *)fixupContent + offsetInAtom;
     return std::error_code();
   default:
     return make_dynamic_error_code(Twine("unsupported arm64 relocation pair"));
@@ -483,6 +487,7 @@ void ArchHandler_arm64::generateAtomContent(
   for (const Reference *ref : atom) {
     uint32_t offset = ref->offsetInAtom();
     const Atom *target = ref->target();
+    bool targetUnnamed = target->name().empty();
     uint64_t targetAddress = 0;
     if (isa<DefinedAtom>(target))
       targetAddress = findAddress(*target);
@@ -490,7 +495,7 @@ void ArchHandler_arm64::generateAtomContent(
     uint64_t fixupAddress = atomAddress + offset;
     if (relocatable) {
       applyFixupRelocatable(*ref, &atomContentBuffer[offset], fixupAddress,
-                            targetAddress, atomAddress);
+                            targetAddress, atomAddress, targetUnnamed);
     } else {
       applyFixupFinal(*ref, &atomContentBuffer[offset], fixupAddress,
                       targetAddress, atomAddress);
@@ -589,7 +594,8 @@ void ArchHandler_arm64::applyFixupRelocatable(const Reference &ref,
                                               uint8_t *loc,
                                               uint64_t fixupAddress,
                                               uint64_t targetAddress,
-                                              uint64_t inAtomAddress) {
+                                              uint64_t inAtomAddress,
+                                              bool targetUnnamed) {
   if (ref.kindNamespace() != Reference::KindNamespace::mach_o)
     return;
   assert(ref.kindArch() == Reference::KindArch::AArch64);
@@ -614,7 +620,10 @@ void ArchHandler_arm64::applyFixupRelocatable(const Reference &ref,
     *loc32 = setImm12(*loc32, 0);
     return;
   case pointer64:
-    *loc64 = ref.addend();
+    if (targetUnnamed)
+      *loc64 = targetAddress + ref.addend();
+    else
+      *loc64 = ref.addend();
     return;
   case delta64:
     *loc64 = ref.addend() + inAtomAddress - fixupAddress;
@@ -708,8 +717,12 @@ void ArchHandler_arm64::appendSectionRelocations(
                   ARM64_RELOC_TLVP_LOAD_PAGEOFF12 | rExtern | rLength4);
     return;
   case pointer64:
-    appendReloc(relocs, sectionOffset, symbolIndexForAtom(*ref.target()), 0,
-                  X86_64_RELOC_UNSIGNED | rExtern | rLength8);
+    if (ref.target()->name().empty())
+      appendReloc(relocs, sectionOffset, sectionIndexForAtom(*ref.target()), 0,
+                  ARM64_RELOC_UNSIGNED           | rLength8);
+    else
+      appendReloc(relocs, sectionOffset, symbolIndexForAtom(*ref.target()), 0,
+                  ARM64_RELOC_UNSIGNED | rExtern | rLength8);
     return;
   case delta64:
     appendReloc(relocs, sectionOffset, symbolIndexForAtom(atom), 0,

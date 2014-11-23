@@ -318,7 +318,8 @@ protected:
       Builder.defineMacro("_GNU_SOURCE");
   }
 public:
-  KFreeBSDTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
+  KFreeBSDTargetInfo(const llvm::Triple &Triple)
+      : OSTargetInfo<Target>(Triple) {
     this->UserLabelPrefix = "";
   }
 };
@@ -641,7 +642,8 @@ public:
     // RegParmMax is inherited from the underlying architecture
     this->LongDoubleFormat = &llvm::APFloat::IEEEdouble;
     if (Triple.getArch() == llvm::Triple::arm) {
-      this->DescriptionString = "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S128";
+      this->DescriptionString =
+          "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S128";
     } else if (Triple.getArch() == llvm::Triple::armeb) {
       this->DescriptionString = "E-p:32:32-i64:64-v128:64:128-n32-S128";
     } else if (Triple.getArch() == llvm::Triple::x86) {
@@ -932,7 +934,7 @@ const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
 #include "clang/Basic/BuiltinsPPC.def"
 };
 
-  /// handleTargetFeatures - Perform initialization based on the user
+/// handleTargetFeatures - Perform initialization based on the user
 /// configured set of features.
 bool PPCTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
                                          DiagnosticsEngine &Diags) {
@@ -1157,7 +1159,6 @@ bool PPCTargetInfo::hasFeature(StringRef Feature) const {
     .Default(false);
 }
 
-  
 const char * const PPCTargetInfo::GCCRegNames[] = {
   "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
   "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
@@ -1358,7 +1359,7 @@ public:
       : DarwinTargetInfo<PPC32TargetInfo>(Triple) {
     HasAlignMac68kSupport = true;
     BoolWidth = BoolAlign = 32; //XXX support -mone-byte-bool?
-    PtrDiffType = SignedInt;    // for http://llvm.org/bugs/show_bug.cgi?id=15726
+    PtrDiffType = SignedInt; // for http://llvm.org/bugs/show_bug.cgi?id=15726
     LongLongAlign = 32;
     SuitableAlign = 128;
     DescriptionString = "E-m:o-p:32:32-f64:32:64-n32";
@@ -1425,8 +1426,9 @@ namespace {
       Aliases = nullptr;
       NumAliases = 0;
     }
-    bool validateAsmConstraint(const char *&Name,
-                               TargetInfo::ConstraintInfo &Info) const override {
+    bool
+    validateAsmConstraint(const char *&Name,
+                          TargetInfo::ConstraintInfo &Info) const override {
       switch (*Name) {
       default: return false;
       case 'c':
@@ -1886,7 +1888,8 @@ class X86TargetInfo : public TargetInfo {
   bool HasTBM;
   bool HasFMA;
   bool HasF16C;
-  bool HasAVX512CD, HasAVX512ER, HasAVX512PF, HasAVX512DQ, HasAVX512BW, HasAVX512VL;
+  bool HasAVX512CD, HasAVX512ER, HasAVX512PF, HasAVX512DQ, HasAVX512BW,
+      HasAVX512VL;
   bool HasSHA;
   bool HasCX16;
 
@@ -2033,6 +2036,7 @@ class X86TargetInfo : public TargetInfo {
     /// This specification is deprecated and will be removed in the future.
     /// Users should prefer \see CK_K8.
     // FIXME: Warn on this when the CPU is set to it.
+    //@{
     CK_x86_64,
     //@}
 
@@ -2087,7 +2091,7 @@ public:
     NumNames = llvm::array_lengthof(AddlRegNames);
   }
   bool validateAsmConstraint(const char *&Name,
-                                     TargetInfo::ConstraintInfo &info) const override;
+                             TargetInfo::ConstraintInfo &info) const override;
 
   bool validateOutputSize(StringRef Constraint, unsigned Size) const override;
 
@@ -2517,8 +2521,9 @@ void X86TargetInfo::setSSELevel(llvm::StringMap<bool> &Features,
   case AVX2:
     Features["avx2"] = false;
   case AVX512F:
-    Features["avx512f"] = Features["avx512cd"] = Features["avx512er"] = Features["avx512pf"] =
-    Features["avx512dq"] = Features["avx512bw"] = Features["avx512vl"] = false;
+    Features["avx512f"] = Features["avx512cd"] = Features["avx512er"] =
+        Features["avx512pf"] = Features["avx512dq"] = Features["avx512bw"] =
+            Features["avx512vl"] = false;
   }
 }
 
@@ -3618,9 +3623,10 @@ public:
     Int64Type   = IsX32 ? SignedLongLong   : SignedLong;
     RegParmMax = 6;
 
+    // Pointers are 32-bit in x32.
     DescriptionString = (IsX32)
-                            ? "e-m:e-" "p:32:32-" "i64:64-f80:128-n8:16:32:64-S128"
-                            : "e-m:e-"            "i64:64-f80:128-n8:16:32:64-S128";
+                            ? "e-m:e-p:32:32-i64:64-f80:128-n8:16:32:64-S128"
+                            : "e-m:e-i64:64-f80:128-n8:16:32:64-S128";
 
     // Use fpret only for long double.
     RealTypeUsesObjCFPRet = (1 << TargetInfo::LongDouble);
@@ -3722,6 +3728,10 @@ public:
     DefineStd(Builder, "WIN64", Opts);
     Builder.defineMacro("__MINGW64__");
     addMinGWDefines(Opts, Builder);
+
+    // GCC defines this macro when it is using __gxx_personality_seh0.
+    if (!Opts.SjLjExceptions)
+      Builder.defineMacro("__SEH__");
   }
 };
 } // end anonymous namespace
@@ -3988,8 +3998,8 @@ public:
       MaxAtomicInlineWidth = 64;
 
     // Do force alignment of members that follow zero length bitfields.  If
-    // the alignment of the zero-length bitfield is greater than the member 
-    // that follows it, `bar', `bar' will be aligned as the  type of the 
+    // the alignment of the zero-length bitfield is greater than the member
+    // that follows it, `bar', `bar' will be aligned as the  type of the
     // zero length bitfield.
     UseZeroLengthBitfieldAlignment = true;
   }
@@ -4135,40 +4145,43 @@ public:
   }
   // FIXME: Should we actually have some table instead of these switches?
   static const char *getCPUDefineSuffix(StringRef Name) {
-    return llvm::StringSwitch<const char*>(Name)
-      .Cases("arm8", "arm810", "4")
-      .Cases("strongarm", "strongarm110", "strongarm1100", "strongarm1110", "4")
-      .Cases("arm7tdmi", "arm7tdmi-s", "arm710t", "arm720t", "arm9", "4T")
-      .Cases("arm9tdmi", "arm920", "arm920t", "arm922t", "arm940t", "4T")
-      .Case("ep9312", "4T")
-      .Cases("arm10tdmi", "arm1020t", "5T")
-      .Cases("arm9e", "arm946e-s", "arm966e-s", "arm968e-s", "5TE")
-      .Case("arm926ej-s", "5TEJ")
-      .Cases("arm10e", "arm1020e", "arm1022e", "5TE")
-      .Cases("xscale", "iwmmxt", "5TE")
-      .Case("arm1136j-s", "6J")
-      .Cases("armv6z", "arm1176jz-s", "arm1176jzf-s", "6ZK")
-      .Cases("arm1136jf-s", "mpcorenovfp", "mpcore", "6K")
-      .Cases("arm1156t2-s", "arm1156t2f-s", "6T2")
-      .Cases("cortex-a5", "cortex-a7", "cortex-a8", "7A")
-      .Cases("cortex-a9", "cortex-a12", "cortex-a15", "cortex-a17", "krait", "7A")
-      .Cases("cortex-r4", "cortex-r5", "7R")
-      .Case("swift", "7S")
-      .Case("cyclone", "8A")
-      .Case("cortex-m3", "7M")
-      .Cases("cortex-m4", "cortex-m7", "7EM")
-      .Case("cortex-m0", "6M")
-      .Cases("cortex-a53", "cortex-a57", "8A")
-      .Default(nullptr);
+    return llvm::StringSwitch<const char *>(Name)
+        .Cases("arm8", "arm810", "4")
+        .Cases("strongarm", "strongarm110", "strongarm1100", "strongarm1110",
+               "4")
+        .Cases("arm7tdmi", "arm7tdmi-s", "arm710t", "arm720t", "arm9", "4T")
+        .Cases("arm9tdmi", "arm920", "arm920t", "arm922t", "arm940t", "4T")
+        .Case("ep9312", "4T")
+        .Cases("arm10tdmi", "arm1020t", "5T")
+        .Cases("arm9e", "arm946e-s", "arm966e-s", "arm968e-s", "5TE")
+        .Case("arm926ej-s", "5TEJ")
+        .Cases("arm10e", "arm1020e", "arm1022e", "5TE")
+        .Cases("xscale", "iwmmxt", "5TE")
+        .Case("arm1136j-s", "6J")
+        .Cases("arm1176jz-s", "arm1176jzf-s", "6ZK")
+        .Cases("arm1136jf-s", "mpcorenovfp", "mpcore", "6K")
+        .Cases("arm1156t2-s", "arm1156t2f-s", "6T2")
+        .Cases("cortex-a5", "cortex-a7", "cortex-a8", "7A")
+        .Cases("cortex-a9", "cortex-a12", "cortex-a15", "cortex-a17", "krait",
+               "7A")
+        .Cases("cortex-r4", "cortex-r5", "7R")
+        .Case("swift", "7S")
+        .Case("cyclone", "8A")
+        .Case("cortex-m3", "7M")
+        .Cases("cortex-m4", "cortex-m7", "7EM")
+        .Case("cortex-m0", "6M")
+        .Cases("cortex-a53", "cortex-a57", "8A")
+        .Default(nullptr);
   }
   static const char *getCPUProfile(StringRef Name) {
-    return llvm::StringSwitch<const char*>(Name)
-      .Cases("cortex-a5", "cortex-a7", "cortex-a8", "A")
-      .Cases("cortex-a9", "cortex-a12", "cortex-a15", "cortex-a17", "krait", "A")
-      .Cases("cortex-a53", "cortex-a57", "A")
-      .Cases("cortex-m3", "cortex-m4", "cortex-m0", "cortex-m7", "M")
-      .Cases("cortex-r4", "cortex-r5", "R")
-      .Default("");
+    return llvm::StringSwitch<const char *>(Name)
+        .Cases("cortex-a5", "cortex-a7", "cortex-a8", "A")
+        .Cases("cortex-a9", "cortex-a12", "cortex-a15", "cortex-a17", "krait",
+               "A")
+        .Cases("cortex-a53", "cortex-a57", "A")
+        .Cases("cortex-m3", "cortex-m4", "cortex-m0", "cortex-m7", "M")
+        .Cases("cortex-r4", "cortex-r5", "R")
+        .Default("");
   }
   bool setCPU(const std::string &Name) override {
     if (!getCPUDefineSuffix(Name))
@@ -4218,9 +4231,9 @@ public:
 
     // __ARM_ARCH is defined as an integer value indicating the current ARM ISA
     Builder.defineMacro("__ARM_ARCH", CPUArch.substr(0, 1));
-    if (CPUArch[0] >= '8') {                                                    
-      Builder.defineMacro("__ARM_FEATURE_NUMERIC_MAXMIN");                      
-      Builder.defineMacro("__ARM_FEATURE_DIRECTED_ROUNDING");                   
+    if (CPUArch[0] >= '8') {
+      Builder.defineMacro("__ARM_FEATURE_NUMERIC_MAXMIN");
+      Builder.defineMacro("__ARM_FEATURE_DIRECTED_ROUNDING");
     }
 
     // __ARM_ARCH_ISA_ARM is defined to 1 if the core supports the ARM ISA.  It
@@ -4628,7 +4641,8 @@ public:
       : DarwinTargetInfo<ARMleTargetInfo>(Triple) {
     HasAlignMac68kSupport = true;
     // iOS always has 64-bit atomic instructions.
-    // FIXME: This should be based off of the target features in ARMleTargetInfo.
+    // FIXME: This should be based off of the target features in
+    // ARMleTargetInfo.
     MaxAtomicInlineWidth = 64;
 
     // Darwin on iOS uses a variant of the ARM C++ ABI.
@@ -4692,7 +4706,7 @@ public:
   }
 
   StringRef getABI() const override { return ABI; }
-  virtual bool setABI(const std::string &Name) override {
+  bool setABI(const std::string &Name) override {
     if (Name != "aapcs" && Name != "darwinpcs")
       return false;
 
@@ -4700,7 +4714,7 @@ public:
     return true;
   }
 
-  virtual bool setCPU(const std::string &Name) override {
+  bool setCPU(const std::string &Name) override {
     bool CPUKnown = llvm::StringSwitch<bool>(Name)
                         .Case("generic", true)
                         .Cases("cortex-a53", "cortex-a57", true)
@@ -4775,7 +4789,7 @@ public:
     NumRecords = clang::AArch64::LastTSBuiltin - Builtin::FirstTSBuiltin;
   }
 
-  virtual bool hasFeature(StringRef Feature) const override {
+  bool hasFeature(StringRef Feature) const override {
     return Feature == "aarch64" ||
       Feature == "arm64" ||
       (Feature == "neon" && FPU == NeonMode);
@@ -4800,9 +4814,9 @@ public:
     return true;
   }
 
-  virtual bool isCLZForZeroUndef() const override { return false; }
+  bool isCLZForZeroUndef() const override { return false; }
 
-  virtual BuiltinVaListKind getBuiltinVaListKind() const override {
+  BuiltinVaListKind getBuiltinVaListKind() const override {
     return TargetInfo::AArch64ABIBuiltinVaList;
   }
 
@@ -4811,8 +4825,9 @@ public:
   virtual void getGCCRegAliases(const GCCRegAlias *&Aliases,
                                 unsigned &NumAliases) const override;
 
-  virtual bool validateAsmConstraint(const char *&Name,
-                                     TargetInfo::ConstraintInfo &Info) const override {
+  virtual bool
+  validateAsmConstraint(const char *&Name,
+                        TargetInfo::ConstraintInfo &Info) const override {
     switch (*Name) {
     default:
       return false;
@@ -4835,11 +4850,11 @@ public:
       Info.setAllowsRegister();
       return true;
     case 'U':
-      // Ump: A memory address suitable for ldp/stp in SI, DI, SF and DF modes, whatever they may be
-      // Utf: A memory address suitable for ldp/stp in TF mode, whatever it may be
-      // Usa: An absolute symbolic address
-      // Ush: The high part (bits 32:12) of a pc-relative symbolic address
-      llvm_unreachable("FIXME: Unimplemented support for bizarre constraints");
+      // Ump: A memory address suitable for ldp/stp in SI, DI, SF and DF modes.
+      // Utf: A memory address suitable for ldp/stp in TF mode.
+      // Usa: An absolute symbolic address.
+      // Ush: The high part (bits 32:12) of a pc-relative symbolic address.
+      llvm_unreachable("FIXME: Unimplemented support for U* constraints.");
     case 'z': // Zero register, wzr or xzr
       Info.setAllowsRegister();
       return true;
@@ -4881,7 +4896,7 @@ public:
     }
   }
 
-  virtual const char *getClobbers() const override { return ""; }
+  const char *getClobbers() const override { return ""; }
 
   int getEHDataRegisterNumber(unsigned RegNo) const override {
     if (RegNo == 0)
@@ -5018,7 +5033,7 @@ public:
     TheCXXABI.set(TargetCXXABI::iOS64);
   }
 
-  virtual BuiltinVaListKind getBuiltinVaListKind() const override {
+  BuiltinVaListKind getBuiltinVaListKind() const override {
     return TargetInfo::CharPtrBuiltinVaList;
   }
 };
@@ -5526,8 +5541,9 @@ namespace {
       Aliases = nullptr;
       NumAliases = 0;
     }
-    bool validateAsmConstraint(const char *&Name,
-                               TargetInfo::ConstraintInfo &info) const override {
+    bool
+    validateAsmConstraint(const char *&Name,
+                          TargetInfo::ConstraintInfo &info) const override {
       // No target constraints for now.
       return false;
     }
@@ -5813,7 +5829,6 @@ public:
     switch (*Name) {
     default:
       return false;
-        
     case 'r': // CPU registers.
     case 'd': // Equivalent to "r" unless generating MIPS16 code.
     case 'y': // Equivalent to "r", backward compatibility only.
@@ -6336,8 +6351,9 @@ namespace {
     }
     void getGCCRegNames(const char * const *&Names,
                         unsigned &NumNames) const override {}
-    bool validateAsmConstraint(const char *&Name,
-                               TargetInfo::ConstraintInfo &info) const override {
+    bool
+    validateAsmConstraint(const char *&Name,
+                          TargetInfo::ConstraintInfo &info) const override {
       return true;
     }
     void getGCCRegAliases(const GCCRegAlias *&Aliases,
@@ -6469,6 +6485,8 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
       return new DarwinAArch64TargetInfo(Triple);
 
     switch (os) {
+    case llvm::Triple::FreeBSD:
+      return new FreeBSDTargetInfo<AArch64leTargetInfo>(Triple);
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<AArch64leTargetInfo>(Triple);
     case llvm::Triple::NetBSD:
@@ -6479,6 +6497,8 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
 
   case llvm::Triple::aarch64_be:
     switch (os) {
+    case llvm::Triple::FreeBSD:
+      return new FreeBSDTargetInfo<AArch64beTargetInfo>(Triple);
     case llvm::Triple::Linux:
       return new LinuxTargetInfo<AArch64beTargetInfo>(Triple);
     case llvm::Triple::NetBSD:

@@ -227,8 +227,8 @@ public:
   bool AtEndOfStream() {
     if (BitsInCurWord != 0)
       return false;
-    if (Size != 0 && Size == NextChar)
-      return true;
+    if (Size != 0)
+      return Size == NextChar;
     fillCurWord();
     return BitsInCurWord == 0;
   }
@@ -311,12 +311,8 @@ public:
     BitsInCurWord = 0;
 
     // Skip over any bits that are already consumed.
-    if (WordBitNo) {
-      if (sizeof(word_t) > 4)
-        Read64(WordBitNo);
-      else
-        Read(WordBitNo);
-    }
+    if (WordBitNo)
+      Read(WordBitNo);
   }
 
   void fillCurWord() {
@@ -334,25 +330,24 @@ public:
       return;
     }
 
-    // Handle big-endian byte-swapping if necessary.
-    support::detail::packed_endian_specific_integral<
-        word_t, support::little, support::unaligned> EndianValue;
-    memcpy(&EndianValue, Array, sizeof(Array));
-
-    CurWord = EndianValue;
+    CurWord =
+        support::endian::read<word_t, support::little, support::unaligned>(
+            Array);
     NextChar += BytesRead;
     BitsInCurWord = BytesRead * 8;
   }
 
-  uint32_t Read(unsigned NumBits) {
-    assert(NumBits && NumBits <= 32 &&
-           "Cannot return zero or more than 32 bits!");
+  word_t Read(unsigned NumBits) {
+    static const unsigned BitsInWord = sizeof(word_t) * 8;
+
+    assert(NumBits && NumBits <= BitsInWord &&
+           "Cannot return zero or more than BitsInWord bits!");
 
     static const unsigned Mask = sizeof(word_t) > 4 ? 0x3f : 0x1f;
 
     // If the field is fully contained by CurWord, return it quickly.
     if (BitsInCurWord >= NumBits) {
-      uint32_t R = uint32_t(CurWord) & (~0U >> (32-NumBits));
+      word_t R = CurWord & (~word_t(0) >> (BitsInWord - NumBits));
 
       // Use a mask to avoid undefined behavior.
       CurWord >>= (NumBits & Mask);
@@ -361,7 +356,7 @@ public:
       return R;
     }
 
-    uint32_t R = BitsInCurWord ? uint32_t(CurWord) : 0;
+    word_t R = BitsInCurWord ? CurWord : 0;
     unsigned BitsLeft = NumBits - BitsInCurWord;
 
     fillCurWord();
@@ -370,24 +365,16 @@ public:
     if (BitsLeft > BitsInCurWord)
       return 0;
 
-    uint32_t R2 =
-        uint32_t(CurWord) & (~word_t(0) >> (sizeof(word_t) * 8 - BitsLeft));
+    word_t R2 = CurWord & (~word_t(0) >> (BitsInWord - BitsLeft));
 
     // Use a mask to avoid undefined behavior.
     CurWord >>= (BitsLeft & Mask);
 
     BitsInCurWord -= BitsLeft;
 
-    R |= uint32_t(R2 << (NumBits - BitsLeft));
+    R |= R2 << (NumBits - BitsLeft);
 
     return R;
-  }
-
-  uint64_t Read64(unsigned NumBits) {
-    if (NumBits <= 32) return Read(NumBits);
-
-    uint64_t V = Read(32);
-    return V | (uint64_t)Read(NumBits-32) << 32;
   }
 
   uint32_t ReadVBR(unsigned NumBits) {
@@ -502,13 +489,6 @@ private:
   //===--------------------------------------------------------------------===//
   // Record Processing
   //===--------------------------------------------------------------------===//
-
-private:
-  void readAbbreviatedLiteral(const BitCodeAbbrevOp &Op,
-                              SmallVectorImpl<uint64_t> &Vals);
-  void readAbbreviatedField(const BitCodeAbbrevOp &Op,
-                            SmallVectorImpl<uint64_t> &Vals);
-  void skipAbbreviatedField(const BitCodeAbbrevOp &Op);
 
 public:
 

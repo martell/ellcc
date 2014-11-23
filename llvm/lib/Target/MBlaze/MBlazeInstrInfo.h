@@ -168,7 +168,6 @@ namespace MBlaze {
 
 class MBlazeInstrInfo : public MBlazeGenInstrInfo {
   virtual void anchor();
-  MBlazeSubtarget &Subtarget;
   const MBlazeRegisterInfo RI;
 public:
   explicit MBlazeInstrInfo(MBlazeSubtarget &STI);

@@ -54,29 +54,29 @@ namespace {
       Subtarget = &TM.getSubtarget<MBlazeSubtarget>();
     }
 
-    virtual const char *getPassName() const {
+    const char *getPassName() const override {
       return "MBlaze Assembly Printer";
     }
 
     void printSavedRegsBitmask();
     void emitFrameDirective();
-    virtual void EmitFunctionBodyStart();
-    virtual void EmitFunctionBodyEnd();
-    virtual void EmitFunctionEntryLabel();
+    void EmitFunctionBodyStart() override;
+    void EmitFunctionBodyEnd() override;
+    void EmitFunctionEntryLabel() override;
 
-    virtual bool isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB)
-      const;
+    bool isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB)
+      const override;
 
     bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
                          unsigned AsmVariant, const char *ExtraCode,
-                         raw_ostream &O);
+                         raw_ostream &O) override;
     void printOperand(const MachineInstr *MI, int opNum, raw_ostream &O);
     void printUnsignedImm(const MachineInstr *MI, int opNum, raw_ostream &O);
     void printFSLImm(const MachineInstr *MI, int opNum, raw_ostream &O);
     void printMemOperand(const MachineInstr *MI, int opNum, raw_ostream &O,
                          const char *Modifier = 0);
 
-    void EmitInstruction(const MachineInstr *MI);
+    void EmitInstruction(const MachineInstr *MI) override;
   };
 } // end of anonymous namespace
 

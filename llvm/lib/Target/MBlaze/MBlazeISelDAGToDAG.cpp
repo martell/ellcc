@@ -59,7 +59,7 @@ public:
   TM(tm), Subtarget(tm.getSubtarget<MBlazeSubtarget>()) {}
 
   // Pass Name
-  virtual const char *getPassName() const {
+  const char *getPassName() const override {
     return "MBlaze DAG->DAG Pattern Instruction Selection";
   }
 private:
@@ -79,7 +79,7 @@ private:
   }
 
   SDNode *getGlobalBaseReg();
-  SDNode *Select(SDNode *N);
+  SDNode *Select(SDNode *N) override;
 
   // Address Selection
   bool SelectAddrRegReg(SDValue N, SDValue &Base, SDValue &Index);

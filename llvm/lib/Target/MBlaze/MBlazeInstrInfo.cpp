@@ -32,7 +32,7 @@ void MBlazeInstrInfo::anchor() {}
 
 MBlazeInstrInfo::MBlazeInstrInfo(MBlazeSubtarget &STI)
   : MBlazeGenInstrInfo(MBlaze::ADJCALLSTACKDOWN, MBlaze::ADJCALLSTACKUP),
-    Subtarget(STI), RI(STI) {}
+    RI(STI) {}
 
 static bool isZeroImm(const MachineOperand &op) {
   return op.isImm() && op.getImm() == 0;

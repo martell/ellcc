@@ -694,10 +694,9 @@ static void InitCmpLibcallCCs(ISD::CondCode *CCs) {
   CCs[RTLIB::O_F128] = ISD::SETEQ;
 }
 
-/// NOTE: The constructor takes ownership of TLOF.
-TargetLoweringBase::TargetLoweringBase(const TargetMachine &tm,
-                                       const TargetLoweringObjectFile *tlof)
-    : TM(tm), DL(TM.getSubtargetImpl()->getDataLayout()), TLOF(*tlof) {
+/// NOTE: The TargetMachine owns TLOF.
+TargetLoweringBase::TargetLoweringBase(const TargetMachine &tm)
+    : TM(tm), DL(TM.getSubtargetImpl()->getDataLayout()) {
   initActions();
 
   // Perform these initializations only once.
@@ -1040,8 +1039,8 @@ TargetLoweringBase::findRepresentativeClass(MVT VT) const {
 /// computeRegisterProperties - Once all of the register classes are added,
 /// this allows us to compute derived properties we expose.
 void TargetLoweringBase::computeRegisterProperties() {
-  assert(MVT::LAST_VALUETYPE <= MVT::MAX_ALLOWED_VALUETYPE &&
-         "Too many value types for ValueTypeActions to hold!");
+  static_assert(MVT::LAST_VALUETYPE <= MVT::MAX_ALLOWED_VALUETYPE,
+                "Too many value types for ValueTypeActions to hold!");
 
   // Everything defaults to needing one register.
   for (unsigned i = 0; i != MVT::LAST_VALUETYPE; ++i) {
