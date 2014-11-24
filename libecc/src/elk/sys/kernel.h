@@ -25,9 +25,9 @@
 #define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)
 
 // RICH: For now.
-#define copyinstr(src, dst, len) strlcpy(dst, src, len)
-#define copyout(dst, src, len) (memcpy(dst, src, len), len)
-#define copyin(src, dst, len) (memcpy(dst, src, len), len)
+#define copyinstr(src, dst, len) (strlcpy((dst), (src), (len)), 0)
+#define copyout(src, dst, len) (memcpy((dst), (src), (len)), 0)
+#define copyin(src, dst, len) (memcpy((dst), (src), (len)), 0)
 #define user_area(buf) 1
 
 #define ELK_ASSERT 1
@@ -53,6 +53,7 @@ extern int debug;
 // Device debug flags.
 #define DEVDB_CORE      0x00000100
 #define DEVDB_IRQ       0x00000200
+#define DEVDB_DRV       0x00000400
 
 // TTY debug flags.
 #define TTYDB_CORE      0x00001000

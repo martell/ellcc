@@ -14,7 +14,7 @@ EXTERN(__elk_time_commands)
 EXTERN(__elk_test_commands)
 EXTERN(__elk_devfs)
 EXTERN(__elk_fifofs)
-EXTERN(__elk_pl011_dev)
+/* EXTERN(__elk_pl011_dev) */
 EXTERN(__elk_mkdir_bin)
 EXTERN(__elk_ls_bin)
 EXTERN(__elk_cat_bin)

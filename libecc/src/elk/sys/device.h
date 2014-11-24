@@ -56,6 +56,7 @@
 #define device_info __elk_device_info
 #define enodev __elk_enodev
 #define nullop __elk_nullop
+#define driver_register __elk_driver_register
 #endif
 
 typedef struct device *device_t;
@@ -200,5 +201,9 @@ int device_write(device_t, void *, size_t *, int);
 int device_poll(device_t, int);
 int device_ioctl(device_t, u_long, void *);
 int device_info(struct devinfo *);
+
+/** Register a driver for use.
+ */
+void driver_register(struct driver *driver);
 
 #endif /* !_DEVICE_H */

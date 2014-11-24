@@ -27,6 +27,7 @@
 
 // The device module.
 #define MAXDEVNAME 12           // The device name.
+#define NDRIVERS 64             // The maximum number of drivers.
 
 // The file system module.
 #define FS_MAX  16              // The maximum number of file system types.

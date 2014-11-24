@@ -68,14 +68,14 @@ static struct vfssw vfssw[FS_MAX + 1];
  * Global lock to access mount point.
  */
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-#define MOUNT_LOCK_INIT() do { \
+#define LOCK_INIT() do { \
   pthread_mutexattr_t attr; \
   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE); \
   pthread_mutex_init(&mutex, &attr); \
   } while (0)
 
-#define MOUNT_LOCK()  pthread_mutex_lock(&mutex)
-#define MOUNT_UNLOCK()  pthread_mutex_unlock(&mutex)
+#define LOCK()  pthread_mutex_lock(&mutex)
+#define UNLOCK()  pthread_mutex_unlock(&mutex)
 
 /** Register a file system.
  */
@@ -161,7 +161,7 @@ int vfs_findroot(char *path, mount_t *mp, char **root)
     return -1;
 
   /* Find mount point from nearest path */
-  MOUNT_LOCK();
+  LOCK();
   m = NULL;
   head = &mount_list;
   for (n = list_first(head); n != head; n = list_next(n)) {
@@ -172,7 +172,7 @@ int vfs_findroot(char *path, mount_t *mp, char **root)
       m = tmp;
     }
   }
-  MOUNT_UNLOCK();
+  UNLOCK();
   if (m == NULL)
     return -1;
   *root = (char *)(path + max_len);
@@ -188,9 +188,9 @@ int vfs_findroot(char *path, mount_t *mp, char **root)
 void vfs_busy(mount_t mp)
 {
 
-  MOUNT_LOCK();
+  LOCK();
   mp->m_count++;
-  MOUNT_UNLOCK();
+  UNLOCK();
 }
 
 /*
@@ -199,9 +199,9 @@ void vfs_busy(mount_t mp)
 void vfs_unbusy(mount_t mp)
 {
 
-  MOUNT_LOCK();
+  LOCK();
   mp->m_count--;
-  MOUNT_UNLOCK();
+  UNLOCK();
 }
 
 int vfs_nullop(void)
@@ -250,7 +250,7 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
       return error;
   }
 
-  MOUNT_LOCK();
+  LOCK();
 
   /* Check if device or directory has already been mounted. */
   head = &mount_list;
@@ -330,7 +330,7 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
    * Insert to mount list
    */
   list_insert(&mount_list, &mp->m_link);
-  MOUNT_UNLOCK();
+  UNLOCK();
 
   return 0;  /* success */
  err4:
@@ -343,7 +343,7 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
  err1:
   device_close(device);
 
-  MOUNT_UNLOCK();
+  UNLOCK();
   return error;
 }
 
@@ -365,7 +365,7 @@ static int sys_umount2(char *name, int flags)
   if ((error = getpath(name, path)) != 0)
     return error;
 
-  MOUNT_LOCK();
+  LOCK();
 
   /* Get mount entry */
   head = &mount_list;
@@ -402,7 +402,7 @@ static int sys_umount2(char *name, int flags)
     device_close((device_t)mp->m_dev);
   free(mp);
  out:
-  MOUNT_UNLOCK();
+  UNLOCK();
   return error;
 }
 
@@ -412,13 +412,13 @@ static int sys_sync(void)
   list_t head, n;
 
   /* Call each mounted file system. */
-  MOUNT_LOCK();
+  LOCK();
   head = &mount_list;
   for (n = list_first(head); n != head; n = list_next(n)) {
     mp = list_entry(n, struct mount, m_link);
     VFS_SYNC(mp);
   }
-  MOUNT_UNLOCK();
+  UNLOCK();
   bio_sync();
   return 0;
 }
@@ -447,7 +447,7 @@ static int mountCommand(int argc, char **argv)
   list_t head, n;
   mount_t mp;
 
-  MOUNT_LOCK();
+  LOCK();
 
   printf("dev      count root\n");
   printf("-------- ----- --------\n");
@@ -457,7 +457,7 @@ static int mountCommand(int argc, char **argv)
     printf("%8llx %5d %s\n", (long long)mp->m_dev, mp->m_count, mp->m_path);
   }
 
-  MOUNT_UNLOCK();
+  UNLOCK();
   return COMMAND_OK;
 }
 
@@ -506,7 +506,7 @@ ELK_CONSTRUCTOR()
 
 C_CONSTRUCTOR()
 {
-  MOUNT_LOCK_INIT();
+  LOCK_INIT();
 
   /** Initialize the file system systems.
    * They have been registered during ELK constructor time.

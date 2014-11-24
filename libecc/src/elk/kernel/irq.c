@@ -42,6 +42,12 @@ const void *__elk_identify_irq(void)
       // Check all the handler's entries.
       const struct irq_entry *ep = &hp->entries[i];
       if (*ep->irq_status & ep->irq_value) {
+        if (ep->direct) {
+          // RICH: Call the interrupt handler directly.
+          ep->handler.fn(ep->handler.arg);
+          irq_ack(ack);         // Acknowledge the interrupt.
+          return NULL;
+        }
         *ep->irq_clear = ep->clear_value;
         irq_ack(ack);           // Acknowledge the interrupt.
         return &ep->handler;

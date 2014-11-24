@@ -141,7 +141,7 @@ static int thread2Command(int argc, char **argv)
 static int counter;
 static void *thread3(void *arg)
 {
-  printf ("thread3 started\n");
+  // printf ("thread3 started\n");
   for ( ;; ) {
     // Very busy.
     ++counter;

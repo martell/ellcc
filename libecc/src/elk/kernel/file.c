@@ -123,7 +123,7 @@ static int fd_allocate(fdset_t fdset, int spec)
         return -EMFILE;
       }
 
-      for (int i = s; i < s * 2; ++i) {
+      for (int i = s; i < s * FDMULTIPLIER; ++i) {
         init_fd(&newfds[i]);
       }
 

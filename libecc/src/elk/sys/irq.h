@@ -70,7 +70,7 @@ typedef struct irq_handler
             InterruptFn fn;             // The interrupt handler function.
             void **arg;                 // The handler argument pointer.
         } handler;
-        void *unused1;
+        uint32_t direct;        // != 0: Call the handler directly.
         void *unused2;
         void *unused3;
     } entries[];

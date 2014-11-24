@@ -13,13 +13,21 @@
 int main(int argc, char **argv)
 {
   printf("%s started. Type \"help\" for a list of commands.\n", argv[0]);
-
-#if 1
   int s, fd;
   s = mount("", "/", "ramfs", 0, NULL);
   if (s) {
     printf("ramfs mount failed: %s\n", strerror(errno));
   }
+  s = mkdir("/dev", S_IRWXU);
+  if (s) {
+    printf("/dev mkdir failed: %s\n", strerror(errno));
+  }
+  s = mount("", "/dev", "devfs", 0, NULL);
+  if (s) {
+    printf("devfs mount failed: %s\n", strerror(errno));
+  }
+
+#if 0
   fd = open(".././.././foo", O_CREAT|O_WRONLY, 0777);
   if (fd < 0) {
     printf("open(/foo) failed: %s\n", strerror(errno));
@@ -46,15 +54,6 @@ int main(int argc, char **argv)
   s = close(fd);
   if (s < 0) {
     printf("close failed: %s\n", strerror(errno));
-  }
-
-  s = mkdir("/dev", S_IRWXU);
-  if (s) {
-    printf("/dev mkdir failed: %s\n", strerror(errno));
-  }
-  s = mount("", "/dev", "devfs", 0, NULL);
-  if (s) {
-    printf("devfs mount failed: %s\n", strerror(errno));
   }
 
   char *p = getcwd(buffer, 100);
@@ -102,6 +101,18 @@ int main(int argc, char **argv)
   }
 
   chdir("/");
+#endif
+
+#if 0
+  fd = open("/dev/tty", O_RDWR);
+  write(fd, "hello world\n", sizeof("hello world\n"));
+  if (fd < 0) {
+    printf("open(/dev/console) failed:%s\n", strerror(errno));
+  } else {
+    dup2(fd, 0);
+    dup2(fd, 1);
+    dup2(fd, 2);
+  }
 #endif
 
   // Enter the kernel command processor.

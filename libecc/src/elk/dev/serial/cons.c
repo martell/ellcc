@@ -124,6 +124,7 @@ static int cons_init(struct driver *self)
 {
 
   consdev = NULL;
+  device_create(self, "console", D_CHR|D_TTY);
   return 0;
 }
 
@@ -193,7 +194,7 @@ void cons_attach(struct consdev *cdev, int diag)
 #endif
 }
 
-C_CONSTRUCTOR()
+ELK_CONSTRUCTOR()
 {
-  device_create(&cons_driver, cons_driver.name, D_CHR|D_TTY);
+  driver_register(&cons_driver);
 }

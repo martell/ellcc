@@ -192,8 +192,28 @@ static void pl011_start(struct serial_port *sp)
   // Enable UART.
   bus_write_32(UART_CR, (CR_RXE|CR_TXE|CR_UARTEN));
 
+#if 1   // RICH
+    static IRQHandler serial_irq =
+    {
+        .id = UART_IRQ + 32,
+        .edge = 0,
+        .priority = IPL_COMM,
+        .cpus = 0xFFFFFFFF,         // Send to all CPUs.
+        .sources = 1,
+        {
+            { (void *)UART_MIS, MIS_TX|MIS_RX, (void *)UART_ICR, MIS_TX|MIS_RX,
+                { .fn = (void *)pl011_isr },
+              .direct = 1,
+            },
+        }
+    };
+    serial_irq.entries[0].handler.arg = (void *)sp;
+    irq_register(&serial_irq);
+
+#else
   // Install interrupt handler.
   sp->irq = irq_attach(UART_IRQ, IPL_COMM, 0, pl011_isr, IST_NONE, sp);
+#endif
 
   // Enable TX/RX interrupt.
   bus_write_32(UART_IMSC, (IMSC_RX | IMSC_TX));
@@ -205,16 +225,14 @@ static void pl011_stop(struct serial_port *sp)
   bus_write_32(UART_CR, 0);     // Disable everything.
 }
 
-static int
-pl011_init(struct driver *self)
+static int pl011_init(struct driver *self)
 {
 
   serial_attach(&pl011_ops, &pl011_port);
   return 0;
 }
 
-C_CONSTRUCTOR()
+ELK_CONSTRUCTOR()
 {
-  device_create(&pl011_driver, pl011_driver.name, D_CHR);
+  driver_register(&pl011_driver);
 }
-

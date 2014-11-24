@@ -1,5 +1,6 @@
 current SVN:
 
+* Support for tty console.
 * Update to LLVM r222635.
 * Support for user space programs in kernal space (e.g. ls, cat).
 * Added lazy vnode R/W access to ELK.

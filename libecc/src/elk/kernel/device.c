@@ -49,6 +49,15 @@
 
 /* list head of the devices */
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+#define LOCK_INIT() do { \
+  pthread_mutexattr_t attr; \
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE); \
+  pthread_mutex_init(&mutex, &attr); \
+  } while (0)
+
+#define LOCK()  pthread_mutex_lock(&mutex)
+#define UNLOCK()  pthread_mutex_unlock(&mutex)
+
 static struct device *device_list = NULL;
 
 /*
@@ -71,12 +80,12 @@ device_t device_create(const struct driver *drv, const char *name, int flags)
   if (len == 0 || len >= MAXDEVNAME)
     return NULL;
 
-  pthread_mutex_lock(&mutex);
+  LOCK();
 
   /* Check if specified name is already used. */
   if (device_lookup(name) != NULL) {
     printf("duplicate device: %s", name);
-    pthread_mutex_unlock(&mutex);
+    UNLOCK();
     return NULL;
   }
 
@@ -85,7 +94,7 @@ device_t device_create(const struct driver *drv, const char *name, int flags)
    */
   if ((dev = malloc(sizeof(*dev))) == NULL) {
     printf("device_create");
-    pthread_mutex_unlock(&mutex);
+    UNLOCK();
     return NULL;
   }
 
@@ -93,7 +102,7 @@ device_t device_create(const struct driver *drv, const char *name, int flags)
     if ((private = malloc(drv->devsz)) == NULL) {
       free(dev);
       printf("devsz");
-      pthread_mutex_unlock(&mutex);
+      UNLOCK();
       return NULL;
     }
 
@@ -109,7 +118,7 @@ device_t device_create(const struct driver *drv, const char *name, int flags)
   dev->next = device_list;
   device_list = dev;
 
-  pthread_mutex_unlock(&mutex);
+  UNLOCK();
   return dev;
 }
 
@@ -121,15 +130,15 @@ device_t device_create(const struct driver *drv, const char *name, int flags)
 int device_destroy(device_t dev)
 {
 
-  pthread_mutex_lock(&mutex);
+  LOCK();
   if (!device_valid(dev)) {
-    pthread_mutex_unlock(&mutex);
+    UNLOCK();
     return -ENODEV;
   }
 
   dev->active = 0;
   device_release(dev);
-  pthread_mutex_unlock(&mutex);
+  UNLOCK();
   return 0;
 }
 
@@ -183,19 +192,19 @@ int device_valid(device_t dev)
 int device_reference(device_t dev)
 {
 
-  pthread_mutex_lock(&mutex);
+  LOCK();
   if (!device_valid(dev)) {
-    pthread_mutex_unlock(&mutex);
+    UNLOCK();
     return -ENODEV;
   }
 
   if (!capable(CAP_SYS_RAWIO)) {
-    pthread_mutex_unlock(&mutex);
+    UNLOCK();
     return -EPERM;
   }
 
   dev->refcnt++;
-  pthread_mutex_unlock(&mutex);
+  UNLOCK();
   return 0;
 }
 
@@ -207,9 +216,9 @@ void device_release(device_t dev)
 {
   device_t *tmp;
 
-  pthread_mutex_lock(&mutex);
+  LOCK();
   if (--dev->refcnt > 0) {
-    pthread_mutex_unlock(&mutex);
+    UNLOCK();
     return;
   }
 
@@ -224,7 +233,7 @@ void device_release(device_t dev)
   }
 
   free(dev);
-  pthread_mutex_unlock(&mutex);
+  UNLOCK();
 }
 
 /*
@@ -247,26 +256,26 @@ int device_open(const char *name, int mode, device_t *devp)
   if (error)
     return error;
 
-  pthread_mutex_lock(&mutex);
+  LOCK();
   if ((dev = device_lookup(str)) == NULL) {
-    pthread_mutex_unlock(&mutex);
+    UNLOCK();
     return -ENXIO;
   }
 
   error = device_reference(dev);
   if (error) {
-    pthread_mutex_unlock(&mutex);
+    UNLOCK();
     return error;
   }
 
-  pthread_mutex_unlock(&mutex);
+  UNLOCK();
 
   const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->open != NULL);
   error = (*ops->open)(dev, mode);
   if (!error)
-    error = copyout(&dev, devp, sizeof(dev));
+    *devp = dev;
 
   device_release(dev);
   return error;
@@ -321,7 +330,7 @@ int device_read(device_t dev, struct uio *uio, size_t *nbyte, int blkno)
   ASSERT(ops->read != NULL);
   error = (*ops->read)(dev, uio, &count, blkno);
   if (!error)
-    error = copyout(&count, nbyte, sizeof(count));
+    *nbyte = count;
 
   device_release(dev);
   return error;
@@ -353,7 +362,7 @@ int device_write(device_t dev, void *buf, size_t *nbyte, int blkno)
   ASSERT(ops->write != NULL);
   error = (*ops->write)(dev, buf, &count, blkno);
   if (!error)
-    error = copyout(&count, nbyte, sizeof(count));
+    *nbyte = count;
 
   device_release(dev);
   return error;
@@ -411,12 +420,12 @@ int device_control(device_t dev, u_long cmd, void *arg)
 
   ASSERT(dev != NULL);
 
-  pthread_mutex_lock(&mutex);
+  LOCK();
   const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->devctl != NULL);
   error = (*ops->devctl)(dev, cmd, arg);
-  pthread_mutex_unlock(&mutex);
+  UNLOCK();
   return error;
 }
 
@@ -438,7 +447,7 @@ int device_broadcast(u_long cmd, void *arg, int force)
   device_t dev;
   int error, retval = 0;
 
-  pthread_mutex_lock(&mutex);
+  LOCK();
 
   for (dev = device_list; dev != NULL; dev = dev->next) {
     /*
@@ -463,7 +472,7 @@ int device_broadcast(u_long cmd, void *arg, int force)
     }
   }
 
-  pthread_mutex_unlock(&mutex);
+  UNLOCK();
   return retval;
 }
 
@@ -477,7 +486,7 @@ int device_info(struct devinfo *info)
   device_t dev;
   int error = -ESRCH;
 
-  pthread_mutex_lock(&mutex);
+  LOCK();
   for (dev = device_list; dev != NULL; dev = dev->next) {
     if (i++ == target) {
       info->cookie = i;
@@ -489,7 +498,7 @@ int device_info(struct devinfo *info)
     }
   }
 
-  pthread_mutex_unlock(&mutex);
+  UNLOCK();
   return error;
 }
 
@@ -505,6 +514,28 @@ int enodev(void)
 int nullop(void)
 {
   return 0;
+}
+
+/** Register a driver for use.
+ */
+static pthread_mutex_t dmutex = PTHREAD_MUTEX_INITIALIZER;
+static struct driver *driver_table[NDRIVERS];
+
+void driver_register(struct driver *driver)
+{
+  pthread_mutex_lock(&dmutex);
+  for (int i = 0; i < NDRIVERS; ++i) {
+    if (driver_table[i]) {
+      continue;
+    }
+
+    driver_table[i] = driver;
+    pthread_mutex_unlock(&dmutex);
+    return;
+  }
+
+  printf("maximum number of drivers exceeded.\n");
+  pthread_mutex_unlock(&dmutex);
 }
 
 /** Show device information.
@@ -543,6 +574,33 @@ static int dsCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
+/** Show driver information.
+ */
+static int drvsCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("Show driver information.\n");
+    return COMMAND_OK;
+  }
+
+
+  printf("Driver table:\n");
+        printf(" probe    init     unload   devops   flags    name\n");
+        printf(" -------- -------- -------- -------- -------- -----------\n");
+
+  for (int i = 0; i < NDRIVERS; i++) {
+    struct driver *dp = driver_table[i];
+    if (dp == NULL) {
+      continue;
+    }
+
+    printf(" %8p %8p %8p %8p %8lx %s\n",
+           dp->probe, dp->init, dp->unload,
+           dp->devops, (long)dp->flags, dp->name);
+  }
+  return COMMAND_OK;
+}
+
 /** Create a section heading for the help command.
  */
 static int sectionCommand(int argc, char **argv)
@@ -558,4 +616,48 @@ ELK_CONSTRUCTOR()
 {
   command_insert(NULL, sectionCommand);
   command_insert("ds", dsCommand);
+  command_insert("drvs", drvsCommand);
+}
+
+C_CONSTRUCTOR()
+{
+  LOCK_INIT();
+
+  // Call xxx_probe routine for all drivers.
+  struct driver *dp;
+
+  DPRINTF(DEVDB_DRV, ("Probing devices...\n"));
+
+  for (int i = 0; i < NDRIVERS; i++) {
+    dp = driver_table[i];
+    if (dp == NULL) {
+      continue;
+    }
+
+    if (dp->probe != NULL) {
+      if (dp->probe(dp) == 0)
+        dp->flags |= DS_ALIVE;
+    } else {
+      // No probe method. Mark it alive.
+      dp->flags |= DS_ALIVE;
+    }
+  }
+
+  // Call xxx_init routine for all living drivers.
+
+  for (int i = 0; i < NDRIVERS; i++) {
+    dp = driver_table[i];
+    if (dp == NULL) {
+      continue;
+    }
+
+    /* All drivers must have init method */
+    ASSERT(dp->init != NULL);
+
+    if (dp->flags & DS_ALIVE) {
+      DPRINTF(DEVDB_DRV, ("Initializing %s\n", dp->name));
+      if (dp->init(dp) == 0)
+        dp->flags |= DS_ACTIVE;
+    }
+  }
 }

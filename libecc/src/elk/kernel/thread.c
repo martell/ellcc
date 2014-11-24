@@ -1698,6 +1698,8 @@ ELK_CONSTRUCTOR()
 #include <unistd.h>
 #endif
 
+#include <sys/mount.h>
+
 C_CONSTRUCTOR()
 {
   // Set up the tid pool.
@@ -1720,9 +1722,17 @@ C_CONSTRUCTOR()
   create_idle_threads();
 
 #if ENABLEFDS
+#if 1
   // RICH: Temporarily fake a console.
   int __elk_fdconsole_open(fdset_t *fdset);
   int fd = __elk_fdconsole_open(&current->fdset);
+#else
+  s = mount("", "/", "ramfs", 0, NULL);
+  s = mkdir("/dev", S_IRWXU);
+  s = mount("", "/dev", "devfs", 0, NULL);
+  int fd = open("/dev/cons", O_RDWR);
+#endif
+
   if (fd >= 0) {
     dup(fd);                            // stdout
     dup(fd);                            // stderr
