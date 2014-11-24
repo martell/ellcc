@@ -52,6 +52,7 @@ extern int debug;
 
 // Device debug flags.
 #define DEVDB_CORE      0x00000100
+#define DEVDB_IRQ       0x00000200
 
 // TTY debug flags.
 #define TTYDB_CORE      0x00001000

@@ -58,6 +58,9 @@
  *  reentrant because it is not interrupted by same IST itself.
  */
 
+#include <string.h>
+#include <pthread.h>
+
 #if RICH
 #include <kernel.h>
 #include <event.h>
@@ -66,12 +69,16 @@
 #include <sched.h>
 #endif
 #include "config.h"
+#include "hal.h"
 #include "thread.h"
 #include "irq.h"
 
 /* forward declarations */
+#if RICH
 static void  irq_thread(void *);
+#endif
 
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct irq  *irq_table[MAXIRQS];  /* IRQ descriptor table */
 
 /*
@@ -84,13 +91,13 @@ static struct irq  *irq_table[MAXIRQS];  /* IRQ descriptor table */
 irq_t irq_attach(int vector, int pri, int shared,
                  int (*isr)(void *), void (*ist)(void *), void *data)
 {
-  struct irq *irq;
+  irq_t irq;
   int mode;
 
   ASSERT(isr != NULL);
 
-  sched_lock();
-  if ((irq = kmem_alloc(sizeof(*irq))) == NULL)
+  pthread_mutex_lock(&mutex);
+  if ((irq = malloc(sizeof(*irq))) == NULL)
     panic("irq_attach");
 
   memset(irq, 0, sizeof(*irq));
@@ -100,6 +107,7 @@ irq_t irq_attach(int vector, int pri, int shared,
   irq->ist = ist;
   irq->data = data;
 
+#if RICH        // IRQ thread
   if (ist != IST_NONE) {
     /*
      * Create a new thread for IST.
@@ -110,16 +118,19 @@ irq_t irq_attach(int vector, int pri, int shared,
 
     event_init(&irq->istevt, "interrupt");
   }
+#endif
+
   irq_table[vector] = irq;
   mode = shared ? IMODE_LEVEL : IMODE_EDGE;
   interrupt_setup(vector, mode);
   interrupt_unmask(vector, pri);
 
-  sched_unlock();
-  DPRINTF(("IRQ%d attached priority=%d\n", vector, pri));
+  pthread_mutex_unlock(&mutex);
+  DPRINTF(DEVDB_IRQ, ("IRQ%d attached priority=%d\n", vector, pri));
   return irq;
 }
 
+#if RICH
 /*
  * Detach an interrupt handler from the interrupt chain.
  * The detached interrupt will be masked off if nobody
@@ -193,7 +204,7 @@ void irq_handler(int vector)
 
   irq = irq_table[vector];
   if (irq == NULL) {
-    DPRINTF(("Random interrupt ignored\n"));
+    DPRINTF(DEVDB_IRQ, ("Random interrupt ignored\n"));
     return;
   }
   ASSERT(irq->isr != NULL);
@@ -257,3 +268,4 @@ void irq_init(void)
   /* Enable interrupts */
   spl0();
 }
+#endif

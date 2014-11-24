@@ -31,7 +31,9 @@
  * pl011.c - ARM PrimeCell PL011 UART
  */
 
+#include "hal.h"
 #include "ipl.h"
+#include "irq.h"
 #include "tty.h"
 #include "serial.h"
 #include "busio.h"

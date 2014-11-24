@@ -6,6 +6,7 @@ CFLAGS += -I$(SRCPATH)/$(LIB)/sys/$(ARCH) \
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/$(ARCH)
 # Startup code.
 CRTSRCS += crt1.S
+
 # Target specific code.
 SRCS.arm += arm_gic.c arm_sp804.c
 SRCS.i386 += gdt.c idt.c i8259.c
@@ -13,7 +14,6 @@ SRCS.microblaze +=
 SRCS.mips +=
 SRCS.ppc +=
 SRCS.x86_64 += idt.c
-SRCS += $(SRCS.$(ARCH))
 
 # Target independent code.
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/kernel
@@ -51,3 +51,5 @@ VPATH := $(VPATH):$(SRCPATH)/$(LIB)/dev/serial
 # ARM PL011 UART.
 SRCS.arm += pl011.c
 SRCS += serial.c tty.c cons.c
+
+SRCS += $(SRCS.$(ARCH))

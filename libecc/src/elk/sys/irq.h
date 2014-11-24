@@ -7,6 +7,8 @@
 #include <inttypes.h>
 #include <semaphore.h>
 
+#include "config.h"
+
 #if ELK_NAMESPACE
 #define irq_attach __elk_irq_attach
 #define irq_detach __elk_irq_detach
@@ -15,9 +17,7 @@
 #define irq_init __elk_irq_init
 #endif
 
-typedef unsigned long irq_t;    // An irq identifier.
-
-struct irq {
+typedef struct irq {
   int vector;                   // Vector number.
   int (*isr)(void *);           // Pointer to isr.
   void (*ist)(void *);          // Pointer to ist.
@@ -27,7 +27,7 @@ struct irq {
   int istreq;                   // Number of ist request.
   pid_t  thread;                // Thread id of ist.
   sem_t istsem;                 // Event for ist.
-};
+} *irq_t;
 
 // IRQ information.
 struct irqinfo {
@@ -39,18 +39,8 @@ struct irqinfo {
   pid_t thread;                 // Thread id of ist.
 };
 
-/*
- * Return values from ISR.
- */
-#define INT_DONE     0          // Success.
-#define INT_ERROR    1          // Interrupt not handled.
-#define INT_CONTINUE 2          // Continue processing (Request IST).
-
 // Map an interrupt priority level to IST priority.
 #define ISTPRI(pri) (PRI_IST + (IPL_HIGH - pri))
-
-// No IST for irq_attach().
-#define IST_NONE  ((void (*)(void *)) -1)
 
 irq_t irq_attach(int, int, int, int (*)(void *), void (*)(void *), void *);
 void irq_detach(irq_t);

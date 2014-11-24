@@ -34,8 +34,8 @@
  *  @(#)tty.h  8.7 (Berkeley) 1/9/95
  */
 
-#ifndef _SYS_TTY_H_
-#define _SYS_TTY_H_
+#ifndef _tty_h_
+#define _tty_h_
 
 #include <sys/ioctl.h>
 #include <termios.h>
@@ -110,4 +110,4 @@ int tty_getc(struct tty_queue *);
 void tty_done(struct tty *);
 void tty_attach(struct tty *);
 
-#endif /* !_SYS_TTY_H_ */
+#endif // !_tty_h_

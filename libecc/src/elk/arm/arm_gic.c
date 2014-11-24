@@ -1,8 +1,27 @@
 /** The ARM Generic Interrupt Controller.
  */
 
-#include <arm_priv.h>
-#include <irq.h>
+#include "hal.h"
+#include "arm_priv.h"
+#include "irq.h"
+
+// RICH: Stubs for now.
+
+/** Unmask interrupt in ICU for specified irq.
+ * The interrupt mask table is also updated.
+ * Assumes CPU interrupt is disabled in caller.
+ */
+void interrupt_unmask(int vector, int level)
+{
+}
+
+/** Setup interrupt mode.
+ * Select whether an interrupt trigger is edge or level.
+ */
+void interrupt_setup(int vector, int mode)
+{
+  // nop
+}
 
 /** Can we identify IRQs by ID?
  */
