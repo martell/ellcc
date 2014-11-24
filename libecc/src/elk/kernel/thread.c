@@ -1110,6 +1110,20 @@ static int sys_tkill(int tid, int sig)
   return 0;
 }
 
+/** Send a signal to a process.
+ */
+int signal_post(pid_t pid, int sig)
+{
+  // RICH: Send a signal to a process.
+  return 0;
+}
+/** Schedule a defered procedure call.
+ */
+void sched_dpc(struct dpc *dpc, void (*fn)(void *), void *arg)
+{
+  // RICH: Schedule a delayed procedure call.
+}
+
 static void sys_exit(int status)
 {
   if (current->clear_child_tid) {

@@ -53,6 +53,9 @@ extern int debug;
 // Device debug flags.
 #define DEVDB_CORE      0x00000100
 
+// TTY debug flags.
+#define TTYDB_CORE      0x00001000
+
 // Virtual file system debug flags.
 #define	VFSDB_CORE	0x00010000
 #define	VFSDB_SYSCALL	0x00020000

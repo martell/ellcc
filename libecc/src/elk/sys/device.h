@@ -54,9 +54,12 @@
 #define device_poll __elk_device_poll
 #define device_ioctl __elk_device_ioctl
 #define device_info __elk_device_info
+#define enodev __elk_enodev
+#define nullop __elk_nullop
 #endif
 
 typedef struct device *device_t;
+#define NODEV ((device_t)0)
 
 /*
  * Device flags
@@ -90,7 +93,7 @@ struct devops {
   int (*open)(device_t, int);
   int (*close)(device_t);
   int (*read)(device_t, struct uio *, size_t *, int);
-  int (*write)(device_t, char *, size_t *, int);
+  int (*write)(device_t, struct uio *, size_t *, int);
   int (*poll)(device_t, int);
   int (*ioctl)(device_t, u_long, void *);
   int (*devctl)(device_t, u_long, void *);
@@ -98,11 +101,14 @@ struct devops {
 
 typedef int (*devop_open_t)(device_t, int);
 typedef int (*devop_close_t)(device_t);
-typedef int (*devop_read_t)(device_t, char *, size_t *, int);
-typedef int (*devop_write_t)(device_t, char *, size_t *, int);
+typedef int (*devop_read_t)(device_t, struct uio *, size_t *, int);
+typedef int (*devop_write_t)(device_t, struct uio *, size_t *, int);
 typedef int (*devop_poll_t)(device_t, int);
 typedef int (*devop_ioctl_t)(device_t, u_long, void *);
 typedef int (*devop_devctl_t)(device_t, u_long, void *);
+
+int enodev(void);
+int nullop(void);
 
 #define  no_open   ((devop_open_t)nullop)
 #define  no_close  ((devop_close_t)nullop)
@@ -118,7 +124,7 @@ typedef int (*devop_devctl_t)(device_t, u_long, void *);
 struct driver
 {
   const char *name;             // Name of device driver.
-  struct devops *devops;        // device operations.
+  const struct devops *devops;  // device operations.
   size_t devsz;                 // size of private data.
   int flags;                    // state of driver.
   int (*probe)(struct driver *);
@@ -153,7 +159,7 @@ static struct {
 struct device
 {
   struct device *next;          // Linkage on list of all devices.
-  struct driver *driver;        // Pointer to the driver object.
+  const struct driver *driver;  // Pointer to the driver object.
   char name[MAXDEVNAME];        // Name of device.
   int flags;                    // D_* flags defined above.
   int active;                   // Device has not been destroyed.
@@ -161,7 +167,7 @@ struct device
   void *private;                // Private storage.
 };
 
-device_t device_create(struct driver *, const char *, int);
+device_t device_create(const struct driver *, const char *, int);
 int device_destroy(device_t);
 device_t device_lookup(const char *);
 int device_valid(device_t);

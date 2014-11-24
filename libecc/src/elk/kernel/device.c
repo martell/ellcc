@@ -32,7 +32,7 @@
  */
 
 /**
- * The routines in this moduile have the following role:
+ * The routines in this module have the following role:
  *  - Manage the name space for device objects.
  *  - Forward user I/O requests to the drivers with minimum check.
  */
@@ -41,6 +41,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <stdlib.h>
+
 #define DEFINE_DEVICE_STRINGS
 #include "device.h"
 #include "thread.h"
@@ -57,7 +58,7 @@ static struct device *device_list = NULL;
  * I/O services to applications.  Returns device ID on
  * success, or 0 on failure.
  */
-device_t device_create(struct driver *drv, const char *name, int flags)
+device_t device_create(const struct driver *drv, const char *name, int flags)
 {
   device_t dev;
   size_t len;
@@ -238,7 +239,6 @@ void device_release(device_t dev)
  */
 int device_open(const char *name, int mode, device_t *devp)
 {
-  struct devops *ops;
   device_t dev;
   char str[MAXDEVNAME];
   int error;
@@ -261,6 +261,7 @@ int device_open(const char *name, int mode, device_t *devp)
 
   pthread_mutex_unlock(&mutex);
 
+  const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->open != NULL);
   error = (*ops->open)(dev, mode);
@@ -279,12 +280,12 @@ int device_open(const char *name, int mode, device_t *devp)
  */
 int device_close(device_t dev)
 {
-  struct devops *ops;
   int error;
 
   if ((error = device_reference(dev)) != 0)
     return error;
 
+  const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->close != NULL);
   error = (*ops->close)(dev);
@@ -301,7 +302,6 @@ int device_close(device_t dev)
  */
 int device_read(device_t dev, struct uio *uio, size_t *nbyte, int blkno)
 {
-  struct devops *ops;
   size_t count;
   int error;
 
@@ -316,6 +316,7 @@ int device_read(device_t dev, struct uio *uio, size_t *nbyte, int blkno)
     return -EFAULT;
   }
 
+  const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->read != NULL);
   error = (*ops->read)(dev, uio, &count, blkno);
@@ -333,7 +334,6 @@ int device_read(device_t dev, struct uio *uio, size_t *nbyte, int blkno)
  */
 int device_write(device_t dev, void *buf, size_t *nbyte, int blkno)
 {
-  struct devops *ops;
   size_t count;
   int error;
 
@@ -348,6 +348,7 @@ int device_write(device_t dev, void *buf, size_t *nbyte, int blkno)
     return -EFAULT;
   }
 
+  const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->write != NULL);
   error = (*ops->write)(dev, buf, &count, blkno);
@@ -363,12 +364,12 @@ int device_write(device_t dev, void *buf, size_t *nbyte, int blkno)
  */
 int device_poll(device_t dev, int flags)
 {
-  struct devops *ops;
   int error;
 
   if ((error = device_reference(dev)) != 0)
     return error;
 
+  const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->poll != NULL);
   error = (*ops->poll)(dev, flags);
@@ -386,12 +387,12 @@ int device_poll(device_t dev, int flags)
  */
 int device_ioctl(device_t dev, u_long cmd, void *arg)
 {
-  struct devops *ops;
   int error;
 
   if ((error = device_reference(dev)) != 0)
     return error;
 
+  const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->ioctl != NULL);
   error = (*ops->ioctl)(dev, cmd, arg);
@@ -406,12 +407,12 @@ int device_ioctl(device_t dev, u_long cmd, void *arg)
  */
 int device_control(device_t dev, u_long cmd, void *arg)
 {
-  struct devops *ops;
   int error;
 
   ASSERT(dev != NULL);
 
   pthread_mutex_lock(&mutex);
+  const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->devctl != NULL);
   error = (*ops->devctl)(dev, cmd, arg);
@@ -435,7 +436,6 @@ int device_control(device_t dev, u_long cmd, void *arg)
 int device_broadcast(u_long cmd, void *arg, int force)
 {
   device_t dev;
-  struct devops *ops;
   int error, retval = 0;
 
   pthread_mutex_lock(&mutex);
@@ -444,6 +444,7 @@ int device_broadcast(u_long cmd, void *arg, int force)
     /*
      * Call driver's devctl() routine.
      */
+    const struct devops *ops;
     ops = dev->driver->devops;
     if (ops == NULL)
       continue;
@@ -490,6 +491,20 @@ int device_info(struct devinfo *info)
 
   pthread_mutex_unlock(&mutex);
   return error;
+}
+
+/** Nonexistent device call.
+ */
+int enodev(void)
+{
+  return ENODEV;
+}
+
+/* Generic null operation, always returns success.
+ */
+int nullop(void)
+{
+  return 0;
 }
 
 /** Show device information.

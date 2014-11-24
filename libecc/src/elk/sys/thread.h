@@ -22,6 +22,8 @@
 #define setfile __elk_setfile
 #define replacecwd __elk_replacecwd
 #define getpath __elk_getpath
+#define signal_post __elk_signal_post
+#define sched_dpc __elk_sched_dpc
 #define vm_allocate __elk_vm_allocate
 #define vm_free __elk_vm_free
 #endif
@@ -223,6 +225,22 @@ int getpath(const char *name, char *path);
 /** Get the current thread id.
  */
 int gettid(void);
+
+/** Send a signal to a process.
+ */
+int signal_post(pid_t pid, int sig);
+
+struct dpc
+{
+  struct dpc * next;                    // Next in the list.
+  int state;                            // DPC state.
+  void (*fn)(void *);                   // Defered procedure...
+  void *arg;                            // ...and its argument.
+};
+
+/** Schedule a defered procedure call.
+ */
+void sched_dpc(struct dpc *dpc, void (*fn)(void *), void *arg);
 
 #ifndef PAGE_SIZE
 #define PAGE_SIZE 4096

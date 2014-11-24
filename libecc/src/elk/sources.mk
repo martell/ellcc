@@ -19,7 +19,7 @@ SRCS += $(SRCS.$(ARCH))
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/kernel
 # The ELK kernel.
 SRCS += command.c test_commands.c time_commands.c \
-	__elk_start.c time.c irq.c thread.c file.c fdconsole.c \
+	__elk_start.c time.c irq.c nirq.c thread.c file.c fdconsole.c \
 	console.c simple_console.c simple_memman.c simple_exit.c \
 	device.c
 
@@ -44,3 +44,10 @@ SRCS += fifo_vnops.c
 #VPATH := $(VPATH):$(SRCPATH)/$(LIB)/fs/binfs
 # bin file system.
 #SRCS += binfs_vnops.c
+
+# Devices
+# Serial devices.
+VPATH := $(VPATH):$(SRCPATH)/$(LIB)/dev/serial
+# ARM PL011 UART.
+SRCS.arm += pl011.c
+SRCS += serial.c tty.c cons.c
