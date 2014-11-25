@@ -78,7 +78,9 @@ ifeq ($(shell uname),Darwin)
   CFLAGS += -Wno-error=deprecated-declarations
 endif
 
-CFLAGS += -Wno-error=pointer-bool-conversion
+ifneq ($(MINGW),1)
+  CFLAGS += -Wno-error=pointer-bool-conversion
+endif
 
 binutils.configure:
 	$(OUT)if [ -e $(DIR)/binutils/Makefile ] ; then \
