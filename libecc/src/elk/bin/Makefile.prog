@@ -57,35 +57,33 @@ all: strip
 $(PROGNAME): strip
 
 
-define STUBBEGIN=
-$(OUT)echo "#if defined(__ppc__)" >__stubbegin.S
-$(OUT)echo ".section .bss" >>__stubbegin.S
-$(OUT)echo "#else" >>__stubbegin.S
-$(OUT)echo ".bss" >>__stubbegin.S
-$(OUT)echo "#endif" >>__stubbegin.S
-$(OUT)echo ".global __bss_start" >>__stubbegin.S
-$(OUT)echo "__bss_start:" >>__stubbegin.S
-endef
+STUBBEGIN= \
+$(OUT)echo "\#if defined(__ppc__)" >__stubbegin.S ; \
+echo ".section .bss" >>__stubbegin.S ; \
+echo "\#else" >>__stubbegin.S ; \
+echo ".bss" >>__stubbegin.S ; \
+echo "\#endif" >>__stubbegin.S ; \
+echo ".global __bss_start" >>__stubbegin.S ; \
+echo "__bss_start:" >>__stubbegin.S
 
-define STUBEND=
-$(OUT)echo "#include <inttypes.h>" >__stubend.c
-$(OUT)echo "#include <pthread.h>" >>__stubend.c
-$(OUT)echo "#include <string.h>" >>__stubend.c
-$(OUT)echo "#include \"constructor.h\"" >>__stubend.c
-$(OUT)echo "#include \"command.h\"" >>__stubend.c
-$(OUT)echo "FEATURE($(PROG)_bin)" >>__stubend.c
-$(OUT)echo "int main();" >>__stubend.c
-$(OUT)echo "void _exit(int s) __attribute__((noreturn));" >>__stubend.c
-$(OUT)echo "void exit(int s) __attribute__((noreturn));" >>__stubend.c
-$(OUT)echo "void exit(int s) { pthread_exit((void *)(intptr_t)s); };" >>__stubend.c
-$(OUT)echo "static char __bss_end;" >>__stubend.c
-$(OUT)echo "ELK_CONSTRUCTOR()" >>__stubend.c
-$(OUT)echo "{" >>__stubend.c
-$(OUT)echo "extern char __bss_start[];" >>__stubend.c
-$(OUT)echo "memset(__bss_start, 0, &__bss_end - __bss_start);" >>__stubend.c
-$(OUT)echo "command_insert_external(\"$(PROG)\", main);" >>__stubend.c
-$(OUT)echo "}" >>__stubend.c
-endef
+STUBEND= \
+$(OUT)echo "\#include <inttypes.h>" >__stubend.c ; \
+echo "\#include <pthread.h>" >>__stubend.c ; \
+echo "\#include <string.h>" >>__stubend.c ; \
+echo "\#include \"constructor.h\"" >>__stubend.c ; \
+echo "\#include \"command.h\"" >>__stubend.c ; \
+echo "FEATURE($(PROG)_bin)" >>__stubend.c ; \
+echo "int main();" >>__stubend.c ; \
+echo "void _exit(int s) __attribute__((noreturn));" >>__stubend.c ; \
+echo "void exit(int s) __attribute__((noreturn));" >>__stubend.c ; \
+echo "void exit(int s) { pthread_exit((void *)(intptr_t)s); };" >>__stubend.c ; \
+echo "static char __bss_end;" >>__stubend.c ; \
+echo "ELK_CONSTRUCTOR()" >>__stubend.c ; \
+echo "{" >>__stubend.c ; \
+echo "extern char __bss_start[];" >>__stubend.c ; \
+echo "memset(__bss_start, 0, &__bss_end - __bss_start);" >>__stubend.c ; \
+echo "command_insert_external(\"$(PROG)\", main);" >>__stubend.c ; \
+echo "}" >>__stubend.c
 
 __stubbegin.S: Makefile
 	$(STUBBEGIN)

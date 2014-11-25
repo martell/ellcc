@@ -161,6 +161,7 @@ $(Configs)::
 	  CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
 	  CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
 	  AR=$(ELLCC)/bin/ecc-ar \
+	  RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	      ../../src/libedit/configure \
 	      --enable-shared=no  --prefix=$(ELLCC) \
 	      --host=`../../getarch $*`-`../../getos $*` ; \
