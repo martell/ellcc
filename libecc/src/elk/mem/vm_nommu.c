@@ -42,6 +42,7 @@
 #include <errno.h>
 #include <string.h>
 
+#include "config.h"
 #include "kernel.h"
 #include "thread.h"
 #include "page.h"
@@ -64,7 +65,7 @@ static int do_free(vm_map_t, void *);
 static int do_attribute(vm_map_t, void *, int);
 static int do_map(vm_map_t, void *, size_t, void **);
 
-static struct vm_map kernel_map;  	// VM mapping for kernel.
+static struct vm_map kernel_map;    // VM mapping for kernel.
 
 /** Allocate zero-filled memory for specified address.
  *
@@ -79,22 +80,16 @@ static struct vm_map kernel_map;  	// VM mapping for kernel.
 used static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
 {
   int error;
-  void *uaddr;
 
   if (!pid_valid(pid)) {
     return -ESRCH;
   }
 
-#if RICH
   if (pid != getpid() && !capable(CAP_SYS_PTRACE)) {
     return -EPERM;
   }
-#endif
 
-  if (copyin(addr, &uaddr, sizeof(*addr))) {
-    return -EFAULT;
-  }
-
+  void *uaddr = *addr;
   if (anywhere == 0 && !user_area(*addr)) {
     return -EACCES;
   }
@@ -103,8 +98,7 @@ used static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
   pthread_mutex_lock(&map->lock);
   error = do_allocate(map, &uaddr, size, anywhere);
   if (!error) {
-    if (copyout(&uaddr, addr, sizeof(uaddr)))
-      error = -EFAULT;
+    *addr = uaddr;
   }
 
   pthread_mutex_unlock(&map->lock);
@@ -113,9 +107,6 @@ used static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
 
 static int do_allocate(vm_map_t map, void **addr, size_t size, int anywhere)
 {
-  struct seg *seg;
-  vaddr_t start, end;
-
   if (size == 0)
     return -EINVAL;
 
@@ -125,6 +116,8 @@ static int do_allocate(vm_map_t map, void **addr, size_t size, int anywhere)
 #endif
 
   // Allocate segment, and reserve pages for it.
+  struct seg *seg;
+  vaddr_t start;
   if (anywhere) {
     size = round_page(size);
     if ((seg = seg_alloc(&map->head, size)) == NULL)
@@ -133,28 +126,29 @@ static int do_allocate(vm_map_t map, void **addr, size_t size, int anywhere)
     start = seg->addr;
   } else {
     start = trunc_page((vaddr_t)*addr);
-    end = round_page(start + size);
+    vaddr_t end = round_page(start + size);
     size = (size_t)(end - start);
 
     if ((seg = seg_reserve(&map->head, start, size)) == NULL)
       return -ENOMEM;
   }
-  seg->flags = SEG_READ | SEG_WRITE;
 
-  /* Zero fill */
+  seg->flags = SEG_READ|SEG_WRITE;
+
+  // Zero fillA.
   memset((void *)start, 0, size);
   *addr = (void *)seg->addr;
   map->total += size;
   return 0;
 }
 
-/** Deallocate memory segment for specified address.
+/** Deallocate a memory segment at a specified address.
  *
  * The "addr" argument points to a memory segment previously
  * allocated through a call to vm_allocate() or vm_map(). The
  * number of bytes freed is the number of bytes of the
- * allocated segment.  If one of the segment of previous and
- * next are free, it combines with them, and larger free
+ * allocated segment.  If the previous and* next segments are free,
+ * the current segment is combined with them, and a larger free
  * segment is created.
  */
 used static int int_free(pid_t pid, void *addr)
@@ -190,7 +184,7 @@ static int do_free(vm_map_t map, void *addr)
   // Find the target segment.
   seg = seg_lookup(&map->head, va, 1);
   if (seg == NULL || seg->addr != va || (seg->flags & SEG_FREE))
-    return -EINVAL;  /* not allocated */
+    return -EINVAL;
 
   // Relinquish use of the page if it is not shared and mapped.
   if (!(seg->flags & SEG_SHARED) && !(seg->flags & SEG_MAPPED))
@@ -198,7 +192,6 @@ static int do_free(vm_map_t map, void *addr)
 
   map->total -= seg->size;
   seg_free(&map->head, seg);
-
   return 0;
 }
 
@@ -239,7 +232,6 @@ used static int int_attribute(pid_t pid, void *addr, int attr)
 static int do_attribute(vm_map_t map, void *addr, int attr)
 {
   struct seg *seg;
-  int new_flags = 0;
   vaddr_t va;
 
   va = trunc_page((vaddr_t)addr);
@@ -255,16 +247,17 @@ static int do_attribute(vm_map_t map, void *addr, int attr)
     return -EINVAL;
 
   // Check new and old flag.
+  int new_flags = 0;
   if (seg->flags & SEG_WRITE) {
     if (!(attr & PROT_WRITE))
       new_flags = SEG_READ;
   } else {
     if (attr & PROT_WRITE)
-      new_flags = SEG_READ | SEG_WRITE;
+      new_flags = SEG_READ|SEG_WRITE;
   }
 
   if (new_flags == 0)
-    return 0;  				// Same attribute.
+    return 0;                           // Same attribute.
 
   seg->flags = new_flags;
   return 0;
@@ -272,8 +265,7 @@ static int do_attribute(vm_map_t map, void *addr, int attr)
 
 /** Map another process's memory to current process.
  *
- * Note: This routine does not support mapping to a specific
- * address.
+ * Note: This routine does not support mapping to the specific address.
  */
 used static int int_map(pid_t target, void *addr, size_t size, void **alloc)
 {
@@ -304,11 +296,6 @@ used static int int_map(pid_t target, void *addr, size_t size, void **alloc)
 
 static int do_map(vm_map_t map, void *addr, size_t size, void **alloc)
 {
-  struct seg *seg, *tgt;
-  vm_map_t curmap;
-  vaddr_t start, end;
-  void *tmp;
-
   if (size == 0)
     return -EINVAL;
 
@@ -317,29 +304,24 @@ static int do_map(vm_map_t map, void *addr, size_t size, void **alloc)
     return -ENOMEM;
 #endif
 
-  // Check fault.
-  tmp = NULL;
-  if (copyout(&tmp, alloc, sizeof(tmp)))
-    return -EFAULT;
-
-  start = trunc_page((vaddr_t)addr);
-  end = round_page((vaddr_t)addr + size);
+  vaddr_t start = trunc_page((vaddr_t)addr);
+  vaddr_t end = round_page((vaddr_t)addr + size);
   size = (size_t)(end - start);
 
   // Find the segment that includes target address.
-  seg = seg_lookup(&map->head, start, size);
+  struct seg *seg = seg_lookup(&map->head, start, size);
   if (seg == NULL || (seg->flags & SEG_FREE))
-    return -EINVAL;  /* not allocated */
+    return -EINVAL;             // Not allocated.
 
-  tgt = seg;
+  struct seg *tgt = seg;
 
   // Create new segment to map.
-  curmap = getcurmap();
+  vm_map_t curmap = getcurmap();
   if ((seg = seg_create(&curmap->head, start, size)) == NULL)
     return -ENOMEM;
 
   seg->flags = tgt->flags | SEG_MAPPED;
-  copyout(&addr, alloc, sizeof(addr));
+  *alloc = addr;
   curmap->total += size;
   return 0;
 }
@@ -364,7 +346,7 @@ used static vm_map_t int_create(void)
 }
 
 /** Terminate specified virtual memory space.
- * This is called when process is terminated.
+ * This is called when a process is terminated.
  */
 used static void int_terminate(vm_map_t map)
 {
@@ -377,12 +359,13 @@ used static void int_terminate(vm_map_t map)
   seg = &map->head;
   do {
     if (seg->flags != SEG_FREE) {
-      /* Free segment if it is not shared and mapped */
+      // Free segment if it is not shared and mapped.
       if (!(seg->flags & SEG_SHARED) &&
           !(seg->flags & SEG_MAPPED)) {
         page_free(seg->phys, seg->size);
       }
     }
+
     tmp = seg;
     seg = seg->next;
     seg_delete(&map->head, tmp);
@@ -415,49 +398,7 @@ used static int int_reference(vm_map_t map)
   return 0;
 }
 
-#if RICH	// Don't think I need this.
-/** Setup an image for boot task. (NOMMU version)
- * Return 0 on success, errno on failure.
- *
- * Note: We assume that the task images are already copied to
- * the proper address by a boot loader.
- */
-int vm_load(vm_map_t map, struct module *mod, void **stack)
-{
-  struct seg *seg;
-  vaddr_t base, start, end;
-  size_t size;
-
-  DPRINTF(("Loading task:\'%s\'\n", mod->name));
-
-  /*
-   * Reserve text & data area
-   */
-  base = mod->text;
-  size = mod->textsz + mod->datasz + mod->bsssz;
-  if (size == 0)
-    return -EINVAL;
-
-  start = trunc_page(base);
-  end = round_page(start + size);
-  size = (size_t)(end - start);
-
-  if ((seg = seg_create(&map->head, start, size)) == NULL)
-    return -ENOMEM;
-
-  seg->flags = SEG_READ | SEG_WRITE;
-
-  if (mod->bsssz != 0)
-    memset((void *)(mod->data + mod->datasz), 0, mod->bsssz);
-
-  /*
-   * Create stack
-   */
-  return do_allocate(map, stack, DFLSTKSZ, 1);
-}
-#endif // RICH
-
-/** Translate virtual address of current thread to physical address.
+/** Translate virtual address of current process to physical address.
  * Returns physical address on success, or NULL if no mapped memory.
  */
 used static paddr_t int_translate(vaddr_t addr, size_t size)
@@ -540,9 +481,7 @@ static struct seg *seg_create(struct seg *prev, vaddr_t addr, size_t size)
  */
 static void seg_delete(struct seg *head, struct seg *seg)
 {
-
-  /** If it is shared segment, unlink from shared list.
-   */
+  // If it is shared segment, unlink from shared list.
   if (seg->flags & SEG_SHARED) {
     seg->sh_prev->sh_next = seg->sh_next;
     seg->sh_next->sh_prev = seg->sh_prev;
