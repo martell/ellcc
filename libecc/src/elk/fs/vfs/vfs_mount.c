@@ -276,12 +276,10 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
   mp->m_dev = (dev_t)device;
   strcpy(mp->m_path, dir);
 
-  /*
-   * Get vnode to be covered in the upper file system.
-   */
+  // Get vnode to be covered in the upper file system.
   vnode_t vp_covered;
   if (*dir == '/' && *(dir + 1) == '\0') {
-    /* Ignore if it mounts to global root directory. */
+    // Ignore if it mounts to global root directory.
     vp_covered = NULL;
   } else {
     if ((error = namei(dir, &vp_covered)) != 0) {
@@ -289,16 +287,16 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
       error = -ENOENT;
       goto err2;
     }
+
     if (vp_covered->v_type != VDIR) {
       error = -ENOTDIR;
       goto err3;
     }
   }
+
   mp->m_covered = vp_covered;
 
-  /*
-   * Create a root vnode for this file system.
-   */
+  // Create a root vnode for this file system.
   vnode_t vp_ro;
   if ((vp_ro = vget(mp, "/")) == NULL) {
     error = -ENOMEM;
@@ -311,25 +309,19 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
   vp->v_mode = S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR;
   mp->m_root = vp;
 
-  /*
-   * Call a file system specific routine.
-   */
+  // Call a file system specific routine.
   if ((error = VFS_MOUNT(mp, dev, flags, data)) != 0)
     goto err4;
 
   if (mp->m_flags & MNT_RDONLY)
     vp->v_mode &=~S_IWUSR;
 
-  /*
-   * Keep reference count for root/covered vnode.
-   */
+  // Keep reference count for root/covered vnode.
   vn_unlock(vp);
   if (vp_covered)
     vn_unlock(vp_covered);
 
-  /*
-   * Insert to mount list
-   */
+  // Insert to mount list.
   list_insert(&mount_list, &mp->m_link);
   UNLOCK();
 

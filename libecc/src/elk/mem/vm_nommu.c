@@ -427,8 +427,8 @@ int vm_reference(vm_map_t map)
   return 0;
 }
 
-#if RICH	// Don;t think I need this.
-/** Setup task image for boot task. (NOMMU version)
+#if RICH	// Don't think I need this.
+/** Setup an image for boot task. (NOMMU version)
  * Return 0 on success, errno on failure.
  *
  * Note: We assume that the task images are already copied to

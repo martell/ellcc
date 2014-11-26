@@ -74,6 +74,7 @@ struct physmem
 struct bootinfo
 {
   uintptr_t kernbase;                   // Start of kernal address space.
+  uintptr_t userlimit;                  // Upper limit of user space.
   struct vidinfo video;                 // Video information.
   int nr_rams;                          // Number of RAM blocks.
   struct physmem ram[NMEMS];            // Physical RAM table.

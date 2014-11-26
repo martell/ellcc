@@ -32,11 +32,11 @@
 
 #include <sys/types.h>
 #include "types.h"
+#include "mmu.h"
 
 #if RICH
 #include <sys/bootinfo.h>
 #include <context.h>
-#include <mmu.h>
 #endif
 
 #define NO_PGD    ((pgd_t)0)    // Non-existent pgd.
@@ -56,7 +56,7 @@
 #define PG_SYSTEM       3       // System.
 #define PG_IOMEM        4       // System - no cache.
 
-// Virtual/physical address mapping
+// Virtual/physical address mapping.
 struct mmumap
 {
   vaddr_t virt;                 // Virtual address.
@@ -88,23 +88,24 @@ struct mmumap
 #define IMODE_LEVEL     1       // Level trigger.
 
 
+#ifdef HAL_NAMESPACE
 #define interrupt_mask __elk_interrupt_mask
 #define interrupt_unmask __elk_interrupt_unmask
 #define interrupt_setup __elk_interrupt_setup
 #define interrupt_init __elk_interrupt_init
+#define mmu_init __elk_mmu_init
+#define mmu_premap __elk_mmu_premap
+#define mmu_newmap __elk_mmu_newmap
+#define mmu_terminate __elk_mmu_terminate
+#define mmu_map __elk_mmu_map
+#define mmu_switch __elk_mmu_switch
+#define mmu_extract __elk_mmu_extract
+#endif
 
 void interrupt_mask(int);
 void interrupt_unmask(int, int);
 void interrupt_setup(int, int);
 void interrupt_init(void);
-
-#if RICH
-
-void context_set(context_t, int, register_t);
-void context_switch(context_t, context_t);
-void context_save(context_t);
-void context_restore(context_t);
-void context_dump(context_t);
 
 void mmu_init(struct mmumap *);
 void mmu_premap(paddr_t, vaddr_t);
@@ -113,6 +114,14 @@ void mmu_terminate(pgd_t);
 int mmu_map(pgd_t, paddr_t, vaddr_t, size_t, int);
 void mmu_switch(pgd_t);
 paddr_t mmu_extract(pgd_t, vaddr_t, size_t);
+
+#if RICH
+
+void context_set(context_t, int, register_t);
+void context_switch(context_t, context_t);
+void context_save(context_t);
+void context_restore(context_t);
+void context_dump(context_t);
 
 int copyin(const void *, void *, size_t);
 int copyout(const void *, void *, size_t);

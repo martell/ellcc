@@ -25,7 +25,7 @@ SRCS += command.c test_commands.c time_commands.c \
 
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/mem
 # Memory management.
-SRCS += kmem.c page.c vm_nommu.c
+SRCS += kmem.c page.c vm_nommu.c vm.c
 
 # File systems.
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/fs/vfs
