@@ -62,7 +62,7 @@ typedef struct thread
   void *tls;                    // The thread's user space storage.
   struct thread *next;          // Next thread in any list.
   state state;                  // The thread's state.
-  unsigned flags;               // Flags associated with  this thread.
+  unsigned flags;               // Flags associated with this thread.
   int priority;                 // The thread's priority. 0 is highest.
   const char *name;             // The thread's name.
   int *clear_child_tid;         // The clear child thread id address.
@@ -357,20 +357,6 @@ int pid_valid(pid_t pid)
   }
 
   return 1;
-}
-
-/** Lock the scheduler.
- */
-void sched_lock(void)
-{
-  // RICH: Implement.
-}
-
-/** Unock the scheduler.
- */
-void sched_unlock(void)
-{
-  // RICH: Implement.
 }
 
 #if HAVE_VM

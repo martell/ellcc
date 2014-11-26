@@ -63,8 +63,8 @@ struct page
 };
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-#define LOCK() pthread_mutex_lock(&mutex)
-#define UNLOCK() pthread_mutex_unlock(&mutex)
+#define LOCK()  pthread_mutex_lock(&mutex)
+#define UNLOCK()  pthread_mutex_unlock(&mutex)
 
 static struct page page_head;  		// First free block.
 static psize_t total_size;  		// Size of memory in the system.

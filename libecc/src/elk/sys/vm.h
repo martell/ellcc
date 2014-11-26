@@ -30,6 +30,8 @@
 #ifndef _vm_h_
 #define _vm_h_
 
+#include <pthread.h>
+
 #include "types.h"
 #include "bootinfo.h"
 #include "mmu.h"
@@ -86,6 +88,7 @@ typedef struct vm_map
   int refcnt;                   // Reference count.
   pgd_t pgd;                    // Page directory.
   size_t total;                 // Total used size.
+  pthread_mutex_t lock;         // The map lock.
 } *vm_map_t;
 
 // Address translation between physical address and kernel virtual address.

@@ -89,35 +89,31 @@ used static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
   int error;
   void *uaddr;
 
-  sched_lock();
-
   if (!pid_valid(pid)) {
-    sched_unlock();
     return -ESRCH;
   }
 
   if (pid != getpid() && !capable(CAP_SYS_PTRACE)) {
-    sched_unlock();
     return -EPERM;
   }
 
   if (copyin(addr, &uaddr, sizeof(uaddr))) {
-    sched_unlock();
     return -EFAULT;
   }
 
   if (anywhere == 0 && !user_area(*addr)) {
-    sched_unlock();
     return -EACCES;
   }
 
-  error = do_allocate(getmap(pid), &uaddr, size, anywhere);
+  vm_map_t map = getmap(pid);
+  pthread_mutex_lock(&map->lock);
+  error = do_allocate(map, &uaddr, size, anywhere);
   if (!error) {
     if (copyout(&uaddr, addr, sizeof(uaddr)))
       error = -EFAULT;
   }
 
-  sched_unlock();
+  pthread_mutex_unlock(&map->lock);
   return error;
 }
 
@@ -186,24 +182,22 @@ used static int int_free(pid_t pid, void *addr)
 {
   int error;
 
-  sched_lock();
   if (!pid_valid(pid)) {
-    sched_unlock();
     return -ESRCH;
   }
 
   if (pid != getpid() && !capable(CAP_SYS_PTRACE)) {
-    sched_unlock();
     return -EPERM;
   }
 
   if (!user_area(addr)) {
-    sched_unlock();
     return -EFAULT;
   }
 
-  error = do_free(getmap(pid), addr);
-  sched_unlock();
+  vm_map_t map = getmap(pid);
+  pthread_mutex_lock(&map->lock);
+  error = do_free(map, addr);
+  pthread_mutex_unlock(&map->lock);
   return error;
 }
 
@@ -242,29 +236,26 @@ used static int int_attribute(pid_t pid, void *addr, int attr)
 {
   int error;
 
-  sched_lock();
   if (attr == 0 || attr & ~(PROT_READ | PROT_WRITE)) {
-    sched_unlock();
     return -EINVAL;
   }
 
   if (!pid_valid(pid)) {
-    sched_unlock();
     return -ESRCH;
   }
 
   if (pid != getpid() && !capable(CAP_SYS_PTRACE)) {
-    sched_unlock();
     return -EPERM;
   }
 
   if (!user_area(addr)) {
-    sched_unlock();
     return -EFAULT;
   }
 
-  error = do_attribute(getmap(pid), addr, attr);
-  sched_unlock();
+  vm_map_t map = getmap(pid);
+  pthread_mutex_lock(&map->lock);
+  error = do_attribute(map, addr, attr);
+  pthread_mutex_unlock(&map->lock);
   return error;
 }
 
@@ -346,30 +337,26 @@ used static int int_map(pid_t target, void *addr, size_t size, void **alloc)
 {
   int error;
 
-  sched_lock();
   if (!pid_valid(target)) {
-    sched_unlock();
     return -ESRCH;
   }
 
   if (target == getpid()) {
-    sched_unlock();
     return -EINVAL;
   }
 
   if (!capable(CAP_SYS_PTRACE)) {
-    sched_unlock();
     return -EPERM;
   }
 
   if (!user_area(addr)) {
-    sched_unlock();
     return -EFAULT;
   }
 
-  error = do_map(getmap(target), addr, size, alloc);
-
-  sched_unlock();
+  vm_map_t map = getmap(target);
+  pthread_mutex_lock(&map->lock);
+  error = do_map(map, addr, size, alloc);
+  pthread_mutex_unlock(&map->lock);
   return error;
 }
 
@@ -440,8 +427,6 @@ static int do_map(vm_map_t map, void *addr, size_t size, void **alloc)
 
 /** Create new virtual memory space.
  * No memory is inherited.
- *
- * Must be called with scheduler locked.
  */
 used static vm_map_t int_create(void)
 {
@@ -453,6 +438,7 @@ used static vm_map_t int_create(void)
 
   map->refcnt = 1;
   map->total = 0;
+  pthread_mutex_init(&map->lock, NULL);
 
   // Allocate new page directory.
   if ((map->pgd = mmu_newmap()) == NO_PGD) {
@@ -474,7 +460,7 @@ used static void int_terminate(vm_map_t map)
   if (--map->refcnt > 0)
     return;
 
-  sched_lock();
+  pthread_mutex_lock(&map->lock);
   seg = &map->head;
   do {
     if (seg->flags != SEG_FREE) {
@@ -502,7 +488,7 @@ used static void int_terminate(vm_map_t map)
 
   mmu_terminate(map->pgd);
   kmem_free(map);
-  sched_unlock();
+  pthread_mutex_unlock(&map->lock);
 }
 
 /** Duplicate specified virtual memory space.
@@ -515,13 +501,12 @@ used static void int_terminate(vm_map_t map)
  * no need to copy. These segments are physically shared with the
  * original map.
  */
-used static vm_map_t int_dup(vm_map_t org_map)
+used static vm_map_t int_dup(vm_map_t map)
 {
-  vm_map_t new_map;
 
-  sched_lock();
-  new_map = do_dup(org_map);
-  sched_unlock();
+  pthread_mutex_lock(&map->lock);
+  vm_map_t new_map = do_dup(map);
+  pthread_mutex_unlock(&map->lock);
   return new_map;
 }
 
@@ -705,19 +690,15 @@ used static int int_info(struct vminfo *info)
 {
   u_long target = info->cookie;
   pid_t pid = info->pid;
-  u_long i;
-  vm_map_t map;
-  struct seg *seg;
 
-  sched_lock();
   if (!pid_valid(pid)) {
-    sched_unlock();
     return -ESRCH;
   }
 
-  map = getmap(pid);
-  seg = &map->head;
-  i = 0;
+  vm_map_t map = getmap(pid);
+  pthread_mutex_lock(&map->lock);
+  struct seg *seg = &map->head;
+  u_long i = 0;
   do {
     if (i++ == target) {
       info->cookie = i;
@@ -725,13 +706,13 @@ used static int int_info(struct vminfo *info)
       info->size = seg->size;
       info->flags = seg->flags;
       info->phys = seg->phys;
-      sched_unlock();
+      pthread_mutex_unlock(&map->lock);
       return 0;
     }
     seg = seg->next;
   } while (seg != &map->head);
 
-  sched_unlock();
+  pthread_mutex_unlock(&map->lock);
   return -ESRCH;
 }
 

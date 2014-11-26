@@ -29,8 +29,6 @@
 #define getmap __elk_getmap
 #define getcurmap __elk_getcurmap
 #define pid_valid __elk_pid_valid
-#define sched_lock __elk_sched_lock
-#define sched_unlock __elk_sched_unlock
 #define signal_post __elk_signal_post
 #define sched_dpc __elk_sched_dpc
 #endif
@@ -251,14 +249,6 @@ vm_map_t getcurmap(void);
 /** Is a pid valid?
  */
 int pid_valid(pid_t pid);
-
-/** Lock the scheduler.
- */
-void sched_lock(void);
-
-/** Unock the scheduler.
- */
-void sched_unlock(void);
 
 /** Send a signal to a process.
  */
