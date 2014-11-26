@@ -570,15 +570,18 @@ static struct seg *seg_reserve(struct seg *head, vaddr_t addr, size_t size)
   return seg;
 }
 
-weak_alias(int_allocate, vm_allocate);
-weak_alias(int_free, vm_free);
-weak_alias(int_attribute, vm_fattribute);
-weak_alias(int_map, vm_map);
-weak_alias(int_reference, vm_reference);
-weak_alias(int_create, vm_create);
-weak_alias(int_terminate, vm_terminate);
-weak_alias(int_dup, vm_dup);
-weak_alias(int_switch, vm_switch);
-weak_alias(int_translate, vm_translate);
-weak_alias(int_info, vm_info);
-weak_alias(int_init, vm_init);
+ELK_CONSTRUCTOR()
+{
+  vm_allocate = int_allocate;
+  vm_free = int_free;
+  vm_attribute = int_attribute;
+  vm_map = int_map;
+  vm_reference = int_reference;
+  vm_create = int_create;
+  vm_terminate = int_terminate;
+  vm_dup = int_dup;
+  vm_switch = int_switch;
+  vm_translate = int_translate;
+  vm_info = int_info;
+  vm_init = int_init;
+}

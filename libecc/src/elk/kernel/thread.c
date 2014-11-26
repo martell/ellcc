@@ -1743,7 +1743,6 @@ ELK_CONSTRUCTOR()
   bootinfo.ram[0].type = MT_USABLE;
   page_init();
   kmem_init();
-  current->map = vm_init();     // Set up the kernel memory map.
 #endif
 
 #if THREAD_COMMANDS
@@ -1809,6 +1808,9 @@ C_CONSTRUCTOR()
 
   // The main thread is what's running right now.
   alloc_tid(current);
+#if HAVE_VM
+  current->map = vm_init();             // Set up the kernel memory map.
+#endif
 #if ENABLEFDS
   int s = fdset_new(&current->fdset);
   if (s != 0) {

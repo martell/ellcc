@@ -96,17 +96,17 @@ typedef struct vm_map
 #define ptokv(pa)       (void *)((paddr_t)(pa) + KERNBASE)
 #define kvtop(va)       ((paddr_t)(va) - KERNBASE)
 
-int vm_allocate(pid_t, void **, size_t, int);
-int vm_free(pid_t, void *);
-int vm_attribute(pid_t, void *, int);
-int vm_map(pid_t, void *, size_t, void **);
-vm_map_t vm_dup(vm_map_t);
-vm_map_t vm_create(void);
-int vm_reference(vm_map_t);
-void vm_terminate(vm_map_t);
-void vm_switch(vm_map_t);
-/* RICH: int vm_load(vm_map_t, struct module *, void **); */
-paddr_t vm_translate(vaddr_t, size_t);
+// These function calls are indirect to support MMU vs. non-MMU systems.
+int (*vm_allocate)(pid_t, void **, size_t, int);
+int (*vm_free)(pid_t, void *);
+int (*vm_attribute)(pid_t, void *, int);
+int (*vm_map)(pid_t, void *, size_t, void **);
+vm_map_t (*vm_dup)(vm_map_t);
+vm_map_t (*vm_create)(void);
+int (*vm_reference)(vm_map_t);
+void (*vm_terminate)(vm_map_t);
+void (*vm_switch)(vm_map_t);
+paddr_t (*vm_translate)(vaddr_t, size_t);
 
 /** VM information
  */
@@ -120,7 +120,7 @@ struct vminfo
   paddr_t phys;                 // Physical address.
 };
 
-int vm_info(struct vminfo *);
-vm_map_t vm_init(void);
+int (*vm_info)(struct vminfo *);
+vm_map_t (*vm_init)(void);
 
 #endif // !_vm_h_
