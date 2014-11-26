@@ -9,15 +9,6 @@
 #include "target.h"
 #include "constructor.h"
 
-#if RICH
-#include <stddef.h>
-#include <string.h>
-#include <errno.h>
-#include <stdio.h>
-#include "config.h"
-#endif
-
-
 #ifndef NULL
 #define NULL 0
 #endif

@@ -55,6 +55,9 @@
 #include "kmem.h"
 #include "vm.h"
 
+// Virtual memory is a loadable feature.
+FEATURE_CLASS(vm, vm)
+
 /* forward declarations */
 static void seg_init(struct seg *);
 static struct seg *seg_create(struct seg *, vaddr_t, size_t);
@@ -81,7 +84,7 @@ static struct vm_map kernel_map;  	// VM mapping for kernel.
  * default.  The "addr" and "size" argument will be adjusted
  * to page boundary.
  */
-int vm_allocate(pid_t pid, void **addr, size_t size, int anywhere)
+used static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
 {
   int error;
   void *uaddr;
@@ -179,7 +182,7 @@ static int do_allocate(vm_map_t map, void **addr, size_t size, int anywhere)
  * are free, it combines with them, and larger free segment is
  * created.
  */
-int vm_free(pid_t pid, void *addr)
+used static int int_free(pid_t pid, void *addr)
 {
   int error;
 
@@ -235,7 +238,7 @@ static int do_free(vm_map_t map, void *addr)
  * type can be chosen a combination of PROT_READ, PROT_WRITE.
  * Note: PROT_EXEC is not supported, yet.
  */
-int vm_attribute(pid_t pid, void *addr, int attr)
+used static int int_attribute(pid_t pid, void *addr, int attr)
 {
   int error;
 
@@ -339,7 +342,7 @@ static int do_attribute(vm_map_t map, void *addr, int attr)
  *
  * Note: This routine does not support mapping to the specific address.
  */
-int vm_map(pid_t target, void *addr, size_t size, void **alloc)
+used static int int_map(pid_t target, void *addr, size_t size, void **alloc)
 {
   int error;
 
@@ -440,7 +443,7 @@ static int do_map(vm_map_t map, void *addr, size_t size, void **alloc)
  *
  * Must be called with scheduler locked.
  */
-vm_map_t vm_create(void)
+used static vm_map_t int_create(void)
 {
   struct vm_map *map;
 
@@ -464,7 +467,7 @@ vm_map_t vm_create(void)
 /** Terminate specified virtual memory space.
  * This is called when a process is terminated.
  */
-void vm_terminate(vm_map_t map)
+used static void int_terminate(vm_map_t map)
 {
   struct seg *seg, *tmp;
 
@@ -512,7 +515,7 @@ void vm_terminate(vm_map_t map)
  * no need to copy. These segments are physically shared with the
  * original map.
  */
-vm_map_t vm_dup(vm_map_t org_map)
+used static vm_map_t int_dup(vm_map_t org_map)
 {
   vm_map_t new_map;
 
@@ -622,7 +625,7 @@ static vm_map_t do_dup(vm_map_t org_map)
  * don't have to setup the page directory for it. Thus, an idle
  * thread and interrupt threads can be switched quickly.
  */
-void vm_switch(vm_map_t map)
+used static void int_switch(vm_map_t map)
 {
   if (map != &kernel_map)
     mmu_switch(map->pgd);
@@ -630,7 +633,7 @@ void vm_switch(vm_map_t map)
 
 /** Increment reference count of VM mapping.
  */
-int vm_reference(vm_map_t map)
+used static int int_reference(vm_map_t map)
 {
   map->refcnt++;
   return 0;
@@ -640,7 +643,7 @@ int vm_reference(vm_map_t map)
 /** Load process image for boot process.
  * Return 0 on success, or errno on failure.
  */
-int vm_load(vm_map_t map, struct module *mod, void **stack)
+used static int int_load(vm_map_t map, struct module *mod, void **stack)
 {
   char *src;
   void *text, *data;
@@ -693,12 +696,12 @@ int vm_load(vm_map_t map, struct module *mod, void **stack)
 /** Translate virtual address of current process to physical address.
  * Returns physical address on success, or NULL if no mapped memory.
  */
-paddr_t vm_translate(vaddr_t addr, size_t size)
+used static paddr_t int_translate(vaddr_t addr, size_t size)
 {
   return mmu_extract(getcurmap()->pgd, addr, size);
 }
 
-int vm_info(struct vminfo *info)
+used static int int_info(struct vminfo *info)
 {
   u_long target = info->cookie;
   pid_t pid = info->pid;
@@ -732,7 +735,7 @@ int vm_info(struct vminfo *info)
   return -ESRCH;
 }
 
-vm_map_t vm_init(void)
+used static vm_map_t int_init(void)
 {
   pgd_t pgd;
 
@@ -927,3 +930,16 @@ static struct seg *seg_reserve(struct seg *head, vaddr_t addr, size_t size)
   seg->flags = 0;
   return seg;
 }
+
+weak_alias(int_allocate, vm_allocate);
+weak_alias(int_free, vm_free);
+weak_alias(int_attribute, vm_fattribute);
+weak_alias(int_map, vm_map);
+weak_alias(int_reference, vm_reference);
+weak_alias(int_create, vm_create);
+weak_alias(int_terminate, vm_terminate);
+weak_alias(int_dup, vm_dup);
+weak_alias(int_switch, vm_switch);
+weak_alias(int_translate, vm_translate);
+weak_alias(int_info, vm_info);
+weak_alias(int_init, vm_init);
