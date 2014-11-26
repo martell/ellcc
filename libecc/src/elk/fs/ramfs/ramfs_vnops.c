@@ -38,13 +38,15 @@
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <fcntl.h>
 
+#include "kmem.h"
 #include "vnode.h"
 #include "file.h"
 #include "mount.h"
 #include "thread.h"
+#include "page.h"
+#include "vm.h"
 
 FEATURE(ramfs)
 
@@ -168,15 +170,15 @@ static struct ramfs_node *ramfs_allocate_node(char *name, int type, mode_t mode)
 {
   struct ramfs_node *np;
 
-  np = malloc(sizeof(struct ramfs_node));
+  np = kmem_alloc(sizeof(struct ramfs_node));
   if (np == NULL)
     return NULL;
   memset(np, 0, sizeof(struct ramfs_node));
 
   np->rn_namelen = strlen(name);
-  np->rn_name = malloc(np->rn_namelen + 1);
+  np->rn_name = kmem_alloc(np->rn_namelen + 1);
   if (np->rn_name == NULL) {
-    free(np);
+    kmem_free(np);
     return NULL;
   }
   strlcpy(np->rn_name, name, np->rn_namelen + 1);
@@ -187,8 +189,8 @@ static struct ramfs_node *ramfs_allocate_node(char *name, int type, mode_t mode)
 
 static void ramfs_free_node(struct ramfs_node *np)
 {
-  free(np->rn_name);
-  free(np);
+  kmem_free(np->rn_name);
+  kmem_free(np);
 }
 
 static struct ramfs_node *ramfs_add_node(struct ramfs_node *dnp, char *name,
@@ -254,11 +256,11 @@ static int ramfs_rename_node(struct ramfs_node *np, char *name)
     strlcpy(np->rn_name, name, sizeof(np->rn_name));
   } else {
     /* Expand name buffer */
-    tmp = malloc(len + 1);
+    tmp = kmem_alloc(len + 1);
     if (tmp == NULL)
       return -ENOMEM;
     strlcpy(tmp, name, len + 1);
-    free(np->rn_name);
+    kmem_free(np->rn_name);
     np->rn_name = tmp;
   }
   np->rn_namelen = len;
@@ -335,7 +337,7 @@ static int ramfs_remove(vnode_t dvp, vnode_t vp, char *name)
 
   np = vp->v_data;
   if (np->rn_buf != NULL)
-    vm_free(np->rn_buf);
+    vm_free(getpid(), np->rn_buf);
   return 0;
 }
 
@@ -351,17 +353,17 @@ static int ramfs_truncate(vnode_t vp, off_t length)
 
   if (length == 0) {
     if (np->rn_buf != NULL) {
-      vm_free(np->rn_buf);
+      vm_free(getpid(), np->rn_buf);
       np->rn_buf = NULL;
       np->rn_bufsize = 0;
     }
   } else if (length > np->rn_bufsize) {
     new_size = round_page(length);
-    if (vm_allocate(&new_buf, new_size, 1))
+    if (vm_allocate(getpid(), &new_buf, new_size, 1))
       return -EIO;
     if (np->rn_size != 0) {
       memcpy(new_buf, np->rn_buf, vp->v_size);
-      vm_free(np->rn_buf);
+      vm_free(getpid(), np->rn_buf);
     }
     np->rn_buf = new_buf;
     np->rn_bufsize = new_size;
@@ -456,11 +458,11 @@ static int ramfs_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
          * many malloc/free calls.
          */
         new_size = round_page(end_pos);
-        if (vm_allocate(&new_buf, new_size, 1))
+        if (vm_allocate(getpid(), &new_buf, new_size, 1))
           return -EIO;
         if (np->rn_size != 0) {
           memcpy(new_buf, np->rn_buf, vp->v_size);
-          vm_free(np->rn_buf);
+          vm_free(getpid(), np->rn_buf);
         }
         np->rn_buf = new_buf;
         np->rn_bufsize = new_size;

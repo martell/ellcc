@@ -23,6 +23,10 @@ SRCS += command.c test_commands.c time_commands.c \
 	console.c simple_console.c simple_memman.c simple_exit.c \
 	device.c
 
+VPATH := $(VPATH):$(SRCPATH)/$(LIB)/mem
+# Memory management.
+SRCS += kmem.c page.c vm_nommu.c
+
 # File systems.
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/fs/vfs
 #Virtual file system.

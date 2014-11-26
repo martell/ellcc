@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2005-2007, Kohsuke Ohtani
+/*-
+ * Copyright (c) 2005-2008, Kohsuke Ohtani
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,47 +27,43 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _list_h_
-#define _list_h_
+#ifndef _mmu_h_
+#define _mmu_h_
 
-#include <sys/cdefs.h>
+#include <sys/types.h>
 
-struct list
-{
-  struct list *next;
-  struct list *prev;
-};
+typedef uint32_t *pgd_t;                // Page directory.
+typedef uint32_t *pte_t;                // Page table entry.
 
-typedef struct list *list_t;
+#define L1TBL_SIZE      0x4000
+#define L2TBL_SIZE      0x1000
 
-#define list_init(head) ((head)->next = (head)->prev = (head))
-#define list_next(node) ((node)->next)
-#define list_prev(node) ((node)->prev)
-#define list_empty(head) ((head)->next == (head))
-#define list_first(head) ((head)->next)
-#define list_last(head) ((head)->prev)
-#define list_end(head, node) ((node) == (head))
+// Page directory entry (L1).
+#define PDE_PRESENT     0x00000003
+#define PDE_ADDRESS     0xfffff000
 
-// Get the struct for this entry.
-#define list_entry(p, type, member) \
-  ((type *)((char *)(p) - (unsigned long)(&((type *)0)->member)))
+// Page table entry (L2).
+#define PTE_PRESENT     0x00000002
+#define PTE_WBUF        0x00000004
+#define PTE_CACHE       0x00000008
+#define PTE_SYSTEM      0x00000010
+#define PTE_USER_RO     0x00000020
+#define PTE_USER_RW     0x00000030
+#define PTE_ATTR_MASK   0x00000030
+#define PTE_ADDRESS     0xfffffc00
 
-#define LIST_INIT(head) { &(head), &(head) }
+// Virtual and physical address translation.
+#define PAGE_DIR(virt) (int)((((vaddr_t)(virt)) >> 20) & 0xfff)
+#define PAGE_TABLE(virt) (int)((((vaddr_t)(virt)) >> 12) & 0xff)
 
-// Insert new node after specified node.
-static __inline void list_insert(list_t prev, list_t node)
-{
-  prev->next->prev = node;
-  node->next = prev->next;
-  node->prev = prev;
-  prev->next = node;
-}
+#define pte_present(pgd, virt) (pgd[PAGE_DIR(virt)] & PDE_PRESENT)
 
-// Remove specified node from list.
-static __inline void list_remove(list_t node)
-{
-  node->prev->next = node->next;
-  node->next->prev = node->prev;
-}
+#define page_present(pte, virt) (pte[PAGE_TABLE(virt)] & PTE_PRESENT)
 
-#endif // !_list_h_
+#define vtopte(pgd, virt) \
+            (pte_t)ptokv((pgd)[PAGE_DIR(virt)] & PDE_ADDRESS)
+
+#define ptetopg(pte, virt) \
+            ((pte)[PAGE_TABLE(virt)] & PTE_ADDRESS)
+
+#endif // !_mmu_h_

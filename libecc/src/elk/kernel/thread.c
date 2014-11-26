@@ -19,6 +19,8 @@
 #include "thread.h"
 #include "file.h"
 #include "vnode.h"
+#include "page.h"
+#include "kmem.h"
 #include "command.h"
 
 
@@ -86,6 +88,9 @@ typedef struct thread
 #if ENABLEFDS
   fdset_t fdset;                // File descriptors used by the thread.
   file_t cwdfp;                 // The current working directory.
+#endif
+#if HAVE_VM
+  vm_map_t map;                 // The process memory map.
 #endif
   MsgQueue queue;               // The thread's message queue.
 } thread_t;
@@ -336,6 +341,55 @@ int gettid(void)
   return current->tid;
 }
 
+/** Get the current process id.
+ */
+int getpid(void)
+{
+  return current->pid;
+}
+
+/** Is a pid valid?
+ */
+int pid_valid(pid_t pid)
+{
+  if (pid < 0 || pid >= THREADS || threads[pid] == NULL) {
+    return 0;
+  }
+
+  return 1;
+}
+
+/** Lock the scheduler.
+ */
+void sched_lock(void)
+{
+  // RICH: Implement.
+}
+
+/** Unock the scheduler.
+ */
+void sched_unlock(void)
+{
+  // RICH: Implement.
+}
+
+#if HAVE_VM
+/** Get the memory map of a process.
+ */
+vm_map_t getmap(pid_t pid)
+{
+  ASSERT(threads[pid] != NULL);
+  return threads[pid]->map;
+}
+
+/** Get the memory map of the current process.
+ */
+vm_map_t getcurmap()
+{
+  return current->map;
+}
+#endif
+
 /** Enter the IRQ state.
  * This function is called from crt1.S.
  */
@@ -516,7 +570,7 @@ static void thread_delete(thread_t *tp)
   }
 #endif
 
-  free(tp);
+  kmem_free(tp);
 }
 
 /** Change the current thread's state to
@@ -566,7 +620,7 @@ int send_message_q(MsgQueue *queue, Message msg)
   if (queue == NULL) {
     queue = &current->queue;
   }
-  Envelope *envelope = (Envelope *)malloc(sizeof(Envelope));
+  Envelope *envelope = (Envelope *)kmem_alloc(sizeof(Envelope));
   if (!envelope) {
     return ENOMEM;
   }
@@ -655,7 +709,7 @@ Message get_message(MsgQueue *queue)
   } while(envelope == NULL);
 
   Message msg = envelope->message;
-  free(envelope);
+  kmem_free(envelope);
   return msg;
 }
 
@@ -679,7 +733,7 @@ Message get_message_nowait(MsgQueue *queue)
   Message msg;
   if (envelope) {
     msg = envelope->message;
-    free(envelope);
+    kmem_free(envelope);
   } else {
     // No messages available.
     msg  = (Message){ MSG_NONE };
@@ -722,7 +776,7 @@ static struct timeout *timeouts;
 void *timer_wake_at(long long when,
                     TimerCallback callback, void *arg1, void *arg2, int retval)
 {
-  struct timeout *tmo = malloc(sizeof(struct timeout));
+  struct timeout *tmo = kmem_alloc(sizeof(struct timeout));
   if (tmo == NULL) {
     return NULL;
   }
@@ -810,7 +864,7 @@ static int timer_cancel_wake_at(void *id)
       schedule(p->waiter);
     }
 
-    free(p);
+    kmem_free(p);
   } else {
     s = -1;                 // Not found.
   }
@@ -850,7 +904,7 @@ static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
         ++s;
       }
 
-      free(p);
+      kmem_free(p);
       if (s >= count) {
         break;
       }
@@ -890,7 +944,7 @@ long long timer_expired(long long when)
       tmo->callback(tmo->arg1, tmo->arg2);
     }
 
-    free(tmo);
+    kmem_free(tmo);
   }
 
   if (timeouts == NULL) {
@@ -909,19 +963,31 @@ long long timer_expired(long long when)
   return when;        // Schedule the next timeout, if any.
 }
 
+#if !HAVE_VM
 // RICH: temporary definitions.
-int vm_allocate(void **addr, size_t size, int anywhere)
+int vm_allocate(pid_t tid, void **addr, size_t size, int anywhere)
 {
   if (!anywhere) return 1;      // Fail.
   *addr = calloc(size, 1);
   return *addr == NULL;
 }
 
-int vm_free(void *addr)
+int vm_free(pid_t tid, void *addr)
 {
-  free(addr);
+  kmem_free(addr);
   return 0;
 }
+
+void *kmem_alloc(size_t size)
+{
+  return malloc(size);
+}
+
+void kmem_free(void *p)
+{
+  free(p);
+}
+#endif
 
 static long sys_clone(unsigned long flags, void *stack, int *ptid,
 #if defined(__arm__) || defined(__microblaze__) || defined(__ppc__) || \
@@ -935,7 +1001,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
                       long arg5, long data, void (*entry)(void))
 {
   // Create a new thread, copying context.
-  thread_t *tp = malloc(sizeof(thread_t));    // RICH: bin.
+  thread_t *tp = kmem_alloc(sizeof(thread_t)); 
   if (!tp) {
     return -ENOMEM;
   }
@@ -949,16 +1015,32 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 
   int tid = alloc_tid(tp);
   if (tid < 0) {
-    free(tp);
+    kmem_free(tp);
     return -EAGAIN;
   }
+
+#if HAVE_VM
+  if (flags & CLONE_VM) {
+    // Share the address space of the parent.
+    vm_reference(tp->map);
+  } else {
+    // This thread will have a new address space.
+    tp->map = vm_dup(tp->map);
+    if (tp->map == NULL) {
+      // The dup failed.
+      release_tid(tid);
+      kmem_free(tp);
+      return -ENOMEM;
+    }
+  }
+#endif
 
 #if ENABLEFDS
   // Clone or copy the file descriptor set.
   int s = fdset_clone(&tp->fdset, flags & CLONE_FILES);
   if (s < 0) {
     release_tid(tid);
-    free(tp);
+    kmem_free(tp);
     return s;
   }
 
@@ -1637,6 +1719,14 @@ static int dbgCommand(int argc, char **argv)
 }
 #endif
 
+// RICH: Temporary hack.
+#if HAVE_VM
+extern char __end[];            // The end of the .bss area.
+extern char *__heap_end__;      // The bottom of the allocated stacks.
+
+struct bootinfo bootinfo;
+#endif
+
 /* Initialize the thread handling code.
  */
 ELK_CONSTRUCTOR()
@@ -1645,6 +1735,18 @@ ELK_CONSTRUCTOR()
    * the C library that we support threading.
    */
   current = &main_thread;
+#if HAVE_VM
+  bootinfo.kernbase = 0;
+  bootinfo.nr_rams = 1;
+  // RICH Save a few pages for malloc() for now.
+  bootinfo.ram[0].base = round_page((uintptr_t)__end) + (4096 * 4);
+  bootinfo.ram[0].size = trunc_page((uintptr_t)__heap_end__)
+                         - bootinfo.ram[0].base;
+  bootinfo.ram[0].type = MT_USABLE;
+  page_init();
+  kmem_init();
+  current->map = vm_init();     // Set up the kernel memory map.
+#endif
 
 #if THREAD_COMMANDS
   command_insert(NULL, sectionCommand);

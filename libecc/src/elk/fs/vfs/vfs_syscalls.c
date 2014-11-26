@@ -45,6 +45,7 @@
 #include <fcntl.h>
 
 #include "syscalls.h"
+#include "kmem.h"
 #include "vnode.h"
 #include "file.h"
 #include "mount.h"
@@ -154,14 +155,14 @@ static int vfs_open(char *name, int flags, mode_t mode, file_t *fpp)
   }
 
   /* Setup file structure */
-  if (!(fp = malloc(sizeof(struct file)))) {
+  if (!(fp = kmem_alloc(sizeof(struct file)))) {
     vput(vp);
     return -ENOMEM;
   }
 
   /* Request to file system */
   if ((error = VOP_OPEN(vp, flags)) != 0) {
-    free(fp);
+    kmem_free(fp);
     vput(vp);
     return error;
   }
@@ -187,7 +188,7 @@ static int sys_open(char *name, int flags, mode_t mode)
   int fd = allocfd(fp);         // Get a file descriptor.
   if (fd < 0) {
     vput(fp->f_vnode);
-    free(fp);
+    kmem_free(fp);
     return fd;
   }
 
@@ -222,7 +223,7 @@ int vfs_close(file_t fp)
   }
 
   vput(vp);
-  free(fp);
+  kmem_free(fp);
   return 0;
 }
 

@@ -36,7 +36,6 @@
 
 #include <limits.h>
 #include <unistd.h>
-#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -44,6 +43,7 @@
 
 #include "syscalls.h"           // For syscall numbers.
 #include "list.h"
+#include "kmem.h"
 #include "buf.h"
 #include "vnode.h"
 #include "file.h"
@@ -265,7 +265,7 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
   /*
    * Create VFS mount entry.
    */
-  if (!(mp = malloc(sizeof(struct mount)))) {
+  if (!(mp = kmem_alloc(sizeof(struct mount)))) {
     error = -ENOMEM;
     goto err1;
   }
@@ -339,7 +339,7 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
   if (vp_covered)
     vput(vp_covered);
  err2:
-  free(mp);
+  kmem_free(mp);
  err1:
   device_close(device);
 
@@ -400,7 +400,7 @@ static int sys_umount2(char *name, int flags)
 
   if (mp->m_dev)
     device_close((device_t)mp->m_dev);
-  free(mp);
+  kmem_free(mp);
  out:
   UNLOCK();
   return error;

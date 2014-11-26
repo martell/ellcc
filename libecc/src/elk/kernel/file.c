@@ -2,11 +2,11 @@
  */
 #include <errno.h>
 #include <pthread.h>
-#include <stdlib.h>
 #include <string.h>
 #include "config.h"
 #include "kernel.h"
 #include "file.h"
+#include "kmem.h"
 #include "vnode.h"
 
 typedef struct fd
@@ -79,9 +79,9 @@ void fdset_release(fdset_t *fdset)
     fd_release(&set->fds[i]);
   }
 
-  free(set->fds);
+  kmem_free(set->fds);
   pthread_mutex_unlock(&set->mutex);
-  free(set);
+  kmem_free(set);
 }
 
 /** Allocate a new file descriptor.
@@ -97,7 +97,7 @@ static int fd_allocate(fdset_t fdset, int spec)
   }
 
   if (fdset->fds == NULL) {
-    fdset->fds = malloc(initfds * sizeof(fd_t));
+    fdset->fds = kmem_alloc(initfds * sizeof(fd_t));
     if (fdset->fds == NULL) {
       return -EMFILE;
     }
@@ -308,7 +308,7 @@ int fdset_setfile(fdset_t fdset, int fd, file_t file)
  */
 int fdset_new(fdset_t *fdset)
 {
-  *fdset = malloc(sizeof(struct fdset));
+  *fdset = kmem_alloc(sizeof(struct fdset));
   if (*fdset == NULL) {
     return -EMFILE;
   }

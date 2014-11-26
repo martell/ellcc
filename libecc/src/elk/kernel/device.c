@@ -40,11 +40,11 @@
 #include <errno.h>
 #include <pthread.h>
 #include <string.h>
-#include <stdlib.h>
 
 #define DEFINE_DEVICE_STRINGS
 #include "device.h"
 #include "thread.h"
+#include "kmem.h"
 #include "command.h"
 
 /* list head of the devices */
@@ -92,15 +92,15 @@ device_t device_create(const struct driver *drv, const char *name, int flags)
   /*
    * Allocate a device structure and device private data.
    */
-  if ((dev = malloc(sizeof(*dev))) == NULL) {
+  if ((dev = kmem_alloc(sizeof(*dev))) == NULL) {
     printf("device_create");
     UNLOCK();
     return NULL;
   }
 
   if (drv->devsz != 0) {
-    if ((private = malloc(drv->devsz)) == NULL) {
-      free(dev);
+    if ((private = kmem_alloc(drv->devsz)) == NULL) {
+      kmem_free(dev);
       printf("devsz");
       UNLOCK();
       return NULL;
@@ -232,7 +232,7 @@ void device_release(device_t dev)
     }
   }
 
-  free(dev);
+  kmem_free(dev);
   UNLOCK();
 }
 

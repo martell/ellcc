@@ -27,47 +27,58 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _list_h_
-#define _list_h_
+/*
+ * Boot information
+ *
+ * The boot information is set by an OS loader, and
+ * is accessed by kernel later during boot time.
+ */
 
-#include <sys/cdefs.h>
+#ifndef _bootinfo_h_
+#define _bootinfo_h_
 
-struct list
+#include <sys/types.h>
+
+/** Video information
+ */
+struct vidinfo
 {
-  struct list *next;
-  struct list *prev;
+  int pixel_x;                          // Screen pixels.
+  int pixel_y;
+  int text_x;                           // Text size, in characters.
+  int text_y;
 };
 
-typedef struct list *list_t;
-
-#define list_init(head) ((head)->next = (head)->prev = (head))
-#define list_next(node) ((node)->next)
-#define list_prev(node) ((node)->prev)
-#define list_empty(head) ((head)->next == (head))
-#define list_first(head) ((head)->next)
-#define list_last(head) ((head)->prev)
-#define list_end(head, node) ((node) == (head))
-
-// Get the struct for this entry.
-#define list_entry(p, type, member) \
-  ((type *)((char *)(p) - (unsigned long)(&((type *)0)->member)))
-
-#define LIST_INIT(head) { &(head), &(head) }
-
-// Insert new node after specified node.
-static __inline void list_insert(list_t prev, list_t node)
+/** Physical memory
+ */
+struct physmem
 {
-  prev->next->prev = node;
-  node->next = prev->next;
-  node->prev = prev;
-  prev->next = node;
-}
+  paddr_t base;                         // Start address.
+  psize_t size;                         // Size in bytes.
+  int type;                             // Type.
+};
 
-// Remove specified node from list.
-static __inline void list_remove(list_t node)
+// Memory types.
+#define MT_USABLE               1
+#define MT_MEMHOLE              2
+#define MT_RESERVED             3
+
+#define NMEMS                   8       // Max number of memory slots.
+
+/* Boot information
+ */
+#ifdef ELK_NAMESPACE
+#define bootinfo __elk_bootinfo
+#endif
+
+struct bootinfo
 {
-  node->prev->next = node->next;
-  node->next->prev = node->prev;
-}
+  uintptr_t kernbase;                   // Start of kernal address space.
+  struct vidinfo video;                 // Video information.
+  int nr_rams;                          // Number of RAM blocks.
+  struct physmem ram[NMEMS];            // Physical RAM table.
+};
 
-#endif // !_list_h_
+extern struct bootinfo bootinfo;
+
+#endif // !_bootinfo_h_

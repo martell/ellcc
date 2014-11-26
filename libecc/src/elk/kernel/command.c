@@ -2,11 +2,11 @@
  */
 #include <ctype.h>
 #include <unistd.h>
-#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <pthread.h>
 #include "time.h"
+#include "kmem.h"
 #include "kernel.h"
 #include "command.h"
 
@@ -135,17 +135,17 @@ static void free_args(char **argv)
 
   // Adjust to the beginning of the argv array.
   argv -= 2;
-  // Free any malloc()'d words.
+  // Free any kmem_alloc()'d words.
   for (int i = 2; argv[i]; i++) {
     if (argv[i] < argv[0] || argv[i] >= argv[1]) {
-      free(argv[i]);
+      kmem_free(argv[i]);
     }
   }
 
   // Free the copy of the string.
-  free(argv[0]);
+  kmem_free(argv[0]);
   // Free  the string vector.
-  free(argv);
+  kmem_free(argv);
 }
 
 static int parse_args(const char *string, char ***av)
@@ -158,17 +158,17 @@ static int parse_args(const char *string, char ***av)
 
   // Allocate enough room for three more pointers:
   // the start and end of the string and a trailing NULL.
-  char **argv = malloc((count + 3) * sizeof(char *));
+  char **argv = kmem_alloc((count + 3) * sizeof(char *));
   if (argv == NULL) {
     fprintf(stderr, "out of memory\n");
     return -1;
   }
 
   size_t length = strlen(string) + 1;
-  argv[0] = malloc(length);
+  argv[0] = kmem_alloc(length);
   memcpy(argv[0], string, length);
   if (argv[0] == NULL) {
-    free(argv);
+    kmem_free(argv);
     fprintf(stderr, "out of memory\n");
     return -1;
   }
@@ -221,7 +221,7 @@ int run_command(int argc, char **argv)
         s = pthread_attr_init(&attr);
         // RICH: remove when mmap is available.
 #define STACK (4096 * 8)
-        char *sp = malloc(STACK);
+        char *sp = kmem_alloc(STACK);
         s = pthread_attr_setstack(&attr, sp, STACK);
         s = pthread_create(&id, &attr, launch, &cmd);
         if (s != 0) {
@@ -234,7 +234,7 @@ int run_command(int argc, char **argv)
           else
             s = (int)retval;
         }
-        free(sp);
+        kmem_free(sp);
       } else {
         s = command_table[i].fn(argc, argv);
       }

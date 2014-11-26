@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2005-2007, Kohsuke Ohtani
+/*-
+ * Copyright (c) 2005, Kohsuke Ohtani
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,47 +27,23 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _list_h_
-#define _list_h_
+#ifndef _kmem_h_
+#define _kmem_h_
 
-#include <sys/cdefs.h>
+#include <sys/types.h>
 
-struct list
-{
-  struct list *next;
-  struct list *prev;
-};
+#include "config.h"
 
-typedef struct list *list_t;
+#if ELK_NAMESPACE
+#define kmem_alloc __elk_kmem_alloc
+#define kmem_free __elk_kmem_free
+#define kmem_map __elk_kmem_map
+#define kmem_init __elk_kmem_init
+#endif
 
-#define list_init(head) ((head)->next = (head)->prev = (head))
-#define list_next(node) ((node)->next)
-#define list_prev(node) ((node)->prev)
-#define list_empty(head) ((head)->next == (head))
-#define list_first(head) ((head)->next)
-#define list_last(head) ((head)->prev)
-#define list_end(head, node) ((node) == (head))
+void *kmem_alloc(size_t);
+void kmem_free(void *);
+void *kmem_map(void *, size_t);
+void kmem_init(void);
 
-// Get the struct for this entry.
-#define list_entry(p, type, member) \
-  ((type *)((char *)(p) - (unsigned long)(&((type *)0)->member)))
-
-#define LIST_INIT(head) { &(head), &(head) }
-
-// Insert new node after specified node.
-static __inline void list_insert(list_t prev, list_t node)
-{
-  prev->next->prev = node;
-  node->next = prev->next;
-  node->prev = prev;
-  prev->next = node;
-}
-
-// Remove specified node from list.
-static __inline void list_remove(list_t node)
-{
-  node->prev->next = node->next;
-  node->next->prev = node->prev;
-}
-
-#endif // !_list_h_
+#endif // !_kmem_h_

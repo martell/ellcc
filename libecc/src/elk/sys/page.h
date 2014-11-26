@@ -1,5 +1,5 @@
-/*
- * Copyright (c) 2005-2007, Kohsuke Ohtani
+/*-
+ * Copyright (c) 2005, Kohsuke Ohtani
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,47 +27,42 @@
  * SUCH DAMAGE.
  */
 
-#ifndef _list_h_
-#define _list_h_
+#ifndef _page_h_
+#define _page_h_
 
-#include <sys/cdefs.h>
+#include <types.h>
+#include <limits.h>                     // For PAGE_SIZE.
 
-struct list
-{
-  struct list *next;
-  struct list *prev;
+/** Memory information
+ */
+struct meminfo {
+  psize_t total;                        // Total memory size in bytes.
+  psize_t free;                         // Current free memory in bytes.
+  psize_t bootdisk;                     // Total size of boot disk.
 };
 
-typedef struct list *list_t;
+// Memory page.
+// RICH: Not defined for some processors.
+#if __microblaze__ || __mips__ || __ppc__
+#define PAGE_SIZE (4096 + 0)    //  Defined like this to error if defined.
+#endif
 
-#define list_init(head) ((head)->next = (head)->prev = (head))
-#define list_next(node) ((node)->next)
-#define list_prev(node) ((node)->prev)
-#define list_empty(head) ((head)->next == (head))
-#define list_first(head) ((head)->next)
-#define list_last(head) ((head)->prev)
-#define list_end(head, node) ((node) == (head))
+#define PAGE_MASK       (PAGE_SIZE-1)
+#define trunc_page(x)   ((x) & ~PAGE_MASK)
+#define round_page(x)   (((x) + PAGE_MASK) & ~PAGE_MASK)
 
-// Get the struct for this entry.
-#define list_entry(p, type, member) \
-  ((type *)((char *)(p) - (unsigned long)(&((type *)0)->member)))
+#ifdef ELK_NAMESPACE
+#define page_alloc __elk_page_alloc
+#define page_free __elk_page_free
+#define page_reserve __elk_page_reserve
+#define page_info __elk_page_info
+#define page_init __elk_page_init
+#endif
 
-#define LIST_INIT(head) { &(head), &(head) }
+paddr_t page_alloc(psize_t);
+void page_free(paddr_t, psize_t);
+int page_reserve(paddr_t, psize_t);
+void page_info(struct meminfo *);
+void page_init(void);
 
-// Insert new node after specified node.
-static __inline void list_insert(list_t prev, list_t node)
-{
-  prev->next->prev = node;
-  node->next = prev->next;
-  node->prev = prev;
-  prev->next = node;
-}
-
-// Remove specified node from list.
-static __inline void list_remove(list_t node)
-{
-  node->prev->next = node->next;
-  node->next->prev = node->prev;
-}
-
-#endif // !_list_h_
+#endif // !_page_h_

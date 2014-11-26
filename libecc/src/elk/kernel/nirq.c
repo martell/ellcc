@@ -61,15 +61,9 @@
 #include <string.h>
 #include <pthread.h>
 
-#if RICH
-#include <kernel.h>
-#include <event.h>
-#include <kmem.h>
-#include <hal.h>
-#include <sched.h>
-#endif
 #include "config.h"
 #include "hal.h"
+#include "kmem.h"
 #include "thread.h"
 #include "irq.h"
 
@@ -97,7 +91,7 @@ irq_t irq_attach(int vector, int pri, int shared,
   ASSERT(isr != NULL);
 
   pthread_mutex_lock(&mutex);
-  if ((irq = malloc(sizeof(*irq))) == NULL)
+  if ((irq = kmem_alloc(sizeof(*irq))) == NULL)
     panic("irq_attach");
 
   memset(irq, 0, sizeof(*irq));

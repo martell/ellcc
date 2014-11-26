@@ -35,11 +35,11 @@
 #include <limits.h>
 #include <unistd.h>
 #include <string.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
 
 #include "list.h"
+#include "kmem.h"
 #include "vnode.h"
 #include "mount.h"
 #include "vfs.h"
@@ -50,9 +50,10 @@
  *
  * Function   Ref count Lock
  * ---------- --------- ----------
- * vn_lock     *        Lock
+ * vn_lock     *        Lock RO or RW
+ * vn_lock     *        Lock R/W. Must have been RO or R/W locked previously.
  * vn_unlock   *        Unlock
- * vget        1        Lock
+ * vget        1        Lock RO
  * vput       -1        Unlock
  * vref       +1        *
  * vrele      -1        *
@@ -307,13 +308,13 @@ vnode_t vget(mount_t mp, char *path)
 
   DPRINTF(VFSDB_VNODE, ("vget: %s\n", path));
 
-  if (!(vp = malloc(sizeof(struct vnode))))
+  if (!(vp = kmem_alloc(sizeof(struct vnode))))
     return NULL;
   memset(vp, 0, sizeof(struct vnode));
 
   len = strlen(path) + 1;
-  if (!(vp->v_path = malloc(len))) {
-    free(vp);
+  if (!(vp->v_path = kmem_alloc(len))) {
+    kmem_free(vp);
     return NULL;
   }
   vp->v_mount = mp;
@@ -327,8 +328,8 @@ vnode_t vget(mount_t mp, char *path)
    */
   if ((error = VFS_VGET(mp, vp)) != 0) {
     VP_LOCK_DESTROY(vp);
-    free(vp->v_path);
-    free(vp);
+    kmem_free(vp->v_path);
+    kmem_free(vp);
     return NULL;
   }
   vfs_busy(vp->v_mount);
@@ -370,8 +371,8 @@ void vput(vnode_t vp_ro)
   VP_UNLOCK(vp);
   ASSERT(vp->v_nrlocks == 0);
   VP_LOCK_DESTROY(vp);
-  free(vp->v_path);
-  free(vp);
+  kmem_free(vp->v_path);
+  kmem_free(vp);
 }
 
 /*
@@ -419,8 +420,8 @@ void vrele(vnode_t vp_ro)
   VOP_INACTIVE(vp);
   vfs_unbusy(vp->v_mount);
   VP_LOCK_DESTROY(vp);
-  free(vp->v_path);
-  free(vp);
+  kmem_free(vp->v_path);
+  kmem_free(vp);
 }
 
 /*
@@ -436,8 +437,8 @@ void vgone(vnode_t vp_ro)
   list_remove(&vp->v_link);
   vfs_unbusy(vp->v_mount);
   VP_LOCK_DESTROY(vp);
-  free(vp->v_path);
-  free(vp);
+  kmem_free(vp->v_path);
+  kmem_free(vp);
   VNODE_UNLOCK();
 }
 

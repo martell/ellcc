@@ -3,15 +3,16 @@
  */
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
 #include <sched.h>
 #include <unistd.h>
 #include <semaphore.h>
-#include <command.h>
-#include <thread.h>
+
+#include "kmem.h"
+#include "thread.h"
+#include "command.h"
 
 // Make the test commands a loadable feature.
 FEATURE(test_commands)
@@ -37,7 +38,7 @@ static int thread_create(const char *name, pthread_t *id,
   if (s != 0)
     printf("pthread_attr_init: %s\n", strerror(s));
   if (stack == NULL) {
-    stack = malloc(stack_size);
+    stack = kmem_alloc(stack_size);
   }
   s = pthread_attr_setstack(&attr, stack, stack_size);
   if (s != 0)
@@ -164,7 +165,7 @@ static int thread3Command(int argc, char **argv)
   int s = pthread_attr_init(&attr);
   if (s != 0)
     printf("pthread_attr_init: %s\n", strerror(s));
-  char *sp = malloc(4096);
+  char *sp = kmem_alloc(4096);
   s = pthread_attr_setstack(&attr, sp, 4096);
   if (s != 0)
     printf("pthread_attr_setstack %s\n", strerror(s));

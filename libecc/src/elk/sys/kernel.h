@@ -50,6 +50,9 @@ extern int debug;
 // Thread debug flags.
 #define THRDB_CORE      0x00000001
 
+// Memory debug flags.
+#define MEMDB_CORE      0x00000010
+
 // Device debug flags.
 #define DEVDB_CORE      0x00000100
 #define DEVDB_IRQ       0x00000200

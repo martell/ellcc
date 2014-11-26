@@ -40,12 +40,12 @@
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <limits.h>
 #include <fcntl.h>
 
 #include "uio.h"
 #include "list.h"
+#include "kmem.h"
 #include "vnode.h"
 #include "file.h"
 #include "mount.h"
@@ -372,18 +372,18 @@ static int fifo_create(vnode_t dvp, char *name, mode_t mode)
     return EINVAL;
 #endif
 
-  if ((np = malloc(sizeof(struct fifo_node))) == NULL)
+  if ((np = kmem_alloc(sizeof(struct fifo_node))) == NULL)
     return ENOMEM;
 
-  if ((np->fn_buf = malloc(PIPE_BUF)) == NULL) {
-    free(np);
+  if ((np->fn_buf = kmem_alloc(PIPE_BUF)) == NULL) {
+    kmem_free(np);
     return ENOMEM;
   }
   len = strlen(name) + 1;
-  np->fn_name = malloc(len);
+  np->fn_name = kmem_alloc(len);
   if (np->fn_name == NULL) {
-    free(np->fn_buf);
-    free(np);
+    kmem_free(np->fn_buf);
+    kmem_free(np);
     return ENOMEM;
   }
 
@@ -411,9 +411,9 @@ static void cleanup_fifo(vnode_t vp)
   list_remove(&np->fn_link);
   pthread_mutex_unlock(&fifo_lock);
 
-  free(np->fn_name);
-  free(np->fn_buf);
-  free(np);
+  kmem_free(np->fn_name);
+  kmem_free(np->fn_buf);
+  kmem_free(np);
 
   vn_lock_rw(vp)->v_data = NULL;
 }

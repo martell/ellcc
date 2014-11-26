@@ -4,7 +4,9 @@
 #include <syscalls.h>           // For syscall numbers.
 #include <sys/uio.h>            // For writev (used by printf().
 #include <sys/ioctl.h>
+
 #include "kernel.h"
+#include "page.h"
 
 // Make the simple console a loadable feature.
 FEATURE_CLASS(simple_memman, memman)
@@ -12,7 +14,7 @@ FEATURE_CLASS(simple_memman, memman)
 extern char __end[];            // The end of the .bss area.
 extern char *__heap_end__;      // The bottom of the allocated stacks.
 
-static char *brk_ptr = __end;
+static char *brk_ptr;
 
 static char *sys_brk(char *addr)
 {
@@ -32,4 +34,5 @@ ELK_CONSTRUCTOR()
 {
   // Set up a simple brk system call.
   SYSCALL(brk);
+  brk_ptr = (char *)round_page((uintptr_t)__end);
 }

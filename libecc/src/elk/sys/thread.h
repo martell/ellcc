@@ -4,9 +4,11 @@
 #define _thread_h_
 
 #include <limits.h>
+
 #include "config.h"
-#include "file.h"
 #include "kernel.h"
+#include "file.h"
+#include "vm.h"
 
 #if ELK_NAMESPACE
 #define capable(arg) __elk_capable(arg)
@@ -22,10 +24,15 @@
 #define setfile __elk_setfile
 #define replacecwd __elk_replacecwd
 #define getpath __elk_getpath
+#define gettid __elk_gettid
+#define getpid __elk_getpid
+#define getmap __elk_getmap
+#define getcurmap __elk_getcurmap
+#define pid_valid __elk_pid_valid
+#define sched_lock __elk_sched_lock
+#define sched_unlock __elk_sched_unlock
 #define signal_post __elk_signal_post
 #define sched_dpc __elk_sched_dpc
-#define vm_allocate __elk_vm_allocate
-#define vm_free __elk_vm_free
 #endif
 
 #if !HAVE_CAPABILITY
@@ -61,6 +68,9 @@
 
 // Allow raw I/O.
 #define CAP_SYS_RAWIO 17
+
+// Allow ptrace and memory access of any process.
+#define CAP_SYS_PTRACE 19
 
 // Allow mount, umount.
 #define CAP_SYS_ADMIN 21
@@ -226,6 +236,30 @@ int getpath(const char *name, char *path);
  */
 int gettid(void);
 
+/** Get the current process id.
+ */
+int getpid(void);
+
+/** Get the memory map of a process.
+ */
+vm_map_t getmap(pid_t pid);
+
+/** Get the memory map of the current process.
+ */
+vm_map_t getcurmap(void);
+
+/** Is a pid valid?
+ */
+int pid_valid(pid_t pid);
+
+/** Lock the scheduler.
+ */
+void sched_lock(void);
+
+/** Unock the scheduler.
+ */
+void sched_unlock(void);
+
 /** Send a signal to a process.
  */
 int signal_post(pid_t pid, int sig);
@@ -241,16 +275,5 @@ struct dpc
 /** Schedule a defered procedure call.
  */
 void sched_dpc(struct dpc *dpc, void (*fn)(void *), void *arg);
-
-#ifndef PAGE_SIZE
-#define PAGE_SIZE 4096
-#endif
-#define PAGE_MASK (~(PAGE_SIZE-1))
-#define round_page(x) (((x) + PAGE_MASK) & ~PAGE_MASK)
-
-/** Allocate and free memory.
- */
-int vm_allocate(void **addr, size_t size, int anywhere);
-int vm_free(void *addr);
 
 #endif
