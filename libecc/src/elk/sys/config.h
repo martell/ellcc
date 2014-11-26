@@ -42,6 +42,23 @@
 
 // Memory management.
 #define  HAVE_VM 1              // Use mem functions for memory management.
+#define CONFIG_MMU 1		// Use the MMU.
+
+#define CONFIG_ARM_VECTORS 0x00000000
+#if __arm__
+  #if CONFIG_MMU
+    #define CONFIG_SYSPAGE_BASE 0x80000000
+  #else
+    #define CONFIG_SYSPAGE_BASE 0x00000000
+  #endif
+#endif
+#if __i386__
+  #if CONFIG_MMU
+    #define CONFIG_SYSPAGE_BASE 0x80000000
+  #else
+    #define CONFIG_SYSPAGE_BASE 0x00000000
+  #endif
+#endif
 
 // RICH: These will be moved.
 #define VEXPRESS_A9

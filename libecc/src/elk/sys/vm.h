@@ -89,8 +89,9 @@ typedef struct vm_map
 } *vm_map_t;
 
 // Address translation between physical address and kernel virtual address.
-#define ptokv(pa)       (void *)((paddr_t)(pa) + bootinfo.kernbase)
-#define kvtop(va)       ((paddr_t)(va) - bootinfo.kernbase)
+#define KERNBASE bootinfo.kernbase
+#define ptokv(pa)       (void *)((paddr_t)(pa) + KERNBASE)
+#define kvtop(va)       ((paddr_t)(va) - KERNBASE)
 
 int vm_allocate(pid_t, void **, size_t, int);
 int vm_free(pid_t, void *);
