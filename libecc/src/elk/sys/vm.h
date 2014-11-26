@@ -74,12 +74,6 @@ struct seg
 #define SEG_MAPPED      0x00000010
 #define SEG_FREE        0x00000080
 
-// Attributes for vm_attribute().
-#define  PROT_NONE      0x0     // Pages cannot be accessed.
-#define  PROT_READ      0x1     // Pages can be read.
-#define  PROT_WRITE     0x2     // Pages can be written.
-#define  PROT_EXEC      0x4     // Pages can be executed.
-
 /** VM mapping for one process.
  */
 typedef struct vm_map

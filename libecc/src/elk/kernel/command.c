@@ -223,9 +223,11 @@ int run_command(int argc, char **argv)
         pthread_attr_t attr;
         s = pthread_attr_init(&attr);
         // RICH: remove when mmap is available.
+#if RICH
 #define STACK (4096 * 8)
         char *sp = (void *)page_alloc(STACK);
         s = pthread_attr_setstack(&attr, sp, STACK);
+#endif
         s = pthread_create(&id, &attr, launch, &cmd);
         if (s != 0) {
           printf("pthread_create: %s\n", strerror(s));
@@ -237,7 +239,9 @@ int run_command(int argc, char **argv)
           else
             s = (int)retval;
         }
+#if RICH
         page_free((paddr_t)sp, STACK);
+#endif
       } else {
         s = command_table[i].fn(argc, argv);
       }

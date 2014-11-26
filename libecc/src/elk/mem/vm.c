@@ -44,6 +44,7 @@
  * very simply.
  */
 
+#include <sys/mman.h>
 #include <errno.h>
 #include <string.h>
 

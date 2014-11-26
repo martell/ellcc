@@ -1,14 +1,10 @@
 /* Initialize a simple memory allocation handler.
  */
-#include <unistd.h>
-#include <syscalls.h>           // For syscall numbers.
-#include <sys/uio.h>            // For writev (used by printf().
-#include <sys/ioctl.h>
-
+#include "syscalls.h"           // For syscall numbers.
 #include "kernel.h"
 #include "page.h"
 
-// Make the simple console a loadable feature.
+// Make simple memory management a loadable feature.
 FEATURE_CLASS(simple_memman, memman)
 
 extern char __end[];            // The end of the .bss area.

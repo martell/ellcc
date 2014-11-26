@@ -39,6 +39,7 @@
  * Important: The lists of segments are not sorted by address.
  */
 
+#include <sys/mman.h>
 #include <errno.h>
 #include <string.h>
 
