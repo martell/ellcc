@@ -262,18 +262,19 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
       goto err1;
     }
   }
-  /*
-   * Create VFS mount entry.
-   */
-  if (!(mp = kmem_alloc(sizeof(struct mount)))) {
+
+  // Create VFS mount entry.
+  size_t dirlen = strlen(dir) + 1;
+  if (!(mp = kmem_alloc(sizeof(struct mount) + dirlen))) {
     error = -ENOMEM;
     goto err1;
   }
+
   mp->m_count = 0;
   mp->m_op = fs->vs_op;
   mp->m_flags = flags;
   mp->m_dev = (dev_t)device;
-  strlcpy(mp->m_path, dir, sizeof(mp->m_path));
+  strcpy(mp->m_path, dir);
 
   /*
    * Get vnode to be covered in the upper file system.

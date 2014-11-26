@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <semaphore.h>
 
+#include "config.h"
+#include "page.h"
 #include "kmem.h"
 #include "thread.h"
 #include "command.h"
@@ -38,7 +40,7 @@ static int thread_create(const char *name, pthread_t *id,
   if (s != 0)
     printf("pthread_attr_init: %s\n", strerror(s));
   if (stack == NULL) {
-    stack = kmem_alloc(stack_size);
+    stack = (void *)page_alloc(stack_size);
   }
   s = pthread_attr_setstack(&attr, stack, stack_size);
   if (s != 0)
@@ -165,7 +167,7 @@ static int thread3Command(int argc, char **argv)
   int s = pthread_attr_init(&attr);
   if (s != 0)
     printf("pthread_attr_init: %s\n", strerror(s));
-  char *sp = kmem_alloc(4096);
+  char *sp = (void *)page_alloc(4096);
   s = pthread_attr_setstack(&attr, sp, 4096);
   if (s != 0)
     printf("pthread_attr_setstack %s\n", strerror(s));

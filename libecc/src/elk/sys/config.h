@@ -41,7 +41,7 @@
 #define MAXIRQS 32              // The maximum number of IRQs.
 
 // Memory management.
-#define  HAVE_VM 0              // Use mem functions for memory management.
+#define  HAVE_VM 1              // Use mem functions for memory management.
 
 // RICH: These will be moved.
 #define VEXPRESS_A9

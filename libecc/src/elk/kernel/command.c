@@ -5,7 +5,10 @@
 #include <string.h>
 #include <stdio.h>
 #include <pthread.h>
+
+#include "config.h"
 #include "time.h"
+#include "page.h"
 #include "kmem.h"
 #include "kernel.h"
 #include "command.h"
@@ -221,7 +224,7 @@ int run_command(int argc, char **argv)
         s = pthread_attr_init(&attr);
         // RICH: remove when mmap is available.
 #define STACK (4096 * 8)
-        char *sp = kmem_alloc(STACK);
+        char *sp = (void *)page_alloc(STACK);
         s = pthread_attr_setstack(&attr, sp, STACK);
         s = pthread_create(&id, &attr, launch, &cmd);
         if (s != 0) {
@@ -234,7 +237,7 @@ int run_command(int argc, char **argv)
           else
             s = (int)retval;
         }
-        kmem_free(sp);
+        page_free((paddr_t)sp, STACK);
       } else {
         s = command_table[i].fn(argc, argv);
       }

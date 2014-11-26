@@ -987,6 +987,17 @@ void kmem_free(void *p)
 {
   free(p);
 }
+
+paddr_t page_alloc(psize_t size)
+{
+  return (uintptr_t)malloc(size);
+}
+
+void page_free(paddr_t p, psize_t size)
+{
+  free((void *)p);
+}
+
 #endif
 
 static long sys_clone(unsigned long flags, void *stack, int *ptid,

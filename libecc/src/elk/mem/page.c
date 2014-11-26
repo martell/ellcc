@@ -63,12 +63,12 @@ struct page
 };
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-#define LOCK()  pthread_mutex_lock(&mutex)
-#define UNLOCK()  pthread_mutex_unlock(&mutex)
+#define LOCK() pthread_mutex_lock(&mutex)
+#define UNLOCK() pthread_mutex_unlock(&mutex)
 
-static struct page  page_head;  /* first free block */
-static psize_t    total_size;  /* size of memory in the system */
-static psize_t    used_size;  /* current used size */
+static struct page page_head;  		// First free block.
+static psize_t total_size;  		// Size of memory in the system.
+static psize_t used_size;  		// Current used size.
 
 /** Allocate continuous pages of the specified size.
  *
@@ -86,9 +86,7 @@ paddr_t page_alloc(psize_t psize)
 
   LOCK();
 
-  /*
-   * Find the free block that has enough size.
-   */
+  // * Find the free block that has enough size.
   size = round_page(psize);
   blk = &page_head;
   do {
@@ -100,8 +98,7 @@ paddr_t page_alloc(psize_t psize)
     }
   } while (blk->size < size);
 
-  /*
-   * If found block size is exactly as requested,
+  /* If found block size is exactly as requested,
    * just remove it from a free list. Otherwise, the
    * found block is divided into two and first half is
    * used for allocation.

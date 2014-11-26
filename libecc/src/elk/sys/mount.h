@@ -74,11 +74,11 @@ typedef struct mount
   struct vfsops *m_op;          // Pointer to vfs operation.
   int m_flags;                  // Mount flag.
   int m_count;                  // Reference count.
-  char m_path[PATH_MAX];        // Mounted path.
   dev_t m_dev;                  // Mounted device.
   vnode_t m_root;               // Root vnode.
   vnode_t m_covered;            // Vnode covered on parent fs.
   void *m_data;                 // Private data for fs.
+  char m_path[];                // Mounted path.
 } *mount_t;
 
 
