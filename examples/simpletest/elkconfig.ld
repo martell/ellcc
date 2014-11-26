@@ -1,18 +1,24 @@
 /* Choose elk features to pull in. */
 
+/*
+EXTERN(__elk_simple_console)
+*/
 EXTERN(__elk_fdconsole)
 /*
 EXTERN(__elk_cons)
 EXTERN(__elk_pl011_dev)
 */
+
 EXTERN(__elk_simple_memman)
 EXTERN(__elk_command)
 EXTERN(__elk_thread)
 EXTERN(__elk_time)
-EXTERN(__elk_vm)
+
 /*
-EXTERN(__elk_vm_nommu)
+EXTERN(__elk_vm)
 */
+EXTERN(__elk_vm_nommu)
+
 EXTERN(__elk_vfs_syscalls)
 EXTERN(__elk_ramfs)
 EXTERN(__elk_time_commands)
