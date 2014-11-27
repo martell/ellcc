@@ -337,7 +337,7 @@ static int ramfs_remove(vnode_t dvp, vnode_t vp, char *name)
 
   np = vp->v_data;
   if (np->rn_buf != NULL)
-    vm_free(getpid(), np->rn_buf);
+    vm_free(getpid(), np->rn_buf, np->rn_bufsize);
   return 0;
 }
 
@@ -353,7 +353,7 @@ static int ramfs_truncate(vnode_t vp, off_t length)
 
   if (length == 0) {
     if (np->rn_buf != NULL) {
-      vm_free(getpid(), np->rn_buf);
+      vm_free(getpid(), np->rn_buf, np->rn_bufsize);
       np->rn_buf = NULL;
       np->rn_bufsize = 0;
     }
@@ -363,7 +363,7 @@ static int ramfs_truncate(vnode_t vp, off_t length)
       return -EIO;
     if (np->rn_size != 0) {
       memcpy(new_buf, np->rn_buf, vp->v_size);
-      vm_free(getpid(), np->rn_buf);
+      vm_free(getpid(), np->rn_buf, np->rn_bufsize);
     }
     np->rn_buf = new_buf;
     np->rn_bufsize = new_size;
@@ -462,7 +462,7 @@ static int ramfs_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
           return -EIO;
         if (np->rn_size != 0) {
           memcpy(new_buf, np->rn_buf, vp->v_size);
-          vm_free(getpid(), np->rn_buf);
+          vm_free(getpid(), np->rn_buf, np->rn_bufsize);
         }
         np->rn_buf = new_buf;
         np->rn_bufsize = new_size;

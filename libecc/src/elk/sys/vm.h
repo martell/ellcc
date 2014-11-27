@@ -73,6 +73,7 @@ struct seg
 #define SEG_SHARED      0x00000008
 #define SEG_MAPPED      0x00000010
 #define SEG_FREE        0x00000080
+#define SEG_ACCESS      (SEG_READ|SEG_WRITE|SEG_EXEC)
 
 /** VM mapping for one process.
  */
@@ -92,8 +93,8 @@ typedef struct vm_map
 
 // These function calls are indirect to support MMU vs. non-MMU systems.
 int (*vm_allocate)(pid_t, void **, size_t, int);
-int (*vm_free)(pid_t, void *);
-int (*vm_attribute)(pid_t, void *, int);
+int (*vm_free)(pid_t, void *, size_t);
+int (*vm_attribute)(pid_t, void *, size_t, int);
 int (*vm_map)(pid_t, void *, size_t, void **);
 vm_map_t (*vm_dup)(vm_map_t);
 vm_map_t (*vm_create)(void);

@@ -52,10 +52,7 @@ CRTOBJS := $(CRTBASENAMES:%=%.o)
 DEPENDSRCS := $(basename $(filter %.c %.cxx %.cpp %.S, $(SRCS) $(CRTSRCS)))
 DEPENDFILES := $(DEPENDSRCS:%=%.d)
 
-all: strip
-
-$(PROGNAME): strip
-
+all: $(PROGNAME)
 
 STUBBEGIN= \
 $(OUT)echo "\#if defined(__ppc__)" >__stubbegin.S ; \
@@ -99,10 +96,8 @@ __stubbegin.o: __stubbegin.S
 __stubend.o: __stubend.c
 	$(OUTCC)$(CC) -target $(TUPLE) -I$(INCDIR)/sys -I$(INCDIR)/include -c __stubend.c
 
-reloc: $(OBJS) __stubbegin.o __stubend.o
+$(PROGNAME): $(OBJS) __stubbegin.o __stubend.o
 	$(OUTCC)$(CC) -target $(LTUPLE) -o $(PROGNAME) -r __stubbegin.o $(OBJS) __stubend.o -nostdlib
-
-strip: reloc
 	$(OUT)$(OBJCOPY) -w -L* $(PROGNAME)
 	$(OUT)$(OBJCOPY) -w --globalize-symbol=__elk_$(PROG)_bin $(PROGNAME)
 	$(OUT)$(AR) cr ../../$(LIBNAME) $(PROGNAME)

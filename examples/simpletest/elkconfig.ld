@@ -9,10 +9,10 @@ EXTERN(__elk_cons)
 EXTERN(__elk_pl011_dev)
 */
 
-EXTERN(__elk_simple_memman)
 /*
-EXTERN(__elk_memman)
+EXTERN(__elk_simple_memman)
 */
+EXTERN(__elk_memman)
 
 EXTERN(__elk_command)
 EXTERN(__elk_thread)

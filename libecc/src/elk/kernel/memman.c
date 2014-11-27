@@ -27,24 +27,16 @@ static char *sys_brk(char *addr)
 }
 
 #include <string.h>     // RICH
-static int sys_mprotect(void *addr, size_t len, int prot)
+static int sys_mprotect(void *addr, size_t length, int prot)
 {
-  // RICH: what to do with len?
-  int s = vm_attribute(getpid(), addr, prot);
-  printf("mprotect: %s\n", strerror(-s));
+  int s = vm_attribute(getpid(), addr, length, prot);
+  if (s != 0) {
+    printf("mprotect: %s\n", strerror(-s));
+  }
   return s;
 }
 
-#ifdef SYS_mmap
-static void *sys_mmap(void *addr, size_t length, int prot, int flags,
-                      int fd, off_t offset)
-{
-  return (void *)-ENOSYS;
-}
-#endif
-
-#ifdef SYS_mmap2
-static void *sys_mmap2(void *addr, size_t length, int prot, int flags,
+static void *do_mmap(void *addr, size_t length, int prot, int flags,
                       int fd, off_t offset)
 {
   // RICH: Need to check flags, fd, offset.
@@ -55,21 +47,44 @@ static void *sys_mmap2(void *addr, size_t length, int prot, int flags,
   int s = vm_allocate(pid, &p, length, addr == NULL);
   if (s != 0) {
     printf("mmap allocate: %s\n", strerror(-s));
-    return (void *)s;
+    return (void *)(intptr_t)s;
   }
 
-  s = vm_attribute(pid, p, prot);
+  s = vm_attribute(pid, p, length, prot);
   if (s != 0) {
-    printf("mmap attribute: %s\n", strerror(-s));
-    return (void *)s;
+    printf("mmap attribute: (%p) %s\n", p, strerror(-s));
+    vm_free(pid, p, length);
+    return (void *)(intptr_t)s;
   }
 
   return p;
+}
+
+#ifdef SYS_mmap
+static void *sys_mmap(void *addr, size_t length, int prot, int flags,
+                      int fd, off_t offset)
+{
+  return do_mmap(addr, length, prot, flags, fd, offset);
+}
+#endif
+
+#ifdef SYS_mmap2
+static void *sys_mmap2(void *addr, size_t length, int prot, int flags,
+                       int fd, off_t offset)
+{
+  return do_mmap(addr, length, prot, flags, fd, offset * 4096);
 }
 #endif
 
 static int sys_munmap(void *addr, size_t length)
 {
+  return -ENOSYS;
+}
+
+static int sys_mremap(void *old_addr, size_t old_length,
+                    size_t new_length, int flags, void *new_address)
+{
+  printf("mremap(%p, %zu, %zu, %d, %p\n", old_addr, old_length, new_length, flags, new_address);
   return -ENOSYS;
 }
 
@@ -87,4 +102,5 @@ ELK_CONSTRUCTOR()
 #endif
   SYSCALL(mprotect);
   SYSCALL(munmap);
+  SYSCALL(mremap);
 }

@@ -1,5 +1,7 @@
 current SVN:
 
+* Implemented mmap(), etc. in ELK.
+* Added paged based kernel memory management to ELK.
 * Update to LLVM r222635.
 * Support for user space programs in kernal space (e.g. ls, cat).
 * Added lazy vnode R/W access to ELK.

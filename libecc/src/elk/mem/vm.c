@@ -66,10 +66,11 @@ static void seg_delete(struct seg *, struct seg *);
 static struct seg *seg_lookup(struct seg *, vaddr_t, size_t);
 static struct seg *seg_alloc(struct seg *, size_t);
 static void seg_free(struct seg *, struct seg *);
+static struct seg *seg_split(struct seg *, struct seg *, vaddr_t, size_t);
 static struct seg *seg_reserve(struct seg *, vaddr_t, size_t);
 static int do_allocate(vm_map_t, void **, size_t, int);
-static int do_free(vm_map_t, void *);
-static int do_attribute(vm_map_t, void *, int);
+static int do_free(vm_map_t, void *, size_t);
+static int do_attribute(vm_map_t, void *, size_t, int);
 static int do_map(vm_map_t, void *, size_t, void **);
 static vm_map_t do_dup(vm_map_t);
 
@@ -85,7 +86,7 @@ static struct vm_map kernel_map;    // VM mapping for kernel.
  * default.  The "addr" and "size" argument will be adjusted
  * to page boundary.
  */
-used static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
+static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
 {
   int error;
 
@@ -169,11 +170,11 @@ static int do_allocate(vm_map_t map, void **addr, size_t size, int anywhere)
  * The "addr" argument points to a memory segment previously
  * allocated through a call to vm_allocate() or vm_map(). The
  * number of bytes freed is the number of bytes of the
- * allocated segment.  If the previous and* next segments are free,
+ * allocated segment.  If the previous and next segments are free,
  * the current segment is combined with them, and a larger free
  * segment is created.
  */
-used static int int_free(pid_t pid, void *addr)
+static int int_free(pid_t pid, void *addr, size_t size)
 {
   int error;
 
@@ -191,12 +192,12 @@ used static int int_free(pid_t pid, void *addr)
 
   vm_map_t map = getmap(pid);
   pthread_mutex_lock(&map->lock);
-  error = do_free(map, addr);
+  error = do_free(map, addr, size);
   pthread_mutex_unlock(&map->lock);
   return error;
 }
 
-static int do_free(vm_map_t map, void *addr)
+static int do_free(vm_map_t map, void *addr, size_t size)
 {
   struct seg *seg;
   vaddr_t va;
@@ -204,7 +205,7 @@ static int do_free(vm_map_t map, void *addr)
   va = trunc_page((vaddr_t)addr);
 
   // Find the target segment.
-  seg = seg_lookup(&map->head, va, 1);
+  seg = seg_lookup(&map->head, va, size);
   if (seg == NULL || seg->addr != va || (seg->flags & SEG_FREE))
     return -EINVAL;
 
@@ -227,11 +228,12 @@ static int do_free(vm_map_t map, void *addr)
  * type can be chosen a combination of PROT_READ, PROT_WRITE.
  * Note: PROT_EXEC is not supported, yet.
  */
-used static int int_attribute(pid_t pid, void *addr, int attr)
+#define PROT_ALL (PROT_READ|PROT_WRITE|PROT_EXEC|PROT_GROWSDOWN|PROT_GROWSUP)
+static int int_attribute(pid_t pid, void *addr, size_t size, int attr)
 {
   int error;
 
-  if (attr == 0 || attr & ~(PROT_READ | PROT_WRITE)) {
+  if (attr & ~PROT_ALL) {
     return -EINVAL;
   }
 
@@ -244,27 +246,31 @@ used static int int_attribute(pid_t pid, void *addr, int attr)
   }
 
   if (!user_area(addr)) {
-    return -EFAULT;
+    return -ENOMEM;
   }
 
   vm_map_t map = getmap(pid);
   pthread_mutex_lock(&map->lock);
-  error = do_attribute(map, addr, attr);
+  error = do_attribute(map, addr, size, attr);
   pthread_mutex_unlock(&map->lock);
   return error;
 }
 
-static int do_attribute(vm_map_t map, void *addr, int attr)
+static int do_attribute(vm_map_t map, void *addr, size_t size, int attr)
 {
   struct seg *seg;
   paddr_t old_pa, new_pa;
   vaddr_t va;
 
   va = trunc_page((vaddr_t)addr);
+  if (va != (vaddr_t)addr) {
+    // The address must be a multiple of the system page size.
+    return -EINVAL;
+  }
 
   // Find the target segment.
   seg = seg_lookup(&map->head, va, 1);
-  if (seg == NULL || seg->addr != va || (seg->flags & SEG_FREE)) {
+  if (seg == NULL || (seg->flags & SEG_FREE)) {
     return -EINVAL;        // Not allocated.
   }
 
@@ -272,19 +278,28 @@ static int do_attribute(vm_map_t map, void *addr, int attr)
   if (seg->flags & SEG_MAPPED)
     return -EINVAL;
 
-  // Check new and old flag.
-  int new_flags = 0;
-  if (seg->flags & SEG_WRITE) {
-    if (!(attr & PROT_WRITE))
-      new_flags = SEG_READ;
-  } else {
-    if (attr & PROT_WRITE)
-      new_flags = SEG_READ|SEG_WRITE;
+  if (seg->addr != va) {
+    // Not at the beginning, try to split up the segment.
+    seg = seg_split(&map->head, seg, va, size);
+    if (seg == NULL) {
+      // The requested area isn't within the original segment.
+      return -EINVAL;
+    }
   }
 
-  if (new_flags == 0)
-    return 0;                           // Same attribute.
+  // Check new and old flags.
+  int new_flags = 0;
+  if (attr & PROT_READ)
+    new_flags |= SEG_READ;
+  if (attr & PROT_WRITE)
+    new_flags |= SEG_WRITE;
+  if (attr & PROT_EXEC)
+    new_flags |= SEG_EXEC;
 
+  if (new_flags == (seg->flags & SEG_ACCESS))
+    return 0;                           // Same attributes.
+
+  // RICH: We lose the SEG_EXEC flag here.
   int map_type = (new_flags & SEG_WRITE) ? PG_WRITE : PG_READ;
 
   // If it is shared segment, duplicate it.
@@ -314,12 +329,12 @@ static int do_attribute(vm_map_t map, void *addr, int attr)
 
     seg->sh_next = seg->sh_prev = seg;
   } else {
-    if (mmu_map(map->pgd, seg->phys, seg->addr, seg->size,
-          map_type))
+    if (mmu_map(map->pgd, seg->phys, seg->addr, seg->size, map_type))
       return -ENOMEM;
   }
 
-  seg->flags = new_flags;
+  seg->flags &= ~SEG_ACCESS;
+  seg->flags |= new_flags;
   return 0;
 }
 
@@ -327,7 +342,7 @@ static int do_attribute(vm_map_t map, void *addr, int attr)
  *
  * Note: This routine does not support mapping to the specific address.
  */
-used static int int_map(pid_t target, void *addr, size_t size, void **alloc)
+static int int_map(pid_t target, void *addr, size_t size, void **alloc)
 {
   int error;
 
@@ -408,7 +423,7 @@ static int do_map(vm_map_t map, void *addr, size_t size, void **alloc)
 /** Create new virtual memory space.
  * No memory is inherited.
  */
-used static vm_map_t int_create(void)
+static vm_map_t int_create(void)
 {
   struct vm_map *map;
 
@@ -433,7 +448,7 @@ used static vm_map_t int_create(void)
 /** Terminate specified virtual memory space.
  * This is called when a process is terminated.
  */
-used static void int_terminate(vm_map_t map)
+static void int_terminate(vm_map_t map)
 {
   struct seg *seg, *tmp;
 
@@ -481,7 +496,7 @@ used static void int_terminate(vm_map_t map)
  * no need to copy. These segments are physically shared with the
  * original map.
  */
-used static vm_map_t int_dup(vm_map_t map)
+static vm_map_t int_dup(vm_map_t map)
 {
 
   pthread_mutex_lock(&map->lock);
@@ -590,7 +605,7 @@ static vm_map_t do_dup(vm_map_t org_map)
  * don't have to setup the page directory for it. Thus, an idle
  * thread and interrupt threads can be switched quickly.
  */
-used static void int_switch(vm_map_t map)
+static void int_switch(vm_map_t map)
 {
   if (map != &kernel_map)
     mmu_switch(map->pgd);
@@ -598,7 +613,7 @@ used static void int_switch(vm_map_t map)
 
 /** Increment reference count of VM mapping.
  */
-used static int int_reference(vm_map_t map)
+static int int_reference(vm_map_t map)
 {
   map->refcnt++;
   return 0;
@@ -607,12 +622,12 @@ used static int int_reference(vm_map_t map)
 /** Translate virtual address of current process to physical address.
  * Returns physical address on success, or NULL if no mapped memory.
  */
-used static paddr_t int_translate(vaddr_t addr, size_t size)
+static paddr_t int_translate(vaddr_t addr, size_t size)
 {
   return mmu_extract(getcurmap()->pgd, addr, size);
 }
 
-used static int int_info(struct vminfo *info)
+static int int_info(struct vminfo *info)
 {
   u_long target = info->cookie;
   pid_t pid = info->pid;
@@ -642,7 +657,7 @@ used static int int_info(struct vminfo *info)
   return -ESRCH;
 }
 
-used static vm_map_t int_init(void)
+static vm_map_t int_init(void)
 {
   pgd_t pgd;
 
@@ -793,17 +808,13 @@ static void seg_free(struct seg *head, struct seg *seg)
   }
 }
 
-/** Reserve the segment at the specified address/size.
+/** Split the segment at the specified address/size.
  */
-static struct seg *seg_reserve(struct seg *head, vaddr_t addr, size_t size)
+static struct seg *seg_split(struct seg *head, struct seg *seg,
+                             vaddr_t addr, size_t size)
 {
-  struct seg *seg, *prev, *next;
+  struct seg *prev, *next;
   size_t diff;
-
-  // Find the block which includes specified block.
-  seg = seg_lookup(head, addr, size);
-  if (seg == NULL || !(seg->flags & SEG_FREE))
-    return NULL;
 
   // Check previous segment to split segment.
   prev = NULL;
@@ -814,6 +825,10 @@ static struct seg *seg_reserve(struct seg *head, vaddr_t addr, size_t size)
     if (seg == NULL)
       return NULL;
 
+    seg->flags = prev->flags;
+    if (!(seg->flags & SEG_FREE)) {
+      // RICH: MMU
+    }
     prev->size = diff;
   }
 
@@ -829,11 +844,32 @@ static struct seg *seg_reserve(struct seg *head, vaddr_t addr, size_t size)
       return NULL;
     }
 
+    next->flags = seg->flags;
+    if (!(seg->flags & SEG_FREE)) {
+      // RICH: MMU
+    }
     seg->size = size;
   }
 
-  seg->flags = 0;
   return seg;
+}
+
+/** Reserve the segment at the specified address/size.
+ */
+static struct seg *seg_reserve(struct seg *head, vaddr_t addr, size_t size)
+{
+  // Find the block which includes specified block.
+  struct seg *seg = seg_lookup(head, addr, size);
+  if (seg == NULL || !(seg->flags & SEG_FREE))
+    return NULL;
+
+  // Split the block from the previous and next.
+  struct seg *new = seg_split(head, seg, addr, size);
+  if (new == NULL)
+    return NULL;
+
+  new->flags = 0;                       // Clear the SEG_FREE flag.
+  return new;
 }
 
 ELK_CONSTRUCTOR()
