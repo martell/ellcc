@@ -92,8 +92,9 @@ static int fd_allocate(fdset_t fdset, int spec)
   int initfds = INITFDS;
   if (spec == -1) {
     spec = 0;
-  } else if (fdset->fds == NULL && spec > initfds) {
-    initfds = spec + 1;
+  } else if (fdset->fds == NULL)
+    while (spec > initfds) {
+      initfds *= FDMULTIPLIER;
   }
 
   if (fdset->fds == NULL) {
