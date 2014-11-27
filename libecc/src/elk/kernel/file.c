@@ -92,7 +92,7 @@ static int fd_allocate(fdset_t fdset, int spec)
   int initfds = INITFDS;
   if (spec == -1) {
     spec = 0;
-  } else if (fdset->fds == NULL) {
+  } else if (fdset->fds == NULL && spec > initfds) {
     initfds = spec + 1;
   }
 
@@ -117,8 +117,8 @@ static int fd_allocate(fdset_t fdset, int spec)
 
     if (s >= fdset->count) {
       // No open slot found, double the size of the fd array.
-      fd_t *newfds = realloc(fdset->fds,
-                             (s * FDMULTIPLIER) * sizeof(fd_t));
+      fd_t *newfds = kmem_realloc(fdset->fds,
+                                  (s * FDMULTIPLIER) * sizeof(fd_t));
       if (newfds == NULL) {
         return -EMFILE;
       }

@@ -103,7 +103,7 @@ int main(int argc, char **argv)
   chdir("/");
 #endif
 
-#if 0
+#if 1
   fd = open("/dev/tty", O_RDWR);
   write(fd, "hello world\n", sizeof("hello world\n"));
   if (fd < 0) {

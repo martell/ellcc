@@ -36,12 +36,14 @@
 
 #if ELK_NAMESPACE
 #define kmem_alloc __elk_kmem_alloc
+#define kmem_realloc __elk_kmem_realloc
 #define kmem_free __elk_kmem_free
 #define kmem_map __elk_kmem_map
 #define kmem_init __elk_kmem_init
 #endif
 
 void *kmem_alloc(size_t);
+void *kmem_realloc(void *, size_t);
 void kmem_free(void *);
 void *kmem_map(void *, size_t);
 void kmem_init(void);

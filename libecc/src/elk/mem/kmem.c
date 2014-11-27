@@ -54,6 +54,7 @@
 
 #include <sys/types.h>
 #include <limits.h>
+#include <string.h>
 #include <pthread.h>
 
 #include "kernel.h"
@@ -243,6 +244,43 @@ void *kmem_alloc(size_t size)
 
   UNLOCK();
   return p;
+}
+
+/** Reallocate a memory block for the kernel.
+ *
+ * => must not be called from interrupt context.
+ */
+void *kmem_realloc(void *ptr, size_t size)
+{
+
+  ASSERT(ptr != NULL);
+
+  LOCK();
+
+  // Get the block header.
+  struct block_hdr *blk;
+  blk = (struct block_hdr *)((vaddr_t)ptr - BLKHDR_SIZE);
+  if (blk->magic != BLOCK_MAGIC)
+    panic("kmem_free: invalid address");
+
+  if (blk->size >= size) {
+    UNLOCK();
+    return ptr;
+  }
+
+  // RICH: Can we expane the current block? Is it worth it?
+
+  void *new_ptr = kmem_alloc(size);
+  if (new_ptr == NULL) {
+    UNLOCK();
+    return NULL;
+  }
+
+  // Copy the old contents.
+  memcpy(new_ptr, ptr, blk->size);
+  kmem_free(ptr);
+  UNLOCK();
+  return new_ptr;
 }
 
 /** Free an allocated memory block.

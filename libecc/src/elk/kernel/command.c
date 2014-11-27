@@ -262,13 +262,12 @@ static int do_command(const char *string)
     return COMMAND_OK;
   }
   int s = run_command(argc, argv);
-  if (s == COMMAND_OK) {
-    free_args(argv);
-    return s;
+  free_args(argv);
+  if (s) {
+    return COMMAND_ERROR;
   }
 
-  free_args(argv);
-  return COMMAND_ERROR;
+  return COMMAND_OK;
 }
 
 void do_commands(const char *prompt)
