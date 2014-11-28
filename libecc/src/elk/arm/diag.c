@@ -37,9 +37,10 @@
 #include "config.h"
 #include "kernel.h"
 #include "bootinfo.h"
-#include "hal.h"
+#include "vm.h"
 
 #define UART_BASE CONFIG_PL011_BASE
+#define UART_PHYSICAL_BASE CONFIG_PL011_PHYSICAL_BASE
 #define UART_FR (*(volatile uint32_t *)(UART_BASE + 0x18))
 #define UART_DR    (*(volatile uint32_t *)(UART_BASE + 0x00))
 
@@ -80,5 +81,6 @@ void diag_printf(const char *__restrict fmt, ...)
 
 void diag_init(void)
 {
-  // RICH: mmu_premap(0x16000000, UART_BASE);
+  // Map the UART physical address to its address in the kernel virtual space.
+  vm_premap(UART_PHYSICAL_BASE, UART_BASE);
 }

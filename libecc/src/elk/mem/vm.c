@@ -619,6 +619,14 @@ static int int_reference(vm_map_t map)
   return 0;
 }
 
+/** Map a physical page into a virtual page.
+ * This is used for early access to I/O registers.
+ */
+static void int_premap(paddr_t paddr, vaddr_t vaddr)
+{
+  mmu_premap(paddr, vaddr);
+}
+
 /** Translate virtual address of current process to physical address.
  * Returns physical address on success, or NULL if no mapped memory.
  */
@@ -884,6 +892,7 @@ ELK_CONSTRUCTOR()
   vm_dup = int_dup;
   vm_switch = int_switch;
   vm_translate = int_translate;
+  vm_premap = int_premap;
   vm_info = int_info;
   vm_init = int_init;
 }

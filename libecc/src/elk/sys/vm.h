@@ -48,6 +48,7 @@
 #define vm_switch __elk_vm_switch
 #define vm_load __elk_vm_load
 #define vm_translate __elk_vm_translate
+#define vm_premap __elk_vm_premap
 #define vm_info __elk_vm_info
 #define vm_init __elk_vm_init
 #endif
@@ -101,6 +102,7 @@ int (*vm_reference)(vm_map_t);
 void (*vm_terminate)(vm_map_t);
 void (*vm_switch)(vm_map_t);
 paddr_t (*vm_translate)(vaddr_t, size_t);
+void (*vm_premap)(paddr_t, vaddr_t);
 
 /** VM information
  */

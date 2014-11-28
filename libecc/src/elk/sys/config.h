@@ -73,6 +73,7 @@
 #define CONFIG_PL011_BASE 0x0101F1000
 #elif defined (VEXPRESS_A9)
 #define CONFIG_PL011_BASE 0x10009000
+#define CONFIG_PL011_PHYSICAL_BASE 0x10009000   // RICH
 #else // Newer cores.
 #define CONFIG_PL011_BASE 0x1c090000
 #endif

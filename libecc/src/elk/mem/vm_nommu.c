@@ -423,6 +423,14 @@ static paddr_t int_translate(vaddr_t addr, size_t size)
   return (paddr_t)addr;
 }
 
+/** Map a physical page into a virtual page.
+ * This is used for early access to I/O registers.
+ */
+static void int_premap(paddr_t paddr, vaddr_t vaddr)
+{
+  ASSERT(paddr == vaddr);
+}
+
 static int int_info(struct vminfo *info)
 {
   u_long target = info->cookie;
@@ -640,6 +648,7 @@ ELK_CONSTRUCTOR()
   vm_dup = int_dup;
   vm_switch = int_switch;
   vm_translate = int_translate;
+  vm_premap = int_premap;
   vm_info = int_info;
   vm_init = int_init;
 }
