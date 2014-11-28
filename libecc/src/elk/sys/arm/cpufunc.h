@@ -32,6 +32,17 @@
 
 #include <sys/types.h>
 
+#if ELK_NAMESPACE
+#define cpu_idle __elk_cpu_idle
+#define get_faultstatus __elk_faultstatus
+#define get_faultaddress __elk_get_faultaddress
+#define get_ttb __elk_get_ttb
+#define set_ttb __elk_set_ttb
+#define switch_ttb __elk_switch_ttb
+#define flush_tlb __elk_flush_tlb
+#define flush_cache __elk_flush_cache
+#endif
+
 void cpu_idle(void);
 int get_faultstatus(void);
 void *get_faultaddress(void);

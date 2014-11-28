@@ -32,6 +32,21 @@
 
 #include <sys/types.h>
 
+#if ELK_NAMESPACE
+#define cpu_idle __elk_cpu_idle
+#define flush_tlb __elk_flush_tlb
+#define flush_cache __elk_flush_cache
+#define load_tr __elk_load_tr
+#define load_gdt __elk_load_gdt
+#define load_idt __elk_load_idt
+#define get_cr2 __elk_get_cr2
+#define set_cr3 __elk_set_cr3
+#define get_cr3 __elk_get_cr3
+#define outb __elk_outb
+#define outb_p __elk_outb_p
+#define inb_p __elk_inb_p
+#endif
+
 void cpu_idle(void);
 void flush_tlb(void);
 void flush_cache(void);
