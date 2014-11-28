@@ -105,10 +105,10 @@ int main(int argc, char **argv)
 
 #if 1
   fd = open("/dev/tty", O_RDWR);
-  write(fd, "hello world\n", sizeof("hello world\n"));
   if (fd < 0) {
-    printf("open(/dev/console) failed:%s\n", strerror(errno));
+    printf("open(/dev/tty) failed: %s\n", strerror(errno));
   } else {
+    write(fd, "hello world\n", sizeof("hello world\n"));
     dup2(fd, 0);
     dup2(fd, 1);
     dup2(fd, 2);

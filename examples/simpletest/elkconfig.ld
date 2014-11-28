@@ -3,11 +3,11 @@
 /*
 EXTERN(__elk_simple_console)
 */
-EXTERN(__elk_fdconsole)
 /*
+EXTERN(__elk_fdconsole)
+*/
 EXTERN(__elk_cons)
 EXTERN(__elk_pl011_dev)
-*/
 
 /*
 EXTERN(__elk_simple_memman)

@@ -55,6 +55,14 @@ FEATURE(thread)
  * Each thread has a user id (uid) associated with it. Except for uid
  * 0, which in the Unix traditional is the "root" user, uids are arbitrary.
  */
+
+struct robust_list_head
+{
+  volatile void *volatile head;
+  long off;
+  volatile void *volatile pending;
+};
+
 typedef struct thread
 {
   // The saved_ctx and tls fields must be first in the thread struct.
@@ -92,6 +100,8 @@ typedef struct thread
 #if HAVE_VM
   vm_map_t map;                 // The process memory map.
 #endif
+  // A pointer to the user space robust futex list.
+  struct robust_list_head *robust_list;
   MsgQueue queue;               // The thread's message queue.
 } thread_t;
 
@@ -1142,6 +1152,58 @@ static int sys_futex(int *uaddr, int op, int val,
   return s;
 }
 
+/* Get the robust futex list.
+ */
+static int sys_get_robust_list(int tid, struct robust_list_head **head,
+                               size_t len)
+{
+  if (tid == 0) {
+    tid = current->tid;
+  }
+
+  if (len != sizeof(struct robust_futex_list *)) {
+    return -EINVAL;
+  }
+
+  if (tid == current->tid || current->pid == getpid()) {
+    // Short cut checks for the current thread and process.
+    if (copyout(&current->robust_list, head,
+                sizeof(struct robust_futex_list *)))
+      return -EFAULT;
+    return 0;
+  }
+
+  // The request is being made by another process.
+  if (tid < 0 || tid >= THREADS) {
+    return -EINVAL;
+  }
+
+  thread_t *tp = threads[tid];
+  if (tp == NULL) {
+    // Invalid thread id.
+    return -ESRCH;
+  }
+
+  if (!CAPABLE(current, CAP_SYS_PTRACE)) {
+    return -EPERM;
+  }
+
+  if (copyout(&tp->robust_list, head, sizeof(struct robust_list_head *)))
+    return -EFAULT;
+  return 0;
+}
+
+/* Set the robust futex list.
+ */
+static int sys_set_robust_list(struct robust_list_head *head, size_t len)
+{
+  if (len != sizeof(struct robust_list_head))
+    return -EINVAL;
+
+  current->robust_list = head;
+  return 0;
+}
+
 /* Send a signal to a thread.
  */
 static int sys_tkill(int tid, int sig)
@@ -1754,22 +1816,10 @@ ELK_CONSTRUCTOR()
   command_insert("dbg", dbgCommand);
 #endif
 
-  // Set up a set_tid_address system call.
-  SYSCALL(set_tid_address);
-
-  // Set up the sched_yield system call.
-  SYSCALL(sched_yield);
-  // Set up the clone system call.
   SYSCALL(clone);
-  // Set up the futex system call.
-  SYSCALL(futex);
-  // Set up the tkill system call.
-  SYSCALL(tkill);
-  // Set up the exit system calls.
   SYSCALL(exit);
   SYSCALL(exit_group);
-
-  // Various id system calls.
+  SYSCALL(futex);
   SYSCALL(getegid);
   SYSCALL(geteuid);
   SYSCALL(getgid);
@@ -1780,15 +1830,19 @@ ELK_CONSTRUCTOR()
   SYSCALL(getsid);
   SYSCALL(gettid);
   SYSCALL(getuid);
+  SYSCALL(get_robust_list);
+  SYSCALL(sched_yield);
   SYSCALL(setgid);
   SYSCALL(setpgid);
   SYSCALL(setresgid);
   SYSCALL(setregid);
-  SYSCALL(setgid);
   SYSCALL(setresuid);
   SYSCALL(setreuid);
-  SYSCALL(setuid);
   SYSCALL(setsid);
+  SYSCALL(setuid);
+  SYSCALL(set_robust_list);
+  SYSCALL(set_tid_address);
+  SYSCALL(tkill);
   SYSCALL(umask);
 }
 
@@ -1824,16 +1878,9 @@ C_CONSTRUCTOR()
   create_idle_threads();
 
 #if ENABLEFDS
-#if 1
   // RICH: Temporarily fake a console.
   int __elk_fdconsole_open(fdset_t *fdset);
   int fd = __elk_fdconsole_open(&current->fdset);
-#else
-  s = mount("", "/", "ramfs", 0, NULL);
-  s = mkdir("/dev", S_IRWXU);
-  s = mount("", "/dev", "devfs", 0, NULL);
-  int fd = open("/dev/cons", O_RDWR);
-#endif
 
   if (fd >= 0) {
     dup(fd);                            // stdout
