@@ -32,6 +32,7 @@
  */
 
 #include <sys/stat.h>
+#include <sys/uio.h>
 #include <sys/param.h>
 
 #include <dirent.h>

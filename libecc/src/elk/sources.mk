@@ -8,12 +8,12 @@ VPATH := $(VPATH):$(SRCPATH)/$(LIB)/$(ARCH)
 CRTSRCS += crt1.S
 
 # Target specific code.
-SRCS.arm += arm_gic.c arm_sp804.c mmu.c cpufunc.S
-SRCS.i386 += gdt.c idt.c i8259.c mmu.c cpufunc.S
+SRCS.arm += arm_gic.c arm_sp804.c mmu.c cpufunc.S diag.c
+SRCS.i386 += gdt.c idt.c i8259.c mmu.c cpufunc.S diag.c
 SRCS.microblaze +=
 SRCS.mips +=
-SRCS.ppc += cpufunc.S
-SRCS.x86_64 += idt.c
+SRCS.ppc += cpufunc.S diag.c
+SRCS.x86_64 += idt.c diag.c
 
 # Target independent code.
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/kernel

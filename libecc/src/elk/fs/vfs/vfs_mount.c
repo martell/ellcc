@@ -505,7 +505,7 @@ C_CONSTRUCTOR()
    * They have been registered during ELK constructor time.
    */
   for (int i = 0; vfssw[i].vs_name; ++i) {
-    printf("VFS: initializing %s\n", vfssw[i].vs_name);
+    DPRINTF(VFSDB_CORE, ("VFS: initializing %s\n", vfssw[i].vs_name));
     vfssw[i].vs_init();
   }
 }

@@ -6,6 +6,8 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+
+#include "hal.h"
 #include "target.h"
 #include "constructor.h"
 
@@ -14,12 +16,6 @@
 #endif
 
 #define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)
-
-// RICH: For now.
-#define copyinstr(src, dst, len) (strlcpy((dst), (src), (len)), 0)
-#define copyout(src, dst, len) (memcpy((dst), (src), (len)), 0)
-#define copyin(src, dst, len) (memcpy((dst), (src), (len)), 0)
-#define user_area(buf) 1
 
 #define ELK_ASSERT 1
 #if ELK_ASSERT
@@ -31,9 +27,8 @@
 
 #define ELK_DEBUG 1
 #ifdef ELK_DEBUG
-#undef DPRINTF
 
-#include <stdio.h>
+#undef DPRINTF
 
 #define debug __elk_debug
 extern int debug;
@@ -63,10 +58,17 @@ extern int debug;
 // Additional file system debug flags.
 #define AFSDB_CORE      0x01000000
 
-#define	DPRINTF(_m,X)	if (debug & (_m)) printf X
+#if 0
+  #include <stdio.h>
+  #define DPRINTF(_m,X)	if (debug & (_m)) printf X
+#else
+  #include "hal.h"
+  #define DPRINTF(_m,X)	if (debug & (_m)) diag_printf X
+#endif
+
 #else
 #define	DPRINTF(_m, X)
-#endif
+#endif  // !ELK_DEBUG
 
 extern int puts(const char *s);
 #define panic(arg) do { puts(arg); exit(1); } while(1)

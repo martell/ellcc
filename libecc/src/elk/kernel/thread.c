@@ -42,6 +42,48 @@ FEATURE(thread)
 #define DEFAULT_PRIORITY ((PRIORITIES)/2)
 #endif
 
+typedef struct envelope {
+  struct envelope *next;
+  Message message;
+} Envelope;
+
+typedef struct
+{
+  int lock;
+  int level;
+} lock_t;
+
+#define LOCK_INITIALIZER { 0, 0 }
+
+static inline void lock_aquire(lock_t *lock)
+{
+// RICH:
+#if !defined(__microblaze__)
+  while(!__atomic_test_and_set(&lock->lock, __ATOMIC_SEQ_CST))
+      continue;
+#endif
+  lock->level = splhigh();
+}
+
+static inline void lock_release(lock_t *lock)
+{
+  splx(lock->level);
+// RICH:
+#if !defined(__microblaze__)
+  __atomic_clear(&lock->lock, __ATOMIC_SEQ_CST);
+#endif
+}
+
+typedef struct queue
+{
+  lock_t lock;
+  Envelope *head;               // The head of the queue.
+  Envelope *tail;               // The tail of the queue.
+  struct thread *waiter;        // Any threads waiting on the queue.
+} MsgQueue;
+
+#define MSG_QUEUE_INITIALIZER { LOCK_INITIALIZER, NULL, NULL, NULL }
+
 /** A thread is an indepenent executable context in ELK.
  * A thread is identified by a unique identifier, the thread id (tid).
  * Threads are grouped in to processes, identified by a process id (pid).
@@ -102,7 +144,7 @@ typedef struct thread
 #endif
   // A pointer to the user space robust futex list.
   struct robust_list_head *robust_list;
-  MsgQueue queue;               // The thread's message queue.
+  struct queue queue;           // The thread's message queue.
 } thread_t;
 
 static int timer_cancel_wake_at(void *id);
@@ -611,7 +653,7 @@ static int sys_sched_yield(void)
 
 /** Send a message to a message queue.
  */
-int send_message_q(MsgQueue *queue, Message msg)
+int send_message_q(struct queue *queue, Message msg)
 {
   if (queue == NULL) {
     queue = &current->queue;
@@ -661,7 +703,7 @@ int send_message(int tid, Message msg)
   return send_message_q(&tp->queue, msg);
 }
 
-Message get_message(MsgQueue *queue)
+Message get_message(struct queue *queue)
 {
   if (queue == NULL) {
     queue = &current->queue;
@@ -709,7 +751,7 @@ Message get_message(MsgQueue *queue)
   return msg;
 }
 
-Message get_message_nowait(MsgQueue *queue)
+Message get_message_nowait(struct queue *queue)
 {
   if (queue == NULL) {
     queue = &current->queue;
@@ -1090,7 +1132,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   }
   tp->priority = priority;
 
-  tp->queue = (MsgQueue)MSG_QUEUE_INITIALIZER;
+  tp->queue = (struct queue)MSG_QUEUE_INITIALIZER;
 
   context_t *cp = (context_t *)stack;
   tp->saved_ctx = cp;

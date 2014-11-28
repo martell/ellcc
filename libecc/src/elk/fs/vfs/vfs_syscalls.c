@@ -33,6 +33,7 @@
  */
 
 #include <sys/stat.h>
+#include <sys/uio.h>
 #include <dirent.h>
 
 #include <limits.h>

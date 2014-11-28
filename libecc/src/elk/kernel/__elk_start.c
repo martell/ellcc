@@ -1,6 +1,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "config.h"
+#include "hal.h"
+
 int main();
 void *__dso_handle = 0;
 _Noreturn int __libc_start_main(int (*)(), int, char **);
@@ -29,6 +32,9 @@ void __elk_start(long *p, void *heap_end)
 
   // Clear the bss area.
   memset(__bss_start__, 0, __bss_end__ - __bss_start__);
+
+  // Mask all interrupts.
+  splhigh();
 
   // Set up the end of the heap.
   // This has to be done after the data area is initialized.

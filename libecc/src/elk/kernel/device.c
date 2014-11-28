@@ -314,9 +314,6 @@ int device_read(device_t dev, struct uio *uio, size_t *nbyte, int blkno)
   size_t count;
   int error;
 
-  if (!user_area(buf))
-    return -EFAULT;
-
   if ((error = device_reference(dev)) != 0)
     return error;
 

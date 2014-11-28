@@ -1,9 +1,6 @@
 /*-
- * Copyright (c) 1990 The Regents of the University of California.
+ * Copyright (c) 2008, Kohsuke Ohtani
  * All rights reserved.
- *
- * This code is derived from software contributed to Berkeley by
- * William Jolitz.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -13,14 +10,14 @@
  * 2. Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
- * 3. Neither the name of the University nor the names of its contributors
+ * 3. Neither the name of the author nor the names of any co-contributors
  *    may be used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
  * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
  * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
  * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
  * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
@@ -28,41 +25,60 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- *  @(#)asm.h  5.5 (Berkeley) 5/7/91
  */
 
-#ifndef _ARM_ASM_H
-#define _ARM_ASM_H
+/*
+ * diag.c - diagnostic message support
+ */
+
+#include <stdarg.h>
+#include <stdio.h>
 
 #include "config.h"
+#include "kernel.h"
+#include "bootinfo.h"
+#include "hal.h"
 
-#define _ALIGN_TEXT .align 0
-#define _ASM_TYPE_FUNCTION function
-#ifdef ELK_NAMESPACE
-#define _ENTRY(x) \
-  .text; _ALIGN_TEXT; .globl x; .type x,_ASM_TYPE_FUNCTION; x:
+#define UART_BASE CONFIG_PL011_BASE
+#define UART_FR (*(volatile uint32_t *)(UART_BASE + 0x18))
+#define UART_DR    (*(volatile uint32_t *)(UART_BASE + 0x00))
 
-#define _C_LABEL(x) __elk_ ## x
-#define _ASM_LABEL(x) __elk_ ## x
-#else
-#define _ENTRY(x) \
-  .text; _ALIGN_TEXT; .globl x; .type x,_ASM_TYPE_FUNCTION; x:
+// Flag register
+#define FR_RXFE         0x10            // Receive FIFO empty.
+#define FR_TXFF         0x20            // Transmit FIFO full.
 
-#define _C_LABEL(x) x
-#define _ASM_LABEL(x) x
-#endif
+static void serial_putc(int c)
+{
+  while (UART_FR & FR_TXFF)
+    continue;
+  UART_DR = (uint32_t)c;
+}
 
-#define CLABEL(y) _C_LABEL(y)
-#define ASM_LABEL(y) _ASM_LABEL(y)
-#define ENTRY(y)  _ENTRY(_C_LABEL(y));
-#define NENTRY(y)  _ENTRY(_C_LABEL(y))
-#define ASENTRY(y)  _ENTRY(_ASM_LABEL(y));
+void diag_puts(char *buf)
+{
+  while (*buf) {
+    if (*buf == '\n')
+      serial_putc('\r');
+    serial_putc(*buf++);
+  }
+}
 
-#if defined(PIC)
-#define PIC_SYM(x,y)  x ## ( ## y ## )
-#else
-#define PIC_SYM(x,y)  x
-#endif
+static char buffer[CONFIG_DIAG_MSGSZ];
 
-#endif /* !_ARM_ASM_H */
+void diag_printf(const char *__restrict fmt, ...)
+{
+  va_list ap;
+
+  int s = splhigh();
+  va_start(ap, fmt);
+  vsnprintf(buffer, CONFIG_DIAG_MSGSZ, fmt, ap);
+
+  diag_puts(buffer);
+  va_end(ap);
+  splx(s);
+}
+
+void diag_init(void)
+{
+  // RICH: mmu_premap(0x16000000, UART_BASE);
+}

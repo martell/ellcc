@@ -58,6 +58,7 @@
 #include <pthread.h>
 
 #include "kernel.h"
+#include "bootinfo.h"
 #include "types.h"
 #include "list.h"
 #include "page.h"

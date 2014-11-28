@@ -1,4 +1,6 @@
 #include <bits/errno.h>
+#include "config.h"
+#include "asm.h"
 #include "target.h"
 
 /** Call a function only if it exists.
@@ -71,7 +73,7 @@ reset:
         msr     cpsr_c, #Mode_SYS       // |I_bit|F_bit
         mov     sp, r0
         sub     r0, #Stack_SYS
-	mov	r8, r0			// Preserve the heap end.
+        mov     r8, r0                  // Preserve the heap end.
 
         // Point to the vectors.
         ldr     r0, =_start
@@ -79,9 +81,9 @@ reset:
 
         mov     fp, #0
         mov     lr, #0
-	mov	a2, r8			// Get the end of the heap.
+        mov     a2, r8                  // Get the end of the heap.
         ldr     a1,=args
-	bic	sp, sp, #0xF		// Align the stack.
+        bic     sp, sp, #0xF            // Align the stack.
         bl      __elk_start             // Enter ELK.
 
 done:
@@ -90,7 +92,7 @@ done:
 
 // main()'s pseudo arguments.
 args:
-	.word	1			// argc
+  .word  1      // argc
 argv:
         .word   name
         .word   0                       // End of argv.
@@ -375,10 +377,166 @@ __elk_set_syscall:
         movlo   r0, #0
         bx      lr
 
+/** Copy data from user to kernel space.
+ * Returns 0 on success, or EFAULT on page fault.
+ *
+ *  int copyin(const void *uaddr, void *kaddr, size_t len)
+ */
+        .global ASM_LABEL(known_fault1)
+ENTRY(copyin)
+        mov     r12, sp
+        stmdb   sp!, {r4, r11, r12, lr, pc}
+        sub     r11, r12, #4
+        ldr     r4, =ASM_LABEL(userlimit)
+        ldr     r4, [r4]
+        cmp     r0, r4
+        bhi     ASM_LABEL(copy_fault)
+        mov     r12, #0
+        b       2f
+1:
+        ldrb    r3, [r12, r0]
+ASM_LABEL(known_fault1):                // May be fault here.
+        strb    r3, [r12, r1]
+        add     r12, r12, #1
+2:
+        subs    r2, r2, #1
+        bcs     1b
+        mov     r0, #0      /* Set no error */
+        ldmia   sp, {r4, r11, sp, pc}
+
+/** Copy data to user from kernel space.
+ * Returns 0 on success, or EFAULT on page fault.
+ *
+ *  int copyout(const void *kaddr, void *uaddr, size_t len)
+ */
+        .global ASM_LABEL(known_fault2)
+ENTRY(copyout)
+        mov     r12, sp
+        stmdb   sp!, {r4, r11, r12, lr, pc}
+        sub     r11, r12, #4
+        ldr     r4, =ASM_LABEL(userlimit)
+        ldr     r4, [r4]
+        cmp     r1, r4
+        bhi     ASM_LABEL(copy_fault)
+        mov     r12, #0
+        b       2f
+1:
+        ldrb    r3, [r12, r0]
+ASM_LABEL(known_fault2):                // May be fault here.
+        strb    r3, [r12, r1]
+        add     r12, r12, #1
+2:
+        subs    r2, r2, #1
+        bcs     1b
+        mov     r0, #0      /* Set no error */
+        ldmia   sp, {r4, r11, sp, pc}
+
+/*
+ * copyinstr - Copy string from user space.
+ * Returns 0 on success, or EFAULT on page fault, or ENAMETOOLONG.
+ *
+ *  syntax - int copyinstr(const char *uaddr, void *kaddr, size_t len);
+ */
+        .global ASM_LABEL(known_fault3)
+ENTRY(copyinstr)
+        mov     r12, sp
+        stmdb   sp!, {r4, r11, r12, lr, pc}
+        sub     r11, r12, #4
+        ldr     r4, =ASM_LABEL(userlimit)
+        ldr     r4, [r4]
+        cmp     r0, r4
+        bhi     ASM_LABEL(copy_fault)
+        mov     r12, #0
+        b       2f
+1:
+        ldrb    r3, [r12, r0]
+ASM_LABEL(known_fault3):                // May be fault here.
+        strb    r3, [r12, r1]
+        cmp     r3, #0
+        beq     3f
+        add     r12, r12, #1
+2:
+        subs    r2, r2, #1
+        bcs     1b
+        mov     r0, #(ENAMETOOLONG)
+        b       4f
+3:
+        mov     r0, #0      /* Set no error */
+4:
+        ldmia   sp, {r4, r11, sp, pc}
+
+/*
+ * Fault entry for user access
+ */
+ENTRY(copy_fault)
+        mov     r0, #(EFAULT)
+        ldmia   sp, {r4, r11, sp, pc}
+
+/*
+ * int spl0(void);
+ */
+ENTRY(spl0)
+        ldr     r1, =curspl             // curspl = 0.
+        ldr     r0, [r1]
+        mov     r2, #0
+        str     r2, [r1]
+
+        mrs     r1, cpsr                // Enable interrupt.
+        bic     r1, r1, #0xc0
+        msr     cpsr_c, r1
+        mov     pc, lr
+
+/*
+ * int splhigh(void);
+ */
+ENTRY(splhigh)
+        mrs     r1, cpsr                // Disable interrupt.
+        orr     r1, r1, #0xc0
+        msr     cpsr_c, r1
+
+        ldr     r1, =curspl             // curspl = 15.
+        ldr     r0, [r1]
+        mov     r2, #15
+        str     r2, [r1]
+        mov     pc, lr
+
+/** void splx(int s);
+ */
+ENTRY(splx)
+        mov     r3, r0                  // r3: new spl.
+        ldr     r1, =curspl
+        ldr     r0, [r1]
+        cmp     r3, r0
+        moveq   pc, lr                  // Return if equal
+        str     r3, [r1]
+
+        cmp     r3, #0
+        mrs     r1, cpsr
+        bic     r1, r1, #0xc0
+        orrne   r1, r1, #0xc0           // Disable interrupt if curspl != 0.
+        msr     cpsr_c, r1
+        mov     pc, lr
+
+/** void sploff(void);
+ */
+ENTRY(sploff)
+        mrs     r0, cpsr
+        orr     r0, r0, #0xc0
+        msr     cpsr_c, r0
+        mov     pc, lr
+
+/** void splon(void);
+ */
+ENTRY(splon)
+        mrs     r0, cpsr
+        bic     r0, r0, #0xc0
+        msr     cpsr_c, r0
+        mov     pc, lr
+
 string:
-        .asciz "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
+        .asciz  "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
 name:
-        .asciz "kernel"
+        .asciz  "kernel"
 
         .data
         .global __heap_end__
@@ -386,6 +544,14 @@ __heap_end__:
         .word   0
 syscall:
         .word   0
+
+// Current spl.
+curspl:
+	.word	0
+
+        .global ASM_LABEL(userlimit)
+ASM_LABEL(userlimit):
+        .word   0xFFFFFFFF              // RICH: Set this
 
 // Create the system call table with room for 512 entries.
 swi_table:

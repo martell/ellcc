@@ -60,7 +60,14 @@
   #endif
 #endif
 
-// RICH: These will be moved.
+#define CONFIG_DIAG_MSGSZ 128   // Diagnostic meessage size.
+
+#define CONFIG_DIAG_SCREEN 0
+#define CONFIG_DIAG_BOCHS 0
+#define CONFIG_DIAG_QEMU 0
+#define CONFIG_DIAG_SERIAL 1
+#define CONFIG_NS16550_BASE 0x3F8
+
 #define VEXPRESS_A9
 #if defined (VERSATILEPB)
 #define CONFIG_PL011_BASE 0x0101F1000
@@ -69,7 +76,6 @@
 #else // Newer cores.
 #define CONFIG_PL011_BASE 0x1c090000
 #endif
-
 #define CONFIG_PL011_IRQ 5
 
 #endif

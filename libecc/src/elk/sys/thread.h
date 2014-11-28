@@ -7,8 +7,10 @@
 
 #include "config.h"
 #include "kernel.h"
+#include "target.h"
 #include "file.h"
 #include "vm.h"
+#include "hal.h"
 
 #if ELK_NAMESPACE
 #define capable(arg) __elk_capable(arg)
@@ -88,48 +90,6 @@ typedef struct message
                                 // Other stuff can be added.
 } Message;
 
-typedef struct envelope {
-  struct envelope *next;
-  Message message;
-} Envelope;
-
-typedef struct
-{
-  int lock;
-  int level;
-} lock_t;
-
-#define LOCK_INITIALIZER { 0, 0 }
-
-static inline void lock_aquire(lock_t *lock)
-{
-// RICH:
-#if !defined(__microblaze__)
-  while(!__atomic_test_and_set(&lock->lock, __ATOMIC_SEQ_CST))
-      continue;
-#endif
-  lock->level = splhigh();
-}
-
-static inline void lock_release(lock_t *lock)
-{
-  splx(lock->level);
-// RICH:
-#if !defined(__microblaze__)
-  __atomic_clear(&lock->lock, __ATOMIC_SEQ_CST);
-#endif
-}
-
-typedef struct queue
-{
-  lock_t lock;
-  Envelope *head;               // The head of the queue.
-  Envelope *tail;               // The tail of the queue.
-  struct thread *waiter;        // Any threads waiting on the queue.
-} MsgQueue;
-
-#define MSG_QUEUE_INITIALIZER { LOCK_INITIALIZER, NULL, NULL, NULL }
-
 /** System message codes.
  */
 enum {
@@ -137,12 +97,14 @@ enum {
   MSG_TIMEOUT,                  // A timeout has occured.
 };
 
+struct queue;
+
 /** Send a message to a message queue.
  * @param queue The message queue.
  * @param message The message to send.
  * @return 0 on success, else -errno.
  */
-int send_message_q(MsgQueue *queue, Message message);
+int send_message_q(struct queue *queue, Message message);
 
 /** Send a message to a message queue.
  * @param queue The message queue.
@@ -151,8 +113,8 @@ int send_message_q(MsgQueue *queue, Message message);
  */
 int send_message(int tid, Message message);
 
-Message get_message(MsgQueue *queue);
-Message get_message_nowait(MsgQueue *queue);
+Message get_message(struct queue *queue);
+Message get_message_nowait(struct queue *queue);
 
 // Thread states.
 typedef enum state {

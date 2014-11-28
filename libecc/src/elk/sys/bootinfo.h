@@ -39,6 +39,9 @@
 
 #include <sys/types.h>
 
+#include "config.h"
+#include "types.h"
+
 /** Video information
  */
 struct vidinfo
@@ -76,9 +79,15 @@ struct bootinfo
   uintptr_t kernbase;                   // Start of kernal address space.
   uintptr_t userlimit;                  // Upper limit of user space.
   struct vidinfo video;                 // Video information.
+  int mmu;                              // != 0 if mmu is enabled.
   int nr_rams;                          // Number of RAM blocks.
   struct physmem ram[NMEMS];            // Physical RAM table.
 };
+
+#define KERNBASE bootinfo.kernbase
+#define USERLIMIT bootinfo.userlimit
+#define user_area(a) (((vaddr_t)(a) < (vaddr_t)USERLIMIT))
+#define hasMMU() bootinfo.mmu
 
 extern struct bootinfo bootinfo;
 
