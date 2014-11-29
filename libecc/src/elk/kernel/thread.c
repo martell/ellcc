@@ -1837,8 +1837,6 @@ ELK_CONSTRUCTOR()
    */
   current = &main_thread;
 #if HAVE_VM
-  bootinfo.kernbase = 0;
-  bootinfo.userlimit = 0xFFFFFFFF;
   bootinfo.nr_rams = 1;
   // RICH Save a few pages for malloc() for now.
   bootinfo.ram[0].base = round_page((uintptr_t)__end) + (4096 * 4);

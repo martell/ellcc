@@ -5,18 +5,11 @@
 #ifndef _arm_pl011_h_
 #define _arm_pl011_h_
 
-#define VEXPRESS_A9
-#if defined (VERSATILEPB)
-#define BASE 0x0101F1000
-#elif defined (VEXPRESS_A9)
-#define BASE 0x10009000
-#else // Newer cores.
-#define BASE 0x1c090000
-#endif
+#include "config.h"
 
-#define IRQ 5
+#define IRQ CONFIG_PL011_IRQ
 
-#define UART(offset) ((volatile unsigned int *)((BASE + (offset))))
+#define UART(offset) ((volatile unsigned int *)((CONFIG_PL011_BASE + (offset))))
 
 #define UARTDR     UART(0x000)  // Data register.
   #define DOE      0x0800       // Overrun error.

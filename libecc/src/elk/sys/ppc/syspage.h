@@ -30,12 +30,10 @@
 #ifndef _syspage_h_
 #define _syspage_h_
 
-#include "config.h"
-
 /**
  * syspage layout:
  *
- * +------------------+ CONFIG_SYSPAGE_BASE
+ * +------------------+ __syspage_base__
  * | Vector page      |
  * |                  |
  * |                  |
@@ -64,26 +62,30 @@
  * to detect the stack overflow.
  */
 
-#define SYSPAGE         CONFIG_SYSPAGE_BASE
+#ifdef __ASSEMBLER__
+#define SYSPAGE         __syspage_base__
+#define SYSPHYSPAGE     __syspage_physical_base__
+#else
+extern char __syspage_base__[];         // Defined at link time.
+extern char __syspage_physical_base__[];
+#define SYSPAGE         ((paddr_t)__syspage_base__)
+#define SYSPHYSPAGE     ((paddr_t)__syspage_physical_base__)
+#define SYSPAGESZ       (mmu_enabled() ? 0x7000 : 0x5000)
+#endif // __ASSEMBLER__
+
 #define INTSTK          (SYSPAGE + 0x3000)
 #define BOOTINFO        (SYSPAGE + 0x4000)
 #define BOOTSTK         (SYSPAGE + 0x4400)
 #define BOOT_PGD        (SYSPAGE + 0x5000)
 #define BOOT_PTE0       (SYSPAGE + 0x6000)
 
-#define BOOT_PGD_PHYS   0x5000
-#define BOOT_PTE0_PHYS  0x6000
+#define BOOT_PGD_PHYS   (0x5000 + SYSPHYSPAGE)
+#define BOOT_PTE0_PHYS  (0x6000 + SYSPHYSPAGE)
 
 #define INTSTKSZ        0x1000          // Size of interrupt stack.
 #define BOOTSTKSZ       0x0c00          // Size of boot stack.
 
 #define INTSTKTOP       (INTSTK + INTSTKSZ)
 #define BOOTSTKTOP      (BOOTSTK + BOOTSTKSZ)
-
-#ifdef CONFIG_MMU
-#define SYSPAGESZ       0x7000
-#else
-#define SYSPAGESZ       0x5000
-#endif
 
 #endif // !_syspage_h_

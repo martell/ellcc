@@ -88,8 +88,8 @@ typedef struct vm_map
 } *vm_map_t;
 
 // Address translation between physical address and kernel virtual address.
-#define ptokv(pa)       (void *)((paddr_t)(pa) + KERNBASE)
-#define kvtop(va)       ((paddr_t)(va) - KERNBASE)
+#define ptokv(pa)       (void *)((paddr_t)(pa) + VIRTUAL_OFFSET)
+#define kvtop(va)       ((paddr_t)(va) - VIRTUAL_OFFSET)
 
 // These function calls are indirect to support MMU vs. non-MMU systems.
 int (*vm_allocate)(pid_t, void **, size_t, int);

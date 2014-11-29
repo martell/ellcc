@@ -56,7 +56,6 @@ ENTRY(get_faultaddress)
 	mov	pc, lr
 
 
-#ifdef CONFIG_MMU
 /*
  * Get TTB - Translation Table Base register
  */
@@ -95,8 +94,6 @@ ENTRY(switch_ttb)
 ENTRY(flush_tlb)
 	mcr	p15, 0, r0, c8, c7, 0	/* invalidate I+D TLBs */
 	mov	pc, lr
-
-#endif /* !CONFIG_MMU */
 
 /*
  * Flush all cache

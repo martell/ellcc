@@ -3,14 +3,7 @@
 #ifndef _arm_priv_h_
 #define _arm_priv_h_
 
-#define VEXPRESS_A9
-#if defined (VERSATILEPB)
-#define PERIPHBASE ?
-#elif defined (VEXPRESS_A9)
-#define PERIPHBASE 0x1E000000
-#else // Newer cores.
-#define PERIPHBASE 0x2C000000
-#endif
+#include "config.h"
 
 #define PERIPH(offset) ((volatile unsigned int *)((PERIPHBASE + (offset))))
 

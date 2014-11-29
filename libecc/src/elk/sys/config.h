@@ -42,25 +42,6 @@
 
 // Memory management.
 #define  HAVE_VM 1              // Use mem functions for memory management.
-#define CONFIG_MMU 0		// Use the MMU.
-#define CONFIG_SYSPAGE_BASE 0x00000000
-#define CONFIG_KERNEL_TEXT 0x000080000
-
-#define CONFIG_ARM_VECTORS 0x00000000
-#if __arm__
-  #if CONFIG_MMU
-    #define CONFIG_SYSPAGE_BASE 0x80000000
-  #else
-    #define CONFIG_SYSPAGE_BASE 0x00000000
-  #endif
-#endif
-#if __i386__
-  #if CONFIG_MMU
-    #define CONFIG_SYSPAGE_BASE 0x80000000
-  #else
-    #define CONFIG_SYSPAGE_BASE 0x00000000
-  #endif
-#endif
 
 #define CONFIG_DIAG_MSGSZ 128   // Diagnostic meessage size.
 
@@ -70,15 +51,30 @@
 #define CONFIG_DIAG_SERIAL 1
 #define CONFIG_NS16550_BASE 0x3F8
 
-#define VEXPRESS_A9
+#define VEXPRESS_A9 1
+//#define INTEGRATORCP 1
 #if defined (VERSATILEPB)
 #define CONFIG_PL011_BASE 0x0101F1000
+#define CONFIG_PL011_IRQ 5
+#define PERIPHBASE ?
+#define CONFIG_SP804_BASE 0x0101E2000
 #elif defined (VEXPRESS_A9)
 #define CONFIG_PL011_BASE 0x10009000
 #define CONFIG_PL011_PHYSICAL_BASE 0x10009000   // RICH
+#define CONFIG_PL011_IRQ 5
+#define PERIPHBASE 0x1E000000
+#define CONFIG_SP804_BASE 0x10011000
+#elif defined(INTEGRATORCP)
+#define CONFIG_PL011_BASE 0x16000000
+#define CONFIG_PL011_PHYSICAL_BASE 0x16000000   // RICH
+#define CONFIG_PL011_IRQ 1
+#define PERIPHBASE ?
+#define CONFIG_SP804_BASE ?
 #else // Newer cores.
 #define CONFIG_PL011_BASE 0x1c090000
-#endif
 #define CONFIG_PL011_IRQ 5
+#define PERIPHBASE 0x2C000000
+#define CONFIG_SP804_BASE 0x1C110000
+#endif
 
 #endif

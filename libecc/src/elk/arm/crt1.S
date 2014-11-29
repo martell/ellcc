@@ -27,9 +27,8 @@
  */
         .global _start
 _start:
-#if CONFIG_MMU
 	b	reset		        // Relative jump.
-#endif
+        .align  5
 vector_start:
 	/* Exception vector
 	 *
@@ -99,7 +98,9 @@ reset:
         sub     r0, #Stack_SYS
         mov     r8, r0                  // Preserve the heap end.
 
-#if CONFIG_MMU
+        ldr     r0, =__mmu_enabled__    // Check for MMU enabled.
+        cmp     r0, #0
+        beq     nommu
         // Setup control register.
         mov     r0, #CTL_DEFAULT
         mcr     p15, 0, r0, c1, c0, 0
@@ -107,22 +108,22 @@ reset:
         /* Initialize page table
          * The physical address 0-4M is mapped on virtual address 2G.
          */
-        mov     r1, #BOOT_PGD_PHYS      // Clear the page directory */
-        mov     r2, #(BOOT_PGD_PHYS + 0x4000)   // +16k
+        ldr     r1, =BOOT_PGD_PHYS      // Clear the page directory */
+        ldr     r2, =(BOOT_PGD_PHYS + 0x4000)   // +16k
         mov     r0, #0
 1:
         str     r0, [r1], #4
         teq     r1, r2
         bne     1b
 
-        mov     r1, #(BOOT_PGD_PHYS + 0x2000)   // Set PTE0 address in pgd.
-        mov     r0, #BOOT_PTE0_PHYS     // WBUF/CACHE/SYSTEM attribute.
+        ldr     r1, =(BOOT_PGD_PHYS + 0x2000)   // Set PTE0 address in pgd.
+        ldr     r0, =BOOT_PTE0_PHYS     // WBUF/CACHE/SYSTEM attribute.
         orr     r0, r0, #0x03
         str     r0, [r1]
 
-        mov     r1, #BOOT_PTE0_PHYS     // Fill boot page table entry.
+        ldr     r1, =BOOT_PTE0_PHYS     // Fill boot page table entry.
         add     r2, r1, #0x1000
-        mov     r0, #0x1e
+        ldr     r0, =(SYSPHYSPAGE + 0x1e)
 1:
         str     r0, [r1], #4
         add     r0, r0, #0x1000
@@ -130,18 +131,18 @@ reset:
         bne     1b
 
         /* Enable paging.
-         * The physical address 0-4M is temporarily mapped to virtial
+         * The physical address 0-4M is temporarily mapped to virtual
          * address 0-4M. This is needed to enable paging.
          */
-        mov     r1, #BOOT_PGD_PHYS      // Set PTE0 address in pgd.
-        mov     r0, #BOOT_PTE0_PHYS     // WBUF/CACHE/SYSTEM attribute.
+        ldr     r1, =(BOOT_PGD_PHYS + 0x1200)      // Set PTE0 address in pgd.
+        ldr     r0, =BOOT_PTE0_PHYS     // WBUF/CACHE/SYSTEM attribute.
         orr     r0, r0, #0x03
         str     r0, [r1]
 
         mov     r0, #0
         mcr     p15, 0, r0, c7, c10, 4  // Drain write buffer.
         mcr     p15, 0, r0, c8, c7, 0   // flush I,D TLBs.
-        mov     r1, #BOOT_PGD_PHYS
+        ldr     r1, =BOOT_PGD_PHYS
         mcr     p15, 0, r1, c2, c0, 0   // Load the page table pointer.
         mov     r0, #-1
         mcr     p15, 0, r0, c3, c0      // Load the domain access register.
@@ -158,15 +159,14 @@ reload_pc:
          * Since the first page must be accessible for exception
          * vector, we have to map it later.
          */
-        mov     r1, #BOOT_PGD_PHYS      // Set PTE0 address in pgd.
+        ldr     r1, =BOOT_PGD_PHYS      // Set PTE0 address in pgd.
         add     r1, r1, #KERNBASE
         mov     r0, #0
         str     r0, [r1]
         mcr     p15, 0, r0, c8, c7, 0   // Flush I,D TLBs.
+nommu:
 
-#endif // !CONFIG_MMU
-
-        ldr     r0, =_start
+        ldr     r0, =vector_start
         mcr     p15, 0, r0, c12, c0, 0
 
         mov     fp, #0

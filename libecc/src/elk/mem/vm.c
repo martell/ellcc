@@ -689,7 +689,7 @@ static void seg_init(struct seg *seg)
   seg->sh_next = seg->sh_prev = seg;
   seg->addr = PAGE_SIZE;
   seg->phys = 0;
-  seg->size = bootinfo.userlimit - PAGE_SIZE;
+  seg->size = USERLIMIT - PAGE_SIZE;
   seg->flags = SEG_FREE;
 }
 

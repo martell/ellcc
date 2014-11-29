@@ -76,18 +76,21 @@ struct physmem
 
 struct bootinfo
 {
-  uintptr_t kernbase;                   // Start of kernal address space.
-  uintptr_t userlimit;                  // Upper limit of user space.
   struct vidinfo video;                 // Video information.
-  int mmu;                              // != 0 if mmu is enabled.
   int nr_rams;                          // Number of RAM blocks.
   struct physmem ram[NMEMS];            // Physical RAM table.
 };
 
-#define KERNBASE bootinfo.kernbase
-#define USERLIMIT bootinfo.userlimit
+// These symbols are defined at link time.
+extern char __user_limit__[];
+extern char __kernel_base__[];
+extern char __virtual_offset__[];
+extern char __mmu_enabled__[];
+#define USERLIMIT ((paddr_t)__user_limit__)
+#define KERNBASE ((paddr_t)__kernel_base__)
+#define VIRTUAL_OFFSET ((paddr_t)__virtual_offset__)
 #define user_area(a) (((vaddr_t)(a) < (vaddr_t)USERLIMIT))
-#define hasMMU() bootinfo.mmu
+#define mmu_enabled() ((int)(intptr_t)__mmu_enabled__)
 
 extern struct bootinfo bootinfo;
 

@@ -57,7 +57,7 @@ SECTIONS
     KEEP(*(SORT(.dtors.*)))
     KEEP(*(.dtors))
   } > rom
-  __text_end__ = . ;
+  __text_end__ = .;
 
   /* Set up a copy of R/W data in ROM. */
   .data : AT(__text_end__) {

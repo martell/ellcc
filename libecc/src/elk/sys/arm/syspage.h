@@ -30,12 +30,10 @@
 #ifndef _syspage_h_
 #define _syspage_h_
 
-#include "config.h"
-
 /**
  * syspage layout:
  *
- * +------------------+ CONFIG_SYSPAGE_BASE
+ * +------------------+ __syspage_base__
  * | Vector page      |
  * |                  |
  * +------------------+ +0x1000
@@ -71,7 +69,17 @@
  * to detect the stack overflow.
  */
 
-#define SYSPAGE         CONFIG_SYSPAGE_BASE
+#ifdef __ASSEMBLER__
+#define SYSPAGE         __syspage_base__
+#define SYSPHYSPAGE     __syspage_physical_base__
+#else
+extern char __syspage_base__[];         // Defined at link time.
+extern char __syspage_physical_base__[];
+#define SYSPAGE         ((paddr_t)__syspage_base__)
+#define SYSPHYSPAGE     ((paddr_t)__syspage_physical_base__)
+#define SYSPAGESZ       (mmu_enabled() ? 0xA000 : 0x4000)
+#endif // __ASSEMBLER__
+
 #define INTSTK          (SYSPAGE + 0x1000)
 #define SYSSTK          (SYSPAGE + 0x2000)
 #define BOOTINFO        (SYSPAGE + 0x3000)
@@ -81,9 +89,9 @@
 #define BOOT_PTE0       (SYSPAGE + 0x8000)
 #define BOOT_PTE1       (SYSPAGE + 0x9000)
 
-#define BOOT_PGD_PHYS   0x4000
-#define BOOT_PTE0_PHYS  0x8000
-#define BOOT_PTE1_PHYS  0x9000
+#define BOOT_PGD_PHYS   (0x4000 + SYSPHYSPAGE)
+#define BOOT_PTE0_PHYS  (0x8000 + SYSPHYSPAGE)
+#define BOOT_PTE1_PHYS  (0x9000 + SYSPHYSPAGE)
 
 #define INTSTKSZ        0x1000
 #define SYSSTKSZ        0x1000
@@ -95,10 +103,5 @@
 #define ABTSTKTOP       (ABTSTK + ABTSTKSZ)
 #define BOOTSTKTOP      (BOOTSTK + BOOTSTKSZ)
 
-#ifdef CONFIG_MMU
-#define SYSPAGESZ       0xA000
-#else
-#define SYSPAGESZ       0x4000
-#endif
 
 #endif // !_syspage_h_

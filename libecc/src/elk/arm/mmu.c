@@ -309,6 +309,6 @@ void mmu_init(struct mmumap *mmumap_table)
   }
 
   // Map vector page.
-  if (mmu_map(boot_pgd, 0, CONFIG_ARM_VECTORS, PAGE_SIZE, PG_SYSTEM))
+  if (mmu_map(boot_pgd, 0, SYSPAGE, PAGE_SIZE, PG_SYSTEM))
     panic("mmu_init");
 }

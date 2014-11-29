@@ -1,19 +1,13 @@
 /* Definitions for the ARM SP804 Dual-Timer.
  * http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.ddi0271d/Babehiha.html
  */
-#define VEXPRESS_A9
-#if defined (VERSATILEPB)
-#define BASE 0x0101E2000
-#elif defined (VEXPRESS_A9)
-#define BASE 0x10011000
-#else // Newer cores.
-#define BASE 0x1C110000
-#endif
+
+#include "config.h"
 
 #define IRQ 2
 #define CLOCK 1000000
 
-#define T(offset) ((volatile unsigned int *)((BASE + (offset))))
+#define T(offset) ((volatile unsigned int *)((CONFIG_SP804_BASE + (offset))))
 
 #define Timer1Load    T(0x000)  // Timer 1 load register.
 #define Timer1Value   T(0x004)  // Current value register.
