@@ -55,17 +55,7 @@ fiq_p:		.word	fiq
 
 vector_end:
 
-#if RICH
-        ldr     pc, =reset              // Reset.
-        ldr     pc, =undefined          // Undefined opcode.
-        ldr     pc, =swi                // Syscall.
-        ldr     pc, =prefetch           // Prefetch.
-        ldr     pc, =abort              // Abort.
-        nop                             // Reserved.
-        ldr     pc, =irq                // Interrupt.
 // The FIQ interrupt starts here.
-// Enter the FIQ handler directly to save  cycles.
-#endif
 fiq:
         wfi
         b       fiq
