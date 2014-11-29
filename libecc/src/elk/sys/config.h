@@ -42,7 +42,9 @@
 
 // Memory management.
 #define  HAVE_VM 1              // Use mem functions for memory management.
-#define CONFIG_MMU 1		// Use the MMU.
+#define CONFIG_MMU 0		// Use the MMU.
+#define CONFIG_SYSPAGE_BASE 0x00000000
+#define CONFIG_KERNEL_TEXT 0x000080000
 
 #define CONFIG_ARM_VECTORS 0x00000000
 #if __arm__

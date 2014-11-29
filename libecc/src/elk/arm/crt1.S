@@ -1,7 +1,11 @@
 #include <bits/errno.h>
 #include "config.h"
 #include "asm.h"
+#include "cpu.h"
+#include "syspage.h"
 #include "target.h"
+
+#define KERNBASE 0      // RICH: This will change for high kernel.
 
 /** Call a function only if it exists.
  * Act as if it returned 0 or NULL if it's not defined.
@@ -14,8 +18,8 @@
         moveq   r0, #0          ; \
         blxne   r12
 
-        .section .text, "x"
-        .align  4
+	.section ".text","ax"
+	.code 32
 /** This is the reset start point.
  * For ARM this is a set of eight vectors, four bytes apart.
  * Use the vector to load the pc from a nearby handler function
@@ -23,6 +27,35 @@
  */
         .global _start
 _start:
+#if CONFIG_MMU
+	b	reset		        // Relative jump.
+#endif
+vector_start:
+	/* Exception vector
+	 *
+	 * This table will be copied to an appropriate location.
+	 * (the location is platform specific.)
+	 */
+	ldr	pc, reset_p	        // 0x00 mode: svc.
+	ldr	pc, undefined_p	        // 0x04 mode: ?.
+	ldr	pc, swi_p		// 0x08 mode: svc.
+	ldr	pc, prefetch_p	        // 0x0c mode: abort.
+	ldr	pc, abort_p	        // 0x10 mode: abort.
+	nop				// 0x14 reserved.
+	ldr	pc, irq_p		// 0x18 mode: irq.
+	ldr	pc, fiq_p		// 0x1c mode: fiq.
+
+reset_p:	.word	reset
+undefined_p:	.word	undefined
+swi_p:		.word	swi
+prefetch_p:	.word	prefetch
+abort_p:	.word	abort
+irq_p:		.word	irq
+fiq_p:		.word	fiq
+
+vector_end:
+
+#if RICH
         ldr     pc, =reset              // Reset.
         ldr     pc, =undefined          // Undefined opcode.
         ldr     pc, =swi                // Syscall.
@@ -32,6 +65,7 @@ _start:
         ldr     pc, =irq                // Interrupt.
 // The FIQ interrupt starts here.
 // Enter the FIQ handler directly to save  cycles.
+#endif
 fiq:
         wfi
         b       fiq
@@ -75,7 +109,73 @@ reset:
         sub     r0, #Stack_SYS
         mov     r8, r0                  // Preserve the heap end.
 
-        // Point to the vectors.
+#if CONFIG_MMU
+        // Setup control register.
+        mov     r0, #CTL_DEFAULT
+        mcr     p15, 0, r0, c1, c0, 0
+
+        /* Initialize page table
+         * The physical address 0-4M is mapped on virtual address 2G.
+         */
+        mov     r1, #BOOT_PGD_PHYS      // Clear the page directory */
+        mov     r2, #(BOOT_PGD_PHYS + 0x4000)   // +16k
+        mov     r0, #0
+1:
+        str     r0, [r1], #4
+        teq     r1, r2
+        bne     1b
+
+        mov     r1, #(BOOT_PGD_PHYS + 0x2000)   // Set PTE0 address in pgd.
+        mov     r0, #BOOT_PTE0_PHYS     // WBUF/CACHE/SYSTEM attribute.
+        orr     r0, r0, #0x03
+        str     r0, [r1]
+
+        mov     r1, #BOOT_PTE0_PHYS     // Fill boot page table entry.
+        add     r2, r1, #0x1000
+        mov     r0, #0x1e
+1:
+        str     r0, [r1], #4
+        add     r0, r0, #0x1000
+        teq     r1, r2
+        bne     1b
+
+        /* Enable paging.
+         * The physical address 0-4M is temporarily mapped to virtial
+         * address 0-4M. This is needed to enable paging.
+         */
+        mov     r1, #BOOT_PGD_PHYS      // Set PTE0 address in pgd.
+        mov     r0, #BOOT_PTE0_PHYS     // WBUF/CACHE/SYSTEM attribute.
+        orr     r0, r0, #0x03
+        str     r0, [r1]
+
+        mov     r0, #0
+        mcr     p15, 0, r0, c7, c10, 4  // Drain write buffer.
+        mcr     p15, 0, r0, c8, c7, 0   // flush I,D TLBs.
+        mov     r1, #BOOT_PGD_PHYS
+        mcr     p15, 0, r1, c2, c0, 0   // Load the page table pointer.
+        mov     r0, #-1
+        mcr     p15, 0, r0, c3, c0      // Load the domain access register.
+        mrc     p15, 0, r0, c1, c0, 0
+        orr     r0, r0, #0x1000         // I-cache enable.
+        orr     r0, r0, #0x003d         // Write buffer, mmu.
+        mcr     p15, 0, r0, c1, c0, 0
+
+        // Reload PC register for virutal address.
+        ldr     pc, =reload_pc          // Reset pc here.
+reload_pc:
+
+        /* Unmap 0-4M.
+         * Since the first page must be accessible for exception
+         * vector, we have to map it later.
+         */
+        mov     r1, #BOOT_PGD_PHYS      // Set PTE0 address in pgd.
+        add     r1, r1, #KERNBASE
+        mov     r0, #0
+        str     r0, [r1]
+        mcr     p15, 0, r0, c8, c7, 0   // Flush I,D TLBs.
+
+#endif // !CONFIG_MMU
+
         ldr     r0, =_start
         mcr     p15, 0, r0, c12, c0, 0
 
@@ -89,6 +189,29 @@ reset:
 done:
         wfi
         b       done
+
+/*
+ * Relocate exception vector
+ *
+ * void vector_copy(vaddr_t dest);
+ */
+ENTRY(vector_copy)
+	ldr	r1, =vector_start
+	ldr	r2, =vector_end
+1:
+	ldmia	r1!, {r3}
+	stmia	r0!, {r3}
+	teq	r1, r2
+	bne	1b
+	mov	pc, lr
+
+#ifdef CONFIG_CACHE
+/*
+ * Enable cache
+ */
+ENTRY(cache_init)
+	mov	pc, lr
+#endif
 
 // main()'s pseudo arguments.
 args:
@@ -547,7 +670,7 @@ syscall:
 
 // Current spl.
 curspl:
-	.word	0
+        .word  0
 
         .global ASM_LABEL(userlimit)
 ASM_LABEL(userlimit):
