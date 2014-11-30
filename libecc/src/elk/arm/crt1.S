@@ -481,8 +481,7 @@ ENTRY(copyin)
         mov     r12, sp
         stmdb   sp!, {r4, r11, r12, lr, pc}
         sub     r11, r12, #4
-        ldr     r4, =ASM_LABEL(userlimit)
-        ldr     r4, [r4]
+        ldr     r4, userlimit
         cmp     r0, r4
         bhi     ASM_LABEL(copy_fault)
         mov     r12, #0
@@ -498,6 +497,9 @@ ASM_LABEL(known_fault1):                // May be fault here.
         mov     r0, #0      /* Set no error */
         ldmia   sp, {r4, r11, sp, pc}
 
+userlimit:
+        .word   __user_limit__
+
 /** Copy data to user from kernel space.
  * Returns 0 on success, or EFAULT on page fault.
  *
@@ -508,8 +510,7 @@ ENTRY(copyout)
         mov     r12, sp
         stmdb   sp!, {r4, r11, r12, lr, pc}
         sub     r11, r12, #4
-        ldr     r4, =ASM_LABEL(userlimit)
-        ldr     r4, [r4]
+        ldr     r4, userlimit
         cmp     r1, r4
         bhi     ASM_LABEL(copy_fault)
         mov     r12, #0
@@ -536,8 +537,7 @@ ENTRY(copyinstr)
         mov     r12, sp
         stmdb   sp!, {r4, r11, r12, lr, pc}
         sub     r11, r12, #4
-        ldr     r4, =ASM_LABEL(userlimit)
-        ldr     r4, [r4]
+        ldr     r4, userlimit
         cmp     r0, r4
         bhi     ASM_LABEL(copy_fault)
         mov     r12, #0
@@ -642,10 +642,6 @@ syscall:
 // Current spl.
 curspl:
         .word  0
-
-        .global ASM_LABEL(userlimit)
-ASM_LABEL(userlimit):
-        .word   0xFFFFFFFF              // RICH: Set this
 
 // Create the system call table with room for 512 entries.
 swi_table:

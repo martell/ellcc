@@ -48,9 +48,9 @@
 #define __COPYRIGHT(arg)
 #define __RCSID(arg)
 #define __IDSTRING(arg1, arg2)
-#define setprogname(arg)        /* This might need to go someplace else. */
-extern char *program_invocation_short_name;
-#define getprogname() program_invocation_short_name
+extern char *__progname;
+#define setprogname(arg) (__progname = arg)
+#define getprogname() __progname
 #define _DIAGASSERT(arg)
 
 #if defined(__cplusplus)
