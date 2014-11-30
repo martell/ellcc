@@ -79,7 +79,7 @@ reset:
         ldr     sp, =BOOTSTKTOP
         // Finally, set up the SYS mode stack pointer and stay in SYS mode.
         msr     cpsr_c, #Mode_SYS       // |I_bit|F_bit
-        ldr     sp, =SYSSTKTOP
+        ldr     sp, =__mem_top
 
         ldr     r0, =__mmu_enabled__    // Check for MMU enabled.
         cmp     r0, #0

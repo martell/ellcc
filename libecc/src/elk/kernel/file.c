@@ -90,11 +90,15 @@ static int fd_allocate(fdset_t fdset, int spec)
 {
   int s;
   int initfds = INITFDS;
+
   if (spec == -1) {
+    // Get any file decriptor.
     spec = 0;
-  } else if (fdset->fds == NULL)
+  } else if (fdset->fds == NULL) {
+    // The set hasn't been created, make a set big enough.
     while (spec > initfds) {
       initfds *= FDMULTIPLIER;
+    }
   }
 
   if (fdset->fds == NULL) {
@@ -108,7 +112,8 @@ static int fd_allocate(fdset_t fdset, int spec)
       init_fd(&fdset->fds[i]);
     }
 
-    s = 0;      // Allocate the first file descriptor.
+    // Allocate the requested file descriptor.
+    s = spec;
   } else {
     for (s = spec; s < fdset->count; ++s) {
       if (fdset->fds[s].file == NULL) {
@@ -118,18 +123,22 @@ static int fd_allocate(fdset_t fdset, int spec)
 
     if (s >= fdset->count) {
       // No open slot found, double the size of the fd array.
-      fd_t *newfds = kmem_realloc(fdset->fds,
-                                  (s * FDMULTIPLIER) * sizeof(fd_t));
+      int count = fdset->count;
+      while (s >= count) {
+        count *= FDMULTIPLIER;
+      }
+
+      fd_t *newfds = kmem_realloc(fdset->fds, count * sizeof(fd_t));
       if (newfds == NULL) {
         return -EMFILE;
       }
 
-      for (int i = s; i < s * FDMULTIPLIER; ++i) {
+      for (int i = s; i < count; ++i) {
         init_fd(&newfds[i]);
       }
 
       fdset->fds = newfds;
-      fdset->count = s * FDMULTIPLIER;
+      fdset->count = count;
     }
   }
 
@@ -188,7 +197,7 @@ int fdset_clone(fdset_t *fdset, int clone)
   return 0;
 }
 
-/** Add a file specific file descriptor to a set.
+/** Add a specific file descriptor to a set.
  */
 int fdset_addfd(fdset_t fdset, int spec, file_t file)
 {
@@ -295,7 +304,7 @@ int fdset_getdup(fdset_t fdset, int fd, file_t *filep, int free)
 int fdset_setfile(fdset_t fdset, int fd, file_t file)
 {
   pthread_mutex_lock(&fdset->mutex);
-  if (fd >= fdset->count || fdset->fds[fd].file == NULL) {
+  if (fd >= fdset->count) {
     pthread_mutex_unlock(&fdset->mutex);
     return -EBADF;
   }

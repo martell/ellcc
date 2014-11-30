@@ -1051,6 +1051,10 @@ static int sys_dup2(int oldfd, int newfd)
     return error;
   }
 
+  if (oldfd == newfd) {
+    return newfd;
+  }
+
   if ((error = getdup(newfd, &ofp, 0)) < 0) {
     return error;
   }

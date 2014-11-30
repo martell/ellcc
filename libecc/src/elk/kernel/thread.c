@@ -1628,7 +1628,8 @@ int getfile(int fd, file_t *filep)
   return fdset_getfile(current->fdset, fd, filep);
 }
 
-/** Get a file pointer corresponding to a file descriptor.
+/** Create a new file descriptor or replace the file
+ * pointer of a current file descriptor.
  * If free, find the first available free file descriptor.
  */
 int getdup(int fd, file_t *filep, int free)
@@ -1886,44 +1887,29 @@ ELK_CONSTRUCTOR()
   SYSCALL(umask);
 }
 
-// RICH: Temporary.
-#if ENABLEFDS
-#include <unistd.h>
-#endif
-
-#include <sys/mount.h>
-
 C_CONSTRUCTOR()
 {
   // Set up the tid pool.
   tid_initialize();
 
-  // Set up the main and idle threads.
-
   // The main thread is what's running right now.
   alloc_tid(current);
+
 #if HAVE_VM
-  current->map = vm_init();             // Set up the kernel memory map.
+  // Set up the kernel memory map.
+  current->map = vm_init();
 #endif
+
 #if ENABLEFDS
+  // Initialize the main thread's file descriptors.
   int s = fdset_new(&current->fdset);
   ASSERT(s == 0);
 #endif
+
   current->pid = current->tid;          // The main thread starts a group.
   priority = current->priority;
 
   // Create the idle thread(s).
   create_idle_threads();
-
-#if 0 && ENABLEFDS
-  // RICH: Temporarily fake a console.
-  int __elk_fdconsole_open(fdset_t *fdset);
-  int fd = __elk_fdconsole_open(&current->fdset);
-
-  if (fd >= 0) {
-    dup(fd);                            // stdout
-    dup(fd);                            // stderr
-  }
-#endif
 }
 
