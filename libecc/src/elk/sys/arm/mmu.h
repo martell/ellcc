@@ -40,7 +40,7 @@ typedef uint32_t *pte_t;                // Page table entry.
 
 // Page directory entry (L1).
 #define PDE_PRESENT     0x00000001
-#define PDE_ADDRESS     0xfffff000
+#define PDE_ADDRESS     0xfffffc00
 
 // Page table entry (L2).
 #define PTE_PRESENT     0x00000002
