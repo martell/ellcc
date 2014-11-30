@@ -448,20 +448,14 @@ __aeabi_read_tp:
 // Unhandled system calls.
 unhandled_swi:
         stmfd   sp!, {r12, lr}
-        push    { r0-r5 }
-        weak_call(__elk_setup_console)  // Make sure the console is ready.
-        cmp     r0, #0                  // Has the console been set up?
-        pop     { r0-r5 }
-        beq     2f                      // Jump if not.
         push    {r2-r5}                 // Push extra arguments.
         mov     r3, r1
         mov     r2, r0
         ldr     r1, =syscall            // And the system call number.
         ldr     r1, [r1]
-        ldr     r0, =string             // Get the format string.
-        weak_call(printf)               // Print if we have printf.
+        ldr     r0, =unhandled_string   // Get the format string.
+        bl      diag_printf             // Print the unhandled system call.
         add     sp, #16                 // clean up the stack.
-2:
         mov     r0, #-ENOSYS
         ldmfd   sp!, {r12, pc}
 
@@ -633,7 +627,7 @@ ENTRY(splon)
         msr     cpsr_c, r0
         mov     pc, lr
 
-string:
+unhandled_string:
         .asciz  "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
 name:
         .asciz  "kernel"
