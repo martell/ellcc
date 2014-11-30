@@ -149,7 +149,7 @@ static const IRQHandler timer_irq =
   }
 };
 
-ELK_CONSTRUCTOR()
+C_CONSTRUCTOR()
 {
   // Set up the timer.
   resolution = 1000000000 / (CLOCK / 1); 

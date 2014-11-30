@@ -13,8 +13,8 @@ EXTERN(__elk_thread) /* ELK thread handling. */
 
 EXTERN(__elk_time) /* Time related system calls. */
 
-/* EXTERN(__elk_vm) /* Full virtual memory support with MMU.  */
-EXTERN(__elk_vm_nommu) /* Non-MMU memory management. */
+EXTERN(__elk_vm) /* Full virtual memory support with MMU.  */
+/* EXTERN(__elk_vm_nommu) /* Non-MMU memory management. */
 
 EXTERN(__elk_vfs_syscalls) /* File system syscalls. */
 EXTERN(__elk_ramfs) /* The RAM file system. */

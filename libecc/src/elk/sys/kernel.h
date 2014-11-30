@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "config.h"
 #include "hal.h"
 #include "target.h"
 #include "constructor.h"
@@ -15,7 +16,31 @@
 #define NULL 0
 #endif
 
+#if ELK_NAMESPACE
+#define set_syscall __elk_set_syscall
+#define system_init __elk_system_init
+#define system_c_init __elk_system_c_init
+#endif
+
 #define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)
+
+/** Set a system call handler.
+ * @param nr The system call number.
+ * @param fn The system call handling function.
+ * @return 0 on success, -1 on  error.
+ * This function is defined in crt1.S.
+ */
+int __elk_set_syscall(int nr, void *fn);
+
+/** An optiona system initialization function.
+ * Called from __elk_start() before C library initialization.
+ */
+void (*system_init)(void);
+
+/** An optiona system initialization function.
+ * Called from __elk_start() after C library initialization.
+ */
+void (*system_c_init)(void);
 
 #define ELK_ASSERT 1
 #if ELK_ASSERT
@@ -32,6 +57,9 @@
 
 #define debug __elk_debug
 extern int debug;
+
+// Always send a message.
+#define MSG             0x00000000
 
 // Thread debug flags.
 #define THRDB_CORE      0x00000001
@@ -60,10 +88,10 @@ extern int debug;
 
 #if 0
   #include <stdio.h>
-  #define DPRINTF(_m,X)	if (debug & (_m)) printf X
+  #define DPRINTF(_m,X)	if (!_m || (debug & (_m))) printf X
 #else
   #include "hal.h"
-  #define DPRINTF(_m,X)	if (debug & (_m)) diag_printf X
+  #define DPRINTF(_m,X)	if (!_m || (debug & (_m))) diag_printf X
 #endif
 
 #else
@@ -83,13 +111,5 @@ enum {
 };
 
 #define VALIDATE_ADDRESS(addr, size, access)
-
-/** Set a system call handler.
- * @param nr The system call number.
- * @param fn The system call handling function.
- * @return 0 on success, -1 on  error.
- * This function is defined in crt1.S.
- */
-int __elk_set_syscall(int nr, void *fn);
 
 #endif // _kernel_h_

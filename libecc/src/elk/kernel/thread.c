@@ -4,8 +4,10 @@
 #include <sys/uio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/mount.h>
 #define _GNU_SOURCE
 #include <pthread.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <sched.h>
 #include <string.h>
@@ -1829,14 +1831,11 @@ extern char *__heap_end__;      // The bottom of the allocated stacks.
 struct bootinfo bootinfo;
 #endif
 
-/* Initialize the thread handling code.
+/** An optiona system initialization function.
+ * Called from __elk_start() before C library initialization.
  */
-ELK_CONSTRUCTOR()
+static void init(void)
 {
-  /** We set up a thread_self pointer early to tell
-   * the C library that we support threading.
-   */
-  current = &main_thread;
 #if HAVE_VM
   bootinfo.nr_rams = 1;
   // RICH Save a few pages for malloc() for now.
@@ -1847,6 +1846,59 @@ ELK_CONSTRUCTOR()
   page_init();
   kmem_init();
 #endif
+
+#if HAVE_VM
+  // Set up the kernel memory map.
+  current->map = vm_init();
+#endif
+}
+
+/** An optiona system initialization function.
+ * Called from __elk_start() before C library initialization.
+ */
+static void c_init(void)
+{
+#if ENABLEFDS
+  // Initialize the main thread's file descriptors.
+  int s = fdset_new(&current->fdset);
+  ASSERT(s == 0);
+
+  // Set up the RAM file system.
+  s = mount("", "/", "ramfs", 0, NULL);
+  if (s) {
+    printf("ramfs mount failed: %s\n", strerror(errno));
+  }
+
+  // Create and mount the defice directory.
+  s = mkdir("/dev", S_IRWXU);
+  if (s) {
+    printf("/dev mkdir failed: %s\n", strerror(errno));
+  }
+  s = mount("", "/dev", "devfs", 0, NULL);
+  if (s) {
+    printf("devfs mount failed: %s\n", strerror(errno));
+  }
+
+  // Create the kernel stdin, stdout, and stderr.
+  int fd = open("/dev/tty", O_RDWR);
+  assert(fd >= 0);
+  dup2(fd, 0);
+  dup2(fd, 1);
+  dup2(fd, 2);
+  if (fd != 0)
+      close(fd);
+#endif
+
+}
+
+/* Initialize the thread handling code.
+ */
+ELK_CONSTRUCTOR()
+{
+  /** We set up a thread_self pointer early to tell
+   * the C library that we support threading.
+   */
+  current = &main_thread;
 
 #if THREAD_COMMANDS
   command_insert(NULL, sectionCommand);
@@ -1885,6 +1937,10 @@ ELK_CONSTRUCTOR()
   SYSCALL(set_tid_address);
   SYSCALL(tkill);
   SYSCALL(umask);
+
+  // Set up the system initialization functions.
+  system_init = init;
+  system_c_init = c_init;
 }
 
 C_CONSTRUCTOR()
@@ -1894,17 +1950,6 @@ C_CONSTRUCTOR()
 
   // The main thread is what's running right now.
   alloc_tid(current);
-
-#if HAVE_VM
-  // Set up the kernel memory map.
-  current->map = vm_init();
-#endif
-
-#if ENABLEFDS
-  // Initialize the main thread's file descriptors.
-  int s = fdset_new(&current->fdset);
-  ASSERT(s == 0);
-#endif
 
   current->pid = current->tid;          // The main thread starts a group.
   priority = current->priority;

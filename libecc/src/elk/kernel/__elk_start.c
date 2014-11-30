@@ -3,8 +3,9 @@
 
 #include "config.h"
 #include "hal.h"
+#include "kernel.h"
 
-int main();
+int main(int, char **, char **);
 void *__dso_handle = 0;
 _Noreturn int __libc_start_main(int (*)(), int, char **);
 
@@ -18,6 +19,14 @@ extern void *__heap_end__;
 extern void (*const __elk_init_array_end)() __attribute__((weak));
 extern void (*const __elk_init_array_start)() __attribute__((weak));
 extern void (*const __elk_init_array_end)() __attribute__((weak));
+void (*system_init)(void);
+void (*system_c_init)(void);
+
+static int do_main(int argc, char **argv, char **environ)
+{
+  if (system_c_init) system_c_init();   // Optional system initialization.
+  return main(argc, argv, environ);
+}
 
 void __elk_start(long *p, void *heap_end)
 {
@@ -45,8 +54,10 @@ void __elk_start(long *p, void *heap_end)
   for (; a<(uintptr_t)&__elk_init_array_end; a+=sizeof(void(*)()))
           (*(void (**)())a)();
 
+  if (system_init) system_init();       // Optional system initialization.
+
   // Initialize the C run-time and call main().
-  __libc_start_main(main, argc, argv);
+  __libc_start_main(do_main, argc, argv);
 }
 
 #else

@@ -204,15 +204,21 @@ argv:
 
 // RICH: TODO
 undefined:
-        b       undefined
+        ldr     r0, =undefined_string
+        bl      diag_printf
+        b       .
 
 // RICH: TODO
 prefetch:
-        b       prefetch
+        ldr     r0, =prefetch_string
+        bl      diag_printf
+        b       .
 
 // RICH: TODO
 abort:
-        b       abort
+        ldr     r0, =abort_string
+        bl      diag_printf
+        b       .
 
 #define SAVED_REGS r0-r12, lr   // Registers saved in thread context.
 #define NUM_SAVED 14            // The number of saved registers.
@@ -629,6 +635,12 @@ ENTRY(splon)
         msr     cpsr_c, r0
         mov     pc, lr
 
+abort_string:
+        .asciz  "in kernal abort trap\n"
+prefetch_string:
+        .asciz  "in kernal prefetch trap\n"
+undefined_string:
+        .asciz  "in kernal undefined trap\n"
 unhandled_string:
         .asciz  "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
 name:
