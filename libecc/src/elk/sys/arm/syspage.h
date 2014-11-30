@@ -89,9 +89,9 @@ extern char __syspage_physical_base__[];
 #define BOOT_PTE0       (SYSPAGE + 0x8000)
 #define BOOT_PTE1       (SYSPAGE + 0x9000)
 
-#define BOOT_PGD_PHYS   (0x4000 + SYSPHYSPAGE)
-#define BOOT_PTE0_PHYS  (0x8000 + SYSPHYSPAGE)
-#define BOOT_PTE1_PHYS  (0x9000 + SYSPHYSPAGE)
+#define BOOT_PGD_PHYS   (SYSPHYSPAGE + 0x4000)
+#define BOOT_PTE0_PHYS  (SYSPHYSPAGE + 0x8000)
+#define BOOT_PTE1_PHYS  (SYSPHYSPAGE + 0x9000)
 
 #define INTSTKSZ        0x1000
 #define SYSSTKSZ        0x1000

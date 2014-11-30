@@ -1907,9 +1907,7 @@ C_CONSTRUCTOR()
 #endif
 #if ENABLEFDS
   int s = fdset_new(&current->fdset);
-  if (s != 0) {
-    printf("cannot allocate the initial fdset: %s\n", strerror(-s));
-  }
+  ASSERT(s != 0);
 #endif
   current->pid = current->tid;          // The main thread starts a group.
   priority = current->priority;
@@ -1917,7 +1915,7 @@ C_CONSTRUCTOR()
   // Create the idle thread(s).
   create_idle_threads();
 
-#if ENABLEFDS
+#if 0 && ENABLEFDS
   // RICH: Temporarily fake a console.
   int __elk_fdconsole_open(fdset_t *fdset);
   int fd = __elk_fdconsole_open(&current->fdset);

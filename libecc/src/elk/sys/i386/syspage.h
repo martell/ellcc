@@ -79,8 +79,8 @@ extern char __syspage_physical_base__[];
 #define BOOT_PGD        (SYSPAGE + 0x3000)
 #define BOOT_PTE0       (SYSPAGE + 0x4000)
 
-#define BOOT_PGD_PHYS   0x3000 + SYSPHYSPAGE)
-#define BOOT_PTE0_PHYS  0x4000 + SYSPHYSPAGE)
+#define BOOT_PGD_PHYS   ((SYSPHYSPAGE + 0x3000)
+#define BOOT_PTE0_PHYS  ((SYSPHYSPAGE + 0x4000)
 
 #define INTSTKSZ        0x1000          // Size of interrupt stack.
 #define BOOTSTKSZ       0x0c00          // Size of boot stack.

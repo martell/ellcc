@@ -60,15 +60,6 @@ fiq:
         b       fiq
 
         .text
-/* Defined the size of the stacks.
- * Currently, only the SYS mode needs its own stack.
- */
-#define Stack_FIQ   0           // Size of the FIQ stack.
-#define Stack_IRQ   0           // Size of the IRQ stack.
-#define Stack_SVC   0           // Size of the SVC stack.
-#define Stack_ABT   0           // Size of the ABT stack.
-#define Stack_UND   0           // Size of the UND stack.
-#define Stack_SYS   (4096*4)    // Size of the SYS stack.
 
 /** The reset entry point.
  */
@@ -77,26 +68,18 @@ reset:
         * and initializing the stack pointers.
         */
         msr     cpsr_c, #Mode_FIQ|I_bit|F_bit
-        ldr     r0, =__mem_top          // Set up stack for FIQs.
-        mov     sp, r0
-        sub     r0, #Stack_FIQ
+        ldr     sp, =INTSTKTOP
         msr     cpsr_c, #Mode_IRQ|I_bit|F_bit
-        mov     sp, r0
-        sub     r0, #Stack_IRQ
+        ldr     sp, =INTSTKTOP
         msr     cpsr_c, #Mode_ABT|I_bit|F_bit
-        mov     sp, r0
-        sub     r0, #Stack_ABT
+        ldr     sp, =ABTSTKTOP
         msr     cpsr_c, #Mode_UND|I_bit|F_bit
-        mov     sp, r0
-        sub     r0, #Stack_UND
+        ldr     sp, =INTSTKTOP
         msr     cpsr_c, #Mode_SVC|I_bit|F_bit
-        mov     sp, r0
-        sub     r0, #Stack_SVC
+        ldr     sp, =BOOTSTKTOP
         // Finally, set up the SYS mode stack pointer and stay in SYS mode.
         msr     cpsr_c, #Mode_SYS       // |I_bit|F_bit
-        mov     sp, r0
-        sub     r0, #Stack_SYS
-        mov     r8, r0                  // Preserve the heap end.
+        ldr     sp, =SYSSTKTOP
 
         ldr     r0, =__mmu_enabled__    // Check for MMU enabled.
         cmp     r0, #0
@@ -118,7 +101,7 @@ reset:
 
         ldr     r1, =(BOOT_PGD_PHYS + 0x2000)   // Set PTE0 address in pgd.
         ldr     r0, =BOOT_PTE0_PHYS     // WBUF/CACHE/SYSTEM attribute.
-        orr     r0, r0, #0x03
+        orr     r0, r0, #0x01
         str     r0, [r1]
 
         ldr     r1, =BOOT_PTE0_PHYS     // Fill boot page table entry.
@@ -131,12 +114,16 @@ reset:
         bne     1b
 
         /* Enable paging.
-         * The physical address 0-4M is temporarily mapped to virtual
-         * address 0-4M. This is needed to enable paging.
+         * The physical address SYSPHYSPAGE is temporarily mapped
+         * to virtual address SYSPHYSPAGE. This is needed to
+         * enable paging.
          */
-        ldr     r1, =(BOOT_PGD_PHYS + 0x1200)      // Set PTE0 address in pgd.
+        ldr     r8, =SYSPHYSPAGE
+        lsr     r8, #18                 // Calculate the pgd table entry.
+        ldr     r1, =BOOT_PGD_PHYS      // Set PTE0 address in pgd.
+        add     r1, r1, r8              // Add the entry offset and save it.
         ldr     r0, =BOOT_PTE0_PHYS     // WBUF/CACHE/SYSTEM attribute.
-        orr     r0, r0, #0x03
+        orr     r0, r0, #0x01
         str     r0, [r1]
 
         mov     r0, #0
@@ -147,6 +134,7 @@ reset:
         mov     r0, #-1
         mcr     p15, 0, r0, c3, c0      // Load the domain access register.
         mrc     p15, 0, r0, c1, c0, 0
+enable_vm:
         orr     r0, r0, #0x1000         // I-cache enable.
         orr     r0, r0, #0x003d         // Write buffer, mmu.
         mcr     p15, 0, r0, c1, c0, 0
@@ -154,13 +142,12 @@ reset:
         // Reload PC register for virutal address.
         ldr     pc, =reload_pc          // Reset pc here.
 reload_pc:
-
         /* Unmap 0-4M.
          * Since the first page must be accessible for exception
          * vector, we have to map it later.
          */
-        ldr     r1, =BOOT_PGD_PHYS      // Set PTE0 address in pgd.
-        add     r1, r1, #KERNBASE
+        ldr     r1, =BOOT_PGD           // Set PTE0 address in pgd.
+        add     r1, r1, r8              // Using the previous offset.
         mov     r0, #0
         str     r0, [r1]
         mcr     p15, 0, r0, c8, c7, 0   // Flush I,D TLBs.
@@ -171,7 +158,7 @@ nommu:
 
         mov     fp, #0
         mov     lr, #0
-        mov     a2, r8                  // Get the end of the heap.
+        ldr     a2, =__mem_top          // Get the end of the heap.
         ldr     a1,=args
         bic     sp, sp, #0xF            // Align the stack.
         bl      __elk_start             // Enter ELK.
