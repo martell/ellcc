@@ -23,6 +23,7 @@
 #include "vnode.h"
 #include "page.h"
 #include "kmem.h"
+#include "syspage.h"
 #include "command.h"
 
 
@@ -1845,6 +1846,17 @@ static void init(void)
   bootinfo.ram[0].type = MT_USABLE;
   page_init();
   kmem_init();
+
+  // Initialize the cache.
+  // RICH: cache_init();
+
+  // Reserve system pages.
+  page_reserve(kvtop(SYSPAGE), SYSPAGESZ);
+#endif
+
+
+#if RICH
+  machine_startup();            // Target dependent initialzation.
 #endif
 
 #if HAVE_VM
@@ -1854,7 +1866,7 @@ static void init(void)
 }
 
 /** An optiona system initialization function.
- * Called from __elk_start() before C library initialization.
+ * Called from __elk_start() after C library initialization.
  */
 static void c_init(void)
 {
