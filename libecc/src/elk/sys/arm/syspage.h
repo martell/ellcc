@@ -30,78 +30,19 @@
 #ifndef _syspage_h_
 #define _syspage_h_
 
-/**
- * syspage layout:
- *
- * +------------------+ __syspage_base__
- * | Vector page      |
- * |                  |
- * +------------------+ +0x1000
- * | Interrupt stack  |
- * |                  |
- * +------------------+ +0x2000
- * | Sys mode stack   |
- * |                  |
- * +------------------+ +0x3000
- * | Boot information |
- * +------------------+ +0x3400
- * | Abort mode stack |
- * +------------------+ +0x3800
- * | Boot stack       |
- * +------------------+ +0x4000
- * | PGD for boot     |
- * | (MMU only)       |
- * |                  |
- * +------------------+ +0x8000
- * | PTE0 for boot    |
- * | (MMU only)       |
- * +------------------+ +0x9000
- * | PTE1 for UART I/O|
- * | (MMU only)       |
- * +------------------+ +0xA000
- *
- *
- * Note1: Kernel PGD must be stored at 16k aligned address.
- *
- * Note2: PTE0 must be stored at 4k aligned address.
- *
- * Note2: Interrupt stack should be placed after NULL page
- * to detect the stack overflow.
- */
-
-#ifdef __ASSEMBLER__
-#define SYSPAGE         __syspage_base__
-#define SYSPHYSPAGE     __syspage_physical_base__
-#else
-extern char __syspage_base__[];         // Defined at link time.
+// Defined at link time.
+extern char __syspage_base__[];
 extern char __syspage_physical_base__[];
+extern char __boot_pgd__[];
+extern char __boot_pte0__[];
+extern char __boot_pte1__[];
+extern char __syspage_size__[];
+
 #define SYSPAGE         ((paddr_t)__syspage_base__)
 #define SYSPHYSPAGE     ((paddr_t)__syspage_physical_base__)
-#define SYSPAGESZ       (mmu_enabled() ? 0xA000 : 0x4000)
-#endif // __ASSEMBLER__
-
-#define INTSTK          (SYSPAGE + 0x1000)
-#define SYSSTK          (SYSPAGE + 0x2000)
-#define BOOTINFO        (SYSPAGE + 0x3000)
-#define ABTSTK          (SYSPAGE + 0x3400)
-#define BOOTSTK         (SYSPAGE + 0x3800)
-#define BOOT_PGD        (SYSPAGE + 0x4000)
-#define BOOT_PTE0       (SYSPAGE + 0x8000)
-#define BOOT_PTE1       (SYSPAGE + 0x9000)
-
-#define BOOT_PGD_PHYS   (SYSPHYSPAGE + 0x4000)
-#define BOOT_PTE0_PHYS  (SYSPHYSPAGE + 0x8000)
-#define BOOT_PTE1_PHYS  (SYSPHYSPAGE + 0x9000)
-
-#define INTSTKSZ        0x1000
-#define SYSSTKSZ        0x1000
-#define ABTSTKSZ        0x400
-#define BOOTSTKSZ       0x800
-
-#define INTSTKTOP       (INTSTK + INTSTKSZ)
-#define SYSSTKTOP       (SYSSTK + SYSSTKSZ)
-#define ABTSTKTOP       (ABTSTK + ABTSTKSZ)
-#define BOOTSTKTOP      (BOOTSTK + BOOTSTKSZ)
-
+#define SYSPAGESZ       ((size_t)(intptr_t)__syspage_size__)
+#define BOOT_PGD        ((paddr_t)__boot_pgd__)
+#define BOOT_PTE0       ((paddr_t)__boot_pte0__)
+#define BOOT_PTE1       ((paddr_t)__boot_pte1__)
 
 #endif // !_syspage_h_

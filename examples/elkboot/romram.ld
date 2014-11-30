@@ -65,7 +65,7 @@ SECTIONS
   .syspage : {
     __syspage_physical_base__ = . ;
     __syspage_base__ = . ;
-    . = . + syspage_size ;
+    . = . + __syspage_size__ ;
   } > ram
   /* Set up a copy of R/W data in ROM. */
   .data : AT(__text_end__) {

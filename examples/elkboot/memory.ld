@@ -2,32 +2,29 @@
  *
  * syspage layout:
  *
- * +------------------+ ___syspage_base__
+ * +------------------+ __syspage_base__
  * | Vector page      |
- * |                  |
  * +------------------+ +0x1000
  * | Interrupt stack  |
- * |                  |
  * +------------------+ +0x2000
+ * | Abort mode stack |
+ * +------------------+ +0x3000
+ * | Undefined stack  |
+ * +------------------+ +0x4000
  * | Sys mode stack   |
  * |                  |
- * +------------------+ +0x3000
- * | Boot information |
- * +------------------+ +0x3400
- * | Abort mode stack |
- * +------------------+ +0x3800
- * | Boot stack       |
- * +------------------+ +0x4000 - No MMU kernel starts here.
+ * |                  |
+ * +------------------+ +0x8000 - No MMU kernel starts here.
  * | PGD for boot     |
  * | (MMU only)       |
  * |                  |
- * +------------------+ +0x8000
+ * +------------------+ +0xC000
  * | PTE0 for boot    |
  * | (MMU only)       |
- * +------------------+ +0x9000
+ * +------------------+ +0xD000
  * | PTE1 for UART I/O|
  * | (MMU only)       |
- * +------------------+ +0xA000 - MMU kernel starts here.
+ * +------------------+ +0xE000 - MMU kernel starts here.
  *
  * Note1: Kernel PGD must be stored at 16k aligned address.
  *
@@ -45,7 +42,22 @@
 __mmu_enabled__ = 0; 
 __virtual_offset__ = 0x00000000;
 __user_limit__ = 0xFFFFFFFF;
-PROVIDE(syspage_size = 0x4000);
+__intstk_top__ = __syspage_base__ + 0x2000;
+__abortstk_top__ = __syspage_base__ + 0x3000;
+__undefinedstk_top__ = __syspage_base__ + 0x4000;
+__sysstk_top__ = __syspage_base__ + 0x8000;
+
+/* The following are for MMU systems only. */
+__boot_pgd__ = __syspage_base__ + 0x8000;
+__boot_pgd_physical__ = __syspage_physical_base__ + 0x8000;
+__boot_pte0__ = __syspage_base__ + 0xC000;
+__boot_pte0_physical__ = __syspage_physical_base__ + 0xC000;
+__boot_pte1__ = __syspage_base__ + 0xD000;
+__boot_pte1_physical__ = __syspage_physical_base__ + 0xD000;
+
+/* The syspage size has to be large enough for the preceeding allocations. */
+__syspage_size__ = 0x8000;      /* Non-MMU systems. */
+/* __syspage_size__ = 0xE000;      /* MMU systems. */
 
 MEMORY
 {

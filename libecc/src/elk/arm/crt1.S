@@ -2,7 +2,6 @@
 #include "config.h"
 #include "asm.h"
 #include "cpu.h"
-#include "syspage.h"
 #include "target.h"
 
 #define KERNBASE 0      // RICH: This will change for high kernel.
@@ -68,18 +67,18 @@ reset:
         * and initializing the stack pointers.
         */
         msr     cpsr_c, #Mode_FIQ|I_bit|F_bit
-        ldr     sp, =INTSTKTOP
+        ldr     sp, =__intstk_top__
         msr     cpsr_c, #Mode_IRQ|I_bit|F_bit
-        ldr     sp, =INTSTKTOP
+        ldr     sp, =__intstk_top__
         msr     cpsr_c, #Mode_ABT|I_bit|F_bit
-        ldr     sp, =ABTSTKTOP
+        ldr     sp, =__abortstk_top__
         msr     cpsr_c, #Mode_UND|I_bit|F_bit
-        ldr     sp, =INTSTKTOP
+        ldr     sp, =__undefinedstk_top__
         msr     cpsr_c, #Mode_SVC|I_bit|F_bit
-        ldr     sp, =BOOTSTKTOP
+        ldr     sp, =__sysstk_top__
         // Finally, set up the SYS mode stack pointer and stay in SYS mode.
         msr     cpsr_c, #Mode_SYS       // |I_bit|F_bit
-        ldr     sp, =__mem_top
+        ldr     sp, =__sysstk_top__
 
         ldr     r0, =__mmu_enabled__    // Check for MMU enabled.
         cmp     r0, #0
@@ -91,22 +90,25 @@ reset:
         /* Initialize page table
          * The physical address 0-4M is mapped on virtual address 2G.
          */
-        ldr     r1, =BOOT_PGD_PHYS      // Clear the page directory */
-        ldr     r2, =(BOOT_PGD_PHYS + 0x4000)   // +16k
+
+        // Clear the page directory */
+        ldr     r1, =__boot_pgd_physical__
+        ldr     r2, =(__boot_pgd_physical__ + 0x4000) // +16k
         mov     r0, #0
 1:
         str     r0, [r1], #4
         teq     r1, r2
         bne     1b
 
-        ldr     r1, =(BOOT_PGD_PHYS + 0x2000)   // Set PTE0 address in pgd.
-        ldr     r0, =BOOT_PTE0_PHYS     // WBUF/CACHE/SYSTEM attribute.
-        orr     r0, r0, #0x01
+        // Set PTE0 address in pgd. This sets up the map at 0x80000000.
+        ldr     r1, =(__boot_pgd_physical__ + 0x2000)
+        ldr     r0, =__boot_pte0_physical__
+        orr     r0, r0, #0x01           // Used.
         str     r0, [r1]
 
-        ldr     r1, =BOOT_PTE0_PHYS     // Fill boot page table entry.
+        ldr     r1, =__boot_pte0_physical__     // Fill boot page table entry.
         add     r2, r1, #0x1000
-        ldr     r0, =(SYSPHYSPAGE + 0x1e)
+        ldr     r0, =(__syspage_physical_base__ + 0x1E)
 1:
         str     r0, [r1], #4
         add     r0, r0, #0x1000
@@ -114,22 +116,22 @@ reset:
         bne     1b
 
         /* Enable paging.
-         * The physical address SYSPHYSPAGE is temporarily mapped
-         * to virtual address SYSPHYSPAGE. This is needed to
+         * The physical address __syspage_physical_base__ is temporarily mapped
+         * to virtual address __syspage_physical_base__. This is needed to
          * enable paging.
          */
-        ldr     r8, =SYSPHYSPAGE
+        ldr     r8, =__syspage_physical_base__
         lsr     r8, #18                 // Calculate the pgd table entry.
-        ldr     r1, =BOOT_PGD_PHYS      // Set PTE0 address in pgd.
+        ldr     r1, =__boot_pgd_physical__      // Set PTE0 address in pgd.
         add     r1, r1, r8              // Add the entry offset and save it.
-        ldr     r0, =BOOT_PTE0_PHYS     // WBUF/CACHE/SYSTEM attribute.
+        ldr     r0, =__boot_pte0_physical__
         orr     r0, r0, #0x01
         str     r0, [r1]
 
         mov     r0, #0
         mcr     p15, 0, r0, c7, c10, 4  // Drain write buffer.
         mcr     p15, 0, r0, c8, c7, 0   // flush I,D TLBs.
-        ldr     r1, =BOOT_PGD_PHYS
+        ldr     r1, =__boot_pgd_physical__
         mcr     p15, 0, r1, c2, c0, 0   // Load the page table pointer.
         mov     r0, #-1
         mcr     p15, 0, r0, c3, c0      // Load the domain access register.
@@ -146,7 +148,7 @@ reload_pc:
          * Since the first page must be accessible for exception
          * vector, we have to map it later.
          */
-        ldr     r1, =BOOT_PGD           // Set PTE0 address in pgd.
+        ldr     r1, =__boot_pgd__       // Set PTE0 address in pgd.
         add     r1, r1, r8              // Using the previous offset.
         mov     r0, #0
         str     r0, [r1]
