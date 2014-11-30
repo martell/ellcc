@@ -1907,7 +1907,7 @@ C_CONSTRUCTOR()
 #endif
 #if ENABLEFDS
   int s = fdset_new(&current->fdset);
-  ASSERT(s != 0);
+  ASSERT(s == 0);
 #endif
   current->pid = current->tid;          // The main thread starts a group.
   priority = current->priority;
