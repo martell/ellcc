@@ -1,18 +1,20 @@
-/* A simple bare metal main.
+/* ELK running as a boot strap program.
  */
-
-#include <assert.h>
-#include <stdio.h>
-#include <errno.h>
-#include <string.h>
+#include <sys/cdefs.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <assert.h>
 #include <unistd.h>
+#include <string.h>
+#include <stdio.h>
+#include <errno.h>
 #include <fcntl.h>
+
 #include "command.h"
 
 int main(int argc, char **argv)
 {
+  setprogname("elkboot");
   int s, fd;
   s = mount("", "/", "ramfs", 0, NULL);
   if (s) {
@@ -35,8 +37,8 @@ int main(int argc, char **argv)
   if (fd != 0)
       close(fd);
 
-  printf("%s started. Type \"help\" for a list of commands.\n", argv[1]);
+  printf("%s started. Type \"help\" for a list of commands.\n", getprogname());
   // Enter the kernel command processor.
-  do_commands(argv[0]);
+  do_commands(getprogname());
 }
 

@@ -1,5 +1,6 @@
 current SVN:
 
+* Added an example of using ELK as a bootstrap program.
 * Implemented mmap(), etc. in ELK.
 * Added paged based kernel memory management to ELK.
 * Update to LLVM r222635.

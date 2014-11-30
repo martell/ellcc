@@ -6,7 +6,7 @@
 EXTERN(__elk_cons) /* The ELK console device. */
 EXTERN(__elk_pl011_dev) /* ARM UART used as a console. */
 
-/*EXTERN(__elk_simple_memman) /* Simple malloc() memory management. */
+/* EXTERN(__elk_simple_memman) /* Simple malloc() memory management. */
 EXTERN(__elk_memman) /* Full mmap() and malloc() support. */
 
 EXTERN(__elk_thread) /* ELK thread handling. */
