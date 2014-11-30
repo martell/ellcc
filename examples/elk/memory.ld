@@ -56,6 +56,9 @@ __boot_pte1_physical__ = __syspage_physical_base__ + 0xD000;
 /* __syspage_size__ = 0x8000;      /* Non-MMU systems. */
 __syspage_size__ = 0xE000;      /* MMU systems. */
 
+/* __device_base__ = 0x00000000;   /* Non-MMU systems. */
+__device_base__ = 0xC0000000;   /* MMU systems. */
+
 __kernel_base__ = __syspage_base__;
 PROVIDE(load_address = __syspage_physical_base__ + __syspage_size__);
 PROVIDE(kernel_start = __syspage_base__ + __syspage_size__);
@@ -94,7 +97,7 @@ __mmu_enabled__ = 0;
 __syspage_base__ = 0x80000000;
 __syspage_physical_base__ = 0x48000000;
 __user_limit__ = 0x7FFFFFFF;
-__virtual_offset__ = 0x00000000;
+__virtual_offset__ = 0x80000000 - 0x48000000;
 __mmu_enabled__ = 1;
 
 PROVIDE(stack_heap_size = 4M);          /* RICH: Lose this. */

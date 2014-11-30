@@ -59,6 +59,9 @@ __boot_pte1_physical__ = __syspage_physical_base__ + 0xD000;
 __syspage_size__ = 0x8000;      /* Non-MMU systems. */
 /* __syspage_size__ = 0xE000;      /* MMU systems. */
 
+/* __device_base__ = 0x00000000;   /* Non-MMU systems. */
+__device_base__ = 0xC0000000;   /* MMU systems. */
+
 MEMORY
 {
   rom (rx) : ORIGIN = 0x00000000, LENGTH = 64M

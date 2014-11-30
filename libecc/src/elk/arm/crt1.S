@@ -104,7 +104,13 @@ reset:
         ldr     r1, =(__boot_pgd_physical__ + 0x2000)
         ldr     r0, =__boot_pte0_physical__
         orr     r0, r0, #0x01           // Used.
-        str     r0, [r1]
+        str     r0, [r1], #4
+        add     r0, #1024
+        str     r0, [r1], #4
+        add     r0, #1024
+        str     r0, [r1], #4
+        add     r0, #1024
+        str     r0, [r1], #4
 
         ldr     r1, =__boot_pte0_physical__     // Fill boot page table entry.
         add     r2, r1, #0x1000

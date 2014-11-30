@@ -51,6 +51,7 @@
 #define vm_premap __elk_vm_premap
 #define vm_info __elk_vm_info
 #define vm_init __elk_vm_init
+#define vm_mmu_init __elk_vm_mmu_init
 #endif
 
 /** One structure per allocated segment.
@@ -118,5 +119,6 @@ struct vminfo
 
 int (*vm_info)(struct vminfo *);
 vm_map_t (*vm_init)(void);
+void (*vm_mmu_init)(void);
 
 #endif // !_vm_h_

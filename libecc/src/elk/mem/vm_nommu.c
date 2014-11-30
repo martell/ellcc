@@ -461,6 +461,10 @@ static int int_info(struct vminfo *info)
   return -ESRCH;
 }
 
+static void int_mmu_init(void)
+{
+}
+
 static vm_map_t int_init(void)
 {
   seg_init(&kernel_map.head);
@@ -651,4 +655,5 @@ ELK_CONSTRUCTOR()
   vm_premap = int_premap;
   vm_info = int_info;
   vm_init = int_init;
+  vm_mmu_init = int_mmu_init;
 }

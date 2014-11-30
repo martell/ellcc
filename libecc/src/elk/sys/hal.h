@@ -110,7 +110,7 @@ void interrupt_init(void);
 #define mmu_extract __elk_mmu_extract
 #endif
 
-void mmu_init(struct mmumap *);
+void mmu_init(const struct mmumap *);
 void mmu_premap(paddr_t, vaddr_t);
 pgd_t mmu_newmap(void);
 void mmu_terminate(pgd_t);

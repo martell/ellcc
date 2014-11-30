@@ -665,6 +665,37 @@ static int int_info(struct vminfo *info)
   return -ESRCH;
 }
 
+// RICH: Temporary. Hacked for vexpress-a9
+/*
+ * Virtual and physical address mapping
+ *
+ *      { virtual, physical, size, type }
+ */
+static void int_mmu_init(void)
+{
+  const struct mmumap mmumap_table[] =
+  {
+    /** Internal SRAM (4M)
+     */
+    { 0x80000000, 0x48000000, 0x400000, VMT_RAM },
+
+    /** Counter/Timers (1M)
+     */
+    { CONFIG_SP804_BASE, CONFIG_SP804_PHYSICAL_BASE, 0x100000, VMT_IO },
+
+    /** Private memory (1M)
+     */
+    { PRIVATE_BASE, PRIVATE_PHYSICAL_BASE, 0x100000, VMT_IO },
+
+    /** UART 0 (1M)
+     */
+    { CONFIG_PL011_BASE, CONFIG_PL011_PHYSICAL_BASE, 0x100000, VMT_IO },
+    { 0,0,0,0 }
+  };
+
+  mmu_init(mmumap_table);
+}
+
 static vm_map_t int_init(void)
 {
   pgd_t pgd;
@@ -895,4 +926,5 @@ ELK_CONSTRUCTOR()
   vm_premap = int_premap;
   vm_info = int_info;
   vm_init = int_init;
+  vm_mmu_init = int_mmu_init;
 }

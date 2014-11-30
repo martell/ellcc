@@ -77,6 +77,7 @@ static inline void console_enable_rx_interrupt(void)
 
 /** Register the console interrupt handler.
  */
+#include "bootinfo.h"
 static void console_interrupt_register(InterruptFn rx, InterruptFn tx)
 {
     static IRQHandler serial_irq =

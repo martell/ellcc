@@ -5,7 +5,7 @@
 
 #include "config.h"
 
-#define PERIPH(offset) ((volatile unsigned int *)((PERIPHBASE + (offset))))
+#define PERIPH(offset) ((volatile unsigned int *)((PRIVATE_BASE + (offset))))
 
 // Snoop control unit.
 #define SCU(offset) PERIPH(0x0000 + (offset))

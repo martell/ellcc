@@ -86,8 +86,10 @@ extern char __user_limit__[];
 extern char __kernel_base__[];
 extern char __virtual_offset__[];
 extern char __mmu_enabled__[];
+extern char __device_map_offset__[];
 #define USERLIMIT ((paddr_t)__user_limit__)
 #define KERNBASE ((paddr_t)__kernel_base__)
+#define DEVICEBASE ((paddr_t)__device_base__)
 #define VIRTUAL_OFFSET ((paddr_t)__virtual_offset__)
 #define user_area(a) (((vaddr_t)(a) < (vaddr_t)USERLIMIT))
 #define mmu_enabled() ((int)(intptr_t)__mmu_enabled__)

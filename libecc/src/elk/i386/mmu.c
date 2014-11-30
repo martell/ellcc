@@ -253,9 +253,9 @@ paddr_t mmu_extract(pgd_t pgd, vaddr_t va, size_t size)
  * become large, too. For example, page table requires 512K bytes
  * for 512M bytes system RAM.
  */
-void mmu_init(struct mmumap *mmumap_table)
+void mmu_init(const struct mmumap *mmumap_table)
 {
-  struct mmumap *map;
+  const struct mmumap *map;
   int map_type = 0;
 
   for (map = mmumap_table; map->type != 0; map++) {

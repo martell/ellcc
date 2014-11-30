@@ -285,9 +285,9 @@ void mmu_premap(paddr_t phys, vaddr_t virt)
  * these kernel pages.
  * page_init() must be called before calling this routine.
  */
-void mmu_init(struct mmumap *mmumap_table)
+void mmu_init(const struct mmumap *mmumap_table)
 {
-  struct mmumap *map;
+  const struct mmumap *map;
   int map_type = 0;
 
   for (map = mmumap_table; map->type != 0; map++) {

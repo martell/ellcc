@@ -1839,19 +1839,33 @@ static void init(void)
 {
 #if HAVE_VM
   bootinfo.nr_rams = 1;
+#if RICH
   // RICH Save a few pages for malloc() for now.
   bootinfo.ram[0].base = round_page((uintptr_t)__end) + (4096 * 4);
   bootinfo.ram[0].size = trunc_page((uintptr_t)__heap_end__)
                          - bootinfo.ram[0].base;
+#endif
+  bootinfo.ram[0].base = 0x48000000 + 0x0100000;
+  bootinfo.ram[0].size = 0x2000000 - 0x0100000;
   bootinfo.ram[0].type = MT_USABLE;
+#if RICH
+  bootinfo.ram[1].base = 0x48000000;
+  bootinfo.ram[1].size = 0x0100000;
+  bootinfo.ram[1].type = MT_RESERVED;
+#endif
+
   page_init();
   kmem_init();
+
+  // Initialize the MMU page map.
+  vm_mmu_init();
+
+  // Reserve system pages.
+  // page_reserve(kvtop(SYSPAGE), SYSPAGESZ);
 
   // Initialize the cache.
   // RICH: cache_init();
 
-  // Reserve system pages.
-  page_reserve(kvtop(SYSPAGE), SYSPAGESZ);
 #endif
 
 
