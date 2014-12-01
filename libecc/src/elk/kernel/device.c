@@ -317,11 +317,7 @@ int device_read(device_t dev, struct uio *uio, size_t *nbyte, int blkno)
   if ((error = device_reference(dev)) != 0)
     return error;
 
-  if (copyin(nbyte, &count, sizeof(count))) {
-    device_release(dev);
-    return -EFAULT;
-  }
-
+  count = *nbyte;
   const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->read != NULL);
@@ -349,11 +345,7 @@ int device_write(device_t dev, void *buf, size_t *nbyte, int blkno)
   if ((error = device_reference(dev)) != 0)
     return error;
 
-  if (copyin(nbyte, &count, sizeof(count))) {
-    device_release(dev);
-    return -EFAULT;
-  }
-
+  count = *nbyte;
   const struct devops *ops;
   ops = dev->driver->devops;
   ASSERT(ops->write != NULL);
