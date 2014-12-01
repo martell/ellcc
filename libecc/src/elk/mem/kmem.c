@@ -269,7 +269,7 @@ void *kmem_realloc(void *ptr, size_t size)
     return ptr;
   }
 
-  // RICH: Can we expane the current block? Is it worth it?
+  // RICH: Can we expand the current block? Is it worth it?
 
   void *new_ptr = kmem_alloc(size);
   if (new_ptr == NULL) {
