@@ -211,7 +211,7 @@ int vfs_nullop(void)
 
 int vfs_einval(void)
 {
-  return EINVAL;
+  return -EINVAL;
 }
 
 static int sys_mount(char *dev, char *name, char *fsname, int flags,

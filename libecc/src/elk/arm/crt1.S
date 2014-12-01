@@ -495,9 +495,6 @@ ENTRY(copyin)
         mov     r12, sp
         stmdb   sp!, {r4, r11, r12, lr, pc}
         sub     r11, r12, #4
-        ldr     r4, userlimit
-        cmp     r0, r4
-        bhi     ASM_LABEL(copy_fault)
         mov     r12, #0
         b       2f
 1:
@@ -511,9 +508,6 @@ ASM_LABEL(known_fault1):                // May be fault here.
         mov     r0, #0      /* Set no error */
         ldmia   sp, {r4, r11, sp, pc}
 
-userlimit:
-        .word   __user_limit__
-
 /** Copy data to user from kernel space.
  * Returns 0 on success, or EFAULT on page fault.
  *
@@ -524,9 +518,6 @@ ENTRY(copyout)
         mov     r12, sp
         stmdb   sp!, {r4, r11, r12, lr, pc}
         sub     r11, r12, #4
-        ldr     r4, userlimit
-        cmp     r1, r4
-        bhi     ASM_LABEL(copy_fault)
         mov     r12, #0
         b       2f
 1:
@@ -551,9 +542,6 @@ ENTRY(copyinstr)
         mov     r12, sp
         stmdb   sp!, {r4, r11, r12, lr, pc}
         sub     r11, r12, #4
-        ldr     r4, userlimit
-        cmp     r0, r4
-        bhi     ASM_LABEL(copy_fault)
         mov     r12, #0
         b       2f
 1:
@@ -566,22 +554,14 @@ ASM_LABEL(known_fault3):                // May be fault here.
 2:
         subs    r2, r2, #1
         bcs     1b
-        mov     r0, #(ENAMETOOLONG)
+        mov     r0, #(-ENAMETOOLONG)
         b       4f
 3:
         mov     r0, #0      /* Set no error */
 4:
         ldmia   sp, {r4, r11, sp, pc}
 
-/*
- * Fault entry for user access
- */
-ENTRY(copy_fault)
-        mov     r0, #(EFAULT)
-        ldmia   sp, {r4, r11, sp, pc}
-
-/*
- * int spl0(void);
+/** int spl0(void);
  */
 ENTRY(spl0)
         ldr     r1, =curspl             // curspl = 0.
@@ -594,8 +574,7 @@ ENTRY(spl0)
         msr     cpsr_c, r1
         mov     pc, lr
 
-/*
- * int splhigh(void);
+/** int splhigh(void);
  */
 ENTRY(splhigh)
         mrs     r1, cpsr                // Disable interrupt.

@@ -239,7 +239,7 @@ int irq_info(struct irqinfo *info)
     vec++;
   }
   if (!found)
-    return ESRCH;
+    return -ESRCH;
 
   irq = irq_table[vec];
   info->vector = irq->vector;

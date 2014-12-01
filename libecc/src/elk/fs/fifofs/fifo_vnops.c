@@ -180,7 +180,7 @@ static int fifo_open(vnode_t vp, int flags)
   if (flags & FWRITE) {
     if (flags & O_NONBLOCK) {
       if (np->fn_readers == 0)
-        return ENXIO;
+        return -ENXIO;
     } else {
       while (np->fn_readers == 0)
         wait_reader(vp);
@@ -321,7 +321,7 @@ static int fifo_write(vnode_t vp, file_t fp, struct uio *uio, size_t *result)
 static int fifo_ioctl(vnode_t vp, file_t fp, u_long cmd, void *arg)
 {
   DPRINTF(AFSDB_CORE, ("fifo_ioctl\n"));
-  return EINVAL;
+  return -EINVAL;
 }
 
 static int fifo_lookup(vnode_t dvp, char *name, vnode_t vp_ro)
@@ -333,7 +333,7 @@ static int fifo_lookup(vnode_t dvp, char *name, vnode_t vp_ro)
   DPRINTF(AFSDB_CORE, ("fifo_lookup: %s\n", name));
 
   if (*name == '\0')
-    return ENOENT;
+    return -ENOENT;
 
   pthread_mutex_lock(&fifo_lock);
 
@@ -348,7 +348,7 @@ static int fifo_lookup(vnode_t dvp, char *name, vnode_t vp_ro)
   }
   if (found == 0) {
     pthread_mutex_unlock(&fifo_lock);
-    return ENOENT;
+    return -ENOENT;
   }
 
   vnode_rw_t vp = vn_lock_rw(vp_ro);
@@ -369,22 +369,22 @@ static int fifo_create(vnode_t dvp, char *name, mode_t mode)
 
 #if 0
   if (!S_ISFIFO(mode))
-    return EINVAL;
+    return -EINVAL;
 #endif
 
   if ((np = kmem_alloc(sizeof(struct fifo_node))) == NULL)
-    return ENOMEM;
+    return -ENOMEM;
 
   if ((np->fn_buf = kmem_alloc(PIPE_BUF)) == NULL) {
     kmem_free(np);
-    return ENOMEM;
+    return -ENOMEM;
   }
   len = strlen(name) + 1;
   np->fn_name = kmem_alloc(len);
   if (np->fn_name == NULL) {
     kmem_free(np->fn_buf);
     kmem_free(np);
-    return ENOMEM;
+    return -ENOMEM;
   }
 
   strlcpy(np->fn_name, name, len);
@@ -455,7 +455,7 @@ static int fifo_readdir(vnode_t vp, file_t fp, struct dirent *dir)
     }
     if (np == NULL) {
       pthread_mutex_unlock(&fifo_lock);
-      return ENOENT;
+      return -ENOENT;
     }
     dir->d_type = DT_FIFO;
     strlcpy((char *)&dir->d_name, np->fn_name,

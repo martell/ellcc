@@ -503,7 +503,7 @@ int device_info(struct devinfo *info)
  */
 int enodev(void)
 {
-  return ENODEV;
+  return -ENODEV;
 }
 
 /* Generic null operation, always returns success.

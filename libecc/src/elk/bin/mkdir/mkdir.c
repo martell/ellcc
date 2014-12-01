@@ -183,7 +183,7 @@ mkpath(char *path, mode_t mode, mode_t dir_mode)
 			}
 			if (!S_ISDIR(sb.st_mode)) {
 					/* Is there, but isn't a directory */
-				errno = ENOTDIR;
+				errno = -ENOTDIR;
 				warn("%s", path);
 				return -1;
 			}

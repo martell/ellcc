@@ -454,7 +454,7 @@ static int sys_ioctl(int fd, u_long request, void *buf)
                           fd, fp, request));
 
   if ((fp->f_flags & (FREAD | FWRITE)) == 0)
-    return EBADF;
+    return -EBADF;
 
   vp = fp->f_vnode;
   vn_lock(vp, LK_SHARED|LK_RETRY);

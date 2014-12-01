@@ -663,7 +663,7 @@ int send_message_q(struct queue *queue, Message msg)
   }
   Envelope *envelope = (Envelope *)kmem_alloc(sizeof(Envelope));
   if (!envelope) {
-    return ENOMEM;
+    return -ENOMEM;
   }
   envelope->message = msg;
 
@@ -695,12 +695,12 @@ int send_message_q(struct queue *queue, Message msg)
 int send_message(int tid, Message msg)
 {
   if (tid < 0 || tid >= THREADS) {
-    return EINVAL;
+    return -EINVAL;
   }
   thread_t *tp = threads[tid];
 
   if (tp == NULL) {
-    return ESRCH;
+    return -ESRCH;
   }
 
   return send_message_q(&tp->queue, msg);
@@ -1854,6 +1854,7 @@ static void init(void)
   bootinfo.ram[1].type = MT_RESERVED;
 #endif
 
+  diag_init();
   page_init();
   kmem_init();
 
@@ -1892,25 +1893,36 @@ static void c_init(void)
   // Set up the RAM file system.
   s = mount("", "/", "ramfs", 0, NULL);
   if (s) {
-    printf("ramfs mount failed: %s\n", strerror(errno));
+    DPRINTF(MSG, ("ramfs mount failed: %s\n", strerror(errno)));
   }
 
   // Create and mount the defice directory.
   s = mkdir("/dev", S_IRWXU);
   if (s) {
-    printf("/dev mkdir failed: %s\n", strerror(errno));
+    DPRINTF(MSG, ("/dev mkdir failed: %s\n", strerror(errno)));
   }
   s = mount("", "/dev", "devfs", 0, NULL);
   if (s) {
-    printf("devfs mount failed: %s\n", strerror(errno));
+    DPRINTF(MSG, ("devfs mount failed: %s\n", strerror(errno)));
   }
 
   // Create the kernel stdin, stdout, and stderr.
   int fd = open("/dev/tty", O_RDWR);
-  assert(fd >= 0);
-  dup2(fd, 0);
-  dup2(fd, 1);
-  dup2(fd, 2);
+  if (fd) {
+    DPRINTF(MSG, ("open(/dev/tty) failed: %s\n", strerror(errno)));
+  }
+  s = dup2(fd, 0);
+  if (s < 0) {
+    DPRINTF(MSG, ("dup2(%d, 0) failed: %s\n", fd, strerror(errno)));
+  }
+  s = dup2(fd, 1);
+  if (s < 0) {
+    DPRINTF(MSG, ("dup2(%d, 1) failed: %s\n", fd, strerror(errno)));
+  }
+  s = dup2(fd, 2);
+  if (s < 0) {
+    DPRINTF(MSG, ("dup2(%d, 2) failed: %s\n", fd, strerror(errno)));
+  }
   if (fd != 0)
       close(fd);
 #endif
