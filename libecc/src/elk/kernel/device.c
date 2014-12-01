@@ -339,9 +339,6 @@ int device_write(device_t dev, void *buf, size_t *nbyte, int blkno)
   size_t count;
   int error;
 
-  if (!user_area(buf))
-    return -EFAULT;
-
   if ((error = device_reference(dev)) != 0)
     return error;
 
