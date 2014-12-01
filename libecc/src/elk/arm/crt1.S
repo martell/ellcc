@@ -2,6 +2,7 @@
 #include "config.h"
 #include "asm.h"
 #include "cpu.h"
+#include "trap.h"
 #include "target.h"
 
 #define KERNBASE 0      // RICH: This will change for high kernel.
@@ -17,8 +18,8 @@
         moveq   r0, #0          ; \
         blxne   r12
 
-	.section ".text","ax"
-	.code 32
+  .section ".text","ax"
+  .code 32
 /** This is the reset start point.
  * For ARM this is a set of eight vectors, four bytes apart.
  * Use the vector to load the pc from a nearby handler function
@@ -26,30 +27,31 @@
  */
         .global _start
 _start:
-	b	reset		        // Relative jump.
+        b       reset                   // Relative jump.
+
         .align  5
 vector_start:
-	/* Exception vector
-	 *
-	 * This table will be copied to an appropriate location.
-	 * (the location is platform specific.)
-	 */
-	ldr	pc, reset_p	        // 0x00 mode: svc.
-	ldr	pc, undefined_p	        // 0x04 mode: ?.
-	ldr	pc, swi_p		// 0x08 mode: svc.
-	ldr	pc, prefetch_p	        // 0x0c mode: abort.
-	ldr	pc, abort_p	        // 0x10 mode: abort.
-	nop				// 0x14 reserved.
-	ldr	pc, irq_p		// 0x18 mode: irq.
-	ldr	pc, fiq_p		// 0x1c mode: fiq.
+/* Exception vector
+ *
+ * This table will be copied to an appropriate location.
+ * (the location is platform specific.)
+ */
+        ldr     pc, reset_p             // 0x00 mode: svc.
+        ldr     pc, undefined_p         // 0x04 mode: ?.
+        ldr     pc, swi_p               // 0x08 mode: svc.
+        ldr     pc, prefetch_p          // 0x0c mode: abort.
+        ldr     pc, abort_p             // 0x10 mode: abort.
+        nop                             // 0x14 reserved.
+        ldr     pc, irq_p               // 0x18 mode: irq.
+        ldr     pc, fiq_p               // 0x1c mode: fiq.
 
-reset_p:	.word	reset
-undefined_p:	.word	undefined
-swi_p:		.word	swi
-prefetch_p:	.word	prefetch
-abort_p:	.word	abort
-irq_p:		.word	irq
-fiq_p:		.word	fiq
+reset_p:        .word  reset
+undefined_p:    .word  undefined
+swi_p:          .word  swi
+prefetch_p:     .word  prefetch
+abort_p:        .word  abort
+irq_p:          .word  irq
+fiq_p:          .word  fiq
 
 vector_end:
 
@@ -181,26 +183,23 @@ done:
  * void vector_copy(vaddr_t dest);
  */
 ENTRY(vector_copy)
-	ldr	r1, =vector_start
-	ldr	r2, =vector_end
+        ldr     r1, =vector_start
+        ldr     r2, =vector_end
 1:
-	ldmia	r1!, {r3}
-	stmia	r0!, {r3}
-	teq	r1, r2
-	bne	1b
-	mov	pc, lr
+        ldmia   r1!, {r3}
+        stmia   r0!, {r3}
+        teq     r1, r2
+        bne     1b
+        mov     pc, lr
 
-#ifdef CONFIG_CACHE
-/*
- * Enable cache
+/** Enable cache
  */
 ENTRY(cache_init)
-	mov	pc, lr
-#endif
+  mov  pc, lr
 
 // main()'s pseudo arguments.
 args:
-  .word  1      // argc
+        .word  1                        // argc
 argv:
         .word   name
         .word   0                       // End of argv.
@@ -208,26 +207,77 @@ argv:
         // Auxv
         .word   0
 
-// RICH: TODO
+#define SAVED_REGS r0-r12, lr           // Registers saved in thread context.
+#define NUM_SAVED 14                    // The number of saved registers.
+
+#if 1 // RICH: TODO
 undefined:
         ldr     r0, =undefined_string
         bl      diag_printf
         b       .
 
-// RICH: TODO
 prefetch:
         ldr     r0, =prefetch_string
         bl      diag_printf
         b       .
 
-// RICH: TODO
 abort:
         ldr     r0, =abort_string
         bl      diag_printf
         b       .
+#else
+/** Undefined instruction
+ */
+undefined:
+        sub     sp, sp, #CTXREGS        // Adjust stack.
+        stmia   sp, {r0-r14}^           // Push r0-r14.
+        nop                             // Instruction gap for stm^.
+        mov     r0, #TRAP_UNDEFINED
+        b       trap_common
 
-#define SAVED_REGS r0-r12, lr   // Registers saved in thread context.
-#define NUM_SAVED 14            // The number of saved registers.
+/** Prefetch abort
+ */
+prefetch:
+        sub     lr, lr, #8              // Adjust the lr.
+        sub     sp, sp, #CTXREGS        // Adjust stack.
+        stmia   sp, {r0-r14}^           // Push r0-r14.
+        nop                             // Instruction gap for stm^.
+        mov     r0, #TRAP_PREFETCH_ABORT
+        b       trap_common
+
+/** Data abort
+ */
+abort:
+        sub     lr, lr, #4              // Adjust the lr.
+        sub     sp, sp, #CTXREGS        // Adjust stack.
+        stmia   sp, {r0-r14}^           // Push r0-r14.
+        nop                             // Instruction gap for stm^.
+        mov     r0, #TRAP_DATA_ABORT
+        b       trap_common
+
+/** Common entry for all traps
+ * r0 - trap type
+ */
+trap_common:
+        add     r5, sp, #CTXREGS
+        str     r5, [sp, #REG_SVCSP]    // Push svc_sp.
+        str     lr, [sp, #REG_PC]       // Push pc.
+        mrs     r5, spsr                // Push cpsr.
+        str     r5, [sp, #REG_CPSR]
+
+        str     r0, [sp, #REG_R0]       // Set trap type to R0.
+        mov     r0, sp
+        bl      trap_handler
+
+        mov     r5, sp
+        ldr     r1, [r5, #REG_CPSR]     // Restore cpsr.
+        msr     spsr_all, r1
+        ldr     lr, [r5, #REG_PC]       // Restore pc (lr).
+        ldr     sp, [r5, #REG_SVCSP]    // Restore svc_sp.
+        ldmfd   r5, {r0-r14}^           // Restore user mode registers.
+        nop                             // Instruction gap for ldm^.
+        movs    pc, lr                  // Exit, with restoring cpsr.
+#endif // RICH
 
 /** Handle an interrupt.
  * 1. Enter SYS mode and save register.
