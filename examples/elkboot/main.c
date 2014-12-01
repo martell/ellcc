@@ -1,4 +1,4 @@
-/* ELK running as a boot strap program.
+/* ELK running as a bootstrap program.
  */
 #include <sys/cdefs.h>
 #include <stdio.h>
