@@ -2,7 +2,10 @@ ENTRY(_start)
 SECTIONS
 {
   /* Program code goes here. */
-  .text : { *(.text) } > rom
+  .text : {
+    __kernel_base__ = .;
+    *(.text)
+  } > rom
 
   /* Handle constructors and destructors. */
   .preinit_array : {
@@ -59,6 +62,11 @@ SECTIONS
   } > rom
   __text_end__ = .;
 
+  .syspage : {
+    __syspage_physical_base__ = . ;
+    __syspage_base__ = . ;
+    . = . + __syspage_size__ ;
+  } > ram
   /* Set up a copy of R/W data in ROM. */
   .data : AT(__text_end__) {
     PROVIDE_HIDDEN(__data_start__ = .);

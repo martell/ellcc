@@ -73,7 +73,7 @@ SECTIONS
   __data_end__ = .;
   . = ALIGN(8);
   /* Define the uninitialized data area. */
-  .bss : { 
+  .bss : {
     __bss_start__ = .;
     *(.bss)
     __bss_end__ = .;
@@ -83,5 +83,3 @@ SECTIONS
   . = . + stack_heap_size;
   __mem_top = .;                /* Allocate the stack and heap. */
 }
-
-

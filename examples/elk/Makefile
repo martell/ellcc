@@ -1,5 +1,5 @@
 # This is a generic Makefile to build programs using ELLCC
-# targeting multiple Linux and ELK (standalone) environments.
+# targeting multiple ELK (standalone) environments.
 # "make help" shows the make targets supported as well as the
 # available target configurations.
 # This Makefile can be placed a directory containing C and/or C++
@@ -38,6 +38,8 @@ else
     ELLCCBIN=~/ellcc/bin/
   endif
 endif
+
+ELLCCLIB=$(ELLCCBIN)../libecc/lib
 
 CXXFLAGS += -MD -MP
 
@@ -113,7 +115,9 @@ $(PROG): elkconfig.ld $(NEEDCLEAN) $(OBJS)
 	$(OUTC)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 %.ld: %.LD
-	$(OUTCPP)$(CPP) -E - <$< | sed -e "s/#.*//" \
+	$(OUTCPP)$(CPP) -E - <$<   -I $(ELLCCLIB)/$(TARGET) \
+				   -I $(ELLCCLIB)/elk \
+                                 | sed -e "s/#.*//" \
                                  | sed -e 's/^\s*//' \
                                  | sed -e '/^\s*$$/d' > $@
 
@@ -184,7 +188,7 @@ help:
 	@cd $(ELLCCBIN)../libecc/config; ls *-elk-*
 
 clean:
-	rm -f *.o $(PROG) $(PROG).bin $(PROG).log
+	rm -f *.o $(PROG) $(PROG).bin $(PROG).log elkconfig.ld
 
 distclean: clean
 	rm config
