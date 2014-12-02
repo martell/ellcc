@@ -2,8 +2,7 @@ ENTRY(_start)
 SECTIONS
 {
   /* Program code goes here. */
-  .text : {
-    __kernel_base__ = .;
+  .text : AT(__kernel_base__) {
     *(.text)
   } > rom
 
