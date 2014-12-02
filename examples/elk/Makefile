@@ -98,7 +98,7 @@ else
   LD=$(CC)
 endif
 
-$(PROG): $(NEEDCLEAN) $(OBJS)
+$(PROG): elkconfig.ld $(NEEDCLEAN) $(OBJS)
 	$(OUTL)$(LD) $(LDFLAGS) -o $(PROG) $(OBJS)
 
 .SUFFIXES: .LD .ld
@@ -113,7 +113,9 @@ $(PROG): $(NEEDCLEAN) $(OBJS)
 	$(OUTC)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 %.ld: %.LD
-	$(OUTCPP)$(CPP) >$@ -E - <$<
+	$(OUTCPP)$(CPP) -E - <$< | sed -e "s/#.*//" \
+                                 | sed -e 's/^\s*//' \
+                                 | sed -e '/^\s*$$/d' > $@
 
 # Find out how to run a program in the current configuration.
 ARCH=$(shell $(ELLCCBIN)ecc-getarch $(TARGET))

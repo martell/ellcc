@@ -39,12 +39,13 @@
  * these memory regions.
  */
 
+// The following are in all syspages.
 __intstk_top__ = __syspage_base__ + 0x2000;
 __abortstk_top__ = __syspage_base__ + 0x3000;
 __undefinedstk_top__ = __syspage_base__ + 0x4000;
 __sysstk_top__ = __syspage_base__ + 0x8000;
 
-/* The following are for MMU systems only. */
+// The following are in MMU syspages only.
 __boot_pgd__ = __syspage_base__ + 0x8000;
 __boot_pgd_physical__ = __syspage_physical_base__ + 0x8000;
 __boot_pte0__ = __syspage_base__ + 0xC000;
@@ -52,59 +53,52 @@ __boot_pte0_physical__ = __syspage_physical_base__ + 0xC000;
 __boot_pte1__ = __syspage_base__ + 0xD000;
 __boot_pte1_physical__ = __syspage_physical_base__ + 0xD000;
 
-/* The syspage size has to be large enough for the preceeding allocations. */
-/* __syspage_size__ = 0x8000;      /* Non-MMU systems. */
-__syspage_size__ = 0xE000;      /* MMU systems. */
+// Set up any non-zero physical bases.
+#ifdef VEXPRESS_A9
+  __syspage_physical_base__ = 0x48000000;
+#else
+  __syspage_physical_base__ = 0x00000000;
+#endif
 
-/* __device_base__ = 0x00000000;   /* Non-MMU systems. */
-__device_base__ = 0xC0000000;   /* MMU systems. */
+// The syspage size has to be large enough for the preceeding allocations.
+#ifdef MMU
+  // MMU systems.
+  __syspage_base__ = 0x80000000;
+  __syspage_size__ = 0xE000;
+  __device_base__ = 0xC0000000;
+  __user_limit__ = 0x7FFFFFFF;
+  __virtual_offset__ = 0x80000000 - __syspage_physical_base__;
+  __dev_offset__ = 0xC0000000;
+  __mmu_enabled__ = 1;
+#else
+  // Non-MMU systems.
+  __syspage_base__ = __syspage_physical_base__;
+  __syspage_size__ = 0x8000;
+  __device_base__ = 0x00000000;
+  __user_limit__ = 0xFFFFFFFF;
+  __virtual_offset__ = 0x00000000;
+  __dev_offset__ = 0x00000000;
+  __mmu_enabled__ = 0;
+#endif
+
 
 __kernel_base__ = __syspage_base__;
 PROVIDE(load_address = __syspage_physical_base__ + __syspage_size__);
 PROVIDE(kernel_start = __syspage_base__ + __syspage_size__);
 
-/* MMU enabled. RAM at address zero. */
-/*
-__syspage_base__ = 0x80000000;
-__syspage_physical_base__ = 0x00000000;
-__user_limit__ = 0x7FFFFFFF;
-__kernel_base__ = 0x80000000;
-__virtual_offset__ = 0x80000000;
-__mmu_enabled__ = 1;
-*/
-
-/* No MMU. RAM at address zero. */
-/*
-__syspage_base__ = 0x00000000;
-__syspage_physical_base__ = 0x00000000;
-__user_limit__ = 0xFFFFFFFF;
-__kernel_base__ = 0x00000000;
-__virtual_offset__ = 0x00000000;
-__mmu_enabled__ = 0;
-*/
-
-/* vexpress-a9: No MMU. RAM starts at address 0x48000000. */
-/*
-__syspage_base__ = 0x48000000;
-__syspage_physical_base__ = 0x48000000;
-__user_limit__ = 0xFFFFFFFF;
-__kernel_base__ = 0x48000000;
-__virtual_offset__ = 0x00000000;
-__mmu_enabled__ = 0;
-*/
-
-/* vexpress-a9: MMU. RAM starts at address 0x48000000. */
-__syspage_base__ = 0x80000000;
-__syspage_physical_base__ = 0x48000000;
-__user_limit__ = 0x7FFFFFFF;
-__virtual_offset__ = 0x80000000 - 0x48000000;
-__mmu_enabled__ = 1;
-
 PROVIDE(stack_heap_size = 4M);          /* RICH: Lose this. */
-INCLUDE ram.ld
 
-/* __dev_offset__ = 0x00000000; /* Non-MMU systems. */
-__dev_offset__ = 0xC0000000; /* MMU systems. */
+#ifdef BOOT
+  MEMORY
+  {
+    rom (rx) : ORIGIN = 0x00000000, LENGTH = 64M
+    ram (! rx) : ORIGIN = 0x48000000, LENGTH = 32M
+  }
+
+  #include "romram.ld"
+#else
+  #include "ram.ld"
+#endif
 
 __pl011_physical_base__ = 0x10009000;
 __pl011_base__ = __pl011_physical_base__ + __dev_offset__;
