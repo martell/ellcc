@@ -44,6 +44,7 @@ CXXFLAGS += -MD -MP
 ifeq ($(VERBOSE),)
   OUT=@
   OUTC=@echo "Compiling $<";
+  OUTCPP=@echo "Preprocessing $<";
   OUTA=@echo "Assembling $<";
   OUTL=@echo "Linking $(PROG)";
   OUTAR=@echo "Making library $(LIBNAME)";
@@ -68,6 +69,7 @@ $(shell echo TARGET=$(TARGET) >config)
 
 # Set up the ELLCC commands.
 CC=$(ELLCCBIN)ecc
+CPP=$(ELLCCBIN)ecc -E -target $(TARGET)
 CXX=$(ELLCCBIN)ecc++
 ELLCCPREFIX= $(ELLCCBIN)ecc-
 AR=$(ELLCCPREFIX)ar rcu
@@ -99,6 +101,8 @@ endif
 $(PROG): $(NEEDCLEAN) $(OBJS)
 	$(OUTL)$(LD) $(LDFLAGS) -o $(PROG) $(OBJS)
 
+.SUFFIXES: .LD .ld
+
 %.o: %.c
 	$(OUTC)$(CC) $(CFLAGS) -c -o $@ $<
 
@@ -107,6 +111,9 @@ $(PROG): $(NEEDCLEAN) $(OBJS)
 
 %.o: %.cpp
 	$(OUTC)$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+%.ld: %.LD
+	$(OUTCPP)$(CPP) >$@ -E - <$<
 
 # Find out how to run a program in the current configuration.
 ARCH=$(shell $(ELLCCBIN)ecc-getarch $(TARGET))
