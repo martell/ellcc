@@ -6,10 +6,11 @@
 #define _arm_pl011_h_
 
 #include "config.h"
+#include "pl011.h"              // RICH: One of these files has to go.
 
-#define IRQ CONFIG_PL011_IRQ
+#define IRQ PL011_IRQ
 
-#define UART(offset) ((volatile unsigned int *)((CONFIG_PL011_BASE + (offset))))
+#define UART(offset) ((volatile unsigned int *)((PL011_BASE + (offset))))
 
 #define UARTDR     UART(0x000)  // Data register.
   #define DOE      0x0800       // Overrun error.

@@ -34,15 +34,14 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-#include "config.h"
+#include "pl011.h"
 #include "kernel.h"
 #include "bootinfo.h"
+#include "busio.h"
 #include "vm.h"
 
-#define UART_BASE CONFIG_PL011_BASE
-#define UART_PHYSICAL_BASE CONFIG_PL011_PHYSICAL_BASE
-#define UART_FR (*(volatile uint32_t *)(UART_BASE + 0x18))
-#define UART_DR    (*(volatile uint32_t *)(UART_BASE + 0x00))
+#define UART_BASE PL011_BASE
+#define UART_PHYSICAL_BASE PL011_PHYSICAL_BASE
 
 // Flag register
 #define FR_RXFE         0x10            // Receive FIFO empty.
@@ -50,9 +49,10 @@
 
 static void serial_putc(int c)
 {
-  while (UART_FR & FR_TXFF)
+  while (bus_read_32(UART_FR) & FR_TXFF)
     continue;
-  UART_DR = (uint32_t)c;
+
+  bus_write_32(UART_DR, (uint32_t)c);
 }
 
 void diag_puts(char *buf)

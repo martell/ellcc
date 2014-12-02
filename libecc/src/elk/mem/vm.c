@@ -665,31 +665,40 @@ static int int_info(struct vminfo *info)
   return -ESRCH;
 }
 
-// RICH: Temporary. Hacked for vexpress-a9
+/* RICH: Temporary. Hacked for vexpress-a9
+ * This table will move.
+ */
 /*
  * Virtual and physical address mapping
  *
  *      { virtual, physical, size, type }
  */
+#if defined(__arm__)
+#include "arm_sp804.h"
+#include "arm_priv.h"
+#include "pl011.h"
+#endif
 static void int_mmu_init(void)
 {
   const struct mmumap mmumap_table[] =
   {
+#if defined(__arm__)
     /** Internal SRAM (4M)
      */
     { 0x80000000, 0x48000000, 0x400000, VMT_RAM },
 
     /** Counter/Timers (1M)
      */
-    { CONFIG_SP804_BASE, CONFIG_SP804_PHYSICAL_BASE, 0x100000, VMT_IO },
+    { SP804_BASE, SP804_PHYSICAL_BASE, SP804_SIZE, VMT_IO },
 
     /** Private memory (1M)
      */
-    { PRIVATE_BASE, PRIVATE_PHYSICAL_BASE, 0x100000, VMT_IO },
+    { ARM_PRIV_BASE, ARM_PRIV_PHYSICAL_BASE, ARM_PRIV_SIZE, VMT_IO },
 
     /** UART 0 (1M)
      */
-    { CONFIG_PL011_BASE, CONFIG_PL011_PHYSICAL_BASE, 0x100000, VMT_IO },
+    { PL011_BASE, PL011_PHYSICAL_BASE, PL011_SIZE, VMT_IO },
+#endif
     { 0,0,0,0 }
   };
 

@@ -86,7 +86,7 @@ static void check_timeout()
 
   // Set up Timer 1 as the short term timer.
   mt = timeout - mt;
-  mt = mt * CLOCK / 1000000000;
+  mt = mt * SP804_CLOCK / 1000000000;
   if (mt < 0) mt = 0;
   *Timer1Load = mt;
   // Enable timer, 32 bit, Divide by 1 clock, oneshot.
@@ -136,7 +136,7 @@ static void short_interrupt(void *arg)
 
 static const IRQHandler timer_irq =
 {
-  .id = IRQ + 32,
+  .id = SP804_IRQ + 32,
   .edge = 0,
   .priority = 0,
   .cpus = 0xFFFFFFFF,         // Send to all CPUs.
@@ -152,10 +152,10 @@ static const IRQHandler timer_irq =
 C_CONSTRUCTOR()
 {
   // Set up the timer.
-  resolution = 1000000000 / (CLOCK / 1); 
+  resolution = 1000000000 / (SP804_CLOCK / 1); 
 
   // Set up Timer 2 as the second timer.
-  *Timer2BGLoad = CLOCK;
+  *Timer2BGLoad = SP804_CLOCK;
   // Register the interrupt handler.
   irq_register(&timer_irq);
   // Enable timer, 32 bit, Divide by 1 clock, periodic.

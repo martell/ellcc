@@ -51,13 +51,19 @@
 #define CONFIG_DIAG_SERIAL 1
 #define CONFIG_NS16550_BASE 0x3F8
 
+#define CONF_IMPORT(a) extern char a[]
+#define CONF_ADDRESS(a) ((unsigned long)(a))
+#define CONF_INT(a) ((int)(intptr_t)(a))
+#define CONF_UNSIGNED(a) ((unsigned)(uintptr_t)(a))
+#define CONF_SIZE(a) ((size_t)(uintptr_t)(a))
+
 // RICH: Get rid of this.
-#define HAVE_MMU 0
-#if HAVE_MMU
-#define DEVOFFSET 0xC0000000
-#else
-#define DEVOFFSET 0x00000000
-#endif
+// #define HAVE_MMU 0
+// #if HAVE_MMU
+// #define DEVOFFSET 0xC0000000
+// #else
+// #define DEVOFFSET 0x00000000
+// #endif
 #define VEXPRESS_A9 1
 //#define INTEGRATORCP 1
 #if defined (VERSATILEPB)
@@ -66,13 +72,13 @@
 #define PERIPHBASE ?
 #define CONFIG_SP804_BASE 0x0101E2000
 #elif defined (VEXPRESS_A9)
-#define CONFIG_PL011_BASE (DEVOFFSET + 0x10009000)
-#define CONFIG_PL011_PHYSICAL_BASE 0x10009000   // RICH
-#define CONFIG_PL011_IRQ 5
-#define PRIVATE_BASE (DEVOFFSET + 0x1E000000)
-#define PRIVATE_PHYSICAL_BASE 0x1E000000
-#define CONFIG_SP804_BASE (DEVOFFSET + 0x10011000)
-#define CONFIG_SP804_PHYSICAL_BASE 0x10011000
+// #define CONFIG_PL011_BASE (DEVOFFSET + 0x10009000)
+// #define CONFIG_PL011_PHYSICAL_BASE 0x10009000   // RICH
+// #define CONFIG_PL011_IRQ 5
+// #define PRIVATE_BASE (DEVOFFSET + 0x1E000000)
+// #define PRIVATE_PHYSICAL_BASE 0x1E000000
+// #define CONFIG_SP804_BASE (DEVOFFSET + 0x10011000)
+// #define CONFIG_SP804_PHYSICAL_BASE 0x10011000
 #elif defined(INTEGRATORCP)
 #define CONFIG_PL011_BASE 0x16000000
 #define CONFIG_PL011_PHYSICAL_BASE 0x16000000   // RICH

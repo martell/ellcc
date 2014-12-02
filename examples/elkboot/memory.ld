@@ -69,3 +69,23 @@ MEMORY
 }
 
 INCLUDE romram.ld
+
+__dev_offset__ = 0x00000000; /* Non-MMU systems. */
+/* __dev_offset__ = 0xC0000000; /* MMU systems. */
+
+__pl011_physical_base__ = 0x10009000;
+__pl011_base__ = __pl011_physical_base__ + __dev_offset__;
+__pl011_size__ = 0x100000;
+__pl011_irq__ = 5;
+__pl011_clock__ = 14745600;
+__pl011_baud_rate__ = 115200;
+
+__arm_priv_physical_base__ = 0x1E000000;
+__arm_priv_base__ = __arm_priv_physical_base__ + __dev_offset__;
+__arm_priv_size__ = 0x100000;
+
+__sp804_physical_base__ = 0x10011000;
+__sp804_base__ = 0x10011000 + __dev_offset__;
+__sp804_size__ = 0x100000;
+__sp804_irq__ = 2;
+__sp804_clock__ = 1000000; /* HZ */

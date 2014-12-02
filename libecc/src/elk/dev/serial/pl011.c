@@ -37,54 +37,12 @@
 #include "tty.h"
 #include "serial.h"
 #include "busio.h"
+#include "pl011.h"
 
 // Make the pl011 driver a loadable feature.
 FEATURE(pl011_dev)
 
 /* #define DEBUG_PL011 1 */
-
-#define UART_BASE       CONFIG_PL011_BASE
-#define UART_IRQ        CONFIG_PL011_IRQ
-#define UART_CLK        14745600
-#define BAUD_RATE       115200
-
-/* UART Registers */
-#define UART_DR         (UART_BASE + 0x00)
-#define UART_RSR        (UART_BASE + 0x04)
-#define UART_ECR        (UART_BASE + 0x04)
-#define UART_FR         (UART_BASE + 0x18)
-#define UART_IBRD       (UART_BASE + 0x24)
-#define UART_FBRD       (UART_BASE + 0x28)
-#define UART_LCRH       (UART_BASE + 0x2c)
-#define UART_CR         (UART_BASE + 0x30)
-#define UART_IMSC       (UART_BASE + 0x38)
-#define UART_MIS        (UART_BASE + 0x40)
-#define UART_ICR        (UART_BASE + 0x44)
-
-// Flag register.
-#define FR_RXFE         0x10    // Receive FIFO empty.
-#define FR_TXFF         0x20    // Transmit FIFO full.
-
-// Masked interrupt status register.
-#define MIS_RX          0x10    // Receive interrupt.
-#define MIS_TX          0x20    // Transmit interrupt.
-
-// Interrupt clear register.
-#define ICR_RX          0x10    // Clear receive interrupt.
-#define ICR_TX          0x20    // Clear transmit interrupt.
-
-// Line control register (High).
-#define LCRH_WLEN8      0x60    // 8 bits.
-#define LCRH_FEN        0x10    // Enable FIFO.
-
-// Control register.
-#define CR_UARTEN       0x0001  // UART enable.
-#define CR_TXE          0x0100  // Transmit enable.
-#define CR_RXE          0x0200  // Receive enable.
-
-// Interrupt mask set/clear register.
-#define IMSC_RX         0x10    // Receive interrupt mask.
-#define IMSC_TX         0x20    // Transmit interrupt mask.
 
 // Forward functions.
 static int pl011_init(struct driver *);
@@ -176,13 +134,14 @@ static void pl011_start(struct serial_port *sp)
   bus_write_32(UART_ICR, 0x07FF);       // Clear all interrupt status.
 
   /** Set baud rate:
-   * IBRD = UART_CLK / (16 * BAUD_RATE)
-   * FBRD = ROUND((64 * MOD(UART_CLK,(16 * BAUD_RATE))) / (16 * BAUD_RATE))
+   * IBRD = PL011_CLOCK / (16 * PL011_BAUD_RATE)
+   * FBRD = ROUND((64 * MOD(PL011_CLOCK,(16 * PL011_BAUD_RATE)))
+   *        / (16 * PL011_BAUD_RATE))
    */
-  divider = UART_CLK / (16 * BAUD_RATE);
-  remainder = UART_CLK % (16 * BAUD_RATE);
-  fraction = (8 * remainder / BAUD_RATE) >> 1;
-  fraction += (8 * remainder / BAUD_RATE) & 1;
+  divider = PL011_CLOCK / (16 * PL011_BAUD_RATE);
+  remainder = PL011_CLOCK % (16 * PL011_BAUD_RATE);
+  fraction = (8 * remainder / PL011_BAUD_RATE) >> 1;
+  fraction += (8 * remainder / PL011_BAUD_RATE) & 1;
   bus_write_32(UART_IBRD, divider);
   bus_write_32(UART_FBRD, fraction);
 
@@ -195,7 +154,7 @@ static void pl011_start(struct serial_port *sp)
 #if 1   // RICH
     static IRQHandler serial_irq =
     {
-        .id = UART_IRQ + 32,
+        .id = PL011_IRQ + 32,
         .edge = 0,
         .priority = IPL_COMM,
         .cpus = 0xFFFFFFFF,         // Send to all CPUs.

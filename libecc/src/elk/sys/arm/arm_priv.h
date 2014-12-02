@@ -5,7 +5,15 @@
 
 #include "config.h"
 
-#define PERIPH(offset) ((volatile unsigned int *)((PRIVATE_BASE + (offset))))
+CONF_IMPORT(__arm_priv_physical_base__);
+CONF_IMPORT(__arm_priv_base__);
+CONF_IMPORT(__arm_priv_size__);
+
+#define ARM_PRIV_BASE CONF_ADDRESS(__arm_priv_base__)
+#define ARM_PRIV_PHYSICAL_BASE CONF_ADDRESS(__arm_priv_physical_base__)
+#define ARM_PRIV_SIZE CONF_ADDRESS(__arm_priv_size__)
+
+#define PERIPH(offset) ((volatile unsigned int *)((ARM_PRIV_BASE + (offset))))
 
 // Snoop control unit.
 #define SCU(offset) PERIPH(0x0000 + (offset))

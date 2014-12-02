@@ -4,10 +4,19 @@
 
 #include "config.h"
 
-#define IRQ 2
-#define CLOCK 1000000
+CONF_IMPORT(__sp804_physical_base__);
+CONF_IMPORT(__sp804_base__);
+CONF_IMPORT(__sp804_size__);
+CONF_IMPORT(__sp804_irq__);
+CONF_IMPORT(__sp804_clock__);
 
-#define T(offset) ((volatile unsigned int *)((CONFIG_SP804_BASE + (offset))))
+#define SP804_BASE CONF_ADDRESS(__sp804_base__)
+#define SP804_PHYSICAL_BASE CONF_ADDRESS(__sp804_physical_base__)
+#define SP804_IRQ CONF_UNSIGNED(__sp804_irq__)
+#define SP804_CLOCK CONF_UNSIGNED(__sp804_clock__)
+#define SP804_SIZE CONF_SIZE(__sp804_clock__)
+
+#define T(offset) ((volatile unsigned int *)((SP804_BASE + (offset))))
 
 #define Timer1Load    T(0x000)  // Timer 1 load register.
 #define Timer1Value   T(0x004)  // Current value register.
