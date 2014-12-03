@@ -1005,7 +1005,6 @@ long long timer_expired(long long when)
 }
 
 #if !HAVE_VM
-// RICH: temporary definitions.
 int vm_allocate(pid_t tid, void **addr, size_t size, int anywhere)
 {
   if (!anywhere) return 1;      // Fail.

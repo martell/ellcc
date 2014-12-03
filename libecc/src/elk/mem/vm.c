@@ -60,7 +60,7 @@
 FEATURE_CLASS(vm, vm)
 
 // Forward declarations.
-static void seg_init(struct seg *);
+static void seg_init(struct seg *, int);
 static struct seg *seg_create(struct seg *, vaddr_t, size_t);
 static void seg_delete(struct seg *, struct seg *);
 static struct seg *seg_lookup(struct seg *, vaddr_t, size_t);
@@ -100,7 +100,7 @@ static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
   }
 
   void *uaddr = *addr;
-  if (anywhere == 0 && !user_area(*addr)) {
+  if (anywhere == 0 && pid && !user_area(*addr)) {
     return -EACCES;
   }
 
@@ -187,7 +187,7 @@ static int int_free(pid_t pid, void *addr, size_t size)
     return -EPERM;
   }
 
-  if (!user_area(addr)) {
+  if (pid && !user_area(addr)) {
     return -EFAULT;
   }
 
@@ -246,7 +246,7 @@ static int int_attribute(pid_t pid, void *addr, size_t size, int attr)
     return -EPERM;
   }
 
-  if (!user_area(addr)) {
+  if (pid && !user_area(addr)) {
     return -ENOMEM;
   }
 
@@ -359,7 +359,7 @@ static int int_map(pid_t target, void *addr, size_t size, void **alloc)
     return -EPERM;
   }
 
-  if (!user_area(addr)) {
+  if (getpid() && !user_area(addr)) {
     return -EFAULT;
   }
 
@@ -442,7 +442,7 @@ static vm_map_t int_create(void)
     return NULL;
   }
 
-  seg_init(&map->head);
+  seg_init(&map->head, 0);
   return map;
 }
 
@@ -717,20 +717,22 @@ static vm_map_t int_init(void)
   kernel_map.pgd = pgd;
   mmu_switch(pgd);
 
-  seg_init(&kernel_map.head);
+  seg_init(&kernel_map.head, 1);
   return &kernel_map;
 }
 
 /** Initialize segment.
  */
-static void seg_init(struct seg *seg)
+static void seg_init(struct seg *seg, int kernel)
 {
+  extern char __end[];            // The end of the kernel .bss area.
   extern struct bootinfo bootinfo;
   seg->next = seg->prev = seg;
   seg->sh_next = seg->sh_prev = seg;
-  seg->addr = PAGE_SIZE;
+  seg->addr = kernel ? round_page((uintptr_t)__end) : PAGE_SIZE;
   seg->phys = 0;
-  seg->size = USERLIMIT - PAGE_SIZE;
+  seg->size = (kernel ? 0L - seg->addr : USERLIMIT) - PAGE_SIZE;
+  diag_printf("kernel = %d, addr = 0x%08lX size = 0x%08zX\n", kernel, seg->addr, seg->size);
   seg->flags = SEG_FREE;
 }
 
