@@ -37,15 +37,25 @@ static int thread_create(const char *name, pthread_t *id,
 {
   pthread_attr_t attr;
   int s = pthread_attr_init(&attr);
-  if (s != 0)
+  if (s != 0) {
     printf("pthread_attr_init: %s\n", strerror(s));
-  if (stack == NULL) {
-    stack = (void *)page_alloc(stack_size);
+    return COMMAND_ERROR;
   }
-  s = pthread_attr_setstack(&attr, stack, stack_size);
-  if (s != 0)
+
+  void *sp;
+  s = vm_allocate(getpid(), &sp, 4096, 1);
+  if (s != 0) {
+    printf("vm_allocate failed %s\n", strerror(-s));
+    return COMMAND_ERROR;
+  }
+
+  s = pthread_attr_setstack(&attr, sp, 4096);
+  if (s != 0) {
     printf("pthread_attr_setstack %s\n", strerror(s));
-  s = pthread_create(id, &attr, start, arg);
+    return COMMAND_ERROR;
+  }
+
+  s = pthread_create(id, NULL, start, arg);
   if (s != 0)
     printf("pthread_create: %s\n", strerror(s));
   return s;
@@ -165,15 +175,30 @@ static int thread3Command(int argc, char **argv)
 
   pthread_attr_t attr;
   int s = pthread_attr_init(&attr);
-  if (s != 0)
+  if (s != 0) {
     printf("pthread_attr_init: %s\n", strerror(s));
-  char *sp = (void *)page_alloc(4096);
+    return COMMAND_ERROR;
+  }
+
+  void *sp;
+  s = vm_allocate(getpid(), &sp, 4096, 1);
+  if (s != 0) {
+    printf("vm_allocate failed %s\n", strerror(-s));
+    return COMMAND_ERROR;
+  }
+
   s = pthread_attr_setstack(&attr, sp, 4096);
-  if (s != 0)
+  if (s != 0) {
     printf("pthread_attr_setstack %s\n", strerror(s));
+    return COMMAND_ERROR;
+  }
+
   s = pthread_create(&id3, &attr, &thread3, NULL);
-  if (s != 0)
+  if (s != 0) {
     printf("pthread_create: %s\n", strerror(s));
+    return COMMAND_ERROR;
+  }
+
   return COMMAND_OK;
 }
 

@@ -66,7 +66,8 @@ static void seg_delete(struct seg *, struct seg *);
 static struct seg *seg_lookup(struct seg *, vaddr_t, size_t);
 static struct seg *seg_alloc(struct seg *, size_t);
 static void seg_free(struct seg *, struct seg *);
-static struct seg *seg_split(struct seg *, struct seg *, vaddr_t, size_t);
+static struct seg *seg_split(struct seg *, struct seg *, vaddr_t,
+                             size_t, vm_map_t);
 static struct seg *seg_reserve(struct seg *, vaddr_t, size_t);
 static int do_allocate(vm_map_t, void **, size_t, int);
 static int do_free(vm_map_t, void *, size_t);
@@ -280,7 +281,7 @@ static int do_attribute(vm_map_t map, void *addr, size_t size, int attr)
 
   if (seg->addr != va) {
     // Not at the beginning, try to split up the segment.
-    seg = seg_split(&map->head, seg, va, size);
+    seg = seg_split(&map->head, seg, va, size, map);
     if (seg == NULL) {
       // The requested area isn't within the original segment.
       return -EINVAL;
@@ -859,13 +860,14 @@ static void seg_free(struct seg *head, struct seg *seg)
 /** Split the segment at the specified address/size.
  */
 static struct seg *seg_split(struct seg *head, struct seg *seg,
-                             vaddr_t addr, size_t size)
+                             vaddr_t addr, size_t size, vm_map_t map)
 {
   struct seg *prev, *next;
   size_t diff;
 
   // Check previous segment to split segment.
   prev = NULL;
+  int flags = seg->flags;       // Save the original flags.
   if (seg->addr != addr) {
     prev = seg;
     diff = (size_t)(addr - seg->addr);
@@ -876,7 +878,20 @@ static struct seg *seg_split(struct seg *head, struct seg *seg,
     seg->flags = prev->flags;
     if (!(seg->flags & SEG_FREE)) {
       // RICH: MMU
+      ASSERT(map != NULL);
+      seg->phys = prev->phys + diff;
+      int map_type;
+      if (flags & SEG_WRITE)
+        map_type = PG_WRITE;
+      else if (flags & SEG_READ)
+        map_type = PG_READ;
+      else
+        map_type = PG_UNMAP;
+
+      if (mmu_map(map->pgd, seg->phys, seg->addr, size, map_type))
+        return NULL;
     }
+
     prev->size = diff;
   }
 
@@ -894,7 +909,13 @@ static struct seg *seg_split(struct seg *head, struct seg *seg,
 
     next->flags = seg->flags;
     if (!(seg->flags & SEG_FREE)) {
-      // RICH: MMU
+      ASSERT(map != NULL);
+      next->phys = seg->phys + size;
+      if (mmu_map(map->pgd, seg->phys, seg->addr, size, PG_WRITE)) {
+        // Undo previous seg_create() operation.
+        seg_free(head, seg);
+        return NULL;
+      }
     }
     seg->size = size;
   }
@@ -912,7 +933,7 @@ static struct seg *seg_reserve(struct seg *head, vaddr_t addr, size_t size)
     return NULL;
 
   // Split the block from the previous and next.
-  struct seg *new = seg_split(head, seg, addr, size);
+  struct seg *new = seg_split(head, seg, addr, size, NULL);
   if (new == NULL)
     return NULL;
 

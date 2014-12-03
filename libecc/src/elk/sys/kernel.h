@@ -63,6 +63,7 @@ extern int debug;
 
 // Thread debug flags.
 #define THRDB_CORE      0x00000001
+#define THRDB_FAULT     0x00000002
 
 // Memory debug flags.
 #define MEMDB_CORE      0x00000010

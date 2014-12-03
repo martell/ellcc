@@ -4,6 +4,7 @@
 #include "cpu.h"
 #include "trap.h"
 #include "target.h"
+#include "context.h"
 
 /** Call a function only if it exists.
  * Act as if it returned 0 or NULL if it's not defined.
@@ -208,7 +209,7 @@ argv:
 #define SAVED_REGS r0-r12, lr           // Registers saved in thread context.
 #define NUM_SAVED 14                    // The number of saved registers.
 
-#if 1 // RICH: TODO
+#if 0 // RICH: TODO
 undefined:
         ldr     r0, =undefined_string
         bl      diag_printf
@@ -265,7 +266,7 @@ trap_common:
 
         str     r0, [sp, #REG_R0]       // Set trap type to R0.
         mov     r0, sp
-        bl      trap_handler
+        bl      CLABEL(trap_handler)
 
         mov     r5, sp
         ldr     r1, [r5, #REG_CPSR]     // Restore cpsr.
@@ -608,6 +609,12 @@ ASM_LABEL(known_fault3):                // May be fault here.
         mov     r0, #0      /* Set no error */
 4:
         ldmia   sp, {r4, r11, sp, pc}
+
+/** Fault entry for user access
+ */
+ENTRY(copy_fault)
+	mov	r0, #(-EFAULT)
+ 	ldmia	sp, {r4, r11, sp, pc}
 
 /** int spl0(void);
  */

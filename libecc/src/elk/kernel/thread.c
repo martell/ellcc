@@ -1128,13 +1128,6 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   }
 
   tp->next = NULL;
-  if (priority == 0) {
-    priority = DEFAULT_PRIORITY;
-  } else if (priority >= PRIORITIES) {
-    priority = PRIORITIES - 1;
-  }
-  tp->priority = priority;
-
   tp->queue = (struct queue)MSG_QUEUE_INITIALIZER;
 
   context_t *cp = (context_t *)stack;

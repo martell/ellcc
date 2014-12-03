@@ -30,6 +30,8 @@
 #ifndef _trap_h_
 #define _trap_h_
 
+#include "config.h"
+
 /** Trap ID
  */
 #define TRAP_UNDEFINED          0
@@ -37,6 +39,11 @@
 #define TRAP_DATA_ABORT         2
 
 #ifndef __ASSEMBLER__
+
+#ifdef ELK_NAMESPACE
+#define trap_handler __elk_trap_handler
+#define trap_dump __elk_trap_dump
+#endif
 
 void trap_handler(struct cpu_regs *);
 void trap_dump(struct cpu_regs *);
