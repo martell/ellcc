@@ -89,15 +89,17 @@ PROVIDE(kernel_start = __syspage_base__ + __syspage_size__);
 PROVIDE(stack_heap_size = 4M);          /* RICH: Lose this. */
 
 #ifdef FLASH
-  __kernel_base__ = 0;
-  MEMORY
-  {
-    // RICH: need symbolic.
-    rom (rx) : ORIGIN = 0x00000000, LENGTH = 64M
-    ram (! rx) : ORIGIN = 0x48000000, LENGTH = 32M
-  }
-
-  #include "romram.ld"
+  // RICH: need symbolic.
+  #ifdef MMU
+    #include "ram.ld"
+  #else
+    MEMORY
+    {
+      rom (rx) : ORIGIN = 0x00000000, LENGTH = 64M
+      ram (! rx) : ORIGIN = 0x48000000, LENGTH = 32M
+    }
+    #include "romram.ld"
+  #endif
 #else
   #include "ram.ld"
 #endif

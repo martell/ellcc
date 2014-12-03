@@ -2,7 +2,7 @@ ENTRY(_start)
 SECTIONS
 {
   /* Program code goes here. */
-  .text : AT(__kernel_base__) {
+  .text : {
     *(.text)
   } > rom
 
@@ -78,7 +78,7 @@ SECTIONS
   } >ram
   . = ALIGN(8);
   /* Define the uninitialized data area. */
-  .bss : { 
+  .bss : {
     PROVIDE_HIDDEN(__bss_start__ = .);
     *(.bss)
     PROVIDE_HIDDEN(__bss_end__ = .);

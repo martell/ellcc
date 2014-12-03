@@ -4,11 +4,11 @@
 
 #define VEXPRESS_A9		// The Versatile Express Cortex-A9 board.
 
+#undef FLASH			// The kernel is in flash.
+
 #define MMU			// Use an MMU.
 
 #define MMAP			// Supply mmap().
-
-#define FLASH			// The kernel is in flash.
 
 #define	FS			// Use a file system.
 

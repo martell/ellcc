@@ -170,7 +170,7 @@ pgd_t mmu_newmap(void)
   memset(pgd, 0, PAGE_SIZE);
 
   // Copy kernel page tables.
-  i = PAGE_DIR(KERNBASE);
+  i = PAGE_DIR(SYSPAGE);
   memcpy(&pgd[i], &boot_pgd[i], (size_t)(1024 - i));
   return pgd;
 }
@@ -185,7 +185,7 @@ void mmu_terminate(pgd_t pgd)
   flush_tlb();
 
   // Release all user page table.
-  for (i = 0; i < PAGE_DIR(KERNBASE); i++) {
+  for (i = 0; i < PAGE_DIR(SYSPAGE); i++) {
     pte = (pte_t)pgd[i];
     if (pte != 0)
       page_free((paddr_t)((paddr_t)pte & PTE_ADDRESS),

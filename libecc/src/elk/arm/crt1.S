@@ -5,8 +5,6 @@
 #include "trap.h"
 #include "target.h"
 
-#define KERNBASE 0      // RICH: This will change for high kernel.
-
 /** Call a function only if it exists.
  * Act as if it returned 0 or NULL if it's not defined.
  * Preserve r0-r3 since they might be arguments.
