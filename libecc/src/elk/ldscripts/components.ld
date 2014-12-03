@@ -6,18 +6,25 @@
   #define PROC_COMMANDS
 #endif
 
-/*EXTERN(__elk_simple_console) /* Simple polling console. */
-/*EXTERN(__elk_fdconsole) /* Temporary interrupt driven console */
+#ifdef SIMPLE_CONSOLE
+  EXTERN(__elk_simple_console) /* Simple polling console. */
+#endif
+
+#ifdef FD_CONSOLE
+  #warning FD_CONSOLE is deprecated and will be removed.
+  EXTERN(__elk_fdconsole) /* Temporary interrupt driven console */
+  #define THREADS
+#endif
 
 #ifdef CONSOLE
   EXTERN(__elk_cons) /* The ELK console device. */
   #ifdef __arm__
     EXTERN(__elk_pl011_dev) /* ARM UART used as a console. */
   #endif
+  #define THREADS
   #define RAMFS
   #define DEVFS
 #endif
-
 
 #ifdef THREADS
   EXTERN(__elk_thread) /* ELK thread handling. */

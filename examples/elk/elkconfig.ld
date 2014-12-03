@@ -37,29 +37,37 @@ __kernel_base__ = __syspage_base__;
 PROVIDE(load_address = __syspage_physical_base__ + __syspage_size__);
 PROVIDE(kernel_start = __syspage_base__ + __syspage_size__);
 PROVIDE(stack_heap_size = 4M);
+__kernel_base__ = 0;
+MEMORY
+{
+rom (rx) : ORIGIN = 0x00000000, LENGTH = 64M
+ram (! rx) : ORIGIN = 0x48000000, LENGTH = 32M
+}
 ENTRY(_start)
 SECTIONS
 {
-.text kernel_start : AT(load_address) { *(.text) }
+.text : AT(__kernel_base__) {
+*(.text)
+} > rom
 .preinit_array : {
 PROVIDE_HIDDEN(__preinit_array_start = .);
 KEEP(*(.preinit_array))
 PROVIDE_HIDDEN(__preinit_array_end = .);
-}
+} > rom
 .elk_init_array : {
 PROVIDE_HIDDEN(__elk_init_array_start = .);
 KEEP(*(SORT_BY_INIT_PRIORITY(.elk_init_array.*)
 SORT_BY_INIT_PRIORITY(.elk_ctors.*)))
 KEEP(*(.elk_init_array .elk_ctors))
 PROVIDE_HIDDEN(__elk_init_array_end = .);
-}
+} > rom
 .elk_fini_array : {
 PROVIDE_HIDDEN(__elk_fini_array_start = .);
 KEEP(*(SORT_BY_INIT_PRIORITY(.elk_fini_array.*)
 SORT_BY_INIT_PRIORITY(.elk_dtors.*)))
 KEEP(*(.elk_fini_array .elk_dtors))
 PROVIDE_HIDDEN(__elk_fini_array_end = .);
-}
+} > rom
 .init_array : {
 PROVIDE_HIDDEN(__init_array_start = .);
 KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*)
@@ -67,7 +75,7 @@ SORT_BY_INIT_PRIORITY(.ctors.*)))
 KEEP(*(.init_array
 EXCLUDE_FILE(*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .ctors))
 PROVIDE_HIDDEN(__init_array_end = .);
-}
+} > rom
 .fini_array : {
 PROVIDE_HIDDEN(__fini_array_start = .);
 KEEP(*(SORT_BY_INIT_PRIORITY(.fini_array.*)
@@ -75,44 +83,45 @@ SORT_BY_INIT_PRIORITY(.dtors.*)))
 KEEP(*(.fini_array
 EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .dtors))
 PROVIDE_HIDDEN(__fini_array_end = .);
-}
+} > rom
 .ctors : {
 KEEP(*crtbegin.o(.ctors))
 KEEP(*crtbegin?.o(.ctors))
 KEEP(*(EXCLUDE_FILE(*crtend.o *crtend?.o) .ctors))
 KEEP(*(SORT(.ctors.*)))
 KEEP(*(.ctors))
-}
+} > rom
 .dtors : {
 KEEP(*crtbegin.o(.dtors))
 KEEP(*crtbegin?.o(.dtors))
 KEEP(*(EXCLUDE_FILE(*crtend.o *crtend?.o) .dtors))
 KEEP(*(SORT(.dtors.*)))
 KEEP(*(.dtors))
-}
+} > rom
 __text_end__ = .;
-__data_start__ = .;
-HIDDEN (_gp = ALIGN (16) + 0x7ff0);
-.got : { *(.got) }
-.sdata :
-{
-PROVIDE (_SDA_BASE_ = 32768);
-*(.sdata .sdata.* .gnu.linkonce.s.*)
-}
-.data : {
+.syspage : {
+__syspage_physical_base__ = . ;
+__syspage_base__ = . ;
+. = . + __syspage_size__ ;
+} > ram
+.data : AT(__text_end__) {
+PROVIDE_HIDDEN(__data_start__ = .);
 *(.data)
-}
-__data_end__ = .;
+} > ram
+.sdata : AT(.) {
+PROVIDE(_SDA_BASE_ = 32768);
+*(.sdata .sdata.* .gnu.linkonce.s.*)
+PROVIDE_HIDDEN(__data_end__ = .);
+} >ram
 . = ALIGN(8);
 .bss : {
-__bss_start__ = .;
+PROVIDE_HIDDEN(__bss_start__ = .);
 *(.bss)
-__bss_end__ = .;
-}
+PROVIDE_HIDDEN(__bss_end__ = .);
+} > ram
 . = ALIGN(8);
 __end = .;
-. = . + stack_heap_size;
-__mem_top = .;
+__mem_top = ORIGIN(ram) + LENGTH(ram);
 }
 __pl011_physical_base__ = 0x10009000;
 __pl011_base__ = __pl011_physical_base__ + __dev_offset__;

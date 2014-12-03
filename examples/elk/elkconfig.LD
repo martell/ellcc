@@ -8,7 +8,7 @@
 
 #define MMAP			// Supply mmap().
 
-#undef FLASH			// The kernel is in flash.
+#define FLASH			// The kernel is in flash.
 
 #define	FS			// Use a file system.
 
