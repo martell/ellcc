@@ -262,7 +262,7 @@ void *kmem_realloc(void *ptr, size_t size)
   struct block_hdr *blk;
   blk = (struct block_hdr *)((vaddr_t)ptr - BLKHDR_SIZE);
   if (blk->magic != BLOCK_MAGIC)
-    panic("kmem_free: invalid address");
+    panic("kmem_realloc: invalid address");
 
   if (blk->size >= size) {
     UNLOCK();

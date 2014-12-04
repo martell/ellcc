@@ -1663,9 +1663,10 @@ static int sys_setsid(void)
 
 static mode_t sys_umask(mode_t new)
 {
-  mode_t old = current->fs->umask;
-  current->fs->umask = new;
-  return old;
+  // RICH: mode_t old = current->fs->umask;
+  // RICH: current->fs->umask = new;
+  // RICH: return old;
+  return 0;
 }
 
 #if ENABLEFDS
@@ -1817,6 +1818,11 @@ static int psCommand(int argc, char **argv)
     return COMMAND_OK;
   }
 
+  struct meminfo meminfo;
+  page_info(&meminfo);
+  printf("Total pages: %lu (%lu bytes), Free pages: %lu (%lu bytes)\n",
+         meminfo.total / PAGE_SIZE, meminfo.total,
+         meminfo.free / PAGE_SIZE, meminfo.free);
   printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %-10.10s \n",
          "PID", "TID", "TADR", "STATE", "PRI", "NAME");
   for (int i = 0;  i < THREADS; ++i) {
