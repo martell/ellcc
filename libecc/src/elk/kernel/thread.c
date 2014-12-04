@@ -109,7 +109,8 @@ struct robust_list_head
   volatile void *volatile pending;
 };
 
-#if RICH
+#define FS 1
+#if FS
 #if ENABLEFDS
 typedef struct fs
 {
@@ -155,7 +156,7 @@ typedef struct thread
 #if ENABLEFDS
   fdset_t fdset;                // File descriptors used by the thread.
   file_t cwd;                   // The current working directory.
-#if RICH
+#if FS
   fs_t fs;                      // The current file system information.
 #endif
 #endif
@@ -387,7 +388,7 @@ static long long slice_time = 5000000;  // The time slice period (ns).
 
 /**** End of ready lock protected variables. ****/
 
-#if RICH
+#if FS
 #if ENABLEFDS
 static struct fs main_thread_fs = {
   .lock = PTHREAD_MUTEX_INITIALIZER,
@@ -405,7 +406,7 @@ static thread_t main_thread = {
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
 
-#if RICH
+#if FS
 #if ENABLEFDS
   .fs = &main_thread_fs,
 #endif
@@ -646,17 +647,19 @@ static void thread_delete(thread_t *tp)
     vfs_close(fp);
   }
 
-#if RICH
-  pthread_mutex_unlock(&tp->fs->lock);
+#if FS
+  pthread_mutex_lock(&tp->fs->lock);
   if (tp->fs->cwd)
     vrele(tp->fs->cwd);
   if (tp->fs->cwd)
     vrele(tp->fs->root);
-  if (--tp->fs->refcnt) {
+  if (--tp->fs->refcnt == 0) {
     pthread_mutex_unlock(&tp->fs->lock);
     pthread_mutex_destroy(&tp->fs->lock);
     kmem_free(tp->fs);
     tp->fs = NULL;
+  } else {
+    pthread_mutex_unlock(&tp->fs->lock);
   }
 #endif
 #endif
@@ -1155,7 +1158,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     ++fp->f_count;
   }
 
-#if RICH
+#if FS
   if (flags & CLONE_FS) {
     // Share file system information.
     pthread_mutex_lock(&tp->fs->lock);
