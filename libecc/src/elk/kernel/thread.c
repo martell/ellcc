@@ -18,13 +18,14 @@
 #include "config.h"                     // Configuration parameters.
 #include "timer.h"
 #define DEFINE_STATE_STRINGS
-#include "thread.h"
 #include "file.h"
 #include "vnode.h"
 #include "page.h"
 #include "kmem.h"
 #include "syspage.h"
 #include "command.h"
+#include "crt1.h"
+#include "thread.h"
 
 
 #if ENABLEFDS
@@ -1941,7 +1942,7 @@ static void init(void)
   // page_reserve(kvtop(SYSPAGE), SYSPAGESZ);
 
   // Initialize the cache.
-  // RICH: cache_init();
+  cache_init();
 
 #endif
 
