@@ -160,8 +160,8 @@ static int parse_args(const char *string, char ***av)
   }
 
   // Allocate enough room for three more pointers:
-  // the start and end of the string and a trailing NULL.
-  char **argv = kmem_alloc((count + 3) * sizeof(char *));
+  // the start and end of the string and two trailing NULLs (argv & environ).
+  char **argv = kmem_alloc((count + 4) * sizeof(char *));
   if (argv == NULL) {
     fprintf(stderr, "out of memory\n");
     return -1;
@@ -190,6 +190,7 @@ static int parse_args(const char *string, char ***av)
 
   // Terminate the list.
   argv[count + 2] = NULL;
+  argv[count + 3] = NULL;
   *av = argv + 2;
   return count;
 }

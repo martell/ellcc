@@ -87,8 +87,9 @@ struct block_hdr
  */
 struct page_hdr
 {
-  u_short     magic;                    // Magic number.
-  u_short     nallocs;                  // Number of allocated blocks.
+  u_short magic;                        // Magic number.
+  u_short nallocs;                      // Number of allocated blocks.
+  u_int pad[3];                         // Align to 16 bytes.
   struct block_hdr first_blk;           // First block in this page.
 };
 
@@ -210,6 +211,8 @@ void *kmem_alloc(size_t size)
       return NULL;
     }
 
+    DPRINTF(MEMDB_KMEM, ("kmem_alloc: physical page allocated 0x%08lx (%zu)\n",
+                         pa, PAGE_SIZE));
     pg = ptokv(pa);
     pg->nallocs = 0;
     pg->magic = PAGE_MAGIC;
@@ -244,6 +247,9 @@ void *kmem_alloc(size_t size)
   p = (void *)((vaddr_t)blk + BLKHDR_SIZE);
 
   UNLOCK();
+  DPRINTF(MEMDB_KMEM, ("kmem_alloc: address 0x%08lx, size = %zu, "
+                       "blk = %p magic = 0x%04x\n",
+                       p, size, blk, blk->magic));
   return p;
 }
 
@@ -302,10 +308,14 @@ void kmem_free(void *ptr)
 
   LOCK();
 
+  DPRINTF(MEMDB_KMEM, ("kmem_free: address 0x%08lx\n", ptr));
+
   // Get the block header.
   blk = (struct block_hdr *)((vaddr_t)ptr - BLKHDR_SIZE);
-  if (blk->magic != BLOCK_MAGIC)
+  if (blk->magic != BLOCK_MAGIC) {
+    DPRINTF(MSG, ("kmem_free: invalid address 0x%08lx\n", ptr));
     panic("kmem_free: invalid address");
+  }
 
   /* Return the block to free list. Since kernel code will
    * request fixed size of memory block, we don't merge the

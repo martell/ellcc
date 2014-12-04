@@ -67,6 +67,9 @@ extern int debug;
 
 // Memory debug flags.
 #define MEMDB_CORE      0x00000010
+#define MEMDB_KMEM      0x00000020
+#define MEMDB_VM        0x00000040
+#define MEMDB_MMAP      0x00000080
 
 // Device debug flags.
 #define DEVDB_CORE      0x00000100

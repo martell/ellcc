@@ -51,6 +51,7 @@ static void *do_mmap(void *addr, size_t length, int prot, int flags,
     return (void *)(intptr_t)s;
   }
 
+  DPRINTF(MEMDB_MMAP, ("mmap: address %p, size %zu\n", p, length));
   return p;
 }
 
@@ -72,7 +73,9 @@ static void *sys_mmap2(void *addr, size_t length, int prot, int flags,
 
 static int sys_munmap(void *addr, size_t length)
 {
-  return -ENOSYS;
+  pid_t pid = getpid();
+  DPRINTF(MEMDB_MMAP, ("munmap: address %p, size %zu\n", addr, length));
+  return vm_free(pid, addr, length);
 }
 
 static int sys_mremap(void *old_addr, size_t old_length,

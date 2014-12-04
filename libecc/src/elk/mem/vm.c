@@ -63,6 +63,7 @@ FEATURE_CLASS(vm, vm)
 static void seg_init(struct seg *, int);
 static struct seg *seg_create(struct seg *, vaddr_t, size_t);
 static void seg_delete(struct seg *, struct seg *);
+static struct seg *seg_merge(struct seg *, vaddr_t, size_t);
 static struct seg *seg_lookup(struct seg *, vaddr_t, size_t);
 static struct seg *seg_alloc(struct seg *, size_t);
 static void seg_free(struct seg *, struct seg *);
@@ -148,6 +149,8 @@ static int do_allocate(vm_map_t map, void **addr, size_t size, int anywhere)
   if ((pa = page_alloc(size)) == 0)
     goto err1;
 
+  DPRINTF(MEMDB_VM, ("vm_allocate: physical page allocated 0x%08lx (%zu)\n",
+                     pa, size));
   if (mmu_map(map->pgd, pa, seg->addr, size, PG_WRITE))
     goto err2;
 
@@ -204,6 +207,11 @@ static int do_free(vm_map_t map, void *addr, size_t size)
   vaddr_t va;
 
   va = trunc_page((vaddr_t)addr);
+
+  // Merge adjacent segments.
+  seg = seg_merge(&map->head, va, size);
+  if (seg == NULL)
+    return -EINVAL;
 
   // Find the target segment.
   seg = seg_lookup(&map->head, va, size);
@@ -310,6 +318,9 @@ static int do_attribute(vm_map_t map, void *addr, size_t size, int attr)
     // Allocate new physical page.
     if ((new_pa = page_alloc(seg->size)) == 0)
       return -ENOMEM;
+
+    DPRINTF(MEMDB_VM, ("vm_attribute: physical page allocated 0x%08lx (%zu)\n",
+                       new_pa, seg->size));
 
     // Copy source page.
     memcpy(ptokv(new_pa), ptokv(old_pa), seg->size);
@@ -563,6 +574,8 @@ static vm_map_t do_dup(vm_map_t org_map)
         if (dest->phys == 0)
           return NULL;
 
+        DPRINTF(MEMDB_VM, ("vm_dup: physical page allocated 0x%08lx (%zu)\n",
+                           dest->phys, src->size));
         // Copy source page.
         memcpy(ptokv(dest->phys), ptokv(src->phys),
                src->size);
@@ -772,6 +785,50 @@ static void seg_delete(struct seg *head, struct seg *seg)
 
   if (head != seg)
     kmem_free(seg);
+}
+
+/** Merge segments at the specified address and size.
+ */
+static struct seg *seg_merge(struct seg *head, vaddr_t addr, size_t size)
+{
+  struct seg *seg;
+
+  seg = head;
+  do {
+    if (!(seg->flags & SEG_FREE) &&
+        seg->addr == addr &&
+        seg->addr + seg->size >= addr) {
+      // The segment starts in this segment.
+      struct seg *next = seg->next;
+      size_t s = seg->size;
+      while (s < size) {
+        if (next == head) {
+          // No match.
+          return NULL;
+        }
+
+        // Add the size, and keep looking.
+        s += next->size;
+        next = next->next;
+      }
+
+      // Found segmends to merge.
+      for (struct seg *sp = seg->next; sp != next; ) {
+        seg->size += sp->size;
+        struct seg *next = sp->next;    // Save the next pointer.
+        if (seg->size < size) {
+          // This segment is in the middle.
+          seg_free(head, sp);
+        }
+        sp = next;
+      }
+
+      return seg;
+    }
+    seg = seg->next;
+  } while (seg != head);
+
+  return NULL;
 }
 
 /** Find the segment at the specified address.

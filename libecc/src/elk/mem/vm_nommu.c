@@ -551,6 +551,8 @@ static struct seg *seg_alloc(struct seg *head, size_t size)
   if ((pa = page_alloc(size)) == 0)
     return NULL;
 
+  DPRINTF(MEMDB_VM, ("vm_nommu: physical page allocated 0x%08lx (%zu)\n",
+                     pa, size));
   if ((seg = seg_create(head, (vaddr_t)pa, size)) == NULL) {
          page_free(pa, size);
     return NULL;
