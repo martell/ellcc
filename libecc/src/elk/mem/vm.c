@@ -732,7 +732,6 @@ static void seg_init(struct seg *seg, int kernel)
   seg->addr = kernel ? round_page((uintptr_t)__end) : PAGE_SIZE;
   seg->phys = 0;
   seg->size = (kernel ? 0L - seg->addr : USERLIMIT) - PAGE_SIZE;
-  diag_printf("kernel = %d, addr = 0x%08lX size = 0x%08zX\n", kernel, seg->addr, seg->size);
   seg->flags = SEG_FREE;
 }
 
