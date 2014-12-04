@@ -901,6 +901,30 @@ static int sys_fchdir(int fd)
   return 0;
 }
 
+static int sys_chroot(char *name)
+{
+  file_t fp;
+  int error;
+
+  if ((error = vfs_open(name, O_RDONLY, 0, &fp)) != 0) {
+    return error;
+  }
+
+  vnode_t dvp;
+  dvp = fp->f_vnode;
+  if (dvp->v_type != VDIR) {
+    vn_unlock(dvp);
+    vfs_close(fp);
+    return -ENOTDIR;
+  }
+
+  replaceroot(dvp);                     // Replace the root directory.
+  vn_unlock(dvp);
+  vfs_close(fp);
+
+  return 0;
+}
+
 static int sys_link(char *oldname, char *newname)
 {
   // RICH: Implement links.
@@ -1119,6 +1143,7 @@ ELK_CONSTRUCTOR()
 {
   SYSCALL(access);
   SYSCALL(chdir);
+  SYSCALL(chroot);
   SYSCALL(close);
   SYSCALL(creat);
   SYSCALL(dup);
