@@ -651,7 +651,7 @@ static void thread_delete(thread_t *tp)
   pthread_mutex_lock(&tp->fs->lock);
   if (tp->fs->cwd)
     vrele(tp->fs->cwd);
-  if (tp->fs->cwd)
+  if (tp->fs->root)
     vrele(tp->fs->root);
   if (--tp->fs->refcnt == 0) {
     pthread_mutex_unlock(&tp->fs->lock);
@@ -1730,8 +1730,8 @@ int setfile(int fd, file_t file)
  */
 vnode_t replacecwd(vnode_t vp)
 {
-  vnode_t oldvp = current->cwd;
-  current->cwd = vp;
+  vnode_t oldvp = current->fs->cwd;
+  current->fs->cwd = vp;
   return oldvp;
 }
 
@@ -1741,7 +1741,7 @@ vnode_t replacecwd(vnode_t vp)
 int getpath(const char *name, char *path)
 {
   // Find the current directory name.
-  const char *cwd = current->cwd ? current->cwd->v_path : "/";
+  const char *cwd = current->fs->cwd ? current->fs->cwd->v_path : "/";
   const char *src = name;
   char *tgt = path;
   int len = 0;

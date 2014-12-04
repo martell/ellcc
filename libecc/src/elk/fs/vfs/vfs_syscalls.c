@@ -872,6 +872,7 @@ static int sys_chdir(char *name)
   }
 
   vn_unlock(dvp);
+  vref(dvp);
   dvp = replacecwd(dvp);                // Replace the current directory.
   if (dvp) {
     vrele(dvp);                         // Release the old one.
