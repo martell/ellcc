@@ -69,7 +69,7 @@ static int vfs_open(char *name, int flags, mode_t mode, file_t *fpp)
 
   // Find the full path name (may be relative to cwd).
   char path[PATH_MAX];
-  if ((error = getpath(name, path)) != 0)
+  if ((error = getpath(name, path, 1)) != 0)
     return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_open: path=%s flags=%o mode=%x\n",
@@ -629,7 +629,7 @@ static int sys_mkdir(char *name, mode_t mode)
 
   // Find the full path name (may be relative to cwd).
   char path[PATH_MAX];
-  if ((error = getpath(name, path)) != 0)
+  if ((error = getpath(name, path, 1)) != 0)
     return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_mkdir: path=%s mode=%d\n", path, mode));
@@ -664,7 +664,7 @@ static int sys_rmdir(char *name)
 
   // Find the full path name (may be relative to cwd).
   char path[PATH_MAX];
-  if ((error = getpath(name, path)) != 0)
+  if ((error = getpath(name, path, 1)) != 0)
     return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_rmdir: path=%s\n", path));
@@ -707,7 +707,7 @@ static int sys_mknod(char *name, mode_t mode)
 
   // Find the full path name (may be relative to cwd).
   char path[PATH_MAX];
-  if ((error = getpath(name, path)) != 0)
+  if ((error = getpath(name, path, 1)) != 0)
     return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_mknod: path=%s mode=%d\n",  path, mode));
@@ -754,9 +754,9 @@ static int sys_rename(char *srcname, char *destname)
   // Find the full path names (may be relative to cwd).
   char src[PATH_MAX];
   char dest[PATH_MAX];
-  if ((error = getpath(srcname, src)) != 0)
+  if ((error = getpath(srcname, src, 1)) != 0)
     return error;
-  if ((error = getpath(destname, dest)) != 0)
+  if ((error = getpath(destname, dest, 1)) != 0)
     return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_rename: src=%s dest=%s\n", src, dest));
@@ -843,7 +843,7 @@ static int sys_getcwd(char *buf, unsigned long size)
 {
   int error;
   char path[PATH_MAX];
-  if ((error = getpath("", path)) != 0)
+  if ((error = getpath("", path, 0)) != 0)
     return error;
 
   if (strlen(path) + 1 >= size) {
@@ -936,7 +936,7 @@ static int sys_unlink(char *name)
   vnode_t vp, dvp;
   int error;
   char path[PATH_MAX];
-  if ((error = getpath(name, path)) != 0)
+  if ((error = getpath(name, path, 1)) != 0)
     return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_unlink: path=%s\n", path));
@@ -998,7 +998,7 @@ static int sys_stat(char *name, struct stat *st)
   vnode_t vp;
   int error;
   char path[PATH_MAX];
-  if ((error = getpath(name, path)) != 0)
+  if ((error = getpath(name, path, 1)) != 0)
     return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_stat: path=%s\n", path));
@@ -1016,7 +1016,7 @@ static int sys_lstat(char *name, struct stat *st)
   vnode_t vp;
   int error;
   char path[PATH_MAX];
-  if ((error = getpath(name, path)) != 0)
+  if ((error = getpath(name, path, 1)) != 0)
     return error;
 
   DPRINTF(VFSDB_SYSCALL, ("sys_lstat: path=%s\n", path));

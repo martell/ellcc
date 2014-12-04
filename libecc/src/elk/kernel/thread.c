@@ -1727,7 +1727,7 @@ void replaceroot(vnode_t vp)
 /** Get a file path.
  * This function returns the full path name for the file name.
  */
-int getpath(const char *name, char *path)
+int getpath(const char *name, char *path, int full)
 {
   // Find the current directory name.
   const char *cwd = current->fs->cwd ? current->fs->cwd->v_path : "/";

@@ -158,45 +158,44 @@ static const char *state_names[LASTSTATE] =
 /** Timer expired handler.
  * This function is called in an interrupt context.
  */
-long long timer_expired(long long when);
+long long timer_expired(long long);
 
 /** Make an entry in the sleeping list and sleep
  * or schedule a callback.
  */
 typedef void (*TimerCallback)(void *, void *);
-void *timer_wake_at(long long when,
-                    TimerCallback callback, void *arg1, void *arg2, int retval);
+void *timer_wake_at(long long, TimerCallback, void *, void *, int);
 
 struct file;
 
 /** Get a file pointer corresponding to a file descriptor.
  */
-int getfile(int fd, struct file **filep);
+int getfile(int, struct file **);
 
 /** Get a duplicate file descriptor.
  */
-int getdup(int fd, struct file **filep, int free);
+int getdup(int, struct file **, int);
 
 /** Get a file descriptor.
  */
-int allocfd(file_t fp);
+int allocfd(file_t);
 
 /** Set a file pointer corresponding to a file descriptor.
  */
-int setfile(int fd, struct file *file);
+int setfile(int, struct file *);
 
 /** Replace the old cwd with a new one.
  */
-void replacecwd(vnode_t vp);
+void replacecwd(vnode_t);
 
 /** Replace the old root with a new one.
  */
-void replaceroot(vnode_t vp);
+void replaceroot(vnode_t);
 
 /** Get a file path.
  * This function returns the full path name for the file name.
  */
-int getpath(const char *name, char *path);
+int getpath(const char *, char *, int);
 
 /** Get the current thread id.
  */
@@ -208,7 +207,7 @@ int getpid(void);
 
 /** Get the memory map of a process.
  */
-vm_map_t getmap(pid_t pid);
+vm_map_t getmap(pid_t);
 
 /** Get the memory map of the current process.
  */
@@ -216,11 +215,11 @@ vm_map_t getcurmap(void);
 
 /** Is a pid valid?
  */
-int pid_valid(pid_t pid);
+int pid_valid(pid_t);
 
 /** Send a signal to a process.
  */
-int signal_post(pid_t pid, int sig);
+int signal_post(pid_t, int);
 
 struct dpc
 {
@@ -232,6 +231,6 @@ struct dpc
 
 /** Schedule a defered procedure call.
  */
-void sched_dpc(struct dpc *dpc, void (*fn)(void *), void *arg);
+void sched_dpc(struct dpc *, void (*)(void *), void *);
 
 #endif

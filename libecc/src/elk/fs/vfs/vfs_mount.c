@@ -229,7 +229,7 @@ static int sys_mount(char *dev, char *name, char *fsname, int flags,
 
   // Find the full path name (may be relative to cwd).
   char dir[PATH_MAX];
-  if ((error = getpath(name, dir)) != 0)
+  if ((error = getpath(name, dir, 1)) != 0)
     return error;
 
   DPRINTF(VFSDB_CORE, ("VFS: mounting %s at %s\n", fsname, dir));
@@ -355,7 +355,7 @@ static int sys_umount2(char *name, int flags)
 
   // Find the full path name (may be relative to cwd).
   char path[PATH_MAX];
-  if ((error = getpath(name, path)) != 0)
+  if ((error = getpath(name, path, 1)) != 0)
     return error;
 
   LOCK();
