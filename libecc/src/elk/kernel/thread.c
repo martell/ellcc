@@ -108,6 +108,19 @@ struct robust_list_head
   volatile void *volatile pending;
 };
 
+#if RICH
+#if ENABLEFDS
+typedef struct fs
+{
+  pthread_mutex_t lock;
+  int refcnt;                   // Reference count;
+  vnode_t cwd;                  // The current working directory.
+  vnode_t root;                 // The root directory.
+  mode_t umask;                 // The current umask.
+} *fs_t;
+#endif
+#endif
+
 typedef struct thread
 {
   // The saved_ctx and tls fields must be first in the thread struct.
@@ -140,7 +153,10 @@ typedef struct thread
 #endif
 #if ENABLEFDS
   fdset_t fdset;                // File descriptors used by the thread.
-  file_t cwdfp;                 // The current working directory.
+  file_t cwd;                   // The current working directory.
+#if RICH
+  fs_t fs;                      // The current file system information.
+#endif
 #endif
 #if HAVE_VM
   vm_map_t map;                 // The process memory map.
@@ -370,11 +386,30 @@ static long long slice_time = 5000000;  // The time slice period (ns).
 
 /**** End of ready lock protected variables. ****/
 
+#if RICH
+#if ENABLEFDS
+static struct fs main_thread_fs = {
+  .lock = PTHREAD_MUTEX_INITIALIZER,
+  .refcnt = 1,
+  .cwd = NULL,
+  .root = NULL,
+  .umask = 0
+};
+#endif
+#endif
+
 // The main thread's initial values.
 static thread_t main_thread = {
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
+
+#if RICH
+#if ENABLEFDS
+  .fs = &main_thread_fs,
+#endif
+#endif
+
 #if HAVE_CAPABILITY
   .cap = SUPERUSER_CAPABILITIES,
   .ecap = SUPERUSER_CAPABILITIES,
@@ -605,10 +640,24 @@ static void thread_delete(thread_t *tp)
 
 #if ENABLEFDS
   fdset_release(&tp->fdset);
-  file_t fp = tp->cwdfp;
+  file_t fp = tp->cwd;
   if (fp) {
     vfs_close(fp);
   }
+
+#if RICH
+  pthread_mutex_unlock(&tp->fs->lock);
+  if (tp->fs->cwd)
+    vrele(tp->fs->cwd);
+  if (tp->fs->cwd)
+    vrele(tp->fs->root);
+  if (--tp->fs->refcnt) {
+    pthread_mutex_unlock(&tp->fs->lock);
+    pthread_mutex_destroy(&tp->fs->lock);
+    kmem_free(tp->fs);
+    tp->fs = NULL;
+  }
+#endif
 #endif
 
   kmem_free(tp);
@@ -1090,17 +1139,52 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   // Clone or copy the file descriptor set.
   int s = fdset_clone(&tp->fdset, flags & CLONE_FILES);
   if (s < 0) {
+#if HAVE_VM
+    vm_terminate(tp->map);
+#endif
     release_tid(tid);
     kmem_free(tp);
     return s;
   }
 
   // Increment the current directory reference counts.
-  file_t fp = tp->cwdfp;
+  file_t fp = tp->cwd;
   if (fp) {
     vref(fp->f_vnode);
     ++fp->f_count;
   }
+
+#if RICH
+  if (flags & CLONE_FS) {
+    // Share file system information.
+    pthread_mutex_lock(&tp->fs->lock);
+    ++tp->fs->refcnt;
+    pthread_mutex_unlock(&tp->fs->lock);
+  } else {
+    // Start a new file system context.
+    fs_t pfs = tp->fs;                  // Get the parent fs.
+    pthread_mutex_lock(&pfs->lock);
+    tp->fs = kmem_alloc(sizeof(*tp->fs));
+    if (tp->fs == NULL) {
+      pthread_mutex_unlock(&pfs->lock);
+#if HAVE_VM
+      vm_terminate(tp->map);
+#endif
+      release_tid(tid);
+      kmem_free(tp);
+      return -ENOMEM;
+    }
+
+    *tp->fs = *pfs;
+    pthread_mutex_init(&tp->fs->lock, NULL);
+    tp->fs->refcnt = 1;
+    if (tp->fs->cwd)
+      vref(tp->fs->cwd);
+    if (tp->fs->cwd)
+      vref(tp->fs->root);
+    pthread_mutex_unlock(&pfs->lock);
+  }
+#endif
 
 #endif
 
@@ -1643,8 +1727,8 @@ int setfile(int fd, file_t file)
  */
 file_t replacecwd(file_t fp)
 {
-  file_t oldfp = current->cwdfp;
-  current->cwdfp = fp;
+  file_t oldfp = current->cwd;
+  current->cwd = fp;
   return oldfp;
 }
 
@@ -1654,7 +1738,7 @@ file_t replacecwd(file_t fp)
 int getpath(const char *name, char *path)
 {
   // Find the current directory name.
-  const char *cwd = current->cwdfp ? current->cwdfp->f_vnode->v_path : "/";
+  const char *cwd = current->cwd ? current->cwd->f_vnode->v_path : "/";
   const char *src = name;
   char *tgt = path;
   int len = 0;
