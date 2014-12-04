@@ -14,10 +14,8 @@
 
 #include "sanitizer_common/sanitizer_allocator.h"
 #include "sanitizer_common/sanitizer_allocator_interface.h"
-#include "sanitizer_common/sanitizer_stackdepot.h"
 #include "msan.h"
 #include "msan_allocator.h"
-#include "msan_chained_origin_depot.h"
 #include "msan_origin.h"
 #include "msan_thread.h"
 
@@ -97,11 +95,8 @@ static void *MsanAllocate(StackTrace *stack, uptr size,
   } else if (flags()->poison_in_malloc) {
     __msan_poison(res, size);
     if (__msan_get_track_origins()) {
-      u32 stack_id = StackDepotPut(*stack);
-      CHECK(stack_id);
-      u32 id;
-      ChainedOriginDepotPut(stack_id, Origin::kHeapRoot, &id);
-      __msan_set_origin(allocated, size, Origin(id, 1).raw_id());
+      Origin o = Origin::CreateHeapOrigin(stack);
+      __msan_set_origin(allocated, size, o.raw_id());
     }
   }
   MSAN_MALLOC_HOOK(res, size);
@@ -120,11 +115,8 @@ void MsanDeallocate(StackTrace *stack, void *p) {
   if (flags()->poison_in_free) {
     __msan_poison(p, size);
     if (__msan_get_track_origins()) {
-      u32 stack_id = StackDepotPut(*stack);
-      CHECK(stack_id);
-      u32 id;
-      ChainedOriginDepotPut(stack_id, Origin::kHeapRoot, &id);
-      __msan_set_origin(p, size, Origin(id, 1).raw_id());
+      Origin o = Origin::CreateHeapOrigin(stack);
+      __msan_set_origin(p, size, o.raw_id());
     }
   }
   allocator.Deallocate(&cache, p);

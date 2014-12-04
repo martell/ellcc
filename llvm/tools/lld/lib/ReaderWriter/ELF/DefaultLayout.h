@@ -144,12 +144,11 @@ public:
     }
   };
 
-
-  // Merged Sections contain the map of Sectionnames to a vector of sections,
+  // Output Sections contain the map of Sectionnames to a vector of sections,
   // that have been merged to form a single section
-  typedef std::map<StringRef, MergedSections<ELFT> *> MergedSectionMapT;
-  typedef typename std::vector<MergedSections<ELFT> *>::iterator
-  MergedSectionIter;
+  typedef std::map<StringRef, OutputSection<ELFT> *> OutputSectionMapT;
+  typedef
+      typename std::vector<OutputSection<ELFT> *>::iterator OutputSectionIter;
 
   typedef std::unordered_map<SectionKey, AtomSection<ELFT> *, SectionKeyHash,
                              SectionKeyEq> SectionMapT;
@@ -174,8 +173,12 @@ public:
   SectionOrder getSectionOrder(StringRef name, int32_t contentType,
                                int32_t contentPermissions) override;
 
-  /// \brief This maps the input sections to the output section names
-  virtual StringRef getSectionName(const DefinedAtom *da) const;
+  /// \brief Return the name of the input section by decoding the input
+  /// sectionChoice.
+  virtual StringRef getInputSectionName(const DefinedAtom *da) const;
+
+  /// \brief Return the name of the output section from the input section.
+  virtual StringRef getOutputSectionName(StringRef inputSectionName) const;
 
   /// \brief Gets or creates a section.
   AtomSection<ELFT> *getSection(
@@ -193,9 +196,9 @@ public:
   ErrorOr<const lld::AtomLayout &> addAtom(const Atom *atom) override;
 
   /// \brief Find an output Section given a section name.
-  MergedSections<ELFT> *findOutputSection(StringRef name) {
-    auto iter = _mergedSectionMap.find(name);
-    if (iter == _mergedSectionMap.end())
+  OutputSection<ELFT> *findOutputSection(StringRef name) {
+    auto iter = _outputSectionMap.find(name);
+    if (iter == _outputSectionMap.end())
       return nullptr;
     return iter->second;
   }
@@ -206,8 +209,8 @@ public:
                         FindByName(name));
   }
 
-  // Merge sections with the same name into a MergedSections
-  void mergeSimilarSections();
+  // Output sections with the same name into a OutputSection
+  void createOutputSections();
 
   void assignSectionsToSegments() override;
 
@@ -233,12 +236,12 @@ public:
       si->doPreFlight();
   }
 
-  inline bool findAtomAddrByName(StringRef name, uint64_t &addr) override {
+  inline const AtomLayout *findAtomLayoutByName(StringRef name) const override {
     for (auto sec : _sections)
-      if (auto section = dyn_cast<Section<ELFT> >(sec))
-        if (section->findAtomAddrByName(name, addr))
-         return true;
-    return false;
+      if (auto section = dyn_cast<Section<ELFT>>(sec))
+        if (auto *al = section->findAtomLayoutByName(name))
+          return al;
+    return nullptr;
   }
 
   inline void setHeader(ELFHeader<ELFT> *elfHeader) { _elfHeader = elfHeader; }
@@ -247,7 +250,7 @@ public:
     _programHeader = p;
   }
 
-  inline range<MergedSectionIter> mergedSections() { return _mergedSections; }
+  inline range<OutputSectionIter> outputSections() { return _outputSections; }
 
   inline range<ChunkIter> sections() { return _sections; }
 
@@ -311,12 +314,12 @@ protected:
 protected:
   llvm::BumpPtrAllocator _allocator;
   SectionMapT _sectionMap;
-  MergedSectionMapT _mergedSectionMap;
+  OutputSectionMapT _outputSectionMap;
   AdditionalSegmentMapT _additionalSegmentMap;
   SegmentMapT _segmentMap;
   std::vector<Chunk<ELFT> *> _sections;
   std::vector<Segment<ELFT> *> _segments;
-  std::vector<MergedSections<ELFT> *> _mergedSections;
+  std::vector<OutputSection<ELFT> *> _outputSections;
   ELFHeader<ELFT> *_elfHeader;
   ProgramHeader<ELFT> *_programHeader;
   LLD_UNIQUE_BUMP_PTR(RelocationTable<ELFT>) _dynamicRelocationTable;
@@ -400,7 +403,8 @@ Layout::SectionOrder DefaultLayout<ELFT>::getSectionOrder(
 
 /// \brief This maps the input sections to the output section names
 template <class ELFT>
-StringRef DefaultLayout<ELFT>::getSectionName(const DefinedAtom *da) const {
+StringRef
+DefaultLayout<ELFT>::getInputSectionName(const DefinedAtom *da) const {
   if (da->sectionChoice() == DefinedAtom::sectionBasedOnContent) {
     switch (da->contentType()) {
     case DefinedAtom::typeCode:
@@ -419,7 +423,14 @@ StringRef DefaultLayout<ELFT>::getSectionName(const DefinedAtom *da) const {
       break;
     }
   }
-  return llvm::StringSwitch<StringRef>(da->customSectionName())
+  return da->customSectionName();
+}
+
+/// \brief This maps the input sections to the output section names.
+template <class ELFT>
+StringRef
+DefaultLayout<ELFT>::getOutputSectionName(StringRef inputSectionName) const {
+  return llvm::StringSwitch<StringRef>(inputSectionName)
       .StartsWith(".text", ".text")
       .StartsWith(".ctors", ".ctors")
       .StartsWith(".dtors", ".dtors")
@@ -432,7 +443,7 @@ StringRef DefaultLayout<ELFT>::getSectionName(const DefinedAtom *da) const {
       .StartsWith(".tbss", ".tbss")
       .StartsWith(".init_array", ".init_array")
       .StartsWith(".fini_array", ".fini_array")
-      .Default(da->customSectionName());
+      .Default(inputSectionName);
 }
 
 /// \brief Gets the segment for a output section
@@ -536,7 +547,11 @@ template <class ELFT>
 AtomSection<ELFT> *DefaultLayout<ELFT>::getSection(
     StringRef sectionName, int32_t contentType,
     DefinedAtom::ContentPermissions permissions) {
-  const SectionKey sectionKey(sectionName, permissions);
+  // FIXME: We really need the file path here in the SectionKey, when that
+  // is available, replace the sectionKey that has outputSectionName to the
+  // inputSectionName.
+  StringRef outputSectionName = getOutputSectionName(sectionName);
+  const SectionKey sectionKey(outputSectionName, permissions);
   auto sec = _sectionMap.find(sectionKey);
   if (sec != _sectionMap.end())
     return sec->second;
@@ -544,6 +559,7 @@ AtomSection<ELFT> *DefaultLayout<ELFT>::getSection(
       getSectionOrder(sectionName, contentType, permissions);
   AtomSection<ELFT> *newSec =
       createSection(sectionName, contentType, permissions, sectionOrder);
+  newSec->setOutputSectionName(outputSectionName);
   newSec->setOrder(sectionOrder);
   _sections.push_back(newSec);
   _sectionMap.insert(std::make_pair(sectionKey, newSec));
@@ -562,7 +578,7 @@ ErrorOr<const lld::AtomLayout &> DefaultLayout<ELFT>::addAtom(const Atom *atom) 
         definedAtom->permissions();
     const DefinedAtom::ContentType contentType = definedAtom->contentType();
 
-    StringRef sectionName = getSectionName(definedAtom);
+    StringRef sectionName = getInputSectionName(definedAtom);
     AtomSection<ELFT> *section =
         getSection(sectionName, contentType, permissions);
 
@@ -604,27 +620,27 @@ ErrorOr<const lld::AtomLayout &> DefaultLayout<ELFT>::addAtom(const Atom *atom) 
   }
 }
 
-/// Merge sections with the same name into a MergedSections
-template<class ELFT>
-void
-DefaultLayout<ELFT>::mergeSimilarSections() {
-  MergedSections<ELFT> *mergedSection;
+/// Output sections with the same name into a OutputSection
+template <class ELFT> void DefaultLayout<ELFT>::createOutputSections() {
+  OutputSection<ELFT> *outputSection;
 
   for (auto &si : _sections) {
-    const std::pair<StringRef, MergedSections<ELFT> *>
-      currentMergedSections(si->name(), nullptr);
-    std::pair<typename MergedSectionMapT::iterator, bool>
-                            mergedSectionInsert
-                            (_mergedSectionMap.insert(currentMergedSections));
-    if (!mergedSectionInsert.second) {
-      mergedSection = mergedSectionInsert.first->second;
+    Section<ELFT> *section = dyn_cast<Section<ELFT>>(si);
+    if (!section)
+      continue;
+    const std::pair<StringRef, OutputSection<ELFT> *> currentOutputSection(
+        section->outputSectionName(), nullptr);
+    std::pair<typename OutputSectionMapT::iterator, bool> outputSectionInsert(
+        _outputSectionMap.insert(currentOutputSection));
+    if (!outputSectionInsert.second) {
+      outputSection = outputSectionInsert.first->second;
     } else {
-      mergedSection = new (_allocator.Allocate<MergedSections<ELFT>>())
-        MergedSections<ELFT>(si->name());
-      _mergedSections.push_back(mergedSection);
-      mergedSectionInsert.first->second = mergedSection;
+      outputSection = new (_allocator.Allocate<OutputSection<ELFT>>())
+          OutputSection<ELFT>(section->outputSectionName());
+      _outputSections.push_back(outputSection);
+      outputSectionInsert.first->second = outputSection;
     }
-    mergedSection->appendSection(si);
+    outputSection->appendSection(si);
   }
 }
 
@@ -636,33 +652,33 @@ template <class ELFT> void DefaultLayout<ELFT>::assignSectionsToSegments() {
                    [](Chunk<ELFT> *A, Chunk<ELFT> *B) {
     return A->order() < B->order();
   });
-  // Merge all sections
-  mergeSimilarSections();
+  // Create output sections.
+  createOutputSections();
   // Set the ordinal after sorting the sections
   int ordinal = 1;
-  for (auto msi : _mergedSections) {
-    msi->setOrdinal(ordinal);
-    for (auto ai : msi->sections()) {
+  for (auto osi : _outputSections) {
+    osi->setOrdinal(ordinal);
+    for (auto ai : osi->sections()) {
       ai->setOrdinal(ordinal);
     }
     ++ordinal;
   }
-  for (auto msi : _mergedSections) {
-    for (auto ai : msi->sections()) {
+  for (auto osi : _outputSections) {
+    for (auto ai : osi->sections()) {
       if (auto section = dyn_cast<Section<ELFT> >(ai)) {
         if (!hasOutputSegment(section))
           continue;
 
-        msi->setLoadableSection(section->isLoadableSection());
+        osi->setLoadableSection(section->isLoadableSection());
 
         // Get the segment type for the section
         int64_t segmentType = getSegmentType(section);
 
-        msi->setHasSegment();
+        osi->setHasSegment();
         section->setSegmentType(segmentType);
         StringRef segmentName = section->segmentKindToStr();
 
-        int64_t lookupSectionFlag = msi->flags();
+        int64_t lookupSectionFlag = osi->flags();
         if ((!(lookupSectionFlag & llvm::ELF::SHF_WRITE)) &&
             (_context.mergeRODataToTextSegment()))
           lookupSectionFlag &= ~llvm::ELF::SHF_EXECINSTR;
@@ -750,7 +766,7 @@ DefaultLayout<ELFT>::assignVirtualAddress() {
   for (auto si : _segments) {
     if (si->segmentType() == llvm::ELF::PT_LOAD) {
       firstLoadSegment = si;
-      si->firstSection()->setAlign(si->align2());
+      si->firstSection()->setAlign(si->alignment());
       break;
     }
   }
@@ -800,12 +816,12 @@ DefaultLayout<ELFT>::assignVirtualAddress() {
       section->assignFileOffsets(section->fileOffset());
   }
   // Set the size of the merged Sections
-  for (auto msi : _mergedSections) {
+  for (auto osi : _outputSections) {
     uint64_t sectionfileoffset = 0;
     uint64_t startFileOffset = 0;
     uint64_t sectionsize = 0;
     bool isFirstSection = true;
-    for (auto si : msi->sections()) {
+    for (auto si : osi->sections()) {
       if (isFirstSection) {
         startFileOffset = si->fileOffset();
         isFirstSection = false;
@@ -814,16 +830,16 @@ DefaultLayout<ELFT>::assignVirtualAddress() {
       sectionsize = si->fileSize();
     }
     sectionsize = (sectionfileoffset - startFileOffset) + sectionsize;
-    msi->setFileOffset(startFileOffset);
-    msi->setSize(sectionsize);
+    osi->setFileOffset(startFileOffset);
+    osi->setSize(sectionsize);
   }
   // Set the virtual addr of the merged Sections
-  for (auto msi : _mergedSections) {
+  for (auto osi : _outputSections) {
     uint64_t sectionstartaddr = 0;
     uint64_t startaddr = 0;
     uint64_t sectionsize = 0;
     bool isFirstSection = true;
-    for (auto si : msi->sections()) {
+    for (auto si : osi->sections()) {
       if (isFirstSection) {
         startaddr = si->virtualAddr();
         isFirstSection = false;
@@ -832,8 +848,8 @@ DefaultLayout<ELFT>::assignVirtualAddress() {
       sectionsize = si->memSize();
     }
     sectionsize = (sectionstartaddr - startaddr) + sectionsize;
-    msi->setMemSize(sectionsize);
-    msi->setAddr(startaddr);
+    osi->setMemSize(sectionsize);
+    osi->setAddr(startaddr);
   }
 }
 
@@ -855,7 +871,7 @@ void DefaultLayout<ELFT>::assignFileOffsetsForMiscSections() {
     section = dyn_cast<Section<ELFT>>(si);
     if (section && DefaultLayout<ELFT>::hasOutputSegment(section))
       continue;
-    fileoffset = llvm::RoundUpToAlignment(fileoffset, si->align2());
+    fileoffset = llvm::RoundUpToAlignment(fileoffset, si->alignment());
     si->setFileOffset(fileoffset);
     si->setVirtualAddr(0);
     fileoffset += si->fileSize();

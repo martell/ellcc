@@ -13,6 +13,7 @@
 
 #include "CodeGenFunction.h"
 #include "CGCleanup.h"
+#include "CGCXXABI.h"
 #include "CGObjCRuntime.h"
 #include "TargetInfo.h"
 #include "clang/AST/StmtCXX.h"
@@ -50,15 +51,6 @@ static llvm::Constant *getThrowFn(CodeGenModule &CGM) {
     llvm::FunctionType::get(CGM.VoidTy, Args, /*IsVarArgs=*/false);
 
   return CGM.CreateRuntimeFunction(FTy, "__cxa_throw");
-}
-
-static llvm::Constant *getReThrowFn(CodeGenModule &CGM) {
-  // void __cxa_rethrow();
-
-  llvm::FunctionType *FTy =
-    llvm::FunctionType::get(CGM.VoidTy, /*IsVarArgs=*/false);
-
-  return CGM.CreateRuntimeFunction(FTy, "__cxa_rethrow");
 }
 
 static llvm::Constant *getGetExceptionPtrFn(CodeGenModule &CGM) {
@@ -425,19 +417,19 @@ llvm::Value *CodeGenFunction::getSelectorFromSlot() {
 
 void CodeGenFunction::EmitCXXThrowExpr(const CXXThrowExpr *E,
                                        bool KeepInsertionPoint) {
-  if (CGM.getTarget().getTriple().isKnownWindowsMSVCEnvironment()) {
-    ErrorUnsupported(E, "throw expression");
-    return;
-  }
-
   if (!E->getSubExpr()) {
-    EmitNoreturnRuntimeCallOrInvoke(getReThrowFn(CGM), None);
+    CGM.getCXXABI().emitRethrow(*this, /*isNoReturn*/true);
 
     // throw is an expression, and the expression emitters expect us
     // to leave ourselves at a valid insertion point.
     if (KeepInsertionPoint)
       EmitBlock(createBasicBlock("throw.cont"));
 
+    return;
+  }
+
+  if (CGM.getTarget().getTriple().isKnownWindowsMSVCEnvironment()) {
+    ErrorUnsupported(E, "throw expression");
     return;
   }
 
@@ -753,7 +745,7 @@ llvm::BasicBlock *CodeGenFunction::EmitLandingPad() {
   EmitBlock(lpad);
 
   llvm::LandingPadInst *LPadInst =
-    Builder.CreateLandingPad(llvm::StructType::get(Int8PtrTy, Int32Ty, NULL),
+    Builder.CreateLandingPad(llvm::StructType::get(Int8PtrTy, Int32Ty, nullptr),
                              getOpaquePersonalityFn(CGM, personality), 0);
 
   llvm::Value *LPadExn = Builder.CreateExtractValue(LPadInst, 0);
@@ -1281,7 +1273,7 @@ void CodeGenFunction::ExitCXXTryStmt(const CXXTryStmt &S, bool IsFnTryBlock) {
     // constructor function-try-block's catch handler (p14), so this
     // really only applies to destructors.
     if (doImplicitRethrow && HaveInsertPoint()) {
-      EmitRuntimeCallOrInvoke(getReThrowFn(CGM));
+      CGM.getCXXABI().emitRethrow(*this, /*isNoReturn*/false);
       Builder.CreateUnreachable();
       Builder.ClearInsertionPoint();
     }
@@ -1565,7 +1557,7 @@ llvm::BasicBlock *CodeGenFunction::getTerminateLandingPad() {
   // Tell the backend that this is a landing pad.
   const EHPersonality &Personality = EHPersonality::get(CGM);
   llvm::LandingPadInst *LPadInst =
-    Builder.CreateLandingPad(llvm::StructType::get(Int8PtrTy, Int32Ty, NULL),
+    Builder.CreateLandingPad(llvm::StructType::get(Int8PtrTy, Int32Ty, nullptr),
                              getOpaquePersonalityFn(CGM, Personality), 0);
   LPadInst->addClause(getCatchAllValue(*this));
 
@@ -1641,7 +1633,7 @@ llvm::BasicBlock *CodeGenFunction::getEHResumeBlock(bool isCleanup) {
   llvm::Value *Sel = getSelectorFromSlot();
 
   llvm::Type *LPadType = llvm::StructType::get(Exn->getType(),
-                                               Sel->getType(), NULL);
+                                               Sel->getType(), nullptr);
   llvm::Value *LPadVal = llvm::UndefValue::get(LPadType);
   LPadVal = Builder.CreateInsertValue(LPadVal, Exn, 0, "lpad.val");
   LPadVal = Builder.CreateInsertValue(LPadVal, Sel, 1, "lpad.val");

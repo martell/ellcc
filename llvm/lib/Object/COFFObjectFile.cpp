@@ -414,7 +414,8 @@ static uint32_t getNumberOfRelocations(const coff_section *Sec,
     if (getObject(FirstReloc, M, reinterpret_cast<const coff_relocation*>(
         base + Sec->PointerToRelocations)))
       return 0;
-    return FirstReloc->VirtualAddress;
+    // -1 to exclude this first relocation entry.
+    return FirstReloc->VirtualAddress - 1;
   }
   return Sec->NumberOfRelocations;
 }
@@ -1060,7 +1061,7 @@ symbol_iterator COFFObjectFile::getRelocationSymbol(DataRefImpl Rel) const {
   else if (SymbolTable32)
     Ref.p = reinterpret_cast<uintptr_t>(SymbolTable32 + R->SymbolTableIndex);
   else
-    return symbol_end();
+    llvm_unreachable("no symbol table pointer!");
   return symbol_iterator(SymbolRef(Ref, this));
 }
 

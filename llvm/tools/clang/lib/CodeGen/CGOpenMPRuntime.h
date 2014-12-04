@@ -64,6 +64,8 @@ public:
     /// \brief Implicit barrier in 'single' directive.
     OMP_IDENT_BARRIER_IMPL_SINGLE = 0x140
   };
+
+private:
   enum OpenMPRTLFunction {
     /// \brief Call to void __kmpc_fork_call(ident_t *loc, kmp_int32 argc,
     /// kmpc_micro microtask, ...);
@@ -94,10 +96,13 @@ public:
     // kmp_int32 num_threads);
     OMPRTL__kmpc_push_num_threads,
     // Call to void __kmpc_flush(ident_t *loc, ...);
-    OMPRTL__kmpc_flush
+    OMPRTL__kmpc_flush,
+    // Call to kmp_int32 __kmpc_master(ident_t *, kmp_int32 global_tid);
+    OMPRTL__kmpc_master,
+    // Call to void __kmpc_end_master(ident_t *, kmp_int32 global_tid);
+    OMPRTL__kmpc_end_master,
   };
 
-private:
   CodeGenModule &CGM;
   /// \brief Default const ident_t object used for initialization of all other
   /// ident_t objects.
@@ -230,6 +235,13 @@ private:
                                    llvm::Value *Ctor, llvm::Value *CopyCtor,
                                    llvm::Value *Dtor, SourceLocation Loc);
 
+  /// \brief Returns corresponding lock object for the specified critical region
+  /// name. If the lock object does not exist it is created, otherwise the
+  /// reference to the existing copy is returned.
+  /// \param CriticalName Name of the critical region.
+  ///
+  llvm::Value *GetCriticalRegionLock(StringRef CriticalName);
+
 public:
   explicit CGOpenMPRuntime(CodeGenModule &CGM);
   virtual ~CGOpenMPRuntime() {}
@@ -270,28 +282,21 @@ public:
                                  llvm::Value *OutlinedFn,
                                  llvm::Value *CapturedStruct);
 
-  /// \brief Returns corresponding lock object for the specified critical region
-  /// name. If the lock object does not exist it is created, otherwise the
-  /// reference to the existing copy is returned.
+  /// \brief Emits a critical region.
   /// \param CriticalName Name of the critical region.
-  ///
-  llvm::Value *GetCriticalRegionLock(StringRef CriticalName);
+  /// \param CriticalOpGen Generator for the statement associated with the given
+  /// critical region.
+  virtual void EmitOMPCriticalRegion(CodeGenFunction &CGF,
+                                     StringRef CriticalName,
+                                     const std::function<void()> &CriticalOpGen,
+                                     SourceLocation Loc);
 
-  /// \brief Emits start of the critical region by calling void
-  /// __kmpc_critical(ident_t *loc, kmp_int32 global_tid, kmp_critical_name
-  /// * \a RegionLock)
-  /// \param RegionLock The lock object for critical region.
-  virtual void EmitOMPCriticalRegionStart(CodeGenFunction &CGF,
-                                          llvm::Value *RegionLock,
-                                          SourceLocation Loc);
-
-  /// \brief Emits end of the critical region by calling void
-  /// __kmpc_end_critical(ident_t *loc, kmp_int32 global_tid, kmp_critical_name
-  /// * \a RegionLock)
-  /// \param RegionLock The lock object for critical region.
-  virtual void EmitOMPCriticalRegionEnd(CodeGenFunction &CGF,
-                                        llvm::Value *RegionLock,
-                                        SourceLocation Loc);
+  /// \brief Emits a master region.
+  /// \param MasterOpGen Generator for the statement associated with the given
+  /// master region.
+  virtual void EmitOMPMasterRegion(CodeGenFunction &CGF,
+                                   const std::function<void()> &MasterOpGen,
+                                   SourceLocation Loc);
 
   /// \brief Emits a barrier for OpenMP threads.
   /// \param Flags Flags for the barrier.

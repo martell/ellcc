@@ -781,7 +781,7 @@ static bool hasLibrary(const PECOFFLinkingContext &ctx, FileNode *fileNode) {
   ErrorOr<StringRef> path = fileNode->getPath(ctx);
   if (!path)
     return false;
-  for (std::unique_ptr<InputElement> &p : ctx.getLibraryGroup()->elements())
+  for (std::unique_ptr<InputElement> &p : ctx.getInputGraph().inputElements())
     if (auto *f = dyn_cast<FileNode>(p.get()))
       if (*path == *f->getPath(ctx))
         return true;
@@ -1180,6 +1180,7 @@ bool WinLinkDriver::parse(int argc, const char *argv[],
       // any effect.
       // TODO: This should disable dead stripping. Currently we can't do that
       // because removal of associative sections depends on dead stripping.
+      ctx.setDebug(true);
       break;
 
     case OPT_verbose:
@@ -1265,6 +1266,10 @@ bool WinLinkDriver::parse(int argc, const char *argv[],
 
     case OPT_INPUT:
       inputFiles.push_back(ctx.allocate(inputArg->getValue()));
+      break;
+
+    case OPT_pdb:
+      ctx.setPDBFilePath(inputArg->getValue());
       break;
 
     case OPT_lldmoduledeffile:
@@ -1392,10 +1397,8 @@ bool WinLinkDriver::parse(int argc, const char *argv[],
     ctx.setEntryNode(entry.get());
     ctx.getInputGraph().addInputElement(std::move(entry));
 
-    // The container for all library files.
-    std::unique_ptr<Group> group(new PECOFFGroup(ctx));
-    ctx.setLibraryGroup(group.get());
-    ctx.getInputGraph().addInputElement(std::move(group));
+    // Add a group-end marker.
+    ctx.getInputGraph().addInputElement(llvm::make_unique<GroupEnd>(0));
   }
 
   // Add the library files to the library group.
@@ -1404,7 +1407,7 @@ bool WinLinkDriver::parse(int argc, const char *argv[],
       if (isReadingDirectiveSection)
         if (lib->parse(ctx, diag))
           return false;
-      ctx.getLibraryGroup()->addFile(std::move(lib));
+      ctx.addLibraryFile(std::move(lib));
     }
   }
 

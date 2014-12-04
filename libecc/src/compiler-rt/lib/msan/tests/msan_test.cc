@@ -18,7 +18,6 @@
 
 #include "sanitizer/allocator_interface.h"
 #include "sanitizer/msan_interface.h"
-#include "msandr_test_so.h"
 
 #include <inttypes.h>
 #include <stdlib.h>
@@ -1831,6 +1830,16 @@ TEST(MemorySanitizer, wcsnrtombs) {
   EXPECT_POISONED(buff[2]);
 }
 
+TEST(MemorySanitizer, wmemset) {
+    wchar_t x[25];
+    break_optimization(x);
+    EXPECT_POISONED(x[0]);
+    wmemset(x, L'A', 10);
+    EXPECT_EQ(x[0], L'A');
+    EXPECT_EQ(x[9], L'A');
+    EXPECT_POISONED(x[10]);
+}
+
 TEST(MemorySanitizer, mbtowc) {
   const char *x = "abc";
   wchar_t wx;
@@ -3539,8 +3548,7 @@ struct S {
   U2 b;
 };
 
-// http://code.google.com/p/memory-sanitizer/issues/detail?id=6
-TEST(MemorySanitizerOrigins, DISABLED_InitializedStoreDoesNotChangeOrigin) {
+TEST(MemorySanitizerOrigins, InitializedStoreDoesNotChangeOrigin) {
   if (!TrackingOrigins()) return;
 
   S s;

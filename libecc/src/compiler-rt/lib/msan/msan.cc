@@ -207,10 +207,10 @@ void PrintWarningWithOrigin(uptr pc, uptr bp, u32 origin) {
                 common_flags()->fast_unwind_on_fatal);
 
   u32 report_origin =
-    (__msan_get_track_origins() && Origin(origin).isValid()) ? origin : 0;
+    (__msan_get_track_origins() && Origin::isValidId(origin)) ? origin : 0;
   ReportUMR(&stack, report_origin);
 
-  if (__msan_get_track_origins() && !Origin(origin).isValid()) {
+  if (__msan_get_track_origins() && !Origin::isValidId(origin)) {
     Printf(
         "  ORIGIN: invalid (%x). Might be a bug in MemorySanitizer origin "
         "tracking.\n    This could still be a bug in your code, too!\n",
@@ -260,32 +260,9 @@ u32 ChainOrigin(u32 id, StackTrace *stack) {
   if (t && t->InSignalHandler())
     return id;
 
-  Origin o(id);
-  int depth = o.depth();
-  // 0 means unlimited depth.
-  if (flags()->origin_history_size > 0 && depth > 0) {
-    if (depth >= flags()->origin_history_size) {
-      return id;
-    } else {
-      ++depth;
-    }
-  }
-
-  StackDepotHandle h = StackDepotPut_WithHandle(*stack);
-  if (!h.valid()) return id;
-
-  if (flags()->origin_history_per_stack_limit > 0) {
-    int use_count = h.use_count();
-    if (use_count > flags()->origin_history_per_stack_limit) return id;
-  }
-
-  u32 chained_id;
-  bool inserted = ChainedOriginDepotPut(h.id(), o.id(), &chained_id);
-
-  if (inserted && flags()->origin_history_per_stack_limit > 0)
-    h.inc_use_count_unsafe();
-
-  return Origin(chained_id, depth).raw_id();
+  Origin o = Origin::FromRawId(id);
+  Origin chained = Origin::CreateChainedOrigin(o, stack);
+  return chained.raw_id();
 }
 
 }  // namespace __msan
@@ -385,8 +362,7 @@ void __msan_init() {
   __msan_clear_on_return();
   if (__msan_get_track_origins())
     VPrintf(1, "msan_track_origins\n");
-  if (!InitShadow(/* prot1 */ true, /* prot2 */ true,
-                  /* map_shadow */ true, __msan_get_track_origins())) {
+  if (!InitShadow(/* map_shadow */ true, __msan_get_track_origins())) {
     Printf("FATAL: MemorySanitizer can not mmap the shadow memory.\n");
     Printf("FATAL: Make sure to compile with -fPIE and to link with -pie.\n");
     Printf("FATAL: Disabling ASLR is known to cause this error.\n");
@@ -398,10 +374,17 @@ void __msan_init() {
 
   Symbolizer::GetOrInit()->AddHooks(EnterSymbolizer, ExitSymbolizer);
 
-  GetThreadStackAndTls(/* main */ true, &msan_stack_bounds.stack_addr,
-                       &msan_stack_bounds.stack_size,
-                       &msan_stack_bounds.tls_addr,
-                       &msan_stack_bounds.tls_size);
+  if (common_flags()->coverage) {
+    __sanitizer_cov_init();
+    Atexit(__sanitizer_cov_dump);
+  }
+
+  MsanTSDInit(MsanTSDDtor);
+
+  MsanThread *main_thread = MsanThread::Create(0, 0);
+  SetCurrentThread(main_thread);
+  main_thread->ThreadStart();
+
   VPrintf(1, "MemorySanitizer init done\n");
 
   msan_init_is_running = 0;
@@ -552,14 +535,14 @@ void __msan_set_alloca_origin4(void *a, uptr size, char *descr, uptr pc) {
     CHECK_LT(idx, kNumStackOriginDescrs);
     StackOriginDescr[idx] = descr + 4;
     StackOriginPC[idx] = pc;
-    ChainedOriginDepotPut(idx, Origin::kStackRoot, &id);
+    id = Origin::CreateStackOrigin(idx).raw_id();
     *id_ptr = id;
     if (print)
       Printf("First time: idx=%d id=%d %s %p \n", idx, id, descr + 4, pc);
   }
   if (print)
     Printf("__msan_set_alloca_origin: descr=%s id=%x\n", descr + 4, id);
-  __msan_set_origin(a, size, Origin(id, 1).raw_id());
+  __msan_set_origin(a, size, id);
 }
 
 u32 __msan_chain_origin(u32 id) {

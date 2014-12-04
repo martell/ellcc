@@ -249,24 +249,24 @@ void OutputELFWriter<ELFT>::buildAtomToAddressMap(const File &file) {
 template<class ELFT>
 void OutputELFWriter<ELFT>::buildSectionHeaderTable() {
   ScopedTask task(getDefaultDomain(), "buildSectionHeaderTable");
-  for (auto mergedSec : _layout.mergedSections()) {
-    if (mergedSec->kind() != Chunk<ELFT>::Kind::ELFSection &&
-        mergedSec->kind() != Chunk<ELFT>::Kind::AtomSection)
+  for (auto outputSection : _layout.outputSections()) {
+    if (outputSection->kind() != Chunk<ELFT>::Kind::ELFSection &&
+        outputSection->kind() != Chunk<ELFT>::Kind::AtomSection)
       continue;
-    if (mergedSec->hasSegment())
-      _shdrtab->appendSection(mergedSec);
+    if (outputSection->hasSegment())
+      _shdrtab->appendSection(outputSection);
   }
 }
 
 template<class ELFT>
 void OutputELFWriter<ELFT>::assignSectionsWithNoSegments() {
   ScopedTask task(getDefaultDomain(), "assignSectionsWithNoSegments");
-  for (auto mergedSec : _layout.mergedSections()) {
-    if (mergedSec->kind() != Chunk<ELFT>::Kind::ELFSection &&
-        mergedSec->kind() != Chunk<ELFT>::Kind::AtomSection)
+  for (auto outputSection : _layout.outputSections()) {
+    if (outputSection->kind() != Chunk<ELFT>::Kind::ELFSection &&
+        outputSection->kind() != Chunk<ELFT>::Kind::AtomSection)
       continue;
-    if (!mergedSec->hasSegment())
-      _shdrtab->appendSection(mergedSec);
+    if (!outputSection->hasSegment())
+      _shdrtab->appendSection(outputSection);
   }
   _layout.assignFileOffsetsForMiscSections();
   for (auto sec : _layout.sections())
@@ -302,7 +302,9 @@ template <class ELFT> void OutputELFWriter<ELFT>::createDefaultSections() {
   _layout.addSection(_shdrtab.get());
 
   for (auto sec : _layout.sections()) {
-    if (sec->name() != ".eh_frame")
+    // TODO: use findOutputSection
+    auto section = dyn_cast<Section<ELFT>>(sec);
+    if (!section || section->outputSectionName() != ".eh_frame")
       continue;
     _ehFrameHeader.reset(new (_alloc) EHFrameHeader<ELFT>(
         _context, ".eh_frame_hdr", _layout,
@@ -426,9 +428,10 @@ template <class ELFT> std::error_code OutputELFWriter<ELFT>::setELFHeader() {
   _elfHeader->e_shentsize(_shdrtab->entsize());
   _elfHeader->e_shnum(_shdrtab->numHeaders());
   _elfHeader->e_shstrndx(_shstrtab->ordinal());
-  uint64_t virtualAddr = 0;
-  _layout.findAtomAddrByName(_context.entrySymbolName(), virtualAddr);
-  _elfHeader->e_entry(virtualAddr);
+  if (const auto *al = _layout.findAtomLayoutByName(_context.entrySymbolName()))
+    _elfHeader->e_entry(al->_virtualAddr);
+  else
+    _elfHeader->e_entry(0);
 
   return std::error_code();
 }

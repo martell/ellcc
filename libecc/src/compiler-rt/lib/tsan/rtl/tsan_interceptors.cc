@@ -1799,9 +1799,16 @@ TSAN_INTERCEPTOR(uptr, fwrite, const void *p, uptr size, uptr nmemb, void *f) {
   return REAL(fwrite)(p, size, nmemb, f);
 }
 
+static void FlushStreams() {
+  // Flushing all the streams here may freeze the process if a child thread is
+  // performing file stream operations at the same time.
+  REAL(fflush)(stdout);
+  REAL(fflush)(stderr);
+}
+
 TSAN_INTERCEPTOR(void, abort, int fake) {
   SCOPED_TSAN_INTERCEPTOR(abort, fake);
-  REAL(fflush)(0);
+  FlushStreams();
   REAL(abort)(fake);
 }
 
@@ -2130,7 +2137,7 @@ TSAN_INTERCEPTOR(int, vfork, int fake) {
 
 static int OnExit(ThreadState *thr) {
   int status = Finalize(thr);
-  REAL(fflush)(0);
+  FlushStreams();
   return status;
 }
 
@@ -2354,10 +2361,7 @@ static void finalize(void *arg) {
   ThreadState *thr = cur_thread();
   int status = Finalize(thr);
   // Make sure the output is not lost.
-  // Flushing all the streams here may freeze the process if a child thread is
-  // performing file stream operations at the same time.
-  REAL(fflush)(stdout);
-  REAL(fflush)(stderr);
+  FlushStreams();
   if (status)
     REAL(_exit)(status);
 }

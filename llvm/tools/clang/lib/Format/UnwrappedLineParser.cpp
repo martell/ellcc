@@ -418,6 +418,8 @@ void UnwrappedLineParser::parseBlock(bool MustBeDeclaration, bool AddLevel,
 }
 
 static bool IsGoogScope(const UnwrappedLine &Line) {
+  // FIXME: Closure-library specific stuff should not be hard-coded but be
+  // configurable.
   if (Line.Tokens.size() < 4)
     return false;
   auto I = Line.Tokens.begin();
@@ -754,6 +756,13 @@ void UnwrappedLineParser::parseStructuralElement() {
       parseRecord();
       // A record declaration or definition is always the start of a structural
       // element.
+      break;
+    case tok::period:
+      nextToken();
+      // In Java, classes have an implicit static member "class".
+      if (Style.Language == FormatStyle::LK_Java && FormatTok &&
+          FormatTok->is(tok::kw_class))
+        nextToken();
       break;
     case tok::semi:
       nextToken();

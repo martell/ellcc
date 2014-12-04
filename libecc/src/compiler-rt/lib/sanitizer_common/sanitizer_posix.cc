@@ -278,9 +278,8 @@ void MaybeOpenReportFile() {
   if (pid == stoptheworld_tracer_pid)
     pid = stoptheworld_tracer_ppid;
   if (report_fd_pid == pid) return;
-  InternalScopedBuffer<char> report_path_full(4096);
-  internal_snprintf(report_path_full.data(), report_path_full.size(),
-                    "%s.%zu", report_path_prefix, pid);
+  InternalScopedString report_path_full(kMaxPathLength);
+  report_path_full.append("%s.%zu", report_path_prefix, pid);
   uptr openrv = OpenFile(report_path_full.data(), true);
   if (internal_iserror(openrv)) {
     report_fd = kStderrFd;
@@ -309,7 +308,7 @@ void RawWrite(const char *buffer) {
 
 bool GetCodeRangeForFile(const char *module, uptr *start, uptr *end) {
   uptr s, e, off, prot;
-  InternalScopedString buff(4096);
+  InternalScopedString buff(kMaxPathLength);
   MemoryMappingLayout proc_maps(/*cache_enabled*/false);
   while (proc_maps.Next(&s, &e, &off, buff.data(), buff.size(), &prot)) {
     if ((prot & MemoryMappingLayout::kProtectionExecute) != 0

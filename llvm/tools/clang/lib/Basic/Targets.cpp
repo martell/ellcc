@@ -1386,6 +1386,8 @@ namespace {
     1,    // opencl_global
     3,    // opencl_local
     4,    // opencl_constant
+    // FIXME: generic has to be added to the target
+    0,    // opencl_generic
     1,    // cuda_device
     4,    // cuda_constant
     3,    // cuda_shared
@@ -1393,6 +1395,16 @@ namespace {
   class NVPTXTargetInfo : public TargetInfo {
     static const char * const GCCRegNames[];
     static const Builtin::Info BuiltinInfo[];
+
+  // The GPU profiles supported by the NVPTX backend
+  enum GPUKind {
+    GK_NONE,
+    GK_SM20,
+    GK_SM21,
+    GK_SM30,
+    GK_SM35,
+  } GPU;
+
   public:
     NVPTXTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
       BigEndian = false;
@@ -1403,11 +1415,34 @@ namespace {
       // Define available target features
       // These must be defined in sorted order!
       NoAsmVariants = true;
+      // Set the default GPU to sm20
+      GPU = GK_SM20;
     }
     void getTargetDefines(const LangOptions &Opts,
                           MacroBuilder &Builder) const override {
       Builder.defineMacro("__PTX__");
       Builder.defineMacro("__NVPTX__");
+      if (Opts.CUDAIsDevice) {
+        // Set __CUDA_ARCH__ for the GPU specified.
+        std::string CUDAArchCode;
+        switch (GPU) {
+        case GK_SM20:
+          CUDAArchCode = "200";
+          break;
+        case GK_SM21:
+          CUDAArchCode = "210";
+          break;
+        case GK_SM30:
+          CUDAArchCode = "300";
+          break;
+        case GK_SM35:
+          CUDAArchCode = "350";
+          break;
+        default:
+          llvm_unreachable("Unhandled target CPU");
+        }
+        Builder.defineMacro("__CUDA_ARCH__", CUDAArchCode);
+      }
     }
     void getTargetBuiltins(const Builtin::Info *&Records,
                            unsigned &NumRecords) const override {
@@ -1450,14 +1485,14 @@ namespace {
       return TargetInfo::CharPtrBuiltinVaList;
     }
     bool setCPU(const std::string &Name) override {
-      bool Valid = llvm::StringSwitch<bool>(Name)
-        .Case("sm_20", true)
-        .Case("sm_21", true)
-        .Case("sm_30", true)
-        .Case("sm_35", true)
-        .Default(false);
+      GPU = llvm::StringSwitch<GPUKind>(Name)
+                .Case("sm_20", GK_SM20)
+                .Case("sm_21", GK_SM21)
+                .Case("sm_30", GK_SM30)
+                .Case("sm_35", GK_SM35)
+                .Default(GK_NONE);
 
-      return Valid;
+      return GPU != GK_NONE;
     }
   };
 
@@ -1505,6 +1540,7 @@ static const unsigned R600AddrSpaceMap[] = {
   1,    // opencl_global
   3,    // opencl_local
   2,    // opencl_constant
+  4,    // opencl_generic
   1,    // cuda_device
   2,    // cuda_constant
   3     // cuda_shared
@@ -4343,6 +4379,13 @@ public:
       Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_4");
       Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8");
     }
+
+    bool is5EOrAbove = (CPUArchVer >= 6 ||
+                        (CPUArchVer == 5 &&
+                         CPUArch.find('E') != StringRef::npos));
+    bool is32Bit = (!IsThumb || supportsThumb2(ArchName, CPUArch, CPUArchVer));
+    if (is5EOrAbove && is32Bit && (CPUProfile != "M" || CPUArch  == "7EM"))
+      Builder.defineMacro("__ARM_FEATURE_DSP");
   }
   void getTargetBuiltins(const Builtin::Info *&Records,
                          unsigned &NumRecords) const override {
@@ -5583,6 +5626,8 @@ namespace {
       3, // opencl_global
       4, // opencl_local
       5, // opencl_constant
+      // FIXME: generic has to be added to the target
+      0, // opencl_generic
       0, // cuda_device
       0, // cuda_constant
       0  // cuda_shared
@@ -6268,7 +6313,7 @@ public:
     LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
     DescriptionString =
-        "e-S128-p:64:64-v16:16-v32:32-v64:64-v96:32-v128:32-m:e-n8:16:32:64";
+        "e-m:e-v128:32-v16:16-v32:32-v96:32-n8:16:32:64-S128";
   }
 
   void getTargetDefines(const LangOptions &Opts,
@@ -6316,6 +6361,7 @@ namespace {
     1,    // opencl_global
     3,    // opencl_local
     2,    // opencl_constant
+    4,    // opencl_generic
     0,    // cuda_device
     0,    // cuda_constant
     0     // cuda_shared

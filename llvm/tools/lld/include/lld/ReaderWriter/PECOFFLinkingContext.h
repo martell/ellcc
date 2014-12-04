@@ -29,7 +29,6 @@ using llvm::COFF::WindowsSubsystem;
 static const uint8_t DEFAULT_DOS_STUB[128] = {'M', 'Z'};
 
 namespace lld {
-class Group;
 
 class PECOFFLinkingContext : public LinkingContext {
 public:
@@ -47,8 +46,8 @@ public:
         _createManifest(true), _embedManifest(false), _manifestId(1),
         _manifestUAC(true), _manifestLevel("'asInvoker'"),
         _manifestUiAccess("'false'"), _isDll(false), _highEntropyVA(true),
-        _requireSEH(false), _noSEH(false), _implib(""),
-        _dosStub(llvm::makeArrayRef(DEFAULT_DOS_STUB)) {
+        _requireSEH(false), _noSEH(false), _implib(""), _debug(false),
+        _pdbFilePath(""), _dosStub(llvm::makeArrayRef(DEFAULT_DOS_STUB)) {
     setDeadStripping(true);
   }
 
@@ -66,14 +65,17 @@ public:
       return getExternalName().compare(other.getExternalName()) < 0;
     }
 
+    StringRef getRealName() const {
+      return mangledName.empty() ? name : mangledName;
+    }
+
     StringRef getExternalName() const {
-      if (!externalName.empty())
-        return externalName;
-      return name;
+      return externalName.empty() ? name : externalName;
     }
 
     std::string name;
     std::string externalName;
+    std::string mangledName;
     int ordinal;
     bool noname;
     bool isData;
@@ -231,6 +233,12 @@ public:
   void setOutputImportLibraryPath(const std::string &val) { _implib = val; }
   std::string getOutputImportLibraryPath() const;
 
+  void setDebug(bool val) { _debug = val; }
+  bool getDebug() { return _debug; }
+
+  void setPDBFilePath(StringRef str) { _pdbFilePath = str; }
+  std::string getPDBFilePath() const;
+
   void addDelayLoadDLL(StringRef dll) {
     _delayLoadDLLs.insert(dll.lower());
   }
@@ -309,8 +317,7 @@ public:
   void setEntryNode(SimpleFileNode *node) { _entryNode = node; }
   SimpleFileNode *getEntryNode() const { return _entryNode; }
 
-  void setLibraryGroup(Group *group) { _libraryGroup = group; }
-  Group *getLibraryGroup() const { return _libraryGroup; }
+  void addLibraryFile(std::unique_ptr<FileNode> file);
 
   void setModuleDefinitionFile(const std::string val) {
     _moduleDefinitionFile = val;
@@ -390,6 +397,12 @@ private:
   // /IMPLIB command line option.
   std::string _implib;
 
+  // True if /DEBUG is given.
+  bool _debug;
+
+  // PDB file output path. NB: this is dummy -- LLD just creates the empty file.
+  std::string _pdbFilePath;
+
   // /DELAYLOAD option.
   std::set<std::string> _delayLoadDLLs;
 
@@ -425,9 +438,6 @@ private:
 
   // The node containing the entry point file.
   SimpleFileNode *_entryNode;
-
-  // The PECOFFGroup that contains all the .lib files.
-  Group *_libraryGroup;
 
   // Name of the temporary file for lib.exe subcommand. For debugging
   // only.

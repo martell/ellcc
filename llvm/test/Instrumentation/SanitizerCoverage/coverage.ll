@@ -33,12 +33,12 @@ entry:
 ; CHECK0-NOT: call void @__sanitizer_cov_module_init(
 
 ; CHECK1-LABEL: define void @foo
-; CHECK1: %0 = load atomic i8* @__sancov_gen_cov_foo monotonic, align 1
+; CHECK1: %0 = load atomic i8* @__sancov_gen_cov_foo monotonic, align 1, !nosanitize
 ; CHECK1: %1 = icmp eq i8 0, %0
 ; CHECK1: br i1 %1, label %2, label %3
-; CHECK1: call void @__sanitizer_cov
+; CHECK1: call void @__sanitizer_cov(i8*{{.*}})
 ; CHECK1-NOT: call void @__sanitizer_cov
-; CHECK1: store atomic i8 1, i8* @__sancov_gen_cov_foo monotonic, align 1
+; CHECK1: ret void
 
 ; CHECK1-LABEL: define internal void @sancov.module_ctor
 ; CHECK1-NOT: ret

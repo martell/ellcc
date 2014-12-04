@@ -36,9 +36,8 @@ enum ReportType {
 };
 
 struct ReportStack {
-  ReportStack *next;
-  AddressInfo info;
-  static ReportStack *New(uptr addr);
+  SymbolizedStack *frames;
+  static ReportStack *New();
 
  private:
   ReportStack();

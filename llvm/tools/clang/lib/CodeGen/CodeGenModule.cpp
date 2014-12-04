@@ -109,6 +109,7 @@ CodeGenModule::CodeGenModule(ASTContext &C, const CodeGenOptions &CGO,
   Int8PtrPtrTy = Int8PtrTy->getPointerTo(0);
 
   RuntimeCC = getTargetCodeGenInfo().getABIInfo().getRuntimeCC();
+  BuiltinCC = getTargetCodeGenInfo().getABIInfo().getBuiltinCC();
 
   if (LangOpts.ObjC1)
     createObjCRuntime();
@@ -624,7 +625,7 @@ void CodeGenModule::EmitCtorList(const CtorList &Fns, const char *GlobalName) {
 
   // Get the type of a ctor entry, { i32, void ()*, i8* }.
   llvm::StructType *CtorStructTy = llvm::StructType::get(
-      Int32Ty, llvm::PointerType::getUnqual(CtorFTy), VoidPtrTy, NULL);
+      Int32Ty, llvm::PointerType::getUnqual(CtorFTy), VoidPtrTy, nullptr);
 
   // Construct the constructor and destructor arrays.
   SmallVector<llvm::Constant*, 8> Ctors;
@@ -715,10 +716,6 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
     // Naked implies noinline: we should not be inlining such functions.
     B.addAttribute(llvm::Attribute::Naked);
     B.addAttribute(llvm::Attribute::NoInline);
-  } else if (D->hasAttr<OptimizeNoneAttr>()) {
-    // OptimizeNone implies noinline; we should not be inlining such functions.
-    B.addAttribute(llvm::Attribute::OptimizeNone);
-    B.addAttribute(llvm::Attribute::NoInline);
   } else if (D->hasAttr<NoDuplicateAttr>()) {
     B.addAttribute(llvm::Attribute::NoDuplicate);
   } else if (D->hasAttr<NoInlineAttr>()) {
@@ -737,12 +734,6 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
 
   if (D->hasAttr<MinSizeAttr>())
     B.addAttribute(llvm::Attribute::MinSize);
-
-  if (D->hasAttr<OptimizeNoneAttr>()) {
-    // OptimizeNone wins over OptimizeForSize and MinSize.
-    B.removeAttribute(llvm::Attribute::OptimizeForSize);
-    B.removeAttribute(llvm::Attribute::MinSize);
-  }
 
   if (LangOpts.getStackProtector() == LangOptions::SSPOn)
     B.addAttribute(llvm::Attribute::StackProtect);
@@ -771,6 +762,21 @@ void CodeGenModule::SetLLVMFunctionAttributesForDefinition(const Decl *D,
   F->addAttributes(llvm::AttributeSet::FunctionIndex,
                    llvm::AttributeSet::get(
                        F->getContext(), llvm::AttributeSet::FunctionIndex, B));
+
+  if (D->hasAttr<OptimizeNoneAttr>()) {
+    // OptimizeNone implies noinline; we should not be inlining such functions.
+    F->addFnAttr(llvm::Attribute::OptimizeNone);
+    F->addFnAttr(llvm::Attribute::NoInline);
+
+    // OptimizeNone wins over OptimizeForSize, MinSize, AlwaysInline.
+    F->removeFnAttr(llvm::Attribute::OptimizeForSize);
+    F->removeFnAttr(llvm::Attribute::MinSize);
+    F->removeFnAttr(llvm::Attribute::AlwaysInline);
+
+    // Attribute 'inlinehint' has no effect on 'optnone' functions.
+    // Explicitly remove it from the set of function attributes.
+    F->removeFnAttr(llvm::Attribute::InlineHint);
+  }
 
   if (isa<CXXConstructorDecl>(D) || isa<CXXDestructorDecl>(D))
     F->setUnnamedAddr(true);
@@ -1648,6 +1654,21 @@ CodeGenModule::CreateRuntimeFunction(llvm::FunctionType *FTy,
   if (auto *F = dyn_cast<llvm::Function>(C))
     if (F->empty())
       F->setCallingConv(getRuntimeCC());
+  return C;
+}
+
+/// CreateBuiltinFunction - Create a new builtin function with the specified
+/// type and name.
+llvm::Constant *
+CodeGenModule::CreateBuiltinFunction(llvm::FunctionType *FTy,
+                                     StringRef Name,
+                                     llvm::AttributeSet ExtraAttrs) {
+  llvm::Constant *C =
+      GetOrCreateLLVMFunction(Name, FTy, GlobalDecl(), /*ForVTable=*/false,
+                              /*DontDefer=*/false, /*IsThunk=*/false, ExtraAttrs);
+  if (auto *F = dyn_cast<llvm::Function>(C))
+    if (F->empty())
+      F->setCallingConv(getBuiltinCC());
   return C;
 }
 
@@ -3265,6 +3286,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     if (DebugInfo &&
         Spec->getSpecializationKind() == TSK_ExplicitInstantiationDefinition)
       DebugInfo->completeTemplateDefinition(*Spec);
+    break;
   }
 
   default:
@@ -3272,6 +3294,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     // non-top-level decl.  FIXME: Would be nice to have an isTopLevelDeclKind
     // function. Need to recode Decl::Kind to do that easily.
     assert(isa<TypeDecl>(D) && "Unsupported decl kind");
+    break;
   }
 }
 

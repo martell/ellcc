@@ -220,12 +220,14 @@ class SubjectList<list<AttrSubject> subjects, SubjectDiag diag = WarnDiag,
   string CustomDiag = customDiag;
 }
 
-class LangOpt<string name> {
+class LangOpt<string name, bit negated = 0> {
   string Name = name;
+  bit Negated = negated;
 }
 def MicrosoftExt : LangOpt<"MicrosoftExt">;
 def Borland : LangOpt<"Borland">;
 def CUDA : LangOpt<"CUDA">;
+def COnly : LangOpt<"CPlusPlus", 1>;
 
 // Defines targets for target-specific attributes. The list of strings should
 // specify architectures for which the target applies, based off the ArchType
@@ -625,22 +627,27 @@ def OpenCLImageAccess : Attr {
 
 def OpenCLPrivateAddressSpace : TypeAttr {
   let Spellings = [Keyword<"__private">, Keyword<"private">];
-  let Documentation = [Undocumented];
+  let Documentation = [OpenCLAddressSpacePrivateDocs];
 }
 
 def OpenCLGlobalAddressSpace : TypeAttr {
   let Spellings = [Keyword<"__global">, Keyword<"global">];
-  let Documentation = [Undocumented];
+  let Documentation = [OpenCLAddressSpaceGlobalDocs];
 }
 
 def OpenCLLocalAddressSpace : TypeAttr {
   let Spellings = [Keyword<"__local">, Keyword<"local">];
-  let Documentation = [Undocumented];
+  let Documentation = [OpenCLAddressSpaceLocalDocs];
 }
 
 def OpenCLConstantAddressSpace : TypeAttr {
   let Spellings = [Keyword<"__constant">, Keyword<"constant">];
-  let Documentation = [Undocumented];
+  let Documentation = [OpenCLAddressSpaceConstantDocs];
+}
+
+def OpenCLGenericAddressSpace : TypeAttr {
+  let Spellings = [Keyword<"__generic">, Keyword<"generic">];
+  let Documentation = [OpenCLAddressSpaceGenericDocs];
 }
 
 def Deprecated : InheritableAttr {
@@ -697,6 +704,25 @@ def MinSize : InheritableAttr {
   let Spellings = [GNU<"minsize">];
   let Subjects = SubjectList<[Function, ObjCMethod], ErrorDiag>;
   let Documentation = [Undocumented];
+}
+
+def FlagEnum : InheritableAttr {
+  let Spellings = [GNU<"flag_enum">];
+  let Subjects = SubjectList<[Enum]>;
+  let Documentation = [FlagEnumDocs];
+  let LangOpts = [COnly];
+  let AdditionalMembers = [{
+private:
+    llvm::APInt FlagBits;
+public:
+    llvm::APInt &getFlagBits() {
+      return FlagBits;
+    }
+
+    const llvm::APInt &getFlagBits() const {
+      return FlagBits;
+    }
+}];
 }
 
 def Flatten : InheritableAttr {

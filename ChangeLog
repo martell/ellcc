@@ -1,10 +1,10 @@
 current SVN:
 
+* Update to LLVM r223372.
 * ELK can run in MMU and non-MMU configurations.
 * Added an example of using ELK as a bootstrap program.
 * Implemented mmap(), etc. in ELK.
 * Added paged based kernel memory management to ELK.
-* Update to LLVM r222635.
 * Support for user space programs in kernal space (e.g. ls, cat).
 * Added lazy vnode R/W access to ELK.
 * Added a FIFO file system to ELK.

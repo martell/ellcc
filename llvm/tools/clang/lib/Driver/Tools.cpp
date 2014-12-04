@@ -590,6 +590,12 @@ static void getARMFPUFeatures(const Driver &D, const Arg *A,
     Features.push_back("+crypto");
   } else if (FPU == "neon") {
     Features.push_back("+neon");
+  } else if (FPU == "neon-vfpv3") {
+    Features.push_back("+vfpv3");
+    Features.push_back("+neon");
+  } else if (FPU == "neon-vfpv4") {
+    Features.push_back("+neon");
+    Features.push_back("+vfpv4");
   } else if (FPU == "none") {
     Features.push_back("-vfp2");
     Features.push_back("-vfp3");
@@ -2821,8 +2827,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // Note that these flags are trump-cards. Regardless of the order w.r.t. the
   // PIC or PIE options above, if these show up, PIC is disabled.
   llvm::Triple Triple(TripleStr);
-  if (KernelOrKext && (!Triple.isiOS() || Triple.isOSVersionLT(6) ||
-                       Triple.getArch() == llvm::Triple::aarch64))
+  if (KernelOrKext && (!Triple.isiOS() || Triple.isOSVersionLT(6)))
     PIC = PIE = false;
   if (Args.hasArg(options::OPT_static))
     PIC = PIE = false;
@@ -8571,10 +8576,26 @@ void visualstudio::Link::ConstructJob(Compilation &C, const JobAction &JA,
     A.renderAsInput(Args, CmdArgs);
   }
 
-  // It's not sufficient to just use link from the program PATH, because other
-  // environments like GnuWin32 install their own link.exe which may come first.
-  llvm::SmallString<128> linkPath(FindVisualStudioExecutable(
-      getToolChain(), "link.exe", C.getDriver().getClangProgramPath()));
+  // We need to special case some linker paths.  In the case of lld, we need to
+  // translate 'lld' into 'lld-link', and in the case of the regular msvc
+  // linker, we need to use a special search algorithm.
+  llvm::SmallString<128> linkPath;
+  StringRef Linker = Args.getLastArgValue(options::OPT_fuse_ld_EQ, "link");
+  if (Linker.equals_lower("lld"))
+    Linker = "lld-link";
+
+  if (Linker.equals_lower("link")) {
+    // If we're using the MSVC linker, it's not sufficient to just use link
+    // from the program PATH, because other environments like GnuWin32 install
+    // their own link.exe which may come first.
+    linkPath = FindVisualStudioExecutable(getToolChain(), "link.exe",
+                                          C.getDriver().getClangProgramPath());
+  } else {
+    linkPath = Linker;
+    llvm::sys::path::replace_extension(linkPath, "exe");
+    linkPath = getToolChain().GetProgramPath(linkPath.c_str());
+  }
+
   const char *Exec = Args.MakeArgString(linkPath);
   C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }

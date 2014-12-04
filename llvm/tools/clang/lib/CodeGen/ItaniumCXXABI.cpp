@@ -110,6 +110,8 @@ public:
                                llvm::Value *Ptr, QualType ElementType,
                                const CXXDestructorDecl *Dtor) override;
 
+  void emitRethrow(CodeGenFunction &CGF, bool isNoReturn) override;
+
   void EmitFundamentalRTTIDescriptor(QualType Type);
   void EmitFundamentalRTTIDescriptors();
   llvm::Constant *getAddrOfRTTIDescriptor(QualType Ty) override;
@@ -358,7 +360,7 @@ llvm::Type *
 ItaniumCXXABI::ConvertMemberPointerType(const MemberPointerType *MPT) {
   if (MPT->isMemberDataPointer())
     return CGM.PtrDiffTy;
-  return llvm::StructType::get(CGM.PtrDiffTy, CGM.PtrDiffTy, NULL);
+  return llvm::StructType::get(CGM.PtrDiffTy, CGM.PtrDiffTy, nullptr);
 }
 
 /// In the Itanium and ARM ABIs, method pointers have the form:
@@ -885,6 +887,20 @@ void ItaniumCXXABI::emitVirtualObjectDelete(CodeGenFunction &CGF,
 
   if (UseGlobalDelete)
     CGF.PopCleanupBlock();
+}
+
+void ItaniumCXXABI::emitRethrow(CodeGenFunction &CGF, bool isNoReturn) {
+  // void __cxa_rethrow();
+
+  llvm::FunctionType *FTy =
+    llvm::FunctionType::get(CGM.VoidTy, /*IsVarArgs=*/false);
+
+  llvm::Constant *Fn = CGM.CreateRuntimeFunction(FTy, "__cxa_rethrow");
+
+  if (isNoReturn)
+    CGF.EmitNoreturnRuntimeCallOrInvoke(Fn, None);
+  else
+    CGF.EmitRuntimeCallOrInvoke(Fn);
 }
 
 static llvm::Constant *getItaniumDynamicCastFn(CodeGenFunction &CGF) {

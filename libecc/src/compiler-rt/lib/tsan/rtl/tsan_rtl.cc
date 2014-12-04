@@ -133,7 +133,15 @@ static void BackgroundThread(void *arg) {
       Printf("ThreadSanitizer: failed to open memory profile file '%s'\n",
           &filename[0]);
     } else {
-      mprof_fd = openrv;
+      InternalScopedString filename(kMaxPathLength);
+      filename.append("%s.%d", flags()->profile_memory, (int)internal_getpid());
+      uptr openrv = OpenFile(filename.data(), true);
+      if (internal_iserror(openrv)) {
+        Printf("ThreadSanitizer: failed to open memory profile file '%s'\n",
+            &filename[0]);
+      } else {
+        mprof_fd = openrv;
+      }
     }
   }
 

@@ -108,6 +108,18 @@ class ADDIUR2_FM_MM16 {
   let Inst{0}     = 0;
 }
 
+class LOAD_STORE_FM_MM16<bits<6> op> {
+  bits<3> rt;
+  bits<7> addr;
+
+  bits<16> Inst;
+
+  let Inst{15-10} = op;
+  let Inst{9-7}   = rt;
+  let Inst{6-4}   = addr{6-4};
+  let Inst{3-0}   = addr{3-0};
+}
+
 class ADDIUS5_FM_MM16 {
   bits<5> rd;
   bits<4> imm;
@@ -193,6 +205,15 @@ class ADDIUR1SP_FM_MM16 {
   let Inst{9-7}   = rd;
   let Inst{6-1}   = imm;
   let Inst{0}     = 1;
+}
+
+class BRKSDBBP16_FM_MM<bits<6> op> {
+  bits<4> code_;
+  bits<16> Inst;
+
+  let Inst{15-10} = 0x11;
+  let Inst{9-4}   = op;
+  let Inst{3-0}   = code_;
 }
 
 //===----------------------------------------------------------------------===//
@@ -816,4 +837,16 @@ class LWM_FM_MM<bits<4> funct> : MMArch {
   let Inst{20-16} = addr{20-16};
   let Inst{15-12} = funct;
   let Inst{11-0}  = addr{11-0};
+}
+
+class LWM_FM_MM16<bits<4> funct> : MMArch {
+  bits<2> rt;
+  bits<4> addr;
+
+  bits<16> Inst;
+
+  let Inst{15-10} = 0x11;
+  let Inst{9-6}   = funct;
+  let Inst{5-4}   = rt;
+  let Inst{3-0}   = addr;
 }

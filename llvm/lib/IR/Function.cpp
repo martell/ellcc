@@ -298,7 +298,7 @@ void Function::BuildLazyArguments() const {
 
   // Clear the lazy arguments bit.
   unsigned SDC = getSubclassDataFromValue();
-  const_cast<Function*>(this)->setValueSubclassData(SDC &= ~1);
+  const_cast<Function*>(this)->setValueSubclassData(SDC &= ~(1<<0));
 }
 
 size_t Function::arg_size() const {
@@ -335,8 +335,9 @@ void Function::dropAllReferences() {
   while (!BasicBlocks.empty())
     BasicBlocks.begin()->eraseFromParent();
 
-  // Prefix data is stored in a side table.
+  // Prefix and prologue data are stored in a side table.
   setPrefixData(nullptr);
+  setPrologueData(nullptr);
 }
 
 void Function::addAttribute(unsigned i, Attribute::AttrKind attr) {
@@ -416,6 +417,10 @@ void Function::copyAttributesFrom(const GlobalValue *Src) {
     setPrefixData(SrcF->getPrefixData());
   else
     setPrefixData(nullptr);
+  if (SrcF->hasPrologueData())
+    setPrologueData(SrcF->getPrologueData());
+  else
+    setPrologueData(nullptr);
 }
 
 /// getIntrinsicID - This method returns the ID number of the specified
@@ -456,7 +461,15 @@ unsigned Function::lookupIntrinsicID() const {
 }
 
 /// Returns a stable mangling for the type specified for use in the name
-/// mangling scheme used by 'any' types in intrinsic signatures.
+/// mangling scheme used by 'any' types in intrinsic signatures.  The mangling
+/// of named types is simply their name.  Manglings for unnamed types consist
+/// of a prefix ('p' for pointers, 'a' for arrays, 'f_' for functions)
+/// combined with the mangling of their component types.  A vararg function
+/// type will have a suffix of 'vararg'.  Since function types can contain
+/// other function types, we close a function type mangling with suffix 'f'
+/// which can't be confused with it's prefix.  This ensures we don't have
+/// collisions between two unrelated function types. Otherwise, you might
+/// parse ffXX as f(fXX) or f(fX)X.  (X is a placeholder for any other type.)
 static std::string getMangledTypeStr(Type* Ty) {
   std::string Result;
   if (PointerType* PTyp = dyn_cast<PointerType>(Ty)) {
@@ -476,7 +489,8 @@ static std::string getMangledTypeStr(Type* Ty) {
       Result += getMangledTypeStr(FT->getParamType(i));
     if (FT->isVarArg())
       Result += "vararg";
-    Result += "f"; //ensure distinguishable
+    // Ensure nested function types are distinguishable.
+    Result += "f"; 
   } else if (Ty)
     Result += EVT::getEVT(Ty).getEVTString();
   return Result;
@@ -885,11 +899,40 @@ void Function::setPrefixData(Constant *PrefixData) {
       PDHolder->setOperand(0, PrefixData);
     else
       PDHolder = ReturnInst::Create(getContext(), PrefixData);
-    SCData |= 2;
+    SCData |= (1<<1);
   } else {
     delete PDHolder;
     PDMap.erase(this);
-    SCData &= ~2;
+    SCData &= ~(1<<1);
   }
   setValueSubclassData(SCData);
+}
+
+Constant *Function::getPrologueData() const {
+  assert(hasPrologueData());
+  const LLVMContextImpl::PrologueDataMapTy &SOMap =
+      getContext().pImpl->PrologueDataMap;
+  assert(SOMap.find(this) != SOMap.end());
+  return cast<Constant>(SOMap.find(this)->second->getReturnValue());
+}
+
+void Function::setPrologueData(Constant *PrologueData) {
+  if (!PrologueData && !hasPrologueData())
+    return;
+
+  unsigned PDData = getSubclassDataFromValue();
+  LLVMContextImpl::PrologueDataMapTy &PDMap = getContext().pImpl->PrologueDataMap;
+  ReturnInst *&PDHolder = PDMap[this];
+  if (PrologueData) {
+    if (PDHolder)
+      PDHolder->setOperand(0, PrologueData);
+    else
+      PDHolder = ReturnInst::Create(getContext(), PrologueData);
+    PDData |= (1<<2);
+  } else {
+    delete PDHolder;
+    PDMap.erase(this);
+    PDData &= ~(1<<2);
+  }
+  setValueSubclassData(PDData);
 }

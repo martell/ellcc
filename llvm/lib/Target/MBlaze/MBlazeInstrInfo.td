@@ -442,7 +442,7 @@ let Predicates=[HasMul] in {
 //===----------------------------------------------------------------------===//
 
 let canFoldAsLoad = 1, isReMaterializable = 1 in {
-  let neverHasSideEffects = 1 in {
+  let hasSideEffects = 0 in {
     def LBU  :  LoadM<0x30, 0x000, "lbu    ">;
     def LBUR :  LoadM<0x30, 0x200, "lbur   ">;
 
@@ -593,7 +593,7 @@ let isReturn=1, isTerminator=1, hasDelaySlot=1, isBarrier=1,
 // MBlaze misc instructions
 //===----------------------------------------------------------------------===//
 
-let neverHasSideEffects = 1 in {
+let hasSideEffects = 1 in {
   def NOP :  MBlazeInst<0x20, FC, (outs), (ins), "nop    ", [], IIC_ALU>;
 }
 
