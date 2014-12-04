@@ -1778,6 +1778,12 @@ int getpath(const char *name, char *path)
     } else if (count == 1 && *src == '.') {
       // Ignore '.' and './'.
     } else {
+      if (*src == '.') {
+        if (++len >= PATH_MAX)
+          return -ENAMETOOLONG;
+        *tgt++ = '/';
+      }
+
       while (src != p) {
         if (++len >= PATH_MAX)
           return -ENAMETOOLONG;

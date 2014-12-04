@@ -873,6 +873,7 @@ static int sys_chdir(char *name)
 
   replacecwd(dvp);                      // Replace the current directory.
   vn_unlock(dvp);
+  vfs_close(fp);
 
   return 0;
 }
