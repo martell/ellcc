@@ -871,12 +871,8 @@ static int sys_chdir(char *name)
     return -ENOTDIR;
   }
 
+  replacecwd(dvp);                      // Replace the current directory.
   vn_unlock(dvp);
-  vref(dvp);
-  dvp = replacecwd(dvp);                // Replace the current directory.
-  if (dvp) {
-    vrele(dvp);                         // Release the old one.
-  }
 
   return 0;
 }
@@ -898,12 +894,8 @@ static int sys_fchdir(int fd)
     return -ENOTDIR;
   }
 
+  replacecwd(dvp);                      // Replace the current directory.
   vn_unlock(dvp);
-  vref(dvp);
-  dvp = replacecwd(dvp);                // Replace the current directory.
-  if (dvp) {
-    vrele(dvp);                         // Release the old one.
-  }
 
   return 0;
 }

@@ -186,7 +186,7 @@ int setfile(int fd, struct file *file);
 
 /** Replace the old cwd with a new one.
  */
-vnode_t replacecwd(vnode_t vp);
+void replacecwd(vnode_t vp);
 
 /** Get a file path.
  * This function returns the full path name for the file name.
