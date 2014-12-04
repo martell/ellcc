@@ -26,6 +26,7 @@
 #define allocfd __elk_allocfd
 #define setfile __elk_setfile
 #define replacecwd __elk_replacecwd
+#define replaceroot __elk_replaceroot
 #define getpath __elk_getpath
 #define gettid __elk_gettid
 #define getpid __elk_getpid
@@ -187,6 +188,10 @@ int setfile(int fd, struct file *file);
 /** Replace the old cwd with a new one.
  */
 void replacecwd(vnode_t vp);
+
+/** Replace the old root with a new one.
+ */
+void replaceroot(vnode_t vp);
 
 /** Get a file path.
  * This function returns the full path name for the file name.

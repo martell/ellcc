@@ -144,7 +144,6 @@ typedef struct thread
   gid_t fgid;                   // The thread's file group id.
   pid_t pgid;                   // The thread's process group.
   pid_t sid;                    // The thread's session id.
-  mode_t umask;                 // The file creation mask.
 #if HAVE_CAPABILITY
   capability_t cap;             // The thread's capabilities.
   capability_t ecap;            // The thread's effective capabilities.
@@ -1664,8 +1663,8 @@ static int sys_setsid(void)
 
 static mode_t sys_umask(mode_t new)
 {
-  mode_t old = current->umask;
-  current->umask = new;
+  mode_t old = current->fs->umask;
+  current->fs->umask = new;
   return old;
 }
 
@@ -1707,6 +1706,18 @@ void replacecwd(vnode_t vp)
   vnode_t oldvp = current->fs->cwd;
   vref(vp);
   current->fs->cwd = vp;
+  if (oldvp) {
+    vrele(oldvp);
+  }
+}
+
+/** Replace the old root with a new one.
+ */
+void replaceroot(vnode_t vp)
+{
+  vnode_t oldvp = current->fs->root;
+  vref(vp);
+  current->fs->root = vp;
   if (oldvp) {
     vrele(oldvp);
   }
