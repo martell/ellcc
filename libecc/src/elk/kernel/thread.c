@@ -109,8 +109,6 @@ struct robust_list_head
   volatile void *volatile pending;
 };
 
-#define FS 1
-#if FS
 #if ENABLEFDS
 typedef struct fs
 {
@@ -120,7 +118,6 @@ typedef struct fs
   vnode_t root;                 // The root directory.
   mode_t umask;                 // The current umask.
 } *fs_t;
-#endif
 #endif
 
 typedef struct thread
@@ -155,9 +152,7 @@ typedef struct thread
 #endif
 #if ENABLEFDS
   fdset_t fdset;                // File descriptors used by the thread.
-#if FS
   fs_t fs;                      // The current file system information.
-#endif
 #endif
 #if HAVE_VM
   vm_map_t map;                 // The process memory map.
@@ -387,7 +382,6 @@ static long long slice_time = 5000000;  // The time slice period (ns).
 
 /**** End of ready lock protected variables. ****/
 
-#if FS
 #if ENABLEFDS
 static struct fs main_thread_fs = {
   .lock = PTHREAD_MUTEX_INITIALIZER,
@@ -397,7 +391,6 @@ static struct fs main_thread_fs = {
   .umask = 0
 };
 #endif
-#endif
 
 // The main thread's initial values.
 static thread_t main_thread = {
@@ -405,10 +398,8 @@ static thread_t main_thread = {
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
 
-#if FS
 #if ENABLEFDS
   .fs = &main_thread_fs,
-#endif
 #endif
 
 #if HAVE_CAPABILITY
@@ -640,21 +631,19 @@ static void thread_delete(thread_t *tp)
   release_tid(tp->tid);
 
 #if ENABLEFDS
-#if FS
   pthread_mutex_lock(&tp->fs->lock);
-  if (tp->fs->cwd)
-    vrele(tp->fs->cwd);
-  if (tp->fs->root)
-    vrele(tp->fs->root);
+  ASSERT(tp->fs->refcnt > 0);
   if (--tp->fs->refcnt == 0) {
+    if (tp->fs->cwd)
+      vrele(tp->fs->cwd);
+    if (tp->fs->root)
+      vrele(tp->fs->root);
     pthread_mutex_unlock(&tp->fs->lock);
     pthread_mutex_destroy(&tp->fs->lock);
     kmem_free(tp->fs);
-    tp->fs = NULL;
   } else {
     pthread_mutex_unlock(&tp->fs->lock);
   }
-#endif
 #endif
 
   kmem_free(tp);
@@ -1144,7 +1133,6 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     return s;
   }
 
-#if FS
   if (flags & CLONE_FS) {
     // Share file system information.
     pthread_mutex_lock(&tp->fs->lock);
@@ -1170,12 +1158,10 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     tp->fs->refcnt = 1;
     if (tp->fs->cwd)
       vref(tp->fs->cwd);
-    if (tp->fs->cwd)
+    if (tp->fs->root)
       vref(tp->fs->root);
     pthread_mutex_unlock(&pfs->lock);
   }
-#endif
-
 #endif
 
   // Record the TLS.
@@ -1718,19 +1704,10 @@ int setfile(int fd, file_t file)
 void replacecwd(vnode_t vp)
 {
   vnode_t oldvp = current->fs->cwd;
-  if (oldvp == NULL) {
-    // Add references for current uses.
-    for (int i = 0; i < current->fs->refcnt; ++i) {
-      vref(vp);
-    }
-  }
-
+  vref(vp);
   current->fs->cwd = vp;
   if (oldvp) {
-    // Remove references for current uses.
-    for (int i = 0; i < current->fs->refcnt; ++i) {
-      vrele(oldvp);
-    }
+    vrele(oldvp);
   }
 }
 
