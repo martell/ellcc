@@ -631,6 +631,7 @@ static void thread_delete(thread_t *tp)
   release_tid(tp->tid);
 
 #if ENABLEFDS
+  fdset_release(tp->fdset);
   pthread_mutex_lock(&tp->fs->lock);
   ASSERT(tp->fs->refcnt > 0);
   if (--tp->fs->refcnt == 0) {

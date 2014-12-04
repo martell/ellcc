@@ -64,24 +64,22 @@ static void fdset_reference(fdset_t fdset)
 
 /** Release a set of file descriptors.
  */
-void fdset_release(fdset_t *fdset)
+void fdset_release(fdset_t fdset)
 {
-  pthread_mutex_lock(&(*fdset)->mutex);
-  fdset_t set = *fdset;
-  ASSERT(set->refcnt > 0);
-  *fdset = NULL;
-  if (--set->refcnt > 0) {
-    pthread_mutex_unlock(&set->mutex);
+  pthread_mutex_lock(&fdset->mutex);
+  ASSERT(fdset->refcnt > 0);
+  if (--fdset->refcnt > 0) {
+    pthread_mutex_unlock(&fdset->mutex);
     return;
   }
 
-  for (int i = 0; i < set->count; ++i) {
-    fd_release(&set->fds[i]);
+  for (int i = 0; i < fdset->count; ++i) {
+    fd_release(&fdset->fds[i]);
   }
 
-  kmem_free(set->fds);
-  pthread_mutex_unlock(&set->mutex);
-  kmem_free(set);
+  kmem_free(fdset->fds);
+  pthread_mutex_unlock(&fdset->mutex);
+  kmem_free(fdset);
 }
 
 /** Allocate a new file descriptor.
@@ -183,7 +181,7 @@ int fdset_clone(fdset_t *fdset, int clone)
 
   s = addfd(new, set->count - 1, NULL);
   if (s != 0) {
-    fdset_release(&new);
+    fdset_release(new);
     pthread_mutex_unlock(&set->mutex);
     return s;
   }

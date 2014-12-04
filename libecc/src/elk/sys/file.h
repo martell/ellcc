@@ -46,7 +46,7 @@ typedef struct fdset *fdset_t;
 
 /** Release a set of file descriptors.
  */
-void fdset_release(fdset_t *fdset);
+void fdset_release(fdset_t fdset);
 
 /** Clone or copy the fdset.
  */
