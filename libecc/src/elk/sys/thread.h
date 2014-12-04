@@ -8,6 +8,7 @@
 #include "config.h"
 #include "kernel.h"
 #include "target.h"
+#include "vnode.h"
 #include "file.h"
 #include "vm.h"
 #include "hal.h"
@@ -183,9 +184,9 @@ int allocfd(file_t fp);
  */
 int setfile(int fd, struct file *file);
 
-/** Replace the old cwd fp with a new one.
+/** Replace the old cwd with a new one.
  */
-file_t replacecwd(file_t fp);
+vnode_t replacecwd(vnode_t vp);
 
 /** Get a file path.
  * This function returns the full path name for the file name.

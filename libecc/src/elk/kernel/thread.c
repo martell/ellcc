@@ -155,7 +155,7 @@ typedef struct thread
 #endif
 #if ENABLEFDS
   fdset_t fdset;                // File descriptors used by the thread.
-  file_t cwd;                   // The current working directory.
+  vnode_t cwd;                  // The current working directory.
 #if FS
   fs_t fs;                      // The current file system information.
 #endif
@@ -642,9 +642,9 @@ static void thread_delete(thread_t *tp)
 
 #if ENABLEFDS
   fdset_release(&tp->fdset);
-  file_t fp = tp->cwd;
-  if (fp) {
-    vfs_close(fp);
+  vnode_t vp = tp->cwd;
+  if (vp) {
+    vrele(vp);
   }
 
 #if FS
@@ -1152,10 +1152,9 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   }
 
   // Increment the current directory reference counts.
-  file_t fp = tp->cwd;
-  if (fp) {
-    vref(fp->f_vnode);
-    ++fp->f_count;
+  vnode_t vp = tp->cwd;
+  if (vp) {
+    vref(vp);
   }
 
 #if FS
@@ -1727,13 +1726,13 @@ int setfile(int fd, file_t file)
   return fdset_setfile(current->fdset, fd, file);
 }
 
-/** Replace the old cwd fp with a new one.
+/** Replace the old cwd with a new one.
  */
-file_t replacecwd(file_t fp)
+vnode_t replacecwd(vnode_t vp)
 {
-  file_t oldfp = current->cwd;
-  current->cwd = fp;
-  return oldfp;
+  vnode_t oldvp = current->cwd;
+  current->cwd = vp;
+  return oldvp;
 }
 
 /** Get a file path.
@@ -1742,7 +1741,7 @@ file_t replacecwd(file_t fp)
 int getpath(const char *name, char *path)
 {
   // Find the current directory name.
-  const char *cwd = current->cwd ? current->cwd->f_vnode->v_path : "/";
+  const char *cwd = current->cwd ? current->cwd->v_path : "/";
   const char *src = name;
   char *tgt = path;
   int len = 0;

@@ -1,5 +1,6 @@
 current SVN:
 
+* ELK can run in MMU and non-MMU configurations.
 * Added an example of using ELK as a bootstrap program.
 * Implemented mmap(), etc. in ELK.
 * Added paged based kernel memory management to ELK.
