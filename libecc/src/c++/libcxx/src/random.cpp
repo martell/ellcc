@@ -19,6 +19,7 @@
 #if defined(__sun__)
 #define rename solaris_headers_are_broken
 #endif // defined(__sun__)
+#if !defined(_WIN32)
 #include <fcntl.h>
 #include <unistd.h>
 #endif // !defined(_WIN32)
