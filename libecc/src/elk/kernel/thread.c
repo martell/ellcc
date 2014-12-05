@@ -1794,6 +1794,10 @@ int getpath(const char *name, char *path, int full)
       strlcpy(tgt, root, rootlen + 1);
       tgt += rootlen;
       len = rootlen;
+    } else {
+      // A chroot() relative path name.
+      *tgt++ = '/';
+      ++len;
     }
 
     if (len > 1 && *src != '\0' && *src != '.') {
@@ -1804,7 +1808,7 @@ int getpath(const char *name, char *path, int full)
     }
   } else {
     // The current working directory starts the path.
-    cwd += (full ? 0 : rootlen);
+    cwd += (full || rootlen == 1 ? 0 : rootlen);
     if (*cwd) {
       strlcpy(tgt, cwd, PATH_MAX);
       len = strlen(cwd);

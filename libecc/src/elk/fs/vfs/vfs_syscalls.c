@@ -846,12 +846,12 @@ static int sys_getcwd(char *buf, unsigned long size)
   if ((error = getpath("", path, 0)) != 0)
     return error;
 
-  if (strlen(path) + 1 >= size) {
+  size_t len = strlen(path) + 1;
+  if (len >= size) {
     return -ERANGE;
   }
 
-  strlcpy(buf, path, size);
-  return 0;
+  return copyout(path, buf, len);
 }
 
 static int sys_chdir(char *name)
