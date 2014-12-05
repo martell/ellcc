@@ -1831,7 +1831,6 @@ int getpath(const char *name, char *path, int full)
     return -ENAMETOOLONG;
 
   *tgt = '\0';
-  diag_printf("path = %s\n", path);
 
   return 0;
 }
