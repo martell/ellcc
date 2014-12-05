@@ -71,6 +71,9 @@
 // Allow raw I/O.
 #define CAP_SYS_RAWIO 17
 
+// Allow chroot().
+#define CAP_SYS_CHROOT 18
+
 // Allow ptrace and memory access of any process.
 #define CAP_SYS_PTRACE 19
 

@@ -1726,22 +1726,44 @@ void replaceroot(vnode_t vp)
 
 /** Get a file path.
  * This function returns the full path name for the file name.
+ * If full is set, the real file name is returned, otherwise
+ * the name is relative to the chroot() directory.
  */
 int getpath(const char *name, char *path, int full)
 {
   // Find the current directory name.
+  const char *root = current->fs->root ? current->fs->root->v_path : "/";
+  int rootlen = strlen(root);
   const char *cwd = current->fs->cwd ? current->fs->cwd->v_path : "/";
   const char *src = name;
   char *tgt = path;
   int len = 0;
   if (src[0] == '/') {
     // The path starts at the root.
-    *tgt++ = *src++;
-    ++len;
+    ++src;
+    if (full) {
+      strlcpy(tgt, root, rootlen + 1);
+      tgt += rootlen;
+      len = rootlen;
+    }
+
+    if (len > 1 && *src != '\0' && *src != '.') {
+      if (++len >= PATH_MAX)
+        return -ENAMETOOLONG;
+      *tgt++ = '/';
+      ++len;
+    }
   } else {
     // The current working directory starts the path.
-    strlcpy(tgt, cwd, PATH_MAX);
-    len = strlen(cwd);
+    cwd += (full ? 0 : rootlen);
+    if (*cwd) {
+      strlcpy(tgt, cwd, PATH_MAX);
+      len = strlen(cwd);
+    } else {
+      // At the root of a chroot().
+      *tgt = '/';
+      len = 1;
+    }
     tgt += len;
     // If cwd is not the root directory and the name doesn't start with "."
     // add a trailing "/" to the current directory.
@@ -1809,6 +1831,7 @@ int getpath(const char *name, char *path, int full)
     return -ENAMETOOLONG;
 
   *tgt = '\0';
+  diag_printf("path = %s\n", path);
 
   return 0;
 }

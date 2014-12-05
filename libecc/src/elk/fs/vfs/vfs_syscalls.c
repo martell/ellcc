@@ -883,6 +883,10 @@ static int sys_fchdir(int fd)
   file_t fp;
   int error;
 
+  if (!capable(CAP_SYS_CHROOT)) {
+    return -EPERM;
+  }
+
   if ((error = getfile(fd, &fp)) < 0) {
     return error;
   }

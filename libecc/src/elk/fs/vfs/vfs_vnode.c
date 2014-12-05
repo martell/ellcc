@@ -624,6 +624,29 @@ static int cdCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
+/* Change the root directory.
+ */
+static int chrootCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("change the root directory\n");
+    return COMMAND_OK;
+  }
+
+  if (argc != 2) {
+    printf("usage: chroot <directory>\n");
+    return COMMAND_ERROR;
+  }
+
+  int s;
+  if ((s = chroot(argv[1])) != 0) {
+    printf("chroot failed: %s\n", strerror(errno));
+    return COMMAND_ERROR;
+  }
+
+  return COMMAND_OK;
+}
+
 #endif // VFS_COMMANDS
 
 ELK_CONSTRUCTOR()
@@ -634,5 +657,6 @@ ELK_CONSTRUCTOR()
 #if VFS_COMMANDS
   command_insert("vs", vsCommand);
   command_insert("cd", cdCommand);
+  command_insert("chroot", chrootCommand);
 #endif
 }
