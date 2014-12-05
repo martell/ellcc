@@ -1,5 +1,6 @@
 current SVN:
 
+* Added sigprocmask() to ELK.
 * Added chroot() to ELK.
 * Update to LLVM r223372.
 * ELK can run in MMU and non-MMU configurations.

@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <signal.h>
 
 #include "config.h"                     // Configuration parameters.
 #include "timer.h"
@@ -155,6 +156,9 @@ typedef struct thread
 #endif
 #if HAVE_VM
   vm_map_t map;                 // The process memory map.
+#endif
+#if HAVE_SIGNALS
+  sigset_t sigmask;             // The signal mask.
 #endif
   // A pointer to the user space robust futex list.
   struct robust_list_head *robust_list;
@@ -1663,11 +1667,56 @@ static int sys_setsid(void)
 
 static mode_t sys_umask(mode_t new)
 {
-  // RICH: mode_t old = current->fs->umask;
-  // RICH: current->fs->umask = new;
-  // RICH: return old;
+  mode_t old = current->fs->umask;
+  current->fs->umask = new;
+  return old;
+}
+
+#if HAVE_SIGNALS
+
+static int sys_rt_sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
+{
+  int s = 0;
+  if (oldset) {
+    s = copyout(&current->sigmask, oldset, sizeof(sigset_t));
+    if (s != 0) {
+      return s;
+    }
+  }
+
+  if (set == NULL) {
+    return 0;
+  }
+
+  sigset_t tmp;
+  switch(how) {
+    case SIG_BLOCK:
+      s = copyin(set, &tmp, sizeof(sigset_t));
+      if (s == 0) {
+        for (int i = 0; i < sizeof(sigset_t) / sizeof(unsigned long); ++i) {
+          current->sigmask.__bits[i] |= tmp.__bits[i];
+        }
+      }
+      break;
+    case SIG_UNBLOCK:
+      s = copyin(set, &tmp, sizeof(sigset_t));
+      if (s == 0) {
+        for (int i = 0; i < sizeof(sigset_t) / sizeof(unsigned long); ++i) {
+          current->sigmask.__bits[i] &= ~tmp.__bits[i];
+        }
+      }
+    case SIG_SETMASK:
+      s = copyin(set, &current->sigmask, sizeof(sigset_t *));
+      break;
+    default:
+      s = -EINVAL;
+      break;
+  }
+
   return 0;
 }
+
+#endif
 
 #if ENABLEFDS
 /** Get a file descriptor.
@@ -2074,6 +2123,9 @@ ELK_CONSTRUCTOR()
   SYSCALL(setuid);
   SYSCALL(set_robust_list);
   SYSCALL(set_tid_address);
+#if HAVE_SIGNALS
+  SYSCALL(rt_sigprocmask);
+#endif
   SYSCALL(tkill);
   SYSCALL(umask);
 

@@ -40,8 +40,9 @@
 // IRQ handling.
 #define MAXIRQS 32              // The maximum number of IRQs.
 
-// Memory management.
-#define  HAVE_VM 1              // Use mem functions for memory management.
+#define HAVE_VM 1               // Use mem functions for memory management.
+
+#define HAVE_SIGNALS 1          // Implement signals.
 
 #define CONFIG_DIAG_MSGSZ 128   // Diagnostic meessage size.
 
