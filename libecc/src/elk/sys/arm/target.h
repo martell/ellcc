@@ -17,7 +17,7 @@
 #define Mode_UND    0x1B
 #define Mode_SYS    0x1F
 
-#define INITIAL_PSR Mode_SYS
+#define INITIAL_PSR Mode_USR
 
 #define T_bit 0x20
 #define F_bit 0x40

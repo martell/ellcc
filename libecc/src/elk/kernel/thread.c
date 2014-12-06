@@ -47,11 +47,6 @@ FEATURE(thread)
 #define DEFAULT_PRIORITY ((PRIORITIES)/2)
 #endif
 
-typedef struct envelope {
-  struct envelope *next;
-  Message message;
-} Envelope;
-
 typedef struct
 {
   int lock;
@@ -78,14 +73,6 @@ static inline void lock_release(lock_t *lock)
   __atomic_clear(&lock->lock, __ATOMIC_SEQ_CST);
 #endif
 }
-
-typedef struct queue
-{
-  lock_t lock;
-  Envelope *head;               // The head of the queue.
-  Envelope *tail;               // The tail of the queue.
-  struct thread *waiter;        // Any threads waiting on the queue.
-} MsgQueue;
 
 #define MSG_QUEUE_INITIALIZER { LOCK_INITIALIZER, NULL, NULL, NULL }
 
@@ -162,7 +149,6 @@ typedef struct thread
 #endif
   // A pointer to the user space robust futex list.
   struct robust_list_head *robust_list;
-  struct queue queue;           // The thread's message queue.
 } thread_t;
 
 static int timer_cancel_wake_at(void *id);
@@ -693,134 +679,6 @@ static int sys_sched_yield(void)
   return 0;
 }
 
-/** Send a message to a message queue.
- */
-int send_message_q(struct queue *queue, Message msg)
-{
-  if (queue == NULL) {
-    queue = &current->queue;
-  }
-  Envelope *envelope = (Envelope *)kmem_alloc(sizeof(Envelope));
-  if (!envelope) {
-    return -ENOMEM;
-  }
-  envelope->message = msg;
-
-  thread_t *wakeup = NULL;
-  envelope->next = NULL;
-  lock_aquire(&queue->lock);
-  // Queue a envelope.
-  if (queue->head) {
-    queue->tail->next = envelope;
-  } else {
-    queue->head = envelope;
-  }
-  queue->tail = envelope;
-  if (queue->waiter) {
-    // Wake up sleeping threads.
-    wakeup = queue->waiter;
-    queue->waiter = NULL;
-  }
-  lock_release(&queue->lock);
-  if (wakeup) {
-    // Schedule the sleeping threads.
-    schedule(wakeup);
-  }
-  return 0;
-}
-
-/** Send a message to a thread.
- */
-int send_message(int tid, Message msg)
-{
-  if (tid < 0 || tid >= THREADS) {
-    return -EINVAL;
-  }
-  thread_t *tp = threads[tid];
-
-  if (tp == NULL) {
-    return -ESRCH;
-  }
-
-  return send_message_q(&tp->queue, msg);
-}
-
-Message get_message(struct queue *queue)
-{
-  if (queue == NULL) {
-    queue = &current->queue;
-  }
-
-  Envelope *envelope = NULL;;
-  do {
-    lock_aquire(&queue->lock);
-    // Check for queued items.
-    if (queue->head) {
-      envelope = queue->head;
-      queue->head = envelope->next;
-      if (!queue->head) {
-        queue->tail = NULL;
-      }
-    }
-    if (!envelope) {
-      // Sleep until something becomes available.
-      // Remove me from the ready list.
-      lock_aquire(&ready_lock);
-      thread_t *me = current;
-      // Add me to the waiter list.
-      me->next = queue->waiter;
-      queue->waiter = me;
-      lock_release(&queue->lock);
-      int s = nolock_change_state(0, MSGWAIT);
-      if (s != 0) {
-        if (s < 0) {
-          // An error (like EINTR) has occured.
-          errno = -s;
-        } else {
-          // Another system event has occured, handle it.
-        }
-
-        s = -1;
-        return (Message){};
-      }
-    } else {
-      lock_release(&queue->lock);
-    }
-  } while(envelope == NULL);
-
-  Message msg = envelope->message;
-  kmem_free(envelope);
-  return msg;
-}
-
-Message get_message_nowait(struct queue *queue)
-{
-  if (queue == NULL) {
-    queue = &current->queue;
-  }
-
-  Envelope *envelope = NULL;
-  lock_aquire(&queue->lock);
-  // Check for queued items.
-  if (queue->head) {
-    envelope = queue->head;
-    queue->head = envelope->next;
-    if (!queue->head) {
-      queue->tail = NULL;
-    }
-  }
-  lock_release(&queue->lock);
-  Message msg;
-  if (envelope) {
-    msg = envelope->message;
-    kmem_free(envelope);
-  } else {
-    // No messages available.
-    msg  = (Message){ MSG_NONE };
-  }
-  return msg;
-}
-
 /* Set pointer to thread ID.
  * @param tidptr Where to put the thread ID.
  * @return The tid of the calling process.
@@ -1191,7 +1049,6 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   }
 
   tp->next = NULL;
-  tp->queue = (struct queue)MSG_QUEUE_INITIALIZER;
 
   context_t *cp = (context_t *)stack;
   tp->saved_ctx = cp;

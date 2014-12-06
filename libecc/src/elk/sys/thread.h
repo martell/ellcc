@@ -88,39 +88,6 @@ int capable(capability_t cap);
 
 #endif
 
-// RICH: Should messages go away?
-typedef struct message
-{
-  int code;                     // The message code.
-                                // Other stuff can be added.
-} Message;
-
-/** System message codes.
- */
-enum {
-  MSG_NONE,                     // No message.
-  MSG_TIMEOUT,                  // A timeout has occured.
-};
-
-struct queue;
-
-/** Send a message to a message queue.
- * @param queue The message queue.
- * @param message The message to send.
- * @return 0 on success, else -errno.
- */
-int send_message_q(struct queue *queue, Message message);
-
-/** Send a message to a message queue.
- * @param queue The message queue.
- * @param message The message to send.
- * @return 0 on success, else -errno.
- */
-int send_message(int tid, Message message);
-
-Message get_message(struct queue *queue);
-Message get_message_nowait(struct queue *queue);
-
 // Thread states.
 typedef enum state {
   IDLE,                         // This is an idle thread.

@@ -61,63 +61,6 @@ static int thread_create(const char *name, pthread_t *id,
   return s;
 }
 
-/** A simple thread.
- */
-static int tid1;
-static pthread_t id1;
-static void *thread1(void *arg)
-{
-  tid1 = gettid();
-  printf ("thread started %s\n", (char *)arg);
-  for ( ;; ) {
-    // Go to sleep.
-    Message msg = get_message(NULL);
-    printf ("thread running %d\n", msg.code);
-  }
-
-  return 0;
-}
-
-static int thread1Command(int argc, char **argv)
-{
-  if (argc <= 0) {
-    printf("start the thread1 test case.\n");
-    return COMMAND_OK;
-  }
-
-  thread_create("thread1",              // name
-                &id1,                   // id
-                thread1,                // entry
-                0,                      // priority
-                NULL,                   // stack
-                4096,                   // stack size
-                "foo");                 // arg
-
-  return COMMAND_OK;
-}
-
-static int test1Command(int argc, char **argv)
-{
-  if (argc <= 0) {
-    printf("send a message to the thread1 test thread.\n");
-    return COMMAND_OK;
-  }
-
-  if (!id1) {
-    printf("thread1 has not been started.\n");
-    return COMMAND_ERROR;
-  }
-
-  static Message msg = { 3 };
-  int s = send_message(tid1, msg);
-  if (s != 0) {
-    printf("send_message to %d: %s\n", tid1, strerror(s));
-  }
-  msg.code++;
-  return COMMAND_OK;
-}
-
-
 static void *thread2(void *arg)
 {
   printf ("thread2 started\n");
@@ -377,13 +320,11 @@ ELK_CONSTRUCTOR()
   command_insert(NULL, sectionCommand);
   command_insert("syscall", syscallCommand);
   command_insert("yield", yieldCommand);
-  command_insert("thread1", thread1Command);
-  command_insert("test1", test1Command);
-  command_insert("cancel3", cancel3Command);
-  command_insert("join3", join3Command);
   command_insert("thread2", thread2Command);
   command_insert("thread3", thread3Command);
   command_insert("test3", test3Command);
+  command_insert("cancel3", cancel3Command);
+  command_insert("join3", join3Command);
   command_insert("thread4", thread4Command);
   command_insert("test4", test4Command);
   command_insert("thread5", thread5Command);
