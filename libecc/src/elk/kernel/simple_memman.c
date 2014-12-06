@@ -3,6 +3,7 @@
 #include "syscalls.h"           // For syscall numbers.
 #include "kernel.h"
 #include "page.h"
+#include "crt1.h"
 
 // Make simple memory management a loadable feature.
 FEATURE_CLASS(simple_memman, memman)

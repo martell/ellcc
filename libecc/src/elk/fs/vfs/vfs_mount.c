@@ -52,6 +52,7 @@
 #include "vfs.h"
 #include "thread.h"
 #include "command.h"
+#include "crt1.h"
 
 /*
  * List for VFS mount points.

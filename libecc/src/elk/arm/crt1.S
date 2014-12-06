@@ -17,8 +17,8 @@
         moveq   r0, #0          ; \
         blxne   r12
 
-  .section ".text","ax"
-  .code 32
+        .section ".text","ax"
+        .code 32
 /** This is the reset start point.
  * For ARM this is a set of eight vectors, four bytes apart.
  * Use the vector to load the pc from a nearby handler function
@@ -209,22 +209,6 @@ argv:
 #define SAVED_REGS r0-r12, lr           // Registers saved in thread context.
 #define NUM_SAVED 14                    // The number of saved registers.
 
-#if 0 // RICH: TODO
-undefined:
-        ldr     r0, =undefined_string
-        bl      diag_printf
-        b       .
-
-prefetch:
-        ldr     r0, =prefetch_string
-        bl      diag_printf
-        b       .
-
-abort:
-        ldr     r0, =abort_string
-        bl      diag_printf
-        b       .
-#else
 /** Undefined instruction
  */
 undefined:
@@ -276,7 +260,6 @@ trap_common:
         ldmfd   r5, {r0-r14}^           // Restore user mode registers.
         nop                             // Instruction gap for ldm^.
         movs    pc, lr                  // Exit, with restoring cpsr.
-#endif // RICH
 
 /** Handle an interrupt.
  * 1. Enter SYS mode and save register.
@@ -332,9 +315,9 @@ irq:
         rfeia   sp!                     // And return.
 
 /* Set up a context for execution.
- * int __elk_new_context(__elk_context **savearea,
- *                       void * (*entry)(void *), uint32_t psr,
- *                       void *ret, intptr_t arg)
+ * int new_context(context_t **savearea,
+ *                 void * (*entry)(void *), uint32_t psr,
+ *                 void *ret, intptr_t arg)
  * On entry:
  * r0 points to the new context's save area, initialized to the top of
  *     the stack, aligned to 8 bytes.
@@ -342,8 +325,7 @@ irq:
  * r2 is the new context's PSR.
  * r3 is the argument to the context.
  */
-        .global __elk_new_context
-__elk_new_context:
+ENTRY(new_context)
         ldr     r7, [r0]                // Get the new stack pointer.
         stmfd   r7!, {r1, r2}           // Save the new pc and PSR.
         sub     r7, #12 * 4             // Room for registers r2-r12, lr.
@@ -353,14 +335,13 @@ __elk_new_context:
         bx      lr
 
 /* Switch from one context to the next and unlock the queue.
- * void __elk_switch(__elk_context **to, __elk_context **from);
+ * void switch_context(context_t **to, context_t **from);
  * On entry:
  * The ready list is locked.
  * r0 points to the next save area.
  * r1 points to the current save area.
  */
-        .global __elk_switch
-__elk_switch:
+ENTRY(switch_context)
         srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
                                         // the sys stack.
         push    { SAVED_REGS }          // Store other registers.
@@ -373,15 +354,14 @@ __elk_switch:
         rfeia   sp!                     // And dispatch.
 
 /* Switch from one context to the next and unlock the queue.
- * void __elk_switch_arg(int arg, __elk_context **to, __elk_context **from);
+ * void switch_context_arg(int arg, context_t **to, context_t **from);
  * On entry:
  * The ready list is locked.
  * r0 is the tenative return value when the context is restarted.
  * r1 points to the next save area.
  * r2 points to the current save area.
  */
-        .global __elk_switch_arg
-__elk_switch_arg:
+ENTRY(switch_context_arg)
         srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
                                         // the sys stack.
         push    { SAVED_REGS }          // Store other registers.
@@ -394,13 +374,12 @@ __elk_switch_arg:
         rfeia   sp!                     // And dispatch.
 
 /* Enter a context and unlock the queue.
- * void __elk_enter(__elk_context **new);
+ * void enter_context(context_t **new);
  * On entry:
  * The ready list is locked.
  * r0 points to the next save area.
  */
-        .global __elk_enter
-__elk_enter:
+ENTRY(enter_context)
         srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
                                         // the sys stack.
         ldr     sp, [r0]                // Get the new stack pointer.
@@ -525,8 +504,7 @@ unhandled_swi:
 // Set a system call entry.
 // r0 = the entry number.
 // r1 - the handling function.
-        .global __elk_set_syscall
-__elk_set_syscall:
+ENTRY(set_syscall)
         cmp     r0, #512
         ldrlo   r2, =swi_table          // Get the system call table.
         strlo   r1, [r2, r0, lsl #2]    // Set the stystem call entry.

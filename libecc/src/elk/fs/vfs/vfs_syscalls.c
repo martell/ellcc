@@ -53,6 +53,7 @@
 #include "list.h"
 #include "buf.h"
 #include "thread.h"
+#include "crt1.h"
 #include "vfs.h"
 
 FEATURE(vfs_syscalls)

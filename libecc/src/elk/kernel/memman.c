@@ -9,6 +9,7 @@
 #include "thread.h"
 #include "page.h"
 #include "vm.h"
+#include "crt1.h"
 
 // Make memory management a loadable feature.
 FEATURE_CLASS(memman, memman)

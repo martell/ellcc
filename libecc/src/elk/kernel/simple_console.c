@@ -5,6 +5,7 @@
 #include <sys/uio.h>            // For writev (used by printf()).
 #include <sys/ioctl.h>
 #include <kernel.h>
+#include "crt1.h"
 
 // Make the simple console a loadable feature.
 FEATURE_CLASS(simple_console, console)

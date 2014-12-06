@@ -28,7 +28,6 @@
 #include "crt1.h"
 #include "thread.h"
 
-
 #if ENABLEFDS
 #include <stdarg.h>
 #endif
@@ -73,8 +72,6 @@ static inline void lock_release(lock_t *lock)
   __atomic_clear(&lock->lock, __ATOMIC_SEQ_CST);
 #endif
 }
-
-#define MSG_QUEUE_INITIALIZER { LOCK_INITIALIZER, NULL, NULL, NULL }
 
 /** A thread is an indepenent executable context in ELK.
  * A thread is identified by a unique identifier, the thread id (tid).
@@ -152,39 +149,6 @@ typedef struct thread
 } thread_t;
 
 static int timer_cancel_wake_at(void *id);
-
-/** Switch to a new context.
- * @param to The new context.
- * @param from A place to store the current context.
- * This function is implemented in crt1.S.
- */
-int __elk_switch(context_t **to, context_t **from);
-
-/** Switch to a new context.
- * @param arg The tenative return value when the context is restarted.
- * @param to The new context.
- * @param from A place to store the current context.
- * This function is implemented in crt1.S.
- */
-int __elk_switch_arg(int arg, context_t **to, context_t **from);
-
-/** Enter a new context.
- * @param to The new context.
- * This function is implemented in crt1.S.
- */
-int __elk_enter(context_t **to);
-
-/** Set up a new context.
- * @param savearea Where to put the finished stack pointer.
- * @param entry The context entry point (0 if return to caller).
- * @param mode The context execution mode.
- * @param arg1 The first argument to the entry point.
- * @param arg2 The second argument to the entry point.
- * @return 1 to indicate non-clone, else arg1.
- * This function is implemented in crt1.S.
- */
-int __elk_new_context(context_t **savearea, void (entry)(void),
-                      int mode, long arg);
 
 typedef struct thread_queue {
     thread_t *head;
@@ -297,7 +261,7 @@ static void create_idle_threads(void)
     char name[20];
     snprintf(name, 20, "idle%d", i);
     idle_thread[i].name = strdup(name);
-    __elk_new_context(&idle_thread[i].saved_ctx, idle, INITIAL_PSR, 0);
+    new_context(&idle_thread[i].saved_ctx, idle, INITIAL_PSR, 0);
   }
 }
 
@@ -450,7 +414,7 @@ vm_map_t getcurmap()
 /** Enter the IRQ state.
  * This function is called from crt1.S.
  */
-void *__elk_enter_irq(void)
+void *enter_irq(void)
 {
   lock_aquire(&ready_lock);
   long state = irq_state++;
@@ -461,7 +425,7 @@ void *__elk_enter_irq(void)
 /** Unlock the ready queue.
  * This function is called from crt1.S.
  */
-void __elk_unlock_ready(void)
+void unlock_ready(void)
 {
     lock_release(&ready_lock);
 }
@@ -469,7 +433,7 @@ void __elk_unlock_ready(void)
 /** Leave the IRQ state.
  * This function is called from crt1.S.
  */
-void *__elk_leave_irq(void)
+void *leave_irq(void)
 {
   lock_aquire(&ready_lock);
   long state = --irq_state;
@@ -480,7 +444,7 @@ void *__elk_leave_irq(void)
 /** Get the current thread pointer.
  * This function is called from crt1.S.
  */
-thread_t *__elk_thread_self()
+thread_t *thread_self()
 {
   if (irq_state) return NULL;           // Nothing current if in an interrupt
                                         // context.
@@ -601,7 +565,7 @@ static void schedule_nolock(thread_t *list)
   // Switch to the new thread.
   thread_t *me = current;
   get_running();
-  __elk_switch(&current->saved_ctx, &me->saved_ctx);
+  switch_context(&current->saved_ctx, &me->saved_ctx);
 }
 
 /* Schedule a list of threads.
@@ -653,13 +617,13 @@ static int nolock_change_state(int arg, state new_state)
   if (new_state == EXITING) {
     thread_delete(current);
     get_running();
-    return __elk_enter(&current->saved_ctx);
+    return enter_context(&current->saved_ctx);
   }
 
   thread_t *me = current;
   me->state = new_state;
   get_running();
-  return __elk_switch_arg(arg, &current->saved_ctx, &me->saved_ctx);
+  return switch_context_arg(arg, &current->saved_ctx, &me->saved_ctx);
 }
 
 /** Change the current thread's state to
@@ -1055,7 +1019,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   // Copy registers.
   *(cp - 1) = *current->saved_ctx;
 
-  __elk_new_context(&tp->saved_ctx, entry, INITIAL_PSR, 0);
+  new_context(&tp->saved_ctx, entry, INITIAL_PSR, 0);
 
   // Schedule the thread.
   schedule(tp);

@@ -17,20 +17,9 @@
 #endif
 
 #if ELK_NAMESPACE
-#define set_syscall __elk_set_syscall
 #define system_init __elk_system_init
 #define system_c_init __elk_system_c_init
 #endif
-
-#define SYSCALL(name) __elk_set_syscall(SYS_ ## name, sys_ ## name)
-
-/** Set a system call handler.
- * @param nr The system call number.
- * @param fn The system call handling function.
- * @return 0 on success, -1 on  error.
- * This function is defined in crt1.S.
- */
-int __elk_set_syscall(int nr, void *fn);
 
 /** An optiona system initialization function.
  * Called from __elk_start() before C library initialization.

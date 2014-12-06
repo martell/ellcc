@@ -6,9 +6,11 @@
 #include <syscalls.h>           // For syscall numbers.
 #include <sys/uio.h>            // For writev (used by printf()).
 #include <sys/ioctl.h>
+
 #include "kernel.h"
 #include "irq.h"
 #include "console.h"
+#include "crt1.h"
 
 // Make the simple console a loadable feature.
 FEATURE_CLASS(console, console)

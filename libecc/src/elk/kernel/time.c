@@ -6,9 +6,11 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <kernel.h>
-#include <timer.h>
-#include <thread.h>
+
+#include "kernel.h"
+#include "timer.h"
+#include "thread.h"
+#include "crt1.h"
 
 // Make the time syscalls commands a loadable feature.
 FEATURE(time)
