@@ -528,7 +528,7 @@ ENTRY(copyin)
         b       2f
 1:
         ldrb    r3, [r12, r0]
-ASM_LABEL(known_fault1):                // May be fault here.
+CLABEL(known_fault1):                   // Might fault here.
         strb    r3, [r12, r1]
         add     r12, r12, #1
 2:
@@ -551,7 +551,7 @@ ENTRY(copyout)
         b       2f
 1:
         ldrb    r3, [r12, r0]
-ASM_LABEL(known_fault2):                // May be fault here.
+CLABEL(known_fault2):                   // Might fault here.
         strb    r3, [r12, r1]
         add     r12, r12, #1
 2:
@@ -575,7 +575,7 @@ ENTRY(copyinstr)
         b       2f
 1:
         ldrb    r3, [r12, r0]
-ASM_LABEL(known_fault3):                // May be fault here.
+CLABEL(known_fault3):                   // Might fault here.
         strb    r3, [r12, r1]
         cmp     r3, #0
         beq     3f
