@@ -114,7 +114,7 @@ $(PROG): elkconfig.ld $(NEEDCLEAN) $(OBJS)
 %.o: %.cpp
 	$(OUTC)$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-%.ld: %.LD
+%.ld: %.cfg
 	$(OUTCPP)$(CPP) -E - <$<   -I $(ELLCCLIB)/$(TARGET) \
 				   -I $(ELLCCLIB)/elk \
                                  | sed -e "s/#.*//" \

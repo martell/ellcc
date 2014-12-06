@@ -1,5 +1,5 @@
 An example of building ELK.
-The file "elkconfig.LD" contains the configuration parameters for the
+The file "elkconfig.cfg" contains the configuration parameters for the
 build. The definitions of FLASH and MMU determine how ELK should run:
 
 FLASH   MMU
