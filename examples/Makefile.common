@@ -1,5 +1,5 @@
 # This is a generic Makefile to build programs using ELLCC
-# targeting multiple Linux and ELK (standalone) environments.
+# targeting multiple ELK (standalone) environments.
 # "make help" shows the make targets supported as well as the
 # available target configurations.
 # This Makefile can be placed a directory containing C and/or C++
@@ -39,11 +39,14 @@ else
   endif
 endif
 
+ELLCCLIB=$(ELLCCBIN)../libecc/lib
+
 CXXFLAGS += -MD -MP
 
 ifeq ($(VERBOSE),)
   OUT=@
   OUTC=@echo "Compiling $<";
+  OUTCPP=@echo "Preprocessing $<";
   OUTA=@echo "Assembling $<";
   OUTL=@echo "Linking $(PROG)";
   OUTAR=@echo "Making library $(LIBNAME)";
@@ -68,6 +71,7 @@ $(shell echo TARGET=$(TARGET) >config)
 
 # Set up the ELLCC commands.
 CC=$(ELLCCBIN)ecc
+CPP=$(ELLCCBIN)ecc -E -target $(TARGET)
 CXX=$(ELLCCBIN)ecc++
 ELLCCPREFIX= $(ELLCCBIN)ecc-
 AR=$(ELLCCPREFIX)ar rcu
@@ -96,8 +100,10 @@ else
   LD=$(CC)
 endif
 
-$(PROG): $(NEEDCLEAN) $(OBJS)
+$(PROG): elkconfig.ld $(NEEDCLEAN) $(OBJS)
 	$(OUTL)$(LD) $(LDFLAGS) -o $(PROG) $(OBJS)
+
+.SUFFIXES: .LD .ld
 
 %.o: %.c
 	$(OUTC)$(CC) $(CFLAGS) -c -o $@ $<
@@ -107,6 +113,13 @@ $(PROG): $(NEEDCLEAN) $(OBJS)
 
 %.o: %.cpp
 	$(OUTC)$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+%.ld: %.LD
+	$(OUTCPP)$(CPP) -E - <$<   -I $(ELLCCLIB)/$(TARGET) \
+				   -I $(ELLCCLIB)/elk \
+                                 | sed -e "s/#.*//" \
+                                 | sed -e 's/^\s*//' \
+                                 | sed -e '/^\s*$$/d' > $@
 
 # Find out how to run a program in the current configuration.
 ARCH=$(shell $(ELLCCBIN)ecc-getarch $(TARGET))
@@ -120,7 +133,7 @@ else
   MAKEBIN=$(OBJCOPY) -O binary $(PROG) $(PROG).bin;
   ifeq ($(INCARCH),arm)
     RUN=$(QEMUINST)$(ELLCCBIN)qemu-system-$(ARCH) $(QEMUDBG) -M vexpress-a9 \
-	  -m 128M -nographic -kernel $(PROG)
+	  -cpu cortex-a9 -m 128M -nographic -kernel $(PROG)
   endif
   ifeq ($(INCARCH),i386)
     RUN=$(QEMUINST) $(ELLCCBIN)qemu-system-$(ARCH) $(QEMUDBG) -M pc -nographic \
@@ -175,7 +188,7 @@ help:
 	@cd $(ELLCCBIN)../libecc/config; ls *-elk-*
 
 clean:
-	rm -f *.o $(PROG) $(PROG).bin $(PROG).log
+	rm -f *.o $(PROG) $(PROG).bin $(PROG).log elkconfig.ld
 
 distclean: clean
 	rm config

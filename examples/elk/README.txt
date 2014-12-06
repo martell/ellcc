@@ -12,6 +12,13 @@ Running ELK from flash makes allows it to act like a boot loader
 similar to U-Boot. Running from RAM makes ELK look more like a
 Linux kernel.
 
+To build this example, typical commands would be:
+    make arm-elk-engeabi
+    make run
+    make debug
+    (and then in another window)
+    make tui  # "make gdb" starts gdb in commmand mode.
+
 Currently supported configuration(s):
 Linux:
   None

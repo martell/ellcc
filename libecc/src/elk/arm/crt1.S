@@ -250,8 +250,10 @@ trap_common:
 
         str     r0, [sp, #REG_R0]       // Set trap type to R0.
         mov     r0, sp
-        bl      CLABEL(trap_handler)
-
+        weak_call(CLABEL(trap_handler))
+        cmp     r0, #0
+trapped:
+        beq     trapped                 // Stay here if no handler is available.
         mov     r5, sp
         ldr     r1, [r5, #REG_CPSR]     // Restore cpsr.
         msr     spsr_all, r1
@@ -496,7 +498,7 @@ unhandled_swi:
         ldr     r1, =syscall            // And the system call number.
         ldr     r1, [r1]
         ldr     r0, =unhandled_string   // Get the format string.
-        bl      diag_printf             // Print the unhandled system call.
+        weak_call(diag_printf)          // Print the unhandled system call.
         add     sp, #16                 // clean up the stack.
         mov     r0, #-ENOSYS
         ldmfd   sp!, {r12, pc}

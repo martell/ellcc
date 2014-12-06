@@ -6,6 +6,10 @@
   #define PROC_COMMANDS
 #endif
 
+#ifdef SIMPLE_EXIT
+  EXTERN(__elk_simple_exit) /* Simple infinate loop exit handling. */
+#endif
+
 #ifdef SIMPLE_CONSOLE
   EXTERN(__elk_simple_console) /* Simple polling console. */
 #endif
@@ -28,6 +32,11 @@
 
 #ifdef THREADS
   EXTERN(__elk_thread) /* ELK thread handling. */
+  #define TRAP
+#endif
+
+#ifdef TRAP
+  EXTERN(__elk_trap) /* Handle traps. */
 #endif
 
 #ifdef TIME_COMMANDS

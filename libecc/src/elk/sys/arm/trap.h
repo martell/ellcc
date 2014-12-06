@@ -45,8 +45,7 @@
 #define trap_dump __elk_trap_dump
 #endif
 
-void trap_handler(struct cpu_regs *);
-void trap_dump(struct cpu_regs *);
+int trap_handler(struct cpu_regs *);
 
 #endif // !__ASSEMBLER__
 #endif // !_trap_h_

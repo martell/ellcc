@@ -52,6 +52,8 @@
 #include "crt1.h"
 #include "trap.h"
 
+FEATURE(trap)
+
 #define DEBUG
 #ifdef DEBUG
 /*
@@ -77,10 +79,29 @@ static const int exception_map[] = {
 };
 #endif
 
+#ifdef DEBUG
+static void trap_dump(struct cpu_regs *r)
+{
+
+  diag_printf("Trap frame %x\n", r);
+  diag_printf(" r0  %08x r1  %08x r2  %08x r3  %08x r4  %08x r5  %08x\n",
+         r->r0, r->r1, r->r2, r->r3, r->r4, r->r5);
+  diag_printf(" r6  %08x r7  %08x r8  %08x r9  %08x r10 %08x r11 %08x\n",
+         r->r6, r->r7, r->r8, r->r9, r->r10, r->r11);
+  diag_printf(" r12 %08x sp  %08x lr  %08x pc  %08x cpsr %08x\n",
+         r->r12, r->sp, r->lr, r->pc, r->cpsr);
+
+  diag_printf(" >> interrupt is %s\n",
+         (r->cpsr & PSR_INT_MASK) ? "disabled" : "enabled");
+
+  diag_printf(" >> tid=%d\n", gettid());
+}
+#endif /* !DEBUG */
+
 /** Trap handler
  * Invoke the exception handler if it is needed.
  */
-void trap_handler(struct cpu_regs *regs)
+int trap_handler(struct cpu_regs *regs)
 {
   u_long trap_no = regs->r0;
 
@@ -92,7 +113,7 @@ void trap_handler(struct cpu_regs *regs)
     DPRINTF(THRDB_FAULT, ("\n*** Detect Fault! address=%x tid=%d ***\n",
                           get_faultaddress(), gettid()));
     regs->pc = (uint32_t)copy_fault;
-    return;
+    return 1;
   }
 
 #ifdef DEBUG
@@ -116,23 +137,6 @@ void trap_handler(struct cpu_regs *regs)
   exception_mark(exception_map[trap_no]);
   exception_deliver();
 #endif
+  return 1;
 }
 
-#ifdef DEBUG
-void trap_dump(struct cpu_regs *r)
-{
-
-  diag_printf("Trap frame %x\n", r);
-  diag_printf(" r0  %08x r1  %08x r2  %08x r3  %08x r4  %08x r5  %08x\n",
-         r->r0, r->r1, r->r2, r->r3, r->r4, r->r5);
-  diag_printf(" r6  %08x r7  %08x r8  %08x r9  %08x r10 %08x r11 %08x\n",
-         r->r6, r->r7, r->r8, r->r9, r->r10, r->r11);
-  diag_printf(" r12 %08x sp  %08x lr  %08x pc  %08x cpsr %08x\n",
-         r->r12, r->sp, r->lr, r->pc, r->cpsr);
-
-  diag_printf(" >> interrupt is %s\n",
-         (r->cpsr & PSR_INT_MASK) ? "disabled" : "enabled");
-
-  diag_printf(" >> tid=%d\n", gettid());
-}
-#endif /* !DEBUG */
