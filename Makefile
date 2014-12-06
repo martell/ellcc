@@ -60,10 +60,16 @@ sendmacrelease:
 	$(OUT)ssh main.pennware.com chmod oug+r /var/ftp/pub/\*
 	$(OUT)ssh main.pennware.com cp /var/ftp/pub/ellcc-Mac*-$(VERSION).tgz \
                                        web/ellcc/releases
+.PHONY: tagrelease
+tagrelease:
+	$(OUT)svn cp -m "Tag release $(VERSION)." \
+	  http://ellcc.org/svn/ellcc/trunk \
+	  http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
 
 .PHONY: untagrelease
 untagrelease:
-	$(OUT)svn rm http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+	-$(OUT)svn rm -m "Revert." http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
+	-$(OUT)svn rm -m "Revert." http://ellcc.org/svn/ellcc/tags/current
 
 .PHONY: clean
 clean:
