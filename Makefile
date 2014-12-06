@@ -30,7 +30,7 @@ release:
 	$(OUT)svn cp -m "Tag release $(VERSION)." \
 	  http://ellcc.org/svn/ellcc/trunk \
 	  http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
-	$(OUT)echo Run "make sendrelease" to update download sites"
+	$(OUT)echo Run "make sendrelease" to update download sites
 
 .PHONY: sendrelease
 sendrelease:
