@@ -55,12 +55,9 @@
  *  pc      r15    program counter
  */
 
-/*
- * Common register frame for trap/interrupt.
- * These cpu state are saved into top of the kernel stack in
- * trap/interrupt entries. Since the arguments of system calls are
- * passed via registers, the system call library is completely
- * dependent on this register format.
+/** Common register frame for trap/interrupt.
+ * The cpu state is saved on the top of the kernel stack on
+ * trap/interrupt entry.
  */
 struct cpu_regs {
   uint32_t r0;                          //  +0 (00)
@@ -76,27 +73,11 @@ struct cpu_regs {
   uint32_t r10;                         // +40 (28)
   uint32_t r11;                         // +44 (2C)
   uint32_t r12;                         // +48 (30)
-  uint32_t sp;                          // +52 (34)
-  uint32_t lr;                          // +56 (38)
-  uint32_t cpsr;                        // +60 (3C)
-  uint32_t svc_sp;                      // +64 (40)
-  uint32_t svc_lr;                      // +68 (44)
-  uint32_t pc;                          // +72 (48)
-};
-
-/** Kernel mode context for context switching.
- */
-struct kern_regs {
-  uint32_t  r4;
-  uint32_t  r5;
-  uint32_t  r6;
-  uint32_t  r7;
-  uint32_t  r8;
-  uint32_t  r9;
-  uint32_t  r10;
-  uint32_t  r11;
-  uint32_t  sp;
-  uint32_t  lr;
+  uint32_t lr;                          // +52 (34)
+  uint32_t sp;                          // +56 (38)
+  uint32_t pad;                         // +60 (3C) Unsed. For alignment.
+  uint32_t pc;                          // +64 (40)
+  uint32_t cpsr;                        // +68 (44)
 };
 
 #if RICH        // Use later after target.h is gone.
@@ -128,13 +109,12 @@ typedef struct context *context_t;              // Context id.
 #define REG_R10         0x28
 #define REG_R11         0x2c
 #define REG_R12         0x30
-#define REG_SP          0x34
-#define REG_LR          0x38
-#define REG_CPSR        0x3c
-#define REG_SVCSP       0x40
-#define REG_SVCLR       0x44
-#define REG_PC          0x48
+#define REG_LR          0x34
+#define REG_SP          0x38
+// 0x3c is empty.
+#define REG_PC          0x40
+#define REG_CPSR        0x44
 
-#define CTXREGS (4*19)
+#define CTXREGS (4*18)
 
 #endif // _context_h_

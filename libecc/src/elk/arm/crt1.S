@@ -242,8 +242,13 @@ abort:
  * r0 - trap type
  */
 trap_common:
-        add     r5, sp, #CTXREGS
-        str     r5, [sp, #REG_SVCSP]    // Push svc_sp.
+        add     r8, sp, #CTXREGS
+        push    { r0, r1 }
+        weak_call(__elk_thread_self)    // Get the current context.
+        cmp     r0, #0
+        strne   r8, [r0]                // Save sp for clone().
+        pop     { r0, r1 }
+
         str     lr, [sp, #REG_PC]       // Push pc.
         mrs     r5, spsr                // Push cpsr.
         str     r5, [sp, #REG_CPSR]
@@ -258,7 +263,6 @@ trapped:
         ldr     r1, [r5, #REG_CPSR]     // Restore cpsr.
         msr     spsr_all, r1
         ldr     lr, [r5, #REG_PC]       // Restore pc (lr).
-        ldr     sp, [r5, #REG_SVCSP]    // Restore svc_sp.
         ldmfd   r5, {r0-r14}^           // Restore user mode registers.
         nop                             // Instruction gap for ldm^.
         movs    pc, lr                  // Exit, with restoring cpsr.
@@ -283,6 +287,7 @@ irq:
         srsfd   sp!, #Mode_SYS          // Save LR_irq and SPSR_irq on the
                                         // sys stack.
         cpsid   i, #Mode_SYS            // Switch to sys mode.
+        sub     sp, #4 * 2              // Leave room for the sp.
         push    { SAVED_REGS }          // Store other registers.
         weak_call(__elk_enter_irq)      // Enter the IRQ state.
         cmp     r0, #0                  // Have a context pointer?
@@ -314,6 +319,7 @@ irq:
         mcrne   p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(__elk_unlock_ready)   // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
+        add     sp, #4 * 2              // Deallocate the sp space.
         rfeia   sp!                     // And return.
 
 /* Set up a context for execution.
@@ -330,7 +336,7 @@ irq:
 ENTRY(new_context)
         ldr     r7, [r0]                // Get the new stack pointer.
         stmfd   r7!, {r1, r2}           // Save the new pc and PSR.
-        sub     r7, #12 * 4             // Room for registers r2-r12, lr.
+        sub     r7, #14 * 4             // Room for registers r2-r13, sp, pad.
         mov     r1, r3                  // Get the first argument.
         stmfd   r7!, {r1-r2}            // Save the argument.
         str     r7, [r0]                // Update the stack pointer.
@@ -346,6 +352,7 @@ ENTRY(new_context)
 ENTRY(switch_context)
         srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
                                         // the sys stack.
+        sub     sp, #4 * 2              // Room for the saved sp
         push    { SAVED_REGS }          // Store other registers.
         str     sp, [r1]                // Save the current frame.
         ldr     sp, [r0]                // Get the new stack pointer.
@@ -353,6 +360,7 @@ ENTRY(switch_context)
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(__elk_unlock_ready)   // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
+        add     sp, #4 * 2              // Deallocate the saved sp
         rfeia   sp!                     // And dispatch.
 
 /* Switch from one context to the next and unlock the queue.
@@ -366,6 +374,7 @@ ENTRY(switch_context)
 ENTRY(switch_context_arg)
         srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
                                         // the sys stack.
+        sub     sp, #4 * 2              // Room for the saved sp
         push    { SAVED_REGS }          // Store other registers.
         str     sp, [r2]                // Save the current frame.
         ldr     sp, [r1]                // Get the new stack pointer.
@@ -373,6 +382,7 @@ ENTRY(switch_context_arg)
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(__elk_unlock_ready)   // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
+        add     sp, #4 * 2              // Deallocate the saved sp
         rfeia   sp!                     // And dispatch.
 
 /* Enter a context and unlock the queue.
@@ -389,6 +399,7 @@ ENTRY(enter_context)
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(__elk_unlock_ready)   // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
+        add     sp, #4 * 2              // Deallocate the saved sp
         rfeia   sp!                     // And dispatch.
 
 /* Handle a system call.
@@ -398,6 +409,7 @@ swi:
         srsfd   sp!, #Mode_SYS          // Save LR_svc and SPSR_svc on
                                         // the sys stack.
         cpsid   i, #Mode_SYS            // Switch to sys mode.
+        sub     sp, #8                  // Room for the saved sp.
         push    { SAVED_REGS }          // Save registers.
         cpsie   i                       // Enable IRQ
         mov     r8, sp                  // Save the sp.
@@ -420,7 +432,7 @@ __in_syscall:                           // The stack frame is valid here.
         push    { r8, r9 }              // Save the adjustment.
         ldr     r8, =swi_table          // Get the system call table.
         ldr     r8, [r8, r7, lsl #2]    // Get the system call entry.
-        ldr     r7, [sp, #4 * (NUM_SAVED + 2)]// Get the SVC return address
+        ldr     r7, [sp, #4 * (NUM_SAVED + 4)]// Get the SVC return address
                                         // for clone().
         push    { r4, r5, r6, r7 }      // Put extra arguments on the stack.
         blx     r8                      // Dispatch. Return value is in r0/r1
@@ -429,6 +441,7 @@ __in_syscall:                           // The stack frame is valid here.
         add     sp, sp, r8              // And adjust.
         add     sp, #4 * 2              // Deallocate r0-r1.
         pop     { r2-r12, lr }          // SAVED_REGS - r0-r1
+        add     sp, #4 * 2              // Deallocate saved sp space.
         rfeia   sp!                     // And return.
 
 /* ARM has a few "hidden" system calls.
@@ -447,6 +460,7 @@ check_arm_syscall:
         ldr     r7, [r8, r7, lsl #2]    // Get the stystem call entry.
         blx     r7                      // Dispatch. Return value is in r0/r1
         pop     { SAVED_REGS }          // Restore registers.
+        add     sp, #8                  // Deallocate saved sp.
         rfeia   sp!                     // And return.
 
 low:

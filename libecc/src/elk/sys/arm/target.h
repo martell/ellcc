@@ -79,11 +79,15 @@ typedef struct context
     uint32_t r12;
     uint32_t ip;
   };
-  // r13 is sp. Not saved here.
   union {
     uint32_t r14;
     uint32_t lr;
   };
+  union {
+    uint32_t r13;
+    uint32_t sp;
+  };
+  uint32_t pad;
   union {
     uint32_t r15;
     uint32_t pc;
