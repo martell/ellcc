@@ -78,8 +78,10 @@ ifeq ($(shell uname),Darwin)
   CFLAGS += -Wno-error=deprecated-declarations
 endif
 
-ifneq ($(MINGW),1)
-  CFLAGS += -Wno-error=pointer-bool-conversion
+ifneq ($(CC),gcc)
+  ifneq ($(MINGW),1)
+    CFLAGS += -Wno-error=pointer-bool-conversion
+  endif
 endif
 
 binutils.configure:
