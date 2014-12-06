@@ -31,6 +31,7 @@
 #define _trap_h_
 
 #include "config.h"
+#include "context.h"
 
 /** Trap ID
  */
@@ -45,7 +46,7 @@
 #define trap_dump __elk_trap_dump
 #endif
 
-int trap_handler(struct cpu_regs *);
+int trap_handler(context_t *);
 
 #endif // !__ASSEMBLER__
 #endif // !_trap_h_

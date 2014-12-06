@@ -5,6 +5,7 @@
 #define _crt1common_h_
 
 #include "config.h"
+#include "context.h"
 
 /** The following functions are defined  in crt1.S.
  */

@@ -109,11 +109,6 @@ typedef struct context *context_t;              // Context id.
 #define REG_R5          0x14
 #define REG_R6          0x18
 #define REG_R7          0x1c
-#define REG_R8          0x20
-#define REG_R9          0x24
-#define REG_R10         0x28
-#define REG_R11         0x2c
-#define REG_R12         0x30
 #define REG_LR          0x34
 #define REG_SP          0x38
 // 0x3c is empty.

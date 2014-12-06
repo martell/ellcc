@@ -25,6 +25,7 @@
 
 #if !defined(__ASSEMBLER__)
 
+#if RICH
 typedef struct context
 {
   union {
@@ -99,6 +100,7 @@ static inline void context_set_return(context_t *cp, int value)
 {
   cp->a1 = value;
 }
+#endif
 
 #endif // !defined(__ASSEMBLER__)
 

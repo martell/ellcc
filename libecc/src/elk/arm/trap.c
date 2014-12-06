@@ -80,7 +80,7 @@ static const int exception_map[] = {
 #endif
 
 #ifdef DEBUG
-static void trap_dump(struct cpu_regs *r)
+static void trap_dump(context_t *r)
 {
 
   diag_printf("Trap frame %x\n", r);
@@ -101,7 +101,7 @@ static void trap_dump(struct cpu_regs *r)
 /** Trap handler
  * Invoke the exception handler if it is needed.
  */
-int trap_handler(struct cpu_regs *regs)
+int trap_handler(context_t *regs)
 {
   u_long trap_no = regs->r0;
 
