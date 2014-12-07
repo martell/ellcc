@@ -30,6 +30,8 @@
 #ifndef _cpu_h_
 #define _cpu_h_
 
+#define INITIAL_PSR 0 // RICH
+
 // GDTs
 #define KERNEL_CS       0x10
 #define KERNEL_DS       0x18
@@ -81,6 +83,8 @@
 
 #include <sys/types.h>
 #include <context.h>
+
+#include "kernel.h"
 
 #if defined(__SUNPRO_C)
 #pragma pack(1)

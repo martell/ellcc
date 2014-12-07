@@ -7,7 +7,6 @@
 
 #include "config.h"
 #include "kernel.h"
-#include "target.h"
 #include "vnode.h"
 #include "file.h"
 #include "vm.h"

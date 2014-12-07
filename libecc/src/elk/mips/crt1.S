@@ -1,5 +1,5 @@
 #include <bits/errno.h>
-#include "target.h"
+#include "target.h"     // RICH: Get rid of this.
 
 /** Call a function only if it exists.
  * Act as if it returned 0 or NULL if it's not defined.

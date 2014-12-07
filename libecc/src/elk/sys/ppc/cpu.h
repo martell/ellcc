@@ -30,6 +30,8 @@
 #ifndef _cpu_h_
 #define _cpu_h_
 
+#define INITIAL_PSR 0 // RICH
+
 #define STKFRAME_LEN    8               // Length for stack frame.
 
 /** Flags in MSR

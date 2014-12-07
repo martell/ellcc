@@ -2,7 +2,6 @@
 #include "gdt.h"
 #include "traps.h"
 #include "entry.h"
-#include "target.h"
 
 /** Call a function only if it exists.
  * Act as if it returned 0 or NULL if it's not defined.

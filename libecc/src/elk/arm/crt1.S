@@ -3,7 +3,6 @@
 #include "asm.h"
 #include "cpu.h"
 #include "trap.h"
-#include "target.h"
 #include "context.h"
 
 /** Call a function only if it exists.
@@ -67,18 +66,18 @@ reset:
         /* Set up the various stack pointers by setting the correct mode
         * and initializing the stack pointers.
         */
-        msr     cpsr_c, #Mode_FIQ|I_bit|F_bit
+        msr     cpsr_c, #PSR_FIQ_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__intstk_top__
-        msr     cpsr_c, #Mode_IRQ|I_bit|F_bit
+        msr     cpsr_c, #PSR_IRQ_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__intstk_top__
-        msr     cpsr_c, #Mode_ABT|I_bit|F_bit
+        msr     cpsr_c, #PSR_ABT_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__abortstk_top__
-        msr     cpsr_c, #Mode_UND|I_bit|F_bit
+        msr     cpsr_c, #PSR_UND_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__undefinedstk_top__
-        msr     cpsr_c, #Mode_SVC|I_bit|F_bit
+        msr     cpsr_c, #PSR_SVC_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__sysstk_top__
         // Finally, set up the SYS mode stack pointer and stay in SYS mode.
-        msr     cpsr_c, #Mode_SYS       // |I_bit|F_bit
+        msr     cpsr_c, #PSR_SYS_MODE       // |PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__sysstk_top__
 
         ldr     r0, =__mmu_enabled__    // Check for MMU enabled.
@@ -284,9 +283,9 @@ trapped:
  */
 irq:
         sub     lr, lr, #4              // Adjust return address.
-        srsfd   sp!, #Mode_SYS          // Save LR_irq and SPSR_irq on the
+        srsfd   sp!, #PSR_SYS_MODE      // Save LR_irq and SPSR_irq on the
                                         // sys stack.
-        cpsid   i, #Mode_SYS            // Switch to sys mode.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
         sub     sp, #4 * 2              // Leave room for the sp.
         push    { SAVED_REGS }          // Store other registers.
         weak_call(__elk_enter_irq)      // Enter the IRQ state.
@@ -350,7 +349,7 @@ ENTRY(new_context)
  * r1 points to the current save area.
  */
 ENTRY(switch_context)
-        srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
+        srsfd   sp!, #PSR_SYS_MODE      // Save LR_sys and SPSR_sys on
                                         // the sys stack.
         sub     sp, #4 * 2              // Room for the saved sp
         push    { SAVED_REGS }          // Store other registers.
@@ -372,7 +371,7 @@ ENTRY(switch_context)
  * r2 points to the current save area.
  */
 ENTRY(switch_context_arg)
-        srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
+        srsfd   sp!, #PSR_SYS_MODE      // Save LR_sys and SPSR_sys on
                                         // the sys stack.
         sub     sp, #4 * 2              // Room for the saved sp
         push    { SAVED_REGS }          // Store other registers.
@@ -392,7 +391,7 @@ ENTRY(switch_context_arg)
  * r0 points to the next save area.
  */
 ENTRY(enter_context)
-        srsfd   sp!, #Mode_SYS          // Save LR_sys and SPSR_sys on
+        srsfd   sp!, #PSR_SYS_MODE      // Save LR_sys and SPSR_sys on
                                         // the sys stack.
         ldr     sp, [r0]                // Get the new stack pointer.
         ldr     r1, [r0, #4]            // Get the new TLS.
@@ -406,9 +405,9 @@ ENTRY(enter_context)
  * On the ARM, this is entered with an SVC instruction.
  */
 swi:
-        srsfd   sp!, #Mode_SYS          // Save LR_svc and SPSR_svc on
+        srsfd   sp!, #PSR_SYS_MODE      // Save LR_svc and SPSR_svc on
                                         // the sys stack.
-        cpsid   i, #Mode_SYS            // Switch to sys mode.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
         sub     sp, #8                  // Room for the saved sp.
         push    { SAVED_REGS }          // Save registers.
         cpsie   i                       // Enable IRQ

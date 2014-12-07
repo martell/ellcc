@@ -26,6 +26,7 @@
 #include "syspage.h"
 #include "command.h"
 #include "crt1.h"
+#include "cpu.h"
 #include "thread.h"
 
 #if ENABLEFDS

@@ -33,6 +33,8 @@
 #ifndef __ASSEMBLER__
 #include <sys/types.h>
 
+#include "config.h"
+
 /** ARM register reference:
  *
  *  Name    Number  ARM Procedure Calling Standard Role
@@ -80,22 +82,14 @@ typedef struct context {
   uint32_t cpsr;                        // +68 (44)
 } context_t;
 
+#if ELK_NAMESPACE
+#define context_set_return __elk_context_set_return
+#endif
+
 static inline void context_set_return(context_t *cp, int value)
 {
   cp->r0 = value;
 }
-
-#if RICH        // Use later after target.h is gone.
-/** Processor context
- */
-struct context {
-  struct kern_regs kregs;                       // Kernel mode registers.
-  struct cpu_regs *uregs;                       // User mode registers.
-  struct cpu_regs *saved_regs;                  // Savecd user mode registers.
-};
-
-typedef struct context *context_t;              // Context id.
-#endif
 
 #endif // !__ASSEMBLER__
 

@@ -9,12 +9,13 @@
 
 #include "config.h"
 #include "hal.h"
-#include "target.h"
 #include "constructor.h"
 
 #ifndef NULL
 #define NULL 0
 #endif
+
+#define __packed __attribute__((__packed__))
 
 #if ELK_NAMESPACE
 #define system_init __elk_system_init
