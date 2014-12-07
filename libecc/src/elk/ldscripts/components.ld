@@ -102,4 +102,5 @@ EXTERN(__elk_vfs_syscalls) /* File system syscalls. */
   EXTERN(__elk_cat_bin)   /* The BSD cat program. */
   EXTERN(__elk_pwd_bin)   /* The BSD pwd program. */
   EXTERN(__elk_echo_bin)  /* The BSD echo program. */
+  EXTERN(__elk_rm_bin)    /* The BSD rm program. */
 #endif
