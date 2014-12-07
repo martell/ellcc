@@ -82,15 +82,15 @@ void splon(void);
 /** The following functions are used by crt1.S.
  */
 #ifdef ELK_NAMESPACE
-#define enter_irq __elk_enter_irq
+#define enter_sys __elk_enter_sys
 #define unlock_ready __elk_unlock_ready
-#define leave_irq __elk_leave_irq
+#define leave_sys __elk_leave_sys
 #define thread_self __elk_thread_self
 #endif
 
 /** Enter the IRQ state.
  */
-void *enter_irq(void);
+void *enter_sys(void);
 
 /** Unlock the ready queue.
  */
@@ -98,7 +98,7 @@ void unlock_ready(void);
 
 /** Leave the IRQ state.
  */
-void *leave_irq(void);
+void *leave_sys(void);
 
 /** Get the current thread pointer.
  */

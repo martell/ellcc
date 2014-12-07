@@ -270,23 +270,21 @@ void *kmem_realloc(void *ptr, size_t size)
   if (blk->magic != BLOCK_MAGIC)
     panic("kmem_realloc: invalid address");
 
-  if (blk->size >= size) {
+  if (blk->size >= size + BLKHDR_SIZE) {
     UNLOCK();
     return ptr;
   }
 
   // RICH: Can we expand the current block? Is it worth it?
-
+  UNLOCK();
   void *new_ptr = kmem_alloc(size);
   if (new_ptr == NULL) {
-    UNLOCK();
     return NULL;
   }
 
   // Copy the old contents.
-  memcpy(new_ptr, ptr, blk->size);
+  memcpy(new_ptr, ptr, blk->size - BLKHDR_SIZE);
   kmem_free(ptr);
-  UNLOCK();
   return new_ptr;
 }
 

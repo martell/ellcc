@@ -93,7 +93,7 @@ extern int debug;
 #endif  // !ELK_DEBUG
 
 extern int puts(const char *s);
-#define panic(arg) do { puts(arg); exit(1); } while(1)
+#define panic(arg) do { puts(arg); for ( ;; ); } while(1)
 
 /* RICH: Validate a system call address argument.
  */

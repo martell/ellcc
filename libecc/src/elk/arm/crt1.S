@@ -3,6 +3,7 @@
 #include "asm.h"
 #include "cpu.h"
 #include "trap.h"
+#include "syscall.h"
 #include "context.h"
 
 /** Call a function only if it exists.
@@ -75,7 +76,7 @@ reset:
         msr     cpsr_c, #PSR_UND_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__undefinedstk_top__
         msr     cpsr_c, #PSR_SVC_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
-        ldr     sp, =__sysstk_top__
+        ldr     sp, =__svcstk_top__
         // Finally, set up the SYS mode stack pointer and stay in SYS mode.
         msr     cpsr_c, #PSR_SYS_MODE       // |PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__sysstk_top__
@@ -215,6 +216,7 @@ undefined:
         srsfd   sp!, #PSR_SYS_MODE      // Save LR_und and SPSR_und on the
                                         // sys stack.
         cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        cpsie   i                       // Enable IRQ
         sub     sp, #4 * 2              // Leave room for the sp.
         push    { SAVED_REGS }          // Store other registers.
         mov     r0, #TRAP_UNDEFINED
@@ -227,6 +229,7 @@ prefetch:
         srsfd   sp!, #PSR_SYS_MODE      // Save LR_pre and SPSR_pre on the
                                         // sys stack.
         cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        cpsie   i                       // Enable IRQ
         sub     sp, #4 * 2              // Leave room for the sp.
         push    { SAVED_REGS }          // Store other registers.
         mov     r0, #TRAP_PREFETCH_ABORT
@@ -236,9 +239,12 @@ prefetch:
  */
 abort:
         sub     lr, lr, #4              // Adjust return address.
-        srsfd   sp!, #PSR_ABT_MODE      // Save LR_abt and SPSR_abt on the
-                                        // abt stack.
+#if RICH
+        srsfd   sp!, #PSR_SYS_MODE      // Save LR_abt and SPSR_abt on the
+                                        // sys stack.
         cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        cpsie   i                       // Enable IRQ
+#endif
         sub     sp, #4 * 2              // Leave room for the sp.
         push    { SAVED_REGS }          // Store other registers.
         mov     r0, #TRAP_DATA_ABORT
@@ -248,11 +254,12 @@ abort:
  * r0 - trap type
  */
 trap_common:
-        add     r8, sp, #CTXREGS
         push    { r0, r1 }
         weak_call(CLABEL(thread_self))  // Get the current context.
         cmp     r0, #0
-        // RICH: strne   r8, [r0]                // Save sp for clone().
+        strne   r8, [r0]                // Save sp for clone().
+        add     r8, sp, #CTXREGS
+        str     r8, [sp, #REG_SP]
         pop     { r0, r1 }
 
         mov     r1, sp
@@ -286,7 +293,7 @@ irq:
         cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
         sub     sp, #4 * 2              // Leave room for the sp.
         push    { SAVED_REGS }          // Store other registers.
-        weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
+        weak_call(CLABEL(enter_sys))    // Enter the IRQ state.
         cmp     r0, #0                  // Have a context pointer?
         strne   sp, [r0]                // Save the context if so.
         mrcne   p15, 0, r1, c13, c0, 3  // Get the TLS.
@@ -309,7 +316,7 @@ irq:
         cpsie   i                       // Enable IRQ
         pop     { r0, r1 }              // Restore the stack adjustment.
         add     sp, sp, r0              // And adjust.
-        weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
+        weak_call(CLABEL(leave_sys))    // Leave the IRQ state.
         cmp     r0, #0                  // Leaving?
         ldrne   sp, [r0]                // Get the new stack pointer.
         ldrne   r1, [r0, #4]            // Get the new TLS.
@@ -404,18 +411,26 @@ ENTRY(enter_context)
  */
         .fnstart
 swi:
-        srsfd   sp!, #PSR_SYS_MODE      // Save LR_svc and SPSR_svc on
+#if RICH
+        // Handle exit specially: we may have no stack available.
+        cmp     r7, #SYS_exit
+        beq     do_exit
+#endif
+
+        srsfd   sp!, #PSR_SYS_MODE      // Save LR_sys and SPSR_sys on
                                         // the sys stack.
         cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        cpsie   i                       // Enable IRQ
         sub     sp, #8                  // Room for the saved sp.
         push    { SAVED_REGS }          // Save registers.
-        cpsie   i                       // Enable IRQ
-        mov     r8, sp                  // Save the sp.
+        mov     r8, sp                  // Get the usr sp.
         push    { r0, r1 }
         weak_call(CLABEL(thread_self))  // Get the current context.
         cmp     r0, #0
         strne   r8, [r0]                // Save sp for clone().
         pop     { r0, r1 }
+        add     r8, #CTXREGS            // Get usr sp value.
+        str     r8, [sp, #REG_SP]       // Save the sp.
 
         // In a system call.
         // r7 is the call number.
@@ -441,6 +456,12 @@ __in_syscall:                           // The stack frame is valid here.
         pop     { r2-r12, lr }          // SAVED_REGS - r0-r1
         add     sp, #4 * 2              // Deallocate saved sp space.
         rfeia   sp!                     // And return.
+
+do_exit:
+        ldr     r8, =swi_table          // Get the system call table.
+        ldr     r8, [r8, r7, lsl #2]    // Get the system call entry.
+        blx     r8                      // Dispatch. This should never return.
+        b       do_exit
 
 /* ARM has a few "hidden" system calls.
  * Only one of these is used by musl and is defined below for
