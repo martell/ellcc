@@ -141,6 +141,7 @@ static void free_args(char **argv)
   // Free any kmem_alloc()'d words.
   for (int i = 2; argv[i]; i++) {
     if (argv[i] < argv[0] || argv[i] >= argv[1]) {
+diag_printf("foo!\n");
       kmem_free(argv[i]);
     }
   }
