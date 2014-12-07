@@ -241,14 +241,14 @@ abort:
  * r0 - trap type
  */
 trap_common:
+        str     lr, [sp, #REG_PC]       // Push pc.
         add     r8, sp, #CTXREGS
-        push    { r0, r1 }
-        weak_call(__elk_thread_self)    // Get the current context.
+        push    { r0, lr }
+        weak_call(CLABEL(thread_self))  // Get the current context.
         cmp     r0, #0
         strne   r8, [r0]                // Save sp for clone().
         pop     { r0, r1 }
 
-        str     lr, [sp, #REG_PC]       // Push pc.
         mrs     r5, spsr                // Push cpsr.
         str     r5, [sp, #REG_CPSR]
 
@@ -288,7 +288,7 @@ irq:
         cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
         sub     sp, #4 * 2              // Leave room for the sp.
         push    { SAVED_REGS }          // Store other registers.
-        weak_call(__elk_enter_irq)      // Enter the IRQ state.
+        weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
         cmp     r0, #0                  // Have a context pointer?
         strne   sp, [r0]                // Save the context if so.
         mrcne   p15, 0, r1, c13, c0, 3  // Get the TLS.
@@ -296,8 +296,8 @@ irq:
         and     r0, sp, #4              // Test stack alignment.
         sub     sp, sp, r0              // Adjust the stack if needed.
         push    { r0, r1 }              // Save the adjustment.
-        weak_call(__elk_unlock_ready)   // Clear the ready lock.
-        weak_call(__elk_identify_irq)   // Clear interrupt and get irq
+        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
+        weak_call(CLABEL(identify_irq)) // Clear interrupt and get irq
                                         // handler in r0.
         cmp     r0, #0
         beq     1f                      // Jump if no handler.
@@ -311,12 +311,12 @@ irq:
         cpsie   i                       // Enable IRQ
         pop     { r0, r1 }              // Restore the stack adjustment.
         add     sp, sp, r0              // And adjust.
-        weak_call(__elk_leave_irq)      // Leave the IRQ state.
+        weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
         cmp     r0, #0                  // Leaving?
         ldrne   sp, [r0]                // Get the new stack pointer.
         ldrne   r1, [r0, #4]            // Get the new TLS.
         mcrne   p15, 0, r1, c13, c0, 3  // Set the TLS.
-        weak_call(__elk_unlock_ready)   // Clear the ready lock.
+        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
         add     sp, #4 * 2              // Deallocate the sp space.
         rfeia   sp!                     // And return.
@@ -357,7 +357,7 @@ ENTRY(switch_context)
         ldr     sp, [r0]                // Get the new stack pointer.
         ldr     r1, [r0, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
-        weak_call(__elk_unlock_ready)   // Clear the ready lock.
+        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
         add     sp, #4 * 2              // Deallocate the saved sp
         rfeia   sp!                     // And dispatch.
@@ -379,7 +379,7 @@ ENTRY(switch_context_arg)
         ldr     sp, [r1]                // Get the new stack pointer.
         ldr     r1, [r1, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
-        weak_call(__elk_unlock_ready)   // Clear the ready lock.
+        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
         add     sp, #4 * 2              // Deallocate the saved sp
         rfeia   sp!                     // And dispatch.
@@ -396,7 +396,7 @@ ENTRY(enter_context)
         ldr     sp, [r0]                // Get the new stack pointer.
         ldr     r1, [r0, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
-        weak_call(__elk_unlock_ready)   // Clear the ready lock.
+        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         pop     { SAVED_REGS }          // Restore registers
         add     sp, #4 * 2              // Deallocate the saved sp
         rfeia   sp!                     // And dispatch.
@@ -413,7 +413,7 @@ swi:
         cpsie   i                       // Enable IRQ
         mov     r8, sp                  // Save the sp.
         push    { r0, r1 }
-        weak_call(__elk_thread_self)    // Get the current context.
+        weak_call(CLABEL(thread_self))  // Get the current context.
         cmp     r0, #0
         strne   r8, [r0]                // Save sp for clone().
         pop     { r0, r1 }
@@ -486,7 +486,7 @@ __set_thread_area:
         push    { r1, r11, r12, lr }
         mcr     p15, 0, r0, c13, c0, 3
         mov     r1, r0
-        weak_call(__elk_thread_self)    // Get the current context.
+        weak_call(CLABEL(thread_self))  // Get the current context.
         cmp     r0, #0                  // Have a context?
         strne   r1, [r0, #4]            // Save the TLS in the current Thread.
         movne   r0, #0
