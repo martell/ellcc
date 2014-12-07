@@ -46,7 +46,7 @@
 #define trap_dump __elk_trap_dump
 #endif
 
-int trap_handler(context_t *);
+int trap_handler(u_long, context_t *);
 
 #endif // !__ASSEMBLER__
 #endif // !_trap_h_

@@ -211,9 +211,12 @@ argv:
 /** Undefined instruction
  */
 undefined:
-        sub     sp, sp, #CTXREGS        // Adjust stack.
-        stmia   sp, {r0-r14}^           // Push r0-r14.
-        nop                             // Instruction gap for stm^.
+        sub     lr, lr, #4              // Adjust return address.
+        srsfd   sp!, #PSR_SYS_MODE      // Save LR_und and SPSR_und on the
+                                        // sys stack.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        sub     sp, #4 * 2              // Leave room for the sp.
+        push    { SAVED_REGS }          // Store other registers.
         mov     r0, #TRAP_UNDEFINED
         b       trap_common
 
@@ -221,19 +224,23 @@ undefined:
  */
 prefetch:
         sub     lr, lr, #8              // Adjust the lr.
-        sub     sp, sp, #CTXREGS        // Adjust stack.
-        stmia   sp, {r0-r14}^           // Push r0-r14.
-        nop                             // Instruction gap for stm^.
+        srsfd   sp!, #PSR_SYS_MODE      // Save LR_pre and SPSR_pre on the
+                                        // sys stack.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        sub     sp, #4 * 2              // Leave room for the sp.
+        push    { SAVED_REGS }          // Store other registers.
         mov     r0, #TRAP_PREFETCH_ABORT
         b       trap_common
 
 /** Data abort
  */
 abort:
-        sub     lr, lr, #4              // Adjust the lr.
-        sub     sp, sp, #CTXREGS        // Adjust stack.
-        stmia   sp, {r0-r14}^           // Push r0-r14.
-        nop                             // Instruction gap for stm^.
+        sub     lr, lr, #4              // Adjust return address.
+        srsfd   sp!, #PSR_ABT_MODE      // Save LR_abt and SPSR_abt on the
+                                        // abt stack.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        sub     sp, #4 * 2              // Leave room for the sp.
+        push    { SAVED_REGS }          // Store other registers.
         mov     r0, #TRAP_DATA_ABORT
         b       trap_common
 
@@ -241,30 +248,21 @@ abort:
  * r0 - trap type
  */
 trap_common:
-        str     lr, [sp, #REG_PC]       // Push pc.
         add     r8, sp, #CTXREGS
-        push    { r0, lr }
+        push    { r0, r1 }
         weak_call(CLABEL(thread_self))  // Get the current context.
         cmp     r0, #0
-        strne   r8, [r0]                // Save sp for clone().
+        // RICH: strne   r8, [r0]                // Save sp for clone().
         pop     { r0, r1 }
 
-        mrs     r5, spsr                // Push cpsr.
-        str     r5, [sp, #REG_CPSR]
-
-        str     r0, [sp, #REG_R0]       // Set trap type to R0.
-        mov     r0, sp
+        mov     r1, sp
         weak_call(CLABEL(trap_handler))
         cmp     r0, #0
 trapped:
         beq     trapped                 // Stay here if no handler is available.
-        mov     r5, sp
-        ldr     r1, [r5, #REG_CPSR]     // Restore cpsr.
-        msr     spsr_all, r1
-        ldr     lr, [r5, #REG_PC]       // Restore pc (lr).
-        ldmfd   r5, {r0-r14}^           // Restore user mode registers.
-        nop                             // Instruction gap for ldm^.
-        movs    pc, lr                  // Exit, with restoring cpsr.
+        pop     { SAVED_REGS }          // Restore registers
+        add     sp, #4 * 2              // Deallocate the sp space.
+        rfeia   sp!                     // And return.
 
 /** Handle an interrupt.
  * 1. Enter SYS mode and save register.
@@ -404,6 +402,7 @@ ENTRY(enter_context)
 /* Handle a system call.
  * On the ARM, this is entered with an SVC instruction.
  */
+        .fnstart
 swi:
         srsfd   sp!, #PSR_SYS_MODE      // Save LR_svc and SPSR_svc on
                                         // the sys stack.

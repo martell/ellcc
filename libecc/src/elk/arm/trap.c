@@ -101,10 +101,8 @@ static void trap_dump(context_t *r)
 /** Trap handler
  * Invoke the exception handler if it is needed.
  */
-int trap_handler(context_t *regs)
+int trap_handler(u_long trap_no, context_t *regs)
 {
-  u_long trap_no = regs->r0;
-
   if ((regs->cpsr & PSR_MODE) == PSR_SVC_MODE &&
       trap_no == TRAP_DATA_ABORT &&
       (regs->pc - 4 == (uint32_t)known_fault1 ||
