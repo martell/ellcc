@@ -141,7 +141,6 @@ static void free_args(char **argv)
   // Free any kmem_alloc()'d words.
   for (int i = 2; argv[i]; i++) {
     if (argv[i] < argv[0] || argv[i] >= argv[1]) {
-diag_printf("foo!\n");
       kmem_free(argv[i]);
     }
   }
@@ -170,13 +169,13 @@ static int parse_args(const char *string, char ***av)
 
   size_t length = strlen(string) + 1;
   argv[0] = kmem_alloc(length);
-  memcpy(argv[0], string, length);
   if (argv[0] == NULL) {
     kmem_free(argv);
     fprintf(stderr, "out of memory\n");
     return -1;
   }
 
+  memcpy(argv[0], string, length);
   // Remember the end of the string.
   argv[1] = argv[0] + length;
 
@@ -231,7 +230,7 @@ int run_command(int argc, char **argv)
           void *retval;
           s = (int)pthread_join(id, &retval);
           if (s != 0)
-            printf("pthread_create: %s\n", strerror(s));
+            printf("pthread_join: %s\n", strerror(s));
           else
             s = (int)retval;
         }

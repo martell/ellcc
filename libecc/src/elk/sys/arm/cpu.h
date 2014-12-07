@@ -55,7 +55,7 @@
 #define PSR_APP_MODE  PSR_USR_MODE
 #endif
 
-/** Contorl register CP15 register 1
+/** Control register CP15 register 1
  */
 #define CTL_MMU         0x000000001  // M: MMU/Protection unit enable.
 #define CTL_AFLT        0x000000002  // A: Alignment fault enable.
@@ -72,11 +72,5 @@
 #define CTL_HIVEC       0x000002000  // V: Vector relocation.
 
 #define CTL_DEFAULT (CTL_32BP|CTL_32BD|CTL_LABT)
-
-#ifndef __ASSEMBLER__
-
-void cpu_init(void);
-
-#endif // !__ASSEMBLER__
 
 #endif // !_cpu_h_
