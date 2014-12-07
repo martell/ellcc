@@ -409,7 +409,6 @@ ENTRY(enter_context)
 /* Handle a system call.
  * On the ARM, this is entered with an SVC instruction.
  */
-        .fnstart
 swi:
 #if RICH
         // Handle exit specially: we may have no stack available.
