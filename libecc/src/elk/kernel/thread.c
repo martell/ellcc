@@ -278,14 +278,14 @@ static int processor() { return 0; }    // RICH: For now.
 static thread_t *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];   // The ready to run list.
-static long sys_state[PROCESSORS];      // Set if running in sys state.
+static long irq_state[PROCESSORS];      // Set if running in sys state.
 
 #define current current[processor()]
 #define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
 #define ready_head(pri) ready[pri].head
 #define ready_tail(pri) ready[pri].tail
-#define sys_state sys_state[processor()]
+#define irq_state irq_state[processor()]
 
 #elif PROCESSORS > 1
 // Multiple processors, one priority.
@@ -293,21 +293,21 @@ static int processor() { return 0; }    // RICH: For now.
 static thread_t *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
-static long sys_state[PROCESSORS];      // Set if running in sys state.
+static long irq_state[PROCESSORS];      // Set if running in sys state.
 
 #define current current[processor()]
 #define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
 #define ready_head(pri) ready.head
 #define ready_tail(pri) ready.tail
-#define sys_state sys_state[processor()]
+#define irq_state irq_state[processor()]
 
 #elif PRIORITIES > 1
 // One processor, multiple priorities.
 static thread_t *current;
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];
-static long sys_state;                  // Set if running in sys state.
+static long irq_state;                  // Set if running in sys state.
 
 #define processor() 0
 #define current current
@@ -321,7 +321,7 @@ static long sys_state;                  // Set if running in sys state.
 static thread_t *current;
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
-static long sys_state;                  // Set running in sys state.
+static long irq_state;                  // Set running in sys state.
 
 #define processor() 0
 #define current current
@@ -412,13 +412,13 @@ vm_map_t getcurmap()
 }
 #endif
 
-/** Enter the sys state.
+/** Enter the irq state.
  * This function is called from crt1.S.
  */
-void *enter_sys(void)
+void *enter_irq(void)
 {
   lock_aquire(&ready_lock);
-  long state = sys_state++;
+  long state = irq_state++;
   if (state) return NULL;             // Already in sys state.
   return current;                     // To save context.
 }
@@ -431,13 +431,13 @@ void unlock_ready(void)
     lock_release(&ready_lock);
 }
 
-/** Leave the sys state.
+/** Leave the irq state.
  * This function is called from crt1.S.
  */
-void *leave_sys(void)
+void *leave_irq(void)
 {
   lock_aquire(&ready_lock);
-  long state = --sys_state;
+  long state = --irq_state;
   if (state) return NULL;               // Still in sys state.
   return current;                       // Next context.
 }
@@ -447,7 +447,7 @@ void *leave_sys(void)
  */
 thread_t *thread_self()
 {
-  if (sys_state) return NULL;           // Nothing current if in sys state.
+  if (irq_state) return NULL;           // Nothing current if in sys state.
                                         // context.
   return current;
 }
@@ -556,7 +556,7 @@ static void schedule_nolock(thread_t *list)
     insert_thread(current);
   }
 
-  if (sys_state) {
+  if (irq_state) {
     // The curent thread continues.
     get_running();
     lock_release(&ready_lock);

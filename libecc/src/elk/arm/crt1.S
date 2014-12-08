@@ -293,7 +293,7 @@ irq:
         cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
         sub     sp, #4 * 2              // Leave room for the sp.
         push    { SAVED_REGS }          // Store other registers.
-        weak_call(CLABEL(enter_sys))    // Enter the IRQ state.
+        weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
         cmp     r0, #0                  // Have a context pointer?
         strne   sp, [r0]                // Save the context if so.
         mrcne   p15, 0, r1, c13, c0, 3  // Get the TLS.
@@ -316,7 +316,7 @@ irq:
         cpsie   i                       // Enable IRQ
         pop     { r0, r1 }              // Restore the stack adjustment.
         add     sp, sp, r0              // And adjust.
-        weak_call(CLABEL(leave_sys))    // Leave the IRQ state.
+        weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
         cmp     r0, #0                  // Leaving?
         ldrne   sp, [r0]                // Get the new stack pointer.
         ldrne   r1, [r0, #4]            // Get the new TLS.
