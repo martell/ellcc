@@ -36,11 +36,16 @@
 // Make threads a loadable feature.
 FEATURE(thread)
 
+#if 0
+#define THRD_ALLOC(ptr) kmem_alloc(sizeof(thread_t))
+#define THRD_free(ptr) kmem_free(ptr)
+#else
 #define THRD_ALLOC(ptr) ({ int s = 0; \
   s = vm_allocate(0, (void **)&(ptr), CONFIG_THRD_SIZE, 1); \
   s ? NULL : (ptr); })
 
 #define THRD_FREE(ptr) vm_free(0, (ptr), CONFIG_THRD_SIZE)
+#endif
 
 #if HAVE_CAPABILITY
 // Set all capabilities for the superuser.
@@ -261,14 +266,15 @@ static void idle(void)
 static void create_idle_threads(void)
 {
   for (int i = 0; i < PROCESSORS; ++i) {
-    idle_thread[i].saved_ctx = (context_t *)&idle_stack[i][IDLE_STACK];
+    context_t *ctx = (context_t *)&idle_stack[i][IDLE_STACK];
+    idle_thread[i].saved_ctx = ctx;
     idle_thread[i].priority = PRIORITIES;   // The lowest priority.
     idle_thread[i].state = IDLE;
     alloc_tid(&idle_thread[i]);
     char name[20];
     snprintf(name, 20, "idle%d", i);
     idle_thread[i].name = strdup(name);
-    new_context(&idle_thread[i].saved_ctx, idle, INITIAL_PSR, 0);
+    new_context(&idle_thread[i].saved_ctx, idle, INITIAL_PSR, 0, ctx);
   }
 }
 
@@ -1028,7 +1034,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   // Copy registers.
   *(cp - 1) = *current->saved_ctx;
 
-  new_context(&tp->saved_ctx, entry, INITIAL_PSR, 0);
+  new_context(&tp->saved_ctx, entry, INITIAL_PSR, 0, stack);
 
   // Schedule the thread.
   schedule(tp);

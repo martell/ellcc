@@ -62,12 +62,13 @@ int enter_context(context_t **to);
  * @param savearea Where to put the finished stack pointer.
  * @param entry The context entry point (0 if return to caller).
  * @param mode The context execution mode.
- * @param arg1 The first argument to the entry point.
- * @param arg2 The second argument to the entry point.
+ * @param arg The thread argument.
+ * @param stack The thread initial stack pointer.
  * @return 1 to indicate non-clone, else arg1.
  * This function is implemented in crt1.S.
  */
-int new_context(context_t **savearea, void (entry)(void), int mode, long arg);
+int new_context(context_t **savearea, void (entry)(void), int mode,
+                intptr_t arg, void *stack);
 
 void vector_copy(vaddr_t);
 void cpu_init(void);

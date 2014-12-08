@@ -336,13 +336,15 @@ irq:
  * r1 is the new context's start address
  * r2 is the new context's PSR.
  * r3 is the argument to the context.
+ * r4 is the usr stack pointer.
  */
 ENTRY(new_context)
         ldr     r7, [r0]                // Get the new stack pointer.
-        stmfd   r7!, {r1, r2}           // Save the new pc and PSR.
-        sub     r7, #14 * 4             // Room for registers r2-r13, sp, pad.
-        mov     r1, r3                  // Get the first argument.
-        stmfd   r7!, {r1-r2}            // Save the argument.
+        sub     r7, #CTXREGS
+        str     r1, [r7, #REG_PC]       // Save the new pc, psr, arg, and sp.
+        str     r2, [r7, #REG_CPSR]
+        str     r3, [r7, #REG_R0]
+        str     r4, [r7, #REG_SP]
         str     r7, [r0]                // Update the stack pointer.
         bx      lr
 
