@@ -398,8 +398,6 @@ ENTRY(switch_context_arg)
  * r0 points to the next save area.
  */
 ENTRY(enter_context)
-        srsfd   sp!, #PSR_SYS_MODE      // Save LR_sys and SPSR_sys on
-                                        // the sys stack.
         ldr     sp, [r0]                // Get the new stack pointer.
         ldr     r1, [r0, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
