@@ -61,6 +61,7 @@ fiq:
 
         .text
 
+#define SVC 1
 /** The reset entry point.
  */
 reset:
@@ -75,11 +76,19 @@ reset:
         ldr     sp, =__abortstk_top__
         msr     cpsr_c, #PSR_UND_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__undefinedstk_top__
+#if 0 && SVC
+        msr     cpsr_c, #PSR_SYS_MODE       // |PSR_IRQ_DIS|PSR_FIQ_MODE
+        ldr     sp, =__sysstk_top__
+        // Finally, set up the SVC mode stack pointer and stay in SVC mode.
+        msr     cpsr_c, #PSR_SVC_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
+        ldr     sp, =__svcstk_top__
+#else
         msr     cpsr_c, #PSR_SVC_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__svcstk_top__
         // Finally, set up the SYS mode stack pointer and stay in SYS mode.
         msr     cpsr_c, #PSR_SYS_MODE       // |PSR_IRQ_DIS|PSR_FIQ_MODE
         ldr     sp, =__sysstk_top__
+#endif
 
         ldr     r0, =__mmu_enabled__    // Check for MMU enabled.
         cmp     r0, #0
@@ -209,9 +218,56 @@ argv:
 #define SAVED_REGS r0-r12, lr           // Registers saved in thread context.
 #define NUM_SAVED 14                    // The number of saved registers.
 
+#define CHECK_CONTEXT                                                   \
+        push    { r0, r1 }                                              \
+        weak_call(CLABEL(thread_self))  /* Get the current context. */  \
+        cmp     r0, #0                  /* Does one exist? */           \
+        beq     1                                                       \
+        ldr     r1, [r0]                /* Get the current context. */  \
+        sub     r1, #CTXREGS            /* Adjust the context. */       \
+        str     r1, [r0]                /* Save the updated context. */ \
+        add     r1, #CTXREGS            /* Restore the context. */      \
+        ldr     r0, [sp, #0]            /* Copy the pushed registers. */\
+        str     r0, [r1, #0]                                            \
+        ldr     r0, [sp, #4]                                            \
+        str     r0, [r1, #4]                                            \
+        mov     sp, r1                  /* Use the context stack. */    \
+1:                                                                      \
+        pop   { r0, r1 }                /* Restore registers. */
+
 /** Undefined instruction
  */
 undefined:
+#if SVC
+        sub     lr, lr, #4              // Adjust return address.
+        push    { r0, r1 }
+        weak_call(CLABEL(thread_self))  // Get the current context.
+        cmp     r0, #0                  // Does one exist?
+        beq     1
+        ldr     r1, [r0]                // Get the current context pointer.
+        sub     r1, #CTXREGS            // Adjust the context.
+        str     r1, [r0]                // Save the updated context pointer.
+        add     r1, #CTXREGS            // Restore the context.
+        ldr     r0, [sp, #0]            // Copy the pushed registers.
+        str     r0, [r1, #0]
+        ldr     r0, [sp, #4]
+        str     r0, [r1, #4]
+        mov     sp, r1                  // Use the context stack.
+1:
+        pop   { r0, r1 }                // Restore registers.
+        srsfd   sp!, #PSR_UND_MODE      // Save LR_und and SPSR_und on the
+                                        // und stack.
+        sub     sp, #4 * 2              // Leave room for the sp.
+        push    { SAVED_REGS }          // Store other registers.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        mov     r0, sp                  // Copy the usr sp.
+        cpsid   i, #PSR_UND_MODE        // Switch back.
+        str     r0, [sp, #REG_SP]       // Save the usr SP
+        cpsie   i                       // Enable IRQ
+        mov     r0, #TRAP_UNDEFINED
+        b       trap_common
+
+#else
         sub     lr, lr, #4              // Adjust return address.
         srsfd   sp!, #PSR_SYS_MODE      // Save LR_und and SPSR_und on the
                                         // sys stack.
@@ -221,6 +277,7 @@ undefined:
         push    { SAVED_REGS }          // Store other registers.
         mov     r0, #TRAP_UNDEFINED
         b       trap_common
+#endif
 
 /** Prefetch abort
  */
@@ -253,6 +310,31 @@ abort:
 /** Common entry for all traps
  * r0 - trap type
  */
+#if SVC
+trap_common:
+        mov     r1, sp
+        weak_call(CLABEL(trap_handler))
+        cmp     r0, #0
+trapped:
+        beq     trapped                 // Stay here if no handler is available.
+        // Set up the undefined stack for return.
+        cpsid   i                       // Disable IRQ
+        ldr     r8, =__undefinedstk_top__
+        ldr     r1, [sp, #REG_PC]
+        ldr     r2, [sp, #REG_CPSR]
+        stmfd   r8!, {r1, r2}
+        weak_call(CLABEL(thread_self))  // Get the current context.
+        cmp     r0, #0
+        addne   r9, sp, #CTXREGS        // Save the updated context pointer.
+        strne   r9, [r0]
+        pop     { SAVED_REGS }          // Restore registers
+        pop     { r0, r1 }              // Get the user sp
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        mov     sp, r0                  // Set the usr sp.
+        cpsid   i, #PSR_UND_MODE        // Switch to sys mode.
+        mov     sp, r8                  // The und stack.
+        rfeia   sp!                     // And return.
+#else
 trap_common:
         push    { r0, r1 }
         weak_call(CLABEL(thread_self))  // Get the current context.
@@ -270,6 +352,7 @@ trapped:
         pop     { SAVED_REGS }          // Restore registers
         add     sp, #4 * 2              // Deallocate the sp space.
         rfeia   sp!                     // And return.
+#endif
 
 /** Handle an interrupt.
  * 1. Enter SYS mode and save register.
