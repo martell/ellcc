@@ -96,12 +96,12 @@ static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
     return -ESRCH;
   }
 
-  if (pid != getpid() && !capable(CAP_SYS_PTRACE)) {
+  if (pid && pid != getpid() && !capable(CAP_SYS_PTRACE)) {
     return -EPERM;
   }
 
   void *uaddr = *addr;
-  if (anywhere == 0 && pid && !user_area(*addr)) {
+  if (pid && anywhere == 0 && !user_area(*addr)) {
     return -EACCES;
   }
 
@@ -186,7 +186,7 @@ static int int_free(pid_t pid, void *addr, size_t size)
     return -ESRCH;
   }
 
-  if (pid != getpid() && !capable(CAP_SYS_PTRACE)) {
+  if (pid && pid != getpid() && !capable(CAP_SYS_PTRACE)) {
     return -EPERM;
   }
 

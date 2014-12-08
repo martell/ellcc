@@ -36,6 +36,12 @@
 // Make threads a loadable feature.
 FEATURE(thread)
 
+#define THRD_ALLOC(ptr) ({ int s = 0; \
+  s = vm_allocate(0, (void **)&(ptr), CONFIG_THRD_SIZE, 1); \
+  s ? NULL : (ptr); })
+
+#define THRD_FREE(ptr) vm_free(0, (ptr), CONFIG_THRD_SIZE)
+
 #if HAVE_CAPABILITY
 // Set all capabilities for the superuser.
 #define SUPERUSER_CAPABILITIES (~(capability_t)0)
@@ -601,7 +607,7 @@ static void thread_delete(thread_t *tp)
   }
 #endif
 
-  kmem_free(tp);
+  THRD_FREE(tp);
 }
 
 /** Change the current thread's state to
@@ -914,8 +920,10 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
                       long arg5, long data, void (*entry)(void))
 {
   // Create a new thread, copying context.
-  thread_t *tp = kmem_alloc(sizeof(thread_t)); 
-  if (!tp) {
+  int s;
+  thread_t *tp;
+  tp = THRD_ALLOC(tp);
+  if (tp == NULL) {
     return -ENOMEM;
   }
 
@@ -928,7 +936,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 
   int tid = alloc_tid(tp);
   if (tid < 0) {
-    kmem_free(tp);
+    THRD_FREE(tp);
     return -EAGAIN;
   }
 
@@ -942,7 +950,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     if (tp->map == NULL) {
       // The dup failed.
       release_tid(tid);
-      kmem_free(tp);
+      THRD_FREE(tp);
       return -ENOMEM;
     }
   }
@@ -950,13 +958,13 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 
 #if ENABLEFDS
   // Clone or copy the file descriptor set.
-  int s = fdset_clone(&tp->fdset, flags & CLONE_FILES);
+  s = fdset_clone(&tp->fdset, flags & CLONE_FILES);
   if (s < 0) {
 #if HAVE_VM
     vm_terminate(tp->map);
 #endif
     release_tid(tid);
-    kmem_free(tp);
+    THRD_FREE(tp);
     return s;
   }
 
@@ -976,7 +984,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
       vm_terminate(tp->map);
 #endif
       release_tid(tid);
-      kmem_free(tp);
+      THRD_FREE(tp);
       return -ENOMEM;
     }
 

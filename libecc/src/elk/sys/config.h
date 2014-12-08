@@ -3,6 +3,8 @@
 #ifndef _config_h_
 #define _config_h_
 
+#define CONFIG_THRD_SIZE (PAGE_SIZE * 1)        //  The thread page size.
+
 #define ELK_NAMESPACE 1         // Use __elk_ prefaced symbols.
 
 #define HAVE_CAPABILITY 1       // Use capabilities.
