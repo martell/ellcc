@@ -11,11 +11,11 @@
  * Preserve r0-r3 since they might be arguments.
  */
 #define weak_call(name)           \
-        .weak name              ; \
-        ldr     r12, =name      ; \
-        cmp     r12, #0         ; \
-        moveq   r0, #0          ; \
-        blxne   r12
+        .weak   name;             \
+        ldr     r12, =name;       \
+        cmp     r12, #0;          \
+        moveq   r0, #0;           \
+        blxne   r12;
 
         .section ".text","ax"
         .code 32
@@ -61,34 +61,25 @@ fiq:
 
         .text
 
-#define SVC 1
 /** The reset entry point.
  */
 reset:
         /* Set up the various stack pointers by setting the correct mode
         * and initializing the stack pointers.
         */
-        msr     cpsr_c, #PSR_FIQ_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
+        msr     cpsr_c, #PSR_FIQ_MODE|PSR_IRQ_DIS|PSR_FIQ_DIS
         ldr     sp, =__intstk_top__
-        msr     cpsr_c, #PSR_IRQ_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
+        msr     cpsr_c, #PSR_IRQ_MODE|PSR_IRQ_DIS|PSR_FIQ_DIS
         ldr     sp, =__intstk_top__
-        msr     cpsr_c, #PSR_ABT_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
+        msr     cpsr_c, #PSR_ABT_MODE|PSR_IRQ_DIS|PSR_FIQ_DIS
         ldr     sp, =__abortstk_top__
-        msr     cpsr_c, #PSR_UND_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
+        msr     cpsr_c, #PSR_UND_MODE|PSR_IRQ_DIS|PSR_FIQ_DIS
         ldr     sp, =__undefinedstk_top__
-#if 0 && SVC
-        msr     cpsr_c, #PSR_SYS_MODE       // |PSR_IRQ_DIS|PSR_FIQ_MODE
-        ldr     sp, =__sysstk_top__
-        // Finally, set up the SVC mode stack pointer and stay in SVC mode.
-        msr     cpsr_c, #PSR_SVC_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
-        ldr     sp, =__svcstk_top__
-#else
-        msr     cpsr_c, #PSR_SVC_MODE|PSR_IRQ_DIS|PSR_FIQ_MODE
+        msr     cpsr_c, #PSR_SVC_MODE|PSR_IRQ_DIS|PSR_FIQ_DIS
         ldr     sp, =__svcstk_top__
         // Finally, set up the SYS mode stack pointer and stay in SYS mode.
-        msr     cpsr_c, #PSR_SYS_MODE       // |PSR_IRQ_DIS|PSR_FIQ_MODE
+        msr     cpsr_c, #PSR_SYS_MODE       // |PSR_IRQ_DIS|PSR_FIQ_DIS
         ldr     sp, =__sysstk_top__
-#endif
 
         ldr     r0, =__mmu_enabled__    // Check for MMU enabled.
         cmp     r0, #0
@@ -218,141 +209,100 @@ argv:
 #define SAVED_REGS r0-r12, lr           // Registers saved in thread context.
 #define NUM_SAVED 14                    // The number of saved registers.
 
-#define CHECK_CONTEXT                                                   \
-        push    { r0, r1 }                                              \
-        weak_call(CLABEL(thread_self))  /* Get the current context. */  \
-        cmp     r0, #0                  /* Does one exist? */           \
-        beq     1                                                       \
-        ldr     r1, [r0]                /* Get the current context. */  \
-        sub     r1, #CTXREGS            /* Adjust the context. */       \
-        str     r1, [r0]                /* Save the updated context. */ \
-        add     r1, #CTXREGS            /* Restore the context. */      \
-        ldr     r0, [sp, #0]            /* Copy the pushed registers. */\
-        str     r0, [r1, #0]                                            \
-        ldr     r0, [sp, #4]                                            \
-        str     r0, [r1, #4]                                            \
-        mov     sp, r1                  /* Use the context stack. */    \
-1:                                                                      \
-        pop   { r0, r1 }                /* Restore registers. */
+/** Save the current context.
+ * This is a little tricky because nested system calls are allowed.
+ */
+#define HASH #
+#define SAVE_CONTEXT(mode)                                              \
+        srsfd   sp!, HASH mode;         /* Save saved lr and spsr */    \
+                                        /* on the stack. */             \
+        sub     sp, #4 * 2;             /* Leave room for the sp. */    \
+        push    { SAVED_REGS };         /* Store other registers. */    \
+        push    { r0-r1 };              /* Preserve registers. */       \
+        ldr     r0, [sp, #REG_CPSR + 8];/* Get the saved psr. */        \
+        and     r0, #PSR_MODE;          /* Get the old mode. */         \
+        cmp     r0, #PSR_USR_MODE;      /* Were we in usr mode? */      \
+        cmpne   r0, #PSR_SYS_MODE;      /* Were we in sys mode? */      \
+        blne    check; \
+        movne   r0, sp;                 /* Save the current sp. */      \
+        movne   r1, lr;                 /* Save the current lr. */      \
+        bne     1f;                                                     \
+        cpsid   i, #PSR_SYS_MODE;       /* Switch to sys mode. */       \
+        mov     r0, sp;                 /* Copy the usr sp. */          \
+        mov     r1, lr;                 /* Copy the usr lr. */          \
+        cpsid   i, HASH mode;           /* Switch back. */              \
+1:      str     r0, [sp, #REG_SP + 8];  /* Save the usr sp. */          \
+        str     r1, [sp, #REG_LR + 8];  /* Save the usr lr. */          \
+        weak_call(CLABEL(thread_self)); /* Get the thread pointer. */   \
+        cmp     r0, #0;                 /* Does one exist? */           \
+        addne   r1, sp, #8;             /* Calculate context. */        \
+        strne   r1, [r0];               /* Save the updated context. */ \
+        pop     { r0-r1 };              /* Restore registers. */        \
+        cpsie   i                       /* Enable IRQ */
+
+check:  nop
+        mov     pc, lr
+
+/** Restore current context.
+ */
+#define RESTORE_CONTEXT(mode)                                           \
+        weak_call(CLABEL(thread_self)); /* Get the thread pointer. */   \
+        cmp     r0, #0;                 /* Does one exist? */           \
+        beq     1f;                     /* Not now. */                  \
+        ldr     r2, [r0];               /* Get the context pointer. */  \
+        ldr     r3, [r2, #REG_SP];      /* Get the saved sp. */         \
+        ldr     r4, [r2, #REG_CPSR];    /* Get the saved psr. */        \
+        and     r4, #PSR_MODE;          /* Get the old mode. */         \
+        cmp     r4, #PSR_USR_MODE;      /* Were we in usr mode? */      \
+        cmpne   r4, #PSR_SYS_MODE;      /* Were we in sys mode? */      \
+        blne    check; \
+        strne   r3, [r0];               /* Update the context if not. */\
+        bne     1f;                     /* Jump if not. */              \
+        cpsid   i, #PSR_SYS_MODE;       /* Switch to sys mode. */       \
+        mov     sp, r3;                 /* Set the usr sp. */           \
+        cpsid   i, HASH mode;           /* Switch to previous mode. */  \
+1:      pop     { SAVED_REGS };         /* Restore registers. */        \
+        add     sp, #4 * 2;             /* Remove room for the sp. */   \
+        rfeia   sp!                     /* And return. */
 
 /** Undefined instruction
  */
 undefined:
-#if SVC
         sub     lr, lr, #4              // Adjust return address.
-        push    { r0, r1 }
-        weak_call(CLABEL(thread_self))  // Get the current context.
-        cmp     r0, #0                  // Does one exist?
-        beq     1
-        ldr     r1, [r0]                // Get the current context pointer.
-        sub     r1, #CTXREGS            // Adjust the context.
-        str     r1, [r0]                // Save the updated context pointer.
-        add     r1, #CTXREGS            // Restore the context.
-        ldr     r0, [sp, #0]            // Copy the pushed registers.
-        str     r0, [r1, #0]
-        ldr     r0, [sp, #4]
-        str     r0, [r1, #4]
-        mov     sp, r1                  // Use the context stack.
-1:
-        pop   { r0, r1 }                // Restore registers.
-        srsfd   sp!, #PSR_UND_MODE      // Save LR_und and SPSR_und on the
-                                        // und stack.
-        sub     sp, #4 * 2              // Leave room for the sp.
-        push    { SAVED_REGS }          // Store other registers.
-        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
-        mov     r0, sp                  // Copy the usr sp.
-        cpsid   i, #PSR_UND_MODE        // Switch back.
-        str     r0, [sp, #REG_SP]       // Save the usr SP
-        cpsie   i                       // Enable IRQ
+        SAVE_CONTEXT(PSR_UND_MODE)      // Save the context.
         mov     r0, #TRAP_UNDEFINED
-        b       trap_common
-
-#else
-        sub     lr, lr, #4              // Adjust return address.
-        srsfd   sp!, #PSR_SYS_MODE      // Save LR_und and SPSR_und on the
-                                        // sys stack.
-        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
-        cpsie   i                       // Enable IRQ
-        sub     sp, #4 * 2              // Leave room for the sp.
-        push    { SAVED_REGS }          // Store other registers.
-        mov     r0, #TRAP_UNDEFINED
-        b       trap_common
-#endif
+        mov     r1, sp
+        weak_call(CLABEL(trap_handler))
+        cmp     r0, #0
+trapund:
+        beq     trapund                 // Jump if no handler.
+        RESTORE_CONTEXT(PSR_UND_MODE)
 
 /** Prefetch abort
  */
 prefetch:
         sub     lr, lr, #8              // Adjust the lr.
-        srsfd   sp!, #PSR_SYS_MODE      // Save LR_pre and SPSR_pre on the
-                                        // sys stack.
-        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
-        cpsie   i                       // Enable IRQ
-        sub     sp, #4 * 2              // Leave room for the sp.
-        push    { SAVED_REGS }          // Store other registers.
+        SAVE_CONTEXT(PSR_ABT_MODE)      // Save the context.
         mov     r0, #TRAP_PREFETCH_ABORT
-        b       trap_common
+        mov     r1, sp
+        weak_call(CLABEL(trap_handler))
+        cmp     r0, #0
+trappre:
+        beq     trappre                 // Jump if no handler.
+        RESTORE_CONTEXT(PSR_ABT_MODE)
 
 /** Data abort
  */
 abort:
         sub     lr, lr, #4              // Adjust return address.
-#if RICH
-        srsfd   sp!, #PSR_SYS_MODE      // Save LR_abt and SPSR_abt on the
-                                        // sys stack.
-        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
-        cpsie   i                       // Enable IRQ
-#endif
-        sub     sp, #4 * 2              // Leave room for the sp.
-        push    { SAVED_REGS }          // Store other registers.
+        SAVE_CONTEXT(PSR_ABT_MODE)      // Save the context.
         mov     r0, #TRAP_DATA_ABORT
-        b       trap_common
-
-/** Common entry for all traps
- * r0 - trap type
- */
-#if SVC
-trap_common:
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
         cmp     r0, #0
-trapped:
-        beq     trapped                 // Stay here if no handler is available.
-        // Set up the undefined stack for return.
-        cpsid   i                       // Disable IRQ
-        ldr     r8, =__undefinedstk_top__
-        ldr     r1, [sp, #REG_PC]
-        ldr     r2, [sp, #REG_CPSR]
-        stmfd   r8!, {r1, r2}
-        weak_call(CLABEL(thread_self))  // Get the current context.
-        cmp     r0, #0
-        addne   r9, sp, #CTXREGS        // Save the updated context pointer.
-        strne   r9, [r0]
-        pop     { SAVED_REGS }          // Restore registers
-        pop     { r0, r1 }              // Get the user sp
-        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
-        mov     sp, r0                  // Set the usr sp.
-        cpsid   i, #PSR_UND_MODE        // Switch to sys mode.
-        mov     sp, r8                  // The und stack.
-        rfeia   sp!                     // And return.
-#else
-trap_common:
-        push    { r0, r1 }
-        weak_call(CLABEL(thread_self))  // Get the current context.
-        cmp     r0, #0
-        strne   r8, [r0]                // Save sp for clone().
-        add     r8, sp, #CTXREGS
-        str     r8, [sp, #REG_SP]
-        pop     { r0, r1 }
-
-        mov     r1, sp
-        weak_call(CLABEL(trap_handler))
-        cmp     r0, #0
-trapped:
-        beq     trapped                 // Stay here if no handler is available.
-        pop     { SAVED_REGS }          // Restore registers
-        add     sp, #4 * 2              // Deallocate the sp space.
-        rfeia   sp!                     // And return.
-#endif
+trapabt:
+        beq     trapabt                 // Jump if no handler.
+        RESTORE_CONTEXT(PSR_ABT_MODE)
 
 /** Handle an interrupt.
  * 1. Enter SYS mode and save register.
@@ -371,11 +321,16 @@ trapped:
  */
 irq:
         sub     lr, lr, #4              // Adjust return address.
-        srsfd   sp!, #PSR_SYS_MODE      // Save LR_irq and SPSR_irq on the
-                                        // sys stack.
-        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        srsfd   sp!, #PSR_IRQ_MODE      // Save lr and spsr on the
+                                        // irq stack.
         sub     sp, #4 * 2              // Leave room for the sp.
         push    { SAVED_REGS }          // Store other registers.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        mov     r0, sp                  // Set the usr sp.
+        cpsid   i, #PSR_IRQ_MODE        // Switch to previous mode.
+        str     r0, [sp, #REG_SP]       // Save the user sp.
+        bl      ASM_LABEL(splhigh)      // Set the interrupt level.
+        mov     r8, r0                  // Save the current level.
         weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
         cmp     r0, #0                  // Have a context pointer?
         strne   sp, [r0]                // Save the context if so.
@@ -384,7 +339,6 @@ irq:
         and     r0, sp, #4              // Test stack alignment.
         sub     sp, sp, r0              // Adjust the stack if needed.
         push    { r0, r1 }              // Save the adjustment.
-        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         weak_call(CLABEL(identify_irq)) // Clear interrupt and get irq
                                         // handler in r0.
         cmp     r0, #0
@@ -396,15 +350,22 @@ irq:
         cmp     r1, #0                  // Handler function?
         blxne   r1                      // Call it.
 1:
-        cpsie   i                       // Enable IRQ
+        // mov     r0, r8                  // Get interrupt level.
+        // bl      ASM_LABEL(splx)         // Restore interrupt level.
+        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         pop     { r0, r1 }              // Restore the stack adjustment.
         add     sp, sp, r0              // And adjust.
         weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
+        cpsid   i                       // Disable IRQ
         cmp     r0, #0                  // Leaving?
         ldrne   sp, [r0]                // Get the new stack pointer.
         ldrne   r1, [r0, #4]            // Get the new TLS.
         mcrne   p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
+        ldr     r0, [sp, #REG_SP]       // Get the user sp.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        mov     sp, r0                  // Set the usr sp.
+        cpsid   i, #PSR_IRQ_MODE        // Switch to previous mode.
         pop     { SAVED_REGS }          // Restore registers
         add     sp, #4 * 2              // Deallocate the sp space.
         rfeia   sp!                     // And return.
@@ -439,8 +400,7 @@ ENTRY(new_context)
  * r1 points to the current save area.
  */
 ENTRY(switch_context)
-        srsfd   sp!, #PSR_SYS_MODE      // Save LR_sys and SPSR_sys on
-                                        // the sys stack.
+        srsfd   sp!, #PSR_SVC_MODE      // Save lr and spsr on the svc stack.
         sub     sp, #4 * 2              // Room for the saved sp
         push    { SAVED_REGS }          // Store other registers.
         str     sp, [r1]                // Save the current frame.
@@ -448,6 +408,12 @@ ENTRY(switch_context)
         ldr     r1, [r0, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
+#if RICH
+        ldr     r0, [sp, #REG_SP]       // Get the user sp.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        mov     sp, r0                  // Set the usr sp.
+        cpsid   i, #PSR_SVC_MODE        // Switch to previous mode.
+#endif
         pop     { SAVED_REGS }          // Restore registers
         add     sp, #4 * 2              // Deallocate the saved sp
         rfeia   sp!                     // And dispatch.
@@ -461,8 +427,7 @@ ENTRY(switch_context)
  * r2 points to the current save area.
  */
 ENTRY(switch_context_arg)
-        srsfd   sp!, #PSR_SYS_MODE      // Save LR_sys and SPSR_sys on
-                                        // the sys stack.
+        srsfd   sp!, #PSR_SVC_MODE      // Save lr and spsr on the svc stack.
         sub     sp, #4 * 2              // Room for the saved sp
         push    { SAVED_REGS }          // Store other registers.
         str     sp, [r2]                // Save the current frame.
@@ -470,6 +435,12 @@ ENTRY(switch_context_arg)
         ldr     r1, [r1, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
+#if RICH
+        ldr     r0, [sp, #REG_SP]       // Get the user sp.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        mov     sp, r0                  // Set the usr sp.
+        cpsid   i, #PSR_SVC_MODE        // Switch to previous mode.
+#endif
         pop     { SAVED_REGS }          // Restore registers
         add     sp, #4 * 2              // Deallocate the saved sp
         rfeia   sp!                     // And dispatch.
@@ -485,6 +456,10 @@ ENTRY(enter_context)
         ldr     r1, [r0, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
+        ldr     r0, [sp, #REG_SP]       // Get the user sp.
+        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
+        mov     sp, r0;                 // Set the usr sp.
+        cpsid   i, #PSR_SVC_MODE        // Switch to previous mode.
         pop     { SAVED_REGS }          // Restore registers
         add     sp, #4 * 2              // Deallocate the saved sp
         rfeia   sp!                     // And dispatch.
@@ -493,26 +468,7 @@ ENTRY(enter_context)
  * On the ARM, this is entered with an SVC instruction.
  */
 swi:
-#if RICH
-        // Handle exit specially: we may have no stack available.
-        cmp     r7, #SYS_exit
-        beq     do_exit
-#endif
-
-        srsfd   sp!, #PSR_SYS_MODE      // Save LR_sys and SPSR_sys on
-                                        // the sys stack.
-        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
-        cpsie   i                       // Enable IRQ
-        sub     sp, #8                  // Room for the saved sp.
-        push    { SAVED_REGS }          // Save registers.
-        mov     r8, sp                  // Get the usr sp.
-        push    { r0, r1 }
-        weak_call(CLABEL(thread_self))  // Get the current context.
-        cmp     r0, #0
-        strne   r8, [r0]                // Save sp for clone().
-        pop     { r0, r1 }
-        add     r8, #CTXREGS            // Get usr sp value.
-        str     r8, [sp, #REG_SP]       // Save the sp.
+        SAVE_CONTEXT(PSR_SVC_MODE)      // Save the context.
 
         // In a system call.
         // r7 is the call number.
@@ -534,16 +490,9 @@ __in_syscall:                           // The stack frame is valid here.
         add     sp, #4 * 4              // Deallocate args.
         pop     { r8, r9 }              // Restore the stack adjustment.
         add     sp, sp, r8              // And adjust.
-        add     sp, #4 * 2              // Deallocate r0-r1.
-        pop     { r2-r12, lr }          // SAVED_REGS - r0-r1
-        add     sp, #4 * 2              // Deallocate saved sp space.
-        rfeia   sp!                     // And return.
-
-do_exit:
-        ldr     r8, =swi_table          // Get the system call table.
-        ldr     r8, [r8, r7, lsl #2]    // Get the system call entry.
-        blx     r8                      // Dispatch. This should never return.
-        b       do_exit
+        str     r0, [sp, #REG_R0]       // Save possible return values.
+        str     r1, [sp, #REG_R1]
+        RESTORE_CONTEXT(PSR_SVC_MODE)
 
 /* ARM has a few "hidden" system calls.
  * Only one of these is used by musl and is defined below for
@@ -560,9 +509,12 @@ check_arm_syscall:
         adr     r8, ARM_SVC_Table       // Get the system call table.
         ldr     r7, [r8, r7, lsl #2]    // Get the stystem call entry.
         blx     r7                      // Dispatch. Return value is in r0/r1
+        RESTORE_CONTEXT(PSR_SVC_MODE)
+#if RICH
         pop     { SAVED_REGS }          // Restore registers.
         add     sp, #8                  // Deallocate saved sp.
         rfeia   sp!                     // And return.
+#endif
 
 low:
         .word   0xF0000
@@ -649,7 +601,7 @@ CLABEL(known_fault1):                   // Might fault here.
 2:
         subs    r2, r2, #1
         bcs     1b
-        mov     r0, #0      /* Set no error */
+        mov     r0, #0                  // Set no error.
         ldmia   sp, {r4, r11, sp, pc}
 
 /** Copy data to user from kernel space.

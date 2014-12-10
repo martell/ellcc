@@ -87,6 +87,8 @@ void splon(void);
 #define unlock_ready __elk_unlock_ready
 #define leave_irq __elk_leave_irq
 #define thread_self __elk_thread_self
+#define enter_syscall __elk_enter_syscall
+#define leave_syscall __elk_leave_syscall
 #endif
 
 /** Enter the IRQ state.
@@ -104,6 +106,16 @@ void *leave_irq(void);
 /** Get the current thread pointer.
  */
 struct thread *thread_self();
+
+/** Enter a system call..
+ * This function is called from crt1.S.
+ */
+struct thread *enter_syscall();
+
+/** Leave a system call.
+ * This function is called from crt1.S.
+ */
+struct thread *leave_syscall();
 
 #endif // _crt1common_h_
 

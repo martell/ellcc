@@ -125,6 +125,7 @@ typedef struct thread
   struct thread *next;          // Next thread in any list.
   state state;                  // The thread's state.
   unsigned flags;               // Flags associated with this thread.
+  unsigned nesting;             // Suscall nesting level.
   int priority;                 // The thread's priority. 0 is highest.
   const char *name;             // The thread's name.
   int *clear_child_tid;         // The clear child thread id address.
@@ -290,7 +291,7 @@ static int processor() { return 0; }    // RICH: For now.
 static thread_t *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];   // The ready to run list.
-static long irq_state[PROCESSORS];      // Set if running in sys state.
+static long irq_state[PROCESSORS];      // Set if running in irq state.
 
 #define current current[processor()]
 #define idle_thread idle_thread[processor()]
@@ -305,7 +306,7 @@ static int processor() { return 0; }    // RICH: For now.
 static thread_t *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
-static long irq_state[PROCESSORS];      // Set if running in sys state.
+static long irq_state[PROCESSORS];      // Set if running in irq state.
 
 #define current current[processor()]
 #define idle_thread idle_thread[processor()]
@@ -319,7 +320,7 @@ static long irq_state[PROCESSORS];      // Set if running in sys state.
 static thread_t *current;
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];
-static long irq_state;                  // Set if running in sys state.
+static long irq_state;                  // Set if running in irq state.
 
 #define processor() 0
 #define current current
@@ -333,7 +334,7 @@ static long irq_state;                  // Set if running in sys state.
 static thread_t *current;
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
-static long irq_state;                  // Set running in sys state.
+static long irq_state;                  // Set running in irq state.
 
 #define processor() 0
 #define current current
@@ -431,7 +432,7 @@ void *enter_irq(void)
 {
   lock_aquire(&ready_lock);
   long state = irq_state++;
-  if (state) return NULL;             // Already in sys state.
+  if (state) return NULL;             // Already in irq state.
   return current;                     // To save context.
 }
 
@@ -450,7 +451,7 @@ void *leave_irq(void)
 {
   lock_aquire(&ready_lock);
   long state = --irq_state;
-  if (state) return NULL;               // Still in sys state.
+  if (state) return NULL;               // Still in irq state.
   return current;                       // Next context.
 }
 
@@ -459,8 +460,29 @@ void *leave_irq(void)
  */
 thread_t *thread_self()
 {
-  if (irq_state) return NULL;           // Nothing current if in sys state.
-                                        // context.
+  if (irq_state) return NULL;           // Nothing current if in irq state.
+  return current;
+}
+
+/** Enter a system call.
+ * This function is called from crt1.S.
+ */
+thread_t *enter_syscall()
+{
+  if (irq_state) return NULL;           // Nothing current if in irq state.
+  return current;
+}
+
+/** Leave a system call.
+ * This function is called from crt1.S.
+ */
+thread_t *leave_syscall()
+{
+  if (current->nesting == 0) return NULL;
+  ASSERT(current->nesting != 0);
+  if (--current->nesting) return NULL;
+  if (irq_state) return NULL;           // Nothing current if in irq state.
+
   return current;
 }
 
@@ -1740,8 +1762,8 @@ static int psCommand(int argc, char **argv)
   printf("Total pages: %lu (%lu bytes), Free pages: %lu (%lu bytes)\n",
          meminfo.total / PAGE_SIZE, meminfo.total,
          meminfo.free / PAGE_SIZE, meminfo.free);
-  printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %-10.10s \n",
-         "PID", "TID", "TADR", "STATE", "PRI", "NAME");
+  printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %10.10s %-10.10s \n",
+         "PID", "TID", "TADR", "STATE", "PRI", "PSR", "NAME");
   for (int i = 0;  i < THREADS; ++i) {
     thread_t *t =  threads[i];
     if (t == NULL) {
@@ -1752,6 +1774,7 @@ static int psCommand(int argc, char **argv)
     printf("%8p ", t);
     printf("%-10.10s ", state_names[t->state]);
     printf("%5d ", t->priority);
+    printf("0x%08x ", t->saved_ctx->cpsr);
     printf(t->pid == t->tid ? "%s" : "[%s]", t->name ? t->name : "");
     printf("\n");
   }

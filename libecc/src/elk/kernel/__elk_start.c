@@ -25,6 +25,7 @@ void (*system_c_init)(void);
 static int do_main(int argc, char **argv, char **environ)
 {
   if (system_c_init) system_c_init();   // Optional system initialization.
+  spl0();
   return main(argc, argv, environ);
 }
 

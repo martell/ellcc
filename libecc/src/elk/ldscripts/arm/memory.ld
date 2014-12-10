@@ -14,7 +14,7 @@
  * | Svc mode stack   |
  * |                  |
  * |                  |
- * +------------------+ +0x5000
+ * +------------------+ +0x6000
  * | Sys mode stack   |
  * |                  |
  * |                  |
@@ -47,7 +47,7 @@
 __intstk_top__ = __syspage_base__ + 0x2000;
 __abortstk_top__ = __syspage_base__ + 0x3000;
 __undefinedstk_top__ = __syspage_base__ + 0x4000;
-__svcstk_top__ = __syspage_base__ + 0x5000;
+__svcstk_top__ = __syspage_base__ + 0x6000;
 __sysstk_top__ = __syspage_base__ + 0x8000;
 
 // The following are in MMU syspages only.
