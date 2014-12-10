@@ -80,9 +80,10 @@ void cache_init(void);
 void sploff(void);
 void splon(void);
 
-/** The following functions are used by crt1.S.
+/** The following functions and variables are used by crt1.S.
  */
 #ifdef ELK_NAMESPACE
+#define current __elk_current
 #define enter_irq __elk_enter_irq
 #define unlock_ready __elk_unlock_ready
 #define leave_irq __elk_leave_irq
@@ -90,6 +91,10 @@ void splon(void);
 #define enter_syscall __elk_enter_syscall
 #define leave_syscall __elk_leave_syscall
 #endif
+
+/* The threads currently assigned to processors.
+ */
+extern struct thread *current[];
 
 /** Enter the IRQ state.
  */

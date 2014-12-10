@@ -213,55 +213,48 @@ argv:
  * This is a little tricky because nested system calls are allowed.
  */
 #define HASH #
+// RICH: current access has to be fixed for SMP. Need current[processor];
 #define SAVE_CONTEXT(mode)                                              \
+        ldr     sp, =CLABEL(current);   /* Get the current thread. */   \
+        ldr     sp, [sp];               /* Get the system context. */   \
         srsfd   sp!, HASH mode;         /* Save saved lr and spsr */    \
                                         /* on the stack. */             \
         sub     sp, #4 * 2;             /* Leave room for the sp. */    \
         push    { SAVED_REGS };         /* Store other registers. */    \
         push    { r0-r1 };              /* Preserve registers. */       \
+        ldr     r0, =CLABEL(current);   /* Get the current thread. */   \
+        add     r1, sp, #8;             /* Adjust the stack. */         \
+        str     r1, [r0];               /* Save the new context. */     \
         ldr     r0, [sp, #REG_CPSR + 8];/* Get the saved psr. */        \
         and     r0, #PSR_MODE;          /* Get the old mode. */         \
         cmp     r0, #PSR_USR_MODE;      /* Were we in usr mode? */      \
-        cmpne   r0, #PSR_SYS_MODE;      /* Were we in sys mode? */      \
-        blne    check; \
-        movne   r0, sp;                 /* Save the current sp. */      \
-        movne   r1, lr;                 /* Save the current lr. */      \
-        bne     1f;                                                     \
-        cpsid   i, #PSR_SYS_MODE;       /* Switch to sys mode. */       \
+        moveq   r0, #PSR_SYS_MODE;      /* If so, use sys mode. */      \
+        orr     r0, #PSR_INT_MASK;      /* Set mode and disable ints. */\
+        msr     cpsr_c, r0;             /* Switch to the previous. */   \
         mov     r0, sp;                 /* Copy the usr sp. */          \
         mov     r1, lr;                 /* Copy the usr lr. */          \
         cpsid   i, HASH mode;           /* Switch back. */              \
-1:      str     r0, [sp, #REG_SP + 8];  /* Save the usr sp. */          \
+        str     r0, [sp, #REG_SP + 8];  /* Save the usr sp. */          \
         str     r1, [sp, #REG_LR + 8];  /* Save the usr lr. */          \
-        weak_call(CLABEL(thread_self)); /* Get the thread pointer. */   \
-        cmp     r0, #0;                 /* Does one exist? */           \
-        addne   r1, sp, #8;             /* Calculate context. */        \
-        strne   r1, [r0];               /* Save the updated context. */ \
         pop     { r0-r1 };              /* Restore registers. */        \
         cpsie   i                       /* Enable IRQ */
-
-check:  nop
-        mov     pc, lr
 
 /** Restore current context.
  */
 #define RESTORE_CONTEXT(mode)                                           \
-        weak_call(CLABEL(thread_self)); /* Get the thread pointer. */   \
-        cmp     r0, #0;                 /* Does one exist? */           \
-        beq     1f;                     /* Not now. */                  \
-        ldr     r2, [r0];               /* Get the context pointer. */  \
-        ldr     r3, [r2, #REG_SP];      /* Get the saved sp. */         \
-        ldr     r4, [r2, #REG_CPSR];    /* Get the saved psr. */        \
-        and     r4, #PSR_MODE;          /* Get the old mode. */         \
-        cmp     r4, #PSR_USR_MODE;      /* Were we in usr mode? */      \
-        cmpne   r4, #PSR_SYS_MODE;      /* Were we in sys mode? */      \
-        blne    check; \
-        strne   r3, [r0];               /* Update the context if not. */\
-        bne     1f;                     /* Jump if not. */              \
-        cpsid   i, #PSR_SYS_MODE;       /* Switch to sys mode. */       \
-        mov     sp, r3;                 /* Set the usr sp. */           \
+        ldr     r0, [sp, #REG_SP];      /* Get the saved sp. */         \
+        ldr     r1, [sp, #REG_CPSR];    /* Get the saved psr. */        \
+        and     r1, #PSR_MODE;          /* Get the old mode. */         \
+        cmp     r1, #PSR_USR_MODE;      /* Were we in usr mode? */      \
+        moveq   r1, #PSR_SYS_MODE;      /* If so, use sys mode. */      \
+        orr     r1, #PSR_INT_MASK;      /* Set mode and disable ints. */\
+        msr     cpsr_c, r1;             /* Switch to the previous. */   \
+        mov     sp, r0;                 /* Set up the stack pointer. */ \
         cpsid   i, HASH mode;           /* Switch to previous mode. */  \
-1:      pop     { SAVED_REGS };         /* Restore registers. */        \
+        ldr     r0, =CLABEL(current);   /* Get the current thread. */   \
+        add     r1, sp, #CTXREGS;       /* Save the updated context. */ \
+        str     r1, [r0];               /* Save the context pointer. */ \
+        pop     { SAVED_REGS };         /* Restore registers. */        \
         add     sp, #4 * 2;             /* Remove room for the sp. */   \
         rfeia   sp!                     /* And return. */
 
@@ -408,15 +401,7 @@ ENTRY(switch_context)
         ldr     r1, [r0, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-#if RICH
-        ldr     r0, [sp, #REG_SP]       // Get the user sp.
-        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
-        mov     sp, r0                  // Set the usr sp.
-        cpsid   i, #PSR_SVC_MODE        // Switch to previous mode.
-#endif
-        pop     { SAVED_REGS }          // Restore registers
-        add     sp, #4 * 2              // Deallocate the saved sp
-        rfeia   sp!                     // And dispatch.
+        RESTORE_CONTEXT(PSR_SVC_MODE)
 
 /* Switch from one context to the next and unlock the queue.
  * void switch_context_arg(int arg, context_t **to, context_t **from);
@@ -432,18 +417,11 @@ ENTRY(switch_context_arg)
         push    { SAVED_REGS }          // Store other registers.
         str     sp, [r2]                // Save the current frame.
         ldr     sp, [r1]                // Get the new stack pointer.
+        str     r0, [sp, #REG_R0]       // Save the return value.
         ldr     r1, [r1, #4]            // Get the new TLS.
         mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-#if RICH
-        ldr     r0, [sp, #REG_SP]       // Get the user sp.
-        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
-        mov     sp, r0                  // Set the usr sp.
-        cpsid   i, #PSR_SVC_MODE        // Switch to previous mode.
-#endif
-        pop     { SAVED_REGS }          // Restore registers
-        add     sp, #4 * 2              // Deallocate the saved sp
-        rfeia   sp!                     // And dispatch.
+        RESTORE_CONTEXT(PSR_SVC_MODE)
 
 /* Enter a context and unlock the queue.
  * void enter_context(context_t **new);

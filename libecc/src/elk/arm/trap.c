@@ -105,12 +105,12 @@ int trap_handler(u_long trap_no, context_t *regs)
 {
   if ((regs->cpsr & PSR_MODE) == PSR_SVC_MODE &&
       trap_no == TRAP_DATA_ABORT &&
-      (regs->pc - 4 == (uint32_t)known_fault1 ||
-       regs->pc - 4 == (uint32_t)known_fault2 ||
-       regs->pc - 4 == (uint32_t)known_fault3)) {
+      (regs->pc - 4 == (char *)known_fault1 ||
+       regs->pc - 4 == (char *)known_fault2 ||
+       regs->pc - 4 == (char *)known_fault3)) {
     DPRINTF(THRDB_FAULT, ("\n*** Detect Fault! address=%x tid=%d ***\n",
                           get_faultaddress(), gettid()));
-    regs->pc = (uint32_t)copy_fault;
+    regs->pc = (char *)copy_fault;
     return 1;
   }
 

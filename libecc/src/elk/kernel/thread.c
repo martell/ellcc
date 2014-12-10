@@ -37,7 +37,7 @@
 FEATURE(thread)
 
 #if 0
-#define THRD_ALLOC(ptr) kmem_alloc(sizeof(thread_t))
+#define THRD_ALLOC(ptr) kmem_alloc(sizeof(CONFIG_THRD_SIZE))
 #define THRD_free(ptr) kmem_free(ptr)
 #else
 #define THRD_ALLOC(ptr) ({ int s = 0; \
@@ -119,8 +119,8 @@ typedef struct fs
 
 typedef struct thread
 {
-  // The saved_ctx and tls fields must be first in the thread struct.
-  context_t *saved_ctx;         // The thread's saved context.
+  // The context and tls fields must be first in the thread struct.
+  context_t *context;           // The thread's saved context.
   void *tls;                    // The thread's user space storage.
   struct thread *next;          // Next thread in any list.
   state state;                  // The thread's state.
@@ -268,14 +268,14 @@ static void create_idle_threads(void)
 {
   for (int i = 0; i < PROCESSORS; ++i) {
     context_t *ctx = (context_t *)&idle_stack[i][IDLE_STACK];
-    idle_thread[i].saved_ctx = ctx;
+    idle_thread[i].context = ctx;
     idle_thread[i].priority = PRIORITIES;   // The lowest priority.
     idle_thread[i].state = IDLE;
     alloc_tid(&idle_thread[i]);
     char name[20];
     snprintf(name, 20, "idle%d", i);
     idle_thread[i].name = strdup(name);
-    new_context(&idle_thread[i].saved_ctx, idle, INITIAL_PSR, 0, ctx);
+    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0, ctx);
   }
 }
 
@@ -288,12 +288,10 @@ static int priority;                    // The current highest priority.
 #if PRIORITIES > 1 && PROCESSORS > 1
 // Multiple priorities and processors.
 static int processor() { return 0; }    // RICH: For now.
-static thread_t *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];   // The ready to run list.
 static long irq_state[PROCESSORS];      // Set if running in irq state.
 
-#define current current[processor()]
 #define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
 #define ready_head(pri) ready[pri].head
@@ -303,12 +301,10 @@ static long irq_state[PROCESSORS];      // Set if running in irq state.
 #elif PROCESSORS > 1
 // Multiple processors, one priority.
 static int processor() { return 0; }    // RICH: For now.
-static thread_t *current[PROCESSORS];
 static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
 static long irq_state[PROCESSORS];      // Set if running in irq state.
 
-#define current current[processor()]
 #define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
 #define ready_head(pri) ready.head
@@ -317,13 +313,11 @@ static long irq_state[PROCESSORS];      // Set if running in irq state.
 
 #elif PRIORITIES > 1
 // One processor, multiple priorities.
-static thread_t *current;
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];
 static long irq_state;                  // Set if running in irq state.
 
 #define processor() 0
-#define current current
 #define idle_thread idle_thread[0]
 #define slice_tmo slice_tmo
 #define ready_head(pri) ready[pri].head
@@ -331,18 +325,24 @@ static long irq_state;                  // Set if running in irq state.
 
 #else
 // One processor, one priority.
-static thread_t *current;
 static void *slice_tmo;                 // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
 static long irq_state;                  // Set running in irq state.
 
 #define processor() 0
-#define current current
 #define idle_thread idle_thread[0]
 #define slice_tmo slice_tmo
 #define ready_head(pri) ready.head
 #define ready_tail(pri) ready.tail
 
+#endif
+
+// Threads currently assigned to processors.
+thread_t *current[PROCESSORS];
+#if ELK_NAMESPACE
+#define __elk_current __elk_current[processor()]
+#else
+#define current current[processor()]
 #endif
 
 static long long slice_time = 5000000;  // The time slice period (ns).
@@ -359,8 +359,12 @@ static struct fs main_thread_fs = {
 };
 #endif
 
+// This is defined in memory.ld.
+extern char __svcstk_top__[];
+
 // The main thread's initial values.
 static thread_t main_thread = {
+  .context = (context_t *)__svcstk_top__,
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
@@ -600,7 +604,7 @@ static void schedule_nolock(thread_t *list)
   // Switch to the new thread.
   thread_t *me = current;
   get_running();
-  switch_context(&current->saved_ctx, &me->saved_ctx);
+  switch_context(&current->context, &me->context);
 }
 
 /* Schedule a list of threads.
@@ -652,13 +656,13 @@ static int nolock_change_state(int arg, state new_state)
   if (new_state == EXITING) {
     thread_delete(current);
     get_running();
-    return enter_context(&current->saved_ctx);
+    return enter_context(&current->context);
   }
 
   thread_t *me = current;
   me->state = new_state;
   get_running();
-  return switch_context_arg(arg, &current->saved_ctx, &me->saved_ctx);
+  return switch_context_arg(arg, &current->context, &me->context);
 }
 
 /** Change the current thread's state to
@@ -836,7 +840,7 @@ static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
       if (p->waiter) {
         // Wake up the sleeping thread.
         p->waiter->next = NULL;
-        context_set_return(p->waiter->saved_ctx, retval);
+        context_set_return(p->waiter->context, retval);
         schedule(p->waiter);
         ++s;
       }
@@ -1051,12 +1055,16 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 
   tp->next = NULL;
 
+#if RICH
   context_t *cp = (context_t *)stack;
-  tp->saved_ctx = cp;
+#else
+  context_t *cp = (context_t *)((char *)tp + CONFIG_THRD_SIZE);
+#endif
+  tp->context = cp;
   // Copy registers.
-  *(cp - 1) = *current->saved_ctx;
+  *--cp = *current->context;
 
-  new_context(&tp->saved_ctx, entry, INITIAL_PSR, 0, stack);
+  new_context(&tp->context, entry, INITIAL_PSR, 0, stack);
 
   // Schedule the thread.
   schedule(tp);
@@ -1774,7 +1782,7 @@ static int psCommand(int argc, char **argv)
     printf("%8p ", t);
     printf("%-10.10s ", state_names[t->state]);
     printf("%5d ", t->priority);
-    printf("0x%08x ", t->saved_ctx->cpsr);
+    printf("0x%08x ", t->context->cpsr);
     printf(t->pid == t->tid ? "%s" : "[%s]", t->name ? t->name : "");
     printf("\n");
   }
