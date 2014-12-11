@@ -87,29 +87,6 @@ int capable(capability_t cap);
 
 #endif
 
-// Thread states.
-typedef enum state {
-  IDLE,                         // This is an idle thread.
-  READY,                        // The thread is ready to run.
-  RUNNING,                      // The thread is running.
-  EXITING,                      // The thread is exiting.
-  SLEEPING,                     // The thread is sleeping.
-  MSGWAIT,                      // The thread is waiting for a message.
-
-  LASTSTATE                     // To get the number of states.
-} state;
-
-#if defined(DEFINE_STATE_STRINGS)
-static const char *state_names[LASTSTATE] =
-{
-  [IDLE] = "IDLE",
-  [READY] = "READY",
-  [RUNNING] = "RUNNING",
-  [SLEEPING] = "SLEEPING",
-  [MSGWAIT] = "MSGWAIT",
-};
-#endif
-
 /** futex operations.
  */
 #define FUTEX_WAIT              0

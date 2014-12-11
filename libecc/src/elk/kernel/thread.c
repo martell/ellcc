@@ -18,7 +18,6 @@
 
 #include "config.h"                     // Configuration parameters.
 #include "timer.h"
-#define DEFINE_STATE_STRINGS
 #include "file.h"
 #include "vnode.h"
 #include "page.h"
@@ -117,6 +116,29 @@ typedef struct fs
 } *fs_t;
 #endif
 
+// Thread states.
+typedef enum state {
+  IRQ,                          // This is an IRQ "thread".
+  IDLE,                         // This is an idle thread.
+  READY,                        // The thread is ready to run.
+  RUNNING,                      // The thread is running.
+  EXITING,                      // The thread is exiting.
+  SLEEPING,                     // The thread is sleeping.
+  MSGWAIT,                      // The thread is waiting for a message.
+
+  LASTSTATE                     // To get the number of states.
+} state;
+
+static const char *state_names[LASTSTATE] =
+{
+  [IRQ] = "IRQ",
+  [IDLE] = "IDLE",
+  [READY] = "READY",
+  [RUNNING] = "RUNNING",
+  [SLEEPING] = "SLEEPING",
+  [MSGWAIT] = "MSGWAIT",
+};
+
 typedef struct thread
 {
   // The context and tls fields must be first in the thread struct.
@@ -170,7 +192,11 @@ typedef struct thread_queue {
 
 #define IDLE_STACK 4096                         // The idle thread stack size.
 static thread_t idle_thread[PROCESSORS];        // The idle threads.
-static char *idle_stack[PROCESSORS][IDLE_STACK];
+static char *idle_stack[PROCESSORS][IDLE_STACK] __attribute__((aligned(8)));
+
+#define IRQ_STACK 4096                          // The irq "thread" stack size.
+static thread_t irq_thread[PROCESSORS];         // The idle "threads".
+static char *irq_stack[PROCESSORS][IRQ_STACK] __attribute__((aligned(8)));
 
 static void schedule_nolock(thread_t *list);
 
@@ -261,21 +287,33 @@ static void idle(void)
   }
 }
 
+// Pseudo current list for IRQ handling.
+thread_t *current_irq[PROCESSORS];
+
 /** Create an idle thread for each processor.
  * These threads can never exit.
  */
-static void create_idle_threads(void)
+static void create_system_threads(void)
 {
   for (int i = 0; i < PROCESSORS; ++i) {
+    char name[20];
     context_t *ctx = (context_t *)&idle_stack[i][IDLE_STACK];
     idle_thread[i].context = ctx;
-    idle_thread[i].priority = PRIORITIES;   // The lowest priority.
+    idle_thread[i].priority = PRIORITIES;       // The lowest priority.
     idle_thread[i].state = IDLE;
     alloc_tid(&idle_thread[i]);
-    char name[20];
     snprintf(name, 20, "idle%d", i);
     idle_thread[i].name = strdup(name);
-    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0, ctx);
+    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0, ctx - 1);
+
+    ctx = (context_t *)&irq_stack[i][IRQ_STACK];
+    current_irq[i] = &irq_thread[i];
+    irq_thread[i].context = ctx;
+    irq_thread[i].priority = 0;                 // The highest priority.
+    irq_thread[i].state = IRQ;
+    irq_thread[i].tid = THREADS + i;            // Fake tids.
+    snprintf(name, 20, "irq%d", i);
+    irq_thread[i].name = strdup(name);
   }
 }
 
@@ -292,7 +330,6 @@ static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready[PRIORITIES];   // The ready to run list.
 static long irq_state[PROCESSORS];      // Set if running in irq state.
 
-#define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
 #define ready_head(pri) ready[pri].head
 #define ready_tail(pri) ready[pri].tail
@@ -305,7 +342,6 @@ static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
 static ThreadQueue ready;               // The ready to run list.
 static long irq_state[PROCESSORS];      // Set if running in irq state.
 
-#define idle_thread idle_thread[processor()]
 #define slice_tmo slice_tmo[processor()]
 #define ready_head(pri) ready.head
 #define ready_tail(pri) ready.tail
@@ -318,7 +354,6 @@ static ThreadQueue ready[PRIORITIES];
 static long irq_state;                  // Set if running in irq state.
 
 #define processor() 0
-#define idle_thread idle_thread[0]
 #define slice_tmo slice_tmo
 #define ready_head(pri) ready[pri].head
 #define ready_tail(pri) ready[pri].tail
@@ -330,7 +365,6 @@ static ThreadQueue ready;               // The ready to run list.
 static long irq_state;                  // Set running in irq state.
 
 #define processor() 0
-#define idle_thread idle_thread[0]
 #define slice_tmo slice_tmo
 #define ready_head(pri) ready.head
 #define ready_tail(pri) ready.tail
@@ -339,11 +373,18 @@ static long irq_state;                  // Set running in irq state.
 
 // Threads currently assigned to processors.
 thread_t *current[PROCESSORS];
+static thread_t *saved_current[PROCESSORS];     // Saved current during an irq.
 #if ELK_NAMESPACE
 #define __elk_current __elk_current[processor()]
+#define __elk_current_irq __elk_current_irq[processor()]
 #else
 #define current current[processor()]
+#define current_irq current_irq[processor()]
 #endif
+
+#define idle_thread idle_thread[processor()]
+#define saved_current saved_current[processor()]
+#define irq_thread (&irq_thread[processor()])
 
 static long long slice_time = 5000000;  // The time slice period (ns).
 
@@ -429,15 +470,12 @@ vm_map_t getcurmap()
 }
 #endif
 
-/** Enter the irq state.
+/** Lock the ready queue.
  * This function is called from crt1.S.
  */
-void *enter_irq(void)
+void lock_ready(void)
 {
-  lock_aquire(&ready_lock);
-  long state = irq_state++;
-  if (state) return NULL;             // Already in irq state.
-  return current;                     // To save context.
+    lock_aquire(&ready_lock);
 }
 
 /** Unlock the ready queue.
@@ -448,6 +486,20 @@ void unlock_ready(void)
     lock_release(&ready_lock);
 }
 
+/** Enter the irq state.
+ * This function is called from crt1.S.
+ */
+void *enter_irq(void)
+{
+  lock_aquire(&ready_lock);
+  long state = irq_state++;
+  return current;
+  if (state) current;                   // Already in irq state.
+  saved_current = current;              // Save the current context.
+  current = irq_thread;
+  return current;                       // To save context.
+}
+
 /** Leave the irq state.
  * This function is called from crt1.S.
  */
@@ -455,7 +507,9 @@ void *leave_irq(void)
 {
   lock_aquire(&ready_lock);
   long state = --irq_state;
-  if (state) return NULL;               // Still in irq state.
+  return current;
+  if (state) return current;            // Still in irq state.
+  current = saved_current;
   return current;                       // Next context.
 }
 
@@ -465,28 +519,6 @@ void *leave_irq(void)
 thread_t *thread_self()
 {
   if (irq_state) return NULL;           // Nothing current if in irq state.
-  return current;
-}
-
-/** Enter a system call.
- * This function is called from crt1.S.
- */
-thread_t *enter_syscall()
-{
-  if (irq_state) return NULL;           // Nothing current if in irq state.
-  return current;
-}
-
-/** Leave a system call.
- * This function is called from crt1.S.
- */
-thread_t *leave_syscall()
-{
-  if (current->nesting == 0) return NULL;
-  ASSERT(current->nesting != 0);
-  if (--current->nesting) return NULL;
-  if (irq_state) return NULL;           // Nothing current if in irq state.
-
   return current;
 }
 
@@ -2016,7 +2048,7 @@ C_CONSTRUCTOR()
   current->pid = current->tid;          // The main thread starts a group.
   priority = current->priority;
 
-  // Create the idle thread(s).
-  create_idle_threads();
+  // Create the system thread(s).
+  create_system_threads();
 }
 

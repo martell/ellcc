@@ -84,12 +84,12 @@ void splon(void);
  */
 #ifdef ELK_NAMESPACE
 #define current __elk_current
+#define current_irq __elk_current_irq
 #define enter_irq __elk_enter_irq
+#define lock_ready __elk_lock_ready
 #define unlock_ready __elk_unlock_ready
 #define leave_irq __elk_leave_irq
 #define thread_self __elk_thread_self
-#define enter_syscall __elk_enter_syscall
-#define leave_syscall __elk_leave_syscall
 #endif
 
 /* The threads currently assigned to processors.
@@ -99,6 +99,10 @@ extern struct thread *current[];
 /** Enter the IRQ state.
  */
 void *enter_irq(void);
+
+/** Lock the ready queue.
+ */
+void lock_ready(void);
 
 /** Unlock the ready queue.
  */
@@ -112,15 +116,6 @@ void *leave_irq(void);
  */
 struct thread *thread_self();
 
-/** Enter a system call..
- * This function is called from crt1.S.
- */
-struct thread *enter_syscall();
-
-/** Leave a system call.
- * This function is called from crt1.S.
- */
-struct thread *leave_syscall();
 
 #endif // _crt1common_h_
 
