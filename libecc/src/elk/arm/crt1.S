@@ -227,6 +227,8 @@ argv:
         ldr     r0, [r0];               /* Indirectly.             */   \
         add     r1, sp, #8;             /* Adjust the stack. */         \
         str     r1, [r0];               /* Save the new context. */     \
+        mrc     p15, 0, r0, c13, c0, 3; /* Get the TLS. */              \
+        str     r0, [sp, #REG_TLS + 8]; /* Save it. */                  \
         ldr     r0, [sp, #REG_CPSR + 8];/* Get the saved psr. */        \
         and     r0, #PSR_MODE;          /* Get the old mode. */         \
         cmp     r0, #PSR_USR_MODE;      /* Were we in usr mode? */      \
@@ -256,6 +258,8 @@ argv:
         ldr     r0, [r0];               /* Indirectly.             */   \
         add     r1, sp, #CTXREGS;       /* Save the updated context. */ \
         str     r1, [r0];               /* Save the context pointer. */ \
+        ldr     r0, [sp, #REG_TLS];     /* Get the saved TLS. */        \
+        mcr     p15, 0, r0, c13, c0, 3; /* Set the new TLS. */          \
         pop     { SAVED_REGS };         /* Restore registers. */        \
         add     sp, #4 * 2;             /* Remove room for the sp. */   \
         rfeia   sp!                     /* And return. */
@@ -404,8 +408,6 @@ ENTRY(switch_context)
         push    { SAVED_REGS }          // Store other registers.
         str     sp, [r1]                // Save the current frame.
         ldr     sp, [r0]                // Get the new stack pointer.
-        ldr     r1, [r0, #4]            // Get the new TLS.
-        mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         RESTORE_CONTEXT(PSR_SVC_MODE)
 
@@ -424,8 +426,6 @@ ENTRY(switch_context_arg)
         str     sp, [r2]                // Save the current frame.
         ldr     sp, [r1]                // Get the new stack pointer.
         str     r0, [sp, #REG_R0]       // Save the return value.
-        ldr     r1, [r1, #4]            // Get the new TLS.
-        mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         RESTORE_CONTEXT(PSR_SVC_MODE)
 
@@ -437,16 +437,8 @@ ENTRY(switch_context_arg)
  */
 ENTRY(enter_context)
         ldr     sp, [r0]                // Get the new stack pointer.
-        ldr     r1, [r0, #4]            // Get the new TLS.
-        mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-        ldr     r0, [sp, #REG_SP]       // Get the user sp.
-        cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
-        mov     sp, r0;                 // Set the usr sp.
-        cpsid   i, #PSR_SVC_MODE        // Switch to previous mode.
-        pop     { SAVED_REGS }          // Restore registers
-        add     sp, #4 * 2              // Deallocate the saved sp
-        rfeia   sp!                     // And dispatch.
+        RESTORE_CONTEXT(PSR_SVC_MODE)
 
 /* Handle a system call.
  * On the ARM, this is entered with an SVC instruction.
@@ -522,8 +514,8 @@ ARM_SVC_Table:
  */
         .global __set_thread_area
 __set_thread_area:
-        push    { r1, r11, r12, lr }
         mcr     p15, 0, r0, c13, c0, 3
+        bx      lr
         mov     r1, r0
         weak_call(CLABEL(thread_self))  // Get the current context.
         cmp     r0, #0                  // Have a context?
@@ -531,7 +523,6 @@ __set_thread_area:
         movne   r0, #0
         moveq   r0, #-1
         pop     { r1, r11, r12, lr }
-        bx      lr
 
 /* Get thread area.
  * This definitions overrides the musl definition in tls.s.

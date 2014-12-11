@@ -77,7 +77,7 @@ typedef struct context {
   uint32_t r12;                         // +48 (30)
   char *lr;                             // +52 (34)
   char *sp;                             // +56 (38)
-  uint32_t pad;                         // +60 (3C) Unsed. For alignment.
+  char *tls;                            // +60 (3C)
   char *pc;                             // +64 (40)
   uint32_t cpsr;                        // +68 (44)
 } context_t;
@@ -110,7 +110,7 @@ static inline void context_set_return(context_t *cp, int value)
 #define REG_R12         0x30
 #define REG_LR          0x34
 #define REG_SP          0x38
-// 0x3c is empty.
+#define REG_TLS         0x3c
 #define REG_PC          0x40
 #define REG_CPSR        0x44
 
