@@ -516,13 +516,6 @@ ARM_SVC_Table:
 __set_thread_area:
         mcr     p15, 0, r0, c13, c0, 3
         bx      lr
-        mov     r1, r0
-        weak_call(CLABEL(thread_self))  // Get the current context.
-        cmp     r0, #0                  // Have a context?
-        strne   r1, [r0, #4]            // Save the TLS in the current Thread.
-        movne   r0, #0
-        moveq   r0, #-1
-        pop     { r1, r11, r12, lr }
 
 /* Get thread area.
  * This definitions overrides the musl definition in tls.s.
