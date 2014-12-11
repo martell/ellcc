@@ -216,6 +216,7 @@ argv:
 // RICH: current access has to be fixed for SMP. Need current[processor];
 #define SAVE_CONTEXT(mode)                                              \
         ldr     sp, =CLABEL(current);   /* Get the current thread. */   \
+        ldr     sp, [sp];               /* Indirectly.             */   \
         ldr     sp, [sp];               /* Get the system context. */   \
         srsfd   sp!, HASH mode;         /* Save saved lr and spsr */    \
                                         /* on the stack. */             \
@@ -223,6 +224,7 @@ argv:
         push    { SAVED_REGS };         /* Store other registers. */    \
         push    { r0-r1 };              /* Preserve registers. */       \
         ldr     r0, =CLABEL(current);   /* Get the current thread. */   \
+        ldr     r0, [r0];               /* Indirectly.             */   \
         add     r1, sp, #8;             /* Adjust the stack. */         \
         str     r1, [r0];               /* Save the new context. */     \
         ldr     r0, [sp, #REG_CPSR + 8];/* Get the saved psr. */        \
@@ -236,8 +238,7 @@ argv:
         cpsid   i, HASH mode;           /* Switch back. */              \
         str     r0, [sp, #REG_SP + 8];  /* Save the usr sp. */          \
         str     r1, [sp, #REG_LR + 8];  /* Save the usr lr. */          \
-        pop     { r0-r1 };              /* Restore registers. */        \
-        cpsie   i                       /* Enable IRQ */
+        pop     { r0-r1 };              /* Restore registers. */
 
 /** Restore current context.
  */
@@ -252,6 +253,7 @@ argv:
         mov     sp, r0;                 /* Set up the stack pointer. */ \
         cpsid   i, HASH mode;           /* Switch to previous mode. */  \
         ldr     r0, =CLABEL(current);   /* Get the current thread. */   \
+        ldr     r0, [r0];               /* Indirectly.             */   \
         add     r1, sp, #CTXREGS;       /* Save the updated context. */ \
         str     r1, [r0];               /* Save the context pointer. */ \
         pop     { SAVED_REGS };         /* Restore registers. */        \
@@ -263,6 +265,7 @@ argv:
 undefined:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_UND_MODE)      // Save the context.
+        cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_UNDEFINED
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -276,6 +279,7 @@ trapund:
 prefetch:
         sub     lr, lr, #8              // Adjust the lr.
         SAVE_CONTEXT(PSR_ABT_MODE)      // Save the context.
+        cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_PREFETCH_ABORT
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -289,6 +293,7 @@ trappre:
 abort:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_ABT_MODE)      // Save the context.
+        cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_DATA_ABORT
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -318,6 +323,7 @@ irq:
                                         // irq stack.
         sub     sp, #4 * 2              // Leave room for the sp.
         push    { SAVED_REGS }          // Store other registers.
+
         cpsid   i, #PSR_SYS_MODE        // Switch to sys mode.
         mov     r0, sp                  // Set the usr sp.
         cpsid   i, #PSR_IRQ_MODE        // Switch to previous mode.
@@ -447,6 +453,7 @@ ENTRY(enter_context)
  */
 swi:
         SAVE_CONTEXT(PSR_SVC_MODE)      // Save the context.
+        cpsie   i                       // Enable IRQ.
 
         // In a system call.
         // r7 is the call number.
