@@ -28,32 +28,6 @@
 _start:
         b       reset                   // Relative jump.
 
-        .align  5
-vector_start:
-/* Exception vector
- *
- * This table will be copied to an appropriate location.
- * (the location is platform specific.)
- */
-        ldr     pc, reset_p             // 0x00 mode: svc.
-        ldr     pc, undefined_p         // 0x04 mode: ?.
-        ldr     pc, swi_p               // 0x08 mode: svc.
-        ldr     pc, prefetch_p          // 0x0c mode: abort.
-        ldr     pc, abort_p             // 0x10 mode: abort.
-        nop                             // 0x14 reserved.
-        ldr     pc, irq_p               // 0x18 mode: irq.
-        ldr     pc, fiq_p               // 0x1c mode: fiq.
-
-reset_p:        .word  reset
-undefined_p:    .word  undefined
-swi_p:          .word  swi
-prefetch_p:     .word  prefetch
-abort_p:        .word  abort
-irq_p:          .word  irq
-fiq_p:          .word  fiq
-
-vector_end:
-
 // The FIQ interrupt starts here.
 fiq:
         wfi
@@ -223,8 +197,8 @@ argv:
 #define SAVE_CONTEXT(mode, mod)                                         \
         ldr     sp, =CLABEL(current ## mod);                            \
         ldr     sp, [sp];               /* Indirectly.             */   \
-        ldr     sp, [sp];               /* Get the system stack. */   \
-        srsfd   sp!, HASH mode;         /* Save saved lr and spsr */    \
+        ldr     sp, [sp];               /* Get the system stack. */     \
+        srsfd   sp!, HASH mode;         /* Save lr and spsr */          \
                                         /* on the stack. */             \
         sub     sp, #4 * 2;             /* Leave room for sp and tls. */\
         push    { SAVED_REGS };         /* Store other registers. */    \
@@ -394,7 +368,14 @@ irq:
 #else
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_IRQ_MODE,_irq) // Save the context.
-        // Remember to preserve r8 to save the context pointer.
+#if RICH
+        ldr     r0, =swi_p              // Get the current swi handler.
+        ldr     r1, [r0]
+        ldr     r2, =kernel_swi         // Get the address of the kernel handler.
+        str     r2, [r0]
+        push    { r0, r1 }              // Save for later restore.
+#endif
+        // Remember to preserve r8 to save The context pointer.
         ldr     r9, =curspl             // Set the interrupt priority level.
         ldr     r10, [r9]               // Save the old level.
         mov     r1, #15                 // Highest level.
@@ -414,6 +395,11 @@ irq:
 1:
         cpsid   i                       // Disable IRQ.
         str     r10, [r9]               // Restore the old level.
+#if RICH
+        pop     { r0, r1 }              // Restore the swi handler.
+        str     r1, [r0]
+#endif
+
         weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
         // RICH: weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         RESTORE_CONTEXT(PSR_IRQ_MODE)
@@ -501,43 +487,103 @@ ENTRY(enter_context)
         mov     r8,r0                   // Point to the context pointer.
         RESTORE_CONTEXT(PSR_SVC_MODE)
 
-/* Handle a system call.
+/* Handle a system call from usr mode.
  * On the ARM, this is entered with an SVC instruction.
  */
 swi:
-        SAVE_CONTEXT(PSR_SVC_MODE,)     // Save the context.
-        // Remember to preserve r8 to save the context pointer.
-        ldr     r9, =curspl             // Set the interrupt priority level.
-        ldr     r10, [r9]               // Save the old level.
-        cmp     r10, #0                 // Are interrupts enabled?
-        bne     __in_syscall            // Jump if not.
-        cpsie   i                       // Enable IRQ.
+        srsfd   sp!, #PSR_SVC_MODE      // Save lr and spsr on the stack.
+        push    { r0, r1 }              // Preserve registers.
+        ldr     r0, [sp, #12]           // Get the spsr.
+        and     r1, r0, #PSR_MODE
+        cmp     r1, PSR_USR_MODE        // In user space?
+        beq     user_swi
+        // Restore the irq state.
+        and     r1, r0, #PSR_IRQ_DIS|PSR_FIQ_DIS
+        orr     r1, #PSR_SVC_MODE
+        msr     cpsr_c, r1
+        pop     { r0, r1 }
+        push    { r2-r12, lr }
+        ldr     r10, [sp, #4 * 12]      // Get the return address for clone().
+        bl      __in_syscall
+        pop     { r2-r12, lr }          // Restore registers.
+        rfeia   sp!                     // And return.
 
-        // In a system call.
-        // r7 is the call number.
+/** In a system call.
+ * r7 is the call number.
+ * r8 must be preserved.
+ * r10 is the system call return address for clone().
+ */
 __in_syscall:                           // The stack frame is valid here.
-        cmp     r7, #512                // Is it a valid syscall number?
         ldr     r9, =syscall            // Point to the syscall save area.
         str     r7, [r9]                // Save call number for error
                                         // reporting.
+        cmp     r7, #512                // Is it a valid syscall number?
         bhs     check_arm_syscall       // Jump if too big for a syscall.
         // RICH: Get rid of stack adjustment: System stacks are aligned.
         and     r9, sp, #4              // Test stack alignment.
         sub     sp, sp, r9              // Adjust the stack if needed.
-        push    { r8, r9 }              // Save the adjustment.
+        push    { r8, r9, r10, lr }     // Save the adjustment and lr.
         ldr     r8, =swi_table          // Get the system call table.
         ldr     r8, [r8, r7, lsl #2]    // Get the system call entry.
-        ldr     r7, [sp, #4 * (NUM_SAVED + 4)]// Get the SVC return address
+        // RICH: Check this.
+        mov     r7, r10                 // Get the SVC return address
                                         // for clone().
         push    { r4, r5, r6, r7 }      // Put extra arguments on the stack.
         blx     r8                      // Dispatch. Return value is in r0/r1
         add     sp, #4 * 4              // Deallocate args.
-        pop     { r8, r9 }              // Restore the stack adjustment.
+        pop     { r8, r9, r10, lr }     // Restore the stack adjustment and lr.
         add     sp, sp, r9              // And adjust.
+        mov     pc, lr
+
+user_swi:
+        pop     { r0, r1 }
+        SAVE_CONTEXT(PSR_SVC_MODE,)     // Save the context.
+        // Remember to preserve r8 to save the context pointer.
+        cpsie   i                       // Enable IRQ.
+        ldr     r10, [sp, #REG_PC]      // The return address for clone().
+        bl      __in_syscall            // Do the call.
         str     r0, [sp, #REG_R0]       // Save possible return values.
         str     r1, [sp, #REG_R1]
         // r8 has been preserved.
         RESTORE_CONTEXT(PSR_SVC_MODE)
+
+/* Handle a system call from kernel space.
+ * On the ARM, this is entered with an SVC instruction.
+ */
+kernel_swi:
+        ldr     sp, =kernel_swi_stack   // Get the temporary stack pointer
+        srsfd   sp!, #PSR_SVC_MODE      // Save lr and spsr on the stack.
+        push    { r0-r1 }               // Preserve registers.
+        ldr     r0, [sp, #12]           // Get the spsr.
+        and     r1, r0, #PSR_MODE
+        orr     r1, #PSR_IRQ_DIS|PSR_FIQ_DIS
+        msr     cpsr_c, r1              // Switch to the previous.
+        ldr     r1, =kernel_swi_stack_base
+        ldr     r0, [r1]                // Restore r0.
+        ldr     r1, [r1, #4]            // Restore r1.
+        push    { r2-r12, lr }          // Preserve registers.
+        ldr     r8, =kernel_swi_stack_base
+        ldr     r8, [r8, #12]           // Get the spsr.
+        msr     cpsr, r8                // Get the previous interrupt state.
+
+        // In a system call.
+        // r7 is the call number.
+__in_kernel_syscall:                    // The stack frame is valid here.
+        cmp     r7, #512                // Is it a valid syscall number?
+        ldr     r9, =syscall            // Point to the syscall save area.
+        str     r7, [r9]                // Save call number for error
+                                        // reporting.
+bad_call:
+        bhs     bad_call                // Jump if too big for a syscall.
+        ldr     r8, =swi_table          // Get the system call table.
+        ldr     r8, [r8, r7, lsl #2]    // Get the system call entry.
+        ldr     r7, [sp, #4 * 14]       // Get the SVC return address
+                                        // for clone().
+        push    { r4, r5, r6, r7 }      // Put extra arguments on the stack.
+        blx     r8                      // Dispatch. Return value is in r0/r1
+        add     sp, #4 * 4              // Deallocate args and r0, r1.
+        pop     { r2-r12, lr }          // Restore other registers.
+        mov     pc, lr
 
 /* ARM has a few "hidden" system calls.
  * Only one of these is used by musl and is defined below for
@@ -774,10 +820,44 @@ syscall:
 
 // Current spl.
 curspl:
-        .word  0
+        .word   0
 
 // Create the system call table with room for 512 entries.
 swi_table:
         .rep    512
         .word   unhandled_swi
         .endr
+
+kernel_swi_stack_base:
+        .word   0                       // Saved r0.
+        .word   0                       // Saved r1.
+        .word   0                       // Saved lr.
+        .word   0                       // saved spsr.
+kernel_swi_stack:
+
+        .align  5
+vector_start:
+/* Exception vector
+ *
+ * This table will be copied to an appropriate location.
+ * (the location is platform specific.)
+ */
+        ldr     pc, reset_p             // 0x00 mode: svc.
+        ldr     pc, undefined_p         // 0x04 mode: ?.
+        ldr     pc, swi_p               // 0x08 mode: svc.
+        ldr     pc, prefetch_p          // 0x0c mode: abort.
+        ldr     pc, abort_p             // 0x10 mode: abort.
+        nop                             // 0x14 reserved.
+        ldr     pc, irq_p               // 0x18 mode: irq.
+        ldr     pc, fiq_p               // 0x1c mode: fiq.
+
+reset_p:        .word  reset
+undefined_p:    .word  undefined
+swi_p:          .word  swi
+prefetch_p:     .word  prefetch
+abort_p:        .word  abort
+irq_p:          .word  irq
+fiq_p:          .word  fiq
+
+vector_end:
+
