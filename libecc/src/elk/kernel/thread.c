@@ -491,10 +491,9 @@ void unlock_ready(void)
  */
 void *enter_irq(void)
 {
-  lock_aquire(&ready_lock);
+  // RICH: lock_aquire(&ready_lock);
   long state = irq_state++;
-  return current;
-  if (state) current;                   // Already in irq state.
+  if (state) return current;            // Already in irq state.
   saved_current = current;              // Save the current context.
   current = irq_thread;
   return current;                       // To save context.
@@ -505,9 +504,8 @@ void *enter_irq(void)
  */
 void *leave_irq(void)
 {
-  lock_aquire(&ready_lock);
+  // RICH: lock_aquire(&ready_lock);
   long state = --irq_state;
-  return current;
   if (state) return current;            // Still in irq state.
   current = saved_current;
   return current;                       // Next context.

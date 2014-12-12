@@ -395,10 +395,12 @@ irq:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_IRQ_MODE,_irq) // Save the context.
         // Remember to preserve r8 to save the context pointer.
+        ldr     r9, =curspl             // Set the interrupt priority level.
+        ldr     r10, [r9]               // Save the old level.
+        mov     r1, #15                 // Highest level.
+        str     r1, [r9]                // Set the new level.
         weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
-        weak_call(CLABEL(lock_ready))   // Lock the ready list.
-        bl      ASM_LABEL(splhigh)      // Set the interrupt level.
-        mov     r9, r0                  // Save the current level.
+        // RICH: weak_call(CLABEL(lock_ready))   // Lock the ready list.
         weak_call(CLABEL(identify_irq)) // Clear interrupt and get irq
                                         // handler in r0.
         cmp     r0, #0
@@ -410,10 +412,10 @@ irq:
         cmp     r1, #0                  // Handler function?
         blxne   r1                      // Call it.
 1:
-        // mov     r0, r9                  // Get interrupt level.
-        // bl      ASM_LABEL(splx)         // Restore interrupt level.
+        cpsid   i                       // Disable IRQ.
+        str     r10, [r9]               // Restore the old level.
         weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
-        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
+        // RICH: weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         RESTORE_CONTEXT(PSR_IRQ_MODE)
 #endif
 
@@ -505,6 +507,10 @@ ENTRY(enter_context)
 swi:
         SAVE_CONTEXT(PSR_SVC_MODE,)     // Save the context.
         // Remember to preserve r8 to save the context pointer.
+        ldr     r9, =curspl             // Set the interrupt priority level.
+        ldr     r10, [r9]               // Save the old level.
+        cmp     r10, #0                 // Are interrupts enabled?
+        bne     __in_syscall            // Jump if not.
         cpsie   i                       // Enable IRQ.
 
         // In a system call.

@@ -116,7 +116,7 @@ static int pl011_isr(void *arg)
   }
 
   if (mis & MIS_TX) {
-     // Transmit interrupt.
+    // Transmit interrupt.
     serial_xmt_done(sp);
 
     // Clear interrupt status.
