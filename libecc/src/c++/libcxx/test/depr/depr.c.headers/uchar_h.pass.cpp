@@ -6,6 +6,7 @@
 // Source Licenses. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+// XFAIL: newlib
 
 // <uchar.h>
 

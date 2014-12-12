@@ -768,6 +768,7 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
   // Select the ABI to use.
   //
   // FIXME: Support -meabi.
+  // FIXME: Parts of this are duplicated in the backend, unify this somehow.
   const char *ABIName = nullptr;
   if (Arg *A = Args.getLastArg(options::OPT_mabi_EQ)) {
     ABIName = A->getValue();
@@ -775,8 +776,7 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
     // The backend is hardwired to assume AAPCS for M-class processors, ensure
     // the frontend matches that.
     if (Triple.getEnvironment() == llvm::Triple::EABI ||
-        (Triple.getOS() == llvm::Triple::UnknownOS &&
-         Triple.getObjectFormat() == llvm::Triple::MachO) ||
+        Triple.getOS() == llvm::Triple::UnknownOS ||
         StringRef(CPUName).startswith("cortex-m")) {
       ABIName = "aapcs";
     } else {
@@ -797,11 +797,10 @@ void Clang::AddARMTargetArgs(const ArgList &Args,
     case llvm::Triple::EABI:
       ABIName = "aapcs";
       break;
+    // This is also the case for netbsd.
+    case llvm::Triple::GNU:
     default:
-      if (Triple.getOS() == llvm::Triple::NetBSD)
-        ABIName = "apcs-gnu";
-      else
-        ABIName = "aapcs";
+      ABIName = "apcs-gnu";
       break;
     }
   }
@@ -1986,43 +1985,15 @@ shouldUseExceptionTablesForObjCExceptions(const ObjCRuntime &runtime,
            Triple.getArch() == llvm::Triple::armeb));
 }
 
-namespace {
-  struct ExceptionSettings {
-    bool ExceptionsEnabled;
-    bool ShouldUseExceptionTables;
-    ExceptionSettings() : ExceptionsEnabled(false),
-                          ShouldUseExceptionTables(false) {}
-  };
-} // end anonymous namespace.
-
 // exceptionSettings() exists to share the logic between -cc1 and linker
 // invocations.
-static ExceptionSettings exceptionSettings(const ArgList &Args,
-                                           const llvm::Triple &Triple) {
-  ExceptionSettings ES;
-
-  // Are exceptions enabled by default?
-  ES.ExceptionsEnabled = (Triple.getArch() != llvm::Triple::xcore);
-
-  // This keeps track of whether exceptions were explicitly turned on or off.
-  bool DidHaveExplicitExceptionFlag = false;
-
+static bool exceptionSettings(const ArgList &Args, const llvm::Triple &Triple) {
   if (Arg *A = Args.getLastArg(options::OPT_fexceptions,
-                               options::OPT_fno_exceptions)) {
+                               options::OPT_fno_exceptions))
     if (A->getOption().matches(options::OPT_fexceptions))
-      ES.ExceptionsEnabled = true;
-    else
-      ES.ExceptionsEnabled = false;
+      return true;
 
-    DidHaveExplicitExceptionFlag = true;
-  }
-
-  // Exception tables and cleanups can be enabled with -fexceptions even if the
-  // language itself doesn't support exceptions.
-  if (ES.ExceptionsEnabled && DidHaveExplicitExceptionFlag)
-    ES.ShouldUseExceptionTables = true;
-
-  return ES;
+  return false;
 }
 
 /// addExceptionArgs - Adds exception related arguments to the driver command
@@ -2047,8 +2018,8 @@ static void addExceptionArgs(const ArgList &Args, types::ID InputType,
     return;
   }
 
-   // Gather the exception settings from the command line arguments.
-   ExceptionSettings ES = exceptionSettings(Args, Triple);
+  // Gather the exception settings from the command line arguments.
+  bool EH = exceptionSettings(Args, Triple);
 
   // Obj-C exceptions are enabled by default, regardless of -fexceptions. This
   // is not necessarily sensible, but follows GCC.
@@ -2058,31 +2029,27 @@ static void addExceptionArgs(const ArgList &Args, types::ID InputType,
                    true)) {
     CmdArgs.push_back("-fobjc-exceptions");
 
-    ES.ShouldUseExceptionTables |=
-      shouldUseExceptionTablesForObjCExceptions(objcRuntime, Triple);
+    EH |= shouldUseExceptionTablesForObjCExceptions(objcRuntime, Triple);
   }
 
   if (types::isCXX(InputType)) {
-    bool CXXExceptionsEnabled = ES.ExceptionsEnabled;
-
+    bool CXXExceptionsEnabled = Triple.getArch() != llvm::Triple::xcore;
     if (Arg *A = Args.getLastArg(options::OPT_fcxx_exceptions,
                                  options::OPT_fno_cxx_exceptions,
                                  options::OPT_fexceptions,
-                                 options::OPT_fno_exceptions)) {
-      if (A->getOption().matches(options::OPT_fcxx_exceptions))
-        CXXExceptionsEnabled = true;
-      else if (A->getOption().matches(options::OPT_fno_cxx_exceptions))
-        CXXExceptionsEnabled = false;
-    }
+                                 options::OPT_fno_exceptions))
+      CXXExceptionsEnabled =
+          A->getOption().matches(options::OPT_fcxx_exceptions) ||
+          A->getOption().matches(options::OPT_fexceptions);
 
     if (CXXExceptionsEnabled) {
       CmdArgs.push_back("-fcxx-exceptions");
 
-      ES.ShouldUseExceptionTables = true;
+      EH = true;
     }
   }
 
-  if (ES.ShouldUseExceptionTables)
+  if (EH)
     CmdArgs.push_back("-fexceptions");
 }
 
@@ -8749,8 +8716,7 @@ void XCore::Link::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT_v))
     CmdArgs.push_back("-v");
 
-  ExceptionSettings EH = exceptionSettings(Args, getToolChain().getTriple());
-  if (EH.ShouldUseExceptionTables)
+  if (exceptionSettings(Args, getToolChain().getTriple()))
     CmdArgs.push_back("-fexceptions");
 
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);

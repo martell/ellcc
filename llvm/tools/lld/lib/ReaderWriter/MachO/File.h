@@ -24,6 +24,9 @@ using lld::mach_o::normalized::Section;
 
 class MachOFile : public SimpleFile {
 public:
+  MachOFile(std::unique_ptr<MemoryBuffer> mb, MachOLinkingContext *ctx)
+      : SimpleFile(mb->getBufferIdentifier()), _mb(std::move(mb)), _ctx(ctx) {}
+
   MachOFile(StringRef path) : SimpleFile(path) {}
 
   void addDefinedAtom(StringRef name, Atom::Scope scope,
@@ -36,15 +39,15 @@ public:
                                                         contentSize);
     if (copyRefs) {
       // Make a copy of the atom's name and content that is owned by this file.
-      name = name.copy(_allocator);
-      content = content.copy(_allocator);
+      name = name.copy(allocator());
+      content = content.copy(allocator());
     }
     DefinedAtom::Alignment align(
         inSection->alignment,
         sectionOffset % ((uint64_t)1 << inSection->alignment));
     MachODefinedAtom *atom =
-        new (_allocator) MachODefinedAtom(*this, name, scope, type, merge,
-                                          thumb, noDeadStrip, content, align);
+        new (allocator()) MachODefinedAtom(*this, name, scope, type, merge,
+                                           thumb, noDeadStrip, content, align);
     addAtomForSection(inSection, atom, sectionOffset);
   }
 
@@ -58,15 +61,15 @@ public:
                                                         contentSize);
    if (copyRefs) {
       // Make a copy of the atom's name and content that is owned by this file.
-      name = name.copy(_allocator);
-      content = content.copy(_allocator);
-      sectionName = sectionName.copy(_allocator);
+      name = name.copy(allocator());
+      content = content.copy(allocator());
+      sectionName = sectionName.copy(allocator());
     }
     DefinedAtom::Alignment align(
         inSection->alignment,
         sectionOffset % ((uint64_t)1 << inSection->alignment));
     MachODefinedCustomSectionAtom *atom =
-        new (_allocator) MachODefinedCustomSectionAtom(*this, name, scope, type,
+        new (allocator()) MachODefinedCustomSectionAtom(*this, name, scope, type,
                                                         merge, thumb,
                                                         noDeadStrip, content,
                                                         sectionName, align);
@@ -79,24 +82,24 @@ public:
                               const Section *inSection) {
     if (copyRefs) {
       // Make a copy of the atom's name and content that is owned by this file.
-      name = name.copy(_allocator);
+      name = name.copy(allocator());
     }
     DefinedAtom::Alignment align(
         inSection->alignment,
         sectionOffset % ((uint64_t)1 << inSection->alignment));
     MachODefinedAtom *atom =
-       new (_allocator) MachODefinedAtom(*this, name, scope, size, noDeadStrip,
-                                         align);
+       new (allocator()) MachODefinedAtom(*this, name, scope, size, noDeadStrip,
+                                          align);
     addAtomForSection(inSection, atom, sectionOffset);
   }
 
   void addUndefinedAtom(StringRef name, bool copyRefs) {
     if (copyRefs) {
       // Make a copy of the atom's name that is owned by this file.
-      name = name.copy(_allocator);
+      name = name.copy(allocator());
     }
     SimpleUndefinedAtom *atom =
-        new (_allocator) SimpleUndefinedAtom(*this, name);
+        new (allocator()) SimpleUndefinedAtom(*this, name);
     addAtom(*atom);
     _undefAtoms[name] = atom;
   }
@@ -105,10 +108,10 @@ public:
                            DefinedAtom::Alignment align, bool copyRefs) {
     if (copyRefs) {
       // Make a copy of the atom's name that is owned by this file.
-      name = name.copy(_allocator);
+      name = name.copy(allocator());
     }
     MachOTentativeDefAtom *atom =
-        new (_allocator) MachOTentativeDefAtom(*this, name, scope, size, align);
+        new (allocator()) MachOTentativeDefAtom(*this, name, scope, size, align);
     addAtom(*atom);
     _undefAtoms[name] = atom;
   }
@@ -172,7 +175,17 @@ public:
       visitor(offAndAtom.atom, offAndAtom.offset);
   }
 
-  llvm::BumpPtrAllocator &allocator() { return _allocator; }
+  std::error_code doParse() override {
+    // Convert binary file to normalized mach-o.
+    auto normFile = normalized::readBinary(_mb, _ctx->arch());
+    if (std::error_code ec = normFile.getError())
+      return ec;
+    // Convert normalized mach-o to atoms.
+    if (std::error_code ec = normalized::normalizedObjectToAtoms(
+            this, **normFile, false))
+      return ec;
+    return std::error_code();
+  }
   
 private:
   struct SectionOffsetAndAtom { uint64_t offset;  MachODefinedAtom *atom; };
@@ -191,26 +204,26 @@ private:
                          std::vector<SectionOffsetAndAtom>>  SectionToAtoms;
   typedef llvm::StringMap<const lld::Atom *> NameToAtom;
 
-  llvm::BumpPtrAllocator  _allocator;
-  SectionToAtoms          _sectionAtoms;
-  NameToAtom              _undefAtoms;
+  std::unique_ptr<MemoryBuffer> _mb;
+  MachOLinkingContext          *_ctx;
+  SectionToAtoms                _sectionAtoms;
+  NameToAtom                     _undefAtoms;
 };
 
 class MachODylibFile : public SharedLibraryFile {
 public:
-  MachODylibFile(StringRef path, StringRef installName, uint32_t compatVersion,
-                 uint32_t currentVersion)
-      : SharedLibraryFile(path), _installName(installName),
-        _currentVersion(currentVersion), _compatVersion(compatVersion) {
-  }
+  MachODylibFile(std::unique_ptr<MemoryBuffer> mb, MachOLinkingContext *ctx)
+      : SharedLibraryFile(mb->getBufferIdentifier()),
+        _mb(std::move(mb)), _ctx(ctx) {}
 
-  const SharedLibraryAtom *exports(StringRef name,
-                                   bool isData) const override {
-    // Pass down _installName and _allocator so that if this requested symbol
+  MachODylibFile(StringRef path) : SharedLibraryFile(path) {}
+
+  const SharedLibraryAtom *exports(StringRef name, bool isData) const override {
+    // Pass down _installName so that if this requested symbol
     // is re-exported through this dylib, the SharedLibraryAtom's loadName()
     // is this dylib installName and not the implementation dylib's.
     // NOTE: isData is not needed for dylibs (it matters for static libs).
-    return exports(name, _installName, _allocator);
+    return exports(name, _installName);
   }
 
   const atom_collection<DefinedAtom> &defined() const override {
@@ -233,7 +246,7 @@ public:
   /// SharedLibraryAtom is created lazily (since most symbols are not used).
   void addExportedSymbol(StringRef name, bool weakDef, bool copyRefs) {
     if (copyRefs) {
-      name = name.copy(_allocator);
+      name = name.copy(allocator());
     }
     AtomAndFlags info(weakDef);
     _nameToAtom[name] = info;
@@ -244,10 +257,12 @@ public:
   }
 
   StringRef installName() { return _installName; }
-
   uint32_t currentVersion() { return _currentVersion; }
-
   uint32_t compatVersion() { return _compatVersion; }
+
+  void setInstallName(StringRef name) { _installName = name; }
+  void setCompatVersion(uint32_t version) { _compatVersion = version; }
+  void setCurrentVersion(uint32_t version) { _currentVersion = version; }
 
   typedef std::function<MachODylibFile *(StringRef)> FindDylib;
 
@@ -257,17 +272,29 @@ public:
     }
   }
 
+  std::error_code doParse() override {
+    // Convert binary file to normalized mach-o.
+    auto normFile = normalized::readBinary(_mb, _ctx->arch());
+    if (std::error_code ec = normFile.getError())
+      return ec;
+    // Convert normalized mach-o to atoms.
+    if (std::error_code ec = normalized::normalizedDylibToAtoms(
+            this, **normFile, false))
+      return ec;
+    return std::error_code();
+  }
+
 private:
-  const SharedLibraryAtom *exports(StringRef name, StringRef installName,
-                                   llvm::BumpPtrAllocator &allocator) const {
+  const SharedLibraryAtom *exports(StringRef name,
+                                   StringRef installName) const {
     // First, check if requested symbol is directly implemented by this dylib.
     auto entry = _nameToAtom.find(name);
     if (entry != _nameToAtom.end()) {
       if (!entry->second.atom) {
         // Lazily create SharedLibraryAtom.
         entry->second.atom =
-          new (allocator) MachOSharedLibraryAtom(*this, name, installName,
-                                                 entry->second.weakDef);
+          new (allocator()) MachOSharedLibraryAtom(*this, name, installName,
+                                                   entry->second.weakDef);
       }
       return entry->second.atom;
     }
@@ -275,7 +302,7 @@ private:
     // Next, check if symbol is implemented in some re-exported dylib.
     for (const ReExportedDylib &dylib : _reExportedDylibs) {
       assert(dylib.file);
-      auto atom = dylib.file->exports(name, installName, allocator);
+      auto atom = dylib.file->exports(name, installName);
       if (atom)
         return atom;
     }
@@ -298,6 +325,8 @@ private:
     bool                      weakDef;
   };
 
+  std::unique_ptr<MemoryBuffer>              _mb;
+  MachOLinkingContext                       *_ctx;
   StringRef                                  _installName;
   uint32_t                                   _currentVersion;
   uint32_t                                   _compatVersion;
@@ -307,7 +336,6 @@ private:
   atom_collection_vector<AbsoluteAtom>       _absoluteAtoms;
   std::vector<ReExportedDylib>               _reExportedDylibs;
   mutable std::unordered_map<StringRef, AtomAndFlags> _nameToAtom;
-  mutable llvm::BumpPtrAllocator _allocator;
 };
 
 } // end namespace mach_o

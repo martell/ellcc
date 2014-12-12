@@ -48,10 +48,10 @@ public:
 
   /// \brief Modify the section contents before assigning virtual addresses
   //  or assigning file offsets
-  virtual void doPreFlight() override {}
+  void doPreFlight() override {}
 
   /// \brief Finalize the section contents before writing
-  virtual void finalize() override {}
+  void finalize() override {}
 
   /// \brief Does this section have an output segment.
   virtual bool hasOutputSegment() {
@@ -212,7 +212,7 @@ public:
   uint64_t alignOffset(uint64_t offset, DefinedAtom::Alignment &atomAlign);
 
   /// Return if the section is a loadable section that occupies memory
-  virtual bool isLoadableSection() const { return _isLoadedInMemory; }
+  bool isLoadableSection() const override { return _isLoadedInMemory; }
 
   // \brief Append an atom to a Section. The atom gets pushed into a vector
   // contains the atom, the atom file offset, the atom virtual address
@@ -222,7 +222,7 @@ public:
   /// \brief Set the virtual address of each Atom in the Section. This
   /// routine gets called after the linker fixes up the virtual address
   /// of the section
-  virtual void assignVirtualAddress(uint64_t addr) {
+  virtual void assignVirtualAddress(uint64_t addr) override {
     for (auto &ai : _atoms) {
       ai->_virtualAddr = addr + ai->_fileOffset;
     }
@@ -230,7 +230,7 @@ public:
 
   /// \brief Set the file offset of each Atom in the section. This routine
   /// gets called after the linker fixes up the section offset
-  virtual void assignFileOffsets(uint64_t offset) {
+  void assignFileOffsets(uint64_t offset) override {
     for (auto &ai : _atoms) {
       ai->_fileOffset = offset + ai->_fileOffset;
     }
@@ -256,8 +256,8 @@ public:
 
   range<atom_iter> atoms() { return _atoms; }
 
-  virtual void write(ELFWriter *writer, TargetLayout<ELFT> &layout,
-                     llvm::FileOutputBuffer &buffer);
+  void write(ELFWriter *writer, TargetLayout<ELFT> &layout,
+             llvm::FileOutputBuffer &buffer) override;
 
   static bool classof(const Chunk<ELFT> *c) {
     return c->kind() == Chunk<ELFT>::Kind::AtomSection;
@@ -1134,6 +1134,14 @@ public:
       dyn.d_tag = DT_FINI_ARRAYSZ;
       _dt_fini_arraysz = addEntry(dyn);
     }
+    if (getInitAtomLayout()) {
+      dyn.d_tag = DT_INIT;
+      _dt_init = addEntry(dyn);
+    }
+    if (getFiniAtomLayout()) {
+      dyn.d_tag = DT_FINI;
+      _dt_fini = addEntry(dyn);
+    }
   }
 
   /// \brief Dynamic table tag for .got.plt section referencing.
@@ -1179,6 +1187,10 @@ public:
       _entries[_dt_fini_array].d_un.d_val = finiArray->virtualAddr();
       _entries[_dt_fini_arraysz].d_un.d_val = finiArray->memSize();
     }
+    if (const auto *al = getInitAtomLayout())
+      _entries[_dt_init].d_un.d_val = getAtomVirtualAddress(al);
+    if (const auto *al = getFiniAtomLayout())
+      _entries[_dt_fini].d_un.d_val = getAtomVirtualAddress(al);
     if (_layout.hasDynamicRelocationTable()) {
       auto relaTbl = _layout.getDynamicRelocationTable();
       _entries[_dt_rela].d_un.d_val = relaTbl->virtualAddr();
@@ -1196,6 +1208,14 @@ public:
 
 protected:
   EntriesT _entries;
+
+  /// \brief Return a virtual address (maybe adjusted) for the atom layout
+  /// Some targets like microMIPS and ARM Thumb use the last bit
+  /// of a symbol's value to mark 'compressed' code. This function allows
+  /// to adjust a virtal address before using it in the dynamic table tag.
+  virtual uint64_t getAtomVirtualAddress(const AtomLayout *al) const {
+    return al->_virtualAddr;
+  }
 
 private:
   std::size_t _dt_hash;
@@ -1215,9 +1235,25 @@ private:
   std::size_t _dt_fini_array;
   std::size_t _dt_fini_arraysz;
   std::size_t _dt_textrel;
+  std::size_t _dt_init;
+  std::size_t _dt_fini;
   TargetLayout<ELFT> &_layout;
   DynamicSymbolTable<ELFT> *_dynamicSymbolTable;
   HashSection<ELFT> *_hashTable;
+
+  const AtomLayout *getInitAtomLayout() {
+    auto al = _layout.findAtomLayoutByName(this->_context.initFunction());
+    if (al && isa<DefinedAtom>(al->_atom))
+      return al;
+    return nullptr;
+  }
+
+  const AtomLayout *getFiniAtomLayout() {
+    auto al = _layout.findAtomLayoutByName(this->_context.finiFunction());
+    if (al && isa<DefinedAtom>(al->_atom))
+      return al;
+    return nullptr;
+  }
 };
 
 template <class ELFT> class InterpSection : public Section<ELFT> {

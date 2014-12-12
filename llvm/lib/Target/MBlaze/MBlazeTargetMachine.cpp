@@ -58,7 +58,7 @@ public:
   }
 
   virtual bool addInstSelector();
-  virtual bool addPreEmitPass();
+  virtual void addPreEmitPass();
 };
 } // namespace
 
@@ -76,7 +76,6 @@ bool MBlazePassConfig::addInstSelector() {
 // Implemented by targets that want to run passes immediately before
 // machine code is emitted. return true if -print-machineinstrs should
 // print out the code after the passes.
-bool MBlazePassConfig::addPreEmitPass() {
+void MBlazePassConfig::addPreEmitPass() {
   addPass(createMBlazeDelaySlotFillerPass(getMBlazeTargetMachine()));
-  return true;
 }

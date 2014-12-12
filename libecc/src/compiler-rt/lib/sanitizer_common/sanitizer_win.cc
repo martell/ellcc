@@ -363,6 +363,10 @@ void internal__exit(int exitcode) {
   ExitProcess(exitcode);
 }
 
+uptr GetRSS() {
+  return 0;
+}
+
 // ---------------------- BlockingMutex ---------------- {{{1
 const uptr LOCK_UNINITIALIZED = 0;
 const uptr LOCK_READY = (uptr)-1;
@@ -476,15 +480,10 @@ void BufferedStackTrace::SlowUnwindStackWithContext(uptr pc, void *context,
 }
 #endif  // #if !SANITIZER_GO
 
-void MaybeOpenReportFile() {
-  // Windows doesn't have native fork, and we don't support Cygwin or other
-  // environments that try to fake it, so the initial report_fd will always be
-  // correct.
-}
-
-void RawWrite(const char *buffer) {
-  uptr length = (uptr)internal_strlen(buffer);
-  if (length != internal_write(report_fd, buffer, length)) {
+void ReportFile::Write(const char *buffer, uptr length) {
+  SpinMutexLock l(mu);
+  ReopenIfNecessary();
+  if (length != internal_write(fd, buffer, length)) {
     // stderr may be closed, but we may be able to print to the debugger
     // instead.  This is the case when launching a program from Visual Studio,
     // and the following routine should write to its console.

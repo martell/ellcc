@@ -1,5 +1,7 @@
 current SVN:
 
+* Update to LLVM r224113.
+
 version 0.1.5:
 
 * Added sigprocmask() to ELK.

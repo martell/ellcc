@@ -95,6 +95,7 @@ class Util {
 public:
   Util(const MachOLinkingContext &ctxt)
       : _context(ctxt), _archHandler(ctxt.archHandler()), _entryAtom(nullptr) {}
+  ~Util();
 
   void      assignAtomsToSections(const lld::File &atomFile);
   void      organizeSections();
@@ -170,6 +171,22 @@ private:
   std::vector<const Atom *>     _machHeaderAliasAtoms;
 };
 
+Util::~Util() {
+  // The SectionInfo structs are BumpPtr allocated, but atomsAndOffsets needs
+  // to be deleted.
+  for (SectionInfo *si : _sectionInfos) {
+    // clear() destroys vector elements, but does not deallocate.
+    // Instead use swap() to deallocate vector buffer.
+    std::vector<AtomInfo> empty;
+    si->atomsAndOffsets.swap(empty);
+  }
+  // The SegmentInfo structs are BumpPtr allocated, but sections needs
+  // to be deleted.
+  for (SegmentInfo *sgi : _segmentInfos) {
+    std::vector<SectionInfo*> empty2;
+    sgi->sections.swap(empty2);
+  }
+}
 
 SectionInfo *Util::getRelocatableSection(DefinedAtom::ContentType type) {
   StringRef segmentName;
@@ -445,7 +462,7 @@ void Util::layoutSectionsInSegment(SegmentInfo *seg, uint64_t &addr) {
   seg->address = addr;
   for (SectionInfo *sect : seg->sections) {
     sect->address = alignTo(addr, sect->alignment);
-    addr += sect->size;
+    addr = sect->address + sect->size;
   }
   seg->size = llvm::RoundUpToAlignment(addr - seg->address,_context.pageSize());
 }

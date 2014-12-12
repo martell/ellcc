@@ -309,6 +309,10 @@ MacosVersion GetMacosVersion() {
   return result;
 }
 
+uptr GetRSS() {
+  return 0;
+}
+
 }  // namespace __sanitizer
 
 #endif  // SANITIZER_MAC

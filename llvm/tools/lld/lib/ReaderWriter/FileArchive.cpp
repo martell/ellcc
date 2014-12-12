@@ -33,11 +33,21 @@ namespace {
 /// \brief The FileArchive class represents an Archive Library file
 class FileArchive : public lld::ArchiveLibraryFile {
 public:
-  FileArchive(const Registry &registry, Archive *archive, StringRef path,
-              bool isWholeArchive, bool logLoading)
-      : ArchiveLibraryFile(path), _registry(registry),
-        _archive(std::move(archive)), _isWholeArchive(isWholeArchive),
-        _logLoading(logLoading) {}
+  FileArchive(std::unique_ptr<MemoryBuffer> mb, const Registry &reg,
+              StringRef path, bool logLoading)
+      : ArchiveLibraryFile(path), _mb(std::shared_ptr<MemoryBuffer>(mb.release())),
+        _registry(reg), _logLoading(logLoading) {}
+
+  std::error_code doParse() override {
+    // Make Archive object which will be owned by FileArchive object.
+    std::error_code ec;
+    _archive.reset(new Archive(_mb->getMemBufferRef(), ec));
+    if (ec)
+      return ec;
+    if ((ec = buildTableOfContents()))
+      return ec;
+    return std::error_code();
+  }
 
   virtual ~FileArchive() {}
 
@@ -143,17 +153,13 @@ private:
         mb.getBuffer(), memberPath, false));
 
     std::vector<std::unique_ptr<File>> files;
-    _registry.parseFile(memberMB, files);
+    _registry.parseFile(std::move(memberMB), files);
     assert(files.size() == 1);
     result = std::move(files[0]);
 
-    // Note: The object file parsers use getBufferIdentifier() from memberMB
-    // for the file path. And MemoryBuffer makes its own copy of the path.
-    // That means when if memberMB is destroyed, the lld:File objects will
-    // have a dangling reference for their path.  To fix that, all the
-    // MemoryBuffers for the archive members are owned by _memberBuffers.
-    _memberBuffers.push_back(std::move(memberMB));
-
+    // The memory buffer is co-owned by the archive file and the children,
+    // so that the bufffer is deallocated when all the members are destructed.
+    result->setSharedMemoryBuffer(_mb);
     return std::error_code();
   }
 
@@ -204,6 +210,7 @@ private:
   typedef std::unordered_map<StringRef, Archive::child_iterator> MemberMap;
   typedef std::set<const char *> InstantiatedSet;
 
+  std::shared_ptr<MemoryBuffer> _mb;
   const Registry &_registry;
   std::unique_ptr<Archive> _archive;
   mutable MemberMap _symbolMemberMap;
@@ -227,22 +234,11 @@ public:
   }
 
   std::error_code
-  parseFile(std::unique_ptr<MemoryBuffer> &mb, const Registry &reg,
+  parseFile(std::unique_ptr<MemoryBuffer> mb, const Registry &reg,
             std::vector<std::unique_ptr<File>> &result) const override {
-    MemoryBuffer &buff = *mb;
-    // Make Archive object which will be owned by FileArchive object.
-    std::error_code ec;
-    Archive *archive = new Archive(mb->getMemBufferRef(), ec);
-    if (ec)
-      return ec;
-    StringRef path = buff.getBufferIdentifier();
-    // Construct FileArchive object.
+    StringRef path = mb->getBufferIdentifier();
     std::unique_ptr<FileArchive> file(
-        new FileArchive(reg, archive, path, false, _logLoading));
-    ec = file->buildTableOfContents();
-    if (ec)
-      return ec;
-
+        new FileArchive(std::move(mb), reg, path, _logLoading));
     result.push_back(std::move(file));
     return std::error_code();
   }

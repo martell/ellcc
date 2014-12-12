@@ -31,10 +31,6 @@ void FlushShadowMemory() {
 void WriteMemoryProfile(char *buf, uptr buf_size) {
 }
 
-uptr GetRSS() {
-  return 0;
-}
-
 void InitializePlatform() {
 }
 

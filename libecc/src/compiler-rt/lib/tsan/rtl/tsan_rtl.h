@@ -51,78 +51,7 @@
 
 namespace __tsan {
 
-// Descriptor of user's memory block.
-struct MBlock {
-  /*
-  u64 mtx : 1;  // must be first
-  u64 lst : 44;
-  u64 stk : 31;  // on word boundary
-  u64 tid : kTidBits;
-  u64 siz : 128 - 1 - 31 - 44 - kTidBits;  // 39
-  */
-  u64 raw[2];
-
-  void Init(uptr siz, u32 tid, u32 stk) {
-    raw[0] = raw[1] = 0;
-    raw[1] |= (u64)siz << ((1 + 44 + 31 + kTidBits) % 64);
-    raw[1] |= (u64)tid << ((1 + 44 + 31) % 64);
-    raw[0] |= (u64)stk << (1 + 44);
-    raw[1] |= (u64)stk >> (64 - 44 - 1);
-    DCHECK_EQ(Size(), siz);
-    DCHECK_EQ(Tid(), tid);
-    DCHECK_EQ(StackId(), stk);
-  }
-
-  u32 Tid() const {
-    return GetLsb(raw[1] >> ((1 + 44 + 31) % 64), kTidBits);
-  }
-
-  uptr Size() const {
-    return raw[1] >> ((1 + 31 + 44 + kTidBits) % 64);
-  }
-
-  u32 StackId() const {
-    return (raw[0] >> (1 + 44)) | GetLsb(raw[1] << (64 - 44 - 1), 31);
-  }
-
-  SyncVar *ListHead() const {
-    return (SyncVar*)(GetLsb(raw[0] >> 1, 44) << 3);
-  }
-
-  void ListPush(SyncVar *v) {
-    SyncVar *lst = ListHead();
-    v->next = lst;
-    u64 x = (u64)v ^ (u64)lst;
-    x = (x >> 3) << 1;
-    raw[0] ^= x;
-    DCHECK_EQ(ListHead(), v);
-  }
-
-  SyncVar *ListPop() {
-    SyncVar *lst = ListHead();
-    SyncVar *nxt = lst->next;
-    lst->next = 0;
-    u64 x = (u64)lst ^ (u64)nxt;
-    x = (x >> 3) << 1;
-    raw[0] ^= x;
-    DCHECK_EQ(ListHead(), nxt);
-    return lst;
-  }
-
-  void ListReset() {
-    SyncVar *lst = ListHead();
-    u64 x = (u64)lst;
-    x = (x >> 3) << 1;
-    raw[0] ^= x;
-    DCHECK_EQ(ListHead(), 0);
-  }
-
-  void Lock();
-  void Unlock();
-  typedef GenericScopedLock<MBlock> ScopedLock;
-};
-
-#ifndef TSAN_GO
+#ifndef SANITIZER_GO
 struct MapUnmapCallback;
 typedef SizeClassAllocator64<kHeapMemBeg, kHeapMemEnd - kHeapMemBeg, 0,
     DefaultSizeClassMap, MapUnmapCallback> PrimaryAllocator;
@@ -413,7 +342,7 @@ struct ThreadState {
   int ignore_reads_and_writes;
   int ignore_sync;
   // Go does not support ignores.
-#ifndef TSAN_GO
+#ifndef SANITIZER_GO
   IgnoreSet mop_ignore_set;
   IgnoreSet sync_ignore_set;
 #endif
@@ -426,7 +355,7 @@ struct ThreadState {
   u64 racy_state[2];
   MutexSet mset;
   ThreadClock clock;
-#ifndef TSAN_GO
+#ifndef SANITIZER_GO
   AllocatorCache alloc_cache;
   InternalAllocatorCache internal_alloc_cache;
   Vector<JmpBuf> jmp_bufs;
@@ -457,7 +386,7 @@ struct ThreadState {
   DenseSlabAllocCache sync_cache;
   DenseSlabAllocCache clock_cache;
 
-#ifndef TSAN_GO
+#ifndef SANITIZER_GO
   u32 last_sleep_stack_id;
   ThreadClock last_sleep_clock;
 #endif
@@ -471,7 +400,7 @@ struct ThreadState {
                        uptr tls_addr, uptr tls_size);
 };
 
-#ifndef TSAN_GO
+#ifndef SANITIZER_GO
 __attribute__((tls_model("initial-exec")))
 extern THREADLOCAL char cur_thread_placeholder[];
 INLINE ThreadState *cur_thread() {
@@ -561,13 +490,13 @@ extern Context *ctx;  // The one and the only global runtime context.
 
 struct ScopedIgnoreInterceptors {
   ScopedIgnoreInterceptors() {
-#ifndef TSAN_GO
+#ifndef SANITIZER_GO
     cur_thread()->ignore_interceptors++;
 #endif
   }
 
   ~ScopedIgnoreInterceptors() {
-#ifndef TSAN_GO
+#ifndef SANITIZER_GO
     cur_thread()->ignore_interceptors--;
 #endif
   }
@@ -802,7 +731,7 @@ void ALWAYS_INLINE TraceAddEvent(ThreadState *thr, FastState fs,
   StatInc(thr, StatEvents);
   u64 pos = fs.GetTracePos();
   if (UNLIKELY((pos % kTracePartSize) == 0)) {
-#ifndef TSAN_GO
+#ifndef SANITIZER_GO
     HACKY_CALL(__tsan_trace_switch);
 #else
     TraceSwitch(thr);

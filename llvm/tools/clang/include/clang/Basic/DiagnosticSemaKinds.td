@@ -2244,7 +2244,7 @@ def warn_attribute_wrong_decl_type : Warning<
   "Objective-C instance methods|init methods of interface or class extension declarations|"
   "variables, functions and classes|Objective-C protocols|"
   "functions and global variables|structs or typedefs|"
-  "interface or protocol declarations}1">,
+  "interface or protocol declarations|kernel functions}1">,
   InGroup<IgnoredAttributes>;
 def err_attribute_wrong_decl_type : Error<warn_attribute_wrong_decl_type.Text>;
 def warn_type_attribute_wrong_type : Warning<
@@ -6143,7 +6143,6 @@ def warn_cast_qual2 : Warning<"cast from %0 to %1 must have all intermediate "
 
 // inline asm.
 let CategoryName = "Inline Assembly Issue" in {
-  def err_asm_wide_character : Error<"wide string is invalid in 'asm'">;
   def err_asm_invalid_lvalue_in_output : Error<"invalid lvalue in asm output">;
   def err_asm_invalid_output_constraint : Error<
     "invalid output constraint '%0' in asm">;

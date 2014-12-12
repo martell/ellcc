@@ -1860,16 +1860,7 @@ public:
     if (isImm())
       return addImmOperands(Inst, N);
 
-    if (Inst.getOpcode() == ARM::ADDri &&
-      Inst.getOperand(1).getReg() == ARM::PC) {
-      // Instructions of the form [ADD <rd>, pc, #imm] are manually aliased
-      // in processInstruction() to use ADR. We must keep the immediate in
-      // its unencoded form in order to not clash with this aliasing.
-      Inst.addOperand(MCOperand::CreateImm(ARM_AM::rotr32(ModImm.Bits,
-                                                          ModImm.Rot)));
-    } else {
-      Inst.addOperand(MCOperand::CreateImm(ModImm.Bits | (ModImm.Rot << 7)));
-    }
+    Inst.addOperand(MCOperand::CreateImm(ModImm.Bits | (ModImm.Rot << 7)));
   }
 
   void addModImmNotOperands(MCInst &Inst, unsigned N) const {
@@ -4422,15 +4413,31 @@ ARMAsmParser::parseModImm(OperandVector &Operands) {
   MCAsmLexer &Lexer = getLexer();
   int64_t Imm1, Imm2;
 
-  if ((Parser.getTok().isNot(AsmToken::Hash) &&
-       Parser.getTok().isNot(AsmToken::Dollar))
-      || Lexer.peekTok().is(AsmToken::Colon))
-    return MatchOperand_NoMatch;
-
   SMLoc S = Parser.getTok().getLoc();
 
-  // Eat the hash (or dollar)
-  Parser.Lex();
+  // 1) A mod_imm operand can appear in the place of a register name:
+  //   add r0, #mod_imm
+  //   add r0, r0, #mod_imm
+  // to correctly handle the latter, we bail out as soon as we see an
+  // identifier.
+  //
+  // 2) Similarly, we do not want to parse into complex operands:
+  //   mov r0, #mod_imm
+  //   mov r0, :lower16:(_foo)
+  if (Parser.getTok().is(AsmToken::Identifier) ||
+      Parser.getTok().is(AsmToken::Colon))
+    return MatchOperand_NoMatch;
+
+  // Hash (dollar) is optional as per the ARMARM
+  if (Parser.getTok().is(AsmToken::Hash) ||
+      Parser.getTok().is(AsmToken::Dollar)) {
+    // Avoid parsing into complex operands (#:)
+    if (Lexer.peekTok().is(AsmToken::Colon))
+      return MatchOperand_NoMatch;
+
+    // Eat the hash (dollar)
+    Parser.Lex();
+  }
 
   SMLoc Sx1, Ex1;
   Sx1 = Parser.getTok().getLoc();
@@ -4487,12 +4494,6 @@ ARMAsmParser::parseModImm(OperandVector &Operands) {
     return MatchOperand_ParseFail;
   }
 
-  if (Lexer.peekTok().isNot(AsmToken::Hash) &&
-       Lexer.peekTok().isNot(AsmToken::Dollar)) {
-    Error(Lexer.peekTok().getLoc(), "immediate operand expected");
-    return MatchOperand_ParseFail;
-  }
-
   // Eat the comma
   Parser.Lex();
 
@@ -4500,8 +4501,10 @@ ARMAsmParser::parseModImm(OperandVector &Operands) {
   SMLoc Sx2, Ex2;
   Sx2 = Parser.getTok().getLoc();
 
-  // Eat the hash (or dollar)
-  Parser.Lex();
+  // Eat the optional hash (dollar)
+  if (Parser.getTok().is(AsmToken::Hash) ||
+      Parser.getTok().is(AsmToken::Dollar))
+    Parser.Lex();
 
   const MCExpr *Imm2Exp;
   if (getParser().parseExpression(Imm2Exp, Ex2)) {
@@ -6672,7 +6675,11 @@ bool ARMAsmParser::processInstruction(MCInst &Inst,
     TmpInst.setOpcode(ARM::ADR);
     TmpInst.addOperand(Inst.getOperand(0));
     if (Inst.getOperand(2).isImm()) {
-      TmpInst.addOperand(Inst.getOperand(2));
+      // Immediate (mod_imm) will be in its encoded form, we must unencode it
+      // before passing it to the ADR instruction.
+      unsigned Enc = Inst.getOperand(2).getImm();
+      TmpInst.addOperand(MCOperand::CreateImm(
+        ARM_AM::rotr32(Enc & 0xFF, (Enc & 0xF00) >> 7)));
     } else {
       // Turn PC-relative expression into absolute expression.
       // Reading PC provides the start of the current instruction + 8 and
@@ -9103,6 +9110,9 @@ bool ARMAsmParser::parseDirectiveCPU(SMLoc L) {
     return false;
   }
 
+  // FIXME: This switches the CPU features globally, therefore it might
+  // happen that code you would not expect to assemble will. For details
+  // see: http://llvm.org/bugs/show_bug.cgi?id=20757
   STI.InitMCProcessorInfo(CPU, "");
   STI.InitCPUSchedModel(CPU);
   unsigned FB = ComputeAvailableFeatures(STI.getFeatureBits());

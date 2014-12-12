@@ -19,6 +19,7 @@ set(ASAN_SOURCES
   asan_rtl.cc
   asan_stack.cc
   asan_stats.cc
+  asan_suppressions.cc
   asan_thread.cc
   asan_win.cc)
 

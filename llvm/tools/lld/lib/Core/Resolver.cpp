@@ -79,7 +79,7 @@ bool Resolver::handleArchiveFile(const File &file) {
                    [&](StringRef undefName, bool dataSymbolOnly) {
     if (const File *member = archiveFile->find(undefName, dataSymbolOnly)) {
       member->setOrdinal(_context.getNextOrdinalAndIncrement());
-      undefAdded = undefAdded || handleFile(*member);
+      undefAdded = handleFile(*member) || undefAdded;
     }
   });
   return undefAdded;

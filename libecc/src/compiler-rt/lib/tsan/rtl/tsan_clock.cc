@@ -55,6 +55,14 @@
 //   update sync_clock.dirty_count;
 // }
 
+// We don't have ThreadState in these methods, so this is an ugly hack that
+// works only in C++.
+#ifndef SANITIZER_GO
+# define CPP_STAT_INC(typ) StatInc(cur_thread(), typ)
+#else
+# define CPP_STAT_INC(typ) (void)0
+#endif
+
 namespace __tsan {
 
 ThreadClock::ThreadClock() {
