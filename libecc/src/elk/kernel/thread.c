@@ -192,11 +192,11 @@ typedef struct thread_queue {
 
 #define IDLE_STACK 4096                         // The idle thread stack size.
 static thread_t idle_thread[PROCESSORS];        // The idle threads.
-static char *idle_stack[PROCESSORS][IDLE_STACK] __attribute__((aligned(8)));
+static char idle_stack[PROCESSORS][IDLE_STACK] __attribute__((aligned(8)));
 
 #define IRQ_STACK 4096                          // The irq "thread" stack size.
 static thread_t irq_thread[PROCESSORS];         // The idle "threads".
-static char *irq_stack[PROCESSORS][IRQ_STACK] __attribute__((aligned(8)));
+static char irq_stack[PROCESSORS][IRQ_STACK] __attribute__((aligned(8)));
 
 static void schedule_nolock(thread_t *list);
 
@@ -400,12 +400,12 @@ static struct fs main_thread_fs = {
 };
 #endif
 
-// This is defined in memory.ld.
-extern char __svcstk_top__[];
+#define MAIN_STACK 4096*4                         // The irq "thread" stack size.
+static char main_stack[MAIN_STACK] __attribute__((aligned(8)));
 
 // The main thread's initial values.
 static thread_t main_thread = {
-  .context = (context_t *)__svcstk_top__,
+  .context = (context_t *)&main_stack[MAIN_STACK],
   .name = "kernel",
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
