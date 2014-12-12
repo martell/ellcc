@@ -210,23 +210,29 @@ argv:
 #define NUM_SAVED 14                    // The number of saved registers.
 
 /** Save the current context.
- * This is a little tricky because nested system calls are allowed.
+ * This is a little tricky because nested system calls and non-blocking
+ * system calls * from interrupt handlers are allowed.
+ * An interrupt handler can only make a system call after interrupts have
+ * been re-enabled.
+ * The current thread state is saved on its system stack, see context.h.
+ * After this code, r8 is left pointing to the context pointer. It must
+ * be preserved until RESTORE_CONTEXT.
  */
 #define HASH #
 // RICH: current access has to be fixed for SMP. Need current[processor];
 #define SAVE_CONTEXT(mode, mod)                                         \
         ldr     sp, =CLABEL(current ## mod);                            \
         ldr     sp, [sp];               /* Indirectly.             */   \
-        ldr     sp, [sp];               /* Get the system context. */   \
+        ldr     sp, [sp];               /* Get the system stack. */   \
         srsfd   sp!, HASH mode;         /* Save saved lr and spsr */    \
                                         /* on the stack. */             \
-        sub     sp, #4 * 2;             /* Leave room for the sp. */    \
+        sub     sp, #4 * 2;             /* Leave room for sp and tls. */\
         push    { SAVED_REGS };         /* Store other registers. */    \
         push    { r0-r1 };              /* Preserve registers. */       \
-        ldr     r0, =CLABEL(current ## mod);                            \
-        ldr     r0, [r0];               /* Indirectly.             */   \
+        ldr     r8, =CLABEL(current ## mod);                            \
+        ldr     r8, [r8];               /* Indirectly.             */   \
         add     r1, sp, #8;             /* Adjust the stack. */         \
-        str     r1, [r0];               /* Save the new context. */     \
+        str     r1, [r8];               /* Save the new context. */     \
         mrc     p15, 0, r0, c13, c0, 3; /* Get the TLS. */              \
         str     r0, [sp, #REG_TLS + 8]; /* Save it. */                  \
         ldr     r0, [sp, #REG_CPSR + 8];/* Get the saved psr. */        \
@@ -243,6 +249,7 @@ argv:
         pop     { r0-r1 };              /* Restore registers. */
 
 /** Restore current context.
+ * On entry, r8 points to the context save pointer.
  */
 #define RESTORE_CONTEXT(mode)                                           \
         ldr     r0, [sp, #REG_SP];      /* Get the saved sp. */         \
@@ -254,12 +261,11 @@ argv:
         msr     cpsr_c, r1;             /* Switch to the previous. */   \
         mov     sp, r0;                 /* Set up the stack pointer. */ \
         cpsid   i, HASH mode;           /* Switch to previous mode. */  \
-        ldr     r0, =CLABEL(current);   /* Get the current thread. */   \
-        ldr     r0, [r0];               /* Indirectly.             */   \
-        add     r1, sp, #CTXREGS;       /* Save the updated context. */ \
-        str     r1, [r0];               /* Save the context pointer. */ \
         ldr     r0, [sp, #REG_TLS];     /* Get the saved TLS. */        \
         mcr     p15, 0, r0, c13, c0, 3; /* Set the new TLS. */          \
+        add     r0, sp, #CTXREGS;       /* Save the updated context. */ \
+        cpsid   i;                      /* Disable IRQ. */              \
+        str     r0, [r8];               /* Save the context pointer. */ \
         pop     { SAVED_REGS };         /* Restore registers. */        \
         add     sp, #4 * 2;             /* Remove room for the sp. */   \
         rfeia   sp!                     /* And return. */
@@ -269,6 +275,7 @@ argv:
 undefined:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_UND_MODE,)     // Save the context.
+        // Remember to preserve r8 to save the context pointer.
         cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_UNDEFINED
         mov     r1, sp
@@ -283,6 +290,7 @@ trapund:
 prefetch:
         sub     lr, lr, #8              // Adjust the lr.
         SAVE_CONTEXT(PSR_ABT_MODE,)     // Save the context.
+        // Remember to preserve r8 to save the context pointer.
         cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_PREFETCH_ABORT
         mov     r1, sp
@@ -297,6 +305,7 @@ trappre:
 abort:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_ABT_MODE,)     // Save the context.
+        // Remember to preserve r8 to save the context pointer.
         cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_DATA_ABORT
         mov     r1, sp
@@ -385,10 +394,11 @@ irq:
 #else
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_IRQ_MODE,_irq) // Save the context.
+        // Remember to preserve r8 to save the context pointer.
         weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
         weak_call(CLABEL(lock_ready))   // Lock the ready list.
         bl      ASM_LABEL(splhigh)      // Set the interrupt level.
-        mov     r8, r0                  // Save the current level.
+        mov     r9, r0                  // Save the current level.
         weak_call(CLABEL(identify_irq)) // Clear interrupt and get irq
                                         // handler in r0.
         cmp     r0, #0
@@ -400,7 +410,7 @@ irq:
         cmp     r1, #0                  // Handler function?
         blxne   r1                      // Call it.
 1:
-        // mov     r0, r8                  // Get interrupt level.
+        // mov     r0, r9                  // Get interrupt level.
         // bl      ASM_LABEL(splx)         // Restore interrupt level.
         weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
@@ -450,6 +460,7 @@ ENTRY(switch_context)
         str     sp, [r1]                // Save the current frame.
         ldr     sp, [r0]                // Get the new context pointer.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
+        mov     r8,r0                   // Point to the context pointer.
         RESTORE_CONTEXT(PSR_SVC_MODE)
 
 /* Switch from one context to the next and unlock the queue.
@@ -473,6 +484,7 @@ ENTRY(switch_context_arg)
         ldr     sp, [r1]                // Get the new context pointer.
         str     r0, [sp, #REG_R0]       // Save the return value.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
+        mov     r8,r1                   // Point to the context pointer.
         RESTORE_CONTEXT(PSR_SVC_MODE)
 
 /* Enter a context and unlock the queue.
@@ -484,6 +496,7 @@ ENTRY(switch_context_arg)
 ENTRY(enter_context)
         ldr     sp, [r0]                // Get the new stack pointer.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
+        mov     r8,r0                   // Point to the context pointer.
         RESTORE_CONTEXT(PSR_SVC_MODE)
 
 /* Handle a system call.
@@ -491,18 +504,20 @@ ENTRY(enter_context)
  */
 swi:
         SAVE_CONTEXT(PSR_SVC_MODE,)     // Save the context.
+        // Remember to preserve r8 to save the context pointer.
         cpsie   i                       // Enable IRQ.
 
         // In a system call.
         // r7 is the call number.
 __in_syscall:                           // The stack frame is valid here.
         cmp     r7, #512                // Is it a valid syscall number?
-        ldr     r8, =syscall            // Point to the syscall save area.
-        str     r7, [r8]                // Save call number for error
+        ldr     r9, =syscall            // Point to the syscall save area.
+        str     r7, [r9]                // Save call number for error
                                         // reporting.
         bhs     check_arm_syscall       // Jump if too big for a syscall.
-        and     r8, sp, #4              // Test stack alignment.
-        sub     sp, sp, r8              // Adjust the stack if needed.
+        // RICH: Get rid of stack adjustment: System stacks are aligned.
+        and     r9, sp, #4              // Test stack alignment.
+        sub     sp, sp, r9              // Adjust the stack if needed.
         push    { r8, r9 }              // Save the adjustment.
         ldr     r8, =swi_table          // Get the system call table.
         ldr     r8, [r8, r7, lsl #2]    // Get the system call entry.
@@ -512,9 +527,10 @@ __in_syscall:                           // The stack frame is valid here.
         blx     r8                      // Dispatch. Return value is in r0/r1
         add     sp, #4 * 4              // Deallocate args.
         pop     { r8, r9 }              // Restore the stack adjustment.
-        add     sp, sp, r8              // And adjust.
+        add     sp, sp, r9              // And adjust.
         str     r0, [sp, #REG_R0]       // Save possible return values.
         str     r1, [sp, #REG_R1]
+        // r8 has been preserved.
         RESTORE_CONTEXT(PSR_SVC_MODE)
 
 /* ARM has a few "hidden" system calls.
@@ -522,22 +538,17 @@ __in_syscall:                           // The stack frame is valid here.
  * access from kernel space.
  */
 check_arm_syscall:
-        ldr     r8, low
-        cmp     r7, r8
+        ldr     r9, low
+        cmp     r7, r9
         blo     unhandled_swi           // RICH: Incorrect
-        ldr     r8, high
-        cmp     r7, r8
+        ldr     r9, high
+        cmp     r7, r9
         bhi     unhandled_swi
         and     r7, r7, #0x7
-        adr     r8, ARM_SVC_Table       // Get the system call table.
-        ldr     r7, [r8, r7, lsl #2]    // Get the stystem call entry.
+        adr     r9, ARM_SVC_Table       // Get the system call table.
+        ldr     r7, [r9, r7, lsl #2]    // Get the stystem call entry.
         blx     r7                      // Dispatch. Return value is in r0/r1
         RESTORE_CONTEXT(PSR_SVC_MODE)
-#if RICH
-        pop     { SAVED_REGS }          // Restore registers.
-        add     sp, #8                  // Deallocate saved sp.
-        rfeia   sp!                     // And return.
-#endif
 
 low:
         .word   0xF0000
