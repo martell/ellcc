@@ -41,7 +41,8 @@
 #define PSR_UND_MODE    0x0000001b
 #define PSR_SYS_MODE    0x0000001f
 
-#define INITIAL_PSR     PSR_USR_MODE    // User mode status register.
+#define PSR_KRN_MODE    PSR_UND_MODE    // Kernel thread mode.
+#define INITIAL_PSR     PSR_KRN_MODE
 
 #define PSR_THUMB       0x00000020
 

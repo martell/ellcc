@@ -373,7 +373,6 @@ static long irq_state;                  // Set running in irq state.
 
 // Threads currently assigned to processors.
 thread_t *current[PROCESSORS];
-static thread_t *saved_current[PROCESSORS];     // Saved current during an irq.
 #if ELK_NAMESPACE
 #define __elk_current __elk_current[processor()]
 #define __elk_current_irq __elk_current_irq[processor()]
@@ -383,7 +382,6 @@ static thread_t *saved_current[PROCESSORS];     // Saved current during an irq.
 #endif
 
 #define idle_thread idle_thread[processor()]
-#define saved_current saved_current[processor()]
 #define irq_thread (&irq_thread[processor()])
 
 static long long slice_time = 5000000;  // The time slice period (ns).
@@ -493,9 +491,7 @@ void *enter_irq(void)
 {
   // RICH: lock_aquire(&ready_lock);
   long state = irq_state++;
-  if (state) return current;            // Already in irq state.
-  saved_current = current;              // Save the current context.
-  current = irq_thread;
+  if (state) return NULL;               // Already in irq state.
   return current;                       // To save context.
 }
 
@@ -506,8 +502,7 @@ void *leave_irq(void)
 {
   // RICH: lock_aquire(&ready_lock);
   long state = --irq_state;
-  if (state) return current;            // Still in irq state.
-  current = saved_current;
+  if (state) return NULL;               // Still in irq state.
   return current;                       // Next context.
 }
 

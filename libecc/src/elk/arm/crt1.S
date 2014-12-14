@@ -17,6 +17,13 @@
         moveq   r0, #0;           \
         blxne   r12;
 
+/** Load a register only if the label exists.
+ * Act as if it is 0 or NULL if it's not defined.
+ */
+#define weak_load(reg, name)      \
+        .weak   name;             \
+        ldr     reg, =name;
+
         .section ".text","ax"
         .code 32
 /** This is the reset start point.
@@ -27,6 +34,32 @@
         .global _start
 _start:
         b       reset                   // Relative jump.
+
+        .align  5
+vector_start:
+/* Exception vector
+ *
+ * This table will be copied to an appropriate location.
+ * (the location is platform specific.)
+ */
+        ldr     pc, reset_p             // 0x00 mode: svc.
+        ldr     pc, undefined_p         // 0x04 mode: und.
+        ldr     pc, swi_p               // 0x08 mode: svc.
+        ldr     pc, prefetch_p          // 0x0c mode: abort.
+        ldr     pc, abort_p             // 0x10 mode: abort.
+        nop                             // 0x14 reserved.
+        ldr     pc, irq_p               // 0x18 mode: irq.
+        ldr     pc, fiq_p               // 0x1c mode: fiq.
+
+reset_p:        .word  reset
+undefined_p:    .word  undefined
+swi_p:          .word  swi
+prefetch_p:     .word  prefetch
+abort_p:        .word  abort
+irq_p:          .word  irq
+fiq_p:          .word  fiq
+
+vector_end:
 
 // The FIQ interrupt starts here.
 fiq:
@@ -51,8 +84,16 @@ reset:
         ldr     sp, =__undefinedstk_top__
         msr     cpsr_c, #PSR_SVC_MODE|PSR_IRQ_DIS|PSR_FIQ_DIS
         ldr     sp, =__svcstk_top__
-        // Finally, set up the SYS mode stack pointer and stay in SYS mode.
-        msr     cpsr_c, #PSR_SYS_MODE       // |PSR_IRQ_DIS|PSR_FIQ_DIS
+        msr     cpsr_c, #PSR_SYS_MODE|PSR_IRQ_DIS|PSR_FIQ_DIS
+        ldr     sp, =__sysstk_top__
+
+        /** Finally, set up the krn mode stack pointer and stay in krn mode.
+         * krn mode is a pseudo mode that kernel threads run in. It must
+         * be different from svc mode to allow kernel threads to make
+         * system calls. Except for a brief time during trap handling, all
+         * ELK threads are either in krn mode or usr mode.
+         */
+        msr     cpsr_c, #PSR_KRN_MODE
         ldr     sp, =__sysstk_top__
 
         ldr     r0, =__mmu_enabled__    // Check for MMU enabled.
@@ -145,10 +186,14 @@ nommu:
         ldr     a1,=args
         bic     sp, sp, #0xF            // Align the stack.
         bl      __elk_start             // Enter ELK.
-
 done:
         wfi
         b       done
+
+// RICH:
+ENTRY(to_user)
+        msr     cpsr_c, #PSR_USR_MODE   // |PSR_IRQ_DIS|PSR_FIQ_DIS
+        mov     pc, lr
 
 /*
  * Relocate exception vector
@@ -185,71 +230,68 @@ argv:
 
 /** Save the current context.
  * This is a little tricky because nested system calls and non-blocking
- * system calls * from interrupt handlers are allowed.
- * An interrupt handler can only make a system call after interrupts have
- * been re-enabled.
+ * system calls from interrupt handlers are allowed.
  * The current thread state is saved on its system stack, see context.h.
- * After this code, r8 is left pointing to the context pointer. It must
- * be preserved until RESTORE_CONTEXT.
  */
 #define HASH #
-// RICH: current access has to be fixed for SMP. Need current[processor];
-#define SAVE_CONTEXT(mode, mod)                                         \
-        ldr     sp, =CLABEL(current ## mod);                            \
-        ldr     sp, [sp];               /* Indirectly.             */   \
-        ldr     sp, [sp];               /* Get the system stack. */     \
-        srsfd   sp!, HASH mode;         /* Save lr and spsr */          \
-                                        /* on the stack. */             \
-        sub     sp, #4 * 2;             /* Leave room for sp and tls. */\
-        push    { SAVED_REGS };         /* Store other registers. */    \
-        push    { r0-r1 };              /* Preserve registers. */       \
-        ldr     r8, =CLABEL(current ## mod);                            \
-        ldr     r8, [r8];               /* Indirectly.             */   \
-        add     r1, sp, #8;             /* Adjust the stack. */         \
-        str     r1, [r8];               /* Save the new context. */     \
-        mrc     p15, 0, r0, c13, c0, 3; /* Get the TLS. */              \
-        str     r0, [sp, #REG_TLS + 8]; /* Save it. */                  \
-        ldr     r0, [sp, #REG_CPSR + 8];/* Get the saved psr. */        \
-        and     r0, #PSR_MODE;          /* Get the old mode. */         \
+// RICH: current access has to be fixed for SMP. Need current[processor].
+#define SAVE_CONTEXT(mode, stack)                                       \
+        ldr     sp, =stack;                                             \
+        srsfd   sp!, HASH mode;         /* Save the spsr and lr. */     \
+        cpsid   i, #PSR_KRN_MODE;       /* Switch back to krn mode. */  \
+        sub     sp, #4 * 4;             /* For spsr, lr, sp and tls. */ \
+        push    { r0, r1 };                                             \
+        ldr     r0, =stack;                                             \
+        ldr     r1, [r0, #-8];          /* Get the lr (return pc). */   \
+        str     r1, [sp, #16];          /* Put on the krn stack. */     \
+        ldr     r1, [r0, #-4];          /* Get the spsr. */             \
+        str     r1, [sp, #20];          /* Put on the krn stack. */     \
+        ldr     r0, [sp, #20];          /* Get the saved psr. */        \
+        and     r0, r0, #PSR_MODE;      /* Get the previous mode. */    \
+        cmp     r0, #PSR_KRN_MODE;      /* Were we in krn mode? */      \
+        addeq   r1, #CTXREGS;           /* Adjust krn mode saved sp. */ \
+        beq     1f;                     /* Jump if so. */               \
         cmp     r0, #PSR_USR_MODE;      /* Were we in usr mode? */      \
         moveq   r0, #PSR_SYS_MODE;      /* If so, use sys mode. */      \
         orr     r0, #PSR_INT_MASK;      /* Set mode and disable ints. */\
         msr     cpsr_c, r0;             /* Switch to the previous. */   \
-        mov     r0, sp;                 /* Copy the usr sp. */          \
-        mov     r1, lr;                 /* Copy the usr lr. */          \
-        cpsid   i, HASH mode;           /* Switch back. */              \
-        str     r0, [sp, #REG_SP + 8];  /* Save the usr sp. */          \
-        str     r1, [sp, #REG_LR + 8];  /* Save the usr lr. */          \
-        pop     { r0-r1 };              /* Restore registers. */
+        mov     r1, sp;                 /* Copy the old sp. */          \
+        mov     r0, fp;                 /* Copy the old fp. */          \
+        cpsid   i, #PSR_KRN_MODE;       /* Switch back. */              \
+        mov     lr, r0;                 /* Update the lr. */            \
+1:      str     r1, [sp, #8];           /* Save the old sp. */          \
+        mrc     p15, 0, r0, c13, c0, 3; /* Get the tls. */              \
+        str     r0, [sp, #12];          /* Save it. */                  \
+        pop     { r0, r1 };                                             \
+        push    { r0-r12, lr };         /* Save registers. */           \
+        weak_load(r8, CLABEL(current))  /* Point to the context. */     \
+        cmp     r8, #0;                                                 \
+        ldrne   r8, [r8];                                               \
+        strne   sp, [r8];               /* Save the context. */
 
-/** Restore current context.
- * On entry, r8 points to the context save pointer.
- */
-#define RESTORE_CONTEXT(mode)                                           \
-        ldr     r0, [sp, #REG_SP];      /* Get the saved sp. */         \
-        ldr     r1, [sp, #REG_CPSR];    /* Get the saved psr. */        \
-        and     r1, #PSR_MODE;          /* Get the old mode. */         \
-        cmp     r1, #PSR_USR_MODE;      /* Were we in usr mode? */      \
-        moveq   r1, #PSR_SYS_MODE;      /* If so, use sys mode. */      \
-        orr     r1, #PSR_INT_MASK;      /* Set mode and disable ints. */\
-        msr     cpsr_c, r1;             /* Switch to the previous. */   \
-        mov     sp, r0;                 /* Set up the stack pointer. */ \
-        cpsid   i, HASH mode;           /* Switch to previous mode. */  \
-        ldr     r0, [sp, #REG_TLS];     /* Get the saved TLS. */        \
-        mcr     p15, 0, r0, c13, c0, 3; /* Set the new TLS. */          \
-        add     r0, sp, #CTXREGS;       /* Save the updated context. */ \
-        cpsid   i;                      /* Disable IRQ. */              \
-        str     r0, [r8];               /* Save the context pointer. */ \
-        pop     { SAVED_REGS };         /* Restore registers. */        \
-        add     sp, #4 * 2;             /* Remove room for the sp. */   \
-        rfeia   sp!                     /* And return. */
+#define RESTORE_CONTEXT()                                               \
+        ldr     r0, [sp, #REG_TLS];     /* Get the tls. */              \
+        mrc     p15, 0, r0, c13, c0, 3; /* Set the tls. */              \
+        ldr     r0, [sp, #REG_CPSR];    /* Get the old mode. */         \
+        and     r0, r0, #PSR_MODE;      /* Get the previous mode. */    \
+        cmp     r0, #PSR_KRN_MODE;      /* Were we in krn mode? */      \
+        beq     1f;                     /* Jump if so. */               \
+        cmp     r0, #PSR_USR_MODE;      /* Were we in usr mode? */      \
+        moveq   r0, #PSR_SYS_MODE;      /* If so, use sys mode. */      \
+        orr     r0, #PSR_INT_MASK;      /* Set mode and disable ints. */\
+        ldr     r1, [sp, #REG_SP];      /* Get the saved sp. */         \
+        msr     cpsr_c, r0;             /* Switch to the previous. */   \
+        mov     r1, sp;                 /* Copy the old sp. */          \
+        cpsid   i, #PSR_KRN_MODE;       /* Switch back. */              \
+1:      pop     { r0-r12, lr };         /* Restore registers. */        \
+        add     sp, #4 * 2;             /* Remove sp and tls. */        \
+        rfeia   sp!;                    /* And return. */
 
 /** Undefined instruction
  */
 undefined:
         sub     lr, lr, #4              // Adjust return address.
-        SAVE_CONTEXT(PSR_UND_MODE,)     // Save the context.
-        // Remember to preserve r8 to save the context pointer.
+        SAVE_CONTEXT(PSR_UND_MODE, __undefinedstk_top__)
         cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_UNDEFINED
         mov     r1, sp
@@ -257,13 +299,13 @@ undefined:
         cmp     r0, #0
 trapund:
         beq     trapund                 // Jump if no handler.
-        RESTORE_CONTEXT(PSR_UND_MODE)
+        RESTORE_CONTEXT()
 
 /** Prefetch abort
  */
 prefetch:
         sub     lr, lr, #8              // Adjust the lr.
-        SAVE_CONTEXT(PSR_ABT_MODE,)     // Save the context.
+        SAVE_CONTEXT(PSR_ABT_MODE, __abortstk_top__)
         // Remember to preserve r8 to save the context pointer.
         cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_PREFETCH_ABORT
@@ -272,13 +314,13 @@ prefetch:
         cmp     r0, #0
 trappre:
         beq     trappre                 // Jump if no handler.
-        RESTORE_CONTEXT(PSR_ABT_MODE)
+        RESTORE_CONTEXT()
 
 /** Data abort
  */
 abort:
         sub     lr, lr, #4              // Adjust return address.
-        SAVE_CONTEXT(PSR_ABT_MODE,)     // Save the context.
+        SAVE_CONTEXT(PSR_ABT_MODE, __abortstk_top__)
         // Remember to preserve r8 to save the context pointer.
         cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_DATA_ABORT
@@ -287,7 +329,7 @@ abort:
         cmp     r0, #0
 trapabt:
         beq     trapabt                 // Jump if no handler.
-        RESTORE_CONTEXT(PSR_ABT_MODE)
+        RESTORE_CONTEXT()
 
 /** Handle an interrupt.
  * 1. Enter SYS mode and save register.
@@ -305,77 +347,8 @@ trapabt:
  * 13. Restore the user thread context if necessary.
  */
 irq:
-#if RICH
         sub     lr, lr, #4              // Adjust return address.
-        srsfd   sp!, #PSR_IRQ_MODE      // Save lr and spsr on the
-                                        // irq stack.
-        sub     sp, #4 * 2              // Leave room for the sp.
-        push    { SAVED_REGS }          // Store other registers.
-
-        mrc     p15, 0, r0, c13, c0, 3; // Get the TLS.
-        str     r0, [sp, #REG_TLS];     // Save it.
-        ldr     r9, [sp, #REG_CPSR]     // Get the saved psr.
-        and     r9, #PSR_MODE           // Get the old mode.
-        cmp     r9, #PSR_USR_MODE       // Were we in usr mode?
-        moveq   r9, #PSR_SYS_MODE       // If so, use sys mode.
-        orr     r9, #PSR_INT_MASK       // Set mode and disable ints.
-        msr     cpsr_c, r9              // Switch to the previous.
-        mov     r0, sp                  // Copy the usr sp.
-        mov     r1, lr                  // Copy the usr lr.
-        cpsid   i, #PSR_IRQ_MODE        // Switch back.
-        str     r0, [sp, #REG_SP]       // Save the usr sp.
-        str     r1, [sp, #REG_LR]       // Save the usr lr.
-        bl      ASM_LABEL(splhigh)      // Set the interrupt level.
-        mov     r8, r0                  // Save the current level.
-        weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
-        cmp     r0, #0                  // Have a context pointer?
-        strne   sp, [r0]                // Save the context if so.
-        and     r0, sp, #4              // Test stack alignment.
-        sub     sp, sp, r0              // Adjust the stack if needed.
-        push    { r0, r1 }              // Save the adjustment.
-        weak_call(CLABEL(identify_irq)) // Clear interrupt and get irq
-                                        // handler in r0.
-        cmp     r0, #0
-        beq     1f                      // Jump if no handler.
-        ldr     r1, [r0]                // Get the handler function.
-        ldr     r0, [r0, #4]            // And the private data pointer.
-        cmp     r0, #0                  // Has private data?
-        ldrne   r0, [r0]                // Get the pointer.
-        cmp     r1, #0                  // Handler function?
-        blxne   r1                      // Call it.
-1:
-        // mov     r0, r8                  // Get interrupt level.
-        // bl      ASM_LABEL(splx)         // Restore interrupt level.
-        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-        pop     { r0, r1 }              // Restore the stack adjustment.
-        add     sp, sp, r0              // And adjust.
-        weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
-        cpsid   i                       // Disable IRQ
-        cmp     r0, #0                  // Leaving?
-        beq     1f                      // Jump if not.
-        ldr     sp, [r0]                // Get the new stack pointer.
-        ldr     r1, [sp, #REG_TLS]      // Get the new TLS.
-        mcr     p15, 0, r1, c13, c0, 3  // Set the TLS.
-        ldr     r0, [sp, #REG_SP]       // Get the user sp.
-        msr     cpsr_c, r9              // Switch to the previous mode.
-        mov     sp, r0                  // Set the usr sp.
-        cpsid   i, #PSR_IRQ_MODE        // Switch to the current mode.
-1:
-        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-        pop     { SAVED_REGS }          // Restore registers
-        add     sp, #4 * 2              // Deallocate the sp space.
-        rfeia   sp!                     // And return.
-#else
-        sub     lr, lr, #4              // Adjust return address.
-        SAVE_CONTEXT(PSR_IRQ_MODE,_irq) // Save the context.
-#if RICH
-        ldr     r0, =swi_p              // Get the current swi handler.
-        ldr     r1, [r0]
-        ldr     r2, =kernel_swi         // Get the address of the kernel handler.
-        str     r2, [r0]
-        push    { r0, r1 }              // Save for later restore.
-#endif
-        // Remember to preserve r8 to save The context pointer.
+        SAVE_CONTEXT(PSR_IRQ_MODE, __intstk_top__)
         ldr     r9, =curspl             // Set the interrupt priority level.
         ldr     r10, [r9]               // Save the old level.
         mov     r1, #15                 // Highest level.
@@ -395,15 +368,12 @@ irq:
 1:
         cpsid   i                       // Disable IRQ.
         str     r10, [r9]               // Restore the old level.
-#if RICH
-        pop     { r0, r1 }              // Restore the swi handler.
-        str     r1, [r0]
-#endif
-
         weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
-        // RICH: weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-        RESTORE_CONTEXT(PSR_IRQ_MODE)
-#endif
+        cmp     r0, #0                  // End of interrupts?
+        pop     { r1, r9 }              // r9 = lr.
+        moveq   pc, r9                  // Return if not.
+        ldr     sp, [r0]                // Get the new sp.
+        RESTORE_CONTEXT()
 
 /* Set up a context for execution.
  * int new_context(context_t **savearea,
@@ -440,7 +410,7 @@ ENTRY(switch_context)
         mrs     r2, cpsr                // Get the cpsr.
         push    { r2 }
         push    { lr }
-        sub     sp, #4 * 2              // Room for the saved sp
+        sub     sp, #4 * 2              // Room for the saved sp and tls.
         push    { SAVED_REGS }          // Store other registers.
         str     sp, [sp, #REG_SP]       // Save the sp.
         mrc     p15, 0, r0, c13, c0, 3  // Get the TLS.
@@ -448,8 +418,7 @@ ENTRY(switch_context)
         str     sp, [r1]                // Save the current frame.
         ldr     sp, [r0]                // Get the new context pointer.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-        mov     r8,r0                   // Point to the context pointer.
-        RESTORE_CONTEXT(PSR_SVC_MODE)
+        RESTORE_CONTEXT()
 
 /* Switch from one context to the next and unlock the queue.
  * void switch_context_arg(int arg, context_t **to, context_t **from);
@@ -463,17 +432,15 @@ ENTRY(switch_context_arg)
         mrs     r3, cpsr                // Get the cpsr.
         push    { r3 }
         push    { lr }
-        sub     sp, #4 * 2              // Room for the saved sp
+        sub     sp, #4 * 2              // Room for the saved sp and tls.
         push    { SAVED_REGS }          // Store other registers.
         str     sp, [sp, #REG_SP]       // Save the sp.
-        mrc     p15, 0, r0, c13, c0, 3  // Get the TLS.
-        str     r0, [sp, #REG_TLS]      // Save the TLS.
+        mrc     p15, 0, r3, c13, c0, 3  // Get the TLS.
+        str     r3, [sp, #REG_TLS]      // Save the TLS.
         str     sp, [r2]                // Save the current frame.
         ldr     sp, [r1]                // Get the new context pointer.
-        str     r0, [sp, #REG_R0]       // Save the return value.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-        mov     r8,r1                   // Point to the context pointer.
-        RESTORE_CONTEXT(PSR_SVC_MODE)
+        RESTORE_CONTEXT()
 
 /* Enter a context and unlock the queue.
  * void enter_context(context_t **new);
@@ -484,35 +451,15 @@ ENTRY(switch_context_arg)
 ENTRY(enter_context)
         ldr     sp, [r0]                // Get the new stack pointer.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-        mov     r8,r0                   // Point to the context pointer.
-        RESTORE_CONTEXT(PSR_SVC_MODE)
+        RESTORE_CONTEXT()
 
-/* Handle a system call from usr mode.
+/* Handle a system call.
  * On the ARM, this is entered with an SVC instruction.
  */
 swi:
-        srsfd   sp!, #PSR_SVC_MODE      // Save lr and spsr on the stack.
-        push    { r0, r1 }              // Preserve registers.
-        ldr     r0, [sp, #12]           // Get the spsr.
-        and     r1, r0, #PSR_MODE
-        cmp     r1, PSR_USR_MODE        // In user space?
-        beq     user_swi
-        // Restore the irq state.
-        and     r1, r0, #PSR_IRQ_DIS|PSR_FIQ_DIS
-        orr     r1, #PSR_SVC_MODE
-        msr     cpsr_c, r1
-        pop     { r0, r1 }
-        push    { r2-r12, lr }
-        ldr     r10, [sp, #4 * 12]      // Get the return address for clone().
-        bl      __in_syscall
-        pop     { r2-r12, lr }          // Restore registers.
-        rfeia   sp!                     // And return.
-
-/** In a system call.
- * r7 is the call number.
- * r8 must be preserved.
- * r10 is the system call return address for clone().
- */
+        SAVE_CONTEXT(PSR_SVC_MODE, __svcstk_top__)
+        cpsie   i                       // Enable IRQ.
+        ldr     r10, [sp, #REG_PC]      // Get the return address for clone().
 __in_syscall:                           // The stack frame is valid here.
         ldr     r9, =syscall            // Point to the syscall save area.
         str     r7, [r9]                // Save call number for error
@@ -522,7 +469,7 @@ __in_syscall:                           // The stack frame is valid here.
         // RICH: Get rid of stack adjustment: System stacks are aligned.
         and     r9, sp, #4              // Test stack alignment.
         sub     sp, sp, r9              // Adjust the stack if needed.
-        push    { r8, r9, r10, lr }     // Save the adjustment and lr.
+        push    { r8, r9 }              // Save the adjustment.
         ldr     r8, =swi_table          // Get the system call table.
         ldr     r8, [r8, r7, lsl #2]    // Get the system call entry.
         // RICH: Check this.
@@ -531,59 +478,11 @@ __in_syscall:                           // The stack frame is valid here.
         push    { r4, r5, r6, r7 }      // Put extra arguments on the stack.
         blx     r8                      // Dispatch. Return value is in r0/r1
         add     sp, #4 * 4              // Deallocate args.
-        pop     { r8, r9, r10, lr }     // Restore the stack adjustment and lr.
+        pop     { r8, r9 }              // Restore the stack adjustment and lr.
         add     sp, sp, r9              // And adjust.
-        mov     pc, lr
-
-user_swi:
-        pop     { r0, r1 }
-        SAVE_CONTEXT(PSR_SVC_MODE,)     // Save the context.
-        // Remember to preserve r8 to save the context pointer.
-        cpsie   i                       // Enable IRQ.
-        ldr     r10, [sp, #REG_PC]      // The return address for clone().
-        bl      __in_syscall            // Do the call.
         str     r0, [sp, #REG_R0]       // Save possible return values.
-        str     r1, [sp, #REG_R1]
-        // r8 has been preserved.
-        RESTORE_CONTEXT(PSR_SVC_MODE)
-
-/* Handle a system call from kernel space.
- * On the ARM, this is entered with an SVC instruction.
- */
-kernel_swi:
-        ldr     sp, =kernel_swi_stack   // Get the temporary stack pointer
-        srsfd   sp!, #PSR_SVC_MODE      // Save lr and spsr on the stack.
-        push    { r0-r1 }               // Preserve registers.
-        ldr     r0, [sp, #12]           // Get the spsr.
-        and     r1, r0, #PSR_MODE
-        orr     r1, #PSR_IRQ_DIS|PSR_FIQ_DIS
-        msr     cpsr_c, r1              // Switch to the previous.
-        ldr     r1, =kernel_swi_stack_base
-        ldr     r0, [r1]                // Restore r0.
-        ldr     r1, [r1, #4]            // Restore r1.
-        push    { r2-r12, lr }          // Preserve registers.
-        ldr     r8, =kernel_swi_stack_base
-        ldr     r8, [r8, #12]           // Get the spsr.
-        msr     cpsr, r8                // Get the previous interrupt state.
-
-        // In a system call.
-        // r7 is the call number.
-__in_kernel_syscall:                    // The stack frame is valid here.
-        cmp     r7, #512                // Is it a valid syscall number?
-        ldr     r9, =syscall            // Point to the syscall save area.
-        str     r7, [r9]                // Save call number for error
-                                        // reporting.
-bad_call:
-        bhs     bad_call                // Jump if too big for a syscall.
-        ldr     r8, =swi_table          // Get the system call table.
-        ldr     r8, [r8, r7, lsl #2]    // Get the system call entry.
-        ldr     r7, [sp, #4 * 14]       // Get the SVC return address
-                                        // for clone().
-        push    { r4, r5, r6, r7 }      // Put extra arguments on the stack.
-        blx     r8                      // Dispatch. Return value is in r0/r1
-        add     sp, #4 * 4              // Deallocate args and r0, r1.
-        pop     { r2-r12, lr }          // Restore other registers.
-        mov     pc, lr
+        str     r1, [sp, #REG_R1]       // Save possible return values.
+        RESTORE_CONTEXT()
 
 /* ARM has a few "hidden" system calls.
  * Only one of these is used by musl and is defined below for
@@ -600,7 +499,7 @@ check_arm_syscall:
         adr     r9, ARM_SVC_Table       // Get the system call table.
         ldr     r7, [r9, r7, lsl #2]    // Get the stystem call entry.
         blx     r7                      // Dispatch. Return value is in r0/r1
-        RESTORE_CONTEXT(PSR_SVC_MODE)
+        RESTORE_CONTEXT()
 
 low:
         .word   0xF0000
@@ -827,37 +726,4 @@ swi_table:
         .rep    512
         .word   unhandled_swi
         .endr
-
-kernel_swi_stack_base:
-        .word   0                       // Saved r0.
-        .word   0                       // Saved r1.
-        .word   0                       // Saved lr.
-        .word   0                       // saved spsr.
-kernel_swi_stack:
-
-        .align  5
-vector_start:
-/* Exception vector
- *
- * This table will be copied to an appropriate location.
- * (the location is platform specific.)
- */
-        ldr     pc, reset_p             // 0x00 mode: svc.
-        ldr     pc, undefined_p         // 0x04 mode: ?.
-        ldr     pc, swi_p               // 0x08 mode: svc.
-        ldr     pc, prefetch_p          // 0x0c mode: abort.
-        ldr     pc, abort_p             // 0x10 mode: abort.
-        nop                             // 0x14 reserved.
-        ldr     pc, irq_p               // 0x18 mode: irq.
-        ldr     pc, fiq_p               // 0x1c mode: fiq.
-
-reset_p:        .word  reset
-undefined_p:    .word  undefined
-swi_p:          .word  swi
-prefetch_p:     .word  prefetch
-abort_p:        .word  abort
-irq_p:          .word  irq
-fiq_p:          .word  fiq
-
-vector_end:
 

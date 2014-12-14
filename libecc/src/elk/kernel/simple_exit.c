@@ -1,7 +1,6 @@
 /* Handle the exit system call.
  */
 #include <syscalls.h>           // For syscall numbers.
-#include <stdio.h>
 #include <kernel.h>
 #include "crt1.h"
 
