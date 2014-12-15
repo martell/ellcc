@@ -370,9 +370,7 @@ irq:
         str     r10, [r9]               // Restore the old level.
         weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
         cmp     r0, #0                  // End of interrupts?
-        pop     { r1, r9 }              // r9 = lr.
-        moveq   pc, r9                  // Return if not.
-        ldr     sp, [r0]                // Get the new sp.
+        ldrne     sp, [r0]              // Get the new sp.
         RESTORE_CONTEXT()
 
 /* Set up a context for execution.
@@ -523,6 +521,7 @@ ARM_SVC_Table:
         .global __set_thread_area
 __set_thread_area:
         mcr     p15, 0, r0, c13, c0, 3
+        mov     r0, #0
         bx      lr
 
 /* Get thread area.

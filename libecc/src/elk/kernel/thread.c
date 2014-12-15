@@ -304,11 +304,10 @@ static void create_system_threads(void)
     alloc_tid(&idle_thread[i]);
     snprintf(name, 20, "idle%d", i);
     idle_thread[i].name = strdup(name);
-    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0, ctx - 1);
-
     ctx = (context_t *)&irq_stack[i][IRQ_STACK];
-    current_irq[i] = &irq_thread[i];
     irq_thread[i].context = ctx;
+    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0, ctx);
+    current_irq[i] = &irq_thread[i];
     irq_thread[i].priority = 0;                 // The highest priority.
     irq_thread[i].state = IRQ;
     irq_thread[i].tid = THREADS + i;            // Fake tids.
