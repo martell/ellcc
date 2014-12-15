@@ -33,21 +33,7 @@
 #include "config.h"
 #include "context.h"
 
-/** Trap ID
- */
-#define TRAP_UNDEFINED          0
-#define TRAP_PREFETCH_ABORT     1
-#define TRAP_DATA_ABORT         2
-
-#ifndef __ASSEMBLER__
-
-#ifdef ELK_NAMESPACE
-#define trap_handler __elk_trap_handler
-#define trap_dump __elk_trap_dump
-#endif
-
 int trap_handler(u_long, context_t *);
 void trap_dump(const char *, context_t *);
 
-#endif // !__ASSEMBLER__
 #endif // !_trap_h_

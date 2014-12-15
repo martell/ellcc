@@ -69,10 +69,10 @@ static const int exception_map[] = {
 };
 #endif
 
-#ifdef DEBUG
-void trap_dump(context_t *r)
+void trap_dump(const char *s, context_t *r)
 {
-  diag_printf("Trap frame %x\n", r);
+  diag_printf("%s:\n", s);
+  diag_printf("Context frame %x\n", r);
   diag_printf(" r0  %08x r1  %08x r2  %08x r3  %08x r4  %08x r5  %08x\n",
          r->r0, r->r1, r->r2, r->r3, r->r4, r->r5);
   diag_printf(" r6  %08x r7  %08x r8  %08x r9  %08x r10 %08x r11 %08x\n",
@@ -82,10 +82,7 @@ void trap_dump(context_t *r)
 
   diag_printf(" >> interrupt is %s\n",
          (r->cpsr & PSR_INT_MASK) ? "disabled" : "enabled");
-
-  diag_printf(" >> tid=%d\n", gettid());
 }
-#endif /* !DEBUG */
 
 /** Trap handler
  * Invoke the exception handler if it is needed.
@@ -112,7 +109,8 @@ int trap_handler(u_long trap_no, context_t *regs)
     diag_printf(" Fault address=%x\n", regs->pc);
   diag_printf("=============================\n");
 
-  trap_dump(regs);
+  trap_dump("Context", regs);
+  diag_printf(" >> tid=%d\n", gettid());
   for (;;) 
     continue;
 

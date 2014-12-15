@@ -33,11 +33,24 @@
 #include "config.h"
 #include "context.h"
 
-/** Trap ID
+/*
+ * Trap ID
  */
-#define TRAP_UNDEFINED          0
-#define TRAP_PREFETCH_ABORT     1
-#define TRAP_DATA_ABORT         2
+#define TRAP_SYSTEM_RESET	1
+#define TRAP_MACHINE_CHECK	2
+#define TRAP_DSI		3
+#define TRAP_ISI		4
+#define TRAP_EXT_INTERRUPT	5
+#define TRAP_ALIGNMENT		6
+#define TRAP_PROGRAM		7
+#define TRAP_FP_UNAVAILABLE	8
+#define TRAP_DECREMENTER	9
+#define TRAP_RESERVED0		10
+#define TRAP_RESERVED1		11
+#define TRAP_SYSTEM_CALL	12
+#define TRAP_PPC_TRACE		13
+#define TRAP_FP_ASSIST		14
+
 
 #ifndef __ASSEMBLER__
 
@@ -51,3 +64,4 @@ void trap_dump(const char *, context_t *);
 
 #endif // !__ASSEMBLER__
 #endif // !_trap_h_
+

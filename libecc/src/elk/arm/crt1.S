@@ -6,6 +6,8 @@
 #include "syscall.h"
 #include "context.h"
 
+#define CTX_DEBUG 0     // != 0 to debug context switches.
+
 /** Call a function only if it exists.
  * Act as if it returned 0 or NULL if it's not defined.
  * Preserve r0-r3 since they might be arguments.
@@ -16,13 +18,6 @@
         cmp     r12, #0;          \
         moveq   r0, #0;           \
         blxne   r12;
-
-/** Load a register only if the label exists.
- * Act as if it is 0 or NULL if it's not defined.
- */
-#define weak_load(reg, name)      \
-        .weak   name;             \
-        ldr     reg, =name;
 
         .section ".text","ax"
         .code 32
@@ -234,22 +229,20 @@ argv:
  * The current thread state is saved on its system stack, see context.h.
  */
 #define HASH #
-// RICH: current access has to be fixed for SMP. Need current[processor].
 #define SAVE_CONTEXT(mode, stack)                                       \
         ldr     sp, =stack;                                             \
         srsfd   sp!, HASH mode;         /* Save the spsr and lr. */     \
         cpsid   i, #PSR_KRN_MODE;       /* Switch back to krn mode. */  \
-        sub     sp, #4 * 4;             /* For spsr, lr, sp and tls. */ \
+        sub     sp, #CTXREGS;           /* Allocate a context frame. */ \
         push    { r0, r1 };                                             \
         ldr     r0, =stack;                                             \
         ldr     r1, [r0, #-8];          /* Get the lr (return pc). */   \
-        str     r1, [sp, #16];          /* Put on the krn stack. */     \
+        str     r1, [sp, #REG_PC + 8];  /* Put on the krn stack. */     \
         ldr     r1, [r0, #-4];          /* Get the spsr. */             \
-        str     r1, [sp, #20];          /* Put on the krn stack. */     \
-        ldr     r0, [sp, #20];          /* Get the saved psr. */        \
-        and     r0, r0, #PSR_MODE;      /* Get the previous mode. */    \
-        cmp     r0, #PSR_KRN_MODE;      /* Were we in krn mode? */      \
-        addeq   r1, #CTXREGS;           /* Adjust krn mode saved sp. */ \
+        str     r1, [sp, #REG_CPSR + 8];/* Put on the krn stack. */     \
+        and     r1, #PSR_MODE;          /* Get the previous mode. */    \
+        cmp     r1, #PSR_KRN_MODE;      /* Were we in krn mode? */      \
+        addeq   r1, sp, #8;             /* Point to the context. */     \
         beq     1f;                     /* Jump if so. */               \
         cmp     r0, #PSR_USR_MODE;      /* Were we in usr mode? */      \
         moveq   r0, #PSR_SYS_MODE;      /* If so, use sys mode. */      \
@@ -259,15 +252,16 @@ argv:
         mov     r0, fp;                 /* Copy the old fp. */          \
         cpsid   i, #PSR_KRN_MODE;       /* Switch back. */              \
         mov     lr, r0;                 /* Update the lr. */            \
-1:      str     r1, [sp, #8];           /* Save the old sp. */          \
+1:      str     r1, [sp, #REG_SP + 8];  /* Save the old sp. */          \
         mrc     p15, 0, r0, c13, c0, 3; /* Get the tls. */              \
-        str     r0, [sp, #12];          /* Save it. */                  \
+        str     r0, [sp, #REG_TLS + 8]; /* Save it. */                  \
         pop     { r0, r1 };                                             \
+        add     sp, #4 * NUM_SAVED;     /* Prepare for the push. */     \
         push    { r0-r12, lr };         /* Save registers. */           \
-        weak_load(r8, CLABEL(current))  /* Point to the context. */     \
-        cmp     r8, #0;                                                 \
-        ldrne   r8, [r8];                                               \
-        strne   sp, [r8];               /* Save the context. */
+        weak_call(CLABEL(thread_self))  /* Point to the context. */     \
+        cmp     r0, #0;                                                 \
+        strne   sp, [r0];               /* Save the context. */         \
+        ldr     r0, [sp, #REG_R0];
 
 #define RESTORE_CONTEXT()                                               \
         ldr     r0, [sp, #REG_TLS];     /* Get the tls. */              \
@@ -292,7 +286,15 @@ argv:
 undefined:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_UND_MODE, __undefinedstk_top__)
-        cpsie   i                       // Enable IRQ.
+#if CTX_DEBUG
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        mov     r1, sp
+        add     r1, #4 * 9
+        ldr     r0, =undefined_str
+        bl      CLABEL(trap_dump)
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+#endif
+        // RICH: cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_UNDEFINED
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -306,8 +308,16 @@ trapund:
 prefetch:
         sub     lr, lr, #8              // Adjust the lr.
         SAVE_CONTEXT(PSR_ABT_MODE, __abortstk_top__)
+#if CTX_DEBUG
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        mov     r1, sp
+        add     r1, #4 * 9
+        ldr     r0, =prefetch_str
+        bl      CLABEL(trap_dump)
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+#endif
         // Remember to preserve r8 to save the context pointer.
-        cpsie   i                       // Enable IRQ.
+        // RICH: cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_PREFETCH_ABORT
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -321,8 +331,16 @@ trappre:
 abort:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_ABT_MODE, __abortstk_top__)
+#if CTX_DEBUG
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        mov     r1, sp
+        add     r1, #4 * 9
+        ldr     r0, =abort_str
+        bl      CLABEL(trap_dump)
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+#endif
         // Remember to preserve r8 to save the context pointer.
-        cpsie   i                       // Enable IRQ.
+        // RICH: cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_DATA_ABORT
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -353,6 +371,14 @@ irq:
         ldr     r10, [r9]               // Save the old level.
         mov     r1, #15                 // Highest level.
         str     r1, [r9]                // Set the new level.
+#if CTX_DEBUG
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        mov     r1, sp
+        add     r1, #4 * 9
+        ldr     r0, =irq_str
+        bl      CLABEL(trap_dump)
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+#endif
         weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
         // RICH: weak_call(CLABEL(lock_ready))   // Lock the ready list.
         weak_call(CLABEL(identify_irq)) // Clear interrupt and get irq
@@ -370,7 +396,7 @@ irq:
         str     r10, [r9]               // Restore the old level.
         weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
         cmp     r0, #0                  // End of interrupts?
-        ldrne     sp, [r0]              // Get the new sp.
+        ldrne   sp, [r0]                // Get the new sp.
         RESTORE_CONTEXT()
 
 /* Set up a context for execution.
@@ -395,6 +421,13 @@ ENTRY(new_context)
         mov     r4, #0
         str     r4, [r7, #REG_TLS]
         str     r7, [r0]                // Update the stack pointer.
+#if CTX_DEBUG
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        mov     r1, r7
+        ldr     r0, =new_context_str
+        bl      CLABEL(trap_dump)
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+#endif
         bx      lr
 
 /* Switch from one context to the next and unlock the queue.
@@ -414,7 +447,23 @@ ENTRY(switch_context)
         mrc     p15, 0, r0, c13, c0, 3  // Get the TLS.
         str     r0, [sp, #REG_TLS]      // Save the TLS.
         str     sp, [r1]                // Save the current frame.
+#if CTX_DEBUG
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        mov     r1, sp
+        add     r1, #4 * 9
+        ldr     r0, =switch_context_str
+        bl      CLABEL(trap_dump)
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+#endif
         ldr     sp, [r0]                // Get the new context pointer.
+#if CTX_DEBUG
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        mov     r1, sp
+        add     r1, #4 * 9
+        ldr     r0, =switch_context_str
+        bl      CLABEL(trap_dump)
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+#endif
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         RESTORE_CONTEXT()
 
@@ -436,7 +485,23 @@ ENTRY(switch_context_arg)
         mrc     p15, 0, r3, c13, c0, 3  // Get the TLS.
         str     r3, [sp, #REG_TLS]      // Save the TLS.
         str     sp, [r2]                // Save the current frame.
+#if CTX_DEBUG
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        mov     r1, sp
+        add     r1, #4 * 9
+        ldr     r0, =switch_context_arg_str
+        bl      CLABEL(trap_dump)
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+#endif
         ldr     sp, [r1]                // Get the new context pointer.
+#if CTX_DEBUG
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        mov     r1, sp
+        add     r1, #4 * 9
+        ldr     r0, =switch_context_arg_str
+        bl      CLABEL(trap_dump)
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+#endif
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         RESTORE_CONTEXT()
 
@@ -456,7 +521,15 @@ ENTRY(enter_context)
  */
 swi:
         SAVE_CONTEXT(PSR_SVC_MODE, __svcstk_top__)
-        cpsie   i                       // Enable IRQ.
+#if CTX_DEBUG
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        mov     r1, sp
+        add     r1, #4 * 9
+        ldr     r0, =swi_str
+        bl      CLABEL(trap_dump)
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+#endif
+        // RICH: cpsie   i                       // Enable IRQ.
         ldr     r10, [sp, #REG_PC]      // Get the return address for clone().
 __in_syscall:                           // The stack frame is valid here.
         ldr     r9, =syscall            // Point to the syscall save area.
@@ -708,6 +781,24 @@ unhandled_string:
         .asciz  "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
 name:
         .asciz  "kernel"
+#if CTX_DEBUG
+undefined_str:
+        .asciz  "undefined"
+abort_str:
+        .asciz  "abort"
+prefetch_str:
+        .asciz  "prefetch"
+irq_str:
+        .asciz  "irq"
+swi_str:
+        .asciz  "swi"
+new_context_str:
+        .asciz  "new_context"
+switch_context_str:
+        .asciz   "switch_context"
+switch_context_arg_str:
+        .asciz   "switch_context_arg"
+#endif
 
         .data
         .global __heap_end__

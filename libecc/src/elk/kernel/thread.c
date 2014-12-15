@@ -26,6 +26,7 @@
 #include "command.h"
 #include "crt1.h"
 #include "cpu.h"
+#include "trap.h"
 #include "thread.h"
 
 #if ENABLEFDS
@@ -190,13 +191,9 @@ typedef struct thread_queue {
     thread_t *tail;
 } ThreadQueue;
 
-#define IDLE_STACK 4096                         // The idle thread stack size.
+#define IDLE_STACK 4096*3                       // The idle thread stack size.
 static thread_t idle_thread[PROCESSORS];        // The idle threads.
 static char idle_stack[PROCESSORS][IDLE_STACK] __attribute__((aligned(8)));
-
-#define IRQ_STACK 4096                          // The irq "thread" stack size.
-static thread_t irq_thread[PROCESSORS];         // The idle "threads".
-static char irq_stack[PROCESSORS][IRQ_STACK] __attribute__((aligned(8)));
 
 static void schedule_nolock(thread_t *list);
 
@@ -287,9 +284,6 @@ static void idle(void)
   }
 }
 
-// Pseudo current list for IRQ handling.
-thread_t *current_irq[PROCESSORS];
-
 /** Create an idle thread for each processor.
  * These threads can never exit.
  */
@@ -299,20 +293,13 @@ static void create_system_threads(void)
     char name[20];
     context_t *ctx = (context_t *)&idle_stack[i][IDLE_STACK];
     idle_thread[i].context = ctx;
+    memset(ctx - 1, 0xaa, sizeof(context_t));
+    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0xf00dcafe, ctx);
     idle_thread[i].priority = PRIORITIES;       // The lowest priority.
     idle_thread[i].state = IDLE;
     alloc_tid(&idle_thread[i]);
     snprintf(name, 20, "idle%d", i);
     idle_thread[i].name = strdup(name);
-    ctx = (context_t *)&irq_stack[i][IRQ_STACK];
-    irq_thread[i].context = ctx;
-    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0, ctx);
-    current_irq[i] = &irq_thread[i];
-    irq_thread[i].priority = 0;                 // The highest priority.
-    irq_thread[i].state = IRQ;
-    irq_thread[i].tid = THREADS + i;            // Fake tids.
-    snprintf(name, 20, "irq%d", i);
-    irq_thread[i].name = strdup(name);
   }
 }
 
@@ -371,17 +358,10 @@ static long irq_state;                  // Set running in irq state.
 #endif
 
 // Threads currently assigned to processors.
-thread_t *current[PROCESSORS];
-#if ELK_NAMESPACE
-#define __elk_current __elk_current[processor()]
-#define __elk_current_irq __elk_current_irq[processor()]
-#else
+static thread_t *current[PROCESSORS];
 #define current current[processor()]
-#define current_irq current_irq[processor()]
-#endif
 
 #define idle_thread idle_thread[processor()]
-#define irq_thread (&irq_thread[processor()])
 
 static long long slice_time = 5000000;  // The time slice period (ns).
 
@@ -1789,6 +1769,34 @@ static int psCommand(int argc, char **argv)
     return COMMAND_OK;
   }
 
+  int context = 0;
+  while (argc > 1) {
+    const char *p = argv[1];
+    if (*p++ != '-') {
+      break;
+    }
+
+    while (*p) {
+      switch (*p) {
+      case 'c':
+        context = 1;
+        break;
+      default:
+        fprintf(stderr, "unknown option character '%c'\n", *p);
+        return COMMAND_ERROR;
+      }
+      ++p;
+    }
+
+    --argc;
+    ++argv;
+  }
+
+  if (argc != 1) {
+    fprintf(stderr, "invalid argument \"%s\"\n", argv[1]);
+    return COMMAND_ERROR;
+  }
+
   struct meminfo meminfo;
   page_info(&meminfo);
   printf("Total pages: %lu (%lu bytes), Free pages: %lu (%lu bytes)\n",
@@ -1809,6 +1817,13 @@ static int psCommand(int argc, char **argv)
     printf("0x%08x ", t->context->cpsr);
     printf(t->pid == t->tid ? "%s" : "[%s]", t->name ? t->name : "");
     printf("\n");
+    if (context) {
+      if (t->state == RUNNING) {
+        printf("No context saved\n");
+      } else {
+        trap_dump("Context", t->context);
+      }
+    }
   }
 
   return COMMAND_OK;
