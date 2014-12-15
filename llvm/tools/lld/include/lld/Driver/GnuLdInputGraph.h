@@ -74,29 +74,6 @@ public:
   /// \brief Parse the input file to lld::File.
   std::error_code parse(const LinkingContext &, raw_ostream &) override;
 
-  /// \brief This is used by Group Nodes, when there is a need to reset the
-  /// the file to be processed next. When handling a group node that contains
-  /// Input elements, if the group node has to be reprocessed, the linker needs
-  /// to start processing files as part of the input element from beginning.
-  /// Reset the next file index to 0 only if the node is an archive library.
-  void resetNextIndex() override {
-    auto kind = _files[0]->kind();
-    if (kind == File::kindSharedLibrary ||
-        (kind == File::kindArchiveLibrary && !_attributes._isWholeArchive)) {
-      _nextFileIndex = 0;
-    }
-  }
-
-  /// \brief Return the file that has to be processed by the resolver
-  /// to resolve atoms. This iterates over all the files thats part
-  /// of this node. Returns no_more_files when there are no files to be
-  /// processed
-  ErrorOr<File &> getNextFile() override {
-    if (_nextFileIndex == _files.size())
-      return make_error_code(InputGraphError::no_more_files);
-    return *_files[_nextFileIndex++];
-  }
-
 private:
   llvm::BumpPtrAllocator _alloc;
   const ELFLinkingContext &_elfLinkingContext;
@@ -134,16 +111,6 @@ public:
       result.push_back(std::move(elt));
     return true;
   }
-
-  /// Unused functions for ELFGNULdScript Nodes.
-  ErrorOr<File &> getNextFile() override {
-    return make_error_code(InputGraphError::no_more_files);
-  }
-
-  // Linker Script will be expanded and replaced with other elements
-  // by InputGraph::normalize(), so at link time it does not exist in
-  // the tree. No need to handle this message.
-  void resetNextIndex() override {}
 
 private:
   InputGraph::InputElementVectorT _expandElements;

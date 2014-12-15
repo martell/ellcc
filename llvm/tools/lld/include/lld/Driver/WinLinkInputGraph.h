@@ -23,36 +23,21 @@
 
 namespace lld {
 
-extern bool isCOFFLibraryFileExtension(StringRef path);
-
 /// \brief Represents a PECOFF File
 class PECOFFFileNode : public FileNode {
 public:
   PECOFFFileNode(PECOFFLinkingContext &ctx, StringRef path)
       : FileNode(path), _ctx(ctx), _parsed(false) {}
 
-  ErrorOr<StringRef> getPath(const LinkingContext &ctx) const override;
-
   /// \brief Parse the input file to lld::File.
   std::error_code parse(const LinkingContext &ctx,
                         raw_ostream &diagnostics) override;
-
-  ErrorOr<File &> getNextFile() override;
 
 protected:
   const PECOFFLinkingContext &_ctx;
 
 private:
   bool _parsed;
-};
-
-/// \brief Represents a PECOFF Library File
-class PECOFFLibraryNode : public PECOFFFileNode {
-public:
-  PECOFFLibraryNode(PECOFFLinkingContext &ctx, StringRef path)
-      : PECOFFFileNode(ctx, path) {}
-
-  ErrorOr<StringRef> getPath(const LinkingContext &ctx) const override;
 };
 
 } // namespace lld

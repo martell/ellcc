@@ -3,9 +3,10 @@
 // The idea is to pass one of these as the template argument rather than the
 // individual arguments.
 // The template is also used for scalar types, in this case numelts is 1.
-class X86VectorVTInfo<int numelts, ValueType EltVT, RegisterClass rc,
+class X86VectorVTInfo<int numelts, ValueType eltvt, RegisterClass rc,
                       string suffix = ""> {
   RegisterClass RC = rc;
+  ValueType EltVT = eltvt;
   int NumElts = numelts;
 
   // Corresponding mask register class.
@@ -656,20 +657,18 @@ let ExeDomain = SSEPackedDouble in {
 multiclass avx512_broadcast_pat<string InstName, SDNode OpNode,
                                 X86VectorVTInfo _, RegisterClass SrcRC_v,
                                 RegisterClass SrcRC_s> {
-  def : Pat<(_.VT (OpNode  (!cast<ValueType>(_.EltTypeName) SrcRC_s:$src))),
+  def : Pat<(_.VT (OpNode  (_.EltVT SrcRC_s:$src))),
             (!cast<Instruction>(InstName##"r")
               (COPY_TO_REGCLASS SrcRC_s:$src, SrcRC_v))>;
 
   let AddedComplexity = 30 in {
     def : Pat<(_.VT (vselect _.KRCWM:$mask,
-                (OpNode (!cast<ValueType>(_.EltTypeName) SrcRC_s:$src)),
-                _.RC:$src0)),
+                (OpNode (_.EltVT SrcRC_s:$src)), _.RC:$src0)),
               (!cast<Instruction>(InstName##"rk") _.RC:$src0, _.KRCWM:$mask,
                 (COPY_TO_REGCLASS SrcRC_s:$src, SrcRC_v))>;
 
     def : Pat<(_.VT(vselect _.KRCWM:$mask,
-                (OpNode (!cast<ValueType>(_.EltTypeName) SrcRC_s:$src)),
-                _.ImmAllZerosV)),
+                (OpNode (_.EltVT SrcRC_s:$src)), _.ImmAllZerosV)),
               (!cast<Instruction>(InstName##"rkz") _.KRCWM:$mask,
                 (COPY_TO_REGCLASS SrcRC_s:$src, SrcRC_v))>;
   }
@@ -5324,3 +5323,58 @@ defm VCOMPRESSPS : compress_by_elt_width <0x8A, "vcompressps", avx512vl_f32_info
 defm VCOMPRESSPD : compress_by_elt_width <0x8A, "vcompresspd", avx512vl_f64_info>,
                                          EVEX, VEX_W;
 
+// expand
+multiclass expand_by_vec_width<bits<8> opc, X86VectorVTInfo _,
+                                 string OpcodeStr> {
+  def rrkz : AVX5128I<opc, MRMSrcReg, (outs _.RC:$dst),
+              (ins _.KRCWM:$mask, _.RC:$src),
+              OpcodeStr # "\t{$src, $dst {${mask}} {z}|$dst {${mask}} {z}, $src}",
+              [(set _.RC:$dst, (_.VT (X86expand _.KRCWM:$mask, (_.VT _.RC:$src),
+                                      _.ImmAllZerosV)))]>, EVEX_KZ;
+
+  let Constraints = "$src0 = $dst" in
+  def rrk : AVX5128I<opc, MRMSrcReg, (outs _.RC:$dst),
+                    (ins _.RC:$src0, _.KRCWM:$mask, _.RC:$src),
+                    OpcodeStr # "\t{$src, $dst {${mask}} |$dst {${mask}}, $src}",
+                    [(set _.RC:$dst, (_.VT (X86expand _.KRCWM:$mask,
+                                      (_.VT _.RC:$src), _.RC:$src0)))]>, EVEX_K;
+
+  let mayLoad = 1, Constraints = "$src0 = $dst" in
+  def rmk : AVX5128I<opc, MRMSrcMem, (outs _.RC:$dst),
+              (ins _.RC:$src0, _.KRCWM:$mask, _.MemOp:$src),
+              OpcodeStr # "\t{$src, $dst {${mask}} |$dst {${mask}}, $src}",
+              [(set _.RC:$dst, (_.VT (X86expand _.KRCWM:$mask,
+                                      (_.VT (bitconvert
+                                              (_.LdFrag addr:$src))),
+                                      _.RC:$src0)))]>,
+              EVEX_K, EVEX_CD8<_.EltSize, CD8VT1>;
+  
+  let mayLoad = 1 in
+  def rmkz : AVX5128I<opc, MRMSrcMem, (outs _.RC:$dst),
+              (ins _.KRCWM:$mask, _.MemOp:$src),
+              OpcodeStr # "\t{$src, $dst {${mask}} {z}|$dst {${mask}} {z}, $src}",
+              [(set _.RC:$dst, (_.VT (X86expand _.KRCWM:$mask,
+                                      (_.VT (bitconvert (_.LdFrag addr:$src))),
+                                     _.ImmAllZerosV)))]>,
+              EVEX_KZ, EVEX_CD8<_.EltSize, CD8VT1>;
+  
+}
+
+multiclass expand_by_elt_width<bits<8> opc, string OpcodeStr,
+                                 AVX512VLVectorVTInfo VTInfo> {
+  defm Z : expand_by_vec_width<opc, VTInfo.info512, OpcodeStr>, EVEX_V512;
+
+  let Predicates = [HasVLX] in {
+    defm Z256 : expand_by_vec_width<opc, VTInfo.info256, OpcodeStr>, EVEX_V256;
+    defm Z128 : expand_by_vec_width<opc, VTInfo.info128, OpcodeStr>, EVEX_V128;
+  }
+}
+
+defm VPEXPANDD : expand_by_elt_width <0x89, "vpexpandd", avx512vl_i32_info>,
+                                         EVEX;
+defm VPEXPANDQ : expand_by_elt_width <0x89, "vpexpandq", avx512vl_i64_info>,
+                                         EVEX, VEX_W;
+defm VEXPANDPS : expand_by_elt_width <0x88, "vexpandps", avx512vl_f32_info>,
+                                         EVEX;
+defm VEXPANDPD : expand_by_elt_width <0x88, "vexpandpd", avx512vl_f64_info>,
+                                         EVEX, VEX_W;

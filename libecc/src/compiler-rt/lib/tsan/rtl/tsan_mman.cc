@@ -71,7 +71,7 @@ Allocator *allocator() {
 }
 
 void InitializeAllocator() {
-  allocator()->Init();
+  allocator()->Init(common_flags()->allocator_may_return_null);
 }
 
 void AllocatorThreadStart(ThreadState *thr) {
@@ -104,7 +104,7 @@ static void SignalUnsafeCall(ThreadState *thr, uptr pc) {
 
 void *user_alloc(ThreadState *thr, uptr pc, uptr sz, uptr align, bool signal) {
   if ((sz >= (1ull << 40)) || (align >= (1ull << 40)))
-    return AllocatorReturnNull();
+    return allocator()->ReturnNullOrDie();
   void *p = allocator()->Allocate(&thr->alloc_cache, sz, align);
   if (p == 0)
     return 0;
@@ -119,6 +119,15 @@ void *user_alloc(ThreadState *thr, uptr pc, uptr sz, uptr align, bool signal) {
   DPrintf("#%d: alloc(%zu) = %p\n", thr->tid, sz, p);
   if (signal)
     SignalUnsafeCall(thr, pc);
+  return p;
+}
+
+void *user_calloc(ThreadState *thr, uptr pc, uptr size, uptr n) {
+  if (CallocShouldReturnNullDueToOverflow(size, n))
+    return allocator()->ReturnNullOrDie();
+  void *p = user_alloc(thr, pc, n * size);
+  if (p)
+    internal_memset(p, 0, n * size);
   return p;
 }
 

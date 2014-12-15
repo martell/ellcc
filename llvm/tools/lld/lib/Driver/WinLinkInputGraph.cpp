@@ -11,10 +11,6 @@
 
 namespace lld {
 
-bool isCOFFLibraryFileExtension(StringRef path) {
-  return path.endswith_lower(".lib") || path.endswith_lower(".imp");
-}
-
 /// \brief Parse the input file to lld::File.
 std::error_code PECOFFFileNode::parse(const LinkingContext &ctx,
                                       raw_ostream &diagnostics) {
@@ -38,26 +34,6 @@ std::error_code PECOFFFileNode::parse(const LinkingContext &ctx,
     diagnostics << *filePath << "\n";
 
   return ctx.registry().parseFile(std::move(mb.get()), _files);
-}
-
-ErrorOr<File &> PECOFFFileNode::getNextFile() {
-  if (_nextFileIndex == _files.size())
-    return make_error_code(InputGraphError::no_more_files);
-  return *_files[_nextFileIndex++];
-}
-
-ErrorOr<StringRef> PECOFFFileNode::getPath(const LinkingContext &) const {
-  if (isCOFFLibraryFileExtension(_path))
-    return _ctx.searchLibraryFile(_path);
-  if (llvm::sys::path::extension(_path).empty())
-    return _ctx.allocate(_path.str() + ".obj");
-  return _path;
-}
-
-ErrorOr<StringRef> PECOFFLibraryNode::getPath(const LinkingContext &) const {
-  if (isCOFFLibraryFileExtension(_path))
-    return _ctx.searchLibraryFile(_path);
-  return _ctx.searchLibraryFile(_ctx.allocate(_path.str() + ".lib"));
 }
 
 } // end anonymous namespace

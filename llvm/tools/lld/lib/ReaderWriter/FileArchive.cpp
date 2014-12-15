@@ -9,6 +9,7 @@
 
 #include "lld/Core/ArchiveLibraryFile.h"
 #include "lld/Core/LLVM.h"
+#include "lld/Core/LinkingContext.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Object/Archive.h"
@@ -38,17 +39,6 @@ public:
       : ArchiveLibraryFile(path), _mb(std::shared_ptr<MemoryBuffer>(mb.release())),
         _registry(reg), _logLoading(logLoading) {}
 
-  std::error_code doParse() override {
-    // Make Archive object which will be owned by FileArchive object.
-    std::error_code ec;
-    _archive.reset(new Archive(_mb->getMemBufferRef(), ec));
-    if (ec)
-      return ec;
-    if ((ec = buildTableOfContents()))
-      return ec;
-    return std::error_code();
-  }
-
   virtual ~FileArchive() {}
 
   /// \brief Check if any member of the archive contains an Atom with the
@@ -74,9 +64,6 @@ public:
     // give up the pointer so that this object no longer manages it
     return result.release();
   }
-
-  /// \brief Load all members of the archive?
-  virtual bool isWholeArchive() const { return _isWholeArchive; }
 
   /// \brief parse each member
   std::error_code
@@ -133,6 +120,18 @@ public:
     for (const auto &e : _symbolMemberMap)
       ret.insert(e.first);
     return ret;
+  }
+
+protected:
+  std::error_code doParse() override {
+    // Make Archive object which will be owned by FileArchive object.
+    std::error_code ec;
+    _archive.reset(new Archive(_mb->getMemBufferRef(), ec));
+    if (ec)
+      return ec;
+    if ((ec = buildTableOfContents()))
+      return ec;
+    return std::error_code();
   }
 
 private:
@@ -219,7 +218,6 @@ private:
   atom_collection_vector<UndefinedAtom> _undefinedAtoms;
   atom_collection_vector<SharedLibraryAtom> _sharedLibraryAtoms;
   atom_collection_vector<AbsoluteAtom> _absoluteAtoms;
-  bool _isWholeArchive;
   bool _logLoading;
   mutable std::vector<std::unique_ptr<MemoryBuffer>> _memberBuffers;
 };

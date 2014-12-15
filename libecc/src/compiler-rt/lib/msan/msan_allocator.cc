@@ -72,7 +72,7 @@ static inline void Init() {
   if (inited) return;
   __msan_init();
   inited = true;  // this must happen before any threads are created.
-  allocator.Init();
+  allocator.Init(common_flags()->allocator_may_return_null);
 }
 
 void MsanAllocatorThreadFinish() {
@@ -85,7 +85,7 @@ static void *MsanAllocate(StackTrace *stack, uptr size,
   if (size > kMaxAllowedMallocSize) {
     Report("WARNING: MemorySanitizer failed to allocate %p bytes\n",
            (void *)size);
-    return AllocatorReturnNull();
+    return allocator.ReturnNullOrDie();
   }
   void *res = allocator.Allocate(&cache, size, alignment, false);
   Metadata *meta = reinterpret_cast<Metadata*>(allocator.GetMetaData(res));
@@ -120,6 +120,13 @@ void MsanDeallocate(StackTrace *stack, void *p) {
     }
   }
   allocator.Deallocate(&cache, p);
+}
+
+void *MsanCalloc(StackTrace *stack, uptr nmemb, uptr size) {
+  Init();
+  if (CallocShouldReturnNullDueToOverflow(size, nmemb))
+    return allocator.ReturnNullOrDie();
+  return MsanReallocate(stack, 0, nmemb * size, sizeof(u64), true);
 }
 
 void *MsanReallocate(StackTrace *stack, void *old_p, uptr new_size,

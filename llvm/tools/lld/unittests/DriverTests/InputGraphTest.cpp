@@ -27,12 +27,6 @@ public:
   bool validateImpl(raw_ostream &) override { return true; }
 };
 
-class TestFileNode : public SimpleFileNode {
-public:
-  TestFileNode(StringRef path) : SimpleFileNode(path) {}
-  void resetNextIndex() override { FileNode::resetNextIndex(); }
-};
-
 class TestExpandFileNode : public SimpleFileNode {
 public:
   TestExpandFileNode(StringRef path) : SimpleFileNode(path) {}
@@ -60,14 +54,14 @@ public:
   }
 
   StringRef getNext() {
-    ErrorOr<File &> file = _graph->getNextFile();
-    EXPECT_TRUE(!file.getError());
-    return file.get().path();
+    File *file = _graph->getNextFile();
+    EXPECT_TRUE(file);
+    return file->path();
   }
 
   void expectEnd() {
-    ErrorOr<File &> file = _graph->getNextFile();
-    EXPECT_EQ(file.getError(), InputGraphError::no_more_files);
+    File *file = _graph->getNextFile();
+    EXPECT_TRUE(file == nullptr);
   }
 
 protected:
@@ -77,10 +71,10 @@ protected:
 
 } // end anonymous namespace
 
-static std::unique_ptr<TestFileNode> createFile(StringRef name) {
+static std::unique_ptr<SimpleFileNode> createFile(StringRef name) {
   std::vector<std::unique_ptr<File>> files;
   files.push_back(std::unique_ptr<SimpleFile>(new SimpleFile(name)));
-  std::unique_ptr<TestFileNode> file(new TestFileNode("filenode"));
+  std::unique_ptr<SimpleFileNode> file(new SimpleFileNode("filenode"));
   file->addFiles(std::move(files));
   return file;
 }

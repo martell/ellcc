@@ -54,10 +54,8 @@ public:
 
   /// getNextFile returns the next file that needs to be processed by
   /// the resolver. When there are no more files to be processed, an
-  /// appropriate InputGraphError is returned. Ordinals are assigned
-  /// to files returned by getNextFile, which means ordinals would be
-  /// assigned in the way files are resolved.
-  virtual ErrorOr<File &> getNextFile();
+  /// nullptr is returned.
+  File *getNextFile();
 
   /// Adds an observer of getNextFile(). Each time a new file is about to be
   /// returned from getNextFile(), registered observers are called with the file
@@ -97,7 +95,7 @@ protected:
   std::vector<std::function<void(File *)>> _observers;
 
 private:
-  ErrorOr<InputElement *> getNextInputElement();
+  InputElement *getNextInputElement();
 };
 
 /// \brief This describes each element in the InputGraph. The Kind
@@ -125,10 +123,7 @@ public:
   /// \brief functions for the resolver to use
 
   /// Get the next file to be processed by the resolver
-  virtual ErrorOr<File &> getNextFile() = 0;
-
-  /// \brief Reset the next index
-  virtual void resetNextIndex() = 0;
+  virtual File *getNextFile() = 0;
 
   /// Get the elements that we want to expand with.
   virtual bool getReplacements(InputGraph::InputElementVectorT &) {
@@ -156,11 +151,7 @@ public:
     return std::error_code();
   }
 
-  ErrorOr<File &> getNextFile() override {
-    llvm_unreachable("shouldn't be here.");
-  }
-
-  void resetNextIndex() override {}
+  File *getNextFile() override { llvm_unreachable("shouldn't be here."); }
 
 private:
   int _size;
@@ -207,11 +198,15 @@ public:
       _files.push_back(std::move(ai));
   }
 
-  /// \brief Reset the file index if the resolver needs to process
-  /// the node again.
-  void resetNextIndex() override { _nextFileIndex = 0; }
-
   bool getReplacements(InputGraph::InputElementVectorT &result) override;
+
+  /// \brief Return the next File thats part of this node to the
+  /// resolver.
+  File *getNextFile() override {
+    if (_nextFileIndex == _files.size())
+      return nullptr;
+    return _files[_nextFileIndex++].get();
+  }
 
 protected:
   StringRef _path;                       // The path of the Input file
@@ -240,14 +235,6 @@ public:
   /// \brief parse the input element
   std::error_code parse(const LinkingContext &, raw_ostream &) override {
     return std::error_code();
-  }
-
-  /// \brief Return the next File thats part of this node to the
-  /// resolver.
-  ErrorOr<File &> getNextFile() override {
-    if (_nextFileIndex == _files.size())
-      return make_error_code(InputGraphError::no_more_files);
-    return *_files[_nextFileIndex++];
   }
 };
 } // namespace lld
