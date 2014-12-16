@@ -1799,12 +1799,16 @@ static int psCommand(int argc, char **argv)
   printf("Total pages: %lu (%lu bytes), Free pages: %lu (%lu bytes)\n",
          meminfo.total / PAGE_SIZE, meminfo.total,
          meminfo.free / PAGE_SIZE, meminfo.free);
-  printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %-10.10s \n",
-         "PID", "TID", "TADR", "STATE", "PRI", "NAME");
+  int heading = 1;
   for (int i = 0;  i < THREADS; ++i) {
     thread_t *t =  threads[i];
     if (t == NULL) {
       continue;
+    }
+    if (heading) {
+      printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %-10.10s \n",
+             "PID", "TID", "TADR", "STATE", "PRI", "NAME");
+      heading = 0;
     }
     printf("%6d ", t->pid);
     printf("%6d ", t->tid);
@@ -1819,6 +1823,7 @@ static int psCommand(int argc, char **argv)
       } else {
         trap_dump("Context", t->context);
       }
+      heading = 1;
     }
   }
 
