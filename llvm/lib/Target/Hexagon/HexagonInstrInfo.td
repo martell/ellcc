@@ -25,6 +25,11 @@ def I64 : PatLeaf<(i64 DoubleRegs:$R)>;
 def F32 : PatLeaf<(f32 IntRegs:$R)>;
 def F64 : PatLeaf<(f64 DoubleRegs:$R)>;
 
+// Pattern fragments to extract the low and high subregisters from a
+// 64-bit value.
+def LoReg: OutPatFrag<(ops node:$Rs),
+                      (EXTRACT_SUBREG (i64 $Rs), subreg_loreg)>;
+
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
@@ -1744,6 +1749,664 @@ let Defs = [R29, R30, R31], Uses = [R29], hasSideEffects = 0 in {
 //===----------------------------------------------------------------------===//
 // MTYPE/MPYH +
 //===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
+// Template Class
+// MPYS / Multipy signed/unsigned halfwords
+//Rd=mpy[u](Rs.[H|L],Rt.[H|L])[:<<1][:rnd][:sat]
+//===----------------------------------------------------------------------===//
+
+let hasNewValue = 1, opNewValue = 0 in
+class T_M2_mpy < bits<2> LHbits, bit isSat, bit isRnd,
+                 bit hasShift, bit isUnsigned>
+  : MInst < (outs IntRegs:$Rd), (ins IntRegs:$Rs, IntRegs:$Rt),
+  "$Rd = "#!if(isUnsigned,"mpyu","mpy")#"($Rs."#!if(LHbits{1},"h","l")
+                                       #", $Rt."#!if(LHbits{0},"h)","l)")
+                                       #!if(hasShift,":<<1","")
+                                       #!if(isRnd,":rnd","")
+                                       #!if(isSat,":sat",""),
+  [], "", M_tc_3x_SLOT23 > {
+    bits<5> Rd;
+    bits<5> Rs;
+    bits<5> Rt;
+
+    let IClass = 0b1110;
+
+    let Inst{27-24} = 0b1100;
+    let Inst{23} = hasShift;
+    let Inst{22} = isUnsigned;
+    let Inst{21} = isRnd;
+    let Inst{7} = isSat;
+    let Inst{6-5} = LHbits;
+    let Inst{4-0} = Rd;
+    let Inst{20-16} = Rs;
+    let Inst{12-8} = Rt;
+  }
+
+//Rd=mpy(Rs.[H|L],Rt.[H|L])[:<<1]
+let isCodeGenOnly = 0 in {
+def M2_mpy_ll_s1: T_M2_mpy<0b00, 0, 0, 1, 0>;
+def M2_mpy_ll_s0: T_M2_mpy<0b00, 0, 0, 0, 0>;
+def M2_mpy_lh_s1: T_M2_mpy<0b01, 0, 0, 1, 0>;
+def M2_mpy_lh_s0: T_M2_mpy<0b01, 0, 0, 0, 0>;
+def M2_mpy_hl_s1: T_M2_mpy<0b10, 0, 0, 1, 0>;
+def M2_mpy_hl_s0: T_M2_mpy<0b10, 0, 0, 0, 0>;
+def M2_mpy_hh_s1: T_M2_mpy<0b11, 0, 0, 1, 0>;
+def M2_mpy_hh_s0: T_M2_mpy<0b11, 0, 0, 0, 0>;
+}
+
+//Rd=mpyu(Rs.[H|L],Rt.[H|L])[:<<1]
+let isCodeGenOnly = 0 in {
+def M2_mpyu_ll_s1: T_M2_mpy<0b00, 0, 0, 1, 1>;
+def M2_mpyu_ll_s0: T_M2_mpy<0b00, 0, 0, 0, 1>;
+def M2_mpyu_lh_s1: T_M2_mpy<0b01, 0, 0, 1, 1>;
+def M2_mpyu_lh_s0: T_M2_mpy<0b01, 0, 0, 0, 1>;
+def M2_mpyu_hl_s1: T_M2_mpy<0b10, 0, 0, 1, 1>;
+def M2_mpyu_hl_s0: T_M2_mpy<0b10, 0, 0, 0, 1>;
+def M2_mpyu_hh_s1: T_M2_mpy<0b11, 0, 0, 1, 1>;
+def M2_mpyu_hh_s0: T_M2_mpy<0b11, 0, 0, 0, 1>;
+}
+
+//Rd=mpy(Rs.[H|L],Rt.[H|L])[:<<1]:rnd
+let isCodeGenOnly = 0 in {
+def M2_mpy_rnd_ll_s1: T_M2_mpy <0b00, 0, 1, 1, 0>;
+def M2_mpy_rnd_ll_s0: T_M2_mpy <0b00, 0, 1, 0, 0>;
+def M2_mpy_rnd_lh_s1: T_M2_mpy <0b01, 0, 1, 1, 0>;
+def M2_mpy_rnd_lh_s0: T_M2_mpy <0b01, 0, 1, 0, 0>;
+def M2_mpy_rnd_hl_s1: T_M2_mpy <0b10, 0, 1, 1, 0>;
+def M2_mpy_rnd_hl_s0: T_M2_mpy <0b10, 0, 1, 0, 0>;
+def M2_mpy_rnd_hh_s1: T_M2_mpy <0b11, 0, 1, 1, 0>;
+def M2_mpy_rnd_hh_s0: T_M2_mpy <0b11, 0, 1, 0, 0>;
+}
+
+//Rd=mpy(Rs.[H|L],Rt.[H|L])[:<<1][:sat]
+//Rd=mpy(Rs.[H|L],Rt.[H|L])[:<<1][:rnd][:sat]
+let Defs = [USR_OVF], isCodeGenOnly = 0 in {
+  def M2_mpy_sat_ll_s1: T_M2_mpy <0b00, 1, 0, 1, 0>;
+  def M2_mpy_sat_ll_s0: T_M2_mpy <0b00, 1, 0, 0, 0>;
+  def M2_mpy_sat_lh_s1: T_M2_mpy <0b01, 1, 0, 1, 0>;
+  def M2_mpy_sat_lh_s0: T_M2_mpy <0b01, 1, 0, 0, 0>;
+  def M2_mpy_sat_hl_s1: T_M2_mpy <0b10, 1, 0, 1, 0>;
+  def M2_mpy_sat_hl_s0: T_M2_mpy <0b10, 1, 0, 0, 0>;
+  def M2_mpy_sat_hh_s1: T_M2_mpy <0b11, 1, 0, 1, 0>;
+  def M2_mpy_sat_hh_s0: T_M2_mpy <0b11, 1, 0, 0, 0>;
+
+  def M2_mpy_sat_rnd_ll_s1: T_M2_mpy <0b00, 1, 1, 1, 0>;
+  def M2_mpy_sat_rnd_ll_s0: T_M2_mpy <0b00, 1, 1, 0, 0>;
+  def M2_mpy_sat_rnd_lh_s1: T_M2_mpy <0b01, 1, 1, 1, 0>;
+  def M2_mpy_sat_rnd_lh_s0: T_M2_mpy <0b01, 1, 1, 0, 0>;
+  def M2_mpy_sat_rnd_hl_s1: T_M2_mpy <0b10, 1, 1, 1, 0>;
+  def M2_mpy_sat_rnd_hl_s0: T_M2_mpy <0b10, 1, 1, 0, 0>;
+  def M2_mpy_sat_rnd_hh_s1: T_M2_mpy <0b11, 1, 1, 1, 0>;
+  def M2_mpy_sat_rnd_hh_s0: T_M2_mpy <0b11, 1, 1, 0, 0>;
+}
+
+//===----------------------------------------------------------------------===//
+// Template Class
+// MPYS / Multipy signed/unsigned halfwords and add/subtract the
+// result from the accumulator.
+//Rx [-+]= mpy[u](Rs.[H|L],Rt.[H|L])[:<<1][:sat]
+//===----------------------------------------------------------------------===//
+
+let hasNewValue = 1, opNewValue = 0 in
+class T_M2_mpy_acc < bits<2> LHbits, bit isSat, bit isNac,
+                 bit hasShift, bit isUnsigned >
+  : MInst_acc<(outs IntRegs:$Rx), (ins IntRegs:$dst2, IntRegs:$Rs, IntRegs:$Rt),
+  "$Rx "#!if(isNac,"-= ","+= ")#!if(isUnsigned,"mpyu","mpy")
+                              #"($Rs."#!if(LHbits{1},"h","l")
+                              #", $Rt."#!if(LHbits{0},"h)","l)")
+                              #!if(hasShift,":<<1","")
+                              #!if(isSat,":sat",""),
+  [], "$dst2 = $Rx", M_tc_3x_SLOT23 > {
+    bits<5> Rx;
+    bits<5> Rs;
+    bits<5> Rt;
+
+    let IClass = 0b1110;
+    let Inst{27-24} = 0b1110;
+    let Inst{23} = hasShift;
+    let Inst{22} = isUnsigned;
+    let Inst{21} = isNac;
+    let Inst{7} = isSat;
+    let Inst{6-5} = LHbits;
+    let Inst{4-0} = Rx;
+    let Inst{20-16} = Rs;
+    let Inst{12-8} = Rt;
+  }
+
+//Rx += mpy(Rs.[H|L],Rt.[H|L])[:<<1]
+let isCodeGenOnly = 0 in {
+def M2_mpy_acc_ll_s1: T_M2_mpy_acc <0b00, 0, 0, 1, 0>;
+def M2_mpy_acc_ll_s0: T_M2_mpy_acc <0b00, 0, 0, 0, 0>;
+def M2_mpy_acc_lh_s1: T_M2_mpy_acc <0b01, 0, 0, 1, 0>;
+def M2_mpy_acc_lh_s0: T_M2_mpy_acc <0b01, 0, 0, 0, 0>;
+def M2_mpy_acc_hl_s1: T_M2_mpy_acc <0b10, 0, 0, 1, 0>;
+def M2_mpy_acc_hl_s0: T_M2_mpy_acc <0b10, 0, 0, 0, 0>;
+def M2_mpy_acc_hh_s1: T_M2_mpy_acc <0b11, 0, 0, 1, 0>;
+def M2_mpy_acc_hh_s0: T_M2_mpy_acc <0b11, 0, 0, 0, 0>;
+}
+
+//Rx += mpyu(Rs.[H|L],Rt.[H|L])[:<<1]
+let isCodeGenOnly = 0 in {
+def M2_mpyu_acc_ll_s1: T_M2_mpy_acc <0b00, 0, 0, 1, 1>;
+def M2_mpyu_acc_ll_s0: T_M2_mpy_acc <0b00, 0, 0, 0, 1>;
+def M2_mpyu_acc_lh_s1: T_M2_mpy_acc <0b01, 0, 0, 1, 1>;
+def M2_mpyu_acc_lh_s0: T_M2_mpy_acc <0b01, 0, 0, 0, 1>;
+def M2_mpyu_acc_hl_s1: T_M2_mpy_acc <0b10, 0, 0, 1, 1>;
+def M2_mpyu_acc_hl_s0: T_M2_mpy_acc <0b10, 0, 0, 0, 1>;
+def M2_mpyu_acc_hh_s1: T_M2_mpy_acc <0b11, 0, 0, 1, 1>;
+def M2_mpyu_acc_hh_s0: T_M2_mpy_acc <0b11, 0, 0, 0, 1>;
+}
+
+//Rx -= mpy(Rs.[H|L],Rt.[H|L])[:<<1]
+let isCodeGenOnly = 0 in {
+def M2_mpy_nac_ll_s1: T_M2_mpy_acc <0b00, 0, 1, 1, 0>;
+def M2_mpy_nac_ll_s0: T_M2_mpy_acc <0b00, 0, 1, 0, 0>;
+def M2_mpy_nac_lh_s1: T_M2_mpy_acc <0b01, 0, 1, 1, 0>;
+def M2_mpy_nac_lh_s0: T_M2_mpy_acc <0b01, 0, 1, 0, 0>;
+def M2_mpy_nac_hl_s1: T_M2_mpy_acc <0b10, 0, 1, 1, 0>;
+def M2_mpy_nac_hl_s0: T_M2_mpy_acc <0b10, 0, 1, 0, 0>;
+def M2_mpy_nac_hh_s1: T_M2_mpy_acc <0b11, 0, 1, 1, 0>;
+def M2_mpy_nac_hh_s0: T_M2_mpy_acc <0b11, 0, 1, 0, 0>;
+}
+
+//Rx -= mpyu(Rs.[H|L],Rt.[H|L])[:<<1]
+let isCodeGenOnly = 0 in {
+def M2_mpyu_nac_ll_s1: T_M2_mpy_acc <0b00, 0, 1, 1, 1>;
+def M2_mpyu_nac_ll_s0: T_M2_mpy_acc <0b00, 0, 1, 0, 1>;
+def M2_mpyu_nac_lh_s1: T_M2_mpy_acc <0b01, 0, 1, 1, 1>;
+def M2_mpyu_nac_lh_s0: T_M2_mpy_acc <0b01, 0, 1, 0, 1>;
+def M2_mpyu_nac_hl_s1: T_M2_mpy_acc <0b10, 0, 1, 1, 1>;
+def M2_mpyu_nac_hl_s0: T_M2_mpy_acc <0b10, 0, 1, 0, 1>;
+def M2_mpyu_nac_hh_s1: T_M2_mpy_acc <0b11, 0, 1, 1, 1>;
+def M2_mpyu_nac_hh_s0: T_M2_mpy_acc <0b11, 0, 1, 0, 1>;
+}
+
+//Rx += mpy(Rs.[H|L],Rt.[H|L])[:<<1]:sat
+let isCodeGenOnly = 0 in {
+def M2_mpy_acc_sat_ll_s1: T_M2_mpy_acc <0b00, 1, 0, 1, 0>;
+def M2_mpy_acc_sat_ll_s0: T_M2_mpy_acc <0b00, 1, 0, 0, 0>;
+def M2_mpy_acc_sat_lh_s1: T_M2_mpy_acc <0b01, 1, 0, 1, 0>;
+def M2_mpy_acc_sat_lh_s0: T_M2_mpy_acc <0b01, 1, 0, 0, 0>;
+def M2_mpy_acc_sat_hl_s1: T_M2_mpy_acc <0b10, 1, 0, 1, 0>;
+def M2_mpy_acc_sat_hl_s0: T_M2_mpy_acc <0b10, 1, 0, 0, 0>;
+def M2_mpy_acc_sat_hh_s1: T_M2_mpy_acc <0b11, 1, 0, 1, 0>;
+def M2_mpy_acc_sat_hh_s0: T_M2_mpy_acc <0b11, 1, 0, 0, 0>;
+}
+
+//Rx -= mpy(Rs.[H|L],Rt.[H|L])[:<<1]:sat
+let isCodeGenOnly = 0 in {
+def M2_mpy_nac_sat_ll_s1: T_M2_mpy_acc <0b00, 1, 1, 1, 0>;
+def M2_mpy_nac_sat_ll_s0: T_M2_mpy_acc <0b00, 1, 1, 0, 0>;
+def M2_mpy_nac_sat_lh_s1: T_M2_mpy_acc <0b01, 1, 1, 1, 0>;
+def M2_mpy_nac_sat_lh_s0: T_M2_mpy_acc <0b01, 1, 1, 0, 0>;
+def M2_mpy_nac_sat_hl_s1: T_M2_mpy_acc <0b10, 1, 1, 1, 0>;
+def M2_mpy_nac_sat_hl_s0: T_M2_mpy_acc <0b10, 1, 1, 0, 0>;
+def M2_mpy_nac_sat_hh_s1: T_M2_mpy_acc <0b11, 1, 1, 1, 0>;
+def M2_mpy_nac_sat_hh_s0: T_M2_mpy_acc <0b11, 1, 1, 0, 0>;
+}
+
+//===----------------------------------------------------------------------===//
+// Template Class
+// MPYS / Multipy signed/unsigned halfwords and add/subtract the
+// result from the 64-bit destination register.
+//Rxx [-+]= mpy[u](Rs.[H|L],Rt.[H|L])[:<<1][:sat]
+//===----------------------------------------------------------------------===//
+
+class T_M2_mpyd_acc < bits<2> LHbits, bit isNac, bit hasShift, bit isUnsigned>
+  : MInst_acc<(outs DoubleRegs:$Rxx),
+              (ins DoubleRegs:$dst2, IntRegs:$Rs, IntRegs:$Rt),
+  "$Rxx "#!if(isNac,"-= ","+= ")#!if(isUnsigned,"mpyu","mpy")
+                                #"($Rs."#!if(LHbits{1},"h","l")
+                                #", $Rt."#!if(LHbits{0},"h)","l)")
+                                #!if(hasShift,":<<1",""),
+  [], "$dst2 = $Rxx", M_tc_3x_SLOT23 > {
+    bits<5> Rxx;
+    bits<5> Rs;
+    bits<5> Rt;
+
+    let IClass = 0b1110;
+
+    let Inst{27-24} = 0b0110;
+    let Inst{23} = hasShift;
+    let Inst{22} = isUnsigned;
+    let Inst{21} = isNac;
+    let Inst{7} = 0;
+    let Inst{6-5} = LHbits;
+    let Inst{4-0} = Rxx;
+    let Inst{20-16} = Rs;
+    let Inst{12-8} = Rt;
+  }
+
+let isCodeGenOnly = 0 in {
+def M2_mpyd_acc_hh_s0: T_M2_mpyd_acc <0b11, 0, 0, 0>;
+def M2_mpyd_acc_hl_s0: T_M2_mpyd_acc <0b10, 0, 0, 0>;
+def M2_mpyd_acc_lh_s0: T_M2_mpyd_acc <0b01, 0, 0, 0>;
+def M2_mpyd_acc_ll_s0: T_M2_mpyd_acc <0b00, 0, 0, 0>;
+
+def M2_mpyd_acc_hh_s1: T_M2_mpyd_acc <0b11, 0, 1, 0>;
+def M2_mpyd_acc_hl_s1: T_M2_mpyd_acc <0b10, 0, 1, 0>;
+def M2_mpyd_acc_lh_s1: T_M2_mpyd_acc <0b01, 0, 1, 0>;
+def M2_mpyd_acc_ll_s1: T_M2_mpyd_acc <0b00, 0, 1, 0>;
+
+def M2_mpyd_nac_hh_s0: T_M2_mpyd_acc <0b11, 1, 0, 0>;
+def M2_mpyd_nac_hl_s0: T_M2_mpyd_acc <0b10, 1, 0, 0>;
+def M2_mpyd_nac_lh_s0: T_M2_mpyd_acc <0b01, 1, 0, 0>;
+def M2_mpyd_nac_ll_s0: T_M2_mpyd_acc <0b00, 1, 0, 0>;
+
+def M2_mpyd_nac_hh_s1: T_M2_mpyd_acc <0b11, 1, 1, 0>;
+def M2_mpyd_nac_hl_s1: T_M2_mpyd_acc <0b10, 1, 1, 0>;
+def M2_mpyd_nac_lh_s1: T_M2_mpyd_acc <0b01, 1, 1, 0>;
+def M2_mpyd_nac_ll_s1: T_M2_mpyd_acc <0b00, 1, 1, 0>;
+
+def M2_mpyud_acc_hh_s0: T_M2_mpyd_acc <0b11, 0, 0, 1>;
+def M2_mpyud_acc_hl_s0: T_M2_mpyd_acc <0b10, 0, 0, 1>;
+def M2_mpyud_acc_lh_s0: T_M2_mpyd_acc <0b01, 0, 0, 1>;
+def M2_mpyud_acc_ll_s0: T_M2_mpyd_acc <0b00, 0, 0, 1>;
+
+def M2_mpyud_acc_hh_s1: T_M2_mpyd_acc <0b11, 0, 1, 1>;
+def M2_mpyud_acc_hl_s1: T_M2_mpyd_acc <0b10, 0, 1, 1>;
+def M2_mpyud_acc_lh_s1: T_M2_mpyd_acc <0b01, 0, 1, 1>;
+def M2_mpyud_acc_ll_s1: T_M2_mpyd_acc <0b00, 0, 1, 1>;
+
+def M2_mpyud_nac_hh_s0: T_M2_mpyd_acc <0b11, 1, 0, 1>;
+def M2_mpyud_nac_hl_s0: T_M2_mpyd_acc <0b10, 1, 0, 1>;
+def M2_mpyud_nac_lh_s0: T_M2_mpyd_acc <0b01, 1, 0, 1>;
+def M2_mpyud_nac_ll_s0: T_M2_mpyd_acc <0b00, 1, 0, 1>;
+
+def M2_mpyud_nac_hh_s1: T_M2_mpyd_acc <0b11, 1, 1, 1>;
+def M2_mpyud_nac_hl_s1: T_M2_mpyd_acc <0b10, 1, 1, 1>;
+def M2_mpyud_nac_lh_s1: T_M2_mpyd_acc <0b01, 1, 1, 1>;
+def M2_mpyud_nac_ll_s1: T_M2_mpyd_acc <0b00, 1, 1, 1>;
+}
+
+let hasNewValue = 1, opNewValue = 0 in
+class T_MType_mpy <string mnemonic, bits<4> RegTyBits, RegisterClass RC,
+                   bits<3> MajOp, bits<3> MinOp, bit isSat = 0, bit isRnd = 0,
+                   string op2Suffix = "", bit isRaw = 0, bit isHi = 0 >
+  : MInst <(outs IntRegs:$dst), (ins RC:$src1, RC:$src2),
+  "$dst = "#mnemonic
+           #"($src1, $src2"#op2Suffix#")"
+           #!if(MajOp{2}, ":<<1", "")
+           #!if(isRnd, ":rnd", "")
+           #!if(isSat, ":sat", "")
+           #!if(isRaw, !if(isHi, ":raw:hi", ":raw:lo"), ""), [] > {
+    bits<5> dst;
+    bits<5> src1;
+    bits<5> src2;
+
+    let IClass = 0b1110;
+
+    let Inst{27-24} = RegTyBits;
+    let Inst{23-21} = MajOp;
+    let Inst{20-16} = src1;
+    let Inst{13}    = 0b0;
+    let Inst{12-8}  = src2;
+    let Inst{7-5}   = MinOp;
+    let Inst{4-0}   = dst;
+  }
+
+class T_MType_dd  <string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                   bit isSat = 0, bit isRnd = 0 >
+  : T_MType_mpy <mnemonic, 0b1001, DoubleRegs, MajOp, MinOp, isSat, isRnd>;
+
+class T_MType_rr1  <string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                    bit isSat = 0, bit isRnd = 0 >
+  : T_MType_mpy<mnemonic, 0b1101, IntRegs, MajOp, MinOp, isSat, isRnd>;
+
+class T_MType_rr2 <string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                   bit isSat = 0, bit isRnd = 0, string op2str = "" >
+  : T_MType_mpy<mnemonic, 0b1101, IntRegs, MajOp, MinOp, isSat, isRnd, op2str>;
+
+let CextOpcode = "mpyi", InputType = "reg", isCodeGenOnly = 0 in
+def M2_mpyi    : T_MType_rr1 <"mpyi", 0b000, 0b000>, ImmRegRel;
+
+let isCodeGenOnly = 0 in {
+def M2_mpy_up  : T_MType_rr1 <"mpy",  0b000, 0b001>;
+def M2_mpyu_up : T_MType_rr1 <"mpyu", 0b010, 0b001>;
+}
+
+let isCodeGenOnly = 0 in
+def M2_dpmpyss_rnd_s0 : T_MType_rr1 <"mpy", 0b001, 0b001, 0, 1>;
+
+let isCodeGenOnly = 0 in {
+def M2_hmmpyh_rs1 : T_MType_rr2 <"mpy", 0b101, 0b100, 1, 1, ".h">;
+def M2_hmmpyl_rs1 : T_MType_rr2 <"mpy", 0b111, 0b100, 1, 1, ".l">;
+}
+
+// V4 Instructions
+let isCodeGenOnly = 0 in {
+def M2_mpysu_up : T_MType_rr1 <"mpysu", 0b011, 0b001, 0>;
+def M2_mpy_up_s1_sat : T_MType_rr1 <"mpy", 0b111, 0b000, 1>;
+
+def M2_hmmpyh_s1 : T_MType_rr2 <"mpy", 0b101, 0b000, 1, 0, ".h">;
+def M2_hmmpyl_s1 : T_MType_rr2 <"mpy", 0b101, 0b001, 1, 0, ".l">;
+}
+
+def: Pat<(i32 (mul   I32:$src1, I32:$src2)), (M2_mpyi    I32:$src1, I32:$src2)>;
+def: Pat<(i32 (mulhs I32:$src1, I32:$src2)), (M2_mpy_up  I32:$src1, I32:$src2)>;
+def: Pat<(i32 (mulhu I32:$src1, I32:$src2)), (M2_mpyu_up I32:$src1, I32:$src2)>;
+
+let hasNewValue = 1, opNewValue = 0 in
+class T_MType_mpy_ri <bit isNeg, Operand ImmOp, list<dag> pattern>
+  : MInst < (outs IntRegs:$Rd), (ins IntRegs:$Rs, ImmOp:$u8),
+  "$Rd ="#!if(isNeg, "- ", "+ ")#"mpyi($Rs, #$u8)" ,
+   pattern, "", M_tc_3x_SLOT23> {
+    bits<5> Rd;
+    bits<5> Rs;
+    bits<8> u8;
+
+    let IClass = 0b1110;
+
+    let Inst{27-24} = 0b0000;
+    let Inst{23} = isNeg;
+    let Inst{13} = 0b0;
+    let Inst{4-0} = Rd;
+    let Inst{20-16} = Rs;
+    let Inst{12-5} = u8;
+  }
+
+let isExtendable = 1, opExtentBits = 8, opExtendable = 2, isCodeGenOnly = 0 in
+def M2_mpysip : T_MType_mpy_ri <0, u8Ext,
+                [(set (i32 IntRegs:$Rd), (mul IntRegs:$Rs, u8ExtPred:$u8))]>;
+
+let isCodeGenOnly = 0 in
+def M2_mpysin :  T_MType_mpy_ri <1, u8Imm,
+                [(set (i32 IntRegs:$Rd), (ineg (mul IntRegs:$Rs,
+                                                    u8ImmPred:$u8)))]>;
+
+// Assember mapped to M2_mpyi
+let isAsmParserOnly = 1 in
+def M2_mpyui : MInst<(outs IntRegs:$dst),
+                     (ins IntRegs:$src1, IntRegs:$src2),
+  "$dst = mpyui($src1, $src2)">;
+
+// Rd=mpyi(Rs,#m9)
+// s9 is NOT the same as m9 - but it works.. so far.
+// Assembler maps to either Rd=+mpyi(Rs,#u8) or Rd=-mpyi(Rs,#u8)
+// depending on the value of m9. See Arch Spec.
+let isExtendable = 1, opExtendable = 2, isExtentSigned = 1, opExtentBits = 9,
+    CextOpcode = "mpyi", InputType = "imm", hasNewValue = 1 in
+def M2_mpysmi : MInst<(outs IntRegs:$dst), (ins IntRegs:$src1, s9Ext:$src2),
+    "$dst = mpyi($src1, #$src2)",
+    [(set (i32 IntRegs:$dst), (mul (i32 IntRegs:$src1),
+                                   s9ExtPred:$src2))]>, ImmRegRel;
+
+let hasNewValue = 1, isExtendable = 1,  opExtentBits = 8, opExtendable = 3,
+    InputType = "imm" in
+class T_MType_acc_ri <string mnemonic, bits<3> MajOp, Operand ImmOp,
+                      list<dag> pattern = []>
+ : MInst < (outs IntRegs:$dst), (ins IntRegs:$src1, IntRegs:$src2, ImmOp:$src3),
+  "$dst "#mnemonic#"($src2, #$src3)",
+  pattern, "$src1 = $dst", M_tc_2_SLOT23> {
+    bits<5> dst;
+    bits<5> src2;
+    bits<8> src3;
+
+    let IClass = 0b1110;
+
+    let Inst{27-26} = 0b00;
+    let Inst{25-23} = MajOp;
+    let Inst{20-16} = src2;
+    let Inst{13} = 0b0;
+    let Inst{12-5} = src3;
+    let Inst{4-0} = dst;
+  }
+
+let InputType = "reg", hasNewValue = 1 in
+class T_MType_acc_rr <string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                      bit isSwap = 0, list<dag> pattern = [], bit hasNot = 0,
+                      bit isSat = 0, bit isShift = 0>
+  : MInst < (outs IntRegs:$dst),
+            (ins IntRegs:$src1, IntRegs:$src2, IntRegs:$src3),
+  "$dst "#mnemonic#"($src2, "#!if(hasNot, "~$src3)","$src3)")
+                          #!if(isShift, ":<<1", "")
+                          #!if(isSat, ":sat", ""),
+  pattern, "$src1 = $dst", M_tc_2_SLOT23 > {
+    bits<5> dst;
+    bits<5> src2;
+    bits<5> src3;
+
+    let IClass = 0b1110;
+
+    let Inst{27-24} = 0b1111;
+    let Inst{23-21} = MajOp;
+    let Inst{20-16} = !if(isSwap, src3, src2);
+    let Inst{13} = 0b0;
+    let Inst{12-8} = !if(isSwap, src2, src3);
+    let Inst{7-5} = MinOp;
+    let Inst{4-0} = dst;
+  }
+
+let CextOpcode = "MPYI_acc", Itinerary = M_tc_3x_SLOT23, isCodeGenOnly = 0 in {
+  def M2_macsip : T_MType_acc_ri <"+= mpyi", 0b010, u8Ext,
+                  [(set (i32 IntRegs:$dst),
+                        (add (mul IntRegs:$src2, u8ExtPred:$src3),
+                             IntRegs:$src1))]>, ImmRegRel;
+
+  def M2_maci   : T_MType_acc_rr <"+= mpyi", 0b000, 0b000, 0,
+                 [(set (i32 IntRegs:$dst),
+                       (add (mul IntRegs:$src2, IntRegs:$src3),
+                            IntRegs:$src1))]>, ImmRegRel;
+}
+
+let CextOpcode = "ADD_acc", isCodeGenOnly = 0 in {
+  let isExtentSigned = 1 in
+  def M2_accii : T_MType_acc_ri <"+= add", 0b100, s8Ext,
+                 [(set (i32 IntRegs:$dst),
+                       (add (add (i32 IntRegs:$src2), s8_16ExtPred:$src3),
+                            (i32 IntRegs:$src1)))]>, ImmRegRel;
+
+  def M2_acci  : T_MType_acc_rr <"+= add",  0b000, 0b001, 0,
+                 [(set (i32 IntRegs:$dst),
+                       (add (add (i32 IntRegs:$src2), (i32 IntRegs:$src3)),
+                            (i32 IntRegs:$src1)))]>, ImmRegRel;
+}
+
+let CextOpcode = "SUB_acc", isCodeGenOnly = 0 in {
+  let isExtentSigned = 1 in
+  def M2_naccii : T_MType_acc_ri <"-= add", 0b101, s8Ext>, ImmRegRel;
+
+  def M2_nacci  : T_MType_acc_rr <"-= add",  0b100, 0b001, 0>, ImmRegRel;
+}
+
+let Itinerary = M_tc_3x_SLOT23, isCodeGenOnly = 0 in
+def M2_macsin : T_MType_acc_ri <"-= mpyi", 0b011, u8Ext>;
+
+let isCodeGenOnly = 0 in {
+def M2_xor_xacc : T_MType_acc_rr < "^= xor", 0b100, 0b011, 0>;
+def M2_subacc : T_MType_acc_rr <"+= sub",  0b000, 0b011, 1>;
+}
+
+class T_MType_acc_pat1 <InstHexagon MI, SDNode firstOp, SDNode secOp,
+                        PatLeaf ImmPred>
+  : Pat <(secOp IntRegs:$src1, (firstOp IntRegs:$src2, ImmPred:$src3)),
+         (MI IntRegs:$src1, IntRegs:$src2, ImmPred:$src3)>;
+
+class T_MType_acc_pat2 <InstHexagon MI, SDNode firstOp, SDNode secOp>
+  : Pat <(i32 (secOp IntRegs:$src1, (firstOp IntRegs:$src2, IntRegs:$src3))),
+         (MI IntRegs:$src1, IntRegs:$src2, IntRegs:$src3)>;
+
+def : T_MType_acc_pat2 <M2_xor_xacc, xor, xor>;
+def : T_MType_acc_pat1 <M2_macsin, mul, sub, u8ExtPred>;
+
+def : T_MType_acc_pat1 <M2_naccii, add, sub, s8_16ExtPred>;
+def : T_MType_acc_pat2 <M2_nacci, add, sub>;
+//===----------------------------------------------------------------------===//
+// Template Class -- Multiply signed/unsigned halfwords with and without
+// saturation and rounding
+//===----------------------------------------------------------------------===//
+class T_M2_mpyd < bits<2> LHbits, bit isRnd, bit hasShift, bit isUnsigned >
+  : MInst < (outs DoubleRegs:$Rdd), (ins IntRegs:$Rs, IntRegs:$Rt),
+  "$Rdd = "#!if(isUnsigned,"mpyu","mpy")#"($Rs."#!if(LHbits{1},"h","l")
+                                       #", $Rt."#!if(LHbits{0},"h)","l)")
+                                       #!if(hasShift,":<<1","")
+                                       #!if(isRnd,":rnd",""),
+  [] > {
+    bits<5> Rdd;
+    bits<5> Rs;
+    bits<5> Rt;
+
+    let IClass = 0b1110;
+
+    let Inst{27-24} = 0b0100;
+    let Inst{23} = hasShift;
+    let Inst{22} = isUnsigned;
+    let Inst{21} = isRnd;
+    let Inst{6-5} = LHbits;
+    let Inst{4-0} = Rdd;
+    let Inst{20-16} = Rs;
+    let Inst{12-8} = Rt;
+}
+
+let isCodeGenOnly = 0 in {
+def M2_mpyd_hh_s0: T_M2_mpyd<0b11, 0, 0, 0>;
+def M2_mpyd_hl_s0: T_M2_mpyd<0b10, 0, 0, 0>;
+def M2_mpyd_lh_s0: T_M2_mpyd<0b01, 0, 0, 0>;
+def M2_mpyd_ll_s0: T_M2_mpyd<0b00, 0, 0, 0>;
+
+def M2_mpyd_hh_s1: T_M2_mpyd<0b11, 0, 1, 0>;
+def M2_mpyd_hl_s1: T_M2_mpyd<0b10, 0, 1, 0>;
+def M2_mpyd_lh_s1: T_M2_mpyd<0b01, 0, 1, 0>;
+def M2_mpyd_ll_s1: T_M2_mpyd<0b00, 0, 1, 0>;
+
+def M2_mpyd_rnd_hh_s0: T_M2_mpyd<0b11, 1, 0, 0>;
+def M2_mpyd_rnd_hl_s0: T_M2_mpyd<0b10, 1, 0, 0>;
+def M2_mpyd_rnd_lh_s0: T_M2_mpyd<0b01, 1, 0, 0>;
+def M2_mpyd_rnd_ll_s0: T_M2_mpyd<0b00, 1, 0, 0>;
+
+def M2_mpyd_rnd_hh_s1: T_M2_mpyd<0b11, 1, 1, 0>;
+def M2_mpyd_rnd_hl_s1: T_M2_mpyd<0b10, 1, 1, 0>;
+def M2_mpyd_rnd_lh_s1: T_M2_mpyd<0b01, 1, 1, 0>;
+def M2_mpyd_rnd_ll_s1: T_M2_mpyd<0b00, 1, 1, 0>;
+
+//Rdd=mpyu(Rs.[HL],Rt.[HL])[:<<1]
+def M2_mpyud_hh_s0: T_M2_mpyd<0b11, 0, 0, 1>;
+def M2_mpyud_hl_s0: T_M2_mpyd<0b10, 0, 0, 1>;
+def M2_mpyud_lh_s0: T_M2_mpyd<0b01, 0, 0, 1>;
+def M2_mpyud_ll_s0: T_M2_mpyd<0b00, 0, 0, 1>;
+
+def M2_mpyud_hh_s1: T_M2_mpyd<0b11, 0, 1, 1>;
+def M2_mpyud_hl_s1: T_M2_mpyd<0b10, 0, 1, 1>;
+def M2_mpyud_lh_s1: T_M2_mpyd<0b01, 0, 1, 1>;
+def M2_mpyud_ll_s1: T_M2_mpyd<0b00, 0, 1, 1>;
+}
+//===----------------------------------------------------------------------===//
+// Template Class for xtype mpy:
+// Vector multiply
+// Complex multiply
+// multiply 32X32 and use full result
+//===----------------------------------------------------------------------===//
+let hasSideEffects = 0 in
+class T_XTYPE_mpy64 <string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                     bit isSat, bit hasShift, bit isConj>
+   : MInst <(outs DoubleRegs:$Rdd),
+            (ins IntRegs:$Rs, IntRegs:$Rt),
+  "$Rdd = "#mnemonic#"($Rs, $Rt"#!if(isConj,"*)",")")
+                                #!if(hasShift,":<<1","")
+                                #!if(isSat,":sat",""),
+  [] > {
+    bits<5> Rdd;
+    bits<5> Rs;
+    bits<5> Rt;
+
+    let IClass = 0b1110;
+
+    let Inst{27-24} = 0b0101;
+    let Inst{23-21} = MajOp;
+    let Inst{20-16} = Rs;
+    let Inst{12-8} = Rt;
+    let Inst{7-5} = MinOp;
+    let Inst{4-0} = Rdd;
+  }
+
+//===----------------------------------------------------------------------===//
+// Template Class for xtype mpy with accumulation into 64-bit:
+// Vector multiply
+// Complex multiply
+// multiply 32X32 and use full result
+//===----------------------------------------------------------------------===//
+class T_XTYPE_mpy64_acc <string op1, string op2, bits<3> MajOp, bits<3> MinOp,
+                         bit isSat, bit hasShift, bit isConj>
+  : MInst <(outs DoubleRegs:$Rxx),
+           (ins DoubleRegs:$dst2, IntRegs:$Rs, IntRegs:$Rt),
+  "$Rxx "#op2#"= "#op1#"($Rs, $Rt"#!if(isConj,"*)",")")
+                                   #!if(hasShift,":<<1","")
+                                   #!if(isSat,":sat",""),
+
+  [] , "$dst2 = $Rxx" > {
+    bits<5> Rxx;
+    bits<5> Rs;
+    bits<5> Rt;
+
+    let IClass = 0b1110;
+
+    let Inst{27-24} = 0b0111;
+    let Inst{23-21} = MajOp;
+    let Inst{20-16} = Rs;
+    let Inst{12-8} = Rt;
+    let Inst{7-5} = MinOp;
+    let Inst{4-0} = Rxx;
+  }
+
+// MPY - Multiply and use full result
+// Rdd = mpy[u](Rs,Rt)
+let isCodeGenOnly = 0 in {
+def M2_dpmpyss_s0 : T_XTYPE_mpy64 < "mpy", 0b000, 0b000, 0, 0, 0>;
+def M2_dpmpyuu_s0 : T_XTYPE_mpy64 < "mpyu", 0b010, 0b000, 0, 0, 0>;
+
+// Rxx[+-]= mpy[u](Rs,Rt)
+def M2_dpmpyss_acc_s0 : T_XTYPE_mpy64_acc < "mpy",  "+", 0b000, 0b000, 0, 0, 0>;
+def M2_dpmpyss_nac_s0 : T_XTYPE_mpy64_acc < "mpy",  "-", 0b001, 0b000, 0, 0, 0>;
+def M2_dpmpyuu_acc_s0 : T_XTYPE_mpy64_acc < "mpyu", "+", 0b010, 0b000, 0, 0, 0>;
+def M2_dpmpyuu_nac_s0 : T_XTYPE_mpy64_acc < "mpyu", "-", 0b011, 0b000, 0, 0, 0>;
+}
+
+def: Pat<(i64 (mul (i64 (anyext (i32 IntRegs:$src1))),
+                   (i64 (anyext (i32 IntRegs:$src2))))),
+         (M2_dpmpyuu_s0 IntRegs:$src1, IntRegs:$src2)>;
+
+def: Pat<(i64 (mul (i64 (sext (i32 IntRegs:$src1))),
+                   (i64 (sext (i32 IntRegs:$src2))))),
+         (M2_dpmpyss_s0 IntRegs:$src1, IntRegs:$src2)>;
+
+def: Pat<(i64 (mul (is_sext_i32:$src1),
+                   (is_sext_i32:$src2))),
+         (M2_dpmpyss_s0 (LoReg DoubleRegs:$src1), (LoReg DoubleRegs:$src2))>;
+
+// Multiply and accumulate, use full result.
+// Rxx[+-]=mpy(Rs,Rt)
+
+def: Pat<(i64 (add (i64 DoubleRegs:$src1),
+                   (mul (i64 (sext (i32 IntRegs:$src2))),
+                        (i64 (sext (i32 IntRegs:$src3)))))),
+         (M2_dpmpyss_acc_s0 DoubleRegs:$src1, IntRegs:$src2, IntRegs:$src3)>;
+
+def: Pat<(i64 (sub (i64 DoubleRegs:$src1),
+                   (mul (i64 (sext (i32 IntRegs:$src2))),
+                        (i64 (sext (i32 IntRegs:$src3)))))),
+         (M2_dpmpyss_nac_s0 DoubleRegs:$src1, IntRegs:$src2, IntRegs:$src3)>;
+
+def: Pat<(i64 (add (i64 DoubleRegs:$src1),
+                   (mul (i64 (anyext (i32 IntRegs:$src2))),
+                        (i64 (anyext (i32 IntRegs:$src3)))))),
+         (M2_dpmpyuu_acc_s0 DoubleRegs:$src1, IntRegs:$src2, IntRegs:$src3)>;
+
+def: Pat<(i64 (add (i64 DoubleRegs:$src1),
+                   (mul (i64 (zext (i32 IntRegs:$src2))),
+                        (i64 (zext (i32 IntRegs:$src3)))))),
+         (M2_dpmpyuu_acc_s0 DoubleRegs:$src1, IntRegs:$src2, IntRegs:$src3)>;
+
+def: Pat<(i64 (sub (i64 DoubleRegs:$src1),
+                   (mul (i64 (anyext (i32 IntRegs:$src2))),
+                        (i64 (anyext (i32 IntRegs:$src3)))))),
+         (M2_dpmpyuu_nac_s0 DoubleRegs:$src1, IntRegs:$src2, IntRegs:$src3)>;
+
+def: Pat<(i64 (sub (i64 DoubleRegs:$src1),
+                   (mul (i64 (zext (i32 IntRegs:$src2))),
+                        (i64 (zext (i32 IntRegs:$src3)))))),
+         (M2_dpmpyuu_nac_s0 DoubleRegs:$src1, IntRegs:$src2, IntRegs:$src3)>;
+
 // Multiply and use lower result.
 // Rd=+mpyi(Rs,#u8)
 let isExtendable = 1, opExtendable = 2, isExtentSigned = 0, opExtentBits = 8 in
@@ -1784,16 +2447,6 @@ def MPYI_acc_ri : MInst_acc<(outs IntRegs:$dst),
             "$dst += mpyi($src2, #$src3)",
             [(set (i32 IntRegs:$dst),
                   (add (mul (i32 IntRegs:$src2), u8ExtPred:$src3),
-                       (i32 IntRegs:$src1)))],
-            "$src1 = $dst">, ImmRegRel;
-
-// Rx+=mpyi(Rs,Rt)
-let CextOpcode = "MPYI_acc", InputType = "reg" in
-def MPYI_acc_rr : MInst_acc<(outs IntRegs:$dst),
-            (ins IntRegs:$src1, IntRegs:$src2, IntRegs:$src3),
-            "$dst += mpyi($src2, $src3)",
-            [(set (i32 IntRegs:$dst),
-                  (add (mul (i32 IntRegs:$src2), (i32 IntRegs:$src3)),
                        (i32 IntRegs:$src1)))],
             "$src1 = $dst">, ImmRegRel;
 
@@ -1880,16 +2533,6 @@ def MPYU64_sub : MInst_acc<(outs DoubleRegs:$dst),
                             (i64 (anyext (i32 IntRegs:$src3))))))],
             "$src1 = $dst">;
 
-
-let InputType = "reg", CextOpcode = "ADD_acc" in
-def ADDrr_acc : MInst_acc<(outs IntRegs: $dst), (ins IntRegs:$src1,
-                            IntRegs:$src2, IntRegs:$src3),
-             "$dst += add($src2, $src3)",
-             [(set (i32 IntRegs:$dst), (add (add (i32 IntRegs:$src2),
-                                                 (i32 IntRegs:$src3)),
-                                            (i32 IntRegs:$src1)))],
-             "$src1 = $dst">, ImmRegRel;
-
 let isExtendable = 1, opExtendable = 3, isExtentSigned = 1, opExtentBits = 8,
 InputType = "imm", CextOpcode = "ADD_acc" in
 def ADDri_acc : MInst_acc<(outs IntRegs: $dst), (ins IntRegs:$src1,
@@ -1898,15 +2541,6 @@ def ADDri_acc : MInst_acc<(outs IntRegs: $dst), (ins IntRegs:$src1,
              [(set (i32 IntRegs:$dst), (add (add (i32 IntRegs:$src2),
                                                  s8_16ExtPred:$src3),
                                             (i32 IntRegs:$src1)))],
-             "$src1 = $dst">, ImmRegRel;
-
-let CextOpcode = "SUB_acc", InputType = "reg" in
-def SUBrr_acc : MInst_acc<(outs IntRegs: $dst), (ins IntRegs:$src1,
-                            IntRegs:$src2, IntRegs:$src3),
-             "$dst -= add($src2, $src3)",
-             [(set (i32 IntRegs:$dst),
-                   (sub (i32 IntRegs:$src1), (add (i32 IntRegs:$src2),
-                                                  (i32 IntRegs:$src3))))],
              "$src1 = $dst">, ImmRegRel;
 
 let isExtendable = 1, opExtendable = 3, isExtentSigned = 1, opExtentBits = 8,

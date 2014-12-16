@@ -551,6 +551,19 @@ void Sema::InitDataSharingAttributesStack() {
 
 #define DSAStack static_cast<DSAStackTy *>(VarDataSharingAttributesStack)
 
+bool Sema::IsOpenMPCapturedVar(VarDecl *VD) {
+  assert(LangOpts.OpenMP && "OpenMP is not allowed");
+  if (DSAStack->getCurrentDirective() != OMPD_unknown) {
+    auto DVarPrivate = DSAStack->getTopDSA(VD, /*FromParent=*/false);
+    if (DVarPrivate.CKind != OMPC_unknown && isOpenMPPrivate(DVarPrivate.CKind))
+      return true;
+    DVarPrivate = DSAStack->hasDSA(VD, isOpenMPPrivate, MatchesAlways(),
+                                   /*FromParent=*/false);
+    return DVarPrivate.CKind != OMPC_unknown;
+  }
+  return false;
+}
+
 void Sema::DestroyDataSharingAttributesStack() { delete DSAStack; }
 
 void Sema::StartOpenMPDSABlock(OpenMPDirectiveKind DKind,
@@ -4153,11 +4166,12 @@ OMPClause *Sema::ActOnOpenMPPrivateClause(ArrayRef<Expr *> VarList,
     if (VDPrivate->isInvalidDecl())
       continue;
     CurContext->addDecl(VDPrivate);
-    auto VDPrivateRefExpr = DeclRefExpr::Create(
-        Context, /*QualifierLoc*/ NestedNameSpecifierLoc(),
-        /*TemplateKWLoc*/ SourceLocation(), VDPrivate,
-        /*isEnclosingLocal*/ false, /*NameLoc*/ SourceLocation(), DE->getType(),
-        /*VK*/ VK_LValue);
+    auto VDPrivateRefExpr =
+        DeclRefExpr::Create(Context, /*QualifierLoc*/ NestedNameSpecifierLoc(),
+                            /*TemplateKWLoc*/ SourceLocation(), VDPrivate,
+                            /*RefersToCapturedVariable*/ false,
+                            /*NameLoc*/ SourceLocation(), DE->getType(),
+                            /*VK*/ VK_LValue);
 
     DSAStack->addDSA(VD, DE, OMPC_private);
     Vars.push_back(DE);
@@ -4378,7 +4392,7 @@ OMPClause *Sema::ActOnOpenMPFirstprivateClause(ArrayRef<Expr *> VarList,
       VDInitRefExpr = DeclRefExpr::Create(
           Context, /*QualifierLoc*/ NestedNameSpecifierLoc(),
           /*TemplateKWLoc*/ SourceLocation(), VDInit,
-          /*isEnclosingLocal*/ false, ELoc, Type,
+          /*RefersToCapturedVariable*/ true, ELoc, Type,
           /*VK*/ VK_LValue);
       VDInit->setIsUsed();
       auto Init = DefaultLvalueConversion(VDInitRefExpr).get();
@@ -4392,8 +4406,14 @@ OMPClause *Sema::ActOnOpenMPFirstprivateClause(ArrayRef<Expr *> VarList,
       else
         VDPrivate->setInit(Result.getAs<Expr>());
     } else {
-      AddInitializerToDecl(VDPrivate, DefaultLvalueConversion(DE).get(),
-                           /*DirectInit*/ false, /*TypeMayContainAuto*/ false);
+      AddInitializerToDecl(
+          VDPrivate, DefaultLvalueConversion(
+                         DeclRefExpr::Create(Context, NestedNameSpecifierLoc(),
+                                             SourceLocation(), DE->getDecl(),
+                                             /*RefersToCapturedVariable=*/true,
+                                             DE->getExprLoc(), DE->getType(),
+                                             /*VK=*/VK_LValue)).get(),
+          /*DirectInit=*/false, /*TypeMayContainAuto=*/false);
     }
     if (VDPrivate->isInvalidDecl()) {
       if (IsImplicitClause) {
@@ -4406,7 +4426,7 @@ OMPClause *Sema::ActOnOpenMPFirstprivateClause(ArrayRef<Expr *> VarList,
     auto VDPrivateRefExpr = DeclRefExpr::Create(
         Context, /*QualifierLoc*/ NestedNameSpecifierLoc(),
         /*TemplateKWLoc*/ SourceLocation(), VDPrivate,
-        /*isEnclosingLocal*/ false, DE->getLocStart(), DE->getType(),
+        /*RefersToCapturedVariable*/ false, DE->getLocStart(), DE->getType(),
         /*VK*/ VK_LValue);
     DSAStack->addDSA(VD, DE, OMPC_firstprivate);
     Vars.push_back(DE);
