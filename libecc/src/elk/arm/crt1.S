@@ -286,7 +286,7 @@ argv:
 undefined:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_UND_MODE, __undefinedstk_top__)
-#if CTX_DEBUG
+#if CTX_DEBUG > 2
         push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
         mov     r1, sp
         add     r1, #4 * 9
@@ -294,7 +294,7 @@ undefined:
         bl      CLABEL(trap_dump)
         pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
 #endif
-        // RICH: cpsie   i                       // Enable IRQ.
+        cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_UNDEFINED
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -308,7 +308,7 @@ trapund:
 prefetch:
         sub     lr, lr, #8              // Adjust the lr.
         SAVE_CONTEXT(PSR_ABT_MODE, __abortstk_top__)
-#if CTX_DEBUG
+#if CTX_DEBUG > 2
         push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
         mov     r1, sp
         add     r1, #4 * 9
@@ -317,7 +317,7 @@ prefetch:
         pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
 #endif
         // Remember to preserve r8 to save the context pointer.
-        // RICH: cpsie   i                       // Enable IRQ.
+        cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_PREFETCH_ABORT
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -331,7 +331,7 @@ trappre:
 abort:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_ABT_MODE, __abortstk_top__)
-#if CTX_DEBUG
+#if CTX_DEBUG > 2
         push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
         mov     r1, sp
         add     r1, #4 * 9
@@ -340,7 +340,7 @@ abort:
         pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
 #endif
         // Remember to preserve r8 to save the context pointer.
-        // RICH: cpsie   i                       // Enable IRQ.
+        cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_DATA_ABORT
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -371,7 +371,7 @@ irq:
         ldr     r10, [r9]               // Save the old level.
         mov     r1, #15                 // Highest level.
         str     r1, [r9]                // Set the new level.
-#if CTX_DEBUG
+#if CTX_DEBUG > 3
         push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
         mov     r1, sp
         add     r1, #4 * 9
@@ -444,8 +444,8 @@ ENTRY(switch_context)
         sub     sp, #4 * 2              // Room for the saved sp and tls.
         push    { SAVED_REGS }          // Store other registers.
         str     sp, [sp, #REG_SP]       // Save the sp.
-        mrc     p15, 0, r0, c13, c0, 3  // Get the TLS.
-        str     r0, [sp, #REG_TLS]      // Save the TLS.
+        mrc     p15, 0, r2, c13, c0, 3  // Get the TLS.
+        str     r2, [sp, #REG_TLS]      // Save the TLS.
         str     sp, [r1]                // Save the current frame.
 #if CTX_DEBUG
         push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
@@ -521,7 +521,7 @@ ENTRY(enter_context)
  */
 swi:
         SAVE_CONTEXT(PSR_SVC_MODE, __svcstk_top__)
-#if CTX_DEBUG
+#if CTX_DEBUG > 1
         push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
         mov     r1, sp
         add     r1, #4 * 9
@@ -529,7 +529,7 @@ swi:
         bl      CLABEL(trap_dump)
         pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
 #endif
-        // RICH: cpsie   i                       // Enable IRQ.
+        cpsie   i                       // Enable IRQ.
         ldr     r10, [sp, #REG_PC]      // Get the return address for clone().
 __in_syscall:                           // The stack frame is valid here.
         ldr     r9, =syscall            // Point to the syscall save area.

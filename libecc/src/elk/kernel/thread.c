@@ -293,8 +293,7 @@ static void create_system_threads(void)
     char name[20];
     context_t *ctx = (context_t *)&idle_stack[i][IDLE_STACK];
     idle_thread[i].context = ctx;
-    memset(ctx - 1, 0xaa, sizeof(context_t));
-    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0xf00dcafe, ctx);
+    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0, ctx);
     idle_thread[i].priority = PRIORITIES;       // The lowest priority.
     idle_thread[i].state = IDLE;
     alloc_tid(&idle_thread[i]);
