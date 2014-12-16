@@ -1801,8 +1801,8 @@ static int psCommand(int argc, char **argv)
   printf("Total pages: %lu (%lu bytes), Free pages: %lu (%lu bytes)\n",
          meminfo.total / PAGE_SIZE, meminfo.total,
          meminfo.free / PAGE_SIZE, meminfo.free);
-  printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %10.10s %-10.10s \n",
-         "PID", "TID", "TADR", "STATE", "PRI", "PSR", "NAME");
+  printf("%6.6s %6.6s %10.10s %-10.10s %5.5s %-10.10s \n",
+         "PID", "TID", "TADR", "STATE", "PRI", "NAME");
   for (int i = 0;  i < THREADS; ++i) {
     thread_t *t =  threads[i];
     if (t == NULL) {
@@ -1813,7 +1813,6 @@ static int psCommand(int argc, char **argv)
     printf("%8p ", t);
     printf("%-10.10s ", state_names[t->state]);
     printf("%5d ", t->priority);
-    printf("0x%08x ", t->context->cpsr);
     printf(t->pid == t->tid ? "%s" : "[%s]", t->name ? t->name : "");
     printf("\n");
     if (context) {
