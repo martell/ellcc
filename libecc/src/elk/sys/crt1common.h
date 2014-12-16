@@ -68,7 +68,7 @@ int enter_context(context_t **to);
  * This function is implemented in crt1.S.
  */
 int new_context(context_t **savearea, void (entry)(void), int mode,
-                intptr_t arg, void *stack);
+                intptr_t arg, char *sp, char *tls);
 
 void vector_copy(vaddr_t);
 void cpu_init(void);

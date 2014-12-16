@@ -77,7 +77,7 @@ typedef struct context {
   uint32_t r12;                         // +48 (30)
   uint32_t lr;                          // +52 (34)
   char *sp;                             // +56 (38)
-  uint32_t pad;                         // +60 (3C) Unsed. For alignment.
+  char *tls;                            // +60 (3C)
   uint32_t pc;                          // +64 (40)
   uint32_t cpsr;                        // +68 (44)
 } context_t;

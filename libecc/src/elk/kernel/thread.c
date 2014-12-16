@@ -144,7 +144,6 @@ typedef struct thread
 {
   // The context and tls fields must be first in the thread struct.
   context_t *context;           // The thread's saved context.
-  void *tls;                    // The thread's user space storage.
   struct thread *next;          // Next thread in any list.
   state state;                  // The thread's state.
   unsigned flags;               // Flags associated with this thread.
@@ -293,7 +292,9 @@ static void create_system_threads(void)
     char name[20];
     context_t *ctx = (context_t *)&idle_stack[i][IDLE_STACK];
     idle_thread[i].context = ctx;
-    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0, ctx);
+    --ctx;
+    new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0,
+                (char *)ctx, 0);
     idle_thread[i].priority = PRIORITIES;       // The lowest priority.
     idle_thread[i].state = IDLE;
     alloc_tid(&idle_thread[i]);
@@ -946,9 +947,9 @@ void page_free(paddr_t p, psize_t size)
 static long sys_clone(unsigned long flags, void *stack, int *ptid,
 #if defined(__arm__) || defined(__microblaze__) || defined(__ppc__) || \
     defined(__mips__)
-                      void *regs, int *ctid,
+                      void *tls, int *ctid,
 #elif defined(__i386__) || defined(__x86_64__)
-                      int *ctid, void *regs,
+                      int *ctid, void *tls,
 #else
   #error clone arguments not defined
 #endif
@@ -1034,9 +1035,6 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   }
 #endif
 
-  // Record the TLS.
-  tp->tls = regs;
-
   if (flags & CLONE_CHILD_CLEARTID) {
     VALIDATE_ADDRESS(ctid, sizeof(*ctid), VALID_WR);
     tp->clear_child_tid = ctid;
@@ -1067,7 +1065,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   // Copy registers.
   *--cp = *current->context;
 
-  new_context(&tp->context, entry, INITIAL_PSR, 0, stack);
+  new_context(&tp->context, entry, INITIAL_PSR, 0, stack, tls);
 
   // Schedule the thread.
   schedule(tp);
@@ -1817,7 +1815,7 @@ static int psCommand(int argc, char **argv)
     printf("\n");
     if (context) {
       if (t->state == RUNNING) {
-        printf("No context saved\n");
+        printf("Thread is running\n");
       } else {
         trap_dump("Context", t->context);
       }

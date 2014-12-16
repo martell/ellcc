@@ -265,10 +265,11 @@ argv:
 
 #define RESTORE_CONTEXT()                                               \
         ldr     r0, [sp, #REG_TLS];     /* Get the tls. */              \
-        mrc     p15, 0, r0, c13, c0, 3; /* Set the tls. */              \
+        mcr     p15, 0, r0, c13, c0, 3; /* Set the tls. */              \
         ldr     r0, [sp, #REG_CPSR];    /* Get the old mode. */         \
         and     r0, r0, #PSR_MODE;      /* Get the previous mode. */    \
         cmp     r0, #PSR_KRN_MODE;      /* Were we in krn mode? */      \
+        ldreq   sp, [sp, #REG_SP];      /* Get the saved sp. */         \
         beq     1f;                     /* Jump if so. */               \
         cmp     r0, #PSR_USR_MODE;      /* Were we in usr mode? */      \
         moveq   r0, #PSR_SYS_MODE;      /* If so, use sys mode. */      \
@@ -409,7 +410,8 @@ irq:
  * r1 is the new context's start address
  * r2 is the new context's PSR.
  * r3 is the argument to the context.
- * r4 is the usr stack pointer.
+ * [sp] is the stack pointer.
+ * [sp #4] is the tls.
  */
 ENTRY(new_context)
         ldr     r7, [r0]                // Get the new context pointer.
@@ -417,9 +419,10 @@ ENTRY(new_context)
         str     r1, [r7, #REG_PC]       // Save the new pc, psr, arg, and sp.
         str     r2, [r7, #REG_CPSR]
         str     r3, [r7, #REG_R0]
-        str     r4, [r7, #REG_SP]
-        mov     r4, #0
-        str     r4, [r7, #REG_TLS]
+        ldr     r3, [sp]
+        str     r3, [r7, #REG_SP]
+        ldr     r3, [sp, #4]
+        str     r3, [r7, #REG_TLS]
         str     r7, [r0]                // Update the stack pointer.
 #if CTX_DEBUG
         push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
