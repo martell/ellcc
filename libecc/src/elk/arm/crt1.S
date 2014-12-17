@@ -6,7 +6,7 @@
 #include "syscall.h"
 #include "context.h"
 
-#define CTX_DEBUG 1     // != 0 to debug context switches.
+#define CTX_DEBUG 2     // != 0 to debug context switches.
 #define IN_RAM 1        // != 0 if debugging in RAM.
 
 #if CTX_DEBUG
@@ -517,13 +517,19 @@ ENTRY(switch_context_arg)
         RESTORE_CONTEXT()
 
 /* Enter a context and unlock the queue.
- * void enter_context(context_t **new);
  * On entry:
  * The ready list is locked.
- * r0 points to the next save area.
+ * r0 is an argument to the cleanup function.
+ * r1 is an optional cleanup function to call or NULL.
+ * r2 points to the next save area.
  */
 ENTRY(enter_context)
-        ldr     sp, [r0]                // Get the new stack pointer.
+        mov     sp, r2                  // Get the new stack pointer.
+        cmp     r1, #0                  // Need a cleanup call?
+        blxne   r1                      // Call it if so.
+#if CTX_DEBUG
+        TRAP_DUMP(enter_context)
+#endif
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         RESTORE_CONTEXT()
 

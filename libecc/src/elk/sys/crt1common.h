@@ -52,11 +52,13 @@ int switch_context(context_t **to, context_t **from);
  */
 int switch_context_arg(int arg, context_t **to, context_t **from);
 
-/** Enter a new context.
+/** Enter a new context, possibly calling a cleanup function.
+ * @param arg The argument to the cleanup function.
+ * @param cleanup The cleanup function or NULL.
  * @param to The new context.
  * This function is implemented in crt1.S.
  */
-int enter_context(context_t **to);
+int enter_context(void *arg, void (*cleanup)(void *), context_t *to);
 
 /** Set up a new context.
  * @param savearea Where to put the finished stack pointer.

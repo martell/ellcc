@@ -38,13 +38,18 @@ FEATURE(thread)
 
 #if 0
 #define THRD_ALLOC(ptr) kmem_alloc(sizeof(CONFIG_THRD_SIZE))
-#define THRD_free(ptr) kmem_free(ptr)
+#define thread_free(ptr) kmem_free(ptr)
 #else
 #define THRD_ALLOC(ptr) ({ int s = 0; \
   s = vm_allocate(0, (void **)&(ptr), CONFIG_THRD_SIZE, 1); \
   s ? NULL : (ptr); })
 
-#define THRD_FREE(ptr) vm_free(0, (ptr), CONFIG_THRD_SIZE)
+/** This is the cleanup function called from enter_context in crt1.S
+ */
+static void thread_free(void *ptr)
+{
+  vm_free(0, ptr, CONFIG_THRD_SIZE);
+}
 #endif
 
 #if HAVE_CAPABILITY
@@ -377,7 +382,7 @@ static struct fs main_thread_fs = {
 };
 #endif
 
-#define MAIN_STACK 4096*4                         // The irq "thread" stack size.
+#define MAIN_STACK 4096*4       // The main "thread" stack size.
 static char main_stack[MAIN_STACK] __attribute__((aligned(8)));
 
 // The main thread's initial values.
@@ -642,8 +647,6 @@ static void thread_delete(thread_t *tp)
     pthread_mutex_unlock(&tp->fs->lock);
   }
 #endif
-
-  THRD_FREE(tp);
 }
 
 /** Change the current thread's state to
@@ -658,9 +661,12 @@ static int nolock_change_state(int arg, state new_state)
   }
 
   if (new_state == EXITING) {
-    thread_delete(current);
+    // Remove from the ready list.
+    thread_t *me = current;
+    current = current->next;
     get_running();
-    return enter_context(&current->context);
+    thread_delete(me);
+    return enter_context(me, thread_free, current->context);
   }
 
   thread_t *me = current;
@@ -972,7 +978,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 
   int tid = alloc_tid(tp);
   if (tid < 0) {
-    THRD_FREE(tp);
+    thread_free(tp);
     return -EAGAIN;
   }
 
@@ -986,7 +992,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     if (tp->map == NULL) {
       // The dup failed.
       release_tid(tid);
-      THRD_FREE(tp);
+      thread_free(tp);
       return -ENOMEM;
     }
   }
@@ -1000,7 +1006,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     vm_terminate(tp->map);
 #endif
     release_tid(tid);
-    THRD_FREE(tp);
+    thread_free(tp);
     return s;
   }
 
@@ -1020,7 +1026,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
       vm_terminate(tp->map);
 #endif
       release_tid(tid);
-      THRD_FREE(tp);
+      thread_free(tp);
       return -ENOMEM;
     }
 
