@@ -6,7 +6,55 @@
 #include "syscall.h"
 #include "context.h"
 
-#define CTX_DEBUG 0     // != 0 to debug context switches.
+#define CTX_DEBUG 1     // != 0 to debug context switches.
+#define IN_RAM 1        // != 0 if debugging in RAM.
+
+#if CTX_DEBUG
+        .bss
+        .comm   dump_stk, 4096
+
+#if IN_RAM
+#define TRAP_DUMP(where)                                                \
+        str     sp, saved_sp;                                           \
+        ldr     sp, =dump_stk + 4096;                                   \
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr };                 \
+        ldr     r1, saved_sp;                                           \
+        ldr     r0, =where ## _str;                                     \
+        .data;                                                          \
+where ## _str:;                                                         \
+        .asciz  #where;                                                 \
+        .text;                                                          \
+        bl      CLABEL(trap_dump);                                      \
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr };                 \
+        ldr     sp, saved_sp;
+
+#else
+// Not in RAM, nowhere to put the sp.
+#define TRAP_DUMP(where)                                                \
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr };                 \
+        mov     r1, sp;                                                 \
+        add     r1, #4 * 9;                                             \
+        ldr     r0, =where ## _str;                                     \
+        .data;                                                          \
+where ## _str:;                                                         \
+        .asciz  #where;                                                 \
+        .text;                                                          \
+        bl      CLABEL(trap_dump);                                      \
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr };
+#endif  // IN_RAM
+
+#define TRAP_DUMP_REG(reg, where)                                       \
+        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr };                 \
+        mov     r1, reg;                                                \
+        ldr     r0, =where ## _str;                                     \
+        .data;                                                          \
+where ## _str:;                                                         \
+        .asciz  #where;                                                 \
+        .text;                                                          \
+        bl      CLABEL(trap_dump);                                      \
+        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr };
+#endif // CTX_DEBUG
+
 
 /** Call a function only if it exists.
  * Act as if it returned 0 or NULL if it's not defined.
@@ -29,6 +77,10 @@
         .global _start
 _start:
         b       reset                   // Relative jump.
+#if CTX_DEBUG && IN_RAM
+saved_sp:
+        .word   0
+#endif
 
         .align  5
 vector_start:
@@ -288,12 +340,7 @@ undefined:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_UND_MODE, __undefinedstk_top__)
 #if CTX_DEBUG > 2
-        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
-        mov     r1, sp
-        add     r1, #4 * 9
-        ldr     r0, =undefined_str
-        bl      CLABEL(trap_dump)
-        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        TRAP_DUMP(undefined);
 #endif
         cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_UNDEFINED
@@ -310,12 +357,7 @@ prefetch:
         sub     lr, lr, #8              // Adjust the lr.
         SAVE_CONTEXT(PSR_ABT_MODE, __abortstk_top__)
 #if CTX_DEBUG > 2
-        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
-        mov     r1, sp
-        add     r1, #4 * 9
-        ldr     r0, =prefetch_str
-        bl      CLABEL(trap_dump)
-        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        TRAP_DUMP(prefetch)
 #endif
         // Remember to preserve r8 to save the context pointer.
         cpsie   i                       // Enable IRQ.
@@ -333,12 +375,7 @@ abort:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_ABT_MODE, __abortstk_top__)
 #if CTX_DEBUG > 2
-        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
-        mov     r1, sp
-        add     r1, #4 * 9
-        ldr     r0, =abort_str
-        bl      CLABEL(trap_dump)
-        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        TRAP_DUMP(abort)
 #endif
         // Remember to preserve r8 to save the context pointer.
         cpsie   i                       // Enable IRQ.
@@ -373,12 +410,7 @@ irq:
         mov     r1, #15                 // Highest level.
         str     r1, [r9]                // Set the new level.
 #if CTX_DEBUG > 3
-        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
-        mov     r1, sp
-        add     r1, #4 * 9
-        ldr     r0, =irq_str
-        bl      CLABEL(trap_dump)
-        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        TRAP_DUMP(irq)
 #endif
         weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
         // RICH: weak_call(CLABEL(lock_ready))   // Lock the ready list.
@@ -425,11 +457,7 @@ ENTRY(new_context)
         str     r3, [r7, #REG_TLS]
         str     r7, [r0]                // Update the stack pointer.
 #if CTX_DEBUG
-        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
-        mov     r1, r7
-        ldr     r0, =new_context_str
-        bl      CLABEL(trap_dump)
-        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        TRAP_DUMP_REG(r7, new_context)
 #endif
         bx      lr
 
@@ -451,21 +479,11 @@ ENTRY(switch_context)
         str     r2, [sp, #REG_TLS]      // Save the TLS.
         str     sp, [r1]                // Save the current frame.
 #if CTX_DEBUG
-        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
-        mov     r1, sp
-        add     r1, #4 * 9
-        ldr     r0, =switch_context_str
-        bl      CLABEL(trap_dump)
-        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        TRAP_DUMP(switch_context_out)
 #endif
         ldr     sp, [r0]                // Get the new context pointer.
 #if CTX_DEBUG
-        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
-        mov     r1, sp
-        add     r1, #4 * 9
-        ldr     r0, =switch_context_str
-        bl      CLABEL(trap_dump)
-        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        TRAP_DUMP(switch_context_in)
 #endif
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         RESTORE_CONTEXT()
@@ -489,21 +507,11 @@ ENTRY(switch_context_arg)
         str     r3, [sp, #REG_TLS]      // Save the TLS.
         str     sp, [r2]                // Save the current frame.
 #if CTX_DEBUG
-        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
-        mov     r1, sp
-        add     r1, #4 * 9
-        ldr     r0, =switch_context_arg_str
-        bl      CLABEL(trap_dump)
-        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        TRAP_DUMP(switch_context_arg_out)
 #endif
         ldr     sp, [r1]                // Get the new context pointer.
 #if CTX_DEBUG
-        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
-        mov     r1, sp
-        add     r1, #4 * 9
-        ldr     r0, =switch_context_arg_str
-        bl      CLABEL(trap_dump)
-        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        TRAP_DUMP(switch_context_arg_in)
 #endif
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         RESTORE_CONTEXT()
@@ -525,12 +533,7 @@ ENTRY(enter_context)
 swi:
         SAVE_CONTEXT(PSR_SVC_MODE, __svcstk_top__)
 #if CTX_DEBUG > 1
-        push    { r0, r1, r2, r3, r4, r5, r6, r7, lr }
-        mov     r1, sp
-        add     r1, #4 * 9
-        ldr     r0, =swi_str
-        bl      CLABEL(trap_dump)
-        pop     { r0, r1, r2, r3, r4, r5, r6, r7, lr }
+        TRAP_DUMP(swi)
 #endif
         cpsie   i                       // Enable IRQ.
         ldr     r10, [sp, #REG_PC]      // Get the return address for clone().
@@ -784,24 +787,6 @@ unhandled_string:
         .asciz  "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
 name:
         .asciz  "kernel"
-#if CTX_DEBUG
-undefined_str:
-        .asciz  "undefined"
-abort_str:
-        .asciz  "abort"
-prefetch_str:
-        .asciz  "prefetch"
-irq_str:
-        .asciz  "irq"
-swi_str:
-        .asciz  "swi"
-new_context_str:
-        .asciz  "new_context"
-switch_context_str:
-        .asciz   "switch_context"
-switch_context_arg_str:
-        .asciz   "switch_context_arg"
-#endif
 
         .data
         .global __heap_end__
