@@ -8,7 +8,7 @@
 static void *thread(void *arg)
 {
   printf ("thread started\n");
-  sleep(5);
+  sleep(1);
   return (void*)0xdeadbeef;
 }
 
