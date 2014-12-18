@@ -94,7 +94,7 @@ __stubbegin.o: __stubbegin.S
 	$(OUTCC)$(CC) -target $(TUPLE) -c __stubbegin.S
 
 __stubend.o: __stubend.c
-	$(OUTCC)$(CC) -target $(TUPLE) -I$(INCDIR)/sys -I$(INCDIR)/include -c __stubend.c
+	$(OUTCC)$(CC) -g -target $(TUPLE) -I$(INCDIR)/sys -I$(INCDIR)/include -c __stubend.c
 
 $(PROGNAME): $(OBJS) __stubbegin.o __stubend.o
 	$(OUTCC)$(CC) -target $(LTUPLE) -o $(PROGNAME) -r __stubbegin.o $(OBJS) __stubend.o -nostdlib
