@@ -221,9 +221,7 @@ int run_command(int argc, char **argv)
           .argv = argv
         };
         pthread_t id;
-        pthread_attr_t attr;
-        s = pthread_attr_init(&attr);
-        s = pthread_create(&id, &attr, launch, &cmd);
+        s = pthread_create(&id, NULL, launch, &cmd);
         if (s != 0) {
           printf("pthread_create: %s\n", strerror(s));
         } else {

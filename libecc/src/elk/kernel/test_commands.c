@@ -116,27 +116,7 @@ static int thread3Command(int argc, char **argv)
     return COMMAND_OK;
   }
 
-  pthread_attr_t attr;
-  int s = pthread_attr_init(&attr);
-  if (s != 0) {
-    printf("pthread_attr_init: %s\n", strerror(s));
-    return COMMAND_ERROR;
-  }
-
-  void *sp;
-  s = vm_allocate(getpid(), &sp, 4096, 1);
-  if (s != 0) {
-    printf("vm_allocate failed %s\n", strerror(-s));
-    return COMMAND_ERROR;
-  }
-
-  s = pthread_attr_setstack(&attr, sp, 4096);
-  if (s != 0) {
-    printf("pthread_attr_setstack %s\n", strerror(s));
-    return COMMAND_ERROR;
-  }
-
-  s = pthread_create(&id3, &attr, &thread3, NULL);
+  int s = pthread_create(&id3, NULL, &thread3, NULL);
   if (s != 0) {
     printf("pthread_create: %s\n", strerror(s));
     return COMMAND_ERROR;
