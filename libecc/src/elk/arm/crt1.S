@@ -785,12 +785,6 @@ ENTRY(splon)
         msr     cpsr_c, r0
         mov     pc, lr
 
-abort_string:
-        .asciz  "in kernal abort trap\n"
-prefetch_string:
-        .asciz  "in kernal prefetch trap\n"
-undefined_string:
-        .asciz  "in kernal undefined trap\n"
 unhandled_string:
         .asciz  "unhandled system call (%d) args: %d, %d, %d, %d, %d, %d\n"
 name:

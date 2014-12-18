@@ -15,6 +15,10 @@ To build this example, typical commands would be:
     (and then in another window)
     make tui  # "make gdb" starts gdb in commmand mode.
 
+About the only thing you can do with this example is to single step through
+the startup code or set a breakpoint at a function (e.g. main()) and hit
+"c" to continue to the breakpoint.
+
 Currently supported configuration(s):
 Linux:
   armeb-linux-engeabi armeb-linux-engeabihf arm-linux-engeabi

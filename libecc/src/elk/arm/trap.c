@@ -45,6 +45,14 @@
 FEATURE(trap)
 
 #define DEBUG
+
+used static int dummy(void)
+{
+  return 0;
+}
+
+weak_alias(dummy, gettid);
+
 #ifdef DEBUG
 /*
  * Trap name

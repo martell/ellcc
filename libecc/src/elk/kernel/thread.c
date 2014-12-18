@@ -1947,7 +1947,7 @@ static void init(void)
 #endif
 }
 
-/** An optiona system initialization function.
+/** An optional system initialization function.
  * Called from __elk_start() after C library initialization.
  */
 static void c_init(void)

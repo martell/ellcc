@@ -49,8 +49,8 @@
   EXTERN(__elk_time) /* Time related system calls. */
 #endif
 
-#ifdef SIMPLE_MALLOC
-  EXTERN(__elk_simple_memman) /* Simple malloc() memory management. */
+#ifdef SIMPLE_MEMMAN
+  EXTERN(__elk_simple_memman) /* Simple malloc()/brk() memory management. */
 #endif
 
 #ifdef MMAP
