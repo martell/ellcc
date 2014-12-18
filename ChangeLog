@@ -1,5 +1,6 @@
 current SVN:
 
+* Updated ELK context switching to not rely on usr stack.
 * Update to LLVM r224322.
 
 version 0.1.5:

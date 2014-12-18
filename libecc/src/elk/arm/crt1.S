@@ -6,7 +6,7 @@
 #include "syscall.h"
 #include "context.h"
 
-#define CTX_DEBUG 2     // != 0 to debug context switches.
+#define CTX_DEBUG 0     // != 0 to debug context switches.
 #define IN_RAM 1        // != 0 if debugging in RAM.
 
 #if CTX_DEBUG
@@ -296,12 +296,12 @@ argv:
         cmp     r1, #PSR_KRN_MODE;      /* Were we in krn mode? */      \
         addeq   r1, sp, #8;             /* Point to the context. */     \
         beq     1f;                     /* Jump if so. */               \
-        cmp     r0, #PSR_USR_MODE;      /* Were we in usr mode? */      \
-        moveq   r0, #PSR_SYS_MODE;      /* If so, use sys mode. */      \
-        orr     r0, #PSR_INT_MASK;      /* Set mode and disable ints. */\
-        msr     cpsr_c, r0;             /* Switch to the previous. */   \
+        cmp     r1, #PSR_USR_MODE;      /* Were we in usr mode? */      \
+        moveq   r1, #PSR_SYS_MODE;      /* If so, use sys mode. */      \
+        orr     r1, #PSR_INT_MASK;      /* Set mode and disable ints. */\
+        msr     cpsr_c, r1;             /* Switch to the previous. */   \
         mov     r1, sp;                 /* Copy the old sp. */          \
-        mov     r0, fp;                 /* Copy the old fp. */          \
+        mov     r0, lr;                 /* Copy the old lr. */          \
         cpsid   i, #PSR_KRN_MODE;       /* Switch back. */              \
         mov     lr, r0;                 /* Update the lr. */            \
 1:      str     r1, [sp, #REG_SP + 8];  /* Save the old sp. */          \
@@ -327,8 +327,10 @@ argv:
         moveq   r0, #PSR_SYS_MODE;      /* If so, use sys mode. */      \
         orr     r0, #PSR_INT_MASK;      /* Set mode and disable ints. */\
         ldr     r1, [sp, #REG_SP];      /* Get the saved sp. */         \
+        ldr     r2, [sp, #REG_LR];      /* Get the saved lr. */         \
         msr     cpsr_c, r0;             /* Switch to the previous. */   \
-        mov     r1, sp;                 /* Copy the old sp. */          \
+        mov     sp, r1;                 /* Copy the old sp. */          \
+        mov     lr, r2;                 /* Copy the old lr. */          \
         cpsid   i, #PSR_KRN_MODE;       /* Switch back. */              \
 1:      pop     { r0-r12, lr };         /* Restore registers. */        \
         add     sp, #4 * 2;             /* Remove sp and tls. */        \
