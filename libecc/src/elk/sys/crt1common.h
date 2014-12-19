@@ -25,6 +25,8 @@
 #define cache_init __elk_cache_init
 #define sploff __elk_sploff
 #define splon __elk_splon
+#define to_user __elk_to_user
+#define suspend __elk_suspend
 #endif
 
 #define SYSCALL(name) set_syscall(SYS_ ## name, sys_ ## name)
@@ -81,6 +83,14 @@ void copy_fault(void);
 void cache_init(void);
 void sploff(void);
 void splon(void);
+
+/** Which to user mode from kernel mode.
+ */
+
+void to_user(void);
+/** Sleep until  and interrupt happens.
+ */
+void suspend(void);
 
 /** The following functions are used by crt1.S.
  */

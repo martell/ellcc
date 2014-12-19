@@ -280,8 +280,8 @@ static void release_tid(int tid)
 static void idle(void)
 {
   for ( ;; ) {
-    // Do stuff, but nothing that will block.
-    // ARM should do WFI here.
+    // Wait for the next intterupt.
+    suspend();
   }
 }
 
@@ -683,8 +683,6 @@ static int sys_sched_yield(void)
 /* Set pointer to thread ID.
  * @param tidptr Where to put the thread ID.
  * @return The tid of the calling process.
- *
- * Stub for now.
  */
 static long sys_set_tid_address(int *tidptr)
 {

@@ -237,9 +237,17 @@ done:
         wfi
         b       done
 
-// RICH:
+/** All threads are started in the kernel in sys mode.
+ * This call puts a sys mode thread into usr mode.
+ */
 ENTRY(to_user)
-        msr     cpsr_c, #PSR_USR_MODE   // |PSR_IRQ_DIS|PSR_FIQ_DIS
+        msr     cpsr_c, #PSR_USR_MODE
+        mov     pc, lr
+
+/** Wait for an intterupt to occur.
+ */
+ENTRY(suspend)
+        wfi
         mov     pc, lr
 
 /*

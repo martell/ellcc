@@ -55,7 +55,7 @@ static int thread_create(const char *name, pthread_t *id,
     return COMMAND_ERROR;
   }
 
-  s = pthread_create(id, NULL, start, arg);
+  s = pthread_create(id, &attr, start, arg);
   if (s != 0)
     printf("pthread_create: %s\n", strerror(s));
   return s;
