@@ -100,7 +100,7 @@ else
   LD=$(CC)
 endif
 
-$(PROG): elkconfig.ld $(NEEDCLEAN) $(OBJS)
+$(PROG):  $(NEEDCLEAN) elkconfig.ld $(OBJS)
 	$(OUTL)$(LD) $(LDFLAGS) -o $(PROG) $(OBJS)
 
 .SUFFIXES: .LD .ld
