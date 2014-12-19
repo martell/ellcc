@@ -124,25 +124,21 @@ typedef struct fs
 
 // Thread states.
 typedef enum state {
-  IRQ,                          // This is an IRQ "thread".
   IDLE,                         // This is an idle thread.
   READY,                        // The thread is ready to run.
   RUNNING,                      // The thread is running.
   EXITING,                      // The thread is exiting.
   SLEEPING,                     // The thread is sleeping.
-  MSGWAIT,                      // The thread is waiting for a message.
 
   LASTSTATE                     // To get the number of states.
 } state;
 
 static const char *state_names[LASTSTATE] =
 {
-  [IRQ] = "IRQ",
   [IDLE] = "IDLE",
   [READY] = "READY",
   [RUNNING] = "RUNNING",
   [SLEEPING] = "SLEEPING",
-  [MSGWAIT] = "MSGWAIT",
 };
 
 typedef struct thread
@@ -651,9 +647,8 @@ static void thread_delete(thread_t *tp)
 
 /** Change the current thread's state to
  * something besides READY or RUNNING.
- * The ready list must be locked on entry.
  */
-static int nolock_change_state(int arg, state new_state)
+static int change_state(int arg, state new_state)
 {
   if (current->state == IDLE) {
     // Idle threads can't change state.
@@ -669,19 +664,11 @@ static int nolock_change_state(int arg, state new_state)
     return enter_context(me, thread_free, current->context);
   }
 
+  lock_aquire(&ready_lock);
   thread_t *me = current;
   me->state = new_state;
   get_running();
   return switch_context_arg(arg, &current->context, &me->context);
-}
-
-/** Change the current thread's state to
- * something besides READY or RUNNING.
- */
-static int change_state(int arg, state new_state)
-{
-  lock_aquire(&ready_lock);
-  return nolock_change_state(arg, new_state);
 }
 
 /* Give up the remaining time slice.
