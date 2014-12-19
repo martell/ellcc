@@ -71,7 +71,7 @@ typedef struct
 
 #define LOCK_INITIALIZER { 0, 0 }
 
-static inline void lock_aquire(lock_t *lock)
+static inline void lock_acquire(lock_t *lock)
 {
 // RICH:
 #if !defined(__microblaze__)
@@ -454,7 +454,7 @@ vm_map_t getcurmap()
  */
 void lock_ready(void)
 {
-    lock_aquire(&ready_lock);
+    lock_acquire(&ready_lock);
 }
 
 /** Unlock the ready queue.
@@ -470,7 +470,7 @@ void unlock_ready(void)
  */
 void *enter_irq(void)
 {
-  // RICH: lock_aquire(&ready_lock);
+  // RICH: lock_acquire(&ready_lock);
   long state = irq_state++;
   if (state) return NULL;               // Already in irq state.
   return current;                       // To save context.
@@ -483,7 +483,7 @@ void *leave_irq(void)
 {
   long state = --irq_state;
   if (state) return NULL;               // Still in irq state.
-  lock_aquire(&ready_lock);
+  lock_acquire(&ready_lock);
   return current;                       // Next context.
 }
 
@@ -520,7 +520,7 @@ static inline void insert_thread(thread_t *tp)
  */
 static void slice_callback(void *arg1, void *arg2)
 {
-  lock_aquire(&ready_lock);
+  lock_acquire(&ready_lock);
   if ((thread_t *)arg1 == current) {
     schedule_nolock((thread_t *)arg1);
     return;
@@ -529,7 +529,7 @@ static void slice_callback(void *arg1, void *arg2)
 }
 
 /** Make the head of the ready list the running thread.
- * The ready lock must be aquired before this call.
+ * The ready lock must be acquired before this call.
  */
 static void get_running(void)
 {
@@ -577,7 +577,7 @@ static void get_running(void)
 }
 
 /* Schedule a list of threads.
- * The ready lock has been aquired.
+ * The ready lock has been acquired.
  */
 static void schedule_nolock(thread_t *list)
 {
@@ -617,7 +617,7 @@ static void schedule_nolock(thread_t *list)
  */
 static void schedule(thread_t *list)
 {
-  lock_aquire(&ready_lock);
+  lock_acquire(&ready_lock);
   schedule_nolock(list);
 }
 
@@ -656,7 +656,7 @@ static int change_state(int arg, state new_state)
     return -EINVAL;
   }
 
-  lock_aquire(&ready_lock);
+  lock_acquire(&ready_lock);
   if (new_state == EXITING) {
     // Remove from the ready list.
     thread_t *me = current;
@@ -716,7 +716,7 @@ void *timer_wake_at(long long when,
 {
   struct timeout *tmo = NULL;
 
-  lock_aquire(&timeout_lock);
+  lock_acquire(&timeout_lock);
   if (free_timeouts) {
     tmo = free_timeouts;
     free_timeouts = tmo->next;
@@ -741,7 +741,7 @@ void *timer_wake_at(long long when,
     tmo->waiter = NULL;
   }
 
-  lock_aquire(&timeout_lock);
+  lock_acquire(&timeout_lock);
   // Search the list.
   if (timeouts == NULL) {
     timeouts = tmo;
@@ -800,7 +800,7 @@ static int timer_cancel_wake_at(void *id)
 {
   if (id == NULL) return 0;           // Nothing pending.
   int s = 0;
-  lock_aquire(&timeout_lock);
+  lock_acquire(&timeout_lock);
   struct timeout *p, *q;
   for (p = timeouts, q = NULL; p; q = p, p = p->next) {
     if (p == id) {
@@ -823,7 +823,7 @@ static int timer_cancel_wake_at(void *id)
       schedule(p->waiter);
     }
 
-    lock_aquire(&timeout_lock);
+    lock_acquire(&timeout_lock);
     timeout_free(p);
     lock_release(&timeout_lock);
   } else {
@@ -846,7 +846,7 @@ static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
                                    int retval)
 {
   int s = 0;
-  lock_aquire(&timeout_lock);
+  lock_acquire(&timeout_lock);
   struct timeout *p, *q;
   for (p = timeouts, q = NULL; p; q = p, p = p->next) {
     if (p->arg1 == arg1 && p->arg2 == arg2) {
@@ -866,7 +866,7 @@ static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
         ++s;
       }
 
-      lock_aquire(&timeout_lock);
+      lock_acquire(&timeout_lock);
       timeout_free(p);
       lock_release(&timeout_lock);
       if (s >= count) {
@@ -884,7 +884,7 @@ static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
  */
 long long timer_expired(long long when)
 {
-  lock_aquire(&timeout_lock);
+  lock_acquire(&timeout_lock);
   thread_t *ready = NULL;
   thread_t *next = NULL;
   while (timeouts && timeouts->when <= when) {
@@ -910,7 +910,7 @@ long long timer_expired(long long when)
       void *arg2 = tmo->arg2;
       lock_release(&timeout_lock);
       callback(arg1, arg2);
-      lock_aquire(&timeout_lock);
+      lock_acquire(&timeout_lock);
     }
 
     timeout_free(tmo);
@@ -1211,7 +1211,7 @@ static int sys_tkill(int tid, int sig)
     return -ESRCH;
   }
 
-  lock_aquire(&ready_lock);
+  lock_acquire(&ready_lock);
   if (tp == current) {
     // The currently running thread is being signaled.
   } else if (tp->state == READY) {
@@ -1862,7 +1862,7 @@ static int ssCommand(int argc, char **argv)
     return COMMAND_OK;
   }
 
-  lock_aquire(&timeout_lock);
+  lock_acquire(&timeout_lock);
   int i = 0;
   for (struct timeout *tmo = timeouts; tmo; tmo = tmo->next) {
     printf("%d %lld", i, tmo->when);
