@@ -432,6 +432,7 @@ irq:
         weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
         cmp     r0, #0                  // End of interrupts?
         ldrne   sp, [r0]                // Get the new sp.
+        weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
         RESTORE_CONTEXT()
 
 /* Set up a context for execution.

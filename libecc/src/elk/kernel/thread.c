@@ -75,7 +75,7 @@ static inline void lock_aquire(lock_t *lock)
 {
 // RICH:
 #if !defined(__microblaze__)
-  while(!__atomic_test_and_set(&lock->lock, __ATOMIC_SEQ_CST))
+  while(__atomic_test_and_set(&lock->lock, __ATOMIC_SEQ_CST))
       continue;
 #endif
   lock->level = splhigh();
@@ -222,7 +222,7 @@ static void tid_initialize(void)
     tids[i++] = tid;
   }
 
-  tid_in = &tids[THREADS];
+  tid_in = &tids[i];
   tid_out = &tids[0];
 }
 
@@ -236,10 +236,12 @@ static int alloc_tid(thread_t *tp)
     pthread_mutex_unlock(&tid_mutex);
     return -EAGAIN;
   }
+
   tp->tid = *tid_out++;
   if (tid_out == &tids[THREADS]) {
     tid_out = tids;
   }
+
   pthread_mutex_unlock(&tid_mutex);
   threads[tp->tid] = tp;
 
@@ -258,9 +260,8 @@ static void release_tid(int tid)
   pthread_mutex_lock(&tid_mutex);
   if (tid_in == &tids[THREADS]) {
     tid_in = tids;
-  } else {
-    ++tid_in;
   }
+
   if (tid_in == tid_out) {
     // The tid pool is full.
     // This should never happen.
@@ -268,7 +269,7 @@ static void release_tid(int tid)
     return;
   }
 
-  *tid_in = tid;
+  *tid_in++ = tid;
   // Clear the thread map entry.
   threads[tid] = NULL;
   pthread_mutex_unlock(&tid_mutex);
@@ -655,6 +656,7 @@ static int change_state(int arg, state new_state)
     return -EINVAL;
   }
 
+  lock_aquire(&ready_lock);
   if (new_state == EXITING) {
     // Remove from the ready list.
     thread_t *me = current;
@@ -664,7 +666,6 @@ static int change_state(int arg, state new_state)
     return enter_context(me, thread_free, current->context);
   }
 
-  lock_aquire(&ready_lock);
   thread_t *me = current;
   me->state = new_state;
   get_running();
@@ -705,7 +706,8 @@ struct timeout {
 };
 
 static lock_t timeout_lock;
-static struct timeout *timeouts;
+static struct timeout *timeouts;        // Active timeouts.
+static struct timeout *free_timeouts;   // Freed timeouts.
 
 /** Make an entry in the sleeping list and sleep
  * or schedule a callback.
@@ -714,9 +716,20 @@ static struct timeout *timeouts;
 void *timer_wake_at(long long when,
                     TimerCallback callback, void *arg1, void *arg2, int retval)
 {
-  struct timeout *tmo = kmem_alloc(sizeof(struct timeout));
+  struct timeout *tmo = NULL;
+
+  lock_aquire(&timeout_lock);
+  if (free_timeouts) {
+    tmo = free_timeouts;
+    free_timeouts = tmo->next;
+  }
+  lock_release(&timeout_lock);
+
   if (tmo == NULL) {
-    return NULL;
+    tmo = kmem_alloc(sizeof(struct timeout));
+    if (tmo == NULL) {
+      return NULL;
+    }
   }
   tmo->next = NULL;
   tmo->when = when;
@@ -770,6 +783,14 @@ void *timer_wake_at(long long when,
   return tmo;         // Return the timeout identifier (opaque).
 }
 
+/** Timeouts must be locked for this call.
+ */
+static void timeout_free(struct timeout *tp)
+{
+  tp->next = free_timeouts;
+  free_timeouts = tp;
+}
+
 /** Cancel a previously scheduled wakeup.
  * This function will cancel a previously scheduled wakeup.
  * If the wakeup caused the caller to sleep, it will be rescheduled.
@@ -802,7 +823,7 @@ static int timer_cancel_wake_at(void *id)
       schedule(p->waiter);
     }
 
-    kmem_free(p);
+    timeout_free(p);
   } else {
     s = -1;                 // Not found.
   }
@@ -842,7 +863,7 @@ static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
         ++s;
       }
 
-      kmem_free(p);
+      timeout_free(p);
       if (s >= count) {
         break;
       }
@@ -882,7 +903,7 @@ long long timer_expired(long long when)
       tmo->callback(tmo->arg1, tmo->arg2);
     }
 
-    kmem_free(tmo);
+    timeout_free(tmo);
   }
 
   if (timeouts == NULL) {
@@ -1062,7 +1083,8 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 
   // Schedule the thread.
   schedule(tp);
-  return tp->tid;
+  // Do not access *tp here: The thread may have already exited.
+  return tid;
 }
 
 #define FUTEX_MAGIC 0xbeadcafe
