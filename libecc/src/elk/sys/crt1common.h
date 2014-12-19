@@ -96,7 +96,6 @@ void suspend(void);
  */
 #ifdef ELK_NAMESPACE
 #define enter_irq __elk_enter_irq
-#define lock_ready __elk_lock_ready
 #define unlock_ready __elk_unlock_ready
 #define leave_irq __elk_leave_irq
 #define thread_self __elk_thread_self
@@ -105,10 +104,6 @@ void suspend(void);
 /** Enter the IRQ state.
  */
 void *enter_irq(void);
-
-/** Lock the ready queue.
- */
-void lock_ready(void);
 
 /** Unlock the ready queue.
  */

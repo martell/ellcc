@@ -449,13 +449,14 @@ vm_map_t getcurmap()
 }
 #endif
 
+#if RICH
 /** Lock the ready queue.
- * This function is called from crt1.S.
  */
-void lock_ready(void)
+static inline void lock_ready(void)
 {
     lock_acquire(&ready_lock);
 }
+#endif
 
 /** Unlock the ready queue.
  * This function is called from crt1.S.
