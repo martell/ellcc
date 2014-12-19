@@ -280,7 +280,7 @@ static void release_tid(int tid)
 static void idle(void)
 {
   for ( ;; ) {
-    // Wait for the next intterupt.
+    // Wait for the next interrupt.
     suspend();
   }
 }
@@ -762,9 +762,10 @@ void *timer_wake_at(long long when,
     }
   }
 
-  // Set up the timeout.
-  timer_start(timeouts->when);
+  when = timeouts->when;
   lock_release(&timeout_lock);
+  // Set up the timeout.
+  timer_start(when);
   if (tmo->callback == NULL) {
     // Put myself to sleep.
     int s = change_state(retval, SLEEPING);
@@ -904,7 +905,12 @@ long long timer_expired(long long when)
 
     if (tmo->callback) {
       // Call the callback function.
-      tmo->callback(tmo->arg1, tmo->arg2);
+      TimerCallback callback = tmo->callback;
+      void *arg1 = tmo->arg1;
+      void *arg2 = tmo->arg2;
+      lock_release(&timeout_lock);
+      callback(arg1, arg2);
+      lock_aquire(&timeout_lock);
     }
 
     timeout_free(tmo);
