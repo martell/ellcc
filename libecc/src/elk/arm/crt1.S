@@ -415,7 +415,6 @@ irq:
         TRAP_DUMP(irq)
 #endif
         weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
-        // RICH: weak_call(CLABEL(lock_ready))   // Lock the ready list.
         weak_call(CLABEL(identify_irq)) // Clear interrupt and get irq
                                         // handler in r0.
         cmp     r0, #0
@@ -428,12 +427,13 @@ irq:
         blxne   r1                      // Call it.
 1:
         cpsid   i                       // Disable IRQ.
-        str     r10, [r9]               // Restore the old level.
         weak_call(CLABEL(leave_irq))    // Leave the IRQ state.
         cmp     r0, #0                  // End of interrupts?
-        ldrne   sp, [r0]                // Get the new sp.
+        beq     1f
+        ldr     sp, [r0]                // Get the new sp.
+        str     r10, [r9]               // Restore the old level.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-        RESTORE_CONTEXT()
+1:      RESTORE_CONTEXT()
 
 /* Set up a context for execution.
  * int new_context(context_t **savearea,

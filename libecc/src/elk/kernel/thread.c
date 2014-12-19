@@ -481,9 +481,9 @@ void *enter_irq(void)
  */
 void *leave_irq(void)
 {
-  // RICH: lock_aquire(&ready_lock);
   long state = --irq_state;
   if (state) return NULL;               // Still in irq state.
+  lock_aquire(&ready_lock);
   return current;                       // Next context.
 }
 
