@@ -816,6 +816,7 @@ static int timer_cancel_wake_at(void *id)
     } else {
       timeouts = p->next;
     }
+    lock_release(&timeout_lock);
 
     if (p->waiter) {
       // Wake up the sleeping thread.
@@ -823,12 +824,14 @@ static int timer_cancel_wake_at(void *id)
       schedule(p->waiter);
     }
 
+    lock_aquire(&timeout_lock);
     timeout_free(p);
+    lock_release(&timeout_lock);
   } else {
+    lock_release(&timeout_lock);
     s = -1;                 // Not found.
   }
 
-  lock_release(&timeout_lock);
   return s;
 }
 
@@ -854,6 +857,7 @@ static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
       } else {
         timeouts = p->next;
       }
+      lock_release(&timeout_lock);
 
       if (p->waiter) {
         // Wake up the sleeping thread.
@@ -863,7 +867,9 @@ static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
         ++s;
       }
 
+      lock_aquire(&timeout_lock);
       timeout_free(p);
+      lock_release(&timeout_lock);
       if (s >= count) {
         break;
       }
