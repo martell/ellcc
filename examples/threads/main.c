@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdlib.h>
 
 /** A pthread thread.
  */
@@ -22,7 +23,9 @@ int main()
     s = pthread_create(&id, NULL, &thread, NULL);
     if (s != 0) {
       printf("pthread_create: %s\n", strerror(s));
+      exit(1);
     }
+
     ++i;
 
     void *retval;

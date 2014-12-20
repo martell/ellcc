@@ -94,13 +94,10 @@ static int thread2Command(int argc, char **argv)
 
 /** A pthread thread.
  */
-static int counter;
 static void *thread3(void *arg)
 {
-  // printf ("thread3 started\n");
+  printf ("thread3 started\n");
   for ( ;; ) {
-    // Very busy.
-    ++counter;
     sleep(10);
     return (void*)0xdeadbeef;
   }
@@ -122,17 +119,6 @@ static int thread3Command(int argc, char **argv)
     return COMMAND_ERROR;
   }
 
-  return COMMAND_OK;
-}
-
-static int test3Command(int argc, char **argv)
-{
-  if (argc <= 0) {
-    printf("test the thread3 test case.\n");
-    return COMMAND_OK;
-  }
-
-  printf("counter = %d\n", counter);
   return COMMAND_OK;
 }
 
@@ -302,7 +288,6 @@ ELK_CONSTRUCTOR()
   command_insert("yield", yieldCommand);
   command_insert("thread2", thread2Command);
   command_insert("thread3", thread3Command);
-  command_insert("test3", test3Command);
   command_insert("cancel3", cancel3Command);
   command_insert("join3", join3Command);
   command_insert("thread4", thread4Command);

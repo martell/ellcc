@@ -816,9 +816,11 @@ static struct seg *seg_merge(struct seg *head, vaddr_t addr, size_t size)
       for (struct seg *sp = seg->next; sp != next; ) {
         seg->size += sp->size;
         struct seg *next = sp->next;    // Save the next pointer.
-        if (seg->size < size) {
+        if (seg->size <= size) {
           // This segment is in the middle.
-          seg_free(head, sp);
+          kmem_free(sp);
+          seg->next = next;
+          next = sp->next;
         }
         sp = next;
       }
