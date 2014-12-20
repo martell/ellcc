@@ -6,14 +6,34 @@
 #include "syscall.h"
 #include "context.h"
 
-#define CTX_DEBUG 0     // != 0 to debug context switches.
-#define IN_RAM 1        // != 0 if debugging in RAM.
+/* Context dump flags.
+ */
+#define CTX_UNDEFINED                   0x00000001
+#define CTX_PREFETCH                    0x00000002
+#define CTX_ABORT                       0x00000004
+#define CTX_IRQ_ENTRY                   0x00000008
+#define CTX_IRQ_EXIT                    0x00000010
+#define CTX_NEW_CONTEXT                 0x00000020
+#define CTX_SWITCH_CONTEXT_OUT          0x00000040
+#define CTX_SWITCH_CONTEXT_IN           0x00000080
+#define CTX_SWITCH_CONTEXT_ARG_OUT      0x00000100
+#define CTX_SWITCH_CONTEXT_ARG_IN       0x00000200
+#define CTX_SWI_ENTRY                   0x00000400
+#define CTX_SWI_EXIT                    0x00000800
+#define CTX_ENTER_CONTEXT               0x00001000
+
+// Common debug sets.
+#define CTX_IRQ         (CTX_IRQ_ENTRY|CTX_IRQ_EXIT)
+#define CTX_SWI         (CTX_SWI_ENTRY|CTX_SWI_EXIT)
+
+#define CTX_DEBUG 0 // CTX_IRQ|CTX_SWI
+#define IN_RAM 1        // != 0 if debugging in RAM (better handling of bad sp).
 
 #if CTX_DEBUG
+#if IN_RAM
         .bss
         .comm   dump_stk, 4096
 
-#if IN_RAM
 #define TRAP_DUMP(where)                                                \
         str     sp, saved_sp;                                           \
         ldr     sp, =dump_stk + 4096;                                   \
@@ -349,10 +369,10 @@ argv:
 undefined:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_UND_MODE, __undefinedstk_top__)
-#if CTX_DEBUG > 2
+#if CTX_DEBUG & CTX_UNDEFINED
         TRAP_DUMP(undefined);
 #endif
-        cpsie   i                       // Enable IRQ.
+        // RICH: cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_UNDEFINED
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -366,11 +386,11 @@ trapund:
 prefetch:
         sub     lr, lr, #8              // Adjust the lr.
         SAVE_CONTEXT(PSR_ABT_MODE, __abortstk_top__)
-#if CTX_DEBUG > 2
+#if CTX_DEBUG & CTX_PREFETCH
         TRAP_DUMP(prefetch)
 #endif
         // Remember to preserve r8 to save the context pointer.
-        cpsie   i                       // Enable IRQ.
+        // RICH: cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_PREFETCH_ABORT
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -384,11 +404,11 @@ trappre:
 abort:
         sub     lr, lr, #4              // Adjust return address.
         SAVE_CONTEXT(PSR_ABT_MODE, __abortstk_top__)
-#if CTX_DEBUG > 2
+#if CTX_DEBUG & CTX_ABORT
         TRAP_DUMP(abort)
 #endif
         // Remember to preserve r8 to save the context pointer.
-        cpsie   i                       // Enable IRQ.
+        // RICH: cpsie   i                       // Enable IRQ.
         mov     r0, #TRAP_DATA_ABORT
         mov     r1, sp
         weak_call(CLABEL(trap_handler))
@@ -419,8 +439,8 @@ irq:
         ldr     r10, [r9]               // Save the old level.
         mov     r1, #15                 // Highest level.
         str     r1, [r9]                // Set the new level.
-#if CTX_DEBUG > 3
-        TRAP_DUMP(irq)
+#if CTX_DEBUG & CTX_IRQ_ENTRY
+        TRAP_DUMP(irq_entry)
 #endif
         weak_call(CLABEL(enter_irq))    // Enter the IRQ state.
         weak_call(CLABEL(identify_irq)) // Clear interrupt and get irq
@@ -441,7 +461,11 @@ irq:
         ldr     sp, [r0]                // Get the new sp.
         str     r10, [r9]               // Restore the old level.
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
-1:      RESTORE_CONTEXT()
+1:
+#if CTX_DEBUG & CTX_IRQ_EXIT
+        TRAP_DUMP(irq_exit)
+#endif
+        RESTORE_CONTEXT()
 
 /* Set up a context for execution.
  * int new_context(context_t **savearea,
@@ -467,7 +491,7 @@ ENTRY(new_context)
         ldr     r3, [sp, #4]
         str     r3, [r7, #REG_TLS]
         str     r7, [r0]                // Update the stack pointer.
-#if CTX_DEBUG
+#if CTX_DEBUG & CTX_NEW_CONTEXT
         TRAP_DUMP_REG(r7, new_context)
 #endif
         bx      lr
@@ -489,11 +513,11 @@ ENTRY(switch_context)
         mrc     p15, 0, r2, c13, c0, 3  // Get the TLS.
         str     r2, [sp, #REG_TLS]      // Save the TLS.
         str     sp, [r1]                // Save the current frame.
-#if CTX_DEBUG
+#if CTX_DEBUG & CTX_SWITCH_CONTEXT_OUT
         TRAP_DUMP(switch_context_out)
 #endif
         ldr     sp, [r0]                // Get the new context pointer.
-#if CTX_DEBUG
+#if CTX_DEBUG & CTX_SWITCH_CONTEXT_IN
         TRAP_DUMP(switch_context_in)
 #endif
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
@@ -517,11 +541,11 @@ ENTRY(switch_context_arg)
         mrc     p15, 0, r3, c13, c0, 3  // Get the TLS.
         str     r3, [sp, #REG_TLS]      // Save the TLS.
         str     sp, [r2]                // Save the current frame.
-#if CTX_DEBUG
+#if CTX_DEBUG & CTX_SWITCH_CONTEXT_ARG_OUT
         TRAP_DUMP(switch_context_arg_out)
 #endif
         ldr     sp, [r1]                // Get the new context pointer.
-#if CTX_DEBUG
+#if CTX_DEBUG & CTX_SWITCH_CONTEXT_ARG_IN
         TRAP_DUMP(switch_context_arg_in)
 #endif
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
@@ -538,7 +562,7 @@ ENTRY(enter_context)
         mov     sp, r2                  // Get the new stack pointer.
         cmp     r1, #0                  // Need a cleanup call?
         blxne   r1                      // Call it if so.
-#if CTX_DEBUG
+#if CTX_DEBUG & CTX_ENTER_CONTEXT
         TRAP_DUMP(enter_context)
 #endif
         weak_call(CLABEL(unlock_ready)) // Clear the ready lock.
@@ -549,10 +573,10 @@ ENTRY(enter_context)
  */
 swi:
         SAVE_CONTEXT(PSR_SVC_MODE, __svcstk_top__)
-#if CTX_DEBUG > 1
-        TRAP_DUMP(swi)
+#if CTX_DEBUG & CTX_SWI_ENTRY
+        TRAP_DUMP(swi_entry)
 #endif
-        cpsie   i                       // Enable IRQ.
+// RICH:        cpsie   i                       // Enable IRQ.
         ldr     r10, [sp, #REG_PC]      // Get the return address for clone().
 __in_syscall:                           // The stack frame is valid here.
         ldr     r9, =syscall            // Point to the syscall save area.
@@ -576,6 +600,9 @@ __in_syscall:                           // The stack frame is valid here.
         add     sp, sp, r9              // And adjust.
         str     r0, [sp, #REG_R0]       // Save possible return values.
         str     r1, [sp, #REG_R1]       // Save possible return values.
+#if CTX_DEBUG & CTX_SWI_EXIT
+        TRAP_DUMP(swi_exit)
+#endif
         RESTORE_CONTEXT()
 
 /* ARM has a few "hidden" system calls.
