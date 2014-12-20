@@ -26,7 +26,7 @@
 #define CTX_IRQ         (CTX_IRQ_ENTRY|CTX_IRQ_EXIT)
 #define CTX_SWI         (CTX_SWI_ENTRY|CTX_SWI_EXIT)
 
-#define CTX_DEBUG 0 // CTX_IRQ|CTX_SWI
+#define CTX_DEBUG 0     // CTX_IRQ|CTX_SWI
 #define IN_RAM 1        // != 0 if debugging in RAM (better handling of bad sp).
 
 #if CTX_DEBUG

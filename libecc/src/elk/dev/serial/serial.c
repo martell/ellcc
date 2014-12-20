@@ -112,14 +112,23 @@ static void serial_start(struct tty *tp)
   struct serial_port *port = sc->port;
   int c;
 
-  while ((c = tty_getc(&tp->t_outq)) >= 0)
+  if ((c = tty_getc(&tp->t_outq)) >= 0)
     sc->ops->xmt_char(port, c);
+  else
+    tty_done(port->tty);
 }
 
-// Output completed.
+// Continue or finish output.
 void serial_xmt_done(struct serial_port *port)
 {
-  tty_done(port->tty);
+  struct tty *tp = port->tty;
+  struct serial_softc *sc = device_private(tp->t_dev);
+  int c;
+
+  if ((c = tty_getc(&tp->t_outq)) >= 0)
+    sc->ops->xmt_char(port, c);
+  else
+    tty_done(tp);
 }
 
 // Character input.

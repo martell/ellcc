@@ -77,6 +77,8 @@ static void pl011_xmt_char(struct serial_port *sp, int c)
   while (bus_read_32(UART_FR) & FR_TXFF)
     continue;
   bus_write_32(UART_DR, (uint32_t)c);
+  // Enable TX/RX interrupt.
+  bus_write_32(UART_IMSC, (IMSC_RX | IMSC_TX));
 }
 
 static int pl011_rcv_char(struct serial_port *sp)
@@ -117,10 +119,11 @@ static int pl011_isr(void *arg)
 
   if (mis & MIS_TX) {
     // Transmit interrupt.
-    serial_xmt_done(sp);
-
     // Clear interrupt status.
     bus_write_32(UART_ICR, ICR_TX);
+    // Disable the TX interrupt.
+    bus_write_32(UART_IMSC, IMSC_RX);
+    serial_xmt_done(sp);
   }
 
   return 0;
@@ -174,8 +177,8 @@ static void pl011_start(struct serial_port *sp)
   sp->irq = irq_attach(UART_IRQ, IPL_COMM, 0, pl011_isr, IST_NONE, sp);
 #endif
 
-  // Enable TX/RX interrupt.
-  bus_write_32(UART_IMSC, (IMSC_RX | IMSC_TX));
+  // Enable RX interrupt.
+  bus_write_32(UART_IMSC, IMSC_RX);
 }
 
 static void pl011_stop(struct serial_port *sp)
