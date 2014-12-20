@@ -1,5 +1,7 @@
 This is a minimal ELK example supporting multi-threading.
-THIS EXAMPLE IS NOT FUNCTIONAL YET.
+
+This is not exactly minimal yet. Much more is pulled in than
+necessary, e.g. file system support. TODO: Fix it.
 
 Currently supported configuration(s):
 Linux:

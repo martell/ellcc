@@ -57,6 +57,7 @@ FEATURE_CLASS(vm_nommu, vm)
 static void seg_init(struct seg *);
 static struct seg *seg_create(struct seg *, vaddr_t, size_t);
 static void seg_delete(struct seg *, struct seg *);
+static struct seg *seg_merge(struct seg *, vaddr_t, size_t);
 static struct seg *seg_lookup(struct seg *, vaddr_t, size_t);
 static struct seg *seg_alloc(struct seg *, size_t);
 static void seg_free(struct seg *, struct seg *);
@@ -182,6 +183,11 @@ static int do_free(vm_map_t map, void *addr, size_t size)
   vaddr_t va;
 
   va = trunc_page((vaddr_t)addr);
+
+  // Merge adjacent segments.
+  seg = seg_merge(&map->head, va, size);
+  if (seg == NULL)
+    return -EINVAL;
 
   // Find the target segment.
   seg = seg_lookup(&map->head, va, 1);
@@ -520,6 +526,52 @@ static void seg_delete(struct seg *head, struct seg *seg)
 
   if (head != seg)
     kmem_free(seg);
+}
+
+/** Merge segments at the specified address and size.
+ */
+static struct seg *seg_merge(struct seg *head, vaddr_t addr, size_t size)
+{
+  struct seg *seg;
+
+  seg = head;
+  do {
+    if (!(seg->flags & SEG_FREE) &&
+        seg->addr == addr &&
+        seg->addr + seg->size >= addr) {
+      // The segment starts in this segment.
+      struct seg *next = seg->next;
+      size_t s = seg->size;
+      while (s < size) {
+        if (next == head) {
+          // No match.
+          return NULL;
+        }
+
+        // Add the size, and keep looking.
+        s += next->size;
+        next = next->next;
+      }
+
+      // Found segmends to merge.
+      for (struct seg *sp = seg->next; sp != next; ) {
+        seg->size += sp->size;
+        struct seg *next = sp->next;    // Save the next pointer.
+        if (seg->size <= size) {
+          // This segment is in the middle.
+          kmem_free(sp);
+          seg->next = next;
+          next = sp->next;
+        }
+        sp = next;
+      }
+
+      return seg;
+    }
+    seg = seg->next;
+  } while (seg != head);
+
+  return NULL;
 }
 
 /** Find the segment at the specified address.
