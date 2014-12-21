@@ -744,6 +744,7 @@ void *timer_wake_at(long long when,
 
   lock_acquire(&timeout_lock);
   // Search the list.
+  int head = 0;
   if (timeouts == NULL) {
     timeouts = tmo;
   } else {
@@ -760,13 +761,16 @@ void *timer_wake_at(long long when,
     } else {
       // Insert at the head.
       timeouts = tmo;
+      head = 1;
     }
   }
 
-  when = timeouts->when;
   lock_release(&timeout_lock);
-  // Set up the timeout.
-  timer_start(when);
+  if (head) {
+    // Inserted at the head of the list, reset timer.
+    timer_start(when);
+  }
+
   if (tmo->callback == NULL) {
     // Put myself to sleep.
     int s = change_state(retval, SLEEPING);
