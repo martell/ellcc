@@ -937,7 +937,6 @@ static struct seg *seg_split(struct seg *head, struct seg *seg,
 
     seg->flags = prev->flags;
     if (!(seg->flags & SEG_FREE)) {
-      // RICH: MMU
       ASSERT(map != NULL);
       seg->phys = prev->phys + diff;
       int map_type;
