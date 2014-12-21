@@ -18,7 +18,7 @@ SRCS.x86_64 += idt.c diag.c
 # Target independent code.
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/kernel
 # The ELK kernel.
-SRCS += command.c test_commands.c time_commands.c \
+SRCS += command.c time_commands.c \
 	__elk_start.c time.c irq.c nirq.c thread.c file.c fdconsole.c \
 	console.c memman.c simple_console.c simple_memman.c simple_exit.c \
 	device.c

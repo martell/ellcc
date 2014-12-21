@@ -3,6 +3,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <pthread.h>
@@ -10,14 +11,7 @@
 #include <unistd.h>
 #include <semaphore.h>
 
-#include "config.h"
-#include "page.h"
-#include "kmem.h"
-#include "thread.h"
 #include "command.h"
-
-// Make the test commands a loadable feature.
-FEATURE(test_commands)
 
 static int yieldCommand(int argc, char **argv)
 {
@@ -43,19 +37,25 @@ static int thread_create(const char *name, pthread_t *id,
   }
 
   void *sp;
-  s = vm_allocate(getpid(), &sp, 4096, 1);
+
+  if (stack) {
+    sp = stack;
+  } else {
+    sp = malloc(stack_size);
+  }
+
   if (s != 0) {
-    printf("vm_allocate failed %s\n", strerror(-s));
+    printf("malloc failed %s\n", strerror(errno));
     return COMMAND_ERROR;
   }
 
-  s = pthread_attr_setstack(&attr, sp, 4096);
+  s = pthread_attr_setstack(&attr, sp, stack_size);
   if (s != 0) {
     printf("pthread_attr_setstack %s\n", strerror(s));
     return COMMAND_ERROR;
   }
 
-  s = pthread_create(id, &attr, start, arg);
+  s = pthread_create(id, NULL /* &attr */, start, arg);
   if (s != 0)
     printf("pthread_create: %s\n", strerror(s));
   return s;
@@ -281,7 +281,12 @@ static int sectionCommand(int argc, char **argv)
 
 /* Initialize the test commands.
  */
-ELK_CONSTRUCTOR()
+#define C_CONSTRUCTOR() \
+static void __elk_c_init(void) \
+    __attribute__((__constructor__, __used__)); \
+static void __elk_c_init(void)
+
+C_CONSTRUCTOR()
 {
   command_insert(NULL, sectionCommand);
   command_insert("syscall", syscallCommand);

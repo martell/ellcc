@@ -138,7 +138,7 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
   }
 
   // Get the desired time or delta.
-  long long when = req->tv_sec * 1000000000LL + req->tv_nsec;
+  long long when = val.tv_sec * 1000000000LL + val.tv_nsec;
 
   // Get the current time.
   long long now;

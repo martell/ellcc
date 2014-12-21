@@ -747,6 +747,7 @@ void *timer_wake_at(long long when,
   int head = 0;
   if (timeouts == NULL) {
     timeouts = tmo;
+    head = 1;
   } else {
     struct timeout *p, *q;
     for (p = timeouts, q = NULL; p && p->when <= when; q = p, p = p->next)
