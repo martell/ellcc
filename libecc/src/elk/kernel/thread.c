@@ -1847,7 +1847,7 @@ static int psCommand(int argc, char **argv)
       if (t->state == RUNNING) {
         printf("Thread is running\n");
       } else {
-        trap_dump("Context", t->context);
+        trap_dump(printf, "Context", t->context);
       }
       heading = 1;
     }

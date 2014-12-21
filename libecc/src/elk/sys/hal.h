@@ -188,6 +188,6 @@ void clock_init(void);
 
 void diag_init(void);
 void diag_puts(char *);
-void diag_printf(const char *__restrict, ...);
+int diag_printf(const char *__restrict, ...);
 
 #endif // !_hal_h_

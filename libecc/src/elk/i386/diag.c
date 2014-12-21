@@ -191,16 +191,17 @@ void diag_init(void)
 
 static char buffer[CONFIG_DIAG_MSGSZ];
 
-void diag_printf(const char *__restrict fmt, ...)
+int diag_printf(const char *__restrict fmt, ...)
 {
   va_list ap;
 
   int s = splhigh();
   va_start(ap, fmt);
-  vsnprintf(buffer, CONFIG_DIAG_MSGSZ, fmt, ap);
+  int c = vsnprintf(buffer, CONFIG_DIAG_MSGSZ, fmt, ap);
 
   diag_puts(buffer);
   va_end(ap);
   splx(s);
+  return c;
 }
 

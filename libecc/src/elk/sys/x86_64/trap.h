@@ -34,6 +34,6 @@
 #include "context.h"
 
 int trap_handler(u_long, context_t *);
-void trap_dump(const char *, context_t *);
+void trap_dump(int (*)(const char *__restrict, ...), const char *, context_t *);
 
 #endif // !_trap_h_

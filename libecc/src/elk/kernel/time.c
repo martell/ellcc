@@ -17,16 +17,14 @@ FEATURE(time)
 
 static int sys_clock_getres(clockid_t clock, struct timespec *res)
 {
-  if (res) {
-    VALIDATE_ADDRESS(res, sizeof(*res), VALID_WR);
-  }
-
   switch (clock) {
   case CLOCK_MONOTONIC:
   case CLOCK_REALTIME:
     if (res) {
-      res->tv_sec = 0;
-      res->tv_nsec = timer_getres();
+      struct timespec val;
+      val.tv_sec = 0;
+      val.tv_nsec = timer_getres();
+      return copyout(&val, res, sizeof(*res));
     }
     break;
 
@@ -41,20 +39,20 @@ static int sys_clock_getres(clockid_t clock, struct timespec *res)
 
 static int sys_clock_gettime(clockid_t clock, struct timespec *tp)
 {
-  VALIDATE_ADDRESS(tp, sizeof(*tp), VALID_WR);
+  struct timespec val;
 
   switch (clock) {
   case CLOCK_REALTIME: {
     long long realtime = timer_get_realtime();
-    tp->tv_sec = realtime / 1000000000;
-    tp->tv_nsec = realtime % 1000000000;
+    val.tv_sec = realtime / 1000000000;
+    val.tv_nsec = realtime % 1000000000;
     break;
   }
 
   case CLOCK_MONOTONIC: {
     long long monotonic = timer_get_monotonic();
-    tp->tv_sec = monotonic / 1000000000;
-    tp->tv_nsec = monotonic % 1000000000;
+    val.tv_sec = monotonic / 1000000000;
+    val.tv_nsec = monotonic % 1000000000;
     break;
   }
 
@@ -64,21 +62,24 @@ static int sys_clock_gettime(clockid_t clock, struct timespec *tp)
     return -EINVAL;
   }
 
-  return 0;
+  return copyout(&val, tp, sizeof(*tp));
 }
 
 static int sys_clock_settime(clockid_t clock, const struct timespec *tp)
 {
-  VALIDATE_ADDRESS(tp, sizeof(*tp), VALID_RD);
+  struct timespec val;
+  int s = copyin(tp, &val, sizeof(val));
+  if (s != 0)
+    return s;
 
-  if (tp->tv_nsec < 0 || tp->tv_nsec >= 1000000000) {
+  if (val.tv_nsec < 0 || val.tv_nsec >= 1000000000) {
     return -EINVAL;
   }
 
   switch (clock) {
   case CLOCK_REALTIME: {
     // RICH: Permissions.
-    long long realtime = tp->tv_sec * 1000000000LL + tp->tv_nsec;
+    long long realtime = val.tv_sec * 1000000000LL + val.tv_nsec;
     timer_set_realtime(realtime);
     break;
   }
@@ -98,38 +99,41 @@ static int sys_clock_settime(clockid_t clock, const struct timespec *tp)
 
 static int sys_settimeofday(struct timeval *tv)
 {
-  VALIDATE_ADDRESS(tv, sizeof(*tv), VALID_WR);
+  struct timeval val;
+  int s = copyin(tv, &val, sizeof(val));
+  if (s != 0)
+    return s;
   struct timespec ts;
-  ts.tv_sec = tv->tv_sec;
-  ts.tv_nsec = tv->tv_usec * 1000;
+
+  ts.tv_sec = val.tv_sec;
+  ts.tv_nsec = val.tv_usec * 1000;
   return sys_clock_settime(CLOCK_REALTIME, &ts);
 }
 
 static int sys_gettimeofday(struct timeval *tv)
 {
-  VALIDATE_ADDRESS(tv, sizeof(*tv), VALID_RD);
   struct timespec ts;
   int s = sys_clock_gettime(CLOCK_REALTIME, &ts);
   if (s < 0) {
     return s;
   }
 
-  tv->tv_sec = ts.tv_sec;
-  tv->tv_usec = ts.tv_nsec / 1000;
-  return 0;
+  struct timeval val;
+  val.tv_sec = ts.tv_sec;
+  val.tv_usec = ts.tv_nsec / 1000;
+  return copyout(&val, tv, sizeof(*tv));
 }
 
 static int sys_clock_nanosleep(clockid_t clock, int flags,
                                const struct timespec *req,
                                struct timespec *rem)
 {
-  VALIDATE_ADDRESS(req, sizeof(*req), VALID_RD);
-  if (rem) {
-    VALIDATE_ADDRESS(rem, sizeof(*rem), VALID_WR);
-  }
+  struct timespec val;
+  int s = copyin(req, &val, sizeof(val));
+  if (s != 0)
+    return s;
 
-  if (req->tv_nsec < 0 || req->tv_nsec >= 1000000000 ||
-      req->tv_sec < 0) {
+  if (val.tv_nsec < 0 || val.tv_nsec >= 1000000000 || val.tv_sec < 0) {
     return -EINVAL;
   }
 
@@ -166,8 +170,9 @@ static int sys_clock_nanosleep(clockid_t clock, int flags,
     return 0;
   }
 
-  timer_wake_at(when, NULL, 0, 0, 0);
-  // RICH: Check for interrupted call, set rem.
+  if (timer_wake_at(when, NULL, 0, 0, 0) == NULL && errno == EINTR) {
+    // RICH: Set rem.
+  }
   return 0;
 }
 
