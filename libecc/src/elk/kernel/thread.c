@@ -73,21 +73,21 @@ typedef struct
 
 static inline void lock_acquire(lock_t *lock)
 {
+  lock->level = splhigh();
 // RICH:
 #if !defined(__microblaze__)
   while(__atomic_test_and_set(&lock->lock, __ATOMIC_SEQ_CST))
       continue;
 #endif
-  lock->level = splhigh();
 }
 
 static inline void lock_release(lock_t *lock)
 {
-  splx(lock->level);
 // RICH:
 #if !defined(__microblaze__)
   __atomic_clear(&lock->lock, __ATOMIC_SEQ_CST);
 #endif
+  splx(lock->level);
 }
 
 /** A thread is an indepenent executable context in ELK.
