@@ -741,7 +741,7 @@ ENTRY(copyinstr)
         b       2f
 1:
         ldrb    r3, [r12, r0]
-ASM_LABEL(known_fault3):         i      // Might fault here.
+ASM_LABEL(known_fault3):                // Might fault here.
         strb    r3, [r12, r1]
         cmp     r3, #0
         beq     3f
