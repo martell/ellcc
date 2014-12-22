@@ -78,6 +78,8 @@ static vm_map_t do_dup(vm_map_t);
 
 static struct vm_map kernel_map;    // VM mapping for kernel.
 
+#include "vm_common.c"
+
 /** Allocate zero-filled memory for specified address.
  *
  * If "anywhere" argument is true, the "addr" argument will be
@@ -728,6 +730,7 @@ static vm_map_t int_init(void)
     panic("vm_init");
 
   kernel_map.pgd = pgd;
+  kernel_map.refcnt = 1;
   mmu_switch(pgd);
 
   seg_init(&kernel_map.head, 1);
@@ -1017,3 +1020,5 @@ ELK_CONSTRUCTOR()
   vm_init = int_init;
   vm_mmu_init = int_mmu_init;
 }
+
+

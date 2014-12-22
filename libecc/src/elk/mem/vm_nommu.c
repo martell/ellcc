@@ -70,6 +70,8 @@ static int do_map(vm_map_t, void *, size_t, void **);
 
 static struct vm_map kernel_map;    // VM mapping for kernel.
 
+#include "vm_common.c"
+
 /** Allocate zero-filled memory for specified address.
  *
  * If "anywhere" argument is true, the "addr" argument will be

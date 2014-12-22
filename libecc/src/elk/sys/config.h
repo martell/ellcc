@@ -42,6 +42,8 @@
 // IRQ handling.
 #define MAXIRQS 32              // The maximum number of IRQs.
 
+// The virtual memory  module.
+#define VM_COMMANDS 1
 #define HAVE_VM 1               // Use mem functions for memory management.
 
 #define HAVE_SIGNALS 1          // Implement signals.
