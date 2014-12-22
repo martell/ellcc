@@ -114,7 +114,7 @@ else()
   elseif("${COMPILER_RT_TEST_TARGET_ARCH}" MATCHES "aarch32")
     test_target_arch(aarch32 "-march=armv8-a")
   elseif("${COMPILER_RT_TEST_TARGET_ARCH}" MATCHES "aarch64")
-    test_target_arch(aarch64 "-march=aarch64")
+    test_target_arch(aarch64 "-march=armv8-a")
   endif()
 endif()
 
@@ -168,6 +168,12 @@ if (COMPILER_RT_HAS_SANITIZER_COMMON AND ASAN_SUPPORTED_ARCH)
   set(COMPILER_RT_HAS_ASAN TRUE)
 else()
   set(COMPILER_RT_HAS_ASAN FALSE)
+endif()
+
+if (OS_NAME MATCHES "Linux|FreeBSD")
+  set(COMPILER_RT_ASAN_HAS_STATIC_RUNTIME TRUE)
+else()
+  set(COMPILER_RT_ASAN_HAS_STATIC_RUNTIME FALSE)
 endif()
 
 # TODO: Add builtins support.

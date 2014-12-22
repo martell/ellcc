@@ -303,6 +303,10 @@ EXE:      cmd LC_UUID
 EXE:  cmdsize 24
 EXE:     uuid C2D9351C-1EF1-330B-A2AB-EED6CF7D2C5D
 EXE: Load command 9
+EXE:      cmd LC_VERSION_MIN_IPHONEOS
+EXE:  cmdsize 16
+EXE:  version 8.0
+EXE:      sdk 8.0
 EXE: Load command 10
 EXE:       cmd LC_SOURCE_VERSION
 EXE:   cmdsize 16
@@ -313,6 +317,11 @@ EXE:    cmdsize 24
 EXE:   entryoff 32645
 EXE:  stacksize 0
 EXE: Load command 12
+EXE:          cmd LC_ENCRYPTION_INFO
+EXE:      cmdsize 20
+EXE:     cryptoff 16384
+EXE:    cryptsize 16384
+EXE:      cryptid 0
 EXE: Load command 13
 EXE:           cmd LC_LOAD_DYLIB
 EXE:       cmdsize 52

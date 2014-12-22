@@ -3009,6 +3009,7 @@ let Predicates = [HasAVX1Only] in {
 /// classes below
 multiclass basic_sse12_fp_binop_p<bits<8> opc, string OpcodeStr,
                                   SDNode OpNode, SizeItins itins> {
+  let Predicates = [HasAVX, NoVLX] in {
   defm V#NAME#PS : sse12_fp_packed<opc, !strconcat(OpcodeStr, "ps"), OpNode,
                                VR128, v4f32, f128mem, loadv4f32,
                                SSEPackedSingle, itins.s, 0>, PS, VEX_4V;
@@ -3022,6 +3023,7 @@ multiclass basic_sse12_fp_binop_p<bits<8> opc, string OpcodeStr,
   defm V#NAME#PDY : sse12_fp_packed<opc, !strconcat(OpcodeStr, "pd"),
                         OpNode, VR256, v4f64, f256mem, loadv4f64,
                         SSEPackedDouble, itins.d, 0>, PD, VEX_4V, VEX_L;
+  }
 
   let Constraints = "$src1 = $dst" in {
     defm PS : sse12_fp_packed<opc, !strconcat(OpcodeStr, "ps"), OpNode, VR128,
@@ -3534,57 +3536,10 @@ def SSE_RCPS : OpndItins<
 >;
 }
 
-/// sse1_fp_unop_s - SSE1 unops in scalar form.
-multiclass sse1_fp_unop_s<bits<8> opc, string OpcodeStr,
-                          SDNode OpNode, Intrinsic F32Int, OpndItins itins> {
-let Predicates = [HasAVX], hasSideEffects = 0 in {
-  def V#NAME#SSr : SSI<opc, MRMSrcReg, (outs FR32:$dst),
-                      (ins FR32:$src1, FR32:$src2),
-                      !strconcat("v", OpcodeStr,
-                                 "ss\t{$src2, $src1, $dst|$dst, $src1, $src2}"),
-                      []>, VEX_4V, VEX_LIG, Sched<[itins.Sched]>;
-  let mayLoad = 1 in {
-  def V#NAME#SSm : SSI<opc, MRMSrcMem, (outs FR32:$dst),
-                      (ins FR32:$src1,f32mem:$src2),
-                      !strconcat("v", OpcodeStr,
-                                 "ss\t{$src2, $src1, $dst|$dst, $src1, $src2}"),
-                      []>, VEX_4V, VEX_LIG,
-                   Sched<[itins.Sched.Folded, ReadAfterLd]>;
-  let isCodeGenOnly = 1 in
-  def V#NAME#SSm_Int : SSI<opc, MRMSrcMem, (outs VR128:$dst),
-                      (ins VR128:$src1, ssmem:$src2),
-                      !strconcat("v", OpcodeStr,
-                                 "ss\t{$src2, $src1, $dst|$dst, $src1, $src2}"),
-                      []>, VEX_4V, VEX_LIG,
-                      Sched<[itins.Sched.Folded, ReadAfterLd]>;
-  }
-}
-
-  def SSr : SSI<opc, MRMSrcReg, (outs FR32:$dst), (ins FR32:$src),
-                !strconcat(OpcodeStr, "ss\t{$src, $dst|$dst, $src}"),
-                [(set FR32:$dst, (OpNode FR32:$src))]>, Sched<[itins.Sched]>;
-  // For scalar unary operations, fold a load into the operation
-  // only in OptForSize mode. It eliminates an instruction, but it also
-  // eliminates a whole-register clobber (the load), so it introduces a
-  // partial register update condition.
-  def SSm : I<opc, MRMSrcMem, (outs FR32:$dst), (ins f32mem:$src),
-                !strconcat(OpcodeStr, "ss\t{$src, $dst|$dst, $src}"),
-                [(set FR32:$dst, (OpNode (load addr:$src)))], itins.rm>, XS,
-            Requires<[UseSSE1, OptForSize]>, Sched<[itins.Sched.Folded]>;
-let isCodeGenOnly = 1 in {
-  def SSr_Int : SSI<opc, MRMSrcReg, (outs VR128:$dst), (ins VR128:$src),
-                    !strconcat(OpcodeStr, "ss\t{$src, $dst|$dst, $src}"),
-                    [(set VR128:$dst, (F32Int VR128:$src))], itins.rr>,
-                Sched<[itins.Sched]>;
-  def SSm_Int : SSI<opc, MRMSrcMem, (outs VR128:$dst), (ins ssmem:$src),
-                    !strconcat(OpcodeStr, "ss\t{$src, $dst|$dst, $src}"),
-                    [(set VR128:$dst, (F32Int sse_load_f32:$src))], itins.rm>,
-                Sched<[itins.Sched.Folded]>;
-}
-}
-
-/// sse1_fp_unop_s_rw - SSE1 unops where vector form has a read-write operand.
-multiclass sse1_fp_unop_rw<bits<8> opc, string OpcodeStr, SDNode OpNode,
+/// sse1_fp_unop_s - SSE1 unops in scalar form
+/// For the non-AVX defs, we need $src1 to be tied to $dst because
+/// the HW instructions are 2 operand / destructive.
+multiclass sse1_fp_unop_s<bits<8> opc, string OpcodeStr, SDNode OpNode,
                            OpndItins itins> {
 let Predicates = [HasAVX], hasSideEffects = 0 in {
   def V#NAME#SSr : SSI<opc, MRMSrcReg, (outs FR32:$dst),
@@ -3793,20 +3748,19 @@ let Predicates = [HasAVX] in {
 }
 
 // Square root.
-defm SQRT  : sse1_fp_unop_s<0x51, "sqrt",  fsqrt, int_x86_sse_sqrt_ss,
-                            SSE_SQRTSS>,
+defm SQRT  : sse1_fp_unop_s<0x51, "sqrt", fsqrt, SSE_SQRTSS>,
              sse1_fp_unop_p<0x51, "sqrt", fsqrt, SSE_SQRTPS>,
-             sse2_fp_unop_s<0x51, "sqrt",  fsqrt, int_x86_sse2_sqrt_sd,
+             sse2_fp_unop_s<0x51, "sqrt", fsqrt, int_x86_sse2_sqrt_sd,
                             SSE_SQRTSD>,
              sse2_fp_unop_p<0x51, "sqrt", fsqrt, SSE_SQRTPD>;
 
 // Reciprocal approximations. Note that these typically require refinement
 // in order to obtain suitable precision.
-defm RSQRT : sse1_fp_unop_rw<0x52, "rsqrt", X86frsqrt, SSE_RSQRTSS>,
+defm RSQRT : sse1_fp_unop_s<0x52, "rsqrt", X86frsqrt, SSE_RSQRTSS>,
              sse1_fp_unop_p<0x52, "rsqrt", X86frsqrt, SSE_RSQRTPS>,
              sse1_fp_unop_p_int<0x52, "rsqrt", int_x86_sse_rsqrt_ps,
                                 int_x86_avx_rsqrt_ps_256, SSE_RSQRTPS>;
-defm RCP   : sse1_fp_unop_rw<0x53, "rcp", X86frcp, SSE_RCPS>,
+defm RCP   : sse1_fp_unop_s<0x53, "rcp", X86frcp, SSE_RCPS>,
              sse1_fp_unop_p<0x53, "rcp", X86frcp, SSE_RCPP>,
              sse1_fp_unop_p_int<0x53, "rcp", int_x86_sse_rcp_ps,
                                 int_x86_avx_rcp_ps_256, SSE_RCPP>;
@@ -3867,13 +3821,15 @@ let Predicates = [HasAVX] in {
             (VRCPSSm_Int (v4f32 (IMPLICIT_DEF)), sse_load_f32:$src)>;
 }
 
-// Reciprocal approximations. Note that these typically require refinement
-// in order to obtain suitable precision.
+// These are unary operations, but they are modeled as having 2 source operands
+// because the high elements of the destination are unchanged in SSE.
 let Predicates = [UseSSE1] in {
   def : Pat<(int_x86_sse_rsqrt_ss VR128:$src),
             (RSQRTSSr_Int VR128:$src, VR128:$src)>;
   def : Pat<(int_x86_sse_rcp_ss VR128:$src),
             (RCPSSr_Int VR128:$src, VR128:$src)>;
+  def : Pat<(int_x86_sse_sqrt_ss VR128:$src),
+            (SQRTSSr_Int VR128:$src, VR128:$src)>;
 }
 
 // There is no f64 version of the reciprocal approximation instructions.
@@ -4029,12 +3985,14 @@ def VSTMXCSR : VPSI<0xAE, MRM3m, (outs), (ins i32mem:$dst),
                   "stmxcsr\t$dst", [(int_x86_sse_stmxcsr addr:$dst)],
                   IIC_SSE_STMXCSR>, VEX, Sched<[WriteStore]>;
 
-def LDMXCSR : PSI<0xAE, MRM2m, (outs), (ins i32mem:$src),
-                  "ldmxcsr\t$src", [(int_x86_sse_ldmxcsr addr:$src)],
-                  IIC_SSE_LDMXCSR>, Sched<[WriteLoad]>;
-def STMXCSR : PSI<0xAE, MRM3m, (outs), (ins i32mem:$dst),
-                  "stmxcsr\t$dst", [(int_x86_sse_stmxcsr addr:$dst)],
-                  IIC_SSE_STMXCSR>, Sched<[WriteStore]>;
+let Predicates = [UseSSE1] in {
+def LDMXCSR : I<0xAE, MRM2m, (outs), (ins i32mem:$src),
+                "ldmxcsr\t$src", [(int_x86_sse_ldmxcsr addr:$src)],
+                IIC_SSE_LDMXCSR>, TB, Sched<[WriteLoad]>;
+def STMXCSR : I<0xAE, MRM3m, (outs), (ins i32mem:$dst),
+                "stmxcsr\t$dst", [(int_x86_sse_stmxcsr addr:$dst)],
+                IIC_SSE_STMXCSR>, TB, Sched<[WriteStore]>;
+}
 
 //===---------------------------------------------------------------------===//
 // SSE2 - Move Aligned/Unaligned Packed Integer Instructions
@@ -7187,7 +7145,7 @@ let Constraints = "$src1 = $dst" in {
                                   SSE_INTMUL_ITINS_P, 1>;
 }
 
-let Predicates = [HasAVX] in {
+let Predicates = [HasAVX, NoVLX] in {
   defm VPMULLD  : SS48I_binop_rm<0x40, "vpmulld", mul, v4i32, VR128,
                                  memopv2i64, i128mem, 0, SSE_PMULLD_ITINS>,
                                  VEX_4V;
@@ -8158,6 +8116,49 @@ def : Pat<(vinsert128_insert:$ins (v4f64 VR256:$src1), (loadv2f64 addr:$src2),
                          (INSERT_get_vinsert128_imm VR256:$ins))>;
 }
 
+// Combine two consecutive 16-byte loads with a common destination register into
+// one 32-byte load to that register.
+let Predicates = [HasAVX, HasFastMem32] in {
+  def : Pat<(insert_subvector
+              (v8f32 (insert_subvector undef, (loadv4f32 addr:$src), (iPTR 0))),
+              (loadv4f32 (add addr:$src, (iPTR 16))),
+              (iPTR 4)),
+            (VMOVUPSYrm addr:$src)>;
+
+  def : Pat<(insert_subvector
+              (v4f64 (insert_subvector undef, (loadv2f64 addr:$src), (iPTR 0))),
+              (loadv2f64 (add addr:$src, (iPTR 16))),
+              (iPTR 2)),
+            (VMOVUPDYrm addr:$src)>;
+            
+  def : Pat<(insert_subvector
+              (v32i8 (insert_subvector
+                undef, (bc_v16i8 (loadv2i64 addr:$src)), (iPTR 0))),
+              (bc_v16i8 (loadv2i64 (add addr:$src, (iPTR 16)))),
+              (iPTR 16)),
+            (VMOVDQUYrm addr:$src)>;
+            
+  def : Pat<(insert_subvector
+              (v16i16 (insert_subvector
+                undef, (bc_v8i16 (loadv2i64 addr:$src)), (iPTR 0))),
+              (bc_v8i16 (loadv2i64 (add addr:$src, (iPTR 16)))),
+              (iPTR 8)),
+            (VMOVDQUYrm addr:$src)>;
+            
+  def : Pat<(insert_subvector
+              (v8i32 (insert_subvector
+                undef, (bc_v4i32 (loadv2i64 addr:$src)), (iPTR 0))),
+              (bc_v4i32 (loadv2i64 (add addr:$src, (iPTR 16)))),
+              (iPTR 4)),
+            (VMOVDQUYrm addr:$src)>;
+
+  def : Pat<(insert_subvector
+              (v4i64 (insert_subvector undef, (loadv2i64 addr:$src), (iPTR 0))),
+              (loadv2i64 (add addr:$src, (iPTR 16))),
+              (iPTR 2)),
+            (VMOVDQUYrm addr:$src)>;
+}
+
 let Predicates = [HasAVX1Only] in {
 def : Pat<(vinsert128_insert:$ins (v4i64 VR256:$src1), (v2i64 VR128:$src2),
                                    (iPTR imm)),
@@ -8965,20 +8966,26 @@ defm VPMASKMOVQ : avx2_pmovmask<"vpmaskmovq",
                                 int_x86_avx2_maskstore_q_256>, VEX_W;
 
 def: Pat<(masked_store addr:$ptr, (v8i32 VR256:$mask), (v8f32 VR256:$src)),
-         (VPMASKMOVDYmr addr:$ptr, VR256:$mask, VR256:$src)>;
+         (VMASKMOVPSYmr addr:$ptr, VR256:$mask, VR256:$src)>;
 
 def: Pat<(masked_store addr:$ptr, (v8i32 VR256:$mask), (v8i32 VR256:$src)),
          (VPMASKMOVDYmr addr:$ptr, VR256:$mask, VR256:$src)>;
 
+def: Pat<(masked_store addr:$ptr, (v4i32 VR128:$mask), (v4f32 VR128:$src)),
+         (VMASKMOVPSmr addr:$ptr, VR128:$mask, VR128:$src)>;
+
+def: Pat<(masked_store addr:$ptr, (v4i32 VR128:$mask), (v4i32 VR128:$src)),
+         (VPMASKMOVDmr addr:$ptr, VR128:$mask, VR128:$src)>;
+
 def: Pat<(v8f32 (masked_load addr:$ptr, (v8i32 VR256:$mask), undef)),
-         (VPMASKMOVDYrm VR256:$mask, addr:$ptr)>;
+         (VMASKMOVPSYrm VR256:$mask, addr:$ptr)>;
 
 def: Pat<(v8f32 (masked_load addr:$ptr, (v8i32 VR256:$mask),
                              (bc_v8f32 (v8i32 immAllZerosV)))),
-         (VPMASKMOVDYrm VR256:$mask, addr:$ptr)>;
+         (VMASKMOVPSYrm VR256:$mask, addr:$ptr)>;
 
 def: Pat<(v8f32 (masked_load addr:$ptr, (v8i32 VR256:$mask), (v8f32 VR256:$src0))),
-         (VBLENDVPSYrr VR256:$src0, (VPMASKMOVDYrm VR256:$mask, addr:$ptr),
+         (VBLENDVPSYrr VR256:$src0, (VMASKMOVPSYrm VR256:$mask, addr:$ptr),
                        VR256:$mask)>;
 
 def: Pat<(v8i32 (masked_load addr:$ptr, (v8i32 VR256:$mask), undef)),
@@ -8991,21 +8998,42 @@ def: Pat<(v8i32 (masked_load addr:$ptr, (v8i32 VR256:$mask), (v8i32 VR256:$src0)
          (VBLENDVPSYrr VR256:$src0, (VPMASKMOVDYrm VR256:$mask, addr:$ptr),
                        VR256:$mask)>;
 
+def: Pat<(v4f32 (masked_load addr:$ptr, (v4i32 VR128:$mask), undef)),
+         (VMASKMOVPSrm VR128:$mask, addr:$ptr)>;
+
+def: Pat<(v4f32 (masked_load addr:$ptr, (v4i32 VR128:$mask),
+                             (bc_v4f32 (v4i32 immAllZerosV)))),
+         (VMASKMOVPSrm VR128:$mask, addr:$ptr)>;
+
+def: Pat<(v4f32 (masked_load addr:$ptr, (v4i32 VR128:$mask), (v4f32 VR128:$src0))),
+         (VBLENDVPSrr VR128:$src0, (VMASKMOVPSrm VR128:$mask, addr:$ptr),
+                       VR128:$mask)>;
+
+def: Pat<(v4i32 (masked_load addr:$ptr, (v4i32 VR128:$mask), undef)),
+         (VPMASKMOVDrm VR128:$mask, addr:$ptr)>;
+
+def: Pat<(v4i32 (masked_load addr:$ptr, (v4i32 VR128:$mask), (v4i32 immAllZerosV))),
+         (VPMASKMOVDrm VR128:$mask, addr:$ptr)>;
+
+def: Pat<(v4i32 (masked_load addr:$ptr, (v4i32 VR128:$mask), (v4i32 VR128:$src0))),
+         (VBLENDVPSrr VR128:$src0, (VPMASKMOVDrm VR128:$mask, addr:$ptr),
+                       VR128:$mask)>;
+
 def: Pat<(masked_store addr:$ptr, (v4i64 VR256:$mask), (v4f64 VR256:$src)),
-         (VPMASKMOVQYmr addr:$ptr, VR256:$mask, VR256:$src)>;
+         (VMASKMOVPDYmr addr:$ptr, VR256:$mask, VR256:$src)>;
 
 def: Pat<(masked_store addr:$ptr, (v4i64 VR256:$mask), (v4i64 VR256:$src)),
          (VPMASKMOVQYmr addr:$ptr, VR256:$mask, VR256:$src)>;
 
 def: Pat<(v4f64 (masked_load addr:$ptr, (v4i64 VR256:$mask), undef)),
-         (VPMASKMOVQYrm VR256:$mask, addr:$ptr)>;
+         (VMASKMOVPDYrm VR256:$mask, addr:$ptr)>;
 
 def: Pat<(v4f64 (masked_load addr:$ptr, (v4i64 VR256:$mask),
                              (v4f64 immAllZerosV))),
-         (VPMASKMOVQYrm VR256:$mask, addr:$ptr)>;
+         (VMASKMOVPDYrm VR256:$mask, addr:$ptr)>;
 
 def: Pat<(v4f64 (masked_load addr:$ptr, (v4i64 VR256:$mask), (v4f64 VR256:$src0))),
-         (VBLENDVPDYrr VR256:$src0, (VPMASKMOVQYrm VR256:$mask, addr:$ptr),
+         (VBLENDVPDYrr VR256:$src0, (VMASKMOVPDYrm VR256:$mask, addr:$ptr),
                        VR256:$mask)>;
 
 def: Pat<(v4i64 (masked_load addr:$ptr, (v4i64 VR256:$mask), undef)),
@@ -9019,6 +9047,33 @@ def: Pat<(v4i64 (masked_load addr:$ptr, (v4i64 VR256:$mask), (v4i64 VR256:$src0)
          (VBLENDVPDYrr VR256:$src0, (VPMASKMOVQYrm VR256:$mask, addr:$ptr),
                        VR256:$mask)>;
 
+def: Pat<(masked_store addr:$ptr, (v2i64 VR128:$mask), (v2f64 VR128:$src)),
+         (VMASKMOVPDmr addr:$ptr, VR128:$mask, VR128:$src)>;
+
+def: Pat<(masked_store addr:$ptr, (v2i64 VR128:$mask), (v2i64 VR128:$src)),
+         (VPMASKMOVQmr addr:$ptr, VR128:$mask, VR128:$src)>;
+
+def: Pat<(v2f64 (masked_load addr:$ptr, (v2i64 VR128:$mask), undef)),
+         (VMASKMOVPDrm VR128:$mask, addr:$ptr)>;
+
+def: Pat<(v2f64 (masked_load addr:$ptr, (v2i64 VR128:$mask),
+                             (v2f64 immAllZerosV))),
+         (VMASKMOVPDrm VR128:$mask, addr:$ptr)>;
+
+def: Pat<(v2f64 (masked_load addr:$ptr, (v2i64 VR128:$mask), (v2f64 VR128:$src0))),
+         (VBLENDVPDrr VR128:$src0, (VMASKMOVPDrm VR128:$mask, addr:$ptr),
+                       VR128:$mask)>;
+
+def: Pat<(v2i64 (masked_load addr:$ptr, (v2i64 VR128:$mask), undef)),
+         (VPMASKMOVQrm VR128:$mask, addr:$ptr)>;
+
+def: Pat<(v2i64 (masked_load addr:$ptr, (v2i64 VR128:$mask),
+                             (bc_v2i64 (v4i32 immAllZerosV)))),
+         (VPMASKMOVQrm VR128:$mask, addr:$ptr)>;
+
+def: Pat<(v2i64 (masked_load addr:$ptr, (v2i64 VR128:$mask), (v2i64 VR128:$src0))),
+         (VBLENDVPDrr VR128:$src0, (VPMASKMOVQrm VR128:$mask, addr:$ptr),
+                       VR128:$mask)>;
 
 //===----------------------------------------------------------------------===//
 // Variable Bit Shifts

@@ -447,9 +447,9 @@ void HexagonInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
     }
     return;
   }
-  if (Hexagon::CRRegsRegClass.contains(DestReg) &&
+  if (Hexagon::CtrRegsRegClass.contains(DestReg) &&
       Hexagon::IntRegsRegClass.contains(SrcReg)) {
-    BuildMI(MBB, I, DL, get(Hexagon::TFCR), DestReg).addReg(SrcReg);
+    BuildMI(MBB, I, DL, get(Hexagon::A2_tfrrcr), DestReg).addReg(SrcReg);
     return;
   }
   if (Hexagon::PredRegsRegClass.contains(SrcReg) &&
@@ -1172,7 +1172,7 @@ isValidOffset(const int Opcode, const int Offset) const {
   case Hexagon::LDriw_pred:
     return true;
 
-  case Hexagon::LOOP0_i:
+  case Hexagon::J2_loop0i:
     return isUInt<10>(Offset);
 
   // INLINEASM is very special.

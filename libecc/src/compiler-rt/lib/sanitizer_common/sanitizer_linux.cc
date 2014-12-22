@@ -416,7 +416,7 @@ uptr GetRSS() {
   buf[len] = 0;
   // The format of the file is:
   // 1084 89 69 11 0 79 0
-  // We need the second number which is RSS in 4K units.
+  // We need the second number which is RSS in pages.
   char *pos = buf;
   // Skip the first number.
   while (*pos >= '0' && *pos <= '9')
@@ -428,7 +428,7 @@ uptr GetRSS() {
   uptr rss = 0;
   while (*pos >= '0' && *pos <= '9')
     rss = rss * 10 + *pos++ - '0';
-  return rss * 4096;
+  return rss * GetPageSizeCached();
 }
 
 static void GetArgsAndEnv(char*** argv, char*** envp) {
@@ -922,6 +922,21 @@ void GetExtraActivationFlags(char *buf, uptr size) {
 
 bool IsDeadlySignal(int signum) {
   return (signum == SIGSEGV) && common_flags()->handle_segv;
+}
+
+void *internal_start_thread(void(*func)(void *arg), void *arg) {
+  // Start the thread with signals blocked, otherwise it can steal user signals.
+  __sanitizer_sigset_t set, old;
+  internal_sigfillset(&set);
+  internal_sigprocmask(SIG_SETMASK, &set, &old);
+  void *th;
+  real_pthread_create(&th, 0, (void*(*)(void *arg))func, arg);
+  internal_sigprocmask(SIG_SETMASK, &old, 0);
+  return th;
+}
+
+void internal_join_thread(void *th) {
+  real_pthread_join(th, 0);
 }
 
 }  // namespace __sanitizer

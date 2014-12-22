@@ -652,6 +652,9 @@ let ExeDomain = SSEPackedDouble in {
                               avx512vl_f64_info>, VEX_W, EVEX_CD8<64, CD8VT1>;
 }
 
+// avx512_broadcast_pat introduces patterns for broadcast with a scalar argument.
+// Later, we can canonize broadcast instructions before ISel phase and 
+// eliminate additional patterns on ISel.
 // SrcRC_v and SrcRC_s are RegisterClasses for vector and scalar
 // representations of source
 multiclass avx512_broadcast_pat<string InstName, SDNode OpNode,
@@ -2207,6 +2210,11 @@ def: Pat<(v8f64 (masked_load addr:$ptr, VK8WM:$mask,
 
 def: Pat<(v8f64 (masked_load addr:$ptr, VK8WM:$mask, (v8f64 VR512:$src0))),
          (VMOVUPDZrmk VR512:$src0, VK8WM:$mask, addr:$ptr)>;
+
+def: Pat<(v8f32 (masked_load addr:$ptr, VK8WM:$mask, (v8f32 VR256:$src0))),
+         (v8f32 (EXTRACT_SUBREG (v16f32 (VMOVUPSZrmk
+         (INSERT_SUBREG (v16f32 (IMPLICIT_DEF)), VR256:$src0, sub_ymm),
+          (v16i1 (COPY_TO_REGCLASS VK8WM:$mask, VK16WM)), addr:$ptr)), sub_ymm))>;
 
 defm VMOVDQA32 : avx512_load_vl<0x6F, "vmovdqa32", "alignedload", "i", "32",
                                 "16", "8", "4", SSEPackedInt, HasAVX512>,

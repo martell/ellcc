@@ -213,6 +213,7 @@ class AllocatorStats {
   void Init() {
     internal_memset(this, 0, sizeof(*this));
   }
+  void InitLinkerInitialized() {}
 
   void Add(AllocatorStat i, u64 v) {
     v += atomic_load(&stats_[i], memory_order_relaxed);
@@ -237,10 +238,13 @@ class AllocatorStats {
 // Global stats, used for aggregation and querying.
 class AllocatorGlobalStats : public AllocatorStats {
  public:
-  void Init() {
-    internal_memset(this, 0, sizeof(*this));
+  void InitLinkerInitialized() {
     next_ = this;
     prev_ = this;
+  }
+  void Init() {
+    internal_memset(this, 0, sizeof(*this));
+    InitLinkerInitialized();
   }
 
   void Register(AllocatorStats *s) {
@@ -999,10 +1003,14 @@ struct SizeClassAllocatorLocalCache {
 template <class MapUnmapCallback = NoOpMapUnmapCallback>
 class LargeMmapAllocator {
  public:
-  void Init(bool may_return_null) {
-    internal_memset(this, 0, sizeof(*this));
+  void InitLinkerInitialized(bool may_return_null) {
     page_size_ = GetPageSizeCached();
     atomic_store(&may_return_null_, may_return_null, memory_order_relaxed);
+  }
+
+  void Init(bool may_return_null) {
+    internal_memset(this, 0, sizeof(*this));
+    InitLinkerInitialized(may_return_null);
   }
 
   void *Allocate(AllocatorStats *stat, uptr size, uptr alignment) {
@@ -1250,11 +1258,21 @@ template <class PrimaryAllocator, class AllocatorCache,
           class SecondaryAllocator>  // NOLINT
 class CombinedAllocator {
  public:
-  void Init(bool may_return_null) {
+  void InitCommon(bool may_return_null) {
     primary_.Init();
+    atomic_store(&may_return_null_, may_return_null, memory_order_relaxed);
+  }
+
+  void InitLinkerInitialized(bool may_return_null) {
+    secondary_.InitLinkerInitialized(may_return_null);
+    stats_.InitLinkerInitialized();
+    InitCommon(may_return_null);
+  }
+
+  void Init(bool may_return_null) {
     secondary_.Init(may_return_null);
     stats_.Init();
-    atomic_store(&may_return_null_, may_return_null, memory_order_relaxed);
+    InitCommon(may_return_null);
   }
 
   void *Allocate(AllocatorCache *cache, uptr size, uptr alignment,
@@ -1279,8 +1297,12 @@ class CombinedAllocator {
     return res;
   }
 
+  bool MayReturnNull() const {
+    return atomic_load(&may_return_null_, memory_order_acquire);
+  }
+
   void *ReturnNullOrDie() {
-    if (atomic_load(&may_return_null_, memory_order_acquire))
+    if (MayReturnNull())
       return 0;
     ReportAllocatorCannotReturnNull();
   }

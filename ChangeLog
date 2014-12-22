@@ -1,7 +1,10 @@
 current SVN:
 
+* Update to LLVM r224687.
+* Fixed thread spawn memory leak.
+* Cleaned up tty driver interrupt handling.
+* Added a threading example to ELK examples.
 * Updated ELK context switching to not rely on usr stack.
-* Update to LLVM r224322.
 
 version 0.1.5:
 

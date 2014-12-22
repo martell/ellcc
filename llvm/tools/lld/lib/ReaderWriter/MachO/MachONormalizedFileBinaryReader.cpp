@@ -437,6 +437,8 @@ readBinary(std::unique_ptr<MemoryBuffer> &mb,
     case LC_ID_DYLIB: {
       const dylib_command *dl = reinterpret_cast<const dylib_command*>(lc);
       f->installName = lc + read32(&dl->dylib.name, isBig);
+      f->currentVersion = read32(&dl->dylib.current_version, isBig);
+      f->compatVersion = read32(&dl->dylib.compatibility_version, isBig);
       }
       break;
     case LC_DATA_IN_CODE: {
@@ -458,6 +460,11 @@ readBinary(std::unique_ptr<MemoryBuffer> &mb,
       entry.compatVersion = read32(&dl->dylib.compatibility_version, isBig);
       entry.currentVersion = read32(&dl->dylib.current_version, isBig);
       f->dependentDylibs.push_back(entry);
+     }
+      break;
+    case LC_RPATH: {
+      const rpath_command *rpc = reinterpret_cast<const rpath_command *>(lc);
+      f->rpaths.push_back(lc + read32(&rpc->path, isBig));
      }
       break;
     case LC_DYLD_INFO:
