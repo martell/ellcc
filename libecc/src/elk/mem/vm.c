@@ -388,7 +388,7 @@ static int do_map(vm_map_t map, void *addr, size_t size, void **alloc)
   if (size == 0)
     return -EINVAL;
 
-#if RICH // MAXMEM defined in param.h as 4MB. Why?
+#if RICH // MAXMEM defined in param.h as 4MB. Need to allocate more page tables.
   if (map->total + size >= MAXMEM)
     return -ENOMEM;
 #endif
@@ -742,7 +742,6 @@ static vm_map_t int_init(void)
 static void seg_init(struct seg *seg, int kernel)
 {
   extern char __end[];            // The end of the kernel .bss area.
-  extern struct bootinfo bootinfo;
   seg->next = seg->prev = seg;
   seg->sh_next = seg->sh_prev = seg;
   seg->addr = kernel ? round_page((uintptr_t)__end) : PAGE_SIZE;
