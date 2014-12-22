@@ -95,7 +95,7 @@ static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
   }
 
   void *uaddr = *addr;
-  if (anywhere == 0 && !user_area(*addr)) {
+  if (pid && anywhere == 0 && !user_area(*addr)) {
     return -EACCES;
   }
 
@@ -168,7 +168,7 @@ static int int_free(pid_t pid, void *addr, size_t size)
     return -EPERM;
   }
 
-  if (!user_area(addr)) {
+  if (pid && !user_area(addr)) {
     return -EFAULT;
   }
 
@@ -192,7 +192,7 @@ static int do_free(vm_map_t map, void *addr, size_t size)
     return -EINVAL;
 
   // Find the target segment.
-  seg = seg_lookup(&map->head, va, 1);
+  seg = seg_lookup(&map->head, va, size);
   if (seg == NULL || seg->addr != va || (seg->flags & SEG_FREE))
     return -EINVAL;
 
@@ -229,7 +229,7 @@ static int int_attribute(pid_t pid, void *addr, size_t size, int attr)
     return -EPERM;
   }
 
-  if (!user_area(addr)) {
+  if (pid && !user_area(addr)) {
     return -ENOMEM;
   }
 
@@ -252,9 +252,9 @@ static int do_attribute(vm_map_t map, void *addr, size_t size, int attr)
   }
 
   // Find the target segment.
-  seg = seg_lookup(&map->head, va, 1);
+  seg = seg_lookup(&map->head, va, size);
   if (seg == NULL || (seg->flags & SEG_FREE)) {
-    return -EINVAL;  /* not allocated */
+    return -EINVAL;     // Not allocated.
   }
 
   // The attribute of the mapped or shared segment can not be changed.
@@ -308,7 +308,7 @@ static int int_map(pid_t target, void *addr, size_t size, void **alloc)
     return -EPERM;
   }
 
-  if (!user_area(addr)) {
+  if (getpid() && !user_area(addr)) {
     return -EFAULT;
   }
 

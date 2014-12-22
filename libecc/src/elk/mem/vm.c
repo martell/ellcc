@@ -98,7 +98,7 @@ static int int_allocate(pid_t pid, void **addr, size_t size, int anywhere)
     return -ESRCH;
   }
 
-  if (pid && pid != getpid() && !capable(CAP_SYS_PTRACE)) {
+  if (pid != getpid() && !capable(CAP_SYS_PTRACE)) {
     return -EPERM;
   }
 
@@ -188,7 +188,7 @@ static int int_free(pid_t pid, void *addr, size_t size)
     return -ESRCH;
   }
 
-  if (pid && pid != getpid() && !capable(CAP_SYS_PTRACE)) {
+  if (pid != getpid() && !capable(CAP_SYS_PTRACE)) {
     return -EPERM;
   }
 
@@ -821,6 +821,7 @@ static struct seg *seg_merge(struct seg *head, vaddr_t addr, size_t size)
         struct seg *next = sp->next;    // Save the next pointer.
         if (seg->size <= size) {
           // This segment is in the middle.
+          sp->next->prev = seg;
           kmem_free(sp);
           seg->next = next;
           next = sp->next;
@@ -848,6 +849,7 @@ static struct seg *seg_lookup(struct seg *head, vaddr_t addr, size_t size)
         seg->addr + seg->size >= addr + size) {
       return seg;
     }
+
     seg = seg->next;
   } while (seg != head);
 
@@ -891,15 +893,16 @@ static void seg_free(struct seg *head, struct seg *seg)
 
   ASSERT(seg->flags != SEG_FREE);
 
-  seg->flags = SEG_FREE;
-
   // If it is shared segment, unlink from shared list.
   if (seg->flags & SEG_SHARED) {
     seg->sh_prev->sh_next = seg->sh_next;
     seg->sh_next->sh_prev = seg->sh_prev;
+
     if (seg->sh_prev == seg->sh_next)
       seg->sh_prev->flags &= ~SEG_SHARED;
   }
+
+  seg->flags = SEG_FREE;
 
   // If next segment is free, merge with it.
   next = seg->next;
@@ -1020,5 +1023,3 @@ ELK_CONSTRUCTOR()
   vm_init = int_init;
   vm_mmu_init = int_mmu_init;
 }
-
-
