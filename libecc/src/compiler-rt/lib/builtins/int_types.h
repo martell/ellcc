@@ -59,6 +59,7 @@ typedef union
 #if RICH
 #if __LP64__ || defined(__ppc__) || defined(__powerpc__)
 #endif
+#endif
 /* MIPS64 issue: PR 20098 */
 #if defined(__LP64__) && !(defined(__mips__) && defined(__clang__))
 #define CRT_HAS_128BIT
