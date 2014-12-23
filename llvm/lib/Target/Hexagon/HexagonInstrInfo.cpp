@@ -81,8 +81,8 @@ unsigned HexagonInstrInfo::isLoadFromStackSlot(const MachineInstr *MI,
   case Hexagon::LDriw:
   case Hexagon::LDrid:
   case Hexagon::LDrih:
-  case Hexagon::LDrib:
-  case Hexagon::LDriub:
+  case Hexagon::L2_loadrb_io:
+  case Hexagon::L2_loadrub_io:
     if (MI->getOperand(2).isFI() &&
         MI->getOperand(1).isImm() && (MI->getOperand(1).getImm() == 0)) {
       FrameIndex = MI->getOperand(2).getIndex();
@@ -684,10 +684,8 @@ bool HexagonInstrInfo::isPredicable(MachineInstr *MI) const {
   case Hexagon::LDriuh_indexed:
     return isShiftedUInt<6,1>(MI->getOperand(2).getImm());
 
-  case Hexagon::LDrib:
-  case Hexagon::LDriub:
-  case Hexagon::LDrib_indexed:
-  case Hexagon::LDriub_indexed:
+  case Hexagon::L2_loadrb_io:
+  case Hexagon::L2_loadrub_io:
     return isUInt<6>(MI->getOperand(2).getImm());
 
   case Hexagon::POST_LDrid:
@@ -1131,9 +1129,9 @@ isValidOffset(const int Opcode, const int Offset) const {
     return (Offset >= Hexagon_MEMH_OFFSET_MIN) &&
       (Offset <= Hexagon_MEMH_OFFSET_MAX);
 
-  case Hexagon::LDrib:
+  case Hexagon::L2_loadrb_io:
   case Hexagon::STrib:
-  case Hexagon::LDriub:
+  case Hexagon::L2_loadrub_io:
     return (Offset >= Hexagon_MEMB_OFFSET_MIN) &&
       (Offset <= Hexagon_MEMB_OFFSET_MAX);
 
@@ -1364,18 +1362,14 @@ isConditionalLoad (const MachineInstr* MI) const {
     case Hexagon::LDrih_cNotPt :
     case Hexagon::LDrih_indexed_cPt :
     case Hexagon::LDrih_indexed_cNotPt :
-    case Hexagon::LDrib_cPt :
-    case Hexagon::LDrib_cNotPt :
-    case Hexagon::LDrib_indexed_cPt :
-    case Hexagon::LDrib_indexed_cNotPt :
+    case Hexagon::L2_ploadrbt_io:
+    case Hexagon::L2_ploadrbf_io:
     case Hexagon::LDriuh_cPt :
     case Hexagon::LDriuh_cNotPt :
     case Hexagon::LDriuh_indexed_cPt :
     case Hexagon::LDriuh_indexed_cNotPt :
-    case Hexagon::LDriub_cPt :
-    case Hexagon::LDriub_cNotPt :
-    case Hexagon::LDriub_indexed_cPt :
-    case Hexagon::LDriub_indexed_cNotPt :
+    case Hexagon::L2_ploadrubt_io:
+    case Hexagon::L2_ploadrubf_io:
       return true;
     case Hexagon::POST_LDrid_cPt :
     case Hexagon::POST_LDrid_cNotPt :

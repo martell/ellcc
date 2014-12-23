@@ -5164,7 +5164,7 @@ PPCTargetLowering::getReturnAddrFrameIndex(SelectionDAG & DAG) const {
     // Find out what the fix offset of the frame pointer save area.
     int LROffset = PPCFrameLowering::getReturnSaveOffset(isPPC64, isDarwinABI);
     // Allocate the frame index for frame pointer save area.
-    RASI = MF.getFrameInfo()->CreateFixedObject(isPPC64? 8 : 4, LROffset, true);
+    RASI = MF.getFrameInfo()->CreateFixedObject(isPPC64? 8 : 4, LROffset, false);
     // Save the result.
     FI->setReturnAddrSaveIndex(RASI);
   }
@@ -8966,6 +8966,8 @@ PPCTargetLowering::BuildSDIVPow2(SDNode *N, const APInt &Divisor,
                                   std::vector<SDNode *> *Created) const {
   // fold (sdiv X, pow2)
   EVT VT = N->getValueType(0);
+  if (VT == MVT::i64 && !Subtarget.isPPC64())
+    return SDValue();
   if ((VT != MVT::i32 && VT != MVT::i64) ||
       !(Divisor.isPowerOf2() || (-Divisor).isPowerOf2()))
     return SDValue();
