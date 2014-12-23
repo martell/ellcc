@@ -154,10 +154,10 @@ static int do_allocate(vm_map_t map, void **addr, size_t size, int anywhere)
   DPRINTF(MEMDB_VM,
           ("vm_allocate: physical block allocated 0x%08lx (%zu bytes)\n",
            pa, size));
+  seg->phys = pa;
   if (mmu_map(map->pgd, pa, seg->addr, size, PG_WRITE))
     goto err2;
 
-  seg->phys = pa;
 
   // Zero fill.
   memset(ptokv(pa), 0, seg->size);

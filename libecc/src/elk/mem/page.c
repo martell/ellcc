@@ -45,11 +45,13 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
 #include <pthread.h>
 
 #include "kernel.h"
 #include "vm.h"
 #include "bootinfo.h"
+#include "command.h"
 #include "page.h"
 
 /** The page structure is put on the head of the first page of
@@ -271,3 +273,45 @@ void page_init(void)
   used_size = 0;
   DPRINTF(MEMDB_CORE, ("Memory size=%ld\n", total_size));
 }
+
+#if PM_COMMANDS
+/** Display the free page list.
+ */
+static int pmCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("show free memory pages.\n");
+    return COMMAND_OK;
+  }
+
+  printf("%10.10s %10.10s\n", "VADDR", "SIZE");
+  struct page *page = page_head.next;
+  do {
+    printf("%8p %10zd bytes (%zd pages)\n", page, page->size,
+           page->size / PAGE_SIZE);
+    page = page->next;
+  } while(page && page != &page_head);
+
+  return COMMAND_OK;
+}
+
+/** Create a section heading for the help command.
+ */
+static int sectionCommand(int argc, char **argv)
+{
+  if (argc <= 0 ) {
+    printf("Paged Memory Allocation Commands:\n");
+  }
+  return COMMAND_OK;
+}
+
+#endif  // PM_COMMANDS
+
+C_CONSTRUCTOR()
+{
+#if VM_COMMANDS
+  command_insert(NULL, sectionCommand);
+  command_insert("pm", pmCommand);
+#endif
+}
+

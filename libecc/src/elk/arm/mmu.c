@@ -109,6 +109,7 @@ static paddr_t alloc_pgd(void)
  * page entry in it. All page tables are released when mmu_delmap()
  * is called when a process is terminated.
  */
+#include "thread.h"     // RICH
 int mmu_map(pgd_t pgd, paddr_t pa, vaddr_t va, size_t size, int type)
 {
   uint32_t pte_flag = 0;

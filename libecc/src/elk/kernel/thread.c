@@ -150,7 +150,7 @@ typedef struct thread
   unsigned flags;               // Flags associated with this thread.
   unsigned nesting;             // Suscall nesting level.
   int priority;                 // The thread's priority. 0 is highest.
-  const char *name;             // The thread's name.
+  char *name;                   // The thread's name.
   int *clear_child_tid;         // The clear child thread id address.
   pid_t pid;                    // The process id.
   pid_t tid;                    // The thread id.
@@ -300,8 +300,9 @@ static void create_system_threads(void)
     idle_thread[i].priority = PRIORITIES;       // The lowest priority.
     idle_thread[i].state = IDLE;
     alloc_tid(&idle_thread[i]);
-    snprintf(name, 20, "idle%d", i);
-    idle_thread[i].name = strdup(name);
+    int s = snprintf(name, 20, "idle%d", i) + 1;
+    idle_thread[i].name = kmem_alloc(s);
+    strcpy(idle_thread[i].name, name);
   }
 }
 
@@ -1930,19 +1931,19 @@ struct bootinfo bootinfo;
 static void init(void)
 {
 #if HAVE_VM
-  bootinfo.nr_rams = 1;
+
 #if RICH
-  // RICH Save a few pages for malloc() for now.
-  bootinfo.ram[0].base = round_page((uintptr_t)__end) + (4096 * 4);
-  bootinfo.ram[0].size = trunc_page((uintptr_t)__heap_end__)
-                         - bootinfo.ram[0].base;
-#endif
+  bootinfo.nr_rams = 1;
   bootinfo.ram[0].base = 0x48000000 + 0x0100000;
   bootinfo.ram[0].size = 0x2000000 - 0x0100000;
   bootinfo.ram[0].type = MT_USABLE;
-#if RICH
+#else
+  bootinfo.nr_rams = 2;
+  bootinfo.ram[0].base = 0x48000000;
+  bootinfo.ram[0].size = 0x02000000;
+  bootinfo.ram[0].type = MT_USABLE;
   bootinfo.ram[1].base = 0x48000000;
-  bootinfo.ram[1].size = 0x0100000;
+  bootinfo.ram[1].size = round_page((uintptr_t)__end) - SYSPAGE;
   bootinfo.ram[1].type = MT_RESERVED;
 #endif
 

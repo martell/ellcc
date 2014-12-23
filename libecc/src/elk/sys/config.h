@@ -46,6 +46,8 @@
 #define VM_COMMANDS 1
 #define HAVE_VM 1               // Use mem functions for memory management.
 
+#define PM_COMMANDS 1           // Paged memory allocation commands.
+
 #define HAVE_SIGNALS 1          // Implement signals.
 
 #define CONFIG_DIAG_MSGSZ 128   // Diagnostic meessage size.

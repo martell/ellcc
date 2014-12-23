@@ -61,7 +61,6 @@ static int yieldCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
-char *fake_ptr;
 static int memCommand(int argc, char **argv)
 {
   if (argc <= 0) {
@@ -74,11 +73,12 @@ static int memCommand(int argc, char **argv)
     size = strtoul(argv[1], NULL, 0);
   }
 
-  fake_ptr = malloc(size);
-  if (fake_ptr == NULL) {
+  char *ptr = malloc(size);
+  if (ptr == NULL) {
     printf("out of memory\n");
     return COMMAND_ERROR;
   }
+  printf("allocated memory at %8p\n", ptr);
   return COMMAND_OK;
 }
 
