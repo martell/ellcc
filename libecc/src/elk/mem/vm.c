@@ -151,8 +151,9 @@ static int do_allocate(vm_map_t map, void **addr, size_t size, int anywhere)
   if ((pa = page_alloc(size)) == 0)
     goto err1;
 
-  DPRINTF(MEMDB_VM, ("vm_allocate: physical page allocated 0x%08lx (%zu)\n",
-                     pa, size));
+  DPRINTF(MEMDB_VM,
+          ("vm_allocate: physical block allocated 0x%08lx (%zu bytes)\n",
+           pa, size));
   if (mmu_map(map->pgd, pa, seg->addr, size, PG_WRITE))
     goto err2;
 
@@ -317,12 +318,13 @@ static int do_attribute(vm_map_t map, void *addr, size_t size, int attr)
   if (seg->flags & SEG_SHARED) {
     old_pa = seg->phys;
 
-    // Allocate new physical page.
+    // Allocate new physical pages.
     if ((new_pa = page_alloc(seg->size)) == 0)
       return -ENOMEM;
 
-    DPRINTF(MEMDB_VM, ("vm_attribute: physical page allocated 0x%08lx (%zu)\n",
-                       new_pa, seg->size));
+    DPRINTF(MEMDB_VM,
+            ("vm_attribute: physical block allocated 0x%08lx (%zu bytes)\n",
+              new_pa, seg->size));
 
     // Copy source page.
     memcpy(ptokv(new_pa), ptokv(old_pa), seg->size);
@@ -571,13 +573,14 @@ static vm_map_t do_dup(vm_map_t org_map)
       }
 
       if (!(dest->flags & SEG_SHARED)) {
-        // Allocate new physical page.
+        // Allocate new physical pages.
         dest->phys = page_alloc(src->size);
         if (dest->phys == 0)
           return NULL;
 
-        DPRINTF(MEMDB_VM, ("vm_dup: physical page allocated 0x%08lx (%zu)\n",
-                           dest->phys, src->size));
+        DPRINTF(MEMDB_VM,
+                ("vm_dup: physical block allocated 0x%08lx (%zu bytes)\n",
+                  dest->phys, src->size));
         // Copy source page.
         memcpy(ptokv(dest->phys), ptokv(src->phys),
                src->size);
@@ -699,20 +702,16 @@ static void int_mmu_init(void)
   const struct mmumap mmumap_table[] =
   {
 #if defined(__arm__)
-    /** Internal SRAM (4M)
-     */
+    // RAM
     { 0x80000000, 0x48000000, 0x400000, VMT_RAM },
 
-    /** Counter/Timers (1M)
-     */
+    // Counter/Timers.
     { SP804_BASE, SP804_PHYSICAL_BASE, SP804_SIZE, VMT_IO },
 
-    /** Private memory (1M)
-     */
+    // Private memory.
     { ARM_PRIV_BASE, ARM_PRIV_PHYSICAL_BASE, ARM_PRIV_SIZE, VMT_IO },
 
-    /** UART 0 (1M)
-     */
+    // UART 0.
     { PL011_BASE, PL011_PHYSICAL_BASE, PL011_SIZE, VMT_IO },
 #endif
     { 0,0,0,0 }

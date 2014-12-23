@@ -13,17 +13,6 @@
 
 #include "command.h"
 
-static int yieldCommand(int argc, char **argv)
-{
-  if (argc <= 0) {
-    printf("yield the current time slice.\n");
-    return COMMAND_OK;
-  }
-
-  sched_yield();
-  return COMMAND_OK;
-}
-
 static int thread_create(const char *name, pthread_t *id,
                          void *(*start)(void *), int pri,
                          void *stack, size_t stack_size,
@@ -59,6 +48,66 @@ static int thread_create(const char *name, pthread_t *id,
   if (s != 0)
     printf("pthread_create: %s\n", strerror(s));
   return s;
+}
+
+static int yieldCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("yield the current time slice.\n");
+    return COMMAND_OK;
+  }
+
+  sched_yield();
+  return COMMAND_OK;
+}
+
+char *fake_ptr;
+static int memCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("allocate a block of memory.\n");
+    return COMMAND_OK;
+  }
+
+  size_t size = 100 * 1024;
+  if (argc > 1) {
+    size = strtoul(argv[1], NULL, 0);
+  }
+
+  fake_ptr = malloc(size);
+  if (fake_ptr == NULL) {
+    printf("out of memory\n");
+    return COMMAND_ERROR;
+  }
+  return COMMAND_OK;
+}
+
+static void *thread1(void *arg)
+{
+  printf ("thread1 started\n");
+  for ( ;; ) {
+  }
+
+  return 0;
+}
+
+static int thread1Command(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("start the thread1 test case.\n");
+    return COMMAND_OK;
+  }
+
+  pthread_t id1;
+  thread_create("thread1",              // name
+                &id1,                   // id
+                thread1,                // entry
+                0,                      // priority
+                NULL,                   // stack
+                4096,                   // stack size
+                NULL);                  // arg
+
+  return COMMAND_OK;
 }
 
 static void *thread2(void *arg)
@@ -291,6 +340,8 @@ C_CONSTRUCTOR()
   command_insert(NULL, sectionCommand);
   command_insert("syscall", syscallCommand);
   command_insert("yield", yieldCommand);
+  command_insert("mem", memCommand);
+  command_insert("thread1", thread1Command);
   command_insert("thread2", thread2Command);
   command_insert("thread3", thread3Command);
   command_insert("cancel3", cancel3Command);

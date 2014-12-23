@@ -1,6 +1,6 @@
 current SVN:
 
-* Update to LLVM r224687.
+* Update to LLVM r224766.
 * Fixed thread spawn memory leak.
 * Cleaned up tty driver interrupt handling.
 * Added a threading example to ELK examples.

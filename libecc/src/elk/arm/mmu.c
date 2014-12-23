@@ -157,7 +157,10 @@ int mmu_map(pgd_t pgd, paddr_t pa, vaddr_t va, size_t size, int type)
       pgd[PAGE_DIR(va)] = (uint32_t)pg | PDE_PRESENT;
       pte = (pte_t)ptokv(pg);
       memset(pte, 0, L2TBL_SIZE);
+      DPRINTF(MEMDB_VM, ("New pte allocated: %p\n", pte));
     }
+    DPRINTF(MEMDB_VM, ("mmu_map pgd %8p pte(%8p)[%lu] = pa(0x%08x)\n",
+                       pgd, pte, PAGE_TABLE(va), (uint32_t)pa | pte_flag));
 
     // Set new entry into page table.
     pte[PAGE_TABLE(va)] = (uint32_t)pa | pte_flag;
@@ -304,7 +307,6 @@ void mmu_init(const struct mmumap *mmumap_table)
 
     if (mmu_map(boot_pgd, map->phys, map->virt,
           map->size, map_type))
-
       panic("mmu_init");
   }
 
