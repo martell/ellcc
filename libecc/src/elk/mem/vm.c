@@ -703,7 +703,7 @@ static void int_mmu_init(void)
   {
 #if defined(__arm__)
     // RAM
-    { 0x80000000, 0x48000000, 0x400000, VMT_RAM },
+    { 0x48000000, 0x48000000, 0x2000000, VMT_RAM },
 
     // Counter/Timers.
     { SP804_BASE, SP804_PHYSICAL_BASE, SP804_SIZE, VMT_IO },
@@ -724,14 +724,14 @@ static vm_map_t int_init(void)
 {
   pgd_t pgd;
 
+  kernel_map.refcnt = 1;
+
   // Setup vm mapping for the kernel process.
   if ((pgd = mmu_newmap()) == NO_PGD)
     panic("vm_init");
-
-  kernel_map.pgd = pgd;
-  kernel_map.refcnt = 1;
   mmu_switch(pgd);
 
+  kernel_map.pgd = pgd;
   seg_init(&kernel_map.head, 1);
   return &kernel_map;
 }
