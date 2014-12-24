@@ -703,7 +703,7 @@ static void int_mmu_init(void)
   {
 #if defined(__arm__)
     // RAM
-    { 0x48000000, 0x48000000, 0x2000000, VMT_RAM },
+    { 0x80000000, 0x48000000, 0x2000000, VMT_RAM },
 
     // Counter/Timers.
     { SP804_BASE, SP804_PHYSICAL_BASE, SP804_SIZE, VMT_IO },
@@ -743,7 +743,12 @@ static void seg_init(struct seg *seg, int kernel)
   extern char __end[];            // The end of the kernel .bss area.
   seg->next = seg->prev = seg;
   seg->sh_next = seg->sh_prev = seg;
+#if RICH
   seg->addr = kernel ? round_page((uintptr_t)__end) : PAGE_SIZE;
+#else
+  // RICH: Leav room for kmem_alloc(). How much?
+  seg->addr = kernel ? round_page((uintptr_t)__end + 1024*32): PAGE_SIZE;
+#endif
   seg->phys = 0;
   seg->size = (kernel ? 0L - seg->addr : USERLIMIT) - PAGE_SIZE;
   seg->flags = SEG_FREE;

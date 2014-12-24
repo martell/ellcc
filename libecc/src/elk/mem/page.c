@@ -280,14 +280,19 @@ void page_init(void)
 static int pmCommand(int argc, char **argv)
 {
   if (argc <= 0) {
-    printf("show free memory pages.\n");
+    printf("show free memory page.nformation\n");
     return COMMAND_OK;
   }
 
-  printf("%10.10s %10.10s\n", "VADDR", "SIZE");
+  printf("Total size: %9.9lu (%lu pages)\n", total_size, total_size / PAGE_SIZE);
+  printf("Used size:  %9.9lu (%lu pages)\n", used_size, used_size / PAGE_SIZE);
+  printf("Free blocks:\n");
+  printf("%5.5s %10.10s %10.10s\n", "BLOCK", "VADDR", "SIZE");
+
+  int i = 0;
   struct page *page = page_head.next;
   do {
-    printf("%8p %10zd bytes (%zd pages)\n", page, page->size,
+    printf("%5d %8p %10zd bytes (%zd pages)\n", ++i, page, page->size,
            page->size / PAGE_SIZE);
     page = page->next;
   } while(page && page != &page_head);

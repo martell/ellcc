@@ -4,24 +4,39 @@
 
 /** Display a virtual memory map.
  */
+#define MORE 0
 static void display_map(pid_t pid, vm_map_t map)
 {
-  printf("VM map for pid %d\n", pid);
-  printf("reference count %d\n", map->refcnt);
-  printf("size            %zd bytes\n", map->total);
+  printf("VM map for pid %d:\n", pid);
+  printf("reference count: %d\n", map->refcnt);
+  printf("size:            %zd bytes\n", map->total);
   printf("Segments:\n");
-  printf("%10.10s "
-         "%10.10s %10.10s %10.10s %10.10s "
-         "%10.10s %10.10s %10.10s %10.10s\n",
-         "ADDR",
-         "VADDR", "SIZE", "PADDR", "FLAGS",
-         "NEXT", "PREV", "SH_NEXT", "SH_PREV");
+  printf("%5.5s %10.10s "
+         "%10.10s %10.10s %10.10s %10.10s"
+#if MORE
+         " %10.10s %10.10s %10.10s %10.10s"
+#endif
+         "\n",
+         "SEG", "ADDR",
+         "VADDR", "SIZE", "PADDR", "FLAGS"
+#if MORE
+         , "NEXT", "PREV", "SH_NEXT", "SH_PREV"
+#endif
+        );
   struct seg *seg = &map->head;
+  int i = 0;
   do {
-    printf("%8p 0x%08lx %10zd 0x%08lx 0x%08x %8p %8p %8p %8p\n",
-           seg,
-           seg->addr, seg->size, seg->phys, seg->flags,
-           seg->next, seg->prev, seg->sh_next, seg->sh_prev);
+    printf("%5d %8p 0x%08lx %10zd 0x%08lx 0x%08x"
+#if MORE
+           " %8p %8p %8p %8p"
+#endif
+           "\n",
+           ++i, seg,
+           seg->addr, seg->size, seg->phys, seg->flags
+#if MORE
+           , seg->next, seg->prev, seg->sh_next, seg->sh_prev
+#endif
+          );
     seg = seg->next;
   } while(seg && seg != &map->head);
 }
