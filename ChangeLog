@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.6:
+
 * Update to LLVM r224766.
 * Fixed thread spawn memory leak.
 * Cleaned up tty driver interrupt handling.
