@@ -39,9 +39,9 @@ sendrelease:
 	  http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION) \
 	  http://ellcc.org/svn/ellcc/tags/current
 	$(OUT)echo Enter the main password
-	$(OUT)scp ../README.txt ChangeLog ellcc-* main:/var/ftp/pub
+	$(OUT)scp ../README.txt ChangeLog ellcc-*-$(VERSION).tgz main:/var/ftp/pub
 	$(OUT)ssh main chmod oug+r /var/ftp/pub/\*
-	$(OUT)scp ../README.txt ChangeLog ellcc-* main:web/ellcc/releases
+	$(OUT)scp ../README.txt ChangeLog ellcc-*-$(VERSION).tgz main:web/ellcc/releases
 
 .PHONY: macrelease
 macrelease:
