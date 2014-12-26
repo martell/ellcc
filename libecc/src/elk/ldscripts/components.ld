@@ -2,7 +2,6 @@
 
 #ifdef ALL_COMMANDS
   #define TIME_COMMANDS
-  #define TEST_COMMANDS
   #define PROC_COMMANDS
 #endif
 
@@ -64,6 +63,11 @@
   #else
     EXTERN(__elk_vm_nommu) /* Non-MMU memory management. */
   #endif
+#endif
+
+#ifdef NETWORK
+  EXTERN(__elk_lwip_network) /* LWIP networking. */
+  #define FS
 #endif
 
 #ifdef RAMFS

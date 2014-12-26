@@ -23,7 +23,7 @@ VPATH := $(VPATH):$(SRCPATH)/$(LIB)/kernel
 SRCS += command.c time_commands.c \
 	__elk_start.c time.c irq.c nirq.c thread.c file.c fdconsole.c \
 	console.c memman.c simple_console.c simple_memman.c simple_exit.c \
-	device.c
+	device.c lwip_network.c
 
 
 # Turn of LWIP specific warnings.
