@@ -135,6 +135,11 @@ static int sys_setsockopt(int sockfd, int level, int optname,
   return -ENOSYS;
 }
 
+static int sys_shutdown(int sockfd, int how)
+{
+  return -ENOSYS;
+}
+
 static int sys_socket(int domain, int type, int protocol)
 {
   return -ENOSYS;
@@ -196,6 +201,8 @@ static int sys_socketcall(int call, unsigned long *args)
   case __SC_setsockopt:
     return sys_setsockopt(args[0], arg[1], arg[2], (const void *)arg[3],
                           (socklen_t *)arg[4]);
+  case __SC_shutdown:
+    return sys_shutdown(args[0], arg[1]);
   case __SC_socket:
     return sys_socket(args[0], arg[1], arg[2]);
   case __SC_socketpair:
@@ -233,6 +240,7 @@ ELK_CONSTRUCTOR()
   SYSCALL(sendmmsg);
   SYSCALL(sendmsg);
   SYSCALL(setsockopt);
+  SYSCALL(shutdown);
   SYSCALL(socket);
   SYSCALL(socketpair);
 
