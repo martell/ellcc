@@ -25,7 +25,7 @@ void (*system_c_init)(void);
 static int do_main(int argc, char **argv, char **environ)
 {
   if (system_c_init) system_c_init();   // Optional system initialization.
-  spl0();
+  // Initialize the main thread's file descriptors.
   return main(argc, argv, environ);
 }
 
@@ -57,6 +57,7 @@ void __elk_start(long *p, void *heap_end)
 
   if (system_init) system_init();       // Optional system initialization.
 
+  spl0();
   // Initialize the C run-time and call main().
   __libc_start_main(do_main, argc, argv);
 }

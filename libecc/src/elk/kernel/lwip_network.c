@@ -51,15 +51,235 @@
  */
 
 #include <sys/socket.h>
+#include <netinet/in.h>
 
 #include "config.h"
 #include "kernel.h"
-#include "syscalls.h"
 #include "lwip/tcpip.h"
-#include "crt1.h"
 
-// Make LWIP networking a select-able feature.
-FEATURE_CLASS(lwip_network, network)
+// Make LwIP AF_INET(6) networking a select-able feature.
+FEATURE_CLASS(lwip_network, inet_network)
+
+#if RICH
+/** Table to quickly map an lwIP error (err_t) to a socket error
+  * by using -err as an index */
+static const int err_to_errno_table[] = {
+  0,             /* ERR_OK          0      No error, everything OK. */
+  ENOMEM,        /* ERR_MEM        -1      Out of memory error.     */
+  ENOBUFS,       /* ERR_BUF        -2      Buffer error.            */
+  EWOULDBLOCK,   /* ERR_TIMEOUT    -3      Timeout                  */
+  EHOSTUNREACH,  /* ERR_RTE        -4      Routing problem.         */
+  EINPROGRESS,   /* ERR_INPROGRESS -5      Operation in progress    */
+  EINVAL,        /* ERR_VAL        -6      Illegal value.           */
+  EWOULDBLOCK,   /* ERR_WOULDBLOCK -7      Operation would block.   */
+  EADDRINUSE,    /* ERR_USE        -8      Address in use.          */
+  EALREADY,      /* ERR_ISCONN     -9      Already connected.       */
+  ENOTCONN,      /* ERR_CONN       -10     Not connected.           */
+  ECONNABORTED,  /* ERR_ABRT       -11     Connection aborted.      */
+  ECONNRESET,    /* ERR_RST        -12     Connection reset.        */
+  ENOTCONN,      /* ERR_CLSD       -13     Connection closed.       */
+  EIO,           /* ERR_ARG        -14     Illegal argument.        */
+  -1,            /* ERR_IF         -15     Low-level netif error    */
+};
+
+#define ERR_TO_ERRNO_TABLE_SIZE \
+  (sizeof(err_to_errno_table)/sizeof(err_to_errno_table[0]))
+
+#define err_to_errno(err) \
+  ((unsigned)(-(err)) < ERR_TO_ERRNO_TABLE_SIZE ? \
+    err_to_errno_table[-(err)] : EIO)
+
+#if LWIP_IPV6
+
+#define IS_SOCK_ADDR_LEN_VALID(namelen) \
+  (((namelen) == sizeof(struct sockaddr_in)) || \
+  ((namelen) == sizeof(struct sockaddr_in6)))
+#define IS_SOCK_ADDR_TYPE_VALID(name) (((name)->sa_family == AF_INET) || \
+                                      ((name)->sa_family == AF_INET6))
+
+#define SOCK_ADDR_TYPE_MATCH(name, sock) \
+  ((((name)->sa_family == AF_INET) && \
+    !(NETCONNTYPE_ISIPV6((sock)->conn->type))) || \
+   (((name)->sa_family == AF_INET6) && \
+    (NETCONNTYPE_ISIPV6((sock)->conn->type))))
+
+#define IP6ADDR_PORT_TO_SOCKADDR(sin6, ipXaddr, port) \
+  do { \
+    (sin6)->sin6_len = sizeof(struct sockaddr_in6); \
+    (sin6)->sin6_family = AF_INET6; \
+    (sin6)->sin6_port = htons((port)); \
+    (sin6)->sin6_flowinfo = 0; \
+    inet6_addr_from_ip6addr(&(sin6)->sin6_addr, ipX_2_ip6(ipXaddr)); \
+  }while(0)
+
+#define IPXADDR_PORT_TO_SOCKADDR(isipv6, sockaddr, ipXaddr, port) \
+  do { \
+    if (isipv6) { \
+      IP6ADDR_PORT_TO_SOCKADDR((struct sockaddr_in6*)(void*)(sockaddr), \
+                                ipXaddr, port); \
+    } else { \
+      IP4ADDR_PORT_TO_SOCKADDR((struct sockaddr_in*)(void*)(sockaddr), \
+                               ipXaddr, port); \
+    } \
+  } while(0)
+
+#define SOCKADDR6_TO_IP6ADDR_PORT(sin6, ipXaddr, port) \
+  do { \
+    inet6_addr_to_ip6addr(ipX_2_ip6(ipXaddr), &((sin6)->sin6_addr)); \
+    (port) = ntohs((sin6)->sin6_port); \
+  } while(0)
+
+#define SOCKADDR_TO_IPXADDR_PORT(isipv6, sockaddr, ipXaddr, port) \
+  do { \
+    if (isipv6) { \
+      SOCKADDR6_TO_IP6ADDR_PORT((struct sockaddr_in6*)(void*)(sockaddr), \
+                                ipXaddr, port); \
+    } else { \
+      SOCKADDR4_TO_IP4ADDR_PORT((struct sockaddr_in*)(void*)(sockaddr), \
+                                ipXaddr, port); \
+    } \
+  } while(0)
+
+#define DOMAIN_TO_NETCONN_TYPE(domain, type) (((domain) == AF_INET) ? \
+  (type) : (enum netconn_type)((type) | NETCONN_TYPE_IPV6))
+
+#else // LWIP_IPV6
+
+#define IS_SOCK_ADDR_LEN_VALID(namelen) ((namelen) == sizeof(struct sockaddr_in))
+#define IS_SOCK_ADDR_TYPE_VALID(name) ((name)->sa_family == AF_INET)
+#define SOCK_ADDR_TYPE_MATCH(name, sock) 1
+#define IPXADDR_PORT_TO_SOCKADDR(isipv6, sockaddr, ipXaddr, port) \
+  IP4ADDR_PORT_TO_SOCKADDR((struct sockaddr_in*)(void*)(sockaddr), \
+                            ipXaddr, port)
+#define SOCKADDR_TO_IPXADDR_PORT(isipv6, sockaddr, ipXaddr, port) \
+  SOCKADDR4_TO_IP4ADDR_PORT((struct sockaddr_in*)(void*)(sockaddr), ipXaddr, \
+                             port)
+#define DOMAIN_TO_NETCONN_TYPE(domain, netconn_type) (netconn_type)
+
+#endif /* LWIP_IPV6 */
+
+/**
+ * Callback registered in the netconn layer for each socket-netconn.
+ * Processes recvevent (data available) and wakes up tasks waiting for select.
+ */
+static void event_callback(struct netconn *conn, enum netconn_evt evt,
+                           u16_t len)
+{
+#if RICH
+  int s;
+  struct lwip_sock *sock;
+  struct lwip_select_cb *scb;
+  int last_select_cb_ctr;
+  SYS_ARCH_DECL_PROTECT(lev);
+
+  LWIP_UNUSED_ARG(len);
+
+  /* Get socket */
+  if (conn) {
+    s = conn->socket;
+    if (s < 0) {
+      /* Data comes in right away after an accept, even though
+       * the server task might not have created a new socket yet.
+       * Just count down (or up) if that's the case and we
+       * will use the data later. Note that only receive events
+       * can happen before the new socket is set up. */
+      SYS_ARCH_PROTECT(lev);
+      if (conn->socket < 0) {
+        if (evt == NETCONN_EVT_RCVPLUS) {
+          conn->socket--;
+        }
+        SYS_ARCH_UNPROTECT(lev);
+        return;
+      }
+      s = conn->socket;
+      SYS_ARCH_UNPROTECT(lev);
+    }
+
+    sock = get_socket(s);
+    if (!sock) {
+      return;
+    }
+  } else {
+    return;
+  }
+
+  SYS_ARCH_PROTECT(lev);
+  /* Set event as required */
+  switch (evt) {
+    case NETCONN_EVT_RCVPLUS:
+      sock->rcvevent++;
+      break;
+    case NETCONN_EVT_RCVMINUS:
+      sock->rcvevent--;
+      break;
+    case NETCONN_EVT_SENDPLUS:
+      sock->sendevent = 1;
+      break;
+    case NETCONN_EVT_SENDMINUS:
+      sock->sendevent = 0;
+      break;
+    case NETCONN_EVT_ERROR:
+      sock->errevent = 1;
+      break;
+    default:
+      LWIP_ASSERT("unknown event", 0);
+      break;
+  }
+
+  if (sock->select_waiting == 0) {
+    /* noone is waiting for this socket, no need to check select_cb_list */
+    SYS_ARCH_UNPROTECT(lev);
+    return;
+  }
+
+  /* Now decide if anyone is waiting for this socket */
+  /* NOTE: This code goes through the select_cb_list list multiple times
+     ONLY IF a select was actually waiting. We go through the list the number
+     of waiting select calls + 1. This list is expected to be small. */
+
+  /* At this point, SYS_ARCH is still protected! */
+again:
+  for (scb = select_cb_list; scb != NULL; scb = scb->next) {
+    /* remember the state of select_cb_list to detect changes */
+    last_select_cb_ctr = select_cb_ctr;
+    if (scb->sem_signalled == 0) {
+      /* semaphore not signalled yet */
+      int do_signal = 0;
+      /* Test this select call for our socket */
+      if (sock->rcvevent > 0) {
+        if (scb->readset && FD_ISSET(s, scb->readset)) {
+          do_signal = 1;
+        }
+      }
+      if (sock->sendevent != 0) {
+        if (!do_signal && scb->writeset && FD_ISSET(s, scb->writeset)) {
+          do_signal = 1;
+        }
+      }
+      if (sock->errevent != 0) {
+        if (!do_signal && scb->exceptset && FD_ISSET(s, scb->exceptset)) {
+          do_signal = 1;
+        }
+      }
+      if (do_signal) {
+        scb->sem_signalled = 1;
+        /* Don't call SYS_ARCH_UNPROTECT() before signaling the semaphore, as this might
+           lead to the select thread taking itself off the list, invalidating the semaphore. */
+        sys_sem_signal(SELECT_SEM_PTR(scb->sem));
+      }
+    }
+    /* unlock interrupts with each step */
+    SYS_ARCH_UNPROTECT(lev);
+    /* this makes sure interrupt protection time is short */
+    SYS_ARCH_PROTECT(lev);
+    if (last_select_cb_ctr != select_cb_ctr) {
+      /* someone has changed select_cb_list, restart at the beginning */
+      goto again;
+    }
+  }
+  SYS_ARCH_UNPROTECT(lev);
+#endif
+}
 
 static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
@@ -167,116 +387,61 @@ static int sys_shutdown(int sockfd, int how)
 
 static int sys_socket(int domain, int type, int protocol)
 {
-  return -ENOSYS;
-}
+  struct netconn *conn;
+  int i = 0;
 
-static int sys_socketpair(int domain, int type, int protocol, int sv[2])
-{
-  return -ENOSYS;
-}
+#if !LWIP_IPV6
+  LWIP_UNUSED_ARG(domain); /* @todo: check this */
+#endif /* LWIP_IPV6 */
 
-#ifdef SYS_socketcall
-static int sys_socketcall(int call, unsigned long *args)
-{
-  long arg[6];
-
-  // Get the call arguments.
-  copyin(arg, args, sizeof(arg));
-
-  switch (call) {
-  case __SC_accept:
-    return sys_accept(args[0], (struct sockaddr *)arg[1], (socklen_t *)arg[2]);
-  case __SC_accept4:
-    return sys_accept4(args[0], (struct sockaddr *)arg[1], (socklen_t *)arg[2],
-                       arg[3]);
-  case __SC_bind:
-    return sys_bind(args[0], (struct sockaddr *)arg[1], (socklen_t *)arg[2]);
-  case __SC_connect:
-    return sys_connect(args[0], (struct sockaddr *)arg[1], (socklen_t *)arg[2]);
-  case __SC_getpeername:
-    return sys_getpeername(args[0], (struct sockaddr *)arg[1],
-                           (socklen_t *)arg[2]);
-  case __SC_getsockname:
-    return sys_getsockname(args[0], (struct sockaddr *)arg[1],
-                           (socklen_t *)arg[2]);
-  case __SC_getsockopt:
-    return sys_getsockopt(args[0], arg[1], arg[2], (void *)arg[3],
-                          (socklen_t *)arg[4]);
-  case __SC_listen:
-    return sys_listen(args[0], arg[1]);
-  case __SC_recv:
-    return sys_recv(args[0], (void *)arg[1], (size_t)arg[2], arg[3]);
-  case __SC_recvfrom:
-    return sys_recvfrom(args[0], (void *)arg[1], (size_t)arg[2], arg[3],
-                        (struct sockaddr *)arg[4], (socklen_t *)arg[5]);
-  case __SC_recvmmsg:
-    return sys_recvmmsg(args[0], (struct msghdr *)arg[1], arg[2], arg[3],
-                        (struct timespec *)arg[4]);
-  case __SC_recvmsg:
-    return sys_recvmsg(args[0], (struct msghdr *)arg[1], arg[2]);
-  case __SC_send:
-    return sys_send(args[0], (void *)arg[1], (size_t)arg[2], arg[3]);
-  case __SC_sendto:
-    return sys_sendto(args[0], (void *)arg[1], (size_t)arg[2], arg[3],
-                      (struct sockaddr *)arg[4], (socklen_t *)arg[5]);
-  case __SC_sendmmsg:
-    return sys_sendmmsg(args[0], (struct msghdr *)arg[1], arg[2], arg[3]);
-  case __SC_sendmsg:
-    return sys_sendmsg(args[0], (struct msghdr *)arg[1], arg[2]);
-  case __SC_setsockopt:
-    return sys_setsockopt(args[0], arg[1], arg[2], (const void *)arg[3],
-                          (socklen_t *)arg[4]);
-  case __SC_shutdown:
-    return sys_shutdown(args[0], arg[1]);
-  case __SC_socket:
-    return sys_socket(args[0], arg[1], arg[2]);
-  case __SC_socketpair:
-    return sys_socketpair(args[0], arg[1], arg[2], (int *)arg[3]);
-
+  /* create a netconn */
+  switch (type) {
+  case SOCK_RAW:
+    conn = netconn_new_with_proto_and_callback(DOMAIN_TO_NETCONN_TYPE(domain, NETCONN_RAW),
+                                               (u8_t)protocol, event_callback);
+    LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_socket(%s, SOCK_RAW, %d) = ",
+                                 domain == PF_INET ? "PF_INET" : "UNKNOWN", protocol));
+    break;
+  case SOCK_DGRAM:
+    conn = netconn_new_with_callback(DOMAIN_TO_NETCONN_TYPE(domain,
+                 ((protocol == IPPROTO_UDPLITE) ? NETCONN_UDPLITE : NETCONN_UDP)) ,
+                 event_callback);
+    LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_socket(%s, SOCK_DGRAM, %d) = ",
+                                 domain == PF_INET ? "PF_INET" : "UNKNOWN", protocol));
+    break;
+  case SOCK_STREAM:
+    conn = netconn_new_with_callback(DOMAIN_TO_NETCONN_TYPE(domain, NETCONN_TCP), event_callback);
+    LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_socket(%s, SOCK_STREAM, %d) = ",
+                                 domain == PF_INET ? "PF_INET" : "UNKNOWN", protocol));
+    if (conn != NULL) {
+      /* Prevent automatic window updates, we do this on our own! */
+      netconn_set_noautorecved(conn, 1);
+    }
+    break;
   default:
+    LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_socket(%d, %d/UNKNOWN, %d) = -1\n",
+                                 domain, type, protocol));
     return -EINVAL;
   }
+
+  if (!conn) {
+    LWIP_DEBUGF(SOCKETS_DEBUG, ("-1 / ENOBUFS (could not create netconn)\n"));
+    return -ENOBUFS;
+  }
+
+  // RICH: i = alloc_socket(conn, 0);
+
+  if (i == -1) {
+    netconn_delete(conn);
+    return -ENFILE;
+  }
+  conn->socket = i;
+  LWIP_DEBUGF(SOCKETS_DEBUG, ("%d\n", i));
+  return i;
 }
 #endif
 
-// Define socket related system calls.
-ELK_CONSTRUCTOR()
-{
-#ifndef SYS_socketcall
-
-  SYSCALL(accept);
-  SYSCALL(accept4);
-  SYSCALL(bind);
-  SYSCALL(connect);
-  SYSCALL(getpeername);
-  SYSCALL(getsockname);
-  SYSCALL(getsockopt);
-  SYSCALL(listen);
-#ifdef SYS_recv
-  SYSCALL(recv);
-#endif
-  SYSCALL(recvfrom);
-  SYSCALL(recvmmsg);
-  SYSCALL(recvmsg);
-#ifdef SYS_send
-  SYSCALL(send);
-#endif
-  SYSCALL(sendto);
-  SYSCALL(sendmmsg);
-  SYSCALL(sendmsg);
-  SYSCALL(setsockopt);
-  SYSCALL(shutdown);
-  SYSCALL(socket);
-  SYSCALL(socketpair);
-
-#else
-
-  SYSCALL(socketcall);
-
-#endif
-}
-
-// Start up LWIP.
+// Start up LwIP.
 C_CONSTRUCTOR()
 {
   tcpip_init(0, 0);

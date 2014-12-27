@@ -1978,10 +1978,7 @@ static void init(void)
 static void c_init(void)
 {
 #if ENABLEFDS
-  // Initialize the main thread's file descriptors.
-  int s = fdset_new(&current->fdset);
-  ASSERT(s == 0);
-
+  int s;
   // Set up the RAM file system.
   s = mount("", "/", "ramfs", 0, NULL);
   if (s) {
@@ -2018,7 +2015,6 @@ static void c_init(void)
   if (fd != 0)
       close(fd);
 #endif
-
 }
 
 /* Initialize the thread handling code.
@@ -2074,10 +2070,6 @@ ELK_CONSTRUCTOR()
   // Set up the system initialization functions.
   system_init = init;
   system_c_init = c_init;
-}
-
-C_CONSTRUCTOR()
-{
   // Set up the tid pool.
   tid_initialize();
 
@@ -2087,7 +2079,15 @@ C_CONSTRUCTOR()
   current->pid = current->tid;          // The main thread starts a group.
   priority = current->priority;
 
+}
+
+C_CONSTRUCTOR()
+{
+#if ENABLEFDS
+  int s = fdset_new(&current->fdset);
+  ASSERT(s == 0);
+#endif
+
   // Create the system thread(s).
   create_system_threads();
 }
-
