@@ -37,6 +37,26 @@
 // Make networking a select-able feature.
 FEATURE(network)
 
+/* Network domain interface functions.
+ */
+struct domain_interface
+{
+};
+
+/* Interfaces to different domains. These pointers are filled in
+ * by the interface modes that implement them. This file assumes
+ * a NULL interface pointer is an unsupported domain.
+ */
+const struct domain_interface *unix_interface;
+const struct domain_interface *inet_interface;
+const struct domain_interface *ipx_interface;
+const struct domain_interface *netlink_interface;
+const struct domain_interface *x25_interface;
+const struct domain_interface *ax25_interface;
+const struct domain_interface *atmpvc_interface;
+const struct domain_interface *appletalk_interface;
+const struct domain_interface *packet_interface;
+
 static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
   return -ENOSYS;
@@ -143,6 +163,46 @@ static int sys_shutdown(int sockfd, int how)
 
 static int sys_socket(int domain, int type, int protocol)
 {
+  const struct domain_interface *interface = NULL;
+
+  // Choose the domain interface.
+  switch (domain) {
+  case AF_UNIX:
+    interface  = unix_interface;
+    break;
+  case AF_INET:
+  case AF_INET6:
+    interface = inet_interface;
+    break;
+  case AF_IPX:
+    interface = ipx_interface;
+    break;
+  case AF_NETLINK:
+    interface = netlink_interface;
+    break;
+  case AF_X25:
+    interface = x25_interface;
+    break;
+  case AF_AX25:
+    interface = ax25_interface;
+    break;
+  case AF_ATMPVC:
+    interface = atmpvc_interface;
+    break;
+  case AF_APPLETALK:
+    interface = appletalk_interface;
+    break;
+  case AF_PACKET:
+    interface = packet_interface;
+    break;
+  default:
+    return -EINVAL;
+  }
+
+  if (interface == NULL) {
+    return -EAFNOSUPPORT;
+  }
+
   return -ENOSYS;
 }
 
