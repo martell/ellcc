@@ -472,7 +472,7 @@ static int kmCommand(int argc, char **argv)
 static int sectionCommand(int argc, char **argv)
 {
   if (argc <= 0 ) {
-    printf("Paged Memory Allocation Commands:\n");
+    printf("Kernel Heap Allocation Commands:\n");
   }
   return COMMAND_OK;
 }
