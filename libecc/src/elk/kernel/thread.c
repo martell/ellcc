@@ -181,6 +181,7 @@ typedef struct thread
 #endif
   // A pointer to the user space robust futex list.
   struct robust_list_head *robust_list;
+  char *brk;                    // The brk pointer, valid only in process lead.
 } thread_t;
 
 static int timer_cancel_wake_at(void *id);
@@ -1264,6 +1265,44 @@ void sched_dpc(struct dpc *dpc, void (*fn)(void *), void *arg)
   // RICH: Schedule a delayed procedure call.
 }
 
+char *get_brk(pid_t pid)
+{
+  if (pid == 0) {
+    pid = current->pid;
+  }
+
+  if (pid < 0 || pid >= THREADS) {
+    return NULL;
+  }
+
+  thread_t *tp = threads[pid];
+  if (tp == NULL) {
+    // Invalid process id.
+    return NULL;
+  }
+
+  return tp->brk;
+}
+
+void set_brk(pid_t pid, char *brk)
+{
+  if (pid == 0) {
+    pid = current->pid;
+  }
+
+  if (pid < 0 || pid >= THREADS) {
+    return;
+  }
+
+  thread_t *tp = threads[pid];
+  if (tp == NULL) {
+    // Invalid process id.
+    return;
+  }
+
+  tp->brk = brk;
+}
+
 static void sys_exit(int status)
 {
   if (current->clear_child_tid) {
@@ -2020,6 +2059,7 @@ ELK_CONSTRUCTOR()
   /** We set up a thread_self pointer early to tell
    * the C library that we support threading.
    */
+  main_thread.brk = (char *)round_page((uintptr_t)__end);
   current = &main_thread;
 
 #if THREAD_COMMANDS

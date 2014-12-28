@@ -14,17 +14,32 @@
 // Make memory management a loadable feature.
 FEATURE_CLASS(memman, memman)
 
-extern char __end[];            // The end of the .bss area.
-static char *brk_ptr;
-
 static char *sys_brk(char *addr)
 {
-  if (addr == 0) {
-    return brk_ptr;         // Return the current value.
+  pid_t pid = getpid();
+  char *cur_brk = get_brk(pid); // Get the current brk pointer.
+  if (addr == 0 || addr == cur_brk) {
+    return cur_brk;             // Return the current value.
   }
 
-  // All other calls to brk fail.
-  return brk_ptr;
+  int s;
+  if (addr > cur_brk) {
+    // Allocate new memory.
+    void *p = cur_brk;
+    s = vm_allocate(pid, &p, addr - cur_brk, 1);
+  } else {
+    // Free memory.
+    s = vm_free(pid, addr, cur_brk - addr);
+  }
+
+  if (s == 0) {
+    // It worked, set the new brk.
+    set_brk(pid, addr);
+    return addr;
+  }
+
+  // It failed, the brk is unchanged.
+  return cur_brk;
 }
 
 static int sys_mprotect(void *addr, size_t length, int prot)
@@ -89,7 +104,6 @@ static int sys_mremap(void *old_addr, size_t old_length,
  */
 ELK_CONSTRUCTOR()
 {
-  brk_ptr = (char *)round_page((uintptr_t)__end);
   SYSCALL(brk);
 #ifdef SYS_mmap
   SYSCALL(mmap);

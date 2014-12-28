@@ -34,6 +34,8 @@
 #define pid_valid __elk_pid_valid
 #define signal_post __elk_signal_post
 #define sched_dpc __elk_sched_dpc
+#define get_brk __elk_get_brk
+#define set_brk __elk_set_brk
 #endif
 
 #if !HAVE_CAPABILITY
@@ -178,5 +180,10 @@ struct dpc
 /** Schedule a defered procedure call.
  */
 void sched_dpc(struct dpc *, void (*)(void *), void *);
+
+/** Get and set the per-process brk pointer.
+ */
+char *get_brk(pid_t pid);
+void set_brk(pid_t pid, char *brk);
 
 #endif

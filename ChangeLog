@@ -1,5 +1,6 @@
 current SVN:
 
+* Implemented a per-process brk pointer and brk handling.
 * Preallocate the kernel heap in MMU systems.
 * Added LWIP to the ELK build.
 
