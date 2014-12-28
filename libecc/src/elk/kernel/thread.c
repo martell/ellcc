@@ -2059,7 +2059,7 @@ ELK_CONSTRUCTOR()
   /** We set up a thread_self pointer early to tell
    * the C library that we support threading.
    */
-  main_thread.brk = (char *)round_page((uintptr_t)__end);
+  main_thread.brk = (char *)round_page((uintptr_t)__end + KMEM_SIZE);
   current = &main_thread;
 
 #if THREAD_COMMANDS
