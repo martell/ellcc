@@ -280,12 +280,12 @@ void page_init(void)
 static int pmCommand(int argc, char **argv)
 {
   if (argc <= 0) {
-    printf("show free memory page.nformation\n");
+    printf("show free memory page information\n");
     return COMMAND_OK;
   }
 
-  printf("Total size: %9.9lu (%lu pages)\n", total_size, total_size / PAGE_SIZE);
-  printf("Used size:  %9.9lu (%lu pages)\n", used_size, used_size / PAGE_SIZE);
+  printf("Total size: %9lu (%lu pages)\n", total_size, total_size / PAGE_SIZE);
+  printf("Used size:  %9lu (%lu pages)\n", used_size, used_size / PAGE_SIZE);
   printf("Free blocks:\n");
   printf("%5.5s %10.10s %10.10s\n", "BLOCK", "VADDR", "SIZE");
 
@@ -310,13 +310,11 @@ static int sectionCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
-#endif  // PM_COMMANDS
-
 C_CONSTRUCTOR()
 {
-#if VM_COMMANDS
   command_insert(NULL, sectionCommand);
   command_insert("pm", pmCommand);
-#endif
 }
+
+#endif  // PM_COMMANDS
 

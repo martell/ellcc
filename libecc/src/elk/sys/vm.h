@@ -118,7 +118,7 @@ struct vminfo
 };
 
 int (*vm_info)(struct vminfo *);
-vm_map_t (*vm_init)(void);
+vm_map_t (*vm_init)(size_t);
 void (*vm_mmu_init)(void);
 
 #endif // !_vm_h_

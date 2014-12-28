@@ -1,5 +1,6 @@
 current SVN:
 
+* Preallocate the kernel heap in MMU systems.
 * Added LWIP to the ELK build.
 
 version 0.1.6:

@@ -1919,7 +1919,6 @@ static int dbgCommand(int argc, char **argv)
 // RICH: Temporary hack.
 #if HAVE_VM
 extern char __end[];            // The end of the .bss area.
-extern char *__heap_end__;      // The bottom of the allocated stacks.
 
 struct bootinfo bootinfo;
 #endif
@@ -1931,12 +1930,7 @@ static void init(void)
 {
 #if HAVE_VM
 
-#if RICH
-  bootinfo.nr_rams = 1;
-  bootinfo.ram[0].base = 0x48000000 + 0x0100000;
-  bootinfo.ram[0].size = 0x2000000 - 0x0100000;
-  bootinfo.ram[0].type = MT_USABLE;
-#else
+// RICH: Move this.
   bootinfo.nr_rams = 2;
   bootinfo.ram[0].base = 0x48000000;
   bootinfo.ram[0].size = 0x02000000;
@@ -1944,11 +1938,13 @@ static void init(void)
   bootinfo.ram[1].base = 0x48000000;
   bootinfo.ram[1].size = round_page((uintptr_t)__end) - SYSPAGE;
   bootinfo.ram[1].type = MT_RESERVED;
-#endif
+
+// RICH: The size of the kernel kmem heap.
+#define KMEM_SIZE (8 * PAGE_SIZE)
 
   diag_init();
   page_init();
-  kmem_init();
+  kmem_init(KMEM_SIZE);
 
   // Initialize the MMU page map.
   vm_mmu_init();
@@ -1968,7 +1964,7 @@ static void init(void)
 
 #if HAVE_VM
   // Set up the kernel memory map.
-  current->map = vm_init();
+  current->map = vm_init(KMEM_SIZE);
 #endif
 }
 

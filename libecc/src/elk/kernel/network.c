@@ -37,7 +37,6 @@
 // Make networking a select-able feature.
 FEATURE(network)
 
-#define RICH 1
 static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
   return -ENOSYS;
@@ -119,7 +118,6 @@ static int sys_sendto(int sockfd, const void *buf, size_t len, int flags,
   return -ENOSYS;
 }
 
-#if RICH
 static int sys_sendmmsg(int sockfd, const struct msghdr *msgvec,
                         unsigned int vlen, unsigned int flags)
 {
@@ -152,7 +150,6 @@ static int sys_socketpair(int domain, int type, int protocol, int sv[2])
 {
   return -ENOSYS;
 }
-#endif // RICH
 
 #ifdef SYS_socketcall
 static int sys_socketcall(int call, unsigned long *args)
@@ -198,7 +195,6 @@ static int sys_socketcall(int call, unsigned long *args)
   case __SC_sendto:
     return sys_sendto(args[0], (void *)arg[1], (size_t)arg[2], arg[3],
                       (struct sockaddr *)arg[4], (socklen_t *)arg[5]);
-#if RICH
   case __SC_sendmmsg:
     return sys_sendmmsg(args[0], (struct msghdr *)arg[1], arg[2], arg[3]);
   case __SC_sendmsg:
@@ -212,7 +208,6 @@ static int sys_socketcall(int call, unsigned long *args)
     return sys_socket(args[0], arg[1], arg[2]);
   case __SC_socketpair:
     return sys_socketpair(args[0], arg[1], arg[2], (int *)arg[3]);
-#endif // RICH
 
   default:
     return -EINVAL;
@@ -243,14 +238,12 @@ ELK_CONSTRUCTOR()
   SYSCALL(send);
 #endif
   SYSCALL(sendto);
-#if RICH
   SYSCALL(sendmmsg);
   SYSCALL(sendmsg);
   SYSCALL(setsockopt);
   SYSCALL(shutdown);
   SYSCALL(socket);
   SYSCALL(socketpair);
-#endif // RICH
 
 #else
 

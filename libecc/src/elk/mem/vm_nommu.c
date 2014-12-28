@@ -473,7 +473,7 @@ static void int_mmu_init(void)
 {
 }
 
-static vm_map_t int_init(void)
+static vm_map_t int_init(size_t kmem)
 {
   seg_init(&kernel_map.head);
   return &kernel_map;

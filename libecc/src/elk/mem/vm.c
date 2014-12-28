@@ -60,7 +60,7 @@
 FEATURE_CLASS(vm, vm)
 
 // Forward declarations.
-static void seg_init(struct seg *, int);
+static void seg_init(struct seg *, size_t);
 static struct seg *seg_create(struct seg *, vaddr_t, size_t);
 static void seg_delete(struct seg *, struct seg *);
 static struct seg *seg_merge(struct seg *, vaddr_t, size_t);
@@ -720,7 +720,7 @@ static void int_mmu_init(void)
   mmu_init(mmumap_table);
 }
 
-static vm_map_t int_init(void)
+static vm_map_t int_init(size_t kmem)
 {
   pgd_t pgd;
 
@@ -732,25 +732,21 @@ static vm_map_t int_init(void)
   mmu_switch(pgd);
 
   kernel_map.pgd = pgd;
-  seg_init(&kernel_map.head, 1);
+  seg_init(&kernel_map.head, kmem);
   return &kernel_map;
 }
 
 /** Initialize segment.
  */
-static void seg_init(struct seg *seg, int kernel)
+static void seg_init(struct seg *seg, size_t kmem)
 {
   extern char __end[];            // The end of the kernel .bss area.
   seg->next = seg->prev = seg;
   seg->sh_next = seg->sh_prev = seg;
-#if RICH
-  seg->addr = kernel ? round_page((uintptr_t)__end) : PAGE_SIZE;
-#else
   // RICH: Leav room for kmem_alloc(). How much?
-  seg->addr = kernel ? round_page((uintptr_t)__end + 1024*32): PAGE_SIZE;
-#endif
+  seg->addr = kmem ? round_page((uintptr_t)__end + kmem): PAGE_SIZE;
   seg->phys = 0;
-  seg->size = (kernel ? 0L - seg->addr : USERLIMIT) - PAGE_SIZE;
+  seg->size = (kmem ? 0L - seg->addr : USERLIMIT) - PAGE_SIZE;
   seg->flags = SEG_FREE;
 }
 

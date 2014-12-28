@@ -1,4 +1,29 @@
-/*-
+/*
+ * Copyright (c) 2014 Richard Pennington.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ *
  * Copyright (c) 2005-2009, Kohsuke Ohtani
  * All rights reserved.
  *
@@ -56,6 +81,7 @@
 #include <limits.h>
 #include <string.h>
 #include <pthread.h>
+#include <stdio.h>
 
 #include "kernel.h"
 #include "bootinfo.h"
@@ -63,7 +89,26 @@
 #include "list.h"
 #include "page.h"
 #include "vm.h"
+#include "command.h"
 #include "kmem.h"
+
+/** Free Page list.
+ * In an MMU enabled system, kmem pages are preallocated and kept in the free
+ * page list until needed so they don't interfere with kernel virtual memory
+ * allocations.
+ */
+struct free_page
+{
+  union
+  {
+    struct free_page *next;
+    char page[PAGE_SIZE];
+  };
+};
+
+static size_t reserved_size;
+static size_t used_size;
+static struct free_page *free_pages;
 
 /** Block header
  *
@@ -206,14 +251,29 @@ void *kmem_alloc(size_t size)
     pg = PAGETOP(blk);                  // Get the page address.
   } else {
     // No block found. Allocate a new page.
-    if ((pa = page_alloc(PAGE_SIZE)) == 0) {
-      UNLOCK();
-      return NULL;
+    if (mmu_enabled()) {
+      // Grab a preallocated page.
+      struct free_page *fp = free_pages;
+      if (fp == NULL) {
+        UNLOCK();
+        return NULL;
+      }
+      free_pages = fp->next;
+      pg = (struct page_hdr *)fp;
+      reserved_size -= PAGE_SIZE;
+      used_size += PAGE_SIZE;
+    } else {
+      if ((pa = page_alloc(PAGE_SIZE)) == 0) {
+        UNLOCK();
+        return NULL;
+      }
+
+      used_size += PAGE_SIZE;
+      DPRINTF(MEMDB_KMEM, ("kmem_alloc: physical page allocated 0x%08lx (%zu)\n",
+                           pa, PAGE_SIZE));
+      pg = ptokv(pa);
     }
 
-    DPRINTF(MEMDB_KMEM, ("kmem_alloc: physical page allocated 0x%08lx (%zu)\n",
-                         pa, PAGE_SIZE));
-    pg = ptokv(pa);
     pg->nallocs = 0;
     pg->magic = PAGE_MAGIC;
 
@@ -332,7 +392,17 @@ void kmem_free(void *ptr)
     }
 
     pg->magic = 0;
-    page_free(kvtop(pg), PAGE_SIZE);
+    if (mmu_enabled()) {
+      // Put the newly freed page in the free page list.
+      struct free_page *fp = (struct free_page *)pg;
+      fp->next = free_pages;
+      free_pages = fp;
+      reserved_size += PAGE_SIZE;
+      used_size -= PAGE_SIZE;
+    } else {
+      page_free(kvtop(pg), PAGE_SIZE);
+      used_size -= PAGE_SIZE;
+    }
   }
   UNLOCK();
 }
@@ -351,10 +421,66 @@ void *kmem_map(void *addr, size_t size)
   return ptokv(pa);
 }
 
-void kmem_init(void)
+void kmem_init(size_t size)
 {
   int i;
 
   for (i = 0; i < NR_BLOCK_LIST; i++)
     list_init(&free_blocks[i]);
+
+  // Preallocate pages in an MMU enabled system.
+  if (size && mmu_enabled()) {
+    size = round_page(size);
+    reserved_size = size;
+    paddr_t pa = page_alloc(size);
+    if (pa == 0)
+      panic("kmem_init: can't allocate kmem");
+
+    free_pages = (struct free_page *)ptokv(pa);
+    struct free_page *fp = free_pages;
+    // Link all the pages together.
+    while(size -= PAGE_SIZE) {
+      fp->next = fp + 1;
+      ++fp;
+    }
+
+    fp->next = NULL;
+  }
 }
+
+#if KM_COMMANDS
+/** Display kernel heap information.
+ */
+static int kmCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("show kernel heap information\n");
+    return COMMAND_OK;
+  }
+
+  printf("Total size:    %9zu (%zu pages)\n", reserved_size + used_size,
+         (reserved_size + used_size) / PAGE_SIZE);
+  printf("Reserved size: %9zu (%zu pages)\n", reserved_size,
+         reserved_size / PAGE_SIZE);
+  printf("Used size:     %9zu (%zu pages)\n", used_size,
+         used_size / PAGE_SIZE);
+  return COMMAND_OK;
+}
+
+/** Create a section heading for the help command.
+ */
+static int sectionCommand(int argc, char **argv)
+{
+  if (argc <= 0 ) {
+    printf("Paged Memory Allocation Commands:\n");
+  }
+  return COMMAND_OK;
+}
+
+C_CONSTRUCTOR()
+{
+  command_insert(NULL, sectionCommand);
+  command_insert("km", kmCommand);
+}
+
+#endif  // KM_COMMANDS

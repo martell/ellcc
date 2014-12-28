@@ -47,6 +47,7 @@
 #define HAVE_VM 1               // Use mem functions for memory management.
 
 #define PM_COMMANDS 1           // Paged memory allocation commands.
+#define KM_COMMANDS 1           // Kernel heap allocation commands.
 
 #define HAVE_SIGNALS 1          // Implement signals.
 
