@@ -143,7 +143,7 @@ static int fd_allocate(fdset_t fdset, int spec)
   return s;
 }
 
-/** Add a file specific file descriptor to a set.
+/** Add a specific file descriptor to a set.
  */
 static int addfd(fdset_t fdset, int spec, file_t file)
 {

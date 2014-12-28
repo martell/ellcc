@@ -33,20 +33,11 @@
 #include "kernel.h"
 #include "syscalls.h"
 #include "crt1.h"
+#include "network.h"
 
 // Make networking a select-able feature.
 FEATURE(network)
 
-/* Network domain interface functions.
- */
-struct domain_interface
-{
-};
-
-/* Interfaces to different domains. These pointers are filled in
- * by the interface modes that implement them. This file assumes
- * a NULL interface pointer is an unsupported domain.
- */
 const struct domain_interface *unix_interface;
 const struct domain_interface *inet_interface;
 const struct domain_interface *ipx_interface;
@@ -202,6 +193,18 @@ static int sys_socket(int domain, int type, int protocol)
   if (interface == NULL) {
     return -EAFNOSUPPORT;
   }
+
+  // Isolate the flags.
+  unsigned flags = type & (SOCK_NONBLOCK|SOCK_CLOEXEC);
+  type &= ~(SOCK_NONBLOCK|SOCK_CLOEXEC);
+
+  /* Check whether the interface supports the protocol and type
+   * and get its private data.
+   */
+  void *priv;
+  int s = interface->setup(&priv, domain, protocol, type);
+  if (s != 0)
+    return s;
 
   return -ENOSYS;
 }
