@@ -69,9 +69,22 @@ static int getopt(file_t fp, int level, int optname, void *optval,
   return -ENOPROTOOPT;
 }
 
+static int setopt(file_t fp, int level, int optname, const void *optval,
+                      socklen_t optlen)
+{
+  return -ENOPROTOOPT;
+}
+
+static int option_update(file_t fp)
+{
+  return 0;
+}
+
 static const struct domain_interface interface = {
   .setup = setup,
   .getopt = getopt,
+  .setopt = setopt,
+  .option_update = option_update,
   .vnops = &vnops,
 };
 

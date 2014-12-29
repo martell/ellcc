@@ -25,6 +25,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#define _GNU_SOURCE
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
@@ -195,6 +196,11 @@ static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
 
   vnode_t vp = fp->f_vnode;
   vn_lock(vp, LK_SHARED|LK_RETRY);
+  if (vp->v_type != VSOCK) {
+    vn_unlock(vp);
+    return -ENOTSOCK;
+  }
+
   struct socket *sp = vp->v_data;
   if (level != SOL_SOCKET) {
     // Try a lower level get.
@@ -202,10 +208,203 @@ static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
   } else {
     // Handle SOL_SOCKET level requests.
     switch (optname) {
-    default:
-      s= -ENOPROTOOPT;
+#define COPYOUTINT(expr)                                        \
+      {                                                         \
+      socklen_t len;                                            \
+      s = copyin(optlen, &len, sizeof(socklen_t));              \
+      if (s != 0) {                                             \
+        vn_unlock(vp);                                          \
+        return s;                                               \
+      }                                                         \
+      if (len < sizeof(int)) {                                  \
+        vn_unlock(vp);                                          \
+        return -EINVAL;                                         \
+      }                                                         \
+      len = sizeof(int);                                        \
+      int value = (expr);                                       \
+      s = copyout(&value, optval, sizeof(int));                 \
+      if (s != 0) {                                             \
+        vn_unlock(vp);                                          \
+        return s;                                               \
+      }                                                         \
+      s = copyout(&len, optlen, sizeof(socklen_t));             \
+      if (s != 0) {                                             \
+        vn_unlock(vp);                                          \
+        return s;                                               \
+      }                                                         \
+      }
+
+#define COPYOUTTYPE(type, addr)                                 \
+      {                                                         \
+      socklen_t len;                                            \
+      s = copyin(optlen, &len, sizeof(socklen_t));              \
+      if (s != 0) {                                             \
+        vn_unlock(vp);                                          \
+        return s;                                               \
+      }                                                         \
+      if (len < sizeof(type)) {                                 \
+        vn_unlock(vp);                                          \
+        return -EINVAL;                                         \
+      }                                                         \
+      len = sizeof(type);                                       \
+      s = copyout(addr, optval, sizeof(type));                  \
+      if (s != 0) {                                             \
+        vn_unlock(vp);                                          \
+        return s;                                               \
+      }                                                         \
+      s = copyout(&len, optlen, sizeof(socklen_t));             \
+      if (s != 0) {                                             \
+        vn_unlock(vp);                                          \
+        return s;                                               \
+      }                                                         \
+      }
+
+    case SO_ACCEPTCONN:
+      COPYOUTINT((sp->flags & SF_ACCEPTCONN) != 0);
+      break;
+
+    case SO_BINDTODEVICE:
+      s = -ENOPROTOOPT;
+      break;
+
+    case SO_BROADCAST:
+      COPYOUTINT((sp->flags & SF_BROADCAST) != 0);
+      break;
+
+    case SO_BSDCOMPAT:
+      COPYOUTINT((sp->flags & SF_BSDCOMPAT) != 0);
+      break;
+
+    case SO_DEBUG:
+      COPYOUTINT((sp->flags & SF_DEBUG) != 0);
+      break;
+
+    case SO_DOMAIN:
+      COPYOUTINT(sp->domain);
+      break;
+
+    case SO_ERROR:
+      COPYOUTINT(sp->error);
+      break;
+
+    case SO_DONTROUTE:
+      COPYOUTINT((sp->flags & SF_DONTROUTE) != 0);
+      break;
+
+    case SO_KEEPALIVE:
+      COPYOUTINT((sp->flags & SF_KEEPALIVE) != 0);
+      break;
+
+    case SO_LINGER: {
+      socklen_t len;
+      s = copyin(optlen, &len, sizeof(socklen_t));
+      if (s != 0) {
+        vn_unlock(vp);
+        return s;
+      }
+      if (len < sizeof(struct linger)) {
+        vn_unlock(vp);
+        return -EINVAL;
+      }
+      len = sizeof(struct linger);
+      struct linger linger = { .l_onoff = (sp->flags & SF_LINGER) != 0,
+                               .l_linger = sp->linger };
+      s = copyout(&linger, optval, sizeof(struct linger));
+      if (s != 0) {
+        vn_unlock(vp);
+        return s;
+      }
+      s = copyout(&len, optlen, sizeof(socklen_t));
+      if (s != 0) {
+        vn_unlock(vp);
+        return s;
+      }
+      break;
     }
+
+    case SO_MARK:
+      COPYOUTINT(sp->mark);
+      break;
+
+    case SO_OOBINLINE:
+      COPYOUTINT((sp->flags & SF_OOBINLINE) != 0);
+      break;
+
+    case SO_PASSCRED:
+      COPYOUTINT((sp->flags & SF_PASSCRED) != 0);
+      break;
+
+    case SO_PEEK_OFF:
+      COPYOUTINT(sp->peek_off);
+      break;
+
+    case SO_PEERCRED:
+      COPYOUTTYPE(struct timeval, &sp->ucred);
+      break;
+
+    case SO_PRIORITY:
+      COPYOUTINT(sp->priority);
+      break;
+
+    case SO_PROTOCOL:
+      COPYOUTINT(sp->protocol);
+      break;
+
+    case SO_RCVBUF:
+    case SO_RCVBUFFORCE:
+      COPYOUTINT(sp->rcvbuf);
+      break;
+
+    case SO_RCVLOWAT:
+      COPYOUTINT(sp->rcvlowait);
+      break;
+
+    case SO_SNDLOWAT:
+      COPYOUTINT(sp->sndlowait);
+      break;
+
+    case SO_RCVTIMEO:
+      COPYOUTTYPE(struct timeval, &sp->rcvtimeo);
+      break;
+
+    case SO_SNDTIMEO:
+      COPYOUTTYPE(struct timeval, &sp->sndtimeo);
+      break;
+
+    case SO_REUSEADDR:
+      COPYOUTINT((sp->flags & SF_REUSEADDR) != 0);
+      break;
+
+    case SO_RXQ_OVFL:
+      COPYOUTINT((sp->flags & SF_RXQ_OVFL) != 0);
+      break;
+
+    case SO_SNDBUF:
+    case SO_SNDBUFFORCE:
+      COPYOUTINT(sp->sndbuf);
+      break;
+
+    case SO_TIMESTAMP:
+      COPYOUTINT((sp->flags & SF_TIMESTAMP) != 0);
+      break;
+
+    case SO_TYPE:
+      COPYOUTINT(sp->type);
+      break;
+
+    case SO_BUSY_POLL:
+      COPYOUTINT(sp->busy_poll);
+      break;
+
+    default:
+      s = -ENOPROTOOPT;
+      break;
+    }
+
+#undef COPYOUTINT
+#undef COPYOUTTYPE
   }
+
   vn_unlock(vp);
   return s;
 }
@@ -265,9 +464,238 @@ static int sys_sendmsg(int sockfd, const struct msghdr *msgvec,
 }
 
 static int sys_setsockopt(int sockfd, int level, int optname,
-                          const void *optval, socklen_t *optlen)
+                          const void *optval, socklen_t optlen)
 {
-  return -ENOSYS;
+  int s;
+  file_t fp;
+
+  s = getfile(sockfd, &fp);
+  if (s < 0) {
+    return s;
+  }
+
+  vnode_t vp = fp->f_vnode;
+  vn_lock(vp, LK_SHARED|LK_RETRY);
+  if (vp->v_type != VSOCK) {
+    vn_unlock(vp);
+    return -ENOTSOCK;
+  }
+
+  struct socket *sp = vp->v_data;
+  if (level != SOL_SOCKET) {
+    // Try a lower level get.
+    s = sp->interface->setopt(fp, level, optname, optval, optlen);
+  } else {
+    // Handle SOL_SOCKET level requests.
+    switch (optname) {
+#define COPYININT(where)                                        \
+      {                                                         \
+      if (optlen < sizeof(int)) {                               \
+        vn_unlock(vp);                                          \
+        return -EINVAL;                                         \
+      }                                                         \
+      s = copyin(optval, &where, sizeof(int));                  \
+      if (s != 0) {                                             \
+        vn_unlock(vp);                                          \
+        return s;                                               \
+      }                                                         \
+      }
+
+#define COPYINFLAG(flag)                                        \
+      {                                                         \
+      if (optlen < sizeof(int)) {                               \
+        vn_unlock(vp);                                          \
+        return -EINVAL;                                         \
+      }                                                         \
+      int value;                                                \
+      s = copyin(optval, &value, sizeof(int));                  \
+      if (s != 0) {                                             \
+        vn_unlock(vp);                                          \
+        return s;                                               \
+      }                                                         \
+      if (value)                                                \
+        sp->flags |= (flag);                                    \
+      else                                                      \
+        sp->flags &= ~(flag);                                   \
+      }
+
+#define COPYINTYPE(type, where)                                 \
+      {                                                         \
+      if (optlen < sizeof(type)) {                              \
+        vn_unlock(vp);                                          \
+        return -EINVAL;                                         \
+      }                                                         \
+      s = copyin(optval, &where, sizeof(type));                 \
+      if (s != 0) {                                             \
+        vn_unlock(vp);                                          \
+        return s;                                               \
+      }                                                         \
+      }
+
+    case SO_ACCEPTCONN:
+    case SO_DOMAIN:
+    case SO_ERROR:
+    case SO_PEERCRED:
+    case SO_PROTOCOL:
+    case SO_TYPE:
+      s = -EINVAL;                      // Read only.
+      break;
+
+    case SO_BINDTODEVICE:
+      s = -ENOPROTOOPT;
+      break;
+
+    case SO_BROADCAST:
+      COPYINFLAG(SF_BROADCAST);
+      break;
+
+    case SO_BSDCOMPAT:
+      COPYINFLAG(SF_BSDCOMPAT);
+      break;
+
+    case SO_DEBUG:
+      if (capable(CAP_NET_ADMIN)) {
+        COPYINFLAG(SF_DEBUG);
+      } else {
+        s = -EPERM;
+      }
+      break;
+
+    case SO_DONTROUTE:
+      COPYINFLAG(SF_DONTROUTE);
+      break;
+
+    case SO_KEEPALIVE:
+      COPYINFLAG(SF_KEEPALIVE);
+      break;
+
+    case SO_LINGER: {
+      if (optlen < sizeof(struct linger)) {
+        vn_unlock(vp);
+        return -EINVAL;
+      }
+      struct linger linger;
+      s = copyin(optval, &linger, sizeof(struct linger));
+      if (s != 0) {
+        vn_unlock(vp);
+        return s;
+      }
+      if (linger.l_onoff) {
+        sp->flags |= SF_LINGER;
+      } else {
+        sp->flags &= ~SF_LINGER;
+      }
+      sp->linger = linger.l_linger;
+      break;
+    }
+
+    case SO_MARK:
+      if (capable(CAP_NET_ADMIN)) {
+        COPYININT(sp->mark);
+      } else {
+        s = -EPERM;
+      }
+      break;
+
+    case SO_OOBINLINE:
+      COPYINFLAG(SF_OOBINLINE);
+      break;
+
+    case SO_PASSCRED:
+      COPYINFLAG(SF_PASSCRED);
+      break;
+
+    case SO_PEEK_OFF:
+      COPYININT(sp->peek_off);
+      break;
+
+    case SO_PRIORITY: {
+      int temp;
+      COPYININT(temp);
+      if ((temp < 0 || temp > 6) && !capable(CAP_NET_ADMIN)) {
+        s = -EPERM;
+      } else {
+        sp->priority = temp;
+      }
+      break;
+    }
+
+    case SO_RCVBUF:
+    case SO_RCVBUFFORCE: {
+      int rcvbuf;
+      COPYININT(rcvbuf);
+      rcvbuf *= 2;      // RICH: May not need this.
+      if (rcvbuf < CONFIG_SO_RCVBUF_MIN ||
+          ((optname == SO_RCVBUF || !capable(CAP_NET_ADMIN)) &&
+           rcvbuf > CONFIG_SO_RCVBUF_MAX)) {
+        s = -EINVAL;
+      } else {
+        sp->rcvbuf = rcvbuf;
+      }
+      break;
+    }
+
+    case SO_RCVLOWAT:
+      COPYININT(sp->rcvlowait);
+      break;
+
+    case SO_SNDLOWAT:
+      COPYININT(sp->sndlowait);
+      break;
+
+    case SO_RCVTIMEO:
+      COPYINTYPE(struct timeval, sp->rcvtimeo);
+      break;
+
+    case SO_SNDTIMEO:
+      COPYINTYPE(struct timeval, sp->sndtimeo);
+      break;
+
+    case SO_REUSEADDR:
+      COPYINFLAG(SF_REUSEADDR);
+      break;
+
+    case SO_RXQ_OVFL:
+      COPYINFLAG(SF_RXQ_OVFL);
+      break;
+
+    case SO_SNDBUF:
+    case SO_SNDBUFFORCE: {
+      int sndbuf;
+      COPYININT(sndbuf);
+      sndbuf *= 2;      // RICH: May not need this.
+      if (sndbuf < CONFIG_SO_SNDBUF_MIN ||
+          ((optname == SO_SNDBUF || !capable(CAP_NET_ADMIN)) &&
+           sndbuf > CONFIG_SO_SNDBUF_MAX)) {
+        s = -EINVAL;
+      } else {
+        sp->sndbuf = sndbuf;
+      }
+      break;
+    }
+
+    case SO_TIMESTAMP:
+      COPYINFLAG(SF_TIMESTAMP);
+      break;
+
+    case SO_BUSY_POLL:
+      COPYININT(sp->busy_poll);
+      break;
+
+    default:
+      s = -ENOPROTOOPT;
+    }
+#undef COPYININT
+#undef COPYINFLAG
+#undef COPYINTYPE
+    if (s == 0) {
+      // Tell the interface level that some option has changed.
+      s = sp->interface->option_update(fp);
+    }
+  }
+
+  vn_unlock(vp);
+  return s;
 }
 
 static int sys_shutdown(int sockfd, int how)
@@ -387,7 +815,7 @@ static int sys_socketcall(int call, unsigned long *args)
     return sys_sendmsg(args[0], (struct msghdr *)arg[1], arg[2]);
   case __SC_setsockopt:
     return sys_setsockopt(args[0], arg[1], arg[2], (const void *)arg[3],
-                          (socklen_t *)arg[4]);
+                          (socklen_t)arg[4]);
   case __SC_shutdown:
     return sys_shutdown(args[0], arg[1]);
   case __SC_socket:

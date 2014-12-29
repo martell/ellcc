@@ -41,6 +41,9 @@ struct domain_interface
   int (*setup)(void **priv, int domain, int protocol, int type);
   int (*getopt)(file_t fp, int level, int optname, void *optval,
                 socklen_t *optlen);
+  int (*setopt)(file_t fp, int level, int optname, const void *optval,
+                socklen_t optlen);
+  int (*option_update)(file_t fp);
   const struct vnops *vnops;            // Vnode operations.
 };
 
@@ -133,23 +136,27 @@ struct socket
   int busy_poll;                        // The busy poll time in microseconds.
   struct domain_interface *interface;   // The comain interface.
   void *priv;                           // Domain private data.
+  struct timeval rcvtimeo;              // Receive timeout.
+  struct timeval sndtimeo;              // Send timeout.
+  struct ucred ucred;                   // Connect credentials.
 };
 
 /** Socket flag values.
  */
 #define SF_ACCEPTCONN   0x00000001      // Will accept connections.
 #define SF_BROADCAST    0x00000002      // Can broadcast.
-#define SF_DEBUG        0x00000004      // Enable debugging.
-#define SF_DONTROUTE    0x00000008      // Don't send via a gateway.
-#define SF_KEEPALIVE    0x00000010      // Enable keep-alive messages.
-#define SF_LINGER       0x00000020      // Linger has been set.
-#define SF_MARK         0x00000040      // The mark has been set.
-#define SF_OOBINLINE    0x00000080      // Send out-of-band data in line.
-#define SF_PASSCRED     0x00000100      // Enable SCM_CREDENTIALS.
-#define SF_RCVTIMEO     0x00000200      // The receive timeout has been set.
-#define SF_SNDTIMEO     0x00000400      // The send timeout has been set.
-#define SF_REUSEADDR    0x00000800      // Reuse local addresses.
-#define SF_RXQ_OVFL     0x00001000      // Enable dropped packet count.
-#define SF_TIMESTAMP    0x00002000      // Enable SO_TIMESTAMP control message.
+#define SF_BSDCOMPAT    0x00000004      // BSD bug compatibility.
+#define SF_DEBUG        0x00000008      // Enable debugging.
+#define SF_DONTROUTE    0x00000010      // Don't send via a gateway.
+#define SF_KEEPALIVE    0x00000020      // Enable keep-alive messages.
+#define SF_LINGER       0x00000040      // Linger has been set.
+#define SF_MARK         0x00000080      // The mark has been set.
+#define SF_OOBINLINE    0x00000100      // Send out-of-band data in line.
+#define SF_PASSCRED     0x00000200      // Enable SCM_CREDENTIALS.
+#define SF_RCVTIMEO     0x00000400      // The receive timeout has been set.
+#define SF_SNDTIMEO     0x00000800      // The send timeout has been set.
+#define SF_REUSEADDR    0x00001000      // Reuse local addresses.
+#define SF_RXQ_OVFL     0x00002000      // Enable dropped packet count.
+#define SF_TIMESTAMP    0x00004000      // Enable SO_TIMESTAMP control message.
 
 #endif // _network_h_

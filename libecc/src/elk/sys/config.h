@@ -26,6 +26,12 @@
 
 // The network module.
 #define ENABLENET 1             // Enable networking.
+#define CONFIG_SO_RCVBUF_MIN 256
+#define CONFIG_SO_RCVBUF_MAX 212992
+#define CONFIG_SO_RCVBUF_DEFAULT 212992
+#define CONFIG_SO_SNDBUF_MIN 2048
+#define CONFIG_SO_SNDBUF_MAX 212992
+#define CONFIG_SO_SNDBUF_DEFAULT 212992
 
 // The device module.
 #define MAXDEVNAME 12           // The device name.

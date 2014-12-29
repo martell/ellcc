@@ -69,6 +69,9 @@
 // Override uid manipulation restrictions.
 #define CAP_SETUID 7
 
+// Allow network administration.
+#define CAP_NET_ADMIN 12
+
 // Allow raw I/O.
 #define CAP_SYS_RAWIO 17
 
