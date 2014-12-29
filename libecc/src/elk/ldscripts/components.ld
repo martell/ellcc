@@ -66,8 +66,13 @@
 #endif
 
 #ifdef LWIP_NETWORK
-  EXTERN(__elk_lwip_network) /* LWIP INET networking. */
-  // RICH #define NETWORK
+  EXTERN(__elk_lwip_network) /* LWIP AF_INET networking. */
+  #define NETWORK
+#endif
+
+#ifdef UNIX_NETWORK
+  EXTERN(__elk_unix_network) /* AF_UNIX (AF_LOCAL) networking. */
+  #define NETWORK
 #endif
 
 #ifdef NETWORK

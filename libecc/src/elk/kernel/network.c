@@ -33,6 +33,7 @@
 #include "kernel.h"
 #include "syscalls.h"
 #include "crt1.h"
+#include "thread.h"
 #include "network.h"
 
 // Make networking a select-able feature.
@@ -48,6 +49,106 @@ const struct domain_interface *atmpvc_interface;
 const struct domain_interface *appletalk_interface;
 const struct domain_interface *packet_interface;
 
+/** Default vnode operations for sockets.
+ */
+int net_open(vnode_t vp, int flags)
+{
+  return -EINVAL;
+}
+
+int net_close(vnode_t vp, file_t fp)
+{
+  return -EINVAL;
+}
+
+int net_read(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
+{
+  return -EINVAL;
+}
+
+int net_write(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
+{
+  return -EINVAL;
+}
+
+int net_poll(vnode_t vp, file_t fp, int what)
+{
+  return -EINVAL;
+}
+
+int net_seek(vnode_t vp, file_t fp, off_t foffset, off_t offset)
+{
+  return -EINVAL;
+}
+
+int net_ioctl(vnode_t vp, file_t fp, u_long request, void *buf)
+{
+  return -EINVAL;
+}
+
+int net_fsync(vnode_t vp, file_t fp)
+{
+  return -EINVAL;
+}
+
+int net_readdir(vnode_t vp, file_t fp, struct dirent *dir)
+{
+  return -EINVAL;
+}
+
+int net_lookup(vnode_t dvp, char *name, vnode_t vp)
+{
+  return -EINVAL;
+}
+
+int net_create(vnode_t vp, char *name, mode_t mode)
+{
+  return -EINVAL;
+}
+
+int net_remove(vnode_t dvp, vnode_t vp, char *name)
+{
+  return -EINVAL;
+}
+
+int net_rename(vnode_t dvp1, vnode_t vp1, char *sname,
+               vnode_t dvp2, vnode_t vp2, char *dname)
+{
+  return -EINVAL;
+}
+
+int net_mkdir(vnode_t vp, char *name, mode_t mode)
+{
+  return -EINVAL;
+}
+
+int net_rmdir(vnode_t dvp, vnode_t vp, char *name)
+{
+  return -EINVAL;
+}
+
+int net_getattr(vnode_t vp, struct vattr *vattr)
+{
+  return -EINVAL;
+}
+
+int net_setattr(vnode_t vp, struct vattr *vattr)
+{
+  return -EINVAL;
+}
+
+int net_inactive(vnode_t vp)
+{
+  return -EINVAL;
+}
+
+int net_truncate(vnode_t vp, off_t offset)
+{
+  return -EINVAL;
+}
+
+/** Socket related system calls.
+ */
 static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
   return -ENOSYS;
@@ -84,7 +185,29 @@ static int sys_getsockname(int sockfd, struct sockaddr *addr,
 static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
                           socklen_t *optlen)
 {
-  return -ENOSYS;
+  int s;
+  file_t fp;
+
+  s = getfile(sockfd, &fp);
+  if (s < 0) {
+    return s;
+  }
+
+  vnode_t vp = fp->f_vnode;
+  vn_lock(vp, LK_SHARED|LK_RETRY);
+  struct socket *sp = vp->v_data;
+  if (level != SOL_SOCKET) {
+    // Try a lower level get.
+    s = sp->interface->getopt(fp, level, optname, optval, optlen);
+  } else {
+    // Handle SOL_SOCKET level requests.
+    switch (optname) {
+    default:
+      s= -ENOPROTOOPT;
+    }
+  }
+  vn_unlock(vp);
+  return s;
 }
 
 static int sys_listen(int sockfd, int backlog)

@@ -41,7 +41,7 @@
 
 #ifndef __ASSEMBLER__
 
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define trap_handler __elk_trap_handler
 #define trap_dump __elk_trap_dump
 #endif

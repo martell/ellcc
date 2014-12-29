@@ -39,7 +39,7 @@
 
 #define _ALIGN_TEXT .align 0
 #define _ASM_TYPE_FUNCTION function
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define _ENTRY(x) \
   .text; _ALIGN_TEXT; .globl x; .type x,_ASM_TYPE_FUNCTION; x:
 

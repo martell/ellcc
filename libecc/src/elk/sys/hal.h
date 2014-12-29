@@ -88,7 +88,7 @@ struct mmumap
 #define IMODE_LEVEL     1       // Level trigger.
 
 
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define interrupt_mask __elk_interrupt_mask
 #define interrupt_unmask __elk_interrupt_unmask
 #define interrupt_setup __elk_interrupt_setup
@@ -100,7 +100,7 @@ void interrupt_unmask(int, int);
 void interrupt_setup(int, int);
 void interrupt_init(void);
 
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define mmu_init __elk_mmu_init
 #define mmu_premap __elk_mmu_premap
 #define mmu_newmap __elk_mmu_newmap
@@ -127,7 +127,7 @@ void context_dump(context_t);
 void syscall_ret(void);
 #endif
 
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define copyin __elk_copyin
 #define copyout __elk_copyout
 #define copyinstr __elk_copyinstr
@@ -137,7 +137,7 @@ int copyin(const void *, void *, size_t);
 int copyout(const void *, void *, size_t);
 int copyinstr(const void *, void *, size_t);
 
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define splhigh __elk_splhigh
 #define spl0 __elk_spl0
 #define splx __elk_splx
@@ -147,7 +147,7 @@ int splhigh(void);
 int spl0(void);
 void splx(int);
 
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define machine_startup __elk_machine_startup
 #define machine_idle __elk_machine_idle
 #define machine_powerdown __elk_machine_powerdown
@@ -167,7 +167,7 @@ void machine_bootinfo(struct bootinfo **);
 
 void clock_init(void);
 
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define interrupt_mask __elk_interrupt_mask
 #define interrupt_unmask __elk_interrupt_unmask
 #define interrupt_setup __elk_interrupt_setup

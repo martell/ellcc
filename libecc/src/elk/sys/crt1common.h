@@ -10,7 +10,7 @@
 /** The following functions are defined  in crt1.S.
  */
 
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define set_syscall __elk_set_syscall
 #define switch_context __elk_switch_context
 #define switch_context_arg __elk_switch_context_arg
@@ -94,7 +94,7 @@ void suspend(void);
 
 /** The following functions are used by crt1.S.
  */
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define enter_irq __elk_enter_irq
 #define unlock_ready __elk_unlock_ready
 #define leave_irq __elk_leave_irq

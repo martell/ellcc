@@ -38,7 +38,11 @@
 
 #include "vnode.h"
 #include "mount.h"
+#include "network.h"
 #include "vfs.h"
+
+// The AF_UNIX socket interface.
+const struct domain_interface *unix_interface;
 
 /*
  * Convert a pathname into a pointer to a locked vnode.
@@ -124,11 +128,25 @@ int namei(char *path, vnode_t *vpp)
       p++;
   }
 
+#if RICH
   /*
    * Detemine X permission.
    */
   if (vp->v_type != VDIR && sec_vnode_permission(path) != 0) {
     vn_lock_rw(vp)->v_mode &= ~(0111);
+  }
+#endif
+
+  // Handle socket files. They need their own set of vnops.
+  if (vp->v_type == VSOCK) {
+    if (unix_interface == NULL) {
+      // AF_UNIX sockets are not supported.
+      vput(vp);
+      return -EAFNOSUPPORT;
+    }
+
+    // Use the AF_UNIX vnops.
+    vn_lock_rw(vp)->v_op = unix_interface->vnops;
   }
 
   *vpp = vp;

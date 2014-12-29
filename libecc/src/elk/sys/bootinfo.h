@@ -70,7 +70,7 @@ struct physmem
 
 /* Boot information
  */
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define bootinfo __elk_bootinfo
 #endif
 

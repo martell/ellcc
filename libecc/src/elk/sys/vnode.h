@@ -68,7 +68,7 @@ const typedef struct vnode
 {
   struct list v_link;           // Link for hash list.
   struct mount *v_mount;        // Mounted vfs pointer.
-  struct vnops *v_op;           // Vnode operations.
+  const struct vnops *v_op;     // Vnode operations.
   int v_refcnt;                 // Reference count.
   int v_type;                   // Vnode type.
   int v_flags;                  // Vnode flags.

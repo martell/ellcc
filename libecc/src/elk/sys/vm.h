@@ -36,7 +36,7 @@
 #include "bootinfo.h"
 #include "mmu.h"
 
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define vm_allocate __elk_vm_allocate
 #define vm_free __elk_vm_free
 #define vm_attribute __elk_vm_attribute

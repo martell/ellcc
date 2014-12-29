@@ -51,7 +51,7 @@ struct meminfo {
 #define trunc_page(x)   ((x) & ~PAGE_MASK)
 #define round_page(x)   (((x) + PAGE_MASK) & ~PAGE_MASK)
 
-#ifdef ELK_NAMESPACE
+#if ELK_NAMESPACE
 #define page_alloc __elk_page_alloc
 #define page_free __elk_page_free
 #define page_reserve __elk_page_reserve

@@ -28,12 +28,33 @@
 #ifndef _network_h_
 #define _network_h_
 
+#include <sys/socket.h>
+
+#include "config.h"
+#include "vnode.h"
+
 /* Network domain interface functions.
  */
 struct domain_interface
 {
+  // Check arguments and allocate provate data.
   int (*setup)(void **priv, int domain, int protocol, int type);
+  int (*getopt)(file_t fp, int level, int optname, void *optval,
+                socklen_t *optlen);
+  const struct vnops *vnops;            // Vnode operations.
 };
+
+#if ELK_NAMESPACE
+#define unix_interface __elk_unix_interface
+#define inet_interface __elk_inet_interface
+#define ipx_interface __elk_ipx_interface
+#define netlink_interface __elk_netlink_interface
+#define x25_interface __elk_x25_interface
+#define ax25_interface __elk_ax25_interface
+#define atmpvc_interface __elk_atmpvc_interface
+#define appletalk_interface __elk_appletalk_interface
+#define packet_interface __elk_packet_interface
+#endif
 
 /* Interfaces to different domains. These pointers are filled in
  * by the interface modes that implement them. This file assumes
@@ -49,5 +70,86 @@ extern const struct domain_interface *atmpvc_interface;
 extern const struct domain_interface *appletalk_interface;
 extern const struct domain_interface *packet_interface;
 
+#if ELK_NAMESPACE
+#define net_open __elk_net_open
+#define net_close __elk_net_close
+#define net_read __elk_net_read
+#define net_write __elk_net_write
+#define net_poll __elk_net_poll
+#define net_seek __elk_net_seek
+#define net_ioctl __elk_net_ioctl
+#define net_fsync __elk_net_fsync
+#define net_readdir __elk_net_readdir
+#define net_lookup __elk_net_lookup
+#define net_create __elk_net_create
+#define net_remove __elk_net_remove
+#define net_rename __elk_net_rename
+#define net_mkdir __elk_net_mkdir
+#define net_rmdir __elk_net_rmdir
+#define net_getattr __elk_net_getattr
+#define net_setattr __elk_net_setattr
+#define net_inactive __elk_net_inactive
+#define net_truncate __elk_net_truncate
+#endif
+
+int net_open(vnode_t vp, int flags);
+int net_close(vnode_t vp, file_t fp);
+int net_read(vnode_t vp, file_t fp, struct uio *uio, size_t *count);
+int net_write(vnode_t vp, file_t fp, struct uio *uio, size_t *count);
+int net_poll(vnode_t vp, file_t fp, int what);
+int net_seek(vnode_t vp, file_t fp, off_t foffset, off_t offset);
+int net_ioctl(vnode_t vp, file_t fp, u_long request, void *buf);
+int net_fsync(vnode_t vp, file_t fp);
+int net_readdir(vnode_t vp, file_t fp, struct dirent *dir);
+int net_lookup(vnode_t dvp, char *name, vnode_t vp);
+int net_create(vnode_t vp, char *name, mode_t mode);
+int net_remove(vnode_t dvp, vnode_t vp, char *name);
+int net_rename(vnode_t dvp1, vnode_t vp1, char *sname,
+               vnode_t dvp2, vnode_t vp2, char *dname);
+int net_mkdir(vnode_t vp, char *name, mode_t mode);
+int net_rmdir(vnode_t dvp, vnode_t vp, char *name);
+int net_getattr(vnode_t vp, struct vattr *vattr);
+int net_setattr(vnode_t vp, struct vattr *vattr);
+int net_inactive(vnode_t vp);
+int net_truncate(vnode_t vp, off_t offset);
+
+/** The state of a socket.
+ */
+struct socket
+{
+  int domain;                           // The socket's domain.
+  int type;                             // The socket's type.
+  int protocol;                         // The socket's protocol.
+  unsigned flags;                       // Socket flags. See below.
+  int error;                            // The pending socket error.
+  int linger;                           // The linger time in seconds.
+  int mark;                             // The mark.
+  int peek_off;                         // The peek offset.
+  int priority;                         // Packet priority.
+  int rcvbuf;                           // The maximum receive buffer size.
+  int rcvlowait;                        // Minimum bytes to receive.
+  int sndbuf;                           // The maximum send buffer size.
+  int sndlowait;                        // Minimum bytes to send.
+  int busy_poll;                        // The busy poll time in microseconds.
+  struct domain_interface *interface;   // The comain interface.
+  void *priv;                           // Domain private data.
+};
+
+/** Socket flag values.
+ */
+#define SF_ACCEPTCONN   0x00000001      // Will accept connections.
+#define SF_BROADCAST    0x00000002      // Can broadcast.
+#define SF_DEBUG        0x00000004      // Enable debugging.
+#define SF_DONTROUTE    0x00000008      // Don't send via a gateway.
+#define SF_KEEPALIVE    0x00000010      // Enable keep-alive messages.
+#define SF_LINGER       0x00000020      // Linger has been set.
+#define SF_MARK         0x00000040      // The mark has been set.
+#define SF_OOBINLINE    0x00000080      // Send out-of-band data in line.
+#define SF_PASSCRED     0x00000100      // Enable SCM_CREDENTIALS.
+#define SF_RCVTIMEO     0x00000200      // The receive timeout has been set.
+#define SF_SNDTIMEO     0x00000400      // The send timeout has been set.
+#define SF_REUSEADDR    0x00000800      // Reuse local addresses.
+#define SF_RXQ_OVFL     0x00001000      // Enable dropped packet count.
+#define SF_TIMESTAMP    0x00002000      // Enable SO_TIMESTAMP control message.
 
 #endif // _network_h_
