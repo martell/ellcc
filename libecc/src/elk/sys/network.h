@@ -33,19 +33,21 @@
 #include "config.h"
 #include "vnode.h"
 
+typedef struct socket *socket_t;
+
 /* Network domain interface functions.
  */
-struct domain_interface
+typedef const struct domain_interface
 {
   // Check arguments and allocate provate data.
-  int (*setup)(void **priv, int domain, int protocol, int type);
+  int (*setup)(vnode_t vp);
   int (*getopt)(file_t fp, int level, int optname, void *optval,
                 socklen_t *optlen);
   int (*setopt)(file_t fp, int level, int optname, const void *optval,
                 socklen_t optlen);
   int (*option_update)(file_t fp);
   const struct vnops *vnops;            // Vnode operations.
-};
+} *domain_interface_t;
 
 #if ELK_NAMESPACE
 #define unix_interface __elk_unix_interface
@@ -63,15 +65,15 @@ struct domain_interface
  * by the interface modes that implement them. This file assumes
  * a NULL interface pointer is an unsupported domain.
  */
-extern const struct domain_interface *unix_interface;
-extern const struct domain_interface *inet_interface;
-extern const struct domain_interface *ipx_interface;
-extern const struct domain_interface *netlink_interface;
-extern const struct domain_interface *x25_interface;
-extern const struct domain_interface *ax25_interface;
-extern const struct domain_interface *atmpvc_interface;
-extern const struct domain_interface *appletalk_interface;
-extern const struct domain_interface *packet_interface;
+extern domain_interface_t unix_interface;
+extern domain_interface_t inet_interface;
+extern domain_interface_t ipx_interface;
+extern domain_interface_t netlink_interface;
+extern domain_interface_t x25_interface;
+extern domain_interface_t ax25_interface;
+extern domain_interface_t atmpvc_interface;
+extern domain_interface_t appletalk_interface;
+extern domain_interface_t packet_interface;
 
 #if ELK_NAMESPACE
 #define net_open __elk_net_open
@@ -134,7 +136,7 @@ struct socket
   int sndbuf;                           // The maximum send buffer size.
   int sndlowait;                        // Minimum bytes to send.
   int busy_poll;                        // The busy poll time in microseconds.
-  struct domain_interface *interface;   // The comain interface.
+  const domain_interface_t interface;   // The domain interface.
   void *priv;                           // Domain private data.
   struct timeval rcvtimeo;              // Receive timeout.
   struct timeval sndtimeo;              // Send timeout.

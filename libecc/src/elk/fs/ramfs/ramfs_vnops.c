@@ -382,10 +382,23 @@ static int ramfs_create(vnode_t dvp, char *name, mode_t mode)
   struct ramfs_node *np;
 
   DPRINTF(AFSDB_CORE, ("create %s in %s\n", name, dvp->v_path));
-  if (!S_ISREG(mode))
-    return -EINVAL;
+  int type;
 
-  np = ramfs_add_node(dvp->v_data, name, VREG, mode);
+  if (S_ISREG(mode)) {
+    type = VREG;
+  } else if (S_ISBLK(mode)) {
+    type = VBLK;
+  } else if (S_ISCHR(mode)) {
+    type = VCHR;
+  } else if (S_ISSOCK(mode)) {
+    type = VSOCK;
+  } else if (S_ISFIFO(mode)) {
+    type = VFIFO;
+  } else {
+    return -EINVAL;
+  }
+
+  np = ramfs_add_node(dvp->v_data, name, type, mode);
   if (np == NULL)
     return -ENOMEM;
   return 0;
@@ -503,7 +516,7 @@ static int ramfs_rename(vnode_t dvp1, vnode_t vp1, char *name1,
   } else {
     /* Create new file or directory */
     old_np = vp1->v_data;
-    np = ramfs_add_node(dvp2->v_data, name2, VREG, old_np->rn_mode);
+    np = ramfs_add_node(dvp2->v_data, name2, vp1->v_type, old_np->rn_mode);
     if (np == NULL)
       return -ENOMEM;
 

@@ -84,6 +84,9 @@ const typedef struct vnode
 
 typedef struct vnode *vnode_rw_t; // A writeable vnode.
 
+// This should only be used when the vnode is otherwise protected.
+#define VN_RW_OVERRIDE(vp) ((vnode_rw_t)(vp))
+
 // vnode flags.
 #define VSHARED      0x0001     // Locked for shared read access.
 #define VEXCLUSIVE   0x0002     // Locked for exclusive read/write access.

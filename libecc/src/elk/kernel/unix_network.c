@@ -58,9 +58,9 @@ static const struct vnops vnops = {
   net_truncate,
 };
 
-static int setup(void **priv, int domain, int protocol, int type)
+static int setup(vnode_t vp)
 {
-  return -EPROTONOSUPPORT;
+  return 0;
 }
 
 static int getopt(file_t fp, int level, int optname, void *optval,

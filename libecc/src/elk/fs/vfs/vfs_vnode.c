@@ -68,8 +68,9 @@
  */
 static struct list vnode_table[VNODE_BUCKETS];
 
-// This should onle be used when the vnode is otherwise protected.
-#define VN_RW_OVERRIDE(vp) ((vnode_rw_t)(vp))
+/** Anonymous vnode list.
+ */
+static struct list anon_vnodes;
 
 /*
  * Global lock to access all vnodes and vnode table.
@@ -79,25 +80,6 @@ static struct list vnode_table[VNODE_BUCKETS];
 static pthread_mutex_t vnode_lock = PTHREAD_MUTEX_INITIALIZER;
 #define VNODE_LOCK() pthread_mutex_lock(&vnode_lock)
 #define VNODE_UNLOCK() pthread_mutex_unlock(&vnode_lock)
-
-#if 0
-// Simple locking.
-#define VP_LOCK_INIT(vp) \
-  ({ int s = pthread_mutex_init(&VN_RW_OVERRIDE(vp)->v_interlock, NULL); \
-     VN_RW_OVERRIDE(vp)->v_nrlocks = 0; s; })
-#define VP_LOCK_DESTROY(vp) pthread_mutex_destroy(&VN_RW_OVERRIDE(vp)->v_interlock)
-#define VP_LOCK(vp, flags) ({ int s = pthread_mutex_lock(&VN_RW_OVERRIDE(vp)->v_interlock); \
-                              if (s == 0) ++VN_RW_OVERRIDE(vp)->v_nrlocks; s; })
-#define VP_UNLOCK(vp) ({ int s = pthread_mutex_unlock(&VN_RW_OVERRIDE(vp)->v_interlock); \
-                         if (s == 0) --VN_RW_OVERRIDE(vp)->v_nrlocks; s; })
-
-vnode_rw_t vn_lock_rw(vnode_t vp)
-{
-  // Vnodes are always R/W locked.
-  return (vnode_rw_t)vp;
-}
-
-#else
 
 static int VP_LOCK_INIT(vnode_t vp_ro)
 {
@@ -230,8 +212,6 @@ vnode_rw_t vn_lock_rw(vnode_t vp_ro)
   return vp;
 }
 
-#endif
-
 /*
  * Get the hash value from the mount point and path name.
  */
@@ -310,33 +290,42 @@ vnode_t vget(mount_t mp, char *path)
 
   if (!(vp = kmem_alloc(sizeof(struct vnode))))
     return NULL;
-  memset(vp, 0, sizeof(struct vnode));
+  *vp = (struct vnode){};
 
-  len = strlen(path) + 1;
-  if (!(vp->v_path = kmem_alloc(len))) {
-    kmem_free(vp);
-    return NULL;
+  if (path) {
+    len = strlen(path) + 1;
+    if (!(vp->v_path = kmem_alloc(len))) {
+      kmem_free(vp);
+      return NULL;
+    }
+    strlcpy(vp->v_path, path, len);
   }
-  vp->v_mount = mp;
   vp->v_refcnt = 1;
-  vp->v_op = mp->m_op->vfs_vnops;
-  strlcpy(vp->v_path, path, len);
   VP_LOCK_INIT(vp);
+  if (mp) {
+    vp->v_mount = mp;
+    vp->v_op = mp->m_op->vfs_vnops;
 
-  /*
-   * Request to allocate fs specific data for vnode.
-   */
-  if ((error = VFS_VGET(mp, vp)) != 0) {
-    VP_LOCK_DESTROY(vp);
-    kmem_free(vp->v_path);
-    kmem_free(vp);
-    return NULL;
+    /*
+     * Request to allocate fs specific data for vnode.
+     */
+    if ((error = VFS_VGET(mp, vp)) != 0) {
+      VP_LOCK_DESTROY(vp);
+      kmem_free(vp->v_path);
+      kmem_free(vp);
+      return NULL;
+    }
+    vfs_busy(vp->v_mount);
   }
-  vfs_busy(vp->v_mount);
+
   VP_LOCK(vp, LK_SHARED|LK_RETRY);
 
   VNODE_LOCK();
-  list_insert(&vnode_table[vn_hash(mp, path)], &vp->v_link);
+  if (mp) {
+    list_insert(&vnode_table[vn_hash(mp, path)], &vp->v_link);
+  } else {
+    list_insert(&anon_vnodes, &vp->v_link);
+  }
   VNODE_UNLOCK();
   return vp;
 }
@@ -367,7 +356,7 @@ void vput(vnode_t vp_ro)
    * Deallocate fs specific vnode data
    */
   VOP_INACTIVE(vp);
-  vfs_unbusy(vp->v_mount);
+  if (vp->v_mount) vfs_unbusy(vp->v_mount);
   VP_UNLOCK(vp);
   ASSERT(vp->v_nrlocks == 0);
   VP_LOCK_DESTROY(vp);
@@ -418,7 +407,7 @@ void vrele(vnode_t vp_ro)
    * Deallocate fs specific vnode data
    */
   VOP_INACTIVE(vp);
-  vfs_unbusy(vp->v_mount);
+  if (vp->v_mount) vfs_unbusy(vp->v_mount);
   VP_LOCK_DESTROY(vp);
   kmem_free(vp->v_path);
   kmem_free(vp);
@@ -435,7 +424,7 @@ void vgone(vnode_t vp_ro)
   VNODE_LOCK();
   DPRINTF(VFSDB_VNODE, ("vgone: %s\n", vp->v_path));
   list_remove(&vp->v_link);
-  vfs_unbusy(vp->v_mount);
+  if (vp->v_mount) vfs_unbusy(vp->v_mount);
   VP_LOCK_DESTROY(vp);
   kmem_free(vp->v_path);
   kmem_free(vp);
@@ -538,7 +527,7 @@ int vn_access(vnode_t vp, int flags)
     goto out;
   }
   if (flags & VWRITE) {
-    if (vp->v_mount->m_flags & MNT_RDONLY) {
+    if (vp->v_mount && vp->v_mount->m_flags & MNT_RDONLY) {
       error = -EROFS;
       goto out;
     }
@@ -595,6 +584,13 @@ static int vsCommand(int argc, char **argv)
         (strlen(mp->m_path) == 1) ? "\0" : mp->m_path,
         vp->v_path);
     }
+  }
+  head = &anon_vnodes;
+  for (n = list_first(head); n != head; n = list_next(n)) {
+    vp = list_entry(n, struct vnode, v_link);
+    printf("%08x %08x %s %6d %8d anonymous\n", (u_int)vp,
+      (u_int)mp, type[vp->v_type], vp->v_refcnt,
+      (u_int)vp->v_blkno);
   }
   VNODE_UNLOCK();
 
@@ -653,6 +649,8 @@ ELK_CONSTRUCTOR()
 {
   for (int i = 0; i < VNODE_BUCKETS; i++)
     list_init(&vnode_table[i]);
+
+  list_init(&anon_vnodes);
 
 #if VFS_COMMANDS
   command_insert("vs", vsCommand);

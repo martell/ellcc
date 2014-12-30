@@ -29,52 +29,100 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "config.h"
 #include "kernel.h"
 #include "syscalls.h"
 #include "crt1.h"
 #include "thread.h"
+#include "kmem.h"
 #include "network.h"
 
 // Make networking a select-able feature.
 FEATURE(network)
 
-const struct domain_interface *unix_interface;
-const struct domain_interface *inet_interface;
-const struct domain_interface *ipx_interface;
-const struct domain_interface *netlink_interface;
-const struct domain_interface *x25_interface;
-const struct domain_interface *ax25_interface;
-const struct domain_interface *atmpvc_interface;
-const struct domain_interface *appletalk_interface;
-const struct domain_interface *packet_interface;
+domain_interface_t unix_interface;
+domain_interface_t inet_interface;
+domain_interface_t ipx_interface;
+domain_interface_t netlink_interface;
+domain_interface_t x25_interface;
+domain_interface_t ax25_interface;
+domain_interface_t atmpvc_interface;
+domain_interface_t appletalk_interface;
+domain_interface_t packet_interface;
+
+static socket_t new_socket(domain_interface_t interface,
+                           int domain, int type, int protocol)
+{
+  socket_t sp = kmem_alloc(sizeof(struct socket));
+  if (sp == NULL) {
+    return NULL;
+  }
+
+  // Initialize default values.
+  *sp = (struct socket){ .domain = domain, .type = type, .protocol = protocol,
+                         .rcvbuf = CONFIG_SO_RCVBUF_DEFAULT,
+                         .sndbuf = CONFIG_SO_SNDBUF_DEFAULT,
+                         .interface = interface };
+
+  return sp;
+}
+
+static void free_socket(socket_t sp)
+{
+  kmem_free(sp);
+}
 
 /** Default vnode operations for sockets.
  */
+
+/** Open a socket file.
+ */
 int net_open(vnode_t vp, int flags)
 {
-  return -EINVAL;
+  if (unix_interface == NULL) {
+    return -EAFNOSUPPORT;
+  }
+
+  socket_t sp = new_socket(unix_interface, AF_UNIX, SOCK_STREAM, 0);
+  if (sp == NULL) {
+    return -ENOMEM;
+  }
+
+  // The vnode will now own the socket structure.
+  VN_RW_OVERRIDE(vp)->v_data = sp;
+
+  /* Check whether the interface supports the protocol and type
+   * and set it up.
+   */
+  int s = unix_interface->setup(vp);
+  if (s != 0) {
+    vput(vp);
+    return s;
+  }
+
+  return 0;
 }
 
 int net_close(vnode_t vp, file_t fp)
 {
-  return -EINVAL;
+  return 0;
 }
 
 int net_read(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
 {
-  return -EINVAL;
+  return -EPROTONOSUPPORT;
 }
 
 int net_write(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
 {
-  return -EINVAL;
+  return -EPROTONOSUPPORT;
 }
 
 int net_poll(vnode_t vp, file_t fp, int what)
 {
-  return -EINVAL;
+  return -EPROTONOSUPPORT;
 }
 
 int net_seek(vnode_t vp, file_t fp, off_t foffset, off_t offset)
@@ -140,7 +188,9 @@ int net_setattr(vnode_t vp, struct vattr *vattr)
 
 int net_inactive(vnode_t vp)
 {
-  return -EINVAL;
+  // Free the socket specific data.
+  kmem_free(vp->v_data);
+  return 0;
 }
 
 int net_truncate(vnode_t vp, off_t offset)
@@ -184,7 +234,8 @@ static int sys_getsockname(int sockfd, struct sockaddr *addr,
 }
 
 /** Generic socket system call entry.
- * on exit, fp is the file pointer, sp is the socket pointer, s is zero.
+ * on exit, fp is the file pointer, vp is the vnode pointer,
+ * sp is the socket pointer, s is zero indicating no error.
  */
 #define SOCKET_ENTER()                                          \
   int s;                                                        \
@@ -199,7 +250,7 @@ static int sys_getsockname(int sockfd, struct sockaddr *addr,
     vn_unlock(vp);                                              \
     return -ENOTSOCK;                                           \
   }                                                             \
-  struct socket *sp = vp->v_data;
+  socket_t sp = vp->v_data;
 
 static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
                           socklen_t *optlen)
@@ -704,7 +755,7 @@ static int sys_shutdown(int sockfd, int how)
 
 static int sys_socket(int domain, int type, int protocol)
 {
-  const struct domain_interface *interface = NULL;
+  domain_interface_t interface = NULL;
 
   // Choose the domain interface.
   switch (domain) {
@@ -744,24 +795,70 @@ static int sys_socket(int domain, int type, int protocol)
     return -EAFNOSUPPORT;
   }
 
-  // Isolate the flags.
+  // Isolate the flags. RICH: Use them.
   unsigned flags = type & (SOCK_NONBLOCK|SOCK_CLOEXEC);
   type &= ~(SOCK_NONBLOCK|SOCK_CLOEXEC);
 
-  /* Check whether the interface supports the protocol and type
-   * and get its private data.
-   */
-  void *priv;
-  int s = interface->setup(&priv, domain, protocol, type);
-  if (s != 0)
-    return s;
+  socket_t sp = new_socket(interface, domain, type, protocol);
+  if (sp == NULL) {
+    return -ENOMEM;
+  }
 
-  return -ENOSYS;
+  vnode_t vp = vget(NULL, NULL);        // Get an anonymous vnode.
+  if (vp == NULL) {
+    free_socket(sp);
+    return -ENOMEM;
+  }
+  VN_RW_OVERRIDE(vp)->v_op = interface->vnops;
+  // The vnode will now own the socket structure.
+  VN_RW_OVERRIDE(vp)->v_data = sp;
+
+  int s = interface->setup(vp);
+  if (s != 0) {
+    vput(vp);
+    return s;
+  }
+
+  // Setup the file structure.
+  file_t fp;
+  if (!(fp = kmem_alloc(sizeof(struct file)))) {
+    vput(vp);
+    return -ENOMEM;
+  }
+
+  *fp = (struct file){ .f_vnode = vp, .f_flags = FREAD|FWRITE,
+                       .f_offset = 0, .f_count = 1 };
+
+  /* Check whether the interface supports the protocol and type
+   * and set it up.
+   */
+  // Finally, allocate a file descriptor.
+  int fd = allocfd(fp);
+  if (fd < 0) {
+    kmem_free(fp);
+    vput(vp);
+    return fd;
+  }
+
+  vn_unlock(vp);
+  return fd;
 }
 
 static int sys_socketpair(int domain, int type, int protocol, int sv[2])
 {
-  return -ENOSYS;
+  int lsv[2];
+  lsv[0] = sys_socket(domain, type, protocol);
+  if (lsv[0] < 0) {
+    return lsv[0];
+  }
+
+  lsv[1] = dup(lsv[0]);
+  if (lsv[1] < 0) {
+    close(lsv[0]);
+    return lsv[1];
+  }
+
+  return copyout(lsv, sv, sizeof(lsv));
 }
 
 #ifdef SYS_socketcall

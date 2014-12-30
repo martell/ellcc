@@ -362,7 +362,8 @@ void kmem_free(void *ptr)
   struct block_hdr *blk;
   struct page_hdr *pg;
 
-  ASSERT(ptr != NULL);
+  if (ptr == NULL)
+    return;
 
   LOCK();
 

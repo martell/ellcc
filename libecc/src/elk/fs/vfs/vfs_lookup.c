@@ -42,7 +42,7 @@
 #include "vfs.h"
 
 // The AF_UNIX socket interface.
-const struct domain_interface *unix_interface;
+domain_interface_t unix_interface;
 
 /*
  * Convert a pathname into a pointer to a locked vnode.
