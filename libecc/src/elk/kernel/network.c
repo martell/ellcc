@@ -183,25 +183,29 @@ static int sys_getsockname(int sockfd, struct sockaddr *addr,
   return -ENOSYS;
 }
 
+/** Generic socket system call entry.
+ * on exit, fp is the file pointer, sp is the socket pointer, s is zero.
+ */
+#define SOCKET_ENTER()                                          \
+  int s;                                                        \
+  file_t fp;                                                    \
+  s = getfile(sockfd, &fp);                                     \
+  if (s < 0) {                                                  \
+    return s;                                                   \
+  }                                                             \
+  vnode_t vp = fp->f_vnode;                                     \
+  vn_lock(vp, LK_SHARED|LK_RETRY);                              \
+  if (vp->v_type != VSOCK) {                                    \
+    vn_unlock(vp);                                              \
+    return -ENOTSOCK;                                           \
+  }                                                             \
+  struct socket *sp = vp->v_data;
+
 static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
                           socklen_t *optlen)
 {
-  int s;
-  file_t fp;
+  SOCKET_ENTER()
 
-  s = getfile(sockfd, &fp);
-  if (s < 0) {
-    return s;
-  }
-
-  vnode_t vp = fp->f_vnode;
-  vn_lock(vp, LK_SHARED|LK_RETRY);
-  if (vp->v_type != VSOCK) {
-    vn_unlock(vp);
-    return -ENOTSOCK;
-  }
-
-  struct socket *sp = vp->v_data;
   if (level != SOL_SOCKET) {
     // Try a lower level get.
     s = sp->interface->getopt(fp, level, optname, optval, optlen);
@@ -411,12 +415,14 @@ static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
 
 static int sys_listen(int sockfd, int backlog)
 {
+  SOCKET_ENTER()
   return -ENOSYS;
 }
 
 #if defined(SYS_socketcall) || defined(SYS_recv)
 static int sys_recv(int sockfd, void *buf, size_t len, int flags)
 {
+  SOCKET_ENTER()
   return -ENOSYS;
 }
 #endif
@@ -424,23 +430,27 @@ static int sys_recv(int sockfd, void *buf, size_t len, int flags)
 static int sys_recvfrom(int sockfd, void *buf, size_t len, int flags,
                         struct sockaddr *src_addr, socklen_t *addrlen)
 {
+  SOCKET_ENTER()
   return -ENOSYS;
 }
 
 static int sys_recvmmsg(int sockfd, struct msghdr *msgvec, unsigned int vlen,
                         unsigned int flags, struct timespec *timeout)
 {
+  SOCKET_ENTER()
   return -ENOSYS;
 }
 
 static int sys_recvmsg(int sockfd, struct msghdr *msgvec, unsigned int flags)
 {
+  SOCKET_ENTER()
   return -ENOSYS;
 }
 
 #if defined(SYS_socketcall) || defined(SYS_send)
 static int sys_send(int sockfd, const void *buf, size_t len, int flags)
 {
+  SOCKET_ENTER()
   return -ENOSYS;
 }
 #endif
@@ -448,40 +458,28 @@ static int sys_send(int sockfd, const void *buf, size_t len, int flags)
 static int sys_sendto(int sockfd, const void *buf, size_t len, int flags,
                         struct sockaddr *src_addr, socklen_t *addrlen)
 {
+  SOCKET_ENTER()
   return -ENOSYS;
 }
 
 static int sys_sendmmsg(int sockfd, const struct msghdr *msgvec,
                         unsigned int vlen, unsigned int flags)
 {
+  SOCKET_ENTER()
   return -ENOSYS;
 }
 
 static int sys_sendmsg(int sockfd, const struct msghdr *msgvec,
                        unsigned int flags)
 {
+  SOCKET_ENTER()
   return -ENOSYS;
 }
 
 static int sys_setsockopt(int sockfd, int level, int optname,
                           const void *optval, socklen_t optlen)
 {
-  int s;
-  file_t fp;
-
-  s = getfile(sockfd, &fp);
-  if (s < 0) {
-    return s;
-  }
-
-  vnode_t vp = fp->f_vnode;
-  vn_lock(vp, LK_SHARED|LK_RETRY);
-  if (vp->v_type != VSOCK) {
-    vn_unlock(vp);
-    return -ENOTSOCK;
-  }
-
-  struct socket *sp = vp->v_data;
+  SOCKET_ENTER()
   if (level != SOL_SOCKET) {
     // Try a lower level get.
     s = sp->interface->setopt(fp, level, optname, optval, optlen);
@@ -700,6 +698,7 @@ static int sys_setsockopt(int sockfd, int level, int optname,
 
 static int sys_shutdown(int sockfd, int how)
 {
+  SOCKET_ENTER()
   return -ENOSYS;
 }
 
