@@ -97,6 +97,8 @@ extern domain_interface_t packet_interface;
 #define net_truncate __elk_net_truncate
 #endif
 
+/* Default socket vnode operations.
+ */
 int net_open(vnode_t vp, int flags);
 int net_close(vnode_t vp, file_t fp);
 int net_read(vnode_t vp, file_t fp, struct uio *uio, size_t *count);

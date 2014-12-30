@@ -69,11 +69,6 @@ static socket_t new_socket(domain_interface_t interface,
   return sp;
 }
 
-static void free_socket(socket_t sp)
-{
-  kmem_free(sp);
-}
-
 /** Default vnode operations for sockets.
  */
 
@@ -806,7 +801,7 @@ static int sys_socket(int domain, int type, int protocol)
 
   vnode_t vp = vget(NULL, NULL);        // Get an anonymous vnode.
   if (vp == NULL) {
-    free_socket(sp);
+    kmem_free(sp);
     return -ENOMEM;
   }
   VN_RW_OVERRIDE(vp)->v_op = interface->vnops;
