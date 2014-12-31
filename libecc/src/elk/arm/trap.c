@@ -46,7 +46,7 @@ FEATURE(trap)
 
 #define DEBUG
 
-used static int dummy(void)
+is_used static int dummy(void)
 {
   return 0;
 }

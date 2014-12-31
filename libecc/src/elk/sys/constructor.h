@@ -8,9 +8,7 @@
 #define NULL 0
 #endif
 
-#undef used
-
-#define used __attribute((__used__))
+#define is_used __attribute((__used__))
 
 #undef weak_alias
 #define weak_alias(old, new) \

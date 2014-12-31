@@ -120,6 +120,26 @@ int net_setattr(vnode_t vp, struct vattr *vattr);
 int net_inactive(vnode_t vp);
 int net_truncate(vnode_t vp, off_t offset);
 
+/** A socket buffer.
+ */
+struct buffer
+{
+  pthread_mutex_t mutex;                // The buffer mutex.
+  int refcnt;                           // The buffer reference count.
+  sem_t isem;                           // The data available semaphore.
+  sem_t osem;                           // The space available semaphore.
+  struct timeval timeo;                 // The timeout value.
+  int max;                              // The max buffer page count.
+  int total;                            // The total buffer page count.
+  size_t used;                          // The number of bytes used.
+  size_t available;                     // The total number of bytes available.
+  int in_index;                         // Buffer input index.
+  int in_offset;                        // Input offset in buffer.
+  int out_index;                        // Buffer output index.
+  int out_offset;                       // Output offset in buffer.
+  char *buf[];                          // The buffer pointers.
+};
+
 /** The state of a socket.
  */
 struct socket
@@ -138,21 +158,9 @@ struct socket
   int busy_poll;                        // The busy poll time in microseconds.
   const domain_interface_t interface;   // The domain interface.
   void *priv;                           // Domain private data.
-  struct timeval rcvtimeo;              // Receive timeout.
-  struct timeval sndtimeo;              // Send timeout.
   struct ucred ucred;                   // Connect credentials.
-  union
-  {
-    socket_t connection;                // AF_UNIX connected socket.
-  };
-  int rcvmax;                           // The maximum receive buffer size.
-  int sndmax;                           // The maximum send buffer size.
-  pthread_mutex_t rcvmutex;             // The receive buffer mutex.
-  sem_t rcvsem;                         // The receive data available semaphore.
-  pthread_mutex_t sndmutex;             // The send buffer mutex.
-  sem_t sndsem;                         // The sent data semaphore.
-  char *rcvbuf[CONFIG_SO_BUFFER_PAGES]; // The receive buffer pointers.
-  char *sndbuf[CONFIG_SO_BUFFER_PAGES]; // The send buffer pointers.
+  struct buffer *snd;                   // The send buffer.
+  struct buffer *rcv;                   // The receive buffer.
 };
 
 /** Socket flag values.
@@ -167,10 +175,19 @@ struct socket
 #define SF_MARK         0x00000080      // The mark has been set.
 #define SF_OOBINLINE    0x00000100      // Send out-of-band data in line.
 #define SF_PASSCRED     0x00000200      // Enable SCM_CREDENTIALS.
-#define SF_RCVTIMEO     0x00000400      // The receive timeout has been set.
-#define SF_SNDTIMEO     0x00000800      // The send timeout has been set.
-#define SF_REUSEADDR    0x00001000      // Reuse local addresses.
-#define SF_RXQ_OVFL     0x00002000      // Enable dropped packet count.
-#define SF_TIMESTAMP    0x00004000      // Enable SO_TIMESTAMP control message.
+#define SF_REUSEADDR    0x00000400      // Reuse local addresses.
+#define SF_RXQ_OVFL     0x00000800      // Enable dropped packet count.
+#define SF_TIMESTAMP    0x00001000      // Enable SO_TIMESTAMP control message.
+
+#if ELK_NAMESPACE
+#define net_new_buffer __elk_net_new_buffer
+#endif
+
+/** Network support functions.
+ */
+
+/** Create and initialize a new buffer.
+ */
+int net_new_buffer(struct buffer **buf, int max, int total);
 
 #endif // _network_h_

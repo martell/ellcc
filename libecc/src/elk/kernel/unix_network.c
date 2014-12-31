@@ -60,7 +60,23 @@ static const struct vnops vnops = {
 
 static int setup(vnode_t vp)
 {
-  return 0;
+  struct socket *sp = vp->v_data;
+  if (sp->domain != AF_UNIX) {
+    // Only AF_UNIX is supported.
+    return -EAFNOSUPPORT;
+  }
+  if (sp->type != SOCK_STREAM) { // RICH: need this && sp->type != SOCK_DGRAM) {
+    // RICH: Check this error value.
+    return -EOPNOTSUPP;
+  }
+  if (sp->protocol != 0) {
+    return -EPROTONOSUPPORT;
+  }
+
+  // An AF_UNIX socket always has a send buffer.
+  int s = net_new_buffer(&sp->snd, CONFIG_SO_BUFFER_DEFAULT_PAGES,
+                         CONFIG_SO_BUFFER_PAGES);
+  return s;
 }
 
 static int getopt(file_t fp, int level, int optname, void *optval,
