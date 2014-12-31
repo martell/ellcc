@@ -1121,6 +1121,7 @@ static int sys_socket(int domain, int type, int protocol)
     return -ENOMEM;
   }
   VN_RW_OVERRIDE(vp)->v_op = interface->vnops;
+  VN_RW_OVERRIDE(vp)->v_type = VSOCK;
   // The vnode will now own the socket structure.
   VN_RW_OVERRIDE(vp)->v_data = sp;
 

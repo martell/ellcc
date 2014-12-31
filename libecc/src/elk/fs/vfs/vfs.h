@@ -42,8 +42,6 @@
 
 #define sec_vnode_permission __elk_sec_vnode_permission
 #define sec_file_permission __elk_sec_file_permission
-#define namei __elk_namei
-#define lookup __elk_lookup
 #define vnode_init __elk_vnode_init
 #define vfs_findroot __elk_vfs_findroot
 #define vfs_busy __elk_vfs_busy
@@ -52,8 +50,6 @@
 
 int sec_vnode_permission(char *path);
 int sec_file_permission(char *path, int mode);
-int namei(char *path, vnode_t *vpp);
-int lookup(char *path, vnode_t *vpp, char **name);
 void vnode_init(void);
 int vfs_findroot(char *path, mount_t *mp, char **root);
 void vfs_busy(mount_t mp);

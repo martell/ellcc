@@ -205,6 +205,8 @@ typedef  int (*vnop_truncate_t)(vnode_t, off_t);
 #define vcount __elk_vcount
 #define vflush __elk_vflush
 #define vfs_close  __elk_vfs_close 
+#define namei __elk_namei
+#define lookup __elk_lookup
 #endif
 
 int vop_nullop(void);
@@ -216,6 +218,7 @@ void vn_unlock(vnode_t);
 int vn_stat(vnode_t, struct stat *);
 int vn_access(vnode_t, int);
 vnode_t vget(struct mount *, char *);
+int vbind(struct mount *, vnode_t, char *);
 void vput(vnode_t);
 void vgone(vnode_t);
 void vref(vnode_t);
@@ -223,5 +226,7 @@ void vrele(vnode_t);
 int vcount(vnode_t);
 void vflush(struct mount *);
 int vfs_close(file_t fp);
+int namei(char *path, vnode_t *vpp);
+int lookup(char *path, vnode_t *vpp, char **name);
 
 #endif /* !_SYS_VNODE_H_ */

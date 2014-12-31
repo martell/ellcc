@@ -32,6 +32,7 @@
 #include "config.h"
 #include "kernel.h"
 #include "vnode.h"
+#include "thread.h"
 #include "network.h"
 
 // Make AF_UNIX (AF_LOCAL) networking a select-able feature.
@@ -118,33 +119,41 @@ static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
   }
 
   if (uaddr.sun_path[0]) {
-#if RICH
+#if 1
     // This is a file system path.
     // Find the full path name (may be relative to cwd).
-    vnode_t vp;
+    vnode_t dvp;
     char path[PATH_MAX];
 
     s = getpath(uaddr.sun_path, path, 1);
     if (s != 0)
       return s;
 
-    if ((s = namei(path, &vp)) == 0) {
-      vput(vp);
+    if ((s = namei(path, &dvp)) == 0) {
+      vput(dvp);
       return -EEXIST;
     }
 
-    if ((s = lookup(path, &vp, &name)) != 0)
+    char *name;
+    if ((s = lookup(path, &dvp, &name)) != 0)
       return s;
 
-    if ((s = vn_access(vp, VWRITE)) != 0) {
-      vput(vp);
+    if ((s = vn_access(dvp, VWRITE)) != 0) {
+      vput(dvp);
       return s;
     }
 
-    if (s = VOP_CREATE(vp, name, mode) != 0) {
-      vput(vp);
+    // RICH: Creation mode? umask?
+    int mode = S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH;
+    if ((s = VOP_CREATE(dvp, name, S_IFSOCK|mode)) != 0) {
+      vput(dvp);
       return s;
     }
+
+    // Bind the socket to the path.
+    s = vbind(dvp->v_mount, fp->f_vnode, path);
+    vput(dvp);
+    return s;
 #endif
   } else {
     // This is an abstract address.

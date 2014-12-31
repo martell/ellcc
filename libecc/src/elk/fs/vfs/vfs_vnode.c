@@ -330,6 +330,26 @@ vnode_t vget(mount_t mp, char *path)
   return vp;
 }
 
+/** Bind an anonymous vnode to a file system name.
+ */
+int  vbind(mount_t mp, vnode_t vp_ro, char *path)
+{
+  vnode_rw_t vp = vn_lock_rw(vp_ro);
+  vp->v_mount = mp;
+  int len = strlen(path) + 1;
+  if (!(vp->v_path = kmem_alloc(len))) {
+    kmem_free(vp);
+    return -ENOMEM;
+  }
+  strlcpy(vp->v_path, path, len);
+  VNODE_LOCK();
+  list_remove(&vp->v_link);     // Remove from the anonymous list.
+  list_insert(&vnode_table[vn_hash(mp, path)], &vp->v_link);
+  VNODE_UNLOCK();
+  vn_unlock(vp);
+  return 0;
+}
+
 /*
  * Unlock vnode and decrement its reference count.
  */
