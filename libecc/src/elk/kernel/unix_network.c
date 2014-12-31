@@ -26,6 +26,7 @@
  */
 
 
+#include <sys/un.h>
 #include <errno.h>
 
 #include "config.h"
@@ -96,11 +97,69 @@ static int option_update(file_t fp)
   return 0;
 }
 
+static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
+{
+  struct sockaddr_un uaddr;
+  if (addrlen > sizeof(uaddr) || addrlen < sizeof(sa_family_t)) {
+    return -EINVAL;
+  }
+
+  int s = copyin(addr, &uaddr, addrlen);
+  if (s != 0)
+    return s;
+
+  if (uaddr.sun_family != AF_UNIX) {
+    return -EINVAL;
+  }
+
+  if (addrlen == sizeof(sa_family_t)) {
+    // Unnamed address doesn't make sense here.
+    return -EINVAL;
+  }
+
+  if (uaddr.sun_path[0]) {
+#if RICH
+    // This is a file system path.
+    // Find the full path name (may be relative to cwd).
+    vnode_t vp;
+    char path[PATH_MAX];
+
+    s = getpath(uaddr.sun_path, path, 1);
+    if (s != 0)
+      return s;
+
+    if ((s = namei(path, &vp)) == 0) {
+      vput(vp);
+      return -EEXIST;
+    }
+
+    if ((s = lookup(path, &vp, &name)) != 0)
+      return s;
+
+    if ((s = vn_access(vp, VWRITE)) != 0) {
+      vput(vp);
+      return s;
+    }
+
+    if (s = VOP_CREATE(vp, name, mode) != 0) {
+      vput(vp);
+      return s;
+    }
+#endif
+  } else {
+    // This is an abstract address.
+    return -EINVAL;     // RICH: For now.
+  }
+
+  return -ENOPROTOOPT;
+}
+
 static const struct domain_interface interface = {
   .setup = setup,
   .getopt = getopt,
   .setopt = setopt,
   .option_update = option_update,
+  .bind = bindaddr,
   .vnops = &vnops,
 };
 

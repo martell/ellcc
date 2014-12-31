@@ -483,38 +483,6 @@ int net_truncate(vnode_t vp, off_t offset)
 
 /** Socket related system calls.
  */
-static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
-                       int flags)
-{
-  return -ENOSYS;
-}
-
-static int sys_bind(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_connect(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_getpeername(int sockfd, struct sockaddr *addr,
-                           socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_getsockname(int sockfd, struct sockaddr *addr,
-                           socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
 
 /** Generic socket system call entry.
  * on exit, fp is the file pointer, vp is the vnode pointer,
@@ -534,6 +502,50 @@ static int sys_getsockname(int sockfd, struct sockaddr *addr,
     return -ENOTSOCK;                                           \
   }                                                             \
   socket_t sp = vp->v_data;
+
+static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+  SOCKET_ENTER()
+  return -ENOSYS;
+}
+
+static int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
+                       int flags)
+{
+  SOCKET_ENTER()
+  return -ENOSYS;
+}
+
+static int sys_bind(int sockfd, struct sockaddr *addr, socklen_t addrlen)
+{
+  SOCKET_ENTER()
+  if (sp->flags & SF_BOUND) {
+    // The socket is already bound.
+    return -EINVAL;
+  }
+
+  return sp->interface->bind(fp, addr, addrlen);
+}
+
+static int sys_connect(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+  SOCKET_ENTER()
+  return -ENOSYS;
+}
+
+static int sys_getpeername(int sockfd, struct sockaddr *addr,
+                           socklen_t *addrlen)
+{
+  SOCKET_ENTER()
+  return -ENOSYS;
+}
+
+static int sys_getsockname(int sockfd, struct sockaddr *addr,
+                           socklen_t *addrlen)
+{
+  SOCKET_ENTER()
+  return -ENOSYS;
+}
 
 /** Check for the existance of a buffer.
  */
@@ -1171,8 +1183,8 @@ static int sys_socketpair(int domain, int type, int protocol, int sv[2])
     close(lsv[1]);
     return s;
   }
-  s = getfile(lsv[1], &fp2);
 
+  s = getfile(lsv[1], &fp2);
   if (s < 0) {
     close(lsv[0]);
     close(lsv[1]);
@@ -1186,6 +1198,9 @@ static int sys_socketpair(int domain, int type, int protocol, int sv[2])
   ++sp1->rcv->refcnt;
   sp2->rcv = sp1->snd;
   ++sp2->rcv->refcnt;
+  // Mark the sockets as bound.
+  sp1->flags |= SF_BOUND;
+  sp2->flags |= SF_BOUND;
   return copyout(lsv, sv, sizeof(lsv));
 }
 
@@ -1204,7 +1219,7 @@ static int sys_socketcall(int call, unsigned long *args)
     return sys_accept4(args[0], (struct sockaddr *)arg[1], (socklen_t *)arg[2],
                        arg[3]);
   case __SC_bind:
-    return sys_bind(args[0], (struct sockaddr *)arg[1], (socklen_t *)arg[2]);
+    return sys_bind(args[0], (struct sockaddr *)arg[1], (socklen_t)arg[2]);
   case __SC_connect:
     return sys_connect(args[0], (struct sockaddr *)arg[1], (socklen_t *)arg[2]);
   case __SC_getpeername:

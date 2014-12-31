@@ -46,6 +46,7 @@ typedef const struct domain_interface
   int (*setopt)(file_t fp, int level, int optname, const void *optval,
                 socklen_t optlen);
   int (*option_update)(file_t fp);
+  int (*bind)(file_t fp, struct sockaddr *addr, socklen_t addrlen);
   const struct vnops *vnops;            // Vnode operations.
 } *domain_interface_t;
 
@@ -178,6 +179,7 @@ struct socket
 #define SF_REUSEADDR    0x00000400      // Reuse local addresses.
 #define SF_RXQ_OVFL     0x00000800      // Enable dropped packet count.
 #define SF_TIMESTAMP    0x00001000      // Enable SO_TIMESTAMP control message.
+#define SF_BOUND        0x00002000      // The socket has been bound.
 
 #if ELK_NAMESPACE
 #define net_new_buffer __elk_net_new_buffer

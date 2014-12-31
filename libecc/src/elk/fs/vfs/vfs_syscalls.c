@@ -705,7 +705,6 @@ static int sys_mknod(char *name, mode_t mode)
   vnode_t vp, dvp;
   int error;
 
-
   // Find the full path name (may be relative to cwd).
   char path[PATH_MAX];
   if ((error = getpath(name, path, 1)) != 0)
