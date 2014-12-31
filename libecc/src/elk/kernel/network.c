@@ -37,6 +37,7 @@
 #include "crt1.h"
 #include "thread.h"
 #include "kmem.h"
+#include "page.h"
 #include "network.h"
 
 // Make networking a select-able feature.
@@ -62,10 +63,15 @@ static socket_t new_socket(domain_interface_t interface,
 
   // Initialize default values.
   *sp = (struct socket){ .domain = domain, .type = type, .protocol = protocol,
-                         .rcvbuf = CONFIG_SO_RCVBUF_DEFAULT,
-                         .sndbuf = CONFIG_SO_SNDBUF_DEFAULT,
-                         .interface = interface };
+                         .rcvmax = CONFIG_SO_RCVBUF_DEFAULT,
+                         .sndmax = CONFIG_SO_SNDBUF_DEFAULT,
+                         .interface = interface,
+                         .rcvmutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER,
+                         .sndmutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER,
+                       };
 
+  sem_init(&sp->rcvsem, 0, 0);
+  sem_init(&sp->sndsem, 0, 0);
   return sp;
 }
 
@@ -102,6 +108,17 @@ int net_open(vnode_t vp, int flags)
 
 int net_close(vnode_t vp, file_t fp)
 {
+  socket_t sp = fp->f_vnode->v_data;
+  if (sp->connection) {
+    // Break the connection.
+    sp->connection->connection = NULL;
+  }
+
+  // RICH: What about the other side?
+  sem_destroy(&sp->rcvsem);
+  pthread_mutex_destroy(&sp->rcvmutex);
+  sem_destroy(&sp->sndsem);
+  pthread_mutex_destroy(&sp->sndmutex);
   return 0;
 }
 
@@ -401,9 +418,11 @@ static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
       break;
 
     case SO_RCVBUF:
-    case SO_RCVBUFFORCE:
-      COPYOUTINT(sp->rcvbuf);
+    case SO_RCVBUFFORCE: {
+      int rcvmax = sp->rcvmax * PAGE_SIZE;
+      COPYOUTINT(rcvmax);
       break;
+    }
 
     case SO_RCVLOWAT:
       COPYOUTINT(sp->rcvlowait);
@@ -430,9 +449,11 @@ static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
       break;
 
     case SO_SNDBUF:
-    case SO_SNDBUFFORCE:
-      COPYOUTINT(sp->sndbuf);
+    case SO_SNDBUFFORCE: {
+      int sndmax = sp->sndmax * PAGE_SIZE;
+      COPYOUTINT(sndmax);
       break;
+    }
 
     case SO_TIMESTAMP:
       COPYOUTINT((sp->flags & SF_TIMESTAMP) != 0);
@@ -666,15 +687,13 @@ static int sys_setsockopt(int sockfd, int level, int optname,
 
     case SO_RCVBUF:
     case SO_RCVBUFFORCE: {
-      int rcvbuf;
-      COPYININT(rcvbuf);
-      rcvbuf *= 2;      // RICH: May not need this.
-      if (rcvbuf < CONFIG_SO_RCVBUF_MIN ||
-          ((optname == SO_RCVBUF || !capable(CAP_NET_ADMIN)) &&
-           rcvbuf > CONFIG_SO_RCVBUF_MAX)) {
+      int rcvmax;
+      COPYININT(rcvmax);
+      rcvmax /= PAGE_SIZE;
+      if (rcvmax < CONFIG_SO_RCVBUF_MIN || rcvmax > CONFIG_SO_RCVBUF_MAX) {
         s = -EINVAL;
       } else {
-        sp->rcvbuf = rcvbuf;
+        sp->rcvmax = rcvmax;
       }
       break;
     }
@@ -705,15 +724,13 @@ static int sys_setsockopt(int sockfd, int level, int optname,
 
     case SO_SNDBUF:
     case SO_SNDBUFFORCE: {
-      int sndbuf;
-      COPYININT(sndbuf);
-      sndbuf *= 2;      // RICH: May not need this.
-      if (sndbuf < CONFIG_SO_SNDBUF_MIN ||
-          ((optname == SO_SNDBUF || !capable(CAP_NET_ADMIN)) &&
-           sndbuf > CONFIG_SO_SNDBUF_MAX)) {
+      int sndmax;
+      COPYININT(sndmax);
+      sndmax /= PAGE_SIZE;
+      if (sndmax < CONFIG_SO_SNDBUF_MIN || sndmax > CONFIG_SO_SNDBUF_MAX) {
         s = -EINVAL;
       } else {
-        sp->sndbuf = sndbuf;
+        sp->sndmax = sndmax;
       }
       break;
     }
@@ -847,12 +864,33 @@ static int sys_socketpair(int domain, int type, int protocol, int sv[2])
     return lsv[0];
   }
 
-  lsv[1] = dup(lsv[0]);
+  lsv[1] = sys_socket(domain, type, protocol);
   if (lsv[1] < 0) {
     close(lsv[0]);
     return lsv[1];
   }
 
+  // Connect the two sockets.
+  int s;
+  file_t fp1, fp2;
+  s = getfile(lsv[0], &fp1);
+  if (s < 0) {
+    close(lsv[0]);
+    close(lsv[1]);
+    return s;
+  }
+  s = getfile(lsv[1], &fp2);
+
+  if (s < 0) {
+    close(lsv[0]);
+    close(lsv[1]);
+    return s;
+  }
+
+  socket_t sp1 = fp1->f_vnode->v_data;
+  socket_t sp2 = fp2->f_vnode->v_data;
+  sp1->connection = sp2;
+  sp2->connection = sp1;
   return copyout(lsv, sv, sizeof(lsv));
 }
 

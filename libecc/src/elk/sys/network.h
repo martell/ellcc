@@ -133,9 +133,7 @@ struct socket
   int mark;                             // The mark.
   int peek_off;                         // The peek offset.
   int priority;                         // Packet priority.
-  int rcvbuf;                           // The maximum receive buffer size.
   int rcvlowait;                        // Minimum bytes to receive.
-  int sndbuf;                           // The maximum send buffer size.
   int sndlowait;                        // Minimum bytes to send.
   int busy_poll;                        // The busy poll time in microseconds.
   const domain_interface_t interface;   // The domain interface.
@@ -143,6 +141,18 @@ struct socket
   struct timeval rcvtimeo;              // Receive timeout.
   struct timeval sndtimeo;              // Send timeout.
   struct ucred ucred;                   // Connect credentials.
+  union
+  {
+    socket_t connection;                // AF_UNIX connected socket.
+  };
+  int rcvmax;                           // The maximum receive buffer size.
+  int sndmax;                           // The maximum send buffer size.
+  pthread_mutex_t rcvmutex;             // The receive buffer mutex.
+  sem_t rcvsem;                         // The receive data available semaphore.
+  pthread_mutex_t sndmutex;             // The send buffer mutex.
+  sem_t sndsem;                         // The sent data semaphore.
+  char *rcvbuf[CONFIG_SO_BUFFER_PAGES]; // The receive buffer pointers.
+  char *sndbuf[CONFIG_SO_BUFFER_PAGES]; // The send buffer pointers.
 };
 
 /** Socket flag values.
