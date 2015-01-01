@@ -58,6 +58,13 @@
 #include "kmem.h"
 #include "network.h"
 #include "lwip/tcpip.h"
+#include "lwip/ip.h"
+#include "lwip/udp.h"
+#include "lwip/raw.h"
+
+// Originally from lwip/inet.h.
+#define inet_addr_to_ipaddr(target_ipaddr, source_inaddr) \
+  (ip4_addr_set_u32(target_ipaddr, (source_inaddr)->s_addr))
 
 // Make LwIP AF_INET(6) networking a select-able feature.
 FEATURE_CLASS(lwip_network, inet_network)
@@ -116,6 +123,16 @@ static const int err_to_errno_table[] = {
 #define err_to_errno(err) \
   ((unsigned)(-(err)) < ERR_TO_ERRNO_TABLE_SIZE ? \
     err_to_errno_table[-(err)] : EIO)
+
+#define IP4ADDR_PORT_TO_SOCKADDR(sin, ipXaddr, port) do { \
+  (sin)->sin_len = sizeof(struct sockaddr_in); \
+  (sin)->sin_family = AF_INET; \
+  (sin)->sin_port = htons((port)); \
+  inet_addr_from_ipaddr(&(sin)->sin_addr, ipX_2_ip(ipXaddr)); \
+  memset((sin)->sin_zero, 0, SIN_ZERO_LEN); }while(0)
+#define SOCKADDR4_TO_IP4ADDR_PORT(sin, ipXaddr, port) do { \
+  inet_addr_to_ipaddr(ipX_2_ip(ipXaddr), &((sin)->sin_addr)); \
+  (port) = ntohs((sin)->sin_port); }while(0)
 
 #if LWIP_IPV6
 
@@ -185,6 +202,21 @@ static const int err_to_errno_table[] = {
 #define DOMAIN_TO_NETCONN_TYPE(domain, netconn_type) (netconn_type)
 
 #endif /* LWIP_IPV6 */
+
+#define IS_SOCK_ADDR_TYPE_VALID_OR_UNSPEC(name) \
+ (((name)->sa_family == AF_UNSPEC) || \
+ IS_SOCK_ADDR_TYPE_VALID(name))
+#define SOCK_ADDR_TYPE_MATCH_OR_UNSPEC(name, sock) \
+  (((name)->sa_family == AF_UNSPEC) || \
+  SOCK_ADDR_TYPE_MATCH(name, sock))
+#define IS_SOCK_ADDR_ALIGNED(name) \
+  ((((mem_ptr_t)(name)) % 4) == 0)
+
+#define LWIP_SETGETSOCKOPT_DATA_VAR_REF(name) API_VAR_REF(name)
+#define LWIP_SETGETSOCKOPT_DATA_VAR_DECLARE(name) \
+  API_VAR_DECLARE(struct lwip_setgetsockopt_data, name)
+#define LWIP_SETGETSOCKOPT_DATA_VAR_FREE(name) \
+  API_VAR_FREE(MEMP_SOCKET_SETGETSOCKOPT_DATA, name)
 
 /** Callback registered in the netconn layer for each socket-netconn.
  * Processes recvevent (data available) and wakes up tasks waiting for select.
@@ -456,16 +488,179 @@ static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
   return -ENOPROTOOPT;
 }
 
-/** Send bytes to a connection.
- */
-static ssize_t net_send(struct socket *sp, char *buffer, size_t size, int flags)
+static ssize_t net_send(struct socket *sp, const char *buffer, size_t size,
+                        int flags, const struct sockaddr *to, socklen_t tolen)
 {
-  return 0;
+  struct lwip_sock *lwsp = sp->priv;
+  int err;
+  u16_t short_size;
+  int remote_port;
+#if !LWIP_TCPIP_CORE_LOCKING
+  struct netbuf buf;
+#endif
+
+  if (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) == NETCONN_TCP) {
+#if LWIP_TCP
+    int write_flags = NETCONN_COPY |
+      ((flags & MSG_MORE)     ? NETCONN_MORE      : 0) |
+      ((flags & MSG_DONTWAIT) ? NETCONN_DONTBLOCK : 0);
+    size_t written = 0;
+    int s = netconn_write_partly(lwsp->conn, buffer, size, write_flags,
+                                 &written);
+
+    DPRINTF(NETDB_INET, ("lwip_send() err=%d written=%"SZT_F"\n", s, written));
+    return (s == ERR_OK ? written : -err_to_errno(s));
+#else /* LWIP_TCP */
+    LWIP_UNUSED_ARG(flags);
+    return -EIO;
+#endif /* LWIP_TCP */
+  }
+
+  if ((to != NULL) && !SOCK_ADDR_TYPE_MATCH(to, lwsp)) {
+    // The sockaddr does not match the socket type (IPv4/IPv6).
+    return -EINVAL;
+  }
+
+  // @todo: split into multiple sendto's?
+  LWIP_ASSERT("lwip_sendto: size must fit in u16_t", size <= 0xffff);
+  short_size = (u16_t)size;
+  if (((to == NULL) && (tolen == 0)) ||
+      (IS_SOCK_ADDR_LEN_VALID(tolen) &&
+       IS_SOCK_ADDR_TYPE_VALID(to) && IS_SOCK_ADDR_ALIGNED(to))) {
+    // An invalid addres was given.
+    return -EIO;
+  }
+
+#if LWIP_TCPIP_CORE_LOCKING
+  /** Special speedup for fast UDP/RAW sending: call the raw API directly
+   * instead of using the netconn functions.
+   */
+  {
+    struct pbuf* p;
+    ipX_addr_t *remote_addr;
+    ipX_addr_t remote_addr_tmp;
+
+#if LWIP_NETIF_TX_SINGLE_PBUF
+    p = pbuf_alloc(PBUF_TRANSPORT, short_size, PBUF_RAM);
+    if (p != NULL) {
+#if LWIP_CHECKSUM_ON_COPY
+      u16_t chksum = 0;
+      if (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) != NETCONN_RAW) {
+        chksum = LWIP_CHKSUM_COPY(p->payload, buffer, short_size);
+      } else
+#endif /* LWIP_CHECKSUM_ON_COPY */
+      MEMCPY(p->payload, buffer, size);
+#else /* LWIP_NETIF_TX_SINGLE_PBUF */
+    p = pbuf_alloc(PBUF_TRANSPORT, short_size, PBUF_REF);
+    if (p != NULL) {
+      p->payload = (void*)buffer;
+#endif /* LWIP_NETIF_TX_SINGLE_PBUF */
+
+      if (to != NULL) {
+        SOCKADDR_TO_IPXADDR_PORT(to->sa_family == AF_INET6,
+          to, &remote_addr_tmp, remote_port);
+        remote_addr = &remote_addr_tmp;
+      } else {
+        remote_addr = &lwsp->conn->pcb.ip->remote_ip;
+#if LWIP_UDP
+        if (NETCONNTYPE_GROUP(lwsp->conn->type) == NETCONN_UDP) {
+          remote_port = lwsp->conn->pcb.udp->remote_port;
+        } else
+#endif /* LWIP_UDP */
+        {
+          remote_port = 0;
+        }
+      }
+
+      LOCK_TCPIP_CORE();
+      if (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) == NETCONN_RAW) {
+#if LWIP_RAW
+        err = lwsp->conn->last_err = raw_sendto(lwsp->conn->pcb.raw, p,
+                                                ipX_2_ip(remote_addr));
+#else /* LWIP_RAW */
+        err = ERR_ARG;
+#endif /* LWIP_RAW */
+      }
+#if LWIP_UDP && LWIP_RAW
+      else
+#endif /* LWIP_UDP && LWIP_RAW */
+      {
+#if LWIP_UDP
+#if LWIP_CHECKSUM_ON_COPY && LWIP_NETIF_TX_SINGLE_PBUF
+        err = lwsp->conn->last_err = udp_sendto_chksum(lwsp->conn->pcb.udp, p,
+          ipX_2_ip(remote_addr), remote_port, 1, chksum);
+#else /* LWIP_CHECKSUM_ON_COPY && LWIP_NETIF_TX_SINGLE_PBUF */
+        err = lwsp->conn->last_err = udp_sendto(lwsp->conn->pcb.udp, p,
+          ipX_2_ip(remote_addr), remote_port);
+#endif /* LWIP_CHECKSUM_ON_COPY && LWIP_NETIF_TX_SINGLE_PBUF */
+#else /* LWIP_UDP */
+        err = ERR_ARG;
+#endif /* LWIP_UDP */
+      }
+      UNLOCK_TCPIP_CORE();
+      pbuf_free(p);
+    } else {
+      err = ERR_MEM;
+    }
+  }
+#else /* LWIP_TCPIP_CORE_LOCKING */
+  /* initialize a buffer */
+  buf.p = buf.ptr = NULL;
+#if LWIP_CHECKSUM_ON_COPY
+  buf.flags = 0;
+#endif /* LWIP_CHECKSUM_ON_COPY */
+  if (to) {
+    SOCKADDR_TO_IPXADDR_PORT((to->sa_family) == AF_INET6, to, &buf.addr,
+                              remote_port);
+  } else {
+    remote_port = 0;
+    ipX_addr_set_any(NETCONNTYPE_ISIPV6(netconn_type(lwsp->conn)), &buf.addr);
+  }
+  netbuf_fromport(&buf) = remote_port;
+
+
+  DPRINTF(NETDB_INET, ("lwip_sendto(%d, buffer=%p, short_size=%"U16_F",
+                       flags=0x%x to=",
+              s, buffer, short_size, flags));
+  ipX_addr_debug_print(NETCONNTYPE_ISIPV6(netconn_type(lwsp->conn)),
+    SOCKETS_DEBUG, &buf.addr);
+  DPRINTF(NETDB_INET, (" port=%"U16_F"\n", remote_port));
+
+  /* make the buffer point to the data that should be sent */
+#if LWIP_NETIF_TX_SINGLE_PBUF
+  /* Allocate a new netbuf and copy the data into it. */
+  if (netbuf_alloc(&buf, short_size) == NULL) {
+    err = ERR_MEM;
+  } else {
+#if LWIP_CHECKSUM_ON_COPY
+    if (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) != NETCONN_RAW) {
+      u16_t chksum = LWIP_CHKSUM_COPY(buf.p->payload, buffer, short_size);
+      netbuf_set_chksum(&buf, chksum);
+      err = ERR_OK;
+    } else
+#endif /* LWIP_CHECKSUM_ON_COPY */
+    {
+      err = netbuf_take(&buf, buffer, short_size);
+    }
+  }
+#else /* LWIP_NETIF_TX_SINGLE_PBUF */
+  err = netbuf_ref(&buf, buffer, short_size);
+#endif /* LWIP_NETIF_TX_SINGLE_PBUF */
+  if (err == ERR_OK) {
+    /* send the buffer */
+    err = netconn_send(lwsp->conn, &buf);
+  }
+
+  /* deallocated the buffer */
+  netbuf_free(&buf);
+#endif /* LWIP_TCPIP_CORE_LOCKING */
+  return (err == ERR_OK ? short_size : -err_to_errno(err));
 }
 
 /** Get bytes from a connection.
  */
-static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags)
+static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
+                        const struct sockaddr *to, socklen_t tolen)
 {
   return 0;
 }

@@ -49,8 +49,10 @@ typedef const struct domain_interface
   int (*option_update)(file_t fp);
   int (*bind)(file_t fp, struct sockaddr *addr, socklen_t addrlen);
   int (*close)(file_t fp);
-  ssize_t (*send)(struct socket *sp, char *buffer, size_t size, int nonblock);
-  ssize_t (*receive)(struct socket *sp, char *buffer, size_t size, int nonblock);
+  ssize_t (*send)(struct socket *sp, const char *buffer, size_t size,
+                  int flags, const struct sockaddr *to, socklen_t tolen);
+  ssize_t (*receive)(struct socket *sp, char *buffer, size_t size, int flags,
+                     const struct sockaddr *to, socklen_t tolen);
   const struct vnops *vnops;            // Vnode operations.
 } *domain_interface_t;
 
@@ -200,16 +202,16 @@ int net_new_buffer(struct buffer **buf, int max, int total);
 /** Release a buffer.
  * There may be multiple threads using the buffer, so watch the
  * reference counts.
- */                       
+ */
 void net_release_buffer(struct buffer *buf);
 /** Send bytes to a buffer.
  */
-ssize_t net_buffer_send(struct socket *sp, char *buffer, size_t size,
-                               int flags);
+ssize_t net_buffer_send(struct socket *sp, const char *buffer, size_t size,
+                        int flags, const struct sockaddr *to, socklen_t tolen);
 /** Get bytes from a buffer.
  */
 ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size,
-                        int flags);
+                        int flags, const struct sockaddr *to, socklen_t tolen);
 
 
 #endif // _network_h_

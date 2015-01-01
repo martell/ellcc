@@ -124,7 +124,8 @@ void net_release_buffer(struct buffer *buf)
 
 /** Send bytes to a buffer.
  */
-ssize_t net_buffer_send(struct socket *sp, char *buffer, size_t size, int flags)
+ssize_t net_buffer_send(struct socket *sp, const char *buffer, size_t size,
+        int flags, const struct sockaddr *to, socklen_t tolen)
 {
   int s;
   struct buffer *buf = sp->snd;
@@ -207,7 +208,8 @@ ssize_t net_buffer_send(struct socket *sp, char *buffer, size_t size, int flags)
 
 /** Get bytes from a buffer.
  */
-ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size, int flags)
+ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size, int flags,
+                        const struct sockaddr *to, socklen_t tolen)
 {
   int s;
   struct buffer *buf = sp->rcv;
@@ -292,7 +294,7 @@ static int net_out(struct socket *sp, struct uio *uio, size_t *size, int flags)
     // Write nbyte bytes from buffer to buf.
     while (nbyte > 0) {
       // Send bytes to a connection.
-      s = sp->interface->send(sp, buffer, nbyte, flags);
+      s = sp->interface->send(sp, buffer, nbyte, flags, NULL, 0);
       if (s < 0) {
         return s;
       }
@@ -317,7 +319,7 @@ static int net_in(struct socket *sp, struct uio *uio, size_t *size, int flags)
     // Read nbyte bytes from the buffer.
     while (nbyte > 0) {
       // Get bytes from the connection.
-      s = sp->interface->receive(sp, buffer, nbyte, flags);
+      s = sp->interface->receive(sp, buffer, nbyte, flags, NULL, 0);
       if (s < 0 || s < nbyte) {
         // Either an error occured or we would have blocked.
         return s;

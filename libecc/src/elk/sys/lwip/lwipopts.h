@@ -69,6 +69,6 @@
 #define PPP_IPV6_SUPPORT                1
 #define LWIP_IPV6                       0
 #define LWIP_IPV6_FORWARD               0
-
+#define LWIP_TCPIP_CORE_LOCKING         1
 
 #endif /* LWIP_HDR_LWIPOPTS_H__ */
