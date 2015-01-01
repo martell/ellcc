@@ -180,6 +180,7 @@ struct socket
 #define SF_RXQ_OVFL     0x00000800      // Enable dropped packet count.
 #define SF_TIMESTAMP    0x00001000      // Enable SO_TIMESTAMP control message.
 #define SF_BOUND        0x00002000      // The socket has been bound.
+#define SF_CONNECTED    0x00004000      // The socket is connected.
 
 #if ELK_NAMESPACE
 #define net_new_buffer __elk_net_new_buffer

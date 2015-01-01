@@ -503,9 +503,40 @@ int net_truncate(vnode_t vp, off_t offset)
   }                                                             \
   socket_t sp = vp->v_data;
 
+#define IS_LISTEN()                                             \
+  if (!(sp->flags & SF_ACCEPTCONN)) {                           \
+    return -EINVAL;                                             \
+  }
+
+#define NOT_LISTEN()                                            \
+  if (sp->flags & SF_ACCEPTCONN) {                              \
+    return -EINVAL;                                             \
+  }
+
+#define IS_BOUND()                                              \
+  if (!(sp->flags & SF_BOUND)) {                                \
+    return -EINVAL;                                             \
+  }
+
+#define NOT_BOUND()                                             \
+  if (sp->flags & SF_BOUND) {                                   \
+    return -EINVAL;                                             \
+  }
+
+#define IS_CONNECTED()                                          \
+  if (!(sp->flags & SF_CONNECTED)) {                            \
+    return -ENOTCONN;                                           \
+  }
+
+#define NOT_CONNECTED()                                         \
+  if (sp->flags & SF_CONNECTED) {                               \
+    return -EINVAL;                                             \
+  }
+
 static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
   SOCKET_ENTER()
+  IS_LISTEN()
   return -ENOSYS;
 }
 
@@ -513,23 +544,21 @@ static int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
                        int flags)
 {
   SOCKET_ENTER()
+  IS_LISTEN()
   return -ENOSYS;
 }
 
 static int sys_bind(int sockfd, struct sockaddr *addr, socklen_t addrlen)
 {
   SOCKET_ENTER()
-  if (sp->flags & SF_BOUND) {
-    // The socket is already bound.
-    return -EINVAL;
-  }
-
+  NOT_BOUND()
   return sp->interface->bind(fp, addr, addrlen);
 }
 
 static int sys_connect(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
   return -ENOSYS;
 }
 
@@ -537,6 +566,7 @@ static int sys_getpeername(int sockfd, struct sockaddr *addr,
                            socklen_t *addrlen)
 {
   SOCKET_ENTER()
+  IS_CONNECTED()
   return -ENOSYS;
 }
 
@@ -544,6 +574,7 @@ static int sys_getsockname(int sockfd, struct sockaddr *addr,
                            socklen_t *addrlen)
 {
   SOCKET_ENTER()
+  IS_BOUND()
   return -ENOSYS;
 }
 
@@ -778,6 +809,8 @@ static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
 static int sys_listen(int sockfd, int backlog)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
+  NOT_CONNECTED()
   sp->flags |= SO_ACCEPTCONN;
   return 0;
 }
@@ -786,6 +819,7 @@ static int sys_listen(int sockfd, int backlog)
 static int sys_recv(int sockfd, void *buf, size_t len, int flags)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
   return -ENOSYS;
 }
 #endif
@@ -794,6 +828,7 @@ static int sys_recvfrom(int sockfd, void *buf, size_t len, int flags,
                         struct sockaddr *src_addr, socklen_t *addrlen)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
   return -ENOSYS;
 }
 
@@ -801,12 +836,14 @@ static int sys_recvmmsg(int sockfd, struct msghdr *msgvec, unsigned int vlen,
                         unsigned int flags, struct timespec *timeout)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
   return -ENOSYS;
 }
 
 static int sys_recvmsg(int sockfd, struct msghdr *msgvec, unsigned int flags)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
   return -ENOSYS;
 }
 
@@ -814,6 +851,7 @@ static int sys_recvmsg(int sockfd, struct msghdr *msgvec, unsigned int flags)
 static int sys_send(int sockfd, const void *buf, size_t len, int flags)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
   return -ENOSYS;
 }
 #endif
@@ -822,6 +860,7 @@ static int sys_sendto(int sockfd, const void *buf, size_t len, int flags,
                         struct sockaddr *src_addr, socklen_t *addrlen)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
   return -ENOSYS;
 }
 
@@ -829,6 +868,7 @@ static int sys_sendmmsg(int sockfd, const struct msghdr *msgvec,
                         unsigned int vlen, unsigned int flags)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
   return -ENOSYS;
 }
 
@@ -836,6 +876,7 @@ static int sys_sendmsg(int sockfd, const struct msghdr *msgvec,
                        unsigned int flags)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
   return -ENOSYS;
 }
 
@@ -1062,6 +1103,8 @@ static int sys_setsockopt(int sockfd, int level, int optname,
 static int sys_shutdown(int sockfd, int how)
 {
   SOCKET_ENTER()
+  NOT_LISTEN()
+  IS_CONNECTED()
   return -ENOSYS;
 }
 
@@ -1216,9 +1259,9 @@ static int sys_socketpair(int domain, int type, int protocol, int sv[2])
   ++sp1->rcv->refcnt;
   sp2->rcv = sp1->snd;
   ++sp2->rcv->refcnt;
-  // Mark the sockets as bound.
-  sp1->flags |= SF_BOUND;
-  sp2->flags |= SF_BOUND;
+  // Mark the sockets as bound and connected.
+  sp1->flags |= SF_BOUND|SF_CONNECTED;
+  sp2->flags |= SF_BOUND|SF_CONNECTED;
   return copyout(lsv, sv, sizeof(lsv));
 }
 

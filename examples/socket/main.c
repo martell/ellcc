@@ -1,6 +1,7 @@
 /* Simple socket tests.
  */
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -38,6 +39,19 @@ int main(int argc, char **argv)
     printf("read() failed: %s\n", strerror(errno));
   } else {
     printf("read returned s = %d, '%s'\n", s, buffer);
+  }
+
+  s = socket(AF_UNIX, SOCK_STREAM|SOCK_NONBLOCK, 0);
+  if (s < 0) {
+    printf("socket() failed: %s\n", strerror(errno));
+    exit(1);
+  }
+  struct sockaddr_un addr;
+  strcpy(addr.sun_path, "socket");
+  addr.sun_family = AF_UNIX;
+  s = bind(s, (const struct sockaddr *)&addr, sizeof(addr.sun_family) + strlen(addr.sun_path) + 1);
+  if (s != 0) {
+    printf("bind() failed: %s\n", strerror(errno));
   }
 }
 
