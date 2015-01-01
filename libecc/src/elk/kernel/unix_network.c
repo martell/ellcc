@@ -75,10 +75,7 @@ static int setup(vnode_t vp)
     return -EPROTONOSUPPORT;
   }
 
-  // An AF_UNIX socket always has a send buffer.
-  int s = net_new_buffer(&sp->snd, CONFIG_SO_BUFFER_DEFAULT_PAGES,
-                         CONFIG_SO_BUFFER_PAGES);
-  return s;
+  return 0;
 }
 
 static int getopt(file_t fp, int level, int optname, void *optval,
@@ -119,7 +116,6 @@ static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
   }
 
   if (uaddr.sun_path[0]) {
-#if 1
     // This is a file system path.
     // Find the full path name (may be relative to cwd).
     vnode_t dvp;
@@ -154,7 +150,6 @@ static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
     s = vbind(dvp->v_mount, fp->f_vnode, path);
     vput(dvp);
     return s;
-#endif
   } else {
     // This is an abstract address.
     return -EINVAL;     // RICH: For now.

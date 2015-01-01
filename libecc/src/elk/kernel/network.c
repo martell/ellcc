@@ -778,7 +778,8 @@ static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
 static int sys_listen(int sockfd, int backlog)
 {
   SOCKET_ENTER()
-  return -ENOSYS;
+  sp->flags |= SO_ACCEPTCONN;
+  return 0;
 }
 
 #if defined(SYS_socketcall) || defined(SYS_recv)
@@ -1194,6 +1195,22 @@ static int sys_socketpair(int domain, int type, int protocol, int sv[2])
 
   socket_t sp1 = fp1->f_vnode->v_data;
   socket_t sp2 = fp2->f_vnode->v_data;
+  // Create the buffers.
+  s = net_new_buffer(&sp1->snd, CONFIG_SO_BUFFER_DEFAULT_PAGES,
+                     CONFIG_SO_BUFFER_PAGES);
+  if (s < 0) {
+    close(lsv[0]);
+    close(lsv[1]);
+    return s;
+  }
+  s = net_new_buffer(&sp2->snd, CONFIG_SO_BUFFER_DEFAULT_PAGES,
+                     CONFIG_SO_BUFFER_PAGES);
+  if (s < 0) {
+    close(lsv[0]);
+    close(lsv[1]);
+    return s;
+  }
+
   // Connect the buffers.
   sp1->rcv = sp2->snd;
   ++sp1->rcv->refcnt;
