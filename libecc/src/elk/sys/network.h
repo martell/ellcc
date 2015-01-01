@@ -205,11 +205,11 @@ void net_release_buffer(struct buffer *buf);
 /** Send bytes to a buffer.
  */
 ssize_t net_buffer_send(struct socket *sp, char *buffer, size_t size,
-                               int nonblock);
+                               int flags);
 /** Get bytes from a buffer.
  */
 ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size,
-                        int nonblock);
+                        int flags);
 
 
 #endif // _network_h_

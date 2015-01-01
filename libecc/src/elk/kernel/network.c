@@ -36,6 +36,7 @@
 #include "crt1.h"
 #include "thread.h"
 #include "kmem.h"
+#include "page.h"
 #include "network.h"
 
 // Make networking a select-able feature.
@@ -123,8 +124,7 @@ void net_release_buffer(struct buffer *buf)
 
 /** Send bytes to a buffer.
  */
-ssize_t net_buffer_send(struct socket *sp, char *buffer, size_t size,
-                               int nonblock)
+ssize_t net_buffer_send(struct socket *sp, char *buffer, size_t size, int flags)
 {
   int s;
   struct buffer *buf = sp->snd;
@@ -134,7 +134,7 @@ ssize_t net_buffer_send(struct socket *sp, char *buffer, size_t size,
     if (buf->used >= buf->available) {
       // The buffer is full.
       pthread_mutex_unlock(&buf->mutex);
-      if (nonblock) {
+      if (flags & MSG_DONTWAIT) {
         if (total > 0) {
           // We have sent some data.
           return total;
@@ -207,8 +207,7 @@ ssize_t net_buffer_send(struct socket *sp, char *buffer, size_t size,
 
 /** Get bytes from a buffer.
  */
-ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size,
-                        int nonblock)
+ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size, int flags)
 {
   int s;
   struct buffer *buf = sp->rcv;
@@ -218,7 +217,7 @@ ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size,
     if (buf->used == 0) {
       // The buffer is empty.
       pthread_mutex_unlock(&buf->mutex);
-      if (nonblock) {
+      if (flags & MSG_DONTWAIT) {
         if (total > 0) {
           // We have received some data.
           return total;
@@ -283,8 +282,7 @@ ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size,
 
 /** Send data to a connection.
  */
-static int net_out(struct socket *sp, struct uio *uio, size_t *size,
-                          int nonblock)
+static int net_out(struct socket *sp, struct uio *uio, size_t *size, int flags)
 {
   ssize_t s = 0;
   size_t total = 0;
@@ -294,7 +292,7 @@ static int net_out(struct socket *sp, struct uio *uio, size_t *size,
     // Write nbyte bytes from buffer to buf.
     while (nbyte > 0) {
       // Send bytes to a connection.
-      s = sp->interface->send(sp, buffer, nbyte, nonblock);
+      s = sp->interface->send(sp, buffer, nbyte, flags);
       if (s < 0) {
         return s;
       }
@@ -309,8 +307,7 @@ static int net_out(struct socket *sp, struct uio *uio, size_t *size,
 
 /** Get data from a connection.
  */
-static int net_in(struct socket *sp, struct uio *uio, size_t *size,
-                         int nonblock)
+static int net_in(struct socket *sp, struct uio *uio, size_t *size, int flags)
 {
   ssize_t s = 0;
   size_t total = 0;
@@ -320,7 +317,7 @@ static int net_in(struct socket *sp, struct uio *uio, size_t *size,
     // Read nbyte bytes from the buffer.
     while (nbyte > 0) {
       // Get bytes from the connection.
-      s = sp->interface->receive(sp, buffer, nbyte, nonblock);
+      s = sp->interface->receive(sp, buffer, nbyte, flags);
       if (s < 0 || s < nbyte) {
         // Either an error occured or we would have blocked.
         return s;
@@ -384,7 +381,7 @@ int net_read(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
     return -EINVAL;
   }
 
-  return net_in(sp, uio, count, fp->f_flags & O_NONBLOCK);
+  return net_in(sp, uio, count, (fp->f_flags & O_NONBLOCK) ? MSG_DONTWAIT : 0);
 }
 
 /** Write to a socket connection.
@@ -397,7 +394,7 @@ int net_write(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
     return -EINVAL;
   }
 
-  return net_out(sp, uio, count, fp->f_flags & O_NONBLOCK);
+  return net_out(sp, uio, count, (fp->f_flags & O_NONBLOCK) ? MSG_DONTWAIT : 0);
 }
 
 int net_poll(vnode_t vp, file_t fp, int what)

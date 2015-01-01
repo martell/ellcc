@@ -33,7 +33,6 @@
 #include "kernel.h"
 #include "vnode.h"
 #include "thread.h"
-#include "page.h"
 #include "vm.h"
 #include "network.h"
 

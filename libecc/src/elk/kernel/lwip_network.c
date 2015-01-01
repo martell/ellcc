@@ -458,16 +458,14 @@ static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
 
 /** Send bytes to a connection.
  */
-static ssize_t net_send(struct socket *sp, char *buffer, size_t size,
-                        int nonblock)
+static ssize_t net_send(struct socket *sp, char *buffer, size_t size, int flags)
 {
   return 0;
 }
 
 /** Get bytes from a connection.
  */
-static ssize_t net_recv(struct socket *sp, char *buffer, size_t size,
-                        int nonblock)
+static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags)
 {
   return 0;
 }
