@@ -1508,6 +1508,9 @@
 #ifndef LWIP_SOCKET
 #define LWIP_SOCKET                     1
 #endif
+#ifndef LWIP_SOCKET_TYPE
+#define LWIP_SOCKET_TYPE(name)          int name
+#endif
 
 /* LWIP_SOCKET_SET_ERRNO==1: Set errno when socket functions cannot complete
  * successfully, as required by POSIX. Default is POSIX-compliant.

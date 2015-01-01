@@ -50,17 +50,45 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <sys/socket.h>
+#define _GNU_SOURCE
 #include <netinet/in.h>
 
 #include "config.h"
 #include "kernel.h"
+#include "kmem.h"
+#include "network.h"
 #include "lwip/tcpip.h"
 
 // Make LwIP AF_INET(6) networking a select-able feature.
 FEATURE_CLASS(lwip_network, inet_network)
 
-#if RICH
+/** All internal pointers and states used for a socket.
+ */
+struct lwip_sock
+ {
+  // Sockets currently are built on netconns, each socket has one netconn.
+  struct netconn *conn;
+  // data that was left from the previous read.
+  void *lastdata;
+  // Offset in the data that was left from the previous read.
+  int lastoffset;
+  /** Number of times data was received, set by event_callback(),
+   * tested by the receive and select functions
+   */
+  int rcvevent;
+  /** Number of times data was ACKed (free send buffer), set by
+   *  event_callback(), tested by select.
+   */
+  int sendevent;
+  /** Error happened for this socket, set by event_callback(),
+   * tested by select */
+  int errevent;
+  // The last error that occurred on this socket.
+  int err;
+  // Counter of how many threads are waiting for this socket using select.
+  int select_waiting;
+};
+
 /** Table to quickly map an lwIP error (err_t) to a socket error
   * by using -err as an index */
 static const int err_to_errno_table[] = {
@@ -158,15 +186,14 @@ static const int err_to_errno_table[] = {
 
 #endif /* LWIP_IPV6 */
 
-/**
- * Callback registered in the netconn layer for each socket-netconn.
+/** Callback registered in the netconn layer for each socket-netconn.
  * Processes recvevent (data available) and wakes up tasks waiting for select.
  */
 static void event_callback(struct netconn *conn, enum netconn_evt evt,
                            u16_t len)
 {
-#if RICH
   int s;
+  struct socket *sp;
   struct lwip_sock *sock;
   struct lwip_select_cb *scb;
   int last_select_cb_ctr;
@@ -191,11 +218,11 @@ static void event_callback(struct netconn *conn, enum netconn_evt evt,
         SYS_ARCH_UNPROTECT(lev);
         return;
       }
-      s = conn->socket;
       SYS_ARCH_UNPROTECT(lev);
     }
 
-    sock = get_socket(s);
+    sp = conn->priv;            // Get the socket structure.
+    sock = sp->priv;            // And the LwIP socket state.
     if (!sock) {
       return;
     }
@@ -232,6 +259,7 @@ static void event_callback(struct netconn *conn, enum netconn_evt evt,
     return;
   }
 
+#if RICH
   /* Now decide if anyone is waiting for this socket */
   /* NOTE: This code goes through the select_cb_list list multiple times
      ONLY IF a select was actually waiting. We go through the list the number
@@ -277,169 +305,192 @@ again:
       goto again;
     }
   }
+#endif
   SYS_ARCH_UNPROTECT(lev);
-#endif
 }
 
-static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+static const struct vnops vnops = {
+  net_open,
+  net_close,
+  net_read,
+  net_write,
+  net_poll,
+  net_seek,
+  net_ioctl,
+  net_fsync,
+  net_readdir,
+  net_lookup,
+  net_create,
+  net_remove,
+  net_rename,
+  net_mkdir,
+  net_rmdir,
+  net_getattr,
+  net_setattr,
+  net_inactive,
+  net_truncate,
+};
+
+static struct lwip_sock *alloc_socket(struct netconn *conn, int accepted)
 {
-  return -ENOSYS;
+  struct lwip_sock *lwsp = kmem_alloc(sizeof(struct lwip_sock));
+  if (lwsp == NULL) {
+    return NULL;
+  }
+
+  // Initialize the socket state.
+  *lwsp = (struct lwip_sock){
+    .conn = conn,
+    .lastdata = NULL,
+    .lastoffset = 0,
+    .rcvevent = 0,
+    .sendevent = (NETCONNTYPE_GROUP(conn->type) == NETCONN_TCP ?
+                                    (accepted != 0) : 1),
+    .errevent = 0,
+    .err = 0,
+    .select_waiting = 0,
+  };
+
+  return lwsp;
 }
 
-static int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
-                       int flags)
+static int setup(vnode_t vp)
 {
-  return -ENOSYS;
-}
-
-static int sys_bind(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_connect(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_getpeername(int sockfd, struct sockaddr *addr,
-                           socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_getsockname(int sockfd, struct sockaddr *addr,
-                           socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
-                          socklen_t *optlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_listen(int sockfd, int backlog)
-{
-  return -ENOSYS;
-}
-
-#if defined(SYS_socketcall) || defined(SYS_recv)
-static int sys_recv(int sockfd, void *buf, size_t len, int flags)
-{
-  return -ENOSYS;
-}
-#endif
-
-static int sys_recvfrom(int sockfd, void *buf, size_t len, int flags,
-                        struct sockaddr *src_addr, socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_recvmmsg(int sockfd, struct msghdr *msgvec, unsigned int vlen,
-                        unsigned int flags, struct timespec *timeout)
-{
-  return -ENOSYS;
-}
-
-static int sys_recvmsg(int sockfd, struct msghdr *msgvec, unsigned int flags)
-{
-  return -ENOSYS;
-}
-
-#if defined(SYS_socketcall) || defined(SYS_send)
-static int sys_send(int sockfd, const void *buf, size_t len, int flags)
-{
-  return -ENOSYS;
-}
-#endif
-
-static int sys_sendto(int sockfd, const void *buf, size_t len, int flags,
-                        struct sockaddr *src_addr, socklen_t *addrlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_sendmmsg(int sockfd, const struct msghdr *msgvec,
-                        unsigned int vlen, unsigned int flags)
-{
-  return -ENOSYS;
-}
-
-static int sys_sendmsg(int sockfd, const struct msghdr *msgvec,
-                       unsigned int flags)
-{
-  return -ENOSYS;
-}
-
-static int sys_setsockopt(int sockfd, int level, int optname,
-                          const void *optval, socklen_t *optlen)
-{
-  return -ENOSYS;
-}
-
-static int sys_shutdown(int sockfd, int how)
-{
-  return -ENOSYS;
-}
-
-static int sys_socket(int domain, int type, int protocol)
-{
+  struct socket *sp = vp->v_data;
   struct netconn *conn;
-  int i = 0;
+  int domain = sp->domain;
+  int type = sp->type;
+  int protocol = sp->protocol;
 
-#if !LWIP_IPV6
-  LWIP_UNUSED_ARG(domain); /* @todo: check this */
-#endif /* LWIP_IPV6 */
+  if (domain != AF_INET && domain != AF_INET6) {
+    return -EAFNOSUPPORT;
+  }
 
-  /* create a netconn */
-  switch (type) {
+  // Create a netconn.
+  int netconn_type;
+  switch (sp->type) {
   case SOCK_RAW:
-    conn = netconn_new_with_proto_and_callback(DOMAIN_TO_NETCONN_TYPE(domain, NETCONN_RAW),
-                                               (u8_t)protocol, event_callback);
-    LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_socket(%s, SOCK_RAW, %d) = ",
-                                 domain == PF_INET ? "PF_INET" : "UNKNOWN", protocol));
+    netconn_type = DOMAIN_TO_NETCONN_TYPE(domain, NETCONN_RAW);
+    conn = netconn_new_with_proto_and_callback(netconn_type,
+                                               protocol, event_callback);
+    DPRINTF(NETDB_INET, ("lwip_socket(%s, SOCK_RAW, %d) = ",
+                         domain == PF_INET ? "PF_INET" : "UNKNOWN",
+                         protocol));
     break;
   case SOCK_DGRAM:
-    conn = netconn_new_with_callback(DOMAIN_TO_NETCONN_TYPE(domain,
-                 ((protocol == IPPROTO_UDPLITE) ? NETCONN_UDPLITE : NETCONN_UDP)) ,
-                 event_callback);
-    LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_socket(%s, SOCK_DGRAM, %d) = ",
-                                 domain == PF_INET ? "PF_INET" : "UNKNOWN", protocol));
+    netconn_type = DOMAIN_TO_NETCONN_TYPE(domain,
+      (protocol == IPPROTO_UDPLITE) ? NETCONN_UDPLITE : NETCONN_UDP);
+    conn = netconn_new_with_callback(netconn_type, event_callback);
+    DPRINTF(NETDB_INET, ("lwip_socket(%s, SOCK_DGRAM, %d) = ",
+                          domain == PF_INET ? "PF_INET" : "UNKNOWN",
+                          protocol));
     break;
   case SOCK_STREAM:
-    conn = netconn_new_with_callback(DOMAIN_TO_NETCONN_TYPE(domain, NETCONN_TCP), event_callback);
-    LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_socket(%s, SOCK_STREAM, %d) = ",
-                                 domain == PF_INET ? "PF_INET" : "UNKNOWN", protocol));
+    netconn_type = DOMAIN_TO_NETCONN_TYPE(domain, NETCONN_TCP);
+    conn = netconn_new_with_callback(netconn_type, event_callback);
+    DPRINTF(NETDB_INET, ("lwip_socket(%s, SOCK_STREAM, %d) = ",
+                         domain == PF_INET ? "PF_INET" : "UNKNOWN", protocol));
     if (conn != NULL) {
-      /* Prevent automatic window updates, we do this on our own! */
+      // Prevent automatic window updates, we do this on our own!
       netconn_set_noautorecved(conn, 1);
     }
     break;
   default:
-    LWIP_DEBUGF(SOCKETS_DEBUG, ("lwip_socket(%d, %d/UNKNOWN, %d) = -1\n",
-                                 domain, type, protocol));
-    return -EINVAL;
+    DPRINTF(NETDB_INET, ("lwip_socket(%d, %d/UNKNOWN, %d) = -1\n",
+                         domain, type, protocol));
+    return -EOPNOTSUPP;
   }
 
   if (!conn) {
-    LWIP_DEBUGF(SOCKETS_DEBUG, ("-1 / ENOBUFS (could not create netconn)\n"));
+    DPRINTF(NETDB_INET, ("-1 / ENOBUFS (could not create netconn)\n"));
     return -ENOBUFS;
   }
 
-  // RICH: i = alloc_socket(conn, 0);
-
-  if (i == -1) {
+  sp->priv = alloc_socket(conn, 0);
+  if (sp->priv == NULL) {
     netconn_delete(conn);
-    return -ENFILE;
+    return -ENOMEM;
   }
-  conn->socket = i;
-  LWIP_DEBUGF(SOCKETS_DEBUG, ("%d\n", i));
-  return i;
+
+  conn->priv = sp;              // Save the socket information.
+  return 0;
 }
-#endif
+
+static int getopt(file_t fp, int level, int optname, void *optval,
+                      socklen_t *optlen)
+{
+  return -ENOPROTOOPT;
+}
+
+static int setopt(file_t fp, int level, int optname, const void *optval,
+                      socklen_t optlen)
+{
+  return -ENOPROTOOPT;
+}
+
+static int option_update(file_t fp)
+{
+  return 0;
+}
+
+static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
+{
+  struct sockaddr_in iaddr;
+  if (addrlen > sizeof(iaddr) || addrlen < sizeof(sa_family_t)) {
+    return -EINVAL;
+  }
+
+  int s = copyin(addr, &iaddr, addrlen);
+  if (s != 0)
+    return s;
+
+  if (iaddr.sin_family != AF_UNIX) {
+    return -EINVAL;
+  }
+
+  if (addrlen == sizeof(sa_family_t)) {
+    // Unnamed address doesn't make sense here.
+    return -EINVAL;
+  }
+
+  return -ENOPROTOOPT;
+}
+
+/** Send bytes to a connection.
+ */
+static ssize_t net_send(struct socket *sp, char *buffer, size_t size,
+                        int nonblock)
+{
+  return 0;
+}
+
+/** Get bytes from a connection.
+ */
+static ssize_t net_recv(struct socket *sp, char *buffer, size_t size,
+                        int nonblock)
+{
+  return 0;
+}
+
+static int doclose(file_t fp)
+{
+  struct socket *sp = fp->f_vnode->v_data;
+  struct lwip_sock *lwsp = sp->priv;
+
+  return 0;
+}
+
+static const struct domain_interface interface = {
+  .setup = setup,
+  .getopt = getopt,
+  .setopt = setopt,
+  .option_update = option_update,
+  .bind = bindaddr,
+  .send = net_send,
+  .receive = net_recv,
+  .close = doclose,
+  .vnops = &vnops,
+};
 
 // Start up LwIP.
 C_CONSTRUCTOR()

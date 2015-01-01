@@ -36,7 +36,8 @@
 #ifndef LWIP_HDR_LWIPOPTS_H__
 #define LWIP_HDR_LWIPOPTS_H__
 
-#define LWIP_SOCKET                     0       // ELK has its own socket API.
+#define LWIP_SOCKET                     1       // ELK has its own socket API.
+#define LWIP_SOCKET_TYPE(name) struct { int name; void *priv; }
 #define LWIP_SOCKET_SET_ERRNO           0       // ELK takes care of errno.
 #define MEM_LIBC_MALLOC                 1       // Use ELK memory management.
 #define MEMP_MEM_MALLOC                 1

@@ -26,8 +26,6 @@
  */
 
 #define _GNU_SOURCE
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
@@ -38,8 +36,6 @@
 #include "crt1.h"
 #include "thread.h"
 #include "kmem.h"
-#include "page.h"
-#include "vm.h"
 #include "network.h"
 
 // Make networking a select-able feature.
@@ -103,7 +99,7 @@ int net_new_buffer(struct buffer **buf, int max, int total)
  * There may be multiple threads using the buffer, so watch the
  * reference counts.
  */
-static void net_release_buffer(struct buffer *buf)
+void net_release_buffer(struct buffer *buf)
 {
   if (buf == NULL) return;
 
@@ -125,12 +121,13 @@ static void net_release_buffer(struct buffer *buf)
   }
 }
 
-/** Add bytes to a buffer.
+/** Send bytes to a buffer.
  */
-static ssize_t net_buffer_send(struct buffer *buf, char *buffer, size_t size,
+ssize_t net_buffer_send(struct socket *sp, char *buffer, size_t size,
                                int nonblock)
 {
   int s;
+  struct buffer *buf = sp->snd;
   size_t total = 0;
   while (size) {
     pthread_mutex_lock(&buf->mutex);
@@ -208,38 +205,13 @@ static ssize_t net_buffer_send(struct buffer *buf, char *buffer, size_t size,
   return total;
 }
 
-/** Add data to a buffer.
- */
-static int net_buffer_out(struct buffer *buf, struct uio *uio, size_t *size,
-                          int nonblock)
-{
-  ssize_t s = 0;
-  size_t total = 0;
-  for (int i = 0; i < uio->iovcnt; ++i) {
-    char *buffer = uio->iov[i].iov_base;
-    size_t nbyte = uio->iov[i].iov_len;
-    // Write nbyte bytes from buffer to buf.
-    while (nbyte > 0) {
-      // Add bytes to the buffer.
-      s = net_buffer_send(buf, buffer, nbyte, nonblock);
-      if (s < 0) {
-        return s;
-      }
-      nbyte -= s;
-      buffer += s;
-      total += s;
-    }
-  }
-
-  return copyout(&total, size, sizeof(*size));
-}
-
 /** Get bytes from a buffer.
  */
-static ssize_t net_buffer_recv(struct buffer *buf, char *buffer, size_t size,
-                               int nonblock)
+ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size,
+                        int nonblock)
 {
   int s;
+  struct buffer *buf = sp->rcv;
   size_t total = 0;
   while (size) {
     pthread_mutex_lock(&buf->mutex);
@@ -309,9 +281,35 @@ static ssize_t net_buffer_recv(struct buffer *buf, char *buffer, size_t size,
   return total;
 }
 
-/** Get data from a buffer.
+/** Send data to a connection.
  */
-static int net_buffer_in(struct buffer *buf, struct uio *uio, size_t *size,
+static int net_out(struct socket *sp, struct uio *uio, size_t *size,
+                          int nonblock)
+{
+  ssize_t s = 0;
+  size_t total = 0;
+  for (int i = 0; i < uio->iovcnt; ++i) {
+    char *buffer = uio->iov[i].iov_base;
+    size_t nbyte = uio->iov[i].iov_len;
+    // Write nbyte bytes from buffer to buf.
+    while (nbyte > 0) {
+      // Send bytes to a connection.
+      s = sp->interface->send(sp, buffer, nbyte, nonblock);
+      if (s < 0) {
+        return s;
+      }
+      nbyte -= s;
+      buffer += s;
+      total += s;
+    }
+  }
+
+  return copyout(&total, size, sizeof(*size));
+}
+
+/** Get data from a connection.
+ */
+static int net_in(struct socket *sp, struct uio *uio, size_t *size,
                          int nonblock)
 {
   ssize_t s = 0;
@@ -321,8 +319,8 @@ static int net_buffer_in(struct buffer *buf, struct uio *uio, size_t *size,
     size_t nbyte = uio->iov[i].iov_len;
     // Read nbyte bytes from the buffer.
     while (nbyte > 0) {
-      // Get bytes from the buffer.
-      s = net_buffer_recv(buf, buffer, nbyte, nonblock);
+      // Get bytes from the connection.
+      s = sp->interface->receive(sp, buffer, nbyte, nonblock);
       if (s < 0 || s < nbyte) {
         // Either an error occured or we would have blocked.
         return s;
@@ -374,8 +372,7 @@ int net_close(vnode_t vp, file_t fp)
 {
   socket_t sp = fp->f_vnode->v_data;
 
-  net_release_buffer(sp->snd);
-  net_release_buffer(sp->rcv);
+  sp->interface->close(fp);
   return 0;
 }
 
@@ -387,10 +384,10 @@ int net_read(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
     return -EINVAL;
   }
 
-  return net_buffer_in(sp->rcv, uio, count, fp->f_flags & O_NONBLOCK);
+  return net_in(sp, uio, count, fp->f_flags & O_NONBLOCK);
 }
 
-/** Write to a socket buffer.
+/** Write to a socket connection.
  */
 int net_write(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
 {
@@ -400,7 +397,7 @@ int net_write(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
     return -EINVAL;
   }
 
-  return net_buffer_out(sp->snd, uio, count, fp->f_flags & O_NONBLOCK);
+  return net_out(sp, uio, count, fp->f_flags & O_NONBLOCK);
 }
 
 int net_poll(vnode_t vp, file_t fp, int what)
@@ -728,7 +725,7 @@ static int sys_getsockopt(int sockfd, int level, int optname, void *optval,
       break;
 
     case SO_PEERCRED:
-      COPYOUTTYPE(struct timeval, &sp->ucred);
+      COPYOUTTYPE(struct ucred, &sp->ucred);
       break;
 
     case SO_PRIORITY:

@@ -80,6 +80,10 @@ extern int debug;
 // Additional file system debug flags.
 #define AFSDB_CORE      0x01000000
 
+// Network debug flags.
+#define NETDB_CODE      0x10000000
+#define NETDB_INET      0x20000000
+
 #if 0
   #include <stdio.h>
   #define DPRINTF(_m,X)	if (!_m || (debug & (_m))) printf X

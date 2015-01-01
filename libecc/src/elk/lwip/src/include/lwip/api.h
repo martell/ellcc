@@ -186,7 +186,7 @@ struct netconn {
 #endif /* LWIP_TCP */
   /** only used for socket layer */
 #if LWIP_SOCKET
-  int socket;
+  LWIP_SOCKET_TYPE(socket);
 #endif /* LWIP_SOCKET */
 #if LWIP_SO_SNDTIMEO
   /** timeout to wait for sending data (which means enqueueing data for sending

@@ -33,6 +33,8 @@
 #include "kernel.h"
 #include "vnode.h"
 #include "thread.h"
+#include "page.h"
+#include "vm.h"
 #include "network.h"
 
 // Make AF_UNIX (AF_LOCAL) networking a select-able feature.
@@ -158,12 +160,23 @@ static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
   return -ENOPROTOOPT;
 }
 
+static int doclose(file_t fp)
+{
+  struct socket *sp = fp->f_vnode->v_data;
+  net_release_buffer(sp->snd);
+  net_release_buffer(sp->rcv);
+  return 0;
+}
+
 static const struct domain_interface interface = {
   .setup = setup,
   .getopt = getopt,
   .setopt = setopt,
   .option_update = option_update,
   .bind = bindaddr,
+  .send = net_buffer_send,
+  .receive = net_buffer_recv,
+  .close = doclose,
   .vnops = &vnops,
 };
 

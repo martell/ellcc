@@ -28,6 +28,7 @@
 #ifndef _network_h_
 #define _network_h_
 
+#define _GNU_SOURCE
 #include <sys/socket.h>
 
 #include "config.h"
@@ -47,6 +48,9 @@ typedef const struct domain_interface
                 socklen_t optlen);
   int (*option_update)(file_t fp);
   int (*bind)(file_t fp, struct sockaddr *addr, socklen_t addrlen);
+  int (*close)(file_t fp);
+  ssize_t (*send)(struct socket *sp, char *buffer, size_t size, int nonblock);
+  ssize_t (*receive)(struct socket *sp, char *buffer, size_t size, int nonblock);
   const struct vnops *vnops;            // Vnode operations.
 } *domain_interface_t;
 
@@ -184,6 +188,7 @@ struct socket
 
 #if ELK_NAMESPACE
 #define net_new_buffer __elk_net_new_buffer
+#define net_release_buffer __elk_net_release_buffer
 #endif
 
 /** Network support functions.
@@ -192,5 +197,19 @@ struct socket
 /** Create and initialize a new buffer.
  */
 int net_new_buffer(struct buffer **buf, int max, int total);
+/** Release a buffer.
+ * There may be multiple threads using the buffer, so watch the
+ * reference counts.
+ */                       
+void net_release_buffer(struct buffer *buf);
+/** Send bytes to a buffer.
+ */
+ssize_t net_buffer_send(struct socket *sp, char *buffer, size_t size,
+                               int nonblock);
+/** Get bytes from a buffer.
+ */
+ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size,
+                        int nonblock);
+
 
 #endif // _network_h_
