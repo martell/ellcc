@@ -40,7 +40,7 @@ typedef struct socket *socket_t;
  */
 typedef const struct domain_interface
 {
-  // Check arguments and allocate provate data.
+  // Check arguments and allocate private data.
   int (*setup)(vnode_t vp);
   int (*getopt)(file_t fp, int level, int optname, void *optval,
                 socklen_t *optlen);
@@ -48,11 +48,21 @@ typedef const struct domain_interface
                 socklen_t optlen);
   int (*option_update)(file_t fp);
   int (*bind)(file_t fp, struct sockaddr *addr, socklen_t addrlen);
+  int (*listen)(struct socket *sp, int backlog);
+  int (*connect)(struct socket *sp, const struct sockaddr *addr,
+                 socklen_t addrlenlen);
+  int (*accept4)(struct socket *sp, struct socket *newsp,
+                struct sockaddr *addr, socklen_t *addrlen, int flags);
+  ssize_t (*sendto)(struct socket *sp, const char *buffer, size_t size,
+                    int flags, const struct sockaddr *to, socklen_t tolen);
+  ssize_t (*recvfrom)(struct socket *sp, char *buffer, size_t size, int flags,
+                      struct sockaddr *from, socklen_t *fromlen);
+  int (*getpeername)(struct socket *sp, struct sockaddr *addr,
+                            socklen_t *addrlen);
+  int (*getsockname)(struct socket *sp, struct sockaddr *addr,
+                            socklen_t *addrlen);
+  int (*shutdown)(struct socket *sp, int how);
   int (*close)(file_t fp);
-  ssize_t (*send)(struct socket *sp, const char *buffer, size_t size,
-                  int flags, const struct sockaddr *to, socklen_t tolen);
-  ssize_t (*receive)(struct socket *sp, char *buffer, size_t size, int flags,
-                     struct sockaddr *from, socklen_t *fromlen);
   const struct vnops *vnops;            // Vnode operations.
 } *domain_interface_t;
 

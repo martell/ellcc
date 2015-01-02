@@ -96,7 +96,7 @@ static int option_update(file_t fp)
   return 0;
 }
 
-static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
+static int unix_bind(file_t fp, struct sockaddr *addr, socklen_t addrlen)
 {
   struct sockaddr_un uaddr;
   if (addrlen > sizeof(uaddr) || addrlen < sizeof(sa_family_t)) {
@@ -159,7 +159,47 @@ static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
   return -ENOPROTOOPT;
 }
 
-static int doclose(file_t fp)
+static int unix_listen(struct socket *sp, int backlog)
+{
+  // RICH: TODO
+  return -EINVAL;
+}
+
+static int unix_connect(struct socket *sp, const struct sockaddr *addr,
+                        socklen_t addrlenlen)
+{
+  // RICH: TODO
+  return -EINVAL;
+}
+
+static int unix_accept4(struct socket *sp, struct socket *newsp,
+                        struct sockaddr *addr, socklen_t *addrlen, int flags)
+{
+  // RICH: TODO
+  return -EINVAL;
+}
+
+static int unix_getpeername(struct socket *sp, struct sockaddr *addr,
+                            socklen_t *addrlen)
+{
+  // RICH: TODO
+  return -EINVAL;
+}
+
+static int unix_getsockname(struct socket *sp, struct sockaddr *addr, 
+                            socklen_t *addrlen)
+{
+  // RICH: TODO
+  return -EINVAL;
+}
+
+static int unix_shutdown(struct socket *sp, int how)
+{
+  // RICH: TODO
+  return -EINVAL;
+}
+
+static int unix_close(file_t fp)
 {
   struct socket *sp = fp->f_vnode->v_data;
   net_release_buffer(sp->snd);
@@ -172,10 +212,16 @@ static const struct domain_interface interface = {
   .getopt = getopt,
   .setopt = setopt,
   .option_update = option_update,
-  .bind = bindaddr,
-  .send = net_buffer_send,
-  .receive = net_buffer_recv,
-  .close = doclose,
+  .bind = unix_bind,
+  .listen = unix_listen,
+  .connect = unix_connect,
+  .accept4 = unix_accept4,
+  .sendto = net_buffer_send,
+  .recvfrom = net_buffer_recv,
+  .getpeername = unix_getpeername,
+  .getsockname = unix_getsockname,
+  .shutdown = unix_shutdown,
+  .close = unix_close,
   .vnops = &vnops,
 };
 

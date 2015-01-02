@@ -294,7 +294,7 @@ static int net_out(struct socket *sp, struct uio *uio, size_t *size, int flags)
     // Write nbyte bytes from buffer to buf.
     while (nbyte > 0) {
       // Send bytes to a connection.
-      s = sp->interface->send(sp, buffer, nbyte, flags, NULL, 0);
+      s = sp->interface->sendto(sp, buffer, nbyte, flags, NULL, 0);
       if (s < 0) {
         return s;
       }
@@ -319,7 +319,7 @@ static int net_in(struct socket *sp, struct uio *uio, size_t *size, int flags)
     // Read nbyte bytes from the buffer.
     while (nbyte > 0) {
       // Get bytes from the connection.
-      s = sp->interface->receive(sp, buffer, nbyte, flags, NULL, 0);
+      s = sp->interface->recvfrom(sp, buffer, nbyte, flags, NULL, 0);
       if (s < 0 || s < nbyte) {
         // Either an error occured or we would have blocked.
         return s;
@@ -358,6 +358,7 @@ int net_open(vnode_t vp, int flags)
    */
   int s = unix_interface->setup(vp);
   if (s != 0) {
+    kmem_free(sp);
     vput(vp);
     return s;
   }
@@ -477,6 +478,57 @@ int net_truncate(vnode_t vp, off_t offset)
   return -EINVAL;
 }
 
+static int getsockfd(struct socket *sp, int flags, int setup)
+{
+  vnode_t vp = vget(NULL, NULL);        // Get an anonymous vnode.
+  if (vp == NULL) {
+    kmem_free(sp);
+    return -ENOMEM;
+  }
+  VN_RW_OVERRIDE(vp)->v_op = sp->interface->vnops;
+  VN_RW_OVERRIDE(vp)->v_type = VSOCK;
+  // The vnode will now own the socket structure.
+  VN_RW_OVERRIDE(vp)->v_data = sp;
+
+  // Setup the file structure.
+  file_t fp;
+  if (!(fp = kmem_alloc(sizeof(struct file)))) {
+    vput(vp);
+    return -ENOMEM;
+  }
+
+  *fp = (struct file){ .f_vnode = vp, .f_flags = FREAD|FWRITE,
+                       .f_offset = 0, .f_count = 1 };
+
+  if (flags & SOCK_NONBLOCK)
+    fp->f_flags |= O_NONBLOCK;
+  if (flags & SOCK_CLOEXEC)
+    fp->f_flags |= O_CLOEXEC;
+
+  if (setup) {
+    // Set up the new socket.
+    int s = sp->interface->setup(vp);
+    if (s != 0) {
+      vput(vp);
+      return s;
+    }
+  }
+
+  /* Check whether the interface supports the protocol and type
+   * and set it up.
+   */
+  // Finally, allocate a file descriptor.
+  int fd = allocfd(fp);
+  if (fd < 0) {
+    sp->interface->close(fp);
+    kmem_free(fp);
+    vput(vp);
+    return fd;
+  }
+
+  vn_unlock(vp);
+  return fd;
+}
 /** Socket related system calls.
  */
 
@@ -529,19 +581,31 @@ int net_truncate(vnode_t vp, off_t offset)
     return -EINVAL;                                             \
   }
 
-static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
-{
-  SOCKET_ENTER()
-  IS_LISTEN()
-  return -ENOSYS;
-}
-
 static int sys_accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen,
                        int flags)
 {
   SOCKET_ENTER()
   IS_LISTEN()
-  return -ENOSYS;
+  socket_t newsp = new_socket(sp->interface, sp->domain, sp->type,
+                              sp->protocol);
+  if (newsp == NULL) {
+    return -ENOMEM;
+  }
+
+  s = sp->interface->accept4(sp, newsp, addr, addrlen, flags);
+  if (s < 0) {
+    kmem_free(newsp);
+    // The accept failed.
+    return s;
+  }
+
+  // Create a file for the socket and return the socket descriptor.
+  return getsockfd(newsp, 0, 0);
+}
+
+static int sys_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+  return sys_accept4(sockfd, addr, addrlen, 0);
 }
 
 static int sys_bind(int sockfd, struct sockaddr *addr, socklen_t addrlen)
@@ -551,11 +615,11 @@ static int sys_bind(int sockfd, struct sockaddr *addr, socklen_t addrlen)
   return sp->interface->bind(fp, addr, addrlen);
 }
 
-static int sys_connect(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+static int sys_connect(int sockfd, struct sockaddr *addr, socklen_t addrlen)
 {
   SOCKET_ENTER()
   NOT_LISTEN()
-  return -ENOSYS;
+  return sp->interface->connect(sp, addr, addrlen);
 }
 
 static int sys_getpeername(int sockfd, struct sockaddr *addr,
@@ -563,7 +627,7 @@ static int sys_getpeername(int sockfd, struct sockaddr *addr,
 {
   SOCKET_ENTER()
   IS_CONNECTED()
-  return -ENOSYS;
+  return sp->interface->getpeername(sp, addr, addrlen);
 }
 
 static int sys_getsockname(int sockfd, struct sockaddr *addr,
@@ -571,7 +635,7 @@ static int sys_getsockname(int sockfd, struct sockaddr *addr,
 {
   SOCKET_ENTER()
   IS_BOUND()
-  return -ENOSYS;
+  return sp->interface->getsockname(sp, addr, addrlen);
 }
 
 /** Check for the existance of a buffer.
@@ -808,7 +872,7 @@ static int sys_listen(int sockfd, int backlog)
   NOT_LISTEN()
   NOT_CONNECTED()
   sp->flags |= SO_ACCEPTCONN;
-  return 0;
+  return sp->interface->listen(sp, backlog);
 }
 
 #if defined(SYS_socketcall) || defined(SYS_recv)
@@ -816,7 +880,7 @@ static int sys_recv(int sockfd, void *buf, size_t len, int flags)
 {
   SOCKET_ENTER()
   NOT_LISTEN()
-  return -ENOSYS;
+  return sp->interface->recvfrom(sp, buf, len, flags, NULL, NULL);
 }
 #endif
 
@@ -825,7 +889,7 @@ static int sys_recvfrom(int sockfd, void *buf, size_t len, int flags,
 {
   SOCKET_ENTER()
   NOT_LISTEN()
-  return -ENOSYS;
+  return sp->interface->recvfrom(sp, buf, len, flags, src_addr, addrlen);
 }
 
 static int sys_recvmmsg(int sockfd, struct msghdr *msgvec, unsigned int vlen,
@@ -848,16 +912,16 @@ static int sys_send(int sockfd, const void *buf, size_t len, int flags)
 {
   SOCKET_ENTER()
   NOT_LISTEN()
-  return -ENOSYS;
+  return sp->interface->sendto(sp, buf, len, flags, NULL, 0);
 }
 #endif
 
 static int sys_sendto(int sockfd, const void *buf, size_t len, int flags,
-                        struct sockaddr *src_addr, socklen_t *addrlen)
+                        struct sockaddr *src_addr, socklen_t addrlen)
 {
   SOCKET_ENTER()
   NOT_LISTEN()
-  return -ENOSYS;
+  return sp->interface->sendto(sp, buf, len, flags, src_addr, addrlen);
 }
 
 static int sys_sendmmsg(int sockfd, const struct msghdr *msgvec,
@@ -1101,7 +1165,7 @@ static int sys_shutdown(int sockfd, int how)
   SOCKET_ENTER()
   NOT_LISTEN()
   IS_CONNECTED()
-  return -ENOSYS;
+  return sp->interface->shutdown(sp, how);
 }
 
 static int sys_socket(int domain, int type, int protocol)
@@ -1155,50 +1219,8 @@ static int sys_socket(int domain, int type, int protocol)
     return -ENOMEM;
   }
 
-  vnode_t vp = vget(NULL, NULL);        // Get an anonymous vnode.
-  if (vp == NULL) {
-    kmem_free(sp);
-    return -ENOMEM;
-  }
-  VN_RW_OVERRIDE(vp)->v_op = interface->vnops;
-  VN_RW_OVERRIDE(vp)->v_type = VSOCK;
-  // The vnode will now own the socket structure.
-  VN_RW_OVERRIDE(vp)->v_data = sp;
-
-  int s = interface->setup(vp);
-  if (s != 0) {
-    vput(vp);
-    return s;
-  }
-
-  // Setup the file structure.
-  file_t fp;
-  if (!(fp = kmem_alloc(sizeof(struct file)))) {
-    vput(vp);
-    return -ENOMEM;
-  }
-
-  *fp = (struct file){ .f_vnode = vp, .f_flags = FREAD|FWRITE,
-                       .f_offset = 0, .f_count = 1 };
-
-  if (flags & SOCK_NONBLOCK)
-    fp->f_flags |= O_NONBLOCK;
-  if (flags & SOCK_CLOEXEC)
-    fp->f_flags |= O_CLOEXEC;
-
-  /* Check whether the interface supports the protocol and type
-   * and set it up.
-   */
-  // Finally, allocate a file descriptor.
-  int fd = allocfd(fp);
-  if (fd < 0) {
-    kmem_free(fp);
-    vput(vp);
-    return fd;
-  }
-
-  vn_unlock(vp);
-  return fd;
+  // Create a file for the socket and return the socket descriptor.
+  return getsockfd(sp, flags, 1);
 }
 
 static int sys_socketpair(int domain, int type, int protocol, int sv[2])
@@ -1278,7 +1300,7 @@ static int sys_socketcall(int call, unsigned long *args)
   case __SC_bind:
     return sys_bind(args[0], (struct sockaddr *)arg[1], (socklen_t)arg[2]);
   case __SC_connect:
-    return sys_connect(args[0], (struct sockaddr *)arg[1], (socklen_t *)arg[2]);
+    return sys_connect(args[0], (struct sockaddr *)arg[1], (socklen_t)arg[2]);
   case __SC_getpeername:
     return sys_getpeername(args[0], (struct sockaddr *)arg[1],
                            (socklen_t *)arg[2]);
@@ -1304,7 +1326,7 @@ static int sys_socketcall(int call, unsigned long *args)
     return sys_send(args[0], (void *)arg[1], (size_t)arg[2], arg[3]);
   case __SC_sendto:
     return sys_sendto(args[0], (void *)arg[1], (size_t)arg[2], arg[3],
-                      (struct sockaddr *)arg[4], (socklen_t *)arg[5]);
+                      (struct sockaddr *)arg[4], (socklen_t)arg[5]);
   case __SC_sendmmsg:
     return sys_sendmmsg(args[0], (struct msghdr *)arg[1], arg[2], arg[3]);
   case __SC_sendmsg:

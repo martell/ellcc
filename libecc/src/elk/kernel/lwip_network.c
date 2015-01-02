@@ -62,6 +62,29 @@
 #include "lwip/udp.h"
 #include "lwip/raw.h"
 
+// Originally from lwip/ip4_addr.h.
+#undef ip_addr_debug_print
+#define ip_addr_debug_print(debug, ipaddr) \
+  DPRINTF(debug, ("%" U16_F ".%" U16_F ".%" U16_F ".%" U16_F,      \
+                  ipaddr != NULL ? ip4_addr1_16(ipaddr) : 0,       \
+                  ipaddr != NULL ? ip4_addr2_16(ipaddr) : 0,       \
+                  ipaddr != NULL ? ip4_addr3_16(ipaddr) : 0,       \
+                  ipaddr != NULL ? ip4_addr4_16(ipaddr) : 0))
+
+// Originally from lwip/ip4_addr.h.
+#undef ip6_addr_debug_print
+#define ip6_addr_debug_print(debug, ipaddr) \
+  DPRINTF(debug, ("%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F       \
+                  ":%" X16_F ":%" X16_F ":%" X16_F ":%" X16_F,     \
+                  ipaddr != NULL ? IP6_ADDR_BLOCK1(ipaddr) : 0,    \
+                  ipaddr != NULL ? IP6_ADDR_BLOCK2(ipaddr) : 0,    \
+                  ipaddr != NULL ? IP6_ADDR_BLOCK3(ipaddr) : 0,    \
+                  ipaddr != NULL ? IP6_ADDR_BLOCK4(ipaddr) : 0,    \
+                  ipaddr != NULL ? IP6_ADDR_BLOCK5(ipaddr) : 0,    \
+                  ipaddr != NULL ? IP6_ADDR_BLOCK6(ipaddr) : 0,    \
+                  ipaddr != NULL ? IP6_ADDR_BLOCK7(ipaddr) : 0,    \
+                  ipaddr != NULL ? IP6_ADDR_BLOCK8(ipaddr) : 0))
+
 // Originally from lwip/inet.h.
 #define inet_addr_to_ipaddr(target_ipaddr, source_inaddr) \
   (ip4_addr_set_u32(target_ipaddr, (source_inaddr)->s_addr))
@@ -480,31 +503,202 @@ static int option_update(file_t fp)
   return 0;
 }
 
-static int bindaddr(file_t fp, struct sockaddr *addr, socklen_t addrlen)
+static int inet_bind(file_t fp, struct sockaddr *addr, socklen_t addrlen)
 {
-  struct sockaddr_in iaddr;
-  if (addrlen > sizeof(iaddr) || addrlen < sizeof(sa_family_t)) {
+  struct socket *sp = fp->f_vnode->v_data;
+  struct lwip_sock *lwsp = sp->priv;
+  ipX_addr_t local_addr;
+  u16_t local_port;
+  err_t err;
+
+
+  if (!SOCK_ADDR_TYPE_MATCH(addr, lwsp)) {
+    // Sockaddr does not match socket type (IPv4/IPv6).
     return -EINVAL;
   }
 
-  int s = copyin(addr, &iaddr, addrlen);
-  if (s != 0)
-    return s;
-
-  if (iaddr.sin_family != AF_UNIX) {
+  // Check size, family and alignment of 'addr'.
+  if (!(IS_SOCK_ADDR_LEN_VALID(addrlen) &&
+        IS_SOCK_ADDR_TYPE_VALID(addr) && IS_SOCK_ADDR_ALIGNED(addr))) {
+    // Invalid address.
     return -EINVAL;
   }
 
-  if (addrlen == sizeof(sa_family_t)) {
-    // Unnamed address doesn't make sense here.
-    return -EINVAL;
+  LWIP_UNUSED_ARG(addrlen);
+
+  SOCKADDR_TO_IPXADDR_PORT((addr->sa_family == AF_INET6), addr, &local_addr,
+                           local_port);
+  DPRINTF(NETDB_INET, ("lwip_bind(addr="));
+  ipX_addr_debug_print(addr->sa_family == AF_INET6, NETDB_INET, &local_addr);
+  DPRINTF(NETDB_INET, (" port=%"U16_F")\n", local_port));
+
+  err = netconn_bind(lwsp->conn, ipX_2_ip(&local_addr), local_port);
+
+  if (err != ERR_OK) {
+    DPRINTF(NETDB_INET, ("lwip_bind() failed, err=%d\n", err));
+    return -err_to_errno(err);
   }
 
-  return -ENOPROTOOPT;
+  DPRINTF(NETDB_INET, ("lwip_bind() succeeded\n"));
+  return 0;
 }
 
-static ssize_t net_send(struct socket *sp, const char *buffer, size_t size,
-                        int flags, const struct sockaddr *to, socklen_t tolen)
+/** Set a socket into listen mode.
+ * The socket may not have been used for another connection previously.
+ *
+ * @param s the socket to set to listening mode
+ * @param backlog (ATTENTION: needs TCP_LISTEN_BACKLOG=1)
+ * @return 0 on success, non-zero on failure
+ */
+static int inet_listen(struct socket *sp, int backlog)
+{
+  struct lwip_sock *lwsp = sp->priv;
+  err_t err;
+
+  DPRINTF(NETDB_INET, ("lwip_listen(backlog=%d)\n", backlog));
+
+  // Limit the "backlog" parameter to fit in an u8_t.
+  backlog = LWIP_MIN(LWIP_MAX(backlog, 0), 0xff);
+
+  err = netconn_listen_with_backlog(lwsp->conn, (u8_t)backlog);
+
+  if (err != ERR_OK) {
+    DPRINTF(NETDB_INET, ("lwip_listen() failed, err=%d\n", err));
+    if (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) != NETCONN_TCP) {
+      return -EOPNOTSUPP;
+    }
+    return -err_to_errno(err);
+  }
+
+  return 0;
+}
+
+static int inet_connect(struct socket *sp, const struct sockaddr *addr,
+                        socklen_t addrlen)
+{
+  struct lwip_sock *lwsp = sp->priv;
+  err_t err;
+
+  if (!SOCK_ADDR_TYPE_MATCH_OR_UNSPEC(addr, lwsp)) {
+    // The sockaddr does not match socket type (IPv4/IPv6).
+    return -EINVAL;
+  }
+
+  LWIP_UNUSED_ARG(addrlen);
+  if (addr->sa_family == AF_UNSPEC) {
+    DPRINTF(NETDB_INET, ("lwip_connect(AF_UNSPEC)\n"));
+    err = netconn_disconnect(lwsp->conn);
+  } else {
+    ipX_addr_t remote_addr;
+    u16_t remote_port;
+
+    /* check size, family and alignment of 'addr' */
+    if (!(IS_SOCK_ADDR_LEN_VALID(addrlen) &&
+          IS_SOCK_ADDR_TYPE_VALID_OR_UNSPEC(addr) &&
+          IS_SOCK_ADDR_ALIGNED(addr))) {
+      // Invalid address.
+      return -EINVAL;
+    }
+
+    SOCKADDR_TO_IPXADDR_PORT((addr->sa_family == AF_INET6), addr, &remote_addr,
+                             remote_port);
+    DPRINTF(NETDB_INET, ("lwip_connect(addr="));
+    ipX_addr_debug_print(addr->sa_family == AF_INET6, NETDB_INET, &remote_addr);
+    DPRINTF(NETDB_INET, (" port=%"U16_F")\n", remote_port));
+
+    err = netconn_connect(lwsp->conn, ipX_2_ip(&remote_addr), remote_port);
+  }
+
+  if (err != ERR_OK) {
+    DPRINTF(NETDB_INET, ("lwip_connect() failed, err=%d\n", err));
+    return -err_to_errno(err);
+  }
+
+  DPRINTF(NETDB_INET, ("lwip_connect() succeeded\n"));
+  return 0;
+}
+
+static int inet_accept4(struct socket *sp, struct socket *newsp,
+                        struct sockaddr *addr, socklen_t *addrlen, int flags)
+{
+  struct lwip_sock *lwsp = sp->priv;
+  struct netconn *newconn;
+  ipX_addr_t naddr;
+  u16_t port = 0;
+  err_t err;
+  SYS_ARCH_DECL_PROTECT(lev);
+
+  DPRINTF(NETDB_INET, ("lwip_accept()...\n"));
+
+  if (netconn_is_nonblocking(lwsp->conn) && (lwsp->rcvevent <= 0)) {
+    DPRINTF(NETDB_INET, ("lwip_accept(): returning EWOULDBLOCK\n"));
+    return -EWOULDBLOCK;
+  }
+
+  // Wait for a new connection.
+  err = netconn_accept(lwsp->conn, &newconn);
+  if (err != ERR_OK) {
+    DPRINTF(NETDB_INET, ("lwip_accept(): netconn_acept failed, err=%d\n", err));
+    if (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) != NETCONN_TCP) {
+      return -EOPNOTSUPP;
+    }
+    return -err_to_errno(err);
+  }
+
+  ASSERT(newconn != NULL);
+  // Prevent automatic window updates, we do this on our own!
+  netconn_set_noautorecved(newconn, 1);
+
+  /* Note that POSIX only requires us to check addr is non-NULL. addrlen must
+   * not be NULL if addr is valid.
+   */
+  if (addr != NULL) {
+    union sockaddr_aligned tempaddr;
+    // Get the IP address and port of the remote host.
+    err = netconn_peer(newconn, ipX_2_ip(&naddr), &port);
+    if (err != ERR_OK) {
+      DPRINTF(NETDB_INET, ("lwip_accept(): netconn_peer failed, err=%d\n",
+                           err));
+      netconn_delete(newconn);
+      return -err_to_errno(err);
+    }
+    ASSERT(addrlen != NULL);
+
+    IPXADDR_PORT_TO_SOCKADDR(NETCONNTYPE_ISIPV6(newconn->type), &tempaddr,
+                                                &naddr, port);
+    MEMCPY(addr, &tempaddr, *addrlen);
+  }
+
+  struct lwip_sock *nlwsp = alloc_socket(newconn, 1);
+  if (newsp->priv == NULL) {
+    netconn_delete(newconn);
+    return -ENOMEM;
+  }
+
+  newsp->priv = nlwsp;
+
+  /* See event_callback: If data comes in right away after an accept, even
+   * though the server task might not have created a new socket yet.
+   * In that case, newconn->socket is counted down (newconn->socket--),
+   * so nsock->rcvevent is >= 1 here!
+   */
+  SYS_ARCH_PROTECT(lev);
+  nlwsp->rcvevent += (s16_t)(-1 - newconn->socket);
+  newconn->priv = newsp;
+  SYS_ARCH_UNPROTECT(lev);
+
+  if (addr != NULL) {
+    DPRINTF(NETDB_INET, (" addr="));
+    ipX_addr_debug_print(NETCONNTYPE_ISIPV6(newconn->type), NETDB_INET, &naddr);
+    DPRINTF(NETDB_INET, (" port=%"U16_F"\n", port));
+  }
+
+  return 0;
+}
+
+static ssize_t inet_sendto(struct socket *sp, const char *buffer, size_t size,
+                           int flags, const struct sockaddr *to,
+                           socklen_t tolen)
 {
   struct lwip_sock *lwsp = sp->priv;
   int err;
@@ -539,11 +733,11 @@ static ssize_t net_send(struct socket *sp, const char *buffer, size_t size,
   // @todo: split into multiple sendto's?
   LWIP_ASSERT("lwip_sendto: size must fit in u16_t", size <= 0xffff);
   short_size = (u16_t)size;
-  if (((to == NULL) && (tolen == 0)) ||
-      (IS_SOCK_ADDR_LEN_VALID(tolen) &&
-       IS_SOCK_ADDR_TYPE_VALID(to) && IS_SOCK_ADDR_ALIGNED(to))) {
-    // An invalid addres was given.
-    return -EIO;
+  if (!(((to == NULL) && (tolen == 0)) ||
+        (IS_SOCK_ADDR_LEN_VALID(tolen) &&
+         IS_SOCK_ADDR_TYPE_VALID(to) && IS_SOCK_ADDR_ALIGNED(to)))) {
+    // An invalid address was given.
+    return -EINVAL;
   }
 
 #if LWIP_TCPIP_CORE_LOCKING
@@ -638,7 +832,7 @@ static ssize_t net_send(struct socket *sp, const char *buffer, size_t size,
                        flags=0x%x to=",
               s, buffer, short_size, flags));
   ipX_addr_debug_print(NETCONNTYPE_ISIPV6(netconn_type(lwsp->conn)),
-    SOCKETS_DEBUG, &buf.addr);
+    NETDB_INET, &buf.addr);
   DPRINTF(NETDB_INET, (" port=%"U16_F"\n", remote_port));
 
   /* make the buffer point to the data that should be sent */
@@ -674,8 +868,9 @@ static ssize_t net_send(struct socket *sp, const char *buffer, size_t size,
 
 /** Get bytes from a connection.
  */
-static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
-                        struct sockaddr *from, socklen_t *fromlen)
+static ssize_t inet_recvfrom(struct socket *sp, char *buffer, size_t size,
+                             int flags, struct sockaddr *from,
+                             socklen_t *fromlen)
 {
   struct lwip_sock *lwsp = sp->priv;
   void *buf = NULL;
@@ -685,16 +880,18 @@ static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
   u8_t done = 0;
   err_t err;
 
-  DPRINTF(NETDB_INET, ("lwip_recvfrom(%p, %"SZT_F", 0x%x, ..)\n", buffer, size, flags));
+  DPRINTF(NETDB_INET, ("lwip_recvfrom(%p, %"SZT_F", 0x%x, ..)\n", buffer, size,
+                       flags));
 
   do {
-    DPRINTF(NETDB_INET, ("lwip_recvfrom: top while lwsp->lastdata=%p\n", lwsp->lastdata));
-    /* Check if there is data left from the last recv operation. */
+    DPRINTF(NETDB_INET, ("lwip_recvfrom: top while lwsp->lastdata=%p\n",
+                         lwsp->lastdata));
+    // Check if there is data left from the last recv operation.
     if (lwsp->lastdata) {
       buf = lwsp->lastdata;
     } else {
-      /* If this is non-blocking call, then check first */
-      if (((flags & MSG_DONTWAIT) || netconn_is_nonblocking(lwsp->conn)) && 
+      // If this is non-blocking call, then check first.
+      if (((flags & MSG_DONTWAIT) || netconn_is_nonblocking(lwsp->conn)) &&
           (lwsp->rcvevent <= 0)) {
         if (off > 0) {
           /* update receive window */
@@ -702,28 +899,32 @@ static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
           /* already received data, return that */
           return off;
         }
+
         DPRINTF(NETDB_INET, ("lwip_recvfrom(): returning EWOULDBLOCK\n"));
         return -EWOULDBLOCK;
       }
 
       /* No data was left from the previous operation, so we try to get
-         some from the network. */
+       * some from the network.
+       */
       if (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) == NETCONN_TCP) {
         err = netconn_recv_tcp_pbuf(lwsp->conn, (struct pbuf **)&buf);
       } else {
         err = netconn_recv(lwsp->conn, (struct netbuf **)&buf);
       }
+
       DPRINTF(NETDB_INET, ("lwip_recvfrom: netconn_recv err=%d, netbuf=%p\n",
-        err, buf));
+                           err, buf));
 
       if (err != ERR_OK) {
         if (off > 0) {
-          /* update receive window */
+          // Update the receive window.
           netconn_recved(lwsp->conn, (u32_t)off);
-          /* already received data, return that */
+          // Already received data, return that.
           return off;
         }
-        /* We should really do some error checking here. */
+
+        // We should really do some error checking here.
         DPRINTF(NETDB_INET, ("lwip_recvfrom(): buf == NULL, error is \"%s\"!\n",
           lwip_strerr(err)));
         if (err == ERR_CLSD) {
@@ -732,6 +933,7 @@ static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
           return -err_to_errno(err);
         }
       }
+
       LWIP_ASSERT("buf != NULL", buf != NULL);
       lwsp->lastdata = buf;
     }
@@ -742,8 +944,9 @@ static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
       p = ((struct netbuf *)buf)->p;
     }
     buflen = p->tot_len;
-    DPRINTF(NETDB_INET, ("lwip_recvfrom: buflen=%"U16_F" size=%"SZT_F" off=%d sock->lastoffset=%"U16_F"\n",
-      buflen, size, off, lwsp->lastoffset));
+    DPRINTF(NETDB_INET, ("lwip_recvfrom: buflen=%"U16_F" size=%"
+                         SZT_F" off=%d sock->lastoffset=%"U16_F"\n",
+                         buflen, size, off, lwsp->lastoffset));
 
     buflen -= lwsp->lastoffset;
 
@@ -753,8 +956,9 @@ static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
       copylen = (u16_t)size;
     }
 
-    /* copy the contents of the received buffer into
-    the supplied memory pointer buffer */
+    /* Copy the contents of the received buffer into
+     * the supplied memory pointer buffer.
+     */
     pbuf_copy_partial(p, (u8_t*)buffer + off, copylen, lwsp->lastoffset);
 
     off += copylen;
@@ -772,7 +976,7 @@ static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
       done = 1;
     }
 
-    /* Check to see from where the data was.*/
+    // Check to see from where the data was.
     if (done) {
 #if !SOCKETS_DEBUG
       if (from && fromlen)
@@ -785,16 +989,17 @@ static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
         DPRINTF(NETDB_INET, ("lwip_recvfrom(): addr="));
         if (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) == NETCONN_TCP) {
           fromaddr = &tmpaddr;
-          /* @todo: this does not work for IPv6, yet */
+          // TODO: this does not work for IPv6, yet.
           netconn_getaddr(lwsp->conn, ipX_2_ip(fromaddr), &port, 0);
         } else {
           port = netbuf_fromport((struct netbuf *)buf);
           fromaddr = netbuf_fromaddr_ipX((struct netbuf *)buf);
         }
+
         IPXADDR_PORT_TO_SOCKADDR(NETCONNTYPE_ISIPV6(netconn_type(lwsp->conn)),
-          &saddr, fromaddr, port);
+                                 &saddr, fromaddr, port);
         ipX_addr_debug_print(NETCONNTYPE_ISIPV6(netconn_type(lwsp->conn)),
-          SOCKETS_DEBUG, fromaddr);
+                             NETDB_INET, fromaddr);
         DPRINTF(NETDB_INET, (" port=%"U16_F" len=%d\n", port, off));
 #if SOCKETS_DEBUG
         if (from && fromlen)
@@ -805,12 +1010,14 @@ static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
       }
     }
 
-    /* If we don't peek the incoming message... */
+    // If we don't peek the incoming message...
     if ((flags & MSG_PEEK) == 0) {
       /* If this is a TCP socket, check if there is data left in the
-         buffer. If so, it should be saved in the sock structure for next
-         time around. */
-      if ((NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) == NETCONN_TCP) && (buflen - copylen > 0)) {
+       * buffer. If so, it should be saved in the sock structure for next
+       * time around.
+       */
+      if ((NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) == NETCONN_TCP) &&
+          (buflen - copylen > 0)) {
         lwsp->lastdata = buf;
         lwsp->lastoffset += copylen;
         DPRINTF(NETDB_INET, ("lwip_recvfrom: lastdata now netbuf=%p\n", buf));
@@ -819,7 +1026,7 @@ static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
         lwsp->lastoffset = 0;
         DPRINTF(NETDB_INET, ("lwip_recvfrom: deleting netbuf=%p\n", buf));
         if (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) == NETCONN_TCP) {
-          pbuf_free((struct pbuf *)buf);
+                              pbuf_free((struct pbuf *)buf);
         } else {
           netbuf_delete((struct netbuf *)buf);
         }
@@ -829,17 +1036,112 @@ static ssize_t net_recv(struct socket *sp, char *buffer, size_t size, int flags,
 
   if ((off > 0) &&
       (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) == NETCONN_TCP)) {
-    /* update receive window */
+    // Update the receive window.
     netconn_recved(lwsp->conn, (u32_t)off);
   }
   return off;
 }
 
-static int doclose(file_t fp)
+static int getaddrname(struct socket *sp, struct sockaddr *addr,
+                       socklen_t *addrlen, int local)
+{
+  struct lwip_sock *lwsp = sp->priv;
+  union sockaddr_aligned saddr;
+  ipX_addr_t naddr;
+  u16_t port;
+  err_t err;
+
+  /* get the IP address and port */
+  /* @todo: this does not work for IPv6, yet */
+  err = netconn_getaddr(lwsp->conn, ipX_2_ip(&naddr), &port, local);
+  if (err != ERR_OK) {
+    return -err_to_errno(err);
+  }
+
+  IPXADDR_PORT_TO_SOCKADDR(NETCONNTYPE_ISIPV6(netconn_type(lwsp->conn)),
+                           &saddr, &naddr, port);
+
+  DPRINTF(NETDB_INET, ("lwip_getaddrname((, addr="));
+  ipX_addr_debug_print(NETCONNTYPE_ISIPV6(netconn_type(lwsp->conn)),
+                       NETDB_INET, &naddr);
+  DPRINTF(NETDB_INET, (" port=%"U16_F")\n", port));
+
+  MEMCPY(addr, &saddr, *addrlen);
+  return 0;
+}
+
+static int inet_getpeername(struct socket *sp, struct sockaddr *addr,
+                            socklen_t *addrlen)
+{
+  return getaddrname(sp, addr, addrlen, 0);
+}
+
+static int inet_getsockname(struct socket *sp, struct sockaddr *addr,
+                            socklen_t *addrlen)
+{
+  return getaddrname(sp, addr, addrlen, 1);
+}
+
+/** Unimplemented: Close one end of a full-duplex connection.
+ * Currently, the full connection is closed.
+ * RICH: Is this comment still valid?
+ */
+static int inet_shutdown(struct socket *sp, int how)
+{
+  struct lwip_sock *lwsp = sp->priv;
+  err_t err;
+  u8_t shut_rx = 0, shut_tx = 0;
+
+  DPRINTF(NETDB_INET, ("lwip_shutdown(how=%d)\n", how));
+
+  if (lwsp->conn != NULL) {
+    if (NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) != NETCONN_TCP) {
+      return -EOPNOTSUPP;
+    }
+  } else {
+    return -ENOTCONN;
+  }
+
+  if (how == SHUT_RD) {
+    shut_rx = 1;
+  } else if (how == SHUT_WR) {
+    shut_tx = 1;
+  } else if(how == SHUT_RDWR) {
+    shut_rx = 1;
+    shut_tx = 1;
+  } else {
+    return -EINVAL;
+  }
+
+  err = netconn_shutdown(lwsp->conn, shut_rx, shut_tx);
+  return (err == ERR_OK ? 0 : -err_to_errno(err));
+}
+
+static int inet_close(file_t fp)
 {
   struct socket *sp = fp->f_vnode->v_data;
   struct lwip_sock *lwsp = sp->priv;
+  int is_tcp = 0;
 
+  DPRINTF(NETDB_INET, ("lwip_close()\n"));
+
+  if(lwsp->conn != NULL) {
+    is_tcp = NETCONNTYPE_GROUP(netconn_type(lwsp->conn)) == NETCONN_TCP;
+  } else {
+    LWIP_ASSERT("lwsp->lastdata == NULL", lwsp->lastdata == NULL);
+  }
+
+  netconn_delete(lwsp->conn);
+
+  void *lastdata = lwsp->lastdata;
+  kmem_free(lwsp);
+  if (lastdata != NULL) {
+    if (is_tcp) {
+      pbuf_free((struct pbuf *)lastdata);
+    } else {
+      netbuf_delete((struct netbuf *)lastdata);
+    }
+  }
   return 0;
 }
 
@@ -848,10 +1150,16 @@ static const struct domain_interface interface = {
   .getopt = getopt,
   .setopt = setopt,
   .option_update = option_update,
-  .bind = bindaddr,
-  .send = net_send,
-  .receive = net_recv,
-  .close = doclose,
+  .bind = inet_bind,
+  .listen = inet_listen,
+  .connect = inet_connect,
+  .accept4 = inet_accept4,
+  .sendto = inet_sendto,
+  .recvfrom = inet_recvfrom,
+  .getpeername = inet_getpeername,
+  .getsockname = inet_getsockname,
+  .shutdown = inet_shutdown,
+  .close = inet_close,
   .vnops = &vnops,
 };
 
