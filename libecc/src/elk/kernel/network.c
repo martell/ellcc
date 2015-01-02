@@ -209,7 +209,7 @@ ssize_t net_buffer_send(struct socket *sp, const char *buffer, size_t size,
 /** Get bytes from a buffer.
  */
 ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size, int flags,
-                        const struct sockaddr *to, socklen_t tolen)
+                        struct sockaddr *from, socklen_t *fromlen)
 {
   int s;
   struct buffer *buf = sp->rcv;

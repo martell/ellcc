@@ -52,7 +52,7 @@ typedef const struct domain_interface
   ssize_t (*send)(struct socket *sp, const char *buffer, size_t size,
                   int flags, const struct sockaddr *to, socklen_t tolen);
   ssize_t (*receive)(struct socket *sp, char *buffer, size_t size, int flags,
-                     const struct sockaddr *to, socklen_t tolen);
+                     struct sockaddr *from, socklen_t *fromlen);
   const struct vnops *vnops;            // Vnode operations.
 } *domain_interface_t;
 
@@ -210,8 +210,8 @@ ssize_t net_buffer_send(struct socket *sp, const char *buffer, size_t size,
                         int flags, const struct sockaddr *to, socklen_t tolen);
 /** Get bytes from a buffer.
  */
-ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size,
-                        int flags, const struct sockaddr *to, socklen_t tolen);
+ssize_t net_buffer_recv(struct socket *sp, char *buffer, size_t size, int flags,
+                        struct sockaddr *from, socklen_t *fromlen);
 
 
 #endif // _network_h_
