@@ -356,7 +356,7 @@ int net_open(vnode_t vp, int flags)
   /* Check whether the interface supports the protocol and type
    * and set it up.
    */
-  int s = unix_interface->setup(vp);
+  int s = unix_interface->setup(vp, 0);
   if (s != 0) {
     kmem_free(sp);
     vput(vp);
@@ -507,7 +507,7 @@ static int getsockfd(struct socket *sp, int flags, int setup)
 
   if (setup) {
     // Set up the new socket.
-    int s = sp->interface->setup(vp);
+    int s = sp->interface->setup(vp, flags);
     if (s != 0) {
       vput(vp);
       return s;
@@ -871,8 +871,12 @@ static int sys_listen(int sockfd, int backlog)
   SOCKET_ENTER()
   NOT_LISTEN()
   NOT_CONNECTED()
-  sp->flags |= SO_ACCEPTCONN;
-  return sp->interface->listen(sp, backlog);
+  s = sp->interface->listen(sp, backlog);
+  if (s < 0) {
+    return s;
+  }
+  sp->flags |= SF_ACCEPTCONN;
+  return 0;
 }
 
 #if defined(SYS_socketcall) || defined(SYS_recv)

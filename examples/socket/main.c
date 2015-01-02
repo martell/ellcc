@@ -2,6 +2,7 @@
  */
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <arpa/inet.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -9,6 +10,75 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
+#include <pthread.h>
+
+static int thread_create(const char *name, pthread_t *id,
+                         void *(*start)(void *), int pri,
+                         void *stack, size_t stack_size,
+                         void *arg)
+{
+  pthread_attr_t attr;
+  int s = pthread_attr_init(&attr);
+  if (s != 0) {
+    printf("pthread_attr_init: %s\n", strerror(s));
+    return -1;
+  }
+
+  void *sp;
+
+  if (stack) {
+    sp = stack;
+  } else {
+    sp = malloc(stack_size);
+  }
+
+  if (s != 0) {
+    printf("malloc failed %s\n", strerror(errno));
+    return -1;
+  }
+
+  s = pthread_attr_setstack(&attr, sp, stack_size);
+  if (s != 0) {
+    printf("pthread_attr_setstack %s\n", strerror(s));
+    return -1;
+  }
+
+  s = pthread_create(id, NULL /* &attr */, start, arg);
+  if (s != 0)
+    printf("pthread_create: %s\n", strerror(s));
+  return s;
+}
+
+void *start(void * arg)
+{
+  int sfd = socket(AF_INET, SOCK_STREAM /*|SOCK_NONBLOCK */, 0);
+  if (sfd < 0) {
+    printf("socket(AF_INET) failed: %s\n", strerror(errno));
+  }
+  struct sockaddr_in server;
+  server.sin_family = AF_INET;
+  server.sin_addr.s_addr = inet_addr("127.0.0.1");
+  server.sin_port = htons(8888);
+  int s = connect(sfd, (struct sockaddr *)&server, sizeof(server));
+  if (s < 0) {
+    printf("connect(127.0.0.1) failed: %s\n", strerror(errno));
+    exit(1);
+  }
+  printf("connected\n");
+  char buffer[100];
+  int i = 0;
+  while (1) {
+    snprintf(buffer, 100, "hello %d", ++i);
+    s = send(sfd, buffer, strlen(buffer), 0);
+    if (s < 0) {
+      printf("send(127.0.0.1) failed: %s\n", strerror(errno));
+      exit(1);
+    }
+    sleep(2);
+  }
+
+  return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -54,19 +124,38 @@ int main(int argc, char **argv)
     printf("bind() failed: %s\n", strerror(errno));
   }
 
-  s = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0);
-  if (s < 0) {
+  int sfd = socket(AF_INET, SOCK_STREAM /*|SOCK_NONBLOCK */, 0);
+  if (sfd < 0) {
     printf("socket(AF_INET) failed: %s\n", strerror(errno));
-    exit(1);
   }
-#if RICH
-  struct sockaddr_in addr;
-  strcpy(addr.sin_path, "socket");
-  addr.sun_family = AF_UNIX;
-  s = bind(s, (const struct sockaddr *)&addr, sizeof(addr.sun_family) + strlen(addr.sun_path) + 1);
-  if (s != 0) {
-    printf("bind() failed: %s\n", strerror(errno));
+  struct sockaddr_in server;
+  server.sin_family = AF_INET;
+  server.sin_addr.s_addr = INADDR_ANY;
+  server.sin_port = htons(8888);
+  s = bind(sfd, (struct sockaddr *)&server, sizeof(server));
+  if (s < 0) {
+    printf("bind(AF_INET) failed: %s\n", strerror(errno));
   }
-#endif
+  s = listen(sfd, 3);
+  if (s < 0) {
+    printf("listen(AF_INET) failed: %s\n", strerror(errno));
+  }
+
+  pthread_t id;
+  thread_create("foo", &id, start, 0, 0, 4096, NULL);
+
+  struct sockaddr_in client;
+  int clientlen = sizeof(client);
+  int cfd = accept(sfd, (struct sockaddr *)&client, (socklen_t *)&clientlen);
+  if (cfd < 0) {
+    printf("accept(AF_INET) failed: %s\n", strerror(errno));
+  }
+
+  printf("connection accepted\n");
+  size_t size;
+  while((size = recv(cfd, buffer, 100, 0)) > 0) {
+    printf("got '%s'\n", buffer);
+  }
+  printf("exiting\n");
 }
 

@@ -424,7 +424,7 @@ static struct lwip_sock *alloc_socket(struct netconn *conn, int accepted)
   return lwsp;
 }
 
-static int setup(vnode_t vp)
+static int setup(vnode_t vp, int flags)
 {
   struct socket *sp = vp->v_data;
   struct netconn *conn;
@@ -474,6 +474,10 @@ static int setup(vnode_t vp)
   if (!conn) {
     DPRINTF(NETDB_INET, ("-1 / ENOBUFS (could not create netconn)\n"));
     return -ENOBUFS;
+  }
+
+  if (flags & SOCK_NONBLOCK) {
+    netconn_set_nonblocking(conn, 1);
   }
 
   sp->priv = alloc_socket(conn, 0);
@@ -626,7 +630,6 @@ static int inet_accept4(struct socket *sp, struct socket *newsp,
   ipX_addr_t naddr;
   u16_t port = 0;
   err_t err;
-  SYS_ARCH_DECL_PROTECT(lev);
 
   DPRINTF(NETDB_INET, ("lwip_accept()...\n"));
 
@@ -670,7 +673,7 @@ static int inet_accept4(struct socket *sp, struct socket *newsp,
   }
 
   struct lwip_sock *nlwsp = alloc_socket(newconn, 1);
-  if (newsp->priv == NULL) {
+  if (nlwsp == NULL) {
     netconn_delete(newconn);
     return -ENOMEM;
   }

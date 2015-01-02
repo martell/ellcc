@@ -1116,7 +1116,6 @@ static int sys_futex(int *uaddr, int op, int val,
   switch (op & 0x7F) {
   default:
   case FUTEX_FD:
-  case FUTEX_REQUEUE:
   case FUTEX_CMP_REQUEUE:
   case FUTEX_WAKE_OP:
   case FUTEX_LOCK_PI:
@@ -1144,6 +1143,9 @@ static int sys_futex(int *uaddr, int op, int val,
     break;
   }
 
+  case FUTEX_REQUEUE:	// RICH: For now.
+    s = timer_cancel_wake_count(val, (void *)FUTEX_MAGIC, uaddr, 0);
+    break;
   case FUTEX_WAKE:
     s = timer_cancel_wake_count(val, (void *)FUTEX_MAGIC, uaddr, 0);
     break;

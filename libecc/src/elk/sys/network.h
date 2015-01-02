@@ -41,7 +41,7 @@ typedef struct socket *socket_t;
 typedef const struct domain_interface
 {
   // Check arguments and allocate private data.
-  int (*setup)(vnode_t vp);
+  int (*setup)(vnode_t vp, int flags);
   int (*getopt)(file_t fp, int level, int optname, void *optval,
                 socklen_t *optlen);
   int (*setopt)(file_t fp, int level, int optname, const void *optval,

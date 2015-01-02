@@ -61,7 +61,7 @@ static const struct vnops vnops = {
   net_truncate,
 };
 
-static int setup(vnode_t vp)
+static int setup(vnode_t vp, int flags)
 {
   struct socket *sp = vp->v_data;
   if (sp->domain != AF_UNIX) {
@@ -226,7 +226,7 @@ static const struct domain_interface interface = {
 };
 
 // Register the interface.
-C_CONSTRUCTOR()
+ELK_CONSTRUCTOR()
 {
   unix_interface = &interface;
 }
