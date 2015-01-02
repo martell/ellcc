@@ -850,7 +850,7 @@ static int timer_cancel_wake_at(void *id)
  * @return The number of threads that have been awoken.
  */
 static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
-                                   int retval)
+                                   void *uaddr2, int retval)
 {
   int s = 0;
   lock_acquire(&timeout_lock);
@@ -858,27 +858,38 @@ static int timer_cancel_wake_count(unsigned count, void *arg1, void *arg2,
   for (p = timeouts, q = NULL; p; q = p, p = p->next) {
     if (p->arg1 == arg1 && p->arg2 == arg2) {
       // Have a match.
-      if (q) {
-        q->next = p->next;
+      if (s < count) {
+	// Remove this entry.
+	if (q) {
+	  q->next = p->next;
+	} else {
+	  timeouts = p->next;
+	}
+	lock_release(&timeout_lock);
+
+	if (p->waiter) {
+	  // Wake up the sleeping thread.
+	  p->waiter->next = NULL;
+	  context_set_return(p->waiter->context, retval);
+	  schedule(p->waiter);
+	  ++s;
+	  lock_acquire(&timeout_lock);
+	  timeout_free(p);
+	  lock_release(&timeout_lock);
+	}
+      } else if (uaddr2) {
+	// Wait on a new address.
+	p->arg2 = uaddr2;
+	++s;
       } else {
-        timeouts = p->next;
-      }
-      lock_release(&timeout_lock);
-
-      if (p->waiter) {
-        // Wake up the sleeping thread.
-        p->waiter->next = NULL;
-        context_set_return(p->waiter->context, retval);
-        schedule(p->waiter);
-        ++s;
+	if (++s >= count) {
+	  lock_acquire(&timeout_lock);
+	  timeout_free(p);
+	  lock_release(&timeout_lock);
+	  break;
+	}
       }
 
-      lock_acquire(&timeout_lock);
-      timeout_free(p);
-      lock_release(&timeout_lock);
-      if (s >= count) {
-        break;
-      }
     }
   }
 
@@ -1143,11 +1154,11 @@ static int sys_futex(int *uaddr, int op, int val,
     break;
   }
 
-  case FUTEX_REQUEUE:	// RICH: For now.
-    s = timer_cancel_wake_count(val, (void *)FUTEX_MAGIC, uaddr, 0);
+  case FUTEX_REQUEUE:
+    s = timer_cancel_wake_count(val, (void *)FUTEX_MAGIC, uaddr, uaddr2, 0);
     break;
   case FUTEX_WAKE:
-    s = timer_cancel_wake_count(val, (void *)FUTEX_MAGIC, uaddr, 0);
+    s = timer_cancel_wake_count(val, (void *)FUTEX_MAGIC, uaddr, NULL, 0);
     break;
   }
 
@@ -1310,7 +1321,7 @@ static void sys_exit(int status)
   if (current->clear_child_tid) {
     *current->clear_child_tid = 0;
     timer_cancel_wake_count(~0, (void *)FUTEX_MAGIC, current->clear_child_tid,
-                            0);
+                            NULL, 0);
   }
 
   change_state(0, EXITING);

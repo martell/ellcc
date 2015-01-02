@@ -43,7 +43,7 @@ void *start(void * arg)
   int i = 0;
   while (1) {
     snprintf(buffer, 100, "hello %d", ++i);
-    s = send(sfd, buffer, strlen(buffer), 0);
+    s = send(sfd, buffer, strlen(buffer) + 1, 0);
     if (s < 0) {
       printf("send(127.0.0.1) failed: %s\n", strerror(errno));
       exit(1);
