@@ -17,33 +17,7 @@ static int thread_create(const char *name, pthread_t *id,
                          void *stack, size_t stack_size,
                          void *arg)
 {
-  pthread_attr_t attr;
-  int s = pthread_attr_init(&attr);
-  if (s != 0) {
-    printf("pthread_attr_init: %s\n", strerror(s));
-    return -1;
-  }
-
-  void *sp;
-
-  if (stack) {
-    sp = stack;
-  } else {
-    sp = malloc(stack_size);
-  }
-
-  if (s != 0) {
-    printf("malloc failed %s\n", strerror(errno));
-    return -1;
-  }
-
-  s = pthread_attr_setstack(&attr, sp, stack_size);
-  if (s != 0) {
-    printf("pthread_attr_setstack %s\n", strerror(s));
-    return -1;
-  }
-
-  s = pthread_create(id, NULL /* &attr */, start, arg);
+  int s = pthread_create(id, NULL /* &attr */, start, arg);
   if (s != 0)
     printf("pthread_create: %s\n", strerror(s));
   return s;
@@ -142,7 +116,7 @@ int main(int argc, char **argv)
   }
 
   pthread_t id;
-  thread_create("foo", &id, start, 0, 0, 4096, NULL);
+  thread_create("foo", &id, start, 0, 0, 0, NULL);
 
   struct sockaddr_in client;
   int clientlen = sizeof(client);
