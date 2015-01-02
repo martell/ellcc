@@ -1163,6 +1163,11 @@ static const struct domain_interface interface = {
   .vnops = &vnops,
 };
 
+ELK_CONSTRUCTOR()
+{
+  inet_interface = &interface;
+}
+
 // Start up LwIP.
 C_CONSTRUCTOR()
 {

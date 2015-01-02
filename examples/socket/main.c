@@ -53,5 +53,20 @@ int main(int argc, char **argv)
   if (s != 0) {
     printf("bind() failed: %s\n", strerror(errno));
   }
+
+  s = socket(AF_INET, SOCK_STREAM|SOCK_NONBLOCK, 0);
+  if (s < 0) {
+    printf("socket(AF_INET) failed: %s\n", strerror(errno));
+    exit(1);
+  }
+#if RICH
+  struct sockaddr_in addr;
+  strcpy(addr.sin_path, "socket");
+  addr.sun_family = AF_UNIX;
+  s = bind(s, (const struct sockaddr *)&addr, sizeof(addr.sun_family) + strlen(addr.sun_path) + 1);
+  if (s != 0) {
+    printf("bind() failed: %s\n", strerror(errno));
+  }
+#endif
 }
 
