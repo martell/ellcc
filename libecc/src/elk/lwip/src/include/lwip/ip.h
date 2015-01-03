@@ -49,10 +49,10 @@ extern "C" {
 /* This is passed as the destination address to ip_output_if (not
    to ip_output), meaning that an IP header already is constructed
    in the pbuf. This is used when TCP retransmits. */
-#ifdef IP_HDRINCL
-#undef IP_HDRINCL
-#endif /* IP_HDRINCL */
-#define IP_HDRINCL  NULL
+#ifdef IP_HDRINCLUDED
+#undef IP_HDRINCLUDED
+#endif /* IP_HDRINCLUDED */
+#define IP_HDRINCLUDED  NULL
 
 #if LWIP_NETIF_HWADDRHINT
 #define IP_PCB_ADDRHINT ;u8_t addr_hint

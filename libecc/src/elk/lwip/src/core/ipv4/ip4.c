@@ -627,11 +627,11 @@ ip_input(struct pbuf *p, struct netif *inp)
  * the IP header and calculates the IP header checksum. If the source
  * IP address is NULL, the IP address of the outgoing network
  * interface is filled in as source address.
- * If the destination IP address is IP_HDRINCL, p is assumed to already
+ * If the destination IP address is IP_HDRINCLUDED, p is assumed to already
  * include an IP header and p->payload points to it instead of the data.
  *
  * @param p the packet to send (p->payload points to the data, e.g. next
-            protocol header; if dest == IP_HDRINCL, p already includes an IP
+            protocol header; if dest == IP_HDRINCLUDED, p already includes an IP
             header and p->payload points to that IP header)
  * @param src the source IP address to send from (if src == IP_ADDR_ANY, the
  *         IP  address of the netif used to send is used as source address)
@@ -668,7 +668,7 @@ err_t ip_output_if_opt(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
 {
 #endif /* IP_OPTIONS_SEND */
   ip_addr_t *src_used = src;
-  if (dest != IP_HDRINCL) {
+  if (dest != IP_HDRINCLUDED) {
     if (ip_addr_isany(src)) {
       src_used = &netif->ip_addr;
     }
@@ -717,7 +717,7 @@ err_t ip_output_if_opt_src(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
   snmp_inc_ipoutrequests();
 
   /* Should the IP header be generated or is it already included in p? */
-  if (dest != IP_HDRINCL) {
+  if (dest != IP_HDRINCLUDED) {
     u16_t ip_hlen = IP_HLEN;
 #if IP_OPTIONS_SEND
     u16_t optlen_aligned = 0;
@@ -849,7 +849,7 @@ err_t ip_output_if_opt_src(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
  * interface and calls upon ip_output_if to do the actual work.
  *
  * @param p the packet to send (p->payload points to the data, e.g. next
-            protocol header; if dest == IP_HDRINCL, p already includes an IP
+            protocol header; if dest == IP_HDRINCLUDED, p already includes an IP
             header and p->payload points to that IP header)
  * @param src the source IP address to send from (if src == IP_ADDR_ANY, the
  *         IP  address of the netif used to send is used as source address)
@@ -886,7 +886,7 @@ ip_output(struct pbuf *p, ip_addr_t *src, ip_addr_t *dest,
  *  before calling ip_output_if.
  *
  * @param p the packet to send (p->payload points to the data, e.g. next
-            protocol header; if dest == IP_HDRINCL, p already includes an IP
+            protocol header; if dest == IP_HDRINCLUDED, p already includes an IP
             header and p->payload points to that IP header)
  * @param src the source IP address to send from (if src == IP_ADDR_ANY, the
  *         IP  address of the netif used to send is used as source address)

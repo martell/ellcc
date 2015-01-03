@@ -1622,7 +1622,7 @@ lwip_getsockopt(int s, int level, int optname, void *optval, socklen_t *optlen)
 /* Level: IPPROTO_IP */
   case IPPROTO_IP:
     switch (optname) {
-    /* UNIMPL case IP_HDRINCL: */
+    /* UNIMPL case IP_HDRINCLUDED: */
     /* UNIMPL case IP_RCVDSTADDR: */
     /* UNIMPL case IP_RCVIF: */
     case IP_TTL:
@@ -2152,7 +2152,7 @@ lwip_setsockopt(int s, int level, int optname, const void *optval, socklen_t opt
 /* Level: IPPROTO_IP */
   case IPPROTO_IP:
     switch (optname) {
-    /* UNIMPL case IP_HDRINCL: */
+    /* UNIMPL case IP_HDRINCLUDED: */
     /* UNIMPL case IP_RCVDSTADDR: */
     /* UNIMPL case IP_RCVIF: */
     case IP_TTL:

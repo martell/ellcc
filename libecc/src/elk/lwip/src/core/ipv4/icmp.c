@@ -217,7 +217,7 @@ icmp_input(struct pbuf *p, struct netif *inp)
     } else {
       err_t ret;
       /* send an ICMP packet, src addr is the dest addr of the current packet */
-      ret = ip_output_if(p, ip_current_dest_addr(), IP_HDRINCL,
+      ret = ip_output_if(p, ip_current_dest_addr(), IP_HDRINCLUDED,
                    ICMP_TTL, 0, IP_PROTO_ICMP, inp);
       if (ret != ERR_OK) {
         LWIP_DEBUGF(ICMP_DEBUG, ("icmp_input: ip_output_if returned an error: %c.\n", ret));

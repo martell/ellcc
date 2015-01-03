@@ -53,6 +53,7 @@
 #define _GNU_SOURCE
 #include <netinet/in.h>
 #include <sys/ioctl.h>
+#include <errno.h>
 
 #include "config.h"
 #include "kernel.h"
@@ -477,6 +478,34 @@ static int getopt(file_t fp, int level, int optname, void *optval,
   }
 
   switch (optname) {
+  case IP_ADD_MEMBERSHIP:
+  case IP_ADD_SOURCE_MEMBERSHIP:
+  case IP_BLOCK_SOURCE:
+  case IP_DROP_MEMBERSHIP:
+  case IP_DROP_SOURCE_MEMBERSHIP:
+  case IP_FREEBIND:
+  case IP_HDRINCL:
+  case IP_MSFILTER:
+  case IP_MTU:
+  case IP_MTU_DISCOVER:
+  case IP_MULTICAST_ALL:
+  case IP_MULTICAST_IF:
+  case IP_MULTICAST_LOOP:
+  case IP_MULTICAST_TTL:
+  case IP_NODEFRAG:
+  case IP_OPTIONS:
+  case IP_PKTINFO:
+  case IP_RECVERR:
+  case IP_RECVOPTS:
+  case IP_RECVORIGDSTADDR:
+  case IP_RECVTOS:
+  case IP_RECVTTL:
+  case IP_RETOPTS:
+  case IP_ROUTER_ALERT:
+  case IP_TOS:
+  case IP_TRANSPARENT:
+  case IP_TTL:
+  case IP_UNBLOCK_SOURCE:
   default:
     return -ENOPROTOOPT;
   }
@@ -490,6 +519,34 @@ static int setopt(file_t fp, int level, int optname, const void *optval,
   }
 
   switch (optname) {
+  case IP_ADD_MEMBERSHIP:
+  case IP_ADD_SOURCE_MEMBERSHIP:
+  case IP_BLOCK_SOURCE:
+  case IP_DROP_MEMBERSHIP:
+  case IP_DROP_SOURCE_MEMBERSHIP:
+  case IP_FREEBIND:
+  case IP_HDRINCL:
+  case IP_MSFILTER:
+  case IP_MTU:
+  case IP_MTU_DISCOVER:
+  case IP_MULTICAST_ALL:
+  case IP_MULTICAST_IF:
+  case IP_MULTICAST_LOOP:
+  case IP_MULTICAST_TTL:
+  case IP_NODEFRAG:
+  case IP_OPTIONS:
+  case IP_PKTINFO:
+  case IP_RECVERR:
+  case IP_RECVOPTS:
+  case IP_RECVORIGDSTADDR:
+  case IP_RECVTOS:
+  case IP_RECVTTL:
+  case IP_RETOPTS:
+  case IP_ROUTER_ALERT:
+  case IP_TOS:
+  case IP_TRANSPARENT:
+  case IP_TTL:
+  case IP_UNBLOCK_SOURCE:
   default:
     return -ENOPROTOOPT;
   }
