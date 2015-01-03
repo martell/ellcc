@@ -52,6 +52,7 @@
 
 #define _GNU_SOURCE
 #include <netinet/in.h>
+#include <sys/ioctl.h>
 
 #include "config.h"
 #include "kernel.h"
@@ -379,28 +380,6 @@ again:
   SYS_ARCH_UNPROTECT(lev);
 }
 
-static const struct vnops vnops = {
-  net_open,
-  net_close,
-  net_read,
-  net_write,
-  net_poll,
-  net_seek,
-  net_ioctl,
-  net_fsync,
-  net_readdir,
-  net_lookup,
-  net_create,
-  net_remove,
-  net_rename,
-  net_mkdir,
-  net_rmdir,
-  net_getattr,
-  net_setattr,
-  net_inactive,
-  net_truncate,
-};
-
 static struct lwip_sock *alloc_socket(struct netconn *conn, int accepted)
 {
   struct lwip_sock *lwsp = kmem_alloc(sizeof(struct lwip_sock));
@@ -493,18 +472,67 @@ static int setup(vnode_t vp, int flags)
 static int getopt(file_t fp, int level, int optname, void *optval,
                       socklen_t *optlen)
 {
-  return -ENOPROTOOPT;
+  if (level != IPPROTO_IP) {
+    return -EINVAL;
+  }
+
+  switch (optname) {
+  default:
+    return -ENOPROTOOPT;
+  }
 }
 
 static int setopt(file_t fp, int level, int optname, const void *optval,
                       socklen_t optlen)
 {
-  return -ENOPROTOOPT;
+  if (level != IPPROTO_IP) {
+    return -EINVAL;
+  }
+
+  switch (optname) {
+  default:
+    return -ENOPROTOOPT;
+  }
 }
 
 static int option_update(file_t fp)
 {
   return 0;
+}
+
+static int inet_ioctl(file_t fp, u_long request, void *buf)
+{
+  switch (request) {
+  case SIOCGIFNAME:
+  case SIOCGIFINDEX:
+  case SIOCGIFFLAGS:
+  case SIOCSIFFLAGS:
+  case SIOCGIFPFLAGS:
+  case SIOCSIFPFLAGS:
+  case SIOCGIFADDR:
+  case SIOCSIFDSTADDR:
+  case SIOCGIFBRDADDR:
+  case SIOCSIFBRDADDR:
+  case SIOCGIFNETMASK:
+  case SIOCSIFNETMASK:
+  case SIOCGIFMETRIC:
+  case SIOCSIFMETRIC:
+  case SIOCGIFMTU:
+  case SIOCSIFMTU:
+  case SIOCGIFHWADDR:
+  case SIOCSIFHWADDR:
+  case SIOCSIFHWBROADCAST:
+  case SIOCGIFMAP:
+  case SIOCSIFMAP:
+  case SIOCADDMULTI:
+  case SIOCDELMULTI:
+  case SIOCGIFTXQLEN:
+  case SIOCSIFTXQLEN:
+  case SIOCSIFNAME:
+  case SIOCGIFCONF:
+  default:
+    return -EINVAL;
+  }
 }
 
 static int inet_bind(file_t fp, struct sockaddr *addr, socklen_t addrlen)
@@ -532,18 +560,18 @@ static int inet_bind(file_t fp, struct sockaddr *addr, socklen_t addrlen)
 
   SOCKADDR_TO_IPXADDR_PORT((addr->sa_family == AF_INET6), addr, &local_addr,
                            local_port);
-  DPRINTF(NETDB_INET, ("lwip_bind(addr="));
+  DPRINTF(NETDB_INET, ("inet_bind(addr="));
   ipX_addr_debug_print(addr->sa_family == AF_INET6, NETDB_INET, &local_addr);
   DPRINTF(NETDB_INET, (" port=%"U16_F")\n", local_port));
 
   err = netconn_bind(lwsp->conn, ipX_2_ip(&local_addr), local_port);
 
   if (err != ERR_OK) {
-    DPRINTF(NETDB_INET, ("lwip_bind() failed, err=%d\n", err));
+    DPRINTF(NETDB_INET, ("inet_bind() failed, err=%d\n", err));
     return -err_to_errno(err);
   }
 
-  DPRINTF(NETDB_INET, ("lwip_bind() succeeded\n"));
+  DPRINTF(NETDB_INET, ("inet_bind() succeeded\n"));
   return 0;
 }
 
@@ -1153,6 +1181,7 @@ static const struct domain_interface interface = {
   .getopt = getopt,
   .setopt = setopt,
   .option_update = option_update,
+  .ioctl = inet_ioctl,
   .bind = inet_bind,
   .listen = inet_listen,
   .connect = inet_connect,
@@ -1163,7 +1192,7 @@ static const struct domain_interface interface = {
   .getsockname = inet_getsockname,
   .shutdown = inet_shutdown,
   .close = inet_close,
-  .vnops = &vnops,
+  .vnops = &net_vnops,
 };
 
 ELK_CONSTRUCTOR()

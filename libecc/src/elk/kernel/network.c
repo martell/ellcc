@@ -26,6 +26,7 @@
  */
 
 #define _GNU_SOURCE
+#include <sys/ioctl.h>
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
@@ -412,7 +413,17 @@ int net_seek(vnode_t vp, file_t fp, off_t foffset, off_t offset)
 
 int net_ioctl(vnode_t vp, file_t fp, u_long request, void *buf)
 {
-  return -EINVAL;
+  struct socket *sp = vp->v_data;
+
+  switch (request) {
+  // Socket ioctls.
+  case SIOCGSTAMP:
+  case SIOCSPGRP:
+  case FIOASYNC:
+  case SIOCGPGRP:
+  default:
+    return sp->interface->ioctl(fp, request, buf);
+  }
 }
 
 int net_fsync(vnode_t vp, file_t fp)
@@ -477,6 +488,30 @@ int net_truncate(vnode_t vp, off_t offset)
 {
   return -EINVAL;
 }
+
+/** Common network vnode operations.
+ */
+const struct vnops net_vnops = {
+  net_open,
+  net_close,
+  net_read,
+  net_write,
+  net_poll,
+  net_seek,
+  net_ioctl,
+  net_fsync,
+  net_readdir,
+  net_lookup,
+  net_create,
+  net_remove,
+  net_rename,
+  net_mkdir,
+  net_rmdir,
+  net_getattr,
+  net_setattr,
+  net_inactive,
+  net_truncate,
+};
 
 static int getsockfd(struct socket *sp, int flags, int setup)
 {

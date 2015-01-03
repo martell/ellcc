@@ -27,6 +27,7 @@
 
 
 #include <sys/un.h>
+#include <sys/ioctl.h>
 #include <errno.h>
 
 #include "config.h"
@@ -38,28 +39,6 @@
 
 // Make AF_UNIX (AF_LOCAL) networking a select-able feature.
 FEATURE_CLASS(unix_network, unix_network)
-
-static const struct vnops vnops = {
-  net_open,
-  net_close,
-  net_read,
-  net_write,
-  net_poll,
-  net_seek,
-  net_ioctl,
-  net_fsync,
-  net_readdir,
-  net_lookup,
-  net_create,
-  net_remove,
-  net_rename,
-  net_mkdir,
-  net_rmdir,
-  net_getattr,
-  net_setattr,
-  net_inactive,
-  net_truncate,
-};
 
 static int setup(vnode_t vp, int flags)
 {
@@ -82,18 +61,51 @@ static int setup(vnode_t vp, int flags)
 static int getopt(file_t fp, int level, int optname, void *optval,
                       socklen_t *optlen)
 {
+  if (level != SOL_SOCKET) {
+    return -EINVAL;
+  }
+
+  // There ar no AF_UNIX socket options that aren't already handled.
   return -ENOPROTOOPT;
 }
 
 static int setopt(file_t fp, int level, int optname, const void *optval,
                       socklen_t optlen)
 {
+  if (level != SOL_SOCKET) {
+    return -EINVAL;
+  }
+
+  // There ar no AF_UNIX socket options that aren't already handled.
   return -ENOPROTOOPT;
 }
 
 static int option_update(file_t fp)
 {
   return 0;
+}
+
+static int unix_ioctl(file_t fp, u_long request, void *buf)
+{
+  struct socket *sp = fp->f_vnode->v_data;
+  switch (request) {
+  case FIONREAD: {      // Return the number of bytes in the read buffer.
+    if (sp->flags & SF_ACCEPTCONN) {
+      return -EINVAL;
+    }
+
+    int size;
+    if (sp->rcv == NULL) {
+      size = 0;
+    } else {
+      size = sp->rcv->used;
+    }
+
+    return copyout(&size, buf, sizeof(int));
+  }
+  default:
+    return -EINVAL;
+  }
 }
 
 static int unix_bind(file_t fp, struct sockaddr *addr, socklen_t addrlen)
@@ -212,6 +224,7 @@ static const struct domain_interface interface = {
   .getopt = getopt,
   .setopt = setopt,
   .option_update = option_update,
+  .ioctl = unix_ioctl,
   .bind = unix_bind,
   .listen = unix_listen,
   .connect = unix_connect,
@@ -222,7 +235,7 @@ static const struct domain_interface interface = {
   .getsockname = unix_getsockname,
   .shutdown = unix_shutdown,
   .close = unix_close,
-  .vnops = &vnops,
+  .vnops = &net_vnops,
 };
 
 // Register the interface.

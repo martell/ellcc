@@ -47,6 +47,7 @@ typedef const struct domain_interface
   int (*setopt)(file_t fp, int level, int optname, const void *optval,
                 socklen_t optlen);
   int (*option_update)(file_t fp);
+  int (*ioctl)(file_t fp, u_long request, void *buf);
   int (*bind)(file_t fp, struct sockaddr *addr, socklen_t addrlen);
   int (*listen)(struct socket *sp, int backlog);
   int (*connect)(struct socket *sp, const struct sockaddr *addr,
@@ -93,49 +94,10 @@ extern domain_interface_t appletalk_interface;
 extern domain_interface_t packet_interface;
 
 #if ELK_NAMESPACE
-#define net_open __elk_net_open
-#define net_close __elk_net_close
-#define net_read __elk_net_read
-#define net_write __elk_net_write
-#define net_poll __elk_net_poll
-#define net_seek __elk_net_seek
-#define net_ioctl __elk_net_ioctl
-#define net_fsync __elk_net_fsync
-#define net_readdir __elk_net_readdir
-#define net_lookup __elk_net_lookup
-#define net_create __elk_net_create
-#define net_remove __elk_net_remove
-#define net_rename __elk_net_rename
-#define net_mkdir __elk_net_mkdir
-#define net_rmdir __elk_net_rmdir
-#define net_getattr __elk_net_getattr
-#define net_setattr __elk_net_setattr
-#define net_inactive __elk_net_inactive
-#define net_truncate __elk_net_truncate
+#define net_vnops __elk_net_vnops
 #endif
 
-/* Default socket vnode operations.
- */
-int net_open(vnode_t vp, int flags);
-int net_close(vnode_t vp, file_t fp);
-int net_read(vnode_t vp, file_t fp, struct uio *uio, size_t *count);
-int net_write(vnode_t vp, file_t fp, struct uio *uio, size_t *count);
-int net_poll(vnode_t vp, file_t fp, int what);
-int net_seek(vnode_t vp, file_t fp, off_t foffset, off_t offset);
-int net_ioctl(vnode_t vp, file_t fp, u_long request, void *buf);
-int net_fsync(vnode_t vp, file_t fp);
-int net_readdir(vnode_t vp, file_t fp, struct dirent *dir);
-int net_lookup(vnode_t dvp, char *name, vnode_t vp);
-int net_create(vnode_t vp, char *name, mode_t mode);
-int net_remove(vnode_t dvp, vnode_t vp, char *name);
-int net_rename(vnode_t dvp1, vnode_t vp1, char *sname,
-               vnode_t dvp2, vnode_t vp2, char *dname);
-int net_mkdir(vnode_t vp, char *name, mode_t mode);
-int net_rmdir(vnode_t dvp, vnode_t vp, char *name);
-int net_getattr(vnode_t vp, struct vattr *vattr);
-int net_setattr(vnode_t vp, struct vattr *vattr);
-int net_inactive(vnode_t vp);
-int net_truncate(vnode_t vp, off_t offset);
+const struct vnops net_vnops;
 
 /** A socket buffer.
  */
