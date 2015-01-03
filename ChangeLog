@@ -1,5 +1,7 @@
 current SVN:
 
+* Integrated LwIP with the ELK virtual file system.
+* Added AF_UNIX (AF_LOCAL) SOCK_STREAM support and socketpair().
 * Implemented a per-process brk pointer and brk handling.
 * Preallocate the kernel heap in MMU systems.
 * Added LWIP to the ELK build.
