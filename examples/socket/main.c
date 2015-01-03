@@ -48,7 +48,7 @@ void *start(void * arg)
       printf("send(127.0.0.1) failed: %s\n", strerror(errno));
       exit(1);
     }
-    sleep(2);
+    sleep(1);
   }
 
   return 0;
