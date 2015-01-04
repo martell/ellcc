@@ -611,12 +611,12 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
 // Get the request struct.
 #define GET_REQUEST()                                           \
   s = copyin(buf, &req, sizeof(req));                           \
-  if (s) return s;
+  if (s) break;
 
 // Return the request struct.
 #define SET_REQUEST()                                           \
   s = copyout(&req, buf, sizeof(req));                          \
-  if (s) return s;
+  if (s) break;
 
 // Look up the interface name.
 #define GET_INDEX()                                             \
@@ -637,7 +637,8 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
 // Does the requester have net admin priveleges?
 #define IS_ADMIN()                                              \
   if (!capable(CAP_NET_ADMIN)) {                                \
-    return -EPERM;                                              \
+    s = -EPERM;                                                 \
+    break;                                                      \
   }
 
 // Create the netif if it doesn't exist.
@@ -645,18 +646,21 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
   if (interface->netif == NULL) {                               \
     struct netif *netif = kmem_alloc(sizeof(struct netif));     \
     if (netif == NULL) {                                        \
-      return -ENOMEM;                                           \
+      s = -ENOMEM;                                              \
+      break;                                                    \
     }                                                           \
     err_t err = netifapi_netif_add(netif, NULL, NULL, NULL,     \
                                    interface->state,            \
                                    interface->init,             \
                                    interface->input);           \
     if (err != ERR_OK) {                                        \
-      return -err_to_errno(err);                                \
+      s = -err_to_errno(err);                                   \
+      break;                                                    \
     }                                                           \
   }                                                             \
 }
 
+  pthread_mutex_lock(&interface_lock);
   switch (request) {
   case SIOCGIFNAME:     // Return the interface name.
     GET_REQUEST();
@@ -666,7 +670,8 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
     }
     if (interfaces[req.ifr_ifindex].name == NULL) {
       // Interface not found.
-      return -ESRCH;
+      s = -ESRCH;
+      break;
     }
 
     strcpy(req.ifr_name, interfaces[req.ifr_ifindex].name);
@@ -734,9 +739,11 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
   case SIOCGIFPFLAGS:           // These don't seem to be defined by Linux.
   case SIOCSIFPFLAGS:
   default:
-    return -EINVAL;
+    s = -EINVAL;
+    break;
   }
 
+  pthread_mutex_unlock(&interface_lock);
   return s;
 }
 
