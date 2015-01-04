@@ -54,6 +54,7 @@
 #include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
+#include <pthread.h>
 #include <errno.h>
 
 #include "config.h"
@@ -61,6 +62,8 @@
 #include "thread.h"
 #include "kmem.h"
 #include "network.h"
+#include "command.h"
+#include "lwip/lwip_interface.h"        // This is an ELK include file.
 #include "lwip/tcpip.h"
 #include "lwip/ip.h"
 #include "lwip/udp.h"
@@ -570,6 +573,7 @@ struct interface {
 };
 
 // The available interfaces.
+static pthread_mutex_t interface_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct interface interfaces[CONFIG_NET_MAX_INET_INTERFACES];
 
 /** Add an interface to the interface list.
@@ -1396,9 +1400,48 @@ static const struct domain_interface interface = {
   .vnops = &net_vnops,
 };
 
+#if CONFIG_INET_COMMANDS
+static int inetifCommand(int argc, char **argv)
+{
+  if (argc <= 0) {
+    printf("show inet interface information\n");
+    return COMMAND_OK;
+  }
+
+  printf("%16.16s\n",
+         "NAME");
+  pthread_mutex_lock(&interface_lock);
+  for (int i = 0; i < CONFIG_NET_MAX_INET_INTERFACES; ++i) {
+    if (interfaces[i].name == NULL) {
+      continue;
+    }
+
+    printf("%16.16s\n", interfaces[i].name);
+  }
+
+  pthread_mutex_unlock(&interface_lock);
+  return COMMAND_OK;
+}
+
+/** Create a section heading for the help command.
+ */
+static int sectionCommand(int argc, char **argv)
+{
+  if (argc <= 0 ) {
+    printf("INET Commands:\n");
+  }
+  return COMMAND_OK;
+}
+#endif
+
 ELK_CONSTRUCTOR()
 {
   inet_interface = &interface;
+
+#if CONFIG_INET_COMMANDS
+  command_insert(NULL, sectionCommand);
+  command_insert("inetif", inetifCommand);
+#endif
 }
 
 // Start up LwIP.

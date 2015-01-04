@@ -68,6 +68,9 @@
 #ifdef LWIP_NETWORK
   EXTERN(__elk_lwip_network) /* LWIP AF_INET networking. */
   #define NETWORK
+  #ifdef LWIP_LAN91C111
+    EXTERN(__elk_lwip_lan91c111) /* The LAN91C111 Ethernet driver.. */
+  #endif
 #endif
 
 #ifdef UNIX_NETWORK
