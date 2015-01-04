@@ -75,6 +75,9 @@
 #include "lwip/ethip6.h"
 #include "netif/etharp.h"
 #include "netif/ppp/pppoe.h"
+#include "lwip/tcpip.h"
+
+#include "lwip/lwip_interface.h"	// This is an ELK include file.
 
 // Make the driver a loadable feature.
 FEATURE(lwip_lan91c111)
@@ -93,9 +96,6 @@ struct lan91c111if {
   struct eth_addr *ethaddr;
   /* Add whatever per-interface state that is needed here. */
 };
-
-/* Forward declarations. */
-/* RICH: static */ void  lan91c111if_input(struct netif *netif);
 
 /**
  * In this function, the hardware should be initialized.
@@ -257,7 +257,8 @@ static struct pbuf *low_level_input(struct netif *netif)
  *
  * @param netif the lwip network interface structure for this lan91c111if
  */
-/* RICH: static */ void lan91c111if_input(struct netif *netif)
+/* RICH: This will be called from the interrupt handler.
+static */ void input(struct netif *netif)
 {
   struct lan91c111if *lan91c111if;
   struct eth_hdr *ethhdr;
@@ -309,7 +310,7 @@ static struct pbuf *low_level_input(struct netif *netif)
  *         ERR_MEM if private data couldn't be allocated
  *         any other err_t on error
  */
-err_t lan91c111if_init(struct netif *netif)
+static err_t init(struct netif *netif)
 {
   struct lan91c111if *lan91c111if;
 
@@ -355,4 +356,10 @@ err_t lan91c111if_init(struct netif *netif)
   low_level_init(netif);
 
   return ERR_OK;
+}
+
+C_CONSTRUCTOR()
+{
+  // Register the interface.
+  lwip_add_interface("ln01", init, tcpip_input, NULL);
 }

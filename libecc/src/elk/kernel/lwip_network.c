@@ -53,10 +53,12 @@
 #define _GNU_SOURCE
 #include <netinet/in.h>
 #include <sys/ioctl.h>
+#include <net/if.h>
 #include <errno.h>
 
 #include "config.h"
 #include "kernel.h"
+#include "thread.h"
 #include "kmem.h"
 #include "network.h"
 #include "lwip/tcpip.h"
@@ -557,16 +559,154 @@ static int option_update(file_t fp)
   return 0;
 }
 
+// The list of available interfaces.
+struct interface {
+  char *name;                   // The interface name.
+  int flags;                    // Interface flags.
+  struct netif *netif;          // The LwIP interface structure.
+  netif_init_fn init;           // The initialization function.
+  netif_input_fn input;         // The input function.
+  void *state;                  // The device state.
+};
+
+// The available interfaces.
+static struct interface interfaces[CONFIG_NET_MAX_INET_INTERFACES];
+
+/** Add an interface to the interface list.
+ */
+int lwip_add_interface(const char *name, netif_init_fn init,
+                       netif_input_fn input, void *state)
+{
+  for (int i = 0; i < CONFIG_NET_MAX_INET_INTERFACES; ++i) {
+    if (interfaces[i].name == NULL) {
+      // Use this entry.
+      interfaces[i].name = kmem_alloc(strlen(name) + 1);
+      if (interfaces[i].name == NULL) {
+        return -ENOMEM;
+      }
+      strcpy(interfaces[i].name, name);
+      interfaces[i].flags = 0;
+      interfaces[i].netif = NULL;
+      interfaces[i].init = init;
+      interfaces[i].input = input;
+      interfaces[i].state = state;
+      return 0;
+    }
+  }
+
+  return -EAGAIN;
+}
+
 static int inet_ioctl(file_t fp, u_long request, void *buf)
 {
+  int s;                        // Call status.
+  int index;                    // The interface index.
+  struct interface *interface;  // The interface.
+  struct ifreq req;             // For a potential request.
+
+// Get the request struct.
+#define GET_REQUEST()                                           \
+  s = copyin(buf, &req, sizeof(req));                           \
+  if (s) return s;
+
+// Return the request struct.
+#define SET_REQUEST()                                           \
+  s = copyout(&req, buf, sizeof(req));                          \
+  if (s) return s;
+
+// Look up the interface name.
+#define GET_INDEX()                                             \
+  for (index = 0; index < CONFIG_NET_MAX_INET_INTERFACES; ++index) { \
+    interface = &interfaces[index];                             \
+    if (interface->name == NULL) {                              \
+      continue;                                                 \
+    }                                                           \
+    if (strcmp(interface->name, req.ifr_name) == 0) {           \
+      break;                                                    \
+    }                                                           \
+  }                                                             \
+  if (index >= CONFIG_NET_MAX_INET_INTERFACES) {                \
+    s = -ESRCH;                                                 \
+    break;                                                      \
+  }
+
+// Does the requester have net admin priveleges?
+#define IS_ADMIN()                                              \
+  if (!capable(CAP_NET_ADMIN)) {                                \
+    return -EPERM;                                              \
+  }
+
+// Create the netif if it doesn't exist.
+#define CHECK_NETIF() {                                         \
+  if (interface->netif == NULL) {                               \
+    struct netif *netif = kmem_alloc(sizeof(struct netif));     \
+    if (netif == NULL) {                                        \
+      return -ENOMEM;                                           \
+    }                                                           \
+    err_t err = netifapi_netif_add(netif, NULL, NULL, NULL,     \
+                                   interface->state,            \
+                                   interface->init,             \
+                                   interface->input);           \
+    if (err != ERR_OK) {                                        \
+      return -err_to_errno(err);                                \
+    }                                                           \
+  }                                                             \
+}
+
   switch (request) {
-  case SIOCGIFNAME:
-  case SIOCGIFINDEX:
+  case SIOCGIFNAME:     // Return the interface name.
+    GET_REQUEST();
+    if (req.ifr_ifindex < 0 ||
+       req.ifr_ifindex >= CONFIG_NET_MAX_INET_INTERFACES) {
+      return -EINVAL;
+    }
+    if (interfaces[req.ifr_ifindex].name == NULL) {
+      // Interface not found.
+      return -ESRCH;
+    }
+
+    strcpy(req.ifr_name, interfaces[req.ifr_ifindex].name);
+    SET_REQUEST();
+    break;
+
+  case SIOCGIFINDEX:    // Return the interface index.
+    GET_REQUEST();
+    GET_INDEX();
+    // Found.
+    req.ifr_ifindex = index;
+    SET_REQUEST();
+    break;
+
   case SIOCGIFFLAGS:
+    GET_REQUEST();
+    GET_INDEX();
+    CHECK_NETIF();
+    // RICH: Can we get additional flags via device status?
+    req.ifr_flags = interface->flags;
+    SET_REQUEST();
+    break;
+
   case SIOCSIFFLAGS:
-  case SIOCGIFPFLAGS:
-  case SIOCSIFPFLAGS:
+    IS_ADMIN();
+    GET_REQUEST();
+    GET_INDEX();
+    // Act on any flag changes.
+    interface->flags = req.ifr_flags;
+    break;
+
   case SIOCGIFADDR:
+    GET_REQUEST();
+    GET_INDEX();
+    // Get the interface address.
+    SET_REQUEST();
+    break;
+
+  case SIOCSIFADDR:
+    GET_REQUEST();
+    GET_INDEX();
+    // Set the interface address.
+    break;
+
   case SIOCSIFDSTADDR:
   case SIOCGIFBRDADDR:
   case SIOCSIFBRDADDR:
@@ -587,9 +727,13 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
   case SIOCSIFTXQLEN:
   case SIOCSIFNAME:
   case SIOCGIFCONF:
+  case SIOCGIFPFLAGS:           // These don't seem to be defined by Linux.
+  case SIOCSIFPFLAGS:
   default:
     return -EINVAL;
   }
+
+  return s;
 }
 
 static int inet_bind(file_t fp, struct sockaddr *addr, socklen_t addrlen)

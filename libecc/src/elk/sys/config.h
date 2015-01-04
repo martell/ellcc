@@ -26,6 +26,7 @@
 
 // The network module.
 #define ENABLENET 1             // Enable networking.
+#define CONFIG_NET_MAX_INET_INTERFACES 16
 #define CONFIG_SO_BUFFER_PAGES 64
 #define CONFIG_SO_BUFFER_DEFAULT_PAGES 10
 #define CONFIG_SO_RCVBUF_MIN 1
