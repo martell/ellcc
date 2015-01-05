@@ -23,7 +23,8 @@ static const char *MaybeCallUbsanDefaultOptions() {
 
 void InitializeCommonFlags() {
   SetCommonFlagsDefaults();
-  CommonFlags cf = *common_flags();
+  CommonFlags cf;
+  cf.CopyFrom(*common_flags());
   cf.print_summary = false;
   OverrideCommonFlags(cf);
   // Override from user-specified string.

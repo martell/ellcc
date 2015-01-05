@@ -146,7 +146,8 @@ static void ParseFlagsFromString(Flags *f, const char *str) {
 static void InitializeFlags(Flags *f, const char *options) {
   SetCommonFlagsDefaults();
   {
-    CommonFlags cf = *common_flags();
+    CommonFlags cf;
+    cf.CopyFrom(*common_flags());
     cf.external_symbolizer_path = GetEnv("MSAN_SYMBOLIZER_PATH");
     cf.malloc_context_size = 20;
     cf.handle_ioctl = true;
@@ -379,10 +380,7 @@ void __msan_init() {
 
   Symbolizer::GetOrInit()->AddHooks(EnterSymbolizer, ExitSymbolizer);
 
-  if (common_flags()->coverage) {
-    __sanitizer_cov_init();
-    Atexit(__sanitizer_cov_dump);
-  }
+  InitializeCoverage(common_flags()->coverage, common_flags()->coverage_dir);
 
   MsanTSDInit(MsanTSDDtor);
 

@@ -268,6 +268,10 @@ void RunMultipleEpochsTest() {
   }
   EXPECT_EQ(d.testOnlyGetEpoch(), 4 * d.size());
 
+#if !SANITIZER_DEBUG
+  // EXPECT_DEATH clones a thread with 4K stack,
+  // which is overflown by tsan memory accesses functions in debug mode.
+
   // Can not handle the locks from the previous epoch.
   // The caller should update the lock id.
   EXPECT_DEATH(d.onLock(&dtls, l0), "CHECK failed.*current_epoch_");

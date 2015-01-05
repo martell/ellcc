@@ -10,6 +10,7 @@
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/Version.h"
+#include "clang/Config/config.h"
 #include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/Options.h"
 #include "clang/Driver/Util.h"
@@ -982,14 +983,19 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
 
 std::string CompilerInvocation::GetResourcesPath(const char *Argv0,
                                                  void *MainAddr) {
-  SmallString<128> P(llvm::sys::fs::getMainExecutable(Argv0, MainAddr));
+  std::string ClangExecutable =
+      llvm::sys::fs::getMainExecutable(Argv0, MainAddr);
+  StringRef Dir = llvm::sys::path::parent_path(ClangExecutable);
 
-  if (!P.empty()) {
-    llvm::sys::path::remove_filename(P); // Remove /clang from foo/bin/clang
-    llvm::sys::path::remove_filename(P); // Remove /bin   from foo/bin
-
-    // Get foo/lib/clang/<version>/include
-    llvm::sys::path::append(P, "lib", "clang", CLANG_VERSION_STRING);
+  // Compute the path to the resource directory.
+  StringRef ClangResourceDir(CLANG_RESOURCE_DIR);
+  SmallString<128> P(Dir);
+  if (ClangResourceDir != "") {
+    llvm::sys::path::append(P, ClangResourceDir);
+  } else {
+    StringRef ClangLibdirSuffix(CLANG_LIBDIR_SUFFIX);
+    llvm::sys::path::append(P, "..", Twine("lib") + ClangLibdirSuffix, "clang",
+                            CLANG_VERSION_STRING);
   }
 
   return P.str();
@@ -1440,8 +1446,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   // is specified, or -std is set to a conforming mode.
   // Trigraphs are disabled by default in c++1z onwards.
   Opts.Trigraphs = !Opts.GNUMode && !Opts.MSVCCompat && !Opts.CPlusPlus1z;
-  if (Args.hasArg(OPT_trigraphs))
-    Opts.Trigraphs = 1;
+  Opts.Trigraphs =
+      Args.hasFlag(OPT_ftrigraphs, OPT_fno_trigraphs, Opts.Trigraphs);
 
   Opts.DollarIdents = Args.hasFlag(OPT_fdollars_in_identifiers,
                                    OPT_fno_dollars_in_identifiers,

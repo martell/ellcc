@@ -547,10 +547,81 @@ static uint32_t getSectionStartAddr(uint64_t targetAddr,
   llvm_unreachable("Section missing");
 }
 
-void AtomChunk::applyRelocationsARM(uint8_t *buffer,
-                                    std::map<const Atom *, uint64_t> &atomRva,
-                                    std::vector<uint64_t> &sectionRva,
-                                    uint64_t imageBaseAddress) {
+static void applyThumbMoveImmediate(ulittle16_t *mov, uint16_t imm) {
+  // MOVW(T3): |11110|i|10|0|1|0|0|imm4|0|imm3|Rd|imm8|
+  //            imm32 = zext imm4:i:imm3:imm8
+  // MOVT(T1): |11110|i|10|1|1|0|0|imm4|0|imm3|Rd|imm8|
+  //            imm16 = imm4:i:imm3:imm8
+  mov[0] =
+      mov[0] | (((imm & 0x0800) >> 11) << 10) | (((imm & 0xf000) >> 12) << 0);
+  mov[1] =
+      mov[1] | (((imm & 0x0700) >> 8) << 12) | (((imm & 0x00ff) >> 0) << 0);
+}
+
+static void applyThumbBranchImmediate(ulittle16_t *bl, int32_t imm) {
+  // BL(T1):  |11110|S|imm10|11|J1|1|J2|imm11|
+  //          imm32 = sext S:I1:I2:imm10:imm11:'0'
+  // B.W(T4): |11110|S|imm10|10|J1|1|J2|imm11|
+  //          imm32 = sext S:I1:I2:imm10:imm11:'0'
+  //
+  //          I1 = ~(J1 ^ S), I2 = ~(J2 ^ S)
+
+  assert((~abs(imm) & (-1 << 24)) && "bl/b.w out of range");
+
+  uint32_t S = (imm < 0 ? 1 : 0);
+  uint32_t J1 = ((~imm & 0x00800000) >> 23) ^ S;
+  uint32_t J2 = ((~imm & 0x00400000) >> 22) ^ S;
+
+  bl[0] = bl[0] | (((imm & 0x003ff000) >> 12) << 0) | (S << 10);
+  bl[1] = bl[1] | (((imm & 0x00000ffe) >>  1) << 0) | (J2 << 11) | (J1 << 13);
+}
+
+void AtomChunk::applyRelocationsARM(uint8_t *Buffer,
+                                    std::map<const Atom *, uint64_t> &AtomRVA,
+                                    std::vector<uint64_t> &SectionRVA,
+                                    uint64_t ImageBase) {
+  Buffer = Buffer + _fileOffset;
+  for (const auto *Layout : _atomLayouts) {
+    const DefinedAtom *Atom = cast<DefinedAtom>(Layout->_atom);
+    for (const Reference *R : *Atom) {
+      if (R->kindNamespace() != Reference::KindNamespace::COFF)
+        continue;
+
+      bool AssumeTHUMBCode = false;
+      if (auto Target = cast_or_null<DefinedAtom>(R->target()))
+        AssumeTHUMBCode = Target->permissions() == DefinedAtom::permR_X ||
+                          Target->permissions() == DefinedAtom::permRWX;
+
+      const auto AtomOffset = R->offsetInAtom();
+      const auto FileOffset = Layout->_fileOffset;
+      const auto TargetAddr = AtomRVA[R->target()] | (AssumeTHUMBCode ? 1 : 0);
+      auto RelocSite16 =
+          reinterpret_cast<ulittle16_t *>(Buffer + FileOffset + AtomOffset);
+      auto RelocSite32 =
+          reinterpret_cast<ulittle32_t *>(Buffer + FileOffset + AtomOffset);
+
+      switch (R->kindValue()) {
+      default: llvm_unreachable("unsupported relocation type");
+      case llvm::COFF::IMAGE_REL_ARM_ADDR32:
+        *RelocSite32 = *RelocSite32 + TargetAddr + ImageBase;
+        break;
+      case llvm::COFF::IMAGE_REL_ARM_MOV32T:
+        applyThumbMoveImmediate(&RelocSite16[0], (TargetAddr + ImageBase) >>  0);
+        applyThumbMoveImmediate(&RelocSite16[2], (TargetAddr + ImageBase) >> 16);
+        break;
+      case llvm::COFF::IMAGE_REL_ARM_BRANCH24T:
+        // NOTE: the thumb bit will implicitly be truncated properly
+        applyThumbBranchImmediate(RelocSite16,
+                                  TargetAddr - AtomRVA[Atom] - AtomOffset - 4);
+        break;
+      case llvm::COFF::IMAGE_REL_ARM_BLX23T:
+        // NOTE: the thumb bit will implicitly be truncated properly
+        applyThumbBranchImmediate(RelocSite16,
+                                  TargetAddr - AtomRVA[Atom] - AtomOffset - 4);
+        break;
+      }
+    }
+  }
 }
 
 void AtomChunk::applyRelocationsX86(uint8_t *buffer,
@@ -696,6 +767,9 @@ void AtomChunk::addBaseRelocations(std::vector<uint64_t> &relocSites) const {
     break;
   case llvm::COFF::IMAGE_FILE_MACHINE_AMD64:
     relType = llvm::COFF::IMAGE_REL_AMD64_ADDR64;
+    break;
+  case llvm::COFF::IMAGE_FILE_MACHINE_ARMNT:
+    relType = llvm::COFF::IMAGE_REL_ARM_ADDR32;
     break;
   }
 

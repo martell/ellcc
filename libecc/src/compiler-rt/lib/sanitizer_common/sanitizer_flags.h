@@ -55,6 +55,10 @@ struct CommonFlags {
   uptr mmap_limit_mb;
   uptr hard_rss_limit_mb;
   bool coverage;
+  bool coverage_pcs;
+  bool coverage_bitset;
+  bool coverage_direct;
+  const char *coverage_dir;
   bool full_address_space;
   const char *suppressions;
   bool print_suppressions;
@@ -64,6 +68,8 @@ struct CommonFlags {
 
   void SetDefaults();
   void ParseFromString(const char *str);
+
+  void CopyFrom(const CommonFlags &other);
 };
 
 // Functions to get/set global CommonFlags shared by all sanitizer runtimes:
@@ -86,7 +92,7 @@ inline void ParseCommonFlagsFromString(const char *str) {
 // only during the flags initialization (i.e. before they are used for
 // the first time).
 inline void OverrideCommonFlags(const CommonFlags &cf) {
-  common_flags_dont_use = cf;
+  common_flags_dont_use.CopyFrom(cf);
 }
 
 void PrintFlagDescriptions();

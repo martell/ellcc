@@ -55,7 +55,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/AliasSetTracker.h"
-#include "llvm/Analysis/AssumptionTracker.h"
+#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/Analysis/CodeMetrics.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -908,11 +908,11 @@ public:
                              LoopVectorizationLegality *Legal,
                              const TargetTransformInfo &TTI,
                              const DataLayout *DL, const TargetLibraryInfo *TLI,
-                             AssumptionTracker *AT, const Function *F,
+                             AssumptionCache *AC, const Function *F,
                              const LoopVectorizeHints *Hints)
       : TheLoop(L), SE(SE), LI(LI), Legal(Legal), TTI(TTI), DL(DL), TLI(TLI),
         TheFunction(F), Hints(Hints) {
-    CodeMetrics::collectEphemeralValues(L, AT, EphValues);
+    CodeMetrics::collectEphemeralValues(L, AC, EphValues);
   }
 
   /// Information about vectorization costs
@@ -1267,7 +1267,7 @@ struct LoopVectorize : public FunctionPass {
   BlockFrequencyInfo *BFI;
   TargetLibraryInfo *TLI;
   AliasAnalysis *AA;
-  AssumptionTracker *AT;
+  AssumptionCache *AC;
   bool DisableUnrolling;
   bool AlwaysVectorize;
 
@@ -1283,7 +1283,7 @@ struct LoopVectorize : public FunctionPass {
     BFI = &getAnalysis<BlockFrequencyInfo>();
     TLI = getAnalysisIfAvailable<TargetLibraryInfo>();
     AA = &getAnalysis<AliasAnalysis>();
-    AT = &getAnalysis<AssumptionTracker>();
+    AC = &getAnalysis<AssumptionCacheTracker>().getAssumptionCache(F);
 
     // Compute some weights outside of the loop over the loops. Compute this
     // using a BranchProbability to re-use its scaling math.
@@ -1402,7 +1402,7 @@ struct LoopVectorize : public FunctionPass {
     }
 
     // Use the cost model.
-    LoopVectorizationCostModel CM(L, SE, LI, &LVL, *TTI, DL, TLI, AT, F,
+    LoopVectorizationCostModel CM(L, SE, LI, &LVL, *TTI, DL, TLI, AC, F,
                                   &Hints);
 
     // Check the function attributes to find out if this function should be
@@ -1490,7 +1490,7 @@ struct LoopVectorize : public FunctionPass {
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
-    AU.addRequired<AssumptionTracker>();
+    AU.addRequired<AssumptionCacheTracker>();
     AU.addRequiredID(LoopSimplifyID);
     AU.addRequiredID(LCSSAID);
     AU.addRequired<BlockFrequencyInfo>();
@@ -1852,6 +1852,7 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr) {
     Ptr = Builder.CreateExtractElement(PtrVal[0], Zero);
   }
 
+  VectorParts Mask = createBlockInMask(Instr->getParent());
   // Handle Stores:
   if (SI) {
     assert(!Legal->isUniform(SI->getPointerOperand()) &&
@@ -1860,7 +1861,7 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr) {
     // We don't want to update the value in the map as it might be used in
     // another expression. So don't use a reference type for "StoredVal".
     VectorParts StoredVal = getVectorValue(SI->getValueOperand());
-
+    
     for (unsigned Part = 0; Part < UF; ++Part) {
       // Calculate the pointer for the specific unroll-part.
       Value *PartPtr = Builder.CreateGEP(Ptr, Builder.getInt32(Part * VF));
@@ -1879,20 +1880,9 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr) {
                                             DataTy->getPointerTo(AddressSpace));
 
       Instruction *NewSI;
-      if (Legal->isMaskRequired(SI)) {
-        Type *I8PtrTy =
-        Builder.getInt8PtrTy(PartPtr->getType()->getPointerAddressSpace());
-
-        Value *I8Ptr = Builder.CreateBitCast(PartPtr, I8PtrTy);
-
-        VectorParts Cond = createBlockInMask(SI->getParent());
-        SmallVector <Value *, 8> Ops;
-        Ops.push_back(I8Ptr);
-        Ops.push_back(StoredVal[Part]);
-        Ops.push_back(Builder.getInt32(Alignment));
-        Ops.push_back(Cond[Part]);
-        NewSI = Builder.CreateMaskedStore(Ops);
-      }
+      if (Legal->isMaskRequired(SI))
+        NewSI = Builder.CreateMaskedStore(StoredVal[Part], VecPtr, Alignment,
+                                          Mask[Part]);
       else 
         NewSI = Builder.CreateAlignedStore(StoredVal[Part], VecPtr, Alignment);
       propagateMetadata(NewSI, SI);
@@ -1915,25 +1905,14 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr) {
     }
 
     Instruction* NewLI;
-    if (Legal->isMaskRequired(LI)) {
-      Type *I8PtrTy =
-        Builder.getInt8PtrTy(PartPtr->getType()->getPointerAddressSpace());
-
-      Value *I8Ptr = Builder.CreateBitCast(PartPtr, I8PtrTy);
-
-      VectorParts SrcMask = createBlockInMask(LI->getParent());
-      SmallVector <Value *, 8> Ops;
-      Ops.push_back(I8Ptr);
-      Ops.push_back(UndefValue::get(DataTy));
-      Ops.push_back(Builder.getInt32(Alignment));
-      Ops.push_back(SrcMask[Part]);
-      NewLI = Builder.CreateMaskedLoad(Ops);
-    }
-    else {
-      Value *VecPtr = Builder.CreateBitCast(PartPtr,
-                                            DataTy->getPointerTo(AddressSpace));
+    Value *VecPtr = Builder.CreateBitCast(PartPtr,
+                                          DataTy->getPointerTo(AddressSpace));
+    if (Legal->isMaskRequired(LI))
+      NewLI = Builder.CreateMaskedLoad(VecPtr, Alignment, Mask[Part],
+                                       UndefValue::get(DataTy),
+                                       "wide.masked.load");
+    else
       NewLI = Builder.CreateAlignedLoad(VecPtr, Alignment, "wide.load");
-    }
     propagateMetadata(NewLI, LI);
     Entry[Part] = Reverse ? reverseVector(NewLI) :  NewLI;
   }
@@ -6166,7 +6145,7 @@ static const char lv_name[] = "Loop Vectorization";
 INITIALIZE_PASS_BEGIN(LoopVectorize, LV_NAME, lv_name, false, false)
 INITIALIZE_AG_DEPENDENCY(TargetTransformInfo)
 INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
-INITIALIZE_PASS_DEPENDENCY(AssumptionTracker)
+INITIALIZE_PASS_DEPENDENCY(AssumptionCacheTracker)
 INITIALIZE_PASS_DEPENDENCY(BlockFrequencyInfo)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)

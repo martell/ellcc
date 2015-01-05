@@ -174,7 +174,8 @@ void ParseFlagsFromString(Flags *f, const char *str) {
 void InitializeFlags(Flags *f) {
   SetCommonFlagsDefaults();
   {
-    CommonFlags cf = *common_flags();
+    CommonFlags cf;
+    cf.CopyFrom(*common_flags());
     cf.detect_leaks = CAN_SANITIZE_LEAKS;
     cf.external_symbolizer_path = GetEnv("ASAN_SYMBOLIZER_PATH");
     cf.malloc_context_size = kDefaultMallocContextSize;

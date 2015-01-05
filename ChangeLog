@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r225133.
 * Integrated LwIP with the ELK virtual file system.
 * Added AF_UNIX (AF_LOCAL) SOCK_STREAM support and socketpair().
 * Implemented a per-process brk pointer and brk handling.
