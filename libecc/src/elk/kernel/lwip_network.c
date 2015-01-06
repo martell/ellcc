@@ -606,6 +606,7 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
   int s;                        // Call status.
   int index;                    // The interface index.
   struct interface *interface;  // The interface.
+  struct netif *netif;          // The LwIP interface.
   struct ifreq req;             // For a potential request.
 
 // Get the request struct.
@@ -642,9 +643,9 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
   }
 
 // Create the netif if it doesn't exist.
-#define CHECK_NETIF() {                                         \
+#define CHECK_NETIF()                                           \
   if (interface->netif == NULL) {                               \
-    struct netif *netif = kmem_alloc(sizeof(struct netif));     \
+    netif = kmem_alloc(sizeof(struct netif));                   \
     if (netif == NULL) {                                        \
       s = -ENOMEM;                                              \
       break;                                                    \
@@ -654,11 +655,14 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
                                    interface->init,             \
                                    interface->input);           \
     if (err != ERR_OK) {                                        \
+      kmem_free(netif);                                         \
       s = -err_to_errno(err);                                   \
       break;                                                    \
     }                                                           \
-  }                                                             \
-}
+    interface->netif = netif;                                   \
+  } else {                                                      \
+    netif = interface->netif;                                   \
+  }
 
   pthread_mutex_lock(&interface_lock);
   switch (request) {
@@ -690,6 +694,13 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
     GET_REQUEST();
     GET_INDEX();
     CHECK_NETIF();
+    if (netif->flags & NETIF_FLAG_UP)
+      interface->flags |= IFF_UP;
+    if (netif->flags & NETIF_FLAG_BROADCAST)
+      interface->flags |= IFF_BROADCAST;
+    if (netif->flags & NETIF_FLAG_POINTTOPOINT)
+      interface->flags |= IFF_POINTOPOINT;
+
     // RICH: Can we get additional flags via device status?
     req.ifr_flags = interface->flags;
     SET_REQUEST();
@@ -1415,15 +1426,17 @@ static int inetifCommand(int argc, char **argv)
     return COMMAND_OK;
   }
 
-  printf("%16.16s\n",
-         "NAME");
+  printf("%6.6s %16.16s %8.8s\n",
+         "INDEX", "NAME", "STATE");
   pthread_mutex_lock(&interface_lock);
   for (int i = 0; i < CONFIG_NET_MAX_INET_INTERFACES; ++i) {
     if (interfaces[i].name == NULL) {
       continue;
     }
 
-    printf("%16.16s\n", interfaces[i].name);
+    printf("%6d %16.16s %8.8s", i, interfaces[i].name,
+          interfaces[i].netif ? "active" : "inactive");
+    printf("\n");
   }
 
   pthread_mutex_unlock(&interface_lock);
