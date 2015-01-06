@@ -41,7 +41,8 @@ sendrelease:
 	$(OUT)echo Enter the ellcc.org password
 	$(OUT)scp ../README.txt ChangeLog ellcc-*-$(VERSION).tgz ellcc.org:/var/ftp/pub
 	$(OUT)ssh ellcc.org chmod oug+r /var/ftp/pub/\*
-	$(OUT)scp ../README.txt ChangeLog ellcc-*-$(VERSION).tgz ellcc.org:web/ellcc/releases
+	$(OUT)ssh ellcc.org cp /var/ftp/pub/ellcc-*-$(VERSION).tgz \
+                                       web/ellcc/releases
 
 .PHONY: macrelease
 macrelease:
