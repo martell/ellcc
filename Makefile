@@ -38,10 +38,10 @@ sendrelease:
 	$(OUT)svn cp -m "Tag current release." \
 	  http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION) \
 	  http://ellcc.org/svn/ellcc/tags/current
-	$(OUT)echo Enter the main password
-	$(OUT)scp ../README.txt ChangeLog ellcc-*-$(VERSION).tgz main:/var/ftp/pub
-	$(OUT)ssh main chmod oug+r /var/ftp/pub/\*
-	$(OUT)scp ../README.txt ChangeLog ellcc-*-$(VERSION).tgz main:web/ellcc/releases
+	$(OUT)echo Enter the ellcc.org password
+	$(OUT)scp ../README.txt ChangeLog ellcc-*-$(VERSION).tgz ellcc.org:/var/ftp/pub
+	$(OUT)ssh ellcc.org chmod oug+r /var/ftp/pub/\*
+	$(OUT)scp ../README.txt ChangeLog ellcc-*-$(VERSION).tgz ellcc.org:web/ellcc/releases
 
 .PHONY: macrelease
 macrelease:
@@ -55,10 +55,10 @@ macrelease:
 
 .PHONY: sendmacrelease
 sendmacrelease:
-	$(OUT)echo Enter the main.pennware.com password
-	$(OUT)scp ellcc-Mac*-$(VERSION).tgz main.pennware.com:/var/ftp/pub
-	$(OUT)ssh main.pennware.com chmod oug+r /var/ftp/pub/\*
-	$(OUT)ssh main.pennware.com cp /var/ftp/pub/ellcc-Mac*-$(VERSION).tgz \
+	$(OUT)echo Enter the ellcc.org password
+	$(OUT)scp ellcc-Mac*-$(VERSION).tgz ellcc.org:/var/ftp/pub
+	$(OUT)ssh ellcc.org chmod oug+r /var/ftp/pub/\*
+	$(OUT)ssh ellcc.org cp /var/ftp/pub/ellcc-Mac*-$(VERSION).tgz \
                                        web/ellcc/releases
 .PHONY: tagrelease
 tagrelease:
