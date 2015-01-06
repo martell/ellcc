@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.7:
+
 * Update to LLVM r225133.
 * Integrated LwIP with the ELK virtual file system.
 * Added AF_UNIX (AF_LOCAL) SOCK_STREAM support and socketpair().
