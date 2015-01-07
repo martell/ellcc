@@ -1,5 +1,7 @@
 current SVN:
 
+* Added AF_INET socket ioctl() handling for interfaces.
+
 version 0.1.7:
 
 * Update to LLVM r225133.
