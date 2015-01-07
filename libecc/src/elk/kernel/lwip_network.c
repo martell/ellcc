@@ -54,6 +54,8 @@
 #include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
+#include <net/if_arp.h>
+#include <arpa/inet.h>
 #include <pthread.h>
 #include <errno.h>
 
@@ -581,7 +583,8 @@ static struct interface interfaces[CONFIG_NET_MAX_INET_INTERFACES];
 int lwip_add_interface(const char *name, netif_init_fn init,
                        netif_input_fn input, void *state)
 {
-  for (int i = 0; i < CONFIG_NET_MAX_INET_INTERFACES; ++i) {
+  // interfaces[0] is reserved for the loopback interface.
+  for (int i = 1; i < CONFIG_NET_MAX_INET_INTERFACES; ++i) {
     if (interfaces[i].name == NULL) {
       // Use this entry.
       interfaces[i].name = kmem_alloc(strlen(name) + 1);
@@ -608,6 +611,7 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
   struct interface *interface;  // The interface.
   struct netif *netif;          // The LwIP interface.
   struct ifreq req;             // For a potential request.
+  err_t err;                    // LwIP error return value.
 
 // Get the request struct.
 #define GET_REQUEST()                                           \
@@ -626,12 +630,13 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
     if (interface->name == NULL) {                              \
       continue;                                                 \
     }                                                           \
+    interface->name[IFNAMSIZ - 1] = '\0';                       \
     if (strcmp(interface->name, req.ifr_name) == 0) {           \
       break;                                                    \
     }                                                           \
   }                                                             \
   if (index >= CONFIG_NET_MAX_INET_INTERFACES) {                \
-    s = -ESRCH;                                                 \
+    s = -ENODEV;                                                \
     break;                                                      \
   }
 
@@ -650,10 +655,10 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
       s = -ENOMEM;                                              \
       break;                                                    \
     }                                                           \
-    err_t err = netifapi_netif_add(netif, NULL, NULL, NULL,     \
-                                   interface->state,            \
-                                   interface->init,             \
-                                   interface->input);           \
+    err = netifapi_netif_add(netif, NULL, NULL, NULL,           \
+                             interface->state,                  \
+                             interface->init,                   \
+                             interface->input);                 \
     if (err != ERR_OK) {                                        \
       kmem_free(netif);                                         \
       s = -err_to_errno(err);                                   \
@@ -663,6 +668,27 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
   } else {                                                      \
     netif = interface->netif;                                   \
   }
+
+#define UPDATE_FLAGS()                                          \
+    if (netif->flags & NETIF_FLAG_UP)                           \
+      interface->flags |= IFF_UP;                               \
+    if (netif->flags & NETIF_FLAG_BROADCAST)                    \
+      interface->flags |= IFF_BROADCAST;                        \
+    if (netif->flags & NETIF_FLAG_LINK_UP)                      \
+      interface->flags |= IFF_RUNNING;                          \
+    if (!(netif->flags & NETIF_FLAG_ETHARP))                    \
+      interface->flags |= IFF_NOARP;                            \
+    if (netif->flags & NETIF_FLAG_POINTTOPOINT)                 \
+      interface->flags |= IFF_POINTOPOINT;
+
+#define WHEN_CHANGED(flag, set, cleared)                        \
+      if (changed & (flag)) {                                   \
+        if (req.ifr_flags & (flag)) {                           \
+          set;                                                  \
+        } else {                                                \
+          cleared;                                              \
+        }                                                       \
+      }
 
   pthread_mutex_lock(&interface_lock);
   switch (request) {
@@ -674,7 +700,7 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
     }
     if (interfaces[req.ifr_ifindex].name == NULL) {
       // Interface not found.
-      s = -ESRCH;
+      s = -ENODEV;
       break;
     }
 
@@ -694,13 +720,7 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
     GET_REQUEST();
     GET_INDEX();
     CHECK_NETIF();
-    if (netif->flags & NETIF_FLAG_UP)
-      interface->flags |= IFF_UP;
-    if (netif->flags & NETIF_FLAG_BROADCAST)
-      interface->flags |= IFF_BROADCAST;
-    if (netif->flags & NETIF_FLAG_POINTTOPOINT)
-      interface->flags |= IFF_POINTOPOINT;
-
+    UPDATE_FLAGS();
     // RICH: Can we get additional flags via device status?
     req.ifr_flags = interface->flags;
     SET_REQUEST();
@@ -710,34 +730,139 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
     IS_ADMIN();
     GET_REQUEST();
     GET_INDEX();
+    CHECK_NETIF();
+    UPDATE_FLAGS();
     // Act on any flag changes.
+    int changed = req.ifr_flags ^ interface->flags;
+    // Update the driver with any flags that have changed.
+    WHEN_CHANGED(IFF_UP, netifapi_netif_set_up(netif),
+                 netifapi_netif_set_down(netif));
+    // RICH: Additional flags?
+    UPDATE_FLAGS();
     interface->flags = req.ifr_flags;
+    break;
+
+  case SIOCGIFPFLAGS:           // These don't seem to be defined by Linux.
+  case SIOCSIFPFLAGS:
+    s = -EOPNOTSUPP;
     break;
 
   case SIOCGIFADDR:
     GET_REQUEST();
     GET_INDEX();
+    CHECK_NETIF();
     // Get the interface address.
+    req.ifr_addr.sa_family = AF_INET;
+    memcpy(req.ifr_addr.sa_data, &netif->ip_addr, sizeof(netif->ip_addr));
     SET_REQUEST();
     break;
 
   case SIOCSIFADDR:
+    IS_ADMIN();
     GET_REQUEST();
     GET_INDEX();
+    if (req.ifr_addr.sa_family != AF_INET) {
+      s = -EINVAL;
+      break;
+    }
+
+    CHECK_NETIF();
     // Set the interface address.
+    err = netifapi_netif_set_addr(netif, (ip_addr_t *)&req.ifr_addr.sa_data,
+                                  &netif->netmask, &netif->gw);
+    if (err != ERR_OK)
+      s = -err_to_errno(err);
     break;
 
   case SIOCSIFDSTADDR:
+    s = -EOPNOTSUPP;
+    break;
+
   case SIOCGIFBRDADDR:
   case SIOCSIFBRDADDR:
+    s = -EOPNOTSUPP;
+    break;
+
   case SIOCGIFNETMASK:
+    GET_REQUEST();
+    GET_INDEX();
+    CHECK_NETIF();
+    // Get the interface netbask.
+    req.ifr_netmask.sa_family = AF_INET;
+    memcpy(req.ifr_netmask.sa_data, &netif->netmask, sizeof(netif->netmask));
+    SET_REQUEST();
+    break;
+
   case SIOCSIFNETMASK:
+    IS_ADMIN();
+    GET_REQUEST();
+    GET_INDEX();
+    if (req.ifr_netmask.sa_family != AF_INET) {
+      s = -EINVAL;
+      break;
+    }
+
+    CHECK_NETIF();
+    // Set the interface netbask.
+    err = netifapi_netif_set_addr(netif, &netif->ip_addr,
+                                  (ip_addr_t *)&req.ifr_addr.sa_data,
+                                  &netif->gw);
+    if (err != ERR_OK)
+      s = -err_to_errno(err);
+    break;
+
   case SIOCGIFMETRIC:
+    GET_REQUEST();
+    GET_INDEX();
+    CHECK_NETIF();
+    req.ifr_metric = 0;
+    SET_REQUEST();
+    break;
+
   case SIOCSIFMETRIC:
+    s = -EOPNOTSUPP;
+    break;
+
   case SIOCGIFMTU:
+    GET_REQUEST();
+    GET_INDEX();
+    CHECK_NETIF();
+    req.ifr_mtu = netif->mtu;
+    SET_REQUEST();
+    break;
+
   case SIOCSIFMTU:
+    IS_ADMIN();
+    GET_REQUEST();
+    GET_INDEX();
+    CHECK_NETIF();
+    netif->mtu = req.ifr_mtu;
+    break;
+
   case SIOCGIFHWADDR:
+    GET_REQUEST();
+    GET_INDEX();
+    CHECK_NETIF();
+    req.ifr_hwaddr.sa_family = ARPHRD_ETHER;
+    memcpy(req.ifr_hwaddr.sa_data, &netif->hwaddr, netif->hwaddr_len);
+    SET_REQUEST();
+    break;
+
   case SIOCSIFHWADDR:
+    IS_ADMIN();
+    GET_REQUEST();
+    GET_INDEX();
+    if (req.ifr_netmask.sa_family != ARPHRD_ETHER) {
+      s = -EINVAL;
+      break;
+    }
+
+    CHECK_NETIF();
+    // Set the interface MAC address.
+    netif->hwaddr_len = NETIF_MAX_HWADDR_LEN;
+    memcpy(&netif->hwaddr, req.ifr_hwaddr.sa_data, netif->hwaddr_len);
+    break;
+
   case SIOCSIFHWBROADCAST:
   case SIOCGIFMAP:
   case SIOCSIFMAP:
@@ -747,10 +872,8 @@ static int inet_ioctl(file_t fp, u_long request, void *buf)
   case SIOCSIFTXQLEN:
   case SIOCSIFNAME:
   case SIOCGIFCONF:
-  case SIOCGIFPFLAGS:           // These don't seem to be defined by Linux.
-  case SIOCSIFPFLAGS:
   default:
-    s = -EINVAL;
+    s = -EOPNOTSUPP;
     break;
   }
 
@@ -1426,17 +1549,73 @@ static int inetifCommand(int argc, char **argv)
     return COMMAND_OK;
   }
 
-  printf("%6.6s %16.16s %8.8s\n",
-         "INDEX", "NAME", "STATE");
+  static const struct
+  {
+    int flag;
+    const char *name;
+  } flags[] = {
+    { IFF_UP, "UP" },
+    { IFF_BROADCAST, "BROADCAST" },
+    { IFF_DEBUG, "DEBUG" },
+    { IFF_LOOPBACK, "LOOPBACK" },
+    { IFF_POINTOPOINT, "POINTOPOINT" },
+    { IFF_RUNNING, "RUNNING" },
+    { IFF_NOARP, "NOARP" },
+    { IFF_PROMISC, "PROMISC" },
+    { IFF_NOTRAILERS, "NOTRAILERS" },
+    { IFF_ALLMULTI, "ALLMULTI" },
+    { IFF_MASTER, "MASTER" },
+    { IFF_SLAVE, "SLAVE" },
+    { IFF_MULTICAST, "MULTICAST" },
+    { IFF_PORTSEL, "PORTSEL" },
+    { IFF_AUTOMEDIA, "AUTOMEDIA" },
+    { IFF_DYNAMIC, "DYNAMIC" },
+    { IFF_LOWER_UP, "LOWER_UP" },
+    { IFF_DORMANT, "DORMANT" },
+    { IFF_ECHO, "ECHO" },
+    { 0, NULL }
+  };
+
   pthread_mutex_lock(&interface_lock);
   for (int i = 0; i < CONFIG_NET_MAX_INET_INTERFACES; ++i) {
-    if (interfaces[i].name == NULL) {
+    struct interface *interface = &interfaces[i];
+    if (interface->name == NULL) {
       continue;
     }
 
-    printf("%6d %16.16s %8.8s", i, interfaces[i].name,
-          interfaces[i].netif ? "active" : "inactive");
-    printf("\n");
+    struct netif *netif = interface->netif;
+    printf("%d %s: %s", i, interface->name,
+           netif ? "active" : "inactive\n");
+    if (netif == NULL) {
+      continue;
+    }
+    UPDATE_FLAGS();
+    printf(" flags=%d (0x%02X)<", interface->flags, netif->flags);
+    int comma = 0;
+    for (int j = 0; flags[j].flag; ++j) {
+      if (interface->flags & flags[j].flag) {
+        printf("%s%s", comma ? "," : "", flags[j].name);
+        comma = 1;
+      }
+    }
+    printf(">  mtu %u\n", netif->mtu);
+    struct in_addr in_addr;
+    in_addr.s_addr = netif->ip_addr.addr;
+    printf("\tinet %s", inet_ntoa(in_addr));
+    in_addr.s_addr = netif->netmask.addr;
+    printf("  netmask %s", inet_ntoa(in_addr));
+    in_addr.s_addr = ~in_addr.s_addr;
+    in_addr.s_addr |= netif->ip_addr.addr;
+    printf("  broadcast %s\n", inet_ntoa(in_addr));
+    if (netif->hwaddr_len) {
+      printf("\tether ");
+      int colon = 0;
+      for (int j = 0; j < netif->hwaddr_len; ++j) {
+        printf("%s%02x", colon ? ":" : "", netif->hwaddr[j]);
+        colon = 1;
+      }
+      printf("\n");
+    }
   }
 
   pthread_mutex_unlock(&interface_lock);
@@ -1468,5 +1647,18 @@ ELK_CONSTRUCTOR()
 C_CONSTRUCTOR()
 {
   tcpip_init(0, 0);
+
+#if LWIP_HAVE_LOOPIF
+  struct netif *netif = netif_find("lo0");
+  if (netif) {
+    // Add the loopback interface.
+    interfaces[0].name = "lo";
+    interfaces[0].flags = IFF_LOOPBACK;
+    interfaces[0].netif = netif;
+    interfaces[0].init = NULL;
+    interfaces[0].input = NULL;
+    interfaces[0].state = NULL;
+  }
+#endif
 }
 
