@@ -1,7 +1,7 @@
 ==============================================================================
 ELLCC Release License
 ==============================================================================
-Copyright (c) 2006-2014 Richard Pennington.
+Copyright (c) 2006-2015 Richard Pennington.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without

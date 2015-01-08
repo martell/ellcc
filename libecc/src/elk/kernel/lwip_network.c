@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014 Richard Pennington.
+ * Copyright (c) 2014-2015 Richard Pennington.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
