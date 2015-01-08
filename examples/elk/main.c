@@ -22,19 +22,15 @@ int main(int argc, char **argv)
   if (sfd < 0) {
     printf("socket(AF_INET) failed: %s\n", strerror(errno));
   }
+
+  int s;
   struct ifreq ifreq;
-  strcpy(ifreq.ifr_name, "ln01");
-  int s = ioctl(sfd, SIOCGIFFLAGS, &ifreq);
-  if (s < 0) {
-    printf("ioctl(SIOCGIFFLAGS) failed: %s\n", strerror(errno));
-  }
   struct in_addr in_addr;
-  s = ioctl(sfd, SIOCGIFADDR, &ifreq);
-  if (s < 0) {
-    printf("ioctl(SIOCGIFADDR) failed: %s\n", strerror(errno));
-  } else {
-    memcpy(&in_addr.s_addr, ifreq.ifr_addr.sa_data, sizeof(in_addr.s_addr));
-  }
+
+  // Set the device name for subsequent calls.
+  strcpy(ifreq.ifr_name, "ln01");
+
+  // Set the interface IP{ address.
   inet_aton("192.124.43.4", &in_addr);
   ifreq.ifr_addr.sa_family = AF_INET;
   memcpy(ifreq.ifr_addr.sa_data, &in_addr, sizeof(in_addr));
@@ -43,13 +39,7 @@ int main(int argc, char **argv)
     printf("ioctl(SIOCSIFADDR) failed: %s\n", strerror(errno));
   }
 
-  s = ioctl(sfd, SIOCGIFADDR, &ifreq);
-  if (s < 0) {
-    printf("ioctl(SIOCGIFADDR) failed: %s\n", strerror(errno));
-  } else {
-    memcpy(&in_addr.s_addr, ifreq.ifr_addr.sa_data, sizeof(in_addr.s_addr));
-  }
-
+  // Set ine interface netmask.
   inet_aton("255.255.255.0", &in_addr);
   ifreq.ifr_netmask.sa_family = AF_INET;
   memcpy(ifreq.ifr_netmask.sa_data, &in_addr, sizeof(in_addr));
@@ -58,6 +48,7 @@ int main(int argc, char **argv)
     printf("ioctl(SIOCSIFNETMASK) failed: %s\n", strerror(errno));
   }
 
+  // Set the interface MAC address.
   ifreq.ifr_hwaddr.sa_family = ARPHRD_ETHER;
   ifreq.ifr_hwaddr.sa_data[0] = 0x01;
   ifreq.ifr_hwaddr.sa_data[1] = 0x02;
