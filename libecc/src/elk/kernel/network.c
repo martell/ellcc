@@ -380,11 +380,6 @@ int net_close(vnode_t vp, file_t fp)
 int net_read(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
 {
   struct socket *sp = vp->v_data;       // Get the socket.
-  if (sp->rcv == NULL) {
-    // No receive buffer exists.
-    return -EINVAL;
-  }
-
   return net_in(sp, uio, count, (fp->f_flags & O_NONBLOCK) ? MSG_DONTWAIT : 0);
 }
 
@@ -393,11 +388,6 @@ int net_read(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
 int net_write(vnode_t vp, file_t fp, struct uio *uio, size_t *count)
 {
   struct socket *sp = vp->v_data;       // Get the socket.
-  if (sp->snd == NULL) {
-    // No send buffer exists.
-    return -EINVAL;
-  }
-
   return net_out(sp, uio, count, (fp->f_flags & O_NONBLOCK) ? MSG_DONTWAIT : 0);
 }
 
