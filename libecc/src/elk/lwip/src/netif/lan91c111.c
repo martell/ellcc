@@ -145,7 +145,7 @@ static struct data data[] = {
 };
 #define UNITS (sizeof(data) / sizeof(data[0]))
 
-const static struct ethernetif ethernetif[UNITS] = {
+const static struct ethernetif ethernetif[] = {
   { .name = "ln0", .ops = &ops, .priv = &data[0], },
   { .name = "ln1", .ops = &ops, .priv = &data[1], },
 };
