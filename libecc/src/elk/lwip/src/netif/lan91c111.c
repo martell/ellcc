@@ -74,7 +74,7 @@ FEATURE(lwip_lan91c111)
  */
 struct data
 {
-  u8_t address[ETHARP_HWADDR_LEN];
+  u8_t hwaddr[ETHARP_HWADDR_LEN];
 };
 
 // The hardware initialize function.
@@ -85,7 +85,7 @@ static void init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
   // Set the MAC hardware address length.
   *hwaddr_len = ETHARP_HWADDR_LEN;
   // Set MAC hardware address.
-  memcpy(hwaddr, dp->address, ETHARP_HWADDR_LEN);
+  memcpy(hwaddr, dp->hwaddr, ETHARP_HWADDR_LEN);
   // Do whatever else is needed to initialize the interface.
 }
 
@@ -138,9 +138,9 @@ static const struct etherops ops = {
 };
 
 static struct data data[] = {
-  { .address = "\x05\x04\x03\x02\x01",
+  { .hwaddr = "\x05\x04\x03\x02\x01",
   },
-  { .address = "\x15\x14\x13\x12\x11",
+  { .hwaddr = "\x15\x14\x13\x12\x11",
   },
 };
 #define UNITS (sizeof(data) / sizeof(data[0]))
