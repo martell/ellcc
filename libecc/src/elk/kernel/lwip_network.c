@@ -50,7 +50,6 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define _GNU_SOURCE
 #include <netinet/in.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
@@ -587,7 +586,8 @@ int lwip_add_interface(const char *name, netif_init_fn init,
   for (int i = 1; i < CONFIG_NET_MAX_INET_INTERFACES; ++i) {
     if (interfaces[i].name == NULL) {
       // Use this entry.
-      interfaces[i].name = kmem_alloc(strlen(name) + 1);
+      int len = strlen(name) + 1;
+      interfaces[i].name = kmem_alloc(len);
       if (interfaces[i].name == NULL) {
         return -ENOMEM;
       }

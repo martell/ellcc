@@ -47,6 +47,7 @@
 #define _GNU_SOURCE
 #define __COPYRIGHT(arg)
 #define __RCSID(arg)
+#define __KERNEL_RCSID(arg1, arg2)
 #define __IDSTRING(arg1, arg2)
 extern char *__progname;
 #define setprogname(arg) (__progname = arg)

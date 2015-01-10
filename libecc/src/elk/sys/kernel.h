@@ -83,6 +83,7 @@ extern int debug;
 // Network debug flags.
 #define NETDB_CODE      0x10000000
 #define NETDB_INET      0x20000000
+#define NETDB_BSD       0x40000000
 
 #if 0
   #include <stdio.h>

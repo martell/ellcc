@@ -1,32 +1,42 @@
-#ifndef __ETHERNETIF_H
-#define __ETHERNETIF_H
+#ifndef _ethernetif_h_
+#define _ethernetif_h_
+
+#include "config.h"
+#include "netif/etharp.h"
 
 #define ETHERNET_MTU		1500
 
-struct ethernetif {
-  void (* low_level_init)(void *i, uint8_t *addr, void *mcast); ///< the hardware init function
-  int (* low_level_startoutput)(void *i); ///< check room
-  void (* low_level_output)(void *i, void *data, uint16_t len); ///< write blocks
-  void (* low_level_endoutput)(void *i, uint16_t total_len);  ///< end writing, send
-  int (* low_level_startinput)(void *i);  ///< check existence, get length
-  void (* low_level_input)(void *i, void *data, uint16_t len); ///< read blocks
-  void (* low_level_endinput)(void *i);   ///< end reading
-  void (* low_level_input_nomem)(void *i, uint16_t len); ///< drop/queue
-  void *internals; ///< trivial internal stuff, like for example I/O address, passed to low level functions
-  uint8_t address[6]; ///< "the MAC"
+struct etherops
+{
+  // The hardware initialize function.
+  void (*init)(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast);
+  // Check room. RICH: Clarify.
+  int (*startoutput)(void *i, int unit);
+  // Write blocks.
+  void (*output)(void *i, int unit, void *data, uint16_t len);
+  // End writing, send.
+  void (*endoutput)(void *i, int unit, uint16_t total_len);
+  // Check existence, get length.
+  int (*startinput)(void *i, int unit);
+  // Read blocks.
+  void (*input)(void *i, int unit, void *data, uint16_t len);
+  // End reading.
+  void (*endinput)(void *i, int unit);
+  // Drop or queue the packet if the interface allows it.
+  void (*input_nomem)(void *i, int unit, uint16_t len);
 };
 
-/*
-  uint8_t flags;
+struct ethernetif
+{
+  const char *name;             // The ELK name for this device.
+  const struct etherops *ops;   // The low level callback functions.
+  void *priv;                   // Driver private data.
+};
 
-/// Flags
-//@{
-#define ETHERNETIF_FLAG_RXPENDING   (1<<0)
-#define ETHERNETIF_FLAG_LSCHANGE    (1<<1)
-#define ETHERNETIF_FLAG_LINKUP      (1<<2)
-#define ETHERNETIF_FLAG_100MBPS     (1<<3)
-#define ETHERNETIF_FLAG_FULLDUPLEX  (1<<4)
-//@}
-*/
-
+#if ELK_NAMESPACE
+#define ethernetif_add_interface __elk_ethernetif_add_interface
 #endif
+
+int ethernetif_add_interface(struct ethernetif *ethernetif);
+
+#endif // _ethernetif_h_

@@ -4,7 +4,6 @@
 #include <sys/uio.h>
 #include <sys/types.h>
 #include <sys/mount.h>
-#define _GNU_SOURCE
 #include <pthread.h>
 #include <unistd.h>
 #include <stdio.h>

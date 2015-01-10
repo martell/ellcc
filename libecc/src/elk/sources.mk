@@ -1,8 +1,7 @@
-CFLAGS += -g -Werror -Wall -std=c11 -D_XOPEN_SOURCE=700 -D_BSD_SOURCE
+CFLAGS += -g -Werror -Wall -std=c11 -D_XOPEN_SOURCE=700 \
+          -D_BSD_SOURCE -D_GNU_SOURCE
 CFLAGS += -I$(SRCPATH)/$(LIB)/sys/$(ARCH) \
           -I$(SRCPATH)/$(LIB)/sys \
-          -I$(SRCPATH)/$(LIB)/sys/lwip \
-          -I$(SRCPATH)/$(LIB)/lwip/src/include \
           -I$(SRCPATH)/$(LIB)/include
 
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/$(ARCH)
@@ -25,11 +24,16 @@ SRCS += command.c time_commands.c \
 	console.c memman.c simple_console.c simple_memman.c simple_exit.c \
 	device.c network.c lwip_network.c unix_network.c
 
+# LwIP
+#define SIOCSIFNAME     0x8923
+CFLAGS += -I$(SRCPATH)/$(LIB)/sys/lwip \
+          -I$(SRCPATH)/$(LIB)/lwip/src/include \
 
-# Turn of LWIP specific warnings.
+# Turn off LwIP specific warnings.
 CFLAGS += -Wno-empty-body -Wno-self-assign -Wno-unused-variable
+
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/lwip/src/core
-# LWIP core functionality.
+# LwIP core functionality.
 SRCS += def.c dhcp.c dns.c inet_chksum.c init.c mem.c memp.c netif.c pbuf.c \
         raw.c stats.c sys.c tcp.c tcp_in.c tcp_out.c timers.c udp.c
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/lwip/src/core/ipv4
@@ -41,7 +45,7 @@ SRCS += asn1_dec.c asn1_enc.c mib2.c mib_structs.c msg_in.c msg_out.c
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/lwip/src/api
 SRCS += api_lib.c api_msg.c err.c netbuf.c netdb.c netifapi.c pppapi.c tcpip.c
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/lwip/src/netif
-SRCS += etharp.c lan91c111.c
+SRCS += etharp.c ethernetif_driver.c lan91c111.c
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/lwip/src/netif/ppp
 SRCS += auth.c ccp.c chap-md5.c chap_ms.c chap-new.c demand.c eap.c ecp.c \
         eui64.c fsm.c ipcp.c ipv6cp.c lcp.c magic.c multilink.c ppp.c \

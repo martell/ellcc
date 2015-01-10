@@ -25,7 +25,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#define _GNU_SOURCE
 #include <sys/ioctl.h>
 #include <errno.h>
 #include <string.h>

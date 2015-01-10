@@ -24,12 +24,13 @@ int main(int argc, char **argv)
     printf("socket(AF_INET) failed: %s\n", strerror(errno));
   }
 
+#if 1
   int s;
   struct ifreq ifreq;
   struct in_addr in_addr;
 
   // Set the device name for subsequent calls.
-  strcpy(ifreq.ifr_name, "ln01");
+  strcpy(ifreq.ifr_name, "ln0");
 
   // Set the interface IP address.
   inet_aton("192.124.43.4", &in_addr);
@@ -40,7 +41,7 @@ int main(int argc, char **argv)
     printf("ioctl(SIOCSIFADDR) failed: %s\n", strerror(errno));
   }
 
-  // Set ine interface netmask.
+  // Set the interface netmask.
   inet_aton("255.255.255.0", &in_addr);
   ifreq.ifr_netmask.sa_family = AF_INET;
   memcpy(ifreq.ifr_netmask.sa_data, &in_addr, sizeof(in_addr));
@@ -49,6 +50,7 @@ int main(int argc, char **argv)
     printf("ioctl(SIOCSIFNETMASK) failed: %s\n", strerror(errno));
   }
 
+#if 0
   // Set the interface MAC address.
   ifreq.ifr_hwaddr.sa_family = ARPHRD_ETHER;
   ifreq.ifr_hwaddr.sa_data[0] = 0x01;
@@ -61,6 +63,7 @@ int main(int argc, char **argv)
   if (s < 0) {
     printf("ioctl(SIOCSIFHWADDR) failed: %s\n", strerror(errno));
   }
+#endif
 
   s = ioctl(sfd, SIOCGIFFLAGS, &ifreq);
   if (s < 0) {
@@ -93,12 +96,15 @@ int main(int argc, char **argv)
     printf("sendto() failed: %s\n", strerror(errno));
   }
 
-  s = recv(sfd, buf, 100, 0); // MSG_DONTWAIT);
-  if (s < 0) {
-    printf("recv() failed: %s\n", strerror(errno));
-  } else {
-    printf("got '%s'\n", buf);
+  if (s == 0) {
+    s = recv(sfd, buf, 100, 0); // MSG_DONTWAIT);
+    if (s < 0) {
+      printf("recv() failed: %s\n", strerror(errno));
+    } else {
+      printf("got '%s'\n", buf);
+    }
   }
+#endif
 
   printf("Try the command 'inetif'\n");
 
