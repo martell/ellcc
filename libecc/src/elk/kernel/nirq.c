@@ -73,7 +73,7 @@ static void  irq_thread(void *);
 #endif
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-static struct irq  *irq_table[MAXIRQS];  /* IRQ descriptor table */
+static struct irq  *irq_table[CONFIG_MAX_IRQS];  /* IRQ descriptor table */
 
 /*
  * irq_attach - attach ISR and IST to the specified interrupt.
@@ -133,7 +133,7 @@ irq_t irq_attach(int vector, int pri, int shared,
 void irq_detach(irq_t irq)
 {
   ASSERT(irq != NULL);
-  ASSERT(irq->vector < MAXIRQS);
+  ASSERT(irq->vector < CONFIG_MAX_IRQS);
 
   interrupt_mask(irq->vector);
   irq_table[irq->vector] = NULL;
@@ -231,7 +231,7 @@ int irq_info(struct irqinfo *info)
   int found = 0;
   struct irq *irq;
 
-  while (vec < MAXIRQS) {
+  while (vec < CONFIG_MAX_IRQS) {
     if (irq_table[vec]) {
       found = 1;
       break;

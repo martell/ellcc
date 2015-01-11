@@ -208,7 +208,7 @@ static int devfs_lookup(vnode_t dvp, char *name, vnode_t vp_ro)
     error = device_info(&info);
     if (error)
       return -ENOENT;
-    if (!strncmp(info.name, name, MAXDEVNAME))
+    if (!strncmp(info.name, name, CONFIG_MAXDEVNAME))
       break;
     i++;
   }

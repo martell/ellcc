@@ -45,7 +45,7 @@ SRCS += asn1_dec.c asn1_enc.c mib2.c mib_structs.c msg_in.c msg_out.c
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/lwip/src/api
 SRCS += api_lib.c api_msg.c err.c netbuf.c netdb.c netifapi.c pppapi.c tcpip.c
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/lwip/src/netif
-SRCS += etharp.c ethernetif_driver.c lan91c111.c
+SRCS += etharp.c ethernetif_driver.c lan91c111.c lan9118.c
 VPATH := $(VPATH):$(SRCPATH)/$(LIB)/lwip/src/netif/ppp
 SRCS += auth.c ccp.c chap-md5.c chap_ms.c chap-new.c demand.c eap.c ecp.c \
         eui64.c fsm.c ipcp.c ipv6cp.c lcp.c magic.c multilink.c ppp.c \

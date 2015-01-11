@@ -449,7 +449,7 @@ void kmem_init(size_t size)
   }
 }
 
-#if KM_COMMANDS
+#if CONFIG_KM_COMMANDS
 /** Display kernel heap information.
  */
 static int kmCommand(int argc, char **argv)
@@ -484,4 +484,4 @@ C_CONSTRUCTOR()
   command_insert("km", kmCommand);
 }
 
-#endif  // KM_COMMANDS
+#endif  // CONFIG_KM_COMMANDS

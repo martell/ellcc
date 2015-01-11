@@ -274,7 +274,7 @@ void page_init(void)
   DPRINTF(MEMDB_CORE, ("Memory size=%ld\n", total_size));
 }
 
-#if PM_COMMANDS
+#if CONFIG_PM_COMMANDS
 /** Display the free page list.
  */
 static int pmCommand(int argc, char **argv)
@@ -316,5 +316,5 @@ C_CONSTRUCTOR()
   command_insert("pm", pmCommand);
 }
 
-#endif  // PM_COMMANDS
+#endif  // CONFIG_PM_COMMANDS
 

@@ -63,7 +63,7 @@ static struct list mount_list = LIST_INIT(mount_list);
  * VFS switch table
  */
 static pthread_mutex_t swmutex = PTHREAD_MUTEX_INITIALIZER;
-static struct vfssw vfssw[FS_MAX + 1];
+static struct vfssw vfssw[CONFIG_FS_MAX + 1];
 
 /*
  * Global lock to access mount point.
@@ -84,7 +84,7 @@ int vfs_register(const char *name, int (*init)(void), struct vfsops *vfsops)
 {
   pthread_mutex_lock(&swmutex);
   int i;
-  for (i = 0; i < FS_MAX; ++i) {
+  for (i = 0; i < CONFIG_FS_MAX; ++i) {
     if (vfssw[i].vs_name != NULL)
       continue;
 
@@ -94,7 +94,7 @@ int vfs_register(const char *name, int (*init)(void), struct vfsops *vfsops)
     break;
   }
 
-  if (i >= FS_MAX) {
+  if (i >= CONFIG_FS_MAX) {
     i = -EAGAIN;
   } else {
     i = 0;
@@ -417,7 +417,7 @@ static int sys_sync(void)
   return 0;
 }
 
-#if VFS_COMMANDS
+#if CONFIG_VFS_COMMANDS
 /** Create a section heading for the help command.
  */
 static int sectionCommand(int argc, char **argv)
@@ -468,7 +468,7 @@ static int fsCommand(int argc, char **argv)
   pthread_mutex_lock(&swmutex);
   int i;
   int comma = 0;
-  for (i = 0; i < FS_MAX; ++i) {
+  for (i = 0; i < CONFIG_FS_MAX; ++i) {
     if (vfssw[i].vs_name == NULL)
       continue;
 
@@ -491,7 +491,7 @@ ELK_CONSTRUCTOR()
   SYSCALL(umount2);
   SYSCALL(sync);
 
-#if VFS_COMMANDS
+#if CONFIG_VFS_COMMANDS
   command_insert(NULL, sectionCommand);
   command_insert("fs", fsCommand);
   command_insert("mount", mountCommand);

@@ -38,7 +38,7 @@
 #define set_brk __elk_set_brk
 #endif
 
-#if !HAVE_CAPABILITY
+#if !CONFIG_HAVE_CAPABILITY
 // Define a simple capability check.
 #define CAPABLE(thread, capability) \
   (!(thread)->euid)

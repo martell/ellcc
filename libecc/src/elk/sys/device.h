@@ -161,7 +161,7 @@ struct device
 {
   struct device *next;          // Linkage on list of all devices.
   const struct driver *driver;  // Pointer to the driver object.
-  char name[MAXDEVNAME];        // Name of device.
+  char name[CONFIG_MAXDEVNAME]; // Name of device.
   int flags;                    // D_* flags defined above.
   int active;                   // Device has not been destroyed.
   int refcnt;                   // Reference count.
@@ -183,7 +183,7 @@ struct devinfo {
   u_long cookie;                // Index cookie.
   device_t id;                  // Device id.
   int flags;                    // Device characteristics flags.
-  char name[MAXDEVNAME];        // Device name.
+  char name[CONFIG_MAXDEVNAME]; // Device name.
 };
 
 int device_info(struct devinfo *info);

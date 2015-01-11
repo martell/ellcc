@@ -76,8 +76,8 @@ device_t device_create(const struct driver *drv, const char *name, int flags)
   ASSERT(drv != NULL);
 
   /* Check the length of name. */
-  len = strnlen(name, MAXDEVNAME);
-  if (len == 0 || len >= MAXDEVNAME)
+  len = strnlen(name, CONFIG_MAXDEVNAME);
+  if (len == 0 || len >= CONFIG_MAXDEVNAME)
     return NULL;
 
   LOCK();
@@ -150,7 +150,7 @@ device_t device_lookup(const char *name)
   device_t dev;
 
   for (dev = device_list; dev != NULL; dev = dev->next) {
-    if (!strncmp(dev->name, name, MAXDEVNAME))
+    if (!strncmp(dev->name, name, CONFIG_MAXDEVNAME))
       return dev;
   }
   return NULL;
@@ -249,10 +249,10 @@ void device_release(device_t dev)
 int device_open(const char *name, int mode, device_t *devp)
 {
   device_t dev;
-  char str[MAXDEVNAME];
+  char str[CONFIG_MAXDEVNAME];
   int error;
 
-  error = copyinstr(name, str, MAXDEVNAME);
+  error = copyinstr(name, str, CONFIG_MAXDEVNAME);
   if (error)
     return error;
 
@@ -478,7 +478,7 @@ int device_info(struct devinfo *info)
       info->cookie = i;
       info->id = dev;
       info->flags = dev->flags;
-      strlcpy(info->name, dev->name, MAXDEVNAME);
+      strlcpy(info->name, dev->name, CONFIG_MAXDEVNAME);
       error = 0;
       break;
     }
@@ -505,12 +505,12 @@ int nullop(void)
 /** Register a driver for use.
  */
 static pthread_mutex_t dmutex = PTHREAD_MUTEX_INITIALIZER;
-static struct driver *driver_table[NDRIVERS];
+static struct driver *driver_table[CONFIG_NDRIVERS];
 
 void driver_register(struct driver *driver)
 {
   pthread_mutex_lock(&dmutex);
-  for (int i = 0; i < NDRIVERS; ++i) {
+  for (int i = 0; i < CONFIG_NDRIVERS; ++i) {
     if (driver_table[i]) {
       continue;
     }
@@ -534,10 +534,11 @@ static int dsCommand(int argc, char **argv)
   }
 
   printf("%*.*s %7.7s %7.7s %-10.10s \n",
-         MAXDEVNAME , MAXDEVNAME , "NAME", "ACTIVE", "REFCNT", "FLAGS");
+         CONFIG_MAXDEVNAME , CONFIG_MAXDEVNAME , "NAME",
+         "ACTIVE", "REFCNT", "FLAGS");
   for (struct device *dp = device_list; dp; dp = dp->next) {
       printf("%*.*s %7s %7d ",
-             MAXDEVNAME, MAXDEVNAME, dp->name,
+             CONFIG_MAXDEVNAME, CONFIG_MAXDEVNAME, dp->name,
              dp->active ? "yes" : "", dp->refcnt);
       int comma = 0;
       for (int i = 0; device_flag_names[i].name; ++i) {
@@ -574,7 +575,7 @@ static int drvsCommand(int argc, char **argv)
         printf(" probe    init     unload   devops   flags    name\n");
         printf(" -------- -------- -------- -------- -------- -----------\n");
 
-  for (int i = 0; i < NDRIVERS; i++) {
+  for (int i = 0; i < CONFIG_NDRIVERS; i++) {
     struct driver *dp = driver_table[i];
     if (dp == NULL) {
       continue;
@@ -614,7 +615,7 @@ C_CONSTRUCTOR()
 
   DPRINTF(DEVDB_DRV, ("Probing devices...\n"));
 
-  for (int i = 0; i < NDRIVERS; i++) {
+  for (int i = 0; i < CONFIG_NDRIVERS; i++) {
     dp = driver_table[i];
     if (dp == NULL) {
       continue;
@@ -631,7 +632,7 @@ C_CONSTRUCTOR()
 
   // Call xxx_init routine for all living drivers.
 
-  for (int i = 0; i < NDRIVERS; i++) {
+  for (int i = 0; i < CONFIG_NDRIVERS; i++) {
     dp = driver_table[i];
     if (dp == NULL) {
       continue;

@@ -27,7 +27,7 @@
 #include "trap.h"
 #include "thread.h"
 
-#if ENABLEFDS
+#if CONFIG_ENABLEFDS
 #include <stdarg.h>
 #endif
 
@@ -35,22 +35,22 @@
 FEATURE(thread)
 
 #if 0
-#define THRD_ALLOC(ptr) kmem_alloc(sizeof(CONFIG_THRD_SIZE))
+#define THRD_ALLOC(ptr) kmem_alloc(sizeof(CONFIG_THREAD_SIZE))
 #define thread_free(ptr) kmem_free(ptr)
 #else
 #define THRD_ALLOC(ptr) ({ int s = 0; \
-  s = vm_allocate(0, (void **)&(ptr), CONFIG_THRD_SIZE, 1); \
+  s = vm_allocate(0, (void **)&(ptr), CONFIG_THREAD_SIZE, 1); \
   s ? NULL : (ptr); })
 
 /** This is the cleanup function called from enter_context in crt1.S
  */
 static void thread_free(void *ptr)
 {
-  vm_free(0, ptr, CONFIG_THRD_SIZE);
+  vm_free(0, ptr, CONFIG_THREAD_SIZE);
 }
 #endif
 
-#if HAVE_CAPABILITY
+#if CONFIG_HAVE_CAPABILITY
 // Set all capabilities for the superuser.
 #define SUPERUSER_CAPABILITIES (~(capability_t)0)
 #define NO_CAPABILITIES ((capability_t)0)
@@ -58,7 +58,7 @@ static void thread_free(void *ptr)
 #define CAPABLE(thread, capability) \
   ((thread)->ecap & CAPABILITY_TO_BIT(capability))
 
-#define DEFAULT_PRIORITY ((PRIORITIES)/2)
+#define DEFAULT_PRIORITY ((CONFIG_PRIORITIES)/2)
 #endif
 
 typedef struct
@@ -109,7 +109,7 @@ struct robust_list_head
   volatile void *volatile pending;
 };
 
-#if ENABLEFDS
+#if CONFIG_ENABLEFDS
 typedef struct fs
 {
   pthread_mutex_t lock;
@@ -163,19 +163,19 @@ typedef struct thread
   gid_t fgid;                   // The thread's file group id.
   pid_t pgid;                   // The thread's process group.
   pid_t sid;                    // The thread's session id.
-#if HAVE_CAPABILITY
+#if CONFIG_HAVE_CAPABILITY
   capability_t cap;             // The thread's capabilities.
   capability_t ecap;            // The thread's effective capabilities.
   capability_t icap;            // The thread's inheritable capabilities.
 #endif
-#if ENABLEFDS
+#if CONFIG_ENABLEFDS
   fdset_t fdset;                // File descriptors used by the thread.
   fs_t fs;                      // The current file system information.
 #endif
-#if HAVE_VM
+#if CONFIG_VM
   vm_map_t map;                 // The process memory map.
 #endif
-#if HAVE_SIGNALS
+#if CONFIG_SIGNALS
   sigset_t sigmask;             // The signal mask.
 #endif
   // A pointer to the user space robust futex list.
@@ -191,28 +191,29 @@ typedef struct thread_queue {
 } ThreadQueue;
 
 #define IDLE_STACK 4096*3                       // The idle thread stack size.
-static thread_t idle_thread[PROCESSORS];        // The idle threads.
-static char idle_stack[PROCESSORS][IDLE_STACK] __attribute__((aligned(8)));
+static thread_t idle_thread[CONFIG_PROCESSORS]; // The idle threads.
+static char idle_stack[CONFIG_PROCESSORS][IDLE_STACK]
+  __attribute__((aligned(8)));
 
 static void schedule_nolock(thread_t *list);
 
 /* The tid_mutex protects the thread id pool.
  */
 static pthread_mutex_t tid_mutex = PTHREAD_MUTEX_INITIALIZER;
-static int tids[THREADS];
+static int tids[CONFIG_THREADS];
 static int *tid_in;
 static int *tid_out;
 
 /** The thread id to thread mapping.
  */
-static thread_t *threads[THREADS];
+static thread_t *threads[CONFIG_THREADS];
 
 /** Initialize the tid pool.
  */
 static void tid_initialize(void)
 {
   int i = 0;
-  for (int tid = 0; tid < THREADS; ++tid) {
+  for (int tid = 0; tid < CONFIG_THREADS; ++tid) {
     if (tid == 1) {
       // Reserve tid 1 for a future spawn of init.
       continue;
@@ -237,7 +238,7 @@ static int alloc_tid(thread_t *tp)
   }
 
   tp->tid = *tid_out++;
-  if (tid_out == &tids[THREADS]) {
+  if (tid_out == &tids[CONFIG_THREADS]) {
     tid_out = tids;
   }
 
@@ -251,13 +252,13 @@ static int alloc_tid(thread_t *tp)
  */
 static void release_tid(int tid)
 {
-  if (tid < 0 || tid >= THREADS) {
+  if (tid < 0 || tid >= CONFIG_THREADS) {
     // This should never happen.
     return;
   }
 
   pthread_mutex_lock(&tid_mutex);
-  if (tid_in == &tids[THREADS]) {
+  if (tid_in == &tids[CONFIG_THREADS]) {
     tid_in = tids;
   }
 
@@ -289,14 +290,14 @@ static void idle(void)
  */
 static void create_system_threads(void)
 {
-  for (int i = 0; i < PROCESSORS; ++i) {
+  for (int i = 0; i < CONFIG_PROCESSORS; ++i) {
     char name[20];
     context_t *ctx = (context_t *)&idle_stack[i][IDLE_STACK];
     idle_thread[i].context = ctx;
     --ctx;
     new_context(&idle_thread[i].context, idle, INITIAL_PSR, 0,
                 (char *)ctx, 0);
-    idle_thread[i].priority = PRIORITIES;       // The lowest priority.
+    idle_thread[i].priority = CONFIG_PRIORITIES;        // The lowest priority.
     idle_thread[i].state = IDLE;
     alloc_tid(&idle_thread[i]);
     int s = snprintf(name, 20, "idle%d", i) + 1;
@@ -311,34 +312,34 @@ static lock_t ready_lock;
 
 static int priority;                    // The current highest priority.
 
-#if PRIORITIES > 1 && PROCESSORS > 1
+#if CONFIG_PRIORITIES > 1 && CONFIG_PROCESSORS > 1
 // Multiple priorities and processors.
-static int processor() { return 0; }    // RICH: For now.
-static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
-static ThreadQueue ready[PRIORITIES];   // The ready to run list.
-static long irq_state[PROCESSORS];      // Set if running in irq state.
+static int processor() { return 0; }            // RICH: For now.
+static void *slice_tmo[CONFIG_PROCESSORS];      // Time slice timeout ID.
+static ThreadQueue ready[CONFIG_PRIORITIES];
+static long irq_state[CONFIG_PROCESSORS];       // Set if running in irq state.
 
 #define slice_tmo slice_tmo[processor()]
 #define ready_head(pri) ready[pri].head
 #define ready_tail(pri) ready[pri].tail
 #define irq_state irq_state[processor()]
 
-#elif PROCESSORS > 1
+#elif CONFIG_PROCESSORS > 1
 // Multiple processors, one priority.
-static int processor() { return 0; }    // RICH: For now.
-static void *slice_tmo[PROCESSORS];     // Time slice timeout ID.
-static ThreadQueue ready;               // The ready to run list.
-static long irq_state[PROCESSORS];      // Set if running in irq state.
+static int processor() { return 0; }            // RICH: For now.
+static void *slice_tmo[CONFIG_PROCESSORS];      // Time slice timeout ID.
+static ThreadQueue ready;
+static long irq_state[CONFIG_PROCESSORS];       // Set if running in irq state.
 
 #define slice_tmo slice_tmo[processor()]
 #define ready_head(pri) ready.head
 #define ready_tail(pri) ready.tail
 #define irq_state irq_state[processor()]
 
-#elif PRIORITIES > 1
+#elif CONFIG_PRIORITIES > 1
 // One processor, multiple priorities.
 static void *slice_tmo;                 // Time slice timeout ID.
-static ThreadQueue ready[PRIORITIES];
+static ThreadQueue ready[CONFIG_PRIORITIES];
 static long irq_state;                  // Set if running in irq state.
 
 #define processor() 0
@@ -360,7 +361,7 @@ static long irq_state;                  // Set running in irq state.
 #endif
 
 // Threads currently assigned to processors.
-static thread_t *current[PROCESSORS];
+static thread_t *current[CONFIG_PROCESSORS];
 #define current current[processor()]
 
 #define idle_thread idle_thread[processor()]
@@ -369,7 +370,7 @@ static long long slice_time = 5000000;  // The time slice period (ns).
 
 /**** End of ready lock protected variables. ****/
 
-#if ENABLEFDS
+#if CONFIG_ENABLEFDS
 static struct fs main_thread_fs = {
   .lock = PTHREAD_MUTEX_INITIALIZER,
   .refcnt = 1,
@@ -389,11 +390,11 @@ static thread_t main_thread = {
   .priority = DEFAULT_PRIORITY,
   .state = RUNNING,
 
-#if ENABLEFDS
+#if CONFIG_ENABLEFDS
   .fs = &main_thread_fs,
 #endif
 
-#if HAVE_CAPABILITY
+#if CONFIG_HAVE_CAPABILITY
   .cap = SUPERUSER_CAPABILITIES,
   .ecap = SUPERUSER_CAPABILITIES,
   .icap = SUPERUSER_CAPABILITIES,
@@ -425,14 +426,14 @@ int getpid(void)
  */
 int pid_valid(pid_t pid)
 {
-  if (pid < 0 || pid >= THREADS || threads[pid] == NULL) {
+  if (pid < 0 || pid >= CONFIG_THREADS || threads[pid] == NULL) {
     return 0;
   }
 
   return 1;
 }
 
-#if HAVE_VM
+#if CONFIG_VM
 /** Get the memory map of a process.
  */
 vm_map_t getmap(pid_t pid)
@@ -537,11 +538,11 @@ static void get_running(void)
   int timeslice = 1;  // Assume a time slice is needed.
 
   // Find the highest priority thread to run.
-  current = priority < PRIORITIES ? ready_head(priority) : NULL;
+  current = priority < CONFIG_PRIORITIES ? ready_head(priority) : NULL;
 
-#if PRIORITIES > 1
+#if CONFIG_PRIORITIES > 1
   // Check for lower priority things to run.
-  while (current == NULL && priority < PRIORITIES) {
+  while (current == NULL && priority < CONFIG_PRIORITIES) {
     ++priority;
     current = ready_head(priority);
   }
@@ -550,7 +551,7 @@ static void get_running(void)
   if (current == NULL) {
     timeslice = 0;          // No need to timeslice for the idle thread.
     current = &idle_thread;
-    priority = PRIORITIES;
+    priority = CONFIG_PRIORITIES;
   } else {
     idle_thread.state = IDLE;
     // Remove the head of the ready list.
@@ -629,7 +630,7 @@ static void thread_delete(thread_t *tp)
 {
   release_tid(tp->tid);
 
-#if ENABLEFDS
+#if CONFIG_ENABLEFDS
   fdset_release(tp->fdset);
   pthread_mutex_lock(&tp->fs->lock);
   ASSERT(tp->fs->refcnt > 0);
@@ -949,7 +950,7 @@ long long timer_expired(long long when)
   return when;        // Schedule the next timeout, if any.
 }
 
-#if !HAVE_VM
+#if !CONFIG_VM
 int vm_allocate(pid_t tid, void **addr, size_t size, int anywhere)
 {
   if (!anywhere) return 1;      // Fail.
@@ -1017,7 +1018,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     return -EAGAIN;
   }
 
-#if HAVE_VM
+#if CONFIG_VM
   if (flags & CLONE_VM) {
     // Share the address space of the parent.
     vm_reference(tp->map);
@@ -1033,11 +1034,11 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
   }
 #endif
 
-#if ENABLEFDS
+#if CONFIG_ENABLEFDS
   // Clone or copy the file descriptor set.
   s = fdset_clone(&tp->fdset, flags & CLONE_FILES);
   if (s < 0) {
-#if HAVE_VM
+#if CONFIG_VM
     vm_terminate(tp->map);
 #endif
     release_tid(tid);
@@ -1057,7 +1058,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
     tp->fs = kmem_alloc(sizeof(*tp->fs));
     if (tp->fs == NULL) {
       pthread_mutex_unlock(&pfs->lock);
-#if HAVE_VM
+#if CONFIG_VM
       vm_terminate(tp->map);
 #endif
       release_tid(tid);
@@ -1100,7 +1101,7 @@ static long sys_clone(unsigned long flags, void *stack, int *ptid,
 #if RICH
   context_t *cp = (context_t *)stack;
 #else
-  context_t *cp = (context_t *)((char *)tp + CONFIG_THRD_SIZE);
+  context_t *cp = (context_t *)((char *)tp + CONFIG_THREAD_SIZE);
 #endif
   tp->context = cp;
   // Copy registers.
@@ -1186,7 +1187,7 @@ static int sys_get_robust_list(int tid, struct robust_list_head **head,
   }
 
   // The request is being made by another process.
-  if (tid < 0 || tid >= THREADS) {
+  if (tid < 0 || tid >= CONFIG_THREADS) {
     return -EINVAL;
   }
 
@@ -1220,7 +1221,7 @@ static int sys_set_robust_list(struct robust_list_head *head, size_t len)
  */
 static int sys_tkill(int tid, int sig)
 {
-  if (tid < 0 || tid >= THREADS) {
+  if (tid < 0 || tid >= CONFIG_THREADS) {
     return -EINVAL;
   }
 
@@ -1283,7 +1284,7 @@ char *get_brk(pid_t pid)
     pid = current->pid;
   }
 
-  if (pid < 0 || pid >= THREADS) {
+  if (pid < 0 || pid >= CONFIG_THREADS) {
     return NULL;
   }
 
@@ -1302,7 +1303,7 @@ void set_brk(pid_t pid, char *brk)
     pid = current->pid;
   }
 
-  if (pid < 0 || pid >= THREADS) {
+  if (pid < 0 || pid >= CONFIG_THREADS) {
     return;
   }
 
@@ -1352,7 +1353,7 @@ static pid_t sys_getpgid(pid_t pid)
     return current->pgid;
   }
 
-  if (pid < 0 || pid >= THREADS || threads[pid] == NULL) {
+  if (pid < 0 || pid >= CONFIG_THREADS || threads[pid] == NULL) {
     return -ESRCH;
   }
 
@@ -1392,12 +1393,12 @@ static uid_t sys_getuid(void)
 static int sys_setpgid(pid_t pid, pid_t pgid)
 {
   // Check for a valid pgid.
-  if (pgid < 0 || pgid >= THREADS) {
+  if (pgid < 0 || pgid >= CONFIG_THREADS) {
     return -EINVAL;
   }
 
   // Check for a valid pid.
-  if (pid < 0 || pid >= THREADS) {
+  if (pid < 0 || pid >= CONFIG_THREADS) {
     return -EINVAL;
   }
 
@@ -1516,7 +1517,7 @@ static int sys_setgid(gid_t gid)
 
 static int sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
 {
-#if HAVE_CAPABILITY
+#if CONFIG_HAVE_CAPABILITY
   int rzero = current->uid == 0;
   int ezero = current->euid = 0;
   int szero = current->euid = 0;
@@ -1567,7 +1568,7 @@ static int sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
     current->suid = suid;
   }
 
-#if HAVE_CAPABILITY
+#if CONFIG_HAVE_CAPABILITY
   if (rzero || ezero || szero) {
     // One or both started as zero.
     if (current->uid && current->euid && current->suid) {
@@ -1621,7 +1622,7 @@ static mode_t sys_umask(mode_t new)
   return old;
 }
 
-#if HAVE_SIGNALS
+#if CONFIG_SIGNALS
 
 static int sys_rt_sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 {
@@ -1667,7 +1668,7 @@ static int sys_rt_sigprocmask(int how, const sigset_t *set, sigset_t *oldset)
 
 #endif
 
-#if ENABLEFDS
+#if CONFIG_ENABLEFDS
 /** Get a file descriptor.
  */
 int allocfd(file_t fp)
@@ -1837,9 +1838,9 @@ int getpath(const char *name, char *path, int full)
   return 0;
 }
 
-#endif // ENABLEFDS
+#endif // CONFIG_ENABLEFDS
 
-#if THREAD_COMMANDS
+#if CONFIG_THREAD_COMMANDS
 
 static int psCommand(int argc, char **argv)
 {
@@ -1882,7 +1883,7 @@ static int psCommand(int argc, char **argv)
          meminfo.total / PAGE_SIZE, meminfo.total,
          meminfo.free / PAGE_SIZE, meminfo.free);
   int heading = 1;
-  for (int i = 0;  i < THREADS; ++i) {
+  for (int i = 0;  i < CONFIG_THREADS; ++i) {
     thread_t *t =  threads[i];
     if (t == NULL) {
       continue;
@@ -1943,7 +1944,7 @@ static int sectionCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
-#endif  // THREAD_COMMANDS
+#endif  // CONFIG_THREAD_COMMANDS
 
 #if ELK_DEBUG
 int debug;
@@ -1968,7 +1969,7 @@ static int dbgCommand(int argc, char **argv)
 #endif
 
 // RICH: Temporary hack.
-#if HAVE_VM
+#if CONFIG_VM
 extern char __end[];            // The end of the .bss area.
 
 struct bootinfo bootinfo;
@@ -1979,7 +1980,7 @@ struct bootinfo bootinfo;
  */
 static void init(void)
 {
-#if HAVE_VM
+#if CONFIG_VM
 
 // RICH: Move this.
   bootinfo.nr_rams = 2;
@@ -2013,7 +2014,7 @@ static void init(void)
   machine_startup();            // Target dependent initialzation.
 #endif
 
-#if HAVE_VM
+#if CONFIG_VM
   // Set up the kernel memory map.
   current->map = vm_init(KMEM_SIZE);
 #endif
@@ -2024,7 +2025,7 @@ static void init(void)
  */
 static void c_init(void)
 {
-#if ENABLEFDS
+#if CONFIG_ENABLEFDS
   int s;
   // Set up the RAM file system.
   s = mount("", "/", "ramfs", 0, NULL);
@@ -2074,11 +2075,11 @@ ELK_CONSTRUCTOR()
   main_thread.brk = (char *)round_page((uintptr_t)__end + KMEM_SIZE);
   current = &main_thread;
 
-#if THREAD_COMMANDS
+#if CONFIG_THREAD_COMMANDS
   command_insert(NULL, sectionCommand);
   command_insert("ps", psCommand);
   command_insert("ss", ssCommand);
-#endif
+#endif // CONFIG_THREAD_COMMANDS
 #if ELK_DEBUG
   command_insert("dbg", dbgCommand);
 #endif
@@ -2109,7 +2110,7 @@ ELK_CONSTRUCTOR()
   SYSCALL(setuid);
   SYSCALL(set_robust_list);
   SYSCALL(set_tid_address);
-#if HAVE_SIGNALS
+#if CONFIG_SIGNALS
   SYSCALL(rt_sigprocmask);
 #endif
   SYSCALL(tkill);
@@ -2131,7 +2132,7 @@ ELK_CONSTRUCTOR()
 
 C_CONSTRUCTOR()
 {
-#if ENABLEFDS
+#if CONFIG_ENABLEFDS
   int s = fdset_new(&current->fdset);
   ASSERT(s == 0);
 #endif

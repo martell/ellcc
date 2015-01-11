@@ -56,7 +56,7 @@
 #define tty_attach __elk_tty_attach
 #endif
 
-#define TTYQ_SIZE MAX_INPUT
+#define TTYQ_SIZE CONFIG_MAX_INPUT
 #define TTYQ_HIWAT (TTYQ_SIZE - 10)
 
 struct tty_queue {

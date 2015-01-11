@@ -570,7 +570,7 @@ int vop_einval(void)
   return -EINVAL;
 }
 
-#if VFS_COMMANDS
+#if CONFIG_VFS_COMMANDS
 /*
  * List all vnodes.
  */
@@ -663,7 +663,7 @@ static int chrootCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
-#endif // VFS_COMMANDS
+#endif // CONFIG_VFS_COMMANDS
 
 ELK_CONSTRUCTOR()
 {
@@ -672,7 +672,7 @@ ELK_CONSTRUCTOR()
 
   list_init(&anon_vnodes);
 
-#if VFS_COMMANDS
+#if CONFIG_VFS_COMMANDS
   command_insert("vs", vsCommand);
   command_insert("cd", cdCommand);
   command_insert("chroot", chrootCommand);

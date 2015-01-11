@@ -87,7 +87,7 @@ void fdset_release(fdset_t fdset)
 static int fd_allocate(fdset_t fdset, int spec)
 {
   int s;
-  int initfds = INITFDS;
+  int initfds = CONFIG_INITFDS;
 
   if (spec == -1) {
     // Get any file decriptor.
@@ -95,7 +95,7 @@ static int fd_allocate(fdset_t fdset, int spec)
   } else if (fdset->fds == NULL) {
     // The set hasn't been created, make a set big enough.
     while (spec > initfds) {
-      initfds *= FDMULTIPLIER;
+      initfds *= CONFIG_FDMULTIPLIER;
     }
   }
 
@@ -123,7 +123,7 @@ static int fd_allocate(fdset_t fdset, int spec)
       // No open slot found, double the size of the fd array.
       int count = fdset->count;
       while (s >= count) {
-        count *= FDMULTIPLIER;
+        count *= CONFIG_FDMULTIPLIER;
       }
 
       fd_t *newfds = kmem_realloc(fdset->fds, count * sizeof(fd_t));

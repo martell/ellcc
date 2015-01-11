@@ -1,4 +1,4 @@
-#if VM_COMMANDS
+#if CONFIG_VM_COMMANDS
 #include <stdio.h>
 #include "command.h"
 
@@ -90,11 +90,11 @@ static int sectionCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
-#endif  // VM_COMMANDS
+#endif  // CONFIG_VM_COMMANDS
 
 C_CONSTRUCTOR()
 {
-#if VM_COMMANDS
+#if CONFIG_VM_COMMANDS
   command_insert(NULL, sectionCommand);
   command_insert("vm", vmCommand);
 #endif
