@@ -28,6 +28,26 @@
 #ifndef _LAN9118REG_H_
 #define _LAN9118REG_H_
 
+#define LAN9118_DEFAULT_TX_FIF_SZ       5 /*kB*/
+
+#ifndef LAN9118_TX_FIF_SZ
+#define LAN9118_TX_FIF_SZ       LAN9118_DEFAULT_TX_FIF_SZ
+#endif
+#define LAN9118_TX_DATA_FIFO_SIZE       (LAN9118_TX_FIF_SZ * 1024 - 512)
+/*
+ * LAN9118 has FIFO buffer, total size is 16kB.  That is using TX and RX
+ * buffers.  We can set TX FIFO Size.  Also TX Status FIFO size is fixed
+ * at 512 Bytes.
+ *
+ *  TX FIFO Size                : LAN9118_TX_FIF_SZ
+ *   TX Status FIFO Size        : 512 Bytes (fixed)
+ *   TX Data FIFO Size          : LAN9118_TX_FIF_SZ - TX Status FIFO Size
+ *
+ *  RX FIFO Size                : 16kB - LAN9118_TX_FIF_SZ
+ *   RX Status FIFO Size        : RX FIFO Size / 16
+ *   RX Data FIFO Size          : RX FIFO Size - RX Status FIFO Size
+ */
+
 #define LAN9118_IOSIZE	0x100
 
 #define LAN9118_ID_9115	0x0115

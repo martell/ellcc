@@ -81,7 +81,7 @@ struct data
 };
 
 // The hardware initialize function.
-static int init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
+static int init(void *i, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
 {
   struct data *dp = i;
 
@@ -95,39 +95,39 @@ static int init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
 }
 
 // Check room. RICH: Clarify.
-static int startoutput(void *i, int unit)
+static int startoutput(void *i)
 {
   return 0;
 }
 
 // Write blocks.
-static void output(void *i, int unit, void *data, uint16_t len)
+static void output(void *i, void *data, uint16_t len)
 {
 }
 
 // End writing, send.
-static void endoutput(void *i, int unit, uint16_t total_len)
+static void endoutput(void *i, uint16_t total_len)
 {
 }
 
 // Check existence, get length.
-static int startinput(void *i, int unit)
+static int startinput(void *i)
 {
   return 0;
 }
 
 // Read blocks.
-static void input(void *i, int unit, void *data, uint16_t len)
+static void input(void *i, void *data, uint16_t len)
 {
 }
 
 // End reading.
-static void endinput(void *i, int unit)
+static void endinput(void *i)
 {
 }
 
 // Drop or queue the packet if the interface allows it.
-static void input_nomem(void *i, int unit, uint16_t len)
+static void input_nomem(void *i, uint16_t len)
 {
 }
 

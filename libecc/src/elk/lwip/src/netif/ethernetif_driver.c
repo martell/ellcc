@@ -112,7 +112,7 @@ static */ void input(struct netif *netif)
 
   ethernetif = netif->state;
   do {
-    if((len = ethernetif->ops->startinput(ethernetif->priv, netif->num)) == 0)
+    if((len = ethernetif->ops->startinput(ethernetif->priv)) == 0)
       break;
 
     // Move received packet into a new pbuf.
@@ -142,11 +142,11 @@ static */ void input(struct netif *netif)
          * ensure the tot_len member of the pbuf is the sum of the chained
          * pbuf len members.
          */
-        ethernetif->ops->input(ethernetif->priv, netif->num,
+        ethernetif->ops->input(ethernetif->priv,
                                q->payload, q->len);
       }
 
-      ethernetif->ops->endinput(ethernetif->priv, netif->num);
+      ethernetif->ops->endinput(ethernetif->priv);
 
 #if ETH_PAD_SIZE
       pbuf_header(p, ETH_PAD_SIZE); /* reclaim the padding word */
@@ -162,7 +162,7 @@ static */ void input(struct netif *netif)
 #if ETH_PAD_SIZE
       len -= ETH_PAD_SIZE; // Allow room for Ethernet padding.
 #endif
-      ethernetif->ops->input_nomem(ethernetif->priv, netif->num, len);
+      ethernetif->ops->input_nomem(ethernetif->priv, len);
       LINK_STATS_INC(link.memerr);
       LINK_STATS_INC(link.drop);
       return;
@@ -218,7 +218,7 @@ static err_t linkoutput(struct netif *netif, struct pbuf *p)
   struct ethernetif *ethernetif = netif->state;
   struct pbuf *q;
 
-  if(!ethernetif->ops->startoutput(ethernetif->priv, netif->num))
+  if(!ethernetif->ops->startoutput(ethernetif->priv))
     return ERR_IF;
 
 #if ETH_PAD_SIZE
@@ -230,10 +230,10 @@ static err_t linkoutput(struct netif *netif, struct pbuf *p)
      * time. The size of the data in each pbuf is kept in the ->len
      * variable.
      */
-    ethernetif->ops->output(ethernetif->priv, netif->num, q->payload, q->len);
+    ethernetif->ops->output(ethernetif->priv, q->payload, q->len);
   }
 
-  ethernetif->ops->endoutput(ethernetif->priv, netif->num, p->tot_len);
+  ethernetif->ops->endoutput(ethernetif->priv, p->tot_len);
 
 #if ETH_PAD_SIZE
   pbuf_header(p, ETH_PAD_SIZE); // Reclaim the padding word.
@@ -300,7 +300,7 @@ static err_t init(struct netif *netif)
   netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
 
   // Initialize the hardware and send back the Mac address.
-  int s = ethernetif->ops->init(ethernetif->priv, netif->num,
+  int s = ethernetif->ops->init(ethernetif->priv,
                                 &netif->hwaddr_len, netif->hwaddr, NULL);
   if (s < 0) {
     return ERR_ARG;     // RICH: Better error?

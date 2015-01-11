@@ -80,10 +80,32 @@ static void delay(int microsecs)
   // RICH: Implement somewhere.
 }
 
+
+static uint32_t mac_readreg(vaddr_t base, int reg)
+{
+  uint32_t cmd;
+  int timo = 3 * 1000 * 1000;           /* XXXX: 3sec */
+
+  bus_write_32(base + LAN9118_MAC_CSR_CMD,
+               LAN9118_MAC_CSR_CMD_BUSY | LAN9118_MAC_CSR_CMD_R | reg);
+  do {
+    cmd = bus_read_32(base + LAN9118_MAC_CSR_CMD);
+    if (!(cmd & LAN9118_MAC_CSR_CMD_BUSY))
+      break;
+
+    delay(100);
+  } while (timo -= 100);
+
+   if (timo <= 0)
+     diag_printf("%s: command busy\n", __func__);
+
+  return bus_read_32(base + LAN9118_MAC_CSR_DATA);
+}
+
 static void mac_writereg(vaddr_t base, int reg, uint32_t val)
 {
   uint32_t cmd;
-  int timo = 3 * 1000 * 1000;     /* XXXX: 3sec */
+  int timo = 3 * 1000 * 1000;           /* XXXX: 3sec */
 
   bus_write_32(base + LAN9118_MAC_CSR_DATA, val);
   bus_write_32(base + LAN9118_MAC_CSR_CMD,
@@ -120,7 +142,7 @@ static int setup_phy(vaddr_t base)
 }
 
 // The hardware initialize function.
-static int init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
+static int init(void *i, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
 {
   struct data *dp = i;
 
@@ -176,44 +198,83 @@ static int init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
     return s;
   }
 
-  diag_printf("9118 good\n");
+  // Set the trasmit FIFO size.
+  reg = bus_read_32(dp->base + LAN9118_HW_CFG);
+  reg &= ~LAN9118_HW_CFG_TX_FIF_MASK;
+  reg |= LAN9118_HW_CFG_TX_FIF_SZ(LAN9118_TX_FIF_SZ);
+  bus_write_32(dp->base + LAN9118_HW_CFG, reg);
+
+  // Configure the GPIO.
+  bus_write_32(dp->base + LAN9118_GPIO_CFG,
+               LAN9118_GPIO_CFG_LEDX_EN(2)  |
+               LAN9118_GPIO_CFG_LEDX_EN(1)  |
+               LAN9118_GPIO_CFG_LEDX_EN(0)  |
+               LAN9118_GPIO_CFG_GPIOBUFN(2) |
+               LAN9118_GPIO_CFG_GPIOBUFN(1) |
+               LAN9118_GPIO_CFG_GPIOBUFN(0));
+
+  bus_write_32(dp->base + LAN9118_IRQ_CFG, LAN9118_IRQ_CFG_IRQ_EN);
+  bus_write_32(dp->base + LAN9118_INT_STS,
+               bus_read_32(dp->base + LAN9118_INT_STS));
+  bus_write_32(dp->base + LAN9118_FIFO_INT,
+               LAN9118_FIFO_INT_TXSL(0) | LAN9118_FIFO_INT_RXSL(0));
+
+  // Enable interrupts.
+  bus_write_32(dp->base + LAN9118_INT_EN,
+#if 0   // not yet...
+               LAN9118_INT_PHY_INT | /* PHY */
+               LAN9118_INT_PME_INT | /* Power Management Event */
+#endif
+               LAN9118_INT_RXE     | /* Receive Error */
+               LAN9118_INT_TSFL    | /* TX Status FIFO Level */
+               LAN9118_INT_RXDF_INT| /* RX Dropped Frame Interrupt */
+               LAN9118_INT_RSFF    | /* RX Status FIFO Full */
+               LAN9118_INT_RSFL);    /* RX Status FIFO Level */
+
+  bus_write_32(dp->base + LAN9118_RX_CFG, LAN9118_RX_CFG_RXDOFF(2));
+  bus_write_32(dp->base + LAN9118_TX_CFG, LAN9118_TX_CFG_TX_ON);
+  reg = mac_readreg(dp->base, LAN9118_MAC_CR);
+  mac_writereg(dp->base, LAN9118_MAC_CR,
+               reg | LAN9118_MAC_CR_TXEN | LAN9118_MAC_CR_RXEN);
+
+  // RICH: lan9118_set_filter(sc);
   return 0;
 }
 
 // Check room. RICH: Clarify.
-static int startoutput(void *i, int unit)
+static int startoutput(void *i)
 {
   return 0;
 }
 
 // Write blocks.
-static void output(void *i, int unit, void *data, uint16_t len)
+static void output(void *i, void *data, uint16_t len)
 {
 }
 
 // End writing, send.
-static void endoutput(void *i, int unit, uint16_t total_len)
+static void endoutput(void *i, uint16_t total_len)
 {
 }
 
 // Check existence, get length.
-static int startinput(void *i, int unit)
+static int startinput(void *i)
 {
   return 0;
 }
 
 // Read blocks.
-static void input(void *i, int unit, void *data, uint16_t len)
+static void input(void *i, void *data, uint16_t len)
 {
 }
 
 // End reading.
-static void endinput(void *i, int unit)
+static void endinput(void *i)
 {
 }
 
 // Drop or queue the packet if the interface allows it.
-static void input_nomem(void *i, int unit, uint16_t len)
+static void input_nomem(void *i, uint16_t len)
 {
 }
 

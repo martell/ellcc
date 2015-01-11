@@ -9,21 +9,21 @@
 struct etherops
 {
   // The hardware initialize function.
-  int (*init)(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast);
+  int (*init)(void *i, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast);
   // Check room. RICH: Clarify.
-  int (*startoutput)(void *i, int unit);
+  int (*startoutput)(void *i);
   // Write blocks.
-  void (*output)(void *i, int unit, void *data, uint16_t len);
+  void (*output)(void *i, void *data, uint16_t len);
   // End writing, send.
-  void (*endoutput)(void *i, int unit, uint16_t total_len);
+  void (*endoutput)(void *i, uint16_t total_len);
   // Check existence, get length.
-  int (*startinput)(void *i, int unit);
+  int (*startinput)(void *i);
   // Read blocks.
-  void (*input)(void *i, int unit, void *data, uint16_t len);
+  void (*input)(void *i, void *data, uint16_t len);
   // End reading.
-  void (*endinput)(void *i, int unit);
+  void (*endinput)(void *i);
   // Drop or queue the packet if the interface allows it.
-  void (*input_nomem)(void *i, int unit, uint16_t len);
+  void (*input_nomem)(void *i, uint16_t len);
 };
 
 struct ethernetif
