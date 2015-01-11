@@ -62,6 +62,9 @@
  *
  */
 
+#include <unistd.h>
+#include <errno.h>
+
 #include "config.h"
 #include "kernel.h"
 
@@ -78,7 +81,7 @@ struct data
 };
 
 // The hardware initialize function.
-static void init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
+static int init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
 {
   struct data *dp = i;
 
@@ -87,6 +90,8 @@ static void init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
   // Set MAC hardware address.
   memcpy(hwaddr, dp->hwaddr, ETHARP_HWADDR_LEN);
   // Do whatever else is needed to initialize the interface.
+
+  return 0;
 }
 
 // Check room. RICH: Clarify.
@@ -146,8 +151,8 @@ static struct data data[] = {
 #define UNITS (sizeof(data) / sizeof(data[0]))
 
 const static struct ethernetif ethernetif[] = {
-  { .name = "ln0", .ops = &ops, .priv = &data[0], },
-  { .name = "ln1", .ops = &ops, .priv = &data[1], },
+  { .name = "lb0", .ops = &ops, .priv = &data[0], },
+  { .name = "lb1", .ops = &ops, .priv = &data[1], },
 };
 
 ELK_CONSTRUCTOR()

@@ -36,12 +36,15 @@
 
 #include <sys/types.h>
 
-#define bus_read_8(addr) (*((volatile uint8_t *)(addr)))
-#define bus_read_16(addr) (*((volatile uint16_t *)(addr)))
-#define bus_read_32(addr) (*((volatile uint32_t *)(addr)))
+/* temp!! */
+#define IOBASE	0x80000000
 
-#define bus_write_8(addr, val) (*((volatile uint8_t *)(addr)) = (val))
-#define bus_write_16(addr, val) (*((volatile uint16_t *)(addr)) = (val))
-#define bus_write_32(addr, val) (*((volatile uint32_t *)(addr)) = (val))
+#define bus_read_8(addr)	(*((volatile uint8_t *)(IOBASE+addr)))
+#define bus_read_16(addr)	(*((volatile uint16_t *)(IOBASE+addr)))
+#define bus_read_32(addr)	(*((volatile uint32_t *)(IOBASE+addr)))
+
+#define bus_write_8(addr, val)	(*((volatile uint8_t *)(IOBASE+addr)) = (val))
+#define bus_write_16(addr, val)	(*((volatile uint16_t *)(IOBASE+addr)) = (val))
+#define bus_write_32(addr, val)	(*((volatile uint32_t *)(IOBASE+addr)) = (val))
 
 #endif // _busio_h_

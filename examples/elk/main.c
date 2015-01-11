@@ -30,7 +30,7 @@ int main(int argc, char **argv)
   struct in_addr in_addr;
 
   // Set the device name for subsequent calls.
-  strcpy(ifreq.ifr_name, "ln0");
+  strcpy(ifreq.ifr_name, "la0");
 
   // Set the interface IP address.
   inet_aton("192.124.43.4", &in_addr);
@@ -94,9 +94,7 @@ int main(int argc, char **argv)
   s = sendto(sfd, buf, len, 0, (struct sockaddr *)&sockaddr_in, sizeof(sockaddr_in));
   if (s < 0) {
     printf("sendto() failed: %s\n", strerror(errno));
-  }
-
-  if (s == 0) {
+  } else {
     s = recv(sfd, buf, 100, 0); // MSG_DONTWAIT);
     if (s < 0) {
       printf("recv() failed: %s\n", strerror(errno));

@@ -300,8 +300,11 @@ static err_t init(struct netif *netif)
   netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
 
   // Initialize the hardware and send back the Mac address.
-  ethernetif->ops->init(ethernetif->priv, netif->num,
-                        &netif->hwaddr_len, netif->hwaddr, NULL);
+  int s = ethernetif->ops->init(ethernetif->priv, netif->num,
+                                &netif->hwaddr_len, netif->hwaddr, NULL);
+  if (s < 0) {
+    return ERR_ARG;     // RICH: Better error?
+  }
 
   return ERR_OK;
 }

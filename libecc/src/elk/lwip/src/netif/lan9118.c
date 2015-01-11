@@ -62,9 +62,14 @@
  *
  */
 
+#include <unistd.h>
+#include <errno.h>
+
 #include "config.h"
 #include "kernel.h"
+#include "busio.h"
 
+#include "lan9118reg.h"
 #include "ethernetif.h"
 
 // Make the driver a loadable feature.
@@ -74,11 +79,12 @@ FEATURE(lwip_lan9118)
  */
 struct data
 {
+  vaddr_t base;
   u8_t hwaddr[ETHARP_HWADDR_LEN];
 };
 
 // The hardware initialize function.
-static void init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
+static int init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
 {
   struct data *dp = i;
 
@@ -87,6 +93,26 @@ static void init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
   // Set MAC hardware address.
   memcpy(hwaddr, dp->hwaddr, ETHARP_HWADDR_LEN);
   // Do whatever else is needed to initialize the interface.
+  int c = 10;
+  while (!(bus_read_32(dp->base + LAN9118_PMT_CTRL) & LAN9118_PMT_CTRL_READY)) {
+    usleep(500000);     // 500 milliseconds.
+    if (--c == 0) {
+      return -EBUSY;
+    }
+  }
+
+  // Soft reset.
+  bus_write_32(dp->base + LAN9118_HW_CFG, LAN9118_HW_CFG_SRST);
+  uint32_t reg;
+  do {
+    reg = bus_read_32(dp->base + LAN9118_HW_CFG);
+    if (reg & LAN9118_HW_CFG_SRST_TO) {
+      return -ETIMEDOUT;
+    }
+  } while (reg & LAN9118_HW_CFG_SRST);
+
+  diag_printf("9118 good\n");
+  return 0;
 }
 
 // Check room. RICH: Clarify.
@@ -138,16 +164,18 @@ static const struct etherops ops = {
 };
 
 static struct data data[] = {
-  { .hwaddr = "\x05\x04\x03\x02\x01",
+  { .base = 0xdb000000,         // RICH: Address assignment.
+    .hwaddr = "\x06\x05\x04\x03\x02\x01",
   },
-  { .hwaddr = "\x15\x14\x13\x12\x11",
+  { .base = 0xda000000,
+    .hwaddr = "\x16\x15\x14\x13\x12\x11",
   },
 };
 #define UNITS (sizeof(data) / sizeof(data[0]))
 
 const static struct ethernetif ethernetif[] = {
-  { .name = "l91180", .ops = &ops, .priv = &data[0], },
-  { .name = "l91181", .ops = &ops, .priv = &data[1], },
+  { .name = "la0", .ops = &ops, .priv = &data[0], },
+  { .name = "la1", .ops = &ops, .priv = &data[1], },
 };
 
 ELK_CONSTRUCTOR()

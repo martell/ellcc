@@ -36,12 +36,12 @@
 
 #include <sys/types.h>
 
-#define bus_read_8(addr) (*((volatile uint8_t *)(addr)))
-#define bus_read_16(addr) (*((volatile uint16_t *)(addr)))
-#define bus_read_32(addr) (*((volatile uint32_t *)(addr)))
+void	 bus_write_8(int addr, uint8_t val);
+void	 bus_write_16(int addr, uint16_t val);
+void	 bus_write_32(int addr, uint32_t val);
 
-#define bus_write_8(addr, val) (*((volatile uint8_t *)(addr)) = (val))
-#define bus_write_16(addr, val) (*((volatile uint16_t *)(addr)) = (val))
-#define bus_write_32(addr, val) (*((volatile uint32_t *)(addr)) = (val))
+uint8_t	 bus_read_8(int addr);
+uint16_t bus_read_16(int addr);
+uint32_t bus_read_32(int addr);
 
 #endif // _busio_h_

@@ -713,6 +713,9 @@ static void int_mmu_init(void)
 
     // UART 0.
     { PL011_BASE, PL011_PHYSICAL_BASE, PL011_SIZE, VMT_IO },
+
+    // LAN9118. RICH: Better way.
+    { 0xdb000000, 0x4e000000, 0x100000, VMT_IO },
 #endif
     { 0,0,0,0 }
   };
