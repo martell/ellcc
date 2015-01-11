@@ -72,6 +72,7 @@ FEATURE(lwip_lan9118)
 struct data
 {
   vaddr_t base;
+  u16_t mtu;
   u8_t hwaddr[ETHARP_HWADDR_LEN];
 };
 
@@ -142,9 +143,13 @@ static int setup_phy(vaddr_t base)
 }
 
 // The hardware initialize function.
-static int init(void *i, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
+static int init(void *i, u8_t *hwaddr_len, u8_t *hwaddr,
+                u16_t *mtu, void *mcast)
 {
   struct data *dp = i;
+
+  // Set the maximum transfer unit.
+  *mtu = dp->mtu;
 
   // Set the MAC hardware address length.
   *hwaddr_len = ETHARP_HWADDR_LEN;
@@ -241,15 +246,30 @@ static int init(void *i, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
   return 0;
 }
 
-// Check room. RICH: Clarify.
+/** Check the interface for room in the transmit buffer.
+ * This function could wait until space is available if the
+ * transmitter is active.
+ */
 static int startoutput(void *i)
 {
+  struct data *dp = i;
+  unsigned tx;
+
+  // Find the amount of free TX buffer space.
+  tx = LAN9118_TX_FIFO_INF_TDFREE(bus_read_32(dp->base + LAN9118_TX_FIFO_INF));
+  if (tx >= dp->mtu) {
+    return 1;
+  }
+
+  // RICH: Delay until space is available?
   return 0;
 }
 
-// Write blocks.
+// Write data to the interface.
 static void output(void *i, void *data, uint16_t len)
 {
+  struct data *dp = i;
+
 }
 
 // End writing, send.
@@ -291,9 +311,11 @@ static const struct etherops ops = {
 
 static struct data data[] = {
   { .base = 0xdb000000,         // RICH: Address assignment.
+    .mtu = ETHERNET_MTU,
     .hwaddr = "\x06\x05\x04\x03\x02\x01",
   },
   { .base = 0xda000000,
+    .mtu = ETHERNET_MTU,
     .hwaddr = "\x16\x15\x14\x13\x12\x11",
   },
 };

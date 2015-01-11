@@ -81,7 +81,8 @@ struct data
 };
 
 // The hardware initialize function.
-static int init(void *i, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
+static int init(void *i, u8_t *hwaddr_len, u8_t *hwaddr, u16_t *mtu,
+                void *mcast)
 {
   struct data *dp = i;
 

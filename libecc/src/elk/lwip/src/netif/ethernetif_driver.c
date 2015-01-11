@@ -292,16 +292,14 @@ static err_t init(struct netif *netif)
 #endif // LWIP_IPV6
   netif->linkoutput = linkoutput;
 
-  // Maximum transfer unit.
-  netif->mtu = ETHERNET_MTU;
-
   // Device capabilities.
   // Don't set NETIF_FLAG_ETHARP if this device is not an ethernet one.
   netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_LINK_UP;
 
   // Initialize the hardware and send back the Mac address.
   int s = ethernetif->ops->init(ethernetif->priv,
-                                &netif->hwaddr_len, netif->hwaddr, NULL);
+                                &netif->hwaddr_len, netif->hwaddr,
+                                &netif->mtu, NULL);
   if (s < 0) {
     return ERR_ARG;     // RICH: Better error?
   }

@@ -9,8 +9,8 @@
 struct etherops
 {
   // The hardware initialize function.
-  int (*init)(void *i, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast);
-  // Check room. RICH: Clarify.
+  int (*init)(void *i, u8_t *hwaddr_len, u8_t *hwaddr, u16_t *mtu, void *mcast);
+  // Check the device for room in the transmit buffer.
   int (*startoutput)(void *i);
   // Write blocks.
   void (*output)(void *i, void *data, uint16_t len);
