@@ -30,36 +30,28 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  *
- * Copyright (c) 2001-2004 Swedish Institute of Computer Science.
+ * Copyright (c) 2008 KIYOHARA Takashi
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
- *  modification, are permitted provided that the following conditions are met:
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
  *
- * 1. Redistributions of source code must retain the above copyright notice,
- *    this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- *    this list of conditions and the following disclaimer in the documentation
- *    and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
- * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
- * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * This file is part of ELK and the lwIP TCP/IP stack.
- *
- * Author: Adam Dunkels <adam@sics.se>
- * Author: Richard Pennington <rich@pennware.com>
- *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ * ANY WAY OUT OF THE USE OF THI
  */
 
 #include <unistd.h>
@@ -83,6 +75,50 @@ struct data
   u8_t hwaddr[ETHARP_HWADDR_LEN];
 };
 
+static void delay(int microsecs)
+{
+  // RICH: Implement somewhere.
+}
+
+static void mac_writereg(vaddr_t base, int reg, uint32_t val)
+{
+  uint32_t cmd;
+  int timo = 3 * 1000 * 1000;     /* XXXX: 3sec */
+
+  bus_write_32(base + LAN9118_MAC_CSR_DATA, val);
+  bus_write_32(base + LAN9118_MAC_CSR_CMD,
+               LAN9118_MAC_CSR_CMD_BUSY | LAN9118_MAC_CSR_CMD_W | reg);
+  do {
+    cmd = bus_read_32(base + LAN9118_MAC_CSR_CMD);
+    if (!(cmd & LAN9118_MAC_CSR_CMD_BUSY))
+      break;
+    delay(100);
+  } while (timo -= 100);
+  if (timo <= 0)
+    diag_printf("%s: command busy\n", __func__);
+}
+
+static int setup_phy(vaddr_t base)
+{
+  // Turn off the clock.
+  bus_write_32(base + LAN9118_HW_CFG,
+               LAN9118_HW_CFG_MBO | LAN9118_HW_CFG_PHY_CLK_SEL_CD);
+  delay(1);
+
+  // Use the internal PHY.
+  bus_write_32(base + LAN9118_HW_CFG,
+               LAN9118_HW_CFG_MBO | LAN9118_HW_CFG_PHY_CLK_SEL_IPHY);
+  delay(1);
+
+  // Reset PHY.
+  uint32_t pmt_ctrl = bus_read_32(base + LAN9118_PMT_CTRL);
+  bus_write_32(base + LAN9118_PMT_CTRL, pmt_ctrl | LAN9118_PMT_CTRL_PHY_RST);
+  while (bus_read_32(base + LAN9118_PMT_CTRL) & LAN9118_PMT_CTRL_PHY_RST)
+    continue;
+
+  return 0;
+}
+
 // The hardware initialize function.
 static int init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
 {
@@ -95,7 +131,7 @@ static int init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
   // Do whatever else is needed to initialize the interface.
   int c = 10;
   while (!(bus_read_32(dp->base + LAN9118_PMT_CTRL) & LAN9118_PMT_CTRL_READY)) {
-    usleep(500000);     // 500 milliseconds.
+    delay(500000);     // 500 milliseconds.
     if (--c == 0) {
       return -EBUSY;
     }
@@ -110,6 +146,35 @@ static int init(void *i, int unit, u8_t *hwaddr_len, u8_t *hwaddr, void *mcast)
       return -ETIMEDOUT;
     }
   } while (reg & LAN9118_HW_CFG_SRST);
+
+  if (bus_read_32(dp->base + LAN9118_BYTE_TEST) == LAN9118_BYTE_TEST_VALUE) {
+    // The byte order is wrong.
+    bus_write_32(dp->base + LAN9118_WORD_SWAP, 0xffffffff);
+    if (bus_read_32(dp->base + LAN9118_BYTE_TEST) != LAN9118_BYTE_TEST_VALUE) {
+      return -EIO;
+    }
+  }
+
+  // MAke sure the EEPROM is not busy.
+  while (bus_read_32(dp->base + LAN9118_E2P_CMD) & LAN9118_E2P_CMD_EPCB)
+    continue;
+
+   if (!(bus_read_32(dp->base + LAN9118_E2P_CMD) & LAN9118_E2P_CMD_MACAL)) {
+     mac_writereg(dp->base, LAN9118_ADDRL,
+                  dp->hwaddr[0] |
+                  dp->hwaddr[1] << 8 |
+                  dp->hwaddr[2] << 16 |
+                  dp->hwaddr[3] << 24);
+     mac_writereg(dp->base, LAN9118_ADDRH,
+                  dp->hwaddr[4] | dp->hwaddr[5] << 8);
+  }
+
+  // RICH: Set flow control here.
+
+  int s = setup_phy(dp->base);
+  if (s != 0) {
+    return s;
+  }
 
   diag_printf("9118 good\n");
   return 0;
