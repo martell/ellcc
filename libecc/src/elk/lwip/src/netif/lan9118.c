@@ -250,14 +250,20 @@ static int init(void *i, u8_t *hwaddr_len, u8_t *hwaddr,
  * This function could wait until space is available if the
  * transmitter is active.
  */
-static int startoutput(void *i)
+static int startoutput(void *i, uint16_t total_len, int fragcnt)
 {
   struct data *dp = i;
   unsigned tx;
+  /* Calculate the buffer space needed for this packet.
+   * Two control words + fragment data.
+   * RICH: This is wrong. Adjust.
+   */
+  size_t size = total_len + (fragcnt * (2 * sizeof(uint32_t)));
 
   // Find the amount of free TX buffer space.
   tx = LAN9118_TX_FIFO_INF_TDFREE(bus_read_32(dp->base + LAN9118_TX_FIFO_INF));
-  if (tx >= dp->mtu) {
+diag_printf("fragcnt = %u size = %zu tx = %u\n", fragcnt, total_len, tx);
+  if (tx >= size) {
     return 1;
   }
 
@@ -299,14 +305,15 @@ static void input_nomem(void *i, uint16_t len)
 }
 
 static const struct etherops ops = {
-  init,
-  startoutput,
-  output,
-  endoutput,
-  startinput,
-  input,
-  endinput,
-  input_nomem,
+  .flags = ETHIF_FRAGCNT,
+  .init = init,
+  .startoutput = startoutput,
+  .output = output,
+  .endoutput = endoutput,
+  .startinput = startinput,
+  .input = input,
+  .endinput = endinput,
+  .input_nomem = input_nomem,
 };
 
 static struct data data[] = {

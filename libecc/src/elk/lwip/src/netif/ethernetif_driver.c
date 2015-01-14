@@ -217,8 +217,18 @@ static err_t linkoutput(struct netif *netif, struct pbuf *p)
 {
   struct ethernetif *ethernetif = netif->state;
   struct pbuf *q;
+  uint16_t total_len = p->tot_len;      // The length of the packet.
+  int fragcnt = 0;                      // The number of fragments.
+  unsigned flags = ethernetif->ops->flags;
 
-  if(!ethernetif->ops->startoutput(ethernetif->priv))
+  if (flags & ETHIF_FRAGCNT) {
+    // Pre-calculate the number of fragments for startoutput().
+    for(q = p; q != NULL; q = q->next) {
+      ++fragcnt;
+    }
+  }
+
+  if(!ethernetif->ops->startoutput(ethernetif->priv, total_len, fragcnt))
     return ERR_IF;
 
 #if ETH_PAD_SIZE
@@ -233,7 +243,7 @@ static err_t linkoutput(struct netif *netif, struct pbuf *p)
     ethernetif->ops->output(ethernetif->priv, q->payload, q->len);
   }
 
-  ethernetif->ops->endoutput(ethernetif->priv, p->tot_len);
+  ethernetif->ops->endoutput(ethernetif->priv, total_len);
 
 #if ETH_PAD_SIZE
   pbuf_header(p, ETH_PAD_SIZE); // Reclaim the padding word.

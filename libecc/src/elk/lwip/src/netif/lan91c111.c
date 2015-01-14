@@ -95,8 +95,11 @@ static int init(void *i, u8_t *hwaddr_len, u8_t *hwaddr, u16_t *mtu,
   return 0;
 }
 
-// Check room. RICH: Clarify.
-static int startoutput(void *i)
+/** Check the interface for room in the transmit buffer.
+ * This function could wait until space is available if the
+ * transmitter is active.
+ */
+static int startoutput(void *i, uint16_t total_len, int fragcnt)
 {
   return 0;
 }
@@ -133,14 +136,15 @@ static void input_nomem(void *i, uint16_t len)
 }
 
 static const struct etherops ops = {
-  init,
-  startoutput,
-  output,
-  endoutput,
-  startinput,
-  input,
-  endinput,
-  input_nomem,
+  .flags = ETHIF_FRAGCNT,
+  .init = init,
+  .startoutput = startoutput,
+  .output = output,
+  .endoutput = endoutput,
+  .startinput = startinput,
+  .input = input,
+  .endinput = endinput,
+  .input_nomem = input_nomem,
 };
 
 static struct data data[] = {

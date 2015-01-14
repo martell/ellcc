@@ -8,10 +8,11 @@
 
 struct etherops
 {
+  unsigned flags;               // Driver flags, see below.
   // The hardware initialize function.
   int (*init)(void *i, u8_t *hwaddr_len, u8_t *hwaddr, u16_t *mtu, void *mcast);
   // Check the device for room in the transmit buffer.
-  int (*startoutput)(void *i);
+  int (*startoutput)(void *i, uint16_t total_len, int fragcnt);
   // Write blocks.
   void (*output)(void *i, void *data, uint16_t len);
   // End writing, send.
@@ -25,6 +26,11 @@ struct etherops
   // Drop or queue the packet if the interface allows it.
   void (*input_nomem)(void *i, uint16_t len);
 };
+
+// Flag values.
+
+// Calculate the number of fragments for startoutput().
+#define ETHIF_FRAGCNT   0x00001
 
 struct ethernetif
 {
