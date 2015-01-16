@@ -8,9 +8,9 @@ compiler:
     # - -no-integrated-as
   c_include_dirs:
     - $R/clang
+    - $R/mingw/x86_64-w64-mingw32/sys-root/mingw/include
     - $R/mingw/gcc/x86_64-w64-mingw32/4.8.4/include
     - $R/mingw/gcc/x86_64-w64-mingw32/4.8.4/include-fixed
-    - $R/mingw/x86_64-w64-mingw32/sys-root/mingw/include
   cxx_include_dirs:
     - $R/mingw/x86_64-w64-mingw32/sys-root/mingw/include/c++
     - $R/mingw/x86_64-w64-mingw32/sys-root/mingw/include/c++/x86_64-w64-mingw32

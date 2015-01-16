@@ -8,9 +8,9 @@ compiler:
     # - -no-integrated-as
   c_include_dirs:
     - $R/clang
+    - $R/mingw/i686-w64-mingw32/sys-root/mingw/include
     - $R/mingw/gcc/i686-w64-mingw32/4.8.4/include
     - $R/mingw/gcc/i686-w64-mingw32/4.8.4/include-fixed
-    - $R/mingw/i686-w64-mingw32/sys-root/mingw/include
   cxx_include_dirs:
     - $R/mingw/i686-w64-mingw32/sys-root/mingw/include/c++
     - $R/mingw/i686-w64-mingw32/sys-root/mingw/include/c++/i686-w64-mingw32
@@ -38,6 +38,7 @@ linker:
   opt_pthread:
     - -pthread
   options:
+    # - -flavor gnu
     - -m i386pe
   static_crt1: $R/mingw/i686-w64-mingw32/sys-root/mingw/lib/crt2.o
   dynamic_crt1: $R/lib/i386-linux-eng/Scrt1.o
