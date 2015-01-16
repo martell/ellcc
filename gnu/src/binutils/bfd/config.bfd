@@ -512,7 +512,7 @@ case "${targ}" in
   i[3-7]86-*-elf | i[3-7]86-*-sco3.2v5* | \
   i[3-7]86-*-dgux* | i[3-7]86-*-sysv5*)
     targ_defvec=bfd_elf32_i386_vec
-    targ_selvecs=i386coff_vec
+    // RICH: Remove ambiguity. targ_selvecs=i386coff_vec
     ;;
   i[3-7]86-*-solaris2*)
     targ_defvec=bfd_elf32_i386_sol2_vec

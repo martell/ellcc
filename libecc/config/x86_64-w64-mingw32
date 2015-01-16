@@ -1,0 +1,70 @@
+---
+based_on:        ''
+global:
+  static_default:  true
+compiler:
+  options:
+    - -target x86_64-ellcc-mingw
+    # - -no-integrated-as
+  c_include_dirs:
+    - $R/clang
+    - $R/mingw/gcc/x86_64-w64-mingw32/4.8.4/include
+    - $R/mingw/gcc/x86_64-w64-mingw32/4.8.4/include-fixed
+    - $R/mingw/x86_64-w64-mingw32/sys-root/mingw/include
+  cxx_include_dirs:
+    - $R/mingw/x86_64-w64-mingw32/sys-root/mingw/include/c++
+    - $R/mingw/x86_64-w64-mingw32/sys-root/mingw/include/c++/x86_64-w64-mingw32
+    - $R/mingw/x86_64-w64-mingw32/sys-root/mingw/include/c++/backward
+assembler:
+  exe: $E/x86_64-w64-mingw32-as
+  output:
+    - -o $O
+linker:
+  exe: $E/ecc-ld$X
+  # exe: $E/lld$X
+  output:
+    - -o $O
+  start:
+  opt_static:
+    - -Bstatic
+  opt_rdynamic:
+    - -export-dynamic
+  opt_dynamic:
+    - -Bdynamic
+  opt_shared:
+    - -shared
+  opt_notshared:
+    - -dynamic-linker /usr/libexec/ld.so
+  opt_pthread:
+    - -pthread
+  options:
+    - -m i386pep
+  static_crt1: $R/mingw/x86_64-w64-mingw32/sys-root/mingw/lib/crt2.o
+  dynamic_crt1: $R/lib/i386-linux-eng/Scrt1.o
+  crtbegin: $R/mingw/x86_64-w64-mingw32/sys-root/mingw/lib/crtbegin.o
+  crtend: $R/mingw/x86_64-w64-mingw32/sys-root/mingw/lib/crtend.o
+  library_paths:
+    - -L$R/mingw/gcc/x86_64-w64-mingw32/4.8.4
+    - -L$R/mingw/x86_64-w64-mingw32/lib
+    - -L$R/mingw/x86_64-w64-mingw32/sys-root/mingw/lib
+    - -L$R/mingw/x86_64-w64-mingw32/lib
+    - -L$R/mingw/x86_64-w64-mingw32/sys-root/mingw/lib
+  cxx_libraries:
+    - -lstdc++
+    - -lm
+  profile_libraries:
+    - -lprofile_rt
+  c_libraries:
+    - -lmingw32
+    - -lgcc
+    - -lgcc_eh
+    - -lmoldname
+    - -lmingwex
+    - -lmsvcrt
+    - -ladvapi32
+    - -lshell32
+    - -luser32
+    - -lkernel32
+    - -lmingw32
+    - -lgcc
+...

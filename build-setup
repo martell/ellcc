@@ -205,6 +205,17 @@ if [ "x${ecc}" != "x" ] ; then
     haslibs=yes
     WHY="build for ${host} with libecc using ecc"
   fi
+  if [ x${tuple} = "xi386-w64-mingw32" ]; then
+    # To build for host with libecc:
+    if [ -e ${ecc}-ar ]; then
+      ar=${ecc}-ar
+      ranlib=${ecc}-ranlib
+    fi
+    builddir="-${tuple}"
+    haslibs=yes
+    os=mingw32
+    WHY="build for ${host} with libecc using ecc"
+  fi
 fi
 
 export host

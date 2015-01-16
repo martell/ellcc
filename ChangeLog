@@ -1,5 +1,6 @@
 current SVN:
 
+* Added support for using ELLCC to build for Windows using MinGW runtime.
 * Added AF_INET socket ioctl() handling for interfaces.
 
 version 0.1.7:

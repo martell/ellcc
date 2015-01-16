@@ -21,6 +21,8 @@ CROSSSUBDIRS := \
        gnu-build$(TARGETDIR)/binutils/ppc64-elf \
        gnu-build$(TARGETDIR)/binutils/sparc-elf \
        gnu-build$(TARGETDIR)/binutils/x86_64-elf \
+       gnu-build$(TARGETDIR)/binutils/i686-w64-mingw32 \
+       gnu-build$(TARGETDIR)/binutils/x86_64-w64-mingw32 \
        gnu-build$(TARGETDIR)/gdb \
        gnu-build$(TARGETDIR)/binutils
 

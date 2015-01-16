@@ -23,6 +23,7 @@ mkdir -p gnu-build$builddir
 echo Configuring package binutils for all targets, adding a couple.
 moretargets=`echo $targets | sed -e "s/-elf /-linux,/g"`
 moretargets=,$moretargets,arm-elf-linux-eabi,armeb-elf-linux-eabi
+moretargets=,$moretargets,x86_64-w64-mingw32,i686-w64-mingw32
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
     targetlist=$targetlist$moretargets haslibs=$haslibs \
     MINGW=$mingw bindir=$bindir prefix=$prefix build=$build TUPLE=$tuple \
@@ -31,7 +32,7 @@ make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
 make -C gnu-build$builddir/binutils || exit 1
 
 # Configure for assemblers for all targets in the target list.
-for t in $targets; do
+for t in $targets x86_64-w64-mingw32 i686-w64-mingw32; do
   echo Configuring the assembler for $t
   make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
       target=$t haslibs=$haslibs \
