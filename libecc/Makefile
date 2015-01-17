@@ -219,6 +219,7 @@ c++-headers:
 	mkdir -p include/c++ ; \
 	cp -pr src/c++/libcxx/include/* include/c++ ; \
 	cp -pr src/c++/libcxxabi/include/* include/c++
+	mv include/c++/unwind.h  include/
 
 $(Configs)::
 	$(OUT)echo Making libc++ for $@ in c++-build/$@

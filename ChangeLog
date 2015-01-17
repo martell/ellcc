@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to musl 1.1.6.
 * Update to LLVM r226372.
 * Added support for using ELLCC to build for Windows using MinGW runtime.
 * Added AF_INET socket ioctl() handling for interfaces.

@@ -10,16 +10,17 @@ static inline __attribute__((const)) pthread_t __pthread_self()
 
 #else
 
-typedef char *(*__ptr_func_t)(void) __attribute__((const));
-#if defined(__ELLCC__)
-char *__aeabi_read_tp(void);
-
-#define __pthread_self() \
-	((pthread_t)(__aeabi_read_tp()+8-sizeof(struct pthread)))
+static inline __attribute__((const)) pthread_t __pthread_self()
+{
+#ifdef __clang__
+	char *p;
+	__asm__( "bl __a_gettp\n\tmov %0,r0" : "=r"(p) : : "cc", "r0", "lr" );
 #else
-#define __pthread_self() \
-	((pthread_t)(((__ptr_func_t)0xffff0fe0)()+8-sizeof(struct pthread)))
-#endif  /* !defined(__ELLCC__) */
+	register char *p __asm__("r0");
+	__asm__( "bl __a_gettp" : "=r"(p) : : "cc", "lr" );
+#endif
+	return (void *)(p+8-sizeof(struct pthread));
+}
 
 #endif
 
