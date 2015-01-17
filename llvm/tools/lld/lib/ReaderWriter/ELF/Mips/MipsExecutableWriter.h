@@ -22,8 +22,7 @@ template <typename ELFT> class MipsTargetLayout;
 template <class ELFT>
 class MipsExecutableWriter : public ExecutableWriter<ELFT> {
 public:
-  MipsExecutableWriter(MipsLinkingContext &ctx, MipsTargetLayout<ELFT> &layout,
-                       MipsELFFlagsMerger &elfFlagsMerger);
+  MipsExecutableWriter(MipsLinkingContext &ctx, MipsTargetLayout<ELFT> &layout);
 
 protected:
   void buildDynamicSymbolTable(const File &file) override;
@@ -42,16 +41,13 @@ protected:
 
 private:
   MipsELFWriter<ELFT> _writeHelper;
-  MipsLinkingContext &_mipsContext;
   MipsTargetLayout<Mips32ElELFType> &_mipsTargetLayout;
 };
 
 template <class ELFT>
-MipsExecutableWriter<ELFT>::MipsExecutableWriter(
-    MipsLinkingContext &ctx, MipsTargetLayout<ELFT> &layout,
-    MipsELFFlagsMerger &elfFlagsMerger)
-    : ExecutableWriter<ELFT>(ctx, layout),
-      _writeHelper(ctx, layout, elfFlagsMerger), _mipsContext(ctx),
+MipsExecutableWriter<ELFT>::MipsExecutableWriter(MipsLinkingContext &ctx,
+                                                 MipsTargetLayout<ELFT> &layout)
+    : ExecutableWriter<ELFT>(ctx, layout), _writeHelper(ctx, layout),
       _mipsTargetLayout(layout) {}
 
 template <class ELFT>
@@ -60,7 +56,7 @@ std::error_code MipsExecutableWriter<ELFT>::setELFHeader() {
   if (ec)
     return ec;
 
-  StringRef entryName = _mipsContext.entrySymbolName();
+  StringRef entryName = this->_context.entrySymbolName();
   if (const AtomLayout *al = this->_layout.findAtomLayoutByName(entryName)) {
     const auto *ea = cast<DefinedAtom>(al->_atom);
     if (ea->codeModel() == DefinedAtom::codeMipsMicro ||
@@ -132,7 +128,7 @@ template <class ELFT>
 LLD_UNIQUE_BUMP_PTR(SymbolTable<ELFT>)
     MipsExecutableWriter<ELFT>::createSymbolTable() {
   return LLD_UNIQUE_BUMP_PTR(SymbolTable<ELFT>)(new (
-      this->_alloc) MipsSymbolTable<ELFT>(_mipsContext));
+      this->_alloc) MipsSymbolTable<ELFT>(this->_context));
 }
 
 /// \brief create dynamic table
@@ -140,7 +136,7 @@ template <class ELFT>
 LLD_UNIQUE_BUMP_PTR(DynamicTable<ELFT>)
     MipsExecutableWriter<ELFT>::createDynamicTable() {
   return LLD_UNIQUE_BUMP_PTR(DynamicTable<ELFT>)(new (
-      this->_alloc) MipsDynamicTable<ELFT>(_mipsContext, _mipsTargetLayout));
+      this->_alloc) MipsDynamicTable<ELFT>(this->_context, _mipsTargetLayout));
 }
 
 /// \brief create dynamic symbol table
@@ -149,7 +145,7 @@ LLD_UNIQUE_BUMP_PTR(DynamicSymbolTable<ELFT>)
     MipsExecutableWriter<ELFT>::createDynamicSymbolTable() {
   return LLD_UNIQUE_BUMP_PTR(
       DynamicSymbolTable<ELFT>)(new (this->_alloc) MipsDynamicSymbolTable<ELFT>(
-      _mipsContext, _mipsTargetLayout));
+      this->_context, _mipsTargetLayout));
 }
 
 } // namespace elf

@@ -17,8 +17,8 @@
 #ifndef LLD_DRIVER_DRIVER_H
 #define LLD_DRIVER_DRIVER_H
 
-#include "lld/Core/InputGraph.h"
 #include "lld/Core/LLVM.h"
+#include "lld/Core/Node.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Support/raw_ostream.h"
 #include <memory>
@@ -31,6 +31,12 @@ class CoreLinkingContext;
 class MachOLinkingContext;
 class PECOFFLinkingContext;
 class ELFLinkingContext;
+
+typedef std::vector<std::unique_ptr<File>> FileVector;
+
+FileVector makeErrorFile(StringRef path, std::error_code ec);
+FileVector parseMemberFiles(FileVector &files);
+FileVector loadFile(LinkingContext &ctx, StringRef path, bool wholeArchive);
 
 /// Base class for all Drivers.
 class Driver {
@@ -94,6 +100,11 @@ public:
   /// Returns true iff there was an error.
   static bool parse(int argc, const char *argv[], MachOLinkingContext &info,
                     raw_ostream &diagnostics = llvm::errs());
+
+  // Reads a file from disk to memory. Returns only a needed chunk
+  // if a fat binary.
+  static ErrorOr<std::unique_ptr<MemoryBuffer>>
+  getMemoryBuffer(MachOLinkingContext &ctx, StringRef path);
 
 private:
   DarwinLdDriver() LLVM_DELETED_FUNCTION;

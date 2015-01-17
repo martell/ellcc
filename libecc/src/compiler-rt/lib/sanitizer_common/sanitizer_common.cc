@@ -12,8 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "sanitizer_common.h"
+#include "sanitizer_allocator_internal.h"
 #include "sanitizer_flags.h"
 #include "sanitizer_libc.h"
+#include "sanitizer_placement_new.h"
 
 namespace __sanitizer {
 
@@ -129,8 +131,8 @@ void NORETURN CheckFailed(const char *file, int line, const char *cond,
   Die();
 }
 
-uptr ReadFileToBuffer(const char *file_name, char **buff,
-                      uptr *buff_size, uptr max_len) {
+uptr ReadFileToBuffer(const char *file_name, char **buff, uptr *buff_size,
+                      uptr max_len, int *errno_p) {
   uptr PageSize = GetPageSizeCached();
   uptr kMinFileLen = PageSize;
   uptr read_len = 0;
@@ -139,7 +141,7 @@ uptr ReadFileToBuffer(const char *file_name, char **buff,
   // The files we usually open are not seekable, so try different buffer sizes.
   for (uptr size = kMinFileLen; size <= max_len; size *= 2) {
     uptr openrv = OpenFile(file_name, /*write*/ false);
-    if (internal_iserror(openrv)) return 0;
+    if (internal_iserror(openrv, errno_p)) return 0;
     fd_t fd = openrv;
     UnmapOrDie(*buff, *buff_size);
     *buff = (char*)MmapOrDie(size, __func__);
@@ -149,6 +151,10 @@ uptr ReadFileToBuffer(const char *file_name, char **buff,
     bool reached_eof = false;
     while (read_len + PageSize <= size) {
       uptr just_read = internal_read(fd, *buff + read_len, PageSize);
+      if (internal_iserror(just_read, errno_p)) {
+        UnmapOrDie(*buff, *buff_size);
+        return 0;
+      }
       if (just_read == 0) {
         reached_eof = true;
         break;
@@ -237,20 +243,28 @@ void ReportErrorSummary(const char *error_type, const char *file,
 LoadedModule::LoadedModule(const char *module_name, uptr base_address) {
   full_name_ = internal_strdup(module_name);
   base_address_ = base_address;
-  n_ranges_ = 0;
+  ranges_.clear();
+}
+
+void LoadedModule::clear() {
+  InternalFree(full_name_);
+  while (!ranges_.empty()) {
+    AddressRange *r = ranges_.front();
+    ranges_.pop_front();
+    InternalFree(r);
+  }
 }
 
 void LoadedModule::addAddressRange(uptr beg, uptr end, bool executable) {
-  CHECK_LT(n_ranges_, kMaxNumberOfAddressRanges);
-  ranges_[n_ranges_].beg = beg;
-  ranges_[n_ranges_].end = end;
-  exec_[n_ranges_] = executable;
-  n_ranges_++;
+  void *mem = InternalAlloc(sizeof(AddressRange));
+  AddressRange *r = new(mem) AddressRange(beg, end, executable);
+  ranges_.push_back(r);
 }
 
 bool LoadedModule::containsAddress(uptr address) const {
-  for (uptr i = 0; i < n_ranges_; i++) {
-    if (ranges_[i].beg <= address && address < ranges_[i].end)
+  for (Iterator iter = ranges(); iter.hasNext();) {
+    const AddressRange *r = iter.next();
+    if (r->beg <= address && address < r->end)
       return true;
   }
   return false;

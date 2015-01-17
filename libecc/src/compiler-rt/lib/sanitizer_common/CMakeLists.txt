@@ -8,6 +8,7 @@ set(SANITIZER_SOURCES
   sanitizer_deadlock_detector1.cc
   sanitizer_deadlock_detector2.cc
   sanitizer_flags.cc
+  sanitizer_flag_parser.cc
   sanitizer_libc.cc
   sanitizer_libignore.cc
   sanitizer_linux.cc
@@ -62,7 +63,9 @@ set(SANITIZER_HEADERS
   sanitizer_common_syscalls.inc
   sanitizer_deadlock_detector.h
   sanitizer_deadlock_detector_interface.h
+  sanitizer_flag_parser.h
   sanitizer_flags.h
+  sanitizer_flags.inc
   sanitizer_internal_defs.h
   sanitizer_lfstack.h
   sanitizer_libc.h

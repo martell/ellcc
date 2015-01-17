@@ -16,6 +16,7 @@
 
 #include "sanitizer_common/sanitizer_common.h"
 #include "sanitizer_common/sanitizer_flags.h"
+#include "sanitizer_common/sanitizer_flag_parser.h"
 #include "sanitizer_common/sanitizer_placement_new.h"
 #include "sanitizer_common/sanitizer_procmaps.h"
 #include "sanitizer_common/sanitizer_stackdepot.h"
@@ -36,41 +37,26 @@ bool DisabledInThisThread() { return disable_counter > 0; }
 
 Flags lsan_flags;
 
+void Flags::SetDefaults() {
+#define LSAN_FLAG(Type, Name, DefaultValue, Description) Name = DefaultValue;
+#include "lsan_flags.inc"
+#undef LSAN_FLAG
+}
+
+static void RegisterLsanFlags(FlagParser *parser, Flags *f) {
+#define LSAN_FLAG(Type, Name, DefaultValue, Description) \
+  RegisterFlag(parser, #Name, Description, &f->Name);
+#include "lsan_flags.inc"
+#undef LSAN_FLAG
+}
+
 static void InitializeFlags(bool standalone) {
   Flags *f = flags();
-  // Default values.
-  f->report_objects = false;
-  f->resolution = 0;
-  f->max_leaks = 0;
-  f->exitcode = 23;
-  f->use_registers = true;
-  f->use_globals = true;
-  f->use_stacks = true;
-  f->use_tls = true;
-  f->use_root_regions = true;
-  f->use_unaligned = false;
-  f->use_poisoned = false;
-  f->log_pointers = false;
-  f->log_threads = false;
+  FlagParser parser;
+  RegisterLsanFlags(&parser, f);
+  RegisterCommonFlags(&parser);
 
-  const char *options = GetEnv("LSAN_OPTIONS");
-  if (options) {
-    ParseFlag(options, &f->use_registers, "use_registers", "");
-    ParseFlag(options, &f->use_globals, "use_globals", "");
-    ParseFlag(options, &f->use_stacks, "use_stacks", "");
-    ParseFlag(options, &f->use_tls, "use_tls", "");
-    ParseFlag(options, &f->use_root_regions, "use_root_regions", "");
-    ParseFlag(options, &f->use_unaligned, "use_unaligned", "");
-    ParseFlag(options, &f->use_poisoned, "use_poisoned", "");
-    ParseFlag(options, &f->report_objects, "report_objects", "");
-    ParseFlag(options, &f->resolution, "resolution", "");
-    CHECK_GE(&f->resolution, 0);
-    ParseFlag(options, &f->max_leaks, "max_leaks", "");
-    CHECK_GE(&f->max_leaks, 0);
-    ParseFlag(options, &f->log_pointers, "log_pointers", "");
-    ParseFlag(options, &f->log_threads, "log_threads", "");
-    ParseFlag(options, &f->exitcode, "exitcode", "");
-  }
+  f->SetDefaults();
 
   // Set defaults for common flags (only in standalone mode) and parse
   // them from LSAN_OPTIONS.
@@ -83,7 +69,9 @@ static void InitializeFlags(bool standalone) {
     cf.detect_leaks = true;
     OverrideCommonFlags(cf);
   }
-  ParseCommonFlagsFromString(options);
+
+  const char *options = GetEnv("LSAN_OPTIONS");
+  parser.ParseString(options);
 }
 
 #define LOG_POINTERS(...)                           \

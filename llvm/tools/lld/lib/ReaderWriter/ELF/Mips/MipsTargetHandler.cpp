@@ -19,20 +19,19 @@ using namespace elf;
 typedef llvm::object::ELFType<llvm::support::little, 2, false> Mips32ElELFType;
 
 MipsTargetHandler::MipsTargetHandler(MipsLinkingContext &ctx)
-    : DefaultTargetHandler(ctx), _ctx(ctx),
-      _runtimeFile(new MipsRuntimeFile<Mips32ElELFType>(ctx)),
+    : _ctx(ctx), _runtimeFile(new MipsRuntimeFile<Mips32ElELFType>(ctx)),
       _targetLayout(new MipsTargetLayout<Mips32ElELFType>(ctx)),
-      _relocationHandler(new MipsTargetRelocationHandler(*_targetLayout, ctx)) {}
+      _relocationHandler(new MipsTargetRelocationHandler(*_targetLayout, ctx)) {
+}
 
 std::unique_ptr<Writer> MipsTargetHandler::getWriter() {
   switch (_ctx.getOutputELFType()) {
   case llvm::ELF::ET_EXEC:
-    return std::unique_ptr<Writer>(new MipsExecutableWriter<Mips32ElELFType>(
-        _ctx, *_targetLayout, _elfFlagsMerger));
+    return std::unique_ptr<Writer>(
+        new MipsExecutableWriter<Mips32ElELFType>(_ctx, *_targetLayout));
   case llvm::ELF::ET_DYN:
     return std::unique_ptr<Writer>(
-        new MipsDynamicLibraryWriter<Mips32ElELFType>(_ctx, *_targetLayout,
-                                                      _elfFlagsMerger));
+        new MipsDynamicLibraryWriter<Mips32ElELFType>(_ctx, *_targetLayout));
   case llvm::ELF::ET_REL:
     llvm_unreachable("TODO: support -r mode");
   default:

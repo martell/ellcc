@@ -59,10 +59,9 @@ std::error_code PPCTargetRelocationHandler::applyRelocation(
 }
 
 PPCTargetHandler::PPCTargetHandler(PPCLinkingContext &context)
-    : DefaultTargetHandler(context), _ppcLinkingContext(context),
+    : _ppcLinkingContext(context),
       _ppcTargetLayout(new PPCTargetLayout<PPCELFType>(context)),
-      _ppcRelocationHandler(
-          new PPCTargetRelocationHandler(context, *_ppcTargetLayout.get())) {}
+      _ppcRelocationHandler(new PPCTargetRelocationHandler(context)) {}
 
 void PPCTargetHandler::registerRelocationNames(Registry &registry) {
   registry.addKindTable(Reference::KindNamespace::ELF,

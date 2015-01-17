@@ -31,9 +31,12 @@ bool Resolver::handleFile(const File &file) {
   bool undefAdded = false;
   for (const DefinedAtom *atom : file.defined())
     doDefinedAtom(*atom);
-  for (const UndefinedAtom *atom : file.undefined())
-    if (doUndefinedAtom(*atom))
+  for (const UndefinedAtom *atom : file.undefined()) {
+    if (doUndefinedAtom(*atom)) {
       undefAdded = true;
+      maybePreloadArchiveMember(atom->name());
+    }
+  }
   for (const SharedLibraryAtom *atom : file.sharedLibrary())
     doSharedLibraryAtom(*atom);
   for (const AbsoluteAtom *atom : file.absolute())
@@ -229,54 +232,79 @@ void Resolver::addAtoms(const std::vector<const DefinedAtom *> &newAtoms) {
     doDefinedAtom(*newAtom);
 }
 
+// Instantiate an archive file member if there's a file containing a
+// defined symbol for a given symbol name. Instantiation is done in a
+// different worker thread and has no visible side effect.
+void Resolver::maybePreloadArchiveMember(StringRef sym) {
+  auto it = _archiveMap.find(sym);
+  if (it == _archiveMap.end())
+    return;
+  ArchiveLibraryFile *archive = it->second;
+  archive->preload(_context.getTaskGroup(), sym);
+}
+
 // Returns true if at least one of N previous files has created an
 // undefined symbol.
-bool Resolver::undefinesAdded(int n) {
-  for (size_t i = _fileIndex - n; i < _fileIndex; ++i)
-    if (_newUndefinesAdded[_files[i]])
-      return true;
+bool Resolver::undefinesAdded(int begin, int end) {
+  std::vector<std::unique_ptr<Node>> &inputs = _context.getNodes();
+  for (int i = begin; i < end; ++i)
+    if (FileNode *node = dyn_cast<FileNode>(inputs[i].get()))
+      if (_newUndefinesAdded[node->getFile()])
+        return true;
   return false;
 }
 
-File *Resolver::nextFile(bool &inGroup) {
-  if (size_t groupSize = _context.getInputGraph().getGroupSize()) {
+File *Resolver::getFile(int &index, int &groupLevel) {
+  std::vector<std::unique_ptr<Node>> &inputs = _context.getNodes();
+  if ((size_t)index >= inputs.size())
+    return nullptr;
+  if (GroupEnd *group = dyn_cast<GroupEnd>(inputs[index].get())) {
     // We are at the end of the current group. If one or more new
     // undefined atom has been added in the last groupSize files, we
     // reiterate over the files.
-    if (undefinesAdded(groupSize))
-      _fileIndex -= groupSize;
-    _context.getInputGraph().skipGroup();
-    return nextFile(inGroup);
+    int size = group->getSize();
+    if (undefinesAdded(index - size, index)) {
+      index -= size;
+      ++groupLevel;
+      return getFile(index, groupLevel);
+    }
+    ++index;
+    --groupLevel;
+    return getFile(index, groupLevel);
   }
-  if (_fileIndex < _files.size()) {
-    // We are still in the current group.
-    inGroup = true;
-    return _files[_fileIndex++];
-  }
-  // We are not in a group. Get a new file.
-  File *file = _context.getInputGraph().getNextFile();
-  if (!file)
-    return nullptr;
-  _files.push_back(&*file);
-  ++_fileIndex;
-  inGroup = false;
-  return file;
+  return cast<FileNode>(inputs[index++].get())->getFile();
+}
+
+// Make a map of Symbol -> ArchiveFile.
+void Resolver::makePreloadArchiveMap() {
+  std::vector<std::unique_ptr<Node>> &nodes = _context.getNodes();
+  for (auto it = nodes.rbegin(), e = nodes.rend(); it != e; ++it)
+    if (auto *fnode = dyn_cast<FileNode>(it->get()))
+      if (auto *archive = dyn_cast<ArchiveLibraryFile>(fnode->getFile()))
+        for (StringRef sym : archive->getDefinedSymbols())
+          _archiveMap[sym] = archive;
 }
 
 // Keep adding atoms until _context.getNextFile() returns an error. This
 // function is where undefined atoms are resolved.
-void Resolver::resolveUndefines() {
+bool Resolver::resolveUndefines() {
   ScopedTask task(getDefaultDomain(), "resolveUndefines");
-
+  int index = 0;
+  int groupLevel = 0;
   for (;;) {
-    bool inGroup = false;
     bool undefAdded = false;
-    File *file = nextFile(inGroup);
+    File *file = getFile(index, groupLevel);
     if (!file)
-      return;
+      return true;
+    if (std::error_code ec = file->parse()) {
+      llvm::errs() << "Cannot open " + file->path()
+                   << ": " << ec.message() << "\n";
+      return false;
+    }
+    file->beforeLink();
     switch (file->kind()) {
     case File::kindObject:
-      if (inGroup)
+      if (groupLevel > 0)
         break;
       assert(!file->hasOrdinal());
       file->setOrdinal(_context.getNextOrdinalAndIncrement());
@@ -293,7 +321,7 @@ void Resolver::resolveUndefines() {
       handleSharedLibrary(*file);
       break;
     }
-    _newUndefinesAdded[&*file] = undefAdded;
+    _newUndefinesAdded[file] = undefAdded;
   }
 }
 
@@ -443,7 +471,9 @@ void Resolver::removeCoalescedAwayAtoms() {
 }
 
 bool Resolver::resolve() {
-  resolveUndefines();
+  makePreloadArchiveMap();
+  if (!resolveUndefines())
+    return false;
   updateReferences();
   deadStripOptimize();
   if (checkUndefines())
@@ -452,32 +482,6 @@ bool Resolver::resolve() {
   removeCoalescedAwayAtoms();
   _result->addAtoms(_atoms);
   return true;
-}
-
-void Resolver::MergedFile::addAtom(const Atom &atom) {
-  if (auto *def = dyn_cast<DefinedAtom>(&atom)) {
-    _definedAtoms._atoms.push_back(def);
-  } else if (auto *undef = dyn_cast<UndefinedAtom>(&atom)) {
-    _undefinedAtoms._atoms.push_back(undef);
-  } else if (auto *shared = dyn_cast<SharedLibraryAtom>(&atom)) {
-    _sharedLibraryAtoms._atoms.push_back(shared);
-  } else if (auto *abs = dyn_cast<AbsoluteAtom>(&atom)) {
-    _absoluteAtoms._atoms.push_back(abs);
-  } else {
-    llvm_unreachable("atom has unknown definition kind");
-  }
-}
-
-MutableFile::DefinedAtomRange Resolver::MergedFile::definedAtoms() {
-  return range<std::vector<const DefinedAtom *>::iterator>(
-      _definedAtoms._atoms.begin(), _definedAtoms._atoms.end());
-}
-
-void Resolver::MergedFile::removeDefinedAtomsIf(
-    std::function<bool(const DefinedAtom *)> pred) {
-  auto &atoms = _definedAtoms._atoms;
-  auto newEnd = std::remove_if(atoms.begin(), atoms.end(), pred);
-  atoms.erase(newEnd, atoms.end());
 }
 
 void Resolver::MergedFile::addAtoms(std::vector<const Atom *> &all) {

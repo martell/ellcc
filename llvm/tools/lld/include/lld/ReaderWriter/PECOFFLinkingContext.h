@@ -97,6 +97,9 @@ public:
     return _machineType == llvm::COFF::IMAGE_FILE_MACHINE_AMD64;
   }
 
+  // Returns a set of all defined symbols in input files.
+  const std::set<std::string> &definedSymbols();
+
   /// Page size of x86 processor. Some data needs to be aligned at page boundary
   /// when loaded into memory.
   uint64_t getPageSize() const {
@@ -312,11 +315,6 @@ public:
     return *r;
   }
 
-  virtual bool hasInputGraph() { return !!_inputGraph; }
-
-  void setEntryNode(SimpleFileNode *node) { _entryNode = node; }
-  SimpleFileNode *getEntryNode() const { return _entryNode; }
-
   void addLibraryFile(std::unique_ptr<FileNode> file);
 
   void setModuleDefinitionFile(const std::string val) {
@@ -436,12 +434,12 @@ private:
   // Microsoft Windows." This feature was somewhat useful before Windows 95.
   ArrayRef<uint8_t> _dosStub;
 
-  // The node containing the entry point file.
-  SimpleFileNode *_entryNode;
-
   // Name of the temporary file for lib.exe subcommand. For debugging
   // only.
   std::string _moduleDefinitionFile;
+
+  std::set<std::string> _definedSyms;
+  std::set<Node *> _seen;
 };
 
 } // end namespace lld

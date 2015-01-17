@@ -290,6 +290,17 @@ public:
   bool alignSegments() const { return _alignSegments; }
   void setAlignSegments(bool align) { _alignSegments = align; }
 
+  /// \brief The attributes class provides a way for a input file to look into
+  /// all the positional attributes that were specified in the command line.
+  /// There are few positional operators and the number of arguments to the
+  /// ELFFileNode class keeps growing. This achieves code to be clean as well.
+  class Attributes {
+  public:
+    Attributes() : _isSysRooted(false) {}
+    void setSysRooted(bool isSysRooted) { _isSysRooted = isSysRooted; }
+    bool _isSysRooted;
+  };
+
 private:
   ELFLinkingContext() LLVM_DELETED_FUNCTION;
 

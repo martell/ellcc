@@ -90,13 +90,15 @@ MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM,
   setOperationAction(ISD::FEXP,       MVT::f32, Expand);
 
   // Load extented operations for i1 types must be promoted
-  setLoadExtAction(ISD::EXTLOAD,  MVT::i1,  Promote);
-  setLoadExtAction(ISD::ZEXTLOAD, MVT::i1,  Promote);
-  setLoadExtAction(ISD::SEXTLOAD, MVT::i1,  Promote);
+  for (MVT VT : MVT::integer_valuetypes()) {
+    setLoadExtAction(ISD::EXTLOAD,  VT, MVT::i1,  Promote);
+    setLoadExtAction(ISD::ZEXTLOAD, VT, MVT::i1,  Promote);
+    setLoadExtAction(ISD::SEXTLOAD, VT, MVT::i1,  Promote);
 
-  // Sign extended loads must be expanded
-  setLoadExtAction(ISD::SEXTLOAD, MVT::i8, Expand);
-  setLoadExtAction(ISD::SEXTLOAD, MVT::i16, Expand);
+    // Sign extended loads must be expanded
+    setLoadExtAction(ISD::SEXTLOAD, VT, MVT::i8, Expand);
+    setLoadExtAction(ISD::SEXTLOAD, VT, MVT::i16, Expand);
+  }
 
   // MBlaze has no REM or DIVREM operations.
   setOperationAction(ISD::UREM,    MVT::i32, Expand);
@@ -183,7 +185,8 @@ MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM,
   setOperationAction(ISD::STACKRESTORE,      MVT::Other, Expand);
 
   // MBlaze doesn't have extending float->double load/store
-  setLoadExtAction(ISD::EXTLOAD, MVT::f32, Expand);
+  for (MVT VT : MVT::fp_valuetypes())
+    setLoadExtAction(ISD::EXTLOAD, VT, MVT::f32, Expand);
   setTruncStoreAction(MVT::f64, MVT::f32, Expand);
 
   setMinFunctionAlignment(2);

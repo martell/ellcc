@@ -17,7 +17,9 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include <future>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <unordered_map>
 
@@ -57,6 +59,17 @@ public:
       return nullptr;
 
     _membersInstantiated.insert(memberStart);
+
+    // Check if a file is preloaded.
+    {
+      std::lock_guard<std::mutex> lock(_mutex);
+      auto it = _preloaded.find(memberStart);
+      if (it != _preloaded.end()) {
+        std::future<const File *> &future = it->second;
+        return future.get();
+      }
+    }
+
     std::unique_ptr<File> result;
     if (instantiateMember(ci, result))
       return nullptr;
@@ -65,9 +78,42 @@ public:
     return result.release();
   }
 
+  // Instantiate a member file containing a given symbol name.
+  void preload(TaskGroup &group, StringRef name) override {
+    auto member = _symbolMemberMap.find(name);
+    if (member == _symbolMemberMap.end())
+      return;
+    Archive::child_iterator ci = member->second;
+
+    // Do nothing if a member is already instantiated.
+    const char *memberStart = ci->getBuffer().data();
+    if (_membersInstantiated.count(memberStart))
+      return;
+
+    std::lock_guard<std::mutex> lock(_mutex);
+    if (_preloaded.find(memberStart) != _preloaded.end())
+      return;
+
+    // Instantiate the member
+    auto *promise = new std::promise<const File *>;
+    _preloaded[memberStart] = promise->get_future();
+    _promises.push_back(std::unique_ptr<std::promise<const File *>>(promise));
+
+    group.spawn([=] {
+      std::unique_ptr<File> result;
+      if (instantiateMember(ci, result)) {
+        promise->set_value(nullptr);
+        return;
+      }
+      promise->set_value(result.release());
+    });
+  }
+
   /// \brief parse each member
   std::error_code
-  parseAllMembers(std::vector<std::unique_ptr<File>> &result) const override {
+  parseAllMembers(std::vector<std::unique_ptr<File>> &result) override {
+    if (std::error_code ec = parse())
+      return ec;
     for (auto mf = _archive->child_begin(), me = _archive->child_end();
          mf != me; ++mf) {
       std::unique_ptr<File> file;
@@ -115,7 +161,8 @@ public:
   }
 
   /// Returns a set of all defined symbols in the archive.
-  std::set<StringRef> getDefinedSymbols() const override {
+  std::set<StringRef> getDefinedSymbols() override {
+    parse();
     std::set<StringRef> ret;
     for (const auto &e : _symbolMemberMap)
       ret.insert(e.first);
@@ -152,9 +199,12 @@ private:
         mb.getBuffer(), memberPath, false));
 
     std::vector<std::unique_ptr<File>> files;
-    _registry.parseFile(std::move(memberMB), files);
+    if (std::error_code ec = _registry.loadFile(std::move(memberMB), files))
+      return ec;
     assert(files.size() == 1);
     result = std::move(files[0]);
+    if (std::error_code ec = result->parse())
+      return ec;
 
     // The memory buffer is co-owned by the archive file and the children,
     // so that the bufffer is deallocated when all the members are destructed.
@@ -220,6 +270,9 @@ private:
   atom_collection_vector<AbsoluteAtom> _absoluteAtoms;
   bool _logLoading;
   mutable std::vector<std::unique_ptr<MemoryBuffer>> _memberBuffers;
+  mutable std::map<const char *, std::future<const File *>> _preloaded;
+  mutable std::vector<std::unique_ptr<std::promise<const File *>>> _promises;
+  mutable std::mutex _mutex;
 };
 
 class ArchiveReader : public Reader {
@@ -232,8 +285,8 @@ public:
   }
 
   std::error_code
-  parseFile(std::unique_ptr<MemoryBuffer> mb, const Registry &reg,
-            std::vector<std::unique_ptr<File>> &result) const override {
+  loadFile(std::unique_ptr<MemoryBuffer> mb, const Registry &reg,
+           std::vector<std::unique_ptr<File>> &result) const override {
     StringRef path = mb->getBufferIdentifier();
     std::unique_ptr<FileArchive> file(
         new FileArchive(std::move(mb), reg, path, _logLoading));

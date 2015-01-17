@@ -10,8 +10,10 @@
 #ifndef LLD_CORE_RESOLVER_H
 #define LLD_CORE_RESOLVER_H
 
+#include "lld/Core/ArchiveLibraryFile.h"
 #include "lld/Core/File.h"
 #include "lld/Core/SharedLibraryFile.h"
+#include "lld/Core/Simple.h"
 #include "lld/Core/SymbolTable.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -55,14 +57,15 @@ public:
 private:
   typedef std::function<void(StringRef, bool)> UndefCallback;
 
-  bool undefinesAdded(int count);
-  File *nextFile(bool &inGroup);
+  bool undefinesAdded(int begin, int end);
+  File *getFile(int &index, int &groupLevel);
 
   /// \brief Add section group/.gnu.linkonce if it does not exist previously.
   void maybeAddSectionGroupOrGnuLinkOnce(const DefinedAtom &atom);
 
   /// \brief The main function that iterates over the files to resolve
-  void resolveUndefines();
+  void makePreloadArchiveMap();
+  bool resolveUndefines();
   void updateReferences();
   void deadStripOptimize();
   bool checkUndefines();
@@ -72,38 +75,12 @@ private:
 
   void markLive(const Atom *atom);
   void addAtoms(const std::vector<const DefinedAtom *>&);
+  void maybePreloadArchiveMember(StringRef sym);
 
-  class MergedFile : public MutableFile {
+  class MergedFile : public SimpleFile {
   public:
-    MergedFile() : MutableFile("<linker-internal>") {}
-
-    const atom_collection<DefinedAtom> &defined() const override {
-      return _definedAtoms;
-    }
-    const atom_collection<UndefinedAtom>& undefined() const override {
-      return _undefinedAtoms;
-    }
-    const atom_collection<SharedLibraryAtom>& sharedLibrary() const override {
-      return _sharedLibraryAtoms;
-    }
-    const atom_collection<AbsoluteAtom>& absolute() const override {
-      return _absoluteAtoms;
-    }
-
+    MergedFile() : SimpleFile("<linker-internal>") {}
     void addAtoms(std::vector<const Atom*>& atoms);
-
-    void addAtom(const Atom& atom) override;
-
-    DefinedAtomRange definedAtoms() override;
-
-    void removeDefinedAtomsIf(
-        std::function<bool(const DefinedAtom *)> pred) override;
-
-  private:
-    atom_collection_vector<DefinedAtom>         _definedAtoms;
-    atom_collection_vector<UndefinedAtom>       _undefinedAtoms;
-    atom_collection_vector<SharedLibraryAtom>   _sharedLibraryAtoms;
-    atom_collection_vector<AbsoluteAtom>        _absoluteAtoms;
   };
 
   LinkingContext &_context;
@@ -119,6 +96,9 @@ private:
   std::vector<File *> _files;
   std::map<File *, bool> _newUndefinesAdded;
   size_t _fileIndex;
+
+  // Preloading
+  std::map<StringRef, ArchiveLibraryFile *> _archiveMap;
 };
 
 } // namespace lld

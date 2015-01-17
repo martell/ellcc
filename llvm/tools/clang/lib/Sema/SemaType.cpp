@@ -1007,16 +1007,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
       const unsigned TemplateParameterDepth = LSI->AutoTemplateParameterDepth;
       const unsigned AutoParameterPosition = LSI->AutoTemplateParams.size();
       const bool IsParameterPack = declarator.hasEllipsis();
-      
-      // Create a name for the invented template parameter type.
-      std::string InventedTemplateParamName = "$auto-";
-      llvm::raw_string_ostream ss(InventedTemplateParamName);
-      ss << TemplateParameterDepth; 
-      ss << "-" << AutoParameterPosition;
-      ss.flush();
 
-      IdentifierInfo& TemplateParamII = Context.Idents.get(
-                                        InventedTemplateParamName.c_str());
       // Turns out we must create the TemplateTypeParmDecl here to 
       // retrieve the corresponding template parameter type. 
       TemplateTypeParmDecl *CorrespondingTemplateParam =
@@ -1031,7 +1022,7 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
         /*NameLoc*/ declarator.getLocStart(),  
         TemplateParameterDepth, 
         AutoParameterPosition,  // our template param index 
-        /* Identifier*/ &TemplateParamII, false, IsParameterPack);
+        /* Identifier*/ nullptr, false, IsParameterPack);
       LSI->AutoTemplateParams.push_back(CorrespondingTemplateParam);
       // Replace the 'auto' in the function parameter with this invented 
       // template type parameter.
@@ -2801,8 +2792,16 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       // class type in C++.
       if ((T.getCVRQualifiers() || T->isAtomicType()) &&
           !(S.getLangOpts().CPlusPlus &&
-            (T->isDependentType() || T->isRecordType())))
-        diagnoseRedundantReturnTypeQualifiers(S, T, D, chunkIndex);
+            (T->isDependentType() || T->isRecordType()))) {
+	if (T->isVoidType() && !S.getLangOpts().CPlusPlus &&
+	    D.getFunctionDefinitionKind() == FDK_Definition) {
+	  // [6.9.1/3] qualified void return is invalid on a C
+	  // function definition.  Apparently ok on declarations and
+	  // in C++ though (!)
+	  S.Diag(DeclType.Loc, diag::err_func_returning_qualified_void) << T;
+	} else
+	  diagnoseRedundantReturnTypeQualifiers(S, T, D, chunkIndex);
+      }
 
       // Objective-C ARC ownership qualifiers are ignored on the function
       // return type (by type canonicalization). Complain if this attribute

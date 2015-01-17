@@ -152,3 +152,18 @@ namespace PR21947 {
 int blue;  // expected-note {{'blue' declared here}}
 __typeof blur y;  // expected-error {{use of undeclared identifier 'blur'; did you mean 'blue'?}}
 }
+
+namespace PR22092 {
+a = b ? : 0;  // expected-error {{C++ requires a type specifier for all declarations}} \
+              // expected-error-re {{use of undeclared identifier 'b'{{$}}}}
+}
+
+extern long clock (void);
+struct Pointer {
+  void set_xpos(int);
+  void set_ypos(int);
+};
+void MovePointer(Pointer &Click, int x, int y) {  // expected-note 2 {{'Click' declared here}}
+  click.set_xpos(x);  // expected-error {{use of undeclared identifier 'click'; did you mean 'Click'?}}
+  click.set_ypos(x);  // expected-error {{use of undeclared identifier 'click'; did you mean 'Click'?}}
+}

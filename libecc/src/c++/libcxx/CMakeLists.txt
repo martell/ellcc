@@ -57,6 +57,8 @@ option(LIBCXX_ENABLE_MONOTONIC_CLOCK
    This option may only be used when LIBCXX_ENABLE_THREADS=OFF." ON)
 option(LIBCXX_INSTALL_HEADERS "Install the libc++ headers." ON)
 option(LIBCXX_INSTALL_SUPPORT_HEADERS "Install libc++ support headers." ON)
+set(LIBCXX_SYSROOT "" CACHE STRING "Use alternate sysroot.")
+set(LIBCXX_GCC_TOOLCHAIN "" CACHE STRING "Use alternate GCC toolchain.")
 if (LIBCXX_BUILT_STANDALONE)
   set(LLVM_USE_SANITIZER "" CACHE STRING
       "Define the sanitizer used to build the library and tests")
@@ -82,21 +84,6 @@ set_property(CACHE LIBCXX_CXX_ABI PROPERTY STRINGS ;${CXXABIS})
 #===============================================================================
 # Configure System
 #===============================================================================
-
-# Get triples.
-include(GetTriple)
-get_host_triple(LIBCXX_HOST_TRIPLE
-  LIBCXX_HOST_ARCH
-  LIBCXX_HOST_VENDOR
-  LIBCXX_HOST_OS
-  )
-set(LIBCXX_HOST_TRIPLE ${LIBCXX_HOST_TRIPLE} CACHE STRING "Host triple.")
-get_target_triple(LIBCXX_TARGET_TRIPLE
-  LIBCXX_TARGET_ARCH
-  LIBCXX_TARGET_VENDOR
-  LIBCXX_TARGET_OS
-  )
-set(LIBCXX_TARGET_TRIPLE ${LIBCXX_TARGET_TRIPLE} CACHE STRING "Target triple.")
 
 set(LIBCXX_COMPILER    ${CMAKE_CXX_COMPILER})
 set(LIBCXX_SOURCE_DIR  ${CMAKE_CURRENT_SOURCE_DIR})
@@ -276,6 +263,12 @@ if (LIBCXX_BUILT_STANDALONE)
     message(WARNING "LLVM_USE_SANITIZER is not supported with MSVC")
   endif()
 endif()
+
+append_if(LIBCXX_CXX_FLAGS LIBCXX_TARGET_TRIPLE
+          "-target ${LIBCXX_TARGET_TRIPLE}")
+append_if(LIBCXX_CXX_FLAGS LIBCXX_SYSROOT "--sysroot ${LIBCXX_SYSROOT}")
+append_if(LIBCXX_CXX_FLAGS LIBCXX_GCC_TOOLCHAIN
+          "-gcc-toolchain ${LIBCXX_GCC_TOOLCHAIN}")
 
 string(REPLACE ";" " " LIBCXX_CXX_FLAGS "${LIBCXX_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LIBCXX_CXX_FLAGS}")

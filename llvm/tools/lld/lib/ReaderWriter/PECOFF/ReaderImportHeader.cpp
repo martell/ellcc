@@ -154,10 +154,18 @@ const uint8_t FuncAtomContentX86[] = {
     0xcc, 0xcc                          // INT 3; INT 3
 };
 
+const uint8_t FuncAtomContentARMNT[] = {
+  0x40, 0xf2, 0x00, 0x0c,               // mov.w ip, #0
+  0xc0, 0xf2, 0x00, 0x0c,               // mov.t ip, #0
+  0xdc, 0xf8, 0x00, 0xf0,               // ldr.w pc, [ip]
+};
+
 static void setJumpInstTarget(COFFLinkerInternalAtom *src, const Atom *dst,
                               int off, MachineTypes machine) {
   COFFReference *ref;
+
   switch (machine) {
+  default: llvm::report_fatal_error("unsupported machine type");
   case llvm::COFF::IMAGE_FILE_MACHINE_I386:
     ref = new COFFReference(dst, off, llvm::COFF::IMAGE_REL_I386_DIR32,
                             Reference::KindArch::x86);
@@ -166,9 +174,12 @@ static void setJumpInstTarget(COFFLinkerInternalAtom *src, const Atom *dst,
     ref = new COFFReference(dst, off, llvm::COFF::IMAGE_REL_AMD64_REL32,
                             Reference::KindArch::x86_64);
     break;
-  default:
-    llvm::report_fatal_error("unsupported machine type");
+  case llvm::COFF::IMAGE_FILE_MACHINE_ARMNT:
+    ref = new COFFReference(dst, off, llvm::COFF::IMAGE_REL_ARM_MOV32T,
+                            Reference::KindArch::ARM);
+    break;
   }
+
   src->addReference(std::unique_ptr<COFFReference>(ref));
 }
 
@@ -177,9 +188,22 @@ class FuncAtom : public COFFLinkerInternalAtom {
 public:
   FuncAtom(const File &file, StringRef symbolName,
            const COFFSharedLibraryAtom *impAtom, MachineTypes machine)
-      : COFFLinkerInternalAtom(file, /*oridnal*/ 0, createContent(),
+      : COFFLinkerInternalAtom(file, /*oridnal*/ 0, createContent(machine),
                                symbolName) {
-    setJumpInstTarget(this, impAtom, 2, machine);
+    size_t Offset;
+
+    switch (machine) {
+    default: llvm::report_fatal_error("unsupported machine type");
+    case llvm::COFF::IMAGE_FILE_MACHINE_I386:
+    case llvm::COFF::IMAGE_FILE_MACHINE_AMD64:
+      Offset = 2;
+      break;
+    case llvm::COFF::IMAGE_FILE_MACHINE_ARMNT:
+      Offset = 0;
+      break;
+    }
+
+    setJumpInstTarget(this, impAtom, Offset, machine);
   }
 
   uint64_t ordinal() const override { return 0; }
@@ -189,9 +213,24 @@ public:
   ContentPermissions permissions() const override { return permR_X; }
 
 private:
-  std::vector<uint8_t> createContent() const {
-    return std::vector<uint8_t>(
-        FuncAtomContentX86, FuncAtomContentX86 + sizeof(FuncAtomContentX86));
+  std::vector<uint8_t> createContent(MachineTypes machine) const {
+    const uint8_t *Data;
+    size_t Size;
+
+    switch (machine) {
+    default: llvm::report_fatal_error("unsupported machine type");
+    case llvm::COFF::IMAGE_FILE_MACHINE_I386:
+    case llvm::COFF::IMAGE_FILE_MACHINE_AMD64:
+      Data = FuncAtomContentX86;
+      Size = sizeof(FuncAtomContentX86);
+      break;
+    case llvm::COFF::IMAGE_FILE_MACHINE_ARMNT:
+      Data = FuncAtomContentARMNT;
+      Size = sizeof(FuncAtomContentARMNT);
+      break;
+    }
+
+    return std::vector<uint8_t>(Data, Data + Size);
   }
 };
 
@@ -315,7 +354,7 @@ private:
 
 class COFFImportLibraryReader : public Reader {
 public:
-  COFFImportLibraryReader(MachineTypes machine) : _machine(machine) {}
+  COFFImportLibraryReader(PECOFFLinkingContext &ctx) : _ctx(ctx) {}
 
   bool canParse(file_magic magic, StringRef,
                 const MemoryBuffer &mb) const override {
@@ -325,22 +364,21 @@ public:
   }
 
   std::error_code
-  parseFile(std::unique_ptr<MemoryBuffer> mb, const class Registry &,
-            std::vector<std::unique_ptr<File> > &result) const override {
-    auto *file = new FileImportLibrary(std::move(mb), _machine);
+  loadFile(std::unique_ptr<MemoryBuffer> mb, const class Registry &,
+           std::vector<std::unique_ptr<File> > &result) const override {
+    auto *file = new FileImportLibrary(std::move(mb), _ctx.getMachineType());
     result.push_back(std::unique_ptr<File>(file));
     return std::error_code();
   }
 
 private:
-  MachineTypes _machine;
+  PECOFFLinkingContext &_ctx;
 };
 
 } // end anonymous namespace
 
 void Registry::addSupportCOFFImportLibraries(PECOFFLinkingContext &ctx) {
-  MachineTypes machine = ctx.getMachineType();
-  add(llvm::make_unique<COFFImportLibraryReader>(machine));
+  add(llvm::make_unique<COFFImportLibraryReader>(ctx));
 }
 
 } // end namespace lld

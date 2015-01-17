@@ -10,16 +10,15 @@ set(LLVM_TARGET_DEFINITIONS WinLinkOptions.td)
 tablegen(LLVM WinLinkOptions.inc -gen-opt-parser-defs)
 add_public_tablegen_target(DriverOptionsTableGen)
 
+set(LLVM_LINK_COMPONENTS object option support)
+
 add_lld_library(lldDriver
   CoreDriver.cpp
-  DarwinInputGraph.cpp
   DarwinLdDriver.cpp
   Driver.cpp
   GnuLdDriver.cpp
-  GnuLdInputGraph.cpp
   UniversalDriver.cpp
   WinLinkDriver.cpp
-  WinLinkInputGraph.cpp
   WinLinkModuleDef.cpp
   )
 

@@ -17,8 +17,8 @@
 #include "MCTargetDesc/NVPTXMCAsmInfo.h"
 #include "NVPTX.h"
 #include "NVPTXInstrInfo.h"
-#include "NVPTXMachineFunctionInfo.h"
 #include "NVPTXMCExpr.h"
+#include "NVPTXMachineFunctionInfo.h"
 #include "NVPTXRegisterInfo.h"
 #include "NVPTXTargetMachine.h"
 #include "NVPTXUtilities.h"
@@ -374,17 +374,15 @@ void NVPTXAsmPrinter::printReturnValStr(const Function *F, raw_ostream &O) {
     } else if (isa<PointerType>(Ty)) {
       O << ".param .b" << TLI->getPointerTy().getSizeInBits()
         << " func_retval0";
-    } else {
-      if ((Ty->getTypeID() == Type::StructTyID) || isa<VectorType>(Ty)) {
-        unsigned totalsz = TD->getTypeAllocSize(Ty);
-        unsigned retAlignment = 0;
-        if (!llvm::getAlign(*F, 0, retAlignment))
-          retAlignment = TD->getABITypeAlignment(Ty);
-        O << ".param .align " << retAlignment << " .b8 func_retval0[" << totalsz
-          << "]";
-      } else
-        assert(false && "Unknown return type");
-    }
+    } else if ((Ty->getTypeID() == Type::StructTyID) || isa<VectorType>(Ty)) {
+       unsigned totalsz = TD->getTypeAllocSize(Ty);
+       unsigned retAlignment = 0;
+       if (!llvm::getAlign(*F, 0, retAlignment))
+         retAlignment = TD->getABITypeAlignment(Ty);
+       O << ".param .align " << retAlignment << " .b8 func_retval0[" << totalsz
+         << "]";
+    } else
+      llvm_unreachable("Unknown return type");
   } else {
     SmallVector<EVT, 16> vtparts;
     ComputeValueVTs(*TLI, Ty, vtparts);

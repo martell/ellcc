@@ -839,6 +839,39 @@ _mm512_cvt_roundpd_epu32(__m512d __A, const int __R)
                 __R);
 }
 
+/* Unpack and Interleave */
+static __inline __m512d __attribute__((__always_inline__, __nodebug__))
+_mm512_unpackhi_pd(__m512d __a, __m512d __b)
+{
+  return __builtin_shufflevector(__a, __b, 1, 9, 1+2, 9+2, 1+4, 9+4, 1+6, 9+6);
+}
+
+static __inline __m512d __attribute__((__always_inline__, __nodebug__))
+_mm512_unpacklo_pd(__m512d __a, __m512d __b)
+{
+  return __builtin_shufflevector(__a, __b, 0, 8, 0+2, 8+2, 0+4, 8+4, 0+6, 8+6);
+}
+
+static __inline __m512 __attribute__((__always_inline__, __nodebug__))
+_mm512_unpackhi_ps(__m512 __a, __m512 __b)
+{
+  return __builtin_shufflevector(__a, __b,
+                                 2,    18,    3,    19,
+                                 2+4,  18+4,  3+4,  19+4,
+                                 2+8,  18+8,  3+8,  19+8,
+                                 2+12, 18+12, 3+12, 19+12);
+}
+
+static __inline __m512 __attribute__((__always_inline__, __nodebug__))
+_mm512_unpacklo_ps(__m512 __a, __m512 __b)
+{
+  return __builtin_shufflevector(__a, __b,
+                                 0,    16,    1,    17,
+                                 0+4,  16+4,  1+4,  17+4,
+                                 0+8,  16+8,  1+8,  17+8,
+                                 0+12, 16+12, 1+12, 17+12);
+}
+
 /* Bit Test */
 
 static __inline __mmask16 __attribute__ ((__always_inline__, __nodebug__))
@@ -895,6 +928,24 @@ _mm512_maskz_loadu_pd(__mmask8 __U, void const *__P)
                                                    (__mmask8) __U);
 }
 
+static __inline __m512 __attribute__ ((__always_inline__, __nodebug__))
+_mm512_maskz_load_ps(__mmask16 __U, void const *__P)
+{
+  return (__m512) __builtin_ia32_loadaps512_mask ((const __v16sf *)__P,
+                                                  (__v16sf)
+                                                  _mm512_setzero_ps (),
+                                                  (__mmask16) __U);
+}
+
+static __inline __m512d __attribute__ ((__always_inline__, __nodebug__))
+_mm512_maskz_load_pd(__mmask8 __U, void const *__P)
+{
+  return (__m512d) __builtin_ia32_loadapd512_mask ((const __v8df *)__P,
+                                                   (__v8df)
+                                                   _mm512_setzero_pd (),
+                                                   (__mmask8) __U);
+}
+
 static __inline __m512d __attribute__((__always_inline__, __nodebug__))
 _mm512_loadu_pd(double const *__p)
 {
@@ -911,6 +962,24 @@ _mm512_loadu_ps(float const *__p)
     __m512 __v;
   } __attribute__((packed, may_alias));
   return ((struct __loadu_ps*)__p)->__v;
+}
+
+static __inline __m512 __attribute__((__always_inline__, __nodebug__))
+_mm512_load_ps(double const *__p)
+{
+  return (__m512) __builtin_ia32_loadaps512_mask ((const __v16sf *)__p,
+                                                  (__v16sf)
+                                                  _mm512_setzero_ps (),
+                                                  (__mmask16) -1);
+}
+
+static __inline __m512d __attribute__((__always_inline__, __nodebug__))
+_mm512_load_pd(float const *__p)
+{
+  return (__m512d) __builtin_ia32_loadapd512_mask ((const __v8df *)__p,
+                                                   (__v8df)
+                                                   _mm512_setzero_pd (),
+                                                   (__mmask8) -1);
 }
 
 /* SIMD store ops */
@@ -955,15 +1024,28 @@ _mm512_storeu_ps(void *__P, __m512 __A)
 }
 
 static __inline void __attribute__ ((__always_inline__, __nodebug__))
-_mm512_store_ps(void *__P, __m512 __A)
+_mm512_mask_store_pd(void *__P, __mmask8 __U, __m512d __A)
 {
-  *(__m512*)__P = __A;
+  __builtin_ia32_storeapd512_mask ((__v8df *)__P, (__v8df) __A, (__mmask8) __U);
 }
 
 static __inline void __attribute__ ((__always_inline__, __nodebug__))
 _mm512_store_pd(void *__P, __m512d __A)
 {
   *(__m512d*)__P = __A;
+}
+
+static __inline void __attribute__ ((__always_inline__, __nodebug__))
+_mm512_mask_store_ps(void *__P, __mmask16 __U, __m512 __A)
+{
+  __builtin_ia32_storeaps512_mask ((__v16sf *)__P, (__v16sf) __A,
+                                   (__mmask16) __U);
+}
+
+static __inline void __attribute__ ((__always_inline__, __nodebug__))
+_mm512_store_ps(void *__P, __m512 __A)
+{
+  *(__m512*)__P = __A;
 }
 
 /* Mask ops */

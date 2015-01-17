@@ -12,6 +12,7 @@
 #include "ELFReader.h"
 #include "MipsELFFile.h"
 #include "MipsELFFlagsMerger.h"
+#include "MipsLinkingContext.h"
 
 namespace lld {
 namespace elf {
@@ -44,17 +45,17 @@ class MipsELFObjectReader
       BaseReaderType;
 
 public:
-  MipsELFObjectReader(MipsELFFlagsMerger &flagMerger, bool atomizeStrings)
+  MipsELFObjectReader(MipsLinkingContext &ctx, bool atomizeStrings)
       : BaseReaderType(atomizeStrings, llvm::ELF::EM_MIPS),
-        _flagMerger(flagMerger) {}
+        _flagMerger(ctx.getELFFlagsMerger()) {}
 
   std::error_code
-  parseFile(std::unique_ptr<MemoryBuffer> mb, const Registry &registry,
-            std::vector<std::unique_ptr<File>> &result) const override {
+  loadFile(std::unique_ptr<MemoryBuffer> mb, const Registry &registry,
+           std::vector<std::unique_ptr<File>> &result) const override {
     auto &hdr = *elfHeader(*mb);
     if (std::error_code ec = _flagMerger.merge(hdr.getFileClass(), hdr.e_flags))
       return ec;
-    return BaseReaderType::parseFile(std::move(mb), registry, result);
+    return BaseReaderType::loadFile(std::move(mb), registry, result);
   }
 
 private:
@@ -67,17 +68,17 @@ class MipsELFDSOReader
       BaseReaderType;
 
 public:
-  MipsELFDSOReader(MipsELFFlagsMerger &flagMerger, bool useUndefines)
+  MipsELFDSOReader(MipsLinkingContext &ctx, bool useUndefines)
       : BaseReaderType(useUndefines, llvm::ELF::EM_MIPS),
-        _flagMerger(flagMerger) {}
+        _flagMerger(ctx.getELFFlagsMerger()) {}
 
   std::error_code
-  parseFile(std::unique_ptr<MemoryBuffer> mb, const Registry &registry,
-            std::vector<std::unique_ptr<File>> &result) const override {
+  loadFile(std::unique_ptr<MemoryBuffer> mb, const Registry &registry,
+           std::vector<std::unique_ptr<File>> &result) const override {
     auto &hdr = *elfHeader(*mb);
     if (std::error_code ec = _flagMerger.merge(hdr.getFileClass(), hdr.e_flags))
       return ec;
-    return BaseReaderType::parseFile(std::move(mb), registry, result);
+    return BaseReaderType::loadFile(std::move(mb), registry, result);
   }
 
 private:

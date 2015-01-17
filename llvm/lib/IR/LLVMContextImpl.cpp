@@ -15,6 +15,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/GCStrategy.h"
 #include "llvm/IR/Module.h"
 #include <algorithm>
 using namespace llvm;
@@ -72,7 +73,30 @@ LLVMContextImpl::~LLVMContextImpl() {
   // the container. Avoid iterators during this operation:
   while (!OwnedModules.empty())
     delete *OwnedModules.begin();
-  
+
+  // Drop references for MDNodes.  Do this before Values get deleted to avoid
+  // unnecessary RAUW when nodes are still unresolved.
+  for (auto *I : DistinctMDNodes)
+    I->dropAllReferences();
+  for (auto *I : MDTuples)
+    I->dropAllReferences();
+  for (auto *I : MDLocations)
+    I->dropAllReferences();
+
+  // Also drop references that come from the Value bridges.
+  for (auto &Pair : ValuesAsMetadata)
+    Pair.second->dropUsers();
+  for (auto &Pair : MetadataAsValues)
+    Pair.second->dropUse();
+
+  // Destroy MDNodes.
+  for (UniquableMDNode *I : DistinctMDNodes)
+    I->deleteAsSubclass();
+  for (MDTuple *I : MDTuples)
+    delete I;
+  for (MDLocation *I : MDLocations)
+    delete I;
+
   // Free the constants.  This is important to do here to ensure that they are
   // freed before the LeakDetector is torn down.
   std::for_each(ExprConstants.map_begin(), ExprConstants.map_end(),
@@ -135,19 +159,6 @@ LLVMContextImpl::~LLVMContextImpl() {
   for (auto &Pair : ValuesAsMetadata)
     delete Pair.second;
 
-  // Destroy MDNodes.  ~MDNode can move and remove nodes between the MDNodeSet
-  // and the NonUniquedMDNodes sets, so copy the values out first.
-  SmallVector<GenericMDNode *, 8> MDNodes;
-  MDNodes.reserve(MDNodeSet.size() + NonUniquedMDNodes.size());
-  MDNodes.append(MDNodeSet.begin(), MDNodeSet.end());
-  MDNodes.append(NonUniquedMDNodes.begin(), NonUniquedMDNodes.end());
-  for (GenericMDNode *I : MDNodes)
-    I->dropAllReferences();
-  for (GenericMDNode *I : MDNodes)
-    delete I;
-  assert(MDNodeSet.empty() && NonUniquedMDNodes.empty() &&
-         "Destroying all MDNodes didn't empty the Context's sets.");
-
   // Destroy MDStrings.
   MDStringCache.clear();
 }
@@ -172,3 +183,26 @@ void InsertValueConstantExpr::anchor() { }
 void GetElementPtrConstantExpr::anchor() { }
 
 void CompareConstantExpr::anchor() { }
+
+GCStrategy *LLVMContextImpl::getGCStrategy(const StringRef Name) {
+  // TODO: Arguably, just doing a linear search would be faster for small N
+  auto NMI = GCStrategyMap.find(Name);
+  if (NMI != GCStrategyMap.end())
+    return NMI->getValue();
+  
+  for (auto& Entry : GCRegistry::entries()) {
+    if (Name == Entry.getName()) {
+      std::unique_ptr<GCStrategy> S = Entry.instantiate();
+      S->Name = Name;
+      GCStrategyMap[Name] = S.get();
+      GCStrategyList.push_back(std::move(S));
+      return GCStrategyList.back().get();
+    }
+  }
+
+  // No GCStrategy found for that name, error reporting is the job of our
+  // callers. 
+  return nullptr;
+}
+
+

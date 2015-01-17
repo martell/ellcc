@@ -28,11 +28,8 @@ set(ASAN_UNITTEST_COMMON_CFLAGS
   -I${COMPILER_RT_SOURCE_DIR}/lib/sanitizer_common/tests
   -Wall
   -Wno-format
-  -Werror
   -Werror=sign-compare
-  -O2)
-append_if(COMPILER_RT_HAS_G_FLAG -g ASAN_UNITTEST_COMMON_CFLAGS)
-append_if(COMPILER_RT_HAS_Zi_FLAG -Zi ASAN_UNITTEST_COMMON_CFLAGS)
+  -Wno-non-virtual-dtor)
 append_list_if(COMPILER_RT_HAS_WVARIADIC_MACROS_FLAG -Wno-variadic-macros ASAN_UNITTEST_COMMON_CFLAGS)
 
 if(MSVC)

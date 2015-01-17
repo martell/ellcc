@@ -49,7 +49,6 @@ Driver::Driver(StringRef ClangExecutable,
   : Opts(createDriverOptTable()), Diags(Diags), Mode(GCCMode),
     ClangExecutable(ClangExecutable), SysRoot(DEFAULT_SYSROOT),
     UseStdLib(true), DefaultTargetTriple(DefaultTargetTriple),
-    DefaultImageName("a.out"),
     DriverTitle("clang LLVM compiler"),
     CCPrintOptionsFilename(nullptr), CCPrintHeadersFilename(nullptr),
     CCLogDiagnosticsFilename(nullptr),
@@ -553,6 +552,11 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
     Cmd.Print(ScriptOS, "\n", /*Quote=*/true, &CrashInfo);
     Diag(clang::diag::note_drv_command_failed_diag_msg) << Script;
   }
+
+  for (const auto &A : C.getArgs().filtered(options::OPT_frewrite_map_file,
+                                            options::OPT_frewrite_map_file_EQ))
+    Diag(clang::diag::note_drv_command_failed_diag_msg) << A->getValue();
+
   Diag(clang::diag::note_drv_command_failed_diag_msg)
       << "\n\n********************";
 }
@@ -1415,7 +1419,7 @@ void Driver::BuildJobs(Compilation &C) const {
       if (FinalOutput)
         LinkingOutput = FinalOutput->getValue();
       else
-        LinkingOutput = DefaultImageName.c_str();
+        LinkingOutput = getDefaultImageName();
     }
 
     InputInfo II;
@@ -1631,6 +1635,11 @@ void Driver::BuildJobsForAction(Compilation &C,
   }
 }
 
+const char *Driver::getDefaultImageName() const {
+  llvm::Triple Target(llvm::Triple::normalize(DefaultTargetTriple));
+  return Target.isOSWindows() ? "a.exe" : "a.out";
+}
+
 /// \brief Create output filename based on ArgValue, which could either be a
 /// full filename, filename without extension, or a directory. If ArgValue
 /// does not provide a filename, then use BaseName, and use the extension
@@ -1749,12 +1758,12 @@ const char *Driver::GetNamedOutputPath(Compilation &C,
       NamedOutput = MakeCLOutputFilename(C.getArgs(), "", BaseName,
                                          types::TY_Image);
     } else if (MultipleArchs && BoundArch) {
-      SmallString<128> Output(DefaultImageName.c_str());
+      SmallString<128> Output(getDefaultImageName());
       Output += "-";
       Output.append(BoundArch);
       NamedOutput = C.getArgs().MakeArgString(Output.c_str());
     } else
-      NamedOutput = DefaultImageName.c_str();
+      NamedOutput = getDefaultImageName();
   } else {
     const char *Suffix = types::getTypeTempSuffix(JA.getType(), IsCLMode());
     assert(Suffix && "All types used for output should have a suffix.");

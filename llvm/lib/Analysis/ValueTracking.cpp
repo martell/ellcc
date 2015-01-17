@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/IR/CallSite.h"
@@ -489,8 +489,7 @@ static void computeKnownBitsFromAssume(Value *V, APInt &KnownZero,
     if (!AssumeVH)
       continue;
     CallInst *I = cast<CallInst>(AssumeVH);
-    assert((I->getParent()->getParent() == 
-            const_cast<Function*>(Q.CxtI->getParent()->getParent())) &&
+    assert(I->getParent()->getParent() == Q.CxtI->getParent()->getParent() &&
            "Got assumption for the wrong function!");
     if (Q.ExclInvs.count(I))
       continue;
@@ -2727,6 +2726,35 @@ OverflowResult llvm::computeOverflowForUnsignedMul(Value *LHS, Value *RHS,
   LHSKnownOne.umul_ov(RHSKnownOne, MinOverflow);
   if (MinOverflow)
     return OverflowResult::AlwaysOverflows;
+
+  return OverflowResult::MayOverflow;
+}
+
+OverflowResult llvm::computeOverflowForUnsignedAdd(Value *LHS, Value *RHS,
+                                                   const DataLayout *DL,
+                                                   AssumptionCache *AC,
+                                                   const Instruction *CxtI,
+                                                   const DominatorTree *DT) {
+  bool LHSKnownNonNegative, LHSKnownNegative;
+  ComputeSignBit(LHS, LHSKnownNonNegative, LHSKnownNegative, DL, /*Depth=*/0,
+                 AC, CxtI, DT);
+  if (LHSKnownNonNegative || LHSKnownNegative) {
+    bool RHSKnownNonNegative, RHSKnownNegative;
+    ComputeSignBit(RHS, RHSKnownNonNegative, RHSKnownNegative, DL, /*Depth=*/0,
+                   AC, CxtI, DT);
+
+    if (LHSKnownNegative && RHSKnownNegative) {
+      // The sign bit is set in both cases: this MUST overflow.
+      // Create a simple add instruction, and insert it into the struct.
+      return OverflowResult::AlwaysOverflows;
+    }
+
+    if (LHSKnownNonNegative && RHSKnownNonNegative) {
+      // The sign bit is clear in both cases: this CANNOT overflow.
+      // Create a simple add instruction, and insert it into the struct.
+      return OverflowResult::NeverOverflows;
+    }
+  }
 
   return OverflowResult::MayOverflow;
 }

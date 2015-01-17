@@ -8,7 +8,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "lld/Driver/Driver.h"
-#include "lld/Driver/CoreInputGraph.h"
 #include "lld/ReaderWriter/CoreLinkingContext.h"
 #include "lld/ReaderWriter/Reader.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -76,16 +75,15 @@ static const Registry::KindStrings coreKindStrings[] = {
 
 bool CoreDriver::link(int argc, const char *argv[], raw_ostream &diagnostics) {
   CoreLinkingContext ctx;
-  if (!parse(argc, argv, ctx))
-    return false;
 
   // Register possible input file parsers.
   ctx.registry().addSupportNativeObjects();
   ctx.registry().addSupportYamlFiles();
-
   ctx.registry().addKindTable(Reference::KindNamespace::testing,
                               Reference::KindArch::all, coreKindStrings);
 
+  if (!parse(argc, argv, ctx))
+    return false;
   return Driver::link(ctx);
 }
 
@@ -104,8 +102,6 @@ bool CoreDriver::parse(int argc, const char *argv[], CoreLinkingContext &ctx,
                 << missingCount << " argument(s).\n";
     return false;
   }
-
-  std::unique_ptr<InputGraph> inputGraph(new InputGraph());
 
   // Set default options
   ctx.setOutputPath("-");
@@ -151,22 +147,23 @@ bool CoreDriver::parse(int argc, const char *argv[], CoreLinkingContext &ctx,
       ctx.addPassNamed(inputArg->getValue());
       break;
 
-    case OPT_INPUT:
-      inputGraph->addInputElement(std::unique_ptr<InputElement>(
-          new CoreFileNode(ctx, inputArg->getValue())));
+    case OPT_INPUT: {
+      std::vector<std::unique_ptr<File>> files
+        = loadFile(ctx, inputArg->getValue(), false);
+      for (std::unique_ptr<File> &file : files)
+        ctx.getNodes().push_back(llvm::make_unique<FileNode>(std::move(file)));
       break;
+    }
 
     default:
       break;
     }
   }
 
-  if (!inputGraph->size()) {
+  if (ctx.getNodes().empty()) {
     diagnostics << "No input files\n";
     return false;
   }
-
-  ctx.setInputGraph(std::move(inputGraph));
 
   // Validate the combination of options used.
   return ctx.validate(diagnostics);

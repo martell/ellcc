@@ -13,6 +13,158 @@
 // March 4, 2008
 //===----------------------------------------------------------------------===//
 
+class T_RR_pat <InstHexagon MI, Intrinsic IntID>
+  : Pat <(IntID I32:$Rs, I32:$Rt),
+         (MI I32:$Rs, I32:$Rt)>;
+
+class T_RRR_pat <InstHexagon MI, Intrinsic IntID>
+  : Pat <(IntID I32:$Rs, I32:$Rt, I32:$Ru),
+         (MI I32:$Rs, I32:$Rt, I32:$Ru)>;
+
+//===----------------------------------------------------------------------===//
+// MPYS / Multipy signed/unsigned halfwords
+//Rd=mpy[u](Rs.[H|L],Rt.[H|L])[:<<1][:rnd][:sat]
+//===----------------------------------------------------------------------===//
+
+def : T_RR_pat <M2_mpy_ll_s1, int_hexagon_M2_mpy_ll_s1>;
+def : T_RR_pat <M2_mpy_ll_s0, int_hexagon_M2_mpy_ll_s0>;
+def : T_RR_pat <M2_mpy_lh_s1, int_hexagon_M2_mpy_lh_s1>;
+def : T_RR_pat <M2_mpy_lh_s0, int_hexagon_M2_mpy_lh_s0>;
+def : T_RR_pat <M2_mpy_hl_s1, int_hexagon_M2_mpy_hl_s1>;
+def : T_RR_pat <M2_mpy_hl_s0, int_hexagon_M2_mpy_hl_s0>;
+def : T_RR_pat <M2_mpy_hh_s1, int_hexagon_M2_mpy_hh_s1>;
+def : T_RR_pat <M2_mpy_hh_s0, int_hexagon_M2_mpy_hh_s0>;
+
+def : T_RR_pat <M2_mpyu_ll_s1, int_hexagon_M2_mpyu_ll_s1>;
+def : T_RR_pat <M2_mpyu_ll_s0, int_hexagon_M2_mpyu_ll_s0>;
+def : T_RR_pat <M2_mpyu_lh_s1, int_hexagon_M2_mpyu_lh_s1>;
+def : T_RR_pat <M2_mpyu_lh_s0, int_hexagon_M2_mpyu_lh_s0>;
+def : T_RR_pat <M2_mpyu_hl_s1, int_hexagon_M2_mpyu_hl_s1>;
+def : T_RR_pat <M2_mpyu_hl_s0, int_hexagon_M2_mpyu_hl_s0>;
+def : T_RR_pat <M2_mpyu_hh_s1, int_hexagon_M2_mpyu_hh_s1>;
+def : T_RR_pat <M2_mpyu_hh_s0, int_hexagon_M2_mpyu_hh_s0>;
+
+def : T_RR_pat <M2_mpy_sat_ll_s1, int_hexagon_M2_mpy_sat_ll_s1>;
+def : T_RR_pat <M2_mpy_sat_ll_s0, int_hexagon_M2_mpy_sat_ll_s0>;
+def : T_RR_pat <M2_mpy_sat_lh_s1, int_hexagon_M2_mpy_sat_lh_s1>;
+def : T_RR_pat <M2_mpy_sat_lh_s0, int_hexagon_M2_mpy_sat_lh_s0>;
+def : T_RR_pat <M2_mpy_sat_hl_s1, int_hexagon_M2_mpy_sat_hl_s1>;
+def : T_RR_pat <M2_mpy_sat_hl_s0, int_hexagon_M2_mpy_sat_hl_s0>;
+def : T_RR_pat <M2_mpy_sat_hh_s1, int_hexagon_M2_mpy_sat_hh_s1>;
+def : T_RR_pat <M2_mpy_sat_hh_s0, int_hexagon_M2_mpy_sat_hh_s0>;
+
+def : T_RR_pat <M2_mpy_rnd_ll_s1, int_hexagon_M2_mpy_rnd_ll_s1>;
+def : T_RR_pat <M2_mpy_rnd_ll_s0, int_hexagon_M2_mpy_rnd_ll_s0>;
+def : T_RR_pat <M2_mpy_rnd_lh_s1, int_hexagon_M2_mpy_rnd_lh_s1>;
+def : T_RR_pat <M2_mpy_rnd_lh_s0, int_hexagon_M2_mpy_rnd_lh_s0>;
+def : T_RR_pat <M2_mpy_rnd_hl_s1, int_hexagon_M2_mpy_rnd_hl_s1>;
+def : T_RR_pat <M2_mpy_rnd_hl_s0, int_hexagon_M2_mpy_rnd_hl_s0>;
+def : T_RR_pat <M2_mpy_rnd_hh_s1, int_hexagon_M2_mpy_rnd_hh_s1>;
+def : T_RR_pat <M2_mpy_rnd_hh_s0, int_hexagon_M2_mpy_rnd_hh_s0>;
+
+def : T_RR_pat <M2_mpy_sat_rnd_ll_s1, int_hexagon_M2_mpy_sat_rnd_ll_s1>;
+def : T_RR_pat <M2_mpy_sat_rnd_ll_s0, int_hexagon_M2_mpy_sat_rnd_ll_s0>;
+def : T_RR_pat <M2_mpy_sat_rnd_lh_s1, int_hexagon_M2_mpy_sat_rnd_lh_s1>;
+def : T_RR_pat <M2_mpy_sat_rnd_lh_s0, int_hexagon_M2_mpy_sat_rnd_lh_s0>;
+def : T_RR_pat <M2_mpy_sat_rnd_hl_s1, int_hexagon_M2_mpy_sat_rnd_hl_s1>;
+def : T_RR_pat <M2_mpy_sat_rnd_hl_s0, int_hexagon_M2_mpy_sat_rnd_hl_s0>;
+def : T_RR_pat <M2_mpy_sat_rnd_hh_s1, int_hexagon_M2_mpy_sat_rnd_hh_s1>;
+def : T_RR_pat <M2_mpy_sat_rnd_hh_s0, int_hexagon_M2_mpy_sat_rnd_hh_s0>;
+
+
+//===----------------------------------------------------------------------===//
+// MPYS / Multipy signed/unsigned halfwords and add/subtract the
+// result from the accumulator.
+//Rx [-+]= mpy[u](Rs.[H|L],Rt.[H|L])[:<<1][:sat]
+//===----------------------------------------------------------------------===//
+
+def : T_RRR_pat <M2_mpy_acc_ll_s1, int_hexagon_M2_mpy_acc_ll_s1>;
+def : T_RRR_pat <M2_mpy_acc_ll_s0, int_hexagon_M2_mpy_acc_ll_s0>;
+def : T_RRR_pat <M2_mpy_acc_lh_s1, int_hexagon_M2_mpy_acc_lh_s1>;
+def : T_RRR_pat <M2_mpy_acc_lh_s0, int_hexagon_M2_mpy_acc_lh_s0>;
+def : T_RRR_pat <M2_mpy_acc_hl_s1, int_hexagon_M2_mpy_acc_hl_s1>;
+def : T_RRR_pat <M2_mpy_acc_hl_s0, int_hexagon_M2_mpy_acc_hl_s0>;
+def : T_RRR_pat <M2_mpy_acc_hh_s1, int_hexagon_M2_mpy_acc_hh_s1>;
+def : T_RRR_pat <M2_mpy_acc_hh_s0, int_hexagon_M2_mpy_acc_hh_s0>;
+
+def : T_RRR_pat <M2_mpyu_acc_ll_s1, int_hexagon_M2_mpyu_acc_ll_s1>;
+def : T_RRR_pat <M2_mpyu_acc_ll_s0, int_hexagon_M2_mpyu_acc_ll_s0>;
+def : T_RRR_pat <M2_mpyu_acc_lh_s1, int_hexagon_M2_mpyu_acc_lh_s1>;
+def : T_RRR_pat <M2_mpyu_acc_lh_s0, int_hexagon_M2_mpyu_acc_lh_s0>;
+def : T_RRR_pat <M2_mpyu_acc_hl_s1, int_hexagon_M2_mpyu_acc_hl_s1>;
+def : T_RRR_pat <M2_mpyu_acc_hl_s0, int_hexagon_M2_mpyu_acc_hl_s0>;
+def : T_RRR_pat <M2_mpyu_acc_hh_s1, int_hexagon_M2_mpyu_acc_hh_s1>;
+def : T_RRR_pat <M2_mpyu_acc_hh_s0, int_hexagon_M2_mpyu_acc_hh_s0>;
+
+def : T_RRR_pat <M2_mpy_nac_ll_s1, int_hexagon_M2_mpy_nac_ll_s1>;
+def : T_RRR_pat <M2_mpy_nac_ll_s0, int_hexagon_M2_mpy_nac_ll_s0>;
+def : T_RRR_pat <M2_mpy_nac_lh_s1, int_hexagon_M2_mpy_nac_lh_s1>;
+def : T_RRR_pat <M2_mpy_nac_lh_s0, int_hexagon_M2_mpy_nac_lh_s0>;
+def : T_RRR_pat <M2_mpy_nac_hl_s1, int_hexagon_M2_mpy_nac_hl_s1>;
+def : T_RRR_pat <M2_mpy_nac_hl_s0, int_hexagon_M2_mpy_nac_hl_s0>;
+def : T_RRR_pat <M2_mpy_nac_hh_s1, int_hexagon_M2_mpy_nac_hh_s1>;
+def : T_RRR_pat <M2_mpy_nac_hh_s0, int_hexagon_M2_mpy_nac_hh_s0>;
+
+def : T_RRR_pat <M2_mpyu_nac_ll_s1, int_hexagon_M2_mpyu_nac_ll_s1>;
+def : T_RRR_pat <M2_mpyu_nac_ll_s0, int_hexagon_M2_mpyu_nac_ll_s0>;
+def : T_RRR_pat <M2_mpyu_nac_lh_s1, int_hexagon_M2_mpyu_nac_lh_s1>;
+def : T_RRR_pat <M2_mpyu_nac_lh_s0, int_hexagon_M2_mpyu_nac_lh_s0>;
+def : T_RRR_pat <M2_mpyu_nac_hl_s1, int_hexagon_M2_mpyu_nac_hl_s1>;
+def : T_RRR_pat <M2_mpyu_nac_hl_s0, int_hexagon_M2_mpyu_nac_hl_s0>;
+def : T_RRR_pat <M2_mpyu_nac_hh_s1, int_hexagon_M2_mpyu_nac_hh_s1>;
+def : T_RRR_pat <M2_mpyu_nac_hh_s0, int_hexagon_M2_mpyu_nac_hh_s0>;
+
+def : T_RRR_pat <M2_mpy_acc_sat_ll_s1, int_hexagon_M2_mpy_acc_sat_ll_s1>;
+def : T_RRR_pat <M2_mpy_acc_sat_ll_s0, int_hexagon_M2_mpy_acc_sat_ll_s0>;
+def : T_RRR_pat <M2_mpy_acc_sat_lh_s1, int_hexagon_M2_mpy_acc_sat_lh_s1>;
+def : T_RRR_pat <M2_mpy_acc_sat_lh_s0, int_hexagon_M2_mpy_acc_sat_lh_s0>;
+def : T_RRR_pat <M2_mpy_acc_sat_hl_s1, int_hexagon_M2_mpy_acc_sat_hl_s1>;
+def : T_RRR_pat <M2_mpy_acc_sat_hl_s0, int_hexagon_M2_mpy_acc_sat_hl_s0>;
+def : T_RRR_pat <M2_mpy_acc_sat_hh_s1, int_hexagon_M2_mpy_acc_sat_hh_s1>;
+def : T_RRR_pat <M2_mpy_acc_sat_hh_s0, int_hexagon_M2_mpy_acc_sat_hh_s0>;
+
+def : T_RRR_pat <M2_mpy_nac_sat_ll_s1, int_hexagon_M2_mpy_nac_sat_ll_s1>;
+def : T_RRR_pat <M2_mpy_nac_sat_ll_s0, int_hexagon_M2_mpy_nac_sat_ll_s0>;
+def : T_RRR_pat <M2_mpy_nac_sat_lh_s1, int_hexagon_M2_mpy_nac_sat_lh_s1>;
+def : T_RRR_pat <M2_mpy_nac_sat_lh_s0, int_hexagon_M2_mpy_nac_sat_lh_s0>;
+def : T_RRR_pat <M2_mpy_nac_sat_hl_s1, int_hexagon_M2_mpy_nac_sat_hl_s1>;
+def : T_RRR_pat <M2_mpy_nac_sat_hl_s0, int_hexagon_M2_mpy_nac_sat_hl_s0>;
+def : T_RRR_pat <M2_mpy_nac_sat_hh_s1, int_hexagon_M2_mpy_nac_sat_hh_s1>;
+def : T_RRR_pat <M2_mpy_nac_sat_hh_s0, int_hexagon_M2_mpy_nac_sat_hh_s0>;
+
+
+//===----------------------------------------------------------------------===//
+// Multiply signed/unsigned halfwords with and without saturation and rounding
+// into a 64-bits destination register.
+//===----------------------------------------------------------------------===//
+
+def : T_RR_pat <M2_mpyd_hh_s0, int_hexagon_M2_mpyd_hh_s0>;
+def : T_RR_pat <M2_mpyd_hl_s0, int_hexagon_M2_mpyd_hl_s0>;
+def : T_RR_pat <M2_mpyd_lh_s0, int_hexagon_M2_mpyd_lh_s0>;
+def : T_RR_pat <M2_mpyd_ll_s0, int_hexagon_M2_mpyd_ll_s0>;
+def : T_RR_pat <M2_mpyd_hh_s1, int_hexagon_M2_mpyd_hh_s1>;
+def : T_RR_pat <M2_mpyd_hl_s1, int_hexagon_M2_mpyd_hl_s1>;
+def : T_RR_pat <M2_mpyd_lh_s1, int_hexagon_M2_mpyd_lh_s1>;
+def : T_RR_pat <M2_mpyd_ll_s1, int_hexagon_M2_mpyd_ll_s1>;
+
+def : T_RR_pat <M2_mpyd_rnd_hh_s0, int_hexagon_M2_mpyd_rnd_hh_s0>;
+def : T_RR_pat <M2_mpyd_rnd_hl_s0, int_hexagon_M2_mpyd_rnd_hl_s0>;
+def : T_RR_pat <M2_mpyd_rnd_lh_s0, int_hexagon_M2_mpyd_rnd_lh_s0>;
+def : T_RR_pat <M2_mpyd_rnd_ll_s0, int_hexagon_M2_mpyd_rnd_ll_s0>;
+def : T_RR_pat <M2_mpyd_rnd_hh_s1, int_hexagon_M2_mpyd_rnd_hh_s1>;
+def : T_RR_pat <M2_mpyd_rnd_hl_s1, int_hexagon_M2_mpyd_rnd_hl_s1>;
+def : T_RR_pat <M2_mpyd_rnd_lh_s1, int_hexagon_M2_mpyd_rnd_lh_s1>;
+def : T_RR_pat <M2_mpyd_rnd_ll_s1, int_hexagon_M2_mpyd_rnd_ll_s1>;
+
+def : T_RR_pat <M2_mpyud_hh_s0, int_hexagon_M2_mpyud_hh_s0>;
+def : T_RR_pat <M2_mpyud_hl_s0, int_hexagon_M2_mpyud_hl_s0>;
+def : T_RR_pat <M2_mpyud_lh_s0, int_hexagon_M2_mpyud_lh_s0>;
+def : T_RR_pat <M2_mpyud_ll_s0, int_hexagon_M2_mpyud_ll_s0>;
+def : T_RR_pat <M2_mpyud_hh_s1, int_hexagon_M2_mpyud_hh_s1>;
+def : T_RR_pat <M2_mpyud_hl_s1, int_hexagon_M2_mpyud_hl_s1>;
+def : T_RR_pat <M2_mpyud_lh_s1, int_hexagon_M2_mpyud_lh_s1>;
+def : T_RR_pat <M2_mpyud_ll_s1, int_hexagon_M2_mpyud_ll_s1>;
+
 //
 // ALU 32 types.
 //
@@ -2566,188 +2718,6 @@ def HEXAGON_M2_dpmpyss_nac_s0:
 *            MTYPE/MPYS                                             *
 *********************************************************************/
 
-// MTYPE / MPYS / Scalar 16x16 multiply signed.
-//Rd=mpy(Rs.[H|L],Rt.[H|L:<<0|:<<1]|
-//          [:<<0[:rnd|:sat|:rnd:sat]|:<<1[:rnd|:sat|:rnd:sat]]]
-def HEXAGON_M2_mpy_hh_s0:
-  si_MInst_sisi_hh                <"mpy",     int_hexagon_M2_mpy_hh_s0>;
-def HEXAGON_M2_mpy_hh_s1:
-  si_MInst_sisi_hh_s1             <"mpy",     int_hexagon_M2_mpy_hh_s1>;
-def HEXAGON_M2_mpy_rnd_hh_s1:
-  si_MInst_sisi_rnd_hh_s1         <"mpy",     int_hexagon_M2_mpy_rnd_hh_s1>;
-def HEXAGON_M2_mpy_sat_rnd_hh_s1:
-  si_MInst_sisi_sat_rnd_hh_s1     <"mpy",     int_hexagon_M2_mpy_sat_rnd_hh_s1>;
-def HEXAGON_M2_mpy_sat_hh_s1:
-  si_MInst_sisi_sat_hh_s1         <"mpy",     int_hexagon_M2_mpy_sat_hh_s1>;
-def HEXAGON_M2_mpy_rnd_hh_s0:
-  si_MInst_sisi_rnd_hh            <"mpy",     int_hexagon_M2_mpy_rnd_hh_s0>;
-def HEXAGON_M2_mpy_sat_rnd_hh_s0:
-  si_MInst_sisi_sat_rnd_hh        <"mpy",     int_hexagon_M2_mpy_sat_rnd_hh_s0>;
-def HEXAGON_M2_mpy_sat_hh_s0:
-  si_MInst_sisi_sat_hh            <"mpy",     int_hexagon_M2_mpy_sat_hh_s0>;
-
-def HEXAGON_M2_mpy_hl_s0:
-  si_MInst_sisi_hl                <"mpy",     int_hexagon_M2_mpy_hl_s0>;
-def HEXAGON_M2_mpy_hl_s1:
-  si_MInst_sisi_hl_s1             <"mpy",     int_hexagon_M2_mpy_hl_s1>;
-def HEXAGON_M2_mpy_rnd_hl_s1:
-  si_MInst_sisi_rnd_hl_s1         <"mpy",     int_hexagon_M2_mpy_rnd_hl_s1>;
-def HEXAGON_M2_mpy_sat_rnd_hl_s1:
-  si_MInst_sisi_sat_rnd_hl_s1     <"mpy",     int_hexagon_M2_mpy_sat_rnd_hl_s1>;
-def HEXAGON_M2_mpy_sat_hl_s1:
-  si_MInst_sisi_sat_hl_s1         <"mpy",     int_hexagon_M2_mpy_sat_hl_s1>;
-def HEXAGON_M2_mpy_rnd_hl_s0:
-  si_MInst_sisi_rnd_hl            <"mpy",     int_hexagon_M2_mpy_rnd_hl_s0>;
-def HEXAGON_M2_mpy_sat_rnd_hl_s0:
-  si_MInst_sisi_sat_rnd_hl        <"mpy",     int_hexagon_M2_mpy_sat_rnd_hl_s0>;
-def HEXAGON_M2_mpy_sat_hl_s0:
-  si_MInst_sisi_sat_hl            <"mpy",     int_hexagon_M2_mpy_sat_hl_s0>;
-
-def HEXAGON_M2_mpy_lh_s0:
-  si_MInst_sisi_lh                <"mpy",     int_hexagon_M2_mpy_lh_s0>;
-def HEXAGON_M2_mpy_lh_s1:
-  si_MInst_sisi_lh_s1             <"mpy",     int_hexagon_M2_mpy_lh_s1>;
-def HEXAGON_M2_mpy_rnd_lh_s1:
-  si_MInst_sisi_rnd_lh_s1         <"mpy",     int_hexagon_M2_mpy_rnd_lh_s1>;
-def HEXAGON_M2_mpy_sat_rnd_lh_s1:
-  si_MInst_sisi_sat_rnd_lh_s1     <"mpy",     int_hexagon_M2_mpy_sat_rnd_lh_s1>;
-def HEXAGON_M2_mpy_sat_lh_s1:
-  si_MInst_sisi_sat_lh_s1         <"mpy",     int_hexagon_M2_mpy_sat_lh_s1>;
-def HEXAGON_M2_mpy_rnd_lh_s0:
-  si_MInst_sisi_rnd_lh            <"mpy",     int_hexagon_M2_mpy_rnd_lh_s0>;
-def HEXAGON_M2_mpy_sat_rnd_lh_s0:
-  si_MInst_sisi_sat_rnd_lh        <"mpy",     int_hexagon_M2_mpy_sat_rnd_lh_s0>;
-def HEXAGON_M2_mpy_sat_lh_s0:
-  si_MInst_sisi_sat_lh            <"mpy",     int_hexagon_M2_mpy_sat_lh_s0>;
-
-def HEXAGON_M2_mpy_ll_s0:
-  si_MInst_sisi_ll                <"mpy",     int_hexagon_M2_mpy_ll_s0>;
-def HEXAGON_M2_mpy_ll_s1:
-  si_MInst_sisi_ll_s1             <"mpy",     int_hexagon_M2_mpy_ll_s1>;
-def HEXAGON_M2_mpy_rnd_ll_s1:
-  si_MInst_sisi_rnd_ll_s1         <"mpy",     int_hexagon_M2_mpy_rnd_ll_s1>;
-def HEXAGON_M2_mpy_sat_rnd_ll_s1:
-  si_MInst_sisi_sat_rnd_ll_s1     <"mpy",     int_hexagon_M2_mpy_sat_rnd_ll_s1>;
-def HEXAGON_M2_mpy_sat_ll_s1:
-  si_MInst_sisi_sat_ll_s1         <"mpy",     int_hexagon_M2_mpy_sat_ll_s1>;
-def HEXAGON_M2_mpy_rnd_ll_s0:
-  si_MInst_sisi_rnd_ll            <"mpy",     int_hexagon_M2_mpy_rnd_ll_s0>;
-def HEXAGON_M2_mpy_sat_rnd_ll_s0:
-  si_MInst_sisi_sat_rnd_ll        <"mpy",     int_hexagon_M2_mpy_sat_rnd_ll_s0>;
-def HEXAGON_M2_mpy_sat_ll_s0:
-  si_MInst_sisi_sat_ll            <"mpy",     int_hexagon_M2_mpy_sat_ll_s0>;
-
-//Rdd=mpy(Rs.[H|L],Rt.[H|L])[[:<<0|:<<1]|[:<<0:rnd|:<<1:rnd]]
-def HEXAGON_M2_mpyd_hh_s0:
-  di_MInst_sisi_hh                <"mpy",     int_hexagon_M2_mpyd_hh_s0>;
-def HEXAGON_M2_mpyd_hh_s1:
-  di_MInst_sisi_hh_s1             <"mpy",     int_hexagon_M2_mpyd_hh_s1>;
-def HEXAGON_M2_mpyd_rnd_hh_s1:
-  di_MInst_sisi_rnd_hh_s1         <"mpy",     int_hexagon_M2_mpyd_rnd_hh_s1>;
-def HEXAGON_M2_mpyd_rnd_hh_s0:
-  di_MInst_sisi_rnd_hh            <"mpy",     int_hexagon_M2_mpyd_rnd_hh_s0>;
-
-def HEXAGON_M2_mpyd_hl_s0:
-  di_MInst_sisi_hl                <"mpy",     int_hexagon_M2_mpyd_hl_s0>;
-def HEXAGON_M2_mpyd_hl_s1:
-  di_MInst_sisi_hl_s1             <"mpy",     int_hexagon_M2_mpyd_hl_s1>;
-def HEXAGON_M2_mpyd_rnd_hl_s1:
-  di_MInst_sisi_rnd_hl_s1         <"mpy",     int_hexagon_M2_mpyd_rnd_hl_s1>;
-def HEXAGON_M2_mpyd_rnd_hl_s0:
-  di_MInst_sisi_rnd_hl            <"mpy",     int_hexagon_M2_mpyd_rnd_hl_s0>;
-
-def HEXAGON_M2_mpyd_lh_s0:
-  di_MInst_sisi_lh                <"mpy",     int_hexagon_M2_mpyd_lh_s0>;
-def HEXAGON_M2_mpyd_lh_s1:
-  di_MInst_sisi_lh_s1             <"mpy",     int_hexagon_M2_mpyd_lh_s1>;
-def HEXAGON_M2_mpyd_rnd_lh_s1:
-  di_MInst_sisi_rnd_lh_s1         <"mpy",     int_hexagon_M2_mpyd_rnd_lh_s1>;
-def HEXAGON_M2_mpyd_rnd_lh_s0:
-  di_MInst_sisi_rnd_lh            <"mpy",     int_hexagon_M2_mpyd_rnd_lh_s0>;
-
-def HEXAGON_M2_mpyd_ll_s0:
-  di_MInst_sisi_ll                <"mpy",     int_hexagon_M2_mpyd_ll_s0>;
-def HEXAGON_M2_mpyd_ll_s1:
-  di_MInst_sisi_ll_s1             <"mpy",     int_hexagon_M2_mpyd_ll_s1>;
-def HEXAGON_M2_mpyd_rnd_ll_s1:
-  di_MInst_sisi_rnd_ll_s1         <"mpy",     int_hexagon_M2_mpyd_rnd_ll_s1>;
-def HEXAGON_M2_mpyd_rnd_ll_s0:
-  di_MInst_sisi_rnd_ll            <"mpy",     int_hexagon_M2_mpyd_rnd_ll_s0>;
-
-//Rx+=mpy(Rs.[H|L],Rt.[H|L])[[[:<<0|:<<1]|[:<<0:sat|:<<1:sat]]
-def HEXAGON_M2_mpy_acc_hh_s0:
-  si_MInst_sisisi_acc_hh            <"mpy",  int_hexagon_M2_mpy_acc_hh_s0>;
-def HEXAGON_M2_mpy_acc_hh_s1:
-  si_MInst_sisisi_acc_hh_s1         <"mpy",  int_hexagon_M2_mpy_acc_hh_s1>;
-def HEXAGON_M2_mpy_acc_sat_hh_s1:
-  si_MInst_sisisi_acc_sat_hh_s1     <"mpy",  int_hexagon_M2_mpy_acc_sat_hh_s1>;
-def HEXAGON_M2_mpy_acc_sat_hh_s0:
-  si_MInst_sisisi_acc_sat_hh        <"mpy",  int_hexagon_M2_mpy_acc_sat_hh_s0>;
-
-def HEXAGON_M2_mpy_acc_hl_s0:
-  si_MInst_sisisi_acc_hl            <"mpy",  int_hexagon_M2_mpy_acc_hl_s0>;
-def HEXAGON_M2_mpy_acc_hl_s1:
-  si_MInst_sisisi_acc_hl_s1         <"mpy",  int_hexagon_M2_mpy_acc_hl_s1>;
-def HEXAGON_M2_mpy_acc_sat_hl_s1:
-  si_MInst_sisisi_acc_sat_hl_s1     <"mpy",  int_hexagon_M2_mpy_acc_sat_hl_s1>;
-def HEXAGON_M2_mpy_acc_sat_hl_s0:
-  si_MInst_sisisi_acc_sat_hl        <"mpy",  int_hexagon_M2_mpy_acc_sat_hl_s0>;
-
-def HEXAGON_M2_mpy_acc_lh_s0:
-  si_MInst_sisisi_acc_lh            <"mpy",  int_hexagon_M2_mpy_acc_lh_s0>;
-def HEXAGON_M2_mpy_acc_lh_s1:
-  si_MInst_sisisi_acc_lh_s1         <"mpy",  int_hexagon_M2_mpy_acc_lh_s1>;
-def HEXAGON_M2_mpy_acc_sat_lh_s1:
-  si_MInst_sisisi_acc_sat_lh_s1     <"mpy",  int_hexagon_M2_mpy_acc_sat_lh_s1>;
-def HEXAGON_M2_mpy_acc_sat_lh_s0:
-  si_MInst_sisisi_acc_sat_lh        <"mpy",  int_hexagon_M2_mpy_acc_sat_lh_s0>;
-
-def HEXAGON_M2_mpy_acc_ll_s0:
-  si_MInst_sisisi_acc_ll            <"mpy",  int_hexagon_M2_mpy_acc_ll_s0>;
-def HEXAGON_M2_mpy_acc_ll_s1:
-  si_MInst_sisisi_acc_ll_s1         <"mpy",  int_hexagon_M2_mpy_acc_ll_s1>;
-def HEXAGON_M2_mpy_acc_sat_ll_s1:
-  si_MInst_sisisi_acc_sat_ll_s1     <"mpy",  int_hexagon_M2_mpy_acc_sat_ll_s1>;
-def HEXAGON_M2_mpy_acc_sat_ll_s0:
-  si_MInst_sisisi_acc_sat_ll        <"mpy",  int_hexagon_M2_mpy_acc_sat_ll_s0>;
-
-//Rx-=mpy(Rs.[H|L],Rt.[H|L])[[[:<<0|:<<1]|[:<<0:sat|:<<1:sat]]
-def HEXAGON_M2_mpy_nac_hh_s0:
-  si_MInst_sisisi_nac_hh            <"mpy",  int_hexagon_M2_mpy_nac_hh_s0>;
-def HEXAGON_M2_mpy_nac_hh_s1:
-  si_MInst_sisisi_nac_hh_s1         <"mpy",  int_hexagon_M2_mpy_nac_hh_s1>;
-def HEXAGON_M2_mpy_nac_sat_hh_s1:
-  si_MInst_sisisi_nac_sat_hh_s1     <"mpy",  int_hexagon_M2_mpy_nac_sat_hh_s1>;
-def HEXAGON_M2_mpy_nac_sat_hh_s0:
-  si_MInst_sisisi_nac_sat_hh        <"mpy",  int_hexagon_M2_mpy_nac_sat_hh_s0>;
-
-def HEXAGON_M2_mpy_nac_hl_s0:
-  si_MInst_sisisi_nac_hl            <"mpy",  int_hexagon_M2_mpy_nac_hl_s0>;
-def HEXAGON_M2_mpy_nac_hl_s1:
-  si_MInst_sisisi_nac_hl_s1         <"mpy",  int_hexagon_M2_mpy_nac_hl_s1>;
-def HEXAGON_M2_mpy_nac_sat_hl_s1:
-  si_MInst_sisisi_nac_sat_hl_s1     <"mpy",  int_hexagon_M2_mpy_nac_sat_hl_s1>;
-def HEXAGON_M2_mpy_nac_sat_hl_s0:
-  si_MInst_sisisi_nac_sat_hl        <"mpy",  int_hexagon_M2_mpy_nac_sat_hl_s0>;
-
-def HEXAGON_M2_mpy_nac_lh_s0:
-  si_MInst_sisisi_nac_lh            <"mpy",  int_hexagon_M2_mpy_nac_lh_s0>;
-def HEXAGON_M2_mpy_nac_lh_s1:
-  si_MInst_sisisi_nac_lh_s1         <"mpy",  int_hexagon_M2_mpy_nac_lh_s1>;
-def HEXAGON_M2_mpy_nac_sat_lh_s1:
-  si_MInst_sisisi_nac_sat_lh_s1     <"mpy",  int_hexagon_M2_mpy_nac_sat_lh_s1>;
-def HEXAGON_M2_mpy_nac_sat_lh_s0:
-  si_MInst_sisisi_nac_sat_lh        <"mpy",  int_hexagon_M2_mpy_nac_sat_lh_s0>;
-
-def HEXAGON_M2_mpy_nac_ll_s0:
-  si_MInst_sisisi_nac_ll            <"mpy",  int_hexagon_M2_mpy_nac_ll_s0>;
-def HEXAGON_M2_mpy_nac_ll_s1:
-  si_MInst_sisisi_nac_ll_s1         <"mpy",  int_hexagon_M2_mpy_nac_ll_s1>;
-def HEXAGON_M2_mpy_nac_sat_ll_s1:
-  si_MInst_sisisi_nac_sat_ll_s1     <"mpy",  int_hexagon_M2_mpy_nac_sat_ll_s1>;
-def HEXAGON_M2_mpy_nac_sat_ll_s0:
-  si_MInst_sisisi_nac_sat_ll        <"mpy",  int_hexagon_M2_mpy_nac_sat_ll_s0>;
-
 //Rx+=mpy(Rs.[H|L],Rt.[H|L:<<0|:<<1]
 def HEXAGON_M2_mpyd_acc_hh_s0:
   di_MInst_disisi_acc_hh          <"mpy",    int_hexagon_M2_mpyd_acc_hh_s0>;
@@ -2840,10 +2810,6 @@ def HEXAGON_M2_mpyu_acc_lh_s0:
   si_MInst_sisisi_acc_lh            <"mpyu",    int_hexagon_M2_mpyu_acc_lh_s0>;
 def HEXAGON_M2_mpyu_acc_lh_s1:
   si_MInst_sisisi_acc_lh_s1         <"mpyu",    int_hexagon_M2_mpyu_acc_lh_s1>;
-def HEXAGON_M2_mpyu_acc_ll_s0:
-  si_MInst_sisisi_acc_ll            <"mpyu",    int_hexagon_M2_mpyu_acc_ll_s0>;
-def HEXAGON_M2_mpyu_acc_ll_s1:
-  si_MInst_sisisi_acc_ll_s1         <"mpyu",    int_hexagon_M2_mpyu_acc_ll_s1>;
 
 //Rd+=mpyu(Rs.[H|L],Rt.[H|L])[:<<0|:<<1]
 def HEXAGON_M2_mpyu_nac_hh_s0:
@@ -2858,10 +2824,6 @@ def HEXAGON_M2_mpyu_nac_lh_s0:
   si_MInst_sisisi_nac_lh            <"mpyu",    int_hexagon_M2_mpyu_nac_lh_s0>;
 def HEXAGON_M2_mpyu_nac_lh_s1:
   si_MInst_sisisi_nac_lh_s1         <"mpyu",    int_hexagon_M2_mpyu_nac_lh_s1>;
-def HEXAGON_M2_mpyu_nac_ll_s0:
-  si_MInst_sisisi_nac_ll            <"mpyu",    int_hexagon_M2_mpyu_nac_ll_s0>;
-def HEXAGON_M2_mpyu_nac_ll_s1:
-  si_MInst_sisisi_nac_ll_s1         <"mpyu",    int_hexagon_M2_mpyu_nac_ll_s1>;
 
 //Rdd+=mpyu(Rs.[H|L],Rt.[H|L])[:<<0|:<<1]
 def HEXAGON_M2_mpyud_acc_hh_s0:
@@ -2876,10 +2838,6 @@ def HEXAGON_M2_mpyud_acc_lh_s0:
   di_MInst_disisi_acc_lh            <"mpyu", int_hexagon_M2_mpyud_acc_lh_s0>;
 def HEXAGON_M2_mpyud_acc_lh_s1:
   di_MInst_disisi_acc_lh_s1         <"mpyu", int_hexagon_M2_mpyud_acc_lh_s1>;
-def HEXAGON_M2_mpyud_acc_ll_s0:
-  di_MInst_disisi_acc_ll            <"mpyu", int_hexagon_M2_mpyud_acc_ll_s0>;
-def HEXAGON_M2_mpyud_acc_ll_s1:
-  di_MInst_disisi_acc_ll_s1         <"mpyu", int_hexagon_M2_mpyud_acc_ll_s1>;
 
 //Rdd-=mpyu(Rs.[H|L],Rt.[H|L])[:<<0|:<<1]
 def HEXAGON_M2_mpyud_nac_hh_s0:
@@ -2894,10 +2852,6 @@ def HEXAGON_M2_mpyud_nac_lh_s0:
   di_MInst_disisi_nac_lh            <"mpyu", int_hexagon_M2_mpyud_nac_lh_s0>;
 def HEXAGON_M2_mpyud_nac_lh_s1:
   di_MInst_disisi_nac_lh_s1         <"mpyu", int_hexagon_M2_mpyud_nac_lh_s1>;
-def HEXAGON_M2_mpyud_nac_ll_s0:
-  di_MInst_disisi_nac_ll            <"mpyu", int_hexagon_M2_mpyud_nac_ll_s0>;
-def HEXAGON_M2_mpyud_nac_ll_s1:
-  di_MInst_disisi_nac_ll_s1         <"mpyu", int_hexagon_M2_mpyud_nac_ll_s1>;
 
 
 /********************************************************************

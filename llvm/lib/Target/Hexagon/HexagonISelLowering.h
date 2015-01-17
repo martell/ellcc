@@ -49,10 +49,14 @@ bool isPositiveHalfWord(SDNode *N);
       FTOI,        // FP to Int within a FP register.
       ITOF,        // Int to FP within a FP register.
 
-      CALL,        // A call instruction.
+      CALLv3,      // A V3+ call instruction.
+      CALLv3nr,    // A V3+ call instruction that doesn't return.
+      CALLR,
+
       RET_FLAG,    // Return with a flag operand.
       BR_JT,       // Jump table.
-      BARRIER,     // Memory barrier.
+      BARRIER,     // Memory barrier
+      POPCOUNT,
       COMBINE,
       WrapperJT,
       WrapperCP,
@@ -68,7 +72,8 @@ bool isPositiveHalfWord(SDNode *N);
       WrapperShuffOB,
       WrapperShuffOH,
       TC_RETURN,
-      EH_RETURN
+      EH_RETURN,
+      DCFETCH
     };
   }
 

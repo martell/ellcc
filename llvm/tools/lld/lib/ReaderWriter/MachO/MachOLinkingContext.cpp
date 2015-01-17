@@ -12,8 +12,9 @@
 #include "File.h"
 #include "MachONormalizedFile.h"
 #include "MachOPasses.h"
+#include "lld/Core/ArchiveLibraryFile.h"
 #include "lld/Core/PassManager.h"
-#include "lld/Driver/DarwinInputGraph.h"
+#include "lld/Driver/Driver.h"
 #include "lld/Passes/LayoutPass.h"
 #include "lld/Passes/RoundTripYAMLPass.h"
 #include "lld/ReaderWriter/Reader.h"
@@ -21,8 +22,8 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Config/config.h"
-#include "llvm/Support/Errc.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/Errc.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/MachO.h"
 #include "llvm/Support/Path.h"
@@ -605,20 +606,19 @@ Writer &MachOLinkingContext::writer() const {
 }
 
 MachODylibFile* MachOLinkingContext::loadIndirectDylib(StringRef path) {
-  std::unique_ptr<MachOFileNode> node(new MachOFileNode(path, *this));
-  std::error_code ec = node->parse(*this, llvm::errs());
-  if (ec)
+  ErrorOr<std::unique_ptr<MemoryBuffer>> mbOrErr =
+    DarwinLdDriver::getMemoryBuffer(*this, path);
+  if (mbOrErr.getError())
     return nullptr;
 
-  assert(node->files().size() == 1 && "expected one file in dylib");
-  // lld::File object is owned by MachOFileNode object. This method returns
-  // an unowned pointer to the lld::File object.
-  MachODylibFile* result = reinterpret_cast<MachODylibFile*>(
-                                                   node->files().front().get());
-
+  std::vector<std::unique_ptr<File>> files;
+  if (registry().loadFile(std::move(mbOrErr.get()), files))
+    return nullptr;
+  assert(files.size() == 1 && "expected one file in dylib");
+  files[0]->parse();
+  MachODylibFile* result = reinterpret_cast<MachODylibFile*>(files[0].get());
   // Node object now owned by _indirectDylibs vector.
-  _indirectDylibs.push_back(std::move(node));
-
+  _indirectDylibs.push_back(std::move(files[0]));
   return result;
 }
 
@@ -928,16 +928,12 @@ bool MachOLinkingContext::customAtomOrderer(const DefinedAtom *left,
   return true;
 }
 
-static File *getFirstFile(const std::unique_ptr<InputElement> &elem) {
-  FileNode *e = dyn_cast<FileNode>(const_cast<InputElement *>(elem.get()));
-  if (!e || e->files().empty())
-    return nullptr;
-  return e->files()[0].get();
-}
-
-static bool isLibrary(const std::unique_ptr<InputElement> &elem) {
-  File *f = getFirstFile(elem);
-  return f && (isa<SharedLibraryFile>(f) || isa<ArchiveLibraryFile>(f));
+static bool isLibrary(const std::unique_ptr<Node> &elem) {
+  if (FileNode *node = dyn_cast<FileNode>(const_cast<Node *>(elem.get()))) {
+    File *file = node->getFile();
+    return isa<SharedLibraryFile>(file) || isa<ArchiveLibraryFile>(file);
+  }
+  return false;
 }
 
 // The darwin linker processes input files in two phases.  The first phase
@@ -948,11 +944,10 @@ static bool isLibrary(const std::unique_ptr<InputElement> &elem) {
 // so that the Resolver will reiterate over the libraries as long as we find
 // new undefines from libraries.
 void MachOLinkingContext::maybeSortInputFiles() {
-  std::vector<std::unique_ptr<InputElement>> &elements
-      = getInputGraph().inputElements();
+  std::vector<std::unique_ptr<Node>> &elements = getNodes();
   std::stable_sort(elements.begin(), elements.end(),
-                   [](const std::unique_ptr<InputElement> &a,
-                      const std::unique_ptr<InputElement> &b) {
+                   [](const std::unique_ptr<Node> &a,
+                      const std::unique_ptr<Node> &b) {
                      return !isLibrary(a) && isLibrary(b);
                    });
   size_t numLibs = std::count_if(elements.begin(), elements.end(), isLibrary);

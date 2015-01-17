@@ -22,7 +22,7 @@ add_llvm_library(LLVMCodeGen
   ForwardControlFlowIntegrity.cpp
   GCMetadata.cpp
   GCMetadataPrinter.cpp
-  GCStrategy.cpp
+  GCRootLowering.cpp
   GlobalMerge.cpp
   IfConversion.cpp
   InlineSpiller.cpp
@@ -104,6 +104,7 @@ add_llvm_library(LLVMCodeGen
   StackSlotColoring.cpp
   StackMapLivenessAnalysis.cpp
   StackMaps.cpp
+  StatepointExampleGC.cpp
   TailDuplication.cpp
   TargetFrameLoweringImpl.cpp
   TargetInstrInfo.cpp

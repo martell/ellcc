@@ -217,6 +217,7 @@ private:
     void PeepholeCROps();
 
     SDValue combineToCMPB(SDNode *N);
+    void foldBoolExts(SDValue &Res, SDNode *&N);
 
     bool AllUsersSelectZero(SDNode *N);
     void SwapAllSelectUsers(SDNode *N);
@@ -306,6 +307,7 @@ SDNode *PPCDAGToDAGISel::getGlobalBaseReg() {
         if (M->getPICLevel() == PICLevel::Small) {
           BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MoveGOTtoLR));
           BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MFLR), GlobalBaseReg);
+          MF->getInfo<PPCFunctionInfo>()->setUsesPICBase(true);
         } else {
           BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MovePCtoLR));
           BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MFLR), GlobalBaseReg);
@@ -602,16 +604,33 @@ static unsigned SelectInt64CountDirect(int64_t Imm) {
   return Result;
 }
 
+static uint64_t Rot64(uint64_t Imm, unsigned R) {
+  return (Imm << R) | (Imm >> (64 - R));
+}
+
 static unsigned SelectInt64Count(int64_t Imm) {
-  unsigned DirectCount = SelectInt64CountDirect(Imm);
+  unsigned Count = SelectInt64CountDirect(Imm);
+  if (Count == 1)
+    return Count;
 
-  // If might be cheaper to materialize the bit-inverted constant, and then
-  // flip the bits (which takes one nor instruction).
-  unsigned NotDirectCount = SelectInt64CountDirect(~(uint64_t) Imm) + 1;
-  if (NotDirectCount < DirectCount)
-    return NotDirectCount;
+  for (unsigned r = 1; r < 63; ++r) {
+    uint64_t RImm = Rot64(Imm, r);
+    unsigned RCount = SelectInt64CountDirect(RImm) + 1;
+    Count = std::min(Count, RCount);
 
-  return DirectCount;
+    // See comments in SelectInt64 for an explanation of the logic below.
+    unsigned LS = findLastSet(RImm);
+    if (LS != r-1)
+      continue;
+
+    uint64_t OnesMask = -(int64_t) (UINT64_C(1) << (LS+1));
+    uint64_t RImmWithOnes = RImm | OnesMask;
+
+    RCount = SelectInt64CountDirect(RImmWithOnes) + 1;
+    Count = std::min(Count, RCount);
+  }
+
+  return Count;
 }
 
 // Select a 64-bit constant. For cost-modeling purposes, SelectInt64Count
@@ -691,19 +710,59 @@ static SDNode *SelectInt64Direct(SelectionDAG *CurDAG, SDLoc dl, int64_t Imm) {
 }
 
 static SDNode *SelectInt64(SelectionDAG *CurDAG, SDLoc dl, int64_t Imm) {
-  unsigned DirectCount = SelectInt64CountDirect(Imm);
+  unsigned Count = SelectInt64CountDirect(Imm);
+  if (Count == 1)
+    return SelectInt64Direct(CurDAG, dl, Imm);
 
-  // If might be cheaper to materialize the bit-inverted constant, and then
-  // flip the bits (which takes one nor instruction).
-  unsigned NotDirectCount = SelectInt64CountDirect(~(uint64_t) Imm) + 1;
-  if (NotDirectCount < DirectCount) {
-    SDValue NotDirectVal =
-      SDValue(SelectInt64Direct(CurDAG, dl, ~(uint64_t) Imm), 0);
-    return CurDAG->getMachineNode(PPC::NOR8, dl, MVT::i64, NotDirectVal,
-                                  NotDirectVal);
+  unsigned RMin = 0;
+
+  int64_t MatImm;
+  unsigned MaskEnd;
+
+  for (unsigned r = 1; r < 63; ++r) {
+    uint64_t RImm = Rot64(Imm, r);
+    unsigned RCount = SelectInt64CountDirect(RImm) + 1;
+    if (RCount < Count) {
+      Count = RCount;
+      RMin = r;
+      MatImm = RImm;
+      MaskEnd = 63;
+    }
+
+    // If the immediate to generate has many trailing zeros, it might be
+    // worthwhile to generate a rotated value with too many leading ones
+    // (because that's free with li/lis's sign-extension semantics), and then
+    // mask them off after rotation.
+
+    unsigned LS = findLastSet(RImm);
+    // We're adding (63-LS) higher-order ones, and we expect to mask them off
+    // after performing the inverse rotation by (64-r). So we need that:
+    //   63-LS == 64-r => LS == r-1
+    if (LS != r-1)
+      continue;
+
+    uint64_t OnesMask = -(int64_t) (UINT64_C(1) << (LS+1));
+    uint64_t RImmWithOnes = RImm | OnesMask;
+
+    RCount = SelectInt64CountDirect(RImmWithOnes) + 1;
+    if (RCount < Count) {
+      Count = RCount;
+      RMin = r;
+      MatImm = RImmWithOnes;
+      MaskEnd = LS;
+    }
   }
 
-  return SelectInt64Direct(CurDAG, dl, Imm);
+  if (!RMin)
+    return SelectInt64Direct(CurDAG, dl, Imm);
+
+  auto getI32Imm = [CurDAG](unsigned Imm) {
+      return CurDAG->getTargetConstant(Imm, MVT::i32);
+  };
+
+  SDValue Val = SDValue(SelectInt64Direct(CurDAG, dl, MatImm), 0);
+  return CurDAG->getMachineNode(PPC::RLDICR, dl, MVT::i64, Val,
+                                getI32Imm(64 - RMin), getI32Imm(MaskEnd));
 }
 
 // Select a 64-bit constant.
@@ -3116,6 +3175,73 @@ SDValue PPCDAGToDAGISel::combineToCMPB(SDNode *N) {
   return Res;
 }
 
+// When CR bit registers are enabled, an extension of an i1 variable to a i32
+// or i64 value is lowered in terms of a SELECT_I[48] operation, and thus
+// involves constant materialization of a 0 or a 1 or both. If the result of
+// the extension is then operated upon by some operator that can be constant
+// folded with a constant 0 or 1, and that constant can be materialized using
+// only one instruction (like a zero or one), then we should fold in those
+// operations with the select.
+void PPCDAGToDAGISel::foldBoolExts(SDValue &Res, SDNode *&N) {
+  if (!PPCSubTarget->useCRBits())
+    return;
+
+  if (N->getOpcode() != ISD::ZERO_EXTEND &&
+      N->getOpcode() != ISD::SIGN_EXTEND &&
+      N->getOpcode() != ISD::ANY_EXTEND)
+    return;
+
+  if (N->getOperand(0).getValueType() != MVT::i1)
+    return;
+
+  if (!N->hasOneUse())
+    return;
+
+  SDLoc dl(N);
+  EVT VT = N->getValueType(0);
+  SDValue Cond = N->getOperand(0);
+  SDValue ConstTrue =
+    CurDAG->getConstant(N->getOpcode() == ISD::SIGN_EXTEND ? -1 : 1, VT);
+  SDValue ConstFalse = CurDAG->getConstant(0, VT);
+
+  do {
+    SDNode *User = *N->use_begin();
+    if (User->getNumOperands() != 2)
+      break;
+
+    auto TryFold = [this, N, User](SDValue Val) {
+      SDValue UserO0 = User->getOperand(0), UserO1 = User->getOperand(1);
+      SDValue O0 = UserO0.getNode() == N ? Val : UserO0;
+      SDValue O1 = UserO1.getNode() == N ? Val : UserO1;
+
+      return CurDAG->FoldConstantArithmetic(User->getOpcode(),
+                                            User->getValueType(0),
+                                            O0.getNode(), O1.getNode());
+    };
+
+    SDValue TrueRes = TryFold(ConstTrue);
+    if (!TrueRes)
+      break;
+    SDValue FalseRes = TryFold(ConstFalse);
+    if (!FalseRes)
+      break;
+
+    // For us to materialize these using one instruction, we must be able to
+    // represent them as signed 16-bit integers.
+    uint64_t True  = cast<ConstantSDNode>(TrueRes)->getZExtValue(),
+             False = cast<ConstantSDNode>(FalseRes)->getZExtValue();
+    if (!isInt<16>(True) || !isInt<16>(False))
+      break;
+
+    // We can replace User with a new SELECT node, and try again to see if we
+    // can fold the select with its user.
+    Res = CurDAG->getSelect(dl, User->getValueType(0), Cond, TrueRes, FalseRes);
+    N = User;
+    ConstTrue = TrueRes;
+    ConstFalse = FalseRes;
+  } while (N->hasOneUse());
+}
+
 void PPCDAGToDAGISel::PreprocessISelDAG() {
   SelectionDAG::allnodes_iterator Position(CurDAG->getRoot().getNode());
   ++Position;
@@ -3133,6 +3259,9 @@ void PPCDAGToDAGISel::PreprocessISelDAG() {
       Res = combineToCMPB(N);
       break;
     }
+
+    if (!Res)
+      foldBoolExts(Res, N);
 
     if (Res) {
       DEBUG(dbgs() << "PPC DAG preprocessing replacing:\nOld:    ");
@@ -3672,6 +3801,19 @@ static bool PeepholePPC64ZExtGather(SDValue Op32,
     return true;
   }
 
+  // LHBRX and LWBRX always clear the higher-order bits.
+  if (Op32.getMachineOpcode() == PPC::LHBRX ||
+      Op32.getMachineOpcode() == PPC::LWBRX) {
+    ToPromote.insert(Op32.getNode());
+    return true;
+  }
+
+  // CNTLZW always produces a 64-bit value in [0,32], and so is zero extended.
+  if (Op32.getMachineOpcode() == PPC::CNTLZW) {
+    ToPromote.insert(Op32.getNode());
+    return true;
+  }
+
   // Next, check for those instructions we can look through.
 
   // Assuming the mask does not wrap around, then the higher-order bits are
@@ -3859,6 +4001,9 @@ void PPCDAGToDAGISel::PeepholePPC64ZExt() {
       case PPC::SRW:       NewOpcode = PPC::SRW8; break;
       case PPC::LI:        NewOpcode = PPC::LI8; break;
       case PPC::LIS:       NewOpcode = PPC::LIS8; break;
+      case PPC::LHBRX:     NewOpcode = PPC::LHBRX8; break;
+      case PPC::LWBRX:     NewOpcode = PPC::LWBRX8; break;
+      case PPC::CNTLZW:    NewOpcode = PPC::CNTLZW8; break;
       case PPC::RLWIMI:    NewOpcode = PPC::RLWIMI8; break;
       case PPC::OR:        NewOpcode = PPC::OR8; break;
       case PPC::SELECT_I4: NewOpcode = PPC::SELECT_I8; break;

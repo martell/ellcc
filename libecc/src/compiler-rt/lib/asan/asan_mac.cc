@@ -205,11 +205,6 @@ void *AsanDoesNotSupportStaticLinkage() {
   return 0;
 }
 
-bool AsanInterceptsSignal(int signum) {
-  return (signum == SIGSEGV || signum == SIGBUS) &&
-         common_flags()->handle_segv;
-}
-
 void AsanPlatformThreadInit() {
 }
 
