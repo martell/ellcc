@@ -1783,7 +1783,7 @@ int yywrap (void) { return 1; }
 
 
 
-#line 1787 "ldlex.c"
+#line 1787 "../../../src/binutils/ld/ldlex.c"
 
 #define INITIAL 0
 #define SCRIPT 1
@@ -1991,7 +1991,7 @@ YY_DECL
 	}
     }
 
-#line 1995 "ldlex.c"
+#line 1995 "../../../src/binutils/ld/ldlex.c"
 
 	if ( !(yy_init) )
 		{
@@ -3198,7 +3198,7 @@ YY_RULE_SETUP
 #line 475 "ldlex.l"
 ECHO;
 	YY_BREAK
-#line 3202 "ldlex.c"
+#line 3202 "../../../src/binutils/ld/ldlex.c"
 
 	case YY_END_OF_BUFFER:
 		{
