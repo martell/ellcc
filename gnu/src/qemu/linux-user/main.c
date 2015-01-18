@@ -309,7 +309,6 @@ void cpu_loop(CPUX86State *env)
                                           env->regs[8],
                                           env->regs[9],
                                           0, 0);
-            env->eip = env->exception_next_eip;
             break;
 #endif
         case EXCP0B_NOSEG:
@@ -1007,7 +1006,6 @@ void cpu_loop(CPUARMState *env)
     CPUState *cs = CPU(arm_env_get_cpu(env));
     int trapnr, sig;
     target_siginfo_t info;
-    uint32_t addr;
 
     for (;;) {
         cpu_exec_start(cs);
@@ -1043,12 +1041,11 @@ void cpu_loop(CPUARMState *env)
             /* fall through for segv */
         case EXCP_PREFETCH_ABORT:
         case EXCP_DATA_ABORT:
-            addr = env->exception.vaddress;
             info.si_signo = SIGSEGV;
             info.si_errno = 0;
             /* XXX: check env->error_code */
             info.si_code = TARGET_SEGV_MAPERR;
-            info._sifields._sigfault._addr = addr;
+            info._sifields._sigfault._addr = env->exception.vaddress;
             queue_signal(env, info.si_signo, &info);
             break;
         case EXCP_DEBUG:
@@ -3459,8 +3456,7 @@ CPUArchState *cpu_copy(CPUArchState *env)
         cpu_breakpoint_insert(new_cpu, bp->pc, bp->flags, NULL);
     }
     QTAILQ_FOREACH(wp, &cpu->watchpoints, entry) {
-        cpu_watchpoint_insert(new_cpu, wp->vaddr, (~wp->len_mask) + 1,
-                              wp->flags, NULL);
+        cpu_watchpoint_insert(new_cpu, wp->vaddr, wp->len, wp->flags, NULL);
     }
 #endif
 
@@ -3546,6 +3542,17 @@ static void handle_arg_pagesize(const char *arg)
         fprintf(stderr, "page size must be a power of two\n");
         exit(1);
     }
+}
+
+static void handle_arg_randseed(const char *arg)
+{
+    unsigned long long seed;
+
+    if (parse_uint_full(arg, &seed, 0) != 0 || seed > UINT_MAX) {
+        fprintf(stderr, "Invalid seed number: %s\n", arg);
+        exit(1);
+    }
+    srand(seed);
 }
 
 static void handle_arg_gdb(const char *arg)
@@ -3676,6 +3683,8 @@ static const struct qemu_argument arg_table[] = {
      "",           "run in singlestep mode"},
     {"strace",     "QEMU_STRACE",      false, handle_arg_strace,
      "",           "log system calls"},
+    {"seed",       "QEMU_RAND_SEED",   true,  handle_arg_randseed,
+     "",           "Seed for pseudo-random number generator"},
     {"version",    "QEMU_VERSION",     false, handle_arg_version,
      "",           "display version information and exit"},
     {NULL, NULL, false, NULL, NULL, NULL}
@@ -3858,6 +3867,8 @@ int main(int argc, char **argv, char **envp)
     cpudef_setup(); /* parse cpu definitions in target config file (TBD) */
 #endif
 
+    srand(time(NULL));
+
     optind = parse_args(argc, argv);
 
     /* Zero out regs */
@@ -3926,6 +3937,10 @@ int main(int argc, char **argv, char **envp)
 
     if (getenv("QEMU_STRACE")) {
         do_strace = 1;
+    }
+
+    if (getenv("QEMU_RAND_SEED")) {
+        handle_arg_randseed(getenv("QEMU_RAND_SEED"));
     }
 
     target_environ = envlist_to_environ(envlist, NULL);

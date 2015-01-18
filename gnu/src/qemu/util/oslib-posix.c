@@ -94,7 +94,7 @@ void *qemu_oom_check(void *ptr)
     return ptr;
 }
 
-void *qemu_memalign(size_t alignment, size_t size)
+void *qemu_try_memalign(size_t alignment, size_t size)
 {
     void *ptr;
 
@@ -106,21 +106,25 @@ void *qemu_memalign(size_t alignment, size_t size)
     int ret;
     ret = posix_memalign(&ptr, alignment, size);
     if (ret != 0) {
-        fprintf(stderr, "Failed to allocate %zu B: %s\n",
-                size, strerror(ret));
-        abort();
+        errno = ret;
+        ptr = NULL;
     }
 #elif defined(CONFIG_BSD)
-    ptr = qemu_oom_check(valloc(size));
+    ptr = valloc(size);
 #else
-    ptr = qemu_oom_check(memalign(alignment, size));
+    ptr = memalign(alignment, size);
 #endif
     trace_qemu_memalign(alignment, size, ptr);
     return ptr;
 }
 
+void *qemu_memalign(size_t alignment, size_t size)
+{
+    return qemu_oom_check(qemu_try_memalign(alignment, size));
+}
+
 /* alloc shared memory pages */
-void *qemu_anon_ram_alloc(size_t size)
+void *qemu_anon_ram_alloc(size_t size, uint64_t *alignment)
 {
     size_t align = QEMU_VMALLOC_ALIGN;
     size_t total = size + align - getpagesize();
@@ -132,6 +136,9 @@ void *qemu_anon_ram_alloc(size_t size)
         return NULL;
     }
 
+    if (alignment) {
+        *alignment = align;
+    }
     ptr += offset;
     total -= offset;
 
@@ -386,7 +393,8 @@ void os_mem_prealloc(int fd, char *area, size_t memory)
     pthread_sigmask(SIG_UNBLOCK, &set, &oldset);
 
     if (sigsetjmp(sigjump, 1)) {
-        fprintf(stderr, "os_mem_prealloc: failed to preallocate pages\n");
+        fprintf(stderr, "os_mem_prealloc: Insufficient free host memory "
+                        "pages available to allocate guest RAM\n");
         exit(1);
     } else {
         int i;

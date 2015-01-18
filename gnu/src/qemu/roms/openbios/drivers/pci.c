@@ -34,6 +34,9 @@
 #include "cuda.h"
 #include "macio.h"
 #endif
+#ifdef CONFIG_DRIVER_USB
+#include "drivers/usb.h"
+#endif
 
 #if defined (CONFIG_DEBUG_PCI)
 # define PCI_DPRINTF(format, ...) printk(format, ## __VA_ARGS__)
@@ -414,62 +417,6 @@ static void pci_set_bus_range(const pci_config_t *config)
 	set_property(dev, "bus-range", (char *)props, 2 * sizeof(props[0]));
 }
 
-static void pci_host_set_interrupt_map(const pci_config_t *config)
-{
-/* XXX We currently have a hook in the MPIC init code to fill in its handle.
- *     If you want to have interrupt maps for your PCI host bus, add your
- *     architecture to the #if and make your bridge detect code fill in its
- *     handle too.
- *
- *     It would be great if someone clever could come up with a more universal
- *     mechanism here.
- */
-#if defined(CONFIG_PPC)
-	phandle_t dev = get_cur_dev();
-	u32 props[7 * 8];
-	int i;
-
-#if defined(CONFIG_PPC)
-	/* Oldworld macs do interrupt maps differently */
-	if(!is_newworld())
-		return;
-#endif
-
-	for (i = 0; i < (7*8); i+=7) {
-		props[i+PCI_INT_MAP_PCI0] = 0;
-		props[i+PCI_INT_MAP_PCI1] = 0;
-		props[i+PCI_INT_MAP_PCI2] = 0;
-		props[i+PCI_INT_MAP_PCI_INT] = (i / 7) + 1; // starts at PINA=1
-		props[i+PCI_INT_MAP_PIC_HANDLE] = 0; // gets patched in later
-		props[i+PCI_INT_MAP_PIC_INT] = arch->irqs[i / 7];
-		props[i+PCI_INT_MAP_PIC_POL] = 3;
-	}
-	set_property(dev, "interrupt-map", (char *)props, 7 * 8 * sizeof(props[0]));
-
-	props[PCI_INT_MAP_PCI0] = 0;
-	props[PCI_INT_MAP_PCI1] = 0;
-	props[PCI_INT_MAP_PCI2] = 0;
-	props[PCI_INT_MAP_PCI_INT] = 0x7;
-
-	set_property(dev, "interrupt-map-mask", (char *)props, 4 * sizeof(props[0]));
-#elif defined(CONFIG_SPARC64)
-	phandle_t dev = get_cur_dev();
-	uint32_t props[5];
-
-	props[0] = 0x000001fe;
-	props[1] = 0x020003f8;
-	props[2] = 1;
-	props[3] = find_dev("/");
-	props[4] = 0x2b;
-	set_property(dev, "interrupt-map", (char *)props, 5 * sizeof(props[0]));
-
-	props[0] = 0x000001ff;
-	props[1] = 0xffffffff;
-	props[2] = 3;
-	set_property(dev, "interrupt-map-mask", (char *)props, 3 * sizeof(props[0]));
-#endif
-}
-
 static void pci_host_set_reg(phandle_t phandle)
 {
     phandle_t dev = phandle;
@@ -536,7 +483,6 @@ int host_config_cb(const pci_config_t *config)
 	//XXX this overrides "reg" property
 	pci_host_set_reg(get_cur_dev());
 	pci_host_set_ranges(config);
-	pci_host_set_interrupt_map(config);
 
 	return 0;
 }
@@ -553,6 +499,9 @@ static int sabre_configure(phandle_t dev)
                      sizeof(props[0]));
         set_property(dev, "#virtual-dma-addr-cells", (char *)props,
                      sizeof(props[0]));
+
+        set_property(dev, "no-streaming-cache", (char *)props, 0);
+
         props[0] = 0x000007f0;
         props[1] = 0x000007ee;
         props[2] = 0x000007ef;
@@ -841,10 +790,14 @@ int ebus_config_cb(const pci_config_t *config)
 {
 #ifdef CONFIG_DRIVER_EBUS
     phandle_t dev = get_cur_dev();
-    uint32_t props[5];
+    uint32_t props[12];
+    int ncells;
+    int i;
+    uint32_t mask;
+    int flags, space_code;
 
-    props[0] = 0x000001fe;
-    props[1] = 0x020003f8;
+    props[0] = 0x14;
+    props[1] = 0x3f8;
     props[2] = 1;
     props[3] = find_dev("/");
     props[4] = 0x2b;
@@ -855,14 +808,37 @@ int ebus_config_cb(const pci_config_t *config)
     props[2] = 3;
     set_property(dev, "interrupt-map-mask", (char *)props, 3 * sizeof(props[0]));
 
+    /* Build ranges property from the BARs */
+    ncells = 0;
+    for (i = 0; i < 6; i++) {
+        /* consider only bars with non-zero region size */
+        if (!config->sizes[i])
+            continue;
+
+        pci_decode_pci_addr(config->assigned[i],
+                            &flags, &space_code, &mask);
+
+        props[ncells++] = PCI_BASE_ADDR_0 + (i * sizeof(uint32_t));
+        props[ncells++] = 0x0;
+
+        ncells += pci_encode_phys_addr(props + ncells,
+                                       flags, space_code, config->dev,
+                                       PCI_BASE_ADDR_0 + (i * sizeof(uint32_t)),
+                                       0);
+
+        props[ncells++] = config->sizes[i];
+    }
+
+    set_property(dev, "ranges", (char *)props, ncells * sizeof(props[0]));
+
 #ifdef CONFIG_DRIVER_FLOPPY
     ob_floppy_init(config->path, "fdthree", 0x3f0ULL, 0);
 #endif
 #ifdef CONFIG_DRIVER_PC_SERIAL
-    ob_pc_serial_init(config->path, "su", arch->io_base, 0x3f8ULL, 0);
+    ob_pc_serial_init(config->path, "su", (PCI_BASE_ADDR_1 | 0ULL) << 32, 0x3f8ULL, 0);
 #endif
 #ifdef CONFIG_DRIVER_PC_KBD
-    ob_pc_kbd_init(config->path, "kb_ps2", arch->io_base, 0x60ULL, 0);
+    ob_pc_kbd_init(config->path, "kb_ps2", (PCI_BASE_ADDR_1 | 0ULL) << 32, 0x60ULL, 0);
 #endif
 #endif
     return 0;
@@ -880,6 +856,14 @@ int i82378_config_cb(const pci_config_t *config)
     ob_ide_init(config->path, 0x1f0, 0x3f6, 0x170, 0x376);
 #endif
 
+    return 0;
+}
+
+int usb_ohci_config_cb(const pci_config_t *config)
+{
+#ifdef CONFIG_DRIVER_USB
+    ob_usb_ohci_init(config->path, 0x80000000 | config->dev);
+#endif
     return 0;
 }
 
@@ -933,10 +917,7 @@ static void ob_pci_add_properties(phandle_t phandle,
 		OLDWORLD(set_int_property(dev, "AAPL,interrupts",
 					  config->irq_line));
 #if defined(CONFIG_SPARC64)
-                /* direct mapping bssnn (Bus, Slot, interrupt Number */
-                set_int_property(get_cur_dev(), "interrupts",
-                                 ((((config->dev >> 11) << 2)
-                                   + config->irq_pin - 1) & 0x1f));
+                set_int_property(dev, "interrupts", config->irq_pin);
 #else
 		NEWWORLD(set_int_property(dev, "interrupts", config->irq_pin));
 #endif
@@ -1375,6 +1356,132 @@ static void ob_configure_pci_device(const char* parent_path,
     }
 }
 
+static void ob_pci_set_available(phandle_t host, unsigned long mem_base, unsigned long io_base)
+{
+    /* Create an available property for both memory and IO space */
+    uint32_t props[10];
+    int ncells;
+
+    ncells = 0;
+    ncells += pci_encode_phys_addr(props + ncells, 0, MEMORY_SPACE_32, 0, 0, mem_base);
+    ncells += pci_encode_size(props + ncells, arch->mem_len - mem_base);
+    ncells += pci_encode_phys_addr(props + ncells, 0, IO_SPACE, 0, 0, io_base);
+    ncells += pci_encode_size(props + ncells, arch->io_len - io_base);
+
+    set_property(host, "available", (char *)props, ncells * sizeof(props[0]));
+}
+
+/* Convert device/irq pin to interrupt property */
+#define SUN4U_INTERRUPT(dev, irq_pin) \
+            ((((dev >> 11) << 2) + irq_pin - 1) & 0x1f)
+
+static void ob_pci_host_set_interrupt_map(phandle_t host)
+{
+    phandle_t dnode = 0;
+    u32 props[128];
+    int i;
+
+#if defined(CONFIG_PPC)
+    phandle_t target_node;
+
+    /* Oldworld macs do interrupt maps differently */
+    if (!is_newworld())
+        return;
+
+    dnode = dt_iterate_type(0, "open-pic");
+    if (dnode) {
+        /* patch in openpic interrupt-parent properties */
+        target_node = find_dev("/pci/mac-io");
+        set_int_property(target_node, "interrupt-parent", dnode);
+
+        target_node = find_dev("/pci/mac-io/escc/ch-a");
+        set_int_property(target_node, "interrupt-parent", dnode);
+
+        target_node = find_dev("/pci/mac-io/escc/ch-b");
+        set_int_property(target_node, "interrupt-parent", dnode);
+
+        /* QEMU only emulates 2 of the 3 ata buses currently */
+        /* On a new world Mac these are not numbered but named by the
+         * ATA version they support. Thus we have: ata-3, ata-3, ata-4
+         * On g3beige they all called just ide.
+         * We take ata-3 and ata-4 which seems to work for both
+         * at least for clients we care about */
+        target_node = find_dev("/pci/mac-io/ata-3");
+        set_int_property(target_node, "interrupt-parent", dnode);
+
+        target_node = find_dev("/pci/mac-io/ata-4");
+        set_int_property(target_node, "interrupt-parent", dnode);
+
+        target_node = find_dev("/pci/mac-io/via-cuda");
+        set_int_property(target_node, "interrupt-parent", dnode);
+
+        target_node = find_dev("/pci");
+        set_int_property(target_node, "interrupt-parent", dnode);
+
+        /* openpic interrupt mapping */
+        for (i = 0; i < (7*8); i += 7) {
+            props[i + PCI_INT_MAP_PCI0] = 0;
+            props[i + PCI_INT_MAP_PCI1] = 0;
+            props[i + PCI_INT_MAP_PCI2] = 0;
+            props[i + PCI_INT_MAP_PCI_INT] = (i / 7) + 1; // starts at PINA=1
+            props[i + PCI_INT_MAP_PIC_HANDLE] = dnode;
+            props[i + PCI_INT_MAP_PIC_INT] = arch->irqs[i / 7];
+            props[i + PCI_INT_MAP_PIC_POL] = 3;
+        }
+        set_property(host, "interrupt-map", (char *)props, 7 * 8 * sizeof(props[0]));
+
+        props[PCI_INT_MAP_PCI0] = 0;
+        props[PCI_INT_MAP_PCI1] = 0;
+        props[PCI_INT_MAP_PCI2] = 0;
+        props[PCI_INT_MAP_PCI_INT] = 0x7;
+
+        set_property(host, "interrupt-map-mask", (char *)props, 4 * sizeof(props[0]));
+    }
+#elif defined(CONFIG_SPARC64)
+    int ncells, len;
+    u32 *val, addr;
+    char *reg;
+
+    /* Set interrupt-map for PCI devices with an interrupt pin present */
+    ncells = 0;
+
+    PUSH(host);
+    fword("child");
+    dnode = POP();
+    while (dnode) {
+        if (get_int_property(dnode, "interrupts", &len)) {
+            reg = get_property(dnode, "reg", &len);
+            if (reg) {
+                val = (u32 *)reg;
+
+                for (i = 0; i < (len / sizeof(u32)); i += 5) {
+                    addr = val[i];
+
+                    /* Device address is in 1st 32-bit word of encoded PCI address for config space */
+                    if (!(addr & 0x03000000)) {
+                        ncells += pci_encode_phys_addr(props + ncells, 0, 0, addr, 0, 0);
+                        props[ncells++] = 1;    /* always interrupt pin 1 for QEMU */
+                        props[ncells++] = host;
+                        props[ncells++] = SUN4U_INTERRUPT(addr, 1);
+                    }
+                }
+            }
+        }
+
+        PUSH(dnode);
+        fword("peer");
+        dnode = POP();
+    }
+    set_property(host, "interrupt-map", (char *)props, ncells * sizeof(props[0]));
+
+    props[0] = 0x0000f800;
+    props[1] = 0x0;
+    props[2] = 0x0;
+    props[3] = 7;
+    set_property(host, "interrupt-map-mask", (char *)props, 4 * sizeof(props[0]));
+#endif
+}
+
 int ob_pci_init(void)
 {
     int bus, devnum, fn;
@@ -1382,7 +1489,7 @@ int ob_pci_init(void)
     unsigned long mem_base, io_base;
 
     pci_config_t config = {}; /* host bridge */
-    phandle_t phandle_host;
+    phandle_t phandle_host = 0;
 
     PCI_DPRINTF("Initializing PCI host bridge...\n");
 
@@ -1430,6 +1537,11 @@ int ob_pci_init(void)
         break;
     }
 
+    /* create available attributes for the PCI bridge */
+    ob_pci_set_available(phandle_host, mem_base, io_base);
+
+    /* configure the host bridge interrupt map */
+    ob_pci_host_set_interrupt_map(phandle_host);
 
     device_end();
 

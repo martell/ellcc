@@ -824,8 +824,6 @@ static uint32_t get_elf_hwcap2(void)
         NEW_AUX_ENT(AT_IGNOREPPC, AT_IGNOREPPC);        \
     } while (0)
 
-static inline uint32_t get_ppc64_abi(struct image_info *infop);
-
 static inline void init_thread(struct target_pt_regs *_regs, struct image_info *infop)
 {
     _regs->gpr[1] = infop->start_stack;
@@ -1213,13 +1211,6 @@ static inline void init_thread(struct target_pt_regs *regs, struct image_info *i
 
 #include "elf.h"
 
-#ifdef TARGET_PPC
-static inline uint32_t get_ppc64_abi(struct image_info *infop)
-{
-  return infop->elf_flags & EF_PPC64_ABI;
-}
-#endif
-
 struct exec
 {
     unsigned int a_info;   /* Use macros N_MAGIC, etc for access */
@@ -1556,7 +1547,6 @@ static abi_ulong create_elf_tables(abi_ulong p, int argc, int envc,
      * Generate 16 random bytes for userspace PRNG seeding (not
      * cryptically secure but it's not the aim of QEMU).
      */
-    srand((unsigned int) time(NULL));
     for (i = 0; i < 16; i++) {
         k_rand_bytes[i] = rand();
     }
@@ -1838,11 +1828,11 @@ static void load_elf_image(const char *image_name, int image_fd,
     loaddr = -1, hiaddr = 0;
     for (i = 0; i < ehdr->e_phnum; ++i) {
         if (phdr[i].p_type == PT_LOAD) {
-            abi_ulong a = phdr[i].p_vaddr;
+            abi_ulong a = phdr[i].p_vaddr - phdr[i].p_offset;
             if (a < loaddr) {
                 loaddr = a;
             }
-            a += phdr[i].p_memsz;
+            a = phdr[i].p_vaddr + phdr[i].p_memsz;
             if (a > hiaddr) {
                 hiaddr = a;
             }
@@ -2372,9 +2362,9 @@ struct elf_note_info {
 };
 
 struct vm_area_struct {
-    abi_ulong   vma_start;  /* start vaddr of memory region */
-    abi_ulong   vma_end;    /* end vaddr of memory region */
-    abi_ulong   vma_flags;  /* protection etc. flags for the region */
+    target_ulong   vma_start;  /* start vaddr of memory region */
+    target_ulong   vma_end;    /* end vaddr of memory region */
+    abi_ulong      vma_flags;  /* protection etc. flags for the region */
     QTAILQ_ENTRY(vm_area_struct) vma_link;
 };
 
@@ -2385,13 +2375,13 @@ struct mm_struct {
 
 static struct mm_struct *vma_init(void);
 static void vma_delete(struct mm_struct *);
-static int vma_add_mapping(struct mm_struct *, abi_ulong,
-                           abi_ulong, abi_ulong);
+static int vma_add_mapping(struct mm_struct *, target_ulong,
+                           target_ulong, abi_ulong);
 static int vma_get_mapping_count(const struct mm_struct *);
 static struct vm_area_struct *vma_first(const struct mm_struct *);
 static struct vm_area_struct *vma_next(struct vm_area_struct *);
 static abi_ulong vma_dump_size(const struct vm_area_struct *);
-static int vma_walker(void *priv, abi_ulong start, abi_ulong end,
+static int vma_walker(void *priv, target_ulong start, target_ulong end,
                       unsigned long flags);
 
 static void fill_elf_header(struct elfhdr *, int, uint16_t, uint32_t);
@@ -2483,8 +2473,8 @@ static void vma_delete(struct mm_struct *mm)
     g_free(mm);
 }
 
-static int vma_add_mapping(struct mm_struct *mm, abi_ulong start,
-                           abi_ulong end, abi_ulong flags)
+static int vma_add_mapping(struct mm_struct *mm, target_ulong start,
+                           target_ulong end, abi_ulong flags)
 {
     struct vm_area_struct *vma;
 
@@ -2552,7 +2542,7 @@ static abi_ulong vma_dump_size(const struct vm_area_struct *vma)
     return (vma->vma_end - vma->vma_start);
 }
 
-static int vma_walker(void *priv, abi_ulong start, abi_ulong end,
+static int vma_walker(void *priv, target_ulong start, target_ulong end,
                       unsigned long flags)
 {
     struct mm_struct *mm = (struct mm_struct *)priv;

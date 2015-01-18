@@ -28,6 +28,9 @@
 #include "sysemu/char.h"
 #include "hw/usb.h"
 #include "qmp-commands.h"
+#include "qapi/qmp-input-visitor.h"
+#include "qapi/qmp-output-visitor.h"
+#include "qapi-visit.h"
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -84,6 +87,95 @@
 
 #define READ_BUF_LEN 4096
 #define READ_RETRIES 10
+#define CHR_MAX_FILENAME_SIZE 256
+#define TCP_MAX_FDS 16
+
+/***********************************************************/
+/* Socket address helpers */
+static void qapi_copy_SocketAddress(SocketAddress **p_dest,
+                                    SocketAddress *src)
+{
+    QmpOutputVisitor *qov;
+    QmpInputVisitor *qiv;
+    Visitor *ov, *iv;
+    QObject *obj;
+
+    *p_dest = NULL;
+
+    qov = qmp_output_visitor_new();
+    ov = qmp_output_get_visitor(qov);
+    visit_type_SocketAddress(ov, &src, NULL, &error_abort);
+    obj = qmp_output_get_qobject(qov);
+    qmp_output_visitor_cleanup(qov);
+    if (!obj) {
+        return;
+    }
+
+    qiv = qmp_input_visitor_new(obj);
+    iv = qmp_input_get_visitor(qiv);
+    visit_type_SocketAddress(iv, p_dest, NULL, &error_abort);
+    qmp_input_visitor_cleanup(qiv);
+    qobject_decref(obj);
+}
+
+static int SocketAddress_to_str(char *dest, int max_len,
+                                const char *prefix, SocketAddress *addr,
+                                bool is_listen, bool is_telnet)
+{
+    switch (addr->kind) {
+    case SOCKET_ADDRESS_KIND_INET:
+        return snprintf(dest, max_len, "%s%s:%s:%s%s", prefix,
+                        is_telnet ? "telnet" : "tcp", addr->inet->host,
+                        addr->inet->port, is_listen ? ",server" : "");
+        break;
+    case SOCKET_ADDRESS_KIND_UNIX:
+        return snprintf(dest, max_len, "%sunix:%s%s", prefix,
+                        addr->q_unix->path, is_listen ? ",server" : "");
+        break;
+    case SOCKET_ADDRESS_KIND_FD:
+        return snprintf(dest, max_len, "%sfd:%s%s", prefix, addr->fd->str,
+                        is_listen ? ",server" : "");
+        break;
+    default:
+        abort();
+    }
+}
+
+static int sockaddr_to_str(char *dest, int max_len,
+                           struct sockaddr_storage *ss, socklen_t ss_len,
+                           struct sockaddr_storage *ps, socklen_t ps_len,
+                           bool is_listen, bool is_telnet)
+{
+    char shost[NI_MAXHOST], sserv[NI_MAXSERV];
+    char phost[NI_MAXHOST], pserv[NI_MAXSERV];
+    const char *left = "", *right = "";
+
+    switch (ss->ss_family) {
+#ifndef _WIN32
+    case AF_UNIX:
+        return snprintf(dest, max_len, "unix:%s%s",
+                        ((struct sockaddr_un *)(ss))->sun_path,
+                        is_listen ? ",server" : "");
+#endif
+    case AF_INET6:
+        left  = "[";
+        right = "]";
+        /* fall through */
+    case AF_INET:
+        getnameinfo((struct sockaddr *) ss, ss_len, shost, sizeof(shost),
+                    sserv, sizeof(sserv), NI_NUMERICHOST | NI_NUMERICSERV);
+        getnameinfo((struct sockaddr *) ps, ps_len, phost, sizeof(phost),
+                    pserv, sizeof(pserv), NI_NUMERICHOST | NI_NUMERICSERV);
+        return snprintf(dest, max_len, "%s:%s%s%s:%s%s <-> %s%s%s:%s",
+                        is_telnet ? "telnet" : "tcp",
+                        left, shost, right, sserv,
+                        is_listen ? ",server" : "",
+                        left, phost, right, pserv);
+
+    default:
+        return snprintf(dest, max_len, "unknown");
+    }
+}
 
 /***********************************************************/
 /* character device */
@@ -373,7 +465,7 @@ static const char * const mux_help[] = {
     "% h    print this help\n\r",
     "% x    exit emulator\n\r",
     "% s    save disk data back to file (if -snapshot)\n\r",
-    "% t    toggle console timestamps\n\r"
+    "% t    toggle console timestamps\n\r",
     "% b    send break (magic sysrq)\n\r",
     "% c    switch between console and monitor\n\r",
     "% %  sends %\n\r",
@@ -975,7 +1067,7 @@ static CharDriverState *qemu_chr_open_fd(int fd_in, int fd_out)
     s = g_malloc0(sizeof(FDCharDriver));
     s->fd_in = io_channel_from_fd(fd_in);
     s->fd_out = io_channel_from_fd(fd_out);
-    fcntl(fd_out, F_SETFL, O_NONBLOCK);
+    qemu_set_nonblock(fd_out);
     s->chr = chr;
     chr->opaque = s;
     chr->chr_add_watch = fd_chr_add_watch;
@@ -989,7 +1081,8 @@ static CharDriverState *qemu_chr_open_fd(int fd_in, int fd_out)
 static CharDriverState *qemu_chr_open_pipe(ChardevHostdev *opts)
 {
     int fd_in, fd_out;
-    char filename_in[256], filename_out[256];
+    char filename_in[CHR_MAX_FILENAME_SIZE];
+    char filename_out[CHR_MAX_FILENAME_SIZE];
     const char *filename = opts->device;
 
     if (filename == NULL) {
@@ -997,8 +1090,8 @@ static CharDriverState *qemu_chr_open_pipe(ChardevHostdev *opts)
         return NULL;
     }
 
-    snprintf(filename_in, 256, "%s.in", filename);
-    snprintf(filename_out, 256, "%s.out", filename);
+    snprintf(filename_in, CHR_MAX_FILENAME_SIZE, "%s.in", filename);
+    snprintf(filename_out, CHR_MAX_FILENAME_SIZE, "%s.out", filename);
     TFR(fd_in = qemu_open(filename_in, O_RDWR | O_BINARY));
     TFR(fd_out = qemu_open(filename_out, O_RDWR | O_BINARY));
     if (fd_in < 0 || fd_out < 0) {
@@ -1017,6 +1110,7 @@ static CharDriverState *qemu_chr_open_pipe(ChardevHostdev *opts)
 /* init terminal so that we can grab keys */
 static struct termios oldtty;
 static int old_fd0_flags;
+static bool stdio_in_use;
 static bool stdio_allow_signal;
 
 static void term_exit(void)
@@ -1060,9 +1154,16 @@ static CharDriverState *qemu_chr_open_stdio(ChardevStdio *opts)
         error_report("cannot use stdio with -daemonize");
         return NULL;
     }
+
+    if (stdio_in_use) {
+        error_report("cannot use stdio by multiple character devices");
+        exit(1);
+    }
+
+    stdio_in_use = true;
     old_fd0_flags = fcntl(0, F_GETFL);
-    tcgetattr (0, &oldtty);
-    fcntl(0, F_SETFL, O_NONBLOCK);
+    tcgetattr(0, &oldtty);
+    qemu_set_nonblock(0);
     atexit(term_exit);
 
     chr = qemu_chr_open_fd(0, 1);
@@ -1968,7 +2069,7 @@ static int win_chr_pipe_init(CharDriverState *chr, const char *filename)
     OVERLAPPED ov;
     int ret;
     DWORD size;
-    char openname[256];
+    char openname[CHR_MAX_FILENAME_SIZE];
 
     s->fpipe = TRUE;
 
@@ -2385,20 +2486,6 @@ static CharDriverState *qemu_chr_open_udp_fd(int fd)
     return chr;
 }
 
-static CharDriverState *qemu_chr_open_udp(QemuOpts *opts)
-{
-    Error *local_err = NULL;
-    int fd = -1;
-
-    fd = inet_dgram_opts(opts, &local_err);
-    if (fd < 0) {
-        qerror_report_err(local_err);
-        error_free(local_err);
-        return NULL;
-    }
-    return qemu_chr_open_udp_fd(fd);
-}
-
 /***********************************************************/
 /* TCP Net console */
 
@@ -2416,7 +2503,38 @@ typedef struct {
     int read_msgfds_num;
     int *write_msgfds;
     int write_msgfds_num;
+
+    SocketAddress *addr;
+    bool is_listen;
+    bool is_telnet;
+
+    guint reconnect_timer;
+    int64_t reconnect_time;
+    bool connect_err_reported;
 } TCPCharDriver;
+
+static gboolean socket_reconnect_timeout(gpointer opaque);
+
+static void qemu_chr_socket_restart_timer(CharDriverState *chr)
+{
+    TCPCharDriver *s = chr->opaque;
+    assert(s->connected == 0);
+    s->reconnect_timer = g_timeout_add_seconds(s->reconnect_time,
+                                               socket_reconnect_timeout, chr);
+}
+
+static void check_report_connect_error(CharDriverState *chr,
+                                       Error *err)
+{
+    TCPCharDriver *s = chr->opaque;
+
+    if (!s->connect_err_reported) {
+        error_report("Unable to connect character device %s: %s",
+                     chr->label, error_get_pretty(err));
+        s->connect_err_reported = true;
+    }
+    qemu_chr_socket_restart_timer(chr);
+}
 
 static gboolean tcp_chr_accept(GIOChannel *chan, GIOCondition cond, void *opaque);
 
@@ -2551,6 +2669,8 @@ static int tcp_get_msgfds(CharDriverState *chr, int *fds, int num)
     TCPCharDriver *s = chr->opaque;
     int to_copy = (s->read_msgfds_num < num) ? s->read_msgfds_num : num;
 
+    assert(num <= TCP_MAX_FDS);
+
     if (to_copy) {
         int i;
 
@@ -2645,7 +2765,7 @@ static ssize_t tcp_chr_recv(CharDriverState *chr, char *buf, size_t len)
     struct iovec iov[1];
     union {
         struct cmsghdr cmsg;
-        char control[CMSG_SPACE(sizeof(int))];
+        char control[CMSG_SPACE(sizeof(int) * TCP_MAX_FDS)];
     } msg_control;
     int flags = 0;
     ssize_t ret;
@@ -2696,7 +2816,12 @@ static void tcp_chr_disconnect(CharDriverState *chr)
     s->chan = NULL;
     closesocket(s->fd);
     s->fd = -1;
+    SocketAddress_to_str(chr->filename, CHR_MAX_FILENAME_SIZE,
+                         "disconnected:", s->addr, s->is_listen, s->is_telnet);
     qemu_chr_be_event(chr, CHR_EVENT_CLOSED);
+    if (s->reconnect_time) {
+        qemu_chr_socket_restart_timer(chr);
+    }
 }
 
 static gboolean tcp_chr_read(GIOChannel *chan, GIOCondition cond, void *opaque)
@@ -2767,6 +2892,21 @@ static void tcp_chr_connect(void *opaque)
 {
     CharDriverState *chr = opaque;
     TCPCharDriver *s = chr->opaque;
+    struct sockaddr_storage ss, ps;
+    socklen_t ss_len = sizeof(ss), ps_len = sizeof(ps);
+
+    memset(&ss, 0, ss_len);
+    if (getsockname(s->fd, (struct sockaddr *) &ss, &ss_len) != 0) {
+        snprintf(chr->filename, CHR_MAX_FILENAME_SIZE,
+                 "Error in getsockname: %s\n", strerror(errno));
+    } else if (getpeername(s->fd, (struct sockaddr *) &ps, &ps_len) != 0) {
+        snprintf(chr->filename, CHR_MAX_FILENAME_SIZE,
+                 "Error in getpeername: %s\n", strerror(errno));
+    } else {
+        sockaddr_to_str(chr->filename, CHR_MAX_FILENAME_SIZE,
+                        &ss, ss_len, &ps, ps_len,
+                        s->is_listen, s->is_telnet);
+    }
 
     s->connected = 1;
     if (s->chan) {
@@ -2865,6 +3005,12 @@ static void tcp_chr_close(CharDriverState *chr)
 {
     TCPCharDriver *s = chr->opaque;
     int i;
+
+    if (s->reconnect_timer) {
+        g_source_remove(s->reconnect_timer);
+        s->reconnect_timer = 0;
+    }
+    qapi_free_SocketAddress(s->addr);
     if (s->fd >= 0) {
         remove_fd_in_watch(chr);
         if (s->chan) {
@@ -2895,79 +3041,15 @@ static void tcp_chr_close(CharDriverState *chr)
     qemu_chr_be_event(chr, CHR_EVENT_CLOSED);
 }
 
-static CharDriverState *qemu_chr_open_socket_fd(int fd, bool do_nodelay,
-                                                bool is_listen, bool is_telnet,
-                                                bool is_waitconnect,
-                                                Error **errp)
+static void qemu_chr_finish_socket_connection(CharDriverState *chr, int fd)
 {
-    CharDriverState *chr = NULL;
-    TCPCharDriver *s = NULL;
-    char host[NI_MAXHOST], serv[NI_MAXSERV];
-    const char *left = "", *right = "";
-    struct sockaddr_storage ss;
-    socklen_t ss_len = sizeof(ss);
+    TCPCharDriver *s = chr->opaque;
 
-    memset(&ss, 0, ss_len);
-    if (getsockname(fd, (struct sockaddr *) &ss, &ss_len) != 0) {
-        error_setg_errno(errp, errno, "getsockname");
-        return NULL;
-    }
-
-    chr = qemu_chr_alloc();
-    s = g_malloc0(sizeof(TCPCharDriver));
-
-    s->connected = 0;
-    s->fd = -1;
-    s->listen_fd = -1;
-    s->read_msgfds = 0;
-    s->read_msgfds_num = 0;
-    s->write_msgfds = 0;
-    s->write_msgfds_num = 0;
-
-    chr->filename = g_malloc(256);
-    switch (ss.ss_family) {
-#ifndef _WIN32
-    case AF_UNIX:
-        s->is_unix = 1;
-        snprintf(chr->filename, 256, "unix:%s%s",
-                 ((struct sockaddr_un *)(&ss))->sun_path,
-                 is_listen ? ",server" : "");
-        break;
-#endif
-    case AF_INET6:
-        left  = "[";
-        right = "]";
-        /* fall through */
-    case AF_INET:
-        s->do_nodelay = do_nodelay;
-        getnameinfo((struct sockaddr *) &ss, ss_len, host, sizeof(host),
-                    serv, sizeof(serv), NI_NUMERICHOST | NI_NUMERICSERV);
-        snprintf(chr->filename, 256, "%s:%s%s%s:%s%s",
-                 is_telnet ? "telnet" : "tcp",
-                 left, host, right, serv,
-                 is_listen ? ",server" : "");
-        break;
-    }
-
-    chr->opaque = s;
-    chr->chr_write = tcp_chr_write;
-    chr->chr_sync_read = tcp_chr_sync_read;
-    chr->chr_close = tcp_chr_close;
-    chr->get_msgfds = tcp_get_msgfds;
-    chr->set_msgfds = tcp_set_msgfds;
-    chr->chr_add_client = tcp_chr_add_client;
-    chr->chr_add_watch = tcp_chr_add_watch;
-    chr->chr_update_read_handler = tcp_chr_update_read_handler;
-    /* be isn't opened until we get a connection */
-    chr->explicit_be_open = true;
-
-    if (is_listen) {
+    if (s->is_listen) {
         s->listen_fd = fd;
         s->listen_chan = io_channel_from_socket(s->listen_fd);
-        s->listen_tag = g_io_add_watch(s->listen_chan, G_IO_IN, tcp_chr_accept, chr);
-        if (is_telnet) {
-            s->do_telnetopt = 1;
-        }
+        s->listen_tag = g_io_add_watch(s->listen_chan, G_IO_IN,
+                                       tcp_chr_accept, chr);
     } else {
         s->connected = 1;
         s->fd = fd;
@@ -2975,69 +3057,41 @@ static CharDriverState *qemu_chr_open_socket_fd(int fd, bool do_nodelay,
         s->chan = io_channel_from_socket(s->fd);
         tcp_chr_connect(chr);
     }
-
-    if (is_listen && is_waitconnect) {
-        fprintf(stderr, "QEMU waiting for connection on: %s\n",
-                chr->filename);
-        tcp_chr_accept(s->listen_chan, G_IO_IN, chr);
-        qemu_set_nonblock(s->listen_fd);
-    }
-    return chr;
 }
 
-static CharDriverState *qemu_chr_open_socket(QemuOpts *opts)
+static void qemu_chr_socket_connected(int fd, Error *err, void *opaque)
 {
-    CharDriverState *chr = NULL;
-    Error *local_err = NULL;
-    int fd = -1;
+    CharDriverState *chr = opaque;
+    TCPCharDriver *s = chr->opaque;
 
-    bool is_listen      = qemu_opt_get_bool(opts, "server", false);
-    bool is_waitconnect = is_listen && qemu_opt_get_bool(opts, "wait", true);
-    bool is_telnet      = qemu_opt_get_bool(opts, "telnet", false);
-    bool do_nodelay     = !qemu_opt_get_bool(opts, "delay", true);
-    bool is_unix        = qemu_opt_get(opts, "path") != NULL;
+    if (fd < 0) {
+        check_report_connect_error(chr, err);
+        return;
+    }
 
-    if (is_unix) {
-        if (is_listen) {
-            fd = unix_listen_opts(opts, &local_err);
-        } else {
-            fd = unix_connect_opts(opts, &local_err, NULL, NULL);
-        }
+    s->connect_err_reported = false;
+    qemu_chr_finish_socket_connection(chr, fd);
+}
+
+static bool qemu_chr_open_socket_fd(CharDriverState *chr, Error **errp)
+{
+    TCPCharDriver *s = chr->opaque;
+    int fd;
+
+    if (s->is_listen) {
+        fd = socket_listen(s->addr, errp);
+    } else if (s->reconnect_time) {
+        fd = socket_connect(s->addr, errp, qemu_chr_socket_connected, chr);
+        return fd >= 0;
     } else {
-        if (is_listen) {
-            fd = inet_listen_opts(opts, 0, &local_err);
-        } else {
-            fd = inet_connect_opts(opts, &local_err, NULL, NULL);
-        }
+        fd = socket_connect(s->addr, errp, NULL, NULL);
     }
     if (fd < 0) {
-        goto fail;
+        return false;
     }
 
-    if (!is_waitconnect)
-        qemu_set_nonblock(fd);
-
-    chr = qemu_chr_open_socket_fd(fd, do_nodelay, is_listen, is_telnet,
-                                  is_waitconnect, &local_err);
-    if (local_err) {
-        goto fail;
-    }
-    return chr;
-
-
- fail:
-    if (local_err) {
-        qerror_report_err(local_err);
-        error_free(local_err);
-    }
-    if (fd >= 0) {
-        closesocket(fd);
-    }
-    if (chr) {
-        g_free(chr->opaque);
-        g_free(chr);
-    }
-    return NULL;
+    qemu_chr_finish_socket_connection(chr, fd);
+    return true;
 }
 
 /*********************************************************/
@@ -3258,6 +3312,7 @@ QemuOpts *qemu_chr_parse_compat(const char *label, const char *filename)
         strcmp(filename, "pty")     == 0 ||
         strcmp(filename, "msmouse") == 0 ||
         strcmp(filename, "braille") == 0 ||
+        strcmp(filename, "testdev") == 0 ||
         strcmp(filename, "stdio")   == 0) {
         qemu_opt_set(opts, "backend", filename);
         return opts;
@@ -3449,29 +3504,124 @@ static void qemu_chr_parse_mux(QemuOpts *opts, ChardevBackend *backend,
     backend->mux->chardev = g_strdup(chardev);
 }
 
+static void qemu_chr_parse_socket(QemuOpts *opts, ChardevBackend *backend,
+                                  Error **errp)
+{
+    bool is_listen      = qemu_opt_get_bool(opts, "server", false);
+    bool is_waitconnect = is_listen && qemu_opt_get_bool(opts, "wait", true);
+    bool is_telnet      = qemu_opt_get_bool(opts, "telnet", false);
+    bool do_nodelay     = !qemu_opt_get_bool(opts, "delay", true);
+    int64_t reconnect   = qemu_opt_get_number(opts, "reconnect", 0);
+    const char *path = qemu_opt_get(opts, "path");
+    const char *host = qemu_opt_get(opts, "host");
+    const char *port = qemu_opt_get(opts, "port");
+    SocketAddress *addr;
+
+    if (!path) {
+        if (!host) {
+            error_setg(errp, "chardev: socket: no host given");
+            return;
+        }
+        if (!port) {
+            error_setg(errp, "chardev: socket: no port given");
+            return;
+        }
+    }
+
+    backend->socket = g_new0(ChardevSocket, 1);
+
+    backend->socket->has_nodelay = true;
+    backend->socket->nodelay = do_nodelay;
+    backend->socket->has_server = true;
+    backend->socket->server = is_listen;
+    backend->socket->has_telnet = true;
+    backend->socket->telnet = is_telnet;
+    backend->socket->has_wait = true;
+    backend->socket->wait = is_waitconnect;
+    backend->socket->has_reconnect = true;
+    backend->socket->reconnect = reconnect;
+
+    addr = g_new0(SocketAddress, 1);
+    if (path) {
+        addr->kind = SOCKET_ADDRESS_KIND_UNIX;
+        addr->q_unix = g_new0(UnixSocketAddress, 1);
+        addr->q_unix->path = g_strdup(path);
+    } else {
+        addr->kind = SOCKET_ADDRESS_KIND_INET;
+        addr->inet = g_new0(InetSocketAddress, 1);
+        addr->inet->host = g_strdup(host);
+        addr->inet->port = g_strdup(port);
+        addr->inet->has_to = qemu_opt_get(opts, "to");
+        addr->inet->to = qemu_opt_get_number(opts, "to", 0);
+        addr->inet->has_ipv4 = qemu_opt_get(opts, "ipv4");
+        addr->inet->ipv4 = qemu_opt_get_bool(opts, "ipv4", 0);
+        addr->inet->has_ipv6 = qemu_opt_get(opts, "ipv6");
+        addr->inet->ipv6 = qemu_opt_get_bool(opts, "ipv6", 0);
+    }
+    backend->socket->addr = addr;
+}
+
+static void qemu_chr_parse_udp(QemuOpts *opts, ChardevBackend *backend,
+                               Error **errp)
+{
+    const char *host = qemu_opt_get(opts, "host");
+    const char *port = qemu_opt_get(opts, "port");
+    const char *localaddr = qemu_opt_get(opts, "localaddr");
+    const char *localport = qemu_opt_get(opts, "localport");
+    bool has_local = false;
+    SocketAddress *addr;
+
+    if (host == NULL || strlen(host) == 0) {
+        host = "localhost";
+    }
+    if (port == NULL || strlen(port) == 0) {
+        error_setg(errp, "chardev: udp: remote port not specified");
+        return;
+    }
+    if (localport == NULL || strlen(localport) == 0) {
+        localport = "0";
+    } else {
+        has_local = true;
+    }
+    if (localaddr == NULL || strlen(localaddr) == 0) {
+        localaddr = "";
+    } else {
+        has_local = true;
+    }
+
+    backend->udp = g_new0(ChardevUdp, 1);
+
+    addr = g_new0(SocketAddress, 1);
+    addr->kind = SOCKET_ADDRESS_KIND_INET;
+    addr->inet = g_new0(InetSocketAddress, 1);
+    addr->inet->host = g_strdup(host);
+    addr->inet->port = g_strdup(port);
+    addr->inet->has_ipv4 = qemu_opt_get(opts, "ipv4");
+    addr->inet->ipv4 = qemu_opt_get_bool(opts, "ipv4", 0);
+    addr->inet->has_ipv6 = qemu_opt_get(opts, "ipv6");
+    addr->inet->ipv6 = qemu_opt_get_bool(opts, "ipv6", 0);
+    backend->udp->remote = addr;
+
+    if (has_local) {
+        backend->udp->has_local = true;
+        addr = g_new0(SocketAddress, 1);
+        addr->kind = SOCKET_ADDRESS_KIND_INET;
+        addr->inet = g_new0(InetSocketAddress, 1);
+        addr->inet->host = g_strdup(localaddr);
+        addr->inet->port = g_strdup(localport);
+        backend->udp->local = addr;
+    }
+}
+
 typedef struct CharDriver {
     const char *name;
-    /* old, pre qapi */
-    CharDriverState *(*open)(QemuOpts *opts);
-    /* new, qapi-based */
     ChardevBackendKind kind;
     void (*parse)(QemuOpts *opts, ChardevBackend *backend, Error **errp);
 } CharDriver;
 
 static GSList *backends;
 
-void register_char_driver(const char *name, CharDriverState *(*open)(QemuOpts *))
-{
-    CharDriver *s;
-
-    s = g_malloc0(sizeof(*s));
-    s->name = g_strdup(name);
-    s->open = open;
-
-    backends = g_slist_append(backends, s);
-}
-
-void register_char_driver_qapi(const char *name, ChardevBackendKind kind,
+void register_char_driver(const char *name, ChardevBackendKind kind,
         void (*parse)(QemuOpts *opts, ChardevBackend *backend, Error **errp))
 {
     CharDriver *s;
@@ -3492,8 +3642,12 @@ CharDriverState *qemu_chr_new_from_opts(QemuOpts *opts,
     CharDriver *cd;
     CharDriverState *chr;
     GSList *i;
+    ChardevReturn *ret = NULL;
+    ChardevBackend *backend;
+    const char *id = qemu_opts_id(opts);
+    char *bid = NULL;
 
-    if (qemu_opts_id(opts) == NULL) {
+    if (id == NULL) {
         error_setg(errp, "chardev: no id specified");
         goto err;
     }
@@ -3516,89 +3670,49 @@ CharDriverState *qemu_chr_new_from_opts(QemuOpts *opts,
         goto err;
     }
 
-    if (!cd->open) {
-        /* using new, qapi init */
-        ChardevBackend *backend = g_new0(ChardevBackend, 1);
-        ChardevReturn *ret = NULL;
-        const char *id = qemu_opts_id(opts);
-        char *bid = NULL;
-
-        if (qemu_opt_get_bool(opts, "mux", 0)) {
-            bid = g_strdup_printf("%s-base", id);
-        }
-
-        chr = NULL;
-        backend->kind = cd->kind;
-        if (cd->parse) {
-            cd->parse(opts, backend, &local_err);
-            if (local_err) {
-                error_propagate(errp, local_err);
-                goto qapi_out;
-            }
-        }
-        ret = qmp_chardev_add(bid ? bid : id, backend, errp);
-        if (!ret) {
-            goto qapi_out;
-        }
-
-        if (bid) {
-            qapi_free_ChardevBackend(backend);
-            qapi_free_ChardevReturn(ret);
-            backend = g_new0(ChardevBackend, 1);
-            backend->mux = g_new0(ChardevMux, 1);
-            backend->kind = CHARDEV_BACKEND_KIND_MUX;
-            backend->mux->chardev = g_strdup(bid);
-            ret = qmp_chardev_add(id, backend, errp);
-            if (!ret) {
-                chr = qemu_chr_find(bid);
-                qemu_chr_delete(chr);
-                chr = NULL;
-                goto qapi_out;
-            }
-        }
-
-        chr = qemu_chr_find(id);
-        chr->opts = opts;
-
-    qapi_out:
-        qapi_free_ChardevBackend(backend);
-        qapi_free_ChardevReturn(ret);
-        g_free(bid);
-        return chr;
-    }
-
-    chr = cd->open(opts);
-    if (!chr) {
-        error_setg(errp, "chardev: opening backend \"%s\" failed",
-                   qemu_opt_get(opts, "backend"));
-        goto err;
-    }
-
-    if (!chr->filename)
-        chr->filename = g_strdup(qemu_opt_get(opts, "backend"));
-    chr->init = init;
-    /* if we didn't create the chardev via qmp_chardev_add, we
-     * need to send the OPENED event here
-     */
-    if (!chr->explicit_be_open) {
-        qemu_chr_be_event(chr, CHR_EVENT_OPENED);
-    }
-    QTAILQ_INSERT_TAIL(&chardevs, chr, next);
+    backend = g_new0(ChardevBackend, 1);
 
     if (qemu_opt_get_bool(opts, "mux", 0)) {
-        CharDriverState *base = chr;
-        int len = strlen(qemu_opts_id(opts)) + 6;
-        base->label = g_malloc(len);
-        snprintf(base->label, len, "%s-base", qemu_opts_id(opts));
-        chr = qemu_chr_open_mux(base);
-        chr->filename = base->filename;
-        chr->avail_connections = MAX_MUX;
-        QTAILQ_INSERT_TAIL(&chardevs, chr, next);
-    } else {
-        chr->avail_connections = 1;
+        bid = g_strdup_printf("%s-base", id);
     }
-    chr->label = g_strdup(qemu_opts_id(opts));
+
+    chr = NULL;
+    backend->kind = cd->kind;
+    if (cd->parse) {
+        cd->parse(opts, backend, &local_err);
+        if (local_err) {
+            error_propagate(errp, local_err);
+            goto qapi_out;
+        }
+    }
+    ret = qmp_chardev_add(bid ? bid : id, backend, errp);
+    if (!ret) {
+        goto qapi_out;
+    }
+
+    if (bid) {
+        qapi_free_ChardevBackend(backend);
+        qapi_free_ChardevReturn(ret);
+        backend = g_new0(ChardevBackend, 1);
+        backend->mux = g_new0(ChardevMux, 1);
+        backend->kind = CHARDEV_BACKEND_KIND_MUX;
+        backend->mux->chardev = g_strdup(bid);
+        ret = qmp_chardev_add(id, backend, errp);
+        if (!ret) {
+            chr = qemu_chr_find(bid);
+            qemu_chr_delete(chr);
+            chr = NULL;
+            goto qapi_out;
+        }
+    }
+
+    chr = qemu_chr_find(id);
     chr->opts = opts;
+
+qapi_out:
+    qapi_free_ChardevBackend(backend);
+    qapi_free_ChardevReturn(ret);
+    g_free(bid);
     return chr;
 
 err:
@@ -3825,6 +3939,9 @@ QemuOptsList qemu_chardev_opts = {
             .name = "delay",
             .type = QEMU_OPT_BOOL,
         },{
+            .name = "reconnect",
+            .type = QEMU_OPT_NUMBER,
+        },{
             .name = "telnet",
             .type = QEMU_OPT_BOOL,
         },{
@@ -3968,26 +4085,95 @@ static CharDriverState *qmp_chardev_open_parallel(ChardevHostdev *parallel,
 
 #endif /* WIN32 */
 
+static void socket_try_connect(CharDriverState *chr)
+{
+    Error *err = NULL;
+
+    if (!qemu_chr_open_socket_fd(chr, &err)) {
+        check_report_connect_error(chr, err);
+    }
+}
+
+static gboolean socket_reconnect_timeout(gpointer opaque)
+{
+    CharDriverState *chr = opaque;
+    TCPCharDriver *s = chr->opaque;
+
+    s->reconnect_timer = 0;
+
+    if (chr->be_open) {
+        return false;
+    }
+
+    socket_try_connect(chr);
+
+    return false;
+}
+
 static CharDriverState *qmp_chardev_open_socket(ChardevSocket *sock,
                                                 Error **errp)
 {
+    CharDriverState *chr;
+    TCPCharDriver *s;
     SocketAddress *addr = sock->addr;
     bool do_nodelay     = sock->has_nodelay ? sock->nodelay : false;
     bool is_listen      = sock->has_server  ? sock->server  : true;
     bool is_telnet      = sock->has_telnet  ? sock->telnet  : false;
     bool is_waitconnect = sock->has_wait    ? sock->wait    : false;
-    int fd;
+    int64_t reconnect   = sock->has_reconnect ? sock->reconnect : 0;
+
+    chr = qemu_chr_alloc();
+    s = g_malloc0(sizeof(TCPCharDriver));
+
+    s->fd = -1;
+    s->listen_fd = -1;
+    s->is_unix = addr->kind == SOCKET_ADDRESS_KIND_UNIX;
+    s->is_listen = is_listen;
+    s->is_telnet = is_telnet;
+    s->do_nodelay = do_nodelay;
+    qapi_copy_SocketAddress(&s->addr, sock->addr);
+
+    chr->opaque = s;
+    chr->chr_write = tcp_chr_write;
+    chr->chr_sync_read = tcp_chr_sync_read;
+    chr->chr_close = tcp_chr_close;
+    chr->get_msgfds = tcp_get_msgfds;
+    chr->set_msgfds = tcp_set_msgfds;
+    chr->chr_add_client = tcp_chr_add_client;
+    chr->chr_add_watch = tcp_chr_add_watch;
+    chr->chr_update_read_handler = tcp_chr_update_read_handler;
+    /* be isn't opened until we get a connection */
+    chr->explicit_be_open = true;
+
+    chr->filename = g_malloc(CHR_MAX_FILENAME_SIZE);
+    SocketAddress_to_str(chr->filename, CHR_MAX_FILENAME_SIZE, "disconnected:",
+                         addr, is_listen, is_telnet);
 
     if (is_listen) {
-        fd = socket_listen(addr, errp);
-    } else {
-        fd = socket_connect(addr, errp, NULL, NULL);
+        if (is_telnet) {
+            s->do_telnetopt = 1;
+        }
+    } else if (reconnect > 0) {
+        s->reconnect_time = reconnect;
     }
-    if (fd < 0) {
+
+    if (s->reconnect_time) {
+        socket_try_connect(chr);
+    } else if (!qemu_chr_open_socket_fd(chr, errp)) {
+        g_free(s);
+        g_free(chr->filename);
+        g_free(chr);
         return NULL;
     }
-    return qemu_chr_open_socket_fd(fd, do_nodelay, is_listen,
-                                   is_telnet, is_waitconnect, errp);
+
+    if (is_listen && is_waitconnect) {
+        fprintf(stderr, "QEMU waiting for connection on: %s\n",
+                chr->filename);
+        tcp_chr_accept(s->listen_chan, G_IO_IN, chr);
+        qemu_set_nonblock(s->listen_fd);
+    }
+
+    return chr;
 }
 
 static CharDriverState *qmp_chardev_open_udp(ChardevUdp *udp,
@@ -4059,6 +4245,9 @@ ChardevReturn *qmp_chardev_add(const char *id, ChardevBackend *backend,
         chr = chr_baum_init();
         break;
 #endif
+    case CHARDEV_BACKEND_KIND_TESTDEV:
+        chr = chr_testdev_init();
+        break;
     case CHARDEV_BACKEND_KIND_STDIO:
         chr = qemu_chr_open_stdio(backend->stdio);
         break;
@@ -4119,7 +4308,7 @@ void qmp_chardev_remove(const char *id, Error **errp)
     CharDriverState *chr;
 
     chr = qemu_chr_find(id);
-    if (NULL == chr) {
+    if (chr == NULL) {
         error_setg(errp, "Chardev '%s' not found", id);
         return;
     }
@@ -4133,32 +4322,32 @@ void qmp_chardev_remove(const char *id, Error **errp)
 
 static void register_types(void)
 {
-    register_char_driver_qapi("null", CHARDEV_BACKEND_KIND_NULL, NULL);
-    register_char_driver("socket", qemu_chr_open_socket);
-    register_char_driver("udp", qemu_chr_open_udp);
-    register_char_driver_qapi("ringbuf", CHARDEV_BACKEND_KIND_RINGBUF,
-                              qemu_chr_parse_ringbuf);
-    register_char_driver_qapi("file", CHARDEV_BACKEND_KIND_FILE,
-                              qemu_chr_parse_file_out);
-    register_char_driver_qapi("stdio", CHARDEV_BACKEND_KIND_STDIO,
-                              qemu_chr_parse_stdio);
-    register_char_driver_qapi("serial", CHARDEV_BACKEND_KIND_SERIAL,
-                              qemu_chr_parse_serial);
-    register_char_driver_qapi("tty", CHARDEV_BACKEND_KIND_SERIAL,
-                              qemu_chr_parse_serial);
-    register_char_driver_qapi("parallel", CHARDEV_BACKEND_KIND_PARALLEL,
-                              qemu_chr_parse_parallel);
-    register_char_driver_qapi("parport", CHARDEV_BACKEND_KIND_PARALLEL,
-                              qemu_chr_parse_parallel);
-    register_char_driver_qapi("pty", CHARDEV_BACKEND_KIND_PTY, NULL);
-    register_char_driver_qapi("console", CHARDEV_BACKEND_KIND_CONSOLE, NULL);
-    register_char_driver_qapi("pipe", CHARDEV_BACKEND_KIND_PIPE,
-                              qemu_chr_parse_pipe);
-    register_char_driver_qapi("mux", CHARDEV_BACKEND_KIND_MUX,
-                              qemu_chr_parse_mux);
+    register_char_driver("null", CHARDEV_BACKEND_KIND_NULL, NULL);
+    register_char_driver("socket", CHARDEV_BACKEND_KIND_SOCKET,
+                         qemu_chr_parse_socket);
+    register_char_driver("udp", CHARDEV_BACKEND_KIND_UDP, qemu_chr_parse_udp);
+    register_char_driver("ringbuf", CHARDEV_BACKEND_KIND_RINGBUF,
+                         qemu_chr_parse_ringbuf);
+    register_char_driver("file", CHARDEV_BACKEND_KIND_FILE,
+                         qemu_chr_parse_file_out);
+    register_char_driver("stdio", CHARDEV_BACKEND_KIND_STDIO,
+                         qemu_chr_parse_stdio);
+    register_char_driver("serial", CHARDEV_BACKEND_KIND_SERIAL,
+                         qemu_chr_parse_serial);
+    register_char_driver("tty", CHARDEV_BACKEND_KIND_SERIAL,
+                         qemu_chr_parse_serial);
+    register_char_driver("parallel", CHARDEV_BACKEND_KIND_PARALLEL,
+                         qemu_chr_parse_parallel);
+    register_char_driver("parport", CHARDEV_BACKEND_KIND_PARALLEL,
+                         qemu_chr_parse_parallel);
+    register_char_driver("pty", CHARDEV_BACKEND_KIND_PTY, NULL);
+    register_char_driver("console", CHARDEV_BACKEND_KIND_CONSOLE, NULL);
+    register_char_driver("pipe", CHARDEV_BACKEND_KIND_PIPE,
+                         qemu_chr_parse_pipe);
+    register_char_driver("mux", CHARDEV_BACKEND_KIND_MUX, qemu_chr_parse_mux);
     /* Bug-compatibility: */
-    register_char_driver_qapi("memory", CHARDEV_BACKEND_KIND_MEMORY,
-                              qemu_chr_parse_ringbuf);
+    register_char_driver("memory", CHARDEV_BACKEND_KIND_MEMORY,
+                         qemu_chr_parse_ringbuf);
     /* this must be done after machine init, since we register FEs with muxes
      * as part of realize functions like serial_isa_realizefn when -nographic
      * is specified

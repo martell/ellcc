@@ -145,7 +145,7 @@ void pcie_cap_deverr_init(PCIDevice *dev)
                                PCI_EXP_DEVCTL_FERE | PCI_EXP_DEVCTL_URRE);
     pci_long_test_and_set_mask(dev->w1cmask + pos + PCI_EXP_DEVSTA,
                                PCI_EXP_DEVSTA_CED | PCI_EXP_DEVSTA_NFED |
-                               PCI_EXP_DEVSTA_URD | PCI_EXP_DEVSTA_URD);
+                               PCI_EXP_DEVSTA_FED | PCI_EXP_DEVSTA_URD);
 }
 
 void pcie_cap_deverr_reset(PCIDevice *dev)
@@ -229,7 +229,7 @@ static void pcie_cap_slot_hotplug_common(PCIDevice *hotplug_dev,
         /* the slot is electromechanically locked.
          * This error is propagated up to qdev and then to HMP/QMP.
          */
-        error_setg_errno(errp, -EBUSY, "slot is electromechanically locked");
+        error_setg_errno(errp, EBUSY, "slot is electromechanically locked");
     }
 }
 
@@ -262,8 +262,8 @@ void pcie_cap_slot_hotplug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
                         PCI_EXP_HP_EV_PDC | PCI_EXP_HP_EV_ABP);
 }
 
-void pcie_cap_slot_hot_unplug_cb(HotplugHandler *hotplug_dev, DeviceState *dev,
-                                 Error **errp)
+void pcie_cap_slot_hot_unplug_request_cb(HotplugHandler *hotplug_dev,
+                                         DeviceState *dev, Error **errp)
 {
     uint8_t *exp_cap;
 
@@ -497,9 +497,10 @@ void pcie_cap_flr_write_config(PCIDevice *dev,
     }
 }
 
-/* Alternative Routing-ID Interpretation (ARI) */
-/* ari forwarding support for down stream port */
-void pcie_cap_ari_init(PCIDevice *dev)
+/* Alternative Routing-ID Interpretation (ARI)
+ * forwarding support for root and downstream ports
+ */
+void pcie_cap_arifwd_init(PCIDevice *dev)
 {
     uint32_t pos = dev->exp.exp_cap;
     pci_long_test_and_set_mask(dev->config + pos + PCI_EXP_DEVCAP2,
@@ -508,13 +509,13 @@ void pcie_cap_ari_init(PCIDevice *dev)
                                PCI_EXP_DEVCTL2_ARI);
 }
 
-void pcie_cap_ari_reset(PCIDevice *dev)
+void pcie_cap_arifwd_reset(PCIDevice *dev)
 {
     uint8_t *devctl2 = dev->config + dev->exp.exp_cap + PCI_EXP_DEVCTL2;
     pci_long_test_and_clear_mask(devctl2, PCI_EXP_DEVCTL2_ARI);
 }
 
-bool pcie_cap_is_ari_enabled(const PCIDevice *dev)
+bool pcie_cap_is_arifwd_enabled(const PCIDevice *dev)
 {
     if (!pci_is_express(dev)) {
         return false;
@@ -528,7 +529,7 @@ bool pcie_cap_is_ari_enabled(const PCIDevice *dev)
 }
 
 /**************************************************************************
- * pci express extended capability allocation functions
+ * pci express extended capability list management functions
  * uint16_t ext_cap_id (16 bit)
  * uint8_t cap_ver (4 bit)
  * uint16_t cap_offset (12 bit)
@@ -630,5 +631,5 @@ void pcie_ari_init(PCIDevice *dev, uint16_t offset, uint16_t nextfn)
 {
     pcie_add_capability(dev, PCI_EXT_CAP_ID_ARI, PCI_ARI_VER,
                         offset, PCI_ARI_SIZEOF);
-    pci_set_long(dev->config + offset + PCI_ARI_CAP, PCI_ARI_CAP_NFN(nextfn));
+    pci_set_long(dev->config + offset + PCI_ARI_CAP, (nextfn & 0xff) << 8);
 }

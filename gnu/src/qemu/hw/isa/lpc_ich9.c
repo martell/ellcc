@@ -7,7 +7,7 @@
  *               VA Linux Systems Japan K.K.
  * Copyright (C) 2012 Jason Baron <jbaron@redhat.com>
  *
- * This is based on piix_pci.c, but heavily modified.
+ * This is based on piix.c, but heavily modified.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -607,8 +607,8 @@ static void ich9_device_plug_cb(HotplugHandler *hotplug_dev,
     ich9_pm_device_plug_cb(&lpc->pm, dev, errp);
 }
 
-static void ich9_device_unplug_cb(HotplugHandler *hotplug_dev,
-                                  DeviceState *dev, Error **errp)
+static void ich9_device_unplug_request_cb(HotplugHandler *hotplug_dev,
+                                          DeviceState *dev, Error **errp)
 {
     error_setg(errp, "acpi: device unplug request for not supported device"
                " type: %s", object_get_typename(OBJECT(dev)));
@@ -676,7 +676,7 @@ static void ich9_lpc_class_init(ObjectClass *klass, void *data)
      */
     dc->cannot_instantiate_with_device_add_yet = true;
     hc->plug = ich9_device_plug_cb;
-    hc->unplug = ich9_device_unplug_cb;
+    hc->unplug_request = ich9_device_unplug_request_cb;
     adevc->ospm_status = ich9_pm_ospm_status;
 }
 

@@ -33,10 +33,12 @@
 #include "hw/arm/primecell.h"
 #include "hw/devices.h"
 #include "net/net.h"
+#include "sysemu/block-backend.h"
 #include "sysemu/device_tree.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/kvm.h"
 #include "hw/boards.h"
+#include "hw/loader.h"
 #include "exec/address-spaces.h"
 #include "qemu/bitops.h"
 #include "qemu/error-report.h"
@@ -98,17 +100,17 @@ typedef struct VirtBoardInfo {
  */
 static const MemMapEntry a15memmap[] = {
     /* Space up to 0x8000000 is reserved for a boot ROM */
-    [VIRT_FLASH] = { 0, 0x8000000 },
-    [VIRT_CPUPERIPHS] = { 0x8000000, 0x20000 },
+    [VIRT_FLASH] =      {          0, 0x08000000 },
+    [VIRT_CPUPERIPHS] = { 0x08000000, 0x00020000 },
     /* GIC distributor and CPU interfaces sit inside the CPU peripheral space */
-    [VIRT_GIC_DIST] = { 0x8000000, 0x10000 },
-    [VIRT_GIC_CPU] = { 0x8010000, 0x10000 },
-    [VIRT_UART] = { 0x9000000, 0x1000 },
-    [VIRT_RTC] = { 0x9010000, 0x1000 },
-    [VIRT_MMIO] = { 0xa000000, 0x200 },
+    [VIRT_GIC_DIST] =   { 0x08000000, 0x00010000 },
+    [VIRT_GIC_CPU] =    { 0x08010000, 0x00010000 },
+    [VIRT_UART] =       { 0x09000000, 0x00001000 },
+    [VIRT_RTC] =        { 0x09010000, 0x00001000 },
+    [VIRT_MMIO] =       { 0x0a000000, 0x00000200 },
     /* ...repeating for a total of NUM_VIRTIO_TRANSPORTS, each of that size */
     /* 0x10000000 .. 0x40000000 reserved for PCI */
-    [VIRT_MEM] = { 0x40000000, 30ULL * 1024 * 1024 * 1024 },
+    [VIRT_MEM] =        { 0x40000000, 30ULL * 1024 * 1024 * 1024 },
 };
 
 static const int a15irqmap[] = {
@@ -189,47 +191,48 @@ static void create_fdt(VirtBoardInfo *vbi)
 
 static void fdt_add_psci_node(const VirtBoardInfo *vbi)
 {
+    uint32_t cpu_suspend_fn;
+    uint32_t cpu_off_fn;
+    uint32_t cpu_on_fn;
+    uint32_t migrate_fn;
     void *fdt = vbi->fdt;
     ARMCPU *armcpu = ARM_CPU(qemu_get_cpu(0));
 
-    /* No PSCI for TCG yet */
-    if (kvm_enabled()) {
-        uint32_t cpu_suspend_fn;
-        uint32_t cpu_off_fn;
-        uint32_t cpu_on_fn;
-        uint32_t migrate_fn;
+    qemu_fdt_add_subnode(fdt, "/psci");
+    if (armcpu->psci_version == 2) {
+        const char comp[] = "arm,psci-0.2\0arm,psci";
+        qemu_fdt_setprop(fdt, "/psci", "compatible", comp, sizeof(comp));
 
-        qemu_fdt_add_subnode(fdt, "/psci");
-        if (armcpu->psci_version == 2) {
-            const char comp[] = "arm,psci-0.2\0arm,psci";
-            qemu_fdt_setprop(fdt, "/psci", "compatible", comp, sizeof(comp));
-
-            cpu_off_fn = QEMU_PSCI_0_2_FN_CPU_OFF;
-            if (arm_feature(&armcpu->env, ARM_FEATURE_AARCH64)) {
-                cpu_suspend_fn = QEMU_PSCI_0_2_FN64_CPU_SUSPEND;
-                cpu_on_fn = QEMU_PSCI_0_2_FN64_CPU_ON;
-                migrate_fn = QEMU_PSCI_0_2_FN64_MIGRATE;
-            } else {
-                cpu_suspend_fn = QEMU_PSCI_0_2_FN_CPU_SUSPEND;
-                cpu_on_fn = QEMU_PSCI_0_2_FN_CPU_ON;
-                migrate_fn = QEMU_PSCI_0_2_FN_MIGRATE;
-            }
+        cpu_off_fn = QEMU_PSCI_0_2_FN_CPU_OFF;
+        if (arm_feature(&armcpu->env, ARM_FEATURE_AARCH64)) {
+            cpu_suspend_fn = QEMU_PSCI_0_2_FN64_CPU_SUSPEND;
+            cpu_on_fn = QEMU_PSCI_0_2_FN64_CPU_ON;
+            migrate_fn = QEMU_PSCI_0_2_FN64_MIGRATE;
         } else {
-            qemu_fdt_setprop_string(fdt, "/psci", "compatible", "arm,psci");
-
-            cpu_suspend_fn = QEMU_PSCI_0_1_FN_CPU_SUSPEND;
-            cpu_off_fn = QEMU_PSCI_0_1_FN_CPU_OFF;
-            cpu_on_fn = QEMU_PSCI_0_1_FN_CPU_ON;
-            migrate_fn = QEMU_PSCI_0_1_FN_MIGRATE;
+            cpu_suspend_fn = QEMU_PSCI_0_2_FN_CPU_SUSPEND;
+            cpu_on_fn = QEMU_PSCI_0_2_FN_CPU_ON;
+            migrate_fn = QEMU_PSCI_0_2_FN_MIGRATE;
         }
+    } else {
+        qemu_fdt_setprop_string(fdt, "/psci", "compatible", "arm,psci");
 
-        qemu_fdt_setprop_string(fdt, "/psci", "method", "hvc");
-
-        qemu_fdt_setprop_cell(fdt, "/psci", "cpu_suspend", cpu_suspend_fn);
-        qemu_fdt_setprop_cell(fdt, "/psci", "cpu_off", cpu_off_fn);
-        qemu_fdt_setprop_cell(fdt, "/psci", "cpu_on", cpu_on_fn);
-        qemu_fdt_setprop_cell(fdt, "/psci", "migrate", migrate_fn);
+        cpu_suspend_fn = QEMU_PSCI_0_1_FN_CPU_SUSPEND;
+        cpu_off_fn = QEMU_PSCI_0_1_FN_CPU_OFF;
+        cpu_on_fn = QEMU_PSCI_0_1_FN_CPU_ON;
+        migrate_fn = QEMU_PSCI_0_1_FN_MIGRATE;
     }
+
+    /* We adopt the PSCI spec's nomenclature, and use 'conduit' to refer
+     * to the instruction that should be used to invoke PSCI functions.
+     * However, the device tree binding uses 'method' instead, so that is
+     * what we should use here.
+     */
+    qemu_fdt_setprop_string(fdt, "/psci", "method", "hvc");
+
+    qemu_fdt_setprop_cell(fdt, "/psci", "cpu_suspend", cpu_suspend_fn);
+    qemu_fdt_setprop_cell(fdt, "/psci", "cpu_off", cpu_off_fn);
+    qemu_fdt_setprop_cell(fdt, "/psci", "cpu_on", cpu_on_fn);
+    qemu_fdt_setprop_cell(fdt, "/psci", "migrate", migrate_fn);
 }
 
 static void fdt_add_timer_nodes(const VirtBoardInfo *vbi)
@@ -238,14 +241,23 @@ static void fdt_add_timer_nodes(const VirtBoardInfo *vbi)
      * but for the GIC implementation provided by both QEMU and KVM
      * they are edge-triggered.
      */
+    ARMCPU *armcpu;
     uint32_t irqflags = GIC_FDT_IRQ_FLAGS_EDGE_LO_HI;
 
     irqflags = deposit32(irqflags, GIC_FDT_IRQ_PPI_CPU_START,
                          GIC_FDT_IRQ_PPI_CPU_WIDTH, (1 << vbi->smp_cpus) - 1);
 
     qemu_fdt_add_subnode(vbi->fdt, "/timer");
-    qemu_fdt_setprop_string(vbi->fdt, "/timer",
-                                "compatible", "arm,armv7-timer");
+
+    armcpu = ARM_CPU(qemu_get_cpu(0));
+    if (arm_feature(&armcpu->env, ARM_FEATURE_V8)) {
+        const char compat[] = "arm,armv8-timer\0arm,armv7-timer";
+        qemu_fdt_setprop(vbi->fdt, "/timer", "compatible",
+                         compat, sizeof(compat));
+    } else {
+        qemu_fdt_setprop_string(vbi->fdt, "/timer", "compatible",
+                                "arm,armv7-timer");
+    }
     qemu_fdt_setprop_cells(vbi->fdt, "/timer", "interrupts",
                                GIC_FDT_IRQ_TYPE_PPI, 13, irqflags,
                                GIC_FDT_IRQ_TYPE_PPI, 14, irqflags,
@@ -371,11 +383,13 @@ static void create_uart(const VirtBoardInfo *vbi, qemu_irq *pic)
                                      2, base, 2, size);
     qemu_fdt_setprop_cells(vbi->fdt, nodename, "interrupts",
                                GIC_FDT_IRQ_TYPE_SPI, irq,
-                               GIC_FDT_IRQ_FLAGS_EDGE_LO_HI);
+                               GIC_FDT_IRQ_FLAGS_LEVEL_HI);
     qemu_fdt_setprop_cells(vbi->fdt, nodename, "clocks",
                                vbi->clock_phandle, vbi->clock_phandle);
     qemu_fdt_setprop(vbi->fdt, nodename, "clock-names",
                          clocknames, sizeof(clocknames));
+
+    qemu_fdt_setprop_string(vbi->fdt, "/chosen", "stdout-path", nodename);
     g_free(nodename);
 }
 
@@ -396,7 +410,7 @@ static void create_rtc(const VirtBoardInfo *vbi, qemu_irq *pic)
                                  2, base, 2, size);
     qemu_fdt_setprop_cells(vbi->fdt, nodename, "interrupts",
                            GIC_FDT_IRQ_TYPE_SPI, irq,
-                           GIC_FDT_IRQ_FLAGS_EDGE_LO_HI);
+                           GIC_FDT_IRQ_FLAGS_LEVEL_HI);
     qemu_fdt_setprop_cell(vbi->fdt, nodename, "clocks", vbi->clock_phandle);
     qemu_fdt_setprop_string(vbi->fdt, nodename, "clock-names", "apb_pclk");
     g_free(nodename);
@@ -437,6 +451,74 @@ static void create_virtio_devices(const VirtBoardInfo *vbi, qemu_irq *pic)
     }
 }
 
+static void create_one_flash(const char *name, hwaddr flashbase,
+                             hwaddr flashsize)
+{
+    /* Create and map a single flash device. We use the same
+     * parameters as the flash devices on the Versatile Express board.
+     */
+    DriveInfo *dinfo = drive_get_next(IF_PFLASH);
+    DeviceState *dev = qdev_create(NULL, "cfi.pflash01");
+    const uint64_t sectorlength = 256 * 1024;
+
+    if (dinfo && qdev_prop_set_drive(dev, "drive",
+                                     blk_by_legacy_dinfo(dinfo))) {
+        abort();
+    }
+
+    qdev_prop_set_uint32(dev, "num-blocks", flashsize / sectorlength);
+    qdev_prop_set_uint64(dev, "sector-length", sectorlength);
+    qdev_prop_set_uint8(dev, "width", 4);
+    qdev_prop_set_uint8(dev, "device-width", 2);
+    qdev_prop_set_uint8(dev, "big-endian", 0);
+    qdev_prop_set_uint16(dev, "id0", 0x89);
+    qdev_prop_set_uint16(dev, "id1", 0x18);
+    qdev_prop_set_uint16(dev, "id2", 0x00);
+    qdev_prop_set_uint16(dev, "id3", 0x00);
+    qdev_prop_set_string(dev, "name", name);
+    qdev_init_nofail(dev);
+
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, flashbase);
+}
+
+static void create_flash(const VirtBoardInfo *vbi)
+{
+    /* Create two flash devices to fill the VIRT_FLASH space in the memmap.
+     * Any file passed via -bios goes in the first of these.
+     */
+    hwaddr flashsize = vbi->memmap[VIRT_FLASH].size / 2;
+    hwaddr flashbase = vbi->memmap[VIRT_FLASH].base;
+    char *nodename;
+
+    if (bios_name) {
+        const char *fn;
+
+        if (drive_get(IF_PFLASH, 0, 0)) {
+            error_report("The contents of the first flash device may be "
+                         "specified with -bios or with -drive if=pflash... "
+                         "but you cannot use both options at once");
+            exit(1);
+        }
+        fn = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
+        if (!fn || load_image_targphys(fn, flashbase, flashsize) < 0) {
+            error_report("Could not load ROM image '%s'", bios_name);
+            exit(1);
+        }
+    }
+
+    create_one_flash("virt.flash0", flashbase, flashsize);
+    create_one_flash("virt.flash1", flashbase + flashsize, flashsize);
+
+    nodename = g_strdup_printf("/flash@%" PRIx64, flashbase);
+    qemu_fdt_add_subnode(vbi->fdt, nodename);
+    qemu_fdt_setprop_string(vbi->fdt, nodename, "compatible", "cfi-flash");
+    qemu_fdt_setprop_sized_cells(vbi->fdt, nodename, "reg",
+                                 2, flashbase, 2, flashsize,
+                                 2, flashbase + flashsize, 2, flashsize);
+    qemu_fdt_setprop_cell(vbi->fdt, nodename, "bank-width", 4);
+    g_free(nodename);
+}
+
 static void *machvirt_dtb(const struct arm_boot_info *binfo, int *fdt_size)
 {
     const VirtBoardInfo *board = (const VirtBoardInfo *)binfo;
@@ -467,23 +549,12 @@ static void machvirt_init(MachineState *machine)
 
     vbi->smp_cpus = smp_cpus;
 
-    /*
-     * Only supported method of starting secondary CPUs is PSCI and
-     * PSCI is not yet supported with TCG, so limit smp_cpus to 1
-     * if we're not using KVM.
-     */
-    if (!kvm_enabled() && smp_cpus > 1) {
-        error_report("mach-virt: must enable KVM to use multiple CPUs");
-        exit(1);
-    }
-
     if (machine->ram_size > vbi->memmap[VIRT_MEM].size) {
         error_report("mach-virt: cannot model more than 30GB RAM");
         exit(1);
     }
 
     create_fdt(vbi);
-    fdt_add_timer_nodes(vbi);
 
     for (n = 0; n < smp_cpus; n++) {
         ObjectClass *oc = cpu_class_by_name(TYPE_ARM_CPU, cpu_model);
@@ -494,6 +565,9 @@ static void machvirt_init(MachineState *machine)
             exit(1);
         }
         cpuobj = object_new(object_class_get_name(oc));
+
+        object_property_set_int(cpuobj, QEMU_PSCI_CONDUIT_HVC, "psci-conduit",
+                                NULL);
 
         /* Secondary CPUs start in PSCI powered-down state */
         if (n > 0) {
@@ -507,12 +581,16 @@ static void machvirt_init(MachineState *machine)
 
         object_property_set_bool(cpuobj, true, "realized", NULL);
     }
+    fdt_add_timer_nodes(vbi);
     fdt_add_cpu_nodes(vbi);
     fdt_add_psci_node(vbi);
 
-    memory_region_init_ram(ram, NULL, "mach-virt.ram", machine->ram_size);
+    memory_region_init_ram(ram, NULL, "mach-virt.ram", machine->ram_size,
+                           &error_abort);
     vmstate_register_ram_global(ram);
     memory_region_add_subregion(sysmem, vbi->memmap[VIRT_MEM].base, ram);
+
+    create_flash(vbi);
 
     create_gic(vbi, pic);
 
@@ -541,7 +619,7 @@ static QEMUMachine machvirt_a15_machine = {
     .name = "virt",
     .desc = "ARM Virtual Machine",
     .init = machvirt_init,
-    .max_cpus = 4,
+    .max_cpus = 8,
 };
 
 static void machvirt_machine_init(void)

@@ -40,7 +40,7 @@ static void dummy_m68k_init(MachineState *machine)
     env->vbr = 0;
 
     /* RAM at address zero */
-    memory_region_init_ram(ram, NULL, "dummy_m68k.ram", ram_size);
+    memory_region_init_ram(ram, NULL, "dummy_m68k.ram", ram_size, &error_abort);
     vmstate_register_ram_global(ram);
     memory_region_add_subregion(address_space_mem, 0, ram);
 
@@ -50,7 +50,8 @@ static void dummy_m68k_init(MachineState *machine)
                                NULL, NULL, 1, ELF_MACHINE, 0);
         entry = elf_entry;
         if (kernel_size < 0) {
-            kernel_size = load_uimage(kernel_filename, &entry, NULL, NULL);
+            kernel_size = load_uimage(kernel_filename, &entry, NULL, NULL,
+                                      NULL, NULL);
         }
         if (kernel_size < 0) {
             kernel_size = load_image_targphys(kernel_filename,

@@ -38,7 +38,7 @@
 #include "hw/ide.h"
 #include "hw/loader.h"
 #include "elf.h"
-#include "sysemu/blockdev.h"
+#include "sysemu/block-backend.h"
 #include "exec/address-spaces.h"
 
 //#define DEBUG_IRQ
@@ -609,8 +609,8 @@ pci_ebus_init1(PCIDevice *pci_dev)
                              0, 0x1000000);
     pci_register_bar(pci_dev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &s->bar0);
     memory_region_init_alias(&s->bar1, OBJECT(s), "bar1", get_system_io(),
-                             0, 0x800000);
-    pci_register_bar(pci_dev, 1, PCI_BASE_ADDRESS_SPACE_MEMORY, &s->bar1);
+                             0, 0x1000);
+    pci_register_bar(pci_dev, 1, PCI_BASE_ADDRESS_SPACE_IO, &s->bar1);
     return 0;
 }
 
@@ -686,7 +686,8 @@ static int prom_init1(SysBusDevice *dev)
 {
     PROMState *s = OPENPROM(dev);
 
-    memory_region_init_ram(&s->prom, OBJECT(s), "sun4u.prom", PROM_SIZE_MAX);
+    memory_region_init_ram(&s->prom, OBJECT(s), "sun4u.prom", PROM_SIZE_MAX,
+                           &error_abort);
     vmstate_register_ram_global(&s->prom);
     memory_region_set_readonly(&s->prom, true);
     sysbus_init_mmio(dev, &s->prom);
@@ -729,7 +730,8 @@ static int ram_init1(SysBusDevice *dev)
 {
     RamDevice *d = SUN4U_RAM(dev);
 
-    memory_region_init_ram(&d->ram, OBJECT(d), "sun4u.ram", d->size);
+    memory_region_init_ram(&d->ram, OBJECT(d), "sun4u.ram", d->size,
+                           &error_abort);
     vmstate_register_ram_global(&d->ram);
     sysbus_init_mmio(dev, &d->ram);
     return 0;
@@ -862,7 +864,7 @@ static void sun4uv_init(MemoryRegion *address_space_mem,
     for(i = 0; i < nb_nics; i++)
         pci_nic_init_nofail(&nd_table[i], pci_bus, "ne2k_pci", NULL);
 
-    ide_drive_get(hd, MAX_IDE_BUS);
+    ide_drive_get(hd, ARRAY_SIZE(hd));
 
     pci_cmd646_ide_init(pci_bus, hd, 1);
 

@@ -41,6 +41,7 @@
 #include <assert.h>
 #include <signal.h>
 #include "glib-compat.h"
+#include "qemu/option.h"
 
 #ifdef _WIN32
 #include "sysemu/os-win32.h"
@@ -104,9 +105,16 @@ static inline char *realpath(const char *path, char *resolved_path)
 }
 #endif
 
+void cpu_ticks_init(void);
+
 /* icount */
-void configure_icount(const char *option);
+void configure_icount(QemuOpts *opts, Error **errp);
 extern int use_icount;
+extern int icount_align_option;
+/* drift information for info jit command */
+extern int64_t max_delay;
+extern int64_t max_advance;
+void dump_drift_info(FILE *f, fprintf_function cpu_fprintf);
 
 #include "qemu/osdep.h"
 #include "qemu/bswap.h"
@@ -181,6 +189,9 @@ int64_t strtosz_suffix_unit(const char *nptr, char **end,
 
 /* used to print char* safely */
 #define STR_OR_NULL(str) ((str) ? (str) : "null")
+
+/* id.c */
+bool id_wellformed(const char *id);
 
 /* path.c */
 void init_paths(const char *prefix);
@@ -346,7 +357,6 @@ char *qemu_find_file(int type, const char *name);
 void os_setup_early_signal_handling(void);
 char *os_find_datadir(void);
 void os_parse_cmd_args(int index, const char *optarg);
-void os_pidfile_error(void);
 
 /* Convert a byte between binary and BCD.  */
 static inline uint8_t to_bcd(uint8_t val)

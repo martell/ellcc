@@ -18,6 +18,18 @@
 #  define FUNC     ((const char*) ("???"))
 #endif
 
+#if defined (__GNUC__)
+#  define unlikely(expr) __builtin_expect ((expr), 0)
+#else
+#  define unlikely(expr)  (expr)
+#endif
+
+#if defined (__GNUC__)
+#  define MAYBE_UNUSED  __attribute__((unused))
+#else
+#  define MAYBE_UNUSED
+#endif
+
 #ifndef INT16_MIN
 # define INT16_MIN              (-32767-1)
 #endif
@@ -42,6 +54,19 @@
 # define UINT32_MAX             (4294967295U)
 #endif
 
+#ifndef INT64_MIN
+# define INT64_MIN              (-9223372036854775807-1)
+#endif
+
+#ifndef INT64_MAX
+# define INT64_MAX              (9223372036854775807)
+#endif
+
+#ifndef SIZE_MAX
+# define SIZE_MAX               ((size_t)-1)
+#endif
+
+
 #ifndef M_PI
 # define M_PI			3.14159265358979323846
 #endif
@@ -50,17 +75,22 @@
 /* 'inline' is available only in C++ in MSVC */
 #   define inline __inline
 #   define force_inline __forceinline
+#   define noinline __declspec(noinline)
 #elif defined __GNUC__ || (defined(__SUNPRO_C) && (__SUNPRO_C >= 0x590))
 #   define inline __inline__
 #   define force_inline __inline__ __attribute__ ((__always_inline__))
+#   define noinline __attribute__((noinline))
 #else
 #   ifndef force_inline
 #      define force_inline inline
 #   endif
+#   ifndef noinline
+#      define noinline
+#   endif
 #endif
 
 /* GCC visibility */
-#if defined(__GNUC__) && __GNUC__ >= 4
+#if defined(__GNUC__) && __GNUC__ >= 4 && !defined(_WIN32)
 #   define PIXMAN_EXPORT __attribute__ ((visibility("default")))
 /* Sun Studio 8 visibility */
 #elif defined(__SUNPRO_C) && (__SUNPRO_C >= 0x550)
@@ -69,30 +99,29 @@
 #   define PIXMAN_EXPORT
 #endif
 
+/* member offsets */
+#define CONTAINER_OF(type, member, data)				\
+    ((type *)(((uint8_t *)data) - offsetof (type, member)))
+
 /* TLS */
-#if defined(TOOLCHAIN_SUPPORTS__THREAD)
+#if defined(PIXMAN_NO_TLS)
 
 #   define PIXMAN_DEFINE_THREAD_LOCAL(type, name)			\
-    static __thread type name
+    static type name
 #   define PIXMAN_GET_THREAD_LOCAL(name)				\
     (&name)
 
-#elif defined(__MINGW32__) && !defined(__WIN64)
+#elif defined(TLS)
 
-/* We can't include <windows.h> as it causes carious clashes with
- * identifiers in pixman, sigh. So just declare the functions we need
- * here.
- */
-extern __stdcall long InterlockedCompareExchange(long volatile *, long, long);
-#define InterlockedCompareExchangePointer(d,e,c)			\
-    (void *)InterlockedCompareExchange((long volatile *)(d),(long)(e),(long)(c))
-extern __stdcall int TlsAlloc (void);
-extern __stdcall void *TlsGetValue (unsigned);
-extern __stdcall int TlsSetValue (unsigned, void *);
-extern __stdcall void *CreateMutexA(void *, int, char *);
-extern __stdcall int CloseHandle(void *);
-extern __stdcall unsigned WaitForSingleObject (void *, unsigned);
-extern __stdcall int ReleaseMutex (void *);
+#   define PIXMAN_DEFINE_THREAD_LOCAL(type, name)			\
+    static TLS type name
+#   define PIXMAN_GET_THREAD_LOCAL(name)				\
+    (&name)
+
+#elif defined(__MINGW32__)
+
+#   define _NO_W32_PSEUDO_MODIFIERS
+#   include <windows.h>
 
 #   define PIXMAN_DEFINE_THREAD_LOCAL(type, name)			\
     static volatile int tls_ ## name ## _initialized = 0;		\
@@ -149,7 +178,7 @@ extern __stdcall int ReleaseMutex (void *);
 #   define PIXMAN_GET_THREAD_LOCAL(name)				\
     (&name)
 
-#elif defined(HAVE_PTHREAD_SETSPECIFIC)
+#elif defined(HAVE_PTHREADS)
 
 #include <pthread.h>
 
@@ -198,6 +227,6 @@ extern __stdcall int ReleaseMutex (void *);
 
 #else
 
-#    error "Unknown thread local support for this system"
+#    error "Unknown thread local support for this system. Pixman will not work with multiple threads. Define PIXMAN_NO_TLS to acknowledge and accept this limitation and compile pixman without thread-safety support."
 
 #endif

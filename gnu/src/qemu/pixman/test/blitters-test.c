@@ -2,47 +2,20 @@
  * Test program, which stresses the use of different color formats and
  * compositing operations.
  *
- * Just run it without any command line arguments, and it will report either
- *   "blitters test passed" - everything is ok
- *   "blitters test failed!" - there is some problem
- *
- * In the case of failure, finding the problem involves the following steps:
- * 1. Get the reference 'blitters-test' binary. It makes sense to disable all
- *    the cpu specific optimizations in pixman and also configure it with
- *    '--disable-shared' option. Those who are paranoid can also tweak the
- *    sources to disable all fastpath functions. The resulting binary
- *    can be renamed to something like 'blitters-test.ref'.
- * 2. Compile the buggy binary (also with the '--disable-shared' option).
- * 3. Run 'ruby blitters-test-bisect.rb ./blitters-test.ref ./blitters-test'
- * 4. Look at the information about failed case (destination buffer content
- *    will be shown) and try to figure out what is wrong. Loading
- *    test program in gdb, specifying failed test number in the command
- *    line with '-' character prepended and setting breakpoint on
- *    'pixman_image_composite' function can provide detailed information
- *    about function arguments
+ * Script 'fuzzer-find-diff.pl' can be used to narrow down the problem in
+ * the case of test failure.
  */
-#include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <config.h>
 #include "utils.h"
 
-static pixman_indexed_t palette;
+static pixman_indexed_t rgb_palette[9];
+static pixman_indexed_t y_palette[9];
 
-static void *
-aligned_malloc (size_t align, size_t size)
-{
-    void *result;
-
-#ifdef HAVE_POSIX_MEMALIGN
-    if (posix_memalign (&result, align, size) != 0)
-      result = NULL;
-#else
-    result = malloc (size);
-#endif
-
-    return result;
-}
+/* The first eight format in the list are by far the most widely
+ * used formats, so we test those more than the others
+ */
+#define N_MOST_LIKELY_FORMATS 8
 
 /* Create random image for testing purposes */
 static pixman_image_t *
@@ -52,43 +25,60 @@ create_random_image (pixman_format_code_t *allowed_formats,
 		     int                   max_extra_stride,
 		     pixman_format_code_t *used_fmt)
 {
-    int n = 0, i, width, height, stride;
+    int n = 0, width, height, stride;
     pixman_format_code_t fmt;
     uint32_t *buf;
     pixman_image_t *img;
 
-    while (allowed_formats[n] != -1)
+    while (allowed_formats[n] != PIXMAN_null)
 	n++;
-    fmt = allowed_formats[lcg_rand_n (n)];
 
-    width = lcg_rand_n (max_width) + 1;
-    height = lcg_rand_n (max_height) + 1;
+    if (n > N_MOST_LIKELY_FORMATS && prng_rand_n (4) != 0)
+	n = N_MOST_LIKELY_FORMATS;
+    fmt = allowed_formats[prng_rand_n (n)];
+
+    width = prng_rand_n (max_width) + 1;
+    height = prng_rand_n (max_height) + 1;
     stride = (width * PIXMAN_FORMAT_BPP (fmt) + 7) / 8 +
-	lcg_rand_n (max_extra_stride + 1);
+	prng_rand_n (max_extra_stride + 1);
     stride = (stride + 3) & ~3;
 
     /* do the allocation */
     buf = aligned_malloc (64, stride * height);
 
-    /* initialize image with random data */
-    for (i = 0; i < stride * height; i++)
+    if (prng_rand_n (4) == 0)
     {
-	/* generation is biased to having more 0 or 255 bytes as
-	 * they are more likely to be special-cased in code
-	 */
-	*((uint8_t *)buf + i) = lcg_rand_n (4) ? lcg_rand_n (256) :
-	    (lcg_rand_n (2) ? 0 : 255);
+	/* uniform distribution */
+	prng_randmemset (buf, stride * height, 0);
+    }
+    else
+    {
+	/* significantly increased probability for 0x00 and 0xFF */
+	prng_randmemset (buf, stride * height, RANDMEMSET_MORE_00_AND_FF);
     }
 
+    /* test negative stride */
+    if (prng_rand_n (4) == 0)
+    {
+	buf += (stride / 4) * (height - 1);
+	stride = - stride;
+    }
+    
     img = pixman_image_create_bits (fmt, width, height, buf, stride);
 
-    if (PIXMAN_FORMAT_TYPE (fmt) == PIXMAN_TYPE_COLOR	||
-	PIXMAN_FORMAT_TYPE (fmt) == PIXMAN_TYPE_GRAY)
+    if (PIXMAN_FORMAT_TYPE (fmt) == PIXMAN_TYPE_COLOR)
     {
-	pixman_image_set_indexed (img, &palette);
+	pixman_image_set_indexed (img, &(rgb_palette[PIXMAN_FORMAT_BPP (fmt)]));
+    }
+    else if (PIXMAN_FORMAT_TYPE (fmt) == PIXMAN_TYPE_GRAY)
+    {
+	pixman_image_set_indexed (img, &(y_palette[PIXMAN_FORMAT_BPP (fmt)]));
     }
 
-    image_endian_swap (img, PIXMAN_FORMAT_BPP (fmt));
+    if (prng_rand_n (16) == 0)
+	pixman_image_set_filter (img, PIXMAN_FILTER_BILINEAR, NULL, 0);
+
+    image_endian_swap (img);
 
     if (used_fmt) *used_fmt = fmt;
     return img;
@@ -101,36 +91,13 @@ free_random_image (uint32_t initcrc,
 		   pixman_format_code_t fmt)
 {
     uint32_t crc32 = 0;
-    int stride = pixman_image_get_stride (img);
     uint32_t *data = pixman_image_get_data (img);
-    int height = pixman_image_get_height (img);
 
-    if (fmt != -1)
-    {
-	/* mask unused 'x' part */
-	if (PIXMAN_FORMAT_BPP (fmt) - PIXMAN_FORMAT_DEPTH (fmt) &&
-	    PIXMAN_FORMAT_DEPTH (fmt) != 0)
-	{
-	    int i;
-	    uint32_t *data = pixman_image_get_data (img);
-	    uint32_t mask = (1 << PIXMAN_FORMAT_DEPTH (fmt)) - 1;
+    if (fmt != PIXMAN_null)
+	crc32 = compute_crc32_for_image (initcrc, img);
 
-	    if (PIXMAN_FORMAT_TYPE (fmt) == PIXMAN_TYPE_BGRA)
-		mask <<= (PIXMAN_FORMAT_BPP (fmt) - PIXMAN_FORMAT_DEPTH (fmt));
-
-	    for (i = 0; i < 32; i++)
-		mask |= mask << (i * PIXMAN_FORMAT_BPP (fmt));
-
-	    for (i = 0; i < stride * height / 4; i++)
-		data[i] &= mask;
-	}
-
-	/* swap endiannes in order to provide identical results on both big
-	 * and litte endian systems
-	 */
-	image_endian_swap (img, PIXMAN_FORMAT_BPP (fmt));
-	crc32 = compute_crc32 (initcrc, data, stride * height);
-    }
+    if (img->bits.rowstride < 0)
+	data += img->bits.rowstride * (img->bits.height - 1);
 
     pixman_image_unref (img);
     free (data);
@@ -201,22 +168,27 @@ static pixman_op_t op_list[] = {
 
 static pixman_format_code_t img_fmt_list[] = {
     PIXMAN_a8r8g8b8,
-    PIXMAN_x8r8g8b8,
-    PIXMAN_r5g6b5,
-    PIXMAN_r3g3b2,
-    PIXMAN_a8,
     PIXMAN_a8b8g8r8,
+    PIXMAN_x8r8g8b8,
     PIXMAN_x8b8g8r8,
-    PIXMAN_b8g8r8a8,
-    PIXMAN_b8g8r8x8,
-    PIXMAN_r8g8b8,
-    PIXMAN_b8g8r8,
     PIXMAN_r5g6b5,
     PIXMAN_b5g6r5,
+    PIXMAN_a8,
+    PIXMAN_a1,
+    PIXMAN_r3g3b2,
+    PIXMAN_b8g8r8a8,
+    PIXMAN_b8g8r8x8,
+    PIXMAN_r8g8b8a8,
+    PIXMAN_r8g8b8x8,
+    PIXMAN_x14r6g6b6,
+    PIXMAN_r8g8b8,
+    PIXMAN_b8g8r8,
+#if 0 /* These are going to use floating point in the near future */
     PIXMAN_x2r10g10b10,
     PIXMAN_a2r10g10b10,
     PIXMAN_x2b10g10r10,
     PIXMAN_a2b10g10r10,
+#endif
     PIXMAN_a1r5g5b5,
     PIXMAN_x1r5g5b5,
     PIXMAN_a1b5g5r5,
@@ -225,7 +197,6 @@ static pixman_format_code_t img_fmt_list[] = {
     PIXMAN_x4r4g4b4,
     PIXMAN_a4b4g4r4,
     PIXMAN_x4b4g4r4,
-    PIXMAN_a8,
     PIXMAN_r3g3b2,
     PIXMAN_b2g3r3,
     PIXMAN_a2r2g2b2,
@@ -243,8 +214,7 @@ static pixman_format_code_t img_fmt_list[] = {
     PIXMAN_b1g2r1,
     PIXMAN_a1r1g1b1,
     PIXMAN_a1b1g1r1,
-    PIXMAN_a1,
-    -1
+    PIXMAN_null
 };
 
 static pixman_format_code_t mask_fmt_list[] = {
@@ -252,7 +222,7 @@ static pixman_format_code_t mask_fmt_list[] = {
     PIXMAN_a8,
     PIXMAN_a4,
     PIXMAN_a1,
-    -1
+    PIXMAN_null
 };
 
 
@@ -260,9 +230,8 @@ static pixman_format_code_t mask_fmt_list[] = {
  * Composite operation with pseudorandom images
  */
 uint32_t
-test_composite (uint32_t initcrc, int testnum, int verbose)
+test_composite (int testnum, int verbose)
 {
-    int i;
     pixman_image_t *src_img = NULL;
     pixman_image_t *dst_img = NULL;
     pixman_image_t *mask_img = NULL;
@@ -273,11 +242,12 @@ test_composite (uint32_t initcrc, int testnum, int verbose)
     int dst_x, dst_y;
     int mask_x, mask_y;
     int w, h;
-    int op;
+    pixman_op_t op;
     pixman_format_code_t src_fmt, dst_fmt, mask_fmt;
-    uint32_t *dstbuf, *srcbuf, *maskbuf;
+    uint32_t *srcbuf, *maskbuf;
     uint32_t crc32;
     int max_width, max_height, max_extra_stride;
+    FLOAT_REGS_CORRUPTION_DETECTOR_START ();
 
     max_width = max_height = 24 + testnum / 10000;
     max_extra_stride = 4 + testnum / 1000000;
@@ -291,11 +261,11 @@ test_composite (uint32_t initcrc, int testnum, int verbose)
     if (max_extra_stride > 8)
 	max_extra_stride = 8;
 
-    lcg_srand (testnum);
+    prng_srand (testnum);
 
-    op = op_list[lcg_rand_n (sizeof (op_list) / sizeof (op_list[0]))];
+    op = op_list[prng_rand_n (ARRAY_LENGTH (op_list))];
 
-    if (lcg_rand_n (8))
+    if (prng_rand_n (8))
     {
 	/* normal image */
 	src_img = create_random_image (img_fmt_list, max_width, max_height,
@@ -321,25 +291,24 @@ test_composite (uint32_t initcrc, int testnum, int verbose)
     dst_height = pixman_image_get_height (dst_img);
     dst_stride = pixman_image_get_stride (dst_img);
 
-    dstbuf = pixman_image_get_data (dst_img);
     srcbuf = pixman_image_get_data (src_img);
 
-    src_x = lcg_rand_n (src_width);
-    src_y = lcg_rand_n (src_height);
-    dst_x = lcg_rand_n (dst_width);
-    dst_y = lcg_rand_n (dst_height);
+    src_x = prng_rand_n (src_width);
+    src_y = prng_rand_n (src_height);
+    dst_x = prng_rand_n (dst_width);
+    dst_y = prng_rand_n (dst_height);
 
     mask_img = NULL;
-    mask_fmt = -1;
+    mask_fmt = PIXMAN_null;
     mask_x = 0;
     mask_y = 0;
     maskbuf = NULL;
 
     if ((src_fmt == PIXMAN_x8r8g8b8 || src_fmt == PIXMAN_x8b8g8r8) &&
-	(lcg_rand_n (4) == 0))
+	(prng_rand_n (4) == 0))
     {
 	/* PIXBUF */
-	mask_fmt = lcg_rand_n (2) ? PIXMAN_a8r8g8b8 : PIXMAN_a8b8g8r8;
+	mask_fmt = prng_rand_n (2) ? PIXMAN_a8r8g8b8 : PIXMAN_a8b8g8r8;
 	mask_img = pixman_image_create_bits (mask_fmt,
 	                                     src_width,
 	                                     src_height,
@@ -349,9 +318,9 @@ test_composite (uint32_t initcrc, int testnum, int verbose)
 	mask_y = src_y;
 	maskbuf = srcbuf;
     }
-    else if (lcg_rand_n (2))
+    else if (prng_rand_n (2))
     {
-	if (lcg_rand_n (2))
+	if (prng_rand_n (2))
 	{
 	    mask_img = create_random_image (mask_fmt_list, max_width, max_height,
 					   max_extra_stride, &mask_fmt);
@@ -364,21 +333,23 @@ test_composite (uint32_t initcrc, int testnum, int verbose)
 	    pixman_image_set_repeat (mask_img, PIXMAN_REPEAT_NORMAL);
 	}
 
-	if (lcg_rand_n (2))
+	if (prng_rand_n (2))
 	    pixman_image_set_component_alpha (mask_img, 1);
 
-	mask_x = lcg_rand_n (pixman_image_get_width (mask_img));
-	mask_y = lcg_rand_n (pixman_image_get_height (mask_img));
+	mask_x = prng_rand_n (pixman_image_get_width (mask_img));
+	mask_y = prng_rand_n (pixman_image_get_height (mask_img));
     }
 
 
-    w = lcg_rand_n (dst_width - dst_x + 1);
-    h = lcg_rand_n (dst_height - dst_y + 1);
+    w = prng_rand_n (dst_width - dst_x + 1);
+    h = prng_rand_n (dst_height - dst_y + 1);
 
     if (verbose)
     {
-	printf ("op=%d, src_fmt=%08X, dst_fmt=%08X, mask_fmt=%08X\n",
-	    op, src_fmt, dst_fmt, mask_fmt);
+        printf ("op=%s\n", operator_name (op));
+	printf ("src_fmt=%s, dst_fmt=%s, mask_fmt=%s\n",
+	    format_name (src_fmt), format_name (dst_fmt),
+	    format_name (mask_fmt));
 	printf ("src_width=%d, src_height=%d, dst_width=%d, dst_height=%d\n",
 	    src_width, src_height, dst_width, dst_height);
 	printf ("src_x=%d, src_y=%d, dst_x=%d, dst_y=%d\n",
@@ -392,106 +363,37 @@ test_composite (uint32_t initcrc, int testnum, int verbose)
 			    src_x, src_y, mask_x, mask_y, dst_x, dst_y, w, h);
 
     if (verbose)
-    {
-	int j;
+	print_image (dst_img);
 
-	printf ("---\n");
-	for (i = 0; i < dst_height; i++)
-	{
-	    for (j = 0; j < dst_stride; j++)
-	    {
-		if (j == (dst_width * PIXMAN_FORMAT_BPP (dst_fmt) + 7) / 8)
-		    printf ("| ");
-
-		printf ("%02X ", *((uint8_t *)dstbuf + i * dst_stride + j));
-	    }
-	    printf ("\n");
-	}
-	printf ("---\n");
-    }
-
-    free_random_image (initcrc, src_img, -1);
-    crc32 = free_random_image (initcrc, dst_img, dst_fmt);
+    free_random_image (0, src_img, PIXMAN_null);
+    crc32 = free_random_image (0, dst_img, dst_fmt);
 
     if (mask_img)
     {
 	if (srcbuf == maskbuf)
 	    pixman_image_unref(mask_img);
 	else
-	    free_random_image (initcrc, mask_img, -1);
+	    free_random_image (0, mask_img, PIXMAN_null);
     }
 
-
+    FLOAT_REGS_CORRUPTION_DETECTOR_FINISH ();
     return crc32;
 }
 
-static void
-initialize_palette (void)
+int
+main (int argc, const char *argv[])
 {
     int i;
 
-    for (i = 0; i < PIXMAN_MAX_INDEXED; ++i)
-	palette.rgba[i] = lcg_rand ();
+    prng_srand (0);
 
-    for (i = 0; i < 32768; ++i)
-	palette.ent[i] = lcg_rand() & 0xff;
-}
-
-int
-main (int argc, char *argv[])
-{
-    int i, n1 = 1, n2 = 0;
-    uint32_t crc = 0;
-    int verbose = getenv ("VERBOSE") != NULL;
-
-    initialize_palette();
-
-    if (argc >= 3)
+    for (i = 1; i <= 8; i++)
     {
-	n1 = atoi (argv[1]);
-	n2 = atoi (argv[2]);
-    }
-    else if (argc >= 2)
-    {
-	n2 = atoi (argv[1]);
-    }
-    else
-    {
-	n1 = 1;
-	n2 = 2000000;
+	initialize_palette (&(rgb_palette[i]), i, TRUE);
+	initialize_palette (&(y_palette[i]), i, FALSE);
     }
 
-    if (n2 < 0)
-    {
-	crc = test_composite (0, abs (n2), 1);
-	printf ("crc32=%08X\n", crc);
-    }
-    else
-    {
-	for (i = n1; i <= n2; i++)
-	{
-	    crc = test_composite (crc, i, 0);
-
-	    if (verbose)
-		printf ("%d: %08X\n", i, crc);
-	}
-	printf ("crc32=%08X\n", crc);
-
-	if (n2 == 2000000)
-	{
-	    /* Predefined value for running with all the fastpath functions
-	       disabled. It needs to be updated every time when changes are
-	       introduced to this program or behavior of pixman changes! */
-	    if (crc == 0xBBACC28D)
-	    {
-		printf ("blitters test passed\n");
-	    }
-	    else
-	    {
-		printf ("blitters test failed!\n");
-		return 1;
-	    }
-	}
-    }
-    return 0;
+    return fuzzer_test_main("blitters", 2000000,
+			    0xE0A07495,
+			    test_composite, argc, argv);
 }

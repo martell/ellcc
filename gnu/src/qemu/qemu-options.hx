@@ -33,9 +33,11 @@ DEF("machine", HAS_ARG, QEMU_OPTION_machine, \
     "                property accel=accel1[:accel2[:...]] selects accelerator\n"
     "                supported accelerators are kvm, xen, tcg (default: tcg)\n"
     "                kernel_irqchip=on|off controls accelerated irqchip support\n"
+    "                vmport=on|off|auto controls emulation of vmport (default: auto)\n"
     "                kvm_shadow_mem=size of KVM shadow MMU\n"
     "                dump-guest-core=on|off include guest memory in a core dump (default=on)\n"
-    "                mem-merge=on|off controls memory merge support (default: on)\n",
+    "                mem-merge=on|off controls memory merge support (default: on)\n"
+    "                iommu=on|off controls emulated Intel IOMMU (VT-d) support (default=off)\n",
     QEMU_ARCH_ALL)
 STEXI
 @item -machine [type=]@var{name}[,prop=@var{value}[,...]]
@@ -50,6 +52,10 @@ than one accelerator specified, the next one is used if the previous one fails
 to initialize.
 @item kernel_irqchip=on|off
 Enables in-kernel irqchip support for the chosen accelerator when available.
+@item vmport=on|off|auto
+Enables emulation of VMWare IO port, for vmmouse etc. auto says to select the
+value based on accel. For accel=xen the default is off otherwise the default
+is on.
 @item kvm_shadow_mem=size
 Defines the size of the KVM shadow MMU.
 @item dump-guest-core=on|off
@@ -58,6 +64,8 @@ Include guest memory in a core dump. The default is on.
 Enables or disables memory merge support. This feature, when supported by
 the host, de-duplicates identical memory pages among VMs instances
 (enabled by default).
+@item iommu=on|off
+Enables or disables emulated Intel IOMMU (VT-d) support. The default is off.
 @end table
 ETEXI
 
@@ -225,7 +233,8 @@ DEF("m", HAS_ARG, QEMU_OPTION_m,
     "                size: initial amount of guest memory (default: "
     stringify(DEFAULT_RAM_SIZE) "MiB)\n"
     "                slots: number of hotplug slots (default: none)\n"
-    "                maxmem: maximum amount of guest memory (default: none)\n",
+    "                maxmem: maximum amount of guest memory (default: none)\n"
+    "NOTE: Some architectures might enforce a specific granularity\n",
     QEMU_ARCH_ALL)
 STEXI
 @item -m [size=]@var{megs}
@@ -427,7 +436,7 @@ DEF("drive", HAS_ARG, QEMU_OPTION_drive,
     "       [,serial=s][,addr=A][,rerror=ignore|stop|report]\n"
     "       [,werror=ignore|stop|report|enospc][,id=name][,aio=threads|native]\n"
     "       [,readonly=on|off][,copy-on-read=on|off]\n"
-    "       [,detect-zeroes=on|off|unmap]\n"
+    "       [,discard=ignore|unmap][,detect-zeroes=on|off|unmap]\n"
     "       [[,bps=b]|[[,bps_rd=r][,bps_wr=w]]]\n"
     "       [[,iops=i]|[[,iops_rd=r][,iops_wr=w]]]\n"
     "       [[,bps_max=bm]|[[,bps_rd_max=rm][,bps_wr_max=wm]]]\n"
@@ -1444,7 +1453,7 @@ DEF("net", HAS_ARG, QEMU_OPTION_net,
     "                use 'src=' to specify source address\n"
     "                use 'dst=' to specify destination address\n"
     "                use 'udp=on' to specify udp encapsulation\n"
-    "                use 'dstport=' to specify destination udp port\n"
+    "                use 'srcport=' to specify source udp port\n"
     "                use 'dstport=' to specify destination udp port\n"
     "                use 'ipv6=on' to force v6\n"
     "                L2TPv3 uses cookies to prevent misconfiguration as\n"
@@ -1926,9 +1935,9 @@ ETEXI
 
 DEF("chardev", HAS_ARG, QEMU_OPTION_chardev,
     "-chardev null,id=id[,mux=on|off]\n"
-    "-chardev socket,id=id[,host=host],port=host[,to=to][,ipv4][,ipv6][,nodelay]\n"
-    "         [,server][,nowait][,telnet][,mux=on|off] (tcp)\n"
-    "-chardev socket,id=id,path=path[,server][,nowait][,telnet],[mux=on|off] (unix)\n"
+    "-chardev socket,id=id[,host=host],port=port[,to=to][,ipv4][,ipv6][,nodelay][,reconnect=seconds]\n"
+    "         [,server][,nowait][,telnet][,reconnect=seconds][,mux=on|off] (tcp)\n"
+    "-chardev socket,id=id,path=path[,server][,nowait][,telnet][,reconnect=seconds][,mux=on|off] (unix)\n"
     "-chardev udp,id=id[,host=host],port=port[,localaddr=localaddr]\n"
     "         [,localport=localport][,ipv4][,ipv6][,mux=on|off]\n"
     "-chardev msmouse,id=id[,mux=on|off]\n"
@@ -2000,7 +2009,7 @@ Options to each backend are described below.
 A void device. This device will not emit any data, and will drop any data it
 receives. The null backend does not take any options.
 
-@item -chardev socket ,id=@var{id} [@var{TCP options} or @var{unix options}] [,server] [,nowait] [,telnet]
+@item -chardev socket ,id=@var{id} [@var{TCP options} or @var{unix options}] [,server] [,nowait] [,telnet] [,reconnect=@var{seconds}]
 
 Create a two-way stream socket, which can be either a TCP or a unix socket. A
 unix socket will be created if @option{path} is specified. Behaviour is
@@ -2013,6 +2022,10 @@ connect to a listening socket.
 
 @option{telnet} specifies that traffic on the socket should interpret telnet
 escape sequences.
+
+@option{reconnect} sets the timeout for reconnecting on non-server sockets when
+the remote end goes away.  qemu will delay this many seconds and then attempt
+to reconnect.  Zero disables reconnecting, and is the default.
 
 TCP and unix socket options are given below:
 
@@ -2351,6 +2364,16 @@ multiple of 512 bytes. It defaults to 256k.
 @item sslverify
 Whether to verify the remote server's certificate when connecting over SSL. It
 can have the value 'on' or 'off'. It defaults to 'on'.
+
+@item cookie
+Send this cookie (it can also be a list of cookies separated by ';') with
+each outgoing request.  Only supported when using protocols such as HTTP
+which support cookies, otherwise ignored.
+
+@item timeout
+Set the timeout in seconds of the CURL connection. This timeout is the time
+that CURL waits for a response from the remote server to get the size of the
+image to be downloaded. If not set, the default timeout of 5 seconds is used.
 @end table
 
 Note that when passing options to qemu explicitly, @option{driver} is the value
@@ -2372,9 +2395,10 @@ qemu-system-x86_64 -drive file=/tmp/Fedora-x86_64-20-20131211.1-sda.qcow2,copy-o
 @end example
 
 Example: boot from an image stored on a VMware vSphere server with a self-signed
-certificate using a local overlay for writes and a readahead of 64k
+certificate using a local overlay for writes, a readahead of 64k and a timeout
+of 10 seconds.
 @example
-qemu-img create -f qcow2 -o backing_file='json:@{"file.driver":"https",, "file.url":"https://user:password@@vsphere.example.com/folder/test/test-flat.vmdk?dcPath=Datacenter&dsName=datastore1",, "file.sslverify":"off",, "file.readahead":"64k"@}' /tmp/test.qcow2
+qemu-img create -f qcow2 -o backing_file='json:@{"file.driver":"https",, "file.url":"https://user:password@@vsphere.example.com/folder/test/test-flat.vmdk?dcPath=Datacenter&dsName=datastore1",, "file.sslverify":"off",, "file.readahead":"64k",, "file.timeout":10@}' /tmp/test.qcow2
 
 qemu-system-x86_64 -drive file=/tmp/test.qcow2
 @end example
@@ -2672,14 +2696,16 @@ telnet on port 5555 to access the QEMU port.
 localhost 5555
 @end table
 
-@item tcp:[@var{host}]:@var{port}[,@var{server}][,nowait][,nodelay]
+@item tcp:[@var{host}]:@var{port}[,@var{server}][,nowait][,nodelay][,reconnect=@var{seconds}]
 The TCP Net Console has two modes of operation.  It can send the serial
 I/O to a location or wait for a connection from a location.  By default
 the TCP Net Console is sent to @var{host} at the @var{port}.  If you use
 the @var{server} option QEMU will wait for a client socket application
 to connect to the port before continuing, unless the @code{nowait}
 option was specified.  The @code{nodelay} option disables the Nagle buffering
-algorithm.  If @var{host} is omitted, 0.0.0.0 is assumed. Only
+algorithm.  The @code{reconnect} option only applies if @var{noserver} is
+set, if the connection goes down it will attempt to reconnect at the
+given interval.  If @var{host} is omitted, 0.0.0.0 is assumed. Only
 one TCP connection at a time is accepted. You can use @code{telnet} to
 connect to the corresponding character device.
 @table @code
@@ -2700,7 +2726,7 @@ MAGIC_SYSRQ sequence if you use a telnet that supports sending the break
 sequence.  Typically in unix telnet you do it with Control-] and then
 type "send break" followed by pressing the enter key.
 
-@item unix:@var{path}[,server][,nowait]
+@item unix:@var{path}[,server][,nowait][,reconnect=@var{seconds}]
 A unix domain socket is used instead of a tcp socket.  The option works the
 same as if you had specified @code{-serial tcp} except the unix domain socket
 @var{path} is used for connections.
@@ -2968,16 +2994,8 @@ Load the contents of @var{file} as an option ROM.
 This option is useful to load things like EtherBoot.
 ETEXI
 
-DEF("clock", HAS_ARG, QEMU_OPTION_clock, \
-    "-clock          force the use of the given methods for timer alarm.\n" \
-    "                To see what timers are available use '-clock help'\n",
-    QEMU_ARCH_ALL)
-STEXI
-@item -clock @var{method}
-@findex -clock
-Force the use of the given methods for timer alarm. To see what timers
-are available use @code{-clock help}.
-ETEXI
+HXCOMM Silently ignored for compatibility
+DEF("clock", HAS_ARG, QEMU_OPTION_clock, "", QEMU_ARCH_ALL)
 
 HXCOMM Options deprecated by -rtc
 DEF("localtime", 0, QEMU_OPTION_localtime, "", QEMU_ARCH_ALL)
@@ -3011,11 +3029,11 @@ re-inject them.
 ETEXI
 
 DEF("icount", HAS_ARG, QEMU_OPTION_icount, \
-    "-icount [N|auto]\n" \
+    "-icount [shift=N|auto][,align=on|off]\n" \
     "                enable virtual instruction counter with 2^N clock ticks per\n" \
-    "                instruction\n", QEMU_ARCH_ALL)
+    "                instruction and enable aligning the host and virtual clocks\n", QEMU_ARCH_ALL)
 STEXI
-@item -icount [@var{N}|auto]
+@item -icount [shift=@var{N}|auto]
 @findex -icount
 Enable virtual instruction counter.  The virtual cpu will execute one
 instruction every 2^@var{N} ns of virtual time.  If @code{auto} is specified
@@ -3026,6 +3044,17 @@ Note that while this option can give deterministic behavior, it does not
 provide cycle accurate emulation.  Modern CPUs contain superscalar out of
 order cores with complex cache hierarchies.  The number of instructions
 executed often has little or no correlation with actual performance.
+
+@option{align=on} will activate the delay algorithm which will try to
+to synchronise the host clock and the virtual clock. The goal is to
+have a guest running at the real frequency imposed by the shift option.
+Whenever the guest clock is behind the host clock and if
+@option{align=on} is specified then we print a messsage to the user
+to inform about the delay.
+Currently this option does not work when @option{shift} is @code{auto}.
+Note: The sync algorithm will work for those shift values for which
+the guest clock runs ahead of the host clock. Typically this happens
+when the shift value is high (how high depends on the host machine).
 ETEXI
 
 DEF("watchdog", HAS_ARG, QEMU_OPTION_watchdog, \

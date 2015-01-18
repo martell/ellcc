@@ -23,6 +23,7 @@
 #include <stdarg.h>
 #include <sys/types.h>
 #include "qapi/qmp/qdict.h"
+#include "glib-compat.h"
 
 typedef struct QTestState QTestState;
 
@@ -281,6 +282,17 @@ void qtest_memread(QTestState *s, uint64_t addr, void *data, size_t size);
  * Write a buffer to guest memory.
  */
 void qtest_memwrite(QTestState *s, uint64_t addr, const void *data, size_t size);
+
+/**
+ * qtest_memset:
+ * @s: #QTestState instance to operate on.
+ * @addr: Guest address to write to.
+ * @patt: Byte pattern to fill the guest memory region with.
+ * @size: Number of bytes to write.
+ *
+ * Write a pattern to guest memory.
+ */
+void qtest_memset(QTestState *s, uint64_t addr, uint8_t patt, size_t size);
 
 /**
  * qtest_clock_step_next:
@@ -621,6 +633,19 @@ static inline void memwrite(uint64_t addr, const void *data, size_t size)
 }
 
 /**
+ * qmemset:
+ * @addr: Guest address to write to.
+ * @patt: Byte pattern to fill the guest memory region with.
+ * @size: Number of bytes to write.
+ *
+ * Write a pattern to guest memory.
+ */
+static inline void qmemset(uint64_t addr, uint8_t patt, size_t size)
+{
+    qtest_memset(global_qtest, addr, patt, size);
+}
+
+/**
  * clock_step_next:
  *
  * Advance the QEMU_CLOCK_VIRTUAL to the next deadline.
@@ -657,5 +682,12 @@ static inline int64_t clock_set(int64_t val)
 {
     return qtest_clock_set(global_qtest, val);
 }
+
+/**
+ * qtest_big_endian:
+ *
+ * Returns: True if the architecture under test has a big endian configuration.
+ */
+bool qtest_big_endian(void);
 
 #endif

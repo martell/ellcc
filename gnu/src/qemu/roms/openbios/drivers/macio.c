@@ -27,20 +27,31 @@
 
 #define NW_IO_NVRAM_SIZE   0x00004000
 #define NW_IO_NVRAM_OFFSET 0xfff04000
-#define NW_IO_NVRAM_SHIFT  1
 
 #define IO_OPENPIC_SIZE    0x00040000
 #define IO_OPENPIC_OFFSET  0x00040000
 
 static char *nvram;
 
+static int macio_nvram_shift(void)
+{
+	int nvram_flat;
+
+        if (is_oldworld())
+                return OW_IO_NVRAM_SHIFT;
+
+	nvram_flat = fw_cfg_read_i32(FW_CFG_PPC_NVRAM_FLAT);
+	return nvram_flat ? 0 : 1;
+}
+
 int
 macio_get_nvram_size(void)
 {
+	int shift = macio_nvram_shift();
         if (is_oldworld())
-                return OW_IO_NVRAM_SIZE >> OW_IO_NVRAM_SHIFT;
+                return OW_IO_NVRAM_SIZE >> shift;
         else
-                return NW_IO_NVRAM_SIZE >> NW_IO_NVRAM_SHIFT;
+                return NW_IO_NVRAM_SIZE >> shift;
 }
 
 static unsigned long macio_nvram_offset(void)
@@ -123,14 +134,9 @@ void
 macio_nvram_put(char *buf)
 {
 	int i;
-        unsigned int it_shift;
+        unsigned int it_shift = macio_nvram_shift();
 
-        if (is_oldworld())
-                it_shift = OW_IO_NVRAM_SHIFT;
-        else
-                it_shift = NW_IO_NVRAM_SHIFT;
-
-	for (i=0; i< arch_nvram_size() ; i++)
+	for (i=0; i < arch_nvram_size(); i++)
 		nvram[i << it_shift] = buf[i];
 #ifdef DUMP_NVRAM
 	printk("new nvram:\n");
@@ -142,12 +148,7 @@ void
 macio_nvram_get(char *buf)
 {
 	int i;
-        unsigned int it_shift;
-
-        if (is_oldworld())
-                it_shift = OW_IO_NVRAM_SHIFT;
-        else
-                it_shift = NW_IO_NVRAM_SHIFT;
+        unsigned int it_shift = macio_nvram_shift();
 
 	for (i=0; i< arch_nvram_size(); i++)
                 buf[i] = nvram[i << it_shift];
@@ -161,7 +162,6 @@ macio_nvram_get(char *buf)
 static void
 openpic_init(const char *path, phys_addr_t addr)
 {
-        phandle_t target_node;
         phandle_t dnode;
         int props[2];
         char buf[128];
@@ -186,42 +186,6 @@ openpic_init(const char *path, phys_addr_t addr)
         set_int_property(dnode, "clock-frequency", 4166666);
 
         fword("finish-device");
-
-        u32 *interrupt_map;
-        int len, i;
-
-        /* patch in interrupt parent */
-        dnode = find_dev(buf);
-
-        target_node = find_dev("/pci/mac-io");
-        set_int_property(target_node, "interrupt-parent", dnode);
-
-        target_node = find_dev("/pci/mac-io/escc/ch-a");
-        set_int_property(target_node, "interrupt-parent", dnode);
-
-        target_node = find_dev("/pci/mac-io/escc/ch-b");
-        set_int_property(target_node, "interrupt-parent", dnode);
-
-        target_node = find_dev("/pci/mac-io/ata-1");
-        set_int_property(target_node, "interrupt-parent", dnode);
-
-        target_node = find_dev("/pci/mac-io/ata-2");
-        set_int_property(target_node, "interrupt-parent", dnode);
-
-        target_node = find_dev("/pci/mac-io/ata-3");
-        set_int_property(target_node, "interrupt-parent", dnode);
-
-        target_node = find_dev("/pci/mac-io/via-cuda");
-        set_int_property(target_node, "interrupt-parent", dnode);
-
-        target_node = find_dev("/pci");
-        set_int_property(target_node, "interrupt-parent", dnode);
-
-        interrupt_map = (u32 *)get_property(target_node, "interrupt-map", &len);
-        for (i = 0; i < 8; i++) {
-            interrupt_map[(i * 7) + PCI_INT_MAP_PIC_HANDLE] = (u32)dnode;
-        }
-        set_property(target_node, "interrupt-map", (char *)interrupt_map, len);
 }
 
 DECLARE_NODE(ob_macio, INSTALL_OPEN, sizeof(int), "Tmac-io");
@@ -311,7 +275,7 @@ ob_macio_keylargo_init(const char *path, phys_addr_t addr)
         /* The NewWorld NVRAM is not located in the MacIO device */
         macio_nvram_init("", 0);
         escc_init(path, addr);
-        macio_ide_init(path, addr, 3);
+        macio_ide_init(path, addr, 2);
         openpic_init(path, addr);
 	ob_unin_init();
 }

@@ -41,6 +41,29 @@ static MemoryRegion *framebuffer;
 static bool xen_in_migration;
 
 /* Compatibility with older version */
+
+/* This allows QEMU to build on a system that has Xen 4.5 or earlier
+ * installed.  This here (not in hw/xen/xen_common.h) because xen/hvm/ioreq.h
+ * needs to be included before this block and hw/xen/xen_common.h needs to
+ * be included before xen/hvm/ioreq.h
+ */
+#ifndef IOREQ_TYPE_VMWARE_PORT
+#define IOREQ_TYPE_VMWARE_PORT  3
+struct vmware_regs {
+    uint32_t esi;
+    uint32_t edi;
+    uint32_t ebx;
+    uint32_t ecx;
+    uint32_t edx;
+};
+typedef struct vmware_regs vmware_regs_t;
+
+struct shared_vmport_iopage {
+    struct vmware_regs vcpu_vmport_regs[1];
+};
+typedef struct shared_vmport_iopage shared_vmport_iopage_t;
+#endif
+
 #if __XEN_LATEST_INTERFACE_VERSION__ < 0x0003020a
 static inline uint32_t xen_vcpu_eport(shared_iopage_t *shared_page, int i)
 {
@@ -71,7 +94,7 @@ static inline ioreq_t *xen_vcpu_ioreq(shared_iopage_t *shared_page, int vcpu)
 typedef struct XenPhysmap {
     hwaddr start_addr;
     ram_addr_t size;
-    char *name;
+    const char *name;
     hwaddr phys_offset;
 
     QLIST_ENTRY(XenPhysmap) list;
@@ -79,8 +102,10 @@ typedef struct XenPhysmap {
 
 typedef struct XenIOState {
     shared_iopage_t *shared_page;
+    shared_vmport_iopage_t *shared_vmport_page;
     buffered_iopage_t *buffered_io_page;
     QEMUTimer *buffered_io_timer;
+    CPUState **cpu_by_vcpu_id;
     /* the evtchn port for polling the notification, */
     evtchn_port_t *ioreq_local_port;
     /* evtchn local port for buffered io */
@@ -188,7 +213,8 @@ static void xen_ram_init(ram_addr_t *below_4g_mem_size,
          */
         block_len = (1ULL << 32) + *above_4g_mem_size;
     }
-    memory_region_init_ram(&ram_memory, NULL, "xen.ram", block_len);
+    memory_region_init_ram(&ram_memory, NULL, "xen.ram", block_len,
+                           &error_abort);
     *ram_memory_p = &ram_memory;
     vmstate_register_ram_global(&ram_memory);
 
@@ -291,6 +317,7 @@ static int xen_add_to_physmap(XenIOState *state,
     hwaddr pfn, start_gpfn;
     hwaddr phys_offset = memory_region_get_ram_addr(mr);
     char path[80], value[17];
+    const char *mr_name;
 
     if (get_physmapping(state, start_addr, size)) {
         return 0;
@@ -326,11 +353,13 @@ go_physmap:
         }
     }
 
+    mr_name = memory_region_name(mr);
+
     physmap = g_malloc(sizeof (XenPhysmap));
 
     physmap->start_addr = start_addr;
     physmap->size = size;
-    physmap->name = (char *)mr->name;
+    physmap->name = mr_name;
     physmap->phys_offset = phys_offset;
 
     QLIST_INSERT_HEAD(&state->physmap, physmap, list);
@@ -354,11 +383,11 @@ go_physmap:
     if (!xs_write(state->xenstore, 0, path, value, strlen(value))) {
         return -1;
     }
-    if (mr->name) {
+    if (mr_name) {
         snprintf(path, sizeof(path),
                 "/local/domain/0/device-model/%d/physmap/%"PRIx64"/name",
                 xen_domid, (uint64_t)phys_offset);
-        if (!xs_write(state->xenstore, 0, path, mr->name, strlen(mr->name))) {
+        if (!xs_write(state->xenstore, 0, path, mr_name, strlen(mr_name))) {
             return -1;
         }
     }
@@ -513,11 +542,14 @@ static void xen_sync_dirty_bitmap(XenIOState *state,
                                  start_addr >> TARGET_PAGE_BITS, npages,
                                  bitmap);
     if (rc < 0) {
-        if (rc != -ENODATA) {
+#ifndef ENODATA
+#define ENODATA  ENOENT
+#endif
+        if (errno == ENODATA) {
             memory_region_set_dirty(framebuffer, 0, size);
             DPRINTF("xen: track_dirty_vram failed (0x" TARGET_FMT_plx
                     ", 0x" TARGET_FMT_plx "): %s\n",
-                    start_addr, start_addr + size, strerror(-rc));
+                    start_addr, start_addr + size, strerror(errno));
         }
         return;
     }
@@ -766,7 +798,50 @@ static void cpu_ioreq_move(ioreq_t *req)
     }
 }
 
-static void handle_ioreq(ioreq_t *req)
+static void regs_to_cpu(vmware_regs_t *vmport_regs, ioreq_t *req)
+{
+    X86CPU *cpu;
+    CPUX86State *env;
+
+    cpu = X86_CPU(current_cpu);
+    env = &cpu->env;
+    env->regs[R_EAX] = req->data;
+    env->regs[R_EBX] = vmport_regs->ebx;
+    env->regs[R_ECX] = vmport_regs->ecx;
+    env->regs[R_EDX] = vmport_regs->edx;
+    env->regs[R_ESI] = vmport_regs->esi;
+    env->regs[R_EDI] = vmport_regs->edi;
+}
+
+static void regs_from_cpu(vmware_regs_t *vmport_regs)
+{
+    X86CPU *cpu = X86_CPU(current_cpu);
+    CPUX86State *env = &cpu->env;
+
+    vmport_regs->ebx = env->regs[R_EBX];
+    vmport_regs->ecx = env->regs[R_ECX];
+    vmport_regs->edx = env->regs[R_EDX];
+    vmport_regs->esi = env->regs[R_ESI];
+    vmport_regs->edi = env->regs[R_EDI];
+}
+
+static void handle_vmport_ioreq(XenIOState *state, ioreq_t *req)
+{
+    vmware_regs_t *vmport_regs;
+
+    assert(state->shared_vmport_page);
+    vmport_regs =
+        &state->shared_vmport_page->vcpu_vmport_regs[state->send_vcpu];
+    QEMU_BUILD_BUG_ON(sizeof(*req) < sizeof(*vmport_regs));
+
+    current_cpu = state->cpu_by_vcpu_id[state->send_vcpu];
+    regs_to_cpu(vmport_regs, req);
+    cpu_ioreq_pio(req);
+    regs_from_cpu(vmport_regs);
+    current_cpu = NULL;
+}
+
+static void handle_ioreq(XenIOState *state, ioreq_t *req)
 {
     if (!req->data_is_ptr && (req->dir == IOREQ_WRITE) &&
             (req->size < sizeof (target_ulong))) {
@@ -779,6 +854,9 @@ static void handle_ioreq(ioreq_t *req)
             break;
         case IOREQ_TYPE_COPY:
             cpu_ioreq_move(req);
+            break;
+        case IOREQ_TYPE_VMWARE_PORT:
+            handle_vmport_ioreq(state, req);
             break;
         case IOREQ_TYPE_TIMEOFFSET:
             break;
@@ -821,7 +899,7 @@ static int handle_buffered_iopage(XenIOState *state)
             req.data |= ((uint64_t)buf_req->data) << 32;
         }
 
-        handle_ioreq(&req);
+        handle_ioreq(state, &req);
 
         xen_mb();
         state->buffered_io_page->read_pointer += qw ? 2 : 1;
@@ -850,14 +928,16 @@ static void cpu_handle_ioreq(void *opaque)
 
     handle_buffered_iopage(state);
     if (req) {
-        handle_ioreq(req);
+        handle_ioreq(state, req);
 
         if (req->state != STATE_IOREQ_INPROCESS) {
             fprintf(stderr, "Badness in I/O request ... not in service?!: "
                     "%x, ptr: %x, port: %"PRIx64", "
-                    "data: %"PRIx64", count: %" FMT_ioreq_size ", size: %" FMT_ioreq_size "\n",
+                    "data: %"PRIx64", count: %" FMT_ioreq_size
+                    ", size: %" FMT_ioreq_size
+                    ", type: %"FMT_ioreq_size"\n",
                     req->state, req->data_is_ptr, req->addr,
-                    req->data, req->count, req->size);
+                    req->data, req->count, req->size, req->type);
             destroy_hvm_domain(false);
             return;
         }
@@ -897,6 +977,14 @@ static void xen_main_loop_prepare(XenIOState *state)
                                                  state);
 
     if (evtchn_fd != -1) {
+        CPUState *cpu_state;
+
+        DPRINTF("%s: Init cpu_by_vcpu_id\n", __func__);
+        CPU_FOREACH(cpu_state) {
+            DPRINTF("%s: cpu_by_vcpu_id[%d]=%p\n",
+                    __func__, cpu_state->cpu_index, cpu_state);
+            state->cpu_by_vcpu_id[cpu_state->cpu_index] = cpu_state;
+        }
         qemu_set_fd_handler(evtchn_fd, cpu_handle_ioreq, NULL, state);
     }
 }
@@ -905,9 +993,8 @@ static void xen_main_loop_prepare(XenIOState *state)
 static void xen_hvm_change_state_handler(void *opaque, int running,
                                          RunState rstate)
 {
-    XenIOState *xstate = opaque;
     if (running) {
-        xen_main_loop_prepare(xstate);
+        xen_main_loop_prepare((XenIOState *)opaque);
     }
 }
 
@@ -972,6 +1059,7 @@ static void xen_wakeup_notifier(Notifier *notifier, void *data)
     xc_set_hvm_param(xen_xc, xen_domid, HVM_PARAM_ACPI_S_STATE, 0);
 }
 
+/* return 0 means OK, or -1 means critical issue -- will exit(1) */
 int xen_hvm_init(ram_addr_t *below_4g_mem_size, ram_addr_t *above_4g_mem_size,
                  MemoryRegion **ram_memory)
 {
@@ -985,15 +1073,13 @@ int xen_hvm_init(ram_addr_t *below_4g_mem_size, ram_addr_t *above_4g_mem_size,
     state->xce_handle = xen_xc_evtchn_open(NULL, 0);
     if (state->xce_handle == XC_HANDLER_INITIAL_VALUE) {
         perror("xen: event channel open");
-        g_free(state);
-        return -errno;
+        return -1;
     }
 
     state->xenstore = xs_daemon_open();
     if (state->xenstore == NULL) {
         perror("xen: xenstore open");
-        g_free(state);
-        return -errno;
+        return -1;
     }
 
     state->exit.notify = xen_exit_notifier;
@@ -1014,6 +1100,20 @@ int xen_hvm_init(ram_addr_t *below_4g_mem_size, ram_addr_t *above_4g_mem_size,
                  errno, xen_xc);
     }
 
+    rc = xen_get_vmport_regs_pfn(xen_xc, xen_domid, &ioreq_pfn);
+    if (!rc) {
+        DPRINTF("shared vmport page at pfn %lx\n", ioreq_pfn);
+        state->shared_vmport_page =
+            xc_map_foreign_range(xen_xc, xen_domid, XC_PAGE_SIZE,
+                                 PROT_READ|PROT_WRITE, ioreq_pfn);
+        if (state->shared_vmport_page == NULL) {
+            hw_error("map shared vmport IO page returned error %d handle="
+                     XC_INTERFACE_FMT, errno, xen_xc);
+        }
+    } else if (rc != -ENOSYS) {
+        hw_error("get vmport regs pfn returned error %d, rc=%d", errno, rc);
+    }
+
     xc_get_hvm_param(xen_xc, xen_domid, HVM_PARAM_BUFIOREQ_PFN, &ioreq_pfn);
     DPRINTF("buffered io page at pfn %lx\n", ioreq_pfn);
     state->buffered_io_page = xc_map_foreign_range(xen_xc, xen_domid, XC_PAGE_SIZE,
@@ -1021,6 +1121,9 @@ int xen_hvm_init(ram_addr_t *below_4g_mem_size, ram_addr_t *above_4g_mem_size,
     if (state->buffered_io_page == NULL) {
         hw_error("map buffered IO page returned error %d", errno);
     }
+
+    /* Note: cpus is empty at this point in init */
+    state->cpu_by_vcpu_id = g_malloc0(max_cpus * sizeof(CPUState *));
 
     state->ioreq_local_port = g_malloc0(max_cpus * sizeof (evtchn_port_t));
 
@@ -1063,7 +1166,7 @@ int xen_hvm_init(ram_addr_t *below_4g_mem_size, ram_addr_t *above_4g_mem_size,
     /* Initialize backend core & drivers */
     if (xen_be_init() != 0) {
         fprintf(stderr, "%s: xen backend core setup failed\n", __FUNCTION__);
-        exit(1);
+        return -1;
     }
     xen_be_register("console", &xen_console_ops);
     xen_be_register("vkbd", &xen_kbdmouse_ops);

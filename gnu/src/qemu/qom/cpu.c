@@ -107,15 +107,6 @@ static void cpu_common_get_memory_mapping(CPUState *cpu,
     error_setg(errp, "Obtaining memory mappings is unsupported on this CPU.");
 }
 
-/* CPU hot-plug notifiers */
-static NotifierList cpu_added_notifiers =
-    NOTIFIER_LIST_INITIALIZER(cpu_add_notifiers);
-
-void qemu_register_cpu_added_notifier(Notifier *notifier)
-{
-    notifier_list_add(&cpu_added_notifiers, notifier);
-}
-
 void cpu_reset_interrupt(CPUState *cpu, int mask)
 {
     cpu->interrupt_request &= ~mask;
@@ -200,6 +191,15 @@ bool target_words_bigendian(void);
 static bool cpu_common_virtio_is_big_endian(CPUState *cpu)
 {
     return target_words_bigendian();
+}
+
+static void cpu_common_noop(CPUState *cpu)
+{
+}
+
+static bool cpu_common_exec_interrupt(CPUState *cpu, int int_req)
+{
+    return false;
 }
 
 void cpu_dump_state(CPUState *cpu, FILE *f, fprintf_function cpu_fprintf,
@@ -303,7 +303,6 @@ static void cpu_common_realizefn(DeviceState *dev, Error **errp)
 
     if (dev->hotplugged) {
         cpu_synchronize_post_init(cpu);
-        notifier_list_notify(&cpu_added_notifiers, dev);
         cpu_resume(cpu);
     }
 }
@@ -340,6 +339,10 @@ static void cpu_class_init(ObjectClass *klass, void *data)
     k->gdb_read_register = cpu_common_gdb_read_register;
     k->gdb_write_register = cpu_common_gdb_write_register;
     k->virtio_is_big_endian = cpu_common_virtio_is_big_endian;
+    k->debug_excp_handler = cpu_common_noop;
+    k->cpu_exec_enter = cpu_common_noop;
+    k->cpu_exec_exit = cpu_common_noop;
+    k->cpu_exec_interrupt = cpu_common_exec_interrupt;
     dc->realize = cpu_common_realizefn;
     /*
      * Reason: CPUs still need special care by board code: wiring up

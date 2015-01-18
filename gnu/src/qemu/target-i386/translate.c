@@ -32,6 +32,9 @@
 #include "exec/helper-proto.h"
 #include "exec/helper-gen.h"
 
+#include "trace-tcg.h"
+
+
 #define PREFIX_REPZ   0x01
 #define PREFIX_REPNZ  0x02
 #define PREFIX_LOCK   0x04
@@ -7984,7 +7987,7 @@ static inline void gen_intermediate_code_internal(X86CPU *cpu,
                 if (bp->pc == pc_ptr &&
                     !((bp->flags & BP_CPU) && (tb->flags & HF_RF_MASK))) {
                     gen_debug(dc, pc_ptr - dc->cs_base);
-                    break;
+                    goto done_generating;
                 }
             }
         }
@@ -8035,6 +8038,7 @@ static inline void gen_intermediate_code_internal(X86CPU *cpu,
     }
     if (tb->cflags & CF_LAST_IO)
         gen_io_end();
+done_generating:
     gen_tb_end(tb, num_insns);
     *tcg_ctx.gen_opc_ptr = INDEX_op_end;
     /* we don't forget to fill the last values */

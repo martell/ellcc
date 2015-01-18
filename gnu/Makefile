@@ -141,8 +141,10 @@ qemu.configure:
         else  \
           echo Configuring qemu for $(TUPLE) in $(DIR) ; \
 	  cd $(DIR) ; \
-	  ./configure --cc="$(CC)" --host-cc="$(HCC)" --extra-cflags="" \
+	  ./configure --cc="gcc" --host-cc="gcc" --extra-cflags="" \
 	    --prefix=$(prefix) \
 	    --disable-strip --target-list="$(targetlist)" --disable-guest-agent \
 	    --disable-tools ; \
 	fi
+
+# RICH:	  ./configure --cc="$(CC)" --host-cc="$(HCC)" --extra-cflags="" \

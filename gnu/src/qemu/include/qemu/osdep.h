@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <sys/types.h>
 #ifdef __OpenBSD__
 #include <sys/signal.h>
@@ -68,6 +69,12 @@ typedef signed int              int_fast16_t;
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #endif
 
+/* Minimum function that returns zero only iff both values are zero.
+ * Intended for use with unsigned values only. */
+#ifndef MIN_NON_ZERO
+#define MIN_NON_ZERO(a, b) (((a) != 0 && (a) < (b)) ? (a) : (b))
+#endif
+
 #ifndef ROUND_UP
 #define ROUND_UP(n,d) (((n) + (d) - 1) & -(d))
 #endif
@@ -95,8 +102,9 @@ typedef signed int              int_fast16_t;
 #define qemu_printf printf
 
 int qemu_daemon(int nochdir, int noclose);
+void *qemu_try_memalign(size_t alignment, size_t size);
 void *qemu_memalign(size_t alignment, size_t size);
-void *qemu_anon_ram_alloc(size_t size);
+void *qemu_anon_ram_alloc(size_t size, uint64_t *align);
 void qemu_vfree(void *ptr);
 void qemu_anon_ram_free(void *ptr, size_t size);
 
@@ -245,11 +253,7 @@ char *qemu_get_exec_dir(void);
  * Search the auxiliary vector for @type, returning the value
  * or 0 if @type is not present.
  */
-#if defined(CONFIG_GETAUXVAL) || defined(__linux__)
 unsigned long qemu_getauxval(unsigned long type);
-#else
-static inline unsigned long qemu_getauxval(unsigned long type) { return 0; }
-#endif
 
 void qemu_set_tty_echo(int fd, bool echo);
 

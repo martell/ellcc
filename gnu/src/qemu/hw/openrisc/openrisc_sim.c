@@ -72,7 +72,7 @@ static void cpu_openrisc_load_kernel(ram_addr_t ram_size,
         entry = elf_entry;
         if (kernel_size < 0) {
             kernel_size = load_uimage(kernel_filename,
-                                      &entry, NULL, NULL);
+                                      &entry, NULL, NULL, NULL, NULL);
         }
         if (kernel_size < 0) {
             kernel_size = load_image_targphys(kernel_filename,
@@ -114,7 +114,7 @@ static void openrisc_sim_init(MachineState *machine)
     }
 
     ram = g_malloc(sizeof(*ram));
-    memory_region_init_ram(ram, NULL, "openrisc.ram", ram_size);
+    memory_region_init_ram(ram, NULL, "openrisc.ram", ram_size, &error_abort);
     vmstate_register_ram_global(ram);
     memory_region_add_subregion(get_system_memory(), 0, ram);
 

@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to QEMU 2.2.0.
 * Update to binutils 2.25.
 * Update to musl 1.1.6.
 * Update to LLVM r226372.

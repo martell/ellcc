@@ -12,6 +12,9 @@
 
 #include "hw/boards.h"
 #include "qapi/visitor.h"
+#include "hw/sysbus.h"
+#include "sysemu/sysemu.h"
+#include "qemu/error-report.h"
 
 static char *machine_get_accel(Object *obj, Error **errp)
 {
@@ -243,8 +246,49 @@ static void machine_set_firmware(Object *obj, const char *value, Error **errp)
     ms->firmware = g_strdup(value);
 }
 
+static bool machine_get_iommu(Object *obj, Error **errp)
+{
+    MachineState *ms = MACHINE(obj);
+
+    return ms->iommu;
+}
+
+static void machine_set_iommu(Object *obj, bool value, Error **errp)
+{
+    MachineState *ms = MACHINE(obj);
+
+    ms->iommu = value;
+}
+
+static int error_on_sysbus_device(SysBusDevice *sbdev, void *opaque)
+{
+    error_report("Option '-device %s' cannot be handled by this machine",
+                 object_class_get_name(object_get_class(OBJECT(sbdev))));
+    exit(1);
+}
+
+static void machine_init_notify(Notifier *notifier, void *data)
+{
+    Object *machine = qdev_get_machine();
+    ObjectClass *oc = object_get_class(machine);
+    MachineClass *mc = MACHINE_CLASS(oc);
+
+    if (mc->has_dynamic_sysbus) {
+        /* Our machine can handle dynamic sysbus devices, we're all good */
+        return;
+    }
+
+    /*
+     * Loop through all dynamically created devices and check whether there
+     * are sysbus devices among them. If there are, error out.
+     */
+    foreach_dynamic_sysbus_device(error_on_sysbus_device, NULL);
+}
+
 static void machine_initfn(Object *obj)
 {
+    MachineState *ms = MACHINE(obj);
+
     object_property_add_str(obj, "accel",
                             machine_get_accel, machine_set_accel, NULL);
     object_property_add_bool(obj, "kernel-irqchip",
@@ -278,10 +322,21 @@ static void machine_initfn(Object *obj)
                              machine_set_dump_guest_core,
                              NULL);
     object_property_add_bool(obj, "mem-merge",
-                             machine_get_mem_merge, machine_set_mem_merge, NULL);
-    object_property_add_bool(obj, "usb", machine_get_usb, machine_set_usb, NULL);
+                             machine_get_mem_merge,
+                             machine_set_mem_merge, NULL);
+    object_property_add_bool(obj, "usb",
+                             machine_get_usb,
+                             machine_set_usb, NULL);
     object_property_add_str(obj, "firmware",
-                            machine_get_firmware, machine_set_firmware, NULL);
+                            machine_get_firmware,
+                            machine_set_firmware, NULL);
+    object_property_add_bool(obj, "iommu",
+                             machine_get_iommu,
+                             machine_set_iommu, NULL);
+
+    /* Register notifier when init is done for sysbus sanity checks */
+    ms->sysbus_notifier.notify = machine_init_notify;
+    qemu_add_machine_init_done_notifier(&ms->sysbus_notifier);
 }
 
 static void machine_finalize(Object *obj)

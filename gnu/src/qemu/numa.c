@@ -35,6 +35,7 @@
 #include "hw/boards.h"
 #include "sysemu/hostmem.h"
 #include "qmp-commands.h"
+#include "hw/mem/pc-dimm.h"
 
 QemuOptsList qemu_numa_opts = {
     .name = "numa",
@@ -263,14 +264,14 @@ static void allocate_system_memory_nonnuma(MemoryRegion *mr, Object *owner,
         if (err) {
             qerror_report_err(err);
             error_free(err);
-            memory_region_init_ram(mr, owner, name, ram_size);
+            memory_region_init_ram(mr, owner, name, ram_size, &error_abort);
         }
 #else
         fprintf(stderr, "-mem-path not supported on this host\n");
         exit(1);
 #endif
     } else {
-        memory_region_init_ram(mr, owner, name, ram_size);
+        memory_region_init_ram(mr, owner, name, ram_size, &error_abort);
     }
     vmstate_register_ram_global(mr);
 }
@@ -315,13 +316,51 @@ void memory_region_allocate_system_memory(MemoryRegion *mr, Object *owner,
     }
 }
 
+static void numa_stat_memory_devices(uint64_t node_mem[])
+{
+    MemoryDeviceInfoList *info_list = NULL;
+    MemoryDeviceInfoList **prev = &info_list;
+    MemoryDeviceInfoList *info;
+
+    qmp_pc_dimm_device_list(qdev_get_machine(), &prev);
+    for (info = info_list; info; info = info->next) {
+        MemoryDeviceInfo *value = info->value;
+
+        if (value) {
+            switch (value->kind) {
+            case MEMORY_DEVICE_INFO_KIND_DIMM:
+                node_mem[value->dimm->node] += value->dimm->size;
+                break;
+            default:
+                break;
+            }
+        }
+    }
+    qapi_free_MemoryDeviceInfoList(info_list);
+}
+
+void query_numa_node_mem(uint64_t node_mem[])
+{
+    int i;
+
+    if (nb_numa_nodes <= 0) {
+        return;
+    }
+
+    numa_stat_memory_devices(node_mem);
+    for (i = 0; i < nb_numa_nodes; i++) {
+        node_mem[i] += numa_info[i].node_mem;
+    }
+}
+
 static int query_memdev(Object *obj, void *opaque)
 {
     MemdevList **list = opaque;
+    MemdevList *m = NULL;
     Error *err = NULL;
 
     if (object_dynamic_cast(obj, TYPE_MEMORY_BACKEND)) {
-        MemdevList *m = g_malloc0(sizeof(*m));
+        m = g_malloc0(sizeof(*m));
 
         m->value = g_malloc0(sizeof(*m->value));
 
@@ -369,13 +408,16 @@ static int query_memdev(Object *obj, void *opaque)
 
     return 0;
 error:
+    g_free(m->value);
+    g_free(m);
+
     return -1;
 }
 
 MemdevList *qmp_query_memdev(Error **errp)
 {
     Object *obj;
-    MemdevList *list = NULL, *m;
+    MemdevList *list = NULL;
 
     obj = object_resolve_path("/objects", NULL);
     if (obj == NULL) {
@@ -389,11 +431,6 @@ MemdevList *qmp_query_memdev(Error **errp)
     return list;
 
 error:
-    while (list) {
-        m = list;
-        list = list->next;
-        g_free(m->value);
-        g_free(m);
-    }
+    qapi_free_MemdevList(list);
     return NULL;
 }

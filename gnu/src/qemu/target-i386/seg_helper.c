@@ -883,32 +883,23 @@ static void do_interrupt64(CPUX86State *env, int intno, int is_int,
     }
     if ((!(e2 & DESC_C_MASK) && dpl < cpl) || ist != 0) {
         /* to inner privilege */
-        if (ist != 0) {
-            esp = get_rsp_from_tss(env, ist + 3);
-        } else {
-            esp = get_rsp_from_tss(env, dpl);
-        }
-        esp &= ~0xfLL; /* align stack */
-        ss = 0;
         new_stack = 1;
+        esp = get_rsp_from_tss(env, ist != 0 ? ist + 3 : dpl);
+        ss = 0;
     } else if ((e2 & DESC_C_MASK) || dpl == cpl) {
         /* to same privilege */
         if (env->eflags & VM_MASK) {
             raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
         }
         new_stack = 0;
-        if (ist != 0) {
-            esp = get_rsp_from_tss(env, ist + 3);
-        } else {
-            esp = env->regs[R_ESP];
-        }
-        esp &= ~0xfLL; /* align stack */
+        esp = env->regs[R_ESP];
         dpl = cpl;
     } else {
         raise_exception_err(env, EXCP0D_GPF, selector & 0xfffc);
         new_stack = 0; /* avoid warning */
         esp = 0; /* avoid warning */
     }
+    esp &= ~0xfLL; /* align stack */
 
     PUSHQ(esp, env->segs[R_SS].selector);
     PUSHQ(esp, env->regs[R_ESP]);
@@ -1127,8 +1118,8 @@ static void do_interrupt_user(CPUX86State *env, int intno, int is_int,
 
     /* Since we emulate only user space, we cannot do more than
        exiting the emulation with the suitable exception and error
-       code */
-    if (is_int) {
+       code. So update EIP for INT 0x80 and EXCP_SYSCALL. */
+    if (is_int || intno == EXCP_SYSCALL) {
         env->eip = next_eip;
     }
 }
@@ -1277,6 +1268,75 @@ void x86_cpu_do_interrupt(CPUState *cs)
 void do_interrupt_x86_hardirq(CPUX86State *env, int intno, int is_hw)
 {
     do_interrupt_all(x86_env_get_cpu(env), intno, 0, 0, 0, is_hw);
+}
+
+bool x86_cpu_exec_interrupt(CPUState *cs, int interrupt_request)
+{
+    X86CPU *cpu = X86_CPU(cs);
+    CPUX86State *env = &cpu->env;
+    bool ret = false;
+
+#if !defined(CONFIG_USER_ONLY)
+    if (interrupt_request & CPU_INTERRUPT_POLL) {
+        cs->interrupt_request &= ~CPU_INTERRUPT_POLL;
+        apic_poll_irq(cpu->apic_state);
+    }
+#endif
+    if (interrupt_request & CPU_INTERRUPT_SIPI) {
+        do_cpu_sipi(cpu);
+    } else if (env->hflags2 & HF2_GIF_MASK) {
+        if ((interrupt_request & CPU_INTERRUPT_SMI) &&
+            !(env->hflags & HF_SMM_MASK)) {
+            cpu_svm_check_intercept_param(env, SVM_EXIT_SMI, 0);
+            cs->interrupt_request &= ~CPU_INTERRUPT_SMI;
+            do_smm_enter(cpu);
+            ret = true;
+        } else if ((interrupt_request & CPU_INTERRUPT_NMI) &&
+                   !(env->hflags2 & HF2_NMI_MASK)) {
+            cs->interrupt_request &= ~CPU_INTERRUPT_NMI;
+            env->hflags2 |= HF2_NMI_MASK;
+            do_interrupt_x86_hardirq(env, EXCP02_NMI, 1);
+            ret = true;
+        } else if (interrupt_request & CPU_INTERRUPT_MCE) {
+            cs->interrupt_request &= ~CPU_INTERRUPT_MCE;
+            do_interrupt_x86_hardirq(env, EXCP12_MCHK, 0);
+            ret = true;
+        } else if ((interrupt_request & CPU_INTERRUPT_HARD) &&
+                   (((env->hflags2 & HF2_VINTR_MASK) &&
+                     (env->hflags2 & HF2_HIF_MASK)) ||
+                    (!(env->hflags2 & HF2_VINTR_MASK) &&
+                     (env->eflags & IF_MASK &&
+                      !(env->hflags & HF_INHIBIT_IRQ_MASK))))) {
+            int intno;
+            cpu_svm_check_intercept_param(env, SVM_EXIT_INTR, 0);
+            cs->interrupt_request &= ~(CPU_INTERRUPT_HARD |
+                                       CPU_INTERRUPT_VIRQ);
+            intno = cpu_get_pic_interrupt(env);
+            qemu_log_mask(CPU_LOG_TB_IN_ASM,
+                          "Servicing hardware INT=0x%02x\n", intno);
+            do_interrupt_x86_hardirq(env, intno, 1);
+            /* ensure that no TB jump will be modified as
+               the program flow was changed */
+            ret = true;
+#if !defined(CONFIG_USER_ONLY)
+        } else if ((interrupt_request & CPU_INTERRUPT_VIRQ) &&
+                   (env->eflags & IF_MASK) &&
+                   !(env->hflags & HF_INHIBIT_IRQ_MASK)) {
+            int intno;
+            /* FIXME: this should respect TPR */
+            cpu_svm_check_intercept_param(env, SVM_EXIT_VINTR, 0);
+            intno = ldl_phys(cs->as, env->vm_vmcb
+                             + offsetof(struct vmcb, control.int_vector));
+            qemu_log_mask(CPU_LOG_TB_IN_ASM,
+                          "Servicing virtual hardware INT=0x%02x\n", intno);
+            do_interrupt_x86_hardirq(env, intno, 1);
+            cs->interrupt_request &= ~CPU_INTERRUPT_VIRQ;
+            ret = true;
+#endif
+        }
+    }
+
+    return ret;
 }
 
 void helper_enter_level(CPUX86State *env, int level, int data32,

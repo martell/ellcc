@@ -799,7 +799,6 @@ static void do_pci_unregister_device(PCIDevice *pci_dev)
     pci_config_free(pci_dev);
 
     address_space_destroy(&pci_dev->bus_master_as);
-    memory_region_destroy(&pci_dev->bus_master_enable_region);
 }
 
 /* -1 for devfn means auto assign */
@@ -1777,7 +1776,12 @@ static int pci_qdev_init(DeviceState *qdev)
         pci_dev->romfile = g_strdup(pc->romfile);
         is_default_rom = true;
     }
-    pci_add_option_rom(pci_dev, is_default_rom);
+
+    rc = pci_add_option_rom(pci_dev, is_default_rom);
+    if (rc != 0) {
+        pci_unregister_device(DEVICE(pci_dev));
+        return rc;
+    }
 
     return 0;
 }
@@ -1938,6 +1942,15 @@ static int pci_add_option_rom(PCIDevice *pdev, bool is_default_rom)
          * for 0.11 compatibility.
          */
         int class = pci_get_word(pdev->config + PCI_CLASS_DEVICE);
+
+        /*
+         * Hot-plugged devices can't use the option ROM
+         * if the rom bar is disabled.
+         */
+        if (DEVICE(pdev)->hotplugged) {
+            return -1;
+        }
+
         if (class == 0x0300) {
             rom_add_vga(pdev->romfile);
         } else {
@@ -1975,7 +1988,7 @@ static int pci_add_option_rom(PCIDevice *pdev, bool is_default_rom)
         snprintf(name, sizeof(name), "%s.rom", object_get_typename(OBJECT(pdev)));
     }
     pdev->has_rom = true;
-    memory_region_init_ram(&pdev->rom, OBJECT(pdev), name, size);
+    memory_region_init_ram(&pdev->rom, OBJECT(pdev), name, size, &error_abort);
     vmstate_register_ram(&pdev->rom, &pdev->qdev);
     ptr = memory_region_get_ram_ptr(&pdev->rom);
     load_image(path, ptr);
@@ -1997,7 +2010,6 @@ static void pci_del_option_rom(PCIDevice *pdev)
         return;
 
     vmstate_unregister_ram(&pdev->rom, &pdev->qdev);
-    memory_region_destroy(&pdev->rom);
     pdev->has_rom = false;
 }
 

@@ -25,7 +25,6 @@
 #include "hw/hw.h"
 #include "monitor/qdev.h"
 #include "hw/usb.h"
-#include "hw/pcmcia.h"
 #include "hw/i386/pc.h"
 #include "hw/pci/pci.h"
 #include "sysemu/watchdog.h"
@@ -206,7 +205,7 @@ struct Monitor {
     ReadLineState *rs;
     MonitorControl *mc;
     CPUState *mon_cpu;
-    BlockDriverCompletionFunc *password_completion_cb;
+    BlockCompletionFunc *password_completion_cb;
     void *password_opaque;
     mon_cmd_t *cmd_table;
     QError *error;
@@ -886,19 +885,12 @@ static void do_trace_event_set_state(Monitor *mon, const QDict *qdict)
 {
     const char *tp_name = qdict_get_str(qdict, "name");
     bool new_state = qdict_get_bool(qdict, "option");
+    Error *local_err = NULL;
 
-    bool found = false;
-    TraceEvent *ev = NULL;
-    while ((ev = trace_event_pattern(tp_name, ev)) != NULL) {
-        found = true;
-        if (!trace_event_get_state_static(ev)) {
-            monitor_printf(mon, "event \"%s\" is not traceable\n", tp_name);
-        } else {
-            trace_event_set_state_dynamic(ev, new_state);
-        }
-    }
-    if (!trace_event_is_pattern(tp_name) && !found) {
-        monitor_printf(mon, "unknown event name \"%s\"\n", tp_name);
+    qmp_trace_event_set_state(tp_name, new_state, true, true, &local_err);
+    if (local_err) {
+        qerror_report_err(local_err);
+        error_free(local_err);
     }
 }
 
@@ -1047,6 +1039,7 @@ static void do_info_registers(Monitor *mon, const QDict *qdict)
 static void do_info_jit(Monitor *mon, const QDict *qdict)
 {
     dump_exec_info((FILE *)mon, monitor_fprintf);
+    dump_drift_info((FILE *)mon, monitor_fprintf);
 }
 
 static void do_info_history(Monitor *mon, const QDict *qdict)
@@ -1078,7 +1071,15 @@ static void do_info_cpu_stats(Monitor *mon, const QDict *qdict)
 
 static void do_trace_print_events(Monitor *mon, const QDict *qdict)
 {
-    trace_print_events((FILE *)mon, &monitor_fprintf);
+    TraceEventInfoList *events = qmp_trace_event_get_state("*", NULL);
+    TraceEventInfoList *elem;
+
+    for (elem = events; elem != NULL; elem = elem->next) {
+        monitor_printf(mon, "%s : state %u\n",
+                       elem->value->name,
+                       elem->value->state == TRACE_EVENT_STATE_ENABLED ? 1 : 0);
+    }
+    qapi_free_TraceEventInfoList(events);
 }
 
 static int client_migrate_info(Monitor *mon, const QDict *qdict,
@@ -1947,7 +1948,10 @@ static void do_info_numa(Monitor *mon, const QDict *qdict)
 {
     int i;
     CPUState *cpu;
+    uint64_t *node_mem;
 
+    node_mem = g_new0(uint64_t, nb_numa_nodes);
+    query_numa_node_mem(node_mem);
     monitor_printf(mon, "%d nodes\n", nb_numa_nodes);
     for (i = 0; i < nb_numa_nodes; i++) {
         monitor_printf(mon, "node %d cpus:", i);
@@ -1958,8 +1962,9 @@ static void do_info_numa(Monitor *mon, const QDict *qdict)
         }
         monitor_printf(mon, "\n");
         monitor_printf(mon, "node %d size: %" PRId64 " MB\n", i,
-            numa_info[i].node_mem >> 20);
+                       node_mem[i] >> 20);
     }
+    g_free(node_mem);
 }
 
 #ifdef CONFIG_PROFILER
@@ -2541,8 +2546,10 @@ static int monitor_fdset_dup_fd_find_remove(int dup_fd, bool remove)
                     if (QLIST_EMPTY(&mon_fdset->dup_fds)) {
                         monitor_fdset_cleanup(mon_fdset);
                     }
+                    return -1;
+                } else {
+                    return mon_fdset->id;
                 }
-                return mon_fdset->id;
             }
         }
     }
@@ -2554,9 +2561,9 @@ int monitor_fdset_dup_fd_find(int dup_fd)
     return monitor_fdset_dup_fd_find_remove(dup_fd, false);
 }
 
-int monitor_fdset_dup_fd_remove(int dup_fd)
+void monitor_fdset_dup_fd_remove(int dup_fd)
 {
-    return monitor_fdset_dup_fd_find_remove(dup_fd, true);
+    monitor_fdset_dup_fd_find_remove(dup_fd, true);
 }
 
 int monitor_handle_fd_param(Monitor *mon, const char *fdname)
@@ -2788,13 +2795,6 @@ static mon_cmd_t info_cmds[] = {
         .mhandler.cmd = hmp_info_status,
     },
     {
-        .name       = "pcmcia",
-        .args_type  = "",
-        .params     = "",
-        .help       = "show guest PCMCIA status",
-        .mhandler.cmd = pcmcia_info,
-    },
-    {
         .name       = "mice",
         .args_type  = "",
         .params     = "",
@@ -2918,6 +2918,13 @@ static mon_cmd_t info_cmds[] = {
         .mhandler.cmd = hmp_info_memdev,
     },
     {
+        .name       = "memory-devices",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show memory devices",
+        .mhandler.cmd = hmp_info_memory_devices,
+    },
+    {
         .name       = NULL,
     },
 };
@@ -2965,7 +2972,7 @@ static target_long monitor_get_ccr (const struct MonitorDef *md, int val)
 
     u = 0;
     for (i = 0; i < 8; i++)
-        u |= env->crf[i] << (32 - (4 * i));
+        u |= env->crf[i] << (32 - (4 * (i + 1)));
 
     return u;
 }
@@ -4205,24 +4212,6 @@ static void file_completion(Monitor *mon, const char *input)
     closedir(ffs);
 }
 
-typedef struct MonitorBlockComplete {
-    Monitor *mon;
-    const char *input;
-} MonitorBlockComplete;
-
-static void block_completion_it(void *opaque, BlockDriverState *bs)
-{
-    const char *name = bdrv_get_device_name(bs);
-    MonitorBlockComplete *mbc = opaque;
-    Monitor *mon = mbc->mon;
-    const char *input = mbc->input;
-
-    if (input[0] == '\0' ||
-        !strncmp(name, (char *)input, strlen(input))) {
-        readline_add_completion(mon->rs, name);
-    }
-}
-
 static const char *next_arg_type(const char *typestr)
 {
     const char *p = strchr(typestr, ':');
@@ -4329,23 +4318,26 @@ void object_add_completion(ReadLineState *rs, int nb_args, const char *str)
     g_slist_free(list);
 }
 
-static void device_del_bus_completion(ReadLineState *rs,  BusState *bus,
-                                      const char *str, size_t len)
+static void peripheral_device_del_completion(ReadLineState *rs,
+                                             const char *str, size_t len)
 {
-    BusChild *kid;
+    Object *peripheral = container_get(qdev_get_machine(), "/peripheral");
+    GSList *list, *item;
 
-    QTAILQ_FOREACH(kid, &bus->children, sibling) {
-        DeviceState *dev = kid->child;
-        BusState *dev_child;
+    list = qdev_build_hotpluggable_device_list(peripheral);
+    if (!list) {
+        return;
+    }
+
+    for (item = list; item; item = g_slist_next(item)) {
+        DeviceState *dev = item->data;
 
         if (dev->id && !strncmp(str, dev->id, len)) {
             readline_add_completion(rs, dev->id);
         }
-
-        QLIST_FOREACH(dev_child, &dev->child_bus, sibling) {
-            device_del_bus_completion(rs, dev_child, str, len);
-        }
     }
+
+    g_slist_free(list);
 }
 
 void chardev_remove_completion(ReadLineState *rs, int nb_args, const char *str)
@@ -4420,7 +4412,7 @@ void device_del_completion(ReadLineState *rs, int nb_args, const char *str)
 
     len = strlen(str);
     readline_set_completion_index(rs, len);
-    device_del_bus_completion(rs, sysbus_get_default(), str, len);
+    peripheral_device_del_completion(rs, str, len);
 }
 
 void object_del_completion(ReadLineState *rs, int nb_args, const char *str)
@@ -4520,16 +4512,15 @@ void netdev_del_completion(ReadLineState *rs, int nb_args, const char *str)
 
 void watchdog_action_completion(ReadLineState *rs, int nb_args, const char *str)
 {
+    int i;
+
     if (nb_args != 2) {
         return;
     }
     readline_set_completion_index(rs, strlen(str));
-    add_completion_option(rs, str, "reset");
-    add_completion_option(rs, str, "shutdown");
-    add_completion_option(rs, str, "poweroff");
-    add_completion_option(rs, str, "pause");
-    add_completion_option(rs, str, "debug");
-    add_completion_option(rs, str, "none");
+    for (i = 0; WatchdogExpirationAction_lookup[i]; i++) {
+        add_completion_option(rs, str, WatchdogExpirationAction_lookup[i]);
+    }
 }
 
 void migrate_set_capability_completion(ReadLineState *rs, int nb_args,
@@ -4661,9 +4652,9 @@ static void monitor_find_completion_by_table(Monitor *mon,
 {
     const char *cmdname;
     int i;
-    const char *ptype, *str;
+    const char *ptype, *str, *name;
     const mon_cmd_t *cmd;
-    MonitorBlockComplete mbs;
+    BlockDriverState *bs;
 
     if (nb_args <= 1) {
         /* command completion */
@@ -4715,10 +4706,14 @@ static void monitor_find_completion_by_table(Monitor *mon,
             break;
         case 'B':
             /* block device name completion */
-            mbs.mon = mon;
-            mbs.input = str;
             readline_set_completion_index(mon->rs, strlen(str));
-            bdrv_iterate(block_completion_it, &mbs);
+            for (bs = bdrv_next(NULL); bs; bs = bdrv_next(bs)) {
+                name = bdrv_get_device_name(bs);
+                if (str[0] == '\0' ||
+                    !strncmp(name, str, strlen(str))) {
+                    readline_add_completion(mon->rs, name);
+                }
+            }
             break;
         case 's':
         case 'S':
@@ -4745,8 +4740,11 @@ static void monitor_find_completion(void *opaque,
         return;
     }
 #ifdef DEBUG_COMPLETION
-    for (i = 0; i < nb_args; i++) {
-        monitor_printf(mon, "arg%d = '%s'\n", i, args[i]);
+    {
+        int i;
+        for (i = 0; i < nb_args; i++) {
+            monitor_printf(mon, "arg%d = '%s'\n", i, args[i]);
+        }
     }
 #endif
 
@@ -5243,6 +5241,7 @@ static void monitor_event(void *opaque, int event)
         monitor_printf(mon, "QEMU %s monitor - type 'help' for more "
                        "information\n", QEMU_VERSION);
         if (!mon->mux_out) {
+            readline_restart(mon->rs);
             readline_show_prompt(mon->rs);
         }
         mon->reset_seen = 1;
@@ -5374,7 +5373,7 @@ ReadLineState *monitor_get_rs(Monitor *mon)
 }
 
 int monitor_read_bdrv_key_start(Monitor *mon, BlockDriverState *bs,
-                                BlockDriverCompletionFunc *completion_cb,
+                                BlockCompletionFunc *completion_cb,
                                 void *opaque)
 {
     int err;
@@ -5406,7 +5405,7 @@ int monitor_read_bdrv_key_start(Monitor *mon, BlockDriverState *bs,
 }
 
 int monitor_read_block_device_key(Monitor *mon, const char *device,
-                                  BlockDriverCompletionFunc *completion_cb,
+                                  BlockCompletionFunc *completion_cb,
                                   void *opaque)
 {
     BlockDriverState *bs;

@@ -266,6 +266,7 @@ typedef enum {
     INTTYPE_TIMER,
     INTTYPE_DEBUG,
     INTTYPE_WRITE_ERR,
+    INTTYPE_PROFILING,
     INTTYPE_MAX
 } interrupt_type;
 
@@ -390,7 +391,7 @@ static inline CPUXtensaState *cpu_init(const char *cpu_model)
 }
 
 void xtensa_translate_init(void);
-void xtensa_breakpoint_handler(CPUXtensaState *env);
+void xtensa_breakpoint_handler(CPUState *cs);
 int cpu_xtensa_exec(CPUXtensaState *s);
 void xtensa_register_core(XtensaConfigList *node);
 void check_interrupts(CPUXtensaState *s);
@@ -469,6 +470,12 @@ static inline xtensa_tlb_entry *xtensa_tlb_get_entry(CPUXtensaState *env,
     return dtlb ?
         env->dtlb[wi] + ei :
         env->itlb[wi] + ei;
+}
+
+static inline uint32_t xtensa_replicate_windowstart(CPUXtensaState *env)
+{
+    return env->sregs[WINDOW_START] |
+        (env->sregs[WINDOW_START] << env->config->nareg / 4);
 }
 
 /* MMU modes definitions */

@@ -30,6 +30,9 @@
 #include "qemu/error-report.h"
 #include "qapi/qmp/qerror.h"
 #include "qapi/qmp/qbool.h"
+#include "qapi/util.h"
+#include "qapi/qmp/types.h"
+#include "qapi-event.h"
 #include "trace.h"
 #include "qemu/option_int.h"
 
@@ -203,8 +206,8 @@ static void GCC_FMT_ATTR(3, 4) report_unsupported(BlockDriverState *bs,
     vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);
 
-    error_set(errp, QERR_UNKNOWN_BLOCK_FORMAT_FEATURE, bs->device_name, "qcow2",
-              msg);
+    error_set(errp, QERR_UNKNOWN_BLOCK_FORMAT_FEATURE,
+              bdrv_get_device_name(bs), "qcow2", msg);
 }
 
 static void report_unsupported_feature(BlockDriverState *bs,
@@ -403,6 +406,12 @@ static QemuOptsList qcow2_runtime_opts = {
                     "templates (none, constant, cached, all)",
         },
         {
+            .name = QCOW2_OPT_OVERLAP_TEMPLATE,
+            .type = QEMU_OPT_STRING,
+            .help = "Selects which overlap checks to perform from a range of "
+                    "templates (none, constant, cached, all)",
+        },
+        {
             .name = QCOW2_OPT_OVERLAP_MAIN_HEADER,
             .type = QEMU_OPT_BOOL,
             .help = "Check for unintended writes into the main qcow2 header",
@@ -442,6 +451,22 @@ static QemuOptsList qcow2_runtime_opts = {
             .type = QEMU_OPT_BOOL,
             .help = "Check for unintended writes into an inactive L2 table",
         },
+        {
+            .name = QCOW2_OPT_CACHE_SIZE,
+            .type = QEMU_OPT_SIZE,
+            .help = "Maximum combined metadata (L2 tables and refcount blocks) "
+                    "cache size",
+        },
+        {
+            .name = QCOW2_OPT_L2_CACHE_SIZE,
+            .type = QEMU_OPT_SIZE,
+            .help = "Maximum L2 table cache size",
+        },
+        {
+            .name = QCOW2_OPT_REFCOUNT_CACHE_SIZE,
+            .type = QEMU_OPT_SIZE,
+            .help = "Maximum refcount block cache size",
+        },
         { /* end of list */ }
     },
 };
@@ -457,6 +482,61 @@ static const char *overlap_bool_option_names[QCOW2_OL_MAX_BITNR] = {
     [QCOW2_OL_INACTIVE_L2_BITNR]    = QCOW2_OPT_OVERLAP_INACTIVE_L2,
 };
 
+static void read_cache_sizes(QemuOpts *opts, uint64_t *l2_cache_size,
+                             uint64_t *refcount_cache_size, Error **errp)
+{
+    uint64_t combined_cache_size;
+    bool l2_cache_size_set, refcount_cache_size_set, combined_cache_size_set;
+
+    combined_cache_size_set = qemu_opt_get(opts, QCOW2_OPT_CACHE_SIZE);
+    l2_cache_size_set = qemu_opt_get(opts, QCOW2_OPT_L2_CACHE_SIZE);
+    refcount_cache_size_set = qemu_opt_get(opts, QCOW2_OPT_REFCOUNT_CACHE_SIZE);
+
+    combined_cache_size = qemu_opt_get_size(opts, QCOW2_OPT_CACHE_SIZE, 0);
+    *l2_cache_size = qemu_opt_get_size(opts, QCOW2_OPT_L2_CACHE_SIZE, 0);
+    *refcount_cache_size = qemu_opt_get_size(opts,
+                                             QCOW2_OPT_REFCOUNT_CACHE_SIZE, 0);
+
+    if (combined_cache_size_set) {
+        if (l2_cache_size_set && refcount_cache_size_set) {
+            error_setg(errp, QCOW2_OPT_CACHE_SIZE ", " QCOW2_OPT_L2_CACHE_SIZE
+                       " and " QCOW2_OPT_REFCOUNT_CACHE_SIZE " may not be set "
+                       "the same time");
+            return;
+        } else if (*l2_cache_size > combined_cache_size) {
+            error_setg(errp, QCOW2_OPT_L2_CACHE_SIZE " may not exceed "
+                       QCOW2_OPT_CACHE_SIZE);
+            return;
+        } else if (*refcount_cache_size > combined_cache_size) {
+            error_setg(errp, QCOW2_OPT_REFCOUNT_CACHE_SIZE " may not exceed "
+                       QCOW2_OPT_CACHE_SIZE);
+            return;
+        }
+
+        if (l2_cache_size_set) {
+            *refcount_cache_size = combined_cache_size - *l2_cache_size;
+        } else if (refcount_cache_size_set) {
+            *l2_cache_size = combined_cache_size - *refcount_cache_size;
+        } else {
+            *refcount_cache_size = combined_cache_size
+                                 / (DEFAULT_L2_REFCOUNT_SIZE_RATIO + 1);
+            *l2_cache_size = combined_cache_size - *refcount_cache_size;
+        }
+    } else {
+        if (!l2_cache_size_set && !refcount_cache_size_set) {
+            *l2_cache_size = DEFAULT_L2_CACHE_BYTE_SIZE;
+            *refcount_cache_size = *l2_cache_size
+                                 / DEFAULT_L2_REFCOUNT_SIZE_RATIO;
+        } else if (!l2_cache_size_set) {
+            *l2_cache_size = *refcount_cache_size
+                           * DEFAULT_L2_REFCOUNT_SIZE_RATIO;
+        } else if (!refcount_cache_size_set) {
+            *refcount_cache_size = *l2_cache_size
+                                 / DEFAULT_L2_REFCOUNT_SIZE_RATIO;
+        }
+    }
+}
+
 static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
                       Error **errp)
 {
@@ -464,12 +544,13 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
     unsigned int len, i;
     int ret = 0;
     QCowHeader header;
-    QemuOpts *opts;
+    QemuOpts *opts = NULL;
     Error *local_err = NULL;
     uint64_t ext_end;
     uint64_t l1_vm_state_index;
-    const char *opt_overlap_check;
+    const char *opt_overlap_check, *opt_overlap_check_template;
     int overlap_check_template = 0;
+    uint64_t l2_cache_size, refcount_cache_size;
 
     ret = bdrv_pread(bs->file, 0, &header, sizeof(header));
     if (ret < 0) {
@@ -617,6 +698,9 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
 
     s->l2_bits = s->cluster_bits - 3; /* L2 is always one cluster */
     s->l2_size = 1 << s->l2_bits;
+    /* 2^(s->refcount_order - 3) is the refcount width in bytes */
+    s->refcount_block_bits = s->cluster_bits - (s->refcount_order - 3);
+    s->refcount_block_size = 1 << s->refcount_block_bits;
     bs->total_sectors = header.size / 512;
     s->csize_shift = (62 - (s->cluster_bits - 8));
     s->csize_mask = (1 << (s->cluster_bits - 8)) - 1;
@@ -688,8 +772,13 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
 
 
     if (s->l1_size > 0) {
-        s->l1_table = g_malloc0(
+        s->l1_table = qemu_try_blockalign(bs->file,
             align_offset(s->l1_size * sizeof(uint64_t), 512));
+        if (s->l1_table == NULL) {
+            error_setg(errp, "Could not allocate L1 table");
+            ret = -ENOMEM;
+            goto fail;
+        }
         ret = bdrv_pread(bs->file, s->l1_table_offset, s->l1_table,
                          s->l1_size * sizeof(uint64_t));
         if (ret < 0) {
@@ -701,14 +790,61 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
         }
     }
 
+    /* get L2 table/refcount block cache size from command line options */
+    opts = qemu_opts_create(&qcow2_runtime_opts, NULL, 0, &error_abort);
+    qemu_opts_absorb_qdict(opts, options, &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
+        ret = -EINVAL;
+        goto fail;
+    }
+
+    read_cache_sizes(opts, &l2_cache_size, &refcount_cache_size, &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
+        ret = -EINVAL;
+        goto fail;
+    }
+
+    l2_cache_size /= s->cluster_size;
+    if (l2_cache_size < MIN_L2_CACHE_SIZE) {
+        l2_cache_size = MIN_L2_CACHE_SIZE;
+    }
+    if (l2_cache_size > INT_MAX) {
+        error_setg(errp, "L2 cache size too big");
+        ret = -EINVAL;
+        goto fail;
+    }
+
+    refcount_cache_size /= s->cluster_size;
+    if (refcount_cache_size < MIN_REFCOUNT_CACHE_SIZE) {
+        refcount_cache_size = MIN_REFCOUNT_CACHE_SIZE;
+    }
+    if (refcount_cache_size > INT_MAX) {
+        error_setg(errp, "Refcount cache size too big");
+        ret = -EINVAL;
+        goto fail;
+    }
+
     /* alloc L2 table/refcount block cache */
-    s->l2_table_cache = qcow2_cache_create(bs, L2_CACHE_SIZE);
-    s->refcount_block_cache = qcow2_cache_create(bs, REFCOUNT_CACHE_SIZE);
+    s->l2_table_cache = qcow2_cache_create(bs, l2_cache_size);
+    s->refcount_block_cache = qcow2_cache_create(bs, refcount_cache_size);
+    if (s->l2_table_cache == NULL || s->refcount_block_cache == NULL) {
+        error_setg(errp, "Could not allocate metadata caches");
+        ret = -ENOMEM;
+        goto fail;
+    }
 
     s->cluster_cache = g_malloc(s->cluster_size);
     /* one more sector for decompressed data alignment */
-    s->cluster_data = qemu_blockalign(bs, QCOW_MAX_CRYPT_CLUSTERS * s->cluster_size
-                                  + 512);
+    s->cluster_data = qemu_try_blockalign(bs->file, QCOW_MAX_CRYPT_CLUSTERS
+                                                    * s->cluster_size + 512);
+    if (s->cluster_data == NULL) {
+        error_setg(errp, "Could not allocate temporary cluster buffer");
+        ret = -ENOMEM;
+        goto fail;
+    }
+
     s->cluster_cache_offset = -1;
     s->flags = flags;
 
@@ -774,7 +910,7 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
         (s->incompatible_features & QCOW2_INCOMPAT_DIRTY)) {
         BdrvCheckResult result = {0};
 
-        ret = qcow2_check(bs, &result, BDRV_FIX_ERRORS);
+        ret = qcow2_check(bs, &result, BDRV_FIX_ERRORS | BDRV_FIX_LEAKS);
         if (ret < 0) {
             error_setg_errno(errp, -ret, "Could not repair dirty image");
             goto fail;
@@ -782,14 +918,6 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
     }
 
     /* Enable lazy_refcounts according to image and command line options */
-    opts = qemu_opts_create(&qcow2_runtime_opts, NULL, 0, &error_abort);
-    qemu_opts_absorb_qdict(opts, options, &local_err);
-    if (local_err) {
-        error_propagate(errp, local_err);
-        ret = -EINVAL;
-        goto fail;
-    }
-
     s->use_lazy_refcounts = qemu_opt_get_bool(opts, QCOW2_OPT_LAZY_REFCOUNTS,
         (s->compatible_features & QCOW2_COMPAT_LAZY_REFCOUNTS));
 
@@ -803,7 +931,21 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
     s->discard_passthrough[QCOW2_DISCARD_OTHER] =
         qemu_opt_get_bool(opts, QCOW2_OPT_DISCARD_OTHER, false);
 
-    opt_overlap_check = qemu_opt_get(opts, "overlap-check") ?: "cached";
+    opt_overlap_check = qemu_opt_get(opts, QCOW2_OPT_OVERLAP);
+    opt_overlap_check_template = qemu_opt_get(opts, QCOW2_OPT_OVERLAP_TEMPLATE);
+    if (opt_overlap_check_template && opt_overlap_check &&
+        strcmp(opt_overlap_check_template, opt_overlap_check))
+    {
+        error_setg(errp, "Conflicting values for qcow2 options '"
+                   QCOW2_OPT_OVERLAP "' ('%s') and '" QCOW2_OPT_OVERLAP_TEMPLATE
+                   "' ('%s')", opt_overlap_check, opt_overlap_check_template);
+        ret = -EINVAL;
+        goto fail;
+    }
+    if (!opt_overlap_check) {
+        opt_overlap_check = opt_overlap_check_template ?: "cached";
+    }
+
     if (!strcmp(opt_overlap_check, "none")) {
         overlap_check_template = 0;
     } else if (!strcmp(opt_overlap_check, "constant")) {
@@ -816,7 +958,6 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
         error_setg(errp, "Unsupported value '%s' for qcow2 option "
                    "'overlap-check'. Allowed are either of the following: "
                    "none, constant, cached, all", opt_overlap_check);
-        qemu_opts_del(opts);
         ret = -EINVAL;
         goto fail;
     }
@@ -831,6 +972,7 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
     }
 
     qemu_opts_del(opts);
+    opts = NULL;
 
     if (s->use_lazy_refcounts && s->qcow_version < 3) {
         error_setg(errp, "Lazy refcounts require a qcow2 image with at least "
@@ -848,11 +990,12 @@ static int qcow2_open(BlockDriverState *bs, QDict *options, int flags,
     return ret;
 
  fail:
+    qemu_opts_del(opts);
     g_free(s->unknown_header_fields);
     cleanup_unknown_header_ext(bs);
     qcow2_free_snapshots(bs);
     qcow2_refcount_close(bs);
-    g_free(s->l1_table);
+    qemu_vfree(s->l1_table);
     /* else pre-write overlap checks in cache_destroy may crash */
     s->l1_table = NULL;
     if (s->l2_table_cache) {
@@ -1082,7 +1225,12 @@ static coroutine_fn int qcow2_co_readv(BlockDriverState *bs, int64_t sector_num,
                  */
                 if (!cluster_data) {
                     cluster_data =
-                        qemu_blockalign(bs, QCOW_MAX_CRYPT_CLUSTERS * s->cluster_size);
+                        qemu_try_blockalign(bs->file, QCOW_MAX_CRYPT_CLUSTERS
+                                                      * s->cluster_size);
+                    if (cluster_data == NULL) {
+                        ret = -ENOMEM;
+                        goto fail;
+                    }
                 }
 
                 assert(cur_nr_sectors <=
@@ -1182,8 +1330,13 @@ static coroutine_fn int qcow2_co_writev(BlockDriverState *bs,
 
         if (s->crypt_method) {
             if (!cluster_data) {
-                cluster_data = qemu_blockalign(bs, QCOW_MAX_CRYPT_CLUSTERS *
-                                                 s->cluster_size);
+                cluster_data = qemu_try_blockalign(bs->file,
+                                                   QCOW_MAX_CRYPT_CLUSTERS
+                                                   * s->cluster_size);
+                if (cluster_data == NULL) {
+                    ret = -ENOMEM;
+                    goto fail;
+                }
             }
 
             assert(hd_qiov.size <=
@@ -1270,7 +1423,7 @@ fail:
 static void qcow2_close(BlockDriverState *bs)
 {
     BDRVQcowState *s = bs->opaque;
-    g_free(s->l1_table);
+    qemu_vfree(s->l1_table);
     /* else pre-write overlap checks in cache_destroy may crash */
     s->l1_table = NULL;
 
@@ -1557,7 +1710,7 @@ static int preallocate(BlockDriverState *bs)
     int ret;
     QCowL2Meta *meta;
 
-    nb_sectors = bdrv_getlength(bs) >> BDRV_SECTOR_BITS;
+    nb_sectors = bdrv_nb_sectors(bs);
     offset = 0;
 
     while (nb_sectors) {
@@ -1612,7 +1765,7 @@ static int preallocate(BlockDriverState *bs)
 
 static int qcow2_create2(const char *filename, int64_t total_size,
                          const char *backing_file, const char *backing_format,
-                         int flags, size_t cluster_size, int prealloc,
+                         int flags, size_t cluster_size, PreallocMode prealloc,
                          QemuOpts *opts, int version,
                          Error **errp)
 {
@@ -1645,6 +1798,56 @@ static int qcow2_create2(const char *filename, int64_t total_size,
     Error *local_err = NULL;
     int ret;
 
+    if (prealloc == PREALLOC_MODE_FULL || prealloc == PREALLOC_MODE_FALLOC) {
+        int64_t meta_size = 0;
+        uint64_t nreftablee, nrefblocke, nl1e, nl2e;
+        int64_t aligned_total_size = align_offset(total_size, cluster_size);
+
+        /* header: 1 cluster */
+        meta_size += cluster_size;
+
+        /* total size of L2 tables */
+        nl2e = aligned_total_size / cluster_size;
+        nl2e = align_offset(nl2e, cluster_size / sizeof(uint64_t));
+        meta_size += nl2e * sizeof(uint64_t);
+
+        /* total size of L1 tables */
+        nl1e = nl2e * sizeof(uint64_t) / cluster_size;
+        nl1e = align_offset(nl1e, cluster_size / sizeof(uint64_t));
+        meta_size += nl1e * sizeof(uint64_t);
+
+        /* total size of refcount blocks
+         *
+         * note: every host cluster is reference-counted, including metadata
+         * (even refcount blocks are recursively included).
+         * Let:
+         *   a = total_size (this is the guest disk size)
+         *   m = meta size not including refcount blocks and refcount tables
+         *   c = cluster size
+         *   y1 = number of refcount blocks entries
+         *   y2 = meta size including everything
+         * then,
+         *   y1 = (y2 + a)/c
+         *   y2 = y1 * sizeof(u16) + y1 * sizeof(u16) * sizeof(u64) / c + m
+         * we can get y1:
+         *   y1 = (a + m) / (c - sizeof(u16) - sizeof(u16) * sizeof(u64) / c)
+         */
+        nrefblocke = (aligned_total_size + meta_size + cluster_size) /
+            (cluster_size - sizeof(uint16_t) -
+             1.0 * sizeof(uint16_t) * sizeof(uint64_t) / cluster_size);
+        nrefblocke = align_offset(nrefblocke, cluster_size / sizeof(uint16_t));
+        meta_size += nrefblocke * sizeof(uint16_t);
+
+        /* total size of refcount tables */
+        nreftablee = nrefblocke * sizeof(uint16_t) / cluster_size;
+        nreftablee = align_offset(nreftablee, cluster_size / sizeof(uint64_t));
+        meta_size += nreftablee * sizeof(uint64_t);
+
+        qemu_opt_set_number(opts, BLOCK_OPT_SIZE,
+                            aligned_total_size + meta_size);
+        qemu_opt_set(opts, BLOCK_OPT_PREALLOC, PreallocMode_lookup[prealloc]);
+    }
+
     ret = bdrv_create_file(filename, opts, &local_err);
     if (ret < 0) {
         error_propagate(errp, local_err);
@@ -1671,7 +1874,7 @@ static int qcow2_create2(const char *filename, int64_t total_size,
         .l1_size                    = cpu_to_be32(0),
         .refcount_table_offset      = cpu_to_be64(cluster_size),
         .refcount_table_clusters    = cpu_to_be32(1),
-        .refcount_order             = cpu_to_be32(3 + REFCOUNT_SHIFT),
+        .refcount_order             = cpu_to_be32(4),
         .header_length              = cpu_to_be32(sizeof(*header)),
     };
 
@@ -1733,7 +1936,7 @@ static int qcow2_create2(const char *filename, int64_t total_size,
     }
 
     /* Okay, now that we have a valid image, let's give it the right size */
-    ret = bdrv_truncate(bs, total_size * BDRV_SECTOR_SIZE);
+    ret = bdrv_truncate(bs, total_size);
     if (ret < 0) {
         error_setg_errno(errp, -ret, "Could not resize image");
         goto out;
@@ -1750,7 +1953,7 @@ static int qcow2_create2(const char *filename, int64_t total_size,
     }
 
     /* And if we're supposed to preallocate metadata, do that now */
-    if (prealloc) {
+    if (prealloc != PREALLOC_MODE_OFF) {
         BDRVQcowState *s = bs->opaque;
         qemu_co_mutex_lock(&s->lock);
         ret = preallocate(bs);
@@ -1786,16 +1989,17 @@ static int qcow2_create(const char *filename, QemuOpts *opts, Error **errp)
     char *backing_file = NULL;
     char *backing_fmt = NULL;
     char *buf = NULL;
-    uint64_t sectors = 0;
+    uint64_t size = 0;
     int flags = 0;
     size_t cluster_size = DEFAULT_CLUSTER_SIZE;
-    int prealloc = 0;
+    PreallocMode prealloc;
     int version = 3;
     Error *local_err = NULL;
     int ret;
 
     /* Read out options */
-    sectors = qemu_opt_get_size_del(opts, BLOCK_OPT_SIZE, 0) / 512;
+    size = ROUND_UP(qemu_opt_get_size_del(opts, BLOCK_OPT_SIZE, 0),
+                    BDRV_SECTOR_SIZE);
     backing_file = qemu_opt_get_del(opts, BLOCK_OPT_BACKING_FILE);
     backing_fmt = qemu_opt_get_del(opts, BLOCK_OPT_BACKING_FMT);
     if (qemu_opt_get_bool_del(opts, BLOCK_OPT_ENCRYPT, false)) {
@@ -1804,12 +2008,11 @@ static int qcow2_create(const char *filename, QemuOpts *opts, Error **errp)
     cluster_size = qemu_opt_get_size_del(opts, BLOCK_OPT_CLUSTER_SIZE,
                                          DEFAULT_CLUSTER_SIZE);
     buf = qemu_opt_get_del(opts, BLOCK_OPT_PREALLOC);
-    if (!buf || !strcmp(buf, "off")) {
-        prealloc = 0;
-    } else if (!strcmp(buf, "metadata")) {
-        prealloc = 1;
-    } else {
-        error_setg(errp, "Invalid preallocation mode: '%s'", buf);
+    prealloc = qapi_enum_parse(PreallocMode_lookup, buf,
+                               PREALLOC_MODE_MAX, PREALLOC_MODE_OFF,
+                               &local_err);
+    if (local_err) {
+        error_propagate(errp, local_err);
         ret = -EINVAL;
         goto finish;
     }
@@ -1831,7 +2034,7 @@ static int qcow2_create(const char *filename, QemuOpts *opts, Error **errp)
         flags |= BLOCK_FLAG_LAZY_REFCOUNTS;
     }
 
-    if (backing_file && prealloc) {
+    if (backing_file && prealloc != PREALLOC_MODE_OFF) {
         error_setg(errp, "Backing file and preallocation cannot be used at "
                    "the same time");
         ret = -EINVAL;
@@ -1845,7 +2048,7 @@ static int qcow2_create(const char *filename, QemuOpts *opts, Error **errp)
         goto finish;
     }
 
-    ret = qcow2_create2(filename, sectors, backing_file, backing_fmt, flags,
+    ret = qcow2_create2(filename, size, backing_file, backing_fmt, flags,
                         cluster_size, prealloc, opts, version, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
@@ -1886,7 +2089,7 @@ static coroutine_fn int qcow2_co_discard(BlockDriverState *bs,
 
     qemu_co_mutex_lock(&s->lock);
     ret = qcow2_discard_clusters(bs, sector_num << BDRV_SECTOR_BITS,
-        nb_sectors, QCOW2_DISCARD_REQUEST);
+        nb_sectors, QCOW2_DISCARD_REQUEST, false);
     qemu_co_mutex_unlock(&s->lock);
     return ret;
 }
@@ -1947,7 +2150,6 @@ static int qcow2_write_compressed(BlockDriverState *bs, int64_t sector_num,
         /* align end of file to a sector boundary to ease reading with
            sector based I/Os */
         cluster_offset = bdrv_getlength(bs->file);
-        cluster_offset = (cluster_offset + 511) & ~511;
         bdrv_truncate(bs->file, cluster_offset);
         return 0;
     }
@@ -2028,6 +2230,195 @@ fail:
     return ret;
 }
 
+static int make_completely_empty(BlockDriverState *bs)
+{
+    BDRVQcowState *s = bs->opaque;
+    int ret, l1_clusters;
+    int64_t offset;
+    uint64_t *new_reftable = NULL;
+    uint64_t rt_entry, l1_size2;
+    struct {
+        uint64_t l1_offset;
+        uint64_t reftable_offset;
+        uint32_t reftable_clusters;
+    } QEMU_PACKED l1_ofs_rt_ofs_cls;
+
+    ret = qcow2_cache_empty(bs, s->l2_table_cache);
+    if (ret < 0) {
+        goto fail;
+    }
+
+    ret = qcow2_cache_empty(bs, s->refcount_block_cache);
+    if (ret < 0) {
+        goto fail;
+    }
+
+    /* Refcounts will be broken utterly */
+    ret = qcow2_mark_dirty(bs);
+    if (ret < 0) {
+        goto fail;
+    }
+
+    BLKDBG_EVENT(bs->file, BLKDBG_L1_UPDATE);
+
+    l1_clusters = DIV_ROUND_UP(s->l1_size, s->cluster_size / sizeof(uint64_t));
+    l1_size2 = (uint64_t)s->l1_size * sizeof(uint64_t);
+
+    /* After this call, neither the in-memory nor the on-disk refcount
+     * information accurately describe the actual references */
+
+    ret = bdrv_write_zeroes(bs->file, s->l1_table_offset / BDRV_SECTOR_SIZE,
+                            l1_clusters * s->cluster_sectors, 0);
+    if (ret < 0) {
+        goto fail_broken_refcounts;
+    }
+    memset(s->l1_table, 0, l1_size2);
+
+    BLKDBG_EVENT(bs->file, BLKDBG_EMPTY_IMAGE_PREPARE);
+
+    /* Overwrite enough clusters at the beginning of the sectors to place
+     * the refcount table, a refcount block and the L1 table in; this may
+     * overwrite parts of the existing refcount and L1 table, which is not
+     * an issue because the dirty flag is set, complete data loss is in fact
+     * desired and partial data loss is consequently fine as well */
+    ret = bdrv_write_zeroes(bs->file, s->cluster_size / BDRV_SECTOR_SIZE,
+                            (2 + l1_clusters) * s->cluster_size /
+                            BDRV_SECTOR_SIZE, 0);
+    /* This call (even if it failed overall) may have overwritten on-disk
+     * refcount structures; in that case, the in-memory refcount information
+     * will probably differ from the on-disk information which makes the BDS
+     * unusable */
+    if (ret < 0) {
+        goto fail_broken_refcounts;
+    }
+
+    BLKDBG_EVENT(bs->file, BLKDBG_L1_UPDATE);
+    BLKDBG_EVENT(bs->file, BLKDBG_REFTABLE_UPDATE);
+
+    /* "Create" an empty reftable (one cluster) directly after the image
+     * header and an empty L1 table three clusters after the image header;
+     * the cluster between those two will be used as the first refblock */
+    cpu_to_be64w(&l1_ofs_rt_ofs_cls.l1_offset, 3 * s->cluster_size);
+    cpu_to_be64w(&l1_ofs_rt_ofs_cls.reftable_offset, s->cluster_size);
+    cpu_to_be32w(&l1_ofs_rt_ofs_cls.reftable_clusters, 1);
+    ret = bdrv_pwrite_sync(bs->file, offsetof(QCowHeader, l1_table_offset),
+                           &l1_ofs_rt_ofs_cls, sizeof(l1_ofs_rt_ofs_cls));
+    if (ret < 0) {
+        goto fail_broken_refcounts;
+    }
+
+    s->l1_table_offset = 3 * s->cluster_size;
+
+    new_reftable = g_try_new0(uint64_t, s->cluster_size / sizeof(uint64_t));
+    if (!new_reftable) {
+        ret = -ENOMEM;
+        goto fail_broken_refcounts;
+    }
+
+    s->refcount_table_offset = s->cluster_size;
+    s->refcount_table_size   = s->cluster_size / sizeof(uint64_t);
+
+    g_free(s->refcount_table);
+    s->refcount_table = new_reftable;
+    new_reftable = NULL;
+
+    /* Now the in-memory refcount information again corresponds to the on-disk
+     * information (reftable is empty and no refblocks (the refblock cache is
+     * empty)); however, this means some clusters (e.g. the image header) are
+     * referenced, but not refcounted, but the normal qcow2 code assumes that
+     * the in-memory information is always correct */
+
+    BLKDBG_EVENT(bs->file, BLKDBG_REFBLOCK_ALLOC);
+
+    /* Enter the first refblock into the reftable */
+    rt_entry = cpu_to_be64(2 * s->cluster_size);
+    ret = bdrv_pwrite_sync(bs->file, s->cluster_size,
+                           &rt_entry, sizeof(rt_entry));
+    if (ret < 0) {
+        goto fail_broken_refcounts;
+    }
+    s->refcount_table[0] = 2 * s->cluster_size;
+
+    s->free_cluster_index = 0;
+    assert(3 + l1_clusters <= s->refcount_block_size);
+    offset = qcow2_alloc_clusters(bs, 3 * s->cluster_size + l1_size2);
+    if (offset < 0) {
+        ret = offset;
+        goto fail_broken_refcounts;
+    } else if (offset > 0) {
+        error_report("First cluster in emptied image is in use");
+        abort();
+    }
+
+    /* Now finally the in-memory information corresponds to the on-disk
+     * structures and is correct */
+    ret = qcow2_mark_clean(bs);
+    if (ret < 0) {
+        goto fail;
+    }
+
+    ret = bdrv_truncate(bs->file, (3 + l1_clusters) * s->cluster_size);
+    if (ret < 0) {
+        goto fail;
+    }
+
+    return 0;
+
+fail_broken_refcounts:
+    /* The BDS is unusable at this point. If we wanted to make it usable, we
+     * would have to call qcow2_refcount_close(), qcow2_refcount_init(),
+     * qcow2_check_refcounts(), qcow2_refcount_close() and qcow2_refcount_init()
+     * again. However, because the functions which could have caused this error
+     * path to be taken are used by those functions as well, it's very likely
+     * that that sequence will fail as well. Therefore, just eject the BDS. */
+    bs->drv = NULL;
+
+fail:
+    g_free(new_reftable);
+    return ret;
+}
+
+static int qcow2_make_empty(BlockDriverState *bs)
+{
+    BDRVQcowState *s = bs->opaque;
+    uint64_t start_sector;
+    int sector_step = INT_MAX / BDRV_SECTOR_SIZE;
+    int l1_clusters, ret = 0;
+
+    l1_clusters = DIV_ROUND_UP(s->l1_size, s->cluster_size / sizeof(uint64_t));
+
+    if (s->qcow_version >= 3 && !s->snapshots &&
+        3 + l1_clusters <= s->refcount_block_size) {
+        /* The following function only works for qcow2 v3 images (it requires
+         * the dirty flag) and only as long as there are no snapshots (because
+         * it completely empties the image). Furthermore, the L1 table and three
+         * additional clusters (image header, refcount table, one refcount
+         * block) have to fit inside one refcount block. */
+        return make_completely_empty(bs);
+    }
+
+    /* This fallback code simply discards every active cluster; this is slow,
+     * but works in all cases */
+    for (start_sector = 0; start_sector < bs->total_sectors;
+         start_sector += sector_step)
+    {
+        /* As this function is generally used after committing an external
+         * snapshot, QCOW2_DISCARD_SNAPSHOT seems appropriate. Also, the
+         * default action for this kind of discard is to pass the discard,
+         * which will ideally result in an actually smaller image file, as
+         * is probably desired. */
+        ret = qcow2_discard_clusters(bs, start_sector * BDRV_SECTOR_SIZE,
+                                     MIN(sector_step,
+                                         bs->total_sectors - start_sector),
+                                     QCOW2_DISCARD_SNAPSHOT, true);
+        if (ret < 0) {
+            break;
+        }
+    }
+
+    return ret;
+}
+
 static coroutine_fn int qcow2_co_flush_to_os(BlockDriverState *bs)
 {
     BDRVQcowState *s = bs->opaque;
@@ -2083,6 +2474,9 @@ static ImageInfoSpecific *qcow2_get_specific_info(BlockDriverState *bs)
             .lazy_refcounts     = s->compatible_features &
                                   QCOW2_COMPAT_LAZY_REFCOUNTS,
             .has_lazy_refcounts = true,
+            .corrupt            = s->incompatible_features &
+                                  QCOW2_INCOMPAT_CORRUPT,
+            .has_corrupt        = true,
         };
     }
 
@@ -2156,7 +2550,8 @@ static int qcow2_load_vmstate(BlockDriverState *bs, uint8_t *buf,
  * Downgrades an image's version. To achieve this, any incompatible features
  * have to be removed.
  */
-static int qcow2_downgrade(BlockDriverState *bs, int target_version)
+static int qcow2_downgrade(BlockDriverState *bs, int target_version,
+                           BlockDriverAmendStatusCB *status_cb)
 {
     BDRVQcowState *s = bs->opaque;
     int current_version = s->qcow_version;
@@ -2205,7 +2600,7 @@ static int qcow2_downgrade(BlockDriverState *bs, int target_version)
     /* clearing autoclear features is trivial */
     s->autoclear_features = 0;
 
-    ret = qcow2_expand_zero_clusters(bs);
+    ret = qcow2_expand_zero_clusters(bs, status_cb);
     if (ret < 0) {
         return ret;
     }
@@ -2219,7 +2614,8 @@ static int qcow2_downgrade(BlockDriverState *bs, int target_version)
     return 0;
 }
 
-static int qcow2_amend_options(BlockDriverState *bs, QemuOpts *opts)
+static int qcow2_amend_options(BlockDriverState *bs, QemuOpts *opts,
+                               BlockDriverAmendStatusCB *status_cb)
 {
     BDRVQcowState *s = bs->opaque;
     int old_version = s->qcow_version, new_version = old_version;
@@ -2297,7 +2693,7 @@ static int qcow2_amend_options(BlockDriverState *bs, QemuOpts *opts)
                 return ret;
             }
         } else {
-            ret = qcow2_downgrade(bs, new_version);
+            ret = qcow2_downgrade(bs, new_version, status_cb);
             if (ret < 0) {
                 return ret;
             }
@@ -2353,6 +2749,52 @@ static int qcow2_amend_options(BlockDriverState *bs, QemuOpts *opts)
     return 0;
 }
 
+/*
+ * If offset or size are negative, respectively, they will not be included in
+ * the BLOCK_IMAGE_CORRUPTED event emitted.
+ * fatal will be ignored for read-only BDS; corruptions found there will always
+ * be considered non-fatal.
+ */
+void qcow2_signal_corruption(BlockDriverState *bs, bool fatal, int64_t offset,
+                             int64_t size, const char *message_format, ...)
+{
+    BDRVQcowState *s = bs->opaque;
+    char *message;
+    va_list ap;
+
+    fatal = fatal && !bs->read_only;
+
+    if (s->signaled_corruption &&
+        (!fatal || (s->incompatible_features & QCOW2_INCOMPAT_CORRUPT)))
+    {
+        return;
+    }
+
+    va_start(ap, message_format);
+    message = g_strdup_vprintf(message_format, ap);
+    va_end(ap);
+
+    if (fatal) {
+        fprintf(stderr, "qcow2: Marking image as corrupt: %s; further "
+                "corruption events will be suppressed\n", message);
+    } else {
+        fprintf(stderr, "qcow2: Image is corrupt: %s; further non-fatal "
+                "corruption events will be suppressed\n", message);
+    }
+
+    qapi_event_send_block_image_corrupted(bdrv_get_device_name(bs), message,
+                                          offset >= 0, offset, size >= 0, size,
+                                          fatal, &error_abort);
+    g_free(message);
+
+    if (fatal) {
+        qcow2_mark_corrupt(bs);
+        bs->drv = NULL; /* make BDS unusable */
+    }
+
+    s->signaled_corruption = true;
+}
+
 static QemuOptsList qcow2_create_opts = {
     .name = "qcow2-create-opts",
     .head = QTAILQ_HEAD_INITIALIZER(qcow2_create_opts.head),
@@ -2392,7 +2834,8 @@ static QemuOptsList qcow2_create_opts = {
         {
             .name = BLOCK_OPT_PREALLOC,
             .type = QEMU_OPT_STRING,
-            .help = "Preallocation mode (allowed values: off, metadata)"
+            .help = "Preallocation mode (allowed values: off, metadata, "
+                    "falloc, full)"
         },
         {
             .name = BLOCK_OPT_LAZY_REFCOUNTS,
@@ -2424,6 +2867,7 @@ static BlockDriver bdrv_qcow2 = {
     .bdrv_co_discard        = qcow2_co_discard,
     .bdrv_truncate          = qcow2_truncate,
     .bdrv_write_compressed  = qcow2_write_compressed,
+    .bdrv_make_empty        = qcow2_make_empty,
 
     .bdrv_snapshot_create   = qcow2_snapshot_create,
     .bdrv_snapshot_goto     = qcow2_snapshot_goto,

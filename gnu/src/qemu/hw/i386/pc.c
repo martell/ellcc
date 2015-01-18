@@ -44,7 +44,7 @@
 #include "sysemu/kvm.h"
 #include "kvm_i386.h"
 #include "hw/xen/xen.h"
-#include "sysemu/blockdev.h"
+#include "sysemu/block-backend.h"
 #include "hw/block/block.h"
 #include "ui/qemu-spice.h"
 #include "exec/memory.h"
@@ -61,6 +61,7 @@
 #include "hw/mem/pc-dimm.h"
 #include "trace.h"
 #include "qapi/visitor.h"
+#include "qapi-visit.h"
 
 /* debug PC/ISA interrupts */
 //#define DEBUG_IRQ
@@ -75,7 +76,7 @@
 /* Leave a chunk of memory at the top of RAM for the BIOS ACPI tables
  * (128K) and other BIOS datastructures (less than 4K reported to be used at
  * the moment, 32K should be enough for a while).  */
-unsigned acpi_data_size = 0x20000 + 0x8000;
+static unsigned acpi_data_size = 0x20000 + 0x8000;
 void pc_set_legacy_acpi_data_size(void)
 {
     acpi_data_size = 0x10000;
@@ -355,30 +356,15 @@ static void pc_cmos_init_late(void *opaque)
     qemu_unregister_reset(pc_cmos_init_late, opaque);
 }
 
-typedef struct RTCCPUHotplugArg {
-    Notifier cpu_added_notifier;
-    ISADevice *rtc_state;
-} RTCCPUHotplugArg;
-
-static void rtc_notify_cpu_added(Notifier *notifier, void *data)
-{
-    RTCCPUHotplugArg *arg = container_of(notifier, RTCCPUHotplugArg,
-                                         cpu_added_notifier);
-    ISADevice *s = arg->rtc_state;
-
-    /* increment the number of CPUs */
-    rtc_set_memory(s, 0x5f, rtc_get_memory(s, 0x5f) + 1);
-}
-
 void pc_cmos_init(ram_addr_t ram_size, ram_addr_t above_4g_mem_size,
-                  const char *boot_device,
+                  const char *boot_device, MachineState *machine,
                   ISADevice *floppy, BusState *idebus0, BusState *idebus1,
                   ISADevice *s)
 {
     int val, nb, i;
     FDriveType fd_type[2] = { FDRIVE_DRV_NONE, FDRIVE_DRV_NONE };
     static pc_cmos_init_late_arg arg;
-    static RTCCPUHotplugArg cpu_hotplug_cb;
+    PCMachineState *pc_machine = PC_MACHINE(machine);
 
     /* various important CMOS locations needed by PC/Bochs bios */
 
@@ -417,10 +403,14 @@ void pc_cmos_init(ram_addr_t ram_size, ram_addr_t above_4g_mem_size,
 
     /* set the number of CPU */
     rtc_set_memory(s, 0x5f, smp_cpus - 1);
-    /* init CPU hotplug notifier */
-    cpu_hotplug_cb.rtc_state = s;
-    cpu_hotplug_cb.cpu_added_notifier.notify = rtc_notify_cpu_added;
-    qemu_register_cpu_added_notifier(&cpu_hotplug_cb.cpu_added_notifier);
+
+    object_property_add_link(OBJECT(machine), "rtc_state",
+                             TYPE_ISA_DEVICE,
+                             (Object **)&pc_machine->rtc,
+                             object_property_allow_set_link,
+                             OBJ_PROP_LINK_UNREF_ON_RELEASE, &error_abort);
+    object_property_set_link(OBJECT(machine), OBJECT(s),
+                             "rtc_state", &error_abort);
 
     if (set_boot_dev(s, boot_device)) {
         exit(1);
@@ -483,7 +473,7 @@ static void port92_write(void *opaque, hwaddr addr, uint64_t val,
     Port92State *s = opaque;
     int oldval = s->outport;
 
-    DPRINTF("port92: write 0x%02x\n", val);
+    DPRINTF("port92: write 0x%02" PRIx64 "\n", val);
     s->outport = val;
     qemu_set_irq(*s->a20_out, (val >> 1) & 1);
     if ((val & 1) && !(oldval & 1)) {
@@ -1074,35 +1064,6 @@ typedef struct PcRomPciInfo {
     uint64_t w64_max;
 } PcRomPciInfo;
 
-static void pc_fw_cfg_guest_info(PcGuestInfo *guest_info)
-{
-    PcRomPciInfo *info;
-    Object *pci_info;
-    bool ambiguous = false;
-
-    if (!guest_info->has_pci_info || !guest_info->fw_cfg) {
-        return;
-    }
-    pci_info = object_resolve_path_type("", TYPE_PCI_HOST_BRIDGE, &ambiguous);
-    g_assert(!ambiguous);
-    if (!pci_info) {
-        return;
-    }
-
-    info = g_malloc(sizeof *info);
-    info->w32_min = cpu_to_le64(object_property_get_int(pci_info,
-                                PCI_HOST_PROP_PCI_HOLE_START, NULL));
-    info->w32_max = cpu_to_le64(object_property_get_int(pci_info,
-                                PCI_HOST_PROP_PCI_HOLE_END, NULL));
-    info->w64_min = cpu_to_le64(object_property_get_int(pci_info,
-                                PCI_HOST_PROP_PCI_HOLE64_START, NULL));
-    info->w64_max = cpu_to_le64(object_property_get_int(pci_info,
-                                PCI_HOST_PROP_PCI_HOLE64_END, NULL));
-    /* Pass PCI hole info to guest via a side channel.
-     * Required so guest PCI enumeration does the right thing. */
-    fw_cfg_add_file(guest_info->fw_cfg, "etc/pci-info", info, sizeof *info);
-}
-
 typedef struct PcGuestInfoState {
     PcGuestInfo info;
     Notifier machine_done;
@@ -1114,7 +1075,6 @@ void pc_guest_info_machine_done(Notifier *notifier, void *data)
     PcGuestInfoState *guest_info_state = container_of(notifier,
                                                       PcGuestInfoState,
                                                       machine_done);
-    pc_fw_cfg_guest_info(&guest_info_state->info);
     acpi_setup(&guest_info_state->info);
 }
 
@@ -1198,6 +1158,31 @@ void pc_acpi_init(const char *default_dsdt)
     }
 }
 
+FWCfgState *xen_load_linux(const char *kernel_filename,
+                           const char *kernel_cmdline,
+                           const char *initrd_filename,
+                           ram_addr_t below_4g_mem_size,
+                           PcGuestInfo *guest_info)
+{
+    int i;
+    FWCfgState *fw_cfg;
+
+    assert(kernel_filename != NULL);
+
+    fw_cfg = fw_cfg_init(BIOS_CFG_IOPORT, BIOS_CFG_IOPORT + 1, 0, 0);
+    rom_set_fw(fw_cfg);
+
+    load_linux(fw_cfg, kernel_filename, initrd_filename,
+               kernel_cmdline, below_4g_mem_size);
+    for (i = 0; i < nb_option_roms; i++) {
+        assert(!strcmp(option_rom[i].name, "linuxboot.bin") ||
+               !strcmp(option_rom[i].name, "multiboot.bin"));
+        rom_add_option(option_rom[i].name, option_rom[i].bootindex);
+    }
+    guest_info->fw_cfg = fw_cfg;
+    return fw_cfg;
+}
+
 FWCfgState *pc_memory_init(MachineState *machine,
                            MemoryRegion *system_memory,
                            ram_addr_t below_4g_mem_size,
@@ -1263,6 +1248,11 @@ FWCfgState *pc_memory_init(MachineState *machine,
         pcms->hotplug_memory_base =
             ROUND_UP(0x100000000ULL + above_4g_mem_size, 1ULL << 30);
 
+        if (pcms->enforce_aligned_dimm) {
+            /* size hotplug region assuming 1G page max alignment per slot */
+            hotplug_mem_size += (1ULL << 30) * machine->ram_slots;
+        }
+
         if ((pcms->hotplug_memory_base + hotplug_mem_size) <
             hotplug_mem_size) {
             error_report("unsupported amount of maximum memory: " RAM_ADDR_FMT,
@@ -1280,7 +1270,8 @@ FWCfgState *pc_memory_init(MachineState *machine,
     pc_system_firmware_init(rom_memory, guest_info->isapc_ram_fw);
 
     option_rom_mr = g_malloc(sizeof(*option_rom_mr));
-    memory_region_init_ram(option_rom_mr, NULL, "pc.rom", PC_ROM_SIZE);
+    memory_region_init_ram(option_rom_mr, NULL, "pc.rom", PC_ROM_SIZE,
+                           &error_abort);
     vmstate_register_ram_global(option_rom_mr);
     memory_region_add_subregion_overlap(rom_memory,
                                         PC_ROM_MIN_VGA,
@@ -1520,6 +1511,7 @@ static void pc_generic_machine_class_init(ObjectClass *oc, void *data)
     MachineClass *mc = MACHINE_CLASS(oc);
     QEMUMachine *qm = data;
 
+    mc->family = qm->family;
     mc->name = qm->name;
     mc->alias = qm->alias;
     mc->desc = qm->desc;
@@ -1528,6 +1520,7 @@ static void pc_generic_machine_class_init(ObjectClass *oc, void *data)
     mc->hot_add_cpu = qm->hot_add_cpu;
     mc->kvm_type = qm->kvm_type;
     mc->block_default_type = qm->block_default_type;
+    mc->units_per_default_bus = qm->units_per_default_bus;
     mc->max_cpus = qm->max_cpus;
     mc->no_serial = qm->no_serial;
     mc->no_parallel = qm->no_parallel;
@@ -1539,6 +1532,7 @@ static void pc_generic_machine_class_init(ObjectClass *oc, void *data)
     mc->is_default = qm->is_default;
     mc->default_machine_opts = qm->default_machine_opts;
     mc->default_boot_order = qm->default_boot_order;
+    mc->default_display = qm->default_display;
     mc->compat_props = qm->compat_props;
     mc->hw_version = qm->hw_version;
 }
@@ -1557,6 +1551,37 @@ void qemu_register_pc_machine(QEMUMachine *m)
     g_free(name);
 }
 
+static int pc_dimm_count(Object *obj, void *opaque)
+{
+    int *count = opaque;
+
+    if (object_dynamic_cast(obj, TYPE_PC_DIMM)) {
+        (*count)++;
+    }
+
+    object_child_foreach(obj, pc_dimm_count, opaque);
+    return 0;
+}
+
+static int pc_existing_dimms_capacity(Object *obj, void *opaque)
+{
+    Error *local_err = NULL;
+    uint64_t *size = opaque;
+
+    if (object_dynamic_cast(obj, TYPE_PC_DIMM)) {
+        (*size) += object_property_get_int(obj, PC_DIMM_SIZE_PROP, &local_err);
+
+        if (local_err) {
+            qerror_report_err(local_err);
+            error_free(local_err);
+            return 1;
+        }
+    }
+
+    object_child_foreach(obj, pc_dimm_count, opaque);
+    return 0;
+}
+
 static void pc_dimm_plug(HotplugHandler *hotplug_dev,
                          DeviceState *dev, Error **errp)
 {
@@ -1568,17 +1593,37 @@ static void pc_dimm_plug(HotplugHandler *hotplug_dev,
     PCDIMMDevice *dimm = PC_DIMM(dev);
     PCDIMMDeviceClass *ddc = PC_DIMM_GET_CLASS(dimm);
     MemoryRegion *mr = ddc->get_memory_region(dimm);
-    uint64_t addr = object_property_get_int(OBJECT(dimm), PC_DIMM_ADDR_PROP,
-                                            &local_err);
+    uint64_t existing_dimms_capacity = 0;
+    uint64_t align = TARGET_PAGE_SIZE;
+    uint64_t addr;
+
+    addr = object_property_get_int(OBJECT(dimm), PC_DIMM_ADDR_PROP, &local_err);
     if (local_err) {
         goto out;
     }
 
+    if (memory_region_get_alignment(mr) && pcms->enforce_aligned_dimm) {
+        align = memory_region_get_alignment(mr);
+    }
+
     addr = pc_dimm_get_free_addr(pcms->hotplug_memory_base,
                                  memory_region_size(&pcms->hotplug_memory),
-                                 !addr ? NULL : &addr,
+                                 !addr ? NULL : &addr, align,
                                  memory_region_size(mr), &local_err);
     if (local_err) {
+        goto out;
+    }
+
+    if (pc_existing_dimms_capacity(OBJECT(machine), &existing_dimms_capacity)) {
+        error_setg(&local_err, "failed to get total size of existing DIMMs");
+        goto out;
+    }
+
+    if (existing_dimms_capacity + memory_region_size(mr) >
+        machine->maxram_size - machine->ram_size) {
+        error_setg(&local_err, "not enough space, currently 0x%" PRIx64
+                   " in use of total 0x" RAM_ADDR_FMT,
+                   existing_dimms_capacity, machine->maxram_size);
         goto out;
     }
 
@@ -1610,6 +1655,11 @@ static void pc_dimm_plug(HotplugHandler *hotplug_dev,
         goto out;
     }
 
+    if (kvm_enabled() && !kvm_has_free_slot(machine)) {
+        error_setg(&local_err, "hypervisor has no free memory slots left");
+        goto out;
+    }
+
     memory_region_add_subregion(&pcms->hotplug_memory,
                                 addr - pcms->hotplug_memory_base, mr);
     vmstate_register_ram(mr, dev);
@@ -1620,11 +1670,42 @@ out:
     error_propagate(errp, local_err);
 }
 
+static void pc_cpu_plug(HotplugHandler *hotplug_dev,
+                        DeviceState *dev, Error **errp)
+{
+    HotplugHandlerClass *hhc;
+    Error *local_err = NULL;
+    PCMachineState *pcms = PC_MACHINE(hotplug_dev);
+
+    if (!dev->hotplugged) {
+        goto out;
+    }
+
+    if (!pcms->acpi_dev) {
+        error_setg(&local_err,
+                   "cpu hotplug is not enabled: missing acpi device");
+        goto out;
+    }
+
+    hhc = HOTPLUG_HANDLER_GET_CLASS(pcms->acpi_dev);
+    hhc->plug(HOTPLUG_HANDLER(pcms->acpi_dev), dev, &local_err);
+    if (local_err) {
+        goto out;
+    }
+
+    /* increment the number of CPUs */
+    rtc_set_memory(pcms->rtc, 0x5f, rtc_get_memory(pcms->rtc, 0x5f) + 1);
+out:
+    error_propagate(errp, local_err);
+}
+
 static void pc_machine_device_plug_cb(HotplugHandler *hotplug_dev,
                                       DeviceState *dev, Error **errp)
 {
     if (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
         pc_dimm_plug(hotplug_dev, dev, errp);
+    } else if (object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
+        pc_cpu_plug(hotplug_dev, dev, errp);
     }
 }
 
@@ -1633,7 +1714,8 @@ static HotplugHandler *pc_get_hotpug_handler(MachineState *machine,
 {
     PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(machine);
 
-    if (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
+    if (object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM) ||
+        object_dynamic_cast(OBJECT(dev), TYPE_CPU)) {
         return HOTPLUG_HANDLER(machine);
     }
 
@@ -1691,6 +1773,30 @@ static void pc_machine_set_max_ram_below_4g(Object *obj, Visitor *v,
     pcms->max_ram_below_4g = value;
 }
 
+static void pc_machine_get_vmport(Object *obj, Visitor *v, void *opaque,
+                                  const char *name, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+    OnOffAuto vmport = pcms->vmport;
+
+    visit_type_OnOffAuto(v, &vmport, name, errp);
+}
+
+static void pc_machine_set_vmport(Object *obj, Visitor *v, void *opaque,
+                                  const char *name, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    visit_type_OnOffAuto(v, &pcms->vmport, name, errp);
+}
+
+static bool pc_machine_get_aligned_dimm(Object *obj, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    return pcms->enforce_aligned_dimm;
+}
+
 static void pc_machine_initfn(Object *obj)
 {
     PCMachineState *pcms = PC_MACHINE(obj);
@@ -1703,6 +1809,17 @@ static void pc_machine_initfn(Object *obj)
                         pc_machine_get_max_ram_below_4g,
                         pc_machine_set_max_ram_below_4g,
                         NULL, NULL, NULL);
+
+    pcms->vmport = ON_OFF_AUTO_AUTO;
+    object_property_add(obj, PC_MACHINE_VMPORT, "OnOffAuto",
+                        pc_machine_get_vmport,
+                        pc_machine_set_vmport,
+                        NULL, NULL, NULL);
+
+    pcms->enforce_aligned_dimm = true;
+    object_property_add_bool(obj, PC_MACHINE_ENFORCE_ALIGNED_DIMM,
+                             pc_machine_get_aligned_dimm,
+                             NULL, NULL);
 }
 
 static void pc_machine_class_init(ObjectClass *oc, void *data)

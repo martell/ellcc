@@ -57,6 +57,12 @@ GENERATED_HEADERS += trace/generated-tracers-dtrace.h
 endif
 GENERATED_SOURCES += trace/generated-tracers.c
 
+GENERATED_HEADERS += trace/generated-tcg-tracers.h
+
+GENERATED_HEADERS += trace/generated-helpers-wrappers.h
+GENERATED_HEADERS += trace/generated-helpers.h
+GENERATED_SOURCES += trace/generated-helpers.c
+
 ifeq ($(findstring ust,$(TRACE_BACKENDS)),ust)
 GENERATED_HEADERS += trace/generated-ust-provider.h
 GENERATED_SOURCES += trace/generated-ust.c
@@ -202,7 +208,7 @@ Makefile: $(version-obj-y) $(version-lobj-y)
 # Build libraries
 
 libqemustub.a: $(stub-obj-y)
-libqemuutil.a: $(util-obj-y) qapi-types.o qapi-visit.o qapi-event.o
+libqemuutil.a: $(util-obj-y)
 
 block-modules = $(foreach o,$(block-obj-m),"$(basename $(subst /,-,$o))",) NULL
 util/module.o-cflags = -D'CONFIG_BLOCK_MODULES=$(block-modules)'
@@ -412,6 +418,7 @@ endif
 	set -e; for x in $(KEYMAPS); do \
 		$(INSTALL_DATA) $(SRC_PATH)/pc-bios/keymaps/$$x "$(DESTDIR)$(qemu_datadir)/keymaps"; \
 	done
+	$(INSTALL_DATA) $(SRC_PATH)/trace-events "$(DESTDIR)$(qemu_datadir)/trace-events"
 	for d in $(TARGET_DIRS); do \
 	$(MAKE) $(SUBDIR_MAKEFLAGS) TARGET_DIR=$$d/ -C $$d $@ || exit 1 ; \
         done

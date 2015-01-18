@@ -326,7 +326,7 @@ seccomp=""
 glusterfs=""
 glusterfs_discard="no"
 glusterfs_zerofill="no"
-virtio_blk_data_plane=""
+archipelago=""
 gtk=""
 gtkabi=""
 vte=""
@@ -388,6 +388,7 @@ cpp="${CPP-$cc -E}"
 objcopy="${OBJCOPY-${cross_prefix}objcopy}"
 ld="${LD-${cross_prefix}ld}"
 libtool="${LIBTOOL-${cross_prefix}libtool}"
+nm="${NM-${cross_prefix}nm}"
 strip="${STRIP-${cross_prefix}strip}"
 windres="${WINDRES-${cross_prefix}windres}"
 pkg_config_exe="${PKG_CONFIG-${cross_prefix}pkg-config}"
@@ -1087,9 +1088,12 @@ for opt do
   ;;
   --enable-glusterfs) glusterfs="yes"
   ;;
-  --disable-virtio-blk-data-plane) virtio_blk_data_plane="no"
+  --disable-archipelago) archipelago="no"
   ;;
-  --enable-virtio-blk-data-plane) virtio_blk_data_plane="yes"
+  --enable-archipelago) archipelago="yes"
+  ;;
+  --disable-virtio-blk-data-plane|--enable-virtio-blk-data-plane)
+      echo "$0: $opt is obsolete, virtio-blk data-plane is always on" >&2
   ;;
   --disable-gtk) gtk="no"
   ;;
@@ -1344,7 +1348,7 @@ Advanced options (experts only):
   --enable-linux-aio       enable Linux AIO support
   --disable-cap-ng         disable libcap-ng support
   --enable-cap-ng          enable libcap-ng support
-  --disable-attr           disables attr and xattr support
+  --disable-attr           disable attr and xattr support
   --enable-attr            enable attr and xattr support
   --disable-blobs          disable installing provided firmware blobs
   --enable-docs            enable documentation build
@@ -1375,20 +1379,22 @@ Advanced options (experts only):
   --with-vss-sdk=SDK-path  enable Windows VSS support in QEMU Guest Agent
   --with-win-sdk=SDK-path  path to Windows Platform SDK (to build VSS .tlb)
   --disable-seccomp        disable seccomp support
-  --enable-seccomp         enables seccomp support
+  --enable-seccomp         enable seccomp support
   --with-coroutine=BACKEND coroutine backend. Supported options:
                            gthread, ucontext, sigaltstack, windows
   --disable-coroutine-pool disable coroutine freelist (worse performance)
   --enable-coroutine-pool  enable coroutine freelist (better performance)
   --enable-glusterfs       enable GlusterFS backend
   --disable-glusterfs      disable GlusterFS backend
+  --enable-archipelago     enable Archipelago backend
+  --disable-archipelago    disable Archipelago backend
   --enable-gcov            enable test coverage analysis with gcov
   --gcov=GCOV              use specified gcov [$gcov_tool]
   --disable-tpm            disable TPM support
   --enable-tpm             enable TPM support
   --disable-libssh2        disable ssh block device support
   --enable-libssh2         enable ssh block device support
-  --disable-vhdx           disables support for the Microsoft VHDX image format
+  --disable-vhdx           disable support for the Microsoft VHDX image format
   --enable-vhdx            enable support for the Microsoft VHDX image format
   --disable-quorum         disable quorum block filter support
   --enable-quorum          enable quorum block filter support
@@ -1817,7 +1823,8 @@ fi
 # libseccomp check
 
 if test "$seccomp" != "no" ; then
-    if $pkg_config --atleast-version=2.1.0 libseccomp; then
+    if test "$cpu" = "i386" || test "$cpu" = "x86_64" &&
+        $pkg_config --atleast-version=2.1.1 libseccomp; then
         libs_softmmu="$libs_softmmu `$pkg_config --libs libseccomp`"
         QEMU_CFLAGS="$QEMU_CFLAGS `$pkg_config --cflags libseccomp`"
 	seccomp="yes"
@@ -2709,6 +2716,12 @@ for i in $glib_modules; do
     fi
 done
 
+# g_test_trap_subprocess added in 2.38. Used by some tests.
+glib_subprocess=yes
+if ! $pkg_config --atleast-version=2.38 glib-2.0; then
+    glib_subprocess=no
+fi
+
 ##########################################
 # SHA command probe for modules
 if test "$modules" = yes; then
@@ -2730,7 +2743,7 @@ fi
 if test "$pixman" = ""; then
   if test "$want_tools" = "no" -a "$softmmu" = "no"; then
     pixman="none"
-  elif $pkg_config pixman-1 > /dev/null 2>&1; then
+  elif $pkg_config --atleast-version=0.21.8 pixman-1 > /dev/null 2>&1; then
     pixman="system"
   else
     pixman="internal"
@@ -2746,11 +2759,12 @@ if test "$pixman" = "none"; then
   pixman_cflags=
   pixman_libs=
 elif test "$pixman" = "system"; then
+  # pixman version has been checked above
   pixman_cflags=`$pkg_config --cflags pixman-1`
   pixman_libs=`$pkg_config --libs pixman-1`
 else
   if test ! -d ${source_path}/pixman/pixman; then
-    error_exit "pixman not present. Your options:" \
+    error_exit "pixman >= 0.21.8 not present. Your options:" \
         "  (1) Preferred: Install the pixman devel package (any recent" \
         "      distro should have packages as Xorg needs pixman too)." \
         "  (2) Fetch the pixman submodule, using:" \
@@ -2929,16 +2943,6 @@ else
 fi
 
 ##########################################
-# adjust virtio-blk-data-plane based on linux-aio
-
-if test "$virtio_blk_data_plane" = "yes" -a \
-	"$linux_aio" != "yes" ; then
-  error_exit "virtio-blk-data-plane requires Linux AIO, please try --enable-linux-aio"
-elif test -z "$virtio_blk_data_plane" ; then
-  virtio_blk_data_plane=$linux_aio
-fi
-
-##########################################
 # attr probe
 
 if test "$attr" != "no" ; then
@@ -3072,6 +3076,33 @@ EOF
   fi
 fi
 
+
+##########################################
+# archipelago probe
+if test "$archipelago" != "no" ; then
+    cat > $TMPC <<EOF
+#include <stdio.h>
+#include <xseg/xseg.h>
+#include <xseg/protocol.h>
+int main(void) {
+    xseg_initialize();
+    return 0;
+}
+EOF
+    archipelago_libs=-lxseg
+    if compile_prog "" "$archipelago_libs"; then
+        archipelago="yes"
+        libs_tools="$archipelago_libs $libs_tools"
+        libs_softmmu="$archipelago_libs $libs_softmmu"
+    else
+      if test "$archipelago" = "yes" ; then
+        feature_not_found "Archipelago backend support" "Install libxseg devel"
+      fi
+      archipelago="no"
+    fi
+fi
+
+
 ##########################################
 # glusterfs probe
 if test "$glusterfs" != "no" ; then
@@ -3087,7 +3118,8 @@ if test "$glusterfs" != "no" ; then
     fi
   else
     if test "$glusterfs" = "yes" ; then
-      feature_not_found "GlusterFS backend support" "Install glusterfs-api devel"
+      feature_not_found "GlusterFS backend support" \
+          "Install glusterfs-api devel >= 3"
     fi
     glusterfs="no"
   fi
@@ -3277,6 +3309,21 @@ if compile_prog "" "" ; then
   fallocate_punch_hole=yes
 fi
 
+# check for posix_fallocate
+posix_fallocate=no
+cat > $TMPC << EOF
+#include <fcntl.h>
+
+int main(void)
+{
+    posix_fallocate(0, 0, 0);
+    return 0;
+}
+EOF
+if compile_prog "" "" ; then
+    posix_fallocate=yes
+fi
+
 # check for sync_file_range
 sync_file_range=no
 cat > $TMPC << EOF
@@ -3421,6 +3468,37 @@ if compile_prog "" "" ; then
   sendfile=yes
 fi
 
+# check for timerfd support (glibc 2.8 and newer)
+timerfd=no
+cat > $TMPC << EOF
+#include <sys/timerfd.h>
+
+int main(void)
+{
+    return(timerfd_create(CLOCK_REALTIME, 0));
+}
+EOF
+if compile_prog "" "" ; then
+  timerfd=yes
+fi
+
+# check for setns and unshare support
+setns=no
+cat > $TMPC << EOF
+#include <sched.h>
+
+int main(void)
+{
+    int ret;
+    ret = setns(0, 0);
+    ret = unshare(0);
+    return ret;
+}
+EOF
+if compile_prog "" "" ; then
+  setns=yes
+fi
+
 # Check if tools are available to build documentation.
 if test "$docs" != "no" ; then
   if has makeinfo && has pod2man; then
@@ -3532,7 +3610,8 @@ EOF
     spice_server_version=$($pkg_config --modversion spice-server)
   else
     if test "$spice" = "yes" ; then
-      feature_not_found "spice" "Install spice-server and spice-protocol devel"
+      feature_not_found "spice" \
+          "Install spice-server(>=0.12.0) and spice-protocol(>=0.12.3) devel"
     fi
     spice="no"
   fi
@@ -3563,7 +3642,7 @@ EOF
         smartcard_nss="yes"
     else
         if test "$smartcard_nss" = "yes"; then
-            feature_not_found "nss"
+            feature_not_found "nss" "Install nss devel >= 3.12.8"
         fi
         smartcard_nss="no"
     fi
@@ -3579,7 +3658,7 @@ if test "$libusb" != "no" ; then
         libs_softmmu="$libs_softmmu $libusb_libs"
     else
         if test "$libusb" = "yes"; then
-            feature_not_found "libusb" "Install libusb devel"
+            feature_not_found "libusb" "Install libusb devel >= 1.0.13"
         fi
         libusb="no"
     fi
@@ -3893,12 +3972,11 @@ else
 fi
 
 ########################################
-# check if we have valgrind/valgrind.h and valgrind/memcheck.h
+# check if we have valgrind/valgrind.h
 
 valgrind_h=no
 cat > $TMPC << EOF
 #include <valgrind/valgrind.h>
-#include <valgrind/memcheck.h>
 int main(void) {
   return 0;
 }
@@ -4004,7 +4082,7 @@ if test "$libnfs" != "no" ; then
     LIBS="$LIBS $libnfs_libs"
   else
     if test "$libnfs" = "yes" ; then
-      feature_not_found "libnfs"
+      feature_not_found "libnfs" "Install libnfs devel >= 1.9.3"
     fi
     libnfs="no"
   fi
@@ -4134,9 +4212,9 @@ EOF
   fi
 fi
 
-# add pixman flags after all config tests are done
-QEMU_CFLAGS="$QEMU_CFLAGS $pixman_cflags $fdt_cflags"
-libs_softmmu="$libs_softmmu $pixman_libs"
+# prepend pixman and ftd flags after all config tests are done
+QEMU_CFLAGS="$pixman_cflags $fdt_cflags $QEMU_CFLAGS"
+libs_softmmu="$pixman_libs $libs_softmmu"
 
 echo "Install prefix    $prefix"
 echo "BIOS directory    `eval echo $qemu_datadir`"
@@ -4251,7 +4329,7 @@ echo "seccomp support   $seccomp"
 echo "coroutine backend $coroutine"
 echo "coroutine pool    $coroutine_pool"
 echo "GlusterFS support $glusterfs"
-echo "virtio-blk-data-plane $virtio_blk_data_plane"
+echo "Archipelago support $archipelago"
 echo "gcov              $gcov_tool"
 echo "gcov enabled      $gcov"
 echo "TPM support       $tpm"
@@ -4460,6 +4538,9 @@ fi
 if test "$fallocate_punch_hole" = "yes" ; then
   echo "CONFIG_FALLOCATE_PUNCH_HOLE=y" >> $config_host_mak
 fi
+if test "$posix_fallocate" = "yes" ; then
+  echo "CONFIG_POSIX_FALLOCATE=y" >> $config_host_mak
+fi
 if test "$sync_file_range" = "yes" ; then
   echo "CONFIG_SYNC_FILE_RANGE=y" >> $config_host_mak
 fi
@@ -4487,6 +4568,12 @@ fi
 if test "$sendfile" = "yes" ; then
   echo "CONFIG_SENDFILE=y" >> $config_host_mak
 fi
+if test "$timerfd" = "yes" ; then
+  echo "CONFIG_TIMERFD=y" >> $config_host_mak
+fi
+if test "$setns" = "yes" ; then
+  echo "CONFIG_SETNS=y" >> $config_host_mak
+fi
 if test "$inotify" = "yes" ; then
   echo "CONFIG_INOTIFY=y" >> $config_host_mak
 fi
@@ -4510,6 +4597,9 @@ fi
 if test "$bluez" = "yes" ; then
   echo "CONFIG_BLUEZ=y" >> $config_host_mak
   echo "BLUEZ_CFLAGS=$bluez_cflags" >> $config_host_mak
+fi
+if test "glib_subprocess" = "yes" ; then
+  echo "CONFIG_HAS_GLIB_SUBPROCESS_TESTS=y" >> $config_host_mak
 fi
 echo "GLIB_CFLAGS=$glib_cflags" >> $config_host_mak
 if test "$gtk" = "yes" ; then
@@ -4689,6 +4779,11 @@ if test "$glusterfs_zerofill" = "yes" ; then
   echo "CONFIG_GLUSTERFS_ZEROFILL=y" >> $config_host_mak
 fi
 
+if test "$archipelago" = "yes" ; then
+  echo "CONFIG_ARCHIPELAGO=m" >> $config_host_mak
+  echo "ARCHIPELAGO_LIBS=$archipelago_libs" >> $config_host_mak
+fi
+
 if test "$libssh2" = "yes" ; then
   echo "CONFIG_LIBSSH2=m" >> $config_host_mak
   echo "LIBSSH2_CFLAGS=$libssh2_cflags" >> $config_host_mak
@@ -4697,10 +4792,6 @@ fi
 
 if test "$quorum" = "yes" ; then
   echo "CONFIG_QUORUM=y" >> $config_host_mak
-fi
-
-if test "$virtio_blk_data_plane" = "yes" ; then
-  echo 'CONFIG_VIRTIO_BLK_DATA_PLANE=$(CONFIG_VIRTIO)' >> $config_host_mak
 fi
 
 if test "$vhdx" = "yes" ; then
@@ -4809,6 +4900,7 @@ echo "AS=$as" >> $config_host_mak
 echo "CPP=$cpp" >> $config_host_mak
 echo "OBJCOPY=$objcopy" >> $config_host_mak
 echo "LD=$ld" >> $config_host_mak
+echo "NM=$nm" >> $config_host_mak
 echo "WINDRES=$windres" >> $config_host_mak
 echo "LIBTOOL=$libtool" >> $config_host_mak
 echo "CFLAGS=$CFLAGS" >> $config_host_mak
@@ -4817,6 +4909,7 @@ echo "QEMU_CFLAGS=$QEMU_CFLAGS" >> $config_host_mak
 echo "QEMU_INCLUDES=$QEMU_INCLUDES" >> $config_host_mak
 if test "$sparse" = "yes" ; then
   echo "CC           := REAL_CC=\"\$(CC)\" cgcc"       >> $config_host_mak
+  echo "CXX          := REAL_CC=\"\$(CXX)\" cgcc"      >> $config_host_mak
   echo "HOST_CC      := REAL_CC=\"\$(HOST_CC)\" cgcc"  >> $config_host_mak
   echo "QEMU_CFLAGS  += -Wbitwise -Wno-transparent-union -Wno-old-initializer -Wno-non-pointer-null" >> $config_host_mak
 fi
@@ -4937,7 +5030,7 @@ case "$target_name" in
   aarch64)
     TARGET_BASE_ARCH=arm
     bflt="yes"
-    gdb_xml_files="aarch64-core.xml aarch64-fpu.xml"
+    gdb_xml_files="aarch64-core.xml aarch64-fpu.xml arm-core.xml arm-vfp.xml arm-vfp3.xml arm-neon.xml"
   ;;
   cris)
   ;;
@@ -4965,6 +5058,8 @@ case "$target_name" in
     TARGET_ARCH=mips64
     TARGET_BASE_ARCH=mips
     echo "TARGET_ABI_MIPSN64=y" >> $config_target_mak
+  ;;
+  tricore)
   ;;
   moxie)
   ;;
@@ -5014,6 +5109,7 @@ case "$target_name" in
     echo "TARGET_ABI32=y" >> $config_target_mak
   ;;
   s390x)
+    gdb_xml_files="s390x-core64.xml s390-acr.xml s390-fpr.xml"
   ;;
   unicore32)
   ;;
@@ -5292,10 +5388,6 @@ for rom in seabios vgabios ; do
     echo "IASL=$iasl" >> $config_mak
     echo "LD=$ld" >> $config_mak
 done
-
-if test "$docs" = "yes" ; then
-  mkdir -p QMP
-fi
 
 # set up qemu-iotests in this build directory
 iotests_common_env="tests/qemu-iotests/common.env"

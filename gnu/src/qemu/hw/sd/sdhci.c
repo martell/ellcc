@@ -23,6 +23,7 @@
  */
 
 #include "hw/hw.h"
+#include "sysemu/block-backend.h"
 #include "sysemu/blockdev.h"
 #include "sysemu/dma.h"
 #include "qemu/timer.h"
@@ -702,7 +703,8 @@ static void sdhci_do_adma(SDHCIState *s)
                         length -= block_size - begin;
                     }
                     dma_memory_read(&address_space_memory, dscr.addr,
-                                    &s->fifo_buffer[begin], s->data_count);
+                                    &s->fifo_buffer[begin],
+                                    s->data_count - begin);
                     dscr.addr += s->data_count - begin;
                     if (s->data_count == block_size) {
                         for (n = 0; n < block_size; n++) {
@@ -1164,7 +1166,7 @@ static void sdhci_initfn(Object *obj)
     DriveInfo *di;
 
     di = drive_get_next(IF_SD);
-    s->card = sd_init(di ? di->bdrv : NULL, false);
+    s->card = sd_init(di ? blk_by_legacy_dinfo(di) : NULL, false);
     if (s->card == NULL) {
         exit(1);
     }

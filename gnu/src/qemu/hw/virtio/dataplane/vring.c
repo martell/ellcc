@@ -181,7 +181,8 @@ static int get_desc(Vring *vring, VirtQueueElement *elem,
 
     /* Stop for now if there are not enough iovecs available. */
     if (*num >= VIRTQUEUE_MAX_SIZE) {
-        return -ENOBUFS;
+        error_report("Invalid SG num: %u", *num);
+        return -EFAULT;
     }
 
     /* TODO handle non-contiguous memory across region boundaries */
@@ -351,10 +352,6 @@ int vring_pop(VirtIODevice *vdev, Vring *vring,
         goto out;
     }
 
-    if (vdev->guest_features & (1 << VIRTIO_RING_F_EVENT_IDX)) {
-        vring_avail_event(&vring->vr) = vring->vr.avail->idx;
-    }
-
     i = head;
     do {
         if (unlikely(i >= num)) {
@@ -391,6 +388,10 @@ int vring_pop(VirtIODevice *vdev, Vring *vring,
 
     /* On success, increment avail index. */
     vring->last_avail_idx++;
+    if (vdev->guest_features & (1 << VIRTIO_RING_F_EVENT_IDX)) {
+        vring_avail_event(&vring->vr) = vring->last_avail_idx;
+    }
+
     return head;
 
 out:
