@@ -828,14 +828,6 @@ static inline void init_thread(struct target_pt_regs *_regs, struct image_info *
 {
     _regs->gpr[1] = infop->start_stack;
 #if defined(TARGET_PPC64) && !defined(TARGET_ABI32)
-#if RICH
-     // RICH: This seriously mucks things up. How does ppc64 start?
-    _regs->gpr[2] = ldq_raw(infop->entry + 8); // RICH + infop->load_addr;
-     infop->entry = ldq_raw(infop->entry); // RICH + infop->load_addr;
-// #else
-    _regs->gpr[2] = ldq_raw(infop->entry + 8) + infop->load_bias;
-    infop->entry = ldq_raw(infop->entry) + infop->load_bias;
-#endif
     if (get_ppc64_abi(infop) < 2) {
         _regs->gpr[2] = ldq_raw(infop->entry + 8) + infop->load_bias;
         infop->entry = ldq_raw(infop->entry) + infop->load_bias;
