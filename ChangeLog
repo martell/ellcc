@@ -1,5 +1,8 @@
 current SVN:
 
+version 0.1.8:
+
+* Support for MinGW-w64 compilation.
 * Update to QEMU 2.2.0.
 * Update to binutils 2.25.
 * Update to musl 1.1.6.
