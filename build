@@ -69,7 +69,7 @@ if [ $all -eq 1 ] ; then
     fi
     ./build $config || bailout "Build failed for $config"
   done
-  ./build -m || bailout "Build failed for MinGW"
+    ./build -m || bailout "Build failed for MinGW"
   exit 0
 fi
 
@@ -89,7 +89,7 @@ if [ "$package" != "" ] ; then
     fi
   done
   # Package for Windows.
-  ./mingwmkdist Win32 $package || bailout "Packaging failed for MinGW"
+  #./mingwmkdist Win32 $package || bailout "Packaging failed for MinGW"
   exit 0
 fi
 

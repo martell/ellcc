@@ -12,4 +12,5 @@ libecc/share/doc/index.html
 libecc/Makefile
 libecc/config.musl
 libecc/src/
+libecc/mingw/
 examples/
