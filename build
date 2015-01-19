@@ -89,7 +89,7 @@ if [ "$package" != "" ] ; then
     fi
   done
   # Package for Windows.
-  #./mingwmkdist Win32 $package || bailout "Packaging failed for MinGW"
+  ./mingwmkdist Win32 $package || bailout "Packaging failed for MinGW"
   exit 0
 fi
 
