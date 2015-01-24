@@ -1,5 +1,6 @@
 current SVN:
 
+* Added missing MinGW libraries to repository.
 * Removed extraneous utmpx.c from the musl sources.
 
 version 0.1.8:
