@@ -100,7 +100,11 @@ else
   LD=$(CC)
 endif
 
-$(PROG):  $(NEEDCLEAN) elkconfig.ld $(OBJS)
+ifeq ($(findstring -elk,$(TARGET)),-elk)
+ CONFIG=elkconfig.ld
+endif
+
+$(PROG):  $(NEEDCLEAN) $(CONFIG) $(OBJS)
 	$(OUTL)$(LD) $(LDFLAGS) -o $(PROG) $(OBJS)
 
 .SUFFIXES: .LD .ld
