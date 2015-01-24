@@ -1,5 +1,7 @@
 current SVN:
 
+* Removed extraneous utmpx.c from the musl sources.
+
 version 0.1.8:
 
 * Support for MinGW-w64 compilation.
