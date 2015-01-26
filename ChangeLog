@@ -1,5 +1,6 @@
 current SVN:
 
+* Added write example.
 * Added missing MinGW libraries to repository.
 * Removed extraneous utmpx.c from the musl sources.
 
