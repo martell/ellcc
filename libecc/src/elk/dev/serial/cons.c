@@ -194,7 +194,7 @@ void cons_attach(struct consdev *cdev, int diag)
 #endif
 }
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   driver_register(&cons_driver);
 }

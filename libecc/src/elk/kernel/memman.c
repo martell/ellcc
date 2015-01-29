@@ -102,7 +102,7 @@ static int sys_mremap(void *old_addr, size_t old_length,
 
 /* Initialize the simple memory allocator.
  */
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   SYSCALL(brk);
 #ifdef SYS_mmap

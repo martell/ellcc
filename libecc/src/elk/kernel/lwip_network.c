@@ -1633,7 +1633,7 @@ static int sectionCommand(int argc, char **argv)
 }
 #endif
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   inet_interface = &interface;
 

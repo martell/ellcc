@@ -2067,7 +2067,7 @@ static void c_init(void)
 
 /* Initialize the thread handling code.
  */
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   /** We set up a thread_self pointer early to tell
    * the C library that we support threading.

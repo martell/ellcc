@@ -13,19 +13,43 @@ SECTIONS
     PROVIDE_HIDDEN(__preinit_array_end = .);
   } > rom
 
-  .elk_init_array : {
-    PROVIDE_HIDDEN(__elk_init_array_start = .);
-    KEEP(*(SORT_BY_INIT_PRIORITY(.elk_init_array.*) 
-           SORT_BY_INIT_PRIORITY(.elk_ctors.*)))
-    KEEP(*(.elk_init_array .elk_ctors))
-    PROVIDE_HIDDEN(__elk_init_array_end = .);
+  .elk_preinit_array : {
+    PROVIDE_HIDDEN(__elk_preinit_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.elk_preinit_array.*)))
+    KEEP(*(.elk_preinit_array))
+    PROVIDE_HIDDEN(__elk_preinit_array_end = .);
   } > rom
-  .elk_fini_array  : {
-    PROVIDE_HIDDEN(__elk_fini_array_start = .);
-    KEEP(*(SORT_BY_INIT_PRIORITY(.elk_fini_array.*)
-           SORT_BY_INIT_PRIORITY(.elk_dtors.*)))
-    KEEP(*(.elk_fini_array .elk_dtors))
-    PROVIDE_HIDDEN(__elk_fini_array_end = .);
+  .elk_prefini_array  : {
+    PROVIDE_HIDDEN(__elk_prefini_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.elk_prefini_array.*)))
+    KEEP(*(.elk_prefini_array))
+    PROVIDE_HIDDEN(__elk_prefini_array_end = .);
+  } > rom
+
+  .elk_sysinit_array : {
+    PROVIDE_HIDDEN(__elk_sysinit_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.elk_sysinit_array.*)))
+    KEEP(*(.elk_sysinit_array))
+    PROVIDE_HIDDEN(__elk_sysinit_array_end = .);
+  } > rom
+  .elk_sysfini_array  : {
+    PROVIDE_HIDDEN(__elk_sysfini_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.elk_sysfini_array.*)))
+    KEEP(*(.elk_sysfini_array))
+    PROVIDE_HIDDEN(__elk_sysfini_array_end = .);
+  } > rom
+
+  .elk_maininit_array : {
+    PROVIDE_HIDDEN(__elk_maininit_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.elk_maininit_array.*)))
+    KEEP(*(.elk_maininit_array))
+    PROVIDE_HIDDEN(__elk_maininit_array_end = .);
+  } > rom
+  .elk_mainfini_array  : {
+    PROVIDE_HIDDEN(__elk_mainfini_array_start = .);
+    KEEP(*(SORT_BY_INIT_PRIORITY(.elk_mainfini_array.*)))
+    KEEP(*(.elk_mainfini_array))
+    PROVIDE_HIDDEN(__elk_mainfini_array_end = .);
   } > rom
 
   .init_array : {

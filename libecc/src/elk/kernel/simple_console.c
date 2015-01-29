@@ -99,11 +99,11 @@ static ssize_t sys_readv(int fd, const struct iovec *iov, int iovcount)
     return count;
 }
 
-ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
+ELK_PRECONSTRUCTOR()
 {
     static int setup;
     if (setup) {
-      return 1;
+      return;
     }
 
     // Set up a simple ioctl system call.
@@ -117,5 +117,4 @@ ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
     // Set up a simple readv system call.
     SYSCALL(readv);
     setup = 1;
-    return 1;
 }

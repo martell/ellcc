@@ -263,7 +263,7 @@ static int devfs_init(void)
   return 0;
 }
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   vfs_register("devfs", devfs_init, &devfs_vfsops);
 }

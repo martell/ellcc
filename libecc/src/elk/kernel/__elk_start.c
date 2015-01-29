@@ -16,15 +16,23 @@ extern char __text_end__[] __attribute__((weak));
 extern char __bss_start__[] __attribute__((weak));
 extern char __bss_end__[] __attribute__((weak));
 extern void *__heap_end__;
-extern void (*const __elk_init_array_end)() __attribute__((weak));
-extern void (*const __elk_init_array_start)() __attribute__((weak));
-extern void (*const __elk_init_array_end)() __attribute__((weak));
+extern void (*const __elk_preinit_array_start)() __attribute__((weak));
+extern void (*const __elk_preinit_array_end)() __attribute__((weak));
+extern void (*const __elk_sysinit_array_start)() __attribute__((weak));
+extern void (*const __elk_sysinit_array_end)() __attribute__((weak));
+extern void (*const __elk_maininit_array_start)() __attribute__((weak));
+extern void (*const __elk_maininit_array_end)() __attribute__((weak));
 void (*system_init)(void);
 void (*system_c_init)(void);
 
 static int do_main(int argc, char **argv, char **environ)
 {
   if (system_c_init) system_c_init();   // Optional system initialization.
+  // Run the pre-main initialization constructors.
+  uintptr_t a = (uintptr_t)&__elk_maininit_array_start;
+  for (; a<(uintptr_t)&__elk_maininit_array_end; a+=sizeof(void(*)()))
+          (*(void (**)())a)();
+
   // Initialize the main thread's file descriptors.
   return main(argc, argv, environ);
 }
@@ -50,9 +58,15 @@ void __elk_start(long *p, void *heap_end)
   // This has to be done after the data area is initialized.
   __heap_end__ = heap_end;
 
-  // Run the ELK constructors.
-  uintptr_t a = (uintptr_t)&__elk_init_array_start;
-  for (; a<(uintptr_t)&__elk_init_array_end; a+=sizeof(void(*)()))
+  // Run the ELK pre-init constructors.
+  uintptr_t a;
+  a = (uintptr_t)&__elk_preinit_array_start;
+  for (; a<(uintptr_t)&__elk_preinit_array_end; a+=sizeof(void(*)()))
+          (*(void (**)())a)();
+
+  // Run the system initialization constructors.
+  a = (uintptr_t)&__elk_sysinit_array_start;
+  for (; a<(uintptr_t)&__elk_sysinit_array_end; a+=sizeof(void(*)()))
           (*(void (**)())a)();
 
   if (system_init) system_init();       // Optional system initialization.

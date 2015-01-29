@@ -15,7 +15,7 @@ static int sys_exit(int status)
 
 strong_alias(sys_exit, sys_exit_group);
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   // Set up a simple exit system call.
   SYSCALL(exit);

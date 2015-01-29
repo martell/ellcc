@@ -181,7 +181,7 @@ static int sys_nanosleep(const struct timespec *req, struct timespec *rem)
   return sys_clock_nanosleep(CLOCK_MONOTONIC, 0, req, rem);
 }
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   // Set up time related system calls.
   SYSCALL(clock_getres);

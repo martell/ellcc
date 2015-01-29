@@ -517,7 +517,7 @@ static void wakeup_reader(vnode_t vp)
   pthread_cond_broadcast(&np->fn_wcond);
 }
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   vfs_register("fifofs", fifofs_init, &fifofs_vfsops);
 }

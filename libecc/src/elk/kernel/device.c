@@ -599,7 +599,7 @@ static int sectionCommand(int argc, char **argv)
   return COMMAND_OK;
 }
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   command_insert(NULL, sectionCommand);
   command_insert("ds", dsCommand);

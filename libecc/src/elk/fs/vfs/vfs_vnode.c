@@ -665,7 +665,7 @@ static int chrootCommand(int argc, char **argv)
 
 #endif // CONFIG_VFS_COMMANDS
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   for (int i = 0; i < VNODE_BUCKETS; i++)
     list_init(&vnode_table[i]);

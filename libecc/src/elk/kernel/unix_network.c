@@ -239,7 +239,7 @@ static const struct domain_interface interface = {
 };
 
 // Register the interface.
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   unix_interface = &interface;
 }

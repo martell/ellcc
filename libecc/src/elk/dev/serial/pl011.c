@@ -194,7 +194,7 @@ static int pl011_init(struct driver *self)
   return 0;
 }
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   driver_register(&pl011_driver);
 }

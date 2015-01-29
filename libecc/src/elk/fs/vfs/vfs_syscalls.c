@@ -1143,7 +1143,7 @@ static int sys_fcntl(int fd, int cmd, int arg)
   return s;
 }
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   SYSCALL(access);
   SYSCALL(chdir);

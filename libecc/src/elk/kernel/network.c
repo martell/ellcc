@@ -1376,7 +1376,7 @@ static int sys_socketcall(int call, unsigned long *args)
 #endif
 
 // Define socket related system calls.
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
 #ifndef SYS_socketcall
 

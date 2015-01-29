@@ -696,7 +696,7 @@ static struct seg *seg_reserve(struct seg *head, vaddr_t addr, size_t size)
   return seg;
 }
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   vm_allocate = int_allocate;
   vm_free = int_free;

@@ -366,7 +366,7 @@ bio_sync(void)
 /*
  * Initialize the buffer I/O system.
  */
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   struct buf *bp;
   int i;

@@ -585,7 +585,7 @@ static int ramfs_init(void)
   return 0;
 }
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   vfs_register("ramfs", ramfs_init, &ramfs_vfsops);
 }

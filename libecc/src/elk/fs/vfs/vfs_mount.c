@@ -485,7 +485,7 @@ static int fsCommand(int argc, char **argv)
 
 #endif
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   SYSCALL(mount);
   SYSCALL(umount2);

@@ -160,7 +160,7 @@ const static struct ethernetif ethernetif[] = {
   { .name = "lb1", .ops = &ops, .priv = &data[1], },
 };
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   // Register the interface(s).
   for (int u = 0; u < UNITS; ++u) {

@@ -239,11 +239,11 @@ static int sys_ioctl(int fd, int request, ...)
   }
 }
 
-ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
+ELK_PRECONSTRUCTOR()
 {
   static int setup;
   if (setup) {
-    return 1;
+    return;
   }
 
   // Set up the console for interrupt serial I/O.
@@ -266,5 +266,4 @@ ELK_CONSTRUCTOR_BY_NAME(int, __elk_setup_console)
   // Enable the receive interrupt.
   console_enable_rx_interrupt();
   setup = 1;
-  return 1;
 }

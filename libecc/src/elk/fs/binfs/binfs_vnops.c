@@ -237,7 +237,7 @@ static int binfs_init(void)
   return 0;
 }
 
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   vfs_register("binfs", binfs_init, &binfs_vfsops);
 }

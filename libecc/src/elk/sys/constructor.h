@@ -35,12 +35,12 @@ strong_alias(__elk_ ## feature, __elk_feature_ ## function);
 #if !defined(__ELK__)
 // Building ELK to run under Linux.
 // We'll use C constructors for everything.
-#define ELK_CONSTRUCTOR() \
+#define ELK_PRECONSTRUCTOR() \
 static void __elk_init(void) \
     __attribute__((__constructor__, __used__)); \
 static void __elk_init(void)
 
-#define ELK_CONSTRUCTOR_BY_NAME(returns, name) \
+#define ELK_PRECONSTRUCTOR_BY_NAME(returns, name) \
 returns name(void) \
     __attribute__((__constructor__, __used__)); \
 returns name(void)
@@ -57,31 +57,32 @@ returns name(void)
 
 #else
 // Building ELK to run bare bones.
-// The ELK constructors come before C library initialization.
+// The ELK constructors come before and after C library initialization.
+#define ELK_PRECONSTRUCTOR() \
+static void __elk_preinit(void); \
+static void (*__elk_preinit_p)(void) \
+  __attribute((section (".elk_preinit_array"), __used__)) \
+     = __elk_preinit; \
+static void __elk_preinit(void)
 
-#define ELK_CONSTRUCTOR() \
-static void __elk_init(void); \
-static void (*__elk_init_p)(void) \
-  __attribute((section (".elk_init_array"), __used__)) \
-     = __elk_init; \
-static void __elk_init(void)
-
-#define ELK_CONSTRUCTOR_BY_NAME(returns, name) \
-returns name(void); \
-static returns (*name ## _p)(void) \
-  __attribute((section (".elk_init_array"), __used__)) \
-     = name; \
-returns name(void)
+#define ELK_SYSCONSTRUCTOR() \
+static void __elk_sysinit(void); \
+static void (*__elk_sysinit_p)(void) \
+  __attribute((section (".elk_sysinit_array"), __used__)) \
+     = __elk_sysinit; \
+static void __elk_sysinit(void)
 
 #define C_CONSTRUCTOR() \
 static void __elk_c_init(void) \
     __attribute__((__constructor__, __used__)); \
 static void __elk_c_init(void)
 
-#define C_CONSTRUCTOR_BY_NAME(returns, name) \
-returns name(void) \
-    __attribute__((__constructor__, __used__)); \
-returns name(void)
+#define ELK_MAINCONSTRUCTOR() \
+static void __elk_maininit(void); \
+static void (*__elk_maininit_p)(void) \
+  __attribute((section (".elk_maininit_array"), __used__)) \
+     = __elk_maininit; \
+static void __elk_maininit(void)
 
 #endif // __ELK__
 

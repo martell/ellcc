@@ -27,7 +27,7 @@ static char *sys_brk(char *addr)
 
 /* Initialize the simple memory allocator.
  */
-ELK_CONSTRUCTOR()
+ELK_PRECONSTRUCTOR()
 {
   // Set up a simple brk system call.
   SYSCALL(brk);
