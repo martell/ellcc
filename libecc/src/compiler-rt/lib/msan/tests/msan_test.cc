@@ -19,6 +19,19 @@
 #include "sanitizer/allocator_interface.h"
 #include "sanitizer/msan_interface.h"
 
+#if defined(__FreeBSD__)
+# define _KERNEL  // To declare 'shminfo' structure.
+# include <sys/shm.h>
+# undef _KERNEL
+extern "C" {
+// <sys/shm.h> doesn't declare these functions in _KERNEL mode.
+void *shmat(int, const void *, int);
+int shmget(key_t, size_t, int);
+int shmctl(int, int, struct shmid_ds *);
+int shmdt(const void *);
+}
+#endif
+
 #include <inttypes.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -58,6 +71,9 @@
 # include <netinet/ether.h>
 #else
 # include <netinet/in.h>
+# include <sys/uio.h>
+# include <sys/mount.h>
+# define f_namelen f_namemax  // FreeBSD names this statfs field so.
 #endif
 
 #if defined(__i386__) || defined(__x86_64__)
@@ -74,8 +90,14 @@
 // On FreeBSD procfs is not enabled by default.
 #if defined(__FreeBSD__)
 # define FILE_TO_READ "/bin/cat"
+# define DIR_TO_READ "/bin"
+# define SUBFILE_TO_READ "cat"
+# define SYMLINK_TO_READ "/usr/bin/tar"
 #else
 # define FILE_TO_READ "/proc/self/stat"
+# define DIR_TO_READ "/proc/self"
+# define SUBFILE_TO_READ "stat"
+# define SYMLINK_TO_READ "/proc/self/exe"
 #endif
 
 static const size_t kPageSize = 4096;
@@ -504,9 +526,8 @@ static char *DynRetTestStr;
 
 TEST(MemorySanitizer, DynRet) {
   ReturnPoisoned<S8>();
-  EXPECT_NOT_POISONED(clearenv());
+  EXPECT_NOT_POISONED(atoi("0"));
 }
-
 
 TEST(MemorySanitizer, DynRet1) {
   ReturnPoisoned<S8>();
@@ -562,7 +583,7 @@ TEST(MemorySanitizer, strerror) {
 TEST(MemorySanitizer, strerror_r) {
   errno = 0;
   char buf[1000];
-  char *res = strerror_r(EINVAL, buf, sizeof(buf));
+  char *res = (char*) (size_t) strerror_r(EINVAL, buf, sizeof(buf));
   ASSERT_EQ(0, errno);
   if (!res) res = buf; // POSIX version success.
   EXPECT_NOT_POISONED(strlen(res));
@@ -616,7 +637,7 @@ TEST(MemorySanitizer, readv) {
   int fd = open(FILE_TO_READ, O_RDONLY);
   ASSERT_GT(fd, 0);
   int sz = readv(fd, iov, 2);
-  ASSERT_LT(sz, 5 + 2000);
+  ASSERT_LE(sz, 5 + 2000);
   ASSERT_GT(sz, iov[0].iov_len);
   EXPECT_POISONED(buf[0]);
   EXPECT_NOT_POISONED(buf[1]);
@@ -639,7 +660,7 @@ TEST(MemorySanitizer, preadv) {
   int fd = open(FILE_TO_READ, O_RDONLY);
   ASSERT_GT(fd, 0);
   int sz = preadv(fd, iov, 2, 3);
-  ASSERT_LT(sz, 5 + 2000);
+  ASSERT_LE(sz, 5 + 2000);
   ASSERT_GT(sz, iov[0].iov_len);
   EXPECT_POISONED(buf[0]);
   EXPECT_NOT_POISONED(buf[1]);
@@ -661,7 +682,7 @@ TEST(MemorySanitizer, DISABLED_ioctl) {
 
 TEST(MemorySanitizer, readlink) {
   char *x = new char[1000];
-  readlink("/proc/self/exe", x, 1000);
+  readlink(SYMLINK_TO_READ, x, 1000);
   EXPECT_NOT_POISONED(x[0]);
   delete [] x;
 }
@@ -677,9 +698,9 @@ TEST(MemorySanitizer, stat) {
 
 TEST(MemorySanitizer, fstatat) {
   struct stat* st = new struct stat;
-  int dirfd = open("/proc/self", O_RDONLY);
+  int dirfd = open(DIR_TO_READ, O_RDONLY);
   ASSERT_GT(dirfd, 0);
-  int res = fstatat(dirfd, "stat", st, 0);
+  int res = fstatat(dirfd, SUBFILE_TO_READ, st, 0);
   ASSERT_EQ(0, res);
   EXPECT_NOT_POISONED(st->st_dev);
   EXPECT_NOT_POISONED(st->st_mode);
@@ -771,6 +792,8 @@ TEST(MemorySanitizer, poll) {
   close(pipefd[1]);
 }
 
+// There is no ppoll() on FreeBSD.
+#if !defined (__FreeBSD__)
 TEST(MemorySanitizer, ppoll) {
   int* pipefd = new int[2];
   int res = pipe(pipefd);
@@ -795,6 +818,7 @@ TEST(MemorySanitizer, ppoll) {
   close(pipefd[0]);
   close(pipefd[1]);
 }
+#endif
 
 TEST(MemorySanitizer, poll_positive) {
   int* pipefd = new int[2];
@@ -859,8 +883,11 @@ TEST(MemorySanitizer, accept) {
   res = fcntl(connect_socket, F_SETFL, O_NONBLOCK);
   ASSERT_EQ(0, res);
   res = connect(connect_socket, (struct sockaddr *)&sai, sizeof(sai));
-  ASSERT_EQ(-1, res);
-  ASSERT_EQ(EINPROGRESS, errno);
+  // On FreeBSD this connection completes immediately.
+  if (res != 0) {
+    ASSERT_EQ(-1, res);
+    ASSERT_EQ(EINPROGRESS, errno);
+  }
 
   __msan_poison(&sai, sizeof(sai));
   int new_sock = accept(listen_socket, (struct sockaddr *)&sai, &sz);
@@ -1148,6 +1175,8 @@ TEST(MemorySanitizer, shmctl) {
   ASSERT_GT(res, -1);
   EXPECT_NOT_POISONED(ds);
 
+  // FreeBSD does not support shmctl(IPC_INFO) and shmctl(SHM_INFO).
+#if !defined(__FreeBSD__)
   struct shminfo si;
   res = shmctl(id, IPC_INFO, (struct shmid_ds *)&si);
   ASSERT_GT(res, -1);
@@ -1157,6 +1186,7 @@ TEST(MemorySanitizer, shmctl) {
   res = shmctl(id, SHM_INFO, (struct shmid_ds *)&s_i);
   ASSERT_GT(res, -1);
   EXPECT_NOT_POISONED(s_i);
+#endif
 
   res = shmctl(id, IPC_RMID, 0);
   ASSERT_GT(res, -1);
@@ -1220,6 +1250,16 @@ TEST(MemorySanitizer, confstr) {
   EXPECT_NOT_POISONED(buf2[res - 1]);
   EXPECT_POISONED(buf2[res]);
   ASSERT_EQ(res, strlen(buf2) + 1);
+}
+
+TEST(MemorySanitizer, opendir) {
+  DIR *dir = opendir(".");
+  closedir(dir);
+
+  char name[10] = ".";
+  __msan_poison(name, sizeof(name));
+  EXPECT_UMR(dir = opendir(name));
+  closedir(dir);
 }
 
 TEST(MemorySanitizer, readdir) {
@@ -3403,7 +3443,7 @@ TEST(MemorySanitizer, UnalignedStore64) {
   EXPECT_POISONED_O(x[11], origin);
 }
 
-#if defined(__clang__)
+#if (defined(__x86_64__) && defined(__clang__))
 namespace {
 typedef U1 V16x8 __attribute__((__vector_size__(16)));
 typedef U2 V8x16 __attribute__((__vector_size__(16)));

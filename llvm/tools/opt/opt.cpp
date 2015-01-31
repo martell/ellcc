@@ -21,6 +21,7 @@
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/RegionPass.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Bitcode/BitcodeWriterPass.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/IR/DataLayout.h"
@@ -322,6 +323,7 @@ int main(int argc, char **argv) {
   initializeCodeGenPreparePass(Registry);
   initializeAtomicExpandPass(Registry);
   initializeRewriteSymbolsPass(Registry);
+  initializeWinEHPreparePass(Registry);
 
 #ifdef LINK_POLLY_INTO_TOOLS
   polly::initializePollyPasses(Registry);
@@ -401,12 +403,12 @@ int main(int argc, char **argv) {
   PassManager Passes;
 
   // Add an appropriate TargetLibraryInfo pass for the module's triple.
-  TargetLibraryInfo TLI(Triple(M->getTargetTriple()));
+  TargetLibraryInfoImpl TLII(Triple(M->getTargetTriple()));
 
   // The -disable-simplify-libcalls flag actually disables all builtin optzns.
   if (DisableSimplifyLibCalls)
-    TLI.disableAllFunctions();
-  Passes.add(new TargetLibraryInfoWrapperPass(TLI));
+    TLII.disableAllFunctions();
+  Passes.add(new TargetLibraryInfoWrapperPass(TLII));
 
   // Add an appropriate DataLayout instance for this module.
   const DataLayout *DL = M->getDataLayout();
@@ -425,17 +427,16 @@ int main(int argc, char **argv) {
   std::unique_ptr<TargetMachine> TM(Machine);
 
   // Add internal analysis passes from the target machine.
-  if (TM)
-    TM->addAnalysisPasses(Passes);
+  Passes.add(createTargetTransformInfoWrapperPass(
+      TM ? TM->getTTI() : TargetTransformInfo(DL)));
 
   std::unique_ptr<FunctionPassManager> FPasses;
   if (OptLevelO1 || OptLevelO2 || OptLevelOs || OptLevelOz || OptLevelO3) {
     FPasses.reset(new FunctionPassManager(M.get()));
     if (DL)
       FPasses->add(new DataLayoutPass());
-    if (TM)
-      TM->addAnalysisPasses(*FPasses);
-
+    FPasses->add(createTargetTransformInfoWrapperPass(
+        TM ? TM->getTTI() : TargetTransformInfo(DL)));
   }
 
   if (PrintBreakpoints) {

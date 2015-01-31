@@ -17,8 +17,6 @@
 namespace lld {
 namespace elf {
 
-typedef llvm::object::ELFType<llvm::support::little, 2, false> Mips32ElELFType;
-
 struct MipsELFFileCreateTraits {
   typedef llvm::ErrorOr<std::unique_ptr<lld::File>> result_type;
 
@@ -39,10 +37,10 @@ struct MipsDynamicFileCreateELFTraits {
   }
 };
 
+template <class ELFT>
 class MipsELFObjectReader
-    : public ELFObjectReader<Mips32ElELFType, MipsELFFileCreateTraits> {
-  typedef ELFObjectReader<Mips32ElELFType, MipsELFFileCreateTraits>
-      BaseReaderType;
+    : public ELFObjectReader<ELFT, MipsELFFileCreateTraits> {
+  typedef ELFObjectReader<ELFT, MipsELFFileCreateTraits> BaseReaderType;
 
 public:
   MipsELFObjectReader(MipsLinkingContext &ctx, bool atomizeStrings)
@@ -52,7 +50,7 @@ public:
   std::error_code
   loadFile(std::unique_ptr<MemoryBuffer> mb, const Registry &registry,
            std::vector<std::unique_ptr<File>> &result) const override {
-    auto &hdr = *elfHeader(*mb);
+    auto &hdr = *this->elfHeader(*mb);
     if (std::error_code ec = _flagMerger.merge(hdr.getFileClass(), hdr.e_flags))
       return ec;
     return BaseReaderType::loadFile(std::move(mb), registry, result);
@@ -62,10 +60,10 @@ private:
   MipsELFFlagsMerger &_flagMerger;
 };
 
+template <class ELFT>
 class MipsELFDSOReader
-    : public ELFDSOReader<Mips32ElELFType, MipsDynamicFileCreateELFTraits> {
-  typedef ELFDSOReader<Mips32ElELFType, MipsDynamicFileCreateELFTraits>
-      BaseReaderType;
+    : public ELFDSOReader<ELFT, MipsDynamicFileCreateELFTraits> {
+  typedef ELFDSOReader<ELFT, MipsDynamicFileCreateELFTraits> BaseReaderType;
 
 public:
   MipsELFDSOReader(MipsLinkingContext &ctx, bool useUndefines)
@@ -75,7 +73,7 @@ public:
   std::error_code
   loadFile(std::unique_ptr<MemoryBuffer> mb, const Registry &registry,
            std::vector<std::unique_ptr<File>> &result) const override {
-    auto &hdr = *elfHeader(*mb);
+    auto &hdr = *this->elfHeader(*mb);
     if (std::error_code ec = _flagMerger.merge(hdr.getFileClass(), hdr.e_flags))
       return ec;
     return BaseReaderType::loadFile(std::move(mb), registry, result);

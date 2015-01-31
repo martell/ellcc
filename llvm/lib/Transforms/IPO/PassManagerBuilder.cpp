@@ -24,7 +24,6 @@
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetSubtargetInfo.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Vectorize.h"
@@ -479,13 +478,7 @@ void PassManagerBuilder::addLTOOptimizationPasses(PassManagerBase &PM) {
     PM.add(createMergeFunctionsPass());
 }
 
-void PassManagerBuilder::populateLTOPassManager(PassManagerBase &PM,
-                                                TargetMachine *TM) {
-  if (TM) {
-    PM.add(new DataLayoutPass());
-    TM->addAnalysisPasses(PM);
-  }
-
+void PassManagerBuilder::populateLTOPassManager(PassManagerBase &PM) {
   if (LibraryInfo)
     PM.add(new TargetLibraryInfoWrapperPass(*LibraryInfo));
 

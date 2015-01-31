@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r227686.
 * Added write example.
 * Added missing MinGW libraries to repository.
 * Removed extraneous utmpx.c from the musl sources.

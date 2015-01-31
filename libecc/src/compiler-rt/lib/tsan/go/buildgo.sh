@@ -18,6 +18,7 @@ SRCS="
 	../../sanitizer_common/sanitizer_allocator.cc
 	../../sanitizer_common/sanitizer_common.cc
 	../../sanitizer_common/sanitizer_deadlock_detector2.cc
+	../../sanitizer_common/sanitizer_flag_parser.cc
 	../../sanitizer_common/sanitizer_flags.cc
 	../../sanitizer_common/sanitizer_libc.cc
 	../../sanitizer_common/sanitizer_persistent_allocator.cc
@@ -40,6 +41,7 @@ if [ "`uname -a | grep Linux`" != "" ]; then
 		../../sanitizer_common/sanitizer_procmaps_common.cc
 		../../sanitizer_common/sanitizer_procmaps_linux.cc
 		../../sanitizer_common/sanitizer_linux.cc
+		../../sanitizer_common/sanitizer_linux_libcdep.cc
 		../../sanitizer_common/sanitizer_stoptheworld_linux_libcdep.cc
 	"
 elif [ "`uname -a | grep FreeBSD`" != "" ]; then
@@ -53,6 +55,7 @@ elif [ "`uname -a | grep FreeBSD`" != "" ]; then
                 ../../sanitizer_common/sanitizer_procmaps_common.cc
                 ../../sanitizer_common/sanitizer_procmaps_freebsd.cc
                 ../../sanitizer_common/sanitizer_linux.cc
+                ../../sanitizer_common/sanitizer_linux_libcdep.cc
                 ../../sanitizer_common/sanitizer_stoptheworld_linux_libcdep.cc
         "
 elif [ "`uname -a | grep Darwin`" != "" ]; then
@@ -86,7 +89,7 @@ for F in $SRCS; do
 	cat $F >> gotsan.cc
 done
 
-FLAGS=" -I../rtl -I../.. -I../../sanitizer_common -I../../../include -std=c++11 -m64 -Wall -fno-exceptions -fno-rtti -DSANITIZER_GO -DTSAN_SHADOW_COUNT=4 -DSANITIZER_DEADLOCK_DETECTOR_VERSION=2 $OSCFLAGS"
+FLAGS=" -I../rtl -I../.. -I../../sanitizer_common -I../../../include -std=c++11 -m64 -Wall -fno-exceptions -fno-rtti -DSANITIZER_GO -DSANITIZER_DEADLOCK_DETECTOR_VERSION=2 $OSCFLAGS"
 if [ "$DEBUG" == "" ]; then
 	FLAGS+=" -DSANITIZER_DEBUG=0 -O3 -msse3 -fomit-frame-pointer"
 else

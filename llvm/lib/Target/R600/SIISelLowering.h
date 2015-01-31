@@ -63,7 +63,7 @@ class SITargetLowering : public AMDGPUTargetLowering {
   SDValue performSetCCCombine(SDNode *N, DAGCombinerInfo &DCI) const;
 
 public:
-  SITargetLowering(TargetMachine &tm);
+  SITargetLowering(TargetMachine &tm, const AMDGPUSubtarget &STI);
 
   bool isShuffleMaskLegal(const SmallVectorImpl<int> &/*Mask*/,
                           EVT /*VT*/) const override;
@@ -95,6 +95,7 @@ public:
 
   MachineBasicBlock * EmitInstrWithCustomInserter(MachineInstr * MI,
                                       MachineBasicBlock * BB) const override;
+  bool enableAggressiveFMAFusion(EVT VT) const override;
   EVT getSetCCResultType(LLVMContext &Context, EVT VT) const override;
   MVT getScalarShiftAmountTy(EVT VT) const override;
   bool isFMAFasterThanFMulAndFAdd(EVT VT) const override;

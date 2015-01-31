@@ -86,7 +86,8 @@ void ShowStatsAndAbort() {
 
 // ---------------------- mmap -------------------- {{{1
 // Reserve memory range [beg, end].
-static void ReserveShadowMemoryRange(uptr beg, uptr end) {
+// We need to use inclusive range because end+1 may not be representable.
+void ReserveShadowMemoryRange(uptr beg, uptr end) {
   CHECK_EQ((beg % GetPageSizeCached()), 0);
   CHECK_EQ(((end + 1) % GetPageSizeCached()), 0);
   uptr size = end - beg + 1;
@@ -97,6 +98,8 @@ static void ReserveShadowMemoryRange(uptr beg, uptr end) {
            "Perhaps you're using ulimit -v\n", size);
     Abort();
   }
+  if (common_flags()->no_huge_pages_for_shadow)
+    NoHugePagesInRegion(beg, size);
 }
 
 // --------------- LowLevelAllocateCallbac ---------- {{{1
@@ -353,8 +356,7 @@ static void AsanInitInternal() {
   }
 #endif
 
-  if (common_flags()->verbosity)
-    PrintAddressSpaceLayout();
+  if (Verbosity()) PrintAddressSpaceLayout();
 
   DisableCoreDumperIfNecessary();
 
@@ -383,6 +385,8 @@ static void AsanInitInternal() {
   } else {
     Report("Shadow memory range interleaves with an existing memory mapping. "
            "ASan cannot proceed correctly. ABORTING.\n");
+    Report("ASan shadow was supposed to be located in the [%p-%p] range.\n",
+           shadow_start, kHighShadowEnd);
     DumpProcessMap();
     Die();
   }

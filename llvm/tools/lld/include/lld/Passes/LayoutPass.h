@@ -12,7 +12,7 @@
 
 #include "lld/Core/File.h"
 #include "lld/Core/Pass.h"
-#include "lld/ReaderWriter/Reader.h"
+#include "lld/Core/Reader.h"
 #include "llvm/ADT/DenseMap.h"
 #include <map>
 #include <string>
@@ -51,10 +51,6 @@ private:
   // Build the followOn atoms chain as specified by the kindLayoutAfter
   // reference type
   void buildFollowOnTable(MutableFile::DefinedAtomRange &range);
-
-  // Build the followOn atoms chain as specified by the kindInGroup
-  // reference type
-  void buildInGroupTable(MutableFile::DefinedAtomRange &range);
 
   // Build a map of Atoms to ordinals for sorting the atoms
   void buildOrdinalOverrideMap(MutableFile::DefinedAtomRange &range);

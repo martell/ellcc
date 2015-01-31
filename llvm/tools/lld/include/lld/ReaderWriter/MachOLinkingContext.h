@@ -11,8 +11,8 @@
 #define LLD_READER_WRITER_MACHO_LINKING_CONTEXT_H
 
 #include "lld/Core/LinkingContext.h"
-#include "lld/ReaderWriter/Reader.h"
-#include "lld/ReaderWriter/Writer.h"
+#include "lld/Core/Reader.h"
+#include "lld/Core/Writer.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -252,6 +252,10 @@ public:
 
   /// Used to keep track of direct and indirect dylibs.
   void registerDylib(mach_o::MachODylibFile *dylib, bool upward) const;
+
+  // Reads a file from disk to memory. Returns only a needed chunk
+  // if a fat binary.
+  ErrorOr<std::unique_ptr<MemoryBuffer>> getMemoryBuffer(StringRef path);
 
   /// Used to find indirect dylibs. Instantiates a MachODylibFile if one
   /// has not already been made for the requested dylib.  Uses -L and -F

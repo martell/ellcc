@@ -1,3 +1,4 @@
+
 //==--- DiagnosticSemaKinds.td - libsema diagnostics ----------------------===//
 //
 //                     The LLVM Compiler Infrastructure
@@ -1230,7 +1231,10 @@ def warn_cxx98_compat_enum_nested_name_spec : Warning<
   InGroup<CXX98Compat>, DefaultIgnore;
 def err_nested_name_spec_is_not_class : Error<
   "%0 cannot appear before '::' because it is not a class"
-  "%select{ or namespace|, namespace, or scoped enumeration}1; did you mean ':'?">;
+  "%select{ or namespace|, namespace, or enumeration}1; did you mean ':'?">;
+def ext_nested_name_spec_is_enum : ExtWarn<
+  "use of enumeration in a nested name specifier is a C++11 extension">,
+  InGroup<CXX11>;
 
 // C++ class members
 def err_storageclass_invalid_for_member : Error<
@@ -3901,8 +3905,8 @@ def err_static_data_member_reinitialization :
 def err_redefinition : Error<"redefinition of %0">;
 def err_alias_after_tentative :
   Error<"alias definition of %0 after tentative definition">;
-def err_tentative_after_alias :
-  Error<"tentative definition of %0 after alias definition">;
+def err_alias_is_definition :
+  Error<"definition %0 cannot also be an alias">;
 def err_definition_of_implicitly_declared_member : Error<
   "definition of implicitly declared %select{default constructor|copy "
   "constructor|move constructor|copy assignment operator|move assignment "
@@ -4326,8 +4330,9 @@ def note_exits_block_captures_strong : Note<
 def note_exits_block_captures_weak : Note<
   "jump exits lifetime of block which weakly captures a variable">;
 
-def err_func_returning_qualified_void : Error<
-  "function cannot return qualified void type %0">;
+def err_func_returning_qualified_void : ExtWarn<
+  "function cannot return qualified void type %0">,
+  InGroup<DiagGroup<"qualified-void-return-type">>;
 def err_func_returning_array_function : Error<
   "function cannot return %select{array|function}0 type %1">;
 def err_field_declared_as_function : Error<"field %0 declared as a function">;
@@ -5262,6 +5267,11 @@ def err_bad_cstyle_cast_overload : Error<
 def err_bad_cxx_cast_generic : Error<
   "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
   "functional-style cast}0 from %1 to %2 is not allowed">;
+def err_bad_cxx_cast_unrelated_class : Error<
+  "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
+  "functional-style cast}0 from %1 to %2, which are not related by "
+  "inheritance, is not allowed">;
+def note_type_incomplete : Note<"%0 is incomplete">;
 def err_bad_cxx_cast_rvalue : Error<
   "%select{const_cast|static_cast|reinterpret_cast|dynamic_cast|C-style cast|"
   "functional-style cast}0 from rvalue to reference type %2">;
@@ -5609,7 +5619,7 @@ def err_typecheck_deleted_function : Error<
   "invokes a deleted function">;
   
 def err_expected_class_or_namespace : Error<"%0 is not a class"
-  "%select{ or namespace|, namespace, or scoped enumeration}1">;
+  "%select{ or namespace|, namespace, or enumeration}1">;
 def err_invalid_declarator_scope : Error<"cannot define or redeclare %0 here "
   "because namespace %1 does not enclose namespace %2">;
 def err_invalid_declarator_global_scope : Error<
@@ -6170,6 +6180,8 @@ let CategoryName = "Inline Assembly Issue" in {
     "invalid lvalue in asm input for constraint '%0'">;
   def err_asm_invalid_input_constraint : Error<
     "invalid input constraint '%0' in asm">;
+  def err_asm_immediate_expected : Error<"constraint '%0' expects "
+    "an integer constant expression">;
   def err_asm_invalid_type_in_input : Error<
     "invalid type %0 in asm input for constraint '%1'">;
   def err_asm_tying_incompatible_types : Error<
@@ -6354,6 +6366,9 @@ def err_base_class_has_flexible_array_member : Error<
 def err_incomplete_base_class : Error<"base class has incomplete type">;
 def err_duplicate_base_class : Error<
   "base class %0 specified more than once as a direct base class">;
+def warn_inaccessible_base_class : Warning<
+  "direct base %0 is inaccessible due to ambiguity:%1">,
+  InGroup<DiagGroup<"inaccessible-base">>;
 // FIXME: better way to display derivation?  Pass entire thing into diagclient?
 def err_ambiguous_derived_to_base_conv : Error<
   "ambiguous conversion from derived class %0 to base class %1:%2">;
@@ -7424,6 +7439,10 @@ def note_omp_nested_teams_construct_here : Note<
   "nested teams construct here">;
 def note_omp_nested_statement_here : Note<
   "%select{statement|directive}0 outside teams construct here">;
+def err_omp_single_copyprivate_with_nowait : Error<
+  "the 'copyprivate' clause must not be used with the 'nowait' clause">;
+def note_omp_nowait_clause_here : Note<
+  "'nowait' clause is here">;
 } // end of OpenMP category
 
 let CategoryName = "Related Result Type Issue" in {

@@ -122,6 +122,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
     setOperationAction(ISD::MUL,              MVT::i64, Custom);
 
   if (Subtarget.isGP64bit()) {
+    setOperationAction(ISD::SMUL_LOHI,        MVT::i64, Custom);
+    setOperationAction(ISD::UMUL_LOHI,        MVT::i64, Custom);
     setOperationAction(ISD::MULHS,            MVT::i64, Custom);
     setOperationAction(ISD::MULHU,            MVT::i64, Custom);
     setOperationAction(ISD::SDIVREM,          MVT::i64, Custom);
@@ -200,6 +202,8 @@ MipsSETargetLowering::MipsSETargetLowering(const MipsTargetMachine &TM,
   if (Subtarget.hasMips64r6()) {
     // MIPS64r6 replaces the accumulator-based multiplies with a three register
     // instruction
+    setOperationAction(ISD::SMUL_LOHI, MVT::i64, Expand);
+    setOperationAction(ISD::UMUL_LOHI, MVT::i64, Expand);
     setOperationAction(ISD::MUL, MVT::i64, Legal);
     setOperationAction(ISD::MULHS, MVT::i64, Legal);
     setOperationAction(ISD::MULHU, MVT::i64, Legal);
@@ -2743,8 +2747,7 @@ emitBPOSGE32(MachineInstr *MI, MachineBasicBlock *BB) const{
   //  $vr0 = phi($vr2, $fbb, $vr1, $tbb)
 
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   const TargetRegisterClass *RC = &Mips::GPR32RegClass;
   DebugLoc DL = MI->getDebugLoc();
   const BasicBlock *LLVM_BB = BB->getBasicBlock();
@@ -2809,8 +2812,7 @@ emitMSACBranchPseudo(MachineInstr *MI, MachineBasicBlock *BB,
   //  $rd = phi($rd1, $fbb, $rd2, $tbb)
 
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   const TargetRegisterClass *RC = &Mips::GPR32RegClass;
   DebugLoc DL = MI->getDebugLoc();
   const BasicBlock *LLVM_BB = BB->getBasicBlock();
@@ -2871,8 +2873,7 @@ emitMSACBranchPseudo(MachineInstr *MI, MachineBasicBlock *BB,
 // for lane 1 because it would require FR=0 mode which isn't supported by MSA.
 MachineBasicBlock * MipsSETargetLowering::
 emitCOPY_FW(MachineInstr *MI, MachineBasicBlock *BB) const{
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
   DebugLoc DL = MI->getDebugLoc();
   unsigned Fd = MI->getOperand(0).getReg();
@@ -2906,8 +2907,7 @@ MachineBasicBlock * MipsSETargetLowering::
 emitCOPY_FD(MachineInstr *MI, MachineBasicBlock *BB) const{
   assert(Subtarget.isFP64bit());
 
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
   unsigned Fd  = MI->getOperand(0).getReg();
   unsigned Ws  = MI->getOperand(1).getReg();
@@ -2936,8 +2936,7 @@ emitCOPY_FD(MachineInstr *MI, MachineBasicBlock *BB) const{
 MachineBasicBlock *
 MipsSETargetLowering::emitINSERT_FW(MachineInstr *MI,
                                     MachineBasicBlock *BB) const {
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
   DebugLoc DL = MI->getDebugLoc();
   unsigned Wd = MI->getOperand(0).getReg();
@@ -2971,8 +2970,7 @@ MipsSETargetLowering::emitINSERT_FD(MachineInstr *MI,
                                     MachineBasicBlock *BB) const {
   assert(Subtarget.isFP64bit());
 
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
   DebugLoc DL = MI->getDebugLoc();
   unsigned Wd = MI->getOperand(0).getReg();
@@ -3020,8 +3018,7 @@ MipsSETargetLowering::emitINSERT_DF_VIDX(MachineInstr *MI,
                                          MachineBasicBlock *BB,
                                          unsigned EltSizeInBytes,
                                          bool IsFP) const {
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
   DebugLoc DL = MI->getDebugLoc();
   unsigned Wd = MI->getOperand(0).getReg();
@@ -3131,8 +3128,7 @@ MipsSETargetLowering::emitINSERT_DF_VIDX(MachineInstr *MI,
 MachineBasicBlock *
 MipsSETargetLowering::emitFILL_FW(MachineInstr *MI,
                                   MachineBasicBlock *BB) const {
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
   DebugLoc DL = MI->getDebugLoc();
   unsigned Wd = MI->getOperand(0).getReg();
@@ -3163,8 +3159,7 @@ MipsSETargetLowering::emitFILL_FD(MachineInstr *MI,
                                   MachineBasicBlock *BB) const {
   assert(Subtarget.isFP64bit());
 
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
   DebugLoc DL = MI->getDebugLoc();
   unsigned Wd = MI->getOperand(0).getReg();
@@ -3192,8 +3187,7 @@ MipsSETargetLowering::emitFILL_FD(MachineInstr *MI,
 MachineBasicBlock *
 MipsSETargetLowering::emitFEXP2_W_1(MachineInstr *MI,
                                     MachineBasicBlock *BB) const {
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
   const TargetRegisterClass *RC = &Mips::MSA128WRegClass;
   unsigned Ws1 = RegInfo.createVirtualRegister(RC);
@@ -3222,8 +3216,7 @@ MipsSETargetLowering::emitFEXP2_W_1(MachineInstr *MI,
 MachineBasicBlock *
 MipsSETargetLowering::emitFEXP2_D_1(MachineInstr *MI,
                                     MachineBasicBlock *BB) const {
-  const TargetInstrInfo *TII =
-      getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
   const TargetRegisterClass *RC = &Mips::MSA128DRegClass;
   unsigned Ws1 = RegInfo.createVirtualRegister(RC);

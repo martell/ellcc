@@ -436,7 +436,8 @@ class NVPTXSubtarget;
 //===--------------------------------------------------------------------===//
 class NVPTXTargetLowering : public TargetLowering {
 public:
-  explicit NVPTXTargetLowering(const NVPTXTargetMachine &TM);
+  explicit NVPTXTargetLowering(const NVPTXTargetMachine &TM,
+                               const NVPTXSubtarget &STI);
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
 
   SDValue LowerGlobalAddress(SDValue Op, SelectionDAG &DAG) const;
@@ -510,7 +511,7 @@ public:
   bool enableAggressiveFMAFusion(EVT VT) const override { return true; }
 
 private:
-  const NVPTXSubtarget &nvptxSubtarget; // cache the subtarget here
+  const NVPTXSubtarget &STI; // cache the subtarget here
 
   SDValue getExtSymb(SelectionDAG &DAG, const char *name, int idx,
                      EVT = MVT::i32) const;
@@ -528,6 +529,8 @@ private:
 
   SDValue LowerShiftRightParts(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerShiftLeftParts(SDValue Op, SelectionDAG &DAG) const;
+
+  SDValue LowerSelect(SDValue Op, SelectionDAG &DAG) const;
 
   void ReplaceNodeResults(SDNode *N, SmallVectorImpl<SDValue> &Results,
                           SelectionDAG &DAG) const override;

@@ -4,6 +4,10 @@
 
 cmake_minimum_required(VERSION 2.8.8)
 
+if(POLICY CMP0042)
+  cmake_policy(SET CMP0042 NEW) # Set MACOSX_RPATH=YES by default
+endif()
+
 if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   project(libcxxabi)
 
@@ -97,6 +101,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   set(LIBCXXABI_BUILT_STANDALONE 1)
 else()
+  set(LLVM_MAIN_SRC_DIR "${CMAKE_SOURCE_DIR}" CACHE PATH "Path to LLVM source tree")
   set(LLVM_LIT "${CMAKE_SOURCE_DIR}/utils/lit/lit.py")
   set(LIBCXXABI_LIBDIR_SUFFIX ${LLVM_LIBDIR_SUFFIX})
 endif()
@@ -126,13 +131,31 @@ find_path(
   LIBCXXABI_LIBCXX_INCLUDES
   vector
   PATHS ${LIBCXXABI_LIBCXX_INCLUDES}
+        ${LIBCXXABI_LIBCXX_PATH}/include
         ${CMAKE_BINARY_DIR}/${LIBCXXABI_LIBCXX_INCLUDES}
         ${LLVM_MAIN_SRC_DIR}/projects/libcxx/include
         ${LLVM_INCLUDE_DIR}/c++/v1
   )
 
-set(LIBCXXABI_LIBCXX_INCLUDES "${LIBCXXABI_LIBCXX_INCLUDES}" CACHE STRING
+set(LIBCXXABI_LIBCXX_INCLUDES "${LIBCXXABI_LIBCXX_INCLUDES}" CACHE PATH
     "Specify path to libc++ includes." FORCE)
+
+find_path(
+  LIBCXXABI_LIBCXX_PATH
+  test/libcxx/__init__.py
+  PATHS ${LIBCXXABI_LIBCXX_PATH}
+        ${LIBCXXABI_LIBCXX_INCLUDES}/../
+        ${LLVM_MAIN_SRC_DIR}/projects/libcxx/
+  NO_DEFAULT_PATH
+  )
+
+if (LIBCXXABI_LIBCXX_PATH STREQUAL "LIBCXXABI_LIBCXX_PATH-NOTFOUND")
+  message(WARNING "LIBCXXABI_LIBCXX_PATH was not specified and couldn't be infered.")
+  set(LIBCXXABI_LIBCXX_PATH "")
+endif()
+
+set(LIBCXXABI_LIBCXX_PATH "${LIBCXXABI_LIBCXX_PATH}" CACHE PATH
+    "Specify path to libc++ source." FORCE)
 
 #===============================================================================
 # Configure System
@@ -164,6 +187,7 @@ macro(append_if list condition var)
   endif()
 endmacro()
 
+set(LIBCXXABI_C_FLAGS "")
 set(LIBCXXABI_CXX_FLAGS "")
 set(LIBCXXABI_COMPILE_FLAGS "")
 set(LIBCXXABI_LINK_FLAGS "")
@@ -216,6 +240,8 @@ endif()
 append_if(LIBCXXABI_CXX_FLAGS LIBCXXABI_HAS_FSTRICT_ALIASING_FLAG -fstrict-aliasing)
 append_if(LIBCXXABI_CXX_FLAGS LIBCXXABI_HAS_EHSC_FLAG -EHsc)
 
+append_if(LIBCXXABI_C_FLAGS LIBCXXABI_HAS_FUNWIND_TABLES -funwind-tables)
+
 # Assert
 string(TOUPPER "${CMAKE_BUILD_TYPE}" uppercase_CMAKE_BUILD_TYPE)
 if (LIBCXXABI_ENABLE_ASSERTIONS)
@@ -247,6 +273,11 @@ if (MSVC)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
 
+# Define LIBCXXABI_USE_LLVM_UNWINDER for conditional compilation.
+if (LIBCXXABI_USE_LLVM_UNWINDER)
+  add_definitions(-DLIBCXXABI_USE_LLVM_UNWINDER=1)
+endif()
+
 append_if(LIBCXXABI_COMPILE_FLAGS LIBCXXABI_TARGET_TRIPLE
           "-target ${LIBCXXABI_TARGET_TRIPLE}")
 append_if(LIBCXXABI_COMPILE_FLAGS LIBCXXABI_GCC_TOOLCHAIN
@@ -255,6 +286,7 @@ append_if(LIBCXXABI_COMPILE_FLAGS LIBCXXABI_SYSROOT
           "--sysroot ${LIBCXXABI_SYSROOT}")
 string(REPLACE ";" " " LIBCXXABI_CXX_FLAGS "${LIBCXXABI_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LIBCXXABI_CXX_FLAGS}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${LIBCXXABI_C_FLAGS}")
 
 #===============================================================================
 # Setup Source Code

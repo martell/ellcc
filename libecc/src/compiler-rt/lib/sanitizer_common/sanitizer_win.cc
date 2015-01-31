@@ -132,6 +132,10 @@ void FlushUnneededShadowMemory(uptr addr, uptr size) {
   // FIXME: add madvice-analog when we move to 64-bits.
 }
 
+void NoHugePagesInRegion(uptr addr, uptr size) {
+  // FIXME: probably similar to FlushUnneededShadowMemory.
+}
+
 bool MemoryRangeIsAvailable(uptr range_start, uptr range_end) {
   MEMORY_BASIC_INFORMATION mbi;
   CHECK(VirtualQuery((void *)range_start, &mbi, sizeof(mbi)));
@@ -512,7 +516,7 @@ void GetThreadStackAndTls(bool main, uptr *stk_addr, uptr *stk_size,
 }
 
 #if !SANITIZER_GO
-void BufferedStackTrace::SlowUnwindStack(uptr pc, uptr max_depth) {
+void BufferedStackTrace::SlowUnwindStack(uptr pc, u32 max_depth) {
   CHECK_GE(max_depth, 2);
   // FIXME: CaptureStackBackTrace might be too slow for us.
   // FIXME: Compare with StackWalk64.
@@ -528,7 +532,7 @@ void BufferedStackTrace::SlowUnwindStack(uptr pc, uptr max_depth) {
 }
 
 void BufferedStackTrace::SlowUnwindStackWithContext(uptr pc, void *context,
-                                                    uptr max_depth) {
+                                                    u32 max_depth) {
   CONTEXT ctx = *(CONTEXT *)context;
   STACKFRAME64 stack_frame;
   memset(&stack_frame, 0, sizeof(stack_frame));

@@ -245,12 +245,18 @@ unsigned ContinuationIndenter::addTokenToState(LineState &State, bool Newline,
        (Current.Previous->Tok.getIdentifierInfo() == nullptr ||
         Current.Previous->Tok.getIdentifierInfo()->getPPKeywordID() ==
             tok::pp_not_keyword))) {
-    // FIXME: Is this correct?
-    int WhitespaceLength = SourceMgr.getSpellingColumnNumber(
-                               State.NextToken->WhitespaceRange.getEnd()) -
-                           SourceMgr.getSpellingColumnNumber(
-                               State.NextToken->WhitespaceRange.getBegin());
-    State.Column += WhitespaceLength;
+    unsigned EndColumn =
+        SourceMgr.getSpellingColumnNumber(Current.WhitespaceRange.getEnd());
+    if (Current.LastNewlineOffset != 0) {
+      // If there is a newline within this token, the final column will solely
+      // determined by the current end column.
+      State.Column = EndColumn;
+    } else {
+      unsigned StartColumn =
+          SourceMgr.getSpellingColumnNumber(Current.WhitespaceRange.getBegin());
+      assert(EndColumn >= StartColumn);
+      State.Column += EndColumn - StartColumn;
+    }
     moveStateToNextToken(State, DryRun, /*Newline=*/false);
     return 0;
   }
@@ -516,7 +522,7 @@ unsigned ContinuationIndenter::getNewLineColumn(const LineState &State) {
   if (NextNonComment->is(tok::l_brace) && NextNonComment->BlockKind == BK_Block)
     return Current.NestingLevel == 0 ? State.FirstIndent
                                      : State.Stack.back().Indent;
-  if (Current.isOneOf(tok::r_brace, tok::r_square)) {
+  if (Current.isOneOf(tok::r_brace, tok::r_square) && State.Stack.size() > 1) {
     if (Current.closesBlockTypeList(Style))
       return State.Stack[State.Stack.size() - 2].NestedBlockIndent;
     if (Current.MatchingParen &&
@@ -783,7 +789,6 @@ void ContinuationIndenter::moveStatePastFakeLParens(LineState &State,
 void ContinuationIndenter::moveStatePastFakeRParens(LineState &State) {
   for (unsigned i = 0, e = State.NextToken->FakeRParens; i != e; ++i) {
     unsigned VariablePos = State.Stack.back().VariablePos;
-    assert(State.Stack.size() > 1);
     if (State.Stack.size() == 1) {
       // Do not pop the last element.
       break;
@@ -1082,8 +1087,9 @@ bool ContinuationIndenter::nextIsMultilineString(const LineState &State) {
   if (Current.getNextNonComment() &&
       Current.getNextNonComment()->isStringLiteral())
     return true; // Implicit concatenation.
-  if (State.Column + Current.ColumnWidth + Current.UnbreakableTailLength >
-      Style.ColumnLimit)
+  if (Style.ColumnLimit != 0 &&
+      State.Column + Current.ColumnWidth + Current.UnbreakableTailLength >
+          Style.ColumnLimit)
     return true; // String will be split.
   return false;
 }

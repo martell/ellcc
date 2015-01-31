@@ -131,19 +131,19 @@ public:
 
   /// \brief Read input sections and populate necessary data structures
   /// to read them later and create atoms
-  virtual std::error_code createAtomizableSections();
+  std::error_code createAtomizableSections();
 
   /// \brief Create mergeable atoms from sections that have the merge attribute
   /// set
-  virtual std::error_code createMergeableAtoms();
+  std::error_code createMergeableAtoms();
 
   /// \brief Add the symbols that the sections contain. The symbols will be
   /// converted to atoms for
   /// Undefined symbols, absolute symbols
-  virtual std::error_code createSymbolsFromAtomizableSections();
+  std::error_code createSymbolsFromAtomizableSections();
 
   /// \brief Create individual atoms
-  virtual std::error_code createAtoms();
+  std::error_code createAtoms();
 
   const atom_collection<DefinedAtom> &defined() const override {
     return _definedAtoms;
@@ -186,97 +186,84 @@ protected:
 
   /// \brief After all the Atoms and References are created, update each
   /// Reference's target with the Atom pointer it refers to.
-  virtual void updateReferences();
+  void updateReferences();
 
   /// \brief Update the reference if the access corresponds to a merge string
   /// section.
-  virtual void updateReferenceForMergeStringAccess(ELFReference<ELFT> *ref,
-                                                   const Elf_Sym *symbol,
-                                                   const Elf_Shdr *shdr);
-
-  /// \brief Return true if the symbol is corresponding to an architecture
-  /// specific section. We will let the TargetHandler handle such atoms.
-  virtual bool isTargetSpecificAtom(const Elf_Shdr *shdr, const Elf_Sym *sym);
+  void updateReferenceForMergeStringAccess(ELFReference<ELFT> *ref,
+                                           const Elf_Sym *symbol,
+                                           const Elf_Shdr *shdr);
 
   /// \brief Do we want to ignore the section. Ignored sections are
   /// not processed to create atoms
-  virtual bool isIgnoredSection(const Elf_Shdr *section);
+  bool isIgnoredSection(const Elf_Shdr *section);
 
   /// \brief Is the current section be treated as a mergeable string section.
   /// The contents of a mergeable string section are null-terminated strings.
   /// If the section have mergeable strings, the linker would need to split
   /// the section into multiple atoms and mark them mergeByContent.
-  virtual bool isMergeableStringSection(const Elf_Shdr *section);
+  bool isMergeableStringSection(const Elf_Shdr *section);
 
   /// \brief Returns a new anonymous atom whose size is equal to the
   /// section size. That atom will be used to represent the entire
   /// section that have no symbols.
-  virtual ELFDefinedAtom<ELFT> *createSectionAtom(const Elf_Shdr *section,
-                                                  StringRef sectionName,
-                                                  ArrayRef<uint8_t> contents);
+  ELFDefinedAtom<ELFT> *createSectionAtom(const Elf_Shdr *section,
+                                          StringRef sectionName,
+                                          ArrayRef<uint8_t> contents);
 
   /// Returns the symbol's content size. The nextSymbol should be null if the
   /// symbol is the last one in the section.
-  virtual uint64_t symbolContentSize(const Elf_Shdr *section,
-                                     const Elf_Sym *symbol,
-                                     const Elf_Sym *nextSymbol);
+  uint64_t symbolContentSize(const Elf_Shdr *section,
+                             const Elf_Sym *symbol,
+                             const Elf_Sym *nextSymbol);
 
-  virtual void createEdge(ELFDefinedAtom<ELFT> *from, ELFDefinedAtom<ELFT> *to,
-                          uint32_t edgeKind);
-
-  /// Determines if the reader needs to create atoms for the section.
-  virtual bool ignoreCreateAtomsForSection(const Elf_Shdr *shdr) {
-    return false;
-  }
+  void createEdge(ELFDefinedAtom<ELFT> *from, ELFDefinedAtom<ELFT> *to,
+                  uint32_t edgeKind);
 
   /// Get the section name for a section.
-  virtual ErrorOr<StringRef> getSectionName(const Elf_Shdr *shdr) const {
+  ErrorOr<StringRef> getSectionName(const Elf_Shdr *shdr) const {
     if (!shdr)
       return StringRef();
     return _objFile->getSectionName(shdr);
   }
 
   /// Determines if the section occupy memory space.
-  virtual bool sectionOccupiesMemorySpace(const Elf_Shdr *shdr) const {
+  bool sectionOccupiesMemorySpace(const Elf_Shdr *shdr) const {
     return (shdr->sh_type != llvm::ELF::SHT_NOBITS);
   }
 
   /// Return the section contents.
-  virtual ErrorOr<ArrayRef<uint8_t>>
-  getSectionContents(const Elf_Shdr *shdr) const {
+  ErrorOr<ArrayRef<uint8_t>> getSectionContents(const Elf_Shdr *shdr) const {
     if (!shdr || !sectionOccupiesMemorySpace(shdr))
       return ArrayRef<uint8_t>();
     return _objFile->getSectionContents(shdr);
   }
 
   /// Returns true if the symbol is a undefined symbol.
-  virtual bool isUndefinedSymbol(const Elf_Sym *sym) const {
+  bool isUndefinedSymbol(const Elf_Sym *sym) const {
     return (sym->st_shndx == llvm::ELF::SHN_UNDEF);
   }
 
   /// Determines if the target wants to create an atom for a section that has no
   /// symbol references.
-  virtual bool
-  handleSectionWithNoSymbols(const Elf_Shdr *shdr,
-                             std::vector<Elf_Sym_Iter> &symbols) const {
-    if (shdr && shdr->sh_type == llvm::ELF::SHT_PROGBITS && symbols.empty())
-      return true;
-    return false;
+  bool handleSectionWithNoSymbols(const Elf_Shdr *shdr,
+                                  std::vector<Elf_Sym_Iter> &syms) const {
+    return shdr && (shdr->sh_type == llvm::ELF::SHT_PROGBITS) && syms.empty();
   }
 
   /// Process the Undefined symbol and create an atom for it.
-  virtual ErrorOr<ELFUndefinedAtom<ELFT> *>
+  ErrorOr<ELFUndefinedAtom<ELFT> *>
   handleUndefinedSymbol(StringRef symName, const Elf_Sym *sym) {
     return new (_readerStorage) ELFUndefinedAtom<ELFT>(*this, symName, sym);
   }
 
   /// Returns true if the symbol is a absolute symbol.
-  virtual bool isAbsoluteSymbol(const Elf_Sym *sym) const {
+  bool isAbsoluteSymbol(const Elf_Sym *sym) const {
     return (sym->st_shndx == llvm::ELF::SHN_ABS);
   }
 
   /// Process the Absolute symbol and create an atom for it.
-  virtual ErrorOr<ELFAbsoluteAtom<ELFT> *>
+  ErrorOr<ELFAbsoluteAtom<ELFT> *>
   handleAbsoluteSymbol(StringRef symName, const Elf_Sym *sym, int64_t value) {
     return new (_readerStorage)
         ELFAbsoluteAtom<ELFT>(*this, symName, sym, value);
@@ -290,6 +277,12 @@ protected:
   virtual bool isCommonSymbol(const Elf_Sym *symbol) const {
     return symbol->getType() == llvm::ELF::STT_COMMON ||
            symbol->st_shndx == llvm::ELF::SHN_COMMON;
+  }
+
+  /// Returns correct st_value for the symbol depending on the architecture.
+  /// For most architectures it's just a regular st_value with no changes.
+  virtual uint64_t getSymbolValue(const Elf_Sym *symbol) const {
+    return symbol->st_value;
   }
 
   /// Process the common symbol and create an atom for it.
@@ -322,7 +315,7 @@ protected:
   }
 
   /// Process the Merge string and create an atom for it.
-  virtual ErrorOr<ELFMergeAtom<ELFT> *>
+  ErrorOr<ELFMergeAtom<ELFT> *>
   handleMergeString(StringRef sectionName, const Elf_Shdr *sectionHdr,
                     ArrayRef<uint8_t> contentData, unsigned int offset) {
     ELFMergeAtom<ELFT> *mergeAtom = new (_readerStorage)
@@ -460,8 +453,6 @@ template <class ELFT> Reference::KindArch ELFFile<ELFT>::kindArch() {
     return Reference::KindArch::x86;
   case llvm::ELF::EM_ARM:
     return Reference::KindArch::ARM;
-  case llvm::ELF::EM_PPC:
-    return Reference::KindArch::PowerPC;
   case llvm::ELF::EM_HEXAGON:
     return Reference::KindArch::Hexagon;
   case llvm::ELF::EM_MIPS:
@@ -586,7 +577,7 @@ std::error_code ELFFile<ELFT>::createSymbolsFromAtomizableSections() {
 
     if (isAbsoluteSymbol(&*SymI)) {
       ErrorOr<ELFAbsoluteAtom<ELFT> *> absAtom =
-          handleAbsoluteSymbol(*symbolName, &*SymI, SymI->st_value);
+          handleAbsoluteSymbol(*symbolName, &*SymI, (int64_t)getSymbolValue(&*SymI));
       _absoluteAtoms._atoms.push_back(*absAtom);
       _symbolToAtomMapping.insert(std::make_pair(&*SymI, *absAtom));
     } else if (isUndefinedSymbol(&*SymI)) {
@@ -614,17 +605,13 @@ std::error_code ELFFile<ELFT>::createSymbolsFromAtomizableSections() {
 template <class ELFT> std::error_code ELFFile<ELFT>::createAtoms() {
   for (auto &i : _sectionSymbols) {
     const Elf_Shdr *section = i.first;
-
-    // Check if need to create atoms for this section?
-    if ((ignoreCreateAtomsForSection(section)))
-      continue;
-
     std::vector<Elf_Sym_Iter> &symbols = i.second;
 
     // Sort symbols by position.
     std::stable_sort(symbols.begin(), symbols.end(),
-                     [](Elf_Sym_Iter A,
-                        Elf_Sym_Iter B) { return A->st_value < B->st_value; });
+                     [this](Elf_Sym_Iter a, Elf_Sym_Iter b) {
+                       return getSymbolValue(&*a) < getSymbolValue(&*b);
+                     });
 
     ErrorOr<StringRef> sectionName = this->getSectionName(section);
     if (std::error_code ec = sectionName.getError())
@@ -643,7 +630,6 @@ template <class ELFT> std::error_code ELFFile<ELFT>::createAtoms() {
     }
 
     ELFDefinedAtom<ELFT> *previousAtom = nullptr;
-    ELFDefinedAtom<ELFT> *inGroupAtom = nullptr;
     ELFReference<ELFT> *anonFollowedBy = nullptr;
 
     for (auto si = symbols.begin(), se = symbols.end(); si != se; ++si) {
@@ -675,7 +661,7 @@ template <class ELFT> std::error_code ELFFile<ELFT>::createAtoms() {
       }
 
       ArrayRef<uint8_t> symbolData((const uint8_t *)sectionContents->data() +
-                                       symbol->st_value,
+                                       getSymbolValue(&*symbol),
                                    contentSize);
 
       // If the linker finds that a section has global atoms that are in a
@@ -704,7 +690,6 @@ template <class ELFT> std::error_code ELFFile<ELFT>::createAtoms() {
         sym->setBinding(llvm::ELF::STB_GLOBAL);
         anonAtom = createDefinedAtomAndAssignRelocations(
             "", *sectionName, sym, section, symbolData, *sectionContents);
-        anonAtom->setOrdinal(++_ordinal);
         symbolData = ArrayRef<uint8_t>();
 
         // If this is the last atom, let's not create a followon reference.
@@ -729,24 +714,18 @@ template <class ELFT> std::error_code ELFFile<ELFT>::createAtoms() {
         // Set the followon atom to the weak atom that we have created, so
         // that they would alias when the file gets written.
         followOn->setTarget(anonAtom ? anonAtom : newAtom);
-
-        // Add a preceded-by reference only if the current atom is not a weak
-        // atom.
-        if (symbol->getBinding() != llvm::ELF::STB_WEAK)
-          createEdge(newAtom, inGroupAtom, lld::Reference::kindInGroup);
       }
 
       // The previous atom is always the atom created before unless the atom
       // is a weak atom.
       previousAtom = anonAtom ? anonAtom : newAtom;
 
-      if (!inGroupAtom)
-        inGroupAtom = previousAtom;
-
       _definedAtoms._atoms.push_back(newAtom);
       _symbolToAtomMapping.insert(std::make_pair(&*symbol, newAtom));
-      if (anonAtom)
+      if (anonAtom) {
+        anonAtom->setOrdinal(++_ordinal);
         _definedAtoms._atoms.push_back(anonAtom);
+      }
     }
   }
 
@@ -782,12 +761,13 @@ void ELFFile<ELFT>::createRelocationReferences(const Elf_Sym &symbol,
                                                ArrayRef<uint8_t> content,
                                                range<Elf_Rela_Iter> rels) {
   bool isMips64EL = _objFile->isMips64EL();
+  const auto symValue = getSymbolValue(&symbol);
   for (const auto &rel : rels) {
-    if (rel.r_offset < symbol.st_value ||
-        symbol.st_value + content.size() <= rel.r_offset)
+    if (rel.r_offset < symValue ||
+        symValue + content.size() <= rel.r_offset)
       continue;
     _references.push_back(new (_readerStorage) ELFReference<ELFT>(
-        &rel, rel.r_offset - symbol.st_value, kindArch(),
+        &rel, rel.r_offset - symValue, kindArch(),
         rel.getType(isMips64EL), rel.getSymbol(isMips64EL)));
   }
 }
@@ -798,14 +778,15 @@ void ELFFile<ELFT>::createRelocationReferences(const Elf_Sym &symbol,
                                                ArrayRef<uint8_t> secContent,
                                                range<Elf_Rel_Iter> rels) {
   bool isMips64EL = _objFile->isMips64EL();
+  const auto symValue = getSymbolValue(&symbol);
   for (const auto &rel : rels) {
-    if (rel.r_offset < symbol.st_value ||
-        symbol.st_value + symContent.size() <= rel.r_offset)
+    if (rel.r_offset < symValue ||
+        symValue + symContent.size() <= rel.r_offset)
       continue;
     _references.push_back(new (_readerStorage) ELFReference<ELFT>(
-        &rel, rel.r_offset - symbol.st_value, kindArch(),
+        &rel, rel.r_offset - symValue, kindArch(),
         rel.getType(isMips64EL), rel.getSymbol(isMips64EL)));
-    int32_t addend = *(symContent.data() + rel.r_offset - symbol.st_value);
+    int32_t addend = *(symContent.data() + rel.r_offset - symValue);
     _references.back()->setAddend(addend);
   }
 }
@@ -832,7 +813,7 @@ void ELFFile<ELFT>::updateReferenceForMergeStringAccess(ELFReference<ELFT> *ref,
   // _symbolToAtomMapping, so we cannot find it by calling findAtom(). We
   // instead call findMergeAtom().
   if (symbol->getType() != llvm::ELF::STT_SECTION)
-    addend = symbol->st_value + addend;
+    addend = getSymbolValue(symbol) + addend;
   ELFMergeAtom<ELFT> *mergedAtom = findMergeAtom(shdr, addend);
   ref->setOffset(addend - mergedAtom->offset());
   ref->setAddend(0);
@@ -854,14 +835,6 @@ template <class ELFT> void ELFFile<ELFT>::updateReferences() {
       updateReferenceForMergeStringAccess(ri, symbol, shdr);
     }
   }
-}
-
-template <class ELFT>
-bool ELFFile<ELFT>::isTargetSpecificAtom(const Elf_Shdr *shdr,
-                                         const Elf_Sym *sym) {
-  return ((shdr && (shdr->sh_flags & llvm::ELF::SHF_MASKPROC)) ||
-          (sym->st_shndx >= llvm::ELF::SHN_LOPROC &&
-           sym->st_shndx <= llvm::ELF::SHN_HIPROC));
 }
 
 template <class ELFT>
@@ -914,9 +887,10 @@ template <class ELFT>
 uint64_t ELFFile<ELFT>::symbolContentSize(const Elf_Shdr *section,
                                           const Elf_Sym *symbol,
                                           const Elf_Sym *nextSymbol) {
+  const auto symValue = getSymbolValue(symbol);
   // if this is the last symbol, take up the remaining data.
-  return nextSymbol ? nextSymbol->st_value - symbol->st_value
-                    : section->sh_size - symbol->st_value;
+  return nextSymbol ? getSymbolValue(nextSymbol) - symValue
+                    : section->sh_size - symValue;
 }
 
 template <class ELFT>

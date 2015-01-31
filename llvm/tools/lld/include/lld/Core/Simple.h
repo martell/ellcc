@@ -25,6 +25,18 @@
 
 namespace lld {
 
+// Copy all atoms from src to dst. Atom ownership is not transferred.
+inline void copyAtoms(MutableFile *dst, File *src) {
+  for (const DefinedAtom *atom : src->defined())
+    dst->addAtom(*atom);
+  for (const UndefinedAtom *atom : src->undefined())
+    dst->addAtom(*atom);
+  for (const SharedLibraryAtom *atom : src->sharedLibrary())
+    dst->addAtom(*atom);
+  for (const AbsoluteAtom *atom : src->absolute())
+    dst->addAtom(*atom);
+}
+
 class SimpleFile : public MutableFile {
 public:
   SimpleFile(StringRef path) : MutableFile(path) {}
@@ -70,26 +82,11 @@ public:
     return make_range(_definedAtoms._atoms);
   }
 
-protected:
+private:
   atom_collection_vector<DefinedAtom>        _definedAtoms;
   atom_collection_vector<UndefinedAtom>      _undefinedAtoms;
   atom_collection_vector<SharedLibraryAtom>  _sharedLibraryAtoms;
   atom_collection_vector<AbsoluteAtom>       _absoluteAtoms;
-};
-
-class SimpleFileWrapper : public SimpleFile {
-public:
-  SimpleFileWrapper(const LinkingContext &context, const File &file)
-      : SimpleFile(file.path()) {
-    for (auto definedAtom : file.defined())
-      _definedAtoms._atoms.push_back(std::move(definedAtom));
-    for (auto undefAtom : file.undefined())
-      _undefinedAtoms._atoms.push_back(std::move(undefAtom));
-    for (auto shlibAtom : file.sharedLibrary())
-      _sharedLibraryAtoms._atoms.push_back(std::move(shlibAtom));
-    for (auto absAtom : file.absolute())
-      _absoluteAtoms._atoms.push_back(std::move(absAtom));
-  }
 };
 
 class SimpleReference : public Reference {
@@ -190,7 +187,9 @@ public:
 
   Scope scope() const override { return DefinedAtom::scopeLinkageUnit; }
 
-  Interposable interposable() const override { return DefinedAtom::interposeNo; }
+  Interposable interposable() const override {
+    return DefinedAtom::interposeNo;
+  }
 
   Merge merge() const override { return DefinedAtom::mergeNo; }
 
@@ -233,7 +232,8 @@ public:
                     Reference::KindValue kindValue, uint64_t off,
                     const Atom *target, Reference::Addend a) {
     assert(target && "trying to create reference to nothing");
-    auto node = new (_file.allocator()) SimpleReference(ns, arch, kindValue, off, target, a);
+    auto node = new (_file.allocator())
+        SimpleReference(ns, arch, kindValue, off, target, a);
     _references.push_back(node);
   }
 
@@ -267,9 +267,9 @@ public:
 private:
   typedef llvm::ilist<SimpleReference> RefList;
 
-  const File                   &_file;
-  uint64_t                      _ordinal;
-  mutable RefList               _references;
+  const File &_file;
+  uint64_t _ordinal;
+  mutable RefList _references;
 };
 
 class SimpleUndefinedAtom : public UndefinedAtom {

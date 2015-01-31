@@ -201,6 +201,7 @@ public:
     codeMipsMicro,    // microMIPS instruction encoding
     codeMipsMicroPIC, // microMIPS instruction encoding + PIC
     codeMips16,       // MIPS-16 instruction encoding
+    codeARMThumb,     // ARM Thumb instruction set
   };
 
   struct Alignment {
@@ -347,6 +348,10 @@ public:
     return (atomContentType == DefinedAtom::typeGroupComdat ||
             atomContentType == DefinedAtom::typeGnuLinkOnce);
   }
+
+  // Returns true if lhs should be placed before rhs in the final output.
+  static bool compareByPosition(const DefinedAtom *lhs,
+                                const DefinedAtom *rhs);
 
 protected:
   // DefinedAtom is an abstract base class. Only subclasses can access

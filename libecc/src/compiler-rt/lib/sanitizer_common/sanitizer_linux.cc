@@ -406,33 +406,6 @@ static void ReadNullSepFileToArray(const char *path, char ***arr,
 }
 #endif
 
-uptr GetRSS() {
-  uptr fd = OpenFile("/proc/self/statm", false);
-  if ((sptr)fd < 0)
-    return 0;
-  char buf[64];
-  uptr len = internal_read(fd, buf, sizeof(buf) - 1);
-  internal_close(fd);
-  if ((sptr)len <= 0)
-    return 0;
-  buf[len] = 0;
-  // The format of the file is:
-  // 1084 89 69 11 0 79 0
-  // We need the second number which is RSS in pages.
-  char *pos = buf;
-  // Skip the first number.
-  while (*pos >= '0' && *pos <= '9')
-    pos++;
-  // Skip whitespaces.
-  while (!(*pos >= '0' && *pos <= '9') && *pos != 0)
-    pos++;
-  // Read the number.
-  uptr rss = 0;
-  while (*pos >= '0' && *pos <= '9')
-    rss = rss * 10 + *pos++ - '0';
-  return rss * GetPageSizeCached();
-}
-
 static void GetArgsAndEnv(char*** argv, char*** envp) {
 #if !SANITIZER_GO
   if (&__libc_stack_end) {
@@ -460,17 +433,6 @@ void ReExec() {
   Die();
 }
 
-// Stub implementation of GetThreadStackAndTls for Go.
-#if SANITIZER_GO
-void GetThreadStackAndTls(bool main, uptr *stk_addr, uptr *stk_size,
-                          uptr *tls_addr, uptr *tls_size) {
-  *stk_addr = 0;
-  *stk_size = 0;
-  *tls_addr = 0;
-  *tls_size = 0;
-}
-#endif  // SANITIZER_GO
-
 void PrepareForSandboxing(__sanitizer_sandbox_arguments *args) {
   // Some kinds of sandboxes may forbid filesystem access, so we won't be able
   // to read the file mappings from /proc/self/maps. Luckily, neither the
@@ -491,15 +453,12 @@ enum MutexState {
   MtxSleeping = 2
 };
 
-BlockingMutex::BlockingMutex(LinkerInitialized) {
-  CHECK_EQ(owner_, 0);
-}
-
 BlockingMutex::BlockingMutex() {
   internal_memset(this, 0, sizeof(*this));
 }
 
 void BlockingMutex::Lock() {
+  CHECK_EQ(owner_, 0);
   atomic_uint32_t *m = reinterpret_cast<atomic_uint32_t *>(&opaque_storage_);
   if (atomic_exchange(m, MtxLocked, memory_order_acquire) == MtxUnlocked)
     return;
@@ -787,6 +746,7 @@ bool LibraryNameIs(const char *full_name, const char *base_name) {
 #if !SANITIZER_ANDROID
 // Call cb for each region mapped by map.
 void ForEachMappedRegion(link_map *map, void (*cb)(const void *, uptr)) {
+  CHECK_NE(map, nullptr);
 #if !SANITIZER_FREEBSD
   typedef ElfW(Phdr) Elf_Phdr;
   typedef ElfW(Ehdr) Elf_Ehdr;

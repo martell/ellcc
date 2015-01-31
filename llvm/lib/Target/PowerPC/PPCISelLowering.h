@@ -367,12 +367,12 @@ namespace llvm {
     SDValue get_VSPLTI_elt(SDNode *N, unsigned ByteSize, SelectionDAG &DAG);
   }
 
-  class PPCSubtarget;
   class PPCTargetLowering : public TargetLowering {
     const PPCSubtarget &Subtarget;
 
   public:
-    explicit PPCTargetLowering(const PPCTargetMachine &TM);
+    explicit PPCTargetLowering(const PPCTargetMachine &TM,
+                               const PPCSubtarget &STI);
 
     /// getTargetNodeName() - This method returns the name of a target specific
     /// DAG node.

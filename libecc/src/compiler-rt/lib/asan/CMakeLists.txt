@@ -66,8 +66,8 @@ if(APPLE)
     add_compiler_rt_darwin_object_library(RTAsan ${os}
       ARCH ${ASAN_SUPPORTED_ARCH}
       SOURCES ${ASAN_SOURCES} ${ASAN_CXX_SOURCES}
-      CFLAGS ${ASAN_CFLAGS}
-      DEFS ${ASAN_COMMON_DEFINITIONS})
+      CFLAGS ${ASAN_DYNAMIC_CFLAGS}
+      DEFS ${ASAN_DYNAMIC_DEFINITIONS})
   endforeach()
 elseif(ANDROID)
   add_library(RTAsan.arm.android OBJECT ${ASAN_SOURCES} ${ASAN_CXX_SOURCES})
@@ -102,8 +102,8 @@ if(APPLE)
               $<TARGET_OBJECTS:RTInterception.${os}>
               $<TARGET_OBJECTS:RTSanitizerCommon.${os}>
               $<TARGET_OBJECTS:RTLSanCommon.${os}>
-      CFLAGS ${ASAN_CFLAGS}
-      DEFS ${ASAN_COMMON_DEFINITIONS})
+      CFLAGS ${ASAN_DYNAMIC_CFLAGS}
+      DEFS ${ASAN_DYNAMIC_DEFINITIONS})
     add_dependencies(asan clang_rt.asan_${os}_dynamic)
   endforeach()
 

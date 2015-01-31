@@ -150,7 +150,7 @@ defm rpath : dashEq<"rpath", "rpath",
 def rpath_link : Separate<["-"], "rpath-link">,
      HelpText<"Specifies the first set of directories to search">,
      Group<grp_dynlibexec>;
-def export_dynamic : Flag<["--"], "export-dynamic">,
+def export_dynamic : Flag<["-", "--"], "export-dynamic">,
      HelpText<"Add all symbols to the dynamic symbol table"
               " when creating executables">,
      Group<grp_main>;
@@ -199,7 +199,7 @@ def no_allow_shlib_undefs : Flag<["--"], "no-allow-shlib-undefined">,
      HelpText<"Do not allow undefined symbols from dynamic"
               " library when creating executables">,
      Group<grp_resolveropt>;
-def allow_shlib_undefs : Flag<["--"], "allow-shlib-undefined">,
+def allow_shlib_undefs : Flag<["-", "--"], "allow-shlib-undefined">,
      HelpText<"Allow undefined symbols from dynamic"
              " library when creating executables">,
      Group<grp_resolveropt>;

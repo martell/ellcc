@@ -29,6 +29,9 @@ namespace llvm {
 //===----------------------------------------------------------------------===//
 
 class AMDGPUTargetMachine : public LLVMTargetMachine {
+private:
+  const DataLayout DL;
+
 protected:
   TargetLoweringObjectFile *TLOF;
   AMDGPUSubtarget Subtarget;
@@ -39,6 +42,11 @@ public:
                       StringRef CPU, TargetOptions Options, Reloc::Model RM,
                       CodeModel::Model CM, CodeGenOpt::Level OL);
   ~AMDGPUTargetMachine();
+  // FIXME: This is currently broken, the DataLayout needs to move to
+  // the target machine.
+  const DataLayout *getDataLayout() const override {
+    return &DL;
+  }
   const AMDGPUSubtarget *getSubtargetImpl() const override {
     return &Subtarget;
   }
@@ -47,8 +55,8 @@ public:
   }
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
 
-  /// \brief Register R600 analysis passes with a pass manager.
-  void addAnalysisPasses(PassManagerBase &PM) override;
+  TargetTransformInfo getTTI() override;
+
   TargetLoweringObjectFile *getObjFileLowering() const override {
     return TLOF;
   }

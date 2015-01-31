@@ -1,9 +1,10 @@
-add_lld_executable(lld
+add_llvm_executable(lld
   lld.cpp
   )
 
 target_link_libraries(lld
   lldDriver
+  LLVMSupport
   )
 
 install(TARGETS lld

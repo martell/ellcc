@@ -25,13 +25,11 @@ Initialize(MCContext &Ctx, const TargetMachine &TM) {
 
   SmallDataSection =
     getContext().getELFSection(".sdata", ELF::SHT_PROGBITS,
-                               ELF::SHF_WRITE |ELF::SHF_ALLOC,
-                               SectionKind::getDataRel());
+                               ELF::SHF_WRITE |ELF::SHF_ALLOC);
 
   SmallBSSSection =
     getContext().getELFSection(".sbss", ELF::SHT_NOBITS,
-                               ELF::SHF_WRITE |ELF::SHF_ALLOC,
-                               SectionKind::getBSS());
+                               ELF::SHF_WRITE |ELF::SHF_ALLOC);
 
 }
 
@@ -70,8 +68,7 @@ IsGlobalInSmallSection(const GlobalValue *GV, const TargetMachine &TM,
     return false;
 
   Type *Ty = GV->getType()->getElementType();
-  return IsInSmallSection(
-    TM.getSubtargetImpl()->getDataLayout()->getTypeAllocSize(Ty));
+  return IsInSmallSection(TM.getDataLayout()->getTypeAllocSize(Ty));
 }
 
 const MCSection *MBlazeTargetObjectFile::

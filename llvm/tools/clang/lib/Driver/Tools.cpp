@@ -967,6 +967,11 @@ void Clang::AddAArch64TargetArgs(const ArgList &Args,
     if (A->getOption().matches(options::OPT_mno_global_merge))
       CmdArgs.push_back("-mno-global-merge");
   }
+
+  if (Args.hasArg(options::OPT_ffixed_x18)) {
+    CmdArgs.push_back("-backend-option");
+    CmdArgs.push_back("-aarch64-reserve-x18");
+  }
 }
 
 void Clang::AddMBlazeTargetArgs(const ArgList &Args,
@@ -1130,17 +1135,6 @@ static void getMIPSTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   StringRef ABIName;
   mips::getMipsCPUAndABI(Args, Triple, CPUName, ABIName);
   ABIName = getGnuCompatibleMipsABIName(ABIName);
-
-  // Always override the backend's default ABI.
-  std::string ABIFeature = llvm::StringSwitch<StringRef>(ABIName)
-                               .Case("32", "+o32")
-                               .Case("n32", "+n32")
-                               .Case("64", "+n64")
-                               .Case("eabi", "+eabi")
-                               .Default(("+" + ABIName).str());
-  Features.push_back("-o32");
-  Features.push_back("-n64");
-  Features.push_back(Args.MakeArgString(ABIFeature));
 
   AddTargetFeature(Args, Features, options::OPT_mno_abicalls,
                    options::OPT_mabicalls, "noabicalls");
@@ -1511,6 +1505,10 @@ static const char *getX86TargetCPU(const ArgList &Args,
       return "core-avx2";
     return Is64Bit ? "core2" : "yonah";
   }
+
+  // Set up default CPU name for PS4 compilers.
+  if (Triple.isPS4CPU())
+    return "btver2";
 
   // On Android use targets compatible with gcc
   if (Triple.getEnvironment() == llvm::Triple::Android)
@@ -2039,7 +2037,8 @@ static void addExceptionArgs(const ArgList &Args, types::ID InputType,
   }
 
   if (types::isCXX(InputType)) {
-    bool CXXExceptionsEnabled = Triple.getArch() != llvm::Triple::xcore;
+    bool CXXExceptionsEnabled =
+        Triple.getArch() != llvm::Triple::xcore && !Triple.isPS4CPU();
     if (Arg *A = Args.getLastArg(options::OPT_fcxx_exceptions,
                                  options::OPT_fno_cxx_exceptions,
                                  options::OPT_fexceptions,
@@ -2203,8 +2202,11 @@ static SmallString<128> getCompilerRTLibDir(const ToolChain &TC) {
 }
 
 static SmallString<128> getCompilerRT(const ToolChain &TC, StringRef Component,
-                                      bool Shared = false,
-                                      const char *Env = "") {
+                                      bool Shared = false) {
+  const char *Env = TC.getTriple().getEnvironment() == llvm::Triple::Android
+                        ? "-android"
+                        : "";
+
   bool IsOSWindows = TC.getTriple().isOSWindows();
   StringRef Arch = getArchNameForCompilerRTLib(TC);
   const char *Prefix = IsOSWindows ? "" : "lib";
@@ -2249,16 +2251,11 @@ static void addProfileRT(const ToolChain &TC, const ArgList &Args,
 static void addSanitizerRuntime(const ToolChain &TC, const ArgList &Args,
                                 ArgStringList &CmdArgs, StringRef Sanitizer,
                                 bool IsShared) {
-  const char *Env = TC.getTriple().getEnvironment() == llvm::Triple::Android
-                        ? "-android"
-                        : "";
-
   // Static runtimes must be forced into executable, so we wrap them in
   // whole-archive.
   if (!IsShared)
     CmdArgs.push_back("-whole-archive");
-  CmdArgs.push_back(Args.MakeArgString(getCompilerRT(TC, Sanitizer, IsShared,
-                                                     Env)));
+  CmdArgs.push_back(Args.MakeArgString(getCompilerRT(TC, Sanitizer, IsShared)));
   if (!IsShared)
     CmdArgs.push_back("-no-whole-archive");
 }
@@ -2396,6 +2393,9 @@ static bool shouldUseLeafFramePointer(const ArgList &Args,
   if (Arg *A = Args.getLastArg(options::OPT_mno_omit_leaf_frame_pointer,
                                options::OPT_momit_leaf_frame_pointer))
     return A->getOption().matches(options::OPT_mno_omit_leaf_frame_pointer);
+
+  if (Triple.isPS4CPU())
+    return false;
 
   return shouldUseFramePointerForTarget(Args, Triple);
 }
@@ -3029,6 +3029,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       !TrappingMath)
     CmdArgs.push_back("-menable-unsafe-fp-math");
 
+  if (!SignedZeros)
+    CmdArgs.push_back("-fno-signed-zeros");
 
   // Validate and pass through -fp-contract option. 
   if (Arg *A = Args.getLastArg(options::OPT_ffast_math, FastMathAliasOption,
@@ -3815,6 +3817,15 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(Args.MakeArgString("-mstack-alignment=" + alignment));
   }
 
+  if (Args.hasArg(options::OPT_mstack_probe_size)) {
+    StringRef Size = Args.getLastArgValue(options::OPT_mstack_probe_size);
+
+    if (!Size.empty())
+      CmdArgs.push_back(Args.MakeArgString("-mstack-probe-size=" + Size));
+    else
+      CmdArgs.push_back("-mstack-probe-size=0");
+  }
+
   if (getToolChain().getTriple().getArch() == llvm::Triple::aarch64 ||
       getToolChain().getTriple().getArch() == llvm::Triple::aarch64_be)
     CmdArgs.push_back("-fallow-half-arguments-and-returns");
@@ -4016,20 +4027,47 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                    false))
     CmdArgs.push_back("-fno-elide-constructors");
 
-  // -frtti is default.
-  if (!Args.hasFlag(options::OPT_frtti, options::OPT_fno_rtti) ||
+  // -frtti is default, except for the PS4 CPU.
+  if (!Args.hasFlag(options::OPT_frtti, options::OPT_fno_rtti,
+                    !Triple.isPS4CPU()) ||
       KernelOrKext) {
-    CmdArgs.push_back("-fno-rtti");
+    bool RTTIEnabled = false;
+    Arg *NoRTTIArg = Args.getLastArg(
+        options::OPT_mkernel, options::OPT_fapple_kext, options::OPT_fno_rtti);
+
+    // PS4 requires rtti when exceptions are enabled. If -fno-rtti was
+    // explicitly passed, error out. Otherwise enable rtti and emit a
+    // warning.
+    if (Triple.isPS4CPU()) {
+      if (Arg *A = Args.getLastArg(options::OPT_fcxx_exceptions)) {
+        if (NoRTTIArg)
+          D.Diag(diag::err_drv_argument_not_allowed_with)
+              << NoRTTIArg->getAsString(Args) << A->getAsString(Args);
+        else {
+          RTTIEnabled = true;
+          D.Diag(diag::warn_drv_enabling_rtti_with_exceptions);
+        }
+      }
+    }
 
     // -fno-rtti cannot usefully be combined with -fsanitize=vptr.
     if (Sanitize.sanitizesVptr()) {
-      std::string NoRttiArg =
-        Args.getLastArg(options::OPT_mkernel,
-                        options::OPT_fapple_kext,
-                        options::OPT_fno_rtti)->getAsString(Args);
-      D.Diag(diag::err_drv_argument_not_allowed_with)
-        << "-fsanitize=vptr" << NoRttiArg;
+      // If rtti was explicitly disabled and the vptr sanitizer is on, error
+      // out. Otherwise, warn that vptr will be disabled unless -frtti is
+      // passed.
+      if (NoRTTIArg) {
+        D.Diag(diag::err_drv_argument_not_allowed_with)
+            << "-fsanitize=vptr" << NoRTTIArg->getAsString(Args);
+      } else {
+        D.Diag(diag::warn_drv_disabling_vptr_no_rtti_default);
+        // All sanitizer switches have been pushed. This -fno-sanitize
+        // will override any -fsanitize={vptr,undefined} passed before it.
+        CmdArgs.push_back("-fno-sanitize=vptr");
+      }
     }
+
+    if (!RTTIEnabled)
+      CmdArgs.push_back("-fno-rtti");
   }
 
   // -fshort-enums=0 is default for all architectures except Hexagon.
@@ -4852,10 +4890,10 @@ void Clang::AddClangCLArgs(const ArgList &Args, ArgStringList &CmdArgs) const {
   const Driver &D = getToolChain().getDriver();
   EHFlags EH = parseClangCLEHFlags(D, Args);
   // FIXME: Do something with NoExceptC.
-  if (EH.Synch || EH.Asynch) {
-    CmdArgs.push_back("-fexceptions");
+  if (EH.Synch || EH.Asynch)
     CmdArgs.push_back("-fcxx-exceptions");
-  }
+  // Always add -fexceptions to allow SEH __try.
+  CmdArgs.push_back("-fexceptions");
 
   // /EP should expand to -E -P.
   if (Args.hasArg(options::OPT__SLASH_EP)) {
@@ -4905,6 +4943,17 @@ visualstudio::Compile *Clang::getCLFallback() const {
   if (!CLFallback)
     CLFallback.reset(new visualstudio::Compile(getToolChain()));
   return CLFallback.get();
+}
+
+void ClangAs::AddMIPSTargetArgs(const ArgList &Args,
+                                ArgStringList &CmdArgs) const {
+  StringRef CPUName;
+  StringRef ABIName;
+  const llvm::Triple &Triple = getToolChain().getTriple();
+  mips::getMipsCPUAndABI(Args, Triple, CPUName, ABIName);
+
+  CmdArgs.push_back("-target-abi");
+  CmdArgs.push_back(ABIName.data());
 }
 
 void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
@@ -5013,6 +5062,19 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   // FIXME: Add -static support, once we have it.
+
+  // Add target specific flags.
+  switch(getToolChain().getArch()) {
+  default:
+    break;
+
+  case llvm::Triple::mips:
+  case llvm::Triple::mipsel:
+  case llvm::Triple::mips64:
+  case llvm::Triple::mips64el:
+    AddMIPSTargetArgs(Args, CmdArgs);
+    break;
+  }
 
   // Consume all the warning flags. Usually this would be handled more
   // gracefully by -cc1 (warning about unknown warning flags, etc) but -cc1as
@@ -5176,16 +5238,22 @@ void gcc::Compile::RenderExtraToolArgs(const JobAction &JA,
                                        ArgStringList &CmdArgs) const {
   const Driver &D = getToolChain().getDriver();
 
+  switch (JA.getType()) {
   // If -flto, etc. are present then make sure not to force assembly output.
-  if (JA.getType() == types::TY_LLVM_IR || JA.getType() == types::TY_LTO_IR ||
-      JA.getType() == types::TY_LLVM_BC || JA.getType() == types::TY_LTO_BC)
+  case types::TY_LLVM_IR:
+  case types::TY_LTO_IR:
+  case types::TY_LLVM_BC:
+  case types::TY_LTO_BC:
     CmdArgs.push_back("-c");
-  else {
-    if (JA.getType() != types::TY_PP_Asm)
-      D.Diag(diag::err_drv_invalid_gcc_output_type)
-        << getTypeName(JA.getType());
-
+    break;
+  case types::TY_PP_Asm:
     CmdArgs.push_back("-S");
+    break;
+  case types::TY_Nothing:
+    CmdArgs.push_back("-fsyntax-only");
+    break;
+  default:
+    D.Diag(diag::err_drv_invalid_gcc_output_type) << getTypeName(JA.getType());
   }
 }
 
@@ -5671,6 +5739,20 @@ const char *arm::getLLVMArchSuffixForARM(StringRef CPU) {
     .Case("cyclone", "v8")
     .Cases("cortex-a53", "cortex-a57", "v8")
     .Default("");
+}
+
+void arm::appendEBLinkFlags(const ArgList &Args, ArgStringList &CmdArgs, const llvm::Triple &Triple) {
+  if (Args.hasArg(options::OPT_r))
+    return;
+
+  StringRef Suffix = getLLVMArchSuffixForARM(getARMCPUForMArch(Args, Triple));
+  const char *LinkFlag = llvm::StringSwitch<const char *>(Suffix)
+    .Cases("v4", "v4t", "v5", "v5e", nullptr)
+    .Cases("v6", "v6t2", nullptr)
+    .Default("--be8");
+
+  if (LinkFlag)
+    CmdArgs.push_back(LinkFlag);
 }
 
 bool mips::hasMipsAbiArg(const ArgList &Args, const char *Value) {
@@ -7136,6 +7218,7 @@ void netbsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
     break;
   case llvm::Triple::armeb:
   case llvm::Triple::thumbeb:
+    arm::appendEBLinkFlags(Args, CmdArgs, getToolChain().getTriple());
     CmdArgs.push_back("-m");
     switch (getToolChain().getTriple().getEnvironment()) {
     case llvm::Triple::EABI:
@@ -7686,6 +7769,10 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT_s))
     CmdArgs.push_back("-s");
 
+  if (ToolChain.getArch() == llvm::Triple::armeb ||
+      ToolChain.getArch() == llvm::Triple::thumbeb)
+    arm::appendEBLinkFlags(Args, CmdArgs, getToolChain().getTriple());
+
   for (const auto &Opt : ToolChain.ExtraOpts)
     CmdArgs.push_back(Opt.c_str());
 
@@ -7718,6 +7805,13 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(Args.MakeArgString(
         D.DyldPrefix + getLinuxDynamicLinker(Args, ToolChain)));
   }
+
+  // Work around a bug in GNU ld (and gold) linker versions up to 2.25
+  // that may mis-optimize code generated by this version of clang/LLVM
+  // to access general-dynamic or local-dynamic TLS variables.
+  if (ToolChain.getArch() == llvm::Triple::ppc64 ||
+      ToolChain.getArch() == llvm::Triple::ppc64le)
+    CmdArgs.push_back("--no-tls-optimize");
 
   CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());

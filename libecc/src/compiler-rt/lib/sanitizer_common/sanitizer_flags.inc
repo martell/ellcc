@@ -104,6 +104,9 @@ COMMON_FLAG(uptr, soft_rss_limit_mb, 0,
             " until the RSS goes below the soft limit."
             " This limit does not affect memory allocations other than"
             " malloc/new.")
+COMMON_FLAG(bool, can_use_proc_maps_statm, true,
+            "If false, do not attempt to read /proc/maps/statm."
+            " Mostly useful for testing sanitizers.")
 COMMON_FLAG(
     bool, coverage, false,
     "If set, coverage information will be dumped at program shutdown (if the "
@@ -139,3 +142,5 @@ COMMON_FLAG(const char *, stack_trace_format, "DEFAULT",
             "Format string used to render stack frames. "
             "See sanitizer_stacktrace_printer.h for the format description. "
             "Use DEFAULT to get default format.")
+COMMON_FLAG(bool, no_huge_pages_for_shadow, true,
+            "If true, the shadow is not allowed to use huge pages. ")

@@ -369,6 +369,8 @@ AC_CACHE_CHECK([type of operating system we're going to target],
     llvm_cv_target_os_type="NativeClient" ;;
   *-unknown-eabi*)
     llvm_cv_target_os_type="Freestanding" ;;
+  *-*-ps4)
+    llvm_cv_target_os_type="PS4" ;;
   *)
     llvm_cv_target_os_type="Unknown" ;;
 esac])
@@ -1719,7 +1721,9 @@ if test "$llvm_cv_os_type" = "MingW" ; then
   AC_CHECK_LIB(gcc,_alloca,AC_DEFINE([HAVE__ALLOCA],[1],[Have host's _alloca]))
   AC_CHECK_LIB(gcc,__alloca,AC_DEFINE([HAVE___ALLOCA],[1],[Have host's __alloca]))
   AC_CHECK_LIB(gcc,__chkstk,AC_DEFINE([HAVE___CHKSTK],[1],[Have host's __chkstk]))
+  AC_CHECK_LIB(gcc,__chkstk_ms,AC_DEFINE([HAVE___CHKSTK_MS],[1],[Have host's __chkstk_ms]))
   AC_CHECK_LIB(gcc,___chkstk,AC_DEFINE([HAVE____CHKSTK],[1],[Have host's ___chkstk]))
+  AC_CHECK_LIB(gcc,___chkstk_ms,AC_DEFINE([HAVE____CHKSTK_MS],[1],[Have host's ___chkstk_ms]))
 
   AC_CHECK_LIB(gcc,__ashldi3,AC_DEFINE([HAVE___ASHLDI3],[1],[Have host's __ashldi3]))
   AC_CHECK_LIB(gcc,__ashrdi3,AC_DEFINE([HAVE___ASHRDI3],[1],[Have host's __ashrdi3]))

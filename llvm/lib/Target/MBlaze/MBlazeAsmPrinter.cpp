@@ -49,8 +49,9 @@ namespace {
   class MBlazeAsmPrinter : public AsmPrinter {
     const MBlazeSubtarget *Subtarget;
   public:
-    explicit MBlazeAsmPrinter(TargetMachine &TM, MCStreamer &Streamer)
-      : AsmPrinter(TM, Streamer) {
+    explicit MBlazeAsmPrinter(TargetMachine &TM,
+                              std::unique_ptr<MCStreamer> Streamer)
+      : AsmPrinter(TM, std::move(Streamer)) {
       Subtarget = &TM.getSubtarget<MBlazeSubtarget>();
     }
 

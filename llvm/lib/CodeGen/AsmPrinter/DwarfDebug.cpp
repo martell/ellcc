@@ -1119,7 +1119,7 @@ static DebugLoc findPrologueEndLoc(const MachineFunction *MF) {
   for (const auto &MBB : *MF)
     for (const auto &MI : MBB)
       if (!MI.isDebugValue() && !MI.getFlag(MachineInstr::FrameSetup) &&
-        !MI.getDebugLoc().isUnknown()) {
+          !MI.getDebugLoc().isUnknown()) {
         // Did the target forget to set the FrameSetup flag for CFI insns?
         assert(!MI.isCFIInstruction() &&
                "First non-frame-setup instruction is a CFI instruction.");
@@ -1223,12 +1223,12 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
   if (!PrologEndLoc.isUnknown()) {
     DebugLoc FnStartDL =
         PrologEndLoc.getFnDebugLoc(MF->getFunction()->getContext());
-    recordSourceLine(
-        FnStartDL.getLine(), FnStartDL.getCol(),
-        FnStartDL.getScope(MF->getFunction()->getContext()),
-        // We'd like to list the prologue as "not statements" but GDB behaves
-        // poorly if we do that. Revisit this with caution/GDB (7.5+) testing.
-        DWARF2_FLAG_IS_STMT);
+
+    // We'd like to list the prologue as "not statements" but GDB behaves
+    // poorly if we do that. Revisit this with caution/GDB (7.5+) testing.
+    recordSourceLine(FnStartDL.getLine(), FnStartDL.getCol(),
+                     FnStartDL.getScope(MF->getFunction()->getContext()),
+                     DWARF2_FLAG_IS_STMT);
   }
 }
 
@@ -1683,14 +1683,12 @@ void DwarfDebug::emitLocPieces(ByteStreamer &Streamer,
 
 #ifndef NDEBUG
     DIVariable Var = Piece.getVariable();
-    assert(!Var.isIndirect() && "indirect address for piece");
     unsigned VarSize = Var.getSizeInBits(Map);
     assert(PieceSize+PieceOffset <= VarSize/SizeOfByte
            && "piece is larger than or outside of variable");
     assert(PieceSize*SizeOfByte != VarSize
            && "piece covers entire variable");
 #endif
-
     emitDebugLocValue(Streamer, Piece, PieceOffset*SizeOfByte);
   }
 }
@@ -1726,7 +1724,7 @@ void DwarfDebug::emitDebugLocValue(ByteStreamer &Streamer,
     DIExpression Expr = Value.getExpression();
     if (!Expr || (Expr.getNumElements() == 0))
       // Regular entry.
-      Asm->EmitDwarfRegOp(Streamer, Loc, DV.isIndirect());
+      Asm->EmitDwarfRegOp(Streamer, Loc);
     else {
       // Complex address entry.
       if (Loc.getOffset()) {
@@ -1735,8 +1733,6 @@ void DwarfDebug::emitDebugLocValue(ByteStreamer &Streamer,
       } else
         DwarfExpr.AddMachineRegExpression(Expr, Loc.getReg(),
                                           PieceOffsetInBits);
-      if (DV.isIndirect())
-        DwarfExpr.EmitOp(dwarf::DW_OP_deref);
     }
   }
   // else ... ignore constant fp. There is not any good way to

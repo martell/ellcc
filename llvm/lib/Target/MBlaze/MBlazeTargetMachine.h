@@ -21,38 +21,42 @@
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
-  class formatted_raw_ostream;
+class formatted_raw_ostream;
 
-  class MBlazeTargetMachine : public LLVMTargetMachine {
-    std::unique_ptr<TargetLoweringObjectFile> TLOF;
-    MBlazeSubtarget        *Subtarget;
-    MBlazeSubtarget        DefaultSubtarget;
-    MBlazeIntrinsicInfo    IntrinsicInfo;
+class MBlazeTargetMachine : public LLVMTargetMachine {
+  std::unique_ptr<TargetLoweringObjectFile> TLOF;
+  const DataLayout DL; // Calculates type size & alignment
+  MBlazeSubtarget        *Subtarget;
+  MBlazeSubtarget        DefaultSubtarget;
+  MBlazeIntrinsicInfo    IntrinsicInfo;
 
-  public:
-    MBlazeTargetMachine(const Target &T, StringRef TT,
-                        StringRef CPU, StringRef FS,
-                        const TargetOptions &Options,
-                        Reloc::Model RM, CodeModel::Model CM,
-                        CodeGenOpt::Level OL);
-  ~MBlazeTargetMachine() override;
+public:
+  MBlazeTargetMachine(const Target &T, StringRef TT,
+                      StringRef CPU, StringRef FS,
+                      const TargetOptions &Options,
+                      Reloc::Model RM, CodeModel::Model CM,
+                      CodeGenOpt::Level OL);
+~MBlazeTargetMachine() override;
 
-    const MBlazeSubtarget *getSubtargetImpl() const override {
-      if (Subtarget)
-        return Subtarget;
-      return &DefaultSubtarget;
-    }
+  const MBlazeSubtarget *getSubtargetImpl() const override {
+    if (Subtarget)
+      return Subtarget;
+    return &DefaultSubtarget;
+  }
 
-    const TargetIntrinsicInfo *getIntrinsicInfo() const override
-    { return &IntrinsicInfo; }
+  const TargetIntrinsicInfo *getIntrinsicInfo() const override {
+    return &IntrinsicInfo;
+  }
 
-    // Pass Pipeline Configuration
-    TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
+  // Pass Pipeline Configuration
+  TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
 
-    TargetLoweringObjectFile *getObjFileLowering() const override {
-      return TLOF.get();
-    }
-  };
+  TargetLoweringObjectFile *getObjFileLowering() const override {
+    return TLOF.get();
+  }
+
+  const DataLayout *getDataLayout() const override { return &DL; }
+};
 } // End llvm namespace
 
 #endif

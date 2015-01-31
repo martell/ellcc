@@ -696,16 +696,16 @@ getModuleForFile(LLVMContext &Context, claimed_file &F, raw_fd_ostream *ApiFile,
   return Obj.takeModule();
 }
 
-static void runLTOPasses(Module &M, TargetMachine &TM) {
+static void runLTOPasses(Module &M, const TargetMachine &TM) {
   PassManager passes;
   PassManagerBuilder PMB;
-  PMB.LibraryInfo = new TargetLibraryInfo(Triple(TM.getTargetTriple()));
+  PMB.LibraryInfo = new TargetLibraryInfoImpl(Triple(TM.getTargetTriple()));
   PMB.Inliner = createFunctionInliningPass();
   PMB.VerifyInput = true;
   PMB.VerifyOutput = true;
   PMB.LoopVectorize = true;
   PMB.SLPVectorize = true;
-  PMB.populateLTOPassManager(passes, &TM);
+  PMB.populateLTOPassManager(passes);
   passes.run(M);
 }
 

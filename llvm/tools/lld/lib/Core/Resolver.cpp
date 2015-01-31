@@ -254,7 +254,7 @@ bool Resolver::undefinesAdded(int begin, int end) {
   return false;
 }
 
-File *Resolver::getFile(int &index, int &groupLevel) {
+File *Resolver::getFile(int &index) {
   std::vector<std::unique_ptr<Node>> &inputs = _context.getNodes();
   if ((size_t)index >= inputs.size())
     return nullptr;
@@ -265,12 +265,10 @@ File *Resolver::getFile(int &index, int &groupLevel) {
     int size = group->getSize();
     if (undefinesAdded(index - size, index)) {
       index -= size;
-      ++groupLevel;
-      return getFile(index, groupLevel);
+      return getFile(index);
     }
     ++index;
-    --groupLevel;
-    return getFile(index, groupLevel);
+    return getFile(index);
   }
   return cast<FileNode>(inputs[index++].get())->getFile();
 }
@@ -278,8 +276,8 @@ File *Resolver::getFile(int &index, int &groupLevel) {
 // Make a map of Symbol -> ArchiveFile.
 void Resolver::makePreloadArchiveMap() {
   std::vector<std::unique_ptr<Node>> &nodes = _context.getNodes();
-  for (auto it = nodes.rbegin(), e = nodes.rend(); it != e; ++it)
-    if (auto *fnode = dyn_cast<FileNode>(it->get()))
+  for (int i = nodes.size() - 1; i >= 0; --i)
+    if (auto *fnode = dyn_cast<FileNode>(nodes[i].get()))
       if (auto *archive = dyn_cast<ArchiveLibraryFile>(fnode->getFile()))
         for (StringRef sym : archive->getDefinedSymbols())
           _archiveMap[sym] = archive;
@@ -290,10 +288,10 @@ void Resolver::makePreloadArchiveMap() {
 bool Resolver::resolveUndefines() {
   ScopedTask task(getDefaultDomain(), "resolveUndefines");
   int index = 0;
-  int groupLevel = 0;
+  std::set<File *> seen;
   for (;;) {
     bool undefAdded = false;
-    File *file = getFile(index, groupLevel);
+    File *file = getFile(index);
     if (!file)
       return true;
     if (std::error_code ec = file->parse()) {
@@ -304,8 +302,12 @@ bool Resolver::resolveUndefines() {
     file->beforeLink();
     switch (file->kind()) {
     case File::kindObject:
-      if (groupLevel > 0)
+      // The same file may be visited more than once if the file is
+      // in --start-group and --end-group. Only library files should
+      // be processed more than once.
+      if (seen.count(file))
         break;
+      seen.insert(file);
       assert(!file->hasOrdinal());
       file->setOrdinal(_context.getNextOrdinalAndIncrement());
       undefAdded = handleFile(*file);

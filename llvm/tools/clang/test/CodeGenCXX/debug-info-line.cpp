@@ -1,5 +1,5 @@
-// RUN: %clang_cc1 -gline-tables-only -std=c++11 -fexceptions -fcxx-exceptions -S -emit-llvm %s -o - | FileCheck %s
-// RUN: %clang_cc1 -gline-tables-only -std=c++11 -fexceptions -fcxx-exceptions -S -emit-llvm %s -o - -triple i686-linux-gnu | FileCheck %s
+// RUN: %clang_cc1 -w -gline-tables-only -std=c++11 -fexceptions -fcxx-exceptions -S -emit-llvm %s -o - | FileCheck %s
+// RUN: %clang_cc1 -w -gline-tables-only -std=c++11 -fexceptions -fcxx-exceptions -S -emit-llvm %s -o - -triple i686-linux-gnu | FileCheck %s
 
 // XFAIL: win32
 
@@ -10,11 +10,11 @@ extern "C" __complex float *complex_sink();
 
 // CHECK-LABEL: define
 void f1() {
-#line 100
-  * // The store for the assignment should be attributed to the start of the
-      // assignment expression here, regardless of the location of subexpressions.
-      sink() = src();
+  *sink()
   // CHECK: store {{.*}}, !dbg [[DBG_F1:!.*]]
+#line 100
+      = //
+      src();
 }
 
 struct foo {
@@ -38,16 +38,20 @@ foo::foo()
 
 // CHECK-LABEL: define {{.*}}f2{{.*}}
 void f2() {
+  // CHECK: store float {{.*}} !dbg [[DBG_F2:!.*]]
+  *complex_sink()
 #line 300
-  * // CHECK: store float {{.*}} !dbg [[DBG_F2:!.*]]
-      complex_sink() = complex_src();
+      = //
+      complex_src();
 }
 
 // CHECK-LABEL: define
 void f3() {
+  // CHECK: store float {{.*}} !dbg [[DBG_F3:!.*]]
+  *complex_sink()
 #line 400
-  * // CHECK: store float {{.*}} !dbg [[DBG_F3:!.*]]
-      complex_sink() += complex_src();
+      += //
+      complex_src();
 }
 
 // CHECK-LABEL: define
@@ -70,9 +74,11 @@ agg agg_src();
 // CHECK-LABEL: define
 void f6() {
   agg x;
+  // CHECK: call void @llvm.memcpy{{.*}} !dbg [[DBG_F6:!.*]]
+  x
 #line 700
-  x // CHECK: call void @llvm.memcpy{{.*}} !dbg [[DBG_F6:!.*]]
-      = agg_src();
+      = //
+      agg_src();
 }
 
 // CHECK-LABEL: define
@@ -166,22 +172,83 @@ void f13() {
   F13_IMPL;
 }
 
-struct f14 {
-  f14(int);
+struct f14_impl {
+  f14_impl(int);
 };
 
 // CHECK-LABEL: define
-// CHECK-LABEL: define
-// CHECK-LABEL: define
-// CHECK: call {{.*}}, !dbg [[DBG_F14_CTOR_CALL:![0-9]*]]
-// FIXME: The ctor call should be attributed to the line of the NSDMI, not the
-// start of this declaration.
+struct f14_use {
+// CHECK: call {{.*}}f14_impl{{.*}}, !dbg [[DBG_F14_CTOR_CALL:![0-9]*]]
 #line 1600
-struct {
-  f14 v = 1;
-} f14_inst;
+  f14_impl v{//
+             1};
+  f14_use();
+};
+
+f14_use::f14_use() = default;
 
 // CHECK-LABEL: define
+// CHECK-LABEL: define
+void func(foo);
+void f15(foo *f) {
+  func(
+// CHECK: getelementptr {{.*}}, !dbg [[DBG_F15:![0-9]*]]
+#line 1700
+      f[3]);
+}
+
+// CHECK-LABEL: define
+void f16(__complex float f) {
+  __complex float g = //
+// CHECK: add {{.*}}, !dbg [[DBG_F16:![0-9]*]]
+#line 1800
+      f + 1;
+}
+
+// CHECK-LABEL: define
+void f17(int *x) {
+  1,
+// CHECK: getelementptr {{.*}}, !dbg [[DBG_F17:![0-9]*]]
+#line 1900
+      x[1];
+}
+
+// CHECK-LABEL: define
+void f18(int a, int b) {
+// CHECK: icmp {{.*}}, !dbg [[DBG_F18_1:![0-9]*]]
+// CHECK: br {{.*}}, !dbg [[DBG_F18_2:![0-9]*]]
+#line 2000
+  if (a  //
+      && //
+      b)
+    ;
+}
+
+// CHECK-LABEL: define
+void f19(int a, int b) {
+// CHECK: icmp {{.*}}, !dbg [[DBG_F19_1:![0-9]*]]
+// CHECK: br {{.*}}, !dbg [[DBG_F19_2:![0-9]*]]
+#line 2100
+  if (a  //
+      || //
+      b)
+    ;
+}
+
+// CHECK-LABEL: define
+void f20(int a, int b, int c) {
+// CHECK: icmp {{.*}}, !dbg [[DBG_F20_1:![0-9]*]]
+// FIXME: Conditional operator's exprloc should be the '?' not the start of the
+// expression, then this would go in the right place. (but adding getExprLoc to
+// the ConditionalOperator breaks the ARC migration tool - need to investigate
+// further).
+// CHECK: br {{.*}}, !dbg [[DBG_F20_1]]
+#line 2200
+  if (a  //
+      ? //
+      b : c)
+    ;
+}
 
 // CHECK: [[DBG_F1]] = !MDLocation(line: 100,
 // CHECK: [[DBG_FOO_VALUE]] = !MDLocation(line: 200,
@@ -203,3 +270,11 @@ struct {
 // CHECK: [[DBG_F12]] = !MDLocation(line: 1400,
 // CHECK: [[DBG_F13]] = !MDLocation(line: 1500,
 // CHECK: [[DBG_F14_CTOR_CALL]] = !MDLocation(line: 1600,
+// CHECK: [[DBG_F15]] = !MDLocation(line: 1700,
+// CHECK: [[DBG_F16]] = !MDLocation(line: 1800,
+// CHECK: [[DBG_F17]] = !MDLocation(line: 1900,
+// CHECK: [[DBG_F18_1]] = !MDLocation(line: 2000,
+// CHECK: [[DBG_F18_2]] = !MDLocation(line: 2001,
+// CHECK: [[DBG_F19_1]] = !MDLocation(line: 2100,
+// CHECK: [[DBG_F19_2]] = !MDLocation(line: 2101,
+// CHECK: [[DBG_F20_1]] = !MDLocation(line: 2200,

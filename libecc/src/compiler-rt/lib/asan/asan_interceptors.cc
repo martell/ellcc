@@ -142,13 +142,16 @@ DECLARE_REAL_AND_INTERCEPTOR(void, free, void *)
 #define COMMON_INTERCEPTOR_READ_RANGE(ctx, ptr, size) \
   ASAN_READ_RANGE(ctx, ptr, size)
 #define COMMON_INTERCEPTOR_ENTER(ctx, func, ...)                               \
+  ASAN_INTERCEPTOR_ENTER(ctx, func);                                           \
   do {                                                                         \
     if (asan_init_is_running)                                                  \
       return REAL(func)(__VA_ARGS__);                                          \
-    ASAN_INTERCEPTOR_ENTER(ctx, func);                                         \
     if (SANITIZER_MAC && UNLIKELY(!asan_inited))                               \
       return REAL(func)(__VA_ARGS__);                                          \
     ENSURE_ASAN_INITED();                                                      \
+  } while (false)
+#define COMMON_INTERCEPTOR_DIR_ACQUIRE(ctx, path) \
+  do {                                            \
   } while (false)
 #define COMMON_INTERCEPTOR_FD_ACQUIRE(ctx, fd) \
   do {                                         \
@@ -169,7 +172,8 @@ DECLARE_REAL_AND_INTERCEPTOR(void, free, void *)
   } while (false)
 #define COMMON_INTERCEPTOR_BLOCK_REAL(name) REAL(name)
 #define COMMON_INTERCEPTOR_ON_EXIT(ctx) OnExit()
-#define COMMON_INTERCEPTOR_LIBRARY_LOADED(filename, res) CoverageUpdateMapping()
+#define COMMON_INTERCEPTOR_LIBRARY_LOADED(filename, handle) \
+  CoverageUpdateMapping()
 #define COMMON_INTERCEPTOR_LIBRARY_UNLOADED() CoverageUpdateMapping()
 #define COMMON_INTERCEPTOR_NOTHING_IS_INITIALIZED (!asan_inited)
 #include "sanitizer_common/sanitizer_common_interceptors.inc"

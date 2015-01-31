@@ -346,6 +346,8 @@ def AddressSpace : TypeAttr {
 def Alias : Attr {
   let Spellings = [GCC<"alias">];
   let Args = [StringArgument<"Aliasee">];
+  let Subjects = SubjectList<[Function, GlobalVar], ErrorDiag,
+                             "ExpectedFunctionGlobalVarMethodOrProperty">;
   let Documentation = [Undocumented];
 }
 
@@ -1149,12 +1151,6 @@ def Ownership : InheritableAttr {
 def Packed : InheritableAttr {
   let Spellings = [GCC<"packed">];
 //  let Subjects = [Tag, Field];
-  let Documentation = [Undocumented];
-}
-
-def PnaclCall : InheritableAttr {
-  let Spellings = [GNU<"pnaclcall">];
-//  let Subjects = [Function, ObjCMethod];
   let Documentation = [Undocumented];
 }
 

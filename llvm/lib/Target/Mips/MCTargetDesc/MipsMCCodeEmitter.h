@@ -108,6 +108,13 @@ public:
                                      SmallVectorImpl<MCFixup> &Fixups,
                                      const MCSubtargetInfo &STI) const;
 
+  // getBranchTargetOpValueMMPC10 - Return binary encoding of the microMIPS
+  // 10-bit branch target operand. If the machine operand requires relocation,
+  // record the relocation and return zero.
+  unsigned getBranchTargetOpValueMMPC10(const MCInst &MI, unsigned OpNo,
+                                        SmallVectorImpl<MCFixup> &Fixups,
+                                        const MCSubtargetInfo &STI) const;
+
   // getBranchTargetOpValue - Return binary encoding of the microMIPS branch
   // target operand. If the machine operand requires relocation,
   // record the relocation and return zero.
@@ -161,6 +168,9 @@ public:
   unsigned getMemEncodingMMSPImm5Lsl2(const MCInst &MI, unsigned OpNo,
                                       SmallVectorImpl<MCFixup> &Fixups,
                                       const MCSubtargetInfo &STI) const;
+  unsigned getMemEncodingMMGPImm7Lsl2(const MCInst &MI, unsigned OpNo,
+                                      SmallVectorImpl<MCFixup> &Fixups,
+                                      const MCSubtargetInfo &STI) const;
   unsigned getMemEncodingMMImm12(const MCInst &MI, unsigned OpNo,
                                  SmallVectorImpl<MCFixup> &Fixups,
                                  const MCSubtargetInfo &STI) const;
@@ -197,6 +207,10 @@ public:
   unsigned getRegisterPairOpValue(const MCInst &MI, unsigned OpNo,
                                   SmallVectorImpl<MCFixup> &Fixups,
                                   const MCSubtargetInfo &STI) const;
+
+  unsigned getSimm23Lsl2Encoding(const MCInst &MI, unsigned OpNo,
+                                 SmallVectorImpl<MCFixup> &Fixups,
+                                 const MCSubtargetInfo &STI) const;
 
   unsigned getExprOpValue(const MCExpr *Expr, SmallVectorImpl<MCFixup> &Fixups,
                           const MCSubtargetInfo &STI) const;

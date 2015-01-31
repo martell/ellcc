@@ -7,10 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "lld/ReaderWriter/Writer.h"
 #include "NativeFileFormat.h"
 #include "lld/Core/File.h"
 #include "lld/Core/LinkingContext.h"
+#include "lld/Core/Writer.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
@@ -68,7 +68,7 @@ public:
     this->makeHeader();
 
     std::error_code ec;
-    llvm::raw_fd_ostream out(outPath.data(), ec, llvm::sys::fs::F_None);
+    llvm::raw_fd_ostream out(outPath, ec, llvm::sys::fs::F_None);
     if (ec)
       return ec;
 

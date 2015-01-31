@@ -112,7 +112,6 @@ static void diagnoseBadTypeAttribute(Sema &S, const AttributeList &attr,
     case AttributeList::AT_SysVABI: \
     case AttributeList::AT_Regparm: \
     case AttributeList::AT_Pcs: \
-    case AttributeList::AT_PnaclCall: \
     case AttributeList::AT_IntelOclBicc
 
 // Microsoft-specific type qualifiers.
@@ -869,7 +868,9 @@ static QualType ConvertDeclSpecToType(TypeProcessingState &state) {
     else
       Result = Context.DoubleTy;
 
-    if (S.getLangOpts().OpenCL && !S.getOpenCLOptions().cl_khr_fp64) {
+    if (S.getLangOpts().OpenCL &&
+        !((S.getLangOpts().OpenCLVersion >= 120) ||
+          S.getOpenCLOptions().cl_khr_fp64)) {
       S.Diag(DS.getTypeSpecTypeLoc(), diag::err_double_requires_fp64);
       declarator.setInvalidType(true);
     }
@@ -2476,8 +2477,24 @@ getCCForDeclaratorChunk(Sema &S, Declarator &D,
     }
   }
 
-  return S.Context.getDefaultCallingConvention(FTI.isVariadic,
-                                               IsCXXInstanceMethod);
+  CallingConv CC = S.Context.getDefaultCallingConvention(FTI.isVariadic,
+                                                         IsCXXInstanceMethod);
+
+  // Attribute AT_OpenCLKernel affects the calling convention only on
+  // the SPIR target, hence it cannot be treated as a calling
+  // convention attribute. This is the simplest place to infer
+  // "spir_kernel" for OpenCL kernels on SPIR.
+  if (CC == CC_SpirFunction) {
+    for (const AttributeList *Attr = D.getDeclSpec().getAttributes().getList();
+         Attr; Attr = Attr->getNext()) {
+      if (Attr->getKind() == AttributeList::AT_OpenCLKernel) {
+        CC = CC_SpirKernel;
+        break;
+      }
+    }
+  }
+
+  return CC;
 }
 
 static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
@@ -3432,8 +3449,6 @@ static AttributeList::Kind getAttrListKind(AttributedType::Kind kind) {
   case AttributedType::attr_pcs:
   case AttributedType::attr_pcs_vfp:
     return AttributeList::AT_Pcs;
-  case AttributedType::attr_pnaclcall:
-    return AttributeList::AT_PnaclCall;
   case AttributedType::attr_inteloclbicc:
     return AttributeList::AT_IntelOclBicc;
   case AttributedType::attr_ms_abi:
@@ -4462,8 +4477,6 @@ static AttributedType::Kind getCCTypeAttrKind(AttributeList &Attr) {
         .Case("aapcs", AttributedType::attr_pcs)
         .Case("aapcs-vfp", AttributedType::attr_pcs_vfp);
   }
-  case AttributeList::AT_PnaclCall:
-    return AttributedType::attr_pnaclcall;
   case AttributeList::AT_IntelOclBicc:
     return AttributedType::attr_inteloclbicc;
   case AttributeList::AT_MSABI:

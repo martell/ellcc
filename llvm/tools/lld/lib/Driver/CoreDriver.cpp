@@ -7,9 +7,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "lld/Core/Reader.h"
 #include "lld/Driver/Driver.h"
 #include "lld/ReaderWriter/CoreLinkingContext.h"
-#include "lld/ReaderWriter/Reader.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Triple.h"
@@ -111,7 +111,7 @@ bool CoreDriver::parse(int argc, const char *argv[], CoreLinkingContext &ctx,
   ctx.setAllowRemainingUndefines(true);
   ctx.setSearchArchivesToOverrideTentativeDefinitions(false);
 
-  // Process all the arguments and create Input Elements
+  // Process all the arguments and create input files.
   for (auto inputArg : *parsedArgs) {
     switch (inputArg->getOption().getID()) {
     case OPT_mllvm:

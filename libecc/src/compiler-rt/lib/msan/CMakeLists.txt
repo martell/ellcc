@@ -9,6 +9,7 @@ set(MSAN_RTL_SOURCES
   msan_linux.cc
   msan_new_delete.cc
   msan_report.cc
+  msan_poisoning.cc
   )
 
 set(MSAN_RTL_CFLAGS ${SANITIZER_COMMON_CFLAGS})

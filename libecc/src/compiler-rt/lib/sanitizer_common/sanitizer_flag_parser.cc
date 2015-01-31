@@ -17,9 +17,44 @@
 #include "sanitizer_libc.h"
 #include "sanitizer_flags.h"
 #include "sanitizer_flag_parser.h"
-#include "sanitizer_allocator_internal.h"
 
 namespace __sanitizer {
+
+LowLevelAllocator FlagParser::Alloc;
+
+class UnknownFlags {
+  static const int kMaxUnknownFlags = 20;
+  const char *unknown_flags_[kMaxUnknownFlags];
+  int n_unknown_flags_;
+
+ public:
+  void Add(const char *name) {
+    CHECK_LT(n_unknown_flags_, kMaxUnknownFlags);
+    unknown_flags_[n_unknown_flags_++] = name;
+  }
+
+  void Report() {
+    if (!n_unknown_flags_) return;
+    Printf("WARNING: found %d unrecognized flag(s):\n", n_unknown_flags_);
+    for (int i = 0; i < n_unknown_flags_; ++i)
+      Printf("    %s\n", unknown_flags_[i]);
+    n_unknown_flags_ = 0;
+  }
+};
+
+UnknownFlags unknown_flags;
+
+void ReportUnrecognizedFlags() {
+  unknown_flags.Report();
+}
+
+char *FlagParser::ll_strndup(const char *s, uptr n) {
+  uptr len = internal_strnlen(s, n);
+  char *s2 = (char*)Alloc.Allocate(len + 1);
+  internal_memcpy(s2, s, len);
+  s2[len] = 0;
+  return s2;
+}
 
 void FlagParser::PrintFlagDescriptions() {
   Printf("Available flags for %s:\n", SanitizerToolName);
@@ -45,7 +80,7 @@ void FlagParser::parse_flag() {
   uptr name_start = pos_;
   while (buf_[pos_] != 0 && buf_[pos_] != '=' && !is_space(buf_[pos_])) ++pos_;
   if (buf_[pos_] != '=') fatal_error("expected '='");
-  char *name = internal_strndup(buf_ + name_start, pos_ - name_start);
+  char *name = ll_strndup(buf_ + name_start, pos_ - name_start);
 
   uptr value_start = ++pos_;
   char *value;
@@ -53,22 +88,17 @@ void FlagParser::parse_flag() {
     char quote = buf_[pos_++];
     while (buf_[pos_] != 0 && buf_[pos_] != quote) ++pos_;
     if (buf_[pos_] == 0) fatal_error("unterminated string");
-    value = internal_strndup(buf_ + value_start + 1, pos_ - value_start - 1);
+    value = ll_strndup(buf_ + value_start + 1, pos_ - value_start - 1);
     ++pos_; // consume the closing quote
   } else {
     while (buf_[pos_] != 0 && !is_space(buf_[pos_])) ++pos_;
     if (buf_[pos_] != 0 && !is_space(buf_[pos_]))
       fatal_error("expected separator or eol");
-    value = internal_strndup(buf_ + value_start, pos_ - value_start);
+    value = ll_strndup(buf_ + value_start, pos_ - value_start);
   }
 
   bool res = run_handler(name, value);
-  if (!res) {
-    Printf("Flag parsing failed.");
-    Die();
-  }
-  InternalFree(name);
-  InternalFree(value);
+  if (!res) fatal_error("Flag parsing failed.");
 }
 
 void FlagParser::parse_flags() {
@@ -102,13 +132,14 @@ bool FlagParser::run_handler(const char *name, const char *value) {
     if (internal_strcmp(name, flags_[i].name) == 0)
       return flags_[i].handler->Parse(value);
   }
-  Printf("ERROR: Unknown flag: '%s'\n", name);
-  return false;
+  // Unrecognized flag. This is not a fatal error, we may print a warning later.
+  unknown_flags.Add(name);
+  return true;
 }
 
 void FlagParser::RegisterHandler(const char *name, FlagHandlerBase *handler,
                                  const char *desc) {
-  CHECK(n_flags_ < kMaxFlags);
+  CHECK_LT(n_flags_, kMaxFlags);
   flags_[n_flags_].name = name;
   flags_[n_flags_].desc = desc;
   flags_[n_flags_].handler = handler;
@@ -116,13 +147,7 @@ void FlagParser::RegisterHandler(const char *name, FlagHandlerBase *handler,
 }
 
 FlagParser::FlagParser() : n_flags_(0), buf_(nullptr), pos_(0) {
-  flags_ = (Flag *)InternalAlloc(sizeof(Flag) * kMaxFlags);
-}
-
-FlagParser::~FlagParser() {
-  for (int i = 0; i < n_flags_; ++i)
-    InternalFree(flags_[i].handler);
-  InternalFree(flags_);
+  flags_ = (Flag *)Alloc.Allocate(sizeof(Flag) * kMaxFlags);
 }
 
 }  // namespace __sanitizer

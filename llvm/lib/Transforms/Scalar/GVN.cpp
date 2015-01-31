@@ -2182,9 +2182,16 @@ bool GVN::propagateEquality(Value *LHS, Value *RHS,
 
       // Handle the floating point versions of equality comparisons too.
       if ((isKnownTrue && Cmp->getPredicate() == CmpInst::FCMP_OEQ) ||
-          (isKnownFalse && Cmp->getPredicate() == CmpInst::FCMP_UNE))
-        Worklist.push_back(std::make_pair(Op0, Op1));
-
+          (isKnownFalse && Cmp->getPredicate() == CmpInst::FCMP_UNE)) {
+        // Floating point -0.0 and 0.0 compare equal, so we can't
+        // propagate a constant based on that comparison.
+        // FIXME: We should do this optimization if 'no signed zeros' is
+        // applicable via an instruction-level fast-math-flag or some other
+        // indicator that relaxed FP semantics are being used.
+        if (!isa<ConstantFP>(Op1) || !cast<ConstantFP>(Op1)->isZero())
+          Worklist.push_back(std::make_pair(Op0, Op1));
+      }
+ 
       // If "A >= B" is known true, replace "A < B" with false everywhere.
       CmpInst::Predicate NotPred = Cmp->getInversePredicate();
       Constant *NotVal = ConstantInt::get(Cmp->getType(), isKnownFalse);
@@ -2363,7 +2370,8 @@ bool GVN::runOnFunction(Function& F) {
   for (Function::iterator FI = F.begin(), FE = F.end(); FI != FE; ) {
     BasicBlock *BB = FI++;
 
-    bool removedBlock = MergeBlockIntoPredecessor(BB, this);
+    bool removedBlock = MergeBlockIntoPredecessor(
+        BB, DT, /* LoopInfo */ nullptr, VN.getAliasAnalysis(), MD);
     if (removedBlock) ++NumGVNBlocks;
 
     Changed |= removedBlock;
@@ -2634,7 +2642,8 @@ bool GVN::performPRE(Function &F) {
 /// Split the critical edge connecting the given two blocks, and return
 /// the block inserted to the critical edge.
 BasicBlock *GVN::splitCriticalEdges(BasicBlock *Pred, BasicBlock *Succ) {
-  BasicBlock *BB = SplitCriticalEdge(Pred, Succ, this);
+  BasicBlock *BB = SplitCriticalEdge(
+      Pred, Succ, CriticalEdgeSplittingOptions(getAliasAnalysis(), DT));
   if (MD)
     MD->invalidateCachedPredecessors();
   return BB;
@@ -2647,7 +2656,8 @@ bool GVN::splitCriticalEdges() {
     return false;
   do {
     std::pair<TerminatorInst*, unsigned> Edge = toSplit.pop_back_val();
-    SplitCriticalEdge(Edge.first, Edge.second, this);
+    SplitCriticalEdge(Edge.first, Edge.second,
+                      CriticalEdgeSplittingOptions(getAliasAnalysis(), DT));
   } while (!toSplit.empty());
   if (MD) MD->invalidateCachedPredecessors();
   return true;

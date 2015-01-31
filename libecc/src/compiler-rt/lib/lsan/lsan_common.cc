@@ -70,8 +70,17 @@ static void InitializeFlags(bool standalone) {
     OverrideCommonFlags(cf);
   }
 
+  bool help_before = common_flags()->help;
+
   const char *options = GetEnv("LSAN_OPTIONS");
   parser.ParseString(options);
+
+  SetVerbosity(common_flags()->verbosity);
+
+  if (Verbosity()) ReportUnrecognizedFlags();
+
+  if (!help_before && common_flags()->help)
+    parser.PrintFlagDescriptions();
 }
 
 #define LOG_POINTERS(...)                           \
@@ -357,7 +366,7 @@ static void CollectLeaksCb(uptr chunk, void *arg) {
   LsanMetadata m(chunk);
   if (!m.allocated()) return;
   if (m.tag() == kDirectlyLeaked || m.tag() == kIndirectlyLeaked) {
-    uptr resolution = flags()->resolution;
+    u32 resolution = flags()->resolution;
     u32 stack_trace_id = 0;
     if (resolution > 0) {
       StackTrace stack = StackDepotGet(m.stack_trace_id());

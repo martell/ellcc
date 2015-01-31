@@ -26,6 +26,24 @@ extern "C" void LLVMInitializeMBlazeTarget() {
   RegisterTargetMachine<MBlazeTargetMachine> X(TheMBlazeTarget);
 }
 
+static std::string computeDataLayout(bool BigEndian=true) {
+  // Endian.
+  std::string Ret = BigEndian ? "E" : "e";
+
+  Ret += "-m:m";
+
+  // Pointers are 32 bits and aligned to 32 bits.
+  Ret += "-p:32:32";
+
+  // Integer registers are 32 bits.
+  Ret += "-n32";
+
+  // The stack is 32 bit aligned.
+  Ret += "-S32";
+
+  return Ret;
+}
+
 // DataLayout --> Big-endian, 32-bit pointer/ABI/alignment
 // The stack is always 8 byte aligned
 // On function prologue, the stack is created by decrementing
@@ -39,7 +57,8 @@ MBlazeTargetMachine(const Target &T, StringRef TT,
                     CodeGenOpt::Level OL)
   : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
     TLOF(make_unique<MBlazeTargetObjectFile>()),
-    Subtarget(nullptr), DefaultSubtarget(TT, CPU, FS, this) {
+    DL(computeDataLayout()), Subtarget(nullptr),
+    DefaultSubtarget(TT, CPU, FS, /* isL:ittle */ false, *this) {
   Subtarget = &DefaultSubtarget;
   initAsmInfo();
 }

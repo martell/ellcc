@@ -15,6 +15,7 @@
 
 #include "AMDGPUTargetMachine.h"
 #include "AMDGPU.h"
+#include "AMDGPUTargetTransformInfo.h"
 #include "R600ISelLowering.h"
 #include "R600InstrInfo.h"
 #include "R600MachineScheduler.h"
@@ -50,12 +51,28 @@ static MachineSchedRegistry
 SchedCustomRegistry("r600", "Run R600's custom scheduler",
                     createR600MachineScheduler);
 
+static std::string computeDataLayout(StringRef TT) {
+  Triple Triple(TT);
+  std::string Ret = "e-p:32:32";
+
+  if (Triple.getArch() == Triple::amdgcn) {
+    // 32-bit private, local, and region pointers. 64-bit global and constant.
+    Ret += "-p1:64:64-p2:64:64-p3:32:32-p4:64:64-p5:32:32-p24:64:64";
+  }
+
+  Ret += "-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256"
+         "-v512:512-v1024:1024-v2048:2048-n32:64";
+
+  return Ret;
+}
+
 AMDGPUTargetMachine::AMDGPUTargetMachine(const Target &T, StringRef TT,
                                          StringRef CPU, StringRef FS,
                                          TargetOptions Options, Reloc::Model RM,
                                          CodeModel::Model CM,
                                          CodeGenOpt::Level OptLevel)
     : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OptLevel),
+      DL(computeDataLayout(TT)),
       TLOF(new TargetLoweringObjectFileELF()),
       Subtarget(TT, CPU, FS, *this), IntrinsicInfo() {
   setRequiresStructuredCFG(true);
@@ -100,15 +117,11 @@ TargetPassConfig *AMDGPUTargetMachine::createPassConfig(PassManagerBase &PM) {
 }
 
 //===----------------------------------------------------------------------===//
-// AMDGPU Analysis Pass Setup
+// AMDGPU Pass Setup
 //===----------------------------------------------------------------------===//
 
-void AMDGPUTargetMachine::addAnalysisPasses(PassManagerBase &PM) {
-  // Add first the target-independent BasicTTI pass, then our AMDGPU pass. This
-  // allows the AMDGPU pass to delegate to the target independent layer when
-  // appropriate.
-  PM.add(createBasicTargetTransformInfoPass(this));
-  PM.add(createAMDGPUTargetTransformInfoPass(this));
+TargetTransformInfo AMDGPUTargetMachine::getTTI() {
+  return TargetTransformInfo(AMDGPUTTIImpl(this));
 }
 
 void AMDGPUPassConfig::addIRPasses() {

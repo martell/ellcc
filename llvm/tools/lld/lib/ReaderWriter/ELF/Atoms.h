@@ -37,13 +37,13 @@ template <class ELFT> class ELFReference : public Reference {
   typedef llvm::object::Elf_Rel_Impl<ELFT, true> Elf_Rela;
 public:
   ELFReference(const Elf_Rela *rela, uint64_t off, Reference::KindArch arch,
-               uint16_t relocType, uint32_t idx)
+               Reference::KindValue relocType, uint32_t idx)
       : Reference(Reference::KindNamespace::ELF, arch, relocType),
         _target(nullptr), _targetSymbolIndex(idx), _offsetInAtom(off),
         _addend(rela->r_addend) {}
 
   ELFReference(const Elf_Rel *rel, uint64_t off, Reference::KindArch arch,
-               uint16_t relocType, uint32_t idx)
+               Reference::KindValue relocType, uint32_t idx)
       : Reference(Reference::KindNamespace::ELF, arch, relocType),
         _target(nullptr), _targetSymbolIndex(idx), _offsetInAtom(off),
         _addend(0) {}
@@ -281,14 +281,20 @@ public:
   }
 
   Alignment alignment() const override {
+    // Obtain proper value of st_value field.
+    const auto symValue = getSymbolValue(_symbol);
+
     // Unallocated common symbols specify their alignment constraints in
     // st_value.
     if ((_symbol->getType() == llvm::ELF::STT_COMMON) ||
         _symbol->st_shndx == llvm::ELF::SHN_COMMON) {
-      return Alignment(llvm::Log2_64(_symbol->st_value));
+      return Alignment(llvm::Log2_64(symValue));
+    } else if (_section->sh_addralign == 0) {
+      // sh_addralign of 0 means no alignment
+      return Alignment(0, symValue);
     }
     return Alignment(llvm::Log2_64(_section->sh_addralign),
-                     _symbol->st_value % _section->sh_addralign);
+                     symValue % _section->sh_addralign);
   }
 
   // Do we have a choice for ELF?  All symbols live in explicit sections.
@@ -411,6 +417,13 @@ public:
   }
 
   virtual void setOrdinal(uint64_t ord) { _ordinal = ord; }
+
+protected:
+  /// Returns correct st_value for the symbol depending on the architecture.
+  /// For most architectures it's just a regular st_value with no changes.
+  virtual uint64_t getSymbolValue(const Elf_Sym *symbol) const {
+    return symbol->st_value;
+  }
 
 protected:
   const ELFFile<ELFT> &_owningFile;
@@ -648,36 +661,36 @@ class SimpleELFDefinedAtom : public SimpleDefinedAtom {
 public:
   SimpleELFDefinedAtom(const File &f) : SimpleDefinedAtom(f) {}
 
-  void addReferenceELF(Reference::KindArch arch, uint16_t kindValue,
+  void addReferenceELF(Reference::KindArch arch, Reference::KindValue kindValue,
                        uint64_t off, const Atom *target,
                        Reference::Addend addend) {
     this->addReference(Reference::KindNamespace::ELF, arch, kindValue, off,
                        target, addend);
   }
 
-  void addReferenceELF_Hexagon(uint16_t relocType, uint64_t off, const Atom *t,
-                               Reference::Addend a) {
+  void addReferenceELF_Hexagon(Reference::KindValue relocType, uint64_t off,
+                               const Atom *t, Reference::Addend a) {
     this->addReferenceELF(Reference::KindArch::Hexagon, relocType, off, t, a);
   }
 
-  void addReferenceELF_x86_64(uint16_t relocType, uint64_t off, const Atom *t,
-                              Reference::Addend a) {
+  void addReferenceELF_x86_64(Reference::KindValue relocType, uint64_t off,
+                              const Atom *t, Reference::Addend a) {
     this->addReferenceELF(Reference::KindArch::x86_64, relocType, off, t, a);
   }
 
-  void addReferenceELF_PowerPC(uint16_t relocType, uint64_t off, const Atom *t,
-                               Reference::Addend a) {
-    this->addReferenceELF(Reference::KindArch::PowerPC, relocType, off, t, a);
-  }
-
-  void addReferenceELF_Mips(uint16_t relocType, uint64_t off, const Atom *t,
-                            Reference::Addend a) {
+  void addReferenceELF_Mips(Reference::KindValue relocType, uint64_t off,
+                            const Atom *t, Reference::Addend a) {
     this->addReferenceELF(Reference::KindArch::Mips, relocType, off, t, a);
   }
 
-  void addReferenceELF_AArch64(uint16_t relocType, uint64_t off, const Atom *t,
-                               Reference::Addend a) {
+  void addReferenceELF_AArch64(Reference::KindValue relocType, uint64_t off,
+                               const Atom *t, Reference::Addend a) {
     this->addReferenceELF(Reference::KindArch::AArch64, relocType, off, t, a);
+  }
+
+  void addReferenceELF_ARM(Reference::KindValue relocType, uint64_t off,
+                           const Atom *t, Reference::Addend a) {
+    this->addReferenceELF(Reference::KindArch::ARM, relocType, off, t, a);
   }
 };
 

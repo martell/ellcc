@@ -9,8 +9,8 @@
 
 #include "lld/Core/Instrumentation.h"
 #include "lld/Core/Simple.h"
+#include "lld/Core/Writer.h"
 #include "lld/Passes/RoundTripYAMLPass.h"
-#include "lld/ReaderWriter/Writer.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Path.h"
 #include <memory>
@@ -28,9 +28,7 @@ void RoundTripYAMLPass::perform(std::unique_ptr<MutableFile> &mergedFile) {
   StringRef outFile = llvm::sys::path::filename(_context.outputPath());
   if (llvm::sys::fs::createTemporaryFile(outFile, "yaml", tmpYAMLFile))
     return;
-  DEBUG_WITH_TYPE("RoundTripYAMLPass", {
-    llvm::dbgs() << "RoundTripYAMLPass: " << tmpYAMLFile << "\n";
-  });
+  DEBUG(llvm::dbgs() << "RoundTripYAMLPass: " << tmpYAMLFile << "\n");
 
   // The file that is written would be kept around if there is a problem
   // writing to the file or when reading atoms back from the file.
@@ -49,6 +47,7 @@ void RoundTripYAMLPass::perform(std::unique_ptr<MutableFile> &mergedFile) {
   File *objFile = _yamlFile[0].get();
   if (objFile->parse())
     llvm_unreachable("native reader parse error");
-  mergedFile.reset(new SimpleFileWrapper(_context, *objFile));
+  mergedFile.reset(new SimpleFile(objFile->path()));
+  copyAtoms(mergedFile.get(), objFile);
   llvm::sys::fs::remove(tmpYAMLFile.str());
 }

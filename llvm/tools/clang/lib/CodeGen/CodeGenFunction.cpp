@@ -43,7 +43,7 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
       BlockInfo(nullptr), BlockPointer(nullptr),
       LambdaThisCaptureField(nullptr), NormalCleanupDest(nullptr),
       NextCleanupDestIndex(1), FirstBlockInfo(nullptr), EHResumeBlock(nullptr),
-      ExceptionSlot(nullptr), EHSelectorSlot(nullptr),
+      ExceptionSlot(nullptr), EHSelectorSlot(nullptr), SEHPointersDecl(nullptr),
       DebugInfo(CGM.getModuleDebugInfo()), DisableDebugInfo(false),
       DidCallStackSave(false), IndirectBranch(nullptr), PGO(cgm),
       SwitchInsn(nullptr), SwitchWeights(nullptr), CaseRangeBlock(nullptr),
@@ -1058,8 +1058,11 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
       uint64_t RHSCount = Cnt.getCount();
 
       ConditionalEvaluation eval(*this);
-      EmitBranchOnBoolExpr(CondBOp->getLHS(), LHSTrue, FalseBlock, RHSCount);
-      EmitBlock(LHSTrue);
+      {
+        ApplyDebugLocation DL(*this, Cond);
+        EmitBranchOnBoolExpr(CondBOp->getLHS(), LHSTrue, FalseBlock, RHSCount);
+        EmitBlock(LHSTrue);
+      }
 
       // Any temporaries created here are conditional.
       Cnt.beginRegion(Builder);
@@ -1103,8 +1106,11 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
       uint64_t RHSCount = TrueCount - LHSCount;
 
       ConditionalEvaluation eval(*this);
-      EmitBranchOnBoolExpr(CondBOp->getLHS(), TrueBlock, LHSFalse, LHSCount);
-      EmitBlock(LHSFalse);
+      {
+        ApplyDebugLocation DL(*this, Cond);
+        EmitBranchOnBoolExpr(CondBOp->getLHS(), TrueBlock, LHSFalse, LHSCount);
+        EmitBlock(LHSFalse);
+      }
 
       // Any temporaries created here are conditional.
       Cnt.beginRegion(Builder);
@@ -1151,8 +1157,11 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
     cond.begin(*this);
     EmitBlock(LHSBlock);
     Cnt.beginRegion(Builder);
-    EmitBranchOnBoolExpr(CondOp->getLHS(), TrueBlock, FalseBlock,
-                         LHSScaledTrueCount);
+    {
+      ApplyDebugLocation DL(*this, Cond);
+      EmitBranchOnBoolExpr(CondOp->getLHS(), TrueBlock, FalseBlock,
+                           LHSScaledTrueCount);
+    }
     cond.end(*this);
 
     cond.begin(*this);
@@ -1181,7 +1190,11 @@ void CodeGenFunction::EmitBranchOnBoolExpr(const Expr *Cond,
                                                   CurrentCount - TrueCount);
 
   // Emit the code with the fully general case.
-  llvm::Value *CondV = EvaluateExprAsBool(Cond);
+  llvm::Value *CondV;
+  {
+    ApplyDebugLocation DL(*this, Cond);
+    CondV = EvaluateExprAsBool(Cond);
+  }
   Builder.CreateCondBr(CondV, TrueBlock, FalseBlock, Weights);
 }
 

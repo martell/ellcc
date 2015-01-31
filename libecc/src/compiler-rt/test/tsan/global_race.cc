@@ -1,8 +1,5 @@
 // RUN: %clangxx_tsan -O1 %s -o %T/global_race.cc.exe && %deflake %run %T/global_race.cc.exe | FileCheck %s
-#include <pthread.h>
-#include <stdio.h>
-#include <stddef.h>
-#include <unistd.h>
+#include "test.h"
 
 int GlobalData[10];
 int x;
@@ -14,7 +11,7 @@ namespace XXX {
 }
 
 void *Thread(void *a) {
-  sleep(1);
+  barrier_wait(&barrier);
   GlobalData[2] = 42;
   x = 1;
   XXX::YYY::ZZZ[0] = 1;
@@ -22,6 +19,7 @@ void *Thread(void *a) {
 }
 
 int main() {
+  barrier_init(&barrier, 2);
   // On FreeBSD, the %p conversion specifier works as 0x%x and thus does not
   // match to the format used in the diagnotic message.
   fprintf(stderr, "addr=0x%012lx\n", (unsigned long) GlobalData);
@@ -30,8 +28,7 @@ int main() {
   pthread_t t;
   pthread_create(&t, 0, Thread, 0);
   GlobalData[2] = 43;
-  x = 0;
-  XXX::YYY::ZZZ[0] = 0;
+  barrier_wait(&barrier);
   pthread_join(t, 0);
 }
 

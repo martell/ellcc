@@ -9,8 +9,8 @@
 
 #include "lld/Core/Instrumentation.h"
 #include "lld/Core/Simple.h"
+#include "lld/Core/Writer.h"
 #include "lld/Passes/RoundTripNativePass.h"
-#include "lld/ReaderWriter/Writer.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Path.h"
 #include <memory>
@@ -28,9 +28,7 @@ void RoundTripNativePass::perform(std::unique_ptr<MutableFile> &mergedFile) {
   StringRef outFile = llvm::sys::path::filename(_context.outputPath());
   if (llvm::sys::fs::createTemporaryFile(outFile, "native", tmpNativeFile))
     return;
-  DEBUG_WITH_TYPE("RoundTripNativePass", {
-    llvm::dbgs() << "RoundTripNativePass: " << tmpNativeFile << "\n";
-  });
+  DEBUG(llvm::dbgs() << "RoundTripNativePass: " << tmpNativeFile << "\n");
 
   // The file that is written would be kept around if there is a problem
   // writing to the file or when reading atoms back from the file.
@@ -49,7 +47,7 @@ void RoundTripNativePass::perform(std::unique_ptr<MutableFile> &mergedFile) {
   File *objFile = _nativeFile[0].get();
   if (objFile->parse())
     llvm_unreachable("native reader parse error");
-  mergedFile.reset(new SimpleFileWrapper(_context, *objFile));
-
+  mergedFile.reset(new SimpleFile(objFile->path()));
+  copyAtoms(mergedFile.get(), objFile);
   llvm::sys::fs::remove(tmpNativeFile.str());
 }
