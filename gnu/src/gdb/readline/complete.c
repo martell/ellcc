@@ -2026,9 +2026,9 @@ rl_username_completion_function (text, state)
      const char *text;
      int state;
 {
-#if defined (__WIN32__) || defined (__OPENNT)
+#if defined (__WIN32__) || defined(__WIN64__) || defined (__OPENNT)
   return (char *)NULL;
-#else /* !__WIN32__ && !__OPENNT) */
+#else /* !__WIN32__ && !__WIN64__ && !__OPENNT) */
   static char *username = (char *)NULL;
   static struct passwd *entry;
   static int namelen, first_char, first_char_loc;
@@ -2075,7 +2075,7 @@ rl_username_completion_function (text, state)
 
       return (value);
     }
-#endif /* !__WIN32__ && !__OPENNT */
+#endif /* !__WIN32__ && !__WIN64__ && !__OPENNT */
 }
 
 /* Return non-zero if CONVFN matches FILENAME up to the length of FILENAME

@@ -58,6 +58,9 @@
 # endif
 #else
 # ifndef HAVE_STPCPY
+#if defined(__ELLCC__)
+#define stpcpy mystpcpy
+#endif
 static char *stpcpy PARAMS ((char *dest, const char *src));
 # endif
 #endif

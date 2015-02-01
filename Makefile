@@ -82,7 +82,6 @@ TARGETS=
 # Limit targets to keep the ecc executable smaller, e.g.:
 #TARGETS=--enable-targets=arm
 
-#ifneq ($(TARGET),$(build))
 ifneq ($(CC),gcc)
   BUILD=--build=$(build)-$(HOSTOS)
   HOST=--host=$(TARGET)-$(OS)

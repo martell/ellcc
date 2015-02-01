@@ -50,7 +50,7 @@ install::
 	  $(MAKE) -C $$dir install-html || exit 1; \
 	done
 
-ifneq ($(TARGET),$(build))
+ifneq ($(CC),gcc)
   HOST=--host=$(TARGET)-$(OS)
 else
   HOST=
