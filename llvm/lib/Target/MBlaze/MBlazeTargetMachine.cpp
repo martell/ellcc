@@ -30,7 +30,7 @@ static std::string computeDataLayout(bool BigEndian=true) {
   // Endian.
   std::string Ret = BigEndian ? "E" : "e";
 
-  Ret += "-m:m";
+  Ret += "-m:e";
 
   // Pointers are 32 bits and aligned to 32 bits.
   Ret += "-p:32:32";
