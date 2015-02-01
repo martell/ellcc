@@ -1,5 +1,6 @@
 current SVN:
 
+* Build for Windows using ecc/mingw-w64.
 * Update to LLVM r227686.
 * Added write example.
 * Added missing MinGW libraries to repository.

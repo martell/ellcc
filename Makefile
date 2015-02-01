@@ -85,15 +85,9 @@ TARGETS=
 #ifneq ($(TARGET),$(build))
 ifneq ($(CC),gcc)
   BUILD=--build=$(build)-$(HOSTOS)
-  ifeq ($(MINGW),1)
-    HOST=--host=$(TARGET)
-    TRGT=--target=$(TARGET)
-    ELLCC_ARG0=-DELLCC_ARG0=\\\"x86_64-ellcc-linux\\\"
-  else
-    HOST=--host=$(TARGET)-$(OS)
-    TRGT=--target=$(TARGET)-$(OS)
-    ELLCC_ARG0=-DELLCC_ARG0=\\\"$(TUPLE)\\\"
-  endif
+  HOST=--host=$(TARGET)-$(OS)
+  TRGT=--target=$(TARGET)-$(OS)
+  ELLCC_ARG0=-DELLCC_ARG0=\\\"$(TUPLE)\\\"
 else
   HOST=
   BUILD=

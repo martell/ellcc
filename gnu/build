@@ -26,7 +26,7 @@ moretargets=,$moretargets,arm-elf-linux-eabi,armeb-elf-linux-eabi
 moretargets=,$moretargets,x86_64-w64-mingw32,i686-w64-mingw32
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
     targetlist=$targetlist$moretargets haslibs=$haslibs \
-    MINGW=$mingw bindir=$bindir prefix=$prefix build=$build TUPLE=$tuple \
+    bindir=$bindir prefix=$prefix build=$build TUPLE=$tuple \
     binutils.configure || exit 1
 
 make -C gnu-build$builddir/binutils || exit 1
@@ -36,7 +36,7 @@ for t in $targets x86_64-w64-mingw32 i686-w64-mingw32; do
   echo Configuring the assembler for $t
   make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
       target=$t haslibs=$haslibs \
-      MINGW=$mingw bindir=$bindir prefix=$prefix build=$build TUPLE=$tuple \
+      bindir=$bindir prefix=$prefix build=$build TUPLE=$tuple \
       gas.configure || exit 1
 
   make -C gnu-build$builddir/binutils/$t || exit 1
@@ -47,7 +47,7 @@ done
 echo Configuring package gdb for all targets
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
     targetlist=all haslibs=$haslibs \
-    MINGW=$mingw bindir=$bindir prefix=$prefix build=$build TUPLE=$tuple \
+    bindir=$bindir prefix=$prefix build=$build TUPLE=$tuple \
     gdb.configure || exit 1
 
 make -C gnu-build$builddir/gdb || exit 1
@@ -57,7 +57,7 @@ if [ "$host" != "$build" ] ; then
   # Build only  binutils, the assemblers, and gdb.
   # Finally, install into the target specific bin dir.
   mkdir -p $bindir
-  make MINGW=$mingw TARGETDIR=$builddir BINDIR=$bindir installcross || exit 1
+  make TARGETDIR=$builddir BINDIR=$bindir installcross || exit 1
   exit 0
 fi
 

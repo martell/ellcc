@@ -51,24 +51,16 @@ install::
 	done
 
 ifneq ($(TARGET),$(build))
-  ifeq ($(MINGW),1)
-    HOST=--host=$(TARGET)
-  else
-    HOST=--host=$(TARGET)-$(OS)
-  endif
+  HOST=--host=$(TARGET)-$(OS)
 else
   HOST=
 endif
 
-ifneq ($(MINGW),1)
-  ifneq ($(CC),gcc)
-    ifeq ($(haslibs),yes)
-      override CPP := "$(CC) -target $(TUPLE) -E"
-      override CC := "$(CC) -target $(TUPLE)"
-      override CXX := "$(CXX) -target $(TUPLE)"
-    endif
-  else
-      override CPP := "$(CC) -E"
+ifneq ($(CC),gcc)
+  ifeq ($(haslibs),yes)
+    override CPP := "$(CC) -target $(TUPLE) -E"
+    override CC := "$(CC) -target $(TUPLE)"
+    override CXX := "$(CXX) -target $(TUPLE)"
   endif
 else
     override CPP := "$(CC) -E"
@@ -81,9 +73,7 @@ ifeq ($(shell uname),Darwin)
 endif
 
 ifneq ($(CC),gcc)
-  ifneq ($(MINGW),1)
-    CFLAGS += -Wno-error=pointer-bool-conversion
-  endif
+  CFLAGS += -Wno-error=pointer-bool-conversion
 endif
 
 binutils.configure:

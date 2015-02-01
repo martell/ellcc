@@ -23,28 +23,14 @@ esac
 ecc=
 
 # Get build options.
-mingw=0
 debug=0
 libtuple=
-mingwtriple=i686-w64-mingw32 # RICH: x86_64-w64-mingw32 for 64 bit
-mingwprefix=${mingwtriple}-
 while [ $# -gt 0 ] ; do
   case $1 in
     -l)
       # Use a different tuple to find libraries.
       shift
       libtuple=$1
-      shift
-      ;;
-    -m)
-      # Cross build for MinGW
-      mingw=1
-      shift
-      ;;
-    -mt)
-      # Set the MinGW triple.
-      shift
-      mingwtriple=$1
       shift
       ;;
     -d)
@@ -70,31 +56,15 @@ MAKE=make
 
 # OG: Set default compiler (the most likely at first sight, depending on
 # the environment...)
-if [ $mingw -ne 0 ] ; then
-  cc=${mingwprefix}gcc
-  cxx=${mingwprefix}g++
-  hcc=${mingwprefix}gcc
-  hcxx=${mingwprefix}g++
-  ar=${mingwprefix}ar
-  builddir=-MinGW
-  bindir=${bindir}-MinGW
-  haslibs=no
-  ranlib=${mingwprefix}ranlib
-  host=${mingwtriple}
-  os=mingw32
-  hostos=Linux
-  WHY="cross build for MinGW"
-else
-  cc=gcc
-  cxx=g++
-  hcc=gcc
-  hcxx=g++
-  ar=ar
-  builddir=""
-  haslibs=no
-  ranlib=ranlib
-  WHY="build for $host with host libraries using gcc"
-fi
+cc=gcc
+cxx=g++
+hcc=gcc
+hcxx=g++
+ar=ar
+builddir=""
+haslibs=no
+ranlib=ranlib
+WHY="build for $host with host libraries using gcc"
 
 # OG: Assume 2 jobs if we can't work out the number of CPUs on the host
 # Note: this is meant to protect the building host, as the original
@@ -126,16 +96,14 @@ fi
 echo Processing ${hostos} 
 case "x${hostos}" in
   xLinux)
-    if [ $mingw -eq 0 ] ; then
-      # ELLCC can currently build itself only for Linux...
-      if [ `which ecc 2>/dev/null` ] ; then
-        # ecc exists, and is in the PATH.
-        ecc=ecc
-      fi
+    # ELLCC can currently build itself only for Linux...
+    if [ `which ecc 2>/dev/null` ] ; then
+      # ecc exists, and is in the PATH.
+      ecc=ecc
+    fi
 
-      if [ -e ${bin}/ecc ]; then
-        ecc=${bin}/ecc
-      fi
+    if [ -e ${bin}/ecc ]; then
+      ecc=${bin}/ecc
     fi
     maxjobs=`grep processor /proc/cpuinfo | wc -l`
     hostos=linux
@@ -152,17 +120,15 @@ case "x${hostos}" in
     # OG: GNU make is in the port - standard FreeBSD make just won't work...
     # and the default compiler is clang
     echo FreeBSD detected
-    if [ $mingw -eq 0 ] ; then
-      MAKE=gmake
-      cc=cc
-      cxx=c++
-      hcc=cc
-      hcxx=c++
-      ar=ar
-      builddir=""
-      haslibs=no
-      WHY="build for ${host} with host libraries using gcc"
-    fi
+    MAKE=gmake
+    cc=cc
+    cxx=c++
+    hcc=cc
+    hcxx=c++
+    ar=ar
+    builddir=""
+    haslibs=no
+    WHY="build for ${host} with host libraries using gcc"
     hostos=freebsd
 
     # FreeBSD has a Linux emulation package, which supports /proc in a

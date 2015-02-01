@@ -57,7 +57,7 @@ fi
 
 if [ $all -eq 1 ] ; then
   # Build all configurations except host.
-  BldConfigs=`cd libecc/config; echo *-linux-*`
+  BldConfigs=`cd libecc/config; echo *-linux-* *-w64-mingw32`
   for config in $BldConfigs ; do
     # Don't rebuild the host.
     if [ `libecc/getarch $config` = $host ] ; then
@@ -69,13 +69,13 @@ if [ $all -eq 1 ] ; then
     fi
     ./build $config || bailout "Build failed for $config"
   done
-    ./build -m || bailout "Build failed for MinGW"
+    # RICH: ./build -m || bailout "Build failed for MinGW"
   exit 0
 fi
 
 if [ "$package" != "" ] ; then
   # Package all configurations.
-  BldConfigs=`cd libecc/config; echo *-linux-*`
+  BldConfigs=`cd libecc/config; echo *-linux-* *-w64-mingw32`
   for config in $BldConfigs ; do
     # The microblaze can't self host.
     if [ `libecc/getarch $config` = microblaze ] ; then
@@ -88,8 +88,6 @@ if [ "$package" != "" ] ; then
       ./mkdist $config $package || bailout "Packaging failed for $config"
     fi
   done
-  # Package for Windows.
-  ./mingwmkdist Win32 $package || bailout "Packaging failed for MinGW"
   exit 0
 fi
 
@@ -101,7 +99,7 @@ cp -p bin-extra/* $bindir
 mkdir -p llvm-build$builddir
 
 ${MAKE} DIR=llvm-build$builddir CC="$cc" CXX="$cxx" AR="$ar" RANLIB="$ranlib" \
-     TARGET=$host OS=$os HOSTOS=$hostos TUPLE=$tuple MINGW=$mingw \
+     TARGET=$host OS=$os HOSTOS=$hostos TUPLE=$tuple \
      bindir=$bindir prefix=$prefix build=$build haslibs=$haslibs \
      llvm.configure || bailout "Configure failed for llvm"
 
@@ -110,11 +108,7 @@ ${MAKE} -C llvm-build$builddir -j ${maxjobs} || bailout "Make failed for llvm"
 
 # Build the GNU tools.
 cd gnu
-  if [ $mingw -eq 1 ] ; then 
-    ./build -m -mt $mingwtriple || bailout "MinGW build failed for gnu"
-  else
-    ./build $arg1 || bailout "Build failed for gnu"
-  fi
+  ./build $arg1 || bailout "Build failed for gnu"
 cd ..
 
 # Now install the ELLCC tools.

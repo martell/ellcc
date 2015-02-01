@@ -12,9 +12,14 @@ if [ -e bin-$1 ] ; then
 fi
 pwd=`pwd`
 pwd=`basename $pwd`
+deref=
+regex='.*-w64-mingw'
+if [[ $1 =~ $regex ]] ; then
+  deref=-h
+fi
 make -C examples distclean
 files=`sed -e "s:\(.*\):$pwd/\1:" ellcc.files`
-cd ..; tar --transform="s:$pwd/:ellcc/:" -cvpz -f $pwd/$name $files ; cd -
+cd ..; tar $deref --transform="s:$pwd/:ellcc/:" -cvpz -f $pwd/$name $files ; cd -
 if [ -e bin-$1 ] ; then
   rm bin
   mv bin.save bin
