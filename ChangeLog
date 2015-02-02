@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.9:
+
 * Build for Windows using ecc/mingw-w64.
 * Update to LLVM r227686.
 * Added write example.
