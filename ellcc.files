@@ -1,4 +1,5 @@
 bin/*
+libecc/clang
 libecc/config
 libecc/include
 libecc/mkscripts

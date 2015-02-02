@@ -1,5 +1,7 @@
 current SVN:
 
+* Added missing clang include files.
+
 version 0.1.9:
 
 * Build for Windows using ecc/mingw-w64.
