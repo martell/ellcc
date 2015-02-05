@@ -1,0 +1,15 @@
+based_on: arm-ellcc-linux
+compiler:
+  options:
+    - -target arm-ellcc-linux
+    - -mthumb
+    - -mcpu=cortex-m3
+    - -mfpu=none
+    - -mfloat-abi=softfp
+linker:
+  static_crt1: $R/lib/thumb-linux-engeabi/crt1.o
+  dynamic_crt1: $R/lib/thumb-linux-engeabi/Scrt1.o
+  crtbegin: $R/lib/thumb-linux-engeabi/crtbegin.o
+  crtend: $R/lib/thumb-linux-engeabi/crtend.o
+  library_paths:
+    - -L$R/lib/thumb-linux-engeabi
