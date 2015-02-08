@@ -75,7 +75,7 @@ echo "void _exit(int s) __attribute__((noreturn));" >>__stubend.c ; \
 echo "void exit(int s) __attribute__((noreturn));" >>__stubend.c ; \
 echo "void exit(int s) { pthread_exit((void *)(intptr_t)s); };" >>__stubend.c ; \
 echo "static char __bss_end;" >>__stubend.c ; \
-echo "ELK_CONSTRUCTOR()" >>__stubend.c ; \
+echo "ELK_PRECONSTRUCTOR()" >>__stubend.c ; \
 echo "{" >>__stubend.c ; \
 echo "extern char __bss_start[];" >>__stubend.c ; \
 echo "memset(__bss_start, 0, &__bss_end - __bss_start);" >>__stubend.c ; \
