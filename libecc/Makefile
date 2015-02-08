@@ -185,7 +185,6 @@ $(Configs)::
 	cp -p $*/src/editline/readline.h ../include
 
 clean:
-	$(OUT)$(MAKE) $(MFLAGS) -C src/compiler-rt clean
 	$(OUT)rm -fr *-build
 
 install:
@@ -208,17 +207,6 @@ musl.install:
 	(cd ../include/`../getincarch $*`; rm -rf machine; ln -sf bits machine) ;\
 	mkdir -p ../lib/$* ; \
 	cp $*/install/lib/*.a $*/install/lib/*.o ../lib/$*
-
-%.compiler-rt.install:
-	$(OUT)cd src/compiler-rt/ellcc_linux ; \
-	for target in `echo *` ; do \
-	  echo Installing libcompiler-rt for $* ; \
-	  mkdir -p ../../../lib/$* ; \
-	  cp `../../../getarch $*`/libcompiler_rt.a ../../../lib/$* ; \
-          (cd ../../../lib/$* ; \
-	    ln -fs libcompiler_rt.a libgcc.a ; \
-	    ln -fs libncurses.a libterminfo.a); \
-	done
 
 c++-headers:
 	$(OUT)echo Installing C++ headers ; \
