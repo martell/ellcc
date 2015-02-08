@@ -21,7 +21,7 @@ SRCS += absvdi2.c absvsi2.c absvti2.c adddf3.c addsf3.c addtf3.c addvdi3.c \
   powixf2.c subdf3.c subsf3.c subvdi3.c subvsi3.c subvti3.c subtf3.c \
   trampoline_setup.c truncdfsf2.c ucmpdi2.c ucmpti2.c udivdi3.c udivmoddi4.c \
   udivmodsi4.c udivmodti4.c udivsi3.c udivti3.c umoddi3.c umodsi3.c umodti3.c \
-  gcc_personality_v0.c mulsi3
+  gcc_personality_v0.c mulsi3.c
 
 ifeq ($(ARCH),x86_64)
 VPATH := $(VPATH):$(SRCPATH)/compiler-rt/lib/builtins/x86_64
