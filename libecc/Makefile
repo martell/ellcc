@@ -71,6 +71,8 @@ $(Configs)::
 	      AR=$(ELLCC)/bin/ecc-ar \
 	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	      --host=`../../getarch $*`-`../../getos $*` \
+	      --build=x86_64-linux \
+	      --with-build-cc=$(ELLCC)/bin/ecc \
 	      --prefix=$(ELLCC) $$NOCXX ; \
 	fi
 
