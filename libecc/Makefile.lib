@@ -1,7 +1,9 @@
 # Build rules for a library.
 ELLCC=../../..
 TUPLE = $(shell basename `pwd`)
-ARCH = $(shell ../../getincarch $(TUPLE))
+LIBDIR = $(ELLCC)/libecc/lib/$(TUPLE)
+ARCH = $(shell $(ELLCC)/bin/ecc-getincarch $(TUPLE))
+SUBARCH = $(shell $(ELLCC)/bin/ecc-getsubarch $(TUPLE))
 LIB = $(patsubst %-build,%,$(shell basename `cd ..; pwd`))
 LIBNAME = lib$(LIB).a
 SRCPATH := ../../src

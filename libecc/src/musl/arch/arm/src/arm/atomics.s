@@ -6,12 +6,13 @@
 __a_barrier:
 	ldr ip,1f
 	ldr ip,[pc,ip]
-	add pc,pc,ip
+	add pc,ip
 1:	.word __a_barrier_ptr-1b
 .global __a_barrier_dummy
 .hidden __a_barrier_dummy
 __a_barrier_dummy:
 	tst lr,#1
+        it eq
 	moveq pc,lr
 	bx lr
 .global __a_barrier_oldkuser
@@ -25,6 +26,7 @@ __a_barrier_oldkuser:
 	mov pc,ip
 	pop {r0,r1,r2,r3,ip,lr}
 	tst lr,#1
+        it eq
 	moveq pc,lr
 	bx lr
 .global __a_barrier_v6
@@ -44,7 +46,7 @@ __a_barrier_v7:
 __a_cas:
 	ldr ip,1f
 	ldr ip,[pc,ip]
-	add pc,pc,ip
+	add pc,ip
 1:	.word __a_cas_ptr-1b
 .global __a_cas_dummy
 .hidden __a_cas_dummy
@@ -52,8 +54,10 @@ __a_cas_dummy:
 	mov r3,r0
 	ldr r0,[r2]
 	subs r0,r3,r0
+        it eq
 	streq r1,[r2]
 	tst lr,#1
+        it eq
 	moveq pc,lr
 	bx lr
 .global __a_cas_v6
@@ -64,6 +68,7 @@ __a_cas_v6:
 1:	.word 0xe1920f9f        /* ldrex r0,[r2] */
 	subs r0,r3,r0
 	.word 0x01820f91        /* strexeq r0,r1,[r2] */
+        it eq
 	teqeq r0,#1
 	beq 1b
 	mcr p15,0,r0,c7,c10,5
@@ -76,6 +81,7 @@ __a_cas_v7:
 1:	.word 0xe1920f9f        /* ldrex r0,[r2] */
 	subs r0,r3,r0
 	.word 0x01820f91        /* strexeq r0,r1,[r2] */
+        it eq
 	teqeq r0,#1
 	beq 1b
 	.word 0xf57ff05b        /* dmb ish */
@@ -91,7 +97,7 @@ __aeabi_read_tp:
 __a_gettp:
 	ldr r0,1f
 	ldr r0,[pc,r0]
-	add pc,pc,r0
+	add pc,r0
 1:	.word __a_gettp_ptr-1b
 .global __a_gettp_dummy
 .hidden __a_gettp_dummy

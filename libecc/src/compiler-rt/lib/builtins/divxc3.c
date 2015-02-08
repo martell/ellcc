@@ -11,6 +11,7 @@
  *
  */
 
+#if !defined(__microblaze__)    // RICH
 #if !_ARCH_PPC
 
 #include "int_lib.h"
@@ -60,4 +61,5 @@ __divxc3(long double __a, long double __b, long double __c, long double __d)
     return z;
 }
 
+#endif
 #endif

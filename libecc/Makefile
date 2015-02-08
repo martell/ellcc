@@ -41,9 +41,13 @@ $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$@/musl || exit 1
 	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$@/musl install || exit 1
 	$(OUT)$(MAKE) $(MFLAGS) $@.musl.install
-	@echo Making libcompiler-rt for $@ in src/compiler-rt
-	$(OUT)$(MAKE) $(MFLAGS) -C src/compiler-rt ellcc_linux-`./getarch $@`
-	$(OUT)$(MAKE) $(MFLAGS) $@.compiler-rt.install
+
+$(Configs)::
+	@echo Making libcompiler-rt for $@ in compiler-rt-build
+	$(OUT)mkdir -p compiler-rt-build/$@
+	$(OUT)cp -p Makefile.lib compiler-rt-build/$@/Makefile
+	$(OUT)$(MAKE) $(MFLAGS) -C compiler-rt-build/$@ install || exit 1
+
 
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.ncurses.configure && \

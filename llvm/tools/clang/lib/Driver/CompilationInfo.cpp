@@ -40,7 +40,7 @@ const char ellcc_linux[] =
   "  c_libraries:\n"
   "    - -(\n"                  // This is need for ARM and profiling.
   "    - -lc\n"
-  "    - -lcompiler_rt\n"
+  "    - -lcompiler-rt\n"
   "    - -)\n"
   "";
 

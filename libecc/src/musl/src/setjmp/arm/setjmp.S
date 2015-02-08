@@ -8,7 +8,12 @@ __setjmp:
 _setjmp:
 setjmp:
 	mov ip,r0
+#if defined(__thumb__)
+	stmia ip!,{v1,v2,v3,v4,v5,v6,sl,fp,lr}
+        str sp, [ip], #4
+#else
 	stmia ip!,{v1,v2,v3,v4,v5,v6,sl,fp,sp,lr}
+#endif
 	mov r0,#0
 
 	adr r1,1f
@@ -32,6 +37,7 @@ setjmp:
 	stcl p1, cr14, [ip], #8
 	stcl p1, cr15, [ip], #8
 3:	tst lr,#1
+        it eq
 	moveq pc,lr
 	bx lr
 

@@ -31,6 +31,26 @@
         dmb ; \
         bx lr
 
+#if defined(__thumb__)
+#define SYNC_OP_8(op) \
+        .p2align 2 ; \
+        .thumb ; \
+        .syntax unified ; \
+        DEFINE_COMPILERRT_THUMB_FUNCTION(__sync_fetch_and_ ## op) \
+        push {r4, r5, r6, lr} ; \
+        dmb ; \
+        mov r12, r0 ; \
+        LOCAL_LABEL(tryatomic_ ## op): \
+        ldrex r0, [r12] ; \
+        ldr r1, [r12, #4] ; \
+        op(r4, r5, r0, r1, r2, r3) ; \
+        strex r6, r4, [r12] ; \
+        cmp r6, #0 ; \
+        bne LOCAL_LABEL(tryatomic_ ## op) ; \
+        str r5, [r12, #4] ; \
+        dmb ; \
+        pop {r4, r5, r6, pc}
+#else
 #define SYNC_OP_8(op) \
         .p2align 2 ; \
         .thumb ; \
@@ -47,6 +67,7 @@
         bne LOCAL_LABEL(tryatomic_ ## op) ; \
         dmb ; \
         pop {r4, r5, r6, pc}
+#endif
 
 #define MINMAX_4(rD, rN, rM, cmp_kind) \
         cmp rN, rM ; \

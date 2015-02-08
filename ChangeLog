@@ -1,5 +1,9 @@
 current SVN:
 
+version 0.1.10:
+
+* Updated the compiler-rt build rules.
+* Added support for building Cortex-M3 libraries and programs.
 * Added missing clang include files.
 
 version 0.1.9:

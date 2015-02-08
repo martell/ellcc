@@ -1,0 +1,10 @@
+#! /bin/sh
+# This script returns the arch for a tuple.
+#
+case "$1" in
+# Catch these early to simplify matching for 32-bit archs
+arm*hf) ARCH=armhf ;;
+mips*sf) ARCH=mipssf ;;
+*) echo unknown && exit 1 ;;
+esac
+echo $ARCH

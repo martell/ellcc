@@ -106,11 +106,18 @@ define mkasmdep
 $(dir $(patsubst %/,%,$(dir $(1))))$(notdir $(1:.s=.o)): $(1)
 endef
 $(foreach s,$(wildcard src/*/$(ARCH)*/*.s),$(eval $(call mkasmdep,$(s))))
+define mkasmdepS
+$(dir $(patsubst %/,%,$(dir $(1))))$(notdir $(1:.S=.o)): $(1)
+endef
+$(foreach s,$(wildcard src/*/$(ARCH)*/*.S),$(eval $(call mkasmdepS,$(s))))
 
 %.o: $(ARCH)$(ASMSUBARCH)/%.sub
 	$(CC) $(CFLAGS_ALL_STATIC) -c -o $@ $(dir $<)$(shell cat $<)
 
 %.o: $(ARCH)/%.s
+	$(CC) $(CFLAGS_ALL_STATIC) -c -o $@ $<
+
+%.o: $(ARCH)/%.S
 	$(CC) $(CFLAGS_ALL_STATIC) -c -o $@ $<
 
 %.o: %.c $(GENH) $(IMPH)
@@ -120,6 +127,9 @@ $(foreach s,$(wildcard src/*/$(ARCH)*/*.s),$(eval $(call mkasmdep,$(s))))
 	$(CC) $(CFLAGS_ALL_SHARED) -c -o $@ $(dir $<)$(shell cat $<)
 
 %.lo: $(ARCH)/%.s
+	$(CC) $(CFLAGS_ALL_SHARED) -c -o $@ $<
+
+%.lo: $(ARCH)/%.S
 	$(CC) $(CFLAGS_ALL_SHARED) -c -o $@ $<
 
 %.lo: %.c $(GENH) $(IMPH)

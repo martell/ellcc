@@ -11,5 +11,6 @@ __syscall:
 	svc 0
 	ldmfd sp!,{r4,r5,r6,r7}
 	tst lr,#1
+        it eq
 	moveq pc,lr
 	bx lr

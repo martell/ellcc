@@ -14,5 +14,6 @@ _dlstart:
 	mov r1,r0
 	mov r0,#0
 	tst r1,#1
+        it eq
 	moveq pc,r1
 	bx r1

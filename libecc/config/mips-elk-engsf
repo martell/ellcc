@@ -28,5 +28,5 @@ linker:
     - -lelk
     - '-('
     - -lc
-    - -lcompiler_rt
+    - -lcompiler-rt
     - '-)'

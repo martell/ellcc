@@ -6,8 +6,14 @@ _longjmp:
 longjmp:
 	mov ip,r0
 	movs r0,r1
+        it eq
 	moveq r0,#1
+#if defined(__thumb__)
+	ldmia ip!, {v1,v2,v3,v4,v5,v6,sl,fp,lr}
+        ldr sp, [ip], #4
+#else
 	ldmia ip!, {v1,v2,v3,v4,v5,v6,sl,fp,sp,lr}
+#endif
 
 	adr r1,1f
 	ldr r2,1f
@@ -30,6 +36,7 @@ longjmp:
 	ldcl p1, cr14, [ip], #8
 	ldcl p1, cr15, [ip], #8
 3:	tst lr,#1
+        it eq
 	moveq pc,lr
 	bx lr
 
