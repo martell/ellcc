@@ -26,6 +26,16 @@ my @PREPENDPATHDIRS =
     ('/home/rich/ellcc/bin');
 
 my $defaultsrc = "/*\n" .
+" *      Simple factorial function\n" .
+" */\n" .
+"\n" .
+"long fact(long arg)\n" .
+"{\n" .
+"    if (arg <= 1) return 1;\n" .
+"\n" .
+"    return arg * fact(arg - 1);\n" .
+"\n}\n";
+my $defaultsrc = "/*\n" .
 " *      Erastosthenes Sieve Prime Number Program in C\n" .
 " *      from Byte, Sept. 1981, pg. 186\n" .
 " */\n" .
@@ -66,16 +76,6 @@ my $defaultsrc = "/*\n" .
 "                        }\n" .
 "                }\n" .
 '        printf("%d primes\n",count);' .
-"\n}\n";
-my $defaultsrc = "/*\n" .
-" *      Simple factorial function\n" .
-" */\n" .
-"\n" .
-"long fact(long arg)\n" .
-"{\n" .
-"    if (arg <= 1) return 1;\n" .
-"\n" .
-"    return arg * fact(arg - 1);\n" .
 "\n}\n";
 sub getname {
     my ($extension) = @_;
@@ -220,6 +220,7 @@ $llvmTargets{'mips32r2'} = { label => '32-bit Mips r2'  };
 $llvmTargets{'mips32r2sf'} = { label => '32-bit Mips r2 Soft Float'  };
 $llvmTargets{'arm'} = { label => '32-bit ARM'  };
 $llvmTargets{'armv8'} = { label => '32-bit ARMv8'  };
+$llvmTargets{'thumb'} = { label => 'ARM Thumb'  };
 $llvmTargets{'ppc'} = { label => '32-bit PowerPC'  };
 $llvmTargets{'ppc64'} = { label => '64-bit PowerPC'  };
 $llvmTargets{'i386'} = { label => '32-bit X86: Pentium-Pro and above'  };
