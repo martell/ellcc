@@ -214,17 +214,15 @@ allows you to compile for a wider set of processors.
 END
 
 my %llvmTargets = ();
-$llvmTargets{'microblaze'} = { label => '32-bit Microblaze soft core'  };
-$llvmTargets{'mips'} = { label => '32-bit Mips'  };
-$llvmTargets{'mips32r2'} = { label => '32-bit Mips r2'  };
-$llvmTargets{'mips32r2sf'} = { label => '32-bit Mips r2 Soft Float'  };
-$llvmTargets{'arm'} = { label => '32-bit ARM'  };
-$llvmTargets{'armv8'} = { label => '32-bit ARMv8'  };
-$llvmTargets{'thumb'} = { label => 'ARM Thumb'  };
-$llvmTargets{'ppc'} = { label => '32-bit PowerPC'  };
-$llvmTargets{'ppc64'} = { label => '64-bit PowerPC'  };
-$llvmTargets{'i386'} = { label => '32-bit X86: Pentium-Pro and above'  };
-$llvmTargets{'x86_64'}  = { label => '64-bit X86: EM64T and AMD64' };
+$llvmTargets{'microblaze'} = { label => 'Microblaze soft core', triple => 'microblaze-linux-eng'  };
+$llvmTargets{'mips32r2'} = { label => 'Mips', triple => 'mips-linux-eng'  };
+$llvmTargets{'mips32r2sf'} = { label => 'Mips Soft Float', triple => 'mips-linux-engsf'  };
+$llvmTargets{'arm'} = { label => 'ARM 32-bit Soft Float', triple => 'arm-linux-engeabi' };
+$llvmTargets{'arm'} = { label => 'ARM 32-bit', triple => 'arm-linux-engeabihf' };
+$llvmTargets{'thumb'} = { label => 'ARM Thumb', triple => 'thumb-linux-engeabi'  };
+$llvmTargets{'ppc'} = { label => 'PowerPC 32-bit', triple => 'ppc-linux-eng'  };
+$llvmTargets{'i386'} = { label => 'X86 32-bit', triple => 'i386-linux-eng'  };
+$llvmTargets{'x86_64'}  = { label => 'X86 64-bit', triple => 'x86_64-linux-eng' };
 $llvmTargets{'llvm'} = { label => 'LLVM assembly' };
 $llvmTargets{'cpp'} = { label => 'LLVM C++ API code' };
 my %targetLabels = map { $_ => $llvmTargets{$_}->{'label'} } keys %llvmTargets;
@@ -479,8 +477,9 @@ s@(\n)?#include.*[<"](.*\.\..*)[">].*\n@$1#error "invalid #include file $2 detec
     } else {
         $disassemblyFile = getname(".s");
         my $options = ( $c->param('optlevel') eq "None" ) ? "-O0" : "-O3";
-        try_run( "$target-ellcc-linux",
-            "ecc -target $target-ellcc-linux -S $options -o $disassemblyFile $inputFile > $outputFile 2>&1",
+        my $targetTriple = $llvmTargets{$target}->{'triple'};
+        try_run( "$targetTriple",
+            "ecc -target $targetTriple -S $options -o $disassemblyFile $inputFile > $outputFile 2>&1",
             $outputFile );
     }
 
