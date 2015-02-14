@@ -35,7 +35,7 @@
 #include "llvm/LinkAllIR.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/MC/SubtargetFeature.h"
-#include "llvm/PassManager.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -180,7 +180,7 @@ DefaultDataLayout("default-data-layout",
 
 
 
-static inline void addPass(PassManagerBase &PM, Pass *P) {
+static inline void addPass(legacy::PassManagerBase &PM, Pass *P) {
   // Add the pass to the pass manager...
   PM.add(P);
 
@@ -195,7 +195,8 @@ static inline void addPass(PassManagerBase &PM, Pass *P) {
 /// OptLevel.
 ///
 /// OptLevel - Optimization Level
-static void AddOptimizationPasses(PassManagerBase &MPM,FunctionPassManager &FPM,
+static void AddOptimizationPasses(legacy::PassManagerBase &MPM,
+                                  legacy::FunctionPassManager &FPM,
                                   unsigned OptLevel, unsigned SizeLevel) {
   FPM.add(createVerifierPass());          // Verify that input is correct
   MPM.add(createDebugInfoVerifierPass()); // Verify that debug info is correct
@@ -230,7 +231,7 @@ static void AddOptimizationPasses(PassManagerBase &MPM,FunctionPassManager &FPM,
   Builder.populateModulePassManager(MPM);
 }
 
-static void AddStandardLinkPasses(PassManagerBase &PM) {
+static void AddStandardLinkPasses(legacy::PassManagerBase &PM) {
   PassManagerBuilder Builder;
   Builder.VerifyInput = true;
   Builder.StripDebug = StripDebug;
@@ -370,6 +371,12 @@ int main(int argc, char **argv) {
     }
   }
 
+  Triple ModuleTriple(M->getTargetTriple());
+  TargetMachine *Machine = nullptr;
+  if (ModuleTriple.getArch())
+    Machine = GetTargetMachine(ModuleTriple);
+  std::unique_ptr<TargetMachine> TM(Machine);
+
   // If the output is set to be emitted to standard out, and standard out is a
   // console, print out a warning message and refuse to do it.  We don't
   // impress anyone by spewing tons of binary goo to a terminal.
@@ -391,8 +398,8 @@ int main(int argc, char **argv) {
     // The user has asked to use the new pass manager and provided a pipeline
     // string. Hand off the rest of the functionality to the new code for that
     // layer.
-    return runPassPipeline(argv[0], Context, *M, Out.get(), PassPipeline,
-                           OK, VK)
+    return runPassPipeline(argv[0], Context, *M, TM.get(), Out.get(),
+                           PassPipeline, OK, VK)
                ? 0
                : 1;
   }
@@ -400,10 +407,10 @@ int main(int argc, char **argv) {
   // Create a PassManager to hold and optimize the collection of passes we are
   // about to build.
   //
-  PassManager Passes;
+  legacy::PassManager Passes;
 
   // Add an appropriate TargetLibraryInfo pass for the module's triple.
-  TargetLibraryInfoImpl TLII(Triple(M->getTargetTriple()));
+  TargetLibraryInfoImpl TLII(ModuleTriple);
 
   // The -disable-simplify-libcalls flag actually disables all builtin optzns.
   if (DisableSimplifyLibCalls)
@@ -420,23 +427,17 @@ int main(int argc, char **argv) {
   if (DL)
     Passes.add(new DataLayoutPass());
 
-  Triple ModuleTriple(M->getTargetTriple());
-  TargetMachine *Machine = nullptr;
-  if (ModuleTriple.getArch())
-    Machine = GetTargetMachine(Triple(ModuleTriple));
-  std::unique_ptr<TargetMachine> TM(Machine);
-
   // Add internal analysis passes from the target machine.
-  Passes.add(createTargetTransformInfoWrapperPass(
-      TM ? TM->getTTI() : TargetTransformInfo(DL)));
+  Passes.add(createTargetTransformInfoWrapperPass(TM ? TM->getTargetIRAnalysis()
+                                                     : TargetIRAnalysis()));
 
-  std::unique_ptr<FunctionPassManager> FPasses;
+  std::unique_ptr<legacy::FunctionPassManager> FPasses;
   if (OptLevelO1 || OptLevelO2 || OptLevelOs || OptLevelOz || OptLevelO3) {
-    FPasses.reset(new FunctionPassManager(M.get()));
+    FPasses.reset(new legacy::FunctionPassManager(M.get()));
     if (DL)
       FPasses->add(new DataLayoutPass());
     FPasses->add(createTargetTransformInfoWrapperPass(
-        TM ? TM->getTTI() : TargetTransformInfo(DL)));
+        TM ? TM->getTargetIRAnalysis() : TargetIRAnalysis()));
   }
 
   if (PrintBreakpoints) {

@@ -166,7 +166,7 @@ static unsigned getELFSectionType(StringRef Name, SectionKind K) {
 
 
 static unsigned
-getELFSectionFlags(SectionKind K) {
+getELFSectionFlags(SectionKind K, bool InCOMDAT) {
   unsigned Flags = 0;
 
   if (!K.isMetadata())
@@ -181,7 +181,10 @@ getELFSectionFlags(SectionKind K) {
   if (K.isThreadLocal())
     Flags |= ELF::SHF_TLS;
 
-  if (K.isMergeableCString() || K.isMergeableConst())
+  // FIXME: There is nothing in ELF preventing an SHF_MERGE from being
+  // in a comdat. We just avoid it for now because we don't print
+  // those .sections correctly.
+  if (!InCOMDAT && (K.isMergeableCString() || K.isMergeableConst()))
     Flags |= ELF::SHF_MERGE;
 
   if (K.isMergeableCString())
@@ -211,7 +214,7 @@ const MCSection *TargetLoweringObjectFileELF::getExplicitSectionGlobal(
   Kind = getELFKindForNamedSection(SectionName, Kind);
 
   StringRef Group = "";
-  unsigned Flags = getELFSectionFlags(Kind);
+  unsigned Flags = getELFSectionFlags(Kind, GV->hasComdat());
   if (const Comdat *C = getELFComdat(GV)) {
     Group = C->getName();
     Flags |= ELF::SHF_GROUP;
@@ -221,21 +224,27 @@ const MCSection *TargetLoweringObjectFileELF::getExplicitSectionGlobal(
                                     /*EntrySize=*/0, Group);
 }
 
-/// getSectionPrefixForGlobal - Return the section prefix name used by options
-/// FunctionsSections and DataSections.
+/// Return the section prefix name used by options FunctionsSections and
+/// DataSections.
 static StringRef getSectionPrefixForGlobal(SectionKind Kind) {
-  if (Kind.isText())                 return ".text.";
-  if (Kind.isReadOnly())             return ".rodata.";
-  if (Kind.isBSS())                  return ".bss.";
-
-  if (Kind.isThreadData())           return ".tdata.";
-  if (Kind.isThreadBSS())            return ".tbss.";
-
-  if (Kind.isDataNoRel())            return ".data.";
-  if (Kind.isDataRelLocal())         return ".data.rel.local.";
-  if (Kind.isDataRel())              return ".data.rel.";
-  if (Kind.isReadOnlyWithRelLocal()) return ".data.rel.ro.local.";
-
+  if (Kind.isText())
+    return ".text.";
+  if (Kind.isReadOnly())
+    return ".rodata.";
+  if (Kind.isBSS())
+    return ".bss.";
+  if (Kind.isThreadData())
+    return ".tdata.";
+  if (Kind.isThreadBSS())
+    return ".tbss.";
+  if (Kind.isDataNoRel())
+    return ".data.";
+  if (Kind.isDataRelLocal())
+    return ".data.rel.local.";
+  if (Kind.isDataRel())
+    return ".data.rel.";
+  if (Kind.isReadOnlyWithRelLocal())
+    return ".data.rel.ro.local.";
   assert(Kind.isReadOnlyWithRel() && "Unknown section kind");
   return ".data.rel.ro.";
 }
@@ -243,7 +252,7 @@ static StringRef getSectionPrefixForGlobal(SectionKind Kind) {
 const MCSection *TargetLoweringObjectFileELF::
 SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
                        Mangler &Mang, const TargetMachine &TM) const {
-  unsigned Flags = getELFSectionFlags(Kind);
+  unsigned Flags = getELFSectionFlags(Kind, GV->hasComdat());
 
   // If we have -ffunction-section or -fdata-section then we should emit the
   // global value to a uniqued section specifically for it.
@@ -323,6 +332,35 @@ SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
 
   assert(Kind.isReadOnlyWithRel() && "Unknown section kind");
   return DataRelROSection;
+}
+
+const MCSection *TargetLoweringObjectFileELF::getSectionForJumpTable(
+    const Function &F, Mangler &Mang, const TargetMachine &TM) const {
+  // If the function can be removed, produce a unique section so that
+  // the table doesn't prevent the removal.
+  const Comdat *C = F.getComdat();
+  bool EmitUniqueSection = TM.getFunctionSections() || C;
+  if (!EmitUniqueSection)
+    return ReadOnlySection;
+
+  SmallString<128> Name(".rodata.");
+  TM.getNameWithPrefix(Name, &F, Mang, true);
+
+  unsigned Flags = ELF::SHF_ALLOC;
+  StringRef Group = "";
+  if (C) {
+    Flags |= ELF::SHF_GROUP;
+    Group = C->getName();
+  }
+
+  return getContext().getELFSection(Name, ELF::SHT_PROGBITS, Flags, 0, Group);
+}
+
+bool TargetLoweringObjectFileELF::shouldPutJumpTableInFunctionSection(
+    bool UsesLabelDifference, const Function &F) const {
+  // We can always create relative relocations, so use another section
+  // that can be marked non-executable.
+  return false;
 }
 
 /// getSectionForConstant - Given a mergeable constant with the

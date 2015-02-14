@@ -11,6 +11,10 @@
 #ifndef __UNWIND_EHABI_H__
 #define __UNWIND_EHABI_H__
 
+#include <__cxxabi_config.h>
+
+#if LIBCXXABI_ARM_EHABI
+
 #include <stdint.h>
 #include <unwind.h>
 
@@ -22,7 +26,7 @@ static inline uint32_t signExtendPrel31(uint32_t data) {
 }
 
 static inline uint32_t readPrel31(const uint32_t *data) {
-  return (((uint32_t) data) + signExtendPrel31(*data));
+  return (((uint32_t)(uintptr_t)data) + signExtendPrel31(*data));
 }
 
 #if defined(__cplusplus)
@@ -41,5 +45,7 @@ extern _Unwind_Reason_Code __aeabi_unwind_cpp_pr2(
 #if defined(__cplusplus)
 } // extern "C"
 #endif
+
+#endif // LIBCXXABI_ARM_EHABI
 
 #endif  // __UNWIND_EHABI_H__

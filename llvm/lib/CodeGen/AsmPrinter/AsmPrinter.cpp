@@ -129,7 +129,7 @@ unsigned AsmPrinter::getFunctionNumber() const {
 }
 
 const TargetLoweringObjectFile &AsmPrinter::getObjFileLowering() const {
-  return TM.getSubtargetImpl()->getTargetLowering()->getObjFileLowering();
+  return *TM.getObjFileLowering();
 }
 
 /// getDataLayout - Return information about data layout.
@@ -656,9 +656,9 @@ static bool emitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
   OS << V.getName();
 
   DIExpression Expr = MI->getDebugExpression();
-  if (Expr.isVariablePiece())
-    OS << " [piece offset=" << Expr.getPieceOffset()
-       << " size=" << Expr.getPieceSize() << "]";
+  if (Expr.isBitPiece())
+    OS << " [bit_piece offset=" << Expr.getBitPieceOffset()
+       << " size=" << Expr.getBitPieceSize() << "]";
   OS << " <- ";
 
   // The second operand is only an offset if it's an immediate.
@@ -1177,25 +1177,15 @@ void AsmPrinter::EmitJumpTableInfo() {
   // Pick the directive to use to print the jump table entries, and switch to
   // the appropriate section.
   const Function *F = MF->getFunction();
-  bool JTInDiffSection = false;
-  if (// In PIC mode, we need to emit the jump table to the same section as the
-      // function body itself, otherwise the label differences won't make sense.
-      // FIXME: Need a better predicate for this: what about custom entries?
-      MJTI->getEntryKind() == MachineJumpTableInfo::EK_LabelDifference32 ||
-      // We should also do if the section name is NULL or function is declared
-      // in discardable section
-      // FIXME: this isn't the right predicate, should be based on the MCSection
-      // for the function.
-      F->isWeakForLinker()) {
-    OutStreamer.SwitchSection(
-        getObjFileLowering().SectionForGlobal(F, *Mang, TM));
-  } else {
+  const TargetLoweringObjectFile &TLOF = getObjFileLowering();
+  bool JTInDiffSection = !TLOF.shouldPutJumpTableInFunctionSection(
+      MJTI->getEntryKind() == MachineJumpTableInfo::EK_LabelDifference32,
+      *F);
+  if (JTInDiffSection) {
     // Otherwise, drop it in the readonly section.
     const MCSection *ReadOnlySection =
-        getObjFileLowering().getSectionForConstant(SectionKind::getReadOnly(),
-                                                   /*C=*/nullptr);
+        TLOF.getSectionForJumpTable(*F, *Mang, TM);
     OutStreamer.SwitchSection(ReadOnlySection);
-    JTInDiffSection = true;
   }
 
   EmitAlignment(Log2_32(

@@ -26,6 +26,15 @@ namespace llvm {
 
 extern cl::opt<unsigned> PartialUnrollingThreshold;
 
+/// \brief Base class which can be used to help build a TTI implementation.
+///
+/// This class provides as much implementation of the TTI interface as is
+/// possible using the target independent parts of the code generator.
+///
+/// In order to subclass it, your class must implement a getST() method to
+/// return the subtarget, and a getTLI() method to return the target lowering.
+/// We need these methods implemented in the derived class so that this class
+/// doesn't have to duplicate storage for them.
 template <typename T>
 class BasicTTIImplBase : public TargetTransformInfoImplCRTPBase<T> {
 private:
@@ -70,30 +79,32 @@ private:
     return Cost;
   }
 
+  /// \brief Local query method delegates up to T which *must* implement this!
+  const TargetSubtargetInfo *getST() const {
+    return static_cast<const T *>(this)->getST();
+  }
+
+  /// \brief Local query method delegates up to T which *must* implement this!
   const TargetLoweringBase *getTLI() const {
-    return TM->getSubtargetImpl()->getTargetLowering();
+    return static_cast<const T *>(this)->getTLI();
   }
 
 protected:
-  const TargetMachine *TM;
-
-  explicit BasicTTIImplBase(const TargetMachine *TM = nullptr)
-      : BaseT(TM ? TM->getDataLayout() : nullptr), TM(TM) {}
+  explicit BasicTTIImplBase(const TargetMachine *TM)
+      : BaseT(TM->getDataLayout()) {}
 
 public:
   // Provide value semantics. MSVC requires that we spell all of these out.
   BasicTTIImplBase(const BasicTTIImplBase &Arg)
-      : BaseT(static_cast<const BaseT &>(Arg)), TM(Arg.TM) {}
+      : BaseT(static_cast<const BaseT &>(Arg)) {}
   BasicTTIImplBase(BasicTTIImplBase &&Arg)
-      : BaseT(std::move(static_cast<BaseT &>(Arg))), TM(std::move(Arg.TM)) {}
+      : BaseT(std::move(static_cast<BaseT &>(Arg))) {}
   BasicTTIImplBase &operator=(const BasicTTIImplBase &RHS) {
     BaseT::operator=(static_cast<const BaseT &>(RHS));
-    TM = RHS.TM;
     return *this;
   }
   BasicTTIImplBase &operator=(BasicTTIImplBase &&RHS) {
     BaseT::operator=(std::move(static_cast<BaseT &>(RHS)));
-    TM = std::move(RHS.TM);
     return *this;
   }
 
@@ -139,6 +150,28 @@ public:
     return getTLI()->isTypeLegal(VT);
   }
 
+  unsigned getIntrinsicCost(Intrinsic::ID IID, Type *RetTy,
+                            ArrayRef<const Value *> Arguments) {
+    return BaseT::getIntrinsicCost(IID, RetTy, Arguments);
+  }
+
+  unsigned getIntrinsicCost(Intrinsic::ID IID, Type *RetTy,
+                            ArrayRef<Type *> ParamTys) {
+    if (IID == Intrinsic::cttz) {
+      if (getTLI()->isCheapToSpeculateCttz())
+        return TargetTransformInfo::TCC_Basic;
+      return TargetTransformInfo::TCC_Expensive;
+    }
+
+    if (IID == Intrinsic::ctlz) {
+       if (getTLI()->isCheapToSpeculateCtlz())
+        return TargetTransformInfo::TCC_Basic;
+      return TargetTransformInfo::TCC_Expensive;
+    }
+
+    return BaseT::getIntrinsicCost(IID, RetTy, ParamTys);
+  }
+
   unsigned getJumpBufAlignment() { return getTLI()->getJumpBufAlignment(); }
 
   unsigned getJumpBufSize() { return getTLI()->getJumpBufSize(); }
@@ -156,8 +189,32 @@ public:
            TLI->isOperationLegalOrCustom(ISD::FSQRT, VT);
   }
 
-  void getUnrollingPreferences(const Function *F, Loop *L,
-                               TTI::UnrollingPreferences &UP) {
+  unsigned getFPOpCost(Type *Ty) {
+    // By default, FP instructions are no more expensive since they are
+    // implemented in HW.  Target specific TTI can override this.
+    return TargetTransformInfo::TCC_Basic;
+  }
+
+  unsigned getOperationCost(unsigned Opcode, Type *Ty, Type *OpTy) {
+    const TargetLoweringBase *TLI = getTLI();
+    switch (Opcode) {
+    default: break;
+    case Instruction::Trunc: {
+      if (TLI->isTruncateFree(OpTy, Ty))
+        return TargetTransformInfo::TCC_Free;
+      return TargetTransformInfo::TCC_Basic;
+    }
+    case Instruction::ZExt: {
+      if (TLI->isZExtFree(OpTy, Ty))
+        return TargetTransformInfo::TCC_Free;
+      return TargetTransformInfo::TCC_Basic;
+    }
+    }
+
+    return BaseT::getOperationCost(Opcode, Ty, OpTy);
+  }
+
+  void getUnrollingPreferences(Loop *L, TTI::UnrollingPreferences &UP) {
     // This unrolling functionality is target independent, but to provide some
     // motivation for its intended use, for x86:
 
@@ -182,7 +239,7 @@ public:
     // until someone finds a case where it matters in practice.
 
     unsigned MaxOps;
-    const TargetSubtargetInfo *ST = TM->getSubtargetImpl(*F);
+    const TargetSubtargetInfo *ST = getST();
     if (PartialUnrollingThreshold.getNumOccurrences() > 0)
       MaxOps = PartialUnrollingThreshold;
     else if (ST->getSchedModel().LoopMicroOpBufferSize > 0)
@@ -626,21 +683,33 @@ public:
 /// is needed.
 class BasicTTIImpl : public BasicTTIImplBase<BasicTTIImpl> {
   typedef BasicTTIImplBase<BasicTTIImpl> BaseT;
+  friend class BasicTTIImplBase<BasicTTIImpl>;
+
+  const TargetSubtargetInfo *ST;
+  const TargetLoweringBase *TLI;
+
+  const TargetSubtargetInfo *getST() const { return ST; }
+  const TargetLoweringBase *getTLI() const { return TLI; }
 
 public:
-  explicit BasicTTIImpl(const TargetMachine *TM = nullptr);
+  explicit BasicTTIImpl(const TargetMachine *ST, Function &F);
 
   // Provide value semantics. MSVC requires that we spell all of these out.
   BasicTTIImpl(const BasicTTIImpl &Arg)
-      : BaseT(static_cast<const BaseT &>(Arg)) {}
+      : BaseT(static_cast<const BaseT &>(Arg)), ST(Arg.ST), TLI(Arg.TLI) {}
   BasicTTIImpl(BasicTTIImpl &&Arg)
-      : BaseT(std::move(static_cast<BaseT &>(Arg))) {}
+      : BaseT(std::move(static_cast<BaseT &>(Arg))), ST(std::move(Arg.ST)),
+        TLI(std::move(Arg.TLI)) {}
   BasicTTIImpl &operator=(const BasicTTIImpl &RHS) {
     BaseT::operator=(static_cast<const BaseT &>(RHS));
+    ST = RHS.ST;
+    TLI = RHS.TLI;
     return *this;
   }
   BasicTTIImpl &operator=(BasicTTIImpl &&RHS) {
     BaseT::operator=(std::move(static_cast<BaseT &>(RHS)));
+    ST = std::move(RHS.ST);
+    TLI = std::move(RHS.TLI);
     return *this;
   }
 };

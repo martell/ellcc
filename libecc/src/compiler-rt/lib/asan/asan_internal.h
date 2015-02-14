@@ -91,6 +91,7 @@ void *AsanDoesNotSupportStaticLinkage();
 void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp);
 void AsanOnSIGSEGV(int, void *siginfo, void *context);
 
+void DisableReexec();
 void MaybeReexec();
 void ReadContextStack(void *context, uptr *stack, uptr *ssize);
 void AsanPlatformThreadInit();

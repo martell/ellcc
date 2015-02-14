@@ -156,6 +156,8 @@ def export_dynamic : Flag<["-", "--"], "export-dynamic">,
      Group<grp_main>;
 def alias_export_dynamic: Flag<["-"], "E">,
       Alias<export_dynamic>;
+def no_export_dynamic : Flag<["--"], "no-export-dynamic">,
+     Group<grp_main>;
 
 //===----------------------------------------------------------------------===//
 /// Dynamic Library Options
@@ -239,7 +241,18 @@ def demangle : Flag<["--"], "demangle">,
 def no_demangle : Flag<["--"], "no-demangle">,
      HelpText<"Dont demangle C++ symbols">,
      Group<grp_symbolopts>;
-
+def strip_all : Flag<["--"], "strip-all">,
+     HelpText<"Omit all symbol informations from output">,
+     Group<grp_symbolopts>;
+def alias_strip_all : Flag<["-"], "s">,
+     Alias<strip_all>;
+defm wrap : smDash<"wrap", "wrap",
+            "Use a wrapper function for symbol. Any "
+            " undefined reference to symbol will be resolved to "
+            "\"__wrap_symbol\". Any undefined reference to \"__real_symbol\""
+            " will be resolved to symbol.">,
+            MetaVarName<"<symbol>">,
+            Group<grp_symbolopts>;
 //===----------------------------------------------------------------------===//
 /// Optimization Options
 //===----------------------------------------------------------------------===//

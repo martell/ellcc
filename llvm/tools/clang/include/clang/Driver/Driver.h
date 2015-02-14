@@ -22,8 +22,6 @@
 #include "llvm/Support/Path.h" // FIXME: Kill when CompilationInfo
 #include <memory>
                               // lands.
-#include "clang/Config/config.h"
-#include "clang/Basic/Version.h"
 #include <list>
 #include <set>
 #include <string>
@@ -63,6 +61,12 @@ class Driver {
     CPPMode,
     CLMode
   } Mode;
+
+  enum SaveTempsMode {
+    SaveTempsNone,
+    SaveTempsCwd,
+    SaveTempsObj
+  } SaveTemps;
 
 public:
   // Diag - Forwarding function for diagnostics.
@@ -242,18 +246,9 @@ public:
   }
 
   /// \brief Set the compiler's resource directory.
-  void setResourceDir() {
-      // Compute the path to the resource directory.
-      llvm::StringRef ClangResourceDir(CLANG_RESOURCE_DIR);
-      llvm::SmallString<128> P(Dir);
-      if (ClangResourceDir != "")
-        llvm::sys::path::append(P, ClangResourceDir);
-      else if (CCCIsELLCC) {
-        llvm::sys::path::append(P, "..", "libecc");
-      } else
-        llvm::sys::path::append(P, "..", "lib", "clang", CLANG_VERSION_STRING);
-      ResourceDir = P.str();
-  }
+  void setResourceDir();
+  bool isSaveTempsEnabled() const { return SaveTemps != SaveTempsNone; }
+  bool isSaveTempsObj() const { return SaveTemps == SaveTempsObj; }
 
   /// @}
   /// @name Primary Functionality

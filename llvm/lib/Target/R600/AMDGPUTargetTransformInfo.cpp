@@ -27,10 +27,10 @@ using namespace llvm;
 
 #define DEBUG_TYPE "AMDGPUtti"
 
-void AMDGPUTTIImpl::getUnrollingPreferences(const Function *, Loop *L,
+void AMDGPUTTIImpl::getUnrollingPreferences(Loop *L,
                                             TTI::UnrollingPreferences &UP) {
   UP.Threshold = 300; // Twice the default.
-  UP.Count = UINT_MAX;
+  UP.MaxCount = UINT_MAX;
   UP.Partial = true;
 
   // TODO: Do we want runtime unrolling?

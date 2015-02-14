@@ -80,7 +80,11 @@ public:
   /// Public function for testing.
   static std::error_code evalLinkerScript(ELFLinkingContext &ctx,
                                           std::unique_ptr<MemoryBuffer> mb,
-                                          raw_ostream &diag);
+                                          raw_ostream &diag, bool nostdlib);
+
+  /// A factory method to create an instance of ELFLinkingContext.
+  static std::unique_ptr<ELFLinkingContext>
+  createELFLinkingContext(llvm::Triple triple);
 
 private:
   static llvm::Triple getDefaultTarget(const char *progName);
@@ -141,7 +145,6 @@ private:
 /// Driver for lld unit tests
 class CoreDriver : public Driver {
 public:
-
   /// Parses command line arguments same as lld-core and performs link.
   /// Returns true iff there was an error.
   static bool link(int argc, const char *argv[],

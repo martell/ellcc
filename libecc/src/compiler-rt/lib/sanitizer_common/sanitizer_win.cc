@@ -123,23 +123,33 @@ void *MmapNoReserveOrDie(uptr size, const char *mem_type) {
 }
 
 void *Mprotect(uptr fixed_addr, uptr size) {
-  return VirtualAlloc((LPVOID)fixed_addr, size,
-                      MEM_RESERVE | MEM_COMMIT, PAGE_NOACCESS);
+  void *res = VirtualAlloc((LPVOID)fixed_addr, size,
+                           MEM_RESERVE | MEM_COMMIT, PAGE_NOACCESS);
+  if (res == 0)
+    Report("WARNING: %s failed to "
+           "mprotect %p (%zd) bytes at %p (error code: %d)\n",
+           SanitizerToolName, size, size, fixed_addr, GetLastError());
+  return res;
 }
 
 void FlushUnneededShadowMemory(uptr addr, uptr size) {
   // This is almost useless on 32-bits.
-  // FIXME: add madvice-analog when we move to 64-bits.
+  // FIXME: add madvise-analog when we move to 64-bits.
 }
 
 void NoHugePagesInRegion(uptr addr, uptr size) {
   // FIXME: probably similar to FlushUnneededShadowMemory.
 }
 
+void DontDumpShadowMemory(uptr addr, uptr length) {
+  // This is almost useless on 32-bits.
+  // FIXME: add madvise-analog when we move to 64-bits.
+}
+
 bool MemoryRangeIsAvailable(uptr range_start, uptr range_end) {
   MEMORY_BASIC_INFORMATION mbi;
   CHECK(VirtualQuery((void *)range_start, &mbi, sizeof(mbi)));
-  return mbi.Protect & PAGE_NOACCESS &&
+  return mbi.Protect == PAGE_NOACCESS &&
          (uptr)mbi.BaseAddress + mbi.RegionSize >= range_end;
 }
 
@@ -249,8 +259,8 @@ void DumpProcessMap() {
   for (size_t i = 0; i < num_modules; ++i) {
     const ModuleInfo &mi = modules[i];
     char module_name[MAX_PATH];
-    bool got_module_name = GetModuleFileNameEx(
-        cur_process, mi.handle, module_name, sizeof(module_name));
+    bool got_module_name = GetModuleFileNameA(
+        mi.handle, module_name, sizeof(module_name));
     if (mi.end_address != 0) {
       Printf("\t%p-%p %s\n", mi.base_address, mi.end_address,
              got_module_name ? module_name : "[no name]");

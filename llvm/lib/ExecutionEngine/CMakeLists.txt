@@ -5,7 +5,11 @@ add_llvm_library(LLVMExecutionEngine
   ExecutionEngineBindings.cpp
   GDBRegistrationListener.cpp
   RTDyldMemoryManager.cpp
+  SectionMemoryManager.cpp
   TargetSelect.cpp
+
+  ADDITIONAL_HEADER_DIRS
+  ${LLVM_MAIN_INCLUDE_DIR}/llvm/ExecutionEngine
   )
 
 add_subdirectory(Interpreter)

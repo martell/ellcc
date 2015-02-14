@@ -1,6 +1,7 @@
 include(CheckCXXCompilerFlag)
 include(CheckLibraryExists)
 include(CheckSymbolExists)
+include(TestBigEndian)
 
 # CodeGen options.
 check_cxx_compiler_flag(-fPIC                COMPILER_RT_HAS_FPIC_FLAG)
@@ -16,6 +17,7 @@ check_cxx_compiler_flag(-ffreestanding       COMPILER_RT_HAS_FFREESTANDING_FLAG)
 check_cxx_compiler_flag("-Werror -fno-function-sections" COMPILER_RT_HAS_FNO_FUNCTION_SECTIONS_FLAG)
 check_cxx_compiler_flag(-std=c++11           COMPILER_RT_HAS_STD_CXX11_FLAG)
 check_cxx_compiler_flag(-fno-lto             COMPILER_RT_HAS_FNO_LTO_FLAG)
+check_cxx_compiler_flag(-msse3               COMPILER_RT_HAS_MSSE3_FLAG)
 
 check_cxx_compiler_flag(/GR COMPILER_RT_HAS_GR_FLAG)
 check_cxx_compiler_flag(/GS COMPILER_RT_HAS_GS_FLAG)
@@ -26,7 +28,7 @@ check_cxx_compiler_flag(/Oy COMPILER_RT_HAS_Oy_FLAG)
 check_cxx_compiler_flag(-gline-tables-only COMPILER_RT_HAS_GLINE_TABLES_ONLY_FLAG)
 check_cxx_compiler_flag(-g COMPILER_RT_HAS_G_FLAG)
 check_cxx_compiler_flag(/Zi COMPILER_RT_HAS_Zi_FLAG)
- 
+
 # Warnings.
 check_cxx_compiler_flag(-Wall COMPILER_RT_HAS_WALL_FLAG)
 check_cxx_compiler_flag(-Werror COMPILER_RT_HAS_WERROR_FLAG)
@@ -108,8 +110,12 @@ else()
       test_target_arch(i386 "")
     endif()
   elseif("${LLVM_NATIVE_ARCH}" STREQUAL "PowerPC")
-    test_target_arch(powerpc64 "-m64")
-    test_target_arch(powerpc64le "-m64")
+    TEST_BIG_ENDIAN(HOST_IS_BIG_ENDIAN)
+    if(HOST_IS_BIG_ENDIAN)
+      test_target_arch(powerpc64 "-m64")
+    else()
+      test_target_arch(powerpc64le "-m64")
+    endif()
   elseif("${LLVM_NATIVE_ARCH}" STREQUAL "Mips")
     if("${COMPILER_RT_TEST_TARGET_ARCH}" MATCHES "mipsel|mips64el")
       # regex for mipsel, mips64el
@@ -189,7 +195,7 @@ else()
   set(COMPILER_RT_HAS_ASAN FALSE)
 endif()
 
-if (OS_NAME MATCHES "Linux|FreeBSD")
+if (OS_NAME MATCHES "Linux|FreeBSD|Windows")
   set(COMPILER_RT_ASAN_HAS_STATIC_RUNTIME TRUE)
 else()
   set(COMPILER_RT_ASAN_HAS_STATIC_RUNTIME FALSE)

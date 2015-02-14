@@ -83,6 +83,8 @@ DefinedAtom::ContentPermissions DefinedAtom::permissions(ContentType type) {
 
 bool DefinedAtom::compareByPosition(const DefinedAtom *lhs,
                                     const DefinedAtom *rhs) {
+  if (lhs == rhs)
+    return false;
   const File *lhsFile = &lhs->file();
   const File *rhsFile = &rhs->file();
   if (lhsFile->ordinal() != rhsFile->ordinal())

@@ -19,23 +19,21 @@
 #include <pthread.h>
 #include <unwind.h>
 
-#if __APPLE__
+#ifdef __APPLE__
   #include <mach-o/dyld.h>
 #endif
 
-#include "libunwind.h"
+#include "config.h"
 
 #include "AddressSpace.hpp"
-#include "Registers.hpp"
-#include "DwarfInstructions.hpp"
 #include "config.h"
 #if _LIBUNWIND_SUPPORT_COMPACT_UNWIND
 #include "CompactUnwinder.hpp"
 #endif
-
-#if LIBCXXABI_ARM_EHABI
+#include "DwarfInstructions.hpp"
+#include "libunwind.h"
+#include "Registers.hpp"
 #include "Unwind-EHABI.h"
-#endif
 
 namespace libunwind {
 
@@ -64,7 +62,7 @@ private:
   // These fields are all static to avoid needing an initializer.
   // There is only one instance of this class per process.
   static pthread_rwlock_t _lock;
-#if __APPLE__
+#ifdef __APPLE__
   static void dyldUnloadHook(const struct mach_header *mh, intptr_t slide);
   static bool _registeredForDyldUnloads;
 #endif
@@ -93,7 +91,7 @@ typename DwarfFDECache<A>::entry DwarfFDECache<A>::_initialBuffer[64];
 template <typename A>
 pthread_rwlock_t DwarfFDECache<A>::_lock = PTHREAD_RWLOCK_INITIALIZER;
 
-#if __APPLE__
+#ifdef __APPLE__
 template <typename A>
 bool DwarfFDECache<A>::_registeredForDyldUnloads = false;
 #endif
@@ -135,7 +133,7 @@ void DwarfFDECache<A>::add(pint_t mh, pint_t ip_start, pint_t ip_end,
   _bufferUsed->ip_end = ip_end;
   _bufferUsed->fde = fde;
   ++_bufferUsed;
-#if __APPLE__
+#ifdef __APPLE__
   if (!_registeredForDyldUnloads) {
     _dyld_register_func_for_remove_image(&dyldUnloadHook);
     _registeredForDyldUnloads = true;
@@ -159,7 +157,7 @@ void DwarfFDECache<A>::removeAllIn(pint_t mh) {
   _LIBUNWIND_LOG_NON_ZERO(::pthread_rwlock_unlock(&_lock));
 }
 
-#if __APPLE__
+#ifdef __APPLE__
 template <typename A>
 void DwarfFDECache<A>::dyldUnloadHook(const struct mach_header *mh, intptr_t ) {
   removeAllIn((pint_t) mh);
@@ -370,28 +368,48 @@ private:
 };
 #endif // _LIBUNWIND_SUPPORT_COMPACT_UNWIND
 
-
 class _LIBUNWIND_HIDDEN AbstractUnwindCursor {
 public:
-  virtual             ~AbstractUnwindCursor() {}
-  virtual bool        validReg(int) = 0;
-  virtual unw_word_t  getReg(int) = 0;
-  virtual void        setReg(int, unw_word_t) = 0;
-  virtual bool        validFloatReg(int) = 0;
-  virtual unw_fpreg_t getFloatReg(int) = 0;
-  virtual void        setFloatReg(int, unw_fpreg_t) = 0;
-  virtual int         step() = 0;
-  virtual void        getInfo(unw_proc_info_t *) = 0;
-  virtual void        jumpto() = 0;
-  virtual bool        isSignalFrame() = 0;
-  virtual bool        getFunctionName(char *bf, size_t ln, unw_word_t *off) = 0;
-  virtual void        setInfoBasedOnIPRegister(bool isReturnAddr = false) = 0;
-  virtual const char *getRegisterName(int num) = 0;
-#if __arm__
-  virtual void        saveVFPAsX() = 0;
+  // NOTE: provide a class specific placement deallocation function (S5.3.4 p20)
+  // This avoids an unnecessary dependency to libc++abi.
+  void operator delete(void *, size_t) {}
+
+  virtual ~AbstractUnwindCursor() {}
+  virtual bool validReg(int) { _LIBUNWIND_ABORT("validReg not implemented"); }
+  virtual unw_word_t getReg(int) { _LIBUNWIND_ABORT("getReg not implemented"); }
+  virtual void setReg(int, unw_word_t) {
+    _LIBUNWIND_ABORT("setReg not implemented");
+  }
+  virtual bool validFloatReg(int) {
+    _LIBUNWIND_ABORT("validFloatReg not implemented");
+  }
+  virtual unw_fpreg_t getFloatReg(int) {
+    _LIBUNWIND_ABORT("getFloatReg not implemented");
+  }
+  virtual void setFloatReg(int, unw_fpreg_t) {
+    _LIBUNWIND_ABORT("setFloatReg not implemented");
+  }
+  virtual int step() { _LIBUNWIND_ABORT("step not implemented"); }
+  virtual void getInfo(unw_proc_info_t *) {
+    _LIBUNWIND_ABORT("getInfo not implemented");
+  }
+  virtual void jumpto() { _LIBUNWIND_ABORT("jumpto not implemented"); }
+  virtual bool isSignalFrame() {
+    _LIBUNWIND_ABORT("isSignalFrame not implemented");
+  }
+  virtual bool getFunctionName(char *, size_t, unw_word_t *) {
+    _LIBUNWIND_ABORT("getFunctionName not implemented");
+  }
+  virtual void setInfoBasedOnIPRegister(bool = false) {
+    _LIBUNWIND_ABORT("setInfoBasedOnIPRegister not implemented");
+  }
+  virtual const char *getRegisterName(int) {
+    _LIBUNWIND_ABORT("getRegisterName not implemented");
+  }
+#ifdef __arm__
+  virtual void saveVFPAsX() { _LIBUNWIND_ABORT("saveVFPAsX not implemented"); }
 #endif
 };
-
 
 /// UnwindCursor contains all state (including all register values) during
 /// an unwind.  This is normally stack allocated inside a unw_cursor_t.
@@ -415,11 +433,9 @@ public:
   virtual bool        getFunctionName(char *buf, size_t len, unw_word_t *off);
   virtual void        setInfoBasedOnIPRegister(bool isReturnAddress = false);
   virtual const char *getRegisterName(int num);
-#if __arm__
+#ifdef __arm__
   virtual void        saveVFPAsX();
 #endif
-
-  void            operator delete(void *, size_t) {}
 
 private:
 
@@ -590,7 +606,7 @@ template <typename A, typename R> void UnwindCursor<A, R>::jumpto() {
   _registers.jumpto();
 }
 
-#if __arm__
+#ifdef __arm__
 template <typename A, typename R> void UnwindCursor<A, R>::saveVFPAsX() {
   _registers.saveVFPAsX();
 }
@@ -722,8 +738,8 @@ bool UnwindCursor<A, R>::getInfoFromEHABISection(
   // in compact form (section 6.3 EHABI).
   if (exceptionTableData & 0x80000000) {
     // Grab the index of the personality routine from the compact form.
-    int choice = (exceptionTableData & 0x0f000000) >> 24;
-    int extraWords = 0;
+    uint32_t choice = (exceptionTableData & 0x0f000000) >> 24;
+    uint32_t extraWords = 0;
     switch (choice) {
       case 0:
         personalityRoutine = (unw_word_t) &__aeabi_unwind_cpp_pr0;
@@ -1302,6 +1318,6 @@ bool UnwindCursor<A, R>::getFunctionName(char *buf, size_t bufLen,
                                          buf, bufLen, offset);
 }
 
-}; // namespace libunwind
+} // namespace libunwind
 
 #endif // __UNWINDCURSOR_HPP__

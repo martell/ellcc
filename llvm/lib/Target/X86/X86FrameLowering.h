@@ -18,10 +18,6 @@
 
 namespace llvm {
 
-class MCSymbol;
-class X86TargetMachine;
-class X86Subtarget;
-
 class X86FrameLowering : public TargetFrameLowering {
 public:
   explicit X86FrameLowering(StackDirection D, unsigned StackAl, int LAO)
@@ -66,6 +62,8 @@ public:
 
   bool hasFP(const MachineFunction &MF) const override;
   bool hasReservedCallFrame(const MachineFunction &MF) const override;
+  bool canSimplifyCallFramePseudos(const MachineFunction &MF) const override;
+  bool needsFrameIndexResolution(const MachineFunction &MF) const override;
 
   int getFrameIndexOffset(const MachineFunction &MF, int FI) const override;
   int getFrameIndexReference(const MachineFunction &MF, int FI,

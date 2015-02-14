@@ -25,7 +25,7 @@
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCTargetOptions.h"
 #include "llvm/MC/SectionKind.h"
-#include "llvm/PassManager.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
@@ -148,32 +148,9 @@ void TargetMachine::setOptLevel(CodeGenOpt::Level Level) const {
     CodeGenInfo->setOptLevel(Level);
 }
 
-bool TargetMachine::getAsmVerbosityDefault() const {
-  return Options.MCOptions.AsmVerbose;
-}
-
-void TargetMachine::setAsmVerbosityDefault(bool V) {
-  Options.MCOptions.AsmVerbose = V;
-}
-
-bool TargetMachine::getFunctionSections() const {
-  return Options.FunctionSections;
-}
-
-bool TargetMachine::getDataSections() const {
-  return Options.DataSections;
-}
-
-void TargetMachine::setFunctionSections(bool V) {
-  Options.FunctionSections = V;
-}
-
-void TargetMachine::setDataSections(bool V) {
-  Options.DataSections = V;
-}
-
-TargetTransformInfo TargetMachine::getTTI() {
-  return TargetTransformInfo(getDataLayout());
+TargetIRAnalysis TargetMachine::getTargetIRAnalysis() {
+  return TargetIRAnalysis(
+      [this](Function &) { return TargetTransformInfo(getDataLayout()); });
 }
 
 static bool canUsePrivateLabel(const MCAsmInfo &AsmInfo,
@@ -199,9 +176,8 @@ void TargetMachine::getNameWithPrefix(SmallVectorImpl<char> &Name,
     return;
   }
   SectionKind GVKind = TargetLoweringObjectFile::getKindForGlobal(GV, *this);
-  const TargetLoweringObjectFile &TLOF =
-      getSubtargetImpl()->getTargetLowering()->getObjFileLowering();
-  const MCSection *TheSection = TLOF.SectionForGlobal(GV, GVKind, Mang, *this);
+  const TargetLoweringObjectFile *TLOF = getObjFileLowering();
+  const MCSection *TheSection = TLOF->SectionForGlobal(GV, GVKind, Mang, *this);
   bool CannotUsePrivateLabel = !canUsePrivateLabel(*AsmInfo, *TheSection);
   Mang.getNameWithPrefix(Name, GV, CannotUsePrivateLabel);
 }
@@ -209,7 +185,6 @@ void TargetMachine::getNameWithPrefix(SmallVectorImpl<char> &Name,
 MCSymbol *TargetMachine::getSymbol(const GlobalValue *GV, Mangler &Mang) const {
   SmallString<60> NameStr;
   getNameWithPrefix(NameStr, GV, Mang);
-  const TargetLoweringObjectFile &TLOF =
-      getSubtargetImpl()->getTargetLowering()->getObjFileLowering();
-  return TLOF.getContext().GetOrCreateSymbol(NameStr.str());
+  const TargetLoweringObjectFile *TLOF = getObjFileLowering();
+  return TLOF->getContext().GetOrCreateSymbol(NameStr.str());
 }

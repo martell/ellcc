@@ -53,6 +53,10 @@ extern "C" void* _DYNAMIC;
 
 namespace __asan {
 
+void DisableReexec() {
+  // No need to re-exec on Linux.
+}
+
 void MaybeReexec() {
   // No need to re-exec on Linux.
 }

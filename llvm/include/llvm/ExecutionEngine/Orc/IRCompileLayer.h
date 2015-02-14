@@ -14,7 +14,10 @@
 #ifndef LLVM_EXECUTIONENGINE_ORC_IRCOMPILELAYER_H
 #define LLVM_EXECUTIONENGINE_ORC_IRCOMPILELAYER_H
 
+#include "JITSymbol.h"
 #include "llvm/ExecutionEngine/ObjectCache.h"
+#include "llvm/ExecutionEngine/RTDyldMemoryManager.h"
+#include "llvm/Object/ObjectFile.h"
 #include <memory>
 
 namespace llvm {
@@ -76,24 +79,36 @@ public:
       Buffers.push_back(std::move(Buffer));
     }
 
-    return BaseLayer.addObjectSet(std::move(Objects), std::move(MM));
+    ModuleSetHandleT H =
+      BaseLayer.addObjectSet(Objects, std::move(MM));
+
+    BaseLayer.takeOwnershipOfBuffers(H, std::move(Buffers));
+
+    return H;
   }
 
   /// @brief Remove the module set associated with the handle H.
   void removeModuleSet(ModuleSetHandleT H) { BaseLayer.removeObjectSet(H); }
 
-  /// @brief Get the address of a loaded symbol. This call is forwarded to the
-  ///        base layer's getSymbolAddress implementation.
-  uint64_t getSymbolAddress(const std::string &Name, bool ExportedSymbolsOnly) {
-    return BaseLayer.getSymbolAddress(Name, ExportedSymbolsOnly);
+  /// @brief Search for the given named symbol.
+  /// @param Name The name of the symbol to search for.
+  /// @param ExportedSymbolsOnly If true, search only for exported symbols.
+  /// @return A handle for the given named symbol, if it exists.
+  JITSymbol findSymbol(const std::string &Name, bool ExportedSymbolsOnly) {
+    return BaseLayer.findSymbol(Name, ExportedSymbolsOnly);
   }
 
   /// @brief Get the address of the given symbol in the context of the set of
   ///        compiled modules represented by the handle H. This call is
   ///        forwarded to the base layer's implementation.
-  uint64_t lookupSymbolAddressIn(ModuleSetHandleT H, const std::string &Name,
-                                 bool ExportedSymbolsOnly) {
-    return BaseLayer.lookupSymbolAddressIn(H, Name, ExportedSymbolsOnly);
+  /// @param H The handle for the module set to search in.
+  /// @param Name The name of the symbol to search for.
+  /// @param ExportedSymbolsOnly If true, search only for exported symbols.
+  /// @return A handle for the given named symbol, if it is found in the
+  ///         given module set.
+  JITSymbol findSymbolIn(ModuleSetHandleT H, const std::string &Name,
+                         bool ExportedSymbolsOnly) {
+    return BaseLayer.findSymbolIn(H, Name, ExportedSymbolsOnly);
   }
 
 private:

@@ -49,7 +49,7 @@ PPCSubtarget::PPCSubtarget(const std::string &TT, const std::string &CPU,
     : PPCGenSubtargetInfo(TT, CPU, FS), TargetTriple(TT),
       IsPPC64(TargetTriple.getArch() == Triple::ppc64 ||
               TargetTriple.getArch() == Triple::ppc64le),
-      TargetABI(PPC_ABI_UNKNOWN),
+      TargetABI(PPC_ABI_UNKNOWN), TM(TM),
       FrameLowering(initializeSubtargetDependencies(CPU, FS)), InstrInfo(*this),
       TLInfo(TM, *this), TSInfo(TM.getDataLayout()) {}
 
@@ -65,6 +65,7 @@ void PPCSubtarget::initializeEnvironment() {
   HasQPX = false;
   HasVSX = false;
   HasP8Vector = false;
+  HasP8Altivec = false;
   HasFCPSGN = false;
   HasFSQRT = false;
   HasFRE = false;
@@ -146,8 +147,7 @@ void PPCSubtarget::initSubtargetFeatures(StringRef CPU, StringRef FS) {
 /// hasLazyResolverStub - Return true if accesses to the specified global have
 /// to go through a dyld lazy resolution stub.  This means that an extra load
 /// is required to get the address of the global.
-bool PPCSubtarget::hasLazyResolverStub(const GlobalValue *GV,
-                                       const TargetMachine &TM) const {
+bool PPCSubtarget::hasLazyResolverStub(const GlobalValue *GV) const {
   // We never have stubs if HasLazyResolverStubs=false or if in static mode.
   if (!HasLazyResolverStubs || TM.getRelocationModel() == Reloc::Static)
     return false;

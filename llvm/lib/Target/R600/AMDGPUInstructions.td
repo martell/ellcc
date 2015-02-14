@@ -590,7 +590,7 @@ applied.
 
 def legalshift32 : ImmLeaf <i32, [{return Imm >=0 && Imm < 32;}]>;
 def bfemask : PatLeaf <(imm), [{return isMask_32(N->getZExtValue());}],
-                            SDNodeXForm<imm, [{ return CurDAG->getTargetConstant(CountTrailingOnes_32(N->getZExtValue()), MVT::i32);}]>>;
+                            SDNodeXForm<imm, [{ return CurDAG->getTargetConstant(countTrailingOnes(N->getZExtValue()), MVT::i32);}]>>;
 
 class BFEPattern <Instruction BFE> : Pat <
   (and (srl i32:$x, legalshift32:$y), bfemask:$z),
@@ -612,12 +612,14 @@ def umul24 : PatFrag <(ops node:$x, node:$y), (mul node:$x, node:$y)>;
 
 def cvt_rpi_i32_f32 : PatFrag <
   (ops node:$src),
-  (fp_to_sint (ffloor (fadd $src, FP_HALF)))
+  (fp_to_sint (ffloor (fadd $src, FP_HALF))),
+  [{ (void) N; return TM.Options.NoNaNsFPMath; }]
 >;
 
 def cvt_flr_i32_f32 : PatFrag <
   (ops node:$src),
-  (fp_to_sint (ffloor $src))
+  (fp_to_sint (ffloor $src)),
+  [{ (void)N; return TM.Options.NoNaNsFPMath; }]
 >;
 
 /*

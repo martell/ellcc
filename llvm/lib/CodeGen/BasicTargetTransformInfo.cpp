@@ -16,10 +16,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/BasicTTIImpl.h"
-#include "llvm/CodeGen/Passes.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/TargetTransformInfoImpl.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/Support/CommandLine.h"
 #include <utility>
 using namespace llvm;
@@ -33,4 +33,5 @@ cl::opt<unsigned>
                                     cl::desc("Threshold for partial unrolling"),
                                     cl::Hidden);
 
-BasicTTIImpl::BasicTTIImpl(const TargetMachine *TM) : BaseT(TM) {}
+BasicTTIImpl::BasicTTIImpl(const TargetMachine *TM, Function &F)
+    : BaseT(TM), ST(TM->getSubtargetImpl(F)), TLI(ST->getTargetLowering()) {}

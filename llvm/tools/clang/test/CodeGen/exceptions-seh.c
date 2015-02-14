@@ -1,4 +1,4 @@
-// RUN: %clang_cc1 %s -triple x86_64-pc-win32 -fexceptions -fms-extensions -emit-llvm -o - | FileCheck %s
+// RUN: %clang_cc1 %s -triple x86_64-pc-win32 -fms-extensions -emit-llvm -o - | FileCheck %s
 
 // FIXME: Perform this outlining automatically CodeGen.
 void try_body(int numerator, int denominator, int *myres) {
@@ -21,7 +21,7 @@ int safe_div(int numerator, int denominator, int *res) {
   return success;
 }
 // CHECK-LABEL: define i32 @safe_div(i32 %numerator, i32 %denominator, i32* %res)
-// CHECK: invoke void @try_body(i32 %{{.*}}, i32 %{{.*}}, i32* %{{.*}})
+// CHECK: invoke void @try_body(i32 %{{.*}}, i32 %{{.*}}, i32* %{{.*}}) #[[NOINLINE:[0-9]+]]
 // CHECK:       to label %{{.*}} unwind label %[[lpad:[^ ]*]]
 //
 // CHECK: [[lpad]]
@@ -51,7 +51,7 @@ int filter_expr_capture(void) {
 // CHECK-LABEL: define i32 @filter_expr_capture()
 // FIXMECHECK: %[[captures]] = call i8* @llvm.frameallocate(i32 4)
 // CHECK: store i32 42, i32* %[[r:[^ ,]*]]
-// CHECK: invoke void @j()
+// CHECK: invoke void @j() #[[NOINLINE]]
 //
 // CHECK: landingpad
 // CHECK-NEXT: catch i8* bitcast (i32 (i8*, i8*)* @"\01?filt$0@0@filter_expr_capture@@" to i8*)
@@ -81,7 +81,7 @@ int nested_try(void) {
 }
 // CHECK-LABEL: define i32 @nested_try()
 // CHECK: store i32 42, i32* %[[r:[^ ,]*]]
-// CHECK: invoke void @j()
+// CHECK: invoke void @j() #[[NOINLINE]]
 // CHECK:       to label %[[cont:[^ ]*]] unwind label %[[lpad:[^ ]*]]
 //
 // CHECK: [[cont]]
@@ -138,17 +138,22 @@ void basic_finally(void) {
 // CHECK:       to label %[[cont:[^ ]*]] unwind label %[[lpad:[^ ]*]]
 //
 // CHECK: [[cont]]
+// CHECK: br label %[[finally:[^ ]*]]
+//
+// CHECK: [[finally]]
 // CHECK: load i32* @g
 // CHECK: add i32 %{{.*}}, -1
 // CHECK: store i32 %{{.*}}, i32* @g
+// CHECK: icmp eq
+// CHECK: br i1 %{{.*}}, label
+//
 // CHECK: ret void
 //
 // CHECK: [[lpad]]
 // CHECK: landingpad { i8*, i32 } personality i8* bitcast (i32 (...)* @__C_specific_handler to i8*)
 // CHECK-NEXT: cleanup
-// CHECK: load i32* @g
-// CHECK: add i32 %{{.*}}, -1
-// CHECK: store i32 %{{.*}}, i32* @g
+// CHECK: br label %[[finally]]
+//
 // CHECK: resume
 
 int returns_int(void);
@@ -174,3 +179,5 @@ int except_return(void) {
 // CHECK: [[retbb]]
 // CHECK: %[[r:[^ ]*]] = load i32* %[[rv]]
 // CHECK: ret i32 %[[r]]
+
+// CHECK: attributes #[[NOINLINE]] = { {{.*noinline.*}} }

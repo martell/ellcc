@@ -28,13 +28,17 @@ namespace llvm {
 class PPCTTIImpl : public BasicTTIImplBase<PPCTTIImpl> {
   typedef BasicTTIImplBase<PPCTTIImpl> BaseT;
   typedef TargetTransformInfo TTI;
+  friend BaseT;
 
   const PPCSubtarget *ST;
   const PPCTargetLowering *TLI;
 
+  const PPCSubtarget *getST() const { return ST; }
+  const PPCTargetLowering *getTLI() const { return TLI; }
+
 public:
-  explicit PPCTTIImpl(const PPCTargetMachine *TM = nullptr)
-      : BaseT(TM), ST(TM->getSubtargetImpl()), TLI(ST->getTargetLowering()) {}
+  explicit PPCTTIImpl(const PPCTargetMachine *TM, Function &F)
+      : BaseT(TM), ST(TM->getSubtargetImpl(F)), TLI(ST->getTargetLowering()) {}
 
   // Provide value semantics. MSVC requires that we spell all of these out.
   PPCTTIImpl(const PPCTTIImpl &Arg)
@@ -67,8 +71,7 @@ public:
                          Type *Ty);
 
   TTI::PopcntSupportKind getPopcntSupport(unsigned TyWidth);
-  void getUnrollingPreferences(const Function *F, Loop *L,
-                               TTI::UnrollingPreferences &UP);
+  void getUnrollingPreferences(Loop *L, TTI::UnrollingPreferences &UP);
 
   /// @}
 

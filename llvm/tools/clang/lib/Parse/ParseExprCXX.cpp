@@ -894,11 +894,16 @@ Optional<unsigned> Parser::ParseLambdaIntroducer(LambdaIntroducer &Intro,
         // to save the necessary state, and restore it later.
         EnterExpressionEvaluationContext EC(Actions,
                                             Sema::PotentiallyEvaluated);
-        TryConsumeToken(tok::equal);
+        bool HadEquals = TryConsumeToken(tok::equal);
 
-        if (!SkippedInits)
+        if (!SkippedInits) {
+          // Warn on constructs that will change meaning when we implement N3922
+          if (!HadEquals && Tok.is(tok::l_brace)) {
+            Diag(Tok, diag::warn_init_capture_direct_list_init)
+              << FixItHint::CreateInsertion(Tok.getLocation(), "=");
+          }
           Init = ParseInitializer();
-        else if (Tok.is(tok::l_brace)) {
+        } else if (Tok.is(tok::l_brace)) {
           BalancedDelimiterTracker Braces(*this, tok::l_brace);
           Braces.consumeOpen();
           Braces.skipToEnd();
@@ -1084,6 +1089,11 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
     // GNU-style attributes must be parsed before the mutable specifier to be
     // compatible with GCC.
     MaybeParseGNUAttributes(Attr, &DeclEndLoc);
+
+    // MSVC-style attributes must be parsed before the mutable specifier to be
+    // compatible with MSVC.
+    while (Tok.is(tok::kw___declspec))
+      ParseMicrosoftDeclSpec(Attr);
 
     // Parse 'mutable'[opt].
     SourceLocation MutableLoc;
@@ -2509,8 +2519,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
 
     // If the user wrote ~T::T, correct it to T::~T.
     DeclaratorScopeObj DeclScopeObj(*this, SS);
-    if (!TemplateSpecified && //!ColonIsSacred &&
-        NextToken().is(tok::coloncolon)) {
+    if (!TemplateSpecified && NextToken().is(tok::coloncolon)) {
       // Don't let ParseOptionalCXXScopeSpecifier() "correct"
       // `int A; struct { ~A::A(); };` to `int A; struct { ~A:A(); };`,
       // it will confuse this recovery logic.
@@ -2522,6 +2531,8 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
       }
       if (ParseOptionalCXXScopeSpecifier(SS, ObjectType, EnteringContext))
         return true;
+      if (SS.isNotEmpty())
+        ObjectType = ParsedType();
       if (Tok.isNot(tok::identifier) || NextToken().is(tok::coloncolon) ||
           SS.isInvalid()) {
         Diag(TildeLoc, diag::err_destructor_tilde_scope);

@@ -22,8 +22,9 @@
 #ifndef LLVM_ANALYSIS_TARGETTRANSFORMINFO_H
 #define LLVM_ANALYSIS_TARGETTRANSFORMINFO_H
 
-#include "llvm/IR/Intrinsics.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/DataTypes.h"
 
@@ -32,6 +33,7 @@ namespace llvm {
 class Function;
 class GlobalValue;
 class Loop;
+class PreservedAnalyses;
 class Type;
 class User;
 class Value;
@@ -75,6 +77,17 @@ public:
   // We need to define the destructor out-of-line to define our sub-classes
   // out-of-line.
   ~TargetTransformInfo();
+
+  /// \brief Handle the invalidation of this information.
+  ///
+  /// When used as a result of \c TargetIRAnalysis this method will be called
+  /// when the function this was computed for changes. When it returns false,
+  /// the information is preserved across those changes.
+  bool invalidate(Function &, const PreservedAnalyses &) {
+    // FIXME: We should probably in some way ensure that the subtarget
+    // information for a function hasn't changed.
+    return false;
+  }
 
   /// \name Generic Target Information
   /// @{
@@ -204,6 +217,13 @@ public:
     /// exceed this cost. Set this to UINT_MAX to disable the loop body cost
     /// restriction.
     unsigned Threshold;
+    /// If complete unrolling could help other optimizations (e.g. InstSimplify)
+    /// to remove N% of instructions, then we can go beyond unroll threshold.
+    /// This value set the minimal percent for allowing that.
+    unsigned MinPercentOfOptimized;
+    /// The absolute cost threshold. We won't go beyond this even if complete
+    /// unrolling could result in optimizing out 90% of instructions.
+    unsigned AbsoluteThreshold;
     /// The cost threshold for the unrolled loop when optimizing for size (set
     /// to UINT_MAX to disable).
     unsigned OptSizeThreshold;
@@ -236,8 +256,7 @@ public:
   /// \brief Get target-customized preferences for the generic loop unrolling
   /// transformation. The caller will initialize UP with the current
   /// target-independent defaults.
-  void getUnrollingPreferences(const Function *F, Loop *L,
-                               UnrollingPreferences &UP) const;
+  void getUnrollingPreferences(Loop *L, UnrollingPreferences &UP) const;
 
   /// @}
 
@@ -312,6 +331,10 @@ public:
 
   /// \brief Return true if the hardware has a fast square-root instruction.
   bool haveFastSqrt(Type *Ty) const;
+
+  /// \brief Return the expected cost of supporting the floating point operation
+  /// of the specified type.
+  unsigned getFPOpCost(Type *Ty) const;
 
   /// \brief Return the expected cost of materializing for the given integer
   /// immediate of the specified type.
@@ -486,8 +509,7 @@ public:
   virtual unsigned getUserCost(const User *U) = 0;
   virtual bool hasBranchDivergence() = 0;
   virtual bool isLoweredToCall(const Function *F) = 0;
-  virtual void getUnrollingPreferences(const Function *F, Loop *L,
-                                       UnrollingPreferences &UP) = 0;
+  virtual void getUnrollingPreferences(Loop *L, UnrollingPreferences &UP) = 0;
   virtual bool isLegalAddImmediate(int64_t Imm) = 0;
   virtual bool isLegalICmpImmediate(int64_t Imm) = 0;
   virtual bool isLegalAddressingMode(Type *Ty, GlobalValue *BaseGV,
@@ -505,6 +527,7 @@ public:
   virtual bool shouldBuildLookupTables() = 0;
   virtual PopcntSupportKind getPopcntSupport(unsigned IntTyWidthInBit) = 0;
   virtual bool haveFastSqrt(Type *Ty) = 0;
+  virtual unsigned getFPOpCost(Type *Ty) = 0;
   virtual unsigned getIntImmCost(const APInt &Imm, Type *Ty) = 0;
   virtual unsigned getIntImmCost(unsigned Opc, unsigned Idx, const APInt &Imm,
                                  Type *Ty) = 0;
@@ -583,9 +606,8 @@ public:
   bool isLoweredToCall(const Function *F) override {
     return Impl.isLoweredToCall(F);
   }
-  void getUnrollingPreferences(const Function *F, Loop *L,
-                               UnrollingPreferences &UP) override {
-    return Impl.getUnrollingPreferences(F, L, UP);
+  void getUnrollingPreferences(Loop *L, UnrollingPreferences &UP) override {
+    return Impl.getUnrollingPreferences(L, UP);
   }
   bool isLegalAddImmediate(int64_t Imm) override {
     return Impl.isLegalAddImmediate(Imm);
@@ -621,6 +643,11 @@ public:
     return Impl.getPopcntSupport(IntTyWidthInBit);
   }
   bool haveFastSqrt(Type *Ty) override { return Impl.haveFastSqrt(Ty); }
+
+  unsigned getFPOpCost(Type *Ty) override {
+    return Impl.getFPOpCost(Ty);
+  }
+
   unsigned getIntImmCost(const APInt &Imm, Type *Ty) override {
     return Impl.getIntImmCost(Imm, Ty);
   }
@@ -706,12 +733,81 @@ template <typename T>
 TargetTransformInfo::TargetTransformInfo(T Impl)
     : TTIImpl(new Model<T>(Impl)) {}
 
+/// \brief Analysis pass providing the \c TargetTransformInfo.
+///
+/// The core idea of the TargetIRAnalysis is to expose an interface through
+/// which LLVM targets can analyze and provide information about the middle
+/// end's target-independent IR. This supports use cases such as target-aware
+/// cost modeling of IR constructs.
+///
+/// This is a function analysis because much of the cost modeling for targets
+/// is done in a subtarget specific way and LLVM supports compiling different
+/// functions targeting different subtargets in order to support runtime
+/// dispatch according to the observed subtarget.
+class TargetIRAnalysis {
+public:
+  typedef TargetTransformInfo Result;
+
+  /// \brief Opaque, unique identifier for this analysis pass.
+  static void *ID() { return (void *)&PassID; }
+
+  /// \brief Provide access to a name for this pass for debugging purposes.
+  static StringRef name() { return "TargetIRAnalysis"; }
+
+  /// \brief Default construct a target IR analysis.
+  ///
+  /// This will use the module's datalayout to construct a baseline
+  /// conservative TTI result.
+  TargetIRAnalysis();
+
+  /// \brief Construct an IR analysis pass around a target-provide callback.
+  ///
+  /// The callback will be called with a particular function for which the TTI
+  /// is needed and must return a TTI object for that function.
+  TargetIRAnalysis(std::function<Result(Function &)> TTICallback);
+
+  // Value semantics. We spell out the constructors for MSVC.
+  TargetIRAnalysis(const TargetIRAnalysis &Arg)
+      : TTICallback(Arg.TTICallback) {}
+  TargetIRAnalysis(TargetIRAnalysis &&Arg)
+      : TTICallback(std::move(Arg.TTICallback)) {}
+  TargetIRAnalysis &operator=(const TargetIRAnalysis &RHS) {
+    TTICallback = RHS.TTICallback;
+    return *this;
+  }
+  TargetIRAnalysis &operator=(TargetIRAnalysis &&RHS) {
+    TTICallback = std::move(RHS.TTICallback);
+    return *this;
+  }
+
+  Result run(Function &F);
+
+private:
+  static char PassID;
+
+  /// \brief The callback used to produce a result.
+  ///
+  /// We use a completely opaque callback so that targets can provide whatever
+  /// mechanism they desire for constructing the TTI for a given function.
+  ///
+  /// FIXME: Should we really use std::function? It's relatively inefficient.
+  /// It might be possible to arrange for even stateful callbacks to outlive
+  /// the analysis and thus use a function_ref which would be lighter weight.
+  /// This may also be less error prone as the callback is likely to reference
+  /// the external TargetMachine, and that reference needs to never dangle.
+  std::function<Result(Function &)> TTICallback;
+
+  /// \brief Helper function used as the callback in the default constructor.
+  static Result getDefaultTTI(Function &F);
+};
+
 /// \brief Wrapper pass for TargetTransformInfo.
 ///
 /// This pass can be constructed from a TTI object which it stores internally
 /// and is queried by passes.
 class TargetTransformInfoWrapperPass : public ImmutablePass {
-  TargetTransformInfo TTI;
+  TargetIRAnalysis TIRA;
+  Optional<TargetTransformInfo> TTI;
 
   virtual void anchor();
 
@@ -724,17 +820,16 @@ public:
   /// Use the constructor below or call one of the creation routines.
   TargetTransformInfoWrapperPass();
 
-  explicit TargetTransformInfoWrapperPass(TargetTransformInfo TTI);
+  explicit TargetTransformInfoWrapperPass(TargetIRAnalysis TIRA);
 
-  TargetTransformInfo &getTTI() { return TTI; }
-  const TargetTransformInfo &getTTI() const { return TTI; }
+  TargetTransformInfo &getTTI(Function &F);
 };
 
 /// \brief Create an analysis pass wrapper around a TTI object.
 ///
 /// This analysis pass just holds the TTI instance and makes it available to
 /// clients.
-ImmutablePass *createTargetTransformInfoWrapperPass(TargetTransformInfo TTI);
+ImmutablePass *createTargetTransformInfoWrapperPass(TargetIRAnalysis TIRA);
 
 } // End llvm namespace
 

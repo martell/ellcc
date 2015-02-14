@@ -35,7 +35,11 @@ const char *const kTsanOptionsEnv = "TSAN_OPTIONS";
 
 const int kTidBits = 13;
 const unsigned kMaxTid = 1 << kTidBits;
+#ifndef SANITIZER_GO
 const unsigned kMaxTidInClock = kMaxTid * 2;  // This includes msb 'freed' bit.
+#else
+const unsigned kMaxTidInClock = kMaxTid;  // Go does not track freed memory.
+#endif
 const int kClkBits = 42;
 const uptr kShadowStackSize = 64 * 1024;
 
@@ -55,12 +59,6 @@ const uptr kShadowMultiplier = kShadowSize * kShadowCnt / kShadowCell;
 const bool kCollectHistory = false;
 #else
 const bool kCollectHistory = true;
-#endif
-
-#if defined(TSAN_COLLECT_STATS) && TSAN_COLLECT_STATS
-const bool kCollectStats = true;
-#else
-const bool kCollectStats = false;
 #endif
 
 // The following "build consistency" machinery ensures that all source files

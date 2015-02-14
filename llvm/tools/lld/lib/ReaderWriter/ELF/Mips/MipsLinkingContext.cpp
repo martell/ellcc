@@ -71,11 +71,10 @@ void MipsLinkingContext::addPasses(PassManager &pm) {
   if (pass)
     pm.add(std::move(pass));
   ELFLinkingContext::addPasses(pm);
-  pm.add(std::unique_ptr<Pass>(new elf::MipsCtorsOrderPass()));
+  pm.add(llvm::make_unique<elf::MipsCtorsOrderPass>());
 }
 
-bool MipsLinkingContext::isDynamicRelocation(const DefinedAtom &,
-                                             const Reference &r) const {
+bool MipsLinkingContext::isDynamicRelocation(const Reference &r) const {
   if (r.kindNamespace() != Reference::KindNamespace::ELF)
     return false;
   assert(r.kindArch() == Reference::KindArch::Mips);
@@ -100,8 +99,7 @@ bool MipsLinkingContext::isCopyRelocation(const Reference &r) const {
   return false;
 }
 
-bool MipsLinkingContext::isPLTRelocation(const DefinedAtom &,
-                                         const Reference &r) const {
+bool MipsLinkingContext::isPLTRelocation(const Reference &r) const {
   if (r.kindNamespace() != Reference::KindNamespace::ELF)
     return false;
   assert(r.kindArch() == Reference::KindArch::Mips);

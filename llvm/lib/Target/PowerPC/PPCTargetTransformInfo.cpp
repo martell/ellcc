@@ -181,15 +181,15 @@ unsigned PPCTTIImpl::getIntImmCost(unsigned Opcode, unsigned Idx,
   return PPCTTIImpl::getIntImmCost(Imm, Ty);
 }
 
-void PPCTTIImpl::getUnrollingPreferences(const Function *F, Loop *L,
+void PPCTTIImpl::getUnrollingPreferences(Loop *L,
                                          TTI::UnrollingPreferences &UP) {
-  if (TM->getSubtarget<PPCSubtarget>(F).getDarwinDirective() == PPC::DIR_A2) {
+  if (ST->getDarwinDirective() == PPC::DIR_A2) {
     // The A2 is in-order with a deep pipeline, and concatenation unrolling
     // helps expose latency-hiding opportunities to the instruction scheduler.
     UP.Partial = UP.Runtime = true;
   }
 
-  BaseT::getUnrollingPreferences(F, L, UP);
+  BaseT::getUnrollingPreferences(L, UP);
 }
 
 unsigned PPCTTIImpl::getNumberOfRegisters(bool Vector) {
@@ -225,6 +225,12 @@ unsigned PPCTTIImpl::getMaxInterleaveFactor() {
   // FIXME: For lack of any better information, do no harm...
   if (Directive == PPC::DIR_E500mc || Directive == PPC::DIR_E5500)
     return 1;
+
+  // For P7 and P8, floating-point instructions have a 6-cycle latency and
+  // there are two execution units, so unroll by 12x for latency hiding.
+  if (Directive == PPC::DIR_PWR7 ||
+      Directive == PPC::DIR_PWR8)
+    return 12;
 
   // For most things, modern systems have two execution units (and
   // out-of-order execution).

@@ -537,6 +537,144 @@ static const char *GuessSymbolName(uint64_t value, SymbolAddressMap *AddrMap) {
   return SymbolName;
 }
 
+static void DumpCstringSection(MachOObjectFile *O, const char *sect,
+                               uint32_t sect_size, uint64_t sect_addr,
+                               bool print_addresses) {
+  for (uint32_t i = 0; i < sect_size; i++) {
+    if (print_addresses) {
+      if (O->is64Bit())
+        outs() << format("0x%016" PRIx64, sect_addr + i) << "  ";
+      else
+        outs() << format("0x%08" PRIx64, sect_addr + i) << "  ";
+    }
+    for (; i < sect_size && sect[i] != '\0'; i++) {
+      char p[2];
+      p[0] = sect[i];
+      p[1] = '\0';
+      outs().write_escaped(p);
+    }
+    if (i < sect_size && sect[i] == '\0')
+      outs() << "\n";
+  }
+}
+
+static void DumpLiteral4(uint32_t l, float f) {
+  outs() << format("0x%08" PRIx32, l);
+  if ((l & 0x7f800000) != 0x7f800000)
+    outs() << format(" (%.16e)\n", f);
+  else {
+    if (l == 0x7f800000)
+      outs() << " (+Infinity)\n";
+    else if (l == 0xff800000)
+      outs() << " (-Infinity)\n";
+    else if ((l & 0x00400000) == 0x00400000)
+      outs() << " (non-signaling Not-a-Number)\n";
+    else
+      outs() << " (signaling Not-a-Number)\n";
+  }
+}
+
+static void DumpLiteral4Section(MachOObjectFile *O, const char *sect,
+                                uint32_t sect_size, uint64_t sect_addr,
+                                bool print_addresses) {
+  for (uint32_t i = 0; i < sect_size; i += sizeof(float)) {
+    if (print_addresses) {
+      if (O->is64Bit())
+        outs() << format("0x%016" PRIx64, sect_addr + i) << "  ";
+      else
+        outs() << format("0x%08" PRIx64, sect_addr + i) << "  ";
+    }
+    float f;
+    memcpy(&f, sect + i, sizeof(float));
+    if (O->isLittleEndian() != sys::IsLittleEndianHost)
+      sys::swapByteOrder(f);
+    uint32_t l;
+    memcpy(&l, sect + i, sizeof(uint32_t));
+    if (O->isLittleEndian() != sys::IsLittleEndianHost)
+      sys::swapByteOrder(l);
+    DumpLiteral4(l, f);
+  }
+}
+
+static void DumpLiteral8(MachOObjectFile *O, uint32_t l0, uint32_t l1,
+                         double d) {
+  outs() << format("0x%08" PRIx32, l0) << " " << format("0x%08" PRIx32, l1);
+  uint32_t Hi, Lo;
+  if (O->isLittleEndian()) {
+    Hi = l1;
+    Lo = l0;
+  } else {
+    Hi = l0;
+    Lo = l1;
+  }
+  // Hi is the high word, so this is equivalent to if(isfinite(d))
+  if ((Hi & 0x7ff00000) != 0x7ff00000)
+    outs() << format(" (%.16e)\n", d);
+  else {
+    if (Hi == 0x7ff00000 && Lo == 0)
+      outs() << " (+Infinity)\n";
+    else if (Hi == 0xfff00000 && Lo == 0)
+      outs() << " (-Infinity)\n";
+    else if ((Hi & 0x00080000) == 0x00080000)
+      outs() << " (non-signaling Not-a-Number)\n";
+    else
+      outs() << " (signaling Not-a-Number)\n";
+  }
+}
+
+static void DumpLiteral8Section(MachOObjectFile *O, const char *sect,
+                                uint32_t sect_size, uint64_t sect_addr,
+                                bool print_addresses) {
+  for (uint32_t i = 0; i < sect_size; i += sizeof(double)) {
+    if (print_addresses) {
+      if (O->is64Bit())
+        outs() << format("0x%016" PRIx64, sect_addr + i) << "  ";
+      else
+        outs() << format("0x%08" PRIx64, sect_addr + i) << "  ";
+    }
+    double d;
+    memcpy(&d, sect + i, sizeof(double));
+    if (O->isLittleEndian() != sys::IsLittleEndianHost)
+      sys::swapByteOrder(d);
+    uint32_t l0, l1;
+    memcpy(&l0, sect + i, sizeof(uint32_t));
+    memcpy(&l1, sect + i + sizeof(uint32_t), sizeof(uint32_t));
+    if (O->isLittleEndian() != sys::IsLittleEndianHost) {
+      sys::swapByteOrder(l0);
+      sys::swapByteOrder(l1);
+    }
+    DumpLiteral8(O, l0, l1, d);
+  }
+}
+
+static void DumpLiteral16Section(MachOObjectFile *O, const char *sect,
+                                 uint32_t sect_size, uint64_t sect_addr,
+                                 bool print_addresses) {
+  for (uint32_t i = 0; i < sect_size; i += 16) {
+    if (print_addresses) {
+      if (O->is64Bit())
+        outs() << format("0x%016" PRIx64, sect_addr + i) << "  ";
+      else
+        outs() << format("0x%08" PRIx64, sect_addr + i) << "  ";
+    }
+    uint32_t l0, l1, l2, l3;
+    memcpy(&l0, sect + i, sizeof(uint32_t));
+    memcpy(&l1, sect + i + sizeof(uint32_t), sizeof(uint32_t));
+    memcpy(&l2, sect + i + 2 * sizeof(uint32_t), sizeof(uint32_t));
+    memcpy(&l3, sect + i + 3 * sizeof(uint32_t), sizeof(uint32_t));
+    if (O->isLittleEndian() != sys::IsLittleEndianHost) {
+      sys::swapByteOrder(l0);
+      sys::swapByteOrder(l1);
+      sys::swapByteOrder(l2);
+      sys::swapByteOrder(l3);
+    }
+    outs() << format("0x%08" PRIx32, l0) << " ";
+    outs() << format("0x%08" PRIx32, l1) << " ";
+    outs() << format("0x%08" PRIx32, l2) << " ";
+    outs() << format("0x%08" PRIx32, l3) << "\n";
+  }
+}
+
 static void DumpInitTermPointerSection(MachOObjectFile *O, const char *sect,
                                        uint32_t sect_size, uint64_t sect_addr,
                                        SymbolAddressMap *AddrMap,
@@ -616,7 +754,11 @@ static void DumpRawSectionContents(MachOObjectFile *O, const char *sect,
   }
 }
 
-static void DumpSectionContents(MachOObjectFile *O, bool verbose) {
+static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
+                             StringRef DisSegName, StringRef DisSectName);
+
+static void DumpSectionContents(StringRef Filename, MachOObjectFile *O,
+                                bool verbose) {
   SymbolAddressMap AddrMap;
   if (verbose)
     CreateSymbolAddressMap(O, &AddrMap);
@@ -642,15 +784,16 @@ static void DumpSectionContents(MachOObjectFile *O, bool verbose) {
           (SectName == DumpSectName)) {
         outs() << "Contents of (" << SegName << "," << SectName
                << ") section\n";
-        uint32_t section_type;
+        uint32_t section_flags;
         if (O->is64Bit()) {
           const MachO::section_64 Sec = O->getSection64(Ref);
-          section_type = Sec.flags & MachO::SECTION_TYPE;
+          section_flags = Sec.flags;
 
         } else {
           const MachO::section Sec = O->getSection(Ref);
-          section_type = Sec.flags & MachO::SECTION_TYPE;
+          section_flags = Sec.flags;
         }
+        uint32_t section_type = section_flags & MachO::SECTION_TYPE;
 
         StringRef BytesStr;
         Section.getContents(BytesStr);
@@ -659,12 +802,29 @@ static void DumpSectionContents(MachOObjectFile *O, bool verbose) {
         uint64_t sect_addr = Section.getAddress();
 
         if (verbose) {
+          if ((section_flags & MachO::S_ATTR_PURE_INSTRUCTIONS) ||
+              (section_flags & MachO::S_ATTR_SOME_INSTRUCTIONS)) {
+            DisassembleMachO(Filename, O, SegName, SectName);
+            continue;
+          }
           switch (section_type) {
           case MachO::S_REGULAR:
             DumpRawSectionContents(O, sect, sect_size, sect_addr);
             break;
           case MachO::S_ZEROFILL:
             outs() << "zerofill section and has no contents in the file\n";
+            break;
+          case MachO::S_CSTRING_LITERALS:
+            DumpCstringSection(O, sect, sect_size, sect_addr, verbose);
+            break;
+          case MachO::S_4BYTE_LITERALS:
+            DumpLiteral4Section(O, sect, sect_size, sect_addr, verbose);
+            break;
+          case MachO::S_8BYTE_LITERALS:
+            DumpLiteral8Section(O, sect, sect_size, sect_addr, verbose);
+            break;
+          case MachO::S_16BYTE_LITERALS:
+            DumpLiteral16Section(O, sect, sect_size, sect_addr, verbose);
             break;
           case MachO::S_MOD_INIT_FUNC_POINTERS:
           case MachO::S_MOD_TERM_FUNC_POINTERS:
@@ -722,8 +882,6 @@ static bool checkMachOAndArchFlags(ObjectFile *O, StringRef Filename) {
   return true;
 }
 
-static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF);
-
 // ProcessMachO() is passed a single opened Mach-O file, which may be an
 // archive member and or in a slice of a universal file.  It prints the
 // the file name and header info and then processes it according to the
@@ -746,7 +904,7 @@ static void ProcessMachO(StringRef Filename, MachOObjectFile *MachOOF,
   }
 
   if (Disassemble)
-    DisassembleMachO(Filename, MachOOF);
+    DisassembleMachO(Filename, MachOOF, "__TEXT", "__text");
   if (IndirectSymbols)
     PrintIndirectSymbols(MachOOF, true);
   if (DataInCode)
@@ -760,7 +918,7 @@ static void ProcessMachO(StringRef Filename, MachOObjectFile *MachOOF,
   if (SectionContents)
     PrintSectionContents(MachOOF);
   if (DumpSections.size() != 0)
-    DumpSectionContents(MachOOF, true);
+    DumpSectionContents(Filename, MachOOF, true);
   if (SymbolTable)
     PrintSymbolTable(MachOOF);
   if (UnwindInfo)
@@ -1489,34 +1647,18 @@ int SymbolizerGetOpInfo(void *DisInfo, uint64_t Pc, uint64_t Offset,
       const char *name = SymName.data();
       op_info->AddSymbol.Present = 1;
       op_info->AddSymbol.Name = name;
-      if (value != 0) {
-        switch (r_type) {
-        case MachO::ARM_RELOC_HALF:
-          if ((r_length & 0x1) == 1) {
-            op_info->Value = value << 16 | other_half;
-            op_info->VariantKind = LLVMDisassembler_VariantKind_ARM_HI16;
-          } else {
-            op_info->Value = other_half << 16 | value;
-            op_info->VariantKind = LLVMDisassembler_VariantKind_ARM_LO16;
-          }
-          break;
-        default:
-          break;
+      switch (r_type) {
+      case MachO::ARM_RELOC_HALF:
+        if ((r_length & 0x1) == 1) {
+          op_info->Value = value << 16 | other_half;
+          op_info->VariantKind = LLVMDisassembler_VariantKind_ARM_HI16;
+        } else {
+          op_info->Value = other_half << 16 | value;
+          op_info->VariantKind = LLVMDisassembler_VariantKind_ARM_LO16;
         }
-      } else {
-        switch (r_type) {
-        case MachO::ARM_RELOC_HALF:
-          if ((r_length & 0x1) == 1) {
-            op_info->Value = value << 16 | other_half;
-            op_info->VariantKind = LLVMDisassembler_VariantKind_ARM_HI16;
-          } else {
-            op_info->Value = other_half << 16 | value;
-            op_info->VariantKind = LLVMDisassembler_VariantKind_ARM_LO16;
-          }
-          break;
-        default:
-          break;
-        }
+        break;
+      default:
+        break;
       }
       return 1;
     }
@@ -2547,7 +2689,8 @@ static void emitComments(raw_svector_ostream &CommentStream,
   CommentStream.resync();
 }
 
-static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF) {
+static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
+                             StringRef DisSegName, StringRef DisSectName) {
   const char *McpuDefault = nullptr;
   const Target *ThumbTarget = nullptr;
   const Target *TheTarget = GetTarget(MachOOF, &McpuDefault, &ThumbTarget);
@@ -2715,28 +2858,18 @@ static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF) {
     diContext.reset(DIContext::getDWARFContext(*DbgObj));
   }
 
-  // TODO: For now this only disassembles the (__TEXT,__text) section (see the
-  // checks in the code below at the top of this loop).  It should allow a
-  // darwin otool(1) like -s option to disassemble any named segment & section
-  // that is marked as containing instructions with the attributes
-  // S_ATTR_PURE_INSTRUCTIONS or S_ATTR_SOME_INSTRUCTIONS in the flags field of
-  // the section structure.
-  outs() << "(__TEXT,__text) section\n";
+  if (DumpSections.size() == 0)
+    outs() << "(" << DisSegName << "," << DisSectName << ") section\n";
 
   for (unsigned SectIdx = 0; SectIdx != Sections.size(); SectIdx++) {
-
-    bool SectIsText = Sections[SectIdx].isText();
-    if (SectIsText == false)
-      continue;
-
     StringRef SectName;
-    if (Sections[SectIdx].getName(SectName) || SectName != "__text")
-      continue; // Skip non-text sections
+    if (Sections[SectIdx].getName(SectName) || SectName != DisSectName)
+      continue;
 
     DataRefImpl DR = Sections[SectIdx].getRawDataRefImpl();
 
     StringRef SegmentName = MachOOF->getSectionFinalSegmentName(DR);
-    if (SegmentName != "__TEXT")
+    if (SegmentName != DisSegName)
       continue;
 
     StringRef BytesStr;

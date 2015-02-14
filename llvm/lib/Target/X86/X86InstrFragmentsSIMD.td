@@ -12,6 +12,17 @@
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
+// MMX specific DAG Nodes.
+//===----------------------------------------------------------------------===//
+
+// Low word of MMX to GPR.
+def MMX_X86movd2w : SDNode<"X86ISD::MMX_MOVD2W", SDTypeProfile<1, 1,
+                            [SDTCisVT<0, i32>, SDTCisVT<1, x86mmx>]>>;
+// GPR to low word of MMX.
+def MMX_X86movw2d : SDNode<"X86ISD::MMX_MOVW2D", SDTypeProfile<1, 1,
+                            [SDTCisVT<0, x86mmx>, SDTCisVT<1, i32>]>>;
+
+//===----------------------------------------------------------------------===//
 // MMX Pattern Fragments
 //===----------------------------------------------------------------------===//
 
@@ -433,7 +444,7 @@ def alignedloadv8i64  : PatFrag<(ops node:$ptr),
 // setting a feature bit in the processor (on startup, for example).
 // Opteron 10h and later implement such a feature.
 def memop : PatFrag<(ops node:$ptr), (load node:$ptr), [{
-  return    Subtarget->hasVectorUAMem()
+  return    Subtarget->hasSSEUnalignedMem()
          || cast<LoadSDNode>(N)->getAlignment() >= 16;
 }]>;
 
@@ -445,18 +456,6 @@ def memopfsf64 : PatFrag<(ops node:$ptr), (f64   (memop node:$ptr))>;
 def memopv4f32 : PatFrag<(ops node:$ptr), (v4f32 (memop node:$ptr))>;
 def memopv2f64 : PatFrag<(ops node:$ptr), (v2f64 (memop node:$ptr))>;
 def memopv2i64 : PatFrag<(ops node:$ptr), (v2i64 (memop node:$ptr))>;
-
-// 256-bit memop pattern fragments
-// NOTE: all 256-bit integer vector loads are promoted to v4i64
-def memopv8f32 : PatFrag<(ops node:$ptr), (v8f32 (memop node:$ptr))>;
-def memopv4f64 : PatFrag<(ops node:$ptr), (v4f64 (memop node:$ptr))>;
-def memopv4i64 : PatFrag<(ops node:$ptr), (v4i64 (memop node:$ptr))>;
-
-// 512-bit memop pattern fragments
-def memopv16f32 : PatFrag<(ops node:$ptr), (v16f32 (memop node:$ptr))>;
-def memopv8f64  : PatFrag<(ops node:$ptr), (v8f64  (memop node:$ptr))>;
-def memopv16i32 : PatFrag<(ops node:$ptr), (v16i32 (memop node:$ptr))>;
-def memopv8i64  : PatFrag<(ops node:$ptr), (v8i64  (memop node:$ptr))>;
 
 // SSSE3 uses MMX registers for some instructions. They aren't aligned on a
 // 16-byte boundary.

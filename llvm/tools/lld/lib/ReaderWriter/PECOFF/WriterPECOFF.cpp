@@ -148,6 +148,7 @@ public:
   }
 
   void setNumberOfSections(uint32_t num) { _coffHeader.NumberOfSections = num; }
+  void setNumberOfSymbols(uint32_t num) { _coffHeader.NumberOfSymbols = num; }
 
   void setAddressOfEntryPoint(uint32_t address) {
     _peHeader.AddressOfEntryPoint = address;
@@ -186,13 +187,24 @@ public:
   }
 
   uint32_t addSectionName(StringRef sectionName) {
-    if (_stringTable.empty())
-      _stringTable.insert(_stringTable.begin(), 4, 0);
+    if (_stringTable.empty()) {
+      // The string table immediately follows the symbol table.
+      // We don't really need a symbol table, but some tools (e.g. dumpbin)
+      // don't like zero-length symbol table.
+      // Make room for the empty symbol slot, which occupies 18 byte.
+      // We also need to reserve 4 bytes for the string table header.
+      int size = sizeof(llvm::object::coff_symbol16) + 4;
+      _stringTable.insert(_stringTable.begin(), size, 0);
+      // Set the name of the dummy symbol to the first string table entry.
+      // It's better than letting dumpbin print out a garabage as a symbol name.
+      char *off = _stringTable.data() + 4;
+      *reinterpret_cast<ulittle32_t *>(off) = 4;
+    }
     uint32_t offset = _stringTable.size();
     _stringTable.insert(_stringTable.end(), sectionName.begin(),
                         sectionName.end());
     _stringTable.push_back('\0');
-    return offset;
+    return offset - sizeof(llvm::object::coff_symbol16);
   }
 
   uint64_t size() const override { return _stringTable.size(); }
@@ -200,7 +212,8 @@ public:
   void write(uint8_t *buffer) override {
     if (_stringTable.empty())
       return;
-    *reinterpret_cast<ulittle32_t *>(_stringTable.data()) = _stringTable.size();
+    char *off = _stringTable.data() + sizeof(llvm::object::coff_symbol16);
+    *reinterpret_cast<ulittle32_t *>(off) = _stringTable.size();
     std::memcpy(buffer, _stringTable.data(), _stringTable.size());
   }
 
@@ -647,7 +660,8 @@ void AtomChunk::applyRelocationsX86(uint8_t *buffer,
       auto relocSite32 = reinterpret_cast<ulittle32_t *>(
           buffer + layout->_fileOffset + ref->offsetInAtom());
       auto relocSite16 = reinterpret_cast<ulittle16_t *>(relocSite32);
-      uint64_t targetAddr = atomRva[ref->target()];
+      const Atom *target = ref->target();
+      uint64_t targetAddr = atomRva[target];
       // Also account for whatever offset is already stored at the relocation
       // site.
       switch (ref->kindValue()) {
@@ -656,7 +670,10 @@ void AtomChunk::applyRelocationsX86(uint8_t *buffer,
         break;
       case llvm::COFF::IMAGE_REL_I386_DIR32:
         // Set target's 32-bit VA.
-        *relocSite32 += targetAddr + imageBaseAddress;
+        if (auto *abs = dyn_cast<AbsoluteAtom>(target))
+          *relocSite32 += abs->value();
+        else
+          *relocSite32 += targetAddr + imageBaseAddress;
         break;
       case llvm::COFF::IMAGE_REL_I386_DIR32NB:
         // Set target's 32-bit RVA.
@@ -1154,11 +1171,11 @@ void PECOFFWriter::build(const File &linkedFile) {
   }
 
   setImageSizeOnDisk();
-  // N.B. Currently released versions of dumpbin do not appropriately handle
-  // symbol tables which NumberOfSymbols set to zero but a non-zero
-  // PointerToSymbolTable.
-  if (stringTable->size())
+
+  if (stringTable->size()) {
     peHeader->setPointerToSymbolTable(stringTable->fileOffset());
+    peHeader->setNumberOfSymbols(1);
+  }
 
   for (std::unique_ptr<Chunk> &chunk : _chunks) {
     SectionChunk *section = dyn_cast<SectionChunk>(chunk.get());

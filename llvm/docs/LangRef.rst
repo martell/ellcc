@@ -588,7 +588,7 @@ iteration. The maximum alignment is ``1 << 29``.
 
 Globals can also have a :ref:`DLL storage class <dllstorageclass>`.
 
-Variables and aliasaes can have a
+Variables and aliases can have a
 :ref:`Thread Local Storage Model <tls_model>`.
 
 Syntax::
@@ -1236,9 +1236,12 @@ example:
     normally. This produces undefined behavior at runtime if the
     function ever does dynamically return.
 ``nounwind``
-    This function attribute indicates that the function never returns
-    with an unwind or exceptional control flow. If the function does
-    unwind, its runtime behavior is undefined.
+    This function attribute indicates that the function never raises an
+    exception. If the function does raise an exception, its runtime
+    behavior is undefined. However, functions marked nounwind may still
+    trap or generate asynchronous exceptions. Exception handling schemes
+    that are recognized by LLVM to handle asynchronous exceptions, such
+    as SEH, will still provide their implementation defined semantics.
 ``optnone``
     This function attribute indicates that the function is not optimized
     by any optimization or code generator passes with the

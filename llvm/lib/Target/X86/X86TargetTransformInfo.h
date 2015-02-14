@@ -28,16 +28,19 @@ namespace llvm {
 class X86TTIImpl : public BasicTTIImplBase<X86TTIImpl> {
   typedef BasicTTIImplBase<X86TTIImpl> BaseT;
   typedef TargetTransformInfo TTI;
+  friend BaseT;
 
   const X86Subtarget *ST;
   const X86TargetLowering *TLI;
 
   unsigned getScalarizationOverhead(Type *Ty, bool Insert, bool Extract);
 
+  const X86Subtarget *getST() const { return ST; }
+  const X86TargetLowering *getTLI() const { return TLI; }
+
 public:
-  explicit X86TTIImpl(const X86TargetMachine *TM = nullptr)
-      : BaseT(TM), ST(TM ? TM->getSubtargetImpl() : nullptr),
-        TLI(ST ? ST->getTargetLowering() : nullptr) {}
+  explicit X86TTIImpl(const X86TargetMachine *TM, Function &F)
+      : BaseT(TM), ST(TM->getSubtargetImpl(F)), TLI(ST->getTargetLowering()) {}
 
   // Provide value semantics. MSVC requires that we spell all of these out.
   X86TTIImpl(const X86TTIImpl &Arg)
@@ -103,7 +106,6 @@ public:
 
   /// @}
 };
-;
 
 } // end namespace llvm
 

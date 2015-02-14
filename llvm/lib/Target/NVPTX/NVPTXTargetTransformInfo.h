@@ -28,26 +28,33 @@ namespace llvm {
 class NVPTXTTIImpl : public BasicTTIImplBase<NVPTXTTIImpl> {
   typedef BasicTTIImplBase<NVPTXTTIImpl> BaseT;
   typedef TargetTransformInfo TTI;
+  friend BaseT;
 
+  const NVPTXSubtarget *ST;
   const NVPTXTargetLowering *TLI;
 
+  const NVPTXSubtarget *getST() const { return ST; };
+  const NVPTXTargetLowering *getTLI() const { return TLI; };
+
 public:
-  explicit NVPTXTTIImpl(const NVPTXTargetMachine *TM = nullptr)
-      : BaseT(TM),
-        TLI(TM ? TM->getSubtargetImpl()->getTargetLowering() : nullptr) {}
+  explicit NVPTXTTIImpl(const NVPTXTargetMachine *TM)
+      : BaseT(TM), ST(TM->getSubtargetImpl()), TLI(ST->getTargetLowering()) {}
 
   // Provide value semantics. MSVC requires that we spell all of these out.
   NVPTXTTIImpl(const NVPTXTTIImpl &Arg)
-      : BaseT(static_cast<const BaseT &>(Arg)), TLI(Arg.TLI) {}
+      : BaseT(static_cast<const BaseT &>(Arg)), ST(Arg.ST), TLI(Arg.TLI) {}
   NVPTXTTIImpl(NVPTXTTIImpl &&Arg)
-      : BaseT(std::move(static_cast<BaseT &>(Arg))), TLI(std::move(Arg.TLI)) {}
+      : BaseT(std::move(static_cast<BaseT &>(Arg))), ST(std::move(Arg.ST)),
+        TLI(std::move(Arg.TLI)) {}
   NVPTXTTIImpl &operator=(const NVPTXTTIImpl &RHS) {
     BaseT::operator=(static_cast<const BaseT &>(RHS));
+    ST = RHS.ST;
     TLI = RHS.TLI;
     return *this;
   }
   NVPTXTTIImpl &operator=(NVPTXTTIImpl &&RHS) {
     BaseT::operator=(std::move(static_cast<BaseT &>(RHS)));
+    ST = std::move(RHS.ST);
     TLI = std::move(RHS.TLI);
     return *this;
   }

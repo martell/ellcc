@@ -64,11 +64,13 @@ void Token::dump(raw_ostream &os) const {
     CASE(kw_exclude_file)
     CASE(kw_group)
     CASE(kw_hidden)
+    CASE(kw_input)
     CASE(kw_keep)
     CASE(kw_provide)
     CASE(kw_provide_hidden)
     CASE(kw_only_if_ro)
     CASE(kw_only_if_rw)
+    CASE(kw_output)
     CASE(kw_output_arch)
     CASE(kw_output_format)
     CASE(kw_overlay)
@@ -240,66 +242,18 @@ bool Lexer::canStartNumber(char c) const {
 }
 
 bool Lexer::canContinueNumber(char c) const {
-  switch (c) {
-  // Digits
-  case '0': case '1': case '2': case '3': case '4': case '5': case '6':
-  case '7': case '8': case '9':
-  case 'A': case 'B': case 'C': case 'D': case 'E': case 'F':
-  case 'a': case 'b': case 'c': case 'd': case 'e': case 'f':
-  // Hex marker
-  case 'x': case 'X':
-  // Type suffix
-  case 'h': case 'H': case 'o': case 'O':
-  // Scale suffix
-  case 'M': case 'K':
-    return true;
-  default:
-    return false;
-  }
+  // [xX] = hex marker, [hHoO] = type suffix, [MK] = scale suffix.
+  return strchr("0123456789ABCDEFabcdefxXhHoOMK", c);
 }
 
 bool Lexer::canStartName(char c) const {
-  switch (c) {
-  case 'A': case 'B': case 'C': case 'D': case 'E': case 'F': case 'G':
-  case 'H': case 'I': case 'J': case 'K': case 'L': case 'M': case 'N':
-  case 'O': case 'P': case 'Q': case 'R': case 'S': case 'T': case 'U':
-  case 'V': case 'W': case 'X': case 'Y': case 'Z':
-  case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g':
-  case 'h': case 'i': case 'j': case 'k': case 'l': case 'm': case 'n':
-  case 'o': case 'p': case 'q': case 'r': case 's': case 't': case 'u':
-  case 'v': case 'w': case 'x': case 'y': case 'z':
-  case '_': case '.': case '$': case '/': case '\\':
-  case '*':
-    return true;
-  default:
-    return false;
-  }
+  return strchr(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_.$/\\*", c);
 }
 
 bool Lexer::canContinueName(char c) const {
-  switch (c) {
-  case 'A': case 'B': case 'C': case 'D': case 'E': case 'F': case 'G':
-  case 'H': case 'I': case 'J': case 'K': case 'L': case 'M': case 'N':
-  case 'O': case 'P': case 'Q': case 'R': case 'S': case 'T': case 'U':
-  case 'V': case 'W': case 'X': case 'Y': case 'Z':
-  case 'a': case 'b': case 'c': case 'd': case 'e': case 'f': case 'g':
-  case 'h': case 'i': case 'j': case 'k': case 'l': case 'm': case 'n':
-  case 'o': case 'p': case 'q': case 'r': case 's': case 't': case 'u':
-  case 'v': case 'w': case 'x': case 'y': case 'z':
-  case '0': case '1': case '2': case '3': case '4': case '5': case '6':
-  case '7': case '8': case '9':
-  case '_': case '.': case '$': case '/': case '\\': case '~': case '=':
-  case '+':
-  case '[':
-  case ']':
-  case '*':
-  case '?':
-  case '-':
-  case ':':
-    return true;
-  default:
-    return false;
-  }
+  return strchr("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+                "0123456789_.$/\\~=+[]*?-:", c);
 }
 
 /// Helper function to split a StringRef in two at the nth character.
@@ -512,9 +466,11 @@ void Lexer::lex(Token &tok) {
             .Case("EXCLUDE_FILE", Token::kw_exclude_file)
             .Case("GROUP", Token::kw_group)
             .Case("HIDDEN", Token::kw_hidden)
+            .Case("INPUT", Token::kw_input)
             .Case("KEEP", Token::kw_keep)
             .Case("ONLY_IF_RO", Token::kw_only_if_ro)
             .Case("ONLY_IF_RW", Token::kw_only_if_rw)
+            .Case("OUTPUT", Token::kw_output)
             .Case("OUTPUT_ARCH", Token::kw_output_arch)
             .Case("OUTPUT_FORMAT", Token::kw_output_format)
             .Case("OVERLAY", Token::kw_overlay)
@@ -550,23 +506,22 @@ void Lexer::skipWhitespace() {
       break;
     // Potential comment.
     case '/':
-      if (_buffer.size() >= 2 && _buffer[1] == '*') {
-        // Skip starting /*
-        _buffer = _buffer.drop_front(2);
-        // If the next char is also a /, it's not the end.
-        if (!_buffer.empty() && _buffer[0] == '/')
-          _buffer = _buffer.drop_front();
-
-        // Scan for /'s. We're done if it is preceded by a *.
-        while (true) {
-          if (_buffer.empty())
-            break;
-          _buffer = _buffer.drop_front();
-          if (_buffer.data()[-1] == '/' && _buffer.data()[-2] == '*')
-            break;
-        }
-      } else
+      if (_buffer.size() <= 1 || _buffer[1] != '*')
         return;
+      // Skip starting /*
+      _buffer = _buffer.drop_front(2);
+      // If the next char is also a /, it's not the end.
+      if (!_buffer.empty() && _buffer[0] == '/')
+        _buffer = _buffer.drop_front();
+
+      // Scan for /'s. We're done if it is preceded by a *.
+      while (true) {
+        if (_buffer.empty())
+          break;
+        _buffer = _buffer.drop_front();
+        if (_buffer.data()[-1] == '/' && _buffer.data()[-2] == '*')
+          break;
+      }
       break;
     default:
       return;
@@ -890,60 +845,74 @@ void Sections::dump(raw_ostream &os) const {
 }
 
 // Parser functions
-LinkerScript *Parser::parse() {
+std::error_code Parser::parse() {
   // Get the first token.
   _lex.lex(_tok);
   // Parse top level commands.
   while (true) {
     switch (_tok._kind) {
     case Token::eof:
-      return &_script;
+      return std::error_code();
     case Token::semicolon:
       consumeToken();
       break;
+    case Token::kw_output: {
+      auto output = parseOutput();
+      if (!output)
+        return LinkerScriptReaderError::parse_error;
+      _script._commands.push_back(output);
+      break;
+    }
     case Token::kw_output_format: {
       auto outputFormat = parseOutputFormat();
       if (!outputFormat)
-        return nullptr;
+        return LinkerScriptReaderError::parse_error;
       _script._commands.push_back(outputFormat);
       break;
     }
     case Token::kw_output_arch: {
       auto outputArch = parseOutputArch();
       if (!outputArch)
-        return nullptr;
+        return LinkerScriptReaderError::parse_error;
       _script._commands.push_back(outputArch);
       break;
     }
+    case Token::kw_input: {
+      Input *input = parsePathList<Input>();
+      if (!input)
+        return LinkerScriptReaderError::parse_error;
+      _script._commands.push_back(input);
+      break;
+    }
     case Token::kw_group: {
-      auto group = parseGroup();
+      Group *group = parsePathList<Group>();
       if (!group)
-        return nullptr;
+        return LinkerScriptReaderError::parse_error;
       _script._commands.push_back(group);
       break;
     }
     case Token::kw_as_needed:
       // Not allowed at top level.
       error(_tok, "AS_NEEDED not allowed at top level.");
-      return nullptr;
+      return LinkerScriptReaderError::parse_error;
     case Token::kw_entry: {
       Entry *entry = parseEntry();
       if (!entry)
-        return nullptr;
+        return LinkerScriptReaderError::parse_error;
       _script._commands.push_back(entry);
       break;
     }
     case Token::kw_search_dir: {
       SearchDir *searchDir = parseSearchDir();
       if (!searchDir)
-        return nullptr;
+        return LinkerScriptReaderError::parse_error;
       _script._commands.push_back(searchDir);
       break;
     }
     case Token::kw_sections: {
       Sections *sections = parseSections();
       if (!sections)
-        return nullptr;
+        return LinkerScriptReaderError::parse_error;
       _script._commands.push_back(sections);
       break;
     }
@@ -953,18 +922,17 @@ LinkerScript *Parser::parse() {
     case Token::kw_provide_hidden: {
       const Command *cmd = parseSymbolAssignment();
       if (!cmd)
-        return nullptr;
+        return LinkerScriptReaderError::parse_error;
       _script._commands.push_back(cmd);
       break;
     }
     default:
       // Unexpected.
       error(_tok, "expected linker script command");
-      return nullptr;
+      return LinkerScriptReaderError::parse_error;
     }
   }
-
-  return nullptr;
+  return LinkerScriptReaderError::parse_error;
 }
 
 const Expression *Parser::parseFunctionCall() {
@@ -1211,6 +1179,27 @@ const Expression *Parser::parseTernaryCondOp(const Expression *lhs) {
   return new (_alloc) TernaryConditional(lhs, trueExpr, falseExpr);
 }
 
+// Parse OUTPUT(ident)
+Output *Parser::parseOutput() {
+  assert(_tok._kind == Token::kw_output && "Expected OUTPUT");
+  consumeToken();
+  if (!expectAndConsume(Token::l_paren, "expected ("))
+    return nullptr;
+
+  if (_tok._kind != Token::identifier) {
+    error(_tok, "Expected identifier in OUTPUT.");
+    return nullptr;
+  }
+
+  auto ret = new (_alloc) Output(_tok._range);
+  consumeToken();
+
+  if (!expectAndConsume(Token::r_paren, "expected )"))
+    return nullptr;
+
+  return ret;
+}
+
 // Parse OUTPUT_FORMAT(ident)
 OutputFormat *Parser::parseOutputFormat() {
   assert(_tok._kind == Token::kw_output_format && "Expected OUTPUT_FORMAT!");
@@ -1266,15 +1255,13 @@ OutputArch *Parser::parseOutputArch() {
   return ret;
 }
 
-// Parse GROUP(file ...)
-Group *Parser::parseGroup() {
-  assert(_tok._kind == Token::kw_group && "Expected GROUP!");
+// Parse file list for INPUT or GROUP
+template<class T> T *Parser::parsePathList() {
   consumeToken();
   if (!expectAndConsume(Token::l_paren, "expected ("))
     return nullptr;
 
   std::vector<Path> paths;
-
   while (_tok._kind == Token::identifier || _tok._kind == Token::libname ||
          _tok._kind == Token::kw_as_needed) {
     switch (_tok._kind) {
@@ -1294,13 +1281,9 @@ Group *Parser::parseGroup() {
       llvm_unreachable("Invalid token.");
     }
   }
-
-  auto ret = new (_alloc) Group(paths);
-
   if (!expectAndConsume(Token::r_paren, "expected )"))
     return nullptr;
-
-  return ret;
+  return new (_alloc) T(paths);
 }
 
 // Parse AS_NEEDED(file ...)

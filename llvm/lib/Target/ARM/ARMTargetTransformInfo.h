@@ -28,6 +28,7 @@ namespace llvm {
 class ARMTTIImpl : public BasicTTIImplBase<ARMTTIImpl> {
   typedef BasicTTIImplBase<ARMTTIImpl> BaseT;
   typedef TargetTransformInfo TTI;
+  friend BaseT;
 
   const ARMSubtarget *ST;
   const ARMTargetLowering *TLI;
@@ -36,10 +37,12 @@ class ARMTTIImpl : public BasicTTIImplBase<ARMTTIImpl> {
   /// are set if the result needs to be inserted and/or extracted from vectors.
   unsigned getScalarizationOverhead(Type *Ty, bool Insert, bool Extract);
 
+  const ARMSubtarget *getST() const { return ST; }
+  const ARMTargetLowering *getTLI() const { return TLI; }
+
 public:
-  explicit ARMTTIImpl(const ARMBaseTargetMachine *TM = nullptr)
-      : BaseT(TM), ST(TM ? TM->getSubtargetImpl() : nullptr),
-        TLI(ST ? ST->getTargetLowering() : nullptr) {}
+  explicit ARMTTIImpl(const ARMBaseTargetMachine *TM, Function &F)
+      : BaseT(TM), ST(TM->getSubtargetImpl(F)), TLI(ST->getTargetLowering()) {}
 
   // Provide value semantics. MSVC requires that we spell all of these out.
   ARMTTIImpl(const ARMTTIImpl &Arg)
@@ -110,6 +113,8 @@ public:
   unsigned getVectorInstrCost(unsigned Opcode, Type *Val, unsigned Index);
 
   unsigned getAddressComputationCost(Type *Val, bool IsComplex);
+
+  unsigned getFPOpCost(Type *Ty);
 
   unsigned getArithmeticInstrCost(
       unsigned Opcode, Type *Ty,

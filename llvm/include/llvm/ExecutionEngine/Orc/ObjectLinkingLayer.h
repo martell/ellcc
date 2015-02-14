@@ -14,6 +14,7 @@
 #ifndef LLVM_EXECUTIONENGINE_ORC_OBJECTLINKINGLAYER_H
 #define LLVM_EXECUTIONENGINE_ORC_OBJECTLINKINGLAYER_H
 
+#include "JITSymbol.h"
 #include "LookasideRTDyldMM.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
@@ -24,6 +25,7 @@ namespace llvm {
 
 class ObjectLinkingLayerBase {
 protected:
+
   /// @brief Holds a set of objects to be allocated/linked as a unit in the JIT.
   ///
   /// An instance of this class will be created for each set of objects added
@@ -48,7 +50,7 @@ protected:
       return RTDyld->loadObject(Obj);
     }
 
-    uint64_t getSymbolAddress(StringRef Name, bool ExportedSymbolsOnly) {
+    TargetAddress getSymbolAddress(StringRef Name, bool ExportedSymbolsOnly) {
       if (ExportedSymbolsOnly)
         return RTDyld->getExportedSymbolLoadAddress(Name);
       return RTDyld->getSymbolLoadAddress(Name);
@@ -61,19 +63,29 @@ protected:
       RTDyld->resolveRelocations();
       RTDyld->registerEHFrames();
       MM->finalizeMemory();
+      OwnedBuffers.clear();
       State = Finalized;
     }
 
-    void mapSectionAddress(const void *LocalAddress, uint64_t TargetAddress) {
+    void mapSectionAddress(const void *LocalAddress, TargetAddress TargetAddr) {
       assert((State != Finalized) &&
              "Attempting to remap sections for finalized objects.");
-      RTDyld->mapSectionAddress(LocalAddress, TargetAddress);
+      RTDyld->mapSectionAddress(LocalAddress, TargetAddr);
+    }
+
+    void takeOwnershipOfBuffer(std::unique_ptr<MemoryBuffer> B) {
+      OwnedBuffers.push_back(std::move(B));
     }
 
   private:
     std::unique_ptr<RTDyldMemoryManager> MM;
     std::unique_ptr<RuntimeDyld> RTDyld;
     enum { Raw, Finalizing, Finalized } State;
+
+    // FIXME: This ownership hack only exists because RuntimeDyldELF still
+    //        wants to be able to inspect the original object when resolving
+    //        relocations. As soon as that can be fixed this should be removed.
+    std::vector<std::unique_ptr<MemoryBuffer>> OwnedBuffers;
   };
 
   typedef std::list<LinkedObjectSet> LinkedObjectSetListT;
@@ -81,6 +93,16 @@ protected:
 public:
   /// @brief Handle to a set of loaded objects.
   typedef LinkedObjectSetListT::iterator ObjSetHandleT;
+
+  // Ownership hack.
+  // FIXME: Remove this as soon as RuntimeDyldELF can apply relocations without
+  //        referencing the original object.
+  template <typename OwningMBSet>
+  void takeOwnershipOfBuffers(ObjSetHandleT H, OwningMBSet MBs) {
+    for (auto &MB : MBs)
+      H->takeOwnershipOfBuffer(std::move(MB));
+  }
+
 };
 
 /// @brief Default (no-op) action to perform when loading objects.
@@ -115,9 +137,9 @@ public:
   /// @brief Construct an ObjectLinkingLayer with the given NotifyLoaded,
   ///        NotifyFinalized and CreateMemoryManager functors.
   ObjectLinkingLayer(
-      CreateRTDyldMMFtor CreateMemoryManager,
-      NotifyLoadedFtor NotifyLoaded,
-      NotifyFinalizedFtor NotifyFinalized)
+      CreateRTDyldMMFtor CreateMemoryManager = CreateRTDyldMMFtor(),
+      NotifyLoadedFtor NotifyLoaded = NotifyLoadedFtor(),
+      NotifyFinalizedFtor NotifyFinalized = NotifyFinalizedFtor())
       : NotifyLoaded(std::move(NotifyLoaded)),
         NotifyFinalized(std::move(NotifyFinalized)),
         CreateMemoryManager(std::move(CreateMemoryManager)) {}
@@ -158,8 +180,8 @@ public:
 
   /// @brief Map section addresses for the objects associated with the handle H.
   void mapSectionAddress(ObjSetHandleT H, const void *LocalAddress,
-                         uint64_t TargetAddress) {
-    H->mapSectionAddress(LocalAddress, TargetAddress);
+                         TargetAddress TargetAddr) {
+    H->mapSectionAddress(LocalAddress, TargetAddr);
   }
 
   /// @brief Remove the set of objects associated with handle H.
@@ -175,42 +197,40 @@ public:
     LinkedObjSetList.erase(H);
   }
 
-  /// @brief Get the address of a loaded symbol.
-  ///
-  /// @return The address in the target process's address space of the named
-  ///         symbol. Null if no such symbol is known.
-  ///
-  ///   This method will trigger the finalization of the linked object set
-  /// containing the definition of the given symbol, if it is found.
-  uint64_t getSymbolAddress(StringRef Name, bool ExportedSymbolsOnly) {
+  /// @brief Search for the given named symbol.
+  /// @param Name The name of the symbol to search for.
+  /// @param ExportedSymbolsOnly If true, search only for exported symbols.
+  /// @return A handle for the given named symbol, if it exists.
+  JITSymbol findSymbol(StringRef Name, bool ExportedSymbolsOnly) {
     for (auto I = LinkedObjSetList.begin(), E = LinkedObjSetList.end(); I != E;
          ++I)
-      if (uint64_t Addr = lookupSymbolAddressIn(I, Name, ExportedSymbolsOnly))
-        return Addr;
+      if (auto Symbol = findSymbolIn(I, Name, ExportedSymbolsOnly))
+        return Symbol;
 
-    return 0;
+    return nullptr;
   }
 
-  /// @brief Search for a given symbol in the context of the set of loaded
-  ///        objects represented by the handle H.
-  ///
-  /// @return The address in the target process's address space of the named
-  ///         symbol. Null if the given object set does not contain a definition
-  ///         of this symbol.
-  ///
-  ///   This method will trigger the finalization of the linked object set
-  /// represented by the handle H if that set contains the requested symbol.
-  uint64_t lookupSymbolAddressIn(ObjSetHandleT H, StringRef Name,
-                                 bool ExportedSymbolsOnly) {
-    if (uint64_t Addr = H->getSymbolAddress(Name, ExportedSymbolsOnly)) {
-      if (H->NeedsFinalization()) {
-        H->Finalize();
-        if (NotifyFinalized)
-          NotifyFinalized(H);
-      }
-      return Addr;
-    }
-    return 0;
+  /// @brief Search for the given named symbol in the context of the set of
+  ///        loaded objects represented by the handle H.
+  /// @param H The handle for the object set to search in.
+  /// @param Name The name of the symbol to search for.
+  /// @param ExportedSymbolsOnly If true, search only for exported symbols.
+  /// @return A handle for the given named symbol, if it is found in the
+  ///         given object set.
+  JITSymbol findSymbolIn(ObjSetHandleT H, StringRef Name,
+                         bool ExportedSymbolsOnly) {
+    if (auto Addr = H->getSymbolAddress(Name, ExportedSymbolsOnly))
+      return JITSymbol(
+        [this, Addr, H](){
+          if (H->NeedsFinalization()) {
+            H->Finalize();
+            if (NotifyFinalized)
+              NotifyFinalized(H);
+          }
+          return Addr;
+        });
+
+    return nullptr;
   }
 
 private:

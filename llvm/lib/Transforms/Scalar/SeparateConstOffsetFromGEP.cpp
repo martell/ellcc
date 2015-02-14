@@ -314,6 +314,7 @@ class SeparateConstOffsetFromGEP : public FunctionPass {
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<DataLayoutPass>();
     AU.addRequired<TargetTransformInfoWrapperPass>();
+    AU.setPreservesCFG();
   }
 
   bool doInitialization(Module &M) override {
@@ -858,7 +859,8 @@ bool SeparateConstOffsetFromGEP::splitGEP(GetElementPtrInst *GEP) {
   // case.
   if (!LowerGEP) {
     TargetTransformInfo &TTI =
-        getAnalysis<TargetTransformInfoWrapperPass>().getTTI();
+        getAnalysis<TargetTransformInfoWrapperPass>().getTTI(
+            *GEP->getParent()->getParent());
     if (!TTI.isLegalAddressingMode(GEP->getType()->getElementType(),
                                    /*BaseGV=*/nullptr, AccumulativeByteOffset,
                                    /*HasBaseReg=*/true, /*Scale=*/0)) {
@@ -997,6 +999,9 @@ bool SeparateConstOffsetFromGEP::splitGEP(GetElementPtrInst *GEP) {
 }
 
 bool SeparateConstOffsetFromGEP::runOnFunction(Function &F) {
+  if (skipOptnoneFunction(F))
+    return false;
+
   if (DisableSeparateConstOffsetFromGEP)
     return false;
 

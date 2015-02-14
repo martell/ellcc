@@ -15,6 +15,7 @@
 #ifndef LLD_READER_WRITER_LINKER_SCRIPT_H
 #define LLD_READER_WRITER_LINKER_SCRIPT_H
 
+#include "lld/Core/Error.h"
 #include "lld/Core/LLVM.h"
 #include "lld/Core/range.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -73,11 +74,13 @@ public:
     kw_exclude_file,
     kw_group,
     kw_hidden,
+    kw_input,
     kw_keep,
     kw_provide,
     kw_provide_hidden,
     kw_only_if_ro,
     kw_only_if_rw,
+    kw_output,
     kw_output_arch,
     kw_output_format,
     kw_overlay,
@@ -148,7 +151,9 @@ public:
   enum class Kind {
     Entry,
     Group,
+    Input,
     InputSectionsCmd,
+    Output,
     OutputArch,
     OutputFormat,
     OutputSectionDescription,
@@ -169,6 +174,23 @@ protected:
 
 private:
   Kind _kind;
+};
+
+class Output : public Command {
+public:
+  explicit Output(StringRef outputFileName)
+      : Command(Kind::Output), _outputFileName(outputFileName) {}
+
+  static bool classof(const Command *c) { return c->getKind() == Kind::Output; }
+
+  void dump(raw_ostream &os) const override {
+    os << "OUTPUT(" << _outputFileName << ")\n";
+  }
+
+  StringRef getOutputFileName() const { return _outputFileName; }
+
+private:
+  StringRef _outputFileName;
 };
 
 class OutputFormat : public Command {
@@ -230,16 +252,18 @@ struct Path {
       : _path(path), _asNeeded(asNeeded), _isDashlPrefix(isLib) {}
 };
 
-class Group : public Command {
+template<Command::Kind K>
+class PathList : public Command {
 public:
-  template <class RangeT> explicit Group(RangeT range) : Command(Kind::Group) {
+  template <class RangeT> PathList(StringRef name, RangeT range)
+      : Command(K), _name(name) {
     std::copy(std::begin(range), std::end(range), std::back_inserter(_paths));
   }
 
-  static bool classof(const Command *c) { return c->getKind() == Kind::Group; }
+  static bool classof(const Command *c) { return c->getKind() == K; }
 
   void dump(raw_ostream &os) const override {
-    os << "GROUP(";
+    os << _name << "(";
     bool first = true;
     for (const Path &path : getPaths()) {
       if (!first)
@@ -259,7 +283,20 @@ public:
   const std::vector<Path> &getPaths() const { return _paths; }
 
 private:
+  StringRef _name;
   std::vector<Path> _paths;
+};
+
+class Group : public PathList<Command::Kind::Group> {
+public:
+  template <class RangeT> Group(RangeT range)
+      : PathList("GROUP", std::move(range)) {}
+};
+
+class Input : public PathList<Command::Kind::Input> {
+public:
+  template <class RangeT> Input(RangeT range)
+      : PathList("INPUT", std::move(range)) {}
 };
 
 class Entry : public Command {
@@ -720,9 +757,18 @@ public:
 /// https://sourceware.org/binutils/docs/ld/Scripts.html
 class Parser {
 public:
-  explicit Parser(Lexer &lex) : _lex(lex), _peekAvailable(false) {}
+  explicit Parser(std::unique_ptr<MemoryBuffer> mb)
+      : _lex(std::move(mb)), _peekAvailable(false) {}
 
-  LinkerScript *parse();
+  /// Let's not allow copying of Parser class because it would be expensive
+  /// to update all the AST pointers to a new buffer.
+  Parser(const Parser &instance) LLVM_DELETED_FUNCTION;
+
+  /// Lex and parse the current memory buffer to create a linker script AST.
+  std::error_code parse();
+
+  /// Returns a reference to the top level node of the linker script AST.
+  LinkerScript *get() { return &_script; }
 
 private:
   /// Advances to the next token, either asking the Lexer to lex the next token
@@ -834,6 +880,13 @@ private:
 
   // ==== High-level commands parsing ====
 
+  /// Parse the OUTPUT linker script command.
+  /// Example:
+  /// OUTPUT(/path/to/file)
+  /// ^~~~> parseOutput()
+  ///
+  Output *parseOutput();
+
   /// Parse the OUTPUT_FORMAT linker script command.
   /// Example:
   ///
@@ -850,7 +903,7 @@ private:
   ///
   OutputArch *parseOutputArch();
 
-  /// Parse the GROUP linker script command.
+  /// Parse the INPUT or GROUP linker script command.
   /// Example:
   ///
   /// GROUP ( /lib/x86_64-linux-gnu/libc.so.6
@@ -858,7 +911,7 @@ private:
   ///         AS_NEEDED ( /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 )
   ///         -lm -l:libgcc.a )
   ///
-  Group *parseGroup();
+  template<class T> T *parsePathList();
   bool parseAsNeeded(std::vector<Path> &paths);
 
   /// Parse the ENTRY linker script command.
@@ -955,7 +1008,7 @@ private:
   // The top-level/entry-point linker script AST node
   LinkerScript _script;
 
-  Lexer &_lex;
+  Lexer _lex;
 
   // Current token being analyzed
   Token _tok;

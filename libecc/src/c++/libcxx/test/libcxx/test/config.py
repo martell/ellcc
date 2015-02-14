@@ -1,3 +1,4 @@
+import importlib
 import locale
 import os
 import platform
@@ -48,7 +49,7 @@ class Configuration(object):
         self.config = config
         self.cxx = None
         self.libcxx_src_root = None
-        self.obj_root = None
+        self.libcxx_obj_root = None
         self.cxx_library_root = None
         self.env = {}
         self.use_target = False
@@ -56,9 +57,6 @@ class Configuration(object):
         self.use_clang_verify = False
         self.long_tests = None
         self.execute_external = False
-
-        if platform.system() not in ('Darwin', 'FreeBSD', 'Linux'):
-            self.lit_config.fatal("unrecognized system")
 
     def get_lit_conf(self, name, default=None):
         val = self.lit_config.params.get(name, None)
@@ -80,6 +78,7 @@ class Configuration(object):
             "parameter '{}' should be true or false".format(name))
 
     def configure(self):
+        self.configure_target_info()
         self.configure_cxx()
         self.configure_triple()
         self.configure_src_root()
@@ -92,6 +91,7 @@ class Configuration(object):
         self.configure_env()
         self.configure_compile_flags()
         self.configure_link_flags()
+        self.configure_warnings()
         self.configure_sanitizer()
         self.configure_substitutions()
         self.configure_features()
@@ -107,6 +107,15 @@ class Configuration(object):
         self.lit_config.note('Using available_features: %s' %
                              list(self.config.available_features))
         self.lit_config.note('Using environment: %r' % self.env)
+
+    def configure_target_info(self):
+        default = "libcxx.test.target_info.LocalTI"
+        info_str = self.get_lit_conf('target_info', default)
+        mod_path, _, info = info_str.rpartition('.')
+        mod = importlib.import_module(mod_path)
+        self.target_info = getattr(mod, info)()
+        if info_str != default:
+            self.lit_config.note("inferred target_info as: %r" % info_str)
 
     def get_test_format(self):
         return LibcxxTestFormat(
@@ -145,12 +154,11 @@ class Configuration(object):
             'libcxx_src_root', os.path.dirname(self.config.test_source_root))
 
     def configure_obj_root(self):
-        self.obj_root = self.get_lit_conf('libcxx_obj_root',
-                                          self.libcxx_src_root)
+        self.libcxx_obj_root = self.get_lit_conf('libcxx_obj_root')
 
     def configure_cxx_library_root(self):
         self.cxx_library_root = self.get_lit_conf('cxx_library_root',
-                                                  self.obj_root)
+                                                  self.libcxx_obj_root)
 
     def configure_use_system_cxx_lib(self):
         # This test suite supports testing against either the system library or
@@ -237,17 +245,25 @@ class Configuration(object):
             },
         }
 
-        default_locale = locale.setlocale(locale.LC_ALL)
-        for feature, loc in locales[platform.system()].items():
-            try:
-                locale.setlocale(locale.LC_ALL, loc)
-                self.config.available_features.add(
-                    'locale.{0}'.format(feature))
-            except locale.Error:
-                self.lit_config.warning('The locale {0} is not supported by '
-                                        'your platform. Some tests will be '
-                                        'unsupported.'.format(loc))
-        locale.setlocale(locale.LC_ALL, default_locale)
+        target_system = self.target_info.system()
+        target_platform = self.target_info.platform()
+
+        if target_system in locales:
+            default_locale = locale.setlocale(locale.LC_ALL)
+            for feature, loc in locales[target_system].items():
+                try:
+                    locale.setlocale(locale.LC_ALL, loc)
+                    self.config.available_features.add(
+                        'locale.{0}'.format(feature))
+                except locale.Error:
+                    self.lit_config.warning('The locale {0} is not supported by '
+                                            'your platform. Some tests will be '
+                                            'unsupported.'.format(loc))
+            locale.setlocale(locale.LC_ALL, default_locale)
+        else:
+            # Warn that the user doesn't get any free XFAILs for locale issues
+            self.lit_config.warning("No locales entry for target_system: %s" %
+                                    target_system)
 
         # Write an "available feature" that combines the triple when
         # use_system_cxx_lib is enabled. This is so that we can easily write
@@ -257,13 +273,15 @@ class Configuration(object):
             self.config.available_features.add(
                 'with_system_cxx_lib=%s' % self.config.target_triple)
 
+        # Insert the platform name into the available features as a lower case.
+        self.config.available_features.add(target_platform)
+
         # Some linux distributions have different locale data than others.
         # Insert the distributions name and name-version into the available
         # features to allow tests to XFAIL on them.
-        if sys.platform.startswith('linux'):
-            name, ver, _ = platform.linux_distribution()
-            name = name.lower().strip()
-            ver = ver.lower().strip()
+        if target_platform == 'linux':
+            name = self.target_info.platform_name()
+            ver = self.target_info.platform_ver()
             if name:
                 self.config.available_features.add(name)
             if name and ver:
@@ -332,8 +350,9 @@ class Configuration(object):
             self.cxx.flags += ['-target', self.config.target_triple]
 
     def configure_compile_flags_header_includes(self):
-        self.cxx.compile_flags += [
-            '-I' + os.path.join(self.libcxx_src_root, 'test/support')]
+        support_path = os.path.join(self.libcxx_src_root, 'test/support')
+        self.cxx.compile_flags += ['-I' + support_path]
+        self.cxx.compile_flags += ['-include', os.path.join(support_path, 'nasty_macros.hpp')]
         libcxx_headers = self.get_lit_conf(
             'libcxx_headers', os.path.join(self.libcxx_src_root, 'include'))
         if not os.path.isdir(libcxx_headers):
@@ -393,7 +412,7 @@ class Configuration(object):
                     "with 'use_system_cxx_lib=true'")
             self.cxx.link_flags += ['-Wl,-rpath,' +
                                     os.path.dirname(libcxx_library)]
-        elif not self.use_system_cxx_lib:
+        elif not self.use_system_cxx_lib and self.cxx_library_root:
             self.cxx.link_flags += ['-L' + self.cxx_library_root,
                                     '-Wl,-rpath,' + self.cxx_library_root]
 
@@ -430,9 +449,10 @@ class Configuration(object):
     def configure_extra_library_flags(self):
         enable_threads = self.get_lit_bool('enable_threads', True)
         llvm_unwinder = self.get_lit_bool('llvm_unwinder', False)
-        if sys.platform == 'darwin':
+        target_platform = self.target_info.platform()
+        if target_platform == 'darwin':
             self.cxx.link_flags += ['-lSystem']
-        elif sys.platform.startswith('linux'):
+        elif target_platform == 'linux':
             if not llvm_unwinder:
                 self.cxx.link_flags += ['-lgcc_eh']
             self.cxx.link_flags += ['-lc', '-lm']
@@ -443,10 +463,18 @@ class Configuration(object):
                 self.cxx.link_flags += ['-lunwind', '-ldl']
             else:
                 self.cxx.link_flags += ['-lgcc_s']
-        elif sys.platform.startswith('freebsd'):
+        elif target_platform.startswith('freebsd'):
             self.cxx.link_flags += ['-lc', '-lm', '-lpthread', '-lgcc_s']
         else:
-            self.lit_config.fatal("unrecognized system: %r" % sys.platform)
+            self.lit_config.fatal("unrecognized system: %r" % target_platform)
+
+    def configure_warnings(self):
+        enable_warnings = self.get_lit_bool('enable_warnings', False)
+        if enable_warnings:
+            self.cxx.compile_flags += ['-Wsystem-headers', '-Wall', '-Werror']
+            if ('clang' in self.config.available_features or
+                'apple-clang' in self.config.available_features):
+                self.cxx.compile_flags += ['-Wno-user-defined-literals']
 
     def configure_sanitizer(self):
         san = self.get_lit_conf('use_sanitizer', '').strip()
@@ -463,7 +491,7 @@ class Configuration(object):
                                              symbolizer_search_paths)
             # Setup the sanitizer compile flags
             self.cxx.flags += ['-g', '-fno-omit-frame-pointer']
-            if sys.platform.startswith('linux'):
+            if self.target_info.platform() == 'linux':
                 self.cxx.link_flags += ['-ldl']
             if san == 'Address':
                 self.cxx.flags += ['-fsanitize=address']
@@ -562,4 +590,5 @@ class Configuration(object):
                 cxx_library_root = os.path.dirname(libcxx_library)
             else:
                 cxx_library_root = self.cxx_library_root
-            self.env['DYLD_LIBRARY_PATH'] = cxx_library_root
+            if cxx_library_root:
+                self.env['DYLD_LIBRARY_PATH'] = cxx_library_root

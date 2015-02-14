@@ -14,6 +14,7 @@
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -80,8 +81,8 @@ bool TargetTransformInfo::isLoweredToCall(const Function *F) const {
 }
 
 void TargetTransformInfo::getUnrollingPreferences(
-    const Function *F, Loop *L, UnrollingPreferences &UP) const {
-  return TTIImpl->getUnrollingPreferences(F, L, UP);
+    Loop *L, UnrollingPreferences &UP) const {
+  return TTIImpl->getUnrollingPreferences(L, UP);
 }
 
 bool TargetTransformInfo::isLegalAddImmediate(int64_t Imm) const {
@@ -145,6 +146,10 @@ TargetTransformInfo::getPopcntSupport(unsigned IntTyWidthInBit) const {
 
 bool TargetTransformInfo::haveFastSqrt(Type *Ty) const {
   return TTIImpl->haveFastSqrt(Ty);
+}
+
+unsigned TargetTransformInfo::getFPOpCost(Type *Ty) const {
+  return TTIImpl->getFPOpCost(Ty);
 }
 
 unsigned TargetTransformInfo::getIntImmCost(const APInt &Imm, Type *Ty) const {
@@ -255,6 +260,22 @@ Value *TargetTransformInfo::getOrCreateResultFromMemIntrinsic(
 
 TargetTransformInfo::Concept::~Concept() {}
 
+TargetIRAnalysis::TargetIRAnalysis() : TTICallback(&getDefaultTTI) {}
+
+TargetIRAnalysis::TargetIRAnalysis(
+    std::function<Result(Function &)> TTICallback)
+    : TTICallback(TTICallback) {}
+
+TargetIRAnalysis::Result TargetIRAnalysis::run(Function &F) {
+  return TTICallback(F);
+}
+
+char TargetIRAnalysis::PassID;
+
+TargetIRAnalysis::Result TargetIRAnalysis::getDefaultTTI(Function &F) {
+  return Result(F.getParent()->getDataLayout());
+}
+
 // Register the basic pass.
 INITIALIZE_PASS(TargetTransformInfoWrapperPass, "tti",
                 "Target Transform Information", false, true)
@@ -263,19 +284,24 @@ char TargetTransformInfoWrapperPass::ID = 0;
 void TargetTransformInfoWrapperPass::anchor() {}
 
 TargetTransformInfoWrapperPass::TargetTransformInfoWrapperPass()
-    : ImmutablePass(ID), TTI(NoTTIImpl(/*DataLayout*/ nullptr)) {
+    : ImmutablePass(ID) {
   initializeTargetTransformInfoWrapperPassPass(
       *PassRegistry::getPassRegistry());
 }
 
 TargetTransformInfoWrapperPass::TargetTransformInfoWrapperPass(
-    TargetTransformInfo TTI)
-    : ImmutablePass(ID), TTI(std::move(TTI)) {
+    TargetIRAnalysis TIRA)
+    : ImmutablePass(ID), TIRA(std::move(TIRA)) {
   initializeTargetTransformInfoWrapperPassPass(
       *PassRegistry::getPassRegistry());
 }
 
+TargetTransformInfo &TargetTransformInfoWrapperPass::getTTI(Function &F) {
+  TTI = TIRA.run(F);
+  return *TTI;
+}
+
 ImmutablePass *
-llvm::createTargetTransformInfoWrapperPass(TargetTransformInfo TTI) {
-  return new TargetTransformInfoWrapperPass(std::move(TTI));
+llvm::createTargetTransformInfoWrapperPass(TargetIRAnalysis TIRA) {
+  return new TargetTransformInfoWrapperPass(std::move(TIRA));
 }

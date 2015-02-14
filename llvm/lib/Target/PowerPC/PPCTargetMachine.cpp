@@ -17,8 +17,8 @@
 #include "PPCTargetTransformInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/PassManager.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/TargetRegistry.h"
@@ -29,6 +29,10 @@ using namespace llvm;
 static cl::
 opt<bool> DisableCTRLoops("disable-ppc-ctrloops", cl::Hidden,
                         cl::desc("Disable CTR loops for PPC"));
+
+static cl::
+opt<bool> DisablePreIncPrep("disable-ppc-preinc-prep", cl::Hidden,
+                            cl::desc("Disable PPC loop preinc prep"));
 
 static cl::opt<bool>
 VSXFMAMutateEarly("schedule-ppc-vsx-fma-mutation-early",
@@ -231,6 +235,9 @@ void PPCPassConfig::addIRPasses() {
 }
 
 bool PPCPassConfig::addPreISel() {
+  if (!DisablePreIncPrep && getOptLevel() != CodeGenOpt::None)
+    addPass(createPPCLoopPreIncPrepPass(getPPCTargetMachine()));
+
   if (!DisableCTRLoops && getOptLevel() != CodeGenOpt::None)
     addPass(createPPCCTRLoops(getPPCTargetMachine()));
 
@@ -259,11 +266,11 @@ void PPCPassConfig::addPreRegAlloc() {
   initializePPCVSXFMAMutatePass(*PassRegistry::getPassRegistry());
   insertPass(VSXFMAMutateEarly ? &RegisterCoalescerID : &MachineSchedulerID,
              &PPCVSXFMAMutateID);
+  if (getPPCTargetMachine().getRelocationModel() == Reloc::PIC_)
+    addPass(createPPCTLSDynamicCallPass());
 }
 
 void PPCPassConfig::addPreSched2() {
-  addPass(createPPCVSXCopyCleanupPass(), false);
-
   if (getOptLevel() != CodeGenOpt::None)
     addPass(&IfConverterID);
 }
@@ -275,6 +282,7 @@ void PPCPassConfig::addPreEmitPass() {
   addPass(createPPCBranchSelectionPass(), false);
 }
 
-TargetTransformInfo PPCTargetMachine::getTTI() {
-  return TargetTransformInfo(PPCTTIImpl(this));
+TargetIRAnalysis PPCTargetMachine::getTargetIRAnalysis() {
+  return TargetIRAnalysis(
+      [this](Function &F) { return TargetTransformInfo(PPCTTIImpl(this, F)); });
 }

@@ -18,11 +18,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if !_LIBUNWIND_IS_BAREMETAL
+#ifndef _LIBUNWIND_IS_BAREMETAL
 #include <dlfcn.h>
 #endif
 
-#if __APPLE__
+#ifdef __APPLE__
 #include <mach-o/getsect.h>
 namespace libunwind {
    bool checkKeyMgrRegisteredFDEs(uintptr_t targetAddr, void *&fde);
@@ -35,7 +35,7 @@ namespace libunwind {
 #include "Registers.hpp"
 
 #if LIBCXXABI_ARM_EHABI
-#if __linux__
+#ifdef __linux__
 
 typedef long unsigned int *_Unwind_Ptr;
 extern "C" _Unwind_Ptr __gnu_Unwind_Find_exidx(_Unwind_Ptr addr, int *len);
@@ -43,9 +43,9 @@ extern "C" _Unwind_Ptr __gnu_Unwind_Find_exidx(_Unwind_Ptr addr, int *len);
 // Emulate the BSD dl_unwind_find_exidx API when on a GNU libdl system.
 #define dl_unwind_find_exidx __gnu_Unwind_Find_exidx
 
-#elif !_LIBUNWIND_IS_BAREMETAL
+#elif !defined(_LIBUNWIND_IS_BAREMETAL)
 #include <link.h>
-#else // _LIBUNWIND_IS_BAREMETAL
+#else // !defined(_LIBUNWIND_IS_BAREMETAL)
 // When statically linked on bare-metal, the symbols for the EH table are looked
 // up without going through the dynamic loader.
 struct EHTEntry {
@@ -54,7 +54,7 @@ struct EHTEntry {
 };
 extern EHTEntry __exidx_start;
 extern EHTEntry __exidx_end;
-#endif // !_LIBUNWIND_IS_BAREMETAL
+#endif // !defined(_LIBUNWIND_IS_BAREMETAL)
 
 #endif  // LIBCXXABI_ARM_EHABI
 
@@ -91,7 +91,7 @@ struct UnwindInfoSections {
 /// making local unwinds fast.
 class __attribute__((visibility("hidden"))) LocalAddressSpace {
 public:
-#if __LP64__
+#ifdef __LP64__
   typedef uint64_t pint_t;
   typedef int64_t  sint_t;
 #else
@@ -142,7 +142,7 @@ public:
 };
 
 inline uintptr_t LocalAddressSpace::getP(pint_t addr) {
-#if __LP64__
+#ifdef __LP64__
   return get64(addr);
 #else
   return get32(addr);
@@ -282,7 +282,7 @@ inline LocalAddressSpace::pint_t LocalAddressSpace::getEncodedP(pint_t &addr,
   return result;
 }
 
-#if __APPLE__ 
+#ifdef __APPLE__ 
   struct dyld_unwind_sections
   {
     const struct mach_header*   mh;
@@ -326,7 +326,7 @@ inline LocalAddressSpace::pint_t LocalAddressSpace::getEncodedP(pint_t &addr,
 
 inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
                                                   UnwindInfoSections &info) {
-#if __APPLE__
+#ifdef __APPLE__
   dyld_unwind_sections dyldInfo;
   if (_dyld_find_unwind_sections((void *)targetAddr, &dyldInfo)) {
     info.dso_base                      = (uintptr_t)dyldInfo.mh;
@@ -339,7 +339,7 @@ inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
     return true;
   }
 #elif LIBCXXABI_ARM_EHABI
- #if _LIBUNWIND_IS_BAREMETAL
+ #ifdef _LIBUNWIND_IS_BAREMETAL
   // Bare metal is statically linked, so no need to ask the dynamic loader
   info.arm_section =        (uintptr_t)(&__exidx_start);
   info.arm_section_length = (uintptr_t)(&__exidx_end - &__exidx_start);
@@ -353,7 +353,6 @@ inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
                              info.arm_section, info.arm_section_length);
   if (info.arm_section && info.arm_section_length)
     return true;
->>>>>>> .merge-right.r4118
 #endif
 
   return false;
@@ -361,7 +360,7 @@ inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
 
 
 inline bool LocalAddressSpace::findOtherFDE(pint_t targetAddr, pint_t &fde) {
-#if __APPLE__
+#ifdef __APPLE__
   return checkKeyMgrRegisteredFDEs(targetAddr, *((void**)&fde));
 #elif __ELLCC__
 // RICH: #warning findOtherFDE is not implemented
@@ -377,7 +376,7 @@ inline bool LocalAddressSpace::findOtherFDE(pint_t targetAddr, pint_t &fde) {
 inline bool LocalAddressSpace::findFunctionName(pint_t addr, char *buf,
                                                 size_t bufLen,
                                                 unw_word_t *offset) {
-#if !_LIBUNWIND_IS_BAREMETAL
+#ifndef _LIBUNWIND_IS_BAREMETAL
   Dl_info dyldInfo;
   if (dladdr((void *)addr, &dyldInfo)) {
     if (dyldInfo.dli_sname != NULL) {
@@ -392,7 +391,7 @@ inline bool LocalAddressSpace::findFunctionName(pint_t addr, char *buf,
 
 
 
-#if UNW_REMOTE
+#ifdef UNW_REMOTE
 
 /// OtherAddressSpace is used as a template parameter to UnwindCursor when
 /// unwinding a thread in the another process.  The other process can be a

@@ -1,5 +1,7 @@
 current SVN:
 
+* Update to LLVM r229186.
+
 version 0.1.10:
 
 * Updated the compiler-rt build rules.

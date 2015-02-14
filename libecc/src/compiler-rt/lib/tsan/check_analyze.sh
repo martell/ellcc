@@ -27,13 +27,25 @@ check() {
   fi
 }
 
-for f in $mops; do
-  check $f rsp 1   # To read caller pc.
-  check $f push 0
-  check $f pop 0
+for f in write1; do
+  check $f rsp 1
+  check $f push 2
+  check $f pop 2
 done
 
-for f in $func; do
+for f in write2 write4 write8; do
+  check $f rsp 1
+  check $f push 3
+  check $f pop 3
+done
+
+for f in read1 read2 read4 read8; do
+  check $f rsp 1
+  check $f push 5
+  check $f pop 5
+done
+
+for f in func_entry func_exit; do
   check $f rsp 0
   check $f push 0
   check $f pop 0

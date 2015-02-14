@@ -204,9 +204,13 @@ public:
     return get(Opcode).TSFlags & SIInstrFlags::FLAT;
   }
 
+  bool isWQM(uint16_t Opcode) const {
+    return get(Opcode).TSFlags & SIInstrFlags::WQM;
+  }
+
   bool isInlineConstant(const APInt &Imm) const;
-  bool isInlineConstant(const MachineOperand &MO) const;
-  bool isLiteralConstant(const MachineOperand &MO) const;
+  bool isInlineConstant(const MachineOperand &MO, unsigned OpSize) const;
+  bool isLiteralConstant(const MachineOperand &MO, unsigned OpSize) const;
 
   bool isImmOperandLegal(const MachineInstr *MI, unsigned OpNo,
                          const MachineOperand &MO) const;
@@ -221,7 +225,8 @@ public:
 
   /// \brief Returns true if this operand uses the constant bus.
   bool usesConstantBus(const MachineRegisterInfo &MRI,
-                       const MachineOperand &MO) const;
+                       const MachineOperand &MO,
+                       unsigned OpSize) const;
 
   /// \brief Return true if this instruction has any modifiers.
   ///  e.g. src[012]_mod, omod, clamp.
@@ -243,7 +248,20 @@ public:
   /// the register class of its machine operand.
   /// to infer the correct register class base on the other operands.
   const TargetRegisterClass *getOpRegClass(const MachineInstr &MI,
-                                           unsigned OpNo) const;\
+                                           unsigned OpNo) const;
+
+  /// \brief Return the size in bytes of the operand OpNo on the given
+  // instruction opcode.
+  unsigned getOpSize(uint16_t Opcode, unsigned OpNo) const {
+    const MCOperandInfo &OpInfo = get(Opcode).OpInfo[OpNo];
+    return RI.getRegClass(OpInfo.RegClass)->getSize();
+  }
+
+  /// \brief This form should usually be preferred since it handles operands
+  /// with unknown register classes.
+  unsigned getOpSize(const MachineInstr &MI, unsigned OpNo) const {
+    return getOpRegClass(MI, OpNo)->getSize();
+  }
 
   /// \returns true if it is legal for the operand at index \p OpNo
   /// to read a VGPR.

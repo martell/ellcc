@@ -16,7 +16,7 @@
 #include "XCore.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/IR/Module.h"
-#include "llvm/PassManager.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
 
@@ -83,6 +83,7 @@ extern "C" void LLVMInitializeXCoreTarget() {
   RegisterTargetMachine<XCoreTargetMachine> X(TheXCoreTarget);
 }
 
-TargetTransformInfo XCoreTargetMachine::getTTI() {
-  return TargetTransformInfo(XCoreTTIImpl(this));
+TargetIRAnalysis XCoreTargetMachine::getTargetIRAnalysis() {
+  return TargetIRAnalysis(
+      [this](Function &) { return TargetTransformInfo(XCoreTTIImpl(this)); });
 }

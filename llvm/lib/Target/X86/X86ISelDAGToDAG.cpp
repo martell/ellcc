@@ -156,9 +156,7 @@ namespace {
 
   public:
     explicit X86DAGToDAGISel(X86TargetMachine &tm, CodeGenOpt::Level OptLevel)
-      : SelectionDAGISel(tm, OptLevel),
-        Subtarget(&tm.getSubtarget<X86Subtarget>()),
-        OptForSize(false) {}
+        : SelectionDAGISel(tm, OptLevel), OptForSize(false) {}
 
     const char *getPassName() const override {
       return "X86 DAG->DAG Instruction Selection";
@@ -166,7 +164,7 @@ namespace {
 
     bool runOnMachineFunction(MachineFunction &MF) override {
       // Reset the subtarget each time through.
-      Subtarget = &TM.getSubtarget<X86Subtarget>();
+      Subtarget = &MF.getSubtarget<X86Subtarget>();
       SelectionDAGISel::runOnMachineFunction(MF);
       return true;
     }
@@ -298,7 +296,7 @@ namespace {
     /// getInstrInfo - Return a reference to the TargetInstrInfo, casted
     /// to the target-specific type.
     const X86InstrInfo *getInstrInfo() const {
-      return getTargetMachine().getSubtargetImpl()->getInstrInfo();
+      return Subtarget->getInstrInfo();
     }
 
     /// \brief Address-mode matching performs shift-of-and to and-of-shift
@@ -573,7 +571,7 @@ void X86DAGToDAGISel::PreprocessISelDAG() {
 /// the main function.
 void X86DAGToDAGISel::EmitSpecialCodeForMain(MachineBasicBlock *BB,
                                              MachineFrameInfo *MFI) {
-  const TargetInstrInfo *TII = TM.getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = getInstrInfo();
   if (Subtarget->isTargetCygMing()) {
     unsigned CallOp =
       Subtarget->is64Bit() ? X86::CALL64pcrel32 : X86::CALLpcrel32;
@@ -918,7 +916,7 @@ static bool FoldMaskAndShiftToScale(SelectionDAG &DAG, SDValue N,
   if (AMShiftAmt <= 0 || AMShiftAmt > 3) return true;
 
   // We also need to ensure that mask is a continuous run of bits.
-  if (CountTrailingOnes_64(Mask >> MaskTZ) + MaskTZ + MaskLZ != 64) return true;
+  if (countTrailingOnes(Mask >> MaskTZ) + MaskTZ + MaskLZ != 64) return true;
 
   // Scale the leading zero count down based on the actual size of the value.
   // Also scale it down based on the size of the shift.
@@ -2612,26 +2610,9 @@ SDNode *X86DAGToDAGISel::Select(SDNode *Node) {
     SDValue N1 = Node->getOperand(1);
 
     if (N0.getOpcode() == ISD::TRUNCATE && N0.hasOneUse() &&
-        HasNoSignedComparisonUses(Node)) {
-      // Look for (X86cmp (truncate $op, i1), 0) and try to convert to a
-      // smaller encoding
-      if (Opcode == X86ISD::CMP && N0.getValueType() == MVT::i1 &&
-          X86::isZeroNode(N1)) {
-        SDValue Reg = N0.getOperand(0);
-        SDValue Imm = CurDAG->getTargetConstant(1, MVT::i8);
-
-        // Emit testb
-        if (Reg.getScalarValueSizeInBits() > 8)
-          Reg = CurDAG->getTargetExtractSubreg(X86::sub_8bit, dl, MVT::i8, Reg);
-        // Emit a testb.
-        SDNode *NewNode = CurDAG->getMachineNode(X86::TEST8ri, dl, MVT::i32,
-                                                Reg, Imm);
-        ReplaceUses(SDValue(Node, 0), SDValue(NewNode, 0));
-        return nullptr;
-      }
-
+        HasNoSignedComparisonUses(Node))
       N0 = N0.getOperand(0);
-    }
+
     // Look for (X86cmp (and $op, $imm), 0) and see if we can convert it to
     // use a smaller encoding.
     // Look past the truncate if CMP is the only use of it.

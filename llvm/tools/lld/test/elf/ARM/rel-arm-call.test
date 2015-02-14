@@ -10,8 +10,8 @@
 #               call site  offset  PC(arm) _Z1fv addr
 #               0x400090 + (-0x24) + 0x8 = 0x400074
 # CHECK: SYMBOL TABLE:
-# CHECK: 00400074 g     F .text  00000014 _Z1fv
-# CHECK: 00400088 g     F .text  00000018 main
+# CHECK: 00400074 g     F .text  {{[0-9a-f]+}} _Z1fv
+# CHECK: 00400088 g     F .text  {{[0-9a-f]+}} main
 
 ---
 FileHeader:
