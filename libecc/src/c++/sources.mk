@@ -18,5 +18,4 @@ CXXFLAGS := -I$(SRCPATH)/c++/libcxxabi/include $(CXXFLAGS)
 CXXFLAGS += -D_GNU_SOURCE -Ddl_info=Dl_info
 VPATH := $(VPATH):$(SRCPATH)/c++/libcxxabi/src/Unwind
 SRCS += libunwind.cpp UnwindLevel1.c UnwindLevel1-gcc-ext.c \
-        UnwindRegistersRestore.S UnwindRegistersSave.S aeabi_unwind.c \
-	Unwind-EHABI.cpp
+        UnwindRegistersRestore.S UnwindRegistersSave.S Unwind-EHABI.cpp
