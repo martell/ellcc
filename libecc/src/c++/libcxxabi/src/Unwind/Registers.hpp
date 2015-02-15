@@ -1302,7 +1302,7 @@ public:
   Registers_arm(const void *registers);
 
   bool        validRegister(int num) const;
-  uint32_t    getRegister(int num);
+  uint32_t    getRegister(int num) const;
   void        setRegister(int num, uint32_t value);
   bool        validFloatRegister(int num) const;
   unw_fpreg_t getFloatRegister(int num);
@@ -1315,6 +1315,7 @@ public:
     restoreSavedFloatRegisters();
     restoreCoreAndJumpTo();
   }
+  static int  lastDwarfRegNum() { return 287; }
 
   uint32_t  getSP() const         { return _registers.__sp; }
   void      setSP(uint32_t value) { _registers.__sp = value; }
@@ -1433,7 +1434,7 @@ inline bool Registers_arm::validRegister(int regNum) const {
   return false;
 }
 
-inline uint32_t Registers_arm::getRegister(int regNum) {
+inline uint32_t Registers_arm::getRegister(int regNum) const {
   if (regNum == UNW_REG_SP || regNum == UNW_ARM_SP)
     return _registers.__sp;
   if (regNum == UNW_ARM_LR)
@@ -1444,8 +1445,8 @@ inline uint32_t Registers_arm::getRegister(int regNum) {
     return _registers.__r[regNum];
   if (regNum >= UNW_ARM_WC0 && regNum <= UNW_ARM_WC3) {
     if (!_saved_iwmmx_control) {
-      _saved_iwmmx_control = true;
-      saveiWMMXControl(_iwmmx_control);
+      // RICH: Do in saveiWMMXControl? _saved_iwmmx_control = true;
+      saveiWMMXControl(/* RICH: */ (unsigned int *)_iwmmx_control);
     }
     return _iwmmx_control[regNum - UNW_ARM_WC0];
   }
@@ -1463,7 +1464,7 @@ inline void Registers_arm::setRegister(int regNum, uint32_t value) {
     _registers.__r[regNum] = value;
   else if (regNum >= UNW_ARM_WC0 && regNum <= UNW_ARM_WC3) {
     if (!_saved_iwmmx_control) {
-      _saved_iwmmx_control = true;
+      // RICH: Do in saveiWMMXControl? _saved_iwmmx_control = true;
       saveiWMMXControl(_iwmmx_control);
     }
     _iwmmx_control[regNum - UNW_ARM_WC0] = value;
