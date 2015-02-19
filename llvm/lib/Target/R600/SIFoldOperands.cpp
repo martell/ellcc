@@ -203,14 +203,20 @@ bool SIFoldOperands::runOnMachineFunction(MachineFunction &MF) {
         const MachineOperand &UseOp = UseMI->getOperand(Use.getOperandNo());
 
         // FIXME: Fold operands with subregs.
-        if (UseOp.isReg() && UseOp.getSubReg() && OpToFold.isReg()) {
+        if (UseOp.isReg() && ((UseOp.getSubReg() && OpToFold.isReg()) ||
+            UseOp.isImplicit())) {
           continue;
         }
 
         APInt Imm;
 
         if (FoldingImm) {
-          const TargetRegisterClass *UseRC = MRI.getRegClass(UseOp.getReg());
+          unsigned UseReg = UseOp.getReg();
+          const TargetRegisterClass *UseRC
+            = TargetRegisterInfo::isVirtualRegister(UseReg) ?
+            MRI.getRegClass(UseReg) :
+            TRI.getRegClass(UseReg);
+
           Imm = APInt(64, OpToFold.getImm());
 
           // Split 64-bit constants into 32-bits for folding.
@@ -229,8 +235,13 @@ bool SIFoldOperands::runOnMachineFunction(MachineFunction &MF) {
           // In order to fold immediates into copies, we need to change the
           // copy to a MOV.
           if (UseMI->getOpcode() == AMDGPU::COPY) {
-            unsigned MovOp = TII->getMovOpcode(
-                MRI.getRegClass(UseMI->getOperand(0).getReg()));
+            unsigned DestReg = UseMI->getOperand(0).getReg();
+            const TargetRegisterClass *DestRC
+              = TargetRegisterInfo::isVirtualRegister(DestReg) ?
+              MRI.getRegClass(DestReg) :
+              TRI.getRegClass(DestReg);
+
+            unsigned MovOp = TII->getMovOpcode(DestRC);
             if (MovOp == AMDGPU::COPY)
               continue;
 

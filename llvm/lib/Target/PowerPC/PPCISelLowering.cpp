@@ -2698,9 +2698,10 @@ PPCTargetLowering::LowerFormalArguments_64SVR4(
     unsigned ObjSize = ObjectVT.getStoreSize();
     unsigned ArgSize = ObjSize;
     ISD::ArgFlagsTy Flags = Ins[ArgNo].Flags;
-    std::advance(FuncArg, Ins[ArgNo].OrigArgIndex - CurArgIdx);
-    CurArgIdx = Ins[ArgNo].OrigArgIndex;
-
+    if (Ins[ArgNo].isOrigArg()) {
+      std::advance(FuncArg, Ins[ArgNo].getOrigArgIndex() - CurArgIdx);
+      CurArgIdx = Ins[ArgNo].getOrigArgIndex();
+    }
     // We re-align the argument offset for each argument, except when using the
     // fast calling convention, when we need to make sure we do that only when
     // we'll actually use a stack slot.
@@ -2723,6 +2724,8 @@ PPCTargetLowering::LowerFormalArguments_64SVR4(
     // FIXME the codegen can be much improved in some cases.
     // We do not have to keep everything in memory.
     if (Flags.isByVal()) {
+      assert(Ins[ArgNo].isOrigArg() && "Byval arguments cannot be implicit");
+
       if (CallConv == CallingConv::Fast)
         ComputeArgOffset();
 
@@ -3101,9 +3104,10 @@ PPCTargetLowering::LowerFormalArguments_Darwin(
     unsigned ObjSize = ObjectVT.getSizeInBits()/8;
     unsigned ArgSize = ObjSize;
     ISD::ArgFlagsTy Flags = Ins[ArgNo].Flags;
-    std::advance(FuncArg, Ins[ArgNo].OrigArgIndex - CurArgIdx);
-    CurArgIdx = Ins[ArgNo].OrigArgIndex;
-
+    if (Ins[ArgNo].isOrigArg()) {
+      std::advance(FuncArg, Ins[ArgNo].getOrigArgIndex() - CurArgIdx);
+      CurArgIdx = Ins[ArgNo].getOrigArgIndex();
+    }
     unsigned CurArgOffset = ArgOffset;
 
     // Varargs or 64 bit Altivec parameters are padded to a 16 byte boundary.
@@ -3124,6 +3128,8 @@ PPCTargetLowering::LowerFormalArguments_Darwin(
     // FIXME the codegen can be much improved in some cases.
     // We do not have to keep everything in memory.
     if (Flags.isByVal()) {
+      assert(Ins[ArgNo].isOrigArg() && "Byval arguments cannot be implicit");
+
       // ObjSize is the true size, ArgSize rounded up to multiple of registers.
       ObjSize = Flags.getByValSize();
       ArgSize = ((ObjSize + PtrByteSize - 1)/PtrByteSize) * PtrByteSize;
@@ -7181,8 +7187,7 @@ PPCTargetLowering::emitEHSjLjSetJmp(MachineInstr *MI,
   // Naked functions never have a base pointer, and so we use r1. For all
   // other functions, this decision must be delayed until during PEI.
   unsigned BaseReg;
-  if (MF->getFunction()->getAttributes().hasAttribute(
-          AttributeSet::FunctionIndex, Attribute::Naked))
+  if (MF->getFunction()->hasFnAttribute(Attribute::Naked))
     BaseReg = Subtarget.isPPC64() ? PPC::X1 : PPC::R1;
   else
     BaseReg = Subtarget.isPPC64() ? PPC::BP8 : PPC::BP;
@@ -9721,8 +9726,7 @@ SDValue PPCTargetLowering::LowerFRAMEADDR(SDValue Op,
   // Naked functions never have a frame pointer, and so we use r1. For all
   // other functions, this decision must be delayed until during PEI.
   unsigned FrameReg;
-  if (MF.getFunction()->getAttributes().hasAttribute(
-        AttributeSet::FunctionIndex, Attribute::Naked))
+  if (MF.getFunction()->hasFnAttribute(Attribute::Naked))
     FrameReg = isPPC64 ? PPC::X1 : PPC::R1;
   else
     FrameReg = isPPC64 ? PPC::FP8 : PPC::FP;

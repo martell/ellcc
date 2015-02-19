@@ -24,15 +24,26 @@ struct Elf_RegInfo<ELFType<TargetEndianness, MaxAlign, false>> {
   LLVM_ELF_IMPORT_TYPES(TargetEndianness, MaxAlign, false)
   Elf_Word ri_gprmask;     // bit-mask of used general registers
   Elf_Word ri_cprmask[4];  // bit-mask of used co-processor registers
-  Elf_Sword ri_gp_value;   // gp register value
+  Elf_Addr ri_gp_value;    // gp register value
 };
 
 template <llvm::support::endianness TargetEndianness, std::size_t MaxAlign>
 struct Elf_RegInfo<ELFType<TargetEndianness, MaxAlign, true>> {
   LLVM_ELF_IMPORT_TYPES(TargetEndianness, MaxAlign, true)
   Elf_Word ri_gprmask;     // bit-mask of used general registers
+  Elf_Word ri_pad;         // unused padding field
   Elf_Word ri_cprmask[4];  // bit-mask of used co-processor registers
-  Elf_Sword ri_gp_value;   // gp register value
+  Elf_Addr ri_gp_value;    // gp register value
+};
+
+template <class ELFT> struct Elf_Mips_Options {
+  LLVM_ELF_IMPORT_TYPES(ELFT::TargetEndianness, ELFT::MaxAlignment,
+                        ELFT::Is64Bits)
+  uint8_t kind;     // Determines interpretation of variable part of descriptor
+  uint8_t size;     // Byte size of descriptor, including this header
+  Elf_Half section; // Section header index of section affected,
+                    // or 0 for global options
+  Elf_Word info;    // Kind-specific information
 };
 
 } // end namespace object.
@@ -131,25 +142,59 @@ private:
         referenceStart, referenceEnd, referenceList);
   }
 
+  const Elf_Shdr *findSectionByType(uint64_t type) {
+    for (const Elf_Shdr &section : this->_objFile->sections())
+      if (section.sh_type == type)
+        return &section;
+    return nullptr;
+  }
+
+  const Elf_Shdr *findSectionByFlags(uint64_t flags) {
+    for (const Elf_Shdr &section : this->_objFile->sections())
+      if (section.sh_flags & flags)
+        return &section;
+    return nullptr;
+  }
+
   std::error_code readAuxData() {
+    using namespace llvm::ELF;
+    if (const Elf_Shdr *sec = findSectionByFlags(SHF_TLS)) {
+      _tpOff = sec->sh_addr + TP_OFFSET;
+      _dtpOff = sec->sh_addr + DTP_OFFSET;
+    }
+
     typedef llvm::object::Elf_RegInfo<ELFT> Elf_RegInfo;
+    typedef llvm::object::Elf_Mips_Options<ELFT> Elf_Mips_Options;
 
-    for (const Elf_Shdr &section : this->_objFile->sections()) {
-      if (!_gp0.hasValue() && section.sh_type == llvm::ELF::SHT_MIPS_REGINFO) {
-        auto contents = this->getSectionContents(&section);
-        if (std::error_code ec = contents.getError())
-          return ec;
+    if (const Elf_Shdr *sec = findSectionByType(SHT_MIPS_OPTIONS)) {
+      auto contents = this->getSectionContents(sec);
+      if (std::error_code ec = contents.getError())
+        return ec;
 
-        ArrayRef<uint8_t> raw = contents.get();
+      ArrayRef<uint8_t> raw = contents.get();
+      while (!raw.empty()) {
+        if (raw.size() < sizeof(Elf_Mips_Options))
+          return make_dynamic_error_code(
+              StringRef("Invalid size of MIPS_OPTIONS section"));
 
-        // FIXME (simon): Show error in case of invalid section size.
-        assert(raw.size() == sizeof(Elf_RegInfo) &&
-               "Invalid size of RegInfo section");
-        _gp0 = reinterpret_cast<const Elf_RegInfo *>(raw.data())->ri_gp_value;
-      } else if (!_tpOff.hasValue() && section.sh_flags & llvm::ELF::SHF_TLS) {
-        _tpOff = section.sh_addr + TP_OFFSET;
-        _dtpOff = section.sh_addr + DTP_OFFSET;
+        const auto *opt = reinterpret_cast<const Elf_Mips_Options *>(raw.data());
+        if (opt->kind == ODK_REGINFO) {
+          _gp0 = reinterpret_cast<const Elf_RegInfo *>(opt + 1)->ri_gp_value;
+          break;
+        }
+        raw = raw.slice(opt->size);
       }
+    } else if (const Elf_Shdr *sec = findSectionByType(SHT_MIPS_REGINFO)) {
+      auto contents = this->getSectionContents(sec);
+      if (std::error_code ec = contents.getError())
+        return ec;
+
+      ArrayRef<uint8_t> raw = contents.get();
+      if (raw.size() != sizeof(Elf_RegInfo))
+        return make_dynamic_error_code(
+            StringRef("Invalid size of MIPS_REGINFO section"));
+
+      _gp0 = reinterpret_cast<const Elf_RegInfo *>(raw.data())->ri_gp_value;
     }
     return std::error_code();
   }

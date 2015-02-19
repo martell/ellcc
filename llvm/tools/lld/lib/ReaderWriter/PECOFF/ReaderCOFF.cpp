@@ -83,7 +83,7 @@ public:
 
   FileCOFF(std::unique_ptr<MemoryBuffer> mb, PECOFFLinkingContext &ctx)
     : File(mb->getBufferIdentifier(), kindObject), _mb(std::move(mb)),
-      _compatibleWithSEH(false), _ordinal(0),
+      _compatibleWithSEH(false), _ordinal(1),
       _machineType(llvm::COFF::MT_Invalid), _ctx(ctx) {}
 
   std::error_code doParse() override;
@@ -107,11 +107,6 @@ public:
   }
 
   void beforeLink() override;
-
-  void addDefinedAtom(AliasAtom *atom) {
-    atom->setOrdinal(_ordinal++);
-    _definedAtoms._atoms.push_back(atom);
-  }
 
   void addUndefinedSymbol(StringRef sym) {
     _undefinedAtoms._atoms.push_back(new (_alloc) COFFUndefinedAtom(*this, sym));
@@ -168,6 +163,7 @@ private:
   std::error_code addRelocationReferenceToAtoms();
   std::error_code findSection(StringRef name, const coff_section *&result);
   StringRef ArrayRefToString(ArrayRef<uint8_t> array);
+  uint64_t getNextOrdinal();
 
   std::unique_ptr<const llvm::object::COFFObjectFile> _obj;
   std::unique_ptr<MemoryBuffer> _mb;
@@ -555,7 +551,7 @@ FileCOFF::createDefinedSymbols(const SymbolVectorT &symbols,
       uint32_t size = sym.getValue();
       auto *atom = new (_alloc)
           COFFBSSAtom(*this, name, getScope(sym), DefinedAtom::permRW_,
-                      DefinedAtom::mergeAsWeakAndAddressUsed, size, _ordinal++);
+                      DefinedAtom::mergeAsWeakAndAddressUsed, size, getNextOrdinal());
 
       // Common symbols should be aligned on natural boundaries with the maximum
       // of 32 byte. It's not documented anywhere, but it's what MSVC link.exe
@@ -653,13 +649,8 @@ std::error_code FileCOFF::AtomizeDefinedSymbolsInSection(
   // Sort symbols by position.
   std::stable_sort(
       symbols.begin(), symbols.end(),
-      // For some reason MSVC fails to allow the lambda in this context with a
-      // "illegal use of local type in type instantiation". MSVC is clearly
-      // wrong here. Force a conversion to function pointer to work around.
-      static_cast<bool (*)(llvm::object::COFFSymbolRef,
-                           llvm::object::COFFSymbolRef)>(
-          [](llvm::object::COFFSymbolRef a, llvm::object::COFFSymbolRef b)
-              -> bool { return a.getValue() < b.getValue(); }));
+      [](llvm::object::COFFSymbolRef a, llvm::object::COFFSymbolRef b)
+          -> bool { return a.getValue() < b.getValue(); });
 
   StringRef sectionName;
   if (std::error_code ec = _obj->getSectionName(section, sectionName))
@@ -674,7 +665,7 @@ std::error_code FileCOFF::AtomizeDefinedSymbolsInSection(
                                      : si[1].getValue() - sym.getValue();
       auto *atom = new (_alloc) COFFBSSAtom(
           *this, _symbolName[sym], getScope(sym), getPermissions(section),
-          DefinedAtom::mergeAsWeakAndAddressUsed, size, _ordinal++);
+          DefinedAtom::mergeAsWeakAndAddressUsed, size, getNextOrdinal());
       atoms.push_back(atom);
       _symbolAtom[sym] = atom;
     }
@@ -709,7 +700,7 @@ std::error_code FileCOFF::AtomizeDefinedSymbolsInSection(
     ArrayRef<uint8_t> data(secData.data(), secData.size());
     auto *atom = new (_alloc) COFFDefinedAtom(
         *this, "", sectionName, Atom::scopeTranslationUnit, type, isComdat,
-        perms, _merge[section], data, _ordinal++);
+        perms, _merge[section], data, getNextOrdinal());
     atoms.push_back(atom);
     _definedAtomLocations[section][0].push_back(atom);
     return std::error_code();
@@ -722,7 +713,7 @@ std::error_code FileCOFF::AtomizeDefinedSymbolsInSection(
     ArrayRef<uint8_t> data(secData.data(), size);
     auto *atom = new (_alloc) COFFDefinedAtom(
         *this, "", sectionName, Atom::scopeTranslationUnit, type, isComdat,
-        perms, _merge[section], data, _ordinal++);
+        perms, _merge[section], data, getNextOrdinal());
     atoms.push_back(atom);
     _definedAtomLocations[section][0].push_back(atom);
   }
@@ -735,7 +726,7 @@ std::error_code FileCOFF::AtomizeDefinedSymbolsInSection(
     ArrayRef<uint8_t> data(start, end);
     auto *atom = new (_alloc) COFFDefinedAtom(
         *this, _symbolName[*si], sectionName, getScope(*si), type, isComdat,
-        perms, _merge[section], data, _ordinal++);
+        perms, _merge[section], data, getNextOrdinal());
     atoms.push_back(atom);
     _symbolAtom[*si] = atom;
     _definedAtomLocations[section][si->getValue()].push_back(atom);
@@ -873,6 +864,7 @@ AliasAtom *FileCOFF::createAlias(StringRef name,
   alias->setMerge(DefinedAtom::mergeAsWeak);
   if (target->contentType() == DefinedAtom::typeCode)
     alias->setDeadStrip(DefinedAtom::deadStripNever);
+  alias->setOrdinal(target->ordinal() - 1);
   return alias;
 }
 
@@ -884,7 +876,7 @@ void FileCOFF::createAlternateNameAtoms() {
       aliases.push_back(createAlias(it->second, atom));
   }
   for (AliasAtom *alias : aliases)
-    addDefinedAtom(alias);
+    _definedAtoms._atoms.push_back(alias);
 }
 
 // Interpret the contents of .drectve section. If exists, the section contains
@@ -990,12 +982,10 @@ std::error_code FileCOFF::maybeCreateSXDataAtoms() {
   if (sxdata.empty())
     return std::error_code();
 
-  std::vector<uint8_t> atomContent =
-      *new (_alloc) std::vector<uint8_t>((size_t)sxdata.size());
   auto *atom = new (_alloc) COFFDefinedAtom(
       *this, "", ".sxdata", Atom::scopeTranslationUnit, DefinedAtom::typeData,
       false /*isComdat*/, DefinedAtom::permR__, DefinedAtom::mergeNo,
-      atomContent, _ordinal++);
+      sxdata, getNextOrdinal());
 
   const ulittle32_t *symbolIndex =
       reinterpret_cast<const ulittle32_t *>(sxdata.data());
@@ -1069,6 +1059,13 @@ StringRef FileCOFF::ArrayRefToString(ArrayRef<uint8_t> array) {
   std::string *contents =
       new (_alloc) std::string(reinterpret_cast<const char *>(&array[0]), len);
   return StringRef(*contents).trim();
+}
+
+// getNextOrdinal returns a monotonically increasaing uint64_t number
+// starting from 1. There's a large gap between two numbers returned
+// from this function, so that you can put other atoms between them.
+uint64_t FileCOFF::getNextOrdinal() {
+  return _ordinal++ << 32;
 }
 
 class COFFObjectReader : public Reader {

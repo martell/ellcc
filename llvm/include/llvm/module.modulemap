@@ -40,7 +40,43 @@ module LLVM_Backend {
 
 module LLVM_Bitcode { requires cplusplus umbrella "Bitcode" module * { export * } }
 module LLVM_Config { requires cplusplus umbrella "Config" module * { export * } }
-module LLVM_DebugInfo { requires cplusplus umbrella "DebugInfo" module * { export * } }
+
+module LLVM_DebugInfo_DWARF {
+  requires cplusplus
+
+  umbrella "DebugInfo/DWARF"
+  module * { export * }
+}
+
+module LLVM_DebugInfo_PDB {
+  requires cplusplus
+
+  umbrella "DebugInfo/PDB"
+  module * { export * }
+
+  // Separate out this subdirectory; it's an optional component that depends on
+  // a separate library which might not be available.
+  //
+  // FIXME: There should be a better way to specify this.
+  exclude header "DebugInfo/PDB/DIA/DIADataStream.h"
+  exclude header "DebugInfo/PDB/DIA/DIAEnumDebugStreams.h"
+  exclude header "DebugInfo/PDB/DIA/DIAEnumLineNumbers.h"
+  exclude header "DebugInfo/PDB/DIA/DIAEnumSourceFiles.h"
+  exclude header "DebugInfo/PDB/DIA/DIAEnumSymbols.h"
+  exclude header "DebugInfo/PDB/DIA/DIALineNumber.h"
+  exclude header "DebugInfo/PDB/DIA/DIARawSymbol.h"
+  exclude header "DebugInfo/PDB/DIA/DIASession.h"
+  exclude header "DebugInfo/PDB/DIA/DIASourceFile.h"
+  exclude header "DebugInfo/PDB/DIA/DIASupport.h"
+}
+
+module LLVM_DebugInfo_PDB_DIA {
+  requires cplusplus
+
+  umbrella "DebugInfo/PDB/DIA"
+  module * { export * }
+}
+
 module LLVM_ExecutionEngine {
   requires cplusplus
 

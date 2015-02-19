@@ -91,6 +91,8 @@ class Configuration(object):
         self.configure_env()
         self.configure_compile_flags()
         self.configure_link_flags()
+        self.configure_color_diagnostics()
+        self.configure_debug_mode()
         self.configure_warnings()
         self.configure_sanitizer()
         self.configure_substitutions()
@@ -467,6 +469,34 @@ class Configuration(object):
             self.cxx.link_flags += ['-lc', '-lm', '-lpthread', '-lgcc_s']
         else:
             self.lit_config.fatal("unrecognized system: %r" % target_platform)
+
+    def configure_color_diagnostics(self):
+        use_color = self.get_lit_conf('color_diagnostics')
+        if use_color is None:
+            use_color = os.environ.get('LIBCXX_COLOR_DIAGNOSTICS')
+        if use_color is None:
+            return
+        if use_color != '':
+            self.lit_config.fatal('Invalid value for color_diagnostics "%s".'
+                                  % use_color)
+        cxx_type = self.cxx.type
+        if cxx_type is None:
+            self.lit_config.warning(
+                'Unable to force color output for unknown compiler "%s"'
+                % cxx.path)
+        elif cxx_type in ['clang', 'apple-clang']:
+            self.cxx.flags += ['-fcolor-diagnostics']
+        elif cxx_type == 'gcc':
+            self.cxx.flags += ['-fdiagnostics-color=always']
+
+    def configure_debug_mode(self):
+        debug_level = self.get_lit_conf('debug_level', None)
+        if not debug_level:
+            return
+        if debug_level not in ['0', '1']:
+            self.lit_config.fatal('Invalid value for debug_level "%s".'
+                                  % debug_level)
+        self.cxx.compile_flags += ['-D_LIBCPP_DEBUG=%s' % debug_level]
 
     def configure_warnings(self):
         enable_warnings = self.get_lit_bool('enable_warnings', False)

@@ -39,9 +39,6 @@
 #include <memory>
 #include <sys/stat.h>
 #include <system_error>
-#if LLVM_ON_UNIX
-#include <unistd.h> // for gethostname()
-#endif
 using namespace clang;
 
 //===----------------------------------------------------------------------===//
@@ -476,6 +473,8 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DataSections = Args.hasFlag(OPT_fdata_sections,
                                    OPT_fno_data_sections, false);
   Opts.MergeFunctions = Args.hasArg(OPT_fmerge_functions);
+
+  Opts.MSVolatile = Args.hasArg(OPT_fms_volatile);
 
   Opts.VectorizeBB = Args.hasArg(OPT_vectorize_slp_aggressive);
   Opts.VectorizeLoop = Args.hasArg(OPT_vectorize_loops);
@@ -1523,6 +1522,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.NoMathBuiltin = Args.hasArg(OPT_fno_math_builtin);
   Opts.AssumeSaneOperatorNew = !Args.hasArg(OPT_fno_assume_sane_operator_new);
   Opts.SizedDeallocation |= Args.hasArg(OPT_fsized_deallocation);
+  Opts.DefineSizedDeallocation = Opts.SizedDeallocation &&
+      Args.hasArg(OPT_fdefine_sized_deallocation);
   Opts.HeinousExtensions = Args.hasArg(OPT_fheinous_gnu_extensions);
   Opts.AccessControl = !Args.hasArg(OPT_fno_access_control);
   Opts.ElideConstructors = !Args.hasArg(OPT_fno_elide_constructors);
@@ -2023,20 +2024,6 @@ std::string CompilerInvocation::getModuleHash() const {
         code = hash_combine(code, statBuf.st_mtime);
     }
   }
-
-#if LLVM_ON_UNIX
-  // The LockFileManager cannot tell when processes from another host are
-  // running, so mangle the hostname in to the module hash to separate them.
-  char hostname[256];
-  hostname[0] = 0;
-  if (gethostname(hostname, 255) == 0) {
-    // Forcibly null-terminate the result, since POSIX doesn't require that
-    // truncation result in an error or that truncated names be null-terminated.
-    hostname[sizeof(hostname)-1] = 0;
-    code = hash_combine(code, StringRef(hostname));
-  }
-  // Ignore failures in gethostname() by not including the hostname in the hash.
-#endif
 
   return llvm::APInt(64, code).toString(36, /*Signed=*/false);
 }

@@ -7,8 +7,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/DebugInfo/PDB/PDBSymbol.h"
 #include "llvm/DebugInfo/PDB/PDBSymbolUsingNamespace.h"
+
+#include "llvm/DebugInfo/PDB/PDBSymbol.h"
+
 #include <utility>
 
 using namespace llvm;
@@ -18,4 +20,4 @@ PDBSymbolUsingNamespace::PDBSymbolUsingNamespace(
     : PDBSymbol(PDBSession, std::move(Symbol)) {}
 
 void PDBSymbolUsingNamespace::dump(raw_ostream &OS, int Indent,
-                                   PDB_DumpLevel Level) const {}
+                                   PDB_DumpLevel Level, PDB_DumpFlags Flags) const {}
