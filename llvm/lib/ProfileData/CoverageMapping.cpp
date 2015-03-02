@@ -219,16 +219,18 @@ CoverageMapping::load(CoverageMappingReader &CoverageReader,
 ErrorOr<std::unique_ptr<CoverageMapping>>
 CoverageMapping::load(StringRef ObjectFilename, StringRef ProfileFilename) {
   auto CounterMappingBuff = MemoryBuffer::getFileOrSTDIN(ObjectFilename);
-  if (auto EC = CounterMappingBuff.getError())
+  if (std::error_code EC = CounterMappingBuff.getError())
     return EC;
-  ObjectFileCoverageMappingReader CoverageReader(CounterMappingBuff.get());
-  if (auto EC = CoverageReader.readHeader())
+  auto CoverageReaderOrErr =
+      BinaryCoverageReader::create(CounterMappingBuff.get());
+  if (std::error_code EC = CoverageReaderOrErr.getError())
     return EC;
+  auto CoverageReader = std::move(CoverageReaderOrErr.get());
   auto ProfileReaderOrErr = IndexedInstrProfReader::create(ProfileFilename);
   if (auto EC = ProfileReaderOrErr.getError())
     return EC;
   auto ProfileReader = std::move(ProfileReaderOrErr.get());
-  return load(CoverageReader, *ProfileReader);
+  return load(*CoverageReader, *ProfileReader);
 }
 
 namespace {
@@ -361,7 +363,9 @@ static Optional<unsigned> findMainViewFileID(StringRef SourceFile,
       IsNotExpandedFile[CR.ExpandedFileID] = false;
   IsNotExpandedFile &= FilenameEquivalence;
   int I = IsNotExpandedFile.find_first();
-  return I != -1 ? I : None;
+  if (I == -1)
+    return None;
+  return I;
 }
 
 static Optional<unsigned> findMainViewFileID(const FunctionRecord &Function) {
@@ -370,7 +374,9 @@ static Optional<unsigned> findMainViewFileID(const FunctionRecord &Function) {
     if (CR.Kind == CounterMappingRegion::ExpansionRegion)
       IsNotExpandedFile[CR.ExpandedFileID] = false;
   int I = IsNotExpandedFile.find_first();
-  return I != -1 ? I : None;
+  if (I == -1)
+    return None;
+  return I;
 }
 
 /// Sort a nested sequence of regions from a single file.

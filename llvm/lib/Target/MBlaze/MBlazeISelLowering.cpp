@@ -192,7 +192,7 @@ MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM,
   setMinFunctionAlignment(2);
 
   setStackPointerRegisterToSaveRestore(MBlaze::R1);
-  computeRegisterProperties();
+  computeRegisterProperties(Subtarget.getRegisterInfo());
 }
 
 EVT MBlazeTargetLowering::getSetCCResultType(LLVMContext &, EVT) const {
@@ -661,13 +661,12 @@ static bool CC_MBlaze_AssignReg(unsigned &ValNo, MVT &ValVT, MVT &LocVT,
                                 CCValAssign::LocInfo &LocInfo,
                                 ISD::ArgFlagsTy &ArgFlags,
                                 CCState &State) {
-  static const uint16_t ArgRegs[] = {
+  static const MCPhysReg ArgRegs[] = {
     MBlaze::R5, MBlaze::R6, MBlaze::R7,
     MBlaze::R8, MBlaze::R9, MBlaze::R10
   };
 
-  const unsigned NumArgRegs = array_lengthof(ArgRegs);
-  unsigned Reg = State.AllocateReg(ArgRegs, NumArgRegs);
+  unsigned Reg = State.AllocateReg(ArgRegs);
   if (!Reg) return false;
 
   unsigned SizeInBytes = ValVT.getSizeInBits() >> 3;
@@ -1128,7 +1127,8 @@ MBlazeTargetLowering::getSingleConstraintMatchWeight(
 /// to an LLVM register class, return a register of 0 and the register class
 /// pointer.
 std::pair<unsigned, const TargetRegisterClass*> MBlazeTargetLowering::
-getRegForInlineAsmConstraint(const std::string &Constraint, MVT VT) const {
+getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                             const std::string &Constraint, MVT VT) const {
   if (Constraint.size() == 1) {
     switch (Constraint[0]) {
     case 'r':
@@ -1142,7 +1142,7 @@ getRegForInlineAsmConstraint(const std::string &Constraint, MVT VT) const {
         return std::make_pair(0U, &MBlaze::GPRRegClass);
     }
   }
-  return TargetLowering::getRegForInlineAsmConstraint(Constraint, VT);
+  return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
 }
 
 bool MBlazeTargetLowering::

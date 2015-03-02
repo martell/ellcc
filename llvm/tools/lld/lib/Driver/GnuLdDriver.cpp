@@ -32,6 +32,7 @@
 #include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstring>
 #include <tuple>
@@ -171,7 +172,15 @@ bool GnuLdDriver::linkELF(int argc, const char *argv[], raw_ostream &diag) {
     return false;
   if (!options)
     return true;
-  return link(*options, diag);
+  bool linked = link(*options, diag);
+
+  // Handle --stats.
+  if (options->collectStats()) {
+    llvm::TimeRecord t = llvm::TimeRecord::getCurrentTime(true);
+    diag << "total time in link " << t.getProcessTime() << "\n";
+    diag << "data size " << t.getMemUsed() << "\n";
+  }
+  return linked;
 }
 
 static llvm::Optional<llvm::Triple::ArchType>
@@ -413,10 +422,6 @@ bool GnuLdDriver::parse(int argc, const char *argv[],
   if (auto *arg = parsedArgs->getLastArg(OPT_sysroot))
     ctx->setSysroot(arg->getValue());
 
-  // Add the default search directory specific to the target.
-  if (!parsedArgs->hasArg(OPT_nostdlib))
-    addPlatformSearchDirs(*ctx, triple, baseTriple);
-
   // Handle --demangle option(For compatibility)
   if (parsedArgs->hasArg(OPT_demangle))
     ctx->setDemangleSymbols(true);
@@ -443,6 +448,11 @@ bool GnuLdDriver::parse(int argc, const char *argv[],
     ctx->setUseShlibUndefines(false);
     ctx->setPrintRemainingUndefines(false);
     ctx->setAllowRemainingUndefines(true);
+  }
+
+  // Handle --stats.
+  if (parsedArgs->hasArg(OPT_stats)) {
+    ctx->setCollectStats(true);
   }
 
   // Figure out if the output type is nmagic/omagic
@@ -529,6 +539,10 @@ bool GnuLdDriver::parse(int argc, const char *argv[],
 
   for (auto *arg : parsedArgs->filtered(OPT_L))
     ctx->addSearchPath(arg->getValue());
+
+  // Add the default search directory specific to the target.
+  if (!parsedArgs->hasArg(OPT_nostdlib))
+    addPlatformSearchDirs(*ctx, triple, baseTriple);
 
   for (auto *arg : parsedArgs->filtered(OPT_u))
     ctx->addInitialUndefinedSymbol(arg->getValue());

@@ -103,14 +103,14 @@ namespace llvm {
                                               const MBlazeSubtarget &STI);
 
     /// LowerOperation - Provide custom lowering hooks for some operations.
-    virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
 
     /// getTargetNodeName - This method returns the name of a target specific
     //  DAG node.
-    virtual const char *getTargetNodeName(unsigned Opcode) const;
+    const char *getTargetNodeName(unsigned Opcode) const override;
 
     /// getSetCCResultType - get the ISD::SETCC result ValueType
-    EVT getSetCCResultType(LLVMContext &Context, EVT VT) const;
+    EVT getSetCCResultType(LLVMContext &Context, EVT VT) const override;
 
   private:
     // Subtarget Info
@@ -137,18 +137,18 @@ namespace llvm {
                            CallingConv::ID CallConv, bool isVarArg,
                            const SmallVectorImpl<ISD::InputArg> &Ins,
                            SDLoc dl, SelectionDAG &DAG,
-                           SmallVectorImpl<SDValue> &InVals) const;
+                           SmallVectorImpl<SDValue> &InVals) const override;
 
     virtual SDValue
       LowerCall(TargetLowering::CallLoweringInfo &CLI,
-                SmallVectorImpl<SDValue> &InVals) const;
+                SmallVectorImpl<SDValue> &InVals) const override;
 
     virtual SDValue
       LowerReturn(SDValue Chain,
                   CallingConv::ID CallConv, bool isVarArg,
                   const SmallVectorImpl<ISD::OutputArg> &Outs,
                   const SmallVectorImpl<SDValue> &OutVals,
-                  SDLoc dl, SelectionDAG &DAG) const;
+                  SDLoc dl, SelectionDAG &DAG) const override;
 
     virtual MachineBasicBlock*
       EmitCustomShift(MachineInstr *MI, MachineBasicBlock *MBB) const;
@@ -159,28 +159,30 @@ namespace llvm {
     virtual MachineBasicBlock*
             EmitCustomAtomic(MachineInstr *MI, MachineBasicBlock *MBB) const;
 
-    virtual MachineBasicBlock *
-      EmitInstrWithCustomInserter(MachineInstr *MI,
-                                  MachineBasicBlock *MBB) const;
+    MachineBasicBlock *
+    EmitInstrWithCustomInserter(MachineInstr *MI,
+                                MachineBasicBlock *MBB) const override;
 
     // Inline asm support
-    ConstraintType getConstraintType(const std::string &Constraint) const;
+    ConstraintType
+      getConstraintType(const std::string &Constraint) const override;
 
     /// Examine constraint string and operand type and determine a weight value.
     /// The operand object must already have been set up with the operand type.
     ConstraintWeight getSingleConstraintMatchWeight(
-      AsmOperandInfo &info, const char *constraint) const;
+      AsmOperandInfo &info, const char *constraint) const override;
 
     std::pair<unsigned, const TargetRegisterClass*>
-              getRegForInlineAsmConstraint(const std::string &Constraint,
-                                           MVT VT) const;
+    getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                                 const std::string &Constraint,
+                                           MVT VT) const override;
 
-    virtual bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const;
+    bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const override;
 
     /// isFPImmLegal - Returns true if the target can instruction select the
     /// specified FP immediate natively. If false, the legalizer will
     /// materialize the FP immediate as a load from a constant pool.
-    virtual bool isFPImmLegal(const APFloat &Imm, EVT VT) const;
+    bool isFPImmLegal(const APFloat &Imm, EVT VT) const override;
   };
 }
 

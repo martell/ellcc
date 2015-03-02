@@ -37,7 +37,7 @@ entry:
 ; CHECK0-NOT: call void @__sanitizer_cov_module_init(
 
 ; CHECK1-LABEL: define void @foo
-; CHECK1: %0 = load atomic i32* {{.*}} monotonic, align 4, !nosanitize
+; CHECK1: %0 = load atomic i32, i32* {{.*}} monotonic, align 4, !nosanitize
 ; CHECK1: %1 = icmp sge i32 0, %0
 ; CHECK1: br i1 %1, label %2, label %3
 ; CHECK1: call void @__sanitizer_cov(i32*{{.*}})
@@ -47,7 +47,7 @@ entry:
 
 ; CHECK1-LABEL: define internal void @sancov.module_ctor
 ; CHECK1-NOT: ret
-; CHECK1: call void @__sanitizer_cov_module_init({{.*}}, i64 2)
+; CHECK1: call void @__sanitizer_cov_module_init({{.*}}, i64 2,
 ; CHECK1: ret
 
 ; CHECK_WITH_CHECK-LABEL: define void @foo
@@ -66,7 +66,7 @@ entry:
 
 ; CHECK2-LABEL: define internal void @sancov.module_ctor
 ; CHECK2-NOT: ret
-; CHECK2: call void @__sanitizer_cov_module_init({{.*}}, i64 4)
+; CHECK2: call void @__sanitizer_cov_module_init({{.*}}, i64 4,
 ; CHECK2: ret
 
 ; CHECK3-LABEL: define void @foo
@@ -84,8 +84,8 @@ entry:
 define void @CallViaVptr(%struct.StructWithVptr* %foo) uwtable sanitize_address {
 entry:
   %0 = bitcast %struct.StructWithVptr* %foo to void (%struct.StructWithVptr*)***
-  %vtable = load void (%struct.StructWithVptr*)*** %0, align 8
-  %1 = load void (%struct.StructWithVptr*)** %vtable, align 8
+  %vtable = load void (%struct.StructWithVptr*)**, void (%struct.StructWithVptr*)*** %0, align 8
+  %1 = load void (%struct.StructWithVptr*)*, void (%struct.StructWithVptr*)** %vtable, align 8
   tail call void %1(%struct.StructWithVptr* %foo)
   tail call void %1(%struct.StructWithVptr* %foo)
   tail call void asm sideeffect "", ""()

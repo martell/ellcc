@@ -68,14 +68,6 @@ define <8 x double> @test7(<8 x double> %a) {
   ret <8 x double>%res
 }
 
-declare <2 x double> @llvm.x86.avx512.mask.rndscale.sd(<2 x double>, <2 x double>, <2 x double>, i8, i32, i32)
-
-define <2 x double> @test_rndsc_sd(<2 x double> %a, <2 x double> %b, <2 x double> %c) {
-; CHECK: vrndscalesd $11, %xmm{{.*}} {%k1} ## encoding: [0x62,0xf3,0xfd,0x09,0x0b,0xd1,0x0b]
-  %res = call <2 x double> @llvm.x86.avx512.mask.rndscale.sd(<2 x double> %a, <2 x double> %b, <2 x double> %c, i8 5, i32 11, i32 4)
-  ret <2 x double>%res
-}
-
 declare <16 x float> @llvm.x86.avx512.mask.rndscale.ps.512(<16 x float>, i32, <16 x float>, i16, i32)
 
 define <16 x float> @test8(<16 x float> %a) {
@@ -364,7 +356,7 @@ define <8 x double> @test_x86_mask_blend_pd_512(i8 %a0, <8 x double> %a1, <8 x d
 define <8 x double> @test_x86_mask_blend_pd_512_memop(<8 x double> %a, <8 x double>* %ptr, i8 %mask) {
   ; CHECK-LABEL: test_x86_mask_blend_pd_512_memop
   ; CHECK: vblendmpd (%
-  %b = load <8 x double>* %ptr
+  %b = load <8 x double>, <8 x double>* %ptr
   %res = call <8 x double> @llvm.x86.avx512.mask.blend.pd.512(<8 x double> %a, <8 x double> %b, i8 %mask) ; <<8 x double>> [#uses=1]
   ret <8 x double> %res
 }
@@ -1443,7 +1435,7 @@ declare <8 x i64> @llvm.x86.avx512.mask.psrlv.q(<8 x i64>, <8 x i64>, <8 x i64>,
 define <8 x i64> @test_x86_avx512_psrlv_q_memop(<8 x i64> %a0, <8 x i64>* %ptr) {
   ; CHECK-LABEL: test_x86_avx512_psrlv_q_memop
   ; CHECK: vpsrlvq (%
-  %b = load <8 x i64>* %ptr
+  %b = load <8 x i64>, <8 x i64>* %ptr
   %res = call <8 x i64> @llvm.x86.avx512.mask.psrlv.q(<8 x i64> %a0, <8 x i64> %b, <8 x i64> zeroinitializer, i8 -1)
   ret <8 x i64> %res
 }

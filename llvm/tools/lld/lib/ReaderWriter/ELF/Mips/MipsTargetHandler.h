@@ -67,6 +67,16 @@ public:
     return *_gpDispAtom;
   }
 
+  /// \brief Return the section order for a input section
+  Layout::SectionOrder getSectionOrder(StringRef name, int32_t contentType,
+                                       int32_t contentPermissions) override {
+    if ((contentType == DefinedAtom::typeStub) && (name.startswith(".text")))
+      return DefaultLayout<ELFType>::ORDER_TEXT;
+
+    return DefaultLayout<ELFType>::getSectionOrder(name, contentType,
+                                                   contentPermissions);
+  }
+
 private:
   llvm::BumpPtrAllocator _alloc;
   MipsGOTSection<ELFType> *_gotSection;

@@ -1033,6 +1033,9 @@ ctype<char>::classic_table()  _NOEXCEPT
 // going to end up dereferencing it later...
 #elif defined(EMSCRIPTEN) || defined(__ELLCC__)
     return *__ctype_b_loc();
+#elif defined(_NEWLIB_VERSION)
+    // Newlib has a 257-entry table in ctype_.c, where (char)0 starts at [1].
+    return _ctype_ + 1;
 #elif defined(_AIX)
     return (const unsigned long *)__lc_ctype_ptr->obj->mask;
 #elif defined(__ANDROID__)

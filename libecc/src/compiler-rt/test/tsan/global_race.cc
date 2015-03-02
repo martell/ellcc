@@ -20,9 +20,9 @@ void *Thread(void *a) {
 
 int main() {
   barrier_init(&barrier, 2);
-  // On FreeBSD, the %p conversion specifier works as 0x%x and thus does not
-  // match to the format used in the diagnotic message.
-  fprintf(stderr, "addr=0x%012lx\n", (unsigned long) GlobalData);
+  fprintf(stderr, "addr=");
+  print_address(GlobalData);
+  fprintf(stderr, "\n");
   fprintf(stderr, "addr2=%p\n", &x);
   fprintf(stderr, "addr3=%p\n", XXX::YYY::ZZZ);
   pthread_t t;

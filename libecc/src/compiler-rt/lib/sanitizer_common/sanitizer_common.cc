@@ -16,6 +16,7 @@
 #include "sanitizer_flags.h"
 #include "sanitizer_libc.h"
 #include "sanitizer_placement_new.h"
+#include "sanitizer_symbolizer.h"
 
 namespace __sanitizer {
 
@@ -230,15 +231,18 @@ void ReportErrorSummary(const char *error_message) {
   __sanitizer_report_error_summary(buff.data());
 }
 
-void ReportErrorSummary(const char *error_type, const char *file,
-                        int line, const char *function) {
+void ReportErrorSummary(const char *error_type, const AddressInfo &info) {
   if (!common_flags()->print_summary)
     return;
   InternalScopedString buff(kMaxSummaryLength);
-  buff.append("%s %s:%d %s", error_type,
-              file ? StripPathPrefix(file, common_flags()->strip_path_prefix)
-                   : "??",
-              line, function ? function : "??");
+  buff.append(
+      "%s %s:%d", error_type,
+      info.file ? StripPathPrefix(info.file, common_flags()->strip_path_prefix)
+                : "??",
+      info.line);
+  if (info.column > 0)
+    buff.append(":%d", info.column);
+  buff.append(" %s", info.function ? info.function : "??");
   ReportErrorSummary(buff.data());
 }
 
@@ -288,9 +292,46 @@ void DecreaseTotalMmap(uptr size) {
   atomic_fetch_sub(&g_total_mmaped, size, memory_order_relaxed);
 }
 
-static void (*sandboxing_callback)();
-void SetSandboxingCallback(void (*f)()) {
-  sandboxing_callback = f;
+bool TemplateMatch(const char *templ, const char *str) {
+  if (str == 0 || str[0] == 0)
+    return false;
+  bool start = false;
+  if (templ && templ[0] == '^') {
+    start = true;
+    templ++;
+  }
+  bool asterisk = false;
+  while (templ && templ[0]) {
+    if (templ[0] == '*') {
+      templ++;
+      start = false;
+      asterisk = true;
+      continue;
+    }
+    if (templ[0] == '$')
+      return str[0] == 0 || asterisk;
+    if (str[0] == 0)
+      return false;
+    char *tpos = (char*)internal_strchr(templ, '*');
+    char *tpos1 = (char*)internal_strchr(templ, '$');
+    if (tpos == 0 || (tpos1 && tpos1 < tpos))
+      tpos = tpos1;
+    if (tpos != 0)
+      tpos[0] = 0;
+    const char *str0 = str;
+    const char *spos = internal_strstr(str, templ);
+    str = spos + internal_strlen(templ);
+    templ = tpos;
+    if (tpos)
+      tpos[0] = tpos == tpos1 ? '$' : '*';
+    if (spos == 0)
+      return false;
+    if (start && spos != str0)
+      return false;
+    start = false;
+    asterisk = false;
+  }
+  return true;
 }
 
 }  // namespace __sanitizer

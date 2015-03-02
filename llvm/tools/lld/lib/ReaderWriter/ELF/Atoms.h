@@ -35,6 +35,8 @@ template <typename ELFT> class ELFFile;
 template <class ELFT> class ELFReference : public Reference {
   typedef llvm::object::Elf_Rel_Impl<ELFT, false> Elf_Rel;
   typedef llvm::object::Elf_Rel_Impl<ELFT, true> Elf_Rela;
+  typedef llvm::object::Elf_Sym_Impl<ELFT> Elf_Sym;
+
 public:
   ELFReference(const Elf_Rela *rela, uint64_t off, Reference::KindArch arch,
                Reference::KindValue relocType, uint32_t idx)
@@ -124,9 +126,8 @@ public:
 
   StringRef name() const override { return _name; }
 
-  // FIXME: What distinguishes a symbol in ELF that can help decide if the
-  // symbol is undefined only during build and not runtime? This will make us
-  // choose canBeNullAtBuildtime and canBeNullAtRuntime.
+  // A symbol in ELF can be undefined at build time if the symbol is a undefined
+  // weak symbol.
   CanBeNull canBeNull() const override {
     if (_symbol->getBinding() == llvm::ELF::STB_WEAK)
       return CanBeNull::canBeNullAtBuildtime;
@@ -173,14 +174,16 @@ public:
   uint64_t size() const override {
     // Common symbols are not allocated in object files,
     // so use st_size to tell how many bytes are required.
-    if ((_symbol->getType() == llvm::ELF::STT_COMMON) ||
-        _symbol->st_shndx == llvm::ELF::SHN_COMMON)
+    if (_symbol && (_symbol->getType() == llvm::ELF::STT_COMMON ||
+                    _symbol->st_shndx == llvm::ELF::SHN_COMMON))
       return (uint64_t) _symbol->st_size;
 
     return _contentData.size();
   }
 
   Scope scope() const override {
+    if (!_symbol)
+      return scopeGlobal;
     if (_symbol->getVisibility() == llvm::ELF::STV_HIDDEN)
       return scopeLinkageUnit;
     else if (_symbol->getBinding() != llvm::ELF::STB_LOCAL)
@@ -192,8 +195,10 @@ public:
   // FIXME: Need to revisit this in future.
   Interposable interposable() const override { return interposeNo; }
 
-  // FIXME: What ways can we determine this in ELF?
   Merge merge() const override {
+    if (!_symbol)
+      return mergeNo;
+
     if (_symbol->getBinding() == llvm::ELF::STB_WEAK)
       return mergeAsWeak;
 
@@ -210,6 +215,12 @@ public:
 
     ContentType ret = typeUnknown;
     uint64_t flags = _section->sh_flags;
+
+    if (_section->sh_type == llvm::ELF::SHT_GROUP)
+      return typeGroupComdat;
+
+    if (!_symbol && _sectionName.startswith(".gnu.linkonce"))
+      return typeGnuLinkOnce;
 
     if (!(flags & llvm::ELF::SHF_ALLOC))
       return _contentType = typeNoAlloc;
@@ -281,6 +292,9 @@ public:
   }
 
   Alignment alignment() const override {
+    if (!_symbol)
+      return Alignment(0);
+
     // Obtain proper value of st_value field.
     const auto symValue = getSymbolValue(_symbol);
 
@@ -318,7 +332,7 @@ public:
 
   StringRef customSectionName() const override {
     if ((contentType() == typeZeroFill) ||
-        (_symbol->st_shndx == llvm::ELF::SHN_COMMON))
+        (_symbol && _symbol->st_shndx == llvm::ELF::SHN_COMMON))
       return ".bss";
     return _sectionName;
   }

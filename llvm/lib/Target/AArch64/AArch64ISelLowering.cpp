@@ -111,7 +111,7 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   }
 
   // Compute derived properties from the register classes
-  computeRegisterProperties();
+  computeRegisterProperties(Subtarget->getRegisterInfo());
 
   // Provide all sorts of operation actions
   setOperationAction(ISD::GlobalAddress, MVT::i64, Custom);
@@ -728,13 +728,6 @@ void AArch64TargetLowering::computeKnownBitsForTargetNode(
 
 MVT AArch64TargetLowering::getScalarShiftAmountTy(EVT LHSTy) const {
   return MVT::i64;
-}
-
-unsigned AArch64TargetLowering::getMaximalGlobalOffset() const {
-  // FIXME: On AArch64, this depends on the type.
-  // Basically, the addressable offsets are up to 4095 * Ty.getSizeInBytes().
-  // and the offset has to be a multiple of the related size in bytes.
-  return 4095;
 }
 
 FastISel *
@@ -2203,8 +2196,7 @@ void AArch64TargetLowering::saveVarArgRegisters(CCState &CCInfo,
                                           AArch64::X3, AArch64::X4, AArch64::X5,
                                           AArch64::X6, AArch64::X7 };
   static const unsigned NumGPRArgRegs = array_lengthof(GPRArgRegs);
-  unsigned FirstVariadicGPR =
-      CCInfo.getFirstUnallocated(GPRArgRegs, NumGPRArgRegs);
+  unsigned FirstVariadicGPR = CCInfo.getFirstUnallocated(GPRArgRegs);
 
   unsigned GPRSaveSize = 8 * (NumGPRArgRegs - FirstVariadicGPR);
   int GPRIdx = 0;
@@ -2232,8 +2224,7 @@ void AArch64TargetLowering::saveVarArgRegisters(CCState &CCInfo,
         AArch64::Q0, AArch64::Q1, AArch64::Q2, AArch64::Q3,
         AArch64::Q4, AArch64::Q5, AArch64::Q6, AArch64::Q7};
     static const unsigned NumFPRArgRegs = array_lengthof(FPRArgRegs);
-    unsigned FirstVariadicFPR =
-        CCInfo.getFirstUnallocated(FPRArgRegs, NumFPRArgRegs);
+    unsigned FirstVariadicFPR = CCInfo.getFirstUnallocated(FPRArgRegs);
 
     unsigned FPRSaveSize = 16 * (NumFPRArgRegs - FirstVariadicFPR);
     int FPRIdx = 0;
@@ -3365,11 +3356,12 @@ SDValue AArch64TargetLowering::LowerFCOPYSIGN(SDValue Op,
 
   EVT VecVT;
   EVT EltVT;
-  SDValue EltMask, VecVal1, VecVal2;
+  uint64_t EltMask;
+  SDValue VecVal1, VecVal2;
   if (VT == MVT::f32 || VT == MVT::v2f32 || VT == MVT::v4f32) {
     EltVT = MVT::i32;
     VecVT = MVT::v4i32;
-    EltMask = DAG.getConstant(0x80000000ULL, EltVT);
+    EltMask = 0x80000000ULL;
 
     if (!VT.isVector()) {
       VecVal1 = DAG.getTargetInsertSubreg(AArch64::ssub, DL, VecVT,
@@ -3387,7 +3379,7 @@ SDValue AArch64TargetLowering::LowerFCOPYSIGN(SDValue Op,
     // We want to materialize a mask with the the high bit set, but the AdvSIMD
     // immediate moves cannot materialize that in a single instruction for
     // 64-bit elements. Instead, materialize zero and then negate it.
-    EltMask = DAG.getConstant(0, EltVT);
+    EltMask = 0;
 
     if (!VT.isVector()) {
       VecVal1 = DAG.getTargetInsertSubreg(AArch64::dsub, DL, VecVT,
@@ -3402,11 +3394,7 @@ SDValue AArch64TargetLowering::LowerFCOPYSIGN(SDValue Op,
     llvm_unreachable("Invalid type for copysign!");
   }
 
-  std::vector<SDValue> BuildVectorOps;
-  for (unsigned i = 0; i < VecVT.getVectorNumElements(); ++i)
-    BuildVectorOps.push_back(EltMask);
-
-  SDValue BuildVec = DAG.getNode(ISD::BUILD_VECTOR, DL, VecVT, BuildVectorOps);
+  SDValue BuildVec = DAG.getConstant(EltMask, VecVT);
 
   // If we couldn't materialize the mask above, then the mask vector will be
   // the zero vector, and we need to negate it here.
@@ -4272,7 +4260,8 @@ AArch64TargetLowering::getSingleConstraintMatchWeight(
 
 std::pair<unsigned, const TargetRegisterClass *>
 AArch64TargetLowering::getRegForInlineAsmConstraint(
-    const std::string &Constraint, MVT VT) const {
+    const TargetRegisterInfo *TRI, const std::string &Constraint,
+    MVT VT) const {
   if (Constraint.size() == 1) {
     switch (Constraint[0]) {
     case 'r':
@@ -4301,7 +4290,7 @@ AArch64TargetLowering::getRegForInlineAsmConstraint(
   // Use the default implementation in TargetLowering to convert the register
   // constraint into a member of a register class.
   std::pair<unsigned, const TargetRegisterClass *> Res;
-  Res = TargetLowering::getRegForInlineAsmConstraint(Constraint, VT);
+  Res = TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
 
   // Not found as a standard register?
   if (!Res.second) {
@@ -6535,6 +6524,34 @@ bool AArch64TargetLowering::isTruncateFree(EVT VT1, EVT VT2) const {
   return NumBits1 > NumBits2;
 }
 
+/// Check if it is profitable to hoist instruction in then/else to if.
+/// Not profitable if I and it's user can form a FMA instruction
+/// because we prefer FMSUB/FMADD.
+bool AArch64TargetLowering::isProfitableToHoist(Instruction *I) const {
+  if (I->getOpcode() != Instruction::FMul)
+    return true;
+
+  if (I->getNumUses() != 1)
+    return true;
+
+  Instruction *User = I->user_back();
+
+  if (User &&
+      !(User->getOpcode() == Instruction::FSub ||
+        User->getOpcode() == Instruction::FAdd))
+    return true;
+
+  const TargetOptions &Options = getTargetMachine().Options;
+  EVT VT = getValueType(User->getOperand(0)->getType());
+
+  if (isFMAFasterThanFMulAndFAdd(VT) &&
+      isOperationLegalOrCustom(ISD::FMA, VT) &&
+      (Options.AllowFPOpFusion == FPOpFusion::Fast || Options.UnsafeFPMath))
+    return false;
+
+  return true;
+}
+
 // All 32-bit GPR operations implicitly zero the high-half of the corresponding
 // 64-bit GPR.
 bool AArch64TargetLowering::isZExtFree(Type *Ty1, Type *Ty2) const {
@@ -7973,7 +7990,7 @@ static SDValue performPostLD1Combine(SDNode *N,
                                            LoadSDN->getMemOperand());
 
     // Update the uses.
-    std::vector<SDValue> NewResults;
+    SmallVector<SDValue, 2> NewResults;
     NewResults.push_back(SDValue(LD, 0));             // The result of load
     NewResults.push_back(SDValue(UpdN.getNode(), 2)); // Chain
     DCI.CombineTo(LD, NewResults);

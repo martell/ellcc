@@ -1,8 +1,8 @@
-; RUN: llc < %s -mcpu=x86-64 -mattr=+sse2 -x86-experimental-vector-shuffle-legality | FileCheck %s --check-prefix=ALL --check-prefix=SSE --check-prefix=SSE2
-; RUN: llc < %s -mcpu=x86-64 -mattr=+ssse3 -x86-experimental-vector-shuffle-legality | FileCheck %s --check-prefix=ALL --check-prefix=SSE --check-prefix=SSSE3
-; RUN: llc < %s -mcpu=x86-64 -mattr=+sse4.1 -x86-experimental-vector-shuffle-legality | FileCheck %s --check-prefix=ALL --check-prefix=SSE --check-prefix=SSE41
-; RUN: llc < %s -mcpu=x86-64 -mattr=+avx -x86-experimental-vector-shuffle-legality | FileCheck %s --check-prefix=ALL --check-prefix=AVX --check-prefix=AVX1
-; RUN: llc < %s -mcpu=x86-64 -mattr=+avx2 -x86-experimental-vector-shuffle-legality | FileCheck %s --check-prefix=ALL --check-prefix=AVX --check-prefix=AVX2
+; RUN: llc < %s -mcpu=x86-64 -mattr=+sse2 | FileCheck %s --check-prefix=ALL --check-prefix=SSE --check-prefix=SSE2
+; RUN: llc < %s -mcpu=x86-64 -mattr=+ssse3 | FileCheck %s --check-prefix=ALL --check-prefix=SSE --check-prefix=SSSE3
+; RUN: llc < %s -mcpu=x86-64 -mattr=+sse4.1 | FileCheck %s --check-prefix=ALL --check-prefix=SSE --check-prefix=SSE41
+; RUN: llc < %s -mcpu=x86-64 -mattr=+avx | FileCheck %s --check-prefix=ALL --check-prefix=AVX --check-prefix=AVX1
+; RUN: llc < %s -mcpu=x86-64 -mattr=+avx2 | FileCheck %s --check-prefix=ALL --check-prefix=AVX --check-prefix=AVX2
 ;
 ; Verify that the DAG combiner correctly folds bitwise operations across
 ; shuffles, nested shuffles with undef, pairs of nested shuffles, and other
@@ -600,17 +600,17 @@ define <4 x i32> @combine_bitwise_ops_test3c(<4 x i32> %a, <4 x i32> %b, <4 x i3
 ; SSE2-LABEL: combine_bitwise_ops_test3c:
 ; SSE2:       # BB#0:
 ; SSE2-NEXT:    pxor %xmm1, %xmm0
-; SSE2-NEXT:    pshufd {{.*#+}} xmm0 = xmm0[0,2,2,3]
+; SSE2-NEXT:    pshufd {{.*#+}} xmm0 = xmm0[0,1,0,2]
 ; SSE2-NEXT:    pxor %xmm1, %xmm1
-; SSE2-NEXT:    punpcklqdq {{.*#+}} xmm0 = xmm0[0],xmm1[0]
+; SSE2-NEXT:    punpckhqdq {{.*#+}} xmm0 = xmm0[1],xmm1[1]
 ; SSE2-NEXT:    retq
 ;
 ; SSSE3-LABEL: combine_bitwise_ops_test3c:
 ; SSSE3:       # BB#0:
 ; SSSE3-NEXT:    pxor %xmm1, %xmm0
-; SSSE3-NEXT:    pshufd {{.*#+}} xmm0 = xmm0[0,2,2,3]
+; SSSE3-NEXT:    pshufd {{.*#+}} xmm0 = xmm0[0,1,0,2]
 ; SSSE3-NEXT:    pxor %xmm1, %xmm1
-; SSSE3-NEXT:    punpcklqdq {{.*#+}} xmm0 = xmm0[0],xmm1[0]
+; SSSE3-NEXT:    punpckhqdq {{.*#+}} xmm0 = xmm0[1],xmm1[1]
 ; SSSE3-NEXT:    retq
 ;
 ; SSE41-LABEL: combine_bitwise_ops_test3c:
@@ -1117,16 +1117,14 @@ define <4 x i32> @combine_nested_undef_test18(<4 x i32> %A, <4 x i32> %B) {
 define <4 x i32> @combine_nested_undef_test19(<4 x i32> %A, <4 x i32> %B) {
 ; SSE2-LABEL: combine_nested_undef_test19:
 ; SSE2:       # BB#0:
-; SSE2-NEXT:    shufps {{.*#+}} xmm1 = xmm1[1,0],xmm0[0,0]
-; SSE2-NEXT:    shufps {{.*#+}} xmm1 = xmm1[0,2],xmm0[0,0]
-; SSE2-NEXT:    movaps %xmm1, %xmm0
+; SSE2-NEXT:    punpckldq {{.*#+}} xmm0 = xmm0[0],xmm1[0],xmm0[1],xmm1[1]
+; SSE2-NEXT:    pshufd {{.*#+}} xmm0 = xmm0[3,0,0,0]
 ; SSE2-NEXT:    retq
 ;
 ; SSSE3-LABEL: combine_nested_undef_test19:
 ; SSSE3:       # BB#0:
-; SSSE3-NEXT:    shufps {{.*#+}} xmm1 = xmm1[1,0],xmm0[0,0]
-; SSSE3-NEXT:    shufps {{.*#+}} xmm1 = xmm1[0,2],xmm0[0,0]
-; SSSE3-NEXT:    movaps %xmm1, %xmm0
+; SSSE3-NEXT:    punpckldq {{.*#+}} xmm0 = xmm0[0],xmm1[0],xmm0[1],xmm1[1]
+; SSSE3-NEXT:    pshufd {{.*#+}} xmm0 = xmm0[3,0,0,0]
 ; SSSE3-NEXT:    retq
 ;
 ; SSE41-LABEL: combine_nested_undef_test19:
@@ -1191,16 +1189,14 @@ define <4 x i32> @combine_nested_undef_test20(<4 x i32> %A, <4 x i32> %B) {
 define <4 x i32> @combine_nested_undef_test21(<4 x i32> %A, <4 x i32> %B) {
 ; SSE2-LABEL: combine_nested_undef_test21:
 ; SSE2:       # BB#0:
-; SSE2-NEXT:    pshufd {{.*#+}} xmm2 = xmm0[1,1,2,3]
-; SSE2-NEXT:    pshufd {{.*#+}} xmm0 = xmm1[0,0,1,1]
-; SSE2-NEXT:    punpckldq {{.*#+}} xmm0 = xmm0[0],xmm2[0],xmm0[1],xmm2[1]
+; SSE2-NEXT:    punpckldq {{.*#+}} xmm1 = xmm1[0],xmm0[0],xmm1[1],xmm0[1]
+; SSE2-NEXT:    pshufd {{.*#+}} xmm0 = xmm1[0,3,0,3]
 ; SSE2-NEXT:    retq
 ;
 ; SSSE3-LABEL: combine_nested_undef_test21:
 ; SSSE3:       # BB#0:
-; SSSE3-NEXT:    pshufd {{.*#+}} xmm2 = xmm0[1,1,2,3]
-; SSSE3-NEXT:    pshufd {{.*#+}} xmm0 = xmm1[0,0,1,1]
-; SSSE3-NEXT:    punpckldq {{.*#+}} xmm0 = xmm0[0],xmm2[0],xmm0[1],xmm2[1]
+; SSSE3-NEXT:    punpckldq {{.*#+}} xmm1 = xmm1[0],xmm0[0],xmm1[1],xmm0[1]
+; SSSE3-NEXT:    pshufd {{.*#+}} xmm0 = xmm1[0,3,0,3]
 ; SSSE3-NEXT:    retq
 ;
 ; SSE41-LABEL: combine_nested_undef_test21:
@@ -1795,8 +1791,8 @@ define <8 x float> @combine_test22(<2 x float>* %a, <2 x float>* %b) {
 ; AVX-NEXT:    vmovhpd (%rsi), %xmm0, %xmm0
 ; AVX-NEXT:    retq
 ; Current AVX2 lowering of this is still awful, not adding a test case.
-  %1 = load <2 x float>* %a, align 8
-  %2 = load <2 x float>* %b, align 8
+  %1 = load <2 x float>, <2 x float>* %a, align 8
+  %2 = load <2 x float>, <2 x float>* %b, align 8
   %3 = shufflevector <2 x float> %1, <2 x float> %2, <8 x i32> <i32 0, i32 1, i32 2, i32 3, i32 undef, i32 undef, i32 undef, i32 undef>
   ret <8 x float> %3
 }
@@ -1937,8 +1933,8 @@ define <4 x i8> @combine_test1c(<4 x i8>* %a, <4 x i8>* %b) {
 ; AVX2-NEXT:    vpmovzxbd {{.*#+}} xmm1 = mem[0],zero,zero,zero,mem[1],zero,zero,zero,mem[2],zero,zero,zero,mem[3],zero,zero,zero
 ; AVX2-NEXT:    vpblendd {{.*#+}} xmm0 = xmm0[0],xmm1[1,2,3]
 ; AVX2-NEXT:    retq
-  %A = load <4 x i8>* %a
-  %B = load <4 x i8>* %b
+  %A = load <4 x i8>, <4 x i8>* %a
+  %B = load <4 x i8>, <4 x i8>* %b
   %1 = shufflevector <4 x i8> %A, <4 x i8> %B, <4 x i32> <i32 0, i32 5, i32 2, i32 7>
   %2 = shufflevector <4 x i8> %1, <4 x i8> %B, <4 x i32> <i32 0, i32 1, i32 6, i32 3>
   ret <4 x i8> %2
@@ -1980,8 +1976,8 @@ define <4 x i8> @combine_test2c(<4 x i8>* %a, <4 x i8>* %b) {
 ; AVX-NEXT:    vpmovzxbd {{.*#+}} xmm1 = mem[0],zero,zero,zero,mem[1],zero,zero,zero,mem[2],zero,zero,zero,mem[3],zero,zero,zero
 ; AVX-NEXT:    vpunpcklqdq {{.*#+}} xmm0 = xmm0[0],xmm1[0]
 ; AVX-NEXT:    retq
-  %A = load <4 x i8>* %a
-  %B = load <4 x i8>* %b
+  %A = load <4 x i8>, <4 x i8>* %a
+  %B = load <4 x i8>, <4 x i8>* %b
   %1 = shufflevector <4 x i8> %A, <4 x i8> %B, <4 x i32> <i32 0, i32 5, i32 1, i32 5>
   %2 = shufflevector <4 x i8> %1, <4 x i8> %B, <4 x i32> <i32 0, i32 2, i32 4, i32 1>
   ret <4 x i8> %2
@@ -2023,8 +2019,8 @@ define <4 x i8> @combine_test3c(<4 x i8>* %a, <4 x i8>* %b) {
 ; AVX-NEXT:    vpmovzxbd {{.*#+}} xmm1 = mem[0],zero,zero,zero,mem[1],zero,zero,zero,mem[2],zero,zero,zero,mem[3],zero,zero,zero
 ; AVX-NEXT:    vpunpckhqdq {{.*#+}} xmm0 = xmm1[1],xmm0[1]
 ; AVX-NEXT:    retq
-  %A = load <4 x i8>* %a
-  %B = load <4 x i8>* %b
+  %A = load <4 x i8>, <4 x i8>* %a
+  %B = load <4 x i8>, <4 x i8>* %b
   %1 = shufflevector <4 x i8> %A, <4 x i8> %B, <4 x i32> <i32 2, i32 3, i32 5, i32 5>
   %2 = shufflevector <4 x i8> %1, <4 x i8> %B, <4 x i32> <i32 6, i32 7, i32 0, i32 1>
   ret <4 x i8> %2
@@ -2075,8 +2071,8 @@ define <4 x i8> @combine_test4c(<4 x i8>* %a, <4 x i8>* %b) {
 ; AVX2-NEXT:    vpmovzxbd {{.*#+}} xmm1 = mem[0],zero,zero,zero,mem[1],zero,zero,zero,mem[2],zero,zero,zero,mem[3],zero,zero,zero
 ; AVX2-NEXT:    vpblendd {{.*#+}} xmm0 = xmm1[0],xmm0[1],xmm1[2,3]
 ; AVX2-NEXT:    retq
-  %A = load <4 x i8>* %a
-  %B = load <4 x i8>* %b
+  %A = load <4 x i8>, <4 x i8>* %a
+  %B = load <4 x i8>, <4 x i8>* %b
   %1 = shufflevector <4 x i8> %A, <4 x i8> %B, <4 x i32> <i32 4, i32 1, i32 6, i32 3>
   %2 = shufflevector <4 x i8> %1, <4 x i8> %B, <4 x i32> <i32 0, i32 1, i32 2, i32 7>
   ret <4 x i8> %2
