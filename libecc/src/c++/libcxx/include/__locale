@@ -407,7 +407,6 @@ public:
     static const mask punct  = 1<<7;
     static const mask xdigit = 1<<8;
     static const mask blank  = 1<<9;
-#else  // __GLIBC__ || _WIN32 || __APPLE__ || __FreeBSD__ || EMSCRIPTEN || __sun__
 #elif defined(_NEWLIB_VERSION)
     // Same type as Newlib's _ctype_ array in newlib/libc/include/ctype.h.
     typedef char mask;
@@ -422,7 +421,6 @@ public:
     static const mask xdigit = _X | _N;
     static const mask blank  = _B;
 #else
->>>>>>> .merge-right.r4973
     typedef unsigned long mask;
     static const mask space  = 1<<0;
     static const mask print  = 1<<1;
