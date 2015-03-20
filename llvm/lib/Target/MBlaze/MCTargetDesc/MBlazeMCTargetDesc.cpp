@@ -111,26 +111,22 @@ MBlazeTargetELFStreamer(MCStreamer &S, const MCSubtargetInfo &STI)
 {
 }
 
-static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
-                                    MCContext &Ctx, MCAsmBackend &MAB,
-                                    raw_ostream &OS, MCCodeEmitter *Emitter,
-                                    const MCSubtargetInfo &STI, bool RelaxAll) {
-  MCStreamer *S =
-    createELFStreamer(Ctx, MAB, OS, Emitter, RelaxAll);
-  new MBlazeTargetELFStreamer(*S, STI);
+static MCStreamer *createMCStreamer(const Triple &T, MCContext &Ctx,
+                                    MCAsmBackend &MAB, raw_ostream &OS,
+                                    MCCodeEmitter *Emitter, bool RelaxAll) {
+  MCStreamer *S = createELFStreamer(Ctx, MAB, OS, Emitter, RelaxAll);
   return S;
 }
 
-static MCStreamer *
-createMCAsmStreamer(MCContext &Ctx, formatted_raw_ostream &OS,
-                    bool isVerboseAsm, bool useDwarfDirectory,
-                    MCInstPrinter *InstPrint, MCCodeEmitter *CE,
-                    MCAsmBackend *TAB, bool ShowInst) {
-  MCStreamer *S =
-    llvm::createAsmStreamer(Ctx, OS, isVerboseAsm, useDwarfDirectory,
-                            InstPrint, CE, TAB, ShowInst);
-  new MBlazeTargetAsmStreamer(*S, OS);
-  return S;
+static MCTargetStreamer *
+createMCAsmTargetStreamer(MCStreamer &S, formatted_raw_ostream &OS,
+                          MCInstPrinter *InstPrint, bool isVerboseAsm) {
+  return new MBlazeTargetAsmStreamer(S, OS);
+}
+
+static MCTargetStreamer *
+createMBlazeObjectTargetStreamer(MCStreamer &S, const MCSubtargetInfo &STI) {
+  return new MBlazeTargetELFStreamer(S, STI);
 }
 
 static MCInstPrinter *createMBlazeMCInstPrinter(const Target &T,
@@ -168,16 +164,20 @@ extern "C" void LLVMInitializeMBlazeTargetMC() {
   TargetRegistry::RegisterMCCodeEmitter(TheMBlazeTarget,
                                         llvm::createMBlazeMCCodeEmitter);
 
-  // Register the asm streamer
-  TargetRegistry::RegisterAsmStreamer(TheMBlazeTarget,
-                                       createMCAsmStreamer);
+  // Register the elf streamer.
+  TargetRegistry::RegisterELFStreamer(TheMBlazeTarget, createMCStreamer);
+
+  // Register the asm target streamer
+  TargetRegistry::RegisterAsmTargetStreamer(TheMBlazeTarget,
+                                            createMCAsmTargetStreamer);
   // Register the asm backend
   TargetRegistry::RegisterMCAsmBackend(TheMBlazeTarget,
                                        createMBlazeAsmBackend);
 
   // Register the object streamer
-  TargetRegistry::RegisterMCObjectStreamer(TheMBlazeTarget,
-                                           createMCStreamer);
+  TargetRegistry::
+  RegisterObjectTargetStreamer(TheMBlazeTarget,
+                               createMBlazeObjectTargetStreamer);
 
   // Register the MCInstPrinter.
   TargetRegistry::RegisterMCInstPrinter(TheMBlazeTarget,

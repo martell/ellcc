@@ -55,9 +55,8 @@ MBlazeTargetMachine(const Target &T, StringRef TT,
                     StringRef CPU, StringRef FS, const TargetOptions &Options,
                     Reloc::Model RM, CodeModel::Model CM,
                     CodeGenOpt::Level OL)
-  : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
-    TLOF(make_unique<MBlazeTargetObjectFile>()),
-    DL(computeDataLayout()), Subtarget(nullptr),
+  : LLVMTargetMachine(T, computeDataLayout(), TT, CPU, FS, Options, RM, CM, OL),
+    TLOF(make_unique<MBlazeTargetObjectFile>()), Subtarget(nullptr),
     DefaultSubtarget(TT, CPU, FS, /* isL:ittle */ false, *this) {
   Subtarget = &DefaultSubtarget;
   initAsmInfo();

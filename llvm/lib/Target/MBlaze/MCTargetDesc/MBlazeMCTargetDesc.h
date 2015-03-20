@@ -32,7 +32,6 @@ extern Target TheMBlazeTarget;
 
 MCCodeEmitter *createMBlazeMCCodeEmitter(const MCInstrInfo &MCII,
                                          const MCRegisterInfo &MRI,
-                                         const MCSubtargetInfo &STI,
                                          MCContext &Ctx);
 
 MCAsmBackend *createMBlazeAsmBackend(const Target &T,

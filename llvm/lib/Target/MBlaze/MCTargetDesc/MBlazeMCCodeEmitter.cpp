@@ -16,6 +16,8 @@
 #include "MCTargetDesc/MBlazeBaseInfo.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/MC/MCCodeEmitter.h"
+#include "llvm/ADT/APFloat.h"
+#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCInst.h"
@@ -32,11 +34,12 @@ class MBlazeMCCodeEmitter : public MCCodeEmitter {
   MBlazeMCCodeEmitter(const MBlazeMCCodeEmitter &) = delete;
   void operator=(const MBlazeMCCodeEmitter &) = delete;
   const MCInstrInfo &MCII;
+  MCContext &Ctx;
 
 public:
-  MBlazeMCCodeEmitter(const MCInstrInfo &mcii, const MCSubtargetInfo &sti,
+  MBlazeMCCodeEmitter(const MCInstrInfo &mcii,
                       MCContext &ctx)
-    : MCII(mcii) {
+    : MCII(mcii), Ctx(ctx) {
   }
 
   ~MBlazeMCCodeEmitter() {}
@@ -101,9 +104,8 @@ public:
 
 MCCodeEmitter *llvm::createMBlazeMCCodeEmitter(const MCInstrInfo &MCII,
                                                const MCRegisterInfo &MRI,
-                                               const MCSubtargetInfo &STI,
                                                MCContext &Ctx) {
-  return new MBlazeMCCodeEmitter(MCII, STI, Ctx);
+  return new MBlazeMCCodeEmitter(MCII, Ctx);
 }
 
 /// getMachineOpValue - Return binary encoding of operand. If the machine
@@ -112,16 +114,19 @@ unsigned MBlazeMCCodeEmitter::getMachineOpValue(const MCInst &MI,
                                             const MCOperand &MO,
                                             SmallVectorImpl<MCFixup> &Fixups,
                                             const MCSubtargetInfo &STI) const {
-  if (MO.isReg())
-    return getMBlazeRegisterNumbering(MO.getReg());
-  if (MO.isImm())
+  if (MO.isReg()) {
+    unsigned Reg = MO.getReg();
+    unsigned RegNo = Ctx.getRegisterInfo()->getEncodingValue(Reg);
+    return RegNo;
+  } else if (MO.isImm()) {
     return static_cast<unsigned>(MO.getImm());
-  if (MO.isExpr())
-    return 0; // The relocation has already been recorded at this point.
-#ifndef NDEBUG
-  errs() << MO;
-#endif
-  llvm_unreachable(0);
+  } else if (MO.isFPImm()) {
+    return static_cast<unsigned>(APFloat(MO.getFPImm())
+        .bitcastToAPInt().getHiBits(32).getLimitedValue());
+  }
+  // MO must be an Expr.
+  assert(MO.isExpr());
+  return 0; // The relocation has already been recorded at this point.
 }
 
 void MBlazeMCCodeEmitter::
@@ -216,6 +221,7 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
   unsigned Value = getBinaryCodeForInstr(MI, Fixups, STI);
   EmitConstant(Value, 4, CurByte, OS);
 }
+
 
 // FIXME: These #defines shouldn't be necessary. Instead, tblgen should
 // be able to generate code emitter helpers for either variant, like it

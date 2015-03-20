@@ -25,7 +25,6 @@ class formatted_raw_ostream;
 
 class MBlazeTargetMachine : public LLVMTargetMachine {
   std::unique_ptr<TargetLoweringObjectFile> TLOF;
-  const DataLayout DL; // Calculates type size & alignment
   MBlazeSubtarget        *Subtarget;
   MBlazeSubtarget        DefaultSubtarget;
   MBlazeIntrinsicInfo    IntrinsicInfo;
@@ -55,7 +54,6 @@ public:
     return TLOF.get();
   }
 
-  const DataLayout *getDataLayout() const override { return &DL; }
 };
 } // End llvm namespace
 
