@@ -486,7 +486,7 @@ void ASTStmtReader::VisitStringLiteral(StringLiteral *E) {
 
   // Read string data
   SmallString<16> Str(&Record[Idx], &Record[Idx] + Len);
-  E->setString(Reader.getContext(), Str.str(), kind, isPascal);
+  E->setString(Reader.getContext(), Str, kind, isPascal);
   Idx += Len;
 
   // Read source locations
@@ -2132,7 +2132,9 @@ void ASTStmtReader::VisitOMPAtomicDirective(OMPAtomicDirective *D) {
   // The NumClauses field was read in ReadStmtFromStream.
   ++Idx;
   VisitOMPExecutableDirective(D);
+  D->setOpKind(static_cast<BinaryOperatorKind>(Record[Idx++]));
   D->setX(Reader.ReadSubExpr());
+  D->setXRVal(Reader.ReadSubExpr());
   D->setV(Reader.ReadSubExpr());
   D->setExpr(Reader.ReadSubExpr());
 }

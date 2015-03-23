@@ -719,6 +719,9 @@ public:
   /// Get the address of the RTTI descriptor for the given type.
   llvm::Constant *GetAddrOfRTTIDescriptor(QualType Ty, bool ForEH = false);
 
+  llvm::Constant *getAddrOfCXXHandlerMapEntry(QualType Ty,
+                                              QualType CatchHandlerType);
+
   /// Get the address of a uuid descriptor .
   llvm::Constant *GetAddrOfUuidDescriptor(const CXXUuidofExpr* E);
 
@@ -1102,6 +1105,14 @@ public:
   /// \brief Emit a code for threadprivate directive.
   /// \param D Threadprivate declaration.
   void EmitOMPThreadPrivateDecl(const OMPThreadPrivateDecl *D);
+
+  /// Emit bit set entries for the given vtable using the given layout if
+  /// vptr CFI is enabled.
+  void EmitVTableBitSetEntries(llvm::GlobalVariable *VTable,
+                               const VTableLayout &VTLayout);
+
+  /// \breif Get the declaration of std::terminate for the platform.
+  llvm::Constant *getTerminateFn();
 
 private:
   llvm::Constant *

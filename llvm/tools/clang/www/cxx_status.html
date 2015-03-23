@@ -38,7 +38,7 @@
 <!--*************************************************************************-->
 <h1>C++ Support in Clang</h1>
 <!--*************************************************************************-->
-<p>Last updated: $Date: 2015-02-18 22:34:13 -0600 (Wed, 18 Feb 2015) $</p>
+<p>Last updated: $Date: 2015-02-25 17:48:35 -0600 (Wed, 25 Feb 2015) $</p>
 
 <p>Clang fully implements all published ISO C++ standards including <a
 href="#cxx11">C++11</a>, as well as the upcoming <a
@@ -518,12 +518,13 @@ Clang version in which each feature became available.</p>
     </tr>
 </table>
 <p>
-<span id="n3778">(6): As of Clang 3.7, using sized deallocation in C++14 mode requires linking either
-libc++ 3.7 or later, or libstdc++ 5 or later. Alternatively, you can use the 
-<code>-fdefine-sized-deallocation</code> compiler option to enable the implementation under 
-Clang 3.4 through Clang 3.6, where weak definitions of sized deallocation functions are implicitly 
-generated (by the compiler). You can also use the <code>-fno-sized-deallocation</code> option 
-to disable sized deallocation.
+<span id="n3778">(6): In Clang SVN, using sized deallocation in C++14 mode requires linking either
+libc++ 3.7 or later, or libstdc++ 5 or later. Alternatively, you can use the
+<code>-Xclang -fdefine-sized-deallocation</code> compiler option to enable the implementation from
+Clang 3.4 through Clang 3.6, where weak definitions of sized deallocation functions are implicitly
+generated (by the compiler). You can also use the <code>-Xclang -fno-sized-deallocation</code> option 
+to disable sized deallocation. Note that both of these flags are temporary provisions and may go away
+soon.
 </span>
 </p>
 

@@ -121,6 +121,10 @@ class CompilerInstance : public ModuleLoader {
   /// \brief Module names that have an override for the target file.
   llvm::StringMap<std::string> ModuleFileOverrides;
 
+  /// \brief Module files that we've explicitly loaded via \ref loadModuleFile,
+  /// and their dependencies.
+  llvm::StringSet<> ExplicitlyLoadedModuleFiles;
+
   /// \brief The location of the module-import keyword for the last module
   /// import. 
   SourceLocation LastModuleImportLoc;
@@ -574,6 +578,8 @@ public:
   /// Create the preprocessor, using the invocation, file, and source managers,
   /// and replace any existing one with it.
   void createPreprocessor(TranslationUnitKind TUKind);
+
+  std::string getSpecificModuleCachePath();
 
   /// Create the AST context.
   void createASTContext();

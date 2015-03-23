@@ -323,6 +323,8 @@ void CodeGenModule::checkAliases() {
 
 void CodeGenModule::clear() {
   DeferredDeclsToEmit.clear();
+  if (OpenMPRuntime)
+    OpenMPRuntime->clear();
 }
 
 void InstrProfStats::reportDiagnostics(DiagnosticsEngine &Diags,
@@ -1849,7 +1851,8 @@ CodeGenModule::CreateOrReplaceCXXRuntimeVariable(StringRef Name,
     OldGV->eraseFromParent();
   }
 
-  if (supportsCOMDAT() && GV->isWeakForLinker())
+  if (supportsCOMDAT() && GV->isWeakForLinker() &&
+      !GV->hasAvailableExternallyLinkage())
     GV->setComdat(TheModule.getOrInsertComdat(GV->getName()));
 
   return GV;
@@ -3082,10 +3085,19 @@ llvm::Constant *CodeGenModule::GetAddrOfGlobalTemporary(
   // Create a global variable for this lifetime-extended temporary.
   llvm::GlobalValue::LinkageTypes Linkage =
       getLLVMLinkageVarDefinition(VD, Constant);
-  // There is no need for this temporary to have global linkage if the global
-  // variable has external linkage.
-  if (Linkage == llvm::GlobalVariable::ExternalLinkage)
-    Linkage = llvm::GlobalVariable::PrivateLinkage;
+  if (Linkage == llvm::GlobalVariable::ExternalLinkage) {
+    const VarDecl *InitVD;
+    if (VD->isStaticDataMember() && VD->getAnyInitializer(InitVD) &&
+        isa<CXXRecordDecl>(InitVD->getLexicalDeclContext())) {
+      // Temporaries defined inside a class get linkonce_odr linkage because the
+      // class can be defined in multipe translation units.
+      Linkage = llvm::GlobalVariable::LinkOnceODRLinkage;
+    } else {
+      // There is no need for this temporary to have external linkage if the
+      // VarDecl has external linkage.
+      Linkage = llvm::GlobalVariable::InternalLinkage;
+    }
+  }
   unsigned AddrSpace = GetGlobalVarAddressSpace(
       VD, getContext().getTargetAddressSpace(MaterializedType));
   auto *GV = new llvm::GlobalVariable(
@@ -3095,6 +3107,8 @@ llvm::Constant *CodeGenModule::GetAddrOfGlobalTemporary(
   setGlobalVisibility(GV, VD);
   GV->setAlignment(
       getContext().getTypeAlignInChars(MaterializedType).getQuantity());
+  if (supportsCOMDAT() && GV->isWeakForLinker())
+    GV->setComdat(TheModule.getOrInsertComdat(GV->getName()));
   if (VD->getTLSKind())
     setTLSMode(GV, *VD);
   Slot = GV;
@@ -3349,15 +3363,7 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
 
   case Decl::FileScopeAsm: {
     auto *AD = cast<FileScopeAsmDecl>(D);
-    StringRef AsmString = AD->getAsmString()->getString();
-
-    const std::string &S = getModule().getModuleInlineAsm();
-    if (S.empty())
-      getModule().setModuleInlineAsm(AsmString);
-    else if (S.end()[-1] == '\n')
-      getModule().setModuleInlineAsm(S + AsmString.str());
-    else
-      getModule().setModuleInlineAsm(S + '\n' + AsmString.str());
+    getModule().appendModuleInlineAsm(AD->getAsmString()->getString());
     break;
   }
 
@@ -3641,6 +3647,12 @@ llvm::Constant *CodeGenModule::EmitUuidofInitializer(StringRef Uuid) {
   return llvm::ConstantStruct::getAnon(Fields);
 }
 
+llvm::Constant *
+CodeGenModule::getAddrOfCXXHandlerMapEntry(QualType Ty,
+                                           QualType CatchHandlerType) {
+  return getCXXABI().getAddrOfCXXHandlerMapEntry(Ty, CatchHandlerType);
+}
+
 llvm::Constant *CodeGenModule::GetAddrOfRTTIDescriptor(QualType Ty,
                                                        bool ForEH) {
   // Return a bogus pointer if RTTI is disabled, unless it's for EH.
@@ -3663,10 +3675,8 @@ void CodeGenModule::EmitOMPThreadPrivateDecl(const OMPThreadPrivateDecl *D) {
         VD->getAnyInitializer() &&
         !VD->getAnyInitializer()->isConstantInitializer(getContext(),
                                                         /*ForRef=*/false);
-    if (auto InitFunction =
-            getOpenMPRuntime().EmitOMPThreadPrivateVarDefinition(
-                VD, GetAddrOfGlobalVar(VD), RefExpr->getLocStart(),
-                PerformInit))
+    if (auto InitFunction = getOpenMPRuntime().emitThreadPrivateVarDefinition(
+            VD, GetAddrOfGlobalVar(VD), RefExpr->getLocStart(), PerformInit))
       CXXGlobalInits.push_back(InitFunction);
   }
 }

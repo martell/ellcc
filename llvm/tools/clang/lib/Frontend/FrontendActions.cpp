@@ -209,7 +209,7 @@ collectModuleHeaderIncludes(const LangOptions &LangOpts, FileManager &FileMgr,
     std::error_code EC;
     SmallString<128> DirNative;
     llvm::sys::path::native(UmbrellaDir->getName(), DirNative);
-    for (llvm::sys::fs::recursive_directory_iterator Dir(DirNative.str(), EC), 
+    for (llvm::sys::fs::recursive_directory_iterator Dir(DirNative, EC), 
                                                      DirEnd;
          Dir != DirEnd && !EC; Dir.increment(EC)) {
       // Check whether this entry has an extension typically associated with 
@@ -366,7 +366,7 @@ bool GenerateModuleAction::ComputeASTConsumerArguments(CompilerInstance &CI,
     HeaderSearch &HS = CI.getPreprocessor().getHeaderSearchInfo();
     CI.getFrontendOpts().OutputFile =
         HS.getModuleFileName(CI.getLangOpts().CurrentModule,
-                             ModuleMapForUniquing->getName(), IsSystem);
+                             ModuleMapForUniquing->getName());
   }
   
   // We use createOutputFile here because this is exposed via libclang, and we
@@ -462,8 +462,8 @@ namespace {
       return false;
     }
 
-    bool ReadTargetOptions(const TargetOptions &TargetOpts,
-                           bool Complain) override {
+    bool ReadTargetOptions(const TargetOptions &TargetOpts, bool Complain,
+                           bool AllowCompatibleDifferences) override {
       Out.indent(2) << "Target options:\n";
       Out.indent(4) << "  Triple: " << TargetOpts.Triple << "\n";
       Out.indent(4) << "  CPU: " << TargetOpts.CPU << "\n";
@@ -501,9 +501,11 @@ namespace {
     }
 
     bool ReadHeaderSearchOptions(const HeaderSearchOptions &HSOpts,
+                                 StringRef SpecificModuleCachePath,
                                  bool Complain) override {
       Out.indent(2) << "Header search options:\n";
       Out.indent(4) << "System root [-isysroot=]: '" << HSOpts.Sysroot << "'\n";
+      Out.indent(4) << "Module Cache: '" << SpecificModuleCachePath << "'\n";
       DUMP_BOOLEAN(HSOpts.UseBuiltinIncludes,
                    "Use builtin include directories [-nobuiltininc]");
       DUMP_BOOLEAN(HSOpts.UseStandardSystemIncludes,

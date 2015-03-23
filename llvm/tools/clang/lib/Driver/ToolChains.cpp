@@ -302,8 +302,8 @@ void MachO::AddLinkRuntimeLib(const ArgList &Args, ArgStringList &CmdArgs,
   // For now, allow missing resource libraries to support developers who may
   // not have compiler-rt checked out or integrated into their build (unless
   // we explicitly force linking with this library).
-  if (AlwaysLink || llvm::sys::fs::exists(P.str()))
-    CmdArgs.push_back(Args.MakeArgString(P.str()));
+  if (AlwaysLink || llvm::sys::fs::exists(P))
+    CmdArgs.push_back(Args.MakeArgString(P));
 
   // Adding the rpaths might negatively interact when other rpaths are involved,
   // so we should make sure we add the rpaths last, after all user-specified
@@ -320,7 +320,7 @@ void MachO::AddLinkRuntimeLib(const ArgList &Args, ArgStringList &CmdArgs,
     // Add the path to the resource dir to rpath to support using the dylib
     // from the default location without copying.
     CmdArgs.push_back("-rpath");
-    CmdArgs.push_back(Args.MakeArgString(Dir.str()));
+    CmdArgs.push_back(Args.MakeArgString(Dir));
   }
 }
 
@@ -599,11 +599,11 @@ void DarwinClang::AddCXXStdlibLibArgs(const ArgList &Args,
       SmallString<128> P(A->getValue());
       llvm::sys::path::append(P, "usr", "lib", "libstdc++.dylib");
 
-      if (!llvm::sys::fs::exists(P.str())) {
+      if (!llvm::sys::fs::exists(P)) {
         llvm::sys::path::remove_filename(P);
         llvm::sys::path::append(P, "libstdc++.6.dylib");
-        if (llvm::sys::fs::exists(P.str())) {
-          CmdArgs.push_back(Args.MakeArgString(P.str()));
+        if (llvm::sys::fs::exists(P)) {
+          CmdArgs.push_back(Args.MakeArgString(P));
           return;
         }
       }
@@ -646,8 +646,8 @@ void DarwinClang::AddCCKextLibArgs(const ArgList &Args,
 
   // For now, allow missing resource libraries to support developers who may
   // not have compiler-rt checked out or integrated into their build.
-  if (llvm::sys::fs::exists(P.str()))
-    CmdArgs.push_back(Args.MakeArgString(P.str()));
+  if (llvm::sys::fs::exists(P))
+    CmdArgs.push_back(Args.MakeArgString(P));
 }
 
 DerivedArgList *MachO::TranslateArgs(const DerivedArgList &Args,
@@ -1725,6 +1725,7 @@ static bool findMIPSMultilibs(const llvm::Triple &TargetTriple, StringRef Path,
 
   MultilibSet AndroidMipsMultilibs = MultilibSet()
     .Maybe(Multilib("/mips-r2").flag("+march=mips32r2"))
+    .Maybe(Multilib("/mips-r6").flag("+march=mips32r6"))
     .FilterOut(NonExistent);
 
   MultilibSet DebianMipsMultilibs;
@@ -1783,9 +1784,13 @@ static bool findMIPSMultilibs(const llvm::Triple &TargetTriple, StringRef Path,
   addMultilibFlag(isMips64(TargetArch), "m64", Flags);
   addMultilibFlag(isMips16(Args), "mips16", Flags);
   addMultilibFlag(CPUName == "mips32", "march=mips32", Flags);
-  addMultilibFlag(CPUName == "mips32r2", "march=mips32r2", Flags);
+  addMultilibFlag(CPUName == "mips32r2" || CPUName == "mips32r3" ||
+                      CPUName == "mips32r5",
+                  "march=mips32r2", Flags);
+  addMultilibFlag(CPUName == "mips32r6", "march=mips32r6", Flags);
   addMultilibFlag(CPUName == "mips64", "march=mips64", Flags);
-  addMultilibFlag(CPUName == "mips64r2" || CPUName == "octeon",
+  addMultilibFlag(CPUName == "mips64r2" || CPUName == "mips64r3" ||
+                      CPUName == "mips64r5" || CPUName == "octeon",
                   "march=mips64r2", Flags);
   addMultilibFlag(isMicroMips(Args), "mmicromips", Flags);
   addMultilibFlag(tools::mips::isUCLibc(Args), "muclibc", Flags);
@@ -2245,7 +2250,7 @@ void Hexagon_TC::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
 
   llvm::sys::path::append(IncludeDir, "hexagon/include/c++/");
   llvm::sys::path::append(IncludeDir, Ver);
-  addSystemInclude(DriverArgs, CC1Args, IncludeDir.str());
+  addSystemInclude(DriverArgs, CC1Args, IncludeDir);
 }
 
 ToolChain::CXXStdlibType
@@ -3151,7 +3156,7 @@ void Linux::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
     SmallString<128> P(D.ResourceDir);
     llvm::sys::path::append(P, "include");
 #endif
-    addSystemInclude(DriverArgs, CC1Args, P.str());
+    addSystemInclude(DriverArgs, CC1Args, P);
   }
 
   if (DriverArgs.hasArg(options::OPT_nostdlibinc))

@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "UnwrappedLineParser.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
 
 #define DEBUG_TYPE "format-parser"
@@ -262,7 +263,7 @@ bool UnwrappedLineParser::parse() {
 void UnwrappedLineParser::parseFile() {
   ScopedDeclarationState DeclarationState(
       *Line, DeclarationScopeStack,
-      /*MustBeDeclaration=*/ !Line->InPPDirective);
+      /*MustBeDeclaration=*/!Line->InPPDirective);
   parseLevel(/*HasOpeningBrace=*/false);
   // Make sure to format the remaining tokens.
   flushComments(true);
@@ -604,7 +605,7 @@ void UnwrappedLineParser::parsePPUnknown() {
 // Here we blacklist certain tokens that are not usually the first token in an
 // unwrapped line. This is used in attempt to distinguish macro calls without
 // trailing semicolons from other constructs split to several lines.
-bool tokenCanStartNewLine(clang::Token Tok) {
+static bool tokenCanStartNewLine(const clang::Token &Tok) {
   // Semicolon can be a null-statement, l_square can be a start of a macro or
   // a C++11 attribute, but this doesn't seem to be common.
   return Tok.isNot(tok::semi) && Tok.isNot(tok::l_brace) &&
@@ -734,9 +735,20 @@ void UnwrappedLineParser::parseStructuralElement() {
       }
     }
     break;
+  case tok::kw_export:
+    if (Style.Language == FormatStyle::LK_JavaScript) {
+      parseJavaScriptEs6ImportExport();
+      return;
+    }
+    break;
   case tok::identifier:
     if (FormatTok->IsForEachMacro) {
       parseForOrWhileLoop();
+      return;
+    }
+    if (Style.Language == FormatStyle::LK_JavaScript &&
+        FormatTok->is(Keywords.kw_import)) {
+      parseJavaScriptEs6ImportExport();
       return;
     }
     // In all other cases, parse the declaration.
@@ -856,6 +868,9 @@ void UnwrappedLineParser::parseStructuralElement() {
     case tok::l_square:
       parseSquare();
       break;
+    case tok::kw_new:
+      parseNew();
+      break;
     default:
       nextToken();
       break;
@@ -965,7 +980,7 @@ void UnwrappedLineParser::tryToParseJSFunction() {
 
   // Consume function name.
   if (FormatTok->is(tok::identifier))
-      nextToken();
+    nextToken();
 
   if (FormatTok->isNot(tok::l_paren))
     return;
@@ -1262,6 +1277,31 @@ void UnwrappedLineParser::parseNamespace() {
   // FIXME: Add error handling.
 }
 
+void UnwrappedLineParser::parseNew() {
+  assert(FormatTok->is(tok::kw_new) && "'new' expected");
+  nextToken();
+  if (Style.Language != FormatStyle::LK_Java)
+    return;
+
+  // In Java, we can parse everything up to the parens, which aren't optional.
+  do {
+    // There should not be a ;, { or } before the new's open paren.
+    if (FormatTok->isOneOf(tok::semi, tok::l_brace, tok::r_brace))
+      return;
+
+    // Consume the parens.
+    if (FormatTok->is(tok::l_paren)) {
+      parseParens();
+
+      // If there is a class body of an anonymous class, consume that as child.
+      if (FormatTok->is(tok::l_brace))
+        parseChildBlock();
+      return;
+    }
+    nextToken();
+  } while (!eof());
+}
+
 void UnwrappedLineParser::parseForOrWhileLoop() {
   assert((FormatTok->Tok.is(tok::kw_for) || FormatTok->Tok.is(tok::kw_while) ||
           FormatTok->IsForEachMacro) &&
@@ -1519,7 +1559,8 @@ void UnwrappedLineParser::parseRecord() {
   // class A {} n, m;
   // will end up in one unwrapped line.
   // This does not apply for Java.
-  if (Style.Language == FormatStyle::LK_Java)
+  if (Style.Language == FormatStyle::LK_Java ||
+      Style.Language == FormatStyle::LK_JavaScript)
     addUnwrappedLine();
 }
 
@@ -1596,6 +1637,30 @@ void UnwrappedLineParser::parseObjCProtocol() {
 
   addUnwrappedLine();
   parseObjCUntilAtEnd();
+}
+
+void UnwrappedLineParser::parseJavaScriptEs6ImportExport() {
+  assert(FormatTok->isOneOf(Keywords.kw_import, tok::kw_export));
+  nextToken();
+
+  if (FormatTok->isOneOf(tok::kw_const, tok::kw_class, Keywords.kw_function,
+                         Keywords.kw_var))
+    return; // Fall through to parsing the corresponding structure.
+
+  if (FormatTok->is(tok::kw_default)) {
+    nextToken(); // export default ..., fall through after eating 'default'.
+    return;
+  }
+
+  if (FormatTok->is(tok::l_brace)) {
+    FormatTok->BlockKind = BK_Block;
+    parseBracedList();
+  }
+
+  while (!eof() && FormatTok->isNot(tok::semi) &&
+         FormatTok->isNot(tok::l_brace)) {
+    nextToken();
+  }
 }
 
 LLVM_ATTRIBUTE_UNUSED static void printDebugInfo(const UnwrappedLine &Line,

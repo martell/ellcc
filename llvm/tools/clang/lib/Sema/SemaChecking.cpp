@@ -184,7 +184,7 @@ static bool SemaBuiltinCallWithStaticChain(Sema &S, CallExpr *BuiltinCall) {
     return true;
   }
 
-  QualType ReturnTy = CE->getCallReturnType();
+  QualType ReturnTy = CE->getCallReturnType(S.Context);
   QualType ArgTys[2] = { ReturnTy, ChainResult.get()->getType() };
   QualType BuiltinTy = S.Context.getFunctionType(
       ReturnTy, ArgTys, FunctionProtoType::ExtProtoInfo());
@@ -317,6 +317,10 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
     break;
   case Builtin::BI__builtin_longjmp:
     if (SemaBuiltinLongjmp(TheCall))
+      return ExprError();
+    break;
+  case Builtin::BI__builtin_setjmp:
+    if (SemaBuiltinSetjmp(TheCall))
       return ExprError();
     break;
 
@@ -498,6 +502,19 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
       return ExprError();
     break;
   }
+
+  case Builtin::BI__GetExceptionInfo:
+    if (checkArgCount(*this, TheCall, 1))
+      return ExprError();
+
+    if (CheckCXXThrowOperand(
+            TheCall->getLocStart(),
+            Context.getExceptionObjectType(FDecl->getParamDecl(0)->getType()),
+            TheCall))
+      return ExprError();
+
+    TheCall->setType(Context.VoidPtrTy);
+    break;
 
   }
 
@@ -878,17 +895,6 @@ bool Sema::CheckX86BuiltinFunctionCall(unsigned BuiltinID, CallExpr *TheCall) {
   switch (BuiltinID) {
   default: return false;
   case X86::BI_mm_prefetch: i = 1; l = 0; u = 3; break;
-  case X86::BI__builtin_ia32_vextractf128_pd256:
-  case X86::BI__builtin_ia32_vextractf128_ps256:
-  case X86::BI__builtin_ia32_vextractf128_si256:
-  case X86::BI__builtin_ia32_extract128i256: i = 1, l = 0, u = 1; break;
-  case X86::BI__builtin_ia32_vinsertf128_pd256:
-  case X86::BI__builtin_ia32_vinsertf128_ps256:
-  case X86::BI__builtin_ia32_vinsertf128_si256:
-  case X86::BI__builtin_ia32_insert128i256:
-  case X86::BI__builtin_ia32_blendpd: i = 2, l = 0; u = 1; break;
-  case X86::BI__builtin_ia32_blendps:
-  case X86::BI__builtin_ia32_blendpd256:
   case X86::BI__builtin_ia32_sha1rnds4: i = 2, l = 0; u = 3; break;
   case X86::BI__builtin_ia32_vpermil2pd:
   case X86::BI__builtin_ia32_vpermil2pd256:
@@ -1312,9 +1318,10 @@ ExprResult Sema::SemaAtomicOpsOverloaded(ExprResult TheCallResult,
   //   M is C if C is an integer, and ptrdiff_t if C is a pointer, and
   //   the int parameters are for orderings.
 
-  assert(AtomicExpr::AO__c11_atomic_init == 0 &&
-         AtomicExpr::AO__c11_atomic_fetch_xor + 1 == AtomicExpr::AO__atomic_load
-         && "need to update code for modified C11 atomics");
+  static_assert(AtomicExpr::AO__c11_atomic_init == 0 &&
+                    AtomicExpr::AO__c11_atomic_fetch_xor + 1 ==
+                        AtomicExpr::AO__atomic_load,
+                "need to update code for modified C11 atomics");
   bool IsC11 = Op >= AtomicExpr::AO__c11_atomic_init &&
                Op <= AtomicExpr::AO__c11_atomic_fetch_xor;
   bool IsN = Op == AtomicExpr::AO__atomic_load_n ||
@@ -2131,7 +2138,7 @@ bool Sema::SemaBuiltinVAStartARM(CallExpr *Call) {
   if (checkBuiltinArgument(*this, Call, 0))
     return true;
 
-  static const struct {
+  const struct {
     unsigned ArgNo;
     QualType Type;
   } ArgumentTypes[] = {
@@ -2378,7 +2385,7 @@ bool Sema::SemaBuiltinAssume(CallExpr *TheCall) {
   if (Arg->isInstantiationDependent()) return false;
 
   if (Arg->HasSideEffects(Context))
-    return Diag(Arg->getLocStart(), diag::warn_assume_side_effects)
+    Diag(Arg->getLocStart(), diag::warn_assume_side_effects)
       << Arg->getSourceRange()
       << cast<FunctionDecl>(TheCall->getCalleeDecl())->getIdentifier();
 
@@ -2463,8 +2470,13 @@ bool Sema::SemaBuiltinConstantArgRange(CallExpr *TheCall, int ArgNum,
 }
 
 /// SemaBuiltinLongjmp - Handle __builtin_longjmp(void *env[5], int val).
-/// This checks that val is a constant 1.
+/// This checks that the target supports __builtin_longjmp and
+/// that val is a constant 1.
 bool Sema::SemaBuiltinLongjmp(CallExpr *TheCall) {
+  if (!Context.getTargetInfo().hasSjLjLowering())
+    return Diag(TheCall->getLocStart(), diag::err_builtin_longjmp_unsupported)
+             << SourceRange(TheCall->getLocStart(), TheCall->getLocEnd());
+
   Expr *Arg = TheCall->getArg(1);
   llvm::APSInt Result;
 
@@ -2476,6 +2488,16 @@ bool Sema::SemaBuiltinLongjmp(CallExpr *TheCall) {
     return Diag(TheCall->getLocStart(), diag::err_builtin_longjmp_invalid_val)
              << SourceRange(Arg->getLocStart(), Arg->getLocEnd());
 
+  return false;
+}
+
+
+/// SemaBuiltinSetjmp - Handle __builtin_setjmp(void *env[5]).
+/// This checks that the target supports __builtin_setjmp.
+bool Sema::SemaBuiltinSetjmp(CallExpr *TheCall) {
+  if (!Context.getTargetInfo().hasSjLjLowering())
+    return Diag(TheCall->getLocStart(), diag::err_builtin_setjmp_unsupported)
+             << SourceRange(TheCall->getLocStart(), TheCall->getLocEnd());
   return false;
 }
 
@@ -2680,6 +2702,8 @@ Sema::FormatStringType Sema::GetFormatStringType(const FormatAttr *Format) {
   .Case("strftime", FST_Strftime)
   .Case("strfmon", FST_Strfmon)
   .Cases("kprintf", "cmn_err", "vcmn_err", "zcmn_err", FST_Kprintf)
+  .Case("freebsd_kprintf", FST_FreeBSDKPrintf)
+  .Case("os_trace", FST_OSTrace)
   .Default(FST_Unknown);
 }
 
@@ -3150,10 +3174,7 @@ void CheckFormatHandler::EmitFormatDiagnostic(Sema &S, bool InFunctionCall,
   if (InFunctionCall) {
     const Sema::SemaDiagnosticBuilder &D = S.Diag(Loc, PDiag);
     D << StringRange;
-    for (ArrayRef<FixItHint>::iterator I = FixIt.begin(), E = FixIt.end();
-         I != E; ++I) {
-      D << *I;
-    }
+    D << FixIt;
   } else {
     S.Diag(IsStringLocation ? ArgumentExpr->getExprLoc() : Loc, PDiag)
       << ArgumentExpr->getSourceRange();
@@ -3163,10 +3184,7 @@ void CheckFormatHandler::EmitFormatDiagnostic(Sema &S, bool InFunctionCall,
              diag::note_format_string_defined);
 
     Note << StringRange;
-    for (ArrayRef<FixItHint>::iterator I = FixIt.begin(), E = FixIt.end();
-         I != E; ++I) {
-      Note << *I;
-    }
+    Note << FixIt;
   }
 }
 
@@ -3461,6 +3479,43 @@ CheckPrintfHandler::HandlePrintfSpecifier(const analyze_printf::PrintfSpecifier
     CoveredArgs.set(argIndex);
   }
 
+  // FreeBSD kernel extensions.
+  if (CS.getKind() == ConversionSpecifier::FreeBSDbArg ||
+      CS.getKind() == ConversionSpecifier::FreeBSDDArg) {
+    // We need at least two arguments.
+    if (!CheckNumArgs(FS, CS, startSpecifier, specifierLen, argIndex + 1))
+      return false;
+
+    // Claim the second argument.
+    CoveredArgs.set(argIndex + 1);
+
+    // Type check the first argument (int for %b, pointer for %D)
+    const Expr *Ex = getDataArg(argIndex);
+    const analyze_printf::ArgType &AT =
+      (CS.getKind() == ConversionSpecifier::FreeBSDbArg) ?
+        ArgType(S.Context.IntTy) : ArgType::CPointerTy;
+    if (AT.isValid() && !AT.matchesType(S.Context, Ex->getType()))
+      EmitFormatDiagnostic(
+        S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
+        << AT.getRepresentativeTypeName(S.Context) << Ex->getType()
+        << false << Ex->getSourceRange(),
+        Ex->getLocStart(), /*IsStringLocation*/false,
+        getSpecifierRange(startSpecifier, specifierLen));
+
+    // Type check the second argument (char * for both %b and %D)
+    Ex = getDataArg(argIndex + 1);
+    const analyze_printf::ArgType &AT2 = ArgType::CStrTy;
+    if (AT2.isValid() && !AT2.matchesType(S.Context, Ex->getType()))
+      EmitFormatDiagnostic(
+        S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
+        << AT2.getRepresentativeTypeName(S.Context) << Ex->getType()
+        << false << Ex->getSourceRange(),
+        Ex->getLocStart(), /*IsStringLocation*/false,
+        getSpecifierRange(startSpecifier, specifierLen));
+
+     return true;
+  }
+
   // Check for using an Objective-C specific conversion specifier
   // in a non-ObjC literal.
   if (!ObjCContext && CS.isObjCArg()) {
@@ -3639,8 +3694,11 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
     ExprTy = TET->getUnderlyingExpr()->getType();
   }
 
-  if (AT.matchesType(S.Context, ExprTy))
+  analyze_printf::ArgType::MatchKind match = AT.matchesType(S.Context, ExprTy);
+
+  if (match == analyze_printf::ArgType::Match) {
     return true;
+  }
 
   // Look through argument promotions for our error message's reported type.
   // This includes the integral and floating promotions, but excludes array
@@ -3735,16 +3793,18 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
     CharSourceRange SpecRange = getSpecifierRange(StartSpecifier, SpecifierLen);
 
     if (IntendedTy == ExprTy && !ShouldNotPrintDirectly) {
+      unsigned diag = diag::warn_format_conversion_argument_type_mismatch;
+      if (match == analyze_format_string::ArgType::NoMatchPedantic) {
+        diag = diag::warn_format_conversion_argument_type_mismatch_pedantic;
+      }
       // In this case, the specifier is wrong and should be changed to match
       // the argument.
-      EmitFormatDiagnostic(
-        S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
-          << AT.getRepresentativeTypeName(S.Context) << IntendedTy << IsEnum
-          << E->getSourceRange(),
-        E->getLocStart(),
-        /*IsStringLocation*/false,
-        SpecRange,
-        FixItHint::CreateReplacement(SpecRange, os.str()));
+      EmitFormatDiagnostic(S.PDiag(diag)
+                               << AT.getRepresentativeTypeName(S.Context)
+                               << IntendedTy << IsEnum << E->getSourceRange(),
+                           E->getLocStart(),
+                           /*IsStringLocation*/ false, SpecRange,
+                           FixItHint::CreateReplacement(SpecRange, os.str()));
 
     } else {
       // The canonical type for formatting this value is different from the
@@ -3818,15 +3878,18 @@ CheckPrintfHandler::checkFormatExpr(const analyze_printf::PrintfSpecifier &FS,
     // arguments here.
     switch (S.isValidVarArgType(ExprTy)) {
     case Sema::VAK_Valid:
-    case Sema::VAK_ValidInCXX11:
-      EmitFormatDiagnostic(
-        S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
-          << AT.getRepresentativeTypeName(S.Context) << ExprTy << IsEnum
-          << CSR
-          << E->getSourceRange(),
-        E->getLocStart(), /*IsStringLocation*/false, CSR);
-      break;
+    case Sema::VAK_ValidInCXX11: {
+      unsigned diag = diag::warn_format_conversion_argument_type_mismatch;
+      if (match == analyze_printf::ArgType::NoMatchPedantic) {
+        diag = diag::warn_format_conversion_argument_type_mismatch_pedantic;
+      }
 
+      EmitFormatDiagnostic(
+          S.PDiag(diag) << AT.getRepresentativeTypeName(S.Context) << ExprTy
+                        << IsEnum << CSR << E->getSourceRange(),
+          E->getLocStart(), /*IsStringLocation*/ false, CSR);
+      break;
+    }
     case Sema::VAK_Undefined:
     case Sema::VAK_MSVCUndefined:
       EmitFormatDiagnostic(
@@ -3958,13 +4021,13 @@ bool CheckScanfHandler::HandleScanfSpecifier(
                            FixItHint::CreateRemoval(R));
     }
   }
-  
+
   if (!FS.consumesDataArgument()) {
     // FIXME: Technically specifying a precision or field width here
     // makes no sense.  Worth issuing a warning at some point.
     return true;
   }
-  
+
   // Consume the argument.
   unsigned argIndex = FS.getArgIndex();
   if (argIndex < NumDataArgs) {
@@ -3973,7 +4036,7 @@ bool CheckScanfHandler::HandleScanfSpecifier(
       // function if we encounter some other error.
     CoveredArgs.set(argIndex);
   }
-  
+
   // Check the length modifier is valid with the given conversion specifier.
   if (!FS.hasValidLengthModifier(S.getASTContext().getTargetInfo()))
     HandleInvalidLengthModifier(FS, CS, startSpecifier, specifierLen,
@@ -3990,47 +4053,57 @@ bool CheckScanfHandler::HandleScanfSpecifier(
   // The remaining checks depend on the data arguments.
   if (HasVAListArg)
     return true;
-  
+
   if (!CheckNumArgs(FS, CS, startSpecifier, specifierLen, argIndex))
     return false;
-  
+
   // Check that the argument type matches the format specifier.
   const Expr *Ex = getDataArg(argIndex);
   if (!Ex)
     return true;
 
   const analyze_format_string::ArgType &AT = FS.getArgType(S.Context);
-  if (AT.isValid() && !AT.matchesType(S.Context, Ex->getType())) {
-    ScanfSpecifier fixedFS = FS;
-    bool success = fixedFS.fixType(Ex->getType(),
-                                   Ex->IgnoreImpCasts()->getType(),
-                                   S.getLangOpts(), S.Context);
 
-    if (success) {
-      // Get the fix string from the fixed format specifier.
-      SmallString<128> buf;
-      llvm::raw_svector_ostream os(buf);
-      fixedFS.toString(os);
+  if (!AT.isValid()) {
+    return true;
+  }
 
-      EmitFormatDiagnostic(
-        S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
-          << AT.getRepresentativeTypeName(S.Context) << Ex->getType() << false
-          << Ex->getSourceRange(),
+  analyze_format_string::ArgType::MatchKind match =
+      AT.matchesType(S.Context, Ex->getType());
+  if (match == analyze_format_string::ArgType::Match) {
+    return true;
+  }
+
+  ScanfSpecifier fixedFS = FS;
+  bool success = fixedFS.fixType(Ex->getType(), Ex->IgnoreImpCasts()->getType(),
+                                 S.getLangOpts(), S.Context);
+
+  unsigned diag = diag::warn_format_conversion_argument_type_mismatch;
+  if (match == analyze_format_string::ArgType::NoMatchPedantic) {
+    diag = diag::warn_format_conversion_argument_type_mismatch_pedantic;
+  }
+
+  if (success) {
+    // Get the fix string from the fixed format specifier.
+    SmallString<128> buf;
+    llvm::raw_svector_ostream os(buf);
+    fixedFS.toString(os);
+
+    EmitFormatDiagnostic(
+        S.PDiag(diag) << AT.getRepresentativeTypeName(S.Context)
+                      << Ex->getType() << false << Ex->getSourceRange(),
         Ex->getLocStart(),
-        /*IsStringLocation*/false,
+        /*IsStringLocation*/ false,
         getSpecifierRange(startSpecifier, specifierLen),
         FixItHint::CreateReplacement(
-          getSpecifierRange(startSpecifier, specifierLen),
-          os.str()));
-    } else {
-      EmitFormatDiagnostic(
-        S.PDiag(diag::warn_format_conversion_argument_type_mismatch)
-          << AT.getRepresentativeTypeName(S.Context) << Ex->getType() << false
-          << Ex->getSourceRange(),
-        Ex->getLocStart(),
-        /*IsStringLocation*/false,
-        getSpecifierRange(startSpecifier, specifierLen));
-    }
+            getSpecifierRange(startSpecifier, specifierLen), os.str()));
+  } else {
+    EmitFormatDiagnostic(S.PDiag(diag)
+                             << AT.getRepresentativeTypeName(S.Context)
+                             << Ex->getType() << false << Ex->getSourceRange(),
+                         Ex->getLocStart(),
+                         /*IsStringLocation*/ false,
+                         getSpecifierRange(startSpecifier, specifierLen));
   }
 
   return true;
@@ -4084,15 +4157,17 @@ void Sema::CheckFormatString(const StringLiteral *FExpr,
     return;
   }
   
-  if (Type == FST_Printf || Type == FST_NSString) {
+  if (Type == FST_Printf || Type == FST_NSString ||
+      Type == FST_FreeBSDKPrintf || Type == FST_OSTrace) {
     CheckPrintfHandler H(*this, FExpr, OrigFormatExpr, firstDataArg,
-                         numDataArgs, (Type == FST_NSString),
+                         numDataArgs, (Type == FST_NSString || Type == FST_OSTrace),
                          Str, HasVAListArg, Args, format_idx,
                          inFunctionCall, CallType, CheckedVarArgs);
   
     if (!analyze_format_string::ParsePrintfString(H, Str, Str + StrLen,
                                                   getLangOpts(),
-                                                  Context.getTargetInfo()))
+                                                  Context.getTargetInfo(),
+                                                  Type == FST_FreeBSDKPrintf))
       H.DoneProcessing();
   } else if (Type == FST_Scanf) {
     CheckScanfHandler H(*this, FExpr, OrigFormatExpr, firstDataArg, numDataArgs,
@@ -6742,8 +6817,11 @@ void AnalyzeImplicitConversions(Sema &S, Expr *OrigE, SourceLocation CC) {
       E = POE->getResultExpr();
   }
   
-  if (const OpaqueValueExpr *OVE = dyn_cast<OpaqueValueExpr>(E))
-    return AnalyzeImplicitConversions(S, OVE->getSourceExpr(), CC);
+  if (const OpaqueValueExpr *OVE = dyn_cast<OpaqueValueExpr>(E)) {
+    if (OVE->getSourceExpr())
+      AnalyzeImplicitConversions(S, OVE->getSourceExpr(), CC);
+    return;
+  }
   
   // Skip past explicit casts.
   if (isa<ExplicitCastExpr>(E)) {
@@ -6825,7 +6903,7 @@ static bool CheckForReference(Sema &SemaRef, const Expr *E,
     if (!M->getMemberDecl()->getType()->isReferenceType())
       return false;
   } else if (const CallExpr *Call = dyn_cast<CallExpr>(E)) {
-    if (!Call->getCallReturnType()->isReferenceType())
+    if (!Call->getCallReturnType(SemaRef.Context)->isReferenceType())
       return false;
     FD = Call->getDirectCallee();
   } else {
@@ -8134,6 +8212,236 @@ static bool isSetterLikeSelector(Selector sel) {
   return !isLowercase(str.front());
 }
 
+static Optional<int> GetNSMutableArrayArgumentIndex(Sema &S,
+                                                    ObjCMessageExpr *Message) {
+  if (S.NSMutableArrayPointer.isNull()) {
+    IdentifierInfo *NSMutableArrayId =
+      S.NSAPIObj->getNSClassId(NSAPI::ClassId_NSMutableArray);
+    NamedDecl *IF = S.LookupSingleName(S.TUScope, NSMutableArrayId,
+                                       Message->getLocStart(),
+                                       Sema::LookupOrdinaryName);
+    ObjCInterfaceDecl *InterfaceDecl = dyn_cast_or_null<ObjCInterfaceDecl>(IF);
+    if (!InterfaceDecl) {
+      return None;
+    }
+    QualType NSMutableArrayObject =
+      S.Context.getObjCInterfaceType(InterfaceDecl);
+    S.NSMutableArrayPointer =
+      S.Context.getObjCObjectPointerType(NSMutableArrayObject);
+  }
+
+  if (S.NSMutableArrayPointer != Message->getReceiverType()) {
+    return None;
+  }
+
+  Selector Sel = Message->getSelector();
+
+  Optional<NSAPI::NSArrayMethodKind> MKOpt =
+    S.NSAPIObj->getNSArrayMethodKind(Sel);
+  if (!MKOpt) {
+    return None;
+  }
+
+  NSAPI::NSArrayMethodKind MK = *MKOpt;
+
+  switch (MK) {
+    case NSAPI::NSMutableArr_addObject:
+    case NSAPI::NSMutableArr_insertObjectAtIndex:
+    case NSAPI::NSMutableArr_setObjectAtIndexedSubscript:
+      return 0;
+    case NSAPI::NSMutableArr_replaceObjectAtIndex:
+      return 1;
+
+    default:
+      return None;
+  }
+
+  return None;
+}
+
+static
+Optional<int> GetNSMutableDictionaryArgumentIndex(Sema &S,
+                                                  ObjCMessageExpr *Message) {
+
+  if (S.NSMutableDictionaryPointer.isNull()) {
+    IdentifierInfo *NSMutableDictionaryId =
+      S.NSAPIObj->getNSClassId(NSAPI::ClassId_NSMutableDictionary);
+    NamedDecl *IF = S.LookupSingleName(S.TUScope, NSMutableDictionaryId,
+                                       Message->getLocStart(),
+                                       Sema::LookupOrdinaryName);
+    ObjCInterfaceDecl *InterfaceDecl = dyn_cast_or_null<ObjCInterfaceDecl>(IF);
+    if (!InterfaceDecl) {
+      return None;
+    }
+    QualType NSMutableDictionaryObject =
+      S.Context.getObjCInterfaceType(InterfaceDecl);
+    S.NSMutableDictionaryPointer =
+      S.Context.getObjCObjectPointerType(NSMutableDictionaryObject);
+  }
+
+  if (S.NSMutableDictionaryPointer != Message->getReceiverType()) {
+    return None;
+  }
+
+  Selector Sel = Message->getSelector();
+
+  Optional<NSAPI::NSDictionaryMethodKind> MKOpt =
+    S.NSAPIObj->getNSDictionaryMethodKind(Sel);
+  if (!MKOpt) {
+    return None;
+  }
+
+  NSAPI::NSDictionaryMethodKind MK = *MKOpt;
+
+  switch (MK) {
+    case NSAPI::NSMutableDict_setObjectForKey:
+    case NSAPI::NSMutableDict_setValueForKey:
+    case NSAPI::NSMutableDict_setObjectForKeyedSubscript:
+      return 0;
+
+    default:
+      return None;
+  }
+
+  return None;
+}
+
+static Optional<int> GetNSSetArgumentIndex(Sema &S, ObjCMessageExpr *Message) {
+
+  ObjCInterfaceDecl *InterfaceDecl;
+  if (S.NSMutableSetPointer.isNull()) {
+    IdentifierInfo *NSMutableSetId =
+      S.NSAPIObj->getNSClassId(NSAPI::ClassId_NSMutableSet);
+    NamedDecl *IF = S.LookupSingleName(S.TUScope, NSMutableSetId,
+                                       Message->getLocStart(),
+                                       Sema::LookupOrdinaryName);
+    InterfaceDecl = dyn_cast_or_null<ObjCInterfaceDecl>(IF);
+    if (InterfaceDecl) {
+      QualType NSMutableSetObject =
+        S.Context.getObjCInterfaceType(InterfaceDecl);
+      S.NSMutableSetPointer =
+        S.Context.getObjCObjectPointerType(NSMutableSetObject);
+    }
+  }
+
+  if (S.NSCountedSetPointer.isNull()) {
+    IdentifierInfo *NSCountedSetId =
+      S.NSAPIObj->getNSClassId(NSAPI::ClassId_NSCountedSet);
+    NamedDecl *IF = S.LookupSingleName(S.TUScope, NSCountedSetId,
+                                       Message->getLocStart(),
+                                       Sema::LookupOrdinaryName);
+    InterfaceDecl = dyn_cast_or_null<ObjCInterfaceDecl>(IF);
+    if (InterfaceDecl) {
+      QualType NSCountedSetObject =
+        S.Context.getObjCInterfaceType(InterfaceDecl);
+      S.NSCountedSetPointer =
+        S.Context.getObjCObjectPointerType(NSCountedSetObject);
+    }
+  }
+
+  if (S.NSMutableOrderedSetPointer.isNull()) {
+    IdentifierInfo *NSOrderedSetId =
+      S.NSAPIObj->getNSClassId(NSAPI::ClassId_NSMutableOrderedSet);
+    NamedDecl *IF = S.LookupSingleName(S.TUScope, NSOrderedSetId,
+                                       Message->getLocStart(),
+                                       Sema::LookupOrdinaryName);
+    InterfaceDecl = dyn_cast_or_null<ObjCInterfaceDecl>(IF);
+    if (InterfaceDecl) {
+      QualType NSOrderedSetObject =
+        S.Context.getObjCInterfaceType(InterfaceDecl);
+      S.NSMutableOrderedSetPointer =
+        S.Context.getObjCObjectPointerType(NSOrderedSetObject);
+    }
+  }
+
+  QualType ReceiverType = Message->getReceiverType();
+
+  bool IsMutableSet = !S.NSMutableSetPointer.isNull() &&
+    ReceiverType == S.NSMutableSetPointer;
+  bool IsMutableOrderedSet = !S.NSMutableOrderedSetPointer.isNull() &&
+    ReceiverType == S.NSMutableOrderedSetPointer;
+  bool IsCountedSet = !S.NSCountedSetPointer.isNull() &&
+    ReceiverType == S.NSCountedSetPointer;
+
+  if (!IsMutableSet && !IsMutableOrderedSet && !IsCountedSet) {
+    return None;
+  }
+
+  Selector Sel = Message->getSelector();
+
+  Optional<NSAPI::NSSetMethodKind> MKOpt = S.NSAPIObj->getNSSetMethodKind(Sel);
+  if (!MKOpt) {
+    return None;
+  }
+
+  NSAPI::NSSetMethodKind MK = *MKOpt;
+
+  switch (MK) {
+    case NSAPI::NSMutableSet_addObject:
+    case NSAPI::NSOrderedSet_setObjectAtIndex:
+    case NSAPI::NSOrderedSet_setObjectAtIndexedSubscript:
+    case NSAPI::NSOrderedSet_insertObjectAtIndex:
+      return 0;
+    case NSAPI::NSOrderedSet_replaceObjectAtIndexWithObject:
+      return 1;
+  }
+
+  return None;
+}
+
+void Sema::CheckObjCCircularContainer(ObjCMessageExpr *Message) {
+  if (!Message->isInstanceMessage()) {
+    return;
+  }
+
+  Optional<int> ArgOpt;
+
+  if (!(ArgOpt = GetNSMutableArrayArgumentIndex(*this, Message)) &&
+      !(ArgOpt = GetNSMutableDictionaryArgumentIndex(*this, Message)) &&
+      !(ArgOpt = GetNSSetArgumentIndex(*this, Message))) {
+    return;
+  }
+
+  int ArgIndex = *ArgOpt;
+
+  Expr *Receiver = Message->getInstanceReceiver()->IgnoreImpCasts();
+  if (OpaqueValueExpr *OE = dyn_cast<OpaqueValueExpr>(Receiver)) {
+    Receiver = OE->getSourceExpr()->IgnoreImpCasts();
+  }
+
+  Expr *Arg = Message->getArg(ArgIndex)->IgnoreImpCasts();
+  if (OpaqueValueExpr *OE = dyn_cast<OpaqueValueExpr>(Arg)) {
+    Arg = OE->getSourceExpr()->IgnoreImpCasts();
+  }
+
+  if (DeclRefExpr *ReceiverRE = dyn_cast<DeclRefExpr>(Receiver)) {
+    if (DeclRefExpr *ArgRE = dyn_cast<DeclRefExpr>(Arg)) {
+      if (ReceiverRE->getDecl() == ArgRE->getDecl()) {
+        ValueDecl *Decl = ReceiverRE->getDecl();
+        Diag(Message->getSourceRange().getBegin(),
+             diag::warn_objc_circular_container)
+          << Decl->getName();
+        Diag(Decl->getLocation(),
+             diag::note_objc_circular_container_declared_here)
+          << Decl->getName();
+      }
+    }
+  } else if (ObjCIvarRefExpr *IvarRE = dyn_cast<ObjCIvarRefExpr>(Receiver)) {
+    if (ObjCIvarRefExpr *IvarArgRE = dyn_cast<ObjCIvarRefExpr>(Arg)) {
+      if (IvarRE->getDecl() == IvarArgRE->getDecl()) {
+        ObjCIvarDecl *Decl = IvarRE->getDecl();
+        Diag(Message->getSourceRange().getBegin(),
+             diag::warn_objc_circular_container)
+          << Decl->getName();
+        Diag(Decl->getLocation(),
+             diag::note_objc_circular_container_declared_here)
+          << Decl->getName();
+      }
+    }
+  }
+
+}
+
 /// Check a message send to see if it's likely to cause a retain cycle.
 void Sema::checkRetainCycles(ObjCMessageExpr *msg) {
   // Only check instance methods whose selector looks like a setter.
@@ -8318,7 +8626,7 @@ bool ShouldDiagnoseEmptyStmtBody(const SourceManager &SourceMgr,
 
   // Get line numbers of statement and body.
   bool StmtLineInvalid;
-  unsigned StmtLine = SourceMgr.getSpellingLineNumber(StmtLoc,
+  unsigned StmtLine = SourceMgr.getPresumedLineNumber(StmtLoc,
                                                       &StmtLineInvalid);
   if (StmtLineInvalid)
     return false;

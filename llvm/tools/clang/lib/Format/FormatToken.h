@@ -70,6 +70,7 @@ enum TokenType {
   TT_StartOfName,
   TT_TemplateCloser,
   TT_TemplateOpener,
+  TT_TemplateString,
   TT_TrailingAnnotation,
   TT_TrailingReturnArrow,
   TT_TrailingUnaryOperator,
@@ -527,6 +528,7 @@ struct AdditionalKeywords {
 
     kw_finally = &IdentTable.get("finally");
     kw_function = &IdentTable.get("function");
+    kw_import = &IdentTable.get("import");
     kw_var = &IdentTable.get("var");
 
     kw_abstract = &IdentTable.get("abstract");
@@ -559,6 +561,7 @@ struct AdditionalKeywords {
   // JavaScript keywords.
   IdentifierInfo *kw_finally;
   IdentifierInfo *kw_function;
+  IdentifierInfo *kw_import;
   IdentifierInfo *kw_var;
 
   // Java keywords.

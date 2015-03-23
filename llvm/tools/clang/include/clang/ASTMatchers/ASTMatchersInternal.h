@@ -38,9 +38,12 @@
 #include "clang/AST/ASTTypeTraits.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclObjC.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/ExprObjC.h"
 #include "clang/AST/Stmt.h"
 #include "clang/AST/StmtCXX.h"
+#include "clang/AST/StmtObjC.h"
 #include "clang/AST/Type.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/VariadicFunction.h"
@@ -887,7 +890,7 @@ typedef TypeList<Decl, Stmt, NestedNameSpecifier, NestedNameSpecifierLoc,
 /// \brief Helper meta-function to extract the argument out of a function of
 ///   type void(Arg).
 ///
-/// See AST_POLYMORPHIC_SUPPORTED_TYPES_* for details.
+/// See AST_POLYMORPHIC_SUPPORTED_TYPES for details.
 template <class T> struct ExtractFunctionArgMeta;
 template <class T> struct ExtractFunctionArgMeta<void(T)> {
   typedef T type;

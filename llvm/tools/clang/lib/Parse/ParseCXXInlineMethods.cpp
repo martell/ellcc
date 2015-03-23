@@ -306,8 +306,9 @@ void Parser::ParseLexedMethodDeclaration(LateParsedMethodDeclaration &LM) {
   ParseScope PrototypeScope(this, Scope::FunctionPrototypeScope |
                             Scope::FunctionDeclarationScope | Scope::DeclScope);
   for (unsigned I = 0, N = LM.DefaultArgs.size(); I != N; ++I) {
-    auto Param = LM.DefaultArgs[I].Param;
+    auto Param = cast<ParmVarDecl>(LM.DefaultArgs[I].Param);
     // Introduce the parameter into scope.
+    bool HasUnparsed = Param->hasUnparsedDefaultArg();
     Actions.ActOnDelayedCXXMethodParameter(getCurScope(), Param);
     if (CachedTokens *Toks = LM.DefaultArgs[I].Toks) {
       // Mark the end of the default argument so that we know when to stop when
@@ -316,8 +317,7 @@ void Parser::ParseLexedMethodDeclaration(LateParsedMethodDeclaration &LM) {
       Token DefArgEnd;
       DefArgEnd.startToken();
       DefArgEnd.setKind(tok::eof);
-      DefArgEnd.setLocation(LastDefaultArgToken.getLocation().getLocWithOffset(
-          LastDefaultArgToken.getLength()));
+      DefArgEnd.setLocation(LastDefaultArgToken.getEndLoc());
       DefArgEnd.setEofData(Param);
       Toks->push_back(DefArgEnd);
 
@@ -371,6 +371,16 @@ void Parser::ParseLexedMethodDeclaration(LateParsedMethodDeclaration &LM) {
 
       delete Toks;
       LM.DefaultArgs[I].Toks = nullptr;
+    } else if (HasUnparsed) {
+      assert(Param->hasInheritedDefaultArg());
+      FunctionDecl *Old = cast<FunctionDecl>(LM.Method)->getPreviousDecl();
+      ParmVarDecl *OldParam = Old->getParamDecl(I);
+      assert (!OldParam->hasUnparsedDefaultArg());
+      if (OldParam->hasUninstantiatedDefaultArg())
+        Param->setUninstantiatedDefaultArg(
+                                      Param->getUninstantiatedDefaultArg());
+      else
+        Param->setDefaultArg(OldParam->getInit());
     }
   }
 
@@ -381,9 +391,7 @@ void Parser::ParseLexedMethodDeclaration(LateParsedMethodDeclaration &LM) {
     Token ExceptionSpecEnd;
     ExceptionSpecEnd.startToken();
     ExceptionSpecEnd.setKind(tok::eof);
-    ExceptionSpecEnd.setLocation(
-        LastExceptionSpecToken.getLocation().getLocWithOffset(
-            LastExceptionSpecToken.getLength()));
+    ExceptionSpecEnd.setLocation(LastExceptionSpecToken.getEndLoc());
     ExceptionSpecEnd.setEofData(LM.Method);
     Toks->push_back(ExceptionSpecEnd);
 
@@ -488,8 +496,7 @@ void Parser::ParseLexedMethodDef(LexedMethod &LM) {
   Token BodyEnd;
   BodyEnd.startToken();
   BodyEnd.setKind(tok::eof);
-  BodyEnd.setLocation(
-      LastBodyToken.getLocation().getLocWithOffset(LastBodyToken.getLength()));
+  BodyEnd.setLocation(LastBodyToken.getEndLoc());
   BodyEnd.setEofData(LM.D);
   LM.Toks.push_back(BodyEnd);
   // Append the current token at the end of the new token stream so that it

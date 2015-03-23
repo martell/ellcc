@@ -131,7 +131,7 @@ void single_X()
   asm("foo %1,%0" : "=r" (out0) : "X" (min1));
   // CHECK: call i32 asm "foo $1,$0", "=r,X[[CLOBBERS]](i32 1)
   asm("foo %1,%0" : "=r" (out0) : "X" (1));
-  // CHECK: call i32 asm "foo $1,$0", "=r,X[[CLOBBERS]](i32* getelementptr inbounds ([2 x i32]* {{[a-zA-Z0-9@%]+}}, i32 0, i32 0))
+  // CHECK: call i32 asm "foo $1,$0", "=r,X[[CLOBBERS]](i32* getelementptr inbounds ([2 x i32], [2 x i32]* {{[a-zA-Z0-9@%]+}}, i32 0, i32 0))
   asm("foo %1,%0" : "=r" (out0) : "X" (marray));
   // CHECK: call i32 asm "foo $1,$0", "=r,X[[CLOBBERS]](double {{[0-9.eE+-]+}})
   asm("foo %1,%0" : "=r" (out0) : "X" (1.0e+01));
@@ -144,7 +144,7 @@ void single_p()
 {
   register int out0 = 0;
   // Constraint converted differently on different platforms moved to platform-specific.
-  // : call i32 asm "foo $1,$0", "=r,im[[CLOBBERS]](i32* getelementptr inbounds ([2 x i32]* {{[a-zA-Z0-9@%]+}}, i32 0, i32 0))
+  // : call i32 asm "foo $1,$0", "=r,im[[CLOBBERS]](i32* getelementptr inbounds ([2 x i32], [2 x i32]* {{[a-zA-Z0-9@%]+}}, i32 0, i32 0))
   asm("foo %1,%0" : "=r" (out0) : "p" (marray));
 }
 
@@ -264,7 +264,7 @@ void multi_X()
   asm("foo %1,%0" : "=r,r" (out0) : "r,X" (min1));
   // CHECK: call i32 asm "foo $1,$0", "=r|r,r|X[[CLOBBERS]](i32 1)
   asm("foo %1,%0" : "=r,r" (out0) : "r,X" (1));
-  // CHECK: call i32 asm "foo $1,$0", "=r|r,r|X[[CLOBBERS]](i32* getelementptr inbounds ([2 x i32]* {{[a-zA-Z0-9@%]+}}, i32 0, i32 0))
+  // CHECK: call i32 asm "foo $1,$0", "=r|r,r|X[[CLOBBERS]](i32* getelementptr inbounds ([2 x i32], [2 x i32]* {{[a-zA-Z0-9@%]+}}, i32 0, i32 0))
   asm("foo %1,%0" : "=r,r" (out0) : "r,X" (marray));
   // CHECK: call i32 asm "foo $1,$0", "=r|r,r|X[[CLOBBERS]](double {{[0-9.eE+-]+}})
   asm("foo %1,%0" : "=r,r" (out0) : "r,X" (1.0e+01));
@@ -277,6 +277,6 @@ void multi_p()
 {
   register int out0 = 0;
   // Constraint converted differently on different platforms moved to platform-specific.
-  // : call i32 asm "foo $1,$0", "=r|r,r|im[[CLOBBERS]](i32* getelementptr inbounds ([2 x i32]* {{[a-zA-Z0-9@%]+}}, i32 0, i32 0))
+  // : call i32 asm "foo $1,$0", "=r|r,r|im[[CLOBBERS]](i32* getelementptr inbounds ([2 x i32], [2 x i32]* {{[a-zA-Z0-9@%]+}}, i32 0, i32 0))
   asm("foo %1,%0" : "=r,r" (out0) : "r,p" (marray));
 }

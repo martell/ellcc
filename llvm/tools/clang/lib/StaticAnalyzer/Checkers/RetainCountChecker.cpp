@@ -2852,7 +2852,7 @@ void RetainCountChecker::checkPostStmt(const ObjCIvarRefExpr *IRE,
 
   ProgramStateRef State = C.getState();
   SymbolRef Sym = State->getSVal(*IVarLoc).getAsSymbol();
-  if (!Sym)
+  if (!Sym || !wasLoadedFromIvar(Sym))
     return;
 
   // Accessing an ivar directly is unusual. If we've done that, be more
@@ -2867,7 +2867,9 @@ void RetainCountChecker::checkPostStmt(const ObjCIvarRefExpr *IRE,
   else
     return;
 
-  if (!wasLoadedFromIvar(Sym))
+  // If the value is already known to be nil, don't bother tracking it.
+  ConstraintManager &CMgr = State->getConstraintManager();
+  if (CMgr.isNull(State, Sym).isConstrainedTrue())
     return;
 
   if (const RefVal *RV = getRefBinding(State, Sym)) {
@@ -2880,9 +2882,10 @@ void RetainCountChecker::checkPostStmt(const ObjCIvarRefExpr *IRE,
 
     // Also don't do anything if the ivar is unretained. If so, we know that
     // there's no outstanding retain count for the value.
-    if (const ObjCPropertyDecl *Prop = findPropForIvar(IRE->getDecl()))
-      if (!Prop->isRetaining())
-        return;
+    if (Kind == RetEffect::ObjC)
+      if (const ObjCPropertyDecl *Prop = findPropForIvar(IRE->getDecl()))
+        if (!Prop->isRetaining())
+          return;
 
     // Note that this value has been loaded from an ivar.
     C.addTransition(setRefBinding(State, Sym, RV->withIvarAccess()));
@@ -2898,12 +2901,16 @@ void RetainCountChecker::checkPostStmt(const ObjCIvarRefExpr *IRE,
   }
 
   // Try to find the property associated with this ivar.
-  const ObjCPropertyDecl *Prop = findPropForIvar(IRE->getDecl());
-
-  if (Prop && !Prop->isRetaining())
-    State = setRefBinding(State, Sym, PlusZero);
-  else
+  if (Kind != RetEffect::ObjC) {
     State = setRefBinding(State, Sym, PlusZero.withIvarAccess());
+  } else {
+    const ObjCPropertyDecl *Prop = findPropForIvar(IRE->getDecl());
+
+    if (Prop && !Prop->isRetaining())
+      State = setRefBinding(State, Sym, PlusZero);
+    else
+      State = setRefBinding(State, Sym, PlusZero.withIvarAccess());
+  }
 
   C.addTransition(State);
 }
@@ -3338,7 +3345,7 @@ bool RetainCountChecker::evalCall(const CallExpr *CE, CheckerContext &C) const {
   // See if it's one of the specific functions we know how to eval.
   bool canEval = false;
 
-  QualType ResultTy = CE->getCallReturnType();
+  QualType ResultTy = CE->getCallReturnType(C.getASTContext());
   if (ResultTy->isObjCIdType()) {
     // Handle: id NSMakeCollectable(CFTypeRef)
     canEval = II->isStr("NSMakeCollectable");

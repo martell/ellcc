@@ -71,7 +71,6 @@ private:
   legacy::PassManager *getCodeGenPasses() const {
     if (!CodeGenPasses) {
       CodeGenPasses = new legacy::PassManager();
-      CodeGenPasses->add(new DataLayoutPass());
       CodeGenPasses->add(
           createTargetTransformInfoWrapperPass(getTargetIRAnalysis()));
     }
@@ -81,7 +80,6 @@ private:
   legacy::PassManager *getPerModulePasses() const {
     if (!PerModulePasses) {
       PerModulePasses = new legacy::PassManager();
-      PerModulePasses->add(new DataLayoutPass());
       PerModulePasses->add(
           createTargetTransformInfoWrapperPass(getTargetIRAnalysis()));
     }
@@ -91,7 +89,6 @@ private:
   legacy::FunctionPassManager *getPerFunctionPasses() const {
     if (!PerFunctionPasses) {
       PerFunctionPasses = new legacy::FunctionPassManager(TheModule);
-      PerFunctionPasses->add(new DataLayoutPass());
       PerFunctionPasses->add(
           createTargetTransformInfoWrapperPass(getTargetIRAnalysis()));
     }
@@ -240,6 +237,14 @@ static TargetLibraryInfoImpl *createTLII(llvm::Triple &TargetTriple,
   TargetLibraryInfoImpl *TLII = new TargetLibraryInfoImpl(TargetTriple);
   if (!CodeGenOpts.SimplifyLibCalls)
     TLII->disableAllFunctions();
+
+  switch (CodeGenOpts.getVecLib()) {
+  case CodeGenOptions::Accelerate:
+    TLII->addVectorizableFunctionsFromVecLib(TargetLibraryInfoImpl::Accelerate);
+    break;
+  default:
+    break;
+  }
   return TLII;
 }
 
@@ -383,6 +388,7 @@ void EmitAssemblyHelper::CreatePasses() {
     Options.NoRedZone = CodeGenOpts.DisableRedZone;
     Options.FunctionNamesInData =
         !CodeGenOpts.CoverageNoFunctionNamesInData;
+    Options.ExitBlockBeforeBody = CodeGenOpts.CoverageExitBlockBeforeBody;
     MPM->add(createGCOVProfilerPass(Options));
     if (CodeGenOpts.getDebugInfo() == CodeGenOptions::NoDebugInfo)
       MPM->add(createStripSymbolsPass(true));
@@ -527,6 +533,7 @@ TargetMachine *EmitAssemblyHelper::CreateTargetMachine(bool MustCreateTM) {
   Options.PositionIndependentExecutable = LangOpts.PIELevel != 0;
   Options.FunctionSections = CodeGenOpts.FunctionSections;
   Options.DataSections = CodeGenOpts.DataSections;
+  Options.UniqueSectionNames = CodeGenOpts.UniqueSectionNames;
 
   Options.MCOptions.MCRelaxAll = CodeGenOpts.RelaxAll;
   Options.MCOptions.MCSaveTempLabels = CodeGenOpts.SaveTempLabels;
