@@ -3481,7 +3481,6 @@ std::error_code BitcodeReader::ParseFunctionBody(Function *F) {
 
       I = GetElementPtrInst::Create(Ty, BasePtr, GEPIdx);
 
-      assert(!Ty || Ty == cast<GetElementPtrInst>(I)->getSourceElementType());
       InstructionList.push_back(I);
       if (InBounds)
         cast<GetElementPtrInst>(I)->setIsInBounds(true);

@@ -812,7 +812,7 @@ ctype<wchar_t>::do_toupper(char_type c) const
 {
 #ifdef _LIBCPP_HAS_DEFAULTRUNELOCALE
     return isascii(c) ? _DefaultRuneLocale.__mapupper[c] : c;
-#elif defined(__GLIBC__) || defined(EMSCRIPTEN) || defined(__NetBSD__)
+#elif defined(__GLIBC__) || defined(__EMSCRIPTEN__) || defined(__NetBSD__)
     return isascii(c) ? ctype<char>::__classic_upper_table()[c] : c;
 #else
     return (isascii(c) && iswlower_l(c, __cloc())) ? c-L'a'+L'A' : c;
@@ -825,7 +825,7 @@ ctype<wchar_t>::do_toupper(char_type* low, const char_type* high) const
     for (; low != high; ++low)
 #ifdef _LIBCPP_HAS_DEFAULTRUNELOCALE
         *low = isascii(*low) ? _DefaultRuneLocale.__mapupper[*low] : *low;
-#elif defined(__GLIBC__) || defined(EMSCRIPTEN) || defined(__NetBSD__)
+#elif defined(__GLIBC__) || defined(__EMSCRIPTEN__) || defined(__NetBSD__)
         *low = isascii(*low) ? ctype<char>::__classic_upper_table()[*low]
                              : *low;
 #else
@@ -839,7 +839,7 @@ ctype<wchar_t>::do_tolower(char_type c) const
 {
 #ifdef _LIBCPP_HAS_DEFAULTRUNELOCALE
     return isascii(c) ? _DefaultRuneLocale.__maplower[c] : c;
-#elif defined(__GLIBC__) || defined(EMSCRIPTEN) || defined(__NetBSD__)
+#elif defined(__GLIBC__) || defined(__EMSCRIPTEN__) || defined(__NetBSD__)
     return isascii(c) ? ctype<char>::__classic_lower_table()[c] : c;
 #else
     return (isascii(c) && isupper_l(c, __cloc())) ? c-L'A'+'a' : c;
@@ -852,7 +852,7 @@ ctype<wchar_t>::do_tolower(char_type* low, const char_type* high) const
     for (; low != high; ++low)
 #ifdef _LIBCPP_HAS_DEFAULTRUNELOCALE
         *low = isascii(*low) ? _DefaultRuneLocale.__maplower[*low] : *low;
-#elif defined(__GLIBC__) || defined(EMSCRIPTEN) || defined(__NetBSD__)
+#elif defined(__GLIBC__) || defined(__EMSCRIPTEN__) || defined(__NetBSD__)
         *low = isascii(*low) ? ctype<char>::__classic_lower_table()[*low]
                              : *low;
 #else
@@ -921,7 +921,7 @@ ctype<char>::do_toupper(char_type c) const
       static_cast<char>(_DefaultRuneLocale.__mapupper[static_cast<ptrdiff_t>(c)]) : c;
 #elif defined(__NetBSD__)
     return static_cast<char>(__classic_upper_table()[static_cast<unsigned char>(c)]);
-#elif defined(__GLIBC__) || defined(EMSCRIPTEN)
+#elif defined(__GLIBC__) || defined(__EMSCRIPTEN__)
     return isascii(c) ? 
       static_cast<char>(__classic_upper_table()[static_cast<unsigned char>(c)]) : c;
 #else
@@ -938,8 +938,9 @@ ctype<char>::do_toupper(char_type* low, const char_type* high) const
           static_cast<char>(_DefaultRuneLocale.__mapupper[static_cast<ptrdiff_t>(*low)]) : *low;
 #elif defined(__NetBSD__)
         *low = static_cast<char>(__classic_upper_table()[static_cast<unsigned char>(*low)]);
-#elif defined(__GLIBC__) || defined(EMSCRIPTEN)
-        *low = isascii(*low) ? __classic_upper_table()[static_cast<size_t>(*low)] : *low;
+#elif defined(__GLIBC__) || defined(__EMSCRIPTEN__)
+        *low = isascii(*low) ?
+          static_cast<char>(__classic_upper_table()[static_cast<size_t>(*low)]) : *low;
 #else
         *low = (isascii(*low) && islower_l(*low, __cloc())) ? *low-'a'+'A' : *low;
 #endif
@@ -954,8 +955,9 @@ ctype<char>::do_tolower(char_type c) const
       static_cast<char>(_DefaultRuneLocale.__maplower[static_cast<ptrdiff_t>(c)]) : c;
 #elif defined(__NetBSD__)
     return static_cast<char>(__classic_lower_table()[static_cast<unsigned char>(c)]);
-#elif defined(__GLIBC__) || defined(EMSCRIPTEN) || defined(__NetBSD__)
-    return isascii(c) ? __classic_lower_table()[static_cast<size_t>(c)] : c;
+#elif defined(__GLIBC__) || defined(__EMSCRIPTEN__) || defined(__NetBSD__)
+    return isascii(c) ?
+      static_cast<char>(__classic_lower_table()[static_cast<size_t>(c)]) : c;
 #else
     return (isascii(c) && isupper_l(c, __cloc())) ? c-'A'+'a' : c;
 #endif
@@ -969,8 +971,8 @@ ctype<char>::do_tolower(char_type* low, const char_type* high) const
         *low = isascii(*low) ? static_cast<char>(_DefaultRuneLocale.__maplower[static_cast<ptrdiff_t>(*low)]) : *low;
 #elif defined(__NetBSD__)
         *low = static_cast<char>(__classic_lower_table()[static_cast<unsigned char>(*low)]);
-#elif defined(__GLIBC__) || defined(EMSCRIPTEN)
-        *low = isascii(*low) ? __classic_lower_table()[static_cast<size_t>(*low)] : *low;
+#elif defined(__GLIBC__) || defined(__EMSCRIPTEN__)
+        *low = isascii(*low) ? static_cast<char>(__classic_lower_table()[static_cast<size_t>(*low)]) : *low;
 #else
         *low = (isascii(*low) && isupper_l(*low, __cloc())) ? *low-'A'+'a' : *low;
 #endif
@@ -1010,7 +1012,7 @@ ctype<char>::do_narrow(const char_type* low, const char_type* high, char dfault,
     return low;
 }
 
-#if defined(EMSCRIPTEN) || defined(__ELLCC__)
+#if defined(__EMSCRIPTEN__) || defined(__ELLCC__)
 extern "C" const unsigned short ** __ctype_b_loc();
 extern "C" const int ** __ctype_tolower_loc();
 extern "C" const int ** __ctype_toupper_loc();
@@ -1112,13 +1114,13 @@ ctype<char>::classic_table()  _NOEXCEPT
     return _ctype+1; // internal ctype mask table defined in msvcrt.dll
 // This is assumed to be safe, which is a nonsense assumption because we're
 // going to end up dereferencing it later...
-#elif defined(EMSCRIPTEN) || defined(__ELLCC__)
+#elif defined(__EMSCRIPTEN__) || defined(__ELLCC__)
     return *__ctype_b_loc();
 #elif defined(_NEWLIB_VERSION)
     // Newlib has a 257-entry table in ctype_.c, where (char)0 starts at [1].
     return _ctype_ + 1;
 #elif defined(_AIX)
-    return (const unsigned long *)__lc_ctype_ptr->obj->mask;
+    return (const unsigned int *)__lc_ctype_ptr->obj->mask;
 #else
     // Platform not supported: abort so the person doing the port knows what to
     // fix
@@ -1155,7 +1157,7 @@ ctype<char>::__classic_upper_table() _NOEXCEPT
     return _C_toupper_tab_ + 1;
 }
 
-#elif defined(EMSCRIPTEN)
+#elif defined(__EMSCRIPTEN__)
 const int*
 ctype<char>::__classic_lower_table() _NOEXCEPT
 {
@@ -1167,7 +1169,7 @@ ctype<char>::__classic_upper_table() _NOEXCEPT
 {
     return *__ctype_toupper_loc();
 }
-#endif // __GLIBC__ || EMSCRIPTEN || __NETBSD__ || __ELLCC__
+#endif // __GLIBC__ || __EMSCRIPTEN__ || __NETBSD__ || __ELLCC__
 
 // template <> class ctype_byname<char>
 
@@ -1287,7 +1289,8 @@ ctype_byname<wchar_t>::do_is(const char_type* low, const char_type* high, mask* 
         else
         {
             *vec = 0;
-            if (iswspace_l(*low, __l))
+            wint_t ch = static_cast<wint_t>(*low);
+            if (iswspace_l(ch, __l))
                 *vec |= space;
 #ifndef _LIBCPP_CTYPE_MASK_IS_COMPOSITE_PRINT
             if (iswprint_l(ch, __l))
@@ -1295,9 +1298,9 @@ ctype_byname<wchar_t>::do_is(const char_type* low, const char_type* high, mask* 
 #endif
             if (iswcntrl_l(ch, __l))
                 *vec |= cntrl;
-            if (iswupper_l(*low, __l))
+            if (iswupper_l(ch, __l))
                 *vec |= upper;
-            if (iswlower_l(*low, __l))
+            if (iswlower_l(ch, __l))
                 *vec |= lower;
 #ifndef _LIBCPP_CTYPE_MASK_IS_COMPOSITE_ALPHA
             if (iswalpha_l(ch, __l))
@@ -1305,7 +1308,7 @@ ctype_byname<wchar_t>::do_is(const char_type* low, const char_type* high, mask* 
 #endif
             if (iswdigit_l(ch, __l))
                 *vec |= digit;
-            if (iswpunct_l(*low, __l))
+            if (iswpunct_l(ch, __l))
                 *vec |= punct;
 #ifndef _LIBCPP_CTYPE_MASK_IS_COMPOSITE_XDIGIT
             if (iswxdigit_l(ch, __l))
@@ -1764,9 +1767,9 @@ int
 codecvt<wchar_t, char, mbstate_t>::do_max_length() const  _NOEXCEPT
 {
 #ifdef _LIBCPP_LOCALE__L_EXTENSIONS
-    return __l == 0 ? 1 : MB_CUR_MAX_L(__l);
+    return __l == 0 ? 1 : static_cast<int>(  MB_CUR_MAX_L(__l));
 #else
-    return __l == 0 ? 1 : __mb_cur_max_l(__l);
+    return __l == 0 ? 1 : static_cast<int>(__mb_cur_max_l(__l));
 #endif
 }
 

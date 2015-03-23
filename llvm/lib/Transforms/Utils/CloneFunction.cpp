@@ -278,14 +278,6 @@ namespace {
         TypeMapper = nullptr;
         Materializer = nullptr;
       }
-      // These are optional components.  The Director may return null.
-      if (Director) {
-        TypeMapper = Director->getTypeRemapper();
-        Materializer = Director->getValueMaterializer();
-      } else {
-        TypeMapper = nullptr;
-        Materializer = nullptr;
-      }
     }
 
     /// The specified block is found to be reachable, clone it and

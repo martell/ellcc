@@ -2466,17 +2466,6 @@ static const MCPhysReg QFPR[] = {
     PPC::QF1, PPC::QF2, PPC::QF3,  PPC::QF4,  PPC::QF5,  PPC::QF6, PPC::QF7,
     PPC::QF8, PPC::QF9, PPC::QF10, PPC::QF11, PPC::QF12, PPC::QF13};
 
-/// GetQFPR - Get the set of QPX registers that should be allocated for
-/// arguments.
-static const MCPhysReg *GetQFPR() {
-  static const MCPhysReg QFPR[] = {
-    PPC::QF1, PPC::QF2, PPC::QF3, PPC::QF4, PPC::QF5, PPC::QF6, PPC::QF7,
-    PPC::QF8, PPC::QF9, PPC::QF10, PPC::QF11, PPC::QF12, PPC::QF13
-  };
-
-  return QFPR;
-}
-
 /// CalculateStackSlotSize - Calculates the size reserved for this argument on
 /// the stack.
 static unsigned CalculateStackSlotSize(EVT ArgVT, ISD::ArgFlagsTy Flags,
@@ -2907,8 +2896,6 @@ PPCTargetLowering::LowerFormalArguments_64SVR4(
     PPC::VSH2, PPC::VSH3, PPC::VSH4, PPC::VSH5, PPC::VSH6, PPC::VSH7, PPC::VSH8,
     PPC::VSH9, PPC::VSH10, PPC::VSH11, PPC::VSH12, PPC::VSH13
   };
-
-  static const MCPhysReg *QFPR = GetQFPR();
 
   const unsigned Num_GPR_Regs = array_lengthof(GPR);
   const unsigned Num_FPR_Regs = 13;
@@ -4604,8 +4591,6 @@ PPCTargetLowering::LowerCall_64SVR4(SDValue Chain, SDValue Callee,
     PPC::VSH2, PPC::VSH3, PPC::VSH4, PPC::VSH5, PPC::VSH6, PPC::VSH7, PPC::VSH8,
     PPC::VSH9, PPC::VSH10, PPC::VSH11, PPC::VSH12, PPC::VSH13
   };
-
-  static const MCPhysReg *QFPR = GetQFPR();
 
   const unsigned NumGPRs = array_lengthof(GPR);
   const unsigned NumFPRs = 13;

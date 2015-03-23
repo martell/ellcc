@@ -25,5 +25,4 @@ void PDBSymbolCustom::getDataBytes(llvm::SmallVector<uint8_t, 32> &bytes) {
   RawSymbol->getDataBytes(bytes);
 }
 
-  Dumper.dump(*this, OS, Indent);
 void PDBSymbolCustom::dump(PDBSymDumper &Dumper) const { Dumper.dump(*this); }

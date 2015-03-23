@@ -40,25 +40,13 @@ for.cond:                                         ; preds = %for.inc, %entry
   br i1 %cmp, label %for.body, label %for.end
 
 for.body:                                         ; preds = %for.cond
-<<<<<<< .working
-  %1 = load i32, i32* %i, align 4
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %1 = load i32, i32* %i, align 4
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
-<<<<<<< .working
-  %4 = load i32, i32* %i, align 4
-  %arrayidx1 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %4
-=======
   %4 = load i32, i32* %i, align 4
   %arrayidx1 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %4
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx1, align 4
   br label %for.inc
 
@@ -69,15 +57,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx2, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx2, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -108,23 +90,12 @@ for.cond:                                         ; preds = %for.inc, %entry
 for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %add = add nsw i32 %1, 10
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %add
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %add
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add1 = add nsw i32 %2, %3
-<<<<<<< .working
-  %4 = load i32, i32* %i, align 4
-  %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %4
-=======
   %4 = load i32, i32* %i, align 4
   %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %4
->>>>>>> .merge-right.r4997
   store i32 %add1, i32* %arrayidx2, align 4
   br label %for.inc
 
@@ -135,15 +106,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx3, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx3, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -172,25 +137,14 @@ for.cond:                                         ; preds = %for.inc, %entry
   br i1 %cmp, label %for.body, label %for.end
 
 for.body:                                         ; preds = %for.cond
-<<<<<<< .working
-  %1 = load i32, i32* %i, align 4
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %1 = load i32, i32* %i, align 4
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
   %4 = load i32, i32* %i, align 4
   %add1 = add nsw i32 %4, 10
-<<<<<<< .working
-  %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %add1
-=======
   %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %add1
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx2, align 4
   br label %for.inc
 
@@ -201,15 +155,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx3, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx3, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -294,33 +242,17 @@ for.cond:                                         ; preds = %for.inc, %entry
   br i1 %cmp, label %for.body, label %for.end
 
 for.body:                                         ; preds = %for.cond
-<<<<<<< .working
-  %1 = load i32, i32* %i, align 4
-  %2 = load i32, i32* %N, align 4
-  %arrayidx = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 2), i32 0, i32 %2
-  %arrayidx1 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx, i32 0, i32 %1
-  %3 = load i32, i32* %arrayidx1, align 4
-  %4 = load i32, i32* %a.addr, align 4
-=======
   %1 = load i32, i32* %i, align 4
   %2 = load i32, i32* %N, align 4
   %arrayidx = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 2), i32 0, i32 %2
   %arrayidx1 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx, i32 0, i32 %1
   %3 = load i32, i32* %arrayidx1, align 4
   %4 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %3, %4
-<<<<<<< .working
-  %5 = load i32, i32* %i, align 4
-  %6 = load i32, i32* %N, align 4
-  %arrayidx2 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %6
-  %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx2, i32 0, i32 %5
-=======
   %5 = load i32, i32* %i, align 4
   %6 = load i32, i32* %N, align 4
   %arrayidx2 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %6
   %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx2, i32 0, i32 %5
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx3, align 4
   br label %for.inc
 
@@ -331,19 +263,11 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %8 = load i32, i32* %a.addr, align 4
-  %9 = load i32, i32* %N, align 4
-  %arrayidx4 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %9
-  %arrayidx5 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx4, i32 0, i32 %8
-  %10 = load i32, i32* %arrayidx5, align 4
-=======
   %8 = load i32, i32* %a.addr, align 4
   %9 = load i32, i32* %N, align 4
   %arrayidx4 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %9
   %arrayidx5 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx4, i32 0, i32 %8
   %10 = load i32, i32* %arrayidx5, align 4
->>>>>>> .merge-right.r4997
   ret i32 %10
 }
 
@@ -377,29 +301,15 @@ for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %2 = load i32, i32* %N, align 4
   %add = add nsw i32 %2, 1
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %add
-  %arrayidx1 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx, i32 0, i32 %1
-  %3 = load i32, i32* %arrayidx1, align 4
-  %4 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %add
   %arrayidx1 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx, i32 0, i32 %1
   %3 = load i32, i32* %arrayidx1, align 4
   %4 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add2 = add nsw i32 %3, %4
-<<<<<<< .working
-  %5 = load i32, i32* %i, align 4
-  %6 = load i32, i32* %N, align 4
-  %arrayidx3 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %6
-  %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx3, i32 0, i32 %5
-=======
   %5 = load i32, i32* %i, align 4
   %6 = load i32, i32* %N, align 4
   %arrayidx3 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %6
   %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx3, i32 0, i32 %5
->>>>>>> .merge-right.r4997
   store i32 %add2, i32* %arrayidx4, align 4
   br label %for.inc
 
@@ -410,19 +320,11 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %8 = load i32, i32* %a.addr, align 4
-  %9 = load i32, i32* %N, align 4
-  %arrayidx5 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %9
-  %arrayidx6 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx5, i32 0, i32 %8
-  %10 = load i32, i32* %arrayidx6, align 4
-=======
   %8 = load i32, i32* %a.addr, align 4
   %9 = load i32, i32* %N, align 4
   %arrayidx5 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %9
   %arrayidx6 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx5, i32 0, i32 %8
   %10 = load i32, i32* %arrayidx6, align 4
->>>>>>> .merge-right.r4997
   ret i32 %10
 }
 
@@ -453,24 +355,14 @@ for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %sub = sub nsw i32 100, %1
   %sub1 = sub nsw i32 %sub, 1
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
   %4 = load i32, i32* %i, align 4
   %sub2 = sub nsw i32 100, %4
   %sub3 = sub nsw i32 %sub2, 1
-<<<<<<< .working
-  %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub3
-=======
   %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub3
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx4, align 4
   br label %for.inc
 
@@ -481,15 +373,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx5 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx5, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx5 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx5, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -521,24 +407,14 @@ for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %sub = sub nsw i32 100, %1
   %sub1 = sub nsw i32 %sub, 10
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
   %4 = load i32, i32* %i, align 4
   %sub2 = sub nsw i32 100, %4
   %sub3 = sub nsw i32 %sub2, 1
-<<<<<<< .working
-  %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub3
-=======
   %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub3
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx4, align 4
   br label %for.inc
 
@@ -549,15 +425,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx5 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx5, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx5 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx5, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -589,24 +459,14 @@ for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %sub = sub nsw i32 100, %1
   %sub1 = sub nsw i32 %sub, 1
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
   %4 = load i32, i32* %i, align 4
   %sub2 = sub nsw i32 100, %4
   %sub3 = sub nsw i32 %sub2, 10
-<<<<<<< .working
-  %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub3
-=======
   %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub3
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx4, align 4
   br label %for.inc
 
@@ -617,15 +477,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx5 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx5, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx5 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx5, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -719,32 +573,18 @@ for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %sub = sub nsw i32 100, %1
   %sub1 = sub nsw i32 %sub, 1
-<<<<<<< .working
-  %2 = load i32, i32* %N, align 4
-  %arrayidx = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 2), i32 0, i32 %2
-  %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx, i32 0, i32 %sub1
-  %3 = load i32, i32* %arrayidx2, align 4
-  %4 = load i32, i32* %a.addr, align 4
-=======
   %2 = load i32, i32* %N, align 4
   %arrayidx = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 2), i32 0, i32 %2
   %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx, i32 0, i32 %sub1
   %3 = load i32, i32* %arrayidx2, align 4
   %4 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %3, %4
   %5 = load i32, i32* %i, align 4
   %sub3 = sub nsw i32 100, %5
   %sub4 = sub nsw i32 %sub3, 1
-<<<<<<< .working
-  %6 = load i32, i32* %N, align 4
-  %arrayidx5 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %6
-  %arrayidx6 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx5, i32 0, i32 %sub4
-=======
   %6 = load i32, i32* %N, align 4
   %arrayidx5 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %6
   %arrayidx6 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx5, i32 0, i32 %sub4
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx6, align 4
   br label %for.inc
 
@@ -755,19 +595,11 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %8 = load i32, i32* %a.addr, align 4
-  %9 = load i32, i32* %N, align 4
-  %arrayidx7 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %9
-  %arrayidx8 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx7, i32 0, i32 %8
-  %10 = load i32, i32* %arrayidx8, align 4
-=======
   %8 = load i32, i32* %a.addr, align 4
   %9 = load i32, i32* %N, align 4
   %arrayidx7 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %9
   %arrayidx8 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx7, i32 0, i32 %8
   %10 = load i32, i32* %arrayidx8, align 4
->>>>>>> .merge-right.r4997
   ret i32 %10
 }
 
@@ -803,30 +635,17 @@ for.body:                                         ; preds = %for.cond
   %sub1 = sub nsw i32 %sub, 1
   %2 = load i32, i32* %N, align 4
   %add = add nsw i32 %2, 1
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %add
-  %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx, i32 0, i32 %sub1
-  %3 = load i32, i32* %arrayidx2, align 4
-  %4 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %add
   %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx, i32 0, i32 %sub1
   %3 = load i32, i32* %arrayidx2, align 4
   %4 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add3 = add nsw i32 %3, %4
   %5 = load i32, i32* %i, align 4
   %sub4 = sub nsw i32 100, %5
   %sub5 = sub nsw i32 %sub4, 1
-<<<<<<< .working
-  %6 = load i32, i32* %N, align 4
-  %arrayidx6 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %6
-  %arrayidx7 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx6, i32 0, i32 %sub5
-=======
   %6 = load i32, i32* %N, align 4
   %arrayidx6 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %6
   %arrayidx7 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx6, i32 0, i32 %sub5
->>>>>>> .merge-right.r4997
   store i32 %add3, i32* %arrayidx7, align 4
   br label %for.inc
 
@@ -837,19 +656,11 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %8 = load i32, i32* %a.addr, align 4
-  %9 = load i32, i32* %N, align 4
-  %arrayidx8 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %9
-  %arrayidx9 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx8, i32 0, i32 %8
-  %10 = load i32, i32* %arrayidx9, align 4
-=======
   %8 = load i32, i32* %a.addr, align 4
   %9 = load i32, i32* %N, align 4
   %arrayidx8 = getelementptr inbounds [100 x [100 x i32]], [100 x [100 x i32]]* getelementptr inbounds (%struct.anon.0, %struct.anon.0* @Bar, i32 0, i32 0), i32 0, i32 %9
   %arrayidx9 = getelementptr inbounds [100 x i32], [100 x i32]* %arrayidx8, i32 0, i32 %8
   %10 = load i32, i32* %arrayidx9, align 4
->>>>>>> .merge-right.r4997
   ret i32 %10
 }
 
@@ -880,23 +691,12 @@ for.cond:                                         ; preds = %for.inc, %entry
 for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %add = add nsw i32 %1, 4
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %add
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %add
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add1 = add nsw i32 %2, %3
-<<<<<<< .working
-  %4 = load i32, i32* %i, align 4
-  %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %4
-=======
   %4 = load i32, i32* %i, align 4
   %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %4
->>>>>>> .merge-right.r4997
   store i32 %add1, i32* %arrayidx2, align 4
   br label %for.inc
 
@@ -907,15 +707,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx3, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx3, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -947,24 +741,14 @@ for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %sub = sub nsw i32 100, %1
   %sub1 = sub nsw i32 %sub, 5
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
   %4 = load i32, i32* %i, align 4
   %sub2 = sub nsw i32 100, %4
   %sub3 = sub nsw i32 %sub2, 1
-<<<<<<< .working
-  %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub3
-=======
   %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub3
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx4, align 4
   br label %for.inc
 
@@ -975,15 +759,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx5 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx5, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx5 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx5, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -1019,23 +797,12 @@ for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %sub = sub nsw i32 100, %1
   %sub1 = sub nsw i32 %sub, 1
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
-<<<<<<< .working
-  %4 = load i32, i32* %i, align 4
-  %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %4
-=======
   %4 = load i32, i32* %i, align 4
   %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %4
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx2, align 4
   br label %for.inc
 
@@ -1046,15 +813,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx3, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx3, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -1083,26 +844,15 @@ for.cond:                                         ; preds = %for.inc, %entry
   br i1 %cmp, label %for.body, label %for.end
 
 for.body:                                         ; preds = %for.cond
-<<<<<<< .working
-  %1 = load i32, i32* %i, align 4
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %1 = load i32, i32* %i, align 4
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
   %4 = load i32, i32* %i, align 4
   %sub = sub nsw i32 100, %4
   %sub1 = sub nsw i32 %sub, 1
-<<<<<<< .working
-  %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub1
-=======
   %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %sub1
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx2, align 4
   br label %for.inc
 
@@ -1113,15 +863,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx3, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx3, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -1210,23 +954,13 @@ for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %sub = sub nsw i32 100, %1
   %sub1 = sub nsw i32 %sub, 1
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
   %4 = load i32, i32* %i, align 4
   %add2 = add nsw i32 %4, 10
-<<<<<<< .working
-  %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %add2
-=======
   %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %add2
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx3, align 4
   br label %for.inc
 
@@ -1237,15 +971,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx4, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx4, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -1276,23 +1004,12 @@ for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %sub = sub nsw i32 100, %1
   %sub1 = sub nsw i32 %sub, 10
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
-<<<<<<< .working
-  %4 = load i32, i32* %i, align 4
-  %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %4
-=======
   %4 = load i32, i32* %i, align 4
   %arrayidx2 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %4
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx2, align 4
   br label %for.inc
 
@@ -1303,15 +1020,9 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx3, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx3, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }
 
@@ -1342,23 +1053,13 @@ for.body:                                         ; preds = %for.cond
   %1 = load i32, i32* %i, align 4
   %sub = sub nsw i32 100, %1
   %sub1 = sub nsw i32 %sub, 10
-<<<<<<< .working
-  %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
-  %2 = load i32, i32* %arrayidx, align 4
-  %3 = load i32, i32* %a.addr, align 4
-=======
   %arrayidx = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 2), i32 0, i32 %sub1
   %2 = load i32, i32* %arrayidx, align 4
   %3 = load i32, i32* %a.addr, align 4
->>>>>>> .merge-right.r4997
   %add = add nsw i32 %2, %3
   %4 = load i32, i32* %i, align 4
   %add2 = add nsw i32 %4, 10
-<<<<<<< .working
-  %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %add2
-=======
   %arrayidx3 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %add2
->>>>>>> .merge-right.r4997
   store i32 %add, i32* %arrayidx3, align 4
   br label %for.inc
 
@@ -1369,14 +1070,8 @@ for.inc:                                          ; preds = %for.body
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-<<<<<<< .working
-  %6 = load i32, i32* %a.addr, align 4
-  %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
-  %7 = load i32, i32* %arrayidx4, align 4
-=======
   %6 = load i32, i32* %a.addr, align 4
   %arrayidx4 = getelementptr inbounds [100 x i32], [100 x i32]* getelementptr inbounds (%struct.anon, %struct.anon* @Foo, i32 0, i32 0), i32 0, i32 %6
   %7 = load i32, i32* %arrayidx4, align 4
->>>>>>> .merge-right.r4997
   ret i32 %7
 }

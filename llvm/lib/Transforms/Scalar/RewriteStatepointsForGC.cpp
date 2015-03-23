@@ -548,9 +548,6 @@ public:
   }
   PhiState(Value *b) : status(Base), base(b) {}
   PhiState() : status(Unknown), base(nullptr) {}
-  PhiState(const PhiState &other) : status(other.status), base(other.base) {
-    assert(status != Base || base);
-  }
 
   Status getStatus() const { return status; }
   Value *getBase() const { return base; }
@@ -1168,11 +1165,11 @@ static AttributeSet legalizeCallAttributes(AttributeSet AS) {
 ///   statepointToken - statepoint instruction to which relocates should be
 ///   bound.
 ///   Builder - Llvm IR builder to be used to construct new calls.
-void CreateGCRelocates(ArrayRef<llvm::Value *> liveVariables,
-                       const int liveStart,
-                       ArrayRef<llvm::Value *> basePtrs,
-                       Instruction *statepointToken, IRBuilder<> Builder) {
-
+static void CreateGCRelocates(ArrayRef<llvm::Value *> liveVariables,
+                              const int liveStart,
+                              ArrayRef<llvm::Value *> basePtrs,
+                              Instruction *statepointToken,
+                              IRBuilder<> Builder) {
   SmallVector<Instruction *, 64> NewDefs;
   NewDefs.reserve(liveVariables.size());
 
@@ -1596,8 +1593,18 @@ static void relocationViaAlloca(
     // store must be inserted after load, otherwise store will be in alloca's
     // use list and an extra load will be inserted before it
     StoreInst *store = new StoreInst(def, alloca);
-    if (isa<Instruction>(def)) {
-      store->insertAfter(cast<Instruction>(def));
+    if (Instruction *inst = dyn_cast<Instruction>(def)) {
+      if (InvokeInst *invoke = dyn_cast<InvokeInst>(inst)) {
+        // InvokeInst is a TerminatorInst so the store need to be inserted
+        // into its normal destination block.
+        BasicBlock *normalDest = invoke->getNormalDest();
+        store->insertBefore(normalDest->getFirstNonPHI());
+      } else {
+        assert(!inst->isTerminator() &&
+               "The only TerminatorInst that can produce a value is "
+               "InvokeInst which is handled above.");
+         store->insertAfter(inst);
+      }
     } else {
       assert((isa<Argument>(def) || isa<GlobalVariable>(def) ||
               (isa<Constant>(def) && cast<Constant>(def)->isNullValue())) &&

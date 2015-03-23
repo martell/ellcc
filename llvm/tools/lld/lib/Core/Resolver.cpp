@@ -33,9 +33,12 @@ bool Resolver::handleFile(File &file) {
   bool undefAdded = false;
   for (const DefinedAtom *atom : file.defined())
     doDefinedAtom(*atom);
-  for (const UndefinedAtom *atom : file.undefined())
-    if (doUndefinedAtom(*atom))
+  for (const UndefinedAtom *atom : file.undefined()) {
+    if (doUndefinedAtom(*atom)) {
       undefAdded = true;
+      maybePreloadArchiveMember(atom->name());
+    }
+  }
   for (const SharedLibraryAtom *atom : file.sharedLibrary())
     doSharedLibraryAtom(*atom);
   for (const AbsoluteAtom *atom : file.absolute())
@@ -399,9 +402,6 @@ void Resolver::deadStripOptimize() {
       for (const Reference *ref : *defAtom)
         if (isBackref(ref))
           _reverseRef.insert(std::make_pair(ref->target(), atom));
-    if (const AbsoluteAtom *absAtom = dyn_cast<AbsoluteAtom>(atom))
-      markLive(absAtom);
-  }
     if (const AbsoluteAtom *absAtom = dyn_cast<AbsoluteAtom>(atom))
       markLive(absAtom);
   }

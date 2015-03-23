@@ -111,8 +111,6 @@ AsmPrinter::AsmPrinter(TargetMachine &tm, std::unique_ptr<MCStreamer> Streamer)
   CurExceptionSym = CurrentFnSym = CurrentFnSymForSize = nullptr;
   CurrentFnBegin = nullptr;
   CurrentFnEnd = nullptr;
-  CurrentFnBegin = nullptr;
-  CurrentFnEnd = nullptr;
   GCMetadataPrinters = nullptr;
   VerboseAsm = OutStreamer.isVerboseAsm();
 }

@@ -928,50 +928,6 @@ bool LoopAccessInfo::canAnalyzeLoop() {
 
 void LoopAccessInfo::analyzeLoop(const ValueToValueMap &Strides) {
 
-  // We must have a single backedge.
-  if (TheLoop->getNumBackEdges() != 1) {
-    emitAnalysis(
-        LoopAccessReport() <<
-        "loop control flow is not understood by analyzer");
-    return false;
-  }
-
-  // We must have a single exiting block.
-  if (!TheLoop->getExitingBlock()) {
-    emitAnalysis(
-        LoopAccessReport() <<
-        "loop control flow is not understood by analyzer");
-    return false;
-  }
-
-  // We only handle bottom-tested loops, i.e. loop in which the condition is
-  // checked at the end of each iteration. With that we can assume that all
-  // instructions in the loop are executed the same number of times.
-  if (TheLoop->getExitingBlock() != TheLoop->getLoopLatch()) {
-    emitAnalysis(
-        LoopAccessReport() <<
-        "loop control flow is not understood by analyzer");
-    return false;
-  }
-
-  // We need to have a loop header.
-  DEBUG(dbgs() << "LAA: Found a loop: " <<
-        TheLoop->getHeader()->getName() << '\n');
-
-  // ScalarEvolution needs to be able to find the exit count.
-  const SCEV *ExitCount = SE->getBackedgeTakenCount(TheLoop);
-  if (ExitCount == SE->getCouldNotCompute()) {
-    emitAnalysis(LoopAccessReport() <<
-                 "could not determine number of loop iterations");
-    DEBUG(dbgs() << "LAA: SCEV could not compute the loop exit count.\n");
-    return false;
-  }
-
-  return true;
-}
-
-void LoopAccessInfo::analyzeLoop(const ValueToValueMap &Strides) {
-
   typedef SmallVector<Value*, 16> ValueVector;
   typedef SmallPtrSet<Value*, 16> ValueSet;
 

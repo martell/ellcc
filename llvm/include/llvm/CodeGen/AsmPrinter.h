@@ -333,8 +333,6 @@ public:
 public:
   MCSymbol *createTempSymbol(const Twine &Name) const;
 
-  MCSymbol *createTempSymbol(const Twine &Name, unsigned ID) const;
-
   /// Return the MCSymbol for a private symbol with global value name as its
   /// base, with the specified suffix.
   MCSymbol *getSymbolWithGlobalValueBase(const GlobalValue *GV,

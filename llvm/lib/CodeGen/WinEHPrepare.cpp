@@ -184,7 +184,6 @@ public:
 
 protected:
   WinEHFrameVariableMaterializer Materializer;
-  WinEHFrameVariableMaterializer Materializer;
   Type *SelectorIDType;
   Type *Int8PtrType;
   LandingPadMap &LPadMap;

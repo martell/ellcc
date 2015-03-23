@@ -9,7 +9,6 @@
 
 #include "AArch64TargetHandler.h"
 #include "AArch64LinkingContext.h"
-#include "lld/Core/Endian.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/MathExtras.h"

@@ -195,7 +195,7 @@
 #endif
 
 #ifndef _LIBCPP_TYPE_VIS
-#  if __has_attribute(type_visibility)
+#  if __has_attribute(__type_visibility__)
 #    define _LIBCPP_TYPE_VIS __attribute__ ((__type_visibility__("default")))
 #  else
 #    define _LIBCPP_TYPE_VIS __attribute__ ((__visibility__("default")))
@@ -454,9 +454,7 @@ namespace std {
 #endif
 
 #if _GNUC_VER < 404
-#define _LIBCPP_HAS_NO_ADVANCED_SFINAE
 #define _LIBCPP_HAS_NO_DECLTYPE
-#define _LIBCPP_HAS_NO_DEFAULTED_FUNCTIONS
 #define _LIBCPP_HAS_NO_DELETED_FUNCTIONS
 #define _LIBCPP_HAS_NO_UNICODE_CHARS
 #define _LIBCPP_HAS_NO_VARIADICS
@@ -465,6 +463,11 @@ namespace std {
 
 #if _GNUC_VER < 406
 #define _LIBCPP_HAS_NO_NULLPTR
+#endif
+
+#if _GNUC_VER < 407
+#define _LIBCPP_HAS_NO_ADVANCED_SFINAE
+#define _LIBCPP_HAS_NO_DEFAULTED_FUNCTIONS
 #endif
 
 #endif  // __GXX_EXPERIMENTAL_CXX0X__
@@ -531,7 +534,6 @@ namespace std {
 #define _LIBCPP_HAS_NO_GENERALIZED_INITIALIZERS
 #define _LIBCPP_HAS_NO_NULLPTR
 #define _LIBCPP_HAS_NO_UNICODE_CHARS
-#define _LIBCPP_HAS_NO_STRONG_ENUMS
 #define _LIBCPP_HAS_IS_BASE_OF
 #define _LIBCPP_HAS_NO_VARIABLE_TEMPLATES
 

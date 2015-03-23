@@ -19,8 +19,6 @@ namespace llvm {
   /// x86-64.
   class X86_64MachoTargetObjectFile : public TargetLoweringObjectFileMachO {
   public:
-    X86_64MachoTargetObjectFile();
-
     const MCExpr *
     getTTypeGlobalReference(const GlobalValue *GV, unsigned Encoding,
                             Mangler &Mang, const TargetMachine &TM,

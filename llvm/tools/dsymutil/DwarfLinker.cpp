@@ -1200,8 +1200,6 @@ private:
                      const DWARFDebugInfoEntryMinimal *DIE = nullptr) const;
 
   bool createStreamer(Triple TheTriple, StringRef OutputFilename);
-
-  bool createStreamer(Triple TheTriple, StringRef OutputFilename);
   /// @}
 
 private:
@@ -1279,7 +1277,6 @@ bool DwarfLinker::getDIENames(const DWARFDebugInfoEntryMinimal &Die,
 /// information about a specific \p DIE related to the warning.
 void DwarfLinker::reportWarning(const Twine &Warning, const DWARFUnit *Unit,
                                 const DWARFDebugInfoEntryMinimal *DIE) const {
-  StringRef Context = "<debug map>";
   StringRef Context = "<debug map>";
   if (CurrentDebugObject)
     Context = CurrentDebugObject->getObjectFilename();

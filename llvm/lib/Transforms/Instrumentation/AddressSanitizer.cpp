@@ -178,9 +178,6 @@ static cl::opt<bool> ClSkipPromotableAllocas(
     "asan-skip-promotable-allocas",
     cl::desc("Do not instrument promotable allocas"), cl::Hidden,
     cl::init(true));
-static cl::opt<bool> ClSkipPromotableAllocas("asan-skip-promotable-allocas",
-       cl::desc("Do not instrument promotable allocas"),
-       cl::Hidden, cl::init(true));
 
 // These flags allow to change the shadow mapping.
 // The shadow mapping looks like
@@ -826,8 +823,6 @@ Value *AddressSanitizer::isInterestingMemoryAccess(Instruction *I,
 
   Value *PtrOperand = nullptr;
   const DataLayout &DL = I->getModule()->getDataLayout();
-
-  Value *PtrOperand = nullptr;
   if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
     if (!ClInstrumentReads) return nullptr;
     *IsWrite = false;

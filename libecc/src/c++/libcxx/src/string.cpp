@@ -65,7 +65,7 @@ as_integer_helper(const string& func, const S& str, size_t* idx, int base, F f)
 {
     typename S::value_type* ptr = nullptr;
     const typename S::value_type* const p = str.c_str();
-    int errno_save = errno;
+    typename remove_reference<decltype(errno)>::type errno_save = errno;
     errno = 0;
     V r = f(p, &ptr, base);
     swap(errno, errno_save);
@@ -182,7 +182,7 @@ as_float_helper(const string& func, const S& str, size_t* idx, F f )
 {
     typename S::value_type* ptr = nullptr;
     const typename S::value_type* const p = str.c_str();
-    int errno_save = errno;
+    typename remove_reference<decltype(errno)>::type errno_save = errno;
     errno = 0;
     V r = f(p, &ptr);
     swap(errno, errno_save);

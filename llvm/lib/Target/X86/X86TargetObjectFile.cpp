@@ -22,11 +22,6 @@
 using namespace llvm;
 using namespace dwarf;
 
-X86_64MachoTargetObjectFile::X86_64MachoTargetObjectFile()
-  : TargetLoweringObjectFileMachO() {
-  SupportIndirectSymViaGOTPCRel = true;
-}
-
 const MCExpr *X86_64MachoTargetObjectFile::getTTypeGlobalReference(
     const GlobalValue *GV, unsigned Encoding, Mangler &Mang,
     const TargetMachine &TM, MachineModuleInfo *MMI,

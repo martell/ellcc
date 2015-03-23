@@ -5483,13 +5483,6 @@ int LLParser::ParseGetElementPtr(Instruction *&Inst, PerFunctionState &PFS) {
       ParseTypeAndValue(Ptr, Loc, PFS))
     return true;
 
-  Type *PtrTy = Ptr->getType();
-  if (VectorType *VT = dyn_cast<VectorType>(PtrTy))
-    PtrTy = VT->getElementType();
-  if (Ty != cast<SequentialType>(PtrTy)->getElementType())
-    return Error(ExplicitTypeLoc,
-                 "explicit pointee type doesn't match operand's pointee type");
-
   Type *BaseType = Ptr->getType();
   PointerType *BasePointerType = dyn_cast<PointerType>(BaseType->getScalarType());
   if (!BasePointerType)

@@ -22,7 +22,6 @@
 #include "Atoms.h"
 #include "WriterImportLibrary.h"
 #include "lld/Core/DefinedAtom.h"
-#include "lld/Core/Endian.h"
 #include "lld/Core/File.h"
 #include "lld/Core/Writer.h"
 #include "lld/ReaderWriter/AtomLayout.h"

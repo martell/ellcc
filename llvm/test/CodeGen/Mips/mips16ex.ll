@@ -5,8 +5,6 @@
 ;16-NEXT: $func_begin0 = ([[TMP]])
 ;16-NEXT: .cfi_startproc
 ;16-NEXT: .cfi_personality
-;16-NEXT: .cfi_startproc
-;16-NEXT: .cfi_personality
 @.str = private unnamed_addr constant [7 x i8] c"hello\0A\00", align 1
 @_ZTIi = external constant i8*
 @.str1 = private unnamed_addr constant [15 x i8] c"exception %i \0A\00", align 1

@@ -695,12 +695,6 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
       return &LI;
   }
 
-  // Replace GEP indices if possible.
-  if (Instruction *NewGEPI = replaceGEPIdxWithZero(*this, Op, LI)) {
-      Worklist.Add(NewGEPI);
-      return &LI;
-  }
-
   // None of the following transforms are legal for volatile/atomic loads.
   // FIXME: Some of it is okay for atomic loads; needs refactoring.
   if (!LI.isSimple()) return nullptr;
@@ -900,12 +894,6 @@ Instruction *InstCombiner::visitStoreInst(StoreInst &SI) {
   // Try to canonicalize the stored type.
   if (unpackStoreToAggregate(*this, SI))
     return EraseInstFromFunction(SI);
-
-  // Replace GEP indices if possible.
-  if (Instruction *NewGEPI = replaceGEPIdxWithZero(*this, Ptr, SI)) {
-      Worklist.Add(NewGEPI);
-      return &SI;
-  }
 
   // Replace GEP indices if possible.
   if (Instruction *NewGEPI = replaceGEPIdxWithZero(*this, Ptr, SI)) {

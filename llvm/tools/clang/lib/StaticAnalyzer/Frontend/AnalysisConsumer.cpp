@@ -289,7 +289,6 @@ public:
 
   void Initialize(ASTContext &Context) override {
     Ctx = &Context;
-    // RICH: Had this disabled for some reason. Try again.
     checkerMgr = createCheckerManager(*Opts, PP.getLangOpts(), Plugins,
                                       PP.getDiagnostics());
 

@@ -594,6 +594,7 @@ void MCObjectFileInfo::InitCOFFMCObjectFileInfo(Triple T) {
       COFF::IMAGE_SCN_MEM_DISCARDABLE | COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
           COFF::IMAGE_SCN_MEM_READ,
       SectionKind::getMetadata(), "section_line");
+
   DwarfFrameSection = Ctx->getCOFFSection(
       ".debug_frame",
       COFF::IMAGE_SCN_MEM_DISCARDABLE | COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
@@ -748,8 +749,7 @@ void MCObjectFileInfo::InitMCObjectFileInfo(StringRef T, Reloc::Model relocm,
   // FIXME: Checking for Arch here to filter out bogus triples such as
   // cellspu-apple-darwin. Perhaps we should fix in Triple?
   if ((Arch == Triple::x86 || Arch == Triple::x86_64 ||
-       Arch == Triple::arm || Arch == Triple::armeb ||
-       Arch == Triple::thumb ||
+       Arch == Triple::arm || Arch == Triple::thumb ||
        Arch == Triple::aarch64 ||
        Arch == Triple::ppc || Arch == Triple::ppc64 ||
        Arch == Triple::UnknownArch) &&

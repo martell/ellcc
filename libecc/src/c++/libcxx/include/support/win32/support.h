@@ -30,7 +30,6 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <Windows.h>
 
 // The mingw headers already define these as static.
 #ifndef __MINGW32__

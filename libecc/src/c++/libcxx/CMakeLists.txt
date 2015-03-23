@@ -297,6 +297,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LIBCXX_CXX_FLAGS}")
 #===============================================================================
 
 include_directories(include)
+add_subdirectory(include)
 
 # Add source code. This also contains all of the logic for deciding linker flags
 # soname, etc...

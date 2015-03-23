@@ -8,13 +8,13 @@ set -e
 
 if [ `basename $(pwd)` != "lib" ]
 then
-	echo "current directory must be lib"
-	exit 1
+    echo "current directory must be lib"
+    exit 1
 fi
 
 if [ -z "$CXX" ]
 then
-	CXX=clang++
+    CXX=clang++
 fi
 
 if [ -z "$CXX_LANG" ]
@@ -100,7 +100,7 @@ case $TRIPLE in
     LDSHARED_FLAGS="-o libc++.dll \
         -shared -nodefaultlibs -Wl,--export-all-symbols -Wl,--allow-multiple-definition -Wl,--out-implib,libc++.dll.a \
         -lsupc++ -lpthread -lmingw32 -lgcc_s -lgcc -lmoldname -lmingwex -lmsvcr100 -ladvapi32 -lshell32 -luser32 -lkernel32 -lmingw32 -lgcc_s -lgcc -lmoldname -lmingwex -lmsvcrt"
-	;;
+    ;;
   *-ibm-*)
     hostOS=`uname`
     hostOS=`echo $hostOS | sed -e "s/\s+$//"`

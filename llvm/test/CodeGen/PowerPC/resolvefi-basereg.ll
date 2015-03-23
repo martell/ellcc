@@ -114,6 +114,7 @@ if.end:                                           ; preds = %if.then, %entry
   store i8* bitcast (double* getelementptr inbounds (%struct.S1998, %struct.S1998* @s1998, i32 0, i32 3) to i8*), i8** %arrayidx21, align 8
   %15 = load i32, i32* %i, align 4
   %idxprom22 = sext i32 %15 to i64
+  %arrayidx23 = getelementptr inbounds [32 x i64], [32 x i64]* getelementptr inbounds (%struct.Info, %struct.Info* @info, i32 0, i32 7), i32 0, i64 %idxprom22
   store i64 8, i64* %arrayidx23, align 8
   %16 = load i32, i32* %i, align 4
   %idxprom24 = sext i32 %16 to i64
@@ -163,14 +164,11 @@ if.end:                                           ; preds = %if.then, %entry
   %26 = load i32, i32* %i, align 4
   %inc41 = add nsw i32 %26, 1
   store i32 %inc41, i32* %i, align 4
+  %bf.load = load i32, i32* getelementptr inbounds (%struct.S1998, %struct.S1998* @s1998, i32 0, i32 6, i64 4, i32 1), align 8
   %bf.clear = and i32 %bf.load, 7
   %bf.set = or i32 %bf.clear, 16
-  store i32 %bf.set, i32* getelementptr inbounds (%struct.S1998* @s1998, i32 0, i32 6, i64 4, i32 1), align 8
-  %bf.load42 = load i32, i32* getelementptr inbounds ([5 x %struct.S1998]* @a1998, i32 0, i64 2, i32 6, i64 4, i32 1), align 8
-=======
   store i32 %bf.set, i32* getelementptr inbounds (%struct.S1998, %struct.S1998* @s1998, i32 0, i32 6, i64 4, i32 1), align 8
   %bf.load42 = load i32, i32* getelementptr inbounds ([5 x %struct.S1998], [5 x %struct.S1998]* @a1998, i32 0, i64 2, i32 6, i64 4, i32 1), align 8
->>>>>>> .merge-right.r4997
   %bf.clear43 = and i32 %bf.load42, 7
   %bf.set44 = or i32 %bf.clear43, 24
   store i32 %bf.set44, i32* getelementptr inbounds ([5 x %struct.S1998], [5 x %struct.S1998]* @a1998, i32 0, i64 2, i32 6, i64 4, i32 1), align 8
@@ -262,6 +260,7 @@ if.end:                                           ; preds = %if.then, %entry
   store i8* getelementptr inbounds (%struct.S1998, %struct.S1998* @s1998, i32 0, i32 6, i64 4, i32 7), i8** %arrayidx84, align 8
   %44 = load i32, i32* %i, align 4
   %idxprom85 = sext i32 %44 to i64
+  %arrayidx86 = getelementptr inbounds [32 x i64], [32 x i64]* getelementptr inbounds (%struct.Info, %struct.Info* @info, i32 0, i32 7), i32 0, i64 %idxprom85
   store i64 1, i64* %arrayidx86, align 8
   %45 = load i32, i32* %i, align 4
   %idxprom87 = sext i32 %45 to i64
