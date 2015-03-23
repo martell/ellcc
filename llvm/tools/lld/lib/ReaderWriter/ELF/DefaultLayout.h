@@ -169,7 +169,8 @@ public:
 
   typedef llvm::DenseSet<const Atom *> AtomSetT;
 
-  DefaultLayout(const ELFLinkingContext &context) : _context(context) {}
+  DefaultLayout(ELFLinkingContext &context)
+      : _context(context), _linkerScriptSema(context.linkerScriptSema()) {}
 
   /// \brief Return the section order for a input section
   SectionOrder getSectionOrder(StringRef name, int32_t contentType,
@@ -180,13 +181,15 @@ public:
   virtual StringRef getInputSectionName(const DefinedAtom *da) const;
 
   /// \brief Return the name of the output section from the input section.
-  virtual StringRef getOutputSectionName(StringRef inputSectionName) const;
+  virtual StringRef getOutputSectionName(StringRef archivePath,
+                                         StringRef memberPath,
+                                         StringRef inputSectionName) const;
 
   /// \brief Gets or creates a section.
   AtomSection<ELFT> *
   getSection(StringRef name, int32_t contentType,
              DefinedAtom::ContentPermissions contentPermissions,
-             StringRef path);
+             const DefinedAtom *da);
 
   /// \brief Gets the segment for a output section
   virtual Layout::SegmentType getSegmentType(Section<ELFT> *section) const;
@@ -215,31 +218,40 @@ public:
   // Output sections with the same name into a OutputSection
   void createOutputSections();
 
+  /// \brief Sort the sections by their order as defined by the layout,
+  /// preparing all sections to be assigned to a segment.
+  virtual void sortInputSections();
+
+  /// \brief Add extra chunks to a segment just before including the input
+  /// section given by <archivePath, memberPath, sectionName>. This
+  /// is used to add linker script expressions before each section.
+  virtual void addExtraChunksToSegment(Segment<ELFT> *segment,
+                                       StringRef archivePath,
+                                       StringRef memberPath,
+                                       StringRef sectionName);
+
   void assignSectionsToSegments() override;
 
   void assignVirtualAddress() override;
 
   void assignFileOffsetsForMiscSections();
 
-  /// Inline functions
-  inline range<AbsoluteAtomIterT> absoluteAtoms() { return _absoluteAtoms; }
+  range<AbsoluteAtomIterT> absoluteAtoms() { return _absoluteAtoms; }
 
-  inline void addSection(Chunk<ELFT> *c) {
-    _sections.push_back(c);
-  }
+  void addSection(Chunk<ELFT> *c) { _sections.push_back(c); }
 
-  inline void finalize() {
+  void finalize() {
     ScopedTask task(getDefaultDomain(), "Finalize layout");
     for (auto &si : _sections)
       si->finalize();
   }
 
-  inline void doPreFlight() {
+  void doPreFlight() {
     for (auto &si : _sections)
       si->doPreFlight();
   }
 
-  inline const AtomLayout *findAtomLayoutByName(StringRef name) const override {
+  const AtomLayout *findAtomLayoutByName(StringRef name) const override {
     for (auto sec : _sections)
       if (auto section = dyn_cast<Section<ELFT>>(sec))
         if (auto *al = section->findAtomLayoutByName(name))
@@ -247,19 +259,19 @@ public:
     return nullptr;
   }
 
-  inline void setHeader(ELFHeader<ELFT> *elfHeader) { _elfHeader = elfHeader; }
+  void setHeader(ELFHeader<ELFT> *elfHeader) { _elfHeader = elfHeader; }
 
-  inline void setProgramHeader(ProgramHeader<ELFT> *p) {
+  void setProgramHeader(ProgramHeader<ELFT> *p) {
     _programHeader = p;
   }
 
-  inline range<OutputSectionIter> outputSections() { return _outputSections; }
+  range<OutputSectionIter> outputSections() { return _outputSections; }
 
-  inline range<ChunkIter> sections() { return _sections; }
+  range<ChunkIter> sections() { return _sections; }
 
-  inline range<SegmentIter> segments() { return _segments; }
+  range<SegmentIter> segments() { return _segments; }
 
-  inline ELFHeader<ELFT> *getHeader() { return _elfHeader; }
+  ELFHeader<ELFT> *getHeader() { return _elfHeader; }
 
   bool hasDynamicRelocationTable() const { return !!_dynamicRelocationTable; }
 
@@ -321,12 +333,13 @@ protected:
   std::vector<OutputSection<ELFT> *> _outputSections;
   ELFHeader<ELFT> *_elfHeader;
   ProgramHeader<ELFT> *_programHeader;
-  LLD_UNIQUE_BUMP_PTR(RelocationTable<ELFT>) _dynamicRelocationTable;
-  LLD_UNIQUE_BUMP_PTR(RelocationTable<ELFT>) _pltRelocationTable;
+  unique_bump_ptr<RelocationTable<ELFT>> _dynamicRelocationTable;
+  unique_bump_ptr<RelocationTable<ELFT>> _pltRelocationTable;
   std::vector<lld::AtomLayout *> _absoluteAtoms;
   AtomSetT _referencedDynAtoms;
   llvm::StringSet<> _copiedDynSymNames;
-  const ELFLinkingContext &_context;
+  ELFLinkingContext &_context;
+  script::Sema &_linkerScriptSema;
 };
 
 template <class ELFT>
@@ -418,7 +431,16 @@ DefaultLayout<ELFT>::getInputSectionName(const DefinedAtom *da) const {
 /// \brief This maps the input sections to the output section names.
 template <class ELFT>
 StringRef
-DefaultLayout<ELFT>::getOutputSectionName(StringRef inputSectionName) const {
+DefaultLayout<ELFT>::getOutputSectionName(StringRef archivePath,
+                                          StringRef memberPath,
+                                          StringRef inputSectionName) const {
+  StringRef outputSectionName;
+  if (_linkerScriptSema.hasLayoutCommands()) {
+    script::Sema::SectionKey key = {archivePath, memberPath, inputSectionName};
+    outputSectionName = _linkerScriptSema.getOutputSection(key);
+    if (!outputSectionName.empty())
+      return outputSectionName;
+  }
   return llvm::StringSwitch<StringRef>(inputSectionName)
       .StartsWith(".text", ".text")
       .StartsWith(".ctors", ".ctors")
@@ -536,17 +558,20 @@ template <class ELFT>
 AtomSection<ELFT> *
 DefaultLayout<ELFT>::getSection(StringRef sectionName, int32_t contentType,
                                 DefinedAtom::ContentPermissions permissions,
-                                StringRef path) {
-  const SectionKey sectionKey(sectionName, permissions, path);
-  SectionOrder sectionOrder =
-      getSectionOrder(sectionName, contentType, permissions);
+                                const DefinedAtom *da) {
+  const SectionKey sectionKey(sectionName, permissions, da->file().path());
+  SectionOrder sectionOrder = getSectionOrder(sectionName, contentType, permissions);
   auto sec = _sectionMap.find(sectionKey);
   if (sec != _sectionMap.end())
     return sec->second;
   AtomSection<ELFT> *newSec =
       createSection(sectionName, contentType, permissions, sectionOrder);
-  newSec->setOutputSectionName(getOutputSectionName(sectionName));
+
+  newSec->setOutputSectionName(getOutputSectionName(
+      da->file().archivePath(), da->file().memberPath(), sectionName));
   newSec->setOrder(sectionOrder);
+  newSec->setArchiveNameOrPath(da->file().archivePath());
+  newSec->setMemberNameOrPath(da->file().memberPath());
   _sections.push_back(newSec);
   _sectionMap.insert(std::make_pair(sectionKey, newSec));
   return newSec;
@@ -566,8 +591,8 @@ DefaultLayout<ELFT>::addAtom(const Atom *atom) {
     const DefinedAtom::ContentType contentType = definedAtom->contentType();
 
     StringRef sectionName = getInputSectionName(definedAtom);
-    AtomSection<ELFT> *section = getSection(
-        sectionName, contentType, permissions, definedAtom->file().path());
+    AtomSection<ELFT> *section =
+        getSection(sectionName, contentType, permissions, definedAtom);
 
     // Add runtime relocations to the .rela section.
     for (const auto &reloc : *definedAtom) {
@@ -635,10 +660,7 @@ template <class ELFT> void DefaultLayout<ELFT>::assignSectionsToSegments() {
   ScopedTask task(getDefaultDomain(), "assignSectionsToSegments");
   ELFLinkingContext::OutputMagic outputMagic = _context.getOutputMagic();
   // sort the sections by their order as defined by the layout
-  std::stable_sort(_sections.begin(), _sections.end(),
-                   [](Chunk<ELFT> *A, Chunk<ELFT> *B) {
-    return A->order() < B->order();
-  });
+  sortInputSections();
   // Create output sections.
   createOutputSections();
   // Set the ordinal after sorting the sections
@@ -689,8 +711,8 @@ template <class ELFT> void DefaultLayout<ELFT>::assignSectionsToSegments() {
           if (!additionalSegmentInsert.second) {
             segment = additionalSegmentInsert.first->second;
           } else {
-            segment = new (_allocator) Segment<ELFT>(_context, segmentName,
-                                                     segmentType);
+            segment = new (_allocator)
+                Segment<ELFT>(_context, segmentName, segmentType);
             additionalSegmentInsert.first->second = segment;
             _segments.push_back(segment);
           }
@@ -716,11 +738,16 @@ template <class ELFT> void DefaultLayout<ELFT>::assignSectionsToSegments() {
         if (!segmentInsert.second) {
           segment = segmentInsert.first->second;
         } else {
-          segment = new (_allocator) Segment<ELFT>(_context, "PT_LOAD",
-                                                   llvm::ELF::PT_LOAD);
+          segment = new (_allocator)
+              Segment<ELFT>(_context, "PT_LOAD", llvm::ELF::PT_LOAD);
           segmentInsert.first->second = segment;
           _segments.push_back(segment);
         }
+        // Insert chunks with linker script expressions that occur at this
+        // point, just before appending a new input section
+        addExtraChunksToSegment(segment, section->archivePath(),
+                                section->memberPath(),
+                                section->inputSectionName());
         segment->append(section);
       }
     }
@@ -757,6 +784,7 @@ DefaultLayout<ELFT>::assignVirtualAddress() {
       break;
     }
   }
+  assert(firstLoadSegment != nullptr && "No loadable segment!");
   firstLoadSegment->prepend(_programHeader);
   firstLoadSegment->prepend(_elfHeader);
   bool newSegmentHeaderAdded = true;
@@ -873,6 +901,86 @@ void DefaultLayout<ELFT>::assignFileOffsetsForMiscSections() {
     fileoffset += si->fileSize();
   }
 }
+
+template <class ELFT> void DefaultLayout<ELFT>::sortInputSections() {
+  // First, sort according to default layout's order
+  std::stable_sort(
+      _sections.begin(), _sections.end(),
+      [](Chunk<ELFT> *A, Chunk<ELFT> *B) { return A->order() < B->order(); });
+
+  if (!_linkerScriptSema.hasLayoutCommands())
+    return;
+
+  // Sort the sections by their order as defined by the linker script
+  std::stable_sort(this->_sections.begin(), this->_sections.end(),
+                   [this](Chunk<ELFT> *A, Chunk<ELFT> *B) {
+                     auto *a = dyn_cast<Section<ELFT>>(A);
+                     auto *b = dyn_cast<Section<ELFT>>(B);
+
+                     if (a == nullptr)
+                       return false;
+                     if (b == nullptr)
+                       return true;
+
+                     return _linkerScriptSema.less(
+                         {a->archivePath(), a->memberPath(),
+                          a->inputSectionName()},
+                         {b->archivePath(), b->memberPath(),
+                          b->inputSectionName()});
+                   });
+  // Now try to arrange sections with no mapping rules to sections with
+  // similar content
+  auto p = this->_sections.begin();
+  // Find first section that has no assigned rule id
+  while (p != this->_sections.end()) {
+    auto *sect = dyn_cast<AtomSection<ELFT>>(*p);
+    if (!sect)
+      break;
+
+    if (!_linkerScriptSema.hasMapping({sect->archivePath(),
+                                       sect->memberPath(),
+                                       sect->inputSectionName()}))
+      break;
+
+    ++p;
+  }
+  // For all sections that have no assigned rule id, try to move them near a
+  // section with similar contents
+  if (p != this->_sections.begin()) {
+    for (; p != this->_sections.end(); ++p) {
+      auto q = p;
+      --q;
+      while (q != this->_sections.begin() &&
+             (*q)->getContentType() != (*p)->getContentType())
+        --q;
+      if ((*q)->getContentType() != (*p)->getContentType())
+        continue;
+      ++q;
+      for (auto i = p; i != q;) {
+        auto next = i--;
+        std::iter_swap(i, next);
+      }
+    }
+  }
+}
+
+template <class ELFT>
+void DefaultLayout<ELFT>::addExtraChunksToSegment(Segment<ELFT> *segment,
+                                                  StringRef archivePath,
+                                                  StringRef memberPath,
+                                                  StringRef sectionName) {
+  if (!_linkerScriptSema.hasLayoutCommands())
+    return;
+
+  std::vector<const script::SymbolAssignment *> exprs =
+      _linkerScriptSema.getExprs({archivePath, memberPath, sectionName});
+  for (auto expr : exprs) {
+    auto expChunk =
+        new (this->_allocator) ExpressionChunk<ELFT>(this->_context, expr);
+    segment->append(expChunk);
+  }
+}
+
 } // end namespace elf
 } // end namespace lld
 

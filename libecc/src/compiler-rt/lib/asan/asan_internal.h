@@ -62,21 +62,6 @@ namespace __asan {
 class AsanThread;
 using __sanitizer::StackTrace;
 
-struct SignalContext {
-  void *context;
-  uptr addr;
-  uptr pc;
-  uptr sp;
-  uptr bp;
-
-  SignalContext(void *context, uptr addr, uptr pc, uptr sp, uptr bp) :
-      context(context), addr(addr), pc(pc), sp(sp), bp(bp) {
-  }
-
-  // Creates signal context in a platform-specific manner.
-  static SignalContext Create(void *siginfo, void *context);
-};
-
 void AsanInitFromRtl();
 
 // asan_rtl.cc
@@ -88,7 +73,6 @@ void ReplaceSystemMalloc();
 // asan_linux.cc / asan_mac.cc / asan_win.cc
 void *AsanDoesNotSupportStaticLinkage();
 
-void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp);
 void AsanOnSIGSEGV(int, void *siginfo, void *context);
 
 void DisableReexec();

@@ -26,6 +26,7 @@ namespace lld {
 namespace mach_o {
 namespace normalized {
 
+using namespace llvm::support::endian;
 using llvm::sys::getSwappedBytes;
 
 template<typename T>

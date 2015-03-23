@@ -38,8 +38,10 @@ bool ColorizeReports() {
 void ReportErrorSummary(const char *error_type, StackTrace *stack) {
   if (!common_flags()->print_summary)
     return;
-  if (stack->size == 0 || !Symbolizer::GetOrInit()->CanReturnFileLineInfo())
+  if (stack->size == 0) {
+    ReportErrorSummary(error_type);
     return;
+  }
   // Currently, we include the first stack frame into the report summary.
   // Maybe sometimes we need to choose another frame (e.g. skip memcpy/etc).
   uptr pc = StackTrace::GetPreviousInstructionPc(stack->trace[0]);

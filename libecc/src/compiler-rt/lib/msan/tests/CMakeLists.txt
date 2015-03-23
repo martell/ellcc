@@ -32,6 +32,10 @@ set(MSAN_UNITTEST_COMMON_CFLAGS
   -fno-omit-frame-pointer
   -mno-omit-leaf-frame-pointer
   -Wno-deprecated-declarations
+  -Wno-unused-variable
+  -Wno-zero-length-array
+  -Wno-uninitialized
+  -Werror=sign-compare
 )
 set(MSAN_UNITTEST_INSTRUMENTED_CFLAGS
   ${MSAN_UNITTEST_COMMON_CFLAGS}

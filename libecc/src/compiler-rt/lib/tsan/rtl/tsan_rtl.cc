@@ -218,6 +218,7 @@ static void StopBackgroundThread() {
   ctx->background_thread = 0;
 }
 #endif
+#endif
 
 void DontNeedShadowFor(uptr addr, uptr size) {
   uptr shadow_beg = MemToShadow(addr);
@@ -331,6 +332,7 @@ void Initialize(ThreadState *thr) {
 #ifndef __mips__
   StartBackgroundThread();
   SetSandboxingCallback(StopBackgroundThread);
+#endif
 #endif
   if (common_flags()->detect_deadlocks)
     ctx->dd = DDetector::Create(flags());
@@ -453,7 +455,7 @@ void GrowShadowStack(ThreadState *thr) {
 #endif
 
 u32 CurrentStackId(ThreadState *thr, uptr pc) {
-  if (thr->shadow_stack_pos == 0)  // May happen during bootstrap.
+  if (!thr->is_inited)  // May happen during bootstrap.
     return 0;
   if (pc != 0) {
 #ifndef SANITIZER_GO

@@ -23,8 +23,6 @@ int main() {
   fprintf(stderr, "addr=");
   print_address(GlobalData);
   fprintf(stderr, "\n");
-  fprintf(stderr, "addr2=%p\n", &x);
-  fprintf(stderr, "addr3=%p\n", XXX::YYY::ZZZ);
   pthread_t t;
   pthread_create(&t, 0, Thread, 0);
   GlobalData[2] = 43;

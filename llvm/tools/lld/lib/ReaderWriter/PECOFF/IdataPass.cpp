@@ -21,6 +21,7 @@
 #include <map>
 #include <vector>
 
+using namespace llvm::support::endian;
 using llvm::object::delay_import_directory_table_entry;
 
 namespace lld {

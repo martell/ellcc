@@ -28,6 +28,7 @@ set(SANITIZER_SOURCES
   sanitizer_suppressions.cc
   sanitizer_symbolizer.cc
   sanitizer_symbolizer_libbacktrace.cc
+  sanitizer_symbolizer_mac.cc
   sanitizer_symbolizer_win.cc
   sanitizer_tls_get_addr.cc
   sanitizer_thread_registry.cc
@@ -41,6 +42,7 @@ set(SANITIZER_LIBCDEP_SOURCES
   sanitizer_stoptheworld_linux_libcdep.cc
   sanitizer_symbolizer_libcdep.cc
   sanitizer_symbolizer_posix_libcdep.cc
+  sanitizer_symbolizer_process_libcdep.cc
   sanitizer_unwind_posix_libcdep.cc)
 
 # Explicitly list all sanitizer_common headers. Not all of these are
@@ -90,7 +92,10 @@ set(SANITIZER_HEADERS
   sanitizer_stoptheworld.h
   sanitizer_suppressions.h
   sanitizer_symbolizer.h
+  sanitizer_symbolizer_internal.h
   sanitizer_symbolizer_libbacktrace.h
+  sanitizer_symbolizer_mac.h
+  sanitizer_symbolizer_win.h
   sanitizer_syscall_generic.inc
   sanitizer_syscall_linux_x86_64.inc
   sanitizer_thread_registry.h)

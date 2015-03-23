@@ -1016,6 +1016,87 @@ extern "C" const int ** __ctype_tolower_loc();
 extern "C" const int ** __ctype_toupper_loc();
 #endif
 
+#ifdef _LIBCPP_PROVIDES_DEFAULT_RUNE_TABLE
+const ctype<char>::mask*
+ctype<char>::classic_table()  _NOEXCEPT
+{
+    static _LIBCPP_CONSTEXPR const ctype<char>::mask builtin_table[table_size] = {
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl | space | blank,
+        cntrl | space,                  cntrl | space,
+        cntrl | space,                  cntrl | space,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        cntrl,                          cntrl,
+        space | blank | print,          punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  punct | print,
+        digit | print | xdigit,         digit | print | xdigit,
+        digit | print | xdigit,         digit | print | xdigit,
+        digit | print | xdigit,         digit | print | xdigit,
+        digit | print | xdigit,         digit | print | xdigit,
+        digit | print | xdigit,         digit | print | xdigit,
+        punct | print,                  punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  upper | xdigit | print | alpha,
+        upper | xdigit | print | alpha, upper | xdigit | print | alpha,
+        upper | xdigit | print | alpha, upper | xdigit | print | alpha,
+        upper | xdigit | print | alpha, upper | print | alpha,
+        upper | print | alpha,          upper | print | alpha,
+        upper | print | alpha,          upper | print | alpha,
+        upper | print | alpha,          upper | print | alpha,
+        upper | print | alpha,          upper | print | alpha,
+        upper | print | alpha,          upper | print | alpha,
+        upper | print | alpha,          upper | print | alpha,
+        upper | print | alpha,          upper | print | alpha,
+        upper | print | alpha,          upper | print | alpha,
+        upper | print | alpha,          upper | print | alpha,
+        upper | print | alpha,          punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  lower | xdigit | print | alpha,
+        lower | xdigit | print | alpha, lower | xdigit | print | alpha,
+        lower | xdigit | print | alpha, lower | xdigit | print | alpha,
+        lower | xdigit | print | alpha, lower | print | alpha,
+        lower | print | alpha,          lower | print | alpha,
+        lower | print | alpha,          lower | print | alpha,
+        lower | print | alpha,          lower | print | alpha,
+        lower | print | alpha,          lower | print | alpha,
+        lower | print | alpha,          lower | print | alpha,
+        lower | print | alpha,          lower | print | alpha,
+        lower | print | alpha,          lower | print | alpha,
+        lower | print | alpha,          lower | print | alpha,
+        lower | print | alpha,          lower | print | alpha,
+        lower | print | alpha,          punct | print,
+        punct | print,                  punct | print,
+        punct | print,                  cntrl,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+    return builtin_table;
+}
+#else
 const ctype<char>::mask*
 ctype<char>::classic_table()  _NOEXCEPT
 {
@@ -1038,8 +1119,6 @@ ctype<char>::classic_table()  _NOEXCEPT
     return _ctype_ + 1;
 #elif defined(_AIX)
     return (const unsigned long *)__lc_ctype_ptr->obj->mask;
-#elif defined(__ANDROID__)
-    return reinterpret_cast<const unsigned char*>(_ctype_) + 1;
 #else
     // Platform not supported: abort so the person doing the port knows what to
     // fix
@@ -1049,6 +1128,7 @@ ctype<char>::classic_table()  _NOEXCEPT
     return NULL;
 #endif
 }
+#endif
 
 #if defined(__GLIBC__)
 const int*
@@ -1182,16 +1262,17 @@ ctype_byname<wchar_t>::do_is(mask m, char_type c) const
     return static_cast<bool>(iswctype_l(c, m, __l));
 #else
     bool result = false;
-    if (m & space) result |= (iswspace_l(c, __l) != 0);
-    if (m & print) result |= (iswprint_l(c, __l) != 0);
-    if (m & cntrl) result |= (iswcntrl_l(c, __l) != 0);
-    if (m & upper) result |= (iswupper_l(c, __l) != 0);
-    if (m & lower) result |= (iswlower_l(c, __l) != 0);
-    if (m & alpha) result |= (iswalpha_l(c, __l) != 0);
-    if (m & digit) result |= (iswdigit_l(c, __l) != 0);
-    if (m & punct) result |= (iswpunct_l(c, __l) != 0);
-    if (m & xdigit) result |= (iswxdigit_l(c, __l) != 0);
-    if (m & blank) result |= (iswblank_l(c, __l) != 0);
+    wint_t ch = static_cast<wint_t>(c);
+    if ((m & space) == space) result |= (iswspace_l(ch, __l) != 0);
+    if ((m & print) == print) result |= (iswprint_l(ch, __l) != 0);
+    if ((m & cntrl) == cntrl) result |= (iswcntrl_l(ch, __l) != 0);
+    if ((m & upper) == upper) result |= (iswupper_l(ch, __l) != 0);
+    if ((m & lower) == lower) result |= (iswlower_l(ch, __l) != 0);
+    if ((m & alpha) == alpha) result |= (iswalpha_l(ch, __l) != 0);
+    if ((m & digit) == digit) result |= (iswdigit_l(ch, __l) != 0);
+    if ((m & punct) == punct) result |= (iswpunct_l(ch, __l) != 0);
+    if ((m & xdigit) == xdigit) result |= (iswxdigit_l(ch, __l) != 0);
+    if ((m & blank) == blank) result |= (iswblank_l(ch, __l) != 0);
     return result;
 #endif
 }
@@ -1208,22 +1289,32 @@ ctype_byname<wchar_t>::do_is(const char_type* low, const char_type* high, mask* 
             *vec = 0;
             if (iswspace_l(*low, __l))
                 *vec |= space;
-            if (iswprint_l(*low, __l))
+#ifndef _LIBCPP_CTYPE_MASK_IS_COMPOSITE_PRINT
+            if (iswprint_l(ch, __l))
                 *vec |= print;
-            if (iswcntrl_l(*low, __l))
+#endif
+            if (iswcntrl_l(ch, __l))
                 *vec |= cntrl;
             if (iswupper_l(*low, __l))
                 *vec |= upper;
             if (iswlower_l(*low, __l))
                 *vec |= lower;
-            if (iswalpha_l(*low, __l))
+#ifndef _LIBCPP_CTYPE_MASK_IS_COMPOSITE_ALPHA
+            if (iswalpha_l(ch, __l))
                 *vec |= alpha;
-            if (iswdigit_l(*low, __l))
+#endif
+            if (iswdigit_l(ch, __l))
                 *vec |= digit;
             if (iswpunct_l(*low, __l))
                 *vec |= punct;
-            if (iswxdigit_l(*low, __l))
+#ifndef _LIBCPP_CTYPE_MASK_IS_COMPOSITE_XDIGIT
+            if (iswxdigit_l(ch, __l))
                 *vec |= xdigit;
+#endif
+#if !defined(__sun__)
+            if (iswblank_l(ch, __l))
+                *vec |= blank;
+#endif
         }
     }
     return low;
@@ -1238,16 +1329,17 @@ ctype_byname<wchar_t>::do_scan_is(mask m, const char_type* low, const char_type*
         if (iswctype_l(*low, m, __l))
             break;
 #else
-        if (m & space && iswspace_l(*low, __l)) break;
-        if (m & print && iswprint_l(*low, __l)) break;
-        if (m & cntrl && iswcntrl_l(*low, __l)) break;
-        if (m & upper && iswupper_l(*low, __l)) break;
-        if (m & lower && iswlower_l(*low, __l)) break;
-        if (m & alpha && iswalpha_l(*low, __l)) break;
-        if (m & digit && iswdigit_l(*low, __l)) break;
-        if (m & punct && iswpunct_l(*low, __l)) break;
-        if (m & xdigit && iswxdigit_l(*low, __l)) break;
-        if (m & blank && iswblank_l(*low, __l)) break;
+        wint_t ch = static_cast<wint_t>(*low);
+        if ((m & space) == space && iswspace_l(ch, __l)) break;
+        if ((m & print) == print && iswprint_l(ch, __l)) break;
+        if ((m & cntrl) == cntrl && iswcntrl_l(ch, __l)) break;
+        if ((m & upper) == upper && iswupper_l(ch, __l)) break;
+        if ((m & lower) == lower && iswlower_l(ch, __l)) break;
+        if ((m & alpha) == alpha && iswalpha_l(ch, __l)) break;
+        if ((m & digit) == digit && iswdigit_l(ch, __l)) break;
+        if ((m & punct) == punct && iswpunct_l(ch, __l)) break;
+        if ((m & xdigit) == xdigit && iswxdigit_l(ch, __l)) break;
+        if ((m & blank) == blank && iswblank_l(ch, __l)) break;
 #endif
     }
     return low;
@@ -1262,16 +1354,17 @@ ctype_byname<wchar_t>::do_scan_not(mask m, const char_type* low, const char_type
         if (!iswctype_l(*low, m, __l))
             break;
 #else
-        if (m & space && iswspace_l(*low, __l)) continue;
-        if (m & print && iswprint_l(*low, __l)) continue;
-        if (m & cntrl && iswcntrl_l(*low, __l)) continue;
-        if (m & upper && iswupper_l(*low, __l)) continue;
-        if (m & lower && iswlower_l(*low, __l)) continue;
-        if (m & alpha && iswalpha_l(*low, __l)) continue;
-        if (m & digit && iswdigit_l(*low, __l)) continue;
-        if (m & punct && iswpunct_l(*low, __l)) continue;
-        if (m & xdigit && iswxdigit_l(*low, __l)) continue;
-        if (m & blank && iswblank_l(*low, __l)) continue;
+        wint_t ch = static_cast<wint_t>(*low);
+        if ((m & space) == space && iswspace_l(ch, __l)) continue;
+        if ((m & print) == print && iswprint_l(ch, __l)) continue;
+        if ((m & cntrl) == cntrl && iswcntrl_l(ch, __l)) continue;
+        if ((m & upper) == upper && iswupper_l(ch, __l)) continue;
+        if ((m & lower) == lower && iswlower_l(ch, __l)) continue;
+        if ((m & alpha) == alpha && iswalpha_l(ch, __l)) continue;
+        if ((m & digit) == digit && iswdigit_l(ch, __l)) continue;
+        if ((m & punct) == punct && iswpunct_l(ch, __l)) continue;
+        if ((m & xdigit) == xdigit && iswxdigit_l(ch, __l)) continue;
+        if ((m & blank) == blank && iswblank_l(ch, __l)) continue;
         break;
 #endif
     }

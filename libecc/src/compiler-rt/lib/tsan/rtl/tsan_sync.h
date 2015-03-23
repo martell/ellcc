@@ -91,6 +91,12 @@ class SyncTab {
   SyncTab();
   ~SyncTab();
 
+  void AllocBlock(ThreadState *thr, uptr pc, uptr p, uptr sz);
+  uptr FreeBlock(ThreadState *thr, uptr pc, uptr p);
+  bool FreeRange(ThreadState *thr, uptr pc, uptr p, uptr sz);
+  void ResetRange(ThreadState *thr, uptr pc, uptr p, uptr sz);
+  MBlock* GetBlock(uptr p);
+
   SyncVar* GetOrCreateAndLock(ThreadState *thr, uptr pc,
                               uptr addr, bool write_lock);
   SyncVar* GetIfExistsAndLock(uptr addr, bool write_lock);

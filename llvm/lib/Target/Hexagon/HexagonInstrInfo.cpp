@@ -62,10 +62,8 @@ const int Hexagon_MEMB_AUTOINC_MIN = -8;
 void HexagonInstrInfo::anchor() {}
 
 HexagonInstrInfo::HexagonInstrInfo(HexagonSubtarget &ST)
-  : HexagonGenInstrInfo(Hexagon::ADJCALLSTACKDOWN, Hexagon::ADJCALLSTACKUP),
-    RI(ST), Subtarget(ST) {
-}
-
+    : HexagonGenInstrInfo(Hexagon::ADJCALLSTACKDOWN, Hexagon::ADJCALLSTACKUP),
+      RI(), Subtarget(ST) {}
 
 /// isLoadFromStackSlot - If the specified machine instruction is a direct
 /// load from a stack slot, return the virtual or physical register number of
@@ -159,15 +157,19 @@ HexagonInstrInfo::InsertBranch(MachineBasicBlock &MBB,MachineBasicBlock *TBB,
         }
         BuildMI(&MBB, DL, get(BOpc)).addMBB(TBB);
       } else {
-        BuildMI(&MBB, DL,
-                get(BccOpc)).addReg(Cond[regPos].getReg()).addMBB(TBB);
+        // If Cond[0] is a basic block, insert ENDLOOP0.
+        if (Cond[0].isMBB())
+          BuildMI(&MBB, DL, get(Hexagon::ENDLOOP0)).addMBB(Cond[0].getMBB());
+        else
+          BuildMI(&MBB, DL,
+                  get(BccOpc)).addReg(Cond[regPos].getReg()).addMBB(TBB);
       }
       return 1;
     }
 
+    // We don't handle ENDLOOP0 with a conditional branch in AnalyzeBranch.
     BuildMI(&MBB, DL, get(BccOpc)).addReg(Cond[regPos].getReg()).addMBB(TBB);
     BuildMI(&MBB, DL, get(BOpc)).addMBB(FBB);
-
     return 2;
 }
 
@@ -211,9 +213,11 @@ bool HexagonInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
       return false;
     --I;
   }
-
+  
+  bool JumpToBlock = I->getOpcode() == Hexagon::J2_jump &&
+                     I->getOperand(0).isMBB();
   // Delete the JMP if it's equivalent to a fall-through.
-  if (AllowModify && I->getOpcode() == Hexagon::J2_jump &&
+  if (AllowModify && JumpToBlock &&
       MBB.isLayoutSuccessor(I->getOperand(0).getMBB())) {
     DEBUG(dbgs()<< "\nErasing the jump to successor block\n";);
     I->eraseFromParent();
@@ -243,6 +247,14 @@ bool HexagonInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
   } while(I);
 
   int LastOpcode = LastInst->getOpcode();
+  int SecLastOpcode = SecondLastInst ? SecondLastInst->getOpcode() : 0;
+  // If the branch target is not a basic block, it could be a tail call.
+  // (It is, if the target is a function.)
+  if (LastOpcode == Hexagon::J2_jump && !LastInst->getOperand(0).isMBB())
+    return true;
+  if (SecLastOpcode == Hexagon::J2_jump &&
+      !SecondLastInst->getOperand(0).isMBB())
+    return true;
 
   bool LastOpcodeHasJMP_c = PredOpcodeHasJMP_c(LastOpcode);
   bool LastOpcodeHasNot = PredOpcodeHasNot(LastOpcode);
@@ -269,8 +281,6 @@ bool HexagonInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
     // Otherwise, don't know what this is.
     return true;
   }
-
-  int SecLastOpcode = SecondLastInst->getOpcode();
 
   bool SecLastOpcodeHasJMP_c = PredOpcodeHasJMP_c(SecLastOpcode);
   bool SecLastOpcodeHasNot = PredOpcodeHasNot(SecLastOpcode);
@@ -308,30 +318,35 @@ bool HexagonInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
 
 
 unsigned HexagonInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const {
-  int BOpc   = Hexagon::J2_jump;
-  int BccOpc = Hexagon::J2_jumpt;
-  int BccOpcNot = Hexagon::J2_jumpf;
-
   MachineBasicBlock::iterator I = MBB.end();
   if (I == MBB.begin()) return 0;
   --I;
-  if (I->getOpcode() != BOpc && I->getOpcode() != BccOpc &&
-      I->getOpcode() != BccOpcNot)
-    return 0;
-
-  // Remove the branch.
-  I->eraseFromParent();
+  unsigned Opc1 = I->getOpcode();
+  switch (Opc1) {
+    case Hexagon::J2_jump:
+    case Hexagon::J2_jumpt:
+    case Hexagon::J2_jumpf:
+    case Hexagon::ENDLOOP0:
+      I->eraseFromParent();
+      break;
+    default:
+      return 0;
+  }
 
   I = MBB.end();
 
   if (I == MBB.begin()) return 1;
   --I;
-  if (I->getOpcode() != BccOpc && I->getOpcode() != BccOpcNot)
-    return 1;
-
-  // Remove the branch.
-  I->eraseFromParent();
-  return 2;
+  unsigned Opc2 = I->getOpcode();
+  switch (Opc2) {
+    case Hexagon::J2_jumpt:
+    case Hexagon::J2_jumpf:
+    case Hexagon::ENDLOOP0:
+      I->eraseFromParent();
+      return 2;
+    default:
+      return 1;
+  }
 }
 
 
@@ -549,6 +564,39 @@ void HexagonInstrInfo::loadRegFromAddr(MachineFunction &MF, unsigned DestReg,
                                  SmallVectorImpl<MachineInstr*> &NewMIs) const {
   llvm_unreachable("Unimplemented");
 }
+bool
+HexagonInstrInfo::expandPostRAPseudo(MachineBasicBlock::iterator MI) const {
+  MachineBasicBlock &MBB = *MI->getParent();
+  DebugLoc DL = MI->getDebugLoc();
+  unsigned Opc = MI->getOpcode();
+
+  switch (Opc) {
+    case Hexagon::TFR_PdTrue: {
+      unsigned Reg = MI->getOperand(0).getReg();
+      BuildMI(MBB, MI, DL, get(Hexagon::C2_orn), Reg)
+        .addReg(Reg, RegState::Undef)
+        .addReg(Reg, RegState::Undef);
+      MBB.erase(MI);
+      return true;
+    }
+    case Hexagon::TFR_PdFalse: {
+      unsigned Reg = MI->getOperand(0).getReg();
+      BuildMI(MBB, MI, DL, get(Hexagon::C2_andn), Reg)
+        .addReg(Reg, RegState::Undef)
+        .addReg(Reg, RegState::Undef);
+      MBB.erase(MI);
+      return true;
+    }
+    case Hexagon::TCRETURNi:
+      MI->setDesc(get(Hexagon::J2_jump));
+      return true;
+    case Hexagon::TCRETURNr:
+      MI->setDesc(get(Hexagon::J2_jumpr));
+      return true;
+  }
+
+  return false;
+}
 
 MachineInstr *HexagonInstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
                                                       MachineInstr *MI,
@@ -640,7 +688,7 @@ bool HexagonInstrInfo::isPredicable(MachineInstr *MI) const {
 
   switch(Opc) {
   case Hexagon::A2_tfrsi:
-    return isInt<12>(MI->getOperand(1).getImm());
+    return (isOperandExtended(MI, 1) && isConstExtended(MI)) || isInt<12>(MI->getOperand(1).getImm());
 
   case Hexagon::S2_storerd_io:
     return isShiftedUInt<6,3>(MI->getOperand(1).getImm());
@@ -1520,7 +1568,6 @@ int HexagonInstrInfo::GetDotNewOp(const MachineInstr* MI) const {
 
   switch (MI->getOpcode()) {
   default: llvm_unreachable("Unknown .new type");
-  // store new value byte
   case Hexagon::S4_storerb_ur:
     return Hexagon::S4_storerbnew_ur;
 
@@ -1530,6 +1577,20 @@ int HexagonInstrInfo::GetDotNewOp(const MachineInstr* MI) const {
   case Hexagon::S4_storeri_ur:
     return Hexagon::S4_storerinew_ur;
 
+  case Hexagon::S2_storerb_pci:
+    return Hexagon::S2_storerb_pci;
+
+  case Hexagon::S2_storeri_pci:
+    return Hexagon::S2_storeri_pci;
+
+  case Hexagon::S2_storerh_pci:
+    return Hexagon::S2_storerh_pci;
+
+  case Hexagon::S2_storerd_pci:
+    return Hexagon::S2_storerd_pci;
+
+  case Hexagon::S2_storerf_pci:
+    return Hexagon::S2_storerf_pci;
   }
   return 0;
 }
@@ -1646,7 +1707,7 @@ bool HexagonInstrInfo::isConstExtended(MachineInstr *MI) const {
   // We currently only handle isGlobal() because it is the only kind of
   // object we are going to end up with here for now.
   // In the future we probably should add isSymbol(), etc.
-  if (MO.isGlobal() || MO.isSymbol())
+  if (MO.isGlobal() || MO.isSymbol() || MO.isBlockAddress())
     return true;
 
   // If the extendable operand is not 'Immediate' type, the instruction should

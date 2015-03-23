@@ -26,7 +26,7 @@ namespace elf {
 template <class ELFType>
 class MipsTargetLayout final : public TargetLayout<ELFType> {
 public:
-  MipsTargetLayout(const MipsLinkingContext &ctx)
+  MipsTargetLayout(MipsLinkingContext &ctx)
       : TargetLayout<ELFType>(ctx),
         _gotSection(new (_alloc) MipsGOTSection<ELFType>(ctx)),
         _pltSection(new (_alloc) MipsPLTSection<ELFType>(ctx)) {}
@@ -87,10 +87,10 @@ private:
 
 /// \brief Mips Runtime file.
 template <class ELFType>
-class MipsRuntimeFile final : public CRuntimeFile<ELFType> {
+class MipsRuntimeFile final : public RuntimeFile<ELFType> {
 public:
   MipsRuntimeFile(MipsLinkingContext &ctx)
-      : CRuntimeFile<ELFType>(ctx, "Mips runtime file") {}
+      : RuntimeFile<ELFType>(ctx, "Mips runtime file") {}
 };
 
 /// \brief Auxiliary class holds relocation's names table.
@@ -174,7 +174,7 @@ public:
     }
   }
 
-  void finalize(bool sort = true) override {
+  void finalize(bool sort) override {
     SymbolTable<ELFT>::finalize(sort);
 
     for (auto &ste : this->_symbolTable) {

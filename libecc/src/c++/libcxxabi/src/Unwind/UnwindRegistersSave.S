@@ -230,14 +230,14 @@ DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   blr
 
 
-#elif defined(__arm64__)
+#elif defined(__arm64__) || defined(__aarch64__)
 
-;
-; extern int unw_getcontext(unw_context_t* thread_state)
-;
-; On entry:
-;  thread_state pointer is in x0
-;
+//
+// extern int unw_getcontext(unw_context_t* thread_state)
+//
+// On entry:
+//  thread_state pointer is in x0
+//
   .p2align 2
 DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   stp    x0, x1,  [x0, #0x000]
@@ -277,7 +277,7 @@ DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
   stp    d28,d29, [x0, #0x1F0]
   str    d30,     [x0, #0x200]
   str    d31,     [x0, #0x208]
-  ldr    x0, #0      // return UNW_ESUCCESS
+  ldr    x0, #0                   // return UNW_ESUCCESS
   ret
 
 #elif __microblaze__

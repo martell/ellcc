@@ -440,11 +440,15 @@ class InternalMmapVectorNoCtor {
   const T *data() const {
     return data_;
   }
+  T *data() {
+    return data_;
+  }
   uptr capacity() const {
     return capacity_;
   }
 
   void clear() { size_ = 0; }
+  bool empty() const { return size() == 0; }
 
  private:
   void Resize(uptr new_capacity) {
@@ -607,6 +611,23 @@ static inline void SanitizerBreakOptimization(void *arg) {
   __asm__ __volatile__("" : : "r" (arg) : "memory");
 #endif
 }
+
+struct SignalContext {
+  void *context;
+  uptr addr;
+  uptr pc;
+  uptr sp;
+  uptr bp;
+
+  SignalContext(void *context, uptr addr, uptr pc, uptr sp, uptr bp) :
+      context(context), addr(addr), pc(pc), sp(sp), bp(bp) {
+  }
+
+  // Creates signal context in a platform-specific manner.
+  static SignalContext Create(void *siginfo, void *context);
+};
+
+void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp);
 
 }  // namespace __sanitizer
 

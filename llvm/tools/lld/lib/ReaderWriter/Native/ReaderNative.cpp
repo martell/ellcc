@@ -45,9 +45,9 @@ public:
 
   StringRef name() const override;
 
-  uint64_t size() const override {
-    return _ivarData->contentSize;
-  }
+  uint64_t size() const override { return _ivarData->contentSize; }
+
+  uint64_t sectionSize() const override { return _ivarData->sectionSize; }
 
   DefinedAtom::Scope scope() const override {
     return (DefinedAtom::Scope)(attributes().scope);
@@ -71,16 +71,10 @@ public:
   }
 
   DefinedAtom::SectionChoice sectionChoice() const override {
-    return (DefinedAtom::SectionChoice)(
-        attributes().sectionChoiceAndPosition >> 4);
+    return (DefinedAtom::SectionChoice)(attributes().sectionChoice);
   }
 
   StringRef customSectionName() const override;
-
-  SectionPosition sectionPosition() const override {
-     return (DefinedAtom::SectionPosition)(
-        attributes().sectionChoiceAndPosition & 0xF);
-  }
 
   DefinedAtom::DeadStripKind deadStrip() const override {
      return (DefinedAtom::DeadStripKind)(attributes().deadStrip);

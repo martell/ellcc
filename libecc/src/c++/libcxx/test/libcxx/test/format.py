@@ -6,6 +6,7 @@ import lit.Test        # pylint: disable=import-error
 import lit.TestRunner  # pylint: disable=import-error
 import lit.util        # pylint: disable=import-error
 
+from libcxx.test.executor import LocalExecutor as LocalExecutor
 import libcxx.util
 
 
@@ -59,6 +60,10 @@ class LibcxxTestFormat(object):
         is_pass_test = name.endswith('.pass.cpp')
         is_fail_test = name.endswith('.fail.cpp')
 
+        if test.config.unsupported:
+            return (lit.Test.UNSUPPORTED,
+                    "A lit.local.cfg marked this unsupported")
+
         res = lit.TestRunner.parseIntegratedTestScript(
             test, require_script=is_sh_test)
         # Check if a result for the test was returned. If so return that
@@ -75,7 +80,7 @@ class LibcxxTestFormat(object):
 
         # Dispatch the test based on its suffix.
         if is_sh_test:
-            if self.executor:
+            if not isinstance(self.executor, LocalExecutor):
                 # We can't run ShTest tests with a executor yet.
                 # For now, bail on trying to run them
                 return lit.Test.UNSUPPORTED, 'ShTest format not yet supported'
@@ -114,8 +119,14 @@ class LibcxxTestFormat(object):
             env = None
             if self.exec_env:
                 env = self.exec_env
-            out, err, rc = self.executor.run(exec_path, [exec_path],
-                                             local_cwd, env)
+            # TODO: Only list actually needed files in file_deps.
+            # Right now we just mark all of the .dat files in the same
+            # directory as dependencies, but it's likely less than that. We
+            # should add a `// FILE-DEP: foo.dat` to each test to track this.
+            data_files = [os.path.join(local_cwd, f)
+                          for f in os.listdir(local_cwd) if f.endswith('.dat')]
+            cmd, out, err, rc = self.executor.run(exec_path, [exec_path],
+                                                  local_cwd, data_files, env)
             if rc != 0:
                 report = libcxx.util.makeReport(cmd, out, err, rc)
                 report = "Compiled With: %s\n%s" % (compile_cmd, report)

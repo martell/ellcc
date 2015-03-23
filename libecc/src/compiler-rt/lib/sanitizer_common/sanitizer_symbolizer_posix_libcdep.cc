@@ -21,12 +21,9 @@
 #include "sanitizer_linux.h"
 #include "sanitizer_placement_new.h"
 #include "sanitizer_procmaps.h"
-#include "sanitizer_symbolizer.h"
+#include "sanitizer_symbolizer_internal.h"
 #include "sanitizer_symbolizer_libbacktrace.h"
 
-#include <errno.h>
-#include <stdlib.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 // C++ demangling function, as required by Itanium C++ ABI. This is weak,
@@ -55,211 +52,6 @@ static const char *DemangleCXXABI(const char *name) {
   return name;
 }
 
-// Extracts the prefix of "str" that consists of any characters not
-// present in "delims" string, and copies this prefix to "result", allocating
-// space for it.
-// Returns a pointer to "str" after skipping extracted prefix and first
-// delimiter char.
-static const char *ExtractToken(const char *str, const char *delims,
-                                char **result) {
-  uptr prefix_len = internal_strcspn(str, delims);
-  *result = (char*)InternalAlloc(prefix_len + 1);
-  internal_memcpy(*result, str, prefix_len);
-  (*result)[prefix_len] = '\0';
-  const char *prefix_end = str + prefix_len;
-  if (*prefix_end != '\0') prefix_end++;
-  return prefix_end;
-}
-
-// Same as ExtractToken, but converts extracted token to integer.
-static const char *ExtractInt(const char *str, const char *delims,
-                              int *result) {
-  char *buff;
-  const char *ret = ExtractToken(str, delims, &buff);
-  if (buff != 0) {
-    *result = (int)internal_atoll(buff);
-  }
-  InternalFree(buff);
-  return ret;
-}
-
-static const char *ExtractUptr(const char *str, const char *delims,
-                               uptr *result) {
-  char *buff;
-  const char *ret = ExtractToken(str, delims, &buff);
-  if (buff != 0) {
-    *result = (uptr)internal_atoll(buff);
-  }
-  InternalFree(buff);
-  return ret;
-}
-
-SymbolizerProcess::SymbolizerProcess(const char *path)
-    : path_(path),
-      input_fd_(kInvalidFd),
-      output_fd_(kInvalidFd),
-      times_restarted_(0),
-      failed_to_start_(false),
-      reported_invalid_path_(false) {
-  CHECK(path_);
-  CHECK_NE(path_[0], '\0');
-}
-
-const char *SymbolizerProcess::SendCommand(const char *command) {
-  for (; times_restarted_ < kMaxTimesRestarted; times_restarted_++) {
-    // Start or restart symbolizer if we failed to send command to it.
-    if (const char *res = SendCommandImpl(command))
-      return res;
-    Restart();
-  }
-  if (!failed_to_start_) {
-    Report("WARNING: Failed to use and restart external symbolizer!\n");
-    failed_to_start_ = true;
-  }
-  return 0;
-}
-
-bool SymbolizerProcess::Restart() {
-  if (input_fd_ != kInvalidFd)
-    internal_close(input_fd_);
-  if (output_fd_ != kInvalidFd)
-    internal_close(output_fd_);
-  return StartSymbolizerSubprocess();
-}
-
-const char *SymbolizerProcess::SendCommandImpl(const char *command) {
-  if (input_fd_ == kInvalidFd || output_fd_ == kInvalidFd)
-      return 0;
-  if (!WriteToSymbolizer(command, internal_strlen(command)))
-      return 0;
-  if (!ReadFromSymbolizer(buffer_, kBufferSize))
-      return 0;
-  return buffer_;
-}
-
-bool SymbolizerProcess::ReadFromSymbolizer(char *buffer, uptr max_length) {
-  if (max_length == 0)
-    return true;
-  uptr read_len = 0;
-  while (true) {
-    uptr just_read = internal_read(input_fd_, buffer + read_len,
-                                   max_length - read_len - 1);
-    // We can't read 0 bytes, as we don't expect external symbolizer to close
-    // its stdout.
-    if (just_read == 0 || just_read == (uptr)-1) {
-      Report("WARNING: Can't read from symbolizer at fd %d\n", input_fd_);
-      return false;
-    }
-    read_len += just_read;
-    if (ReachedEndOfOutput(buffer, read_len))
-      break;
-  }
-  buffer[read_len] = '\0';
-  return true;
-}
-
-bool SymbolizerProcess::WriteToSymbolizer(const char *buffer, uptr length) {
-  if (length == 0)
-    return true;
-  uptr write_len = internal_write(output_fd_, buffer, length);
-  if (write_len == 0 || write_len == (uptr)-1) {
-    Report("WARNING: Can't write to symbolizer at fd %d\n", output_fd_);
-    return false;
-  }
-  return true;
-}
-
-bool SymbolizerProcess::StartSymbolizerSubprocess() {
-  if (!FileExists(path_)) {
-    if (!reported_invalid_path_) {
-      Report("WARNING: invalid path to external symbolizer!\n");
-      reported_invalid_path_ = true;
-    }
-    return false;
-  }
-
-  int *infd = NULL;
-  int *outfd = NULL;
-  // The client program may close its stdin and/or stdout and/or stderr
-  // thus allowing socketpair to reuse file descriptors 0, 1 or 2.
-  // In this case the communication between the forked processes may be
-  // broken if either the parent or the child tries to close or duplicate
-  // these descriptors. The loop below produces two pairs of file
-  // descriptors, each greater than 2 (stderr).
-  int sock_pair[5][2];
-  for (int i = 0; i < 5; i++) {
-    if (pipe(sock_pair[i]) == -1) {
-      for (int j = 0; j < i; j++) {
-        internal_close(sock_pair[j][0]);
-        internal_close(sock_pair[j][1]);
-      }
-      Report("WARNING: Can't create a socket pair to start "
-             "external symbolizer (errno: %d)\n", errno);
-      return false;
-    } else if (sock_pair[i][0] > 2 && sock_pair[i][1] > 2) {
-      if (infd == NULL) {
-        infd = sock_pair[i];
-      } else {
-        outfd = sock_pair[i];
-        for (int j = 0; j < i; j++) {
-          if (sock_pair[j] == infd) continue;
-          internal_close(sock_pair[j][0]);
-          internal_close(sock_pair[j][1]);
-        }
-        break;
-      }
-    }
-  }
-  CHECK(infd);
-  CHECK(outfd);
-
-  // Real fork() may call user callbacks registered with pthread_atfork().
-  int pid = internal_fork();
-  if (pid == -1) {
-    // Fork() failed.
-    internal_close(infd[0]);
-    internal_close(infd[1]);
-    internal_close(outfd[0]);
-    internal_close(outfd[1]);
-    Report("WARNING: failed to fork external symbolizer "
-           " (errno: %d)\n", errno);
-    return false;
-  } else if (pid == 0) {
-    // Child subprocess.
-    internal_close(STDOUT_FILENO);
-    internal_close(STDIN_FILENO);
-    internal_dup2(outfd[0], STDIN_FILENO);
-    internal_dup2(infd[1], STDOUT_FILENO);
-    internal_close(outfd[0]);
-    internal_close(outfd[1]);
-    internal_close(infd[0]);
-    internal_close(infd[1]);
-    for (int fd = sysconf(_SC_OPEN_MAX); fd > 2; fd--)
-      internal_close(fd);
-    ExecuteWithDefaultArgs(path_);
-    internal__exit(1);
-  }
-
-  // Continue execution in parent process.
-  internal_close(outfd[0]);
-  internal_close(infd[1]);
-  input_fd_ = infd[0];
-  output_fd_ = outfd[1];
-
-  // Check that symbolizer subprocess started successfully.
-  int pid_status;
-  SleepForMillis(kSymbolizerStartupTimeMillis);
-  int exited_pid = waitpid(pid, &pid_status, WNOHANG);
-  if (exited_pid != 0) {
-    // Either waitpid failed, or child has already exited.
-    Report("WARNING: external symbolizer didn't start up correctly!\n");
-    return false;
-  }
-
-  return true;
-}
-
-
 // Parses one or more two-line strings in the following format:
 //   <function_name>
 //   <file_name>:<line_number>[:<column_number>]
@@ -282,11 +74,12 @@ static void ParseSymbolizePCOutput(const char *str, SymbolizedStack *res) {
       top_frame = false;
     } else {
       cur = SymbolizedStack::New(res->info.address);
-      cur->info.FillAddressAndModuleInfo(res->info.address, res->info.module,
-                                         res->info.module_offset);
+      cur->info.FillModuleInfo(res->info.module, res->info.module_offset);
       last->next = cur;
       last = cur;
     }
+  return 0;
+}
 
     AddressInfo *info = &cur->info;
     info->function = function_name;
@@ -382,6 +175,7 @@ class LLVMSymbolizer : public SymbolizerTool {
     if (const char *buf =
             SendCommand(/*is_data*/ true, info->module, info->module_offset)) {
       ParseSymbolizeDataOutput(buf, info);
+      info->start += (addr - info->module_offset);  // Add the base address.
       return true;
     }
     return false;
@@ -510,7 +304,10 @@ class InternalSymbolizer : public SymbolizerTool {
   bool SymbolizeData(uptr addr, DataInfo *info) override {
     bool result = __sanitizer_symbolize_data(info->module, info->module_offset,
                                              buffer_, kBufferSize);
-    if (result) ParseSymbolizeDataOutput(buffer_, info);
+    if (result) {
+      ParseSymbolizeDataOutput(buffer_, info);
+      info->start += (addr - info->module_offset);  // Add the base address.
+    }
     return result;
   }
 
@@ -555,113 +352,22 @@ class InternalSymbolizer : public SymbolizerTool {
 
 class POSIXSymbolizer : public Symbolizer {
  public:
-  POSIXSymbolizer(SymbolizerTool *external_symbolizer,
-                  SymbolizerTool *internal_symbolizer,
-                  LibbacktraceSymbolizer *libbacktrace_symbolizer)
-      : Symbolizer(),
-        external_symbolizer_(external_symbolizer),
-        internal_symbolizer_(internal_symbolizer),
-        libbacktrace_symbolizer_(libbacktrace_symbolizer) {}
+  explicit POSIXSymbolizer(IntrusiveList<SymbolizerTool> tools)
+      : Symbolizer(tools) {}
 
-  SymbolizedStack *SymbolizePC(uptr addr) override {
-    BlockingMutexLock l(&mu_);
-    const char *module_name;
-    uptr module_offset;
-    if (!FindModuleNameAndOffsetForAddress(addr, &module_name, &module_offset))
-      return SymbolizedStack::New(addr);
-    // First, try to use libbacktrace symbolizer (if it's available).
-    if (libbacktrace_symbolizer_ != 0) {
-      mu_.CheckLocked();
-      if (SymbolizedStack *res = libbacktrace_symbolizer_->SymbolizeCode(
-              addr, module_name, module_offset))
-        return res;
-    }
-    // Always fill data about module name and offset.
-    SymbolizedStack *res = SymbolizedStack::New(addr);
-    res->info.FillAddressAndModuleInfo(addr, module_name, module_offset);
-    if (SymbolizerTool *tool = GetSymbolizerTool()) {
-      SymbolizerScope sym_scope(this);
-      tool->SymbolizePC(addr, res);
-    }
-    return res;
-  }
-
-  bool SymbolizeData(uptr addr, DataInfo *info) override {
-    BlockingMutexLock l(&mu_);
-    LoadedModule *module = FindModuleForAddress(addr);
-    if (module == 0)
-      return false;
-    const char *module_name = module->full_name();
-    uptr module_offset = addr - module->base_address();
-    info->Clear();
-    info->module = internal_strdup(module_name);
-    info->module_offset = module_offset;
-    // First, try to use libbacktrace symbolizer (if it's available).
-    if (libbacktrace_symbolizer_ != 0) {
-      mu_.CheckLocked();
-      if (libbacktrace_symbolizer_->SymbolizeData(addr, info))
-        return true;
-    }
-    if (SymbolizerTool *tool = GetSymbolizerTool()) {
-      SymbolizerScope sym_scope(this);
-      tool->SymbolizeData(addr, info);
-    }
-    info->start += module->base_address();
-    return true;
-  }
-
-  bool GetModuleNameAndOffsetForPC(uptr pc, const char **module_name,
-                                   uptr *module_address) override {
-    BlockingMutexLock l(&mu_);
-    return FindModuleNameAndOffsetForAddress(pc, module_name, module_address);
-  }
-
-  bool CanReturnFileLineInfo() override {
-    return internal_symbolizer_ != 0 || external_symbolizer_ != 0 ||
-           libbacktrace_symbolizer_ != 0;
-  }
-
-  void Flush() override {
-    BlockingMutexLock l(&mu_);
-    if (internal_symbolizer_ != 0) {
-      SymbolizerScope sym_scope(this);
-      internal_symbolizer_->Flush();
-    }
-  }
-
-  const char *Demangle(const char *name) override {
-    BlockingMutexLock l(&mu_);
-    // Run hooks even if we don't use internal symbolizer, as cxxabi
-    // demangle may call system functions.
-    SymbolizerScope sym_scope(this);
-    // Try to use libbacktrace demangler (if available).
-    if (libbacktrace_symbolizer_ != 0) {
-      if (const char *demangled = libbacktrace_symbolizer_->Demangle(name))
-        return demangled;
-    }
-    if (internal_symbolizer_ != 0)
-      return internal_symbolizer_->Demangle(name);
+ private:
+  const char *PlatformDemangle(const char *name) override {
     return DemangleCXXABI(name);
   }
 
-  void PrepareForSandboxing() override {
+  void PlatformPrepareForSandboxing() override {
 #if SANITIZER_LINUX && !SANITIZER_ANDROID
-    BlockingMutexLock l(&mu_);
     // Cache /proc/self/exe on Linux.
     CacheBinaryName();
 #endif
   }
 
- private:
-  SymbolizerTool *GetSymbolizerTool() {
-    mu_.CheckLocked();
-    if (internal_symbolizer_) return internal_symbolizer_;
-    if (external_symbolizer_) return external_symbolizer_;
-    return nullptr;
-  }
-
   LoadedModule *FindModuleForAddress(uptr address) {
-    mu_.CheckLocked();
     bool modules_were_reloaded = false;
     if (modules_ == 0 || !modules_fresh_) {
       modules_ = (LoadedModule*)(symbolizer_allocator_.Allocate(
@@ -690,9 +396,9 @@ class POSIXSymbolizer : public Symbolizer {
     return 0;
   }
 
-  bool FindModuleNameAndOffsetForAddress(uptr address, const char **module_name,
-                                         uptr *module_offset) {
-    mu_.CheckLocked();
+  bool PlatformFindModuleNameAndOffsetForAddress(uptr address,
+                                                 const char **module_name,
+                                                 uptr *module_offset) override {
     LoadedModule *module = FindModuleForAddress(address);
     if (module == 0)
       return false;
@@ -707,49 +413,52 @@ class POSIXSymbolizer : public Symbolizer {
   uptr n_modules_;
   // If stale, need to reload the modules before looking up addresses.
   bool modules_fresh_;
-  BlockingMutex mu_;
-
-  SymbolizerTool *const external_symbolizer_;         // Leaked.
-  SymbolizerTool *const internal_symbolizer_;         // Leaked.
-  LibbacktraceSymbolizer *libbacktrace_symbolizer_;   // Leaked.
 };
 
-Symbolizer *Symbolizer::PlatformInit() {
+static SymbolizerTool *ChooseSymbolizer(LowLevelAllocator *allocator) {
   if (!common_flags()->symbolize) {
-    return new(symbolizer_allocator_) POSIXSymbolizer(0, 0, 0);
+    VReport(2, "Symbolizer is disabled.\n");
+    return nullptr;
   }
-  InternalSymbolizer* internal_symbolizer =
-      InternalSymbolizer::get(&symbolizer_allocator_);
-  SymbolizerTool *external_symbolizer = 0;
-  LibbacktraceSymbolizer *libbacktrace_symbolizer = 0;
-
-  if (!internal_symbolizer) {
-    libbacktrace_symbolizer =
-        LibbacktraceSymbolizer::get(&symbolizer_allocator_);
-    if (!libbacktrace_symbolizer) {
-      const char *path_to_external = common_flags()->external_symbolizer_path;
-      if (path_to_external && path_to_external[0] == '\0') {
-        // External symbolizer is explicitly disabled. Do nothing.
-      } else {
-        // Find path to llvm-symbolizer if it's not provided.
-        if (!path_to_external)
-          path_to_external = FindPathToBinary("llvm-symbolizer");
-        if (path_to_external) {
-          external_symbolizer = new(symbolizer_allocator_)
-              LLVMSymbolizer(path_to_external, &symbolizer_allocator_);
-        } else if (common_flags()->allow_addr2line) {
-          // If llvm-symbolizer is not found, try to use addr2line.
-          if (const char *addr2line_path = FindPathToBinary("addr2line")) {
-            external_symbolizer = new(symbolizer_allocator_)
-                Addr2LinePool(addr2line_path, &symbolizer_allocator_);
-          }
-        }
-      }
+  if (SymbolizerTool *tool = InternalSymbolizer::get(allocator)) {
+    VReport(2, "Using internal symbolizer.\n");
+    return tool;
+  }
+  if (SymbolizerTool *tool = LibbacktraceSymbolizer::get(allocator)) {
+    VReport(2, "Using libbacktrace symbolizer.\n");
+    return tool;
+  }
+  const char *path_to_external = common_flags()->external_symbolizer_path;
+  if (path_to_external && path_to_external[0] == '\0') {
+    // External symbolizer is explicitly disabled. Do nothing.
+    return nullptr;
+  }
+  // Find path to llvm-symbolizer if it's not provided.
+  if (!path_to_external) {
+    path_to_external = FindPathToBinary("llvm-symbolizer");
+  }
+  if (path_to_external) {
+    VReport(2, "Using llvm-symbolizer at path: %s\n", path_to_external);
+    return new(*allocator) LLVMSymbolizer(path_to_external, allocator);
+  }
+  if (common_flags()->allow_addr2line) {
+    // If llvm-symbolizer is not found, try to use addr2line.
+    if (const char *addr2line_path = FindPathToBinary("addr2line")) {
+      VReport(2, "Using addr2line at path: %s\n", addr2line_path);
+      return new(*allocator) Addr2LinePool(addr2line_path, allocator);
     }
   }
+  VReport(2, "No internal or external symbolizer found.\n");
+  return nullptr;
+}
 
-  return new(symbolizer_allocator_) POSIXSymbolizer(
-      external_symbolizer, internal_symbolizer, libbacktrace_symbolizer);
+Symbolizer *Symbolizer::PlatformInit() {
+  IntrusiveList<SymbolizerTool> list;
+  list.clear();
+  if (SymbolizerTool *tool = ChooseSymbolizer(&symbolizer_allocator_)) {
+    list.push_back(tool);
+  }
+  return new(symbolizer_allocator_) POSIXSymbolizer(list);
 }
 
 }  // namespace __sanitizer

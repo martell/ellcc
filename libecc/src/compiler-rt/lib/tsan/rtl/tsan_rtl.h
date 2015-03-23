@@ -323,7 +323,7 @@ class Shadow : public FastState {
   }
 };
 
-struct SignalContext;
+struct ThreadSignalContext;
 
 struct JmpBuf {
   uptr sp;
@@ -381,6 +381,7 @@ struct ThreadState {
   const int unique_id;
   bool in_symbolizer;
   bool in_ignored_lib;
+  bool is_inited;
   bool is_dead;
   bool is_freeing;
   bool is_vptr_access;
@@ -397,7 +398,7 @@ struct ThreadState {
   DDLogicalThread *dd_lt;
 
   atomic_uintptr_t in_signal_handler;
-  SignalContext *signal_ctx;
+  ThreadSignalContext *signal_ctx;
 
   DenseSlabAllocCache block_cache;
   DenseSlabAllocCache sync_cache;

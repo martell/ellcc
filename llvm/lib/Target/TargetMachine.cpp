@@ -36,14 +36,12 @@ using namespace llvm;
 // TargetMachine Class
 //
 
-TargetMachine::TargetMachine(const Target &T,
+TargetMachine::TargetMachine(const Target &T, StringRef DataLayoutString,
                              StringRef TT, StringRef CPU, StringRef FS,
                              const TargetOptions &Options)
-  : TheTarget(T), TargetTriple(TT), TargetCPU(CPU), TargetFS(FS),
-    CodeGenInfo(nullptr), AsmInfo(nullptr),
-    RequireStructuredCFG(false),
-    Options(Options) {
-}
+    : TheTarget(T), DL(DataLayoutString), TargetTriple(TT), TargetCPU(CPU),
+      TargetFS(FS), CodeGenInfo(nullptr), AsmInfo(nullptr),
+      RequireStructuredCFG(false), Options(Options) {}
 
 TargetMachine::~TargetMachine() {
   delete CodeGenInfo;
@@ -177,7 +175,7 @@ void TargetMachine::getNameWithPrefix(SmallVectorImpl<char> &Name,
   const TargetLoweringObjectFile *TLOF = getObjFileLowering();
   const MCSection *TheSection = TLOF->SectionForGlobal(GV, GVKind, Mang, *this);
   bool CannotUsePrivateLabel = !canUsePrivateLabel(*AsmInfo, *TheSection);
-  Mang.getNameWithPrefix(Name, GV, CannotUsePrivateLabel);
+  TLOF->getNameWithPrefix(Name, GV, CannotUsePrivateLabel, Mang, *this);
 }
 
 MCSymbol *TargetMachine::getSymbol(const GlobalValue *GV, Mangler &Mang) const {

@@ -295,8 +295,8 @@ static void diagnosticHandler(const DiagnosticInfo &DI, void *Context) {
   case DS_Warning:
     Level = LDPL_WARNING;
     break;
-  case DS_Remark:
   case DS_Note:
+  case DS_Remark:
     Level = LDPL_INFO;
     break;
   }
@@ -598,6 +598,7 @@ getModuleForFile(LLVMContext &Context, claimed_file &F,
 
   Module &M = Obj.getModule();
 
+  M.materializeMetadata();
   UpgradeDebugInfo(M);
 
   SmallPtrSet<GlobalValue *, 8> Used;
@@ -711,10 +712,9 @@ getModuleForFile(LLVMContext &Context, claimed_file &F,
 
 static void runLTOPasses(Module &M, TargetMachine &TM) {
   if (const DataLayout *DL = TM.getDataLayout())
-    M.setDataLayout(DL);
+    M.setDataLayout(*DL);
 
   legacy::PassManager passes;
-  passes.add(new DataLayoutPass());
   passes.add(createTargetTransformInfoWrapperPass(TM.getTargetIRAnalysis()));
 
   PassManagerBuilder PMB;
@@ -764,7 +764,6 @@ static void codegen(Module &M) {
     saveBCFile(output_name + ".opt.bc", M);
 
   legacy::PassManager CodeGenPasses;
-  CodeGenPasses.add(new DataLayoutPass());
 
   SmallString<128> Filename;
   int FD;
@@ -809,7 +808,7 @@ static ld_plugin_status allSymbolsReadHook(raw_fd_ostream *ApiFile) {
     return LDPS_OK;
 
   LLVMContext Context;
-  Context.setDiagnosticHandler(diagnosticHandler);
+  Context.setDiagnosticHandler(diagnosticHandler, nullptr, true);
 
   std::unique_ptr<Module> Combined(new Module("ld-temp.o", Context));
   Linker L(Combined.get());

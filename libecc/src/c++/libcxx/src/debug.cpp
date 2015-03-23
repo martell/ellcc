@@ -216,10 +216,10 @@ __libcpp_db::__erase_i(void* __i)
             else
                 q->__next_ = p->__next_;
             __c_node* c = p->__c_;
-            free(p);
             --__isz_;
             if (c != nullptr)
                 c->__remove(p);
+            free(p);
         }
     }
 }

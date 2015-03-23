@@ -332,15 +332,6 @@ template <> struct ScalarEnumerationTraits<lld::DefinedAtom::SectionChoice> {
   }
 };
 
-template <> struct ScalarEnumerationTraits<lld::DefinedAtom::SectionPosition> {
-  static void enumeration(IO &io, lld::DefinedAtom::SectionPosition &value) {
-    io.enumCase(value, "start", lld::DefinedAtom::sectionPositionStart);
-    io.enumCase(value, "early", lld::DefinedAtom::sectionPositionEarly);
-    io.enumCase(value, "any",   lld::DefinedAtom::sectionPositionAny);
-    io.enumCase(value, "end",   lld::DefinedAtom::sectionPositionEnd);
-  }
-};
-
 template <> struct ScalarEnumerationTraits<lld::DefinedAtom::Interposable> {
   static void enumeration(IO &io, lld::DefinedAtom::Interposable &value) {
     io.enumCase(value, "no",           DefinedAtom::interposeNo);
@@ -620,16 +611,16 @@ template <> struct MappingTraits<const lld::File *> {
     const atom_collection<lld::AbsoluteAtom> &absolute() const override {
       return _noAbsoluteAtoms;
     }
-    const File *find(StringRef name, bool dataSymbolOnly) const override {
+    File *find(StringRef name, bool dataSymbolOnly) override {
       for (const ArchMember &member : _members) {
         for (const lld::DefinedAtom *atom : member._content->defined()) {
           if (name == atom->name()) {
             if (!dataSymbolOnly)
-              return member._content;
+              return const_cast<File *>(member._content);
             switch (atom->contentType()) {
             case lld::DefinedAtom::typeData:
             case lld::DefinedAtom::typeZeroFill:
-              return member._content;
+              return const_cast<File *>(member._content);
             default:
               break;
             }
@@ -810,11 +801,11 @@ template <> struct MappingTraits<const lld::DefinedAtom *> {
           _scope(atom->scope()), _interpose(atom->interposable()),
           _merge(atom->merge()), _contentType(atom->contentType()),
           _alignment(atom->alignment()), _sectionChoice(atom->sectionChoice()),
-          _sectionPosition(atom->sectionPosition()),
           _deadStrip(atom->deadStrip()), _dynamicExport(atom->dynamicExport()),
           _codeModel(atom->codeModel()),
           _permissions(atom->permissions()), _size(atom->size()),
-          _sectionName(atom->customSectionName()) {
+          _sectionName(atom->customSectionName()),
+          _sectionSize(atom->sectionSize()) {
       for (const lld::Reference *r : *atom)
         _references.push_back(r);
       if (!atom->occupiesDiskSpace())
@@ -860,7 +851,7 @@ template <> struct MappingTraits<const lld::DefinedAtom *> {
     Alignment alignment() const override { return _alignment; }
     SectionChoice sectionChoice() const override { return _sectionChoice; }
     StringRef customSectionName() const override { return _sectionName; }
-    SectionPosition sectionPosition() const override { return _sectionPosition; }
+    uint64_t sectionSize() const override { return _sectionSize; }
     DeadStripKind deadStrip() const override { return _deadStrip; }
     DynamicExport dynamicExport() const override { return _dynamicExport; }
     CodeModel codeModel() const override { return _codeModel; }
@@ -906,7 +897,6 @@ template <> struct MappingTraits<const lld::DefinedAtom *> {
     ContentType                         _contentType;
     Alignment                           _alignment;
     SectionChoice                       _sectionChoice;
-    SectionPosition                     _sectionPosition;
     DeadStripKind                       _deadStrip;
     DynamicExport                       _dynamicExport;
     CodeModel                           _codeModel;
@@ -915,6 +905,7 @@ template <> struct MappingTraits<const lld::DefinedAtom *> {
     std::vector<ImplicitHex8>           _content;
     uint64_t                            _size;
     StringRef                           _sectionName;
+    uint64_t                            _sectionSize;
     std::vector<const lld::Reference *> _references;
     bool _isGroupChild;
   };
@@ -951,8 +942,7 @@ template <> struct MappingTraits<const lld::DefinedAtom *> {
     io.mapOptional("section-choice",   keys->_sectionChoice,
                                          DefinedAtom::sectionBasedOnContent);
     io.mapOptional("section-name",     keys->_sectionName, StringRef());
-    io.mapOptional("section-position", keys->_sectionPosition,
-                                         DefinedAtom::sectionPositionAny);
+    io.mapOptional("section-size",     keys->_sectionSize, (uint64_t)0);
     io.mapOptional("dead-strip",       keys->_deadStrip,
                                          DefinedAtom::deadStripNormal);
     io.mapOptional("dynamic-export",   keys->_dynamicExport,

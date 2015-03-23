@@ -126,6 +126,7 @@ private:
     ivar.referencesCount = refsCount;
     ivar.contentOffset = getContentOffset(atom);
     ivar.contentSize = atom.size();
+    ivar.sectionSize = atom.sectionSize();
     _definedAtomIvars.push_back(ivar);
   }
 
@@ -421,8 +422,7 @@ private:
     attrs.interposable      = atom.interposable();
     attrs.merge             = atom.merge();
     attrs.contentType       = atom.contentType();
-    attrs.sectionChoiceAndPosition
-                          = atom.sectionChoice() << 4 | atom.sectionPosition();
+    attrs.sectionChoice     = atom.sectionChoice();
     attrs.deadStrip         = atom.deadStrip();
     attrs.dynamicExport     = atom.dynamicExport();
     attrs.codeModel         = atom.codeModel();

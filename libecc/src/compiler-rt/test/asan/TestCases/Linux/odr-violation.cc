@@ -1,6 +1,9 @@
 // We use fast_unwind_on_malloc=0 to have full unwinding even w/o frame
 // pointers. This setting is not on by default because it's too expensive.
 //
+// We use fast_unwind_on_malloc=0 to have full unwinding even w/o frame
+// pointers. This setting is not on by default because it's too expensive.
+//
 // Different size: detect a bug if detect_odr_violation>=1
 // RUN: %clangxx_asan -DBUILD_SO=1 -fPIC -shared %s -o %t-ODR-SO.so
 // RUN: %clangxx_asan %s %t-ODR-SO.so -Wl,-R. -o %t-ODR-EXE

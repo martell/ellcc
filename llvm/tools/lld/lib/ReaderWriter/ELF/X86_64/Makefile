@@ -12,4 +12,6 @@ LIBRARYNAME := lldX86_64ELFTarget
 USEDLIBS = lldCore.a
 CPP.Flags += -I$(PROJ_SRC_DIR)/$(LLD_LEVEL)/lib/ReaderWriter/ELF
 
+PARALLEL_DIRS := ExampleSubTarget
+
 include $(LLD_LEVEL)/Makefile

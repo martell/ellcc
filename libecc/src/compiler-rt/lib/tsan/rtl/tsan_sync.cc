@@ -143,62 +143,19 @@ SyncVar* SyncTab::GetAndLock(ThreadState *thr, uptr pc,
   }
 }
 
-SyncVar* SyncTab::GetAndRemove(ThreadState *thr, uptr pc, uptr addr) {
-#ifndef TSAN_GO
-  {  // NOLINT
-    SyncVar *res = GetAndRemoveJavaSync(thr, pc, addr);
-    if (res)
-      return res;
-  }
-  if (PrimaryAllocator::PointerIsMine((void*)addr)) {
-    MBlock *b = user_mblock(thr, (void*)addr);
-    CHECK_NE(b, 0);
-    SyncVar *res = 0;
-    {
-      MBlock::ScopedLock l(b);
-      res = b->ListHead();
-      if (res) {
-        if (res->addr == addr) {
-          if (res->is_linker_init)
-            return 0;
-          b->ListPop();
-        } else {
-          SyncVar **prev = &res->next;
-          res = *prev;
-          while (res) {
-            if (res->addr == addr) {
-              if (res->is_linker_init)
-                return 0;
-              *prev = res->next;
-              break;
-            }
-            prev = &res->next;
-            res = *prev;
-          }
-        }
-        if (res) {
-          StatInc(thr, StatSyncDestroyed);
-          res->mtx.Lock();
-          res->mtx.Unlock();
-        }
-      }
-    }
-    return res;
-  }
-#endif
-
-  Part *p = &tab_[PartIdx(addr)];
-  SyncVar *res = 0;
-  {
-    Lock l(&p->mtx);
-    SyncVar **prev = &p->val;
-    res = *prev;
-    while (res) {
-      if (res->addr == addr) {
-        if (res->is_linker_init)
-          return 0;
-        *prev = res->next;
+bool MetaMap::FreeRange(ThreadState *thr, uptr pc, uptr p, uptr sz) {
+  bool has_something = false;
+  u32 *meta = MemToMeta(p);
+  u32 *end = MemToMeta(p + sz);
+  if (end == meta)
+    end++;
+  for (; meta < end; meta++) {
+    u32 idx = *meta;
+    *meta = 0;
+    for (;;) {
+      if (idx == 0)
         break;
+      has_something = true;
       if (idx & kFlagBlock) {
         block_alloc_.Free(&thr->block_cache, idx & ~kFlagMask);
         break;
@@ -216,16 +173,78 @@ SyncVar* SyncTab::GetAndRemove(ThreadState *thr, uptr pc, uptr addr) {
       res = *prev;
     }
   }
-  if (res) {
-    StatInc(thr, StatSyncDestroyed);
-    res->mtx.Lock();
-    res->mtx.Unlock();
-  }
-  return res;
+  return has_something;
 }
 
-int SyncTab::PartIdx(uptr addr) {
-  return (addr >> 3) % kPartCount;
+// ResetRange removes all meta objects from the range.
+// It is called for large mmap-ed regions. The function is best-effort wrt
+// freeing of meta objects, because we don't want to page in the whole range
+// which can be huge. The function probes pages one-by-one until it finds a page
+// without meta objects, at this point it stops freeing meta objects. Because
+// thread stacks grow top-down, we do the same starting from end as well.
+void MetaMap::ResetRange(ThreadState *thr, uptr pc, uptr p, uptr sz) {
+  const uptr kMetaRatio = kMetaShadowCell / kMetaShadowSize;
+  const uptr kPageSize = GetPageSizeCached() * kMetaRatio;
+  if (sz <= 4 * kPageSize) {
+    // If the range is small, just do the normal free procedure.
+    FreeRange(thr, pc, p, sz);
+    return;
+  }
+  // First, round both ends of the range to page size.
+  uptr diff = RoundUp(p, kPageSize) - p;
+  if (diff != 0) {
+    FreeRange(thr, pc, p, diff);
+    p += diff;
+    sz -= diff;
+  }
+  diff = p + sz - RoundDown(p + sz, kPageSize);
+  if (diff != 0) {
+    FreeRange(thr, pc, p + sz - diff, diff);
+    sz -= diff;
+  }
+  // Now we must have a non-empty page-aligned range.
+  CHECK_GT(sz, 0);
+  CHECK_EQ(p, RoundUp(p, kPageSize));
+  CHECK_EQ(sz, RoundUp(sz, kPageSize));
+  const uptr p0 = p;
+  const uptr sz0 = sz;
+  // Probe start of the range.
+  while (sz > 0) {
+    bool has_something = FreeRange(thr, pc, p, kPageSize);
+    p += kPageSize;
+    sz -= kPageSize;
+    if (!has_something)
+      break;
+  }
+  // Probe end of the range.
+  while (sz > 0) {
+    bool has_something = FreeRange(thr, pc, p - kPageSize, kPageSize);
+    sz -= kPageSize;
+    if (!has_something)
+      break;
+  }
+  // Finally, page out the whole range (including the parts that we've just
+  // freed). Note: we can't simply madvise, because we need to leave a zeroed
+  // range (otherwise __tsan_java_move can crash if it encounters a left-over
+  // meta objects in java heap).
+  uptr metap = (uptr)MemToMeta(p0);
+  uptr metasz = sz0 / kMetaRatio;
+  UnmapOrDie((void*)metap, metasz);
+  MmapFixedNoReserve(metap, metasz);
+}
+
+MBlock* MetaMap::GetBlock(uptr p) {
+  u32 *meta = MemToMeta(p);
+  u32 idx = *meta;
+  for (;;) {
+    if (idx == 0)
+      return 0;
+    if (idx & kFlagBlock)
+      return block_alloc_.Map(idx & ~kFlagMask);
+    DCHECK(idx & kFlagSync);
+    SyncVar * s = sync_alloc_.Map(idx & ~kFlagMask);
+    idx = s->next;
+  }
 }
 
 StackTrace::StackTrace()

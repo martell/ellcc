@@ -95,6 +95,7 @@ public:
     ARMSubArch_v7s,
     ARMSubArch_v6,
     ARMSubArch_v6m,
+    ARMSubArch_v6k,
     ARMSubArch_v6t2,
     ARMSubArch_v5,
     ARMSubArch_v5te,
@@ -123,6 +124,7 @@ public:
   enum OSType {
     UnknownOS,
 
+    CloudABI,
     Darwin,
     DragonFly,
     FreeBSD,
