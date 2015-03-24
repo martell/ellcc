@@ -81,7 +81,7 @@
   #define _LIBUNWIND_ABORT(msg) __assert_fail(msg, __FILE__, __LINE__, __func__)
   #define _LIBUNWIND_SUPPORT_COMPACT_UNWIND 0
   #define _LIBUNWIND_SUPPORT_DWARF_UNWIND   1 // RICH: (!defined(__arm__))
-  #define _LIBUNWIND_SUPPORT_DWARF_INDEX    0
+  #define _LIBUNWIND_SUPPORT_DWARF_INDEX    _LIBUNWIND_SUPPORT_DWARF_UNWIND
   #include <string.h>   // For strlcpy().
 
 #else

@@ -26,10 +26,8 @@
 #include "config.h"
 
 #include "AddressSpace.hpp"
-#include "config.h"
-#if _LIBUNWIND_SUPPORT_COMPACT_UNWIND
 #include "CompactUnwinder.hpp"
-#endif
+#include "config.h"
 #include "DwarfInstructions.hpp"
 #include "EHHeaderParser.hpp"
 #include "libunwind.h"
