@@ -16,6 +16,8 @@ SRCS += abort_message.cpp cxa_aux_runtime.cpp cxa_default_handlers.cpp \
 CFLAGS := -I$(SRCPATH)/c++/libcxxabi/include $(CFLAGS)
 CXXFLAGS := -I$(SRCPATH)/c++/libcxxabi/include $(CXXFLAGS)
 CXXFLAGS += -D_GNU_SOURCE -Ddl_info=Dl_info
+CFLAGS += -DLIBCXXABI_USE_LLVM_UNWINDER=1
+CXXFLAGS += -DLIBCXXABI_USE_LLVM_UNWINDER=1
 VPATH := $(VPATH):$(SRCPATH)/c++/libcxxabi/src/Unwind
 SRCS += libunwind.cpp UnwindLevel1.c UnwindLevel1-gcc-ext.c \
         UnwindRegistersRestore.S UnwindRegistersSave.S Unwind-EHABI.cpp
