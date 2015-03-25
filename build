@@ -50,6 +50,7 @@ if [ $debug -ne 0 ] ; then
   echo ar=$ar
   echo ranlib=$ranlib
   echo builddir=$builddir
+  echo bindir=$bindir
   echo haslibs=$haslibs
   echo maxjobs=$maxjobs
   exit 0
@@ -64,7 +65,7 @@ if [ $all -eq 1 ] ; then
       continue
     fi
     # The microblaze can't self host.
-    if [ `bin-getarch $config` = microblaze ] ; then
+    if [ `bin/ecc-getarch $config` = microblaze ] ; then
       continue
     fi
     ./build $config || bailout "Build failed for $config"

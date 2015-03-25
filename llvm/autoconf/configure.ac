@@ -1978,7 +1978,7 @@ if test "${prefix}" = "NONE" ; then
   prefix="/usr/local"
 fi
 eval LLVM_PREFIX="${prefix}";
-eval LLVM_BINDIR="${prefix}/bin";
+eval LLVM_BINDIR="${bindir}";
 eval LLVM_DATADIR="${prefix}/share/llvm";
 eval LLVM_DOCSDIR="${prefix}/share/doc/llvm";
 eval LLVM_ETCDIR="${prefix}/etc/llvm";
