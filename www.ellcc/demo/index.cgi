@@ -220,6 +220,7 @@ $llvmTargets{'mips32r2sf'} = { label => 'Mips Soft Float', triple => 'mips-linux
 $llvmTargets{'arm'} = { label => 'ARM 32-bit Soft Float', triple => 'arm-linux-engeabi' };
 $llvmTargets{'arm'} = { label => 'ARM 32-bit', triple => 'arm-linux-engeabihf' };
 $llvmTargets{'thumb'} = { label => 'ARM Thumb', triple => 'thumb-linux-engeabi'  };
+$llvmTargets{'aarch64'} = { label => 'ARM AArch64', triple => 'aarch64-linux-eng'  };
 $llvmTargets{'ppc'} = { label => 'PowerPC 32-bit', triple => 'ppc-linux-eng'  };
 $llvmTargets{'i386'} = { label => 'X86 32-bit', triple => 'i386-linux-eng'  };
 $llvmTargets{'x86_64'}  = { label => 'X86 64-bit', triple => 'x86_64-linux-eng' };
