@@ -94,6 +94,30 @@ const char armeb_ellcc_linux[] =
   "    - -L $R/lib/armeb/linux\n"
   "";
 
+const char aarch64_ellcc_linux[] =
+  "based_on: ellcc-linux\n"
+  "compiler:\n"
+  "  options:\n"
+  "    - -target aarch64-ellcc-linux\n"
+  "  c_include_dirs:\n"
+  "    - $R/include/aarch64\n"
+  "    - $R/include\n"
+  "assembler:\n"
+  "  exe: $E/aarch64-elf-as$X\n"
+  "linker:\n"
+  "  options:\n"
+  "    - -m aarch64linux\n"
+  "    - --build-id\n"
+  "    - --hash-style=gnu\n"
+  "    - --eh-frame-hdr\n"
+  "  static_crt1: $R/lib/aarch64/linux/crt1.o\n"
+  "  dynamic_crt1: $R/lib/aarch64/linux/Scrt1.o\n"
+  "  crtbegin: $R/lib/aarch64/linux/crtbegin.o\n"
+  "  crtend: $R/lib/aarch64/linux/crtend.o\n"
+  "  library_paths:\n"
+  "    - -L $R/lib/aarch64/linux\n"
+  "";
+
 const char i386_ellcc_linux[] =
   "based_on: ellcc-linux\n"
   "compiler:\n"
@@ -273,6 +297,7 @@ void PredefinedInfo(CompilationInfo &Info)
       Info.DefineInfo("ellcc-linux", ellcc_linux);
       Info.DefineInfo("arm-ellcc-linux", arm_ellcc_linux);
       Info.DefineInfo("armeb-ellcc-linux", armeb_ellcc_linux);
+      Info.DefineInfo("aarch64-ellcc-linux", aarch64_ellcc_linux);
       Info.DefineInfo("i386-ellcc-linux", i386_ellcc_linux);
       Info.DefineInfo("microblaze-ellcc-linux",
                                   microblaze_ellcc_linux);

@@ -70,7 +70,7 @@ $(Configs)::
 	      CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
 	      AR=$(ELLCC)/bin/ecc-ar \
 	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
-	      --host=`../../getarch $*`-`../../getos $*` \
+	      --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*` \
 	      --build=x86_64-linux \
 	      --with-build-cc=$(ELLCC)/bin/ecc \
 	      --prefix=$(ELLCC) $$NOCXX ; \
@@ -135,7 +135,7 @@ $(Configs)::
 	  AR=$(ELLCC)/bin/ecc-ar \
 	  RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	      ../../src/expat/configure \
-	      --host=`../../getarch $*`-`../../getos $*` \
+	      --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*` \
 	      --prefix=$(ELLCC) --enable-shared=no ; \
 	fi
 
@@ -170,7 +170,7 @@ $(Configs)::
 	  RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	      ../../src/libedit/configure \
 	      --enable-shared=no  --prefix=$(ELLCC) \
-	      --host=`../../getarch $*`-`../../getos $*` ; \
+	      --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*` ; \
 	fi
 
 %.libedit.build:
@@ -201,10 +201,10 @@ musl.install:
 	mkdir -p ../include ; \
 	cp -pr $*/install/include/* ../include ; \
 	ln -sf ../endian.h ../include/sys ; \
-	mkdir -p ../include/`../getincarch $*` ; \
-	rm -fr ../include/`../getincarch $*`/bits ; \
-	mv ../include/bits ../include/`../getincarch $*`/bits ; \
-	(cd ../include/`../getincarch $*`; rm -rf machine; ln -sf bits machine) ;\
+	mkdir -p ../include/`../../bin/ecc-getincarch $*` ; \
+	rm -fr ../include/`../../bin/ecc-getincarch $*`/bits ; \
+	mv ../include/bits ../include/`../../bin/ecc-getincarch $*`/bits ; \
+	(cd ../include/`../../bin/ecc-getincarch $*`; rm -rf machine; ln -sf bits machine) ;\
 	mkdir -p ../lib/$* ; \
 	cp $*/install/lib/*.a $*/install/lib/*.o ../lib/$*
 

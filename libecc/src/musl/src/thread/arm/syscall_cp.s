@@ -21,3 +21,7 @@ __cp_end:
         it eq
 	moveq pc,lr
 	bx lr
+.global __cp_cancel
+__cp_cancel:
+	ldmfd sp!,{r4,r5,r6,r7,lr}
+	b __cancel

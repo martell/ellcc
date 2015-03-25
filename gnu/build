@@ -63,14 +63,14 @@ fi
 
 # Configure for QEMU.
 # The QEMU system targets.
-qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu \
+qemu_target_list="i386-softmmu x86_64-softmmu arm-softmmu aarch64-softmmu \
     microblaze-softmmu mips-softmmu mipsel-softmmu \
     ppc-softmmu ppc64-softmmu sparc-softmmu"
 
 if [ `uname` = "Linux" ] ; then 
     # The QEMU Linux user space targets.
     qemu_target_list="$qemu_target_list i386-linux-user \
-    x86_64-linux-user arm-linux-user armeb-linux-user \
+    x86_64-linux-user arm-linux-user armeb-linux-user aarch64-linux-user \
     microblaze-linux-user mips-linux-user mipsel-linux-user \
     ppc-linux-user ppc64-linux-user ppc64abi32-linux-user sparc-linux-user"
 fi

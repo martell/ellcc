@@ -70,7 +70,7 @@
     }
   #endif
 
-  #define _LIBUNWIND_BUILD_ZERO_COST_APIS (__arm__ || __i386__ || \
+  #define _LIBUNWIND_BUILD_ZERO_COST_APIS (__arm__ || __aarch64__ || __i386__ || \
                                            __microblaze__ || __mips__ || \
                                            __ppc__ || __x86_64__)
   #define _LIBUNWIND_BUILD_SJLJ_APIS      (0)

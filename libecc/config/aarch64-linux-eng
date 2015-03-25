@@ -1,0 +1,11 @@
+based_on: aarch64-ellcc-linux
+compiler:
+  options:
+    - -target aarch64-ellcc-linux
+linker:
+  static_crt1: $R/lib/aarch64-linux-eng/crt1.o
+  dynamic_crt1: $R/lib/aarch64-linux-eng/Scrt1.o
+  crtbegin: $R/lib/aarch64-linux-eng/crtbegin.o
+  crtend: $R/lib/aarch64-linux-eng/crtend.o
+  library_paths:
+    - -L$R/lib/aarch64-linux-eng

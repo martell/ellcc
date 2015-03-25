@@ -81,7 +81,7 @@ fi
 # Check for cross-compiler definition
 if [ $# -ge 1 ] ; then
   # The first argument is the desired cross host tuple.
-  host=`${prefix}/libecc/getarch $1`
+  host=`${prefix}/bin/ecc-getarch $1`
   arg1=$1
   bindir=${bindir}-$1
   # OG: The host OS may be something else.... let ${hostos} find out

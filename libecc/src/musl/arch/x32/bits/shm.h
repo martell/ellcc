@@ -18,7 +18,7 @@ struct shmid_ds
 struct shminfo {
 	unsigned long shmmax, __pad0, shmmin, __pad1, shmmni, __pad2,
 	              shmseg, __pad3, shmall, __pad4;
-	unsigned long long __unused[4];
+	unsigned long long __unused1[4];
 };
 
 struct shm_info {

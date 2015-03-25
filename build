@@ -60,11 +60,11 @@ if [ $all -eq 1 ] ; then
   BldConfigs=`cd libecc/config; echo *-linux-* *-w64-mingw32`
   for config in $BldConfigs ; do
     # Don't rebuild the host.
-    if [ `libecc/getarch $config` = $host ] ; then
+    if [ `bin/ecc-getarch $config` = $host ] ; then
       continue
     fi
     # The microblaze can't self host.
-    if [ `libecc/getarch $config` = microblaze ] ; then
+    if [ `bin-getarch $config` = microblaze ] ; then
       continue
     fi
     ./build $config || bailout "Build failed for $config"
@@ -78,7 +78,7 @@ if [ "$package" != "" ] ; then
   BldConfigs=`cd libecc/config; echo *-linux-* *-w64-mingw32`
   for config in $BldConfigs ; do
     # The microblaze can't self host.
-    if [ `libecc/getarch $config` = microblaze ] ; then
+    if [ `bin/ecc-getarch $config` = microblaze ] ; then
       continue
     fi
     if [ ! -e llvm-build-$config ] ; then

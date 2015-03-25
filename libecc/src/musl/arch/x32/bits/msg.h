@@ -12,5 +12,5 @@ struct msqid_ds
 	long __unused3;
 	pid_t msg_lspid;
 	pid_t msg_lrpid;
-	unsigned long long __unused[2];
+	unsigned long long __unused1[2];
 };
