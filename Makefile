@@ -1,5 +1,5 @@
 # Build ELLCC.
-VERSION=0.1.10
+VERSION=0.1.11
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory

@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.11:
+
 * Added aarch64 support.
 * Update to musl 1.1.7.
 * Update to LLVM r232721.
