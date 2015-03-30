@@ -1,5 +1,7 @@
 current SVN:
 
+* Update to musl 1.1.8.
+
 version 0.1.11:
 
 * Added aarch64 support.
