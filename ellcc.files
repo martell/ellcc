@@ -11,6 +11,7 @@ libecc/share
 libecc/share/doc
 libecc/share/doc/index.html
 libecc/Makefile
+libecc/Makefile.lib
 libecc/config.musl
 libecc/src/
 libecc/mingw/

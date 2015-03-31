@@ -225,13 +225,15 @@ $(Configs)::
 
 clang-headers:
 	$(OUT)echo Installing clang headers
-	$(OUT)mkdir -p clang
-	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/* clang
-	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/altivec.h include
-	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/emmintrin.h include
-	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/mmintrin.h include
-	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/mm_malloc.h include
-	$(OUT)cp -p ../llvm/tools/clang/lib/Headers/xmmintrin.h include
+	$(OUT)if [ -e  ../llvm/tools/clang/lib/Headers ] ; then \
+	  mkdir -p clang ; \
+	  cp -p ../llvm/tools/clang/lib/Headers/* clang ; \
+	  cp -p ../llvm/tools/clang/lib/Headers/altivec.h include ; \
+	  cp -p ../llvm/tools/clang/lib/Headers/emmintrin.h include ; \
+	  cp -p ../llvm/tools/clang/lib/Headers/mmintrin.h include ; \
+	  cp -p ../llvm/tools/clang/lib/Headers/mm_malloc.h include ; \
+	  cp -p ../llvm/tools/clang/lib/Headers/xmmintrin.h include ; \
+	fi
 
 $(ElkConfigs)::
 	$(OUT)echo Making libelk for $@ in elk-build/$@

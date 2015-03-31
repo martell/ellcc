@@ -1,5 +1,8 @@
 current SVN:
 
+version 0.1.12:
+
+* Fixed library builds with binary releases.
 * Update to musl 1.1.8.
 
 version 0.1.11:
