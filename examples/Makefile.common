@@ -130,12 +130,14 @@ $(PROG):  $(NEEDCLEAN) $(CONFIG) $(OBJS)
 ARCH=$(shell $(ELLCCBIN)ecc-getarch $(TARGET))
 # First, use QEMU Linux user mode for Linux targets.
 ifeq ($(findstring -linux-,$(TARGET)),-linux-)
-  RUN=$(ELLCCBIN)qemu-$(ARCH) $(PROG)
+  RUN=$(ELLCCBIN)qemu-$(ARCH) $(QEMUDBG) $(PROG)
+  DBG="-g 1234"
 else
   # Otherwise, set up to run QEMU in system mode for ELK configurations.
   INCARCH=$(shell $(ELLCCBIN)ecc-getincarch $(TARGET))
   QEMUINST=echo "enter 'control-A x' to exit QEMU";
   MAKEBIN=$(OBJCOPY) -O binary $(PROG) $(PROG).bin;
+  DBG="-s -S"
   ifeq ($(INCARCH),arm)
     RUN=$(QEMUINST)$(ELLCCBIN)qemu-system-$(ARCH) $(QEMUDBG) -M vexpress-a9 \
 	  -cpu cortex-a9 -m 128M -nographic -kernel $(PROG)
@@ -170,7 +172,7 @@ log: $(PROG)
 
 debug:
 	@echo "Type 'make gdb' or 'make tui' in another window"
-	$(OUTD)$(MAKE) TARGET=$(TARGET) QEMUDBG="-s -S" run
+	$(OUTD)$(MAKE) TARGET=$(TARGET) QEMUDBG=$(DBG) run
 
 gdb:
 	$(GDB) -ex "target remote :1234" $(PROG)
@@ -183,7 +185,7 @@ help:
 	@echo "make TARGET=mips-linux-eng - build for a specific configuration"
 	@echo "make run                   - run the program"
 	@echo "make debug                 - debug the ELK program"
-	@echo "make gdb                   - debug twith gdb"
+	@echo "make gdb                   - debug with gdb"
 	@echo "make tui                   - debug with gdb in TUI mode"
 	@echo "make clean                 - clean up the directory"
 	@echo "make distclean             - really clean up the directory"
