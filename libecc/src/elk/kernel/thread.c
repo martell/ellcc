@@ -542,8 +542,11 @@ static void get_running(void)
 
 #if CONFIG_PRIORITIES > 1
   // Check for lower priority things to run.
-  while (current == NULL && priority < CONFIG_PRIORITIES) {
+  while (current == NULL) {
     ++priority;
+    if (priority >= CONFIG_PRIORITIES) {
+      break;
+    }
     current = ready_head(priority);
   }
 #endif

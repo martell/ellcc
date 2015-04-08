@@ -1,5 +1,6 @@
 current SVN:
 
+* Fixed ELK thread scheduler for idle thread.
 * Update to GDB 7.9.
 
 version 0.1.12:

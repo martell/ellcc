@@ -168,7 +168,7 @@ run: $(PROG)
 	$(OUTR)$(RUN)
 
 log: $(PROG)
-	$(OUTR);$(RUN) -d in_asm,cpu -D $(PROG).log
+	$(OUTR)$(RUN) -d in_asm,cpu -D $(PROG).log
 
 debug:
 	@echo "Type 'make gdb' or 'make tui' in another window"
