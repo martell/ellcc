@@ -1,5 +1,7 @@
 current SVN:
 
+* Update to GDB 7.9.
+
 version 0.1.12:
 
 * Fixed library builds with binary releases.
