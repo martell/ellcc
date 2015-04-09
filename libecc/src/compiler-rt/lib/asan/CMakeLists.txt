@@ -102,6 +102,7 @@ if(APPLE)
               $<TARGET_OBJECTS:RTInterception.${os}>
               $<TARGET_OBJECTS:RTSanitizerCommon.${os}>
               $<TARGET_OBJECTS:RTLSanCommon.${os}>
+              $<TARGET_OBJECTS:RTUbsan.${os}>
       CFLAGS ${ASAN_DYNAMIC_CFLAGS}
       DEFS ${ASAN_DYNAMIC_DEFINITIONS})
     add_dependencies(asan clang_rt.asan_${os}_dynamic)
@@ -128,11 +129,9 @@ else()
       $<TARGET_OBJECTS:RTAsan.${arch}>
       $<TARGET_OBJECTS:RTInterception.${arch}>
       $<TARGET_OBJECTS:RTSanitizerCommon.${arch}>
-      $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>)
-    if (NOT WIN32)
-      # We can't build Leak Sanitizer on Windows yet.
-      list(APPEND ASAN_RUNTIME_OBJECTS $<TARGET_OBJECTS:RTLSanCommon.${arch}>)
-    endif()
+      $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>
+      $<TARGET_OBJECTS:RTLSanCommon.${arch}>
+      $<TARGET_OBJECTS:RTUbsan.${arch}>)
 
     add_compiler_rt_static_runtime(clang_rt.asan-${arch} ${arch}
       SOURCES ${ASAN_RUNTIME_OBJECTS}
@@ -142,6 +141,7 @@ else()
 
     add_compiler_rt_runtime(clang_rt.asan_cxx-${arch} ${arch} STATIC
       SOURCES $<TARGET_OBJECTS:RTAsan_cxx.${arch}>
+              $<TARGET_OBJECTS:RTUbsan_cxx.${arch}>
       CFLAGS ${ASAN_CFLAGS}
       DEFS ${ASAN_COMMON_DEFINITIONS})
     add_dependencies(asan clang_rt.asan_cxx-${arch})
@@ -160,6 +160,7 @@ else()
     add_compiler_rt_runtime(clang_rt.asan-dynamic-${arch} ${arch} SHARED
       OUTPUT_NAME ${SHARED_ASAN_NAME}
       SOURCES $<TARGET_OBJECTS:RTAsan_dynamic.${arch}>
+              $<TARGET_OBJECTS:RTUbsan_cxx.${arch}>
               ${ASAN_COMMON_RUNTIME_OBJECTS}
       CFLAGS ${ASAN_DYNAMIC_CFLAGS}
       DEFS ${ASAN_DYNAMIC_DEFINITIONS})

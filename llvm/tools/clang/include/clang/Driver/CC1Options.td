@@ -518,12 +518,6 @@ def fdeprecated_macro : Flag<["-"], "fdeprecated-macro">,
   HelpText<"Defines the __DEPRECATED macro">;
 def fno_deprecated_macro : Flag<["-"], "fno-deprecated-macro">,
   HelpText<"Undefines the __DEPRECATED macro">;
-def fsized_deallocation : Flag<["-"], "fsized-deallocation">,
-  HelpText<"Enable C++14 sized global deallocation functions">;
-def fno_sized_deallocation: Flag<["-"], "fno-sized-deallocation">,
-  HelpText<"Disable sized deallocation functions">;
-def fdefine_sized_deallocation: Flag<["-"], "fdefine-sized-deallocation">,
-  HelpText<"Allow compiler-generated definition of sized deallocation functions">;
 def fobjc_subscripting_legacy_runtime : Flag<["-"], "fobjc-subscripting-legacy-runtime">,
   HelpText<"Allow Objective-C array and dictionary subscripting in legacy runtime">;
 def vtordisp_mode_EQ : Joined<["-"], "vtordisp-mode=">,
@@ -591,8 +585,6 @@ def cl_finite_math_only : Flag<["-"], "cl-finite-math-only">,
   HelpText<"OpenCL only. Allow floating-point optimizations that assume arguments and results are not NaNs or +-Inf.">;
 def cl_kernel_arg_info : Flag<["-"], "cl-kernel-arg-info">,
   HelpText<"OpenCL only. Generate kernel argument metadata.">;
-def : Flag<["-"], "cl-no-signed-zeros">, Alias<fno_signed_zeros>,
-  HelpText<"OpenCL only. Allow optimizations to ignore the signedness of the floating-point zero.">;
 def cl_unsafe_math_optimizations : Flag<["-"], "cl-unsafe-math-optimizations">,
   HelpText<"OpenCL only. Allow unsafe floating-point optimizations.  Also implies -cl-no-signed-zeros and -cl-mad-enable">;
 def cl_fast_relaxed_math : Flag<["-"], "cl-fast-relaxed-math">,

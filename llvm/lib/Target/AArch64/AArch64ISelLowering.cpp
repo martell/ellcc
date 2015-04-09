@@ -481,6 +481,7 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
 
   // Enable TBZ/TBNZ
   MaskAndBranchFoldingIsLegal = true;
+  EnableExtLdPromotion = true;
 
   setMinFunctionAlignment(2);
 
@@ -1257,7 +1258,7 @@ getAArch64XALUOOp(AArch64CC::CondCode &CC, SDValue Op, SelectionDAG &DAG) {
   case ISD::SMULO:
   case ISD::UMULO: {
     CC = AArch64CC::NE;
-    bool IsSigned = (Op.getOpcode() == ISD::SMULO) ? true : false;
+    bool IsSigned = Op.getOpcode() == ISD::SMULO;
     if (Op.getValueType() == MVT::i32) {
       unsigned ExtendOpc = IsSigned ? ISD::SIGN_EXTEND : ISD::ZERO_EXTEND;
       // For a 32 bit multiply with overflow check we want the instruction
@@ -3514,49 +3515,10 @@ static bool selectCCOpsAreFMaxCompatible(SDValue Cmp, SDValue Result) {
   return Result->getOpcode() == ISD::FP_EXTEND && Result->getOperand(0) == Cmp;
 }
 
-SDValue AArch64TargetLowering::LowerSELECT(SDValue Op,
-                                           SelectionDAG &DAG) const {
-  SDValue CC = Op->getOperand(0);
-  SDValue TVal = Op->getOperand(1);
-  SDValue FVal = Op->getOperand(2);
-  SDLoc DL(Op);
-
-  unsigned Opc = CC.getOpcode();
-  // Optimize {s|u}{add|sub|mul}.with.overflow feeding into a select
-  // instruction.
-  if (CC.getResNo() == 1 &&
-      (Opc == ISD::SADDO || Opc == ISD::UADDO || Opc == ISD::SSUBO ||
-       Opc == ISD::USUBO || Opc == ISD::SMULO || Opc == ISD::UMULO)) {
-    // Only lower legal XALUO ops.
-    if (!DAG.getTargetLoweringInfo().isTypeLegal(CC->getValueType(0)))
-      return SDValue();
-
-    AArch64CC::CondCode OFCC;
-    SDValue Value, Overflow;
-    std::tie(Value, Overflow) = getAArch64XALUOOp(OFCC, CC.getValue(0), DAG);
-    SDValue CCVal = DAG.getConstant(OFCC, MVT::i32);
-
-    return DAG.getNode(AArch64ISD::CSEL, DL, Op.getValueType(), TVal, FVal,
-                       CCVal, Overflow);
-  }
-
-  if (CC.getOpcode() == ISD::SETCC)
-    return DAG.getSelectCC(DL, CC.getOperand(0), CC.getOperand(1), TVal, FVal,
-                           cast<CondCodeSDNode>(CC.getOperand(2))->get());
-  else
-    return DAG.getSelectCC(DL, CC, DAG.getConstant(0, CC.getValueType()), TVal,
-                           FVal, ISD::SETNE);
-}
-
-SDValue AArch64TargetLowering::LowerSELECT_CC(SDValue Op,
+SDValue AArch64TargetLowering::LowerSELECT_CC(ISD::CondCode CC, SDValue LHS,
+                                              SDValue RHS, SDValue TVal,
+                                              SDValue FVal, SDLoc dl,
                                               SelectionDAG &DAG) const {
-  ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(4))->get();
-  SDValue LHS = Op.getOperand(0);
-  SDValue RHS = Op.getOperand(1);
-  SDValue TVal = Op.getOperand(2);
-  SDValue FVal = Op.getOperand(3);
-  SDLoc dl(Op);
-
   // Handle f128 first, because it will result in a comparison of some RTLIB
   // call result against zero.
   if (LHS.getValueType() == MVT::f128) {
@@ -3664,14 +3626,14 @@ SDValue AArch64TargetLowering::LowerSELECT_CC(SDValue Op,
     SDValue CCVal;
     SDValue Cmp = getAArch64Cmp(LHS, RHS, CC, CCVal, DAG, dl);
 
-    EVT VT = Op.getValueType();
+    EVT VT = TVal.getValueType();
     return DAG.getNode(Opcode, dl, VT, TVal, FVal, CCVal, Cmp);
   }
 
   // Now we know we're dealing with FP values.
   assert(LHS.getValueType() == MVT::f32 || LHS.getValueType() == MVT::f64);
   assert(LHS.getValueType() == RHS.getValueType());
-  EVT VT = Op.getValueType();
+  EVT VT = TVal.getValueType();
 
   // Try to match this select into a max/min operation, which have dedicated
   // opcode in the instruction set.
@@ -3730,6 +3692,58 @@ SDValue AArch64TargetLowering::LowerSELECT_CC(SDValue Op,
 
   // Otherwise, return the output of the first CSEL.
   return CS1;
+}
+
+SDValue AArch64TargetLowering::LowerSELECT_CC(SDValue Op,
+                                              SelectionDAG &DAG) const {
+  ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(4))->get();
+  SDValue LHS = Op.getOperand(0);
+  SDValue RHS = Op.getOperand(1);
+  SDValue TVal = Op.getOperand(2);
+  SDValue FVal = Op.getOperand(3);
+  SDLoc DL(Op);
+  return LowerSELECT_CC(CC, LHS, RHS, TVal, FVal, DL, DAG);
+}
+
+SDValue AArch64TargetLowering::LowerSELECT(SDValue Op,
+                                           SelectionDAG &DAG) const {
+  SDValue CCVal = Op->getOperand(0);
+  SDValue TVal = Op->getOperand(1);
+  SDValue FVal = Op->getOperand(2);
+  SDLoc DL(Op);
+
+  unsigned Opc = CCVal.getOpcode();
+  // Optimize {s|u}{add|sub|mul}.with.overflow feeding into a select
+  // instruction.
+  if (CCVal.getResNo() == 1 &&
+      (Opc == ISD::SADDO || Opc == ISD::UADDO || Opc == ISD::SSUBO ||
+       Opc == ISD::USUBO || Opc == ISD::SMULO || Opc == ISD::UMULO)) {
+    // Only lower legal XALUO ops.
+    if (!DAG.getTargetLoweringInfo().isTypeLegal(CCVal->getValueType(0)))
+      return SDValue();
+
+    AArch64CC::CondCode OFCC;
+    SDValue Value, Overflow;
+    std::tie(Value, Overflow) = getAArch64XALUOOp(OFCC, CCVal.getValue(0), DAG);
+    SDValue CCVal = DAG.getConstant(OFCC, MVT::i32);
+
+    return DAG.getNode(AArch64ISD::CSEL, DL, Op.getValueType(), TVal, FVal,
+                       CCVal, Overflow);
+  }
+
+  // Lower it the same way as we would lower a SELECT_CC node.
+  ISD::CondCode CC;
+  SDValue LHS, RHS;
+  if (CCVal.getOpcode() == ISD::SETCC) {
+    LHS = CCVal.getOperand(0);
+    RHS = CCVal.getOperand(1);
+    CC = cast<CondCodeSDNode>(CCVal->getOperand(2))->get();
+  } else {
+    LHS = CCVal;
+    RHS = DAG.getConstant(0, CCVal.getValueType());
+    CC = ISD::SETNE;
+  }
+  return LowerSELECT_CC(CC, LHS, RHS, TVal, FVal, DL, DAG);
 }
 
 SDValue AArch64TargetLowering::LowerJumpTable(SDValue Op,
@@ -6554,6 +6568,59 @@ bool AArch64TargetLowering::isZExtFree(SDValue Val, EVT VT2) const {
           VT1.getSizeInBits() <= 32);
 }
 
+bool AArch64TargetLowering::isExtFreeImpl(const Instruction *Ext) const {
+  if (isa<FPExtInst>(Ext))
+    return false;
+
+  // Vector types are next free.
+  if (Ext->getType()->isVectorTy())
+    return false;
+
+  for (const Use &U : Ext->uses()) {
+    // The extension is free if we can fold it with a left shift in an
+    // addressing mode or an arithmetic operation: add, sub, and cmp.
+
+    // Is there a shift?
+    const Instruction *Instr = cast<Instruction>(U.getUser());
+
+    // Is this a constant shift?
+    switch (Instr->getOpcode()) {
+    case Instruction::Shl:
+      if (!isa<ConstantInt>(Instr->getOperand(1)))
+        return false;
+      break;
+    case Instruction::GetElementPtr: {
+      gep_type_iterator GTI = gep_type_begin(Instr);
+      std::advance(GTI, U.getOperandNo());
+      Type *IdxTy = *GTI;
+      // This extension will end up with a shift because of the scaling factor.
+      // 8-bit sized types have a scaling factor of 1, thus a shift amount of 0.
+      // Get the shift amount based on the scaling factor:
+      // log2(sizeof(IdxTy)) - log2(8).
+      uint64_t ShiftAmt =
+        countTrailingZeros(getDataLayout()->getTypeStoreSizeInBits(IdxTy)) - 3;
+      // Is the constant foldable in the shift of the addressing mode?
+      // I.e., shift amount is between 1 and 4 inclusive.
+      if (ShiftAmt == 0 || ShiftAmt > 4)
+        return false;
+      break;
+    }
+    case Instruction::Trunc:
+      // Check if this is a noop.
+      // trunc(sext ty1 to ty2) to ty1.
+      if (Instr->getType() == Ext->getOperand(0)->getType())
+        continue;
+    // FALL THROUGH.
+    default:
+      return false;
+    }
+
+    // At this point we can use the bfm family, so this extension is free
+    // for that use.
+  }
+  return true;
+}
+
 bool AArch64TargetLowering::hasPairedLoad(Type *LoadedType,
                                           unsigned &RequiredAligment) const {
   if (!LoadedType->isIntegerTy() && !LoadedType->isFloatTy())
@@ -6597,7 +6664,17 @@ EVT AArch64TargetLowering::getOptimalMemOpType(uint64_t Size, unsigned DstAlign,
        (allowsMisalignedMemoryAccesses(MVT::f128, 0, 1, &Fast) && Fast)))
     return MVT::f128;
 
-  return Size >= 8 ? MVT::i64 : MVT::i32;
+  if (Size >= 8 &&
+      (memOpAlign(SrcAlign, DstAlign, 8) ||
+       (allowsMisalignedMemoryAccesses(MVT::i64, 0, 1, &Fast) && Fast)))
+    return MVT::i64;
+
+  if (Size >= 4 &&
+      (memOpAlign(SrcAlign, DstAlign, 4) ||
+       (allowsMisalignedMemoryAccesses(MVT::i32, 0, 1, &Fast) && Fast)))
+    return MVT::i32;
+
+  return MVT::Other;
 }
 
 // 12-bit optionally shifted immediates are legal for adds.
@@ -6748,7 +6825,7 @@ bool AArch64TargetLowering::shouldConvertConstantLoadToIntImm(const APInt &Imm,
   unsigned LZ = countLeadingZeros((uint64_t)Val);
   unsigned Shift = (63 - LZ) / 16;
   // MOVZ is free so return true for one or fewer MOVK.
-  return (Shift < 3) ? true : false;
+  return Shift < 3;
 }
 
 // Generate SUBS and CSEL for integer abs.
@@ -7187,8 +7264,9 @@ static SDValue performConcatVectorsCombine(SDNode *N,
   //   (v4i16 (concat_vectors (v2i16 (truncate (v2i64))),
   //                          (v2i16 (truncate (v2i64)))))
   // ->
-  //   (v4i16 (truncate (v4i32 (concat_vectors (v2i32 (truncate (v2i64))),
-  //                                           (v2i32 (truncate (v2i64)))))))
+  //   (v4i16 (truncate (vector_shuffle (v4i32 (bitcast (v2i64))),
+  //                                    (v4i32 (bitcast (v2i64))),
+  //                                    <0, 2, 4, 6>)))
   // This isn't really target-specific, but ISD::TRUNCATE legality isn't keyed
   // on both input and result type, so we might generate worse code.
   // On AArch64 we know it's fine for v2i64->v4i16 and v4i32->v8i8.
@@ -7202,20 +7280,15 @@ static SDValue performConcatVectorsCombine(SDNode *N,
     if (N00VT == N10.getValueType() &&
         (N00VT == MVT::v2i64 || N00VT == MVT::v4i32) &&
         N00VT.getScalarSizeInBits() == 4 * VT.getScalarSizeInBits()) {
-      MVT MidVT = (N00VT == MVT::v2i64 ? MVT::v2i32 : MVT::v4i16);
-#if defined(__GNUC__)
-#if __GNUC__ == 4 && __GNUC_MINOR__ == 7 && __GNUC_PATCHLEVEL__ == 2
-      // FIXME: g++-4.7.2 might miscompile PerformDAGCombine().
-      asm volatile("":::"memory");
-#endif
-#endif
-      MVT ConcatMidVT = MVT::getVectorVT(MidVT.getVectorElementType(),
-                                         MidVT.getVectorNumElements() * 2);
-      return DAG.getNode(
-          ISD::TRUNCATE, dl, VT,
-          DAG.getNode(ISD::CONCAT_VECTORS, dl, ConcatMidVT,
-                      DAG.getNode(ISD::TRUNCATE, dl, MidVT, N00),
-                      DAG.getNode(ISD::TRUNCATE, dl, MidVT, N10)));
+      MVT MidVT = (N00VT == MVT::v2i64 ? MVT::v4i32 : MVT::v8i16);
+      SmallVector<int, 8> Mask(MidVT.getVectorNumElements());
+      for (size_t i = 0; i < Mask.size(); ++i)
+        Mask[i] = i * 2;
+      return DAG.getNode(ISD::TRUNCATE, dl, VT,
+                         DAG.getVectorShuffle(
+                             MidVT, dl,
+                             DAG.getNode(ISD::BITCAST, dl, MidVT, N00),
+                             DAG.getNode(ISD::BITCAST, dl, MidVT, N10), Mask));
     }
   }
 

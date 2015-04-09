@@ -35,7 +35,6 @@
 
 namespace __sanitizer {
 
-static const uptr kMaxNumberOfModules = 1 << 14;
 static const uptr kMaxTextSize = 64 * 1024;
 
 struct CachedMapping {
@@ -102,9 +101,9 @@ void CovUpdateMapping(const char *coverage_dir, uptr caller_pc) {
                                "%s/%zd.sancov.map.tmp", coverage_dir,
                                internal_getpid());
   CHECK_LE(res, tmp_path.size());
-  uptr map_fd = OpenFile(tmp_path.data(), true);
-  if (internal_iserror(map_fd, &err)) {
-    Report(" Coverage: failed to open %s for writing: %d\n", tmp_path.data(),
+  fd_t map_fd = OpenFile(tmp_path.data(), WrOnly, &err);
+  if (map_fd == kInvalidFd) {
+    Report("Coverage: failed to open %s for writing: %d\n", tmp_path.data(),
            err);
     Die();
   }

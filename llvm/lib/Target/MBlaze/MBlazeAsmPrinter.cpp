@@ -52,12 +52,13 @@ namespace {
     explicit MBlazeAsmPrinter(TargetMachine &TM,
                               std::unique_ptr<MCStreamer> Streamer)
       : AsmPrinter(TM, std::move(Streamer)) {
-      Subtarget = &TM.getSubtarget<MBlazeSubtarget>();
     }
 
     const char *getPassName() const override {
       return "MBlaze Assembly Printer";
     }
+
+    bool runOnMachineFunction(MachineFunction &MF) override;
 
     void printSavedRegsBitmask();
     void emitFrameDirective();
@@ -80,6 +81,17 @@ namespace {
     void EmitInstruction(const MachineInstr *MI) override;
   };
 } // end of anonymous namespace
+
+bool MBlazeAsmPrinter::runOnMachineFunction(MachineFunction &MF) {
+  Subtarget = &MF.getSubtarget<MBlazeSubtarget>();
+  
+  // Initialize TargetLoweringObjectFile.
+  const_cast<TargetLoweringObjectFile &>(getObjFileLowering())
+      .Initialize(OutContext, TM);
+  
+  AsmPrinter::runOnMachineFunction(MF);
+  return true;
+}
 
 // #include "MBlazeGenAsmWriter.inc"
 

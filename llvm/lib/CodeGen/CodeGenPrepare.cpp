@@ -600,8 +600,8 @@ simplifyRelocatesOffABase(IntrinsicInst *RelocatedBase,
     // Create a Builder and replace the target callsite with a gep
     IRBuilder<> Builder(ToReplace);
     Builder.SetCurrentDebugLocation(ToReplace->getDebugLoc());
-    Value *Replacement =
-        Builder.CreateGEP(RelocatedBase, makeArrayRef(OffsetV));
+    Value *Replacement = Builder.CreateGEP(
+        Derived->getSourceElementType(), RelocatedBase, makeArrayRef(OffsetV));
     Instruction *ReplacementInst = cast<Instruction>(Replacement);
     ReplacementInst->removeFromParent();
     ReplacementInst->insertAfter(RelocatedBase);
@@ -1081,8 +1081,9 @@ static void ScalarizeMaskedLoad(CallInst *CI) {
     //
     CondBlock = IfBlock->splitBasicBlock(InsertPt, "cond.load");
     Builder.SetInsertPoint(InsertPt);
-    
-    Value* Gep = Builder.CreateInBoundsGEP(FirstEltPtr, Builder.getInt32(Idx));
+
+    Value *Gep =
+        Builder.CreateInBoundsGEP(EltTy, FirstEltPtr, Builder.getInt32(Idx));
     LoadInst* Load = Builder.CreateLoad(Gep, false);
     VResult = Builder.CreateInsertElement(VResult, Load, Builder.getInt32(Idx));
 
@@ -1176,7 +1177,8 @@ static void ScalarizeMaskedStore(CallInst *CI) {
     Builder.SetInsertPoint(InsertPt);
     
     Value *OneElt = Builder.CreateExtractElement(Src, Builder.getInt32(Idx));
-    Value* Gep = Builder.CreateInBoundsGEP(FirstEltPtr, Builder.getInt32(Idx));
+    Value *Gep =
+        Builder.CreateInBoundsGEP(EltTy, FirstEltPtr, Builder.getInt32(Idx));
     Builder.CreateStore(OneElt, Gep);
 
     // Create "else" block, fill it in the next iteration
@@ -3233,7 +3235,8 @@ bool CodeGenPrepare::OptimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
       return false;
     } else {
       Type *I8PtrTy =
-        Builder.getInt8PtrTy(Addr->getType()->getPointerAddressSpace());
+          Builder.getInt8PtrTy(Addr->getType()->getPointerAddressSpace());
+      Type *I8Ty = Builder.getInt8Ty();
 
       // Start with the base register. Do this first so that subsequent address
       // matching finds it last, which will prevent it from trying to match it
@@ -3285,7 +3288,7 @@ bool CodeGenPrepare::OptimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
           // SDAG consecutive load/store merging.
           if (ResultPtr->getType() != I8PtrTy)
             ResultPtr = Builder.CreateBitCast(ResultPtr, I8PtrTy);
-          ResultPtr = Builder.CreateGEP(ResultPtr, ResultIndex, "sunkaddr");
+          ResultPtr = Builder.CreateGEP(I8Ty, ResultPtr, ResultIndex, "sunkaddr");
         }
 
         ResultIndex = V;
@@ -3296,7 +3299,7 @@ bool CodeGenPrepare::OptimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
       } else {
         if (ResultPtr->getType() != I8PtrTy)
           ResultPtr = Builder.CreateBitCast(ResultPtr, I8PtrTy);
-        SunkAddr = Builder.CreateGEP(ResultPtr, ResultIndex, "sunkaddr");
+        SunkAddr = Builder.CreateGEP(I8Ty, ResultPtr, ResultIndex, "sunkaddr");
       }
 
       if (SunkAddr->getType() != Addr->getType())

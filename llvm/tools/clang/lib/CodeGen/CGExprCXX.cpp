@@ -256,6 +256,12 @@ RValue CodeGenFunction::EmitCXXMemberOrOperatorMemberCallExpr(
   } else if (UseVirtualCall) {
     Callee = CGM.getCXXABI().getVirtualFunctionPointer(*this, MD, This, Ty);
   } else {
+    if (SanOpts.has(SanitizerKind::CFINVCall) &&
+        MD->getParent()->isDynamicClass()) {
+      llvm::Value *VTable = GetVTablePtr(This, Int8PtrTy);
+      EmitVTablePtrCheckForCall(MD, VTable);
+    }
+
     if (getLangOpts().AppleKext && MD->isVirtual() && HasQualifier)
       Callee = BuildAppleKextVirtualCall(MD, Qualifier, Ty);
     else if (!DevirtualizedMethod)
@@ -778,12 +784,10 @@ static void StoreAnyExprIntoOneUnit(CodeGenFunction &CGF, const Expr *Init,
   llvm_unreachable("bad evaluation kind");
 }
 
-void
-CodeGenFunction::EmitNewArrayInitializer(const CXXNewExpr *E,
-                                         QualType ElementType,
-                                         llvm::Value *BeginPtr,
-                                         llvm::Value *NumElements,
-                                         llvm::Value *AllocSizeWithoutCookie) {
+void CodeGenFunction::EmitNewArrayInitializer(
+    const CXXNewExpr *E, QualType ElementType, llvm::Type *ElementTy,
+    llvm::Value *BeginPtr, llvm::Value *NumElements,
+    llvm::Value *AllocSizeWithoutCookie) {
   // If we have a type with trivial initialization and no initializer,
   // there's nothing to do.
   if (!E->hasInitializer())
@@ -809,7 +813,8 @@ CodeGenFunction::EmitNewArrayInitializer(const CXXNewExpr *E,
     if (const ConstantArrayType *CAT = dyn_cast_or_null<ConstantArrayType>(
             AllocType->getAsArrayTypeUnsafe())) {
       unsigned AS = CurPtr->getType()->getPointerAddressSpace();
-      llvm::Type *AllocPtrTy = ConvertTypeForMem(AllocType)->getPointerTo(AS);
+      ElementTy = ConvertTypeForMem(AllocType);
+      llvm::Type *AllocPtrTy = ElementTy->getPointerTo(AS);
       CurPtr = Builder.CreateBitCast(CurPtr, AllocPtrTy);
       InitListElements *= getContext().getConstantArrayElementCount(CAT);
     }
@@ -839,7 +844,8 @@ CodeGenFunction::EmitNewArrayInitializer(const CXXNewExpr *E,
       // initialization loops.
       StoreAnyExprIntoOneUnit(*this, ILE->getInit(i),
                               ILE->getInit(i)->getType(), CurPtr);
-      CurPtr = Builder.CreateConstInBoundsGEP1_32(CurPtr, 1, "array.exp.next");
+      CurPtr = Builder.CreateConstInBoundsGEP1_32(ElementTy, CurPtr, 1,
+                                                  "array.exp.next");
     }
 
     // The remaining elements are filled with the array filler expression.
@@ -1000,7 +1006,7 @@ CodeGenFunction::EmitNewArrayInitializer(const CXXNewExpr *E,
 
   // Advance to the next element by adjusting the pointer type as necessary.
   llvm::Value *NextPtr =
-      Builder.CreateConstInBoundsGEP1_32(CurPtr, 1, "array.next");
+      Builder.CreateConstInBoundsGEP1_32(ElementTy, CurPtr, 1, "array.next");
 
   // Check whether we've gotten to the end of the array and, if so,
   // exit the loop.
@@ -1012,13 +1018,12 @@ CodeGenFunction::EmitNewArrayInitializer(const CXXNewExpr *E,
 }
 
 static void EmitNewInitializer(CodeGenFunction &CGF, const CXXNewExpr *E,
-                               QualType ElementType,
-                               llvm::Value *NewPtr,
-                               llvm::Value *NumElements,
+                               QualType ElementType, llvm::Type *ElementTy,
+                               llvm::Value *NewPtr, llvm::Value *NumElements,
                                llvm::Value *AllocSizeWithoutCookie) {
   ApplyDebugLocation DL(CGF, E);
   if (E->isArray())
-    CGF.EmitNewArrayInitializer(E, ElementType, NewPtr, NumElements,
+    CGF.EmitNewArrayInitializer(E, ElementType, ElementTy, NewPtr, NumElements,
                                 AllocSizeWithoutCookie);
   else if (const Expr *Init = E->getInitializer())
     StoreAnyExprIntoOneUnit(CGF, Init, E->getAllocatedType(), NewPtr);
@@ -1326,11 +1331,11 @@ llvm::Value *CodeGenFunction::EmitCXXNewExpr(const CXXNewExpr *E) {
                                                        E, allocType);
   }
 
-  llvm::Type *elementPtrTy
-    = ConvertTypeForMem(allocType)->getPointerTo(AS);
+  llvm::Type *elementTy = ConvertTypeForMem(allocType);
+  llvm::Type *elementPtrTy = elementTy->getPointerTo(AS);
   llvm::Value *result = Builder.CreateBitCast(allocation, elementPtrTy);
 
-  EmitNewInitializer(*this, E, allocType, result, numElements,
+  EmitNewInitializer(*this, E, allocType, elementTy, result, numElements,
                      allocSizeWithoutCookie);
   if (E->isArray()) {
     // NewPtr is a pointer to the base element type.  If we're
@@ -1420,71 +1425,6 @@ CodeGenFunction::pushCallObjectDeleteCleanup(const FunctionDecl *OperatorDelete,
                                              QualType ElementType) {
   EHStack.pushCleanup<CallObjectDelete>(NormalAndEHCleanup, CompletePtr,
                                         OperatorDelete, ElementType);
-}
-
-static void EmitDelete(CodeGenFunction &CGF,
-                              const CXXDeleteExpr *DE,
-                              llvm::Value *Ptr,
-                              QualType ElementType);
-
-static void EmitSizedDelete(CodeGenFunction &CGF,
-                            const CXXDeleteExpr *DE,
-                            llvm::Value *Ptr,
-                            QualType ElementType,
-                            FunctionDecl* UnsizedDealloc) {
-
-  if (CGF.getLangOpts().DefineSizedDeallocation) {
-    // The delete operator in use is fixed. So simply emit the delete expr.
-    EmitDelete(CGF, DE, Ptr, ElementType);
-    return;
-  }
-
-  assert(UnsizedDealloc && "We must be emiting a 'sized' delete expr");
-
-  // Branch off over the value of operator delete:
-  // Use the sized form if available, and default on the unsized form otherwise.
-  llvm::BasicBlock *ThenBlock = CGF.createBasicBlock("if.then");
-  llvm::BasicBlock *ContBlock = CGF.createBasicBlock("if.end");
-  llvm::BasicBlock *ElseBlock = CGF.createBasicBlock("if.else");
-
-  // Emit the condition.
-  const FunctionDecl *OpDelFD = DE->getOperatorDelete();
-  llvm::Value *OpDelAddr = CGF.CGM.GetAddrOfFunction(OpDelFD);
-  //llvm::Function *OpDel = dyn_cast<llvm::Function>(OpDelAddr);
-  llvm::Value *SDE = CGF.Builder.CreateIsNotNull(OpDelAddr, "sized.del.exists");
-  CGF.Builder.CreateCondBr(SDE, ThenBlock, ElseBlock);
-
-  // Emit the 'then' code.
-  CGF.EmitBlock(ThenBlock);
-  EmitDelete(CGF, DE, Ptr, ElementType);
-  CGF.EmitBranch(ContBlock);
-
-  // Compute the 'unsized' delete expr.
-  CXXDeleteExpr * E = const_cast<CXXDeleteExpr*>(DE);
-  CXXDeleteExpr *UnsizedDE =
-  new (CGF.getContext()) CXXDeleteExpr(CGF.getContext().VoidTy,
-                                       E->isGlobalDelete(),
-                                       E->isArrayForm(),
-                                       E->isArrayFormAsWritten(),
-                                       E->doesUsualArrayDeleteWantSize(),
-                                       UnsizedDealloc,
-                                       E->getArgument(),
-                                       E->getLocStart());
-  // Emit the 'else' code.
-  {
-    // There is no need to emit line number for an unconditional branch.
-    auto NL = ApplyDebugLocation::CreateEmpty(CGF);
-    CGF.EmitBlock(ElseBlock);
-  }
-  EmitDelete(CGF, UnsizedDE, Ptr, ElementType);
-  {
-    // There is no need to emit line number for an unconditional branch.
-    auto NL = ApplyDebugLocation::CreateEmpty(CGF);
-    CGF.EmitBranch(ContBlock);
-  }
-
-  // Emit the continuation block for code after the if.
-  CGF.EmitBlock(ContBlock, true);
 }
 
 /// Emit the code for deleting a single object.
@@ -1646,17 +1586,6 @@ static void EmitArrayDelete(CodeGenFunction &CGF,
   CGF.PopCleanupBlock();
 }
 
-static void EmitDelete(CodeGenFunction &CGF,
-                       const CXXDeleteExpr *DE,
-                       llvm::Value *Ptr,
-                       QualType ElementType) {
-  if (DE->isArrayForm()) {
-    EmitArrayDelete(CGF, DE, Ptr, ElementType);
-  } else {
-    EmitObjectDelete(CGF, DE, Ptr, ElementType);
-  }
-}
-
 void CodeGenFunction::EmitCXXDeleteExpr(const CXXDeleteExpr *E) {
   const Expr *Arg = E->getArgument();
   llvm::Value *Ptr = EmitScalarExpr(Arg);
@@ -1696,12 +1625,11 @@ void CodeGenFunction::EmitCXXDeleteExpr(const CXXDeleteExpr *E) {
   assert(ConvertTypeForMem(DeleteTy) ==
          cast<llvm::PointerType>(Ptr->getType())->getElementType());
 
-  const FunctionDecl *Dealloc = E->getOperatorDelete();
-  if (FunctionDecl* UnsizedDealloc =
-      Dealloc->getCorrespondingUnsizedGlobalDeallocationFunction())
-    EmitSizedDelete(*this, E, Ptr, DeleteTy, UnsizedDealloc);
-  else
-    EmitDelete(*this, E, Ptr, DeleteTy);
+  if (E->isArrayForm()) {
+    EmitArrayDelete(*this, E, Ptr, DeleteTy);
+  } else {
+    EmitObjectDelete(*this, E, Ptr, DeleteTy);
+  }
 
   EmitBlock(DeleteEnd);
 }

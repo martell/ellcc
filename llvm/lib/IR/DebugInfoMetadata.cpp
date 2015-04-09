@@ -14,6 +14,7 @@
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "LLVMContextImpl.h"
 #include "MetadataImpl.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/IR/Function.h"
 
 using namespace llvm;
@@ -44,6 +45,7 @@ MDLocation *MDLocation::getImpl(LLVMContext &Context, unsigned Line,
   // Fixup column.
   adjustColumn(Column);
 
+  assert(Scope && "Expected scope");
   if (Storage == Uniqued) {
     if (auto *N =
             getUniqued(Context.pImpl->MDLocations,
@@ -63,6 +65,49 @@ MDLocation *MDLocation::getImpl(LLVMContext &Context, unsigned Line,
                        MDLocation(Context, Storage, Line, Column, Ops),
                    Storage, Context.pImpl->MDLocations);
 }
+
+unsigned DebugNode::getFlag(StringRef Flag) {
+  return StringSwitch<unsigned>(Flag)
+#define HANDLE_DI_FLAG(ID, NAME) .Case("DIFlag" #NAME, Flag##NAME)
+#include "llvm/IR/DebugInfoFlags.def"
+      .Default(0);
+}
+
+const char *DebugNode::getFlagString(unsigned Flag) {
+  switch (Flag) {
+  default:
+    return "";
+#define HANDLE_DI_FLAG(ID, NAME)                                               \
+  case Flag##NAME:                                                             \
+    return "DIFlag" #NAME;
+#include "llvm/IR/DebugInfoFlags.def"
+  }
+}
+
+unsigned DebugNode::splitFlags(unsigned Flags,
+                               SmallVectorImpl<unsigned> &SplitFlags) {
+  // Accessibility flags need to be specially handled, since they're packed
+  // together.
+  if (unsigned A = Flags & FlagAccessibility) {
+    if (A == FlagPrivate)
+      SplitFlags.push_back(FlagPrivate);
+    else if (A == FlagProtected)
+      SplitFlags.push_back(FlagProtected);
+    else
+      SplitFlags.push_back(FlagPublic);
+    Flags &= ~A;
+  }
+
+#define HANDLE_DI_FLAG(ID, NAME)                                               \
+  if (unsigned Bit = Flags & ID) {                                             \
+    SplitFlags.push_back(Bit);                                                 \
+    Flags &= ~Bit;                                                             \
+  }
+#include "llvm/IR/DebugInfoFlags.def"
+
+  return Flags;
+}
+
 
 static StringRef getString(const MDString *S) {
   if (S)
@@ -237,6 +282,12 @@ MDCompileUnit *MDCompileUnit::getImpl(
       (SourceLanguage, IsOptimized, RuntimeVersion, EmissionKind), Ops);
 }
 
+MDSubprogram *MDLocalScope::getSubprogram() const {
+  if (auto *Block = dyn_cast<MDLexicalBlockBase>(this))
+    return Block->getScope()->getSubprogram();
+  return const_cast<MDSubprogram *>(cast<MDSubprogram>(this));
+}
+
 MDSubprogram *MDSubprogram::getImpl(
     LLVMContext &Context, Metadata *Scope, MDString *Name,
     MDString *LinkageName, Metadata *File, unsigned Line, Metadata *Type,
@@ -271,6 +322,7 @@ MDLexicalBlock *MDLexicalBlock::getImpl(LLVMContext &Context, Metadata *Scope,
                                         Metadata *File, unsigned Line,
                                         unsigned Column, StorageType Storage,
                                         bool ShouldCreate) {
+  assert(Scope && "Expected scope");
   DEFINE_GETIMPL_LOOKUP(MDLexicalBlock, (Scope, File, Line, Column));
   Metadata *Ops[] = {File, Scope};
   DEFINE_GETIMPL_STORE(MDLexicalBlock, (Line, Column), Ops);
@@ -281,6 +333,7 @@ MDLexicalBlockFile *MDLexicalBlockFile::getImpl(LLVMContext &Context,
                                                 unsigned Discriminator,
                                                 StorageType Storage,
                                                 bool ShouldCreate) {
+  assert(Scope && "Expected scope");
   DEFINE_GETIMPL_LOOKUP(MDLexicalBlockFile, (Scope, File, Discriminator));
   Metadata *Ops[] = {File, Scope};
   DEFINE_GETIMPL_STORE(MDLexicalBlockFile, (Discriminator), Ops);
@@ -345,6 +398,7 @@ MDLocalVariable *MDLocalVariable::getImpl(
   // it matches historical behaviour for now.
   Arg &= (1u << 8) - 1;
 
+  assert(Scope && "Expected scope");
   assert(isCanonical(Name) && "Expected canonical MDString");
   DEFINE_GETIMPL_LOOKUP(MDLocalVariable, (Tag, Scope, getString(Name), File,
                                           Line, Type, Arg, Flags, InlinedAt));
@@ -389,6 +443,24 @@ bool MDExpression::isValid() const {
     }
   }
   return true;
+}
+
+bool MDExpression::isBitPiece() const {
+  assert(isValid() && "Expected valid expression");
+  if (unsigned N = getNumElements())
+    if (N >= 3)
+      return getElement(N - 3) == dwarf::DW_OP_bit_piece;
+  return false;
+}
+
+uint64_t MDExpression::getBitPieceOffset() const {
+  assert(isBitPiece() && "Expected bit piece");
+  return getElement(getNumElements() - 2);
+}
+
+uint64_t MDExpression::getBitPieceSize() const {
+  assert(isBitPiece() && "Expected bit piece");
+  return getElement(getNumElements() - 1);
 }
 
 MDObjCProperty *MDObjCProperty::getImpl(

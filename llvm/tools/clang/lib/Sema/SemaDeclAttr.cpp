@@ -51,6 +51,11 @@ namespace AttributeLangSupport {
 static bool isFunctionOrMethod(const Decl *D) {
   return (D->getFunctionType() != nullptr) || isa<ObjCMethodDecl>(D);
 }
+/// \brief Return true if the given decl has function type (function or
+/// function-typed variable) or an Objective-C method or a block.
+static bool isFunctionOrMethodOrBlock(const Decl *D) {
+  return isFunctionOrMethod(D) || isa<BlockDecl>(D);
+}
 
 /// Return true if the given decl has a declarator that should have
 /// been processed by Sema::GetTypeForDeclarator.
@@ -257,7 +262,7 @@ static bool checkFunctionOrMethodParameterIndex(Sema &S, const Decl *D,
                                                 unsigned AttrArgNum,
                                                 const Expr *IdxExpr,
                                                 uint64_t &Idx) {
-  assert(isFunctionOrMethod(D));
+  assert(isFunctionOrMethodOrBlock(D));
 
   // In C++ the implicit 'this' function parameter also counts.
   // Parameters are counted from one.
@@ -1601,7 +1606,7 @@ static void handleAnalyzerNoReturnAttr(Sema &S, Decl *D,
   
   // The checking path for 'noreturn' and 'analyzer_noreturn' are different
   // because 'analyzer_noreturn' does not impact the type.
-  if (!isFunctionOrMethod(D) && !isa<BlockDecl>(D)) {
+  if (!isFunctionOrMethodOrBlock(D)) {
     ValueDecl *VD = dyn_cast<ValueDecl>(D);
     if (!VD || (!VD->getType()->isBlockPointerType() &&
                 !VD->getType()->isFunctionPointerType())) {
@@ -2862,6 +2867,16 @@ static void handleAlignedAttr(Sema &S, Decl *D, const AttributeList &Attr) {
 
   if (!Attr.isPackExpansion() && S.DiagnoseUnexpandedParameterPack(E))
     return;
+
+  if (E->isValueDependent()) {
+    if (const auto *TND = dyn_cast<TypedefNameDecl>(D)) {
+      if (!TND->getUnderlyingType()->isDependentType()) {
+        S.Diag(Attr.getLoc(), diag::err_alignment_dependent_typedef_name)
+            << E->getSourceRange();
+        return;
+      }
+    }
+  }
 
   S.AddAlignedAttr(Attr.getRange(), D, E, Attr.getAttributeSpellingListIndex(),
                    Attr.isPackExpansion());
@@ -5019,8 +5034,7 @@ void Sema::ProcessPragmaWeak(Scope *S, Decl *D) {
         ND = FD;
     if (ND) {
       if (IdentifierInfo *Id = ND->getIdentifier()) {
-        llvm::DenseMap<IdentifierInfo*,WeakInfo>::iterator I
-          = WeakUndeclaredIdentifiers.find(Id);
+        auto I = WeakUndeclaredIdentifiers.find(Id);
         if (I != WeakUndeclaredIdentifiers.end()) {
           WeakInfo W = I->second;
           DeclApplyPragmaWeak(S, ND, W);
@@ -5117,7 +5131,7 @@ static bool isDeclUnavailable(Decl *D) {
   return false;
 }
 
-static void DoEmitAvailabilityWarning(Sema &S, DelayedDiagnostic::DDKind K,
+static void DoEmitAvailabilityWarning(Sema &S, Sema::AvailabilityDiagnostic K,
                                       Decl *Ctx, const NamedDecl *D,
                                       StringRef Message, SourceLocation Loc,
                                       const ObjCInterfaceDecl *UnknownObjCClass,
@@ -5134,7 +5148,7 @@ static void DoEmitAvailabilityWarning(Sema &S, DelayedDiagnostic::DDKind K,
 
   // Don't warn if our current context is deprecated or unavailable.
   switch (K) {
-  case DelayedDiagnostic::Deprecation:
+  case Sema::AD_Deprecation:
     if (isDeclDeprecated(Ctx))
       return;
     diag = !ObjCPropertyAccess ? diag::warn_deprecated
@@ -5145,7 +5159,7 @@ static void DoEmitAvailabilityWarning(Sema &S, DelayedDiagnostic::DDKind K,
     available_here_select_kind = /* deprecated */ 2;
     break;
 
-  case DelayedDiagnostic::Unavailable:
+  case Sema::AD_Unavailable:
     if (isDeclUnavailable(Ctx))
       return;
     diag = !ObjCPropertyAccess ? diag::err_unavailable
@@ -5156,8 +5170,13 @@ static void DoEmitAvailabilityWarning(Sema &S, DelayedDiagnostic::DDKind K,
     available_here_select_kind = /* unavailable */ 0;
     break;
 
-  default:
-    llvm_unreachable("Neither a deprecation or unavailable kind");
+  case Sema::AD_Partial:
+    diag = diag::warn_partial_availability;
+    diag_message = diag::warn_partial_message;
+    diag_fwdclass_message = diag::warn_partial_fwdclass_message;
+    property_note_select = /* partial */ 2;
+    available_here_select_kind = /* partial */ 3;
+    break;
   }
 
   if (!Message.empty()) {
@@ -5177,15 +5196,21 @@ static void DoEmitAvailabilityWarning(Sema &S, DelayedDiagnostic::DDKind K,
 
   S.Diag(D->getLocation(), diag::note_availability_specified_here)
       << D << available_here_select_kind;
+  if (K == Sema::AD_Partial)
+    S.Diag(Loc, diag::note_partial_availability_silence) << D;
 }
 
 static void handleDelayedAvailabilityCheck(Sema &S, DelayedDiagnostic &DD,
                                            Decl *Ctx) {
+  assert(DD.Kind == DelayedDiagnostic::Deprecation ||
+         DD.Kind == DelayedDiagnostic::Unavailable);
+  Sema::AvailabilityDiagnostic AD = DD.Kind == DelayedDiagnostic::Deprecation
+                                        ? Sema::AD_Deprecation
+                                        : Sema::AD_Unavailable;
   DD.Triggered = true;
-  DoEmitAvailabilityWarning(S, (DelayedDiagnostic::DDKind)DD.Kind, Ctx,
-                            DD.getDeprecationDecl(), DD.getDeprecationMessage(),
-                            DD.Loc, DD.getUnknownObjCClass(),
-                            DD.getObjCProperty(), false);
+  DoEmitAvailabilityWarning(
+      S, AD, Ctx, DD.getDeprecationDecl(), DD.getDeprecationMessage(), DD.Loc,
+      DD.getUnknownObjCClass(), DD.getObjCProperty(), false);
 }
 
 void Sema::PopParsingDeclaration(ParsingDeclState state, Decl *decl) {
@@ -5251,7 +5276,7 @@ void Sema::EmitAvailabilityWarning(AvailabilityDiagnostic AD,
                                    const ObjCPropertyDecl  *ObjCProperty,
                                    bool ObjCPropertyAccess) {
   // Delay if we're currently parsing a declaration.
-  if (DelayedDiagnostics.shouldDelayDiagnostics()) {
+  if (DelayedDiagnostics.shouldDelayDiagnostics() && AD != AD_Partial) {
     DelayedDiagnostics.add(DelayedDiagnostic::makeAvailability(
         AD, Loc, D, UnknownObjCClass, ObjCProperty, Message,
         ObjCPropertyAccess));
@@ -5259,16 +5284,6 @@ void Sema::EmitAvailabilityWarning(AvailabilityDiagnostic AD,
   }
 
   Decl *Ctx = cast<Decl>(getCurLexicalContext());
-  DelayedDiagnostic::DDKind K;
-  switch (AD) {
-    case AD_Deprecation:
-      K = DelayedDiagnostic::Deprecation;
-      break;
-    case AD_Unavailable:
-      K = DelayedDiagnostic::Unavailable;
-      break;
-  }
-
-  DoEmitAvailabilityWarning(*this, K, Ctx, D, Message, Loc,
-                            UnknownObjCClass, ObjCProperty, ObjCPropertyAccess);
+  DoEmitAvailabilityWarning(*this, AD, Ctx, D, Message, Loc, UnknownObjCClass,
+                            ObjCProperty, ObjCPropertyAccess);
 }

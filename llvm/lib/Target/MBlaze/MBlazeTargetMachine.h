@@ -37,11 +37,13 @@ public:
                       CodeGenOpt::Level OL);
 ~MBlazeTargetMachine() override;
 
-  const MBlazeSubtarget *getSubtargetImpl() const override {
+  const MBlazeSubtarget *getSubtargetImpl() const {
     if (Subtarget)
       return Subtarget;
     return &DefaultSubtarget;
   }
+
+  const MBlazeSubtarget *getSubtargetImpl(const Function &F) const override;
 
   const TargetIntrinsicInfo *getIntrinsicInfo() const override {
     return &IntrinsicInfo;

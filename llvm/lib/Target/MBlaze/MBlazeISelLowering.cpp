@@ -253,8 +253,7 @@ MBlazeTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
 MachineBasicBlock*
 MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
                                       MachineBasicBlock *MBB) const {
-  const TargetInstrInfo *TII = 
-    getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   DebugLoc dl = MI->getDebugLoc();
 
   // To "insert" a shift left instruction, we actually have to insert a
@@ -353,8 +352,7 @@ MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
 MachineBasicBlock*
 MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
                                        MachineBasicBlock *MBB) const {
-  const TargetInstrInfo *TII =
-    getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   DebugLoc dl = MI->getDebugLoc();
 
   // To "insert" a SELECT_CC instruction, we actually have to insert the
@@ -418,8 +416,7 @@ MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
 MachineBasicBlock*
 MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
                                        MachineBasicBlock *MBB) const {
-  const TargetInstrInfo *TII =
-    getTargetMachine().getSubtargetImpl()->getInstrInfo();
+  const TargetInstrInfo *TII = Subtarget.getInstrInfo();
   DebugLoc dl = MI->getDebugLoc();
 
   // All atomic instructions on the Microblaze are implemented using the

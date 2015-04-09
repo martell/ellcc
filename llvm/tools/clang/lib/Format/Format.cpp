@@ -862,6 +862,8 @@ private:
     String->OriginalColumn = Macro->OriginalColumn;
     String->ColumnWidth = encoding::columnWidthWithTabs(
         String->TokenText, String->OriginalColumn, Style.TabWidth, Encoding);
+    String->NewlinesBefore = Macro->NewlinesBefore;
+    String->HasUnescapedNewline = Macro->HasUnescapedNewline;
 
     Tokens.pop_back();
     Tokens.pop_back();
@@ -1504,8 +1506,7 @@ LangOptions getFormattingLangOpts(const FormatStyle &Style) {
   LangOpts.CPlusPlus11 = Style.Standard == FormatStyle::LS_Cpp03 ? 0 : 1;
   LangOpts.CPlusPlus14 = Style.Standard == FormatStyle::LS_Cpp03 ? 0 : 1;
   LangOpts.LineComment = 1;
-  bool AlternativeOperators = Style.Language != FormatStyle::LK_JavaScript &&
-                              Style.Language != FormatStyle::LK_Java;
+  bool AlternativeOperators = Style.Language == FormatStyle::LK_Cpp;
   LangOpts.CXXOperatorNames = AlternativeOperators ? 1 : 0;
   LangOpts.Bool = 1;
   LangOpts.ObjC1 = 1;

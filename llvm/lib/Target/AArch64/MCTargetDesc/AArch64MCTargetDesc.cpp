@@ -109,16 +109,15 @@ static MCCodeGenInfo *createAArch64MCCodeGenInfo(StringRef TT, Reloc::Model RM,
   return X;
 }
 
-static MCInstPrinter *createAArch64MCInstPrinter(const Target &T,
+static MCInstPrinter *createAArch64MCInstPrinter(const Triple &T,
                                                  unsigned SyntaxVariant,
                                                  const MCAsmInfo &MAI,
                                                  const MCInstrInfo &MII,
-                                                 const MCRegisterInfo &MRI,
-                                                 const MCSubtargetInfo &STI) {
+                                                 const MCRegisterInfo &MRI) {
   if (SyntaxVariant == 0)
-    return new AArch64InstPrinter(MAI, MII, MRI, STI);
+    return new AArch64InstPrinter(MAI, MII, MRI);
   if (SyntaxVariant == 1)
-    return new AArch64AppleInstPrinter(MAI, MII, MRI, STI);
+    return new AArch64AppleInstPrinter(MAI, MII, MRI);
 
   return nullptr;
 }
@@ -131,8 +130,10 @@ static MCStreamer *createELFStreamer(const Triple &T, MCContext &Ctx,
 
 static MCStreamer *createMachOStreamer(MCContext &Ctx, MCAsmBackend &TAB,
                                        raw_ostream &OS, MCCodeEmitter *Emitter,
-                                       bool RelaxAll) {
+                                       bool RelaxAll,
+                                       bool DWARFMustBeAtTheEnd) {
   return createMachOStreamer(Ctx, TAB, OS, Emitter, RelaxAll,
+                             DWARFMustBeAtTheEnd,
                              /*LabelSections*/ true);
 }
 

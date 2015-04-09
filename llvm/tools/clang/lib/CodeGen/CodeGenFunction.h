@@ -604,7 +604,10 @@ public:
     }
 
     /// \brief Exit scope - all the mapped variables are restored.
-    ~OMPPrivateScope() { ForceCleanup(); }
+    ~OMPPrivateScope() {
+      if (PerformCleanup)
+        ForceCleanup();
+    }
   };
 
   /// \brief Takes the old cleanup stack size and emits the cleanup blocks
@@ -848,7 +851,8 @@ public:
   
   /// getByrefValueFieldNumber - Given a declaration, returns the LLVM field
   /// number that holds the value.
-  unsigned getByRefValueLLVMField(const ValueDecl *VD) const;
+  std::pair<llvm::Type *, unsigned>
+  getByRefValueLLVMField(const ValueDecl *VD) const;
 
   /// BuildBlockByrefAddress - Computes address location of the
   /// variable which is declared as __block.
@@ -872,6 +876,10 @@ private:
   /// decls.
   typedef llvm::DenseMap<const Decl*, llvm::Value*> DeclMapTy;
   DeclMapTy LocalDeclMap;
+
+  /// Track escaped local variables with auto storage. Used during SEH
+  /// outlining to produce a call to llvm.frameescape.
+  llvm::DenseMap<llvm::AllocaInst *, int> EscapedLocals;
 
   /// LabelMap - This keeps track of the LLVM basic block for each C label.
   llvm::DenseMap<const LabelDecl*, JumpDest> LabelMap;
@@ -1726,7 +1734,8 @@ public:
                              llvm::Value *This);
 
   void EmitNewArrayInitializer(const CXXNewExpr *E, QualType elementType,
-                               llvm::Value *NewPtr, llvm::Value *NumElements,
+                               llvm::Type *ElementTy, llvm::Value *NewPtr,
+                               llvm::Value *NumElements,
                                llvm::Value *AllocSizeWithoutCookie);
 
   void EmitCXXTemporary(const CXXTemporary *Temporary, QualType TempType,
@@ -1892,8 +1901,8 @@ public:
     llvm::Value *getObjectAddress(CodeGenFunction &CGF) const {
       if (!IsByRef) return Address;
 
-      return CGF.Builder.CreateStructGEP(Address,
-                                         CGF.getByRefValueLLVMField(Variable),
+      auto F = CGF.getByRefValueLLVMField(Variable);
+      return CGF.Builder.CreateStructGEP(F.first, Address, F.second,
                                          Variable->getNameAsString());
     }
   };
@@ -2001,6 +2010,12 @@ public:
   llvm::Value *EmitSEHExceptionCode();
   llvm::Value *EmitSEHExceptionInfo();
   llvm::Value *EmitSEHAbnormalTermination();
+
+  /// Scan the outlined statement for captures from the parent function. For
+  /// each capture, mark the capture as escaped and emit a call to
+  /// llvm.framerecover. Insert the framerecover result into the LocalDeclMap.
+  void EmitCapturedLocals(CodeGenFunction &ParentCGF, const Stmt *OutlinedStmt,
+                          llvm::Value *ParentFP);
 
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            ArrayRef<const Attr *> Attrs = None);
@@ -2120,11 +2135,15 @@ public:
   void EmitAtomicStore(RValue rvalue, LValue lvalue, llvm::AtomicOrdering AO,
                        bool IsVolatile, bool isInit);
 
-  std::pair<RValue, RValue> EmitAtomicCompareExchange(
+  std::pair<RValue, llvm::Value *> EmitAtomicCompareExchange(
       LValue Obj, RValue Expected, RValue Desired, SourceLocation Loc,
       llvm::AtomicOrdering Success = llvm::SequentiallyConsistent,
       llvm::AtomicOrdering Failure = llvm::SequentiallyConsistent,
       bool IsWeak = false, AggValueSlot Slot = AggValueSlot::ignored());
+
+  void EmitAtomicUpdate(LValue LVal, llvm::AtomicOrdering AO,
+                        const std::function<RValue(RValue)> &UpdateOp,
+                        bool IsVolatile);
 
   /// EmitToMemory - Change a scalar value from its value
   /// representation to its in-memory representation.
@@ -2427,6 +2446,7 @@ public:
   llvm::Value *EmitX86BuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitPPCBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitR600BuiltinExpr(unsigned BuiltinID, const CallExpr *E);
+  llvm::Value *EmitSystemZBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
 
   llvm::Value *EmitObjCProtocolExpr(const ObjCProtocolExpr *E);
   llvm::Value *EmitObjCStringLiteral(const ObjCStringLiteral *E);

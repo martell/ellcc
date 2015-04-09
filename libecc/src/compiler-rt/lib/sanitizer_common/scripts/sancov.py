@@ -4,6 +4,9 @@
 # We need to merge these integers into a set and then
 # either print them (as hex) or dump them into another file.
 import array
+import bisect
+import glob
+import os.path
 import struct
 import sys
 
@@ -19,33 +22,45 @@ def Usage():
 
 def CheckBits(bits):
   if bits != 32 and bits != 64:
-    raise Exception("Wrond bitness: %d" % bits)
+    raise Exception("Wrong bitness: %d" % bits)
 
 def TypeCodeForBits(bits):
   CheckBits(bits)
   return 'L' if bits == 64 else 'I'
 
-kMagic64 = 0xC0BFFFFFFFFFFF64
-kMagic32 = 0xC0BFFFFFFFFFFF32
+kMagic32SecondHalf = 0xFFFFFF32;
+kMagic64SecondHalf = 0xFFFFFF64;
+kMagicFirstHalf    = 0xC0BFFFFF;
 
 def MagicForBits(bits):
   CheckBits(bits)
-  return kMagic64 if bits == 64 else kMagic32
+  if sys.byteorder == 'little':
+    return [kMagic64SecondHalf if bits == 64 else kMagic32SecondHalf, kMagicFirstHalf]
+  else:
+    return [kMagicFirstHalf, kMagic64SecondHalf if bits == 64 else kMagic32SecondHalf]
+
+def ReadMagicAndReturnBitness(f, path):
+  magic_bytes = f.read(8)
+  magic_words = struct.unpack('II', magic_bytes);
+  bits = 0
+  idx = 1 if sys.byteorder == 'little' else 0
+  if magic_words[idx] == kMagicFirstHalf:
+    if magic_words[1-idx] == kMagic64SecondHalf:
+      bits = 64
+    elif magic_words[1-idx] == kMagic32SecondHalf:
+      bits = 32
+  if bits == 0:
+    raise Exception('Bad magic word in %s' % path)
+  return bits
 
 def ReadOneFile(path):
   with open(path, mode="rb") as f:
     f.seek(0, 2)
     size = f.tell()
     f.seek(0, 0)
-    if size <= 8:
-      raise Exception('File %s is short (> 8 bytes)' % path)
-    magic_word = struct.unpack('L', f.read(8))[0];
-    if magic_word == kMagic64:
-      bits = 64
-    elif magic_word == kMagic32:
-      bits = 32
-    else:
-      raise Exception('Bad magic word in %s' % path)
+    if size < 8:
+      raise Exception('File %s is short (< 8 bytes)' % path)
+    bits = ReadMagicAndReturnBitness(f, path)
     size -= 8
     s = array.array(TypeCodeForBits(bits), f.read(size))
   print >>sys.stderr, "%s: read %d %d-bit PCs from %s" % (prog_name, size * 8 / bits, bits, path)
@@ -64,6 +79,8 @@ def PrintFiles(files):
     s = Merge(files)
   else:  # If there is just on file, print the PCs in order.
     s = ReadOneFile(files[0])
+    print >> sys.stderr, "%s: 1 file merged; %d PCs total" % \
+      (prog_name, len(s))
   for i in s:
     print "0x%x" % i
 
@@ -72,10 +89,9 @@ def MergeAndPrint(files):
     Usage()
   s = Merge(files)
   bits = 32
-  magic = kMagic32
   if max(s) > 0xFFFFFFFF:
     bits = 64
-    magic = kMagic64
+  array.array('I', MagicForBits(bits)).tofile(sys.stdout)
   a = array.array(TypeCodeForBits(bits), s)
   a.tofile(sys.stdout)
 
@@ -151,7 +167,7 @@ def UnpackOneRawFile(path, map_path):
       arr = array.array(TypeCodeForBits(bits))
       arr.fromlist(sorted(pc_list))
       with open(dst_path, 'ab') as f2:
-        array.array('L', [MagicForBits(bits)]).tofile(f2)
+        array.array('I', MagicForBits(bits)).tofile(f2)
         arr.tofile(f2)
 
 def RawUnpack(files):
@@ -166,11 +182,19 @@ if __name__ == '__main__':
   if len(sys.argv) <= 2:
     Usage();
 
+  file_list = []
+  for f in sys.argv[2:]:
+    file_list += glob.glob(f)
+  if not file_list:
+    Usage()
+
   if sys.argv[1] == "print":
-    PrintFiles(sys.argv[2:])
+    PrintFiles(file_list)
   elif sys.argv[1] == "merge":
-    MergeAndPrint(sys.argv[2:])
+    MergeAndPrint(file_list)
   elif sys.argv[1] == "unpack":
-    Unpack(sys.argv[2:])
+    Unpack(file_list)
+  elif sys.argv[1] == "rawunpack":
+    RawUnpack(file_list)
   else:
     Usage()

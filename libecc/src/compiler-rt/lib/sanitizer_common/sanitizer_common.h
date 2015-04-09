@@ -35,6 +35,9 @@ const uptr kCacheLineSize = 64;
 
 const uptr kMaxPathLength = 4096;
 
+// 16K loaded modules should be enough for everyone.
+static const uptr kMaxNumberOfModules = 1 << 14;
+
 const uptr kMaxThreadStackSize = 1 << 30;  // 1Gb
 
 extern const char *SanitizerToolName;  // Can be changed by the tool.
@@ -156,7 +159,7 @@ extern StaticSpinMutex CommonSanitizerReportMutex;
 
 struct ReportFile {
   void Write(const char *buffer, uptr length);
-  bool PrintsToTty();
+  bool SupportsColors();
   void SetReportPath(const char *path);
 
   // Don't use fields directly. They are only declared public to allow
@@ -183,17 +186,28 @@ extern ReportFile report_file;
 extern uptr stoptheworld_tracer_pid;
 extern uptr stoptheworld_tracer_ppid;
 
-uptr OpenFile(const char *filename, bool write);
+enum FileAccessMode {
+  RdOnly,
+  WrOnly,
+  RdWr
+};
+
+// Returns kInvalidFd on error.
+fd_t OpenFile(const char *filename, FileAccessMode mode,
+              error_t *errno_p = nullptr);
+bool SupportsColoredOutput(fd_t fd);
+
 // Opens the file 'file_name" and reads up to 'max_len' bytes.
 // The resulting buffer is mmaped and stored in '*buff'.
 // The size of the mmaped region is stored in '*buff_size',
 // Returns the number of read bytes or 0 if file can not be opened.
 uptr ReadFileToBuffer(const char *file_name, char **buff, uptr *buff_size,
-                      uptr max_len, int *errno_p = nullptr);
+                      uptr max_len, error_t *errno_p = nullptr);
 // Maps given file to virtual memory, and returns pointer to it
-// (or NULL if the mapping failes). Stores the size of mmaped region
+// (or NULL if mapping fails). Stores the size of mmaped region
 // in '*buff_size'.
 void *MapFileToMemory(const char *file_name, uptr *buff_size);
+void *MapWritableFileToMemory(void *addr, uptr size, fd_t fd, uptr offset);
 
 bool IsAccessibleMemoryRange(uptr beg, uptr size);
 
@@ -537,7 +551,8 @@ uptr InternalBinarySearch(const Container &v, uptr first, uptr last,
 // executable or a shared object).
 class LoadedModule {
  public:
-  LoadedModule(const char *module_name, uptr base_address);
+  LoadedModule() : full_name_(nullptr), base_address_(0) { ranges_.clear(); }
+  void set(const char *module_name, uptr base_address);
   void clear();
   void addAddressRange(uptr beg, uptr end, bool executable);
   bool containsAddress(uptr address) const;

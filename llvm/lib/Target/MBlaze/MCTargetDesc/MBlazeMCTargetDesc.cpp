@@ -129,12 +129,11 @@ createMBlazeObjectTargetStreamer(MCStreamer &S, const MCSubtargetInfo &STI) {
   return new MBlazeTargetELFStreamer(S, STI);
 }
 
-static MCInstPrinter *createMBlazeMCInstPrinter(const Target &T,
+static MCInstPrinter *createMBlazeMCInstPrinter(const Triple &T,
                                                 unsigned SyntaxVariant,
                                                 const MCAsmInfo &MAI,
                                                 const MCInstrInfo &MII,
-                                                const MCRegisterInfo &MRI,
-                                                const MCSubtargetInfo &STI) {
+                                                const MCRegisterInfo &MRI) {
   if (SyntaxVariant == 0)
     return new MBlazeInstPrinter(MAI, MII, MRI);
   return 0;

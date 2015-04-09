@@ -1217,10 +1217,25 @@ llvm::DenseSet<Module*> &Sema::getLookupModules() {
 /// path (by instantiating a template, you allow it to see the declarations that
 /// your module can see, including those later on in your module).
 bool LookupResult::isVisibleSlow(Sema &SemaRef, NamedDecl *D) {
-  assert(D->isHidden() && !SemaRef.ActiveTemplateInstantiations.empty() &&
-         "should not call this: not in slow case");
+  assert(D->isHidden() && "should not call this: not in slow case");
   Module *DeclModule = D->getOwningModule();
   assert(DeclModule && "hidden decl not from a module");
+
+  // If this declaration is not at namespace scope nor module-private,
+  // then it is visible if its lexical parent has a visible definition.
+  DeclContext *DC = D->getLexicalDeclContext();
+  if (!D->isModulePrivate() &&
+      DC && !DC->isFileContext() && !isa<LinkageSpecDecl>(DC)) {
+    if (SemaRef.hasVisibleDefinition(cast<NamedDecl>(DC))) {
+      if (SemaRef.ActiveTemplateInstantiations.empty()) {
+        // Cache the fact that this declaration is implicitly visible because
+        // its parent has a visible definition.
+        D->setHidden(false);
+      }
+      return true;
+    }
+    return false;
+  }
 
   // Find the extra places where we need to look.
   llvm::DenseSet<Module*> &LookupModules = SemaRef.getLookupModules();
@@ -3021,17 +3036,45 @@ static void LookupVisibleDecls(DeclContext *Ctx, LookupResult &Result,
   if (Visited.visitedContext(Ctx->getPrimaryContext()))
     return;
 
+  // Outside C++, lookup results for the TU live on identifiers.
+  if (isa<TranslationUnitDecl>(Ctx) &&
+      !Result.getSema().getLangOpts().CPlusPlus) {
+    auto &S = Result.getSema();
+    auto &Idents = S.Context.Idents;
+
+    // Ensure all external identifiers are in the identifier table.
+    if (IdentifierInfoLookup *External = Idents.getExternalIdentifierLookup()) {
+      std::unique_ptr<IdentifierIterator> Iter(External->getIdentifiers());
+      for (StringRef Name = Iter->Next(); !Name.empty(); Name = Iter->Next())
+        Idents.get(Name);
+    }
+
+    // Walk all lookup results in the TU for each identifier.
+    for (const auto &Ident : Idents) {
+      for (auto I = S.IdResolver.begin(Ident.getValue()),
+                E = S.IdResolver.end();
+           I != E; ++I) {
+        if (S.IdResolver.isDeclInScope(*I, Ctx)) {
+          if (NamedDecl *ND = Result.getAcceptableDecl(*I)) {
+            Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
+            Visited.add(ND);
+          }
+        }
+      }
+    }
+
+    return;
+  }
+
   if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(Ctx))
     Result.getSema().ForceDeclarationOfImplicitMembers(Class);
 
   // Enumerate all of the results in this context.
   for (const auto &R : Ctx->lookups()) {
-    for (auto *I : R) {
-      if (NamedDecl *ND = dyn_cast<NamedDecl>(I)) {
-        if ((ND = Result.getAcceptableDecl(ND))) {
-          Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
-          Visited.add(ND);
-        }
+    for (auto *D : R) {
+      if (auto *ND = Result.getAcceptableDecl(D)) {
+        Consumer.FoundDecl(ND, Visited.checkHidden(ND), Ctx, InBaseClass);
+        Visited.add(ND);
       }
     }
   }

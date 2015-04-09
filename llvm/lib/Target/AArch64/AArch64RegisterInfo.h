@@ -72,7 +72,7 @@ public:
   bool requiresFrameIndexScavenging(const MachineFunction &MF) const override;
 
   bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const override;
-  bool isFrameOffsetLegal(const MachineInstr *MI,
+  bool isFrameOffsetLegal(const MachineInstr *MI, unsigned BaseReg,
                           int64_t Offset) const override;
   void materializeFrameBaseRegister(MachineBasicBlock *MBB, unsigned BaseReg,
                                     int FrameIdx,
@@ -93,6 +93,9 @@ public:
 
   unsigned getRegPressureLimit(const TargetRegisterClass *RC,
                                MachineFunction &MF) const override;
+  // Base pointer (stack realignment) support.
+  bool canRealignStack(const MachineFunction &MF) const;
+  bool needsStackRealignment(const MachineFunction &MF) const override;
 };
 
 } // end namespace llvm

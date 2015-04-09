@@ -144,6 +144,35 @@ TEST_F(FormatTestJS, ContainerLiterals) {
   verifyFormat("x = foo && {a: 123};");
 }
 
+TEST_F(FormatTestJS, MethodsInObjectLiterals) {
+  verifyFormat("var o = {\n"
+               "  value: 'test',\n"
+               "  get value() {  // getter\n"
+               "    return this.value;\n"
+               "  }\n"
+               "};");
+  verifyFormat("var o = {\n"
+               "  value: 'test',\n"
+               "  set value(val) {  // setter\n"
+               "    this.value = val;\n"
+               "  }\n"
+               "};");
+  verifyFormat("var o = {\n"
+               "  value: 'test',\n"
+               "  someMethod(val) {  // method\n"
+               "    doSomething(this.value + val);\n"
+               "  }\n"
+               "};");
+  verifyFormat("var o = {\n"
+               "  someMethod(val) {  // method\n"
+               "    doSomething(this.value + val);\n"
+               "  },\n"
+               "  someOtherMethod(val) {  // method\n"
+               "    doSomething(this.value + val);\n"
+               "  }\n"
+               "};");
+}
+
 TEST_F(FormatTestJS, SpacesInContainerLiterals) {
   verifyFormat("var arr = [1, 2, 3];");
   verifyFormat("f({a: 1, b: 2, c: 3});");
@@ -167,6 +196,11 @@ TEST_F(FormatTestJS, GoogScopes) {
                "var x = a.b;\n"
                "var y = c.d;\n"
                "});  // goog.scope");
+  verifyFormat("goog.scope(function() {\n"
+               "// test\n"
+               "var x = 0;\n"
+               "// test\n"
+               "});");
 }
 
 TEST_F(FormatTestJS, GoogModules) {
@@ -374,10 +408,9 @@ TEST_F(FormatTestJS, MultipleFunctionLiterals) {
                "      body();\n"
                "    });");
 
-  // FIXME: This is bad, but it used to be formatted correctly by accident.
-  verifyFormat("getSomeLongPromise().then(function(value) {\n"
-               "  body();\n"
-               "}).thenCatch(function(error) { body(); });");
+  verifyFormat("getSomeLongPromise()\n"
+               "    .then(function(value) { body(); })\n"
+               "    .thenCatch(function(error) { body(); });");
 }
 
 TEST_F(FormatTestJS, ReturnStatements) {

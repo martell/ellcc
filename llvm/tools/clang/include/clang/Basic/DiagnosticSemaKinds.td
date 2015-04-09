@@ -731,7 +731,7 @@ def warn_accessor_property_type_mismatch : Warning<
 def not_conv_function_declared_at : Note<"type conversion function declared here">;
 def note_method_declared_at : Note<"method %0 declared here">;
 def note_property_attribute : Note<"property %0 is declared "
-  "%select{deprecated|unavailable}1 here">;
+  "%select{deprecated|unavailable|partial}1 here">;
 def err_setter_type_void : Error<"type of setter must be void">;
 def err_duplicate_method_decl : Error<"duplicate declaration of method %0">;
 def warn_duplicate_method_decl : 
@@ -889,8 +889,10 @@ def warn_dealloc_in_category : Warning<
 InGroup<DeallocInCategory>;
 def err_gc_weak_property_strong_type : Error<
   "weak attribute declared on a __strong type property in GC mode">;
-def note_arc_assign_to_strong : Note<
-  "assign the value to a strong variable to keep the object alive during use">;
+def warn_receiver_is_weak : Warning <
+  "weak %select{receiver|property|implicit property}0 may be "
+  "unpredictably set to nil">,
+  InGroup<DiagGroup<"receiver-is-weak">>, DefaultIgnore;
 def warn_arc_repeated_use_of_weak : Warning <
   "weak %select{variable|property|implicit property|instance variable}0 %1 is "
   "accessed multiple times in this %select{function|method|block|lambda}2 "
@@ -1551,7 +1553,7 @@ def warn_uninit_byref_blockvar_captured_by_block : Warning<
   "block pointer variable %0 is uninitialized when captured by block">,
   InGroup<Uninitialized>, DefaultIgnore;
 def note_block_var_fixit_add_initialization : Note<
-  "maybe you meant to use __block %0">;
+  "did you mean to use __block %0?">;
 def note_in_omitted_aggregate_initializer : Note<
   "in implicit initialization of %select{array element %1|field %1}0 "
   "with omitted initializer">;
@@ -2132,6 +2134,8 @@ def error_cannot_find_suitable_accessor : Error<
 
 def err_alignment_not_power_of_two : Error<
   "requested alignment is not a power of 2">;
+def err_alignment_dependent_typedef_name : Error<
+  "requested alignment is dependent but declaration is not dependent">;
 
 def err_attribute_aligned_too_great : Error<
   "requested alignment must be %0 bytes or smaller">;
@@ -2806,6 +2810,8 @@ def err_param_default_argument_member_template_redecl : Error<
   "default arguments cannot be added to an out-of-line definition of a member "
   "of a %select{class template|class template partial specialization|nested "
   "class in a template}0">;
+def err_param_default_argument_on_parameter_pack : Error<
+  "parameter pack cannot have a default argument">;
 def err_uninitialized_member_for_assign : Error<
   "cannot define the implicit copy assignment operator for %0, because "
   "non-static %select{reference|const}1 member %2 can't use copy "
@@ -3445,6 +3451,12 @@ def err_template_spec_redecl_out_of_scope : Error<
   "variable template partial|function template|member "
   "function|static data member|member class|member enumeration}0 "
   "specialization of %1 not in a namespace enclosing %2">;
+def ext_ms_template_spec_redecl_out_of_scope: ExtWarn<
+  "%select{class template|class template partial|variable template|"
+  "variable template partial|function template|member "
+  "function|static data member|member class|member enumeration}0 "
+  "specialization of %1 outside namespace enclosing %2 "
+  "is a Microsoft extension">, InGroup<Microsoft>;
 def err_template_spec_redecl_global_scope : Error<
   "%select{class template|class template partial|variable template|"
   "variable template partial|function template|member "
@@ -3791,34 +3803,14 @@ def note_template_parameter_pack_here : Note<
   "previous %select{template type|non-type template|template template}0 "
   "parameter%select{| pack}1 declared here">;
   
-def err_unexpanded_parameter_pack_0 : Error<
+def err_unexpanded_parameter_pack : Error<
   "%select{expression|base type|declaration type|data member type|bit-field "
   "size|static assertion|fixed underlying type|enumerator value|"
   "using declaration|friend declaration|qualifier|initializer|default argument|"
   "non-type template parameter type|exception type|partial specialization|"
-  "__if_exists name|__if_not_exists name|lambda|block}0 "
-  "contains an unexpanded parameter pack">;
-def err_unexpanded_parameter_pack_1 : Error<
-  "%select{expression|base type|declaration type|data member type|bit-field "
-  "size|static assertion|fixed underlying type|enumerator value|"
-  "using declaration|friend declaration|qualifier|initializer|default argument|"
-  "non-type template parameter type|exception type|partial specialization|"
-  "__if_exists name|__if_not_exists name|lambda|block}0 "
-  "contains unexpanded parameter pack %1">;
-def err_unexpanded_parameter_pack_2 : Error<
-  "%select{expression|base type|declaration type|data member type|bit-field "
-  "size|static assertion|fixed underlying type|enumerator value|"
-  "using declaration|friend declaration|qualifier|initializer|default argument|"
-  "non-type template parameter type|exception type|partial specialization|"
-  "__if_exists name|__if_not_exists name|lambda|block}0 "
-  "contains unexpanded parameter packs %1 and %2">;
-def err_unexpanded_parameter_pack_3_or_more : Error<
-  "%select{expression|base type|declaration type|data member type|bit-field "
-  "size|static assertion|fixed underlying type|enumerator value|"
-  "using declaration|friend declaration|qualifier|initializer|default argument|"
-  "non-type template parameter type|exception type|partial specialization|"
-  "__if_exists name|__if_not_exists name|lambda|block}0 "
-  "contains unexpanded parameter packs %1, %2, ...">;
+  "__if_exists name|__if_not_exists name|lambda|block}0 contains"
+  "%plural{0: an|:}1 unexpanded parameter pack"
+  "%plural{0:|1: %2|2:s %2 and %3|:s %2, %3, ...}1">;
 
 def err_pack_expansion_without_parameter_packs : Error<
   "pack expansion does not contain any unexpanded parameter packs">;
@@ -3867,6 +3859,15 @@ def err_not_found_by_two_phase_lookup : Error<"call to function %0 that is neith
 def note_not_found_by_two_phase_lookup : Note<"%0 should be declared prior to the "
     "call site%select{| or in %2| or in an associated namespace of one of its arguments}1">;
 def err_undeclared_use : Error<"use of undeclared %0">;
+def warn_partial_availability : Warning<"%0 is only available conditionally">,
+    InGroup<PartialAvailability>, DefaultIgnore;
+def note_partial_availability_silence : Note<
+  "explicitly redeclare %0 to silence this warning">;
+def warn_partial_message : Warning<"%0 is partial: %1">,
+    InGroup<PartialAvailability>, DefaultIgnore;
+def warn_partial_fwdclass_message : Warning<
+    "%0 may be partial because the receiver type is unknown">,
+    InGroup<PartialAvailability>, DefaultIgnore;
 def warn_deprecated : Warning<"%0 is deprecated">,
     InGroup<DeprecatedDeclarations>;
 def warn_property_method_deprecated :
@@ -3892,7 +3893,7 @@ def warn_unavailable_fwdclass_message : Warning<
     InGroup<UnavailableDeclarations>;
 def note_availability_specified_here : Note<
   "%0 has been explicitly marked "
-  "%select{unavailable|deleted|deprecated}1 here">;
+  "%select{unavailable|deleted|deprecated|partial}1 here">;
 def note_implicitly_deleted : Note<
   "explicitly defaulted function was implicitly deleted here">;
 def note_inherited_deleted_here : Note<
@@ -4801,7 +4802,7 @@ def error_arc_weak_ivar_access : Error<
 def err_typecheck_member_reference_arrow : Error<
   "member reference type %0 is not a pointer">;
 def err_typecheck_member_reference_suggestion : Error<
-  "member reference type %0 is %select{a|not a}1 pointer; maybe you meant to use '%select{->|.}1'?">;
+  "member reference type %0 is %select{a|not a}1 pointer; did you mean to use '%select{->|.}1'?">;
 def note_typecheck_member_reference_suggestion : Note<
   "did you mean to use '.' instead?">;
 def note_member_reference_arrow_from_operator_arrow : Note<
@@ -5474,7 +5475,8 @@ def err_bad_memptr_lhs : Error<
   "left hand operand to %0 must be a %select{|pointer to }1class "
   "compatible with the right hand operand, but is %2">;
 def warn_exception_caught_by_earlier_handler : Warning<
-  "exception of type %0 will be caught by earlier handler">;
+  "exception of type %0 will be caught by earlier handler">,
+  InGroup<Exceptions>;
 def note_previous_exception_handler : Note<"for type %0">;
 def err_exceptions_disabled : Error<
   "cannot use '%0' with exceptions disabled">;
@@ -6859,29 +6861,18 @@ def warn_case_empty_range : Warning<"empty case range specified">;
 def warn_missing_case_for_condition :
   Warning<"no case matching constant switch condition '%0'">;
 
-def warn_def_missing_case1 : Warning<
-  "enumeration value %0 not explicitly handled in switch">,
-  InGroup<SwitchEnum>, DefaultIgnore;
-def warn_def_missing_case2 : Warning<
-  "enumeration values %0 and %1 not explicitly handled in switch">,
-  InGroup<SwitchEnum>, DefaultIgnore;
-def warn_def_missing_case3 : Warning<
-  "enumeration values %0, %1, and %2 not explicitly handled in switch">,
-  InGroup<SwitchEnum>, DefaultIgnore;
-def warn_def_missing_cases : Warning<
-  "%0 enumeration values not explicitly handled in switch: %1, %2, %3...">,
+def warn_def_missing_case : Warning<"%plural{"
+  "1:enumeration value %1 not explicitly handled in switch|"
+  "2:enumeration values %1 and %2 not explicitly handled in switch|"
+  "3:enumeration values %1, %2, and %3 not explicitly handled in switch|"
+  ":%0 enumeration values not explicitly handled in switch: %1, %2, %3...}0">,
   InGroup<SwitchEnum>, DefaultIgnore;
 
-def warn_missing_case1 : Warning<"enumeration value %0 not handled in switch">,
-  InGroup<Switch>;
-def warn_missing_case2 : Warning<
-  "enumeration values %0 and %1 not handled in switch">,
-  InGroup<Switch>;
-def warn_missing_case3 : Warning<
-  "enumeration values %0, %1, and %2 not handled in switch">,
-  InGroup<Switch>;
-def warn_missing_cases : Warning<
-  "%0 enumeration values not handled in switch: %1, %2, %3...">,
+def warn_missing_case : Warning<"%plural{"
+  "1:enumeration value %1 not handled in switch|"
+  "2:enumeration values %1 and %2 not handled in switch|"
+  "3:enumeration values %1, %2, and %3 not handled in switch|"
+  ":%0 enumeration values not handled in switch: %1, %2, %3...}0">,
   InGroup<Switch>;
 
 def warn_unannotated_fallthrough : Warning<
@@ -7052,6 +7043,8 @@ def note_neon_vector_initializer_non_portable_q : Note<
   "consider using vld1q_%0%1() to initialize a vector from memory, or "
   "vcombine_%0%1(vcreate_%0%1(), vcreate_%0%1()) to initialize from integer "
   "constants">;
+def err_systemz_invalid_tabort_code : Error<
+  "invalid transaction abort code">;
 
 def err_builtin_longjmp_unsupported : Error<
   "__builtin_longjmp is not supported for the current target">;
@@ -7507,6 +7500,8 @@ def err_omp_atomic_capture_not_compound_statement : Error<
   " '{v = x; x = x binop expr;}', '{v = x; x = expr binop x;}', '{x = x binop expr; v = x;}', '{x = expr binop x; v = x;}' or '{v = x; x = expr;}',"
   " '{v = x; x++;}', '{v = x; ++x;}', '{++x; v = x;}', '{x++; v = x;}', '{v = x; x--;}', '{v = x; --x;}', '{--x; v = x;}', '{x--; v = x;}'"
   " where x is an l-value expression with scalar type">;
+def note_omp_atomic_capture: Note<
+  "%select{expected assignment expression|expected compound statement|expected exactly two expression statements|expected in right hand side of the first expression}0">;
 def err_omp_atomic_several_clauses : Error<
   "directive '#pragma omp atomic' cannot contain more than one 'read', 'write', 'update' or 'capture' clause">;
 def note_omp_atomic_previous_clause : Note<

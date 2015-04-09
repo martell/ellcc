@@ -821,7 +821,7 @@ static void WriteMDSubrange(const MDSubrange *N, const ValueEnumerator &,
                             unsigned Abbrev) {
   Record.push_back(N->isDistinct());
   Record.push_back(N->getCount());
-  Record.push_back(rotateSign(N->getLo()));
+  Record.push_back(rotateSign(N->getLowerBound()));
 
   Stream.EmitRecord(bitc::METADATA_SUBRANGE, Record, Abbrev);
   Record.clear();
@@ -892,10 +892,10 @@ static void WriteMDCompositeType(const MDCompositeType *N,
   Record.push_back(N->getAlignInBits());
   Record.push_back(N->getOffsetInBits());
   Record.push_back(N->getFlags());
-  Record.push_back(VE.getMetadataOrNullID(N->getElements()));
+  Record.push_back(VE.getMetadataOrNullID(N->getElements().get()));
   Record.push_back(N->getRuntimeLang());
   Record.push_back(VE.getMetadataOrNullID(N->getVTableHolder()));
-  Record.push_back(VE.getMetadataOrNullID(N->getTemplateParams()));
+  Record.push_back(VE.getMetadataOrNullID(N->getTemplateParams().get()));
   Record.push_back(VE.getMetadataOrNullID(N->getRawIdentifier()));
 
   Stream.EmitRecord(bitc::METADATA_COMPOSITE_TYPE, Record, Abbrev);
@@ -909,7 +909,7 @@ static void WriteMDSubroutineType(const MDSubroutineType *N,
                                   unsigned Abbrev) {
   Record.push_back(N->isDistinct());
   Record.push_back(N->getFlags());
-  Record.push_back(VE.getMetadataOrNullID(N->getTypeArray()));
+  Record.push_back(VE.getMetadataOrNullID(N->getTypeArray().get()));
 
   Stream.EmitRecord(bitc::METADATA_SUBROUTINE_TYPE, Record, Abbrev);
   Record.clear();
@@ -940,11 +940,11 @@ static void WriteMDCompileUnit(const MDCompileUnit *N,
   Record.push_back(N->getRuntimeVersion());
   Record.push_back(VE.getMetadataOrNullID(N->getRawSplitDebugFilename()));
   Record.push_back(N->getEmissionKind());
-  Record.push_back(VE.getMetadataOrNullID(N->getEnumTypes()));
-  Record.push_back(VE.getMetadataOrNullID(N->getRetainedTypes()));
-  Record.push_back(VE.getMetadataOrNullID(N->getSubprograms()));
-  Record.push_back(VE.getMetadataOrNullID(N->getGlobalVariables()));
-  Record.push_back(VE.getMetadataOrNullID(N->getImportedEntities()));
+  Record.push_back(VE.getMetadataOrNullID(N->getEnumTypes().get()));
+  Record.push_back(VE.getMetadataOrNullID(N->getRetainedTypes().get()));
+  Record.push_back(VE.getMetadataOrNullID(N->getSubprograms().get()));
+  Record.push_back(VE.getMetadataOrNullID(N->getGlobalVariables().get()));
+  Record.push_back(VE.getMetadataOrNullID(N->getImportedEntities().get()));
 
   Stream.EmitRecord(bitc::METADATA_COMPILE_UNIT, Record, Abbrev);
   Record.clear();
@@ -971,9 +971,9 @@ static void WriteMDSubprogram(const MDSubprogram *N,
   Record.push_back(N->getFlags());
   Record.push_back(N->isOptimized());
   Record.push_back(VE.getMetadataOrNullID(N->getFunction()));
-  Record.push_back(VE.getMetadataOrNullID(N->getTemplateParams()));
+  Record.push_back(VE.getMetadataOrNullID(N->getTemplateParams().get()));
   Record.push_back(VE.getMetadataOrNullID(N->getDeclaration()));
-  Record.push_back(VE.getMetadataOrNullID(N->getVariables()));
+  Record.push_back(VE.getMetadataOrNullID(N->getVariables().get()));
 
   Stream.EmitRecord(bitc::METADATA_SUBPROGRAM, Record, Abbrev);
   Record.clear();
@@ -2089,7 +2089,7 @@ static void WriteFunction(const Function &F, ValueEnumerator &VE,
 
   bool NeedsMetadataAttachment = false;
 
-  DebugLoc LastDL;
+  MDLocation *LastDL = nullptr;
 
   // Finally, emit all the instructions, in order.
   for (Function::const_iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
@@ -2104,26 +2104,22 @@ static void WriteFunction(const Function &F, ValueEnumerator &VE,
       NeedsMetadataAttachment |= I->hasMetadataOtherThanDebugLoc();
 
       // If the instruction has a debug location, emit it.
-      DebugLoc DL = I->getDebugLoc();
-      if (DL.isUnknown()) {
-        // nothing todo.
-      } else if (DL == LastDL) {
+      MDLocation *DL = I->getDebugLoc();
+      if (!DL)
+        continue;
+
+      if (DL == LastDL) {
         // Just repeat the same debug loc as last time.
         Stream.EmitRecord(bitc::FUNC_CODE_DEBUG_LOC_AGAIN, Vals);
-      } else {
-        MDNode *Scope, *IA;
-        DL.getScopeAndInlinedAt(Scope, IA, I->getContext());
-        assert(Scope && "Expected valid scope");
-
-        Vals.push_back(DL.getLine());
-        Vals.push_back(DL.getCol());
-        Vals.push_back(VE.getMetadataOrNullID(Scope));
-        Vals.push_back(VE.getMetadataOrNullID(IA));
-        Stream.EmitRecord(bitc::FUNC_CODE_DEBUG_LOC, Vals);
-        Vals.clear();
-
-        LastDL = DL;
+        continue;
       }
+
+      Vals.push_back(DL->getLine());
+      Vals.push_back(DL->getColumn());
+      Vals.push_back(VE.getMetadataOrNullID(DL->getScope()));
+      Vals.push_back(VE.getMetadataOrNullID(DL->getInlinedAt()));
+      Stream.EmitRecord(bitc::FUNC_CODE_DEBUG_LOC, Vals);
+      Vals.clear();
     }
 
   // Emit names for all the instructions etc.

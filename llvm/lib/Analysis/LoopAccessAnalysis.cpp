@@ -15,13 +15,14 @@
 #include "llvm/Analysis/LoopAccessAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolutionExpander.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/VectorUtils.h"
-#include "llvm/Analysis/TargetLibraryInfo.h"
 using namespace llvm;
 
 #define DEBUG_TYPE "loop-accesses"
@@ -174,6 +175,17 @@ void LoopAccessInfo::RuntimePointerCheck::print(
           OS << " (Partition: " << (*PtrPartition)[J] << ")";
         OS << "\n";
       }
+}
+
+bool LoopAccessInfo::RuntimePointerCheck::needsAnyChecking(
+    const SmallVectorImpl<int> *PtrPartition) const {
+  unsigned NumPointers = Pointers.size();
+
+  for (unsigned I = 0; I < NumPointers; ++I)
+    for (unsigned J = I + 1; J < NumPointers; ++J)
+      if (needsChecking(I, J, PtrPartition))
+        return true;
+  return false;
 }
 
 namespace {
@@ -1032,16 +1044,8 @@ void LoopAccessInfo::analyzeLoop(const ValueToValueMap &Strides) {
   for (I = Stores.begin(), IE = Stores.end(); I != IE; ++I) {
     StoreInst *ST = cast<StoreInst>(*I);
     Value* Ptr = ST->getPointerOperand();
-
-    if (isUniform(Ptr)) {
-      emitAnalysis(
-          LoopAccessReport(ST)
-          << "write to a loop invariant address could not be vectorized");
-      DEBUG(dbgs() << "LAA: We don't allow storing to uniform addresses\n");
-      CanVecMem = false;
-      return;
-    }
-
+    // Check for store to loop invariant address.
+    StoreToLoopInvariantAddress |= isUniform(Ptr);
     // If we did *not* see this pointer before, insert it to  the read-write
     // list. At this phase it is only a 'write' list.
     if (Seen.insert(Ptr).second) {
@@ -1210,9 +1214,8 @@ static Instruction *getFirstInst(Instruction *FirstInst, Value *V,
 
 std::pair<Instruction *, Instruction *> LoopAccessInfo::addRuntimeCheck(
     Instruction *Loc, const SmallVectorImpl<int> *PtrPartition) const {
-  Instruction *tnullptr = nullptr;
   if (!PtrRtCheck.Need)
-    return std::pair<Instruction *, Instruction *>(tnullptr, tnullptr);
+    return std::make_pair(nullptr, nullptr);
 
   unsigned NumPointers = PtrRtCheck.Pointers.size();
   SmallVector<TrackingVH<Value> , 2> Starts;
@@ -1283,6 +1286,9 @@ std::pair<Instruction *, Instruction *> LoopAccessInfo::addRuntimeCheck(
     }
   }
 
+  if (!MemoryRuntimeCheck)
+    return std::make_pair(nullptr, nullptr);
+
   // We have to do this trickery because the IRBuilder might fold the check to a
   // constant expression in which case there is no Instruction anchored in a
   // the block.
@@ -1300,7 +1306,8 @@ LoopAccessInfo::LoopAccessInfo(Loop *L, ScalarEvolution *SE,
                                const ValueToValueMap &Strides)
     : DepChecker(SE, L), NumComparisons(0), TheLoop(L), SE(SE), DL(DL),
       TLI(TLI), AA(AA), DT(DT), NumLoads(0), NumStores(0),
-      MaxSafeDepDistBytes(-1U), CanVecMem(false) {
+      MaxSafeDepDistBytes(-1U), CanVecMem(false),
+      StoreToLoopInvariantAddress(false) {
   if (canAnalyzeLoop())
     analyzeLoop(Strides);
 }
@@ -1312,6 +1319,10 @@ void LoopAccessInfo::print(raw_ostream &OS, unsigned Depth) const {
     else
       OS.indent(Depth) << "Memory dependences are safe with run-time checks\n";
   }
+
+  OS.indent(Depth) << "Store to invariant address was "
+                   << (StoreToLoopInvariantAddress ? "" : "not ")
+                   << "found in loop.\n";
 
   if (Report)
     OS.indent(Depth) << "Report: " << Report->str() << "\n";

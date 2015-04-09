@@ -51,8 +51,6 @@ class MCObjectStreamer : public MCStreamer {
 protected:
   MCObjectStreamer(MCContext &Context, MCAsmBackend &TAB, raw_ostream &OS,
                    MCCodeEmitter *Emitter);
-  MCObjectStreamer(MCContext &Context, MCAsmBackend &TAB, raw_ostream &OS,
-                   MCCodeEmitter *Emitter, MCAssembler *Assembler);
   ~MCObjectStreamer();
 
 public:
@@ -84,6 +82,8 @@ protected:
   /// Get a data fragment to write into, creating a new one if the current
   /// fragment is not a data fragment.
   MCDataFragment *getOrCreateDataFragment();
+
+  bool changeSectionImpl(const MCSection *Section, const MCExpr *Subsection);
 
 public:
   void visitUsedSymbol(const MCSymbol &Sym) override;

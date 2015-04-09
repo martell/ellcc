@@ -57,6 +57,9 @@
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=leak,memory -pie -fno-rtti %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANL-SANM
 // CHECK-SANL-SANM: '-fsanitize=leak' not allowed with '-fsanitize=memory'
 
+// RUN: %clang -target x86_64-linux-gnu -fsanitize=signed-integer-overflow,memory -pie -fno-rtti %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-MSAN-UBSAN
+// CHECK-MSAN-UBSAN: '-fsanitize=signed-integer-overflow' not allowed with '-fsanitize=memory'
+
 // RUN: %clang -target x86_64-linux-gnu -fsanitize-memory-track-origins -pie %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-ONLY-TRACK-ORIGINS
 // CHECK-ONLY-TRACK-ORIGINS: warning: argument unused during compilation: '-fsanitize-memory-track-origins'
 
@@ -101,13 +104,13 @@
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=leak -fsanitize-coverage=1 %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANITIZE-COVERAGE-1
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=undefined -fsanitize-coverage=1 %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANITIZE-COVERAGE-1
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=bool -fsanitize-coverage=1 %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANITIZE-COVERAGE-1
+// RUN: %clang -target x86_64-linux-gnu -fsanitize=dataflow -fsanitize-coverage=1 %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANITIZE-COVERAGE-1
 // CHECK-SANITIZE-COVERAGE-1: fsanitize-coverage=1
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=address -fsanitize-coverage=4 %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANITIZE-COVERAGE-4
 // CHECK-SANITIZE-COVERAGE-4: fsanitize-coverage=4
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=address -fsanitize-coverage=5 %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANITIZE-COVERAGE-5
 // CHECK-SANITIZE-COVERAGE-5: error: invalid value '5' in '-fsanitize-coverage=5'
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=thread   -fsanitize-coverage=1 %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANITIZE-COVERAGE-UNUSED
-// RUN: %clang -target x86_64-linux-gnu -fsanitize=dataflow -fsanitize-coverage=1 %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANITIZE-COVERAGE-UNUSED
 // RUN: %clang -target x86_64-linux-gnu                     -fsanitize-coverage=1 %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-SANITIZE-COVERAGE-UNUSED
 // CHECK-SANITIZE-COVERAGE-UNUSED: argument unused during compilation: '-fsanitize-coverage=1'
 
@@ -203,11 +206,13 @@
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=cfi -c %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-CFI
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=cfi-derived-cast -c %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-CFI-DCAST
 // RUN: %clang -target x86_64-linux-gnu -fsanitize=cfi-unrelated-cast -c %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-CFI-UCAST
-// RUN: %clang -target x86_64-linux-gnu -fsanitize=cfi-vptr -c %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-CFI-VPTR
-// CHECK-CFI: -emit-llvm-bc{{.*}}-fsanitize=cfi-derived-cast,cfi-unrelated-cast,cfi-vptr
+// RUN: %clang -target x86_64-linux-gnu -fsanitize=cfi-nvcall -c %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-CFI-NVCALL
+// RUN: %clang -target x86_64-linux-gnu -fsanitize=cfi-vcall -c %s -### 2>&1 | FileCheck %s --check-prefix=CHECK-CFI-VCALL
+// CHECK-CFI: -emit-llvm-bc{{.*}}-fsanitize=cfi-derived-cast,cfi-unrelated-cast,cfi-nvcall,cfi-vcall
 // CHECK-CFI-DCAST: -emit-llvm-bc{{.*}}-fsanitize=cfi-derived-cast
 // CHECK-CFI-UCAST: -emit-llvm-bc{{.*}}-fsanitize=cfi-unrelated-cast
-// CHECK-CFI-VPTR: -emit-llvm-bc{{.*}}-fsanitize=cfi-vptr
+// CHECK-CFI-NVCALL: -emit-llvm-bc{{.*}}-fsanitize=cfi-nvcall
+// CHECK-CFI-VCALL: -emit-llvm-bc{{.*}}-fsanitize=cfi-vcall
 
 // RUN: %clang_cl -fsanitize=address -c -MDd -### -- %s 2>&1 | FileCheck %s -check-prefix=CHECK-ASAN-DEBUGRTL
 // RUN: %clang_cl -fsanitize=address -c -MTd -### -- %s 2>&1 | FileCheck %s -check-prefix=CHECK-ASAN-DEBUGRTL
@@ -226,3 +231,11 @@
 // RUN: %clang_cl -fsanitize=address -c -MDd -MD -### -- %s 2>&1 | FileCheck %s -check-prefix=CHECK-ASAN-RELEASERTL
 // RUN: %clang_cl -fsanitize=address -c -LDd -LD -### -- %s 2>&1 | FileCheck %s -check-prefix=CHECK-ASAN-RELEASERTL
 // CHECK-ASAN-RELEASERTL-NOT: error: invalid argument
+
+// RUN: %clang_cl -fsanitize=address -fsanitize-coverage=1 -c -### -- %s 2>&1 | FileCheck %s -check-prefix=CLANG-CL-COVERAGE
+// CLANG-CL-COVERAGE-NOT: error:
+// CLANG-CL-COVERAGE-NOT: warning:
+// CLANG-CL-COVERAGE-NOT: argument unused
+// CLANG-CL-COVERAGE-NOT: unknown argument
+// CLANG-CL-COVERAGE: -fsanitize=address
+// CLANG-CL-COVERAGE: -fsanitize-coverage=1

@@ -1737,8 +1737,7 @@ QualifierInfo::setTemplateParameterListsInfo(ASTContext &Context,
   if (NumTPLists > 0) {
     TemplParamLists = new (Context) TemplateParameterList*[NumTPLists];
     NumTemplParamLists = NumTPLists;
-    for (unsigned i = NumTPLists; i-- > 0; )
-      TemplParamLists[i] = TPLists[i];
+    std::copy(TPLists, TPLists + NumTPLists, TemplParamLists);
   }
 }
 
@@ -2513,39 +2512,6 @@ bool FunctionDecl::isReplaceableGlobalAllocationFunction() const {
   return RD && isNamed(RD, "nothrow_t") && RD->isInStdNamespace();
 }
 
-FunctionDecl *
-FunctionDecl::getCorrespondingUnsizedGlobalDeallocationFunction() const {
-  ASTContext &Ctx = getASTContext();
-  if (!Ctx.getLangOpts().SizedDeallocation)
-    return nullptr;
-
-  if (getDeclName().getNameKind() != DeclarationName::CXXOperatorName)
-    return nullptr;
-  if (getDeclName().getCXXOverloadedOperator() != OO_Delete &&
-      getDeclName().getCXXOverloadedOperator() != OO_Array_Delete)
-    return nullptr;
-  if (isa<CXXRecordDecl>(getDeclContext()))
-    return nullptr;
-
-  if (!getDeclContext()->getRedeclContext()->isTranslationUnit())
-    return nullptr;
-
-  if (getNumParams() != 2 || isVariadic() ||
-      !Ctx.hasSameType(getType()->castAs<FunctionProtoType>()->getParamType(1),
-                       Ctx.getSizeType()))
-    return nullptr;
-
-  // This is a sized deallocation function. Find the corresponding unsized
-  // deallocation function.
-  lookup_result R = getDeclContext()->lookup(getDeclName());
-  for (lookup_result::iterator RI = R.begin(), RE = R.end(); RI != RE;
-       ++RI)
-    if (FunctionDecl *FD = dyn_cast<FunctionDecl>(*RI))
-      if (FD->getNumParams() == 1 && !FD->isVariadic())
-        return FD;
-  return nullptr;
-}
-
 LanguageLinkage FunctionDecl::getLanguageLinkage() const {
   return getDeclLanguageLinkage(*this);
 }
@@ -2734,7 +2700,8 @@ bool FunctionDecl::isMSExternInline() const {
   if (!Context.getLangOpts().MSVCCompat && !hasAttr<DLLExportAttr>())
     return false;
 
-  for (const FunctionDecl *FD = this; FD; FD = FD->getPreviousDecl())
+  for (const FunctionDecl *FD = getMostRecentDecl(); FD;
+       FD = FD->getPreviousDecl())
     if (FD->getStorageClass() == SC_Extern)
       return true;
 
@@ -3136,6 +3103,8 @@ DependentFunctionTemplateSpecializationInfo::
 DependentFunctionTemplateSpecializationInfo(const UnresolvedSetImpl &Ts,
                                       const TemplateArgumentListInfo &TArgs)
   : AngleLocs(TArgs.getLAngleLoc(), TArgs.getRAngleLoc()) {
+  static_assert(sizeof(*this) % llvm::AlignOf<void *>::Alignment == 0,
+                "Trailing data is unaligned!");
 
   d.NumTemplates = Ts.size();
   d.NumArgs = TArgs.size();
@@ -3950,6 +3919,14 @@ TypedefDecl *TypedefDecl::Create(ASTContext &C, DeclContext *DC,
 }
 
 void TypedefNameDecl::anchor() { }
+
+TagDecl *TypedefNameDecl::getAnonDeclWithTypedefName() const {
+  if (auto *TT = getTypeSourceInfo()->getType()->getAs<TagType>())
+    if (TT->getDecl()->getTypedefNameForAnonDecl() == this)
+      return TT->getDecl();
+
+  return nullptr;
+}
 
 TypedefDecl *TypedefDecl::CreateDeserialized(ASTContext &C, unsigned ID) {
   return new (C, ID) TypedefDecl(C, nullptr, SourceLocation(), SourceLocation(),

@@ -98,6 +98,7 @@ class Configuration(object):
         self.configure_debug_mode()
         self.configure_warnings()
         self.configure_sanitizer()
+        self.configure_coverage()
         self.configure_substitutions()
         self.configure_features()
 
@@ -222,7 +223,8 @@ class Configuration(object):
         self.execute_external = not use_lit_shell
 
     def configure_ccache(self):
-        use_ccache = self.get_lit_bool('use_ccache', False)
+        use_ccache_default = os.environ.get('LIBCXX_USE_CCACHE') is not None
+        use_ccache = self.get_lit_bool('use_ccache', use_ccache_default)
         if use_ccache:
             self.cxx.use_ccache = True
             self.lit_config.note('enabling ccache')
@@ -349,6 +351,8 @@ class Configuration(object):
         self.configure_compile_flags_exceptions()
         self.configure_compile_flags_rtti()
         self.configure_compile_flags_no_global_filesystem_namespace()
+        self.configure_compile_flags_no_stdin()
+        self.configure_compile_flags_no_stdout()
         enable_32bit = self.get_lit_bool('enable_32bit', False)
         if enable_32bit:
             self.cxx.flags += ['-m32']
@@ -405,6 +409,18 @@ class Configuration(object):
                 'libcpp-has-no-global-filesystem-namespace')
             self.cxx.compile_flags += [
                 '-D_LIBCPP_HAS_NO_GLOBAL_FILESYSTEM_NAMESPACE']
+
+    def configure_compile_flags_no_stdin(self):
+        enable_stdin = self.get_lit_bool('enable_stdin', True)
+        if not enable_stdin:
+            self.config.available_features.add('libcpp-has-no-stdin')
+            self.cxx.compile_flags += ['-D_LIBCPP_HAS_NO_STDIN']
+
+    def configure_compile_flags_no_stdout(self):
+        enable_stdout = self.get_lit_bool('enable_stdout', True)
+        if not enable_stdout:
+            self.config.available_features.add('libcpp-has-no-stdout')
+            self.cxx.compile_flags += ['-D_LIBCPP_HAS_NO_STDOUT']
 
     def configure_compile_flags_no_threads(self):
         self.cxx.compile_flags += ['-D_LIBCPP_HAS_NO_THREADS']
@@ -578,6 +594,12 @@ class Configuration(object):
             else:
                 self.lit_config.fatal('unsupported value for '
                                       'use_sanitizer: {0}'.format(san))
+
+    def configure_coverage(self):
+        self.generate_coverage = self.get_lit_bool('generate_coverage', False)
+        if self.generate_coverage:
+            self.cxx.flags += ['-g', '--coverage']
+            self.cxx.compile_flags += ['-O0']
 
     def configure_substitutions(self):
         sub = self.config.substitutions

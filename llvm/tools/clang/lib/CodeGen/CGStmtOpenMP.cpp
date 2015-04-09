@@ -266,6 +266,13 @@ void CodeGenFunction::EmitOMPLoopBody(const OMPLoopDirective &S,
   for (auto I : S.updates()) {
     EmitIgnoredExpr(I);
   }
+  // Update the linear variables.
+  for (auto C : OMPExecutableDirective::linear_filter(S.clauses())) {
+    for (auto U : C->updates()) {
+      EmitIgnoredExpr(U);
+    }
+  }
+
   // On a continue in the body, jump to the end.
   auto Continue = getJumpDestInCurrentScope("omp.body.continue");
   BreakContinueStack.push_back(BreakContinue(JumpDest(), Continue));
@@ -336,6 +343,12 @@ void CodeGenFunction::EmitOMPSimdFinal(const OMPLoopDirective &S) {
     }
     ++IC;
   }
+  // Emit the final values of the linear variables.
+  for (auto C : OMPExecutableDirective::linear_filter(S.clauses())) {
+    for (auto F : C->finals()) {
+      EmitIgnoredExpr(F);
+    }
+  }
 }
 
 static void EmitOMPAlignedClause(CodeGenFunction &CGF, CodeGenModule &CGM,
@@ -378,6 +391,25 @@ static void EmitPrivateLoopCounters(CodeGenFunction &CGF,
     assert(IsRegistered && "counter already registered as private");
     // Silence the warning about unused variable.
     (void)IsRegistered;
+  }
+}
+
+static void
+EmitPrivateLinearVars(CodeGenFunction &CGF, const OMPExecutableDirective &D,
+                      CodeGenFunction::OMPPrivateScope &PrivateScope) {
+  for (auto Clause : OMPExecutableDirective::linear_filter(D.clauses())) {
+    for (auto *E : Clause->varlists()) {
+      auto VD = cast<VarDecl>(cast<DeclRefExpr>(E)->getDecl());
+      bool IsRegistered = PrivateScope.addPrivate(VD, [&]()->llvm::Value * {
+        // Emit var without initialization.
+        auto VarEmission = CGF.EmitAutoVarAlloca(*VD);
+        CGF.EmitAutoVarCleanups(VarEmission);
+        return VarEmission.getAllocatedAddress();
+      });
+      assert(IsRegistered && "linear var already registered as private");
+      // Silence the warning about unused variable.
+      (void)IsRegistered;
+    }
   }
 }
 
@@ -428,6 +460,14 @@ void CodeGenFunction::EmitOMPSimdDirective(const OMPSimdDirective &S) {
 
   InlinedOpenMPRegionScopeRAII Region(*this, S);
 
+  // Emit inits for the linear variables.
+  for (auto C : OMPExecutableDirective::linear_filter(S.clauses())) {
+    for (auto Init : C->inits()) {
+      auto *D = cast<VarDecl>(cast<DeclRefExpr>(Init)->getDecl());
+      EmitVarDecl(*D);
+    }
+  }
+
   // Emit the loop iteration variable.
   const Expr *IVExpr = S.getIterationVariable();
   const VarDecl *IVDecl = cast<VarDecl>(cast<DeclRefExpr>(IVExpr)->getDecl());
@@ -443,6 +483,17 @@ void CodeGenFunction::EmitOMPSimdDirective(const OMPSimdDirective &S) {
     EmitIgnoredExpr(S.getCalcLastIteration());
   }
 
+  // Emit the linear steps for the linear clauses.
+  // If a step is not constant, it is pre-calculated before the loop.
+  for (auto C : OMPExecutableDirective::linear_filter(S.clauses())) {
+    if (auto CS = cast_or_null<BinaryOperator>(C->getCalcStep()))
+      if (auto SaveRef = cast<DeclRefExpr>(CS->getLHS())) {
+        EmitVarDecl(*cast<VarDecl>(SaveRef->getDecl()));
+        // Emit calculation of the linear step.
+        EmitIgnoredExpr(CS);
+      }
+  }
+
   if (SeparateIter) {
     // Emit: if (LastIteration > 0) - begin.
     RegionCounter Cnt = getPGORegionCounter(&S);
@@ -455,6 +506,7 @@ void CodeGenFunction::EmitOMPSimdDirective(const OMPSimdDirective &S) {
     {
       OMPPrivateScope LoopScope(*this);
       EmitPrivateLoopCounters(*this, LoopScope, S.counters());
+      EmitPrivateLinearVars(*this, S, LoopScope);
       EmitOMPPrivateClause(S, LoopScope);
       (void)LoopScope.Privatize();
       EmitOMPInnerLoop(S, LoopScope.requiresCleanups(),
@@ -473,6 +525,7 @@ void CodeGenFunction::EmitOMPSimdDirective(const OMPSimdDirective &S) {
     {
       OMPPrivateScope LoopScope(*this);
       EmitPrivateLoopCounters(*this, LoopScope, S.counters());
+      EmitPrivateLinearVars(*this, S, LoopScope);
       EmitOMPPrivateClause(S, LoopScope);
       (void)LoopScope.Privatize();
       EmitOMPInnerLoop(S, LoopScope.requiresCleanups(),
@@ -732,8 +785,9 @@ void CodeGenFunction::EmitOMPForDirective(const OMPForDirective &S) {
   EmitOMPWorksharingLoop(S);
 
   // Emit an implicit barrier at the end.
-  CGM.getOpenMPRuntime().emitBarrierCall(*this, S.getLocStart(),
-                                         /*IsExplicit*/ false);
+  if (!S.getSingleClause(OMPC_nowait)) {
+    CGM.getOpenMPRuntime().emitBarrierCall(*this, S.getLocStart(), OMPD_for);
+  }
 }
 
 void CodeGenFunction::EmitOMPForSimdDirective(const OMPForSimdDirective &) {
@@ -829,13 +883,15 @@ void CodeGenFunction::EmitOMPSectionsDirective(const OMPSectionsDirective &S) {
       InlinedOpenMPRegionScopeRAII Region(*this, S);
       EmitStmt(Stmt);
       EnsureInsertPoint();
-    }, S.getLocStart());
+    }, S.getLocStart(), llvm::None, llvm::None, llvm::None, llvm::None);
   }
 
   // Emit an implicit barrier at the end.
-  if (!S.getSingleClause(OMPC_nowait))
-    CGM.getOpenMPRuntime().emitBarrierCall(*this, S.getLocStart(),
-                                           /*IsExplicit=*/false);
+  if (!S.getSingleClause(OMPC_nowait)) {
+    CGM.getOpenMPRuntime().emitBarrierCall(
+        *this, S.getLocStart(),
+        (CS && CS->size() > 1) ? OMPD_sections : OMPD_single);
+  }
 }
 
 void CodeGenFunction::EmitOMPSectionDirective(const OMPSectionDirective &S) {
@@ -845,11 +901,38 @@ void CodeGenFunction::EmitOMPSectionDirective(const OMPSectionDirective &S) {
 }
 
 void CodeGenFunction::EmitOMPSingleDirective(const OMPSingleDirective &S) {
+  llvm::SmallVector<const Expr *, 8> CopyprivateVars;
+  llvm::SmallVector<const Expr *, 8> SrcExprs;
+  llvm::SmallVector<const Expr *, 8> DstExprs;
+  llvm::SmallVector<const Expr *, 8> AssignmentOps;
+  // Check if there are any 'copyprivate' clauses associated with this 'single'
+  // construct.
+  auto CopyprivateFilter = [](const OMPClause *C) -> bool {
+    return C->getClauseKind() == OMPC_copyprivate;
+  };
+  // Build a list of copyprivate variables along with helper expressions
+  // (<source>, <destination>, <destination>=<source> expressions)
+  typedef OMPExecutableDirective::filtered_clause_iterator<decltype(
+      CopyprivateFilter)> CopyprivateIter;
+  for (CopyprivateIter I(S.clauses(), CopyprivateFilter); I; ++I) {
+    auto *C = cast<OMPCopyprivateClause>(*I);
+    CopyprivateVars.append(C->varlists().begin(), C->varlists().end());
+    SrcExprs.append(C->source_exprs().begin(), C->source_exprs().end());
+    DstExprs.append(C->destination_exprs().begin(),
+                    C->destination_exprs().end());
+    AssignmentOps.append(C->assignment_ops().begin(),
+                         C->assignment_ops().end());
+  }
+  // Emit code for 'single' region along with 'copyprivate' clauses
   CGM.getOpenMPRuntime().emitSingleRegion(*this, [&]() -> void {
     InlinedOpenMPRegionScopeRAII Region(*this, S);
     EmitStmt(cast<CapturedStmt>(S.getAssociatedStmt())->getCapturedStmt());
     EnsureInsertPoint();
-  }, S.getLocStart());
+  }, S.getLocStart(), CopyprivateVars, SrcExprs, DstExprs, AssignmentOps);
+  // Emit an implicit barrier at the end.
+  if (!S.getSingleClause(OMPC_nowait)) {
+    CGM.getOpenMPRuntime().emitBarrierCall(*this, S.getLocStart(), OMPD_single);
+  }
 }
 
 void CodeGenFunction::EmitOMPMasterDirective(const OMPMasterDirective &S) {
@@ -921,7 +1004,7 @@ void CodeGenFunction::EmitOMPTaskyieldDirective(
 }
 
 void CodeGenFunction::EmitOMPBarrierDirective(const OMPBarrierDirective &S) {
-  CGM.getOpenMPRuntime().emitBarrierCall(*this, S.getLocStart());
+  CGM.getOpenMPRuntime().emitBarrierCall(*this, S.getLocStart(), OMPD_barrier);
 }
 
 void CodeGenFunction::EmitOMPTaskwaitDirective(const OMPTaskwaitDirective &) {
@@ -1036,9 +1119,136 @@ static void EmitOMPAtomicWriteExpr(CodeGenFunction &CGF, bool IsSeqCst,
     CGF.CGM.getOpenMPRuntime().emitFlush(CGF, llvm::None, Loc);
 }
 
+static Optional<llvm::AtomicRMWInst::BinOp>
+getCompatibleAtomicRMWBinOp(ASTContext &Context, BinaryOperatorKind Op,
+                            bool IsXLHSInRHSPart, LValue XLValue,
+                            RValue ExprRValue) {
+  Optional<llvm::AtomicRMWInst::BinOp> RMWOp;
+  // Allow atomicrmw only if 'x' and 'expr' are integer values, lvalue for 'x'
+  // expression is simple and atomic is allowed for the given type for the
+  // target platform.
+  if (ExprRValue.isScalar() &&
+      ExprRValue.getScalarVal()->getType()->isIntegerTy() &&
+      XLValue.isSimple() &&
+      (isa<llvm::ConstantInt>(ExprRValue.getScalarVal()) ||
+       (ExprRValue.getScalarVal()->getType() ==
+        XLValue.getAddress()->getType()->getPointerElementType())) &&
+      Context.getTargetInfo().hasBuiltinAtomic(
+          Context.getTypeSize(XLValue.getType()),
+          Context.toBits(XLValue.getAlignment()))) {
+    switch (Op) {
+    case BO_Add:
+      RMWOp = llvm::AtomicRMWInst::Add;
+      break;
+    case BO_Sub:
+      if (IsXLHSInRHSPart) {
+        RMWOp = llvm::AtomicRMWInst::Sub;
+      }
+      break;
+    case BO_And:
+      RMWOp = llvm::AtomicRMWInst::And;
+      break;
+    case BO_Or:
+      RMWOp = llvm::AtomicRMWInst::Or;
+      break;
+    case BO_Xor:
+      RMWOp = llvm::AtomicRMWInst::Xor;
+      break;
+    case BO_Mul:
+    case BO_Div:
+    case BO_Rem:
+    case BO_Shl:
+    case BO_Shr:
+      break;
+    case BO_PtrMemD:
+    case BO_PtrMemI:
+    case BO_LT:
+    case BO_GT:
+    case BO_LE:
+    case BO_GE:
+    case BO_EQ:
+    case BO_NE:
+    case BO_LAnd:
+    case BO_LOr:
+    case BO_Assign:
+    case BO_MulAssign:
+    case BO_DivAssign:
+    case BO_RemAssign:
+    case BO_AddAssign:
+    case BO_SubAssign:
+    case BO_ShlAssign:
+    case BO_ShrAssign:
+    case BO_AndAssign:
+    case BO_XorAssign:
+    case BO_OrAssign:
+    case BO_Comma:
+      llvm_unreachable("Unexpected binary operation in 'atomic update'.");
+    }
+  }
+  return std::move(RMWOp);
+}
+
+static void EmitOMPAtomicUpdateExpr(CodeGenFunction &CGF, bool IsSeqCst,
+                                    const Expr *X, const Expr *E,
+                                    const Expr *UE, bool IsXLHSInRHSPart,
+                                    SourceLocation Loc) {
+  assert(isa<BinaryOperator>(UE->IgnoreImpCasts()) &&
+         "Update expr in 'atomic update' must be a binary operator.");
+  auto *BOUE = cast<BinaryOperator>(UE->IgnoreImpCasts());
+  // Update expressions are allowed to have the following forms:
+  // x binop= expr; -> xrval + expr;
+  // x++, ++x -> xrval + 1;
+  // x--, --x -> xrval - 1;
+  // x = x binop expr; -> xrval binop expr
+  // x = expr Op x; - > expr binop xrval;
+  assert(X->isLValue() && "X of 'omp atomic write' is not lvalue");
+  LValue XLValue = CGF.EmitLValue(X);
+  RValue ExprRValue = CGF.EmitAnyExpr(E);
+  const auto &Op =
+      getCompatibleAtomicRMWBinOp(CGF.CGM.getContext(), BOUE->getOpcode(),
+                                  IsXLHSInRHSPart, XLValue, ExprRValue);
+  auto AO = IsSeqCst ? llvm::SequentiallyConsistent : llvm::Monotonic;
+  if (Op) {
+    auto *ExprVal = ExprRValue.getScalarVal();
+    if (auto *IC = dyn_cast<llvm::ConstantInt>(ExprVal)) {
+      ExprVal = CGF.Builder.CreateIntCast(
+          IC, XLValue.getAddress()->getType()->getPointerElementType(),
+          XLValue.getType()->hasSignedIntegerRepresentation());
+    }
+    CGF.Builder.CreateAtomicRMW(*Op, XLValue.getAddress(), ExprVal, AO);
+  } else {
+    auto *LHS = cast<OpaqueValueExpr>(BOUE->getLHS()->IgnoreImpCasts());
+    auto *RHS = cast<OpaqueValueExpr>(BOUE->getRHS()->IgnoreImpCasts());
+    CodeGenFunction::OpaqueValueMapping MapExpr(
+        CGF, IsXLHSInRHSPart ? RHS : LHS, ExprRValue);
+    auto *XRValExpr = IsXLHSInRHSPart ? LHS : RHS;
+    if (XLValue.isGlobalReg()) {
+      // Emit an update expression: 'xrval' binop 'expr' or 'expr' binop
+      // 'xrval'.
+      CodeGenFunction::OpaqueValueMapping MapX(
+          CGF, XRValExpr, CGF.EmitLoadOfLValue(XLValue, Loc));
+      CGF.EmitStoreThroughLValue(CGF.EmitAnyExpr(UE), XLValue);
+    } else {
+      // Perform compare-and-swap procedure.
+      CGF.EmitAtomicUpdate(
+          XLValue, AO, [&CGF, &UE, &XRValExpr](RValue XRVal) -> RValue {
+            CodeGenFunction::OpaqueValueMapping MapX(CGF, XRValExpr, XRVal);
+            return CGF.EmitAnyExpr(UE);
+          }, /*IsVolatile=*/false);
+    }
+  }
+  // OpenMP, 2.12.6, atomic Construct
+  // Any atomic construct with a seq_cst clause forces the atomically
+  // performed operation to include an implicit flush operation without a
+  // list.
+  if (IsSeqCst)
+    CGF.CGM.getOpenMPRuntime().emitFlush(CGF, llvm::None, Loc);
+}
+
 static void EmitOMPAtomicExpr(CodeGenFunction &CGF, OpenMPClauseKind Kind,
                               bool IsSeqCst, const Expr *X, const Expr *V,
-                              const Expr *E, SourceLocation Loc) {
+                              const Expr *E, const Expr *UE,
+                              bool IsXLHSInRHSPart, SourceLocation Loc) {
   switch (Kind) {
   case OMPC_read:
     EmitOMPAtomicReadExpr(CGF, IsSeqCst, X, V, Loc);
@@ -1046,7 +1256,10 @@ static void EmitOMPAtomicExpr(CodeGenFunction &CGF, OpenMPClauseKind Kind,
   case OMPC_write:
     EmitOMPAtomicWriteExpr(CGF, IsSeqCst, X, E, Loc);
     break;
+  case OMPC_unknown:
   case OMPC_update:
+    EmitOMPAtomicUpdateExpr(CGF, IsSeqCst, X, E, UE, IsXLHSInRHSPart, Loc);
+    break;
   case OMPC_capture:
     llvm_unreachable("CodeGen for 'omp atomic clause' is not supported yet.");
   case OMPC_if:
@@ -1073,7 +1286,6 @@ static void EmitOMPAtomicExpr(CodeGenFunction &CGF, OpenMPClauseKind Kind,
   case OMPC_untied:
   case OMPC_threadprivate:
   case OMPC_mergeable:
-  case OMPC_unknown:
     llvm_unreachable("Clause is not allowed in 'omp atomic'.");
   }
 }
@@ -1096,7 +1308,7 @@ void CodeGenFunction::EmitOMPAtomicDirective(const OMPAtomicDirective &S) {
   InlinedOpenMPRegionScopeRAII Region(*this, S);
 
   EmitOMPAtomicExpr(*this, Kind, IsSeqCst, S.getX(), S.getV(), S.getExpr(),
-                    S.getLocStart());
+                    S.getUpdateExpr(), S.isXLHSInRHSPart(), S.getLocStart());
 }
 
 void CodeGenFunction::EmitOMPTargetDirective(const OMPTargetDirective &) {

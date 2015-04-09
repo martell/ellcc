@@ -29,6 +29,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/raw_ostream.h"
 #include <memory>
 
 using namespace llvm;
@@ -53,7 +54,13 @@ public:
   }
 
   unsigned getATRegNum() const { return ATReg; }
-  bool setATReg(unsigned Reg);
+  bool setATReg(unsigned Reg) {
+    if (Reg > 31)
+      return false;
+
+    ATReg = Reg;
+    return true;
+  }
 
   bool isReorder() const { return Reorder; }
   void setReorder() { Reorder = true; }
@@ -2071,12 +2078,14 @@ void MipsAsmParser::expandMemInst(MCInst &Inst, SMLoc IDLoc,
   // Prepare TempInst for next instruction.
   TempInst.clear();
   // Add temp register to base.
-  TempInst.setOpcode(Mips::ADDu);
-  TempInst.addOperand(MCOperand::CreateReg(TmpRegNum));
-  TempInst.addOperand(MCOperand::CreateReg(TmpRegNum));
-  TempInst.addOperand(MCOperand::CreateReg(BaseRegNum));
-  Instructions.push_back(TempInst);
-  TempInst.clear();
+  if (BaseRegNum != Mips::ZERO) {
+    TempInst.setOpcode(Mips::ADDu);
+    TempInst.addOperand(MCOperand::CreateReg(TmpRegNum));
+    TempInst.addOperand(MCOperand::CreateReg(TmpRegNum));
+    TempInst.addOperand(MCOperand::CreateReg(BaseRegNum));
+    Instructions.push_back(TempInst);
+    TempInst.clear();
+  }
   // And finally, create original instruction with low part
   // of offset and new base.
   TempInst.setOpcode(Inst.getOpcode());
@@ -2376,14 +2385,6 @@ int MipsAsmParser::matchMSA128CtrlRegisterName(StringRef Name) {
   return CC;
 }
 
-bool MipsAssemblerOptions::setATReg(unsigned Reg) {
-  if (Reg > 31)
-    return false;
-
-  ATReg = Reg;
-  return true;
-}
-
 int MipsAsmParser::getATReg(SMLoc Loc) {
   int AT = AssemblerOptions.back()->getATRegNum();
   if (AT == 0)
@@ -2572,7 +2573,7 @@ bool MipsAsmParser::parseRelocOperand(const MCExpr *&Res) {
   if (Tok.isNot(AsmToken::Identifier))
     return true;
 
-  std::string Str = Tok.getIdentifier().str();
+  std::string Str = Tok.getIdentifier();
 
   Parser.Lex(); // Eat the identifier.
   // Now make an expression from the rest of the operand.
@@ -3580,11 +3581,7 @@ bool MipsAsmParser::parseSetAssignment() {
   if (Parser.parseExpression(Value))
     return reportParseError("expected valid expression after comma");
 
-  // Check if the Name already exists as a symbol.
-  MCSymbol *Sym = getContext().LookupSymbol(Name);
-  if (Sym)
-    return reportParseError("symbol already defined");
-  Sym = getContext().GetOrCreateSymbol(Name);
+  MCSymbol *Sym = getContext().GetOrCreateSymbol(Name);
   Sym->setVariableValue(Value);
 
   return false;

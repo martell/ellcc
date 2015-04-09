@@ -64,6 +64,11 @@ MBlazeTargetMachine(const Target &T, StringRef TT,
 
 MBlazeTargetMachine::~MBlazeTargetMachine() {}
 
+const MBlazeSubtarget *
+MBlazeTargetMachine::getSubtargetImpl(const Function &F) const {
+  return Subtarget;     // RICH: ?
+}
+
 namespace {
 /// MBlaze Code Generator Pass Configuration Options.
 class MBlazePassConfig : public TargetPassConfig {

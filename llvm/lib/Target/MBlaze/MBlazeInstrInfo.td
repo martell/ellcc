@@ -47,22 +47,22 @@ def callseq_end   : SDNode<"ISD::CALLSEQ_END", SDT_MBCallSeqEnd,
 //===----------------------------------------------------------------------===//
 // MBlaze Instruction Predicate Definitions.
 //===----------------------------------------------------------------------===//
-// def HasPipe3     : Predicate<"Subtarget.hasPipe3()">;
-def HasBarrel    : Predicate<"Subtarget.hasBarrel()">;
-// def NoBarrel     : Predicate<"!Subtarget.hasBarrel()">;
-def HasDiv       : Predicate<"Subtarget.hasDiv()">;
-def HasMul       : Predicate<"Subtarget.hasMul()">;
-// def HasFSL       : Predicate<"Subtarget.hasFSL()">;
-// def HasEFSL      : Predicate<"Subtarget.hasEFSL()">;
-// def HasMSRSet    : Predicate<"Subtarget.hasMSRSet()">;
-// def HasException : Predicate<"Subtarget.hasException()">;
-def HasPatCmp    : Predicate<"Subtarget.hasPatCmp()">;
-def HasFPU       : Predicate<"Subtarget.hasFPU()">;
-// def HasESR       : Predicate<"Subtarget.hasESR()">;
-// def HasPVR       : Predicate<"Subtarget.hasPVR()">;
-def HasMul64     : Predicate<"Subtarget.hasMul64()">;
-def HasSqrt      : Predicate<"Subtarget.hasSqrt()">;
-// def HasMMU       : Predicate<"Subtarget.hasMMU()">;
+// def HasPipe3     : Predicate<"Subtarget->hasPipe3()">;
+def HasBarrel    : Predicate<"Subtarget->hasBarrel()">;
+// def NoBarrel     : Predicate<"!Subtarget->hasBarrel()">;
+def HasDiv       : Predicate<"Subtarget->hasDiv()">;
+def HasMul       : Predicate<"Subtarget->hasMul()">;
+// def HasFSL       : Predicate<"Subtarget->hasFSL()">;
+// def HasEFSL      : Predicate<"Subtarget->hasEFSL()">;
+// def HasMSRSet    : Predicate<"Subtarget->hasMSRSet()">;
+// def HasException : Predicate<"Subtarget->hasException()">;
+def HasPatCmp    : Predicate<"Subtarget->hasPatCmp()">;
+def HasFPU       : Predicate<"Subtarget->hasFPU()">;
+// def HasESR       : Predicate<"Subtarget->hasESR()">;
+// def HasPVR       : Predicate<"Subtarget->hasPVR()">;
+def HasMul64     : Predicate<"Subtarget->hasMul64()">;
+def HasSqrt      : Predicate<"Subtarget->hasSqrt()">;
+// def HasMMU       : Predicate<"Subtarget->hasMMU()">;
 
 //===----------------------------------------------------------------------===//
 // MBlaze Operand, Complex Patterns and Transformations Definitions.

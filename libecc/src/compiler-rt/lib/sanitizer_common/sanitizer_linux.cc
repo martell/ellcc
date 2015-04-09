@@ -147,11 +147,6 @@ uptr internal_open(const char *filename, int flags, u32 mode) {
 #endif
 }
 
-uptr OpenFile(const char *filename, bool write) {
-  return internal_open(filename,
-      write ? O_WRONLY | O_CREAT /*| O_CLOEXEC*/ : O_RDONLY, 0660);
-}
-
 uptr internal_read(fd_t fd, void *buf, uptr count) {
   sptr res;
   HANDLE_EINTR(res, (sptr)internal_syscall(SYSCALL(read), fd, (uptr)buf,
@@ -163,6 +158,13 @@ uptr internal_write(fd_t fd, const void *buf, uptr count) {
   sptr res;
   HANDLE_EINTR(res, (sptr)internal_syscall(SYSCALL(write), fd, (uptr)buf,
                count));
+  return res;
+}
+
+uptr internal_ftruncate(fd_t fd, uptr size) {
+  sptr res;
+  HANDLE_EINTR(res, (sptr)internal_syscall(SYSCALL(ftruncate), fd,
+               (OFF_T)size));
   return res;
 }
 

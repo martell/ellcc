@@ -366,7 +366,7 @@ private:
   /// Map used to get unique annotation strings.
   llvm::StringMap<llvm::Constant*> AnnotationStrings;
 
-  llvm::StringMap<llvm::Constant*> CFConstantStringMap;
+  llvm::StringMap<llvm::GlobalVariable *> CFConstantStringMap;
 
   llvm::DenseMap<llvm::Constant *, llvm::GlobalVariable *> ConstantStringMap;
   llvm::DenseMap<const Decl*, llvm::Constant *> StaticLocalDeclMap;
@@ -719,8 +719,8 @@ public:
   /// Get the address of the RTTI descriptor for the given type.
   llvm::Constant *GetAddrOfRTTIDescriptor(QualType Ty, bool ForEH = false);
 
-  llvm::Constant *getAddrOfCXXHandlerMapEntry(QualType Ty,
-                                              QualType CatchHandlerType);
+  llvm::Constant *getAddrOfCXXCatchHandlerType(QualType Ty,
+                                               QualType CatchHandlerType);
 
   /// Get the address of a uuid descriptor .
   llvm::Constant *GetAddrOfUuidDescriptor(const CXXUuidofExpr* E);
@@ -786,7 +786,7 @@ public:
   /// Return a pointer to a constant NSString object for the given string. Or a
   /// user defined String object as defined via
   /// -fconstant-string-class=class_name option.
-  llvm::Constant *GetAddrOfConstantString(const StringLiteral *Literal);
+  llvm::GlobalVariable *GetAddrOfConstantString(const StringLiteral *Literal);
 
   /// Return a constant array for the given string.
   llvm::Constant *GetConstantArrayFromStringLiteral(const StringLiteral *E);

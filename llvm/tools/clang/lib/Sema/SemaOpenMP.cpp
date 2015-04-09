@@ -622,6 +622,10 @@ void Sema::EndOpenMPDSABlock(Stmt *CurDirective) {
   PopExpressionEvaluationContext();
 }
 
+static bool FinishOpenMPLinearClause(OMPLinearClause &Clause, DeclRefExpr *IV,
+                                     Expr *NumIterations, Sema &SemaRef,
+                                     Scope *S);
+
 namespace {
 
 class VarDeclFilterCCC : public CorrectionCandidateCallback {
@@ -755,7 +759,7 @@ ExprResult Sema::ActOnOpenMPIdExpression(Scope *CurScope,
   // OpenMP [2.9.2, Restrictions, C/C++, p.2-6]
   //   A threadprivate directive must lexically precede all references to any
   //   of the variables in its list.
-  if (VD->isUsed()) {
+  if (VD->isUsed() && !DSAStack->isThreadPrivate(CanonicalVD)) {
     Diag(Id.getLoc(), diag::err_omp_var_used)
         << getOpenMPDirectiveName(OMPD_threadprivate) << VD;
     return ExprError();
@@ -1181,6 +1185,26 @@ void Sema::ActOnOpenMPRegionStart(OpenMPDirectiveKind DKind, Scope *CurScope) {
   case OMPD_unknown:
     llvm_unreachable("Unknown OpenMP directive");
   }
+}
+
+StmtResult Sema::ActOnOpenMPRegionEnd(StmtResult S,
+                                      ArrayRef<OMPClause *> Clauses) {
+  if (!S.isUsable()) {
+    ActOnCapturedRegionError();
+    return StmtError();
+  }
+  // Mark all variables in private list clauses as used in inner region. This is
+  // required for proper codegen.
+  for (auto *Clause : Clauses) {
+    if (isOpenMPPrivate(Clause->getClauseKind())) {
+      for (auto *VarRef : Clause->children()) {
+        if (auto *E = cast_or_null<Expr>(VarRef)) {
+          MarkDeclarationsReferencedInExpr(E);
+        }
+      }
+    }
+  }
+  return ActOnCapturedRegionEnd(S.get());
 }
 
 static bool CheckNestingOfRegions(Sema &SemaRef, DSAStackTy *Stack,
@@ -2915,6 +2939,7 @@ CheckOpenMPLoop(OpenMPDirectiveKind DKind, Expr *NestedLoopCountExpr,
   // Save results
   Built.IterationVarRef = IV.get();
   Built.LastIteration = LastIteration.get();
+  Built.NumIterations = NumIterations.get();
   Built.CalcLastIteration = CalcLastIteration.get();
   Built.PreCond = PreCond.get();
   Built.Cond = Cond.get();
@@ -2957,6 +2982,16 @@ StmtResult Sema::ActOnOpenMPSimdDirective(
 
   assert((CurContext->isDependentContext() || B.builtAll()) &&
          "omp simd loop exprs were not built");
+
+  if (!CurContext->isDependentContext()) {
+    // Finalize the clauses that need pre-built expressions for CodeGen.
+    for (auto C : Clauses) {
+      if (auto LC = dyn_cast<OMPLinearClause>(C))
+        if (FinishOpenMPLinearClause(*LC, cast<DeclRefExpr>(B.IterationVarRef),
+                                     B.NumIterations, *this, CurScope))
+          return StmtError();
+    }
+  }
 
   getCurFunction()->setHasBranchProtectedScope();
   return OMPSimdDirective::Create(Context, StartLoc, EndLoc, NestedLoopCount,
@@ -3267,40 +3302,54 @@ class OpenMPAtomicUpdateChecker {
   Sema &SemaRef;
   /// \brief A location for note diagnostics (when error is found).
   SourceLocation NoteLoc;
-  /// \brief Atomic operation supposed to be performed on source expression.
-  BinaryOperatorKind OpKind;
   /// \brief 'x' lvalue part of the source atomic expression.
   Expr *X;
-  /// \brief 'x' rvalue part of the source atomic expression, used in the right
-  /// hand side of the expression. We need this to properly generate RHS part of
-  /// the source expression (x = x'rval' binop expr or x = expr binop x'rval').
-  Expr *XRVal;
   /// \brief 'expr' rvalue part of the source atomic expression.
   Expr *E;
+  /// \brief Helper expression of the form
+  /// 'OpaqueValueExpr(x) binop OpaqueValueExpr(expr)' or
+  /// 'OpaqueValueExpr(expr) binop OpaqueValueExpr(x)'.
+  Expr *UpdateExpr;
+  /// \brief Is 'x' a LHS in a RHS part of full update expression. It is
+  /// important for non-associative operations.
+  bool IsXLHSInRHSPart;
+  BinaryOperatorKind Op;
+  SourceLocation OpLoc;
+  /// \brief true if the source expression is a postfix unary operation, false
+  /// if it is a prefix unary operation.
+  bool IsPostfixUpdate;
 
 public:
   OpenMPAtomicUpdateChecker(Sema &SemaRef)
-      : SemaRef(SemaRef), OpKind(BO_PtrMemD), X(nullptr), XRVal(nullptr),
-        E(nullptr) {}
+      : SemaRef(SemaRef), X(nullptr), E(nullptr), UpdateExpr(nullptr),
+        IsXLHSInRHSPart(false), Op(BO_PtrMemD), IsPostfixUpdate(false) {}
   /// \brief Check specified statement that it is suitable for 'atomic update'
   /// constructs and extract 'x', 'expr' and Operation from the original
-  /// expression.
+  /// expression. If DiagId and NoteId == 0, then only check is performed
+  /// without error notification.
   /// \param DiagId Diagnostic which should be emitted if error is found.
   /// \param NoteId Diagnostic note for the main error message.
   /// \return true if statement is not an update expression, false otherwise.
-  bool checkStatement(Stmt *S, unsigned DiagId, unsigned NoteId);
+  bool checkStatement(Stmt *S, unsigned DiagId = 0, unsigned NoteId = 0);
   /// \brief Return the 'x' lvalue part of the source atomic expression.
   Expr *getX() const { return X; }
-  /// \brief Return the 'x' rvalue part of the source atomic expression, used in
-  /// the RHS part of the source expression.
-  Expr *getXRVal() const { return XRVal; }
   /// \brief Return the 'expr' rvalue part of the source atomic expression.
   Expr *getExpr() const { return E; }
-  /// \brief Return required atomic operation.
-  BinaryOperatorKind getOpKind() const {return OpKind;}
+  /// \brief Return the update expression used in calculation of the updated
+  /// value. Always has form 'OpaqueValueExpr(x) binop OpaqueValueExpr(expr)' or
+  /// 'OpaqueValueExpr(expr) binop OpaqueValueExpr(x)'.
+  Expr *getUpdateExpr() const { return UpdateExpr; }
+  /// \brief Return true if 'x' is LHS in RHS part of full update expression,
+  /// false otherwise.
+  bool isXLHSInRHSPart() const { return IsXLHSInRHSPart; }
+
+  /// \brief true if the source expression is a postfix unary operation, false
+  /// if it is a prefix unary operation.
+  bool isPostfixUpdate() const { return IsPostfixUpdate; }
+
 private:
-  bool checkBinaryOperation(BinaryOperator *AtomicBinOp, unsigned DiagId,
-                            unsigned NoteId);
+  bool checkBinaryOperation(BinaryOperator *AtomicBinOp, unsigned DiagId = 0,
+                            unsigned NoteId = 0);
 };
 } // namespace
 
@@ -3319,7 +3368,8 @@ bool OpenMPAtomicUpdateChecker::checkBinaryOperation(
       if (AtomicInnerBinOp->isMultiplicativeOp() ||
           AtomicInnerBinOp->isAdditiveOp() || AtomicInnerBinOp->isShiftOp() ||
           AtomicInnerBinOp->isBitwiseOp()) {
-        OpKind = AtomicInnerBinOp->getOpcode();
+        Op = AtomicInnerBinOp->getOpcode();
+        OpLoc = AtomicInnerBinOp->getOperatorLoc();
         auto *LHS = AtomicInnerBinOp->getLHS();
         auto *RHS = AtomicInnerBinOp->getRHS();
         llvm::FoldingSetNodeID XId, LHSId, RHSId;
@@ -3331,10 +3381,10 @@ bool OpenMPAtomicUpdateChecker::checkBinaryOperation(
                                             /*Canonical=*/true);
         if (XId == LHSId) {
           E = RHS;
-          XRVal = LHS;
+          IsXLHSInRHSPart = true;
         } else if (XId == RHSId) {
           E = LHS;
-          XRVal = RHS;
+          IsXLHSInRHSPart = false;
         } else {
           ErrorLoc = AtomicInnerBinOp->getExprLoc();
           ErrorRange = AtomicInnerBinOp->getSourceRange();
@@ -3361,12 +3411,12 @@ bool OpenMPAtomicUpdateChecker::checkBinaryOperation(
     NoteRange = SourceRange(NoteLoc, NoteLoc);
     ErrorFound = NotAnAssignmentOp;
   }
-  if (ErrorFound != NoError) {
+  if (ErrorFound != NoError && DiagId != 0 && NoteId != 0) {
     SemaRef.Diag(ErrorLoc, DiagId) << ErrorRange;
     SemaRef.Diag(NoteLoc, NoteId) << ErrorFound << NoteRange;
     return true;
   } else if (SemaRef.CurContext->isDependentContext())
-    E = X = XRVal = nullptr;
+    E = X = UpdateExpr = nullptr;
   return false;
 }
 
@@ -3390,26 +3440,27 @@ bool OpenMPAtomicUpdateChecker::checkStatement(Stmt *S, unsigned DiagId,
       if (auto *AtomicCompAssignOp = dyn_cast<CompoundAssignOperator>(
               AtomicBody->IgnoreParenImpCasts())) {
         // Check for Compound Assignment Operation
-        OpKind = BinaryOperator::getOpForCompoundAssignment(
+        Op = BinaryOperator::getOpForCompoundAssignment(
             AtomicCompAssignOp->getOpcode());
-        X = AtomicCompAssignOp->getLHS();
-        XRVal = SemaRef.PerformImplicitConversion(
-                            X, AtomicCompAssignOp->getComputationLHSType(),
-                            Sema::AA_Casting, /*AllowExplicit=*/true).get();
+        OpLoc = AtomicCompAssignOp->getOperatorLoc();
         E = AtomicCompAssignOp->getRHS();
+        X = AtomicCompAssignOp->getLHS();
+        IsXLHSInRHSPart = true;
       } else if (auto *AtomicBinOp = dyn_cast<BinaryOperator>(
                      AtomicBody->IgnoreParenImpCasts())) {
         // Check for Binary Operation
-        return checkBinaryOperation(AtomicBinOp, DiagId, NoteId);
+        if(checkBinaryOperation(AtomicBinOp, DiagId, NoteId))
+          return true;
       } else if (auto *AtomicUnaryOp =
-                     // Check for Binary Operation
                  dyn_cast<UnaryOperator>(AtomicBody->IgnoreParenImpCasts())) {
         // Check for Unary Operation
         if (AtomicUnaryOp->isIncrementDecrementOp()) {
-          OpKind = AtomicUnaryOp->isIncrementOp() ? BO_Add : BO_Sub;
-          XRVal = X = AtomicUnaryOp->getSubExpr();
-          E = SemaRef.ActOnIntegerConstant(AtomicUnaryOp->getOperatorLoc(), 1)
-                  .get();
+          IsPostfixUpdate = AtomicUnaryOp->isPostfix();
+          Op = AtomicUnaryOp->isIncrementOp() ? BO_Add : BO_Sub;
+          OpLoc = AtomicUnaryOp->getOperatorLoc();
+          X = AtomicUnaryOp->getSubExpr();
+          E = SemaRef.ActOnIntegerConstant(OpLoc, /*uint64_t Val=*/1).get();
+          IsXLHSInRHSPart = true;
         } else {
           ErrorFound = NotAnUnaryIncDecExpression;
           ErrorLoc = AtomicUnaryOp->getExprLoc();
@@ -3432,12 +3483,31 @@ bool OpenMPAtomicUpdateChecker::checkStatement(Stmt *S, unsigned DiagId,
     NoteLoc = ErrorLoc = S->getLocStart();
     NoteRange = ErrorRange = SourceRange(NoteLoc, NoteLoc);
   }
-  if (ErrorFound != NoError) {
+  if (ErrorFound != NoError && DiagId != 0 && NoteId != 0) {
     SemaRef.Diag(ErrorLoc, DiagId) << ErrorRange;
     SemaRef.Diag(NoteLoc, NoteId) << ErrorFound << NoteRange;
     return true;
   } else if (SemaRef.CurContext->isDependentContext())
-    E = X = XRVal = nullptr;
+    E = X = UpdateExpr = nullptr;
+  if (E && X) {
+    // Build an update expression of form 'OpaqueValueExpr(x) binop
+    // OpaqueValueExpr(expr)' or 'OpaqueValueExpr(expr) binop
+    // OpaqueValueExpr(x)' and then cast it to the type of the 'x' expression.
+    auto *OVEX = new (SemaRef.getASTContext())
+        OpaqueValueExpr(X->getExprLoc(), X->getType(), VK_RValue);
+    auto *OVEExpr = new (SemaRef.getASTContext())
+        OpaqueValueExpr(E->getExprLoc(), E->getType(), VK_RValue);
+    auto Update =
+        SemaRef.CreateBuiltinBinOp(OpLoc, Op, IsXLHSInRHSPart ? OVEX : OVEExpr,
+                                   IsXLHSInRHSPart ? OVEExpr : OVEX);
+    if (Update.isInvalid())
+      return true;
+    Update = SemaRef.PerformImplicitConversion(Update.get(), X->getType(),
+                                               Sema::AA_Casting);
+    if (Update.isInvalid())
+      return true;
+    UpdateExpr = Update.get();
+  }
   return false;
 }
 
@@ -3452,7 +3522,6 @@ StmtResult Sema::ActOnOpenMPAtomicDirective(ArrayRef<OMPClause *> Clauses,
   // top and a single exit at the bottom.
   // The point of exit cannot be a branch out of the structured block.
   // longjmp() and throw() must not violate the entry/exit criteria.
-  // TODO further analysis of associated statements and clauses.
   OpenMPClauseKind AtomicKind = OMPC_unknown;
   SourceLocation AtomicKindLoc;
   for (auto *C : Clauses) {
@@ -3475,11 +3544,12 @@ StmtResult Sema::ActOnOpenMPAtomicDirective(ArrayRef<OMPClause *> Clauses,
   if (auto *EWC = dyn_cast<ExprWithCleanups>(Body))
     Body = EWC->getSubExpr();
 
-  BinaryOperatorKind OpKind = BO_PtrMemD;
   Expr *X = nullptr;
-  Expr *XRVal = nullptr;
   Expr *V = nullptr;
   Expr *E = nullptr;
+  Expr *UE = nullptr;
+  bool IsXLHSInRHSPart = false;
+  bool IsPostfixUpdate = false;
   // OpenMP [2.12.6, atomic Construct]
   // In the next expressions:
   // * x and v (as applicable) are both l-value expressions with scalar type.
@@ -3502,14 +3572,14 @@ StmtResult Sema::ActOnOpenMPAtomicDirective(ArrayRef<OMPClause *> Clauses,
   // expr or subexpressions of expr.
   // * For forms that allow multiple occurrences of x, the number of times
   // that x is evaluated is unspecified.
-  enum {
-    NotAnExpression,
-    NotAnAssignmentOp,
-    NotAScalarType,
-    NotAnLValue,
-    NoError
-  } ErrorFound = NoError;
   if (AtomicKind == OMPC_read) {
+    enum {
+      NotAnExpression,
+      NotAnAssignmentOp,
+      NotAScalarType,
+      NotAnLValue,
+      NoError
+    } ErrorFound = NoError;
     SourceLocation ErrorLoc, NoteLoc;
     SourceRange ErrorRange, NoteRange;
     // If clause is read:
@@ -3565,6 +3635,13 @@ StmtResult Sema::ActOnOpenMPAtomicDirective(ArrayRef<OMPClause *> Clauses,
     } else if (CurContext->isDependentContext())
       V = X = nullptr;
   } else if (AtomicKind == OMPC_write) {
+    enum {
+      NotAnExpression,
+      NotAnAssignmentOp,
+      NotAScalarType,
+      NotAnLValue,
+      NoError
+    } ErrorFound = NoError;
     SourceLocation ErrorLoc, NoteLoc;
     SourceRange ErrorRange, NoteRange;
     // If clause is write:
@@ -3637,25 +3714,222 @@ StmtResult Sema::ActOnOpenMPAtomicDirective(ArrayRef<OMPClause *> Clauses,
     if (!CurContext->isDependentContext()) {
       E = Checker.getExpr();
       X = Checker.getX();
-      XRVal = Checker.getXRVal();
-      OpKind = Checker.getOpKind();
+      UE = Checker.getUpdateExpr();
+      IsXLHSInRHSPart = Checker.isXLHSInRHSPart();
     }
   } else if (AtomicKind == OMPC_capture) {
-    if (isa<Expr>(Body) && !isa<BinaryOperator>(Body)) {
-      Diag(Body->getLocStart(),
-           diag::err_omp_atomic_capture_not_expression_statement);
-      return StmtError();
-    } else if (!isa<Expr>(Body) && !isa<CompoundStmt>(Body)) {
-      Diag(Body->getLocStart(),
-           diag::err_omp_atomic_capture_not_compound_statement);
-      return StmtError();
+    enum {
+      NotAnAssignmentOp,
+      NotACompoundStatement,
+      NotTwoSubstatements,
+      NotASpecificExpression,
+      NoError
+    } ErrorFound = NoError;
+    SourceLocation ErrorLoc, NoteLoc;
+    SourceRange ErrorRange, NoteRange;
+    if (auto *AtomicBody = dyn_cast<Expr>(Body)) {
+      // If clause is a capture:
+      //  v = x++;
+      //  v = x--;
+      //  v = ++x;
+      //  v = --x;
+      //  v = x binop= expr;
+      //  v = x = x binop expr;
+      //  v = x = expr binop x;
+      auto *AtomicBinOp =
+          dyn_cast<BinaryOperator>(AtomicBody->IgnoreParenImpCasts());
+      if (AtomicBinOp && AtomicBinOp->getOpcode() == BO_Assign) {
+        V = AtomicBinOp->getLHS();
+        Body = AtomicBinOp->getRHS()->IgnoreParenImpCasts();
+        OpenMPAtomicUpdateChecker Checker(*this);
+        if (Checker.checkStatement(
+                Body, diag::err_omp_atomic_capture_not_expression_statement,
+                diag::note_omp_atomic_update))
+          return StmtError();
+        E = Checker.getExpr();
+        X = Checker.getX();
+        UE = Checker.getUpdateExpr();
+        IsXLHSInRHSPart = Checker.isXLHSInRHSPart();
+        IsPostfixUpdate = Checker.isPostfixUpdate();
+      } else {
+        ErrorLoc = AtomicBody->getExprLoc();
+        ErrorRange = AtomicBody->getSourceRange();
+        NoteLoc = AtomicBinOp ? AtomicBinOp->getOperatorLoc()
+                              : AtomicBody->getExprLoc();
+        NoteRange = AtomicBinOp ? AtomicBinOp->getSourceRange()
+                                : AtomicBody->getSourceRange();
+        ErrorFound = NotAnAssignmentOp;
+      }
+      if (ErrorFound != NoError) {
+        Diag(ErrorLoc, diag::err_omp_atomic_capture_not_expression_statement)
+            << ErrorRange;
+        Diag(NoteLoc, diag::note_omp_atomic_capture) << ErrorFound << NoteRange;
+        return StmtError();
+      } else if (CurContext->isDependentContext()) {
+        UE = V = E = X = nullptr;
+      }
+    } else {
+      // If clause is a capture:
+      //  { v = x; x = expr; }
+      //  { v = x; x++; }
+      //  { v = x; x--; }
+      //  { v = x; ++x; }
+      //  { v = x; --x; }
+      //  { v = x; x binop= expr; }
+      //  { v = x; x = x binop expr; }
+      //  { v = x; x = expr binop x; }
+      //  { x++; v = x; }
+      //  { x--; v = x; }
+      //  { ++x; v = x; }
+      //  { --x; v = x; }
+      //  { x binop= expr; v = x; }
+      //  { x = x binop expr; v = x; }
+      //  { x = expr binop x; v = x; }
+      if (auto *CS = dyn_cast<CompoundStmt>(Body)) {
+        // Check that this is { expr1; expr2; }
+        if (CS->size() == 2) {
+          auto *First = CS->body_front();
+          auto *Second = CS->body_back();
+          if (auto *EWC = dyn_cast<ExprWithCleanups>(First))
+            First = EWC->getSubExpr()->IgnoreParenImpCasts();
+          if (auto *EWC = dyn_cast<ExprWithCleanups>(Second))
+            Second = EWC->getSubExpr()->IgnoreParenImpCasts();
+          // Need to find what subexpression is 'v' and what is 'x'.
+          OpenMPAtomicUpdateChecker Checker(*this);
+          bool IsUpdateExprFound = !Checker.checkStatement(Second);
+          BinaryOperator *BinOp = nullptr;
+          if (IsUpdateExprFound) {
+            BinOp = dyn_cast<BinaryOperator>(First);
+            IsUpdateExprFound = BinOp && BinOp->getOpcode() == BO_Assign;
+          }
+          if (IsUpdateExprFound && !CurContext->isDependentContext()) {
+            //  { v = x; x++; }
+            //  { v = x; x--; }
+            //  { v = x; ++x; }
+            //  { v = x; --x; }
+            //  { v = x; x binop= expr; }
+            //  { v = x; x = x binop expr; }
+            //  { v = x; x = expr binop x; }
+            // Check that the first expression has form v = x.
+            auto *PossibleX = BinOp->getRHS()->IgnoreParenImpCasts();
+            llvm::FoldingSetNodeID XId, PossibleXId;
+            Checker.getX()->Profile(XId, Context, /*Canonical=*/true);
+            PossibleX->Profile(PossibleXId, Context, /*Canonical=*/true);
+            IsUpdateExprFound = XId == PossibleXId;
+            if (IsUpdateExprFound) {
+              V = BinOp->getLHS();
+              X = Checker.getX();
+              E = Checker.getExpr();
+              UE = Checker.getUpdateExpr();
+              IsXLHSInRHSPart = Checker.isXLHSInRHSPart();
+              IsPostfixUpdate = Checker.isPostfixUpdate();
+            }
+          }
+          if (!IsUpdateExprFound) {
+            IsUpdateExprFound = !Checker.checkStatement(First);
+            BinOp = nullptr;
+            if (IsUpdateExprFound) {
+              BinOp = dyn_cast<BinaryOperator>(Second);
+              IsUpdateExprFound = BinOp && BinOp->getOpcode() == BO_Assign;
+            }
+            if (IsUpdateExprFound && !CurContext->isDependentContext()) {
+              //  { x++; v = x; }
+              //  { x--; v = x; }
+              //  { ++x; v = x; }
+              //  { --x; v = x; }
+              //  { x binop= expr; v = x; }
+              //  { x = x binop expr; v = x; }
+              //  { x = expr binop x; v = x; }
+              // Check that the second expression has form v = x.
+              auto *PossibleX = BinOp->getRHS()->IgnoreParenImpCasts();
+              llvm::FoldingSetNodeID XId, PossibleXId;
+              Checker.getX()->Profile(XId, Context, /*Canonical=*/true);
+              PossibleX->Profile(PossibleXId, Context, /*Canonical=*/true);
+              IsUpdateExprFound = XId == PossibleXId;
+              if (IsUpdateExprFound) {
+                V = BinOp->getLHS();
+                X = Checker.getX();
+                E = Checker.getExpr();
+                UE = Checker.getUpdateExpr();
+                IsXLHSInRHSPart = Checker.isXLHSInRHSPart();
+                IsPostfixUpdate = Checker.isPostfixUpdate();
+              }
+            }
+          }
+          if (!IsUpdateExprFound) {
+            //  { v = x; x = expr; }
+            auto *FirstBinOp = dyn_cast<BinaryOperator>(First);
+            if (!FirstBinOp || FirstBinOp->getOpcode() != BO_Assign) {
+              ErrorFound = NotAnAssignmentOp;
+              NoteLoc = ErrorLoc = FirstBinOp ? FirstBinOp->getOperatorLoc()
+                                              : First->getLocStart();
+              NoteRange = ErrorRange = FirstBinOp
+                                           ? FirstBinOp->getSourceRange()
+                                           : SourceRange(ErrorLoc, ErrorLoc);
+            } else {
+              auto *SecondBinOp = dyn_cast<BinaryOperator>(Second);
+              if (!SecondBinOp || SecondBinOp->getOpcode() != BO_Assign) {
+                ErrorFound = NotAnAssignmentOp;
+                NoteLoc = ErrorLoc = SecondBinOp ? SecondBinOp->getOperatorLoc()
+                                                 : Second->getLocStart();
+                NoteRange = ErrorRange = SecondBinOp
+                                             ? SecondBinOp->getSourceRange()
+                                             : SourceRange(ErrorLoc, ErrorLoc);
+              } else {
+                auto *PossibleXRHSInFirst =
+                    FirstBinOp->getRHS()->IgnoreParenImpCasts();
+                auto *PossibleXLHSInSecond =
+                    SecondBinOp->getLHS()->IgnoreParenImpCasts();
+                llvm::FoldingSetNodeID X1Id, X2Id;
+                PossibleXRHSInFirst->Profile(X1Id, Context, /*Canonical=*/true);
+                PossibleXLHSInSecond->Profile(X2Id, Context,
+                                              /*Canonical=*/true);
+                IsUpdateExprFound = X1Id == X2Id;
+                if (IsUpdateExprFound) {
+                  V = FirstBinOp->getLHS();
+                  X = SecondBinOp->getLHS();
+                  E = SecondBinOp->getRHS();
+                  UE = nullptr;
+                  IsXLHSInRHSPart = false;
+                  IsPostfixUpdate = true;
+                } else {
+                  ErrorFound = NotASpecificExpression;
+                  ErrorLoc = FirstBinOp->getExprLoc();
+                  ErrorRange = FirstBinOp->getSourceRange();
+                  NoteLoc = SecondBinOp->getLHS()->getExprLoc();
+                  NoteRange = SecondBinOp->getRHS()->getSourceRange();
+                }
+              }
+            }
+          }
+        } else {
+          NoteLoc = ErrorLoc = Body->getLocStart();
+          NoteRange = ErrorRange =
+              SourceRange(Body->getLocStart(), Body->getLocStart());
+          ErrorFound = NotTwoSubstatements;
+        }
+      } else {
+        NoteLoc = ErrorLoc = Body->getLocStart();
+        NoteRange = ErrorRange =
+            SourceRange(Body->getLocStart(), Body->getLocStart());
+        ErrorFound = NotACompoundStatement;
+      }
+      if (ErrorFound != NoError) {
+        Diag(ErrorLoc, diag::err_omp_atomic_capture_not_compound_statement)
+            << ErrorRange;
+        Diag(NoteLoc, diag::note_omp_atomic_capture) << ErrorFound << NoteRange;
+        return StmtError();
+      } else if (CurContext->isDependentContext()) {
+        UE = V = E = X = nullptr;
+      }
     }
   }
 
   getCurFunction()->setHasBranchProtectedScope();
 
   return OMPAtomicDirective::Create(Context, StartLoc, EndLoc, Clauses, AStmt,
-                                    OpKind, X, XRVal, V, E);
+                                    X, V, E, UE, IsXLHSInRHSPart,
+                                    IsPostfixUpdate);
 }
 
 StmtResult Sema::ActOnOpenMPTargetDirective(ArrayRef<OMPClause *> Clauses,
@@ -5231,11 +5505,13 @@ OMPClause *Sema::ActOnOpenMPLinearClause(ArrayRef<Expr *> VarList, Expr *Step,
                                          SourceLocation ColonLoc,
                                          SourceLocation EndLoc) {
   SmallVector<Expr *, 8> Vars;
+  SmallVector<Expr *, 8> Inits;
   for (auto &RefExpr : VarList) {
     assert(RefExpr && "NULL expr in OpenMP linear clause.");
     if (isa<DependentScopeDeclRefExpr>(RefExpr)) {
       // It will be analyzed later.
       Vars.push_back(RefExpr);
+      Inits.push_back(nullptr);
       continue;
     }
 
@@ -5277,6 +5553,7 @@ OMPClause *Sema::ActOnOpenMPLinearClause(ArrayRef<Expr *> VarList, Expr *Step,
     if (QType->isDependentType() || QType->isInstantiationDependentType()) {
       // It will be analyzed later.
       Vars.push_back(DE);
+      Inits.push_back(nullptr);
       continue;
     }
 
@@ -5322,14 +5599,27 @@ OMPClause *Sema::ActOnOpenMPLinearClause(ArrayRef<Expr *> VarList, Expr *Step,
       continue;
     }
 
+    // Build var to save initial value.
+    VarDecl *Init = BuildVarDecl(*this, ELoc, DE->getType(), ".linear.start");
+    AddInitializerToDecl(Init, DefaultLvalueConversion(DE).get(),
+                         /*DirectInit*/ false, /*TypeMayContainAuto*/ false);
+    CurContext->addDecl(Init);
+    Init->setIsUsed();
+    auto InitRef = DeclRefExpr::Create(
+        Context, /*QualifierLoc*/ NestedNameSpecifierLoc(),
+        /*TemplateKWLoc*/ SourceLocation(), Init,
+        /*isEnclosingLocal*/ false, DE->getLocStart(), DE->getType(),
+        /*VK*/ VK_LValue);
     DSAStack->addDSA(VD, DE, OMPC_linear);
     Vars.push_back(DE);
+    Inits.push_back(InitRef);
   }
 
   if (Vars.empty())
     return nullptr;
 
   Expr *StepExpr = Step;
+  Expr *CalcStepExpr = nullptr;
   if (Step && !Step->isValueDependent() && !Step->isTypeDependent() &&
       !Step->isInstantiationDependent() &&
       !Step->containsUnexpandedParameterPack()) {
@@ -5339,17 +5629,85 @@ OMPClause *Sema::ActOnOpenMPLinearClause(ArrayRef<Expr *> VarList, Expr *Step,
       return nullptr;
     StepExpr = Val.get();
 
+    // Build var to save the step value.
+    VarDecl *SaveVar =
+        BuildVarDecl(*this, StepLoc, StepExpr->getType(), ".linear.step");
+    CurContext->addDecl(SaveVar);
+    SaveVar->setIsUsed();
+    ExprResult SaveRef =
+        BuildDeclRefExpr(SaveVar, StepExpr->getType(), VK_LValue, StepLoc);
+    ExprResult CalcStep =
+        BuildBinOp(CurScope, StepLoc, BO_Assign, SaveRef.get(), StepExpr);
+
     // Warn about zero linear step (it would be probably better specified as
     // making corresponding variables 'const').
     llvm::APSInt Result;
-    if (StepExpr->isIntegerConstantExpr(Result, Context) &&
-        !Result.isNegative() && !Result.isStrictlyPositive())
+    bool IsConstant = StepExpr->isIntegerConstantExpr(Result, Context);
+    if (IsConstant && !Result.isNegative() && !Result.isStrictlyPositive())
       Diag(StepLoc, diag::warn_omp_linear_step_zero) << Vars[0]
                                                      << (Vars.size() > 1);
+    if (!IsConstant && CalcStep.isUsable()) {
+      // Calculate the step beforehand instead of doing this on each iteration.
+      // (This is not used if the number of iterations may be kfold-ed).
+      CalcStepExpr = CalcStep.get();
+    }
   }
 
   return OMPLinearClause::Create(Context, StartLoc, LParenLoc, ColonLoc, EndLoc,
-                                 Vars, StepExpr);
+                                 Vars, Inits, StepExpr, CalcStepExpr);
+}
+
+static bool FinishOpenMPLinearClause(OMPLinearClause &Clause, DeclRefExpr *IV,
+                                     Expr *NumIterations, Sema &SemaRef,
+                                     Scope *S) {
+  // Walk the vars and build update/final expressions for the CodeGen.
+  SmallVector<Expr *, 8> Updates;
+  SmallVector<Expr *, 8> Finals;
+  Expr *Step = Clause.getStep();
+  Expr *CalcStep = Clause.getCalcStep();
+  // OpenMP [2.14.3.7, linear clause]
+  // If linear-step is not specified it is assumed to be 1.
+  if (Step == nullptr)
+    Step = SemaRef.ActOnIntegerConstant(SourceLocation(), 1).get();
+  else if (CalcStep)
+    Step = cast<BinaryOperator>(CalcStep)->getLHS();
+  bool HasErrors = false;
+  auto CurInit = Clause.inits().begin();
+  for (auto &RefExpr : Clause.varlists()) {
+    Expr *InitExpr = *CurInit;
+
+    // Build privatized reference to the current linear var.
+    auto DE = cast<DeclRefExpr>(RefExpr);
+    auto PrivateRef = DeclRefExpr::Create(
+        SemaRef.Context, /*QualifierLoc*/ DE->getQualifierLoc(),
+        /*TemplateKWLoc*/ SourceLocation(), DE->getDecl(),
+        /* RefersToEnclosingVariableOrCapture */ true, DE->getLocStart(),
+        DE->getType(), /*VK*/ VK_LValue);
+
+    // Build update: Var = InitExpr + IV * Step
+    ExprResult Update =
+        BuildCounterUpdate(SemaRef, S, RefExpr->getExprLoc(), PrivateRef,
+                           InitExpr, IV, Step, /* Subtract */ false);
+    Update = SemaRef.ActOnFinishFullExpr(Update.get());
+
+    // Build final: Var = InitExpr + NumIterations * Step
+    ExprResult Final =
+        BuildCounterUpdate(SemaRef, S, RefExpr->getExprLoc(), RefExpr, InitExpr,
+                           NumIterations, Step, /* Subtract */ false);
+    Final = SemaRef.ActOnFinishFullExpr(Final.get());
+    if (!Update.isUsable() || !Final.isUsable()) {
+      Updates.push_back(nullptr);
+      Finals.push_back(nullptr);
+      HasErrors = true;
+    } else {
+      Updates.push_back(Update.get());
+      Finals.push_back(Final.get());
+    }
+    ++CurInit;
+  }
+  Clause.setUpdates(Updates);
+  Clause.setFinals(Finals);
+  return HasErrors;
 }
 
 OMPClause *Sema::ActOnOpenMPAlignedClause(
@@ -5515,11 +5873,17 @@ OMPClause *Sema::ActOnOpenMPCopyprivateClause(ArrayRef<Expr *> VarList,
                                               SourceLocation LParenLoc,
                                               SourceLocation EndLoc) {
   SmallVector<Expr *, 8> Vars;
+  SmallVector<Expr *, 8> SrcExprs;
+  SmallVector<Expr *, 8> DstExprs;
+  SmallVector<Expr *, 8> AssignmentOps;
   for (auto &RefExpr : VarList) {
     assert(RefExpr && "NULL expr in OpenMP copyprivate clause.");
     if (isa<DependentScopeDeclRefExpr>(RefExpr)) {
       // It will be analyzed later.
       Vars.push_back(RefExpr);
+      SrcExprs.push_back(nullptr);
+      DstExprs.push_back(nullptr);
+      AssignmentOps.push_back(nullptr);
       continue;
     }
 
@@ -5541,6 +5905,9 @@ OMPClause *Sema::ActOnOpenMPCopyprivateClause(ArrayRef<Expr *> VarList,
     if (Type->isDependentType() || Type->isInstantiationDependentType()) {
       // It will be analyzed later.
       Vars.push_back(DE);
+      SrcExprs.push_back(nullptr);
+      DstExprs.push_back(nullptr);
+      AssignmentOps.push_back(nullptr);
       continue;
     }
 
@@ -5549,8 +5916,8 @@ OMPClause *Sema::ActOnOpenMPCopyprivateClause(ArrayRef<Expr *> VarList,
     //  private or firstprivate clause on the single construct.
     if (!DSAStack->isThreadPrivate(VD)) {
       auto DVar = DSAStack->getTopDSA(VD, false);
-      if (DVar.CKind != OMPC_copyprivate && DVar.CKind != OMPC_unknown &&
-          !(DVar.CKind == OMPC_private && !DVar.RefExpr)) {
+      if (DVar.CKind != OMPC_unknown && DVar.CKind != OMPC_copyprivate &&
+          DVar.RefExpr) {
         Diag(ELoc, diag::err_omp_wrong_dsa)
             << getOpenMPClauseName(DVar.CKind)
             << getOpenMPClauseName(OMPC_copyprivate);
@@ -5577,41 +5944,36 @@ OMPClause *Sema::ActOnOpenMPCopyprivateClause(ArrayRef<Expr *> VarList,
     //  A variable of class type (or array thereof) that appears in a
     //  copyin clause requires an accessible, unambiguous copy assignment
     //  operator for the class type.
-    Type = Context.getBaseElementType(Type);
-    CXXRecordDecl *RD =
-        getLangOpts().CPlusPlus ? Type->getAsCXXRecordDecl() : nullptr;
-    // FIXME This code must be replaced by actual assignment of the
-    // threadprivate variable.
-    if (RD) {
-      CXXMethodDecl *MD = LookupCopyingAssignment(RD, 0, false, 0);
-      DeclAccessPair FoundDecl = DeclAccessPair::make(MD, MD->getAccess());
-      if (MD) {
-        if (CheckMemberAccess(ELoc, RD, FoundDecl) == AR_inaccessible ||
-            MD->isDeleted()) {
-          Diag(ELoc, diag::err_omp_required_method)
-              << getOpenMPClauseName(OMPC_copyprivate) << 2;
-          bool IsDecl = VD->isThisDeclarationADefinition(Context) ==
-                        VarDecl::DeclarationOnly;
-          Diag(VD->getLocation(),
-               IsDecl ? diag::note_previous_decl : diag::note_defined_here)
-              << VD;
-          Diag(RD->getLocation(), diag::note_previous_decl) << RD;
-          continue;
-        }
-        MarkFunctionReferenced(ELoc, MD);
-        DiagnoseUseOfDecl(MD, ELoc);
-      }
-    }
+    auto *SrcVD = BuildVarDecl(*this, DE->getLocStart(), VD->getType(),
+                               ".copyprivate.src");
+    auto *PseudoSrcExpr = BuildDeclRefExpr(SrcVD, DE->getType(), VK_LValue,
+                                           DE->getExprLoc()).get();
+    auto *DstVD = BuildVarDecl(*this, DE->getLocStart(), VD->getType(),
+                               ".copyprivate.dst");
+    auto *PseudoDstExpr = BuildDeclRefExpr(DstVD, DE->getType(), VK_LValue,
+                                           DE->getExprLoc()).get();
+    auto AssignmentOp = BuildBinOp(/*S=*/nullptr, DE->getExprLoc(), BO_Assign,
+                                   PseudoDstExpr, PseudoSrcExpr);
+    if (AssignmentOp.isInvalid())
+      continue;
+    AssignmentOp = ActOnFinishFullExpr(AssignmentOp.get(), DE->getExprLoc(),
+                                       /*DiscardedValue=*/true);
+    if (AssignmentOp.isInvalid())
+      continue;
 
     // No need to mark vars as copyprivate, they are already threadprivate or
     // implicitly private.
     Vars.push_back(DE);
+    SrcExprs.push_back(PseudoSrcExpr);
+    DstExprs.push_back(PseudoDstExpr);
+    AssignmentOps.push_back(AssignmentOp.get());
   }
 
   if (Vars.empty())
     return nullptr;
 
-  return OMPCopyprivateClause::Create(Context, StartLoc, LParenLoc, EndLoc, Vars);
+  return OMPCopyprivateClause::Create(Context, StartLoc, LParenLoc, EndLoc,
+                                      Vars, SrcExprs, DstExprs, AssignmentOps);
 }
 
 OMPClause *Sema::ActOnOpenMPFlushClause(ArrayRef<Expr *> VarList,

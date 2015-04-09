@@ -26,7 +26,7 @@ using namespace llvm;
 #include "MBlazeGenAsmWriter.inc"
 
 void MBlazeInstPrinter::printInst(const MCInst *MI, raw_ostream &O,
-                                  StringRef Annot) {
+                                  StringRef Annot, const MCSubtargetInfo &STI) {
   printInstruction(MI, O);
   printAnnotation(O, Annot);
 }
