@@ -54,15 +54,15 @@ void ReportFile::ReopenIfNecessary() {
     if (fd_pid == pid)
       return;
     else
-      internal_close(fd);
+      CloseFile(fd);
   }
 
   internal_snprintf(full_path, kMaxPathLength, "%s.%zu", path_prefix, pid);
   fd = OpenFile(full_path, WrOnly);
   if (fd == kInvalidFd) {
     const char *ErrorMsgPrefix = "ERROR: Can't open file: ";
-    internal_write(kStderrFd, ErrorMsgPrefix, internal_strlen(ErrorMsgPrefix));
-    internal_write(kStderrFd, full_path, internal_strlen(full_path));
+    WriteToFile(kStderrFd, ErrorMsgPrefix, internal_strlen(ErrorMsgPrefix));
+    WriteToFile(kStderrFd, full_path, internal_strlen(full_path));
     Die();
   }
   fd_pid = pid;
@@ -81,7 +81,7 @@ void ReportFile::SetReportPath(const char *path) {
 
   SpinMutexLock l(mu);
   if (fd != kStdoutFd && fd != kStderrFd && fd != kInvalidFd)
-    internal_close(fd);
+    CloseFile(fd);
   fd = kInvalidFd;
   if (internal_strcmp(path, "stdout") == 0) {
     fd = kStdoutFd;
@@ -152,8 +152,8 @@ uptr ReadFileToBuffer(const char *file_name, char **buff, uptr *buff_size,
     read_len = 0;
     bool reached_eof = false;
     while (read_len + PageSize <= size) {
-      uptr just_read = internal_read(fd, *buff + read_len, PageSize);
-      if (internal_iserror(just_read, errno_p)) {
+      uptr just_read;
+      if (!ReadFromFile(fd, *buff + read_len, PageSize, &just_read, errno_p)) {
         UnmapOrDie(*buff, *buff_size);
         return 0;
       }
@@ -163,7 +163,7 @@ uptr ReadFileToBuffer(const char *file_name, char **buff, uptr *buff_size,
       }
       read_len += just_read;
     }
-    internal_close(fd);
+    CloseFile(fd);
     if (reached_eof)  // We've read the whole file.
       break;
   }

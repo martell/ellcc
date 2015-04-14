@@ -40,7 +40,7 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
       CurFn(nullptr), CapturedStmtInfo(nullptr),
       SanOpts(CGM.getLangOpts().Sanitize), IsSanitizerScope(false),
       CurFuncIsThunk(false), AutoreleaseResult(false), SawAsmBlock(false),
-      BlockInfo(nullptr), BlockPointer(nullptr),
+      IsOutlinedSEHHelper(false), BlockInfo(nullptr), BlockPointer(nullptr),
       LambdaThisCaptureField(nullptr), NormalCleanupDest(nullptr),
       NextCleanupDestIndex(1), FirstBlockInfo(nullptr), EHResumeBlock(nullptr),
       ExceptionSlot(nullptr), EHSelectorSlot(nullptr),
@@ -69,6 +69,9 @@ CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
   }
   if (CGM.getCodeGenOpts().NoSignedZeros) {
     FMF.setNoSignedZeros();
+  }
+  if (CGM.getCodeGenOpts().ReciprocalMath) {
+    FMF.setAllowReciprocal();
   }
   Builder.SetFastMathFlags(FMF);
 }

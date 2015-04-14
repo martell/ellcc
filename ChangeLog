@@ -1,7 +1,7 @@
 current SVN:
 
 * Removed lld for now.
-* Update to LLVM r234480.
+* Update to LLVM r234745.
 * Fixed ELK thread scheduler for idle thread.
 * Update to GDB 7.9.
 

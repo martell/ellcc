@@ -211,8 +211,9 @@ void CoverageData::Enable() {
   tr_event_array = reinterpret_cast<u32 *>(MmapNoReserveOrDie(
       sizeof(tr_event_array[0]) * kTrEventArrayMaxSize + GetMmapGranularity(),
       "CovInit::tr_event_array"));
-  Mprotect(reinterpret_cast<uptr>(&tr_event_array[kTrEventArrayMaxSize]),
-           GetMmapGranularity());
+  MprotectNoAccess(
+      reinterpret_cast<uptr>(&tr_event_array[kTrEventArrayMaxSize]),
+      GetMmapGranularity());
   tr_event_array_size = kTrEventArrayMaxSize;
   tr_event_pointer = tr_event_array;
 
@@ -245,7 +246,7 @@ void CoverageData::Disable() {
     tr_event_pointer = nullptr;
   }
   if (pc_fd != kInvalidFd) {
-    internal_close(pc_fd);
+    CloseFile(pc_fd);
     pc_fd = kInvalidFd;
   }
 }
@@ -522,9 +523,9 @@ static void CovWritePacked(int pid, const char *module, const void *blob,
 
   if (cov_max_block_size == 0) {
     // Writing to a file. Just go ahead.
-    internal_write(cov_fd, &header, sizeof(header));
-    internal_write(cov_fd, module, module_name_length);
-    internal_write(cov_fd, blob, blob_size);
+    WriteToFile(cov_fd, &header, sizeof(header));
+    WriteToFile(cov_fd, module, module_name_length);
+    WriteToFile(cov_fd, blob, blob_size);
   } else {
     // Writing to a socket. We want to split the data into appropriately sized
     // blocks.
@@ -547,8 +548,7 @@ static void CovWritePacked(int pid, const char *module, const void *blob,
       internal_memcpy(block_data_begin, blob_pos, payload_size);
       blob_pos += payload_size;
       ((CovHeader *)block.data())->data_length = payload_size;
-      internal_write(cov_fd, block.data(),
-                     header_size_with_module + payload_size);
+      WriteToFile(cov_fd, block.data(), header_size_with_module + payload_size);
     }
   }
 }
@@ -595,16 +595,16 @@ void CoverageData::DumpTrace() {
   InternalScopedString path(kMaxPathLength);
   fd_t fd = CovOpenFile(&path, false, "trace-points");
   if (fd == kInvalidFd) return;
-  internal_write(fd, out.data(), out.length());
-  internal_close(fd);
+  WriteToFile(fd, out.data(), out.length());
+  CloseFile(fd);
 
   fd = CovOpenFile(&path, false, "trace-compunits");
   if (fd == kInvalidFd) return;
   out.clear();
   for (uptr i = 0; i < comp_unit_name_vec.size(); i++)
     out.append("%s\n", comp_unit_name_vec[i].copied_module_name);
-  internal_write(fd, out.data(), out.length());
-  internal_close(fd);
+  WriteToFile(fd, out.data(), out.length());
+  CloseFile(fd);
 
   fd = CovOpenFile(&path, false, "trace-events");
   if (fd == kInvalidFd) return;
@@ -612,15 +612,16 @@ void CoverageData::DumpTrace() {
   u8 *event_bytes = reinterpret_cast<u8*>(tr_event_array);
   // The trace file could be huge, and may not be written with a single syscall.
   while (bytes_to_write) {
-    uptr actually_written = internal_write(fd, event_bytes, bytes_to_write);
-    if (actually_written <= bytes_to_write) {
+    uptr actually_written;
+    if (WriteToFile(fd, event_bytes, bytes_to_write, &actually_written) &&
+        actually_written <= bytes_to_write) {
       bytes_to_write -= actually_written;
       event_bytes += actually_written;
     } else {
       break;
     }
   }
-  internal_close(fd);
+  CloseFile(fd);
   VReport(1, " CovDump: Trace: %zd PCs written\n", size());
   VReport(1, " CovDump: Trace: %zd Events written\n", max_idx);
 }
@@ -660,8 +661,8 @@ void CoverageData::DumpCallerCalleePairs() {
   InternalScopedString path(kMaxPathLength);
   fd_t fd = CovOpenFile(&path, false, "caller-callee");
   if (fd == kInvalidFd) return;
-  internal_write(fd, out.data(), out.length());
-  internal_close(fd);
+  WriteToFile(fd, out.data(), out.length());
+  CloseFile(fd);
   VReport(1, " CovDump: %zd caller-callee pairs written\n", total);
 }
 
@@ -695,8 +696,8 @@ void CoverageData::DumpCounters() {
     fd_t fd =
         CovOpenFile(&path, /* packed */ false, base_name, "counters-sancov");
     if (fd == kInvalidFd) return;
-    internal_write(fd, bitset.data() + r.beg, r.end - r.beg);
-    internal_close(fd);
+    WriteToFile(fd, bitset.data() + r.beg, r.end - r.beg);
+    CloseFile(fd);
     VReport(1, " CovDump: %zd counters written for '%s'\n", r.end - r.beg,
             base_name);
   }
@@ -722,8 +723,8 @@ void CoverageData::DumpAsBitSet() {
     const char *base_name = StripModuleName(r.copied_module_name);
     fd_t fd = CovOpenFile(&path, /* packed */false, base_name, "bitset-sancov");
     if (fd == kInvalidFd) return;
-    internal_write(fd, out.data() + r.beg, r.end - r.beg);
-    internal_close(fd);
+    WriteToFile(fd, out.data() + r.beg, r.end - r.beg);
+    CloseFile(fd);
     VReport(1,
             " CovDump: bitset of %zd bits written for '%s', %zd bits are set\n",
             r.end - r.beg, base_name, n_set_bits);
@@ -777,13 +778,13 @@ void CoverageData::DumpOffsets() {
       // One file per module per process.
       fd_t fd = CovOpenFile(&path, false /* packed */, module_name);
       if (fd == kInvalidFd) continue;
-      internal_write(fd, offsets.data(), offsets.size() * sizeof(offsets[0]));
-      internal_close(fd);
+      WriteToFile(fd, offsets.data(), offsets.size() * sizeof(offsets[0]));
+      CloseFile(fd);
       VReport(1, " CovDump: %s: %zd PCs written\n", path.data(), num_offsets);
     }
   }
   if (cov_fd != kInvalidFd)
-    internal_close(cov_fd);
+    CloseFile(cov_fd);
 }
 
 void CoverageData::DumpAll() {
@@ -804,7 +805,7 @@ void CovPrepareForSandboxing(__sanitizer_sandbox_arguments *args) {
   if (!cov_sandboxed) return;
   cov_max_block_size = args->coverage_max_block_size;
   if (args->coverage_fd >= 0) {
-    cov_fd = args->coverage_fd;
+    cov_fd = (fd_t)args->coverage_fd;
   } else {
     InternalScopedString path(kMaxPathLength);
     // Pre-open the file now. The sandbox won't allow us to do it later.

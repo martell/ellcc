@@ -892,7 +892,7 @@ public:
         void *Ctxt = nullptr,
         SourceMgr::DiagHandlerTy DiagHandler = nullptr,
         void *DiagHandlerCtxt = nullptr);
-  ~Input();
+  ~Input() override;
 
   // Check if there was an syntax or semantic error during parsing.
   std::error_code error();
@@ -959,7 +959,7 @@ private:
   };
 
   class MapHNode : public HNode {
-    virtual void anchor();
+    void anchor() override;
 
   public:
     MapHNode(Node *n) : HNode(n) { }
@@ -978,7 +978,7 @@ private:
   };
 
   class SequenceHNode : public HNode {
-    virtual void anchor();
+    void anchor() override;
 
   public:
     SequenceHNode(Node *n) : HNode(n) { }
@@ -1024,7 +1024,7 @@ private:
 class Output : public IO {
 public:
   Output(llvm::raw_ostream &, void *Ctxt=nullptr);
-  virtual ~Output();
+  ~Output() override;
 
   bool outputting() override;
   bool mapTag(StringRef, bool) override;
