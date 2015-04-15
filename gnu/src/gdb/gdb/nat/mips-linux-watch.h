@@ -18,7 +18,9 @@
 #ifndef MIPS_LINUX_WATCH_H
 #define MIPS_LINUX_WATCH_H 1
 
+#if !defined(__ELLCC__)
 #include <asm/ptrace.h>
+#endif
 #include <stdint.h>
 
 #include "break-common.h"

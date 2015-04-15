@@ -16,7 +16,9 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "common-defs.h"
+#if !defined(__ELLCC__)
 #include <sys/ptrace.h>
+#endif
 #include "mips-linux-watch.h"
 
 /* Assuming usable watch registers REGS, return the irw_mask of
