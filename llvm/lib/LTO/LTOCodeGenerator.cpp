@@ -82,6 +82,7 @@ void LTOCodeGenerator::initialize() {
   DiagHandler = nullptr;
   DiagContext = nullptr;
   OwnedModule = nullptr;
+  ShouldInternalize = true;
 
   initializeLTOPasses();
 }
@@ -214,7 +215,8 @@ bool LTOCodeGenerator::writeMergedModules(const char *path,
   }
 
   // write bitcode to it
-  WriteBitcodeToFile(IRLinker.getModule(), Out.os());
+  WriteBitcodeToFile(IRLinker.getModule(), Out.os(),
+                     /* ShouldPreserveUseListOrder */ true);
   Out.os().close();
 
   if (Out.os().has_error()) {
@@ -463,7 +465,7 @@ static void accumulateAndSortLibcalls(std::vector<StringRef> &Libcalls,
 }
 
 void LTOCodeGenerator::applyScopeRestrictions() {
-  if (ScopeRestrictionsDone)
+  if (ScopeRestrictionsDone || !ShouldInternalize)
     return;
   Module *mergedModule = IRLinker.getModule();
 
@@ -565,7 +567,8 @@ bool LTOCodeGenerator::optimize(bool DisableInline,
   return true;
 }
 
-bool LTOCodeGenerator::compileOptimized(raw_ostream &out, std::string &errMsg) {
+bool LTOCodeGenerator::compileOptimized(raw_pwrite_stream &out,
+                                        std::string &errMsg) {
   if (!this->determineTarget(errMsg))
     return false;
 

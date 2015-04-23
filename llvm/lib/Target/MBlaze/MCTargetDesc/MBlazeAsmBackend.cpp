@@ -124,7 +124,7 @@ public:
   void applyFixup(const MCFixup &Fixup, char *Data, unsigned DataSize,
                   uint64_t Value, bool IsPCRel) const;
 
-  MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
+  MCObjectWriter *createObjectWriter(raw_pwrite_stream &OS) const {
     return createMBlazeELFObjectWriter(OS, OSABI);
   }
 };

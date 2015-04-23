@@ -894,13 +894,13 @@ static LinkageInfo getLVForClassMember(const NamedDecl *D,
   if (const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(D)) {
     // If the type of the function uses a type with unique-external
     // linkage, it's not legally usable from outside this translation unit.
-    // But only look at the type-as-written. If this function has an auto-deduced
-    // return type, we can't compute the linkage of that type because it could
-    // require looking at the linkage of this function, and we don't need this
-    // for correctness because the type is not part of the function's
-    // signature.
-    // FIXME: This is a hack. We should be able to solve this circularity and the
-    // one in getLVForNamespaceScopeDecl for Functions some other way.
+    // But only look at the type-as-written. If this function has an
+    // auto-deduced return type, we can't compute the linkage of that type
+    // because it could require looking at the linkage of this function, and we
+    // don't need this for correctness because the type is not part of the
+    // function's signature.
+    // FIXME: This is a hack. We should be able to solve this circularity and
+    // the one in getLVForNamespaceScopeDecl for Functions some other way.
     {
       QualType TypeAsWritten = MD->getType();
       if (TypeSourceInfo *TSI = MD->getTypeSourceInfo())
@@ -1877,9 +1877,8 @@ bool VarDecl::isInExternCXXContext() const {
 
 VarDecl *VarDecl::getCanonicalDecl() { return getFirstDecl(); }
 
-VarDecl::DefinitionKind VarDecl::isThisDeclarationADefinition(
-  ASTContext &C) const
-{
+VarDecl::DefinitionKind
+VarDecl::isThisDeclarationADefinition(ASTContext &C) const {
   // C++ [basic.def]p2:
   //   A declaration is a definition unless [...] it contains the 'extern'
   //   specifier or a linkage-specification and neither an initializer [...],
@@ -1916,7 +1915,8 @@ VarDecl::DefinitionKind VarDecl::isThisDeclarationADefinition(
   if (hasInit())
     return Definition;
 
-  if (hasAttr<AliasAttr>())
+  if (hasAttr<AliasAttr>() ||
+      (hasAttr<SelectAnyAttr>() && !getAttr<SelectAnyAttr>()->isInherited()))
     return Definition;
 
   // A variable template specialization (other than a static data member

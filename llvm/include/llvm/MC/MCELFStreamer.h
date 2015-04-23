@@ -29,18 +29,18 @@ class raw_ostream;
 
 class MCELFStreamer : public MCObjectStreamer {
 public:
-  MCELFStreamer(MCContext &Context, MCAsmBackend &TAB, raw_ostream &OS,
+  MCELFStreamer(MCContext &Context, MCAsmBackend &TAB, raw_pwrite_stream &OS,
                 MCCodeEmitter *Emitter)
-      : MCObjectStreamer(Context, TAB, OS, Emitter),
-        SeenIdent(false) {}
+      : MCObjectStreamer(Context, TAB, OS, Emitter), SeenIdent(false) {}
 
   ~MCELFStreamer() override;
 
   /// state management
   void reset() override {
+    SeenIdent = false;
     LocalCommons.clear();
     BindingExplicitlySet.clear();
-    SeenIdent = false;
+    BundleGroups.clear();
     MCObjectStreamer::reset();
   }
 
@@ -116,8 +116,9 @@ private:
 };
 
 MCELFStreamer *createARMELFStreamer(MCContext &Context, MCAsmBackend &TAB,
-                                    raw_ostream &OS, MCCodeEmitter *Emitter,
-                                    bool RelaxAll, bool IsThumb);
+                                    raw_pwrite_stream &OS,
+                                    MCCodeEmitter *Emitter, bool RelaxAll,
+                                    bool IsThumb);
 
 } // end namespace llvm
 

@@ -49,6 +49,7 @@ enum TokenType {
   TT_InlineASMColon,
   TT_JavaAnnotation,
   TT_JsTypeColon,
+  TT_JsTypeOptionalQuestion,
   TT_LambdaArrow,
   TT_LambdaLSquare,
   TT_LeadingJavaAnnotation,
@@ -544,6 +545,8 @@ struct AdditionalKeywords {
     kw_throws = &IdentTable.get("throws");
     kw___except = &IdentTable.get("__except");
 
+    kw_mark = &IdentTable.get("mark");
+
     kw_option = &IdentTable.get("option");
     kw_optional = &IdentTable.get("optional");
     kw_repeated = &IdentTable.get("repeated");
@@ -580,6 +583,9 @@ struct AdditionalKeywords {
   IdentifierInfo *kw_package;
   IdentifierInfo *kw_synchronized;
   IdentifierInfo *kw_throws;
+
+  // Pragma keywords.
+  IdentifierInfo *kw_mark;
 
   // Proto keywords.
   IdentifierInfo *kw_option;

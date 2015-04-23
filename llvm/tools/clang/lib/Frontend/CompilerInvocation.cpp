@@ -405,6 +405,10 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
     // Default Dwarf version is 4 if we are generating debug information.
     Opts.DwarfVersion = 4;
 
+  if (const Arg *A =
+          Args.getLastArg(OPT_emit_llvm_uselists, OPT_no_emit_llvm_uselists))
+    Opts.EmitLLVMUseLists = A->getOption().getID() == OPT_emit_llvm_uselists;
+
   Opts.DisableLLVMOpts = Args.hasArg(OPT_disable_llvm_optzns);
   Opts.DisableRedZone = Args.hasArg(OPT_disable_red_zone);
   Opts.ForbidGuardVariables = Args.hasArg(OPT_fforbid_guard_variables);
@@ -1370,6 +1374,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   if (Args.hasArg(OPT_fcuda_allow_host_calls_from_host_device))
     Opts.CUDAAllowHostCallsFromHostDevice = 1;
+
+  if (Args.hasArg(OPT_fcuda_disable_target_call_checks))
+    Opts.CUDADisableTargetCallChecks = 1;
 
   if (Opts.ObjC1) {
     if (Arg *arg = Args.getLastArg(OPT_fobjc_runtime_EQ)) {

@@ -2314,6 +2314,20 @@ def STLXPX : StoreExclusivePair<0b11, 0, 0, 1, 1, GPR64, "stlxp">;
 def STXPW  : StoreExclusivePair<0b10, 0, 0, 1, 0, GPR32, "stxp">;
 def STXPX  : StoreExclusivePair<0b11, 0, 0, 1, 0, GPR64, "stxp">;
 
+let Predicates = [HasV8_1a] in {
+  // v8.1a "Limited Order Region" extension load-acquire instructions
+  def LDLARW  : LoadAcquire   <0b10, 1, 1, 0, 0, GPR32, "ldlar">;
+  def LDLARX  : LoadAcquire   <0b11, 1, 1, 0, 0, GPR64, "ldlar">;
+  def LDLARB  : LoadAcquire   <0b00, 1, 1, 0, 0, GPR32, "ldlarb">;
+  def LDLARH  : LoadAcquire   <0b01, 1, 1, 0, 0, GPR32, "ldlarh">;
+
+  // v8.1a "Limited Order Region" extension store-release instructions
+  def STLLRW  : StoreRelease   <0b10, 1, 0, 0, 0, GPR32, "stllr">;
+  def STLLRX  : StoreRelease   <0b11, 1, 0, 0, 0, GPR64, "stllr">;
+  def STLLRB  : StoreRelease   <0b00, 1, 0, 0, 0, GPR32, "stllrb">;
+  def STLLRH  : StoreRelease   <0b01, 1, 0, 0, 0, GPR32, "stllrh">;
+}
+
 //===----------------------------------------------------------------------===//
 // Scaled floating point to integer conversion instructions.
 //===----------------------------------------------------------------------===//
@@ -3496,13 +3510,13 @@ def : Pat<(f64 (int_aarch64_neon_fminv (v2f64 V128:$Rn))),
 // AdvSIMD INS/DUP instructions
 //----------------------------------------------------------------------------
 
-def DUPv8i8gpr  : SIMDDupFromMain<0, 0b00001, ".8b", v8i8, V64, GPR32>;
-def DUPv16i8gpr : SIMDDupFromMain<1, 0b00001, ".16b", v16i8, V128, GPR32>;
-def DUPv4i16gpr : SIMDDupFromMain<0, 0b00010, ".4h", v4i16, V64, GPR32>;
-def DUPv8i16gpr : SIMDDupFromMain<1, 0b00010, ".8h", v8i16, V128, GPR32>;
-def DUPv2i32gpr : SIMDDupFromMain<0, 0b00100, ".2s", v2i32, V64, GPR32>;
-def DUPv4i32gpr : SIMDDupFromMain<1, 0b00100, ".4s", v4i32, V128, GPR32>;
-def DUPv2i64gpr : SIMDDupFromMain<1, 0b01000, ".2d", v2i64, V128, GPR64>;
+def DUPv8i8gpr  : SIMDDupFromMain<0, {?,?,?,?,1}, ".8b", v8i8, V64, GPR32>;
+def DUPv16i8gpr : SIMDDupFromMain<1, {?,?,?,?,1}, ".16b", v16i8, V128, GPR32>;
+def DUPv4i16gpr : SIMDDupFromMain<0, {?,?,?,1,0}, ".4h", v4i16, V64, GPR32>;
+def DUPv8i16gpr : SIMDDupFromMain<1, {?,?,?,1,0}, ".8h", v8i16, V128, GPR32>;
+def DUPv2i32gpr : SIMDDupFromMain<0, {?,?,1,0,0}, ".2s", v2i32, V64, GPR32>;
+def DUPv4i32gpr : SIMDDupFromMain<1, {?,?,1,0,0}, ".4s", v4i32, V128, GPR32>;
+def DUPv2i64gpr : SIMDDupFromMain<1, {?,1,0,0,0}, ".2d", v2i64, V128, GPR64>;
 
 def DUPv2i64lane : SIMDDup64FromElement;
 def DUPv2i32lane : SIMDDup32FromElement<0, ".2s", v2i32, V64>;

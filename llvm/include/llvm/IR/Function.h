@@ -223,6 +223,10 @@ public:
   /// @brief adds the dereferenceable attribute to the list of attributes.
   void addDereferenceableAttr(unsigned i, uint64_t Bytes);
 
+  /// @brief adds the dereferenceable_or_null attribute to the list of
+  /// attributes.
+  void addDereferenceableOrNullAttr(unsigned i, uint64_t Bytes);
+
   /// @brief Extract the alignment for a call or parameter (0=unknown).
   unsigned getParamAlignment(unsigned i) const {
     return AttributeSets.getParamAlignment(i);
@@ -452,6 +456,10 @@ public:
 
   Constant *getPrologueData() const;
   void setPrologueData(Constant *PrologueData);
+
+  /// Print the function to an output stream with an optional
+  /// AssemblyAnnotationWriter.
+  void print(raw_ostream &OS, AssemblyAnnotationWriter *AAW = nullptr) const;
 
   /// viewCFG - This function is meant for use from the debugger.  You can just
   /// say 'call F->viewCFG()' and a ghostview window should pop up from the

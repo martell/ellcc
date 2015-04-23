@@ -27,6 +27,7 @@ class MCSubtargetInfo;
 class Target;
 class StringRef;
 class raw_ostream;
+class raw_pwrite_stream;
 
 extern Target TheMBlazeTarget;
 
@@ -39,7 +40,8 @@ MCAsmBackend *createMBlazeAsmBackend(const Target &T,
                                      StringRef TT,
                                      StringRef CPU);
 
-MCObjectWriter *createMBlazeELFObjectWriter(raw_ostream &OS, uint8_t OSABI);
+MCObjectWriter *createMBlazeELFObjectWriter(raw_pwrite_stream &OS,
+                                            uint8_t OSABI);
 } // End llvm namespace
 
 // Defines symbolic names for MBlaze registers.  This defines a mapping from

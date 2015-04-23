@@ -2851,13 +2851,16 @@ SDValue SelectionDAG::getNode(unsigned Opcode, SDLoc DL,
         // FIXME: Entirely reasonable to perform folding of other unary
         // operations here as the need arises.
         break;
+      case ISD::TRUNCATE:
+        // Constant build vector truncation can be done with the original scalar
+        // operands but with a new build vector with the truncated value type.
+        return getNode(ISD::BUILD_VECTOR, DL, VT, BV->ops());
       case ISD::FNEG:
       case ISD::FABS:
       case ISD::FCEIL:
       case ISD::FTRUNC:
       case ISD::FFLOOR:
       case ISD::FP_EXTEND:
-      case ISD::TRUNCATE:
       case ISD::UINT_TO_FP:
       case ISD::SINT_TO_FP: {
         // Let the above scalar folding handle the folding of each element.
@@ -3195,6 +3198,18 @@ SDValue SelectionDAG::getNode(unsigned Opcode, SDLoc DL, EVT VT, SDValue N1,
       SmallVector<SDValue, 16> Elts(N1.getNode()->op_begin(),
                                     N1.getNode()->op_end());
       Elts.append(N2.getNode()->op_begin(), N2.getNode()->op_end());
+
+      // BUILD_VECTOR requires all inputs to be of the same type, find the
+      // maximum type and extend them all.
+      EVT SVT = VT.getScalarType();
+      for (SDValue Op : Elts)
+        SVT = (SVT.bitsLT(Op.getValueType()) ? Op.getValueType() : SVT);
+      if (SVT.bitsGT(VT.getScalarType()))
+        for (SDValue &Op : Elts)
+          Op = TLI->isZExtFree(Op.getValueType(), SVT)
+             ? getZExtOrTrunc(Op, DL, SVT)
+             : getSExtOrTrunc(Op, DL, SVT);
+
       return getNode(ISD::BUILD_VECTOR, DL, VT, Elts);
     }
     break;
@@ -4294,7 +4309,7 @@ static SDValue getMemsetStores(SelectionDAG &DAG, SDLoc dl,
 SDValue SelectionDAG::getMemcpy(SDValue Chain, SDLoc dl, SDValue Dst,
                                 SDValue Src, SDValue Size,
                                 unsigned Align, bool isVol, bool AlwaysInline,
-                                MachinePointerInfo DstPtrInfo,
+                                bool isTailCall, MachinePointerInfo DstPtrInfo,
                                 MachinePointerInfo SrcPtrInfo) {
   assert(Align && "The SDAG layer expects explicit alignment and reserves 0");
 
@@ -4352,15 +4367,16 @@ SDValue SelectionDAG::getMemcpy(SDValue Chain, SDLoc dl, SDValue Dst,
                Type::getVoidTy(*getContext()),
                getExternalSymbol(TLI->getLibcallName(RTLIB::MEMCPY),
                                  TLI->getPointerTy()), std::move(Args), 0)
-    .setDiscardResult();
-  std::pair<SDValue,SDValue> CallResult = TLI->LowerCallTo(CLI);
+    .setDiscardResult()
+    .setTailCall(isTailCall);
 
+  std::pair<SDValue,SDValue> CallResult = TLI->LowerCallTo(CLI);
   return CallResult.second;
 }
 
 SDValue SelectionDAG::getMemmove(SDValue Chain, SDLoc dl, SDValue Dst,
                                  SDValue Src, SDValue Size,
-                                 unsigned Align, bool isVol,
+                                 unsigned Align, bool isVol, bool isTailCall,
                                  MachinePointerInfo DstPtrInfo,
                                  MachinePointerInfo SrcPtrInfo) {
   assert(Align && "The SDAG layer expects explicit alignment and reserves 0");
@@ -4407,15 +4423,16 @@ SDValue SelectionDAG::getMemmove(SDValue Chain, SDLoc dl, SDValue Dst,
                Type::getVoidTy(*getContext()),
                getExternalSymbol(TLI->getLibcallName(RTLIB::MEMMOVE),
                                  TLI->getPointerTy()), std::move(Args), 0)
-    .setDiscardResult();
-  std::pair<SDValue,SDValue> CallResult = TLI->LowerCallTo(CLI);
+    .setDiscardResult()
+    .setTailCall(isTailCall);
 
+  std::pair<SDValue,SDValue> CallResult = TLI->LowerCallTo(CLI);
   return CallResult.second;
 }
 
 SDValue SelectionDAG::getMemset(SDValue Chain, SDLoc dl, SDValue Dst,
                                 SDValue Src, SDValue Size,
-                                unsigned Align, bool isVol,
+                                unsigned Align, bool isVol, bool isTailCall,
                                 MachinePointerInfo DstPtrInfo) {
   assert(Align && "The SDAG layer expects explicit alignment and reserves 0");
 
@@ -4464,7 +4481,8 @@ SDValue SelectionDAG::getMemset(SDValue Chain, SDLoc dl, SDValue Dst,
                Type::getVoidTy(*getContext()),
                getExternalSymbol(TLI->getLibcallName(RTLIB::MEMSET),
                                  TLI->getPointerTy()), std::move(Args), 0)
-    .setDiscardResult();
+    .setDiscardResult()
+    .setTailCall(isTailCall);
 
   std::pair<SDValue,SDValue> CallResult = TLI->LowerCallTo(CLI);
   return CallResult.second;

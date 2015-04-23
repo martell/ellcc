@@ -1777,6 +1777,8 @@ CodeGenModule::GetOrCreateLLVMGlobal(StringRef MangledName,
     // handling.
     GV->setConstant(isTypeConstant(D->getType(), false));
 
+    GV->setAlignment(getContext().getDeclAlign(D).getQuantity());
+
     setLinkageAndVisibilityForGV(GV, D);
 
     if (D->getTLSKind()) {
@@ -2134,7 +2136,8 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
 }
 
 static bool isVarDeclStrongDefinition(const ASTContext &Context,
-                                      const VarDecl *D, bool NoCommon) {
+                                      CodeGenModule &CGM, const VarDecl *D,
+                                      bool NoCommon) {
   // Don't give variables common linkage if -fno-common was specified unless it
   // was overridden by a NoCommon attribute.
   if ((NoCommon || D->hasAttr<NoCommonAttr>()) && !D->hasAttr<CommonAttr>())
@@ -2157,6 +2160,10 @@ static bool isVarDeclStrongDefinition(const ASTContext &Context,
 
   // Tentative definitions marked with WeakImportAttr are true definitions.
   if (D->hasAttr<WeakImportAttr>())
+    return true;
+
+  // A variable cannot be both common and exist in a comdat.
+  if (shouldBeInCOMDAT(CGM, *D))
     return true;
 
   // Declarations with a required alignment do not have common linakge in MSVC
@@ -2227,7 +2234,7 @@ llvm::GlobalValue::LinkageTypes CodeGenModule::getLLVMLinkageForDeclarator(
   // C++ doesn't have tentative definitions and thus cannot have common
   // linkage.
   if (!getLangOpts().CPlusPlus && isa<VarDecl>(D) &&
-      !isVarDeclStrongDefinition(Context, cast<VarDecl>(D),
+      !isVarDeclStrongDefinition(Context, *this, cast<VarDecl>(D),
                                  CodeGenOpts.NoCommon))
     return llvm::GlobalVariable::CommonLinkage;
 
@@ -3430,7 +3437,7 @@ void CodeGenModule::ClearUnusedCoverageMapping(const Decl *D) {
 
 void CodeGenModule::EmitDeferredUnusedCoverageMappings() {
   std::vector<const Decl *> DeferredDecls;
-  for (const auto I : DeferredEmptyCoverageMappingDecls) {
+  for (const auto &I : DeferredEmptyCoverageMappingDecls) {
     if (!I.second)
       continue;
     DeferredDecls.push_back(I.first);

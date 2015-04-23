@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r235585.
 * Removed lld for now.
 * Update to LLVM r234745.
 * Fixed ELK thread scheduler for idle thread.

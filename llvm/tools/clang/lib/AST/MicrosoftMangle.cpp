@@ -1377,17 +1377,27 @@ void MicrosoftCXXNameMangler::mangleArgumentType(QualType T,
   // e.g.
   // void (*x)(void) will not form a backreference with void x(void)
   void *TypePtr;
-  if (const DecayedType *DT = T->getAs<DecayedType>()) {
-    TypePtr = DT->getOriginalType().getCanonicalType().getAsOpaquePtr();
+  if (const auto *DT = T->getAs<DecayedType>()) {
+    QualType OriginalType = DT->getOriginalType();
+    // Decayed ConstantArrayType should be treated identically to decayed
+    // IncompleteArrayType.
+    if (const auto *CAT =
+            getASTContext().getAsConstantArrayType(OriginalType))
+      OriginalType = getASTContext().getIncompleteArrayType(
+          CAT->getElementType(), CAT->getSizeModifier(),
+          CAT->getIndexTypeCVRQualifiers());
+
+    TypePtr = OriginalType.getCanonicalType().getAsOpaquePtr();
     // If the original parameter was textually written as an array,
     // instead treat the decayed parameter like it's const.
     //
     // e.g.
     // int [] -> int * const
-    if (DT->getOriginalType()->isArrayType())
+    if (OriginalType->isArrayType())
       T = T.withConst();
-  } else
+  } else {
     TypePtr = T.getCanonicalType().getAsOpaquePtr();
+  }
 
   ArgBackRefMap::iterator Found = TypeBackReferences.find(TypePtr);
 
@@ -1680,7 +1690,7 @@ void MicrosoftCXXNameMangler::mangleFunctionType(const FunctionType *T,
     Out << 'X';
   } else {
     // Happens for function pointer type arguments for example.
-    for (const QualType Arg : Proto->param_types())
+    for (const QualType &Arg : Proto->param_types())
       mangleArgumentType(Arg, Range);
     // <builtin-type>      ::= Z  # ellipsis
     if (Proto->isVariadic())
@@ -1867,19 +1877,21 @@ void MicrosoftCXXNameMangler::mangleArrayType(const ArrayType *T) {
   QualType ElementTy(T, 0);
   SmallVector<llvm::APInt, 3> Dimensions;
   for (;;) {
-    if (const ConstantArrayType *CAT =
-            getASTContext().getAsConstantArrayType(ElementTy)) {
+    if (ElementTy->isConstantArrayType()) {
+      const ConstantArrayType *CAT =
+          getASTContext().getAsConstantArrayType(ElementTy);
       Dimensions.push_back(CAT->getSize());
       ElementTy = CAT->getElementType();
+    } else if (ElementTy->isIncompleteArrayType()) {
+      const IncompleteArrayType *IAT =
+          getASTContext().getAsIncompleteArrayType(ElementTy);
+      Dimensions.push_back(llvm::APInt(32, 0));
+      ElementTy = IAT->getElementType();
     } else if (ElementTy->isVariableArrayType()) {
       const VariableArrayType *VAT =
         getASTContext().getAsVariableArrayType(ElementTy);
-      DiagnosticsEngine &Diags = Context.getDiags();
-      unsigned DiagID = Diags.getCustomDiagID(DiagnosticsEngine::Error,
-        "cannot mangle this variable-length array yet");
-      Diags.Report(VAT->getSizeExpr()->getExprLoc(), DiagID)
-        << VAT->getBracketsRange();
-      return;
+      Dimensions.push_back(llvm::APInt(32, 0));
+      ElementTy = VAT->getElementType();
     } else if (ElementTy->isDependentSizedArrayType()) {
       // The dependent expression has to be folded into a constant (TODO).
       const DependentSizedArrayType *DSAT =
@@ -1890,12 +1902,9 @@ void MicrosoftCXXNameMangler::mangleArrayType(const ArrayType *T) {
       Diags.Report(DSAT->getSizeExpr()->getExprLoc(), DiagID)
         << DSAT->getBracketsRange();
       return;
-    } else if (const IncompleteArrayType *IAT =
-                   getASTContext().getAsIncompleteArrayType(ElementTy)) {
-      Dimensions.push_back(llvm::APInt(32, 0));
-      ElementTy = IAT->getElementType();
+    } else {
+      break;
     }
-    else break;
   }
   Out << 'Y';
   // <dimension-count> ::= <number> # number of extra dimensions

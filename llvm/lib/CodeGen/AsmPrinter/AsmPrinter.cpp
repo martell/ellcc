@@ -670,18 +670,18 @@ static bool emitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
   raw_svector_ostream OS(Str);
   OS << "DEBUG_VALUE: ";
 
-  DIVariable V = MI->getDebugVariable();
-  if (DISubprogram SP = dyn_cast<MDSubprogram>(V.getContext())) {
-    StringRef Name = SP.getDisplayName();
+  const MDLocalVariable *V = MI->getDebugVariable();
+  if (auto *SP = dyn_cast<MDSubprogram>(V->getScope())) {
+    StringRef Name = SP->getDisplayName();
     if (!Name.empty())
       OS << Name << ":";
   }
-  OS << V.getName();
+  OS << V->getName();
 
-  DIExpression Expr = MI->getDebugExpression();
-  if (Expr.isBitPiece())
-    OS << " [bit_piece offset=" << Expr.getBitPieceOffset()
-       << " size=" << Expr.getBitPieceSize() << "]";
+  const MDExpression *Expr = MI->getDebugExpression();
+  if (Expr->isBitPiece())
+    OS << " [bit_piece offset=" << Expr->getBitPieceOffset()
+       << " size=" << Expr->getBitPieceSize() << "]";
   OS << " <- ";
 
   // The second operand is only an offset if it's an immediate.

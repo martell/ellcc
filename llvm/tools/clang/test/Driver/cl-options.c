@@ -350,10 +350,12 @@
 // RUN:     -fno-color-diagnostics \
 // RUN:     -fdiagnostics-color \
 // RUN:     -fno-diagnostics-color \
+// RUN:     -fdiagnostics-parseable-fixits \
 // RUN:     -ferror-limit=10 \
 // RUN:     -fmsc-version=1800 \
 // RUN:     -fno-strict-aliasing \
 // RUN:     -fstrict-aliasing \
+// RUN:     -fsyntax-only \
 // RUN:     -mllvm -disable-llvm-optzns \
 // RUN:     -Wunused-variable \
 // RUN:     -fmacro-backtrace-limit=0 \

@@ -2744,8 +2744,9 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
             DAG.getConstant(Outs[i].Flags.getByValSize(), MVT::i64);
         SDValue Cpy = DAG.getMemcpy(
             Chain, DL, DstAddr, Arg, SizeNode, Outs[i].Flags.getByValAlign(),
-            /*isVol = */ false,
-            /*AlwaysInline = */ false, DstInfo, MachinePointerInfo());
+            /*isVol = */ false, /*AlwaysInline = */ false,
+            /*isTailCall = */ false,
+            DstInfo, MachinePointerInfo());
 
         MemOpChains.push_back(Cpy);
       } else {
@@ -3976,7 +3977,7 @@ SDValue AArch64TargetLowering::LowerVACOPY(SDValue Op,
 
   return DAG.getMemcpy(Op.getOperand(0), SDLoc(Op), Op.getOperand(1),
                        Op.getOperand(2), DAG.getConstant(VaListSize, MVT::i32),
-                       8, false, false, MachinePointerInfo(DestSV),
+                       8, false, false, false, MachinePointerInfo(DestSV),
                        MachinePointerInfo(SrcSV));
 }
 
@@ -5045,7 +5046,7 @@ static SDValue GeneratePerfectShuffle(unsigned PFEntry, SDValue LHS,
     unsigned Opcode;
     if (EltTy == MVT::i8)
       Opcode = AArch64ISD::DUPLANE8;
-    else if (EltTy == MVT::i16)
+    else if (EltTy == MVT::i16 || EltTy == MVT::f16)
       Opcode = AArch64ISD::DUPLANE16;
     else if (EltTy == MVT::i32 || EltTy == MVT::f32)
       Opcode = AArch64ISD::DUPLANE32;
@@ -8114,6 +8115,13 @@ static SDValue performPostLD1Combine(SDNode *N,
         continue;
       Inc = DAG.getRegister(AArch64::XZR, MVT::i64);
     }
+
+    // Finally, check that the vector doesn't depend on the load.
+    // Again, this would create a cycle.
+    // The load depending on the vector is fine, as that's the case for the
+    // LD1*post we'll eventually generate anyway.
+    if (LoadSDN->isPredecessorOf(Vector.getNode()))
+      continue;
 
     SmallVector<SDValue, 8> Ops;
     Ops.push_back(LD->getOperand(0));  // Chain

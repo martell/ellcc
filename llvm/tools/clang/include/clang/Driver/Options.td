@@ -462,7 +462,7 @@ def fdebug_pass_arguments : Flag<["-"], "fdebug-pass-arguments">, Group<f_Group>
 def fdebug_pass_structure : Flag<["-"], "fdebug-pass-structure">, Group<f_Group>;
 def fdiagnostics_fixit_info : Flag<["-"], "fdiagnostics-fixit-info">, Group<f_clang_Group>;
 def fdiagnostics_parseable_fixits : Flag<["-"], "fdiagnostics-parseable-fixits">, Group<f_clang_Group>,
-    Flags<[CC1Option]>, HelpText<"Print fix-its in machine parseable form">;
+    Flags<[CoreOption, CC1Option]>, HelpText<"Print fix-its in machine parseable form">;
 def fdiagnostics_print_source_range_info : Flag<["-"], "fdiagnostics-print-source-range-info">,
     Group<f_clang_Group>,  Flags<[CC1Option]>,
     HelpText<"Print source range spans in numeric form">;
@@ -934,7 +934,8 @@ def fstrict_enums : Flag<["-"], "fstrict-enums">, Group<f_Group>, Flags<[CC1Opti
   HelpText<"Enable optimizations based on the strict definition of an enum's "
            "value range">;
 def fstrict_overflow : Flag<["-"], "fstrict-overflow">, Group<f_Group>;
-def fsyntax_only : Flag<["-"], "fsyntax-only">, Flags<[DriverOption,CC1Option]>, Group<Action_Group>;
+def fsyntax_only : Flag<["-"], "fsyntax-only">,
+  Flags<[DriverOption,CoreOption,CC1Option]>, Group<Action_Group>;
 def ftabstop_EQ : Joined<["-"], "ftabstop=">, Group<f_Group>;
 def ftemplate_depth_EQ : Joined<["-"], "ftemplate-depth=">, Group<f_Group>;
 def ftemplate_depth_ : Joined<["-"], "ftemplate-depth-">, Group<f_Group>;

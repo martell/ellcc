@@ -940,8 +940,9 @@ void ASTWriter::WriteBlockInfoBlock() {
   // Preprocessor Block.
   BLOCK(PREPROCESSOR_BLOCK);
   RECORD(PP_MACRO_DIRECTIVE_HISTORY);
-  RECORD(PP_MACRO_OBJECT_LIKE);
   RECORD(PP_MACRO_FUNCTION_LIKE);
+  RECORD(PP_MACRO_OBJECT_LIKE);
+  RECORD(PP_MODULE_MACRO);
   RECORD(PP_TOKEN);
 
   // Decls and Types block.
@@ -1971,52 +1972,6 @@ void ASTWriter::WriteSourceManagerBlock(SourceManager &SourceMgr,
 // Preprocessor Serialization
 //===----------------------------------------------------------------------===//
 
-namespace {
-class ASTMacroTableTrait {
-public:
-  typedef IdentID key_type;
-  typedef key_type key_type_ref;
-
-  struct Data {
-    uint32_t MacroDirectivesOffset;
-  };
-
-  typedef Data data_type;
-  typedef const data_type &data_type_ref;
-  typedef unsigned hash_value_type;
-  typedef unsigned offset_type;
-
-  static hash_value_type ComputeHash(IdentID IdID) {
-    return llvm::hash_value(IdID);
-  }
-
-  std::pair<unsigned,unsigned>
-  static EmitKeyDataLength(raw_ostream& Out,
-                           key_type_ref Key, data_type_ref Data) {
-    unsigned KeyLen = 4; // IdentID.
-    unsigned DataLen = 4; // MacroDirectivesOffset.
-    return std::make_pair(KeyLen, DataLen);
-  }
-
-  static void EmitKey(raw_ostream& Out, key_type_ref Key, unsigned KeyLen) {
-    using namespace llvm::support;
-    endian::Writer<little>(Out).write<uint32_t>(Key);
-  }
-
-  static void EmitData(raw_ostream& Out, key_type_ref Key, data_type_ref Data,
-                       unsigned) {
-    using namespace llvm::support;
-    endian::Writer<little>(Out).write<uint32_t>(Data.MacroDirectivesOffset);
-  }
-};
-} // end anonymous namespace
-
-static int compareMacroDirectives(
-    const std::pair<const IdentifierInfo *, MacroDirective *> *X,
-    const std::pair<const IdentifierInfo *, MacroDirective *> *Y) {
-  return X->first->getName().compare(Y->first->getName());
-}
-
 static bool shouldIgnoreMacro(MacroDirective *MD, bool IsModule,
                               const Preprocessor &PP) {
   if (MacroInfo *MI = MD->getMacroInfo())
@@ -2038,6 +1993,69 @@ static bool shouldIgnoreMacro(MacroDirective *MD, bool IsModule,
   return false;
 }
 
+static void addOverriddenSubmodules(ASTWriter &Writer, const Preprocessor &PP,
+                                    MacroDirective *MD,
+                                    SmallVectorImpl<uint64_t> &Result) {
+  assert(!isa<VisibilityMacroDirective>(MD) &&
+         "only #define and #undef can override");
+
+  if (MD->isImported()) {
+    auto ModIDs = MD->getOverriddenModules();
+    Result.insert(Result.end(), ModIDs.begin(), ModIDs.end());
+    return;
+  }
+
+  unsigned Start = Result.size();
+
+  SubmoduleID ModID = Writer.inferSubmoduleIDFromLocation(MD->getLocation());
+  for (MD = MD->getPrevious(); MD; MD = MD->getPrevious()) {
+    if (shouldIgnoreMacro(MD, /*IsModule*/true, PP))
+      break;
+
+    // If this is a definition from a submodule import, that submodule's
+    // definition is overridden by the definition or undefinition that we
+    // started with.
+    if (MD->isImported()) {
+      if (auto *DefMD = dyn_cast<DefMacroDirective>(MD)) {
+        SubmoduleID DefModuleID = DefMD->getInfo()->getOwningModuleID();
+        assert(DefModuleID && "imported macro has no owning module");
+        Result.push_back(DefModuleID);
+      } else if (auto *UndefMD = dyn_cast<UndefMacroDirective>(MD)) {
+        // If we override a #undef, we override anything that #undef overrides.
+        // We don't need to override it, since an active #undef doesn't affect
+        // the meaning of a macro.
+        // FIXME: Overriding the #undef directly might be simpler.
+        auto Overrides = UndefMD->getOverriddenModules();
+        Result.insert(Result.end(), Overrides.begin(), Overrides.end());
+      }
+    }
+
+    // Stop once we leave the original macro's submodule.
+    //
+    // Either this submodule #included another submodule of the same
+    // module or it just happened to be built after the other module.
+    // In the former case, we override the submodule's macro.
+    //
+    // FIXME: In the latter case, we shouldn't do so, but we can't tell
+    // these cases apart.
+    //
+    // FIXME: We can leave this submodule and re-enter it if it #includes a
+    // header within a different submodule of the same module. In such cases
+    // the overrides list will be incomplete.
+    SubmoduleID DirectiveModuleID =
+        Writer.inferSubmoduleIDFromLocation(MD->getLocation());
+    if (DirectiveModuleID != ModID) {
+      if (DirectiveModuleID && !MD->isImported())
+        Result.push_back(DirectiveModuleID);
+      break;
+    }
+  }
+
+  // Weed out any duplicate overrides.
+  std::sort(Result.begin() + Start, Result.end());
+  Result.erase(std::unique(Result.begin() + Start, Result.end()), Result.end());
+}
+
 /// \brief Writes the block containing the serialized form of the
 /// preprocessor.
 ///
@@ -2047,6 +2065,7 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP, bool IsModule) {
     WritePreprocessorDetail(*PPRec);
 
   RecordData Record;
+  RecordData ModuleMacroRecord;
 
   // If the preprocessor __COUNTER__ value has been bumped, remember it.
   if (PP.getCounterValue() != 0) {
@@ -2068,8 +2087,8 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP, bool IsModule) {
   // emitting each to the PP section.
 
   // Construct the list of macro directives that need to be serialized.
-  SmallVector<std::pair<const IdentifierInfo *, MacroDirective *>, 2>
-    MacroDirectives;
+  typedef std::pair<const IdentifierInfo *, MacroDirective *> MacroChain;
+  SmallVector<MacroChain, 2> MacroDirectives;
   for (Preprocessor::macro_iterator
          I = PP.macro_begin(/*IncludeExternalMacros=*/false),
          E = PP.macro_end(/*IncludeExternalMacros=*/false);
@@ -2079,14 +2098,17 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP, bool IsModule) {
 
   // Sort the set of macro definitions that need to be serialized by the
   // name of the macro, to provide a stable ordering.
-  llvm::array_pod_sort(MacroDirectives.begin(), MacroDirectives.end(),
-                       &compareMacroDirectives);
+  int (*Cmp)(const MacroChain*, const MacroChain*) =
+    [](const MacroChain *A, const MacroChain *B) -> int {
+      return A->first->getName().compare(B->first->getName());
+    };
+  llvm::array_pod_sort(MacroDirectives.begin(), MacroDirectives.end(), Cmp);
 
   // Emit the macro directives as a list and associate the offset with the
   // identifier they belong to.
-  for (unsigned I = 0, N = MacroDirectives.size(); I != N; ++I) {
-    const IdentifierInfo *Name = MacroDirectives[I].first;
-    MacroDirective *MD = MacroDirectives[I].second;
+  for (auto &Chain : MacroDirectives) {
+    const IdentifierInfo *Name = Chain.first;
+    MacroDirective *MD = Chain.second;
 
     // If the macro or identifier need no updates, don't write the macro history
     // for this one.
@@ -2095,10 +2117,26 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP, bool IsModule) {
         Name->isFromAST() && !Name->hasChangedSinceDeserialization())
       continue;
 
+    // State of this macro within each submodule.
+    enum class SubmoduleMacroState {
+      /// We've seen nothing about this macro.
+      None,
+      /// We've seen a public visibility directive.
+      Public,
+      /// We've either exported a macro for this module or found that the
+      /// module's definition of this macro is private.
+      Done
+    };
+    llvm::DenseMap<SubmoduleID, SubmoduleMacroState> State;
+
+    auto StartOffset = Stream.GetCurrentBitNo();
+
     // Emit the macro directives in reverse source order.
     for (; MD; MD = MD->getPrevious()) {
+      // Once we hit an ignored macro, we're done: the rest of the chain
+      // will all be ignored macros.
       if (shouldIgnoreMacro(MD, IsModule, PP))
-        continue;
+        break;
 
       AddSourceLocation(MD->getLocation(), Record);
       Record.push_back(MD->getKind());
@@ -2119,11 +2157,46 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP, bool IsModule) {
         Record.push_back(Overrides.size());
         Record.append(Overrides.begin(), Overrides.end());
       }
+
+      // If this is the final definition in some module, and it's not
+      // module-private, add a module macro record for it.
+      if (IsModule) {
+        SubmoduleID ModID =
+            MD->isImported() ? MD->getOwningModuleID()
+                             : inferSubmoduleIDFromLocation(MD->getLocation());
+        assert(ModID && "found macro in no submodule");
+
+        auto &S = State[ModID];
+        if (S == SubmoduleMacroState::Done) {
+          // We've already handled the final macro from this submodule, or seen
+          // a private visibility directive.
+        } else if (auto *VisMD = dyn_cast<VisibilityMacroDirective>(MD)) {
+          // The latest visibility directive for a name in a submodule affects
+          // all the directives that come before it.
+          if (S == SubmoduleMacroState::None)
+            S = VisMD->isPublic() ? SubmoduleMacroState::Public
+                                  : SubmoduleMacroState::Done;
+        } else {
+          S = SubmoduleMacroState::Done;
+
+          // Emit a record indicating this submodule exports this macro.
+          ModuleMacroRecord.push_back(ModID);
+          if (DefMacroDirective *DefMD = dyn_cast<DefMacroDirective>(MD))
+            ModuleMacroRecord.push_back(getMacroID(DefMD->getInfo()));
+          else
+            ModuleMacroRecord.push_back(0);
+          addOverriddenSubmodules(*this, PP, MD, ModuleMacroRecord);
+
+          Stream.EmitRecord(PP_MODULE_MACRO, ModuleMacroRecord);
+          ModuleMacroRecord.clear();
+        }
+      }
     }
+
     if (Record.empty())
       continue;
 
-    IdentMacroDirectivesOffsetMap[Name] = Stream.GetCurrentBitNo();
+    IdentMacroDirectivesOffsetMap[Name] = StartOffset;
     Stream.EmitRecord(PP_MACRO_DIRECTIVE_HISTORY, Record);
     Record.clear();
   }
@@ -3137,167 +3210,21 @@ class ASTIdentifierTableTrait {
   ASTWriter &Writer;
   Preprocessor &PP;
   IdentifierResolver &IdResolver;
-  bool IsModule;
   
-  /// \brief Determines whether this is an "interesting" identifier
-  /// that needs a full IdentifierInfo structure written into the hash
-  /// table.
-  bool isInterestingIdentifier(IdentifierInfo *II, MacroDirective *&Macro) {
-    if (II->isPoisoned() ||
+  /// \brief Determines whether this is an "interesting" identifier that needs a
+  /// full IdentifierInfo structure written into the hash table. Notably, this
+  /// doesn't check whether the name has macros defined; use PublicMacroIterator
+  /// to check that.
+  bool isInterestingIdentifier(IdentifierInfo *II, uint64_t MacroOffset) {
+    if (MacroOffset ||
+        II->isPoisoned() ||
         II->isExtensionToken() ||
         II->getObjCOrBuiltinID() ||
         II->hasRevertedTokenIDToIdentifier() ||
         II->getFETokenInfo<void>())
       return true;
 
-    return hadMacroDefinition(II, Macro);
-  }
-
-  bool hadMacroDefinition(IdentifierInfo *II, MacroDirective *&Macro) {
-    if (!II->hadMacroDefinition())
-      return false;
-
-    if (Macro || (Macro = PP.getMacroDirectiveHistory(II))) {
-      if (!IsModule)
-        return !shouldIgnoreMacro(Macro, IsModule, PP);
-
-      MacroState State;
-      if (getFirstPublicSubmoduleMacro(Macro, State))
-        return true;
-    }
-
     return false;
-  }
-
-  enum class SubmoduleMacroState {
-    /// We've seen nothing about this macro.
-    None,
-    /// We've seen a public visibility directive.
-    Public,
-    /// We've either exported a macro for this module or found that the
-    /// module's definition of this macro is private.
-    Done
-  };
-  typedef llvm::DenseMap<SubmoduleID, SubmoduleMacroState> MacroState;
-
-  MacroDirective *
-  getFirstPublicSubmoduleMacro(MacroDirective *MD, MacroState &State) {
-    if (MacroDirective *NextMD = getPublicSubmoduleMacro(MD, State))
-      return NextMD;
-    return nullptr;
-  }
-
-  MacroDirective *
-  getNextPublicSubmoduleMacro(MacroDirective *MD, MacroState &State) {
-    if (MacroDirective *NextMD =
-            getPublicSubmoduleMacro(MD->getPrevious(), State))
-      return NextMD;
-    return nullptr;
-  }
-
-  /// \brief Traverses the macro directives history and returns the next
-  /// public macro definition or undefinition that has not been found so far.
-  ///
-  /// A macro that is defined in submodule A and undefined in submodule B
-  /// will still be considered as defined/exported from submodule A.
-  MacroDirective *getPublicSubmoduleMacro(MacroDirective *MD,
-                                          MacroState &State) {
-    if (!MD)
-      return nullptr;
-
-    Optional<bool> IsPublic;
-    for (; MD; MD = MD->getPrevious()) {
-      // Once we hit an ignored macro, we're done: the rest of the chain
-      // will all be ignored macros.
-      if (shouldIgnoreMacro(MD, IsModule, PP))
-        break;
-
-      // If this macro was imported, re-export it.
-      if (MD->isImported())
-        return MD;
-
-      SubmoduleID ModID = getSubmoduleID(MD);
-      auto &S = State[ModID];
-      assert(ModID && "found macro in no submodule");
-
-      if (S == SubmoduleMacroState::Done)
-        continue;
-
-      if (auto *VisMD = dyn_cast<VisibilityMacroDirective>(MD)) {
-        // The latest visibility directive for a name in a submodule affects all
-        // the directives that come before it.
-        if (S == SubmoduleMacroState::None)
-          S = VisMD->isPublic() ? SubmoduleMacroState::Public
-                                : SubmoduleMacroState::Done;
-      } else {
-        S = SubmoduleMacroState::Done;
-        return MD;
-      }
-    }
-
-    return nullptr;
-  }
-
-  ArrayRef<SubmoduleID>
-  getOverriddenSubmodules(MacroDirective *MD,
-                          SmallVectorImpl<SubmoduleID> &ScratchSpace) {
-    assert(!isa<VisibilityMacroDirective>(MD) &&
-           "only #define and #undef can override");
-    if (MD->isImported())
-      return MD->getOverriddenModules();
-
-    ScratchSpace.clear();
-    SubmoduleID ModID = getSubmoduleID(MD);
-    for (MD = MD->getPrevious(); MD; MD = MD->getPrevious()) {
-      if (shouldIgnoreMacro(MD, IsModule, PP))
-        break;
-
-      // If this is a definition from a submodule import, that submodule's
-      // definition is overridden by the definition or undefinition that we
-      // started with.
-      if (MD->isImported()) {
-        if (auto *DefMD = dyn_cast<DefMacroDirective>(MD)) {
-          SubmoduleID DefModuleID = DefMD->getInfo()->getOwningModuleID();
-          assert(DefModuleID && "imported macro has no owning module");
-          ScratchSpace.push_back(DefModuleID);
-        } else if (auto *UndefMD = dyn_cast<UndefMacroDirective>(MD)) {
-          // If we override a #undef, we override anything that #undef overrides.
-          // We don't need to override it, since an active #undef doesn't affect
-          // the meaning of a macro.
-          auto Overrides = UndefMD->getOverriddenModules();
-          ScratchSpace.insert(ScratchSpace.end(),
-                              Overrides.begin(), Overrides.end());
-        }
-      }
-
-      // Stop once we leave the original macro's submodule.
-      //
-      // Either this submodule #included another submodule of the same
-      // module or it just happened to be built after the other module.
-      // In the former case, we override the submodule's macro.
-      //
-      // FIXME: In the latter case, we shouldn't do so, but we can't tell
-      // these cases apart.
-      //
-      // FIXME: We can leave this submodule and re-enter it if it #includes a
-      // header within a different submodule of the same module. In such cases
-      // the overrides list will be incomplete.
-      SubmoduleID DirectiveModuleID = getSubmoduleID(MD);
-      if (DirectiveModuleID != ModID) {
-        if (DirectiveModuleID && !MD->isImported())
-          ScratchSpace.push_back(DirectiveModuleID);
-        break;
-      }
-    }
-
-    std::sort(ScratchSpace.begin(), ScratchSpace.end());
-    ScratchSpace.erase(std::unique(ScratchSpace.begin(), ScratchSpace.end()),
-                       ScratchSpace.end());
-    return ScratchSpace;
-  }
-
-  SubmoduleID getSubmoduleID(MacroDirective *MD) {
-    return Writer.inferSubmoduleIDFromLocation(MD->getLocation());
   }
 
 public:
@@ -3310,9 +3237,9 @@ public:
   typedef unsigned hash_value_type;
   typedef unsigned offset_type;
 
-  ASTIdentifierTableTrait(ASTWriter &Writer, Preprocessor &PP, 
-                          IdentifierResolver &IdResolver, bool IsModule)
-    : Writer(Writer), PP(PP), IdResolver(IdResolver), IsModule(IsModule) { }
+  ASTIdentifierTableTrait(ASTWriter &Writer, Preprocessor &PP,
+                          IdentifierResolver &IdResolver)
+      : Writer(Writer), PP(PP), IdResolver(IdResolver) {}
 
   static hash_value_type ComputeHash(const IdentifierInfo* II) {
     return llvm::HashString(II->getName());
@@ -3322,25 +3249,12 @@ public:
   EmitKeyDataLength(raw_ostream& Out, IdentifierInfo* II, IdentID ID) {
     unsigned KeyLen = II->getLength() + 1;
     unsigned DataLen = 4; // 4 bytes for the persistent ID << 1
-    MacroDirective *Macro = nullptr;
-    if (isInterestingIdentifier(II, Macro)) {
+    auto MacroOffset = Writer.getMacroDirectivesOffset(II);
+    if (isInterestingIdentifier(II, MacroOffset)) {
       DataLen += 2; // 2 bytes for builtin ID
       DataLen += 2; // 2 bytes for flags
-      if (hadMacroDefinition(II, Macro)) {
+      if (MacroOffset)
         DataLen += 4; // MacroDirectives offset.
-        if (IsModule) {
-          MacroState State;
-          SmallVector<SubmoduleID, 16> Scratch;
-          for (MacroDirective *MD = getFirstPublicSubmoduleMacro(Macro, State);
-               MD; MD = getNextPublicSubmoduleMacro(MD, State)) {
-            DataLen += 4; // MacroInfo ID or ModuleID.
-            if (unsigned NumOverrides =
-                    getOverriddenSubmodules(MD, Scratch).size())
-              DataLen += 4 * (1 + NumOverrides);
-          }
-          DataLen += 4; // 0 terminator.
-        }
-      }
 
       for (IdentifierResolver::iterator D = IdResolver.begin(II),
                                      DEnd = IdResolver.end();
@@ -3367,25 +3281,13 @@ public:
     Out.write(II->getNameStart(), KeyLen);
   }
 
-  static void emitMacroOverrides(raw_ostream &Out,
-                                 ArrayRef<SubmoduleID> Overridden) {
-    if (!Overridden.empty()) {
-      using namespace llvm::support;
-      endian::Writer<little> LE(Out);
-      LE.write<uint32_t>(Overridden.size() | 0x80000000U);
-      for (unsigned I = 0, N = Overridden.size(); I != N; ++I) {
-        assert(Overridden[I] && "zero module ID for override");
-        LE.write<uint32_t>(Overridden[I]);
-      }
-    }
-  }
-
   void EmitData(raw_ostream& Out, IdentifierInfo* II,
                 IdentID ID, unsigned) {
     using namespace llvm::support;
     endian::Writer<little> LE(Out);
-    MacroDirective *Macro = nullptr;
-    if (!isInterestingIdentifier(II, Macro)) {
+
+    auto MacroOffset = Writer.getMacroDirectivesOffset(II);
+    if (!isInterestingIdentifier(II, MacroOffset)) {
       LE.write<uint32_t>(ID << 1);
       return;
     }
@@ -3395,43 +3297,16 @@ public:
     assert((Bits & 0xffff) == Bits && "ObjCOrBuiltinID too big for ASTReader.");
     LE.write<uint16_t>(Bits);
     Bits = 0;
-    bool HadMacroDefinition = hadMacroDefinition(II, Macro);
+    bool HadMacroDefinition = MacroOffset != 0;
     Bits = (Bits << 1) | unsigned(HadMacroDefinition);
-    Bits = (Bits << 1) | unsigned(IsModule);
     Bits = (Bits << 1) | unsigned(II->isExtensionToken());
     Bits = (Bits << 1) | unsigned(II->isPoisoned());
     Bits = (Bits << 1) | unsigned(II->hasRevertedTokenIDToIdentifier());
     Bits = (Bits << 1) | unsigned(II->isCPlusPlusOperatorKeyword());
     LE.write<uint16_t>(Bits);
 
-    if (HadMacroDefinition) {
-      LE.write<uint32_t>(Writer.getMacroDirectivesOffset(II));
-      if (IsModule) {
-        // Write the IDs of macros coming from different submodules.
-        MacroState State;
-        SmallVector<SubmoduleID, 16> Scratch;
-        for (MacroDirective *MD = getFirstPublicSubmoduleMacro(Macro, State);
-             MD; MD = getNextPublicSubmoduleMacro(MD, State)) {
-          if (DefMacroDirective *DefMD = dyn_cast<DefMacroDirective>(MD)) {
-            // FIXME: If this macro directive was created by #pragma pop_macros,
-            // or if it was created implicitly by resolving conflicting macros,
-            // it may be for a different submodule from the one in the MacroInfo
-            // object. If so, we should write out its owning ModuleID.
-            MacroID InfoID = Writer.getMacroID(DefMD->getInfo());
-            assert(InfoID);
-            LE.write<uint32_t>(InfoID << 1);
-          } else {
-            auto *UndefMD = cast<UndefMacroDirective>(MD);
-            SubmoduleID Mod = UndefMD->isImported()
-                                  ? UndefMD->getOwningModuleID()
-                                  : getSubmoduleID(UndefMD);
-            LE.write<uint32_t>((Mod << 1) | 1);
-          }
-          emitMacroOverrides(Out, getOverriddenSubmodules(MD, Scratch));
-        }
-        LE.write<uint32_t>((uint32_t)-1);
-      }
-    }
+    if (HadMacroDefinition)
+      LE.write<uint32_t>(MacroOffset);
 
     // Emit the declaration IDs in reverse order, because the
     // IdentifierResolver provides the declarations as they would be
@@ -3463,7 +3338,7 @@ void ASTWriter::WriteIdentifierTable(Preprocessor &PP,
   // strings.
   {
     llvm::OnDiskChainedHashTableGenerator<ASTIdentifierTableTrait> Generator;
-    ASTIdentifierTableTrait Trait(*this, PP, IdResolver, IsModule);
+    ASTIdentifierTableTrait Trait(*this, PP, IdResolver);
 
     // Look for any identifiers that were named while processing the
     // headers, but are otherwise not needed. We add these to the hash
@@ -3497,7 +3372,6 @@ void ASTWriter::WriteIdentifierTable(Preprocessor &PP,
     uint32_t BucketOffset;
     {
       using namespace llvm::support;
-      ASTIdentifierTableTrait Trait(*this, PP, IdResolver, IsModule);
       llvm::raw_svector_ostream Out(IdentifierTable);
       // Make sure that no bucket is at offset 0
       endian::Writer<little>(Out).write<uint32_t>(0);
@@ -4943,8 +4817,7 @@ MacroID ASTWriter::getMacroID(MacroInfo *MI) {
 }
 
 uint64_t ASTWriter::getMacroDirectivesOffset(const IdentifierInfo *Name) {
-  assert(IdentMacroDirectivesOffsetMap[Name] && "not set!");
-  return IdentMacroDirectivesOffsetMap[Name];
+  return IdentMacroDirectivesOffsetMap.lookup(Name);
 }
 
 void ASTWriter::AddSelectorRef(const Selector SelRef, RecordDataImpl &Record) {

@@ -202,6 +202,31 @@ static void instantiateDependentEnableIfAttr(
   New->addAttr(EIA);
 }
 
+// Constructs and adds to New a new instance of CUDALaunchBoundsAttr using
+// template A as the base and arguments from TemplateArgs.
+static void instantiateDependentCUDALaunchBoundsAttr(
+    Sema &S, const MultiLevelTemplateArgumentList &TemplateArgs,
+    const CUDALaunchBoundsAttr &Attr, Decl *New) {
+  // The alignment expression is a constant expression.
+  EnterExpressionEvaluationContext Unevaluated(S, Sema::ConstantEvaluated);
+
+  ExprResult Result = S.SubstExpr(Attr.getMaxThreads(), TemplateArgs);
+  if (Result.isInvalid())
+    return;
+  Expr *MaxThreads = Result.getAs<Expr>();
+
+  Expr *MinBlocks = nullptr;
+  if (Attr.getMinBlocks()) {
+    Result = S.SubstExpr(Attr.getMinBlocks(), TemplateArgs);
+    if (Result.isInvalid())
+      return;
+    MinBlocks = Result.getAs<Expr>();
+  }
+
+  S.AddLaunchBoundsAttr(Attr.getLocation(), New, MaxThreads, MinBlocks,
+                        Attr.getSpellingListIndex());
+}
+
 void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
                             const Decl *Tmpl, Decl *New,
                             LateInstantiatedAttrVec *LateAttrs,
@@ -230,6 +255,13 @@ void Sema::InstantiateAttrs(const MultiLevelTemplateArgumentList &TemplateArgs,
     if (EnableIf && EnableIf->getCond()->isValueDependent()) {
       instantiateDependentEnableIfAttr(*this, TemplateArgs, EnableIf, Tmpl,
                                        New);
+      continue;
+    }
+
+    if (const CUDALaunchBoundsAttr *CUDALaunchBounds =
+            dyn_cast<CUDALaunchBoundsAttr>(TmplAttr)) {
+      instantiateDependentCUDALaunchBoundsAttr(*this, TemplateArgs,
+                                               *CUDALaunchBounds, New);
       continue;
     }
 
@@ -3865,17 +3897,6 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
   if (TSK == TSK_ExplicitInstantiationDeclaration)
     return;
 
-  // We may be explicitly instantiating something we've already implicitly
-  // instantiated.
-  VarDecl *InstantiatedDef = Var->getDefinition();
-  if (InstantiatedDef)
-    InstantiatedDef->setTemplateSpecializationKind(TSK, PointOfInstantiation);
-
-  // If we've already instantiated the definition and we're not
-  // re-instantiating it explicitly, we don't need to do anything.
-  if (InstantiatedDef && TSK != TSK_ExplicitInstantiationDefinition)
-    return;
-
   // Make sure to pass the instantiated variable to the consumer at the end.
   struct PassToConsumerRAII {
     ASTConsumer &Consumer;
@@ -3889,10 +3910,14 @@ void Sema::InstantiateVariableDefinition(SourceLocation PointOfInstantiation,
     }
   } PassToConsumerRAII(Consumer, Var);
 
-  // If we already implicitly instantiated this, just let the consumer know that
-  // it needs to handle an explicit instantiation now.
-  if (InstantiatedDef && TSK == TSK_ExplicitInstantiationDefinition)
+  // If we already have a definition, we're done.
+  if (VarDecl *Def = Var->getDefinition()) {
+    // We may be explicitly instantiating something we've already implicitly
+    // instantiated.
+    Def->setTemplateSpecializationKind(Var->getTemplateSpecializationKind(),
+                                       PointOfInstantiation);
     return;
+  }
 
   InstantiatingTemplate Inst(*this, PointOfInstantiation, Var);
   if (Inst.isInvalid())

@@ -4114,7 +4114,15 @@ ABIArgInfo AArch64ABIInfo::classifyReturnType(QualType RetTy) const {
   // Aggregates <= 16 bytes are returned directly in registers or on the stack.
   uint64_t Size = getContext().getTypeSize(RetTy);
   if (Size <= 128) {
+    unsigned Alignment = getContext().getTypeAlign(RetTy);
     Size = 64 * ((Size + 63) / 64); // round up to multiple of 8 bytes
+
+    // We use a pair of i64 for 16-byte aggregate with 8-byte alignment.
+    // For aggregates with 16-byte alignment, we use i128.
+    if (Alignment < 128 && Size == 128) {
+      llvm::Type *BaseTy = llvm::Type::getInt64Ty(getVMContext());
+      return ABIArgInfo::getDirect(llvm::ArrayType::get(BaseTy, Size / 64));
+    }
     return ABIArgInfo::getDirect(llvm::IntegerType::get(getVMContext(), Size));
   }
 
@@ -5163,18 +5171,22 @@ SetTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
       // Create !{<func-ref>, metadata !"kernel", i32 1} node
       addNVVMMetadata(F, "kernel", 1);
     }
-    if (FD->hasAttr<CUDALaunchBoundsAttr>()) {
+    if (CUDALaunchBoundsAttr *Attr = FD->getAttr<CUDALaunchBoundsAttr>()) {
       // Create !{<func-ref>, metadata !"maxntidx", i32 <val>} node
-      addNVVMMetadata(F, "maxntidx",
-                      FD->getAttr<CUDALaunchBoundsAttr>()->getMaxThreads());
-      // min blocks is a default argument for CUDALaunchBoundsAttr, so getting a
-      // zero value from getMinBlocks either means it was not specified in
-      // __launch_bounds__ or the user specified a 0 value. In both cases, we
-      // don't have to add a PTX directive.
-      int MinCTASM = FD->getAttr<CUDALaunchBoundsAttr>()->getMinBlocks();
-      if (MinCTASM > 0) {
-        // Create !{<func-ref>, metadata !"minctasm", i32 <val>} node
-        addNVVMMetadata(F, "minctasm", MinCTASM);
+      llvm::APSInt MaxThreads(32);
+      MaxThreads = Attr->getMaxThreads()->EvaluateKnownConstInt(M.getContext());
+      if (MaxThreads > 0)
+        addNVVMMetadata(F, "maxntidx", MaxThreads.getExtValue());
+
+      // min blocks is an optional argument for CUDALaunchBoundsAttr. If it was
+      // not specified in __launch_bounds__ or if the user specified a 0 value,
+      // we don't have to add a PTX directive.
+      if (Attr->getMinBlocks()) {
+        llvm::APSInt MinBlocks(32);
+        MinBlocks = Attr->getMinBlocks()->EvaluateKnownConstInt(M.getContext());
+        if (MinBlocks > 0)
+          // Create !{<func-ref>, metadata !"minctasm", i32 <val>} node
+          addNVVMMetadata(F, "minctasm", MinBlocks.getExtValue());
       }
     }
   }

@@ -307,6 +307,10 @@ namespace {
     SDValue visitINSERT_SUBVECTOR(SDNode *N);
     SDValue visitMLOAD(SDNode *N);
     SDValue visitMSTORE(SDNode *N);
+    SDValue visitFP_TO_FP16(SDNode *N);
+
+    SDValue visitFADDForFMACombine(SDNode *N);
+    SDValue visitFSUBForFMACombine(SDNode *N);
 
     SDValue XformToShuffleWithZero(SDNode *N);
     SDValue ReassociateOps(unsigned Opc, SDLoc DL, SDValue LHS, SDValue RHS);
@@ -1380,6 +1384,7 @@ SDValue DAGCombiner::visit(SDNode *N) {
   case ISD::INSERT_SUBVECTOR:   return visitINSERT_SUBVECTOR(N);
   case ISD::MLOAD:              return visitMLOAD(N);
   case ISD::MSTORE:             return visitMSTORE(N);
+  case ISD::FP_TO_FP16:         return visitFP_TO_FP16(N);
   }
   return SDValue();
 }
@@ -4881,7 +4886,7 @@ SDValue DAGCombiner::visitSELECT(SDNode *N) {
       SDValue N1_0 = N1->getOperand(0);
       SDValue N1_1 = N1->getOperand(1);
       SDValue N1_2 = N1->getOperand(2);
-      if (N1_2 == N2) {
+      if (N1_2 == N2 && N0.getValueType() == N1_0.getValueType()) {
         // Create the actual and node if we can generate good code for it.
         if (!TLI.shouldNormalizeToSelectSequence(*DAG.getContext(), VT)) {
           SDValue And = DAG.getNode(ISD::AND, SDLoc(N), N0.getValueType(),
@@ -4900,7 +4905,7 @@ SDValue DAGCombiner::visitSELECT(SDNode *N) {
       SDValue N2_0 = N2->getOperand(0);
       SDValue N2_1 = N2->getOperand(1);
       SDValue N2_2 = N2->getOperand(2);
-      if (N2_1 == N1) {
+      if (N2_1 == N1 && N0.getValueType() == N2_0.getValueType()) {
         // Create the actual or node if we can generate good code for it.
         if (!TLI.shouldNormalizeToSelectSequence(*DAG.getContext(), VT)) {
           SDValue Or = DAG.getNode(ISD::OR, SDLoc(N), N0.getValueType(),
@@ -5187,6 +5192,9 @@ SDValue DAGCombiner::visitVSELECT(SDNode *N) {
       return DAG.getNode(ISD::XOR, DL, VT, Add, Shift);
     }
   }
+
+  if (SimplifySelectOps(N, N1, N2))
+    return SDValue(N, 0);  // Don't revisit N.
 
   // If the VSELECT result requires splitting and the mask is provided by a
   // SETCC, then split both nodes and its operands before legalization. This
@@ -6926,6 +6934,51 @@ SDValue DAGCombiner::visitBITCAST(SDNode *N) {
       return CombineLD;
   }
 
+  // Remove double bitcasts from shuffles - this is often a legacy of
+  // XformToShuffleWithZero being used to combine bitmaskings (of
+  // float vectors bitcast to integer vectors) into shuffles.
+  // bitcast(shuffle(bitcast(s0),bitcast(s1))) -> shuffle(s0,s1)
+  if (Level < AfterLegalizeDAG && TLI.isTypeLegal(VT) && VT.isVector() &&
+      N0->getOpcode() == ISD::VECTOR_SHUFFLE &&
+      VT.getVectorNumElements() >= N0.getValueType().getVectorNumElements() &&
+      !(VT.getVectorNumElements() % N0.getValueType().getVectorNumElements())) {
+    ShuffleVectorSDNode *SVN = cast<ShuffleVectorSDNode>(N0);
+
+    // If operands are a bitcast, peek through if it casts the original VT.
+    // If operands are a UNDEF or constant, just bitcast back to original VT.
+    auto PeekThroughBitcast = [&](SDValue Op) {
+      if (Op.getOpcode() == ISD::BITCAST &&
+          Op.getOperand(0)->getValueType(0) == VT)
+        return SDValue(Op.getOperand(0));
+      if (ISD::isBuildVectorOfConstantSDNodes(Op.getNode()) ||
+          ISD::isBuildVectorOfConstantFPSDNodes(Op.getNode()))
+        return DAG.getNode(ISD::BITCAST, SDLoc(N), VT, Op);
+      return SDValue();
+    };
+
+    SDValue SV0 = PeekThroughBitcast(N0->getOperand(0));
+    SDValue SV1 = PeekThroughBitcast(N0->getOperand(1));
+    if (!(SV0 && SV1))
+      return SDValue();
+
+    int MaskScale =
+        VT.getVectorNumElements() / N0.getValueType().getVectorNumElements();
+    SmallVector<int, 8> NewMask;
+    for (int M : SVN->getMask())
+      for (int i = 0; i != MaskScale; ++i)
+        NewMask.push_back(M < 0 ? -1 : M * MaskScale + i);
+
+    bool LegalMask = TLI.isShuffleMaskLegal(NewMask, VT);
+    if (!LegalMask) {
+      std::swap(SV0, SV1);
+      ShuffleVectorSDNode::commuteMask(NewMask);
+      LegalMask = TLI.isShuffleMaskLegal(NewMask, VT);
+    }
+
+    if (LegalMask)
+      return DAG.getVectorShuffle(VT, SDLoc(N), SV0, SV1, NewMask);
+  }
+
   return SDValue();
 }
 
@@ -7057,20 +7110,44 @@ ConstantFoldBITCASTofBUILD_VECTOR(SDNode *BV, EVT DstEltVT) {
   return DAG.getNode(ISD::BUILD_VECTOR, SDLoc(BV), VT, Ops);
 }
 
-// Attempt different variants of (fadd (fmul a, b), c) -> fma or fmad
-static SDValue performFaddFmulCombines(unsigned FusedOpcode,
-                                       bool Aggressive,
-                                       SDNode *N,
-                                       const TargetLowering &TLI,
-                                       SelectionDAG &DAG) {
+/// Try to perform FMA combining on a given FADD node.
+SDValue DAGCombiner::visitFADDForFMACombine(SDNode *N) {
+
+
+
+
   SDValue N0 = N->getOperand(0);
   SDValue N1 = N->getOperand(1);
   EVT VT = N->getValueType(0);
+  SDLoc SL(N);
+
+  const TargetOptions &Options = DAG.getTarget().Options;
+  bool UnsafeFPMath = (Options.AllowFPOpFusion == FPOpFusion::Fast ||
+                       Options.UnsafeFPMath);
+
+  // Floating-point multiply-add with intermediate rounding.
+  bool HasFMAD = (LegalOperations &&
+                  TLI.isOperationLegal(ISD::FMAD, VT));
+
+  // Floating-point multiply-add without intermediate rounding.
+  bool HasFMA = ((!LegalOperations ||
+                  TLI.isOperationLegalOrCustom(ISD::FMA, VT)) &&
+                 TLI.isFMAFasterThanFMulAndFAdd(VT) &&
+                 UnsafeFPMath);
+
+  // No valid opcode, do not combine.
+  if (!HasFMAD && !HasFMA)
+    return SDValue();
+
+  // Always prefer FMAD to FMA for precision.
+  unsigned int PreferredFusedOpcode = HasFMAD ? ISD::FMAD : ISD::FMA;
+  bool Aggressive = TLI.enableAggressiveFMAFusion(VT);
+  bool LookThroughFPExt = TLI.isFPExtFree(VT);
 
   // fold (fadd (fmul x, y), z) -> (fma x, y, z)
   if (N0.getOpcode() == ISD::FMUL &&
       (Aggressive || N0->hasOneUse())) {
-    return DAG.getNode(FusedOpcode, SDLoc(N), VT,
+    return DAG.getNode(PreferredFusedOpcode, SL, VT,
                        N0.getOperand(0), N0.getOperand(1), N1);
   }
 
@@ -7078,53 +7155,180 @@ static SDValue performFaddFmulCombines(unsigned FusedOpcode,
   // Note: Commutes FADD operands.
   if (N1.getOpcode() == ISD::FMUL &&
       (Aggressive || N1->hasOneUse())) {
-    return DAG.getNode(FusedOpcode, SDLoc(N), VT,
+    return DAG.getNode(PreferredFusedOpcode, SL, VT,
                        N1.getOperand(0), N1.getOperand(1), N0);
   }
 
+  // Look through FP_EXTEND nodes to do more combining.
+  if (UnsafeFPMath && LookThroughFPExt) {
+    // fold (fadd (fpext (fmul x, y)), z) -> (fma (fpext x), (fpext y), z)
+    if (N0.getOpcode() == ISD::FP_EXTEND) {
+      SDValue N00 = N0.getOperand(0);
+      if (N00.getOpcode() == ISD::FMUL)
+        return DAG.getNode(PreferredFusedOpcode, SL, VT,
+                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                       N00.getOperand(0)),
+                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                       N00.getOperand(1)), N1);
+    }
+
+    // fold (fadd x, (fpext (fmul y, z))) -> (fma (fpext y), (fpext z), x)
+    // Note: Commutes FADD operands.
+    if (N1.getOpcode() == ISD::FP_EXTEND) {
+      SDValue N10 = N1.getOperand(0);
+      if (N10.getOpcode() == ISD::FMUL)
+        return DAG.getNode(PreferredFusedOpcode, SL, VT,
+                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                       N10.getOperand(0)),
+                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                       N10.getOperand(1)), N0);
+    }
+  }
+
   // More folding opportunities when target permits.
-  if (Aggressive) {
+  if ((UnsafeFPMath || HasFMAD)  && Aggressive) {
     // fold (fadd (fma x, y, (fmul u, v)), z) -> (fma x, y (fma u, v, z))
-    if (N0.getOpcode() == ISD::FMA &&
+    if (N0.getOpcode() == PreferredFusedOpcode &&
         N0.getOperand(2).getOpcode() == ISD::FMUL) {
-      return DAG.getNode(FusedOpcode, SDLoc(N), VT,
+      return DAG.getNode(PreferredFusedOpcode, SL, VT,
                          N0.getOperand(0), N0.getOperand(1),
-                         DAG.getNode(FusedOpcode, SDLoc(N), VT,
+                         DAG.getNode(PreferredFusedOpcode, SL, VT,
                                      N0.getOperand(2).getOperand(0),
                                      N0.getOperand(2).getOperand(1),
                                      N1));
     }
 
     // fold (fadd x, (fma y, z, (fmul u, v)) -> (fma y, z (fma u, v, x))
-    if (N1->getOpcode() == ISD::FMA &&
+    if (N1->getOpcode() == PreferredFusedOpcode &&
         N1.getOperand(2).getOpcode() == ISD::FMUL) {
-      return DAG.getNode(FusedOpcode, SDLoc(N), VT,
+      return DAG.getNode(PreferredFusedOpcode, SL, VT,
                          N1.getOperand(0), N1.getOperand(1),
-                         DAG.getNode(FusedOpcode, SDLoc(N), VT,
+                         DAG.getNode(PreferredFusedOpcode, SL, VT,
                                      N1.getOperand(2).getOperand(0),
                                      N1.getOperand(2).getOperand(1),
                                      N0));
+    }
+
+    if (UnsafeFPMath && LookThroughFPExt) {
+      // fold (fadd (fma x, y, (fpext (fmul u, v))), z)
+      //   -> (fma x, y, (fma (fpext u), (fpext v), z))
+      auto FoldFAddFMAFPExtFMul = [&] (
+          SDValue X, SDValue Y, SDValue U, SDValue V, SDValue Z) {
+        return DAG.getNode(PreferredFusedOpcode, SL, VT, X, Y,
+                           DAG.getNode(PreferredFusedOpcode, SL, VT,
+                                       DAG.getNode(ISD::FP_EXTEND, SL, VT, U),
+                                       DAG.getNode(ISD::FP_EXTEND, SL, VT, V),
+                                       Z));
+      };
+      if (N0.getOpcode() == PreferredFusedOpcode) {
+        SDValue N02 = N0.getOperand(2);
+        if (N02.getOpcode() == ISD::FP_EXTEND) {
+          SDValue N020 = N02.getOperand(0);
+          if (N020.getOpcode() == ISD::FMUL)
+            return FoldFAddFMAFPExtFMul(N0.getOperand(0), N0.getOperand(1),
+                                        N020.getOperand(0), N020.getOperand(1),
+                                        N1);
+        }
+      }
+
+      // fold (fadd (fpext (fma x, y, (fmul u, v))), z)
+      //   -> (fma (fpext x), (fpext y), (fma (fpext u), (fpext v), z))
+      // FIXME: This turns two single-precision and one double-precision
+      // operation into two double-precision operations, which might not be
+      // interesting for all targets, especially GPUs.
+      auto FoldFAddFPExtFMAFMul = [&] (
+          SDValue X, SDValue Y, SDValue U, SDValue V, SDValue Z) {
+        return DAG.getNode(PreferredFusedOpcode, SL, VT,
+                           DAG.getNode(ISD::FP_EXTEND, SL, VT, X),
+                           DAG.getNode(ISD::FP_EXTEND, SL, VT, Y),
+                           DAG.getNode(PreferredFusedOpcode, SL, VT,
+                                       DAG.getNode(ISD::FP_EXTEND, SL, VT, U),
+                                       DAG.getNode(ISD::FP_EXTEND, SL, VT, V),
+                                       Z));
+      };
+      if (N0.getOpcode() == ISD::FP_EXTEND) {
+        SDValue N00 = N0.getOperand(0);
+        if (N00.getOpcode() == PreferredFusedOpcode) {
+          SDValue N002 = N00.getOperand(2);
+          if (N002.getOpcode() == ISD::FMUL)
+            return FoldFAddFPExtFMAFMul(N00.getOperand(0), N00.getOperand(1),
+                                        N002.getOperand(0), N002.getOperand(1),
+                                        N1);
+        }
+      }
+
+      // fold (fadd x, (fma y, z, (fpext (fmul u, v)))
+      //   -> (fma y, z, (fma (fpext u), (fpext v), x))
+      if (N1.getOpcode() == PreferredFusedOpcode) {
+        SDValue N12 = N1.getOperand(2);
+        if (N12.getOpcode() == ISD::FP_EXTEND) {
+          SDValue N120 = N12.getOperand(0);
+          if (N120.getOpcode() == ISD::FMUL)
+            return FoldFAddFMAFPExtFMul(N1.getOperand(0), N1.getOperand(1),
+                                        N120.getOperand(0), N120.getOperand(1),
+                                        N0);
+        }
+      }
+
+      // fold (fadd x, (fpext (fma y, z, (fmul u, v)))
+      //   -> (fma (fpext y), (fpext z), (fma (fpext u), (fpext v), x))
+      // FIXME: This turns two single-precision and one double-precision
+      // operation into two double-precision operations, which might not be
+      // interesting for all targets, especially GPUs.
+      if (N1.getOpcode() == ISD::FP_EXTEND) {
+        SDValue N10 = N1.getOperand(0);
+        if (N10.getOpcode() == PreferredFusedOpcode) {
+          SDValue N102 = N10.getOperand(2);
+          if (N102.getOpcode() == ISD::FMUL)
+            return FoldFAddFPExtFMAFMul(N10.getOperand(0), N10.getOperand(1),
+                                        N102.getOperand(0), N102.getOperand(1),
+                                        N0);
+        }
+      }
     }
   }
 
   return SDValue();
 }
 
-static SDValue performFsubFmulCombines(unsigned FusedOpcode,
-                                       bool Aggressive,
-                                       SDNode *N,
-                                       const TargetLowering &TLI,
-                                       SelectionDAG &DAG) {
+/// Try to perform FMA combining on a given FSUB node.
+SDValue DAGCombiner::visitFSUBForFMACombine(SDNode *N) {
+
+
+
   SDValue N0 = N->getOperand(0);
   SDValue N1 = N->getOperand(1);
   EVT VT = N->getValueType(0);
 
   SDLoc SL(N);
 
+  const TargetOptions &Options = DAG.getTarget().Options;
+  bool UnsafeFPMath = (Options.AllowFPOpFusion == FPOpFusion::Fast ||
+                       Options.UnsafeFPMath);
+
+  // Floating-point multiply-add with intermediate rounding.
+  bool HasFMAD = (LegalOperations &&
+                  TLI.isOperationLegal(ISD::FMAD, VT));
+
+  // Floating-point multiply-add without intermediate rounding.
+  bool HasFMA = ((!LegalOperations ||
+                  TLI.isOperationLegalOrCustom(ISD::FMA, VT)) &&
+                 TLI.isFMAFasterThanFMulAndFAdd(VT) &&
+                 UnsafeFPMath);
+
+  // No valid opcode, do not combine.
+  if (!HasFMAD && !HasFMA)
+    return SDValue();
+
+  // Always prefer FMAD to FMA for precision.
+  unsigned int PreferredFusedOpcode = HasFMAD ? ISD::FMAD : ISD::FMA;
+  bool Aggressive = TLI.enableAggressiveFMAFusion(VT);
+  bool LookThroughFPExt = TLI.isFPExtFree(VT);
+
   // fold (fsub (fmul x, y), z) -> (fma x, y, (fneg z))
   if (N0.getOpcode() == ISD::FMUL &&
       (Aggressive || N0->hasOneUse())) {
-    return DAG.getNode(FusedOpcode, SL, VT,
+    return DAG.getNode(PreferredFusedOpcode, SL, VT,
                        N0.getOperand(0), N0.getOperand(1),
                        DAG.getNode(ISD::FNEG, SL, VT, N1));
   }
@@ -7133,7 +7337,7 @@ static SDValue performFsubFmulCombines(unsigned FusedOpcode,
   // Note: Commutes FSUB operands.
   if (N1.getOpcode() == ISD::FMUL &&
       (Aggressive || N1->hasOneUse()))
-    return DAG.getNode(FusedOpcode, SL, VT,
+    return DAG.getNode(PreferredFusedOpcode, SL, VT,
                        DAG.getNode(ISD::FNEG, SL, VT,
                                    N1.getOperand(0)),
                        N1.getOperand(1), N0);
@@ -7144,40 +7348,213 @@ static SDValue performFsubFmulCombines(unsigned FusedOpcode,
       (Aggressive || (N0->hasOneUse() && N0.getOperand(0).hasOneUse()))) {
     SDValue N00 = N0.getOperand(0).getOperand(0);
     SDValue N01 = N0.getOperand(0).getOperand(1);
-    return DAG.getNode(FusedOpcode, SL, VT,
+    return DAG.getNode(PreferredFusedOpcode, SL, VT,
                        DAG.getNode(ISD::FNEG, SL, VT, N00), N01,
                        DAG.getNode(ISD::FNEG, SL, VT, N1));
   }
 
+  // Look through FP_EXTEND nodes to do more combining.
+  if (UnsafeFPMath && LookThroughFPExt) {
+    // fold (fsub (fpext (fmul x, y)), z)
+    //   -> (fma (fpext x), (fpext y), (fneg z))
+    if (N0.getOpcode() == ISD::FP_EXTEND) {
+      SDValue N00 = N0.getOperand(0);
+      if (N00.getOpcode() == ISD::FMUL)
+        return DAG.getNode(PreferredFusedOpcode, SL, VT,
+                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                       N00.getOperand(0)),
+                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                       N00.getOperand(1)),
+                           DAG.getNode(ISD::FNEG, SL, VT, N1));
+    }
+
+    // fold (fsub x, (fpext (fmul y, z)))
+    //   -> (fma (fneg (fpext y)), (fpext z), x)
+    // Note: Commutes FSUB operands.
+    if (N1.getOpcode() == ISD::FP_EXTEND) {
+      SDValue N10 = N1.getOperand(0);
+      if (N10.getOpcode() == ISD::FMUL)
+        return DAG.getNode(PreferredFusedOpcode, SL, VT,
+                           DAG.getNode(ISD::FNEG, SL, VT,
+                                       DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                   N10.getOperand(0))),
+                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                       N10.getOperand(1)),
+                           N0);
+    }
+
+    // fold (fsub (fpext (fneg (fmul, x, y))), z)
+    //   -> (fneg (fma (fpext x), (fpext y), z))
+    // Note: This could be removed with appropriate canonicalization of the
+    // input expression into (fneg (fadd (fpext (fmul, x, y)), z). However, the
+    // orthogonal flags -fp-contract=fast and -enable-unsafe-fp-math prevent
+    // from implementing the canonicalization in visitFSUB.
+    if (N0.getOpcode() == ISD::FP_EXTEND) {
+      SDValue N00 = N0.getOperand(0);
+      if (N00.getOpcode() == ISD::FNEG) {
+        SDValue N000 = N00.getOperand(0);
+        if (N000.getOpcode() == ISD::FMUL) {
+          return DAG.getNode(ISD::FNEG, SL, VT,
+                             DAG.getNode(PreferredFusedOpcode, SL, VT,
+                                         DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                     N000.getOperand(0)),
+                                         DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                     N000.getOperand(1)),
+                                         N1));
+        }
+      }
+    }
+
+    // fold (fsub (fneg (fpext (fmul, x, y))), z)
+    //   -> (fneg (fma (fpext x)), (fpext y), z)
+    // Note: This could be removed with appropriate canonicalization of the
+    // input expression into (fneg (fadd (fpext (fmul, x, y)), z). However, the
+    // orthogonal flags -fp-contract=fast and -enable-unsafe-fp-math prevent
+    // from implementing the canonicalization in visitFSUB.
+    if (N0.getOpcode() == ISD::FNEG) {
+      SDValue N00 = N0.getOperand(0);
+      if (N00.getOpcode() == ISD::FP_EXTEND) {
+        SDValue N000 = N00.getOperand(0);
+        if (N000.getOpcode() == ISD::FMUL) {
+          return DAG.getNode(ISD::FNEG, SL, VT,
+                             DAG.getNode(PreferredFusedOpcode, SL, VT,
+                                         DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                     N000.getOperand(0)),
+                                         DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                     N000.getOperand(1)),
+                                         N1));
+        }
+      }
+    }
+
+  }
+
   // More folding opportunities when target permits.
-  if (Aggressive) {
+  if ((UnsafeFPMath || HasFMAD) && Aggressive) {
     // fold (fsub (fma x, y, (fmul u, v)), z)
     //   -> (fma x, y (fma u, v, (fneg z)))
-    if (N0.getOpcode() == FusedOpcode &&
+    if (N0.getOpcode() == PreferredFusedOpcode &&
         N0.getOperand(2).getOpcode() == ISD::FMUL) {
-      return DAG.getNode(FusedOpcode, SDLoc(N), VT,
+      return DAG.getNode(PreferredFusedOpcode, SL, VT,
                          N0.getOperand(0), N0.getOperand(1),
-                         DAG.getNode(FusedOpcode, SDLoc(N), VT,
+                         DAG.getNode(PreferredFusedOpcode, SL, VT,
                                      N0.getOperand(2).getOperand(0),
                                      N0.getOperand(2).getOperand(1),
-                                     DAG.getNode(ISD::FNEG, SDLoc(N), VT,
+                                     DAG.getNode(ISD::FNEG, SL, VT,
                                                  N1)));
     }
 
     // fold (fsub x, (fma y, z, (fmul u, v)))
     //   -> (fma (fneg y), z, (fma (fneg u), v, x))
-    if (N1.getOpcode() == FusedOpcode &&
+    if (N1.getOpcode() == PreferredFusedOpcode &&
         N1.getOperand(2).getOpcode() == ISD::FMUL) {
       SDValue N20 = N1.getOperand(2).getOperand(0);
       SDValue N21 = N1.getOperand(2).getOperand(1);
-      return DAG.getNode(FusedOpcode, SDLoc(N), VT,
-                         DAG.getNode(ISD::FNEG, SDLoc(N), VT,
+      return DAG.getNode(PreferredFusedOpcode, SL, VT,
+                         DAG.getNode(ISD::FNEG, SL, VT,
                                      N1.getOperand(0)),
                          N1.getOperand(1),
-                         DAG.getNode(FusedOpcode, SDLoc(N), VT,
-                                     DAG.getNode(ISD::FNEG, SDLoc(N),  VT,
-                                                 N20),
+                         DAG.getNode(PreferredFusedOpcode, SL, VT,
+                                     DAG.getNode(ISD::FNEG, SL, VT, N20),
+
                                      N21, N0));
+    }
+
+    if (UnsafeFPMath && LookThroughFPExt) {
+      // fold (fsub (fma x, y, (fpext (fmul u, v))), z)
+      //   -> (fma x, y (fma (fpext u), (fpext v), (fneg z)))
+      if (N0.getOpcode() == PreferredFusedOpcode) {
+        SDValue N02 = N0.getOperand(2);
+        if (N02.getOpcode() == ISD::FP_EXTEND) {
+          SDValue N020 = N02.getOperand(0);
+          if (N020.getOpcode() == ISD::FMUL)
+            return DAG.getNode(PreferredFusedOpcode, SL, VT,
+                               N0.getOperand(0), N0.getOperand(1),
+                               DAG.getNode(PreferredFusedOpcode, SL, VT,
+                                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                       N020.getOperand(0)),
+                                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                       N020.getOperand(1)),
+                                           DAG.getNode(ISD::FNEG, SL, VT,
+                                                       N1)));
+        }
+      }
+
+      // fold (fsub (fpext (fma x, y, (fmul u, v))), z)
+      //   -> (fma (fpext x), (fpext y),
+      //           (fma (fpext u), (fpext v), (fneg z)))
+      // FIXME: This turns two single-precision and one double-precision
+      // operation into two double-precision operations, which might not be
+      // interesting for all targets, especially GPUs.
+      if (N0.getOpcode() == ISD::FP_EXTEND) {
+        SDValue N00 = N0.getOperand(0);
+        if (N00.getOpcode() == PreferredFusedOpcode) {
+          SDValue N002 = N00.getOperand(2);
+          if (N002.getOpcode() == ISD::FMUL)
+            return DAG.getNode(PreferredFusedOpcode, SL, VT,
+                               DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                           N00.getOperand(0)),
+                               DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                           N00.getOperand(1)),
+                               DAG.getNode(PreferredFusedOpcode, SL, VT,
+                                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                       N002.getOperand(0)),
+                                           DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                       N002.getOperand(1)),
+                                           DAG.getNode(ISD::FNEG, SL, VT,
+                                                       N1)));
+        }
+      }
+
+      // fold (fsub x, (fma y, z, (fpext (fmul u, v))))
+      //   -> (fma (fneg y), z, (fma (fneg (fpext u)), (fpext v), x))
+      if (N1.getOpcode() == PreferredFusedOpcode &&
+        N1.getOperand(2).getOpcode() == ISD::FP_EXTEND) {
+        SDValue N120 = N1.getOperand(2).getOperand(0);
+        if (N120.getOpcode() == ISD::FMUL) {
+          SDValue N1200 = N120.getOperand(0);
+          SDValue N1201 = N120.getOperand(1);
+          return DAG.getNode(PreferredFusedOpcode, SL, VT,
+                             DAG.getNode(ISD::FNEG, SL, VT, N1.getOperand(0)),
+                             N1.getOperand(1),
+                             DAG.getNode(PreferredFusedOpcode, SL, VT,
+                                         DAG.getNode(ISD::FNEG, SL, VT,
+                                             DAG.getNode(ISD::FP_EXTEND, SL,
+                                                         VT, N1200)),
+                                         DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                     N1201),
+                                         N0));
+        }
+      }
+
+      // fold (fsub x, (fpext (fma y, z, (fmul u, v))))
+      //   -> (fma (fneg (fpext y)), (fpext z),
+      //           (fma (fneg (fpext u)), (fpext v), x))
+      // FIXME: This turns two single-precision and one double-precision
+      // operation into two double-precision operations, which might not be
+      // interesting for all targets, especially GPUs.
+      if (N1.getOpcode() == ISD::FP_EXTEND &&
+        N1.getOperand(0).getOpcode() == PreferredFusedOpcode) {
+        SDValue N100 = N1.getOperand(0).getOperand(0);
+        SDValue N101 = N1.getOperand(0).getOperand(1);
+        SDValue N102 = N1.getOperand(0).getOperand(2);
+        if (N102.getOpcode() == ISD::FMUL) {
+          SDValue N1020 = N102.getOperand(0);
+          SDValue N1021 = N102.getOperand(1);
+          return DAG.getNode(PreferredFusedOpcode, SL, VT,
+                             DAG.getNode(ISD::FNEG, SL, VT,
+                                         DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                     N100)),
+                             DAG.getNode(ISD::FP_EXTEND, SL, VT, N101),
+                             DAG.getNode(PreferredFusedOpcode, SL, VT,
+                                         DAG.getNode(ISD::FNEG, SL, VT,
+                                             DAG.getNode(ISD::FP_EXTEND, SL,
+                                                         VT, N1020)),
+                                         DAG.getNode(ISD::FP_EXTEND, SL, VT,
+                                                     N1021),
+                                         N0));
+        }
+      }
     }
   }
 
@@ -7322,55 +7699,11 @@ SDValue DAGCombiner::visitFADD(SDNode *N) {
     }
   } // enable-unsafe-fp-math
 
-  if (LegalOperations && TLI.isOperationLegal(ISD::FMAD, VT)) {
-    // Assume if there is an fmad instruction that it should be aggressively
-    // used.
-    if (SDValue Fused = performFaddFmulCombines(ISD::FMAD, true, N, TLI, DAG))
-      return Fused;
-  }
-
   // FADD -> FMA combines:
-  if ((Options.AllowFPOpFusion == FPOpFusion::Fast || Options.UnsafeFPMath) &&
-      TLI.isFMAFasterThanFMulAndFAdd(VT) &&
-      (!LegalOperations || TLI.isOperationLegalOrCustom(ISD::FMA, VT))) {
-
-    if (!TLI.isOperationLegal(ISD::FMAD, VT)) {
-      // Don't form FMA if we are preferring FMAD.
-      if (SDValue Fused
-          = performFaddFmulCombines(ISD::FMA,
-                                    TLI.enableAggressiveFMAFusion(VT),
-                                    N, TLI, DAG)) {
-        return Fused;
-      }
-    }
-
-    // When FP_EXTEND nodes are free on the target, and there is an opportunity
-    // to combine into FMA, arrange such nodes accordingly.
-    if (TLI.isFPExtFree(VT)) {
-
-      // fold (fadd (fpext (fmul x, y)), z) -> (fma (fpext x), (fpext y), z)
-      if (N0.getOpcode() == ISD::FP_EXTEND) {
-        SDValue N00 = N0.getOperand(0);
-        if (N00.getOpcode() == ISD::FMUL)
-          return DAG.getNode(ISD::FMA, SDLoc(N), VT,
-                             DAG.getNode(ISD::FP_EXTEND, SDLoc(N), VT,
-                                         N00.getOperand(0)),
-                             DAG.getNode(ISD::FP_EXTEND, SDLoc(N), VT,
-                                         N00.getOperand(1)), N1);
-      }
-
-      // fold (fadd x, (fpext (fmul y, z)), z) -> (fma (fpext y), (fpext z), x)
-      // Note: Commutes FADD operands.
-      if (N1.getOpcode() == ISD::FP_EXTEND) {
-        SDValue N10 = N1.getOperand(0);
-        if (N10.getOpcode() == ISD::FMUL)
-          return DAG.getNode(ISD::FMA, SDLoc(N), VT,
-                             DAG.getNode(ISD::FP_EXTEND, SDLoc(N), VT,
-                                         N10.getOperand(0)),
-                             DAG.getNode(ISD::FP_EXTEND, SDLoc(N), VT,
-                                         N10.getOperand(1)), N0);
-      }
-    }
+  SDValue Fused = visitFADDForFMACombine(N);
+  if (Fused) {
+    AddToWorklist(Fused.getNode());
+    return Fused;
   }
 
   return SDValue();
@@ -7431,96 +7764,11 @@ SDValue DAGCombiner::visitFSUB(SDNode *N) {
     }
   }
 
-  if (LegalOperations && TLI.isOperationLegal(ISD::FMAD, VT)) {
-    // Assume if there is an fmad instruction that it should be aggressively
-    // used.
-    if (SDValue Fused = performFsubFmulCombines(ISD::FMAD, true, N, TLI, DAG))
-      return Fused;
-  }
-
   // FSUB -> FMA combines:
-  if ((Options.AllowFPOpFusion == FPOpFusion::Fast || Options.UnsafeFPMath) &&
-      TLI.isFMAFasterThanFMulAndFAdd(VT) &&
-      (!LegalOperations || TLI.isOperationLegalOrCustom(ISD::FMA, VT))) {
-
-    if (!TLI.isOperationLegal(ISD::FMAD, VT)) {
-      // Don't form FMA if we are preferring FMAD.
-
-      if (SDValue Fused
-          = performFsubFmulCombines(ISD::FMA,
-                                    TLI.enableAggressiveFMAFusion(VT),
-                                    N, TLI, DAG)) {
-        return Fused;
-      }
-    }
-
-    // When FP_EXTEND nodes are free on the target, and there is an opportunity
-    // to combine into FMA, arrange such nodes accordingly.
-    if (TLI.isFPExtFree(VT)) {
-      // fold (fsub (fpext (fmul x, y)), z)
-      //   -> (fma (fpext x), (fpext y), (fneg z))
-      if (N0.getOpcode() == ISD::FP_EXTEND) {
-        SDValue N00 = N0.getOperand(0);
-        if (N00.getOpcode() == ISD::FMUL)
-          return DAG.getNode(ISD::FMA, SDLoc(N), VT,
-                             DAG.getNode(ISD::FP_EXTEND, SDLoc(N), VT,
-                                         N00.getOperand(0)),
-                             DAG.getNode(ISD::FP_EXTEND, SDLoc(N), VT,
-                                         N00.getOperand(1)),
-                             DAG.getNode(ISD::FNEG, SDLoc(N), VT, N1));
-      }
-
-      // fold (fsub x, (fpext (fmul y, z)))
-      //   -> (fma (fneg (fpext y)), (fpext z), x)
-      // Note: Commutes FSUB operands.
-      if (N1.getOpcode() == ISD::FP_EXTEND) {
-        SDValue N10 = N1.getOperand(0);
-        if (N10.getOpcode() == ISD::FMUL)
-          return DAG.getNode(ISD::FMA, SDLoc(N), VT,
-                             DAG.getNode(ISD::FNEG, SDLoc(N), VT,
-                                         DAG.getNode(ISD::FP_EXTEND, SDLoc(N),
-                                                     VT, N10.getOperand(0))),
-                             DAG.getNode(ISD::FP_EXTEND, SDLoc(N), VT,
-                                         N10.getOperand(1)),
-                             N0);
-      }
-
-      // fold (fsub (fpext (fneg (fmul, x, y))), z)
-      //   -> (fma (fneg (fpext x)), (fpext y), (fneg z))
-      if (N0.getOpcode() == ISD::FP_EXTEND) {
-        SDValue N00 = N0.getOperand(0);
-        if (N00.getOpcode() == ISD::FNEG) {
-          SDValue N000 = N00.getOperand(0);
-          if (N000.getOpcode() == ISD::FMUL) {
-            return DAG.getNode(ISD::FMA, dl, VT,
-                               DAG.getNode(ISD::FNEG, dl, VT,
-                                           DAG.getNode(ISD::FP_EXTEND, SDLoc(N),
-                                                       VT, N000.getOperand(0))),
-                               DAG.getNode(ISD::FP_EXTEND, SDLoc(N), VT,
-                                           N000.getOperand(1)),
-                               DAG.getNode(ISD::FNEG, dl, VT, N1));
-          }
-        }
-      }
-
-      // fold (fsub (fneg (fpext (fmul, x, y))), z)
-      //   -> (fma (fneg (fpext x)), (fpext y), (fneg z))
-      if (N0.getOpcode() == ISD::FNEG) {
-        SDValue N00 = N0.getOperand(0);
-        if (N00.getOpcode() == ISD::FP_EXTEND) {
-          SDValue N000 = N00.getOperand(0);
-          if (N000.getOpcode() == ISD::FMUL) {
-            return DAG.getNode(ISD::FMA, dl, VT,
-                               DAG.getNode(ISD::FNEG, dl, VT,
-                                           DAG.getNode(ISD::FP_EXTEND, SDLoc(N),
-                                           VT, N000.getOperand(0))),
-                               DAG.getNode(ISD::FP_EXTEND, SDLoc(N), VT,
-                                           N000.getOperand(1)),
-                               DAG.getNode(ISD::FNEG, dl, VT, N1));
-          }
-        }
-      }
-    }
+  SDValue Fused = visitFSUBForFMACombine(N);
+  if (Fused) {
+    AddToWorklist(Fused.getNode());
+    return Fused;
   }
 
   return SDValue();
@@ -8160,6 +8408,11 @@ SDValue DAGCombiner::visitFP_EXTEND(SDNode *N) {
   // fold (fp_extend c1fp) -> c1fp
   if (isConstantFPBuildVectorOrConstantFP(N0))
     return DAG.getNode(ISD::FP_EXTEND, SDLoc(N), VT, N0);
+
+  // fold (fp_extend (fp16_to_fp op)) -> (fp16_to_fp op)
+  if (N0.getOpcode() == ISD::FP16_TO_FP &&
+      TLI.getOperationAction(ISD::FP16_TO_FP, VT) == TargetLowering::Legal)
+    return DAG.getNode(ISD::FP16_TO_FP, SDLoc(N), VT, N0.getOperand(0));
 
   // Turn fp_extend(fp_round(X, 1)) -> x since the fp_round doesn't affect the
   // value of X.
@@ -11499,6 +11752,68 @@ SDValue DAGCombiner::visitBUILD_VECTOR(SDNode *N) {
   return SDValue();
 }
 
+static SDValue combineConcatVectorOfScalars(SDNode *N, SelectionDAG &DAG) {
+  const TargetLowering &TLI = DAG.getTargetLoweringInfo();
+  EVT OpVT = N->getOperand(0).getValueType();
+
+  // If the operands are legal vectors, leave them alone.
+  if (TLI.isTypeLegal(OpVT))
+    return SDValue();
+
+  SDLoc DL(N);
+  EVT VT = N->getValueType(0);
+  SmallVector<SDValue, 8> Ops;
+
+  EVT SVT = EVT::getIntegerVT(*DAG.getContext(), OpVT.getSizeInBits());
+  SDValue ScalarUndef = DAG.getNode(ISD::UNDEF, DL, SVT);
+
+  // Keep track of what we encounter.
+  bool AnyInteger = false;
+  bool AnyFP = false;
+  for (const SDValue &Op : N->ops()) {
+    if (ISD::BITCAST == Op.getOpcode() &&
+        !Op.getOperand(0).getValueType().isVector())
+      Ops.push_back(Op.getOperand(0));
+    else if (ISD::UNDEF == Op.getOpcode())
+      Ops.push_back(ScalarUndef);
+    else
+      return SDValue();
+
+    // Note whether we encounter an integer or floating point scalar.
+    // If it's neither, bail out, it could be something weird like x86mmx.
+    EVT LastOpVT = Ops.back().getValueType();
+    if (LastOpVT.isFloatingPoint())
+      AnyFP = true;
+    else if (LastOpVT.isInteger())
+      AnyInteger = true;
+    else
+      return SDValue();
+  }
+
+  // If any of the operands is a floating point scalar bitcast to a vector,
+  // use floating point types throughout, and bitcast everything.  
+  // Replace UNDEFs by another scalar UNDEF node, of the final desired type.
+  if (AnyFP) {
+    SVT = EVT::getFloatingPointVT(OpVT.getSizeInBits());
+    ScalarUndef = DAG.getNode(ISD::UNDEF, DL, SVT);
+    if (AnyInteger) {
+      for (SDValue &Op : Ops) {
+        if (Op.getValueType() == SVT)
+          continue;
+        if (Op.getOpcode() == ISD::UNDEF)
+          Op = ScalarUndef;
+        else
+          Op = DAG.getNode(ISD::BITCAST, DL, SVT, Op);
+      }
+    }
+  }
+
+  EVT VecVT = EVT::getVectorVT(*DAG.getContext(), SVT,
+                               VT.getSizeInBits() / SVT.getSizeInBits());
+  return DAG.getNode(ISD::BITCAST, DL, VT,
+                     DAG.getNode(ISD::BUILD_VECTOR, DL, VecVT, Ops));
+}
+
 SDValue DAGCombiner::visitCONCAT_VECTORS(SDNode *N) {
   // TODO: Check to see if this is a CONCAT_VECTORS of a bunch of
   // EXTRACT_SUBVECTOR operations.  If so, and if the EXTRACT_SUBVECTOR vector
@@ -11600,6 +11915,10 @@ SDValue DAGCombiner::visitCONCAT_VECTORS(SDNode *N) {
            "Concat vector type mismatch");
     return DAG.getNode(ISD::BUILD_VECTOR, SDLoc(N), VT, Opnds);
   }
+
+  // Fold CONCAT_VECTORS of only bitcast scalars (or undef) to BUILD_VECTOR.
+  if (SDValue V = combineConcatVectorOfScalars(N, DAG))
+    return V;
 
   // Type legalization of vectors and DAG canonicalization of SHUFFLE_VECTOR
   // nodes often generate nop CONCAT_VECTOR nodes.
@@ -12283,6 +12602,16 @@ SDValue DAGCombiner::visitINSERT_SUBVECTOR(SDNode *N) {
   return SDValue();
 }
 
+SDValue DAGCombiner::visitFP_TO_FP16(SDNode *N) {
+  SDValue N0 = N->getOperand(0);
+
+  // fold (fp_to_fp16 (fp16_to_fp op)) -> op
+  if (N0->getOpcode() == ISD::FP16_TO_FP)
+    return N0->getOperand(0);
+
+  return SDValue();
+}
+
 /// Returns a vector_shuffle if it able to transform an AND to a vector_shuffle
 /// with the destination vector and a zero vector.
 /// e.g. AND V, <0xffffffff, 0, 0xffffffff, 0>. ==>
@@ -12462,6 +12791,38 @@ SDValue DAGCombiner::SimplifySelect(SDLoc DL, SDValue N0,
 bool DAGCombiner::SimplifySelectOps(SDNode *TheSelect, SDValue LHS,
                                     SDValue RHS) {
 
+  // fold (select (setcc x, -0.0, *lt), NaN, (fsqrt x))
+  // The select + setcc is redundant, because fsqrt returns NaN for X < -0.
+  if (const ConstantFPSDNode *NaN = isConstOrConstSplatFP(LHS)) {
+    if (NaN->isNaN() && RHS.getOpcode() == ISD::FSQRT) {
+      // We have: (select (setcc ?, ?, ?), NaN, (fsqrt ?))
+      SDValue Sqrt = RHS;
+      ISD::CondCode CC;
+      SDValue CmpLHS;
+      const ConstantFPSDNode *NegZero = nullptr;
+
+      if (TheSelect->getOpcode() == ISD::SELECT_CC) {
+        CC = dyn_cast<CondCodeSDNode>(TheSelect->getOperand(4))->get();
+        CmpLHS = TheSelect->getOperand(0);
+        NegZero = isConstOrConstSplatFP(TheSelect->getOperand(1));
+      } else {
+        // SELECT or VSELECT
+        SDValue Cmp = TheSelect->getOperand(0);
+        if (Cmp.getOpcode() == ISD::SETCC) {
+          CC = dyn_cast<CondCodeSDNode>(Cmp.getOperand(2))->get();
+          CmpLHS = Cmp.getOperand(0);
+          NegZero = isConstOrConstSplatFP(Cmp.getOperand(1));
+        }
+      }
+      if (NegZero && NegZero->isNegative() && NegZero->isZero() &&
+          Sqrt.getOperand(0) == CmpLHS && (CC == ISD::SETOLT ||
+          CC == ISD::SETULT || CC == ISD::SETLT)) {
+        // We have: (select (setcc x, -0.0, *lt), NaN, (fsqrt x))
+        CombineTo(TheSelect, Sqrt);
+        return true;
+      }
+    }
+  }
   // Cannot simplify select with vector condition
   if (TheSelect->getOperand(0).getValueType().isVector()) return false;
 
@@ -12483,6 +12844,9 @@ bool DAGCombiner::SimplifySelectOps(SDNode *TheSelect, SDValue LHS,
     if (LHS.getOperand(0) != RHS.getOperand(0) ||
         // Do not let this transformation reduce the number of volatile loads.
         LLD->isVolatile() || RLD->isVolatile() ||
+        // FIXME: If either is a pre/post inc/dec load,
+        // we'd need to split out the address adjustment.
+        LLD->isIndexed() || RLD->isIndexed() ||
         // If this is an EXTLOAD, the VT's must match.
         LLD->getMemoryVT() != RLD->getMemoryVT() ||
         // If this is an EXTLOAD, the kind of extension must match.
