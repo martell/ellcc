@@ -1,5 +1,5 @@
 # -*- python -*-
-# Copyright (C) 2009-2013 Free Software Foundation, Inc.
+# Copyright (C) 2009-2014 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@ import gdb
 import os
 import os.path
 
-pythondir = '/usr/share/gcc-4.8.4/python'
+pythondir = '/usr/share/gcc-4.9.2/python'
 libdir = '/usr/x86_64-w64-mingw32/lib/../lib'
 
 # This file might be loaded when there is no current objfile.  This

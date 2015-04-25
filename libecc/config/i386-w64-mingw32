@@ -8,11 +8,11 @@ compiler:
     # - -no-integrated-as
   c_include_dirs:
     - $R/clang
-    - $R/mingw/i686-w64-mingw32/sys-root/mingw/include
+    - $R/mingw/include
   cxx_include_dirs:
-    - $R/mingw/i686-w64-mingw32/sys-root/mingw/include/c++
-    - $R/mingw/i686-w64-mingw32/sys-root/mingw/include/c++/i686-w64-mingw32
-    - $R/mingw/i686-w64-mingw32/sys-root/mingw/include/c++/backward
+    - $R/mingw/include/c++
+    - $R/mingw/include/c++/i686-w64-mingw32
+    - $R/mingw/include/c++/backward
 assembler:
   exe: $E/i686-w64-mingw32-as
   output:
@@ -40,10 +40,10 @@ linker:
     - -m i386pe
   static_crt1: $R/mingw/i686-w64-mingw32/sys-root/mingw/lib/crt2.o
   dynamic_crt1: $R/lib/i386-linux-eng/Scrt1.o
-  crtbegin: $R/mingw/gcc/i686-w64-mingw32/4.8.4/crtbegin.o
-  crtend: $R/mingw/gcc/i686-w64-mingw32/4.8.4/crtend.o
+  crtbegin: $R/mingw/gcc/i686-w64-mingw32/4.9.2/crtbegin.o
+  crtend: $R/mingw/gcc/i686-w64-mingw32/4.9.2/crtend.o
   library_paths:
-    - -L$R/mingw/gcc/i686-w64-mingw32/4.8.4
+    - -L$R/mingw/gcc/i686-w64-mingw32/4.9.2
     - -L$R/mingw/i686-w64-mingw32/lib
     - -L$R/mingw/i686-w64-mingw32/sys-root/mingw/lib
     - -L$R/mingw/i686-w64-mingw32/lib
@@ -54,16 +54,17 @@ linker:
   profile_libraries:
     - -lprofile_rt
   c_libraries:
+    - -(
     - -lmingw32
     - -lgcc
     - -lgcc_eh
     - -lmoldname
     - -lmingwex
     - -lmsvcrt
+    - -lpthread
     - -ladvapi32
     - -lshell32
     - -luser32
     - -lkernel32
-    - -lmingw32
-    - -lgcc
+    - -)
 ...
