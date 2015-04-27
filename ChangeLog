@@ -1,6 +1,8 @@
 current SVN:
 
-* Update to MinGW-64 4.0.
+version 0.1.13:
+
+* Update to MinGW-w64 4.0.
 * Update to LLVM r235585.
 * Removed lld for now.
 * Update to LLVM r234745.
