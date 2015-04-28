@@ -61,7 +61,7 @@ if [ $all -eq 1 ] ; then
   BldConfigs=`cd libecc/config; echo *-linux-* *-w64-mingw32`
   for config in $BldConfigs ; do
     # Don't rebuild the host.
-    if [ `bin/ecc-getarch $config` = $host ] ; then
+    if [ `bin/ecc-getarch $config`-`bin/ecc-getos $config` = $host-$hostos ] ; then
       continue
     fi
     # The microblaze can't self host.

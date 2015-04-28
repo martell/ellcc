@@ -26,7 +26,6 @@ release:
 	$(OUT)$(MAKE) $(MFLAGS) \
 	  CLANG_VENDOR="ecc $(VERSION) based on" all || exit 1
 	$(OUT)./build -p $(VERSION) || exit 1
-	$(OUT)echo Enter the ellcc.org svn password
 	$(OUT)svn cp -m "Tag release $(VERSION)." \
 	  http://ellcc.org/svn/ellcc/trunk \
 	  http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION)
