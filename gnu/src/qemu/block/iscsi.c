@@ -56,6 +56,7 @@ typedef struct IscsiLun {
     uint64_t num_blocks;
     int events;
     QEMUTimer *nop_timer;
+    QEMUTimer *event_timer;
     uint8_t lbpme;
     uint8_t lbprz;
     uint8_t has_write_same;
@@ -65,6 +66,7 @@ typedef struct IscsiLun {
     unsigned long *allocationmap;
     int cluster_sectors;
     bool use_16_for_rw;
+    bool write_protected;
 } IscsiLun;
 
 typedef struct IscsiTask {
@@ -94,6 +96,7 @@ typedef struct IscsiAIOCB {
 #endif
 } IscsiAIOCB;
 
+#define EVENT_INTERVAL 250
 #define NOP_INTERVAL 5000
 #define MAX_NOP_FAILURES 3
 #define ISCSI_CMD_RETRIES ARRAY_SIZE(iscsi_retry_times)
@@ -255,21 +258,30 @@ static void
 iscsi_set_events(IscsiLun *iscsilun)
 {
     struct iscsi_context *iscsi = iscsilun->iscsi;
-    int ev;
+    int ev = iscsi_which_events(iscsi);
 
-    /* We always register a read handler.  */
-    ev = POLLIN;
-    ev |= iscsi_which_events(iscsi);
     if (ev != iscsilun->events) {
         aio_set_fd_handler(iscsilun->aio_context,
                            iscsi_get_fd(iscsi),
-                           iscsi_process_read,
+                           (ev & POLLIN) ? iscsi_process_read : NULL,
                            (ev & POLLOUT) ? iscsi_process_write : NULL,
                            iscsilun);
-
+        iscsilun->events = ev;
     }
 
-    iscsilun->events = ev;
+    /* newer versions of libiscsi may return zero events. In this
+     * case start a timer to ensure we are able to return to service
+     * once this situation changes. */
+    if (!ev) {
+        timer_mod(iscsilun->event_timer,
+                  qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + EVENT_INTERVAL);
+    }
+}
+
+static void iscsi_timed_set_events(void *opaque)
+{
+    IscsiLun *iscsilun = opaque;
+    iscsi_set_events(iscsilun);
 }
 
 static void
@@ -1213,6 +1225,11 @@ static void iscsi_detach_aio_context(BlockDriverState *bs)
         timer_free(iscsilun->nop_timer);
         iscsilun->nop_timer = NULL;
     }
+    if (iscsilun->event_timer) {
+        timer_del(iscsilun->event_timer);
+        timer_free(iscsilun->event_timer);
+        iscsilun->event_timer = NULL;
+    }
 }
 
 static void iscsi_attach_aio_context(BlockDriverState *bs,
@@ -1229,6 +1246,11 @@ static void iscsi_attach_aio_context(BlockDriverState *bs,
                                         iscsi_nop_timed_event, iscsilun);
     timer_mod(iscsilun->nop_timer,
               qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + NOP_INTERVAL);
+
+    /* Prepare a timer for a delayed call to iscsi_set_events */
+    iscsilun->event_timer = aio_timer_new(iscsilun->aio_context,
+                                          QEMU_CLOCK_REALTIME, SCALE_MS,
+                                          iscsi_timed_set_events, iscsilun);
 }
 
 static bool iscsi_is_write_protected(IscsiLun *iscsilun)
@@ -1268,10 +1290,6 @@ out:
 /*
  * We support iscsi url's on the form
  * iscsi://[<username>%<password>@]<host>[:<port>]/<targetname>/<lun>
- *
- * Note: flags are currently not used by iscsi_open.  If this function
- * is changed such that flags are used, please examine iscsi_reopen_prepare()
- * to see if needs to be changed as well.
  */
 static int iscsi_open(BlockDriverState *bs, QDict *options, int flags,
                       Error **errp)
@@ -1286,7 +1304,7 @@ static int iscsi_open(BlockDriverState *bs, QDict *options, int flags,
     QemuOpts *opts;
     Error *local_err = NULL;
     const char *filename;
-    int i, ret;
+    int i, ret = 0;
 
     if ((BDRV_SECTOR_SIZE % 512) != 0) {
         error_setg(errp, "iSCSI: Invalid BDRV_SECTOR_SIZE. "
@@ -1329,7 +1347,7 @@ static int iscsi_open(BlockDriverState *bs, QDict *options, int flags,
         goto out;
     }
 
-    if (iscsi_url->user != NULL) {
+    if (iscsi_url->user[0] != '\0') {
         ret = iscsi_set_initiator_username_pwd(iscsi, iscsi_url->user,
                                               iscsi_url->passwd);
         if (ret != 0) {
@@ -1385,9 +1403,10 @@ static int iscsi_open(BlockDriverState *bs, QDict *options, int flags,
     scsi_free_scsi_task(task);
     task = NULL;
 
+    iscsilun->write_protected = iscsi_is_write_protected(iscsilun);
     /* Check the write protect flag of the LUN if we want to write */
     if (iscsilun->type == TYPE_DISK && (flags & BDRV_O_RDWR) &&
-        iscsi_is_write_protected(iscsilun)) {
+        iscsilun->write_protected) {
         error_setg(errp, "Cannot open a write protected LUN as read-write");
         ret = -EACCES;
         goto out;
@@ -1541,13 +1560,17 @@ static void iscsi_refresh_limits(BlockDriverState *bs, Error **errp)
         sector_limits_lun2qemu(iscsilun->bl.opt_xfer_len, iscsilun);
 }
 
-/* Since iscsi_open() ignores bdrv_flags, there is nothing to do here in
- * prepare.  Note that this will not re-establish a connection with an iSCSI
- * target - it is effectively a NOP.  */
+/* Note that this will not re-establish a connection with an iSCSI target - it
+ * is effectively a NOP.  */
 static int iscsi_reopen_prepare(BDRVReopenState *state,
                                 BlockReopenQueue *queue, Error **errp)
 {
-    /* NOP */
+    IscsiLun *iscsilun = state->bs->opaque;
+
+    if (state->flags & BDRV_O_RDWR && iscsilun->write_protected) {
+        error_setg(errp, "Cannot open a write protected LUN as read-write");
+        return -EACCES;
+    }
     return 0;
 }
 

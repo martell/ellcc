@@ -6,6 +6,7 @@
 #include "hw/qdev.h"
 #include "qapi/error.h"
 #include "qmp-commands.h"
+#include "hw/i386/pc.h"
 
 static QemuOptsList *vm_config_groups[32];
 static QemuOptsList *drive_config_groups[4];
@@ -32,8 +33,7 @@ QemuOptsList *qemu_find_opts(const char *group)
 
     ret = find_list(vm_config_groups, group, &local_err);
     if (local_err) {
-        error_report("%s", error_get_pretty(local_err));
-        error_free(local_err);
+        error_report_err(local_err);
     }
 
     return ret;
@@ -149,6 +149,84 @@ static CommandLineParameterInfoList *get_drive_infolist(void)
     return head;
 }
 
+/* restore machine options that are now machine's properties */
+static QemuOptsList machine_opts = {
+    .merge_lists = true,
+    .head = QTAILQ_HEAD_INITIALIZER(machine_opts.head),
+    .desc = {
+        {
+            .name = "type",
+            .type = QEMU_OPT_STRING,
+            .help = "emulated machine"
+        },{
+            .name = "accel",
+            .type = QEMU_OPT_STRING,
+            .help = "accelerator list",
+        },{
+            .name = "kernel_irqchip",
+            .type = QEMU_OPT_BOOL,
+            .help = "use KVM in-kernel irqchip",
+        },{
+            .name = "kvm_shadow_mem",
+            .type = QEMU_OPT_SIZE,
+            .help = "KVM shadow MMU size",
+        },{
+            .name = "kernel",
+            .type = QEMU_OPT_STRING,
+            .help = "Linux kernel image file",
+        },{
+            .name = "initrd",
+            .type = QEMU_OPT_STRING,
+            .help = "Linux initial ramdisk file",
+        },{
+            .name = "append",
+            .type = QEMU_OPT_STRING,
+            .help = "Linux kernel command line",
+        },{
+            .name = "dtb",
+            .type = QEMU_OPT_STRING,
+            .help = "Linux kernel device tree file",
+        },{
+            .name = "dumpdtb",
+            .type = QEMU_OPT_STRING,
+            .help = "Dump current dtb to a file and quit",
+        },{
+            .name = "phandle_start",
+            .type = QEMU_OPT_NUMBER,
+            .help = "The first phandle ID we may generate dynamically",
+        },{
+            .name = "dt_compatible",
+            .type = QEMU_OPT_STRING,
+            .help = "Overrides the \"compatible\" property of the dt root node",
+        },{
+            .name = "dump-guest-core",
+            .type = QEMU_OPT_BOOL,
+            .help = "Include guest memory in  a core dump",
+        },{
+            .name = "mem-merge",
+            .type = QEMU_OPT_BOOL,
+            .help = "enable/disable memory merge support",
+        },{
+            .name = "usb",
+            .type = QEMU_OPT_BOOL,
+            .help = "Set on/off to enable/disable usb",
+        },{
+            .name = "firmware",
+            .type = QEMU_OPT_STRING,
+            .help = "firmware image",
+        },{
+            .name = "iommu",
+            .type = QEMU_OPT_BOOL,
+            .help = "Set on/off to enable/disable Intel IOMMU (VT-d)",
+        },{
+            .name = "suppress-vmdesc",
+            .type = QEMU_OPT_BOOL,
+            .help = "Set on to disable self-describing migration",
+        },
+        { /* End of list */ }
+    }
+};
+
 CommandLineOptionInfoList *qmp_query_command_line_options(bool has_option,
                                                           const char *option,
                                                           Error **errp)
@@ -163,6 +241,8 @@ CommandLineOptionInfoList *qmp_query_command_line_options(bool has_option,
             info->option = g_strdup(vm_config_groups[i]->name);
             if (!strcmp("drive", vm_config_groups[i]->name)) {
                 info->parameters = get_drive_infolist();
+            } else if (!strcmp("machine", vm_config_groups[i]->name)) {
+                info->parameters = query_option_descs(machine_opts.desc);
             } else {
                 info->parameters =
                     query_option_descs(vm_config_groups[i]->desc);
@@ -220,6 +300,7 @@ void qemu_add_opts(QemuOptsList *list)
 
 int qemu_set_option(const char *str)
 {
+    Error *local_err = NULL;
     char group[64], id[64], arg[64];
     QemuOptsList *list;
     QemuOpts *opts;
@@ -243,7 +324,9 @@ int qemu_set_option(const char *str)
         return -1;
     }
 
-    if (qemu_opt_set(opts, arg, str+offset+1) == -1) {
+    qemu_opt_set(opts, arg, str + offset + 1, &local_err);
+    if (local_err) {
+        error_report_err(local_err);
         return -1;
     }
     return 0;
@@ -314,8 +397,7 @@ int qemu_config_parse(FILE *fp, QemuOptsList **lists, const char *fname)
             /* group with id */
             list = find_list(lists, group, &local_err);
             if (local_err) {
-                error_report("%s", error_get_pretty(local_err));
-                error_free(local_err);
+                error_report_err(local_err);
                 goto out;
             }
             opts = qemu_opts_create(list, id, 1, NULL);
@@ -325,8 +407,7 @@ int qemu_config_parse(FILE *fp, QemuOptsList **lists, const char *fname)
             /* group without id */
             list = find_list(lists, group, &local_err);
             if (local_err) {
-                error_report("%s", error_get_pretty(local_err));
-                error_free(local_err);
+                error_report_err(local_err);
                 goto out;
             }
             opts = qemu_opts_create(list, NULL, 0, &error_abort);
@@ -338,7 +419,9 @@ int qemu_config_parse(FILE *fp, QemuOptsList **lists, const char *fname)
                 error_report("no group defined");
                 goto out;
             }
-            if (qemu_opt_set(opts, arg, value) != 0) {
+            qemu_opt_set(opts, arg, value, &local_err);
+            if (local_err) {
+                error_report_err(local_err);
                 goto out;
             }
             continue;

@@ -28,6 +28,9 @@ FILE_LICENCE ( GPL2_OR_LATER );
  *
  */
 
+/** Page shift */
+#define PAGE_SHIFT 12
+
 /*
  * Physical<->Bus and Bus<->I/O address mappings
  *
@@ -45,7 +48,7 @@ IOAPI_INLINE ( x86, bus_to_phys ) ( unsigned long bus_addr ) {
 
 static inline __always_inline void *
 IOAPI_INLINE ( x86, ioremap ) ( unsigned long bus_addr, size_t len __unused ) {
-	return phys_to_virt ( bus_addr );
+	return ( bus_addr ? phys_to_virt ( bus_addr ) : NULL );
 }
 
 static inline __always_inline void

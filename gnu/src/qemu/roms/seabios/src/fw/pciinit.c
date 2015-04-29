@@ -8,6 +8,7 @@
 #include "byteorder.h" // le64_to_cpu
 #include "config.h" // CONFIG_*
 #include "dev-q35.h" // Q35_HOST_BRIDGE_PCIEXBAR_ADDR
+#include "dev-piix.h" // PIIX_*
 #include "hw/ata.h" // PORT_ATA1_CMD_BASE
 #include "hw/pci.h" // pci_config_readl
 #include "hw/pci_ids.h" // PCI_VENDOR_ID_INTEL
@@ -114,27 +115,18 @@ static int piix_pci_slot_get_irq(struct pci_device *pci, int pin)
 
 static int mch_pci_slot_get_irq(struct pci_device *pci, int pin)
 {
-    int irq, slot, pin_addend = 0;
-
+    int pin_addend = 0;
     while (pci->parent != NULL) {
         pin_addend += pci_bdf_to_dev(pci->bdf);
         pci = pci->parent;
     }
-    slot = pci_bdf_to_dev(pci->bdf);
-
-    switch (slot) {
-    /* Slots 0-24 rotate slot:pin mapping similar to piix above, but
-       with a different starting index - see q35-acpi-dsdt.dsl */
-    case 0 ... 24:
-        irq = pci_irqs[(pin - 1 + pin_addend + slot) & 3];
-        break;
+    u8 slot = pci_bdf_to_dev(pci->bdf);
+    if (slot <= 24)
+        /* Slots 0-24 rotate slot:pin mapping similar to piix above, but
+           with a different starting index - see q35-acpi-dsdt.dsl */
+        return pci_irqs[(pin - 1 + pin_addend + slot) & 3];
     /* Slots 25-31 all use LNKA mapping (or LNKE, but A:D = E:H) */
-    case 25 ... 31:
-        irq = pci_irqs[(pin - 1 + pin_addend) & 3];
-        break;
-    }
-
-    return irq;
+    return pci_irqs[(pin - 1 + pin_addend) & 3];
 }
 
 /* PIIX3/PIIX4 PCI to ISA bridge */
@@ -152,8 +144,8 @@ static void piix_isa_bridge_setup(struct pci_device *pci, void *arg)
         /* activate irq remapping in PIIX */
         pci_config_writeb(pci->bdf, 0x60 + i, irq);
     }
-    outb(elcr[0], 0x4d0);
-    outb(elcr[1], 0x4d1);
+    outb(elcr[0], PIIX_PORT_ELCR1);
+    outb(elcr[1], PIIX_PORT_ELCR2);
     dprintf(1, "PIIX3/PIIX4 init: elcr=%02x %02x\n", elcr[0], elcr[1]);
 }
 
@@ -229,10 +221,10 @@ static void piix4_pm_config_setup(u16 bdf)
     // acpi sci is hardwired to 9
     pci_config_writeb(bdf, PCI_INTERRUPT_LINE, 9);
 
-    pci_config_writel(bdf, 0x40, acpi_pm_base | 1);
-    pci_config_writeb(bdf, 0x80, 0x01); /* enable PM io space */
-    pci_config_writel(bdf, 0x90, (acpi_pm_base + 0x100) | 1);
-    pci_config_writeb(bdf, 0xd2, 0x09); /* enable SMBus io space */
+    pci_config_writel(bdf, PIIX_PMBASE, acpi_pm_base | 1);
+    pci_config_writeb(bdf, PIIX_PMREGMISC, 0x01); /* enable PM io space */
+    pci_config_writel(bdf, PIIX_SMBHSTBASE, (acpi_pm_base + 0x100) | 1);
+    pci_config_writeb(bdf, PIIX_SMBHSTCFG, 0x09); /* enable SMBus io space */
 }
 
 static int PiixPmBDF = -1;
@@ -498,8 +490,17 @@ pci_bios_init_bus_rec(int bus, u8 *pci_bus)
 static void
 pci_bios_init_bus(void)
 {
+    u8 extraroots = romfile_loadint("etc/extra-pci-roots", 0);
     u8 pci_bus = 0;
+
     pci_bios_init_bus_rec(0 /* host bus */, &pci_bus);
+
+    if (extraroots) {
+        while (pci_bus < 0xff) {
+            pci_bus++;
+            pci_bios_init_bus_rec(pci_bus, &pci_bus);
+        }
+    }
 }
 
 
@@ -676,6 +677,11 @@ static int pci_bios_check_devices(struct pci_bus *busses)
             busses[pci->secondary_bus].bus_dev = pci;
 
         struct pci_bus *bus = &busses[pci_bdf_to_bus(pci->bdf)];
+        if (!bus->bus_dev)
+            /*
+             * Resources for all root busses go in busses[0]
+             */
+            bus = &busses[0];
         int i;
         for (i = 0; i < PCI_NUM_REGIONS; i++) {
             if ((pci->class == PCI_CLASS_BRIDGE_PCI) &&
@@ -706,6 +712,11 @@ static int pci_bios_check_devices(struct pci_bus *busses)
         if (!s->bus_dev)
             continue;
         struct pci_bus *parent = &busses[pci_bdf_to_bus(s->bus_dev->bdf)];
+        if (!parent->bus_dev)
+            /*
+             * Resources for all root busses go in busses[0]
+             */
+            parent = &busses[0];
         int type;
         int hotplug_support = pci_bus_hotplug_support(s);
         for (type = 0; type < PCI_REGION_TYPE_COUNT; type++) {

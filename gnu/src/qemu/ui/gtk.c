@@ -294,6 +294,10 @@ static void gd_update_cursor(VirtualConsole *vc)
         return;
     }
 
+    if (!gtk_widget_get_realized(vc->gfx.drawing_area)) {
+        return;
+    }
+
     window = gtk_widget_get_window(GTK_WIDGET(vc->gfx.drawing_area));
     if (s->full_screen || qemu_input_is_absolute() || s->ptr_owner == vc) {
         gdk_window_set_cursor(window, s->null_cursor);
@@ -458,6 +462,10 @@ static void gd_update(DisplayChangeListener *dcl,
 
     trace_gd_update(vc->label, x, y, w, h);
 
+    if (!gtk_widget_get_realized(vc->gfx.drawing_area)) {
+        return;
+    }
+
     if (vc->gfx.convert) {
         pixman_image_composite(PIXMAN_OP_SRC, vc->gfx.ds->image,
                                NULL, vc->gfx.convert,
@@ -539,6 +547,10 @@ static void gd_cursor_define(DisplayChangeListener *dcl,
     VirtualConsole *vc = container_of(dcl, VirtualConsole, gfx.dcl);
     GdkPixbuf *pixbuf;
     GdkCursor *cursor;
+
+    if (!gtk_widget_get_realized(vc->gfx.drawing_area)) {
+        return;
+    }
 
     pixbuf = gdk_pixbuf_new_from_data((guchar *)(c->data),
                                       GDK_COLORSPACE_RGB, true, 8,
@@ -1654,12 +1666,13 @@ static GtkWidget *gd_create_menu_machine(GtkDisplayState *s)
 }
 
 static const DisplayChangeListenerOps dcl_ops = {
-    .dpy_name          = "gtk",
-    .dpy_gfx_update    = gd_update,
-    .dpy_gfx_switch    = gd_switch,
-    .dpy_refresh       = gd_refresh,
-    .dpy_mouse_set     = gd_mouse_set,
-    .dpy_cursor_define = gd_cursor_define,
+    .dpy_name             = "gtk",
+    .dpy_gfx_update       = gd_update,
+    .dpy_gfx_switch       = gd_switch,
+    .dpy_gfx_check_format = qemu_pixman_check_format,
+    .dpy_refresh          = gd_refresh,
+    .dpy_mouse_set        = gd_mouse_set,
+    .dpy_cursor_define    = gd_cursor_define,
 };
 
 static GSList *gd_vc_gfx_init(GtkDisplayState *s, VirtualConsole *vc,

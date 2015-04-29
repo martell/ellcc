@@ -45,6 +45,7 @@ extern bool kvm_async_interrupts_allowed;
 extern bool kvm_halt_in_kernel_allowed;
 extern bool kvm_eventfds_allowed;
 extern bool kvm_irqfds_allowed;
+extern bool kvm_resamplefds_allowed;
 extern bool kvm_msi_via_irqfd_allowed;
 extern bool kvm_gsi_routing_allowed;
 extern bool kvm_gsi_direct_mapping;
@@ -102,6 +103,15 @@ extern bool kvm_readonly_mem_allowed;
 #define kvm_irqfds_enabled() (kvm_irqfds_allowed)
 
 /**
+ * kvm_resamplefds_enabled:
+ *
+ * Returns: true if we can use resamplefds to inject interrupts into
+ * a KVM CPU (ie the kernel supports resamplefds and we are running
+ * with a configuration where it is meaningful to use them).
+ */
+#define kvm_resamplefds_enabled() (kvm_resamplefds_allowed)
+
+/**
  * kvm_msi_via_irqfd_enabled:
  *
  * Returns: true if we can route a PCI MSI (Message Signaled Interrupt)
@@ -148,6 +158,7 @@ extern bool kvm_readonly_mem_allowed;
 
 struct kvm_run;
 struct kvm_lapic_state;
+struct kvm_irq_routing_entry;
 
 typedef struct KVMCapabilityInfo {
     const char *name;
@@ -214,6 +225,18 @@ int kvm_vcpu_ioctl(CPUState *cpu, int type, ...);
 int kvm_device_ioctl(int fd, int type, ...);
 
 /**
+ * kvm_vm_check_attr - check for existence of a specific vm attribute
+ * @s: The KVMState pointer
+ * @group: the group
+ * @attr: the attribute of that group to query for
+ *
+ * Returns: 1 if the attribute exists
+ *          0 if the attribute either does not exist or if the vm device
+ *            interface is unavailable
+ */
+int kvm_vm_check_attr(KVMState *s, uint32_t group, uint64_t attr);
+
+/**
  * kvm_create_device - create a KVM device for the device control API
  * @KVMState: The KVMState pointer
  * @type: The KVM device type (see Documentation/virtual/kvm/devices in the
@@ -248,7 +271,7 @@ int kvm_arch_get_registers(CPUState *cpu);
 
 int kvm_arch_put_registers(CPUState *cpu, int level);
 
-int kvm_arch_init(KVMState *s);
+int kvm_arch_init(MachineState *ms, KVMState *s);
 
 int kvm_arch_init_vcpu(CPUState *cpu);
 
@@ -259,6 +282,9 @@ int kvm_arch_on_sigbus_vcpu(CPUState *cpu, int code, void *addr);
 int kvm_arch_on_sigbus(int code, void *addr);
 
 void kvm_arch_init_irq_routing(KVMState *s);
+
+int kvm_arch_fixup_msi_route(struct kvm_irq_routing_entry *route,
+                             uint64_t address, uint32_t data);
 
 int kvm_set_irq(KVMState *s, int irq, int level);
 int kvm_irqchip_send_msi(KVMState *s, MSIMessage msg);

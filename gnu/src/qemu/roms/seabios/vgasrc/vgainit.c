@@ -15,22 +15,12 @@
 #include "std/pmm.h" // struct pmmheader
 #include "string.h" // checksum_far
 #include "util.h" // VERSION
-#include "vgabios.h" // struct VideoSavePointer_s
+#include "vgabios.h" // video_save_pointer_table
 #include "vgahw.h" // vgahw_setup
 
-// Standard Video Save Pointer Table
-struct VideoSavePointer_s {
-    struct segoff_s videoparam;
-    struct segoff_s paramdynamicsave;
-    struct segoff_s textcharset;
-    struct segoff_s graphcharset;
-    struct segoff_s secsavepointer;
-    u8 reserved[8];
-} PACKED;
+struct video_save_pointer_s video_save_pointer_table VAR16;
 
-struct VideoSavePointer_s video_save_pointer_table VAR16;
-
-struct VideoParam_s video_param_table[29] VAR16;
+struct video_param_s video_param_table[29] VAR16;
 
 // Type of emulator platform - for dprintf with certain compile options.
 int PlatformRunningOn VAR16;
@@ -98,6 +88,38 @@ allocate_extra_stack(void)
 
 
 /****************************************************************
+ * Timer hook
+ ****************************************************************/
+
+struct segoff_s Timer_Hook_Resume VAR16 VISIBLE16;
+
+void VISIBLE16
+handle_timer_hook(void)
+{
+    if (!vga_emulate_text())
+        return;
+    vgafb_set_swcursor(GET_BDA(timer_counter) % 18 < 9);
+}
+
+static void
+hook_timer_irq(void)
+{
+    if (!CONFIG_VGA_EMULATE_TEXT)
+        return;
+    extern void entry_timer_hook(void);
+    extern void entry_timer_hook_extrastack(void);
+    struct segoff_s oldirq = GET_IVT(0x08);
+    struct segoff_s newirq = SEGOFF(get_global_seg(), (u32)entry_timer_hook);
+    if (CONFIG_VGA_ALLOCATE_EXTRA_STACK && GET_GLOBAL(ExtraStackSeg))
+        newirq = SEGOFF(get_global_seg(), (u32)entry_timer_hook_extrastack);
+    dprintf(1, "Hooking hardware timer irq (old=%x new=%x)\n"
+            , oldirq.segoff, newirq.segoff);
+    SET_VGA(Timer_Hook_Resume, oldirq);
+    SET_IVT(0x08, newirq);
+}
+
+
+/****************************************************************
  * VGA post
  ****************************************************************/
 
@@ -108,20 +130,16 @@ init_bios_area(void)
     // set 80x25 color (not clear from RBIL but usual)
     set_equipment_flags(0x30, 0x20);
 
-    // the default char height
-    SET_BDA(char_height, 0x10);
-
-    // Clear the screen
-    SET_BDA(video_ctl, 0x60);
-
-    // Set the basic screen we have
-    SET_BDA(video_switches, 0xf9);
-
     // Set the basic modeset options
     SET_BDA(modeset_ctl, 0x51);
 
-    // Set the  default MSR
-    SET_BDA(video_msr, 0x09);
+    SET_BDA(dcc_index, CONFIG_VGA_STDVGA_PORTS ? 0x08 : 0xff);
+    SET_BDA(video_savetable
+            , SEGOFF(get_global_seg(), (u32)&video_save_pointer_table));
+
+    // FIXME
+    SET_BDA(video_msr, 0x00); // Unavailable on vanilla vga, but...
+    SET_BDA(video_pal, 0x00); // Unavailable on vanilla vga, but...
 }
 
 int VgaBDF VAR16 = -1;
@@ -163,6 +181,8 @@ vga_post(struct bregs *regs)
     SET_IVT(0x10, SEGOFF(get_global_seg(), (u32)entry_10));
 
     allocate_extra_stack();
+
+    hook_timer_irq();
 
     SET_VGA(HaveRunInit, 1);
 

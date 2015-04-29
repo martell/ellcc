@@ -400,6 +400,10 @@ static int intelx_probe ( struct pci_device *pci ) {
 
 	/* Map registers */
 	intel->regs = ioremap ( pci->membase, INTEL_BAR_SIZE );
+	if ( ! intel->regs ) {
+		rc = -ENODEV;
+		goto err_ioremap;
+	}
 
 	/* Reset the NIC */
 	if ( ( rc = intelx_reset ( intel ) ) != 0 )
@@ -424,6 +428,7 @@ static int intelx_probe ( struct pci_device *pci ) {
 	intelx_reset ( intel );
  err_reset:
 	iounmap ( intel->regs );
+ err_ioremap:
 	netdev_nullify ( netdev );
 	netdev_put ( netdev );
  err_alloc:
@@ -456,6 +461,7 @@ static struct pci_device_id intelx_nics[] = {
 	PCI_ROM ( 0x8086, 0x10fb, "82599", "82599", 0 ),
 	PCI_ROM ( 0x8086, 0x1528, "x540at2", "X540-AT2", 0 ),
 	PCI_ROM ( 0x8086, 0x154d, "x520", "X520", 0 ),
+	PCI_ROM ( 0x8086, 0x1557, "82599", "82599", 0 ),
 };
 
 /** PCI driver */

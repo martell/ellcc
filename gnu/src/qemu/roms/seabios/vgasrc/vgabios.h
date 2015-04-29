@@ -1,23 +1,10 @@
 #ifndef __VGABIOS_H
 #define __VGABIOS_H
 
+#include "config.h" // CONFIG_VGA_EMULATE_TEXT
 #include "types.h" // u8
 #include "farptr.h" // struct segoff_s
-
-// standard BIOS Video Parameter Table
-struct VideoParam_s {
-    u8 twidth;
-    u8 theightm1;
-    u8 cheight;
-    u16 slength;
-    u8 sequ_regs[4];
-    u8 miscreg;
-    u8 crtc_regs[25];
-    u8 actl_regs[20];
-    u8 grdc_regs[9];
-} PACKED;
-
-extern struct VideoParam_s video_param_table[29];
+#include "std/vga.h" // struct video_param_s
 
 // Save/Restore flags
 #define SR_HARDWARE   0x0001
@@ -75,6 +62,30 @@ struct gfx_op {
 #define GO_MEMSET  3
 #define GO_MEMMOVE 4
 
+// Custom internal storage in BDA
+#define VGA_CUSTOM_BDA 0xb9
+
+struct vga_bda_s {
+    u8 flags;
+    u16 vbe_mode;
+    u16 vgamode_offset;
+} PACKED;
+
+#define BF_PM_MASK      0x0f
+#define BF_EMULATE_TEXT 0x10
+#define BF_SWCURSOR     0x20
+
+#define GET_BDA_EXT(var) \
+    GET_FARVAR(SEG_BDA, ((struct vga_bda_s *)VGA_CUSTOM_BDA)->var)
+#define SET_BDA_EXT(var, val) \
+    SET_FARVAR(SEG_BDA, ((struct vga_bda_s *)VGA_CUSTOM_BDA)->var, (val))
+#define MASK_BDA_EXT(var, off, on)                                      \
+    SET_BDA_EXT(var, (GET_BDA_EXT(var) & ~(off)) | (on))
+
+static inline int vga_emulate_text(void) {
+    return CONFIG_VGA_EMULATE_TEXT && GET_BDA_EXT(flags) & BF_EMULATE_TEXT;
+}
+
 // Debug settings
 #define DEBUG_VGA_POST 1
 #define DEBUG_VGA_10 3
@@ -87,7 +98,8 @@ extern u8 vgafont14alt[];
 extern u8 vgafont16alt[];
 
 // vgainit.c
-extern struct VideoSavePointer_s video_save_pointer_table;
+extern struct video_save_pointer_s video_save_pointer_table;
+extern struct video_param_s video_param_table[29];
 
 // vgabios.c
 extern int VgaBDF;
@@ -101,22 +113,26 @@ struct cursorpos {
 };
 int vga_bpp(struct vgamode_s *vmode_g);
 u16 calc_page_size(u8 memmodel, u16 width, u16 height);
+u16 get_cursor_shape(void);
+struct cursorpos get_cursor_pos(u8 page);
 int bda_save_restore(int cmd, u16 seg, void *data);
 struct vgamode_s *get_current_mode(void);
 int vga_set_mode(int mode, int flags);
+extern struct video_func_static static_functionality;
 
 // vgafb.c
 void init_gfx_op(struct gfx_op *op, struct vgamode_s *vmode_g);
 void handle_gfx_op(struct gfx_op *op);
 void *text_address(struct cursorpos cp);
-void vgafb_move_chars(struct vgamode_s *vmode_g, struct cursorpos dest
+void vgafb_move_chars(struct cursorpos dest
                       , struct cursorpos src, struct cursorpos movesize);
-void vgafb_clear_chars(struct vgamode_s *vmode_g, struct cursorpos dest
+void vgafb_clear_chars(struct cursorpos dest
                        , struct carattr ca, struct cursorpos movesize);
 void vgafb_write_char(struct cursorpos cp, struct carattr ca);
 struct carattr vgafb_read_char(struct cursorpos cp);
 void vgafb_write_pixel(u8 color, u16 x, u16 y);
 u8 vgafb_read_pixel(u16 x, u16 y);
+void vgafb_set_swcursor(int enable);
 
 // vbe.c
 extern u32 VBE_total_memory;

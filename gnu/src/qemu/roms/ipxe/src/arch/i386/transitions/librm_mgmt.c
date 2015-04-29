@@ -8,6 +8,7 @@
 FILE_LICENCE ( GPL2_OR_LATER );
 
 #include <stdint.h>
+#include <ipxe/profile.h>
 #include <realmode.h>
 #include <pic8259.h>
 
@@ -20,7 +21,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 extern char interrupt_wrapper[];
 
 /** The interrupt vectors */
-static struct interrupt_vector intr_vec[ IRQ_MAX + 1 ];
+static struct interrupt_vector intr_vec[NUM_INT];
 
 /** The interrupt descriptor table */
 struct interrupt_descriptor idt[NUM_INT] __attribute__ (( aligned ( 16 ) ));
@@ -29,6 +30,12 @@ struct interrupt_descriptor idt[NUM_INT] __attribute__ (( aligned ( 16 ) ));
 struct idtr idtr = {
 	.limit = ( sizeof ( idt ) - 1 ),
 };
+
+/** Timer interrupt profiler */
+static struct profiler timer_irq_profiler __profiler = { .name = "irq.timer" };
+
+/** Other interrupt profiler */
+static struct profiler other_irq_profiler __profiler = { .name = "irq.other" };
 
 /**
  * Allocate space on the real-mode stack and copy data there from a
@@ -83,13 +90,11 @@ void set_interrupt_vector ( unsigned int intr, void *vector ) {
  */
 void init_idt ( void ) {
 	struct interrupt_vector *vec;
-	unsigned int irq;
 	unsigned int intr;
 
 	/* Initialise the interrupt descriptor table and interrupt vectors */
-	for ( irq = 0 ; irq <= IRQ_MAX ; irq++ ) {
-		intr = IRQ_INT ( irq );
-		vec = &intr_vec[irq];
+	for ( intr = 0 ; intr < NUM_INT ; intr++ ) {
+		vec = &intr_vec[intr];
 		vec->pushal = PUSHAL_INSN;
 		vec->movb = MOVB_INSN;
 		vec->intr = intr;
@@ -98,24 +103,47 @@ void init_idt ( void ) {
 				( uint32_t ) vec->next );
 		set_interrupt_vector ( intr, vec );
 	}
+	DBGC ( &intr_vec[0], "INTn vector at %p+%xn (phys %#lx+%xn)\n",
+	       intr_vec, sizeof ( intr_vec[0] ),
+	       virt_to_phys ( intr_vec ), sizeof ( intr_vec[0] ) );
 
 	/* Initialise the interrupt descriptor table register */
 	idtr.base = virt_to_phys ( idt );
 }
 
 /**
+ * Determine interrupt profiler (for debugging)
+ *
+ * @v intr		Interrupt number
+ * @ret profiler	Profiler
+ */
+static struct profiler * interrupt_profiler ( int intr ) {
+
+	switch ( intr ) {
+	case IRQ_INT ( 0 ) :
+		return &timer_irq_profiler;
+	default:
+		return &other_irq_profiler;
+	}
+}
+
+/**
  * Interrupt handler
  *
- * @v irq		Interrupt number
+ * @v intr		Interrupt number
  */
-void __attribute__ (( cdecl, regparm ( 1 ) )) interrupt ( int irq ) {
+void __attribute__ (( cdecl, regparm ( 1 ) )) interrupt ( int intr ) {
+	struct profiler *profiler = interrupt_profiler ( intr );
 	uint32_t discard_eax;
 
 	/* Reissue interrupt in real mode */
+	profile_start ( profiler );
 	__asm__ __volatile__ ( REAL_CODE ( "movb %%al, %%cs:(1f + 1)\n\t"
 					   "\n1:\n\t"
 					   "int $0x00\n\t" )
-			       : "=a" ( discard_eax ) : "0" ( irq ) );
+			       : "=a" ( discard_eax ) : "0" ( intr ) );
+	profile_stop ( profiler );
+	profile_exclude ( profiler );
 }
 
 PROVIDE_UACCESS_INLINE ( librm, phys_to_user );

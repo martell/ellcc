@@ -44,12 +44,11 @@ void disable_bootsplash(void);
 
 // cdrom.c
 extern u8 CDRom_locks[];
-extern struct cdemu_s CDEmu;
+extern struct eltorito_s CDEmu;
 extern struct drive_s *cdemu_drive_gf;
 struct disk_op_s;
 int process_cdemu_op(struct disk_op_s *op);
 void cdrom_prepboot(void);
-void cdemu_134b(struct bregs *regs);
 int cdrom_boot(struct drive_s *drive_g);
 
 // clock.c
@@ -126,7 +125,6 @@ void smm_device_setup(void);
 void smm_setup(void);
 
 // fw/smp.c
-extern u32 CountCPUs;
 extern u32 MaxCountCPUs;
 void wrmsr_smp(u32 index, u64 val);
 void smp_setup(void);
@@ -147,6 +145,10 @@ void floppy_tick(void);
 // hw/ramdisk.c
 void ramdisk_setup(void);
 int process_ramdisk_op(struct disk_op_s *op);
+
+// hw/sdcard.c
+int process_sdcard_op(struct disk_op_s *op);
+void sdcard_setup(void);
 
 // hw/timer.c
 void timer_setup(void);
@@ -178,6 +180,7 @@ void process_key(u8 key);
 
 // misc.c
 extern struct bios_config_table_s BIOS_CONFIG_TABLE __aligned(1);
+extern struct floppy_dbt_s diskette_param_table __aligned(1);
 extern u8 BiosChecksum;
 int in_post(void);
 void mathcp_setup(void);
@@ -217,9 +220,6 @@ void reloc_preinit(void *f, void *arg);
 
 // resume.c
 extern int HaveRunPost;
-
-// romlayout.S
-void reset_vector(void) __noreturn;
 
 // serial.c
 void serial_setup(void);

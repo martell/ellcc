@@ -33,6 +33,7 @@
 #include "sysemu/sysemu.h"
 #include "sysemu/dma.h"
 #include "qemu/iov.h"
+#include "qemu/range.h"
 
 #include "e1000_regs.h"
 
@@ -577,7 +578,7 @@ static inline int
 is_vlan_packet(E1000State *s, const uint8_t *buf)
 {
     return (be16_to_cpup((uint16_t *)(buf + 12)) ==
-                le16_to_cpup((uint16_t *)(s->mac_reg + VET)));
+                le16_to_cpu(s->mac_reg[VET]));
 }
 
 static inline int
@@ -710,7 +711,7 @@ process_tx_desc(E1000State *s, struct e1000_tx_desc *dp)
         (tp->cptse || txd_lower & E1000_TXD_CMD_EOP)) {
         tp->vlan_needed = 1;
         stw_be_p(tp->vlan_header,
-                      le16_to_cpup((uint16_t *)(s->mac_reg + VET)));
+                      le16_to_cpu(s->mac_reg[VET]));
         stw_be_p(tp->vlan_header + 2,
                       le16_to_cpu(dp->upper.fields.special));
     }
@@ -923,7 +924,9 @@ e1000_can_receive(NetClientState *nc)
     E1000State *s = qemu_get_nic_opaque(nc);
 
     return (s->mac_reg[STATUS] & E1000_STATUS_LU) &&
-        (s->mac_reg[RCTL] & E1000_RCTL_EN) && e1000_has_rxbufs(s, 1);
+        (s->mac_reg[RCTL] & E1000_RCTL_EN) &&
+        (s->parent_obj.config[PCI_COMMAND] & PCI_COMMAND_MASTER) &&
+        e1000_has_rxbufs(s, 1);
 }
 
 static uint64_t rx_desc_base(E1000State *s)
@@ -1500,14 +1503,6 @@ e1000_mmio_setup(E1000State *d)
 }
 
 static void
-e1000_cleanup(NetClientState *nc)
-{
-    E1000State *s = qemu_get_nic_opaque(nc);
-
-    s->nic = NULL;
-}
-
-static void
 pci_e1000_uninit(PCIDevice *dev)
 {
     E1000State *d = E1000(dev);
@@ -1525,11 +1520,24 @@ static NetClientInfo net_e1000_info = {
     .can_receive = e1000_can_receive,
     .receive = e1000_receive,
     .receive_iov = e1000_receive_iov,
-    .cleanup = e1000_cleanup,
     .link_status_changed = e1000_set_link_status,
 };
 
-static int pci_e1000_init(PCIDevice *pci_dev)
+static void e1000_write_config(PCIDevice *pci_dev, uint32_t address,
+                                uint32_t val, int len)
+{
+    E1000State *s = E1000(pci_dev);
+
+    pci_default_write_config(pci_dev, address, val, len);
+
+    if (range_covers_byte(address, len, PCI_COMMAND) &&
+        (pci_dev->config[PCI_COMMAND] & PCI_COMMAND_MASTER)) {
+        qemu_flush_queued_packets(qemu_get_queue(s->nic));
+    }
+}
+
+
+static void pci_e1000_realize(PCIDevice *pci_dev, Error **errp)
 {
     DeviceState *dev = DEVICE(pci_dev);
     E1000State *d = E1000(pci_dev);
@@ -1538,6 +1546,8 @@ static int pci_e1000_init(PCIDevice *pci_dev)
     uint16_t checksum = 0;
     int i;
     uint8_t *macaddr;
+
+    pci_dev->config_write = e1000_write_config;
 
     pci_conf = pci_dev->config;
 
@@ -1571,8 +1581,6 @@ static int pci_e1000_init(PCIDevice *pci_dev)
 
     d->autoneg_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL, e1000_autoneg_timer, d);
     d->mit_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, e1000_mit_timer, d);
-
-    return 0;
 }
 
 static void qdev_e1000_reset(DeviceState *dev)
@@ -1604,7 +1612,7 @@ static void e1000_class_init(ObjectClass *klass, void *data)
     E1000BaseClass *e = E1000_DEVICE_CLASS(klass);
     const E1000Info *info = data;
 
-    k->init = pci_e1000_init;
+    k->realize = pci_e1000_realize;
     k->exit = pci_e1000_uninit;
     k->romfile = "efi-e1000.rom";
     k->vendor_id = PCI_VENDOR_ID_INTEL;

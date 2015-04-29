@@ -8,6 +8,7 @@
 #include "config.h" // CONFIG_*
 #include "output.h" // dprintf
 #include "malloc.h" // free
+#include "memmap.h" // PAGE_SIZE
 #include "pci.h" // pci_bdf_to_bus
 #include "pci_ids.h" // PCI_CLASS_SERIAL_USB_UHCI
 #include "pci_regs.h" // PCI_BASE_ADDRESS_0
@@ -32,7 +33,7 @@ struct ehci_pipe {
     struct usb_pipe pipe;
 };
 
-static int PendingEHCIPorts;
+static int PendingEHCI;
 
 
 /****************************************************************
@@ -50,26 +51,14 @@ ehci_hub_detect(struct usbhub_s *hub, u32 port)
     u32 *portreg = &cntl->regs->portsc[port];
     u32 portsc = readl(portreg);
 
-    // Power up port.
-    if (!(portsc & PORT_POWER)) {
-        portsc |= PORT_POWER;
-        writel(portreg, portsc);
-        msleep(EHCI_TIME_POSTPOWER);
-    } else {
-        // Port is already powered up, but we don't know how long it
-        // has been powered up, so wait the 20ms.
-        msleep(EHCI_TIME_POSTPOWER);
-    }
-    portsc = readl(portreg);
-
     if (!(portsc & PORT_CONNECT))
         // No device present
-        goto doneearly;
+        return 0;
 
     if ((portsc & PORT_LINESTATUS_MASK) == PORT_LINESTATUS_KSTATE) {
         // low speed device
         writel(portreg, portsc | PORT_OWNER);
-        goto doneearly;
+        return -1;
     }
 
     // XXX - if just powered up, need to wait for USB_TIME_ATTDB?
@@ -78,11 +67,7 @@ ehci_hub_detect(struct usbhub_s *hub, u32 port)
     portsc = (portsc & ~PORT_PE) | PORT_RESET;
     writel(portreg, portsc);
     msleep(USB_TIME_DRSTR);
-    return 0;
-
-doneearly:
-    PendingEHCIPorts--;
-    return -1;
+    return 1;
 }
 
 // Reset device on port
@@ -98,21 +83,17 @@ ehci_hub_reset(struct usbhub_s *hub, u32 port)
     writel(portreg, portsc);
     msleep(EHCI_TIME_POSTRESET);
 
-    int rv = -1;
     portsc = readl(portreg);
     if (!(portsc & PORT_CONNECT))
         // No longer connected
-        goto resetfail;
+        return -1;
     if (!(portsc & PORT_PE)) {
         // full speed device
         writel(portreg, portsc | PORT_OWNER);
-        goto resetfail;
+        return -1;
     }
 
-    rv = USB_HIGHSPEED;
-resetfail:
-    PendingEHCIPorts--;
-    return rv;
+    return USB_HIGHSPEED;
 }
 
 // Disable port
@@ -135,7 +116,18 @@ static struct usbhub_op_s ehci_HubOp = {
 static int
 check_ehci_ports(struct usb_ehci_s *cntl)
 {
-    ASSERT32FLAT();
+    // Power up ports.
+    int i;
+    for (i=0; i<cntl->checkports; i++) {
+        u32 *portreg = &cntl->regs->portsc[i];
+        u32 portsc = readl(portreg);
+        if (!(portsc & PORT_POWER)) {
+            portsc |= PORT_POWER;
+            writel(portreg, portsc);
+        }
+    }
+    msleep(EHCI_TIME_POSTPOWER);
+
     struct usbhub_s hub;
     memset(&hub, 0, sizeof(hub));
     hub.cntl = &cntl->usb;
@@ -204,7 +196,7 @@ ehci_free_pipes(struct usb_ehci_s *cntl)
         if (next == start)
             break;
         struct ehci_pipe *pipe = container_of(next, struct ehci_pipe, qh);
-        if (pipe->pipe.cntl != &cntl->usb)
+        if (usb_is_freelist(&cntl->usb, &pipe->pipe))
             pos->next = next->next;
         else
             pos = next;
@@ -231,6 +223,7 @@ configure_ehci(void *data)
     struct ehci_qh *async_qh = memalign_high(EHCI_QH_ALIGN, sizeof(*async_qh));
     if (!fl || !intr_qh || !async_qh) {
         warn_noalloc();
+        PendingEHCI--;
         goto fail;
     }
 
@@ -246,6 +239,7 @@ configure_ehci(void *data)
             break;
         if (timer_check(end)) {
             warn_timeout();
+            PendingEHCI--;
             goto fail;
         }
         yield();
@@ -279,6 +273,7 @@ configure_ehci(void *data)
 
     // Set default of high speed for root hub.
     writel(&cntl->regs->configflag, 1);
+    PendingEHCI--;
 
     // Find devices
     int count = check_ehci_ports(cntl);
@@ -319,7 +314,7 @@ ehci_controller_setup(struct pci_device *pci)
     cntl->regs = (void*)caps + readb(&caps->caplength);
     if (hcc_params & HCC_64BIT_ADDR)
         cntl->regs->ctrldssegment = 0;
-    PendingEHCIPorts += cntl->checkports;
+    PendingEHCI++;
 
     dprintf(1, "EHCI init on dev %02x:%02x.%x (regs=%p)\n"
             , pci_bdf_to_bus(bdf), pci_bdf_to_dev(bdf)
@@ -343,9 +338,9 @@ ehci_setup(void)
             ehci_controller_setup(pci);
     }
 
-    // Wait for all EHCI ports to initialize.  This forces OHCI/UHCI
-    // setup to always be after any EHCI ports are set to low speed.
-    while (PendingEHCIPorts)
+    // Wait for all EHCI controllers to initialize.  This forces OHCI/UHCI
+    // setup to always be after any EHCI ports are routed to EHCI.
+    while (PendingEHCI)
         yield();
 }
 
@@ -392,7 +387,7 @@ ehci_alloc_intr_pipe(struct usbdevice_s *usbdev
 {
     struct usb_ehci_s *cntl = container_of(
         usbdev->hub->cntl, struct usb_ehci_s, usb);
-    int frameexp = usb_getFrameExp(usbdev, epdesc);
+    int frameexp = usb_get_period(usbdev, epdesc);
     dprintf(7, "ehci_alloc_intr_pipe %p %d\n", &cntl->usb, frameexp);
 
     if (frameexp > 10)
@@ -451,10 +446,13 @@ fail:
 }
 
 struct usb_pipe *
-ehci_alloc_pipe(struct usbdevice_s *usbdev
-                , struct usb_endpoint_descriptor *epdesc)
+ehci_realloc_pipe(struct usbdevice_s *usbdev, struct usb_pipe *upipe
+                  , struct usb_endpoint_descriptor *epdesc)
 {
     if (! CONFIG_USB_EHCI)
+        return NULL;
+    usb_add_freelist(upipe);
+    if (!epdesc)
         return NULL;
     u8 eptype = epdesc->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK;
     if (eptype == USB_ENDPOINT_XFER_INT)
@@ -463,7 +461,7 @@ ehci_alloc_pipe(struct usbdevice_s *usbdev
         usbdev->hub->cntl, struct usb_ehci_s, usb);
     dprintf(7, "ehci_alloc_async_pipe %p %d\n", &cntl->usb, eptype);
 
-    struct usb_pipe *usbpipe = usb_getFreePipe(&cntl->usb, eptype);
+    struct usb_pipe *usbpipe = usb_get_freelist(&cntl->usb, eptype);
     if (usbpipe) {
         // Use previously allocated pipe.
         struct ehci_pipe *pipe = container_of(usbpipe, struct ehci_pipe, pipe);
@@ -503,9 +501,8 @@ ehci_reset_pipe(struct ehci_pipe *pipe)
 }
 
 static int
-ehci_wait_td(struct ehci_pipe *pipe, struct ehci_qtd *td, int timeout)
+ehci_wait_td(struct ehci_pipe *pipe, struct ehci_qtd *td, u32 end)
 {
-    u32 end = timer_calc(timeout);
     u32 status;
     for (;;) {
         status = td->token;
@@ -534,132 +531,84 @@ ehci_wait_td(struct ehci_pipe *pipe, struct ehci_qtd *td, int timeout)
     return 0;
 }
 
-static int
-fillTDbuffer(struct ehci_qtd *td, u16 maxpacket, const void *buf, int bytes)
+static void
+ehci_fill_tdbuf(struct ehci_qtd *td, u32 dest, int transfer)
 {
-    u32 dest = (u32)buf;
-    u32 *pos = td->buf;
-    while (bytes) {
-        if (pos >= &td->buf[ARRAY_SIZE(td->buf)])
-            // More data than can transfer in a single qtd - only use
-            // full packets to prevent a babble error.
-            return ALIGN_DOWN(dest - (u32)buf, maxpacket);
-        u32 count = bytes;
-        u32 max = 0x1000 - (dest & 0xfff);
-        if (count > max)
-            count = max;
-        *pos = dest;
-        bytes -= count;
-        dest += count;
-        pos++;
-    }
-    return dest - (u32)buf;
+    u32 *pos = td->buf, end = dest + transfer;
+    for (; dest < end; dest = ALIGN_DOWN(dest + PAGE_SIZE, PAGE_SIZE))
+        *pos++ = dest;
 }
 
+#define STACKQTDS 6
+
 int
-ehci_control(struct usb_pipe *p, int dir, const void *cmd, int cmdsize
-             , void *data, int datasize)
+ehci_send_pipe(struct usb_pipe *p, int dir, const void *cmd
+               , void *data, int datasize)
 {
-    ASSERT32FLAT();
     if (! CONFIG_USB_EHCI)
         return -1;
-    dprintf(5, "ehci_control %p (dir=%d cmd=%d data=%d)\n"
-            , p, dir, cmdsize, datasize);
-    if (datasize > 4*4096 || cmdsize > 4*4096) {
-        // XXX - should support larger sizes.
-        warn_noalloc();
-        return -1;
-    }
     struct ehci_pipe *pipe = container_of(p, struct ehci_pipe, pipe);
+    dprintf(7, "ehci_send_pipe qh=%p dir=%d data=%p size=%d\n"
+            , &pipe->qh, dir, data, datasize);
+
+    // Allocate tds on stack (with required alignment)
+    u8 tdsbuf[sizeof(struct ehci_qtd) * STACKQTDS + EHCI_QTD_ALIGN - 1];
+    struct ehci_qtd *tds = (void*)ALIGN((u32)tdsbuf, EHCI_QTD_ALIGN), *td = tds;
+    memset(tds, 0, sizeof(*tds) * STACKQTDS);
 
     // Setup transfer descriptors
-    struct ehci_qtd *tds = memalign_tmphigh(EHCI_QTD_ALIGN, sizeof(*tds) * 3);
-    if (!tds) {
-        warn_noalloc();
-        return -1;
-    }
-    memset(tds, 0, sizeof(*tds) * 3);
-    struct ehci_qtd *td = tds;
-
-    td->qtd_next = (u32)&td[1];
-    td->alt_next = EHCI_PTR_TERM;
-    td->token = (ehci_explen(cmdsize) | QTD_STS_ACTIVE
-                 | QTD_PID_SETUP | ehci_maxerr(3));
-    u16 maxpacket = pipe->pipe.maxpacket;
-    fillTDbuffer(td, maxpacket, cmd, cmdsize);
-    td++;
-
-    if (datasize) {
-        td->qtd_next = (u32)&td[1];
+    u16 maxpacket = GET_LOWFLAT(pipe->pipe.maxpacket);
+    u32 toggle = 0;
+    if (cmd) {
+        // Send setup pid on control transfers
+        td->qtd_next = (u32)MAKE_FLATPTR(GET_SEG(SS), td+1);
         td->alt_next = EHCI_PTR_TERM;
-        td->token = (QTD_TOGGLE | ehci_explen(datasize) | QTD_STS_ACTIVE
+        td->token = (ehci_explen(USB_CONTROL_SETUP_SIZE) | QTD_STS_ACTIVE
+                     | QTD_PID_SETUP | ehci_maxerr(3));
+        ehci_fill_tdbuf(td, (u32)cmd, USB_CONTROL_SETUP_SIZE);
+        td++;
+        toggle = QTD_TOGGLE;
+    }
+    u32 dest = (u32)data, dataend = dest + datasize;
+    while (dest < dataend) {
+        // Send data pids
+        if (td >= &tds[STACKQTDS]) {
+            warn_noalloc();
+            return -1;
+        }
+        int maxtransfer = 5*PAGE_SIZE - (dest & (PAGE_SIZE-1));
+        int transfer = dataend - dest;
+        if (transfer > maxtransfer)
+            transfer = ALIGN_DOWN(maxtransfer, maxpacket);
+        td->qtd_next = (u32)MAKE_FLATPTR(GET_SEG(SS), td+1);
+        td->alt_next = EHCI_PTR_TERM;
+        td->token = (ehci_explen(transfer) | toggle | QTD_STS_ACTIVE
                      | (dir ? QTD_PID_IN : QTD_PID_OUT) | ehci_maxerr(3));
-        fillTDbuffer(td, maxpacket, data, datasize);
+        ehci_fill_tdbuf(td, dest, transfer);
+        td++;
+        dest += transfer;
+    }
+    if (cmd) {
+        // Send status pid on control transfers
+        if (td >= &tds[STACKQTDS]) {
+            warn_noalloc();
+            return -1;
+        }
+        td->qtd_next = EHCI_PTR_TERM;
+        td->alt_next = EHCI_PTR_TERM;
+        td->token = (QTD_TOGGLE | QTD_STS_ACTIVE
+                     | (dir ? QTD_PID_OUT : QTD_PID_IN) | ehci_maxerr(3));
         td++;
     }
 
-    td->qtd_next = EHCI_PTR_TERM;
-    td->alt_next = EHCI_PTR_TERM;
-    td->token = (QTD_TOGGLE | QTD_STS_ACTIVE
-                 | (dir ? QTD_PID_OUT : QTD_PID_IN) | ehci_maxerr(3));
-
     // Transfer data
-    barrier();
-    pipe->qh.qtd_next = (u32)tds;
-    int i, ret=0;
-    for (i=0; i<3; i++) {
-        struct ehci_qtd *td = &tds[i];
-        ret = ehci_wait_td(pipe, td, 500);
-        if (ret)
-            break;
-    }
-    free(tds);
-    return ret;
-}
-
-#define STACKQTDS 4
-
-int
-ehci_send_bulk(struct usb_pipe *p, int dir, void *data, int datasize)
-{
-    if (! CONFIG_USB_EHCI)
-        return -1;
-    struct ehci_pipe *pipe = container_of(p, struct ehci_pipe, pipe);
-    dprintf(7, "ehci_send_bulk qh=%p dir=%d data=%p size=%d\n"
-            , &pipe->qh, dir, data, datasize);
-
-    // Allocate 4 tds on stack (with required alignment)
-    u8 tdsbuf[sizeof(struct ehci_qtd) * STACKQTDS + EHCI_QTD_ALIGN - 1];
-    struct ehci_qtd *tds = (void*)ALIGN((u32)tdsbuf, EHCI_QTD_ALIGN);
-    memset(tds, 0, sizeof(*tds) * STACKQTDS);
+    (td-1)->qtd_next = EHCI_PTR_TERM;
     barrier();
     SET_LOWFLAT(pipe->qh.qtd_next, (u32)MAKE_FLATPTR(GET_SEG(SS), tds));
-
-    u16 maxpacket = GET_LOWFLAT(pipe->pipe.maxpacket);
-    int tdpos = 0;
-    while (datasize) {
-        struct ehci_qtd *td = &tds[tdpos++ % STACKQTDS];
-        int ret = ehci_wait_td(pipe, td, 5000);
-        if (ret)
-            return -1;
-
-        struct ehci_qtd *nexttd_fl = MAKE_FLATPTR(GET_SEG(SS)
-                                                 , &tds[tdpos % STACKQTDS]);
-
-        int transfer = fillTDbuffer(td, maxpacket, data, datasize);
-        td->qtd_next = (transfer==datasize ? EHCI_PTR_TERM : (u32)nexttd_fl);
-        td->alt_next = EHCI_PTR_TERM;
-        barrier();
-        td->token = (ehci_explen(transfer) | QTD_STS_ACTIVE
-                     | (dir ? QTD_PID_IN : QTD_PID_OUT) | ehci_maxerr(3));
-
-        data += transfer;
-        datasize -= transfer;
-    }
+    u32 end = timer_calc(usb_xfer_time(p, datasize));
     int i;
-    for (i=0; i<STACKQTDS; i++) {
-        struct ehci_qtd *td = &tds[tdpos++ % STACKQTDS];
-        int ret = ehci_wait_td(pipe, td, 5000);
+    for (i=0, td=tds; i<STACKQTDS; i++, td++) {
+        int ret = ehci_wait_td(pipe, td, end);
         if (ret)
             return -1;
     }

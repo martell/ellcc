@@ -39,7 +39,6 @@
         FFFFFFFF and            \ keep lower 32 bits
 ;
 
-
 \ calc 64 bit MEM BAR size
 : pci-bar-size-mem64 ( bar-addr -- bar-size )
         dup pci-bar-size        \ fetch raw size lower 32 bits
@@ -127,7 +126,11 @@
 \ Setup a prefetchable 64bit BAR and return its size
 : assign-mem64-bar ( bar-addr -- 8 )
         dup pci-bar-size-mem64         \ fetch size
-        pci-next-mem                    \ var to change
+        pci-next-mem64 @ 0 = IF          \ Check if we have 64-bit memory range
+	    pci-next-mem
+	ELSE
+	    pci-next-mem64
+	THEN
         assign-bar-value64              \ and set it all
 ;
 
@@ -141,7 +144,11 @@
 \ Setup a non-prefetchable 64bit BAR and return its size
 : assign-mmio64-bar ( bar-addr -- 8 )
         dup pci-bar-size-mem64          \ fetch size
-        pci-next-mmio                   \ var to change
+        pci-next-mem64 @ 0 = IF          \ Check if we have 64-bit memory range
+	    pci-next-mmio
+	ELSE
+	    pci-next-mem64              \ for board-qemu we will use same range
+	THEN
         assign-bar-value64              \ and set it all
 ;
 
@@ -558,7 +565,7 @@
 \ ***************************************************************************************
 \ set up common properties for devices and bridges
 : pci-common-props ( addr -- )
-        dup pci-class-name 2dup device-name device-type
+        dup pci-class-name device-name
         dup pci-vendor@    encode-int s" vendor-id"      property
         dup pci-device@    encode-int s" device-id"      property
         dup pci-revision@  encode-int s" revision-id"    property

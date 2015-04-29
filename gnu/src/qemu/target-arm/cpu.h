@@ -32,14 +32,14 @@
 #  define ELF_MACHINE EM_ARM
 #endif
 
+#define TARGET_IS_BIENDIAN 1
+
 #define CPUArchState struct CPUARMState
 
 #include "qemu-common.h"
 #include "exec/cpu-defs.h"
 
 #include "fpu/softfloat.h"
-
-#define TARGET_HAS_ICE 1
 
 #define EXCP_UDEF            1   /* undefined instruction */
 #define EXCP_SWI             2   /* software interrupt */
@@ -100,7 +100,7 @@ typedef uint32_t ARMReadCPFunc(void *opaque, int cp_info,
 
 struct arm_boot_info;
 
-#define NB_MMU_MODES 4
+#define NB_MMU_MODES 7
 
 /* We currently assume float and double are IEEE single and double
    precision respectively.
@@ -119,6 +119,12 @@ typedef struct ARMGenericTimer {
 #define GTIMER_PHYS 0
 #define GTIMER_VIRT 1
 #define NUM_GTIMERS 2
+
+typedef struct {
+    uint64_t raw_tcr;
+    uint32_t mask;
+    uint32_t base_mask;
+} TCR;
 
 typedef struct CPUARMState {
     /* Regs for current mode.  */
@@ -177,28 +183,111 @@ typedef struct CPUARMState {
     /* System control coprocessor (cp15) */
     struct {
         uint32_t c0_cpuid;
-        uint64_t c0_cssel; /* Cache size selection.  */
-        uint64_t c1_sys; /* System control register.  */
+        union { /* Cache size selection */
+            struct {
+                uint64_t _unused_csselr0;
+                uint64_t csselr_ns;
+                uint64_t _unused_csselr1;
+                uint64_t csselr_s;
+            };
+            uint64_t csselr_el[4];
+        };
+        union { /* System control register. */
+            struct {
+                uint64_t _unused_sctlr;
+                uint64_t sctlr_ns;
+                uint64_t hsctlr;
+                uint64_t sctlr_s;
+            };
+            uint64_t sctlr_el[4];
+        };
         uint64_t c1_coproc; /* Coprocessor access register.  */
         uint32_t c1_xscaleauxcr; /* XScale auxiliary control register.  */
-        uint64_t ttbr0_el1; /* MMU translation table base 0. */
-        uint64_t ttbr1_el1; /* MMU translation table base 1. */
-        uint64_t c2_control; /* MMU translation table base control.  */
-        uint32_t c2_mask; /* MMU translation table base selection mask.  */
-        uint32_t c2_base_mask; /* MMU translation table base 0 mask. */
+        uint64_t sder; /* Secure debug enable register. */
+        uint32_t nsacr; /* Non-secure access control register. */
+        union { /* MMU translation table base 0. */
+            struct {
+                uint64_t _unused_ttbr0_0;
+                uint64_t ttbr0_ns;
+                uint64_t _unused_ttbr0_1;
+                uint64_t ttbr0_s;
+            };
+            uint64_t ttbr0_el[4];
+        };
+        union { /* MMU translation table base 1. */
+            struct {
+                uint64_t _unused_ttbr1_0;
+                uint64_t ttbr1_ns;
+                uint64_t _unused_ttbr1_1;
+                uint64_t ttbr1_s;
+            };
+            uint64_t ttbr1_el[4];
+        };
+        /* MMU translation table base control. */
+        TCR tcr_el[4];
         uint32_t c2_data; /* MPU data cachable bits.  */
         uint32_t c2_insn; /* MPU instruction cachable bits.  */
-        uint32_t c3; /* MMU domain access control register
-                        MPU write buffer control.  */
+        union { /* MMU domain access control register
+                 * MPU write buffer control.
+                 */
+            struct {
+                uint64_t dacr_ns;
+                uint64_t dacr_s;
+            };
+            struct {
+                uint64_t dacr32_el2;
+            };
+        };
         uint32_t pmsav5_data_ap; /* PMSAv5 MPU data access permissions */
         uint32_t pmsav5_insn_ap; /* PMSAv5 MPU insn access permissions */
         uint64_t hcr_el2; /* Hypervisor configuration register */
         uint64_t scr_el3; /* Secure configuration register.  */
-        uint32_t ifsr_el2; /* Fault status registers.  */
-        uint64_t esr_el[4];
+        union { /* Fault status registers.  */
+            struct {
+                uint64_t ifsr_ns;
+                uint64_t ifsr_s;
+            };
+            struct {
+                uint64_t ifsr32_el2;
+            };
+        };
+        union {
+            struct {
+                uint64_t _unused_dfsr;
+                uint64_t dfsr_ns;
+                uint64_t hsr;
+                uint64_t dfsr_s;
+            };
+            uint64_t esr_el[4];
+        };
         uint32_t c6_region[8]; /* MPU base/size registers.  */
-        uint64_t far_el[4]; /* Fault address registers.  */
-        uint64_t par_el1;  /* Translation result. */
+        union { /* Fault address registers. */
+            struct {
+                uint64_t _unused_far0;
+#ifdef HOST_WORDS_BIGENDIAN
+                uint32_t ifar_ns;
+                uint32_t dfar_ns;
+                uint32_t ifar_s;
+                uint32_t dfar_s;
+#else
+                uint32_t dfar_ns;
+                uint32_t ifar_ns;
+                uint32_t dfar_s;
+                uint32_t ifar_s;
+#endif
+                uint64_t _unused_far3;
+            };
+            uint64_t far_el[4];
+        };
+        union { /* Translation result. */
+            struct {
+                uint64_t _unused_par_0;
+                uint64_t par_ns;
+                uint64_t _unused_par_1;
+                uint64_t par_s;
+            };
+            uint64_t par_el[4];
+        };
         uint32_t c9_insn; /* Cache lockdown registers.  */
         uint32_t c9_data;
         uint64_t c9_pmcr; /* performance monitor control register */
@@ -207,13 +296,67 @@ typedef struct CPUARMState {
         uint32_t c9_pmxevtyper; /* perf monitor event type */
         uint32_t c9_pmuserenr; /* perf monitor user enable */
         uint32_t c9_pminten; /* perf monitor interrupt enables */
-        uint64_t mair_el1;
-        uint64_t vbar_el[4]; /* vector base address register */
-        uint32_t c13_fcse; /* FCSE PID.  */
-        uint64_t contextidr_el1; /* Context ID.  */
-        uint64_t tpidr_el0; /* User RW Thread register.  */
-        uint64_t tpidrro_el0; /* User RO Thread register.  */
-        uint64_t tpidr_el1; /* Privileged Thread register.  */
+        union { /* Memory attribute redirection */
+            struct {
+#ifdef HOST_WORDS_BIGENDIAN
+                uint64_t _unused_mair_0;
+                uint32_t mair1_ns;
+                uint32_t mair0_ns;
+                uint64_t _unused_mair_1;
+                uint32_t mair1_s;
+                uint32_t mair0_s;
+#else
+                uint64_t _unused_mair_0;
+                uint32_t mair0_ns;
+                uint32_t mair1_ns;
+                uint64_t _unused_mair_1;
+                uint32_t mair0_s;
+                uint32_t mair1_s;
+#endif
+            };
+            uint64_t mair_el[4];
+        };
+        union { /* vector base address register */
+            struct {
+                uint64_t _unused_vbar;
+                uint64_t vbar_ns;
+                uint64_t hvbar;
+                uint64_t vbar_s;
+            };
+            uint64_t vbar_el[4];
+        };
+        uint32_t mvbar; /* (monitor) vector base address register */
+        struct { /* FCSE PID. */
+            uint32_t fcseidr_ns;
+            uint32_t fcseidr_s;
+        };
+        union { /* Context ID. */
+            struct {
+                uint64_t _unused_contextidr_0;
+                uint64_t contextidr_ns;
+                uint64_t _unused_contextidr_1;
+                uint64_t contextidr_s;
+            };
+            uint64_t contextidr_el[4];
+        };
+        union { /* User RW Thread register. */
+            struct {
+                uint64_t tpidrurw_ns;
+                uint64_t tpidrprw_ns;
+                uint64_t htpidr;
+                uint64_t _tpidr_el3;
+            };
+            uint64_t tpidr_el[4];
+        };
+        /* The secure banks of these registers don't map anywhere */
+        uint64_t tpidrurw_s;
+        uint64_t tpidrprw_s;
+        uint64_t tpidruro_s;
+
+        union { /* User RO Thread register. */
+            uint64_t tpidruro_ns;
+            uint64_t tpidrro_el[1];
+        };
         uint64_t c14_cntfrq; /* Counter Frequency register */
         uint64_t c14_cntkctl; /* Timer Control register */
         ARMGenericTimer c14_timer[NUM_GTIMERS];
@@ -352,6 +495,8 @@ typedef struct CPUARMState {
 ARMCPU *cpu_arm_init(const char *cpu_model);
 int cpu_arm_exec(CPUARMState *s);
 uint32_t do_arm_semihosting(CPUARMState *env);
+void aarch64_sync_32_to_64(CPUARMState *env);
+void aarch64_sync_64_to_32(CPUARMState *env);
 
 static inline bool is_a64(CPUARMState *env)
 {
@@ -817,6 +962,49 @@ static inline bool arm_el_is_aa64(CPUARMState *env, int el)
     return arm_feature(env, ARM_FEATURE_AARCH64);
 }
 
+/* Function for determing whether guest cp register reads and writes should
+ * access the secure or non-secure bank of a cp register.  When EL3 is
+ * operating in AArch32 state, the NS-bit determines whether the secure
+ * instance of a cp register should be used. When EL3 is AArch64 (or if
+ * it doesn't exist at all) then there is no register banking, and all
+ * accesses are to the non-secure version.
+ */
+static inline bool access_secure_reg(CPUARMState *env)
+{
+    bool ret = (arm_feature(env, ARM_FEATURE_EL3) &&
+                !arm_el_is_aa64(env, 3) &&
+                !(env->cp15.scr_el3 & SCR_NS));
+
+    return ret;
+}
+
+/* Macros for accessing a specified CP register bank */
+#define A32_BANKED_REG_GET(_env, _regname, _secure)    \
+    ((_secure) ? (_env)->cp15._regname##_s : (_env)->cp15._regname##_ns)
+
+#define A32_BANKED_REG_SET(_env, _regname, _secure, _val)   \
+    do {                                                \
+        if (_secure) {                                   \
+            (_env)->cp15._regname##_s = (_val);            \
+        } else {                                        \
+            (_env)->cp15._regname##_ns = (_val);           \
+        }                                               \
+    } while (0)
+
+/* Macros for automatically accessing a specific CP register bank depending on
+ * the current secure state of the system.  These macros are not intended for
+ * supporting instruction translation reads/writes as these are dependent
+ * solely on the SCR.NS bit and not the mode.
+ */
+#define A32_BANKED_CURRENT_REG_GET(_env, _regname)        \
+    A32_BANKED_REG_GET((_env), _regname,                \
+                       ((!arm_el_is_aa64((_env), 3) && arm_is_secure(_env))))
+
+#define A32_BANKED_CURRENT_REG_SET(_env, _regname, _val)                       \
+    A32_BANKED_REG_SET((_env), _regname,                                    \
+                       ((!arm_el_is_aa64((_env), 3) && arm_is_secure(_env))),  \
+                       (_val))
+
 void arm_cpu_list(FILE *f, fprintf_function cpu_fprintf);
 unsigned int arm_excp_target_el(CPUState *cs, unsigned int excp_idx);
 
@@ -836,6 +1024,7 @@ void armv7m_nvic_complete_irq(void *opaque, int irq);
  *  Crn, Crm, opc1, opc2 fields
  *  32 or 64 bit register (ie is it accessed via MRC/MCR
  *    or via MRRC/MCRR?)
+ *  non-secure/secure bank (AArch32 only)
  * We allow 4 bits for opc1 because MRRC/MCRR have a 4 bit field.
  * (In this case crn and opc2 should be zero.)
  * For AArch64, there is no 32/64 bit size distinction;
@@ -853,9 +1042,16 @@ void armv7m_nvic_complete_irq(void *opaque, int irq);
 #define CP_REG_AA64_SHIFT 28
 #define CP_REG_AA64_MASK (1 << CP_REG_AA64_SHIFT)
 
-#define ENCODE_CP_REG(cp, is64, crn, crm, opc1, opc2)   \
-    (((cp) << 16) | ((is64) << 15) | ((crn) << 11) |    \
-     ((crm) << 7) | ((opc1) << 3) | (opc2))
+/* To enable banking of coprocessor registers depending on ns-bit we
+ * add a bit to distinguish between secure and non-secure cpregs in the
+ * hashtable.
+ */
+#define CP_REG_NS_SHIFT 29
+#define CP_REG_NS_MASK (1 << CP_REG_NS_SHIFT)
+
+#define ENCODE_CP_REG(cp, is64, ns, crn, crm, opc1, opc2)   \
+    ((ns) << CP_REG_NS_SHIFT | ((cp) << 16) | ((is64) << 15) |   \
+     ((crn) << 11) | ((crm) << 7) | ((opc1) << 3) | (opc2))
 
 #define ENCODE_AA64_CP_REG(cp, crn, crm, op0, op1, op2) \
     (CP_REG_AA64_MASK |                                 \
@@ -874,8 +1070,15 @@ static inline uint32_t kvm_to_cpreg_id(uint64_t kvmid)
     uint32_t cpregid = kvmid;
     if ((kvmid & CP_REG_ARCH_MASK) == CP_REG_ARM64) {
         cpregid |= CP_REG_AA64_MASK;
-    } else if ((kvmid & CP_REG_SIZE_MASK) == CP_REG_SIZE_U64) {
-        cpregid |= (1 << 15);
+    } else {
+        if ((kvmid & CP_REG_SIZE_MASK) == CP_REG_SIZE_U64) {
+            cpregid |= (1 << 15);
+        }
+
+        /* KVM is always non-secure so add the NS flag on AArch32 register
+         * entries.
+         */
+         cpregid |= 1 << CP_REG_NS_SHIFT;
     }
     return cpregid;
 }
@@ -911,8 +1114,14 @@ static inline uint64_t cpreg_to_kvm_id(uint32_t cpregid)
  * a register definition to override a previous definition for the
  * same (cp, is64, crn, crm, opc1, opc2) tuple: either the new or the
  * old must have the OVERRIDE bit set.
- * NO_MIGRATE indicates that this register should be ignored for migration;
- * (eg because any state is accessed via some other coprocessor register).
+ * ALIAS indicates that this register is an alias view of some underlying
+ * state which is also visible via another register, and that the other
+ * register is handling migration; registers marked ALIAS will not be migrated
+ * but may have their state set by syncing of register state from KVM.
+ * NO_RAW indicates that this register has no underlying state and does not
+ * support raw access for state saving/loading; it will not be used for either
+ * migration or KVM state synchronization. (Typically this is for "registers"
+ * which are actually used as instructions for cache maintenance and so on.)
  * IO indicates that this register does I/O and therefore its accesses
  * need to be surrounded by gen_io_start()/gen_io_end(). In particular,
  * registers which implement clocks or timers require this.
@@ -922,8 +1131,9 @@ static inline uint64_t cpreg_to_kvm_id(uint32_t cpregid)
 #define ARM_CP_64BIT 4
 #define ARM_CP_SUPPRESS_TB_END 8
 #define ARM_CP_OVERRIDE 16
-#define ARM_CP_NO_MIGRATE 32
+#define ARM_CP_ALIAS 32
 #define ARM_CP_IO 64
+#define ARM_CP_NO_RAW 128
 #define ARM_CP_NOP (ARM_CP_SPECIAL | (1 << 8))
 #define ARM_CP_WFI (ARM_CP_SPECIAL | (2 << 8))
 #define ARM_CP_NZCV (ARM_CP_SPECIAL | (3 << 8))
@@ -933,7 +1143,7 @@ static inline uint64_t cpreg_to_kvm_id(uint32_t cpregid)
 /* Used only as a terminator for ARMCPRegInfo lists */
 #define ARM_CP_SENTINEL 0xffff
 /* Mask of only the flag bits in a type field */
-#define ARM_CP_FLAG_MASK 0x7f
+#define ARM_CP_FLAG_MASK 0xff
 
 /* Valid values for ARMCPRegInfo state field, indicating which of
  * the AArch32 and AArch64 execution states this register is visible in.
@@ -948,6 +1158,21 @@ enum {
     ARM_CP_STATE_AA32 = 0,
     ARM_CP_STATE_AA64 = 1,
     ARM_CP_STATE_BOTH = 2,
+};
+
+/* ARM CP register secure state flags.  These flags identify security state
+ * attributes for a given CP register entry.
+ * The existence of both or neither secure and non-secure flags indicates that
+ * the register has both a secure and non-secure hash entry.  A single one of
+ * these flags causes the register to only be hashed for the specified
+ * security state.
+ * Although definitions may have any combination of the S/NS bits, each
+ * registered entry will only have one to identify whether the entry is secure
+ * or non-secure.
+ */
+enum {
+    ARM_CP_SECSTATE_S =   (1 << 0), /* bit[0]: Secure state register */
+    ARM_CP_SECSTATE_NS =  (1 << 1), /* bit[1]: Non-secure state register */
 };
 
 /* Return true if cptype is a valid type field. This is used to try to
@@ -997,6 +1222,10 @@ static inline bool cptype_valid(int cptype)
  */
 static inline int arm_current_el(CPUARMState *env)
 {
+    if (arm_feature(env, ARM_FEATURE_M)) {
+        return !((env->v7m.exception == 0) && (env->v7m.control & 1));
+    }
+
     if (is_a64(env)) {
         return extract32(env->pstate, 2, 2);
     }
@@ -1084,6 +1313,8 @@ struct ARMCPRegInfo {
     int type;
     /* Access rights: PL*_[RW] */
     int access;
+    /* Security state: ARM_CP_SECSTATE_* bits/values */
+    int secure;
     /* The opaque pointer passed to define_arm_cp_regs_with_opaque() when
      * this register was defined: can be used to hand data through to the
      * register read/write functions, since they are passed the ARMCPRegInfo*.
@@ -1093,12 +1324,27 @@ struct ARMCPRegInfo {
      * fieldoffset is non-zero, the reset value of the register.
      */
     uint64_t resetvalue;
-    /* Offset of the field in CPUARMState for this register. This is not
-     * needed if either:
+    /* Offset of the field in CPUARMState for this register.
+     *
+     * This is not needed if either:
      *  1. type is ARM_CP_CONST or one of the ARM_CP_SPECIALs
      *  2. both readfn and writefn are specified
      */
     ptrdiff_t fieldoffset; /* offsetof(CPUARMState, field) */
+
+    /* Offsets of the secure and non-secure fields in CPUARMState for the
+     * register if it is banked.  These fields are only used during the static
+     * registration of a register.  During hashing the bank associated
+     * with a given security state is copied to fieldoffset which is used from
+     * there on out.
+     *
+     * It is expected that register definitions use either fieldoffset or
+     * bank_fieldoffsets in the definition but not both.  It is also expected
+     * that both bank offsets are set when defining a banked register.  This
+     * use indicates that a register is banked.
+     */
+    ptrdiff_t bank_fieldoffsets[2];
+
     /* Function for making any access checks for this register in addition to
      * those specified by the 'access' permissions bits. If NULL, no extra
      * checks required. The access check is performed at runtime, not at
@@ -1247,27 +1493,50 @@ static inline bool arm_excp_unmasked(CPUState *cs, unsigned int excp_idx)
     CPUARMState *env = cs->env_ptr;
     unsigned int cur_el = arm_current_el(env);
     unsigned int target_el = arm_excp_target_el(cs, excp_idx);
-    /* FIXME: Use actual secure state.  */
-    bool secure = false;
-    /* If in EL1/0, Physical IRQ routing to EL2 only happens from NS state.  */
-    bool irq_can_hyp = !secure && cur_el < 2 && target_el == 2;
+    bool secure = arm_is_secure(env);
+    uint32_t scr;
+    uint32_t hcr;
+    bool pstate_unmasked;
+    int8_t unmasked = 0;
 
-    /* Don't take exceptions if they target a lower EL.  */
+    /* Don't take exceptions if they target a lower EL.
+     * This check should catch any exceptions that would not be taken but left
+     * pending.
+     */
     if (cur_el > target_el) {
         return false;
     }
 
     switch (excp_idx) {
     case EXCP_FIQ:
-        if (irq_can_hyp && (env->cp15.hcr_el2 & HCR_FMO)) {
-            return true;
-        }
-        return !(env->daif & PSTATE_F);
+        /* If FIQs are routed to EL3 or EL2 then there are cases where we
+         * override the CPSR.F in determining if the exception is masked or
+         * not.  If neither of these are set then we fall back to the CPSR.F
+         * setting otherwise we further assess the state below.
+         */
+        hcr = (env->cp15.hcr_el2 & HCR_FMO);
+        scr = (env->cp15.scr_el3 & SCR_FIQ);
+
+        /* When EL3 is 32-bit, the SCR.FW bit controls whether the CPSR.F bit
+         * masks FIQ interrupts when taken in non-secure state.  If SCR.FW is
+         * set then FIQs can be masked by CPSR.F when non-secure but only
+         * when FIQs are only routed to EL3.
+         */
+        scr &= !((env->cp15.scr_el3 & SCR_FW) && !hcr);
+        pstate_unmasked = !(env->daif & PSTATE_F);
+        break;
+
     case EXCP_IRQ:
-        if (irq_can_hyp && (env->cp15.hcr_el2 & HCR_IMO)) {
-            return true;
-        }
-        return !(env->daif & PSTATE_I);
+        /* When EL3 execution state is 32-bit, if HCR.IMO is set then we may
+         * override the CPSR.I masking when in non-secure state.  The SCR.IRQ
+         * setting has already been taken into consideration when setting the
+         * target EL, so it does not have a further affect here.
+         */
+        hcr = (env->cp15.hcr_el2 & HCR_IMO);
+        scr = false;
+        pstate_unmasked = !(env->daif & PSTATE_I);
+        break;
+
     case EXCP_VFIQ:
         if (secure || !(env->cp15.hcr_el2 & HCR_FMO)) {
             /* VFIQs are only taken when hypervized and non-secure.  */
@@ -1283,29 +1552,114 @@ static inline bool arm_excp_unmasked(CPUState *cs, unsigned int excp_idx)
     default:
         g_assert_not_reached();
     }
+
+    /* Use the target EL, current execution state and SCR/HCR settings to
+     * determine whether the corresponding CPSR bit is used to mask the
+     * interrupt.
+     */
+    if ((target_el > cur_el) && (target_el != 1)) {
+        if (arm_el_is_aa64(env, 3) || ((scr || hcr) && (!secure))) {
+            unmasked = 1;
+        }
+    }
+
+    /* The PSTATE bits only mask the interrupt if we have not overriden the
+     * ability above.
+     */
+    return unmasked || pstate_unmasked;
 }
 
-static inline CPUARMState *cpu_init(const char *cpu_model)
-{
-    ARMCPU *cpu = cpu_arm_init(cpu_model);
-    if (cpu) {
-        return &cpu->env;
-    }
-    return NULL;
-}
+#define cpu_init(cpu_model) CPU(cpu_arm_init(cpu_model))
 
 #define cpu_exec cpu_arm_exec
 #define cpu_gen_code cpu_arm_gen_code
 #define cpu_signal_handler cpu_arm_signal_handler
 #define cpu_list arm_cpu_list
 
-/* MMU modes definitions */
-#define MMU_MODE0_SUFFIX _user
-#define MMU_MODE1_SUFFIX _kernel
+/* ARM has the following "translation regimes" (as the ARM ARM calls them):
+ *
+ * If EL3 is 64-bit:
+ *  + NonSecure EL1 & 0 stage 1
+ *  + NonSecure EL1 & 0 stage 2
+ *  + NonSecure EL2
+ *  + Secure EL1 & EL0
+ *  + Secure EL3
+ * If EL3 is 32-bit:
+ *  + NonSecure PL1 & 0 stage 1
+ *  + NonSecure PL1 & 0 stage 2
+ *  + NonSecure PL2
+ *  + Secure PL0 & PL1
+ * (reminder: for 32 bit EL3, Secure PL1 is *EL3*, not EL1.)
+ *
+ * For QEMU, an mmu_idx is not quite the same as a translation regime because:
+ *  1. we need to split the "EL1 & 0" regimes into two mmu_idxes, because they
+ *     may differ in access permissions even if the VA->PA map is the same
+ *  2. we want to cache in our TLB the full VA->IPA->PA lookup for a stage 1+2
+ *     translation, which means that we have one mmu_idx that deals with two
+ *     concatenated translation regimes [this sort of combined s1+2 TLB is
+ *     architecturally permitted]
+ *  3. we don't need to allocate an mmu_idx to translations that we won't be
+ *     handling via the TLB. The only way to do a stage 1 translation without
+ *     the immediate stage 2 translation is via the ATS or AT system insns,
+ *     which can be slow-pathed and always do a page table walk.
+ *  4. we can also safely fold together the "32 bit EL3" and "64 bit EL3"
+ *     translation regimes, because they map reasonably well to each other
+ *     and they can't both be active at the same time.
+ * This gives us the following list of mmu_idx values:
+ *
+ * NS EL0 (aka NS PL0) stage 1+2
+ * NS EL1 (aka NS PL1) stage 1+2
+ * NS EL2 (aka NS PL2)
+ * S EL3 (aka S PL1)
+ * S EL0 (aka S PL0)
+ * S EL1 (not used if EL3 is 32 bit)
+ * NS EL0+1 stage 2
+ *
+ * (The last of these is an mmu_idx because we want to be able to use the TLB
+ * for the accesses done as part of a stage 1 page table walk, rather than
+ * having to walk the stage 2 page table over and over.)
+ *
+ * Our enumeration includes at the end some entries which are not "true"
+ * mmu_idx values in that they don't have corresponding TLBs and are only
+ * valid for doing slow path page table walks.
+ *
+ * The constant names here are patterned after the general style of the names
+ * of the AT/ATS operations.
+ * The values used are carefully arranged to make mmu_idx => EL lookup easy.
+ */
+typedef enum ARMMMUIdx {
+    ARMMMUIdx_S12NSE0 = 0,
+    ARMMMUIdx_S12NSE1 = 1,
+    ARMMMUIdx_S1E2 = 2,
+    ARMMMUIdx_S1E3 = 3,
+    ARMMMUIdx_S1SE0 = 4,
+    ARMMMUIdx_S1SE1 = 5,
+    ARMMMUIdx_S2NS = 6,
+    /* Indexes below here don't have TLBs and are used only for AT system
+     * instructions or for the first stage of an S12 page table walk.
+     */
+    ARMMMUIdx_S1NSE0 = 7,
+    ARMMMUIdx_S1NSE1 = 8,
+} ARMMMUIdx;
+
 #define MMU_USER_IDX 0
-static inline int cpu_mmu_index (CPUARMState *env)
+
+/* Return the exception level we're running at if this is our mmu_idx */
+static inline int arm_mmu_idx_to_el(ARMMMUIdx mmu_idx)
 {
-    return arm_current_el(env);
+    assert(mmu_idx < ARMMMUIdx_S2NS);
+    return mmu_idx & 3;
+}
+
+/* Determine the current mmu_idx to use for normal loads/stores */
+static inline int cpu_mmu_index(CPUARMState *env)
+{
+    int el = arm_current_el(env);
+
+    if (el < 2 && arm_is_secure_below_el3(env)) {
+        return ARMMMUIdx_S1SE0 + el;
+    }
+    return el;
 }
 
 /* Return the Exception Level targeted by debug exceptions;
@@ -1372,9 +1726,13 @@ static inline bool arm_singlestep_active(CPUARMState *env)
 
 /* Bit usage in the TB flags field: bit 31 indicates whether we are
  * in 32 or 64 bit mode. The meaning of the other bits depends on that.
+ * We put flags which are shared between 32 and 64 bit mode at the top
+ * of the word, and flags which apply to only one mode at the bottom.
  */
 #define ARM_TBFLAG_AARCH64_STATE_SHIFT 31
 #define ARM_TBFLAG_AARCH64_STATE_MASK  (1U << ARM_TBFLAG_AARCH64_STATE_SHIFT)
+#define ARM_TBFLAG_MMUIDX_SHIFT 28
+#define ARM_TBFLAG_MMUIDX_MASK (0x7 << ARM_TBFLAG_MMUIDX_SHIFT)
 
 /* Bit usage when in AArch32 state: */
 #define ARM_TBFLAG_THUMB_SHIFT      0
@@ -1383,8 +1741,6 @@ static inline bool arm_singlestep_active(CPUARMState *env)
 #define ARM_TBFLAG_VECLEN_MASK      (0x7 << ARM_TBFLAG_VECLEN_SHIFT)
 #define ARM_TBFLAG_VECSTRIDE_SHIFT  4
 #define ARM_TBFLAG_VECSTRIDE_MASK   (0x3 << ARM_TBFLAG_VECSTRIDE_SHIFT)
-#define ARM_TBFLAG_PRIV_SHIFT       6
-#define ARM_TBFLAG_PRIV_MASK        (1 << ARM_TBFLAG_PRIV_SHIFT)
 #define ARM_TBFLAG_VFPEN_SHIFT      7
 #define ARM_TBFLAG_VFPEN_MASK       (1 << ARM_TBFLAG_VFPEN_SHIFT)
 #define ARM_TBFLAG_CONDEXEC_SHIFT   8
@@ -1402,10 +1758,14 @@ static inline bool arm_singlestep_active(CPUARMState *env)
  */
 #define ARM_TBFLAG_XSCALE_CPAR_SHIFT 20
 #define ARM_TBFLAG_XSCALE_CPAR_MASK (3 << ARM_TBFLAG_XSCALE_CPAR_SHIFT)
+/* Indicates whether cp register reads and writes by guest code should access
+ * the secure or nonsecure bank of banked registers; note that this is not
+ * the same thing as the current security state of the processor!
+ */
+#define ARM_TBFLAG_NS_SHIFT         22
+#define ARM_TBFLAG_NS_MASK          (1 << ARM_TBFLAG_NS_SHIFT)
 
 /* Bit usage when in AArch64 state */
-#define ARM_TBFLAG_AA64_EL_SHIFT    0
-#define ARM_TBFLAG_AA64_EL_MASK     (0x3 << ARM_TBFLAG_AA64_EL_SHIFT)
 #define ARM_TBFLAG_AA64_FPEN_SHIFT  2
 #define ARM_TBFLAG_AA64_FPEN_MASK   (1 << ARM_TBFLAG_AA64_FPEN_SHIFT)
 #define ARM_TBFLAG_AA64_SS_ACTIVE_SHIFT 3
@@ -1416,14 +1776,14 @@ static inline bool arm_singlestep_active(CPUARMState *env)
 /* some convenience accessor macros */
 #define ARM_TBFLAG_AARCH64_STATE(F) \
     (((F) & ARM_TBFLAG_AARCH64_STATE_MASK) >> ARM_TBFLAG_AARCH64_STATE_SHIFT)
+#define ARM_TBFLAG_MMUIDX(F) \
+    (((F) & ARM_TBFLAG_MMUIDX_MASK) >> ARM_TBFLAG_MMUIDX_SHIFT)
 #define ARM_TBFLAG_THUMB(F) \
     (((F) & ARM_TBFLAG_THUMB_MASK) >> ARM_TBFLAG_THUMB_SHIFT)
 #define ARM_TBFLAG_VECLEN(F) \
     (((F) & ARM_TBFLAG_VECLEN_MASK) >> ARM_TBFLAG_VECLEN_SHIFT)
 #define ARM_TBFLAG_VECSTRIDE(F) \
     (((F) & ARM_TBFLAG_VECSTRIDE_MASK) >> ARM_TBFLAG_VECSTRIDE_SHIFT)
-#define ARM_TBFLAG_PRIV(F) \
-    (((F) & ARM_TBFLAG_PRIV_MASK) >> ARM_TBFLAG_PRIV_SHIFT)
 #define ARM_TBFLAG_VFPEN(F) \
     (((F) & ARM_TBFLAG_VFPEN_MASK) >> ARM_TBFLAG_VFPEN_SHIFT)
 #define ARM_TBFLAG_CONDEXEC(F) \
@@ -1438,14 +1798,14 @@ static inline bool arm_singlestep_active(CPUARMState *env)
     (((F) & ARM_TBFLAG_PSTATE_SS_MASK) >> ARM_TBFLAG_PSTATE_SS_SHIFT)
 #define ARM_TBFLAG_XSCALE_CPAR(F) \
     (((F) & ARM_TBFLAG_XSCALE_CPAR_MASK) >> ARM_TBFLAG_XSCALE_CPAR_SHIFT)
-#define ARM_TBFLAG_AA64_EL(F) \
-    (((F) & ARM_TBFLAG_AA64_EL_MASK) >> ARM_TBFLAG_AA64_EL_SHIFT)
 #define ARM_TBFLAG_AA64_FPEN(F) \
     (((F) & ARM_TBFLAG_AA64_FPEN_MASK) >> ARM_TBFLAG_AA64_FPEN_SHIFT)
 #define ARM_TBFLAG_AA64_SS_ACTIVE(F) \
     (((F) & ARM_TBFLAG_AA64_SS_ACTIVE_MASK) >> ARM_TBFLAG_AA64_SS_ACTIVE_SHIFT)
 #define ARM_TBFLAG_AA64_PSTATE_SS(F) \
     (((F) & ARM_TBFLAG_AA64_PSTATE_SS_MASK) >> ARM_TBFLAG_AA64_PSTATE_SS_SHIFT)
+#define ARM_TBFLAG_NS(F) \
+    (((F) & ARM_TBFLAG_NS_MASK) >> ARM_TBFLAG_NS_SHIFT)
 
 static inline void cpu_get_tb_cpu_state(CPUARMState *env, target_ulong *pc,
                                         target_ulong *cs_base, int *flags)
@@ -1461,8 +1821,7 @@ static inline void cpu_get_tb_cpu_state(CPUARMState *env, target_ulong *pc,
 
     if (is_a64(env)) {
         *pc = env->pc;
-        *flags = ARM_TBFLAG_AARCH64_STATE_MASK
-            | (arm_current_el(env) << ARM_TBFLAG_AA64_EL_SHIFT);
+        *flags = ARM_TBFLAG_AARCH64_STATE_MASK;
         if (fpen == 3 || (fpen == 1 && arm_current_el(env) != 0)) {
             *flags |= ARM_TBFLAG_AA64_FPEN_MASK;
         }
@@ -1480,20 +1839,14 @@ static inline void cpu_get_tb_cpu_state(CPUARMState *env, target_ulong *pc,
             }
         }
     } else {
-        int privmode;
         *pc = env->regs[15];
         *flags = (env->thumb << ARM_TBFLAG_THUMB_SHIFT)
             | (env->vfp.vec_len << ARM_TBFLAG_VECLEN_SHIFT)
             | (env->vfp.vec_stride << ARM_TBFLAG_VECSTRIDE_SHIFT)
             | (env->condexec_bits << ARM_TBFLAG_CONDEXEC_SHIFT)
             | (env->bswap_code << ARM_TBFLAG_BSWAP_CODE_SHIFT);
-        if (arm_feature(env, ARM_FEATURE_M)) {
-            privmode = !((env->v7m.exception == 0) && (env->v7m.control & 1));
-        } else {
-            privmode = (env->uncached_cpsr & CPSR_M) != ARM_CPU_MODE_USR;
-        }
-        if (privmode) {
-            *flags |= ARM_TBFLAG_PRIV_MASK;
+        if (!(access_secure_reg(env))) {
+            *flags |= ARM_TBFLAG_NS_MASK;
         }
         if (env->vfp.xregs[ARM_VFP_FPEXC] & (1 << 30)
             || arm_el_is_aa64(env, 1)) {
@@ -1518,6 +1871,8 @@ static inline void cpu_get_tb_cpu_state(CPUARMState *env, target_ulong *pc,
         *flags |= (extract32(env->cp15.c15_cpar, 0, 2)
                    << ARM_TBFLAG_XSCALE_CPAR_SHIFT);
     }
+
+    *flags |= (cpu_mmu_index(env) << ARM_TBFLAG_MMUIDX_SHIFT);
 
     *cs_base = 0;
 }

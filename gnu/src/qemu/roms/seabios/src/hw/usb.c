@@ -26,72 +26,43 @@
  * Controller function wrappers
  ****************************************************************/
 
-// Allocate an async pipe (control or bulk).
-struct usb_pipe *
-usb_alloc_pipe(struct usbdevice_s *usbdev
-               , struct usb_endpoint_descriptor *epdesc)
+// Allocate, update, or free a usb pipe.
+static struct usb_pipe *
+usb_realloc_pipe(struct usbdevice_s *usbdev, struct usb_pipe *pipe
+                 , struct usb_endpoint_descriptor *epdesc)
 {
     switch (usbdev->hub->cntl->type) {
     default:
     case USB_TYPE_UHCI:
-        return uhci_alloc_pipe(usbdev, epdesc);
+        return uhci_realloc_pipe(usbdev, pipe, epdesc);
     case USB_TYPE_OHCI:
-        return ohci_alloc_pipe(usbdev, epdesc);
+        return ohci_realloc_pipe(usbdev, pipe, epdesc);
     case USB_TYPE_EHCI:
-        return ehci_alloc_pipe(usbdev, epdesc);
+        return ehci_realloc_pipe(usbdev, pipe, epdesc);
     case USB_TYPE_XHCI:
-        return xhci_alloc_pipe(usbdev, epdesc);
-    }
-}
-
-// Update an pipe (used for control only)
-struct usb_pipe *
-usb_update_pipe(struct usbdevice_s *usbdev, struct usb_pipe *pipe
-                , struct usb_endpoint_descriptor *epdesc)
-{
-    switch (usbdev->hub->cntl->type) {
-    case USB_TYPE_XHCI:
-        return xhci_update_pipe(usbdev, pipe, epdesc);
-    default:
-        free_pipe(pipe);
-        return usb_alloc_pipe(usbdev, epdesc);
+        return xhci_realloc_pipe(usbdev, pipe, epdesc);
     }
 }
 
 // Send a message on a control pipe using the default control descriptor.
 static int
-send_control(struct usb_pipe *pipe, int dir, const void *cmd, int cmdsize
-             , void *data, int datasize)
-{
-    ASSERT32FLAT();
-    switch (pipe->type) {
-    default:
-    case USB_TYPE_UHCI:
-        return uhci_control(pipe, dir, cmd, cmdsize, data, datasize);
-    case USB_TYPE_OHCI:
-        return ohci_control(pipe, dir, cmd, cmdsize, data, datasize);
-    case USB_TYPE_EHCI:
-        return ehci_control(pipe, dir, cmd, cmdsize, data, datasize);
-    case USB_TYPE_XHCI:
-        return xhci_control(pipe, dir, cmd, cmdsize, data, datasize);
-    }
-}
-
-int
-usb_send_bulk(struct usb_pipe *pipe_fl, int dir, void *data, int datasize)
+usb_send_pipe(struct usb_pipe *pipe_fl, int dir, const void *cmd
+              , void *data, int datasize)
 {
     switch (GET_LOWFLAT(pipe_fl->type)) {
     default:
     case USB_TYPE_UHCI:
-        return uhci_send_bulk(pipe_fl, dir, data, datasize);
+        return uhci_send_pipe(pipe_fl, dir, cmd, data, datasize);
     case USB_TYPE_OHCI:
-        return ohci_send_bulk(pipe_fl, dir, data, datasize);
+        if (MODESEGMENT)
+            return -1;
+        return ohci_send_pipe(pipe_fl, dir, cmd, data, datasize);
     case USB_TYPE_EHCI:
-        return ehci_send_bulk(pipe_fl, dir, data, datasize);
+        return ehci_send_pipe(pipe_fl, dir, cmd, data, datasize);
     case USB_TYPE_XHCI:
         if (MODESEGMENT)
             return -1;
-        return xhci_send_bulk(pipe_fl, dir, data, datasize);
+        return xhci_send_pipe(pipe_fl, dir, cmd, data, datasize);
     }
 }
 
@@ -116,30 +87,61 @@ usb_poll_intr(struct usb_pipe *pipe_fl, void *data)
 
 int usb_32bit_pipe(struct usb_pipe *pipe_fl)
 {
-    return CONFIG_USB_XHCI && GET_LOWFLAT(pipe_fl->type) == USB_TYPE_XHCI;
+    return (CONFIG_USB_XHCI && GET_LOWFLAT(pipe_fl->type) == USB_TYPE_XHCI)
+        || (CONFIG_USB_OHCI && GET_LOWFLAT(pipe_fl->type) == USB_TYPE_OHCI);
 }
+
 
 /****************************************************************
  * Helper functions
  ****************************************************************/
 
-// Send a message to the default control pipe of a device.
-int
-send_default_control(struct usb_pipe *pipe, const struct usb_ctrlrequest *req
-                     , void *data)
+// Allocate a usb pipe.
+struct usb_pipe *
+usb_alloc_pipe(struct usbdevice_s *usbdev
+               , struct usb_endpoint_descriptor *epdesc)
 {
-    return send_control(pipe, req->bRequestType & USB_DIR_IN
-                        , req, sizeof(*req), data, req->wLength);
+    return usb_realloc_pipe(usbdev, NULL, epdesc);
 }
 
 // Free an allocated control or bulk pipe.
 void
-free_pipe(struct usb_pipe *pipe)
+usb_free_pipe(struct usbdevice_s *usbdev, struct usb_pipe *pipe)
 {
-    ASSERT32FLAT();
     if (!pipe)
         return;
-    // Add to controller's free list.
+    usb_realloc_pipe(usbdev, pipe, NULL);
+}
+
+// Send a message to the default control pipe of a device.
+int
+usb_send_default_control(struct usb_pipe *pipe, const struct usb_ctrlrequest *req
+                         , void *data)
+{
+    return usb_send_pipe(pipe, req->bRequestType & USB_DIR_IN, req
+                         , data, req->wLength);
+}
+
+// Send a message to a bulk endpoint
+int
+usb_send_bulk(struct usb_pipe *pipe_fl, int dir, void *data, int datasize)
+{
+    return usb_send_pipe(pipe_fl, dir, NULL, data, datasize);
+}
+
+// Check if a pipe for a given controller is on the freelist
+int
+usb_is_freelist(struct usb_s *cntl, struct usb_pipe *pipe)
+{
+    return pipe->cntl != cntl;
+}
+
+// Add a pipe to the controller's freelist
+void
+usb_add_freelist(struct usb_pipe *pipe)
+{
+    if (!pipe)
+        return;
     struct usb_s *cntl = pipe->cntl;
     pipe->freenext = cntl->freelist;
     cntl->freelist = pipe;
@@ -147,7 +149,7 @@ free_pipe(struct usb_pipe *pipe)
 
 // Check for an available pipe on the freelist.
 struct usb_pipe *
-usb_getFreePipe(struct usb_s *cntl, u8 eptype)
+usb_get_freelist(struct usb_s *cntl, u8 eptype)
 {
     struct usb_pipe **pfree = &cntl->freelist;
     for (;;) {
@@ -178,8 +180,8 @@ usb_desc2pipe(struct usb_pipe *pipe, struct usbdevice_s *usbdev
 
 // Find the exponential period of the requested interrupt end point.
 int
-usb_getFrameExp(struct usbdevice_s *usbdev
-                , struct usb_endpoint_descriptor *epdesc)
+usb_get_period(struct usbdevice_s *usbdev
+               , struct usb_endpoint_descriptor *epdesc)
 {
     int period = epdesc->bInterval;
     if (usbdev->speed != USB_HIGHSPEED)
@@ -187,9 +189,22 @@ usb_getFrameExp(struct usbdevice_s *usbdev
     return (period <= 4) ? 0 : period - 4;
 }
 
-// Find the first endpoing of a given type in an interface description.
+// Maximum time (in ms) a data transfer should take
+int
+usb_xfer_time(struct usb_pipe *pipe, int datalen)
+{
+    // Use the maximum command time (5 seconds), except for
+    // set_address commands where we don't want to stall the boot if
+    // the device doesn't actually exist.  Add 100ms to account for
+    // any controller delays.
+    if (!GET_LOWFLAT(pipe->devaddr))
+        return USB_TIME_STATUS + 100;
+    return USB_TIME_COMMAND + 100;
+}
+
+// Find the first endpoint of a given type in an interface description.
 struct usb_endpoint_descriptor *
-findEndPointDesc(struct usbdevice_s *usbdev, int type, int dir)
+usb_find_desc(struct usbdevice_s *usbdev, int type, int dir)
 {
     struct usb_endpoint_descriptor *epdesc = (void*)&usbdev->iface[1];
     for (;;) {
@@ -215,7 +230,7 @@ get_device_info8(struct usb_pipe *pipe, struct usb_device_descriptor *dinfo)
     req.wValue = USB_DT_DEVICE<<8;
     req.wIndex = 0;
     req.wLength = 8;
-    return send_default_control(pipe, &req, dinfo);
+    return usb_send_default_control(pipe, &req, dinfo);
 }
 
 static struct usb_config_descriptor *
@@ -229,7 +244,7 @@ get_device_config(struct usb_pipe *pipe)
     req.wValue = USB_DT_CONFIG<<8;
     req.wIndex = 0;
     req.wLength = sizeof(cfg);
-    int ret = send_default_control(pipe, &req, &cfg);
+    int ret = usb_send_default_control(pipe, &req, &cfg);
     if (ret)
         return NULL;
 
@@ -237,9 +252,11 @@ get_device_config(struct usb_pipe *pipe)
     if (!config)
         return NULL;
     req.wLength = cfg.wTotalLength;
-    ret = send_default_control(pipe, &req, config);
-    if (ret)
+    ret = usb_send_default_control(pipe, &req, config);
+    if (ret) {
+        free(config);
         return NULL;
+    }
     //hexdump(config, cfg.wTotalLength);
     return config;
 }
@@ -253,7 +270,7 @@ set_configuration(struct usb_pipe *pipe, u16 val)
     req.wValue = val;
     req.wIndex = 0;
     req.wLength = 0;
-    return send_default_control(pipe, &req, NULL);
+    return usb_send_default_control(pipe, &req, NULL);
 }
 
 
@@ -297,9 +314,9 @@ usb_set_address(struct usbdevice_s *usbdev)
     req.wValue = cntl->maxaddr + 1;
     req.wIndex = 0;
     req.wLength = 0;
-    int ret = send_default_control(usbdev->defpipe, &req, NULL);
+    int ret = usb_send_default_control(usbdev->defpipe, &req, NULL);
     if (ret) {
-        free_pipe(usbdev->defpipe);
+        usb_free_pipe(usbdev, usbdev->defpipe);
         return -1;
     }
 
@@ -307,7 +324,7 @@ usb_set_address(struct usbdevice_s *usbdev)
 
     cntl->maxaddr++;
     usbdev->devaddr = cntl->maxaddr;
-    usbdev->defpipe = usb_update_pipe(usbdev, usbdev->defpipe, &epdesc);
+    usbdev->defpipe = usb_realloc_pipe(usbdev, usbdev->defpipe, &epdesc);
     if (!usbdev->defpipe)
         return -1;
     return 0;
@@ -338,7 +355,7 @@ configure_usb_device(struct usbdevice_s *usbdev)
         .wMaxPacketSize = maxpacket,
         .bmAttributes = USB_ENDPOINT_XFER_CONTROL,
     };
-    usbdev->defpipe = usb_update_pipe(usbdev, usbdev->defpipe, &epdesc);
+    usbdev->defpipe = usb_realloc_pipe(usbdev, usbdev->defpipe, &epdesc);
     if (!usbdev->defpipe)
         return -1;
 
@@ -391,15 +408,23 @@ usb_hub_port_setup(void *data)
     struct usbhub_s *hub = usbdev->hub;
     u32 port = usbdev->port;
 
-    // Detect if device present (and possibly start reset)
-    int ret = hub->op->detect(hub, port);
-    if (ret)
-        // No device present
-        goto done;
+    for (;;) {
+        // Detect if device present (and possibly start reset)
+        int ret = hub->op->detect(hub, port);
+        if (ret > 0)
+            // Device connected.
+            break;
+        if (ret < 0 || timer_check(hub->detectend))
+            // No device found.
+            goto done;
+        msleep(5);
+    }
+
+    // XXX - wait USB_TIME_ATTDB time?
 
     // Reset port and determine device speed
     mutex_lock(&hub->cntl->resetlock);
-    ret = hub->op->reset(hub, port);
+    int ret = hub->op->reset(hub, port);
     if (ret < 0)
         // Reset failed
         goto resetfail;
@@ -415,7 +440,7 @@ usb_hub_port_setup(void *data)
 
     // Configure the device
     int count = configure_usb_device(usbdev);
-    free_pipe(usbdev->defpipe);
+    usb_free_pipe(usbdev, usbdev->defpipe);
     if (!count)
         hub->op->disconnect(hub, port);
     hub->devcount += count;
@@ -434,6 +459,7 @@ usb_enumerate(struct usbhub_s *hub)
 {
     u32 portcount = hub->portcount;
     hub->threads = portcount;
+    hub->detectend = timer_calc(USB_TIME_SIGATT);
 
     // Launch a thread for every port.
     int i;

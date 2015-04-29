@@ -20,7 +20,7 @@ value display_num ( str len )
 s" ,Display-" $cat 41 display_num + char-cat \ add ", Display-A" or "-B" to name ( str len )
 encode-string s" name" property \ store as name property
 
-s" display" encode-string s" device_type" property \ add "device_type" propert
+s" display" device-type
 
 \ screen-info is set by pci-class_03.fs contains output of get_vbe_info bios-snk call
 CASE screen-info c@ \ ( display-type )
@@ -58,62 +58,6 @@ THEN
       width height width char-width / height char-height / ( width height #lines #cols )
       fb8-install 
       true to is-installed?
-   THEN
-;
-
-\ as of OF 8bit Graphics Recommendation, these shall be implemented:
-
-: draw-rectangle ( adr x y w h -- )
-   is-installed? IF
-      0 ?DO
-         4dup ( adr x y w adr x y w )
-         drop ( adr x y w adr x y )
-         i + screen-width * + \ calculate offset into framebuffer ((y + i) * screen_width + x) 
-         ( adr x y w adr offs ) 
-         frame-buffer-adr + \ add to frame-buffer-adr ( adr x y w adr fb_adr ) 
-         1 pick 3 pick i * + swap 3 pick ( adr x y w adr adr_offs fb_adr w )
-         rmove \ copy line ( adr x y w adr )
-         drop ( adr x y w )
-      LOOP
-      4drop
-   ELSE
-      4drop drop
-   THEN
-;
-
-: fill-rectangle ( number x y w h -- )
-   is-installed? IF
-      0 ?DO
-         4dup ( number x y w number x y w )
-         drop ( number x y w number x y )
-         i + screen-width * + \ calculate offset into framebuffer ((y + i) * screen_width + x) 
-         ( number x y w number offs ) 
-         frame-buffer-adr + \ add to frame-buffer-adr ( number x y w number adr ) 
-         2 pick 2 pick ( number x y w number adr w number )
-         rfill \ draw line ( number x y w number )
-         drop ( number x y w )
-      LOOP
-      4drop
-   ELSE
-      4drop drop
-   THEN
-;
-
-: read-rectangle ( adr x y w h -- )
-   is-installed? IF
-      0 ?DO
-         4dup ( adr x y w adr x y w )
-         drop ( adr x y w adr x y )
-         i + screen-width * + \ calculate offset into framebuffer ((y + i) * screen_width + x) 
-         ( adr x y w adr offs ) 
-         frame-buffer-adr + \ add to frame-buffer-adr ( adr x y w adr fb_adr ) 
-         1 pick 3 pick i * + 3 pick ( adr x y w adr fb_adr adr_offs w )
-         rmove \ copy line ( adr x y w adr )
-         drop ( adr x y w )
-      LOOP
-      4drop
-   ELSE
-      4drop drop
    THEN
 ;
 
@@ -195,9 +139,7 @@ THEN
    2drop
 ;
 
-: dimensions ( -- width height )
-width height
-;
+include graphics.fs
 
 \ clear screen 
 mem-adr width height * 0 rfill

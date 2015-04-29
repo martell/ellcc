@@ -36,21 +36,6 @@ struct chs_s {
     u16 pad;
 };
 
-// ElTorito Device Emulation data
-struct cdemu_s {
-    struct drive_s *emulated_drive_gf;
-    u32 ilba;
-    u16 buffer_segment;
-    u16 load_segment;
-    u16 sector_count;
-    u8  active;
-    u8  media;
-    u8  emulated_extdrive;
-
-    // Virtual device
-    struct chs_s lchs;
-};
-
 struct drive_s {
     u8 type;            // Driver type (DTYPE_*)
     u8 floppy_type;     // Type of floppy (only for floppy drives).
@@ -86,6 +71,7 @@ struct drive_s {
 #define DTYPE_ESP_SCSI     0x81
 #define DTYPE_MEGASAS      0x82
 #define DTYPE_PVSCSI       0x83
+#define DTYPE_SDCARD       0x90
 
 #define MAXDESCSIZE 80
 
@@ -107,7 +93,6 @@ struct drive_s {
  ****************************************************************/
 
 // block.c
-extern struct dpte_s DefaultDPTE;
 extern u8 FloppyCount, CDCount;
 extern u8 *bounce_buf_fl;
 struct drive_s *getDrive(u8 exttype, u8 extdriveoffset);
@@ -115,18 +100,10 @@ int getDriveId(u8 exttype, struct drive_s *drive);
 void map_floppy_drive(struct drive_s *drive);
 void map_hd_drive(struct drive_s *drive);
 void map_cd_drive(struct drive_s *drive);
-struct bregs;
-void __disk_ret(struct bregs *regs, u32 linecode, const char *fname);
-void __disk_ret_unimplemented(struct bregs *regs, u32 linecode
-                              , const char *fname);
+struct int13dpt_s;
+int fill_edd(u16 seg, struct int13dpt_s *param_far, struct drive_s *drive_gf);
 int process_op(struct disk_op_s *op);
 int send_disk_op(struct disk_op_s *op);
 int create_bounce_buf(void);
-
-// Helper function for setting up a return code.
-#define disk_ret(regs, code) \
-    __disk_ret((regs), (code) | (__LINE__ << 8), __func__)
-#define disk_ret_unimplemented(regs, code) \
-    __disk_ret_unimplemented((regs), (code) | (__LINE__ << 8), __func__)
 
 #endif // block.h

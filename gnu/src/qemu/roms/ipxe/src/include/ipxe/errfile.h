@@ -154,6 +154,9 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define ERRFILE_intel		     ( ERRFILE_DRIVER | 0x00650000 )
 #define ERRFILE_myson		     ( ERRFILE_DRIVER | 0x00660000 )
 #define ERRFILE_intelx		     ( ERRFILE_DRIVER | 0x00670000 )
+#define ERRFILE_snp		     ( ERRFILE_DRIVER | 0x00680000 )
+#define ERRFILE_netfront	     ( ERRFILE_DRIVER | 0x00690000 )
+#define ERRFILE_nii		     ( ERRFILE_DRIVER | 0x006a0000 )
 
 #define ERRFILE_scsi		     ( ERRFILE_DRIVER | 0x00700000 )
 #define ERRFILE_arbel		     ( ERRFILE_DRIVER | 0x00710000 )
@@ -223,6 +226,7 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define ERRFILE_icmp			( ERRFILE_NET | 0x00390000 )
 #define ERRFILE_ping			( ERRFILE_NET | 0x003a0000 )
 #define ERRFILE_dhcpv6			( ERRFILE_NET | 0x003b0000 )
+#define ERRFILE_nfs_uri			( ERRFILE_NET | 0x003c0000 )
 
 #define ERRFILE_image		      ( ERRFILE_IMAGE | 0x00000000 )
 #define ERRFILE_elf		      ( ERRFILE_IMAGE | 0x00010000 )
@@ -299,6 +303,11 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #define ERRFILE_memmap_settings	      ( ERRFILE_OTHER | 0x003f0000 )
 #define ERRFILE_param_cmd	      ( ERRFILE_OTHER | 0x00400000 )
 #define ERRFILE_deflate		      ( ERRFILE_OTHER | 0x00410000 )
+#define ERRFILE_xenstore	      ( ERRFILE_OTHER | 0x00420000 )
+#define ERRFILE_xenbus		      ( ERRFILE_OTHER | 0x00430000 )
+#define ERRFILE_xengrant	      ( ERRFILE_OTHER | 0x00440000 )
+#define ERRFILE_efi_utils	      ( ERRFILE_OTHER | 0x00450000 )
+#define ERRFILE_efi_wrap	      ( ERRFILE_OTHER | 0x00460000 )
 
 /** @} */
 

@@ -16,6 +16,7 @@
 #include "hmp.h"
 #include "net/net.h"
 #include "sysemu/char.h"
+#include "sysemu/block-backend.h"
 #include "qemu/option.h"
 #include "qemu/timer.h"
 #include "qmp-commands.h"
@@ -27,6 +28,10 @@
 #include "ui/console.h"
 #include "block/qapi.h"
 #include "qemu-io.h"
+
+#ifdef CONFIG_SPICE
+#include <spice/enums.h>
+#endif
 
 static void hmp_handle_error(Monitor *mon, Error **errp)
 {
@@ -157,7 +162,8 @@ void hmp_info_migrate(Monitor *mon, const QDict *qdict)
     }
 
     if (info->has_status) {
-        monitor_printf(mon, "Migration status: %s\n", info->status);
+        monitor_printf(mon, "Migration status: %s\n",
+                       MigrationStatus_lookup[info->status]);
         monitor_printf(mon, "total time: %" PRIu64 " milliseconds\n",
                        info->total_time);
         if (info->has_expected_downtime) {
@@ -290,14 +296,132 @@ void hmp_info_cpus(Monitor *mon, const QDict *qdict)
     qapi_free_CpuInfoList(cpu_list);
 }
 
+static void print_block_info(Monitor *mon, BlockInfo *info,
+                             BlockDeviceInfo *inserted, bool verbose)
+{
+    ImageInfo *image_info;
+
+    assert(!info || !info->has_inserted || info->inserted == inserted);
+
+    if (info) {
+        monitor_printf(mon, "%s", info->device);
+        if (inserted && inserted->has_node_name) {
+            monitor_printf(mon, " (%s)", inserted->node_name);
+        }
+    } else {
+        assert(inserted);
+        monitor_printf(mon, "%s",
+                       inserted->has_node_name
+                       ? inserted->node_name
+                       : "<anonymous>");
+    }
+
+    if (inserted) {
+        monitor_printf(mon, ": %s (%s%s%s)\n",
+                       inserted->file,
+                       inserted->drv,
+                       inserted->ro ? ", read-only" : "",
+                       inserted->encrypted ? ", encrypted" : "");
+    } else {
+        monitor_printf(mon, ": [not inserted]\n");
+    }
+
+    if (info) {
+        if (info->has_io_status && info->io_status != BLOCK_DEVICE_IO_STATUS_OK) {
+            monitor_printf(mon, "    I/O status:       %s\n",
+                           BlockDeviceIoStatus_lookup[info->io_status]);
+        }
+
+        if (info->removable) {
+            monitor_printf(mon, "    Removable device: %slocked, tray %s\n",
+                           info->locked ? "" : "not ",
+                           info->tray_open ? "open" : "closed");
+        }
+    }
+
+
+    if (!inserted) {
+        return;
+    }
+
+    monitor_printf(mon, "    Cache mode:       %s%s%s\n",
+                   inserted->cache->writeback ? "writeback" : "writethrough",
+                   inserted->cache->direct ? ", direct" : "",
+                   inserted->cache->no_flush ? ", ignore flushes" : "");
+
+    if (inserted->has_backing_file) {
+        monitor_printf(mon,
+                       "    Backing file:     %s "
+                       "(chain depth: %" PRId64 ")\n",
+                       inserted->backing_file,
+                       inserted->backing_file_depth);
+    }
+
+    if (inserted->detect_zeroes != BLOCKDEV_DETECT_ZEROES_OPTIONS_OFF) {
+        monitor_printf(mon, "    Detect zeroes:    %s\n",
+                       BlockdevDetectZeroesOptions_lookup[inserted->detect_zeroes]);
+    }
+
+    if (inserted->bps  || inserted->bps_rd  || inserted->bps_wr  ||
+        inserted->iops || inserted->iops_rd || inserted->iops_wr)
+    {
+        monitor_printf(mon, "    I/O throttling:   bps=%" PRId64
+                        " bps_rd=%" PRId64  " bps_wr=%" PRId64
+                        " bps_max=%" PRId64
+                        " bps_rd_max=%" PRId64
+                        " bps_wr_max=%" PRId64
+                        " iops=%" PRId64 " iops_rd=%" PRId64
+                        " iops_wr=%" PRId64
+                        " iops_max=%" PRId64
+                        " iops_rd_max=%" PRId64
+                        " iops_wr_max=%" PRId64
+                        " iops_size=%" PRId64 "\n",
+                        inserted->bps,
+                        inserted->bps_rd,
+                        inserted->bps_wr,
+                        inserted->bps_max,
+                        inserted->bps_rd_max,
+                        inserted->bps_wr_max,
+                        inserted->iops,
+                        inserted->iops_rd,
+                        inserted->iops_wr,
+                        inserted->iops_max,
+                        inserted->iops_rd_max,
+                        inserted->iops_wr_max,
+                        inserted->iops_size);
+    }
+
+    /* TODO: inserted->image should never be null */
+    if (verbose && inserted->image) {
+        monitor_printf(mon, "\nImages:\n");
+        image_info = inserted->image;
+        while (1) {
+                bdrv_image_info_dump((fprintf_function)monitor_printf,
+                                     mon, image_info);
+            if (image_info->has_backing_image) {
+                image_info = image_info->backing_image;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
 void hmp_info_block(Monitor *mon, const QDict *qdict)
 {
     BlockInfoList *block_list, *info;
-    ImageInfo *image_info;
+    BlockDeviceInfoList *blockdev_list, *blockdev;
     const char *device = qdict_get_try_str(qdict, "device");
     bool verbose = qdict_get_try_bool(qdict, "verbose", 0);
+    bool nodes = qdict_get_try_bool(qdict, "nodes", 0);
+    bool printed = false;
 
-    block_list = qmp_query_block(NULL);
+    /* Print BlockBackend information */
+    if (!nodes) {
+        block_list = qmp_query_block(NULL);
+    } else {
+        block_list = NULL;
+    }
 
     for (info = block_list; info; info = info->next) {
         if (device && strcmp(device, info->value->device)) {
@@ -308,102 +432,40 @@ void hmp_info_block(Monitor *mon, const QDict *qdict)
             monitor_printf(mon, "\n");
         }
 
-        monitor_printf(mon, "%s", info->value->device);
-        if (info->value->has_inserted) {
-            monitor_printf(mon, ": %s (%s%s%s)\n",
-                           info->value->inserted->file,
-                           info->value->inserted->drv,
-                           info->value->inserted->ro ? ", read-only" : "",
-                           info->value->inserted->encrypted ? ", encrypted" : "");
-        } else {
-            monitor_printf(mon, ": [not inserted]\n");
-        }
-
-        if (info->value->has_io_status && info->value->io_status != BLOCK_DEVICE_IO_STATUS_OK) {
-            monitor_printf(mon, "    I/O status:       %s\n",
-                           BlockDeviceIoStatus_lookup[info->value->io_status]);
-        }
-
-        if (info->value->removable) {
-            monitor_printf(mon, "    Removable device: %slocked, tray %s\n",
-                           info->value->locked ? "" : "not ",
-                           info->value->tray_open ? "open" : "closed");
-        }
-
-
-        if (!info->value->has_inserted) {
-            continue;
-        }
-
-        if (info->value->inserted->has_backing_file) {
-            monitor_printf(mon,
-                           "    Backing file:     %s "
-                           "(chain depth: %" PRId64 ")\n",
-                           info->value->inserted->backing_file,
-                           info->value->inserted->backing_file_depth);
-        }
-
-        if (info->value->inserted->detect_zeroes != BLOCKDEV_DETECT_ZEROES_OPTIONS_OFF) {
-            monitor_printf(mon, "    Detect zeroes:    %s\n",
-                           BlockdevDetectZeroesOptions_lookup[info->value->inserted->detect_zeroes]);
-        }
-
-        if (info->value->inserted->bps
-            || info->value->inserted->bps_rd
-            || info->value->inserted->bps_wr
-            || info->value->inserted->iops
-            || info->value->inserted->iops_rd
-            || info->value->inserted->iops_wr)
-        {
-            monitor_printf(mon, "    I/O throttling:   bps=%" PRId64
-                            " bps_rd=%" PRId64  " bps_wr=%" PRId64
-                            " bps_max=%" PRId64
-                            " bps_rd_max=%" PRId64
-                            " bps_wr_max=%" PRId64
-                            " iops=%" PRId64 " iops_rd=%" PRId64
-                            " iops_wr=%" PRId64
-                            " iops_max=%" PRId64
-                            " iops_rd_max=%" PRId64
-                            " iops_wr_max=%" PRId64
-                            " iops_size=%" PRId64 "\n",
-                            info->value->inserted->bps,
-                            info->value->inserted->bps_rd,
-                            info->value->inserted->bps_wr,
-                            info->value->inserted->bps_max,
-                            info->value->inserted->bps_rd_max,
-                            info->value->inserted->bps_wr_max,
-                            info->value->inserted->iops,
-                            info->value->inserted->iops_rd,
-                            info->value->inserted->iops_wr,
-                            info->value->inserted->iops_max,
-                            info->value->inserted->iops_rd_max,
-                            info->value->inserted->iops_wr_max,
-                            info->value->inserted->iops_size);
-        }
-
-        if (verbose) {
-            monitor_printf(mon, "\nImages:\n");
-            image_info = info->value->inserted->image;
-            while (1) {
-                    bdrv_image_info_dump((fprintf_function)monitor_printf,
-                                         mon, image_info);
-                if (image_info->has_backing_image) {
-                    image_info = image_info->backing_image;
-                } else {
-                    break;
-                }
-            }
-        }
+        print_block_info(mon, info->value, info->value->has_inserted
+                                           ? info->value->inserted : NULL,
+                         verbose);
+        printed = true;
     }
 
     qapi_free_BlockInfoList(block_list);
+
+    if ((!device && !nodes) || printed) {
+        return;
+    }
+
+    /* Print node information */
+    blockdev_list = qmp_query_named_block_nodes(NULL);
+    for (blockdev = blockdev_list; blockdev; blockdev = blockdev->next) {
+        assert(blockdev->value->has_node_name);
+        if (device && strcmp(device, blockdev->value->node_name)) {
+            continue;
+        }
+
+        if (blockdev != blockdev_list) {
+            monitor_printf(mon, "\n");
+        }
+
+        print_block_info(mon, NULL, blockdev->value, verbose);
+    }
+    qapi_free_BlockDeviceInfoList(blockdev_list);
 }
 
 void hmp_info_blockstats(Monitor *mon, const QDict *qdict)
 {
     BlockStatsList *stats_list, *stats;
 
-    stats_list = qmp_query_blockstats(NULL);
+    stats_list = qmp_query_blockstats(false, false, NULL);
 
     for (stats = stats_list; stats; stats = stats->next) {
         if (!stats->value->has_device) {
@@ -419,6 +481,8 @@ void hmp_info_blockstats(Monitor *mon, const QDict *qdict)
                        " wr_total_time_ns=%" PRId64
                        " rd_total_time_ns=%" PRId64
                        " flush_total_time_ns=%" PRId64
+                       " rd_merged=%" PRId64
+                       " wr_merged=%" PRId64
                        "\n",
                        stats->value->stats->rd_bytes,
                        stats->value->stats->wr_bytes,
@@ -427,7 +491,9 @@ void hmp_info_blockstats(Monitor *mon, const QDict *qdict)
                        stats->value->stats->flush_operations,
                        stats->value->stats->wr_total_time_ns,
                        stats->value->stats->rd_total_time_ns,
-                       stats->value->stats->flush_total_time_ns);
+                       stats->value->stats->flush_total_time_ns,
+                       stats->value->stats->rd_merged,
+                       stats->value->stats->wr_merged);
     }
 
     qapi_free_BlockStatsList(stats_list);
@@ -480,10 +546,30 @@ out:
     qapi_free_VncInfo(info);
 }
 
+#ifdef CONFIG_SPICE
 void hmp_info_spice(Monitor *mon, const QDict *qdict)
 {
     SpiceChannelList *chan;
     SpiceInfo *info;
+    const char *channel_name;
+    const char * const channel_names[] = {
+        [SPICE_CHANNEL_MAIN] = "main",
+        [SPICE_CHANNEL_DISPLAY] = "display",
+        [SPICE_CHANNEL_INPUTS] = "inputs",
+        [SPICE_CHANNEL_CURSOR] = "cursor",
+        [SPICE_CHANNEL_PLAYBACK] = "playback",
+        [SPICE_CHANNEL_RECORD] = "record",
+        [SPICE_CHANNEL_TUNNEL] = "tunnel",
+        [SPICE_CHANNEL_SMARTCARD] = "smartcard",
+        [SPICE_CHANNEL_USBREDIR] = "usbredir",
+        [SPICE_CHANNEL_PORT] = "port",
+#if 0
+        /* minimum spice-protocol is 0.12.3, webdav was added in 0.12.7,
+         * no easy way to #ifdef (SPICE_CHANNEL_* is a enum).  Disable
+         * as quick fix for build failures with older versions. */
+        [SPICE_CHANNEL_WEBDAV] = "webdav",
+#endif
+    };
 
     info = qmp_query_spice(NULL);
 
@@ -520,12 +606,22 @@ void hmp_info_spice(Monitor *mon, const QDict *qdict)
                            chan->value->connection_id);
             monitor_printf(mon, "     channel: %" PRId64 ":%" PRId64 "\n",
                            chan->value->channel_type, chan->value->channel_id);
+
+            channel_name = "unknown";
+            if (chan->value->channel_type > 0 &&
+                chan->value->channel_type < ARRAY_SIZE(channel_names) &&
+                channel_names[chan->value->channel_type]) {
+                channel_name = channel_names[chan->value->channel_type];
+            }
+
+            monitor_printf(mon, "     channel name: %s\n", channel_name);
         }
     }
 
 out:
     qapi_free_SpiceInfo(info);
 }
+#endif
 
 void hmp_info_balloon(Monitor *mon, const QDict *qdict)
 {
@@ -862,7 +958,7 @@ void hmp_system_wakeup(Monitor *mon, const QDict *qdict)
     qmp_system_wakeup(NULL);
 }
 
-void hmp_inject_nmi(Monitor *mon, const QDict *qdict)
+void hmp_nmi(Monitor *mon, const QDict *qdict)
 {
     Error *err = NULL;
 
@@ -1020,6 +1116,16 @@ void hmp_snapshot_delete_blkdev_internal(Monitor *mon, const QDict *qdict)
 void hmp_migrate_cancel(Monitor *mon, const QDict *qdict)
 {
     qmp_migrate_cancel(NULL);
+}
+
+void hmp_migrate_incoming(Monitor *mon, const QDict *qdict)
+{
+    Error *err = NULL;
+    const char *uri = qdict_get_str(qdict, "uri");
+
+    qmp_migrate_incoming(uri, &err);
+
+    hmp_handle_error(mon, &err);
 }
 
 void hmp_migrate_set_downtime(Monitor *mon, const QDict *qdict)
@@ -1237,21 +1343,21 @@ void hmp_block_job_complete(Monitor *mon, const QDict *qdict)
     hmp_handle_error(mon, &error);
 }
 
-typedef struct MigrationStatus
+typedef struct HMPMigrationStatus
 {
     QEMUTimer *timer;
     Monitor *mon;
     bool is_block_migration;
-} MigrationStatus;
+} HMPMigrationStatus;
 
 static void hmp_migrate_status_cb(void *opaque)
 {
-    MigrationStatus *status = opaque;
+    HMPMigrationStatus *status = opaque;
     MigrationInfo *info;
 
     info = qmp_query_migrate(NULL);
-    if (!info->has_status || strcmp(info->status, "active") == 0 ||
-        strcmp(info->status, "setup") == 0) {
+    if (!info->has_status || info->status == MIGRATION_STATUS_ACTIVE ||
+        info->status == MIGRATION_STATUS_SETUP) {
         if (info->has_disk) {
             int progress;
 
@@ -1294,7 +1400,7 @@ void hmp_migrate(Monitor *mon, const QDict *qdict)
     }
 
     if (!detach) {
-        MigrationStatus *status;
+        HMPMigrationStatus *status;
 
         if (monitor_suspend(mon) < 0) {
             monitor_printf(mon, "terminal does not allow synchronous "
@@ -1471,7 +1577,7 @@ void hmp_closefd(Monitor *mon, const QDict *qdict)
     hmp_handle_error(mon, &err);
 }
 
-void hmp_send_key(Monitor *mon, const QDict *qdict)
+void hmp_sendkey(Monitor *mon, const QDict *qdict)
 {
     const char *keys = qdict_get_str(qdict, "keys");
     KeyValueList *keylist, *head = NULL, *tmp = NULL;
@@ -1540,7 +1646,7 @@ err_out:
     goto out;
 }
 
-void hmp_screen_dump(Monitor *mon, const QDict *qdict)
+void hmp_screendump(Monitor *mon, const QDict *qdict)
 {
     const char *filename = qdict_get_str(qdict, "filename");
     Error *err = NULL;
@@ -1659,14 +1765,14 @@ void hmp_chardev_remove(Monitor *mon, const QDict *qdict)
 
 void hmp_qemu_io(Monitor *mon, const QDict *qdict)
 {
-    BlockDriverState *bs;
+    BlockBackend *blk;
     const char* device = qdict_get_str(qdict, "device");
     const char* command = qdict_get_str(qdict, "command");
     Error *err = NULL;
 
-    bs = bdrv_find(device);
-    if (bs) {
-        qemuio_command(bs, command);
+    blk = blk_by_name(device);
+    if (blk) {
+        qemuio_command(blk, command);
     } else {
         error_set(&err, QERR_DEVICE_NOT_FOUND, device);
     }
@@ -1757,4 +1863,51 @@ void hmp_info_memory_devices(Monitor *mon, const QDict *qdict)
     }
 
     qapi_free_MemoryDeviceInfoList(info_list);
+}
+
+void hmp_qom_list(Monitor *mon, const QDict *qdict)
+{
+    const char *path = qdict_get_try_str(qdict, "path");
+    ObjectPropertyInfoList *list;
+    Error *err = NULL;
+
+    if (path == NULL) {
+        monitor_printf(mon, "/\n");
+        return;
+    }
+
+    list = qmp_qom_list(path, &err);
+    if (err == NULL) {
+        ObjectPropertyInfoList *start = list;
+        while (list != NULL) {
+            ObjectPropertyInfo *value = list->value;
+
+            monitor_printf(mon, "%s (%s)\n",
+                           value->name, value->type);
+            list = list->next;
+        }
+        qapi_free_ObjectPropertyInfoList(start);
+    }
+    hmp_handle_error(mon, &err);
+}
+
+void hmp_qom_set(Monitor *mon, const QDict *qdict)
+{
+    const char *path = qdict_get_str(qdict, "path");
+    const char *property = qdict_get_str(qdict, "property");
+    const char *value = qdict_get_str(qdict, "value");
+    Error *err = NULL;
+    bool ambiguous = false;
+    Object *obj;
+
+    obj = object_resolve_path(path, &ambiguous);
+    if (obj == NULL) {
+        error_set(&err, QERR_DEVICE_NOT_FOUND, path);
+    } else {
+        if (ambiguous) {
+            monitor_printf(mon, "Warning: Path '%s' is ambiguous\n", path);
+        }
+        object_property_parse(obj, value, property, &err);
+    }
+    hmp_handle_error(mon, &err);
 }

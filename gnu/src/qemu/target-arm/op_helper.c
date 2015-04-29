@@ -361,7 +361,7 @@ void HELPER(msr_i_pstate)(CPUARMState *env, uint32_t op, uint32_t imm)
      * Note that SPSel is never OK from EL0; we rely on handle_msr_i()
      * to catch that case at translate time.
      */
-    if (arm_current_el(env) == 0 && !(env->cp15.c1_sys & SCTLR_UMA)) {
+    if (arm_current_el(env) == 0 && !(env->cp15.sctlr_el[1] & SCTLR_UMA)) {
         raise_exception(env, EXCP_UDEF);
     }
 
@@ -465,7 +465,7 @@ void HELPER(exception_return)(CPUARMState *env)
     int cur_el = arm_current_el(env);
     unsigned int spsr_idx = aarch64_banked_spsr_index(cur_el);
     uint32_t spsr = env->banked_spsr[spsr_idx];
-    int new_el, i;
+    int new_el;
 
     aarch64_save_sp(env, cur_el);
 
@@ -491,9 +491,7 @@ void HELPER(exception_return)(CPUARMState *env)
         if (!arm_singlestep_active(env)) {
             env->uncached_cpsr &= ~PSTATE_SS;
         }
-        for (i = 0; i < 15; i++) {
-            env->regs[i] = env->xregs[i];
-        }
+        aarch64_sync_64_to_32(env);
 
         env->regs[15] = env->elr_el[1] & ~0x1;
     } else {
@@ -575,7 +573,7 @@ static bool linked_bp_matches(ARMCPU *cpu, int lbn)
      * short descriptor format (in which case it holds both PROCID and ASID),
      * since we don't implement the optional v7 context ID masking.
      */
-    contextidr = extract64(env->cp15.contextidr_el1, 0, 32);
+    contextidr = extract64(env->cp15.contextidr_el[1], 0, 32);
 
     switch (bt) {
     case 3: /* linked context ID match */

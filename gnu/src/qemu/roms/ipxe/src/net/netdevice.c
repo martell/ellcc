@@ -50,6 +50,9 @@ struct list_head net_devices = LIST_HEAD_INIT ( net_devices );
 /** List of open network devices, in reverse order of opening */
 static struct list_head open_net_devices = LIST_HEAD_INIT ( open_net_devices );
 
+/** Network device index */
+static unsigned int netdev_index = 0;
+
 /** Network polling profiler */
 static struct profiler net_poll_profiler __profiler = { .name = "net.poll" };
 
@@ -597,22 +600,34 @@ struct net_device * alloc_netdev ( size_t priv_len ) {
  * devices.
  */
 int register_netdev ( struct net_device *netdev ) {
-	static unsigned int ifindex = 0;
 	struct ll_protocol *ll_protocol = netdev->ll_protocol;
 	struct net_driver *driver;
+	struct net_device *duplicate;
 	uint32_t seed;
 	int rc;
-
-	/* Record device index and create device name */
-	netdev->index = ifindex++;
-	if ( netdev->name[0] == '\0' ) {
-		snprintf ( netdev->name, sizeof ( netdev->name ), "net%d",
-			   netdev->index );
-	}
 
 	/* Set initial link-layer address, if not already set */
 	if ( ! netdev_has_ll_addr ( netdev ) ) {
 		ll_protocol->init_addr ( netdev->hw_addr, netdev->ll_addr );
+	}
+
+	/* Reject network devices that are already available via a
+	 * different hardware device.
+	 */
+	duplicate = find_netdev_by_ll_addr ( ll_protocol, netdev->ll_addr );
+	if ( duplicate && ( duplicate->dev != netdev->dev ) ) {
+		DBGC ( netdev, "NETDEV rejecting duplicate (phys %s) of %s "
+		       "(phys %s)\n", netdev->dev->name, duplicate->name,
+		       duplicate->dev->name );
+		rc = -EEXIST;
+		goto err_duplicate;
+	}
+
+	/* Record device index and create device name */
+	netdev->index = netdev_index++;
+	if ( netdev->name[0] == '\0' ) {
+		snprintf ( netdev->name, sizeof ( netdev->name ), "net%d",
+			   netdev->index );
 	}
 
 	/* Use least significant bits of the link-layer address to
@@ -658,6 +673,7 @@ int register_netdev ( struct net_device *netdev ) {
 	clear_settings ( netdev_settings ( netdev ) );
 	unregister_settings ( netdev_settings ( netdev ) );
  err_register_settings:
+ err_duplicate:
 	return rc;
 }
 
@@ -764,6 +780,10 @@ void unregister_netdev ( struct net_device *netdev ) {
 	DBGC ( netdev, "NETDEV %s unregistered\n", netdev->name );
 	list_del ( &netdev->list );
 	netdev_put ( netdev );
+
+	/* Reset network device index if no devices remain */
+	if ( list_empty ( &net_devices ) )
+		netdev_index = 0;
 }
 
 /** Enable or disable interrupts
@@ -844,6 +864,27 @@ struct net_device * find_netdev_by_location ( unsigned int bus_type,
 	}
 
 	return NULL;	
+}
+
+/**
+ * Get network device by link-layer address
+ *
+ * @v ll_protocol	Link-layer protocol
+ * @v ll_addr		Link-layer address
+ * @ret netdev		Network device, or NULL
+ */
+struct net_device * find_netdev_by_ll_addr ( struct ll_protocol *ll_protocol,
+					     const void *ll_addr ) {
+	struct net_device *netdev;
+
+	list_for_each_entry ( netdev, &net_devices, list ) {
+		if ( ( netdev->ll_protocol == ll_protocol ) &&
+		     ( memcmp ( netdev->ll_addr, ll_addr,
+				ll_protocol->ll_addr_len ) == 0 ) )
+			return netdev;
+	}
+
+	return NULL;
 }
 
 /**
@@ -1039,7 +1080,7 @@ static unsigned int net_discard ( void ) {
 
 			/* Discard first deferred packet */
 			list_del ( &iobuf->list );
-			free ( iobuf );
+			free_iob ( iobuf );
 
 			/* Report discard */
 			discarded++;

@@ -71,8 +71,7 @@ CPUState *cpu_generic_init(const char *typename, const char *cpu_model)
 
 out:
     if (err != NULL) {
-        error_report("%s", error_get_pretty(err));
-        error_free(err);
+        error_report_err(err);
         object_unref(OBJECT(cpu));
         return NULL;
     }
@@ -97,7 +96,7 @@ void cpu_get_memory_mapping(CPUState *cpu, MemoryMappingList *list,
 {
     CPUClass *cc = CPU_GET_CLASS(cpu);
 
-    return cc->get_memory_mapping(cpu, list, errp);
+    cc->get_memory_mapping(cpu, list, errp);
 }
 
 static void cpu_common_get_memory_mapping(CPUState *cpu,
@@ -249,6 +248,7 @@ static void cpu_common_reset(CPUState *cpu)
     cpu->icount_extra = 0;
     cpu->icount_decr.u32 = 0;
     cpu->can_do_io = 0;
+    cpu->exception_index = -1;
     memset(cpu->tb_jmp_cache, 0, TB_JMP_CACHE_SIZE * sizeof(void *));
 }
 

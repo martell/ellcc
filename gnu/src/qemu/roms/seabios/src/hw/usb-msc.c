@@ -130,7 +130,7 @@ usb_msc_maxlun(struct usb_pipe *pipe)
     req.wIndex = 0;
     req.wLength = 1;
     unsigned char maxlun;
-    int ret = send_default_control(pipe, &req, &maxlun);
+    int ret = usb_send_default_control(pipe, &req, &maxlun);
     if (ret)
         return 0;
     return maxlun;
@@ -189,9 +189,9 @@ usb_msc_setup(struct usbdevice_s *usbdev)
 
     // Find bulk in and bulk out endpoints.
     struct usb_pipe *inpipe = NULL, *outpipe = NULL;
-    struct usb_endpoint_descriptor *indesc = findEndPointDesc(
+    struct usb_endpoint_descriptor *indesc = usb_find_desc(
         usbdev, USB_ENDPOINT_XFER_BULK, USB_DIR_IN);
-    struct usb_endpoint_descriptor *outdesc = findEndPointDesc(
+    struct usb_endpoint_descriptor *outdesc = usb_find_desc(
         usbdev, USB_ENDPOINT_XFER_BULK, USB_DIR_OUT);
     if (!indesc || !outdesc)
         goto fail;
@@ -214,7 +214,7 @@ usb_msc_setup(struct usbdevice_s *usbdev)
     return 0;
 fail:
     dprintf(1, "Unable to configure USB MSC device.\n");
-    free_pipe(inpipe);
-    free_pipe(outpipe);
+    usb_free_pipe(usbdev, inpipe);
+    usb_free_pipe(usbdev, outpipe);
     return -1;
 }

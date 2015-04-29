@@ -82,11 +82,14 @@ static inline void arm_log_exception(int idx)
 
 /*
  * For AArch64, map a given EL to an index in the banked_spsr array.
+ * Note that this mapping and the AArch32 mapping defined in bank_number()
+ * must agree such that the AArch64<->AArch32 SPSRs have the architecturally
+ * mandated mapping between each other.
  */
 static inline unsigned int aarch64_banked_spsr_index(unsigned int el)
 {
     static const unsigned int map[4] = {
-        [1] = 0, /* EL1.  */
+        [1] = 1, /* EL1.  */
         [2] = 6, /* EL2.  */
         [3] = 7, /* EL3.  */
     };
@@ -153,9 +156,9 @@ static inline void update_spsel(CPUARMState *env, uint32_t imm)
  */
 static inline bool extended_addresses_enabled(CPUARMState *env)
 {
-    return arm_el_is_aa64(env, 1)
-        || ((arm_feature(env, ARM_FEATURE_LPAE)
-             && (env->cp15.c2_control & TTBCR_EAE)));
+    TCR *tcr = &env->cp15.tcr_el[arm_is_secure(env) ? 3 : 1];
+    return arm_el_is_aa64(env, 1) ||
+           (arm_feature(env, ARM_FEATURE_LPAE) && (tcr->raw_tcr & TTBCR_EAE));
 }
 
 /* Valid Syndrome Register EC field values */

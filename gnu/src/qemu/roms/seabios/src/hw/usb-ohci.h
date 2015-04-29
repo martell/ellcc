@@ -5,12 +5,12 @@
 void ohci_setup(void);
 struct usbdevice_s;
 struct usb_endpoint_descriptor;
-struct usb_pipe *ohci_alloc_pipe(struct usbdevice_s *usbdev
-                                 , struct usb_endpoint_descriptor *epdesc);
 struct usb_pipe;
-int ohci_control(struct usb_pipe *p, int dir, const void *cmd, int cmdsize
-                 , void *data, int datasize);
-int ohci_send_bulk(struct usb_pipe *p, int dir, void *data, int datasize);
+struct usb_pipe *ohci_realloc_pipe(struct usbdevice_s *usbdev
+                                   , struct usb_pipe *upipe
+                                   , struct usb_endpoint_descriptor *epdesc);
+int ohci_send_pipe(struct usb_pipe *p, int dir, const void *cmd
+                   , void *data, int datasize);
 int ohci_poll_intr(struct usb_pipe *p, void *data);
 
 
@@ -106,6 +106,7 @@ struct ohci_regs {
 
 #define OHCI_HCR        (1 << 0)
 #define OHCI_CLF        (1 << 1)
+#define OHCI_BLF        (1 << 2)
 
 #define OHCI_INTR_MIE   (1 << 31)
 

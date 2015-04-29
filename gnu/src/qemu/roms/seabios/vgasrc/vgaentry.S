@@ -15,7 +15,7 @@
  ****************************************************************/
 
         .section .rom.header
-        .code16gcc
+        .code16
         .global _rom_header, _rom_header_size, _rom_header_checksum
 _rom_header:
         .word 0xaa55
@@ -112,18 +112,10 @@ entry_10_extrastack:
         pushw %ds               // Set %ds:%eax to space on ExtraStack
         pushl %eax
         movw %cs:ExtraStackSeg, %ds
-        movl $(CONFIG_VGA_EXTRA_STACK_SIZE-BREGS_size-8), %eax
-        popl BREGS_eax(%eax)    // Backup registers
-        popw BREGS_ds(%eax)
-        movl %edi, BREGS_edi(%eax)
-        movl %esi, BREGS_esi(%eax)
-        movl %ebp, BREGS_ebp(%eax)
-        movl %ebx, BREGS_ebx(%eax)
-        movl %edx, BREGS_edx(%eax)
-        movl %ecx, BREGS_ecx(%eax)
-        movw %es, BREGS_es(%eax)
-        movl %esp, BREGS_size+0(%eax)
-        movw %ss, BREGS_size+4(%eax)
+        movl $(CONFIG_VGA_EXTRA_STACK_SIZE-PUSHBREGS_size-16), %eax
+        SAVEBREGS_POP_DSEAX     // Save registers on extra stack
+        movl %esp, PUSHBREGS_size+8(%eax)
+        movw %ss, PUSHBREGS_size+12(%eax)
         popl BREGS_code(%eax)
         popw BREGS_flags(%eax)
 
@@ -133,21 +125,41 @@ entry_10_extrastack:
         VGA_CALLL handle_10
 
         movl %esp, %eax         // Restore registers and return
-        movw BREGS_size+4(%eax), %ss
-        movl BREGS_size+0(%eax), %esp
+        movw PUSHBREGS_size+12(%eax), %ss
+        movl PUSHBREGS_size+8(%eax), %esp
         popl %edx
         popw %dx
         pushw BREGS_flags(%eax)
         pushl BREGS_code(%eax)
-        movl BREGS_edi(%eax), %edi
-        movl BREGS_esi(%eax), %esi
-        movl BREGS_ebp(%eax), %ebp
-        movl BREGS_ebx(%eax), %ebx
-        movl BREGS_edx(%eax), %edx
-        movl BREGS_ecx(%eax), %ecx
-        movw BREGS_es(%eax), %es
-        pushw BREGS_ds(%eax)
-        pushl BREGS_eax(%eax)
-        popl %eax
-        popw %ds
+        RESTOREBREGS_DSEAX
         iretw
+
+        // Timer irq handling
+        DECLFUNC entry_timer_hook
+entry_timer_hook:
+        ENTRY handle_timer_hook
+        ljmpw *%cs:Timer_Hook_Resume
+
+        // Timer irq handling on extra stack
+        DECLFUNC entry_timer_hook_extrastack
+entry_timer_hook_extrastack:
+        cli
+        cld
+        pushw %ds               // Set %ds:%eax to space on ExtraStack
+        pushl %eax
+        movw %cs:ExtraStackSeg, %ds
+        movl $(CONFIG_VGA_EXTRA_STACK_SIZE-PUSHBREGS_size-8), %eax
+        SAVEBREGS_POP_DSEAX
+        movl %esp, PUSHBREGS_size(%eax)
+        movw %ss, PUSHBREGS_size+4(%eax)
+
+        movw %ds, %dx           // Setup %ss/%esp and call function
+        movw %dx, %ss
+        movl %eax, %esp
+        calll handle_timer_hook
+
+        movl %esp, %eax         // Restore registers and return
+        movw PUSHBREGS_size+4(%eax), %ss
+        movl PUSHBREGS_size(%eax), %esp
+        RESTOREBREGS_DSEAX
+        ljmpw *%cs:Timer_Hook_Resume

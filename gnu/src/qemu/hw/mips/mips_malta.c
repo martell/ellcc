@@ -993,9 +993,8 @@ void mips_malta_init(MachineState *machine)
     }
 
     /* register RAM at high address where it is undisturbed by IO */
-    memory_region_init_ram(ram_high, NULL, "mips_malta.ram", ram_size,
-                           &error_abort);
-    vmstate_register_ram_global(ram_high);
+    memory_region_allocate_system_memory(ram_high, NULL, "mips_malta.ram",
+                                         ram_size);
     memory_region_add_subregion(system_memory, 0x80000000, ram_high);
 
     /* alias for pre IO hole access */
@@ -1172,10 +1171,9 @@ void mips_malta_init(MachineState *machine)
     isa_create_simple(isa_bus, "i8042");
 
     rtc_init(isa_bus, 2000, NULL);
-    serial_isa_init(isa_bus, 0, serial_hds[0]);
-    serial_isa_init(isa_bus, 1, serial_hds[1]);
-    if (parallel_hds[0])
-        parallel_init(isa_bus, 0, parallel_hds[0]);
+    serial_hds_isa_init(isa_bus, 2);
+    parallel_hds_isa_init(isa_bus, 1);
+
     for(i = 0; i < MAX_FD; i++) {
         fd[i] = drive_get(IF_FLOPPY, 0, i);
     }

@@ -15,20 +15,17 @@
 
 #include <stddef.h>
 #include <stdint.h>
-
-int printk(const char *, ...);
-void *memcpy(void *, const void *, size_t);
-void *memset(void *, int, size_t);
+#include <unistd.h>
+#include <string.h>
+#include <stdio.h>
+#include <of.h>
 
 uint64_t get_time(void);
-void udelay(unsigned int);
-void mdelay(unsigned int);
 int getchar(void);
 
-int strcmp(const char *, const char *);
-char *strcpy(char *, const char *);
-int printf(const char *, ...);
 void *malloc_aligned(size_t size, int align);
+
+int pre_open_ih(int fd, ihandle_t ih);
 
 void exception_forward(void);
 void undo_exception(void);

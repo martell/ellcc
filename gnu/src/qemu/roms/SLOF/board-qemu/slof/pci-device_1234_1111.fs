@@ -57,68 +57,6 @@ false VALUE is-installed?
   1ce vga-w! 1d0 vga-w@
 ;
 
-
-\ **************************************************************************
-\ ** These come from vga-display.fs and should probably be moved to a common
-\ ** location.
-
-: draw-rectangle ( adr x y w h -- )
-   is-installed? IF
-      0 ?DO
-         4dup ( adr x y w adr x y w )
-         drop ( adr x y w adr x y )
-         i + screen-width * + \ calculate offset into framebuffer ((y + i) * screen_width + x) 
-         ( adr x y w adr offs ) 
-         frame-buffer-adr + \ add to frame-buffer-adr ( adr x y w adr fb_adr ) 
-         1 pick 3 pick i * + swap 3 pick ( adr x y w adr adr_offs fb_adr w )
-         rmove \ copy line ( adr x y w adr )
-         drop ( adr x y w )
-      LOOP
-      4drop
-   ELSE
-      4drop drop
-   THEN
-;
-
-: fill-rectangle ( number x y w h -- )
-   is-installed? IF
-      0 ?DO
-         4dup ( number x y w number x y w )
-         drop ( number x y w number x y )
-         i + screen-width * + \ calculate offset into framebuffer ((y + i) * screen_width + x) 
-         ( number x y w number offs ) 
-         frame-buffer-adr + \ add to frame-buffer-adr ( number x y w number adr ) 
-         2 pick 2 pick ( number x y w number adr w number )
-         rfill \ draw line ( number x y w number )
-         drop ( number x y w )
-      LOOP
-      4drop
-   ELSE
-      4drop drop
-   THEN
-;
-
-: read-rectangle ( adr x y w h -- )
-   is-installed? IF
-      0 ?DO
-         4dup ( adr x y w adr x y w )
-         drop ( adr x y w adr x y )
-         i + screen-width * + \ calculate offset into framebuffer ((y + i) * screen_width + x) 
-         ( adr x y w adr offs ) 
-         frame-buffer-adr + \ add to frame-buffer-adr ( adr x y w adr fb_adr ) 
-         1 pick 3 pick i * + 3 pick ( adr x y w adr fb_adr adr_offs w )
-         rmove \ copy line ( adr x y w adr )
-         drop ( adr x y w )
-      LOOP
-      4drop
-   ELSE
-      4drop drop
-   THEN
-;
-
-\ ** end of copy from vga-display.fs
-\ **************************************************************************
-
 : color! ( r g b number -- ) 
    3c8 vga-b!
    rot 3c9 vga-b!
@@ -147,12 +85,7 @@ false VALUE is-installed?
    3drop
 ;
 
-: default-palette
-  \ Grayscale ramp for now, be smarter later
-  100 0 DO
-    i i i i color!
-  LOOP
-;
+include graphics.fs
 
 \ qemu fake VBE IO registers
 0 CONSTANT VBE_DISPI_INDEX_ID
@@ -245,7 +178,7 @@ a CONSTANT VBE_DISPI_INDEX_NB
    disp-depth encode-int s" depth" property
    s" ISO8859-1" encode-string s" character-set" property \ i hope this is ok...
    \ add "device_type" property
-   s" display" encode-string s" device_type" property
+   s" display" device-type
    s" qemu,std-vga" encode-string s" compatible" property
    \ XXX We don't create an "address" property because Linux doesn't know what
    \ to do with it for >32-bit
@@ -284,10 +217,6 @@ a CONSTANT VBE_DISPI_INDEX_NB
     THEN
 ;
 
-: dimensions ( -- width height )
-  disp-width disp-height
-;
-
 : set-alias
     s" screen" find-alias 0= IF
       \ no previous screen alias defined, define it...
@@ -306,7 +235,7 @@ pci-io-enable
 add-legacy-reg
 read-settings
 init-mode
-default-palette
+init-default-palette
 setup-properties
 ' display-install is-install
 ' display-remove is-remove

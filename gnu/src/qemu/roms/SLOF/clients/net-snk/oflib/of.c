@@ -14,36 +14,11 @@
 #include <of.h>
 #include <rtas.h>
 #include <string.h>
-#include <netdriver_int.h>
-#include <fileio.h>
 #include <libbootmsg.h>
+#include <kernel.h>
 
 extern void call_client_interface(of_arg_t *);
 
-static int ofmod_init(void);
-static int ofmod_term(void);
-static int ofmod_open(snk_fileio_t*, const char* name, int flags);
-static int ofmod_read(char *buffer, int len);
-static int ofmod_write(char *buffer, int len);
-static int ofmod_ioctl(int request, void *data);
-
-int glue_init(snk_kernel_t *, unsigned int *, size_t, size_t);
-void glue_release(void);
-
-snk_module_t of_module = {
-	.version = 1,
-	.type    = MOD_TYPE_OTHER,
-	.running = 1,
-	.link_addr = (char*) 1,
-	.init    = ofmod_init,
-	.term    = ofmod_term,
-	.open    = ofmod_open,
-	.write   = ofmod_write,
-	.read    = ofmod_read,
-	.ioctl   = ofmod_ioctl
-};
-
-static ihandle_t fd_ihandle_array[FILEIO_MAX];
 static int claim_rc = 0;
 static void* client_start;
 static size_t client_size;
@@ -284,6 +259,13 @@ of_parent(phandle_t phandle)
 }
 
 phandle_t
+of_instance_to_package(ihandle_t ihandle)
+{
+	return (phandle_t) of_1_1("instance-to-package", ihandle);
+}
+
+
+phandle_t
 of_finddevice(const char *name)
 {
 	return (phandle_t) of_1_1("finddevice", p32cast name);
@@ -305,16 +287,6 @@ void
 of_release(void *start, unsigned int size)
 {
 	(void) of_2_0("release", p32cast start, size);
-}
-
-unsigned int
-romfs_lookup(const char *name, void **addr)
-{
-	unsigned int high, low;
-	unsigned int i = of_2_3("ibm,romfs-lookup", p32cast name, strlen(name),
-				(int *) &high, (int *) &low);
-	*addr = (void*)(((unsigned long) high << 32) | (unsigned long) low);
-	return i;
 }
 
 void *
@@ -396,62 +368,6 @@ bootmsg_cp(short id)
 }
 */
 
-static long
-of_fileio_read(snk_fileio_t *fileio, char *buf, long len)
-{
-	if(!fileio)
-		return -1;
-	return of_read( * (ihandle_t*) fileio->data, buf, len );
-}
-
-static long
-of_fileio_write(snk_fileio_t *fileio, char *buf, long len)
-{
-	if(!fileio)
-		return -1;
-	return of_write( * (ihandle_t*) fileio->data, buf, len );
-}
-
-static int
-of_fileio_close(snk_fileio_t *fileio)
-{
-	if(!fileio)
-		return -1;
-
-	fileio->type = FILEIO_TYPE_EMPTY;
-	of_close( * (ihandle_t*) fileio->data );
-	return 0;
-}
-
-static long
-dma_map_in(void *address, long size, int cachable)
-{
-	unsigned int ret;
-
-	/* Is dma-map-in available? */
-	if (of_test("dma-map-in") != 0) {
-		/* No dma-map-in available ==> Assume we can use 1:1 addresses */
-		return (long)address;
-	}
-
-	ret = of_3_1("dma-map-in", p32cast address, (int)size, cachable);
-
-	return ret;
-}
-
-static void
-dma_map_out(void *address, long devaddr, long size)
-{
-	/* Is dma-map-out available? */
-	if (of_test("dma-map-out") != 0) {
-		/* No dma-map-out available */
-		return;
-	}
-
-	of_3_0("dma-map-out", p32cast address, (int)devaddr, (int)size);
-}
-
-
 #define CONFIG_SPACE 0
 #define IO_SPACE 1
 #define MEM_SPACE 2
@@ -461,7 +377,7 @@ dma_map_out(void *address, long devaddr, long size)
 
 #define DEBUG_TRANSLATE_ADDRESS 0
 #if DEBUG_TRANSLATE_ADDRESS != 0
-#define DEBUG_TR(str...) printk(str)
+#define DEBUG_TR(str...) printf(str)
 #else
 #define DEBUG_TR(str...)
 #endif
@@ -729,86 +645,14 @@ get_puid(phandle_t node)
 	return 0;
 }
 
-static int set_vio_config(vio_config_t * vio_config, phandle_t net)
-{
-	vio_config->config_type = CONFIG_TYPE_VIO;
-	vio_config->reg_len = of_getprop(net, "reg", vio_config->reg,
-					 sizeof(vio_config->reg));
-	of_getprop(net, "compatible", &vio_config->compat, 64);
-
-	return 0;
-}
-
-/* Fill in the pci config structure from the device tree */
-static int set_pci_config(pci_config_t * pci_config, phandle_t net)
-{
-	unsigned char buf[400];
-	int len, bar_nr;
-	unsigned int *assigned_ptr;
-
-	pci_config->config_type = CONFIG_TYPE_PCI;
-
-	of_getprop(net, "vendor-id", &pci_config->vendor_id, 4);
-	of_getprop(net, "device-id", &pci_config->device_id, 4);
-	of_getprop(net, "revision-id", &pci_config->revision_id, 4);
-	of_getprop(net, "class-code", &pci_config->class_code, 4);
-	of_getprop(net, "interrupts", &pci_config->interrupt_line, 4);
-
-	len = of_getprop(net, "assigned-addresses", buf, 400);
-	if (len <= 0)
-		return -1;
-
-	assigned_ptr = (unsigned int *) &buf[0];
-	pci_config->bus = (assigned_ptr[0] & 0x00ff0000) >> 16;
-	pci_config->devfn = (assigned_ptr[0] & 0x0000ff00) >> 8;
-
-	while (len > 0) {
-		/* Fixme 64 bit bars */
-		bar_nr = ((assigned_ptr[0] & 0xff) - 0x10) / 4;
-		pci_config->bars[bar_nr].type =
-		    (assigned_ptr[0] & 0x0f000000) >> 24;
-		pci_config->bars[bar_nr].addr = assigned_ptr[2];
-		pci_config->bars[bar_nr].size = assigned_ptr[4];
-		assigned_ptr += 5;
-		len -= 5 * sizeof(int);
-	}
-
-	pci_config->puid = get_puid(net);
-
-	return 0;
-}
-
-static int set_config(snk_kernel_t * snk_kernel_interface)
-{
-	phandle_t parent, net = get_boot_device();
-	char compat[64];
-
-	if (net == -1)
-		return -1;
-
-	parent = of_parent(net);
-	of_getprop(parent, "compatible", compat, 64);
-
-	if (strcmp(compat, "IBM,vdevice") == 0
-	    || strncmp(compat, "ibm,virtio", 10) == 0)
-		return set_vio_config(&snk_kernel_interface->vio_conf, net);
-
-	return set_pci_config(&snk_kernel_interface->pci_conf, net);
-}
-
-void
-get_mac(char *mac)
+int of_get_mac(phandle_t device, char *mac)
 {
 	uint8_t localmac[8];
 	int len;
 
-	phandle_t net = get_boot_device();
-	if (net == -1)
-		return;
-
-	len = of_getprop(net, "local-mac-address", localmac, 8);
+	len = of_getprop(device, "local-mac-address", localmac, 8);
 	if (len <= 0)
-		return;
+		return -1;
 
 	if (len == 8) {
 		/* Some bad FDT nodes like veth use a 8-byte wide
@@ -818,6 +662,7 @@ get_mac(char *mac)
 	else {
 		memcpy(mac, localmac, 6);
 	}
+	return 0;
 }
 
 static void
@@ -837,12 +682,11 @@ get_timebase(unsigned int *timebase)
 	of_getprop(cpu, "timebase-frequency", timebase, 4);
 }
 
-
-int
-glue_init(snk_kernel_t * snk_kernel_interface, unsigned int * timebase,
-          size_t _client_start, size_t _client_size)
+int of_glue_init(unsigned int * timebase,
+		 size_t _client_start, size_t _client_size)
 {
 	phandle_t chosen = of_finddevice("/chosen");
+	ihandle_t stdin_ih, stdout_ih;
 
 	client_start = (void *) (long) _client_start;
 	client_size = _client_size;
@@ -850,99 +694,22 @@ glue_init(snk_kernel_t * snk_kernel_interface, unsigned int * timebase,
 	if (chosen == -1)
 		return -1;
 
-	fd_array[0].type  = FILEIO_TYPE_USED;
-	fd_array[0].read  = of_fileio_read;
-	fd_array[0].write = of_fileio_write;
-	fd_array[0].ioctl = 0;
-	fd_array[0].close = of_fileio_close;
-	fd_array[0].data  = &fd_ihandle_array[0];
-	of_getprop(chosen, "stdin", fd_array[0].data, sizeof(ihandle_t));
-
-	fd_array[1].type  = FILEIO_TYPE_USED;
-	fd_array[1].read  = of_fileio_read;
-	fd_array[1].write = of_fileio_write;
-	fd_array[1].ioctl = 0;
-	fd_array[1].close = of_fileio_close;
-	fd_array[1].data  = &fd_ihandle_array[1];
-	of_getprop(chosen, "stdout", fd_array[1].data, sizeof(ihandle_t));
-
-	if (of_write(fd_ihandle_array[1], " ", 1) < 0)
-		return -2;
-
-	/* Setup Kernel Struct */
-	if (set_config(snk_kernel_interface) == -1) {
-		snk_kernel_interface->print(" No net device found \n");
-	}
-
+	of_getprop(chosen, "stdin", &stdin_ih, sizeof(ihandle_t));
+	of_getprop(chosen, "stdout", &stdout_ih, sizeof(ihandle_t));
+	pre_open_ih(0, stdin_ih);
+	pre_open_ih(1, stdout_ih);
+	pre_open_ih(2, stdout_ih);
 	get_timebase(timebase);
 	rtas_init();
-
-	snk_kernel_interface->k_romfs_lookup = romfs_lookup;
-	snk_kernel_interface->translate_addr = translate_address;
-	snk_kernel_interface->pci_config_read = rtas_pci_config_read;
-	snk_kernel_interface->pci_config_write = rtas_pci_config_write;
-	snk_kernel_interface->dma_map_in = dma_map_in;
-	snk_kernel_interface->dma_map_out = dma_map_out;
 
 	claim_rc=(int)(long)of_claim(client_start, client_size, 0);
 
 	return 0;
 }
 
-void
-glue_release(void)
+void of_glue_release(void)
 {
 	if (claim_rc >= 0) {
 		of_release(client_start, client_size);
 	}
 }
-
-static int
-ofmod_init(void)
-{
-	of_module.running = 1;
-	return 0;
-}
-
-static int
-ofmod_term(void)
-{
-	of_module.running = 0;
-	return 0;
-}
-
-static int
-ofmod_open(snk_fileio_t *fileio, const char* name, int flags)
-{
-	if ((fd_ihandle_array[fileio->idx] = of_open (name)) == 0)
-	{
-		/* this module can not open this file */
-		return -1;
-	}
-
-	fileio->type  = FILEIO_TYPE_USED;
-	fileio->read  = of_fileio_read;
-	fileio->write = of_fileio_write;
-	fileio->close = of_fileio_close;
-	fileio->data  = &fd_ihandle_array[fileio->idx];
-	return 0;
-}
-
-static int
-ofmod_read(char *buffer, int len)
-{
-	return len;
-}
-
-static int
-ofmod_write(char *buffer, int len)
-{
-	return len;
-}
-
-static int
-ofmod_ioctl(int request, void *data)
-{
-	return 0;
-}
-

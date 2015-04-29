@@ -16,7 +16,6 @@
  */
 
 #include <spice.h>
-#include <spice-experimental.h>
 
 #include <netdb.h>
 #include "sysemu/sysemu.h"
@@ -386,10 +385,7 @@ static SpiceChannelList *qmp_query_spice_channels(void)
         struct sockaddr *paddr;
         socklen_t plen;
 
-        if (!(item->info->flags & SPICE_CHANNEL_EVENT_FLAG_ADDR_EXT)) {
-            error_report("invalid channel event");
-            return NULL;
-        }
+        assert(item->info->flags & SPICE_CHANNEL_EVENT_FLAG_ADDR_EXT);
 
         chan = g_malloc0(sizeof(*chan));
         chan->value = g_malloc0(sizeof(*chan->value));
@@ -440,6 +436,11 @@ static QemuOptsList qemu_spice_opts = {
         },{
             .name = "ipv6",
             .type = QEMU_OPT_BOOL,
+#ifdef SPICE_ADDR_FLAG_UNIX_ONLY
+        },{
+            .name = "unix",
+            .type = QEMU_OPT_BOOL,
+#endif
         },{
             .name = "password",
             .type = QEMU_OPT_STRING,
@@ -661,10 +662,6 @@ void qemu_spice_init(void)
     }
     port = qemu_opt_get_number(opts, "port", 0);
     tls_port = qemu_opt_get_number(opts, "tls-port", 0);
-    if (!port && !tls_port) {
-        error_report("neither port nor tls-port specified for spice");
-        exit(1);
-    }
     if (port < 0 || port > 65535) {
         error_report("spice port is out of range");
         exit(1);
@@ -716,6 +713,10 @@ void qemu_spice_init(void)
         addr_flags |= SPICE_ADDR_FLAG_IPV4_ONLY;
     } else if (qemu_opt_get_bool(opts, "ipv6", 0)) {
         addr_flags |= SPICE_ADDR_FLAG_IPV6_ONLY;
+#ifdef SPICE_ADDR_FLAG_UNIX_ONLY
+    } else if (qemu_opt_get_bool(opts, "unix", 0)) {
+        addr_flags |= SPICE_ADDR_FLAG_UNIX_ONLY;
+#endif
     }
 
     spice_server = spice_server_new();

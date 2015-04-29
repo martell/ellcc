@@ -189,6 +189,7 @@ static void tap_send(void *opaque)
 {
     TAPState *s = opaque;
     int size;
+    int packets = 0;
 
     while (qemu_can_send_packet(&s->nc)) {
         uint8_t *buf = s->buf;
@@ -208,6 +209,17 @@ static void tap_send(void *opaque)
             tap_read_poll(s, false);
             break;
         } else if (size < 0) {
+            break;
+        }
+
+        /*
+         * When the host keeps receiving more packets while tap_send() is
+         * running we can hog the QEMU global mutex.  Limit the number of
+         * packets that are processed per tap_send() callback to prevent
+         * stalling the guest.
+         */
+        packets++;
+        if (packets >= 50) {
             break;
         }
     }
@@ -593,6 +605,7 @@ static int net_init_tap_one(const NetdevTapOptions *tap, NetClientState *peer,
                             const char *downscript, const char *vhostfdname,
                             int vnet_hdr, int fd)
 {
+    Error *err = NULL;
     TAPState *s;
     int vhostfd;
 
@@ -631,8 +644,9 @@ static int net_init_tap_one(const NetdevTapOptions *tap, NetClientState *peer,
         options.force = tap->has_vhostforce && tap->vhostforce;
 
         if (tap->has_vhostfd || tap->has_vhostfds) {
-            vhostfd = monitor_handle_fd_param(cur_mon, vhostfdname);
+            vhostfd = monitor_fd_param(cur_mon, vhostfdname, &err);
             if (vhostfd == -1) {
+                error_report_err(err);
                 return -1;
             }
         } else {
@@ -692,6 +706,7 @@ int net_init_tap(const NetClientOptions *opts, const char *name,
     /* for the no-fd, no-helper case */
     const char *script = NULL; /* suppress wrong "uninit'd use" gcc warning */
     const char *downscript = NULL;
+    Error *err = NULL;
     const char *vhostfdname;
     char ifname[128];
 
@@ -717,8 +732,9 @@ int net_init_tap(const NetClientOptions *opts, const char *name,
             return -1;
         }
 
-        fd = monitor_handle_fd_param(cur_mon, tap->fd);
+        fd = monitor_fd_param(cur_mon, tap->fd, &err);
         if (fd == -1) {
+            error_report_err(err);
             return -1;
         }
 
@@ -756,8 +772,9 @@ int net_init_tap(const NetClientOptions *opts, const char *name,
         }
 
         for (i = 0; i < nfds; i++) {
-            fd = monitor_handle_fd_param(cur_mon, fds[i]);
+            fd = monitor_fd_param(cur_mon, fds[i], &err);
             if (fd == -1) {
+                error_report_err(err);
                 return -1;
             }
 

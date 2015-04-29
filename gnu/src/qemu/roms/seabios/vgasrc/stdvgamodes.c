@@ -9,7 +9,7 @@
 #include "output.h" // warn_internalerror
 #include "stdvga.h" // stdvga_find_mode
 #include "string.h" // memcpy_far
-#include "vgabios.h" // struct VideoParamTableEntry_s
+#include "vgabios.h" // video_param_table
 
 
 /****************************************************************
@@ -363,7 +363,7 @@ stdvga_build_video_param(void)
         int mode = GET_GLOBAL(parammodes[i]);
         if (! mode)
             continue;
-        struct VideoParam_s *vparam_g = &video_param_table[i];
+        struct video_param_s *vparam_g = &video_param_table[i];
         struct vgamode_s *vmode_g = stdvga_find_mode(mode);
         if (!vmode_g)
             continue;
@@ -397,6 +397,15 @@ stdvga_build_video_param(void)
                    , get_global_seg(), GET_GLOBAL(stdmode_g->grdc_regs)
                    , ARRAY_SIZE(vparam_g->grdc_regs));
     }
+
+    // Fill available legacy modes in video_func_static table
+    u32 modes = 0;
+    for (i = 0; i < ARRAY_SIZE(vga_modes); i++) {
+        u16 mode = vga_modes[i].mode;
+        if (mode <= 0x13)
+            modes |= 1<<i;
+    }
+    SET_VGA(static_functionality.modes, modes);
 }
 
 void

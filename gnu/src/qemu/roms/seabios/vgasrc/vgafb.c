@@ -236,9 +236,31 @@ get_color(int depth, u8 attr)
     int r = (attr&4) ? 2 : 0, g = (attr&2) ? 2 : 0, b = (attr&1) ? 2 : 0;
     if ((attr & 0xf) == 6)
         g = 1;
-    return ((((((1<<rbits) - 1) * (r + h) + 1) / 3) << (gbits+bbits))
-            + (((((1<<gbits) - 1) * (g + h) + 1) / 3) << bbits)
-            + ((((1<<bbits) - 1) * (b + h) + 1) / 3));
+    int rv = DIV_ROUND_CLOSEST(((1<<rbits) - 1) * (r + h), 3);
+    int gv = DIV_ROUND_CLOSEST(((1<<gbits) - 1) * (g + h), 3);
+    int bv = DIV_ROUND_CLOSEST(((1<<bbits) - 1) * (b + h), 3);
+    return (rv << (gbits+bbits)) + (gv << bbits) + bv;
+}
+
+// Find the closest attribute for a given framebuffer color
+static u8
+reverse_color(int depth, u32 color)
+{
+    int rbits, gbits, bbits;
+    switch (depth) {
+    case 15: rbits=5; gbits=5; bbits=5; break;
+    case 16: rbits=5; gbits=6; bbits=5; break;
+    default:
+    case 24: rbits=8; gbits=8; bbits=8; break;
+    }
+    int rv = (color >> (gbits+bbits)) & ((1<<rbits)-1);
+    int gv = (color >> bbits) & ((1<<gbits)-1);
+    int bv = color & ((1<<bbits)-1);
+    int r = DIV_ROUND_CLOSEST(rv * 3, (1<<rbits) - 1);
+    int g = DIV_ROUND_CLOSEST(gv * 3, (1<<gbits) - 1);
+    int b = DIV_ROUND_CLOSEST(bv * 3, (1<<bbits) - 1);
+    int h = r && g && b && (r != 2 || g != 2 || b != 2);
+    return (h ? 8 : 0) | ((r-h) ? 4 : 0) | ((g-h) ? 2 : 0) | ((b-h) ? 1 : 0);
 }
 
 static void
@@ -253,9 +275,14 @@ gfx_direct(struct gfx_op *op)
                       + op->x * bypp);
     switch (op->op) {
     default:
-    case GO_READ8:
-        // XXX - not implemented.
+    case GO_READ8: {
+        u8 data[64];
+        memcpy_high(MAKE_FLATPTR(GET_SEG(SS), data), dest_far, bypp * 8);
+        int i;
+        for (i=0; i<8; i++)
+            op->pixels[i] = reverse_color(depth, *(u32*)&data[i*bypp]);
         break;
+    }
     case GO_WRITE8: {
         u8 data[64];
         int i;
@@ -340,7 +367,7 @@ gfx_move_chars(struct vgamode_s *vmode_g, struct cursorpos dest
     handle_gfx_op(&op);
 }
 
-// Clear are of screen in graphics mode.
+// Clear area of screen in graphics mode.
 static void
 gfx_clear_chars(struct vgamode_s *vmode_g, struct cursorpos dest
                 , struct carattr ca, struct cursorpos clearsize)
@@ -353,6 +380,8 @@ gfx_clear_chars(struct vgamode_s *vmode_g, struct cursorpos dest
     op.y = dest.y * cheight;
     op.ylen = clearsize.y * cheight;
     op.pixels[0] = ca.attr;
+    if (vga_emulate_text())
+        op.pixels[0] = ca.attr >> 4;
     op.op = GO_MEMSET;
     handle_gfx_op(&op);
 }
@@ -387,7 +416,25 @@ gfx_write_char(struct vgamode_s *vmode_g
     op.x = cp.x * 8;
     int cheight = GET_BDA(char_height);
     op.y = cp.y * cheight;
-    int usexor = ca.attr & 0x80 && GET_GLOBAL(vmode_g->depth) < 8;
+    u8 fgattr = ca.attr, bgattr = 0x00;
+    int usexor = 0;
+    if (vga_emulate_text()) {
+        if (ca.use_attr) {
+            bgattr = fgattr >> 4;
+            fgattr = fgattr & 0x0f;
+        } else {
+            // Read bottom right pixel of the cell to guess bg color
+            op.op = GO_READ8;
+            op.y += cheight-1;
+            handle_gfx_op(&op);
+            op.y -= cheight-1;
+            bgattr = op.pixels[7];
+            fgattr = bgattr ^ 0x7;
+        }
+    } else if (fgattr & 0x80 && GET_GLOBAL(vmode_g->depth) < 8) {
+        usexor = 1;
+        fgattr &= 0x7f;
+    }
     int i;
     for (i = 0; i < cheight; i++, op.y++) {
         u8 fontline = GET_FARVAR(font.seg, *(u8*)(font.offset+i));
@@ -396,12 +443,86 @@ gfx_write_char(struct vgamode_s *vmode_g
             handle_gfx_op(&op);
             int j;
             for (j = 0; j < 8; j++)
-                op.pixels[j] ^= (fontline & (0x80>>j)) ? (ca.attr & 0x7f) : 0x00;
+                op.pixels[j] ^= (fontline & (0x80>>j)) ? fgattr : 0x00;
         } else {
             int j;
             for (j = 0; j < 8; j++)
-                op.pixels[j] = (fontline & (0x80>>j)) ? ca.attr : 0x00;
+                op.pixels[j] = (fontline & (0x80>>j)) ? fgattr : bgattr;
         }
+        op.op = GO_WRITE8;
+        handle_gfx_op(&op);
+    }
+}
+
+// Read a character from the screen in graphics mode.
+static struct carattr
+gfx_read_char(struct vgamode_s *vmode_g, struct cursorpos cp)
+{
+    u8 lines[16];
+    int cheight = GET_BDA(char_height);
+    if (cp.x >= GET_BDA(video_cols) || cheight > ARRAY_SIZE(lines))
+        goto fail;
+
+    // Read cell from screen
+    struct gfx_op op;
+    init_gfx_op(&op, vmode_g);
+    op.op = GO_READ8;
+    op.x = cp.x * 8;
+    op.y = cp.y * cheight;
+    int car = 0;
+    u8 fgattr = 0x00, bgattr = 0x00;
+    if (vga_emulate_text()) {
+        // Read bottom right pixel of the cell to guess bg color
+        op.y += cheight-1;
+        handle_gfx_op(&op);
+        op.y -= cheight-1;
+        bgattr = op.pixels[7];
+        fgattr = bgattr ^ 0x7;
+        // Report space character for blank cells (skip null character check)
+        car = 1;
+    }
+    u8 i, j;
+    for (i=0; i<cheight; i++, op.y++) {
+        u8 line = 0;
+        handle_gfx_op(&op);
+        for (j=0; j<8; j++)
+            if (op.pixels[j] != bgattr) {
+                line |= 0x80 >> j;
+                fgattr = op.pixels[j];
+            }
+        lines[i] = line;
+    }
+
+    // Determine font
+    for (; car<256; car++) {
+        struct segoff_s font = get_font_data(car);
+        if (memcmp_far(GET_SEG(SS), lines
+                       , font.seg, (void*)(font.offset+0), cheight) == 0)
+            return (struct carattr){car, fgattr | (bgattr << 4), 0};
+    }
+fail:
+    return (struct carattr){0, 0, 0};
+}
+
+// Draw/undraw a cursor on the framebuffer by xor'ing the cursor cell
+void
+gfx_set_swcursor(struct vgamode_s *vmode_g, int enable, struct cursorpos cp)
+{
+    u16 cursor_type = get_cursor_shape();
+    u8 start = cursor_type >> 8, end = cursor_type & 0xff;
+    struct gfx_op op;
+    init_gfx_op(&op, vmode_g);
+    op.x = cp.x * 8;
+    int cheight = GET_BDA(char_height);
+    op.y = cp.y * cheight + start;
+
+    int i;
+    for (i = start; i < cheight && i <= end; i++, op.y++) {
+        op.op = GO_READ8;
+        handle_gfx_op(&op);
+        int j;
+        for (j = 0; j < 8; j++)
+            op.pixels[j] ^= 0x07;
         op.op = GO_WRITE8;
         handle_gfx_op(&op);
     }
@@ -414,6 +535,7 @@ vgafb_write_pixel(u8 color, u16 x, u16 y)
     struct vgamode_s *vmode_g = get_current_mode();
     if (!vmode_g)
         return;
+    vgafb_set_swcursor(0);
 
     struct gfx_op op;
     init_gfx_op(&op, vmode_g);
@@ -438,6 +560,7 @@ vgafb_read_pixel(u16 x, u16 y)
     struct vgamode_s *vmode_g = get_current_mode();
     if (!vmode_g)
         return 0;
+    vgafb_set_swcursor(0);
 
     struct gfx_op op;
     init_gfx_op(&op, vmode_g);
@@ -465,9 +588,14 @@ text_address(struct cursorpos cp)
 
 // Move characters on screen.
 void
-vgafb_move_chars(struct vgamode_s *vmode_g, struct cursorpos dest
+vgafb_move_chars(struct cursorpos dest
                  , struct cursorpos src, struct cursorpos movesize)
 {
+    struct vgamode_s *vmode_g = get_current_mode();
+    if (!vmode_g)
+        return;
+    vgafb_set_swcursor(0);
+
     if (GET_GLOBAL(vmode_g->memmodel) != MM_TEXT) {
         gfx_move_chars(vmode_g, dest, src, movesize);
         return;
@@ -479,11 +607,16 @@ vgafb_move_chars(struct vgamode_s *vmode_g, struct cursorpos dest
                    , movesize.x * 2, stride, movesize.y);
 }
 
-// Clear are of screen.
+// Clear area of screen.
 void
-vgafb_clear_chars(struct vgamode_s *vmode_g, struct cursorpos dest
+vgafb_clear_chars(struct cursorpos dest
                   , struct carattr ca, struct cursorpos clearsize)
 {
+    struct vgamode_s *vmode_g = get_current_mode();
+    if (!vmode_g)
+        return;
+    vgafb_set_swcursor(0);
+
     if (GET_GLOBAL(vmode_g->memmodel) != MM_TEXT) {
         gfx_clear_chars(vmode_g, dest, ca, clearsize);
         return;
@@ -502,6 +635,7 @@ vgafb_write_char(struct cursorpos cp, struct carattr ca)
     struct vgamode_s *vmode_g = get_current_mode();
     if (!vmode_g)
         return;
+    vgafb_set_swcursor(0);
 
     if (GET_GLOBAL(vmode_g->memmodel) != MM_TEXT) {
         gfx_write_char(vmode_g, cp, ca);
@@ -523,20 +657,46 @@ vgafb_read_char(struct cursorpos cp)
 {
     struct vgamode_s *vmode_g = get_current_mode();
     if (!vmode_g)
-        goto fail;
+        return (struct carattr){0, 0, 0};
+    vgafb_set_swcursor(0);
 
-    if (GET_GLOBAL(vmode_g->memmodel) != MM_TEXT) {
-        // FIXME gfx mode
-        dprintf(1, "Read char in graphics mode\n");
-        goto fail;
-    }
+    if (GET_GLOBAL(vmode_g->memmodel) != MM_TEXT)
+        return gfx_read_char(vmode_g, cp);
 
     u16 *dest_far = text_address(cp);
     u16 v = GET_FARVAR(GET_GLOBAL(vmode_g->sstart), *dest_far);
-    struct carattr ca = {v, v>>8, 0};
-    return ca;
+    return (struct carattr){v, v>>8, 0};
+}
 
-fail: ;
-    struct carattr ca2 = {0, 0, 0};
-    return ca2;
+// Draw/undraw a cursor on the screen
+void
+vgafb_set_swcursor(int enable)
+{
+    if (!vga_emulate_text())
+        return;
+    u8 flags = GET_BDA_EXT(flags);
+    if (!!(flags & BF_SWCURSOR) == enable)
+        // Already in requested mode.
+        return;
+    struct vgamode_s *vmode_g = get_current_mode();
+    if (!vmode_g)
+        return;
+    struct cursorpos cp = get_cursor_pos(0xff);
+    if (cp.x >= GET_BDA(video_cols) || cp.y > GET_BDA(video_rows)
+        || GET_BDA(cursor_type) >= 0x2000)
+        // Cursor not visible
+        return;
+
+    SET_BDA_EXT(flags, (flags & ~BF_SWCURSOR) | (enable ? BF_SWCURSOR : 0));
+
+    if (GET_GLOBAL(vmode_g->memmodel) != MM_TEXT) {
+        gfx_set_swcursor(vmode_g, enable, cp);
+        return;
+    }
+
+    // In text mode, swap foreground and background attributes for cursor
+    void *dest_far = text_address(cp) + 1;
+    u8 attr = GET_FARVAR(GET_GLOBAL(vmode_g->sstart), *(u8*)dest_far);
+    attr = (attr >> 4) | (attr << 4);
+    SET_FARVAR(GET_GLOBAL(vmode_g->sstart), *(u8*)dest_far, attr);
 }

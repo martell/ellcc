@@ -118,7 +118,6 @@ static void ide_test_start(const char *cmdline_fmt, ...)
     va_end(ap);
 
     qtest_start(cmdline);
-    qtest_irq_intercept_in(global_qtest, "ioapic");
     guest_malloc = pc_alloc_init();
 
     g_free(cmdline);
@@ -385,9 +384,10 @@ static void test_bmdma_no_busmaster(void)
 static void test_bmdma_setup(void)
 {
     ide_test_start(
-        "-drive file=%s,if=ide,serial=%s,cache=writeback "
+        "-drive file=%s,if=ide,serial=%s,cache=writeback,format=raw "
         "-global ide-hd.ver=%s",
         tmp_path, "testdisk", "version");
+    qtest_irq_intercept_in(global_qtest, "ioapic");
 }
 
 static void test_bmdma_teardown(void)
@@ -414,7 +414,7 @@ static void test_identify(void)
     int ret;
 
     ide_test_start(
-        "-drive file=%s,if=ide,serial=%s,cache=writeback "
+        "-drive file=%s,if=ide,serial=%s,cache=writeback,format=raw "
         "-global ide-hd.ver=%s",
         tmp_path, "testdisk", "version");
 
@@ -458,7 +458,7 @@ static void test_flush(void)
     uint8_t data;
 
     ide_test_start(
-        "-drive file=blkdebug::%s,if=ide,cache=writeback",
+        "-drive file=blkdebug::%s,if=ide,cache=writeback,format=raw",
         tmp_path);
 
     /* Delay the completion of the flush request until we explicitly do it */
@@ -516,7 +516,7 @@ static void prepare_blkdebug_script(const char *debug_fn, const char *event)
     g_assert(ret == 0);
 }
 
-static void test_retry_flush(void)
+static void test_retry_flush(const char *machine)
 {
     uint8_t data;
     const char *s;
@@ -526,7 +526,8 @@ static void test_retry_flush(void)
 
     ide_test_start(
         "-vnc none "
-        "-drive file=blkdebug:%s:%s,if=ide,cache=writeback,rerror=stop,werror=stop",
+        "-drive file=blkdebug:%s:%s,if=ide,cache=writeback,format=raw,"
+        "rerror=stop,werror=stop",
         debug_path, tmp_path);
 
     /* FLUSH CACHE command on device 0*/
@@ -579,6 +580,16 @@ static void test_flush_nodev(void)
     ide_test_quit();
 }
 
+static void test_pci_retry_flush(const char *machine)
+{
+    test_retry_flush("pc");
+}
+
+static void test_isa_retry_flush(const char *machine)
+{
+    test_retry_flush("isapc");
+}
+
 int main(int argc, char **argv)
 {
     const char *arch = qtest_get_arch();
@@ -616,9 +627,9 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/bmdma/teardown", test_bmdma_teardown);
 
     qtest_add_func("/ide/flush", test_flush);
-    qtest_add_func("/ide/flush_nodev", test_flush_nodev);
-
-    qtest_add_func("/ide/retry/flush", test_retry_flush);
+    qtest_add_func("/ide/flush/nodev", test_flush_nodev);
+    qtest_add_func("/ide/flush/retry_pci", test_pci_retry_flush);
+    qtest_add_func("/ide/flush/retry_isa", test_isa_retry_flush);
 
     ret = g_test_run();
 

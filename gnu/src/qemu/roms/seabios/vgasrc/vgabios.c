@@ -50,37 +50,34 @@ calc_page_size(u8 memmodel, u16 width, u16 height)
     }
 }
 
-static void
-set_cursor_shape(u8 start, u8 end)
+// Determine cursor shape (taking into account possible cursor scaling)
+u16
+get_cursor_shape(void)
 {
-    start &= 0x3f;
-    end &= 0x1f;
-
-    u16 curs = (start << 8) + end;
-    SET_BDA(cursor_type, curs);
-
-    if (!CONFIG_VGA_STDVGA_PORTS)
-        return;
-
-    u8 modeset_ctl = GET_BDA(modeset_ctl);
+    u16 cursor_type = GET_BDA(cursor_type);
+    u8 emulate_cursor = (GET_BDA(video_ctl) & 1) == 0;
+    if (!emulate_cursor)
+        return cursor_type;
+    u8 start = (cursor_type >> 8) & 0x3f;
+    u8 end = cursor_type & 0x1f;
     u16 cheight = GET_BDA(char_height);
-    if ((modeset_ctl & 0x01) && (cheight > 8) && (end < 8) && (start < 0x20)) {
-        if (end != (start + 1))
-            start = ((start + 1) * cheight / 8) - 1;
-        else
-            start = ((end + 1) * cheight / 8) - 2;
-        end = ((end + 1) * cheight / 8) - 1;
-    }
-    stdvga_set_cursor_shape(start, end);
+    if (cheight <= 8 || end >= 8 || start >= 0x20)
+        return cursor_type;
+    if (end != (start + 1))
+        start = ((start + 1) * cheight / 8) - 1;
+    else
+        start = ((end + 1) * cheight / 8) - 2;
+    end = ((end + 1) * cheight / 8) - 1;
+    return (start << 8) | end;
 }
 
-static u16
-get_cursor_shape(u8 page)
+static void
+set_cursor_shape(u16 cursor_type)
 {
-    if (page > 7)
-        return 0;
-    // FIXME should handle VGA 14/16 lines
-    return GET_BDA(cursor_type);
+    vgafb_set_swcursor(0);
+    SET_BDA(cursor_type, cursor_type);
+    if (CONFIG_VGA_STDVGA_PORTS)
+        stdvga_set_cursor_shape(get_cursor_shape());
 }
 
 static void
@@ -91,6 +88,8 @@ set_cursor_pos(struct cursorpos cp)
     // Should not happen...
     if (page > 7)
         return;
+
+    vgafb_set_swcursor(0);
 
     // Bios cursor pos
     SET_BDA(cursor_pos[page], (y << 8) | x);
@@ -107,7 +106,7 @@ set_cursor_pos(struct cursorpos cp)
     stdvga_set_cursor_pos((int)text_address(cp));
 }
 
-static struct cursorpos
+struct cursorpos
 get_cursor_pos(u8 page)
 {
     if (page == 0xff)
@@ -117,7 +116,6 @@ get_cursor_pos(u8 page)
         struct cursorpos cp = { 0, 0, 0xfe };
         return cp;
     }
-    // FIXME should handle VGA 14/16 lines
     u16 xy = GET_BDA(cursor_pos[page]);
     struct cursorpos cp = {xy, xy>>8, page};
     return cp;
@@ -133,6 +131,8 @@ set_active_page(u8 page)
     struct vgamode_s *vmode_g = get_current_mode();
     if (!vmode_g)
         return;
+
+    vgafb_set_swcursor(0);
 
     // Calculate memory address of start of page
     struct cursorpos cp = {0, 0, page};
@@ -153,16 +153,16 @@ static void
 set_scan_lines(u8 lines)
 {
     stdvga_set_scan_lines(lines);
-    if (lines == 8)
-        set_cursor_shape(0x06, 0x07);
-    else
-        set_cursor_shape(lines - 4, lines - 3);
     SET_BDA(char_height, lines);
     u16 vde = stdvga_get_vde();
     u8 rows = vde / lines;
     SET_BDA(video_rows, rows - 1);
     u16 cols = GET_BDA(video_cols);
     SET_BDA(video_pagesize, calc_page_size(MM_TEXT, cols, rows));
+    if (lines == 8)
+        set_cursor_shape(0x0607);
+    else
+        set_cursor_shape(((lines - 3) << 8) | (lines - 2));
 }
 
 
@@ -212,19 +212,15 @@ write_teletype(struct cursorpos *pcp, struct carattr ca)
     if (pcp->y > nbrows) {
         pcp->y--;
 
-        struct vgamode_s *vmode_g = get_current_mode();
-        if (!vmode_g)
-            return;
-
         struct cursorpos dest = {0, 0, pcp->page};
         struct cursorpos src = {0, 1, pcp->page};
         struct cursorpos size = {GET_BDA(video_cols), nbrows};
-        vgafb_move_chars(vmode_g, dest, src, size);
+        vgafb_move_chars(dest, src, size);
 
         struct cursorpos clr = {0, nbrows, pcp->page};
         struct carattr attr = {' ', 0, 0};
         struct cursorpos clrsize = {GET_BDA(video_cols), 1};
-        vgafb_clear_chars(vmode_g, clr, attr, clrsize);
+        vgafb_clear_chars(clr, attr, clrsize);
     }
 }
 
@@ -252,7 +248,7 @@ bda_save_restore(int cmd, u16 seg, void *data)
                    , sizeof(info->bda_0x49));
         memcpy_far(seg, info->bda_0x84, SEG_BDA, (void*)0x84
                    , sizeof(info->bda_0x84));
-        SET_FARVAR(seg, info->vbe_mode, GET_BDA(vbe_mode));
+        SET_FARVAR(seg, info->vbe_mode, GET_BDA_EXT(vbe_mode));
         SET_FARVAR(seg, info->font0, GET_IVT(0x1f));
         SET_FARVAR(seg, info->font1, GET_IVT(0x43));
     }
@@ -261,7 +257,10 @@ bda_save_restore(int cmd, u16 seg, void *data)
                    , sizeof(info->bda_0x49));
         memcpy_far(SEG_BDA, (void*)0x84, seg, info->bda_0x84
                    , sizeof(info->bda_0x84));
-        SET_BDA(vbe_mode, GET_FARVAR(seg, info->vbe_mode));
+        u16 vbe_mode = GET_FARVAR(seg, info->vbe_mode);
+        SET_BDA_EXT(vbe_mode, vbe_mode);
+        struct vgamode_s *vmode_g = vgahw_find_mode(vbe_mode);
+        SET_BDA_EXT(vgamode_offset, (u32)vmode_g);
         SET_IVT(0x1f, GET_FARVAR(seg, info->font0));
         SET_IVT(0x43, GET_FARVAR(seg, info->font1));
     }
@@ -276,7 +275,7 @@ bda_save_restore(int cmd, u16 seg, void *data)
 struct vgamode_s *
 get_current_mode(void)
 {
-    return vgahw_find_mode(GET_BDA(vbe_mode) & ~MF_VBEFLAGS);
+    return (void*)(GET_BDA_EXT(vgamode_offset)+0);
 }
 
 // Setup BDA after a mode switch.
@@ -287,6 +286,8 @@ vga_set_mode(int mode, int flags)
     struct vgamode_s *vmode_g = vgahw_find_mode(mode);
     if (!vmode_g)
         return VBE_RETURN_STATUS_FAILED;
+
+    vgafb_set_swcursor(0);
 
     int ret = vgahw_set_mode(vmode_g, flags);
     if (ret)
@@ -301,7 +302,8 @@ vga_set_mode(int mode, int flags)
         SET_BDA(video_mode, mode);
     else
         SET_BDA(video_mode, 0xff);
-    SET_BDA(vbe_mode, mode | (flags & MF_VBEFLAGS));
+    SET_BDA_EXT(vbe_mode, mode | (flags & MF_VBEFLAGS));
+    SET_BDA_EXT(vgamode_offset, (u32)vmode_g);
     if (memmodel == MM_TEXT) {
         SET_BDA(video_cols, width);
         SET_BDA(video_rows, height-1);
@@ -310,7 +312,7 @@ vga_set_mode(int mode, int flags)
         int cwidth = GET_GLOBAL(vmode_g->cwidth);
         SET_BDA(video_cols, width / cwidth);
         SET_BDA(video_rows, (height / cheight) - 1);
-        SET_BDA(cursor_type, 0x0000);
+        SET_BDA(cursor_type, vga_emulate_text() ? 0x0607 : 0x0000);
     }
     SET_BDA(video_pagesize, calc_page_size(memmodel, width, height));
     SET_BDA(crtc_address, CONFIG_VGA_STDVGA_PORTS ? stdvga_get_crtc() : 0);
@@ -323,15 +325,6 @@ vga_set_mode(int mode, int flags)
         SET_BDA(cursor_pos[i], 0x0000);
     SET_BDA(video_pagestart, 0x0000);
     SET_BDA(video_page, 0x00);
-
-    // FIXME We nearly have the good tables. to be reworked
-    SET_BDA(dcc_index, 0x08);   // 8 is VGA should be ok for now
-    SET_BDA(video_savetable
-            , SEGOFF(get_global_seg(), (u32)&video_save_pointer_table));
-
-    // FIXME
-    SET_BDA(video_msr, 0x00); // Unavailable on vanilla vga, but...
-    SET_BDA(video_pal, 0x00); // Unavailable on vanilla vga, but...
 
     // Set the ints 0x1F and 0x43
     SET_IVT(0x1f, SEGOFF(get_global_seg(), (u32)&vgafont8[128 * 8]));
@@ -379,7 +372,7 @@ handle_1000(struct bregs *regs)
 static void
 handle_1001(struct bregs *regs)
 {
-    set_cursor_shape(regs->ch, regs->cl);
+    set_cursor_shape(regs->cx);
 }
 
 static void
@@ -392,7 +385,7 @@ handle_1002(struct bregs *regs)
 static void
 handle_1003(struct bregs *regs)
 {
-    regs->cx = get_cursor_shape(regs->bh);
+    regs->cx = GET_BDA(cursor_type);
     struct cursorpos cp = get_cursor_pos(regs->bh);
     regs->dl = cp.x;
     regs->dh = cp.y;
@@ -426,10 +419,6 @@ verify_scroll(struct bregs *regs, int dir)
     if (wincols <= 0 || winrows <= 0)
         return;
 
-    struct vgamode_s *vmode_g = get_current_mode();
-    if (!vmode_g)
-        return;
-
     u8 page = GET_BDA(video_page);
     int clearlines = regs->al, movelines = winrows - clearlines;
     if (!clearlines || movelines <= 0) {
@@ -437,7 +426,7 @@ verify_scroll(struct bregs *regs, int dir)
         struct cursorpos clr = {ulx, uly, page};
         struct carattr attr = {' ', regs->bh, 1};
         struct cursorpos clrsize = {wincols, winrows};
-        vgafb_clear_chars(vmode_g, clr, attr, clrsize);
+        vgafb_clear_chars(clr, attr, clrsize);
         return;
     }
 
@@ -446,23 +435,23 @@ verify_scroll(struct bregs *regs, int dir)
         struct cursorpos dest = {ulx, uly, page};
         struct cursorpos src = {ulx, uly + clearlines, page};
         struct cursorpos size = {wincols, movelines};
-        vgafb_move_chars(vmode_g, dest, src, size);
+        vgafb_move_chars(dest, src, size);
 
         struct cursorpos clr = {ulx, uly + movelines, page};
         struct carattr attr = {' ', regs->bh, 1};
         struct cursorpos clrsize = {wincols, clearlines};
-        vgafb_clear_chars(vmode_g, clr, attr, clrsize);
+        vgafb_clear_chars(clr, attr, clrsize);
     } else {
         // Scroll down
         struct cursorpos dest = {ulx, uly + clearlines, page};
         struct cursorpos src = {ulx, uly, page};
         struct cursorpos size = {wincols, movelines};
-        vgafb_move_chars(vmode_g, dest, src, size);
+        vgafb_move_chars(dest, src, size);
 
         struct cursorpos clr = {ulx, uly, page};
         struct carattr attr = {' ', regs->bh, 1};
         struct cursorpos clrsize = {wincols, clearlines};
-        vgafb_clear_chars(vmode_g, clr, attr, clrsize);
+        vgafb_clear_chars(clr, attr, clrsize);
     }
 }
 
@@ -985,9 +974,7 @@ handle_101233(struct bregs *regs)
 static void
 handle_101234(struct bregs *regs)
 {
-    u8 v = (regs->al & 0x01) ^ 0x01;
-    u8 v2 = GET_BDA(modeset_ctl) & ~0x01;
-    SET_BDA(modeset_ctl, v | v2);
+    SET_BDA(video_ctl, (GET_BDA(video_ctl) & ~0x01) | (regs->al & 0x01));
     regs->al = 0x12;
 }
 
@@ -1096,51 +1083,23 @@ handle_101a(struct bregs *regs)
 }
 
 
-static u8 static_functionality[0x10] VAR16 = {
- /* 0 */ 0xff,  // All modes supported #1
- /* 1 */ 0xe0,  // All modes supported #2
- /* 2 */ 0x0f,  // All modes supported #3
- /* 3 */ 0x00, 0x00, 0x00, 0x00,  // reserved
- /* 7 */ 0x07,  // 200, 350, 400 scan lines
- /* 8 */ 0x02,  // mamimum number of visible charsets in text mode
- /* 9 */ 0x08,  // total number of charset blocks in text mode
- /* a */ 0xe7,  // Change to add new functions
- /* b */ 0x0c,  // Change to add new functions
- /* c */ 0x00,  // reserved
- /* d */ 0x00,  // reserved
- /* e */ 0x00,  // Change to add new functions
- /* f */ 0x00   // reserved
+struct video_func_static static_functionality VAR16 = {
+    .modes          = 0x00,   // Filled in by stdvga_build_video_param()
+    .scanlines      = 0x07,   // 200, 350, 400 scan lines
+    .cblocks        = 0x02,   // mamimum number of visible charsets in text mode
+    .active_cblocks = 0x08,   // total number of charset blocks in text mode
+    .misc_flags     = 0x0ce7,
 };
-
-struct funcInfo {
-    struct segoff_s static_functionality;
-    u8 bda_0x49[30];
-    u8 bda_0x84[3];
-    u8 dcc_index;
-    u8 dcc_alt;
-    u16 colors;
-    u8 pages;
-    u8 scan_lines;
-    u8 primary_char;
-    u8 secondar_char;
-    u8 misc;
-    u8 non_vga_mode;
-    u8 reserved_2f[2];
-    u8 video_mem;
-    u8 save_flags;
-    u8 disp_info;
-    u8 reserved_34[12];
-} PACKED;
 
 static void
 handle_101b(struct bregs *regs)
 {
     u16 seg = regs->es;
-    struct funcInfo *info = (void*)(regs->di+0);
+    struct video_func_info *info = (void*)(regs->di+0);
     memset_far(seg, info, 0, sizeof(*info));
     // Address of static functionality table
     SET_FARVAR(seg, info->static_functionality
-               , SEGOFF(get_global_seg(), (u32)static_functionality));
+               , SEGOFF(get_global_seg(), (u32)&static_functionality));
 
     // Hard coded copy from BIOS area. Should it be cleaner ?
     memcpy_far(seg, info->bda_0x49, SEG_BDA, (void*)0x49

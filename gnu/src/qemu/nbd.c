@@ -17,8 +17,7 @@
  */
 
 #include "block/nbd.h"
-#include "block/block.h"
-#include "block/block_int.h"
+#include "sysemu/block-backend.h"
 
 #include "block/coroutine.h"
 
@@ -101,7 +100,7 @@ struct NBDExport {
     int refcount;
     void (*close)(NBDExport *exp);
 
-    BlockDriverState *bs;
+    BlockBackend *blk;
     char *name;
     off_t dev_offset;
     off_t size;
@@ -192,6 +191,26 @@ static ssize_t read_sync(int fd, void *buffer, size_t size)
      * that this is coroutine-safe.
      */
     return nbd_wr_sync(fd, buffer, size, true);
+}
+
+static ssize_t drop_sync(int fd, size_t size)
+{
+    ssize_t ret, dropped = size;
+    uint8_t *buffer = g_malloc(MIN(65536, size));
+
+    while (size > 0) {
+        ret = read_sync(fd, buffer, MIN(65536, size));
+        if (ret < 0) {
+            g_free(buffer);
+            return ret;
+        }
+
+        assert(ret <= size);
+        size -= ret;
+    }
+
+    g_free(buffer);
+    return dropped;
 }
 
 static ssize_t write_sync(int fd, void *buffer, size_t size)
@@ -304,6 +323,9 @@ static int nbd_handle_list(NBDClient *client, uint32_t length)
 
     csock = client->sock;
     if (length) {
+        if (drop_sync(csock, length) != length) {
+            return -EIO;
+        }
         return nbd_send_rep(csock, NBD_REP_ERR_INVALID, NBD_OPT_LIST);
     }
 
@@ -351,29 +373,38 @@ fail:
 
 static int nbd_receive_options(NBDClient *client)
 {
+    int csock = client->sock;
+    uint32_t flags;
+
+    /* Client sends:
+        [ 0 ..   3]   client flags
+
+        [ 0 ..   7]   NBD_OPTS_MAGIC
+        [ 8 ..  11]   NBD option
+        [12 ..  15]   Data length
+        ...           Rest of request
+
+        [ 0 ..   7]   NBD_OPTS_MAGIC
+        [ 8 ..  11]   Second NBD option
+        [12 ..  15]   Data length
+        ...           Rest of request
+    */
+
+    if (read_sync(csock, &flags, sizeof(flags)) != sizeof(flags)) {
+        LOG("read failed");
+        return -EIO;
+    }
+    TRACE("Checking client flags");
+    be32_to_cpus(&flags);
+    if (flags != 0 && flags != NBD_FLAG_C_FIXED_NEWSTYLE) {
+        LOG("Bad client flags received");
+        return -EIO;
+    }
+
     while (1) {
-        int csock = client->sock;
+        int ret;
         uint32_t tmp, length;
         uint64_t magic;
-
-        /* Client sends:
-            [ 0 ..   3]   client flags
-            [ 4 ..  11]   NBD_OPTS_MAGIC
-            [12 ..  15]   NBD option
-            [16 ..  19]   length
-            ...           Rest of request
-        */
-
-        if (read_sync(csock, &tmp, sizeof(tmp)) != sizeof(tmp)) {
-            LOG("read failed");
-            return -EINVAL;
-        }
-        TRACE("Checking client flags");
-        tmp = be32_to_cpu(tmp);
-        if (tmp != 0 && tmp != NBD_FLAG_C_FIXED_NEWSTYLE) {
-            LOG("Bad client flags received");
-            return -EINVAL;
-        }
 
         if (read_sync(csock, &magic, sizeof(magic)) != sizeof(magic)) {
             LOG("read failed");
@@ -399,8 +430,9 @@ static int nbd_receive_options(NBDClient *client)
         TRACE("Checking option");
         switch (be32_to_cpu(tmp)) {
         case NBD_OPT_LIST:
-            if (nbd_handle_list(client, length) < 0) {
-                return 1;
+            ret = nbd_handle_list(client, length);
+            if (ret < 0) {
+                return ret;
             }
             break;
 
@@ -495,7 +527,7 @@ fail:
 }
 
 int nbd_receive_negotiate(int csock, const char *name, uint32_t *flags,
-                          off_t *size, size_t *blocksize)
+                          off_t *size, Error **errp)
 {
     char buf[256];
     uint64_t magic, s;
@@ -507,13 +539,13 @@ int nbd_receive_negotiate(int csock, const char *name, uint32_t *flags,
     rc = -EINVAL;
 
     if (read_sync(csock, buf, 8) != 8) {
-        LOG("read failed");
+        error_setg(errp, "Failed to read data");
         goto fail;
     }
 
     buf[8] = '\0';
     if (strlen(buf) == 0) {
-        LOG("server connection closed");
+        error_setg(errp, "Server connection closed unexpectedly");
         goto fail;
     }
 
@@ -528,12 +560,12 @@ int nbd_receive_negotiate(int csock, const char *name, uint32_t *flags,
           qemu_isprint(buf[7]) ? buf[7] : '.');
 
     if (memcmp(buf, "NBDMAGIC", 8) != 0) {
-        LOG("Invalid magic received");
+        error_setg(errp, "Invalid magic received");
         goto fail;
     }
 
     if (read_sync(csock, &magic, sizeof(magic)) != sizeof(magic)) {
-        LOG("read failed");
+        error_setg(errp, "Failed to read magic");
         goto fail;
     }
     magic = be64_to_cpu(magic);
@@ -546,73 +578,80 @@ int nbd_receive_negotiate(int csock, const char *name, uint32_t *flags,
 
         TRACE("Checking magic (opts_magic)");
         if (magic != NBD_OPTS_MAGIC) {
-            LOG("Bad magic received");
+            if (magic == NBD_CLIENT_MAGIC) {
+                error_setg(errp, "Server does not support export names");
+            } else {
+                error_setg(errp, "Bad magic received");
+            }
             goto fail;
         }
         if (read_sync(csock, &tmp, sizeof(tmp)) != sizeof(tmp)) {
-            LOG("flags read failed");
+            error_setg(errp, "Failed to read server flags");
             goto fail;
         }
         *flags = be16_to_cpu(tmp) << 16;
         /* reserved for future use */
         if (write_sync(csock, &reserved, sizeof(reserved)) !=
             sizeof(reserved)) {
-            LOG("write failed (reserved)");
+            error_setg(errp, "Failed to read reserved field");
             goto fail;
         }
         /* write the export name */
         magic = cpu_to_be64(magic);
         if (write_sync(csock, &magic, sizeof(magic)) != sizeof(magic)) {
-            LOG("write failed (magic)");
+            error_setg(errp, "Failed to send export name magic");
             goto fail;
         }
         opt = cpu_to_be32(NBD_OPT_EXPORT_NAME);
         if (write_sync(csock, &opt, sizeof(opt)) != sizeof(opt)) {
-            LOG("write failed (opt)");
+            error_setg(errp, "Failed to send export name option number");
             goto fail;
         }
         namesize = cpu_to_be32(strlen(name));
         if (write_sync(csock, &namesize, sizeof(namesize)) !=
             sizeof(namesize)) {
-            LOG("write failed (namesize)");
+            error_setg(errp, "Failed to send export name length");
             goto fail;
         }
         if (write_sync(csock, (char*)name, strlen(name)) != strlen(name)) {
-            LOG("write failed (name)");
+            error_setg(errp, "Failed to send export name");
             goto fail;
         }
     } else {
         TRACE("Checking magic (cli_magic)");
 
         if (magic != NBD_CLIENT_MAGIC) {
-            LOG("Bad magic received");
+            if (magic == NBD_OPTS_MAGIC) {
+                error_setg(errp, "Server requires an export name");
+            } else {
+                error_setg(errp, "Bad magic received");
+            }
             goto fail;
         }
     }
 
     if (read_sync(csock, &s, sizeof(s)) != sizeof(s)) {
-        LOG("read failed");
+        error_setg(errp, "Failed to read export length");
         goto fail;
     }
     *size = be64_to_cpu(s);
-    *blocksize = 1024;
     TRACE("Size is %" PRIu64, *size);
 
     if (!name) {
         if (read_sync(csock, flags, sizeof(*flags)) != sizeof(*flags)) {
-            LOG("read failed (flags)");
+            error_setg(errp, "Failed to read export flags");
             goto fail;
         }
         *flags = be32_to_cpup(flags);
     } else {
         if (read_sync(csock, &tmp, sizeof(tmp)) != sizeof(tmp)) {
-            LOG("read failed (tmp)");
+            error_setg(errp, "Failed to read export flags");
             goto fail;
         }
-        *flags |= be32_to_cpu(tmp);
+        *flags |= be16_to_cpu(tmp);
     }
     if (read_sync(csock, &buf, 124) != 124) {
-        LOG("read failed (buf)");
+        error_setg(errp, "Failed to read reserved block");
         goto fail;
     }
     rc = 0;
@@ -622,7 +661,7 @@ fail:
 }
 
 #ifdef __linux__
-int nbd_init(int fd, int csock, uint32_t flags, off_t size, size_t blocksize)
+int nbd_init(int fd, int csock, uint32_t flags, off_t size)
 {
     TRACE("Setting NBD socket");
 
@@ -632,17 +671,17 @@ int nbd_init(int fd, int csock, uint32_t flags, off_t size, size_t blocksize)
         return -serrno;
     }
 
-    TRACE("Setting block size to %lu", (unsigned long)blocksize);
+    TRACE("Setting block size to %lu", (unsigned long)BDRV_SECTOR_SIZE);
 
-    if (ioctl(fd, NBD_SET_BLKSIZE, blocksize) < 0) {
+    if (ioctl(fd, NBD_SET_BLKSIZE, (size_t)BDRV_SECTOR_SIZE) < 0) {
         int serrno = errno;
         LOG("Failed setting NBD block size");
         return -serrno;
     }
 
-        TRACE("Setting size to %zd block(s)", (size_t)(size / blocksize));
+    TRACE("Setting size to %zd block(s)", (size_t)(size / BDRV_SECTOR_SIZE));
 
-    if (ioctl(fd, NBD_SET_SIZE_BLOCKS, size / blocksize) < 0) {
+    if (ioctl(fd, NBD_SET_SIZE_BLOCKS, size / (size_t)BDRV_SECTOR_SIZE) < 0) {
         int serrno = errno;
         LOG("Failed setting size (in blocks)");
         return -serrno;
@@ -707,7 +746,7 @@ int nbd_client(int fd)
     return ret;
 }
 #else
-int nbd_init(int fd, int csock, uint32_t flags, off_t size, size_t blocksize)
+int nbd_init(int fd, int csock, uint32_t flags, off_t size)
 {
     return -ENOTSUP;
 }
@@ -867,7 +906,7 @@ void nbd_client_put(NBDClient *client)
 {
     if (--client->refcount == 0) {
         /* The last reference should be dropped by client->close,
-         * which is called by nbd_client_close.
+         * which is called by client_close.
          */
         assert(client->closing);
 
@@ -882,7 +921,7 @@ void nbd_client_put(NBDClient *client)
     }
 }
 
-void nbd_client_close(NBDClient *client)
+static void client_close(NBDClient *client)
 {
     if (client->closing) {
         return;
@@ -929,7 +968,7 @@ static void nbd_request_put(NBDRequest *req)
     nbd_client_put(client);
 }
 
-static void bs_aio_attached(AioContext *ctx, void *opaque)
+static void blk_aio_attached(AioContext *ctx, void *opaque)
 {
     NBDExport *exp = opaque;
     NBDClient *client;
@@ -943,7 +982,7 @@ static void bs_aio_attached(AioContext *ctx, void *opaque)
     }
 }
 
-static void bs_aio_detach(void *opaque)
+static void blk_aio_detach(void *opaque)
 {
     NBDExport *exp = opaque;
     NBDClient *client;
@@ -957,28 +996,39 @@ static void bs_aio_detach(void *opaque)
     exp->ctx = NULL;
 }
 
-NBDExport *nbd_export_new(BlockDriverState *bs, off_t dev_offset,
-                          off_t size, uint32_t nbdflags,
-                          void (*close)(NBDExport *))
+NBDExport *nbd_export_new(BlockBackend *blk, off_t dev_offset, off_t size,
+                          uint32_t nbdflags, void (*close)(NBDExport *),
+                          Error **errp)
 {
     NBDExport *exp = g_malloc0(sizeof(NBDExport));
     exp->refcount = 1;
     QTAILQ_INIT(&exp->clients);
-    exp->bs = bs;
+    exp->blk = blk;
     exp->dev_offset = dev_offset;
     exp->nbdflags = nbdflags;
-    exp->size = size == -1 ? bdrv_getlength(bs) : size;
+    exp->size = size < 0 ? blk_getlength(blk) : size;
+    if (exp->size < 0) {
+        error_setg_errno(errp, -exp->size,
+                         "Failed to determine the NBD export's length");
+        goto fail;
+    }
+    exp->size -= exp->size % BDRV_SECTOR_SIZE;
+
     exp->close = close;
-    exp->ctx = bdrv_get_aio_context(bs);
-    bdrv_ref(bs);
-    bdrv_add_aio_context_notifier(bs, bs_aio_attached, bs_aio_detach, exp);
+    exp->ctx = blk_get_aio_context(blk);
+    blk_ref(blk);
+    blk_add_aio_context_notifier(blk, blk_aio_attached, blk_aio_detach, exp);
     /*
      * NBD exports are used for non-shared storage migration.  Make sure
      * that BDRV_O_INCOMING is cleared and the image is ready for write
      * access since the export could be available before migration handover.
      */
-    bdrv_invalidate_cache(bs, NULL);
+    blk_invalidate_cache(blk, NULL);
     return exp;
+
+fail:
+    g_free(exp);
+    return NULL;
 }
 
 NBDExport *nbd_export_find(const char *name)
@@ -1020,15 +1070,15 @@ void nbd_export_close(NBDExport *exp)
 
     nbd_export_get(exp);
     QTAILQ_FOREACH_SAFE(client, &exp->clients, next, next) {
-        nbd_client_close(client);
+        client_close(client);
     }
     nbd_export_set_name(exp, NULL);
     nbd_export_put(exp);
-    if (exp->bs) {
-        bdrv_remove_aio_context_notifier(exp->bs, bs_aio_attached,
-                                         bs_aio_detach, exp);
-        bdrv_unref(exp->bs);
-        exp->bs = NULL;
+    if (exp->blk) {
+        blk_remove_aio_context_notifier(exp->blk, blk_aio_attached,
+                                        blk_aio_detach, exp);
+        blk_unref(exp->blk);
+        exp->blk = NULL;
     }
 }
 
@@ -1056,9 +1106,9 @@ void nbd_export_put(NBDExport *exp)
     }
 }
 
-BlockDriverState *nbd_export_get_blockdev(NBDExport *exp)
+BlockBackend *nbd_export_get_blockdev(NBDExport *exp)
 {
-    return exp->bs;
+    return exp->blk;
 }
 
 void nbd_export_close_all(void)
@@ -1137,7 +1187,7 @@ static ssize_t nbd_co_receive_request(NBDRequest *req, struct nbd_request *reque
 
     command = request->type & NBD_CMD_MASK_COMMAND;
     if (command == NBD_CMD_READ || command == NBD_CMD_WRITE) {
-        req->data = qemu_blockalign(client->exp->bs, request->len);
+        req->data = blk_blockalign(client->exp->blk, request->len);
     }
     if (command == NBD_CMD_WRITE) {
         TRACE("Reading %u byte(s)", request->len);
@@ -1203,7 +1253,7 @@ static void nbd_trip(void *opaque)
         TRACE("Request type is READ");
 
         if (request.type & NBD_CMD_FLAG_FUA) {
-            ret = bdrv_co_flush(exp->bs);
+            ret = blk_co_flush(exp->blk);
             if (ret < 0) {
                 LOG("flush failed");
                 reply.error = -ret;
@@ -1211,8 +1261,9 @@ static void nbd_trip(void *opaque)
             }
         }
 
-        ret = bdrv_read(exp->bs, (request.from + exp->dev_offset) / 512,
-                        req->data, request.len / 512);
+        ret = blk_read(exp->blk,
+                       (request.from + exp->dev_offset) / BDRV_SECTOR_SIZE,
+                       req->data, request.len / BDRV_SECTOR_SIZE);
         if (ret < 0) {
             LOG("reading from file failed");
             reply.error = -ret;
@@ -1234,8 +1285,9 @@ static void nbd_trip(void *opaque)
 
         TRACE("Writing to device");
 
-        ret = bdrv_write(exp->bs, (request.from + exp->dev_offset) / 512,
-                         req->data, request.len / 512);
+        ret = blk_write(exp->blk,
+                        (request.from + exp->dev_offset) / BDRV_SECTOR_SIZE,
+                        req->data, request.len / BDRV_SECTOR_SIZE);
         if (ret < 0) {
             LOG("writing to file failed");
             reply.error = -ret;
@@ -1243,7 +1295,7 @@ static void nbd_trip(void *opaque)
         }
 
         if (request.type & NBD_CMD_FLAG_FUA) {
-            ret = bdrv_co_flush(exp->bs);
+            ret = blk_co_flush(exp->blk);
             if (ret < 0) {
                 LOG("flush failed");
                 reply.error = -ret;
@@ -1262,7 +1314,7 @@ static void nbd_trip(void *opaque)
     case NBD_CMD_FLUSH:
         TRACE("Request type is FLUSH");
 
-        ret = bdrv_co_flush(exp->bs);
+        ret = blk_co_flush(exp->blk);
         if (ret < 0) {
             LOG("flush failed");
             reply.error = -ret;
@@ -1273,8 +1325,9 @@ static void nbd_trip(void *opaque)
         break;
     case NBD_CMD_TRIM:
         TRACE("Request type is TRIM");
-        ret = bdrv_co_discard(exp->bs, (request.from + exp->dev_offset) / 512,
-                              request.len / 512);
+        ret = blk_co_discard(exp->blk, (request.from + exp->dev_offset)
+                                       / BDRV_SECTOR_SIZE,
+                             request.len / BDRV_SECTOR_SIZE);
         if (ret < 0) {
             LOG("discard failed");
             reply.error = -ret;
@@ -1286,7 +1339,7 @@ static void nbd_trip(void *opaque)
     default:
         LOG("invalid request type (%u) received", request.type);
     invalid_request:
-        reply.error = -EINVAL;
+        reply.error = EINVAL;
     error_reply:
         if (nbd_co_send_reply(req, &reply, 0) < 0) {
             goto out;
@@ -1302,7 +1355,7 @@ done:
 
 out:
     nbd_request_put(req);
-    nbd_client_close(client);
+    client_close(client);
 }
 
 static void nbd_read(void *opaque)

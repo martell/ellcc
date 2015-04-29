@@ -7,7 +7,7 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 # Usage:
-#   objdump -m i386 -M i8086 -M suffix -d out/rom16.o | tools/checkstack.py
+#   objdump -m i386 -M i8086 -M suffix -d out/rom16.o | scripts/checkstack.py
 
 import sys
 import re
@@ -181,6 +181,8 @@ def calc():
                     noteCall(cur, subfuncs, insnaddr, calladdr, 0)
                 elif insn.startswith('calll'):
                     noteCall(cur, subfuncs, insnaddr, calladdr, stackusage + 4)
+                elif insn.startswith('callw'):
+                    noteCall(cur, subfuncs, insnaddr, calladdr, stackusage + 2)
                 else:
                     print("unknown call", ref)
                     noteCall(cur, subfuncs, insnaddr, calladdr, stackusage)

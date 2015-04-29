@@ -10,7 +10,7 @@
 #include "hw/ps2port.h" // ps2_mouse_command
 #include "hw/usb-hid.h" // usb_mouse_command
 #include "output.h" // dprintf
-#include "stacks.h" // stack_hop
+#include "stacks.h" // stack_hop_back
 #include "util.h" // mouse_init
 
 void
@@ -27,8 +27,8 @@ static int
 mouse_command(int command, u8 *param)
 {
     if (usb_mouse_active())
-        return stack_hop(command, (u32)param, usb_mouse_command);
-    return stack_hop(command, (u32)param, ps2_mouse_command);
+        return usb_mouse_command(command, param);
+    return ps2_mouse_command(command, param);
 }
 
 #define RET_SUCCESS      0x00
@@ -274,9 +274,18 @@ handle_15c2(struct bregs *regs)
     }
 }
 
-static void
-invoke_mouse_handler(u16 ebda_seg)
+void VISIBLE16
+invoke_mouse_handler(void)
 {
+    if (!CONFIG_MOUSE)
+        return;
+    if (need_hop_back()) {
+        extern void _cfunc16_invoke_mouse_handler(void);
+        stack_hop_back(0, 0, _cfunc16_invoke_mouse_handler);
+        return;
+    }
+    ASSERT16();
+    u16 ebda_seg = get_ebda_seg();
     u16 status = GET_EBDA(ebda_seg, mouse_data[0]);
     u16 X      = GET_EBDA(ebda_seg, mouse_data[1]);
     u16 Y      = GET_EBDA(ebda_seg, mouse_data[2]);
@@ -330,5 +339,5 @@ process_mouse(u8 data)
     }
 
     SET_EBDA(ebda_seg, mouse_flag1, 0);
-    stack_hop_back(ebda_seg, 0, invoke_mouse_handler);
+    invoke_mouse_handler();
 }

@@ -27,47 +27,19 @@ FILE_LICENCE ( GPL2_OR_LATER );
 #include <ipxe/netdevice.h>
 #include <ipxe/iobuf.h>
 #include <ipxe/in.h>
-#include <ipxe/pci.h>
+#include <ipxe/version.h>
 #include <ipxe/efi/efi.h>
-#include <ipxe/efi/efi_pci.h>
 #include <ipxe/efi/efi_driver.h>
 #include <ipxe/efi/efi_strings.h>
+#include <ipxe/efi/efi_utils.h>
 #include <ipxe/efi/efi_snp.h>
-#include <config/general.h>
 #include <usr/autoboot.h>
-
-/** EFI simple network protocol GUID */
-static EFI_GUID efi_simple_network_protocol_guid
-	= EFI_SIMPLE_NETWORK_PROTOCOL_GUID;
-
-/** EFI device path protocol GUID */
-static EFI_GUID efi_device_path_protocol_guid
-	= EFI_DEVICE_PATH_PROTOCOL_GUID;
-
-/** EFI network interface identifier GUID */
-static EFI_GUID efi_nii_protocol_guid
-	= EFI_NETWORK_INTERFACE_IDENTIFIER_PROTOCOL_GUID;
-
-/** EFI network interface identifier GUID (extra special version) */
-static EFI_GUID efi_nii31_protocol_guid = {
-	/* At some point, it seems that someone decided to change the
-	 * GUID.  Current EFI builds ignore the older GUID, older EFI
-	 * builds ignore the newer GUID, so we have to expose both.
-	 */
-	0x1ACED566, 0x76ED, 0x4218,
-	{ 0xBC, 0x81, 0x76, 0x7F, 0x1F, 0x97, 0x7A, 0x89 }
-};
-
-/** EFI component name protocol GUID */
-static EFI_GUID efi_component_name2_protocol_guid
-	= EFI_COMPONENT_NAME2_PROTOCOL_GUID;
-
-/** EFI load file protocol GUID */
-static EFI_GUID efi_load_file_protocol_guid
-	= EFI_LOAD_FILE_PROTOCOL_GUID;
 
 /** List of SNP devices */
 static LIST_HEAD ( efi_snp_devices );
+
+/** Network devices are currently claimed for use by iPXE */
+static int efi_snp_claimed;
 
 /**
  * Set EFI SNP mode state
@@ -85,7 +57,7 @@ static void efi_snp_set_state ( struct efi_snp_device *snpdev ) {
 	} else if ( ! netdev_is_open ( netdev ) ) {
 		/* Network device not opened; report as Started */
 		mode->State = EfiSimpleNetworkStarted;
-	} else if ( ! netdev_rx_frozen ( netdev ) ) {
+	} else if ( efi_snp_claimed ) {
 		/* Network device opened but claimed for use by iPXE; report
 		 * as Started to inhibit receive polling.
 		 */
@@ -164,7 +136,7 @@ efi_snp_start ( EFI_SIMPLE_NETWORK_PROTOCOL *snp ) {
 	DBGC2 ( snpdev, "SNPDEV %p START\n", snpdev );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	snpdev->started = 1;
@@ -186,7 +158,7 @@ efi_snp_stop ( EFI_SIMPLE_NETWORK_PROTOCOL *snp ) {
 	DBGC2 ( snpdev, "SNPDEV %p STOP\n", snpdev );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	snpdev->started = 0;
@@ -214,7 +186,7 @@ efi_snp_initialize ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 		( ( unsigned long ) extra_tx_bufsize ) );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	if ( ( rc = netdev_open ( snpdev->netdev ) ) != 0 ) {
@@ -244,7 +216,7 @@ efi_snp_reset ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN ext_verify ) {
 		snpdev, ( ext_verify ? "with" : "without" ) );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	netdev_close ( snpdev->netdev );
@@ -274,7 +246,7 @@ efi_snp_shutdown ( EFI_SIMPLE_NETWORK_PROTOCOL *snp ) {
 	DBGC2 ( snpdev, "SNPDEV %p SHUTDOWN\n", snpdev );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	netdev_close ( snpdev->netdev );
@@ -311,7 +283,7 @@ efi_snp_receive_filters ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, UINT32 enable,
 	}
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	/* Lie through our teeth, otherwise MNP refuses to accept us */
@@ -337,7 +309,7 @@ efi_snp_station_address ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN reset,
 		( reset ? "reset" : ll_protocol->ntoa ( new ) ) );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	/* Set the MAC address */
@@ -348,7 +320,7 @@ efi_snp_station_address ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN reset,
 	/* MAC address changes take effect only on netdev_open() */
 	if ( netdev_is_open ( snpdev->netdev ) ) {
 		DBGC ( snpdev, "SNPDEV %p MAC address changed while net "
-		       "devive open\n", snpdev );
+		       "device open\n", snpdev );
 	}
 
 	return 0;
@@ -374,7 +346,7 @@ efi_snp_statistics ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN reset,
 		( reset ? " reset" : "" ) );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	/* Gather statistics */
@@ -426,7 +398,7 @@ efi_snp_mcast_ip_to_mac ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN ipv6,
 	DBGC2 ( snpdev, "SNPDEV %p MCAST_IP_TO_MAC %s\n", snpdev, ip_str );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	/* Try to hash the address */
@@ -463,7 +435,7 @@ efi_snp_nvdata ( EFI_SIMPLE_NETWORK_PROTOCOL *snp, BOOLEAN read,
 		DBGC2_HDA ( snpdev, offset, data, len );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	return EFI_UNSUPPORTED;
@@ -486,7 +458,7 @@ efi_snp_get_status ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 	DBGC2 ( snpdev, "SNPDEV %p GET_STATUS", snpdev );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	/* Poll the network device */
@@ -585,7 +557,7 @@ efi_snp_transmit ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 	DBGC2 ( snpdev, "\n" );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	/* Sanity checks */
@@ -697,7 +669,7 @@ efi_snp_receive ( EFI_SIMPLE_NETWORK_PROTOCOL *snp,
 		( ( unsigned long ) *len ) );
 
 	/* Fail if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return EFI_NOT_READY;
 
 	/* Poll the network device */
@@ -761,7 +733,7 @@ static VOID EFIAPI efi_snp_wait_for_packet ( EFI_EVENT event,
 		return;
 
 	/* Do nothing if net device is currently claimed for use by iPXE */
-	if ( ! netdev_rx_frozen ( snpdev->netdev ) )
+	if ( efi_snp_claimed )
 		return;
 
 	/* Poll the network device */
@@ -922,36 +894,34 @@ static struct efi_snp_device * efi_snp_demux ( struct net_device *netdev ) {
  */
 static int efi_snp_probe ( struct net_device *netdev ) {
 	EFI_BOOT_SERVICES *bs = efi_systab->BootServices;
-	struct efi_pci_device *efipci;
+	struct efi_device *efidev;
 	struct efi_snp_device *snpdev;
+	union {
+		EFI_DEVICE_PATH_PROTOCOL *path;
+		void *interface;
+	} path;
 	EFI_DEVICE_PATH_PROTOCOL *path_end;
 	MAC_ADDR_DEVICE_PATH *macpath;
 	size_t path_prefix_len = 0;
 	EFI_STATUS efirc;
 	int rc;
 
-	/* Find EFI PCI device */
-	efipci = efipci_find ( netdev->dev );
-	if ( ! efipci ) {
-		DBG ( "SNP skipping non-PCI device %s\n", netdev->name );
+	/* Find parent EFI device */
+	efidev = efidev_parent ( netdev->dev );
+	if ( ! efidev ) {
+		DBG ( "SNP skipping non-EFI device %s\n", netdev->name );
 		rc = 0;
-		goto err_no_pci;
+		goto err_no_efidev;
 	}
 
-	/* Calculate device path prefix length */
-	path_end = efi_devpath_end ( efipci->path );
-	path_prefix_len = ( ( ( void * ) path_end ) -
-			    ( ( void * ) efipci->path ) );
-
 	/* Allocate the SNP device */
-	snpdev = zalloc ( sizeof ( *snpdev ) + path_prefix_len +
-			  sizeof ( *macpath ) );
+	snpdev = zalloc ( sizeof ( *snpdev ) );
 	if ( ! snpdev ) {
 		rc = -ENOMEM;
 		goto err_alloc_snp;
 	}
 	snpdev->netdev = netdev_get ( netdev );
-	snpdev->efipci = efipci;
+	snpdev->efidev = efidev;
 
 	/* Sanity check */
 	if ( netdev->ll_protocol->ll_addr_len > sizeof ( EFI_MAC_ADDRESS ) ) {
@@ -988,12 +958,13 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 	efi_snprintf ( snpdev->driver_name,
 		       ( sizeof ( snpdev->driver_name ) /
 			 sizeof ( snpdev->driver_name[0] ) ),
-		       PRODUCT_SHORT_NAME " %s", netdev->dev->driver_name );
+		       "%s %s", product_short_name, netdev->dev->driver_name );
 	efi_snprintf ( snpdev->controller_name,
 		       ( sizeof ( snpdev->controller_name ) /
 			 sizeof ( snpdev->controller_name[0] ) ),
-		       PRODUCT_SHORT_NAME " %s (%s)",
-		       netdev->name, netdev_addr ( netdev ) );
+		       "%s %s (%s, %s)", product_short_name,
+		       netdev->dev->driver_name, netdev->dev->name,
+		       netdev_addr ( netdev ) );
 	snpdev->name2.GetDriverName = efi_snp_get_driver_name;
 	snpdev->name2.GetControllerName = efi_snp_get_controller_name;
 	snpdev->name2.SupportedLanguages = "en";
@@ -1007,9 +978,32 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 				       sizeof ( snpdev->name[0] ) ),
 		       "%s", netdev->name );
 
+	/* Get the parent device path */
+	if ( ( efirc = bs->OpenProtocol ( efidev->device,
+					  &efi_device_path_protocol_guid,
+					  &path.interface, efi_image_handle,
+					  efidev->device,
+					  EFI_OPEN_PROTOCOL_GET_PROTOCOL ))!=0){
+		rc = -EEFI ( efirc );
+		DBGC ( snpdev, "SNPDEV %p cannot get %p %s device path: %s\n",
+		       snpdev, efidev->device,
+		       efi_handle_name ( efidev->device ), strerror ( rc ) );
+		goto err_open_device_path;
+	}
+
+	/* Allocate the new device path */
+	path_end = efi_devpath_end ( path.path );
+	path_prefix_len = ( ( ( void * ) path_end ) - ( ( void * ) path.path ));
+	snpdev->path = zalloc ( path_prefix_len + sizeof ( *macpath ) +
+				sizeof ( *path_end ) );
+	if ( ! snpdev->path ) {
+		rc = -ENOMEM;
+		goto err_alloc_device_path;
+	}
+
 	/* Populate the device path */
-	memcpy ( &snpdev->path, efipci->path, path_prefix_len );
-	macpath = ( ( ( void * ) &snpdev->path ) + path_prefix_len );
+	memcpy ( snpdev->path, path.path, path_prefix_len );
+	macpath = ( ( ( void * ) snpdev->path ) + path_prefix_len );
 	path_end = ( ( void * ) ( macpath + 1 ) );
 	memset ( macpath, 0, sizeof ( *macpath ) );
 	macpath->Header.Type = MESSAGING_DEVICE_PATH;
@@ -1027,7 +1021,7 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 	if ( ( efirc = bs->InstallMultipleProtocolInterfaces (
 			&snpdev->handle,
 			&efi_simple_network_protocol_guid, &snpdev->snp,
-			&efi_device_path_protocol_guid, &snpdev->path,
+			&efi_device_path_protocol_guid, snpdev->path,
 			&efi_nii_protocol_guid, &snpdev->nii,
 			&efi_nii31_protocol_guid, &snpdev->nii,
 			&efi_component_name2_protocol_guid, &snpdev->name2,
@@ -1039,49 +1033,62 @@ static int efi_snp_probe ( struct net_device *netdev ) {
 		goto err_install_protocol_interface;
 	}
 
-	/* Add as child of PCI device */
-	if ( ( rc = efipci_child_add ( efipci, snpdev->handle ) ) != 0 ) {
-		DBGC ( snpdev, "SNPDEV %p could not become child of " PCI_FMT
-		       ": %s\n", snpdev, PCI_ARGS ( &efipci->pci ),
-		       strerror ( rc ) );
-		goto err_efipci_child_add;
+	/* Add as child of EFI parent device */
+	if ( ( rc = efi_child_add ( efidev->device, snpdev->handle ) ) != 0 ) {
+		DBGC ( snpdev, "SNPDEV %p could not become child of %p %s: "
+		       "%s\n", snpdev, efidev->device,
+		       efi_handle_name ( efidev->device ), strerror ( rc ) );
+		goto err_efi_child_add;
 	}
 
 	/* Install HII */
 	if ( ( rc = efi_snp_hii_install ( snpdev ) ) != 0 ) {
 		DBGC ( snpdev, "SNPDEV %p could not install HII: %s\n",
 		       snpdev, strerror ( rc ) );
-		goto err_hii_install;
+		/* HII fails on several platforms.  It's
+		 * non-essential, so treat this as a non-fatal
+		 * error.
+		 */
 	}
 
 	/* Add to list of SNP devices */
 	list_add ( &snpdev->list, &efi_snp_devices );
 
-	DBGC ( snpdev, "SNPDEV %p installed for %s as device %p\n",
-	       snpdev, netdev->name, snpdev->handle );
+	/* Close device path */
+	bs->CloseProtocol ( efidev->device, &efi_device_path_protocol_guid,
+			    efi_image_handle, efidev->device );
+
+	DBGC ( snpdev, "SNPDEV %p installed for %s as device %p %s\n",
+	       snpdev, netdev->name, snpdev->handle,
+	       efi_handle_name ( snpdev->handle ) );
 	return 0;
 
-	efi_snp_hii_uninstall ( snpdev );
- err_hii_install:
-	efipci_child_del ( efipci, snpdev->handle );
- err_efipci_child_add:
+	if ( snpdev->package_list )
+		efi_snp_hii_uninstall ( snpdev );
+	efi_child_del ( efidev->device, snpdev->handle );
+ err_efi_child_add:
 	bs->UninstallMultipleProtocolInterfaces (
 			snpdev->handle,
 			&efi_simple_network_protocol_guid, &snpdev->snp,
-			&efi_device_path_protocol_guid, &snpdev->path,
+			&efi_device_path_protocol_guid, snpdev->path,
 			&efi_nii_protocol_guid, &snpdev->nii,
 			&efi_nii31_protocol_guid, &snpdev->nii,
 			&efi_component_name2_protocol_guid, &snpdev->name2,
 			&efi_load_file_protocol_guid, &snpdev->load_file,
 			NULL );
  err_install_protocol_interface:
+	free ( snpdev->path );
+ err_alloc_device_path:
+	bs->CloseProtocol ( efidev->device, &efi_device_path_protocol_guid,
+			    efi_image_handle, efidev->device );
+ err_open_device_path:
 	bs->CloseEvent ( snpdev->snp.WaitForPacket );
  err_create_event:
  err_ll_addr_len:
 	netdev_put ( netdev );
 	free ( snpdev );
  err_alloc_snp:
- err_no_pci:
+ err_no_efidev:
 	return rc;
 }
 
@@ -1127,18 +1134,20 @@ static void efi_snp_remove ( struct net_device *netdev ) {
 	}
 
 	/* Uninstall the SNP */
-	efi_snp_hii_uninstall ( snpdev );
-	efipci_child_del ( snpdev->efipci, snpdev->handle );
+	if ( snpdev->package_list )
+		efi_snp_hii_uninstall ( snpdev );
+	efi_child_del ( snpdev->efidev->device, snpdev->handle );
 	list_del ( &snpdev->list );
 	bs->UninstallMultipleProtocolInterfaces (
 			snpdev->handle,
 			&efi_simple_network_protocol_guid, &snpdev->snp,
-			&efi_device_path_protocol_guid, &snpdev->path,
+			&efi_device_path_protocol_guid, snpdev->path,
 			&efi_nii_protocol_guid, &snpdev->nii,
 			&efi_nii31_protocol_guid, &snpdev->nii,
 			&efi_component_name2_protocol_guid, &snpdev->name2,
 			&efi_load_file_protocol_guid, &snpdev->load_file,
 			NULL );
+	free ( snpdev->path );
 	bs->CloseEvent ( snpdev->snp.WaitForPacket );
 	netdev_put ( snpdev->netdev );
 	free ( snpdev );
@@ -1151,6 +1160,22 @@ struct net_driver efi_snp_driver __net_driver = {
 	.notify = efi_snp_notify,
 	.remove = efi_snp_remove,
 };
+
+/**
+ * Find SNP device by EFI device handle
+ *
+ * @v handle		EFI device handle
+ * @ret snpdev		SNP device, or NULL
+ */
+struct efi_snp_device * find_snpdev ( EFI_HANDLE handle ) {
+	struct efi_snp_device *snpdev;
+
+	list_for_each_entry ( snpdev, &efi_snp_devices, list ) {
+		if ( snpdev->handle == handle )
+			return snpdev;
+	}
+	return NULL;
+}
 
 /**
  * Get most recently opened SNP device
@@ -1168,23 +1193,17 @@ struct efi_snp_device * last_opened_snpdev ( void ) {
 }
 
 /**
- * Claim network devices for use by iPXE
+ * Set SNP claimed/released state
  *
+ * @v claimed		Network devices are claimed for use by iPXE
  */
-void efi_snp_claim ( void ) {
-	struct net_device *netdev;
+void efi_snp_set_claimed ( int claimed ) {
+	struct efi_snp_device *snpdev;
 
-	for_each_netdev ( netdev )
-		netdev_rx_unfreeze ( netdev );
-}
+	/* Claim SNP devices */
+	efi_snp_claimed = claimed;
 
-/**
- * Release network devices for use via SNP
- *
- */
-void efi_snp_release ( void ) {
-	struct net_device *netdev;
-
-	for_each_netdev ( netdev )
-		netdev_rx_freeze ( netdev );
+	/* Update SNP mode state for each interface */
+	list_for_each_entry ( snpdev, &efi_snp_devices, list )
+		efi_snp_set_state ( snpdev );
 }
