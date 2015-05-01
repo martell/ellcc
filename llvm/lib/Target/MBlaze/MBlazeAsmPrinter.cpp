@@ -160,12 +160,12 @@ void MBlazeAsmPrinter::printSavedRegsBitmask() {
     CPUBitmask |= (1 << getMBlazeRegisterNumbering(RI.getRARegister()));
 
   // Print CPUBitmask
-  OutStreamer.EmitRawText("\t.mask\t0x" + Twine::utohexstr(CPUBitmask));
+  OutStreamer->EmitRawText("\t.mask\t0x" + Twine::utohexstr(CPUBitmask));
 }
 
 /// Frame Directive
 void MBlazeAsmPrinter::emitFrameDirective() {
-  if (!OutStreamer.hasRawTextSupport())
+  if (!OutStreamer->hasRawTextSupport())
     return;
 
   const TargetRegisterInfo &RI = *MF->getSubtarget().getRegisterInfo();
@@ -173,20 +173,20 @@ void MBlazeAsmPrinter::emitFrameDirective() {
   unsigned retReg = RI.getRARegister();
   unsigned stkSze = MF->getFrameInfo()->getStackSize();
 
-  OutStreamer.EmitRawText("\t.frame\t" +
+  OutStreamer->EmitRawText("\t.frame\t" +
                           Twine(MBlazeInstPrinter::getRegisterName(stkReg)) +
                           "," + Twine(stkSze) + "," +
                           Twine(MBlazeInstPrinter::getRegisterName(retReg)));
 }
 
 void MBlazeAsmPrinter::EmitFunctionEntryLabel() {
-  if (OutStreamer.hasRawTextSupport())
-    OutStreamer.EmitRawText("\t.ent\t" + Twine(CurrentFnSym->getName()));
+  if (OutStreamer->hasRawTextSupport())
+    OutStreamer->EmitRawText("\t.ent\t" + Twine(CurrentFnSym->getName()));
   AsmPrinter::EmitFunctionEntryLabel();
 }
 
 void MBlazeAsmPrinter::EmitFunctionBodyStart() {
-  if (!OutStreamer.hasRawTextSupport())
+  if (!OutStreamer->hasRawTextSupport())
     return;
 
   emitFrameDirective();
@@ -194,8 +194,8 @@ void MBlazeAsmPrinter::EmitFunctionBodyStart() {
 }
 
 void MBlazeAsmPrinter::EmitFunctionBodyEnd() {
-  if (OutStreamer.hasRawTextSupport())
-    OutStreamer.EmitRawText("\t.end\t" + Twine(CurrentFnSym->getName()));
+  if (OutStreamer->hasRawTextSupport())
+    OutStreamer->EmitRawText("\t.end\t" + Twine(CurrentFnSym->getName()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -204,7 +204,7 @@ void MBlazeAsmPrinter::EmitInstruction(const MachineInstr *MI) {
 
   MCInst TmpInst;
   MCInstLowering.Lower(MI, TmpInst);
-  EmitToStreamer(OutStreamer, TmpInst);
+  EmitToStreamer(*OutStreamer, TmpInst);
 }
 
 // Print out an operand for an inline asm expression.

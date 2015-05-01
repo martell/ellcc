@@ -13,6 +13,7 @@
 // expected-note@Inputs/macros_right.h:12{{expanding this definition of 'LEFT_RIGHT_DIFFERENT'}}
 // expected-note@Inputs/macros_right.h:13{{expanding this definition of 'LEFT_RIGHT_DIFFERENT2'}}
 // expected-note@Inputs/macros_left.h:14{{other definition of 'LEFT_RIGHT_DIFFERENT'}}
+// expected-note@Inputs/macros_left.h:11{{other definition of 'LEFT_RIGHT_DIFFERENT2'}}
 
 @import macros;
 
@@ -26,6 +27,10 @@
 
 #ifdef MODULE
 #  error MODULE macro should not be visible
+#endif
+
+#ifndef INDIRECTLY_IN_MACROS
+#  error INDIRECTLY_IN_MACROS should be visible
 #endif
 
 // CHECK-PREPROCESSED: double d

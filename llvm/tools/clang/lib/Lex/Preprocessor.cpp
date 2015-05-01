@@ -107,6 +107,9 @@ Preprocessor::Preprocessor(IntrusiveRefCntPtr<PreprocessorOptions> PPOpts,
 
   // We haven't read anything from the external source.
   ReadMacrosFromExternalSource = false;
+  // We might already have some macros from an imported module (via a PCH or
+  // preamble) if modules is enabled.
+  MacroVisibilityGeneration = LangOpts.Modules ? 1 : 0;
   
   // "Poison" __VA_ARGS__, which can only appear in the expansion of a macro.
   // This gets unpoisoned where it is allowed.
@@ -322,7 +325,7 @@ StringRef Preprocessor::getLastMacroWithSpelling(
   for (Preprocessor::macro_iterator I = macro_begin(), E = macro_end();
        I != E; ++I) {
     const MacroDirective::DefInfo
-      Def = I->second->findDirectiveAtLoc(Loc, SourceMgr);
+      Def = I->second.findDirectiveAtLoc(Loc, SourceMgr);
     if (!Def || !Def.getMacroInfo())
       continue;
     if (!Def.getMacroInfo()->isObjectLike())
@@ -622,8 +625,9 @@ bool Preprocessor::HandleIdentifier(Token &Identifier) {
   }
 
   // If this is a macro to be expanded, do it.
-  if (MacroDirective *MD = getMacroDirective(&II)) {
-    MacroInfo *MI = MD->getMacroInfo();
+  if (MacroDefinition MD = getMacroDefinition(&II)) {
+    auto *MI = MD.getMacroInfo();
+    assert(MI && "macro definition with no macro info?");
     if (!DisableMacroExpansion) {
       if (!Identifier.isExpandDisabled() && MI->isEnabled()) {
         // C99 6.10.3p10: If the preprocessing token immediately after the
@@ -748,11 +752,13 @@ void Preprocessor::LexAfterModuleImport(Token &Result) {
   // If we have a non-empty module path, load the named module.
   if (!ModuleImportPath.empty()) {
     Module *Imported = nullptr;
-    if (getLangOpts().Modules)
+    if (getLangOpts().Modules) {
       Imported = TheModuleLoader.loadModule(ModuleImportLoc,
                                             ModuleImportPath,
                                             Module::MacrosVisible,
                                             /*IsIncludeDirective=*/false);
+      ++MacroVisibilityGeneration;
+    }
     if (Callbacks && (getLangOpts().Modules || getLangOpts().DebuggerSupport))
       Callbacks->moduleImport(ModuleImportLoc, ModuleImportPath, Imported);
   }

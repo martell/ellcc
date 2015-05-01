@@ -213,7 +213,7 @@ c++-headers:
 	mkdir -p include/c++ ; \
 	cp -pr src/c++/libcxx/include/* include/c++ ; \
 	cp -pr src/c++/libcxxabi/include/* include/c++
-	mv include/c++/unwind.h include/
+	cp -pr src/c++/libunwind/include/unwind.h include/
 	mv include/c++/__cxxabi_config.h include/
 
 $(Configs)::

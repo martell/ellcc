@@ -89,10 +89,12 @@ private:
   bool SelectAddrRegReg(SDValue N, SDValue &Base, SDValue &Index);
   bool SelectAddrRegImm(SDValue N, SDValue &Disp, SDValue &Base);
 
+#if RICH
   // getI32Imm - Return a target constant with the specified value, of type i32.
   inline SDValue getI32Imm(unsigned Imm) {
     return CurDAG->getTargetConstant(Imm, MVT::i32);
   }
+#endif
 };
 
 }
@@ -164,7 +166,7 @@ SelectAddrRegImm(SDValue N, SDValue &Base, SDValue &Disp) {
   if (N.getOpcode() == ISD::ADD || N.getOpcode() == ISD::OR) {
     int32_t imm = 0;
     if (isIntS32Immediate(N.getOperand(1), imm)) {
-      Disp = CurDAG->getTargetConstant(imm, MVT::i32);
+      Disp = CurDAG->getTargetConstant(imm, SDLoc(N.getOperand(1)), MVT::i32);
       if (FrameIndexSDNode *FI = dyn_cast<FrameIndexSDNode>(N.getOperand(0))) {
         Base = CurDAG->getTargetFrameIndex(FI->getIndex(), N.getValueType());
       } else {
@@ -175,12 +177,12 @@ SelectAddrRegImm(SDValue N, SDValue &Base, SDValue &Disp) {
   } else if (ConstantSDNode *CN = dyn_cast<ConstantSDNode>(N)) {
     // Loading from a constant address.
     uint32_t Imm = CN->getZExtValue();
-    Disp = CurDAG->getTargetConstant(Imm, CN->getValueType(0));
+    Disp = CurDAG->getTargetConstant(Imm, SDLoc(CN), CN->getValueType(0));
     Base = CurDAG->getRegister(MBlaze::R0, CN->getValueType(0));
     return true;
   }
 
-  Disp = CurDAG->getTargetConstant(0,
+  Disp = CurDAG->getTargetConstant(0, SDLoc(N),
                     TM.getSubtargetImpl()->getTargetLowering()->getPointerTy());
   if (FrameIndexSDNode *FI = dyn_cast<FrameIndexSDNode>(N))
     Base = CurDAG->getTargetFrameIndex(FI->getIndex(), N.getValueType());
@@ -219,7 +221,7 @@ SDNode* MBlazeDAGToDAGISel::Select(SDNode *Node) {
       return getGlobalBaseReg();
 
     case ISD::FrameIndex: {
-        SDValue imm = CurDAG->getTargetConstant(0, MVT::i32);
+        SDValue imm = CurDAG->getTargetConstant(0, dl, MVT::i32);
         int FI = dyn_cast<FrameIndexSDNode>(Node)->getIndex();
         EVT VT = Node->getValueType(0);
         SDValue TFI = CurDAG->getTargetFrameIndex(FI, VT);

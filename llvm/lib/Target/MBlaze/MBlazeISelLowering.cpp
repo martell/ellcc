@@ -718,7 +718,7 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // Variable argument function calls require a minimum of 24-bytes of stack
   if (isVarArg && NumBytes < 24) NumBytes = 24;
 
-  Chain = DAG.getCALLSEQ_START(Chain, DAG.getIntPtrConstant(NumBytes, true),
+  Chain = DAG.getCALLSEQ_START(Chain, DAG.getIntPtrConstant(NumBytes, dl, true),
                                dl);
 
   SmallVector<std::pair<unsigned, SDValue>, 8> RegsToPass;
@@ -827,8 +827,8 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
   InFlag = Chain.getValue(1);
 
   // Create the CALLSEQ_END node.
-  Chain = DAG.getCALLSEQ_END(Chain, DAG.getIntPtrConstant(NumBytes, true),
-                             DAG.getIntPtrConstant(0, true), InFlag, dl);
+  Chain = DAG.getCALLSEQ_END(Chain, DAG.getIntPtrConstant(NumBytes, dl, true),
+                             DAG.getIntPtrConstant(0, dl, true), InFlag, dl);
   if (!Ins.empty())
     InFlag = Chain.getValue(1);
 

@@ -1979,10 +1979,6 @@ static bool shouldIgnoreMacro(MacroDirective *MD, bool IsModule,
       return true;
 
   if (IsModule) {
-    // Re-export any imported directives.
-    if (MD->isImported())
-      return false;
-
     SourceLocation Loc = MD->getLocation();
     if (Loc.isInvalid())
       return true;
@@ -1991,69 +1987,6 @@ static bool shouldIgnoreMacro(MacroDirective *MD, bool IsModule,
   }
 
   return false;
-}
-
-static void addOverriddenSubmodules(ASTWriter &Writer, const Preprocessor &PP,
-                                    MacroDirective *MD,
-                                    SmallVectorImpl<uint64_t> &Result) {
-  assert(!isa<VisibilityMacroDirective>(MD) &&
-         "only #define and #undef can override");
-
-  if (MD->isImported()) {
-    auto ModIDs = MD->getOverriddenModules();
-    Result.insert(Result.end(), ModIDs.begin(), ModIDs.end());
-    return;
-  }
-
-  unsigned Start = Result.size();
-
-  SubmoduleID ModID = Writer.inferSubmoduleIDFromLocation(MD->getLocation());
-  for (MD = MD->getPrevious(); MD; MD = MD->getPrevious()) {
-    if (shouldIgnoreMacro(MD, /*IsModule*/true, PP))
-      break;
-
-    // If this is a definition from a submodule import, that submodule's
-    // definition is overridden by the definition or undefinition that we
-    // started with.
-    if (MD->isImported()) {
-      if (auto *DefMD = dyn_cast<DefMacroDirective>(MD)) {
-        SubmoduleID DefModuleID = DefMD->getInfo()->getOwningModuleID();
-        assert(DefModuleID && "imported macro has no owning module");
-        Result.push_back(DefModuleID);
-      } else if (auto *UndefMD = dyn_cast<UndefMacroDirective>(MD)) {
-        // If we override a #undef, we override anything that #undef overrides.
-        // We don't need to override it, since an active #undef doesn't affect
-        // the meaning of a macro.
-        // FIXME: Overriding the #undef directly might be simpler.
-        auto Overrides = UndefMD->getOverriddenModules();
-        Result.insert(Result.end(), Overrides.begin(), Overrides.end());
-      }
-    }
-
-    // Stop once we leave the original macro's submodule.
-    //
-    // Either this submodule #included another submodule of the same
-    // module or it just happened to be built after the other module.
-    // In the former case, we override the submodule's macro.
-    //
-    // FIXME: In the latter case, we shouldn't do so, but we can't tell
-    // these cases apart.
-    //
-    // FIXME: We can leave this submodule and re-enter it if it #includes a
-    // header within a different submodule of the same module. In such cases
-    // the overrides list will be incomplete.
-    SubmoduleID DirectiveModuleID =
-        Writer.inferSubmoduleIDFromLocation(MD->getLocation());
-    if (DirectiveModuleID != ModID) {
-      if (DirectiveModuleID && !MD->isImported())
-        Result.push_back(DirectiveModuleID);
-      break;
-    }
-  }
-
-  // Weed out any duplicate overrides.
-  std::sort(Result.begin() + Start, Result.end());
-  Result.erase(std::unique(Result.begin() + Start, Result.end()), Result.end());
 }
 
 /// \brief Writes the block containing the serialized form of the
@@ -2093,7 +2026,7 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP, bool IsModule) {
          I = PP.macro_begin(/*IncludeExternalMacros=*/false),
          E = PP.macro_end(/*IncludeExternalMacros=*/false);
        I != E; ++I) {
-    MacroDirectives.push_back(std::make_pair(I->first, I->second));
+    MacroDirectives.push_back(std::make_pair(I->first, I->second.getLatest()));
   }
 
   // Sort the set of macro definitions that need to be serialized by the
@@ -2113,21 +2046,9 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP, bool IsModule) {
     // If the macro or identifier need no updates, don't write the macro history
     // for this one.
     // FIXME: Chain the macro history instead of re-writing it.
-    if (MD->isFromPCH() &&
+    if (MD && MD->isFromPCH() &&
         Name->isFromAST() && !Name->hasChangedSinceDeserialization())
       continue;
-
-    // State of this macro within each submodule.
-    enum class SubmoduleMacroState {
-      /// We've seen nothing about this macro.
-      None,
-      /// We've seen a public visibility directive.
-      Public,
-      /// We've either exported a macro for this module or found that the
-      /// module's definition of this macro is private.
-      Done
-    };
-    llvm::DenseMap<SubmoduleID, SubmoduleMacroState> State;
 
     auto StartOffset = Stream.GetCurrentBitNo();
 
@@ -2141,55 +2062,34 @@ void ASTWriter::WritePreprocessor(const Preprocessor &PP, bool IsModule) {
       AddSourceLocation(MD->getLocation(), Record);
       Record.push_back(MD->getKind());
       if (auto *DefMD = dyn_cast<DefMacroDirective>(MD)) {
-        MacroID InfoID = getMacroRef(DefMD->getInfo(), Name);
-        Record.push_back(InfoID);
-        Record.push_back(DefMD->getOwningModuleID());
-        Record.push_back(DefMD->isAmbiguous());
-      } else if (auto *UndefMD = dyn_cast<UndefMacroDirective>(MD)) {
-        Record.push_back(UndefMD->getOwningModuleID());
-      } else {
-        auto *VisMD = cast<VisibilityMacroDirective>(MD);
+        Record.push_back(getMacroRef(DefMD->getInfo(), Name));
+      } else if (auto *VisMD = dyn_cast<VisibilityMacroDirective>(MD)) {
         Record.push_back(VisMD->isPublic());
       }
+    }
 
-      if (MD->isImported()) {
-        auto Overrides = MD->getOverriddenModules();
-        Record.push_back(Overrides.size());
-        Record.append(Overrides.begin(), Overrides.end());
-      }
+    // Write out any exported module macros.
+    if (IsModule) {
+      auto Leafs = PP.getLeafModuleMacros(Name);
+      SmallVector<ModuleMacro*, 8> Worklist(Leafs.begin(), Leafs.end());
+      llvm::DenseMap<ModuleMacro*, unsigned> Visits;
+      while (!Worklist.empty()) {
+        auto *Macro = Worklist.pop_back_val();
 
-      // If this is the final definition in some module, and it's not
-      // module-private, add a module macro record for it.
-      if (IsModule) {
-        SubmoduleID ModID =
-            MD->isImported() ? MD->getOwningModuleID()
-                             : inferSubmoduleIDFromLocation(MD->getLocation());
-        assert(ModID && "found macro in no submodule");
+        // Emit a record indicating this submodule exports this macro.
+        ModuleMacroRecord.push_back(
+            getSubmoduleID(Macro->getOwningModule()));
+        ModuleMacroRecord.push_back(getMacroID(Macro->getMacroInfo()));
+        for (auto *M : Macro->overrides())
+          ModuleMacroRecord.push_back(getSubmoduleID(M->getOwningModule()));
 
-        auto &S = State[ModID];
-        if (S == SubmoduleMacroState::Done) {
-          // We've already handled the final macro from this submodule, or seen
-          // a private visibility directive.
-        } else if (auto *VisMD = dyn_cast<VisibilityMacroDirective>(MD)) {
-          // The latest visibility directive for a name in a submodule affects
-          // all the directives that come before it.
-          if (S == SubmoduleMacroState::None)
-            S = VisMD->isPublic() ? SubmoduleMacroState::Public
-                                  : SubmoduleMacroState::Done;
-        } else {
-          S = SubmoduleMacroState::Done;
+        Stream.EmitRecord(PP_MODULE_MACRO, ModuleMacroRecord);
+        ModuleMacroRecord.clear();
 
-          // Emit a record indicating this submodule exports this macro.
-          ModuleMacroRecord.push_back(ModID);
-          if (DefMacroDirective *DefMD = dyn_cast<DefMacroDirective>(MD))
-            ModuleMacroRecord.push_back(getMacroID(DefMD->getInfo()));
-          else
-            ModuleMacroRecord.push_back(0);
-          addOverriddenSubmodules(*this, PP, MD, ModuleMacroRecord);
-
-          Stream.EmitRecord(PP_MODULE_MACRO, ModuleMacroRecord);
-          ModuleMacroRecord.clear();
-        }
+        // Enqueue overridden macros once we've visited all their ancestors.
+        for (auto *M : Macro->overrides())
+          if (++Visits[M] == M->getNumOverridingMacros())
+            Worklist.push_back(M);
       }
     }
 

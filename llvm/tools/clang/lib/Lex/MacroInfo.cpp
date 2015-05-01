@@ -218,8 +218,6 @@ void MacroDirective::dump() const {
   if (auto *Prev = getPrevious())
     Out << " prev " << Prev;
   if (IsFromPCH) Out << " from_pch";
-  if (IsImported) Out << " imported";
-  if (IsAmbiguous) Out << " ambiguous";
 
   if (IsPublic)
     Out << " public";
@@ -235,11 +233,11 @@ void MacroDirective::dump() const {
   Out << "\n";
 }
 
-ModuleMacro *ModuleMacro::create(Preprocessor &PP, unsigned OwningModuleID,
+ModuleMacro *ModuleMacro::create(Preprocessor &PP, Module *OwningModule,
                                  IdentifierInfo *II, MacroInfo *Macro,
                                  ArrayRef<ModuleMacro *> Overrides) {
   void *Mem = PP.getPreprocessorAllocator().Allocate(
       sizeof(ModuleMacro) + sizeof(ModuleMacro *) * Overrides.size(),
       llvm::alignOf<ModuleMacro>());
-  return new (Mem) ModuleMacro(OwningModuleID, II, Macro, Overrides);
+  return new (Mem) ModuleMacro(OwningModule, II, Macro, Overrides);
 }
