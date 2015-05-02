@@ -60,6 +60,30 @@
     #define _LIBUNWIND_SUPPORT_DWARF_INDEX    0
   #endif
 
+#elif __ELLCC__
+  #ifdef __cplusplus
+    extern "C" {
+  #endif
+    void __assert_fail(const char *, const char *, int, const char *)
+                                                      __attribute__((noreturn));
+  #ifdef __cplusplus
+    }
+  #endif
+
+  #define _LIBUNWIND_BUILD_ZERO_COST_APIS (__arm__ || __aarch64__ || __i386__ || \
+                                           __microblaze__ || __mips__ || \
+                                           __ppc__ || __x86_64__)
+  #define _LIBUNWIND_BUILD_SJLJ_APIS      (0)
+  #define _LIBUNWIND_SUPPORT_FRAME_APIS   (__i386__ || __x86_64__)
+  #define _LIBUNWIND_EXPORT               __attribute__((visibility("default")))
+  #define _LIBUNWIND_HIDDEN               __attribute__((visibility("hidden")))
+  #define _LIBUNWIND_LOG(msg, ...) fprintf(stderr, "libuwind: " msg, __VA_ARGS__)
+  #define _LIBUNWIND_ABORT(msg) __assert_fail(msg, __FILE__, __LINE__, __func__)
+  #define _LIBUNWIND_SUPPORT_COMPACT_UNWIND 0
+  #define _LIBUNWIND_SUPPORT_DWARF_UNWIND   1 // RICH: (!defined(__arm__))
+  #define _LIBUNWIND_SUPPORT_DWARF_INDEX    _LIBUNWIND_SUPPORT_DWARF_UNWIND
+  #include <string.h>   // For strlcpy().
+
 #else
   #include <stdlib.h>
 

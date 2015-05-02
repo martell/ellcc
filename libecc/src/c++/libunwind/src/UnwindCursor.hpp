@@ -519,9 +519,9 @@ private:
     }
     return false;
   }
-#endif // _LIBUNWIND_SUPPORT_COMPACT_UNWIND
+// RICH: #endif // _LIBUNWIND_SUPPORT_COMPACT_UNWIND
 
-#if _LIBUNWIND_SUPPORT_DWARF_UNWIND
+// RICH: #if _LIBUNWIND_SUPPORT_DWARF_UNWIND
   compact_unwind_encoding_t dwarfEncoding() const {
     R dummy;
     return dwarfEncoding(dummy);
@@ -863,7 +863,9 @@ bool UnwindCursor<A, R>::getInfoFromDwarfSection(pint_t pc,
       _info.handler           = cieInfo.personality;
       _info.gp                = prolog.spExtraArgSize;
       _info.flags             = 0;
+#if _LIBUNWIND_SUPPORT_COMPACT_UNWIND
       _info.format            = dwarfEncoding();
+#endif
       _info.unwind_info       = fdeInfo.fdeStart;
       _info.unwind_info_size  = (uint32_t)fdeInfo.fdeLength;
       _info.extra             = (unw_word_t) sects.dso_base;
@@ -1225,7 +1227,9 @@ void UnwindCursor<A, R>::setInfoBasedOnIPRegister(bool isReturnAddress) {
                                   // Some frameless functions need SP
                                   // altered when resuming in function.
         _info.flags            = 0;
+#if _LIBUNWIND_SUPPORT_COMPACT_UNWIND
         _info.format           = dwarfEncoding();
+#endif
         _info.unwind_info      = fdeInfo.fdeStart;
         _info.unwind_info_size = (uint32_t)fdeInfo.fdeLength;
         _info.extra            = 0;
@@ -1253,7 +1257,9 @@ void UnwindCursor<A, R>::setInfoBasedOnIPRegister(bool isReturnAddress) {
           _info.handler          = cieInfo.personality;
           _info.gp               = prolog.spExtraArgSize;
           _info.flags            = 0;
+#if _LIBUNWIND_SUPPORT_COMPACT_UNWIND
           _info.format           = dwarfEncoding();
+#endif
           _info.unwind_info      = fdeInfo.fdeStart;
           _info.unwind_info_size = (uint32_t)fdeInfo.fdeLength;
           _info.extra            = 0;
