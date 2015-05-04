@@ -84,6 +84,7 @@ $(Configs)::
 	echo Installing ncurses for $* ; \
 	mkdir -p ../lib/$* ; \
 	cp $*/lib/*.a ../lib/$* ; \
+	(cd ../lib/$*/; ln -s libncurses.a libterminfo.a) ; \
 	cp -p $*/include/*.h ../include ; \
 	$(MAKE) $(MFLAGS) -C $*/misc install
 

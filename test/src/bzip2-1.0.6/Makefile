@@ -24,14 +24,13 @@ all: ecc $(Configs)
 $(Configs):
 	$(MAKE) clean
 	$(MAKE) EXT=.$@ TARGET="-target $@" \
-	        RUN=../../../bin/qemu-`$(LIBECC)/getarch $@` bzip2all
+	        RUN=../../../bin/qemu-`$(ELLCC)/bin/ecc-getarch $@` bzip2all
 
 ecc:
 	$(MAKE) clean
 	$(MAKE) bzip2all
 
 OS=linux
-#RICH: -include ../../../libecc/mkscripts/targets/$(TARGET)/setup.mk
 CC=../../../bin/ecc
 AR=../../../bin/ecc-ar
 RANLIB=../../../bin/ecc-ranlib
