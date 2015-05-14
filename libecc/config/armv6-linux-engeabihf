@@ -1,0 +1,14 @@
+based_on: arm-ellcc-linux
+compiler:
+  options:
+    - -target arm-ellcc-linux
+    - -march=armv7
+    - -mfpu=vfp
+    - -mfloat-abi=softfp
+linker:
+  static_crt1: $R/lib/arm-linux-engeabihf/crt1.o
+  dynamic_crt1: $R/lib/arm-linux-engeabihf/Scrt1.o
+  crtbegin: $R/lib/arm-linux-engeabihf/crtbegin.o
+  crtend: $R/lib/arm-linux-engeabihf/crtend.o
+  library_paths:
+    - -L$R/lib/arm-linux-engeabihf
