@@ -63,7 +63,7 @@ __RCSID("$NetBSD: vis.c,v 1.44 2011/03/12 19:52:48 christos Exp $");
 #include <sys/types.h>
 
 #include <assert.h>
-#include <vis.h>
+#include <bsd_vis.h>
 #include <errno.h>
 #include <stdlib.h>
 

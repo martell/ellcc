@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to musl 1.1.9.
 * Fixed bzip2 build.
 * Updated the libunwind build location.
 * Update to LLVM r236226.
