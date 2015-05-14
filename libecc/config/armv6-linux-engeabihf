@@ -6,9 +6,9 @@ compiler:
     - -mfpu=vfp
     - -mfloat-abi=softfp
 linker:
-  static_crt1: $R/lib/arm-linux-engeabihf/crt1.o
-  dynamic_crt1: $R/lib/arm-linux-engeabihf/Scrt1.o
-  crtbegin: $R/lib/arm-linux-engeabihf/crtbegin.o
-  crtend: $R/lib/arm-linux-engeabihf/crtend.o
+  static_crt1: $R/lib/armv6-linux-engeabihf/crt1.o
+  dynamic_crt1: $R/lib/armv6-linux-engeabihf/Scrt1.o
+  crtbegin: $R/lib/armv6-linux-engeabihf/crtbegin.o
+  crtend: $R/lib/armv6-linux-engeabihf/crtend.o
   library_paths:
-    - -L$R/lib/arm-linux-engeabihf
+    - -L$R/lib/armv6-linux-engeabihf
