@@ -2,7 +2,7 @@ based_on: arm-ellcc-linux
 compiler:
   options:
     - -target arm-ellcc-linux
-    - -march=armv7
+    - -march=armv6
     - -mfpu=vfp
     - -mfloat-abi=softfp
 linker:
