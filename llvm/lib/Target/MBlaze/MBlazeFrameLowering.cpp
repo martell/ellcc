@@ -343,8 +343,8 @@ bool MBlazeFrameLowering::hasFP(const MachineFunction &MF) const {
          MFI->hasVarSizedObjects();
 }
 
-void MBlazeFrameLowering::emitPrologue(MachineFunction &MF) const {
-  MachineBasicBlock &MBB   = MF.front();
+void MBlazeFrameLowering::emitPrologue(MachineFunction &MF,
+                                       MachineBasicBlock &MBB) const {
   MachineFrameInfo *MFI    = MF.getFrameInfo();
   const MBlazeInstrInfo &TII =
     *static_cast<const MBlazeInstrInfo*>(MF.getSubtarget().getInstrInfo());

@@ -418,7 +418,10 @@ def fauto_profile_EQ : Joined<["-"], "fauto-profile=">,
     Alias<fprofile_sample_use_EQ>;
 def fprofile_instr_generate : Flag<["-"], "fprofile-instr-generate">,
     Group<f_Group>, Flags<[CC1Option]>,
-    HelpText<"Generate instrumented code to collect execution counts">;
+    HelpText<"Generate instrumented code to collect execution counts into default.profraw file (overriden by '=' form of option or LLVM_PROFILE_FILE env var)">;
+def fprofile_instr_generate_EQ : Joined<["-"], "fprofile-instr-generate=">,
+    Group<f_Group>, Flags<[CC1Option]>, MetaVarName<"<file>">,
+    HelpText<"Generate instrumented code to collect execution counts into <file> (overridden by LLVM_PROFILE_FILE env var)">;
 def fprofile_instr_use : Flag<["-"], "fprofile-instr-use">, Group<f_Group>;
 def fprofile_instr_use_EQ : Joined<["-"], "fprofile-instr-use=">,
     Group<f_Group>, Flags<[CC1Option]>,
@@ -526,9 +529,15 @@ def fsanitize_blacklist : Joined<["-"], "fsanitize-blacklist=">,
 def fno_sanitize_blacklist : Flag<["-"], "fno-sanitize-blacklist">,
                              Group<f_clang_Group>,
                              HelpText<"Don't use blacklist file for sanitizers">;
-def fsanitize_coverage : Joined<["-"], "fsanitize-coverage=">,
-                                        Group<f_clang_Group>, Flags<[CC1Option, CoreOption]>,
-                                        HelpText<"Enable coverage instrumentation for Sanitizers">;
+def fsanitize_coverage
+    : CommaJoined<["-"], "fsanitize-coverage=">,
+      Group<f_clang_Group>, Flags<[CoreOption]>,
+      HelpText<"Specify the type of coverage instrumentation for Sanitizers">;
+def fno_sanitize_coverage
+    : CommaJoined<["-"], "fno-sanitize-coverage=">,
+      Group<f_clang_Group>, Flags<[CoreOption]>,
+      HelpText<"Disable specified features of coverage instrumentation for "
+               "Sanitizers">;
 def fsanitize_memory_track_origins_EQ : Joined<["-"], "fsanitize-memory-track-origins=">,
                                         Group<f_clang_Group>, Flags<[CC1Option]>,
                                         HelpText<"Enable origins tracking in MemorySanitizer">;
@@ -1307,6 +1316,9 @@ def fno_altivec : Flag<["-"], "fno-altivec">, Group<f_Group>, Flags<[CC1Option]>
 def maltivec : Flag<["-"], "maltivec">, Alias<faltivec>;
 def mno_altivec : Flag<["-"], "mno-altivec">, Alias<fno_altivec>;
 
+def mvx : Flag<["-"], "mvx">, Group<m_Group>;
+def mno_vx : Flag<["-"], "mno-vx">, Group<m_Group>;
+
 def mno_warn_nonportable_cfstrings : Flag<["-"], "mno-warn-nonportable-cfstrings">, Group<m_Group>;
 def mno_omit_leaf_frame_pointer : Flag<["-"], "mno-omit-leaf-frame-pointer">, Group<m_Group>;
 def momit_leaf_frame_pointer : Flag<["-"], "momit-leaf-frame-pointer">, Group<m_Group>,
@@ -1569,7 +1581,7 @@ def no_system_header_prefix : Joined<["--"], "no-system-header-prefix=">,
            "system header.">;
 def : Separate<["--"], "no-system-header-prefix">, Alias<no_system_header_prefix>;
 def s : Flag<["-"], "s">;
-def target : Joined<["-", "--"], "target=">, Flags<[DriverOption, CoreOption]>,
+def target : Joined<["--"], "target=">, Flags<[DriverOption, CoreOption]>,
   HelpText<"Generate code for the given target">;
 def gcc_toolchain : Joined<["--"], "gcc-toolchain=">, Flags<[DriverOption]>,
   HelpText<"Use the gcc toolchain at the given directory">;
@@ -1742,7 +1754,7 @@ def mv5 : Flag<["-"], "mv5">, Group<m_hexagon_Features_Group>, Alias<march_EQ>,
 // aliases for options that are spelled using the more common Unix / GNU flag
 // style of double-dash and equals-joined flags.
 def gcc_toolchain_legacy_spelling : Separate<["-"], "gcc-toolchain">, Alias<gcc_toolchain>;
-def target_legacy_spelling : Separate<["-", "--"], "target">, Alias<target>;
+def target_legacy_spelling : Separate<["-"], "target">, Alias<target>;
 
 // Special internal option to handle -Xlinker --no-demangle.
 def Z_Xlinker__no_demangle : Flag<["-"], "Z-Xlinker-no-demangle">,

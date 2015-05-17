@@ -889,6 +889,12 @@ private:
 
   CodeGenPGO PGO;
 
+  /// Calculate branch weights appropriate for PGO data
+  llvm::MDNode *createProfileWeights(uint64_t TrueCount, uint64_t FalseCount);
+  llvm::MDNode *createProfileWeights(ArrayRef<uint64_t> Weights);
+  llvm::MDNode *createProfileWeightsForLoop(const Stmt *Cond,
+                                            uint64_t LoopCount);
+
 public:
   /// Increment the profiler's counter for the given statement.
   void incrementProfileCounter(const Stmt *S) {
@@ -2266,7 +2272,7 @@ public:
       bool IsWeak = false, AggValueSlot Slot = AggValueSlot::ignored());
 
   void EmitAtomicUpdate(LValue LVal, llvm::AtomicOrdering AO,
-                        const std::function<RValue(RValue)> &UpdateOp,
+                        const llvm::function_ref<RValue(RValue)> &UpdateOp,
                         bool IsVolatile);
 
   /// EmitToMemory - Change a scalar value from its value
@@ -2829,7 +2835,7 @@ public:
   /// \brief Create a basic block that will call a handler function in a
   /// sanitizer runtime with the provided arguments, and create a conditional
   /// branch to it.
-  void EmitCheck(ArrayRef<std::pair<llvm::Value *, SanitizerKind>> Checked,
+  void EmitCheck(ArrayRef<std::pair<llvm::Value *, SanitizerMask>> Checked,
                  StringRef CheckName, ArrayRef<llvm::Constant *> StaticArgs,
                  ArrayRef<llvm::Value *> DynamicArgs);
 

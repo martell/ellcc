@@ -121,7 +121,7 @@ void MipsAsmPrinter::emitPseudoIndirectBranch(MCStreamer &OutStreamer,
 
   if (HasLinkReg) {
     unsigned ZeroReg = Subtarget->isGP64bit() ? Mips::ZERO_64 : Mips::ZERO;
-    TmpInst0.addOperand(MCOperand::CreateReg(ZeroReg));
+    TmpInst0.addOperand(MCOperand::createReg(ZeroReg));
   }
 
   lowerOperand(MI->getOperand(0), MCOp);
@@ -390,6 +390,12 @@ void MipsAsmPrinter::EmitFunctionBodyEnd() {
     return;
   InConstantPool = false;
   OutStreamer->EmitDataRegion(MCDR_DataRegionEnd);
+}
+
+void MipsAsmPrinter::EmitBasicBlockEnd(const MachineBasicBlock &MBB) {
+  MipsTargetStreamer &TS = getTargetStreamer();
+  if (MBB.size() == 0)
+    TS.emitDirectiveInsn();
 }
 
 /// isBlockOnlyReachableByFallthough - Return true if the basic block has
@@ -791,7 +797,7 @@ void MipsAsmPrinter::EmitJal(const MCSubtargetInfo &STI, MCSymbol *Symbol) {
   MCInst I;
   I.setOpcode(Mips::JAL);
   I.addOperand(
-      MCOperand::CreateExpr(MCSymbolRefExpr::Create(Symbol, OutContext)));
+      MCOperand::createExpr(MCSymbolRefExpr::Create(Symbol, OutContext)));
   OutStreamer->EmitInstruction(I, STI);
 }
 
@@ -799,7 +805,7 @@ void MipsAsmPrinter::EmitInstrReg(const MCSubtargetInfo &STI, unsigned Opcode,
                                   unsigned Reg) {
   MCInst I;
   I.setOpcode(Opcode);
-  I.addOperand(MCOperand::CreateReg(Reg));
+  I.addOperand(MCOperand::createReg(Reg));
   OutStreamer->EmitInstruction(I, STI);
 }
 
@@ -818,8 +824,8 @@ void MipsAsmPrinter::EmitInstrRegReg(const MCSubtargetInfo &STI,
     Reg2 = Temp;
   }
   I.setOpcode(Opcode);
-  I.addOperand(MCOperand::CreateReg(Reg1));
-  I.addOperand(MCOperand::CreateReg(Reg2));
+  I.addOperand(MCOperand::createReg(Reg1));
+  I.addOperand(MCOperand::createReg(Reg2));
   OutStreamer->EmitInstruction(I, STI);
 }
 
@@ -828,9 +834,9 @@ void MipsAsmPrinter::EmitInstrRegRegReg(const MCSubtargetInfo &STI,
                                         unsigned Reg2, unsigned Reg3) {
   MCInst I;
   I.setOpcode(Opcode);
-  I.addOperand(MCOperand::CreateReg(Reg1));
-  I.addOperand(MCOperand::CreateReg(Reg2));
-  I.addOperand(MCOperand::CreateReg(Reg3));
+  I.addOperand(MCOperand::createReg(Reg1));
+  I.addOperand(MCOperand::createReg(Reg2));
+  I.addOperand(MCOperand::createReg(Reg3));
   OutStreamer->EmitInstruction(I, STI);
 }
 

@@ -60,7 +60,7 @@ public:
 
   raw_ostream &getStream() { return OS; }
 
-  /// @name High-Level API
+  /// \name High-Level API
   /// @{
 
   /// \brief Perform any late binding of symbols (for example, to assign symbol
@@ -93,7 +93,7 @@ public:
                                           bool InSet) const;
 
   virtual bool IsSymbolRefDifferenceFullyResolvedImpl(const MCAssembler &Asm,
-                                                      const MCSymbolData &DataA,
+                                                      const MCSymbol &SymA,
                                                       const MCFragment &FB,
                                                       bool InSet,
                                                       bool IsPCRel) const;
@@ -112,7 +112,7 @@ public:
                            const MCAsmLayout &Layout) = 0;
 
   /// @}
-  /// @name Binary Output
+  /// \name Binary Output
   /// @{
 
   void Write8(uint8_t Value) {

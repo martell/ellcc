@@ -2788,6 +2788,16 @@ LocalInstantiationScope::findInstantiationOf(const Decl *D) {
       isa<TemplateTemplateParmDecl>(D))
     return nullptr;
 
+  // Local types referenced prior to definition may require instantiation.
+  if (const CXXRecordDecl *RD = dyn_cast<CXXRecordDecl>(D))
+    if (RD->isLocalClass())
+      return nullptr;
+
+  // Enumeration types referenced prior to definition may appear as a result of
+  // error recovery.
+  if (isa<EnumDecl>(D))
+    return nullptr;
+
   // If we didn't find the decl, then we either have a sema bug, or we have a
   // forward reference to a label declaration.  Return null to indicate that
   // we have an uninstantiated label.

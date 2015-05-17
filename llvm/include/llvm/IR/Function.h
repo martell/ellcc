@@ -19,6 +19,7 @@
 #define LLVM_IR_FUNCTION_H
 
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -130,8 +131,8 @@ public:
   Type *getReturnType() const;           // Return the type of the ret val
   FunctionType *getFunctionType() const; // Return the FunctionType for me
 
-  /// getContext - Return a pointer to the LLVMContext associated with this
-  /// function, or NULL if this function is not bound to a context yet.
+  /// getContext - Return a reference to the LLVMContext associated with this
+  /// function.
   LLVMContext &getContext() const;
 
   /// isVarArg - Return true if this function takes a variable number of
@@ -194,6 +195,12 @@ public:
                                  AttributeSet::FunctionIndex, Kind, Value));
   }
 
+  /// Set the entry count for this function.
+  void setEntryCount(uint64_t Count);
+
+  /// Get the entry count for this function.
+  Optional<uint64_t> getEntryCount() const;
+
   /// @brief Return true if the function has the attribute.
   bool hasFnAttribute(Attribute::AttrKind Kind) const {
     return AttributeSets.hasAttribute(AttributeSet::FunctionIndex, Kind);
@@ -248,7 +255,13 @@ public:
   uint64_t getDereferenceableBytes(unsigned i) const {
     return AttributeSets.getDereferenceableBytes(i);
   }
-
+  
+  /// @brief Extract the number of dereferenceable_or_null bytes for a call or
+  /// parameter (0=unknown).
+  uint64_t getDereferenceableOrNullBytes(unsigned i) const {
+    return AttributeSets.getDereferenceableOrNullBytes(i);
+  }
+  
   /// @brief Determine if the function does not access memory.
   bool doesNotAccessMemory() const {
     return AttributeSets.hasAttribute(AttributeSet::FunctionIndex,
@@ -577,6 +590,9 @@ inline ValueSymbolTable *
 ilist_traits<Argument>::getSymTab(Function *F) {
   return F ? &F->getValueSymbolTable() : nullptr;
 }
+
+/// \brief Overwrite attribute Kind in function F.
+void overrideFunctionAttribute(StringRef Kind, StringRef Value, Function &F);
 
 } // End llvm namespace
 

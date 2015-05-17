@@ -22,6 +22,7 @@
 #include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstrInfo.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/raw_ostream.h"
@@ -94,7 +95,7 @@ public:
                      unsigned &CurByte, raw_ostream &OS,
                      SmallVectorImpl<MCFixup> &Fixups) const;
 
-  void EncodeInstruction(const MCInst &MI, raw_ostream &OS,
+  void encodeInstruction(const MCInst &MI, raw_ostream &OS,
                          SmallVectorImpl<MCFixup> &Fixups,
                          const MCSubtargetInfo &STI) const;
 };
@@ -169,13 +170,13 @@ EmitImmediate(const MCInst &MI, unsigned opNo, bool pcrel, unsigned &CurByte,
     switch (MI.getOpcode()) {
     default:
       FixupKind = pcrel ? FK_PCRel_2 : FK_Data_2;
-      Fixups.push_back(MCFixup::Create(0,oper.getExpr(),FixupKind));
+      Fixups.push_back(MCFixup::create(0,oper.getExpr(),FixupKind));
       break;
     case MBlaze::ORI32:
     case MBlaze::ADDIK32:
     case MBlaze::BRLID32:
       FixupKind = pcrel ? FK_PCRel_4 : FK_Data_4;
-      Fixups.push_back(MCFixup::Create(0,oper.getExpr(),FixupKind));
+      Fixups.push_back(MCFixup::create(0,oper.getExpr(),FixupKind));
       break;
     }
   }
@@ -184,7 +185,7 @@ EmitImmediate(const MCInst &MI, unsigned opNo, bool pcrel, unsigned &CurByte,
 
 
 void MBlazeMCCodeEmitter::
-EncodeInstruction(const MCInst &MI, raw_ostream &OS,
+encodeInstruction(const MCInst &MI, raw_ostream &OS,
                   SmallVectorImpl<MCFixup> &Fixups,
                   const MCSubtargetInfo &STI) const {
   unsigned Opcode = MI.getOpcode();

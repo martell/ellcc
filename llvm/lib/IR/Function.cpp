@@ -19,10 +19,13 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/CallSite.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/MDBuilder.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/RWMutex.h"
@@ -115,6 +118,12 @@ uint64_t Argument::getDereferenceableBytes() const {
   assert(getType()->isPointerTy() &&
          "Only pointers have dereferenceable bytes");
   return getParent()->getDereferenceableBytes(getArgNo()+1);
+}
+
+uint64_t Argument::getDereferenceableOrNullBytes() const {
+  assert(getType()->isPointerTy() &&
+         "Only pointers have dereferenceable bytes");
+  return getParent()->getDereferenceableOrNullBytes(getArgNo()+1);
 }
 
 /// hasNestAttr - Return true if this argument has the nest attribute on
@@ -484,10 +493,8 @@ static std::string getMangledTypeStr(Type* Ty) {
     Result += "a" + llvm::utostr(ATyp->getNumElements()) +
       getMangledTypeStr(ATyp->getElementType());
   } else if (StructType* STyp = dyn_cast<StructType>(Ty)) {
-    if (!STyp->isLiteral())
-      Result += STyp->getName();
-    else
-      llvm_unreachable("TODO: implement literal types");
+    assert(!STyp->isLiteral() && "TODO: implement literal types");
+    Result += STyp->getName();
   } else if (FunctionType* FT = dyn_cast<FunctionType>(Ty)) {
     Result += "f_" + getMangledTypeStr(FT->getReturnType());
     for (size_t i = 0; i < FT->getNumParams(); i++)
@@ -968,4 +975,33 @@ void Function::setPrologueData(Constant *PrologueData) {
     PDData &= ~(1<<2);
   }
   setValueSubclassData(PDData);
+}
+
+void llvm::overrideFunctionAttribute(StringRef Kind, StringRef Value,
+                                     Function &F) {
+  auto &Ctx = F.getContext();
+  AttributeSet Attrs = F.getAttributes(), AttrsToRemove;
+
+  AttrsToRemove =
+      AttrsToRemove.addAttribute(Ctx, AttributeSet::FunctionIndex, Kind);
+  Attrs = Attrs.removeAttributes(Ctx, AttributeSet::FunctionIndex,
+                                 AttrsToRemove);
+  Attrs = Attrs.addAttribute(Ctx, AttributeSet::FunctionIndex, Kind, Value);
+  F.setAttributes(Attrs);
+}
+
+void Function::setEntryCount(uint64_t Count) {
+  MDBuilder MDB(getContext());
+  setMetadata(LLVMContext::MD_prof, MDB.createFunctionEntryCount(Count));
+}
+
+Optional<uint64_t> Function::getEntryCount() const {
+  MDNode *MD = getMetadata(LLVMContext::MD_prof);
+  if (MD && MD->getOperand(0))
+    if (MDString *MDS = dyn_cast<MDString>(MD->getOperand(0)))
+      if (MDS->getString().equals("function_entry_count")) {
+        ConstantInt *CI = mdconst::extract<ConstantInt>(MD->getOperand(1));
+        return CI->getValue().getZExtValue();
+      }
+  return None;
 }

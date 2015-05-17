@@ -123,6 +123,7 @@ public:
     void insert(initializer_list<value_type>);
 
     iterator erase(const_iterator position);
+    iterator erase(iterator position);  // C++14
     size_type erase(const key_type& k);
     iterator erase(const_iterator first, const_iterator last);
     void clear() noexcept;
@@ -287,6 +288,7 @@ public:
     void insert(initializer_list<value_type>);
 
     iterator erase(const_iterator position);
+    iterator erase(iterator position);  // C++14
     size_type erase(const key_type& k);
     iterator erase(const_iterator first, const_iterator last);
     void clear() noexcept;
@@ -551,7 +553,7 @@ union __hash_value_type
 
     _LIBCPP_INLINE_VISIBILITY
     __hash_value_type(__hash_value_type&& __v)
-        : __nc(std::move(__v.__nc)) {}
+        : __nc(_VSTD::move(__v.__nc)) {}
 
     _LIBCPP_INLINE_VISIBILITY
     __hash_value_type& operator=(const __hash_value_type& __v)
@@ -559,7 +561,7 @@ union __hash_value_type
 
     _LIBCPP_INLINE_VISIBILITY
     __hash_value_type& operator=(__hash_value_type&& __v)
-        {__nc = std::move(__v.__nc); return *this;}
+        {__nc = _VSTD::move(__v.__nc); return *this;}
 
     _LIBCPP_INLINE_VISIBILITY
     ~__hash_value_type() {__cc.~value_type();}
@@ -943,6 +945,8 @@ public:
 
     _LIBCPP_INLINE_VISIBILITY
     iterator erase(const_iterator __p) {return __table_.erase(__p.__i_);}
+    _LIBCPP_INLINE_VISIBILITY
+    iterator erase(iterator __p)       {return __table_.erase(__p.__i_);}
     _LIBCPP_INLINE_VISIBILITY
     size_type erase(const key_type& __k) {return __table_.__erase_unique(__k);}
     _LIBCPP_INLINE_VISIBILITY
@@ -1643,6 +1647,8 @@ public:
 
     _LIBCPP_INLINE_VISIBILITY
     iterator erase(const_iterator __p) {return __table_.erase(__p.__i_);}
+    _LIBCPP_INLINE_VISIBILITY
+    iterator erase(iterator __p)       {return __table_.erase(__p.__i_);}
     _LIBCPP_INLINE_VISIBILITY
     size_type erase(const key_type& __k) {return __table_.__erase_multi(__k);}
     _LIBCPP_INLINE_VISIBILITY

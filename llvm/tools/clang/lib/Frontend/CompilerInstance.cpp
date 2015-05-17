@@ -949,16 +949,18 @@ static bool compileModuleImpl(CompilerInstance &ImportingInstance,
     FrontendOpts.Inputs.push_back(
         FrontendInputFile(ModuleMapFile->getName(), IK));
   } else {
+    SmallString<128> FakeModuleMapFile(Module->Directory->getName());
+    llvm::sys::path::append(FakeModuleMapFile, "__inferred_module.map");
+    FrontendOpts.Inputs.push_back(FrontendInputFile(FakeModuleMapFile, IK));
+
     llvm::raw_string_ostream OS(InferredModuleMapContent);
     Module->print(OS);
     OS.flush();
-    FrontendOpts.Inputs.push_back(
-        FrontendInputFile("__inferred_module.map", IK));
 
     std::unique_ptr<llvm::MemoryBuffer> ModuleMapBuffer =
         llvm::MemoryBuffer::getMemBuffer(InferredModuleMapContent);
     ModuleMapFile = Instance.getFileManager().getVirtualFile(
-        "__inferred_module.map", InferredModuleMapContent.size(), 0);
+        FakeModuleMapFile, InferredModuleMapContent.size(), 0);
     SourceMgr.overrideFileContents(ModuleMapFile, std::move(ModuleMapBuffer));
   }
 
@@ -1357,7 +1359,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
     if (LastModuleImportResult && ModuleName != getLangOpts().CurrentModule &&
         ModuleName != getLangOpts().ImplementationOfModule)
       ModuleManager->makeModuleVisible(LastModuleImportResult, Visibility,
-                                       ImportLoc, /*Complain=*/false);
+                                       ImportLoc);
     return LastModuleImportResult;
   }
 
@@ -1600,8 +1602,7 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
       return ModuleLoadResult();
     }
 
-    ModuleManager->makeModuleVisible(Module, Visibility, ImportLoc,
-                                     /*Complain=*/true);
+    ModuleManager->makeModuleVisible(Module, Visibility, ImportLoc);
   }
 
   // Check for any configuration macros that have changed.
@@ -1637,9 +1638,13 @@ CompilerInstance::loadModule(SourceLocation ImportLoc,
 
 void CompilerInstance::makeModuleVisible(Module *Mod,
                                          Module::NameVisibilityKind Visibility,
-                                         SourceLocation ImportLoc,
-                                         bool Complain){
-  ModuleManager->makeModuleVisible(Mod, Visibility, ImportLoc, Complain);
+                                         SourceLocation ImportLoc) {
+  if (!ModuleManager)
+    createModuleManager();
+  if (!ModuleManager)
+    return;
+
+  ModuleManager->makeModuleVisible(Mod, Visibility, ImportLoc);
 }
 
 GlobalModuleIndex *CompilerInstance::loadGlobalModuleIndex(

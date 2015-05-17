@@ -70,7 +70,7 @@ static MCCodeGenInfo *createMBlazeMCCodeGenInfo(StringRef TT, Reloc::Model RM,
     RM = Reloc::Static;
   if (CM == CodeModel::Default)
     CM = CodeModel::Small;
-  X->InitMCCodeGenInfo(RM, CM, OL);
+  X->initMCCodeGenInfo(RM, CM, OL);
   return X;
 }
 

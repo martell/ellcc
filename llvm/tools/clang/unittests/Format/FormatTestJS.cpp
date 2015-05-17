@@ -276,6 +276,12 @@ TEST_F(FormatTestJS, FunctionLiterals) {
                "    return x.zIsTooLongForOneLineWithTheDeclarationLine();\n"
                "  };\n"
                "}");
+  verifyFormat("someLooooooooongFunction(\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+               "    function(aaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n"
+               "      // code\n"
+               "    });");
 
   verifyFormat("f({a: function() { return 1; }});",
                getGoogleJSStyleWithColumns(33));
@@ -463,6 +469,7 @@ TEST_F(FormatTestJS, RegexLiteralClassification) {
 }
 
 TEST_F(FormatTestJS, RegexLiteralSpecialCharacters) {
+  verifyFormat("var regex = /=/;");
   verifyFormat("var regex = /a*/;");
   verifyFormat("var regex = /a+/;");
   verifyFormat("var regex = /a?/;");
@@ -547,6 +554,12 @@ TEST_F(FormatTestJS, ClassDeclarations) {
   verifyFormat("class C extends p.P implements i.I {}");
 }
 
+TEST_F(FormatTestJS, InterfaceDeclarations) {
+  verifyFormat("interface I {\n"
+               "  x: string;\n"
+               "}");
+}
+
 TEST_F(FormatTestJS, MetadataAnnotations) {
   verifyFormat("@A\nclass C {\n}");
   verifyFormat("@A({arg: 'value'})\nclass C {\n}");
@@ -586,6 +599,12 @@ TEST_F(FormatTestJS, Modules) {
 
   verifyFormat("export function fn() {\n"
                "  return 'fn';\n"
+               "}");
+  verifyFormat("export function A() {\n"
+               "}\n"
+               "export default function B() {\n"
+               "}\n"
+               "export function C() {\n"
                "}");
   verifyFormat("export const x = 12;");
   verifyFormat("export default class X {}");
@@ -646,6 +665,12 @@ TEST_F(FormatTestJS, TemplateStrings) {
       "var x =\n    `multi\n  line`;",
       format("var x = `multi\n  line`;", getGoogleJSStyleWithColumns(14 - 1)));
 
+  // Make sure template strings get a proper ColumnWidth assigned, even if they
+  // are first token in line.
+  verifyFormat(
+      "var a = aaaaaaaaaaaaaaaaaaaaaaaaaaaa ||\n"
+      "        `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`;");
+
   // Two template strings.
   verifyFormat("var x = `hello` == `hello`;");
 
@@ -687,6 +712,8 @@ TEST_F(FormatTestJS, TypeArguments) {
   verifyFormat("foo<Y>(a);");
   verifyFormat("var x: X<Y>[];");
   verifyFormat("class C extends D<E> implements F<G>, H<I> {}");
+  verifyFormat("function f(a: List<any> = null) {\n}");
+  verifyFormat("function f(): List<any> {\n}");
 }
 
 TEST_F(FormatTestJS, OptionalTypes) {
@@ -695,6 +722,10 @@ TEST_F(FormatTestJS, OptionalTypes) {
                "  y?: z;\n"
                "  z?;\n"
                "}");
+  verifyFormat("interface X {\n"
+               "  y?(): z;\n"
+               "}");
+  verifyFormat("x ? 1 : 2;");
 }
 
 TEST_F(FormatTestJS, IndexSignature) {

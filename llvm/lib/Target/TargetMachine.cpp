@@ -71,10 +71,7 @@ void TargetMachine::resetTargetOptions(const Function &F) const {
   RESET_OPTION(UnsafeFPMath, "unsafe-fp-math");
   RESET_OPTION(NoInfsFPMath, "no-infs-fp-math");
   RESET_OPTION(NoNaNsFPMath, "no-nans-fp-math");
-  RESET_OPTION(UseSoftFloat, "use-soft-float");
   RESET_OPTION(DisableTailCalls, "disable-tail-calls");
-
-  Options.MCOptions.SanitizeAddress = F.hasFnAttribute(Attribute::SanitizeAddress);
 }
 
 /// getRelocationModel - Returns the code generation relocation model. The

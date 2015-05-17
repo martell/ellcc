@@ -18,6 +18,7 @@
 #include "clang/Lex/Token.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Allocator.h"
 #include <cassert>
@@ -244,6 +245,7 @@ public:
   tokens_iterator tokens_begin() const { return ReplacementTokens.begin(); }
   tokens_iterator tokens_end() const { return ReplacementTokens.end(); }
   bool tokens_empty() const { return ReplacementTokens.empty(); }
+  ArrayRef<Token> tokens() const { return ReplacementTokens; }
 
   /// \brief Add the specified token to the replacement text for the macro.
   void AddTokenToBody(const Token &Tok) {
@@ -364,7 +366,7 @@ public:
     bool IsPublic;
 
   public:
-    DefInfo() : DefDirective(nullptr) { }
+    DefInfo() : DefDirective(nullptr), IsPublic(true) { }
 
     DefInfo(DefMacroDirective *DefDirective, SourceLocation UndefLoc,
             bool isPublic)
@@ -565,9 +567,56 @@ public:
 
   /// Get the number of macros that override this one.
   unsigned getNumOverridingMacros() const { return NumOverriddenBy; }
-
 };
 
-}  // end namespace clang
+/// \brief A description of the current definition of a macro.
+///
+/// The definition of a macro comprises a set of (at least one) defining
+/// entities, which are either local MacroDirectives or imported ModuleMacros.
+class MacroDefinition {
+  llvm::PointerIntPair<DefMacroDirective *, 1, bool> LatestLocalAndAmbiguous;
+  ArrayRef<ModuleMacro *> ModuleMacros;
+
+public:
+  MacroDefinition() : LatestLocalAndAmbiguous(), ModuleMacros() {}
+  MacroDefinition(DefMacroDirective *MD, ArrayRef<ModuleMacro *> MMs,
+                  bool IsAmbiguous)
+      : LatestLocalAndAmbiguous(MD, IsAmbiguous), ModuleMacros(MMs) {}
+
+  /// \brief Determine whether there is a definition of this macro.
+  explicit operator bool() const {
+    return getLocalDirective() || !ModuleMacros.empty();
+  }
+
+  /// \brief Get the MacroInfo that should be used for this definition.
+  MacroInfo *getMacroInfo() const {
+    if (!ModuleMacros.empty())
+      return ModuleMacros.back()->getMacroInfo();
+    if (auto *MD = getLocalDirective())
+      return MD->getMacroInfo();
+    return nullptr;
+  }
+
+  /// \brief \c true if the definition is ambiguous, \c false otherwise.
+  bool isAmbiguous() const { return LatestLocalAndAmbiguous.getInt(); }
+
+  /// \brief Get the latest non-imported, non-\#undef'd macro definition
+  /// for this macro.
+  DefMacroDirective *getLocalDirective() const {
+    return LatestLocalAndAmbiguous.getPointer();
+  }
+
+  /// \brief Get the active module macros for this macro.
+  ArrayRef<ModuleMacro *> getModuleMacros() const { return ModuleMacros; }
+
+  template <typename Fn> void forAllDefinitions(Fn F) const {
+    if (auto *MD = getLocalDirective())
+      F(MD->getMacroInfo());
+    for (auto *MM : getModuleMacros())
+      F(MM->getMacroInfo());
+  }
+};
+
+} // end namespace clang
 
 #endif

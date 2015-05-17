@@ -19,6 +19,7 @@
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallSet.h"
+#include "llvm/ADT/SparseBitVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/MachineBlockFrequencyInfo.h"
@@ -69,6 +70,8 @@ namespace {
     // This is different from CEBCandidates since those edges
     // will be split.
     SetVector<std::pair<MachineBasicBlock*,MachineBasicBlock*> > ToSplit;
+
+    SparseBitVector<> RegsToClearKillFlags;
 
   public:
     static char ID; // Pass identification
@@ -287,6 +290,12 @@ bool MachineSinking::runOnMachineFunction(MachineFunction &MF) {
     if (!MadeChange) break;
     EverMadeChange = true;
   }
+
+  // Now clear any kill flags for recorded registers.
+  for (auto I : RegsToClearKillFlags)
+    MRI->clearKillFlags(I);
+  RegsToClearKillFlags.clear();
+
   return EverMadeChange;
 }
 
@@ -656,7 +665,8 @@ bool MachineSinking::SinkInstruction(MachineInstr *MI, bool &SawStore) {
 
   bool BreakPHIEdge = false;
   MachineBasicBlock *ParentBlock = MI->getParent();
-  MachineBasicBlock *SuccToSinkTo = FindSuccToSinkTo(MI, ParentBlock, BreakPHIEdge);
+  MachineBasicBlock *SuccToSinkTo = FindSuccToSinkTo(MI, ParentBlock,
+                                                     BreakPHIEdge);
 
   // If there are no outputs, it must have side-effects.
   if (!SuccToSinkTo)
@@ -755,7 +765,13 @@ bool MachineSinking::SinkInstruction(MachineInstr *MI, bool &SawStore) {
 
   // Conservatively, clear any kill flags, since it's possible that they are no
   // longer correct.
-  MI->clearKillInfo();
+  // Note that we have to clear the kill flags for any register this instruction
+  // uses as we may sink over another instruction which currently kills the
+  // used registers.
+  for (MachineOperand &MO : MI->operands()) {
+    if (MO.isReg() && MO.isUse())
+      RegsToClearKillFlags.set(MO.getReg()); // Remember to clear kill flags.
+  }
 
   return true;
 }

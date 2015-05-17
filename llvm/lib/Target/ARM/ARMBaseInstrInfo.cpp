@@ -655,7 +655,7 @@ unsigned ARMBaseInstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
       ? 1 : ((Opc == ARM::t2TBH_JT) ? 2 : 4);
     unsigned NumOps = MCID.getNumOperands();
     MachineOperand JTOP =
-      MI->getOperand(NumOps - (MI->isPredicable() ? 3 : 2));
+      MI->getOperand(NumOps - (MI->isPredicable() ? 2 : 1));
     unsigned JTI = JTOP.getIndex();
     const MachineJumpTableInfo *MJTI = MF->getJumpTableInfo();
     assert(MJTI != nullptr);
@@ -1920,6 +1920,13 @@ ARMBaseInstrInfo::optimizeSelect(MachineInstr *MI,
   // Update SeenMIs set: register newly created MI and erase removed DefMI.
   SeenMIs.insert(NewMI);
   SeenMIs.erase(DefMI);
+
+  // If MI is inside a loop, and DefMI is outside the loop, then kill flags on
+  // DefMI would be invalid when tranferred inside the loop.  Checking for a
+  // loop is expensive, but at least remove kill flags if they are in different
+  // BBs.
+  if (DefMI->getParent() != MI->getParent())
+    NewMI->clearKillInfo();
 
   // The caller will erase MI, but not DefMI.
   DefMI->eraseFromParent();

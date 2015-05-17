@@ -34,23 +34,26 @@ public:
   /// targetHandlesStackFrameRounding - Returns true if the target is
   /// responsible for rounding up the stack frame (probably at emitPrologue
   /// time).
-  bool targetHandlesStackFrameRounding() const { return true; }
+  bool targetHandlesStackFrameRounding() const override { return true; }
 
   /// emitProlog/emitEpilog - These methods insert prolog and epilog code into
   /// the function.
-  void emitPrologue(MachineFunction &MF) const;
-  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
+  void emitPrologue(MachineFunction &MF,  MachineBasicBlock &MBB)
+                    const override;
+  void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const override;
 
   void eliminateCallFramePseudoInstr(MachineFunction &MF,
                                      MachineBasicBlock &MBB,
-                                     MachineBasicBlock::iterator I) const;
+                                     MachineBasicBlock::iterator I)
+                                     const override;
 
-  bool hasFP(const MachineFunction &MF) const;
+  bool hasFP(const MachineFunction &MF) const override;
 
-  int getFrameIndexOffset(const MachineFunction &MF, int FI) const;
+  int getFrameIndexOffset(const MachineFunction &MF, int FI) const override;
 
   virtual void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                                    RegScavenger *RS) const;
+                                                    RegScavenger *RS)
+                                                    const override;
 };
 
 } // End llvm namespace

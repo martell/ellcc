@@ -95,7 +95,7 @@ ListRecTy *RecTy::getListTy() {
   return ListTy.get();
 }
 
-bool RecTy::baseClassOf(const RecTy *RHS) const{
+bool RecTy::baseClassOf(const RecTy *RHS) const {
   assert (RHS && "NULL pointer");
   return Kind == RHS->getRecTyKind();
 }
@@ -229,11 +229,10 @@ Init *IntRecTy::convertValue(BitInit *BI) {
 Init *IntRecTy::convertValue(BitsInit *BI) {
   int64_t Result = 0;
   for (unsigned i = 0, e = BI->getNumBits(); i != e; ++i)
-    if (BitInit *Bit = dyn_cast<BitInit>(BI->getBit(i))) {
-      Result |= Bit->getValue() << i;
-    } else {
+    if (BitInit *Bit = dyn_cast<BitInit>(BI->getBit(i)))
+      Result |= static_cast<int64_t>(Bit->getValue()) << i;
+    else
       return nullptr;
-    }
   return IntInit::get(Result);
 }
 
@@ -741,7 +740,7 @@ Init *UnOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
 
           Init *TemplateArgName = QualifyName(*CurRec, CurMultiClass, Name,
                                               ":");
-      
+
           if (CurRec->isTemplateArg(TemplateArgName)) {
             const RecordVal *RV = CurRec->getValue(TemplateArgName);
             assert(RV && "Template arg doesn't exist??");
@@ -754,7 +753,8 @@ Init *UnOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
         }
 
         if (CurMultiClass) {
-          Init *MCName = QualifyName(CurMultiClass->Rec, CurMultiClass, Name, "::");
+          Init *MCName = QualifyName(CurMultiClass->Rec, CurMultiClass, Name,
+                                     "::");
 
           if (CurMultiClass->Rec.isTemplateArg(MCName)) {
             const RecordVal *RV = CurMultiClass->Rec.getValue(MCName);
@@ -778,40 +778,25 @@ Init *UnOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
   }
   case HEAD: {
     if (ListInit *LHSl = dyn_cast<ListInit>(LHS)) {
-      assert(LHSl->getSize() != 0 && "Empty list in car");
+      assert(!LHSl->empty() && "Empty list in head");
       return LHSl->getElement(0);
     }
     break;
   }
   case TAIL: {
     if (ListInit *LHSl = dyn_cast<ListInit>(LHS)) {
-      assert(LHSl->getSize() != 0 && "Empty list in cdr");
+      assert(!LHSl->empty() && "Empty list in tail");
       // Note the +1.  We can't just pass the result of getValues()
       // directly.
-      ArrayRef<Init *>::iterator begin = LHSl->getValues().begin()+1;
-      ArrayRef<Init *>::iterator end   = LHSl->getValues().end();
-      ListInit *Result =
-        ListInit::get(ArrayRef<Init *>(begin, end - begin),
-                      LHSl->getType());
-      return Result;
+      return ListInit::get(LHSl->getValues().slice(1), LHSl->getType());
     }
     break;
   }
   case EMPTY: {
-    if (ListInit *LHSl = dyn_cast<ListInit>(LHS)) {
-      if (LHSl->getSize() == 0) {
-        return IntInit::get(1);
-      } else {
-        return IntInit::get(0);
-      }
-    }
-    if (StringInit *LHSs = dyn_cast<StringInit>(LHS)) {
-      if (LHSs->getValue().empty()) {
-        return IntInit::get(1);
-      } else {
-        return IntInit::get(0);
-      }
-    }
+    if (ListInit *LHSl = dyn_cast<ListInit>(LHS))
+      return IntInit::get(LHSl->empty());
+    if (StringInit *LHSs = dyn_cast<StringInit>(LHS))
+      return IntInit::get(LHSs->getValue().empty());
 
     break;
   }
@@ -887,7 +872,7 @@ Init *BinOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
       Args.insert(Args.end(), LHSs->begin(), LHSs->end());
       Args.insert(Args.end(), RHSs->begin(), RHSs->end());
       return ListInit::get(
-          Args, static_cast<ListRecTy *>(LHSs->getType())->getElementType());
+          Args, cast<ListRecTy>(LHSs->getType())->getElementType());
     }
     break;
   }
@@ -971,9 +956,8 @@ std::string BinOpInit::getAsString() const {
   return Result + "(" + LHS->getAsString() + ", " + RHS->getAsString() + ")";
 }
 
-TernOpInit *TernOpInit::get(TernaryOp opc, Init *lhs,
-                                  Init *mhs, Init *rhs,
-                                  RecTy *Type) {
+TernOpInit *TernOpInit::get(TernaryOp opc, Init *lhs, Init *mhs, Init *rhs,
+                            RecTy *Type) {
   typedef std::pair<
     std::pair<
       std::pair<std::pair<unsigned, RecTy *>, Init *>,
@@ -1034,9 +1018,8 @@ static Init *ForeachHelper(Init *LHS, Init *MHS, Init *RHS, RecTy *Type,
 
   OpInit *RHSo = dyn_cast<OpInit>(RHS);
 
-  if (!RHSo) {
+  if (!RHSo)
     PrintFatalError(CurRec->getLoc(), "!foreach requires an operator\n");
-  }
 
   TypedInit *LHSt = dyn_cast<TypedInit>(LHS);
 
@@ -1048,9 +1031,8 @@ static Init *ForeachHelper(Init *LHS, Init *MHS, Init *RHS, RecTy *Type,
       Init *Val = MHSd->getOperator();
       Init *Result = EvaluateOperation(RHSo, LHS, Val,
                                        Type, CurRec, CurMultiClass);
-      if (Result) {
+      if (Result)
         Val = Result;
-      }
 
       std::vector<std::pair<Init *, std::string> > args;
       for (unsigned int i = 0; i < MHSd->getNumArgs(); ++i) {
@@ -1062,9 +1044,8 @@ static Init *ForeachHelper(Init *LHS, Init *MHS, Init *RHS, RecTy *Type,
         // Process args
         Init *Result = EvaluateOperation(RHSo, LHS, Arg, Type,
                                          CurRec, CurMultiClass);
-        if (Result) {
+        if (Result)
           Arg = Result;
-        }
 
         // TODO: Process arg names
         args.push_back(std::make_pair(Arg, ArgName));
@@ -1080,11 +1061,10 @@ static Init *ForeachHelper(Init *LHS, Init *MHS, Init *RHS, RecTy *Type,
         NewOperands.clear();
         for(int i = 0; i < RHSo->getNumOperands(); ++i) {
           // First, replace the foreach variable with the list item
-          if (LHS->getAsString() == RHSo->getOperand(i)->getAsString()) {
+          if (LHS->getAsString() == RHSo->getOperand(i)->getAsString())
             NewOperands.push_back(Item);
-          } else {
+          else
             NewOperands.push_back(RHSo->getOperand(i));
-          }
         }
 
         // Now run the operator and use its result as the new list item
@@ -1114,48 +1094,40 @@ Init *TernOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
     VarInit *RHSv = dyn_cast<VarInit>(RHS);
     StringInit *RHSs = dyn_cast<StringInit>(RHS);
 
-    if ((LHSd && MHSd && RHSd) ||
-        (LHSv && MHSv && RHSv) ||
-        (LHSs && MHSs && RHSs)) {
-      if (RHSd) {
-        Record *Val = RHSd->getDef();
-        if (LHSd->getAsString() == RHSd->getAsString()) {
-          Val = MHSd->getDef();
-        }
-        return DefInit::get(Val);
-      }
-      if (RHSv) {
-        std::string Val = RHSv->getName();
-        if (LHSv->getAsString() == RHSv->getAsString()) {
-          Val = MHSv->getName();
-        }
-        return VarInit::get(Val, getType());
-      }
-      if (RHSs) {
-        std::string Val = RHSs->getValue();
+    if (LHSd && MHSd && RHSd) {
+      Record *Val = RHSd->getDef();
+      if (LHSd->getAsString() == RHSd->getAsString())
+        Val = MHSd->getDef();
+      return DefInit::get(Val);
+    }
+    if (LHSv && MHSv && RHSv) {
+      std::string Val = RHSv->getName();
+      if (LHSv->getAsString() == RHSv->getAsString())
+        Val = MHSv->getName();
+      return VarInit::get(Val, getType());
+    }
+    if (LHSs && MHSs && RHSs) {
+      std::string Val = RHSs->getValue();
 
-        std::string::size_type found;
-        std::string::size_type idx = 0;
-        do {
-          found = Val.find(LHSs->getValue(), idx);
-          if (found != std::string::npos) {
-            Val.replace(found, LHSs->getValue().size(), MHSs->getValue());
-          }
-          idx = found +  MHSs->getValue().size();
-        } while (found != std::string::npos);
-
-        return StringInit::get(Val);
+      std::string::size_type found;
+      std::string::size_type idx = 0;
+      while (true) {
+        found = Val.find(LHSs->getValue(), idx);
+        if (found == std::string::npos)
+          break;
+        Val.replace(found, LHSs->getValue().size(), MHSs->getValue());
+        idx = found + MHSs->getValue().size();
       }
+
+      return StringInit::get(Val);
     }
     break;
   }
 
   case FOREACH: {
-    Init *Result = ForeachHelper(LHS, MHS, RHS, getType(),
-                                 CurRec, CurMultiClass);
-    if (Result) {
+    if (Init *Result = ForeachHelper(LHS, MHS, RHS, getType(),
+                                     CurRec, CurMultiClass))
       return Result;
-    }
     break;
   }
 
@@ -1164,11 +1136,9 @@ Init *TernOpInit::Fold(Record *CurRec, MultiClass *CurMultiClass) const {
     if (Init *I = LHS->convertInitializerTo(IntRecTy::get()))
       LHSi = dyn_cast<IntInit>(I);
     if (LHSi) {
-      if (LHSi->getValue()) {
+      if (LHSi->getValue())
         return MHS;
-      } else {
-        return RHS;
-      }
+      return RHS;
     }
     break;
   }
@@ -1191,11 +1161,10 @@ Init *TernOpInit::resolveReferences(Record &R,
         Init *mhs = MHS->resolveReferences(R, RV);
         return (TernOpInit::get(getOpcode(), lhs, mhs,
                                 RHS, getType()))->Fold(&R, nullptr);
-      } else {
-        Init *rhs = RHS->resolveReferences(R, RV);
-        return (TernOpInit::get(getOpcode(), lhs, MHS,
-                                rhs, getType()))->Fold(&R, nullptr);
       }
+      Init *rhs = RHS->resolveReferences(R, RV);
+      return (TernOpInit::get(getOpcode(), lhs, MHS,
+                              rhs, getType()))->Fold(&R, nullptr);
     }
   }
 
@@ -1295,10 +1264,8 @@ Init *VarInit::resolveListElementReference(Record &R,
   RecordVal *RV = R.getValue(getNameInit());
   assert(RV && "Reference to a non-existent variable?");
   ListInit *LI = dyn_cast<ListInit>(RV->getValue());
-  if (!LI) {
-    TypedInit *VI = cast<TypedInit>(RV->getValue());
-    return VarListElementInit::get(VI, Elt);
-  }
+  if (!LI)
+    return VarListElementInit::get(cast<TypedInit>(RV->getValue()), Elt);
 
   if (Elt >= LI->getSize())
     return nullptr;  // Out of range reference.
@@ -1329,8 +1296,7 @@ Init *VarInit::getFieldInit(Record &R, const RecordVal *RV,
       assert(TheInit != this && "Infinite loop detected!");
       if (Init *I = TheInit->getFieldInit(R, RV, FieldName))
         return I;
-      else
-        return nullptr;
+      return nullptr;
     }
   return nullptr;
 }
@@ -1359,7 +1325,7 @@ VarBitInit *VarBitInit::get(TypedInit *T, unsigned B) {
 }
 
 std::string VarBitInit::getAsString() const {
-   return TI->getAsString() + "{" + utostr(Bit) + "}";
+  return TI->getAsString() + "{" + utostr(Bit) + "}";
 }
 
 Init *VarBitInit::resolveReferences(Record &R, const RecordVal *RV) const {
@@ -1403,9 +1369,7 @@ Init *VarListElementInit::getBit(unsigned Bit) const {
 Init *VarListElementInit:: resolveListElementReference(Record &R,
                                                        const RecordVal *RV,
                                                        unsigned Elt) const {
-  Init *Result = TI->resolveListElementReference(R, RV, Element);
-  
-  if (Result) {
+  if (Init *Result = TI->resolveListElementReference(R, RV, Element)) {
     if (TypedInit *TInit = dyn_cast<TypedInit>(Result)) {
       Init *Result2 = TInit->resolveListElementReference(R, RV, Elt);
       if (Result2) return Result2;
@@ -1413,7 +1377,7 @@ Init *VarListElementInit:: resolveListElementReference(Record &R,
     }
     return Result;
   }
- 
+
   return nullptr;
 }
 
@@ -1473,15 +1437,13 @@ Init *FieldInit::resolveListElementReference(Record &R, const RecordVal *RV,
 Init *FieldInit::resolveReferences(Record &R, const RecordVal *RV) const {
   Init *NewRec = RV ? Rec->resolveReferences(R, RV) : Rec;
 
-  Init *BitsVal = NewRec->getFieldInit(R, RV, FieldName);
-  if (BitsVal) {
+  if (Init *BitsVal = NewRec->getFieldInit(R, RV, FieldName)) {
     Init *BVR = BitsVal->resolveReferences(R, RV);
     return BVR->isComplete() ? BVR : const_cast<FieldInit *>(this);
   }
 
-  if (NewRec != Rec) {
+  if (NewRec != Rec)
     return FieldInit::get(NewRec, FieldName);
-  }
   return const_cast<FieldInit *>(this);
 }
 
@@ -1785,12 +1747,11 @@ Record::getValueAsListOfDefs(StringRef FieldName) const {
   ListInit *List = getValueAsListInit(FieldName);
   std::vector<Record*> Defs;
   for (unsigned i = 0; i < List->getSize(); i++) {
-    if (DefInit *DI = dyn_cast<DefInit>(List->getElement(i))) {
+    if (DefInit *DI = dyn_cast<DefInit>(List->getElement(i)))
       Defs.push_back(DI->getDef());
-    } else {
+    else
       PrintFatalError(getLoc(), "Record `" + getName() + "', field `" +
         FieldName + "' list is not entirely DefInit!");
-    }
   }
   return Defs;
 }
@@ -1820,12 +1781,11 @@ Record::getValueAsListOfInts(StringRef FieldName) const {
   ListInit *List = getValueAsListInit(FieldName);
   std::vector<int64_t> Ints;
   for (unsigned i = 0; i < List->getSize(); i++) {
-    if (IntInit *II = dyn_cast<IntInit>(List->getElement(i))) {
+    if (IntInit *II = dyn_cast<IntInit>(List->getElement(i)))
       Ints.push_back(II->getValue());
-    } else {
+    else
       PrintFatalError(getLoc(), "Record `" + getName() + "', field `" +
         FieldName + "' does not have a list of ints initializer!");
-    }
   }
   return Ints;
 }
@@ -1839,12 +1799,11 @@ Record::getValueAsListOfStrings(StringRef FieldName) const {
   ListInit *List = getValueAsListInit(FieldName);
   std::vector<std::string> Strings;
   for (unsigned i = 0; i < List->getSize(); i++) {
-    if (StringInit *II = dyn_cast<StringInit>(List->getElement(i))) {
+    if (StringInit *II = dyn_cast<StringInit>(List->getElement(i)))
       Strings.push_back(II->getValue());
-    } else {
+    else
       PrintFatalError(getLoc(), "Record `" + getName() + "', field `" +
         FieldName + "' does not have a list of strings initializer!");
-    }
   }
   return Strings;
 }
@@ -1920,9 +1879,8 @@ void MultiClass::dump() const {
   Rec.dump();
 
   errs() << "Defs:\n";
-  for (const auto &Proto : DefPrototypes) {
+  for (const auto &Proto : DefPrototypes)
     Proto->dump();
-  }
 }
 
 
@@ -1930,13 +1888,11 @@ void RecordKeeper::dump() const { errs() << *this; }
 
 raw_ostream &llvm::operator<<(raw_ostream &OS, const RecordKeeper &RK) {
   OS << "------------- Classes -----------------\n";
-  const auto &Classes = RK.getClasses();
-  for (const auto &C : Classes)
+  for (const auto &C : RK.getClasses())
     OS << "class " << *C.second;
 
   OS << "------------- Defs -----------------\n";
-  const auto &Defs = RK.getDefs();
-  for (const auto &D : Defs)
+  for (const auto &D : RK.getDefs())
     OS << "def " << *D.second;
   return OS;
 }

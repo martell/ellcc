@@ -1098,16 +1098,16 @@ public:
   void addExpr(MCInst &Inst, const MCExpr *Expr) const {
     // Add as immediates when possible.  Null MCExpr = 0.
     if (!Expr)
-      Inst.addOperand(MCOperand::CreateImm(0));
+      Inst.addOperand(MCOperand::createImm(0));
     else if (const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(Expr))
-      Inst.addOperand(MCOperand::CreateImm(CE->getValue()));
+      Inst.addOperand(MCOperand::createImm(CE->getValue()));
     else
-      Inst.addOperand(MCOperand::CreateExpr(Expr));
+      Inst.addOperand(MCOperand::createExpr(Expr));
   }
 
   void addRegOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateReg(getReg()));
+    Inst.addOperand(MCOperand::createReg(getReg()));
   }
 
   void addGPR32as64Operands(MCInst &Inst, unsigned N) const {
@@ -1119,26 +1119,26 @@ public:
     uint32_t Reg = RI->getRegClass(AArch64::GPR32RegClassID).getRegister(
         RI->getEncodingValue(getReg()));
 
-    Inst.addOperand(MCOperand::CreateReg(Reg));
+    Inst.addOperand(MCOperand::createReg(Reg));
   }
 
   void addVectorReg64Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     assert(
         AArch64MCRegisterClasses[AArch64::FPR128RegClassID].contains(getReg()));
-    Inst.addOperand(MCOperand::CreateReg(AArch64::D0 + getReg() - AArch64::Q0));
+    Inst.addOperand(MCOperand::createReg(AArch64::D0 + getReg() - AArch64::Q0));
   }
 
   void addVectorReg128Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     assert(
         AArch64MCRegisterClasses[AArch64::FPR128RegClassID].contains(getReg()));
-    Inst.addOperand(MCOperand::CreateReg(getReg()));
+    Inst.addOperand(MCOperand::createReg(getReg()));
   }
 
   void addVectorRegLoOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateReg(getReg()));
+    Inst.addOperand(MCOperand::createReg(getReg()));
   }
 
   template <unsigned NumRegs>
@@ -1149,7 +1149,7 @@ public:
     unsigned FirstReg = FirstRegs[NumRegs - 1];
 
     Inst.addOperand(
-        MCOperand::CreateReg(FirstReg + getVectorListStart() - AArch64::Q0));
+        MCOperand::createReg(FirstReg + getVectorListStart() - AArch64::Q0));
   }
 
   template <unsigned NumRegs>
@@ -1160,32 +1160,32 @@ public:
     unsigned FirstReg = FirstRegs[NumRegs - 1];
 
     Inst.addOperand(
-        MCOperand::CreateReg(FirstReg + getVectorListStart() - AArch64::Q0));
+        MCOperand::createReg(FirstReg + getVectorListStart() - AArch64::Q0));
   }
 
   void addVectorIndex1Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getVectorIndex()));
+    Inst.addOperand(MCOperand::createImm(getVectorIndex()));
   }
 
   void addVectorIndexBOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getVectorIndex()));
+    Inst.addOperand(MCOperand::createImm(getVectorIndex()));
   }
 
   void addVectorIndexHOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getVectorIndex()));
+    Inst.addOperand(MCOperand::createImm(getVectorIndex()));
   }
 
   void addVectorIndexSOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getVectorIndex()));
+    Inst.addOperand(MCOperand::createImm(getVectorIndex()));
   }
 
   void addVectorIndexDOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getVectorIndex()));
+    Inst.addOperand(MCOperand::createImm(getVectorIndex()));
   }
 
   void addImmOperands(MCInst &Inst, unsigned N) const {
@@ -1200,16 +1200,16 @@ public:
     assert(N == 2 && "Invalid number of operands!");
     if (isShiftedImm()) {
       addExpr(Inst, getShiftedImmVal());
-      Inst.addOperand(MCOperand::CreateImm(getShiftedImmShift()));
+      Inst.addOperand(MCOperand::createImm(getShiftedImmShift()));
     } else {
       addExpr(Inst, getImm());
-      Inst.addOperand(MCOperand::CreateImm(0));
+      Inst.addOperand(MCOperand::createImm(0));
     }
   }
 
   void addCondCodeOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getCondCode()));
+    Inst.addOperand(MCOperand::createImm(getCondCode()));
   }
 
   void addAdrpLabelOperands(MCInst &Inst, unsigned N) const {
@@ -1218,7 +1218,7 @@ public:
     if (!MCE)
       addExpr(Inst, getImm());
     else
-      Inst.addOperand(MCOperand::CreateImm(MCE->getValue() >> 12));
+      Inst.addOperand(MCOperand::createImm(MCE->getValue() >> 12));
   }
 
   void addAdrLabelOperands(MCInst &Inst, unsigned N) const {
@@ -1231,119 +1231,119 @@ public:
     const MCConstantExpr *MCE = dyn_cast<MCConstantExpr>(getImm());
 
     if (!MCE) {
-      Inst.addOperand(MCOperand::CreateExpr(getImm()));
+      Inst.addOperand(MCOperand::createExpr(getImm()));
       return;
     }
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue() / Scale));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue() / Scale));
   }
 
   void addSImm9Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addSImm7s4Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue() / 4));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue() / 4));
   }
 
   void addSImm7s8Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue() / 8));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue() / 8));
   }
 
   void addSImm7s16Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue() / 16));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue() / 16));
   }
 
   void addImm0_7Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm1_8Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm0_15Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm1_16Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
     assert(MCE && "Invalid constant immediate operand!");
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm0_31Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm1_31Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm1_32Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm0_63Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm1_63Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm1_64Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm0_127Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm0_255Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm0_65535Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addImm32_63Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue()));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue()));
   }
 
   void addLogicalImm32Operands(MCInst &Inst, unsigned N) const {
@@ -1351,14 +1351,14 @@ public:
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
     uint64_t encoding =
         AArch64_AM::encodeLogicalImmediate(MCE->getValue() & 0xFFFFFFFF, 32);
-    Inst.addOperand(MCOperand::CreateImm(encoding));
+    Inst.addOperand(MCOperand::createImm(encoding));
   }
 
   void addLogicalImm64Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
     uint64_t encoding = AArch64_AM::encodeLogicalImmediate(MCE->getValue(), 64);
-    Inst.addOperand(MCOperand::CreateImm(encoding));
+    Inst.addOperand(MCOperand::createImm(encoding));
   }
 
   void addLogicalImm32NotOperands(MCInst &Inst, unsigned N) const {
@@ -1366,7 +1366,7 @@ public:
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
     int64_t Val = ~MCE->getValue() & 0xFFFFFFFF;
     uint64_t encoding = AArch64_AM::encodeLogicalImmediate(Val, 32);
-    Inst.addOperand(MCOperand::CreateImm(encoding));
+    Inst.addOperand(MCOperand::createImm(encoding));
   }
 
   void addLogicalImm64NotOperands(MCInst &Inst, unsigned N) const {
@@ -1374,14 +1374,14 @@ public:
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
     uint64_t encoding =
         AArch64_AM::encodeLogicalImmediate(~MCE->getValue(), 64);
-    Inst.addOperand(MCOperand::CreateImm(encoding));
+    Inst.addOperand(MCOperand::createImm(encoding));
   }
 
   void addSIMDImmType10Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     const MCConstantExpr *MCE = cast<MCConstantExpr>(getImm());
     uint64_t encoding = AArch64_AM::encodeAdvSIMDModImmType10(MCE->getValue());
-    Inst.addOperand(MCOperand::CreateImm(encoding));
+    Inst.addOperand(MCOperand::createImm(encoding));
   }
 
   void addBranchTarget26Operands(MCInst &Inst, unsigned N) const {
@@ -1395,7 +1395,7 @@ public:
       return;
     }
     assert(MCE && "Invalid constant immediate operand!");
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue() >> 2));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue() >> 2));
   }
 
   void addPCRelLabel19Operands(MCInst &Inst, unsigned N) const {
@@ -1409,7 +1409,7 @@ public:
       return;
     }
     assert(MCE && "Invalid constant immediate operand!");
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue() >> 2));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue() >> 2));
   }
 
   void addBranchTarget14Operands(MCInst &Inst, unsigned N) const {
@@ -1423,52 +1423,52 @@ public:
       return;
     }
     assert(MCE && "Invalid constant immediate operand!");
-    Inst.addOperand(MCOperand::CreateImm(MCE->getValue() >> 2));
+    Inst.addOperand(MCOperand::createImm(MCE->getValue() >> 2));
   }
 
   void addFPImmOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getFPImm()));
+    Inst.addOperand(MCOperand::createImm(getFPImm()));
   }
 
   void addBarrierOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getBarrier()));
+    Inst.addOperand(MCOperand::createImm(getBarrier()));
   }
 
   void addMRSSystemRegisterOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
 
-    Inst.addOperand(MCOperand::CreateImm(SysReg.MRSReg));
+    Inst.addOperand(MCOperand::createImm(SysReg.MRSReg));
   }
 
   void addMSRSystemRegisterOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
 
-    Inst.addOperand(MCOperand::CreateImm(SysReg.MSRReg));
+    Inst.addOperand(MCOperand::createImm(SysReg.MSRReg));
   }
 
   void addSystemPStateFieldOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
 
-    Inst.addOperand(MCOperand::CreateImm(SysReg.PStateField));
+    Inst.addOperand(MCOperand::createImm(SysReg.PStateField));
   }
 
   void addSysCROperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getSysCR()));
+    Inst.addOperand(MCOperand::createImm(getSysCR()));
   }
 
   void addPrefetchOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateImm(getPrefetch()));
+    Inst.addOperand(MCOperand::createImm(getPrefetch()));
   }
 
   void addShifterOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     unsigned Imm =
         AArch64_AM::getShifterImm(getShiftExtendType(), getShiftExtendAmount());
-    Inst.addOperand(MCOperand::CreateImm(Imm));
+    Inst.addOperand(MCOperand::createImm(Imm));
   }
 
   void addExtendOperands(MCInst &Inst, unsigned N) const {
@@ -1476,7 +1476,7 @@ public:
     AArch64_AM::ShiftExtendType ET = getShiftExtendType();
     if (ET == AArch64_AM::LSL) ET = AArch64_AM::UXTW;
     unsigned Imm = AArch64_AM::getArithExtendImm(ET, getShiftExtendAmount());
-    Inst.addOperand(MCOperand::CreateImm(Imm));
+    Inst.addOperand(MCOperand::createImm(Imm));
   }
 
   void addExtend64Operands(MCInst &Inst, unsigned N) const {
@@ -1484,15 +1484,15 @@ public:
     AArch64_AM::ShiftExtendType ET = getShiftExtendType();
     if (ET == AArch64_AM::LSL) ET = AArch64_AM::UXTX;
     unsigned Imm = AArch64_AM::getArithExtendImm(ET, getShiftExtendAmount());
-    Inst.addOperand(MCOperand::CreateImm(Imm));
+    Inst.addOperand(MCOperand::createImm(Imm));
   }
 
   void addMemExtendOperands(MCInst &Inst, unsigned N) const {
     assert(N == 2 && "Invalid number of operands!");
     AArch64_AM::ShiftExtendType ET = getShiftExtendType();
     bool IsSigned = ET == AArch64_AM::SXTW || ET == AArch64_AM::SXTX;
-    Inst.addOperand(MCOperand::CreateImm(IsSigned));
-    Inst.addOperand(MCOperand::CreateImm(getShiftExtendAmount() != 0));
+    Inst.addOperand(MCOperand::createImm(IsSigned));
+    Inst.addOperand(MCOperand::createImm(getShiftExtendAmount() != 0));
   }
 
   // For 8-bit load/store instructions with a register offset, both the
@@ -1503,8 +1503,8 @@ public:
     assert(N == 2 && "Invalid number of operands!");
     AArch64_AM::ShiftExtendType ET = getShiftExtendType();
     bool IsSigned = ET == AArch64_AM::SXTW || ET == AArch64_AM::SXTX;
-    Inst.addOperand(MCOperand::CreateImm(IsSigned));
-    Inst.addOperand(MCOperand::CreateImm(hasShiftExtendAmount()));
+    Inst.addOperand(MCOperand::createImm(IsSigned));
+    Inst.addOperand(MCOperand::createImm(hasShiftExtendAmount()));
   }
 
   template<int Shift>
@@ -1513,7 +1513,7 @@ public:
 
     const MCConstantExpr *CE = cast<MCConstantExpr>(getImm());
     uint64_t Value = CE->getValue();
-    Inst.addOperand(MCOperand::CreateImm((Value >> Shift) & 0xffff));
+    Inst.addOperand(MCOperand::createImm((Value >> Shift) & 0xffff));
   }
 
   template<int Shift>
@@ -1522,7 +1522,7 @@ public:
 
     const MCConstantExpr *CE = cast<MCConstantExpr>(getImm());
     uint64_t Value = CE->getValue();
-    Inst.addOperand(MCOperand::CreateImm((~Value >> Shift) & 0xffff));
+    Inst.addOperand(MCOperand::createImm((~Value >> Shift) & 0xffff));
   }
 
   void print(raw_ostream &OS) const override;
@@ -3644,6 +3644,60 @@ bool AArch64AsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                                 Op3.getEndLoc(), getContext());
       }
     }
+  } else if (NumOperands == 4 && Tok == "bfc") {
+    // FIXME: Horrible hack to handle BFC->BFM alias.
+    AArch64Operand &Op1 = static_cast<AArch64Operand &>(*Operands[1]);
+    AArch64Operand LSBOp = static_cast<AArch64Operand &>(*Operands[2]);
+    AArch64Operand WidthOp = static_cast<AArch64Operand &>(*Operands[3]);
+
+    if (Op1.isReg() && LSBOp.isImm() && WidthOp.isImm()) {
+      const MCConstantExpr *LSBCE = dyn_cast<MCConstantExpr>(LSBOp.getImm());
+      const MCConstantExpr *WidthCE = dyn_cast<MCConstantExpr>(WidthOp.getImm());
+
+      if (LSBCE && WidthCE) {
+        uint64_t LSB = LSBCE->getValue();
+        uint64_t Width = WidthCE->getValue();
+
+        uint64_t RegWidth = 0;
+        if (AArch64MCRegisterClasses[AArch64::GPR64allRegClassID].contains(
+                Op1.getReg()))
+          RegWidth = 64;
+        else
+          RegWidth = 32;
+
+        if (LSB >= RegWidth)
+          return Error(LSBOp.getStartLoc(),
+                       "expected integer in range [0, 31]");
+        if (Width < 1 || Width > RegWidth)
+          return Error(WidthOp.getStartLoc(),
+                       "expected integer in range [1, 32]");
+
+        uint64_t ImmR = 0;
+        if (RegWidth == 32)
+          ImmR = (32 - LSB) & 0x1f;
+        else
+          ImmR = (64 - LSB) & 0x3f;
+
+        uint64_t ImmS = Width - 1;
+
+        if (ImmR != 0 && ImmS >= ImmR)
+          return Error(WidthOp.getStartLoc(),
+                       "requested insert overflows register");
+
+        const MCExpr *ImmRExpr = MCConstantExpr::Create(ImmR, getContext());
+        const MCExpr *ImmSExpr = MCConstantExpr::Create(ImmS, getContext());
+        Operands[0] = AArch64Operand::CreateToken(
+              "bfm", false, Op.getStartLoc(), getContext());
+        Operands[2] = AArch64Operand::CreateReg(
+            RegWidth == 32 ? AArch64::WZR : AArch64::XZR, false, SMLoc(),
+            SMLoc(), getContext());
+        Operands[3] = AArch64Operand::CreateImm(
+            ImmRExpr, LSBOp.getStartLoc(), LSBOp.getEndLoc(), getContext());
+        Operands.emplace_back(
+            AArch64Operand::CreateImm(ImmSExpr, WidthOp.getStartLoc(),
+                                      WidthOp.getEndLoc(), getContext()));
+      }
+    }
   } else if (NumOperands == 5) {
     // FIXME: Horrible hack to handle the BFI -> BFM, SBFIZ->SBFM, and
     // UBFIZ -> UBFM aliases.
@@ -3675,8 +3729,7 @@ bool AArch64AsmParser::MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                          "expected integer in range [1, 32]");
 
           uint64_t NewOp3Val = 0;
-          if (AArch64MCRegisterClasses[AArch64::GPR32allRegClassID].contains(
-                  Op1.getReg()))
+          if (RegWidth == 32)
             NewOp3Val = (32 - Op3Val) & 0x1f;
           else
             NewOp3Val = (64 - Op3Val) & 0x3f;
@@ -4057,7 +4110,7 @@ bool AArch64AsmParser::parseDirectiveTLSDescCall(SMLoc L) {
 
   MCInst Inst;
   Inst.setOpcode(AArch64::TLSDESCCALL);
-  Inst.addOperand(MCOperand::CreateExpr(Expr));
+  Inst.addOperand(MCOperand::createExpr(Expr));
 
   getParser().getStreamer().EmitInstruction(Inst, STI);
   return false;

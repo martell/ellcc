@@ -64,12 +64,11 @@ static void PrintMacroDefinition(const IdentifierInfo &II, const MacroInfo &MI,
     OS << ' ';
 
   SmallString<128> SpellingBuffer;
-  for (MacroInfo::tokens_iterator I = MI.tokens_begin(), E = MI.tokens_end();
-       I != E; ++I) {
-    if (I->hasLeadingSpace())
+  for (const auto &T : MI.tokens()) {
+    if (T.hasLeadingSpace())
       OS << ' ';
 
-    OS << PP.getSpelling(*I, SpellingBuffer);
+    OS << PP.getSpelling(T, SpellingBuffer);
   }
 }
 
@@ -170,7 +169,7 @@ public:
 
   /// MacroUndefined - This hook is called whenever a macro #undef is seen.
   void MacroUndefined(const Token &MacroNameTok,
-                      const MacroDirective *MD) override;
+                      const MacroDefinition &MD) override;
 };
 }  // end anonymous namespace
 
@@ -361,7 +360,7 @@ void PrintPPOutputPPCallbacks::MacroDefined(const Token &MacroNameTok,
 }
 
 void PrintPPOutputPPCallbacks::MacroUndefined(const Token &MacroNameTok,
-                                              const MacroDirective *MD) {
+                                              const MacroDefinition &MD) {
   // Only print out macro definitions in -dD mode.
   if (!DumpDefines) return;
 

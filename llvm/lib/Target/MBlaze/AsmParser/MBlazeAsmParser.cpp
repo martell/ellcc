@@ -189,16 +189,16 @@ public:
   void addExpr(MCInst &Inst, const MCExpr *Expr) const {
     // Add as immediates when possible.  Null MCExpr = 0.
     if (Expr == 0)
-      Inst.addOperand(MCOperand::CreateImm(0));
+      Inst.addOperand(MCOperand::createImm(0));
     else if (const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(Expr))
-      Inst.addOperand(MCOperand::CreateImm(CE->getValue()));
+      Inst.addOperand(MCOperand::createImm(CE->getValue()));
     else
-      Inst.addOperand(MCOperand::CreateExpr(Expr));
+      Inst.addOperand(MCOperand::createExpr(Expr));
   }
 
   void addRegOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateReg(getReg()));
+    Inst.addOperand(MCOperand::createReg(getReg()));
   }
 
   void addImmOperands(MCInst &Inst, unsigned N) const {
@@ -214,11 +214,11 @@ public:
   void addMemOperands(MCInst &Inst, unsigned N) const {
     assert(N == 2 && "Invalid number of operands!");
 
-    Inst.addOperand(MCOperand::CreateReg(getMemBase()));
+    Inst.addOperand(MCOperand::createReg(getMemBase()));
 
     unsigned RegOff = getMemOffReg();
     if (RegOff)
-      Inst.addOperand(MCOperand::CreateReg(RegOff));
+      Inst.addOperand(MCOperand::createReg(RegOff));
     else
       addExpr(Inst, getMemOff());
   }
@@ -241,7 +241,7 @@ public:
   }
 
   static std::unique_ptr<MBlazeOperand>
-  CreateReg(unsigned RegNum, SMLoc S, SMLoc E, MBlazeAsmParser &Parser) {
+  createReg(unsigned RegNum, SMLoc S, SMLoc E, MBlazeAsmParser &Parser) {
     auto Op = make_unique<MBlazeOperand>(Register, Parser);
     Op->Reg.RegNum = RegNum;
     Op->StartLoc = S;
@@ -250,7 +250,7 @@ public:
   }
 
   static std::unique_ptr<MBlazeOperand>
-  CreateImm(const MCExpr *Val, SMLoc S, SMLoc E, MBlazeAsmParser &Parser) {
+  createImm(const MCExpr *Val, SMLoc S, SMLoc E, MBlazeAsmParser &Parser) {
     auto Op = make_unique<MBlazeOperand>(Immediate, Parser);
     Op->Imm.Val = Val;
     Op->StartLoc = S;
@@ -426,7 +426,7 @@ MBlazeAsmParser::ParseRegister(SMLoc &StartLoc, SMLoc &EndLoc) {
     return 0;
 
   getLexer().Lex();
-  return MBlazeOperand::CreateReg(RegNo, StartLoc, EndLoc, *this);
+  return MBlazeOperand::createReg(RegNo, StartLoc, EndLoc, *this);
 }
 
 static unsigned MatchFslRegister(StringRef String) {
@@ -472,7 +472,7 @@ std::unique_ptr<MBlazeOperand> MBlazeAsmParser::ParseImmediate() {
     if (getParser().parseExpression(EVal))
       return 0;
 
-    return MBlazeOperand::CreateImm(EVal, S, E, *this);
+    return MBlazeOperand::createImm(EVal, S, E, *this);
   }
 }
 

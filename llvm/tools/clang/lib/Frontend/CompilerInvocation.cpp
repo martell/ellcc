@@ -329,11 +329,8 @@ static void parseSanitizerKinds(StringRef FlagName,
                                 const std::vector<std::string> &Sanitizers,
                                 DiagnosticsEngine &Diags, SanitizerSet &S) {
   for (const auto &Sanitizer : Sanitizers) {
-    SanitizerKind K = llvm::StringSwitch<SanitizerKind>(Sanitizer)
-#define SANITIZER(NAME, ID) .Case(NAME, SanitizerKind::ID)
-#include "clang/Basic/Sanitizers.def"
-                          .Default(SanitizerKind::Unknown);
-    if (K == SanitizerKind::Unknown)
+    SanitizerMask K = parseSanitizerValue(Sanitizer, /*AllowGroups=*/false);
+    if (K == 0)
       Diags.Report(diag::err_drv_invalid_value) << FlagName << Sanitizer;
     else
       S.set(K, true);
@@ -431,7 +428,9 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DisableIntegratedAS = Args.hasArg(OPT_fno_integrated_as);
   Opts.Autolink = !Args.hasArg(OPT_fno_autolink);
   Opts.SampleProfileFile = Args.getLastArgValue(OPT_fprofile_sample_use_EQ);
-  Opts.ProfileInstrGenerate = Args.hasArg(OPT_fprofile_instr_generate);
+  Opts.ProfileInstrGenerate = Args.hasArg(OPT_fprofile_instr_generate) ||
+      Args.hasArg(OPT_fprofile_instr_generate_EQ);;
+  Opts.InstrProfileOutput = Args.getLastArgValue(OPT_fprofile_instr_generate_EQ);
   Opts.InstrProfileInput = Args.getLastArgValue(OPT_fprofile_instr_use_EQ);
   Opts.CoverageMapping = Args.hasArg(OPT_fcoverage_mapping);
   Opts.DumpCoverageMapping = Args.hasArg(OPT_dump_coverage_mapping);
@@ -527,8 +526,14 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.CompressDebugSections = Args.hasArg(OPT_compress_debug_sections);
   Opts.DebugCompilationDir = Args.getLastArgValue(OPT_fdebug_compilation_dir);
   Opts.LinkBitcodeFile = Args.getLastArgValue(OPT_mlink_bitcode_file);
-  Opts.SanitizeCoverage =
-      getLastArgIntValue(Args, OPT_fsanitize_coverage, 0, Diags);
+  Opts.SanitizeCoverageType =
+      getLastArgIntValue(Args, OPT_fsanitize_coverage_type, 0, Diags);
+  Opts.SanitizeCoverageIndirectCalls =
+      Args.hasArg(OPT_fsanitize_coverage_indirect_calls);
+  Opts.SanitizeCoverageTraceBB = Args.hasArg(OPT_fsanitize_coverage_trace_bb);
+  Opts.SanitizeCoverageTraceCmp = Args.hasArg(OPT_fsanitize_coverage_trace_cmp);
+  Opts.SanitizeCoverage8bitCounters =
+      Args.hasArg(OPT_fsanitize_coverage_8bit_counters);
   Opts.SanitizeMemoryTrackOrigins =
       getLastArgIntValue(Args, OPT_fsanitize_memory_track_origins_EQ, 0, Diags);
   Opts.SanitizeUndefinedTrapOnError =
@@ -642,6 +647,9 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   parseSanitizerKinds("-fsanitize-recover=",
                       Args.getAllArgValues(OPT_fsanitize_recover_EQ), Diags,
                       Opts.SanitizeRecover);
+
+  Opts.CudaGpuBinaryFileNames =
+      Args.getAllArgValues(OPT_fcuda_include_gpubinary);
 
   return Success;
 }
@@ -1228,7 +1236,7 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
   Opts.CPlusPlus1z = Std.isCPlusPlus1z();
   Opts.Digraphs = Std.hasDigraphs();
   Opts.GNUMode = Std.isGNUMode();
-  Opts.GNUInline = !Std.isC99();
+  Opts.GNUInline = Std.isC89();
   Opts.HexFloats = Std.hasHexFloats();
   Opts.ImplicitInt = Std.hasImplicitInt();
 
@@ -1411,8 +1419,13 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
         (Opts.ObjCRuntime.getKind() == ObjCRuntime::FragileMacOSX);
   }
     
-  if (Args.hasArg(OPT_fgnu89_inline))
-    Opts.GNUInline = 1;
+  if (Args.hasArg(OPT_fgnu89_inline)) {
+    if (Opts.CPlusPlus)
+      Diags.Report(diag::err_drv_argument_not_allowed_with) << "-fgnu89-inline"
+                                                            << "C++/ObjC++";
+    else
+      Opts.GNUInline = 1;
+  }
 
   if (Args.hasArg(OPT_fapple_kext)) {
     if (!Opts.CPlusPlus)
@@ -1506,6 +1519,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.ModulesStrictDeclUse = Args.hasArg(OPT_fmodules_strict_decluse);
   Opts.ModulesDeclUse =
       Args.hasArg(OPT_fmodules_decluse) || Opts.ModulesStrictDeclUse;
+  Opts.ModulesLocalVisibility =
+      Args.hasArg(OPT_fmodules_local_submodule_visibility);
   Opts.ModulesSearchAll = Opts.Modules &&
     !Args.hasArg(OPT_fno_modules_search_all) &&
     Args.hasArg(OPT_fmodules_search_all);
@@ -1572,7 +1587,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.ImplementationOfModule =
       Args.getLastArgValue(OPT_fmodule_implementation_of);
   Opts.ModuleFeatures = Args.getAllArgValues(OPT_fmodule_feature);
-  Opts.NativeHalfType = Opts.NativeHalfType;
+  Opts.NativeHalfType |= Args.hasArg(OPT_fnative_half_type);
   Opts.HalfArgsAndReturns = Args.hasArg(OPT_fallow_half_arguments_and_returns);
   Opts.GNUAsm = !Args.hasArg(OPT_fno_gnu_inline_asm);
 
@@ -1581,6 +1596,12 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
     Diags.Report(diag::err_conflicting_module_names)
         << Opts.CurrentModule << Opts.ImplementationOfModule;
   }
+
+  // For now, we only support local submodule visibility in C++ (because we
+  // heavily depend on the ODR for merging redefinitions).
+  if (Opts.ModulesLocalVisibility && !Opts.CPlusPlus)
+    Diags.Report(diag::err_drv_argument_not_allowed_with)
+        << "-fmodules-local-submodule-visibility" << "C";
 
   if (Arg *A = Args.getLastArg(OPT_faddress_space_map_mangling_EQ)) {
     switch (llvm::StringSwitch<unsigned>(A->getValue())

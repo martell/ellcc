@@ -537,9 +537,10 @@ Instruction* CallInst::CreateFree(Value* Source, BasicBlock *InsertAtEnd) {
 //                        InvokeInst Implementation
 //===----------------------------------------------------------------------===//
 
-void InvokeInst::init(Value *Fn, BasicBlock *IfNormal, BasicBlock *IfException,
-                      ArrayRef<Value *> Args, const Twine &NameStr) {
-  FTy = cast<FunctionType>(cast<PointerType>(Fn->getType())->getElementType());
+void InvokeInst::init(FunctionType *FTy, Value *Fn, BasicBlock *IfNormal,
+                      BasicBlock *IfException, ArrayRef<Value *> Args,
+                      const Twine &NameStr) {
+  this->FTy = FTy;
 
   assert(NumOperands == 3 + Args.size() && "NumOperands not set up?");
   Op<-3>() = Fn;
@@ -1243,10 +1244,11 @@ void GetElementPtrInst::init(Value *Ptr, ArrayRef<Value *> IdxList,
 }
 
 GetElementPtrInst::GetElementPtrInst(const GetElementPtrInst &GEPI)
-  : Instruction(GEPI.getType(), GetElementPtr,
-                OperandTraits<GetElementPtrInst>::op_end(this)
-                - GEPI.getNumOperands(),
-                GEPI.getNumOperands()) {
+    : Instruction(GEPI.getType(), GetElementPtr,
+                  OperandTraits<GetElementPtrInst>::op_end(this) -
+                      GEPI.getNumOperands(),
+                  GEPI.getNumOperands()),
+      SourceElementType(GEPI.SourceElementType) {
   std::copy(GEPI.op_begin(), GEPI.op_end(), op_begin());
   SubclassOptionalData = GEPI.SubclassOptionalData;
 }

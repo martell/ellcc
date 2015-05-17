@@ -225,7 +225,7 @@ bool AsmPrinter::doInitialization(Module &M) {
         TM.getTargetTriple(), TM.getTargetCPU(), TM.getTargetFeatureString()));
     OutStreamer->AddComment("Start of file scope inline assembly");
     OutStreamer->AddBlankLine();
-    EmitInlineAsm(M.getModuleInlineAsm()+"\n", *STI);
+    EmitInlineAsm(M.getModuleInlineAsm()+"\n", *STI, TM.Options.MCOptions);
     OutStreamer->AddComment("End of file scope inline assembly");
     OutStreamer->AddBlankLine();
   }
@@ -266,6 +266,8 @@ bool AsmPrinter::doInitialization(Module &M) {
   case ExceptionHandling::WinEH:
     switch (MAI->getWinEHEncodingType()) {
     default: llvm_unreachable("unsupported unwinding information encoding");
+    case WinEH::EncodingType::Invalid:
+      break;
     case WinEH::EncodingType::Itanium:
       ES = new Win64Exception(this);
       break;

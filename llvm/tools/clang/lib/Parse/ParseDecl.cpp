@@ -3893,6 +3893,13 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
 
   handleDeclspecAlignBeforeClassKey(attrs, DS, TUK);
 
+  Sema::SkipBodyInfo SkipBody;
+  if (!Name && TUK == Sema::TUK_Definition && Tok.is(tok::l_brace) &&
+      NextToken().is(tok::identifier))
+    SkipBody = Actions.shouldSkipAnonEnumBody(getCurScope(),
+                                              NextToken().getIdentifierInfo(),
+                                              NextToken().getLocation());
+
   bool Owned = false;
   bool IsDependent = false;
   const char *PrevSpec = nullptr;
@@ -3902,7 +3909,22 @@ void Parser::ParseEnumSpecifier(SourceLocation StartLoc, DeclSpec &DS,
                                    AS, DS.getModulePrivateSpecLoc(), TParams,
                                    Owned, IsDependent, ScopedEnumKWLoc,
                                    IsScopedUsingClassTag, BaseType,
-                                   DSC == DSC_type_specifier);
+                                   DSC == DSC_type_specifier, &SkipBody);
+
+  if (SkipBody.ShouldSkip) {
+    assert(TUK == Sema::TUK_Definition && "can only skip a definition");
+
+    BalancedDelimiterTracker T(*this, tok::l_brace);
+    T.consumeOpen();
+    T.skipToEnd();
+
+    if (DS.SetTypeSpecType(DeclSpec::TST_enum, StartLoc,
+                           NameLoc.isValid() ? NameLoc : StartLoc,
+                           PrevSpec, DiagID, TagDecl, Owned,
+                           Actions.getASTContext().getPrintingPolicy()))
+      Diag(StartLoc, DiagID) << PrevSpec;
+    return;
+  }
 
   if (IsDependent) {
     // This enum has a dependent nested-name-specifier. Handle it as a
@@ -3974,6 +3996,7 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
     Diag(Tok, diag::error_empty_enum);
 
   SmallVector<Decl *, 32> EnumConstantDecls;
+  SmallVector<SuppressAccessChecks, 32> EnumAvailabilityDiags;
 
   Decl *LastEnumConstDecl = nullptr;
 
@@ -4004,7 +4027,7 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
 
     SourceLocation EqualLoc;
     ExprResult AssignedVal;
-    ParsingDeclRAIIObject PD(*this, ParsingDeclRAIIObject::NoParent);
+    EnumAvailabilityDiags.emplace_back(*this);
 
     if (TryConsumeToken(tok::equal, EqualLoc)) {
       AssignedVal = ParseConstantExpression();
@@ -4018,7 +4041,7 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
                                                     IdentLoc, Ident,
                                                     attrs.getList(), EqualLoc,
                                                     AssignedVal.get());
-    PD.complete(EnumConstDecl);
+    EnumAvailabilityDiags.back().done();
 
     EnumConstantDecls.push_back(EnumConstDecl);
     LastEnumConstDecl = EnumConstDecl;
@@ -4073,6 +4096,14 @@ void Parser::ParseEnumBody(SourceLocation StartLoc, Decl *EnumDecl) {
                         EnumDecl, EnumConstantDecls,
                         getCurScope(),
                         attrs.getList());
+
+  // Now handle enum constant availability diagnostics.
+  assert(EnumConstantDecls.size() == EnumAvailabilityDiags.size());
+  for (size_t i = 0, e = EnumConstantDecls.size(); i != e; ++i) {
+    ParsingDeclRAIIObject PD(*this, ParsingDeclRAIIObject::NoParent);
+    EnumAvailabilityDiags[i].redelay();
+    PD.complete(EnumConstantDecls[i]);
+  }
 
   EnumScope.Exit();
   Actions.ActOnTagFinishDefinition(getCurScope(), EnumDecl,
