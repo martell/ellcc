@@ -4040,6 +4040,14 @@ TEST_F(FormatTest, BreaksFunctionDeclarationsWithTrailingTokens) {
       "    aaaaaaaaaaaaaaaaaaaaaaaaa;");
 }
 
+TEST_F(FormatTest, FunctionAnnotations) {
+  verifyFormat("DEPRECATED(\"Use NewClass::NewFunction instead.\")\n"
+               "string OldFunction(const string &parameter) {}");
+  verifyFormat("template <typename T>\n"
+               "DEPRECATED(\"Use NewClass::NewFunction instead.\")\n"
+               "string OldFunction(const string &parameter) {}");
+}
+
 TEST_F(FormatTest, BreaksDesireably) {
   verifyFormat("if (aaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaa) ||\n"
                "    aaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaa) ||\n"
@@ -4768,7 +4776,11 @@ TEST_F(FormatTest, AlignsStringLiterals) {
   verifyFormat("f(@\"a\"\n"
                "  @\"b\");");
   verifyFormat("NSString s = @\"a\"\n"
-               "             @\"b\";");
+               "             @\"b\"\n"
+               "             @\"c\";");
+  verifyFormat("NSString s = @\"a\"\n"
+               "              \"b\"\n"
+               "              \"c\";");
 }
 
 TEST_F(FormatTest, AlwaysBreakAfterDefinitionReturnType) {
@@ -4894,14 +4906,12 @@ TEST_F(FormatTest, AlignsPipes) {
       "aaaaaaaa << (aaaaaaaaaaaaaaaaaaa << aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
       "                                 << aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)\n"
       "         << aaaaaaaaaaaaaaaaaaaaaaaaaaaaa;");
-  verifyFormat(
-      "llvm::errs() << \"a: \" << aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
-      "                             aaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
-      "                             aaaaaaaaaaaaaaaaaaaaaaaaaaaa);");
   verifyFormat("llvm::errs() << aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
                "                    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
                "                    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)\n"
                "             << bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;");
+  verifyFormat("llvm::errs() << \"aaaaaaaaaaaaaaaaaaaaaaa: \"\n"
+               "             << aaaaaaaaaaaaaaaaa(aaaaaaaa, aaaaaaaaaaa);");
   verifyFormat(
       "llvm::errs() << aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
       "    aaaaaaaaaaaaaaaaaaaaaaaaaaaa, aaaaaaaaaaaaaaaaaaaaaaaaaaaa);");
