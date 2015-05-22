@@ -75,6 +75,8 @@ static void PrintHelp() {
     std::cerr << "\t";
     std::cerr << D.Default << "\t" << D.Description << "\n";
   }
+  std::cerr << "\nFlags starting with '--' will be ignored and "
+            "will be passed verbatim to subprocesses.\n";
 }
 
 static const char *FlagValue(const char *Param, const char *Name) {
@@ -87,6 +89,14 @@ static const char *FlagValue(const char *Param, const char *Name) {
 
 static bool ParseOneFlag(const char *Param) {
   if (Param[0] != '-') return false;
+  if (Param[1] == '-') {
+    static bool PrintedWarning = false;
+    if (!PrintedWarning) {
+      PrintedWarning = true;
+      std::cerr << "WARNING: libFuzzer ignores flags that start with '--'\n";
+    }
+    return true;
+  }
   for (size_t F = 0; F < kNumFlags; F++) {
     const char *Name = FlagDescriptions[F].Name;
     const char *Str = FlagValue(Param, Name);
@@ -215,6 +225,7 @@ int FuzzerDriver(int argc, char **argv, UserCallback Callback) {
   Fuzzer::FuzzingOptions Options;
   Options.Verbosity = Flags.verbosity;
   Options.MaxLen = Flags.max_len;
+  Options.UnitTimeoutSec = Flags.timeout;
   Options.DoCrossOver = Flags.cross_over;
   Options.MutateDepth = Flags.mutate_depth;
   Options.ExitOnFirst = Flags.exit_on_first;
@@ -230,6 +241,9 @@ int FuzzerDriver(int argc, char **argv, UserCallback Callback) {
     Options.MaxNumberOfRuns = Flags.runs;
   if (!inputs.empty())
     Options.OutputCorpus = inputs[0];
+  if (Flags.sync_command)
+    Options.SyncCommand = Flags.sync_command;
+  Options.SyncTimeout = Flags.sync_timeout;
   Fuzzer F(Callback, Options);
 
   unsigned seed = Flags.seed;
@@ -242,7 +256,7 @@ int FuzzerDriver(int argc, char **argv, UserCallback Callback) {
 
   // Timer
   if (Flags.timeout > 0)
-    SetTimer(Flags.timeout);
+    SetTimer(Flags.timeout / 2 + 1);
 
   if (Flags.verbosity >= 2) {
     std::cerr << "Tokens: {";

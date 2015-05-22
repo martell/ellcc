@@ -61,7 +61,7 @@ GetJumpTableSymbol(const MachineOperand &MO) const {
   }
 
   // Create a symbol for the name.
-  return Ctx.GetOrCreateSymbol(Name.str());
+  return Ctx.getOrCreateSymbol(Name.str());
 }
 
 MCSymbol *MBlazeMCInstLower::
@@ -79,7 +79,7 @@ GetConstantPoolIndexSymbol(const MachineOperand &MO) const {
   }
 
   // Create a symbol for the name.
-  return Ctx.GetOrCreateSymbol(Name.str());
+  return Ctx.getOrCreateSymbol(Name.str());
 }
 
 MCSymbol *MBlazeMCInstLower::

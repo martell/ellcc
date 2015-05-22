@@ -104,11 +104,12 @@ void DyldELFObject<ELFT>::updateSymbolAddress(const SymbolRef &SymRef,
   sym->st_value = static_cast<addr_type>(Addr);
 }
 
-class LoadedELFObjectInfo : public RuntimeDyld::LoadedObjectInfo {
+class LoadedELFObjectInfo
+    : public RuntimeDyld::LoadedObjectInfoHelper<LoadedELFObjectInfo> {
 public:
   LoadedELFObjectInfo(RuntimeDyldImpl &RTDyld, unsigned BeginIdx,
                       unsigned EndIdx)
-    : RuntimeDyld::LoadedObjectInfo(RTDyld, BeginIdx, EndIdx) {}
+      : LoadedObjectInfoHelper(RTDyld, BeginIdx, EndIdx) {}
 
   OwningBinary<ObjectFile>
   getObjectForDebug(const ObjectFile &Obj) const override;

@@ -15,11 +15,11 @@
 namespace llvm {
 
   class MBlazeTargetObjectFile : public TargetLoweringObjectFileELF {
-    const MCSection *SmallDataSection;
-    const MCSection *SmallBSSSection;
+    MCSection *SmallDataSection;
+    MCSection *SmallBSSSection;
   public:
 
-    void Initialize(MCContext &Ctx, const TargetMachine &TM);
+    void Initialize(MCContext &Ctx, const TargetMachine &TM) override;
 
     /// IsGlobalInSmallSection - Return true if this global address should be
     /// placed into small data/bss section.
@@ -30,10 +30,9 @@ namespace llvm {
     bool IsGlobalInSmallSection(const GlobalValue *GV,
                                 const TargetMachine &TM) const;
 
-    const MCSection *SelectSectionForGlobal(const GlobalValue *GV,
-                                            SectionKind Kind,
-                                            Mangler &Mang,
-                                            const TargetMachine &TM) const;
+    MCSection *SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
+                                      Mangler &Mang,
+                                      const TargetMachine &TM) const override;
   };
 } // end namespace llvm
 

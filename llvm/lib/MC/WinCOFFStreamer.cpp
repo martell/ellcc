@@ -219,10 +219,10 @@ void MCWinCOFFStreamer::EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
                                               unsigned ByteAlignment) {
   assert(!Symbol->isInSection() && "Symbol must not already have a section!");
 
-  const MCSection *Section = getContext().getObjectFileInfo()->getBSSSection();
+  MCSection *Section = getContext().getObjectFileInfo()->getBSSSection();
   MCSectionData &SectionData = getAssembler().getOrCreateSectionData(*Section);
-  if (SectionData.getAlignment() < ByteAlignment)
-    SectionData.setAlignment(ByteAlignment);
+  if (Section->getAlignment() < ByteAlignment)
+    Section->setAlignment(ByteAlignment);
 
   MCSymbolData &SD = getAssembler().getOrCreateSymbolData(*Symbol);
   SD.setExternal(false);
@@ -238,15 +238,13 @@ void MCWinCOFFStreamer::EmitLocalCommonSymbol(MCSymbol *Symbol, uint64_t Size,
   SD.setFragment(Fragment);
 }
 
-void MCWinCOFFStreamer::EmitZerofill(const MCSection *Section,
-                                     MCSymbol *Symbol, uint64_t Size,
-                                     unsigned ByteAlignment) {
+void MCWinCOFFStreamer::EmitZerofill(MCSection *Section, MCSymbol *Symbol,
+                                     uint64_t Size, unsigned ByteAlignment) {
   llvm_unreachable("not implemented");
 }
 
-void MCWinCOFFStreamer::EmitTBSSSymbol(const MCSection *Section,
-                                       MCSymbol *Symbol, uint64_t Size,
-                                       unsigned ByteAlignment) {
+void MCWinCOFFStreamer::EmitTBSSSymbol(MCSection *Section, MCSymbol *Symbol,
+                                       uint64_t Size, unsigned ByteAlignment) {
   llvm_unreachable("not implemented");
 }
 
@@ -269,7 +267,7 @@ void MCWinCOFFStreamer::FinishImpl() {
 
 LLVM_ATTRIBUTE_NORETURN
 void MCWinCOFFStreamer::FatalError(const Twine &Msg) const {
-  getContext().FatalError(SMLoc(), Msg);
+  getContext().reportFatalError(SMLoc(), Msg);
 }
 }
 

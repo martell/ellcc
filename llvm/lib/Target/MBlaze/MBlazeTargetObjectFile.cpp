@@ -71,7 +71,7 @@ IsGlobalInSmallSection(const GlobalValue *GV, const TargetMachine &TM,
   return IsInSmallSection(TM.getDataLayout()->getTypeAllocSize(Ty));
 }
 
-const MCSection *MBlazeTargetObjectFile::
+MCSection *MBlazeTargetObjectFile::
 SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
                        Mangler &Mang, const TargetMachine &TM) const {
   // TODO: Could also support "weak" symbols as well with ".gnu.linkonce.s.*"

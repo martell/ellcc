@@ -557,16 +557,13 @@ public:
 
 private:
   FragmentListType Fragments;
-  const MCSection *Section;
+  MCSection *Section;
 
   /// Ordinal - The section index in the assemblers section list.
   unsigned Ordinal;
 
   /// LayoutOrder - The index of this section in the layout order.
   unsigned LayoutOrder;
-
-  /// Alignment - The maximum alignment seen in this section.
-  unsigned Alignment;
 
   /// \brief Keeping track of bundle-locked state.
   BundleLockStateType BundleLockState;
@@ -596,12 +593,9 @@ private:
 public:
   // Only for use as sentinel.
   MCSectionData();
-  MCSectionData(const MCSection &Section, MCAssembler *A = nullptr);
+  MCSectionData(MCSection &Section, MCAssembler *A = nullptr);
 
-  const MCSection &getSection() const { return *Section; }
-
-  unsigned getAlignment() const { return Alignment; }
-  void setAlignment(unsigned Value) { Alignment = Value; }
+  MCSection &getSection() const { return *Section; }
 
   bool hasInstructions() const { return HasInstructions; }
   void setHasInstructions(bool Value) { HasInstructions = Value; }
@@ -834,7 +828,7 @@ public:
 
   /// Find the symbol which defines the atom containing the given symbol, or
   /// null if there is no such symbol.
-  const MCSymbol *getAtom(const MCSymbolData *Symbol) const;
+  const MCSymbol *getAtom(const MCSymbol &S) const;
 
   /// Check whether a particular symbol is visible to the linker and is required
   /// in the symbol table, or whether it can be discarded by the assembler. This
@@ -1021,7 +1015,7 @@ public:
     return *Entry;
   }
 
-  MCSectionData &getOrCreateSectionData(const MCSection &Section,
+  MCSectionData &getOrCreateSectionData(MCSection &Section,
                                         bool *Created = nullptr) {
     MCSectionData *&Entry = SectionMap[&Section];
 
@@ -1033,9 +1027,7 @@ public:
     return *Entry;
   }
 
-  bool hasSymbolData(const MCSymbol &Symbol) const {
-    return Symbol.getUnsafeData().isInitialized();
-  }
+  bool hasSymbolData(const MCSymbol &Symbol) const { return Symbol.hasData(); }
 
   MCSymbolData &getSymbolData(const MCSymbol &Symbol) {
     return const_cast<MCSymbolData &>(
@@ -1051,7 +1043,7 @@ public:
     if (Created)
       *Created = !hasSymbolData(Symbol);
     if (!hasSymbolData(Symbol)) {
-      Symbol.getUnsafeData().initialize(Symbol, nullptr, 0);
+      Symbol.initializeData();
       Symbols.push_back(&Symbol);
     }
     return Symbol.getData();

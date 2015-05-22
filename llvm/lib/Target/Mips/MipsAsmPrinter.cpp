@@ -911,7 +911,7 @@ void MipsAsmPrinter::EmitSwapFPIntRetval(
 
 void MipsAsmPrinter::EmitFPCallStub(
     const char *Symbol, const Mips16HardFloatInfo::FuncSignature *Signature) {
-  MCSymbol *MSymbol = OutContext.GetOrCreateSymbol(StringRef(Symbol));
+  MCSymbol *MSymbol = OutContext.getOrCreateSymbol(StringRef(Symbol));
   using namespace Mips16HardFloatInfo;
   bool LE = getDataLayout().isLittleEndian();
   // Construct a local MCSubtargetInfo here.
@@ -981,7 +981,7 @@ void MipsAsmPrinter::EmitFPCallStub(
   //
   // .section mips16.call.fpxxxx,"ax",@progbits
   //
-  const MCSectionELF *M = OutContext.getELFSection(
+  MCSectionELF *M = OutContext.getELFSection(
       ".mips16.call.fp." + std::string(Symbol), ELF::SHT_PROGBITS,
       ELF::SHF_ALLOC | ELF::SHF_EXECINSTR);
   OutStreamer->SwitchSection(M, nullptr);
@@ -1002,10 +1002,10 @@ void MipsAsmPrinter::EmitFPCallStub(
   //  __call_stub_fp_xxxx:
   //
   std::string x = "__call_stub_fp_" + std::string(Symbol);
-  MCSymbol *Stub = OutContext.GetOrCreateSymbol(StringRef(x));
+  MCSymbol *Stub = OutContext.getOrCreateSymbol(StringRef(x));
   TS.emitDirectiveEnt(*Stub);
   MCSymbol *MType =
-      OutContext.GetOrCreateSymbol("__call_stub_fp_" + Twine(Symbol));
+      OutContext.getOrCreateSymbol("__call_stub_fp_" + Twine(Symbol));
   OutStreamer->EmitSymbolAttribute(MType, MCSA_ELF_TypeFunction);
   OutStreamer->EmitLabel(Stub);
 
@@ -1045,7 +1045,7 @@ void MipsAsmPrinter::EmitFPCallStub(
   // else
   EmitInstrReg(*STI, Mips::JR, Mips::S2);
 
-  MCSymbol *Tmp = OutContext.CreateTempSymbol();
+  MCSymbol *Tmp = OutContext.createTempSymbol();
   OutStreamer->EmitLabel(Tmp);
   const MCSymbolRefExpr *E = MCSymbolRefExpr::Create(Stub, OutContext);
   const MCSymbolRefExpr *T = MCSymbolRefExpr::Create(Tmp, OutContext);
