@@ -12,12 +12,12 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/MC/MCAssembler.h"
+#include "llvm/MC/MCSection.h"
 #include "llvm/MC/MCStreamer.h"
 
 namespace llvm {
 class MCAssembler;
 class MCCodeEmitter;
-class MCSectionData;
 class MCSubtargetInfo;
 class MCExpr;
 class MCFragment;
@@ -35,11 +35,10 @@ class raw_pwrite_stream;
 /// implementation.
 class MCObjectStreamer : public MCStreamer {
   MCAssembler *Assembler;
-  MCSectionData *CurSectionData;
-  MCSectionData::iterator CurInsertionPoint;
+  MCSection::iterator CurInsertionPoint;
   bool EmitEHFrame;
   bool EmitDebugFrame;
-  SmallVector<MCSymbolData *, 2> PendingLabels;
+  SmallVector<MCSymbol *, 2> PendingLabels;
 
   virtual void EmitInstToData(const MCInst &Inst, const MCSubtargetInfo&) = 0;
   void EmitCFIStartProcImpl(MCDwarfFrameInfo &Frame) override;
@@ -57,23 +56,20 @@ public:
   /// Object streamers require the integrated assembler.
   bool isIntegratedAssemblerRequired() const override { return true; }
 
-  MCSymbolData &getOrCreateSymbolData(const MCSymbol *Symbol) {
-    return getAssembler().getOrCreateSymbolData(*Symbol);
+  void getOrCreateSymbolData(const MCSymbol *Symbol) {
+    getAssembler().registerSymbol(*Symbol);
   }
   void EmitFrames(MCAsmBackend *MAB);
   void EmitCFISections(bool EH, bool Debug) override;
 
 protected:
-  MCSectionData *getCurrentSectionData() const {
-    return CurSectionData;
-  }
-
   MCFragment *getCurrentFragment() const;
 
   void insert(MCFragment *F) {
     flushPendingLabels(F);
-    CurSectionData->getFragmentList().insert(CurInsertionPoint, F);
-    F->setParent(CurSectionData);
+    MCSection *CurSection = getCurrentSectionOnly();
+    CurSection->getFragmentList().insert(CurInsertionPoint, F);
+    F->setParent(CurSection);
   }
 
   /// Get a data fragment to write into, creating a new one if the current
@@ -146,9 +142,7 @@ public:
   bool emitAbsoluteSymbolDiff(const MCSymbol *Hi, const MCSymbol *Lo,
                               unsigned Size) override;
 
-  bool mayHaveInstructions(MCSection &Sec) const override {
-    return Assembler->getOrCreateSectionData(Sec).hasInstructions();
-  }
+  bool mayHaveInstructions(MCSection &Sec) const override;
 };
 
 } // end namespace llvm

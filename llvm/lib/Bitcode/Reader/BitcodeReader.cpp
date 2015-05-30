@@ -63,9 +63,7 @@ public:
   // vector compatibility methods
   unsigned size() const { return ValuePtrs.size(); }
   void resize(unsigned N) { ValuePtrs.resize(N); }
-  void push_back(Value *V) {
-    ValuePtrs.push_back(V);
-  }
+  void push_back(Value *V) { ValuePtrs.emplace_back(V); }
 
   void clear() {
     assert(ResolveConstants.empty() && "Constants not resolved?");
@@ -785,7 +783,8 @@ Constant *BitcodeReaderValueList::getConstantFwdRef(unsigned Idx,
     resize(Idx + 1);
 
   if (Value *V = ValuePtrs[Idx]) {
-    assert(Ty == V->getType() && "Type mismatch in constant table!");
+    if (Ty != V->getType())
+      report_fatal_error("Type mismatch in constant table!");
     return cast<Constant>(V);
   }
 
@@ -1095,6 +1094,8 @@ static Attribute::AttrKind GetAttrFromCode(uint64_t Code) {
     return Attribute::InAlloca;
   case bitc::ATTR_KIND_COLD:
     return Attribute::Cold;
+  case bitc::ATTR_KIND_CONVERGENT:
+    return Attribute::Convergent;
   case bitc::ATTR_KIND_INLINE_HINT:
     return Attribute::InlineHint;
   case bitc::ATTR_KIND_IN_REG:
@@ -1633,9 +1634,9 @@ std::error_code BitcodeReader::ParseMetadata() {
       Record.clear();
       Code = Stream.ReadCode();
 
-      // METADATA_NAME is always followed by METADATA_NAMED_NODE.
       unsigned NextBitCode = Stream.readRecord(Code, Record);
-      assert(NextBitCode == bitc::METADATA_NAMED_NODE); (void)NextBitCode;
+      if (NextBitCode != bitc::METADATA_NAMED_NODE)
+        return Error("METADATA_NAME not followed by METADATA_NAMED_NODE");
 
       // Read named metadata elements.
       unsigned Size = Record.size();
@@ -2956,7 +2957,8 @@ std::error_code BitcodeReader::ParseModule(bool Resume,
 
       if (Record.size() > 11) {
         if (unsigned ComdatID = Record[11]) {
-          assert(ComdatID <= ComdatList.size());
+          if (ComdatID > ComdatList.size())
+            return Error("Invalid global variable comdat ID");
           NewGV->setComdat(ComdatList[ComdatID - 1]);
         }
       } else if (hasImplicitComdat(RawLinkage)) {
@@ -3020,7 +3022,8 @@ std::error_code BitcodeReader::ParseModule(bool Resume,
 
       if (Record.size() > 12) {
         if (unsigned ComdatID = Record[12]) {
-          assert(ComdatID <= ComdatList.size());
+          if (ComdatID > ComdatList.size())
+            return Error("Invalid function comdat ID");
           Func->setComdat(ComdatList[ComdatID - 1]);
         }
       } else if (hasImplicitComdat(RawLinkage)) {

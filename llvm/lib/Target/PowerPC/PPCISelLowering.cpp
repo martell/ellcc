@@ -403,15 +403,8 @@ PPCTargetLowering::PPCTargetLowering(const PPCTargetMachine &TM,
     // will selectively turn on ones that can be effectively codegen'd.
     for (MVT VT : MVT::vector_valuetypes()) {
       // add/sub are legal for all supported vector VT's.
-      // This check is temporary until support for quadword add/sub is added
-      if (VT.SimpleTy != MVT::v1i128) {
-        setOperationAction(ISD::ADD , VT, Legal);
-        setOperationAction(ISD::SUB , VT, Legal);
-      }
-      else {
-        setOperationAction(ISD::ADD , VT, Expand);
-        setOperationAction(ISD::SUB , VT, Expand);
-      }
+      setOperationAction(ISD::ADD , VT, Legal);
+      setOperationAction(ISD::SUB , VT, Legal);
       
       // Vector instructions introduced in P8
       if (Subtarget.hasP8Altivec() && (VT.SimpleTy != MVT::v1i128)) {
@@ -1048,6 +1041,9 @@ const char *PPCTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case PPCISD::ADDI_DTPREL_L:   return "PPCISD::ADDI_DTPREL_L";
   case PPCISD::VADD_SPLAT:      return "PPCISD::VADD_SPLAT";
   case PPCISD::SC:              return "PPCISD::SC";
+  case PPCISD::CLRBHRB:         return "PPCISD::CLRBHRB";
+  case PPCISD::MFBHRBE:         return "PPCISD::MFBHRBE";
+  case PPCISD::RFEBB:           return "PPCISD::RFEBB";
   case PPCISD::XXSWAPD:         return "PPCISD::XXSWAPD";
   case PPCISD::QVFPERM:         return "PPCISD::QVFPERM";
   case PPCISD::QVGPCI:          return "PPCISD::QVGPCI";

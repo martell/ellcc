@@ -452,7 +452,7 @@ std::unique_ptr<MBlazeOperand> MBlazeAsmParser::ParseFsl() {
       return 0;
 
     getLexer().Lex();
-    const MCExpr *EVal = MCConstantExpr::Create(reg,getContext());
+    const MCExpr *EVal = MCConstantExpr::create(reg,getContext());
     return MBlazeOperand::CreateFslImm(EVal, S, E, *this);
   }
 }

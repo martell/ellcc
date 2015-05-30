@@ -857,17 +857,16 @@ DwarfDebug::buildLocationList(SmallVectorImpl<DebugLocEntry> &DebugLoc,
     // Attempt to coalesce the ranges of two otherwise identical
     // DebugLocEntries.
     auto CurEntry = DebugLoc.rbegin();
+    DEBUG({
+      dbgs() << CurEntry->getValues().size() << " Values:\n";
+      for (auto &Value : CurEntry->getValues())
+        Value.getExpression()->dump();
+      dbgs() << "-----\n";
+    });
+
     auto PrevEntry = std::next(CurEntry);
     if (PrevEntry != DebugLoc.rend() && PrevEntry->MergeRanges(*CurEntry))
       DebugLoc.pop_back();
-
-    DEBUG({
-      dbgs() << CurEntry->getValues().size() << " Values:\n";
-      for (auto Value : CurEntry->getValues()) {
-        Value.getExpression()->dump();
-      }
-      dbgs() << "-----\n";
-    });
   }
 }
 
@@ -1341,9 +1340,8 @@ static dwarf::PubIndexEntryDescriptor computeIndexValue(DwarfUnit *CU,
 
   // We could have a specification DIE that has our most of our knowledge,
   // look for that now.
-  DIEValue *SpecVal = Die->findAttribute(dwarf::DW_AT_specification);
-  if (SpecVal) {
-    DIE &SpecDIE = cast<DIEEntry>(SpecVal)->getEntry();
+  if (DIEValue SpecVal = Die->findAttribute(dwarf::DW_AT_specification)) {
+    DIE &SpecDIE = SpecVal.getDIEEntry().getEntry();
     if (SpecDIE.findAttribute(dwarf::DW_AT_external))
       Linkage = dwarf::GIEL_EXTERNAL;
   } else if (Die->findAttribute(dwarf::DW_AT_external))
@@ -1977,27 +1975,23 @@ void DwarfDebug::addDwarfTypeUnitType(DwarfCompileUnit &CU,
 void DwarfDebug::addAccelName(StringRef Name, const DIE &Die) {
   if (!useDwarfAccelTables())
     return;
-  AccelNames.AddName(Name, InfoHolder.getStringPool().getSymbol(*Asm, Name),
-                     &Die);
+  AccelNames.AddName(InfoHolder.getStringPool().getEntry(*Asm, Name), &Die);
 }
 
 void DwarfDebug::addAccelObjC(StringRef Name, const DIE &Die) {
   if (!useDwarfAccelTables())
     return;
-  AccelObjC.AddName(Name, InfoHolder.getStringPool().getSymbol(*Asm, Name),
-                    &Die);
+  AccelObjC.AddName(InfoHolder.getStringPool().getEntry(*Asm, Name), &Die);
 }
 
 void DwarfDebug::addAccelNamespace(StringRef Name, const DIE &Die) {
   if (!useDwarfAccelTables())
     return;
-  AccelNamespace.AddName(Name, InfoHolder.getStringPool().getSymbol(*Asm, Name),
-                         &Die);
+  AccelNamespace.AddName(InfoHolder.getStringPool().getEntry(*Asm, Name), &Die);
 }
 
 void DwarfDebug::addAccelType(StringRef Name, const DIE &Die, char Flags) {
   if (!useDwarfAccelTables())
     return;
-  AccelTypes.AddName(Name, InfoHolder.getStringPool().getSymbol(*Asm, Name),
-                     &Die);
+  AccelTypes.AddName(InfoHolder.getStringPool().getEntry(*Asm, Name), &Die);
 }

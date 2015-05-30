@@ -82,6 +82,10 @@ TEST_F(FormatTestJS, UnderstandsJavaScriptOperators) {
 
   verifyFormat("var b = a.map((x) => x + 1);");
   verifyFormat("return ('aaa') in bbbb;");
+
+  // ES6 spread operator.
+  verifyFormat("someFunction(...a);");
+  verifyFormat("var x = [1, ...a, 2];");
 }
 
 TEST_F(FormatTestJS, UnderstandsAmpAmp) {
@@ -147,6 +151,11 @@ TEST_F(FormatTestJS, ContainerLiterals) {
   // Arrow functions in object literals.
   verifyFormat("var x = {y: (a) => { return a; }};");
   verifyFormat("var x = {y: (a) => a};");
+
+  // Computed keys.
+  verifyFormat("var x = {\n"
+               "  [a]: 1,\n"
+               "};");
 }
 
 TEST_F(FormatTestJS, MethodsInObjectLiterals) {
@@ -233,6 +242,13 @@ TEST_F(FormatTestJS, FormatsFreestandingFunctions) {
                "  function inner2(a, b) { return a; }\n"
                "  inner2(a, b);\n"
                "}");
+}
+
+TEST_F(FormatTestJS, ArrayLiterals) {
+  verifyFormat("var aaaaa: List<SomeThing> = [\n"
+               "  new SomeThingAAAAAAAAAAAA(),\n"
+               "  new SomeThingBBBBBBBBB()\n"
+               "];");
 }
 
 TEST_F(FormatTestJS, FunctionLiterals) {
@@ -749,6 +765,13 @@ TEST_F(FormatTestJS, OptionalTypes) {
                "  y?(): z;\n"
                "}");
   verifyFormat("x ? 1 : 2;");
+  verifyFormat("constructor({aa}: {\n"
+               "  aa?: string,\n"
+               "  aaaaaaaa?: string,\n"
+               "  aaaaaaaaaaaaaaa?: boolean,\n"
+               "  aaaaaa?: List<string>\n"
+               "}) {\n"
+               "}");
 }
 
 TEST_F(FormatTestJS, IndexSignature) {

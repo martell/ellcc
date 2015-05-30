@@ -24,7 +24,6 @@ class MCCodeEmitter;
 class MCExpr;
 class MCInst;
 class MCSymbol;
-class MCSymbolData;
 class raw_ostream;
 
 class MCELFStreamer : public MCObjectStreamer {
@@ -89,6 +88,7 @@ public:
   void EmitBundleUnlock() override;
 
 private:
+  bool isBundleLocked() const;
   void EmitInstToFragment(const MCInst &Inst, const MCSubtargetInfo &) override;
   void EmitInstToData(const MCInst &Inst, const MCSubtargetInfo &) override;
 

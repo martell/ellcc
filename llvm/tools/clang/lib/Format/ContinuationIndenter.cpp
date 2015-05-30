@@ -143,11 +143,10 @@ bool ContinuationIndenter::mustBreak(const LineState &State) {
   if (Previous.is(tok::semi) && State.LineContainsContinuedForLoopSection)
     return true;
   if ((startsNextParameter(Current, Style) || Previous.is(tok::semi) ||
-       (Style.BreakBeforeTernaryOperators &&
-        (Current.is(tok::question) ||
-         (Current.is(TT_ConditionalExpr) && Previous.isNot(tok::question)))) ||
+       (Style.BreakBeforeTernaryOperators && Current.is(TT_ConditionalExpr) &&
+        Previous.isNot(tok::question)) ||
        (!Style.BreakBeforeTernaryOperators &&
-        (Previous.is(tok::question) || Previous.is(TT_ConditionalExpr)))) &&
+        Previous.is(TT_ConditionalExpr))) &&
       State.Stack.back().BreakBeforeParameter && !Current.isTrailingComment() &&
       !Current.isOneOf(tok::r_paren, tok::r_brace))
     return true;
@@ -856,7 +855,7 @@ void ContinuationIndenter::moveStatePastScopeOpener(LineState &State,
     const FormatToken *NextNoComment = Current.getNextNonComment();
     AvoidBinPacking =
         Current.isOneOf(TT_ArrayInitializerLSquare, TT_DictLiteral) ||
-        Style.Language == FormatStyle::LK_Proto || !Style.BinPackParameters ||
+        Style.Language == FormatStyle::LK_Proto || !Style.BinPackArguments ||
         (NextNoComment && NextNoComment->is(TT_DesignatedInitializerPeriod));
   } else {
     NewIndent = Style.ContinuationIndentWidth +

@@ -358,7 +358,6 @@ void MipsTargetAsmStreamer::emitDirectiveModuleFP(
     MipsABIFlagsSection::FpABIKind Value, bool Is32BitABI) {
   MipsTargetStreamer::emitDirectiveModuleFP(Value, Is32BitABI);
 
-  StringRef ModuleValue;
   OS << "\t.module\tfp=";
   OS << ABIFlagsSection.getFpABIString(Value) << "\n";
 }
@@ -367,7 +366,6 @@ void MipsTargetAsmStreamer::emitDirectiveSetFp(
     MipsABIFlagsSection::FpABIKind Value) {
   MipsTargetStreamer::emitDirectiveSetFp(Value);
 
-  StringRef ModuleValue;
   OS << "\t.set\tfp=";
   OS << ABIFlagsSection.getFpABIString(Value) << "\n";
 }
@@ -386,7 +384,7 @@ MipsTargetELFStreamer::MipsTargetELFStreamer(MCStreamer &S,
   MCAssembler &MCA = getStreamer().getAssembler();
   Pic = MCA.getContext().getObjectFileInfo()->getRelocM() == Reloc::PIC_;
 
-  uint64_t Features = STI.getFeatureBits();
+  const FeatureBitset &Features = STI.getFeatureBits();
 
   // Set the header flags that we can in the constructor.
   // FIXME: This is a fairly terrible hack. We set the rest
@@ -402,35 +400,35 @@ MipsTargetELFStreamer::MipsTargetELFStreamer(MCStreamer &S,
   unsigned EFlags = MCA.getELFHeaderEFlags();
 
   // Architecture
-  if (Features & Mips::FeatureMips64r6)
+  if (Features[Mips::FeatureMips64r6])
     EFlags |= ELF::EF_MIPS_ARCH_64R6;
-  else if (Features & Mips::FeatureMips64r2 ||
-           Features & Mips::FeatureMips64r3 ||
-           Features & Mips::FeatureMips64r5)
+  else if (Features[Mips::FeatureMips64r2] ||
+           Features[Mips::FeatureMips64r3] ||
+           Features[Mips::FeatureMips64r5])
     EFlags |= ELF::EF_MIPS_ARCH_64R2;
-  else if (Features & Mips::FeatureMips64)
+  else if (Features[Mips::FeatureMips64])
     EFlags |= ELF::EF_MIPS_ARCH_64;
-  else if (Features & Mips::FeatureMips5)
+  else if (Features[Mips::FeatureMips5])
     EFlags |= ELF::EF_MIPS_ARCH_5;
-  else if (Features & Mips::FeatureMips4)
+  else if (Features[Mips::FeatureMips4])
     EFlags |= ELF::EF_MIPS_ARCH_4;
-  else if (Features & Mips::FeatureMips3)
+  else if (Features[Mips::FeatureMips3])
     EFlags |= ELF::EF_MIPS_ARCH_3;
-  else if (Features & Mips::FeatureMips32r6)
+  else if (Features[Mips::FeatureMips32r6])
     EFlags |= ELF::EF_MIPS_ARCH_32R6;
-  else if (Features & Mips::FeatureMips32r2 ||
-           Features & Mips::FeatureMips32r3 ||
-           Features & Mips::FeatureMips32r5)
+  else if (Features[Mips::FeatureMips32r2] ||
+           Features[Mips::FeatureMips32r3] ||
+           Features[Mips::FeatureMips32r5])
     EFlags |= ELF::EF_MIPS_ARCH_32R2;
-  else if (Features & Mips::FeatureMips32)
+  else if (Features[Mips::FeatureMips32])
     EFlags |= ELF::EF_MIPS_ARCH_32;
-  else if (Features & Mips::FeatureMips2)
+  else if (Features[Mips::FeatureMips2])
     EFlags |= ELF::EF_MIPS_ARCH_2;
   else
     EFlags |= ELF::EF_MIPS_ARCH_1;
 
   // Other options.
-  if (Features & Mips::FeatureNaN2008)
+  if (Features[Mips::FeatureNaN2008])
     EFlags |= ELF::EF_MIPS_NAN2008;
 
   // -mabicalls and -mplt are not implemented but we should act as if they were
@@ -443,15 +441,15 @@ MipsTargetELFStreamer::MipsTargetELFStreamer(MCStreamer &S,
 void MipsTargetELFStreamer::emitLabel(MCSymbol *Symbol) {
   if (!isMicroMipsEnabled())
     return;
-  MCSymbolData &Data = getStreamer().getOrCreateSymbolData(Symbol);
-  uint8_t Type = MCELF::GetType(Data);
+  getStreamer().getOrCreateSymbolData(Symbol);
+  uint8_t Type = MCELF::GetType(*Symbol);
   if (Type != ELF::STT_FUNC)
     return;
 
   // The "other" values are stored in the last 6 bits of the second byte
   // The traditional defines for STO values assume the full byte and thus
   // the shift to pack it.
-  MCELF::setOther(Data, ELF::STO_MIPS_MICROMIPS >> 2);
+  MCELF::setOther(*Symbol, ELF::STO_MIPS_MICROMIPS >> 2);
 }
 
 void MipsTargetELFStreamer::finish() {
@@ -460,17 +458,17 @@ void MipsTargetELFStreamer::finish() {
 
   // .bss, .text and .data are always at least 16-byte aligned.
   MCSection &TextSection = *OFI.getTextSection();
-  MCA.getOrCreateSectionData(TextSection);
+  MCA.registerSection(TextSection);
   MCSection &DataSection = *OFI.getDataSection();
-  MCA.getOrCreateSectionData(DataSection);
+  MCA.registerSection(DataSection);
   MCSection &BSSSection = *OFI.getBSSSection();
-  MCA.getOrCreateSectionData(BSSSection);
+  MCA.registerSection(BSSSection);
 
   TextSection.setAlignment(std::max(16u, TextSection.getAlignment()));
   DataSection.setAlignment(std::max(16u, DataSection.getAlignment()));
   BSSSection.setAlignment(std::max(16u, BSSSection.getAlignment()));
 
-  uint64_t Features = STI.getFeatureBits();
+  const FeatureBitset &Features = STI.getFeatureBits();
 
   // Update e_header flags. See the FIXME and comment above in
   // the constructor for a full rundown on this.
@@ -483,10 +481,10 @@ void MipsTargetELFStreamer::finish() {
   else if (getABI().IsN32())
     EFlags |= ELF::EF_MIPS_ABI2;
 
-  if (Features & Mips::FeatureGP64Bit) {
+  if (Features[Mips::FeatureGP64Bit]) {
     if (getABI().IsO32())
       EFlags |= ELF::EF_MIPS_32BITMODE; /* Compatibility Mode */
-  } else if (Features & Mips::FeatureMips64r2 || Features & Mips::FeatureMips64)
+  } else if (Features[Mips::FeatureMips64r2] || Features[Mips::FeatureMips64])
     EFlags |= ELF::EF_MIPS_32BITMODE;
 
   // If we've set the cpic eflag and we're n64, go ahead and set the pic
@@ -512,16 +510,14 @@ void MipsTargetELFStreamer::emitAssignment(MCSymbol *Symbol,
     return;
   const MCSymbol &RhsSym =
       static_cast<const MCSymbolRefExpr *>(Value)->getSymbol();
-  MCSymbolData &Data = getStreamer().getOrCreateSymbolData(&RhsSym);
 
-  if (!(MCELF::getOther(Data) & (ELF::STO_MIPS_MICROMIPS >> 2)))
+  if (!(MCELF::getOther(RhsSym) & (ELF::STO_MIPS_MICROMIPS >> 2)))
     return;
 
-  MCSymbolData &SymbolData = getStreamer().getOrCreateSymbolData(Symbol);
   // The "other" values are stored in the last 6 bits of the second byte.
   // The traditional defines for STO values assume the full byte and thus
   // the shift to pack it.
-  MCELF::setOther(SymbolData, ELF::STO_MIPS_MICROMIPS >> 2);
+  MCELF::setOther(*Symbol, ELF::STO_MIPS_MICROMIPS >> 2);
 }
 
 MCELFStreamer &MipsTargetELFStreamer::getStreamer() {
@@ -568,9 +564,9 @@ void MipsTargetELFStreamer::emitDirectiveEnd(StringRef Name) {
                                             ELF::SHF_ALLOC | ELF::SHT_REL);
 
   const MCSymbolRefExpr *ExprRef =
-      MCSymbolRefExpr::Create(Name, MCSymbolRefExpr::VK_None, Context);
+      MCSymbolRefExpr::create(Name, MCSymbolRefExpr::VK_None, Context);
 
-  MCA.getOrCreateSectionData(*Sec);
+  MCA.registerSection(*Sec);
   Sec->setAlignment(4);
 
   OS.PushSection();
@@ -693,12 +689,12 @@ void MipsTargetELFStreamer::emitDirectiveCpLoad(unsigned RegNo) {
   StringRef SymName("_gp_disp");
   MCAssembler &MCA = getStreamer().getAssembler();
   MCSymbol *GP_Disp = MCA.getContext().getOrCreateSymbol(SymName);
-  MCA.getOrCreateSymbolData(*GP_Disp);
+  MCA.registerSymbol(*GP_Disp);
 
   MCInst TmpInst;
   TmpInst.setOpcode(Mips::LUi);
   TmpInst.addOperand(MCOperand::createReg(Mips::GP));
-  const MCSymbolRefExpr *HiSym = MCSymbolRefExpr::Create(
+  const MCSymbolRefExpr *HiSym = MCSymbolRefExpr::create(
       "_gp_disp", MCSymbolRefExpr::VK_Mips_ABS_HI, MCA.getContext());
   TmpInst.addOperand(MCOperand::createExpr(HiSym));
   getStreamer().EmitInstruction(TmpInst, STI);
@@ -708,7 +704,7 @@ void MipsTargetELFStreamer::emitDirectiveCpLoad(unsigned RegNo) {
   TmpInst.setOpcode(Mips::ADDiu);
   TmpInst.addOperand(MCOperand::createReg(Mips::GP));
   TmpInst.addOperand(MCOperand::createReg(Mips::GP));
-  const MCSymbolRefExpr *LoSym = MCSymbolRefExpr::Create(
+  const MCSymbolRefExpr *LoSym = MCSymbolRefExpr::create(
       "_gp_disp", MCSymbolRefExpr::VK_Mips_ABS_LO, MCA.getContext());
   TmpInst.addOperand(MCOperand::createExpr(LoSym));
   getStreamer().EmitInstruction(TmpInst, STI);
@@ -752,9 +748,9 @@ void MipsTargetELFStreamer::emitDirectiveCpsetup(unsigned RegNo,
   getStreamer().EmitInstruction(Inst, STI);
   Inst.clear();
 
-  const MCSymbolRefExpr *HiExpr = MCSymbolRefExpr::Create(
+  const MCSymbolRefExpr *HiExpr = MCSymbolRefExpr::create(
       &Sym, MCSymbolRefExpr::VK_Mips_GPOFF_HI, MCA.getContext());
-  const MCSymbolRefExpr *LoExpr = MCSymbolRefExpr::Create(
+  const MCSymbolRefExpr *LoExpr = MCSymbolRefExpr::create(
       &Sym, MCSymbolRefExpr::VK_Mips_GPOFF_LO, MCA.getContext());
 
   // lui $gp, %hi(%neg(%gp_rel(funcSym)))
@@ -788,7 +784,7 @@ void MipsTargetELFStreamer::emitMipsAbiFlags() {
   MCStreamer &OS = getStreamer();
   MCSectionELF *Sec = Context.getELFSection(
       ".MIPS.abiflags", ELF::SHT_MIPS_ABIFLAGS, ELF::SHF_ALLOC, 24, "");
-  MCA.getOrCreateSectionData(*Sec);
+  MCA.registerSection(*Sec);
   Sec->setAlignment(8);
   OS.SwitchSection(Sec);
 

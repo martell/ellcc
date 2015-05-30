@@ -800,6 +800,14 @@ TEST(TripleTest, getARMCPUForArch) {
     EXPECT_STREQ("arm1176jzf-s", Triple.getARMCPUForArch());
   }
   {
+    llvm::Triple Triple("thumbv6-unknown-freebsd");
+    EXPECT_STREQ("arm1176jzf-s", Triple.getARMCPUForArch());
+  }
+  {
+    llvm::Triple Triple("armebv6-unknown-freebsd");
+    EXPECT_STREQ("arm1176jzf-s", Triple.getARMCPUForArch());
+  }
+  {
     llvm::Triple Triple("arm--win32");
     EXPECT_STREQ("cortex-a9", Triple.getARMCPUForArch());
   }
@@ -900,6 +908,14 @@ TEST(TripleTest, ParseARMArch) {
     Triple T = Triple("armv5eb");
     EXPECT_EQ(Triple::armeb, T.getArch());
   }
+  {
+    Triple T = Triple("armebv7m");
+    EXPECT_EQ(Triple::armeb, T.getArch());
+  }
+  {
+    Triple T = Triple("armv7eb");
+    EXPECT_EQ(Triple::armeb, T.getArch());
+  }
   // THUMB
   {
     Triple T = Triple("thumb");
@@ -918,7 +934,19 @@ TEST(TripleTest, ParseARMArch) {
     EXPECT_EQ(Triple::thumbeb, T.getArch());
   }
   {
+    Triple T = Triple("thumbebv7");
+    EXPECT_EQ(Triple::thumbeb, T.getArch());
+  }
+  {
+    Triple T = Triple("armv6m");
+    EXPECT_EQ(Triple::thumb, T.getArch());
+  }
+  {
     Triple T = Triple("thumbv2");
+    EXPECT_EQ(Triple::UnknownArch, T.getArch());
+  }
+  {
+    Triple T = Triple("thumbebv6eb");
     EXPECT_EQ(Triple::UnknownArch, T.getArch());
   }
   // AARCH64

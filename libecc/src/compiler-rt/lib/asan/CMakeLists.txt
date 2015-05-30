@@ -54,6 +54,7 @@ append_list_if(MSVC /DEBUG ASAN_DYNAMIC_CFLAGS)
 
 append_list_if(COMPILER_RT_HAS_LIBC c ASAN_DYNAMIC_LIBS)
 append_list_if(COMPILER_RT_HAS_LIBDL dl ASAN_DYNAMIC_LIBS)
+append_list_if(COMPILER_RT_HAS_LIBRT rt ASAN_DYNAMIC_LIBS)
 append_list_if(COMPILER_RT_HAS_LIBM m ASAN_DYNAMIC_LIBS)
 append_list_if(COMPILER_RT_HAS_LIBPTHREAD pthread ASAN_DYNAMIC_LIBS)
 append_list_if(COMPILER_RT_HAS_LIBSTDCXX stdc++ ASAN_DYNAMIC_LIBS)
@@ -87,6 +88,12 @@ else()
       DEFS ${ASAN_COMMON_DEFINITIONS})
     add_compiler_rt_object_library(RTAsan_dynamic ${arch}
       SOURCES ${ASAN_SOURCES} ${ASAN_CXX_SOURCES}
+      CFLAGS ${ASAN_DYNAMIC_CFLAGS}
+      DEFS ${ASAN_DYNAMIC_DEFINITIONS})
+
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/dummy.cc "")
+    add_compiler_rt_object_library(RTAsan_dynamic_version_script_dummy ${arch}
+      SOURCES ${CMAKE_CURRENT_BINARY_DIR}/dummy.cc
       CFLAGS ${ASAN_DYNAMIC_CFLAGS}
       DEFS ${ASAN_DYNAMIC_DEFINITIONS})
   endforeach()
@@ -152,6 +159,20 @@ else()
       DEFS ${ASAN_COMMON_DEFINITIONS})
     add_dependencies(asan clang_rt.asan-preinit-${arch})
 
+    if (UNIX AND NOT ${arch} MATCHES "i386|i686")
+      add_sanitizer_rt_version_list(clang_rt.asan-dynamic-${arch}
+                                    LIB clang_rt.asan-${arch} clang_rt.asan_cxx-${arch}
+                                    EXTRA asan.syms.extra)
+      set(VERSION_SCRIPT_FLAG
+           -Wl,--version-script,${CMAKE_CURRENT_BINARY_DIR}/clang_rt.asan-dynamic-${arch}.vers)
+      set_source_files_properties(
+        ${CMAKE_CURRENT_BINARY_DIR}/dummy.cc
+	PROPERTIES
+	OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/clang_rt.asan-dynamic-${arch}.vers)
+    else()
+      set(VERSION_SCRIPT_FLAG)
+    endif()
+
     if (WIN32)
       set(SHARED_ASAN_NAME clang_rt.asan_dynamic-${arch}${COMPILER_RT_OS_SUFFIX})
     else()
@@ -160,6 +181,11 @@ else()
     add_compiler_rt_runtime(clang_rt.asan-dynamic-${arch} ${arch} SHARED
       OUTPUT_NAME ${SHARED_ASAN_NAME}
       SOURCES $<TARGET_OBJECTS:RTAsan_dynamic.${arch}>
+              # The only purpose of RTAsan_dynamic_version_script_dummy is to carry
+              # a dependency of the shared runtime on the version script. With CMake
+              # 3.1 or later it can be replaced with a straightforward
+              # add_dependencies(clang_rt.asan-dynamic-${arch} clang_rt.asan-dynamic-${arch}-version-list)
+              $<TARGET_OBJECTS:RTAsan_dynamic_version_script_dummy.${arch}>
               $<TARGET_OBJECTS:RTUbsan_cxx.${arch}>
               ${ASAN_COMMON_RUNTIME_OBJECTS}
       CFLAGS ${ASAN_DYNAMIC_CFLAGS}
