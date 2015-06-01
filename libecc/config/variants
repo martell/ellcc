@@ -8,3 +8,10 @@ armv7m  sc300 cortex-m3
 armv7em cortex-m4 cortex-m7
 armv7s  swift
 armv8a  cortex-a53 cortex-a57 cortex-a72
+
+armv6   arm11
+armv6m  cortex-m0, cortex-m1
+atmv7m  cortex-m3
+atmv7em cortex-m4 cortex-m7
+atmv7a  cortex-a5 cortex-a7 cortex-a8 cortex-a9 cortex-a12 cortex-a15 cortex-a17 krait
+armv8a  cortex-a53 cortex-a57 cortex-a72
