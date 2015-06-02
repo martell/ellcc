@@ -15,3 +15,13 @@ atmv7m  cortex-m3
 atmv7em cortex-m4 cortex-m7
 atmv7a  cortex-a5 cortex-a7 cortex-a8 cortex-a9 cortex-a12 cortex-a15 cortex-a17 krait
 armv8a  cortex-a53 cortex-a57 cortex-a72
+
+-eb-
+-el-
+
+-hf-
+-sf-
+
+-none   (no C lib)
+-elk    (musl C lib)
+-linux  (musl C lib)
