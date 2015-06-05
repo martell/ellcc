@@ -23,19 +23,13 @@
 #define BIG5        0340
 #define EUC_KR      0350
 
-/* FIXME: these are not implemented yet
- * EUC:   A1-FE A1-FE
- * GBK:   81-FE 40-7E,80-FE
- * Big5:  A1-FE 40-7E,A1-FE
- */
-
 /* Definitions of charmaps. Each charmap consists of:
  * 1. Empty-string-terminated list of null-terminated aliases.
  * 2. Special type code or number of elided entries.
  * 3. Character table (size determined by field 2). */
 
 static const unsigned char charmaps[] =
-"utf8\0\0\310"
+"utf8\0char\0\0\310"
 "wchart\0\0\306"
 "ucs2\0ucs2be\0\0\304"
 "ucs2le\0\0\305"
@@ -90,6 +84,7 @@ static int fuzzycmp(const unsigned char *a, const unsigned char *b)
 static size_t find_charmap(const void *name)
 {
 	const unsigned char *s;
+	if (!*(char *)name) name=charmaps; /* "utf8" */
 	for (s=charmaps; *s; ) {
 		if (!fuzzycmp(name, s)) {
 			for (; *s; s+=strlen((void *)s)+1);

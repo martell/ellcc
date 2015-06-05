@@ -5,18 +5,14 @@ __asm__(
 START ": \n"
 "	mov fp, #0 \n"
 "	mov lr, #0 \n"
-"	mov a1, sp \n"
-#if defined(__thumb__)
-"       mov a2, sp \n"
-"       bic a2, #0xF \n"
-"       mov sp, a2 \n"
-#else
-"       bic sp, sp, #0xF \n"
-#endif
 "	ldr a2, 1f \n"
-"2:	add a2, pc \n"
+"	add a2, pc \n"
+"	mov a1, sp \n"
+"2:	and ip, a1, #-16 \n"
+"	mov sp, ip \n"
 "	bl " START "_c \n"
 ".weak _DYNAMIC \n"
 ".hidden _DYNAMIC \n"
-"1:	.word _DYNAMIC-2b-8 \n"
+".align 2 \n"
+"1:	.word _DYNAMIC-2b \n"
 );

@@ -2,6 +2,7 @@ __asm__(
 ".set push\n"
 ".text \n"
 ".set noreorder\n"
+".text \n"
 ".global _" START "\n"
 ".global " START "\n"
 ".type   _" START ", @function\n"
@@ -22,8 +23,8 @@ __asm__(
 "	addu $5, $5, $gp \n"
 "	lw $25, 4($ra) \n"
 "	addu $25, $25, $gp \n"
-"	subu $sp, $sp, 16 \n"
+"	and $sp, $sp, -8 \n"
 "	jalr $25 \n"
-"	 and $sp, $sp, -8 \n"
+"	 subu $sp, $sp, 16 \n"
 ".set pop \n"
 );

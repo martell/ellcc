@@ -45,7 +45,7 @@ ALL_INCLUDES = $(sort $(wildcard include/*.h include/*/*.h) $(GENH) $(ARCH_INCLU
 
 EMPTY_LIB_NAMES = m rt pthread crypt util xnet resolv dl
 EMPTY_LIBS = $(EMPTY_LIB_NAMES:%=lib/lib%.a)
-CRT_LIBS = lib/crt1.o lib/Scrt1.o lib/crti.o lib/crtn.o lib/crtbegin.o lib/crtend.o
+CRT_LIBS = lib/crt1.o lib/Scrt1.o lib/rcrt1.o lib/crti.o lib/crtn.o lib/crtbegin.o lib/crtend.o
 STATIC_LIBS = lib/libc.a
 SHARED_LIBS = lib/libc.so
 TOOL_LIBS = lib/musl-gcc.specs
@@ -87,11 +87,13 @@ src/internal/version.h: $(wildcard VERSION .git)
 
 src/internal/version.lo: src/internal/version.h
 
-src/ldso/dlstart.lo src/ldso/dynlink.lo: src/internal/dynlink.h arch/$(ARCH)/reloc.h
+crt/rcrt1.o src/ldso/dlstart.lo src/ldso/dynlink.lo: src/internal/dynlink.h arch/$(ARCH)/reloc.h
 
-crt/crt1.o crt/Scrt1.o src/ldso/dlstart.lo: $(wildcard arch/$(ARCH)/crt_arch.h)
+crt/crt1.o crt/Scrt1.o crt/rcrt1.o src/ldso/dlstart.lo: $(wildcard arch/$(ARCH)/crt_arch.h)
 
-crt/Scrt1.o: CFLAGS += -fPIC
+crt/rcrt1.o: src/ldso/dlstart.c
+
+crt/Scrt1.o crt/rcrt1.o: CFLAGS += -fPIC
 
 OPTIMIZE_SRCS = $(wildcard $(OPTIMIZE_GLOBS:%=src/%))
 $(OPTIMIZE_SRCS:%.c=%.o) $(OPTIMIZE_SRCS:%.c=%.lo): CFLAGS += -O3
@@ -106,7 +108,7 @@ NOSSP_SRCS = $(wildcard crt/*.c) \
 	src/ldso/dlstart.c src/ldso/dynlink.c
 $(NOSSP_SRCS:%.c=%.o) $(NOSSP_SRCS:%.c=%.lo): CFLAGS += $(CFLAGS_NOSSP)
 
-$(CRT_LIBS): CFLAGS += -DCRT
+$(CRT_LIBS:lib/%=crt/%): CFLAGS += -DCRT
 
 # This incantation ensures that changes to any subarch asm files will
 # force the corresponding object file to be rebuilt, even if the implicit
