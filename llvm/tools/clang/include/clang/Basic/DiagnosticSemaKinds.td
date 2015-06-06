@@ -5390,6 +5390,10 @@ def err_bad_const_cast_dest : Error<
   "which is not a reference, pointer-to-object, or pointer-to-data-member">;
 def ext_cast_fn_obj : Extension<
   "cast between pointer-to-function and pointer-to-object is an extension">;
+def ext_ms_cast_fn_obj : ExtWarn<
+  "static_cast between pointer-to-function and pointer-to-object is a "
+  "Microsoft extension">,
+  InGroup<Microsoft>;
 def warn_cxx98_compat_cast_fn_obj : Warning<
   "cast between pointer-to-function and pointer-to-object is incompatible with C++98">,
   InGroup<CXX98CompatPedantic>, DefaultIgnore;
@@ -6334,6 +6338,9 @@ let CategoryName = "Inline Assembly Issue" in {
     "remove the cast or build with -fheinous-gnu-extensions">;
   def err_invalid_asm_value_for_constraint
       : Error <"value '%0' out of range for constraint '%1'">;
+  def err_asm_bitfield_in_memory_constraint
+      : Error <"reference to a bit-field in asm "
+      "%select{input|output}0 with a memory constraint '%1'">;
 
   def warn_asm_label_on_auto_decl : Warning<
     "ignored asm label '%0' on automatic variable">;

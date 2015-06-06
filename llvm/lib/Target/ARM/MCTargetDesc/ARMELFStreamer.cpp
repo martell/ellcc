@@ -22,9 +22,7 @@
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCELF.h"
 #include "llvm/MC/MCELFStreamer.h"
-#include "llvm/MC/MCELFSymbolFlags.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstPrinter.h"
@@ -34,7 +32,7 @@
 #include "llvm/MC/MCSection.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/MC/MCSymbol.h"
+#include "llvm/MC/MCSymbolELF.h"
 #include "llvm/MC/MCValue.h"
 #include "llvm/Support/ARMBuildAttributes.h"
 #include "llvm/Support/ARMEHABI.h"
@@ -562,13 +560,12 @@ private:
     MCSymbol *Start = getContext().createTempSymbol();
     EmitLabel(Start);
 
-    MCSymbol *Symbol =
-      getContext().getOrCreateSymbol(Name + "." +
-                                     Twine(MappingSymbolCounter++));
+    auto *Symbol = cast<MCSymbolELF>(getContext().getOrCreateSymbol(
+        Name + "." + Twine(MappingSymbolCounter++)));
 
     getAssembler().registerSymbol(*Symbol);
-    MCELF::SetType(*Symbol, ELF::STT_NOTYPE);
-    MCELF::SetBinding(*Symbol, ELF::STB_LOCAL);
+    Symbol->setType(ELF::STT_NOTYPE);
+    Symbol->setBinding(ELF::STB_LOCAL);
     Symbol->setExternal(false);
     AssignSection(Symbol, getCurrentSection().first);
 
@@ -813,6 +810,9 @@ void ARMTargetELFStreamer::emitFPUDefaultAttributes() {
                      /* OverwriteExisting= */ false);
     break;
 
+  // ABI_HardFP_use is handled in ARMAsmPrinter, so _SP_D16 is treated the same
+  // as _D16 here.
+  case ARM::FK_FPV4_SP_D16:
   case ARM::FK_VFPV4_D16:
     setAttributeItem(ARMBuildAttrs::FP_arch,
                      ARMBuildAttrs::AllowFPv4B,
@@ -827,6 +827,7 @@ void ARMTargetELFStreamer::emitFPUDefaultAttributes() {
 
   // FPV5_D16 is identical to FP_ARMV8 except for the number of D registers, so
   // uses the FP_ARMV8_D16 build attribute.
+  case ARM::FK_FPV5_SP_D16:
   case ARM::FK_FPV5_D16:
     setAttributeItem(ARMBuildAttrs::FP_arch,
                      ARMBuildAttrs::AllowFPARMv8B,
@@ -861,6 +862,7 @@ void ARMTargetELFStreamer::emitFPUDefaultAttributes() {
     break;
 
   case ARM::FK_SOFTVFP:
+  case ARM::FK_NONE:
     break;
 
   default:
@@ -972,9 +974,9 @@ void ARMTargetELFStreamer::emitLabel(MCSymbol *Symbol) {
   if (!Streamer.IsThumb)
     return;
 
-  Streamer.getOrCreateSymbolData(Symbol);
-  unsigned Type = MCELF::GetType(*Symbol);
-  if (Type == ELF_STT_Func || Type == ELF_STT_GnuIFunc)
+  Streamer.getAssembler().registerSymbol(*Symbol);
+  unsigned Type = cast<MCSymbolELF>(Symbol)->getType();
+  if (Type == ELF::STT_FUNC || Type == ELF::STT_GNU_IFUNC)
     Streamer.EmitThumbFunc(Symbol);
 }
 
@@ -1024,7 +1026,7 @@ inline void ARMELFStreamer::SwitchToEHSection(const char *Prefix,
   }
 
   // Get .ARM.extab or .ARM.exidx section
-  const MCSymbol *Group = FnSection.getGroup();
+  const MCSymbolELF *Group = FnSection.getGroup();
   if (Group)
     Flags |= ELF::SHF_GROUP;
   MCSectionELF *EHSection =

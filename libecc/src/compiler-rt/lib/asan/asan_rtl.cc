@@ -367,6 +367,11 @@ static void AsanInitInternal() {
   // initialization steps look at flags().
   InitializeFlags();
 
+  CacheBinaryName();
+
+  AsanCheckIncompatibleRT();
+  AsanCheckDynamicRTPrereqs();
+
   SetCanPoisonMemory(flags()->poison_heap);
   SetMallocContextSize(common_flags()->malloc_context_size);
 
@@ -513,13 +518,11 @@ void AsanInitFromRtl() {
 
 #if ASAN_DYNAMIC
 // Initialize runtime in case it's LD_PRELOAD-ed into unsanitized executable
-// (and thus normal initializer from .preinit_array haven't run).
+// (and thus normal initializers from .preinit_array or modules haven't run).
 
 class AsanInitializer {
 public:  // NOLINT
   AsanInitializer() {
-    AsanCheckIncompatibleRT();
-    AsanCheckDynamicRTPrereqs();
     AsanInitFromRtl();
   }
 };

@@ -13,7 +13,6 @@
 #include "llvm/MC/MCAsmLayout.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCELFObjectWriter.h"
-#include "llvm/MC/MCELFSymbolFlags.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCSectionELF.h"
@@ -108,7 +107,7 @@ bool MBlazeAsmBackend::writeNopData(uint64_t Count, MCObjectWriter *OW) const {
     return false;
 
   for (uint64_t i = 0; i < Count; i += 4)
-      OW->Write32(0x00000000);
+      OW->write32(0x00000000);
 
   return true;
 }

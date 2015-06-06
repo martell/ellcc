@@ -538,85 +538,13 @@ static void getARMHWDivFeatures(const Driver &D, const Arg *A,
 }
 
 // Handle -mfpu=.
-//
-// FIXME: Centralize feature selection, defaulting shouldn't be also in the
-// frontend target.
 static void getARMFPUFeatures(const Driver &D, const Arg *A,
                               const ArgList &Args,
                               std::vector<const char *> &Features) {
   StringRef FPU = A->getValue();
-
-  // FIXME: Why does "none" disable more than "invalid"?
-  if (FPU == "none") {
-    Features.push_back("-vfp2");
-    Features.push_back("-vfp3");
-    Features.push_back("-vfp4");
-    Features.push_back("-fp-armv8");
-    Features.push_back("-crypto");
-    Features.push_back("-neon");
-    return;
-  }
-
-  // FIXME: Make sure we differentiate sp-only.
-  if (FPU.find("-sp-") != StringRef::npos) {
-    Features.push_back("+fp-only-sp");
-  }
-
-  // All other FPU types, valid or invalid.
-  switch(llvm::ARMTargetParser::parseFPU(FPU)) {
-  case llvm::ARM::FK_INVALID:
-  case llvm::ARM::FK_SOFTVFP:
-    Features.push_back("-vfp2");
-    Features.push_back("-vfp3");
-    Features.push_back("-neon");
-    break;
-  case llvm::ARM::FK_VFP:
-  case llvm::ARM::FK_VFPV2:
-    Features.push_back("+vfp2");
-    Features.push_back("-neon");
-    break;
-  case llvm::ARM::FK_VFPV3_D16:
-    Features.push_back("+d16");
-    // fall-through
-  case llvm::ARM::FK_VFPV3:
-    Features.push_back("+vfp3");
-    Features.push_back("-neon");
-    break;
-  case llvm::ARM::FK_VFPV4_D16:
-    Features.push_back("+d16");
-    // fall-through
-  case llvm::ARM::FK_VFPV4:
-    Features.push_back("+vfp4");
-    Features.push_back("-neon");
-    break;
-  case llvm::ARM::FK_FPV5_D16:
-    Features.push_back("+d16");
-    // fall-through
-  case llvm::ARM::FK_FP_ARMV8:
-    Features.push_back("+fp-armv8");
-    Features.push_back("-neon");
-    Features.push_back("-crypto");
-    break;
-  case llvm::ARM::FK_NEON_FP_ARMV8:
-    Features.push_back("+fp-armv8");
-    Features.push_back("+neon");
-    Features.push_back("-crypto");
-    break;
-  case llvm::ARM::FK_CRYPTO_NEON_FP_ARMV8:
-    Features.push_back("+fp-armv8");
-    Features.push_back("+neon");
-    Features.push_back("+crypto");
-    break;
-  case llvm::ARM::FK_NEON:
-    Features.push_back("+neon");
-    break;
-  case llvm::ARM::FK_NEON_VFPV4:
-    Features.push_back("+neon");
-    Features.push_back("+vfp4");
-    break;
-  default:
+  unsigned FPUID = llvm::ARMTargetParser::parseFPU(FPU);
+  if (!llvm::ARMTargetParser::getFPUFeatures(FPUID, Features))
     D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
-  }
 }
 
 static int getARMSubArchVersionNumber(const llvm::Triple &Triple) {
@@ -761,7 +689,6 @@ static void getARMTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   // to handle -march=native correctly.
   if (const Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
     StringRef Arch = arm::getARMArch(Args, Triple);
-    Arch = llvm::ARMTargetParser::getCanonicalArchName(Arch);
     if (llvm::ARMTargetParser::parseArch(Arch) == llvm::ARM::AK_INVALID)
       D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
   }
@@ -770,7 +697,7 @@ static void getARMTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   // the only function we have to check if a cpu is valid is
   // getLLVMArchSuffixForARM which also needs an architecture.
   if (const Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
-    StringRef CPU = arm::getARMTargetCPU(Args, Triple);
+    std::string CPU = arm::getARMTargetCPU(Args, Triple);
     StringRef Arch = arm::getARMArch(Args, Triple);
     if (strcmp(arm::getLLVMArchSuffixForARM(CPU, Arch), "") == 0)
       D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
@@ -1729,9 +1656,10 @@ static void getX86TargetFeatures(const Driver &D, const llvm::Triple &Triple,
     Features.push_back("-fsgsbase");
   }
 
+  const llvm::Triple::ArchType ArchType = Triple.getArch();
   // Add features to be compatible with gcc for Android.
   if (Triple.getEnvironment() == llvm::Triple::Android) {
-    if (Triple.getArch() == llvm::Triple::x86_64) {
+    if (ArchType == llvm::Triple::x86_64) {
       Features.push_back("+sse4.2");
       Features.push_back("+popcnt");
     } else
@@ -1743,15 +1671,14 @@ static void getX86TargetFeatures(const Driver &D, const llvm::Triple &Triple,
     StringRef Arch = A->getValue();
     bool ArchUsed = false;
     // First, look for flags that are shared in x86 and x86-64.
-    if (Triple.getArch() == llvm::Triple::x86_64 ||
-        Triple.getArch() == llvm::Triple::x86) {
+    if (ArchType == llvm::Triple::x86_64 || ArchType == llvm::Triple::x86) {
       if (Arch == "AVX" || Arch == "AVX2") {
         ArchUsed = true;
         Features.push_back(Args.MakeArgString("+" + Arch.lower()));
       }
     }
     // Then, look for x86-specific flags.
-    if (Triple.getArch() == llvm::Triple::x86) {
+    if (ArchType == llvm::Triple::x86) {
       if (Arch == "IA32") {
         ArchUsed = true;
       } else if (Arch == "SSE" || Arch == "SSE2") {
@@ -2928,7 +2855,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // Android-specific defaults for PIC/PIE
   if (getToolChain().getTriple().getEnvironment() == llvm::Triple::Android) {
-    switch (getToolChain().getTriple().getArch()) {
+    switch (getToolChain().getArch()) {
     case llvm::Triple::arm:
     case llvm::Triple::armeb:
     case llvm::Triple::thumb:
@@ -2954,10 +2881,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // OpenBSD-specific defaults for PIE
   if (getToolChain().getTriple().getOS() == llvm::Triple::OpenBSD) {
-    switch (getToolChain().getTriple().getArch()) {
+    switch (getToolChain().getArch()) {
     case llvm::Triple::mips64:
     case llvm::Triple::mips64el:
-    case llvm::Triple::sparc:
     case llvm::Triple::sparcel:
     case llvm::Triple::x86:
     case llvm::Triple::x86_64:
@@ -2965,6 +2891,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       break;
 
     case llvm::Triple::ppc:
+    case llvm::Triple::sparc:
     case llvm::Triple::sparcv9:
       IsPICLevelTwo = true; // "-fPIE"
       break;
@@ -3958,12 +3885,13 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   Sanitize.addArgs(Args, CmdArgs);
 
   // Report an error for -faltivec on anything other than PowerPC.
-  if (const Arg *A = Args.getLastArg(options::OPT_faltivec))
-    if (!(getToolChain().getArch() == llvm::Triple::ppc ||
-          getToolChain().getArch() == llvm::Triple::ppc64 ||
-          getToolChain().getArch() == llvm::Triple::ppc64le))
-      D.Diag(diag::err_drv_argument_only_allowed_with)
-        << A->getAsString(Args) << "ppc/ppc64/ppc64le";
+  if (const Arg *A = Args.getLastArg(options::OPT_faltivec)) {
+    const llvm::Triple::ArchType Arch = getToolChain().getArch();
+    if (!(Arch == llvm::Triple::ppc || Arch == llvm::Triple::ppc64 ||
+          Arch == llvm::Triple::ppc64le))
+      D.Diag(diag::err_drv_argument_only_allowed_with) << A->getAsString(Args)
+                                                       << "ppc/ppc64/ppc64le";
+  }
 
   if (getToolChain().SupportsProfiling())
     Args.AddLastArg(CmdArgs, options::OPT_pg);
@@ -4074,8 +4002,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-mstack-probe-size=0");
   }
 
-  if (getToolChain().getTriple().getArch() == llvm::Triple::aarch64 ||
-      getToolChain().getTriple().getArch() == llvm::Triple::aarch64_be)
+  if (getToolChain().getArch() == llvm::Triple::aarch64 ||
+      getToolChain().getArch() == llvm::Triple::aarch64_be)
     CmdArgs.push_back("-fallow-half-arguments-and-returns");
 
   if (Arg *A = Args.getLastArg(options::OPT_mrestrict_it,
@@ -4432,7 +4360,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // When ObjectiveC legacy runtime is in effect on MacOSX,
   // turn on the option to do Array/Dictionary subscripting
   // by default.
-  if (getToolChain().getTriple().getArch() == llvm::Triple::x86 &&
+  if (getToolChain().getArch() == llvm::Triple::x86 &&
       getToolChain().getTriple().isMacOSX() &&
       !getToolChain().getTriple().isMacOSXVersionLT(10, 7) &&
       objcRuntime.getKind() == ObjCRuntime::FragileMacOSX &&
@@ -5161,8 +5089,8 @@ void Clang::AddClangCLArgs(const ArgList &Args, ArgStringList &CmdArgs) const {
   }
 
   unsigned VolatileOptionID;
-  if (getToolChain().getTriple().getArch() == llvm::Triple::x86_64 ||
-      getToolChain().getTriple().getArch() == llvm::Triple::x86)
+  if (getToolChain().getArch() == llvm::Triple::x86_64 ||
+      getToolChain().getArch() == llvm::Triple::x86)
     VolatileOptionID = options::OPT__SLASH_volatile_ms;
   else
     VolatileOptionID = options::OPT__SLASH_volatile_iso;
@@ -5427,7 +5355,7 @@ void gcc::Common::ConstructJob(Compilation &C, const JobAction &JA,
   //
   // FIXME: The triple class should directly provide the information we want
   // here.
-  llvm::Triple::ArchType Arch = getToolChain().getArch();
+  const llvm::Triple::ArchType Arch = getToolChain().getArch();
   if (Arch == llvm::Triple::x86 || Arch == llvm::Triple::ppc)
     CmdArgs.push_back("-m32");
   else if (Arch == llvm::Triple::x86_64 || Arch == llvm::Triple::ppc64 ||
@@ -5997,12 +5925,12 @@ const char *arm::getARMCPUForMArch(const ArgList &Args,
 }
 
 /// getARMTargetCPU - Get the (LLVM) name of the ARM cpu we are targeting.
-StringRef arm::getARMTargetCPU(const ArgList &Args,
+std::string arm::getARMTargetCPU(const ArgList &Args,
                                const llvm::Triple &Triple) {
   // FIXME: Warn on inconsistent use of -mcpu and -march.
   // If we have -mcpu=, use that.
   if (Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
-    StringRef MCPU = A->getValue();
+    std::string MCPU = StringRef(A->getValue()).lower();
     // Handle -mcpu=native.
     if (MCPU == "native")
       return llvm::sys::getHostCPUName();
@@ -6017,12 +5945,9 @@ StringRef arm::getARMTargetCPU(const ArgList &Args,
 /// CPU  (or Arch, if CPU is generic).
 // FIXME: This is redundant with -mcpu, why does LLVM use this.
 const char *arm::getLLVMArchSuffixForARM(StringRef CPU, StringRef Arch) {
-  if (CPU == "generic") {
-    unsigned ArchKind = llvm::ARMTargetParser::parseArch(
-                        llvm::ARMTargetParser::getCanonicalArchName(Arch));
-    if (ArchKind == llvm::ARM::AK_ARMV8_1A)
-      return "v8.1a";
-  }
+  if (CPU == "generic" &&
+      llvm::ARMTargetParser::parseArch(Arch) == llvm::ARM::AK_ARMV8_1A)
+    return "v8.1a";
 
   unsigned ArchKind = llvm::ARMTargetParser::parseCPUArch(CPU);
   if (ArchKind == llvm::ARM::AK_INVALID)
@@ -6138,7 +6063,7 @@ llvm::Triple::ArchType darwin::getArchTypeForMachOArchName(StringRef Str) {
 }
 
 void darwin::setTripleTypeForMachOArchName(llvm::Triple &T, StringRef Str) {
-  llvm::Triple::ArchType Arch = getArchTypeForMachOArchName(Str);
+  const llvm::Triple::ArchType Arch = getArchTypeForMachOArchName(Str);
   T.setArch(Arch);
 
   if (Str == "x86_64h")
@@ -6782,7 +6707,7 @@ void solaris::Link::ConstructJob(Compilation &C, const JobAction &JA,
   std::string GCCLibPath = "/usr/gcc/4.5/lib/gcc/";
   const llvm::Triple &T = getToolChain().getTriple();
   std::string LibPath = "/usr/lib/";
-  llvm::Triple::ArchType Arch = T.getArch();
+  const llvm::Triple::ArchType Arch = T.getArch();
   switch (Arch) {
   case llvm::Triple::x86:
     GCCLibPath +=
@@ -7188,7 +7113,7 @@ void bitrig::Link::ConstructJob(Compilation &C, const JobAction &JA,
     }
 
     StringRef MyArch;
-    switch (getToolChain().getTriple().getArch()) {
+    switch (getToolChain().getArch()) {
     case llvm::Triple::arm:
       MyArch = "arm";
       break;
@@ -7307,12 +7232,13 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
                                  const InputInfoList &Inputs,
                                  const ArgList &Args,
                                  const char *LinkingOutput) const {
-  const toolchains::FreeBSD& ToolChain = 
-    static_cast<const toolchains::FreeBSD&>(getToolChain());
+  const toolchains::FreeBSD &ToolChain =
+      static_cast<const toolchains::FreeBSD &>(getToolChain());
   const Driver &D = ToolChain.getDriver();
+  const llvm::Triple::ArchType Arch = ToolChain.getArch();
   const bool IsPIE =
-    !Args.hasArg(options::OPT_shared) &&
-    (Args.hasArg(options::OPT_pie) || ToolChain.isPIEDefault());
+      !Args.hasArg(options::OPT_shared) &&
+      (Args.hasArg(options::OPT_pie) || ToolChain.isPIEDefault());
   ArgStringList CmdArgs;
 
   // Silence warning for "clang -g foo.o -o foo"
@@ -7342,7 +7268,6 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("/libexec/ld-elf.so.1");
     }
     if (ToolChain.getTriple().getOSMajorVersion() >= 9) {
-      llvm::Triple::ArchType Arch = ToolChain.getArch();
       if (Arch == llvm::Triple::arm || Arch == llvm::Triple::sparc ||
           Arch == llvm::Triple::x86 || Arch == llvm::Triple::x86_64) {
         CmdArgs.push_back("--hash-style=both");
@@ -7353,12 +7278,12 @@ void freebsd::Link::ConstructJob(Compilation &C, const JobAction &JA,
 
   // When building 32-bit code on FreeBSD/amd64, we have to explicitly
   // instruct ld in the base system to link 32-bit code.
-  if (ToolChain.getArch() == llvm::Triple::x86) {
+  if (Arch == llvm::Triple::x86) {
     CmdArgs.push_back("-m");
     CmdArgs.push_back("elf_i386_fbsd");
   }
 
-  if (ToolChain.getArch() == llvm::Triple::ppc) {
+  if (Arch == llvm::Triple::ppc) {
     CmdArgs.push_back("-m");
     CmdArgs.push_back("elf32ppc_fbsd");
   }
@@ -7504,7 +7429,7 @@ void netbsd::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
   case llvm::Triple::armeb:
   case llvm::Triple::thumb:
   case llvm::Triple::thumbeb: {
-    std::string MArch(arm::getARMTargetCPU(Args, getToolChain().getTriple()));
+    std::string MArch = arm::getARMTargetCPU(Args, getToolChain().getTriple());
     CmdArgs.push_back(Args.MakeArgString("-mcpu=" + MArch));
     break;
   }
@@ -7851,7 +7776,7 @@ void gnutools::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
     // march from being picked in the absence of a cpu flag.
     Arg *A;
     if ((A = Args.getLastArg(options::OPT_mcpu_EQ)) &&
-      StringRef(A->getValue()) == "krait")
+      StringRef(A->getValue()).lower() == "krait")
         CmdArgs.push_back("-march=armv7-a");
     else
       Args.AddLastArg(CmdArgs, options::OPT_mcpu_EQ);
@@ -8015,35 +7940,33 @@ static void AddLibgcc(const llvm::Triple &Triple, const Driver &D,
 
 static std::string getLinuxDynamicLinker(const ArgList &Args,
                                          const toolchains::Linux &ToolChain) {
+  const llvm::Triple::ArchType Arch = ToolChain.getArch();
+
   if (ToolChain.getTriple().getEnvironment() == llvm::Triple::Android) {
     if (ToolChain.getTriple().isArch64Bit())
       return "/system/bin/linker64";
     else
       return "/system/bin/linker";
-  } else if (ToolChain.getArch() == llvm::Triple::x86 ||
-             ToolChain.getArch() == llvm::Triple::sparc ||
-             ToolChain.getArch() == llvm::Triple::sparcel)
+  } else if (Arch == llvm::Triple::x86 || Arch == llvm::Triple::sparc ||
+             Arch == llvm::Triple::sparcel)
     return "/lib/ld-linux.so.2";
-  else if (ToolChain.getArch() == llvm::Triple::aarch64)
+  else if (Arch == llvm::Triple::aarch64)
     return "/lib/ld-linux-aarch64.so.1";
-  else if (ToolChain.getArch() == llvm::Triple::aarch64_be)
+  else if (Arch == llvm::Triple::aarch64_be)
     return "/lib/ld-linux-aarch64_be.so.1";
-  else if (ToolChain.getArch() == llvm::Triple::arm ||
-           ToolChain.getArch() == llvm::Triple::thumb) {
+  else if (Arch == llvm::Triple::arm || Arch == llvm::Triple::thumb) {
     if (ToolChain.getTriple().getEnvironment() == llvm::Triple::GNUEABIHF)
       return "/lib/ld-linux-armhf.so.3";
     else
       return "/lib/ld-linux.so.3";
-  } else if (ToolChain.getArch() == llvm::Triple::armeb ||
-             ToolChain.getArch() == llvm::Triple::thumbeb) {
+  } else if (Arch == llvm::Triple::armeb || Arch == llvm::Triple::thumbeb) {
+    // TODO: check which dynamic linker name.
     if (ToolChain.getTriple().getEnvironment() == llvm::Triple::GNUEABIHF)
-      return "/lib/ld-linux-armhf.so.3";        /* TODO: check which dynamic linker name.  */
+      return "/lib/ld-linux-armhf.so.3";
     else
-      return "/lib/ld-linux.so.3";              /* TODO: check which dynamic linker name.  */
-  } else if (ToolChain.getArch() == llvm::Triple::mips ||
-             ToolChain.getArch() == llvm::Triple::mipsel ||
-             ToolChain.getArch() == llvm::Triple::mips64 ||
-             ToolChain.getArch() == llvm::Triple::mips64el) {
+      return "/lib/ld-linux.so.3";
+  } else if (Arch == llvm::Triple::mips || Arch == llvm::Triple::mipsel ||
+             Arch == llvm::Triple::mips64 || Arch == llvm::Triple::mips64el) {
     StringRef CPUName;
     StringRef ABIName;
     mips::getMipsCPUAndABI(Args, ToolChain.getTriple(), CPUName, ABIName);
@@ -8061,21 +7984,21 @@ static std::string getLinuxDynamicLinker(const ArgList &Args,
       LibName = IsNaN2008 ? "ld-linux-mipsn8.so.1" : "ld.so.1";
 
     return (LibDir + "/" + LibName).str();
-  } else if (ToolChain.getArch() == llvm::Triple::ppc)
+  } else if (Arch == llvm::Triple::ppc)
     return "/lib/ld.so.1";
-  else if (ToolChain.getArch() == llvm::Triple::ppc64) {
+  else if (Arch == llvm::Triple::ppc64) {
     if (ppc::hasPPCAbiArg(Args, "elfv2"))
       return "/lib64/ld64.so.2";
     return "/lib64/ld64.so.1";
-  } else if (ToolChain.getArch() == llvm::Triple::ppc64le) {
+  } else if (Arch == llvm::Triple::ppc64le) {
     if (ppc::hasPPCAbiArg(Args, "elfv1"))
       return "/lib64/ld64.so.1";
     return "/lib64/ld64.so.2";
-  } else if (ToolChain.getArch() == llvm::Triple::systemz)
+  } else if (Arch == llvm::Triple::systemz)
     return "/lib64/ld64.so.1";
-  else if (ToolChain.getArch() == llvm::Triple::sparcv9)
+  else if (Arch == llvm::Triple::sparcv9)
     return "/lib64/ld-linux.so.2";
-  else if (ToolChain.getArch() == llvm::Triple::x86_64 &&
+  else if (Arch == llvm::Triple::x86_64 &&
            ToolChain.getTriple().getEnvironment() == llvm::Triple::GNUX32)
     return "/libx32/ld-linux-x32.so.2";
   else
@@ -8156,15 +8079,15 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
                                   const InputInfoList &Inputs,
                                   const ArgList &Args,
                                   const char *LinkingOutput) const {
-  const toolchains::Linux& ToolChain =
-    static_cast<const toolchains::Linux&>(getToolChain());
+  const toolchains::Linux &ToolChain =
+      static_cast<const toolchains::Linux &>(getToolChain());
   const Driver &D = ToolChain.getDriver();
+  const llvm::Triple::ArchType Arch = ToolChain.getArch();
   const bool isAndroid =
-    ToolChain.getTriple().getEnvironment() == llvm::Triple::Android;
+      ToolChain.getTriple().getEnvironment() == llvm::Triple::Android;
   const bool IsPIE =
-    !Args.hasArg(options::OPT_shared) &&
-    !Args.hasArg(options::OPT_static) &&
-    (Args.hasArg(options::OPT_pie) || ToolChain.isPIEDefault());
+      !Args.hasArg(options::OPT_shared) && !Args.hasArg(options::OPT_static) &&
+      (Args.hasArg(options::OPT_pie) || ToolChain.isPIEDefault());
 
   ArgStringList CmdArgs;
 
@@ -8188,9 +8111,9 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasArg(options::OPT_s))
     CmdArgs.push_back("-s");
 
-  if (ToolChain.getArch() == llvm::Triple::armeb ||
-      ToolChain.getArch() == llvm::Triple::thumbeb)
-    arm::appendEBLinkFlags(Args, CmdArgs,
+  if (Arch == llvm::Triple::armeb || Arch == llvm::Triple::thumbeb)
+    arm::appendEBLinkFlags(
+        Args, CmdArgs,
         llvm::Triple(getToolChain().ComputeEffectiveClangTriple(Args)));
 
   for (const auto &Opt : ToolChain.ExtraOpts)
@@ -8204,10 +8127,8 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
   CmdArgs.push_back(getLDMOption(ToolChain.getTriple(), Args));
 
   if (Args.hasArg(options::OPT_static)) {
-    if (ToolChain.getArch() == llvm::Triple::arm ||
-        ToolChain.getArch() == llvm::Triple::armeb ||
-        ToolChain.getArch() == llvm::Triple::thumb ||
-        ToolChain.getArch() == llvm::Triple::thumbeb)
+    if (Arch == llvm::Triple::arm || Arch == llvm::Triple::armeb ||
+        Arch == llvm::Triple::thumb || Arch == llvm::Triple::thumbeb)
       CmdArgs.push_back("-Bstatic");
     else
       CmdArgs.push_back("-static");
@@ -8215,10 +8136,8 @@ void gnutools::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-shared");
   }
 
-  if (ToolChain.getArch() == llvm::Triple::arm ||
-      ToolChain.getArch() == llvm::Triple::armeb ||
-      ToolChain.getArch() == llvm::Triple::thumb ||
-      ToolChain.getArch() == llvm::Triple::thumbeb ||
+  if (Arch == llvm::Triple::arm || Arch == llvm::Triple::armeb ||
+      Arch == llvm::Triple::thumb || Arch == llvm::Triple::thumbeb ||
       (!Args.hasArg(options::OPT_static) &&
        !Args.hasArg(options::OPT_shared))) {
     CmdArgs.push_back("-dynamic-linker");
@@ -8393,17 +8312,17 @@ void nacltools::AssembleARM::ConstructJob(Compilation &C, const JobAction &JA,
 // others. Eventually we can support more of that and hopefully migrate back
 // to gnutools::link.
 void nacltools::Link::ConstructJob(Compilation &C, const JobAction &JA,
-                                  const InputInfo &Output,
-                                  const InputInfoList &Inputs,
-                                  const ArgList &Args,
-                                  const char *LinkingOutput) const {
+                                   const InputInfo &Output,
+                                   const InputInfoList &Inputs,
+                                   const ArgList &Args,
+                                   const char *LinkingOutput) const {
 
-  const toolchains::NaCl_TC& ToolChain =
-    static_cast<const toolchains::NaCl_TC&>(getToolChain());
+  const toolchains::NaCl_TC &ToolChain =
+      static_cast<const toolchains::NaCl_TC &>(getToolChain());
   const Driver &D = ToolChain.getDriver();
+  const llvm::Triple::ArchType Arch = ToolChain.getArch();
   const bool IsStatic =
-    !Args.hasArg(options::OPT_dynamic) &&
-    !Args.hasArg(options::OPT_shared);
+      !Args.hasArg(options::OPT_dynamic) && !Args.hasArg(options::OPT_shared);
 
   ArgStringList CmdArgs;
 
@@ -8432,16 +8351,15 @@ void nacltools::Link::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("--eh-frame-hdr");
 
   CmdArgs.push_back("-m");
-  if (ToolChain.getArch() == llvm::Triple::x86)
+  if (Arch == llvm::Triple::x86)
     CmdArgs.push_back("elf_i386_nacl");
-  else if (ToolChain.getArch() == llvm::Triple::arm)
+  else if (Arch == llvm::Triple::arm)
     CmdArgs.push_back("armelf_nacl");
-  else if (ToolChain.getArch() == llvm::Triple::x86_64)
+  else if (Arch == llvm::Triple::x86_64)
     CmdArgs.push_back("elf_x86_64_nacl");
   else
-    D.Diag(diag::err_target_unsupported_arch) << ToolChain.getArchName() <<
-        "Native Client";
-
+    D.Diag(diag::err_target_unsupported_arch) << ToolChain.getArchName()
+                                              << "Native Client";
 
   if (IsStatic)
     CmdArgs.push_back("-static");

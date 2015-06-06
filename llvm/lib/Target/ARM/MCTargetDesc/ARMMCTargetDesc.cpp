@@ -277,21 +277,17 @@ static MCRegisterInfo *createARMMCRegisterInfo(StringRef Triple) {
   return X;
 }
 
-static MCAsmInfo *createARMMCAsmInfo(const MCRegisterInfo &MRI, StringRef TT) {
-  Triple TheTriple(TT);
-  bool IsLittleEndian = true;
-  if (TheTriple.getArch() == Triple::armeb)
-    IsLittleEndian = false;
-
+static MCAsmInfo *createARMMCAsmInfo(const MCRegisterInfo &MRI,
+                                     const Triple &TheTriple) {
   MCAsmInfo *MAI;
   if (TheTriple.isOSDarwin() || TheTriple.isOSBinFormatMachO())
-    MAI = new ARMMCAsmInfoDarwin(TT);
+    MAI = new ARMMCAsmInfoDarwin(TheTriple);
   else if (TheTriple.isWindowsItaniumEnvironment())
     MAI = new ARMCOFFMCAsmInfoGNU();
   else if (TheTriple.isWindowsMSVCEnvironment())
     MAI = new ARMCOFFMCAsmInfoMicrosoft();
   else
-    MAI = new ARMELFMCAsmInfo(TT);
+    MAI = new ARMELFMCAsmInfo(TheTriple);
 
   unsigned Reg = MRI.getDwarfRegNum(ARM::SP, true);
   MAI->addInitialFrameState(MCCFIInstruction::createDefCfa(nullptr, Reg, 0));

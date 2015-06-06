@@ -27,38 +27,10 @@
 
 namespace llvm {
 
-// RecTy subclasses.
-class BitRecTy;
-class BitsRecTy;
-class IntRecTy;
-class StringRecTy;
 class ListRecTy;
-class DagRecTy;
-class RecordRecTy;
-
-// Init subclasses.
-class Init;
-class UnsetInit;
-class BitInit;
-class BitsInit;
-class IntInit;
-class StringInit;
-class ListInit;
-class UnOpInit;
-class BinOpInit;
-class TernOpInit;
-class DefInit;
-class DagInit;
-class TypedInit;
-class VarInit;
-class FieldInit;
-class VarBitInit;
-class VarListElementInit;
-
-// Other classes.
+struct MultiClass;
 class Record;
 class RecordVal;
-struct MultiClass;
 class RecordKeeper;
 
 //===----------------------------------------------------------------------===//
@@ -85,7 +57,7 @@ private:
 public:
   RecTyKind getRecTyKind() const { return Kind; }
 
-  RecTy(RecTyKind K) : Kind(K), ListTy(nullptr) {}
+  RecTy(RecTyKind K) : Kind(K) {}
   virtual ~RecTy() {}
 
   virtual std::string getAsString() const = 0;
@@ -167,7 +139,6 @@ class StringRecTy : public RecTy {
   static StringRecTy Shared;
   StringRecTy() : RecTy(StringRecTyKind) {}
 
-  virtual void anchor();
 public:
   static bool classof(const RecTy *RT) {
     return RT->getRecTyKind() == StringRecTyKind;
@@ -175,7 +146,7 @@ public:
 
   static StringRecTy *get() { return &Shared; }
 
-  std::string getAsString() const override { return "string"; }
+  std::string getAsString() const override;
 };
 
 /// ListRecTy - 'list<Ty>' - Represent a list of values, all of which must be of
@@ -205,7 +176,6 @@ class DagRecTy : public RecTy {
   static DagRecTy Shared;
   DagRecTy() : RecTy(DagRecTyKind) {}
 
-  virtual void anchor();
 public:
   static bool classof(const RecTy *RT) {
     return RT->getRecTyKind() == DagRecTyKind;
@@ -213,7 +183,7 @@ public:
 
   static DagRecTy *get() { return &Shared; }
 
-  std::string getAsString() const override { return "dag"; }
+  std::string getAsString() const override;
 };
 
 /// RecordRecTy - '[classname]' - Represent an instance of a class, such as:
@@ -633,7 +603,6 @@ public:
 
   void Profile(FoldingSetNodeID &ID) const;
 
-  unsigned getSize() const { return Values.size(); }
   Init *getElement(unsigned i) const {
     assert(i < Values.size() && "List element index out of range!");
     return Values[i];
@@ -657,10 +626,11 @@ public:
 
   ArrayRef<Init*> getValues() const { return Values; }
 
-  inline const_iterator begin() const { return Values.begin(); }
-  inline const_iterator end  () const { return Values.end();   }
+  const_iterator begin() const { return Values.begin(); }
+  const_iterator end  () const { return Values.end();   }
 
-  inline bool           empty() const { return Values.empty(); }
+  size_t         size () const { return Values.size();  }
+  bool           empty() const { return Values.empty(); }
 
   /// resolveListElementReference - This method is used to implement
   /// VarListElementInit::resolveReferences.  If the list element is resolvable
@@ -690,8 +660,8 @@ public:
   // Clone - Clone this operator, replacing arguments with the new list
   virtual OpInit *clone(std::vector<Init *> &Operands) const = 0;
 
-  virtual int getNumOperands() const = 0;
-  virtual Init *getOperand(int i) const = 0;
+  virtual unsigned getNumOperands() const = 0;
+  virtual Init *getOperand(unsigned i) const = 0;
 
   // Fold - If possible, fold this to a simpler init.  Return this if not
   // possible to fold.
@@ -732,8 +702,8 @@ public:
     return UnOpInit::get(getOpcode(), *Operands.begin(), getType());
   }
 
-  int getNumOperands() const override { return 1; }
-  Init *getOperand(int i) const override {
+  unsigned getNumOperands() const override { return 1; }
+  Init *getOperand(unsigned i) const override {
     assert(i == 0 && "Invalid operand id for unary operator");
     return getOperand();
   }
@@ -780,13 +750,12 @@ public:
     return BinOpInit::get(getOpcode(), Operands[0], Operands[1], getType());
   }
 
-  int getNumOperands() const override { return 2; }
-  Init *getOperand(int i) const override {
-    assert((i == 0 || i == 1) && "Invalid operand id for binary operator");
-    if (i == 0) {
-      return getLHS();
-    } else {
-      return getRHS();
+  unsigned getNumOperands() const override { return 2; }
+  Init *getOperand(unsigned i) const override {
+    switch (i) {
+    default: llvm_unreachable("Invalid operand id for binary operator");
+    case 0: return getLHS();
+    case 1: return getRHS();
     }
   }
 
@@ -836,16 +805,13 @@ public:
                            getType());
   }
 
-  int getNumOperands() const override { return 3; }
-  Init *getOperand(int i) const override {
-    assert((i == 0 || i == 1 || i == 2) &&
-           "Invalid operand id for ternary operator");
-    if (i == 0) {
-      return getLHS();
-    } else if (i == 1) {
-      return getMHS();
-    } else {
-      return getRHS();
+  unsigned getNumOperands() const override { return 3; }
+  Init *getOperand(unsigned i) const override {
+    switch (i) {
+    default: llvm_unreachable("Invalid operand id for ternary operator");
+    case 0: return getLHS();
+    case 1: return getMHS();
+    case 2: return getRHS();
     }
   }
 
@@ -1143,22 +1109,21 @@ public:
 //===----------------------------------------------------------------------===//
 
 class RecordVal {
-  Init *Name;
+  PointerIntPair<Init *, 1, bool> NameAndPrefix;
   RecTy *Ty;
-  unsigned Prefix;
   Init *Value;
 
 public:
-  RecordVal(Init *N, RecTy *T, unsigned P);
-  RecordVal(const std::string &N, RecTy *T, unsigned P);
+  RecordVal(Init *N, RecTy *T, bool P);
+  RecordVal(const std::string &N, RecTy *T, bool P);
 
   const std::string &getName() const;
-  const Init *getNameInit() const { return Name; }
+  const Init *getNameInit() const { return NameAndPrefix.getPointer(); }
   std::string getNameInitAsString() const {
     return getNameInit()->getAsUnquotedString();
   }
 
-  unsigned getPrefix() const { return Prefix; }
+  bool getPrefix() const { return NameAndPrefix.getInt(); }
   RecTy *getType() const { return Ty; }
   Init *getValue() const { return Value; }
 
@@ -1207,7 +1172,7 @@ class Record {
   //     def Def : Class<Struct<i>>;
   //
   // These need to get fully resolved before instantiating any other
-  // definitions that usie them (e.g. Def).  However, inside a multiclass they
+  // definitions that use them (e.g. Def).  However, inside a multiclass they
   // can't be immediately resolved so we mark them ResolveFirst to fully
   // resolve them later as soon as the multiclass is instantiated.
   bool ResolveFirst;
@@ -1269,8 +1234,8 @@ public:
   ArrayRef<SMRange> getSuperClassRanges() const { return SuperClassRanges; }
 
   bool isTemplateArg(Init *Name) const {
-    for (unsigned i = 0, e = TemplateArgs.size(); i != e; ++i)
-      if (TemplateArgs[i] == Name) return true;
+    for (Init *TA : TemplateArgs)
+      if (TA == Name) return true;
     return false;
   }
   bool isTemplateArg(StringRef Name) const {
@@ -1278,16 +1243,16 @@ public:
   }
 
   const RecordVal *getValue(const Init *Name) const {
-    for (unsigned i = 0, e = Values.size(); i != e; ++i)
-      if (Values[i].getNameInit() == Name) return &Values[i];
+    for (const RecordVal &Val : Values)
+      if (Val.getNameInit() == Name) return &Val;
     return nullptr;
   }
   const RecordVal *getValue(StringRef Name) const {
     return getValue(StringInit::get(Name));
   }
   RecordVal *getValue(const Init *Name) {
-    for (unsigned i = 0, e = Values.size(); i != e; ++i)
-      if (Values[i].getNameInit() == Name) return &Values[i];
+    for (RecordVal &Val : Values)
+      if (Val.getNameInit() == Name) return &Val;
     return nullptr;
   }
   RecordVal *getValue(StringRef Name) {
@@ -1328,15 +1293,15 @@ public:
   }
 
   bool isSubClassOf(const Record *R) const {
-    for (unsigned i = 0, e = SuperClasses.size(); i != e; ++i)
-      if (SuperClasses[i] == R)
+    for (const Record *SC : SuperClasses)
+      if (SC == R)
         return true;
     return false;
   }
 
   bool isSubClassOf(StringRef Name) const {
-    for (unsigned i = 0, e = SuperClasses.size(); i != e; ++i)
-      if (SuperClasses[i]->getNameInitAsString() == Name)
+    for (const Record *SC : SuperClasses)
+      if (SC->getNameInitAsString() == Name)
         return true;
     return false;
   }

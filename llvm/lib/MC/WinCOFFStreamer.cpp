@@ -159,6 +159,12 @@ void MCWinCOFFStreamer::EndCOFFSymbolDef() {
 }
 
 void MCWinCOFFStreamer::EmitCOFFSafeSEH(MCSymbol const *Symbol) {
+  // SafeSEH is a feature specific to 32-bit x86.  It does not exist (and is
+  // unnecessary) on all platforms which use table-based exception dispatch.
+  if (getContext().getObjectFileInfo()->getTargetTriple().getArch() !=
+      Triple::x86)
+    return;
+
   if (Symbol->getFlags() & COFF::SF_SafeSEH)
     return;
 
@@ -187,10 +193,6 @@ void MCWinCOFFStreamer::EmitCOFFSecRel32(MCSymbol const *Symbol) {
   MCFixup Fixup = MCFixup::create(DF->getContents().size(), SRE, FK_SecRel_4);
   DF->getFixups().push_back(Fixup);
   DF->getContents().resize(DF->getContents().size() + 4, 0);
-}
-
-void MCWinCOFFStreamer::EmitELFSize(MCSymbol *Symbol, const MCExpr *Value) {
-  llvm_unreachable("not supported");
 }
 
 void MCWinCOFFStreamer::EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,

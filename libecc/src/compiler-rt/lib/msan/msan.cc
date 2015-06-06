@@ -375,6 +375,7 @@ void __msan_init() {
   InitTlsSize();
 
   InitializeFlags();
+  CacheBinaryName();
   __sanitizer_set_report_path(common_flags()->log_path);
 
   InitializeInterceptors();

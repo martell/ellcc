@@ -106,18 +106,24 @@ terminate() _NOEXCEPT
 #endif // !defined(LIBCXXRT) && !defined(_LIBCPPABI_VERSION)
 
 #if !defined(LIBCXXRT) && !defined(__GLIBCXX__) && !defined(__EMSCRIPTEN__)
-bool uncaught_exception() _NOEXCEPT
+bool uncaught_exception() _NOEXCEPT { return uncaught_exceptions() > 0; }
+
+int uncaught_exceptions() _NOEXCEPT
 {
 #if defined(__APPLE__) || defined(_LIBCPPABI_VERSION)
-    // on Darwin, there is a helper function so __cxa_get_globals is private
-    return __cxa_uncaught_exception();
+   // on Darwin, there is a helper function so __cxa_get_globals is private
+# if _LIBCPPABI_VERSION > 1101
+    return __cxa_uncaught_exceptions();
+# else
+    return __cxa_uncaught_exception() ? 1 : 0;
+# endif
 #else  // __APPLE__
 #   if defined(_MSC_VER) && ! defined(__clang__)
-        _LIBCPP_WARNING("uncaught_exception not yet implemented")
+        _LIBCPP_WARNING("uncaught_exceptions not yet implemented")
 #   else
 #       warning uncaught_exception not yet implemented
 #   endif
-    fprintf(stderr, "uncaught_exception not yet implemented\n");
+    fprintf(stderr, "uncaught_exceptions not yet implemented\n");
     ::abort();
 #endif  // __APPLE__
 }

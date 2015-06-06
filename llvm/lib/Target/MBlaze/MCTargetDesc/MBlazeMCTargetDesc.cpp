@@ -16,7 +16,6 @@
 #include "MBlazeMCAsmInfo.h"
 #include "MBlazeTargetStreamer.h"
 #include "llvm/MC/MCCodeGenInfo.h"
-#include "llvm/MC/MCELF.h"
 #include "llvm/MC/MCELFStreamer.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
@@ -54,12 +53,10 @@ static MCSubtargetInfo *createMBlazeMCSubtargetInfo(StringRef TT, StringRef CPU,
   return X;
 }
 
-static MCAsmInfo *createMBlazeMCAsmInfo(const MCRegisterInfo &MRI, StringRef TT) {
-  Triple TheTriple(TT);
-  switch (TheTriple.getOS()) {
-  default:
-    return new MBlazeMCAsmInfo();
-  }
+static MCAsmInfo *createMBlazeMCAsmInfo(const MCRegisterInfo &MRI,
+                                        const Triple &TT) {
+  MCAsmInfo *MAI = new MBlazeMCAsmInfo();
+  return MAI;
 }
 
 static MCCodeGenInfo *createMBlazeMCCodeGenInfo(StringRef TT, Reloc::Model RM,
