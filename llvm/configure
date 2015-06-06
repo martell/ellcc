@@ -8883,6 +8883,22 @@ sed 's/^/| /' conftest.$ac_ext >&5
 	ac_cv_lib_shell32_main=no
 fi
 
+rm -f core conftest.err conftest.$ac_objext \
+      conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ echo "$as_me:$LINENO: result: $ac_cv_lib_shell32_main" >&5
+echo "${ECHO_T}$ac_cv_lib_shell32_main" >&6; }
+if test $ac_cv_lib_shell32_main = yes; then
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBSHELL32 1
+_ACEOF
+
+  LIBS="-lshell32 $LIBS"
+
+fi
+
+
 { echo "$as_me:$LINENO: checking for main in -lole32" >&5
 echo $ECHO_N "checking for main in -lole32 $ECHO_C" >&6; }
 if test "${ac_cv_lib_ole32_main+set}" = set; then
@@ -8956,30 +8972,13 @@ fi
 echo "${ECHO_T}$ac_cv_lib_ole32_main" >&6; }
 if test $ac_cv_lib_ole32_main = yes; then
   cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBPSAPI 1
+#define HAVE_LIBOLE32 1
 _ACEOF
 
   LIBS="-lole32 $LIBS"
 
 fi
 
-
-rm -f core conftest.err conftest.$ac_objext \
-      conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ echo "$as_me:$LINENO: result: $ac_cv_lib_shell32_main" >&5
-echo "${ECHO_T}$ac_cv_lib_shell32_main" >&6; }
-if test $ac_cv_lib_shell32_main = yes; then
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBSHELL32 1
-_ACEOF
-
-  LIBS="-lshell32 $LIBS"
-
-fi
-
-fi
 
 { echo "$as_me:$LINENO: checking for library containing dlopen" >&5
 echo $ECHO_N "checking for library containing dlopen... $ECHO_C" >&6; }
