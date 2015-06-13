@@ -25,6 +25,7 @@ class MCObjectWriter;
 class MCRegisterInfo;
 class MCSubtargetInfo;
 class Target;
+class Triple;
 class StringRef;
 class raw_ostream;
 class raw_pwrite_stream;
@@ -37,7 +38,7 @@ MCCodeEmitter *createMBlazeMCCodeEmitter(const MCInstrInfo &MCII,
 
 MCAsmBackend *createMBlazeAsmBackend(const Target &T,
                                      const MCRegisterInfo &MRI,
-                                     StringRef TT,
+                                     const Triple &TT,
                                      StringRef CPU);
 
 MCObjectWriter *createMBlazeELFObjectWriter(raw_pwrite_stream &OS,

@@ -56,7 +56,7 @@ public:
 
   /// This constructor initializes the data members to match that
   /// of the specified triple.
-  MBlazeSubtarget(const std::string &TT, const std::string &CPU,
+  MBlazeSubtarget(const Triple &TT, const std::string &CPU,
                   const std::string &FS, bool little,
                   MBlazeTargetMachine &TM);
 
@@ -69,9 +69,9 @@ public:
   void computeIssueWidth();
 
   /// enablePostRAScheduler - True at 'More' optimization.
-  bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
-                             TargetSubtargetInfo::AntiDepBreakMode& Mode,
-                             RegClassVector& CriticalPathRCs) const;
+  bool enablePostRAScheduler() const override;
+
+  void getCriticalPathRCs(RegClassVector& CriticalPathRCs) const override;
 
   bool hasItin()   const { return HasItin; }
   bool hasPCMP()   const { return HasPatCmp; }

@@ -46,7 +46,8 @@ static MCRegisterInfo *createMBlazeMCRegisterInfo(StringRef TT) {
   return X;
 }
 
-static MCSubtargetInfo *createMBlazeMCSubtargetInfo(StringRef TT, StringRef CPU,
+static MCSubtargetInfo *createMBlazeMCSubtargetInfo(const Triple &TT,
+                                                    StringRef CPU,
                                                     StringRef FS) {
   MCSubtargetInfo *X = new MCSubtargetInfo();
   InitMBlazeMCSubtargetInfo(X, TT, CPU, FS);

@@ -343,10 +343,7 @@ void Clang::AddPreprocessingOptions(Compilation &C,
   Args.AddLastArg(CmdArgs, options::OPT_MV);
 
   // Convert all -MQ <target> args to -MT <quoted target>
-  for (arg_iterator it = Args.filtered_begin(options::OPT_MT,
-                                             options::OPT_MQ),
-         ie = Args.filtered_end(); it != ie; ++it) {
-    const Arg *A = *it;
+  for (const Arg *A : Args.filtered(options::OPT_MT, options::OPT_MQ)) {
     A->claim();
 
     if (A->getOption().matches(options::OPT_MQ)) {
@@ -367,10 +364,7 @@ void Clang::AddPreprocessingOptions(Compilation &C,
   // replacement into a build system already set up to be generating
   // .gch files.
   bool RenderedImplicitInclude = false;
-  for (arg_iterator it = Args.filtered_begin(options::OPT_clang_i_Group),
-         ie = Args.filtered_end(); it != ie; ++it) {
-    const Arg *A = it;
-
+  for (const Arg *A : Args.filtered(options::OPT_clang_i_Group)) {
     if (A->getOption().matches(options::OPT_include)) {
       bool IsFirstImplicitInclude = !RenderedImplicitInclude;
       RenderedImplicitInclude = true;
@@ -688,7 +682,7 @@ static void getARMTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   // getARMArch is used here instead of just checking the -march value in order
   // to handle -march=native correctly.
   if (const Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
-    StringRef Arch = arm::getARMArch(Args, Triple);
+    std::string Arch = arm::getARMArch(Args, Triple);
     if (llvm::ARMTargetParser::parseArch(Arch) == llvm::ARM::AK_INVALID)
       D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
   }
@@ -698,7 +692,7 @@ static void getARMTargetFeatures(const Driver &D, const llvm::Triple &Triple,
   // getLLVMArchSuffixForARM which also needs an architecture.
   if (const Arg *A = Args.getLastArg(options::OPT_mcpu_EQ)) {
     std::string CPU = arm::getARMTargetCPU(Args, Triple);
-    StringRef Arch = arm::getARMArch(Args, Triple);
+    std::string Arch = arm::getARMArch(Args, Triple);
     if (strcmp(arm::getLLVMArchSuffixForARM(CPU, Arch), "") == 0)
       D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
   }
@@ -865,7 +859,7 @@ static std::string getAArch64TargetCPU(const ArgList &Args) {
     CPU = A->getValue();
   } else if ((A = Args.getLastArg(options::OPT_mcpu_EQ))) {
     StringRef Mcpu = A->getValue();
-    CPU = Mcpu.split("+").first;
+    CPU = Mcpu.split("+").first.lower();
   }
 
   // Handle CPU name is 'native'.
@@ -1329,11 +1323,9 @@ static std::string getPPCTargetCPU(const ArgList &Args) {
 
 static void getPPCTargetFeatures(const ArgList &Args,
                                  std::vector<const char *> &Features) {
-  for (arg_iterator it = Args.filtered_begin(options::OPT_m_ppc_Features_Group),
-                    ie = Args.filtered_end();
-       it != ie; ++it) {
-    StringRef Name = (*it)->getOption().getName();
-    (*it)->claim();
+  for (const Arg *A : Args.filtered(options::OPT_m_ppc_Features_Group)) {
+    StringRef Name = A->getOption().getName();
+    A->claim();
 
     // Skip over "-m".
     assert(Name.startswith("m") && "Invalid feature name.");
@@ -1631,6 +1623,137 @@ static void AddGoldPlugin(const ToolChain &ToolChain, const ArgList &Args,
     CmdArgs.push_back(Args.MakeArgString(Twine("-plugin-opt=mcpu=") + CPU));
 }
 
+/// This is a helper function for validating the optional refinement step
+/// parameter in reciprocal argument strings. Return false if there is an error
+/// parsing the refinement step. Otherwise, return true and set the Position
+/// of the refinement step in the input string.
+static bool getRefinementStep(const StringRef &In, const Driver &D,
+                                const Arg &A, size_t &Position) {
+  const char RefinementStepToken = ':';
+  Position = In.find(RefinementStepToken);
+  if (Position != StringRef::npos) {
+    StringRef Option = A.getOption().getName();
+    StringRef RefStep = In.substr(Position + 1);
+    // Allow exactly one numeric character for the additional refinement
+    // step parameter. This is reasonable for all currently-supported
+    // operations and architectures because we would expect that a larger value
+    // of refinement steps would cause the estimate "optimization" to
+    // under-perform the native operation. Also, if the estimate does not
+    // converge quickly, it probably will not ever converge, so further
+    // refinement steps will not produce a better answer.
+    if (RefStep.size() != 1) {
+      D.Diag(diag::err_drv_invalid_value) << Option << RefStep;
+      return false;
+    }
+    char RefStepChar = RefStep[0];
+    if (RefStepChar < '0' || RefStepChar > '9') {
+      D.Diag(diag::err_drv_invalid_value) << Option << RefStep;
+      return false;
+    }
+  }
+  return true;
+}
+
+/// The -mrecip flag requires processing of many optional parameters.
+static void ParseMRecip(const Driver &D, const ArgList &Args,
+                        ArgStringList &OutStrings) {
+  StringRef DisabledPrefixIn = "!";
+  StringRef DisabledPrefixOut = "!";
+  StringRef EnabledPrefixOut = "";
+  StringRef Out = "-mrecip=";
+
+  Arg *A = Args.getLastArg(options::OPT_mrecip, options::OPT_mrecip_EQ);
+  if (!A)
+    return;
+
+  unsigned NumOptions = A->getNumValues();
+  if (NumOptions == 0) {
+    // No option is the same as "all".
+    OutStrings.push_back(Args.MakeArgString(Out + "all"));
+    return;
+  }
+
+  // Pass through "all", "none", or "default" with an optional refinement step.
+  if (NumOptions == 1) {
+    StringRef Val = A->getValue(0);
+    size_t RefStepLoc;
+    if (!getRefinementStep(Val, D, *A, RefStepLoc))
+      return;
+    StringRef ValBase = Val.slice(0, RefStepLoc);
+    if (ValBase == "all" || ValBase == "none" || ValBase == "default") {
+      OutStrings.push_back(Args.MakeArgString(Out + Val));
+      return;
+    }
+  }
+
+  // Each reciprocal type may be enabled or disabled individually.
+  // Check each input value for validity, concatenate them all back together,
+  // and pass through.
+
+  llvm::StringMap<bool> OptionStrings;
+  OptionStrings.insert(std::make_pair("divd",       false));
+  OptionStrings.insert(std::make_pair("divf",       false));
+  OptionStrings.insert(std::make_pair("vec-divd",   false));
+  OptionStrings.insert(std::make_pair("vec-divf",   false));
+  OptionStrings.insert(std::make_pair("sqrtd",      false));
+  OptionStrings.insert(std::make_pair("sqrtf",      false));
+  OptionStrings.insert(std::make_pair("vec-sqrtd",  false));
+  OptionStrings.insert(std::make_pair("vec-sqrtf",  false));
+
+  for (unsigned i = 0; i != NumOptions; ++i) {
+    StringRef Val = A->getValue(i);
+
+    bool IsDisabled = Val.startswith(DisabledPrefixIn);
+    // Ignore the disablement token for string matching.
+    if (IsDisabled)
+      Val = Val.substr(1);
+
+    size_t RefStep;
+    if (!getRefinementStep(Val, D, *A, RefStep))
+      return;
+
+    StringRef ValBase = Val.slice(0, RefStep);
+    llvm::StringMap<bool>::iterator OptionIter = OptionStrings.find(ValBase);
+    if (OptionIter == OptionStrings.end()) {
+      // Try again specifying float suffix.
+      OptionIter = OptionStrings.find(ValBase.str() + 'f');
+      if (OptionIter == OptionStrings.end()) {
+        // The input name did not match any known option string.
+        D.Diag(diag::err_drv_unknown_argument) << Val;
+        return;
+      }
+      // The option was specified without a float or double suffix.
+      // Make sure that the double entry was not already specified.
+      // The float entry will be checked below.
+      if (OptionStrings[ValBase.str() + 'd']) {
+        D.Diag(diag::err_drv_invalid_value) << A->getOption().getName() << Val;
+        return;
+      }
+    }
+    
+    if (OptionIter->second == true) {
+      // Duplicate option specified.
+      D.Diag(diag::err_drv_invalid_value) << A->getOption().getName() << Val;
+      return;
+    }
+
+    // Mark the matched option as found. Do not allow duplicate specifiers.
+    OptionIter->second = true;
+
+    // If the precision was not specified, also mark the double entry as found.
+    if (ValBase.back() != 'f' && ValBase.back() != 'd')
+      OptionStrings[ValBase.str() + 'd'] = true;
+
+    // Build the output string.
+    StringRef Prefix = IsDisabled ? DisabledPrefixOut : EnabledPrefixOut;
+    Out = Args.MakeArgString(Out + Prefix + Val);
+    if (i != NumOptions - 1)
+      Out = Args.MakeArgString(Out + ",");
+  }
+
+  OutStrings.push_back(Args.MakeArgString(Out));
+}
+
 static void getX86TargetFeatures(const Driver &D, const llvm::Triple &Triple,
                                  const ArgList &Args,
                                  std::vector<const char *> &Features) {
@@ -1692,11 +1815,9 @@ static void getX86TargetFeatures(const Driver &D, const llvm::Triple &Triple,
 
   // Now add any that the user explicitly requested on the command line,
   // which may override the defaults.
-  for (arg_iterator it = Args.filtered_begin(options::OPT_m_x86_Features_Group),
-                    ie = Args.filtered_end();
-       it != ie; ++it) {
-    StringRef Name = (*it)->getOption().getName();
-    (*it)->claim();
+  for (const Arg *A : Args.filtered(options::OPT_m_x86_Features_Group)) {
+    StringRef Name = A->getOption().getName();
+    A->claim();
 
     // Skip over "-m".
     assert(Name.startswith("m") && "Invalid feature name.");
@@ -1845,7 +1966,8 @@ getAArch64ArchFeaturesFromMcpu(const Driver &D, StringRef Mcpu,
                                const ArgList &Args,
                                std::vector<const char *> &Features) {
   StringRef CPU;
-  if (!DecodeAArch64Mcpu(D, Mcpu, CPU, Features))
+  std::string McpuLowerCase = Mcpu.lower();
+  if (!DecodeAArch64Mcpu(D, McpuLowerCase, CPU, Features))
     return false;
 
   return true;
@@ -1871,7 +1993,8 @@ getAArch64MicroArchFeaturesFromMcpu(const Driver &D, StringRef Mcpu,
                                     std::vector<const char *> &Features) {
   StringRef CPU;
   std::vector<const char *> DecodedFeature;
-  if (!DecodeAArch64Mcpu(D, Mcpu, CPU, DecodedFeature))
+  std::string McpuLowerCase = Mcpu.lower();
+  if (!DecodeAArch64Mcpu(D, McpuLowerCase, CPU, DecodedFeature))
     return false;
 
   return getAArch64MicroArchFeaturesFromMtune(D, CPU, Args, Features);
@@ -2160,10 +2283,8 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
     // When using an integrated assembler, translate -Wa, and -Xassembler
     // options.
     bool CompressDebugSections = false;
-    for (arg_iterator it = Args.filtered_begin(options::OPT_Wa_COMMA,
-                                               options::OPT_Xassembler),
-           ie = Args.filtered_end(); it != ie; ++it) {
-      const Arg *A = *it;
+    for (const Arg *A :
+         Args.filtered(options::OPT_Wa_COMMA, options::OPT_Xassembler)) {
       A->claim();
 
       for (unsigned i = 0, e = A->getNumValues(); i != e; ++i) {
@@ -2658,6 +2779,53 @@ static void appendUserToPath(SmallVectorImpl<char> &Result) {
   Result.append(UID.begin(), UID.end());
 }
 
+VersionTuple visualstudio::getMSVCVersion(const Driver *D,
+                                          const llvm::Triple &Triple,
+                                          const llvm::opt::ArgList &Args,
+                                          bool IsWindowsMSVC) {
+  if (Args.hasFlag(options::OPT_fms_extensions, options::OPT_fno_ms_extensions,
+                   IsWindowsMSVC) ||
+      Args.hasArg(options::OPT_fmsc_version) ||
+      Args.hasArg(options::OPT_fms_compatibility_version)) {
+    const Arg *MSCVersion = Args.getLastArg(options::OPT_fmsc_version);
+    const Arg *MSCompatibilityVersion =
+      Args.getLastArg(options::OPT_fms_compatibility_version);
+
+    if (MSCVersion && MSCompatibilityVersion) {
+      if (D)
+        D->Diag(diag::err_drv_argument_not_allowed_with)
+            << MSCVersion->getAsString(Args)
+            << MSCompatibilityVersion->getAsString(Args);
+      return VersionTuple();
+    }
+
+    if (MSCompatibilityVersion) {
+      VersionTuple MSVT;
+      if (MSVT.tryParse(MSCompatibilityVersion->getValue()) && D)
+        D->Diag(diag::err_drv_invalid_value)
+            << MSCompatibilityVersion->getAsString(Args)
+            << MSCompatibilityVersion->getValue();
+      return MSVT;
+    }
+
+    if (MSCVersion) {
+      unsigned Version = 0;
+      if (StringRef(MSCVersion->getValue()).getAsInteger(10, Version) && D)
+        D->Diag(diag::err_drv_invalid_value) << MSCVersion->getAsString(Args)
+                                             << MSCVersion->getValue();
+      return getMSCompatibilityVersion(Version);
+    }
+
+    unsigned Major, Minor, Micro;
+    Triple.getEnvironmentVersion(Major, Minor, Micro);
+    if (Major || Minor || Micro)
+      return VersionTuple(Major, Minor, Micro);
+
+    return VersionTuple(18);
+  }
+  return VersionTuple();
+}
+
 void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                          const InputInfo &Output,
                          const InputInfoList &Inputs,
@@ -2997,14 +3165,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (Args.hasArg(options::OPT_frewrite_map_file) ||
       Args.hasArg(options::OPT_frewrite_map_file_EQ)) {
-    for (arg_iterator
-             MFI = Args.filtered_begin(options::OPT_frewrite_map_file,
-                                       options::OPT_frewrite_map_file_EQ),
-             MFE = Args.filtered_end();
-         MFI != MFE; ++MFI) {
+    for (const Arg *A : Args.filtered(options::OPT_frewrite_map_file,
+                                      options::OPT_frewrite_map_file_EQ)) {
       CmdArgs.push_back("-frewrite-map-file");
-      CmdArgs.push_back((*MFI)->getValue());
-      (*MFI)->claim();
+      CmdArgs.push_back(A->getValue());
+      A->claim();
     }
   }
 
@@ -3193,6 +3358,8 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back(Args.MakeArgString("-ffp-contract=fast"));
     }
   }
+  
+  ParseMRecip(getToolChain().getDriver(), Args, CmdArgs);
 
   // We separately look for the '-ffast-math' and '-ffinite-math-only' flags,
   // and if we find them, tell the frontend to provide the appropriate
@@ -3640,10 +3807,9 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   // Warn about ignored options to clang.
-  for (arg_iterator it = Args.filtered_begin(
-       options::OPT_clang_ignored_gcc_optimization_f_Group),
-       ie = Args.filtered_end(); it != ie; ++it) {
-    D.Diag(diag::warn_ignored_gcc_optimization) << (*it)->getAsString(Args);
+  for (const Arg *A :
+       Args.filtered(options::OPT_clang_ignored_gcc_optimization_f_Group)) {
+    D.Diag(diag::warn_ignored_gcc_optimization) << A->getAsString(Args);
   }
 
   claimNoWarnArgs(Args);
@@ -3964,16 +4130,15 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   }
 
   // --param ssp-buffer-size=
-  for (arg_iterator it = Args.filtered_begin(options::OPT__param),
-       ie = Args.filtered_end(); it != ie; ++it) {
-    StringRef Str((*it)->getValue());
+  for (const Arg *A : Args.filtered(options::OPT__param)) {
+    StringRef Str(A->getValue());
     if (Str.startswith("ssp-buffer-size=")) {
       if (StackProtectorLevel) {
         CmdArgs.push_back("-stack-protector-buffer-size");
         // FIXME: Verify the argument is a valid integer.
         CmdArgs.push_back(Args.MakeArgString(Str.drop_front(16)));
       }
-      (*it)->claim();
+      A->claim();
     }
   }
 
@@ -4263,38 +4428,11 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("-fms-compatibility");
 
   // -fms-compatibility-version=18.00 is default.
-  VersionTuple MSVT;
-  if (Args.hasFlag(options::OPT_fms_extensions, options::OPT_fno_ms_extensions,
-                   IsWindowsMSVC) ||
-      Args.hasArg(options::OPT_fmsc_version) ||
-      Args.hasArg(options::OPT_fms_compatibility_version)) {
-    const Arg *MSCVersion = Args.getLastArg(options::OPT_fmsc_version);
-    const Arg *MSCompatibilityVersion =
-      Args.getLastArg(options::OPT_fms_compatibility_version);
-
-    if (MSCVersion && MSCompatibilityVersion)
-      D.Diag(diag::err_drv_argument_not_allowed_with)
-          << MSCVersion->getAsString(Args)
-          << MSCompatibilityVersion->getAsString(Args);
-
-    if (MSCompatibilityVersion) {
-      if (MSVT.tryParse(MSCompatibilityVersion->getValue()))
-        D.Diag(diag::err_drv_invalid_value)
-            << MSCompatibilityVersion->getAsString(Args)
-            << MSCompatibilityVersion->getValue();
-    } else if (MSCVersion) {
-      unsigned Version = 0;
-      if (StringRef(MSCVersion->getValue()).getAsInteger(10, Version))
-        D.Diag(diag::err_drv_invalid_value) << MSCVersion->getAsString(Args)
-                                            << MSCVersion->getValue();
-      MSVT = getMSCompatibilityVersion(Version);
-    } else {
-      MSVT = VersionTuple(18);
-    }
-
+  VersionTuple MSVT = visualstudio::getMSVCVersion(
+      &D, getToolChain().getTriple(), Args, IsWindowsMSVC);
+  if (!MSVT.empty())
     CmdArgs.push_back(
         Args.MakeArgString("-fms-compatibility-version=" + MSVT.getAsString()));
-  }
 
   bool IsMSVC2015Compatible = MSVT.getMajor() >= 19;
   if (ImplyVCPPCXXVer) {
@@ -4740,17 +4878,16 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // parser.
   Args.AddAllArgValues(CmdArgs, options::OPT_Xclang);
   bool OptDisabled = false;
-  for (arg_iterator it = Args.filtered_begin(options::OPT_mllvm),
-         ie = Args.filtered_end(); it != ie; ++it) {
-    (*it)->claim();
+  for (const Arg *A : Args.filtered(options::OPT_mllvm)) {
+    A->claim();
 
     // We translate this by hand to the -cc1 argument, since nightly test uses
     // it and developers have been trained to spell it with -mllvm.
-    if (StringRef((*it)->getValue(0)) == "-disable-llvm-optzns") {
+    if (StringRef(A->getValue(0)) == "-disable-llvm-optzns") {
       CmdArgs.push_back("-disable-llvm-optzns");
       OptDisabled = true;
     } else
-      (*it)->render(Args, CmdArgs);
+      A->render(Args, CmdArgs);
   }
 
   // With -save-temps, we want to save the unoptimized bitcode output from the
@@ -5281,10 +5418,8 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
   // doesn't handle that so rather than warning about unused flags that are
   // actually used, we'll lie by omission instead.
   // FIXME: Stop lying and consume only the appropriate driver flags
-  for (arg_iterator it = Args.filtered_begin(options::OPT_W_Group),
-                    ie = Args.filtered_end();
-       it != ie; ++it)
-    (*it)->claim();
+  for (const Arg *A : Args.filtered(options::OPT_W_Group))
+    A->claim();
 
   CollectArgsForIntegratedAssembler(C, Args, CmdArgs,
                                     getToolChain().getDriver());
@@ -5783,10 +5918,9 @@ static void constructHexagonLinkArgs(Compilation &C, const JobAction &JA,
   std::vector<std::string> oslibs;
   bool hasStandalone= false;
 
-  for (arg_iterator it = Args.filtered_begin(options::OPT_moslib_EQ),
-         ie = Args.filtered_end(); it != ie; ++it) {
-    (*it)->claim();
-    oslibs.emplace_back((*it)->getValue());
+  for (const Arg *A : Args.filtered(options::OPT_moslib_EQ)) {
+    A->claim();
+    oslibs.emplace_back(A->getValue());
     hasStandalone = hasStandalone || (oslibs.back() == "standalone");
   }
   if (oslibs.empty()) {
@@ -5878,9 +6012,9 @@ void hexagon::Link::ConstructJob(Compilation &C, const JobAction &JA,
 }
 // Hexagon tools end.
 
-const StringRef arm::getARMArch(const ArgList &Args,
-                                const llvm::Triple &Triple) {
-  StringRef MArch;
+const std::string arm::getARMArch(const ArgList &Args,
+                                  const llvm::Triple &Triple) {
+  std::string MArch;
   if (Arg *A = Args.getLastArg(options::OPT_march_EQ)) {
     // Otherwise, if we have -march= choose the base CPU for that arch.
     MArch = A->getValue();
@@ -5888,6 +6022,7 @@ const StringRef arm::getARMArch(const ArgList &Args,
     // Otherwise, use the Arch from the triple.
     MArch = Triple.getArchName();
   }
+  MArch = StringRef(MArch).lower();
 
   // Handle -march=native.
   if (MArch == "native") {
@@ -5909,7 +6044,7 @@ const StringRef arm::getARMArch(const ArgList &Args,
 /// Get the (LLVM) name of the minimum ARM CPU for the arch we are targeting.
 const char *arm::getARMCPUForMArch(const ArgList &Args,
                                    const llvm::Triple &Triple) {
-  StringRef MArch = getARMArch(Args, Triple);
+  std::string MArch = getARMArch(Args, Triple);
   // getARMCPUForArch defaults to the triple if MArch is empty, but empty MArch
   // here means an -march=native that we can't handle, so instead return no CPU.
   if (MArch.empty())
@@ -6589,10 +6724,8 @@ void darwin::Link::ConstructJob(Compilation &C, const JobAction &JA,
   Args.AddAllArgs(CmdArgs, options::OPT_F);
 
   // -iframework should be forwarded as -F.
-  for (auto it = Args.filtered_begin(options::OPT_iframework),
-         ie = Args.filtered_end(); it != ie; ++it)
-    CmdArgs.push_back(Args.MakeArgString(std::string("-F") +
-                                         (*it)->getValue()));
+  for (const Arg *A : Args.filtered(options::OPT_iframework))
+    CmdArgs.push_back(Args.MakeArgString(std::string("-F") + A->getValue()));
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nodefaultlibs)) {
@@ -7865,6 +7998,9 @@ void gnutools::Assemble::ConstructJob(Compilation &C, const JobAction &JA,
 
     Args.AddLastArg(CmdArgs, options::OPT_mhard_float,
                     options::OPT_msoft_float);
+
+    Args.AddLastArg(CmdArgs, options::OPT_mdouble_float,
+                    options::OPT_msingle_float);
 
     Args.AddLastArg(CmdArgs, options::OPT_modd_spreg,
                     options::OPT_mno_odd_spreg);

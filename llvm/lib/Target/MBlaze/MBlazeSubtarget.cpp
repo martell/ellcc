@@ -25,7 +25,7 @@
 
 using namespace llvm;
 
-MBlazeSubtarget::MBlazeSubtarget(const std::string &TT,
+MBlazeSubtarget::MBlazeSubtarget(const Triple &TT,
                                  const std::string &CPU,
                                  const std::string &FS,
                                  bool little,
@@ -54,12 +54,10 @@ MBlazeSubtarget::MBlazeSubtarget(const std::string &TT,
   InstrItins = getInstrItineraryForCPU(CPUName);
 }
 
-bool MBlazeSubtarget::
-enablePostRAScheduler(CodeGenOpt::Level OptLevel,
-                      TargetSubtargetInfo::AntiDepBreakMode& Mode,
-                      RegClassVector& CriticalPathRCs) const {
-  Mode = TargetSubtargetInfo::ANTIDEP_CRITICAL;
+bool MBlazeSubtarget:: enablePostRAScheduler() const { return true; }
+
+void
+MBlazeSubtarget::getCriticalPathRCs(RegClassVector& CriticalPathRCs) const {
   CriticalPathRCs.clear();
   CriticalPathRCs.push_back(&MBlaze::GPRRegClass);
-  return HasItin && OptLevel >= CodeGenOpt::Default;
 }

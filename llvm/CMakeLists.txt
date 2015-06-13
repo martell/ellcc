@@ -176,7 +176,9 @@ set(LLVM_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/include)
 
 set(LLVM_ALL_TARGETS
   AArch64
+  AMDGPU
   ARM
+  BPF
   CppBackend
   Hexagon
   Mips
@@ -184,7 +186,6 @@ set(LLVM_ALL_TARGETS
   MSP430
   NVPTX
   PowerPC
-  R600
   Sparc
   SystemZ
   X86

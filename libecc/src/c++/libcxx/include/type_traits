@@ -216,10 +216,11 @@ namespace std
 
 _LIBCPP_BEGIN_NAMESPACE_STD
 
-#ifndef _LIBCPP_HAS_NO_VARIADICS
-template <class...> 
+template <class>
 struct __void_t { typedef void type; };
-#endif
+
+template <class T>
+struct __identity { typedef T type; };
 
 template <class _Tp, bool>
 struct _LIBCPP_TYPE_VIS_ONLY __dependent_type : public _Tp {};
@@ -479,19 +480,15 @@ struct __member_pointer_traits_imp
 };
 
 
-namespace __libcpp_is_member_function_pointer_imp {
-    template <typename _Tp>
-    char __test(typename std::__member_pointer_traits_imp<_Tp, true, false>::_FnType *);
-
-    template <typename>
-    std::__two __test(...);
-};
-    
 template <class _Tp> struct __libcpp_is_member_function_pointer
-    : public integral_constant<bool, sizeof(__libcpp_is_member_function_pointer_imp::__test<_Tp>(nullptr)) == 1> {};
+    : public false_type {};
+
+template <class _Ret, class _Class>
+struct __libcpp_is_member_function_pointer<_Ret _Class::*>
+    : public is_function<_Ret> {};
 
 template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_member_function_pointer
-    : public __libcpp_is_member_function_pointer<typename remove_cv<_Tp>::type> {};
+    : public __libcpp_is_member_function_pointer<typename remove_cv<_Tp>::type>::type {};
 
 // is_member_pointer
 
@@ -809,8 +806,16 @@ template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_abstract : public __libcpp_
 
 // is_final
 
-#if _LIBCPP_STD_VER > 11 && __has_feature(is_final)
-template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY 
+#if defined(_LIBCPP_HAS_IS_FINAL)
+template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY
+__libcpp_is_final : public integral_constant<bool, __is_final(_Tp)> {};
+#else
+template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY
+__libcpp_is_final : public false_type {};
+#endif
+
+#if defined(_LIBCPP_HAS_IS_FINAL) && _LIBCPP_STD_VER > 11
+template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY
 is_final : public integral_constant<bool, __is_final(_Tp)> {};
 #endif
 
@@ -1793,7 +1798,8 @@ struct __member_pointer_traits_imp<_Rp (_Class::*)(_Param..., ...) const volatil
     typedef _Rp (_FnType) (_Param..., ...);
 };
 
-#if __has_feature(cxx_reference_qualified_functions)
+#if __has_feature(cxx_reference_qualified_functions) || \
+    (defined(_GNUC_VER) && _GNUC_VER >= 409)
 
 template <class _Rp, class _Class, class ..._Param>
 struct __member_pointer_traits_imp<_Rp (_Class::*)(_Param...) &, true, false>
@@ -1923,7 +1929,7 @@ struct __member_pointer_traits_imp<_Rp (_Class::*)(_Param..., ...) const volatil
     typedef _Rp (_FnType) (_Param..., ...);
 };
 
-#endif  // __has_feature(cxx_reference_qualified_functions)
+#endif  // __has_feature(cxx_reference_qualified_functions) || _GNUC_VER >= 409
 
 #else  // _LIBCPP_HAS_NO_VARIADICS
 
@@ -2249,7 +2255,7 @@ struct __result_of_mp;
 
 template <class _MP, class _Tp>
 struct __result_of_mp<_MP, _Tp, true>
-    : public common_type<typename __member_pointer_traits<_MP>::_ReturnType>
+    : public __identity<typename __member_pointer_traits<_MP>::_ReturnType>
 {
 };
 
@@ -2317,7 +2323,7 @@ template <class _Fn>
 class _LIBCPP_TYPE_VIS_ONLY result_of<_Fn()>
     : public __result_of<_Fn(),
                          is_class<typename remove_reference<_Fn>::type>::value ||
-                         is_function<typename remove_reference<_Fn>::type>::value,
+                         is_function<typename remove_pointer<typename remove_reference<_Fn>::type>::type>::value,
                          is_member_pointer<typename remove_reference<_Fn>::type>::value
                         >
 {
@@ -2327,7 +2333,7 @@ template <class _Fn, class _A0>
 class _LIBCPP_TYPE_VIS_ONLY result_of<_Fn(_A0)>
     : public __result_of<_Fn(_A0),
                          is_class<typename remove_reference<_Fn>::type>::value ||
-                         is_function<typename remove_reference<_Fn>::type>::value,
+                         is_function<typename remove_pointer<typename remove_reference<_Fn>::type>::type>::value,
                          is_member_pointer<typename remove_reference<_Fn>::type>::value
                         >
 {
@@ -2337,7 +2343,7 @@ template <class _Fn, class _A0, class _A1>
 class _LIBCPP_TYPE_VIS_ONLY result_of<_Fn(_A0, _A1)>
     : public __result_of<_Fn(_A0, _A1),
                          is_class<typename remove_reference<_Fn>::type>::value ||
-                         is_function<typename remove_reference<_Fn>::type>::value,
+                         is_function<typename remove_pointer<typename remove_reference<_Fn>::type>::type>::value,
                          is_member_pointer<typename remove_reference<_Fn>::type>::value
                         >
 {
@@ -2347,7 +2353,7 @@ template <class _Fn, class _A0, class _A1, class _A2>
 class _LIBCPP_TYPE_VIS_ONLY result_of<_Fn(_A0, _A1, _A2)>
     : public __result_of<_Fn(_A0, _A1, _A2),
                          is_class<typename remove_reference<_Fn>::type>::value ||
-                         is_function<typename remove_reference<_Fn>::type>::value,
+                         is_function<typename remove_pointer<typename remove_reference<_Fn>::type>::type>::value,
                          is_member_pointer<typename remove_reference<_Fn>::type>::value
                         >
 {
@@ -2695,7 +2701,7 @@ struct _LIBCPP_TYPE_VIS_ONLY is_move_constructible
 
 #ifndef _LIBCPP_HAS_NO_VARIADICS
 
-#if __has_feature(is_trivially_constructible)
+#if __has_feature(is_trivially_constructible) || _GNUC_VER >= 501
 
 template <class _Tp, class... _Args>
 struct _LIBCPP_TYPE_VIS_ONLY is_trivially_constructible
@@ -2754,7 +2760,7 @@ struct _LIBCPP_TYPE_VIS_ONLY is_trivially_constructible
 {
 };
 
-#if __has_feature(is_trivially_constructible)
+#if __has_feature(is_trivially_constructible) || _GNUC_VER >= 501
 
 template <class _Tp>
 struct _LIBCPP_TYPE_VIS_ONLY is_trivially_constructible<_Tp, __is_construct::__nat,
@@ -2842,7 +2848,7 @@ template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_trivially_move_constructibl
 
 // is_trivially_assignable
 
-#if __has_feature(is_trivially_assignable)
+#if __has_feature(is_trivially_assignable) || _GNUC_VER >= 501
 
 template <class _Tp, class _Arg>
 struct is_trivially_assignable
@@ -3280,6 +3286,8 @@ template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_standard_layout
 template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_trivially_copyable
 #if __has_feature(is_trivially_copyable)
     : public integral_constant<bool, __is_trivially_copyable(_Tp)>
+#elif _GNUC_VER >= 501
+    : public integral_constant<bool, !is_volatile<_Tp>::value && __is_trivially_copyable(_Tp)>
 #else
     : integral_constant<bool, is_scalar<typename remove_all_extents<_Tp>::type>::value>
 #endif
@@ -3288,7 +3296,7 @@ template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_trivially_copyable
 // is_trivial;
 
 template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_trivial
-#if __has_feature(is_trivial) || (_GNUC_VER >= 407)
+#if __has_feature(is_trivial) || _GNUC_VER >= 407
     : public integral_constant<bool, __is_trivial(_Tp)>
 #else
     : integral_constant<bool, is_trivially_copyable<_Tp>::value &&

@@ -85,7 +85,7 @@ CXXFLAGS=-target $(TARGET)
 LDFLAGS=-target $(TARGET)
 
 CFLAGS += -g -O3
-CXXFLAGS += -g -O3
+CXXFLAGS += -g -O3 -std=c++11
 
 # Handle any C and C++ source files.
 CSRCS=$(wildcard *.c)

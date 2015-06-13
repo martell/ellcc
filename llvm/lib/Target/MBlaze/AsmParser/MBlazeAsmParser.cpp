@@ -297,7 +297,9 @@ public:
 void MBlazeOperand::print(raw_ostream &OS) const {
   switch (Kind) {
   case Immediate:
-    getImm()->print(OS);
+    OS << "Imm<";
+    OS << *Imm.Val;
+    OS << ">";
     break;
   case Register:
     OS << "<register R";
@@ -320,7 +322,9 @@ void MBlazeOperand::print(raw_ostream &OS) const {
     }
     break;
   case Fsl:
-    getFslImm()->print(OS);
+    OS << "Fsl<";
+    OS << *FslImm.Val;
+    OS << ">";
     break;
   }
 }

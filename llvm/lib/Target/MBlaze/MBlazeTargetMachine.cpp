@@ -51,7 +51,7 @@ static std::string computeDataLayout(bool BigEndian=true) {
 // offset from the stack/frame pointer, using StackGrowsUp enables
 // an easier handling.
 MBlazeTargetMachine::
-MBlazeTargetMachine(const Target &T, StringRef TT,
+MBlazeTargetMachine(const Target &T, const Triple &TT,
                     StringRef CPU, StringRef FS, const TargetOptions &Options,
                     Reloc::Model RM, CodeModel::Model CM,
                     CodeGenOpt::Level OL)

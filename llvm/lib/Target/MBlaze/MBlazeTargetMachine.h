@@ -30,7 +30,7 @@ class MBlazeTargetMachine : public LLVMTargetMachine {
   MBlazeIntrinsicInfo    IntrinsicInfo;
 
 public:
-  MBlazeTargetMachine(const Target &T, StringRef TT,
+  MBlazeTargetMachine(const Target &T, const Triple &TT,
                       StringRef CPU, StringRef FS,
                       const TargetOptions &Options,
                       Reloc::Model RM, CodeModel::Model CM,

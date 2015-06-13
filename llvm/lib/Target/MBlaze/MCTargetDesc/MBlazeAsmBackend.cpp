@@ -158,7 +158,7 @@ void ELFMBlazeAsmBackend::applyFixup(const MCFixup &Fixup, char *Data,
 
 MCAsmBackend *llvm::createMBlazeAsmBackend(const Target &T,
                                            const MCRegisterInfo &MRI,
-                                           StringRef TT,
+                                           const Triple &TT,
                                            StringRef CPU) {
   Triple TheTriple(TT);
 

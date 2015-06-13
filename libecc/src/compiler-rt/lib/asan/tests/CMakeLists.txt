@@ -275,19 +275,20 @@ if(COMPILER_RT_CAN_EXECUTE_TESTS AND NOT ANDROID)
 endif()
 
 if(ANDROID)
-  # We assume that unit tests on Android are built in a build
-  # tree with fresh Clang as a host compiler.
-  
-  # Test w/o ASan instrumentation. Link it with ASan statically.
-  add_executable(AsanNoinstTest
-    $<TARGET_OBJECTS:RTAsan.arm.android>
-    $<TARGET_OBJECTS:RTInterception.arm.android>
-    $<TARGET_OBJECTS:RTSanitizerCommon.arm.android>
-    ${COMPILER_RT_GTEST_SOURCE}
-    ${ASAN_NOINST_TEST_SOURCES})
-  set_target_compile_flags(AsanNoinstTest ${ASAN_UNITTEST_COMMON_CFLAGS})
-  set_target_link_flags(AsanNoinstTest ${ASAN_UNITTEST_NOINST_LINKFLAGS})
-  target_link_libraries(AsanNoinstTest log)
+  foreach(arch ${ASAN_SUPPORTED_ARCH})
+    # Test w/o ASan instrumentation. Link it with ASan statically.
+    add_executable(AsanNoinstTest # FIXME: .arch?
+      $<TARGET_OBJECTS:RTAsan.${arch}>
+      $<TARGET_OBJECTS:RTInterception.${arch}>
+      $<TARGET_OBJECTS:RTSanitizerCommon.${arch}>
+      $<TARGET_OBJECTS:RTSanitizerCommonLibc.${arch}>
+      $<TARGET_OBJECTS:RTUbsan.${arch}>
+      $<TARGET_OBJECTS:RTUbsan_cxx.${arch}>
+      ${COMPILER_RT_GTEST_SOURCE}
+      ${ASAN_NOINST_TEST_SOURCES})
+    set_target_compile_flags(AsanNoinstTest ${ASAN_UNITTEST_COMMON_CFLAGS})
+    set_target_link_flags(AsanNoinstTest ${ASAN_UNITTEST_NOINST_LINKFLAGS})
+    target_link_libraries(AsanNoinstTest ${ASAN_UNITTEST_NOINST_LIBS})
 
   # Test with ASan instrumentation. Link with ASan dynamic runtime.
   add_executable(AsanTest
