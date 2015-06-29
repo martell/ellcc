@@ -43,7 +43,7 @@ set(SANITIZER_LIBCDEP_SOURCES
   sanitizer_symbolizer_libcdep.cc
   sanitizer_symbolizer_posix_libcdep.cc
   sanitizer_symbolizer_process_libcdep.cc
-  sanitizer_unwind_posix_libcdep.cc)
+  sanitizer_unwind_linux_libcdep.cc)
 
 # Explicitly list all sanitizer_common headers. Not all of these are
 # included in sanitizer_common source files, but we need to depend on
@@ -130,7 +130,7 @@ if(APPLE)
 
   add_compiler_rt_object_libraries(RTSanitizerCommon
     OS ${SANITIZER_COMMON_SUPPORTED_OS}
-    ARCH ${SANITIZER_COMMON_SUPPORTED_ARCH}
+    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
     SOURCES ${SANITIZER_SOURCES} ${SANITIZER_LIBCDEP_SOURCES}
     CFLAGS ${SANITIZER_CFLAGS}
     DEFS ${SANITIZER_COMMON_DEFINITIONS})
@@ -149,11 +149,11 @@ else()
   # Otherwise, build separate libraries for each target.
   
   add_compiler_rt_object_libraries(RTSanitizerCommon
-    ARCH ${SANITIZER_COMMON_SUPPORTED_ARCH}
+    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
     SOURCES ${SANITIZER_SOURCES} CFLAGS ${SANITIZER_CFLAGS}
     DEFS ${SANITIZER_COMMON_DEFINITIONS})
   add_compiler_rt_object_libraries(RTSanitizerCommonLibc
-    ARCH ${SANITIZER_COMMON_SUPPORTED_ARCH}
+    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
     SOURCES ${SANITIZER_LIBCDEP_SOURCES} CFLAGS ${SANITIZER_CFLAGS}
     DEFS ${SANITIZER_COMMON_DEFINITIONS})
   foreach(arch ${SANITIZER_COMMON_SUPPORTED_ARCH})

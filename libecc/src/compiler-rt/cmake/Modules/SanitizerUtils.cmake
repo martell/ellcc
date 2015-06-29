@@ -1,5 +1,3 @@
-include(LLVMParseArguments)
-
 set(SANITIZER_GEN_DYNAMIC_LIST
   ${COMPILER_RT_SOURCE_DIR}/lib/sanitizer_common/scripts/gen_dynamic_list.py)
 
@@ -42,6 +40,29 @@ macro(add_sanitizer_rt_symbols name)
       install(FILES ${libfile}.syms DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR})
     endif()
   endif()
+endmacro()
+
+macro(add_sanitizer_rt_version_list name)
+  set(vers ${CMAKE_CURRENT_BINARY_DIR}/${name}.vers)
+  cmake_parse_arguments(ARG "" "" "LIBS;EXTRA" ${ARGN})
+  set(args)
+  foreach(arg ${ARG_EXTRA})
+    list(APPEND args "--extra" ${arg})
+  endforeach()
+  foreach(arg ${ARG_LIBS})
+    list(APPEND args "$<TARGET_FILE:${arg}>")
+  endforeach()
+  add_custom_command(OUTPUT ${vers}
+    COMMAND ${PYTHON_EXECUTABLE}
+      ${SANITIZER_GEN_DYNAMIC_LIST} --version-list ${args}
+      > ${vers}
+    DEPENDS ${SANITIZER_GEN_DYNAMIC_LIST} ${ARG_EXTRA} ${ARG_LIBS}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    COMMENT "Generating version list for ${name}"
+    VERBATIM)
+
+  add_custom_target(${name}-version-list ALL
+    DEPENDS ${vers})
 endmacro()
 
 # Add target to check code style for sanitizer runtimes.

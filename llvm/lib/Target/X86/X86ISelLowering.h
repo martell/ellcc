@@ -218,7 +218,8 @@ namespace llvm {
       // Integer add/sub with signed saturation.
       ADDS,
       SUBS,
-
+      // Unsigned Integer average 
+      AVG,
       /// Integer horizontal add.
       HADD,
 
@@ -236,6 +237,9 @@ namespace llvm {
 
       /// Signed integer max and min.
       SMAX, SMIN,
+
+      // Integer absolute value
+      ABS,
 
       /// Floating point max and min.
       FMAX, FMIN,
@@ -292,6 +296,9 @@ namespace llvm {
 
       // Vector FP round.
       VFPROUND,
+
+      // Vector signed integer to double.
+      CVTDQ2PD,
 
       // 128-bit vector logical left / right shift
       VSHLDQ, VSRLDQ,
@@ -417,6 +424,10 @@ namespace llvm {
       COMPRESS,
       EXPAND,
 
+      //Convert Unsigned/Integer to Scalar Floating-Point Value
+      //with rounding mode
+      SINT_TO_FP_RND,
+      UINT_TO_FP_RND,
       // Save xmm argument registers to the stack, according to %al. An operator
       // is needed so that this can be expanded with control flow.
       VASTART_SAVE_XMM_REGS,

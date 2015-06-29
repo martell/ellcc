@@ -1502,6 +1502,9 @@ u32 get_origin_if_poisoned(uptr a, uptr size) {
 }
 
 void *__msan_memcpy(void *dest, const void *src, SIZE_T n) {
+  if (!msan_inited) return internal_memcpy(dest, src, n);
+  if (msan_init_is_running || __msan::IsInSymbolizer())
+    return REAL(memcpy)(dest, src, n);
   ENSURE_MSAN_INITED();
   GET_STORE_STACK_TRACE;
   void *res = REAL(memcpy)(dest, src, n);

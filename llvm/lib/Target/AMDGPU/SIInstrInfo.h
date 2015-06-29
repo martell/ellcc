@@ -79,9 +79,9 @@ public:
                                int64_t &Offset1,
                                int64_t &Offset2) const override;
 
-  bool getLdStBaseRegImmOfs(MachineInstr *LdSt,
-                            unsigned &BaseReg, unsigned &Offset,
-                            const TargetRegisterInfo *TRI) const final;
+  bool getMemOpBaseRegImmOfs(MachineInstr *LdSt, unsigned &BaseReg,
+                             unsigned &Offset,
+                             const TargetRegisterInfo *TRI) const final;
 
   bool shouldClusterLoads(MachineInstr *FirstLdSt,
                           MachineInstr *SecondLdSt,
@@ -117,7 +117,7 @@ public:
   // register.  If there is no hardware instruction that can store to \p
   // DstRC, then AMDGPU::COPY is returned.
   unsigned getMovOpcode(const TargetRegisterClass *DstRC) const;
-  unsigned commuteOpcode(const MachineInstr &MI) const;
+  int commuteOpcode(const MachineInstr &MI) const;
 
   MachineInstr *commuteInstruction(MachineInstr *MI,
                                    bool NewMI = false) const override;

@@ -287,6 +287,11 @@ struct FormatStyle {
   bool AlwaysBreakTemplateDeclarations;
 
   /// \brief If \c true, always break before multiline string literals.
+  ///
+  /// This flag is mean to make cases where there are multiple multiline strings
+  /// in a file look more consistent. Thus, it will only take effect if wrapping
+  /// the string at that point leads to it being indented
+  /// \c ContinuationIndentWidth spaces from the start of the line.
   bool AlwaysBreakBeforeMultilineStrings;
 
   /// \brief Different ways to use tab in formatting.
@@ -404,7 +409,7 @@ struct FormatStyle {
   /// which should not be split into lines or otherwise changed.
   std::string CommentPragmas;
 
-  /// \brief Disables formatting at all.
+  /// \brief Disables formatting completely.
   bool DisableFormat;
 
   /// \brief A vector of macros that should be interpreted as foreach loops

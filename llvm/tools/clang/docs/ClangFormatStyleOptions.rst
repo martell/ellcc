@@ -228,6 +228,11 @@ the configuration (without a prefix: ``Auto``).
 **AlwaysBreakBeforeMultilineStrings** (``bool``)
   If ``true``, always break before multiline string literals.
 
+  This flag is mean to make cases where there are multiple multiline strings
+  in a file look more consistent. Thus, it will only take effect if wrapping
+  the string at that point leads to it being indented
+  ``ContinuationIndentWidth`` spaces from the start of the line.
+
 **AlwaysBreakTemplateDeclarations** (``bool``)
   If ``true``, always break after the ``template<...>`` of a
   template declaration.
@@ -322,7 +327,7 @@ the configuration (without a prefix: ``Auto``).
   alignment of & and \*. ``PointerAlignment`` is then used only as fallback.
 
 **DisableFormat** (``bool``)
-  Disables formatting at all.
+  Disables formatting completely.
 
 **ExperimentalAutoDetectBinPacking** (``bool``)
   If ``true``, clang-format detects whether function calls and

@@ -19,3 +19,5 @@ int  __tsan_java_acquire(jptr addr);
 int  __tsan_java_release(jptr addr);
 int  __tsan_java_release_store(jptr addr);
 }
+
+const jptr kExternalPCBit = 1ULL << 60;
