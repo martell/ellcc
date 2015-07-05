@@ -23,6 +23,11 @@
 #include "sanitizer_list.h"
 #include "sanitizer_mutex.h"
 
+#ifdef _MSC_VER
+extern "C" void _ReadWriteBarrier();
+#pragma intrinsic(_ReadWriteBarrier)
+#endif
+
 namespace __sanitizer {
 struct StackTrace;
 struct AddressInfo;
@@ -239,6 +244,7 @@ const char *StripModuleName(const char *module);
 
 // OS
 uptr ReadBinaryName(/*out*/char *buf, uptr buf_len);
+uptr ReadBinaryNameCached(/*out*/char *buf, uptr buf_len);
 const char *GetBinaryBasename();
 void CacheBinaryName();
 void DisableCoreDumperIfNecessary();
@@ -378,7 +384,7 @@ INLINE uptr RoundUpToPowerOfTwo(uptr size) {
   uptr up = MostSignificantSetBitIndex(size);
   CHECK(size < (1ULL << (up + 1)));
   CHECK(size > (1ULL << up));
-  return 1UL << (up + 1);
+  return 1ULL << (up + 1);
 }
 
 INLINE uptr RoundUpTo(uptr size, uptr boundary) {
@@ -608,15 +614,15 @@ typedef bool (*string_predicate_t)(const char *);
 uptr GetListOfModules(LoadedModule *modules, uptr max_modules,
                       string_predicate_t filter);
 
-#if SANITIZER_POSIX
-const uptr kPthreadDestructorIterations = 4;
-#else
-// Unused on Windows.
-const uptr kPthreadDestructorIterations = 0;
-#endif
-
 // Callback type for iterating over a set of memory ranges.
 typedef void (*RangeIteratorCallback)(uptr begin, uptr end, void *arg);
+
+enum AndroidApiLevel {
+  ANDROID_NOT_ANDROID = 0,
+  ANDROID_KITKAT = 19,
+  ANDROID_LOLLIPOP_MR1 = 22,
+  ANDROID_POST_LOLLIPOP = 23
+};
 
 #if SANITIZER_ANDROID
 // Initialize Android logging. Any writes before this are silently lost.
@@ -624,12 +630,25 @@ void AndroidLogInit();
 void AndroidLogWrite(const char *buffer);
 void GetExtraActivationFlags(char *buf, uptr size);
 void SanitizerInitializeUnwinder();
+AndroidApiLevel AndroidGetApiLevel();
 #else
 INLINE void AndroidLogInit() {}
 INLINE void AndroidLogWrite(const char *buffer_unused) {}
 INLINE void GetExtraActivationFlags(char *buf, uptr size) { *buf = '\0'; }
 INLINE void SanitizerInitializeUnwinder() {}
+INLINE AndroidApiLevel AndroidGetApiLevel() { return ANDROID_NOT_ANDROID; }
 #endif
+
+INLINE uptr GetPthreadDestructorIterations() {
+#if SANITIZER_ANDROID
+  return (AndroidGetApiLevel() == ANDROID_LOLLIPOP_MR1) ? 8 : 4;
+#elif SANITIZER_POSIX
+  return 4;
+#else
+// Unused on Windows.
+  return 0;
+#endif
+}
 
 void *internal_start_thread(void(*func)(void*), void *arg);
 void internal_join_thread(void *th);
@@ -641,8 +660,7 @@ void MaybeStartBackgroudThread();
 // memset/memcpy/etc.
 static inline void SanitizerBreakOptimization(void *arg) {
 #if _MSC_VER
-  // FIXME: make sure this is actually enough.
-  __asm;
+  _ReadWriteBarrier();
 #else
   __asm__ __volatile__("" : : "r" (arg) : "memory");
 #endif

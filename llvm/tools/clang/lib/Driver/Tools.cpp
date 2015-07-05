@@ -1458,6 +1458,28 @@ static const char *getX86TargetCPU(const ArgList &Args,
       return Args.MakeArgString(CPU);
   }
 
+  if (const Arg *A = Args.getLastArg(options::OPT__SLASH_arch)) {
+    // Mapping built by referring to X86TargetInfo::getDefaultFeatures().
+    StringRef Arch = A->getValue();
+    const char *CPU;
+    if (Triple.getArch() == llvm::Triple::x86) {
+      CPU = llvm::StringSwitch<const char *>(Arch)
+                .Case("IA32", "i386")
+                .Case("SSE", "pentium3")
+                .Case("SSE2", "pentium4")
+                .Case("AVX", "sandybridge")
+                .Case("AVX2", "haswell")
+                .Default(nullptr);
+    } else {
+      CPU = llvm::StringSwitch<const char *>(Arch)
+                .Case("AVX", "sandybridge")
+                .Case("AVX2", "haswell")
+                .Default(nullptr);
+    }
+    if (CPU)
+      return CPU;
+  }
+
   // Select the default CPU if none was given (or detection failed).
 
   if (Triple.getArch() != llvm::Triple::x86_64 &&
@@ -1854,8 +1876,8 @@ static bool DecodeAArch64Features(const Driver &D, StringRef text,
   SmallVector<StringRef, 8> Split;
   text.split(Split, StringRef("+"), -1, false);
 
-  for (unsigned I = 0, E = Split.size(); I != E; ++I) {
-    const char *result = llvm::StringSwitch<const char *>(Split[I])
+  for (const StringRef Feature : Split) {
+    const char *result = llvm::StringSwitch<const char *>(Feature)
                              .Case("fp", "+fp-armv8")
                              .Case("simd", "+neon")
                              .Case("crc", "+crc")
@@ -1867,7 +1889,7 @@ static bool DecodeAArch64Features(const Driver &D, StringRef text,
                              .Default(nullptr);
     if (result)
       Features.push_back(result);
-    else if (Split[I] == "neon" || Split[I] == "noneon")
+    else if (Feature == "neon" || Feature == "noneon")
       D.Diag(diag::err_drv_no_neon_modifier);
     else
       return false;
@@ -2282,9 +2304,9 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
 
 // Until ARM libraries are build separately, we have them all in one library
 static StringRef getArchNameForCompilerRTLib(const ToolChain &TC) {
-  // FIXME: handle 64-bit
   if (TC.getTriple().isOSWindows() &&
-      !TC.getTriple().isWindowsItaniumEnvironment())
+      !TC.getTriple().isWindowsItaniumEnvironment() &&
+      TC.getArch() == llvm::Triple::x86)
     return "i386";
   if (TC.getArch() == llvm::Triple::arm || TC.getArch() == llvm::Triple::armeb)
     return "arm";
@@ -2302,8 +2324,8 @@ static SmallString<128> getCompilerRTLibDir(const ToolChain &TC) {
   return Res;
 }
 
-static SmallString<128> getCompilerRT(const ToolChain &TC, StringRef Component,
-                                      bool Shared = false) {
+SmallString<128> tools::getCompilerRT(const ToolChain &TC, StringRef Component,
+                                      bool Shared) {
   const char *Env = TC.getTriple().getEnvironment() == llvm::Triple::Android
                         ? "-android"
                         : "";
@@ -3986,7 +4008,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     }
 
   const SanitizerArgs &Sanitize = getToolChain().getSanitizerArgs();
-  Sanitize.addArgs(Args, CmdArgs);
+  Sanitize.addArgs(getToolChain(), Args, CmdArgs, InputType);
 
   // Report an error for -faltivec on anything other than PowerPC.
   if (const Arg *A = Args.getLastArg(options::OPT_faltivec)) {
@@ -5901,10 +5923,8 @@ static void constructHexagonLinkArgs(Compilation &C, const JobAction &JA,
     CmdArgs.push_back("--start-group");
 
     if (!buildingLib) {
-      for (std::vector<std::string>::iterator i = oslibs.begin(),
-                                              e = oslibs.end();
-           i != e; ++i)
-        CmdArgs.push_back(Args.MakeArgString("-l" + *i));
+      for (const std::string &Lib : oslibs)
+        CmdArgs.push_back(Args.MakeArgString("-l" + Lib));
       CmdArgs.push_back("-lc");
     }
     CmdArgs.push_back("-lgcc");
@@ -8378,10 +8398,10 @@ void nacltools::AssemblerARM::ConstructJob(Compilation &C, const JobAction &JA,
                                     LinkingOutput);
 }
 
-// This is quite similar to gnutools::link::ConstructJob with changes that
+// This is quite similar to gnutools::Linker::ConstructJob with changes that
 // we use static by default, do not yet support sanitizers or LTO, and a few
 // others. Eventually we can support more of that and hopefully migrate back
-// to gnutools::link.
+// to gnutools::Linker.
 void nacltools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                                      const InputInfo &Output,
                                      const InputInfoList &Inputs,
@@ -9366,6 +9386,212 @@ std::unique_ptr<Command> visualstudio::Compiler::GetCommand(
                                                 D.getClangProgramPath());
   return llvm::make_unique<Command>(JA, *this, Args.MakeArgString(Exec),
                                     CmdArgs);
+}
+
+/// MinGW Tools
+void MinGW::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
+                                    const InputInfo &Output,
+                                    const InputInfoList &Inputs,
+                                    const ArgList &Args,
+                                    const char *LinkingOutput) const {
+  claimNoWarnArgs(Args);
+  ArgStringList CmdArgs;
+
+  if (getToolChain().getArch() == llvm::Triple::x86) {
+    CmdArgs.push_back("--32");
+  } else if (getToolChain().getArch() == llvm::Triple::x86_64) {
+    CmdArgs.push_back("--64");
+  }
+
+  Args.AddAllArgValues(CmdArgs, options::OPT_Wa_COMMA, options::OPT_Xassembler);
+
+  CmdArgs.push_back("-o");
+  CmdArgs.push_back(Output.getFilename());
+
+  for (const auto &II : Inputs)
+    CmdArgs.push_back(II.getFilename());
+
+  const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("as"));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
+
+  if (Args.hasArg(options::OPT_gsplit_dwarf))
+    SplitDebugInfo(getToolChain(), C, *this, JA, Args, Output,
+                   SplitDebugName(Args, Inputs[0]));
+}
+
+void MinGW::Linker::AddLibGCC(const ArgList &Args,
+                              ArgStringList &CmdArgs) const {
+  if (Args.hasArg(options::OPT_mthreads))
+    CmdArgs.push_back("-lmingwthrd");
+  CmdArgs.push_back("-lmingw32");
+  if (Args.hasArg(options::OPT_shared) ||
+      Args.hasArg(options::OPT_shared_libgcc) ||
+      !Args.hasArg(options::OPT_static_libgcc)) {
+    CmdArgs.push_back("-lgcc_s");
+    CmdArgs.push_back("-lgcc");
+  } else {
+    CmdArgs.push_back("-lgcc");
+    CmdArgs.push_back("-lgcc_eh");
+  }
+  CmdArgs.push_back("-lmoldname");
+  CmdArgs.push_back("-lmingwex");
+  CmdArgs.push_back("-lmsvcrt");
+}
+
+void MinGW::Linker::ConstructJob(Compilation &C, const JobAction &JA,
+                                 const InputInfo &Output,
+                                 const InputInfoList &Inputs,
+                                 const ArgList &Args,
+                                 const char *LinkingOutput) const {
+  const ToolChain &TC = getToolChain();
+  const Driver &D = TC.getDriver();
+  // const SanitizerArgs &Sanitize = TC.getSanitizerArgs();
+
+  ArgStringList CmdArgs;
+
+  // Silence warning for "clang -g foo.o -o foo"
+  Args.ClaimAllArgs(options::OPT_g_Group);
+  // and "clang -emit-llvm foo.o -o foo"
+  Args.ClaimAllArgs(options::OPT_emit_llvm);
+  // and for "clang -w foo.o -o foo". Other warning options are already
+  // handled somewhere else.
+  Args.ClaimAllArgs(options::OPT_w);
+
+  if (!D.SysRoot.empty())
+    CmdArgs.push_back(Args.MakeArgString("--sysroot=" + D.SysRoot));
+
+  if (Args.hasArg(options::OPT_s))
+    CmdArgs.push_back("-s");
+
+  CmdArgs.push_back("-m");
+  if (TC.getArch() == llvm::Triple::x86)
+    CmdArgs.push_back("i386pe");
+  if (TC.getArch() == llvm::Triple::x86_64)
+    CmdArgs.push_back("i386pep");
+
+  if (Args.hasArg(options::OPT_mwindows)) {
+    CmdArgs.push_back("--subsystem");
+    CmdArgs.push_back("windows");
+  } else if (Args.hasArg(options::OPT_mconsole)) {
+    CmdArgs.push_back("--subsystem");
+    CmdArgs.push_back("console");
+  }
+
+  if (Args.hasArg(options::OPT_static))
+    CmdArgs.push_back("-Bstatic");
+  else {
+    if (Args.hasArg(options::OPT_mdll))
+      CmdArgs.push_back("--dll");
+    else if (Args.hasArg(options::OPT_shared))
+      CmdArgs.push_back("--shared");
+    CmdArgs.push_back("-Bdynamic");
+    if (Args.hasArg(options::OPT_mdll) || Args.hasArg(options::OPT_shared)) {
+      CmdArgs.push_back("-e");
+      if (TC.getArch() == llvm::Triple::x86)
+        CmdArgs.push_back("_DllMainCRTStartup@12");
+      else
+        CmdArgs.push_back("DllMainCRTStartup");
+      CmdArgs.push_back("--enable-auto-image-base");
+    }
+  }
+
+  CmdArgs.push_back("-o");
+  CmdArgs.push_back(Output.getFilename());
+
+  Args.AddAllArgs(CmdArgs, options::OPT_e);
+  // FIXME: add -N, -n flags
+  Args.AddLastArg(CmdArgs, options::OPT_r);
+  Args.AddLastArg(CmdArgs, options::OPT_s);
+  Args.AddLastArg(CmdArgs, options::OPT_t);
+  Args.AddAllArgs(CmdArgs, options::OPT_u_Group);
+  Args.AddLastArg(CmdArgs, options::OPT_Z_Flag);
+
+  if (!Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nostartfiles)) {
+    if (Args.hasArg(options::OPT_shared) || Args.hasArg(options::OPT_mdll)) {
+      CmdArgs.push_back(Args.MakeArgString(TC.GetFilePath("dllcrt2.o")));
+    } else {
+      if (Args.hasArg(options::OPT_municode))
+        CmdArgs.push_back(Args.MakeArgString(TC.GetFilePath("crt2u.o")));
+      else
+        CmdArgs.push_back(Args.MakeArgString(TC.GetFilePath("crt2.o")));
+    }
+    if (Args.hasArg(options::OPT_pg))
+      CmdArgs.push_back(Args.MakeArgString(TC.GetFilePath("gcrt2.o")));
+    CmdArgs.push_back(Args.MakeArgString(TC.GetFilePath("crtbegin.o")));
+  }
+
+  Args.AddAllArgs(CmdArgs, options::OPT_L);
+  const ToolChain::path_list Paths = TC.getFilePaths();
+  for (const auto &Path : Paths)
+    CmdArgs.push_back(Args.MakeArgString(StringRef("-L") + Path));
+
+  AddLinkerInputs(TC, Inputs, Args, CmdArgs);
+
+  // TODO: Add ASan stuff here
+
+  // TODO: Add profile stuff here
+
+  if (D.CCCIsCXX() && !Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nodefaultlibs)) {
+    bool OnlyLibstdcxxStatic = Args.hasArg(options::OPT_static_libstdcxx) &&
+                               !Args.hasArg(options::OPT_static);
+    if (OnlyLibstdcxxStatic)
+      CmdArgs.push_back("-Bstatic");
+    TC.AddCXXStdlibLibArgs(Args, CmdArgs);
+    if (OnlyLibstdcxxStatic)
+      CmdArgs.push_back("-Bdynamic");
+  }
+
+  if (!Args.hasArg(options::OPT_nostdlib)) {
+    if (!Args.hasArg(options::OPT_nodefaultlibs)) {
+      if (Args.hasArg(options::OPT_static))
+        CmdArgs.push_back("--start-group");
+
+      if (Args.hasArg(options::OPT_fstack_protector) ||
+          Args.hasArg(options::OPT_fstack_protector_strong) ||
+          Args.hasArg(options::OPT_fstack_protector_all)) {
+        CmdArgs.push_back("-lssp_nonshared");
+        CmdArgs.push_back("-lssp");
+      }
+      if (Args.hasArg(options::OPT_fopenmp))
+        CmdArgs.push_back("-lgomp");
+
+      AddLibGCC(Args, CmdArgs);
+
+      if (Args.hasArg(options::OPT_pg))
+        CmdArgs.push_back("-lgmon");
+
+      // FIXME: what to do about pthreads library?
+      // Currently required for OpenMP and posix-threading libgcc, 
+      // does not exists in mingw.org.
+      //CmdArgs.push_back("-lpthread");
+
+      // add system libraries
+      if (Args.hasArg(options::OPT_mwindows)) {
+        CmdArgs.push_back("-lgdi32");
+        CmdArgs.push_back("-lcomdlg32");
+      }
+      CmdArgs.push_back("-ladvapi32");
+      CmdArgs.push_back("-lshell32");
+      CmdArgs.push_back("-luser32");
+      CmdArgs.push_back("-lkernel32");
+
+      if (Args.hasArg(options::OPT_static))
+        CmdArgs.push_back("--end-group");
+      else
+        AddLibGCC(Args, CmdArgs);
+    }
+
+    if (!Args.hasArg(options::OPT_nostartfiles)) {
+      // Add crtfastmath.o if available and fast math is enabled.
+      TC.AddFastMathRuntimeIfAvailable(Args, CmdArgs);
+
+      CmdArgs.push_back(Args.MakeArgString(TC.GetFilePath("crtend.o")));
+    }
+  }
+  const char *Exec = Args.MakeArgString(TC.GetProgramPath("ld"));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs));
 }
 
 /// XCore Tools

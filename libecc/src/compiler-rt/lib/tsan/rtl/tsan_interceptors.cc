@@ -825,7 +825,7 @@ extern "C" void *__tsan_thread_start_func(void *arg) {
     ScopedIgnoreInterceptors ignore;
     ThreadIgnoreBegin(thr, 0);
     if (pthread_setspecific(g_thread_finalize_key,
-                            (void *)kPthreadDestructorIterations)) {
+                            (void *)GetPthreadDestructorIterations())) {
       Printf("ThreadSanitizer: failed to set thread key\n");
       Die();
     }
@@ -991,8 +991,8 @@ INTERCEPTOR(int, pthread_cond_init, void *c, void *a) {
 INTERCEPTOR(int, pthread_cond_wait, void *c, void *m) {
   void *cond = init_cond(c);
   SCOPED_TSAN_INTERCEPTOR(pthread_cond_wait, cond, m);
-  MutexUnlock(thr, pc, (uptr)m);
   MemoryAccessRange(thr, pc, (uptr)c, sizeof(uptr), false);
+  MutexUnlock(thr, pc, (uptr)m);
   CondMutexUnlockCtx arg = {&si, thr, pc, m};
   int res = 0;
   // This ensures that we handle mutex lock even in case of pthread_cancel.
@@ -1013,8 +1013,8 @@ INTERCEPTOR(int, pthread_cond_wait, void *c, void *m) {
 INTERCEPTOR(int, pthread_cond_timedwait, void *c, void *m, void *abstime) {
   void *cond = init_cond(c);
   SCOPED_TSAN_INTERCEPTOR(pthread_cond_timedwait, cond, m, abstime);
-  MutexUnlock(thr, pc, (uptr)m);
   MemoryAccessRange(thr, pc, (uptr)c, sizeof(uptr), false);
+  MutexUnlock(thr, pc, (uptr)m);
   CondMutexUnlockCtx arg = {&si, thr, pc, m};
   int res = 0;
   // This ensures that we handle mutex lock even in case of pthread_cancel.

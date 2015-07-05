@@ -42,6 +42,8 @@ class MIParser {
   StringMap<unsigned> Names2InstrOpCodes;
   /// Maps from register names to registers.
   StringMap<unsigned> Names2Regs;
+  /// Maps from register mask names to register masks.
+  StringMap<const uint32_t *> Names2RegMasks;
 
 public:
   MIParser(SourceMgr &SM, MachineFunction &MF, SMDiagnostic &Error,
@@ -61,11 +63,13 @@ public:
   /// This function always return true.
   bool error(StringRef::iterator Loc, const Twine &Msg);
 
-  MachineInstr *parse();
+  bool parse(MachineInstr *&MI);
+  bool parseMBB(MachineBasicBlock *&MBB);
 
   bool parseRegister(unsigned &Reg);
   bool parseRegisterOperand(MachineOperand &Dest, bool IsDef = false);
   bool parseImmediateOperand(MachineOperand &Dest);
+  bool parseMBBReference(MachineBasicBlock *&MBB);
   bool parseMBBOperand(MachineOperand &Dest);
   bool parseGlobalAddressOperand(MachineOperand &Dest);
   bool parseMachineOperand(MachineOperand &Dest);
@@ -89,6 +93,13 @@ private:
   /// Try to convert a register name to a register number. Return true if the
   /// register name is invalid.
   bool getRegisterByName(StringRef RegName, unsigned &Reg);
+
+  void initNames2RegMasks();
+
+  /// Check if the given identifier is a name of a register mask.
+  ///
+  /// Return null if the identifier isn't a register mask.
+  const uint32_t *getRegMask(StringRef Identifier);
 };
 
 } // end anonymous namespace
@@ -120,7 +131,7 @@ bool MIParser::error(StringRef::iterator Loc, const Twine &Msg) {
   return true;
 }
 
-MachineInstr *MIParser::parse() {
+bool MIParser::parse(MachineInstr *&MI) {
   lex();
 
   // Parse any register operands before '='
@@ -129,32 +140,28 @@ MachineInstr *MIParser::parse() {
   SmallVector<MachineOperand, 8> Operands;
   if (Token.isRegister()) {
     if (parseRegisterOperand(MO, /*IsDef=*/true))
-      return nullptr;
+      return true;
     Operands.push_back(MO);
-    if (Token.isNot(MIToken::equal)) {
-      error("expected '='");
-      return nullptr;
-    }
+    if (Token.isNot(MIToken::equal))
+      return error("expected '='");
     lex();
   }
 
   unsigned OpCode;
   if (Token.isError() || parseInstruction(OpCode))
-    return nullptr;
+    return true;
 
   // TODO: Parse the instruction flags and memory operands.
 
   // Parse the remaining machine operands.
   while (Token.isNot(MIToken::Eof)) {
     if (parseMachineOperand(MO))
-      return nullptr;
+      return true;
     Operands.push_back(MO);
     if (Token.is(MIToken::Eof))
       break;
-    if (Token.isNot(MIToken::comma)) {
-      error("expected ',' before the next machine operand");
-      return nullptr;
-    }
+    if (Token.isNot(MIToken::comma))
+      return error("expected ',' before the next machine operand");
     lex();
   }
 
@@ -168,16 +175,30 @@ MachineInstr *MIParser::parse() {
       // Mark this register as implicit to prevent an assertion when it's added
       // to an instruction. This is a temporary workaround until the implicit
       // register flag can be parsed.
-      Operands[I].setImplicit();
+      if (Operands[I].isReg())
+        Operands[I].setImplicit();
     }
   }
 
   // TODO: Determine the implicit behaviour when implicit register flags are
   // parsed.
-  auto *MI = MF.CreateMachineInstr(MCID, DebugLoc(), /*NoImplicit=*/true);
+  MI = MF.CreateMachineInstr(MCID, DebugLoc(), /*NoImplicit=*/true);
   for (const auto &Operand : Operands)
     MI->addOperand(MF, Operand);
-  return MI;
+  return false;
+}
+
+bool MIParser::parseMBB(MachineBasicBlock *&MBB) {
+  lex();
+  if (Token.isNot(MIToken::MachineBasicBlock))
+    return error("expected a machine basic block reference");
+  if (parseMBBReference(MBB))
+    return true;
+  lex();
+  if (Token.isNot(MIToken::Eof))
+    return error(
+        "expected end of string after the machine basic block reference");
+  return false;
 }
 
 bool MIParser::parseInstruction(unsigned &OpCode) {
@@ -240,7 +261,7 @@ bool MIParser::getUnsigned(unsigned &Result) {
   return false;
 }
 
-bool MIParser::parseMBBOperand(MachineOperand &Dest) {
+bool MIParser::parseMBBReference(MachineBasicBlock *&MBB) {
   assert(Token.is(MIToken::MachineBasicBlock));
   unsigned Number;
   if (getUnsigned(Number))
@@ -249,10 +270,17 @@ bool MIParser::parseMBBOperand(MachineOperand &Dest) {
   if (MBBInfo == MBBSlots.end())
     return error(Twine("use of undefined machine basic block #") +
                  Twine(Number));
-  MachineBasicBlock *MBB = MBBInfo->second;
+  MBB = MBBInfo->second;
   if (!Token.stringValue().empty() && Token.stringValue() != MBB->getName())
     return error(Twine("the name of machine basic block #") + Twine(Number) +
                  " isn't '" + Token.stringValue() + "'");
+  return false;
+}
+
+bool MIParser::parseMBBOperand(MachineOperand &Dest) {
+  MachineBasicBlock *MBB;
+  if (parseMBBReference(MBB))
+    return true;
   Dest = MachineOperand::CreateMBB(MBB);
   lex();
   return false;
@@ -302,6 +330,13 @@ bool MIParser::parseMachineOperand(MachineOperand &Dest) {
     return parseGlobalAddressOperand(Dest);
   case MIToken::Error:
     return true;
+  case MIToken::Identifier:
+    if (const auto *RegMask = getRegMask(Token.stringValue())) {
+      Dest = MachineOperand::CreateRegMask(RegMask);
+      lex();
+      break;
+    }
+  // fallthrough
   default:
     // TODO: parse the other machine operands.
     return error("expected a machine operand");
@@ -352,9 +387,37 @@ bool MIParser::getRegisterByName(StringRef RegName, unsigned &Reg) {
   return false;
 }
 
-MachineInstr *
-llvm::parseMachineInstr(SourceMgr &SM, MachineFunction &MF, StringRef Src,
-                        const DenseMap<unsigned, MachineBasicBlock *> &MBBSlots,
-                        const SlotMapping &IRSlots, SMDiagnostic &Error) {
-  return MIParser(SM, MF, Error, Src, MBBSlots, IRSlots).parse();
+void MIParser::initNames2RegMasks() {
+  if (!Names2RegMasks.empty())
+    return;
+  const auto *TRI = MF.getSubtarget().getRegisterInfo();
+  assert(TRI && "Expected target register info");
+  ArrayRef<const uint32_t *> RegMasks = TRI->getRegMasks();
+  ArrayRef<const char *> RegMaskNames = TRI->getRegMaskNames();
+  assert(RegMasks.size() == RegMaskNames.size());
+  for (size_t I = 0, E = RegMasks.size(); I < E; ++I)
+    Names2RegMasks.insert(
+        std::make_pair(StringRef(RegMaskNames[I]).lower(), RegMasks[I]));
+}
+
+const uint32_t *MIParser::getRegMask(StringRef Identifier) {
+  initNames2RegMasks();
+  auto RegMaskInfo = Names2RegMasks.find(Identifier);
+  if (RegMaskInfo == Names2RegMasks.end())
+    return nullptr;
+  return RegMaskInfo->getValue();
+}
+
+bool llvm::parseMachineInstr(
+    MachineInstr *&MI, SourceMgr &SM, MachineFunction &MF, StringRef Src,
+    const DenseMap<unsigned, MachineBasicBlock *> &MBBSlots,
+    const SlotMapping &IRSlots, SMDiagnostic &Error) {
+  return MIParser(SM, MF, Error, Src, MBBSlots, IRSlots).parse(MI);
+}
+
+bool llvm::parseMBBReference(
+    MachineBasicBlock *&MBB, SourceMgr &SM, MachineFunction &MF, StringRef Src,
+    const DenseMap<unsigned, MachineBasicBlock *> &MBBSlots,
+    const SlotMapping &IRSlots, SMDiagnostic &Error) {
+  return MIParser(SM, MF, Error, Src, MBBSlots, IRSlots).parseMBB(MBB);
 }

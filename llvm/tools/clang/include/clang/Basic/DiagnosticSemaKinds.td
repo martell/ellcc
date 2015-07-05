@@ -426,6 +426,7 @@ def warn_redecl_library_builtin : Warning<
   InGroup<DiagGroup<"incompatible-library-redeclaration">>;
 def err_builtin_definition : Error<"definition of builtin function %0">;
 def err_arm_invalid_specialreg : Error<"invalid special register for builtin">;
+def err_invalid_cpu_supports : Error<"invalid cpu feature string for builtin">;
 def warn_builtin_unknown : Warning<"use of unknown builtin %0">,
   InGroup<ImplicitFunctionDeclare>, DefaultError;
 def warn_dyn_class_memaccess : Warning<
@@ -1050,6 +1051,7 @@ def ext_friend_tag_redecl_outside_namespace : ExtWarn<
   "unqualified friend declaration referring to type outside of the nearest "
   "enclosing namespace is a Microsoft extension; add a nested name specifier">,
   InGroup<Microsoft>;
+def err_pure_friend : Error<"friend declaration cannot have a pure-specifier">;
 
 def err_invalid_member_in_interface : Error<
   "%select{data member |non-public member function |static member function |"
@@ -4696,13 +4698,15 @@ def ext_sizeof_alignof_void_type : Extension<
   "invalid application of '%select{sizeof|alignof|vec_step}0' to a void "
   "type">, InGroup<PointerArith>;
 def err_opencl_sizeof_alignof_type : Error<
-  "invalid application of '%select{sizeof|alignof|vec_step}0' to a void type">;
+  "invalid application of '%select{sizeof|alignof|vec_step|__builtin_omp_required_simd_align}0' to a void type">;
 def err_sizeof_alignof_incomplete_type : Error<
-  "invalid application of '%select{sizeof|alignof|vec_step}0' to an "
+  "invalid application of '%select{sizeof|alignof|vec_step|__builtin_omp_required_simd_align}0' to an "
   "incomplete type %1">;
 def err_sizeof_alignof_function_type : Error<
-  "invalid application of '%select{sizeof|alignof|vec_step}0' to a "
+  "invalid application of '%select{sizeof|alignof|vec_step|__builtin_omp_required_simd_align}0' to a "
   "function type">;
+def err_openmp_default_simd_align_expr : Error<
+  "invalid application of '__builtin_omp_required_simd_align' to an expression, only type is allowed">;
 def err_sizeof_alignof_bitfield : Error<
   "invalid application of '%select{sizeof|alignof}0' to bit-field">;
 def err_alignof_member_of_incomplete_type : Error<
@@ -6797,6 +6801,15 @@ def warn_format_non_standard_conversion_spec: Warning<
 def warn_printf_ignored_flag: Warning<
   "flag '%0' is ignored when flag '%1' is present">,
   InGroup<Format>;
+def warn_printf_empty_objc_flag: Warning<
+  "missing object format flag">,
+  InGroup<Format>;
+def warn_printf_ObjCflags_without_ObjCConversion: Warning<
+  "object format flags cannot be used with '%0' conversion specifier">,
+  InGroup<Format>;
+def warn_printf_invalid_objc_flag: Warning<
+    "'%0' is not a valid object format flag">,
+    InGroup<Format>;
 def warn_scanf_scanlist_incomplete : Warning<
   "no closing ']' for '%%[' in scanf format string">,
   InGroup<Format>;
@@ -7609,6 +7622,12 @@ def err_omp_single_copyprivate_with_nowait : Error<
   "the 'copyprivate' clause must not be used with the 'nowait' clause">;
 def note_omp_nowait_clause_here : Note<
   "'nowait' clause is here">;
+def err_omp_wrong_cancel_region : Error<
+  "one of 'for', 'parallel', 'sections' or 'taskgroup' is expected">;
+def err_omp_parent_cancel_region_nowait : Error<
+  "parent region for 'omp %select{cancellation point/cancel}0' construct cannot be nowait">;
+def err_omp_parent_cancel_region_ordered : Error<
+  "parent region for 'omp %select{cancellation point/cancel}0' construct cannot be ordered">;
 } // end of OpenMP category
 
 let CategoryName = "Related Result Type Issue" in {

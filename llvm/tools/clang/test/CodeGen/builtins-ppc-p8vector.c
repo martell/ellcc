@@ -1,4 +1,4 @@
-// REQUIRES: powerpc-registered-target,asserts
+// REQUIRES: powerpc-registered-target
 // RUN: %clang_cc1 -faltivec -target-feature +power8-vector -triple powerpc64-unknown-unknown -emit-llvm %s -o - | FileCheck %s
 // RUN: %clang_cc1 -faltivec -target-feature +power8-vector -triple powerpc64le-unknown-unknown -emit-llvm %s -o - | FileCheck %s -check-prefix=CHECK-LE
 // RUN: not %clang_cc1 -faltivec -target-feature +vsx -triple powerpc64-unknown-unknown -emit-llvm %s -o - 2>&1 | FileCheck %s -check-prefix=CHECK-PPC
@@ -33,8 +33,8 @@ void test1() {
 
   /* vec_abs */
   res_vsll = vec_abs(vsll);
-// CHECK: call <2 x i64> @llvm.ppc.altivec.vmaxsd(<2 x i64> %{{[0-9]]*}}, <2 x i64>
-// CHECK-LE: call <2 x i64> @llvm.ppc.altivec.vmaxsd(<2 x i64> %{{[0-9]]*}}, <2 x i64>
+// CHECK: call <2 x i64> @llvm.ppc.altivec.vmaxsd(<2 x i64> %{{[0-9]*}}, <2 x i64>
+// CHECK-LE: call <2 x i64> @llvm.ppc.altivec.vmaxsd(<2 x i64> %{{[0-9]*}}, <2 x i64>
 // CHECK-PPC: error: call to 'vec_abs' is ambiguous
 
   res_vd = vec_abs(vda);
@@ -55,6 +55,34 @@ void test1() {
 // CHECK-LE: add <2 x i64>
 // CHECK-PPC: error: call to 'vec_add' is ambiguous
 
+  /* vec_mergee */  
+  res_vbi = vec_mergee(vbi, vbi);
+// CHECK: @llvm.ppc.altivec.vperm
+// CHECK-LE: @llvm.ppc.altivec.vperm
+  
+  res_vi = vec_mergee(vi, vi);
+// CHECK: @llvm.ppc.altivec.vperm
+// CHECK-LE: @llvm.ppc.altivec.vperm
+
+  res_vui = vec_mergee(vui, vui);
+// CHECK: @llvm.ppc.altivec.vperm
+// CHECK-LE: @llvm.ppc.altivec.vperm
+// CHECK-PPC: warning: implicit declaration of function 'vec_mergee'
+
+  /* vec_mergeo */
+  res_vbi = vec_mergeo(vbi, vbi);
+// CHECK: @llvm.ppc.altivec.vperm
+// CHECK-LE: @llvm.ppc.altivec.vperm
+
+  res_vi = vec_mergeo(vi, vi);
+// CHECK: @llvm.ppc.altivec.vperm
+// CHECK-LE: @llvm.ppc.altivec.vperm
+
+  res_vui = vec_mergeo(vui, vui);
+// CHECK: @llvm.ppc.altivec.vperm
+// CHECK-LE: @llvm.ppc.altivec.vperm
+// CHECK-PPC: warning: implicit declaration of function 'vec_mergeo'
+  
   /* vec_cmpeq */
   res_vbll = vec_cmpeq(vsll, vsll);
 // CHECK: @llvm.ppc.altivec.vcmpequd
