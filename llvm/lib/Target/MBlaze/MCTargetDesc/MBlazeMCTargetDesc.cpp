@@ -40,7 +40,7 @@ static MCInstrInfo *createMBlazeMCInstrInfo() {
   return X;
 }
 
-static MCRegisterInfo *createMBlazeMCRegisterInfo(StringRef TT) {
+static MCRegisterInfo *createMBlazeMCRegisterInfo(const Triple &TT) {
   MCRegisterInfo *X = new MCRegisterInfo();
   InitMBlazeMCRegisterInfo(X, MBlaze::R15);
   return X;
@@ -49,9 +49,7 @@ static MCRegisterInfo *createMBlazeMCRegisterInfo(StringRef TT) {
 static MCSubtargetInfo *createMBlazeMCSubtargetInfo(const Triple &TT,
                                                     StringRef CPU,
                                                     StringRef FS) {
-  MCSubtargetInfo *X = new MCSubtargetInfo();
-  InitMBlazeMCSubtargetInfo(X, TT, CPU, FS);
-  return X;
+  return createMBlazeMCSubtargetInfoImpl(TT, CPU, FS);
 }
 
 static MCAsmInfo *createMBlazeMCAsmInfo(const MCRegisterInfo &MRI,
@@ -60,7 +58,8 @@ static MCAsmInfo *createMBlazeMCAsmInfo(const MCRegisterInfo &MRI,
   return MAI;
 }
 
-static MCCodeGenInfo *createMBlazeMCCodeGenInfo(StringRef TT, Reloc::Model RM,
+static MCCodeGenInfo *createMBlazeMCCodeGenInfo(const Triple &TT,
+                                                Reloc::Model RM,
                                                 CodeModel::Model CM,
                                                 CodeGenOpt::Level OL) {
   MCCodeGenInfo *X = new MCCodeGenInfo();

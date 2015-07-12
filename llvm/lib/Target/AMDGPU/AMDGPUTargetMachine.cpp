@@ -156,8 +156,10 @@ public:
 } // End of anonymous namespace
 
 TargetIRAnalysis AMDGPUTargetMachine::getTargetIRAnalysis() {
-  return TargetIRAnalysis(
-      [this](Function &F) { return TargetTransformInfo(AMDGPUTTIImpl(this)); });
+  return TargetIRAnalysis([this](Function &F) {
+    return TargetTransformInfo(
+        AMDGPUTTIImpl(this, F.getParent()->getDataLayout()));
+  });
 }
 
 void AMDGPUPassConfig::addIRPasses() {
@@ -280,10 +282,10 @@ void GCNPassConfig::addPostRegAlloc() {
 }
 
 void GCNPassConfig::addPreSched2() {
-  addPass(createSIInsertWaits(*TM), false);
 }
 
 void GCNPassConfig::addPreEmitPass() {
+  addPass(createSIInsertWaits(*TM), false);
   addPass(createSILowerControlFlowPass(*TM), false);
 }
 

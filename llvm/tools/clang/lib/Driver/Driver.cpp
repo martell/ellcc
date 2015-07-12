@@ -286,6 +286,83 @@ DerivedArgList *Driver::TranslateInputArgs(const InputArgList &Args) const {
   return DAL;
 }
 
+/// \brief Compute target triple from args.
+///
+/// This routine provides the logic to compute a target triple from various
+/// args passed to the driver and the default triple string.
+static llvm::Triple computeTargetTriple(StringRef DefaultTargetTriple,
+                                        const ArgList &Args,
+                                        StringRef DarwinArchName = "") {
+  // FIXME: Already done in Compilation *Driver::BuildCompilation
+  if (const Arg *A = Args.getLastArg(options::OPT_target))
+    DefaultTargetTriple = A->getValue();
+
+  llvm::Triple Target(llvm::Triple::normalize(DefaultTargetTriple));
+
+  // Handle Apple-specific options available here.
+  if (Target.isOSBinFormatMachO()) {
+    // If an explict Darwin arch name is given, that trumps all.
+    if (!DarwinArchName.empty()) {
+      tools::darwin::setTripleTypeForMachOArchName(Target, DarwinArchName);
+      return Target;
+    }
+
+    // Handle the Darwin '-arch' flag.
+    if (Arg *A = Args.getLastArg(options::OPT_arch)) {
+      StringRef ArchName = A->getValue();
+      tools::darwin::setTripleTypeForMachOArchName(Target, ArchName);
+    }
+  }
+
+  // Handle pseudo-target flags '-mlittle-endian'/'-EL' and
+  // '-mbig-endian'/'-EB'.
+  if (Arg *A = Args.getLastArg(options::OPT_mlittle_endian,
+                               options::OPT_mbig_endian)) {
+    if (A->getOption().matches(options::OPT_mlittle_endian)) {
+      llvm::Triple LE = Target.getLittleEndianArchVariant();
+      if (LE.getArch() != llvm::Triple::UnknownArch)
+        Target = std::move(LE);
+    } else {
+      llvm::Triple BE = Target.getBigEndianArchVariant();
+      if (BE.getArch() != llvm::Triple::UnknownArch)
+        Target = std::move(BE);
+    }
+  }
+
+  // Skip further flag support on OSes which don't support '-m32' or '-m64'.
+  if (Target.getArchName() == "tce" || Target.getOS() == llvm::Triple::Minix)
+    return Target;
+
+  // Handle pseudo-target flags '-m64', '-mx32', '-m32' and '-m16'.
+  if (Arg *A = Args.getLastArg(options::OPT_m64, options::OPT_mx32,
+                               options::OPT_m32, options::OPT_m16)) {
+    llvm::Triple::ArchType AT = llvm::Triple::UnknownArch;
+
+    if (A->getOption().matches(options::OPT_m64)) {
+      AT = Target.get64BitArchVariant().getArch();
+      if (Target.getEnvironment() == llvm::Triple::GNUX32)
+        Target.setEnvironment(llvm::Triple::GNU);
+    } else if (A->getOption().matches(options::OPT_mx32) &&
+               Target.get64BitArchVariant().getArch() == llvm::Triple::x86_64) {
+      AT = llvm::Triple::x86_64;
+      Target.setEnvironment(llvm::Triple::GNUX32);
+    } else if (A->getOption().matches(options::OPT_m32)) {
+      AT = Target.get32BitArchVariant().getArch();
+      if (Target.getEnvironment() == llvm::Triple::GNUX32)
+        Target.setEnvironment(llvm::Triple::GNU);
+    } else if (A->getOption().matches(options::OPT_m16) &&
+               Target.get32BitArchVariant().getArch() == llvm::Triple::x86) {
+      AT = llvm::Triple::x86;
+      Target.setEnvironment(llvm::Triple::CODE16);
+    }
+
+    if (AT != llvm::Triple::UnknownArch && AT != Target.getArch())
+      Target.setArch(AT);
+  }
+
+  return Target;
+}
+
 Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   llvm::PrettyStackTraceString CrashInfo("Compilation construction");
 
@@ -372,7 +449,8 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   DerivedArgList *TranslatedArgs = TranslateInputArgs(*UArgs);
 
   // Owned by the host.
-  const ToolChain &TC = getToolChain(*UArgs);
+  const ToolChain &TC =
+      getToolChain(*UArgs, computeTargetTriple(DefaultTargetTriple, *UArgs));
 
   llvm::Triple Target(llvm::Triple::normalize(DefaultTargetTriple));
   if (Target.getVendor() == llvm::Triple::ELLCC && Info == NULL) {
@@ -414,6 +492,19 @@ Compilation *Driver::BuildCompilation(ArrayRef<const char *> ArgList) {
   BuildJobs(*C);
 
   return C;
+}
+
+static void printArgList(raw_ostream &OS, const llvm::opt::ArgList &Args) {
+  llvm::opt::ArgStringList ASL;
+  for (const auto *A : Args)
+    A->render(Args, ASL);
+
+  for (auto I = ASL.begin(), E = ASL.end(); I != E; ++I) {
+    if (I != ASL.begin())
+      OS << ' ';
+    Command::printArg(OS, *I, true);
+  }
+  OS << '\n';
 }
 
 // When clang crashes, produce diagnostic information including the fully
@@ -564,7 +655,9 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
         << "Error generating run script: " + Script + " " + EC.message();
   } else {
     ScriptOS << "# Crash reproducer for " << getClangFullVersion() << "\n"
-             << "# Original command: ";
+             << "# Driver args: ";
+    printArgList(ScriptOS, C.getInputArgs());
+    ScriptOS << "# Original command: ";
     Cmd.Print(ScriptOS, "\n", /*Quote=*/true);
     Cmd.Print(ScriptOS, "\n", /*Quote=*/true, &CrashInfo);
     Diag(clang::diag::note_drv_command_failed_diag_msg) << Script;
@@ -805,14 +898,6 @@ bool Driver::HandleImmediateArgs(const Compilation &C) {
     }
     return false;
   }
-
-  if (C.getArgs().hasArg(options::OPT_print_multi_os_directory)) {
-    // FIXME: This should print out "lib/../lib", "lib/../lib64", or
-    // "lib/../lib32" as appropriate for the toolchain. For now, print
-    // nothing because it's not supported yet.
-    return false;
-  }
-
   return true;
 }
 
@@ -1565,7 +1650,9 @@ void Driver::BuildJobsForAction(Compilation &C, const Action *A,
     const char *ArchName = BAA->getArchName();
 
     if (ArchName)
-      TC = &getToolChain(C.getArgs(), ArchName);
+      TC = &getToolChain(
+          C.getArgs(),
+          computeTargetTriple(DefaultTargetTriple, C.getArgs(), ArchName));
     else
       TC = &C.getDefaultToolChain();
 
@@ -1920,93 +2007,8 @@ std::string Driver::GetTemporaryPath(StringRef Prefix,
   return Path.str();
 }
 
-/// \brief Compute target triple from args.
-///
-/// This routine provides the logic to compute a target triple from various
-/// args passed to the driver and the default triple string.
-static llvm::Triple computeTargetTriple(StringRef DefaultTargetTriple,
-                                        const ArgList &Args,
-                                        StringRef DarwinArchName) {
-  // FIXME: Already done in Compilation *Driver::BuildCompilation
-  if (const Arg *A = Args.getLastArg(options::OPT_target))
-    DefaultTargetTriple = A->getValue();
-
-  llvm::Triple Target(llvm::Triple::normalize(DefaultTargetTriple));
-
-  // Handle Apple-specific options available here.
-  if (Target.isOSBinFormatMachO()) {
-    // If an explict Darwin arch name is given, that trumps all.
-    if (!DarwinArchName.empty()) {
-      tools::darwin::setTripleTypeForMachOArchName(Target, DarwinArchName);
-      return Target;
-    }
-
-    // Handle the Darwin '-arch' flag.
-    if (Arg *A = Args.getLastArg(options::OPT_arch)) {
-      StringRef ArchName = A->getValue();
-      tools::darwin::setTripleTypeForMachOArchName(Target, ArchName);
-    }
-  }
-
-  // Handle pseudo-target flags '-mlittle-endian'/'-EL' and
-  // '-mbig-endian'/'-EB'.
-  if (Arg *A = Args.getLastArg(options::OPT_mlittle_endian,
-                               options::OPT_mbig_endian)) {
-    if (A->getOption().matches(options::OPT_mlittle_endian)) {
-      if (Target.getArch() == llvm::Triple::mips)
-        Target.setArch(llvm::Triple::mipsel);
-      else if (Target.getArch() == llvm::Triple::mips64)
-        Target.setArch(llvm::Triple::mips64el);
-      else if (Target.getArch() == llvm::Triple::aarch64_be)
-        Target.setArch(llvm::Triple::aarch64);
-    } else {
-      if (Target.getArch() == llvm::Triple::mipsel)
-        Target.setArch(llvm::Triple::mips);
-      else if (Target.getArch() == llvm::Triple::mips64el)
-        Target.setArch(llvm::Triple::mips64);
-      else if (Target.getArch() == llvm::Triple::aarch64)
-        Target.setArch(llvm::Triple::aarch64_be);
-    }
-  }
-
-  // Skip further flag support on OSes which don't support '-m32' or '-m64'.
-  if (Target.getArchName() == "tce" || Target.getOS() == llvm::Triple::Minix)
-    return Target;
-
-  // Handle pseudo-target flags '-m64', '-mx32', '-m32' and '-m16'.
-  if (Arg *A = Args.getLastArg(options::OPT_m64, options::OPT_mx32,
-                               options::OPT_m32, options::OPT_m16)) {
-    llvm::Triple::ArchType AT = llvm::Triple::UnknownArch;
-
-    if (A->getOption().matches(options::OPT_m64)) {
-      AT = Target.get64BitArchVariant().getArch();
-      if (Target.getEnvironment() == llvm::Triple::GNUX32)
-        Target.setEnvironment(llvm::Triple::GNU);
-    } else if (A->getOption().matches(options::OPT_mx32) &&
-               Target.get64BitArchVariant().getArch() == llvm::Triple::x86_64) {
-      AT = llvm::Triple::x86_64;
-      Target.setEnvironment(llvm::Triple::GNUX32);
-    } else if (A->getOption().matches(options::OPT_m32)) {
-      AT = Target.get32BitArchVariant().getArch();
-      if (Target.getEnvironment() == llvm::Triple::GNUX32)
-        Target.setEnvironment(llvm::Triple::GNU);
-    } else if (A->getOption().matches(options::OPT_m16) &&
-               Target.get32BitArchVariant().getArch() == llvm::Triple::x86) {
-      AT = llvm::Triple::x86;
-      Target.setEnvironment(llvm::Triple::CODE16);
-    }
-
-    if (AT != llvm::Triple::UnknownArch && AT != Target.getArch())
-      Target.setArch(AT);
-  }
-
-  return Target;
-}
-
 const ToolChain &Driver::getToolChain(const ArgList &Args,
-                                      StringRef DarwinArchName) const {
-  llvm::Triple Target =
-      computeTargetTriple(DefaultTargetTriple, Args, DarwinArchName);
+                                      const llvm::Triple &Target) const {
 
   ToolChain *&TC = ToolChains[Target.str()];
   if (!TC) {

@@ -183,7 +183,8 @@ SelectAddrRegImm(SDValue N, SDValue &Base, SDValue &Disp) {
   }
 
   Disp = CurDAG->getTargetConstant(0, SDLoc(N),
-                    TM.getSubtargetImpl()->getTargetLowering()->getPointerTy());
+                    TM.getSubtargetImpl()->getTargetLowering()->getPointerTy(
+                                               CurDAG->getDataLayout()));
   if (FrameIndexSDNode *FI = dyn_cast<FrameIndexSDNode>(N))
     Base = CurDAG->getTargetFrameIndex(FI->getIndex(), N.getValueType());
   else
@@ -196,7 +197,8 @@ SelectAddrRegImm(SDValue N, SDValue &Base, SDValue &Disp) {
 SDNode *MBlazeDAGToDAGISel::getGlobalBaseReg() {
   unsigned GlobalBaseReg = getInstrInfo()->getGlobalBaseReg(MF);
   return CurDAG->getRegister(GlobalBaseReg,
-                             getTargetLowering()->getPointerTy()).getNode();
+                             getTargetLowering()->getPointerTy(
+                                 CurDAG->getDataLayout())).getNode();
 }
 
 /// Select instructions not customized! Used for

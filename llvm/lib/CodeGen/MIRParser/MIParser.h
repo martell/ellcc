@@ -26,14 +26,18 @@ struct SlotMapping;
 class SMDiagnostic;
 class SourceMgr;
 
+struct PerFunctionMIParsingState {
+  DenseMap<unsigned, MachineBasicBlock *> MBBSlots;
+  DenseMap<unsigned, unsigned> VirtualRegisterSlots;
+};
+
 bool parseMachineInstr(MachineInstr *&MI, SourceMgr &SM, MachineFunction &MF,
-                       StringRef Src,
-                       const DenseMap<unsigned, MachineBasicBlock *> &MBBSlots,
+                       StringRef Src, const PerFunctionMIParsingState &PFS,
                        const SlotMapping &IRSlots, SMDiagnostic &Error);
 
 bool parseMBBReference(MachineBasicBlock *&MBB, SourceMgr &SM,
                        MachineFunction &MF, StringRef Src,
-                       const DenseMap<unsigned, MachineBasicBlock *> &MBBSlots,
+                       const PerFunctionMIParsingState &PFS,
                        const SlotMapping &IRSlots, SMDiagnostic &Error);
 
 } // end namespace llvm

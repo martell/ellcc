@@ -350,6 +350,7 @@ void WinException::emitCXXFrameHandler3Table(const MachineFunction *MF) {
   // EHFlags & 1 -> Synchronous exceptions only, no async exceptions.
   // EHFlags & 2 -> ???
   // EHFlags & 4 -> The function is noexcept(true), unwinding can't continue.
+  OS.EmitValueToAlignment(4);
   OS.EmitLabel(FuncInfoXData);
   OS.EmitIntValue(0x19930522, 4);                      // MagicNumber
   OS.EmitIntValue(FuncInfo.UnwindMap.size(), 4);       // MaxState
@@ -555,7 +556,7 @@ void WinException::emitEHRegistrationOffsetLabel(const WinEHFuncInfo &FuncInfo,
   // we've code generated the parent, we can emit the label assignment that
   // those helpers use to get the offset of the registration node.
   assert(FuncInfo.EHRegNodeEscapeIndex != INT_MAX &&
-         "no EH reg node frameescape index");
+         "no EH reg node localescape index");
   MCSymbol *ParentFrameOffset =
       Asm->OutContext.getOrCreateParentFrameOffsetSymbol(FLinkageName);
   MCSymbol *RegistrationOffsetSym = Asm->OutContext.getOrCreateFrameAllocSymbol(
@@ -578,6 +579,7 @@ void WinException::emitExceptHandlerTable(const MachineFunction *MF) {
 
   // Emit the __ehtable label that we use for llvm.x86.seh.lsda.
   MCSymbol *LSDALabel = Asm->OutContext.getOrCreateLSDASymbol(FLinkageName);
+  OS.EmitValueToAlignment(4);
   OS.EmitLabel(LSDALabel);
 
   const Function *Per = MMI->getPersonality();

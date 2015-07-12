@@ -110,7 +110,8 @@ namespace llvm {
     const char *getTargetNodeName(unsigned Opcode) const override;
 
     /// getSetCCResultType - get the ISD::SETCC result ValueType
-    EVT getSetCCResultType(LLVMContext &Context, EVT VT) const override;
+    EVT getSetCCResultType(const DataLayout &DL, LLVMContext &Context,
+                           EVT VT) const override;
 
   private:
     // Subtarget Info
@@ -164,8 +165,7 @@ namespace llvm {
                                 MachineBasicBlock *MBB) const override;
 
     // Inline asm support
-    ConstraintType
-      getConstraintType(const std::string &Constraint) const override;
+    ConstraintType getConstraintType(StringRef Constraint) const override;
 
     /// Examine constraint string and operand type and determine a weight value.
     /// The operand object must already have been set up with the operand type.
@@ -174,8 +174,7 @@ namespace llvm {
 
     std::pair<unsigned, const TargetRegisterClass*>
     getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
-                                 const std::string &Constraint,
-                                           MVT VT) const override;
+                                 StringRef Constraint, MVT VT) const override;
 
     bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const override;
 

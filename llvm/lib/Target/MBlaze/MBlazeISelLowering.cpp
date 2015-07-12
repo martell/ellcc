@@ -195,7 +195,8 @@ MBlazeTargetLowering::MBlazeTargetLowering(MBlazeTargetMachine &TM,
   computeRegisterProperties(Subtarget.getRegisterInfo());
 }
 
-EVT MBlazeTargetLowering::getSetCCResultType(LLVMContext &, EVT) const {
+EVT MBlazeTargetLowering::getSetCCResultType(const DataLayout &, LLVMContext &,
+                                             EVT) const {
   return MVT::i32;
 }
 
@@ -638,7 +639,7 @@ SDValue MBlazeTargetLowering::LowerVASTART(SDValue Op,
 
   SDLoc dl(Op);
   SDValue FI = DAG.getFrameIndex(FuncInfo->getVarArgsFrameIndex(),
-                                 getPointerTy());
+                                 getPointerTy(DAG.getDataLayout()));
 
   // vastart just stores the address of the VarArgsFrameIndex slot into the
   // memory location argument.
@@ -763,7 +764,7 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
       unsigned StackLoc = VA.getLocMemOffset() + 4;
       int FI = MFI->CreateFixedObject(ArgSize, StackLoc, true);
 
-      SDValue PtrOff = DAG.getFrameIndex(FI,getPointerTy());
+      SDValue PtrOff = DAG.getFrameIndex(FI,getPointerTy(DAG.getDataLayout()));
 
       // emit ISD::STORE whichs stores the
       // parameter value to a stack Location
@@ -799,10 +800,10 @@ LowerCall(TargetLowering::CallLoweringInfo &CLI,
   // node so that legalize doesn't hack it.
   if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl,
-                                getPointerTy(), 0, 0);
+                                getPointerTy(DAG.getDataLayout()), 0, 0);
   else if (ExternalSymbolSDNode *S = dyn_cast<ExternalSymbolSDNode>(Callee))
     Callee = DAG.getTargetExternalSymbol(S->getSymbol(),
-                                getPointerTy(), 0);
+                                getPointerTy(DAG.getDataLayout()), 0);
 
   // MBlazeJmpLink = #chain, #target_address, #opt_in_flags...
   //             = Chain, Callee, Reg#1, Reg#2, ...
@@ -956,7 +957,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
       MBlazeFI->recordLiveIn(FI);
 
       // Create load nodes to retrieve arguments from the stack
-      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy());
+      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
       InVals.push_back(DAG.getLoad(VA.getValVT(), dl, Chain, FIN,
                                    MachinePointerInfo::getFixedStack(FI),
                                    false, false, false, 0));
@@ -968,7 +969,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
   // argument was placed in the stack, there's no need to save any register.
   if ((isVarArg) && ArgRegEnd) {
     if (StackPtr.getNode() == 0)
-      StackPtr = DAG.getRegister(StackReg, getPointerTy());
+      StackPtr = DAG.getRegister(StackReg, getPointerTy(DAG.getDataLayout()));
 
     // The last register argument that must be saved is MBlaze::R10
     const TargetRegisterClass *RC = &MBlaze::GPRRegClass;
@@ -985,7 +986,7 @@ LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
 
       int FI = MFI->CreateFixedObject(4, 0, true);
       MBlazeFI->recordStoreVarArgsFI(FI, -(StackLoc*4));
-      SDValue PtrOff = DAG.getFrameIndex(FI, getPointerTy());
+      SDValue PtrOff = DAG.getFrameIndex(FI, getPointerTy(DAG.getDataLayout()));
       OutChains.push_back(DAG.getStore(Chain, dl, ArgValue, PtrOff,
                                        MachinePointerInfo(),
                                        false, false, 0));
@@ -1069,7 +1070,7 @@ LowerReturn(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
 /// getConstraintType - Given a constraint letter, return the type of
 /// constraint it is for this target.
 MBlazeTargetLowering::ConstraintType MBlazeTargetLowering::
-getConstraintType(const std::string &Constraint) const
+getConstraintType(StringRef Constraint) const
 {
   // MBlaze specific constrainy
   //
@@ -1125,7 +1126,7 @@ MBlazeTargetLowering::getSingleConstraintMatchWeight(
 /// pointer.
 std::pair<unsigned, const TargetRegisterClass*> MBlazeTargetLowering::
 getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
-                             const std::string &Constraint, MVT VT) const {
+                             StringRef Constraint, MVT VT) const {
   if (Constraint.size() == 1) {
     switch (Constraint[0]) {
     case 'r':

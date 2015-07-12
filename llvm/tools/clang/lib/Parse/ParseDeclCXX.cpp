@@ -543,10 +543,11 @@ Decl *Parser::ParseUsingDeclaration(unsigned Context,
     SourceLocation IdLoc = ConsumeToken();
     ParsedType Type = Actions.getInheritingConstructorName(SS, IdLoc, *LastII);
     Name.setConstructorName(Type, IdLoc, IdLoc);
-  } else if (ParseUnqualifiedId(SS, /*EnteringContext=*/ false,
-                                /*AllowDestructorName=*/ true,
-                                /*AllowConstructorName=*/ true, ParsedType(),
-                                TemplateKWLoc, Name)) {
+  } else if (ParseUnqualifiedId(
+                 SS, /*EnteringContext=*/false,
+                 /*AllowDestructorName=*/true,
+                 /*AllowConstructorName=*/NextToken().isNot(tok::equal),
+                 ParsedType(), TemplateKWLoc, Name)) {
     SkipUntil(tok::semi);
     return nullptr;
   }
@@ -3813,7 +3814,7 @@ SourceLocation Parser::SkipCXX11Attributes() {
   return EndLoc;
 }
 
-/// Parse one or more Microsoft-style attributes [Attr]
+/// ParseMicrosoftAttributes - Parse Microsoft attributes [Attr]
 ///
 /// [MS] ms-attribute:
 ///             '[' token-seq ']'
@@ -3829,8 +3830,6 @@ void Parser::ParseMicrosoftAttributes(ParsedAttributes &attrs,
     // FIXME: If this is actually a C++11 attribute, parse it as one.
     BalancedDelimiterTracker T(*this, tok::l_square);
     T.consumeOpen();
-    if (Tok.is(tok::r_square))
-      Diag(T.getOpenLocation(), diag::err_empty_attribute_block);
     SkipUntil(tok::r_square, StopAtSemi | StopBeforeMatch);
     T.consumeClose();
     if (endLoc)

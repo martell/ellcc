@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/LibDriver/LibDriver.h"
@@ -69,6 +70,16 @@ static cl::list<std::string>
                cl::desc("[relpos] [count] <archive-file> [members]..."));
 
 static cl::opt<bool> MRI("M", cl::desc(""));
+
+namespace {
+enum Format { Default, GNU, BSD };
+}
+
+static cl::opt<Format>
+    FormatOpt("format", cl::desc("Archive format to create"),
+              cl::values(clEnumValN(Default, "defalut", "default"),
+                         clEnumValN(GNU, "gnu", "gnu"),
+                         clEnumValN(BSD, "bsd", "bsd"), clEnumValEnd));
 
 std::string Options;
 
@@ -525,7 +536,8 @@ computeNewArchiveMembers(ArchiveOperation Operation,
   assert(unsigned(InsertPos) <= Ret.size());
   Ret.insert(Ret.begin() + InsertPos, Moved.begin(), Moved.end());
 
-  Ret.insert(Ret.begin() + InsertPos, Members.size(), NewArchiveIterator());
+  Ret.insert(Ret.begin() + InsertPos, Members.size(),
+             NewArchiveIterator("", ""));
   int Pos = InsertPos;
   for (auto &Member : Members) {
     StringRef Name = sys::path::filename(Member);
@@ -539,15 +551,32 @@ computeNewArchiveMembers(ArchiveOperation Operation,
 static void
 performWriteOperation(ArchiveOperation Operation, object::Archive *OldArchive,
                       std::vector<NewArchiveIterator> *NewMembersP) {
+  object::Archive::Kind Kind;
+  switch (FormatOpt) {
+  case Default: {
+    Triple T(sys::getProcessTriple());
+    if (T.isOSDarwin())
+      Kind = object::Archive::K_BSD;
+    else
+      Kind = object::Archive::K_GNU;
+    break;
+  }
+  case GNU:
+    Kind = object::Archive::K_GNU;
+    break;
+  case BSD:
+    Kind = object::Archive::K_BSD;
+    break;
+  }
   if (NewMembersP) {
     std::pair<StringRef, std::error_code> Result =
-        writeArchive(ArchiveName, *NewMembersP, Symtab);
+        writeArchive(ArchiveName, *NewMembersP, Symtab, Kind);
     failIfError(Result.second, Result.first);
     return;
   }
   std::vector<NewArchiveIterator> NewMembers =
       computeNewArchiveMembers(Operation, OldArchive);
-  auto Result = writeArchive(ArchiveName, NewMembers, Symtab);
+  auto Result = writeArchive(ArchiveName, NewMembers, Symtab, Kind);
   failIfError(Result.second, Result.first);
 }
 

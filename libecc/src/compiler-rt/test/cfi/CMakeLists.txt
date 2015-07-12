@@ -16,6 +16,11 @@ if(NOT COMPILER_RT_STANDALONE_BUILD)
       LLVMgold
     )
   endif()
+  if(WIN32 AND EXISTS ${CMAKE_SOURCE_DIR}/tools/lld)
+    list(APPEND CFI_TEST_DEPS
+      lld
+    )
+  endif()
 endif()
 
 add_lit_testsuite(check-cfi "Running the cfi regression tests"

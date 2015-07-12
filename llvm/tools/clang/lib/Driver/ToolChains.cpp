@@ -303,6 +303,7 @@ void Darwin::addProfileRTLibs(const ArgList &Args,
   if (!(Args.hasFlag(options::OPT_fprofile_arcs, options::OPT_fno_profile_arcs,
                      false) ||
         Args.hasArg(options::OPT_fprofile_generate) ||
+        Args.hasArg(options::OPT_fprofile_generate_EQ) ||
         Args.hasArg(options::OPT_fprofile_instr_generate) ||
         Args.hasArg(options::OPT_fprofile_instr_generate_EQ) ||
         Args.hasArg(options::OPT_fcreate_profile) ||
@@ -2338,6 +2339,13 @@ NaCl_TC::NaCl_TC(const Driver &D, const llvm::Triple &Triple,
     file_paths.push_back(ToolPath + "arm-nacl");
     break;
   }
+  case llvm::Triple::mipsel: {
+    file_paths.push_back(FilePath + "mipsel-nacl/lib");
+    file_paths.push_back(FilePath + "mipsel-nacl/usr/lib");
+    prog_paths.push_back(ProgPath + "bin");
+    file_paths.push_back(ToolPath + "mipsel-nacl");
+    break;
+  }
   default:
     break;
   }
@@ -2372,6 +2380,9 @@ void NaCl_TC::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
     break;
   case llvm::Triple::x86_64:
     llvm::sys::path::append(P, "x86_64-nacl/usr/include");
+    break;
+  case llvm::Triple::mipsel:
+    llvm::sys::path::append(P, "mipsel-nacl/usr/include");
     break;
   default:
     return;
@@ -2415,6 +2426,10 @@ void NaCl_TC::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
     break;
   case llvm::Triple::x86_64:
     llvm::sys::path::append(P, "x86_64-nacl/include/c++/v1");
+    addSystemInclude(DriverArgs, CC1Args, P.str());
+    break;
+  case llvm::Triple::mipsel:
+    llvm::sys::path::append(P, "mipsel-nacl/include/c++/v1");
     addSystemInclude(DriverArgs, CC1Args, P.str());
     break;
   default:
@@ -2869,6 +2884,7 @@ enum Distro {
   UbuntuTrusty,
   UbuntuUtopic,
   UbuntuVivid,
+  UbuntuWily,
   UnknownDistro
 };
 
@@ -2883,7 +2899,7 @@ static bool IsDebian(enum Distro Distro) {
 }
 
 static bool IsUbuntu(enum Distro Distro) {
-  return Distro >= UbuntuHardy && Distro <= UbuntuVivid;
+  return Distro >= UbuntuHardy && Distro <= UbuntuWily;
 }
 
 static Distro DetectDistro(llvm::Triple::ArchType Arch) {
@@ -2912,6 +2928,7 @@ static Distro DetectDistro(llvm::Triple::ArchType Arch) {
                       .Case("trusty", UbuntuTrusty)
                       .Case("utopic", UbuntuUtopic)
                       .Case("vivid", UbuntuVivid)
+                      .Case("wily", UbuntuWily)
                       .Default(UnknownDistro);
     return Version;
   }
