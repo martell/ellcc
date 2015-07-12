@@ -1199,7 +1199,9 @@ Triple Triple::getBigEndianArchVariant() const {
   case Triple::kalimba:
   case Triple::le32:
   case Triple::le64:
+  case Triple::mblaze:
   case Triple::msp430:
+  case Triple::nios2:
   case Triple::nvptx64:
   case Triple::nvptx:
   case Triple::r600:
@@ -1272,9 +1274,11 @@ Triple Triple::getLittleEndianArchVariant() const {
   case Triple::kalimba:
   case Triple::le32:
   case Triple::le64:
+  case Triple::mblaze:
   case Triple::mips64el:
   case Triple::mipsel:
   case Triple::msp430:
+  case Triple::nios2:
   case Triple::nvptx64:
   case Triple::nvptx:
   case Triple::ppc64le:
