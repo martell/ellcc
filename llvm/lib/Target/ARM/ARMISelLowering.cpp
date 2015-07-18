@@ -142,6 +142,11 @@ void ARMTargetLowering::addTypeForNEON(MVT VT, MVT PromotedLdStVT,
   setOperationAction(ISD::SREM, VT, Expand);
   setOperationAction(ISD::UREM, VT, Expand);
   setOperationAction(ISD::FREM, VT, Expand);
+
+  if (VT.isInteger()) {
+    setOperationAction(ISD::SABSDIFF, VT, Legal);
+    setOperationAction(ISD::UABSDIFF, VT, Legal);
+  }
 }
 
 void ARMTargetLowering::addDRTypeForNEON(MVT VT) {
@@ -543,6 +548,27 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::CTPOP,      MVT::v4i16, Custom);
     setOperationAction(ISD::CTPOP,      MVT::v8i16, Custom);
 
+    // NEON does not have single instruction CTTZ for vectors.
+    setOperationAction(ISD::CTTZ, MVT::v8i8, Custom);
+    setOperationAction(ISD::CTTZ, MVT::v4i16, Custom);
+    setOperationAction(ISD::CTTZ, MVT::v2i32, Custom);
+    setOperationAction(ISD::CTTZ, MVT::v1i64, Custom);
+
+    setOperationAction(ISD::CTTZ, MVT::v16i8, Custom);
+    setOperationAction(ISD::CTTZ, MVT::v8i16, Custom);
+    setOperationAction(ISD::CTTZ, MVT::v4i32, Custom);
+    setOperationAction(ISD::CTTZ, MVT::v2i64, Custom);
+
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v8i8, Custom);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v4i16, Custom);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v2i32, Custom);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v1i64, Custom);
+
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v16i8, Custom);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v8i16, Custom);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v4i32, Custom);
+    setOperationAction(ISD::CTTZ_ZERO_UNDEF, MVT::v2i64, Custom);
+
     // NEON only has FMA instructions as of VFP4.
     if (!Subtarget->hasVFP4()) {
       setOperationAction(ISD::FMA, MVT::v2f32, Expand);
@@ -828,11 +854,11 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
 
   // We want to custom lower some of our intrinsics.
   setOperationAction(ISD::INTRINSIC_WO_CHAIN, MVT::Other, Custom);
-  if (Subtarget->isTargetDarwin()) {
-    setOperationAction(ISD::EH_SJLJ_SETJMP, MVT::i32, Custom);
-    setOperationAction(ISD::EH_SJLJ_LONGJMP, MVT::Other, Custom);
+  setOperationAction(ISD::EH_SJLJ_SETJMP, MVT::i32, Custom);
+  setOperationAction(ISD::EH_SJLJ_LONGJMP, MVT::Other, Custom);
+  setOperationAction(ISD::EH_SJLJ_SETUP_DISPATCH, MVT::Other, Custom);
+  if (Subtarget->isTargetDarwin())
     setLibcallName(RTLIB::UNWIND_RESUME, "_Unwind_SjLj_Resume");
-  }
 
   setOperationAction(ISD::SETCC,     MVT::i32, Expand);
   setOperationAction(ISD::SETCC,     MVT::f32, Expand);
@@ -1048,7 +1074,8 @@ const char *ARMTargetLowering::getTargetNodeName(unsigned Opcode) const {
   case ARMISD::VMOVDRR:       return "ARMISD::VMOVDRR";
 
   case ARMISD::EH_SJLJ_SETJMP: return "ARMISD::EH_SJLJ_SETJMP";
-  case ARMISD::EH_SJLJ_LONGJMP:return "ARMISD::EH_SJLJ_LONGJMP";
+  case ARMISD::EH_SJLJ_LONGJMP: return "ARMISD::EH_SJLJ_LONGJMP";
+  case ARMISD::EH_SJLJ_SETUP_DISPATCH: return "ARMISD::EH_SJLJ_SETUP_DISPATCH";
 
   case ARMISD::TC_RETURN:     return "ARMISD::TC_RETURN";
 
@@ -2701,6 +2728,13 @@ ARMTargetLowering::LowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const {
                      Op.getOperand(1), DAG.getConstant(0, dl, MVT::i32));
 }
 
+SDValue ARMTargetLowering::LowerEH_SJLJ_SETUP_DISPATCH(SDValue Op,
+                                                      SelectionDAG &DAG) const {
+  SDLoc dl(Op);
+  return DAG.getNode(ARMISD::EH_SJLJ_SETUP_DISPATCH, dl, MVT::Other,
+                     Op.getOperand(0));
+}
+
 SDValue
 ARMTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
                                           const ARMSubtarget *Subtarget) const {
@@ -4282,8 +4316,82 @@ SDValue ARMTargetLowering::LowerFLT_ROUNDS_(SDValue Op,
 
 static SDValue LowerCTTZ(SDNode *N, SelectionDAG &DAG,
                          const ARMSubtarget *ST) {
-  EVT VT = N->getValueType(0);
   SDLoc dl(N);
+  EVT VT = N->getValueType(0);
+  if (VT.isVector()) {
+    assert(ST->hasNEON());
+
+    // Compute the least significant set bit: LSB = X & -X
+    SDValue X = N->getOperand(0);
+    SDValue NX = DAG.getNode(ISD::SUB, dl, VT, getZeroVector(VT, DAG, dl), X);
+    SDValue LSB = DAG.getNode(ISD::AND, dl, VT, X, NX);
+
+    EVT ElemTy = VT.getVectorElementType();
+
+    if (ElemTy == MVT::i8) {
+      // Compute with: cttz(x) = ctpop(lsb - 1)
+      SDValue One = DAG.getNode(ARMISD::VMOVIMM, dl, VT,
+                                DAG.getTargetConstant(1, dl, ElemTy));
+      SDValue Bits = DAG.getNode(ISD::SUB, dl, VT, LSB, One);
+      return DAG.getNode(ISD::CTPOP, dl, VT, Bits);
+    }
+
+    if ((ElemTy == MVT::i16 || ElemTy == MVT::i32) &&
+        (N->getOpcode() == ISD::CTTZ_ZERO_UNDEF)) {
+      // Compute with: cttz(x) = (width - 1) - ctlz(lsb), if x != 0
+      unsigned NumBits = ElemTy.getSizeInBits();
+      SDValue WidthMinus1 =
+          DAG.getNode(ARMISD::VMOVIMM, dl, VT,
+                      DAG.getTargetConstant(NumBits - 1, dl, ElemTy));
+      SDValue CTLZ = DAG.getNode(ISD::CTLZ, dl, VT, LSB);
+      return DAG.getNode(ISD::SUB, dl, VT, WidthMinus1, CTLZ);
+    }
+
+    // Compute with: cttz(x) = ctpop(lsb - 1)
+
+    // Since we can only compute the number of bits in a byte with vcnt.8, we
+    // have to gather the result with pairwise addition (vpaddl) for i16, i32,
+    // and i64.
+
+    // Compute LSB - 1.
+    SDValue Bits;
+    if (ElemTy == MVT::i64) {
+      // Load constant 0xffff'ffff'ffff'ffff to register.
+      SDValue FF = DAG.getNode(ARMISD::VMOVIMM, dl, VT,
+                               DAG.getTargetConstant(0x1eff, dl, MVT::i32));
+      Bits = DAG.getNode(ISD::ADD, dl, VT, LSB, FF);
+    } else {
+      SDValue One = DAG.getNode(ARMISD::VMOVIMM, dl, VT,
+                                DAG.getTargetConstant(1, dl, ElemTy));
+      Bits = DAG.getNode(ISD::SUB, dl, VT, LSB, One);
+    }
+
+    // Count #bits with vcnt.8.
+    EVT VT8Bit = VT.is64BitVector() ? MVT::v8i8 : MVT::v16i8;
+    SDValue BitsVT8 = DAG.getNode(ISD::BITCAST, dl, VT8Bit, Bits);
+    SDValue Cnt8 = DAG.getNode(ISD::CTPOP, dl, VT8Bit, BitsVT8);
+
+    // Gather the #bits with vpaddl (pairwise add.)
+    EVT VT16Bit = VT.is64BitVector() ? MVT::v4i16 : MVT::v8i16;
+    SDValue Cnt16 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT16Bit,
+        DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+        Cnt8);
+    if (ElemTy == MVT::i16)
+      return Cnt16;
+
+    EVT VT32Bit = VT.is64BitVector() ? MVT::v2i32 : MVT::v4i32;
+    SDValue Cnt32 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT32Bit,
+        DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+        Cnt16);
+    if (ElemTy == MVT::i32)
+      return Cnt32;
+
+    assert(ElemTy == MVT::i64);
+    SDValue Cnt64 = DAG.getNode(ISD::INTRINSIC_WO_CHAIN, dl, VT,
+        DAG.getTargetConstant(Intrinsic::arm_neon_vpaddlu, dl, MVT::i32),
+        Cnt32);
+    return Cnt64;
+  }
 
   if (!ST->hasV6T2Ops())
     return SDValue();
@@ -6478,6 +6586,7 @@ SDValue ARMTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::GLOBAL_OFFSET_TABLE: return LowerGLOBAL_OFFSET_TABLE(Op, DAG);
   case ISD::EH_SJLJ_SETJMP: return LowerEH_SJLJ_SETJMP(Op, DAG);
   case ISD::EH_SJLJ_LONGJMP: return LowerEH_SJLJ_LONGJMP(Op, DAG);
+  case ISD::EH_SJLJ_SETUP_DISPATCH: return LowerEH_SJLJ_SETUP_DISPATCH(Op, DAG);
   case ISD::INTRINSIC_WO_CHAIN: return LowerINTRINSIC_WO_CHAIN(Op, DAG,
                                                                Subtarget);
   case ISD::BITCAST:       return ExpandBITCAST(Op.getNode(), DAG);
@@ -6487,7 +6596,8 @@ SDValue ARMTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::SHL_PARTS:     return LowerShiftLeftParts(Op, DAG);
   case ISD::SRL_PARTS:
   case ISD::SRA_PARTS:     return LowerShiftRightParts(Op, DAG);
-  case ISD::CTTZ:          return LowerCTTZ(Op.getNode(), DAG, Subtarget);
+  case ISD::CTTZ:
+  case ISD::CTTZ_ZERO_UNDEF: return LowerCTTZ(Op.getNode(), DAG, Subtarget);
   case ISD::CTPOP:         return LowerCTPOP(Op.getNode(), DAG, Subtarget);
   case ISD::SETCC:         return LowerVSETCC(Op, DAG);
   case ISD::ConstantFP:    return LowerConstantFP(Op, DAG, Subtarget);
@@ -7639,6 +7749,9 @@ ARMTargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   case ARM::tInt_eh_sjlj_setjmp:
   case ARM::t2Int_eh_sjlj_setjmp:
   case ARM::t2Int_eh_sjlj_setjmp_nofp:
+    return BB;
+
+  case ARM::Int_eh_sjlj_setup_dispatch:
     EmitSjLjDispatchBlock(MI, BB);
     return BB;
 
@@ -9608,6 +9721,15 @@ static SDValue PerformIntrinsicCombine(SDNode *N, SelectionDAG &DAG) {
   default:
     // Don't do anything for most intrinsics.
     break;
+
+  case Intrinsic::arm_neon_vabds:
+    if (!N->getValueType(0).isInteger())
+      return SDValue();
+    return DAG.getNode(ISD::SABSDIFF, SDLoc(N), N->getValueType(0),
+                       N->getOperand(1), N->getOperand(2));
+  case Intrinsic::arm_neon_vabdu:
+    return DAG.getNode(ISD::UABSDIFF, SDLoc(N), N->getValueType(0),
+                       N->getOperand(1), N->getOperand(2));
 
   // Vector shifts: check for immediate versions and lower them.
   // Note: This is done during DAG combining instead of DAG legalizing because

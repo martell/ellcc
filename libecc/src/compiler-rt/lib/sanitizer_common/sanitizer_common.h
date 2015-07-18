@@ -224,10 +224,12 @@ bool SupportsColoredOutput(fd_t fd);
 
 // Opens the file 'file_name" and reads up to 'max_len' bytes.
 // The resulting buffer is mmaped and stored in '*buff'.
-// The size of the mmaped region is stored in '*buff_size',
-// Returns the number of read bytes or 0 if file can not be opened.
-uptr ReadFileToBuffer(const char *file_name, char **buff, uptr *buff_size,
-                      uptr max_len, error_t *errno_p = nullptr);
+// The size of the mmaped region is stored in '*buff_size'.
+// The total number of read bytes is stored in '*read_len'.
+// Returns true if file was successfully opened and read.
+bool ReadFileToBuffer(const char *file_name, char **buff, uptr *buff_size,
+                      uptr *read_len, uptr max_len = 1 << 26,
+                      error_t *errno_p = nullptr);
 // Maps given file to virtual memory, and returns pointer to it
 // (or NULL if mapping fails). Stores the size of mmaped region
 // in '*buff_size'.
@@ -351,7 +353,11 @@ INLINE uptr MostSignificantSetBitIndex(uptr x) {
   CHECK_NE(x, 0U);
   unsigned long up;  // NOLINT
 #if !SANITIZER_WINDOWS || defined(__clang__) || defined(__GNUC__)
+# ifdef _WIN64
+  up = SANITIZER_WORDSIZE - 1 - __builtin_clzll(x);
+# else
   up = SANITIZER_WORDSIZE - 1 - __builtin_clzl(x);
+# endif
 #elif defined(_WIN64)
   _BitScanReverse64(&up, x);
 #else
@@ -364,7 +370,11 @@ INLINE uptr LeastSignificantSetBitIndex(uptr x) {
   CHECK_NE(x, 0U);
   unsigned long up;  // NOLINT
 #if !SANITIZER_WINDOWS || defined(__clang__) || defined(__GNUC__)
+# ifdef _WIN64
+  up = __builtin_ctzll(x);
+# else
   up = __builtin_ctzl(x);
+# endif
 #elif defined(_WIN64)
   _BitScanForward64(&up, x);
 #else
@@ -402,17 +412,7 @@ INLINE bool IsAligned(uptr a, uptr alignment) {
 
 INLINE uptr Log2(uptr x) {
   CHECK(IsPowerOfTwo(x));
-#if !SANITIZER_WINDOWS || defined(__clang__) || defined(__GNUC__)
-  return __builtin_ctzl(x);
-#elif defined(_WIN64)
-  unsigned long ret;  // NOLINT
-  _BitScanForward64(&ret, x);
-  return ret;
-#else
-  unsigned long ret;  // NOLINT
-  _BitScanForward(&ret, x);
-  return ret;
-#endif
+  return LeastSignificantSetBitIndex(x);
 }
 
 // Don't use std::min, std::max or std::swap, to minimize dependency
@@ -659,7 +659,7 @@ void MaybeStartBackgroudThread();
 // compiler from recognising it and turning it into an actual call to
 // memset/memcpy/etc.
 static inline void SanitizerBreakOptimization(void *arg) {
-#if _MSC_VER
+#if _MSC_VER && !defined(__clang__)
   _ReadWriteBarrier();
 #else
   __asm__ __volatile__("" : : "r" (arg) : "memory");

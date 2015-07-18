@@ -251,7 +251,7 @@ static void interruptFrameLayout(MachineFunction &MF) {
   // Build the prologue SWI for R3 - R12 if needed. Note that R11 must
   // always have a SWI because it is used when processing RMSR.
   for (unsigned r = MBlaze::R3; r <= MBlaze::R12; ++r) {
-    if (!MRI.isPhysRegUsed(r) && !(isIntr && r == MBlaze::R11)) continue;
+    if (!MRI.isPhysRegModified(r) && !(isIntr && r == MBlaze::R11)) continue;
     
     int FI = MFI->CreateStackObject(4,4,false);
     VFI.push_back(FI);
@@ -293,7 +293,7 @@ static void interruptFrameLayout(MachineFunction &MF) {
 
   // Build the epilogue LWI for R3 - R12 if needed
   for (unsigned r = MBlaze::R12, i = VFI.size(); r >= MBlaze::R3; --r) {
-    if (!MRI.isPhysRegUsed(r)) continue;
+    if (!MRI.isPhysRegModified(r)) continue;
     BuildMI(MEXT, MEXTI, EXTDL, TII.get(MBlaze::LWI), r)
       .addFrameIndex(VFI[--i]).addImm(0);
   }
@@ -469,28 +469,6 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
   MBB.erase(I);
 }
 
-
-void MBlazeFrameLowering::
-processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                     RegScavenger *RS) const {
-  MachineFrameInfo *MFI = MF.getFrameInfo();
-  MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
-  CallingConv::ID CallConv = MF.getFunction()->getCallingConv();
-  bool requiresRA = CallConv == CallingConv::MBLAZE_INTR;
-
-  if (MFI->adjustsStack() || requiresRA) {
-    MBlazeFI->setRAStackOffset(0);
-    MFI->CreateFixedObject(4,0,true);
-  }
-
-  if (hasFP(MF)) {
-    MBlazeFI->setFPStackOffset(4);
-    MFI->CreateFixedObject(4,4,true);
-  }
-
-  interruptFrameLayout(MF);
-  analyzeFrameIndexes(MF);
-}
 
 const MBlazeFrameLowering *MBlazeFrameLowering::
 create(const MBlazeSubtarget &ST) {

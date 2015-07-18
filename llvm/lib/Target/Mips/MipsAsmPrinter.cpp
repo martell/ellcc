@@ -169,7 +169,7 @@ void MipsAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     if (MCPE.isMachineConstantPoolEntry())
       EmitMachineConstantPoolValue(MCPE.Val.MachineCPVal);
     else
-      EmitGlobalConstant(MCPE.Val.ConstVal);
+      EmitGlobalConstant(MF->getDataLayout(), MCPE.Val.ConstVal);
     return;
   }
 
@@ -567,7 +567,6 @@ bool MipsAsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
 
 void MipsAsmPrinter::printOperand(const MachineInstr *MI, int opNum,
                                   raw_ostream &O) {
-  const DataLayout *DL = TM.getDataLayout();
   const MachineOperand &MO = MI->getOperand(opNum);
   bool closeP = false;
 
@@ -616,7 +615,7 @@ void MipsAsmPrinter::printOperand(const MachineInstr *MI, int opNum,
     }
 
     case MachineOperand::MO_ConstantPoolIndex:
-      O << DL->getPrivateGlobalPrefix() << "CPI"
+      O << getDataLayout().getPrivateGlobalPrefix() << "CPI"
         << getFunctionNumber() << "_" << MO.getIndex();
       if (MO.getOffset())
         O << "+" << MO.getOffset();

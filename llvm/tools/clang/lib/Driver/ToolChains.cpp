@@ -2294,6 +2294,16 @@ StringRef Hexagon_TC::GetTargetCPU(const ArgList &Args) {
 }
 // End Hexagon
 
+/// AMDGPU Toolchain
+AMDGPUToolChain::AMDGPUToolChain(const Driver &D, const llvm::Triple &Triple,
+                                 const ArgList &Args)
+  : Generic_ELF(D, Triple, Args) { }
+
+Tool *AMDGPUToolChain::buildLinker() const {
+  return new tools::amdgpu::Linker(*this);
+}
+// End AMDGPU
+
 /// NaCl Toolchain
 NaCl_TC::NaCl_TC(const Driver &D, const llvm::Triple &Triple,
                  const ArgList &Args)
@@ -3672,11 +3682,11 @@ ELLCC::ELLCC(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
 }
 
 Tool *ELLCC::buildAssembler() const {
-  return new tools::ellcc::Assemble(*this);
+  return new tools::ellcc::Assembler(*this);
 }
 
 Tool *ELLCC::buildLinker() const {
-  return new tools::ellcc::Link(*this);
+  return new tools::ellcc::Linker(*this);
 }
 
 bool ELLCC::isPICDefault() const {
@@ -3727,6 +3737,65 @@ void ELLCC::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
     CC1Args.push_back("-internal-isystem");
     CC1Args.push_back(i.c_str());
   }
+}
+
+/// Stub for CUDA toolchain. At the moment we don't have assembler or
+/// linker and need toolchain mainly to propagate device-side options
+/// to CC1.
+
+CudaToolChain::CudaToolChain(const Driver &D, const llvm::Triple &Triple,
+                             const ArgList &Args)
+    : Linux(D, Triple, Args) {}
+
+void
+CudaToolChain::addClangTargetOptions(const llvm::opt::ArgList &DriverArgs,
+                                     llvm::opt::ArgStringList &CC1Args) const {
+  Linux::addClangTargetOptions(DriverArgs, CC1Args);
+  CC1Args.push_back("-fcuda-is-device");
+}
+
+llvm::opt::DerivedArgList *
+CudaToolChain::TranslateArgs(const llvm::opt::DerivedArgList &Args,
+                             const char *BoundArch) const {
+  DerivedArgList *DAL = new DerivedArgList(Args.getBaseArgs());
+  const OptTable &Opts = getDriver().getOpts();
+
+  for (Arg *A : Args) {
+    if (A->getOption().matches(options::OPT_Xarch__)) {
+      // Skip this argument unless the architecture matches BoundArch
+      if (A->getValue(0) != StringRef(BoundArch))
+        continue;
+
+      unsigned Index = Args.getBaseArgs().MakeIndex(A->getValue(1));
+      unsigned Prev = Index;
+      std::unique_ptr<Arg> XarchArg(Opts.ParseOneArg(Args, Index));
+
+      // If the argument parsing failed or more than one argument was
+      // consumed, the -Xarch_ argument's parameter tried to consume
+      // extra arguments. Emit an error and ignore.
+      //
+      // We also want to disallow any options which would alter the
+      // driver behavior; that isn't going to work in our model. We
+      // use isDriverOption() as an approximation, although things
+      // like -O4 are going to slip through.
+      if (!XarchArg || Index > Prev + 1) {
+        getDriver().Diag(diag::err_drv_invalid_Xarch_argument_with_args)
+            << A->getAsString(Args);
+        continue;
+      } else if (XarchArg->getOption().hasFlag(options::DriverOption)) {
+        getDriver().Diag(diag::err_drv_invalid_Xarch_argument_isdriver)
+            << A->getAsString(Args);
+        continue;
+      }
+      XarchArg->setBaseArg(A);
+      A = XarchArg.release();
+      DAL->AddSynthesizedArg(A);
+    }
+    DAL->append(A);
+  }
+
+  DAL->AddJoinedArg(nullptr, Opts.getOption(options::OPT_march_EQ), BoundArch);
+  return DAL;
 }
 
 /// XCore tool chain

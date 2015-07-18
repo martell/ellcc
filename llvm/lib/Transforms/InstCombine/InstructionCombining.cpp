@@ -623,6 +623,33 @@ Value *InstCombiner::SimplifyUsingDistributiveLaws(BinaryOperator &I) {
       }
   }
 
+  // (op (select (a, c, b)), (select (a, d, b))) -> (select (a, (op c, d), 0))
+  // (op (select (a, b, c)), (select (a, b, d))) -> (select (a, 0, (op c, d)))
+  if (auto *SI0 = dyn_cast<SelectInst>(LHS)) {
+    if (auto *SI1 = dyn_cast<SelectInst>(RHS)) {
+      if (SI0->getCondition() == SI1->getCondition()) {
+        Value *SI = nullptr;
+        if (Value *V = SimplifyBinOp(TopLevelOpcode, SI0->getFalseValue(),
+                                     SI1->getFalseValue(), DL, TLI, DT, AC))
+          SI = Builder->CreateSelect(SI0->getCondition(),
+                                     Builder->CreateBinOp(TopLevelOpcode,
+                                                          SI0->getTrueValue(),
+                                                          SI1->getTrueValue()),
+                                     V);
+        if (Value *V = SimplifyBinOp(TopLevelOpcode, SI0->getTrueValue(),
+                                     SI1->getTrueValue(), DL, TLI, DT, AC))
+          SI = Builder->CreateSelect(
+              SI0->getCondition(), V,
+              Builder->CreateBinOp(TopLevelOpcode, SI0->getFalseValue(),
+                                   SI1->getFalseValue()));
+        if (SI) {
+          SI->takeName(&I);
+          return SI;
+        }
+      }
+    }
+  }
+
   return nullptr;
 }
 
@@ -2174,16 +2201,9 @@ Instruction *InstCombiner::visitExtractValueInst(ExtractValueInst &EV) {
   if (!EV.hasIndices())
     return ReplaceInstUsesWith(EV, Agg);
 
-  if (Constant *C = dyn_cast<Constant>(Agg)) {
-    if (Constant *C2 = C->getAggregateElement(*EV.idx_begin())) {
-      if (EV.getNumIndices() == 0)
-        return ReplaceInstUsesWith(EV, C2);
-      // Extract the remaining indices out of the constant indexed by the
-      // first index
-      return ExtractValueInst::Create(C2, EV.getIndices().slice(1));
-    }
-    return nullptr; // Can't handle other constants
-  }
+  if (Value *V =
+          SimplifyExtractValueInst(Agg, EV.getIndices(), DL, TLI, DT, AC))
+    return ReplaceInstUsesWith(EV, V);
 
   if (InsertValueInst *IV = dyn_cast<InsertValueInst>(Agg)) {
     // We're extracting from an insertvalue instruction, compare the indices

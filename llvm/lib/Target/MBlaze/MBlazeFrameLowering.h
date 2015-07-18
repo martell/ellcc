@@ -50,10 +50,6 @@ public:
   bool hasFP(const MachineFunction &MF) const override;
 
   int getFrameIndexOffset(const MachineFunction &MF, int FI) const override;
-
-  virtual void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                                    RegScavenger *RS)
-                                                    const override;
 };
 
 } // End llvm namespace

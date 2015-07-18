@@ -699,6 +699,18 @@ private:
   std::string computeSysRoot() const;
 };
 
+class LLVM_LIBRARY_VISIBILITY CudaToolChain : public Linux {
+public:
+  CudaToolChain(const Driver &D, const llvm::Triple &Triple,
+                const llvm::opt::ArgList &Args);
+
+  llvm::opt::DerivedArgList *
+  TranslateArgs(const llvm::opt::DerivedArgList &Args,
+                const char *BoundArch) const override;
+  void addClangTargetOptions(const llvm::opt::ArgList &DriverArgs,
+                             llvm::opt::ArgStringList &CC1Args) const override;
+};
+
 class LLVM_LIBRARY_VISIBILITY Hexagon_TC : public Linux {
 protected:
   GCCVersion GCCLibAndIncVersion;
@@ -728,6 +740,16 @@ public:
   static const char *GetSmallDataThreshold(const llvm::opt::ArgList &Args);
 
   static bool UsesG0(const char *smallDataThreshold);
+};
+
+class LLVM_LIBRARY_VISIBILITY AMDGPUToolChain : public Generic_ELF {
+protected:
+  Tool *buildLinker() const override;
+
+public:
+  AMDGPUToolChain(const Driver &D, const llvm::Triple &Triple,
+            const llvm::opt::ArgList &Args);
+  bool IsIntegratedAssemblerDefault() const override { return true; }
 };
 
 class LLVM_LIBRARY_VISIBILITY NaCl_TC : public Generic_ELF {

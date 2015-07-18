@@ -189,9 +189,9 @@ class ARMAsmParser : public MCTargetAsmParser {
     return getParser().Error(L, Msg, Ranges);
   }
 
-  bool validatetLDMRegList(MCInst Inst, const OperandVector &Operands,
+  bool validatetLDMRegList(const MCInst &Inst, const OperandVector &Operands,
                            unsigned ListNo, bool IsARPop = false);
-  bool validatetSTMRegList(MCInst Inst, const OperandVector &Operands,
+  bool validatetSTMRegList(const MCInst &Inst, const OperandVector &Operands,
                            unsigned ListNo);
 
   int tryParseRegister();
@@ -5481,19 +5481,31 @@ void ARMAsmParser::tryConvertingToTwoOperandForm(StringRef Mnemonic,
   if (Operands.size() != 6)
     return;
 
-  ARMOperand &Op3 = static_cast<ARMOperand &>(*Operands[3]);
-  ARMOperand &Op4 = static_cast<ARMOperand &>(*Operands[4]);
+  const auto &Op3 = static_cast<ARMOperand &>(*Operands[3]);
+        auto &Op4 = static_cast<ARMOperand &>(*Operands[4]);
   if (!Op3.isReg() || !Op4.isReg())
     return;
 
+  auto Op3Reg = Op3.getReg();
+  auto Op4Reg = Op4.getReg();
+
   // For most Thumb2 cases we just generate the 3 operand form and reduce
-  // it in processInstruction(), but for ADD involving PC the the 3 operand
-  // form won't accept PC so we do the transformation here.
-  ARMOperand &Op5 = static_cast<ARMOperand &>(*Operands[5]);
+  // it in processInstruction(), but the 3 operand form of ADD (t2ADDrr)
+  // won't accept SP or PC so we do the transformation here taking care
+  // with immediate range in the 'add sp, sp #imm' case.
+  auto &Op5 = static_cast<ARMOperand &>(*Operands[5]);
   if (isThumbTwo()) {
-    if (Mnemonic != "add" ||
-        !(Op3.getReg() == ARM::PC || Op4.getReg() == ARM::PC ||
-          (Op5.isReg() && Op5.getReg() == ARM::PC)))
+    if (Mnemonic != "add")
+      return;
+    bool TryTransform = Op3Reg == ARM::PC || Op4Reg == ARM::PC ||
+                        (Op5.isReg() && Op5.getReg() == ARM::PC);
+    if (!TryTransform) {
+      TryTransform = (Op3Reg == ARM::SP || Op4Reg == ARM::SP ||
+                      (Op5.isReg() && Op5.getReg() == ARM::SP)) &&
+                     !(Op3Reg == ARM::SP && Op4Reg == ARM::SP &&
+                       Op5.isImm() && !Op5.isImm0_508s4());
+    }
+    if (!TryTransform)
       return;
   } else if (!isThumbOne())
     return;
@@ -5507,15 +5519,15 @@ void ARMAsmParser::tryConvertingToTwoOperandForm(StringRef Mnemonic,
   // If first 2 operands of a 3 operand instruction are the same
   // then transform to 2 operand version of the same instruction
   // e.g. 'adds r0, r0, #1' transforms to 'adds r0, #1'
-  bool Transform = Op3.getReg() == Op4.getReg();
+  bool Transform = Op3Reg == Op4Reg;
 
   // For communtative operations, we might be able to transform if we swap
   // Op4 and Op5.  The 'ADD Rdm, SP, Rdm' form is already handled specially
   // as tADDrsp.
   const ARMOperand *LastOp = &Op5;
   bool Swap = false;
-  if (!Transform && Op5.isReg() && Op3.getReg() == Op5.getReg() &&
-      ((Mnemonic == "add" && Op4.getReg() != ARM::SP) ||
+  if (!Transform && Op5.isReg() && Op3Reg == Op5.getReg() &&
+      ((Mnemonic == "add" && Op4Reg != ARM::SP) ||
        Mnemonic == "and" || Mnemonic == "eor" ||
        Mnemonic == "adc" || Mnemonic == "orr")) {
     Swap = true;
@@ -6025,8 +6037,9 @@ bool ARMAsmParser::ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
 // return 'true' if register list contains non-low GPR registers,
 // 'false' otherwise. If Reg is in the register list or is HiReg, set
 // 'containsReg' to true.
-static bool checkLowRegisterList(MCInst Inst, unsigned OpNo, unsigned Reg,
-                                 unsigned HiReg, bool &containsReg) {
+static bool checkLowRegisterList(const MCInst &Inst, unsigned OpNo,
+                                 unsigned Reg, unsigned HiReg,
+                                 bool &containsReg) {
   containsReg = false;
   for (unsigned i = OpNo; i < Inst.getNumOperands(); ++i) {
     unsigned OpReg = Inst.getOperand(i).getReg();
@@ -6041,8 +6054,8 @@ static bool checkLowRegisterList(MCInst Inst, unsigned OpNo, unsigned Reg,
 
 // Check if the specified regisgter is in the register list of the inst,
 // starting at the indicated operand number.
-static bool listContainsReg(MCInst &Inst, unsigned OpNo, unsigned Reg) {
-  for (unsigned i = OpNo; i < Inst.getNumOperands(); ++i) {
+static bool listContainsReg(const MCInst &Inst, unsigned OpNo, unsigned Reg) {
+  for (unsigned i = OpNo, e = Inst.getNumOperands(); i < e; ++i) {
     unsigned OpReg = Inst.getOperand(i).getReg();
     if (OpReg == Reg)
       return true;
@@ -6060,7 +6073,7 @@ static bool instIsBreakpoint(const MCInst &Inst) {
 
 }
 
-bool ARMAsmParser::validatetLDMRegList(MCInst Inst,
+bool ARMAsmParser::validatetLDMRegList(const MCInst &Inst,
                                        const OperandVector &Operands,
                                        unsigned ListNo, bool IsARPop) {
   const ARMOperand &Op = static_cast<const ARMOperand &>(*Operands[ListNo]);
@@ -6083,7 +6096,7 @@ bool ARMAsmParser::validatetLDMRegList(MCInst Inst,
   return false;
 }
 
-bool ARMAsmParser::validatetSTMRegList(MCInst Inst,
+bool ARMAsmParser::validatetSTMRegList(const MCInst &Inst,
                                        const OperandVector &Operands,
                                        unsigned ListNo) {
   const ARMOperand &Op = static_cast<const ARMOperand &>(*Operands[ListNo]);
@@ -8207,8 +8220,16 @@ bool ARMAsmParser::processInstruction(MCInst &Inst,
     // If the destination and first source operand are the same, and
     // there's no setting of the flags, use encoding T2 instead of T3.
     // Note that this is only for ADD, not SUB. This mirrors the system
-    // 'as' behaviour. Make sure the wide encoding wasn't explicit.
-    if (Inst.getOperand(0).getReg() != Inst.getOperand(1).getReg() ||
+    // 'as' behaviour.  Also take advantage of ADD being commutative.
+    // Make sure the wide encoding wasn't explicit.
+    bool Swap = false;
+    auto DestReg = Inst.getOperand(0).getReg();
+    bool Transform = DestReg == Inst.getOperand(1).getReg();
+    if (!Transform && DestReg == Inst.getOperand(2).getReg()) {
+      Transform = true;
+      Swap = true;
+    }
+    if (!Transform ||
         Inst.getOperand(5).getReg() != 0 ||
         (static_cast<ARMOperand &>(*Operands[3]).isToken() &&
          static_cast<ARMOperand &>(*Operands[3]).getToken() == ".w"))
@@ -8217,7 +8238,7 @@ bool ARMAsmParser::processInstruction(MCInst &Inst,
     TmpInst.setOpcode(ARM::tADDhirr);
     TmpInst.addOperand(Inst.getOperand(0));
     TmpInst.addOperand(Inst.getOperand(0));
-    TmpInst.addOperand(Inst.getOperand(2));
+    TmpInst.addOperand(Inst.getOperand(Swap ? 1 : 2));
     TmpInst.addOperand(Inst.getOperand(3));
     TmpInst.addOperand(Inst.getOperand(4));
     Inst = TmpInst;

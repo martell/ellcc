@@ -2884,8 +2884,8 @@ CXIndex clang_createIndex(int excludeDeclarationsFromPCH,
   llvm::InitializeAllAsmPrinters();
   llvm::InitializeAllAsmParsers();
 
-  CIndexer *CIdxr =
-      new CIndexer(std::make_shared<ObjectFilePCHContainerOperations>());
+  CIndexer *CIdxr = new CIndexer();
+
   if (excludeDeclarationsFromPCH)
     CIdxr->setOnlyLocalDecls();
   if (displayDiagnostics)
@@ -2954,8 +2954,8 @@ enum CXErrorCode clang_createTranslationUnit2(CXIndex CIdx,
   IntrusiveRefCntPtr<DiagnosticsEngine> Diags =
       CompilerInstance::createDiagnostics(new DiagnosticOptions());
   std::unique_ptr<ASTUnit> AU = ASTUnit::LoadFromASTFile(
-      ast_filename, CXXIdx->getPCHContainerOperations(), Diags, FileSystemOpts,
-      CXXIdx->getOnlyLocalDecls(), None,
+      ast_filename, CXXIdx->getPCHContainerOperations()->getRawReader(), Diags,
+      FileSystemOpts, CXXIdx->getOnlyLocalDecls(), None,
       /*CaptureDiagnostics=*/true,
       /*AllowPCHWithCompilerErrors=*/true,
       /*UserFilesAreVolatile=*/true);
@@ -3101,6 +3101,12 @@ static void clang_parseTranslationUnit_Impl(void *UserData) {
       CacheCodeCompletionResults, IncludeBriefCommentsInCodeCompletion,
       /*AllowPCHWithCompilerErrors=*/true, SkipFunctionBodies,
       /*UserFilesAreVolatile=*/true, ForSerialization, &ErrUnit));
+
+  // Early failures in LoadFromCommandLine may return with ErrUnit unset.
+  if (!Unit && !ErrUnit) {
+    PTUI->result = CXError_ASTReadError;
+    return;
+  }
 
   if (NumErrors != Diags->getClient()->getNumErrors()) {
     // Make sure to check that 'Unit' is non-NULL.

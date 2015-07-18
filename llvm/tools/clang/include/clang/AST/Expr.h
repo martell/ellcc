@@ -23,6 +23,7 @@
 #include "clang/AST/TemplateBase.h"
 #include "clang/AST/Type.h"
 #include "clang/Basic/CharInfo.h"
+#include "clang/Basic/LangOptions.h"
 #include "clang/Basic/TypeTraits.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
@@ -896,7 +897,7 @@ public:
 ///   DeclRefExprBits.RefersToEnclosingVariableOrCapture
 ///       Specifies when this declaration reference expression (validly)
 ///       refers to an enclosed local or a captured variable.
-class DeclRefExpr : public Expr {
+class LLVM_ALIGNAS(/*alignof(uint64_t)*/ 8) DeclRefExpr : public Expr {
   /// \brief The declaration that we are referencing.
   ValueDecl *D;
 
@@ -1050,13 +1051,17 @@ public:
     if (!hasTemplateKWAndArgsInfo())
       return nullptr;
 
-    if (hasFoundDecl())
+    if (hasFoundDecl()) {
       return reinterpret_cast<ASTTemplateKWAndArgsInfo *>(
-        &getInternalFoundDecl() + 1);
+          llvm::alignAddr(&getInternalFoundDecl() + 1,
+                          llvm::alignOf<ASTTemplateKWAndArgsInfo>()));
+    }
 
-    if (hasQualifier())
+    if (hasQualifier()) {
       return reinterpret_cast<ASTTemplateKWAndArgsInfo *>(
-        &getInternalQualifierLoc() + 1);
+          llvm::alignAddr(&getInternalQualifierLoc() + 1,
+                          llvm::alignOf<ASTTemplateKWAndArgsInfo>()));
+    }
 
     return reinterpret_cast<ASTTemplateKWAndArgsInfo *>(this + 1);
   }
@@ -2300,9 +2305,9 @@ public:
 
 /// MemberExpr - [C99 6.5.2.3] Structure and Union Members.  X->F and X.F.
 ///
-class MemberExpr : public Expr {
+class LLVM_ALIGNAS(/*alignof(uint64_t)*/ 8) MemberExpr : public Expr {
   /// Extra data stored in some member expressions.
-  struct MemberNameQualifier {
+  struct LLVM_ALIGNAS(/*alignof(uint64_t)*/ 8) MemberNameQualifier {
     /// \brief The nested-name-specifier that qualifies the name, including
     /// source-location information.
     NestedNameSpecifierLoc QualifierLoc;
@@ -2573,6 +2578,14 @@ public:
   /// greater than 1.
   void setHadMultipleCandidates(bool V = true) {
     HadMultipleCandidates = V;
+  }
+
+  /// \brief Returns true if virtual dispatch is performed.
+  /// If the member access is fully qualified, (i.e. X::f()), virtual
+  /// dispatching is not performed. In -fapple-kext mode qualified
+  /// calls to virtual method will still go through the vtable.
+  bool performsVirtualDispatch(const LangOptions &LO) const {
+    return LO.AppleKext || !hasQualifier();
   }
 
   static bool classof(const Stmt *T) {
