@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MILexer.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include <cctype>
@@ -68,6 +69,51 @@ static bool isIdentifierChar(char C) {
          C == '$';
 }
 
+void MIToken::unescapeQuotedStringValue(std::string &Str) const {
+  assert(isStringValueQuoted() && "String value isn't quoted");
+  StringRef Value = Range.drop_front(StringOffset);
+  assert(Value.front() == '"' && Value.back() == '"');
+  Cursor C = Cursor(Value.substr(1, Value.size() - 2));
+
+  Str.clear();
+  Str.reserve(C.remaining().size());
+  while (!C.isEOF()) {
+    char Char = C.peek();
+    if (Char == '\\') {
+      if (C.peek(1) == '\\') {
+        // Two '\' become one
+        Str += '\\';
+        C.advance(2);
+        continue;
+      }
+      if (isxdigit(C.peek(1)) && isxdigit(C.peek(2))) {
+        Str += hexDigitValue(C.peek(1)) * 16 + hexDigitValue(C.peek(2));
+        C.advance(3);
+        continue;
+      }
+    }
+    Str += Char;
+    C.advance();
+  }
+}
+
+/// Lex a string constant using the following regular expression: \"[^\"]*\"
+static Cursor lexStringConstant(
+    Cursor C,
+    function_ref<void(StringRef::iterator Loc, const Twine &)> ErrorCallback) {
+  assert(C.peek() == '"');
+  for (C.advance(); C.peek() != '"'; C.advance()) {
+    if (C.isEOF()) {
+      ErrorCallback(
+          C.location(),
+          "end of machine instruction reached before the closing '\"'");
+      return None;
+    }
+  }
+  C.advance();
+  return C;
+}
+
 static MIToken::TokenKind getIdentifierKind(StringRef Identifier) {
   return StringSwitch<MIToken::TokenKind>(Identifier)
       .Case("_", MIToken::underscore)
@@ -77,11 +123,14 @@ static MIToken::TokenKind getIdentifierKind(StringRef Identifier) {
       .Case("killed", MIToken::kw_killed)
       .Case("undef", MIToken::kw_undef)
       .Case("frame-setup", MIToken::kw_frame_setup)
+      .Case("debug-location", MIToken::kw_debug_location)
+      .Case(".cfi_offset", MIToken::kw_cfi_offset)
+      .Case(".cfi_def_cfa_offset", MIToken::kw_cfi_def_cfa_offset)
       .Default(MIToken::Identifier);
 }
 
 static Cursor maybeLexIdentifier(Cursor C, MIToken &Token) {
-  if (!isalpha(C.peek()) && C.peek() != '_')
+  if (!isalpha(C.peek()) && C.peek() != '_' && C.peek() != '.')
     return None;
   auto Range = C;
   while (isIdentifierChar(C.peek()))
@@ -165,6 +214,10 @@ static Cursor maybeLexFixedStackObject(Cursor C, MIToken &Token) {
   return maybeLexIndex(C, Token, "%fixed-stack.", MIToken::FixedStackObject);
 }
 
+static Cursor maybeLexConstantPoolItem(Cursor C, MIToken &Token) {
+  return maybeLexIndex(C, Token, "%const.", MIToken::ConstantPoolItem);
+}
+
 static Cursor lexVirtualRegister(Cursor C, MIToken &Token) {
   auto Range = C;
   C.advance(); // Skip '%'
@@ -190,25 +243,53 @@ static Cursor maybeLexRegister(Cursor C, MIToken &Token) {
   return C;
 }
 
-static Cursor maybeLexGlobalValue(Cursor C, MIToken &Token) {
+static Cursor lexName(
+    Cursor C, MIToken &Token, MIToken::TokenKind Type,
+    MIToken::TokenKind QuotedType, unsigned PrefixLength,
+    function_ref<void(StringRef::iterator Loc, const Twine &)> ErrorCallback) {
+  auto Range = C;
+  C.advance(PrefixLength);
+  if (C.peek() == '"') {
+    if (Cursor R = lexStringConstant(C, ErrorCallback)) {
+      Token = MIToken(QuotedType, Range.upto(R), PrefixLength);
+      return R;
+    }
+    Token = MIToken(MIToken::Error, Range.remaining());
+    return Range;
+  }
+  while (isIdentifierChar(C.peek()))
+    C.advance();
+  Token = MIToken(Type, Range.upto(C), PrefixLength);
+  return C;
+}
+
+static Cursor maybeLexGlobalValue(
+    Cursor C, MIToken &Token,
+    function_ref<void(StringRef::iterator Loc, const Twine &)> ErrorCallback) {
   if (C.peek() != '@')
     return None;
+  if (!isdigit(C.peek(1)))
+    return lexName(C, Token, MIToken::NamedGlobalValue,
+                   MIToken::QuotedNamedGlobalValue, /*PrefixLength=*/1,
+                   ErrorCallback);
   auto Range = C;
-  C.advance(); // Skip the '@'
-  // TODO: add support for quoted names.
-  if (!isdigit(C.peek())) {
-    while (isIdentifierChar(C.peek()))
-      C.advance();
-    Token = MIToken(MIToken::NamedGlobalValue, Range.upto(C),
-                    /*StringOffset=*/1); // Drop the '@'
-    return C;
-  }
+  C.advance(1); // Skip the '@'
   auto NumberRange = C;
   while (isdigit(C.peek()))
     C.advance();
   Token =
       MIToken(MIToken::GlobalValue, Range.upto(C), APSInt(NumberRange.upto(C)));
   return C;
+}
+
+static Cursor maybeLexExternalSymbol(
+    Cursor C, MIToken &Token,
+    function_ref<void(StringRef::iterator Loc, const Twine &)> ErrorCallback) {
+  if (C.peek() != '$')
+    return None;
+  return lexName(C, Token, MIToken::ExternalSymbol,
+                 MIToken::QuotedExternalSymbol,
+                 /*PrefixLength=*/1, ErrorCallback);
 }
 
 static Cursor maybeLexIntegerLiteral(Cursor C, MIToken &Token) {
@@ -231,6 +312,8 @@ static MIToken::TokenKind symbolToken(char C) {
     return MIToken::equal;
   case ':':
     return MIToken::colon;
+  case '!':
+    return MIToken::exclaim;
   default:
     return MIToken::Error;
   }
@@ -265,9 +348,13 @@ StringRef llvm::lexMIToken(
     return R.remaining();
   if (Cursor R = maybeLexFixedStackObject(C, Token))
     return R.remaining();
+  if (Cursor R = maybeLexConstantPoolItem(C, Token))
+    return R.remaining();
   if (Cursor R = maybeLexRegister(C, Token))
     return R.remaining();
-  if (Cursor R = maybeLexGlobalValue(C, Token))
+  if (Cursor R = maybeLexGlobalValue(C, Token, ErrorCallback))
+    return R.remaining();
+  if (Cursor R = maybeLexExternalSymbol(C, Token, ErrorCallback))
     return R.remaining();
   if (Cursor R = maybeLexIntegerLiteral(C, Token))
     return R.remaining();

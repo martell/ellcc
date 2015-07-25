@@ -139,9 +139,9 @@ const DataLayout &AsmPrinter::getDataLayout() const {
   return MMI->getModule()->getDataLayout();
 }
 
-unsigned AsmPrinter::getPointerSize() const {
-  return TM.getDataLayout()->getPointerSize();
-}
+// Do not use the cached DataLayout because some client use it without a Module
+// (llmv-dsymutil, llvm-dwarfdump).
+unsigned AsmPrinter::getPointerSize() const { return TM.getPointerSize(); }
 
 const MCSubtargetInfo &AsmPrinter::getSubtargetInfo() const {
   assert(MF && "getSubtargetInfo requires a valid MachineFunction!");
@@ -2101,7 +2101,7 @@ static void handleIndirectSymViaGOTPCRel(AsmPrinter &AP, const MCExpr **ME,
   if (!AP.GlobalGOTEquivs.count(GOTEquivSym))
     return;
 
-  const GlobalValue *BaseGV = dyn_cast<GlobalValue>(BaseCst);
+  const GlobalValue *BaseGV = dyn_cast_or_null<GlobalValue>(BaseCst);
   if (!BaseGV)
     return;
 

@@ -20,6 +20,7 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/raw_ostream.h"
@@ -30,6 +31,22 @@
 using namespace llvm;
 
 namespace {
+
+struct StringValueUtility {
+  StringRef String;
+  std::string UnescapedString;
+
+  StringValueUtility(const MIToken &Token) {
+    if (Token.isStringValueQuoted()) {
+      Token.unescapeQuotedStringValue(UnescapedString);
+      String = UnescapedString;
+      return;
+    }
+    String = Token.stringValue();
+  }
+
+  operator StringRef() const { return String; }
+};
 
 /// A wrapper struct around the 'MachineOperand' struct that includes a source
 /// range.
@@ -92,7 +109,14 @@ public:
   bool parseStackObjectOperand(MachineOperand &Dest);
   bool parseFixedStackObjectOperand(MachineOperand &Dest);
   bool parseGlobalAddressOperand(MachineOperand &Dest);
+  bool parseConstantPoolIndexOperand(MachineOperand &Dest);
   bool parseJumpTableIndexOperand(MachineOperand &Dest);
+  bool parseExternalSymbolOperand(MachineOperand &Dest);
+  bool parseMDNode(MDNode *&Node);
+  bool parseMetadataOperand(MachineOperand &Dest);
+  bool parseCFIOffset(int &Offset);
+  bool parseCFIRegister(unsigned &Reg);
+  bool parseCFIOperand(MachineOperand &Dest);
   bool parseMachineOperand(MachineOperand &Dest);
 
 private:
@@ -100,6 +124,10 @@ private:
   ///
   /// Return true if an error occurred.
   bool getUnsigned(unsigned &Result);
+
+  /// If the current token is of the given kind, consume it and return false.
+  /// Otherwise report an error and return true.
+  bool expectAndConsume(MIToken::TokenKind TokenKind);
 
   void initNames2InstrOpCodes();
 
@@ -158,6 +186,22 @@ bool MIParser::error(StringRef::iterator Loc, const Twine &Msg) {
   return true;
 }
 
+static const char *toString(MIToken::TokenKind TokenKind) {
+  switch (TokenKind) {
+  case MIToken::comma:
+    return "','";
+  default:
+    return "<unknown token>";
+  }
+}
+
+bool MIParser::expectAndConsume(MIToken::TokenKind TokenKind) {
+  if (Token.isNot(TokenKind))
+    return error(Twine("expected ") + toString(TokenKind));
+  lex();
+  return false;
+}
+
 bool MIParser::parse(MachineInstr *&MI) {
   lex();
 
@@ -182,7 +226,7 @@ bool MIParser::parse(MachineInstr *&MI) {
   // TODO: Parse the bundle instruction flags and memory operands.
 
   // Parse the remaining machine operands.
-  while (Token.isNot(MIToken::Eof)) {
+  while (Token.isNot(MIToken::Eof) && Token.isNot(MIToken::kw_debug_location)) {
     auto Loc = Token.location();
     if (parseMachineOperand(MO))
       return true;
@@ -194,6 +238,17 @@ bool MIParser::parse(MachineInstr *&MI) {
     lex();
   }
 
+  DebugLoc DebugLocation;
+  if (Token.is(MIToken::kw_debug_location)) {
+    lex();
+    if (Token.isNot(MIToken::exclaim))
+      return error("expected a metadata node after 'debug-location'");
+    MDNode *Node = nullptr;
+    if (parseMDNode(Node))
+      return true;
+    DebugLocation = DebugLoc(Node);
+  }
+
   const auto &MCID = MF.getSubtarget().getInstrInfo()->get(OpCode);
   if (!MCID.isVariadic()) {
     // FIXME: Move the implicit operand verification to the machine verifier.
@@ -202,7 +257,7 @@ bool MIParser::parse(MachineInstr *&MI) {
   }
 
   // TODO: Check for extraneous machine operands.
-  MI = MF.CreateMachineInstr(MCID, DebugLoc(), /*NoImplicit=*/true);
+  MI = MF.CreateMachineInstr(MCID, DebugLocation, /*NoImplicit=*/true);
   MI->setFlags(Flags);
   for (const auto &Operand : Operands)
     MI->addOperand(MF, Operand.Operand);
@@ -485,14 +540,16 @@ bool MIParser::parseFixedStackObjectOperand(MachineOperand &Dest) {
 
 bool MIParser::parseGlobalAddressOperand(MachineOperand &Dest) {
   switch (Token.kind()) {
-  case MIToken::NamedGlobalValue: {
-    auto Name = Token.stringValue();
+  case MIToken::NamedGlobalValue:
+  case MIToken::QuotedNamedGlobalValue: {
+    StringValueUtility Name(Token);
     const Module *M = MF.getFunction()->getParent();
     if (const auto *GV = M->getNamedValue(Name)) {
       Dest = MachineOperand::CreateGA(GV, /*Offset=*/0);
       break;
     }
-    return error(Twine("use of undefined global value '@") + Name + "'");
+    return error(Twine("use of undefined global value '@") +
+                 Token.rawStringValue() + "'");
   }
   case MIToken::GlobalValue: {
     unsigned GVIdx;
@@ -513,6 +570,20 @@ bool MIParser::parseGlobalAddressOperand(MachineOperand &Dest) {
   return false;
 }
 
+bool MIParser::parseConstantPoolIndexOperand(MachineOperand &Dest) {
+  assert(Token.is(MIToken::ConstantPoolItem));
+  unsigned ID;
+  if (getUnsigned(ID))
+    return true;
+  auto ConstantInfo = PFS.ConstantPoolSlots.find(ID);
+  if (ConstantInfo == PFS.ConstantPoolSlots.end())
+    return error("use of undefined constant '%const." + Twine(ID) + "'");
+  lex();
+  // TODO: Parse offset and target flags.
+  Dest = MachineOperand::CreateCPI(ID, /*Offset=*/0);
+  return false;
+}
+
 bool MIParser::parseJumpTableIndexOperand(MachineOperand &Dest) {
   assert(Token.is(MIToken::JumpTableIndex));
   unsigned ID;
@@ -524,6 +595,98 @@ bool MIParser::parseJumpTableIndexOperand(MachineOperand &Dest) {
   lex();
   // TODO: Parse target flags.
   Dest = MachineOperand::CreateJTI(JumpTableEntryInfo->second);
+  return false;
+}
+
+bool MIParser::parseExternalSymbolOperand(MachineOperand &Dest) {
+  assert(Token.is(MIToken::ExternalSymbol) ||
+         Token.is(MIToken::QuotedExternalSymbol));
+  StringValueUtility Name(Token);
+  const char *Symbol = MF.createExternalSymbolName(Name);
+  lex();
+  // TODO: Parse the target flags.
+  Dest = MachineOperand::CreateES(Symbol);
+  return false;
+}
+
+bool MIParser::parseMDNode(MDNode *&Node) {
+  assert(Token.is(MIToken::exclaim));
+  auto Loc = Token.location();
+  lex();
+  if (Token.isNot(MIToken::IntegerLiteral) || Token.integerValue().isSigned())
+    return error("expected metadata id after '!'");
+  unsigned ID;
+  if (getUnsigned(ID))
+    return true;
+  auto NodeInfo = IRSlots.MetadataNodes.find(ID);
+  if (NodeInfo == IRSlots.MetadataNodes.end())
+    return error(Loc, "use of undefined metadata '!" + Twine(ID) + "'");
+  lex();
+  Node = NodeInfo->second.get();
+  return false;
+}
+
+bool MIParser::parseMetadataOperand(MachineOperand &Dest) {
+  MDNode *Node = nullptr;
+  if (parseMDNode(Node))
+    return true;
+  Dest = MachineOperand::CreateMetadata(Node);
+  return false;
+}
+
+bool MIParser::parseCFIOffset(int &Offset) {
+  if (Token.isNot(MIToken::IntegerLiteral))
+    return error("expected a cfi offset");
+  if (Token.integerValue().getMinSignedBits() > 32)
+    return error("expected a 32 bit integer (the cfi offset is too large)");
+  Offset = (int)Token.integerValue().getExtValue();
+  lex();
+  return false;
+}
+
+bool MIParser::parseCFIRegister(unsigned &Reg) {
+  if (Token.isNot(MIToken::NamedRegister))
+    return error("expected a cfi register");
+  unsigned LLVMReg;
+  if (parseRegister(LLVMReg))
+    return true;
+  const auto *TRI = MF.getSubtarget().getRegisterInfo();
+  assert(TRI && "Expected target register info");
+  int DwarfReg = TRI->getDwarfRegNum(LLVMReg, true);
+  if (DwarfReg < 0)
+    return error("invalid DWARF register");
+  Reg = (unsigned)DwarfReg;
+  lex();
+  return false;
+}
+
+bool MIParser::parseCFIOperand(MachineOperand &Dest) {
+  auto Kind = Token.kind();
+  lex();
+  auto &MMI = MF.getMMI();
+  int Offset;
+  unsigned Reg;
+  unsigned CFIIndex;
+  switch (Kind) {
+  case MIToken::kw_cfi_offset:
+    if (parseCFIRegister(Reg) || expectAndConsume(MIToken::comma) ||
+        parseCFIOffset(Offset))
+      return true;
+    CFIIndex =
+        MMI.addFrameInst(MCCFIInstruction::createOffset(nullptr, Reg, Offset));
+    break;
+  case MIToken::kw_cfi_def_cfa_offset:
+    if (parseCFIOffset(Offset))
+      return true;
+    // NB: MCCFIInstruction::createDefCfaOffset negates the offset.
+    CFIIndex = MMI.addFrameInst(
+        MCCFIInstruction::createDefCfaOffset(nullptr, -Offset));
+    break;
+  default:
+    // TODO: Parse the other CFI operands.
+    llvm_unreachable("The current token should be a cfi operand");
+  }
+  Dest = MachineOperand::CreateCFIIndex(CFIIndex);
   return false;
 }
 
@@ -548,9 +711,20 @@ bool MIParser::parseMachineOperand(MachineOperand &Dest) {
     return parseFixedStackObjectOperand(Dest);
   case MIToken::GlobalValue:
   case MIToken::NamedGlobalValue:
+  case MIToken::QuotedNamedGlobalValue:
     return parseGlobalAddressOperand(Dest);
+  case MIToken::ConstantPoolItem:
+    return parseConstantPoolIndexOperand(Dest);
   case MIToken::JumpTableIndex:
     return parseJumpTableIndexOperand(Dest);
+  case MIToken::ExternalSymbol:
+  case MIToken::QuotedExternalSymbol:
+    return parseExternalSymbolOperand(Dest);
+  case MIToken::exclaim:
+    return parseMetadataOperand(Dest);
+  case MIToken::kw_cfi_offset:
+  case MIToken::kw_cfi_def_cfa_offset:
+    return parseCFIOperand(Dest);
   case MIToken::Error:
     return true;
   case MIToken::Identifier:

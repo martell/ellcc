@@ -25,6 +25,7 @@ foreach(arch ${DFSAN_SUPPORTED_ARCH})
   add_compiler_rt_static_runtime(clang_rt.dfsan-libc-${arch} ${arch}
     SOURCES ${DFSAN_RTL_SOURCES}
             $<TARGET_OBJECTS:RTSanitizerCommon.${arch}>
+            $<TARGET_OBJECTS:RTSanitizerCommonNoLibc.${arch}>
             CFLAGS ${DFSAN_NOLIBC_CFLAGS})
   add_sanitizer_rt_symbols(clang_rt.dfsan-${arch} dfsan.syms.extra)
   add_dependencies(dfsan

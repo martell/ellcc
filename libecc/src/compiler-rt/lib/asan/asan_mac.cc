@@ -238,9 +238,6 @@ void *AsanDoesNotSupportStaticLinkage() {
   return 0;
 }
 
-void AsanPlatformThreadInit() {
-}
-
 void ReadContextStack(void *context, uptr *stack, uptr *ssize) {
   UNIMPLEMENTED();
 }

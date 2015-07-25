@@ -570,10 +570,20 @@ class Configuration(object):
     def configure_warnings(self):
         enable_warnings = self.get_lit_bool('enable_warnings', False)
         if enable_warnings:
-            self.cxx.compile_flags += ['-Wsystem-headers', '-Wall', '-Werror']
-            if ('clang' in self.config.available_features or
-                'apple-clang' in self.config.available_features):
-                self.cxx.compile_flags += ['-Wno-user-defined-literals']
+            self.cxx.compile_flags += [
+                '-D_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER',
+                '-Wall', '-Werror'
+            ]
+            self.cxx.addCompileFlagIfSupported('-Wno-attributes')
+            if self.cxx.type == 'clang' or self.cxx.type == 'apple-clang':
+                self.cxx.addCompileFlagIfSupported('-Wno-pessimizing-move')
+                self.cxx.addCompileFlagIfSupported('-Wno-c++11-extensions')
+                self.cxx.addCompileFlagIfSupported('-Wno-user-defined-literals')
+            std = self.get_lit_conf('std', None)
+            if std in ['c++98', 'c++03']:
+                # The '#define static_assert' provided by libc++ in C++03 mode
+                # causes an unused local typedef whenever it is used.
+                self.cxx.addCompileFlagIfSupported('-Wno-unused-local-typedef')
 
     def configure_sanitizer(self):
         san = self.get_lit_conf('use_sanitizer', '').strip()
@@ -613,6 +623,8 @@ class Configuration(object):
                                    '-fno-sanitize-recover']
                 self.cxx.compile_flags += ['-O3']
                 self.config.available_features.add('ubsan')
+                if self.target_info.platform() == 'darwin':
+                    self.config.available_features.add('sanitizer-new-delete')
             elif san == 'Thread':
                 self.cxx.flags += ['-fsanitize=thread']
                 self.config.available_features.add('tsan')
@@ -620,6 +632,10 @@ class Configuration(object):
             else:
                 self.lit_config.fatal('unsupported value for '
                                       'use_sanitizer: {0}'.format(san))
+            san_lib = self.get_lit_conf('sanitizer_library')
+            if san_lib:
+                self.cxx.link_flags += [
+                    san_lib, '-Wl,-rpath,%s' % os.path.dirname(san_lib)]
 
     def configure_coverage(self):
         self.generate_coverage = self.get_lit_bool('generate_coverage', False)

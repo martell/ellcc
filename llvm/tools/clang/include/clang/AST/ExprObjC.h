@@ -82,7 +82,9 @@ public:
   }
     
   // Iterators
-  child_range children() { return child_range(); }
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
 };
 
 /// ObjCBoxedExpr - used for generalized expression boxing.
@@ -391,7 +393,9 @@ public:
   }
 
   // Iterators
-  child_range children() { return child_range(); }
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
 };
 
 /// ObjCSelectorExpr used for \@selector in Objective-C.
@@ -426,7 +430,9 @@ public:
   }
 
   // Iterators
-  child_range children() { return child_range(); }
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
 };
 
 /// ObjCProtocolExpr used for protocol expression in Objective-C.
@@ -466,7 +472,9 @@ public:
   }
 
   // Iterators
-  child_range children() { return child_range(); }
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
 
   friend class ASTStmtReader;
   friend class ASTStmtWriter;
@@ -715,7 +723,7 @@ public:
       Stmt **begin = reinterpret_cast<Stmt**>(&Receiver); // hack!
       return child_range(begin, begin+1);
     }
-    return child_range();
+    return child_range(child_iterator(), child_iterator());
   }
 
 private:
@@ -1351,6 +1359,14 @@ public:
 
   typedef ExprIterator arg_iterator;
   typedef ConstExprIterator const_arg_iterator;
+
+  llvm::iterator_range<arg_iterator> arguments() {
+    return llvm::make_range(arg_begin(), arg_end());
+  }
+
+  llvm::iterator_range<const_arg_iterator> arguments() const {
+    return llvm::make_range(arg_begin(), arg_end());
+  }
 
   arg_iterator arg_begin() { return reinterpret_cast<Stmt **>(getArgs()); }
   arg_iterator arg_end()   { 
