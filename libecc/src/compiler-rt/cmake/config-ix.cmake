@@ -211,11 +211,8 @@ filter_available_targets(LSAN_COMMON_SUPPORTED_ARCH
 filter_available_targets(UBSAN_COMMON_SUPPORTED_ARCH
   ${SANITIZER_COMMON_SUPPORTED_ARCH})
 filter_available_targets(ASAN_SUPPORTED_ARCH
-  x86_64 i386 i686 powerpc64 powerpc64le arm mips mipsel mips64 mips64el)
-if(ANDROID)
-  filter_available_targets(ASAN_SUPPORTED_ARCH aarch64)
-endif()
-filter_available_targets(DFSAN_SUPPORTED_ARCH x86_64 mips64 mips64el)
+  x86_64 i386 i686 powerpc64 powerpc64le arm mips mipsel mips64 mips64el aarch64)
+filter_available_targets(DFSAN_SUPPORTED_ARCH x86_64 mips64 mips64el aarch64)
 filter_available_targets(LSAN_SUPPORTED_ARCH x86_64 mips64 mips64el)
 filter_available_targets(MSAN_SUPPORTED_ARCH x86_64 mips64 mips64el)
 filter_available_targets(PROFILE_SUPPORTED_ARCH x86_64 i386 i686 arm mips mips64

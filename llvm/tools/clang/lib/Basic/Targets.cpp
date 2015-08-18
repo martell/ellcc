@@ -562,7 +562,7 @@ public:
     this->IntMaxType = TargetInfo::SignedLongLong;
     this->Int64Type = TargetInfo::SignedLongLong;
     this->SizeType = TargetInfo::UnsignedInt;
-    this->DescriptionString = "E-m:e-p:32:32-i64:64-n32:64";
+    this->DataLayoutString = "E-m:e-p:32:32-i64:64-n32:64";
   }
 };
 
@@ -724,16 +724,16 @@ public:
     if (Triple.getArch() == llvm::Triple::arm) {
       // Handled in ARM's setABI().
     } else if (Triple.getArch() == llvm::Triple::armeb) {
-      this->DescriptionString = "E-p:32:32-i64:64-v128:64:128-n32-S128";
+      this->DataLayoutString = "E-p:32:32-i64:64-v128:64:128-n32-S128";
     } else if (Triple.getArch() == llvm::Triple::x86) {
-      this->DescriptionString = "e-m:e-p:32:32-i64:64-n8:16:32-S128";
+      this->DataLayoutString = "e-m:e-p:32:32-i64:64-n8:16:32-S128";
     } else if (Triple.getArch() == llvm::Triple::x86_64) {
-      this->DescriptionString = "e-m:e-p:32:32-i64:64-n8:16:32:64-S128";
+      this->DataLayoutString = "e-m:e-p:32:32-i64:64-n8:16:32:64-S128";
     } else if (Triple.getArch() == llvm::Triple::mipsel) {
-      // Handled on mips' setDescriptionString.
+      // Handled on mips' setDataLayoutString.
     } else {
       assert(Triple.getArch() == llvm::Triple::le32);
-      this->DescriptionString = "e-p:32:32-i64:64";
+      this->DataLayoutString = "e-p:32:32-i64:64";
     }
   }
 };
@@ -1021,9 +1021,10 @@ public:
 };
 
 const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
+#define BUILTIN(ID, TYPE, ATTRS) \
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) \
+  { #ID, TYPE, ATTRS, HEADER, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsPPC.def"
 };
 
@@ -1472,7 +1473,7 @@ void PPCTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
 class PPC32TargetInfo : public PPCTargetInfo {
 public:
   PPC32TargetInfo(const llvm::Triple &Triple) : PPCTargetInfo(Triple) {
-    DescriptionString = "E-m:e-p:32:32-i64:64-n32";
+    DataLayoutString = "E-m:e-p:32:32-i64:64-n32";
 
     switch (getTriple().getOS()) {
     case llvm::Triple::Linux:
@@ -1512,10 +1513,10 @@ public:
     Int64Type = SignedLong;
 
     if ((Triple.getArch() == llvm::Triple::ppc64le)) {
-      DescriptionString = "e-m:e-i64:64-n32:64";
+      DataLayoutString = "e-m:e-i64:64-n32:64";
       ABI = "elfv2";
     } else {
-      DescriptionString = "E-m:e-i64:64-n32:64";
+      DataLayoutString = "E-m:e-i64:64-n32:64";
       ABI = "elfv1";
     }
 
@@ -1562,7 +1563,7 @@ public:
     PtrDiffType = SignedInt; // for http://llvm.org/bugs/show_bug.cgi?id=15726
     LongLongAlign = 32;
     SuitableAlign = 128;
-    DescriptionString = "E-m:o-p:32:32-f64:32:64-n32";
+    DataLayoutString = "E-m:o-p:32:32-f64:32:64-n32";
   }
   BuiltinVaListKind getBuiltinVaListKind() const override {
     return TargetInfo::CharPtrBuiltinVaList;
@@ -1576,7 +1577,7 @@ public:
       : DarwinTargetInfo<PPC64TargetInfo>(Triple) {
     HasAlignMac68kSupport = true;
     SuitableAlign = 128;
-    DescriptionString = "E-m:o-i64:64-n32:64";
+    DataLayoutString = "E-m:o-i64:64-n32:64";
   }
 };
 
@@ -1700,9 +1701,10 @@ public:
   };
 
   const Builtin::Info NVPTXTargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
+#define BUILTIN(ID, TYPE, ATTRS) \
+    { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) \
+    { #ID, TYPE, ATTRS, HEADER, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsNVPTX.def"
   };
 
@@ -1723,7 +1725,7 @@ public:
       SizeType = TargetInfo::UnsignedInt;
       PtrDiffType = TargetInfo::SignedInt;
       IntPtrType = TargetInfo::SignedInt;
-      DescriptionString = "e-p:32:32-i64:64-v16:16-v32:32-n16:32:64";
+      DataLayoutString = "e-p:32:32-i64:64-v16:16-v32:32-n16:32:64";
     }
   };
 
@@ -1734,7 +1736,7 @@ public:
       SizeType = TargetInfo::UnsignedLong;
       PtrDiffType = TargetInfo::SignedLong;
       IntPtrType = TargetInfo::SignedLong;
-      DescriptionString = "e-i64:64-v16:16-v32:32-n16:32:64";
+      DataLayoutString = "e-i64:64-v16:16-v32:32-n16:32:64";
     }
   };
 
@@ -1751,15 +1753,15 @@ static const unsigned AMDGPUAddrSpaceMap[] = {
 // If you edit the description strings, make sure you update
 // getPointerWidthV().
 
-static const char *DescriptionStringR600 =
+static const char *DataLayoutStringR600 =
   "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128"
   "-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64";
 
-static const char *DescriptionStringR600DoubleOps =
+static const char *DataLayoutStringR600DoubleOps =
   "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128"
   "-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64";
 
-static const char *DescriptionStringSI =
+static const char *DataLayoutStringSI =
   "e-p:32:32-p1:64:64-p2:64:64-p3:32:32-p4:64:64-p5:32:32-p24:64:64"
   "-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128"
   "-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64";
@@ -1793,13 +1795,13 @@ public:
     : TargetInfo(Triple) {
 
     if (Triple.getArch() == llvm::Triple::amdgcn) {
-      DescriptionString = DescriptionStringSI;
+      DataLayoutString = DataLayoutStringSI;
       GPU = GK_SOUTHERN_ISLANDS;
       hasFP64 = true;
       hasFMAF = true;
       hasLDEXPF = true;
     } else {
-      DescriptionString = DescriptionStringR600;
+      DataLayoutString = DataLayoutStringR600;
       GPU = GK_R600;
       hasFP64 = false;
       hasFMAF = false;
@@ -1924,7 +1926,7 @@ public:
     case GK_R700:
     case GK_EVERGREEN:
     case GK_NORTHERN_ISLANDS:
-      DescriptionString = DescriptionStringR600;
+      DataLayoutString = DataLayoutStringR600;
       hasFP64 = false;
       hasFMAF = false;
       hasLDEXPF = false;
@@ -1933,7 +1935,7 @@ public:
     case GK_R700_DOUBLE_OPS:
     case GK_EVERGREEN_DOUBLE_OPS:
     case GK_CAYMAN:
-      DescriptionString = DescriptionStringR600DoubleOps;
+      DataLayoutString = DataLayoutStringR600DoubleOps;
       hasFP64 = true;
       hasFMAF = true;
       hasLDEXPF = false;
@@ -1941,7 +1943,7 @@ public:
     case GK_SOUTHERN_ISLANDS:
     case GK_SEA_ISLANDS:
     case GK_VOLCANIC_ISLANDS:
-      DescriptionString = DescriptionStringSI;
+      DataLayoutString = DataLayoutStringSI;
       hasFP64 = true;
       hasFMAF = true;
       hasLDEXPF = true;
@@ -1954,7 +1956,7 @@ public:
 
 const Builtin::Info AMDGPUTargetInfo::BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS)                \
-  { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsAMDGPU.def"
 };
 const char * const AMDGPUTargetInfo::GCCRegNames[] = {
@@ -2017,7 +2019,7 @@ class MBlazeTargetInfo : public TargetInfo {
 
 public:
   MBlazeTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
-    DescriptionString = "E-m:e-p:32:32-n32-S32";
+    DataLayoutString = "E-m:e-p:32:32-n32-S32";
     // Microblaze targets default to using the ARM C++ ABI.
     TheCXXABI.set(TargetCXXABI::GenericARM);
     // Microblaze supports atomics up to 4 bytes.
@@ -2163,9 +2165,12 @@ void AMDGPUTargetInfo::getGCCRegNames(const char * const *&Names,
 
 // Namespace for x86 abstract base class
 const Builtin::Info BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
+#define BUILTIN(ID, TYPE, ATTRS)                                               \
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER)                                    \
+  { #ID, TYPE, ATTRS, HEADER, ALL_LANGUAGES, nullptr },
+#define TARGET_BUILTIN(ID, TYPE, ATTRS, FEATURE)                               \
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, FEATURE },
 #include "clang/Basic/BuiltinsX86.def"
 };
 
@@ -3779,7 +3784,7 @@ public:
     LongDoubleWidth = 96;
     LongDoubleAlign = 32;
     SuitableAlign = 128;
-    DescriptionString = "e-m:e-p:32:32-f64:32:64-f80:32-n8:16:32-S128";
+    DataLayoutString = "e-m:e-p:32:32-f64:32:64-f80:32-n8:16:32-S128";
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
     IntPtrType = SignedInt;
@@ -3872,7 +3877,7 @@ public:
     MaxVectorAlign = 256;
     SizeType = UnsignedLong;
     IntPtrType = SignedLong;
-    DescriptionString = "e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128";
+    DataLayoutString = "e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128";
     HasAlignMac68kSupport = true;
   }
 
@@ -3887,9 +3892,9 @@ public:
     DoubleAlign = LongLongAlign = 64;
     bool IsWinCOFF =
         getTriple().isOSWindows() && getTriple().isOSBinFormatCOFF();
-    DescriptionString = IsWinCOFF
-                            ? "e-m:x-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32"
-                            : "e-m:e-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32";
+    DataLayoutString = IsWinCOFF
+                           ? "e-m:x-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32"
+                           : "e-m:e-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32";
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -3970,7 +3975,7 @@ public:
     TLSSupported = false;
     WCharType = UnsignedShort;
     DoubleAlign = LongLongAlign = 64;
-    DescriptionString = "e-m:x-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32";
+    DataLayoutString = "e-m:x-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32";
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -4078,10 +4083,10 @@ public:
     RegParmMax = 6;
 
     // Pointers are 32-bit in x32.
-    DescriptionString = IsX32 ? "e-m:e-p:32:32-i64:64-f80:128-n8:16:32:64-S128"
-                              : IsWinCOFF
-                                    ? "e-m:w-i64:64-f80:128-n8:16:32:64-S128"
-                                    : "e-m:e-i64:64-f80:128-n8:16:32:64-S128";
+    DataLayoutString = IsX32 ? "e-m:e-p:32:32-i64:64-f80:128-n8:16:32:64-S128"
+                             : IsWinCOFF
+                                   ? "e-m:w-i64:64-f80:128-n8:16:32:64-S128"
+                                   : "e-m:e-i64:64-f80:128-n8:16:32:64-S128";
 
     // Use fpret only for long double.
     RealTypeUsesObjCFPRet = (1 << TargetInfo::LongDouble);
@@ -4173,8 +4178,8 @@ public:
                         MacroBuilder &Builder) const override {
     WindowsX86_64TargetInfo::getTargetDefines(Opts, Builder);
     WindowsX86_64TargetInfo::getVisualStudioDefines(Opts, Builder);
-    Builder.defineMacro("_M_X64");
-    Builder.defineMacro("_M_AMD64");
+    Builder.defineMacro("_M_X64", "100");
+    Builder.defineMacro("_M_AMD64", "100");
   }
 };
 
@@ -4231,7 +4236,7 @@ public:
     llvm::Triple T = llvm::Triple(Triple);
     if (T.isiOS())
       UseSignedCharForObjCBool = false;
-    DescriptionString = "e-m:o-i64:64-f80:128-n8:16:32:64-S128";
+    DataLayoutString = "e-m:o-i64:64-f80:128-n8:16:32:64-S128";
   }
 };
 
@@ -4390,24 +4395,24 @@ protected:
     // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
     // so set preferred for small types to 32.
     if (T.isOSBinFormatMachO()) {
-      DescriptionString =
+      DataLayoutString =
           BigEndian ? "E-m:o-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64"
                     : "e-m:o-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64";
     } else if (T.isOSWindows()) {
       assert(!BigEndian && "Windows on ARM does not support big endian");
-      DescriptionString = "e"
-                          "-m:w"
-                          "-p:32:32"
-                          "-i64:64"
-                          "-v128:64:128"
-                          "-a:0:32"
-                          "-n32"
-                          "-S64";
+      DataLayoutString = "e"
+                         "-m:w"
+                         "-p:32:32"
+                         "-i64:64"
+                         "-v128:64:128"
+                         "-a:0:32"
+                         "-n32"
+                         "-S64";
     } else if (T.isOSNaCl()) {
       assert(!BigEndian && "NaCl on ARM does not support big endian");
-      DescriptionString = "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S128";
+      DataLayoutString = "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S128";
     } else {
-      DescriptionString =
+      DataLayoutString =
           BigEndian ? "E-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64"
                     : "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64";
     }
@@ -4442,12 +4447,12 @@ protected:
     ZeroLengthBitfieldBoundary = 32;
 
     if (T.isOSBinFormatMachO())
-      DescriptionString =
+      DataLayoutString =
           BigEndian
               ? "E-m:o-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32"
               : "e-m:o-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32";
     else
-      DescriptionString =
+      DataLayoutString =
           BigEndian
               ? "E-m:e-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32"
               : "e-m:e-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32";
@@ -4764,6 +4769,7 @@ public:
   bool hasFeature(StringRef Feature) const override {
     return llvm::StringSwitch<bool>(Feature)
         .Case("arm", true)
+        .Case("aarch32", true)
         .Case("softfloat", SoftFloat)
         .Case("thumb", isThumb())
         .Case("neon", (FPU & NeonFPU) && !SoftFloat)
@@ -5108,15 +5114,18 @@ void ARMTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
 }
 
 const Builtin::Info ARMTargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
+#define BUILTIN(ID, TYPE, ATTRS) \
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr},
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) \
+  { #ID, TYPE, ATTRS, HEADER, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsNEON.def"
 
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LANGBUILTIN(ID, TYPE, ATTRS, LANG) { #ID, TYPE, ATTRS, 0, LANG },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
+#define BUILTIN(ID, TYPE, ATTRS) \
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr},
+#define LANGBUILTIN(ID, TYPE, ATTRS, LANG) \
+  { #ID, TYPE, ATTRS, nullptr, LANG, nullptr},
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) \
+  { #ID, TYPE, ATTRS, HEADER, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsARM.def"
 };
 
@@ -5234,7 +5243,7 @@ public:
     TLSSupported = false;
     WCharType = UnsignedShort;
     DoubleAlign = LongLongAlign = 64;
-    DescriptionString = "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64";
+    DataLayoutString = "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64";
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -5271,7 +5280,7 @@ public:
 };
 
 class AArch64TargetInfo : public TargetInfo {
-  virtual void setDescriptionString() = 0;
+  virtual void setDataLayoutString() = 0;
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
   static const char *const GCCRegNames[];
 
@@ -5307,7 +5316,6 @@ public:
 
     LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
     MaxVectorAlign = 128;
-    RegParmMax = 8;
     MaxAtomicInlineWidth = 128;
     MaxAtomicPromoteWidth = 128;
 
@@ -5422,6 +5430,7 @@ public:
   bool hasFeature(StringRef Feature) const override {
     return Feature == "aarch64" ||
       Feature == "arm64" ||
+      Feature == "arm" ||
       (Feature == "neon" && FPU == NeonMode);
   }
 
@@ -5439,7 +5448,7 @@ public:
         Crypto = 1;
     }
 
-    setDescriptionString();
+    setDataLayoutString();
 
     return true;
   }
@@ -5586,20 +5595,20 @@ void AArch64TargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
 
 const Builtin::Info AArch64TargetInfo::BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS)                                               \
-  { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsNEON.def"
 
 #define BUILTIN(ID, TYPE, ATTRS)                                               \
-  { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsAArch64.def"
 };
 
 class AArch64leTargetInfo : public AArch64TargetInfo {
-  void setDescriptionString() override {
+  void setDataLayoutString() override {
     if (getTriple().isOSBinFormatMachO())
-      DescriptionString = "e-m:o-i64:64-i128:128-n32:64-S128";
+      DataLayoutString = "e-m:o-i64:64-i128:128-n32:64-S128";
     else
-      DescriptionString = "e-m:e-i64:64-i128:128-n32:64-S128";
+      DataLayoutString = "e-m:e-i64:64-i128:128-n32:64-S128";
   }
 
 public:
@@ -5615,9 +5624,9 @@ public:
 };
 
 class AArch64beTargetInfo : public AArch64TargetInfo {
-  void setDescriptionString() override {
+  void setDataLayoutString() override {
     assert(!getTriple().isOSBinFormatMachO());
-    DescriptionString = "E-m:e-i64:64-i128:128-n32:64-S128";
+    DataLayoutString = "E-m:e-i64:64-i128:128-n32:64-S128";
   }
 
 public:
@@ -5674,7 +5683,7 @@ class HexagonTargetInfo : public TargetInfo {
 public:
   HexagonTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
     BigEndian = false;
-    DescriptionString = "e-m:e-p:32:32-i1:32-i64:64-a:0-n32";
+    DataLayoutString = "e-m:e-p:32:32-i1:32-i64:64-a:0-n32";
 
     // {} in inline assembly are packet specifiers, not assembly variant
     // specifiers.
@@ -5808,9 +5817,10 @@ void HexagonTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
 
 
 const Builtin::Info HexagonTargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
+#define BUILTIN(ID, TYPE, ATTRS) \
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) \
+  { #ID, TYPE, ATTRS, HEADER, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsHexagon.def"
 };
 
@@ -5951,7 +5961,7 @@ void SparcTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
 class SparcV8TargetInfo : public SparcTargetInfo {
 public:
   SparcV8TargetInfo(const llvm::Triple &Triple) : SparcTargetInfo(Triple) {
-    DescriptionString = "E-m:e-p:32:32-i64:64-f128:64-n32-S64";
+    DataLayoutString = "E-m:e-p:32:32-i64:64-f128:64-n32-S64";
     // NetBSD uses long (same as llvm default); everyone else uses int.
     if (getTriple().getOS() == llvm::Triple::NetBSD) {
       SizeType = UnsignedLong;
@@ -5975,7 +5985,7 @@ public:
 class SparcV8elTargetInfo : public SparcV8TargetInfo {
  public:
   SparcV8elTargetInfo(const llvm::Triple &Triple) : SparcV8TargetInfo(Triple) {
-    DescriptionString = "e-m:e-p:32:32-i64:64-f128:64-n32-S64";
+    DataLayoutString = "e-m:e-p:32:32-i64:64-f128:64-n32-S64";
     BigEndian = false;
   }
 };
@@ -5985,7 +5995,7 @@ class SparcV9TargetInfo : public SparcTargetInfo {
 public:
   SparcV9TargetInfo(const llvm::Triple &Triple) : SparcTargetInfo(Triple) {
     // FIXME: Support Sparc quad-precision long double?
-    DescriptionString = "E-m:e-i64:64-n32:64-S128";
+    DataLayoutString = "E-m:e-i64:64-n32:64-S128";
     // This is an LP64 platform.
     LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
 
@@ -6055,7 +6065,7 @@ public:
     LongDoubleFormat = &llvm::APFloat::IEEEquad;
     DefaultAlignForAttributeAligned = 64;
     MinGlobalAlign = 16;
-    DescriptionString = "E-m:e-i1:8:16-i8:8:16-i64:64-f128:64-a:8:16-n32:64";
+    DataLayoutString = "E-m:e-i1:8:16-i8:8:16-i64:64-f128:64-a:8:16-n32:64";
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
   }
   void getTargetDefines(const LangOptions &Opts,
@@ -6066,6 +6076,8 @@ public:
     Builder.defineMacro("__LONG_DOUBLE_128__");
     if (HasTransactionalExecution)
       Builder.defineMacro("__HTM__");
+    if (Opts.ZVector)
+      Builder.defineMacro("__VEC__", "10301");
   }
   void getTargetBuiltins(const Builtin::Info *&Records,
                          unsigned &NumRecords) const override {
@@ -6122,8 +6134,8 @@ public:
     // If we use the vector ABI, vector types are 64-bit aligned.
     if (HasVector) {
       MaxVectorAlign = 64;
-      DescriptionString = "E-m:e-i1:8:16-i8:8:16-i64:64-f128:64"
-                          "-v128:64-a:8:16-n32:64";
+      DataLayoutString = "E-m:e-i1:8:16-i8:8:16-i64:64-f128:64"
+                         "-v128:64-a:8:16-n32:64";
     }
     return true;
   }
@@ -6149,7 +6161,7 @@ public:
 
 const Builtin::Info SystemZTargetInfo::BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS)                                               \
-  { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsSystemZ.def"
 };
 
@@ -6211,7 +6223,7 @@ validateAsmConstraint(const char *&Name,
       IntPtrType = SignedInt;
       PtrDiffType = SignedInt;
       SigAtomicType = SignedLong;
-      DescriptionString = "e-m:e-p:16:16-i32:16:32-a:16-n8:16";
+      DataLayoutString = "e-m:e-p:16:16-i32:16:32-a:16-n8:16";
     }
     void getTargetDefines(const LangOptions &Opts,
                           MacroBuilder &Builder) const override {
@@ -6313,8 +6325,8 @@ validateAsmConstraint(const char *&Name,
       FloatFormat = &llvm::APFloat::IEEEsingle;
       DoubleFormat = &llvm::APFloat::IEEEsingle;
       LongDoubleFormat = &llvm::APFloat::IEEEsingle;
-      DescriptionString = "E-p:32:32-i8:8:32-i16:16:32-i64:32"
-                          "-f64:32-v64:32-v128:32-a:0:32-n32";
+      DataLayoutString = "E-p:32:32-i8:8:32-i16:16:32-i64:32"
+                         "-f64:32-v64:32-v128:32-a:0:32-n32";
       AddrSpaceMap = &TCEOpenCLAddrSpaceMap;
       UseAddrSpaceMapMangling = true;
     }
@@ -6359,10 +6371,10 @@ public:
     RegParmMax = 5;
     if (Triple.getArch() == llvm::Triple::bpfeb) {
       BigEndian = true;
-      DescriptionString = "E-m:e-p:64:64-i64:64-n32:64-S128";
+      DataLayoutString = "E-m:e-p:64:64-i64:64-n32:64-S128";
     } else {
       BigEndian = false;
-      DescriptionString = "e-m:e-p:64:64-i64:64-n32:64-S128";
+      DataLayoutString = "e-m:e-p:64:64-i64:64-n32:64-S128";
     }
     MaxAtomicPromoteWidth = 64;
     MaxAtomicInlineWidth = 64;
@@ -6402,7 +6414,7 @@ public:
 };
 
 class MipsTargetInfoBase : public TargetInfo {
-  virtual void setDescriptionString() = 0;
+  virtual void setDataLayoutString() = 0;
 
   static const Builtin::Info BuiltinInfo[];
   std::string CPU;
@@ -6698,7 +6710,7 @@ public:
         IsNan2008 = false;
     }
 
-    setDescriptionString();
+    setDataLayoutString();
 
     return true;
   }
@@ -6713,9 +6725,10 @@ public:
 };
 
 const Builtin::Info MipsTargetInfoBase::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
+#define BUILTIN(ID, TYPE, ATTRS) \
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) \
+  { #ID, TYPE, ATTRS, HEADER, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsMips.def"
 };
 
@@ -6806,8 +6819,8 @@ public:
 };
 
 class Mips32EBTargetInfo : public Mips32TargetInfoBase {
-  void setDescriptionString() override {
-    DescriptionString = "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64";
+  void setDataLayoutString() override {
+    DataLayoutString = "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64";
   }
 
 public:
@@ -6824,8 +6837,8 @@ public:
 };
 
 class Mips32ELTargetInfo : public Mips32TargetInfoBase {
-  void setDescriptionString() override {
-    DescriptionString = "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64";
+  void setDataLayoutString() override {
+    DataLayoutString = "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64";
   }
 
 public:
@@ -6966,11 +6979,11 @@ public:
 };
 
 class Mips64EBTargetInfo : public Mips64TargetInfoBase {
-  void setDescriptionString() override {
+  void setDataLayoutString() override {
     if (ABI == "n32")
-      DescriptionString = "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128";
+      DataLayoutString = "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128";
     else
-      DescriptionString = "E-m:m-i8:8:32-i16:16:32-i64:64-n32:64-S128";
+      DataLayoutString = "E-m:m-i8:8:32-i16:16:32-i64:64-n32:64-S128";
 
   }
 
@@ -6986,11 +6999,11 @@ public:
 };
 
 class Mips64ELTargetInfo : public Mips64TargetInfoBase {
-  void setDescriptionString() override {
+  void setDataLayoutString() override {
     if (ABI == "n32")
-      DescriptionString = "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128";
+      DataLayoutString = "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128";
     else
-      DescriptionString = "e-m:m-i8:8:32-i16:16:32-i64:64-n32:64-S128";
+      DataLayoutString = "e-m:m-i8:8:32-i16:16:32-i64:64-n32:64-S128";
   }
 public:
   Mips64ELTargetInfo(const llvm::Triple &Triple)
@@ -7075,8 +7088,7 @@ void PNaClTargetInfo::getGCCRegAliases(const GCCRegAlias *&Aliases,
 class NaClMips32ELTargetInfo : public Mips32ELTargetInfo {
 public:
   NaClMips32ELTargetInfo(const llvm::Triple &Triple) :
-    Mips32ELTargetInfo(Triple)  {
-      MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 0;
+    Mips32ELTargetInfo(Triple) {
   }
 
   BuiltinVaListKind getBuiltinVaListKind() const override {
@@ -7093,8 +7105,7 @@ public:
     NoAsmVariants = true;
     LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
-    DescriptionString =
-        "e-m:e-v128:32-v16:16-v32:32-v96:32-n8:16:32:64-S128";
+    DataLayoutString = "e-m:e-v128:32-v16:16-v32:32-v96:32-n8:16:32:64-S128";
   }
 
   void getTargetDefines(const LangOptions &Opts,
@@ -7133,7 +7144,7 @@ public:
 
 const Builtin::Info Le64TargetInfo::BuiltinInfo[] = {
 #define BUILTIN(ID, TYPE, ATTRS)                                               \
-  { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsLe64.def"
 };
 
@@ -7206,9 +7217,8 @@ namespace {
       PointerWidth = PointerAlign = 32;
       SizeType     = TargetInfo::UnsignedInt;
       PtrDiffType = IntPtrType = TargetInfo::SignedInt;
-      DescriptionString
-        = "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-"
-          "v96:128-v192:256-v256:256-v512:512-v1024:1024";
+      DataLayoutString = "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-"
+                         "v96:128-v192:256-v256:256-v512:512-v1024:1024";
     }
     void getTargetDefines(const LangOptions &Opts,
                           MacroBuilder &Builder) const override {
@@ -7222,8 +7232,8 @@ namespace {
       PointerWidth = PointerAlign = 64;
       SizeType     = TargetInfo::UnsignedLong;
       PtrDiffType = IntPtrType = TargetInfo::SignedLong;
-      DescriptionString = "e-i64:64-v16:16-v24:32-v32:32-v48:64-"
-                          "v96:128-v192:256-v256:256-v512:512-v1024:1024";
+      DataLayoutString = "e-i64:64-v16:16-v24:32-v32:32-v48:64-"
+                         "v96:128-v192:256-v256:256-v512:512-v1024:1024";
     }
     void getTargetDefines(const LangOptions &Opts,
                           MacroBuilder &Builder) const override {
@@ -7246,8 +7256,8 @@ public:
     WCharType = UnsignedChar;
     WIntType = UnsignedInt;
     UseZeroLengthBitfieldAlignment = true;
-    DescriptionString = "e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i64:32"
-                        "-f64:32-a:0:32-n32";
+    DataLayoutString = "e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i64:32"
+                       "-f64:32-a:0:32-n32";
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -7289,9 +7299,10 @@ public:
 };
 
 const Builtin::Info XCoreTargetInfo::BuiltinInfo[] = {
-#define BUILTIN(ID, TYPE, ATTRS) { #ID, TYPE, ATTRS, 0, ALL_LANGUAGES },
-#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) { #ID, TYPE, ATTRS, HEADER,\
-                                              ALL_LANGUAGES },
+#define BUILTIN(ID, TYPE, ATTRS) \
+  { #ID, TYPE, ATTRS, nullptr, ALL_LANGUAGES, nullptr },
+#define LIBBUILTIN(ID, TYPE, ATTRS, HEADER) \
+  { #ID, TYPE, ATTRS, HEADER, ALL_LANGUAGES, nullptr },
 #include "clang/Basic/BuiltinsXCore.def"
 };
 } // end anonymous namespace.
@@ -7751,7 +7762,7 @@ static TargetInfo *AllocateTarget(const llvm::Triple &Triple) {
 }
 
 /// CreateTargetInfo - Return the target info object for the specified target
-/// triple.
+/// options.
 TargetInfo *
 TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
                              const std::shared_ptr<TargetOptions> &Opts) {
@@ -7789,9 +7800,8 @@ TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
   Target->getDefaultFeatures(Features);
 
   // Apply the user specified deltas.
-  for (unsigned I = 0, N = Opts->FeaturesAsWritten.size();
-       I < N; ++I) {
-    const char *Name = Opts->FeaturesAsWritten[I].c_str();
+  for (const auto &F : Opts->FeaturesAsWritten) {
+    const char *Name = F.c_str();
     // Apply the feature via the target.
     bool Enabled = Name[0] == '+';
     Target->setFeatureEnabled(Features, Name + 1, Enabled);
@@ -7802,9 +7812,9 @@ TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
   // FIXME: If we are completely confident that we have the right set, we only
   // need to pass the minuses.
   Opts->Features.clear();
-  for (llvm::StringMap<bool>::const_iterator it = Features.begin(),
-         ie = Features.end(); it != ie; ++it)
-    Opts->Features.push_back((it->second ? "+" : "-") + it->first().str());
+  for (const auto &F : Features)
+    Opts->Features.push_back((F.getValue() ? "+" : "-") + F.getKey().str());
+
   if (!Target->handleTargetFeatures(Opts->Features, Diags))
     return nullptr;
 

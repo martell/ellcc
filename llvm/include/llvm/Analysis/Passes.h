@@ -33,12 +33,6 @@ namespace llvm {
 
   //===--------------------------------------------------------------------===//
   //
-  // createAliasDebugger - This pass helps debug clients of AA
-  //
-  Pass *createAliasDebugger();
-
-  //===--------------------------------------------------------------------===//
-  //
   // createAliasAnalysisCounterPass - This pass counts alias queries and how the
   // alias analysis implementation responds.
   //
@@ -56,13 +50,6 @@ namespace llvm {
   // createNoAAPass - This pass implements a "I don't know" alias analysis.
   //
   ImmutablePass *createNoAAPass();
-
-  //===--------------------------------------------------------------------===//
-  //
-  // createBasicAliasAnalysisPass - This pass implements the stateless alias
-  // analysis.
-  //
-  ImmutablePass *createBasicAliasAnalysisPass();
 
   //===--------------------------------------------------------------------===//
   //

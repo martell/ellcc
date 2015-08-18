@@ -153,14 +153,12 @@ struct FunctionInfo {
 
 struct CFLAliasAnalysis;
 
-struct FunctionHandle : public CallbackVH {
+struct FunctionHandle final : public CallbackVH {
   FunctionHandle(Function *Fn, CFLAliasAnalysis *CFLAA)
       : CallbackVH(Fn), CFLAA(CFLAA) {
     assert(Fn != nullptr);
     assert(CFLAA != nullptr);
   }
-
-  ~FunctionHandle() override {}
 
   void deleted() override { removeSelfFromCache(); }
   void allUsesReplacedWith(Value *) override { removeSelfFromCache(); }
@@ -624,7 +622,7 @@ public:
   // ----- Various Edge iterators for the graph ----- //
 
   // \brief Iterator for edges. Because this graph is bidirected, we don't
-  // allow modificaiton of the edges using this iterator. Additionally, the
+  // allow modification of the edges using this iterator. Additionally, the
   // iterator becomes invalid if you add edges to or from the node you're
   // getting the edges of.
   struct EdgeIterator : public std::iterator<std::forward_iterator_tag,
@@ -825,7 +823,7 @@ static bool hasUsefulEdges(Instruction *Inst) {
 }
 
 static bool hasUsefulEdges(ConstantExpr *CE) {
-  // ConstantExpr doens't have terminators, invokes, or fences, so only needs
+  // ConstantExpr doesn't have terminators, invokes, or fences, so only needs
   // to check for compares.
   return CE->getOpcode() != Instruction::ICmp &&
          CE->getOpcode() != Instruction::FCmp;

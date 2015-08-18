@@ -45,6 +45,16 @@ def remark_fe_backend_optimization_remark_missed : Remark<"%0">, BackendInfo,
     InGroup<BackendOptimizationRemarkMissed>;
 def remark_fe_backend_optimization_remark_analysis : Remark<"%0">, BackendInfo,
     InGroup<BackendOptimizationRemarkAnalysis>;
+def remark_fe_backend_optimization_remark_analysis_fpcommute : Remark<"%0; "
+    "allow commutativity by specifying '#pragma clang loop vectorize(enable)' "
+    "before the loop or by providing the compiler option '-ffast-math'">,
+    BackendInfo, InGroup<BackendOptimizationRemarkAnalysis>;
+def remark_fe_backend_optimization_remark_analysis_aliasing : Remark<"%0; "
+    "avoid runtime pointer checking when you know the arrays will always be "
+    "independent by specifying '#pragma clang loop vectorize(assume_safety)' "
+    "before the loop or by specifying 'restrict' on the array arguments. "
+    "Erroneous results will occur if these options are incorrectly applied!">,
+    BackendInfo, InGroup<BackendOptimizationRemarkAnalysis>;
 def warn_fe_backend_optimization_failure : Warning<"%0">, BackendInfo,
     InGroup<BackendOptimizationFailure>, DefaultWarn;
 def note_fe_backend_optimization_remark_invalid_loc : Note<"could "
@@ -194,16 +204,6 @@ def remark_module_build_done : Remark<"finished building module '%0'">,
 def err_conflicting_module_names : Error<
   "conflicting module names specified: '-fmodule-name=%0' and "
   "'-fmodule-implementation-of %1'">;
-def err_conflicting_module_files : Error<
-  "module '%0' is defined in both '%1' and '%2'">;
-def err_module_file_not_found : Error<
-  "module file '%0' not found">, DefaultFatal;
-def err_module_file_invalid : Error<
-  "file '%0' is not a valid precompiled module file">, DefaultFatal;
-def note_module_file_imported_by : Note<
-  "imported by %select{|module '%2' in }1'%0'">;
-def err_module_file_not_module : Error<
-  "AST file '%0' was not built as a module">, DefaultFatal;
 
 def err_missing_vfs_overlay_file : Error<
   "virtual filesystem overlay file '%0' not found">, DefaultFatal;

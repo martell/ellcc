@@ -157,6 +157,18 @@ Example matches Foo::Foo() and Foo::Foo(int)
 </pre></td></tr>
 
 
+<tr><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1CXXConversionDecl.html">Decl</a>&gt;</td><td class="name" onclick="toggle('conversionDecl0')"><a name="conversionDecl0Anchor">conversionDecl</a></td><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1CXXConversionDecl.html">CXXConversionDecl</a>&gt;...</td></tr>
+<tr><td colspan="4" class="doc" id="conversionDecl0"><pre>Matches C++ conversion declarations.
+
+Example matches Foo::operator int()
+  struct Foo {
+    Foo();
+    operator int();
+    int DoSomething();
+  };
+</pre></td></tr>
+
+
 <tr><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1Decl.html">Decl</a>&gt;</td><td class="name" onclick="toggle('decl0')"><a name="decl0Anchor">decl</a></td><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1Decl.html">Decl</a>&gt;...</td></tr>
 <tr><td colspan="4" class="doc" id="decl0"><pre>Matches declarations.
 
@@ -1457,6 +1469,101 @@ Example matches f(0, 0) (matcher = callExpr(argumentCountIs(2)))
 
 <tr><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1CXXConstructExpr.html">CXXConstructExpr</a>&gt;</td><td class="name" onclick="toggle('isListInitialization0')"><a name="isListInitialization0Anchor">isListInitialization</a></td><td></td></tr>
 <tr><td colspan="4" class="doc" id="isListInitialization0"><pre>Matches a constructor call expression which uses list initialization.
+</pre></td></tr>
+
+
+<tr><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1CXXConstructorDecl.html">CXXConstructorDecl</a>&gt;</td><td class="name" onclick="toggle('isCopyConstructor1')"><a name="isCopyConstructor1Anchor">isCopyConstructor</a></td><td></td></tr>
+<tr><td colspan="4" class="doc" id="isCopyConstructor1"><pre>Matches constructor declarations that are copy constructors.
+
+Example matches #2, but not #1 or #3 (matcher = constructorDecl(isCopyConstructor())
+  struct S {
+    S(); // #1
+    S(const S &); // #2
+    S(S &&); // #3
+  };
+</pre></td></tr>
+
+<tr><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1CXXConstructorDecl.html">CXXConstructorDecl</a>&gt;</td><td class="name" onclick="toggle('isDefaultConstructor1')"><a name="isDefaultConstructor1Anchor">isDefaultConstructor</a></td><td></td></tr>
+<tr><td colspan="4" class="doc" id="isDefaultConstructor1"><pre>Matches constructor declarations that are default constructors.
+
+Example matches #1, but not #2 or #3 (matcher = constructorDecl(isDefaultConstructor())
+  struct S {
+    S(); // #1
+    S(const S &); // #2
+    S(S &&); // #3
+  };
+</pre></td></tr>
+
+
+<tr><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1CXXConstructorDecl.html">CXXConstructorDecl</a>&gt;</td><td class="name" onclick="toggle('isExplicit0')"><a name="isExplicit0Anchor">isExplicit</a></td><td></td></tr>
+<tr><td colspan="4" class="doc" id="isExplicit0"><pre>Matches a constructor declaration if it is marked explicit.
+
+Given
+  struct S {
+    S(int); // #1
+    explicit S(double); // #2
+  };
+constructorDecl(isExplicit())
+  will match #2, but not #1.
+</pre></td></tr>
+
+
+<tr><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1CXXConstructorDecl.html">CXXConstructorDecl</a>&gt;</td><td class="name" onclick="toggle('isMoveConstructor1')"><a name="isMoveConstructor1Anchor">isMoveConstructor</a></td><td></td></tr>
+<tr><td colspan="4" class="doc" id="isMoveConstructor1"><pre>Matches constructor declarations that are move constructors.
+
+Example matches #3, but not #1 or #2 (matcher = constructorDecl(isMoveConstructor())
+  struct S {
+    S(); // #1
+    S(const S &); // #2
+    S(S &&); // #3
+  };
+</pre></td></tr>
+
+
+<tr><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1CXXConversionDecl.html">CXXConversionDecl</a>&gt;</td><td class="name" onclick="toggle('isExplicit1')"><a name="isExplicit1Anchor">isExplicit</a></td><td></td></tr>
+<tr><td colspan="4" class="doc" id="isExplicit1"><pre>Matches a conversion declaration if it is marked explicit.
+
+Given
+  struct S {
+    operator int(); // #1
+    explicit operator bool(); // #2
+  };
+conversionDecl(isExplicit())
+  will match #2, but not #1.
+</pre></td></tr>
+
+
+<tr><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1CXXCtorInitializer.html">CXXCtorInitializer</a>&gt;</td><td class="name" onclick="toggle('isBaseInitializer0')"><a name="isBaseInitializer0Anchor">isBaseInitializer</a></td><td></td></tr>
+<tr><td colspan="4" class="doc" id="isBaseInitializer0"><pre>Matches a constructor initializer if it is initializing a base, as opposed to a member.
+
+Given
+  struct B {};
+  struct D : B {
+    int I;
+    D(int i) : I(i) {}
+  };
+  struct E : B {
+    E() : B() {}
+  };
+constructorDecl(hasAnyConstructorInitializer(isBaseInitializer()))
+  will match E(), but not match D(int).
+</pre></td></tr>
+
+
+<tr><td>Matcher&lt<a href="http://clang.llvm.org/doxygen/classclang_1_1CXXCtorInitializer.html">CXXCtorInitializer</a>&gt;</td><td class="name" onclick="toggle('isMemberInitializer0')"><a name="isMemberInitializer0Anchor">isMemberInitializer</a></td><td></td></tr>
+<tr><td colspan="4" class="doc" id="isMemberInitializer0"><pre>Matches a constructor initializer if it is initializing a direct member, as opposed to a base.
+
+Given
+  struct B {};
+  struct D : B {
+    int I;
+    D(int i) : I(i) {}
+  };
+  struct E : B {
+    E() : B() {}
+  };
+constructorDecl(hasAnyConstructorInitializer(isMemberInitializer()))
+  will match D(int), but not match E().
 </pre></td></tr>
 
 

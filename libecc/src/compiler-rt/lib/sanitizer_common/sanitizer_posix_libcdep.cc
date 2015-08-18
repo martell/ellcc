@@ -187,6 +187,7 @@ void InstallDeadlySignalHandlers(SignalHandlerType handler) {
   if (common_flags()->use_sigaltstack) SetAlternateSignalStack();
   MaybeInstallSigaction(SIGSEGV, handler);
   MaybeInstallSigaction(SIGBUS, handler);
+  MaybeInstallSigaction(SIGFPE, handler);
 }
 #endif  // SANITIZER_GO
 

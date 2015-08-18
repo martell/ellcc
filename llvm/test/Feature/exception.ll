@@ -25,3 +25,112 @@ lpad:                                             ; preds = %entry
 declare void @_Z3quxv() optsize
 
 declare i32 @__gxx_personality_v0(...)
+
+define void @cleanupret0() personality i32 (...)* @__gxx_personality_v0 {
+entry:
+  br label %try.cont
+
+try.cont:
+  invoke void @_Z3quxv() optsize
+          to label %try.cont unwind label %bb
+bb:
+  cleanuppad void [i7 4]
+  cleanupret i8 0 unwind label %bb
+}
+
+define void @cleanupret1() personality i32 (...)* @__gxx_personality_v0 {
+entry:
+  br label %try.cont
+
+try.cont:
+  invoke void @_Z3quxv() optsize
+          to label %try.cont unwind label %bb
+bb:
+  cleanuppad void [i7 4]
+  cleanupret void unwind label %bb
+}
+
+define void @cleanupret2() personality i32 (...)* @__gxx_personality_v0 {
+entry:
+  cleanupret i8 0 unwind to caller
+}
+
+define void @cleanupret3() personality i32 (...)* @__gxx_personality_v0 {
+  cleanupret void unwind to caller
+}
+
+define void @catchret() personality i32 (...)* @__gxx_personality_v0 {
+entry:
+  br label %bb
+bb:
+  catchret label %bb
+}
+
+define i8 @catchpad() personality i32 (...)* @__gxx_personality_v0 {
+entry:
+  br label %try.cont
+
+try.cont:
+  invoke void @_Z3quxv() optsize
+          to label %bb unwind label %bb2
+bb:
+  ret i8 0
+bb2:
+  %cbv = catchpad i8 [i7 4] to label %bb unwind label %bb2
+}
+
+define void @terminatepad0() personality i32 (...)* @__gxx_personality_v0 {
+entry:
+  br label %try.cont
+
+try.cont:
+  invoke void @_Z3quxv() optsize
+          to label %try.cont unwind label %bb
+bb:
+  terminatepad [i7 4] unwind label %bb
+}
+
+define void @terminatepad1() personality i32 (...)* @__gxx_personality_v0 {
+entry:
+  br label %try.cont
+
+try.cont:
+  invoke void @_Z3quxv() optsize
+          to label %try.cont unwind label %bb
+bb:
+  terminatepad [i7 4] unwind to caller
+}
+
+define void @cleanuppad() personality i32 (...)* @__gxx_personality_v0 {
+entry:
+  br label %try.cont
+
+try.cont:
+  invoke void @_Z3quxv() optsize
+          to label %try.cont unwind label %bb
+bb:
+  cleanuppad void [i7 4]
+  ret void
+}
+
+define void @catchendpad0() personality i32 (...)* @__gxx_personality_v0 {
+entry:
+  br label %try.cont
+
+try.cont:
+  invoke void @_Z3quxv() optsize
+          to label %try.cont unwind label %bb
+bb:
+  catchendpad unwind label %bb
+}
+
+define void @catchendpad1() personality i32 (...)* @__gxx_personality_v0 {
+entry:
+  br label %try.cont
+
+try.cont:
+  invoke void @_Z3quxv() optsize
+          to label %try.cont unwind label %bb
+bb:
+  catchendpad unwind to caller
+}

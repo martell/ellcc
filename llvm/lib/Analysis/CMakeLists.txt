@@ -2,7 +2,6 @@ add_llvm_library(LLVMAnalysis
   AliasAnalysis.cpp
   AliasAnalysisCounter.cpp
   AliasAnalysisEvaluator.cpp
-  AliasDebugger.cpp
   AliasSetTracker.cpp
   Analysis.cpp
   AssumptionCache.cpp
@@ -45,6 +44,7 @@ add_llvm_library(LLVMAnalysis
   MemoryLocation.cpp
   ModuleDebugInfoPrinter.cpp
   NoAliasAnalysis.cpp
+  OrderedBasicBlock.cpp
   PHITransAddr.cpp
   PostDominators.cpp
   PtrUseVisitor.cpp

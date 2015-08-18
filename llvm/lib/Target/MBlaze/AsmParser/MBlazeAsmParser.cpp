@@ -64,7 +64,7 @@ public:
   MBlazeAsmParser(MCSubtargetInfo &_STI, MCAsmParser &_Parser,
                   const MCInstrInfo &MII,
                   const MCTargetOptions &Options)
-    : MCTargetAsmParser(), STI(_STI), Parser(_Parser) {
+    : MCTargetAsmParser(Options), STI(_STI), Parser(_Parser) {
       setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
   }
 

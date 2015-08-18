@@ -57,7 +57,7 @@ void ReportFile::ReopenIfNecessary() {
       CloseFile(fd);
   }
 
-  const char *exe_name = GetBinaryBasename();
+  const char *exe_name = GetProcessName();
   if (common_flags()->log_exe_name && exe_name) {
     internal_snprintf(full_path, kMaxPathLength, "%s.%s.%zu", path_prefix,
                       exe_name, pid);
@@ -138,6 +138,23 @@ void NORETURN CheckFailed(const char *file, int line, const char *cond,
   Report("Sanitizer CHECK failed: %s:%d %s (%lld, %lld)\n", file, line, cond,
                                                             v1, v2);
   Die();
+}
+
+void NORETURN ReportMmapFailureAndDie(uptr size, const char *mem_type,
+                                      error_t err) {
+  static int recursion_count;
+  if (recursion_count) {
+    // The Report() and CHECK calls below may call mmap recursively and fail.
+    // If we went into recursion, just die.
+    RawWrite("ERROR: Failed to mmap\n");
+    Die();
+  }
+  recursion_count++;
+  Report("ERROR: %s failed to "
+         "allocate 0x%zx (%zd) bytes of %s (error code: %d)\n",
+         SanitizerToolName, size, size, mem_type, err);
+  DumpProcessMap();
+  UNREACHABLE("unable to mmap");
 }
 
 bool ReadFileToBuffer(const char *file_name, char **buff, uptr *buff_size,
@@ -344,11 +361,52 @@ bool TemplateMatch(const char *templ, const char *str) {
   return true;
 }
 
-static char binary_name_cache_str[kMaxPathLength];
-static const char *binary_basename_cache_str;
+static const char kPathSeparator = SANITIZER_WINDOWS ? ';' : ':';
 
-const char *GetBinaryBasename() {
-  return binary_basename_cache_str;
+char *FindPathToBinary(const char *name) {
+  const char *path = GetEnv("PATH");
+  if (!path)
+    return 0;
+  uptr name_len = internal_strlen(name);
+  InternalScopedBuffer<char> buffer(kMaxPathLength);
+  const char *beg = path;
+  while (true) {
+    const char *end = internal_strchrnul(beg, kPathSeparator);
+    uptr prefix_len = end - beg;
+    if (prefix_len + name_len + 2 <= kMaxPathLength) {
+      internal_memcpy(buffer.data(), beg, prefix_len);
+      buffer[prefix_len] = '/';
+      internal_memcpy(&buffer[prefix_len + 1], name, name_len);
+      buffer[prefix_len + 1 + name_len] = '\0';
+      if (FileExists(buffer.data()))
+        return internal_strdup(buffer.data());
+    }
+    if (*end == '\0') break;
+    beg = end + 1;
+  }
+  return nullptr;
+}
+
+static char binary_name_cache_str[kMaxPathLength];
+static char process_name_cache_str[kMaxPathLength];
+
+const char *GetProcessName() {
+  return process_name_cache_str;
+}
+
+static uptr ReadProcessName(/*out*/ char *buf, uptr buf_len) {
+  ReadLongProcessName(buf, buf_len);
+  char *s = const_cast<char *>(StripModuleName(buf));
+  uptr len = internal_strlen(s);
+  if (s != buf) {
+    internal_memmove(buf, s, len);
+    buf[len] = '\0';
+  }
+  return len;
+}
+
+void UpdateProcessName() {
+  ReadProcessName(process_name_cache_str, sizeof(process_name_cache_str));
 }
 
 // Call once to make sure that binary_name_cache_str is initialized
@@ -356,7 +414,7 @@ void CacheBinaryName() {
   if (binary_name_cache_str[0] != '\0')
     return;
   ReadBinaryName(binary_name_cache_str, sizeof(binary_name_cache_str));
-  binary_basename_cache_str = StripModuleName(binary_name_cache_str);
+  ReadProcessName(process_name_cache_str, sizeof(process_name_cache_str));
 }
 
 uptr ReadBinaryNameCached(/*out*/char *buf, uptr buf_len) {

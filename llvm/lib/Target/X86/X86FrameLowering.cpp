@@ -343,30 +343,6 @@ MachineInstrBuilder X86FrameLowering::BuildStackAdjustment(
   return MI;
 }
 
-/// mergeSPUpdatesUp - Merge two stack-manipulating instructions upper iterator.
-static
-void mergeSPUpdatesUp(MachineBasicBlock &MBB, MachineBasicBlock::iterator &MBBI,
-                      unsigned StackPtr, uint64_t *NumBytes = nullptr) {
-  if (MBBI == MBB.begin()) return;
-
-  MachineBasicBlock::iterator PI = std::prev(MBBI);
-  unsigned Opc = PI->getOpcode();
-  if ((Opc == X86::ADD64ri32 || Opc == X86::ADD64ri8 ||
-       Opc == X86::ADD32ri || Opc == X86::ADD32ri8 ||
-       Opc == X86::LEA32r || Opc == X86::LEA64_32r) &&
-      PI->getOperand(0).getReg() == StackPtr) {
-    if (NumBytes)
-      *NumBytes += PI->getOperand(2).getImm();
-    MBB.erase(PI);
-  } else if ((Opc == X86::SUB64ri32 || Opc == X86::SUB64ri8 ||
-              Opc == X86::SUB32ri || Opc == X86::SUB32ri8) &&
-             PI->getOperand(0).getReg() == StackPtr) {
-    if (NumBytes)
-      *NumBytes -= PI->getOperand(2).getImm();
-    MBB.erase(PI);
-  }
-}
-
 int X86FrameLowering::mergeSPUpdates(MachineBasicBlock &MBB,
                                      MachineBasicBlock::iterator &MBBI,
                                      bool doMergeWithPrevious) const {
@@ -1074,7 +1050,7 @@ void X86FrameLowering::emitEpilogue(MachineFunction &MF,
   // If there is an ADD32ri or SUB32ri of ESP immediately before this
   // instruction, merge the two instructions.
   if (NumBytes || MFI->hasVarSizedObjects())
-    mergeSPUpdatesUp(MBB, MBBI, StackPtr, &NumBytes);
+    NumBytes += mergeSPUpdates(MBB, MBBI, true);
 
   // If dynamic alloca is used, then reset esp to point to the last callee-saved
   // slot before popping them off! Same applies for the case, when stack was
@@ -1875,6 +1851,69 @@ void X86FrameLowering::adjustForHiPEPrologue(
 #endif
 }
 
+bool X86FrameLowering::adjustStackWithPops(MachineBasicBlock &MBB,
+    MachineBasicBlock::iterator MBBI, DebugLoc DL, int Offset) const {
+
+  if (Offset % SlotSize)
+    return false;
+
+  int NumPops = Offset / SlotSize;
+  // This is only worth it if we have at most 2 pops.
+  if (NumPops != 1 && NumPops != 2)
+    return false;
+
+  // Handle only the trivial case where the adjustment directly follows
+  // a call. This is the most common one, anyway.
+  if (MBBI == MBB.begin())
+    return false;
+  MachineBasicBlock::iterator Prev = std::prev(MBBI);
+  if (!Prev->isCall() || !Prev->getOperand(1).isRegMask())
+    return false;
+
+  unsigned Regs[2];
+  unsigned FoundRegs = 0;
+
+  auto RegMask = Prev->getOperand(1);
+  
+  // Try to find up to NumPops free registers. 
+  for (auto Candidate : X86::GR32_NOREX_NOSPRegClass) {
+
+    // Poor man's liveness:
+    // Since we're immediately after a call, any register that is clobbered
+    // by the call and not defined by it can be considered dead.
+    if (!RegMask.clobbersPhysReg(Candidate))
+      continue;
+
+    bool IsDef = false;
+    for (const MachineOperand &MO : Prev->implicit_operands()) {
+      if (MO.isReg() && MO.isDef() && MO.getReg() == Candidate) {
+        IsDef = true;
+        break;
+      }
+    }
+
+    if (IsDef)
+      continue;
+
+    Regs[FoundRegs++] = Candidate;
+    if (FoundRegs == (unsigned)NumPops)
+      break;
+  }
+
+  if (FoundRegs == 0)
+    return false;
+
+  // If we found only one free register, but need two, reuse the same one twice.
+  while (FoundRegs < (unsigned)NumPops)
+    Regs[FoundRegs++] = Regs[0];
+
+  for (int i = 0; i < NumPops; ++i)
+    BuildMI(MBB, MBBI, DL, 
+            TII.get(STI.is64Bit() ? X86::POP64r : X86::POP32r), Regs[i]);
+
+  return true;
+}
+
 void X86FrameLowering::
 eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
                               MachineBasicBlock::iterator I) const {
@@ -1906,8 +1945,12 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
     if (Amount) {
       // Add Amount to SP to destroy a frame, and subtract to setup.
       int Offset = isDestroy ? Amount : -Amount;
-      BuildStackAdjustment(MBB, I, DL, Offset, /*InEpilogue=*/false);
+
+      if (!(MF.getFunction()->optForMinSize() && 
+            adjustStackWithPops(MBB, I, DL, Offset)))
+        BuildStackAdjustment(MBB, I, DL, Offset, /*InEpilogue=*/false);
     }
+
     return;
   }
 

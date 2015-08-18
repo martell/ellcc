@@ -73,7 +73,7 @@ void ReplaceSystemMalloc();
 // asan_linux.cc / asan_mac.cc / asan_win.cc
 void *AsanDoesNotSupportStaticLinkage();
 
-void AsanOnSIGSEGV(int, void *siginfo, void *context);
+void AsanOnDeadlySignal(int, void *siginfo, void *context);
 
 void DisableReexec();
 void MaybeReexec();

@@ -1,9 +1,10 @@
 current SVN:
 
+* Update to LLVM r244919.
 * Update to LLVM r243216.
 * Update to LLVM r242605.
 * Update to LLVM r241992.
-* Update to LLVM r241406242605.
+* Update to LLVM r241406.
 * Update to LLVM r240899.
 * Update to LLVM r239675.
 * Update to LLVM r239219.

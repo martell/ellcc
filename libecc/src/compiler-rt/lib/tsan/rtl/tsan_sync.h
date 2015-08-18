@@ -107,16 +107,13 @@ class SyncTab {
   SyncVar* Create(ThreadState *thr, uptr pc, uptr addr);
 
  private:
-  struct Part {
-    Mutex mtx;
-    SyncVar *val;
-    char pad[kCacheLineSize - sizeof(Mutex) - sizeof(SyncVar*)];  // NOLINT
-    Part();
-  };
-
-  // FIXME: Implement something more sane.
-  static const int kPartCount = 1009;
-  Part tab_[kPartCount];
+  static const u32 kFlagMask  = 3u << 30;
+  static const u32 kFlagBlock = 1u << 30;
+  static const u32 kFlagSync  = 2u << 30;
+  typedef DenseSlabAlloc<MBlock, 1<<16, 1<<12> BlockAlloc;
+  typedef DenseSlabAlloc<SyncVar, 1<<16, 1<<10> SyncAlloc;
+  BlockAlloc block_alloc_;
+  SyncAlloc sync_alloc_;
   atomic_uint64_t uid_gen_;
 
   int PartIdx(uptr addr);
