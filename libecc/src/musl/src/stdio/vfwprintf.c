@@ -293,7 +293,10 @@ static int wprintf_core(FILE *f, const wchar_t *fmt, va_list *ap, union arg *nl_
 			if ((fl&LEFT_ADJ)) fprintf(f, "%.*s", w-p, "");
 			l=w;
 			continue;
+		case 'm':
+			arg.p = strerror(errno);
 		case 's':
+			if (!arg.p) arg.p = "(null)";
 			bs = arg.p;
 			if (p<0) p = INT_MAX;
 			for (i=l=0; l<p && (i=mbtowc(&wc, bs, MB_LEN_MAX))>0; bs+=i, l++);
@@ -356,7 +359,7 @@ int vfwprintf(FILE *restrict f, const wchar_t *restrict fmt, va_list ap)
 	}
 
 	FLOCK(f);
-	f->mode |= f->mode+1;
+	fwide(f, 1);
 	olderr = f->flags & F_ERR;
 	f->flags &= ~F_ERR;
 	ret = wprintf_core(f, fmt, &ap2, nl_arg, nl_type);

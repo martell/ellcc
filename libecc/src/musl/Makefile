@@ -52,6 +52,9 @@ TOOL_LIBS = lib/musl-gcc.specs
 ALL_LIBS = $(CRT_LIBS) $(STATIC_LIBS) $(SHARED_LIBS) $(EMPTY_LIBS) $(TOOL_LIBS)
 ALL_TOOLS = tools/musl-gcc
 
+WRAPCC_GCC = gcc
+WRAPCC_CLANG = clang
+
 LDSO_PATHNAME = $(syslibdir)/ld-musl-$(ARCH)$(SUBARCH).so.1
 
 -include config.mak
@@ -122,11 +125,19 @@ $(dir $(patsubst %/,%,$(dir $(1))))$(notdir $(1:.S=.o)): $(1)
 endef
 $(foreach s,$(wildcard src/*/$(ARCH)*/*.S),$(eval $(call mkasmdepS,$(s))))
 
+# Choose invocation of assembler to be used
+# $(1) is input file, $(2) is output file, $(3) is assembler flags
+ifeq ($(ADD_CFI),yes)
+	AS_CMD = LC_ALL=C awk -f tools/add-cfi.$(ARCH).awk $< | $(CC) -x assembler -c -o $@ -
+else
+	AS_CMD = $(CC) -c -o $@ $<
+endif
+
 %.o: $(ARCH)$(ASMSUBARCH)/%.sub
 	$(CC) $(CFLAGS_ALL_STATIC) -c -o $@ $(dir $<)$(shell cat $<)
 
 %.o: $(ARCH)/%.s
-	$(CC) $(CFLAGS_ALL_STATIC) -c -o $@ $<
+	$(AS_CMD) $(CFLAGS_ALL_STATIC)
 
 %.o: $(ARCH)/%.S
 	$(CC) $(CFLAGS_ALL_STATIC) -c -o $@ $<
@@ -138,7 +149,7 @@ $(foreach s,$(wildcard src/*/$(ARCH)*/*.S),$(eval $(call mkasmdepS,$(s))))
 	$(CC) $(CFLAGS_ALL_SHARED) -c -o $@ $(dir $<)$(shell cat $<)
 
 %.lo: $(ARCH)/%.s
-	$(CC) $(CFLAGS_ALL_SHARED) -c -o $@ $<
+	$(AS_CMD) $(CFLAGS_ALL_SHARED)
 
 %.lo: $(ARCH)/%.S
 	$(CC) $(CFLAGS_ALL_SHARED) -c -o $@ $<
@@ -167,7 +178,11 @@ lib/musl-gcc.specs: tools/musl-gcc.specs.sh config.mak
 	sh $< "$(includedir)" "$(libdir)" "$(LDSO_PATHNAME)" > $@
 
 tools/musl-gcc: config.mak
-	printf '#!/bin/sh\nexec "$${REALGCC:-gcc}" "$$@" -specs "%s/musl-gcc.specs"\n' "$(libdir)" > $@
+	printf '#!/bin/sh\nexec "$${REALGCC:-$(WRAPCC_GCC)}" "$$@" -specs "%s/musl-gcc.specs"\n' "$(libdir)" > $@
+	chmod +x $@
+
+tools/%-clang: tools/%-clang.in config.mak
+	sed -e 's!@CC@!$(WRAPCC_CLANG)!g' -e 's!@PREFIX@!$(prefix)!g' -e 's!@INCDIR@!$(includedir)!g' -e 's!@LIBDIR@!$(libdir)!g' -e 's!@LDSO@!$(LDSO_PATHNAME)!g' $< > $@
 	chmod +x $@
 
 $(DESTDIR)$(bindir)/%: tools/%
@@ -202,6 +217,6 @@ musl-%.tar.gz: .git
 
 -include $(DEPS)
 
-.PRECIOUS: $(CRT_LIBS:lib/%=crt/%)
+.SECONDARY:
 
 .PHONY: all clean install install-libs install-headers install-tools

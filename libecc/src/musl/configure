@@ -29,7 +29,7 @@ Optional features:
   --enable-warnings       build with recommended warnings flags [disabled]
   --enable-depends        build with include dependency information [disabled]
   --enable-visibility     use global visibility options to optimize PIC [auto]
-  --enable-gcc-wrapper    build musl-gcc toolchain wrapper [auto]
+  --enable-wrapper=...    build given musl toolchain wrapper [auto]
   --disable-shared        inhibit building shared library [enabled]
   --disable-static        inhibit building static library [enabled]
 
@@ -124,6 +124,8 @@ bindir='$(exec_prefix)/bin'
 libdir='$(prefix)/lib'
 includedir='$(prefix)/include'
 syslibdir='/lib'
+tools=
+tool_libs=
 target=
 optimize=auto
 debug=no
@@ -133,6 +135,8 @@ visibility=auto
 shared=auto
 static=yes
 wrapper=auto
+gcc_wrapper=no
+clang_wrapper=no
 
 for arg ; do
 case "$arg" in
@@ -158,7 +162,12 @@ case "$arg" in
 --disable-warnings|--enable-warnings=no) warnings=no ;;
 --enable-visibility|--enable-visibility=yes) visibility=yes ;;
 --disable-visibility|--enable-visibility=no) visibility=no ;;
---enable-gcc-wrapper|--enable-gcc-wrapper=yes) wrapper=yes ;;
+--enable-wrapper|--enable-wrapper=yes) wrapper=detect ;;
+--enable-wrapper=all) wrapper=yes ; gcc_wrapper=yes ; clang_wrapper=yes ;;
+--enable-wrapper=gcc) wrapper=yes ; gcc_wrapper=yes ;;
+--enable-wrapper=clang) wrapper=yes ; clang_wrapper=yes ;;
+--disable-wrapper|--enable-wrapper=no) wrapper=no ;;
+--enable-gcc-wrapper|--enable-gcc-wrapper=yes) wrapper=yes ; gcc_wrapper=yes ;;
 --disable-gcc-wrapper|--enable-gcc-wrapper=no) wrapper=no ;;
 --enable-*|--disable-*|--with-*|--without-*|--*dir=*|--build=*) ;;
 --host=*|--target=*) target=${arg#*=} ;;
@@ -219,36 +228,51 @@ tryldflag LDFLAGS_TRY -Werror=unknown-warning-option
 tryldflag LDFLAGS_TRY -Werror=unused-command-line-argument
 
 #
-# Need to know if the compiler is gcc to decide whether to build the
-# musl-gcc wrapper, and for critical bug detection in some gcc versions.
+# Need to know if the compiler is gcc or clang to decide which toolchain
+# wrappers to build.
 #
-printf "checking whether compiler is gcc... "
-if fnmatch '*gcc\ version*' "$(LC_ALL=C $CC -v 2>&1)" ; then
-cc_is_gcc=yes
+printf "checking for C compiler family... "
+cc_ver="$(LC_ALL=C $CC -v 2>&1)"
+cc_family=unknown
+if fnmatch '*gcc\ version*' "$cc_ver" ; then
+cc_family=gcc
+elif fnmatch '*clang\ version*' "$cc_ver" ; then
+cc_family=clang
+fi
+echo "$cc_family"
+
+#
+# Figure out toolchain wrapper to build
+#
+if test "$wrapper" = auto -o "$wrapper" = detect ; then
+echo "#include <stdlib.h>" > "$tmpc"
+echo "#if ! __GLIBC__" >> "$tmpc"
+echo "#error no" >> "$tmpc"
+echo "#endif" >> "$tmpc"
+printf "checking for toolchain wrapper to build... "
+if test "$wrapper" = auto && ! $CC -c -o /dev/null "$tmpc" >/dev/null 2>&1 ; then
+echo "none"
+elif test "$cc_family" = gcc ; then
+gcc_wrapper=yes
+echo "gcc"
+elif test "$cc_family" = clang ; then
+clang_wrapper=yes
+echo "clang"
 else
-cc_is_gcc=no
+echo "none"
+if test "$wrapper" = detect ; then
+fail "$0: could not find an appropriate toolchain wrapper"
 fi
-echo "$cc_is_gcc"
-
-#
-# Only build musl-gcc wrapper if toolchain does not already target musl
-#
-if test "$wrapper" = auto ; then
-printf "checking whether to build musl-gcc wrapper... "
-if test "$cc_is_gcc" = yes ; then
-wrapper=yes
-while read line ; do
-case "$line" in */ld-musl-*) wrapper=no ;; esac
-done <<EOF
-$($CC -dumpspecs)
-EOF
-else
-wrapper=no
 fi
-echo "$wrapper"
 fi
 
-
+if test "$gcc_wrapper" = yes ; then
+tools="$tools tools/musl-gcc"
+tool_libs="$tool_libs lib/musl-gcc.specs"
+fi
+if test "$clang_wrapper" = yes ; then
+tools="$tools tools/musl-clang tools/ld.musl-clang"
+fi
 
 #
 # Find the target architecture
@@ -331,6 +355,22 @@ tryflag CFLAGS_MEMOPS -fno-tree-loop-distribute-patterns
 # Enable debugging if requessted.
 #
 test "$debug" = yes && CFLAGS_AUTO=-g
+
+#
+# Preprocess asm files to add extra debugging information if debug is
+# enabled, our assembler supports the needed directives, and the
+# preprocessing script has been written for our architecture.
+#
+printf "checking whether we should preprocess assembly to add debugging information... "
+if fnmatch '-g*|*\ -g*' "$CFLAGS_AUTO $CFLAGS" &&
+   test -f "tools/add-cfi.$ARCH.awk" &&
+   printf ".file 1 \"srcfile.s\"\n.line 1\n.cfi_startproc\n.cfi_endproc" | $CC -g -x assembler -c -o /dev/null 2>/dev/null -
+then
+  ADD_CFI=yes
+else
+  ADD_CFI=no
+fi
+printf "%s\n" "$ADD_CFI"
 
 #
 # Possibly add a -O option to CFLAGS and select modules to optimize with
@@ -591,11 +631,14 @@ LDFLAGS = $LDFLAGS_AUTO $LDFLAGS
 CROSS_COMPILE = $CROSS_COMPILE
 LIBCC = $LIBCC
 OPTIMIZE_GLOBS = $OPTIMIZE_GLOBS
+ALL_TOOLS = $tools
+TOOL_LIBS = $tool_libs
+ADD_CFI = $ADD_CFI
 EOF
 test "x$static" = xno && echo "STATIC_LIBS ="
 test "x$shared" = xno && echo "SHARED_LIBS ="
-test "x$wrapper" = xno && echo "ALL_TOOLS ="
-test "x$wrapper" = xno && echo "TOOL_LIBS ="
+test "x$cc_family" = xgcc && echo 'WRAPCC_GCC = $(CC)'
+test "x$cc_family" = xclang && echo 'WRAPCC_CLANG = $(CC)'
 exec 1>&3 3>&-
 
 printf "done\n"

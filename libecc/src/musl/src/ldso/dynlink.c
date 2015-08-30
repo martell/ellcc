@@ -156,7 +156,7 @@ static uint32_t gnu_hash(const char *s0)
 	const unsigned char *s = (void *)s0;
 	uint_fast32_t h = 5381;
 	for (; *s; s++)
-		h = h*33 + *s;
+		h += h*32 + *s;
 	return h;
 }
 
@@ -174,30 +174,37 @@ static Sym *sysv_lookup(const char *s, uint32_t h, struct dso *dso)
 	return 0;
 }
 
-static Sym *gnu_lookup(const char *s, uint32_t h1, struct dso *dso)
+static Sym *gnu_lookup(uint32_t h1, uint32_t *hashtab, struct dso *dso, const char *s)
 {
-	Sym *syms = dso->syms;
-	char *strings = dso->strings;
-	uint32_t *hashtab = dso->ghashtab;
 	uint32_t nbuckets = hashtab[0];
 	uint32_t *buckets = hashtab + 4 + hashtab[2]*(sizeof(size_t)/4);
-	uint32_t h2;
-	uint32_t *hashval;
 	uint32_t i = buckets[h1 % nbuckets];
 
 	if (!i) return 0;
 
-	hashval = buckets + nbuckets + (i - hashtab[1]);
+	uint32_t *hashval = buckets + nbuckets + (i - hashtab[1]);
 
 	for (h1 |= 1; ; i++) {
-		h2 = *hashval++;
-		if ((!dso->versym || dso->versym[i] >= 0)
-		    && (h1 == (h2|1)) && !strcmp(s, strings + syms[i].st_name))
-			return syms+i;
+		uint32_t h2 = *hashval++;
+		if ((h1 == (h2|1)) && (!dso->versym || dso->versym[i] >= 0)
+		    && !strcmp(s, dso->strings + dso->syms[i].st_name))
+			return dso->syms+i;
 		if (h2 & 1) break;
 	}
 
 	return 0;
+}
+
+static Sym *gnu_lookup_filtered(uint32_t h1, uint32_t *hashtab, struct dso *dso, const char *s, uint32_t fofs, size_t fmask)
+{
+	const size_t *bloomwords = (const void *)(hashtab+4);
+	size_t f = bloomwords[fofs & (hashtab[2]-1)];
+	if (!(f & fmask)) return 0;
+
+	f >>= (h1 >> hashtab[3]) % (8 * sizeof f);
+	if (!(f & 1)) return 0;
+
+	return gnu_lookup(h1, hashtab, dso, s);
 }
 
 #define OK_TYPES (1<<STT_NOTYPE | 1<<STT_OBJECT | 1<<STT_FUNC | 1<<STT_COMMON | 1<<STT_TLS)
@@ -209,14 +216,20 @@ static Sym *gnu_lookup(const char *s, uint32_t h1, struct dso *dso)
 
 static struct symdef find_sym(struct dso *dso, const char *s, int need_def)
 {
-	uint32_t h = 0, gh = 0;
+	uint32_t h = 0, gh, gho, *ght;
+	size_t ghm = 0;
 	struct symdef def = {0};
 	for (; dso; dso=dso->next) {
 		Sym *sym;
 		if (!dso->global) continue;
-		if (dso->ghashtab) {
-			if (!gh) gh = gnu_hash(s);
-			sym = gnu_lookup(s, gh, dso);
+		if ((ght = dso->ghashtab)) {
+			if (!ghm) {
+				gh = gnu_hash(s);
+				int maskbits = 8 * sizeof ghm;
+				gho = gh / maskbits;
+				ghm = 1ul << gh % maskbits;
+			}
+			sym = gnu_lookup_filtered(gh, ght, dso, s, gho, ghm);
 		} else {
 			if (!h) h = sysv_hash(s);
 			sym = sysv_lookup(s, h, dso);
@@ -337,7 +350,7 @@ static void do_relocs(struct dso *dso, size_t *rel, size_t rel_size, size_t stri
 			*reloc_addr = def.dso->tls_id;
 			break;
 		case REL_DTPOFF:
-			*reloc_addr = tls_val + addend;
+			*reloc_addr = tls_val + addend - DTP_OFFSET;
 			break;
 #ifdef TLS_ABOVE_TP
 		case REL_TPOFF:
@@ -421,6 +434,28 @@ static void reclaim_gaps(struct dso *dso)
 		reclaim(dso, ph->p_vaddr+ph->p_memsz,
 			ph->p_vaddr+ph->p_memsz+PAGE_SIZE-1 & -PAGE_SIZE);
 	}
+}
+
+static void *mmap_fixed(void *p, size_t n, int prot, int flags, int fd, off_t off)
+{
+	char *q = mmap(p, n, prot, flags, fd, off);
+	if (q != MAP_FAILED || errno != EINVAL) return q;
+	/* Fallbacks for MAP_FIXED failure on NOMMU kernels. */
+	if (flags & MAP_ANONYMOUS) {
+		memset(p, 0, n);
+		return p;
+	}
+	ssize_t r;
+	if (lseek(fd, off, SEEK_SET) < 0) return MAP_FAILED;
+	for (q=p; n; q+=r, off+=r, n-=r) {
+		r = read(fd, q, n);
+		if (r < 0 && errno != EINTR) return MAP_FAILED;
+		if (!r) {
+			memset(q, 0, n);
+			break;
+		}
+	}
+	return p;
 }
 
 static void *map_library(int fd, struct dso *dso)
@@ -524,19 +559,20 @@ static void *map_library(int fd, struct dso *dso)
 		prot = (((ph->p_flags&PF_R) ? PROT_READ : 0) |
 			((ph->p_flags&PF_W) ? PROT_WRITE: 0) |
 			((ph->p_flags&PF_X) ? PROT_EXEC : 0));
-		if (mmap(base+this_min, this_max-this_min, prot, MAP_PRIVATE|MAP_FIXED, fd, off_start) == MAP_FAILED)
+		if (mmap_fixed(base+this_min, this_max-this_min, prot, MAP_PRIVATE|MAP_FIXED, fd, off_start) == MAP_FAILED)
 			goto error;
 		if (ph->p_memsz > ph->p_filesz) {
 			size_t brk = (size_t)base+ph->p_vaddr+ph->p_filesz;
 			size_t pgbrk = brk+PAGE_SIZE-1 & -PAGE_SIZE;
 			memset((void *)brk, 0, pgbrk-brk & PAGE_SIZE-1);
-			if (pgbrk-(size_t)base < this_max && mmap((void *)pgbrk, (size_t)base+this_max-pgbrk, prot, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) == MAP_FAILED)
+			if (pgbrk-(size_t)base < this_max && mmap_fixed((void *)pgbrk, (size_t)base+this_max-pgbrk, prot, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) == MAP_FAILED)
 				goto error;
 		}
 	}
 	for (i=0; ((size_t *)(base+dyn))[i]; i+=2)
 		if (((size_t *)(base+dyn))[i]==DT_TEXTREL) {
-			if (mprotect(map, map_len, PROT_READ|PROT_WRITE|PROT_EXEC) < 0)
+			if (mprotect(map, map_len, PROT_READ|PROT_WRITE|PROT_EXEC)
+			    && errno != ENOSYS)
 				goto error;
 			break;
 		}
@@ -927,7 +963,8 @@ static void reloc_all(struct dso *p)
 		do_relocs(p, (void *)(p->base+dyn[DT_RELA]), dyn[DT_RELASZ], 3);
 
 		if (head != &ldso && p->relro_start != p->relro_end &&
-		    mprotect(p->base+p->relro_start, p->relro_end-p->relro_start, PROT_READ) < 0) {
+		    mprotect(p->base+p->relro_start, p->relro_end-p->relro_start, PROT_READ)
+		    && errno != ENOSYS) {
 			error("Error relocating %s: RELRO protection failed: %m",
 				p->name);
 			if (runtime) longjmp(*rtld_fail, 1);
@@ -1078,7 +1115,7 @@ void *__tls_get_new(size_t *v)
 	__block_all_sigs(&set);
 	if (v[0]<=(size_t)self->dtv[0]) {
 		__restore_sigs(&set);
-		return (char *)self->dtv[v[0]]+v[1];
+		return (char *)self->dtv[v[0]]+v[1]+DTP_OFFSET;
 	}
 
 	/* This is safe without any locks held because, if the caller
@@ -1111,7 +1148,7 @@ void *__tls_get_new(size_t *v)
 		if (p->tls_id == v[0]) break;
 	}
 	__restore_sigs(&set);
-	return mem + v[1];
+	return mem + v[1] + DTP_OFFSET;
 }
 
 static void update_tls_size()
@@ -1192,6 +1229,17 @@ _Noreturn void __dls3(size_t *sp)
 	char **argv_orig = argv;
 	char **envp = argv+argc+1;
 
+	/* Find aux vector just past environ[] and use it to initialize
+	 * global data that may be needed before we can make syscalls. */
+	__environ = envp;
+	for (i=argc+1; argv[i]; i++);
+	libc.auxv = auxv = (void *)(argv+i+1);
+	decode_vec(auxv, aux, AUX_CNT);
+	__hwcap = aux[AT_HWCAP];
+	libc.page_size = aux[AT_PAGESZ];
+	libc.secure = ((aux[0]&0x7800)!=0x7800 || aux[AT_UID]!=aux[AT_EUID]
+		|| aux[AT_GID]!=aux[AT_EGID] || aux[AT_SECURE]);
+
 	/* Setup early thread pointer in builtin_tls for ldso/libc itself to
 	 * use during dynamic linking. If possible it will also serve as the
 	 * thread pointer at runtime. */
@@ -1200,25 +1248,11 @@ _Noreturn void __dls3(size_t *sp)
 		a_crash();
 	}
 
-	/* Find aux vector just past environ[] */
-	for (i=argc+1; argv[i]; i++)
-		if (!memcmp(argv[i], "LD_LIBRARY_PATH=", 16))
-			env_path = argv[i]+16;
-		else if (!memcmp(argv[i], "LD_PRELOAD=", 11))
-			env_preload = argv[i]+11;
-	auxv = (void *)(argv+i+1);
-
-	decode_vec(auxv, aux, AUX_CNT);
-
 	/* Only trust user/env if kernel says we're not suid/sgid */
-	if ((aux[0]&0x7800)!=0x7800 || aux[AT_UID]!=aux[AT_EUID]
-	  || aux[AT_GID]!=aux[AT_EGID] || aux[AT_SECURE]) {
-		env_path = 0;
-		env_preload = 0;
-		libc.secure = 1;
+	if (!libc.secure) {
+		env_path = getenv("LD_LIBRARY_PATH");
+		env_preload = getenv("LD_PRELOAD");
 	}
-	libc.page_size = aux[AT_PAGESZ];
-	libc.auxv = auxv;
 
 	/* If the main program was already loaded by the kernel,
 	 * AT_PHDR will point to some location other than the dynamic
@@ -1523,7 +1557,7 @@ void *__tls_get_addr(size_t *);
 static void *do_dlsym(struct dso *p, const char *s, void *ra)
 {
 	size_t i;
-	uint32_t h = 0, gh = 0;
+	uint32_t h = 0, gh = 0, *ght;
 	Sym *sym;
 	if (p == head || p == RTLD_DEFAULT || p == RTLD_NEXT) {
 		if (p == RTLD_DEFAULT) {
@@ -1541,9 +1575,9 @@ static void *do_dlsym(struct dso *p, const char *s, void *ra)
 	}
 	if (invalid_dso_handle(p))
 		return 0;
-	if (p->ghashtab) {
+	if ((ght = p->ghashtab)) {
 		gh = gnu_hash(s);
-		sym = gnu_lookup(s, gh, p);
+		sym = gnu_lookup(gh, ght, p, s);
 	} else {
 		h = sysv_hash(s);
 		sym = sysv_lookup(s, h, p);
@@ -1553,9 +1587,9 @@ static void *do_dlsym(struct dso *p, const char *s, void *ra)
 	if (sym && sym->st_value && (1<<(sym->st_info&0xf) & OK_TYPES))
 		return p->base + sym->st_value;
 	if (p->deps) for (i=0; p->deps[i]; i++) {
-		if (p->deps[i]->ghashtab) {
+		if ((ght = p->deps[i]->ghashtab)) {
 			if (!gh) gh = gnu_hash(s);
-			sym = gnu_lookup(s, gh, p->deps[i]);
+			sym = gnu_lookup(gh, ght, p->deps[i], s);
 		} else {
 			if (!h) h = sysv_hash(s);
 			sym = sysv_lookup(s, h, p->deps[i]);

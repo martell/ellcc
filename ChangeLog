@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to musl 1.1.11.
 * Update to LLVM r246362.
 * Update to LLVM r244919.
 * Update to LLVM r243216.
