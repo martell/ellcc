@@ -58,7 +58,9 @@
 #endif
 
 #include "exec/cputlb.h"
+#include "exec/tb-hash.h"
 #include "translate-all.h"
+#include "qemu/bitmap.h"
 #include "qemu/timer.h"
 
 //#define DEBUG_TB_INVALIDATE
@@ -79,7 +81,7 @@ typedef struct PageDesc {
     /* in order to optimize self modifying code, we count the number
        of lookups we do to a given page to use a bitmap */
     unsigned int code_write_count;
-    uint8_t *code_bitmap;
+    unsigned long *code_bitmap;
 #if defined(CONFIG_USER_ONLY)
     unsigned long flags;
 #endif
@@ -116,6 +118,7 @@ typedef struct PageDesc {
 #define V_L1_SHIFT (L1_MAP_ADDR_SPACE_BITS - TARGET_PAGE_BITS - V_L1_BITS)
 
 uintptr_t qemu_real_host_page_size;
+uintptr_t qemu_real_host_page_mask;
 uintptr_t qemu_host_page_size;
 uintptr_t qemu_host_page_mask;
 
@@ -305,6 +308,7 @@ void page_size_init(void)
     /* NOTE: we can always suppose that qemu_host_page_size >=
        TARGET_PAGE_SIZE */
     qemu_real_host_page_size = getpagesize();
+    qemu_real_host_page_mask = ~(qemu_real_host_page_size - 1);
     if (qemu_host_page_size == 0) {
         qemu_host_page_size = qemu_real_host_page_size;
     }
@@ -389,18 +393,6 @@ static PageDesc *page_find_alloc(tb_page_addr_t index, int alloc)
     void **lp;
     int i;
 
-#if defined(CONFIG_USER_ONLY)
-    /* We can't use g_malloc because it may recurse into a locked mutex. */
-# define ALLOC(P, SIZE)                                 \
-    do {                                                \
-        P = mmap(NULL, SIZE, PROT_READ | PROT_WRITE,    \
-                 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);   \
-    } while (0)
-#else
-# define ALLOC(P, SIZE) \
-    do { P = g_malloc0(SIZE); } while (0)
-#endif
-
     /* Level 1.  Always allocated.  */
     lp = l1_map + ((index >> V_L1_SHIFT) & (V_L1_SIZE - 1));
 
@@ -412,7 +404,7 @@ static PageDesc *page_find_alloc(tb_page_addr_t index, int alloc)
             if (!alloc) {
                 return NULL;
             }
-            ALLOC(p, sizeof(void *) * V_L2_SIZE);
+            p = g_new0(void *, V_L2_SIZE);
             *lp = p;
         }
 
@@ -424,11 +416,9 @@ static PageDesc *page_find_alloc(tb_page_addr_t index, int alloc)
         if (!alloc) {
             return NULL;
         }
-        ALLOC(pd, sizeof(PageDesc) * V_L2_SIZE);
+        pd = g_new0(PageDesc, V_L2_SIZE);
         *lp = pd;
     }
-
-#undef ALLOC
 
     return pd + (index & (V_L2_SIZE - 1));
 }
@@ -782,10 +772,8 @@ static void page_flush_tb(void)
 
 /* flush all the translation blocks */
 /* XXX: tb_flush is currently not thread safe */
-void tb_flush(CPUArchState *env1)
+void tb_flush(CPUState *cpu)
 {
-    CPUState *cpu = ENV_GET_CPU(env1);
-
 #if defined(DEBUG_FLUSH)
     printf("qemu: flush code_size=%ld nb_tbs=%d avg_tb_size=%ld\n",
            (unsigned long)(tcg_ctx.code_gen_ptr - tcg_ctx.code_gen_buffer),
@@ -978,39 +966,12 @@ void tb_phys_invalidate(TranslationBlock *tb, tb_page_addr_t page_addr)
     tcg_ctx.tb_ctx.tb_phys_invalidate_count++;
 }
 
-static inline void set_bits(uint8_t *tab, int start, int len)
-{
-    int end, mask, end1;
-
-    end = start + len;
-    tab += start >> 3;
-    mask = 0xff << (start & 7);
-    if ((start & ~7) == (end & ~7)) {
-        if (start < end) {
-            mask &= ~(0xff << (end & 7));
-            *tab |= mask;
-        }
-    } else {
-        *tab++ |= mask;
-        start = (start + 8) & ~7;
-        end1 = end & ~7;
-        while (start < end1) {
-            *tab++ = 0xff;
-            start += 8;
-        }
-        if (start < end) {
-            mask = ~(0xff << (end & 7));
-            *tab |= mask;
-        }
-    }
-}
-
 static void build_page_bitmap(PageDesc *p)
 {
     int n, tb_start, tb_end;
     TranslationBlock *tb;
 
-    p->code_bitmap = g_malloc0(TARGET_PAGE_SIZE / 8);
+    p->code_bitmap = bitmap_new(TARGET_PAGE_SIZE);
 
     tb = p->first_tb;
     while (tb != NULL) {
@@ -1029,7 +990,7 @@ static void build_page_bitmap(PageDesc *p)
             tb_start = 0;
             tb_end = ((tb->pc + tb->size) & ~TARGET_PAGE_MASK);
         }
-        set_bits(p->code_bitmap, tb_start, tb_end - tb_start);
+        bitmap_set(p->code_bitmap, tb_start, tb_end - tb_start);
         tb = tb->page_next[n];
     }
 }
@@ -1051,7 +1012,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
     tb = tb_alloc(pc);
     if (!tb) {
         /* flush must be done */
-        tb_flush(env);
+        tb_flush(cpu);
         /* cannot fail at this point */
         tb = tb_alloc(pc);
         /* Don't forget to invalidate previous TB info.  */
@@ -1082,11 +1043,10 @@ TranslationBlock *tb_gen_code(CPUState *cpu,
  * access: the virtual CPU will exit the current TB if code is modified inside
  * this TB.
  */
-void tb_invalidate_phys_range(tb_page_addr_t start, tb_page_addr_t end,
-                              int is_cpu_write_access)
+void tb_invalidate_phys_range(tb_page_addr_t start, tb_page_addr_t end)
 {
     while (start < end) {
-        tb_invalidate_phys_page_range(start, end, is_cpu_write_access);
+        tb_invalidate_phys_page_range(start, end, 0);
         start &= TARGET_PAGE_MASK;
         start += TARGET_PAGE_SIZE;
     }
@@ -1122,12 +1082,6 @@ void tb_invalidate_phys_page_range(tb_page_addr_t start, tb_page_addr_t end,
     p = page_find(start >> TARGET_PAGE_BITS);
     if (!p) {
         return;
-    }
-    if (!p->code_bitmap &&
-        ++p->code_write_count >= SMC_BITMAP_USE_THRESHOLD &&
-        is_cpu_write_access) {
-        /* build code bitmap */
-        build_page_bitmap(p);
     }
 #if defined(TARGET_HAS_PRECISE_SMC)
     if (cpu != NULL) {
@@ -1198,9 +1152,7 @@ void tb_invalidate_phys_page_range(tb_page_addr_t start, tb_page_addr_t end,
     /* if no code remaining, no need to continue to use slow writes */
     if (!p->first_tb) {
         invalidate_page_bitmap(p);
-        if (is_cpu_write_access) {
-            tlb_unprotect_code_phys(cpu, start, cpu->mem_io_vaddr);
-        }
+        tlb_unprotect_code(start);
     }
 #endif
 #ifdef TARGET_HAS_PRECISE_SMC
@@ -1219,7 +1171,6 @@ void tb_invalidate_phys_page_range(tb_page_addr_t start, tb_page_addr_t end,
 void tb_invalidate_phys_page_fast(tb_page_addr_t start, int len)
 {
     PageDesc *p;
-    int offset, b;
 
 #if 0
     if (1) {
@@ -1234,9 +1185,17 @@ void tb_invalidate_phys_page_fast(tb_page_addr_t start, int len)
     if (!p) {
         return;
     }
+    if (!p->code_bitmap &&
+        ++p->code_write_count >= SMC_BITMAP_USE_THRESHOLD) {
+        /* build code bitmap */
+        build_page_bitmap(p);
+    }
     if (p->code_bitmap) {
-        offset = start & ~TARGET_PAGE_MASK;
-        b = p->code_bitmap[offset >> 3] >> (offset & 7);
+        unsigned int nr;
+        unsigned long b;
+
+        nr = start & ~TARGET_PAGE_MASK;
+        b = p->code_bitmap[BIT_WORD(nr)] >> (nr & (BITS_PER_LONG - 1));
         if (b & ((1 << len) - 1)) {
             goto do_invalidate;
         }
@@ -1454,14 +1413,17 @@ void tb_invalidate_phys_addr(AddressSpace *as, hwaddr addr)
     MemoryRegion *mr;
     hwaddr l = 1;
 
+    rcu_read_lock();
     mr = address_space_translate(as, addr, &addr, &l, false);
     if (!(memory_region_is_ram(mr)
           || memory_region_is_romd(mr))) {
+        rcu_read_unlock();
         return;
     }
     ram_addr = (memory_region_get_ram_addr(mr) & TARGET_PAGE_MASK)
         + addr;
     tb_invalidate_phys_page_range(ram_addr, ram_addr + 1, 0);
+    rcu_read_unlock();
 }
 #endif /* !defined(CONFIG_USER_ONLY) */
 
@@ -1470,12 +1432,22 @@ void tb_check_watchpoint(CPUState *cpu)
     TranslationBlock *tb;
 
     tb = tb_find_pc(cpu->mem_io_pc);
-    if (!tb) {
-        cpu_abort(cpu, "check_watchpoint: could not find TB for pc=%p",
-                  (void *)cpu->mem_io_pc);
+    if (tb) {
+        /* We can use retranslation to find the PC.  */
+        cpu_restore_state_from_tb(cpu, tb, cpu->mem_io_pc);
+        tb_phys_invalidate(tb, -1);
+    } else {
+        /* The exception probably happened in a helper.  The CPU state should
+           have been saved before calling it. Fetch the PC from there.  */
+        CPUArchState *env = cpu->env_ptr;
+        target_ulong pc, cs_base;
+        tb_page_addr_t addr;
+        int flags;
+
+        cpu_get_tb_cpu_state(env, &pc, &cs_base, &flags);
+        addr = get_page_addr_code(env, pc);
+        tb_invalidate_phys_range(addr, addr + 1);
     }
-    cpu_restore_state_from_tb(cpu, tb, cpu->mem_io_pc);
-    tb_phys_invalidate(tb, -1);
 }
 
 #ifndef CONFIG_USER_ONLY

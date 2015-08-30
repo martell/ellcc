@@ -515,6 +515,17 @@ int blk_write(BlockBackend *blk, int64_t sector_num, const uint8_t *buf,
     return bdrv_write(blk->bs, sector_num, buf, nb_sectors);
 }
 
+int blk_write_zeroes(BlockBackend *blk, int64_t sector_num,
+                     int nb_sectors, BdrvRequestFlags flags)
+{
+    int ret = blk_check_request(blk, sector_num, nb_sectors);
+    if (ret < 0) {
+        return ret;
+    }
+
+    return bdrv_write_zeroes(blk->bs, sector_num, nb_sectors, flags);
+}
+
 static void error_callback_bh(void *opaque)
 {
     struct BlockBackendAIOCB *acb = opaque;
@@ -687,6 +698,11 @@ int blk_flush(BlockBackend *blk)
 int blk_flush_all(void)
 {
     return bdrv_flush_all();
+}
+
+void blk_drain(BlockBackend *blk)
+{
+    bdrv_drain(blk->bs);
 }
 
 void blk_drain_all(void)

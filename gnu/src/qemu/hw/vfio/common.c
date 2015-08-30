@@ -270,13 +270,14 @@ static void vfio_iommu_map_notify(Notifier *n, void *data)
      * this IOMMU to its immediate target.  We need to translate
      * it the rest of the way through to memory.
      */
+    rcu_read_lock();
     mr = address_space_translate(&address_space_memory,
                                  iotlb->translated_addr,
                                  &xlat, &len, iotlb->perm & IOMMU_WO);
     if (!memory_region_is_ram(mr)) {
         error_report("iommu map to non memory area %"HWADDR_PRIx"",
                      xlat);
-        return;
+        goto out;
     }
     /*
      * Translation truncates length to the IOMMU page size,
@@ -284,7 +285,7 @@ static void vfio_iommu_map_notify(Notifier *n, void *data)
      */
     if (len & iotlb->addr_mask) {
         error_report("iommu has granularity incompatible with target AS");
-        return;
+        goto out;
     }
 
     if ((iotlb->perm & IOMMU_RW) != IOMMU_NONE) {
@@ -307,6 +308,8 @@ static void vfio_iommu_map_notify(Notifier *n, void *data)
                          iotlb->addr_mask + 1, ret);
         }
     }
+out:
+    rcu_read_unlock();
 }
 
 static void vfio_listener_region_add(MemoryListener *listener,
@@ -769,11 +772,19 @@ static void vfio_disconnect_container(VFIOGroup *group)
 
     if (QLIST_EMPTY(&container->group_list)) {
         VFIOAddressSpace *space = container->space;
+        VFIOGuestIOMMU *giommu, *tmp;
 
         if (container->iommu_data.release) {
             container->iommu_data.release(container);
         }
         QLIST_REMOVE(container, next);
+
+        QLIST_FOREACH_SAFE(giommu, &container->giommu_list, giommu_next, tmp) {
+            memory_region_unregister_iommu_notifier(&giommu->n);
+            QLIST_REMOVE(giommu, giommu_next);
+            g_free(giommu);
+        }
+
         trace_vfio_disconnect_container(container->fd);
         close(container->fd);
         g_free(container);

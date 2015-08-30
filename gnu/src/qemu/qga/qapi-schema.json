@@ -150,7 +150,7 @@
 #
 # Since 1.1.0
 ##
-{ 'type': 'GuestAgentCommandInfo',
+{ 'struct': 'GuestAgentCommandInfo',
   'data': { 'name': 'str', 'enabled': 'bool', 'success-response': 'bool' } }
 
 ##
@@ -164,7 +164,7 @@
 #
 # Since 0.15.0
 ##
-{ 'type': 'GuestAgentInfo',
+{ 'struct': 'GuestAgentInfo',
   'data': { 'version': 'str',
             'supported_commands': ['GuestAgentCommandInfo'] } }
 ##
@@ -195,7 +195,7 @@
 # Since: 0.15.0
 ##
 { 'command': 'guest-shutdown', 'data': { '*mode': 'str' },
-  'success-response': 'no' }
+  'success-response': false }
 
 ##
 # @guest-file-open:
@@ -242,7 +242,7 @@
 #
 # Since: 0.15.0
 ##
-{ 'type': 'GuestFileRead',
+{ 'struct': 'GuestFileRead',
   'data': { 'count': 'int', 'buf-b64': 'str', 'eof': 'bool' } }
 
 ##
@@ -274,7 +274,7 @@
 #
 # Since: 0.15.0
 ##
-{ 'type': 'GuestFileWrite',
+{ 'struct': 'GuestFileWrite',
   'data': { 'count': 'int', 'eof': 'bool' } }
 
 ##
@@ -309,7 +309,7 @@
 #
 # Since: 0.15.0
 ##
-{ 'type': 'GuestFileSeek',
+{ 'struct': 'GuestFileSeek',
   'data': { 'position': 'int', 'eof': 'bool' } }
 
 ##
@@ -425,6 +425,30 @@
   'returns': 'int' }
 
 ##
+# @GuestFilesystemTrimResult
+#
+# @path: path that was trimmed
+# @error: an error message when trim failed
+# @trimmed: bytes trimmed for this path
+# @minimum: reported effective minimum for this path
+#
+# Since: 2.4
+##
+{ 'struct': 'GuestFilesystemTrimResult',
+  'data': {'path': 'str',
+           '*trimmed': 'int', '*minimum': 'int', '*error': 'str'} }
+
+##
+# @GuestFilesystemTrimResponse
+#
+# @paths: list of @GuestFilesystemTrimResult per path that was trimmed
+#
+# Since: 2.4
+##
+{ 'struct': 'GuestFilesystemTrimResponse',
+  'data': {'paths': ['GuestFilesystemTrimResult']} }
+
+##
 # @guest-fstrim:
 #
 # Discard (or "trim") blocks which are not in use by the filesystem.
@@ -437,12 +461,14 @@
 #       fragmented free space, although not all blocks will be discarded.
 #       The default value is zero, meaning "discard every free block".
 #
-# Returns: Nothing.
+# Returns: A @GuestFilesystemTrimResponse which contains the
+#          status of all trimmed paths. (since 2.4)
 #
 # Since: 1.2
 ##
 { 'command': 'guest-fstrim',
-  'data': { '*minimum': 'int' } }
+  'data': { '*minimum': 'int' },
+  'returns': 'GuestFilesystemTrimResponse' }
 
 ##
 # @guest-suspend-disk
@@ -470,7 +496,7 @@
 #
 # Since: 1.1
 ##
-{ 'command': 'guest-suspend-disk', 'success-response': 'no' }
+{ 'command': 'guest-suspend-disk', 'success-response': false }
 
 ##
 # @guest-suspend-ram
@@ -502,7 +528,7 @@
 #
 # Since: 1.1
 ##
-{ 'command': 'guest-suspend-ram', 'success-response': 'no' }
+{ 'command': 'guest-suspend-ram', 'success-response': false }
 
 ##
 # @guest-suspend-hybrid
@@ -529,7 +555,7 @@
 #
 # Since: 1.1
 ##
-{ 'command': 'guest-suspend-hybrid', 'success-response': 'no' }
+{ 'command': 'guest-suspend-hybrid', 'success-response': false }
 
 ##
 # @GuestIpAddressType:
@@ -556,7 +582,7 @@
 #
 # Since: 1.1
 ##
-{ 'type': 'GuestIpAddress',
+{ 'struct': 'GuestIpAddress',
   'data': {'ip-address': 'str',
            'ip-address-type': 'GuestIpAddressType',
            'prefix': 'int'} }
@@ -572,7 +598,7 @@
 #
 # Since: 1.1
 ##
-{ 'type': 'GuestNetworkInterface',
+{ 'struct': 'GuestNetworkInterface',
   'data': {'name': 'str',
            '*hardware-address': 'str',
            '*ip-addresses': ['GuestIpAddress'] } }
@@ -604,7 +630,7 @@
 #
 # Since: 1.5
 ##
-{ 'type': 'GuestLogicalProcessor',
+{ 'struct': 'GuestLogicalProcessor',
   'data': {'logical-id': 'int',
            'online': 'bool',
            '*can-offline': 'bool'} }
@@ -677,12 +703,24 @@
 # @uml: UML disks
 # @sata: SATA disks
 # @sd: SD cards
+# @unknown: Unknown bus type
+# @ieee1394: Win IEEE 1394 bus type
+# @ssa: Win SSA bus type
+# @fibre: Win fiber channel bus type
+# @raid: Win RAID bus type
+# @iscsi: Win iScsi bus type
+# @sas: Win serial-attaches SCSI bus type
+# @mmc: Win multimedia card (MMC) bus type
+# @virtual: Win virtual bus type
+# @file-backed virtual: Win file-backed bus type
 #
-# Since: 2.2
+# Since: 2.2; 'Unknown' and all entries below since 2.4
 ##
 { 'enum': 'GuestDiskBusType',
   'data': [ 'ide', 'fdc', 'scsi', 'virtio', 'xen', 'usb', 'uml', 'sata',
-            'sd' ] }
+            'sd', 'unknown', 'ieee1394', 'ssa', 'fibre', 'raid', 'iscsi',
+            'sas', 'mmc', 'virtual', 'file-backed-virtual' ] }
+
 
 ##
 # @GuestPCIAddress:
@@ -694,7 +732,7 @@
 #
 # Since: 2.2
 ##
-{ 'type': 'GuestPCIAddress',
+{ 'struct': 'GuestPCIAddress',
   'data': {'domain': 'int', 'bus': 'int',
            'slot': 'int', 'function': 'int'} }
 
@@ -709,7 +747,7 @@
 #
 # Since: 2.2
 ##
-{ 'type': 'GuestDiskAddress',
+{ 'struct': 'GuestDiskAddress',
   'data': {'pci-controller': 'GuestPCIAddress',
            'bus-type': 'GuestDiskBusType',
            'bus': 'int', 'target': 'int', 'unit': 'int'} }
@@ -725,7 +763,7 @@
 #
 # Since: 2.2
 ##
-{ 'type': 'GuestFilesystemInfo',
+{ 'struct': 'GuestFilesystemInfo',
   'data': {'name': 'str', 'mountpoint': 'str', 'type': 'str',
            'disk': ['GuestDiskAddress']} }
 
@@ -782,7 +820,7 @@
 #
 # Since: 2.3
 ##
-{ 'type': 'GuestMemoryBlock',
+{ 'struct': 'GuestMemoryBlock',
   'data': {'phys-index': 'uint64',
            'online': 'bool',
            '*can-offline': 'bool'} }
@@ -808,7 +846,7 @@
 #
 # An enumeration of memory block operation result.
 #
-# @sucess: the operation of online/offline memory block is successful.
+# @success: the operation of online/offline memory block is successful.
 # @not-found: can't find the corresponding memoryXXX directory in sysfs.
 # @operation-not-supported: for some old kernels, it does not support
 #                           online or offline memory block.
@@ -835,7 +873,7 @@
 #
 # Since: 2.3
 ##
-{ 'type': 'GuestMemoryBlockResponse',
+{ 'struct': 'GuestMemoryBlockResponse',
   'data': { 'phys-index': 'uint64',
             'response': 'GuestMemoryBlockResponseType',
             '*error-code': 'int' }}
@@ -876,7 +914,7 @@
 #
 # Since: 2.3
 ##
-{ 'type': 'GuestMemoryBlockInfo',
+{ 'struct': 'GuestMemoryBlockInfo',
   'data': {'size': 'uint64'} }
 
 ##

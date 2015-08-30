@@ -79,10 +79,16 @@ struct BlockJob {
     bool cancelled;
 
     /**
-     * Set to true if the job is either paused, or will pause itself
-     * as soon as possible (if busy == true).
+     * Counter for pause request. If non-zero, the block job is either paused,
+     * or if busy == true will pause itself as soon as possible.
      */
-    bool paused;
+    int pause_count;
+
+    /**
+     * Set to true if the job is paused by user.  Can be unpaused with the
+     * block-job-resume QMP command.
+     */
+    bool user_paused;
 
     /**
      * Set to false by the job while it is in a quiescent state, where
@@ -160,6 +166,14 @@ void block_job_sleep_ns(BlockJob *job, QEMUClockType type, int64_t ns);
 void block_job_yield(BlockJob *job);
 
 /**
+ * block_job_release:
+ * @bs: The block device.
+ *
+ * Release job resources when an error occurred or job completed.
+ */
+void block_job_release(BlockDriverState *bs);
+
+/**
  * block_job_completed:
  * @job: The job being completed.
  * @ret: The status code.
@@ -225,9 +239,17 @@ void block_job_pause(BlockJob *job);
  * block_job_resume:
  * @job: The job to be resumed.
  *
- * Resume the specified job.
+ * Resume the specified job.  Must be paired with a preceding block_job_pause.
  */
 void block_job_resume(BlockJob *job);
+
+/**
+ * block_job_enter:
+ * @job: The job to enter.
+ *
+ * Continue the specified job by entering the coroutine.
+ */
+void block_job_enter(BlockJob *job);
 
 /**
  * block_job_event_cancelled:

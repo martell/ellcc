@@ -804,7 +804,7 @@ static int megasas_ctrl_get_info(MegasasState *s, MegasasCmd *cmd)
                                MFI_INFO_LDOPS_READ_POLICY);
     info.max_strips_per_io = cpu_to_le16(s->fw_sge);
     info.stripe_sz_ops.min = 3;
-    info.stripe_sz_ops.max = ffs(MEGASAS_MAX_SECTORS + 1) - 1;
+    info.stripe_sz_ops.max = ctz32(MEGASAS_MAX_SECTORS + 1);
     info.properties.pred_fail_poll_interval = cpu_to_le16(300);
     info.properties.intr_throttle_cnt = cpu_to_le16(16);
     info.properties.intr_throttle_timeout = cpu_to_le16(50);
@@ -2202,8 +2202,15 @@ static uint64_t megasas_queue_read(void *opaque, hwaddr addr,
     return 0;
 }
 
+static void megasas_queue_write(void *opaque, hwaddr addr,
+                               uint64_t val, unsigned size)
+{
+    return;
+}
+
 static const MemoryRegionOps megasas_queue_ops = {
     .read = megasas_queue_read,
+    .write = megasas_queue_write,
     .endianness = DEVICE_LITTLE_ENDIAN,
     .impl = {
         .min_access_size = 8,
@@ -2407,13 +2414,6 @@ static void megasas_scsi_realize(PCIDevice *dev, Error **errp)
     }
 }
 
-static void
-megasas_write_config(PCIDevice *pci, uint32_t addr, uint32_t val, int len)
-{
-    pci_default_write_config(pci, addr, val, len);
-    msi_write_config(pci, addr, val, len);
-}
-
 static Property megasas_properties_gen1[] = {
     DEFINE_PROP_UINT32("max_sge", MegasasState, fw_sge,
                        MEGASAS_DEFAULT_SGE),
@@ -2516,7 +2516,6 @@ static void megasas_class_init(ObjectClass *oc, void *data)
     dc->vmsd = info->vmsd;
     set_bit(DEVICE_CATEGORY_STORAGE, dc->categories);
     dc->desc = info->desc;
-    pc->config_write = megasas_write_config;
 }
 
 static const TypeInfo megasas_info = {

@@ -22,12 +22,12 @@
  */
 
 #include "hw/hw.h"
+#include "qapi/qmp/qerror.h"
 #include "sysemu/block-backend.h"
 #include "sysemu/blockdev.h"
 #include "sysemu/sysemu.h"
 #include "net/net.h"
 #include "hw/boards.h"
-#include "monitor/monitor.h"
 #include "hw/loader.h"
 #include "hw/virtio/virtio.h"
 #include "hw/sysbus.h"
@@ -77,6 +77,16 @@ static int s390_virtio_hcall_notify(const uint64_t *args)
     if (mem > ram_size) {
         VirtIOS390Device *dev = s390_virtio_bus_find_vring(s390_bus, mem, &i);
         if (dev) {
+            /*
+             * Older kernels will use the virtqueue before setting DRIVER_OK.
+             * In this case the feature bits are not yet up to date, meaning
+             * that several funny things can happen, e.g. the guest thinks
+             * EVENT_IDX is on and QEMU thinks it is off. Let's force a feature
+             * and status sync.
+             */
+            if (!(dev->vdev->status & VIRTIO_CONFIG_S_DRIVER_OK)) {
+                s390_virtio_device_update_status(dev);
+            }
             virtio_queue_notify(dev->vdev, i);
         } else {
             r = -EINVAL;
@@ -97,7 +107,9 @@ static int s390_virtio_hcall_reset(const uint64_t *args)
         return -EINVAL;
     }
     virtio_reset(dev->vdev);
-    stb_phys(&address_space_memory, dev->dev_offs + VIRTIO_DEV_OFFS_STATUS, 0);
+    address_space_stb(&address_space_memory,
+                      dev->dev_offs + VIRTIO_DEV_OFFS_STATUS, 0,
+                      MEMTXATTRS_UNSPECIFIED, NULL);
     s390_virtio_device_sync(dev);
     s390_virtio_reset_idx(dev);
 
@@ -312,7 +324,7 @@ void s390_nmi(NMIState *n, int cpu_index, Error **errp)
     CPUState *cs = qemu_get_cpu(cpu_index);
 
     if (s390_cpu_restart(S390_CPU(cs))) {
-        error_set(errp, QERR_UNSUPPORTED);
+        error_setg(errp, QERR_UNSUPPORTED);
     }
 }
 
@@ -333,7 +345,6 @@ static void s390_machine_class_init(ObjectClass *oc, void *data)
     mc->no_floppy = 1;
     mc->no_cdrom = 1;
     mc->no_sdcard = 1;
-    mc->is_default = 1;
     nc->nmi_monitor_handler = s390_nmi;
 }
 

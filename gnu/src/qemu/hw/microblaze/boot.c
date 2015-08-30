@@ -48,13 +48,14 @@ static struct
 static void main_cpu_reset(void *opaque)
 {
     MicroBlazeCPU *cpu = opaque;
+    CPUState *cs = CPU(cpu);
     CPUMBState *env = &cpu->env;
 
-    cpu_reset(CPU(cpu));
+    cpu_reset(cs);
     env->regs[5] = boot_info.cmdline;
     env->regs[6] = boot_info.initrd_start;
     env->regs[7] = boot_info.fdt;
-    env->sregs[SR_PC] = boot_info.bootstrap_pc;
+    cpu_set_pc(cs, boot_info.bootstrap_pc);
     if (boot_info.machine_cpu_reset) {
         boot_info.machine_cpu_reset(cpu);
     }
@@ -113,15 +114,15 @@ void microblaze_load_kernel(MicroBlazeCPU *cpu, hwaddr ddr_base,
     const char *kernel_filename;
     const char *kernel_cmdline;
     const char *dtb_arg;
+    char *filename = NULL;
 
     machine_opts = qemu_get_machine_opts();
     kernel_filename = qemu_opt_get(machine_opts, "kernel");
     kernel_cmdline = qemu_opt_get(machine_opts, "append");
     dtb_arg = qemu_opt_get(machine_opts, "dtb");
-    if (dtb_arg) { /* Preference a -dtb argument */
-        dtb_filename = dtb_arg;
-    } else { /* default to pcbios dtb as passed by machine_init */
-        dtb_filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, dtb_filename);
+    /* default to pcbios dtb as passed by machine_init */
+    if (!dtb_arg) {
+        filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, dtb_filename);
     }
 
     boot_info.machine_cpu_reset = machine_cpu_reset;
@@ -203,7 +204,8 @@ void microblaze_load_kernel(MicroBlazeCPU *cpu, hwaddr ddr_base,
                             boot_info.initrd_start,
                             boot_info.initrd_end,
                             kernel_cmdline,
-                            dtb_filename);
+                            /* Preference a -dtb argument */
+                            dtb_arg ? dtb_arg : filename);
     }
-
+    g_free(filename);
 }

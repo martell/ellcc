@@ -648,6 +648,9 @@ typedef struct USBNetState {
     QTAILQ_HEAD(rndis_resp_head, rndis_response) rndis_resp;
 } USBNetState;
 
+#define TYPE_USB_NET "usb-net"
+#define USB_NET(obj) OBJECT_CHECK(USBNetState, (obj), TYPE_USB_NET)
+
 static int is_rndis(USBNetState *s)
 {
     return s->dev.config->bConfigurationValue == DEV_RNDIS_CONFIG_VALUE;
@@ -1265,6 +1268,10 @@ static ssize_t usbnet_receive(NetClientState *nc, const uint8_t *buf, size_t siz
     uint8_t *in_buf = s->in_buf;
     size_t total_size = size;
 
+    if (!s->dev.config) {
+        return -1;
+    }
+
     if (is_rndis(s)) {
         if (s->rndis_state != RNDIS_DATA_INITIALIZED) {
             return -1;
@@ -1306,17 +1313,6 @@ static ssize_t usbnet_receive(NetClientState *nc, const uint8_t *buf, size_t siz
     return size;
 }
 
-static int usbnet_can_receive(NetClientState *nc)
-{
-    USBNetState *s = qemu_get_nic_opaque(nc);
-
-    if (is_rndis(s) && s->rndis_state != RNDIS_DATA_INITIALIZED) {
-        return 1;
-    }
-
-    return !s->in_len;
-}
-
 static void usbnet_cleanup(NetClientState *nc)
 {
     USBNetState *s = qemu_get_nic_opaque(nc);
@@ -1336,14 +1332,13 @@ static void usb_net_handle_destroy(USBDevice *dev)
 static NetClientInfo net_usbnet_info = {
     .type = NET_CLIENT_OPTIONS_KIND_NIC,
     .size = sizeof(NICState),
-    .can_receive = usbnet_can_receive,
     .receive = usbnet_receive,
     .cleanup = usbnet_cleanup,
 };
 
 static void usb_net_realize(USBDevice *dev, Error **errrp)
 {
-    USBNetState *s = DO_UPCAST(USBNetState, dev, dev);
+    USBNetState *s = USB_NET(dev);
 
     usb_desc_create_serial(dev);
     usb_desc_init(dev);
@@ -1376,7 +1371,7 @@ static void usb_net_realize(USBDevice *dev, Error **errrp)
 static void usb_net_instance_init(Object *obj)
 {
     USBDevice *dev = USB_DEVICE(obj);
-    USBNetState *s = DO_UPCAST(USBNetState, dev, dev);
+    USBNetState *s = USB_NET(dev);
 
     device_add_bootindex_property(obj, &s->conf.bootindex,
                                   "bootindex", "/ethernet-phy@0",
@@ -1390,7 +1385,7 @@ static USBDevice *usb_net_init(USBBus *bus, const char *cmdline)
     QemuOpts *opts;
     int idx;
 
-    opts = qemu_opts_parse(qemu_find_opts("net"), cmdline, 0);
+    opts = qemu_opts_parse_noisily(qemu_find_opts("net"), cmdline, false);
     if (!opts) {
         return NULL;
     }
@@ -1437,7 +1432,7 @@ static void usb_net_class_initfn(ObjectClass *klass, void *data)
 }
 
 static const TypeInfo net_info = {
-    .name          = "usb-net",
+    .name          = TYPE_USB_NET,
     .parent        = TYPE_USB_DEVICE,
     .instance_size = sizeof(USBNetState),
     .class_init    = usb_net_class_initfn,
@@ -1447,7 +1442,7 @@ static const TypeInfo net_info = {
 static void usb_net_register_types(void)
 {
     type_register_static(&net_info);
-    usb_legacy_register("usb-net", "net", usb_net_init);
+    usb_legacy_register(TYPE_USB_NET, "net", usb_net_init);
 }
 
 type_init(usb_net_register_types)

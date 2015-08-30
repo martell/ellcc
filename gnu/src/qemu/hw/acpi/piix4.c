@@ -72,7 +72,7 @@ typedef struct PIIX4PMState {
 
     qemu_irq irq;
     qemu_irq smi_irq;
-    int kvm_enabled;
+    int smm_enabled;
     Notifier machine_ready;
     Notifier powerdown_notifier;
 
@@ -112,6 +112,9 @@ static void apm_ctrl_changed(uint32_t val, void *arg)
 
     /* ACPI specs 3.0, 4.7.2.5 */
     acpi_pm1_cnt_update(&s->ar, val == ACPI_ENABLE, val == ACPI_DISABLE);
+    if (val == ACPI_ENABLE || val == ACPI_DISABLE) {
+        return;
+    }
 
     if (d->config[0x5b] & (1 << 1)) {
         if (s->smi_irq) {
@@ -260,6 +263,7 @@ static const VMStateDescription vmstate_memhp_state = {
     .version_id = 1,
     .minimum_version_id = 1,
     .minimum_version_id_old = 1,
+    .needed = vmstate_test_use_memhp,
     .fields      = (VMStateField[]) {
         VMSTATE_MEMORY_HOTPLUG(acpi_memory_hotplug, PIIX4PMState),
         VMSTATE_END_OF_LIST()
@@ -298,12 +302,9 @@ static const VMStateDescription vmstate_acpi = {
                             vmstate_test_use_acpi_pci_hotplug),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (VMStateSubsection[]) {
-        {
-            .vmsd = &vmstate_memhp_state,
-            .needed = vmstate_test_use_memhp,
-        },
-        VMSTATE_END_OF_LIST()
+    .subsections = (const VMStateDescription*[]) {
+         &vmstate_memhp_state,
+         NULL
     }
 };
 
@@ -321,7 +322,7 @@ static void piix4_reset(void *opaque)
     pci_conf[0x40] = 0x01; /* PM io base read only bit */
     pci_conf[0x80] = 0;
 
-    if (s->kvm_enabled) {
+    if (!s->smm_enabled) {
         /* Mark SMM as already inited (until KVM supports SMM). */
         pci_conf[0x5B] = 0x02;
     }
@@ -361,7 +362,11 @@ static void piix4_device_unplug_request_cb(HotplugHandler *hotplug_dev,
 {
     PIIX4PMState *s = PIIX4_PM(hotplug_dev);
 
-    if (object_dynamic_cast(OBJECT(dev), TYPE_PCI_DEVICE)) {
+    if (s->acpi_memory_hotplug.is_enabled &&
+        object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
+        acpi_memory_unplug_request_cb(&s->ar, s->irq, &s->acpi_memory_hotplug,
+                                      dev, errp);
+    } else if (object_dynamic_cast(OBJECT(dev), TYPE_PCI_DEVICE)) {
         acpi_pcihp_device_unplug_cb(&s->ar, s->irq, &s->acpi_pci_hotplug, dev,
                                     errp);
     } else {
@@ -373,8 +378,15 @@ static void piix4_device_unplug_request_cb(HotplugHandler *hotplug_dev,
 static void piix4_device_unplug_cb(HotplugHandler *hotplug_dev,
                                    DeviceState *dev, Error **errp)
 {
-    error_setg(errp, "acpi: device unplug for not supported device"
-               " type: %s", object_get_typename(OBJECT(dev)));
+    PIIX4PMState *s = PIIX4_PM(hotplug_dev);
+
+    if (s->acpi_memory_hotplug.is_enabled &&
+        object_dynamic_cast(OBJECT(dev), TYPE_PC_DIMM)) {
+        acpi_memory_unplug_cb(&s->acpi_memory_hotplug, dev, errp);
+    } else {
+        error_setg(errp, "acpi: device unplug for not supported device"
+                   " type: %s", object_get_typename(OBJECT(dev)));
+    }
 }
 
 static void piix4_update_bus_hotplug(PCIBus *pci_bus, void *opaque)
@@ -441,7 +453,7 @@ static void piix4_pm_realize(PCIDevice *dev, Error **errp)
     /* APM */
     apm_init(dev, &s->apm, apm_ctrl_changed, s);
 
-    if (s->kvm_enabled) {
+    if (!s->smm_enabled) {
         /* Mark SMM as already inited to prevent SMM from running.  KVM does not
          * support SMM mode. */
         pci_conf[0x5B] = 0x02;
@@ -464,7 +476,7 @@ static void piix4_pm_realize(PCIDevice *dev, Error **errp)
 
     acpi_pm_tmr_init(&s->ar, pm_tmr_timer, &s->io);
     acpi_pm1_evt_init(&s->ar, pm_tmr_timer, &s->io);
-    acpi_pm1_cnt_init(&s->ar, &s->io, s->s4_val);
+    acpi_pm1_cnt_init(&s->ar, &s->io, s->disable_s3, s->disable_s4, s->s4_val);
     acpi_gpe_init(&s->ar, GPE_LEN);
 
     s->powerdown_notifier.notify = piix4_pm_powerdown_req;
@@ -492,8 +504,7 @@ Object *piix4_pm_find(void)
 
 I2CBus *piix4_pm_init(PCIBus *bus, int devfn, uint32_t smb_io_base,
                       qemu_irq sci_irq, qemu_irq smi_irq,
-                      int kvm_enabled, FWCfgState *fw_cfg,
-                      DeviceState **piix4_pm)
+                      int smm_enabled, DeviceState **piix4_pm)
 {
     DeviceState *dev;
     PIIX4PMState *s;
@@ -507,20 +518,12 @@ I2CBus *piix4_pm_init(PCIBus *bus, int devfn, uint32_t smb_io_base,
     s = PIIX4_PM(dev);
     s->irq = sci_irq;
     s->smi_irq = smi_irq;
-    s->kvm_enabled = kvm_enabled;
+    s->smm_enabled = smm_enabled;
     if (xen_enabled()) {
         s->use_acpi_pci_hotplug = false;
     }
 
     qdev_init_nofail(dev);
-
-    if (fw_cfg) {
-        uint8_t suspend[6] = {128, 0, 0, 129, 128, 128};
-        suspend[3] = 1 | ((!s->disable_s3) << 7);
-        suspend[4] = s->s4_val | ((!s->disable_s4) << 7);
-
-        fw_cfg_add_file(fw_cfg, "etc/system-states", g_memdup(suspend, 6), 6);
-    }
 
     return s->smb.smbus;
 }

@@ -1164,7 +1164,7 @@ do {                                            \
 PowerPCCPU *cpu_ppc_init(const char *cpu_model);
 void ppc_translate_init(void);
 void gen_update_current_nip(void *opaque);
-int cpu_ppc_exec (CPUPPCState *s);
+int cpu_ppc_exec (CPUState *s);
 /* you can call this signal handler from your SIGBUS and SIGSEGV
    signal handlers to inform the virtual CPU of exceptions. non zero
    is returned if the signal was handled by the virtual CPU.  */
@@ -2251,8 +2251,8 @@ static inline ppcmas_tlb_t *booke206_get_tlbm(CPUPPCState *env, const int tlbn,
 {
     int r;
     uint32_t ways = booke206_tlb_ways(env, tlbn);
-    int ways_bits = ffs(ways) - 1;
-    int tlb_bits = ffs(booke206_tlb_size(env, tlbn)) - 1;
+    int ways_bits = ctz32(ways);
+    int tlb_bits = ctz32(booke206_tlb_size(env, tlbn));
     int i;
 
     way &= ways - 1;

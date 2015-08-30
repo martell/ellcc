@@ -29,6 +29,7 @@
 #include <glib.h>
 
 #include "libqtest.h"
+#include "libqos/libqos.h"
 #include "libqos/pci-pc.h"
 #include "libqos/malloc-pc.h"
 
@@ -338,6 +339,31 @@ static void test_bmdma_short_prdt(void)
     assert_bit_clear(inb(IDE_BASE + reg_status), DF | ERR);
 }
 
+static void test_bmdma_one_sector_short_prdt(void)
+{
+    uint8_t status;
+
+    /* Read 2 sectors but only give 1 sector in PRDT */
+    PrdtEntry prdt[] = {
+        {
+            .addr = 0,
+            .size = cpu_to_le32(0x200 | PRDT_EOT),
+        },
+    };
+
+    /* Normal request */
+    status = send_dma_request(CMD_READ_DMA, 0, 2,
+                              prdt, ARRAY_SIZE(prdt));
+    g_assert_cmphex(status, ==, 0);
+    assert_bit_clear(inb(IDE_BASE + reg_status), DF | ERR);
+
+    /* Abort the request before it completes */
+    status = send_dma_request(CMD_READ_DMA | CMDF_ABORT, 0, 2,
+                              prdt, ARRAY_SIZE(prdt));
+    g_assert_cmphex(status, ==, 0);
+    assert_bit_clear(inb(IDE_BASE + reg_status), DF | ERR);
+}
+
 static void test_bmdma_long_prdt(void)
 {
     uint8_t status;
@@ -494,33 +520,10 @@ static void test_flush(void)
     ide_test_quit();
 }
 
-static void prepare_blkdebug_script(const char *debug_fn, const char *event)
-{
-    FILE *debug_file = fopen(debug_fn, "w");
-    int ret;
-
-    fprintf(debug_file, "[inject-error]\n");
-    fprintf(debug_file, "event = \"%s\"\n", event);
-    fprintf(debug_file, "errno = \"5\"\n");
-    fprintf(debug_file, "state = \"1\"\n");
-    fprintf(debug_file, "immediately = \"off\"\n");
-    fprintf(debug_file, "once = \"on\"\n");
-
-    fprintf(debug_file, "[set-state]\n");
-    fprintf(debug_file, "event = \"%s\"\n", event);
-    fprintf(debug_file, "new_state = \"2\"\n");
-    fflush(debug_file);
-    g_assert(!ferror(debug_file));
-
-    ret = fclose(debug_file);
-    g_assert(ret == 0);
-}
-
 static void test_retry_flush(const char *machine)
 {
     uint8_t data;
     const char *s;
-    QDict *response;
 
     prepare_blkdebug_script(debug_path, "flush_to_disk");
 
@@ -539,15 +542,7 @@ static void test_retry_flush(const char *machine)
     assert_bit_set(data, BSY | DRDY);
     assert_bit_clear(data, DF | ERR | DRQ);
 
-    for (;; response = NULL) {
-        response = qmp_receive();
-        if ((qdict_haskey(response, "event")) &&
-            (strcmp(qdict_get_str(response, "event"), "STOP") == 0)) {
-            QDECREF(response);
-            break;
-        }
-        QDECREF(response);
-    }
+    qmp_eventwait("STOP");
 
     /* Complete the command */
     s = "{'execute':'cont' }";
@@ -622,6 +617,8 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/bmdma/setup", test_bmdma_setup);
     qtest_add_func("/ide/bmdma/simple_rw", test_bmdma_simple_rw);
     qtest_add_func("/ide/bmdma/short_prdt", test_bmdma_short_prdt);
+    qtest_add_func("/ide/bmdma/one_sector_short_prdt",
+                   test_bmdma_one_sector_short_prdt);
     qtest_add_func("/ide/bmdma/long_prdt", test_bmdma_long_prdt);
     qtest_add_func("/ide/bmdma/no_busmaster", test_bmdma_no_busmaster);
     qtest_add_func("/ide/bmdma/teardown", test_bmdma_teardown);

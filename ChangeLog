@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to QEMU 2.4.0.
 * Update to GDB 7.10.
 * Update to musl 1.1.11.
 * Update to LLVM r246362.
