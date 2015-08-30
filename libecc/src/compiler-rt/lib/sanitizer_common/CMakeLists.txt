@@ -103,6 +103,7 @@ set(SANITIZER_HEADERS
   sanitizer_symbolizer_mac.h
   sanitizer_syscall_generic.inc
   sanitizer_syscall_linux_x86_64.inc
+  sanitizer_syscall_linux_aarch64.inc
   sanitizer_thread_registry.h)
 
 set(SANITIZER_COMMON_DEFINITIONS)
@@ -127,50 +128,28 @@ append_list_if(SANITIZER_LIMIT_FRAME_SIZE -Wframe-larger-than=570
 append_list_if(COMPILER_RT_HAS_WGLOBAL_CONSTRUCTORS_FLAG -Wglobal-constructors
                SANITIZER_CFLAGS)
 
-add_custom_target(sanitizer_common)
-set(SANITIZER_RUNTIME_LIBRARIES)
 if(APPLE)
-  # Build universal binary on APPLE.
-
-  add_compiler_rt_object_libraries(RTSanitizerCommon
-    OS ${SANITIZER_COMMON_SUPPORTED_OS}
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    SOURCES ${SANITIZER_SOURCES} ${SANITIZER_LIBCDEP_SOURCES}
-    CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-  foreach(os ${SANITIZER_COMMON_SUPPORTED_OS})
-    list(APPEND SANITIZER_RUNTIME_LIBRARIES RTSanitizerCommon.${os})
-  endforeach()
-elseif(ANDROID)
-  add_library(RTSanitizerCommon.arm.android OBJECT
-    ${SANITIZER_SOURCES} ${SANITIZER_LIBCDEP_SOURCES})
-  set_target_compile_flags(RTSanitizerCommon.arm.android
-    ${SANITIZER_CFLAGS})
-  set_property(TARGET RTSanitizerCommon.arm.android APPEND PROPERTY
-    COMPILE_DEFINITIONS ${SANITIZER_COMMON_DEFINITIONS})
-  list(APPEND SANITIZER_RUNTIME_LIBRARIES RTSanitizerCommon.arm.android)
-else()
-  # Otherwise, build separate libraries for each target.
-  
-  add_compiler_rt_object_libraries(RTSanitizerCommon
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    SOURCES ${SANITIZER_SOURCES} CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-  add_compiler_rt_object_libraries(RTSanitizerCommonNoLibc
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    SOURCES ${SANITIZER_NOLIBC_SOURCES} CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-  add_compiler_rt_object_libraries(RTSanitizerCommonLibc
-    ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
-    SOURCES ${SANITIZER_LIBCDEP_SOURCES} CFLAGS ${SANITIZER_CFLAGS}
-    DEFS ${SANITIZER_COMMON_DEFINITIONS})
-  foreach(arch ${SANITIZER_COMMON_SUPPORTED_ARCH})
-    list(APPEND SANITIZER_RUNTIME_LIBRARIES RTSanitizerCommon.${arch}
-                                            RTSanitizerCommonLibc.${arch})
-  endforeach()
+  set(OS_OPTION OS ${SANITIZER_COMMON_SUPPORTED_OS})
 endif()
 
-add_dependencies(compiler-rt sanitizer_common)
+add_compiler_rt_object_libraries(RTSanitizerCommon
+  ${OS_OPTION}
+  ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
+  SOURCES ${SANITIZER_SOURCES}
+  CFLAGS ${SANITIZER_CFLAGS}
+  DEFS ${SANITIZER_COMMON_DEFINITIONS})
+add_compiler_rt_object_libraries(RTSanitizerCommonNoLibc
+  ${OS_OPTION}
+  ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
+  SOURCES ${SANITIZER_NOLIBC_SOURCES}
+  CFLAGS ${SANITIZER_CFLAGS}
+  DEFS ${SANITIZER_COMMON_DEFINITIONS})
+add_compiler_rt_object_libraries(RTSanitizerCommonLibc
+  ${OS_OPTION}
+  ARCHS ${SANITIZER_COMMON_SUPPORTED_ARCH}
+  SOURCES ${SANITIZER_LIBCDEP_SOURCES}
+  CFLAGS ${SANITIZER_CFLAGS}
+  DEFS ${SANITIZER_COMMON_DEFINITIONS})
 
 # Unit tests for common sanitizer runtime.
 if(COMPILER_RT_INCLUDE_TESTS)

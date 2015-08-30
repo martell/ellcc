@@ -900,14 +900,11 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
     CGBuilderTy::InsertPoint SavedIP = Builder.saveAndClearIP();
 
     EmitBlock(EHEntry);
+    llvm::CleanupPadInst *CPI = nullptr;
     llvm::BasicBlock *NextAction = getEHDispatchBlock(EHParent);
     if (CGM.getCodeGenOpts().NewMSEH &&
-        EHPersonality::get(*this).isMSVCPersonality()) {
-      if (NextAction)
-        Builder.CreateCleanupPad(VoidTy, NextAction);
-      else
-        Builder.CreateCleanupPad(VoidTy, {});
-    }
+        EHPersonality::get(*this).isMSVCPersonality())
+      CPI = Builder.CreateCleanupPad({});
 
     // We only actually emit the cleanup code if the cleanup is either
     // active or was used before it was deactivated.
@@ -917,8 +914,8 @@ void CodeGenFunction::PopCleanupBlock(bool FallthroughIsBranchThrough) {
       EmitCleanup(*this, Fn, cleanupFlags, EHActiveFlag);
     }
 
-    if (CGM.getCodeGenOpts().NewMSEH && EHPersonality::get(*this).isMSVCPersonality())
-      Builder.CreateCleanupRet(NextAction);
+    if (CPI)
+      Builder.CreateCleanupRet(CPI, NextAction);
     else
       Builder.CreateBr(NextAction);
 

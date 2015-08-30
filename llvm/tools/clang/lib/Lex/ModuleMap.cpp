@@ -320,6 +320,10 @@ void ModuleMap::diagnoseHeaderInclusion(Module *RequestingModule,
 
 static bool isBetterKnownHeader(const ModuleMap::KnownHeader &New,
                                 const ModuleMap::KnownHeader &Old) {
+  // Prefer available modules.
+  if (New.getModule()->isAvailable() && !Old.getModule()->isAvailable())
+    return true;
+
   // Prefer a public header over a private header.
   if ((New.getRole() & ModuleMap::PrivateHeader) !=
       (Old.getRole() & ModuleMap::PrivateHeader))
@@ -349,14 +353,18 @@ ModuleMap::KnownHeader ModuleMap::findModuleForHeader(const FileEntry *File) {
       // Prefer a header from the current module over all others.
       if (H.getModule()->getTopLevelModule() == CompilingModule)
         return MakeResult(H);
-      // Cannot use a module if it is unavailable.
-      if (!H.getModule()->isAvailable())
-        continue;
       if (!Result || isBetterKnownHeader(H, Result))
         Result = H;
     }
     return MakeResult(Result);
   }
+
+  return MakeResult(findOrCreateModuleForHeaderInUmbrellaDir(File));
+}
+
+ModuleMap::KnownHeader
+ModuleMap::findOrCreateModuleForHeaderInUmbrellaDir(const FileEntry *File) {
+  assert(!Headers.count(File) && "already have a module for this header");
 
   SmallVector<const DirectoryEntry *, 2> SkippedDirs;
   KnownHeader H = findHeaderInUmbrellaDirs(File, SkippedDirs);
@@ -418,17 +426,20 @@ ModuleMap::KnownHeader ModuleMap::findModuleForHeader(const FileEntry *File) {
         UmbrellaDirs[SkippedDirs[I]] = Result;
     }
 
-    Headers[File].push_back(KnownHeader(Result, NormalHeader));
-
-    // If a header corresponds to an unavailable module, don't report
-    // that it maps to anything.
-    if (!Result->isAvailable())
-      return KnownHeader();
-
-    return MakeResult(Headers[File].back());
+    KnownHeader Header(Result, NormalHeader);
+    Headers[File].push_back(Header);
+    return Header;
   }
 
   return KnownHeader();
+}
+
+ArrayRef<ModuleMap::KnownHeader>
+ModuleMap::findAllModulesForHeader(const FileEntry *File) const {
+  auto It = Headers.find(File);
+  if (It == Headers.end())
+    return None;
+  return It->second;
 }
 
 bool ModuleMap::isHeaderInUnavailableModule(const FileEntry *Header) const {
@@ -785,15 +796,27 @@ static Module::HeaderKind headerRoleToKind(ModuleMap::ModuleHeaderRole Role) {
 }
 
 void ModuleMap::addHeader(Module *Mod, Module::Header Header,
-                          ModuleHeaderRole Role) {
-  if (!(Role & TextualHeader)) {
-    bool isCompilingModuleHeader = Mod->getTopLevelModule() == CompilingModule;
+                          ModuleHeaderRole Role, bool Imported) {
+  KnownHeader KH(Mod, Role);
+
+  // Only add each header to the headers list once.
+  // FIXME: Should we diagnose if a header is listed twice in the
+  // same module definition?
+  auto &HeaderList = Headers[Header.Entry];
+  for (auto H : HeaderList)
+    if (H == KH)
+      return;
+
+  HeaderList.push_back(KH);
+  Mod->Headers[headerRoleToKind(Role)].push_back(std::move(Header));
+
+  bool isCompilingModuleHeader = Mod->getTopLevelModule() == CompilingModule;
+  if (!Imported || isCompilingModuleHeader) {
+    // When we import HeaderFileInfo, the external source is expected to
+    // set the isModuleHeader flag itself.
     HeaderInfo.MarkFileModuleHeader(Header.Entry, Role,
                                     isCompilingModuleHeader);
   }
-  Headers[Header.Entry].push_back(KnownHeader(Mod, Role));
-
-  Mod->Headers[headerRoleToKind(Role)].push_back(std::move(Header));
 }
 
 void ModuleMap::excludeHeader(Module *Mod, Module::Header Header) {

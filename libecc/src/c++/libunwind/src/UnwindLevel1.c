@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#if !defined(__microblaze__)    // RICH: TODO
 // ARM EHABI does not specify _Unwind_{Get,Set}{GR,IP}().  Thus, we are
 // defining inline functions to delegate the function calls to
 // _Unwind_VRS_{Get,Set}().  However, some applications might declare the
@@ -504,3 +505,4 @@ _LIBUNWIND_EXPORT void _Unwind_SetIP(struct _Unwind_Context *context,
 }
 
 #endif // !_LIBUNWIND_ARM_EHABI
+#endif // !defined(__microblaze__)    // RICH: TODO

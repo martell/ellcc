@@ -5867,7 +5867,6 @@ static void emitComments(raw_svector_ostream &CommentStream,
                          formatted_raw_ostream &FormattedOS,
                          const MCAsmInfo &MAI) {
   // Flush the stream before taking its content.
-  CommentStream.flush();
   StringRef Comments = CommentsToEmit.str();
   // Get the default information for printing a comment.
   const char *CommentBegin = MAI.getCommentString();
@@ -6248,7 +6247,6 @@ static void DisassembleMachO(StringRef Filename, MachOObjectFile *MachOOF,
             dumpBytes(ArrayRef<uint8_t>(Bytes.data() + Index, Size), outs());
           }
           formatted_raw_ostream FormattedOS(outs());
-          Annotations.flush();
           StringRef AnnotationsStr = Annotations.str();
           if (isThumb)
             ThumbIP->printInst(&Inst, FormattedOS, AnnotationsStr, *ThumbSTI);
@@ -7653,19 +7651,23 @@ static void PrintVersionMinLoadCommand(MachO::version_min_command vd) {
     outs() << " Incorrect size\n";
   else
     outs() << "\n";
-  outs() << "  version " << ((vd.version >> 16) & 0xffff) << "."
-         << ((vd.version >> 8) & 0xff);
-  if ((vd.version & 0xff) != 0)
-    outs() << "." << (vd.version & 0xff);
+  outs() << "  version "
+         << MachOObjectFile::getVersionMinMajor(vd, false) << "."
+         << MachOObjectFile::getVersionMinMinor(vd, false);
+  uint32_t Update = MachOObjectFile::getVersionMinUpdate(vd, false);
+  if (Update != 0)
+    outs() << "." << Update;
   outs() << "\n";
   if (vd.sdk == 0)
     outs() << "      sdk n/a";
   else {
-    outs() << "      sdk " << ((vd.sdk >> 16) & 0xffff) << "."
-           << ((vd.sdk >> 8) & 0xff);
+    outs() << "      sdk "
+           << MachOObjectFile::getVersionMinMajor(vd, true) << "."
+           << MachOObjectFile::getVersionMinMinor(vd, true);
   }
-  if ((vd.sdk & 0xff) != 0)
-    outs() << "." << (vd.sdk & 0xff);
+  Update = MachOObjectFile::getVersionMinUpdate(vd, true);
+  if (Update != 0)
+    outs() << "." << Update;
   outs() << "\n";
 }
 

@@ -478,6 +478,8 @@ bool OutputReport(Context *ctx,
                   const ReportStack *suppress_stack1,
                   const ReportStack *suppress_stack2,
                   const ReportLocation *suppress_loc) {
+  if (!flags()->report_bugs)
+    return false;
   atomic_store(&ctx->last_symbolize_time_ns, NanoTime(), memory_order_relaxed);
   const ReportDesc *rep = srep.GetReport();
   Suppression *supp = 0;
@@ -495,7 +497,7 @@ bool OutputReport(Context *ctx,
   PrintReport(rep);
   ctx->nreported++;
   if (flags()->halt_on_error)
-    internal__exit(flags()->exitcode);
+    Die();
   return true;
 }
 

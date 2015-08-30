@@ -301,6 +301,8 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::FTRUNC,      MVT::f16,  Promote);
   setOperationAction(ISD::FMINNUM,     MVT::f16,  Promote);
   setOperationAction(ISD::FMAXNUM,     MVT::f16,  Promote);
+  setOperationAction(ISD::FMINNAN,     MVT::f16,  Promote);
+  setOperationAction(ISD::FMAXNAN,     MVT::f16,  Promote);
 
   // v4f16 is also a storage-only type, so promote it to v4f32 when that is
   // known to be safe.
@@ -391,6 +393,8 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::FROUND, Ty, Legal);
     setOperationAction(ISD::FMINNUM, Ty, Legal);
     setOperationAction(ISD::FMAXNUM, Ty, Legal);
+    setOperationAction(ISD::FMINNAN, Ty, Legal);
+    setOperationAction(ISD::FMAXNAN, Ty, Legal);
   }
 
   setOperationAction(ISD::PREFETCH, MVT::Other, Custom);
@@ -482,7 +486,6 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
 
   setTargetDAGCombine(ISD::SELECT);
   setTargetDAGCombine(ISD::VSELECT);
-  setTargetDAGCombine(ISD::SELECT_CC);
 
   setTargetDAGCombine(ISD::INTRINSIC_VOID);
   setTargetDAGCombine(ISD::INTRINSIC_W_CHAIN);
@@ -681,8 +684,8 @@ void AArch64TargetLowering::addTypeForNEON(EVT VT, EVT PromotedBitwiseVT) {
                             ISD::SABSDIFF, ISD::UABSDIFF})
       setOperationAction(Opcode, VT.getSimpleVT(), Legal);
 
-  // F[MIN|MAX][NUM|NAN] are available for all FP NEON types.
-  if (VT.isFloatingPoint())
+  // F[MIN|MAX][NUM|NAN] are available for all FP NEON types (not f16 though!).
+  if (VT.isFloatingPoint() && VT.getVectorElementType() != MVT::f16)
     for (unsigned Opcode : {ISD::FMINNAN, ISD::FMAXNAN,
                             ISD::FMINNUM, ISD::FMAXNUM})
       setOperationAction(Opcode, VT.getSimpleVT(), Legal);
@@ -1346,7 +1349,7 @@ static SDValue emitConjunctionDisjunctionTree(SelectionDAG &DAG, SDValue Val,
     unsigned NZCV = AArch64CC::getNZCVToSatisfyCondCode(InvOutCC);
     return emitConditionalComparison(LHS, RHS, CC, CCOp, ConditionOp, NZCV, DL,
                                      DAG);
-  } else if (Opcode != ISD::AND && Opcode != ISD::OR)
+  } else if ((Opcode != ISD::AND && Opcode != ISD::OR) || !Val->hasOneUse())
     return SDValue();
 
   assert((Opcode == ISD::OR || !PushNegate)
@@ -1371,10 +1374,17 @@ static SDValue emitConjunctionDisjunctionTree(SelectionDAG &DAG, SDValue Val,
     if (!CanPushNegateL && !CanPushNegateR)
       return SDValue();
     // Order the side where we can push the negate through to LHS.
-    if (!CanPushNegateL && CanPushNegateR) {
+    if (!CanPushNegateL && CanPushNegateR)
       std::swap(LHS, RHS);
-      CanPushNegateL = true;
-    }
+  } else {
+    bool NeedsNegOutL = LHS->getOpcode() == ISD::OR;
+    bool NeedsNegOutR = RHS->getOpcode() == ISD::OR;
+    if (NeedsNegOutL && NeedsNegOutR)
+      return SDValue();
+    // Order the side where we need to negate the output flags to RHS so it
+    // gets emitted first.
+    if (NeedsNegOutL)
+      std::swap(LHS, RHS);
   }
 
   // Emit RHS. If we want to negate the tree we only need to push a negate
@@ -2174,6 +2184,18 @@ SDValue AArch64TargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
     EVT PtrVT = getPointerTy(DAG.getDataLayout());
     return DAG.getNode(AArch64ISD::THREAD_POINTER, dl, PtrVT);
   }
+  case Intrinsic::aarch64_neon_smax:
+    return DAG.getNode(ISD::SMAX, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_neon_umax:
+    return DAG.getNode(ISD::UMAX, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_neon_smin:
+    return DAG.getNode(ISD::SMIN, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
+  case Intrinsic::aarch64_neon_umin:
+    return DAG.getNode(ISD::UMIN, dl, Op.getValueType(),
+                       Op.getOperand(1), Op.getOperand(2));
   }
 }
 
@@ -3822,32 +3844,6 @@ SDValue AArch64TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
     SDValue CC2Val = DAG.getConstant(CC2, dl, MVT::i32);
     return DAG.getNode(AArch64ISD::CSEL, dl, VT, TVal, CS1, CC2Val, Cmp);
   }
-}
-
-/// A SELECT_CC operation is really some kind of max or min if both values being
-/// compared are, in some sense, equal to the results in either case. However,
-/// it is permissible to compare f32 values and produce directly extended f64
-/// values.
-///
-/// Extending the comparison operands would also be allowed, but is less likely
-/// to happen in practice since their use is right here. Note that truncate
-/// operations would *not* be semantically equivalent.
-static bool selectCCOpsAreFMaxCompatible(SDValue Cmp, SDValue Result) {
-  if (Cmp == Result)
-    return (Cmp.getValueType() == MVT::f32 ||
-            Cmp.getValueType() == MVT::f64);
-
-  ConstantFPSDNode *CCmp = dyn_cast<ConstantFPSDNode>(Cmp);
-  ConstantFPSDNode *CResult = dyn_cast<ConstantFPSDNode>(Result);
-  if (CCmp && CResult && Cmp.getValueType() == MVT::f32 &&
-      Result.getValueType() == MVT::f64) {
-    bool Lossy;
-    APFloat CmpVal = CCmp->getValueAPF();
-    CmpVal.convert(APFloat::IEEEdouble, APFloat::rmNearestTiesToEven, &Lossy);
-    return CResult->getValueAPF().bitwiseIsEqual(CmpVal);
-  }
-
-  return Result->getOpcode() == ISD::FP_EXTEND && Result->getOperand(0) == Cmp;
 }
 
 SDValue AArch64TargetLowering::LowerSELECT_CC(ISD::CondCode CC, SDValue LHS,
@@ -9122,75 +9118,6 @@ static SDValue performSelectCombine(SDNode *N,
   return DAG.getSelect(DL, ResVT, Mask, N->getOperand(1), N->getOperand(2));
 }
 
-/// performSelectCCCombine - Target-specific DAG combining for ISD::SELECT_CC
-/// to match FMIN/FMAX patterns.
-static SDValue performSelectCCCombine(SDNode *N, SelectionDAG &DAG) {
-  // Try to use FMIN/FMAX instructions for FP selects like "x < y ? x : y".
-  // Unless the NoNaNsFPMath option is set, be careful about NaNs:
-  // vmax/vmin return NaN if either operand is a NaN;
-  // only do the transformation when it matches that behavior.
-
-  SDValue CondLHS = N->getOperand(0);
-  SDValue CondRHS = N->getOperand(1);
-  SDValue LHS = N->getOperand(2);
-  SDValue RHS = N->getOperand(3);
-  ISD::CondCode CC = cast<CondCodeSDNode>(N->getOperand(4))->get();
-
-  unsigned Opcode;
-  bool IsReversed;
-  if (selectCCOpsAreFMaxCompatible(CondLHS, LHS) &&
-      selectCCOpsAreFMaxCompatible(CondRHS, RHS)) {
-    IsReversed = false; // x CC y ? x : y
-  } else if (selectCCOpsAreFMaxCompatible(CondRHS, LHS) &&
-             selectCCOpsAreFMaxCompatible(CondLHS, RHS)) {
-    IsReversed = true ; // x CC y ? y : x
-  } else {
-    return SDValue();
-  }
-
-  bool IsUnordered = false, IsOrEqual;
-  switch (CC) {
-  default:
-    return SDValue();
-  case ISD::SETULT:
-  case ISD::SETULE:
-    IsUnordered = true;
-  case ISD::SETOLT:
-  case ISD::SETOLE:
-  case ISD::SETLT:
-  case ISD::SETLE:
-    IsOrEqual = (CC == ISD::SETLE || CC == ISD::SETOLE || CC == ISD::SETULE);
-    Opcode = IsReversed ? ISD::FMAXNAN : ISD::FMINNAN;
-    break;
-
-  case ISD::SETUGT:
-  case ISD::SETUGE:
-    IsUnordered = true;
-  case ISD::SETOGT:
-  case ISD::SETOGE:
-  case ISD::SETGT:
-  case ISD::SETGE:
-    IsOrEqual = (CC == ISD::SETGE || CC == ISD::SETOGE || CC == ISD::SETUGE);
-    Opcode = IsReversed ? ISD::FMINNAN : ISD::FMAXNAN;
-    break;
-  }
-
-  // If LHS is NaN, an ordered comparison will be false and the result will be
-  // the RHS, but FMIN(NaN, RHS) = FMAX(NaN, RHS) = NaN. Avoid this by checking
-  // that LHS != NaN. Likewise, for unordered comparisons, check for RHS != NaN.
-  if (!DAG.isKnownNeverNaN(IsUnordered ? RHS : LHS))
-    return SDValue();
-
-  // For xxx-or-equal comparisons, "+0 <= -0" and "-0 >= +0" will both be true,
-  // but FMIN will return -0, and FMAX will return +0. So FMIN/FMAX can only be
-  // used for unsafe math or if one of the operands is known to be nonzero.
-  if (IsOrEqual && !DAG.getTarget().Options.UnsafeFPMath &&
-      !(DAG.isKnownNeverZero(LHS) || DAG.isKnownNeverZero(RHS)))
-    return SDValue();
-
-  return DAG.getNode(Opcode, SDLoc(N), N->getValueType(0), LHS, RHS);
-}
-
 /// Get rid of unnecessary NVCASTs (that don't change the type).
 static SDValue performNVCASTCombine(SDNode *N) {
   if (N->getValueType(0) == N->getOperand(0).getValueType())
@@ -9231,8 +9158,6 @@ SDValue AArch64TargetLowering::PerformDAGCombine(SDNode *N,
     return performSelectCombine(N, DCI);
   case ISD::VSELECT:
     return performVSelectCombine(N, DCI.DAG);
-  case ISD::SELECT_CC:
-    return performSelectCCCombine(N, DCI.DAG);
   case ISD::STORE:
     return performSTORECombine(N, DCI, DAG, Subtarget);
   case AArch64ISD::BRCOND:

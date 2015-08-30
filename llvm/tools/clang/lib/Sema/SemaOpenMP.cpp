@@ -12,6 +12,7 @@
 ///
 //===----------------------------------------------------------------------===//
 
+#include "TreeTransform.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/ASTMutationListener.h"
 #include "clang/AST/Decl.h"
@@ -714,7 +715,7 @@ void Sema::EndOpenMPDSABlock(Stmt *CurDirective) {
             continue;
           }
           auto *VD = cast<VarDecl>(cast<DeclRefExpr>(DE)->getDecl());
-          QualType Type = VD->getType();
+          QualType Type = VD->getType().getNonReferenceType();
           auto DVar = DSAStack->getTopDSA(VD, false);
           if (DVar.CKind == OMPC_lastprivate) {
             // Generate helper private variable and initialize it with the
@@ -2609,20 +2610,85 @@ bool OpenMPIterationSpaceChecker::CheckInc(Expr *S) {
   return true;
 }
 
+namespace {
+// Transform variables declared in GNU statement expressions to new ones to
+// avoid crash on codegen.
+class TransformToNewDefs : public TreeTransform<TransformToNewDefs> {
+  typedef TreeTransform<TransformToNewDefs> BaseTransform;
+
+public:
+  TransformToNewDefs(Sema &SemaRef) : BaseTransform(SemaRef) {}
+
+  Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
+    if (auto *VD = cast<VarDecl>(D))
+      if (!isa<ParmVarDecl>(D) && !isa<VarTemplateSpecializationDecl>(D) &&
+          !isa<ImplicitParamDecl>(D)) {
+        auto *NewVD = VarDecl::Create(
+            SemaRef.Context, VD->getDeclContext(), VD->getLocStart(),
+            VD->getLocation(), VD->getIdentifier(), VD->getType(),
+            VD->getTypeSourceInfo(), VD->getStorageClass());
+        NewVD->setTSCSpec(VD->getTSCSpec());
+        NewVD->setInit(VD->getInit());
+        NewVD->setInitStyle(VD->getInitStyle());
+        NewVD->setExceptionVariable(VD->isExceptionVariable());
+        NewVD->setNRVOVariable(VD->isNRVOVariable());
+        NewVD->setCXXForRangeDecl(VD->isInExternCXXContext());
+        NewVD->setConstexpr(VD->isConstexpr());
+        NewVD->setInitCapture(VD->isInitCapture());
+        NewVD->setPreviousDeclInSameBlockScope(
+            VD->isPreviousDeclInSameBlockScope());
+        VD->getDeclContext()->addHiddenDecl(NewVD);
+        transformedLocalDecl(VD, NewVD);
+        return NewVD;
+      }
+    return BaseTransform::TransformDefinition(Loc, D);
+  }
+
+  ExprResult TransformDeclRefExpr(DeclRefExpr *E) {
+    if (auto *NewD = TransformDecl(E->getExprLoc(), E->getDecl()))
+      if (E->getDecl() != NewD) {
+        NewD->setReferenced();
+        NewD->markUsed(SemaRef.Context);
+        return DeclRefExpr::Create(
+            SemaRef.Context, E->getQualifierLoc(), E->getTemplateKeywordLoc(),
+            cast<ValueDecl>(NewD), E->refersToEnclosingVariableOrCapture(),
+            E->getNameInfo(), E->getType(), E->getValueKind());
+      }
+    return BaseTransform::TransformDeclRefExpr(E);
+  }
+};
+}
+
 /// \brief Build the expression to calculate the number of iterations.
 Expr *
 OpenMPIterationSpaceChecker::BuildNumIterations(Scope *S,
                                                 const bool LimitedType) const {
+  TransformToNewDefs Transform(SemaRef);
   ExprResult Diff;
-  if (Var->getType()->isIntegerType() || Var->getType()->isPointerType() ||
+  auto VarType = Var->getType().getNonReferenceType();
+  if (VarType->isIntegerType() || VarType->isPointerType() ||
       SemaRef.getLangOpts().CPlusPlus) {
     // Upper - Lower
-    Expr *Upper = TestIsLessOp ? UB : LB;
-    Expr *Lower = TestIsLessOp ? LB : UB;
+    auto *UBExpr = TestIsLessOp ? UB : LB;
+    auto *LBExpr = TestIsLessOp ? LB : UB;
+    Expr *Upper = Transform.TransformExpr(UBExpr).get();
+    Expr *Lower = Transform.TransformExpr(LBExpr).get();
+    if (!Upper || !Lower)
+      return nullptr;
+    Upper = SemaRef.PerformImplicitConversion(Upper, UBExpr->getType(),
+                                                    Sema::AA_Converting,
+                                                    /*AllowExplicit=*/true)
+                      .get();
+    Lower = SemaRef.PerformImplicitConversion(Lower, LBExpr->getType(),
+                                              Sema::AA_Converting,
+                                              /*AllowExplicit=*/true)
+                .get();
+    if (!Upper || !Lower)
+      return nullptr;
 
     Diff = SemaRef.BuildBinOp(S, DefaultLoc, BO_Sub, Upper, Lower);
 
-    if (!Diff.isUsable() && Var->getType()->getAsCXXRecordDecl()) {
+    if (!Diff.isUsable() && VarType->getAsCXXRecordDecl()) {
       // BuildBinOp already emitted error, this one is to point user to upper
       // and lower bound, and to tell what is passed to 'operator-'.
       SemaRef.Diag(Upper->getLocStart(), diag::err_omp_loop_diff_cxx)
@@ -2643,8 +2709,15 @@ OpenMPIterationSpaceChecker::BuildNumIterations(Scope *S,
     return nullptr;
 
   // Upper - Lower [- 1] + Step
-  Diff = SemaRef.BuildBinOp(S, DefaultLoc, BO_Add, Diff.get(),
-                            Step->IgnoreImplicit());
+  auto NewStep = Transform.TransformExpr(Step->IgnoreImplicit());
+  if (NewStep.isInvalid())
+    return nullptr;
+  NewStep = SemaRef.PerformImplicitConversion(
+      NewStep.get(), Step->IgnoreImplicit()->getType(), Sema::AA_Converting,
+      /*AllowExplicit=*/true);
+  if (NewStep.isInvalid())
+    return nullptr;
+  Diff = SemaRef.BuildBinOp(S, DefaultLoc, BO_Add, Diff.get(), NewStep.get());
   if (!Diff.isUsable())
     return nullptr;
 
@@ -2654,15 +2727,35 @@ OpenMPIterationSpaceChecker::BuildNumIterations(Scope *S,
     return nullptr;
 
   // (Upper - Lower [- 1] + Step) / Step
-  Diff = SemaRef.BuildBinOp(S, DefaultLoc, BO_Div, Diff.get(),
-                            Step->IgnoreImplicit());
+  NewStep = Transform.TransformExpr(Step->IgnoreImplicit());
+  if (NewStep.isInvalid())
+    return nullptr;
+  NewStep = SemaRef.PerformImplicitConversion(
+      NewStep.get(), Step->IgnoreImplicit()->getType(), Sema::AA_Converting,
+      /*AllowExplicit=*/true);
+  if (NewStep.isInvalid())
+    return nullptr;
+  Diff = SemaRef.BuildBinOp(S, DefaultLoc, BO_Div, Diff.get(), NewStep.get());
   if (!Diff.isUsable())
     return nullptr;
 
   // OpenMP runtime requires 32-bit or 64-bit loop variables.
+  QualType Type = Diff.get()->getType();
+  auto &C = SemaRef.Context;
+  bool UseVarType = VarType->hasIntegerRepresentation() &&
+                    C.getTypeSize(Type) > C.getTypeSize(VarType);
+  if (!Type->isIntegerType() || UseVarType) {
+    unsigned NewSize =
+        UseVarType ? C.getTypeSize(VarType) : C.getTypeSize(Type);
+    bool IsSigned = UseVarType ? VarType->hasSignedIntegerRepresentation()
+                               : Type->hasSignedIntegerRepresentation();
+    Type = C.getIntTypeForBitwidth(NewSize, IsSigned);
+    Diff = SemaRef.PerformImplicitConversion(
+        Diff.get(), Type, Sema::AA_Converting, /*AllowExplicit=*/true);
+    if (!Diff.isUsable())
+      return nullptr;
+  }
   if (LimitedType) {
-    auto &C = SemaRef.Context;
-    QualType Type = Diff.get()->getType();
     unsigned NewSize = (C.getTypeSize(Type) > 32) ? 64 : 32;
     if (NewSize != C.getTypeSize(Type)) {
       if (NewSize < C.getTypeSize(Type)) {
@@ -2671,7 +2764,8 @@ OpenMPIterationSpaceChecker::BuildNumIterations(Scope *S,
             << InitSrcRange << ConditionSrcRange;
       }
       QualType NewType = C.getIntTypeForBitwidth(
-          NewSize, Type->hasSignedIntegerRepresentation());
+          NewSize, Type->hasSignedIntegerRepresentation() ||
+                       C.getTypeSize(Type) < NewSize);
       Diff = SemaRef.PerformImplicitConversion(Diff.get(), NewType,
                                                Sema::AA_Converting, true);
       if (!Diff.isUsable())
@@ -2686,10 +2780,24 @@ Expr *OpenMPIterationSpaceChecker::BuildPreCond(Scope *S, Expr *Cond) const {
   // Try to build LB <op> UB, where <op> is <, >, <=, or >=.
   bool Suppress = SemaRef.getDiagnostics().getSuppressAllDiagnostics();
   SemaRef.getDiagnostics().setSuppressAllDiagnostics(/*Val=*/true);
+  TransformToNewDefs Transform(SemaRef);
+
+  auto NewLB = Transform.TransformExpr(LB);
+  auto NewUB = Transform.TransformExpr(UB);
+  if (NewLB.isInvalid() || NewUB.isInvalid())
+    return Cond;
+  NewLB = SemaRef.PerformImplicitConversion(NewLB.get(), LB->getType(),
+                                            Sema::AA_Converting,
+                                            /*AllowExplicit=*/true);
+  NewUB = SemaRef.PerformImplicitConversion(NewUB.get(), UB->getType(),
+                                            Sema::AA_Converting,
+                                            /*AllowExplicit=*/true);
+  if (NewLB.isInvalid() || NewUB.isInvalid())
+    return Cond;
   auto CondExpr = SemaRef.BuildBinOp(
       S, DefaultLoc, TestIsLessOp ? (TestIsStrictOp ? BO_LT : BO_LE)
                                   : (TestIsStrictOp ? BO_GT : BO_GE),
-      LB, UB);
+      NewLB.get(), NewUB.get());
   if (CondExpr.isUsable()) {
     CondExpr = SemaRef.PerformImplicitConversion(
         CondExpr.get(), SemaRef.Context.BoolTy, /*Action=*/Sema::AA_Casting,
@@ -2912,6 +3020,31 @@ static bool CheckOpenMPIterationSpace(
   return HasErrors;
 }
 
+/// \brief Build 'VarRef = Start.
+static ExprResult BuildCounterInit(Sema &SemaRef, Scope *S, SourceLocation Loc,
+                                   ExprResult VarRef, ExprResult Start) {
+  TransformToNewDefs Transform(SemaRef);
+  // Build 'VarRef = Start.
+  auto NewStart = Transform.TransformExpr(Start.get()->IgnoreImplicit());
+  if (NewStart.isInvalid())
+    return ExprError();
+  NewStart = SemaRef.PerformImplicitConversion(
+      NewStart.get(), Start.get()->IgnoreImplicit()->getType(),
+      Sema::AA_Converting,
+      /*AllowExplicit=*/true);
+  if (NewStart.isInvalid())
+    return ExprError();
+  NewStart = SemaRef.PerformImplicitConversion(
+      NewStart.get(), VarRef.get()->getType(), Sema::AA_Converting,
+      /*AllowExplicit=*/true);
+  if (!NewStart.isUsable())
+    return ExprError();
+
+  auto Init =
+      SemaRef.BuildBinOp(S, Loc, BO_Assign, VarRef.get(), NewStart.get());
+  return Init;
+}
+
 /// \brief Build 'VarRef = Start + Iter * Step'.
 static ExprResult BuildCounterUpdate(Sema &SemaRef, Scope *S,
                                      SourceLocation Loc, ExprResult VarRef,
@@ -2923,14 +3056,33 @@ static ExprResult BuildCounterUpdate(Sema &SemaRef, Scope *S,
       !Step.isUsable())
     return ExprError();
 
-  ExprResult Update = SemaRef.BuildBinOp(S, Loc, BO_Mul, Iter.get(),
-                                         Step.get()->IgnoreImplicit());
+  TransformToNewDefs Transform(SemaRef);
+  auto NewStep = Transform.TransformExpr(Step.get()->IgnoreImplicit());
+  if (NewStep.isInvalid())
+    return ExprError();
+  NewStep = SemaRef.PerformImplicitConversion(
+      NewStep.get(), Step.get()->IgnoreImplicit()->getType(),
+      Sema::AA_Converting,
+      /*AllowExplicit=*/true);
+  if (NewStep.isInvalid())
+    return ExprError();
+  ExprResult Update =
+      SemaRef.BuildBinOp(S, Loc, BO_Mul, Iter.get(), NewStep.get());
   if (!Update.isUsable())
     return ExprError();
 
   // Build 'VarRef = Start + Iter * Step'.
+  auto NewStart = Transform.TransformExpr(Start.get()->IgnoreImplicit());
+  if (NewStart.isInvalid())
+    return ExprError();
+  NewStart = SemaRef.PerformImplicitConversion(
+      NewStart.get(), Start.get()->IgnoreImplicit()->getType(),
+      Sema::AA_Converting,
+      /*AllowExplicit=*/true);
+  if (NewStart.isInvalid())
+    return ExprError();
   Update = SemaRef.BuildBinOp(S, Loc, (Subtract ? BO_Sub : BO_Add),
-                              Start.get()->IgnoreImplicit(), Update.get());
+                              NewStart.get(), Update.get());
   if (!Update.isUsable())
     return ExprError();
 
@@ -3050,8 +3202,18 @@ CheckOpenMPLoop(OpenMPDirectiveKind DKind, Expr *CollapseLoopCountExpr,
   // true).
   auto PreCond = ExprResult(IterSpaces[0].PreCond);
   auto N0 = IterSpaces[0].NumIterations;
-  ExprResult LastIteration32 = WidenIterationCount(32 /* Bits */, N0, SemaRef);
-  ExprResult LastIteration64 = WidenIterationCount(64 /* Bits */, N0, SemaRef);
+  ExprResult LastIteration32 = WidenIterationCount(
+      32 /* Bits */, SemaRef.PerformImplicitConversion(
+                                N0->IgnoreImpCasts(), N0->getType(),
+                                Sema::AA_Converting, /*AllowExplicit=*/true)
+                         .get(),
+      SemaRef);
+  ExprResult LastIteration64 = WidenIterationCount(
+      64 /* Bits */, SemaRef.PerformImplicitConversion(
+                                N0->IgnoreImpCasts(), N0->getType(),
+                                Sema::AA_Converting, /*AllowExplicit=*/true)
+                         .get(),
+      SemaRef);
 
   if (!LastIteration32.isUsable() || !LastIteration64.isUsable())
     return NestedLoopCount;
@@ -3068,11 +3230,19 @@ CheckOpenMPLoop(OpenMPDirectiveKind DKind, Expr *CollapseLoopCountExpr,
     auto N = IterSpaces[Cnt].NumIterations;
     AllCountsNeedLessThan32Bits &= C.getTypeSize(N->getType()) < 32;
     if (LastIteration32.isUsable())
-      LastIteration32 = SemaRef.BuildBinOp(CurScope, SourceLocation(), BO_Mul,
-                                           LastIteration32.get(), N);
+      LastIteration32 = SemaRef.BuildBinOp(
+          CurScope, SourceLocation(), BO_Mul, LastIteration32.get(),
+          SemaRef.PerformImplicitConversion(N->IgnoreImpCasts(), N->getType(),
+                                            Sema::AA_Converting,
+                                            /*AllowExplicit=*/true)
+              .get());
     if (LastIteration64.isUsable())
-      LastIteration64 = SemaRef.BuildBinOp(CurScope, SourceLocation(), BO_Mul,
-                                           LastIteration64.get(), N);
+      LastIteration64 = SemaRef.BuildBinOp(
+          CurScope, SourceLocation(), BO_Mul, LastIteration64.get(),
+          SemaRef.PerformImplicitConversion(N->IgnoreImpCasts(), N->getType(),
+                                            Sema::AA_Converting,
+                                            /*AllowExplicit=*/true)
+              .get());
   }
 
   // Choose either the 32-bit or 64-bit version.
@@ -3233,6 +3403,7 @@ CheckOpenMPLoop(OpenMPDirectiveKind DKind, Expr *CollapseLoopCountExpr,
   // Build updates and final values of the loop counters.
   bool HasErrors = false;
   Built.Counters.resize(NestedLoopCount);
+  Built.Inits.resize(NestedLoopCount);
   Built.Updates.resize(NestedLoopCount);
   Built.Finals.resize(NestedLoopCount);
   {
@@ -3266,6 +3437,12 @@ CheckOpenMPLoop(OpenMPDirectiveKind DKind, Expr *CollapseLoopCountExpr,
           SemaRef, cast<VarDecl>(cast<DeclRefExpr>(IS.CounterVar)->getDecl()),
           IS.CounterVar->getType(), IS.CounterVar->getExprLoc(),
           /*RefersToCapture=*/true);
+      ExprResult Init = BuildCounterInit(SemaRef, CurScope, UpdLoc, CounterVar,
+                                         IS.CounterInit);
+      if (!Init.isUsable()) {
+        HasErrors = true;
+        break;
+      }
       ExprResult Update =
           BuildCounterUpdate(SemaRef, CurScope, UpdLoc, CounterVar,
                              IS.CounterInit, Iter, IS.CounterStep, IS.Subtract);
@@ -3306,6 +3483,7 @@ CheckOpenMPLoop(OpenMPDirectiveKind DKind, Expr *CollapseLoopCountExpr,
       // Save results
       Built.Counters[Cnt] = IS.CounterVar;
       Built.PrivateCounters[Cnt] = IS.PrivateCounterVar;
+      Built.Inits[Cnt] = Init.get();
       Built.Updates[Cnt] = Update.get();
       Built.Finals[Cnt] = Final.get();
     }
@@ -3357,6 +3535,30 @@ static Expr *getOrderedNumberExpr(ArrayRef<OMPClause *> Clauses) {
   return nullptr;
 }
 
+static bool checkSimdlenSafelenValues(Sema &S, const Expr *Simdlen,
+                                      const Expr *Safelen) {
+  llvm::APSInt SimdlenRes, SafelenRes;
+  if (Simdlen->isValueDependent() || Simdlen->isTypeDependent() ||
+      Simdlen->isInstantiationDependent() ||
+      Simdlen->containsUnexpandedParameterPack())
+    return false;
+  if (Safelen->isValueDependent() || Safelen->isTypeDependent() ||
+      Safelen->isInstantiationDependent() ||
+      Safelen->containsUnexpandedParameterPack())
+    return false;
+  Simdlen->EvaluateAsInt(SimdlenRes, S.Context);
+  Safelen->EvaluateAsInt(SafelenRes, S.Context);
+  // OpenMP 4.1 [2.8.1, simd Construct, Restrictions]
+  // If both simdlen and safelen clauses are specified, the value of the simdlen
+  // parameter must be less than or equal to the value of the safelen parameter.
+  if (SimdlenRes > SafelenRes) {
+    S.Diag(Simdlen->getExprLoc(), diag::err_omp_wrong_simdlen_safelen_values)
+        << Simdlen->getSourceRange() << Safelen->getSourceRange();
+    return true;
+  }
+  return false;
+}
+
 StmtResult Sema::ActOnOpenMPSimdDirective(
     ArrayRef<OMPClause *> Clauses, Stmt *AStmt, SourceLocation StartLoc,
     SourceLocation EndLoc,
@@ -3382,6 +3584,24 @@ StmtResult Sema::ActOnOpenMPSimdDirective(
           return StmtError();
     }
   }
+
+  // OpenMP 4.1 [2.8.1, simd Construct, Restrictions]
+  // If both simdlen and safelen clauses are specified, the value of the simdlen
+  // parameter must be less than or equal to the value of the safelen parameter.
+  OMPSafelenClause *Safelen = nullptr;
+  OMPSimdlenClause *Simdlen = nullptr;
+  for (auto *Clause : Clauses) {
+    if (Clause->getClauseKind() == OMPC_safelen)
+      Safelen = cast<OMPSafelenClause>(Clause);
+    else if (Clause->getClauseKind() == OMPC_simdlen)
+      Simdlen = cast<OMPSimdlenClause>(Clause);
+    if (Safelen && Simdlen)
+      break;
+  }
+  if (Simdlen && Safelen &&
+      checkSimdlenSafelenValues(*this, Simdlen->getSimdlen(),
+                                Safelen->getSafelen()))
+    return StmtError();
 
   getCurFunction()->setHasBranchProtectedScope();
   return OMPSimdDirective::Create(Context, StartLoc, EndLoc, NestedLoopCount,
@@ -3445,6 +3665,24 @@ StmtResult Sema::ActOnOpenMPForSimdDirective(
           return StmtError();
     }
   }
+
+  // OpenMP 4.1 [2.8.1, simd Construct, Restrictions]
+  // If both simdlen and safelen clauses are specified, the value of the simdlen
+  // parameter must be less than or equal to the value of the safelen parameter.
+  OMPSafelenClause *Safelen = nullptr;
+  OMPSimdlenClause *Simdlen = nullptr;
+  for (auto *Clause : Clauses) {
+    if (Clause->getClauseKind() == OMPC_safelen)
+      Safelen = cast<OMPSafelenClause>(Clause);
+    else if (Clause->getClauseKind() == OMPC_simdlen)
+      Simdlen = cast<OMPSimdlenClause>(Clause);
+    if (Safelen && Simdlen)
+      break;
+  }
+  if (Simdlen && Safelen &&
+      checkSimdlenSafelenValues(*this, Simdlen->getSimdlen(),
+                                Safelen->getSafelen()))
+    return StmtError();
 
   getCurFunction()->setHasBranchProtectedScope();
   return OMPForSimdDirective::Create(Context, StartLoc, EndLoc, NestedLoopCount,
@@ -3617,6 +3855,24 @@ StmtResult Sema::ActOnOpenMPParallelForSimdDirective(
           return StmtError();
     }
   }
+
+  // OpenMP 4.1 [2.8.1, simd Construct, Restrictions]
+  // If both simdlen and safelen clauses are specified, the value of the simdlen
+  // parameter must be less than or equal to the value of the safelen parameter.
+  OMPSafelenClause *Safelen = nullptr;
+  OMPSimdlenClause *Simdlen = nullptr;
+  for (auto *Clause : Clauses) {
+    if (Clause->getClauseKind() == OMPC_safelen)
+      Safelen = cast<OMPSafelenClause>(Clause);
+    else if (Clause->getClauseKind() == OMPC_simdlen)
+      Simdlen = cast<OMPSimdlenClause>(Clause);
+    if (Safelen && Simdlen)
+      break;
+  }
+  if (Simdlen && Safelen &&
+      checkSimdlenSafelenValues(*this, Simdlen->getSimdlen(),
+                                Safelen->getSafelen()))
+    return StmtError();
 
   getCurFunction()->setHasBranchProtectedScope();
   return OMPParallelForSimdDirective::Create(
@@ -4505,6 +4761,9 @@ OMPClause *Sema::ActOnOpenMPSingleExprClause(OpenMPClauseKind Kind, Expr *Expr,
   case OMPC_safelen:
     Res = ActOnOpenMPSafelenClause(Expr, StartLoc, LParenLoc, EndLoc);
     break;
+  case OMPC_simdlen:
+    Res = ActOnOpenMPSimdlenClause(Expr, StartLoc, LParenLoc, EndLoc);
+    break;
   case OMPC_collapse:
     Res = ActOnOpenMPCollapseClause(Expr, StartLoc, LParenLoc, EndLoc);
     break;
@@ -4697,6 +4956,19 @@ OMPClause *Sema::ActOnOpenMPSafelenClause(Expr *Len, SourceLocation StartLoc,
       OMPSafelenClause(Safelen.get(), StartLoc, LParenLoc, EndLoc);
 }
 
+OMPClause *Sema::ActOnOpenMPSimdlenClause(Expr *Len, SourceLocation StartLoc,
+                                          SourceLocation LParenLoc,
+                                          SourceLocation EndLoc) {
+  // OpenMP [2.8.1, simd construct, Description]
+  // The parameter of the simdlen clause must be a constant
+  // positive integer expression.
+  ExprResult Simdlen = VerifyPositiveIntegerConstantInClause(Len, OMPC_simdlen);
+  if (Simdlen.isInvalid())
+    return nullptr;
+  return new (Context)
+      OMPSimdlenClause(Simdlen.get(), StartLoc, LParenLoc, EndLoc);
+}
+
 OMPClause *Sema::ActOnOpenMPCollapseClause(Expr *NumForLoops,
                                            SourceLocation StartLoc,
                                            SourceLocation LParenLoc,
@@ -4754,6 +5026,7 @@ OMPClause *Sema::ActOnOpenMPSimpleClause(
   case OMPC_final:
   case OMPC_num_threads:
   case OMPC_safelen:
+  case OMPC_simdlen:
   case OMPC_collapse:
   case OMPC_schedule:
   case OMPC_private:
@@ -4875,6 +5148,7 @@ OMPClause *Sema::ActOnOpenMPSingleExprWithArgClause(
   case OMPC_final:
   case OMPC_num_threads:
   case OMPC_safelen:
+  case OMPC_simdlen:
   case OMPC_collapse:
   case OMPC_default:
   case OMPC_proc_bind:
@@ -5007,6 +5281,7 @@ OMPClause *Sema::ActOnOpenMPClause(OpenMPClauseKind Kind,
   case OMPC_final:
   case OMPC_num_threads:
   case OMPC_safelen:
+  case OMPC_simdlen:
   case OMPC_collapse:
   case OMPC_schedule:
   case OMPC_private:
@@ -5076,7 +5351,7 @@ OMPClause *Sema::ActOnOpenMPVarListClause(
     SourceLocation StartLoc, SourceLocation LParenLoc, SourceLocation ColonLoc,
     SourceLocation EndLoc, CXXScopeSpec &ReductionIdScopeSpec,
     const DeclarationNameInfo &ReductionId, OpenMPDependClauseKind DepKind,
-    SourceLocation DepLoc) {
+    OpenMPLinearClauseKind LinKind, SourceLocation DepLinLoc) {
   OMPClause *Res = nullptr;
   switch (Kind) {
   case OMPC_private:
@@ -5097,7 +5372,7 @@ OMPClause *Sema::ActOnOpenMPVarListClause(
     break;
   case OMPC_linear:
     Res = ActOnOpenMPLinearClause(VarList, TailExpr, StartLoc, LParenLoc,
-                                  ColonLoc, EndLoc);
+                                  LinKind, DepLinLoc, ColonLoc, EndLoc);
     break;
   case OMPC_aligned:
     Res = ActOnOpenMPAlignedClause(VarList, TailExpr, StartLoc, LParenLoc,
@@ -5113,13 +5388,14 @@ OMPClause *Sema::ActOnOpenMPVarListClause(
     Res = ActOnOpenMPFlushClause(VarList, StartLoc, LParenLoc, EndLoc);
     break;
   case OMPC_depend:
-    Res = ActOnOpenMPDependClause(DepKind, DepLoc, ColonLoc, VarList, StartLoc,
+    Res = ActOnOpenMPDependClause(DepKind, DepLinLoc, ColonLoc, VarList, StartLoc,
                                   LParenLoc, EndLoc);
     break;
   case OMPC_if:
   case OMPC_final:
   case OMPC_num_threads:
   case OMPC_safelen:
+  case OMPC_simdlen:
   case OMPC_collapse:
   case OMPC_default:
   case OMPC_proc_bind:
@@ -5185,16 +5461,7 @@ OMPClause *Sema::ActOnOpenMPPrivateClause(ArrayRef<Expr *> VarList,
                             diag::err_omp_private_incomplete_type)) {
       continue;
     }
-    if (Type->isReferenceType()) {
-      Diag(ELoc, diag::err_omp_clause_ref_type_arg)
-          << getOpenMPClauseName(OMPC_private) << Type;
-      bool IsDecl =
-          VD->isThisDeclarationADefinition(Context) == VarDecl::DeclarationOnly;
-      Diag(VD->getLocation(),
-           IsDecl ? diag::note_previous_decl : diag::note_defined_here)
-          << VD;
-      continue;
-    }
+    Type = Type.getNonReferenceType();
 
     // OpenMP [2.9.1.1, Data-sharing Attribute Rules for Variables Referenced
     // in a Construct]
@@ -5329,23 +5596,7 @@ OMPClause *Sema::ActOnOpenMPFirstprivateClause(ArrayRef<Expr *> VarList,
                             diag::err_omp_firstprivate_incomplete_type)) {
       continue;
     }
-    if (Type->isReferenceType()) {
-      if (IsImplicitClause) {
-        Diag(ImplicitClauseLoc,
-             diag::err_omp_task_predetermined_firstprivate_ref_type_arg)
-            << Type;
-        Diag(RefExpr->getExprLoc(), diag::note_used_here);
-      } else {
-        Diag(ELoc, diag::err_omp_clause_ref_type_arg)
-            << getOpenMPClauseName(OMPC_firstprivate) << Type;
-      }
-      bool IsDecl =
-          VD->isThisDeclarationADefinition(Context) == VarDecl::DeclarationOnly;
-      Diag(VD->getLocation(),
-           IsDecl ? diag::note_previous_decl : diag::note_defined_here)
-          << VD;
-      continue;
-    }
+    Type = Type.getNonReferenceType();
 
     // OpenMP [2.9.3.4, Restrictions, C/C++, p.1]
     //  A variable of class type (or array thereof) that appears in a private
@@ -5563,16 +5814,7 @@ OMPClause *Sema::ActOnOpenMPLastprivateClause(ArrayRef<Expr *> VarList,
                             diag::err_omp_lastprivate_incomplete_type)) {
       continue;
     }
-    if (Type->isReferenceType()) {
-      Diag(ELoc, diag::err_omp_clause_ref_type_arg)
-          << getOpenMPClauseName(OMPC_lastprivate) << Type;
-      bool IsDecl =
-          VD->isThisDeclarationADefinition(Context) == VarDecl::DeclarationOnly;
-      Diag(VD->getLocation(),
-           IsDecl ? diag::note_previous_decl : diag::note_defined_here)
-          << VD;
-      continue;
-    }
+    Type = Type.getNonReferenceType();
 
     // OpenMP [2.14.1.1, Data-sharing Attribute Rules for Variables Referenced
     // in a Construct]
@@ -6169,18 +6411,24 @@ OMPClause *Sema::ActOnOpenMPReductionClause(
       RHSs, ReductionOps);
 }
 
-OMPClause *Sema::ActOnOpenMPLinearClause(ArrayRef<Expr *> VarList, Expr *Step,
-                                         SourceLocation StartLoc,
-                                         SourceLocation LParenLoc,
-                                         SourceLocation ColonLoc,
-                                         SourceLocation EndLoc) {
+OMPClause *Sema::ActOnOpenMPLinearClause(
+    ArrayRef<Expr *> VarList, Expr *Step, SourceLocation StartLoc,
+    SourceLocation LParenLoc, OpenMPLinearClauseKind LinKind,
+    SourceLocation LinLoc, SourceLocation ColonLoc, SourceLocation EndLoc) {
   SmallVector<Expr *, 8> Vars;
+  SmallVector<Expr *, 8> Privates;
   SmallVector<Expr *, 8> Inits;
+  if ((!LangOpts.CPlusPlus && LinKind != OMPC_LINEAR_val) ||
+      LinKind == OMPC_LINEAR_unknown) {
+    Diag(LinLoc, diag::err_omp_wrong_linear_modifier) << LangOpts.CPlusPlus;
+    LinKind = OMPC_LINEAR_val;
+  }
   for (auto &RefExpr : VarList) {
     assert(RefExpr && "NULL expr in OpenMP linear clause.");
     if (isa<DependentScopeDeclRefExpr>(RefExpr)) {
       // It will be analyzed later.
       Vars.push_back(RefExpr);
+      Privates.push_back(nullptr);
       Inits.push_back(nullptr);
       continue;
     }
@@ -6223,6 +6471,7 @@ OMPClause *Sema::ActOnOpenMPLinearClause(ArrayRef<Expr *> VarList, Expr *Step,
     if (QType->isDependentType() || QType->isInstantiationDependentType()) {
       // It will be analyzed later.
       Vars.push_back(DE);
+      Privates.push_back(nullptr);
       Inits.push_back(nullptr);
       continue;
     }
@@ -6232,16 +6481,13 @@ OMPClause *Sema::ActOnOpenMPLinearClause(ArrayRef<Expr *> VarList, Expr *Step,
                             diag::err_omp_linear_incomplete_type)) {
       continue;
     }
-    if (QType->isReferenceType()) {
-      Diag(ELoc, diag::err_omp_clause_ref_type_arg)
-          << getOpenMPClauseName(OMPC_linear) << QType;
-      bool IsDecl =
-          VD->isThisDeclarationADefinition(Context) == VarDecl::DeclarationOnly;
-      Diag(VD->getLocation(),
-           IsDecl ? diag::note_previous_decl : diag::note_defined_here)
-          << VD;
+    if ((LinKind == OMPC_LINEAR_uval || LinKind == OMPC_LINEAR_ref) &&
+        !QType->isReferenceType()) {
+      Diag(ELoc, diag::err_omp_wrong_linear_modifier_non_reference)
+          << QType << getOpenMPSimpleClauseTypeName(OMPC_linear, LinKind);
       continue;
     }
+    QType = QType.getNonReferenceType();
 
     // A list item must not be const-qualified.
     if (QType.isConstant(Context)) {
@@ -6269,14 +6515,24 @@ OMPClause *Sema::ActOnOpenMPLinearClause(ArrayRef<Expr *> VarList, Expr *Step,
       continue;
     }
 
+    // Build private copy of original var.
+    auto *Private = buildVarDecl(*this, ELoc, QType, VD->getName());
+    auto *PrivateRef = buildDeclRefExpr(
+        *this, Private, DE->getType().getUnqualifiedType(), DE->getExprLoc());
     // Build var to save initial value.
     VarDecl *Init = buildVarDecl(*this, ELoc, QType, ".linear.start");
-    AddInitializerToDecl(Init, DefaultLvalueConversion(DE).get(),
+    Expr *InitExpr;
+    if (LinKind == OMPC_LINEAR_uval)
+      InitExpr = VD->getInit();
+    else
+      InitExpr = DE;
+    AddInitializerToDecl(Init, DefaultLvalueConversion(InitExpr).get(),
                          /*DirectInit*/ false, /*TypeMayContainAuto*/ false);
     auto InitRef = buildDeclRefExpr(
         *this, Init, DE->getType().getUnqualifiedType(), DE->getExprLoc());
     DSAStack->addDSA(VD, DE, OMPC_linear);
     Vars.push_back(DE);
+    Privates.push_back(PrivateRef);
     Inits.push_back(InitRef);
   }
 
@@ -6316,8 +6572,9 @@ OMPClause *Sema::ActOnOpenMPLinearClause(ArrayRef<Expr *> VarList, Expr *Step,
     }
   }
 
-  return OMPLinearClause::Create(Context, StartLoc, LParenLoc, ColonLoc, EndLoc,
-                                 Vars, Inits, StepExpr, CalcStepExpr);
+  return OMPLinearClause::Create(Context, StartLoc, LParenLoc, LinKind, LinLoc,
+                                 ColonLoc, EndLoc, Vars, Privates, Inits,
+                                 StepExpr, CalcStepExpr);
 }
 
 static bool FinishOpenMPLinearClause(OMPLinearClause &Clause, DeclRefExpr *IV,
@@ -6336,25 +6593,31 @@ static bool FinishOpenMPLinearClause(OMPLinearClause &Clause, DeclRefExpr *IV,
     Step = cast<BinaryOperator>(CalcStep)->getLHS();
   bool HasErrors = false;
   auto CurInit = Clause.inits().begin();
+  auto CurPrivate = Clause.privates().begin();
+  auto LinKind = Clause.getModifier();
   for (auto &RefExpr : Clause.varlists()) {
     Expr *InitExpr = *CurInit;
 
     // Build privatized reference to the current linear var.
     auto DE = cast<DeclRefExpr>(RefExpr);
-    auto PrivateRef =
-        buildDeclRefExpr(SemaRef, cast<VarDecl>(DE->getDecl()),
-                         DE->getType().getUnqualifiedType(), DE->getExprLoc(),
-                         /*RefersToCapture=*/true);
+    Expr *CapturedRef;
+    if (LinKind == OMPC_LINEAR_uval)
+      CapturedRef = cast<VarDecl>(DE->getDecl())->getInit();
+    else
+      CapturedRef =
+          buildDeclRefExpr(SemaRef, cast<VarDecl>(DE->getDecl()),
+                           DE->getType().getUnqualifiedType(), DE->getExprLoc(),
+                           /*RefersToCapture=*/true);
 
     // Build update: Var = InitExpr + IV * Step
     ExprResult Update =
-        BuildCounterUpdate(SemaRef, S, RefExpr->getExprLoc(), PrivateRef,
+        BuildCounterUpdate(SemaRef, S, RefExpr->getExprLoc(), *CurPrivate,
                            InitExpr, IV, Step, /* Subtract */ false);
     Update = SemaRef.ActOnFinishFullExpr(Update.get());
 
     // Build final: Var = InitExpr + NumIterations * Step
     ExprResult Final =
-        BuildCounterUpdate(SemaRef, S, RefExpr->getExprLoc(), PrivateRef,
+        BuildCounterUpdate(SemaRef, S, RefExpr->getExprLoc(), CapturedRef,
                            InitExpr, NumIterations, Step, /* Subtract */ false);
     Final = SemaRef.ActOnFinishFullExpr(Final.get());
     if (!Update.isUsable() || !Final.isUsable()) {
@@ -6365,7 +6628,7 @@ static bool FinishOpenMPLinearClause(OMPLinearClause &Clause, DeclRefExpr *IV,
       Updates.push_back(Update.get());
       Finals.push_back(Final.get());
     }
-    ++CurInit;
+    ++CurInit, ++CurPrivate;
   }
   Clause.setUpdates(Updates);
   Clause.setFinals(Finals);
@@ -6624,7 +6887,8 @@ OMPClause *Sema::ActOnOpenMPCopyprivateClause(ArrayRef<Expr *> VarList,
     //  A variable of class type (or array thereof) that appears in a
     //  copyin clause requires an accessible, unambiguous copy assignment
     //  operator for the class type.
-    Type = Context.getBaseElementType(Type).getUnqualifiedType();
+    Type = Context.getBaseElementType(Type.getNonReferenceType())
+               .getUnqualifiedType();
     auto *SrcVD =
         buildVarDecl(*this, DE->getLocStart(), Type, ".copyprivate.src");
     auto *PseudoSrcExpr =
@@ -6709,10 +6973,11 @@ Sema::ActOnOpenMPDependClause(OpenMPDependClauseKind DepKind,
     //  structure) but is not an array element or an array section cannot appear
     //  in a depend clause.
     auto *SimpleExpr = RefExpr->IgnoreParenCasts();
-    DeclRefExpr *DE = dyn_cast<DeclRefExpr>(SimpleExpr);
-    ArraySubscriptExpr *ASE = dyn_cast<ArraySubscriptExpr>(SimpleExpr);
-    if (!RefExpr->IgnoreParenImpCasts()->isLValue() || (!ASE && !DE) ||
-        (DE && !isa<VarDecl>(DE->getDecl())) ||
+    auto *DE = dyn_cast<DeclRefExpr>(SimpleExpr);
+    auto *ASE = dyn_cast<ArraySubscriptExpr>(SimpleExpr);
+    auto *OASE = dyn_cast<OMPArraySectionExpr>(SimpleExpr);
+    if (!RefExpr->IgnoreParenImpCasts()->isLValue() ||
+        (!ASE && !DE && !OASE) || (DE && !isa<VarDecl>(DE->getDecl())) ||
         (ASE && !ASE->getBase()->getType()->isAnyPointerType() &&
          !ASE->getBase()->getType()->isArrayType())) {
       Diag(ELoc, diag::err_omp_expected_var_name_or_array_item)

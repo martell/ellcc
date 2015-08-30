@@ -28,6 +28,9 @@ void llvm::initializeAnalysis(PassRegistry &Registry) {
   initializeBasicAliasAnalysisPass(Registry);
   initializeBlockFrequencyInfoWrapperPassPass(Registry);
   initializeBranchProbabilityInfoWrapperPassPass(Registry);
+  initializeCallGraphWrapperPassPass(Registry);
+  initializeCallGraphPrinterPass(Registry);
+  initializeCallGraphViewerPass(Registry);
   initializeCostModelAnalysisPass(Registry);
   initializeCFGViewerPass(Registry);
   initializeCFGPrinterPass(Registry);
@@ -36,6 +39,7 @@ void llvm::initializeAnalysis(PassRegistry &Registry) {
   initializeCFLAliasAnalysisPass(Registry);
   initializeDependenceAnalysisPass(Registry);
   initializeDelinearizationPass(Registry);
+  initializeDemandedBitsPass(Registry);
   initializeDivergenceAnalysisPass(Registry);
   initializeDominanceFrontierPass(Registry);
   initializeDomViewerPass(Registry);
@@ -46,24 +50,25 @@ void llvm::initializeAnalysis(PassRegistry &Registry) {
   initializePostDomPrinterPass(Registry);
   initializePostDomOnlyViewerPass(Registry);
   initializePostDomOnlyPrinterPass(Registry);
+  initializeGlobalsModRefPass(Registry);
   initializeIVUsersPass(Registry);
   initializeInstCountPass(Registry);
   initializeIntervalPartitionPass(Registry);
   initializeLazyValueInfoPass(Registry);
-  initializeLibCallAliasAnalysisPass(Registry);
   initializeLintPass(Registry);
   initializeLoopInfoWrapperPassPass(Registry);
   initializeMemDepPrinterPass(Registry);
   initializeMemDerefPrinterPass(Registry);
   initializeMemoryDependenceAnalysisPass(Registry);
   initializeModuleDebugInfoPrinterPass(Registry);
+  initializeObjCARCAliasAnalysisPass(Registry);
   initializePostDominatorTreePass(Registry);
   initializeRegionInfoPassPass(Registry);
   initializeRegionViewerPass(Registry);
   initializeRegionPrinterPass(Registry);
   initializeRegionOnlyViewerPass(Registry);
   initializeRegionOnlyPrinterPass(Registry);
-  initializeScalarEvolutionPass(Registry);
+  initializeScalarEvolutionWrapperPassPass(Registry);
   initializeScalarEvolutionAliasAnalysisPass(Registry);
   initializeTargetTransformInfoWrapperPassPass(Registry);
   initializeTypeBasedAliasAnalysisPass(Registry);
@@ -71,6 +76,10 @@ void llvm::initializeAnalysis(PassRegistry &Registry) {
 }
 
 void LLVMInitializeAnalysis(LLVMPassRegistryRef R) {
+  initializeAnalysis(*unwrap(R));
+}
+
+void LLVMInitializeIPA(LLVMPassRegistryRef R) {
   initializeAnalysis(*unwrap(R));
 }
 

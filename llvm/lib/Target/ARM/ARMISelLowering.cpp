@@ -147,6 +147,11 @@ void ARMTargetLowering::addTypeForNEON(MVT VT, MVT PromotedLdStVT,
     setOperationAction(ISD::SABSDIFF, VT, Legal);
     setOperationAction(ISD::UABSDIFF, VT, Legal);
   }
+  if (!VT.isFloatingPoint() &&
+      VT != MVT::v2i64 && VT != MVT::v1i64)
+    for (unsigned Opcode : {ISD::SMIN, ISD::SMAX, ISD::UMIN, ISD::UMAX})
+      setOperationAction(Opcode, VT, Legal);
+
 }
 
 void ARMTargetLowering::addDRTypeForNEON(MVT VT) {
@@ -583,7 +588,6 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     setTargetDAGCombine(ISD::SIGN_EXTEND);
     setTargetDAGCombine(ISD::ZERO_EXTEND);
     setTargetDAGCombine(ISD::ANY_EXTEND);
-    setTargetDAGCombine(ISD::SELECT_CC);
     setTargetDAGCombine(ISD::BUILD_VECTOR);
     setTargetDAGCombine(ISD::VECTOR_SHUFFLE);
     setTargetDAGCombine(ISD::INSERT_VECTOR_ELT);
@@ -721,7 +725,12 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::CTTZ_ZERO_UNDEF  , MVT::i32  , Expand);
   setOperationAction(ISD::CTLZ_ZERO_UNDEF  , MVT::i32  , Expand);
 
-  setOperationAction(ISD::READCYCLECOUNTER, MVT::i64, Custom);
+  // @llvm.readcyclecounter requires the Performance Monitors extension.
+  // Default to the 0 expansion on unsupported platforms.
+  // FIXME: Technically there are older ARM CPUs that have
+  // implementation-specific ways of obtaining this information.
+  if (Subtarget->hasPerfMon())
+    setOperationAction(ISD::READCYCLECOUNTER, MVT::i64, Custom);
 
   // Only ARMv6 has BSWAP.
   if (!Subtarget->hasV6Ops())
@@ -734,11 +743,13 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::UDIV,  MVT::i32, Expand);
   }
 
-  // FIXME: Also set divmod for SREM on EABI/androideabi
   setOperationAction(ISD::SREM,  MVT::i32, Expand);
   setOperationAction(ISD::UREM,  MVT::i32, Expand);
   // Register based DivRem for AEABI (RTABI 4.2)
   if (Subtarget->isTargetAEABI() || Subtarget->isTargetAndroid()) {
+    setOperationAction(ISD::SREM, MVT::i64, Custom);
+    setOperationAction(ISD::UREM, MVT::i64, Custom);
+
     setLibcallName(RTLIB::SDIVREM_I8,  "__aeabi_idivmod");
     setLibcallName(RTLIB::SDIVREM_I16, "__aeabi_idivmod");
     setLibcallName(RTLIB::SDIVREM_I32, "__aeabi_idivmod");
@@ -951,11 +962,11 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
     }
   }
 
-  if (Subtarget->hasVFP3()) {
+  if (Subtarget->hasNEON()) {
+    // vmin and vmax aren't available in a scalar form, so we use
+    // a NEON instruction with an undef lane instead.
     setOperationAction(ISD::FMINNAN, MVT::f32, Legal);
     setOperationAction(ISD::FMAXNAN, MVT::f32, Legal);
-  }
-  if (Subtarget->hasNEON()) {
     setOperationAction(ISD::FMINNAN, MVT::v2f32, Legal);
     setOperationAction(ISD::FMAXNAN, MVT::v2f32, Legal);
     setOperationAction(ISD::FMINNAN, MVT::v4f32, Legal);
@@ -2822,11 +2833,24 @@ ARMTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
     return DAG.getNode(NewOpc, SDLoc(Op), Op.getValueType(),
                        Op.getOperand(1), Op.getOperand(2));
   }
+  case Intrinsic::arm_neon_vminu:
+  case Intrinsic::arm_neon_vmaxu: {
+    if (Op.getValueType().isFloatingPoint())
+      return SDValue();
+    unsigned NewOpc = (IntNo == Intrinsic::arm_neon_vminu)
+      ? ISD::UMIN : ISD::UMAX;
+    return DAG.getNode(NewOpc, SDLoc(Op), Op.getValueType(),
+                         Op.getOperand(1), Op.getOperand(2));
+  }
   case Intrinsic::arm_neon_vmins:
   case Intrinsic::arm_neon_vmaxs: {
     // v{min,max}s is overloaded between signed integers and floats.
-    if (!Op.getValueType().isFloatingPoint())
-      return SDValue();
+    if (!Op.getValueType().isFloatingPoint()) {
+      unsigned NewOpc = (IntNo == Intrinsic::arm_neon_vmins)
+        ? ISD::SMIN : ISD::SMAX;
+      return DAG.getNode(NewOpc, SDLoc(Op), Op.getValueType(),
+                         Op.getOperand(1), Op.getOperand(2));
+    }
     unsigned NewOpc = (IntNo == Intrinsic::arm_neon_vmins)
       ? ISD::FMINNAN : ISD::FMAXNAN;
     return DAG.getNode(NewOpc, SDLoc(Op), Op.getValueType(),
@@ -3624,113 +3648,6 @@ SDValue ARMTargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const {
   // Try to generate VMAXNM/VMINNM on ARMv8.
   if (Subtarget->hasFPARMv8() && (TrueVal.getValueType() == MVT::f32 ||
                                   TrueVal.getValueType() == MVT::f64)) {
-    // We can use VMAXNM/VMINNM for a compare followed by a select with the
-    // same operands, as follows:
-    //   c = fcmp [?gt, ?ge, ?lt, ?le] a, b
-    //   select c, a, b
-    // In NoNaNsFPMath the CC will have been changed from, e.g., 'ogt' to 'gt'.
-    bool swapSides = false;
-    if (!getTargetMachine().Options.NoNaNsFPMath) {
-      // transformability may depend on which way around we compare
-      switch (CC) {
-      default:
-        break;
-      case ISD::SETOGT:
-      case ISD::SETOGE:
-      case ISD::SETOLT:
-      case ISD::SETOLE:
-        // the non-NaN should be RHS
-        swapSides = DAG.isKnownNeverNaN(LHS) && !DAG.isKnownNeverNaN(RHS);
-        break;
-      case ISD::SETUGT:
-      case ISD::SETUGE:
-      case ISD::SETULT:
-      case ISD::SETULE:
-        // the non-NaN should be LHS
-        swapSides = DAG.isKnownNeverNaN(RHS) && !DAG.isKnownNeverNaN(LHS);
-        break;
-      }
-    }
-    swapSides = swapSides || (LHS == FalseVal && RHS == TrueVal);
-    if (swapSides) {
-      CC = ISD::getSetCCSwappedOperands(CC);
-      std::swap(LHS, RHS);
-    }
-    if (LHS == TrueVal && RHS == FalseVal) {
-      bool canTransform = true;
-      // FIXME: FastMathFlags::noSignedZeros() doesn't appear reachable from here
-      if (!getTargetMachine().Options.UnsafeFPMath &&
-          !DAG.isKnownNeverZero(LHS) && !DAG.isKnownNeverZero(RHS)) {
-        const ConstantFPSDNode *Zero;
-        switch (CC) {
-        default:
-          break;
-        case ISD::SETOGT:
-        case ISD::SETUGT:
-        case ISD::SETGT:
-          // RHS must not be -0
-          canTransform = (Zero = dyn_cast<ConstantFPSDNode>(RHS)) &&
-                         !Zero->isNegative();
-          break;
-        case ISD::SETOGE:
-        case ISD::SETUGE:
-        case ISD::SETGE:
-          // LHS must not be -0
-          canTransform = (Zero = dyn_cast<ConstantFPSDNode>(LHS)) &&
-                         !Zero->isNegative();
-          break;
-        case ISD::SETOLT:
-        case ISD::SETULT:
-        case ISD::SETLT:
-          // RHS must not be +0
-          canTransform = (Zero = dyn_cast<ConstantFPSDNode>(RHS)) &&
-                          Zero->isNegative();
-          break;
-        case ISD::SETOLE:
-        case ISD::SETULE:
-        case ISD::SETLE:
-          // LHS must not be +0
-          canTransform = (Zero = dyn_cast<ConstantFPSDNode>(LHS)) &&
-                          Zero->isNegative();
-          break;
-        }
-      }
-      if (canTransform) {
-        // Note: If one of the elements in a pair is a number and the other
-        // element is NaN, the corresponding result element is the number.
-        // This is consistent with the IEEE 754-2008 standard.
-        // Therefore, a > b ? a : b <=> vmax(a,b), if b is constant and a is NaN
-        switch (CC) {
-        default:
-          break;
-        case ISD::SETOGT:
-        case ISD::SETOGE:
-          if (!DAG.isKnownNeverNaN(RHS))
-            break;
-          return DAG.getNode(ISD::FMAXNUM, dl, VT, LHS, RHS);
-        case ISD::SETUGT:
-        case ISD::SETUGE:
-          if (!DAG.isKnownNeverNaN(LHS))
-            break;
-        case ISD::SETGT:
-        case ISD::SETGE:
-          return DAG.getNode(ISD::FMAXNUM, dl, VT, LHS, RHS);
-        case ISD::SETOLT:
-        case ISD::SETOLE:
-          if (!DAG.isKnownNeverNaN(RHS))
-            break;
-          return DAG.getNode(ISD::FMINNUM, dl, VT, LHS, RHS);
-        case ISD::SETULT:
-        case ISD::SETULE:
-          if (!DAG.isKnownNeverNaN(LHS))
-            break;
-        case ISD::SETLT:
-        case ISD::SETLE:
-          return DAG.getNode(ISD::FMINNUM, dl, VT, LHS, RHS);
-        }
-      }
-    }
-
     bool swpCmpOps = false;
     bool swpVselOps = false;
     checkVSELConstraints(CC, CondCode, swpCmpOps, swpVselOps);
@@ -4649,6 +4566,12 @@ static SDValue LowerVSETCC(SDValue Op, SelectionDAG &DAG) {
   EVT VT = Op.getValueType();
   ISD::CondCode SetCCOpcode = cast<CondCodeSDNode>(CC)->get();
   SDLoc dl(Op);
+
+  if (CmpVT.getVectorElementType() == MVT::i64)
+    // 64-bit comparisons are not legal. We've marked SETCC as non-Custom,
+    // but it's possible that our operands are 64-bit but our result is 32-bit.
+    // Bail in this case.
+    return SDValue();
 
   if (Op1.getValueType().isFloatingPoint()) {
     switch (SetCCOpcode) {
@@ -6727,36 +6650,22 @@ static void ReplaceREADCYCLECOUNTER(SDNode *N,
                                     SelectionDAG &DAG,
                                     const ARMSubtarget *Subtarget) {
   SDLoc DL(N);
-  SDValue Cycles32, OutChain;
+  // Under Power Management extensions, the cycle-count is:
+  //    mrc p15, #0, <Rt>, c9, c13, #0
+  SDValue Ops[] = { N->getOperand(0), // Chain
+                    DAG.getConstant(Intrinsic::arm_mrc, DL, MVT::i32),
+                    DAG.getConstant(15, DL, MVT::i32),
+                    DAG.getConstant(0, DL, MVT::i32),
+                    DAG.getConstant(9, DL, MVT::i32),
+                    DAG.getConstant(13, DL, MVT::i32),
+                    DAG.getConstant(0, DL, MVT::i32)
+  };
 
-  if (Subtarget->hasPerfMon()) {
-    // Under Power Management extensions, the cycle-count is:
-    //    mrc p15, #0, <Rt>, c9, c13, #0
-    SDValue Ops[] = { N->getOperand(0), // Chain
-                      DAG.getConstant(Intrinsic::arm_mrc, DL, MVT::i32),
-                      DAG.getConstant(15, DL, MVT::i32),
-                      DAG.getConstant(0, DL, MVT::i32),
-                      DAG.getConstant(9, DL, MVT::i32),
-                      DAG.getConstant(13, DL, MVT::i32),
-                      DAG.getConstant(0, DL, MVT::i32)
-    };
-
-    Cycles32 = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL,
-                           DAG.getVTList(MVT::i32, MVT::Other), Ops);
-    OutChain = Cycles32.getValue(1);
-  } else {
-    // Intrinsic is defined to return 0 on unsupported platforms. Technically
-    // there are older ARM CPUs that have implementation-specific ways of
-    // obtaining this information (FIXME!).
-    Cycles32 = DAG.getConstant(0, DL, MVT::i32);
-    OutChain = DAG.getEntryNode();
-  }
-
-
-  SDValue Cycles64 = DAG.getNode(ISD::BUILD_PAIR, DL, MVT::i64,
-                                 Cycles32, DAG.getConstant(0, DL, MVT::i32));
-  Results.push_back(Cycles64);
-  Results.push_back(OutChain);
+  SDValue Cycles32 = DAG.getNode(ISD::INTRINSIC_W_CHAIN, DL,
+                                 DAG.getVTList(MVT::i32, MVT::Other), Ops);
+  Results.push_back(DAG.getNode(ISD::BUILD_PAIR, DL, MVT::i64, Cycles32,
+                                DAG.getConstant(0, DL, MVT::i32)));
+  Results.push_back(Cycles32.getValue(1));
 }
 
 SDValue ARMTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
@@ -6800,6 +6709,8 @@ SDValue ARMTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::SHL:
   case ISD::SRL:
   case ISD::SRA:           return LowerShift(Op.getNode(), DAG, Subtarget);
+  case ISD::SREM:          return LowerREM(Op.getNode(), DAG);
+  case ISD::UREM:          return LowerREM(Op.getNode(), DAG);
   case ISD::SHL_PARTS:     return LowerShiftLeftParts(Op, DAG);
   case ISD::SRL_PARTS:
   case ISD::SRA_PARTS:     return LowerShiftRightParts(Op, DAG);
@@ -6858,6 +6769,10 @@ void ARMTargetLowering::ReplaceNodeResults(SDNode *N,
   case ISD::SRL:
   case ISD::SRA:
     Res = Expand64BitShift(N, DAG, Subtarget);
+    break;
+  case ISD::SREM:
+  case ISD::UREM:
+    Res = LowerREM(N, DAG);
     break;
   case ISD::READCYCLECOUNTER:
     ReplaceREADCYCLECOUNTER(N, Results, DAG, Subtarget);
@@ -7007,7 +6922,7 @@ void ARMTargetLowering::EmitSjLjDispatchBlock(MachineInstr *MI,
   MachineModuleInfo &MMI = MF->getMMI();
   for (MachineFunction::iterator BB = MF->begin(), E = MF->end(); BB != E;
        ++BB) {
-    if (!BB->isLandingPad()) continue;
+    if (!BB->isEHPad()) continue;
 
     // FIXME: We should assert that the EH_LABEL is the first MI in the landing
     // pad.
@@ -7055,7 +6970,7 @@ void ARMTargetLowering::EmitSjLjDispatchBlock(MachineInstr *MI,
 
   // Shove the dispatch's address into the return slot in the function context.
   MachineBasicBlock *DispatchBB = MF->CreateMachineBasicBlock();
-  DispatchBB->setIsLandingPad();
+  DispatchBB->setIsEHPad();
 
   MachineBasicBlock *TrapBB = MF->CreateMachineBasicBlock();
   unsigned trap_opcode;
@@ -7321,7 +7236,7 @@ void ARMTargetLowering::EmitSjLjDispatchBlock(MachineInstr *MI,
                                                   BB->succ_end());
     while (!Successors.empty()) {
       MachineBasicBlock *SMBB = Successors.pop_back_val();
-      if (SMBB->isLandingPad()) {
+      if (SMBB->isEHPad()) {
         BB->removeSuccessor(SMBB);
         MBBLPads.push_back(SMBB);
       }
@@ -7369,7 +7284,7 @@ void ARMTargetLowering::EmitSjLjDispatchBlock(MachineInstr *MI,
   // landing pad now.
   for (SmallVectorImpl<MachineBasicBlock*>::iterator
          I = MBBLPads.begin(), E = MBBLPads.end(); I != E; ++I)
-    (*I)->setIsLandingPad(false);
+    (*I)->setIsEHPad(false);
 
   // The instruction is gone now.
   MI->eraseFromParent();
@@ -10167,91 +10082,6 @@ static SDValue PerformExtendCombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
-/// PerformSELECT_CCCombine - Target-specific DAG combining for ISD::SELECT_CC
-/// to match f32 max/min patterns to use NEON vmax/vmin instructions.
-static SDValue PerformSELECT_CCCombine(SDNode *N, SelectionDAG &DAG,
-                                       const ARMSubtarget *ST) {
-  // If the target supports NEON, try to use vmax/vmin instructions for f32
-  // selects like "x < y ? x : y".  Unless the NoNaNsFPMath option is set,
-  // be careful about NaNs:  NEON's vmax/vmin return NaN if either operand is
-  // a NaN; only do the transformation when it matches that behavior.
-
-  // For now only do this when using NEON for FP operations; if using VFP, it
-  // is not obvious that the benefit outweighs the cost of switching to the
-  // NEON pipeline.
-  if (!ST->hasNEON() || !ST->useNEONForSinglePrecisionFP() ||
-      N->getValueType(0) != MVT::f32)
-    return SDValue();
-
-  SDValue CondLHS = N->getOperand(0);
-  SDValue CondRHS = N->getOperand(1);
-  SDValue LHS = N->getOperand(2);
-  SDValue RHS = N->getOperand(3);
-  ISD::CondCode CC = cast<CondCodeSDNode>(N->getOperand(4))->get();
-
-  unsigned Opcode = 0;
-  bool IsReversed;
-  if (DAG.isEqualTo(LHS, CondLHS) && DAG.isEqualTo(RHS, CondRHS)) {
-    IsReversed = false; // x CC y ? x : y
-  } else if (DAG.isEqualTo(LHS, CondRHS) && DAG.isEqualTo(RHS, CondLHS)) {
-    IsReversed = true ; // x CC y ? y : x
-  } else {
-    return SDValue();
-  }
-
-  bool IsUnordered;
-  switch (CC) {
-  default: break;
-  case ISD::SETOLT:
-  case ISD::SETOLE:
-  case ISD::SETLT:
-  case ISD::SETLE:
-  case ISD::SETULT:
-  case ISD::SETULE:
-    // If LHS is NaN, an ordered comparison will be false and the result will
-    // be the RHS, but vmin(NaN, RHS) = NaN.  Avoid this by checking that LHS
-    // != NaN.  Likewise, for unordered comparisons, check for RHS != NaN.
-    IsUnordered = (CC == ISD::SETULT || CC == ISD::SETULE);
-    if (!DAG.isKnownNeverNaN(IsUnordered ? RHS : LHS))
-      break;
-    // For less-than-or-equal comparisons, "+0 <= -0" will be true but vmin
-    // will return -0, so vmin can only be used for unsafe math or if one of
-    // the operands is known to be nonzero.
-    if ((CC == ISD::SETLE || CC == ISD::SETOLE || CC == ISD::SETULE) &&
-        !DAG.getTarget().Options.UnsafeFPMath &&
-        !(DAG.isKnownNeverZero(LHS) || DAG.isKnownNeverZero(RHS)))
-      break;
-    Opcode = IsReversed ? ISD::FMAXNAN : ISD::FMINNAN;
-    break;
-
-  case ISD::SETOGT:
-  case ISD::SETOGE:
-  case ISD::SETGT:
-  case ISD::SETGE:
-  case ISD::SETUGT:
-  case ISD::SETUGE:
-    // If LHS is NaN, an ordered comparison will be false and the result will
-    // be the RHS, but vmax(NaN, RHS) = NaN.  Avoid this by checking that LHS
-    // != NaN.  Likewise, for unordered comparisons, check for RHS != NaN.
-    IsUnordered = (CC == ISD::SETUGT || CC == ISD::SETUGE);
-    if (!DAG.isKnownNeverNaN(IsUnordered ? RHS : LHS))
-      break;
-    // For greater-than-or-equal comparisons, "-0 >= +0" will be true but vmax
-    // will return +0, so vmax can only be used for unsafe math or if one of
-    // the operands is known to be nonzero.
-    if ((CC == ISD::SETGE || CC == ISD::SETOGE || CC == ISD::SETUGE) &&
-        !DAG.getTarget().Options.UnsafeFPMath &&
-        !(DAG.isKnownNeverZero(LHS) || DAG.isKnownNeverZero(RHS)))
-      break;
-    Opcode = IsReversed ? ISD::FMINNAN : ISD::FMAXNAN;
-    break;
-  }
-
-  if (!Opcode)
-    return SDValue();
-  return DAG.getNode(Opcode, SDLoc(N), N->getValueType(0), LHS, RHS);
-}
-
 /// PerformCMOVCombine - Target-specific DAG combining for ARMISD::CMOV.
 SDValue
 ARMTargetLowering::PerformCMOVCombine(SDNode *N, SelectionDAG &DAG) const {
@@ -10345,7 +10175,6 @@ SDValue ARMTargetLowering::PerformDAGCombine(SDNode *N,
   case ISD::SIGN_EXTEND:
   case ISD::ZERO_EXTEND:
   case ISD::ANY_EXTEND: return PerformExtendCombine(N, DCI.DAG, Subtarget);
-  case ISD::SELECT_CC:  return PerformSELECT_CCCombine(N, DCI.DAG, Subtarget);
   case ARMISD::CMOV: return PerformCMOVCombine(N, DCI.DAG);
   case ISD::LOAD:       return PerformLOADCombine(N, DCI);
   case ARMISD::VLD2DUP:
@@ -11271,6 +11100,45 @@ void ARMTargetLowering::LowerAsmOperandForConstraint(SDValue Op,
   return TargetLowering::LowerAsmOperandForConstraint(Op, Constraint, Ops, DAG);
 }
 
+static RTLIB::Libcall getDivRemLibcall(
+    const SDNode *N, MVT::SimpleValueType SVT) {
+  assert((N->getOpcode() == ISD::SDIVREM || N->getOpcode() == ISD::UDIVREM ||
+          N->getOpcode() == ISD::SREM    || N->getOpcode() == ISD::UREM) &&
+         "Unhandled Opcode in getDivRemLibcall");
+  bool isSigned = N->getOpcode() == ISD::SDIVREM ||
+                  N->getOpcode() == ISD::SREM;
+  RTLIB::Libcall LC;
+  switch (SVT) {
+  default: llvm_unreachable("Unexpected request for libcall!");
+  case MVT::i8:  LC = isSigned ? RTLIB::SDIVREM_I8  : RTLIB::UDIVREM_I8;  break;
+  case MVT::i16: LC = isSigned ? RTLIB::SDIVREM_I16 : RTLIB::UDIVREM_I16; break;
+  case MVT::i32: LC = isSigned ? RTLIB::SDIVREM_I32 : RTLIB::UDIVREM_I32; break;
+  case MVT::i64: LC = isSigned ? RTLIB::SDIVREM_I64 : RTLIB::UDIVREM_I64; break;
+  }
+  return LC;
+}
+
+static TargetLowering::ArgListTy getDivRemArgList(
+    const SDNode *N, LLVMContext *Context) {
+  assert((N->getOpcode() == ISD::SDIVREM || N->getOpcode() == ISD::UDIVREM ||
+          N->getOpcode() == ISD::SREM    || N->getOpcode() == ISD::UREM) &&
+         "Unhandled Opcode in getDivRemArgList");
+  bool isSigned = N->getOpcode() == ISD::SDIVREM ||
+                  N->getOpcode() == ISD::SREM;
+  TargetLowering::ArgListTy Args;
+  TargetLowering::ArgListEntry Entry;
+  for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i) {
+    EVT ArgVT = N->getOperand(i).getValueType();
+    Type *ArgTy = ArgVT.getTypeForEVT(*Context);
+    Entry.Node = N->getOperand(i);
+    Entry.Ty = ArgTy;
+    Entry.isSExt = isSigned;
+    Entry.isZExt = !isSigned;
+    Args.push_back(Entry);
+  }
+  return Args;
+}
+
 SDValue ARMTargetLowering::LowerDivRem(SDValue Op, SelectionDAG &DAG) const {
   assert((Subtarget->isTargetAEABI() || Subtarget->isTargetAndroid()) &&
          "Register-based DivRem lowering only");
@@ -11281,28 +11149,12 @@ SDValue ARMTargetLowering::LowerDivRem(SDValue Op, SelectionDAG &DAG) const {
   EVT VT = Op->getValueType(0);
   Type *Ty = VT.getTypeForEVT(*DAG.getContext());
 
-  RTLIB::Libcall LC;
-  switch (VT.getSimpleVT().SimpleTy) {
-  default: llvm_unreachable("Unexpected request for libcall!");
-  case MVT::i8:  LC = isSigned ? RTLIB::SDIVREM_I8  : RTLIB::UDIVREM_I8;  break;
-  case MVT::i16: LC = isSigned ? RTLIB::SDIVREM_I16 : RTLIB::UDIVREM_I16; break;
-  case MVT::i32: LC = isSigned ? RTLIB::SDIVREM_I32 : RTLIB::UDIVREM_I32; break;
-  case MVT::i64: LC = isSigned ? RTLIB::SDIVREM_I64 : RTLIB::UDIVREM_I64; break;
-  }
-
+  RTLIB::Libcall LC = getDivRemLibcall(Op.getNode(),
+                                       VT.getSimpleVT().SimpleTy);
   SDValue InChain = DAG.getEntryNode();
 
-  TargetLowering::ArgListTy Args;
-  TargetLowering::ArgListEntry Entry;
-  for (unsigned i = 0, e = Op->getNumOperands(); i != e; ++i) {
-    EVT ArgVT = Op->getOperand(i).getValueType();
-    Type *ArgTy = ArgVT.getTypeForEVT(*DAG.getContext());
-    Entry.Node = Op->getOperand(i);
-    Entry.Ty = ArgTy;
-    Entry.isSExt = isSigned;
-    Entry.isZExt = !isSigned;
-    Args.push_back(Entry);
-  }
+  TargetLowering::ArgListTy Args = getDivRemArgList(Op.getNode(),
+                                                    DAG.getContext());
 
   SDValue Callee = DAG.getExternalSymbol(getLibcallName(LC),
                                          getPointerTy(DAG.getDataLayout()));
@@ -11317,6 +11169,47 @@ SDValue ARMTargetLowering::LowerDivRem(SDValue Op, SelectionDAG &DAG) const {
 
   std::pair<SDValue, SDValue> CallInfo = LowerCallTo(CLI);
   return CallInfo.first;
+}
+
+// Lowers REM using divmod helpers
+// see RTABI section 4.2/4.3
+SDValue ARMTargetLowering::LowerREM(SDNode *N, SelectionDAG &DAG) const {
+  // Build return types (div and rem)
+  std::vector<Type*> RetTyParams;
+  Type *RetTyElement;
+
+  switch (N->getValueType(0).getSimpleVT().SimpleTy) {
+  default: llvm_unreachable("Unexpected request for libcall!");
+  case MVT::i8:   RetTyElement = Type::getInt8Ty(*DAG.getContext());  break;
+  case MVT::i16:  RetTyElement = Type::getInt16Ty(*DAG.getContext()); break;
+  case MVT::i32:  RetTyElement = Type::getInt32Ty(*DAG.getContext()); break;
+  case MVT::i64:  RetTyElement = Type::getInt64Ty(*DAG.getContext()); break;
+  }
+
+  RetTyParams.push_back(RetTyElement);
+  RetTyParams.push_back(RetTyElement);
+  ArrayRef<Type*> ret = ArrayRef<Type*>(RetTyParams);
+  Type *RetTy = StructType::get(*DAG.getContext(), ret);
+
+  RTLIB::Libcall LC = getDivRemLibcall(N, N->getValueType(0).getSimpleVT().
+                                                             SimpleTy);
+  SDValue InChain = DAG.getEntryNode();
+  TargetLowering::ArgListTy Args = getDivRemArgList(N, DAG.getContext());
+  bool isSigned = N->getOpcode() == ISD::SREM;
+  SDValue Callee = DAG.getExternalSymbol(getLibcallName(LC),
+                                         getPointerTy(DAG.getDataLayout()));
+
+  // Lower call
+  CallLoweringInfo CLI(DAG);
+  CLI.setChain(InChain)
+     .setCallee(CallingConv::ARM_AAPCS, RetTy, Callee, std::move(Args), 0)
+     .setSExtResult(isSigned).setZExtResult(!isSigned).setDebugLoc(SDLoc(N));
+  std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
+
+  // Return second (rem) result operand (first contains div)
+  SDNode *ResNode = CallResult.first.getNode();
+  assert(ResNode->getNumOperands() == 2 && "divmod should return two operands");
+  return ResNode->getOperand(1);
 }
 
 SDValue

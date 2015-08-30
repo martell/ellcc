@@ -39,6 +39,7 @@ add_clang_library(clangStaticAnalyzerCheckers
   IdenticalExprChecker.cpp
   IvarInvalidationChecker.cpp
   LLVMConventionsChecker.cpp
+  LocalizationChecker.cpp
   MacOSKeychainAPIChecker.cpp
   MacOSXAPIChecker.cpp
   MallocChecker.cpp
@@ -48,9 +49,11 @@ add_clang_library(clangStaticAnalyzerCheckers
   NSErrorChecker.cpp
   NoReturnFunctionChecker.cpp
   NonNullParamChecker.cpp
+  NullabilityChecker.cpp
   ObjCAtSyncChecker.cpp
   ObjCContainersASTChecker.cpp
   ObjCContainersChecker.cpp
+  ObjCGenericsChecker.cpp
   ObjCMissingSuperCallChecker.cpp
   ObjCSelfInitChecker.cpp
   ObjCUnusedIVarsChecker.cpp
@@ -83,5 +86,6 @@ add_clang_library(clangStaticAnalyzerCheckers
   clangAST
   clangAnalysis
   clangBasic
+  clangLex
   clangStaticAnalyzerCore
   )

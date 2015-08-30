@@ -1448,6 +1448,35 @@ namespace {
       return true;
     }
   };
+
+  struct DLLImportFunctionVisitor
+      : public RecursiveASTVisitor<DLLImportFunctionVisitor> {
+    bool SafeToInline = true;
+
+    bool VisitVarDecl(VarDecl *VD) {
+      // A thread-local variable cannot be imported.
+      SafeToInline = !VD->getTLSKind();
+      return SafeToInline;
+    }
+
+    // Make sure we're not referencing non-imported vars or functions.
+    bool VisitDeclRefExpr(DeclRefExpr *E) {
+      ValueDecl *VD = E->getDecl();
+      if (isa<FunctionDecl>(VD))
+        SafeToInline = VD->hasAttr<DLLImportAttr>();
+      else if (VarDecl *V = dyn_cast<VarDecl>(VD))
+        SafeToInline = !V->hasGlobalStorage() || V->hasAttr<DLLImportAttr>();
+      return SafeToInline;
+    }
+    bool VisitCXXDeleteExpr(CXXDeleteExpr *E) {
+      SafeToInline = E->getOperatorDelete()->hasAttr<DLLImportAttr>();
+      return SafeToInline;
+    }
+    bool VisitCXXNewExpr(CXXNewExpr *E) {
+      SafeToInline = E->getOperatorNew()->hasAttr<DLLImportAttr>();
+      return SafeToInline;
+    }
+  };
 }
 
 // isTriviallyRecursive - Check if this function calls another
@@ -1478,6 +1507,15 @@ CodeGenModule::shouldEmitFunction(GlobalDecl GD) {
   const auto *F = cast<FunctionDecl>(GD.getDecl());
   if (CodeGenOpts.OptimizationLevel == 0 && !F->hasAttr<AlwaysInlineAttr>())
     return false;
+
+  if (F->hasAttr<DLLImportAttr>()) {
+    // Check whether it would be safe to inline this dllimport function.
+    DLLImportFunctionVisitor Visitor;
+    Visitor.TraverseFunctionDecl(const_cast<FunctionDecl*>(F));
+    if (!Visitor.SafeToInline)
+      return false;
+  }
+
   // PR9614. Avoid cases where the source code is lying to us. An available
   // externally function should have an equivalent function somewhere else,
   // but a function that calls itself is clearly not equivalent to the real
@@ -1990,7 +2028,16 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
   const VarDecl *InitDecl;
   const Expr *InitExpr = D->getAnyInitializer(InitDecl);
 
-  if (!InitExpr) {
+  // CUDA E.2.4.1 "__shared__ variables cannot have an initialization as part
+  // of their declaration."
+  if (getLangOpts().CPlusPlus && getLangOpts().CUDAIsDevice
+      && D->hasAttr<CUDASharedAttr>()) {
+    if (InitExpr) {
+      Error(D->getLocation(),
+            "__shared__ variable cannot have an initialization.");
+    }
+    Init = llvm::UndefValue::get(getTypes().ConvertType(ASTTy));
+  } else if (!InitExpr) {
     // This is a tentative definition; tentative definitions are
     // implicitly initialized with { 0 }.
     //
@@ -2076,6 +2123,17 @@ void CodeGenModule::EmitGlobalVarDefinition(const VarDecl *D) {
   if (D->hasAttr<AnnotateAttr>())
     AddGlobalAnnotations(D, GV);
 
+  // CUDA B.2.1 "The __device__ qualifier declares a variable that resides on
+  // the device. [...]"
+  // CUDA B.2.2 "The __constant__ qualifier, optionally used together with
+  // __device__, declares a variable that: [...]
+  // Is accessible from all the threads within the grid and from the host
+  // through the runtime library (cudaGetSymbolAddress() / cudaGetSymbolSize()
+  // / cudaMemcpyToSymbol() / cudaMemcpyFromSymbol())."
+  if (GV && LangOpts.CUDA && LangOpts.CUDAIsDevice &&
+      (D->hasAttr<CUDAConstantAttr>() || D->hasAttr<CUDADeviceAttr>())) {
+    GV->setExternallyInitialized(true);
+  }
   GV->setInitializer(Init);
 
   // If it is safe to mark the global 'constant', do so now.
@@ -2953,7 +3011,6 @@ CodeGenModule::GetAddrOfConstantStringFromLiteral(const StringLiteral *S,
       getCXXABI().getMangleContext().shouldMangleStringLiteral(S)) {
     llvm::raw_svector_ostream Out(MangledNameBuffer);
     getCXXABI().getMangleContext().mangleStringLiteral(S, Out);
-    Out.flush();
 
     LT = llvm::GlobalValue::LinkOnceODRLinkage;
     GlobalVariableName = MangledNameBuffer;
@@ -3030,8 +3087,7 @@ llvm::Constant *CodeGenModule::GetAddrOfGlobalTemporary(
   if (Init == E->GetTemporaryExpr())
     MaterializedType = E->getType();
 
-  llvm::Constant *&Slot = MaterializedGlobalTemporaryMap[E];
-  if (Slot)
+  if (llvm::Constant *Slot = MaterializedGlobalTemporaryMap[E])
     return Slot;
 
   // FIXME: If an externally-visible declaration extends multiple temporaries,
@@ -3041,7 +3097,6 @@ llvm::Constant *CodeGenModule::GetAddrOfGlobalTemporary(
   llvm::raw_svector_ostream Out(Name);
   getCXXABI().getMangleContext().mangleReferenceTemporary(
       VD, E->getManglingNumber(), Out);
-  Out.flush();
 
   APValue *Value = nullptr;
   if (E->getStorageDuration() == SD_Static) {
@@ -3103,7 +3158,7 @@ llvm::Constant *CodeGenModule::GetAddrOfGlobalTemporary(
     GV->setComdat(TheModule.getOrInsertComdat(GV->getName()));
   if (VD->getTLSKind())
     setTLSMode(GV, *VD);
-  Slot = GV;
+  MaterializedGlobalTemporaryMap[E] = GV;
   return GV;
 }
 
@@ -3366,11 +3421,8 @@ void CodeGenModule::EmitTopLevelDecl(Decl *D) {
     auto *Import = cast<ImportDecl>(D);
 
     // Ignore import declarations that come from imported modules.
-    if (clang::Module *Owner = Import->getImportedOwningModule()) {
-      if (getLangOpts().CurrentModule.empty() ||
-          Owner->getTopLevelModule()->Name == getLangOpts().CurrentModule)
-        break;
-    }
+    if (Import->getImportedOwningModule())
+      break;
     if (CGDebugInfo *DI = getModuleDebugInfo())
       DI->EmitImportDecl(*Import);
 

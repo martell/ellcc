@@ -183,6 +183,7 @@ $(Configs)::
 	mkdir -p ../lib/$* ; \
 	cp $*/src/.libs/*.a ../lib/$* ; \
 	cp -p $*/src/histedit.h ../include ; \
+	cp -p $*/src/vis.h ../include ; \
 	cp -p $*/src/editline/readline.h ../include
 
 clean:

@@ -92,7 +92,6 @@ namespace llvm {
       SmallVector<MCFixup, 4> Fixups;
       raw_svector_ostream VecOS(Code);
       CodeEmitter->encodeInstruction(Inst, VecOS, Fixups, STI);
-      VecOS.flush();
       CurrentShadowSize += Code.size();
       if (CurrentShadowSize >= RequiredShadowSize)
         InShadow = false; // The shadow is big enough. Stop counting.
@@ -527,6 +526,12 @@ ReSimplify:
 
   case X86::EH_RETURN:
   case X86::EH_RETURN64: {
+    OutMI = MCInst();
+    OutMI.setOpcode(getRetOpcode(AsmPrinter.getSubtarget()));
+    break;
+  }
+
+  case X86::CATCHRET: {
     OutMI = MCInst();
     OutMI.setOpcode(getRetOpcode(AsmPrinter.getSubtarget()));
     break;

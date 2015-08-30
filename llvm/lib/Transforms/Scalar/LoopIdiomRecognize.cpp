@@ -69,6 +69,7 @@ namespace {
 
 class LoopIdiomRecognize : public LoopPass {
   Loop *CurLoop;
+  AliasAnalysis *AA;
   DominatorTree *DT;
   LoopInfo *LI;
   ScalarEvolution *SE;
@@ -95,8 +96,8 @@ public:
     AU.addPreservedID(LCSSAID);
     AU.addRequired<AliasAnalysis>();
     AU.addPreserved<AliasAnalysis>();
-    AU.addRequired<ScalarEvolution>();
-    AU.addPreserved<ScalarEvolution>();
+    AU.addRequired<ScalarEvolutionWrapperPass>();
+    AU.addPreserved<ScalarEvolutionWrapperPass>();
     AU.addPreserved<DominatorTreeWrapperPass>();
     AU.addRequired<DominatorTreeWrapperPass>();
     AU.addRequired<TargetLibraryInfoWrapperPass>();
@@ -145,7 +146,7 @@ INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(LoopSimplify)
 INITIALIZE_PASS_DEPENDENCY(LCSSA)
-INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
+INITIALIZE_PASS_DEPENDENCY(ScalarEvolutionWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 INITIALIZE_PASS_DEPENDENCY(TargetTransformInfoWrapperPass)
@@ -188,9 +189,10 @@ bool LoopIdiomRecognize::runOnLoop(Loop *L, LPPassManager &LPM) {
   if (Name == "memset" || Name == "memcpy")
     return false;
 
+  AA = &getAnalysis<AliasAnalysis>();
   DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
   LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
-  SE = &getAnalysis<ScalarEvolution>();
+  SE = &getAnalysis<ScalarEvolutionWrapperPass>().getSE();
   TLI = &getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
   TTI = &getAnalysis<TargetTransformInfoWrapperPass>().getTTI(
       *CurLoop->getHeader()->getParent());
@@ -505,7 +507,7 @@ bool LoopIdiomRecognize::processLoopStridedStore(
                                           Preheader->getTerminator());
 
   if (mayLoopAccessLocation(BasePtr, MRI_ModRef, CurLoop, BECount, StoreSize,
-                            getAnalysis<AliasAnalysis>(), TheStore)) {
+                            *AA, TheStore)) {
     Expander.clear();
     // If we generated new code for the base pointer, clean up.
     RecursivelyDeleteTriviallyDeadInstructions(BasePtr, TLI);
@@ -594,7 +596,7 @@ bool LoopIdiomRecognize::processLoopStoreOfLoopLoad(
       Preheader->getTerminator());
 
   if (mayLoopAccessLocation(StoreBasePtr, MRI_ModRef, CurLoop, BECount,
-                            StoreSize, getAnalysis<AliasAnalysis>(), SI)) {
+                            StoreSize, *AA, SI)) {
     Expander.clear();
     // If we generated new code for the base pointer, clean up.
     RecursivelyDeleteTriviallyDeadInstructions(StoreBasePtr, TLI);
@@ -608,7 +610,7 @@ bool LoopIdiomRecognize::processLoopStoreOfLoopLoad(
       Preheader->getTerminator());
 
   if (mayLoopAccessLocation(LoadBasePtr, MRI_Mod, CurLoop, BECount, StoreSize,
-                            getAnalysis<AliasAnalysis>(), SI)) {
+                            *AA, SI)) {
     Expander.clear();
     // If we generated new code for the base pointer, clean up.
     RecursivelyDeleteTriviallyDeadInstructions(LoadBasePtr, TLI);
@@ -826,7 +828,7 @@ bool LoopIdiomRecognize::recognizePopcount() {
     return false;
 
   // Counting population are usually conducted by few arithmetic instructions.
-  // Such instructions can be easilly "absorbed" by vacant slots in a
+  // Such instructions can be easily "absorbed" by vacant slots in a
   // non-compact loop. Therefore, recognizing popcount idiom only makes sense
   // in a compact loop.
 
@@ -916,8 +918,8 @@ void LoopIdiomRecognize::transformLoopToPopcount(BasicBlock *PreCondBB,
     }
   }
 
-  // Step 2: Replace the precondition from "if(x == 0) goto loop-exit" to
-  //   "if(NewCount == 0) loop-exit". Withtout this change, the intrinsic
+  // Step 2: Replace the precondition from "if (x == 0) goto loop-exit" to
+  //   "if (NewCount == 0) loop-exit". Without this change, the intrinsic
   //   function would be partial dead code, and downstream passes will drag
   //   it back from the precondition block to the preheader.
   {
@@ -936,12 +938,12 @@ void LoopIdiomRecognize::transformLoopToPopcount(BasicBlock *PreCondBB,
   }
 
   // Step 3: Note that the population count is exactly the trip count of the
-  // loop in question, which enble us to to convert the loop from noncountable
+  // loop in question, which enable us to to convert the loop from noncountable
   // loop into a countable one. The benefit is twofold:
   //
-  //  - If the loop only counts population, the entire loop become dead after
-  //    the transformation. It is lots easier to prove a countable loop dead
-  //    than to prove a noncountable one. (In some C dialects, a infite loop
+  //  - If the loop only counts population, the entire loop becomes dead after
+  //    the transformation. It is a lot easier to prove a countable loop dead
+  //    than to prove a noncountable one. (In some C dialects, an infinite loop
   //    isn't dead even if it computes nothing useful. In general, DCE needs
   //    to prove a noncountable loop finite before safely delete it.)
   //
@@ -964,10 +966,9 @@ void LoopIdiomRecognize::transformLoopToPopcount(BasicBlock *PreCondBB,
     PHINode *TcPhi = PHINode::Create(Ty, 2, "tcphi", Body->begin());
 
     Builder.SetInsertPoint(LbCond);
-    Value *Opnd1 = cast<Value>(TcPhi);
-    Value *Opnd2 = cast<Value>(ConstantInt::get(Ty, 1));
     Instruction *TcDec = cast<Instruction>(
-        Builder.CreateSub(Opnd1, Opnd2, "tcdec", false, true));
+        Builder.CreateSub(TcPhi, ConstantInt::get(Ty, 1),
+                          "tcdec", false, true));
 
     TcPhi->addIncoming(TripCnt, PreHead);
     TcPhi->addIncoming(TcDec, Body);
@@ -976,7 +977,7 @@ void LoopIdiomRecognize::transformLoopToPopcount(BasicBlock *PreCondBB,
         (LbBr->getSuccessor(0) == Body) ? CmpInst::ICMP_UGT : CmpInst::ICMP_SLE;
     LbCond->setPredicate(Pred);
     LbCond->setOperand(0, TcDec);
-    LbCond->setOperand(1, cast<Value>(ConstantInt::get(Ty, 0)));
+    LbCond->setOperand(1, ConstantInt::get(Ty, 0));
   }
 
   // Step 4: All the references to the original population counter outside

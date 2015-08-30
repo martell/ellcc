@@ -612,7 +612,7 @@ void* align(size_t alignment, size_t size, void*& ptr, size_t& space);
     #include <cassert>
 #endif
 
-#if __has_feature(cxx_atomic) && !defined(_LIBCPP_HAS_NO_THREADS)
+#if !defined(_LIBCPP_HAS_NO_ATOMIC_HEADER)
 #  include <atomic>
 #endif
 
@@ -930,6 +930,15 @@ public:
     static pointer pointer_to(typename conditional<is_void<element_type>::value,
                                       __nat, element_type>::type& __r) _NOEXCEPT
         {return _VSTD::addressof(__r);}
+};
+
+template <class _From, class _To>
+struct __rebind_pointer {
+#ifndef _LIBCPP_HAS_NO_TEMPLATE_ALIASES
+    typedef typename pointer_traits<_From>::template rebind<_To>        type;
+#else
+    typedef typename pointer_traits<_From>::template rebind<_To>::other type;
+#endif
 };
 
 // allocator_traits
@@ -2659,10 +2668,17 @@ public:
         : __ptr_(__u->release(), _VSTD::forward<deleter_type>(__u->get_deleter())) {}
 
     template <class _Up, class _Ep>
-    _LIBCPP_INLINE_VISIBILITY unique_ptr& operator=(unique_ptr<_Up, _Ep> __u)
+    _LIBCPP_INLINE_VISIBILITY
+    typename enable_if<
+        !is_array<_Up>::value &&
+        is_convertible<typename unique_ptr<_Up, _Ep>::pointer, pointer>::value &&
+        is_assignable<deleter_type&, _Ep&>::value,
+        unique_ptr&
+    >::type
+    operator=(unique_ptr<_Up, _Ep> __u)
     {
         reset(__u.release());
-        __ptr_.second() = _VSTD::forward<deleter_type>(__u.get_deleter());
+        __ptr_.second() = _VSTD::forward<_Ep>(__u.get_deleter());
         return *this;
     }
 
@@ -5381,7 +5397,9 @@ inline _LIBCPP_INLINE_VISIBILITY
 basic_ostream<_CharT, _Traits>&
 operator<<(basic_ostream<_CharT, _Traits>& __os, shared_ptr<_Yp> const& __p);
 
-#if __has_feature(cxx_atomic) && !defined(_LIBCPP_HAS_NO_THREADS)
+// TODO(EricWF): Enable this for both Clang and GCC. Currently it is only
+// enabled with clang.
+#if defined(_LIBCPP_HAS_C_ATOMIC_IMP) && !defined(_LIBCPP_HAS_NO_THREADS)
 
 class _LIBCPP_TYPE_VIS __sp_mut
 {
@@ -5507,7 +5525,7 @@ atomic_compare_exchange_weak_explicit(shared_ptr<_Tp>* __p, shared_ptr<_Tp>* __v
     return atomic_compare_exchange_weak(__p, __v, __w);
 }
 
-#endif  // __has_feature(cxx_atomic) && !defined(_LIBCPP_HAS_NO_THREADS)
+#endif  // defined(_LIBCPP_HAS_C_ATOMIC_IMP) && !defined(_LIBCPP_HAS_NO_THREADS)
 
 //enum class
 struct _LIBCPP_TYPE_VIS pointer_safety
@@ -5574,6 +5592,15 @@ template <typename _Alloc>
 _LIBCPP_INLINE_VISIBILITY
 void __swap_allocator(_Alloc &, _Alloc &, false_type) _NOEXCEPT {}
 
+template <typename _Alloc, typename _Traits=allocator_traits<_Alloc> >
+struct __noexcept_move_assign_container : public integral_constant<bool, 
+    _Traits::propagate_on_container_move_assignment::value
+#if _LIBCPP_STD_VER > 14
+        || _Traits::is_always_equal::value
+#else
+        && is_nothrow_move_assignable<_Alloc>::value
+#endif
+    > {};
 
 _LIBCPP_END_NAMESPACE_STD
 

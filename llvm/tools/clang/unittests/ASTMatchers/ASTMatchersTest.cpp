@@ -4331,6 +4331,18 @@ TEST(ElaboratedTypeNarrowing, namesType) {
     elaboratedType(elaboratedType(namesType(typedefType())))));
 }
 
+TEST(TypeMatching, MatchesSubstTemplateTypeParmType) {
+  const std::string code = "template <typename T>"
+                           "int F() {"
+                           "  return 1 + T();"
+                           "}"
+                           "int i = F<int>();";
+  EXPECT_FALSE(matches(code, binaryOperator(hasLHS(
+                                 expr(hasType(substTemplateTypeParmType()))))));
+  EXPECT_TRUE(matches(code, binaryOperator(hasRHS(
+                                expr(hasType(substTemplateTypeParmType()))))));
+}
+
 TEST(NNS, MatchesNestedNameSpecifiers) {
   EXPECT_TRUE(matches("namespace ns { struct A {}; } ns::A a;",
                       nestedNameSpecifier()));
@@ -4350,6 +4362,16 @@ TEST(NNS, MatchesNestedNameSpecifiers) {
 TEST(NullStatement, SimpleCases) {
   EXPECT_TRUE(matches("void f() {int i;;}", nullStmt()));
   EXPECT_TRUE(notMatches("void f() {int i;}", nullStmt()));
+}
+
+TEST(NS, Anonymous) {
+  EXPECT_TRUE(notMatches("namespace N {}", namespaceDecl(isAnonymous())));
+  EXPECT_TRUE(matches("namespace {}", namespaceDecl(isAnonymous())));
+}
+
+TEST(NS, Alias) {
+  EXPECT_TRUE(matches("namespace test {} namespace alias = ::test;",
+                      namespaceAliasDecl(hasName("alias"))));
 }
 
 TEST(NNS, MatchesTypes) {
@@ -4769,6 +4791,13 @@ TEST(EqualsBoundNodeMatcher, UnlessDescendantsOfAncestorsMatch) {
 TEST(TypeDefDeclMatcher, Match) {
   EXPECT_TRUE(matches("typedef int typedefDeclTest;",
                       typedefDecl(hasName("typedefDeclTest"))));
+}
+
+TEST(IsInlineMatcher, IsInline) {
+  EXPECT_TRUE(matches("void g(); inline void f();",
+                      functionDecl(isInline(), hasName("f"))));
+  EXPECT_TRUE(matches("namespace n { inline namespace m {} }",
+                      namespaceDecl(isInline(), hasName("m"))));
 }
 
 // FIXME: Figure out how to specify paths so the following tests pass on Windows.

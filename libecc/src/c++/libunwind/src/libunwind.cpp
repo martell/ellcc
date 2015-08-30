@@ -16,9 +16,6 @@
 #include <cstdlib> // getenv
 #endif
 #include <new>
-#include <tuple>
-#include <memory>
-#include <vector>
 #include <algorithm>
 
 #include "libunwind_ext.h"
@@ -64,6 +61,10 @@ _LIBUNWIND_EXPORT int unw_init_local(unw_cursor_t *cursor,
 #elif _LIBUNWIND_ARM_EHABI
   new ((void *)cursor) UnwindCursor<LocalAddressSpace, Registers_arm>(
                                  context, LocalAddressSpace::sThisAddressSpace);
+#elif defined(__microblaze__)
+// RICH: TODO
+#elif defined(__mips__)
+// RICH: TODO
 #else
 #error Architecture not supported
 #endif

@@ -510,6 +510,10 @@ def warn_main_one_arg : Warning<"only one parameter on 'main' declaration">,
 def err_main_arg_wrong : Error<"%select{first|second|third|fourth}0 "
     "parameter of 'main' (%select{argument count|argument array|environment|"
     "platform-specific data}0) must be of type %1">;
+def err_main_global_variable :
+    Error<"main cannot be declared as global variable">;
+def warn_main_redefined : Warning<"variable named 'main' with external linkage "
+    "has undefined behavior">, InGroup<Main>;
 def ext_main_used : Extension<
   "ISO C++ does not allow 'main' to be used by a program">, InGroup<Main>;
 
@@ -1965,7 +1969,7 @@ def note_private_extern : Note<
   "use __attribute__((visibility(\"hidden\"))) attribute instead">;
 
 // C++ Concepts TS
-def err_concept_decl_non_template : Error<
+def err_concept_wrong_decl_kind : Error<
   "'concept' can only appear on the definition of a function template or variable template">;
 def err_concept_decls_may_only_appear_in_namespace_scope : Error<
   "concept declarations may only appear in namespace scope">;
@@ -1973,6 +1977,8 @@ def err_function_concept_not_defined : Error<
   "function concept declaration must be a definition">;
 def err_var_concept_not_initialized : Error<
   "variable concept declaration must be initialized">;
+def err_function_concept_exception_spec : Error<
+  "function concept cannot have exception specification">;
 
 // C++11 char16_t/char32_t
 def warn_cxx98_compat_unicode_type : Warning<
@@ -2079,9 +2085,9 @@ def err_attribute_invalid_size : Error<
 def err_attribute_zero_size : Error<"zero vector size">;
 def err_attribute_size_too_large : Error<"vector size too large">;
 def err_typecheck_vector_not_convertable : Error<
-  "can't convert between vector values of different size (%0 and %1)">;
+  "cannot convert between vector values of different size (%0 and %1)">;
 def err_typecheck_vector_not_convertable_non_scalar : Error<
-  "can't convert between vector and non-scalar values (%0 and %1)">;
+  "cannot convert between vector and non-scalar values (%0 and %1)">;
 def err_typecheck_vector_lengths_not_equal : Error<
   "vector operands do not have the same number of elements (%0 and %1)">;
 def err_ext_vector_component_exceeds_length : Error<
@@ -2884,7 +2890,7 @@ def err_param_default_argument_on_parameter_pack : Error<
   "parameter pack cannot have a default argument">;
 def err_uninitialized_member_for_assign : Error<
   "cannot define the implicit copy assignment operator for %0, because "
-  "non-static %select{reference|const}1 member %2 can't use copy "
+  "non-static %select{reference|const}1 member %2 cannot use copy "
   "assignment operator">;
 def err_uninitialized_member_in_ctor : Error<
   "%select{|implicit default |inheriting }0constructor for %1 must explicitly "
@@ -2968,7 +2974,7 @@ def note_ovl_candidate_instantiation_depth : Note<
     "candidate template ignored: substitution exceeded maximum template "
     "instantiation depth">;
 def note_ovl_candidate_underqualified : Note<
-    "candidate template ignored: can't deduce a type for %0 that would "
+    "candidate template ignored: cannot deduce a type for %0 that would "
     "make %2 equal %1">;
 def note_ovl_candidate_substitution_failure : Note<
     "candidate template ignored: substitution failure%0%1">;
@@ -3258,7 +3264,7 @@ def err_addr_ovl_ambiguous : Error<
 def err_addr_ovl_not_func_ptrref : Error<
   "address of overloaded function %0 cannot be converted to type %1">;
 def err_addr_ovl_no_qualifier : Error<
-  "can't form member pointer of type %0 without '&' and class name">;
+  "cannot form member pointer of type %0 without '&' and class name">;
 
 // C++11 Literal Operators
 def err_ovl_no_viable_literal_operator : Error<
@@ -4184,15 +4190,15 @@ def warn_array_new_too_large : Warning<"array is too large (%0 elements)">,
 // -Wpadded, -Wpacked
 def warn_padded_struct_field : Warning<
   "padding %select{struct|interface|class}0 %1 with %2 "
-  "%select{byte|bit}3%select{|s}4 to align %5">,
+  "%select{byte|bit}3%s2 to align %4">,
   InGroup<Padded>, DefaultIgnore;
 def warn_padded_struct_anon_field : Warning<
   "padding %select{struct|interface|class}0 %1 with %2 "
-  "%select{byte|bit}3%select{|s}4 to align anonymous bit-field">,
+  "%select{byte|bit}3%s2 to align anonymous bit-field">,
   InGroup<Padded>, DefaultIgnore;
 def warn_padded_struct_size : Warning<
-  "padding size of %0 with %1 %select{byte|bit}2%select{|s}3 "
-  "to alignment boundary">, InGroup<Padded>, DefaultIgnore;
+  "padding size of %0 with %1 %select{byte|bit}2%s1 to alignment boundary">,
+  InGroup<Padded>, DefaultIgnore;
 def warn_unnecessary_packed : Warning<
   "packed attribute is unnecessary for %0">, InGroup<Packed>, DefaultIgnore;
 
@@ -4552,7 +4558,7 @@ def err_typecheck_arc_assign_self : Error<
 def err_typecheck_arc_assign_self_class_method : Error<
   "cannot assign to 'self' in a class method">;
 def err_typecheck_arr_assign_enumeration : Error<
-  "fast enumeration variables can't be modified in ARC by default; "
+  "fast enumeration variables cannot be modified in ARC by default; "
   "declare the variable __strong to allow this">;
 def warn_arc_retained_assign : Warning<
   "assigning retained object to %select{weak|unsafe_unretained}0 "
@@ -5366,7 +5372,7 @@ def warn_objc_pointer_cxx_catch_fragile : Warning<
   "cannot catch an exception thrown with @throw in C++ in the non-unified "
   "exception model">, InGroup<ObjCNonUnifiedException>;
 def err_objc_object_catch : Error<
-  "can't catch an Objective-C object by value">;
+  "cannot catch an Objective-C object by value">;
 def err_incomplete_type_objc_at_encode : Error<
   "'@encode' of incomplete type %0">;
 def warn_objc_circular_container : Warning<
@@ -5788,7 +5794,8 @@ def err_typecheck_bool_condition : Error<
 def err_typecheck_ambiguous_condition : Error<
   "conversion %diff{from $ to $|between types}0,1 is ambiguous">;
 def err_typecheck_nonviable_condition : Error<
-  "no viable conversion%diff{ from $ to $|}0,1">;
+  "no viable conversion%select{%diff{ from $ to $|}1,2|"
+  "%diff{ from returned value of type $ to function return type $|}1,2}0">;
 def err_typecheck_nonviable_condition_incomplete : Error<
   "no viable conversion%diff{ from $ to incomplete type $|}0,1">;
 def err_typecheck_deleted_function : Error<
@@ -7473,10 +7480,6 @@ def err_omp_expected_var_name_or_array_item : Error<
   "expected variable name, array element or array section">;
 def note_omp_task_predetermined_firstprivate_here : Note<
   "predetermined as a firstprivate in a task construct here">;
-def err_omp_clause_ref_type_arg : Error<
-  "arguments of OpenMP clause '%0' cannot be of reference type %1">;
-def err_omp_task_predetermined_firstprivate_ref_type_arg : Error<
-  "predetermined as a firstprivate in a task construct variable cannot be of reference type %0">;
 def err_omp_threadprivate_incomplete_type : Error<
   "threadprivate variable with incomplete type %0">;
 def err_omp_no_dsa_for_variable : Error<
@@ -7665,6 +7668,27 @@ def err_omp_parent_cancel_region_nowait : Error<
   "parent region for 'omp %select{cancellation point/cancel}0' construct cannot be nowait">;
 def err_omp_parent_cancel_region_ordered : Error<
   "parent region for 'omp %select{cancellation point/cancel}0' construct cannot be ordered">;
+def err_omp_array_section_use : Error<"OpenMP array section is not allowed here">;
+def err_omp_typecheck_section_value : Error<
+  "subscripted value is not an array or pointer">;
+def err_omp_typecheck_section_not_integer : Error<
+  "array section %select{lower bound|length}0 is not an integer">;
+def err_omp_section_function_type : Error<
+  "section of pointer to function type %0">;
+def warn_omp_section_is_char : Warning<"array section %select{lower bound|length}0 is of type 'char'">,
+  InGroup<CharSubscript>, DefaultIgnore;
+def err_omp_section_incomplete_type : Error<
+  "section of pointer to incomplete type %0">;
+def err_omp_section_negative : Error<
+  "section %select{lower bound|length}0 is evaluated to a negative value %1">;
+def err_omp_section_length_undefined : Error<
+  "section length is unspecified and cannot be inferred because subscripted value is %select{not an array|an array of unknown bound}0">;
+def err_omp_wrong_linear_modifier : Error<
+  "expected %select{'val' modifier|one of 'ref', val' or 'uval' modifiers}0">;
+def err_omp_wrong_linear_modifier_non_reference : Error<
+  "variable of non-reference type %0 can be used only with 'val' modifier, but used with '%1'">;
+def err_omp_wrong_simdlen_safelen_values : Error<
+  "the value of 'simdlen' parameter must be less than or equal to the value of the 'safelen' parameter">;
 } // end of OpenMP category
 
 let CategoryName = "Related Result Type Issue" in {

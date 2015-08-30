@@ -186,9 +186,15 @@ set(i686_SOURCES
 set(arm_SOURCES
   arm/adddf3vfp.S
   arm/addsf3vfp.S
+  arm/aeabi_cdcmp.S
+  arm/aeabi_cdcmpeq_check_nan.c
+  arm/aeabi_cfcmp.S
+  arm/aeabi_cfcmpeq_check_nan.c
   arm/aeabi_dcmp.S
   arm/aeabi_div0.c
+  arm/aeabi_drsub.c
   arm/aeabi_fcmp.S
+  arm/aeabi_frsub.c
   arm/aeabi_idivmod.S
   arm/aeabi_ldivmod.S
   arm/aeabi_memcmp.S
@@ -267,10 +273,33 @@ set(arm_SOURCES
   arm/unordsf2vfp.S
   ${GENERIC_SOURCES})
 
+set(aarch64_SOURCES
+  comparetf2.c
+  extenddftf2.c
+  extendsftf2.c
+  fixtfdi.c
+  fixtfsi.c
+  fixtfti.c
+  fixunstfdi.c
+  fixunstfsi.c
+  fixunstfti.c
+  floatditf.c
+  floatsitf.c
+  floatunditf.c
+  floatunsitf.c
+  multc3.c
+  trunctfdf2.c
+  trunctfsf2.c
+  ${GENERIC_SOURCES})
+
 add_custom_target(builtins)
 
+if(APPLE)
+  set(OS_OPTION OS osx)
+endif()
+
 if (NOT WIN32 OR MINGW)
-  foreach (arch x86_64 i386 arm)
+  foreach (arch x86_64 i386 i686 arm aarch64)
     if (CAN_TARGET_${arch})
       # Filter out generic versions of routines that are re-implemented in
       # architecture specific manner.  This prevents multiple definitions of the
@@ -283,10 +312,13 @@ if (NOT WIN32 OR MINGW)
         endif ()
       endforeach ()
 
-      add_compiler_rt_runtime(clang_rt.builtins-${arch} ${arch} STATIC
+      add_compiler_rt_runtime(clang_rt.builtins
+                              STATIC
+                              ARCH ${arch}
+                              ${OS_OPTION}
                               SOURCES ${${arch}_SOURCES}
-                              CFLAGS "-std=c99")
-      add_dependencies(builtins clang_rt.builtins-${arch})
+                              CFLAGS "-std=c99"
+                              PARENT_TARGET builtins)
     endif ()
   endforeach ()
 endif ()

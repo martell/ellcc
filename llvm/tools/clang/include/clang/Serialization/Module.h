@@ -152,6 +152,9 @@ public:
   /// \brief Whether this precompiled header is a relocatable PCH file.
   bool RelocatablePCH;
 
+  /// \brief Whether timestamps are included in this module file.
+  bool HasTimestamps;
+
   /// \brief The file entry for the module file.
   const FileEntry *File;
 
@@ -424,17 +427,6 @@ public:
   const serialization::DeclID *FileSortedDecls;
   unsigned NumFileSortedDecls;
 
-  /// \brief Array of redeclaration chain location information within this 
-  /// module file, sorted by the first declaration ID.
-  const serialization::LocalRedeclarationsInfo *RedeclarationsMap;
-
-  /// \brief The number of redeclaration info entries in RedeclarationsMap.
-  unsigned LocalNumRedeclarationsInMap;
-  
-  /// \brief The redeclaration chains for declarations local to this
-  /// module file.
-  SmallVector<uint64_t, 1> RedeclarationChains;
-  
   /// \brief Array of category list location information within this 
   /// module file, sorted by the definition ID.
   const serialization::ObjCCategoriesInfo *ObjCCategoriesMap;

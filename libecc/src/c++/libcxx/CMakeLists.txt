@@ -52,9 +52,11 @@ option(LIBCXX_ENABLE_ASSERTIONS "Enable assertions independent of build mode." O
 option(LIBCXX_ENABLE_SHARED "Build libc++ as a shared library." ON)
 
 option(LIBCXX_INCLUDE_TESTS "Build the libc++ tests." ${LLVM_INCLUDE_TESTS})
+option(LIBCXX_INCLUDE_DOCS "Build the libc++ documentation." ${LLVM_INCLUDE_DOCS})
 set(LIBCXX_LIBDIR_SUFFIX "${LLVM_LIBDIR_SUFFIX}" CACHE STRING
     "Define suffix of library directory name (32/64)")
 option(LIBCXX_INSTALL_HEADERS "Install the libc++ headers." ON)
+option(LIBCXX_INSTALL_LIBRARY "Install the libc++ library." ON)
 option(LIBCXX_INSTALL_SUPPORT_HEADERS "Install libc++ support headers." ON)
 
 # ABI Library options ---------------------------------------------------------
@@ -84,7 +86,7 @@ option(LIBCXX_ENABLE_THREADS "Build libc++ with support for threads." ON)
 option(LIBCXX_ENABLE_THREAD_UNSAFE_C_FUNCTIONS "Build libc++ with support for thread-unsafe C functions" ON)
 option(LIBCXX_ENABLE_MONOTONIC_CLOCK
   "Build libc++ with support for a monotonic clock.
-   This option may only be used when LIBCXX_ENABLE_THREADS=OFF." ON)
+   This option may only be set to OFF when LIBCXX_ENABLE_THREADS=OFF." ON)
 
 # Misc options ----------------------------------------------------------------
 option(LIBCXX_ENABLE_PEDANTIC "Compile with pedantic enabled." ON)
@@ -93,6 +95,23 @@ option(LIBCXX_ENABLE_WERROR "Fail and stop if a warning is triggered." OFF)
 option(LIBCXX_GENERATE_COVERAGE "Enable generating code coverage." OFF)
 set(LIBCXX_COVERAGE_LIBRARY "" CACHE STRING
     "The Profile-rt library used to build with code coverage")
+
+# Don't allow a user to accidentally overwrite the system libc++ installation on Darwin.
+# If the user specifies -DCMAKE_INSTALL_PREFIX=/usr the install rules for libc++
+# will not be generated and a warning will be issued.
+option(LIBCXX_OVERRIDE_DARWIN_INSTALL "Enable overwriting darwins libc++ installation." OFF)
+mark_as_advanced(LIBCXX_OVERRIDE_DARWIN_INSTALL) # Don't show this option by default.
+
+if (${CMAKE_SYSTEM_NAME} MATCHES "Darwin" AND NOT LIBCXX_OVERRIDE_DARWIN_INSTALL)
+  if ("${CMAKE_INSTALL_PREFIX}" STREQUAL "/usr")
+    message(WARNING "Disabling libc++ install rules because installation would "
+                    "overwrite the systems installation. Configure with "
+                    "-DLIBCXX_OVERRIDE_DARWIN_INSTALL=ON to suppress this behaviour.")
+    mark_as_advanced(CLEAR LIBCXX_OVERRIDE_DARWIN_INSTALL) # Show the override option.
+    set(LIBCXX_INSTALL_HEADERS OFF)
+    set(LIBCXX_INSTALL_LIBRARY OFF)
+  endif()
+endif()
 
 #===============================================================================
 # Check option configurations
@@ -247,7 +266,7 @@ define_if_not(LIBCXX_ENABLE_MONOTONIC_CLOCK -D_LIBCPP_HAS_NO_MONOTONIC_CLOCK)
 define_if_not(LIBCXX_ENABLE_THREAD_UNSAFE_C_FUNCTIONS -D_LIBCPP_HAS_NO_THREAD_UNSAFE_C_FUNCTIONS)
 
 
-# Sanitizer flags
+# Sanitizer flags =============================================================
 
 # Configure for sanitizers. If LIBCXX_BUILT_STANDALONE then we have to do
 # the flag translation ourselves. Othewise LLVM's CMakeList.txt will handle it.
@@ -288,6 +307,10 @@ endif()
 include_directories(include)
 add_subdirectory(include)
 add_subdirectory(lib)
+
 if (LIBCXX_INCLUDE_TESTS)
   add_subdirectory(test)
+endif()
+if (LIBCXX_INCLUDE_DOCS)
+  add_subdirectory(docs)
 endif()

@@ -1855,6 +1855,57 @@ SDValue SelectionDAG::getShiftAmountOperand(EVT LHSTy, SDValue Op) {
   return getZExtOrTrunc(Op, SDLoc(Op), ShTy);
 }
 
+SDValue SelectionDAG::expandVAArg(SDNode *Node) {
+  SDLoc dl(Node);
+  const TargetLowering &TLI = getTargetLoweringInfo();
+  const Value *V = cast<SrcValueSDNode>(Node->getOperand(2))->getValue();
+  EVT VT = Node->getValueType(0);
+  SDValue Tmp1 = Node->getOperand(0);
+  SDValue Tmp2 = Node->getOperand(1);
+  unsigned Align = Node->getConstantOperandVal(3);
+
+  SDValue VAListLoad =
+    getLoad(TLI.getPointerTy(getDataLayout()), dl, Tmp1, Tmp2,
+            MachinePointerInfo(V), false, false, false, 0);
+  SDValue VAList = VAListLoad;
+
+  if (Align > TLI.getMinStackArgumentAlignment()) {
+    assert(((Align & (Align-1)) == 0) && "Expected Align to be a power of 2");
+
+    VAList = getNode(ISD::ADD, dl, VAList.getValueType(), VAList,
+                     getConstant(Align - 1, dl, VAList.getValueType()));
+
+    VAList = getNode(ISD::AND, dl, VAList.getValueType(), VAList,
+                     getConstant(-(int64_t)Align, dl, VAList.getValueType()));
+  }
+
+  // Increment the pointer, VAList, to the next vaarg
+  Tmp1 = getNode(ISD::ADD, dl, VAList.getValueType(), VAList,
+                 getConstant(getDataLayout().getTypeAllocSize(
+                                               VT.getTypeForEVT(*getContext())),
+                             dl, VAList.getValueType()));
+  // Store the incremented VAList to the legalized pointer
+  Tmp1 = getStore(VAListLoad.getValue(1), dl, Tmp1, Tmp2,
+                  MachinePointerInfo(V), false, false, 0);
+  // Load the actual argument out of the pointer VAList
+  return getLoad(VT, dl, Tmp1, VAList, MachinePointerInfo(),
+                 false, false, false, 0);
+}
+
+SDValue SelectionDAG::expandVACopy(SDNode *Node) {
+  SDLoc dl(Node);
+  const TargetLowering &TLI = getTargetLoweringInfo();
+  // This defaults to loading a pointer from the input and storing it to the
+  // output, returning the chain.
+  const Value *VD = cast<SrcValueSDNode>(Node->getOperand(3))->getValue();
+  const Value *VS = cast<SrcValueSDNode>(Node->getOperand(4))->getValue();
+  SDValue Tmp1 = getLoad(TLI.getPointerTy(getDataLayout()), dl,
+                         Node->getOperand(0), Node->getOperand(2),
+                         MachinePointerInfo(VS), false, false, false, 0);
+  return getStore(Tmp1.getValue(1), dl, Tmp1, Node->getOperand(1),
+                  MachinePointerInfo(VD), false, false, 0);
+}
+
 /// CreateStackTemporary - Create a stack temporary, suitable for holding the
 /// specified value type.
 SDValue SelectionDAG::CreateStackTemporary(EVT VT, unsigned minAlign) {
@@ -3182,6 +3233,10 @@ static std::pair<APInt, bool> FoldValue(unsigned Opcode, const APInt &C1,
   case ISD::SRA:  return std::make_pair(C1.ashr(C2), true);
   case ISD::ROTL: return std::make_pair(C1.rotl(C2), true);
   case ISD::ROTR: return std::make_pair(C1.rotr(C2), true);
+  case ISD::SMIN: return std::make_pair(C1.sle(C2) ? C1 : C2, true);
+  case ISD::SMAX: return std::make_pair(C1.sge(C2) ? C1 : C2, true);
+  case ISD::UMIN: return std::make_pair(C1.ule(C2) ? C1 : C2, true);
+  case ISD::UMAX: return std::make_pair(C1.uge(C2) ? C1 : C2, true);
   case ISD::UDIV:
     if (!C2.getBoolValue())
       break;
@@ -3356,6 +3411,10 @@ SDValue SelectionDAG::getNode(unsigned Opcode, SDLoc DL, EVT VT, SDValue N1,
   case ISD::MUL:
   case ISD::SDIV:
   case ISD::SREM:
+  case ISD::SMIN:
+  case ISD::SMAX:
+  case ISD::UMIN:
+  case ISD::UMAX:
     assert(VT.isInteger() && "This operator does not apply to FP types!");
     assert(N1.getValueType() == N2.getValueType() &&
            N1.getValueType() == VT && "Binary operator types must match!");
@@ -5273,7 +5332,7 @@ SelectionDAG::getMaskedGather(SDVTList VTs, EVT VT, SDLoc dl,
     cast<MaskedGatherSDNode>(E)->refineAlignment(MMO);
     return SDValue(E, 0);
   }
-  MaskedGatherSDNode *N = 
+  MaskedGatherSDNode *N =
     new (NodeAllocator) MaskedGatherSDNode(dl.getIROrder(), dl.getDebugLoc(),
                                            Ops, VTs, VT, MMO);
   CSEMap.InsertNode(N, IP);
@@ -5668,7 +5727,7 @@ UpdateNodeOperands(SDNode *N, ArrayRef<SDValue> Ops) {
          "Update with wrong number of operands");
 
   // If no operands changed just return the input node.
-  if (Ops.empty() || std::equal(Ops.begin(), Ops.end(), N->op_begin()))
+  if (std::equal(Ops.begin(), Ops.end(), N->op_begin()))
     return N;
 
   // See if the modified node already exists.

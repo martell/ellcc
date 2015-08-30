@@ -179,7 +179,8 @@ public:
                            unsigned Value) {}
 
   /// This is called for each AST file loaded.
-  virtual void visitModuleFile(StringRef Filename) {}
+  virtual void visitModuleFile(StringRef Filename,
+                               serialization::ModuleKind Kind) {}
 
   /// \brief Returns true if this \c ASTReaderListener wants to receive the
   /// input files of the AST file via \c visitInputFile, false otherwise.
@@ -194,7 +195,7 @@ public:
   ///
   /// \returns true to continue receiving the next input file, false to stop.
   virtual bool visitInputFile(StringRef Filename, bool isSystem,
-                              bool isOverridden) {
+                              bool isOverridden, bool isExplicitModule) {
     return true;
   }
 
@@ -242,9 +243,10 @@ public:
   void ReadCounter(const serialization::ModuleFile &M, unsigned Value) override;
   bool needsInputFileVisitation() override;
   bool needsSystemInputFileVisitation() override;
-  void visitModuleFile(StringRef Filename) override;
+  void visitModuleFile(StringRef Filename,
+                       serialization::ModuleKind Kind) override;
   bool visitInputFile(StringRef Filename, bool isSystem,
-                      bool isOverridden) override;
+                      bool isOverridden, bool isExplicitModule) override;
 };
 
 /// \brief ASTReaderListener implementation to validate the information of
@@ -930,20 +932,10 @@ private:
   /// Objective-C protocols.
   std::deque<Decl *> InterestingDecls;
 
-  /// \brief The set of redeclarable declarations that have been deserialized
-  /// since the last time the declaration chains were linked.
-  llvm::SmallPtrSet<Decl *, 16> RedeclsDeserialized;
-  
   /// \brief The list of redeclaration chains that still need to be 
-  /// reconstructed.
-  ///
-  /// Each element is the canonical declaration of the chain.
-  /// Elements in this vector should be unique; use 
-  /// PendingDeclChainsKnown to ensure uniqueness.
-  SmallVector<Decl *, 16> PendingDeclChains;
-
-  /// \brief Keeps track of the elements added to PendingDeclChains.
-  llvm::SmallSet<Decl *, 16> PendingDeclChainsKnown;
+  /// reconstructed, and the local offset to the corresponding list
+  /// of redeclarations.
+  SmallVector<std::pair<Decl *, uint64_t>, 16> PendingDeclChains;
 
   /// \brief The list of canonical declarations whose redeclaration chains
   /// need to be marked as incomplete once we're done deserializing things.
@@ -1170,7 +1162,7 @@ private:
   RecordLocation DeclCursorForID(serialization::DeclID ID,
                                  unsigned &RawLocation);
   void loadDeclUpdateRecords(serialization::DeclID ID, Decl *D);
-  void loadPendingDeclChain(Decl *D);
+  void loadPendingDeclChain(Decl *D, uint64_t LocalOffset);
   void loadObjCCategories(serialization::GlobalDeclID ID, ObjCInterfaceDecl *D,
                           unsigned PreviousGeneration = 0);
 

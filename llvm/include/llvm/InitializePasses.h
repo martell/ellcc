@@ -53,9 +53,6 @@ void initializeInstrumentation(PassRegistry&);
 /// initializeAnalysis - Initialize all passes linked into the Analysis library.
 void initializeAnalysis(PassRegistry&);
 
-/// initializeIPA - Initialize all passes linked into the IPA library.
-void initializeIPA(PassRegistry&);
-
 /// initializeCodeGen - Initialize all passes linked into the CodeGen library.
 void initializeCodeGen(PassRegistry&);
 
@@ -154,7 +151,6 @@ void initializeJumpThreadingPass(PassRegistry&);
 void initializeLCSSAPass(PassRegistry&);
 void initializeLICMPass(PassRegistry&);
 void initializeLazyValueInfoPass(PassRegistry&);
-void initializeLibCallAliasAnalysisPass(PassRegistry&);
 void initializeLintPass(PassRegistry&);
 void initializeLiveDebugVariablesPass(PassRegistry&);
 void initializeLiveIntervalsPass(PassRegistry&);
@@ -248,7 +244,7 @@ void initializeSROAPass(PassRegistry&);
 void initializeSROA_DTPass(PassRegistry&);
 void initializeSROA_SSAUpPass(PassRegistry&);
 void initializeScalarEvolutionAliasAnalysisPass(PassRegistry&);
-void initializeScalarEvolutionPass(PassRegistry&);
+void initializeScalarEvolutionWrapperPassPass(PassRegistry&);
 void initializeShrinkWrapPass(PassRegistry &);
 void initializeSimpleInlinerPass(PassRegistry&);
 void initializeShadowStackGCLoweringPass(PassRegistry&);  
@@ -303,6 +299,7 @@ void initializeDwarfEHPreparePass(PassRegistry&);
 void initializeFloat2IntPass(PassRegistry&);
 void initializeLoopDistributePass(PassRegistry&);
 void initializeSjLjEHPreparePass(PassRegistry&);
+void initializeDemandedBitsPass(PassRegistry&);
 }
 
 #endif

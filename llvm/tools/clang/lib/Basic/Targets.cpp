@@ -1,4 +1,4 @@
-//===--- Targets.cpp - Implement -arch option and targets -----------------===//
+//===--- Targets.cpp - Implement target feature support -------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -867,7 +867,9 @@ public:
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override;
 
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override;
+  bool initFeatureMap(llvm::StringMap<bool> &Features, DiagnosticsEngine &Diags,
+                      StringRef CPU,
+                      std::vector<std::string> &FeaturesVec) const override;
 
   bool handleTargetFeatures(std::vector<std::string> &Features,
                             DiagnosticsEngine &Diags) override;
@@ -1032,64 +1034,26 @@ const Builtin::Info PPCTargetInfo::BuiltinInfo[] = {
 /// configured set of features.
 bool PPCTargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
                                          DiagnosticsEngine &Diags) {
-  for (unsigned i = 0, e = Features.size(); i !=e; ++i) {
-    // Ignore disabled features.
-    if (Features[i][0] == '-')
-      continue;
-
-    StringRef Feature = StringRef(Features[i]).substr(1);
-
-    if (Feature == "vsx") {
+  for (const auto &Feature : Features) {
+    if (Feature == "+vsx") {
       HasVSX = true;
-      continue;
-    }
-
-    if (Feature == "bpermd") {
+    } else if (Feature == "+bpermd") {
       HasBPERMD = true;
-      continue;
-    }
-
-    if (Feature == "extdiv") {
+    } else if (Feature == "+extdiv") {
       HasExtDiv = true;
-      continue;
-    }
-
-    if (Feature == "power8-vector") {
+    } else if (Feature == "+power8-vector") {
       HasP8Vector = true;
-      continue;
-    }
-
-    if (Feature == "crypto") {
+    } else if (Feature == "+crypto") {
       HasP8Crypto = true;
-      continue;
-    }
-
-    if (Feature == "direct-move") {
+    } else if (Feature == "+direct-move") {
       HasDirectMove = true;
-      continue;
-    }
-
-    if (Feature == "qpx") {
+    } else if (Feature == "+qpx") {
       HasQPX = true;
-      continue;
-    }
-
-    if (Feature == "htm") {
+    } else if (Feature == "+htm") {
       HasHTM = true;
-      continue;
     }
-
     // TODO: Finish this list and add an assert that we've handled them
     // all.
-  }
-  if (!HasVSX && (HasP8Vector || HasDirectMove)) {
-    if (HasP8Vector)
-      Diags.Report(diag::err_opt_not_valid_with_opt) << "-mpower8-vector" <<
-                                                        "-mno-vsx";
-    else if (HasDirectMove)
-      Diags.Report(diag::err_opt_not_valid_with_opt) << "-mdirect-move" <<
-                                                        "-mno-vsx";
-    return false;
   }
 
   return true;
@@ -1275,7 +1239,9 @@ void PPCTargetInfo::getTargetDefines(const LangOptions &Opts,
   //   __NO_FPRS__
 }
 
-void PPCTargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
+bool PPCTargetInfo::initFeatureMap(
+    llvm::StringMap<bool> &Features, DiagnosticsEngine &Diags, StringRef CPU,
+    std::vector<std::string> &FeaturesVec) const {
   Features["altivec"] = llvm::StringSwitch<bool>(CPU)
     .Case("7400", true)
     .Case("g4", true)
@@ -1318,6 +1284,28 @@ void PPCTargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     .Case("pwr8", true)
     .Case("pwr7", true)
     .Default(false);
+
+  // Handle explicit options being passed to the compiler here: if we've
+  // explicitly turned off vsx and turned on power8-vector or direct-move then
+  // go ahead and error since the customer has expressed a somewhat incompatible
+  // set of options.
+  if (std::find(FeaturesVec.begin(), FeaturesVec.end(), "-vsx") !=
+      FeaturesVec.end()) {
+    if (std::find(FeaturesVec.begin(), FeaturesVec.end(), "+power8-vector") !=
+        FeaturesVec.end()) {
+      Diags.Report(diag::err_opt_not_valid_with_opt) << "-mpower8-vector"
+                                                     << "-mno-vsx";
+      return false;
+    }
+
+    if (std::find(FeaturesVec.begin(), FeaturesVec.end(), "+direct-move") !=
+        FeaturesVec.end()) {
+      Diags.Report(diag::err_opt_not_valid_with_opt) << "-mdirect-move"
+                                                     << "-mno-vsx";
+      return false;
+    }
+  }
+  return TargetInfo::initFeatureMap(Features, Diags, CPU, FeaturesVec);
 }
 
 bool PPCTargetInfo::hasFeature(StringRef Feature) const {
@@ -1334,37 +1322,29 @@ bool PPCTargetInfo::hasFeature(StringRef Feature) const {
     .Default(false);
 }
 
-/*  There is no clear way for the target to know which of the features in the
-    final feature vector came from defaults and which are actually specified by
-    the user. To that end, we use the fact that this function is not called on
-    default features - only user specified ones. By the first time this
-    function is called, the default features are populated.
-    We then keep track of the features that the user specified so that we
-    can ensure we do not override a user's request (only defaults).
-    For example:
-    -mcpu=pwr8 -mno-vsx (should disable vsx and everything that depends on it)
-    -mcpu=pwr8 -mdirect-move -mno-vsx (should actually be diagnosed)
-
-NOTE: Do not call this from PPCTargetInfo::getDefaultFeatures
-*/
 void PPCTargetInfo::setFeatureEnabled(llvm::StringMap<bool> &Features,
                                       StringRef Name, bool Enabled) const {
-  static llvm::StringMap<bool> ExplicitFeatures;
-  ExplicitFeatures[Name] = Enabled;
-
-  // At this point, -mno-vsx turns off the dependent features but we respect
-  // the user's requests.
-  if (!Enabled && Name == "vsx") {
-    Features["direct-move"] = ExplicitFeatures["direct-move"];
-    Features["power8-vector"] = ExplicitFeatures["power8-vector"];
-  }
-  if ((Enabled && Name == "power8-vector") ||
-      (Enabled && Name == "direct-move")) {
-    if (ExplicitFeatures.find("vsx") == ExplicitFeatures.end()) {
-      Features["vsx"] = true;
+  // If we're enabling direct-move or power8-vector go ahead and enable vsx
+  // as well. Do the inverse if we're disabling vsx. We'll diagnose any user
+  // incompatible options.
+  if (Enabled) {
+    if (Name == "vsx") {
+     Features[Name] = true;
+    } else if (Name == "direct-move") {
+      Features[Name] = Features["vsx"] = true;
+    } else if (Name == "power8-vector") {
+      Features[Name] = Features["vsx"] = true;
+    } else {
+      Features[Name] = true;
+    }
+  } else {
+    if (Name == "vsx") {
+      Features[Name] = Features["direct-move"] = Features["power8-vector"] =
+          false;
+    } else {
+      Features[Name] = false;
     }
   }
-  Features[Name] = Enabled;
 }
 
 const char * const PPCTargetInfo::GCCRegNames[] = {
@@ -2401,6 +2381,75 @@ class X86TargetInfo : public TargetInfo {
     //@}
   } CPU;
 
+  CPUKind getCPUKind(StringRef CPU) const {
+    return llvm::StringSwitch<CPUKind>(CPU)
+        .Case("i386", CK_i386)
+        .Case("i486", CK_i486)
+        .Case("winchip-c6", CK_WinChipC6)
+        .Case("winchip2", CK_WinChip2)
+        .Case("c3", CK_C3)
+        .Case("i586", CK_i586)
+        .Case("pentium", CK_Pentium)
+        .Case("pentium-mmx", CK_PentiumMMX)
+        .Case("i686", CK_i686)
+        .Case("pentiumpro", CK_PentiumPro)
+        .Case("pentium2", CK_Pentium2)
+        .Case("pentium3", CK_Pentium3)
+        .Case("pentium3m", CK_Pentium3M)
+        .Case("pentium-m", CK_PentiumM)
+        .Case("c3-2", CK_C3_2)
+        .Case("yonah", CK_Yonah)
+        .Case("pentium4", CK_Pentium4)
+        .Case("pentium4m", CK_Pentium4M)
+        .Case("prescott", CK_Prescott)
+        .Case("nocona", CK_Nocona)
+        .Case("core2", CK_Core2)
+        .Case("penryn", CK_Penryn)
+        .Case("bonnell", CK_Bonnell)
+        .Case("atom", CK_Bonnell) // Legacy name.
+        .Case("silvermont", CK_Silvermont)
+        .Case("slm", CK_Silvermont) // Legacy name.
+        .Case("nehalem", CK_Nehalem)
+        .Case("corei7", CK_Nehalem) // Legacy name.
+        .Case("westmere", CK_Westmere)
+        .Case("sandybridge", CK_SandyBridge)
+        .Case("corei7-avx", CK_SandyBridge) // Legacy name.
+        .Case("ivybridge", CK_IvyBridge)
+        .Case("core-avx-i", CK_IvyBridge) // Legacy name.
+        .Case("haswell", CK_Haswell)
+        .Case("core-avx2", CK_Haswell) // Legacy name.
+        .Case("broadwell", CK_Broadwell)
+        .Case("skylake", CK_Skylake)
+        .Case("skx", CK_Skylake) // Legacy name.
+        .Case("knl", CK_KNL)
+        .Case("k6", CK_K6)
+        .Case("k6-2", CK_K6_2)
+        .Case("k6-3", CK_K6_3)
+        .Case("athlon", CK_Athlon)
+        .Case("athlon-tbird", CK_AthlonThunderbird)
+        .Case("athlon-4", CK_Athlon4)
+        .Case("athlon-xp", CK_AthlonXP)
+        .Case("athlon-mp", CK_AthlonMP)
+        .Case("athlon64", CK_Athlon64)
+        .Case("athlon64-sse3", CK_Athlon64SSE3)
+        .Case("athlon-fx", CK_AthlonFX)
+        .Case("k8", CK_K8)
+        .Case("k8-sse3", CK_K8SSE3)
+        .Case("opteron", CK_Opteron)
+        .Case("opteron-sse3", CK_OpteronSSE3)
+        .Case("barcelona", CK_AMDFAM10)
+        .Case("amdfam10", CK_AMDFAM10)
+        .Case("btver1", CK_BTVER1)
+        .Case("btver2", CK_BTVER2)
+        .Case("bdver1", CK_BDVER1)
+        .Case("bdver2", CK_BDVER2)
+        .Case("bdver3", CK_BDVER3)
+        .Case("bdver4", CK_BDVER4)
+        .Case("x86-64", CK_x86_64)
+        .Case("geode", CK_Geode)
+        .Default(CK_Generic);
+  }
+
   enum FPMathKind {
     FP_Default,
     FP_SSE,
@@ -2471,10 +2520,12 @@ public:
     setFeatureEnabledImpl(Features, Name, Enabled);
   }
   // This exists purely to cut down on the number of virtual calls in
-  // getDefaultFeatures which calls this repeatedly.
+  // initFeatureMap which calls this repeatedly.
   static void setFeatureEnabledImpl(llvm::StringMap<bool> &Features,
                                     StringRef Name, bool Enabled);
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override;
+  bool initFeatureMap(llvm::StringMap<bool> &Features, DiagnosticsEngine &Diags,
+                      StringRef CPU,
+                      std::vector<std::string> &FeaturesVec) const override;
   bool hasFeature(StringRef Feature) const override;
   bool handleTargetFeatures(std::vector<std::string> &Features,
                             DiagnosticsEngine &Diags) override;
@@ -2489,72 +2540,7 @@ public:
     return "";
   }
   bool setCPU(const std::string &Name) override {
-    CPU = llvm::StringSwitch<CPUKind>(Name)
-      .Case("i386", CK_i386)
-      .Case("i486", CK_i486)
-      .Case("winchip-c6", CK_WinChipC6)
-      .Case("winchip2", CK_WinChip2)
-      .Case("c3", CK_C3)
-      .Case("i586", CK_i586)
-      .Case("pentium", CK_Pentium)
-      .Case("pentium-mmx", CK_PentiumMMX)
-      .Case("i686", CK_i686)
-      .Case("pentiumpro", CK_PentiumPro)
-      .Case("pentium2", CK_Pentium2)
-      .Case("pentium3", CK_Pentium3)
-      .Case("pentium3m", CK_Pentium3M)
-      .Case("pentium-m", CK_PentiumM)
-      .Case("c3-2", CK_C3_2)
-      .Case("yonah", CK_Yonah)
-      .Case("pentium4", CK_Pentium4)
-      .Case("pentium4m", CK_Pentium4M)
-      .Case("prescott", CK_Prescott)
-      .Case("nocona", CK_Nocona)
-      .Case("core2", CK_Core2)
-      .Case("penryn", CK_Penryn)
-      .Case("bonnell", CK_Bonnell)
-      .Case("atom", CK_Bonnell) // Legacy name.
-      .Case("silvermont", CK_Silvermont)
-      .Case("slm", CK_Silvermont) // Legacy name.
-      .Case("nehalem", CK_Nehalem)
-      .Case("corei7", CK_Nehalem) // Legacy name.
-      .Case("westmere", CK_Westmere)
-      .Case("sandybridge", CK_SandyBridge)
-      .Case("corei7-avx", CK_SandyBridge) // Legacy name.
-      .Case("ivybridge", CK_IvyBridge)
-      .Case("core-avx-i", CK_IvyBridge) // Legacy name.
-      .Case("haswell", CK_Haswell)
-      .Case("core-avx2", CK_Haswell) // Legacy name.
-      .Case("broadwell", CK_Broadwell)
-      .Case("skylake", CK_Skylake)
-      .Case("skx", CK_Skylake) // Legacy name.
-      .Case("knl", CK_KNL)
-      .Case("k6", CK_K6)
-      .Case("k6-2", CK_K6_2)
-      .Case("k6-3", CK_K6_3)
-      .Case("athlon", CK_Athlon)
-      .Case("athlon-tbird", CK_AthlonThunderbird)
-      .Case("athlon-4", CK_Athlon4)
-      .Case("athlon-xp", CK_AthlonXP)
-      .Case("athlon-mp", CK_AthlonMP)
-      .Case("athlon64", CK_Athlon64)
-      .Case("athlon64-sse3", CK_Athlon64SSE3)
-      .Case("athlon-fx", CK_AthlonFX)
-      .Case("k8", CK_K8)
-      .Case("k8-sse3", CK_K8SSE3)
-      .Case("opteron", CK_Opteron)
-      .Case("opteron-sse3", CK_OpteronSSE3)
-      .Case("barcelona", CK_AMDFAM10)
-      .Case("amdfam10", CK_AMDFAM10)
-      .Case("btver1", CK_BTVER1)
-      .Case("btver2", CK_BTVER2)
-      .Case("bdver1", CK_BDVER1)
-      .Case("bdver2", CK_BDVER2)
-      .Case("bdver3", CK_BDVER3)
-      .Case("bdver4", CK_BDVER4)
-      .Case("x86-64", CK_x86_64)
-      .Case("geode", CK_Geode)
-      .Default(CK_Generic);
+    CPU = getCPUKind(Name);
 
     // Perform any per-CPU checks necessary to determine if this CPU is
     // acceptable.
@@ -2665,14 +2651,16 @@ bool X86TargetInfo::setFPMath(StringRef Name) {
   return false;
 }
 
-void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
+bool X86TargetInfo::initFeatureMap(
+    llvm::StringMap<bool> &Features, DiagnosticsEngine &Diags, StringRef CPU,
+    std::vector<std::string> &FeaturesVec) const {
   // FIXME: This *really* should not be here.
 
   // X86_64 always has SSE2.
   if (getTriple().getArch() == llvm::Triple::x86_64)
     setFeatureEnabledImpl(Features, "sse2", true);
 
-  switch (CPU) {
+  switch (getCPUKind(CPU)) {
   case CK_Generic:
   case CK_i386:
   case CK_i486:
@@ -2841,6 +2829,7 @@ void X86TargetInfo::getDefaultFeatures(llvm::StringMap<bool> &Features) const {
     setFeatureEnabledImpl(Features, "cx16", true);
     break;
   }
+  return TargetInfo::initFeatureMap(Features, Diags, CPU, FeaturesVec);
 }
 
 void X86TargetInfo::setSSELevel(llvm::StringMap<bool> &Features,
@@ -3028,155 +3017,83 @@ void X86TargetInfo::setFeatureEnabledImpl(llvm::StringMap<bool> &Features,
 /// configured set of features.
 bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
                                          DiagnosticsEngine &Diags) {
-  // Remember the maximum enabled sselevel.
-  for (unsigned i = 0, e = Features.size(); i !=e; ++i) {
-    // Ignore disabled features.
-    if (Features[i][0] == '-')
+  for (const auto &Feature : Features) {
+    if (Feature[0] != '+')
       continue;
 
-    StringRef Feature = StringRef(Features[i]).substr(1);
-
-    if (Feature == "aes") {
+    if (Feature == "+aes") {
       HasAES = true;
-      continue;
-    }
-
-    if (Feature == "pclmul") {
+    } else if (Feature == "+pclmul") {
       HasPCLMUL = true;
-      continue;
-    }
-
-    if (Feature == "lzcnt") {
+    } else if (Feature == "+lzcnt") {
       HasLZCNT = true;
-      continue;
-    }
-
-    if (Feature == "rdrnd") {
+    } else if (Feature == "+rdrnd") {
       HasRDRND = true;
-      continue;
-    }
-
-    if (Feature == "fsgsbase") {
+    } else if (Feature == "+fsgsbase") {
       HasFSGSBASE = true;
-      continue;
-    }
-
-    if (Feature == "bmi") {
+    } else if (Feature == "+bmi") {
       HasBMI = true;
-      continue;
-    }
-
-    if (Feature == "bmi2") {
+    } else if (Feature == "+bmi2") {
       HasBMI2 = true;
-      continue;
-    }
-
-    if (Feature == "popcnt") {
+    } else if (Feature == "+popcnt") {
       HasPOPCNT = true;
-      continue;
-    }
-
-    if (Feature == "rtm") {
+    } else if (Feature == "+rtm") {
       HasRTM = true;
-      continue;
-    }
-
-    if (Feature == "prfchw") {
+    } else if (Feature == "+prfchw") {
       HasPRFCHW = true;
-      continue;
-    }
-
-    if (Feature == "rdseed") {
+    } else if (Feature == "+rdseed") {
       HasRDSEED = true;
-      continue;
-    }
-
-    if (Feature == "adx") {
+    } else if (Feature == "+adx") {
       HasADX = true;
-      continue;
-    }
-
-    if (Feature == "tbm") {
+    } else if (Feature == "+tbm") {
       HasTBM = true;
-      continue;
-    }
-
-    if (Feature == "fma") {
+    } else if (Feature == "+fma") {
       HasFMA = true;
-      continue;
-    }
-
-    if (Feature == "f16c") {
+    } else if (Feature == "+f16c") {
       HasF16C = true;
-      continue;
-    }
-
-    if (Feature == "avx512cd") {
+    } else if (Feature == "+avx512cd") {
       HasAVX512CD = true;
-      continue;
-    }
-
-    if (Feature == "avx512er") {
+    } else if (Feature == "+avx512er") {
       HasAVX512ER = true;
-      continue;
-    }
-
-    if (Feature == "avx512pf") {
+    } else if (Feature == "+avx512pf") {
       HasAVX512PF = true;
-      continue;
-    }
-
-    if (Feature == "avx512dq") {
+    } else if (Feature == "+avx512dq") {
       HasAVX512DQ = true;
-      continue;
-    }
-
-    if (Feature == "avx512bw") {
+    } else if (Feature == "+avx512bw") {
       HasAVX512BW = true;
-      continue;
-    }
-
-    if (Feature == "avx512vl") {
+    } else if (Feature == "+avx512vl") {
       HasAVX512VL = true;
-      continue;
-    }
-
-    if (Feature == "sha") {
+    } else if (Feature == "+sha") {
       HasSHA = true;
-      continue;
-    }
-
-    if (Feature == "cx16") {
+    } else if (Feature == "+cx16") {
       HasCX16 = true;
-      continue;
     }
 
-    assert(Features[i][0] == '+' && "Invalid target feature!");
     X86SSEEnum Level = llvm::StringSwitch<X86SSEEnum>(Feature)
-      .Case("avx512f", AVX512F)
-      .Case("avx2", AVX2)
-      .Case("avx", AVX)
-      .Case("sse4.2", SSE42)
-      .Case("sse4.1", SSE41)
-      .Case("ssse3", SSSE3)
-      .Case("sse3", SSE3)
-      .Case("sse2", SSE2)
-      .Case("sse", SSE1)
+      .Case("+avx512f", AVX512F)
+      .Case("+avx2", AVX2)
+      .Case("+avx", AVX)
+      .Case("+sse4.2", SSE42)
+      .Case("+sse4.1", SSE41)
+      .Case("+ssse3", SSSE3)
+      .Case("+sse3", SSE3)
+      .Case("+sse2", SSE2)
+      .Case("+sse", SSE1)
       .Default(NoSSE);
     SSELevel = std::max(SSELevel, Level);
 
     MMX3DNowEnum ThreeDNowLevel =
       llvm::StringSwitch<MMX3DNowEnum>(Feature)
-        .Case("3dnowa", AMD3DNowAthlon)
-        .Case("3dnow", AMD3DNow)
-        .Case("mmx", MMX)
+        .Case("+3dnowa", AMD3DNowAthlon)
+        .Case("+3dnow", AMD3DNow)
+        .Case("+mmx", MMX)
         .Default(NoMMX3DNow);
     MMX3DNowLevel = std::max(MMX3DNowLevel, ThreeDNowLevel);
 
     XOPEnum XLevel = llvm::StringSwitch<XOPEnum>(Feature)
-        .Case("xop", XOP)
-        .Case("fma4", FMA4)
-        .Case("sse4a", SSE4A)
+        .Case("+xop", XOP)
+        .Case("+fma4", FMA4)
+        .Case("+sse4a", SSE4A)
         .Default(NoXOP);
     XOPLevel = std::max(XOPLevel, XLevel);
   }
@@ -3219,7 +3136,7 @@ bool X86TargetInfo::handleTargetFeatures(std::vector<std::string> &Features,
     MMX3DNowLevel = std::max(MMX3DNowLevel, MMX);
 
   SimdDefaultAlign =
-      (getABI() == "avx512") ? 512 : (getABI() == "avx") ? 256 : 128;
+      hasFeature("avx512f") ? 512 : hasFeature("avx") ? 256 : 128;
   return true;
 }
 
@@ -3874,13 +3791,22 @@ public:
     LongDoubleWidth = 128;
     LongDoubleAlign = 128;
     SuitableAlign = 128;
-    MaxVectorAlign = 256;
     SizeType = UnsignedLong;
     IntPtrType = SignedLong;
     DataLayoutString = "e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128";
     HasAlignMac68kSupport = true;
   }
 
+  bool handleTargetFeatures(std::vector<std::string> &Features,
+                            DiagnosticsEngine &Diags) override {
+    if (!DarwinTargetInfo<X86_32TargetInfo>::handleTargetFeatures(Features,
+                                                                  Diags))
+      return false;
+    // We now know the features we have: we can decide how to align vectors.
+    MaxVectorAlign =
+        hasFeature("avx512f") ? 512 : hasFeature("avx") ? 256 : 128;
+    return true;
+  }
 };
 
 // x86-32 Windows target
@@ -4231,12 +4157,22 @@ public:
   DarwinX86_64TargetInfo(const llvm::Triple &Triple)
       : DarwinTargetInfo<X86_64TargetInfo>(Triple) {
     Int64Type = SignedLongLong;
-    MaxVectorAlign = 256;
     // The 64-bit iOS simulator uses the builtin bool type for Objective-C.
     llvm::Triple T = llvm::Triple(Triple);
     if (T.isiOS())
       UseSignedCharForObjCBool = false;
     DataLayoutString = "e-m:o-i64:64-f80:128-n8:16:32:64-S128";
+  }
+
+  bool handleTargetFeatures(std::vector<std::string> &Features,
+                            DiagnosticsEngine &Diags) override {
+    if (!DarwinTargetInfo<X86_64TargetInfo>::handleTargetFeatures(Features,
+                                                                  Diags))
+      return false;
+    // We now know the features we have: we can decide how to align vectors.
+    MaxVectorAlign =
+        hasFeature("avx512f") ? 512 : hasFeature("avx") ? 256 : 128;
+    return true;
   }
 };
 
@@ -4466,21 +4402,18 @@ protected:
     ArchISA    = llvm::ARMTargetParser::parseArchISA(ArchName);
     DefaultCPU = getDefaultCPU(ArchName);
 
-    // SubArch is specified by the target triple
-    if (!DefaultCPU.empty()) 
-      setArchInfo(DefaultCPU);
-    else 
-      // FIXME ArchInfo should be based on ArchName from triple, not on 
-      // a hard-coded CPU name. Doing so currently causes regressions:
-      // test/Preprocessor/init.c: __ARM_ARCH_6J__ not defined
-      setArchInfo(CPU);
+    unsigned ArchKind = llvm::ARMTargetParser::parseArch(ArchName);
+    if (ArchKind == llvm::ARM::AK_INVALID)
+      // set arch of the CPU, either provided explicitly or hardcoded default
+      ArchKind = llvm::ARMTargetParser::parseCPUArch(CPU);
+    setArchInfo(ArchKind);
   }
 
-  void setArchInfo(StringRef CPU) {
+  void setArchInfo(unsigned Kind) {
     StringRef SubArch;
 
     // cache TargetParser info
-    ArchKind    = llvm::ARMTargetParser::parseCPUArch(CPU);
+    ArchKind    = Kind;
     SubArch     = llvm::ARMTargetParser::getSubArch(ArchKind);
     ArchProfile = llvm::ARMTargetParser::parseArchProfile(SubArch);
     ArchVersion = llvm::ARMTargetParser::parseArchVersion(SubArch);
@@ -4668,7 +4601,9 @@ public:
   }
 
   // FIXME: This should be based on Arch attributes, not CPU names.
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override {
+  bool initFeatureMap(llvm::StringMap<bool> &Features, DiagnosticsEngine &Diags,
+                      StringRef CPU,
+                      std::vector<std::string> &FeaturesVec) const override {
     if (CPU == "arm1136jf-s" || CPU == "arm1176jzf-s" || CPU == "mpcore")
       Features["vfp2"] = true;
     else if (CPU == "cortex-a8" || CPU == "cortex-a9") {
@@ -4700,6 +4635,7 @@ public:
                CPU == "sc300" || CPU == "cortex-r4" || CPU == "cortex-r4f") {
       Features["hwdiv"] = true;
     }
+    return TargetInfo::initFeatureMap(Features, Diags, CPU, FeaturesVec);
   }
 
   bool handleTargetFeatures(std::vector<std::string> &Features,
@@ -4779,10 +4715,11 @@ public:
   }
 
   bool setCPU(const std::string &Name) override {
-    unsigned ArchKind = llvm::ARMTargetParser::parseCPUArch(Name);
+    if (Name != "generic")
+      setArchInfo(llvm::ARMTargetParser::parseCPUArch(Name));
+
     if (ArchKind == llvm::ARM::AK_INVALID)
       return false;
-    setArchInfo(Name);
     setAtomic();
     CPU = Name;
     return true;
@@ -5184,6 +5121,19 @@ public:
   BuiltinVaListKind getBuiltinVaListKind() const override {
     return TargetInfo::CharPtrBuiltinVaList;
   }
+  CallingConvCheckResult checkCallingConvention(CallingConv CC) const override {
+    switch (CC) {
+    case CC_X86StdCall:
+    case CC_X86ThisCall:
+    case CC_X86FastCall:
+    case CC_X86VectorCall:
+      return CCCR_Ignore;
+    case CC_C:
+      return CCCR_OK;
+    default:
+      return CCCR_Warning;
+    }
+  }
 };
 
 // Windows ARM + Itanium C++ ABI Target
@@ -5390,6 +5340,7 @@ public:
     // PCS specifies this for SysV variants, which is all we support. Other ABIs
     // may choose __ARM_FP16_FORMAT_ALTERNATIVE.
     Builder.defineMacro("__ARM_FP16_FORMAT_IEEE");
+    Builder.defineMacro("__ARM_FP16_ARGS");
 
     if (Opts.FastMath || Opts.FiniteMathOnly)
       Builder.defineMacro("__ARM_FP_FAST");
@@ -5439,12 +5390,12 @@ public:
     FPU = FPUMode;
     CRC = 0;
     Crypto = 0;
-    for (unsigned i = 0, e = Features.size(); i != e; ++i) {
-      if (Features[i] == "+neon")
+    for (const auto &Feature : Features) {
+      if (Feature == "+neon")
         FPU = NeonMode;
-      if (Features[i] == "+crc")
+      if (Feature == "+crc")
         CRC = 1;
-      if (Features[i] == "+crypto")
+      if (Feature == "+crypto")
         Crypto = 1;
     }
 
@@ -5962,15 +5913,19 @@ class SparcV8TargetInfo : public SparcTargetInfo {
 public:
   SparcV8TargetInfo(const llvm::Triple &Triple) : SparcTargetInfo(Triple) {
     DataLayoutString = "E-m:e-p:32:32-i64:64-f128:64-n32-S64";
-    // NetBSD uses long (same as llvm default); everyone else uses int.
-    if (getTriple().getOS() == llvm::Triple::NetBSD) {
-      SizeType = UnsignedLong;
-      IntPtrType = SignedLong;
-      PtrDiffType = SignedLong;
-    } else {
+    // NetBSD / OpenBSD use long (same as llvm default); everyone else uses int.
+    switch (getTriple().getOS()) {
+    default:
       SizeType = UnsignedInt;
       IntPtrType = SignedInt;
       PtrDiffType = SignedInt;
+      break;
+    case llvm::Triple::NetBSD:
+    case llvm::Triple::OpenBSD:
+      SizeType = UnsignedLong;
+      IntPtrType = SignedLong;
+      PtrDiffType = SignedLong;
+      break;
     }
   }
 
@@ -6113,22 +6068,25 @@ public:
 
     return CPUKnown;
   }
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override {
+  bool initFeatureMap(llvm::StringMap<bool> &Features, DiagnosticsEngine &Diags,
+                    StringRef CPU,
+                    std::vector<std::string> &FeaturesVec) const override {
     if (CPU == "zEC12")
       Features["transactional-execution"] = true;
     if (CPU == "z13") {
       Features["transactional-execution"] = true;
       Features["vector"] = true;
     }
+    return TargetInfo::initFeatureMap(Features, Diags, CPU, FeaturesVec);
   }
 
   bool handleTargetFeatures(std::vector<std::string> &Features,
                             DiagnosticsEngine &Diags) override {
     HasTransactionalExecution = false;
-    for (unsigned i = 0, e = Features.size(); i != e; ++i) {
-      if (Features[i] == "+transactional-execution")
+    for (const auto &Feature : Features) {
+      if (Feature == "+transactional-execution")
         HasTransactionalExecution = true;
-      if (Features[i] == "+vector")
+      else if (Feature == "+vector")
         HasVector = true;
     }
     // If we use the vector ABI, vector types are 64-bit aligned.
@@ -6480,11 +6438,14 @@ public:
         .Default(false);
   }
   const std::string& getCPU() const { return CPU; }
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override {
+  bool initFeatureMap(llvm::StringMap<bool> &Features, DiagnosticsEngine &Diags,
+                    StringRef CPU,
+                    std::vector<std::string> &FeaturesVec) const override {
     if (CPU == "octeon")
       Features["mips64r2"] = Features["cnmips"] = true;
     else
       Features[CPU] = true;
+    return TargetInfo::initFeatureMap(Features, Diags, CPU, FeaturesVec);
   }
 
   void getTargetDefines(const LangOptions &Opts,
@@ -6684,29 +6645,28 @@ public:
     DspRev = NoDSP;
     HasFP64 = isFP64Default();
 
-    for (std::vector<std::string>::iterator it = Features.begin(),
-         ie = Features.end(); it != ie; ++it) {
-      if (*it == "+single-float")
+    for (const auto &Feature : Features) {
+      if (Feature == "+single-float")
         IsSingleFloat = true;
-      else if (*it == "+soft-float")
+      else if (Feature == "+soft-float")
         FloatABI = SoftFloat;
-      else if (*it == "+mips16")
+      else if (Feature == "+mips16")
         IsMips16 = true;
-      else if (*it == "+micromips")
+      else if (Feature == "+micromips")
         IsMicromips = true;
-      else if (*it == "+dsp")
+      else if (Feature == "+dsp")
         DspRev = std::max(DspRev, DSP1);
-      else if (*it == "+dspr2")
+      else if (Feature == "+dspr2")
         DspRev = std::max(DspRev, DSP2);
-      else if (*it == "+msa")
+      else if (Feature == "+msa")
         HasMSA = true;
-      else if (*it == "+fp64")
+      else if (Feature == "+fp64")
         HasFP64 = true;
-      else if (*it == "-fp64")
+      else if (Feature == "-fp64")
         HasFP64 = false;
-      else if (*it == "+nan2008")
+      else if (Feature == "+nan2008")
         IsNan2008 = true;
-      else if (*it == "-nan2008")
+      else if (Feature == "-nan2008")
         IsNan2008 = false;
     }
 
@@ -7039,8 +6999,6 @@ public:
     this->RegParmMax = 0; // Disallow regparm
   }
 
-  void getDefaultFeatures(llvm::StringMap<bool> &Features) const override {
-  }
   void getArchDefines(const LangOptions &Opts, MacroBuilder &Builder) const {
     Builder.defineMacro("__le32__");
     Builder.defineMacro("__pnacl__");
@@ -7797,20 +7755,11 @@ TargetInfo::CreateTargetInfo(DiagnosticsEngine &Diags,
   // Compute the default target features, we need the target to handle this
   // because features may have dependencies on one another.
   llvm::StringMap<bool> Features;
-  Target->getDefaultFeatures(Features);
-
-  // Apply the user specified deltas.
-  for (const auto &F : Opts->FeaturesAsWritten) {
-    const char *Name = F.c_str();
-    // Apply the feature via the target.
-    bool Enabled = Name[0] == '+';
-    Target->setFeatureEnabled(Features, Name + 1, Enabled);
-  }
+  if (!Target->initFeatureMap(Features, Diags, Opts->CPU,
+                              Opts->FeaturesAsWritten))
+      return nullptr;
 
   // Add the features to the compile options.
-  //
-  // FIXME: If we are completely confident that we have the right set, we only
-  // need to pass the minuses.
   Opts->Features.clear();
   for (const auto &F : Features)
     Opts->Features.push_back((F.getValue() ? "+" : "-") + F.getKey().str());
