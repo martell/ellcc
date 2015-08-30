@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to GDB 7.10.
 * Update to musl 1.1.11.
 * Update to LLVM r246362.
 * Update to LLVM r244919.

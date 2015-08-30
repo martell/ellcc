@@ -21,8 +21,6 @@
 #if !defined(__ELLCC__)
 #include <asm/ptrace.h>
 #endif
-#include <stdint.h>
-
 #include "break-common.h"
 
 #define MAX_DEBUG_REGISTER 8

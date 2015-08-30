@@ -361,7 +361,7 @@ extern const gdb_byte *value_contents_for_printing (struct value *value);
 extern const gdb_byte *
   value_contents_for_printing_const (const struct value *value);
 
-extern int value_fetch_lazy (struct value *val);
+extern void value_fetch_lazy (struct value *val);
 
 /* If nonzero, this is the value of a variable which does not actually
    exist in the program, at least partially.  If the value is lazy,
@@ -1040,6 +1040,8 @@ extern struct value *value_non_lval (struct value *);
 
 extern void value_force_lval (struct value *, CORE_ADDR);
 
+extern struct value *make_cv_value (int, int, struct value *);
+
 extern void preserve_one_value (struct value *, struct objfile *, htab_t);
 
 /* From valops.c */
@@ -1080,7 +1082,10 @@ char *value_internal_function_name (struct value *);
 
 extern struct value *value_of_xmethod (struct xmethod_worker *);
 
-struct value *call_xmethod (struct value *function,
-			    int argc, struct value **argv);
+extern struct type *result_type_of_xmethod (struct value *method,
+					    int argc, struct value **argv);
+
+extern struct value *call_xmethod (struct value *method,
+				   int argc, struct value **argv);
 
 #endif /* !defined (VALUE_H) */
