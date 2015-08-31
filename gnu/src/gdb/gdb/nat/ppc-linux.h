@@ -18,8 +18,10 @@
 #ifndef PPC_LINUX_H
 #define PPC_LINUX_H 1
 
+#ifdef RICH
 #include <asm/ptrace.h>
 #include <asm/cputable.h>
+#endif
 
 /* This sometimes isn't defined.  */
 #ifndef PT_ORIG_R3
