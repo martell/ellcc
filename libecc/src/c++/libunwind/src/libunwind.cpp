@@ -65,6 +65,9 @@ _LIBUNWIND_EXPORT int unw_init_local(unw_cursor_t *cursor,
 // RICH: TODO
 #elif defined(__mips__)
 // RICH: TODO
+#elif defined(__or1k__)
+  new ((void *)cursor) UnwindCursor<LocalAddressSpace, Registers_or1k>(
+                                 context, LocalAddressSpace::sThisAddressSpace);
 #else
 #error Architecture not supported
 #endif

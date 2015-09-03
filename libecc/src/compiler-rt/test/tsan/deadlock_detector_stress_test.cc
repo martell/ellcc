@@ -474,6 +474,19 @@ class LockTest {
   __attribute__((noinline)) void Acquire_1_then_2() { Acquire1(); Acquire2(); }
   __attribute__((noinline)) void Acquire_2_then_0() { Acquire2(); Acquire0(); }
 
+  void Test19() {
+    if (test_number > 0 && test_number != 19) return;
+    fprintf(stderr, "Starting Test19: lots of lock inversions\n");
+    const int kNumLocks = 45;
+    Init(kNumLocks);
+    for (int i = 0; i < kNumLocks; i++) {
+      for (int j = 0; j < kNumLocks; j++)
+        L((i + j) % kNumLocks);
+      for (int j = 0; j < kNumLocks; j++)
+        U((i + j) % kNumLocks);
+    }
+  }
+
  private:
   void Lock2(size_t l1, size_t l2) { L(l1); L(l2); U(l2); U(l1); }
 
@@ -577,6 +590,7 @@ int main(int argc, char **argv) {
   LockTest().Test15();
   LockTest().Test16();
   LockTest().Test17();
+  LockTest().Test19();
   fprintf(stderr, "ALL-DONE\n");
   // CHECK: ALL-DONE
 }

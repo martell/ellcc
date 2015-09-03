@@ -277,6 +277,53 @@ using bool_constant = integral_constant<bool, __b>;
 typedef _LIBCPP_BOOL_CONSTANT(true)  true_type;
 typedef _LIBCPP_BOOL_CONSTANT(false) false_type;
 
+#if !defined(_LIBCPP_HAS_NO_VARIADICS)
+
+// __lazy_and
+
+template <bool _Last, class ..._Preds>
+struct __lazy_and_impl;
+
+template <class ..._Preds>
+struct __lazy_and_impl<false, _Preds...> : false_type {};
+
+template <>
+struct __lazy_and_impl<true> : true_type {};
+
+template <class _Pred>
+struct __lazy_and_impl<true, _Pred> : integral_constant<bool, _Pred::type::value> {};
+
+template <class _Hp, class ..._Tp>
+struct __lazy_and_impl<true, _Hp, _Tp...> : __lazy_and_impl<_Hp::type::value, _Tp...> {};
+
+template <class _P1, class ..._Pr>
+struct __lazy_and : __lazy_and_impl<_P1::type::value, _Pr...> {};
+
+// __lazy_or
+
+template <bool _List, class ..._Preds>
+struct __lazy_or_impl;
+
+template <class ..._Preds>
+struct __lazy_or_impl<true, _Preds...> : true_type {};
+
+template <>
+struct __lazy_or_impl<false> : false_type {};
+
+template <class _Hp, class ..._Tp>
+struct __lazy_or_impl<false, _Hp, _Tp...>
+        : __lazy_or_impl<_Hp::type::value, _Tp...> {};
+
+template <class _P1, class ..._Pr>
+struct __lazy_or : __lazy_or_impl<_P1::type::value, _Pr...> {};
+
+// __lazy_not
+
+template <class _Pred>
+struct __lazy_not : integral_constant<bool, !_Pred::type::value> {};
+
+#endif // !defined(_LIBCPP_HAS_NO_VARIADICS)
+
 // is_const
 
 template <class _Tp> struct _LIBCPP_TYPE_VIS_ONLY is_const            : public false_type {};
@@ -1289,18 +1336,6 @@ public:
 
 template <class _A1, class _A2 = void, class _A3 = void>
 class __promote : public __promote_imp<_A1, _A2, _A3> {};
-
-#ifdef _LIBCPP_STORE_AS_OPTIMIZATION
-
-// __transform
-
-template <class _Tp, size_t = sizeof(_Tp), bool = is_scalar<_Tp>::value> struct __transform {typedef _Tp type;};
-template <class _Tp> struct __transform<_Tp, 1, true> {typedef unsigned char      type;};
-template <class _Tp> struct __transform<_Tp, 2, true> {typedef unsigned short     type;};
-template <class _Tp> struct __transform<_Tp, 4, true> {typedef unsigned int       type;};
-template <class _Tp> struct __transform<_Tp, 8, true> {typedef unsigned long long type;};
-
-#endif  // _LIBCPP_STORE_AS_OPTIMIZATION
 
 // make_signed / make_unsigned
 

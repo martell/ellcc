@@ -494,13 +494,13 @@ static bool isNoCommonDefault(const llvm::Triple &Triple) {
 // Get SubArch (vN).
 static int getARMSubArchVersionNumber(const llvm::Triple &Triple) {
   llvm::StringRef Arch = Triple.getArchName();
-  return llvm::ARMTargetParser::parseArchVersion(Arch);
+  return llvm::ARM::parseArchVersion(Arch);
 }
 
 // True if M-profile.
 static bool isARMMProfile(const llvm::Triple &Triple) {
   llvm::StringRef Arch = Triple.getArchName();
-  unsigned Profile = llvm::ARMTargetParser::parseArchProfile(Arch);
+  unsigned Profile = llvm::ARM::parseArchProfile(Arch);
   return Profile == llvm::ARM::PK_M;
 }
 
@@ -529,8 +529,8 @@ static void getARMArchCPUFromArgs(const ArgList &Args, llvm::StringRef &Arch,
 static void getARMHWDivFeatures(const Driver &D, const Arg *A,
                                 const ArgList &Args, StringRef HWDiv,
                                 std::vector<const char *> &Features) {
-  unsigned HWDivID = llvm::ARMTargetParser::parseHWDiv(HWDiv);
-  if (!llvm::ARMTargetParser::getHWDivFeatures(HWDivID, Features))
+  unsigned HWDivID = llvm::ARM::parseHWDiv(HWDiv);
+  if (!llvm::ARM::getHWDivFeatures(HWDivID, Features))
     D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
 }
 
@@ -538,8 +538,8 @@ static void getARMHWDivFeatures(const Driver &D, const Arg *A,
 static void getARMFPUFeatures(const Driver &D, const Arg *A,
                               const ArgList &Args, StringRef FPU,
                               std::vector<const char *> &Features) {
-  unsigned FPUID = llvm::ARMTargetParser::parseFPU(FPU);
-  if (!llvm::ARMTargetParser::getFPUFeatures(FPUID, Features))
+  unsigned FPUID = llvm::ARM::parseFPU(FPU);
+  if (!llvm::ARM::getFPUFeatures(FPUID, Features))
     D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
 }
 
@@ -550,7 +550,7 @@ static void checkARMArchName(const Driver &D, const Arg *A, const ArgList &Args,
                              llvm::StringRef ArchName,
                              const llvm::Triple &Triple) {
   std::string MArch = arm::getARMArch(ArchName, Triple);
-  if (llvm::ARMTargetParser::parseArch(MArch) == llvm::ARM::AK_INVALID)
+  if (llvm::ARM::parseArch(MArch) == llvm::ARM::AK_INVALID)
     D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
 }
 
@@ -560,7 +560,7 @@ static void checkARMCPUName(const Driver &D, const Arg *A, const ArgList &Args,
                             const llvm::Triple &Triple) {
   std::string CPU = arm::getARMTargetCPU(CPUName, ArchName, Triple);
   std::string Arch = arm::getARMArch(ArchName, Triple);
-  if (strcmp(arm::getLLVMArchSuffixForARM(CPU, Arch), "") == 0)
+  if (arm::getLLVMArchSuffixForARM(CPU, Arch).empty())
     D.Diag(diag::err_drv_clang_unsupported) << A->getAsString(Args);
 }
 
@@ -6267,33 +6267,30 @@ const std::string arm::getARMArch(StringRef Arch, const llvm::Triple &Triple) {
     std::string CPU = llvm::sys::getHostCPUName();
     if (CPU != "generic") {
       // Translate the native cpu into the architecture suffix for that CPU.
-      const char *Suffix = arm::getLLVMArchSuffixForARM(CPU, MArch);
+      StringRef Suffix = arm::getLLVMArchSuffixForARM(CPU, MArch);
       // If there is no valid architecture suffix for this CPU we don't know how
       // to handle it, so return no architecture.
-      if (strcmp(Suffix, "") == 0)
+      if (Suffix.empty())
         MArch = "";
       else
-        MArch = std::string("arm") + Suffix;
+        MArch = std::string("arm") + Suffix.str();
     }
   }
 
   return MArch;
 }
+
 /// Get the (LLVM) name of the minimum ARM CPU for the arch we are targeting.
-const char *arm::getARMCPUForMArch(StringRef Arch, const llvm::Triple &Triple) {
+StringRef arm::getARMCPUForMArch(StringRef Arch, const llvm::Triple &Triple) {
   std::string MArch = getARMArch(Arch, Triple);
   // getARMCPUForArch defaults to the triple if MArch is empty, but empty MArch
   // here means an -march=native that we can't handle, so instead return no CPU.
   if (MArch.empty())
-    return "";
+    return StringRef();
 
   // We need to return an empty string here on invalid MArch values as the
   // various places that call this function can't cope with a null result.
-  const char *result = Triple.getARMCPUForArch(MArch);
-  if (result)
-    return result;
-  else
-    return "";
+  return Triple.getARMCPUForArch(MArch);
 }
 
 /// getARMTargetCPU - Get the (LLVM) name of the ARM cpu we are targeting.
@@ -6316,15 +6313,15 @@ std::string arm::getARMTargetCPU(StringRef CPU, StringRef Arch,
 /// getLLVMArchSuffixForARM - Get the LLVM arch name to use for a particular
 /// CPU  (or Arch, if CPU is generic).
 // FIXME: This is redundant with -mcpu, why does LLVM use this.
-const char *arm::getLLVMArchSuffixForARM(StringRef CPU, StringRef Arch) {
+StringRef arm::getLLVMArchSuffixForARM(StringRef CPU, StringRef Arch) {
   if (CPU == "generic")
-    return llvm::ARMTargetParser::getSubArch(
-        llvm::ARMTargetParser::parseArch(Arch));
+    return llvm::ARM::getSubArch(
+        llvm::ARM::parseArch(Arch));
 
-  unsigned ArchKind = llvm::ARMTargetParser::parseCPUArch(CPU);
+  unsigned ArchKind = llvm::ARM::parseCPUArch(CPU);
   if (ArchKind == llvm::ARM::AK_INVALID)
     return "";
-  return llvm::ARMTargetParser::getSubArch(ArchKind);
+  return llvm::ARM::getSubArch(ArchKind);
 }
 
 void arm::appendEBLinkFlags(const ArgList &Args, ArgStringList &CmdArgs,
@@ -7088,25 +7085,6 @@ void solaris::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                                    const InputInfoList &Inputs,
                                    const ArgList &Args,
                                    const char *LinkingOutput) const {
-  // FIXME: Find a real GCC, don't hard-code versions here
-  std::string GCCLibPath = "/usr/gcc/4.5/lib/gcc/";
-  const llvm::Triple &T = getToolChain().getTriple();
-  std::string LibPath = "/usr/lib/";
-  const llvm::Triple::ArchType Arch = T.getArch();
-  switch (Arch) {
-  case llvm::Triple::x86:
-    GCCLibPath +=
-        ("i386-" + T.getVendorName() + "-" + T.getOSName()).str() + "/4.5.2/";
-    break;
-  case llvm::Triple::x86_64:
-    GCCLibPath += ("i386-" + T.getVendorName() + "-" + T.getOSName()).str();
-    GCCLibPath += "/4.5.2/amd64/";
-    LibPath += "amd64/";
-    break;
-  default:
-    llvm_unreachable("Unsupported architecture");
-  }
-
   ArgStringList CmdArgs;
 
   // Demangle C++ names in errors
@@ -7127,7 +7105,8 @@ void solaris::Linker::ConstructJob(Compilation &C, const JobAction &JA,
       CmdArgs.push_back("-shared");
     } else {
       CmdArgs.push_back("--dynamic-linker");
-      CmdArgs.push_back(Args.MakeArgString(LibPath + "ld.so.1"));
+      CmdArgs.push_back(
+          Args.MakeArgString(getToolChain().GetFilePath("ld.so.1")));
     }
   }
 
@@ -7140,21 +7119,24 @@ void solaris::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
-    if (!Args.hasArg(options::OPT_shared)) {
-      CmdArgs.push_back(Args.MakeArgString(LibPath + "crt1.o"));
-      CmdArgs.push_back(Args.MakeArgString(LibPath + "crti.o"));
-      CmdArgs.push_back(Args.MakeArgString(LibPath + "values-Xa.o"));
-      CmdArgs.push_back(Args.MakeArgString(GCCLibPath + "crtbegin.o"));
-    } else {
-      CmdArgs.push_back(Args.MakeArgString(LibPath + "crti.o"));
-      CmdArgs.push_back(Args.MakeArgString(LibPath + "values-Xa.o"));
-      CmdArgs.push_back(Args.MakeArgString(GCCLibPath + "crtbegin.o"));
-    }
+    if (!Args.hasArg(options::OPT_shared))
+      CmdArgs.push_back(
+          Args.MakeArgString(getToolChain().GetFilePath("crt1.o")));
+
+    CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crti.o")));
+    CmdArgs.push_back(
+        Args.MakeArgString(getToolChain().GetFilePath("values-Xa.o")));
+    CmdArgs.push_back(
+        Args.MakeArgString(getToolChain().GetFilePath("crtbegin.o")));
+
     if (getToolChain().getDriver().CCCIsCXX())
-      CmdArgs.push_back(Args.MakeArgString(LibPath + "cxa_finalize.o"));
+      CmdArgs.push_back(
+          Args.MakeArgString(getToolChain().GetFilePath("cxa_finalize.o")));
   }
 
-  CmdArgs.push_back(Args.MakeArgString("-L" + GCCLibPath));
+  const ToolChain::path_list &Paths = getToolChain().getFilePaths();
+  for (const auto &Path : Paths)
+    CmdArgs.push_back(Args.MakeArgString(StringRef("-L") + Path));
 
   Args.AddAllArgs(CmdArgs, {options::OPT_L, options::OPT_T_Group,
                             options::OPT_e, options::OPT_r});
@@ -7175,9 +7157,10 @@ void solaris::Linker::ConstructJob(Compilation &C, const JobAction &JA,
 
   if (!Args.hasArg(options::OPT_nostdlib) &&
       !Args.hasArg(options::OPT_nostartfiles)) {
-    CmdArgs.push_back(Args.MakeArgString(GCCLibPath + "crtend.o"));
+    CmdArgs.push_back(
+        Args.MakeArgString(getToolChain().GetFilePath("crtend.o")));
   }
-  CmdArgs.push_back(Args.MakeArgString(LibPath + "crtn.o"));
+  CmdArgs.push_back(Args.MakeArgString(getToolChain().GetFilePath("crtn.o")));
 
   addProfileRT(getToolChain(), Args, CmdArgs);
 

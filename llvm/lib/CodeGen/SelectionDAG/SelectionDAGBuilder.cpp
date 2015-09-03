@@ -22,6 +22,7 @@
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Analysis/VectorUtils.h"
 #include "llvm/CodeGen/FastISel.h"
 #include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/GCMetadata.h"
@@ -1923,8 +1924,7 @@ void SelectionDAGBuilder::visitBitTestHeader(BitTestBlock &B,
 
   MachineBasicBlock* MBB = B.Cases[0].ThisBB;
 
-  uint32_t DefaultWeight = getEdgeWeight(SwitchBB, B.Default);
-  addSuccessorWithWeight(SwitchBB, B.Default, DefaultWeight);
+  addSuccessorWithWeight(SwitchBB, B.Default, B.DefaultWeight);
   addSuccessorWithWeight(SwitchBB, MBB, B.Weight);
 
   SDValue BrRange = DAG.getNode(ISD::BRCOND, dl,
@@ -3142,56 +3142,63 @@ void SelectionDAGBuilder::visitMaskedStore(const CallInst &I) {
   setValue(&I, StoreNode);
 }
 
-// Gather/scatter receive a vector of pointers.
-// This vector of pointers may be represented as a base pointer + vector of
-// indices, it depends on GEP and instruction preceding GEP
-// that calculates indices
+// Get a uniform base for the Gather/Scatter intrinsic.
+// The first argument of the Gather/Scatter intrinsic is a vector of pointers.
+// We try to represent it as a base pointer + vector of indices.
+// Usually, the vector of pointers comes from a 'getelementptr' instruction.
+// The first operand of the GEP may be a single pointer or a vector of pointers
+// Example:
+//   %gep.ptr = getelementptr i32, <8 x i32*> %vptr, <8 x i32> %ind
+//  or
+//   %gep.ptr = getelementptr i32, i32* %ptr,        <8 x i32> %ind
+// %res = call <8 x i32> @llvm.masked.gather.v8i32(<8 x i32*> %gep.ptr, ..
+//
+// When the first GEP operand is a single pointer - it is the uniform base we
+// are looking for. If first operand of the GEP is a splat vector - we
+// extract the spalt value and use it as a uniform base.
+// In all other cases the function returns 'false'.
+//
 static bool getUniformBase(Value *& Ptr, SDValue& Base, SDValue& Index,
                            SelectionDAGBuilder* SDB) {
 
-  assert(Ptr->getType()->isVectorTy() && "Unexpected pointer type");
-  GetElementPtrInst *Gep = dyn_cast<GetElementPtrInst>(Ptr);
-  if (!Gep || Gep->getNumOperands() > 2)
-    return false;
-  ShuffleVectorInst *ShuffleInst = 
-    dyn_cast<ShuffleVectorInst>(Gep->getPointerOperand());
-  if (!ShuffleInst || !ShuffleInst->getMask()->isNullValue() ||
-      cast<Instruction>(ShuffleInst->getOperand(0))->getOpcode() !=
-      Instruction::InsertElement)
-    return false;
-
-  Ptr = cast<InsertElementInst>(ShuffleInst->getOperand(0))->getOperand(1);
-
   SelectionDAG& DAG = SDB->DAG;
-  const TargetLowering &TLI = DAG.getTargetLoweringInfo();
-  // Check is the Ptr is inside current basic block
-  // If not, look for the shuffle instruction
-  if (SDB->findValue(Ptr))
-    Base = SDB->getValue(Ptr);
-  else if (SDB->findValue(ShuffleInst)) {
-    SDValue ShuffleNode = SDB->getValue(ShuffleInst);
-    SDLoc sdl = ShuffleNode;
-    Base = DAG.getNode(
-        ISD::EXTRACT_VECTOR_ELT, sdl,
-        ShuffleNode.getValueType().getScalarType(), ShuffleNode,
-        DAG.getConstant(0, sdl, TLI.getVectorIdxTy(DAG.getDataLayout())));
-    SDB->setValue(Ptr, Base);
-  }
-  else
+  LLVMContext &Context = *DAG.getContext();
+
+  assert(Ptr->getType()->isVectorTy() && "Uexpected pointer type");
+  GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Ptr);
+  if (!GEP || GEP->getNumOperands() > 2)
     return false;
 
-  Value *IndexVal = Gep->getOperand(1);
-  if (SDB->findValue(IndexVal)) {
-    Index = SDB->getValue(IndexVal);
+  Value *GEPPtr = GEP->getPointerOperand();
+  if (!GEPPtr->getType()->isVectorTy())
+    Ptr = GEPPtr;
+  else if (!(Ptr = getSplatValue(GEPPtr)))
+    return false;
 
-    if (SExtInst* Sext = dyn_cast<SExtInst>(IndexVal)) {
+  Value *IndexVal = GEP->getOperand(1);
+
+  // The operands of the GEP may be defined in another basic block.
+  // In this case we'll not find nodes for the operands.
+  if (!SDB->findValue(Ptr) || !SDB->findValue(IndexVal))
+    return false;
+
+  Base = SDB->getValue(Ptr);
+  Index = SDB->getValue(IndexVal);
+
+  // Suppress sign extension.
+  if (SExtInst* Sext = dyn_cast<SExtInst>(IndexVal)) {
+    if (SDB->findValue(Sext->getOperand(0))) {
       IndexVal = Sext->getOperand(0);
-      if (SDB->findValue(IndexVal))
-        Index = SDB->getValue(IndexVal);
+      Index = SDB->getValue(IndexVal);
     }
-    return true;
   }
-  return false;
+  if (!Index.getValueType().isVector()) {
+    unsigned GEPWidth = GEP->getType()->getVectorNumElements();
+    EVT VT = EVT::getVectorVT(Context, Index.getValueType(), GEPWidth);
+    SmallVector<SDValue, 16> Ops(GEPWidth, Index);
+    Index = DAG.getNode(ISD::BUILD_VECTOR, SDLoc(Index), VT, Ops);
+  }
+  return true;
 }
 
 void SelectionDAGBuilder::visitMaskedScatter(const CallInst &I) {
@@ -8041,7 +8048,8 @@ void SelectionDAGBuilder::lowerWorkItem(SwitchWorkListItem W, Value *Cond,
   }
 
   // Compute total weight.
-  uint32_t UnhandledWeights = 0;
+  uint32_t DefaultWeight = W.DefaultWeight;
+  uint32_t UnhandledWeights = DefaultWeight;
   for (CaseClusterIt I = W.FirstCluster; I <= W.LastCluster; ++I) {
     UnhandledWeights += I->Weight;
     assert(UnhandledWeights >= I->Weight && "Weight overflow!");
@@ -8071,14 +8079,24 @@ void SelectionDAGBuilder::lowerWorkItem(SwitchWorkListItem W, Value *Cond,
         MachineBasicBlock *JumpMBB = JT->MBB;
         CurMF->insert(BBI, JumpMBB);
 
-        // Collect the sum of weights of outgoing edges from JumpMBB, which will
-        // be the edge weight on CurMBB->JumpMBB.
-        uint32_t JumpWeight = 0;
-        for (auto Succ : JumpMBB->successors())
-          JumpWeight += getEdgeWeight(JumpMBB, Succ);
-        uint32_t FallthruWeight = getEdgeWeight(CurMBB, Fallthrough);
+        uint32_t JumpWeight = I->Weight;
+        uint32_t FallthroughWeight = UnhandledWeights;
 
-        addSuccessorWithWeight(CurMBB, Fallthrough, FallthruWeight);
+        // If Fallthrough is a target of the jump table, we evenly distribute
+        // the weight on the edge to Fallthrough to successors of CurMBB.
+        // Also update the weight on the edge from JumpMBB to Fallthrough.
+        for (MachineBasicBlock::succ_iterator SI = JumpMBB->succ_begin(),
+                                              SE = JumpMBB->succ_end();
+             SI != SE; ++SI) {
+          if (*SI == Fallthrough) {
+            JumpWeight += DefaultWeight / 2;
+            FallthroughWeight -= DefaultWeight / 2;
+            JumpMBB->setSuccWeight(SI, DefaultWeight / 2);
+            break;
+          }
+        }
+
+        addSuccessorWithWeight(CurMBB, Fallthrough, FallthroughWeight);
         addSuccessorWithWeight(CurMBB, JumpMBB, JumpWeight);
 
         // The jump table header will be inserted in our current block, do the
@@ -8105,8 +8123,17 @@ void SelectionDAGBuilder::lowerWorkItem(SwitchWorkListItem W, Value *Cond,
         BTB->Parent = CurMBB;
         BTB->Default = Fallthrough;
 
-        // If we're in the right place, emit the bit test header header right now.
-        if (CurMBB ==SwitchMBB) {
+        BTB->DefaultWeight = UnhandledWeights;
+        // If the cases in bit test don't form a contiguous range, we evenly
+        // distribute the weight on the edge to Fallthrough to two successors
+        // of CurMBB.
+        if (!BTB->ContiguousRange) {
+          BTB->Weight += DefaultWeight / 2;
+          BTB->DefaultWeight -= DefaultWeight / 2;
+        }
+
+        // If we're in the right place, emit the bit test header right now.
+        if (CurMBB == SwitchMBB) {
           visitBitTestHeader(*BTB, SwitchMBB);
           BTB->Emitted = true;
         }
@@ -8171,8 +8198,8 @@ void SelectionDAGBuilder::splitWorkItem(SwitchWorkList &WorkList,
   // Mehlhorn "Nearly Optimal Binary Search Trees" (1975).
   CaseClusterIt LastLeft = W.FirstCluster;
   CaseClusterIt FirstRight = W.LastCluster;
-  uint32_t LeftWeight = LastLeft->Weight;
-  uint32_t RightWeight = FirstRight->Weight;
+  uint32_t LeftWeight = LastLeft->Weight + W.DefaultWeight / 2;
+  uint32_t RightWeight = FirstRight->Weight + W.DefaultWeight / 2;
 
   // Move LastLeft and FirstRight towards each other from opposite directions to
   // find a partitioning of the clusters which balances the weight on both
@@ -8258,7 +8285,8 @@ void SelectionDAGBuilder::splitWorkItem(SwitchWorkList &WorkList,
   } else {
     LeftMBB = FuncInfo.MF->CreateMachineBasicBlock(W.MBB->getBasicBlock());
     FuncInfo.MF->insert(BBI, LeftMBB);
-    WorkList.push_back({LeftMBB, FirstLeft, LastLeft, W.GE, Pivot});
+    WorkList.push_back(
+        {LeftMBB, FirstLeft, LastLeft, W.GE, Pivot, W.DefaultWeight / 2});
     // Put Cond in a virtual register to make it available from the new blocks.
     ExportFromCurrentBlock(Cond);
   }
@@ -8273,7 +8301,8 @@ void SelectionDAGBuilder::splitWorkItem(SwitchWorkList &WorkList,
   } else {
     RightMBB = FuncInfo.MF->CreateMachineBasicBlock(W.MBB->getBasicBlock());
     FuncInfo.MF->insert(BBI, RightMBB);
-    WorkList.push_back({RightMBB, FirstRight, LastRight, Pivot, W.LT});
+    WorkList.push_back(
+        {RightMBB, FirstRight, LastRight, Pivot, W.LT, W.DefaultWeight / 2});
     // Put Cond in a virtual register to make it available from the new blocks.
     ExportFromCurrentBlock(Cond);
   }
@@ -8374,7 +8403,8 @@ void SelectionDAGBuilder::visitSwitch(const SwitchInst &SI) {
   SwitchWorkList WorkList;
   CaseClusterIt First = Clusters.begin();
   CaseClusterIt Last = Clusters.end() - 1;
-  WorkList.push_back({SwitchMBB, First, Last, nullptr, nullptr});
+  uint32_t DefaultWeight = getEdgeWeight(SwitchMBB, DefaultMBB);
+  WorkList.push_back({SwitchMBB, First, Last, nullptr, nullptr, DefaultWeight});
 
   while (!WorkList.empty()) {
     SwitchWorkListItem W = WorkList.back();
