@@ -409,7 +409,10 @@ bool SITargetLowering::allowsMisalignedMemoryAccesses(EVT VT,
     // ds_read/write_b64 require 8-byte alignment, but we can do a 4 byte
     // aligned, 8 byte access in a single operation using ds_read2/write2_b32
     // with adjacent offsets.
-    return Align % 4 == 0;
+    bool AlignedBy4 = (Align % 4 == 0);
+    if (IsFast)
+      *IsFast = AlignedBy4;
+    return AlignedBy4;
   }
 
   // Smaller than dword value must be aligned.
@@ -461,12 +464,6 @@ bool SITargetLowering::shouldConvertConstantLoadToIntImm(const APInt &Imm,
   return TII->isInlineConstant(Imm);
 }
 
-static EVT toIntegerVT(EVT VT) {
-  if (VT.isVector())
-    return VT.changeVectorElementTypeToInteger();
-  return MVT::getIntegerVT(VT.getSizeInBits());
-}
-
 SDValue SITargetLowering::LowerParameter(SelectionDAG &DAG, EVT VT, EVT MemVT,
                                          SDLoc SL, SDValue Chain,
                                          unsigned Offset, bool Signed) const {
@@ -490,30 +487,10 @@ SDValue SITargetLowering::LowerParameter(SelectionDAG &DAG, EVT VT, EVT MemVT,
 
   unsigned Align = DL.getABITypeAlignment(Ty);
 
-  if (VT != MemVT && VT.isFloatingPoint()) {
-    // Do an integer load and convert.
-    // FIXME: This is mostly because load legalization after type legalization
-    // doesn't handle FP extloads.
-    assert(VT.getScalarType() == MVT::f32 &&
-           MemVT.getScalarType() == MVT::f16);
-
-    EVT IVT = toIntegerVT(VT);
-    EVT MemIVT = toIntegerVT(MemVT);
-    SDValue Load = DAG.getLoad(ISD::UNINDEXED, ISD::ZEXTLOAD,
-                               IVT, SL, Chain, Ptr, PtrOffset, PtrInfo, MemIVT,
-                               false, // isVolatile
-                               true, // isNonTemporal
-                               true, // isInvariant
-                               Align); // Alignment
-    SDValue Ops[] = {
-      DAG.getNode(ISD::FP16_TO_FP, SL, VT, Load),
-      Load.getValue(1)
-    };
-
-    return DAG.getMergeValues(Ops, SL);
-  }
-
   ISD::LoadExtType ExtTy = Signed ? ISD::SEXTLOAD : ISD::ZEXTLOAD;
+  if (MemVT.isFloatingPoint())
+    ExtTy = ISD::EXTLOAD;
+
   return DAG.getLoad(ISD::UNINDEXED, ExtTy,
                      VT, SL, Chain, Ptr, PtrOffset, PtrInfo, MemVT,
                      false, // isVolatile

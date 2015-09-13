@@ -403,7 +403,7 @@ bool WinEHPrepare::runOnFunction(Function &Fn) {
     } else if (First->isEHPad()) {
       if (!ForExplicitEH)
         EntryBlocks.push_back(&Fn.getEntryBlock());
-      if (!isa<CatchEndPadInst>(First))
+      if (!isa<CatchEndPadInst>(First) && !isa<CleanupEndPadInst>(First))
         EntryBlocks.push_back(&BB);
       ForExplicitEH = true;
     }
@@ -2616,7 +2616,6 @@ static void addTryBlockMapEntry(WinEHFuncInfo &FuncInfo, int TryLow,
           cast<GlobalVariable>(CS->getAggregateElement(1)->stripPointerCasts());
     }
     HT.Handler = CPI->getNormalDest();
-    HT.HandlerMBB = nullptr;
     // FIXME: Pass CPI->getArgOperand(1).
     HT.CatchObjRecoverIdx = -1;
     TBME.HandlerArray.push_back(HT);
@@ -2645,7 +2644,8 @@ void WinEHNumbering::createTryBlockMapEntry(int TryLow, int TryHigh,
       continue;
     int N;
     for (N = 0; N < NumHandlers; ++N) {
-      if (Entry.HandlerArray[N].Handler != Handlers[N]->getHandlerBlockOrFunc())
+      if (Entry.HandlerArray[N].Handler.get<const Value *>() !=
+          Handlers[N]->getHandlerBlockOrFunc())
         break; // breaks out of inner loop
     }
     // If all the handlers match, this is what we were looking for.
@@ -2692,7 +2692,6 @@ void WinEHNumbering::createTryBlockMapEntry(int TryLow, int TryHigh,
           cast<GlobalVariable>(CS->getAggregateElement(1)->stripPointerCasts());
     }
     HT.Handler = cast<Function>(CH->getHandlerBlockOrFunc());
-    HT.HandlerMBB = nullptr;
     HT.CatchObjRecoverIdx = CH->getExceptionVarIndex();
     TBME.HandlerArray.push_back(HT);
   }
@@ -2949,11 +2948,43 @@ void WinEHNumbering::findActionRootLPads(const Function &F) {
   }
 }
 
-static const BasicBlock *getSingleCatchPadPredecessor(const BasicBlock &BB) {
-  for (const BasicBlock *PredBlock : predecessors(&BB))
-    if (isa<CatchPadInst>(PredBlock->getFirstNonPHI()))
-      return PredBlock;
+static const CatchPadInst *getSingleCatchPadPredecessor(const BasicBlock *BB) {
+  for (const BasicBlock *PredBlock : predecessors(BB))
+    if (auto *CPI = dyn_cast<CatchPadInst>(PredBlock->getFirstNonPHI()))
+      return CPI;
   return nullptr;
+}
+
+/// Find all the catchpads that feed directly into the catchendpad. Frontends
+/// using this personality should ensure that each catchendpad and catchpad has
+/// one or zero catchpad predecessors.
+///
+/// The following C++ generates the IR after it:
+///   try {
+///   } catch (A) {
+///   } catch (B) {
+///   }
+///
+/// IR:
+///   %catchpad.A
+///     catchpad [i8* A typeinfo]
+///         to label %catch.A unwind label %catchpad.B
+///   %catchpad.B
+///     catchpad [i8* B typeinfo]
+///         to label %catch.B unwind label %endcatches
+///   %endcatches
+///     catchendblock unwind to caller
+void findCatchPadsForCatchEndPad(
+    const BasicBlock *CatchEndBB,
+    SmallVectorImpl<const CatchPadInst *> &Handlers) {
+  const CatchPadInst *CPI = getSingleCatchPadPredecessor(CatchEndBB);
+  while (CPI) {
+    Handlers.push_back(CPI);
+    CPI = getSingleCatchPadPredecessor(CPI->getParent());
+  }
+  // We've pushed these back into reverse source order.  Reverse them to get
+  // the list back into source order.
+  std::reverse(Handlers.begin(), Handlers.end());
 }
 
 // Given BB which ends in an unwind edge, return the EHPad that this BB belongs
@@ -2962,15 +2993,14 @@ static const BasicBlock *getEHPadFromPredecessor(const BasicBlock *BB) {
   const TerminatorInst *TI = BB->getTerminator();
   if (isa<InvokeInst>(TI))
     return nullptr;
-  if (isa<CatchPadInst>(TI) || isa<CatchEndPadInst>(TI) ||
-      isa<TerminatePadInst>(TI))
+  if (TI->isEHPad())
     return BB;
   return cast<CleanupReturnInst>(TI)->getCleanupPad()->getParent();
 }
 
-static void calculateExplicitStateNumbers(WinEHFuncInfo &FuncInfo,
-                                          const BasicBlock &BB,
-                                          int ParentState) {
+static void calculateExplicitCXXStateNumbers(WinEHFuncInfo &FuncInfo,
+                                             const BasicBlock &BB,
+                                             int ParentState) {
   assert(BB.isEHPad());
   const Instruction *FirstNonPHI = BB.getFirstNonPHI();
   // All catchpad instructions will be handled when we process their
@@ -2979,36 +3009,30 @@ static void calculateExplicitStateNumbers(WinEHFuncInfo &FuncInfo,
     return;
 
   if (isa<CatchEndPadInst>(FirstNonPHI)) {
-    const BasicBlock *TryPad = &BB;
-    const BasicBlock *LastTryPad = nullptr;
     SmallVector<const CatchPadInst *, 2> Handlers;
-    do {
-      LastTryPad = TryPad;
-      TryPad = getSingleCatchPadPredecessor(*TryPad);
-      if (TryPad)
-        Handlers.push_back(cast<CatchPadInst>(TryPad->getFirstNonPHI()));
-    } while (TryPad);
-    // We've pushed these back into reverse source order.  Reverse them to get
-    // the list back into source order.
-    std::reverse(Handlers.begin(), Handlers.end());
+    findCatchPadsForCatchEndPad(&BB, Handlers);
+    const BasicBlock *FirstTryPad = Handlers.front()->getParent();
     int TryLow = addUnwindMapEntry(FuncInfo, ParentState, nullptr);
     FuncInfo.EHPadStateMap[Handlers.front()] = TryLow;
-    for (const BasicBlock *PredBlock : predecessors(LastTryPad))
+    for (const BasicBlock *PredBlock : predecessors(FirstTryPad))
       if ((PredBlock = getEHPadFromPredecessor(PredBlock)))
-        calculateExplicitStateNumbers(FuncInfo, *PredBlock, TryLow);
+        calculateExplicitCXXStateNumbers(FuncInfo, *PredBlock, TryLow);
     int CatchLow = addUnwindMapEntry(FuncInfo, ParentState, nullptr);
+
+    // catchpads are separate funclets in C++ EH due to the way rethrow works.
+    // In SEH, they aren't, so no invokes will unwind to the catchendpad.
     FuncInfo.EHPadStateMap[FirstNonPHI] = CatchLow;
     int TryHigh = CatchLow - 1;
     for (const BasicBlock *PredBlock : predecessors(&BB))
       if ((PredBlock = getEHPadFromPredecessor(PredBlock)))
-        calculateExplicitStateNumbers(FuncInfo, *PredBlock, CatchLow);
+        calculateExplicitCXXStateNumbers(FuncInfo, *PredBlock, CatchLow);
     int CatchHigh = FuncInfo.getLastStateNumber();
     addTryBlockMapEntry(FuncInfo, TryLow, TryHigh, CatchHigh, Handlers);
-    DEBUG(dbgs() << "TryLow[" << LastTryPad->getName() << "]: " << TryLow
+    DEBUG(dbgs() << "TryLow[" << FirstTryPad->getName() << "]: " << TryLow
                  << '\n');
-    DEBUG(dbgs() << "TryHigh[" << LastTryPad->getName() << "]: " << TryHigh
+    DEBUG(dbgs() << "TryHigh[" << FirstTryPad->getName() << "]: " << TryHigh
                  << '\n');
-    DEBUG(dbgs() << "CatchHigh[" << LastTryPad->getName() << "]: " << CatchHigh
+    DEBUG(dbgs() << "CatchHigh[" << FirstTryPad->getName() << "]: " << CatchHigh
                  << '\n');
   } else if (isa<CleanupPadInst>(FirstNonPHI)) {
     int CleanupState = addUnwindMapEntry(FuncInfo, ParentState, &BB);
@@ -3017,11 +3041,116 @@ static void calculateExplicitStateNumbers(WinEHFuncInfo &FuncInfo,
                  << BB.getName() << '\n');
     for (const BasicBlock *PredBlock : predecessors(&BB))
       if ((PredBlock = getEHPadFromPredecessor(PredBlock)))
-        calculateExplicitStateNumbers(FuncInfo, *PredBlock, CleanupState);
+        calculateExplicitCXXStateNumbers(FuncInfo, *PredBlock, CleanupState);
   } else if (isa<TerminatePadInst>(FirstNonPHI)) {
     report_fatal_error("Not yet implemented!");
   } else {
     llvm_unreachable("unexpected EH Pad!");
+  }
+}
+
+static int addSEHHandler(WinEHFuncInfo &FuncInfo, int ParentState,
+                         const Function *Filter, const BasicBlock *Handler) {
+  SEHUnwindMapEntry Entry;
+  Entry.ToState = ParentState;
+  Entry.Filter = Filter;
+  Entry.Handler = Handler;
+  FuncInfo.SEHUnwindMap.push_back(Entry);
+  return FuncInfo.SEHUnwindMap.size() - 1;
+}
+
+static void calculateExplicitSEHStateNumbers(WinEHFuncInfo &FuncInfo,
+                                             const BasicBlock &BB,
+                                             int ParentState) {
+  assert(BB.isEHPad());
+  const Instruction *FirstNonPHI = BB.getFirstNonPHI();
+  // All catchpad instructions will be handled when we process their
+  // respective catchendpad instruction.
+  if (isa<CatchPadInst>(FirstNonPHI))
+    return;
+
+  if (isa<CatchEndPadInst>(FirstNonPHI)) {
+    // Extract the filter function and the __except basic block and create a
+    // state for them.
+    SmallVector<const CatchPadInst *, 1> Handlers;
+    findCatchPadsForCatchEndPad(&BB, Handlers);
+    assert(Handlers.size() == 1 &&
+           "SEH doesn't have multiple handlers per __try");
+    const CatchPadInst *CPI = Handlers.front();
+    const BasicBlock *CatchPadBB = CPI->getParent();
+    const Function *Filter =
+        cast<Function>(CPI->getArgOperand(0)->stripPointerCasts());
+    int TryState =
+        addSEHHandler(FuncInfo, ParentState, Filter, CPI->getNormalDest());
+
+    // Everything in the __try block uses TryState as its parent state.
+    FuncInfo.EHPadStateMap[CPI] = TryState;
+    DEBUG(dbgs() << "Assigning state #" << TryState << " to BB "
+                 << CatchPadBB->getName() << '\n');
+    for (const BasicBlock *PredBlock : predecessors(CatchPadBB))
+      if ((PredBlock = getEHPadFromPredecessor(PredBlock)))
+        calculateExplicitSEHStateNumbers(FuncInfo, *PredBlock, TryState);
+
+    // Everything in the __except block unwinds to ParentState, just like code
+    // outside the __try.
+    FuncInfo.EHPadStateMap[FirstNonPHI] = ParentState;
+    DEBUG(dbgs() << "Assigning state #" << ParentState << " to BB "
+                 << BB.getName() << '\n');
+    for (const BasicBlock *PredBlock : predecessors(&BB))
+      if ((PredBlock = getEHPadFromPredecessor(PredBlock)))
+        calculateExplicitSEHStateNumbers(FuncInfo, *PredBlock, ParentState);
+  } else if (isa<CleanupPadInst>(FirstNonPHI)) {
+    int CleanupState =
+        addSEHHandler(FuncInfo, ParentState, /*Filter=*/nullptr, &BB);
+    FuncInfo.EHPadStateMap[FirstNonPHI] = CleanupState;
+    DEBUG(dbgs() << "Assigning state #" << CleanupState << " to BB "
+                 << BB.getName() << '\n');
+    for (const BasicBlock *PredBlock : predecessors(&BB))
+      if ((PredBlock = getEHPadFromPredecessor(PredBlock)))
+        calculateExplicitSEHStateNumbers(FuncInfo, *PredBlock, CleanupState);
+  } else if (isa<CleanupEndPadInst>(FirstNonPHI)) {
+    // Anything unwinding through CleanupEndPadInst is in ParentState.
+    FuncInfo.EHPadStateMap[FirstNonPHI] = ParentState;
+    DEBUG(dbgs() << "Assigning state #" << ParentState << " to BB "
+                 << BB.getName() << '\n');
+    for (const BasicBlock *PredBlock : predecessors(&BB))
+      if ((PredBlock = getEHPadFromPredecessor(PredBlock)))
+        calculateExplicitSEHStateNumbers(FuncInfo, *PredBlock, ParentState);
+  } else if (isa<TerminatePadInst>(FirstNonPHI)) {
+    report_fatal_error("Not yet implemented!");
+  } else {
+    llvm_unreachable("unexpected EH Pad!");
+  }
+}
+
+/// Check if the EH Pad unwinds to caller.  Cleanups are a little bit of a
+/// special case because we have to look at the cleanupret instruction that uses
+/// the cleanuppad.
+static bool doesEHPadUnwindToCaller(const Instruction *EHPad) {
+  auto *CPI = dyn_cast<CleanupPadInst>(EHPad);
+  if (!CPI)
+    return EHPad->mayThrow();
+
+  // This cleanup does not return or unwind, so we say it unwinds to caller.
+  if (CPI->use_empty())
+    return true;
+
+  const Instruction *User = CPI->user_back();
+  if (auto *CRI = dyn_cast<CleanupReturnInst>(User))
+    return CRI->unwindsToCaller();
+  return cast<CleanupEndPadInst>(User)->unwindsToCaller();
+}
+
+void llvm::calculateSEHStateNumbers(const Function *ParentFn,
+                                    WinEHFuncInfo &FuncInfo) {
+  // Don't compute state numbers twice.
+  if (!FuncInfo.SEHUnwindMap.empty())
+    return;
+
+  for (const BasicBlock &BB : *ParentFn) {
+    if (!BB.isEHPad() || !doesEHPadUnwindToCaller(BB.getFirstNonPHI()))
+      continue;
+    calculateExplicitSEHStateNumbers(FuncInfo, BB, -1);
   }
 }
 
@@ -3035,23 +3164,13 @@ void llvm::calculateWinCXXEHStateNumbers(const Function *ParentFn,
   for (const BasicBlock &BB : *ParentFn) {
     if (!BB.isEHPad())
       continue;
-    // Check if the EH Pad has no exceptional successors (i.e. it unwinds to
-    // caller).  Cleanups are a little bit of a special case because their
-    // control flow cannot be determined by looking at the pad but instead by
-    // the pad's users.
-    bool HasNoSuccessors = false;
     const Instruction *FirstNonPHI = BB.getFirstNonPHI();
-    if (FirstNonPHI->mayThrow()) {
-      HasNoSuccessors = true;
-    } else if (auto *CPI = dyn_cast<CleanupPadInst>(FirstNonPHI)) {
-      HasNoSuccessors =
-          CPI->use_empty() ||
-          cast<CleanupReturnInst>(CPI->user_back())->unwindsToCaller();
-    }
-
-    if (!HasNoSuccessors)
+    // Skip cleanupendpads; they are exits, not entries.
+    if (isa<CleanupEndPadInst>(FirstNonPHI))
       continue;
-    calculateExplicitStateNumbers(FuncInfo, BB, -1);
+    if (!doesEHPadUnwindToCaller(FirstNonPHI))
+      continue;
+    calculateExplicitCXXStateNumbers(FuncInfo, BB, -1);
     IsExplicit = true;
   }
 
@@ -3096,7 +3215,8 @@ void WinEHPrepare::colorFunclets(Function &F,
     BasicBlock *Color;
     std::tie(Visiting, Color) = Worklist.pop_back_val();
     Instruction *VisitingHead = Visiting->getFirstNonPHI();
-    if (VisitingHead->isEHPad() && !isa<CatchEndPadInst>(VisitingHead)) {
+    if (VisitingHead->isEHPad() && !isa<CatchEndPadInst>(VisitingHead) &&
+        !isa<CleanupEndPadInst>(VisitingHead)) {
       // Mark this as a funclet head as a member of itself.
       FuncletBlocks[Visiting].insert(Visiting);
       // Queue exits with the parent color.
@@ -3130,13 +3250,15 @@ void WinEHPrepare::colorFunclets(Function &F,
     } else {
       // Note that this is a member of the given color.
       FuncletBlocks[Color].insert(Visiting);
-      TerminatorInst *Terminator = Visiting->getTerminator();
-      if (isa<CleanupReturnInst>(Terminator) ||
-          isa<CatchReturnInst>(Terminator)) {
-        // These block's successors have already been queued with the parent
-        // color.
-        continue;
-      }
+    }
+
+    TerminatorInst *Terminator = Visiting->getTerminator();
+    if (isa<CleanupReturnInst>(Terminator) ||
+        isa<CatchReturnInst>(Terminator) ||
+        isa<CleanupEndPadInst>(Terminator)) {
+      // These blocks' successors have already been queued with the parent
+      // color.
+      continue;
     }
     for (BasicBlock *Succ : successors(Visiting)) {
       if (isa<CatchEndPadInst>(Succ->getFirstNonPHI())) {
@@ -3288,11 +3410,16 @@ bool WinEHPrepare::prepareExplicitEH(
       bool IsUnreachableCatchret = false;
       if (auto *CRI = dyn_cast<CatchReturnInst>(TI))
         IsUnreachableCatchret = CRI->getCatchPad() != CatchPad;
-      // The token consumed by a CleanupPadInst must match the funclet token.
+      // The token consumed by a CleanupReturnInst must match the funclet token.
       bool IsUnreachableCleanupret = false;
       if (auto *CRI = dyn_cast<CleanupReturnInst>(TI))
         IsUnreachableCleanupret = CRI->getCleanupPad() != CleanupPad;
-      if (IsUnreachableRet || IsUnreachableCatchret || IsUnreachableCleanupret) {
+      // The token consumed by a CleanupEndPadInst must match the funclet token.
+      bool IsUnreachableCleanupendpad = false;
+      if (auto *CEPI = dyn_cast<CleanupEndPadInst>(TI))
+        IsUnreachableCleanupendpad = CEPI->getCleanupPad() != CleanupPad;
+      if (IsUnreachableRet || IsUnreachableCatchret ||
+          IsUnreachableCleanupret || IsUnreachableCleanupendpad) {
         new UnreachableInst(BB->getContext(), TI);
         TI->eraseFromParent();
       }

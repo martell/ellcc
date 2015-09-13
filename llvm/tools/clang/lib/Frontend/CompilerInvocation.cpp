@@ -709,7 +709,7 @@ static void ParseDependencyOutputArgs(DependencyOutputOptions &Opts,
   // Add sanitizer blacklists as extra dependencies.
   // They won't be discovered by the regular preprocessor, so
   // we let make / ninja to know about this implicit dependency.
-  Opts.ExtraDeps = Args.getAllArgValues(OPT_fsanitize_blacklist);
+  Opts.ExtraDeps = Args.getAllArgValues(OPT_fdepfile_entry);
   auto ModuleFiles = Args.getAllArgValues(OPT_fmodule_file);
   Opts.ExtraDeps.insert(Opts.ExtraDeps.end(), ModuleFiles.begin(),
                         ModuleFiles.end());
@@ -1405,6 +1405,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   if (Args.hasArg(OPT_fcuda_is_device))
     Opts.CUDAIsDevice = 1;
+
+  if (Args.hasArg(OPT_fcuda_uses_libdevice))
+    Opts.CUDAUsesLibDevice = 1;
 
   if (Args.hasArg(OPT_fcuda_allow_host_calls_from_host_device))
     Opts.CUDAAllowHostCallsFromHostDevice = 1;

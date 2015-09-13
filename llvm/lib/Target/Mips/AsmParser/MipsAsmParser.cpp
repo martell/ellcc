@@ -216,6 +216,10 @@ class MipsAsmParser : public MCTargetAsmParser {
   bool expandCondBranches(MCInst &Inst, SMLoc IDLoc,
                           SmallVectorImpl<MCInst> &Instructions);
 
+  bool expandDiv(MCInst &Inst, SMLoc IDLoc,
+                 SmallVectorImpl<MCInst> &Instructions, const bool IsMips64,
+                 const bool Signed);
+
   bool expandUlhu(MCInst &Inst, SMLoc IDLoc,
                   SmallVectorImpl<MCInst> &Instructions);
 
@@ -486,6 +490,10 @@ public:
 
   bool inMips16Mode() const {
     return STI.getFeatureBits()[Mips::FeatureMips16];
+  }
+
+  bool useTraps() const {
+    return STI.getFeatureBits()[Mips::FeatureUseTCCInDIV];
   }
 
   bool useSoftFloat() const {
@@ -1417,7 +1425,9 @@ bool MipsAsmParser::processInstruction(MCInst &Inst, SMLoc IDLoc,
         return Error(IDLoc, "branch to misaligned address");
       break;
     case Mips::BEQZ16_MM:
+    case Mips::BEQZC16_MMR6:
     case Mips::BNEZ16_MM:
+    case Mips::BNEZC16_MMR6:
       assert(MCID.getNumOperands() == 2 && "unexpected number of operands");
       Offset = Inst.getOperand(1);
       if (!Offset.isImm())
@@ -1531,7 +1541,7 @@ bool MipsAsmParser::processInstruction(MCInst &Inst, SMLoc IDLoc,
     if (JalSym->isInSection() || JalSym->isTemporary()) {
       if (isABI_O32()) {
         // If it's a local symbol and the O32 ABI is being used, we expand to:
-        //  lw    $25, 0($gp)
+        //  lw $25, 0($gp)
         //    R_(MICRO)MIPS_GOT16  label
         //  addiu $25, $25, 0
         //    R_(MICRO)MIPS_LO16   label
@@ -1555,7 +1565,7 @@ bool MipsAsmParser::processInstruction(MCInst &Inst, SMLoc IDLoc,
       } else if (isABI_N32() || isABI_N64()) {
         // If it's a local symbol and the N32/N64 ABIs are being used,
         // we expand to:
-        //  lw/ld    $25, 0($gp)
+        //  lw/ld $25, 0($gp)
         //    R_(MICRO)MIPS_GOT_DISP  label
         //  jalr  $25
         const MCExpr *GotDispRelocExpr = evaluateRelocExpr(JalExpr, "got_disp");
@@ -1643,7 +1653,8 @@ bool MipsAsmParser::processInstruction(MCInst &Inst, SMLoc IDLoc,
             if (isIntN(9, MemOffset) && (MemOffset % 4 == 0) &&
                 getContext().getRegisterInfo()->getRegClass(
                   Mips::GPRMM16RegClassID).contains(DstReg.getReg()) &&
-                BaseReg.getReg() == Mips::GP) {
+                (BaseReg.getReg() == Mips::GP ||
+                BaseReg.getReg() == Mips::GP_64)) {
               MCInst TmpInst;
               TmpInst.setLoc(IDLoc);
               TmpInst.setOpcode(Mips::LWGP_MM);
@@ -1807,6 +1818,7 @@ bool MipsAsmParser::needsExpansion(MCInst &Inst) {
   case Mips::LoadAddrReg32:
   case Mips::LoadAddrReg64:
   case Mips::B_MM_Pseudo:
+  case Mips::B_MMR6_Pseudo:
   case Mips::LWM_MM:
   case Mips::SWM_MM:
   case Mips::JalOneReg:
@@ -1821,6 +1833,10 @@ bool MipsAsmParser::needsExpansion(MCInst &Inst) {
   case Mips::BLEU:
   case Mips::BGEU:
   case Mips::BGTU:
+  case Mips::SDivMacro:
+  case Mips::UDivMacro:
+  case Mips::DSDivMacro:
+  case Mips::DUDivMacro:
   case Mips::Ulhu:
   case Mips::Ulw:
     return true;
@@ -1857,6 +1873,7 @@ bool MipsAsmParser::expandInstruction(MCInst &Inst, SMLoc IDLoc,
         Inst.getOperand(0).getReg(), Inst.getOperand(1).getReg(), Inst.getOperand(2),
         Inst.getOpcode() == Mips::LoadAddrReg32, IDLoc, Instructions);
   case Mips::B_MM_Pseudo:
+  case Mips::B_MMR6_Pseudo:
     return expandUncondBranchMMPseudo(Inst, IDLoc, Instructions);
   case Mips::SWM_MM:
   case Mips::LWM_MM:
@@ -1876,6 +1893,14 @@ bool MipsAsmParser::expandInstruction(MCInst &Inst, SMLoc IDLoc,
   case Mips::BGEU:
   case Mips::BGTU:
     return expandCondBranches(Inst, IDLoc, Instructions);
+  case Mips::SDivMacro:
+    return expandDiv(Inst, IDLoc, Instructions, false, true);
+  case Mips::DSDivMacro:
+    return expandDiv(Inst, IDLoc, Instructions, true, true);
+  case Mips::UDivMacro:
+    return expandDiv(Inst, IDLoc, Instructions, false, false);
+  case Mips::DUDivMacro:
+    return expandDiv(Inst, IDLoc, Instructions, true, false);
   case Mips::Ulhu:
     return expandUlhu(Inst, IDLoc, Instructions);
   case Mips::Ulw:
@@ -1897,6 +1922,30 @@ void emitRX(unsigned Opcode, unsigned Reg0, MCOperand Op1, SMLoc IDLoc,
 void emitRI(unsigned Opcode, unsigned Reg0, int32_t Imm, SMLoc IDLoc,
             SmallVectorImpl<MCInst> &Instructions) {
   emitRX(Opcode, Reg0, MCOperand::createImm(Imm), IDLoc, Instructions);
+}
+
+void emitRR(unsigned Opcode, unsigned Reg0, unsigned Reg1, SMLoc IDLoc,
+            SmallVectorImpl<MCInst> &Instructions) {
+  emitRX(Opcode, Reg0, MCOperand::createReg(Reg1), IDLoc, Instructions);
+}
+
+void emitII(unsigned Opcode, int16_t Imm1, int16_t Imm2, SMLoc IDLoc,
+            SmallVectorImpl<MCInst> &Instructions) {
+  MCInst tmpInst;
+  tmpInst.setOpcode(Opcode);
+  tmpInst.addOperand(MCOperand::createImm(Imm1));
+  tmpInst.addOperand(MCOperand::createImm(Imm2));
+  tmpInst.setLoc(IDLoc);
+  Instructions.push_back(tmpInst);
+}
+
+void emitR(unsigned Opcode, unsigned Reg0, SMLoc IDLoc,
+           SmallVectorImpl<MCInst> &Instructions) {
+  MCInst tmpInst;
+  tmpInst.setOpcode(Opcode);
+  tmpInst.addOperand(MCOperand::createReg(Reg0));
+  tmpInst.setLoc(IDLoc);
+  Instructions.push_back(tmpInst);
 }
 
 void emitRRX(unsigned Opcode, unsigned Reg0, unsigned Reg1, MCOperand Op2,
@@ -2326,7 +2375,8 @@ bool MipsAsmParser::expandUncondBranchMMPseudo(
     if (isIntN(11, Offset.getImm())) {
       // If offset fits into 11 bits then this instruction becomes microMIPS
       // 16-bit unconditional branch instruction.
-      Inst.setOpcode(Mips::B16_MM);
+      if (inMicroMipsMode())
+        Inst.setOpcode(hasMips32r6() ? Mips::BC16_MMR6 : Mips::B16_MM);
     } else {
       if (!isIntN(17, Offset.getImm()))
         Error(IDLoc, "branch target out of range");
@@ -2341,8 +2391,10 @@ bool MipsAsmParser::expandUncondBranchMMPseudo(
   }
   Instructions.push_back(Inst);
 
-  // If .set reorder is active, emit a NOP after the branch instruction.
-  if (AssemblerOptions.back()->isReorder())
+  // If .set reorder is active and branch instruction has a delay slot,
+  // emit a NOP after it.
+  const MCInstrDesc &MCID = getInstDesc(Inst.getOpcode());
+  if (MCID.hasDelaySlot() && AssemblerOptions.back()->isReorder())
     createNop(true, IDLoc, Instructions);
 
   return false;
@@ -2721,6 +2773,122 @@ bool MipsAsmParser::expandCondBranches(MCInst &Inst, SMLoc IDLoc,
   BranchInst.addOperand(MCOperand::createReg(Mips::ZERO));
   BranchInst.addOperand(MCOperand::createExpr(OffsetExpr));
   Instructions.push_back(BranchInst);
+  return false;
+}
+
+bool MipsAsmParser::expandDiv(MCInst &Inst, SMLoc IDLoc,
+                              SmallVectorImpl<MCInst> &Instructions,
+                              const bool IsMips64, const bool Signed) {
+  if (hasMips32r6()) {
+    Error(IDLoc, "instruction not supported on mips32r6 or mips64r6");
+    return false;
+  }
+
+  warnIfNoMacro(IDLoc);
+
+  const MCOperand &RsRegOp = Inst.getOperand(0);
+  assert(RsRegOp.isReg() && "expected register operand kind");
+  unsigned RsReg = RsRegOp.getReg();
+
+  const MCOperand &RtRegOp = Inst.getOperand(1);
+  assert(RtRegOp.isReg() && "expected register operand kind");
+  unsigned RtReg = RtRegOp.getReg();
+  unsigned DivOp;
+  unsigned ZeroReg;
+
+  if (IsMips64) {
+    DivOp = Signed ? Mips::DSDIV : Mips::DUDIV;
+    ZeroReg = Mips::ZERO_64;
+  } else {
+    DivOp = Signed ? Mips::SDIV : Mips::UDIV;
+    ZeroReg = Mips::ZERO;
+  }
+
+  bool UseTraps = useTraps();
+
+  if (RsReg == Mips::ZERO || RsReg == Mips::ZERO_64) {
+    if (RtReg == Mips::ZERO || RtReg == Mips::ZERO_64)
+      Warning(IDLoc, "dividing zero by zero");
+    if (IsMips64) {
+      if (Signed && (RtReg == Mips::ZERO || RtReg == Mips::ZERO_64)) {
+        if (UseTraps) {
+          emitRRI(Mips::TEQ, RtReg, ZeroReg, 0x7, IDLoc, Instructions);
+          return false;
+        }
+
+        emitII(Mips::BREAK, 0x7, 0, IDLoc, Instructions);
+        return false;
+      }
+    } else {
+      emitRR(DivOp, RsReg, RtReg, IDLoc, Instructions);
+      return false;
+    }
+  }
+
+  if (RtReg == Mips::ZERO || RtReg == Mips::ZERO_64) {
+    Warning(IDLoc, "division by zero");
+    if (Signed) {
+      if (UseTraps) {
+        emitRRI(Mips::TEQ, RtReg, ZeroReg, 0x7, IDLoc, Instructions);
+        return false;
+      }
+
+      emitII(Mips::BREAK, 0x7, 0, IDLoc, Instructions);
+      return false;
+    }
+  }
+
+  // FIXME: The values for these two BranchTarget variables may be different in
+  // micromips. These magic numbers need to be removed.
+  unsigned BranchTargetNoTraps;
+  unsigned BranchTarget;
+
+  if (UseTraps) {
+    BranchTarget = IsMips64 ? 12 : 8;
+    emitRRI(Mips::TEQ, RtReg, ZeroReg, 0x7, IDLoc, Instructions);
+  } else {
+    BranchTarget = IsMips64 ? 20 : 16;
+    BranchTargetNoTraps = 8;
+    // Branch to the li instruction.
+    emitRRI(Mips::BNE, RtReg, ZeroReg, BranchTargetNoTraps, IDLoc,
+            Instructions);
+  }
+
+  emitRR(DivOp, RsReg, RtReg, IDLoc, Instructions);
+
+  if (!UseTraps)
+    emitII(Mips::BREAK, 0x7, 0, IDLoc, Instructions);
+
+  if (!Signed) {
+    emitR(Mips::MFLO, RsReg, IDLoc, Instructions);
+    return false;
+  }
+
+  unsigned ATReg = getATReg(IDLoc);
+  if (!ATReg)
+    return true;
+
+  emitRRI(Mips::ADDiu, ATReg, ZeroReg, -1, IDLoc, Instructions);
+  if (IsMips64) {
+    // Branch to the mflo instruction.
+    emitRRI(Mips::BNE, RtReg, ATReg, BranchTarget, IDLoc, Instructions);
+    emitRRI(Mips::ADDiu, ATReg, ZeroReg, 1, IDLoc, Instructions);
+    emitRRI(Mips::DSLL32, ATReg, ATReg, 0x1f, IDLoc, Instructions);
+  } else {
+    // Branch to the mflo instruction.
+    emitRRI(Mips::BNE, RtReg, ATReg, BranchTarget, IDLoc, Instructions);
+    emitRI(Mips::LUi, ATReg, (uint16_t)0x8000, IDLoc, Instructions);
+  }
+
+  if (UseTraps)
+    emitRRI(Mips::TEQ, RsReg, ATReg, 0x6, IDLoc, Instructions);
+  else {
+    // Branch to the mflo instruction.
+    emitRRI(Mips::BNE, RsReg, ATReg, BranchTargetNoTraps, IDLoc, Instructions);
+    emitRRI(Mips::SLL, ZeroReg, ZeroReg, 0, IDLoc, Instructions);
+    emitII(Mips::BREAK, 0x6, 0, IDLoc, Instructions);
+  }
+  emitR(Mips::MFLO, RsReg, IDLoc, Instructions);
   return false;
 }
 

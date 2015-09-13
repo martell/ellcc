@@ -262,7 +262,9 @@ def STDFp3SrcRm : SDTypeProfile<1, 4, [SDTCisSameAs<0,1>,
 
 def X86PAlignr : SDNode<"X86ISD::PALIGNR", SDTShuff3OpI>;
 def X86VAlign  : SDNode<"X86ISD::VALIGN", SDTShuff3OpI>;
-def X86Abs     : SDNode<"X86ISD::ABS", SDTIntUnaryOp>;
+
+def X86Abs      : SDNode<"X86ISD::ABS", SDTIntUnaryOp>;
+def X86Conflict : SDNode<"X86ISD::CONFLICT", SDTIntUnaryOp>;
 
 def X86PShufd  : SDNode<"X86ISD::PSHUFD", SDTShuff2OpI>;
 def X86PShufhw : SDNode<"X86ISD::PSHUFHW", SDTShuff2OpI>;
@@ -616,32 +618,6 @@ def memop64 : PatFrag<(ops node:$ptr), (load node:$ptr), [{
 }]>;
 
 def memopmmx  : PatFrag<(ops node:$ptr), (x86mmx  (memop64 node:$ptr))>;
-
-// MOVNT Support
-// Like 'store', but requires the non-temporal bit to be set
-def nontemporalstore : PatFrag<(ops node:$val, node:$ptr),
-                           (st node:$val, node:$ptr), [{
-  if (StoreSDNode *ST = dyn_cast<StoreSDNode>(N))
-    return ST->isNonTemporal();
-  return false;
-}]>;
-
-def alignednontemporalstore : PatFrag<(ops node:$val, node:$ptr),
-                                    (st node:$val, node:$ptr), [{
-  if (StoreSDNode *ST = dyn_cast<StoreSDNode>(N))
-    return ST->isNonTemporal() && !ST->isTruncatingStore() &&
-           ST->getAddressingMode() == ISD::UNINDEXED &&
-           ST->getAlignment() >= 16;
-  return false;
-}]>;
-
-def unalignednontemporalstore : PatFrag<(ops node:$val, node:$ptr),
-                                      (st node:$val, node:$ptr), [{
-  if (StoreSDNode *ST = dyn_cast<StoreSDNode>(N))
-    return ST->isNonTemporal() &&
-           ST->getAlignment() < 16;
-  return false;
-}]>;
 
 def mgatherv4i32 : PatFrag<(ops node:$src1, node:$src2, node:$src3),
   (masked_gather node:$src1, node:$src2, node:$src3) , [{

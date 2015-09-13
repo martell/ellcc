@@ -287,9 +287,10 @@ define <8 x i64> @test_x86_pbroadcastq_i64_512(i64 %a0) {
 declare <8 x i64> @llvm.x86.avx512.pbroadcastq.i64.512(i64) nounwind readonly
 
 define <16 x i32> @test_conflict_d(<16 x i32> %a) {
-  ; CHECK: movw $-1, %ax
-  ; CHECK: vpxor
-  ; CHECK: vpconflictd
+; CHECK-LABEL: test_conflict_d:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    vpconflictd %zmm0, %zmm0
+; CHECK-NEXT:    retq ## encoding: [0xc3]
   %res = call <16 x i32> @llvm.x86.avx512.mask.conflict.d.512(<16 x i32> %a, <16 x i32> zeroinitializer, i16 -1)
   ret <16 x i32> %res
 }
@@ -297,9 +298,10 @@ define <16 x i32> @test_conflict_d(<16 x i32> %a) {
 declare <16 x i32> @llvm.x86.avx512.mask.conflict.d.512(<16 x i32>, <16 x i32>, i16) nounwind readonly
 
 define <8 x i64> @test_conflict_q(<8 x i64> %a) {
-  ; CHECK: movb $-1, %al
-  ; CHECK: vpxor
-  ; CHECK: vpconflictq
+; CHECK-LABEL: test_conflict_q:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    vpconflictq %zmm0, %zmm0
+; CHECK-NEXT:    retq
   %res = call <8 x i64> @llvm.x86.avx512.mask.conflict.q.512(<8 x i64> %a, <8 x i64> zeroinitializer, i8 -1)
   ret <8 x i64> %res
 }
@@ -307,21 +309,32 @@ define <8 x i64> @test_conflict_q(<8 x i64> %a) {
 declare <8 x i64> @llvm.x86.avx512.mask.conflict.q.512(<8 x i64>, <8 x i64>, i8) nounwind readonly
 
 define <16 x i32> @test_maskz_conflict_d(<16 x i32> %a, i16 %mask) {
-  ; CHECK: vpconflictd
+; CHECK-LABEL: test_maskz_conflict_d:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    kmovw %edi, %k1
+; CHECK-NEXT:    vpconflictd %zmm0, %zmm0 {%k1} {z}
+; CHECK-NEXT:    retq
   %res = call <16 x i32> @llvm.x86.avx512.mask.conflict.d.512(<16 x i32> %a, <16 x i32> zeroinitializer, i16 %mask)
   ret <16 x i32> %res
 }
 
 define <8 x i64> @test_mask_conflict_q(<8 x i64> %a, <8 x i64> %b, i8 %mask) {
-  ; CHECK: vpconflictq
+; CHECK-LABEL: test_mask_conflict_q:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    movzbl %dil, %eax
+; CHECK-NEXT:    kmovw %eax, %k1
+; CHECK-NEXT:    vpconflictq %zmm0, %zmm1 {%k1}
+; CHECK-NEXT:    vmovaps %zmm1, %zmm0
+; CHECK-NEXT:    retq
   %res = call <8 x i64> @llvm.x86.avx512.mask.conflict.q.512(<8 x i64> %a, <8 x i64> %b, i8 %mask)
   ret <8 x i64> %res
 }
 
 define <16 x i32> @test_lzcnt_d(<16 x i32> %a) {
-  ; CHECK: movw $-1, %ax
-  ; CHECK: vpxor
-  ; CHECK: vplzcntd
+; CHECK-LABEL: test_lzcnt_d:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    vplzcntd %zmm0, %zmm0
+; CHECK-NEXT:    retq
   %res = call <16 x i32> @llvm.x86.avx512.mask.lzcnt.d.512(<16 x i32> %a, <16 x i32> zeroinitializer, i16 -1)
   ret <16 x i32> %res
 }
@@ -329,9 +342,10 @@ define <16 x i32> @test_lzcnt_d(<16 x i32> %a) {
 declare <16 x i32> @llvm.x86.avx512.mask.lzcnt.d.512(<16 x i32>, <16 x i32>, i16) nounwind readonly
 
 define <8 x i64> @test_lzcnt_q(<8 x i64> %a) {
-  ; CHECK: movb $-1, %al
-  ; CHECK: vpxor
-  ; CHECK: vplzcntq
+; CHECK-LABEL: test_lzcnt_q:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    vplzcntq %zmm0, %zmm0
+; CHECK-NEXT:    retq
   %res = call <8 x i64> @llvm.x86.avx512.mask.lzcnt.q.512(<8 x i64> %a, <8 x i64> zeroinitializer, i8 -1)
   ret <8 x i64> %res
 }
@@ -340,34 +354,27 @@ declare <8 x i64> @llvm.x86.avx512.mask.lzcnt.q.512(<8 x i64>, <8 x i64>, i8) no
 
 
 define <16 x i32> @test_mask_lzcnt_d(<16 x i32> %a, <16 x i32> %b, i16 %mask) {
-  ; CHECK: vplzcntd
+; CHECK-LABEL: test_mask_lzcnt_d:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    kmovw %edi, %k1
+; CHECK-NEXT:    vplzcntd %zmm0, %zmm1 {%k1}
+; CHECK-NEXT:    vmovaps %zmm1, %zmm0
+; CHECK-NEXT:    retq
   %res = call <16 x i32> @llvm.x86.avx512.mask.lzcnt.d.512(<16 x i32> %a, <16 x i32> %b, i16 %mask)
   ret <16 x i32> %res
 }
 
 define <8 x i64> @test_mask_lzcnt_q(<8 x i64> %a, <8 x i64> %b, i8 %mask) {
-  ; CHECK: vplzcntq
+; CHECK-LABEL: test_mask_lzcnt_q:
+; CHECK:       ## BB#0:
+; CHECK-NEXT:    movzbl %dil, %eax
+; CHECK-NEXT:    kmovw %eax, %k1
+; CHECK-NEXT:    vplzcntq %zmm0, %zmm1 {%k1}
+; CHECK-NEXT:    vmovaps %zmm1, %zmm0
+; CHECK-NEXT:    retq ## encoding: [0xc3]
   %res = call <8 x i64> @llvm.x86.avx512.mask.lzcnt.q.512(<8 x i64> %a, <8 x i64> %b, i8 %mask)
   ret <8 x i64> %res
 }
-
-define <16 x i32> @test_ctlz_d(<16 x i32> %a) {
-  ; CHECK-LABEL: test_ctlz_d
-  ; CHECK: vplzcntd
-  %res = call <16 x i32> @llvm.ctlz.v16i32(<16 x i32> %a, i1 false)
-  ret <16 x i32> %res
-}
-
-declare <16 x i32> @llvm.ctlz.v16i32(<16 x i32>, i1) nounwind readonly
-
-define <8 x i64> @test_ctlz_q(<8 x i64> %a) {
-  ; CHECK-LABEL: test_ctlz_q
-  ; CHECK: vplzcntq
-  %res = call <8 x i64> @llvm.ctlz.v8i64(<8 x i64> %a, i1 false)
-  ret <8 x i64> %res
-}
-
-declare <8 x i64> @llvm.ctlz.v8i64(<8 x i64>, i1) nounwind readonly
 
 define <16 x float> @test_x86_mask_blend_ps_512(i16 %a0, <16 x float> %a1, <16 x float> %a2) {
   ; CHECK: vblendmps %zmm1, %zmm0
@@ -904,38 +911,38 @@ declare i8 @llvm.x86.avx512.mask.ucmp.q.512(<8 x i64>, <8 x i64>, i32, i8) nounw
 define <4 x float> @test_mask_vextractf32x4(<4 x float> %b, <16 x float> %a, i8 %mask) {
 ; CHECK-LABEL: test_mask_vextractf32x4:
 ; CHECK: vextractf32x4 $2, %zmm1, %xmm0 {%k1}
-  %res = call <4 x float> @llvm.x86.avx512.mask.vextractf32x4.512(<16 x float> %a, i8 2, <4 x float> %b, i8 %mask)
+  %res = call <4 x float> @llvm.x86.avx512.mask.vextractf32x4.512(<16 x float> %a, i32 2, <4 x float> %b, i8 %mask)
   ret <4 x float> %res
 }
 
-declare <4 x float> @llvm.x86.avx512.mask.vextractf32x4.512(<16 x float>, i8, <4 x float>, i8)
+declare <4 x float> @llvm.x86.avx512.mask.vextractf32x4.512(<16 x float>, i32, <4 x float>, i8)
 
 define <4 x i64> @test_mask_vextracti64x4(<4 x i64> %b, <8 x i64> %a, i8 %mask) {
 ; CHECK-LABEL: test_mask_vextracti64x4:
 ; CHECK: vextracti64x4 $2, %zmm1, %ymm0 {%k1}
-  %res = call <4 x i64> @llvm.x86.avx512.mask.vextracti64x4.512(<8 x i64> %a, i8 2, <4 x i64> %b, i8 %mask)
+  %res = call <4 x i64> @llvm.x86.avx512.mask.vextracti64x4.512(<8 x i64> %a, i32 2, <4 x i64> %b, i8 %mask)
   ret <4 x i64> %res
 }
 
-declare <4 x i64> @llvm.x86.avx512.mask.vextracti64x4.512(<8 x i64>, i8, <4 x i64>, i8)
+declare <4 x i64> @llvm.x86.avx512.mask.vextracti64x4.512(<8 x i64>, i32, <4 x i64>, i8)
 
 define <4 x i32> @test_maskz_vextracti32x4(<16 x i32> %a, i8 %mask) {
 ; CHECK-LABEL: test_maskz_vextracti32x4:
 ; CHECK: vextracti32x4 $2, %zmm0, %xmm0 {%k1} {z}
-  %res = call <4 x i32> @llvm.x86.avx512.mask.vextracti32x4.512(<16 x i32> %a, i8 2, <4 x i32> zeroinitializer, i8 %mask)
+  %res = call <4 x i32> @llvm.x86.avx512.mask.vextracti32x4.512(<16 x i32> %a, i32 2, <4 x i32> zeroinitializer, i8 %mask)
   ret <4 x i32> %res
 }
 
-declare <4 x i32> @llvm.x86.avx512.mask.vextracti32x4.512(<16 x i32>, i8, <4 x i32>, i8)
+declare <4 x i32> @llvm.x86.avx512.mask.vextracti32x4.512(<16 x i32>, i32, <4 x i32>, i8)
 
 define <4 x double> @test_vextractf64x4(<8 x double> %a) {
 ; CHECK-LABEL: test_vextractf64x4:
 ; CHECK: vextractf64x4 $2, %zmm0, %ymm0 ##
-  %res = call <4 x double> @llvm.x86.avx512.mask.vextractf64x4.512(<8 x double> %a, i8 2, <4 x double> zeroinitializer, i8 -1)
+  %res = call <4 x double> @llvm.x86.avx512.mask.vextractf64x4.512(<8 x double> %a, i32 2, <4 x double> zeroinitializer, i8 -1)
   ret <4 x double> %res
 }
 
-declare <4 x double> @llvm.x86.avx512.mask.vextractf64x4.512(<8 x double>, i8, <4 x double>, i8)
+declare <4 x double> @llvm.x86.avx512.mask.vextractf64x4.512(<8 x double>, i32, <4 x double>, i8)
 
 define <16 x i32> @test_x86_avx512_pslli_d(<16 x i32> %a0) {
   ; CHECK-LABEL: test_x86_avx512_pslli_d

@@ -127,7 +127,8 @@ public:
     MipsTechnologies,
     NVIDIA,
     CSR,
-    LastVendorType = CSR
+    Myriad,
+    LastVendorType = Myriad
   };
   enum OSType {
     UnknownOS,

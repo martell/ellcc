@@ -1399,42 +1399,15 @@ static void printArchiveChild(Archive::Child &C, bool verbose,
     // FIXME: this first dash, "-", is for (Mode & S_IFMT) == S_IFREG.
     // But there is nothing in sys::fs::perms for S_IFMT or S_IFREG.
     outs() << "-";
-    if (Mode & sys::fs::owner_read)
-      outs() << "r";
-    else
-      outs() << "-";
-    if (Mode & sys::fs::owner_write)
-      outs() << "w";
-    else
-      outs() << "-";
-    if (Mode & sys::fs::owner_exe)
-      outs() << "x";
-    else
-      outs() << "-";
-    if (Mode & sys::fs::group_read)
-      outs() << "r";
-    else
-      outs() << "-";
-    if (Mode & sys::fs::group_write)
-      outs() << "w";
-    else
-      outs() << "-";
-    if (Mode & sys::fs::group_exe)
-      outs() << "x";
-    else
-      outs() << "-";
-    if (Mode & sys::fs::others_read)
-      outs() << "r";
-    else
-      outs() << "-";
-    if (Mode & sys::fs::others_write)
-      outs() << "w";
-    else
-      outs() << "-";
-    if (Mode & sys::fs::others_exe)
-      outs() << "x";
-    else
-      outs() << "-";
+    outs() << ((Mode & sys::fs::owner_read) ? "r" : "-");
+    outs() << ((Mode & sys::fs::owner_write) ? "w" : "-");
+    outs() << ((Mode & sys::fs::owner_exe) ? "x" : "-");
+    outs() << ((Mode & sys::fs::group_read) ? "r" : "-");
+    outs() << ((Mode & sys::fs::group_write) ? "w" : "-");
+    outs() << ((Mode & sys::fs::group_exe) ? "x" : "-");
+    outs() << ((Mode & sys::fs::others_read) ? "r" : "-");
+    outs() << ((Mode & sys::fs::others_write) ? "w" : "-");
+    outs() << ((Mode & sys::fs::others_exe) ? "x" : "-");
   } else {
     outs() << format("0%o ", Mode);
   }
@@ -7118,36 +7091,20 @@ static void PrintSegmentCommand(uint32_t cmd, uint32_t cmdsize,
            MachO::VM_PROT_EXECUTE)) != 0)
       outs() << "  maxprot ?" << format("0x%08" PRIx32, maxprot) << "\n";
     else {
-      if (maxprot & MachO::VM_PROT_READ)
-        outs() << "  maxprot r";
-      else
-        outs() << "  maxprot -";
-      if (maxprot & MachO::VM_PROT_WRITE)
-        outs() << "w";
-      else
-        outs() << "-";
-      if (maxprot & MachO::VM_PROT_EXECUTE)
-        outs() << "x\n";
-      else
-        outs() << "-\n";
+      outs() << "  maxprot ";
+      outs() << ((maxprot & MachO::VM_PROT_READ) ? "r" : "-");
+      outs() << ((maxprot & MachO::VM_PROT_WRITE) ? "w" : "-");
+      outs() << ((maxprot & MachO::VM_PROT_EXECUTE) ? "x\n" : "-\n");
     }
     if ((initprot &
          ~(MachO::VM_PROT_READ | MachO::VM_PROT_WRITE |
            MachO::VM_PROT_EXECUTE)) != 0)
       outs() << "  initprot ?" << format("0x%08" PRIx32, initprot) << "\n";
     else {
-      if (initprot & MachO::VM_PROT_READ)
-        outs() << " initprot r";
-      else
-        outs() << " initprot -";
-      if (initprot & MachO::VM_PROT_WRITE)
-        outs() << "w";
-      else
-        outs() << "-";
-      if (initprot & MachO::VM_PROT_EXECUTE)
-        outs() << "x\n";
-      else
-        outs() << "-\n";
+      outs() << "  initprot ";
+      outs() << ((initprot & MachO::VM_PROT_READ) ? "r" : "-");
+      outs() << ((initprot & MachO::VM_PROT_WRITE) ? "w" : "-");
+      outs() << ((initprot & MachO::VM_PROT_EXECUTE) ? "x\n" : "-\n");
     }
   } else {
     outs() << "  maxprot " << format("0x%08" PRIx32, maxprot) << "\n";

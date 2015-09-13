@@ -571,6 +571,11 @@ PPCInstrInfo::commuteInstruction(MachineInstr *MI, bool NewMI) const {
   unsigned MB = MI->getOperand(4).getImm();
   unsigned ME = MI->getOperand(5).getImm();
 
+  // We can't commute a trivial mask (there is no way to represent an all-zero
+  // mask).
+  if (MB == 0 && ME == 31)
+    return nullptr;
+
   if (NewMI) {
     // Create a new instruction.
     unsigned Reg0 = ChangeReg0 ? Reg2 : MI->getOperand(0).getReg();
@@ -1469,7 +1474,7 @@ bool PPCInstrInfo::isProfitableToIfCvt(MachineBasicBlock &TMBB,
                      unsigned NumT, unsigned ExtraT,
                      MachineBasicBlock &FMBB,
                      unsigned NumF, unsigned ExtraF,
-                     const BranchProbability &Probability) const {
+                     BranchProbability Probability) const {
   return !(MBBDefinesCTR(TMBB) && MBBDefinesCTR(FMBB));
 }
 

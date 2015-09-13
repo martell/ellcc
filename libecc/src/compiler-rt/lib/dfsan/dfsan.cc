@@ -391,6 +391,8 @@ static void dfsan_fini() {
 }
 
 static void dfsan_init(int argc, char **argv, char **envp) {
+  CheckVMASize();
+
   MmapFixedNoReserve(kShadowAddr, kUnusedAddr - kShadowAddr);
 
   // Protect the region of memory we don't use, to preserve the one-to-one

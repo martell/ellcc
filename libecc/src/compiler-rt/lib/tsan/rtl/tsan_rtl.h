@@ -467,7 +467,7 @@ struct RacyAddress {
 
 struct FiredSuppression {
   ReportType type;
-  uptr pc;
+  uptr pc_or_addr;
   Suppression *supp;
 };
 
@@ -489,9 +489,11 @@ struct Context {
 
   ThreadRegistry *thread_registry;
 
+  Mutex racy_mtx;
   Vector<RacyStacks> racy_stacks;
   Vector<RacyAddress> racy_addresses;
   // Number of fired suppressions may be large enough.
+  Mutex fired_suppressions_mtx;
   InternalMmapVector<FiredSuppression> fired_suppressions;
   DDetector *dd;
 
@@ -600,8 +602,7 @@ bool OutputReport(Context *ctx,
                   const ReportStack *suppress_stack1,
                   const ReportStack *suppress_stack2 = 0,
                   const ReportLocation *suppress_loc = 0);
-bool IsFiredSuppression(Context *ctx, const ScopedReport &srep,
-                        StackTrace trace);
+bool IsFiredSuppression(Context *ctx, ReportType type, StackTrace trace);
 bool IsExpectedReport(uptr addr, uptr size);
 void PrintMatchedBenignRaces();
 

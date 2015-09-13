@@ -212,7 +212,7 @@ void InitTlsSize() {
 
 #if (defined(__x86_64__) || defined(__i386__) || defined(__mips__) \
     || defined(__aarch64__)) \
-    && SANITIZER_LINUX
+    && SANITIZER_LINUX && !SANITIZER_ANDROID
 // sizeof(struct thread) from glibc.
 static atomic_uintptr_t kThreadDescriptorSize;
 
@@ -535,7 +535,8 @@ uptr GetRSS() {
 // Starting with the L release, syslog() works and is preferable to
 // __android_log_write.
 #if SANITIZER_LINUX
-#if SANITIZER_ANDROID && __ANDROID_API__ < 21
+
+#if SANITIZER_ANDROID
 static atomic_uint8_t android_log_initialized;
 
 void AndroidLogInit() {
@@ -545,17 +546,19 @@ void AndroidLogInit() {
 static bool IsSyslogAvailable() {
   return atomic_load(&android_log_initialized, memory_order_acquire);
 }
-
-static void WriteOneLineToSyslog(const char *s) {
-  __android_log_write(ANDROID_LOG_INFO, NULL, s);
-}
 #else
 void AndroidLogInit() {}
 
 static bool IsSyslogAvailable() { return true; }
+#endif  // SANITIZER_ANDROID
 
-static void WriteOneLineToSyslog(const char *s) { syslog(LOG_INFO, "%s", s); }
+static void WriteOneLineToSyslog(const char *s) {
+#if SANITIZER_ANDROID &&__ANDROID_API__ < 21
+  __android_log_write(ANDROID_LOG_INFO, NULL, s);
+#else
+  syslog(LOG_INFO, "%s", s);
 #endif
+}
 
 void WriteToSyslog(const char *buffer) {
   if (!IsSyslogAvailable())

@@ -601,6 +601,8 @@ namespace __sanitizer {
     const void *dlpi_phdr;
     short dlpi_phnum;
   };
+
+  extern unsigned struct_ElfW_Phdr_sz;
 #endif
 
   struct __sanitizer_addrinfo {

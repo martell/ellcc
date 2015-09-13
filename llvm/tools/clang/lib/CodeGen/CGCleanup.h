@@ -15,6 +15,8 @@
 #define LLVM_CLANG_LIB_CODEGEN_CGCLEANUP_H
 
 #include "EHScopeStack.h"
+
+#include "Address.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -99,7 +101,7 @@ protected:
   };
 
 public:
-  enum Kind { Cleanup, Catch, Terminate, Filter, CatchEnd };
+  enum Kind { Cleanup, Catch, Terminate, Filter, PadEnd };
 
   EHScope(Kind kind, EHScopeStack::stable_iterator enclosingEHScope)
     : CachedLandingPad(nullptr), CachedEHDispatchBlock(nullptr),
@@ -305,8 +307,14 @@ public:
   bool isLifetimeMarker() const { return CleanupBits.IsLifetimeMarker; }
   void setLifetimeMarker() { CleanupBits.IsLifetimeMarker = true; }
 
-  llvm::AllocaInst *getActiveFlag() const { return ActiveFlag; }
-  void setActiveFlag(llvm::AllocaInst *Var) { ActiveFlag = Var; }
+  bool hasActiveFlag() const { return ActiveFlag != nullptr; }
+  Address getActiveFlag() const {
+    return Address(ActiveFlag, CharUnits::One());
+  }
+  void setActiveFlag(Address Var) {
+    assert(Var.getAlignment().isOne());
+    ActiveFlag = cast<llvm::AllocaInst>(Var.getPointer());
+  }
 
   void setTestFlagInNormalCleanup() {
     CleanupBits.TestFlagInNormalCleanup = true;
@@ -466,14 +474,14 @@ public:
   }
 };
 
-class EHCatchEndScope : public EHScope {
+class EHPadEndScope : public EHScope {
 public:
-  EHCatchEndScope(EHScopeStack::stable_iterator enclosingEHScope)
-      : EHScope(CatchEnd, enclosingEHScope) {}
-  static size_t getSize() { return sizeof(EHCatchEndScope); }
+  EHPadEndScope(EHScopeStack::stable_iterator enclosingEHScope)
+      : EHScope(PadEnd, enclosingEHScope) {}
+  static size_t getSize() { return sizeof(EHPadEndScope); }
 
   static bool classof(const EHScope *scope) {
-    return scope->getKind() == CatchEnd;
+    return scope->getKind() == PadEnd;
   }
 };
 
@@ -515,8 +523,8 @@ public:
       Size = EHTerminateScope::getSize();
       break;
 
-    case EHScope::CatchEnd:
-      Size = EHCatchEndScope::getSize();
+    case EHScope::PadEnd:
+      Size = EHPadEndScope::getSize();
       break;
     }
     Ptr += llvm::RoundUpToAlignment(Size, ScopeStackAlignment);
@@ -566,12 +574,12 @@ inline void EHScopeStack::popTerminate() {
   deallocate(EHTerminateScope::getSize());
 }
 
-inline void EHScopeStack::popCatchEnd() {
+inline void EHScopeStack::popPadEnd() {
   assert(!empty() && "popping exception stack when not empty");
 
-  EHCatchEndScope &scope = cast<EHCatchEndScope>(*begin());
+  EHPadEndScope &scope = cast<EHPadEndScope>(*begin());
   InnermostEHScope = scope.getEnclosingEHScope();
-  deallocate(EHCatchEndScope::getSize());
+  deallocate(EHPadEndScope::getSize());
 }
 
 inline EHScopeStack::iterator EHScopeStack::find(stable_iterator sp) const {

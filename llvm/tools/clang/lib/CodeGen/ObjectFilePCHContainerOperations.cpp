@@ -30,6 +30,7 @@
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/TargetRegistry.h"
 #include <memory>
+
 using namespace clang;
 
 #define DEBUG_TYPE "pchcontainer"
@@ -50,6 +51,69 @@ class PCHContainerGenerator : public ASTConsumer {
   raw_pwrite_stream *OS;
   std::shared_ptr<PCHBuffer> Buffer;
 
+  /// Visit every type and emit debug info for it.
+  struct DebugTypeVisitor : public RecursiveASTVisitor<DebugTypeVisitor> {
+    clang::CodeGen::CGDebugInfo &DI;
+    ASTContext &Ctx;
+    DebugTypeVisitor(clang::CodeGen::CGDebugInfo &DI, ASTContext &Ctx)
+        : DI(DI), Ctx(Ctx) {}
+
+    /// Determine whether this type can be represented in DWARF.
+    static bool CanRepresent(const Type *Ty) {
+      return !Ty->isDependentType() && !Ty->isUndeducedType();
+    }
+
+    bool VisitTypeDecl(TypeDecl *D) {
+      QualType QualTy = Ctx.getTypeDeclType(D);
+      if (!QualTy.isNull() && CanRepresent(QualTy.getTypePtr()))
+        DI.getOrCreateStandaloneType(QualTy, D->getLocation());
+      return true;
+    }
+
+    bool VisitObjCInterfaceDecl(ObjCInterfaceDecl *D) {
+      QualType QualTy(D->getTypeForDecl(), 0);
+      if (!QualTy.isNull() && CanRepresent(QualTy.getTypePtr()))
+        DI.getOrCreateStandaloneType(QualTy, D->getLocation());
+      return true;
+    }
+
+    bool VisitFunctionDecl(FunctionDecl *D) {
+      if (isa<CXXMethodDecl>(D))
+        // This is not yet supported. Constructing the `this' argument
+        // mandates a CodeGenFunction.
+        return true;
+
+      SmallVector<QualType, 16> ArgTypes;
+      for (auto i : D->params())
+        ArgTypes.push_back(i->getType());
+      QualType RetTy = D->getReturnType();
+      QualType FnTy = Ctx.getFunctionType(RetTy, ArgTypes,
+                                          FunctionProtoType::ExtProtoInfo());
+      if (CanRepresent(FnTy.getTypePtr()))
+        DI.EmitFunctionDecl(D, D->getLocation(), FnTy);
+      return true;
+    }
+
+    bool VisitObjCMethodDecl(ObjCMethodDecl *D) {
+      if (!D->getClassInterface())
+        return true;
+
+      bool selfIsPseudoStrong, selfIsConsumed;
+      SmallVector<QualType, 16> ArgTypes;
+      ArgTypes.push_back(D->getSelfType(Ctx, D->getClassInterface(),
+                                        selfIsPseudoStrong, selfIsConsumed));
+      ArgTypes.push_back(Ctx.getObjCSelType());
+      for (auto i : D->params())
+        ArgTypes.push_back(i->getType());
+      QualType RetTy = D->getReturnType();
+      QualType FnTy = Ctx.getFunctionType(RetTy, ArgTypes,
+                                          FunctionProtoType::ExtProtoInfo());
+      if (CanRepresent(FnTy.getTypePtr()))
+        DI.EmitFunctionDecl(D, D->getLocation(), FnTy);
+      return true;
+    }
+  };
+
 public:
   PCHContainerGenerator(DiagnosticsEngine &diags,
                         const HeaderSearchOptions &HSO,
@@ -69,7 +133,7 @@ public:
     CodeGenOpts.SplitDwarfFile = OutputFileName;
   }
 
-  virtual ~PCHContainerGenerator() {}
+  ~PCHContainerGenerator() override = default;
 
   void Initialize(ASTContext &Context) override {
     assert(!Ctx && "initialized multiple times");
@@ -80,6 +144,36 @@ public:
     M->setDataLayout(Ctx->getTargetInfo().getDataLayoutString());
     Builder.reset(new CodeGen::CodeGenModule(
         *Ctx, HeaderSearchOpts, PreprocessorOpts, CodeGenOpts, *M, Diags));
+  }
+
+  bool HandleTopLevelDecl(DeclGroupRef D) override {
+    if (Diags.hasErrorOccurred() ||
+        (CodeGenOpts.getDebugInfo() == CodeGenOptions::NoDebugInfo))
+      return true;
+
+    // Collect debug info for all decls in this group.
+    for (auto *I : D)
+      if (!I->isFromASTFile()) {
+        DebugTypeVisitor DTV(*Builder->getModuleDebugInfo(), *Ctx);
+        DTV.TraverseDecl(I);
+      }
+    return true;
+  }
+
+  void HandleTagDeclDefinition(TagDecl *D) override {
+    if (Diags.hasErrorOccurred())
+      return;
+
+    Builder->UpdateCompletedType(D);
+  }
+
+  void HandleTagDeclRequiredDefinition(const TagDecl *D) override {
+    if (Diags.hasErrorOccurred())
+      return;
+
+    if (CodeGen::CGDebugInfo *DI = Builder->getModuleDebugInfo())
+      if (const RecordDecl *RD = dyn_cast<RecordDecl>(D))
+        DI->completeRequiredType(RD);
   }
 
   /// Emit a container holding the serialized AST.
@@ -154,7 +248,7 @@ public:
   }
 };
 
-} // namespace
+} // anonymous namespace
 
 std::unique_ptr<ASTConsumer>
 ObjectFilePCHContainerWriter::CreatePCHContainerGenerator(
@@ -190,5 +284,4 @@ void ObjectFilePCHContainerReader::ExtractPCH(
   // As a fallback, treat the buffer as a raw AST.
   StreamFile.init((const unsigned char *)Buffer.getBufferStart(),
                   (const unsigned char *)Buffer.getBufferEnd());
-  return;
 }

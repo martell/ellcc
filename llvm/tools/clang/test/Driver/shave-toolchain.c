@@ -8,10 +8,11 @@
 // As such, we test only for a trailing quote in its rendering.
 // The same goes for "moviAsm".
 
-// RUN: %clang -target shave -c -### %s -Icommon 2>&1 \
+// RUN: %clang -target shave -c -### %s -isystem somewhere -Icommon -Wa,-yippee 2>&1 \
 // RUN:   | FileCheck %s -check-prefix=MOVICOMPILE
-// MOVICOMPILE: moviCompile" "-DMYRIAD2" "-mcpu=myriad2" "-S" "-I" "common"
-// MOVICOMPILE: moviAsm" "-no6thSlotCompression" "-cv:myriad2" "-noSPrefixing" "-a" "-i:common" "-elf"
+// MOVICOMPILE: moviCompile" "-DMYRIAD2" "-mcpu=myriad2" "-S" "-isystem" "somewhere" "-I" "common"
+// MOVICOMPILE: moviAsm" "-no6thSlotCompression" "-cv:myriad2" "-noSPrefixing" "-a"
+// MOVICOMPILE: "-yippee" "-i:somewhere" "-i:common" "-elf"
 
 // RUN: %clang -target shave -c -### %s -DEFINE_ME -UNDEFINE_ME 2>&1 \
 // RUN:   | FileCheck %s -check-prefix=DEFINES
@@ -22,7 +23,11 @@
 // INCLUDES: "-iquote" "quotepath" "-isystem" "syspath"
 
 // RUN: %clang -target shave -c -### %s -g -fno-inline-functions \
-// RUN: -fno-inline-functions-called-once -Os -Wall \
-// RUN: -ffunction-sections 2>&1 | FileCheck %s -check-prefix=F_G_O_W_OPTIONS
-// F_G_O_W_OPTIONS: "-g" "-fno-inline-functions" "-fno-inline-functions-called-once"
-// F_G_O_W_OPTIONS: "-Os" "-Wall" "-ffunction-sections"
+// RUN: -fno-inline-functions-called-once -Os -Wall -MF dep.d \
+// RUN: -ffunction-sections 2>&1 | FileCheck %s -check-prefix=PASSTHRU_OPTIONS
+// PASSTHRU_OPTIONS: "-g" "-fno-inline-functions" "-fno-inline-functions-called-once"
+// PASSTHRU_OPTIONS: "-Os" "-Wall" "-MF" "dep.d" "-ffunction-sections"
+
+// RUN: %clang -target shave -c %s -o foo.o -### -MD -MF dep.d 2>&1 \
+// RUN:   | FileCheck %s -check-prefix=MDMF
+// MDMF: "-S" "-MD" "-MF" "dep.d" "-MT" "foo.o"

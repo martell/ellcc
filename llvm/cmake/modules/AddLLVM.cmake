@@ -399,7 +399,10 @@ function(llvm_add_library name)
   endif()
 
   set_output_directory(${name} ${LLVM_RUNTIME_OUTPUT_INTDIR} ${LLVM_LIBRARY_OUTPUT_INTDIR})
-  llvm_update_compile_flags(${name})
+  # $<TARGET_OBJECTS> doesn't require compile flags.
+  if(NOT obj_name)
+    llvm_update_compile_flags(${name})
+  endif()
   add_link_opts( ${name} )
   if(ARG_OUTPUT_NAME)
     set_target_properties(${name}
@@ -587,6 +590,12 @@ macro(add_llvm_executable name)
 
   add_windows_version_resource_file(ALL_FILES ${ALL_FILES})
 
+  if(XCODE)
+    # Note: the dummy.cpp source file provides no definitions. However,
+    # it forces Xcode to properly link the static library.
+    list(APPEND ALL_FILES "${LLVM_MAIN_SRC_DIR}/cmake/dummy.cpp")
+  endif()
+
   if( EXCLUDE_FROM_ALL )
     add_executable(${name} EXCLUDE_FROM_ALL ${ALL_FILES})
   else()
@@ -597,7 +606,10 @@ macro(add_llvm_executable name)
     set_windows_version_resource_properties(${name} ${windows_resource_file})
   endif()
 
-  llvm_update_compile_flags(${name})
+  # $<TARGET_OBJECTS> doesn't require compile flags.
+  if(NOT LLVM_ENABLE_OBJLIB)
+    llvm_update_compile_flags(${name})
+  endif()
   add_link_opts( ${name} )
 
   # Do not add -Dname_EXPORTS to the command-line when building files in this
@@ -610,13 +622,13 @@ macro(add_llvm_executable name)
     add_llvm_symbol_exports( ${name} ${LLVM_EXPORTED_SYMBOL_FILE} )
   endif(LLVM_EXPORTED_SYMBOL_FILE)
 
+  if (LLVM_LINK_LLVM_DYLIB AND NOT ARG_DISABLE_LLVM_LINK_LLVM_DYLIB)
+    set(USE_SHARED USE_SHARED)
+  endif()
+
   set(EXCLUDE_FROM_ALL OFF)
   set_output_directory(${name} ${LLVM_RUNTIME_OUTPUT_INTDIR} ${LLVM_LIBRARY_OUTPUT_INTDIR})
-  if (LLVM_LINK_LLVM_DYLIB AND NOT ARG_DISABLE_LLVM_LINK_LLVM_DYLIB)
-    target_link_libraries(${name} LLVM)
-  else()
-    llvm_config( ${name} ${LLVM_LINK_COMPONENTS} )
-  endif()
+  llvm_config( ${name} ${USE_SHARED} ${LLVM_LINK_COMPONENTS} )
   if( LLVM_COMMON_DEPENDS )
     add_dependencies( ${name} ${LLVM_COMMON_DEPENDS} )
   endif( LLVM_COMMON_DEPENDS )
@@ -628,11 +640,12 @@ function(export_executable_symbols target)
   endif()
 endfunction()
 
-
-set (LLVM_TOOLCHAIN_TOOLS
-  llvm-ar
-  llvm-objdump
-  )
+if(NOT LLVM_TOOLCHAIN_TOOLS)
+  set (LLVM_TOOLCHAIN_TOOLS
+    llvm-ar
+    llvm-objdump
+    )
+endif()
 
 macro(add_llvm_tool name)
   if( NOT LLVM_BUILD_TOOLS )
@@ -677,7 +690,7 @@ endmacro(add_llvm_example name)
 
 
 macro(add_llvm_utility name)
-  add_llvm_executable(${name} ${ARGN})
+  add_llvm_executable(${name} DISABLE_LLVM_LINK_LLVM_DYLIB ${ARGN})
   set_target_properties(${name} PROPERTIES FOLDER "Utils")
   if( LLVM_INSTALL_UTILS )
     install (TARGETS ${name}

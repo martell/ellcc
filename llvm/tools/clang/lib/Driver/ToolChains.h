@@ -527,6 +527,10 @@ public:
 
   bool IsIntegratedAssemblerDefault() const override { return true; }
 
+  void AddClangCXXStdlibIncludeArgs(
+      const llvm::opt::ArgList &DriverArgs,
+      llvm::opt::ArgStringList &CC1Args) const override;
+
 protected:
   Tool *buildAssembler() const override;
   Tool *buildLinker() const override;
@@ -860,6 +864,10 @@ public:
 
   bool getWindowsSDKDir(std::string &path, int &major, int &minor) const;
   bool getWindowsSDKLibraryPath(std::string &path) const;
+  /// \brief Check if Universal CRT should be used if available
+  bool useUniversalCRT(std::string &visualStudioDir) const;
+  bool getUniversalCRTSdkDir(std::string &path, std::string &ucrtVersion) const;
+  bool getUniversalCRTLibraryPath(std::string &path) const;
   bool getVisualStudioInstallDir(std::string &path) const;
   bool getVisualStudioBinariesFolder(const char *clangProgramPath,
                                      std::string &path) const;
@@ -943,7 +951,7 @@ public:
                  const llvm::opt::ArgList &Args);
   ~SHAVEToolChain() override;
 
-  virtual Tool *SelectTool(const JobAction &JA) const override;
+  Tool *SelectTool(const JobAction &JA) const override;
 
 protected:
   Tool *getTool(Action::ActionClass AC) const override;
@@ -955,8 +963,29 @@ private:
   mutable std::unique_ptr<Tool> Assembler;
 };
 
+class LLVM_LIBRARY_VISIBILITY WebAssembly final : public ToolChain {
+public:
+  WebAssembly(const Driver &D, const llvm::Triple &Triple,
+              const llvm::opt::ArgList &Args)
+      : ToolChain(D, Triple, Args) {}
+
+private:
+  bool IsMathErrnoDefault() const override;
+  bool IsObjCNonFragileABIDefault() const override;
+  bool UseObjCMixedDispatch() const override;
+  bool isPICDefault() const override;
+  bool isPIEDefault() const override;
+  bool isPICDefaultForced() const override;
+  bool IsIntegratedAssemblerDefault() const override;
+  bool hasBlocksRuntime() const override;
+  bool SupportsObjCGC() const override;
+  bool SupportsProfiling() const override;
+  void addClangTargetOptions(const llvm::opt::ArgList &DriverArgs,
+                             llvm::opt::ArgStringList &CC1Args) const override;
+};
+
 } // end namespace toolchains
 } // end namespace driver
 } // end namespace clang
 
-#endif
+#endif // LLVM_CLANG_LIB_DRIVER_TOOLCHAINS_H

@@ -89,8 +89,10 @@ Context::Context()
   , nmissed_expected()
   , thread_registry(new(thread_registry_placeholder) ThreadRegistry(
       CreateThreadContext, kMaxTid, kThreadQuarantineSize))
+  , racy_mtx(MutexTypeRacy, StatMtxRacy)
   , racy_stacks(MBlockRacyStacks)
   , racy_addresses(MBlockRacyAddresses)
+  , fired_suppressions_mtx(MutexTypeFired, StatMtxFired)
   , fired_suppressions(8) {
 }
 
@@ -304,6 +306,9 @@ void Initialize(ThreadState *thr) {
   if (is_initialized)
     return;
   is_initialized = true;
+
+  CheckVMASize();
+
   // We are not ready to handle interceptors yet.
   ScopedIgnoreInterceptors ignore;
   SanitizerToolName = "ThreadSanitizer";
