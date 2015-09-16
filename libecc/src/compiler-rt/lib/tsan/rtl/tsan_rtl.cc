@@ -306,9 +306,6 @@ void Initialize(ThreadState *thr) {
   if (is_initialized)
     return;
   is_initialized = true;
-
-  CheckVMASize();
-
   // We are not ready to handle interceptors yet.
   ScopedIgnoreInterceptors ignore;
   SanitizerToolName = "ThreadSanitizer";
@@ -319,6 +316,7 @@ void Initialize(ThreadState *thr) {
   const char *options = GetEnv(kTsanOptionsEnv);
   CacheBinaryName();
   InitializeFlags(&ctx->flags, options);
+  CheckVMASize();
 #ifndef SANITIZER_GO
   InitializeAllocator();
 #endif

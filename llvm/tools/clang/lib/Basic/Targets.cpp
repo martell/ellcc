@@ -7240,6 +7240,7 @@ public:
     LargeArrayMinWidth = 128;
     LargeArrayAlign = 128;
     SimdDefaultAlign = 128;
+    SigAtomicType = SignedLong;
   }
 
 protected:
@@ -7315,6 +7316,19 @@ private:
   const char *getClobbers() const final { return ""; }
   bool isCLZForZeroUndef() const final { return false; }
   bool hasInt128Type() const final { return true; }
+  IntType getIntTypeByWidth(unsigned BitWidth,
+                            bool IsSigned) const final {
+    // WebAssembly prefers long long for explicitly 64-bit integers.
+    return BitWidth == 64 ? (IsSigned ? SignedLongLong : UnsignedLongLong)
+                          : TargetInfo::getIntTypeByWidth(BitWidth, IsSigned);
+  }
+  IntType getLeastIntTypeByWidth(unsigned BitWidth,
+                                 bool IsSigned) const final {
+    // WebAssembly uses long long for int_least64_t and int_fast64_t.
+    return BitWidth == 64
+               ? (IsSigned ? SignedLongLong : UnsignedLongLong)
+               : TargetInfo::getLeastIntTypeByWidth(BitWidth, IsSigned);
+  }
 };
 
 const Builtin::Info WebAssemblyTargetInfo::BuiltinInfo[] = {
@@ -7329,8 +7343,7 @@ class WebAssembly32TargetInfo : public WebAssemblyTargetInfo {
 public:
   explicit WebAssembly32TargetInfo(const llvm::Triple &T)
       : WebAssemblyTargetInfo(T) {
-    // TODO: Set this to the correct value once the spec issues are resolved.
-    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 0;
+    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 32;
     DataLayoutString = "e-p:32:32-i64:64-n32:64-S128";
   }
 
@@ -7348,8 +7361,7 @@ public:
       : WebAssemblyTargetInfo(T) {
     LongAlign = LongWidth = 64;
     PointerAlign = PointerWidth = 64;
-    // TODO: Set this to the correct value once the spec issues are resolved.
-    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 0;
+    MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
     DataLayoutString = "e-p:64:64-i64:64-n32:64-S128";
   }
 

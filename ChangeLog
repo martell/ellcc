@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r247783.
 * Update to LLVM r247489.
 * Update to LLVM r246642.
 * Update to QEMU 2.4.0.

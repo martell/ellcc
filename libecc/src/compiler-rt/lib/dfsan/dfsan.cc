@@ -391,6 +391,8 @@ static void dfsan_fini() {
 }
 
 static void dfsan_init(int argc, char **argv, char **envp) {
+  InitializeFlags();
+
   CheckVMASize();
 
   MmapFixedNoReserve(kShadowAddr, kUnusedAddr - kShadowAddr);
@@ -404,7 +406,6 @@ static void dfsan_init(int argc, char **argv, char **envp) {
   if (!(init_addr >= kUnusedAddr && init_addr < kAppAddr))
     MmapNoAccess(kUnusedAddr, kAppAddr - kUnusedAddr);
 
-  InitializeFlags();
   InitializeInterceptors();
 
   // Register the fini callback to run when the program terminates successfully
