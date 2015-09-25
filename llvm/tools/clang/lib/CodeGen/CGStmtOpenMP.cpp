@@ -2209,6 +2209,7 @@ static void EmitOMPAtomicExpr(CodeGenFunction &CGF, OpenMPClauseKind Kind,
   case OMPC_depend:
   case OMPC_mergeable:
   case OMPC_device:
+  case OMPC_threads:
     llvm_unreachable("Clause is not allowed in 'omp atomic'.");
   }
 }
@@ -2262,7 +2263,15 @@ void CodeGenFunction::EmitOMPCancellationPointDirective(
 }
 
 void CodeGenFunction::EmitOMPCancelDirective(const OMPCancelDirective &S) {
-  CGM.getOpenMPRuntime().emitCancelCall(*this, S.getLocStart(),
+  const Expr *IfCond = nullptr;
+  for (const auto *C : S.getClausesOfKind<OMPIfClause>()) {
+    if (C->getNameModifier() == OMPD_unknown ||
+        C->getNameModifier() == OMPD_cancel) {
+      IfCond = C->getCondition();
+      break;
+    }
+  }
+  CGM.getOpenMPRuntime().emitCancelCall(*this, S.getLocStart(), IfCond,
                                         S.getCancelRegion());
 }
 

@@ -67,7 +67,8 @@ private:
                          llvm::opt::ArgStringList &CmdArgs) const;
   void AddPPCTargetArgs(const llvm::opt::ArgList &Args,
                         llvm::opt::ArgStringList &CmdArgs) const;
-  void AddARMTargetArgs(const llvm::opt::ArgList &Args,
+  void AddARMTargetArgs(const llvm::Triple &Triple,
+                        const llvm::opt::ArgList &Args,
                         llvm::opt::ArgStringList &CmdArgs,
                         bool KernelOrKext) const;
   void AddARM64TargetArgs(const llvm::opt::ArgList &Args,
@@ -249,7 +250,8 @@ std::string getARMTargetCPU(StringRef CPU, StringRef Arch,
 const std::string getARMArch(StringRef Arch,
                              const llvm::Triple &Triple);
 StringRef getARMCPUForMArch(StringRef Arch, const llvm::Triple &Triple);
-StringRef getLLVMArchSuffixForARM(StringRef CPU, StringRef Arch);
+StringRef getLLVMArchSuffixForARM(StringRef CPU, StringRef Arch,
+                                  const llvm::Triple &Triple);
 
 void appendEBLinkFlags(const llvm::opt::ArgList &Args, ArgStringList &CmdArgs,
                        const llvm::Triple &Triple);
@@ -257,6 +259,13 @@ void appendEBLinkFlags(const llvm::opt::ArgList &Args, ArgStringList &CmdArgs,
 
 namespace mips {
 typedef enum { NanLegacy = 1, Nan2008 = 2 } NanEncoding;
+
+enum class FloatABI {
+  Invalid,
+  Soft,
+  Hard,
+};
+
 NanEncoding getSupportedNanEncoding(StringRef &CPU);
 void getMipsCPUAndABI(const llvm::opt::ArgList &Args,
                       const llvm::Triple &Triple, StringRef &CPUName,
@@ -265,9 +274,10 @@ bool hasMipsAbiArg(const llvm::opt::ArgList &Args, const char *Value);
 bool isUCLibc(const llvm::opt::ArgList &Args);
 bool isNaN2008(const llvm::opt::ArgList &Args, const llvm::Triple &Triple);
 bool isFPXXDefault(const llvm::Triple &Triple, StringRef CPUName,
-                   StringRef ABIName, StringRef FloatABI);
+                   StringRef ABIName, mips::FloatABI FloatABI);
 bool shouldUseFPXX(const llvm::opt::ArgList &Args, const llvm::Triple &Triple,
-                   StringRef CPUName, StringRef ABIName, StringRef FloatABI);
+                   StringRef CPUName, StringRef ABIName,
+                   mips::FloatABI FloatABI);
 }
 
 namespace ppc {
@@ -742,8 +752,14 @@ private:
 } // end namespace MinGW
 
 namespace arm {
-StringRef getARMFloatABI(const Driver &D, const llvm::opt::ArgList &Args,
-                         const llvm::Triple &Triple);
+enum class FloatABI {
+  Invalid,
+  Soft,
+  SoftFP,
+  Hard,
+};
+
+FloatABI getARMFloatABI(const ToolChain &TC, const llvm::opt::ArgList &Args);
 }
 namespace XCore {
 // For XCore, we do not need to instantiate tools for PreProcess, PreCompile and
@@ -827,6 +843,53 @@ public:
                     const char *LinkingOutput) const override;
 };
 } // end namespace SHAVE
+
+/// The Myriad toolchain uses tools that are in two different namespaces.
+/// The Compiler and Assembler as defined above are in the SHAVE namespace,
+/// whereas the linker, which accepts code for a mixture of Sparc and SHAVE,
+/// is in the Myriad namespace.
+namespace Myriad {
+class LLVM_LIBRARY_VISIBILITY Linker : public GnuTool {
+public:
+  Linker(const ToolChain &TC) : GnuTool("shave::Linker", "ld", TC) {}
+  bool hasIntegratedCPP() const override { return false; }
+  bool isLinkJob() const override { return true; }
+  void ConstructJob(Compilation &C, const JobAction &JA,
+                    const InputInfo &Output, const InputInfoList &Inputs,
+                    const llvm::opt::ArgList &TCArgs,
+                    const char *LinkingOutput) const override;
+};
+} // end namespace Myriad
+
+namespace PS4cpu {
+class LLVM_LIBRARY_VISIBILITY Assemble : public Tool {
+public:
+  Assemble(const ToolChain &TC)
+      : Tool("PS4cpu::Assemble", "assembler", TC, RF_Full) {}
+
+  virtual bool hasIntegratedCPP() const { return false; }
+
+  virtual void ConstructJob(Compilation &C, const JobAction &JA,
+                            const InputInfo &Output,
+                            const InputInfoList &Inputs,
+                            const llvm::opt::ArgList &TCArgs,
+                            const char *LinkingOutput) const;
+};
+
+class LLVM_LIBRARY_VISIBILITY Link : public Tool {
+public:
+  Link(const ToolChain &TC) : Tool("PS4cpu::Link", "linker", TC, RF_Full) {}
+
+  virtual bool hasIntegratedCPP() const { return false; }
+  virtual bool isLinkJob() const { return true; }
+
+  virtual void ConstructJob(Compilation &C, const JobAction &JA,
+                            const InputInfo &Output,
+                            const InputInfoList &Inputs,
+                            const llvm::opt::ArgList &TCArgs,
+                            const char *LinkingOutput) const;
+};
+} // end namespace PS4cpu
 
 } // end namespace tools
 } // end namespace driver

@@ -116,6 +116,13 @@ LLVMContext::LLVMContext() : pImpl(new LLVMContextImpl(*this)) {
   assert(UnpredictableID == MD_unpredictable &&
          "unpredictable kind id drifted");
   (void)UnpredictableID;
+
+  // Create the 'invariant.group' metadata kind.
+  unsigned InvariantGroupId = getMDKindID("invariant.group");
+  assert(InvariantGroupId == MD_invariant_group &&
+         "invariant.group kind id drifted");
+  (void)InvariantGroupId;
+
 }
 LLVMContext::~LLVMContext() { delete pImpl; }
 
@@ -274,4 +281,12 @@ void LLVMContext::getMDKindNames(SmallVectorImpl<StringRef> &Names) const {
   for (StringMap<unsigned>::const_iterator I = pImpl->CustomMDKindNames.begin(),
        E = pImpl->CustomMDKindNames.end(); I != E; ++I)
     Names[I->second] = I->first();
+}
+
+void LLVMContext::getOperandBundleTags(SmallVectorImpl<StringRef> &Tags) const {
+  pImpl->getOperandBundleTags(Tags);
+}
+
+uint32_t LLVMContext::getOperandBundleTagID(StringRef Tag) const {
+  return pImpl->getOperandBundleTagID(Tag);
 }

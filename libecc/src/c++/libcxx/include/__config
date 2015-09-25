@@ -64,6 +64,16 @@
 #endif  // __BIG_ENDIAN__
 #endif  // __BIG_ENDIAN__
 
+#ifdef __BYTE_ORDER__
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define _LIBCPP_LITTLE_ENDIAN 1
+#define _LIBCPP_BIG_ENDIAN 0
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define _LIBCPP_LITTLE_ENDIAN 0
+#define _LIBCPP_BIG_ENDIAN 1
+#endif // __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#endif // __BYTE_ORDER__
+
 #ifdef __FreeBSD__
 # include <sys/endian.h>
 #  if _BYTE_ORDER == _LITTLE_ENDIAN
@@ -734,7 +744,7 @@ extern "C" void __sanitizer_annotate_contiguous_container(
 // g++ and cl.exe have RTTI on by default and define a macro when it is.
 // g++ only defines the macro in 4.3.2 and onwards.
 #if !defined(_LIBCPP_NO_RTTI)
-#  if defined(__GNUG__) && ((__GNUC__ >= 5) || (__GNUC__ == 4 && \
+#  if defined(__GNUC__) && ((__GNUC__ >= 5) || (__GNUC__ == 4 && \
    (__GNUC_MINOR__ >= 3 || __GNUC_PATCHLEVEL__ >= 2))) && !defined(__GXX_RTTI)
 #    define _LIBCPP_NO_RTTI
 #  elif (defined(_MSC_VER) && !defined(__clang__)) && !defined(_CPPRTTI)
@@ -776,7 +786,7 @@ extern "C" void __sanitizer_annotate_contiguous_container(
 #define _LIBCPP_HAS_NO_THREAD_UNSAFE_C_FUNCTIONS
 #endif
 
-#if __has_extension(c_atomic)
+#if __has_feature(cxx_atomic) || __has_extension(c_atomic)
 #define _LIBCPP_HAS_C_ATOMIC_IMP
 #elif _GNUC_VER > 407
 #define _LIBCPP_HAS_GCC_ATOMIC_IMP

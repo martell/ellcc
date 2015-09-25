@@ -2128,22 +2128,27 @@ OMPCancellationPointDirective::CreateEmpty(const ASTContext &C, EmptyShell) {
 
 OMPCancelDirective *
 OMPCancelDirective::Create(const ASTContext &C, SourceLocation StartLoc,
-                           SourceLocation EndLoc,
+                           SourceLocation EndLoc, ArrayRef<OMPClause *> Clauses,
                            OpenMPDirectiveKind CancelRegion) {
-  unsigned Size = llvm::RoundUpToAlignment(sizeof(OMPCancelDirective),
-                                           llvm::alignOf<Stmt *>());
+  unsigned Size = llvm::RoundUpToAlignment(
+      sizeof(OMPCancelDirective) + sizeof(OMPClause *) * Clauses.size(),
+      llvm::alignOf<Stmt *>());
   void *Mem = C.Allocate(Size);
-  OMPCancelDirective *Dir = new (Mem) OMPCancelDirective(StartLoc, EndLoc);
+  OMPCancelDirective *Dir =
+      new (Mem) OMPCancelDirective(StartLoc, EndLoc, Clauses.size());
+  Dir->setClauses(Clauses);
   Dir->setCancelRegion(CancelRegion);
   return Dir;
 }
 
 OMPCancelDirective *OMPCancelDirective::CreateEmpty(const ASTContext &C,
+                                                    unsigned NumClauses,
                                                     EmptyShell) {
-  unsigned Size = llvm::RoundUpToAlignment(sizeof(OMPCancelDirective),
+  unsigned Size = llvm::RoundUpToAlignment(sizeof(OMPCancelDirective) +
+                                               sizeof(OMPClause *) * NumClauses,
                                            llvm::alignOf<Stmt *>());
   void *Mem = C.Allocate(Size);
-  return new (Mem) OMPCancelDirective();
+  return new (Mem) OMPCancelDirective(NumClauses);
 }
 
 OMPFlushDirective *OMPFlushDirective::Create(const ASTContext &C,
@@ -2171,21 +2176,27 @@ OMPFlushDirective *OMPFlushDirective::CreateEmpty(const ASTContext &C,
 OMPOrderedDirective *OMPOrderedDirective::Create(const ASTContext &C,
                                                  SourceLocation StartLoc,
                                                  SourceLocation EndLoc,
+                                                 ArrayRef<OMPClause *> Clauses,
                                                  Stmt *AssociatedStmt) {
   unsigned Size = llvm::RoundUpToAlignment(sizeof(OMPOrderedDirective),
-                                           llvm::alignOf<Stmt *>());
-  void *Mem = C.Allocate(Size + sizeof(Stmt *));
-  OMPOrderedDirective *Dir = new (Mem) OMPOrderedDirective(StartLoc, EndLoc);
+                                           llvm::alignOf<OMPClause *>());
+  void *Mem =
+      C.Allocate(Size + sizeof(Stmt *) + sizeof(OMPClause *) * Clauses.size());
+  OMPOrderedDirective *Dir =
+      new (Mem) OMPOrderedDirective(StartLoc, EndLoc, Clauses.size());
+  Dir->setClauses(Clauses);
   Dir->setAssociatedStmt(AssociatedStmt);
   return Dir;
 }
 
 OMPOrderedDirective *OMPOrderedDirective::CreateEmpty(const ASTContext &C,
+                                                      unsigned NumClauses,
                                                       EmptyShell) {
   unsigned Size = llvm::RoundUpToAlignment(sizeof(OMPOrderedDirective),
-                                           llvm::alignOf<Stmt *>());
-  void *Mem = C.Allocate(Size + sizeof(Stmt *));
-  return new (Mem) OMPOrderedDirective();
+                                           llvm::alignOf<OMPClause *>());
+  void *Mem =
+      C.Allocate(Size + sizeof(Stmt *) + sizeof(OMPClause *) * NumClauses);
+  return new (Mem) OMPOrderedDirective(NumClauses);
 }
 
 OMPAtomicDirective *OMPAtomicDirective::Create(

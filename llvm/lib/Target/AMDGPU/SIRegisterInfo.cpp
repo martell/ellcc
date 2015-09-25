@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-
 #include "SIRegisterInfo.h"
 #include "SIInstrInfo.h"
 #include "SIMachineFunctionInfo.h"
@@ -87,7 +86,7 @@ unsigned SIRegisterInfo::getRegPressureSetLimit(const MachineFunction &MF,
     const int *Sets = getRegClassPressureSets(*I);
     assert(Sets);
     for (unsigned i = 0; Sets[i] != -1; ++i) {
-	    if (Sets[i] == (int)Idx)
+      if (Sets[i] == (int)Idx)
         return Limit;
     }
   }
@@ -323,14 +322,6 @@ void SIRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator MI,
   }
 }
 
-const TargetRegisterClass * SIRegisterInfo::getCFGStructurizerRegClass(
-                                                                   MVT VT) const {
-  switch(VT.SimpleTy) {
-    default:
-    case MVT::i32: return &AMDGPU::VGPR_32RegClass;
-  }
-}
-
 unsigned SIRegisterInfo::getHWRegIndex(unsigned Reg) const {
   return getEncodingValue(Reg) & 0xff;
 }
@@ -399,6 +390,30 @@ const TargetRegisterClass *SIRegisterInfo::getSubRegClass(
   } else {
     return &AMDGPU::VGPR_32RegClass;
   }
+}
+
+bool SIRegisterInfo::shouldRewriteCopySrc(
+  const TargetRegisterClass *DefRC,
+  unsigned DefSubReg,
+  const TargetRegisterClass *SrcRC,
+  unsigned SrcSubReg) const {
+  // We want to prefer the smallest register class possible, so we don't want to
+  // stop and rewrite on anything that looks like a subregister
+  // extract. Operations mostly don't care about the super register class, so we
+  // only want to stop on the most basic of copies between the smae register
+  // class.
+  //
+  // e.g. if we have something like
+  // vreg0 = ...
+  // vreg1 = ...
+  // vreg2 = REG_SEQUENCE vreg0, sub0, vreg1, sub1, vreg2, sub2
+  // vreg3 = COPY vreg2, sub0
+  //
+  // We want to look through the COPY to find:
+  //  => vreg3 = COPY vreg0
+
+  // Plain copy.
+  return getCommonSubClass(DefRC, SrcRC) != nullptr;
 }
 
 unsigned SIRegisterInfo::getPhysRegSubReg(unsigned Reg,

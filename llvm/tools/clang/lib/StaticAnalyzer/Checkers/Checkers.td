@@ -129,6 +129,10 @@ def TestAfterDivZeroChecker : Checker<"TestAfterDivZero">,
   HelpText<"Check for division by variable that is later compared against 0. Either the comparison is useless or there is division by zero.">,
   DescFile<"TestAfterDivZeroChecker.cpp">;
 
+def DynamicTypeChecker : Checker<"DynamicTypeChecker">,
+  HelpText<"Check for cases where the dynamic and the static type of an object are unrelated.">,
+  DescFile<"DynamicTypeChecker.cpp">;
+
 } // end "alpha.core"
 
 let ParentPackage = Nullability in {
@@ -487,6 +491,10 @@ def NonLocalizedStringChecker : Checker<"NonLocalizedStringChecker">,
 
 def EmptyLocalizationContextChecker : Checker<"EmptyLocalizationContextChecker">,
   HelpText<"Check that NSLocalizedString macros include a comment for context">,
+  DescFile<"LocalizationChecker.cpp">;
+
+def PluralMisuseChecker : Checker<"PluralMisuseChecker">,
+  HelpText<"Warns against using one vs. many plural pattern in code when generating localized strings.">,
   DescFile<"LocalizationChecker.cpp">;
 
 } // end "alpha.osx.cocoa"

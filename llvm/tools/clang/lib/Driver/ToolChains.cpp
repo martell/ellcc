@@ -620,12 +620,10 @@ void DarwinClang::AddCCKextLibArgs(const ArgList &Args,
   llvm::sys::path::append(P, "lib", "darwin");
 
   // Use the newer cc_kext for iOS ARM after 6.0.
-  if (!isTargetIPhoneOS() || isTargetIOSSimulator() ||
-      getTriple().getArch() == llvm::Triple::aarch64 ||
-      !isIPhoneOSVersionLT(6, 0)) {
-    llvm::sys::path::append(P, "libclang_rt.cc_kext.a");
+  if (isTargetIPhoneOS()) {
+    llvm::sys::path::append(P, "libclang_rt.cc_kext_ios.a");
   } else {
-    llvm::sys::path::append(P, "libclang_rt.cc_kext_ios5.a");
+    llvm::sys::path::append(P, "libclang_rt.cc_kext.a");
   }
 
   // For now, allow missing resource libraries to support developers who may
@@ -856,7 +854,7 @@ void MachO::AddLinkRuntimeLibArgs(const ArgList &Args,
   // { hard-float, soft-float }
   llvm::SmallString<32> CompilerRT = StringRef("libclang_rt.");
   CompilerRT +=
-      tools::arm::getARMFloatABI(getDriver(), Args, getTriple()) == "hard"
+      (tools::arm::getARMFloatABI(*this, Args) == tools::arm::FloatABI::Hard)
           ? "hard"
           : "soft";
   CompilerRT += Args.hasArg(options::OPT_fPIC) ? "_pic.a" : "_static.a";
@@ -1171,7 +1169,8 @@ static llvm::StringRef getGCCToolchainDir(const ArgList &Args) {
 /// necessary because the driver doesn't store the final version of the target
 /// triple.
 void Generic_GCC::GCCInstallationDetector::init(
-    const Driver &D, const llvm::Triple &TargetTriple, const ArgList &Args) {
+    const Driver &D, const llvm::Triple &TargetTriple, const ArgList &Args,
+    ArrayRef<std::string> ExtraTripleAliases) {
   llvm::Triple BiarchVariantTriple = TargetTriple.isArch32Bit()
                                          ? TargetTriple.get64BitArchVariant()
                                          : TargetTriple.get32BitArchVariant();
@@ -1215,18 +1214,20 @@ void Generic_GCC::GCCInstallationDetector::init(
   for (const std::string &Prefix : Prefixes) {
     if (!llvm::sys::fs::exists(Prefix))
       continue;
-    for (const StringRef Suffix : CandidateLibDirs) {
+    for (StringRef Suffix : CandidateLibDirs) {
       const std::string LibDir = Prefix + Suffix.str();
       if (!llvm::sys::fs::exists(LibDir))
         continue;
-      for (const StringRef Candidate : CandidateTripleAliases)
+      for (StringRef Candidate : ExtraTripleAliases) // Try these first.
+        ScanLibDirForGCCTriple(TargetTriple, Args, LibDir, Candidate);
+      for (StringRef Candidate : CandidateTripleAliases)
         ScanLibDirForGCCTriple(TargetTriple, Args, LibDir, Candidate);
     }
-    for (const StringRef Suffix : CandidateBiarchLibDirs) {
+    for (StringRef Suffix : CandidateBiarchLibDirs) {
       const std::string LibDir = Prefix + Suffix.str();
       if (!llvm::sys::fs::exists(LibDir))
         continue;
-      for (const StringRef Candidate : CandidateBiarchTripleAliases)
+      for (StringRef Candidate : CandidateBiarchTripleAliases)
         ScanLibDirForGCCTriple(TargetTriple, Args, LibDir, Candidate,
                                /*NeedsBiarchSuffix=*/ true);
     }
@@ -1478,6 +1479,48 @@ bool Generic_GCC::GCCInstallationDetector::getBiarchSibling(Multilib &M) const {
   // Also include the multiarch variant if it's different.
   if (TargetTriple.str() != BiarchTriple.str())
     BiarchTripleAliases.push_back(BiarchTriple.str());
+}
+
+// \brief -- try common CUDA installation paths looking for files we need for
+// CUDA compilation.
+
+void
+Generic_GCC::CudaInstallationDetector::init(const Driver &D,
+                                            const llvm::Triple &TargetTriple,
+                                            const llvm::opt::ArgList &Args) {
+  SmallVector<std::string, 4> CudaPathCandidates;
+
+  if (Args.hasArg(options::OPT_cuda_path_EQ))
+    CudaPathCandidates.push_back(
+        Args.getLastArgValue(options::OPT_cuda_path_EQ));
+  else {
+    CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda");
+    CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-7.0");
+  }
+
+  for (const auto &CudaPath : CudaPathCandidates) {
+    if (CudaPath.empty() || !llvm::sys::fs::exists(CudaPath))
+      continue;
+
+    CudaInstallPath = CudaPath;
+    CudaIncludePath = CudaInstallPath + "/include";
+    CudaLibDevicePath = CudaInstallPath + "/nvvm/libdevice";
+    CudaLibPath =
+        CudaInstallPath + (TargetTriple.isArch64Bit() ? "/lib64" : "/lib");
+
+    if (!(llvm::sys::fs::exists(CudaIncludePath) &&
+          llvm::sys::fs::exists(CudaLibPath) &&
+          llvm::sys::fs::exists(CudaLibDevicePath)))
+      continue;
+
+    IsValid = true;
+    break;
+  }
+}
+
+void Generic_GCC::CudaInstallationDetector::print(raw_ostream &OS) const {
+  if (isValid())
+    OS << "Found CUDA installation: " << CudaInstallPath << "\n";
 }
 
 namespace {
@@ -2051,7 +2094,7 @@ void Generic_GCC::GCCInstallationDetector::ScanLibDirForGCCTriple(
 
 Generic_GCC::Generic_GCC(const Driver &D, const llvm::Triple &Triple,
                          const ArgList &Args)
-    : ToolChain(D, Triple, Args), GCCInstallation() {
+    : ToolChain(D, Triple, Args), GCCInstallation(), CudaInstallation() {
   getProgramPaths().push_back(getDriver().getInstalledDir());
   if (getDriver().getInstalledDir() != getDriver().Dir)
     getProgramPaths().push_back(getDriver().Dir);
@@ -2083,6 +2126,7 @@ Tool *Generic_GCC::buildLinker() const { return new tools::gcc::Linker(*this); }
 void Generic_GCC::printVerboseInfo(raw_ostream &OS) const {
   // Print the information about how we detected the GCC installation.
   GCCInstallation.print(OS);
+  CudaInstallation.print(OS);
 }
 
 bool Generic_GCC::IsUnwindTablesDefault() const {
@@ -3048,7 +3092,7 @@ static Distro DetectDistro(llvm::Triple::ArchType Arch) {
     SmallVector<StringRef, 16> Lines;
     Data.split(Lines, "\n");
     Distro Version = UnknownDistro;
-    for (const StringRef Line : Lines)
+    for (StringRef Line : Lines)
       if (Version == UnknownDistro && Line.startswith("DISTRIB_CODENAME="))
         Version = llvm::StringSwitch<Distro>(Line.substr(17))
                       .Case("hardy", UbuntuHardy)
@@ -3259,6 +3303,7 @@ static StringRef getOSLibDir(const llvm::Triple &Triple, const ArgList &Args) {
 Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
     : Generic_ELF(D, Triple, Args) {
   GCCInstallation.init(D, Triple, Args);
+  CudaInstallation.init(D, Triple, Args);
   Multilibs = GCCInstallation.getMultilibs();
   llvm::Triple::ArchType Arch = Triple.getArch();
   std::string SysRoot = computeSysRoot();
@@ -3765,17 +3810,17 @@ SanitizerMask Linux::getSupportedSanitizers() const {
   Res |= SanitizerKind::Address;
   Res |= SanitizerKind::KernelAddress;
   Res |= SanitizerKind::Vptr;
+  Res |= SanitizerKind::SafeStack;
   if (IsX86_64 || IsMIPS64 || IsAArch64)
     Res |= SanitizerKind::DataFlow;
   if (IsX86_64 || IsMIPS64)
     Res |= SanitizerKind::Leak;
   if (IsX86_64 || IsMIPS64 || IsAArch64)
     Res |= SanitizerKind::Thread;
-  if (IsX86_64 || IsMIPS64 || IsPowerPC64)
+  if (IsX86_64 || IsMIPS64 || IsPowerPC64 || IsAArch64)
     Res |= SanitizerKind::Memory;
   if (IsX86 || IsX86_64) {
     Res |= SanitizerKind::Function;
-    Res |= SanitizerKind::SafeStack;
   }
   return Res;
 }
@@ -3997,9 +4042,39 @@ void XCoreToolChain::AddCXXStdlibLibArgs(const ArgList &Args,
   // We don't output any lib args. This is handled by xcc.
 }
 
-// SHAVEToolChain does not call Clang's C compiler.
-// We override SelectTool to avoid testing ShouldUseClangCompiler().
-Tool *SHAVEToolChain::SelectTool(const JobAction &JA) const {
+MyriadToolChain::MyriadToolChain(const Driver &D, const llvm::Triple &Triple,
+                                 const ArgList &Args)
+    : Generic_GCC(D, Triple, Args) {
+  // If a target of 'sparc-myriad-elf' is specified to clang, it wants to use
+  // 'sparc-myriad--elf' (note the unknown OS) as the canonical triple.
+  // This won't work to find gcc. Instead we give the installation detector an
+  // extra triple, which is preferable to further hacks of the logic that at
+  // present is based solely on getArch(). In particular, it would be wrong to
+  // choose the myriad installation when targeting a non-myriad sparc install.
+  switch (Triple.getArch()) {
+  default:
+    D.Diag(diag::err_target_unsupported_arch) << Triple.getArchName() << "myriad";
+  case llvm::Triple::sparc:
+  case llvm::Triple::sparcel:
+  case llvm::Triple::shave:
+    GCCInstallation.init(D, Triple, Args, {"sparc-myriad-elf"});
+  }
+}
+
+MyriadToolChain::~MyriadToolChain() {}
+
+void MyriadToolChain::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
+                                                ArgStringList &CC1Args) const {
+  if (!DriverArgs.hasArg(options::OPT_nostdinc))
+    addSystemInclude(DriverArgs, CC1Args, getDriver().SysRoot + "/include");
+}
+
+// MyriadToolChain handles several triples:
+//  {shave,sparc{,el}}-myriad-{rtems,unknown}-elf
+Tool *MyriadToolChain::SelectTool(const JobAction &JA) const {
+  // The inherited method works fine if not targeting the SHAVE.
+  if (!isShaveCompilation(getTriple()))
+    return ToolChain::SelectTool(JA);
   switch (JA.getKind()) {
   case Action::CompileJobClass:
     if (!Compiler)
@@ -4014,30 +4089,29 @@ Tool *SHAVEToolChain::SelectTool(const JobAction &JA) const {
   }
 }
 
-SHAVEToolChain::SHAVEToolChain(const Driver &D, const llvm::Triple &Triple,
-                               const ArgList &Args)
-    : Generic_GCC(D, Triple, Args) {}
-
-SHAVEToolChain::~SHAVEToolChain() {}
-
-/// Following are methods necessary to avoid having moviClang be an abstract
-/// class.
-
-Tool *SHAVEToolChain::getTool(Action::ActionClass AC) const {
-  // SelectTool() must find a tool using the method in the superclass.
-  // There's nothing we can do if that fails.
-  llvm_unreachable("SHAVEToolChain can't getTool");
+void MyriadToolChain::getCompilerSupportDir(std::string &Dir) const {
+  // This directory contains crt{i,n,begin,end}.o as well as libgcc.
+  // These files are tied to a particular version of gcc.
+  SmallString<128> Result(GCCInstallation.getInstallPath());
+  // There are actually 4 choices: {le,be} x {fpu,nofpu}
+  // but as this toolchain is for LEON sparc, it can assume FPU.
+  if (this->getTriple().getArch() == llvm::Triple::sparcel)
+    llvm::sys::path::append(Result, "le");
+  Dir.assign(Result.str());
+}
+void MyriadToolChain::getBuiltinLibDir(std::string &Dir) const {
+  // The contents of LibDir are independent of the version of gcc.
+  // This contains libc, libg (a superset of libc), libm, libstdc++, libssp.
+  SmallString<128> Result(GCCInstallation.getParentLibPath());
+  if (this->getTriple().getArch() == llvm::Triple::sparcel)
+    llvm::sys::path::append(Result, "../sparc-myriad-elf/lib/le");
+  else
+    llvm::sys::path::append(Result, "../sparc-myriad-elf/lib");
+  Dir.assign(Result.str());
 }
 
-Tool *SHAVEToolChain::buildLinker() const {
-  // SHAVEToolChain executables can not be linked except by the vendor tools.
-  llvm_unreachable("SHAVEToolChain can't buildLinker");
-}
-
-Tool *SHAVEToolChain::buildAssembler() const {
-  // This one you'd think should be reachable since we expose an
-  // assembler to the driver, except not the way it expects.
-  llvm_unreachable("SHAVEToolChain can't buildAssembler");
+Tool *MyriadToolChain::buildLinker() const {
+  return new tools::Myriad::Linker(*this);
 }
 
 bool WebAssembly::IsMathErrnoDefault() const { return false; }
@@ -4067,4 +4141,70 @@ void WebAssembly::addClangTargetOptions(const ArgList &DriverArgs,
   if (DriverArgs.hasFlag(options::OPT_fuse_init_array,
                          options::OPT_fno_use_init_array, true))
     CC1Args.push_back("-fuse-init-array");
+}
+
+PS4CPU::PS4CPU(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
+    : Generic_ELF(D, Triple, Args) {
+  if (Args.hasArg(options::OPT_static))
+    D.Diag(diag::err_drv_unsupported_opt_for_target) << "-static" << "PS4";
+
+  // Determine where to find the PS4 libraries. We use SCE_PS4_SDK_DIR
+  // if it exists; otherwise use the driver's installation path, which
+  // should be <SDK_DIR>/host_tools/bin.
+  const char *EnvValue = getenv("SCE_PS4_SDK_DIR");
+  if (EnvValue && !llvm::sys::fs::exists(EnvValue))
+    getDriver().Diag(clang::diag::warn_drv_ps4_sdk_dir) << EnvValue;
+
+  std::string PS4SDKDir = (EnvValue ? EnvValue : getDriver().Dir + "/../..");
+
+  // Report a warning if we can't find the include or lib directories from
+  // the SDK.
+  // If -isysroot was passed, use that as the SDK base path.
+  std::string PrefixDir;
+  if (const Arg *A = Args.getLastArg(options::OPT_isysroot)) {
+    PrefixDir = A->getValue();
+    if (!llvm::sys::fs::exists(PrefixDir))
+      getDriver().Diag(clang::diag::warn_missing_sysroot) << PrefixDir;
+  } else
+    PrefixDir = PS4SDKDir;
+
+  std::string PS4SDKIncludeDir = PrefixDir + "/target/include";
+  if (!Args.hasArg(options::OPT_nostdinc) &&
+      !Args.hasArg(options::OPT_nostdlibinc) &&
+      !Args.hasArg(options::OPT_isysroot) &&
+      !Args.hasArg(options::OPT__sysroot_EQ) &&
+      !llvm::sys::fs::exists(PS4SDKIncludeDir)) {
+    getDriver().Diag(clang::diag::warn_drv_unable_to_find_directory_expected)
+        << "PS4 system headers" << PS4SDKIncludeDir;
+  }
+
+  std::string PS4SDKLibDir = PS4SDKDir + "/target/lib";
+  if (!Args.hasArg(options::OPT_nostdlib) &&
+      !Args.hasArg(options::OPT_nodefaultlibs) &&
+      !Args.hasArg(options::OPT__sysroot_EQ) && !Args.hasArg(options::OPT_E) &&
+      !Args.hasArg(options::OPT_c) && !Args.hasArg(options::OPT_S) &&
+      !Args.hasArg(options::OPT_emit_ast) &&
+      !llvm::sys::fs::exists(PS4SDKLibDir)) {
+    getDriver().Diag(clang::diag::warn_drv_unable_to_find_directory_expected)
+        << "PS4 system libraries" << PS4SDKLibDir;
+    return;
+  }
+  getFilePaths().push_back(PS4SDKLibDir);
+}
+
+Tool *PS4CPU::buildAssembler() const {
+  return new tools::PS4cpu::Assemble(*this);
+}
+
+Tool *PS4CPU::buildLinker() const { return new tools::PS4cpu::Link(*this); }
+
+bool PS4CPU::isPICDefault() const { return true; }
+
+bool PS4CPU::HasNativeLLVMSupport() const { return true; }
+
+SanitizerMask PS4CPU::getSupportedSanitizers() const {
+  SanitizerMask Res = ToolChain::getSupportedSanitizers();
+  Res |= SanitizerKind::Address;
+  Res |= SanitizerKind::Vptr;
+  return Res;
 }
