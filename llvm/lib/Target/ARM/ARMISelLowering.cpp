@@ -11739,11 +11739,10 @@ Value *ARMTargetLowering::emitLoadLinked(IRBuilder<> &Builder, Value *Addr,
 
 void ARMTargetLowering::emitAtomicCmpXchgNoStoreLLBalance(
     IRBuilder<> &Builder) const {
-  if (Subtarget->hasV7Ops()) {
-    Module *M = Builder.GetInsertBlock()->getParent()->getParent();
-    Builder.CreateCall(llvm::Intrinsic::getDeclaration(M,
-                                                       Intrinsic::arm_clrex));
-  }
+  if (!Subtarget->hasV7Ops())
+    return;
+  Module *M = Builder.GetInsertBlock()->getParent()->getParent();
+  Builder.CreateCall(llvm::Intrinsic::getDeclaration(M, Intrinsic::arm_clrex));
 }
 
 Value *ARMTargetLowering::emitStoreConditional(IRBuilder<> &Builder, Value *Val,
