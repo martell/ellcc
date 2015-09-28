@@ -230,12 +230,13 @@ clang-headers:
 	$(OUT)echo Installing clang headers
 	$(OUT)if [ -e  ../llvm/tools/clang/lib/Headers ] ; then \
 	  mkdir -p clang ; \
-	  cp -p ../llvm/tools/clang/lib/Headers/* clang ; \
+	  cp -p -r ../llvm/tools/clang/lib/Headers/* clang ; \
 	  cp -p ../llvm/tools/clang/lib/Headers/altivec.h include ; \
 	  cp -p ../llvm/tools/clang/lib/Headers/emmintrin.h include ; \
 	  cp -p ../llvm/tools/clang/lib/Headers/mmintrin.h include ; \
 	  cp -p ../llvm/tools/clang/lib/Headers/mm_malloc.h include ; \
 	  cp -p ../llvm/tools/clang/lib/Headers/xmmintrin.h include ; \
+	  cp -p ../llvm/tools/clang/lib/Headers/f16cintrin.h include ; \
 	fi
 
 $(ElkConfigs)::

@@ -103,11 +103,11 @@ endfunction()
 set(DARWIN_EXCLUDE_DIR ${CMAKE_SOURCE_DIR}/lib/builtins/Darwin-excludes)
 
 # Read and process the exclude file into a list of symbols
-function(darwin_read_exclude_file output_var file)
-  if(EXISTS ${DARWIN_EXCLUDE_DIR}/${file}.txt)
-    file(READ ${DARWIN_EXCLUDE_DIR}/${file}.txt ${file}_EXCLUDES)
-    string(REPLACE "\n" ";" ${file}_EXCLUDES ${${file}_EXCLUDES})
-    set(${output_var} ${${file}_EXCLUDES} PARENT_SCOPE)
+function(darwin_read_list_from_file output_var file)
+  if(EXISTS ${file})
+    file(READ ${file} EXCLUDES)
+    string(REPLACE "\n" ";" EXCLUDES ${EXCLUDES})
+    set(${output_var} ${EXCLUDES} PARENT_SCOPE)
   endif()
 endfunction()
 
@@ -124,8 +124,10 @@ function(darwin_find_excluded_builtins_list output_var)
     message(FATAL_ERROR "Must specify OS and ARCH to darwin_find_excluded_builtins_list!")
   endif()
 
-  darwin_read_exclude_file(${LIB_OS}_BUILTINS ${LIB_OS})
-  darwin_read_exclude_file(${LIB_OS}_${LIB_ARCH}_BASE_BUILTINS ${LIB_OS}-${LIB_ARCH})
+  darwin_read_list_from_file(${LIB_OS}_BUILTINS
+    ${DARWIN_EXCLUDE_DIR}/${LIB_OS}.txt)
+  darwin_read_list_from_file(${LIB_OS}_${LIB_ARCH}_BASE_BUILTINS
+    ${DARWIN_EXCLUDE_DIR}/${LIB_OS}-${LIB_ARCH}.txt)
 
   if(LIB_MIN_VERSION)
     file(GLOB builtin_lists ${DARWIN_EXCLUDE_DIR}/${LIB_OS}*-${LIB_ARCH}.txt)
@@ -141,7 +143,8 @@ function(darwin_find_excluded_builtins_list output_var)
     endforeach()
 
     if(smallest_version)
-      darwin_read_exclude_file(${LIB_ARCH}_${LIB_OS}_BUILTINS ${LIB_OS}${smallest_version}-${LIB_ARCH})
+      darwin_read_list_from_file(${LIB_ARCH}_${LIB_OS}_BUILTINS
+        ${DARWIN_EXCLUDE_DIR}/${LIB_OS}${smallest_version}-${LIB_ARCH}.txt)
     endif()
   endif()
   
@@ -175,25 +178,27 @@ macro(darwin_add_builtin_library name suffix)
     add_dependencies(${LIB_PARENT_TARGET} ${libname})
   endif()
 
-  list(APPEND ${os}_${suffix}_libs ${libname})
-  list(APPEND ${os}_${suffix}_lipo_flags -arch ${arch} $<TARGET_FILE:${libname}>)
+  list(APPEND ${LIB_OS}_${suffix}_libs ${libname})
+  list(APPEND ${LIB_OS}_${suffix}_lipo_flags -arch ${arch} $<TARGET_FILE:${libname}>)
 endmacro()
 
 function(darwin_lipo_libs name)
   cmake_parse_arguments(LIB
     ""
-    "PARENT_TARGET"
+    "PARENT_TARGET;OUTPUT_DIR"
     "LIPO_FLAGS;DEPENDS"
     ${ARGN})
-  add_custom_command(OUTPUT ${COMPILER_RT_LIBRARY_OUTPUT_DIR}/lib${name}.a
+  add_custom_command(OUTPUT ${LIB_OUTPUT_DIR}/lib${name}.a
     COMMAND lipo -output
-            ${COMPILER_RT_LIBRARY_OUTPUT_DIR}/lib${name}.a
+            ${LIB_OUTPUT_DIR}/lib${name}.a
             -create ${LIB_LIPO_FLAGS}
     DEPENDS ${LIB_DEPENDS}
     )
   add_custom_target(${name}
-    DEPENDS ${COMPILER_RT_LIBRARY_OUTPUT_DIR}/lib${name}.a)
+    DEPENDS ${LIB_OUTPUT_DIR}/lib${name}.a)
   add_dependencies(${LIB_PARENT_TARGET} ${name})
+  install(FILES ${LIB_OUTPUT_DIR}/lib${name}.a
+    DESTINATION ${COMPILER_RT_INSTALL_PATH})
 endfunction()
 
 # Filter out generic versions of routines that are re-implemented in
@@ -264,11 +269,13 @@ macro(darwin_add_builtin_libraries)
     darwin_lipo_libs(clang_rt.cc_kext_${os}
                     PARENT_TARGET builtins
                     LIPO_FLAGS ${${os}_cc_kext_lipo_flags}
-                    DEPENDS ${${os}_cc_kext_libs})
+                    DEPENDS ${${os}_cc_kext_libs}
+                    OUTPUT_DIR ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
     darwin_lipo_libs(clang_rt.${os}
                     PARENT_TARGET builtins
                     LIPO_FLAGS ${${os}_builtins_lipo_flags}
-                    DEPENDS ${${os}_builtins_libs})
+                    DEPENDS ${${os}_builtins_libs}
+                    OUTPUT_DIR ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
   endforeach()
 endmacro()
 
