@@ -6412,13 +6412,20 @@ static bool HasSameValue(const SCEV *A, const SCEV *B) {
   // Quick check to see if they are the same SCEV.
   if (A == B) return true;
 
+  auto ComputesEqualValues = [](const Instruction *A, const Instruction *B) {
+    // Not all instructions that are "identical" compute the same value.  For
+    // instance, two distinct alloca instructions allocating the same type are
+    // identical and do not read memory; but compute distinct values.
+    return A->isIdenticalTo(B) && (isa<BinaryOperator>(A) || isa<GetElementPtrInst>(A));
+  };
+
   // Otherwise, if they're both SCEVUnknown, it's possible that they hold
   // two different instructions with the same value. Check for this case.
   if (const SCEVUnknown *AU = dyn_cast<SCEVUnknown>(A))
     if (const SCEVUnknown *BU = dyn_cast<SCEVUnknown>(B))
       if (const Instruction *AI = dyn_cast<Instruction>(AU->getValue()))
         if (const Instruction *BI = dyn_cast<Instruction>(BU->getValue()))
-          if (AI->isIdenticalTo(BI) && !AI->mayReadFromMemory())
+          if (ComputesEqualValues(AI, BI))
             return true;
 
   // Otherwise assume they may have a different value.
@@ -7429,14 +7436,13 @@ bool ScalarEvolution::isImpliedCondOperandsViaNoOverflow(
   if (LDiff == 0)
     return true;
 
-  unsigned Width = cast<IntegerType>(RHS->getType())->getBitWidth();
   APInt FoundRHSLimit;
 
   if (Pred == CmpInst::ICMP_ULT) {
     FoundRHSLimit = -RDiff;
   } else {
     assert(Pred == CmpInst::ICMP_SLT && "Checked above!");
-    FoundRHSLimit = APInt::getSignedMinValue(Width) - RDiff;
+    FoundRHSLimit = APInt::getSignedMinValue(getTypeSizeInBits(RHS->getType())) - RDiff;
   }
 
   // Try to prove (1) or (2), as needed.

@@ -94,6 +94,7 @@ DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
 #
 # Just trap for the time being.
 DEFINE_LIBUNWIND_FUNCTION(unw_getcontext)
+  .set mips32r2
   teq $0, $0
 
 #elif defined(__ppc__)
