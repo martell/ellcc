@@ -143,7 +143,7 @@ void CodeGenFunction::EmitVarDecl(const VarDecl &D) {
     // Don't emit it now, allow it to be emitted lazily on its first use.
     return;
 
-  if (D.getStorageClass() == SC_OpenCLWorkGroupLocal)
+  if (D.getType().getAddressSpace() == LangAS::opencl_local)
     return CGM.getOpenCLRuntime().EmitWorkGroupLocalVarDecl(*this, D);
 
   assert(D.hasLocalStorage());
@@ -974,9 +974,15 @@ CodeGenFunction::EmitAutoVarAlloca(const VarDecl &D) {
       address = CreateTempAlloca(allocaTy, allocaAlignment);
       address.getPointer()->setName(D.getName());
 
+      // Don't emit lifetime markers for MSVC catch parameters. The lifetime of
+      // the catch parameter starts in the catchpad instruction, and we can't
+      // insert code in those basic blocks.
+      bool IsMSCatchParam =
+          D.isExceptionVariable() && getTarget().getCXXABI().isMicrosoft();
+
       // Emit a lifetime intrinsic if meaningful.  There's no point
       // in doing this if we don't have a valid insertion point (?).
-      if (HaveInsertPoint()) {
+      if (HaveInsertPoint() && !IsMSCatchParam) {
         uint64_t size = CGM.getDataLayout().getTypeAllocSize(allocaTy);
         emission.SizeForLifetimeMarkers =
           EmitLifetimeStart(size, address.getPointer());

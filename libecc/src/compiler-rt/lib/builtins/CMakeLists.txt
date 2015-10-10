@@ -315,9 +315,21 @@ set(armv7_SOURCES ${arm_SOURCES})
 set(armv7s_SOURCES ${arm_SOURCES})
 set(arm64_SOURCES ${aarch64_SOURCES})
 
+# macho_embedded archs
+set(armv6m_SOURCES ${GENERIC_SOURCES})
+set(armv7m_SOURCES ${arm_SOURCES})
+set(armv7em_SOURCES ${arm_SOURCES})
+
+set(mips_SOURCES ${GENERIC_SOURCES})
+set(mipsel_SOURCES ${mips_SOURCES})
+set(mips64_SOURCES ${mips_SOURCES})
+set(mips64el_SOURCES ${mips_SOURCES})
+
 add_custom_target(builtins)
 
 if (APPLE)
+  add_subdirectory(Darwin-excludes)
+  add_subdirectory(macho_embedded)
   darwin_add_builtin_libraries(${BUILTIN_SUPPORTED_OS})
 elseif (NOT WIN32 OR MINGW)
   foreach (arch ${BUILTIN_SUPPORTED_ARCH})

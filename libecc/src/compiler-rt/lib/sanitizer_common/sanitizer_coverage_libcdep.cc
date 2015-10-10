@@ -812,7 +812,7 @@ void CovPrepareForSandboxing(__sanitizer_sandbox_arguments *args) {
   } else {
     InternalScopedString path(kMaxPathLength);
     // Pre-open the file now. The sandbox won't allow us to do it later.
-    cov_fd = CovOpenFile(&path, true /* packed */, 0);
+    cov_fd = CovOpenFile(&path, true /* packed */, nullptr);
   }
 }
 
@@ -858,7 +858,7 @@ void CoverageUpdateMapping() {
     CovUpdateMapping(coverage_dir);
 }
 
-}  // namespace __sanitizer
+} // namespace __sanitizer
 
 extern "C" {
 SANITIZER_INTERFACE_ATTRIBUTE void __sanitizer_cov(u32 *guard) {
@@ -941,4 +941,4 @@ SANITIZER_INTERFACE_ATTRIBUTE SANITIZER_WEAK_ATTRIBUTE
 void __sanitizer_cov_trace_cmp() {}
 SANITIZER_INTERFACE_ATTRIBUTE SANITIZER_WEAK_ATTRIBUTE
 void __sanitizer_cov_trace_switch() {}
-}  // extern "C"
+} // extern "C"

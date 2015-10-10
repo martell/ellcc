@@ -21,6 +21,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Target/CostTable.h"
 #include "llvm/Target/TargetLowering.h"
+
 using namespace llvm;
 
 #define DEBUG_TYPE "x86tti"
@@ -62,8 +63,8 @@ unsigned X86TTIImpl::getRegisterBitWidth(bool Vector) {
 
   if (ST->is64Bit())
     return 64;
-  return 32;
 
+  return 32;
 }
 
 unsigned X86TTIImpl::getMaxInterleaveFactor(unsigned VF) {
@@ -140,6 +141,12 @@ int X86TTIImpl::getArithmeticInstrCost(
     { ISD::SRA,     MVT::v8i64,    1 },
   };
 
+  if (ST->hasAVX512()) {
+    int Idx = CostTableLookup(AVX512CostTable, ISD, LT.second);
+    if (Idx != -1)
+      return LT.first * AVX512CostTable[Idx].Cost;
+  }
+
   static const CostTblEntry<MVT::SimpleValueType> AVX2CostTable[] = {
     // Shifts on v4i64/v8i32 on AVX2 is legal even though we declare to
     // customize them to detect the cases where shift amount is a scalar one.
@@ -153,7 +160,59 @@ int X86TTIImpl::getArithmeticInstrCost(
     { ISD::SRL,     MVT::v2i64,    1 },
     { ISD::SHL,     MVT::v4i64,    1 },
     { ISD::SRL,     MVT::v4i64,    1 },
+  };
 
+  // Look for AVX2 lowering tricks.
+  if (ST->hasAVX2()) {
+    if (ISD == ISD::SHL && LT.second == MVT::v16i16 &&
+        (Op2Info == TargetTransformInfo::OK_UniformConstantValue ||
+         Op2Info == TargetTransformInfo::OK_NonUniformConstantValue))
+      // On AVX2, a packed v16i16 shift left by a constant build_vector
+      // is lowered into a vector multiply (vpmullw).
+      return LT.first;
+
+    int Idx = CostTableLookup(AVX2CostTable, ISD, LT.second);
+    if (Idx != -1)
+      return LT.first * AVX2CostTable[Idx].Cost;
+  }
+
+  static const CostTblEntry<MVT::SimpleValueType> XOPCostTable[] = {
+    // 128bit shifts take 1cy, but right shifts require negation beforehand.
+    { ISD::SHL,     MVT::v16i8,    1 },
+    { ISD::SRL,     MVT::v16i8,    2 },
+    { ISD::SRA,     MVT::v16i8,    2 },
+    { ISD::SHL,     MVT::v8i16,    1 },
+    { ISD::SRL,     MVT::v8i16,    2 },
+    { ISD::SRA,     MVT::v8i16,    2 },
+    { ISD::SHL,     MVT::v4i32,    1 },
+    { ISD::SRL,     MVT::v4i32,    2 },
+    { ISD::SRA,     MVT::v4i32,    2 },
+    { ISD::SHL,     MVT::v2i64,    1 },
+    { ISD::SRL,     MVT::v2i64,    2 },
+    { ISD::SRA,     MVT::v2i64,    2 },
+    // 256bit shifts require splitting if AVX2 didn't catch them above.
+    { ISD::SHL,     MVT::v32i8,    2 },
+    { ISD::SRL,     MVT::v32i8,    4 },
+    { ISD::SRA,     MVT::v32i8,    4 },
+    { ISD::SHL,     MVT::v16i16,   2 },
+    { ISD::SRL,     MVT::v16i16,   4 },
+    { ISD::SRA,     MVT::v16i16,   4 },
+    { ISD::SHL,     MVT::v8i32,    2 },
+    { ISD::SRL,     MVT::v8i32,    4 },
+    { ISD::SRA,     MVT::v8i32,    4 },
+    { ISD::SHL,     MVT::v4i64,    2 },
+    { ISD::SRL,     MVT::v4i64,    4 },
+    { ISD::SRA,     MVT::v4i64,    4 },
+  };
+
+  // Look for XOP lowering tricks.
+  if (ST->hasXOP()) {
+    int Idx = CostTableLookup(XOPCostTable, ISD, LT.second);
+    if (Idx != -1)
+      return LT.first * XOPCostTable[Idx].Cost;
+  }
+
+  static const CostTblEntry<MVT::SimpleValueType> AVX2CustomCostTable[] = {
     { ISD::SHL,  MVT::v32i8,      11 }, // vpblendvb sequence.
     { ISD::SHL,  MVT::v16i16,     10 }, // extend/vpsrlvd/pack sequence.
 
@@ -176,23 +235,11 @@ int X86TTIImpl::getArithmeticInstrCost(
     { ISD::UDIV,  MVT::v4i64,  4*20 },
   };
 
-  if (ST->hasAVX512()) {
-    int Idx = CostTableLookup(AVX512CostTable, ISD, LT.second);
-    if (Idx != -1)
-      return LT.first * AVX512CostTable[Idx].Cost;
-  }
-  // Look for AVX2 lowering tricks.
+  // Look for AVX2 lowering tricks for custom cases.
   if (ST->hasAVX2()) {
-    if (ISD == ISD::SHL && LT.second == MVT::v16i16 &&
-        (Op2Info == TargetTransformInfo::OK_UniformConstantValue ||
-         Op2Info == TargetTransformInfo::OK_NonUniformConstantValue))
-      // On AVX2, a packed v16i16 shift left by a constant build_vector
-      // is lowered into a vector multiply (vpmullw).
-      return LT.first;
-
-    int Idx = CostTableLookup(AVX2CostTable, ISD, LT.second);
+    int Idx = CostTableLookup(AVX2CustomCostTable, ISD, LT.second);
     if (Idx != -1)
-      return LT.first * AVX2CostTable[Idx].Cost;
+      return LT.first * AVX2CustomCostTable[Idx].Cost;
   }
 
   static const CostTblEntry<MVT::SimpleValueType>
@@ -834,7 +881,7 @@ int X86TTIImpl::getMaskedMemoryOpCost(unsigned Opcode, Type *SrcTy,
     // Scalarization
     int MaskSplitCost = getScalarizationOverhead(MaskTy, false, true);
     int ScalarCompareCost = getCmpSelInstrCost(
-        Instruction::ICmp, Type::getInt8Ty(getGlobalContext()), NULL);
+        Instruction::ICmp, Type::getInt8Ty(getGlobalContext()), nullptr);
     int BranchCost = getCFInstrCost(Instruction::Br);
     int MaskCmpCost = NumElem * (BranchCost + ScalarCompareCost);
 
@@ -852,8 +899,8 @@ int X86TTIImpl::getMaskedMemoryOpCost(unsigned Opcode, Type *SrcTy,
   if (LT.second != TLI->getValueType(DL, SrcVTy).getSimpleVT() &&
       LT.second.getVectorNumElements() == NumElem)
     // Promotion requires expand/truncate for data and a shuffle for mask.
-    Cost += getShuffleCost(TTI::SK_Alternate, SrcVTy, 0, 0) +
-            getShuffleCost(TTI::SK_Alternate, MaskTy, 0, 0);
+    Cost += getShuffleCost(TTI::SK_Alternate, SrcVTy, 0, nullptr) +
+            getShuffleCost(TTI::SK_Alternate, MaskTy, 0, nullptr);
 
   else if (LT.second.getVectorNumElements() > NumElem) {
     VectorType *NewMaskTy = VectorType::get(MaskTy->getVectorElementType(),
@@ -1032,6 +1079,13 @@ int X86TTIImpl::getIntImmCost(unsigned Opcode, unsigned Idx, const APInt &Imm,
   case Instruction::Store:
     ImmIdx = 0;
     break;
+  case Instruction::And:
+    // We support 64-bit ANDs with immediates with 32-bits of leading zeroes
+    // by using a 32-bit operation with implicit zero extension. Detect such
+    // immediates here as the normal path expects bit 31 to be sign extended.
+    if (Idx == 1 && Imm.getBitWidth() == 64 && isUInt<32>(Imm.getZExtValue()))
+      return TTI::TCC_Free;
+    // Fallthrough
   case Instruction::Add:
   case Instruction::Sub:
   case Instruction::Mul:
@@ -1039,7 +1093,6 @@ int X86TTIImpl::getIntImmCost(unsigned Opcode, unsigned Idx, const APInt &Imm,
   case Instruction::SDiv:
   case Instruction::URem:
   case Instruction::SRem:
-  case Instruction::And:
   case Instruction::Or:
   case Instruction::Xor:
   case Instruction::ICmp:

@@ -79,7 +79,8 @@ class ThreadRegistry {
 
   ThreadRegistry(ThreadContextFactory factory, u32 max_threads,
                  u32 thread_quarantine_size);
-  void GetNumberOfThreads(uptr *total = 0, uptr *running = 0, uptr *alive = 0);
+  void GetNumberOfThreads(uptr *total = nullptr, uptr *running = nullptr,
+                          uptr *alive = nullptr);
   uptr GetMaxAliveThreads();
 
   void Lock() { mtx_.Lock(); }
@@ -141,7 +142,6 @@ class ThreadRegistry {
 
 typedef GenericScopedLock<ThreadRegistry> ThreadRegistryLock;
 
-}  // namespace __sanitizer
+} // namespace __sanitizer
 
-#endif  // SANITIZER_THREAD_REGISTRY_H
-
+#endif // SANITIZER_THREAD_REGISTRY_H

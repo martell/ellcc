@@ -16,6 +16,7 @@
 #ifndef LLVM_IR_INSTRTYPES_H
 #define LLVM_IR_INSTRTYPES_H
 
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Instruction.h"
@@ -687,7 +688,7 @@ public:
     Value *S,                ///< The pointer value to be casted (operand 0)
     Type *Ty,          ///< The type to which cast should be made
     const Twine &Name = "", ///< Name for the instruction
-    Instruction *InsertBefore = 0 ///< Place to insert the instruction
+    Instruction *InsertBefore = nullptr ///< Place to insert the instruction
   );
 
   /// @brief Create a BitCast, a PtrToInt, or an IntToPTr cast instruction.
@@ -700,7 +701,7 @@ public:
     Value *S,                ///< The pointer value to be casted (operand 0)
     Type *Ty,          ///< The type to which cast should be made
     const Twine &Name = "", ///< Name for the instruction
-    Instruction *InsertBefore = 0 ///< Place to insert the instruction
+    Instruction *InsertBefore = nullptr ///< Place to insert the instruction
   );
 
   /// @brief Create a ZExt, BitCast, or Trunc for int -> int casts.
@@ -1134,19 +1135,19 @@ typedef OperandBundleDefT<const Value *> ConstOperandBundleDef;
 ///
 /// The layout of an operand bundle user is
 ///
-///              +-------uint32_t End---------------------------------+
-///             /                                                      \
-///            /  +------uint32_t Begin------------------+              \
-///           /  /                                        \              \
+///          +-----------uint32_t End-------------------------------------+
+///          |                                                            |
+///          |  +--------uint32_t Begin--------------------+              |
+///          |  |                                          |              |
 ///          ^  ^                                          v              v
 ///  |------|------|----|----|----|----|----|---------|----|---------|----|-----
 ///  | BOI0 | BOI1 | .. | DU | U0 | U1 | .. | BOI0_U0 | .. | BOI1_U0 | .. | Un
 ///  |------|------|----|----|----|----|----|---------|----|---------|----|-----
 ///   v  v                                  ^              ^
-///    \  \                                /              /
-///     \  +------uint32_t Begin----------+              /
-///      \                                              /
-///       +-------uint32_t End-------------------------+
+///   |  |                                  |              |
+///   |  +--------uint32_t Begin------------+              |
+///   |                                                    |
+///   +-----------uint32_t End-----------------------------+
 ///
 ///
 /// BOI0, BOI1 ... are descriptions of operand bundles in this User's use list.
@@ -1204,14 +1205,33 @@ public:
     return OperandBundleUse(BOI->Tag->getKey(), Inputs);
   }
 
-  /// \brief Return the operand bundle at a specific index.
-  OperandBundleUse getOperandBundle(unsigned Index) {
-    assert(Index < getNumOperandBundles() && "Index out of bounds!");
-    auto *BOI = bundle_op_info_begin() + Index;
-    auto op_begin = static_cast<InstrTy *>(this)->op_begin();
-    ArrayRef<Use> Inputs(op_begin + BOI->Begin, op_begin + BOI->End);
-    return OperandBundleUse(BOI->Tag->getKey(), Inputs);
+  /// \brief Return the number of operand bundles with the tag Name attached to
+  /// this instruction.
+  unsigned countOperandBundlesOfType(StringRef Name) const {
+    unsigned Count = 0;
+    for (unsigned i = 0, e = getNumOperandBundles(); i != e; ++i)
+      if (getOperandBundle(i).Tag == Name)
+        Count++;
+
+    return Count;
   }
+
+  /// \brief Return an operand bundle by name, if present.
+  ///
+  /// It is an error to call this for operand bundle types that may have
+  /// multiple instances of them on the same instruction.
+  Optional<OperandBundleUse> getOperandBundle(StringRef Name) const {
+    assert(countOperandBundlesOfType(Name) < 2 && "Precondition violated!");
+
+    for (unsigned i = 0, e = getNumOperandBundles(); i != e; ++i) {
+      OperandBundleUse U = getOperandBundle(i);
+      if (U.Tag == Name)
+        return U;
+    }
+
+    return None;
+  }
+
 
 protected:
   /// \brief Used to keep track of an operand bundle.  See the main comment on
@@ -1321,6 +1341,6 @@ protected:
   }
 };
 
-} // End llvm namespace
+} // end llvm namespace
 
-#endif
+#endif // LLVM_IR_INSTRTYPES_H

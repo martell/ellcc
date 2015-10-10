@@ -403,7 +403,7 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
                   {options::OPT_D, options::OPT_U, options::OPT_I_Group,
                    options::OPT_F, options::OPT_index_header_map});
 
-  // Add -Wp, and -Xassembler if using the preprocessor.
+  // Add -Wp, and -Xpreprocessor if using the preprocessor.
 
   // FIXME: There is a very unfortunate problem here, some troubled
   // souls abuse -Wp, to pass preprocessor options in gcc syntax. To
@@ -837,7 +837,8 @@ static void getARMTargetFeatures(const ToolChain &TC,
     // The above behavior is consistent with GCC.
     int VersionNum = getARMSubArchVersionNumber(Triple);
     if (Triple.isOSDarwin() || Triple.isOSNetBSD()) {
-      if (VersionNum < 6)
+      if (VersionNum < 6 ||
+          Triple.getSubArch() == llvm::Triple::SubArchType::ARMSubArch_v6m)
         Features.push_back("+strict-align");
     } else if (Triple.isOSLinux() || Triple.isOSNaCl()) {
       if (VersionNum < 7)
@@ -997,7 +998,7 @@ void Clang::AddAArch64TargetArgs(const ArgList &Args,
       CmdArgs.push_back("-aarch64-fix-cortex-a53-835769=1");
     else
       CmdArgs.push_back("-aarch64-fix-cortex-a53-835769=0");
-  } else if (Triple.getEnvironment() == llvm::Triple::Android) {
+  } else if (Triple.isAndroid()) {
     // Enabled A53 errata (835769) workaround by default on android
     CmdArgs.push_back("-backend-option");
     CmdArgs.push_back("-aarch64-fix-cortex-a53-835769=1");
@@ -1062,7 +1063,7 @@ void mips::getMipsCPUAndABI(const ArgList &Args, const llvm::Triple &Triple,
   }
 
   // MIPS64r6 is the default for Android MIPS64 (mips64el-linux-android).
-  if (Triple.getEnvironment() == llvm::Triple::Android)
+  if (Triple.isAndroid())
     DefMips64CPU = "mips64r6";
 
   // MIPS3 is the default for mips64*-unknown-openbsd.
@@ -1598,7 +1599,7 @@ static const char *getX86TargetCPU(const ArgList &Args,
     return "btver2";
 
   // On Android use targets compatible with gcc
-  if (Triple.getEnvironment() == llvm::Triple::Android)
+  if (Triple.isAndroid())
     return Is64Bit ? "x86-64" : "i686";
 
   // Everything else goes to x86-64 in 64-bit mode.
@@ -1895,7 +1896,7 @@ static void getX86TargetFeatures(const Driver &D, const llvm::Triple &Triple,
 
   const llvm::Triple::ArchType ArchType = Triple.getArch();
   // Add features to be compatible with gcc for Android.
-  if (Triple.getEnvironment() == llvm::Triple::Android) {
+  if (Triple.isAndroid()) {
     if (ArchType == llvm::Triple::x86_64) {
       Features.push_back("+sse4.2");
       Features.push_back("+popcnt");
@@ -2396,6 +2397,38 @@ static bool UseRelaxAll(Compilation &C, const ArgList &Args) {
                       RelaxDefault);
 }
 
+// Extract the integer N from a string spelled "-dwarf-N", returning 0
+// on mismatch. The StringRef input (rather than an Arg) allows
+// for use by the "-Xassembler" option parser.
+static unsigned DwarfVersionNum(StringRef ArgValue) {
+  return llvm::StringSwitch<unsigned>(ArgValue)
+      .Case("-gdwarf-2", 2)
+      .Case("-gdwarf-3", 3)
+      .Case("-gdwarf-4", 4)
+      .Default(0);
+}
+
+static void RenderDebugEnablingArgs(const ArgList &Args, ArgStringList &CmdArgs,
+                                    CodeGenOptions::DebugInfoKind DebugInfoKind,
+                                    unsigned DwarfVersion) {
+  switch (DebugInfoKind) {
+  case CodeGenOptions::DebugLineTablesOnly:
+    CmdArgs.push_back("-debug-info-kind=line-tables-only");
+    break;
+  case CodeGenOptions::LimitedDebugInfo:
+    CmdArgs.push_back("-debug-info-kind=limited");
+    break;
+  case CodeGenOptions::FullDebugInfo:
+    CmdArgs.push_back("-debug-info-kind=standalone");
+    break;
+  default:
+    break;
+  }
+  if (DwarfVersion > 0)
+    CmdArgs.push_back(
+        Args.MakeArgString("-dwarf-version=" + Twine(DwarfVersion)));
+}
+
 static void CollectArgsForIntegratedAssembler(Compilation &C,
                                               const ArgList &Args,
                                               ArgStringList &CmdArgs,
@@ -2445,7 +2478,14 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
         if (Value == "-I")
           TakeNextArg = true;
       } else if (Value.startswith("-gdwarf-")) {
-        CmdArgs.push_back(Value.data());
+        // "-gdwarf-N" options are not cc1as options.
+        unsigned DwarfVersion = DwarfVersionNum(Value);
+        if (DwarfVersion == 0) { // Send it onward, and let cc1as complain.
+          CmdArgs.push_back(Value.data());
+        } else {
+          RenderDebugEnablingArgs(
+              Args, CmdArgs, CodeGenOptions::LimitedDebugInfo, DwarfVersion);
+        }
       } else if (Value.startswith("-mcpu") || Value.startswith("-mfpu") ||
                  Value.startswith("-mhwdiv") || Value.startswith("-march")) {
         // Do nothing, we'll validate it later.
@@ -2475,60 +2515,11 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
   }
 }
 
-// Until ARM libraries are build separately, we have them all in one library
-static StringRef getArchNameForCompilerRTLib(const ToolChain &TC,
-                                             const ArgList &Args) {
-  const llvm::Triple &Triple = TC.getTriple();
-  bool IsWindows = Triple.isOSWindows();
-
-  if (Triple.isWindowsMSVCEnvironment() && TC.getArch() == llvm::Triple::x86)
-    return "i386";
-
-  if (TC.getArch() == llvm::Triple::arm || TC.getArch() == llvm::Triple::armeb)
-    return (arm::getARMFloatABI(TC, Args) == arm::FloatABI::Hard && !IsWindows)
-               ? "armhf"
-               : "arm";
-
-  return TC.getArchName();
-}
-
-static SmallString<128> getCompilerRTLibDir(const ToolChain &TC) {
-  // The runtimes are located in the OS-specific resource directory.
-  SmallString<128> Res(TC.getDriver().ResourceDir);
-  const llvm::Triple &Triple = TC.getTriple();
-  // TC.getOS() yield "freebsd10.0" whereas "freebsd" is expected.
-  StringRef OSLibName =
-      (Triple.getOS() == llvm::Triple::FreeBSD) ? "freebsd" : TC.getOS();
-  llvm::sys::path::append(Res, "lib", OSLibName);
-  return Res;
-}
-
-SmallString<128> tools::getCompilerRT(const ToolChain &TC, const ArgList &Args,
-                                      StringRef Component, bool Shared) {
-  const char *Env = TC.getTriple().getEnvironment() == llvm::Triple::Android
-                        ? "-android"
-                        : "";
-
-  bool IsOSWindows = TC.getTriple().isOSWindows();
-  bool IsITANMSVCWindows = TC.getTriple().isWindowsMSVCEnvironment() ||
-                           TC.getTriple().isWindowsItaniumEnvironment();
-  StringRef Arch = getArchNameForCompilerRTLib(TC, Args);
-  const char *Prefix = IsITANMSVCWindows ? "" : "lib";
-  const char *Suffix =
-      Shared ? (IsOSWindows ? ".dll" : ".so") : (IsITANMSVCWindows ? ".lib" : ".a");
-
-  SmallString<128> Path = getCompilerRTLibDir(TC);
-  llvm::sys::path::append(Path, Prefix + Twine("clang_rt.") + Component + "-" +
-                                    Arch + Env + Suffix);
-
-  return Path;
-}
-
 static const char *getCompilerRTArgString(const ToolChain &TC,
                                           const llvm::opt::ArgList &Args,
                                           StringRef Component,
                                           bool Shared = false) {
-  return Args.MakeArgString(getCompilerRT(TC, Args, Component, Shared));
+  return Args.MakeArgString(TC.getCompilerRT(Args, Component, Shared));
 }
 
 // This adds the static libclang_rt.builtins-arch.a directly to the command line
@@ -2642,7 +2633,7 @@ static void addSanitizerRuntime(const ToolChain &TC, const ArgList &Args,
 static bool addSanitizerDynamicList(const ToolChain &TC, const ArgList &Args,
                                     ArgStringList &CmdArgs,
                                     StringRef Sanitizer) {
-  SmallString<128> SanRT = getCompilerRT(TC, Args, Sanitizer);
+  SmallString<128> SanRT(TC.getCompilerRT(Args, Sanitizer));
   if (llvm::sys::fs::exists(SanRT + ".syms")) {
     CmdArgs.push_back(Args.MakeArgString("--dynamic-list=" + SanRT + ".syms"));
     return true;
@@ -2675,8 +2666,7 @@ collectSanitizerRuntimes(const ToolChain &TC, const ArgList &Args,
   }
 
   // Collect static runtimes.
-  if (Args.hasArg(options::OPT_shared) ||
-      (TC.getTriple().getEnvironment() == llvm::Triple::Android)) {
+  if (Args.hasArg(options::OPT_shared) || TC.getTriple().isAndroid()) {
     // Don't link static runtimes into DSOs or if compiling for Android.
     return;
   }
@@ -2777,6 +2767,10 @@ static bool shouldUseFramePointerForTarget(const ArgList &Args,
     switch (Triple.getArch()) {
     case llvm::Triple::x86:
       return !areOptimizationsEnabled(Args);
+    case llvm::Triple::arm:
+    case llvm::Triple::thumb:
+      // Windows on ARM builds with FPO disabled to aid fast stack walking
+      return true;
     default:
       // All other supported Windows ISAs use xdata unwind information, so frame
       // pointers are not generally useful.
@@ -3120,7 +3114,7 @@ ParsePICArgs(const ToolChain &ToolChain, const llvm::Triple &Triple,
       Args.hasArg(options::OPT_mkernel, options::OPT_fapple_kext);
 
   // Android-specific defaults for PIC/PIE
-  if (ToolChain.getTriple().getEnvironment() == llvm::Triple::Android) {
+  if (ToolChain.getTriple().isAndroid()) {
     switch (ToolChain.getArch()) {
     case llvm::Triple::arm:
     case llvm::Triple::armeb:
@@ -3835,9 +3829,23 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     break;
   }
 
+  // The 'g' groups options involve a somewhat intricate sequence of decisions
+  // about what to pass from the driver to the frontend, but by the time they
+  // reach cc1 they've been factored into two well-defined orthogonal choices:
+  //  * what level of debug info to generate
+  //  * what dwarf version to write
+  // This avoids having to monkey around further in cc1 other than to disable
+  // codeview if not running in a Windows environment. Perhaps even that
+  // decision should be made in the driver as well though.
+  enum CodeGenOptions::DebugInfoKind DebugInfoKind =
+      CodeGenOptions::NoDebugInfo;
+  // These two are potentially updated by AddClangCLArgs.
+  unsigned DwarfVersion = 0;
+  bool EmitCodeView = false;
+
   // Add clang-cl arguments.
   if (getToolChain().getDriver().IsCLMode())
-    AddClangCLArgs(Args, CmdArgs);
+    AddClangCLArgs(Args, CmdArgs, &DebugInfoKind, &EmitCodeView);
 
   // Pass the linker version in use.
   if (Arg *A = Args.getLastArg(options::OPT_mlinker_version_EQ)) {
@@ -3878,43 +3886,41 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
                                                  : "-");
   }
 
-  // Use the last option from "-g" group. "-gline-tables-only" and "-gdwarf-x"
-  // are preserved, all other debug options are substituted with "-g".
   Args.ClaimAllArgs(options::OPT_g_Group);
   Arg *SplitDwarfArg = Args.getLastArg(options::OPT_gsplit_dwarf);
   if (Arg *A = Args.getLastArg(options::OPT_g_Group)) {
-    if ((A->getOption().matches(options::OPT_gline_tables_only) ||
-         A->getOption().matches(options::OPT_g1)) &&
+    // If you say "-gline-tables-only -gsplit-dwarf", split-dwarf wins,
+    // which mandates turning on "-g". But -split-dwarf is not a g_group option,
+    // hence it takes a nontrivial test to decide about line-tables-only.
+    if (A->getOption().matches(options::OPT_gline_tables_only) &&
         (!SplitDwarfArg || A->getIndex() > SplitDwarfArg->getIndex())) {
-      // FIXME: we should support specifying dwarf version with
-      // -gline-tables-only.
-      CmdArgs.push_back("-gline-tables-only");
-      // Default is dwarf-2 for Darwin, OpenBSD, FreeBSD and Solaris.
-      const llvm::Triple &Triple = getToolChain().getTriple();
-      if (Triple.isOSDarwin() || Triple.getOS() == llvm::Triple::OpenBSD ||
-          Triple.getOS() == llvm::Triple::FreeBSD ||
-          Triple.getOS() == llvm::Triple::Solaris)
-        CmdArgs.push_back("-gdwarf-2");
+      DebugInfoKind = CodeGenOptions::DebugLineTablesOnly;
       SplitDwarfArg = nullptr;
-    } else if (A->getOption().matches(options::OPT_gdwarf_2) ||
-               A->getOption().matches(options::OPT_gdwarf_3) ||
-               A->getOption().matches(options::OPT_gdwarf_4)) {
-      A->render(Args, CmdArgs);
-    } else if (!A->getOption().matches(options::OPT_g0) &&
-               !A->getOption().matches(options::OPT_ggdb0)) {
-      // Default is dwarf-2 for Darwin, OpenBSD, FreeBSD and Solaris.
-      const llvm::Triple &Triple = getToolChain().getTriple();
-      if (Triple.isOSDarwin() || Triple.getOS() == llvm::Triple::OpenBSD ||
-          Triple.getOS() == llvm::Triple::FreeBSD ||
-          Triple.getOS() == llvm::Triple::Solaris)
-        CmdArgs.push_back("-gdwarf-2");
-      else
-        CmdArgs.push_back("-g");
+    } else if (!A->getOption().matches(options::OPT_g0)) {
+      // Some 'g' group option other than one expressly disabling debug info
+      // must have been the final (winning) one. They're all equivalent.
+      DebugInfoKind = CodeGenOptions::LimitedDebugInfo;
     }
   }
 
+  // If a -gdwarf argument appeared, use it, unless DebugInfoKind is None
+  // (because that would mean that "-g0" was the rightmost 'g' group option).
+  // FIXME: specifying "-gdwarf-<N>" "-g1" in that order works,
+  // but "-g1" "-gdwarf-<N>" does not. A deceptively simple (but wrong) "fix"
+  // exists of removing the gdwarf options from the g_group.
+  if (Arg *A = Args.getLastArg(options::OPT_gdwarf_2, options::OPT_gdwarf_3,
+                               options::OPT_gdwarf_4))
+    DwarfVersion = DwarfVersionNum(A->getSpelling());
+
   // Forward -gcodeview.
-  Args.AddLastArg(CmdArgs, options::OPT_gcodeview);
+  // 'EmitCodeView might have been set by CL-compatibility argument parsing.
+  if (Args.hasArg(options::OPT_gcodeview) || EmitCodeView) {
+    // DwarfVersion remains at 0 if no explicit choice was made.
+    CmdArgs.push_back("-gcodeview");
+  } else if (DwarfVersion == 0 &&
+             DebugInfoKind != CodeGenOptions::NoDebugInfo) {
+    DwarfVersion = getToolChain().GetDefaultDwarfVersion();
+  }
 
   // We ignore flags -gstrict-dwarf and -grecord-gcc-switches for now.
   Args.ClaimAllArgs(options::OPT_g_flags_Group);
@@ -3924,7 +3930,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // FIXME: Move backend command line options to the module.
   if (Args.hasArg(options::OPT_gmodules)) {
-    CmdArgs.push_back("-g");
+    DebugInfoKind = CodeGenOptions::LimitedDebugInfo;
     CmdArgs.push_back("-dwarf-ext-refs");
     CmdArgs.push_back("-fmodule-format=obj");
   }
@@ -3933,10 +3939,22 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // splitting and extraction.
   // FIXME: Currently only works on Linux.
   if (getToolChain().getTriple().isOSLinux() && SplitDwarfArg) {
-    CmdArgs.push_back("-g");
+    DebugInfoKind = CodeGenOptions::LimitedDebugInfo;
     CmdArgs.push_back("-backend-option");
     CmdArgs.push_back("-split-dwarf=Enable");
   }
+
+  // After we've dealt with all combinations of things that could
+  // make DebugInfoKind be other than None or DebugLineTablesOnly,
+  // figure out if we need to "upgrade" it to standalone debug info.
+  // We parse these two '-f' options whether or not they will be used,
+  // to claim them even if you wrote "-fstandalone-debug -gline-tables-only"
+  bool NeedFullDebug = Args.hasFlag(options::OPT_fstandalone_debug,
+                                    options::OPT_fno_standalone_debug,
+                                    getToolChain().GetDefaultStandaloneDebug());
+  if (DebugInfoKind == CodeGenOptions::LimitedDebugInfo && NeedFullDebug)
+    DebugInfoKind = CodeGenOptions::FullDebugInfo;
+  RenderDebugEnablingArgs(Args, CmdArgs, DebugInfoKind, DwarfVersion);
 
   // -ggnu-pubnames turns on gnu style pubnames in the backend.
   if (Args.hasArg(options::OPT_ggnu_pubnames)) {
@@ -4300,12 +4318,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   // Forward -f (flag) options which we can pass directly.
   Args.AddLastArg(CmdArgs, options::OPT_femit_all_decls);
   Args.AddLastArg(CmdArgs, options::OPT_fheinous_gnu_extensions);
-  Args.AddLastArg(CmdArgs, options::OPT_fstandalone_debug);
-  Args.AddLastArg(CmdArgs, options::OPT_fno_standalone_debug);
   Args.AddLastArg(CmdArgs, options::OPT_fno_operator_names);
   // Emulated TLS is enabled by default on Android, and can be enabled manually
   // with -femulated-tls.
-  bool EmulatedTLSDefault = Triple.getEnvironment() == llvm::Triple::Android;
+  bool EmulatedTLSDefault = Triple.isAndroid();
   if (Args.hasFlag(options::OPT_femulated_tls, options::OPT_fno_emulated_tls,
                    EmulatedTLSDefault))
     CmdArgs.push_back("-femulated-tls");
@@ -4737,6 +4753,13 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
   if (Args.hasFlag(options::OPT_fborland_extensions,
                    options::OPT_fno_borland_extensions, false))
     CmdArgs.push_back("-fborland-extensions");
+
+  // -fno-declspec is default, except for PS4.
+  if (Args.hasFlag(options::OPT_fdeclspec, options::OPT_fno_declspec,
+                   getToolChain().getTriple().isPS4()))
+    CmdArgs.push_back("-fdeclspec");
+  else if (Args.hasArg(options::OPT_fno_declspec))
+    CmdArgs.push_back("-fno-declspec"); // Explicitly disabling __declspec.
 
   // -fthreadsafe-static is default, except for MSVC compatibility versions less
   // than 19.
@@ -5449,14 +5472,12 @@ static EHFlags parseClangCLEHFlags(const Driver &D, const ArgList &Args) {
     }
   }
 
-  // FIXME: Disable C++ EH completely, until it becomes more reliable. Users
-  // can use -Xclang to manually enable C++ EH until then.
-  EH = EHFlags();
-
   return EH;
 }
 
-void Clang::AddClangCLArgs(const ArgList &Args, ArgStringList &CmdArgs) const {
+void Clang::AddClangCLArgs(const ArgList &Args, ArgStringList &CmdArgs,
+                           enum CodeGenOptions::DebugInfoKind *DebugInfoKind,
+                           bool *EmitCodeView) const {
   unsigned RTOptionID = options::OPT__SLASH_MT;
 
   if (Args.hasArg(options::OPT__SLASH_LDd))
@@ -5520,13 +5541,13 @@ void Clang::AddClangCLArgs(const ArgList &Args, ArgStringList &CmdArgs) const {
     CmdArgs.push_back("-fno-rtti-data");
 
   // Emit CodeView if -Z7 is present.
-  bool EmitCodeView = Args.hasArg(options::OPT__SLASH_Z7);
+  *EmitCodeView = Args.hasArg(options::OPT__SLASH_Z7);
   bool EmitDwarf = Args.hasArg(options::OPT_gdwarf);
   // If we are emitting CV but not DWARF, don't build information that LLVM
   // can't yet process.
-  if (EmitCodeView && !EmitDwarf)
-    CmdArgs.push_back("-gline-tables-only");
-  if (EmitCodeView)
+  if (*EmitCodeView && !EmitDwarf)
+    *DebugInfoKind = CodeGenOptions::DebugLineTablesOnly;
+  if (*EmitCodeView)
     CmdArgs.push_back("-gcodeview");
 
   const Driver &D = getToolChain().getDriver();
@@ -5677,14 +5698,20 @@ void ClangAs::ConstructJob(Compilation &C, const JobAction &JA,
   // with an actual assembly file.
   if (SourceAction->getType() == types::TY_Asm ||
       SourceAction->getType() == types::TY_PP_Asm) {
+    bool WantDebug = false;
+    unsigned DwarfVersion = 0;
     Args.ClaimAllArgs(options::OPT_g_Group);
-    if (Arg *A = Args.getLastArg(options::OPT_g_Group))
-      if (!A->getOption().matches(options::OPT_g0))
-        CmdArgs.push_back("-g");
-
-    if (Arg *A = Args.getLastArg(options::OPT_gdwarf_2, options::OPT_gdwarf_3,
-                                 options::OPT_gdwarf_4))
-      A->render(Args, CmdArgs);
+    if (Arg *A = Args.getLastArg(options::OPT_g_Group)) {
+      WantDebug = !A->getOption().matches(options::OPT_g0);
+      if (WantDebug) {
+        if ((DwarfVersion = DwarfVersionNum(A->getSpelling())) == 0)
+          DwarfVersion = getToolChain().GetDefaultDwarfVersion();
+      }
+    }
+    RenderDebugEnablingArgs(Args, CmdArgs,
+                            (WantDebug ? CodeGenOptions::LimitedDebugInfo
+                                       : CodeGenOptions::NoDebugInfo),
+                            DwarfVersion);
 
     // Add the -fdebug-compilation-dir flag if needed.
     addDebugCompDirArg(Args, CmdArgs);
@@ -6243,8 +6270,7 @@ constructHexagonLinkArgs(Compilation &C, const JobAction &JA,
   const std::string MarchSuffix = "/" + MarchString;
   const std::string G0Suffix = "/G0";
   const std::string MarchG0Suffix = MarchSuffix + G0Suffix;
-  const std::string RootDir =
-      toolchains::HexagonToolChain::GetGnuDir(D.InstalledDir, Args) + "/";
+  const std::string RootDir = ToolChain.GetGnuDir(D.InstalledDir, Args) + "/";
   const std::string StartFilesDir =
       RootDir + "hexagon/lib" + (useG0 ? MarchG0Suffix : MarchSuffix);
 
@@ -6802,15 +6828,34 @@ void darwin::Linker::AddLinkArgs(Compilation &C, const ArgList &Args,
                    options::OPT_fno_application_extension, false))
     CmdArgs.push_back("-application_extension");
 
-  // If we are using LTO, then automatically create a temporary file path for
-  // the linker to use, so that it's lifetime will extend past a possible
-  // dsymutil step.
-  if (Version[0] >= 116 && D.IsUsingLTO(Args) && NeedsTempPath(Inputs)) {
-    const char *TmpPath = C.getArgs().MakeArgString(
-        D.GetTemporaryPath("cc", types::getTypeTempSuffix(types::TY_Object)));
-    C.addTempFile(TmpPath);
-    CmdArgs.push_back("-object_path_lto");
-    CmdArgs.push_back(TmpPath);
+  if (D.IsUsingLTO(Args)) {
+    // If we are using LTO, then automatically create a temporary file path for
+    // the linker to use, so that it's lifetime will extend past a possible
+    // dsymutil step.
+    if (Version[0] >= 116 && NeedsTempPath(Inputs)) {
+      const char *TmpPath = C.getArgs().MakeArgString(
+          D.GetTemporaryPath("cc", types::getTypeTempSuffix(types::TY_Object)));
+      C.addTempFile(TmpPath);
+      CmdArgs.push_back("-object_path_lto");
+      CmdArgs.push_back(TmpPath);
+    }
+
+    // Use -lto_library option to specify the libLTO.dylib path. Try to find
+    // it in clang installed libraries. If not found, the option is not used
+    // and 'ld' will use its default mechanism to search for libLTO.dylib.
+    if (Version[0] >= 133) {
+      // Search for libLTO in <InstalledDir>/../lib/libLTO.dylib
+      StringRef P = llvm::sys::path::parent_path(D.getInstalledDir());
+      SmallString<128> LibLTOPath(P);
+      llvm::sys::path::append(LibLTOPath, "lib");
+      llvm::sys::path::append(LibLTOPath, "libLTO.dylib");
+      if (llvm::sys::fs::exists(LibLTOPath)) {
+        CmdArgs.push_back("-lto_library");
+        CmdArgs.push_back(C.getArgs().MakeArgString(LibLTOPath));
+      } else {
+        D.Diag(diag::warn_drv_lto_libpath);
+      }
+    }
   }
 
   // Derived from the "link" spec.
@@ -8373,7 +8418,7 @@ void gnutools::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
 
 static void AddLibgcc(const llvm::Triple &Triple, const Driver &D,
                       ArgStringList &CmdArgs, const ArgList &Args) {
-  bool isAndroid = Triple.getEnvironment() == llvm::Triple::Android;
+  bool isAndroid = Triple.isAndroid();
   bool isCygMing = Triple.isOSCygMing();
   bool StaticLibgcc = Args.hasArg(options::OPT_static_libgcc) ||
                       Args.hasArg(options::OPT_static);
@@ -8409,7 +8454,7 @@ static std::string getLinuxDynamicLinker(const ArgList &Args,
                                          const toolchains::Linux &ToolChain) {
   const llvm::Triple::ArchType Arch = ToolChain.getArch();
 
-  if (ToolChain.getTriple().getEnvironment() == llvm::Triple::Android) {
+  if (ToolChain.getTriple().isAndroid()) {
     if (ToolChain.getTriple().isArch64Bit())
       return "/system/bin/linker64";
     else
@@ -8557,8 +8602,7 @@ void gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   llvm::Triple Triple = llvm::Triple(TripleStr);
 
   const llvm::Triple::ArchType Arch = ToolChain.getArch();
-  const bool isAndroid =
-      ToolChain.getTriple().getEnvironment() == llvm::Triple::Android;
+  const bool isAndroid = ToolChain.getTriple().isAndroid();
   const bool IsPIE =
       !Args.hasArg(options::OPT_shared) && !Args.hasArg(options::OPT_static) &&
       (Args.hasArg(options::OPT_pie) || ToolChain.isPIEDefault());
@@ -10386,6 +10430,8 @@ void tools::Myriad::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   const llvm::Triple &T = TC.getTriple();
   ArgStringList CmdArgs;
   bool UseStartfiles = !Args.hasArg(options::OPT_nostartfiles);
+  bool UseDefaultLibs = !Args.hasArg(options::OPT_nostdlib) &&
+                        !Args.hasArg(options::OPT_nodefaultlibs);
 
   std::string StartFilesDir, BuiltinLibDir;
   TC.getCompilerSupportDir(StartFilesDir);
@@ -10422,27 +10468,31 @@ void tools::Myriad::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                             options::OPT_e, options::OPT_s, options::OPT_t,
                             options::OPT_Z_Flag, options::OPT_r});
 
-  // The linker doesn't use these builtin paths unless directed to,
-  // because it was not compiled for support with sysroots, nor does
-  // it have a default of little-endian with FPU.
-  CmdArgs.push_back(Args.MakeArgString("-L" + BuiltinLibDir));
-  CmdArgs.push_back(Args.MakeArgString("-L" + StartFilesDir));
+  if (UseDefaultLibs) {
+    // The linker doesn't use these builtin paths unless directed to,
+    // because it was not compiled for support with sysroots, nor does
+    // it have a default of little-endian with FPU.
+    CmdArgs.push_back(Args.MakeArgString("-L" + BuiltinLibDir));
+    CmdArgs.push_back(Args.MakeArgString("-L" + StartFilesDir));
+  }
 
   AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
 
-  if (T.getOS() == llvm::Triple::RTEMS) {
-    CmdArgs.push_back("--start-group");
-    CmdArgs.push_back("-lc");
-    // You must provide your own "-L" option to enable finding these.
-    CmdArgs.push_back("-lrtemscpu");
-    CmdArgs.push_back("-lrtemsbsp");
-    CmdArgs.push_back("--end-group");
-  } else {
-    CmdArgs.push_back("-lc");
+  if (UseDefaultLibs) {
+    if (C.getDriver().CCCIsCXX())
+      CmdArgs.push_back("-lstdc++");
+    if (T.getOS() == llvm::Triple::RTEMS) {
+      CmdArgs.push_back("--start-group");
+      CmdArgs.push_back("-lc");
+      // You must provide your own "-L" option to enable finding these.
+      CmdArgs.push_back("-lrtemscpu");
+      CmdArgs.push_back("-lrtemsbsp");
+      CmdArgs.push_back("--end-group");
+    } else {
+      CmdArgs.push_back("-lc");
+    }
+    CmdArgs.push_back("-lgcc");
   }
-  if (C.getDriver().CCCIsCXX())
-    CmdArgs.push_back("-lstdc++");
-  CmdArgs.push_back("-lgcc");
   if (UseStartfiles) {
     CmdArgs.push_back(Args.MakeArgString(StartFilesDir + "/crtend.o"));
     CmdArgs.push_back(Args.MakeArgString(StartFilesDir + "/crtn.o"));

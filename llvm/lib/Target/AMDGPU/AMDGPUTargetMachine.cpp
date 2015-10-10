@@ -42,6 +42,11 @@ extern "C" void LLVMInitializeAMDGPUTarget() {
   // Register the target
   RegisterTargetMachine<R600TargetMachine> X(TheAMDGPUTarget);
   RegisterTargetMachine<GCNTargetMachine> Y(TheGCNTarget);
+
+  PassRegistry *PR = PassRegistry::getPassRegistry();
+  initializeSIFixSGPRLiveRangesPass(*PR);
+  initializeSIFixControlFlowLiveIntervalsPass(*PR);
+  initializeSILoadStoreOptimizerPass(*PR);
 }
 
 static std::unique_ptr<TargetLoweringObjectFile> createTLOF(const Triple &TT) {
@@ -160,6 +165,8 @@ public:
     : AMDGPUPassConfig(TM, PM) { }
   bool addPreISel() override;
   bool addInstSelector() override;
+  void addFastRegAlloc(FunctionPass *RegAllocPass) override;
+  void addOptimizedRegAlloc(FunctionPass *RegAllocPass) override;
   void addPreRegAlloc() override;
   void addPostRegAlloc() override;
   void addPreSched2() override;
@@ -279,7 +286,6 @@ void GCNPassConfig::addPreRegAlloc() {
   // earlier passes might recompute live intervals.
   // TODO: handle CodeGenOpt::None; fast RA ignores spill weights set by the pass
   if (getOptLevel() > CodeGenOpt::None) {
-    initializeSIFixControlFlowLiveIntervalsPass(*PassRegistry::getPassRegistry());
     insertPass(&MachineSchedulerID, &SIFixControlFlowLiveIntervalsID);
   }
 
@@ -289,12 +295,24 @@ void GCNPassConfig::addPreRegAlloc() {
 
     // This should be run after scheduling, but before register allocation. It
     // also need extra copies to the address operand to be eliminated.
-    initializeSILoadStoreOptimizerPass(*PassRegistry::getPassRegistry());
     insertPass(&MachineSchedulerID, &SILoadStoreOptimizerID);
     insertPass(&MachineSchedulerID, &RegisterCoalescerID);
   }
   addPass(createSIShrinkInstructionsPass(), false);
-  addPass(createSIFixSGPRLiveRangesPass());
+}
+
+void GCNPassConfig::addFastRegAlloc(FunctionPass *RegAllocPass) {
+  addPass(&SIFixSGPRLiveRangesID);
+  TargetPassConfig::addFastRegAlloc(RegAllocPass);
+}
+
+void GCNPassConfig::addOptimizedRegAlloc(FunctionPass *RegAllocPass) {
+  // We want to run this after LiveVariables is computed to avoid computing them
+  // twice.
+  // FIXME: We shouldn't disable the verifier here. r249087 introduced a failure
+  // that needs to be fixed.
+  insertPass(&LiveVariablesID, &SIFixSGPRLiveRangesID, /*VerifyAfter=*/false);
+  TargetPassConfig::addOptimizedRegAlloc(RegAllocPass);
 }
 
 void GCNPassConfig::addPostRegAlloc() {

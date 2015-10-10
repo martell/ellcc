@@ -100,8 +100,6 @@ function(darwin_filter_host_archs input output)
   set(${output} ${tmp_var} PARENT_SCOPE)
 endfunction()
 
-set(DARWIN_EXCLUDE_DIR ${CMAKE_SOURCE_DIR}/lib/builtins/Darwin-excludes)
-
 # Read and process the exclude file into a list of symbols
 function(darwin_read_list_from_file output_var file)
   if(EXISTS ${file})
@@ -185,10 +183,11 @@ endmacro()
 function(darwin_lipo_libs name)
   cmake_parse_arguments(LIB
     ""
-    "PARENT_TARGET;OUTPUT_DIR"
+    "PARENT_TARGET;OUTPUT_DIR;INSTALL_DIR"
     "LIPO_FLAGS;DEPENDS"
     ${ARGN})
   add_custom_command(OUTPUT ${LIB_OUTPUT_DIR}/lib${name}.a
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${LIB_OUTPUT_DIR}
     COMMAND lipo -output
             ${LIB_OUTPUT_DIR}/lib${name}.a
             -create ${LIB_LIPO_FLAGS}
@@ -198,7 +197,7 @@ function(darwin_lipo_libs name)
     DEPENDS ${LIB_OUTPUT_DIR}/lib${name}.a)
   add_dependencies(${LIB_PARENT_TARGET} ${name})
   install(FILES ${LIB_OUTPUT_DIR}/lib${name}.a
-    DESTINATION ${COMPILER_RT_INSTALL_PATH})
+    DESTINATION ${LIB_INSTALL_DIR})
 endfunction()
 
 # Filter out generic versions of routines that are re-implemented in
@@ -230,9 +229,28 @@ function(darwin_filter_builtin_sources output_var exclude_or_include excluded_li
   set(${output_var} ${intermediate} PARENT_SCOPE)
 endfunction()
 
+function(darwin_add_eprintf_library)
+  add_library(clang_rt.eprintf STATIC eprintf.c)
+  set_target_compile_flags(clang_rt.eprintf
+    -isysroot ${DARWIN_osx_SYSROOT}
+    ${DARWIN_osx_BUILTIN_MIN_VER_FLAG}
+    -arch i386)
+  set_target_properties(clang_rt.eprintf PROPERTIES
+      OUTPUT_NAME clang_rt.eprintf${COMPILER_RT_OS_SUFFIX})
+  set_target_properties(clang_rt.eprintf PROPERTIES
+    OSX_ARCHITECTURES i386)
+  add_dependencies(builtins clang_rt.eprintf)
+  set_target_properties(clang_rt.eprintf PROPERTIES
+        ARCHIVE_OUTPUT_DIRECTORY ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
+  install(TARGETS clang_rt.eprintf
+      ARCHIVE DESTINATION ${COMPILER_RT_LIBRARY_INSTALL_DIR})
+endfunction()
+
 # Generates builtin libraries for all operating systems specified in ARGN. Each
 # OS library is constructed by lipo-ing together single-architecture libraries.
 macro(darwin_add_builtin_libraries)
+  set(DARWIN_EXCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Darwin-excludes)
+
   if(CMAKE_CONFIGURATION_TYPES)
     foreach(type ${CMAKE_CONFIGURATION_TYPES})
       set(CMAKE_C_FLAGS_${type} -O3)
@@ -252,15 +270,6 @@ macro(darwin_add_builtin_libraries)
   foreach (os ${ARGN})
     list_union(DARWIN_BUILTIN_ARCHS DARWIN_${os}_ARCHS BUILTIN_SUPPORTED_ARCH)
     foreach (arch ${DARWIN_BUILTIN_ARCHS})
-      # In addition to the builtins cc_kext includes some profile sources
-      darwin_add_builtin_library(clang_rt cc_kext
-                              OS ${os}
-                              ARCH ${arch}
-                              SOURCES ${${arch}_SOURCES} ${PROFILE_SOURCES}
-                              CFLAGS -arch ${arch} -mkernel
-                              DEFS KERNEL_USE
-                              PARENT_TARGET builtins)
-
       darwin_find_excluded_builtins_list(${arch}_${os}_EXCLUDED_BUILTINS
                               OS ${os}
                               ARCH ${arch}
@@ -278,16 +287,148 @@ macro(darwin_add_builtin_libraries)
                               PARENT_TARGET builtins)
     endforeach()
 
-    darwin_lipo_libs(clang_rt.cc_kext_${os}
-                    PARENT_TARGET builtins
-                    LIPO_FLAGS ${${os}_cc_kext_lipo_flags}
-                    DEPENDS ${${os}_cc_kext_libs}
-                    OUTPUT_DIR ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
-    darwin_lipo_libs(clang_rt.${os}
-                    PARENT_TARGET builtins
-                    LIPO_FLAGS ${${os}_builtins_lipo_flags}
-                    DEPENDS ${${os}_builtins_libs}
-                    OUTPUT_DIR ${COMPILER_RT_LIBRARY_OUTPUT_DIR})
+    # Don't build cc_kext libraries for simulator platforms
+    if(NOT DARWIN_${os}_SKIP_CC_KEXT)
+      foreach (arch ${DARWIN_BUILTIN_ARCHS})
+        # By not specifying MIN_VERSION this only reads the OS and OS-arch lists.
+        # We don't want to filter out the builtins that are present in libSystem
+        # because kexts can't link libSystem.
+        darwin_find_excluded_builtins_list(${arch}_${os}_EXCLUDED_BUILTINS
+                              OS ${os}
+                              ARCH ${arch})
+
+        darwin_filter_builtin_sources(filtered_sources
+          EXCLUDE ${arch}_${os}_EXCLUDED_BUILTINS
+          ${${arch}_SOURCES})
+
+        # In addition to the builtins cc_kext includes some profile sources
+        darwin_add_builtin_library(clang_rt cc_kext
+                                OS ${os}
+                                ARCH ${arch}
+                                SOURCES ${filtered_sources} ${PROFILE_SOURCES}
+                                CFLAGS -arch ${arch} -mkernel
+                                DEFS KERNEL_USE
+                                PARENT_TARGET builtins)
+      endforeach()
+      set(archive_name clang_rt.cc_kext_${os})
+      if(${os} STREQUAL "osx")
+        set(archive_name clang_rt.cc_kext)
+      endif()
+      darwin_lipo_libs(${archive_name}
+                      PARENT_TARGET builtins
+                      LIPO_FLAGS ${${os}_cc_kext_lipo_flags}
+                      DEPENDS ${${os}_cc_kext_libs}
+                      OUTPUT_DIR ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
+                      INSTALL_DIR ${COMPILER_RT_LIBRARY_INSTALL_DIR})
+    endif()
   endforeach()
+
+  darwin_add_eprintf_library()
+
+  # We put the x86 sim slices into the archives for their base OS
+  foreach (os ${ARGN})
+    if(NOT ${os} MATCHES ".*sim$")
+      darwin_lipo_libs(clang_rt.${os}
+                        PARENT_TARGET builtins
+                        LIPO_FLAGS ${${os}_builtins_lipo_flags} ${${os}sim_builtins_lipo_flags}
+                        DEPENDS ${${os}_builtins_libs} ${${os}sim_builtins_libs}
+                        OUTPUT_DIR ${COMPILER_RT_LIBRARY_OUTPUT_DIR}
+                        INSTALL_DIR ${COMPILER_RT_LIBRARY_INSTALL_DIR})
+    endif()
+  endforeach()
+  darwin_add_embedded_builtin_libraries()
 endmacro()
 
+function(darwin_add_embedded_builtin_libraries)
+  set(MACHO_SYM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/macho_embedded)
+  if(CMAKE_CONFIGURATION_TYPES)
+    foreach(type ${CMAKE_CONFIGURATION_TYPES})
+      set(CMAKE_C_FLAGS_${type} -Oz)
+      set(CMAKE_CXX_FLAGS_${type} -Oz)
+    endforeach()
+  else()
+    set(CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE} -Oz)
+  endif()
+
+  set(CMAKE_C_FLAGS "-Wall -fomit-frame-pointer -ffreestanding")
+  set(CMAKE_CXX_FLAGS ${CMAKE_C_FLAGS})
+  set(CMAKE_ASM_FLAGS ${CMAKE_C_FLAGS})
+
+  set(SOFT_FLOAT_FLAG -mfloat-abi=soft)
+  set(HARD_FLOAT_FLAG -mfloat-abi=hard)
+
+  set(PIC_FLAG_ -fPIC)
+  set(STATIC_FLAG -static)
+
+  set(DARWIN_macho_embedded_ARCHS armv6m armv7m armv7em armv7 i386 x86_64)
+
+  set(DARWIN_macho_embedded_LIBRARY_OUTPUT_DIR
+    ${COMPILER_RT_OUTPUT_DIR}/lib/macho_embedded)
+  set(DARWIN_macho_embedded_LIBRARY_INSTALL_DIR
+    ${COMPILER_RT_INSTALL_PATH}/lib/macho_embedded)
+    
+  set(CFLAGS_armv7 "-target thumbv7-apple-darwin-eabi")
+  set(CFLAGS_armv7em "-target thumbv7-apple-darwin-eabi")
+  set(CFLAGS_armv7m "-target thumbv7-apple-darwin-eabi")
+  set(CFLAGS_i386 "-march=pentium")
+
+  set(DARWIN_SOFT_FLOAT_ARCHS armv6m armv7m armv7em armv7)
+  set(DARWIN_HARD_FLOAT_ARCHS armv7em armv7 i386 x86_64)
+
+  darwin_read_list_from_file(common_FUNCTIONS ${MACHO_SYM_DIR}/common.txt)
+  darwin_read_list_from_file(thumb2_FUNCTIONS ${MACHO_SYM_DIR}/thumb2.txt)
+  darwin_read_list_from_file(thumb2_64_FUNCTIONS ${MACHO_SYM_DIR}/thumb2-64.txt)
+  darwin_read_list_from_file(arm_FUNCTIONS ${MACHO_SYM_DIR}/arm.txt)
+  darwin_read_list_from_file(i386_FUNCTIONS ${MACHO_SYM_DIR}/i386.txt)
+
+
+  set(armv6m_FUNCTIONS ${common_FUNCTIONS} ${arm_FUNCTIONS})
+  set(armv7m_FUNCTIONS ${common_FUNCTIONS} ${arm_FUNCTIONS} ${thumb2_FUNCTIONS})
+  set(armv7em_FUNCTIONS ${common_FUNCTIONS} ${arm_FUNCTIONS} ${thumb2_FUNCTIONS})
+  set(armv7_FUNCTIONS ${common_FUNCTIONS} ${arm_FUNCTIONS} ${thumb2_FUNCTIONS} ${thumb2_64_FUNCTIONS})
+  set(i386_FUNCTIONS ${common_FUNCTIONS} ${i386_FUNCTIONS})
+  set(x86_64_FUNCTIONS ${common_FUNCTIONS})
+
+  foreach(arch ${DARWIN_macho_embedded_ARCHS})
+    darwin_filter_builtin_sources(${arch}_filtered_sources
+      INCLUDE ${arch}_FUNCTIONS
+      ${${arch}_SOURCES})
+    if(NOT ${arch}_filtered_sources)
+      message("${arch}_SOURCES: ${${arch}_SOURCES}")
+      message("${arch}_FUNCTIONS: ${${arch}_FUNCTIONS}")
+      message(FATAL_ERROR "Empty filtered sources!")
+    endif()
+  endforeach()
+
+  foreach(float_type SOFT HARD)
+    foreach(type PIC STATIC)
+      string(TOLOWER "${float_type}_${type}" lib_suffix)
+      foreach(arch ${DARWIN_${float_type}_FLOAT_ARCHS})
+        set(DARWIN_macho_embedded_SYSROOT ${DARWIN_osx_SYSROOT})
+        set(DARWIN_macho_embedded_BUILTIN_MIN_VER_FLAG ${DARWIN_osx_BUILTIN_MIN_VER_FLAG})
+        set(float_flag)
+        if(${arch} MATCHES "^arm")
+          set(DARWIN_macho_embedded_SYSROOT ${DARWIN_ios_SYSROOT})
+          # x86 targets are hard float by default, but the complain about the
+          # float ABI flag, so don't pass it unless we're targeting arm.
+          set(float_flag ${${float_type}_FLOAT_FLAG})
+        endif()
+        darwin_add_builtin_library(clang_rt ${lib_suffix}
+                              OS macho_embedded
+                              ARCH ${arch}
+                              SOURCES ${${arch}_filtered_sources}
+                              CFLAGS -arch ${arch} ${${type}_FLAG} ${float_flag} ${CFLAGS_${arch}}
+                              PARENT_TARGET builtins)
+      endforeach()
+      foreach(lib ${macho_embedded_${lib_suffix}_libs})
+        set_target_properties(${lib} PROPERTIES LINKER_LANGUAGE C)
+      endforeach()
+      darwin_lipo_libs(clang_rt.${lib_suffix}
+                    PARENT_TARGET builtins
+                    LIPO_FLAGS ${macho_embedded_${lib_suffix}_lipo_flags}
+                    DEPENDS ${macho_embedded_${lib_suffix}_libs}
+                    OUTPUT_DIR ${DARWIN_macho_embedded_LIBRARY_OUTPUT_DIR}
+                    INSTALL_DIR ${DARWIN_macho_embedded_LIBRARY_INSTALL_DIR})
+    endforeach()
+  endforeach()
+endfunction()

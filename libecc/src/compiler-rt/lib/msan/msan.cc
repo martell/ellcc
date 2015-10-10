@@ -224,11 +224,10 @@ void GetStackTrace(BufferedStackTrace *stack, uptr max_s, uptr pc, uptr bp,
   if (!StackTrace::WillUseFastUnwind(request_fast_unwind)) {
     // Block reports from our interceptors during _Unwind_Backtrace.
     SymbolizerScope sym_scope;
-    return stack->Unwind(max_s, pc, bp, 0, 0, 0, request_fast_unwind);
+    return stack->Unwind(max_s, pc, bp, nullptr, 0, 0, request_fast_unwind);
   }
-  uptr stack_bottom = msan_stack_bounds.stack_addr;
-  uptr stack_top = stack_bottom + msan_stack_bounds.stack_size;
-  stack->Unwind(max_s, pc, bp, 0, stack_top, stack_bottom, request_fast_unwind);
+  stack->Unwind(max_s, pc, bp, nullptr, t->stack_top(), t->stack_bottom(),
+                request_fast_unwind);
 }
 
 void PrintWarning(uptr pc, uptr bp) {
@@ -309,7 +308,7 @@ u32 ChainOrigin(u32 id, StackTrace *stack) {
   return chained.raw_id();
 }
 
-}  // namespace __msan
+} // namespace __msan
 
 // Interface.
 
@@ -419,7 +418,9 @@ void __msan_init() {
 
   MsanTSDInit(MsanTSDDtor);
 
-  MsanThread *main_thread = MsanThread::Create(0, 0);
+  MsanAllocatorInit();
+
+  MsanThread *main_thread = MsanThread::Create(nullptr, nullptr);
   SetCurrentThread(main_thread);
   main_thread->ThreadStart();
 
@@ -640,3 +641,11 @@ SANITIZER_INTERFACE_ATTRIBUTE SANITIZER_WEAK_ATTRIBUTE
 const char* __msan_default_options() { return ""; }
 }  // extern "C"
 #endif
+
+extern "C" {
+SANITIZER_INTERFACE_ATTRIBUTE
+void __sanitizer_print_stack_trace() {
+  GET_FATAL_STACK_TRACE_PC_BP(StackTrace::GetCurrentPc(), GET_CURRENT_FRAME());
+  stack.Print();
+}
+} // extern "C"

@@ -90,7 +90,10 @@ def main(argv):
   print('{')
   result.sort()
   for f in result:
-    print('  ' + f + ';')
+    print(u'  %s;' % f)
+  if args.version_list:
+    print('local:')
+    print('  *;')
   print('};')
 
 if __name__ == '__main__':

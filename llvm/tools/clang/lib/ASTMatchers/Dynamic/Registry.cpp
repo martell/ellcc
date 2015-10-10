@@ -291,6 +291,7 @@ RegistryMaps::RegistryMaps() {
   REGISTER_MATCHER(isStruct);
   REGISTER_MATCHER(isTemplateInstantiation);
   REGISTER_MATCHER(isUnion);
+  REGISTER_MATCHER(isVariadic);
   REGISTER_MATCHER(isVirtual);
   REGISTER_MATCHER(isWritten);
   REGISTER_MATCHER(labelStmt);
@@ -519,7 +520,7 @@ Registry::getMatcherCompletions(ArrayRef<ArgKind> AcceptedTypes) {
 
 // static
 VariantMatcher Registry::constructMatcher(MatcherCtor Ctor,
-                                          const SourceRange &NameRange,
+                                          SourceRange NameRange,
                                           ArrayRef<ParserValue> Args,
                                           Diagnostics *Error) {
   return Ctor->create(NameRange, Args, Error);
@@ -527,7 +528,7 @@ VariantMatcher Registry::constructMatcher(MatcherCtor Ctor,
 
 // static
 VariantMatcher Registry::constructBoundMatcher(MatcherCtor Ctor,
-                                               const SourceRange &NameRange,
+                                               SourceRange NameRange,
                                                StringRef BindID,
                                                ArrayRef<ParserValue> Args,
                                                Diagnostics *Error) {

@@ -32,9 +32,6 @@ class LLVMContext;
 class Module;
 class ModuleSlotTracker;
 
-template<typename ValueSubClass, typename ItemParentClass>
-  class SymbolTableListTraits;
-
 enum LLVMConstants : uint32_t {
   DEBUG_METADATA_VERSION = 3 // Current debug info version number.
 };
@@ -573,10 +570,12 @@ struct AAMDNodes {
 template<>
 struct DenseMapInfo<AAMDNodes> {
   static inline AAMDNodes getEmptyKey() {
-    return AAMDNodes(DenseMapInfo<MDNode *>::getEmptyKey(), 0, 0);
+    return AAMDNodes(DenseMapInfo<MDNode *>::getEmptyKey(),
+                     nullptr, nullptr);
   }
   static inline AAMDNodes getTombstoneKey() {
-    return AAMDNodes(DenseMapInfo<MDNode *>::getTombstoneKey(), 0, 0);
+    return AAMDNodes(DenseMapInfo<MDNode *>::getTombstoneKey(),
+                     nullptr, nullptr);
   }
   static unsigned getHashValue(const AAMDNodes &Val) {
     return DenseMapInfo<MDNode *>::getHashValue(Val.TBAA) ^
@@ -1127,7 +1126,6 @@ public:
 ///
 /// TODO: Inherit from Metadata.
 class NamedMDNode : public ilist_node<NamedMDNode> {
-  friend class SymbolTableListTraits<NamedMDNode, Module>;
   friend struct ilist_traits<NamedMDNode>;
   friend class LLVMContextImpl;
   friend class Module;
@@ -1219,4 +1217,4 @@ public:
 
 } // end llvm namespace
 
-#endif
+#endif // LLVM_IR_METADATA_H

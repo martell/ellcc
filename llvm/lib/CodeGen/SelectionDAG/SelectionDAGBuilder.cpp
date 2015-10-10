@@ -1160,7 +1160,36 @@ SDValue SelectionDAGBuilder::getValueImpl(const Value *V) {
 }
 
 void SelectionDAGBuilder::visitCatchPad(const CatchPadInst &I) {
-  llvm_unreachable("should never codegen catchpads");
+  auto Pers = classifyEHPersonality(FuncInfo.Fn->getPersonalityFn());
+  bool IsMSVCCXX = Pers == EHPersonality::MSVC_CXX;
+  bool IsSEH = isAsynchronousEHPersonality(Pers);
+  bool IsCoreCLR = Pers == EHPersonality::CoreCLR;
+  MachineBasicBlock *CatchPadMBB = FuncInfo.MBB;
+  // In MSVC C++ and CoreCLR, catchblocks are funclets and need prologues.
+  if (IsMSVCCXX || IsCoreCLR)
+    CatchPadMBB->setIsEHFuncletEntry();
+
+  MachineBasicBlock *NormalDestMBB = FuncInfo.MBBMap[I.getNormalDest()];
+
+  // Update machine-CFG edge.
+  FuncInfo.MBB->addSuccessor(NormalDestMBB);
+
+  // CatchPads in SEH are not funclets, they are merely markers which indicate
+  // where to insert register restoration code.
+  if (IsSEH) {
+    DAG.setRoot(DAG.getNode(ISD::CATCHRET, getCurSDLoc(), MVT::Other,
+                            getControlRoot(), DAG.getBasicBlock(NormalDestMBB),
+                            DAG.getBasicBlock(FuncInfo.MF->begin())));
+    return;
+  }
+
+  // If this is not a fall-through branch or optimizations are switched off,
+  // emit the branch.
+  if (NormalDestMBB != NextBlock(CatchPadMBB) ||
+      TM.getOptLevel() == CodeGenOpt::None)
+    DAG.setRoot(DAG.getNode(ISD::BR, getCurSDLoc(), MVT::Other,
+                            getControlRoot(),
+                            DAG.getBasicBlock(NormalDestMBB)));
 }
 
 void SelectionDAGBuilder::visitCatchRet(const CatchReturnInst &I) {
@@ -1168,9 +1197,33 @@ void SelectionDAGBuilder::visitCatchRet(const CatchReturnInst &I) {
   MachineBasicBlock *TargetMBB = FuncInfo.MBBMap[I.getSuccessor()];
   FuncInfo.MBB->addSuccessor(TargetMBB);
 
+  auto Pers = classifyEHPersonality(FuncInfo.Fn->getPersonalityFn());
+  bool IsSEH = isAsynchronousEHPersonality(Pers);
+  if (IsSEH) {
+    // If this is not a fall-through branch or optimizations are switched off,
+    // emit the branch.
+    if (TargetMBB != NextBlock(FuncInfo.MBB) ||
+        TM.getOptLevel() == CodeGenOpt::None)
+      DAG.setRoot(DAG.getNode(ISD::BR, getCurSDLoc(), MVT::Other,
+                              getControlRoot(), DAG.getBasicBlock(TargetMBB)));
+    return;
+  }
+
+  // Figure out the funclet membership for the catchret's successor.
+  // This will be used by the FuncletLayout pass to determine how to order the
+  // BB's.
+  MachineModuleInfo &MMI = DAG.getMachineFunction().getMMI();
+  WinEHFuncInfo &EHInfo =
+      MMI.getWinEHFuncInfo(DAG.getMachineFunction().getFunction());
+  const BasicBlock *SuccessorColor = EHInfo.CatchRetSuccessorColorMap[&I];
+  assert(SuccessorColor && "No parent funclet for catchret!");
+  MachineBasicBlock *SuccessorColorMBB = FuncInfo.MBBMap[SuccessorColor];
+  assert(SuccessorColorMBB && "No MBB for SuccessorColor!");
+
   // Create the terminator node.
   SDValue Ret = DAG.getNode(ISD::CATCHRET, getCurSDLoc(), MVT::Other,
-                            getControlRoot(), DAG.getBasicBlock(TargetMBB));
+                            getControlRoot(), DAG.getBasicBlock(TargetMBB),
+                            DAG.getBasicBlock(SuccessorColorMBB));
   DAG.setRoot(Ret);
 }
 
@@ -1182,6 +1235,7 @@ void SelectionDAGBuilder::visitCleanupPad(const CleanupPadInst &CPI) {
   // Don't emit any special code for the cleanuppad instruction. It just marks
   // the start of a funclet.
   FuncInfo.MBB->setIsEHFuncletEntry();
+  FuncInfo.MBB->setIsCleanupFuncletEntry();
 }
 
 /// When an invoke or a cleanupret unwinds to the next EH pad, there are
@@ -1194,15 +1248,17 @@ static void
 findUnwindDestinations(FunctionLoweringInfo &FuncInfo,
                        const BasicBlock *EHPadBB,
                        SmallVectorImpl<MachineBasicBlock *> &UnwindDests) {
-  bool IsMSVCCXX = classifyEHPersonality(FuncInfo.Fn->getPersonalityFn()) ==
-                   EHPersonality::MSVC_CXX;
+  EHPersonality Personality =
+    classifyEHPersonality(FuncInfo.Fn->getPersonalityFn());
+  bool IsMSVCCXX = Personality == EHPersonality::MSVC_CXX;
+  bool IsCoreCLR = Personality == EHPersonality::CoreCLR;
   while (EHPadBB) {
     const Instruction *Pad = EHPadBB->getFirstNonPHI();
     if (isa<LandingPadInst>(Pad)) {
       // Stop on landingpads. They are not funclets.
       UnwindDests.push_back(FuncInfo.MBBMap[EHPadBB]);
       break;
-    } else if (isa<CleanupPadInst>(Pad) || isa<LandingPadInst>(Pad)) {
+    } else if (isa<CleanupPadInst>(Pad)) {
       // Stop on cleanup pads. Cleanups are always funclet entries for all known
       // personalities.
       UnwindDests.push_back(FuncInfo.MBBMap[EHPadBB]);
@@ -1210,9 +1266,9 @@ findUnwindDestinations(FunctionLoweringInfo &FuncInfo,
       break;
     } else if (const auto *CPI = dyn_cast<CatchPadInst>(Pad)) {
       // Add the catchpad handler to the possible destinations.
-      UnwindDests.push_back(FuncInfo.MBBMap[CPI->getNormalDest()]);
+      UnwindDests.push_back(FuncInfo.MBBMap[EHPadBB]);
       // In MSVC C++, catchblocks are funclets and need prologues.
-      if (IsMSVCCXX)
+      if (IsMSVCCXX || IsCoreCLR)
         UnwindDests.back()->setIsEHFuncletEntry();
       EHPadBB = CPI->getUnwindDest();
     } else if (const auto *CEPI = dyn_cast<CatchEndPadInst>(Pad)) {
@@ -2206,7 +2262,8 @@ void SelectionDAGBuilder::visitIndirectBr(const IndirectBrInst &I) {
 
 void SelectionDAGBuilder::visitUnreachable(const UnreachableInst &I) {
   if (DAG.getTarget().Options.TrapUnreachable)
-    DAG.setRoot(DAG.getNode(ISD::TRAP, getCurSDLoc(), MVT::Other, DAG.getRoot()));
+    DAG.setRoot(
+        DAG.getNode(ISD::TRAP, getCurSDLoc(), MVT::Other, DAG.getRoot()));
 }
 
 void SelectionDAGBuilder::visitFSub(const User &I) {
@@ -4393,15 +4450,9 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
                                    N);
           return nullptr;
         }
-      } else if (AI)
+      } else {
         SDV = DAG.getDbgValue(Variable, Expression, N.getNode(), N.getResNo(),
                               true, 0, dl, SDNodeOrder);
-      else {
-        // Can't do anything with other non-AI cases yet.
-        DEBUG(dbgs() << "Dropping debug info for " << DI << "\n");
-        DEBUG(dbgs() << "non-AllocaInst issue for Address: \n\t");
-        DEBUG(Address->dump());
-        return nullptr;
       }
       DAG.AddDbgValue(SDV, N.getNode(), isParameter);
     } else {
@@ -5101,9 +5152,6 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   }
   case Intrinsic::clear_cache:
     return TLI.getClearCacheBuiltinName();
-  case Intrinsic::eh_actions:
-    setValue(&I, DAG.getUNDEF(TLI.getPointerTy(DAG.getDataLayout())));
-    return nullptr;
   case Intrinsic::donothing:
     // ignore
     return nullptr;
@@ -5187,16 +5235,14 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
 
     return nullptr;
   }
-  case Intrinsic::eh_begincatch:
-  case Intrinsic::eh_endcatch:
-    llvm_unreachable("begin/end catch intrinsics not lowered in codegen");
+
+  case Intrinsic::eh_exceptionpointer:
   case Intrinsic::eh_exceptioncode: {
-    unsigned Reg = TLI.getExceptionPointerRegister();
-    assert(Reg && "cannot get exception code on this platform");
+    // Get the exception pointer vreg, copy from it, and resize it to fit.
+    const auto *CPI = cast<CatchPadInst>(I.getArgOperand(0));
     MVT PtrVT = TLI.getPointerTy(DAG.getDataLayout());
     const TargetRegisterClass *PtrRC = TLI.getRegClassFor(PtrVT);
-    assert(FuncInfo.MBB->isEHPad() && "eh.exceptioncode in non-lpad");
-    unsigned VReg = FuncInfo.MBB->addLiveIn(Reg, PtrRC);
+    unsigned VReg = FuncInfo.getCatchPadExceptionPointerVReg(CPI, PtrRC);
     SDValue N =
         DAG.getCopyFromReg(DAG.getEntryNode(), getCurSDLoc(), VReg, PtrVT);
     N = DAG.getZExtOrTrunc(N, getCurSDLoc(), MVT::i32);
@@ -5262,7 +5308,13 @@ SelectionDAGBuilder::lowerInvokable(TargetLowering::CallLoweringInfo &CLI,
     DAG.setRoot(DAG.getEHLabel(getCurSDLoc(), getRoot(), EndLabel));
 
     // Inform MachineModuleInfo of range.
-    MMI.addInvoke(FuncInfo.MBBMap[EHPadBB], BeginLabel, EndLabel);
+    if (MMI.hasEHFunclets()) {
+      WinEHFuncInfo &EHInfo =
+          MMI.getWinEHFuncInfo(DAG.getMachineFunction().getFunction());
+      EHInfo.addIPToStateRange(EHPadBB, BeginLabel, EndLabel);
+    } else {
+      MMI.addInvoke(FuncInfo.MBBMap[EHPadBB], BeginLabel, EndLabel);
+    }
   }
 
   return Result;

@@ -11,6 +11,7 @@
 //
 // This file contains error reporting code.
 //===----------------------------------------------------------------------===//
+
 #include "asan_flags.h"
 #include "asan_internal.h"
 #include "asan_mapping.h"
@@ -27,7 +28,7 @@ namespace __asan {
 
 // -------------------- User-specified callbacks ----------------- {{{1
 static void (*error_report_callback)(const char*);
-static char *error_message_buffer = 0;
+static char *error_message_buffer = nullptr;
 static uptr error_message_buffer_pos = 0;
 static uptr error_message_buffer_size = 0;
 
@@ -374,7 +375,7 @@ void PrintAccessAndVarIntersection(const char *var_name,
                                    uptr prev_var_end, uptr next_var_beg) {
   uptr var_end = var_beg + var_size;
   uptr addr_end = addr + access_size;
-  const char *pos_descr = 0;
+  const char *pos_descr = nullptr;
   // If the variable [var_beg, var_end) is the nearest variable to the
   // current memory access, indicate it in the log.
   if (addr >= var_beg) {
@@ -548,7 +549,7 @@ void DescribeHeapAddress(uptr addr, uptr access_size) {
   StackTrace alloc_stack = chunk.GetAllocStack();
   char tname[128];
   Decorator d;
-  AsanThreadContext *free_thread = 0;
+  AsanThreadContext *free_thread = nullptr;
   if (chunk.FreeTid() != kInvalidTid) {
     free_thread = GetThreadContextByTidLocked(chunk.FreeTid());
     Printf("%sfreed by thread T%d%s here:%s\n", d.Allocation(),
@@ -962,7 +963,7 @@ void ReportMacCfReallocUnknown(uptr addr, uptr zone_ptr, const char *zone_name,
   DescribeHeapAddress(addr, 1);
 }
 
-}  // namespace __asan
+} // namespace __asan
 
 // --------------------------- Interface --------------------- {{{1
 using namespace __asan;  // NOLINT
@@ -1121,7 +1122,7 @@ SANITIZER_INTERFACE_ATTRIBUTE
 void __sanitizer_ptr_cmp(void *a, void *b) {
   CheckForInvalidPointerPair(a, b);
 }
-}  // extern "C"
+} // extern "C"
 
 #if !SANITIZER_SUPPORTS_WEAK_HOOKS
 // Provide default implementation of __asan_on_error that does nothing

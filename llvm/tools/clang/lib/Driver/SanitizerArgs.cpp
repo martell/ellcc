@@ -495,10 +495,8 @@ SanitizerArgs::SanitizerArgs(const ToolChain &TC,
 
   if (AllAddedKinds & Address) {
     AsanSharedRuntime =
-        Args.hasArg(options::OPT_shared_libasan) ||
-        (TC.getTriple().getEnvironment() == llvm::Triple::Android);
-    AsanZeroBaseShadow =
-        (TC.getTriple().getEnvironment() == llvm::Triple::Android);
+        Args.hasArg(options::OPT_shared_libasan) || TC.getTriple().isAndroid();
+    AsanZeroBaseShadow = TC.getTriple().isAndroid();
     if (Arg *A =
             Args.getLastArg(options::OPT_fsanitize_address_field_padding)) {
         StringRef S = A->getValue();
@@ -609,13 +607,11 @@ void SanitizerArgs::addArgs(const ToolChain &TC, const llvm::opt::ArgList &Args,
   if (TC.getTriple().isOSWindows() && needsUbsanRt()) {
     // Instruct the code generator to embed linker directives in the object file
     // that cause the required runtime libraries to be linked.
-    CmdArgs.push_back(
-        Args.MakeArgString("--dependent-lib=" +
-                           tools::getCompilerRT(TC, Args, "ubsan_standalone")));
+    CmdArgs.push_back(Args.MakeArgString(
+        "--dependent-lib=" + TC.getCompilerRT(Args, "ubsan_standalone")));
     if (types::isCXX(InputType))
       CmdArgs.push_back(Args.MakeArgString(
-          "--dependent-lib=" +
-          tools::getCompilerRT(TC, Args, "ubsan_standalone_cxx")));
+          "--dependent-lib=" + TC.getCompilerRT(Args, "ubsan_standalone_cxx")));
   }
 }
 

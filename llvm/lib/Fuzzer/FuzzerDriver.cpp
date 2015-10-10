@@ -202,6 +202,12 @@ int ApplyTokens(const Fuzzer &F, const char *InputFilePath) {
   return 0;
 }
 
+int RunOneTest(Fuzzer *F, const char *InputFilePath) {
+  Unit U = FileToVector(InputFilePath);
+  F->ExecuteCallback(U);
+  return 0;
+}
+
 int FuzzerDriver(int argc, char **argv, UserCallback Callback) {
   FuzzerRandomLibc Rand(0);
   SimpleUserSuppliedFuzzer SUSF(&Rand, Callback);
@@ -243,12 +249,12 @@ int FuzzerDriver(const std::vector<std::string> &Args,
   Options.Verbosity = Flags.verbosity;
   Options.MaxLen = Flags.max_len;
   Options.UnitTimeoutSec = Flags.timeout;
+  Options.MaxTotalTimeSec = Flags.max_total_time;
   Options.DoCrossOver = Flags.cross_over;
   Options.MutateDepth = Flags.mutate_depth;
   Options.ExitOnFirst = Flags.exit_on_first;
   Options.UseCounters = Flags.use_counters;
   Options.UseTraces = Flags.use_traces;
-  Options.UseFullCoverageSet = Flags.use_full_coverage_set;
   Options.PreferSmallDuringInitialShuffle =
       Flags.prefer_small_during_initial_shuffle;
   Options.Tokens = ReadTokensFile(Flags.deprecated_tokens);
@@ -264,6 +270,8 @@ int FuzzerDriver(const std::vector<std::string> &Args,
     Options.SyncCommand = Flags.sync_command;
   Options.SyncTimeout = Flags.sync_timeout;
   Options.ReportSlowUnits = Flags.report_slow_units;
+  if (Flags.artifact_prefix)
+    Options.ArtifactPrefix = Flags.artifact_prefix;
   if (Flags.dict)
     if (!ParseDictionaryFile(FileToString(Flags.dict), &Options.Dictionary))
       return 1;
@@ -274,6 +282,9 @@ int FuzzerDriver(const std::vector<std::string> &Args,
 
   if (Flags.apply_tokens)
     return ApplyTokens(F, Flags.apply_tokens);
+
+  if (Flags.test_single_input)
+    return RunOneTest(&F, Flags.test_single_input);
 
   unsigned Seed = Flags.seed;
   // Initialize Seed.
@@ -309,7 +320,7 @@ int FuzzerDriver(const std::vector<std::string> &Args,
     Printf("Done %d runs in %zd second(s)\n", F.getTotalNumberOfRuns(),
            F.secondsSinceProcessStartUp());
 
-  return 0;
+  exit(0);  // Don't let F destroy itself.
 }
 
 }  // namespace fuzzer

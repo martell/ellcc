@@ -152,10 +152,10 @@ def EH_RETURN64   : I<0xC3, RawFrm, (outs), (ins GR64:$addr),
 
 }
 
-let isTerminator = 1, isBarrier = 1, hasCtrlDep = 1, isCodeGenOnly = 1, isReturn = 1 in {
-def CATCHRET : I<0, Pseudo, (outs), (ins brtarget32:$dst),
-		 "# CATCHRET",
-		 [(catchret bb:$dst)]>;
+let isTerminator = 1, hasSideEffects = 1, isBarrier = 1, hasCtrlDep = 1, isCodeGenOnly = 1, isReturn = 1 in {
+def CATCHRET : I<0, Pseudo, (outs), (ins brtarget32:$dst, brtarget32:$from),
+                 "# CATCHRET",
+                 [(catchret bb:$dst, bb:$from)]>;
 def CLEANUPRET : I<0, Pseudo, (outs), (ins), "# CLEANUPRET", [(cleanupret)]>;
 }
 
@@ -1322,7 +1322,6 @@ def : Pat<(and GR64:$src, 0x00000000FFFFFFFF),
                          (MOV32rr (EXTRACT_SUBREG GR64:$src, sub_32bit)),
                          sub_32bit)>;
 // r & (2^16-1) ==> movz
-let AddedComplexity = 1 in // Give priority over i64immZExt32.
 def : Pat<(and GR64:$src, 0xffff),
           (SUBREG_TO_REG (i64 0),
                       (MOVZX32rr16 (i16 (EXTRACT_SUBREG GR64:$src, sub_16bit))),

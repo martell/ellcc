@@ -30,7 +30,10 @@ namespace opt {
 }
 
 namespace clang {
-  class ObjCRuntime;
+class ObjCRuntime;
+namespace vfs {
+class FileSystem;
+}
 
 namespace driver {
   class Compilation;
@@ -119,7 +122,8 @@ public:
 
   // Accessors
 
-  const Driver &getDriver() const;
+  const Driver &getDriver() const { return D; }
+  vfs::FileSystem &getVFS() const;
   const llvm::Triple &getTriple() const { return Triple; }
 
   llvm::Triple::ArchType getArch() const { return Triple.getArch(); }
@@ -163,7 +167,7 @@ public:
   /// e.g., argv[0])
   /// \return A pair of (`target`, `mode-flag`), where one or both may be empty.
   static std::pair<std::string, std::string>
-  getTargetAndModeFromProgramName(StringRef ProgName, bool&isELLCC);
+  getTargetAndModeFromProgramName(StringRef ProgName, bool& isELLCC);
 
   // Tool access.
 
@@ -250,6 +254,10 @@ public:
     return ToolChain::RLT_Libgcc;
   }
 
+  virtual std::string getCompilerRT(const llvm::opt::ArgList &Args,
+                                    StringRef Component,
+                                    bool Shared = false) const;
+
   /// IsUnwindTablesDefault - Does this tool chain use -funwind-tables
   /// by default.
   virtual bool IsUnwindTablesDefault() const;
@@ -278,6 +286,16 @@ public:
   /// UseDwarfDebugFlags - Embed the compile options to clang into the Dwarf
   /// compile unit information.
   virtual bool UseDwarfDebugFlags() const { return false; }
+
+  // Return the DWARF version to emit, in the absence of arguments
+  // to the contrary.
+  virtual unsigned GetDefaultDwarfVersion() const { return 4; }
+
+  // True if the driver should assume "-fstandalone-debug"
+  // in the absence of an option specifying otherwise,
+  // provided that debugging was requested in the first place.
+  // i.e. a value of 'true' does not imply that debugging is wanted.
+  virtual bool GetDefaultStandaloneDebug() const { return false; }
 
   /// UseSjLjExceptions - Does this tool chain use SjLj exceptions.
   virtual bool UseSjLjExceptions() const { return false; }

@@ -162,10 +162,10 @@ elseif(NOT APPLE) # Supported archs for Apple platforms are generated later
     # since the default ABI differs between gcc and clang.
     # FIXME: Ideally, we would build the N32 library too.
     test_target_arch(mipsel "" "-mips32r2" "--target=mipsel-linux-gnu")
-    test_target_arch(mips64el "" "-mips64r2" "-mabi=n64")
+    test_target_arch(mips64el "" "-mips64r2" "--target=mips64el-linux-gnu" "-mabi=n64")
   elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "mips")
     test_target_arch(mips "" "-mips32r2" "--target=mips-linux-gnu")
-    test_target_arch(mips64 "" "-mips64r2" "-mabi=n64")
+    test_target_arch(mips64 "" "-mips64r2" "--target=mips64-linux-gnu" "-mabi=n64")
   elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "arm")
     test_target_arch(arm "" "-march=armv7-a" "-mfloat-abi=soft")
     test_target_arch(armhf "" "-march=armv7-a" "-mfloat-abi=hard")
@@ -219,7 +219,8 @@ if(APPLE)
   set(X86_64 x86_64 x86_64h)
 endif()
 
-set(ALL_BUILTIN_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64})
+set(ALL_BUILTIN_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64}
+    ${MIPS32} ${MIPS64})
 set(ALL_SANITIZER_COMMON_SUPPORTED_ARCH ${X86} ${X86_64} ${PPC64}
     ${ARM32} ${ARM64} ${MIPS32} ${MIPS64})
 set(ALL_ASAN_SUPPORTED_ARCH ${X86} ${X86_64} ${ARM32} ${ARM64}
@@ -247,6 +248,7 @@ if(APPLE)
   # be 10.8 or higher.
   set(SANITIZER_COMMON_SUPPORTED_OS osx)
   set(BUILTIN_SUPPORTED_OS osx)
+  set(PROFILE_SUPPORTED_OS osx)
   if(NOT SANITIZER_MIN_OSX_VERSION)
     string(REGEX MATCH "-mmacosx-version-min=([.0-9]+)"
            MACOSX_VERSION_MIN_FLAG "${CMAKE_CXX_FLAGS}")
@@ -300,6 +302,22 @@ if(APPLE)
       set(CAN_TARGET_${arch} 1)
     endforeach()
 
+    # Need to build a 10.4 compatible libclang_rt
+    set(DARWIN_10.4_SYSROOT ${DARWIN_osx_SYSROOT})
+    set(DARWIN_10.4_BUILTIN_MIN_VER 10.4)
+    set(DARWIN_10.4_BUILTIN_MIN_VER_FLAG
+        -mmacosx-version-min=${DARWIN_10.4_BUILTIN_MIN_VER})
+    set(DARWIN_10.4_SKIP_CC_KEXT On)
+    darwin_test_archs(10.4
+      DARWIN_10.4_ARCHS
+      ${toolchain_arches})
+    message(STATUS "OSX 10.4 supported arches: ${DARWIN_10.4_ARCHS}")
+    if(DARWIN_10.4_ARCHS)
+      # don't include the Haswell slice in the 10.4 compatibility library
+      list(REMOVE_ITEM DARWIN_10.4_ARCHS x86_64h)
+      list(APPEND BUILTIN_SUPPORTED_OS 10.4)
+    endif()
+
     if(DARWIN_iossim_SYSROOT)
       set(DARWIN_iossim_CFLAGS
         ${DARWIN_COMMON_CFLAGS}
@@ -313,12 +331,14 @@ if(APPLE)
       set(DARWIN_iossim_BUILTIN_MIN_VER_FLAG
         -mios-simulator-version-min=${DARWIN_iossim_BUILTIN_MIN_VER})
 
-      list(APPEND SANITIZER_COMMON_SUPPORTED_OS iossim)
-      list(APPEND BUILTIN_SUPPORTED_OS iossim)
+      set(DARWIN_iossim_SKIP_CC_KEXT On)
       darwin_test_archs(iossim
         DARWIN_iossim_ARCHS
         ${toolchain_arches})
       message(STATUS "iOS Simulator supported arches: ${DARWIN_iossim_ARCHS}")
+      if(DARWIN_iossim_ARCHS)
+        list(APPEND SANITIZER_COMMON_SUPPORTED_OS iossim)
+      endif()
       foreach(arch ${DARWIN_iossim_ARCHS})
         list(APPEND COMPILER_RT_SUPPORTED_ARCH ${arch})
         set(CAN_TARGET_${arch} 1)
@@ -338,12 +358,16 @@ if(APPLE)
       set(DARWIN_ios_BUILTIN_MIN_VER_FLAG
         -miphoneos-version-min=${DARWIN_ios_BUILTIN_MIN_VER})
 
-      list(APPEND SANITIZER_COMMON_SUPPORTED_OS ios)
-      list(APPEND BUILTIN_SUPPORTED_OS ios)
       darwin_test_archs(ios
         DARWIN_ios_ARCHS
         ${toolchain_arches})
       message(STATUS "iOS supported arches: ${DARWIN_ios_ARCHS}")
+      if(DARWIN_ios_ARCHS)
+        list(APPEND SANITIZER_COMMON_SUPPORTED_OS ios)
+        list(APPEND BUILTIN_SUPPORTED_OS ios)
+        list(APPEND PROFILE_SUPPORTED_OS ios)
+        list(APPEND BUILTIN_SUPPORTED_OS iossim)
+      endif()
       foreach(arch ${DARWIN_ios_ARCHS})
         list(APPEND COMPILER_RT_SUPPORTED_ARCH ${arch})
         set(CAN_TARGET_${arch} 1)
@@ -374,10 +398,9 @@ if(APPLE)
   list_union(MSAN_SUPPORTED_ARCH
     ALL_MSAN_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)
-  # Note: profiles is only built for OS X
   list_union(PROFILE_SUPPORTED_ARCH
     ALL_PROFILE_SUPPORTED_ARCH
-    DARWIN_osx_ARCHS)
+    SANITIZER_COMMON_SUPPORTED_ARCH)
   list_union(TSAN_SUPPORTED_ARCH
     ALL_TSAN_SUPPORTED_ARCH
     SANITIZER_COMMON_SUPPORTED_ARCH)

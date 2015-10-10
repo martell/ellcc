@@ -11,6 +11,7 @@
 //
 // Handle globals.
 //===----------------------------------------------------------------------===//
+
 #include "asan_interceptors.h"
 #include "asan_internal.h"
 #include "asan_mapping.h"
@@ -167,7 +168,7 @@ static void RegisterGlobal(const Global *g) {
   l->next = list_of_all_globals;
   list_of_all_globals = l;
   if (g->has_dynamic_init) {
-    if (dynamic_init_globals == 0) {
+    if (!dynamic_init_globals) {
       dynamic_init_globals = new(allocator_for_globals)
           VectorOfGlobals(kDynamicInitGlobalsInitialCapacity);
     }
@@ -206,21 +207,7 @@ void StopInitOrderChecking() {
   }
 }
 
-#if SANITIZER_WINDOWS  // Should only be called on Windows.
-SANITIZER_INTERFACE_ATTRIBUTE
-void UnregisterGlobalsInRange(void *beg, void *end) {
-  if (!flags()->report_globals)
-    return;
-  BlockingMutexLock lock(&mu_for_globals);
-  for (ListOfGlobals *l = list_of_all_globals; l; l = l->next) {
-    void *address = (void *)l->g->beg;
-    if (beg <= address && address < end)
-      UnregisterGlobal(l->g);
-  }
-}
-#endif
-
-}  // namespace __asan
+} // namespace __asan
 
 // ---------------------- Interface ---------------- {{{1
 using namespace __asan;  // NOLINT

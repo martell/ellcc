@@ -58,12 +58,12 @@ static cl::opt<unsigned> DomConditionsMaxDepth("dom-conditions-max-depth",
 /// conditions?
 static cl::opt<unsigned> DomConditionsMaxDomBlocks("dom-conditions-dom-blocks",
                                                    cl::Hidden,
-                                                   cl::init(20000));
+                                                   cl::init(20));
 
 // Controls the number of uses of the value searched for possible
 // dominating comparisons.
 static cl::opt<unsigned> DomConditionsMaxUses("dom-conditions-max-uses",
-                                              cl::Hidden, cl::init(2000));
+                                              cl::Hidden, cl::init(20));
 
 // If true, don't consider only compares whose only use is a branch.
 static cl::opt<bool> DomConditionsSingleCmpUse("dom-conditions-single-cmp-use",
@@ -455,7 +455,7 @@ static bool isValidAssumeForContext(Value *V, const Query &Q) {
       for (BasicBlock::const_iterator I =
              std::next(BasicBlock::const_iterator(Q.CxtI)),
                                       IE(Inv); I != IE; ++I)
-        if (!isSafeToSpeculativelyExecute(I) && !isAssumeLikeIntrinsic(I))
+        if (!isSafeToSpeculativelyExecute(&*I) && !isAssumeLikeIntrinsic(&*I))
           return false;
 
       return !isEphemeralValueOf(Inv, Q.CxtI);
@@ -472,14 +472,14 @@ static bool isValidAssumeForContext(Value *V, const Query &Q) {
     // of the block); the common case is that the assume will come first.
     for (BasicBlock::iterator I = std::next(BasicBlock::iterator(Inv)),
          IE = Inv->getParent()->end(); I != IE; ++I)
-      if (I == Q.CxtI)
+      if (&*I == Q.CxtI)
         return true;
 
     // The context must come first...
     for (BasicBlock::const_iterator I =
            std::next(BasicBlock::const_iterator(Q.CxtI)),
                                     IE(Inv); I != IE; ++I)
-      if (!isSafeToSpeculativelyExecute(I) && !isAssumeLikeIntrinsic(I))
+      if (!isSafeToSpeculativelyExecute(&*I) && !isAssumeLikeIntrinsic(&*I))
         return false;
 
     return !isEphemeralValueOf(Inv, Q.CxtI);
@@ -1065,7 +1065,8 @@ static void computeKnownBitsFromOperator(Operator *I, APInt &KnownZero,
   }
   case Instruction::BitCast: {
     Type *SrcTy = I->getOperand(0)->getType();
-    if ((SrcTy->isIntegerTy() || SrcTy->isPointerTy()) &&
+    if ((SrcTy->isIntegerTy() || SrcTy->isPointerTy() ||
+         SrcTy->isFloatingPointTy()) &&
         // TODO: For now, not handling conversions like:
         // (bitcast i64 %x to <2 x i32>)
         !I->getType()->isVectorTy()) {
@@ -1358,6 +1359,12 @@ static void computeKnownBitsFromOperator(Operator *I, APInt &KnownZero,
     if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(I)) {
       switch (II->getIntrinsicID()) {
       default: break;
+      case Intrinsic::bswap:
+        computeKnownBits(I->getOperand(0), KnownZero2, KnownOne2, DL,
+                         Depth + 1, Q);
+        KnownZero |= KnownZero2.byteSwap();
+        KnownOne |= KnownOne2.byteSwap();
+        break;
       case Intrinsic::ctlz:
       case Intrinsic::cttz: {
         unsigned LowBits = Log2_32(BitWidth)+1;
@@ -1370,6 +1377,12 @@ static void computeKnownBitsFromOperator(Operator *I, APInt &KnownZero,
       case Intrinsic::ctpop: {
         unsigned LowBits = Log2_32(BitWidth)+1;
         KnownZero |= APInt::getHighBitsSet(BitWidth, BitWidth - LowBits);
+        break;
+      }
+      case Intrinsic::fabs: {
+        Type *Ty = II->getType();
+        APInt SignBit = APInt::getSignBit(Ty->getScalarSizeInBits());
+        KnownZero |= APInt::getSplat(Ty->getPrimitiveSizeInBits(), SignBit);
         break;
       }
       case Intrinsic::x86_sse42_crc32_64_64:
@@ -1409,6 +1422,46 @@ static void computeKnownBitsFromOperator(Operator *I, APInt &KnownZero,
   }
 }
 
+static unsigned getAlignment(const Value *V, const DataLayout &DL) {
+  unsigned Align = 0;
+  if (auto *GO = dyn_cast<GlobalObject>(V)) {
+    Align = GO->getAlignment();
+    if (Align == 0) {
+      if (auto *GVar = dyn_cast<GlobalVariable>(GO)) {
+        Type *ObjectType = GVar->getType()->getElementType();
+        if (ObjectType->isSized()) {
+          // If the object is defined in the current Module, we'll be giving
+          // it the preferred alignment. Otherwise, we have to assume that it
+          // may only have the minimum ABI alignment.
+          if (GVar->isStrongDefinitionForLinker())
+            Align = DL.getPreferredAlignment(GVar);
+          else
+            Align = DL.getABITypeAlignment(ObjectType);
+        }
+      }
+    }
+  } else if (const Argument *A = dyn_cast<Argument>(V)) {
+    Align = A->getType()->isPointerTy() ? A->getParamAlignment() : 0;
+
+    if (!Align && A->hasStructRetAttr()) {
+      // An sret parameter has at least the ABI alignment of the return type.
+      Type *EltTy = cast<PointerType>(A->getType())->getElementType();
+      if (EltTy->isSized())
+        Align = DL.getABITypeAlignment(EltTy);
+    }
+  } else if (const AllocaInst *AI = dyn_cast<AllocaInst>(V))
+    Align = AI->getAlignment();
+  else if (auto CS = ImmutableCallSite(V))
+    Align = CS.getAttributes().getParamAlignment(AttributeSet::ReturnIndex);
+  else if (const LoadInst *LI = dyn_cast<LoadInst>(V))
+    if (MDNode *MD = LI->getMetadata(LLVMContext::MD_align)) {
+      ConstantInt *CI = mdconst::extract<ConstantInt>(MD->getOperand(0));
+      Align = CI->getLimitedValue();
+    }
+
+  return Align;
+}
+
 /// Determine which bits of V are known to be either zero or one and return
 /// them in the KnownZero/KnownOne bit sets.
 ///
@@ -1431,8 +1484,9 @@ void computeKnownBits(Value *V, APInt &KnownZero, APInt &KnownOne,
   unsigned BitWidth = KnownZero.getBitWidth();
 
   assert((V->getType()->isIntOrIntVectorTy() ||
+          V->getType()->isFPOrFPVectorTy() ||
           V->getType()->getScalarType()->isPointerTy()) &&
-         "Not integer or pointer type!");
+         "Not integer, floating point, or pointer type!");
   assert((DL.getTypeSizeInBits(V->getType()->getScalarType()) == BitWidth) &&
          (!V->getType()->isIntOrIntVectorTy() ||
           V->getType()->getScalarSizeInBits() == BitWidth) &&
@@ -1469,59 +1523,6 @@ void computeKnownBits(Value *V, APInt &KnownZero, APInt &KnownOne,
     return;
   }
 
-  // The address of an aligned GlobalValue has trailing zeros.
-  if (auto *GO = dyn_cast<GlobalObject>(V)) {
-    unsigned Align = GO->getAlignment();
-    if (Align == 0) {
-      if (auto *GVar = dyn_cast<GlobalVariable>(GO)) {
-        Type *ObjectType = GVar->getType()->getElementType();
-        if (ObjectType->isSized()) {
-          // If the object is defined in the current Module, we'll be giving
-          // it the preferred alignment. Otherwise, we have to assume that it
-          // may only have the minimum ABI alignment.
-          if (GVar->isStrongDefinitionForLinker())
-            Align = DL.getPreferredAlignment(GVar);
-          else
-            Align = DL.getABITypeAlignment(ObjectType);
-        }
-      }
-    }
-    if (Align > 0)
-      KnownZero = APInt::getLowBitsSet(BitWidth,
-                                       countTrailingZeros(Align));
-    else
-      KnownZero.clearAllBits();
-    KnownOne.clearAllBits();
-    return;
-  }
-
-  if (Argument *A = dyn_cast<Argument>(V)) {
-    unsigned Align = A->getType()->isPointerTy() ? A->getParamAlignment() : 0;
-
-    if (!Align && A->hasStructRetAttr()) {
-      // An sret parameter has at least the ABI alignment of the return type.
-      Type *EltTy = cast<PointerType>(A->getType())->getElementType();
-      if (EltTy->isSized())
-        Align = DL.getABITypeAlignment(EltTy);
-    }
-
-    if (Align)
-      KnownZero = APInt::getLowBitsSet(BitWidth, countTrailingZeros(Align));
-    else
-      KnownZero.clearAllBits();
-    KnownOne.clearAllBits();
-
-    // Don't give up yet... there might be an assumption that provides more
-    // information...
-    computeKnownBitsFromAssume(V, KnownZero, KnownOne, DL, Depth, Q);
-
-    // Or a dominating condition for that matter
-    if (EnableDomConditions && Depth <= DomConditionsMaxDepth)
-      computeKnownBitsFromDominatingCondition(V, KnownZero, KnownOne, DL,
-                                              Depth, Q);
-    return;
-  }
-
   // Start out not knowing anything.
   KnownZero.clearAllBits(); KnownOne.clearAllBits();
 
@@ -1540,6 +1541,13 @@ void computeKnownBits(Value *V, APInt &KnownZero, APInt &KnownOne,
 
   if (Operator *I = dyn_cast<Operator>(V))
     computeKnownBitsFromOperator(I, KnownZero, KnownOne, DL, Depth, Q);
+
+  // Aligned pointers have trailing zeros - refine KnownZero set
+  if (V->getType()->isPointerTy()) {
+    unsigned Align = getAlignment(V, DL);
+    if (Align)
+      KnownZero |= APInt::getLowBitsSet(BitWidth, countTrailingZeros(Align));
+  }
 
   // computeKnownBitsFromAssume and computeKnownBitsFromDominatingCondition
   // strictly refines KnownZero and KnownOne. Therefore, we run them after
@@ -1903,6 +1911,26 @@ bool isKnownNonZero(Value *V, const DataLayout &DL, unsigned Depth,
     if (isKnownNonZero(SI->getTrueValue(), DL, Depth, Q) &&
         isKnownNonZero(SI->getFalseValue(), DL, Depth, Q))
       return true;
+  }
+  // PHI
+  else if (PHINode *PN = dyn_cast<PHINode>(V)) {
+    // Try and detect a recurrence that monotonically increases from a
+    // starting value, as these are common as induction variables.
+    if (PN->getNumIncomingValues() == 2) {
+      Value *Start = PN->getIncomingValue(0);
+      Value *Induction = PN->getIncomingValue(1);
+      if (isa<ConstantInt>(Induction) && !isa<ConstantInt>(Start))
+        std::swap(Start, Induction);
+      if (ConstantInt *C = dyn_cast<ConstantInt>(Start)) {
+        if (!C->isZero() && !C->isNegative()) {
+          ConstantInt *X;
+          if ((match(Induction, m_NSWAdd(m_Specific(PN), m_ConstantInt(X))) ||
+               match(Induction, m_NUWAdd(m_Specific(PN), m_ConstantInt(X)))) &&
+              !X->isNegative())
+            return true;
+        }
+      }
+    }
   }
 
   if (!BitWidth) return false;
@@ -2970,20 +2998,7 @@ static bool isDereferenceableFromAttribute(const Value *V, const DataLayout &DL,
 
 static bool isAligned(const Value *Base, APInt Offset, unsigned Align,
                       const DataLayout &DL) {
-  APInt BaseAlign(Offset.getBitWidth(), 0);
-  if (const AllocaInst *AI = dyn_cast<AllocaInst>(Base))
-    BaseAlign = AI->getAlignment();
-  else if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(Base))
-    BaseAlign = GV->getAlignment();
-  else if (const Argument *A = dyn_cast<Argument>(Base))
-    BaseAlign = A->getParamAlignment();
-  else if (auto CS = ImmutableCallSite(Base))
-    BaseAlign = CS.getAttributes().getParamAlignment(AttributeSet::ReturnIndex);
-  else if (const LoadInst *LI = dyn_cast<LoadInst>(Base))
-    if (MDNode *MD = LI->getMetadata(LLVMContext::MD_align)) {
-      ConstantInt *CI = mdconst::extract<ConstantInt>(MD->getOperand(0));
-      BaseAlign = CI->getLimitedValue();
-    }
+  APInt BaseAlign(Offset.getBitWidth(), getAlignment(Base, DL));
 
   if (!BaseAlign) {
     Type *Ty = Base->getType()->getPointerElementType();
@@ -3620,16 +3635,17 @@ bool llvm::isKnownNotFullPoison(const Instruction *PoisonI) {
   SmallSet<const Value *, 16> YieldsPoison;
   YieldsPoison.insert(PoisonI);
 
-  for (const Instruction *I = PoisonI, *E = BB->end(); I != E;
-       I = I->getNextNode()) {
-    if (I != PoisonI) {
-      const Value *NotPoison = getGuaranteedNonFullPoisonOp(I);
+  for (BasicBlock::const_iterator I = PoisonI->getIterator(), E = BB->end();
+       I != E; ++I) {
+    if (&*I != PoisonI) {
+      const Value *NotPoison = getGuaranteedNonFullPoisonOp(&*I);
       if (NotPoison != nullptr && YieldsPoison.count(NotPoison)) return true;
-      if (!isGuaranteedToTransferExecutionToSuccessor(I)) return false;
+      if (!isGuaranteedToTransferExecutionToSuccessor(&*I))
+        return false;
     }
 
     // Mark poison that propagates from I through uses of I.
-    if (YieldsPoison.count(I)) {
+    if (YieldsPoison.count(&*I)) {
       for (const User *User : I->users()) {
         const Instruction *UserI = cast<Instruction>(User);
         if (UserI->getParent() == BB && propagatesFullPoison(UserI))

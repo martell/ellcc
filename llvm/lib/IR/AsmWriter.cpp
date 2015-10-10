@@ -319,6 +319,8 @@ static void PrintCallingConv(unsigned cc, raw_ostream &Out) {
   case CallingConv::X86_64_Win64:  Out << "x86_64_win64cc"; break;
   case CallingConv::SPIR_FUNC:     Out << "spir_func"; break;
   case CallingConv::SPIR_KERNEL:   Out << "spir_kernel"; break;
+  case CallingConv::HHVM:          Out << "hhvmcc"; break;
+  case CallingConv::HHVM_C:        Out << "hhvm_ccc"; break;
   }
 }
 
@@ -815,7 +817,7 @@ void SlotTracker::processFunction() {
   for(Function::const_arg_iterator AI = TheFunction->arg_begin(),
       AE = TheFunction->arg_end(); AI != AE; ++AI)
     if (!AI->hasName())
-      CreateFunctionSlot(AI);
+      CreateFunctionSlot(&*AI);
 
   ST_DEBUG("Inserting Instructions:\n");
 
@@ -2633,7 +2635,7 @@ void AssemblyWriter::printFunction(const Function *F) {
     Out << " {";
     // Output all of the function's basic blocks.
     for (Function::const_iterator I = F->begin(), E = F->end(); I != E; ++I)
-      printBasicBlock(I);
+      printBasicBlock(&*I);
 
     // Output the function's use-lists.
     printUseLists(F);

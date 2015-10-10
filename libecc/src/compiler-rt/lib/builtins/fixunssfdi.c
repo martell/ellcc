@@ -22,8 +22,8 @@ COMPILER_RT_ABI du_int
 __fixunssfdi(float a)
 {
     double da = a;
-    su_int high = da/0x1p32f;
-    su_int low = da - (double)high*0x1p32f;
+    su_int high = da / 4294967296.f;               /* da / 0x1p32f; */
+    su_int low = da - (double)high * 4294967296.f; /* high * 0x1p32f; */
     return ((du_int)high << 32) | low;
 }
 

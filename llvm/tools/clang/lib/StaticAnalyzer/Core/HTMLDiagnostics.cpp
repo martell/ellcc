@@ -126,7 +126,7 @@ void HTMLDiagnostics::ReportDiag(const PathDiagnostic& D,
   assert(!path.empty());
   FileID FID =
     (*path.begin())->getLocation().asLocation().getExpansionLoc().getFileID();
-  assert(!FID.isInvalid());
+  assert(FID.isValid());
 
   // Create a new rewriter to generate HTML.
   Rewriter R(const_cast<SourceManager&>(SMgr), PP.getLangOpts());
@@ -281,7 +281,12 @@ void HTMLDiagnostics::ReportDiag(const PathDiagnostic& D,
 
   if (!AnalyzerOpts.shouldWriteStableReportFilename()) {
       llvm::sys::path::append(Model, Directory, "report-%%%%%%.html");
-
+      if (std::error_code EC =
+          llvm::sys::fs::make_absolute(Model)) {
+          llvm::errs() << "warning: could not make '" << Model
+                       << "' absolute: " << EC.message() << '\n';
+        return;
+      }
       if (std::error_code EC =
           llvm::sys::fs::createUniqueFile(Model, FD, ResultPath)) {
           llvm::errs() << "warning: could not create file in '" << Directory

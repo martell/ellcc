@@ -393,37 +393,17 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
       Diags.Report(diag::err_drv_invalid_value) << A->getAsString(Args) << Name;
   }
 
-  if (Args.hasArg(OPT_gline_tables_only)) {
-    Opts.setDebugInfo(CodeGenOptions::DebugLineTablesOnly);
-  } else if (Args.hasArg(OPT_g_Flag) || Args.hasArg(OPT_gdwarf_2) ||
-             Args.hasArg(OPT_gdwarf_3) || Args.hasArg(OPT_gdwarf_4)) {
-    bool Default = false;
-    // Until dtrace (via CTF) and LLDB can deal with distributed debug info,
-    // Darwin and FreeBSD default to standalone/full debug info.
-    if (llvm::Triple(TargetOpts.Triple).isOSDarwin() ||
-        llvm::Triple(TargetOpts.Triple).isOSFreeBSD())
-      Default = true;
-
-    if (Args.hasFlag(OPT_fstandalone_debug, OPT_fno_standalone_debug, Default))
-      Opts.setDebugInfo(CodeGenOptions::FullDebugInfo);
-    else
-      Opts.setDebugInfo(CodeGenOptions::LimitedDebugInfo);
+  if (Arg *A = Args.getLastArg(OPT_debug_info_kind_EQ)) {
+    Opts.setDebugInfo(
+        llvm::StringSwitch<CodeGenOptions::DebugInfoKind>(A->getValue())
+            .Case("line-tables-only", CodeGenOptions::DebugLineTablesOnly)
+            .Case("limited", CodeGenOptions::LimitedDebugInfo)
+            .Case("standalone", CodeGenOptions::FullDebugInfo));
   }
+  Opts.DwarfVersion = getLastArgIntValue(Args, OPT_dwarf_version_EQ, 0, Diags);
   Opts.DebugColumnInfo = Args.hasArg(OPT_dwarf_column_info);
-  if (Args.hasArg(OPT_gcodeview)) {
-    Opts.EmitCodeView = true;
-    Opts.DwarfVersion = 0;
-  } else if (Opts.getDebugInfo() != CodeGenOptions::NoDebugInfo) {
-    // Default Dwarf version is 4 if we are generating debug information.
-    Opts.DwarfVersion = 4;
-  }
+  Opts.EmitCodeView = Args.hasArg(OPT_gcodeview);
   Opts.SplitDwarfFile = Args.getLastArgValue(OPT_split_dwarf_file);
-  if (Args.hasArg(OPT_gdwarf_2))
-    Opts.DwarfVersion = 2;
-  else if (Args.hasArg(OPT_gdwarf_3))
-    Opts.DwarfVersion = 3;
-  else if (Args.hasArg(OPT_gdwarf_4))
-    Opts.DwarfVersion = 4;
   Opts.DebugTypeExtRefs = Args.hasArg(OPT_dwarf_ext_refs);
 
   if (const Arg *A =
@@ -462,7 +442,6 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DumpCoverageMapping = Args.hasArg(OPT_dump_coverage_mapping);
   Opts.AsmVerbose = Args.hasArg(OPT_masm_verbose);
   Opts.ObjCAutoRefCountExceptions = Args.hasArg(OPT_fobjc_arc_exceptions);
-  Opts.NewMSEH = Args.hasArg(OPT_fnew_ms_eh);
   Opts.CXAAtExit = !Args.hasArg(OPT_fno_use_cxa_atexit);
   Opts.CXXCtorDtorAliases = Args.hasArg(OPT_mconstructor_aliases);
   Opts.CodeModel = getCodeModel(Args, Diags);
@@ -1630,6 +1609,17 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.HalfArgsAndReturns = Args.hasArg(OPT_fallow_half_arguments_and_returns);
   Opts.GNUAsm = !Args.hasArg(OPT_fno_gnu_inline_asm);
 
+  // __declspec is enabled by default for the PS4 by the driver, and also
+  // enabled for Microsoft Extensions or Borland Extensions, here.
+  //
+  // FIXME: __declspec is also currently enabled for CUDA, but isn't really a
+  // CUDA extension, however it is required for supporting cuda_builtin_vars.h,
+  // which uses __declspec(property). Once that has been rewritten in terms of
+  // something more generic, remove the Opts.CUDA term here.
+  Opts.DeclSpecKeyword =
+      Args.hasFlag(OPT_fdeclspec, OPT_fno_declspec,
+                   (Opts.MicrosoftExt || Opts.Borland || Opts.CUDA));
+
   if (!Opts.CurrentModule.empty() && !Opts.ImplementationOfModule.empty() &&
       Opts.CurrentModule != Opts.ImplementationOfModule) {
     Diags.Report(diag::err_conflicting_module_names)
@@ -1708,6 +1698,9 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.FiniteMathOnly = Args.hasArg(OPT_ffinite_math_only) ||
       Args.hasArg(OPT_cl_finite_math_only) ||
       Args.hasArg(OPT_cl_fast_relaxed_math);
+  Opts.UnsafeFPMath = Args.hasArg(OPT_menable_unsafe_fp_math) ||
+                      Args.hasArg(OPT_cl_unsafe_math_optimizations) ||
+                      Args.hasArg(OPT_cl_fast_relaxed_math);
 
   Opts.RetainCommentsFromSystemHeaders =
       Args.hasArg(OPT_fretain_comments_from_system_headers);

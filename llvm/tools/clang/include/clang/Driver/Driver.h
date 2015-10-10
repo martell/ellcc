@@ -37,6 +37,11 @@ namespace opt {
 }
 
 namespace clang {
+
+namespace vfs {
+class FileSystem;
+}
+
 namespace driver {
 
   class Action;
@@ -54,6 +59,8 @@ class Driver {
   llvm::opt::OptTable *Opts;
 
   DiagnosticsEngine &Diags;
+
+  IntrusiveRefCntPtr<vfs::FileSystem> VFS;
 
   enum DriverMode {
     GCCMode,
@@ -208,9 +215,9 @@ private:
                                  SmallVectorImpl<std::string> &Names) const;
 
 public:
-  Driver(StringRef _ClangExecutable,
-         StringRef _DefaultTargetTriple,
-         DiagnosticsEngine &_Diags);
+  Driver(StringRef ClangExecutable, StringRef DefaultTargetTriple,
+         DiagnosticsEngine &Diags,
+         IntrusiveRefCntPtr<vfs::FileSystem> VFS = nullptr);
   ~Driver();
 
   /// @name Accessors
@@ -222,6 +229,8 @@ public:
   const llvm::opt::OptTable &getOpts() const { return *Opts; }
 
   const DiagnosticsEngine &getDiags() const { return Diags; }
+
+  vfs::FileSystem &getVFS() const { return *VFS; }
 
   bool getCheckInputsExist() const { return CheckInputsExist; }
 
