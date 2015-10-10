@@ -70,9 +70,9 @@ $(Configs)::
 	      CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
 	      AR=$(ELLCC)/bin/ecc-ar \
 	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
-	      --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*` \
+              --host=x86_64-macos \
 	      --build=x86_64-linux \
-	      --with-build-cc=$(ELLCC)/bin/ecc \
+	      --with-build-cc=cc \
 	      --prefix=$(ELLCC) $$NOCXX ; \
 	fi
 
