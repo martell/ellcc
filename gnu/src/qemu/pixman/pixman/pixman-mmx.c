@@ -89,6 +89,7 @@ _mm_mulhi_pu16 (__m64 __A, __m64 __B)
     return __A;
 }
 
+#undef __OPTIMIZE__
 #  ifdef __OPTIMIZE__
 extern __inline __m64 __attribute__((__gnu_inline__, __always_inline__, __artificial__))
 _mm_shuffle_pi16 (__m64 __A, int8_t const __N)
