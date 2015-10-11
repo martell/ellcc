@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.16:
+
 * Update to LLVM r249946.
 * Update to LLVM r248750.
 * Update to LLVM r248677.
