@@ -34,6 +34,8 @@ release:
 .PHONY: sendrelease
 sendrelease:
 	$(OUT)echo Enter the ellcc.org svn password
+	$(OUT)svn rm -m "Remove current." \
+	  http://ellcc.org/svn/ellcc/tags/current
 	$(OUT)svn cp -m "Tag current release." \
 	  http://ellcc.org/svn/ellcc/tags/ellcc-$(VERSION) \
 	  http://ellcc.org/svn/ellcc/tags/current
