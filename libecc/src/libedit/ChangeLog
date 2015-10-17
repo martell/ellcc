@@ -1,6 +1,50 @@
    * See also NetBSD changelog:
 	http://cvsweb.netbsd.org/bsdweb.cgi/src/lib/libedit
 
+2015-03-25 Jess Thrysoee
+
+   * version-info: 0:53:0
+
+   * all: sync with upstream source
+
+2014-10-30 Jess Thrysoee
+
+   * version-info: 0:52:0
+
+   * all: sync with upstream source
+
+   * configura.ac: Fix posix shell portability issue. Patch by Ryo Onodera.
+
+2014-06-20 Jess Thrysoee
+
+   * version-info: 0:51:0
+
+   * all: sync with upstream source
+
+2014-06-18 Jess Thrysoee
+
+   * version-info: 0:50:0
+
+   * all: sync with upstream source - add weak alias patches
+
+2014-06-18 Jess Thrysoee
+
+   * version-info: 0:49:0
+
+   * all: sync with upstream source.
+
+2014-02-13 Jess Thrysoee
+
+   * version-info: 0:48:0
+
+   * all: sync with upstream source.
+
+   * examples/fileman.c: Fix typo. Patch by Kamil Dudka.
+
+   * Makefile.am, configure.ac: Add --enable-examples configure parameter.
+	Make it possible to enable/disable building of the examples programs.
+	Patch by James Le Cuirot.
+
 2013-07-12 Jess Thrysoee
 
    * version-info: 0:47:0

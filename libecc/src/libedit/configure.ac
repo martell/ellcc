@@ -35,7 +35,7 @@ AM_INIT_AUTOMAKE
 AC_PROG_LIBTOOL
 
 # libtool -version-info
-AC_SUBST(LT_VERSION, [0:47:0])
+AC_SUBST(LT_VERSION, [0:53:0])
 
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
@@ -64,6 +64,15 @@ AC_CHECK_LIB(tinfo, tgetent,,
 
 ### use option --enable-widec to turn on use of wide-character support
 EL_ENABLE_WIDEC
+
+AC_ARG_ENABLE(
+  [examples],
+  [AS_HELP_STRING([--enable-examples], [build the example programs [default=yes]])],
+  [enable_examples="$enableval"],
+  [enable_examples="yes"]
+)
+
+AM_CONDITIONAL(ENABLE_EXAMPLES, [test "$enable_examples" = "yes"])
 
 # Checks for header files.
 AC_HEADER_DIRENT

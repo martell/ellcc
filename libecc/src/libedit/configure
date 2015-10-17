@@ -586,7 +586,7 @@ MAKEFLAGS=
 
 # Identity of this package.
 PACKAGE_NAME='libedit'
-PACKAGE_TARNAME='libedit-20150919'
+PACKAGE_TARNAME='libedit-20151017'
 PACKAGE_VERSION='3.1'
 PACKAGE_STRING='libedit 3.1'
 PACKAGE_BUGREPORT=''
@@ -641,6 +641,8 @@ HAVE_STRLCAT_TRUE
 HAVE_STRLCPY_FALSE
 HAVE_STRLCPY_TRUE
 LIBOBJS
+ENABLE_EXAMPLES_FALSE
+ENABLE_EXAMPLES_TRUE
 WIDECHAR_FALSE
 WIDECHAR_TRUE
 MANTYPE
@@ -771,6 +773,7 @@ with_gnu_ld
 with_sysroot
 enable_libtool_lock
 enable_widec
+enable_examples
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1370,7 +1373,7 @@ Fine tuning of the installation directories:
   --localedir=DIR         locale-dependent data [DATAROOTDIR/locale]
   --mandir=DIR            man documentation [DATAROOTDIR/man]
   --docdir=DIR            documentation root
-                          [DATAROOTDIR/doc/libedit-20150919]
+                          [DATAROOTDIR/doc/libedit-20151017]
   --htmldir=DIR           html documentation [DOCDIR]
   --dvidir=DIR            dvi documentation [DOCDIR]
   --pdfdir=DIR            pdf documentation [DOCDIR]
@@ -1412,6 +1415,7 @@ Optional Features:
                           optimize for fast installation [default=yes]
   --disable-libtool-lock  avoid locking (might break parallel builds)
   --enable-widec          compile with wide-char/UTF-8 code
+  --enable-examples       build the example programs [default=yes]
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -4213,7 +4217,7 @@ fi
 
 
 # Define the identity of the package.
- PACKAGE='libedit-20150919'
+ PACKAGE='libedit-20151017'
  VERSION='3.1'
 
 
@@ -6713,7 +6717,7 @@ ia64-*-hpux*)
   rm -rf conftest*
   ;;
 
-x86_64-*kfreebsd*-gnu|x86_64-*linux*|ppc*-*linux*|powerpc*-*linux*| \
+x86_64-*kfreebsd*-gnu|x86_64-*linux*|powerpc*-*linux*| \
 s390*-*linux*|s390*-*tpf*|sparc*-*linux*)
   # Find out which ABI we are using.
   echo 'int i;' > conftest.$ac_ext
@@ -6731,7 +6735,10 @@ s390*-*linux*|s390*-*tpf*|sparc*-*linux*)
 	  x86_64-*linux*)
 	    LD="${LD-ld} -m elf_i386"
 	    ;;
-	  ppc64-*linux*|powerpc64-*linux*)
+	  powerpc64le-*linux*)
+	    LD="${LD-ld} -m elf32lppclinux"
+	    ;;
+	  powerpc64-*linux*)
 	    LD="${LD-ld} -m elf32ppclinux"
 	    ;;
 	  s390x-*linux*)
@@ -6750,7 +6757,10 @@ s390*-*linux*|s390*-*tpf*|sparc*-*linux*)
 	  x86_64-*linux*)
 	    LD="${LD-ld} -m elf_x86_64"
 	    ;;
-	  ppc*-*linux*|powerpc*-*linux*)
+	  powerpcle-*linux*)
+	    LD="${LD-ld} -m elf64lppc"
+	    ;;
+	  powerpc-*linux*)
 	    LD="${LD-ld} -m elf64ppc"
 	    ;;
 	  s390*-*linux*|s390*-*tpf*)
@@ -10633,10 +10643,14 @@ fi
   # before this can be enabled.
   hardcode_into_libs=yes
 
+  # Add ABI-specific directories to the system library path.
+  sys_lib_dlsearch_path_spec="/lib64 /usr/lib64 /lib /usr/lib"
+
   # Append ld.so.conf contents to the search path
   if test -f /etc/ld.so.conf; then
     lt_ld_extra=`awk '/^include / { system(sprintf("cd /etc; cat %s 2>/dev/null", \$2)); skip = 1; } { if (!skip) print \$0; skip = 0; }' < /etc/ld.so.conf | $SED -e 's/#.*//;/^[	 ]*hwcap[	 ]/d;s/[:,	]/ /g;s/=[^=]*$//;s/=[^= ]* / /g;s/"//g;/^$/d' | tr '\n' ' '`
-    sys_lib_dlsearch_path_spec="/lib /usr/lib $lt_ld_extra"
+    sys_lib_dlsearch_path_spec="$sys_lib_dlsearch_path_spec $lt_ld_extra"
+
   fi
 
   # We used to test for /lib/ld.so.1 and disable shared libraries on
@@ -11620,7 +11634,7 @@ CC="$lt_save_CC"
 
 
 # libtool -version-info
-LT_VERSION=0:47:0
+LT_VERSION=0:53:0
 
 
 # Check whether --enable-silent-rules was given.
@@ -12262,6 +12276,24 @@ else
   WIDECHAR_FALSE=
 fi
 
+
+
+# Check whether --enable-examples was given.
+if test "${enable_examples+set}" = set; then :
+  enableval=$enable_examples; enable_examples="$enableval"
+else
+  enable_examples="yes"
+
+fi
+
+
+ if test "$enable_examples" = "yes"; then
+  ENABLE_EXAMPLES_TRUE=
+  ENABLE_EXAMPLES_FALSE='#'
+else
+  ENABLE_EXAMPLES_TRUE='#'
+  ENABLE_EXAMPLES_FALSE=
+fi
 
 
 # Checks for header files.
@@ -13480,6 +13512,10 @@ fi
 
 if test -z "${WIDECHAR_TRUE}" && test -z "${WIDECHAR_FALSE}"; then
   as_fn_error $? "conditional \"WIDECHAR\" was never defined.
+Usually this means the macro was only invoked conditionally." "$LINENO" 5
+fi
+if test -z "${ENABLE_EXAMPLES_TRUE}" && test -z "${ENABLE_EXAMPLES_FALSE}"; then
+  as_fn_error $? "conditional \"ENABLE_EXAMPLES\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_STRLCPY_TRUE}" && test -z "${HAVE_STRLCPY_FALSE}"; then

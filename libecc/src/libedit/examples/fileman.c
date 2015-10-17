@@ -3,7 +3,7 @@
    to manipulate files and their modes.
 
    NOTE: this was taken from the GNU Readline documentation and ported
-   to libedit. A commad to output the history list was added.
+   to libedit. A command to output the history list was added.
    
    */
 
