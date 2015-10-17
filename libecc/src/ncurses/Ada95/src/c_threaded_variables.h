@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (c) 1998,2000 Free Software Foundation, Inc.                   *
+ * Copyright (c) 2011-2014,2015 Free Software Foundation, Inc.              *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -26,36 +26,33 @@
  * authorization.                                                           *
  ****************************************************************************/
 
-/*
- * $Id: tty_input.h,v 1.2 2000/12/10 02:26:51 tom Exp $
- */
+/* $Id: c_threaded_variables.h,v 1.3 2015/08/06 23:09:47 tom Exp $ */
 
-#ifndef TTY_INPUT_H
-#define TTY_INPUT_H 1
+#ifndef __C_THREADED_VARIABLES_H
+#define __C_THREADED_VARIABLES_H
 
-extern NCURSES_EXPORT(bool) _nc_tty_mouse_mask (mmask_t);
-extern NCURSES_EXPORT(bool) _nc_tty_pending (void);
-extern NCURSES_EXPORT(int)  _nc_tty_next_event (int);
-extern NCURSES_EXPORT(void) _nc_tty_flags_changed (void);
-extern NCURSES_EXPORT(void) _nc_tty_flush (void);
-extern NCURSES_EXPORT(void) _nc_tty_input_resume (void);
-extern NCURSES_EXPORT(void) _nc_tty_input_suspend (void);
+#include <ncurses_cfg.h>
 
-struct tty_input_data {
-	int             _ifd;           /* input file ptr for screen        */
-	int             _keypad_xmit;   /* current terminal state           */
-	int             _meta_on;       /* current terminal state           */
+#if HAVE_INTTYPES_H
+# include <inttypes.h>
+#else
+# if HAVE_STDINT_H
+#  include <stdint.h>
+# endif
+#endif
 
-	/*
-	 * These are the data that support the mouse interface.
-	 */
-	bool            (*_mouse_event) (SCREEN *);
-	bool            (*_mouse_inline)(SCREEN *);
-	bool            (*_mouse_parse) (int);
-	void            (*_mouse_resume)(SCREEN *);
-	void            (*_mouse_wrap)  (SCREEN *);
-	int             _mouse_fd;      /* file-descriptor, if any */
-	int             mousetype;
-};
+#include <curses.h>
 
-#endif /* TTY_INPUT_H */
+extern WINDOW *stdscr_as_function(void);
+extern WINDOW *curscr_as_function(void);
+
+extern int LINES_as_function(void);
+extern int LINES_as_function(void);
+extern int COLS_as_function(void);
+extern int TABSIZE_as_function(void);
+extern int COLORS_as_function(void);
+extern int COLOR_PAIRS_as_function(void);
+
+extern chtype acs_map_as_function(char /* index */ );
+
+#endif /* __C_THREADED_VARIABLES_H */

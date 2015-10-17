@@ -1,5 +1,5 @@
 /****************************************************************************
- * Copyright (c) 1998-2000,2007 Free Software Foundation, Inc.              *
+ * Copyright (c) 1998-2013,2015 Free Software Foundation, Inc.              *
  *                                                                          *
  * Permission is hereby granted, free of charge, to any person obtaining a  *
  * copy of this software and associated documentation files (the            *
@@ -26,44 +26,46 @@
  * authorization.                                                           *
  ****************************************************************************/
 
-#include <curses.priv.h>
-
-MODULE_ID("$Id: memmove.c,v 1.5 2007/08/11 17:12:43 tom Exp $")
-
 /****************************************************************************
- *  Author: Thomas E. Dickey <dickey@clark.net> 1998                        *
+ *  Author: Thomas E. Dickey                                                *
  ****************************************************************************/
 
-#if USE_MY_MEMMOVE
-#define DST ((char *)s1)
-#define SRC ((const char *)s2)
-NCURSES_EXPORT(void *)
-_nc_memmove(void *s1, const void *s2, size_t n)
+#include <tparm_type.h>
+
+MODULE_ID("$Id: tparm_type.c,v 1.2 2015/04/04 15:01:13 tom Exp $")
+
+/*
+ * Lookup the type of call we should make to tparm().  This ignores the actual
+ * terminfo capability (bad, because it is not extensible), but makes this
+ * code portable to platforms where sizeof(int) != sizeof(char *).
+ */
+TParams
+tparm_type(const char *name)
 {
-    if (n != 0) {
-	if ((DST + n > SRC) && (SRC + n > DST)) {
-	    static char *bfr;
-	    static size_t length;
-	    register size_t j;
-	    if (length < n) {
-		length = (n * 3) / 2;
-		bfr = typeRealloc(char, length, bfr);
-	    }
-	    for (j = 0; j < n; j++)
-		bfr[j] = SRC[j];
-	    s2 = bfr;
+#define TD(code, longname, ti, tc) \
+    	{code, {longname} }, \
+	{code, {ti} }, \
+	{code, {tc} }
+    TParams result = Numbers;
+    /* *INDENT-OFF* */
+    static const struct {
+	TParams code;
+	const char name[12];
+    } table[] = {
+	TD(Num_Str,	"pkey_key",	"pfkey",	"pk"),
+	TD(Num_Str,	"pkey_local",	"pfloc",	"pl"),
+	TD(Num_Str,	"pkey_xmit",	"pfx",		"px"),
+	TD(Num_Str,	"plab_norm",	"pln",		"pn"),
+	TD(Num_Str_Str, "pkey_plab",	"pfxl",		"xl"),
+    };
+    /* *INDENT-ON* */
+
+    unsigned n;
+    for (n = 0; n < SIZEOF(table); n++) {
+	if (!strcmp(name, table[n].name)) {
+	    result = table[n].code;
+	    break;
 	}
-	while (n-- != 0)
-	    DST[n] = SRC[n];
     }
-    return s1;
+    return result;
 }
-#else
-extern
-NCURSES_EXPORT(void)
-_nc_memmove(void);		/* quiet's gcc warning */
-NCURSES_EXPORT(void)
-_nc_memmove(void)
-{
-}				/* nonempty for strict ANSI compilers */
-#endif /* USE_MY_MEMMOVE */
