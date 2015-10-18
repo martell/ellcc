@@ -26,7 +26,6 @@ typedef unsigned long long uint64_t;
 
 #endif /* defined(__FreeBSD__) && defined(__i386__) */
 
-#define PROFILE_HEADER_SIZE 7
 
 typedef struct __llvm_profile_data {
   const uint32_t NameSize;
@@ -35,6 +34,17 @@ typedef struct __llvm_profile_data {
   const char *const Name;
   uint64_t *const Counters;
 } __llvm_profile_data;
+
+typedef struct __llvm_profile_header {
+  uint64_t Magic;
+  uint64_t Version;
+  uint64_t DataSize;
+  uint64_t CountersSize;
+  uint64_t NamesSize;
+  uint64_t CountersDelta;
+  uint64_t NamesDelta;
+} __llvm_profile_header;
+
 
 /*!
  * \brief Get required size for profile buffer.

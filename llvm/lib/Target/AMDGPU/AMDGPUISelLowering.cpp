@@ -355,7 +355,7 @@ AMDGPUTargetLowering::AMDGPUTargetLowering(TargetMachine &TM,
     setOperationAction(ISD::SMUL_LOHI, VT, Expand);
     setOperationAction(ISD::UMUL_LOHI, VT, Expand);
     setOperationAction(ISD::SDIVREM, VT, Custom);
-    setOperationAction(ISD::UDIVREM, VT, Custom);
+    setOperationAction(ISD::UDIVREM, VT, Expand);
     setOperationAction(ISD::ADDC, VT, Expand);
     setOperationAction(ISD::SUBC, VT, Expand);
     setOperationAction(ISD::ADDE, VT, Expand);
@@ -530,6 +530,18 @@ bool AMDGPUTargetLowering::isFNegFree(EVT VT) const {
 bool AMDGPUTargetLowering:: storeOfVectorConstantIsCheap(EVT MemVT,
                                                          unsigned NumElem,
                                                          unsigned AS) const {
+  return true;
+}
+
+bool AMDGPUTargetLowering::aggressivelyPreferBuildVectorSources(EVT VecVT) const {
+  // There are few operations which truly have vector input operands. Any vector
+  // operation is going to involve operations on each component, and a
+  // build_vector will be a copy per element, so it always makes sense to use a
+  // build_vector input in place of the extracted element to avoid a copy into a
+  // super register.
+  //
+  // We should probably only do this if all users are extracts only, but this
+  // should be the common case.
   return true;
 }
 

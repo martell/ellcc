@@ -690,9 +690,8 @@ bool AsmParser::Run(bool NoInitialTextSection, bool NoFinalize) {
         // FIXME: We would really like to refer back to where the symbol was
         // first referenced for a source location. We need to add something
         // to track that. Currently, we just point to the end of the file.
-        printMessage(getLexer().getLoc(), SourceMgr::DK_Error,
-                     "assembler local symbol '" + Sym->getName() +
-                         "' not defined");
+        return Error(getLexer().getLoc(), "assembler local symbol '" +
+                                              Sym->getName() + "' not defined");
     }
   }
 
@@ -4488,7 +4487,7 @@ bool AsmParser::parseDirectiveMSEmit(SMLoc IDLoc, ParseStatementInfo &Info,
   if (!MCE)
     return Error(ExprLoc, "unexpected expression in _emit");
   uint64_t IntValue = MCE->getValue();
-  if (!isUIntN(8, IntValue) && !isIntN(8, IntValue))
+  if (!isUInt<8>(IntValue) && !isInt<8>(IntValue))
     return Error(ExprLoc, "literal value out of range for directive");
 
   Info.AsmRewrites->emplace_back(AOK_Emit, IDLoc, Len);

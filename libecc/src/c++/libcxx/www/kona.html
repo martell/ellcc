@@ -74,13 +74,13 @@
 	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2259">2259</a></td><td>Issues in 17.6.5.5 rules for member functions</td><td>Kona</td><td>Complete</td></tr>
 	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2336">2336</a></td><td><tt>is_trivially_constructible/is_trivially_assignable</tt> traits are always false</td><td>Kona</td><td></td></tr>
 	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2353">2353</a></td><td><tt>std::next</tt> is over-constrained</td><td>Kona</td><td></td></tr>
-	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2367">2367</a></td><td><tt>pair</tt> and <tt>tuple</tt> are not correctly implemented for <tt>is_constructible</tt> with no args</td><td>Kona</td><td></td></tr>
+	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2367">2367</a></td><td><tt>pair</tt> and <tt>tuple</tt> are not correctly implemented for <tt>is_constructible</tt> with no args</td><td>Kona</td><td>Patch Ready</td></tr>
 	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2380">2380</a></td><td>May <tt>&lt;cstdlib&gt;</tt> provide <tt>long ::abs(long)</tt> and <tt>long long ::abs(long long)</tt>?</td><td>Kona</td><td>Complete</td></tr>
 	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2384">2384</a></td><td>Allocator's <tt>deallocate</tt> function needs better specification</td><td>Kona</td><td>Complete</td></tr>
 	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2385">2385</a></td><td><tt>function::assign</tt> allocator argument doesn't make sense</td><td>Kona</td><td></td></tr>
 	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2435">2435</a></td><td><tt>reference_wrapper::operator()</tt>'s Remark should be deleted</td><td>Kona</td><td>Complete</td></tr>
-	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2447">2447</a></td><td>Allocators and <tt>volatile</tt>-qualified value types</td><td>Kona</td><td></td></tr>
-	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2462">2462</a></td><td><tt>std::ios_base::failure</tt> is overspecified</td><td>Kona</td><td></td></tr>
+	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2447">2447</a></td><td>Allocators and <tt>volatile</tt>-qualified value types</td><td>Kona</td><td>Complete</td></tr>
+	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2462">2462</a></td><td><tt>std::ios_base::failure</tt> is overspecified</td><td>Kona</td><td>Complete</td></tr>
 	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2466">2466</a></td><td><tt>allocator_traits::max_size()</tt> default behavior is incorrect</td><td>Kona</td><td>Patch Ready</td></tr>
 	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2469">2469</a></td><td>Wrong specification of Requires clause of <tt>operator[]</tt> for <tt>map</tt> and <tt>unordered_map</tt></td><td>Kona</td><td></td></tr>
 	<tr><td><a href="http://cplusplus.github.io/LWG/lwg-defects.html#2473">2473</a></td><td><tt>basic_filebuf</tt>'s relation to C <tt>FILE</tt> semantics</td><td>Kona</td><td>Complete</td></tr>
@@ -119,15 +119,15 @@
 <li><i>2259 - No code changes needed here.</i></li>
 <li>2336 - <b>Check later</b></li>
 <li>2353 - Simple change, needs a test. (test probably used to exist)</li>
-<li>2367 - Already done in tuple, pair needs to be done. Tests. (Eric)</li>
+<li><i>2367 - <b>Patch Available as D13750</b> (Eric)</i></li>
 <li><i>2380 - No code changes here; we already do this.</i></li>
 <li><i>2384 - Wording cleanup; no code change required</i></li>
 <li>2385 - Removing broken signatures. Only question is "how far back"?</li>
 <li><i>2435 - Wording cleanup; no code change required</i></li>
-<li>2447 - I don't know if there's any work here.</li>
-<li>2462 - No code change necessary. I don't see any tests. I think that there should be</li>
+<li><i>2447 - This is a relaxation of a requirement that we satisfy. No changes needed.</i>.</li>
+<li><i>2462 - Added a simple test. No code change needed</i> <b>Patch Available</b></li>
 <li><i>2466 - Simple change; need a test.</i> <b>Patch Available</b></li>
-<li>2469 - This is a followon to 2464, which we're done. This restates a bunch of operations in terms of newer ops. Probably refactoring to do here, but tests shouldn't change.</li>
+<li>2469 - This is a follow on to 2464, which we're done. This restates a bunch of operations in terms of newer ops. Probably refactoring to do here, but tests shouldn't change.</li>
 <li><i>2473 - There are two changes here; one to <tt>filebuf::seekpos</tt> and the other to <tt>filebuf::sync</tt>. We do both of these already.</i></li>
 <li><i>2476 - Just needed tests.</i> <b>Patch Available</b></li>
 <li><i>2477 - Wording cleanup.</i></li>

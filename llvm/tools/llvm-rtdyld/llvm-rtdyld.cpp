@@ -181,7 +181,10 @@ uint8_t *TrivialMemoryManager::allocateCodeSection(uintptr_t Size,
                                                    unsigned Alignment,
                                                    unsigned SectionID,
                                                    StringRef SectionName) {
-  sys::MemoryBlock MB = sys::Memory::AllocateRWX(Size, nullptr, nullptr);
+  std::string Err;
+  sys::MemoryBlock MB = sys::Memory::AllocateRWX(Size, nullptr, &Err);
+  if (!MB.base())
+    report_fatal_error("MemoryManager allocation failed: " + Err);
   FunctionMemory.push_back(MB);
   return (uint8_t*)MB.base();
 }
@@ -191,19 +194,20 @@ uint8_t *TrivialMemoryManager::allocateDataSection(uintptr_t Size,
                                                    unsigned SectionID,
                                                    StringRef SectionName,
                                                    bool IsReadOnly) {
-  sys::MemoryBlock MB = sys::Memory::AllocateRWX(Size, nullptr, nullptr);
+  std::string Err;
+  sys::MemoryBlock MB = sys::Memory::AllocateRWX(Size, nullptr, &Err);
+  if (!MB.base())
+    report_fatal_error("MemoryManager allocation failed: " + Err);
   DataMemory.push_back(MB);
   return (uint8_t*)MB.base();
 }
 
 void TrivialMemoryManager::invalidateInstructionCache() {
-  for (int i = 0, e = FunctionMemory.size(); i != e; ++i)
-    sys::Memory::InvalidateInstructionCache(FunctionMemory[i].base(),
-                                            FunctionMemory[i].size());
+  for (auto &FM : FunctionMemory)
+    sys::Memory::InvalidateInstructionCache(FM.base(), FM.size());
 
-  for (int i = 0, e = DataMemory.size(); i != e; ++i)
-    sys::Memory::InvalidateInstructionCache(DataMemory[i].base(),
-                                            DataMemory[i].size());
+  for (auto &DM : DataMemory)
+    sys::Memory::InvalidateInstructionCache(DM.base(), DM.size());
 }
 
 static const char *ProgramName;
@@ -240,7 +244,7 @@ static int printLineInfoForInput(bool LoadObjects, bool UseDebugObj) {
   // If we don't have any input files, read from stdin.
   if (!InputFileList.size())
     InputFileList.push_back("-");
-  for(unsigned i = 0, e = InputFileList.size(); i != e; ++i) {
+  for (auto &File : InputFileList) {
     // Instantiate a dynamic linker.
     TrivialMemoryManager MemMgr;
     RuntimeDyld Dyld(MemMgr, MemMgr);
@@ -248,7 +252,7 @@ static int printLineInfoForInput(bool LoadObjects, bool UseDebugObj) {
     // Load the input memory buffer.
 
     ErrorOr<std::unique_ptr<MemoryBuffer>> InputBuffer =
-        MemoryBuffer::getFileOrSTDIN(InputFileList[i]);
+        MemoryBuffer::getFileOrSTDIN(File);
     if (std::error_code EC = InputBuffer.getError())
       return Error("unable to read input: '" + EC.message() + "'");
 
@@ -317,11 +321,9 @@ static int printLineInfoForInput(bool LoadObjects, bool UseDebugObj) {
                << ", Addr = " << Addr << "\n";
 
         DILineInfoTable Lines = Context->getLineInfoForAddressRange(Addr, Size);
-        DILineInfoTable::iterator  Begin = Lines.begin();
-        DILineInfoTable::iterator  End = Lines.end();
-        for (DILineInfoTable::iterator It = Begin; It != End; ++It) {
-          outs() << "  Line info @ " << It->first - Addr << ": "
-                 << It->second.FileName << ", line:" << It->second.Line << "\n";
+        for (auto &D : Lines) {
+          outs() << "  Line info @ " << D.first - Addr << ": "
+                 << D.second.FileName << ", line:" << D.second.Line << "\n";
         }
       }
     }
@@ -346,10 +348,10 @@ static int executeInput() {
   // If we don't have any input files, read from stdin.
   if (!InputFileList.size())
     InputFileList.push_back("-");
-  for(unsigned i = 0, e = InputFileList.size(); i != e; ++i) {
+  for (auto &File : InputFileList) {
     // Load the input memory buffer.
     ErrorOr<std::unique_ptr<MemoryBuffer>> InputBuffer =
-        MemoryBuffer::getFileOrSTDIN(InputFileList[i]);
+        MemoryBuffer::getFileOrSTDIN(File);
     if (std::error_code EC = InputBuffer.getError())
       return Error("unable to read input: '" + EC.message() + "'");
     ErrorOr<std::unique_ptr<ObjectFile>> MaybeObj(
@@ -381,12 +383,11 @@ static int executeInput() {
     return Error("no definition for '" + EntryPoint + "'");
 
   // Invalidate the instruction cache for each loaded function.
-  for (unsigned i = 0, e = MemMgr.FunctionMemory.size(); i != e; ++i) {
-    sys::MemoryBlock &Data = MemMgr.FunctionMemory[i];
+  for (auto &FM : MemMgr.FunctionMemory) {
     // Make sure the memory is executable.
     std::string ErrorStr;
-    sys::Memory::InvalidateInstructionCache(Data.base(), Data.size());
-    if (!sys::Memory::setExecutable(Data, &ErrorStr))
+    sys::Memory::InvalidateInstructionCache(FM.base(), FM.size());
+    if (!sys::Memory::setExecutable(FM, &ErrorStr))
       return Error("unable to mark function executable: '" + ErrorStr + "'");
   }
 

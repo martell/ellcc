@@ -49,6 +49,28 @@ macro(define_if_not condition def)
   endif()
 endmacro()
 
+# Add a macro definition to the __config_site file if the specified condition
+# is 'true'. Note that '-D${def}' is not added. Instead it is expected that
+# the build include the '__config_site' header.
+macro(config_define_if condition def)
+  if (${condition})
+    set(${def} ON)
+    set(LIBCXX_NEEDS_SITE_CONFIG ON)
+  endif()
+endmacro()
+
+macro(config_define_if_not condition def)
+  if (NOT ${condition})
+    set(${def} ON)
+    set(LIBCXX_NEEDS_SITE_CONFIG ON)
+  endif()
+endmacro()
+
+macro(config_define value def)
+  set(${def} ${value})
+  set(LIBCXX_NEEDS_SITE_CONFIG ON)
+endmacro()
+
 # Add a specified list of flags to both 'LIBCXX_COMPILE_FLAGS' and
 # 'LIBCXX_LINK_FLAGS'.
 macro(add_flags)

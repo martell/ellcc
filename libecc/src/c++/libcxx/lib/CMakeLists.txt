@@ -129,15 +129,44 @@ set_target_properties(cxx
     COMPILE_FLAGS "${LIBCXX_COMPILE_FLAGS}"
     LINK_FLAGS    "${LIBCXX_LINK_FLAGS}"
     OUTPUT_NAME   "c++"
-    VERSION       "1.0"
-    SOVERSION     "1"
+    VERSION       "${LIBCXX_ABI_VERSION}.0"
+    SOVERSION     "${LIBCXX_ABI_VERSION}"
   )
+
+# Generate a linker script inplace of a libc++.so symlink. Rerun this command
+# after cxx builds.
+if (LIBCXX_ENABLE_ABI_LINKER_SCRIPT)
+  # Get the name of the ABI library and handle the case where CXXABI_LIBNAME
+  # is a target name and not a library. Ex cxxabi_shared.
+  set(SCRIPT_ABI_LIBNAME "${LIBCXX_CXX_ABI_LIBRARY}")
+  if (SCRIPT_ABI_LIBNAME STREQUAL "cxxabi_shared")
+    set(SCRIPT_ABI_LIBNAME "c++abi")
+  endif()
+  # Generate a linker script inplace of a libc++.so symlink. Rerun this command
+  # after cxx builds.
+  add_custom_command(TARGET cxx POST_BUILD
+    COMMAND
+      ${PYTHON_EXECUTABLE} ${LIBCXX_SOURCE_DIR}/utils/gen_link_script/gen_link_script.py
+    ARGS
+      "$<TARGET_LINKER_FILE:cxx>"
+      "${SCRIPT_ABI_LIBNAME}"
+    WORKING_DIRECTORY ${LIBCXX_BUILD_DIR}
+  )
+endif()
+
 
 if (LIBCXX_INSTALL_LIBRARY)
   install(TARGETS cxx
     LIBRARY DESTINATION lib${LIBCXX_LIBDIR_SUFFIX} COMPONENT libcxx
     ARCHIVE DESTINATION lib${LIBCXX_LIBDIR_SUFFIX} COMPONENT libcxx
     )
+  # NOTE: This install command must go after the cxx install command otherwise
+  # it will not be executed after the library symlinks are installed.
+  if (LIBCXX_ENABLE_ABI_LINKER_SCRIPT)
+    install(FILES "$<TARGET_LINKER_FILE:cxx>"
+      DESTINATION lib${LIBCXX_LIBDIR_SUFFIX}
+      COMPONENT libcxx)
+  endif()
 endif()
 
 if (NOT CMAKE_CONFIGURATION_TYPES AND (LIBCXX_INSTALL_LIBRARY OR

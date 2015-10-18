@@ -43,10 +43,12 @@
 #endif
 
 #ifdef _MSC_VER
+#define ALWAYS_INLINE __forceinline
 #define NOINLINE __declspec(noinline)
 #define NORETURN __declspec(noreturn)
 #define UNUSED
 #else
+#define ALWAYS_INLINE __attribute__((always_inline))
 #define NOINLINE __attribute__((noinline))
 #define NORETURN __attribute__((noreturn))
 #define UNUSED __attribute__((unused))
@@ -106,14 +108,26 @@ uint32_t __inline __builtin_clz(uint32_t value) {
   return 32;
 }
 
+#if defined(_M_ARM) || defined(_M_X64)
 uint32_t __inline __builtin_clzll(uint64_t value) {
   uint32_t leading_zero = 0;
   if (_BitScanReverse64(&leading_zero, value))
     return 63 - leading_zero;
   return 64;
 }
+#else
+uint32_t __inline __builtin_clzll(uint64_t value) {
+  if (value == 0)
+    return 64;
+  uint32_t msh = (uint32_t)(value >> 32);
+  uint32_t lsh = (uint32_t)(value & 0xFFFFFFFF);
+  if (msh != 0)
+    return __builtin_clz(msh);
+  return 32 + __builtin_clz(lsh);
+}
+#endif
 
 #define __builtin_clzl __builtin_clzll
-#endif
+#endif // defined(_MSC_VER) && !defined(__clang__)
 
 #endif /* INT_LIB_H */

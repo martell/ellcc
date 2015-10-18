@@ -1179,6 +1179,13 @@ TEST(Matcher, NonTypeTemplateParmDecl) {
       notMatches("template <typename T> void f();", nonTypeTemplateParmDecl()));
 }
 
+TEST(Matcher, templateTypeParmDecl) {
+  EXPECT_TRUE(matches("template <typename T> void f();",
+                      templateTypeParmDecl(hasName("T"))));
+  EXPECT_TRUE(
+      notMatches("template <int N> void f();", templateTypeParmDecl()));
+}
+
 TEST(Matcher, UserDefinedLiteral) {
   EXPECT_TRUE(matches("constexpr char operator \"\" _inc (const char i) {"
                       "  return i + 1;"
@@ -4107,6 +4114,11 @@ TEST(TypeMatching, MatchesArrayTypes) {
   EXPECT_TRUE(matches("int a[2];",
                       constantArrayType(hasElementType(builtinType()))));
   EXPECT_TRUE(matches("const int a = 0;", qualType(isInteger())));
+}
+
+TEST(TypeMatching, DecayedType) {
+  EXPECT_TRUE(matches("void f(int i[]);", valueDecl(hasType(decayedType(hasDecayedType(pointerType()))))));
+  EXPECT_TRUE(notMatches("int i[7];", decayedType()));
 }
 
 TEST(TypeMatching, MatchesComplexTypes) {

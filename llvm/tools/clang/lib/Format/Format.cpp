@@ -447,6 +447,7 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.BraceWrapping = {false, false, false, false, false, false,
                              false, false, false, false, false};
   LLVMStyle.BreakConstructorInitializersBeforeComma = false;
+  LLVMStyle.BreakAfterJavaFieldAnnotations = false;
   LLVMStyle.ColumnLimit = 80;
   LLVMStyle.CommentPragmas = "^ IWYU pragma:";
   LLVMStyle.ConstructorInitializerAllOnOneLineOrOnePerLine = false;
@@ -550,8 +551,9 @@ FormatStyle getChromiumStyle(FormatStyle::LanguageKind Language) {
   FormatStyle ChromiumStyle = getGoogleStyle(Language);
   if (Language == FormatStyle::LK_Java) {
     ChromiumStyle.AllowShortIfStatementsOnASingleLine = true;
-    ChromiumStyle.IndentWidth = 4;
+    ChromiumStyle.BreakAfterJavaFieldAnnotations = true;
     ChromiumStyle.ContinuationIndentWidth = 8;
+    ChromiumStyle.IndentWidth = 4;
   } else {
     ChromiumStyle.AllowAllParametersOfDeclarationOnNextLine = false;
     ChromiumStyle.AllowShortFunctionsOnASingleLine = FormatStyle::SFS_Inline;
@@ -876,12 +878,23 @@ private:
       return false;
 
     unsigned TokenCount = 0;
+    bool InCharacterClass = false;
     for (auto I = Tokens.rbegin() + 1, E = Tokens.rend(); I != E; ++I) {
       ++TokenCount;
       auto Prev = I + 1;
       while (Prev != E && Prev[0]->is(tok::comment))
         ++Prev;
-      if (I[0]->isOneOf(tok::slash, tok::slashequal) &&
+      // Slashes in character classes (delimited by [ and ]) do not need
+      // escaping. Escaping of the squares themselves is already handled by
+      // \c tryMergeEscapeSequence(), a plain tok::r_square must be non-escaped.
+      if (I[0]->is(tok::r_square))
+        InCharacterClass = true;
+      if (I[0]->is(tok::l_square)) {
+        if (!InCharacterClass)
+          return false;
+        InCharacterClass = false;
+      }
+      if (!InCharacterClass && I[0]->isOneOf(tok::slash, tok::slashequal) &&
           (Prev == E ||
            ((Prev[0]->isOneOf(tok::l_paren, tok::semi, tok::l_brace,
                               tok::r_brace, tok::exclaim, tok::l_square,

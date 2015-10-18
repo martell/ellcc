@@ -372,7 +372,9 @@ private:
         updateParameterCount(Left, CurrentToken);
         if (CurrentToken->isOneOf(tok::colon, tok::l_brace)) {
           FormatToken *Previous = CurrentToken->getPreviousNonComment();
-          if ((CurrentToken->is(tok::colon) ||
+          if (((CurrentToken->is(tok::colon) &&
+                (!Contexts.back().ColonIsDictLiteral ||
+                 Style.Language != FormatStyle::LK_Cpp)) ||
                Style.Language == FormatStyle::LK_Proto) &&
               Previous->Tok.getIdentifierInfo())
             Previous->Type = TT_SelectorName;
@@ -2174,7 +2176,7 @@ bool TokenAnnotator::mustBreakBefore(const AnnotatedLine &Line,
        Style.Language == FormatStyle::LK_JavaScript) &&
       Left.is(TT_LeadingJavaAnnotation) &&
       Right.isNot(TT_LeadingJavaAnnotation) && Right.isNot(tok::l_paren) &&
-      Line.Last->is(tok::l_brace))
+      (Line.Last->is(tok::l_brace) || Style.BreakAfterJavaFieldAnnotations))
     return true;
 
   return false;

@@ -687,9 +687,12 @@ def finstrument_functions : Flag<["-"], "finstrument-functions">, Group<f_Group>
 def flat__namespace : Flag<["-"], "flat_namespace">;
 def flax_vector_conversions : Flag<["-"], "flax-vector-conversions">, Group<f_Group>;
 def flimited_precision_EQ : Joined<["-"], "flimited-precision=">, Group<f_Group>;
-def flto_EQ : Joined<["-"], "flto=">, Group<clang_ignored_gcc_optimization_f_Group>;
-def flto : Flag<["-"], "flto">, Flags<[CC1Option]>, Group<f_Group>;
-def fno_lto : Flag<["-"], "fno-lto">, Group<f_Group>;
+def flto_EQ : Joined<["-"], "flto=">, Flags<[CC1Option]>, Group<f_Group>,
+  HelpText<"Set LTO mode to either 'full' or 'thin'">;
+def flto : Flag<["-"], "flto">, Flags<[CC1Option]>, Group<f_Group>,
+  HelpText<"Enable LTO in 'full' mode">;
+def fno_lto : Flag<["-"], "fno-lto">, Group<f_Group>,
+  HelpText<"Disable LTO mode (default)">;
 def fmacro_backtrace_limit_EQ : Joined<["-"], "fmacro-backtrace-limit=">,
                                 Group<f_Group>, Flags<[DriverOption, CoreOption]>;
 def fmerge_all_constants : Flag<["-"], "fmerge-all-constants">, Group<f_Group>;
@@ -1109,6 +1112,9 @@ def fdebug_types_section: Flag <["-"], "fdebug-types-section">, Group<f_Group>,
   Flags<[CC1Option]>, HelpText<"Place debug types in their own section (ELF Only)">;
 def fno_debug_types_section: Flag<["-"], "fno-debug-types-section">, Group<f_Group>,
   Flags<[CC1Option]>;
+def fdebug_prefix_map_EQ
+  : Joined<["-"], "fdebug-prefix-map=">, Group<f_Group>, Flags<[CC1Option]>,
+    HelpText<"remap file source paths in debug info">;
 def g_Flag : Flag<["-"], "g">, Group<g_Group>,
   HelpText<"Generate source-level debug information">;
 def gline_tables_only : Flag<["-"], "gline-tables-only">, Group<g_Group>,
@@ -1318,6 +1324,11 @@ def mno_prfchw : Flag<["-"], "mno-prfchw">, Group<m_x86_Features_Group>;
 def mno_rdseed : Flag<["-"], "mno-rdseed">, Group<m_x86_Features_Group>;
 def mno_adx : Flag<["-"], "mno-adx">, Group<m_x86_Features_Group>;
 def mno_sha : Flag<["-"], "mno-sha">, Group<m_x86_Features_Group>;
+def mno_fxsr : Flag<["-"], "mno-fxsr">, Group<m_x86_Features_Group>;
+def mno_xsave : Flag<["-"], "mno-xsave">, Group<m_x86_Features_Group>;
+def mno_xsaveopt : Flag<["-"], "mno-xsaveopt">, Group<m_x86_Features_Group>;
+def mno_xsavec : Flag<["-"], "mno-xsavec">, Group<m_x86_Features_Group>;
+def mno_xsaves : Flag<["-"], "mno-xsaves">, Group<m_x86_Features_Group>;
 
 def munaligned_access : Flag<["-"], "munaligned-access">, Group<m_arm_Features_Group>,
   HelpText<"Allow memory accesses to be unaligned (AArch32/AArch64 only)">;
@@ -1465,6 +1476,11 @@ def mrdseed : Flag<["-"], "mrdseed">, Group<m_x86_Features_Group>;
 def madx : Flag<["-"], "madx">, Group<m_x86_Features_Group>;
 def msha : Flag<["-"], "msha">, Group<m_x86_Features_Group>;
 def mcx16 : Flag<["-"], "mcx16">, Group<m_x86_Features_Group>;
+def mfxsr : Flag<["-"], "mfxsr">, Group<m_x86_Features_Group>;
+def mxsave : Flag<["-"], "mxsave">, Group<m_x86_Features_Group>;
+def mxsaveopt : Flag<["-"], "mxsaveopt">, Group<m_x86_Features_Group>;
+def mxsavec : Flag<["-"], "mxsavec">, Group<m_x86_Features_Group>;
+def mxsaves : Flag<["-"], "mxsaves">, Group<m_x86_Features_Group>;
 def mips16 : Flag<["-"], "mips16">, Group<m_Group>;
 def mno_mips16 : Flag<["-"], "mno-mips16">, Group<m_Group>;
 def mmicromips : Flag<["-"], "mmicromips">, Group<m_Group>;

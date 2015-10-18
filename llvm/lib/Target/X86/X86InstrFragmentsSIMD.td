@@ -222,6 +222,13 @@ def X86vpsha   : SDNode<"X86ISD::VPSHA",
                         SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisSameAs<0,1>,
                                       SDTCisVec<2>]>>;
 
+def X86vpcom   : SDNode<"X86ISD::VPCOM",
+                        SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisSameAs<0,1>,
+                                      SDTCisVec<2>, SDTCisVT<3, i8>]>>;
+def X86vpcomu  : SDNode<"X86ISD::VPCOMU",
+                        SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisSameAs<0,1>,
+                                      SDTCisVec<2>, SDTCisVT<3, i8>]>>;
+
 def SDTX86CmpPTest : SDTypeProfile<1, 2, [SDTCisVT<0, i32>,
                                           SDTCisVec<1>,
                                           SDTCisSameAs<2, 1>]>;
@@ -286,6 +293,10 @@ def SDTVBroadcastm : SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisVec<1>]>;
 def SDTBlend : SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisSameAs<0,1>,
                              SDTCisSameAs<1,2>, SDTCisVT<3, i8>]>;
 
+def SDTTernlog  : SDTypeProfile<1, 4, [SDTCisVec<0>, SDTCisSameAs<0,1>,
+                                SDTCisSameAs<0,2>, SDTCisSameAs<0,3>,
+                                SDTCisInt<4>]>;
+
 def SDTFPBinOpRound : SDTypeProfile<1, 3, [      // fadd_round, fmul_round, etc.
   SDTCisSameAs<0, 1>, SDTCisSameAs<0, 2>, SDTCisFP<0>, SDTCisInt<3>]>;
 
@@ -346,6 +357,7 @@ def X86VPermv     : SDNode<"X86ISD::VPERMV",    SDTShuff2Op>;
 def X86VPermi     : SDNode<"X86ISD::VPERMI",    SDTShuff2OpI>;
 def X86VPermv3    : SDNode<"X86ISD::VPERMV3",   SDTShuff3Op>;
 def X86VPermiv3   : SDNode<"X86ISD::VPERMIV3",  SDTShuff3Op>;
+def X86vpternlog  : SDNode<"X86ISD::VPTERNLOG", SDTTernlog>;
 
 def X86VPerm2x128 : SDNode<"X86ISD::VPERM2X128", SDTShuff3OpI>;
 
@@ -505,10 +517,10 @@ def X86vfproundRnd: SDNode<"X86ISD::VFPROUND",
 // These are 'extloads' from a scalar to the low element of a vector, zeroing
 // the top elements.  These are used for the SSE 'ss' and 'sd' instruction
 // forms.
-def sse_load_f32 : ComplexPattern<v4f32, 5, "SelectScalarSSELoad", [],
+def sse_load_f32 : ComplexPattern<v4f32, 5, "selectScalarSSELoad", [],
                                   [SDNPHasChain, SDNPMayLoad, SDNPMemOperand,
                                    SDNPWantRoot]>;
-def sse_load_f64 : ComplexPattern<v2f64, 5, "SelectScalarSSELoad", [],
+def sse_load_f64 : ComplexPattern<v2f64, 5, "selectScalarSSELoad", [],
                                   [SDNPHasChain, SDNPMayLoad, SDNPMemOperand,
                                    SDNPWantRoot]>;
 

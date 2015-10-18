@@ -406,6 +406,9 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.SplitDwarfFile = Args.getLastArgValue(OPT_split_dwarf_file);
   Opts.DebugTypeExtRefs = Args.hasArg(OPT_dwarf_ext_refs);
 
+  for (const auto &Arg : Args.getAllArgValues(OPT_fdebug_prefix_map_EQ))
+    Opts.DebugPrefixMap.insert(StringRef(Arg).split('='));
+
   if (const Arg *A =
           Args.getLastArg(OPT_emit_llvm_uselists, OPT_no_emit_llvm_uselists))
     Opts.EmitLLVMUseLists = A->getOption().getID() == OPT_emit_llvm_uselists;
@@ -496,7 +499,9 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.MergeFunctions = Args.hasArg(OPT_fmerge_functions);
 
-  Opts.PrepareForLTO = Args.hasArg(OPT_flto);
+  Opts.PrepareForLTO = Args.hasArg(OPT_flto, OPT_flto_EQ);
+  const Arg *A = Args.getLastArg(OPT_flto, OPT_flto_EQ);
+  Opts.EmitFunctionSummary = A && A->containsValue("thin");
 
   Opts.MSVolatile = Args.hasArg(OPT_fms_volatile);
 
@@ -1981,8 +1986,8 @@ void ModuleSignature::flush() {
 }
 
 void ModuleSignature::add(StringRef Value) {
-  for (StringRef::iterator I = Value.begin(), IEnd = Value.end(); I != IEnd;++I)
-    add(*I, 8);
+  for (auto &c : Value)
+    add(c, 8);
 }
 
 llvm::APInt ModuleSignature::getAsInteger() const {

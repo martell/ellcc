@@ -170,6 +170,14 @@ ABI Library Specific Options
   If this option is enabled, libc++ will try and link the selected ABI library
   statically.
 
+.. option:: LIBCXX_ENABLE_ABI_LINKER_SCRIPT:BOOL
+
+  **Default**: ``ON`` by default on UNIX platforms other than Apple unless
+  'LIBCXX_ENABLE_STATIC_ABI_LIBRARY' is ON. Otherwise the default value is ``OFF``.
+
+  This option generate and installs a linker script as ``libc++.so`` which
+  links the correct ABI library.
+
 .. option:: LIBCXXABI_USE_LLVM_UNWINDER:BOOL
 
   **Default**: ``OFF``
@@ -192,6 +200,25 @@ libc++ Feature options
   **Default**: ``ON``
 
   Build libc++ with run time type information.
+
+
+libc++ Feature options
+----------------------
+
+The following options allow building libc++ for a different ABI version.
+
+.. option:: LIBCXX_ABI_VERSION:STRING
+
+  **Default**: ``1``
+
+  Defines the target ABI version of libc++.
+
+.. option:: LIBCXX_ABI_UNSTABLE:BOOL
+
+  **Default**: ``OFF``
+
+  Build the "unstable" ABI version of libc++. Includes all ABI changing features
+  on top of the current stable version.
 
 .. _LLVM-specific variables:
 
