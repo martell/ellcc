@@ -8898,7 +8898,7 @@ if test $ac_cv_lib_shell32_main = yes; then
 #define HAVE_LIBSHELL32 1
 _ACEOF
 
-  LIBS="-lshell32 -lole32 $LIBS"
+  LIBS="-lshell32 -luuid $LIBS"
 
 fi
 
