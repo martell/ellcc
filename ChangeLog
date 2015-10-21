@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.17:
+
 * Update to LLVM r250619.
 * Update to ncurses-6.0.
 * Update to libedit-20150325-3.1.
