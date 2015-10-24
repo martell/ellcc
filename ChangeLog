@@ -1,5 +1,6 @@
 current SVN:
 
+* Added a little 'm' makefile to build LLVMLinux with ELLCC (work in progress).
 * Added ncurses C++ headers and library builds for wide character support.
 * Make a link ncurses.h -> curses.h.
 
