@@ -70,6 +70,7 @@ $(Configs)::
 	      CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
 	      AR=$(ELLCC)/bin/ecc-ar \
 	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
+	      --enable-widec \
               --host=x86_64-macos \
 	      --build=x86_64-linux \
 	      --with-build-cc=cc \
@@ -80,8 +81,9 @@ $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) -C ncurses-build/$*
 
 %.ncurses.install:
+	echo Installing ncurses for $*
+	$(OUT)cp -p src/ncurses/c++/curs*.h include
 	$(OUT)cd ncurses-build ; \
-	echo Installing ncurses for $* ; \
 	mkdir -p ../lib/$* ; \
 	cp $*/lib/*.a ../lib/$* ; \
 	(cd ../lib/$*/; ln -s libncurses.a libterminfo.a) ; \

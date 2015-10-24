@@ -1,5 +1,6 @@
 current SVN:
 
+* Added ncurses library builds for wide character support and C++ headers.
 * Make a link ncurses.h -> curses.h.
 
 version 0.1.17:
