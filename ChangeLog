@@ -1,5 +1,7 @@
 current SVN:
 
+* Make a link ncurses.h -> curses.h.
+
 version 0.1.17:
 
 * Update to LLVM r250619.
