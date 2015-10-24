@@ -86,6 +86,7 @@ $(Configs)::
 	cp $*/lib/*.a ../lib/$* ; \
 	(cd ../lib/$*/; ln -s libncurses.a libterminfo.a) ; \
 	cp -p $*/include/*.h ../include ; \
+	(cd ../include; ln -s curses.h ncurses.h ) ; \
 	$(MAKE) $(MFLAGS) -C $*/misc install
 
 $(Configs)::
