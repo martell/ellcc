@@ -5,10 +5,10 @@ TARGET		:= arm-linux-engeabihf
 
 ELLCC		:= $(shell realpath $(shell pwd)/../../ellcc)
 HOSTCC		:= $(ELLCC)/bin/ecc
-CC		:= $(ELLCC)/bin/ecc -target arm-linux-engeabihf
+CC		:= $(ELLCC)/bin/ecc -target $(TARGET) -I$(ELLCC)/libecc/include/$(ARCH)
 
 CPP		:= $(CC) -E
-LD		:= $(ELLCC)/bin/ecc -nostdlib
+LD		:= $(CC) -nostdlib
 
 ifdef ARCH
 export ARCH
