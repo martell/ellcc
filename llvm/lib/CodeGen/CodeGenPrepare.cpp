@@ -20,6 +20,7 @@
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -1120,35 +1121,68 @@ static bool OptimizeExtractBits(BinaryOperator *ShiftI, ConstantInt *CI,
 //
 static void ScalarizeMaskedLoad(CallInst *CI) {
   Value *Ptr  = CI->getArgOperand(0);
-  Value *Src0 = CI->getArgOperand(3);
+  Value *Alignment = CI->getArgOperand(1);
   Value *Mask = CI->getArgOperand(2);
-  VectorType *VecType = dyn_cast<VectorType>(CI->getType());
-  Type *EltTy = VecType->getElementType();
+  Value *Src0 = CI->getArgOperand(3);
 
+  unsigned AlignVal = cast<ConstantInt>(Alignment)->getZExtValue();
+  VectorType *VecType = dyn_cast<VectorType>(CI->getType());
   assert(VecType && "Unexpected return type of masked load intrinsic");
+
+  Type *EltTy = CI->getType()->getVectorElementType();
 
   IRBuilder<> Builder(CI->getContext());
   Instruction *InsertPt = CI;
   BasicBlock *IfBlock = CI->getParent();
   BasicBlock *CondBlock = nullptr;
   BasicBlock *PrevIfBlock = CI->getParent();
-  Builder.SetInsertPoint(InsertPt);
 
+  Builder.SetInsertPoint(InsertPt);
   Builder.SetCurrentDebugLocation(CI->getDebugLoc());
 
+  // Short-cut if the mask is all-true.
+  bool IsAllOnesMask = isa<Constant>(Mask) &&
+    cast<Constant>(Mask)->isAllOnesValue();
+
+  if (IsAllOnesMask) {
+    Value *NewI = Builder.CreateAlignedLoad(Ptr, AlignVal);
+    CI->replaceAllUsesWith(NewI);
+    CI->eraseFromParent();
+    return;
+  }
+
+  // Adjust alignment for the scalar instruction.
+  AlignVal = std::min(AlignVal, VecType->getScalarSizeInBits()/8);
   // Bitcast %addr fron i8* to EltTy*
   Type *NewPtrType =
     EltTy->getPointerTo(cast<PointerType>(Ptr->getType())->getAddressSpace());
   Value *FirstEltPtr = Builder.CreateBitCast(Ptr, NewPtrType);
+  unsigned VectorWidth = VecType->getNumElements();
+
   Value *UndefVal = UndefValue::get(VecType);
 
   // The result vector
   Value *VResult = UndefVal;
 
+  if (isa<ConstantVector>(Mask)) {
+    for (unsigned Idx = 0; Idx < VectorWidth; ++Idx) {
+      if (cast<ConstantVector>(Mask)->getOperand(Idx)->isNullValue())
+          continue;
+      Value *Gep =
+          Builder.CreateInBoundsGEP(EltTy, FirstEltPtr, Builder.getInt32(Idx));
+      LoadInst* Load = Builder.CreateAlignedLoad(Gep, AlignVal);
+      VResult = Builder.CreateInsertElement(VResult, Load,
+                                            Builder.getInt32(Idx));
+    }
+    Value *NewI = Builder.CreateSelect(Mask, VResult, Src0);
+    CI->replaceAllUsesWith(NewI);
+    CI->eraseFromParent();
+    return;
+  }
+
   PHINode *Phi = nullptr;
   Value *PrevPhi = UndefVal;
 
-  unsigned VectorWidth = VecType->getNumElements();
   for (unsigned Idx = 0; Idx < VectorWidth; ++Idx) {
 
     // Fill the "else" block, created in the previous iteration
@@ -1181,7 +1215,7 @@ static void ScalarizeMaskedLoad(CallInst *CI) {
 
     Value *Gep =
         Builder.CreateInBoundsGEP(EltTy, FirstEltPtr, Builder.getInt32(Idx));
-    LoadInst* Load = Builder.CreateLoad(Gep, false);
+    LoadInst* Load = Builder.CreateAlignedLoad(Gep, AlignVal);
     VResult = Builder.CreateInsertElement(VResult, Load, Builder.getInt32(Idx));
 
     // Create "else" block, fill it in the next iteration
@@ -1232,14 +1266,16 @@ static void ScalarizeMaskedLoad(CallInst *CI) {
 //   br label %else2
 //   . . .
 static void ScalarizeMaskedStore(CallInst *CI) {
-  Value *Ptr  = CI->getArgOperand(1);
   Value *Src = CI->getArgOperand(0);
+  Value *Ptr  = CI->getArgOperand(1);
+  Value *Alignment = CI->getArgOperand(2);
   Value *Mask = CI->getArgOperand(3);
 
+  unsigned AlignVal = cast<ConstantInt>(Alignment)->getZExtValue();
   VectorType *VecType = dyn_cast<VectorType>(Src->getType());
-  Type *EltTy = VecType->getElementType();
-
   assert(VecType && "Unexpected data type in masked store intrinsic");
+
+  Type *EltTy = VecType->getElementType();
 
   IRBuilder<> Builder(CI->getContext());
   Instruction *InsertPt = CI;
@@ -1247,19 +1283,44 @@ static void ScalarizeMaskedStore(CallInst *CI) {
   Builder.SetInsertPoint(InsertPt);
   Builder.SetCurrentDebugLocation(CI->getDebugLoc());
 
+  // Short-cut if the mask is all-true.
+  bool IsAllOnesMask = isa<Constant>(Mask) &&
+    cast<Constant>(Mask)->isAllOnesValue();
+
+  if (IsAllOnesMask) {
+    Builder.CreateAlignedStore(Src, Ptr, AlignVal);
+    CI->eraseFromParent();
+    return;
+  }
+
+  // Adjust alignment for the scalar instruction.
+  AlignVal = std::max(AlignVal, VecType->getScalarSizeInBits()/8);
   // Bitcast %addr fron i8* to EltTy*
   Type *NewPtrType =
     EltTy->getPointerTo(cast<PointerType>(Ptr->getType())->getAddressSpace());
   Value *FirstEltPtr = Builder.CreateBitCast(Ptr, NewPtrType);
-
   unsigned VectorWidth = VecType->getNumElements();
+
+  if (isa<ConstantVector>(Mask)) {
+    for (unsigned Idx = 0; Idx < VectorWidth; ++Idx) {
+      if (cast<ConstantVector>(Mask)->getOperand(Idx)->isNullValue())
+          continue;
+      Value *OneElt = Builder.CreateExtractElement(Src, Builder.getInt32(Idx));
+      Value *Gep =
+          Builder.CreateInBoundsGEP(EltTy, FirstEltPtr, Builder.getInt32(Idx));
+      Builder.CreateAlignedStore(OneElt, Gep, AlignVal);
+    }
+    CI->eraseFromParent();
+    return;
+  }
+
   for (unsigned Idx = 0; Idx < VectorWidth; ++Idx) {
 
     // Fill the "else" block, created in the previous iteration
     //
     //  %mask_1 = extractelement <16 x i1> %mask, i32 Idx
     //  %to_store = icmp eq i1 %mask_1, true
-    //  br i1 %to_load, label %cond.store, label %else
+    //  br i1 %to_store, label %cond.store, label %else
     //
     Value *Predicate = Builder.CreateExtractElement(Mask, Builder.getInt32(Idx));
     Value *Cmp = Builder.CreateICmp(ICmpInst::ICMP_EQ, Predicate,
@@ -1278,7 +1339,7 @@ static void ScalarizeMaskedStore(CallInst *CI) {
     Value *OneElt = Builder.CreateExtractElement(Src, Builder.getInt32(Idx));
     Value *Gep =
         Builder.CreateInBoundsGEP(EltTy, FirstEltPtr, Builder.getInt32(Idx));
-    Builder.CreateStore(OneElt, Gep);
+    Builder.CreateAlignedStore(OneElt, Gep, AlignVal);
 
     // Create "else" block, fill it in the next iteration
     BasicBlock *NewIfBlock =
@@ -1384,7 +1445,7 @@ bool CodeGenPrepare::optimizeCallInst(CallInst *CI, bool& ModifiedDT) {
     }
     case Intrinsic::masked_load: {
       // Scalarize unsupported vector masked load
-      if (!TTI->isLegalMaskedLoad(CI->getType(), 1)) {
+      if (!TTI->isLegalMaskedLoad(CI->getType())) {
         ScalarizeMaskedLoad(CI);
         ModifiedDT = true;
         return true;
@@ -1392,7 +1453,7 @@ bool CodeGenPrepare::optimizeCallInst(CallInst *CI, bool& ModifiedDT) {
       return false;
     }
     case Intrinsic::masked_store: {
-      if (!TTI->isLegalMaskedStore(CI->getArgOperand(0)->getType(), 1)) {
+      if (!TTI->isLegalMaskedStore(CI->getArgOperand(0)->getType())) {
         ScalarizeMaskedStore(CI);
         ModifiedDT = true;
         return true;
@@ -2300,9 +2361,7 @@ class TypePromotionHelper {
   /// \brief Utility function to determine if \p OpIdx should be promoted when
   /// promoting \p Inst.
   static bool shouldExtOperand(const Instruction *Inst, int OpIdx) {
-    if (isa<SelectInst>(Inst) && OpIdx == 0)
-      return false;
-    return true;
+    return !(isa<SelectInst>(Inst) && OpIdx == 0);
   }
 
   /// \brief Utility function to promote the operand of \p Ext when this
@@ -2439,10 +2498,8 @@ bool TypePromotionHelper::canGetThrough(const Instruction *Inst,
     return false;
 
   // #2 check that the truncate just drops extended bits.
-  if (Inst->getType()->getIntegerBitWidth() >= OpndType->getIntegerBitWidth())
-    return true;
-
-  return false;
+  return Inst->getType()->getIntegerBitWidth() >=
+         OpndType->getIntegerBitWidth();
 }
 
 TypePromotionHelper::Action TypePromotionHelper::getAction(
@@ -3846,8 +3903,19 @@ bool CodeGenPrepare::optimizeExtUses(Instruction *I) {
   return MadeChange;
 }
 
+/// Check if V (an operand of a select instruction) is an expensive instruction
+/// that is only used once.
+static bool sinkSelectOperand(const TargetTransformInfo *TTI, Value *V) {
+  auto *I = dyn_cast<Instruction>(V);
+  // If it's safe to speculatively execute, then it should not have side
+  // effects; therefore, it's safe to sink and possibly *not* execute.
+  return I && I->hasOneUse() && isSafeToSpeculativelyExecute(I) &&
+         TTI->getUserCost(I) >= TargetTransformInfo::TCC_Expensive;
+}
+
 /// Returns true if a SelectInst should be turned into an explicit branch.
-static bool isFormingBranchFromSelectProfitable(SelectInst *SI) {
+static bool isFormingBranchFromSelectProfitable(const TargetTransformInfo *TTI,
+                                                SelectInst *SI) {
   // FIXME: This should use the same heuristics as IfConversion to determine
   // whether a select is better represented as a branch.  This requires that
   // branch probability metadata is preserved for the select, which is not the
@@ -3868,8 +3936,17 @@ static bool isFormingBranchFromSelectProfitable(SelectInst *SI) {
   // on a load from memory. But if the load is used more than once, do not
   // change the select to a branch because the load is probably needed
   // regardless of whether the branch is taken or not.
-  return ((isa<LoadInst>(CmpOp0) && CmpOp0->hasOneUse()) ||
-          (isa<LoadInst>(CmpOp1) && CmpOp1->hasOneUse()));
+  if ((isa<LoadInst>(CmpOp0) && CmpOp0->hasOneUse()) ||
+      (isa<LoadInst>(CmpOp1) && CmpOp1->hasOneUse()))
+    return true;
+
+  // If either operand of the select is expensive and only needed on one side
+  // of the select, we should form a branch.
+  if (sinkSelectOperand(TTI, SI->getTrueValue()) ||
+      sinkSelectOperand(TTI, SI->getFalseValue()))
+    return true;
+
+  return false;
 }
 
 
@@ -3895,34 +3972,97 @@ bool CodeGenPrepare::optimizeSelectInst(SelectInst *SI) {
     // We have efficient codegen support for the select instruction.
     // Check if it is profitable to keep this 'select'.
     if (!TLI->isPredictableSelectExpensive() ||
-        !isFormingBranchFromSelectProfitable(SI))
+        !isFormingBranchFromSelectProfitable(TTI, SI))
       return false;
   }
 
   ModifiedDT = true;
 
+  // Transform a sequence like this:
+  //    start:
+  //       %cmp = cmp uge i32 %a, %b
+  //       %sel = select i1 %cmp, i32 %c, i32 %d
+  //
+  // Into:
+  //    start:
+  //       %cmp = cmp uge i32 %a, %b
+  //       br i1 %cmp, label %select.true, label %select.false
+  //    select.true:
+  //       br label %select.end
+  //    select.false:
+  //       br label %select.end
+  //    select.end:
+  //       %sel = phi i32 [ %c, %select.true ], [ %d, %select.false ]
+  //
+  // In addition, we may sink instructions that produce %c or %d from
+  // the entry block into the destination(s) of the new branch.
+  // If the true or false blocks do not contain a sunken instruction, that
+  // block and its branch may be optimized away. In that case, one side of the
+  // first branch will point directly to select.end, and the corresponding PHI
+  // predecessor block will be the start block.
+
   // First, we split the block containing the select into 2 blocks.
   BasicBlock *StartBlock = SI->getParent();
   BasicBlock::iterator SplitPt = ++(BasicBlock::iterator(SI));
-  BasicBlock *NextBlock = StartBlock->splitBasicBlock(SplitPt, "select.end");
+  BasicBlock *EndBlock = StartBlock->splitBasicBlock(SplitPt, "select.end");
 
-  // Create a new block serving as the landing pad for the branch.
-  BasicBlock *SmallBlock = BasicBlock::Create(SI->getContext(), "select.mid",
-                                             NextBlock->getParent(), NextBlock);
-
-  // Move the unconditional branch from the block with the select in it into our
-  // landing pad block.
+  // Delete the unconditional branch that was just created by the split.
   StartBlock->getTerminator()->eraseFromParent();
-  BranchInst::Create(NextBlock, SmallBlock);
+
+  // These are the new basic blocks for the conditional branch.
+  // At least one will become an actual new basic block.
+  BasicBlock *TrueBlock = nullptr;
+  BasicBlock *FalseBlock = nullptr;
+
+  // Sink expensive instructions into the conditional blocks to avoid executing
+  // them speculatively.
+  if (sinkSelectOperand(TTI, SI->getTrueValue())) {
+    TrueBlock = BasicBlock::Create(SI->getContext(), "select.true.sink",
+                                   EndBlock->getParent(), EndBlock);
+    auto *TrueBranch = BranchInst::Create(EndBlock, TrueBlock);
+    auto *TrueInst = cast<Instruction>(SI->getTrueValue());
+    TrueInst->moveBefore(TrueBranch);
+  }
+  if (sinkSelectOperand(TTI, SI->getFalseValue())) {
+    FalseBlock = BasicBlock::Create(SI->getContext(), "select.false.sink",
+                                    EndBlock->getParent(), EndBlock);
+    auto *FalseBranch = BranchInst::Create(EndBlock, FalseBlock);
+    auto *FalseInst = cast<Instruction>(SI->getFalseValue());
+    FalseInst->moveBefore(FalseBranch);
+  }
+
+  // If there was nothing to sink, then arbitrarily choose the 'false' side
+  // for a new input value to the PHI.
+  if (TrueBlock == FalseBlock) {
+    assert(TrueBlock == nullptr &&
+           "Unexpected basic block transform while optimizing select");
+
+    FalseBlock = BasicBlock::Create(SI->getContext(), "select.false",
+                                    EndBlock->getParent(), EndBlock);
+    BranchInst::Create(EndBlock, FalseBlock);
+  }
 
   // Insert the real conditional branch based on the original condition.
-  BranchInst::Create(NextBlock, SmallBlock, SI->getCondition(), SI);
+  // If we did not create a new block for one of the 'true' or 'false' paths
+  // of the condition, it means that side of the branch goes to the end block
+  // directly and the path originates from the start block from the point of
+  // view of the new PHI.
+  if (TrueBlock == nullptr) {
+    BranchInst::Create(EndBlock, FalseBlock, SI->getCondition(), SI);
+    TrueBlock = StartBlock;
+  } else if (FalseBlock == nullptr) {
+    BranchInst::Create(TrueBlock, EndBlock, SI->getCondition(), SI);
+    FalseBlock = StartBlock;
+  } else {
+    BranchInst::Create(TrueBlock, FalseBlock, SI->getCondition(), SI);
+  }
 
   // The select itself is replaced with a PHI Node.
-  PHINode *PN = PHINode::Create(SI->getType(), 2, "", &NextBlock->front());
+  PHINode *PN = PHINode::Create(SI->getType(), 2, "", &EndBlock->front());
   PN->takeName(SI);
-  PN->addIncoming(SI->getTrueValue(), StartBlock);
-  PN->addIncoming(SI->getFalseValue(), SmallBlock);
+  PN->addIncoming(SI->getTrueValue(), TrueBlock);
+  PN->addIncoming(SI->getFalseValue(), FalseBlock);
+
   SI->replaceAllUsesWith(PN);
   SI->eraseFromParent();
 

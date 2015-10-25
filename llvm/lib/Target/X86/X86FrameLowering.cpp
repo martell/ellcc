@@ -1102,7 +1102,7 @@ void X86FrameLowering::emitEpilogue(MachineFunction &MF,
     RestoreMBB = TargetMBB;
     if (STI.is32Bit()) {
       RestoreMBB = MF.CreateMachineBasicBlock(MBB.getBasicBlock());
-      MF.insert(TargetMBB, RestoreMBB);
+      MF.insert(TargetMBB->getIterator(), RestoreMBB);
       MBB.removeSuccessor(TargetMBB);
       MBB.addSuccessor(RestoreMBB);
       RestoreMBB->addSuccessor(TargetMBB);
@@ -1178,6 +1178,9 @@ void X86FrameLowering::emitEpilogue(MachineFunction &MF,
           .addReg(ReturnReg)
           .addMBB(RestoreMBB);
     }
+    // Record that we've taken the address of RestoreMBB and no longer just
+    // reference it in a terminator.
+    RestoreMBB->setHasAddressTaken();
   }
 
   if (MBBI != MBB.end())

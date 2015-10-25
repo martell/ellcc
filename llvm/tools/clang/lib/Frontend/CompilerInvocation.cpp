@@ -1296,7 +1296,7 @@ static Visibility parseVisibility(Arg *arg, ArgList &args,
   StringRef value = arg->getValue();
   if (value == "default") {
     return DefaultVisibility;
-  } else if (value == "hidden") {
+  } else if (value == "hidden" || value == "internal") {
     return HiddenVisibility;
   } else if (value == "protected") {
     // FIXME: diagnose if target does not support protected visibility
@@ -1421,12 +1421,28 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
       Opts.ObjCAutoRefCount = 1;
       if (!Opts.ObjCRuntime.allowsARC())
         Diags.Report(diag::err_arc_unsupported_on_runtime);
+    }
 
-      // Only set ObjCARCWeak if ARC is enabled.
-      if (Args.hasArg(OPT_fobjc_runtime_has_weak))
-        Opts.ObjCARCWeak = 1;
-      else
-        Opts.ObjCARCWeak = Opts.ObjCRuntime.allowsWeak();
+    // ObjCWeakRuntime tracks whether the runtime supports __weak, not
+    // whether the feature is actually enabled.  This is predominantly
+    // determined by -fobjc-runtime, but we allow it to be overridden
+    // from the command line for testing purposes.
+    if (Args.hasArg(OPT_fobjc_runtime_has_weak))
+      Opts.ObjCWeakRuntime = 1;
+    else
+      Opts.ObjCWeakRuntime = Opts.ObjCRuntime.allowsWeak();
+
+    // ObjCWeak determines whether __weak is actually enabled.
+    if (Opts.ObjCAutoRefCount) {
+      Opts.ObjCWeak = Opts.ObjCWeakRuntime;
+    } else if (Args.hasArg(OPT_fobjc_weak)) {
+      if (Opts.getGC() != LangOptions::NonGC) {
+        Diags.Report(diag::err_objc_weak_with_gc);
+      } else if (Opts.ObjCWeakRuntime) {
+        Opts.ObjCWeak = true;
+      } else {
+        Diags.Report(diag::err_objc_weak_unsupported);
+      }
     }
 
     if (Args.hasArg(OPT_fno_objc_infer_related_result_type))
@@ -1536,6 +1552,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.RTTIData = Opts.RTTI && !Args.hasArg(OPT_fno_rtti_data);
   Opts.Blocks = Args.hasArg(OPT_fblocks);
   Opts.BlocksRuntimeOptional = Args.hasArg(OPT_fblocks_runtime_optional);
+  Opts.Coroutines = Args.hasArg(OPT_fcoroutines);
   Opts.Modules = Args.hasArg(OPT_fmodules);
   Opts.ModulesStrictDeclUse = Args.hasArg(OPT_fmodules_strict_decluse);
   Opts.ModulesDeclUse =

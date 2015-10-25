@@ -907,8 +907,6 @@ def error_bad_property_context : Error<
 def error_missing_property_ivar_decl : Error<
   "synthesized property %0 must either be named the same as a compatible"
   " instance variable or must explicitly name an instance variable">;
-def error_synthesize_weak_non_arc_or_gc : Error<
-  "@synthesize of 'weak' property is only allowed in ARC or GC mode">;
 def err_arc_perform_selector_retains : Error<
   "performSelector names a selector which retains the object">;
 def warn_arc_perform_selector_leaks : Warning<
@@ -1154,11 +1152,14 @@ def err_incompatible_exception_specs : Error<
   "target exception specification is not superset of source">;
 def err_deep_exception_specs_differ : Error<
   "exception specifications of %select{return|argument}0 types differ">;
-def ext_missing_exception_specification : ExtWarn<
-  "%0 is missing exception specification '%1'">,
-  InGroup<DiagGroup<"missing-exception-spec">>;
 def err_missing_exception_specification : Error<
   "%0 is missing exception specification '%1'">;
+def ext_missing_exception_specification : ExtWarn<
+  err_missing_exception_specification.Text>,
+  InGroup<DiagGroup<"missing-exception-spec">>;
+def ext_ms_missing_exception_specification : ExtWarn<
+  err_missing_exception_specification.Text>,
+  InGroup<MicrosoftExceptionSpec>;
 def err_noexcept_needs_constant_expression : Error<
   "argument to noexcept specifier must be a constant expression">;
 def err_exception_spec_not_parsed : Error<
@@ -2971,6 +2972,9 @@ def note_ovl_candidate : Note<"candidate "
     "%select{none|const|restrict|const and restrict|volatile|const and volatile"
     "|volatile and restrict|const, volatile, and restrict}4)"
     "| made ineligible by enable_if}2">;
+def ext_ovl_equivalent_internal_linkage_functions_in_modules : ExtWarn<
+  "ambiguous use of internal linkage function %0 defined in multiple modules">,
+  InGroup<DiagGroup<"modules-ambiguous-internal-linkage-function">>;
 
 def note_ovl_candidate_inherited_constructor : Note<"inherited from here">;
 def note_ovl_candidate_illegal_constructor : Note<
@@ -4417,8 +4421,10 @@ def note_protected_by_seh_finally : Note<
   "jump bypasses initialization of __finally block">;
 def note_protected_by___block : Note<
   "jump bypasses setup of __block variable">;
-def note_protected_by_objc_ownership : Note<
-  "jump bypasses initialization of retaining variable">;
+def note_protected_by_objc_strong_init : Note<
+  "jump bypasses initialization of __strong variable">;
+def note_protected_by_objc_weak_init : Note<
+  "jump bypasses initialization of __weak variable">;
 def note_enters_block_captures_cxx_obj : Note<
   "jump enters lifetime of block which captures a destructible C++ object">;
 def note_enters_block_captures_strong : Note<
@@ -4455,8 +4461,10 @@ def note_exits_seh_finally : Note<
   "jump exits __finally block">;
 def note_exits_objc_autoreleasepool : Note<
   "jump exits autoreleasepool block">;
-def note_exits_objc_ownership : Note<
-  "jump exits scope of retaining variable">;
+def note_exits_objc_strong : Note<
+  "jump exits scope of __strong variable">;
+def note_exits_objc_weak : Note<
+  "jump exits scope of __weak variable">;
 def note_exits_block_captures_cxx_obj : Note<
   "jump exits lifetime of block which captures a destructible C++ object">;
 def note_exits_block_captures_strong : Note<
@@ -4517,6 +4525,11 @@ let CategoryName = "ARC Weak References" in {
 
 def err_arc_weak_no_runtime : Error<
   "the current deployment target does not support automated __weak references">;
+def err_arc_weak_disabled : Error<
+  "automated __weak references are disabled in manual reference counting">;
+def warn_objc_weak_compat : Warning<
+  "the meaning of __weak has changed in manual reference-counting">,
+  InGroup<DiagGroup<"objc-weak-compat">>, DefaultIgnore;
 def err_arc_unsupported_weak_class : Error<
   "class is incompatible with __weak references">;
 def err_arc_weak_unavailable_assign : Error<
@@ -4659,7 +4672,7 @@ def err_arc_strong_property_ownership : Error<
   "existing instance variable %1 for strong property %0 may not be "
   "%select{|__unsafe_unretained||__weak}2">;
 def err_arc_assign_property_ownership : Error<
-  "existing instance variable %1 for property %0 with %select{unsafe_unretained| assign}2 "
+  "existing instance variable %1 for property %0 with %select{unsafe_unretained|assign}2 "
   "attribute must be __unsafe_unretained">;
 def err_arc_inconsistent_property_ownership : Error<
   "%select{|unsafe_unretained|strong|weak}1 property %0 may not also be "
@@ -7815,6 +7828,27 @@ def err_module_self_import : Error<
   "import of module '%0' appears within same top-level module '%1'">;
 def err_module_import_in_implementation : Error<
   "@import of module '%0' in implementation of '%1'; use #import">;
+}
+
+let CategoryName = "Coroutines Issue" in {
+def err_return_in_coroutine : Error<"return statement in coroutine">;
+def note_declared_coroutine_here : Note<
+  "function is a coroutine due to use of "
+  "'%select{co_await|co_yield|co_return}0' here">;
+def err_coroutine_objc_method : Error<
+  "Objective-C methods as coroutines are not yet supported">;
+def err_coroutine_outside_function : Error<
+  "'%0' cannot be used outside a function">;
+def err_coroutine_ctor_dtor : Error<
+  "'%1' cannot be used in a %select{constructor|destructor}0">;
+def err_coroutine_constexpr : Error<
+  "'%0' cannot be used in a constexpr function">;
+def err_coroutine_varargs : Error<
+  "'%0' cannot be used in a varargs function">;
+def ext_coroutine_without_coawait_coyield : ExtWarn<
+  "'co_return' used in a function "
+  "that uses neither 'co_await' nor 'co_yield'">,
+  InGroup<DiagGroup<"coreturn-without-coawait">>;
 }
 
 let CategoryName = "Documentation Issue" in {

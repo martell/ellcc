@@ -511,6 +511,8 @@ def fobjc_runtime_has_weak : Flag<["-"], "fobjc-runtime-has-weak">,
   HelpText<"The target Objective-C runtime supports ARC weak operations">;
 def fobjc_dispatch_method_EQ : Joined<["-"], "fobjc-dispatch-method=">,
   HelpText<"Objective-C dispatch method to use">;
+def fobjc_weak : Flag<["-"], "fobjc-weak">, Group<f_Group>,
+  HelpText<"Enable ARC-style __weak references">;
 def disable_objc_default_synthesize_properties : Flag<["-"], "disable-objc-default-synthesize-properties">,
   HelpText<"disable the default synthesis of Objective-C properties">;
 def fencode_extended_block_signature : Flag<["-"], "fencode-extended-block-signature">,
@@ -579,6 +581,10 @@ def fnative_half_type: Flag<["-"], "fnative-half-type">,
   HelpText<"Use the native half type for __fp16 instead of promoting to float">;
 def fallow_half_arguments_and_returns : Flag<["-"], "fallow-half-arguments-and-returns">,
   HelpText<"Allow function arguments and returns of type half">;
+
+// C++ TSes.
+def fcoroutines : Flag<["-"], "fcoroutines">,
+  HelpText<"Enable support for the C++ Coroutines TS">;
 
 //===----------------------------------------------------------------------===//
 // Header Search Options

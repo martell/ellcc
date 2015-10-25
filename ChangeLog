@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r251219.
 * Update to musl 1.1.12.
 * Added a little 'm' makefile to build LLVMLinux with ELLCC (work in progress).
 * Added ncurses C++ headers and library builds for wide character support.

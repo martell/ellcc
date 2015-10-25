@@ -67,6 +67,20 @@ set(LIBCXX_CXX_ABI "${LIBCXX_CXX_ABI}" CACHE STRING
 set(CXXABIS none libcxxabi libcxxrt libstdc++ libsupc++)
 set_property(CACHE LIBCXX_CXX_ABI PROPERTY STRINGS ;${CXXABIS})
 
+# Setup the default options if LIBCXX_CXX_ABI is not specified.
+if (NOT LIBCXX_CXX_ABI)
+  if (NOT DEFINED LIBCXX_BUILT_STANDALONE AND
+      IS_DIRECTORY "${CMAKE_SOURCE_DIR}/projects/libcxxabi")
+    set(LIBCXX_CXX_ABI_LIBNAME "libcxxabi")
+    set(LIBCXX_CXX_ABI_INCLUDE_PATHS "${CMAKE_SOURCE_DIR}/projects/libcxxabi/include")
+    set(LIBCXX_CXX_ABI_INTREE 1)
+  else ()
+    set(LIBCXX_CXX_ABI_LIBNAME "none")
+  endif ()
+else ()
+  set(LIBCXX_CXX_ABI_LIBNAME "${LIBCXX_CXX_ABI}")
+endif ()
+
 # Use a static copy of the ABI library when linking libc++. This option
 # cannot be used with LIBCXX_ENABLE_ABI_LINKER_SCRIPT.
 option(LIBCXX_ENABLE_STATIC_ABI_LIBRARY "Statically link the ABI library" OFF)
@@ -74,9 +88,11 @@ option(LIBCXX_ENABLE_STATIC_ABI_LIBRARY "Statically link the ABI library" OFF)
 # Generate and install a linker script inplace of libc++.so. The linker script
 # will link libc++ to the correct ABI library. This option is on by default
 # On UNIX platforms other than Apple unless 'LIBCXX_ENABLE_STATIC_ABI_LIBRARY'
-# is on.
+# is on. This option is also disabled when the ABI library is not specified
+# or is specified to be "none".
 set(ENABLE_LINKER_SCRIPT_DEFAULT_VALUE OFF)
 if (LLVM_HAVE_LINK_VERSION_SCRIPT AND NOT LIBCXX_ENABLE_STATIC_ABI_LIBRARY
+      AND NOT LIBCXX_CXX_ABI_LIBNAME STREQUAL "none"
       AND PYTHONINTERP_FOUND)
     set(ENABLE_LINKER_SCRIPT_DEFAULT_VALUE ON)
 endif()
