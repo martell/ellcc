@@ -1,11 +1,4 @@
-# Insert GAS CFI directives ("control frame information") into x86-32 asm input
-#
-# CFI directives tell the assembler how to generate "stack frame" debug info
-# This information can tell a debugger (like gdb) how to find the current stack
-#   frame at any point in the program code, and how to find the values which
-#   various registers had at higher points in the call stack
-# With this information, the debugger can show a backtrace, and you can move up
-#   and down the call stack and examine the values of local variables
+# Insert GAS CFI directives ("control frame information") into x86-64 asm input
 
 BEGIN {
   # don't put CFI data in the .eh_frame ELF section (which we don't keep)
@@ -29,26 +22,28 @@ function get_const1() {
 }
 
 function canonicalize_reg(register) {
-  if (match(register, /^e/))
+  if (match(register, /^r/))
     return register
+  else if (match(register, /^e/))
+    return "r" substr(register, 2, length(register)-1)
   else if (match(register, /[hl]$/)) # AH, AL, BH, BL, etc
-    return "e" substr(register, 1, 1) "x"
+    return "r" substr(register, 1, 1) "x"
   else # AX, BX, CX, etc
-    return "e" register
+    return "r" register
 }
 function get_reg() {
   # only use if you already know there is 1 and only 1 register
-  match($0, /%e?([abcd][hlx]|si|di|bp)/)
+  match($0, /%[er]?([abcd][xlh]|si|di|bp|8|9|10|11|12|13|14|15)/)
   return canonicalize_reg(substr($0, RSTART+1, RLENGTH-1))
 }
 function get_reg1() {
   # for instructions with 2 operands, get 1st operand (assuming it is register)
-  match($0, /%e?([abcd][hlx]|si|di|bp),/)
+  match($0, /%[er]?([abcd][xlh]|si|di|bp|8|9|10|11|12|13|14|15),/)
   return canonicalize_reg(substr($0, RSTART+1, RLENGTH-2))
 }
 function get_reg2() {
   # for instructions with 2 operands, get 2nd operand (assuming it is register)
-  match($0, /,%e?([abcd][hlx]|si|di|bp)/)
+  match($0, /,%[er]?([abcd][xlh]|si|di|bp|8|9|10|11|12|13|14|15)/)
   return canonicalize_reg(substr($0, RSTART+2, RLENGTH-2))
 }
 
@@ -95,7 +90,7 @@ function adjust_sp_offset(delta) {
 
   if (called == label) {
     # note adjustment of stack pointer from "call label; label:"
-    adjust_sp_offset(4)
+    adjust_sp_offset(8)
   }
 
   if (functions[label]) {
@@ -123,25 +118,16 @@ function adjust_sp_offset(delta) {
 }
 
 # KEEPING UP WITH THE STACK POINTER
-# We do NOT attempt to understand foolish and ridiculous tricks like stashing
-#   the stack pointer and then using %esp as a scratch register, or bitshifting
-#   it or taking its square root or anything stupid like that.
-# %esp should only be adjusted by pushing/popping or adding/subtracting constants
+# %rsp should only be adjusted by pushing/popping or adding/subtracting constants
 #
 /pushl?/ {
-  if (match($0, / %(ax|bx|cx|dx|di|si|bp|sp)/))
-    adjust_sp_offset(2)
-  else
-    adjust_sp_offset(4)
+  adjust_sp_offset(8)
 }
 /popl?/ {
-  if (match($0, / %(ax|bx|cx|dx|di|si|bp|sp)/))
-    adjust_sp_offset(-2)
-  else
-    adjust_sp_offset(-4)
+  adjust_sp_offset(-8)
 }
-/addl? \$-?(0x[0-9a-fA-F]+|[0-9]+),%esp/ { adjust_sp_offset(-get_const1()) }
-/subl? \$-?(0x[0-9a-fA-F]+|[0-9]+),%esp/ { adjust_sp_offset(get_const1()) }
+/addl? \$-?(0x[0-9a-fA-F]+|[0-9]+),%rsp/ { adjust_sp_offset(-get_const1()) }
+/subl? \$-?(0x[0-9a-fA-F]+|[0-9]+),%rsp/ { adjust_sp_offset(get_const1()) }
 
 /call/ {
   if (match($0, /call [0-9]+f/)) # "forward" label
@@ -152,7 +138,7 @@ function adjust_sp_offset(delta) {
 
 # TRACKING REGISTER VALUES FROM THE PREVIOUS STACK FRAME
 #
-/pushl? %e(ax|bx|cx|dx|si|di|bp)/ { # don't match "push (%reg)"
+/pushl? %r(ax|bx|cx|dx|si|di|bp|8|9|10|11|12|13|14|15)/ { # don't match "push (%reg)"
   # if a register is being pushed, and its value has not changed since the
   #   beginning of this function, the pushed value can be used when printing
   #   local variables at the next level up the stack
@@ -167,10 +153,10 @@ function adjust_sp_offset(delta) {
   }
 }
 
-/movl? %e(ax|bx|cx|dx|si|di|bp),-?(0x[0-9a-fA-F]+|[0-9]+)?\(%esp\)/ {
+/movl? %r(ax|bx|cx|dx|si|di|bp|8|9|10|11|12|13|14|15),-?(0x[0-9a-fA-F]+|[0-9]+)?\(%rsp\)/ {
   if (in_function) {
     register = get_reg()
-    if (match($0, /-?(0x[0-9a-fA-F]+|[0-9]+)\(%esp\)/)) {
+    if (match($0, /-?(0x[0-9a-fA-F]+|[0-9]+)\(%rsp\)/)) {
       offset = parse_const(substr($0, RSTART, RLENGTH-6))
     } else {
       offset = 0
@@ -193,15 +179,16 @@ function trashed(register) {
 }
 # this does NOT exhaustively check for all possible instructions which could
 # overwrite a register value inherited from the caller (just the common ones)
-/mov.*,%e?([abcd][hlx]|si|di|bp)$/  { trashed(get_reg2()) }
-/(add|addl|sub|subl|and|or|xor|lea|sal|sar|shl|shr).*,%e?([abcd][hlx]|si|di|bp)$/ {
+/mov.*,%[er]?([abcd][xlh]|si|di|bp|8|9|10|11|12|13|14|15)$/ { trashed(get_reg2()) }
+/(add|addl|sub|subl|and|or|xor|lea|sal|sar|shl|shr).*,%[er]?([abcd][xlh]|si|di|bp|8|9|10|11|12|13|14|15)$/ {
   trashed(get_reg2())
 }
-/^i?mul [^,]*$/                      { trashed("eax"); trashed("edx") }
-/^i?mul.*,%e?([abcd][hlx]|si|di|bp)$/ { trashed(get_reg2()) }
-/^i?div/                             { trashed("eax"); trashed("edx") }
-/(dec|inc|not|neg|pop) %e?([abcd][hlx]|si|di|bp)/  { trashed(get_reg()) }
-/cpuid/ { trashed("eax"); trashed("ebx"); trashed("ecx"); trashed("edx") }
+/^i?mul [^,]*$/ { trashed("rax"); trashed("rdx") }
+/^i?mul.*,%[er]?([abcd][xlh]|si|di|bp|8|9|10|11|12|13|14|15)$/ { trashed(get_reg2()) }
+/^i?div/ { trashed("rax"); trashed("rdx") }
+
+/(dec|inc|not|neg|pop) %[er]?([abcd][xlh]|si|di|bp|8|9|10|11|12|13|14|15)/  { trashed(get_reg()) }
+/cpuid/ { trashed("rax"); trashed("rbx"); trashed("rcx"); trashed("rdx") }
 
 END {
   if (in_function)

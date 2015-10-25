@@ -482,10 +482,18 @@ if test "x$visibility" = xauto ; then
 # - the -include option
 # - the attributes/pragmas used in vis.h
 # - linking code that takes the address of protected symbols
+# - gcc 3.x bug that wrongly claims declarations mismatch
 printf "checking whether global visibility preinclude works... "
-echo 'int (*fp)(void);' > "$tmpc"
-echo 'int foo(void) { }' >> "$tmpc"
-echo 'int bar(void) { fp = foo; return foo(); }' >> "$tmpc"
+cat > "$tmpc" <<EOF
+__attribute__((__visibility__("default")))
+extern struct a *const x;
+typedef struct a b;
+extern b *const x;
+b *const x;
+int (*fp)(void);
+int foo(void) { }
+int bar(void) { fp = foo; return foo(); }
+EOF
 if $CC $CFLAGS_C99FSE $CPPFLAGS $CFLAGS \
   -DSHARED -fPIC -I./src/internal -include vis.h \
   -nostdlib -shared -Wl,-Bsymbolic-functions \
@@ -504,6 +512,12 @@ fi
 
 # Some patched GCC builds have these defaults messed up...
 tryldflag LDFLAGS_AUTO -Wl,--hash-style=both
+
+# Prevent linking if there are undefined symbols; if any exist,
+# libc.so will crash at runtime during relocation processing.
+# The common way this can happen is failure to link the compiler
+# runtime library; implementation error is also a possibility.
+tryldflag LDFLAGS_AUTO -Wl,--no-undefined
 
 test "$shared" = "no" || {
 # Disable dynamic linking if ld is broken and can't do -Bsymbolic-functions
@@ -548,6 +562,7 @@ test "$ARCH" = "microblaze" && trycppif __MICROBLAZEEL__ "$t" \
 && SUBARCH=${SUBARCH}el
 
 if test "$ARCH" = "sh" ; then
+tryflag CFLAGS_AUTO -Wa,--isa=any
 trycppif __BIG_ENDIAN__ "$t" && SUBARCH=${SUBARCH}eb
 if trycppif "__SH_FPU_ANY__ || __SH4__" "$t" ; then
 # Some sh configurations are broken and replace double with float
@@ -563,6 +578,9 @@ fail "$0: error: compiler's floating point configuration is unsupported"
 fi
 else
 SUBARCH=${SUBARCH}-nofpu
+fi
+if trycppif __SH_FDPIC__ "$t" ; then
+SUBARCH=${SUBARCH}-fdpic
 fi
 fi
 

@@ -128,7 +128,7 @@ $(foreach s,$(wildcard src/*/$(ARCH)*/*.S),$(eval $(call mkasmdepS,$(s))))
 # Choose invocation of assembler to be used
 # $(1) is input file, $(2) is output file, $(3) is assembler flags
 ifeq ($(ADD_CFI),yes)
-	AS_CMD = LC_ALL=C awk -f tools/add-cfi.$(ARCH).awk $< | $(CC) -x assembler -c -o $@ -
+	AS_CMD = LC_ALL=C awk -f tools/add-cfi.common.awk -f tools/add-cfi.$(ARCH).awk $< | $(CC) -x assembler -c -o $@ -
 else
 	AS_CMD = $(CC) -c -o $@ $<
 endif
