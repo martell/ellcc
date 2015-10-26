@@ -1678,7 +1678,7 @@ private:
             {return __a.max_size();}
     _LIBCPP_INLINE_VISIBILITY
     static size_type __max_size(false_type, const allocator_type&)
-            {return numeric_limits<size_type>::max();}
+            {return numeric_limits<size_type>::max() / sizeof(value_type);}
 
     _LIBCPP_INLINE_VISIBILITY
     static allocator_type
@@ -1909,6 +1909,10 @@ public:
     _LIBCPP_INLINE_VISIBILITY raw_storage_iterator& operator*() {return *this;}
     _LIBCPP_INLINE_VISIBILITY raw_storage_iterator& operator=(const _Tp& __element)
         {::new(&*__x_) _Tp(__element); return *this;}
+#if _LIBCPP_STD_VER >= 14
+    _LIBCPP_INLINE_VISIBILITY raw_storage_iterator& operator=(_Tp&& __element)
+        {::new(&*__x_) _Tp(_VSTD::move(__element)); return *this;}
+#endif
     _LIBCPP_INLINE_VISIBILITY raw_storage_iterator& operator++() {++__x_; return *this;}
     _LIBCPP_INLINE_VISIBILITY raw_storage_iterator  operator++(int)
         {raw_storage_iterator __t(*this); ++__x_; return __t;}

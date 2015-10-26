@@ -7334,7 +7334,7 @@ static SDValue lowerVectorShuffleWithSSE4A(SDLoc DL, MVT VT, SDValue V1,
     // Determine the extraction length from the part of the
     // lower half that isn't zeroable.
     int Len = HalfSize;
-    for (; Len >= 0; --Len)
+    for (; Len > 0; --Len)
       if (!Zeroable[Len - 1])
         break;
     assert(Len > 0 && "Zeroable shuffle mask");
@@ -7350,7 +7350,7 @@ static SDValue lowerVectorShuffleWithSSE4A(SDLoc DL, MVT VT, SDValue V1,
       M = M % Size;
 
       // All mask elements must be in the lower half.
-      if (M > HalfSize)
+      if (M >= HalfSize)
         return SDValue();
 
       if (Idx < 0 || (Src == V && Idx == (M - i))) {
@@ -10957,8 +10957,7 @@ static SDValue lower1BitVectorShuffle(SDValue Op, SDValue V1, SDValue V2,
   EVT ExtVT;
   switch (VT.SimpleTy) {
   default:
-    assert(false && "Expected a vector of i1 elements");
-    break;
+    llvm_unreachable("Expected a vector of i1 elements");
   case MVT::v2i1:
     ExtVT = MVT::v2i64;
     break;
@@ -27491,4 +27490,28 @@ bool X86TargetLowering::isIntDivCheap(EVT VT, AttributeSet Attr) const {
   bool OptSize = Attr.hasAttribute(AttributeSet::FunctionIndex,
                                    Attribute::MinSize);
   return OptSize && !VT.isVector();
+}
+
+void X86TargetLowering::markInRegArguments(SelectionDAG &DAG,
+       TargetLowering::ArgListTy& Args) const {
+  // The MCU psABI requires some arguments to be passed in-register.
+  // For regular calls, the inreg arguments are marked by the front-end.
+  // However, for compiler generated library calls, we have to patch this
+  // up here.
+  if (!Subtarget->isTargetMCU() || !Args.size())
+    return;
+
+  unsigned FreeRegs = 3;
+  for (auto &Arg : Args) {
+    // For library functions, we do not expect any fancy types.
+    unsigned Size = DAG.getDataLayout().getTypeSizeInBits(Arg.Ty);
+    unsigned SizeInRegs = (Size + 31) / 32;
+    if (SizeInRegs > 2 || SizeInRegs > FreeRegs)
+      continue;
+
+    Arg.isInReg = true;
+    FreeRegs -= SizeInRegs;
+    if (!FreeRegs)
+      break;
+  }
 }

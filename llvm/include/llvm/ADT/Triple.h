@@ -178,7 +178,8 @@ public:
     Cygnus,
     AMDOpenCL,
     CoreCLR,
-    LastEnvironmentType = CoreCLR
+    ELFIAMCU,
+    LastEnvironmentType = ELFIAMCU
   };
   enum ObjectFormatType {
     UnknownObjectFormat,
@@ -433,6 +434,10 @@ public:
 
   bool isOSBitrig() const {
     return getOS() == Triple::Bitrig;
+  }
+
+  bool isEnvironmentIAMCU() const {
+    return getEnvironment() == Triple::ELFIAMCU;
   }
 
   bool isWindowsMSVCEnvironment() const {
