@@ -5,6 +5,9 @@ compiler:
     - -march=armv7a
     - -mfpu=none
     - -mfloat-abi=softfp
+assembler:
+  options:
+    - -meabi=5
 linker:
   static_crt1: $R/lib/arm-linux-engeabi/crt1.o
   dynamic_crt1: $R/lib/arm-linux-engeabi/Scrt1.o

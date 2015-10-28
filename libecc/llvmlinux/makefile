@@ -1,6 +1,6 @@
 # Cross compiling variables
 ARCH		:= arm
-TARGET		:= arm-linux-engeabihf
+TARGET		:= arm-linux-engeabi
 #CROSS_COMPILE	:= arm-linux-gnueabihf-
 
 ELLCC		:= $(shell realpath $(shell pwd)/../../ellcc)
@@ -8,7 +8,8 @@ HOSTCC		:= $(ELLCC)/bin/ecc
 CC		:= $(ELLCC)/bin/ecc -target $(TARGET) -I$(ELLCC)/libecc/include/$(ARCH)
 
 CPP		:= $(CC) -E
-LD		:= $(CC) -nostdlib
+#LD		:= $(CC) -nostdlib
+LD		:= $(ELLCC)/bin/ecc-ld -m armelf_linux_eabi
 
 ifdef ARCH
 export ARCH
