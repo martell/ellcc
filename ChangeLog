@@ -1,5 +1,6 @@
 current SVN:
 
+* Modifications to build Linux.
 * Update to LLVM r251283.
 * Update to LLVM r251219.
 * Update to musl 1.1.12.

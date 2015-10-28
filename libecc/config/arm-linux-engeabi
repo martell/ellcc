@@ -8,6 +8,7 @@ compiler:
 assembler:
   options:
     - -meabi=5
+    - -mcpu=cortex-a8
 linker:
   static_crt1: $R/lib/arm-linux-engeabi/crt1.o
   dynamic_crt1: $R/lib/arm-linux-engeabi/Scrt1.o
