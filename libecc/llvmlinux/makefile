@@ -10,6 +10,7 @@ CC		:= $(ELLCC)/bin/ecc -target $(TARGET) -I$(ELLCC)/libecc/include/$(ARCH)
 CPP		:= $(CC) -E
 #LD		:= $(CC) -nostdlib
 LD		:= $(ELLCC)/bin/ecc-ld -m armelf_linux_eabi
+OBJCOPY		:= $(ELLCC)/bin/ecc-objcopy
 
 ifdef ARCH
 export ARCH
@@ -44,7 +45,8 @@ endif
 #ARCH		?= x86
 #O		:= build/$(ARCH)-$(CC_NOSPACES)
 
-LINUXFLAGS	= CPP="$(CPP)" CC="$(CC)" HOSTCC="$(HOSTCC)" LD="$(LD)"
+LINUXFLAGS	= CPP="$(CPP)" CC="$(CC)" HOSTCC="$(HOSTCC)" LD="$(LD)" \
+		  OBJCOPY=$(OBJCOPY)
 linuxmake	= $(MAKE) -f Makefile $(LINUXFLAGS) O=$(1) $(2)
 
 %:
