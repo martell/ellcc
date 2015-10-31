@@ -63,6 +63,10 @@ static cl::opt<unsigned> SampleProfileMaxPropagateIterations(
     "sample-profile-max-propagate-iterations", cl::init(100),
     cl::desc("Maximum number of iterations to go through when propagating "
              "sample block/edge weights through the CFG."));
+static cl::opt<unsigned> SampleProfileCoverage(
+    "sample-profile-check-coverage", cl::init(0), cl::value_desc("N"),
+    cl::desc("Emit a warning if less than N% of samples in the input profile "
+             "are matched to the IR."));
 
 namespace {
 typedef DenseMap<const BasicBlock *, uint64_t> BlockWeightMap;
@@ -123,6 +127,7 @@ protected:
   bool propagateThroughEdges(Function &F);
   void computeDominanceAndLoopInfo(Function &F);
   unsigned getOffset(unsigned L, unsigned H) const;
+  void clearFunctionData();
 
   /// \brief Map basic blocks to their computed weights.
   ///
@@ -173,6 +178,78 @@ protected:
   /// \brief Flag indicating whether the profile input loaded successfully.
   bool ProfileIsValid;
 };
+
+class SampleCoverageTracker {
+public:
+  SampleCoverageTracker() : SampleCoverage() {}
+
+  void markSamplesUsed(const FunctionSamples *Samples, uint32_t LineOffset,
+                       uint32_t Discriminator);
+  unsigned computeCoverage(const FunctionSamples *Samples) const;
+  unsigned getNumUsedSamples(const FunctionSamples *Samples) const;
+
+private:
+  typedef DenseMap<LineLocation, unsigned> BodySampleCoverageMap;
+  typedef DenseMap<const FunctionSamples *, BodySampleCoverageMap>
+      FunctionSamplesCoverageMap;
+
+  /// Coverage map for sampling records.
+  ///
+  /// This map keeps a record of sampling records that have been matched to
+  /// an IR instruction. This is used to detect some form of staleness in
+  /// profiles (see flag -sample-profile-check-coverage).
+  ///
+  /// Each entry in the map corresponds to a FunctionSamples instance.  This is
+  /// another map that counts how many times the sample record at the
+  /// given location has been used.
+  FunctionSamplesCoverageMap SampleCoverage;
+};
+
+SampleCoverageTracker CoverageTracker;
+}
+
+/// Mark as used the sample record for the given function samples at
+/// (LineOffset, Discriminator).
+void SampleCoverageTracker::markSamplesUsed(const FunctionSamples *Samples,
+                                            uint32_t LineOffset,
+                                            uint32_t Discriminator) {
+  BodySampleCoverageMap &Coverage = SampleCoverage[Samples];
+  Coverage[LineLocation(LineOffset, Discriminator)]++;
+}
+
+/// Return the number of sample records that were applied from this profile.
+unsigned
+SampleCoverageTracker::getNumUsedSamples(const FunctionSamples *Samples) const {
+  auto I = SampleCoverage.find(Samples);
+  return (I != SampleCoverage.end()) ? I->second.size() : 0;
+}
+
+/// Return the fraction of sample records used in this profile.
+///
+/// The returned value is an unsigned integer in the range 0-100 indicating
+/// the percentage of sample records that were used while applying this
+/// profile to the associated function.
+unsigned
+SampleCoverageTracker::computeCoverage(const FunctionSamples *Samples) const {
+  uint32_t NumTotalRecords = Samples->getBodySamples().size();
+  uint32_t NumUsedRecords = getNumUsedSamples(Samples);
+  assert(NumUsedRecords <= NumTotalRecords &&
+         "number of used records cannot exceed the total number of records");
+  return NumTotalRecords > 0 ? NumUsedRecords * 100 / NumTotalRecords : 100;
+}
+
+/// Clear all the per-function data used to load samples and propagate weights.
+void SampleProfileLoader::clearFunctionData() {
+  BlockWeights.clear();
+  EdgeWeights.clear();
+  VisitedBlocks.clear();
+  VisitedEdges.clear();
+  EquivalenceClass.clear();
+  DT = nullptr;
+  PDT = nullptr;
+  LI = nullptr;
+  Predecessors.clear();
+  Successors.clear();
 }
 
 /// \brief Returns the offset of lineno \p L to head_lineno \p H
@@ -242,13 +319,17 @@ SampleProfileLoader::getInstWeight(const Instruction &Inst) const {
   unsigned Lineno = DLoc.getLine();
   unsigned HeaderLineno = DIL->getScope()->getSubprogram()->getLine();
 
-  ErrorOr<uint64_t> R = FS->findSamplesAt(getOffset(Lineno, HeaderLineno),
-                                          DIL->getDiscriminator());
-  if (R)
+  uint32_t LineOffset = getOffset(Lineno, HeaderLineno);
+  uint32_t Discriminator = DIL->getDiscriminator();
+  ErrorOr<uint64_t> R = FS->findSamplesAt(LineOffset, Discriminator);
+  if (R) {
+    if (SampleProfileCoverage)
+      CoverageTracker.markSamplesUsed(FS, LineOffset, Discriminator);
     DEBUG(dbgs() << "    " << Lineno << "." << DIL->getDiscriminator() << ":"
                  << Inst << " (line offset: " << Lineno - HeaderLineno << "."
                  << DIL->getDiscriminator() << " - weight: " << R.get()
                  << ")\n");
+  }
   return R;
 }
 
@@ -294,6 +375,20 @@ bool SampleProfileLoader::computeBlockWeights(Function &F) {
       Changed = true;
     }
     DEBUG(printBlockWeight(dbgs(), &BB));
+  }
+
+  if (SampleProfileCoverage) {
+    unsigned Coverage = CoverageTracker.computeCoverage(Samples);
+    if (Coverage < SampleProfileCoverage) {
+      StringRef Filename = getDISubprogram(&F)->getFilename();
+      F.getContext().diagnose(DiagnosticInfoSampleProfile(
+          Filename.str().c_str(), getFunctionLoc(F),
+          Twine(CoverageTracker.getNumUsedSamples(Samples)) + " of " +
+              Twine(Samples->getBodySamples().size()) +
+              " available profile records (" + Twine(Coverage) +
+              "%) were applied",
+          DS_Warning));
+    }
   }
 
   return Changed;
@@ -387,6 +482,7 @@ SampleProfileLoader::findFunctionSamples(const Instruction &Inst) const {
 /// \returns True if there is any inline happened.
 bool SampleProfileLoader::inlineHotFunctions(Function &F) {
   bool Changed = false;
+  LLVMContext &Ctx = F.getContext();
   while (true) {
     bool LocalChanged = false;
     SmallVector<CallInst *, 10> CIS;
@@ -403,8 +499,17 @@ bool SampleProfileLoader::inlineHotFunctions(Function &F) {
     }
     for (auto CI : CIS) {
       InlineFunctionInfo IFI;
-      if (InlineFunction(CI, IFI))
+      Function *CalledFunction = CI->getCalledFunction();
+      DebugLoc DLoc = CI->getDebugLoc();
+      uint64_t NumSamples = findCalleeFunctionSamples(*CI)->getTotalSamples();
+      if (InlineFunction(CI, IFI)) {
         LocalChanged = true;
+        emitOptimizationRemark(Ctx, DEBUG_TYPE, F, DLoc,
+                               Twine("inlined hot callee '") +
+                                   CalledFunction->getName() + "' with " +
+                                   Twine(NumSamples) + " samples into '" +
+                                   F.getName() + "'");
+      }
     }
     if (LocalChanged) {
       Changed = true;
@@ -724,7 +829,8 @@ void SampleProfileLoader::propagateWeights(Function &F) {
   // Generate MD_prof metadata for every branch instruction using the
   // edge weights computed during propagation.
   DEBUG(dbgs() << "\nPropagation complete. Setting branch weights\n");
-  MDBuilder MDB(F.getContext());
+  LLVMContext &Ctx = F.getContext();
+  MDBuilder MDB(Ctx);
   for (auto &BI : F) {
     BasicBlock *BB = &BI;
     TerminatorInst *TI = BB->getTerminator();
@@ -736,7 +842,8 @@ void SampleProfileLoader::propagateWeights(Function &F) {
     DEBUG(dbgs() << "\nGetting weights for branch at line "
                  << TI->getDebugLoc().getLine() << ".\n");
     SmallVector<uint32_t, 4> Weights;
-    bool AllWeightsZero = true;
+    uint32_t MaxWeight = 0;
+    DebugLoc MaxDestLoc;
     for (unsigned I = 0; I < TI->getNumSuccessors(); ++I) {
       BasicBlock *Succ = TI->getSuccessor(I);
       Edge E = std::make_pair(BB, Succ);
@@ -750,16 +857,28 @@ void SampleProfileLoader::propagateWeights(Function &F) {
         Weight = std::numeric_limits<uint32_t>::max();
       }
       Weights.push_back(static_cast<uint32_t>(Weight));
-      if (Weight != 0)
-        AllWeightsZero = false;
+      if (Weight != 0) {
+        if (Weight > MaxWeight) {
+          MaxWeight = Weight;
+          MaxDestLoc = Succ->getFirstNonPHIOrDbgOrLifetime()->getDebugLoc();
+        }
+      }
     }
 
     // Only set weights if there is at least one non-zero weight.
     // In any other case, let the analyzer set weights.
-    if (!AllWeightsZero) {
+    if (MaxWeight > 0) {
       DEBUG(dbgs() << "SUCCESS. Found non-zero weights.\n");
       TI->setMetadata(llvm::LLVMContext::MD_prof,
                       MDB.createBranchWeights(Weights));
+      DebugLoc BranchLoc = TI->getDebugLoc();
+      emitOptimizationRemark(
+          Ctx, DEBUG_TYPE, F, MaxDestLoc,
+          Twine("most popular destination for conditional branches at ") +
+              ((BranchLoc) ? Twine(BranchLoc->getFilename() + ":" +
+                                   Twine(BranchLoc.getLine()) + ":" +
+                                   Twine(BranchLoc.getCol()))
+                           : Twine("<UNKNOWN LOCATION>")));
     } else {
       DEBUG(dbgs() << "SKIPPED. All branch weights are zero.\n");
     }
@@ -781,7 +900,7 @@ unsigned SampleProfileLoader::getFunctionLoc(Function &F) {
   if (DISubprogram *S = getDISubprogram(&F))
     return S->getLine();
 
-  // If could not find the start of \p F, emit a diagnostic to inform the user
+  // If the start of \p F is missing, emit a diagnostic to inform the user
   // about the missed opportunity.
   F.getContext().diagnose(DiagnosticInfoSampleProfile(
       "No debug information found in function " + F.getName() +
@@ -907,17 +1026,19 @@ ModulePass *llvm::createSampleProfileLoaderPass(StringRef Name) {
 }
 
 bool SampleProfileLoader::runOnModule(Module &M) {
+  if (!ProfileIsValid)
+    return false;
+
   bool retval = false;
   for (auto &F : M)
-    if (!F.isDeclaration())
+    if (!F.isDeclaration()) {
+      clearFunctionData();
       retval |= runOnFunction(F);
+    }
   return retval;
 }
 
 bool SampleProfileLoader::runOnFunction(Function &F) {
-  if (!ProfileIsValid)
-    return false;
-
   Samples = Reader->getSamplesFor(F);
   if (!Samples->empty())
     return emitAnnotations(F);

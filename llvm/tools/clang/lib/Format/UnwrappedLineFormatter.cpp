@@ -709,7 +709,7 @@ private:
 
       // Cut off the analysis of certain solutions if the analysis gets too
       // complex. See description of IgnoreStackForComparison.
-      if (Count > 10000)
+      if (Count > 50000)
         Node->State.IgnoreStackForComparison = true;
 
       if (!Seen.insert(&Node->State).second)
@@ -812,13 +812,14 @@ UnwrappedLineFormatter::format(const SmallVectorImpl<AnnotatedLine *> &Lines,
                                    AdditionalIndent);
   const AnnotatedLine *PreviousLine = nullptr;
   const AnnotatedLine *NextLine = nullptr;
+  bool PreviousLineFormatted = false;
   for (const AnnotatedLine *Line =
            Joiner.getNextMergedLine(DryRun, IndentTracker);
        Line; Line = NextLine) {
     const AnnotatedLine &TheLine = *Line;
     unsigned Indent = IndentTracker.getIndent();
-    bool FixIndentation =
-        FixBadIndentation && (Indent != TheLine.First->OriginalColumn);
+    bool FixIndentation = (FixBadIndentation || PreviousLineFormatted) &&
+                          Indent != TheLine.First->OriginalColumn;
     bool ShouldFormat = TheLine.Affected || FixIndentation;
     // We cannot format this line; if the reason is that the line had a
     // parsing error, remember that.
@@ -845,6 +846,7 @@ UnwrappedLineFormatter::format(const SmallVectorImpl<AnnotatedLine *> &Lines,
       else
         Penalty += OptimizingLineFormatter(Indenter, Whitespaces, Style, this)
                        .formatLine(TheLine, Indent, DryRun);
+      PreviousLineFormatted = true;
     } else {
       // If no token in the current line is affected, we still need to format
       // affected children.
@@ -875,6 +877,7 @@ UnwrappedLineFormatter::format(const SmallVectorImpl<AnnotatedLine *> &Lines,
           Whitespaces->addUntouchableToken(*Tok, TheLine.InPPDirective);
       }
       NextLine = Joiner.getNextMergedLine(DryRun, IndentTracker);
+      PreviousLineFormatted = false;
     }
     if (!DryRun)
       markFinalized(TheLine.First);

@@ -2590,6 +2590,9 @@ def warn_impcast_complex_scalar : Warning<
 def warn_impcast_float_precision : Warning<
   "implicit conversion loses floating-point precision: %0 to %1">,
   InGroup<Conversion>, DefaultIgnore;
+def warn_impcast_double_promotion : Warning<
+  "implicit conversion increases floating-point precision: %0 to %1">,
+  InGroup<DoublePromotion>, DefaultIgnore;
 def warn_impcast_float_integer : Warning<
   "implicit conversion turns floating-point number into integer: %0 to %1">,
   InGroup<FloatConversion>, DefaultIgnore;
@@ -4524,9 +4527,15 @@ let CategoryName = "ARC Semantic Issue" in {
 let CategoryName = "ARC Weak References" in {
 
 def err_arc_weak_no_runtime : Error<
-  "the current deployment target does not support automated __weak references">;
+  "cannot create __weak reference because the current deployment target "
+  "does not support weak references">;
 def err_arc_weak_disabled : Error<
-  "automated __weak references are disabled in manual reference counting">;
+  "cannot create __weak reference in file using manual reference counting">;
+def err_synthesizing_arc_weak_property_disabled : Error<
+  "cannot synthesize weak property in file using manual reference counting">;
+def err_synthesizing_arc_weak_property_no_runtime : Error<
+  "cannot synthesize weak property because the current deployment target "
+  "does not support weak references">;
 def warn_objc_weak_compat : Warning<
   "the meaning of __weak has changed in manual reference-counting">,
   InGroup<DiagGroup<"objc-weak-compat">>, DefaultIgnore;
@@ -4546,6 +4555,21 @@ def err_arc_convesion_of_weak_unavailable : Error<
 } // end "ARC Weak References" category
 
 let CategoryName = "ARC Restrictions" in {
+
+def err_unavailable_in_arc : Error<
+  "%0 is unavailable in ARC">;
+def note_arc_forbidden_type : Note<
+  "declaration uses type that is ill-formed in ARC">;
+def note_performs_forbidden_arc_conversion : Note<
+  "inline function performs a conversion which is forbidden in ARC">;
+def note_arc_init_returns_unrelated : Note<
+  "init method must return a type related to its receiver type">;
+def note_arc_weak_disabled : Note<
+  "declaration uses __weak, but ARC is disabled">;
+def note_arc_weak_no_runtime : Note<"declaration uses __weak, which "
+  "the current deployment target does not support">;
+def note_arc_field_with_ownership : Note<
+  "field has non-trivial ownership qualification">;
 
 def err_arc_illegal_explicit_message : Error<
   "ARC forbids explicit message send of %0">;
@@ -6236,6 +6260,12 @@ def warn_atomic_op_has_invalid_memory_order : Warning<
   "memory order argument to atomic operation is invalid">,
   InGroup<DiagGroup<"atomic-memory-ordering">>;
 
+def err_overflow_builtin_must_be_int : Error<
+  "operand argument to overflow builtin must be an integer (%0 invalid)">;
+def err_overflow_builtin_must_be_ptr_int : Error<
+  "result argument to overflow builtin must be a pointer "
+  "to a non-const integer (%0 invalid)">;
+
 def err_atomic_load_store_uses_lib : Error<
   "atomic %select{load|store}0 requires runtime support that is not "
   "available for this target">;
@@ -7831,7 +7861,8 @@ def err_module_import_in_implementation : Error<
 }
 
 let CategoryName = "Coroutines Issue" in {
-def err_return_in_coroutine : Error<"return statement in coroutine">;
+def err_return_in_coroutine : Error<
+  "return statement not allowed in coroutine; did you mean 'co_return'?">;
 def note_declared_coroutine_here : Note<
   "function is a coroutine due to use of "
   "'%select{co_await|co_yield|co_return}0' here">;
@@ -7845,10 +7876,21 @@ def err_coroutine_constexpr : Error<
   "'%0' cannot be used in a constexpr function">;
 def err_coroutine_varargs : Error<
   "'%0' cannot be used in a varargs function">;
-def ext_coroutine_without_coawait_coyield : ExtWarn<
+def ext_coroutine_without_co_await_co_yield : ExtWarn<
   "'co_return' used in a function "
   "that uses neither 'co_await' nor 'co_yield'">,
   InGroup<DiagGroup<"coreturn-without-coawait">>;
+def err_implied_std_coroutine_traits_not_found : Error<
+  "you need to include <coroutine> before defining a coroutine">;
+def err_malformed_std_coroutine_traits : Error<
+  "std::coroutine_traits must be a class template">;
+def err_implied_std_coroutine_traits_promise_type_not_found : Error<
+  "this function cannot be a coroutine: %0 has no member named 'promise_type'">;
+def err_implied_std_coroutine_traits_promise_type_not_class : Error<
+  "this function cannot be a coroutine: %0 is not a class">;
+def err_coroutine_traits_missing_specialization : Error<
+  "this function cannot be a coroutine: missing definition of "
+  "specialization %0">;
 }
 
 let CategoryName = "Documentation Issue" in {

@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r251722.
 * Modifications to build Linux.
 * Update to LLVM r251283.
 * Update to LLVM r251219.

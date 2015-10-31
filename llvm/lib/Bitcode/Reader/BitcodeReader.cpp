@@ -151,7 +151,9 @@ class BitcodeReader : public GVMaterializer {
   // Last function offset found in the VST.
   uint64_t LastFunctionBlockBit = 0;
   bool SeenValueSymbolTable = false;
-  unsigned VSTOffset = 0;
+  uint64_t VSTOffset = 0;
+  // Contains an arbitrary and optional string identifying the bitcode producer
+  std::string ProducerIdentification;
 
   std::vector<Type*> TypeList;
   BitcodeReaderValueList ValueList;
@@ -273,6 +275,11 @@ public:
   void setStripDebugInfo() override;
 
 private:
+  /// Parse the "IDENTIFICATION_BLOCK_ID" block, populate the
+  // ProducerIdentification data member, and do some basic enforcement on the
+  // "epoch" encoded in the bitcode.
+  std::error_code parseBitcodeVersion();
+
   std::vector<StructType *> IdentifiedStructTypes;
   StructType *createIdentifiedStructType(LLVMContext &Context, StringRef Name);
   StructType *createIdentifiedStructType(LLVMContext &Context);
@@ -381,7 +388,7 @@ private:
 
   ErrorOr<Value *> recordValue(SmallVectorImpl<uint64_t> &Record,
                                unsigned NameIndex, Triple &TT);
-  std::error_code parseValueSymbolTable(unsigned Offset = 0);
+  std::error_code parseValueSymbolTable(uint64_t Offset = 0);
   std::error_code parseConstants();
   std::error_code rememberAndSkipFunctionBodies();
   std::error_code rememberAndSkipFunctionBody();
@@ -518,10 +525,21 @@ static std::error_code error(DiagnosticHandlerFunction DiagnosticHandler,
 }
 
 std::error_code BitcodeReader::error(BitcodeError E, const Twine &Message) {
+  if (!ProducerIdentification.empty()) {
+    Twine MsgWithID = Message + " (Producer: '" + ProducerIdentification +
+                      "' Reader: 'LLVM " + LLVM_VERSION_STRING "')";
+    return ::error(DiagnosticHandler, make_error_code(E), MsgWithID);
+  }
   return ::error(DiagnosticHandler, make_error_code(E), Message);
 }
 
 std::error_code BitcodeReader::error(const Twine &Message) {
+  if (!ProducerIdentification.empty()) {
+    Twine MsgWithID = Message + " (Producer: '" + ProducerIdentification +
+                      "' Reader: 'LLVM " + LLVM_VERSION_STRING "')";
+    return ::error(DiagnosticHandler,
+                   make_error_code(BitcodeError::CorruptedBitcode), MsgWithID);
+  }
   return ::error(DiagnosticHandler,
                  make_error_code(BitcodeError::CorruptedBitcode), Message);
 }
@@ -1746,7 +1764,7 @@ ErrorOr<Value *> BitcodeReader::recordValue(SmallVectorImpl<uint64_t> &Record,
 
 /// Parse the value symbol table at either the current parsing location or
 /// at the given bit offset if provided.
-std::error_code BitcodeReader::parseValueSymbolTable(unsigned Offset) {
+std::error_code BitcodeReader::parseValueSymbolTable(uint64_t Offset) {
   uint64_t CurrentBit;
   // Pass in the Offset to distinguish between calling for the module-level
   // VST (where we want to jump to the VST offset) and the function-level
@@ -3061,6 +3079,49 @@ std::error_code BitcodeReader::rememberAndSkipFunctionBodies() {
   }
 }
 
+std::error_code BitcodeReader::parseBitcodeVersion() {
+  if (Stream.EnterSubBlock(bitc::IDENTIFICATION_BLOCK_ID))
+    return error("Invalid record");
+
+  // Read all the records.
+  SmallVector<uint64_t, 64> Record;
+  while (1) {
+    BitstreamEntry Entry = Stream.advance();
+
+    switch (Entry.Kind) {
+    default:
+    case BitstreamEntry::Error:
+      return error("Malformed block");
+    case BitstreamEntry::EndBlock:
+      return std::error_code();
+    case BitstreamEntry::Record:
+      // The interesting case.
+      break;
+    }
+
+    // Read a record.
+    Record.clear();
+    unsigned BitCode = Stream.readRecord(Entry.ID, Record);
+    switch (BitCode) {
+    default: // Default behavior: reject
+      return error("Invalid value");
+    case bitc::IDENTIFICATION_CODE_STRING: { // IDENTIFICATION:      [strchr x
+                                             // N]
+      convertToString(Record, 0, ProducerIdentification);
+      break;
+    }
+    case bitc::IDENTIFICATION_CODE_EPOCH: { // EPOCH:      [epoch#]
+      unsigned epoch = (unsigned)Record[0];
+      if (epoch != bitc::BITCODE_CURRENT_EPOCH) {
+        return error(
+          Twine("Incompatible epoch: Bitcode '") + Twine(epoch) +
+          "' vs current: '" + Twine(bitc::BITCODE_CURRENT_EPOCH) + "'");
+      }
+    }
+    }
+  }
+}
+
 std::error_code BitcodeReader::parseModule(uint64_t ResumeBit,
                                            bool ShouldLazyLoadMetadata) {
   if (ResumeBit)
@@ -3382,11 +3443,14 @@ std::error_code BitcodeReader::parseModule(uint64_t ResumeBit,
       auto *FTy = dyn_cast<FunctionType>(Ty);
       if (!FTy)
         return error("Invalid type for value");
+      auto CC = static_cast<CallingConv::ID>(Record[1]);
+      if (CC & ~CallingConv::MaxID)
+        return error("Invalid calling convention ID");
 
       Function *Func = Function::Create(FTy, GlobalValue::ExternalLinkage,
                                         "", TheModule);
 
-      Func->setCallingConv(static_cast<CallingConv::ID>(Record[1]));
+      Func->setCallingConv(CC);
       bool isProto = Record[2];
       uint64_t RawLinkage = Record[3];
       Func->setLinkage(getDecodedLinkage(RawLinkage));
@@ -3551,6 +3615,11 @@ BitcodeReader::parseBitcodeInto(std::unique_ptr<DataStreamer> Streamer,
 
     if (Entry.Kind != BitstreamEntry::SubBlock)
       return error("Malformed block");
+
+    if (Entry.ID == bitc::IDENTIFICATION_BLOCK_ID) {
+      parseBitcodeVersion();
+      continue;
+    }
 
     if (Entry.ID == bitc::MODULE_BLOCK_ID)
       return parseModule(0, ShouldLazyLoadMetadata);
@@ -4514,8 +4583,8 @@ std::error_code BitcodeReader::parseFunctionBody(Function *F) {
       I = InvokeInst::Create(Callee, NormalBB, UnwindBB, Ops, OperandBundles);
       OperandBundles.clear();
       InstructionList.push_back(I);
-      cast<InvokeInst>(I)
-          ->setCallingConv(static_cast<CallingConv::ID>(~(1U << 13) & CCInfo));
+      cast<InvokeInst>(I)->setCallingConv(
+          static_cast<CallingConv::ID>(CallingConv::MaxID & CCInfo));
       cast<InvokeInst>(I)->setAttributes(PAL);
       break;
     }
@@ -4899,7 +4968,7 @@ std::error_code BitcodeReader::parseFunctionBody(Function *F) {
       OperandBundles.clear();
       InstructionList.push_back(I);
       cast<CallInst>(I)->setCallingConv(
-          static_cast<CallingConv::ID>((~(1U << 14) & CCInfo) >> 1));
+          static_cast<CallingConv::ID>((0x7ff & CCInfo) >> 1));
       CallInst::TailCallKind TCK = CallInst::TCK_None;
       if (CCInfo & 1)
         TCK = CallInst::TCK_Tail;

@@ -3659,16 +3659,17 @@ class HorizontalReduction {
   unsigned ReductionOpcode;
   /// The opcode of the values we perform a reduction on.
   unsigned ReducedValueOpcode;
-  /// The width of one full horizontal reduction operation.
-  unsigned ReduxWidth;
   /// Should we model this reduction as a pairwise reduction tree or a tree that
   /// splits the vector in halves and adds those halves.
   bool IsPairwiseReduction;
 
 public:
+  /// The width of one full horizontal reduction operation.
+  unsigned ReduxWidth;
+
   HorizontalReduction()
     : ReductionRoot(nullptr), ReductionPHI(nullptr), ReductionOpcode(0),
-    ReducedValueOpcode(0), ReduxWidth(0), IsPairwiseReduction(false) {}
+    ReducedValueOpcode(0), IsPairwiseReduction(false), ReduxWidth(0) {}
 
   /// \brief Try to find a reduction tree.
   bool matchAssociativeReduction(PHINode *Phi, BinaryOperator *B) {
@@ -3714,11 +3715,11 @@ public:
       return false;
 
     // Post order traverse the reduction tree starting at B. We only handle true
-    // trees containing only binary operators.
-    SmallVector<std::pair<BinaryOperator *, unsigned>, 32> Stack;
+    // trees containing only binary operators or selects.
+    SmallVector<std::pair<Instruction *, unsigned>, 32> Stack;
     Stack.push_back(std::make_pair(B, 0));
     while (!Stack.empty()) {
-      BinaryOperator *TreeN = Stack.back().first;
+      Instruction *TreeN = Stack.back().first;
       unsigned EdgeToVist = Stack.back().second++;
       bool IsReducedValue = TreeN->getOpcode() != ReductionOpcode;
 
@@ -3754,9 +3755,10 @@ public:
 
       // Visit left or right.
       Value *NextV = TreeN->getOperand(EdgeToVist);
-      BinaryOperator *Next = dyn_cast<BinaryOperator>(NextV);
-      if (Next)
-        Stack.push_back(std::make_pair(Next, 0));
+      // We currently only allow BinaryOperator's and SelectInst's as reduction
+      // values in our tree.
+      if (isa<BinaryOperator>(NextV) || isa<SelectInst>(NextV))
+        Stack.push_back(std::make_pair(cast<Instruction>(NextV), 0));
       else if (NextV != Phi)
         return false;
     }
@@ -3824,8 +3826,11 @@ public:
     return VectorizedTree != nullptr;
   }
 
-private:
+  unsigned numReductionValues() const {
+    return ReducedVals.size();
+  }
 
+private:
   /// \brief Calculate the cost of a reduction.
   int getReductionCost(TargetTransformInfo *TTI, Value *FirstReducedVal) {
     Type *ScalarTy = FirstReducedVal->getType();
@@ -3932,6 +3937,70 @@ static bool PhiTypeSorterFunc(Value *V, Value *V2) {
   return V->getType() < V2->getType();
 }
 
+/// \brief Try and get a reduction value from a phi node.
+///
+/// Given a phi node \p P in a block \p ParentBB, consider possible reductions
+/// if they come from either \p ParentBB or a containing loop latch.
+///
+/// \returns A candidate reduction value if possible, or \code nullptr \endcode
+/// if not possible.
+static Value *getReductionValue(PHINode *P, BasicBlock *ParentBB,
+                                LoopInfo *LI) {
+  Value *Rdx = nullptr;
+
+  // Return the incoming value if it comes from the same BB as the phi node.
+  if (P->getIncomingBlock(0) == ParentBB) {
+    Rdx = P->getIncomingValue(0);
+  } else if (P->getIncomingBlock(1) == ParentBB) {
+    Rdx = P->getIncomingValue(1);
+  }
+
+  if (Rdx)
+    return Rdx;
+
+  // Otherwise, check whether we have a loop latch to look at.
+  Loop *BBL = LI->getLoopFor(ParentBB);
+  if (!BBL)
+    return Rdx;
+  BasicBlock *BBLatch = BBL->getLoopLatch();
+  if (!BBLatch)
+    return Rdx;
+
+  // There is a loop latch, return the incoming value if it comes from
+  // that. This reduction pattern occassionaly turns up.
+  if (P->getIncomingBlock(0) == BBLatch) {
+    Rdx = P->getIncomingValue(0);
+  } else if (P->getIncomingBlock(1) == BBLatch) {
+    Rdx = P->getIncomingValue(1);
+  }
+
+  return Rdx;
+}
+
+/// \brief Attempt to reduce a horizontal reduction.
+/// If it is legal to match a horizontal reduction feeding
+/// the phi node P with reduction operators BI, then check if it
+/// can be done.
+/// \returns true if a horizontal reduction was matched and reduced.
+/// \returns false if a horizontal reduction was not matched.
+static bool canMatchHorizontalReduction(PHINode *P, BinaryOperator *BI,
+                                        BoUpSLP &R, TargetTransformInfo *TTI) {
+  if (!ShouldVectorizeHor)
+    return false;
+
+  HorizontalReduction HorRdx;
+  if (!HorRdx.matchAssociativeReduction(P, BI))
+    return false;
+
+  // If there is a sufficient number of reduction values, reduce
+  // to a nearby power-of-2. Can safely generate oversized
+  // vectors and rely on the backend to split them to legal sizes.
+  HorRdx.ReduxWidth =
+    std::max((uint64_t)4, PowerOf2Floor(HorRdx.numReductionValues()));
+
+  return HorRdx.tryToReduce(R, TTI);
+}
+
 bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
   bool Changed = false;
   SmallVector<Value *, 4> Incoming;
@@ -3999,20 +4068,16 @@ bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
       // Check that the PHI is a reduction PHI.
       if (P->getNumIncomingValues() != 2)
         return Changed;
-      Value *Rdx =
-          (P->getIncomingBlock(0) == BB
-               ? (P->getIncomingValue(0))
-               : (P->getIncomingBlock(1) == BB ? P->getIncomingValue(1)
-                                               : nullptr));
+
+      Value *Rdx = getReductionValue(P, BB, LI);
+
       // Check if this is a Binary Operator.
       BinaryOperator *BI = dyn_cast_or_null<BinaryOperator>(Rdx);
       if (!BI)
         continue;
 
       // Try to match and vectorize a horizontal reduction.
-      HorizontalReduction HorRdx;
-      if (ShouldVectorizeHor && HorRdx.matchAssociativeReduction(P, BI) &&
-          HorRdx.tryToReduce(R, TTI)) {
+      if (canMatchHorizontalReduction(P, BI, R, TTI)) {
         Changed = true;
         it = BB->begin();
         e = BB->end();
@@ -4035,15 +4100,12 @@ bool SLPVectorizer::vectorizeChainsInBlock(BasicBlock *BB, BoUpSLP &R) {
       continue;
     }
 
-    // Try to vectorize horizontal reductions feeding into a store.
     if (ShouldStartVectorizeHorAtStore)
       if (StoreInst *SI = dyn_cast<StoreInst>(it))
         if (BinaryOperator *BinOp =
                 dyn_cast<BinaryOperator>(SI->getValueOperand())) {
-          HorizontalReduction HorRdx;
-          if (((HorRdx.matchAssociativeReduction(nullptr, BinOp) &&
-                HorRdx.tryToReduce(R, TTI)) ||
-               tryToVectorize(BinOp, R))) {
+          if (canMatchHorizontalReduction(nullptr, BinOp, R, TTI) ||
+              tryToVectorize(BinOp, R)) {
             Changed = true;
             it = BB->begin();
             e = BB->end();

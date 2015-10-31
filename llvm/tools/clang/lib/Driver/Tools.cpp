@@ -612,11 +612,15 @@ arm::FloatABI arm::getARMFloatABI(const ToolChain &TC, const ArgList &Args) {
     switch (Triple.getOS()) {
     case llvm::Triple::Darwin:
     case llvm::Triple::MacOSX:
-    case llvm::Triple::IOS: {
+    case llvm::Triple::IOS:
+    case llvm::Triple::TvOS: {
       // Darwin defaults to "softfp" for v6 and v7.
       ABI = (SubArch == 6 || SubArch == 7) ? FloatABI::SoftFP : FloatABI::Soft;
       break;
     }
+    case llvm::Triple::WatchOS:
+      ABI = FloatABI::Hard;
+      break;
 
     // FIXME: this is invalid for WindowsCE
     case llvm::Triple::Win32:
@@ -806,7 +810,8 @@ static void getARMTargetFeatures(const ToolChain &TC,
                                options::OPT_mno_long_calls)) {
     if (A->getOption().matches(options::OPT_mlong_calls))
       Features.push_back("+long-calls");
-  } else if (KernelOrKext && (!Triple.isiOS() || Triple.isOSVersionLT(6))) {
+  } else if (KernelOrKext && (!Triple.isiOS() || Triple.isOSVersionLT(6)) &&
+             !Triple.isWatchOS()) {
       Features.push_back("+long-calls");
   }
 
@@ -869,6 +874,8 @@ void Clang::AddARMTargetArgs(const llvm::Triple &Triple, const ArgList &Args,
   } else if (Triple.isOSBinFormatMachO()) {
     if (useAAPCSForMachO(Triple)) {
       ABIName = "aapcs";
+    } else if (Triple.isWatchOS()) {
+      ABIName = "aapcs16";
     } else {
       ABIName = "apcs-gnu";
     }
@@ -2459,6 +2466,36 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
         continue;
       }
 
+      switch (C.getDefaultToolChain().getArch()) {
+      default:
+        break;
+      case llvm::Triple::mips:
+      case llvm::Triple::mipsel:
+      case llvm::Triple::mips64:
+      case llvm::Triple::mips64el:
+        if (Value == "--trap") {
+          CmdArgs.push_back("-target-feature");
+          CmdArgs.push_back("+use-tcc-in-div");
+          continue;
+        }
+        if (Value == "--break") {
+          CmdArgs.push_back("-target-feature");
+          CmdArgs.push_back("-use-tcc-in-div");
+          continue;
+        }
+        if (Value.startswith("-msoft-float")) {
+          CmdArgs.push_back("-target-feature");
+          CmdArgs.push_back("+soft-float");
+          continue;
+        }
+        if (Value.startswith("-mhard-float")) {
+          CmdArgs.push_back("-target-feature");
+          CmdArgs.push_back("-soft-float");
+          continue;
+        }
+        break;
+      }
+
       if (Value == "-force_cpusubtype_ALL") {
         // Do nothing, this is the default and we don't support anything else.
       } else if (Value == "-L") {
@@ -2491,18 +2528,6 @@ static void CollectArgsForIntegratedAssembler(Compilation &C,
       } else if (Value.startswith("-mcpu") || Value.startswith("-mfpu") ||
                  Value.startswith("-mhwdiv") || Value.startswith("-march")) {
         // Do nothing, we'll validate it later.
-      } else if (Value == "--trap") {
-        CmdArgs.push_back("-target-feature");
-        CmdArgs.push_back("+use-tcc-in-div");
-      } else if (Value == "--break") {
-        CmdArgs.push_back("-target-feature");
-        CmdArgs.push_back("-use-tcc-in-div");
-      } else if (Value.startswith("-msoft-float")) {
-        CmdArgs.push_back("-target-feature");
-        CmdArgs.push_back("+soft-float");
-      } else if (Value.startswith("-mhard-float")) {
-        CmdArgs.push_back("-target-feature");
-        CmdArgs.push_back("-soft-float");
       } else {
         D.Diag(diag::err_drv_unsupported_option_argument)
             << A->getOption().getName() << Value;
@@ -3183,7 +3208,8 @@ ParsePICArgs(const ToolChain &ToolChain, const llvm::Triple &Triple,
 
   // This kernel flags are a trump-card: they will disable PIC/PIE
   // generation, independent of the argument order.
-  if (KernelOrKext && (!Triple.isiOS() || Triple.isOSVersionLT(6)))
+  if (KernelOrKext && ((!Triple.isiOS() || Triple.isOSVersionLT(6)) &&
+                       !Triple.isWatchOS()))
     PIC = PIE = false;
 
   if (Arg *A = Args.getLastArg(options::OPT_mdynamic_no_pic)) {
@@ -4879,7 +4905,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
     addExceptionArgs(Args, InputType, getToolChain(), KernelOrKext, objcRuntime,
                      CmdArgs);
 
-  if (getToolChain().UseSjLjExceptions())
+  if (getToolChain().UseSjLjExceptions(Args))
     CmdArgs.push_back("-fsjlj-exceptions");
 
   // C++ "sane" operator new.
@@ -5432,12 +5458,14 @@ static bool maybeConsumeDash(const std::string &EH, size_t &I) {
   return !HaveDash;
 }
 
+namespace {
 struct EHFlags {
   EHFlags() : Synch(false), Asynch(false), NoExceptC(false) {}
   bool Synch;
   bool Asynch;
   bool NoExceptC;
 };
+} // end anonymous namespace
 
 /// /EH controls whether to run destructor cleanups when exceptions are
 /// thrown.  There are three modifiers:
@@ -6461,7 +6489,11 @@ StringRef arm::getLLVMArchSuffixForARM(StringRef CPU, StringRef Arch,
       // extract arch from default cpu of the Triple
       ArchKind = llvm::ARM::parseCPUArch(Triple.getARMCPUForArch(ARMArch));
   } else {
-    ArchKind = llvm::ARM::parseCPUArch(CPU);
+    // FIXME: horrible hack to get around the fact that Cortex-A7 is only an
+    // armv7k triple if it's actually been specified via "-arch armv7k".
+    ArchKind = (Arch == "armv7k" || Arch == "thumbv7k")
+                          ? llvm::ARM::AK_ARMV7K
+                          : llvm::ARM::parseCPUArch(CPU);
   }
   if (ArchKind == llvm::ARM::AK_INVALID)
     return "";
@@ -9662,22 +9694,16 @@ void visualstudio::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     CmdArgs.push_back(Args.MakeArgString("-debug"));
     CmdArgs.push_back(Args.MakeArgString("-incremental:no"));
     if (Args.hasArg(options::OPT__SLASH_MD, options::OPT__SLASH_MDd)) {
-      static const char *const CompilerRTComponents[] = {
-          "asan_dynamic", "asan_dynamic_runtime_thunk",
-      };
-      for (const auto &Component : CompilerRTComponents)
-        CmdArgs.push_back(TC.getCompilerRTArgString(Args, Component));
+      for (const auto &Lib : {"asan_dynamic", "asan_dynamic_runtime_thunk"})
+        CmdArgs.push_back(TC.getCompilerRTArgString(Args, Lib));
       // Make sure the dynamic runtime thunk is not optimized out at link time
       // to ensure proper SEH handling.
       CmdArgs.push_back(Args.MakeArgString("-include:___asan_seh_interceptor"));
     } else if (DLL) {
       CmdArgs.push_back(TC.getCompilerRTArgString(Args, "asan_dll_thunk"));
     } else {
-      static const char *const CompilerRTComponents[] = {
-          "asan", "asan_cxx",
-      };
-      for (const auto &Component : CompilerRTComponents)
-        CmdArgs.push_back(TC.getCompilerRTArgString(Args, Component));
+      for (const auto &Lib : {"asan", "asan_cxx"})
+        CmdArgs.push_back(TC.getCompilerRTArgString(Args, Lib));
     }
   }
 
@@ -10326,8 +10352,23 @@ void CrossWindows::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  const std::string Linker = TC.GetProgramPath("ld");
-  Exec = Args.MakeArgString(Linker);
+  if (TC.getSanitizerArgs().needsAsanRt()) {
+    // TODO handle /MT[d] /MD[d]
+    if (Args.hasArg(options::OPT_shared)) {
+      CmdArgs.push_back(TC.getCompilerRTArgString(Args, "asan_dll_thunk"));
+    } else {
+      for (const auto &Lib : {"asan_dynamic", "asan_dynamic_runtime_thunk"})
+        CmdArgs.push_back(TC.getCompilerRTArgString(Args, Lib));
+        // Make sure the dynamic runtime thunk is not optimized out at link time
+        // to ensure proper SEH handling.
+        CmdArgs.push_back(Args.MakeArgString("--undefined"));
+        CmdArgs.push_back(Args.MakeArgString(TC.getArch() == llvm::Triple::x86
+                                                 ? "___asan_seh_interceptor"
+                                                 : "__asan_seh_interceptor"));
+    }
+  }
+
+  Exec = Args.MakeArgString(TC.GetLinkerPath());
 
   C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 }

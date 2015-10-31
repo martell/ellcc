@@ -2329,8 +2329,11 @@ SDValue DAGCombiner::visitSDIV(SDNode *N) {
       return Op;
 
   // sdiv, srem -> sdivrem
-  if (SDValue DivRem = useDivRem(N))
-    return DivRem;
+  // If the divisor is constant, then return DIVREM only if isIntDivCheap() is true.
+  // Otherwise, we break the simplification logic in visitREM().
+  if (!N1C || TLI.isIntDivCheap(N->getValueType(0), Attr))
+    if (SDValue DivRem = useDivRem(N))
+        return DivRem;
 
   // undef / X -> 0
   if (N0.getOpcode() == ISD::UNDEF)
@@ -2390,8 +2393,11 @@ SDValue DAGCombiner::visitUDIV(SDNode *N) {
       return Op;
 
   // sdiv, srem -> sdivrem
-  if (SDValue DivRem = useDivRem(N))
-    return DivRem;
+  // If the divisor is constant, then return DIVREM only if isIntDivCheap() is true.
+  // Otherwise, we break the simplification logic in visitREM().
+  if (!N1C || TLI.isIntDivCheap(N->getValueType(0), Attr))
+    if (SDValue DivRem = useDivRem(N))
+        return DivRem;
 
   // undef / X -> 0
   if (N0.getOpcode() == ISD::UNDEF)
@@ -2448,14 +2454,24 @@ SDValue DAGCombiner::visitREM(SDNode *N) {
     }
   }
 
+  AttributeSet Attr = DAG.getMachineFunction().getFunction()->getAttributes();
+
   // If X/C can be simplified by the division-by-constant logic, lower
   // X%C to the equivalent of X-X/C*C.
-  if (N1C && !N1C->isNullValue()) {
+  // To avoid mangling nodes, this simplification requires that the combine()
+  // call for the speculative DIV must not cause a DIVREM conversion.  We guard
+  // against this by skipping the simplification if isIntDivCheap().  When
+  // div is not cheap, combine will not return a DIVREM.  Regardless,
+  // checking cheapness here makes sense since the simplification results in
+  // fatter code.
+  if (N1C && !N1C->isNullValue() && !TLI.isIntDivCheap(VT, Attr)) {
     unsigned DivOpcode = isSigned ? ISD::SDIV : ISD::UDIV;
     SDValue Div = DAG.getNode(DivOpcode, DL, VT, N0, N1);
     AddToWorklist(Div.getNode());
     SDValue OptimizedDiv = combine(Div.getNode());
     if (OptimizedDiv.getNode() && OptimizedDiv.getNode() != Div.getNode()) {
+      assert((OptimizedDiv.getOpcode() != ISD::UDIVREM) &&
+             (OptimizedDiv.getOpcode() != ISD::SDIVREM));
       SDValue Mul = DAG.getNode(ISD::MUL, DL, VT, OptimizedDiv, N1);
       SDValue Sub = DAG.getNode(ISD::SUB, DL, VT, N0, Mul);
       AddToWorklist(Mul.getNode());
@@ -8461,7 +8477,9 @@ SDValue DAGCombiner::visitFMA(SDNode *N) {
 // FDIVs may be lower than the cost of one FDIV and two FMULs. Another reason
 // is the critical path is increased from "one FDIV" to "one FDIV + one FMUL".
 SDValue DAGCombiner::combineRepeatedFPDivisors(SDNode *N) {
-  if (!DAG.getTarget().Options.UnsafeFPMath)
+  bool UnsafeMath = DAG.getTarget().Options.UnsafeFPMath;
+  const SDNodeFlags *Flags = N->getFlags();
+  if (!UnsafeMath && !Flags->hasAllowReciprocal())
     return SDValue();
 
   // Skip if current node is a reciprocal.
@@ -8480,9 +8498,14 @@ SDValue DAGCombiner::combineRepeatedFPDivisors(SDNode *N) {
   // Find all FDIV users of the same divisor.
   // Use a set because duplicates may be present in the user list.
   SetVector<SDNode *> Users;
-  for (auto *U : N1->uses())
-    if (U->getOpcode() == ISD::FDIV && U->getOperand(1) == N1)
-      Users.insert(U);
+  for (auto *U : N1->uses()) {
+    if (U->getOpcode() == ISD::FDIV && U->getOperand(1) == N1) {
+      // This division is eligible for optimization only if global unsafe math
+      // is enabled or if this division allows reciprocal formation.
+      if (UnsafeMath || U->getFlags()->hasAllowReciprocal())
+        Users.insert(U);
+    }
+  }
 
   // Now that we have the actual number of divisor uses, make sure it meets
   // the minimum threshold specified by the target.
@@ -8492,7 +8515,6 @@ SDValue DAGCombiner::combineRepeatedFPDivisors(SDNode *N) {
   EVT VT = N->getValueType(0);
   SDLoc DL(N);
   SDValue FPOne = DAG.getConstantFP(1.0, DL, VT);
-  const SDNodeFlags *Flags = &cast<BinaryWithFlagsSDNode>(N)->Flags;
   SDValue Reciprocal = DAG.getNode(ISD::FDIV, DL, VT, FPOne, N1, Flags);
 
   // Dividend / Divisor -> Dividend * Reciprocal
