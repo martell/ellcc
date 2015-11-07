@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/DebugInfo/Symbolize/DIPrinter.h"
 #include "llvm/DebugInfo/Symbolize/Symbolize.h"
 #include "llvm/Support/COM.h"
 #include "llvm/Support/CommandLine.h"
@@ -76,6 +77,13 @@ ClDsymHint("dsym-hint", cl::ZeroOrMore,
 static cl::opt<bool>
     ClPrintAddress("print-address", cl::init(false),
                    cl::desc("Show address before line information"));
+
+static bool error(std::error_code ec) {
+  if (!ec)
+    return false;
+  errs() << "LLVMSymbolizer: error reading file: " << ec.message() << ".\n";
+  return true;
+}
 
 static bool parseCommand(bool &IsData, std::string &ModuleName,
                          uint64_t &ModuleOffset) {
@@ -148,18 +156,26 @@ int main(int argc, char **argv) {
   bool IsData = false;
   std::string ModuleName;
   uint64_t ModuleOffset;
+  DIPrinter Printer(outs(), ClPrintFunctions != FunctionNameKind::None);
+
   while (parseCommand(IsData, ModuleName, ModuleOffset)) {
-    std::string Result =
-        IsData ? Symbolizer.symbolizeData(ModuleName, ModuleOffset)
-               : ClPrintInlining
-                     ? Symbolizer.symbolizeInlinedCode(ModuleName, ModuleOffset)
-                     : Symbolizer.symbolizeCode(ModuleName, ModuleOffset);
     if (ClPrintAddress) {
       outs() << "0x";
       outs().write_hex(ModuleOffset);
       outs() << "\n";
     }
-    outs() << Result << "\n";
+    if (IsData) {
+      auto ResOrErr = Symbolizer.symbolizeData(ModuleName, ModuleOffset);
+      Printer << (error(ResOrErr.getError()) ? DIGlobal() : ResOrErr.get());
+    } else if (ClPrintInlining) {
+      auto ResOrErr = Symbolizer.symbolizeInlinedCode(ModuleName, ModuleOffset);
+      Printer << (error(ResOrErr.getError()) ? DIInliningInfo()
+                                             : ResOrErr.get());
+    } else {
+      auto ResOrErr = Symbolizer.symbolizeCode(ModuleName, ModuleOffset);
+      Printer << (error(ResOrErr.getError()) ? DILineInfo() : ResOrErr.get());
+    }
+    outs() << "\n";
     outs().flush();
   }
 

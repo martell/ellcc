@@ -2694,6 +2694,12 @@ static bool TryToSinkInstruction(Instruction *I, BasicBlock *DestBlock) {
         &DestBlock->getParent()->getEntryBlock())
     return false;
 
+  // Do not sink convergent call instructions.
+  if (auto *CI = dyn_cast<CallInst>(I)) {
+    if (CI->isConvergent())
+      return false;
+  }
+
   // We can only sink load instructions if there is nothing between the load and
   // the end of block that could change the value.
   if (I->mayReadFromMemory()) {
@@ -3006,7 +3012,7 @@ static bool prepareICWorklistFromFunction(Function &F, const DataLayout &DL,
     while (EndInst != BB->begin()) {
       // Delete the next to last instruction.
       Instruction *Inst = &*--EndInst->getIterator();
-      if (!Inst->use_empty())
+      if (!Inst->use_empty() && !Inst->getType()->isTokenTy())
         Inst->replaceAllUsesWith(UndefValue::get(Inst->getType()));
       if (Inst->isEHPad()) {
         EndInst = Inst;
@@ -3016,7 +3022,8 @@ static bool prepareICWorklistFromFunction(Function &F, const DataLayout &DL,
         ++NumDeadInst;
         MadeIRChange = true;
       }
-      Inst->eraseFromParent();
+      if (!Inst->getType()->isTokenTy())
+        Inst->eraseFromParent();
     }
   }
 

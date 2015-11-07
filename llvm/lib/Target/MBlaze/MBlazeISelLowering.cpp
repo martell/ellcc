@@ -261,7 +261,7 @@ MBlazeTargetLowering::EmitCustomShift(MachineInstr *MI,
   // simple loop.  The incoming instruction knows the destination vreg to
   // set, the source vreg to operate over and the shift amount.
   const BasicBlock *LLVM_BB = MBB->getBasicBlock();
-  MachineFunction::iterator It = MBB;
+  MachineFunction::iterator It = MBB->getIterator();
   ++It;
 
   // start:
@@ -361,7 +361,7 @@ MBlazeTargetLowering::EmitCustomSelect(MachineInstr *MI,
   // destination vreg to set, the condition code register to branch on, the
   // true/false values to select between, and a branch opcode to use.
   const BasicBlock *LLVM_BB = MBB->getBasicBlock();
-  MachineFunction::iterator It = MBB;
+  MachineFunction::iterator It = MBB->getIterator();
   ++It;
 
   //  thisMBB:
@@ -437,7 +437,7 @@ MBlazeTargetLowering::EmitCustomAtomic(MachineInstr *MI,
   // simple loop.  The incoming instruction knows the destination vreg to
   // set, the source vreg to operate over and the shift amount.
   const BasicBlock *LLVM_BB = MBB->getBasicBlock();
-  MachineFunction::iterator It = MBB;
+  MachineFunction::iterator It = MBB->getIterator();
   ++It;
 
   // start:

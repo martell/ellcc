@@ -65,10 +65,15 @@
 
 namespace __tsan {
 
-ThreadClock::ThreadClock() {
-  nclk_ = 0;
-  for (uptr i = 0; i < (uptr)kMaxTidInClock; i++)
-    clk_[i] = 0;
+ThreadClock::ThreadClock(unsigned tid, unsigned reused)
+    : tid_(tid)
+    , reused_(reused + 1) {  // 0 has special meaning
+  CHECK_LT(tid, kMaxTidInClock);
+  CHECK_EQ(reused_, ((u64)reused_ << kClkBits) >> kClkBits);
+  nclk_ = tid_ + 1;
+  last_acquire_ = 0;
+  internal_memset(clk_, 0, sizeof(clk_));
+  clk_[tid_].reused = reused_;
 }
 
 void ThreadClock::acquire(ClockCache *c, const SyncClock *src) {

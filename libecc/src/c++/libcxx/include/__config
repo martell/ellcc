@@ -11,9 +11,15 @@
 #ifndef _LIBCPP_CONFIG
 #define _LIBCPP_CONFIG
 
-#if !defined(_MSC_VER) || defined(__clang__)
+#if defined(_MSC_VER) && !defined(__clang__)
+#define _LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER
+#endif
+
+#ifndef _LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER
 #pragma GCC system_header
 #endif
+
+#ifdef __cplusplus
 
 #ifdef __GNUC__
 #define _GNUC_VER (__GNUC__ * 100 + __GNUC_MINOR__)
@@ -28,7 +34,11 @@
 #endif
 
 #if defined(_LIBCPP_ABI_UNSTABLE) || _LIBCPP_ABI_VERSION >= 2
+// Change short string represention so that string data starts at offset 0,
+// improving its alignment in some cases.
 #define _LIBCPP_ABI_ALTERNATE_STRING_LAYOUT
+// Fix deque iterator type in order to support incomplete types.
+#define _LIBCPP_ABI_INCOMPLETE_TYPES_IN_DEQUE
 #endif
 
 #define _LIBCPP_CONCAT1(_LIBCPP_X,_LIBCPP_Y) _LIBCPP_X##_LIBCPP_Y
@@ -526,7 +536,6 @@ using namespace _LIBCPP_NAMESPACE __attribute__((__strong__));
 #elif defined(_LIBCPP_MSVC)
 
 #define _LIBCPP_HAS_NO_TEMPLATE_ALIASES
-#define _LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER
 #define _LIBCPP_HAS_NO_CONSTEXPR
 #define _LIBCPP_HAS_NO_CXX14_CONSTEXPR
 #define _LIBCPP_HAS_NO_VARIABLE_TEMPLATES
@@ -810,5 +819,7 @@ extern "C" void __sanitizer_annotate_contiguous_container(
      || defined(_LIBCPP_HAS_NO_THREADS)
 #define _LIBCPP_HAS_NO_ATOMIC_HEADER
 #endif
+
+#endif // __cplusplus
 
 #endif // _LIBCPP_CONFIG

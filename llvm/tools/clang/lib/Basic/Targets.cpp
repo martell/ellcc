@@ -3525,6 +3525,11 @@ void X86TargetInfo::getTargetDefines(const LangOptions &Opts,
   }
   if (CPU >= CK_i586)
     Builder.defineMacro("__GCC_HAVE_SYNC_COMPARE_AND_SWAP_8");
+
+  if (getTriple().isOSIAMCU()) {
+    Builder.defineMacro("__iamcu");
+    Builder.defineMacro("__iamcu__");
+  }
 }
 
 bool X86TargetInfo::hasFeature(StringRef Feature) const {
@@ -3782,6 +3787,11 @@ public:
     PtrDiffType = SignedInt;
     IntPtrType = SignedInt;
     RegParmMax = 3;
+
+    if (getTriple().isOSIAMCU()) {
+      LongDoubleWidth = 64;
+      LongDoubleFormat = &llvm::APFloat::IEEEdouble;
+    }
 
     // Use fpret for all types.
     RealTypeUsesObjCFPRet = ((1 << TargetInfo::Float) |

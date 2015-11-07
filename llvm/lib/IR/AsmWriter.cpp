@@ -1692,7 +1692,6 @@ static void writeDISubprogram(raw_ostream &Out, const DISubprogram *N,
   Printer.printInt("virtualIndex", N->getVirtualIndex());
   Printer.printDIFlags("flags", N->getFlags());
   Printer.printBool("isOptimized", N->isOptimized());
-  Printer.printMetadata("function", N->getRawFunction());
   Printer.printMetadata("templateParams", N->getRawTemplateParams());
   Printer.printMetadata("declaration", N->getRawDeclaration());
   Printer.printMetadata("variables", N->getRawVariables());
@@ -2170,7 +2169,7 @@ void AssemblyWriter::writeOperandBundles(ImmutableCallSite CS) {
 
   bool FirstBundle = true;
   for (unsigned i = 0, e = CS.getNumOperandBundles(); i != e; ++i) {
-    OperandBundleUse BU = CS.getOperandBundle(i);
+    OperandBundleUse BU = CS.getOperandBundleAt(i);
 
     if (!FirstBundle)
       Out << ", ";
@@ -2769,6 +2768,8 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
       Out << "musttail ";
     else if (CI->isTailCall())
       Out << "tail ";
+    else if (CI->isNoTailCall())
+      Out << "notail ";
   }
 
   // Print out the opcode...

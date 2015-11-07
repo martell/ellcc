@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "TestModuleFileExtension.h"
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Basic/FileManager.h"
 #include "clang/Basic/Version.h"
@@ -19,6 +20,7 @@
 #include "clang/Frontend/Utils.h"
 #include "clang/Lex/HeaderSearchOptions.h"
 #include "clang/Serialization/ASTReader.h"
+#include "clang/Serialization/ModuleFileExtension.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -832,6 +834,30 @@ static void ParseFileSystemArgs(FileSystemOptions &Opts, ArgList &Args) {
   Opts.WorkingDir = Args.getLastArgValue(OPT_working_directory);
 }
 
+/// Parse the argument to the -ftest-module-file-extension
+/// command-line argument.
+///
+/// \returns true on error, false on success.
+static bool parseTestModuleFileExtensionArg(StringRef Arg,
+                                            std::string &BlockName,
+                                            unsigned &MajorVersion,
+                                            unsigned &MinorVersion,
+                                            bool &Hashed,
+                                            std::string &UserInfo) {
+  SmallVector<StringRef, 5> Args;
+  Arg.split(Args, ':', 5);
+  if (Args.size() < 5)
+    return true;
+
+  BlockName = Args[0];
+  if (Args[1].getAsInteger(10, MajorVersion)) return true;
+  if (Args[2].getAsInteger(10, MinorVersion)) return true;
+  if (Args[3].getAsInteger(2, Hashed)) return true;
+  if (Args.size() > 4)
+    UserInfo = Args[4];
+  return false;
+}
+
 static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
                                    DiagnosticsEngine &Diags) {
   using namespace options;
@@ -923,6 +949,26 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
     for (const Arg *A : Args.filtered(OPT_plugin_arg))
       if (A->getValue(0) == Opts.AddPluginActions[i])
         Opts.AddPluginArgs[i].emplace_back(A->getValue(1));
+
+  for (const std::string &Arg :
+         Args.getAllArgValues(OPT_ftest_module_file_extension_EQ)) {
+    std::string BlockName;
+    unsigned MajorVersion;
+    unsigned MinorVersion;
+    bool Hashed;
+    std::string UserInfo;
+    if (parseTestModuleFileExtensionArg(Arg, BlockName, MajorVersion,
+                                        MinorVersion, Hashed, UserInfo)) {
+      Diags.Report(diag::err_test_module_file_extension_format) << Arg;
+
+      continue;
+    }
+
+    // Add the testing module file extension.
+    Opts.ModuleFileExtensions.push_back(
+      new TestModuleFileExtension(BlockName, MajorVersion, MinorVersion,
+                                  Hashed, UserInfo));
+  }
 
   if (const Arg *A = Args.getLastArg(OPT_code_completion_at)) {
     Opts.CodeCompletionAt =
@@ -1437,16 +1483,19 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
       Opts.ObjCWeakRuntime = Opts.ObjCRuntime.allowsWeak();
 
     // ObjCWeak determines whether __weak is actually enabled.
-    if (Opts.ObjCAutoRefCount) {
-      Opts.ObjCWeak = Opts.ObjCWeakRuntime;
-    } else if (Args.hasArg(OPT_fobjc_weak)) {
-      if (Opts.getGC() != LangOptions::NonGC) {
+    // Note that we allow -fno-objc-weak to disable this even in ARC mode.
+    if (auto weakArg = Args.getLastArg(OPT_fobjc_weak, OPT_fno_objc_weak)) {
+      if (!weakArg->getOption().matches(OPT_fobjc_weak)) {
+        assert(!Opts.ObjCWeak);
+      } else if (Opts.getGC() != LangOptions::NonGC) {
         Diags.Report(diag::err_objc_weak_with_gc);
-      } else if (Opts.ObjCWeakRuntime) {
-        Opts.ObjCWeak = true;
-      } else {
+      } else if (!Opts.ObjCWeakRuntime) {
         Diags.Report(diag::err_objc_weak_unsupported);
+      } else {
+        Opts.ObjCWeak = 1;
       }
+    } else if (Opts.ObjCAutoRefCount) {
+      Opts.ObjCWeak = Opts.ObjCWeakRuntime;
     }
 
     if (Args.hasArg(OPT_fno_objc_infer_related_result_type))
@@ -2075,6 +2124,12 @@ std::string CompilerInvocation::getModuleHash() const {
 
   // Extend the signature with the user build path.
   code = hash_combine(code, hsOpts.ModuleUserBuildPath);
+
+  // Extend the signature with the module file extensions.
+  const FrontendOptions &frontendOpts = getFrontendOpts();
+  for (auto ext : frontendOpts.ModuleFileExtensions) {
+    code = ext->hashExtension(code);
+  }
 
   // Darwin-specific hack: if we have a sysroot, use the contents and
   // modification time of

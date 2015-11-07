@@ -1386,6 +1386,15 @@ public:
   hasVisibleDefaultArgument(const NamedDecl *D,
                             llvm::SmallVectorImpl<Module *> *Modules = nullptr);
 
+  /// Determine if \p A and \p B are equivalent internal linkage declarations
+  /// from different modules, and thus an ambiguity error can be downgraded to
+  /// an extension warning.
+  bool isEquivalentInternalLinkageDeclaration(const NamedDecl *A,
+                                              const NamedDecl *B);
+  void diagnoseEquivalentInternalLinkageDeclarations(
+      SourceLocation Loc, const NamedDecl *D,
+      ArrayRef<const NamedDecl *> Equiv);
+
   bool RequireCompleteType(SourceLocation Loc, QualType T,
                            TypeDiagnoser &Diagnoser);
   bool RequireCompleteType(SourceLocation Loc, QualType T,
@@ -3047,7 +3056,7 @@ public:
   /// warning) when atomic property has one but not the other user-declared
   /// setter or getter.
   void AtomicPropertySetterGetterRules(ObjCImplDecl* IMPDecl,
-                                       ObjCContainerDecl* IDecl);
+                                       ObjCInterfaceDecl* IDecl);
 
   void DiagnoseOwningPropertyGetterSynthesis(const ObjCImplementationDecl *D);
 
@@ -7257,14 +7266,7 @@ public:
   /// Process the specified property declaration and create decls for the
   /// setters and getters as needed.
   /// \param property The property declaration being processed
-  /// \param CD The semantic container for the property
-  /// \param redeclaredProperty Declaration for property if redeclared
-  ///        in class extension.
-  /// \param lexicalDC Container for redeclaredProperty.
-  void ProcessPropertyDecl(ObjCPropertyDecl *property,
-                           ObjCContainerDecl *CD,
-                           ObjCPropertyDecl *redeclaredProperty = nullptr,
-                           ObjCContainerDecl *lexicalDC = nullptr);
+  void ProcessPropertyDecl(ObjCPropertyDecl *property);
 
 
   void DiagnosePropertyMismatch(ObjCPropertyDecl *Property,
@@ -8844,8 +8846,8 @@ private:
     bool HasVAListArg;
   };
 
-  bool getFormatStringInfo(const FormatAttr *Format, bool IsCXXMember,
-                           FormatStringInfo *FSI);
+  static bool getFormatStringInfo(const FormatAttr *Format, bool IsCXXMember,
+                                  FormatStringInfo *FSI);
   bool CheckFunctionCall(FunctionDecl *FDecl, CallExpr *TheCall,
                          const FunctionProtoType *Proto);
   bool CheckObjCMethodCall(ObjCMethodDecl *Method, SourceLocation loc,
@@ -8910,7 +8912,6 @@ private:
   bool SemaBuiltinARMSpecialReg(unsigned BuiltinID, CallExpr *TheCall,
                                 int ArgNum, unsigned ExpectedFieldNum,
                                 bool AllowName);
-  bool SemaBuiltinCpuSupports(CallExpr *TheCall);
 public:
   enum FormatStringType {
     FST_Scanf,
@@ -8934,7 +8935,7 @@ public:
   
   bool FormatStringHasSArg(const StringLiteral *FExpr);
   
-  bool GetFormatNSStringIdx(const FormatAttr *Format, unsigned &Idx);
+  static bool GetFormatNSStringIdx(const FormatAttr *Format, unsigned &Idx);
 
 private:
   bool CheckFormatArguments(const FormatAttr *Format,

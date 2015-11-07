@@ -1354,11 +1354,13 @@ Sema::CreateGenericSelectionExpr(SourceLocation KeyLoc,
                                  ArrayRef<Expr *> Exprs) {
   unsigned NumAssocs = Types.size();
   assert(NumAssocs == Exprs.size());
-  if (ControllingExpr->getType()->isPlaceholderType()) {
-    ExprResult result = CheckPlaceholderExpr(ControllingExpr);
-    if (result.isInvalid()) return ExprError();
-    ControllingExpr = result.get();
-  }
+
+  // Decay and strip qualifiers for the controlling expression type, and handle
+  // placeholder type replacement. See committee discussion from WG14 DR423.
+  ExprResult R = DefaultFunctionArrayLvalueConversion(ControllingExpr);
+  if (R.isInvalid())
+    return ExprError();
+  ControllingExpr = R.get();
 
   // The controlling expression is an unevaluated operand, so side effects are
   // likely unintended.
@@ -5046,7 +5048,7 @@ Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
     if (!Result.isUsable()) return ExprError();
     TheCall = dyn_cast<CallExpr>(Result.get());
     if (!TheCall) return Result;
-    Args = ArrayRef<Expr *>(TheCall->getArgs(), TheCall->getNumArgs());
+    Args = llvm::makeArrayRef(TheCall->getArgs(), TheCall->getNumArgs());
   }
 
   // Bail out early if calling a builtin with custom typechecking.

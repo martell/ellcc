@@ -869,7 +869,7 @@ namespace llvm {
     /// register, not on the X87 floating point stack.
     bool isScalarFPTypeInSSEReg(EVT VT) const {
       return (VT == MVT::f64 && X86ScalarSSEf64) || // f64 is when SSE2
-      (VT == MVT::f32 && X86ScalarSSEf32);   // f32 is when SSE1
+             (VT == MVT::f32 && X86ScalarSSEf32);   // f32 is when SSE1
     }
 
     /// \brief Returns true if it is beneficial to convert a load of a constant
@@ -888,6 +888,16 @@ namespace llvm {
 
     unsigned getRegisterByName(const char* RegName, EVT VT,
                                SelectionDAG &DAG) const override;
+
+    /// If a physical register, this returns the register that receives the
+    /// exception address on entry to an EH pad.
+    unsigned
+    getExceptionPointerRegister(const Constant *PersonalityFn) const override;
+
+    /// If a physical register, this returns the register that receives the
+    /// exception typeid on entry to a landing pad.
+    unsigned
+    getExceptionSelectorRegister(const Constant *PersonalityFn) const override;
 
     /// This method returns a target specific FastISel object,
     /// or null if the target does not support "fast" ISel.
@@ -1087,6 +1097,9 @@ namespace llvm {
 
     MachineBasicBlock *EmitLoweredWinAlloca(MachineInstr *MI,
                                               MachineBasicBlock *BB) const;
+
+    MachineBasicBlock *EmitLoweredCatchRet(MachineInstr *MI,
+                                           MachineBasicBlock *BB) const;
 
     MachineBasicBlock *EmitLoweredSegAlloca(MachineInstr *MI,
                                             MachineBasicBlock *BB) const;

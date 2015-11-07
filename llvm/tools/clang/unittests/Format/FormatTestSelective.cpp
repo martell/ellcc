@@ -273,6 +273,27 @@ TEST_F(FormatTestSelective, IndividualStatementsOfNestedBlocks) {
                    0, 0));
 }
 
+TEST_F(FormatTestSelective, WrongIndent) {
+  EXPECT_EQ("namespace {\n"
+            "int i;\n"
+            "int j;\n"
+            "}",
+            format("namespace {\n"
+                   "  int i;\n" // Format here.
+                   "  int j;\n"
+                   "}",
+                   15, 0));
+  EXPECT_EQ("namespace {\n"
+            "  int i;\n"
+            "  int j;\n"
+            "}",
+            format("namespace {\n"
+                   "  int i;\n"
+                   "  int j;\n" // Format here.
+                   "}",
+                   24, 0));
+}
+
 TEST_F(FormatTestSelective, AlwaysFormatsEntireMacroDefinitions) {
   Style.AlignEscapedNewlinesLeft = true;
   EXPECT_EQ("int  i;\n"
@@ -444,6 +465,27 @@ TEST_F(FormatTestSelective, UnderstandsTabs) {
                    "  \tg();\n"
                    "}",
                    21, 0));
+}
+
+TEST_F(FormatTestSelective, StopFormattingWhenLeavingScope) {
+  EXPECT_EQ(
+      "void f() {\n"
+      "  if (a) {\n"
+      "    g();\n"
+      "    h();\n"
+      "}\n"
+      "\n"
+      "void g() {\n"
+      "}",
+      format("void f() {\n"
+             "  if (a) {\n" // Assume this was added without the closing brace.
+             "  g();\n"
+             "  h();\n"
+             "}\n"
+             "\n"
+             "void g() {\n" // Make sure not to format this.
+             "}",
+             15, 0));
 }
 
 } // end namespace

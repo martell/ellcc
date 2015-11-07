@@ -1489,15 +1489,20 @@ public:
   }
 
   // Note that 'musttail' implies 'tail'.
-  enum TailCallKind { TCK_None = 0, TCK_Tail = 1, TCK_MustTail = 2 };
+  enum TailCallKind { TCK_None = 0, TCK_Tail = 1, TCK_MustTail = 2,
+                      TCK_NoTail = 3 };
   TailCallKind getTailCallKind() const {
     return TailCallKind(getSubclassDataFromInstruction() & 3);
   }
   bool isTailCall() const {
-    return (getSubclassDataFromInstruction() & 3) != TCK_None;
+    unsigned Kind = getSubclassDataFromInstruction() & 3;
+    return Kind == TCK_Tail || Kind == TCK_MustTail;
   }
   bool isMustTailCall() const {
     return (getSubclassDataFromInstruction() & 3) == TCK_MustTail;
+  }
+  bool isNoTailCall() const {
+    return (getSubclassDataFromInstruction() & 3) == TCK_NoTail;
   }
   void setTailCall(bool isTC = true) {
     setInstructionSubclassData((getSubclassDataFromInstruction() & ~3) |
@@ -1602,6 +1607,21 @@ public:
 
   /// \brief Determine whether the call or the callee has the given attributes.
   bool paramHasAttr(unsigned i, Attribute::AttrKind A) const;
+
+  /// \brief Return true if the data operand at index \p i has the attribute \p
+  /// A.
+  ///
+  /// Data operands include call arguments and values used in operand bundles,
+  /// but does not include the callee operand.  This routine dispatches to the
+  /// underlying AttributeList or the OperandBundleUser as appropriate.
+  ///
+  /// The index \p i is interpreted as
+  ///
+  ///  \p i == Attribute::ReturnIndex  -> the return value
+  ///  \p i in [1, arg_size + 1)  -> argument number (\p i - 1)
+  ///  \p i in [arg_size + 1, data_operand_size + 1) -> bundle operand at index
+  ///     (\p i - 1) in the operand list.
+  bool dataOperandHasImpliedAttr(unsigned i, Attribute::AttrKind A) const;
 
   /// \brief Extract the alignment for a call or parameter (0=unknown).
   unsigned getParamAlignment(unsigned i) const {
@@ -3473,6 +3493,22 @@ public:
 
   /// \brief Determine whether the call or the callee has the given attributes.
   bool paramHasAttr(unsigned i, Attribute::AttrKind A) const;
+
+  /// \brief Return true if the data operand at index \p i has the attribute \p
+  /// A.
+  ///
+  /// Data operands include invoke arguments and values used in operand bundles,
+  /// but does not include the invokee operand, or the two successor blocks.
+  /// This routine dispatches to the underlying AttributeList or the
+  /// OperandBundleUser as appropriate.
+  ///
+  /// The index \p i is interpreted as
+  ///
+  ///  \p i == Attribute::ReturnIndex  -> the return value
+  ///  \p i in [1, arg_size + 1)  -> argument number (\p i - 1)
+  ///  \p i in [arg_size + 1, data_operand_size + 1) -> bundle operand at index
+  ///     (\p i - 1) in the operand list.
+  bool dataOperandHasImpliedAttr(unsigned i, Attribute::AttrKind A) const;
 
   /// \brief Extract the alignment for a call or parameter (0=unknown).
   unsigned getParamAlignment(unsigned i) const {

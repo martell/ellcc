@@ -53,7 +53,7 @@ enum BlockIDs {
   OPERAND_BUNDLE_TAGS_BLOCK_ID
 };
 
-/// Idenfitication block contains a string that describes the producer details,
+/// Identification block contains a string that describes the producer details,
 /// and an epoch that defines the auto-upgrade capability.
 enum IdentificationCodes {
   IDENTIFICATION_CODE_STRING = 1, // IDENTIFICATION:      [strchr x N]
@@ -335,6 +335,15 @@ enum { BITCODE_CURRENT_EPOCH = 0 };
     SYNCHSCOPE_CROSSTHREAD = 1
   };
 
+  /// Markers and flags for call instruction.
+  enum CallMarkersFlags {
+    CALL_TAIL = 0,
+    CALL_CCONV = 1,
+    CALL_MUSTTAIL = 14,
+    CALL_EXPLICIT_TYPE = 15,
+    CALL_NOTAIL = 16
+  };
+
   // The function body block (FUNCTION_BLOCK_ID) describes function bodies.  It
   // can contain a constant block (CONSTANTS_BLOCK_ID).
   enum FunctionCodes {
@@ -466,7 +475,8 @@ enum { BITCODE_CURRENT_EPOCH = 0 };
     ATTR_KIND_SAFESTACK = 44,
     ATTR_KIND_ARGMEMONLY = 45,
     ATTR_KIND_SWIFT_SELF = 46,
-    ATTR_KIND_SWIFT_ERROR = 47
+    ATTR_KIND_SWIFT_ERROR = 47,
+    ATTR_KIND_NO_RECURSE = 48
   };
 
   enum ComdatSelectionKindCodes {

@@ -884,7 +884,8 @@ def err_property_type : Error<"property cannot have array or function type %0">;
 def error_missing_property_context : Error<
   "missing context for property implementation declaration">;
 def error_bad_property_decl : Error<
-  "property implementation must have its declaration in interface %0">;
+  "property implementation must have its declaration in interface %0 or one of "
+  "its extensions">;
 def error_category_property : Error<
   "property declared in category %0 cannot be implemented in "
   "class implementation">;
@@ -1994,7 +1995,13 @@ def err_concept_decl_invalid_specifiers : Error<
 def warn_cxx98_compat_unicode_type : Warning<
   "'%0' type specifier is incompatible with C++98">,
   InGroup<CXX98Compat>, DefaultIgnore;
- 
+
+// __make_integer_seq
+def err_integer_sequence_negative_length : Error<
+  "integer sequences must have non-negative sequence length">;
+def err_integer_sequence_integral_element_type : Error<
+  "integer sequences must have integral element type">;
+
 // Objective-C++
 def err_objc_decls_may_only_appear_in_global_scope : Error<
   "Objective-C declarations may only appear in global scope">;
@@ -2347,7 +2354,7 @@ def warn_attribute_wrong_decl_type : Warning<
   "Objective-C instance methods|init methods of interface or class extension declarations|"
   "variables, functions and classes|Objective-C protocols|"
   "functions and global variables|structs, unions, and typedefs|structs and typedefs|"
-  "interface or protocol declarations|kernel functions}1">,
+  "interface or protocol declarations|kernel functions|non-K&R-style functions}1">,
   InGroup<IgnoredAttributes>;
 def err_attribute_wrong_decl_type : Error<warn_attribute_wrong_decl_type.Text>;
 def warn_type_attribute_wrong_type : Warning<
@@ -2402,6 +2409,8 @@ def warn_attribute_not_on_decl : Warning<
   "%0 attribute ignored when parsing type">, InGroup<IgnoredAttributes>;
 def err_base_specifier_attribute : Error<
   "%0 attribute cannot be applied to a base specifier">;
+def err_invalid_attribute_on_virtual_function : Error<
+  "%0 attribute cannot be applied to virtual functions">;
 
 // Availability attribute
 def warn_availability_unknown_platform : Warning<
@@ -2635,6 +2644,10 @@ def warn_impcast_null_pointer_to_integer : Warning<
 def warn_impcast_floating_point_to_bool : Warning<
     "implicit conversion turns floating-point number into bool: %0 to %1">,
     InGroup<ImplicitConversionFloatingPointToBool>;
+def ext_ms_impcast_fn_obj : ExtWarn<
+  "implicit conversion between pointer-to-function and pointer-to-object is a "
+  "Microsoft extension">,
+  InGroup<MicrosoftCast>, DefaultError, SFINAEFailure;
 
 def warn_impcast_pointer_to_bool : Warning<
     "address of%select{| function| array}0 '%1' will always evaluate to "
@@ -2975,9 +2988,6 @@ def note_ovl_candidate : Note<"candidate "
     "%select{none|const|restrict|const and restrict|volatile|const and volatile"
     "|volatile and restrict|const, volatile, and restrict}4)"
     "| made ineligible by enable_if}2">;
-def ext_ovl_equivalent_internal_linkage_functions_in_modules : ExtWarn<
-  "ambiguous use of internal linkage function %0 defined in multiple modules">,
-  InGroup<DiagGroup<"modules-ambiguous-internal-linkage-function">>;
 
 def note_ovl_candidate_inherited_constructor : Note<"inherited from here">;
 def note_ovl_candidate_illegal_constructor : Note<
@@ -7858,6 +7868,12 @@ def err_module_self_import : Error<
   "import of module '%0' appears within same top-level module '%1'">;
 def err_module_import_in_implementation : Error<
   "@import of module '%0' in implementation of '%1'; use #import">;
+
+def ext_equivalent_internal_linkage_decl_in_modules : ExtWarn<
+  "ambiguous use of internal linkage declaration %0 defined in multiple modules">,
+  InGroup<DiagGroup<"modules-ambiguous-internal-linkage">>;
+def note_equivalent_internal_linkage_decl : Note<
+  "declared here%select{ in module '%1'|}0">;
 }
 
 let CategoryName = "Coroutines Issue" in {

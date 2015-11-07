@@ -238,10 +238,20 @@ static Value *EmitSignBit(CodeGenFunction &CGF, Value *V) {
   llvm::Type *IntTy = llvm::IntegerType::get(C, Width);
   V = CGF.Builder.CreateBitCast(V, IntTy);
   if (Ty->isPPC_FP128Ty()) {
-    // The higher-order double comes first, and so we need to truncate the
-    // pair to extract the overall sign. The order of the pair is the same
-    // in both little- and big-Endian modes.
+    // We want the sign bit of the higher-order double. The bitcast we just
+    // did works as if the double-double was stored to memory and then
+    // read as an i128. The "store" will put the higher-order double in the
+    // lower address in both little- and big-Endian modes, but the "load"
+    // will treat those bits as a different part of the i128: the low bits in
+    // little-Endian, the high bits in big-Endian. Therefore, on big-Endian
+    // we need to shift the high bits down to the low before truncating.
     Width >>= 1;
+    if (CGF.getTarget().isBigEndian()) {
+      Value *ShiftCst = llvm::ConstantInt::get(IntTy, Width);
+      V = CGF.Builder.CreateLShr(V, ShiftCst);
+    } 
+    // We are truncating value in order to extract the higher-order 
+    // double, which we will be using to extract the sign from.
     IntTy = llvm::IntegerType::get(C, Width);
     V = CGF.Builder.CreateTrunc(V, IntTy);
   }
@@ -7274,19 +7284,14 @@ Value *CodeGenFunction::EmitNVPTXBuiltinExpr(unsigned BuiltinID,
 Value *CodeGenFunction::EmitWebAssemblyBuiltinExpr(unsigned BuiltinID,
                                                    const CallExpr *E) {
   switch (BuiltinID) {
-  case WebAssembly::BI__builtin_wasm_page_size: {
-    llvm::Type *ResultType = ConvertType(E->getType());
-    Value *Callee = CGM.getIntrinsic(Intrinsic::wasm_page_size, ResultType);
-    return Builder.CreateCall(Callee);
-  }
   case WebAssembly::BI__builtin_wasm_memory_size: {
     llvm::Type *ResultType = ConvertType(E->getType());
     Value *Callee = CGM.getIntrinsic(Intrinsic::wasm_memory_size, ResultType);
     return Builder.CreateCall(Callee);
   }
-  case WebAssembly::BI__builtin_wasm_resize_memory: {
+  case WebAssembly::BI__builtin_wasm_grow_memory: {
     Value *X = EmitScalarExpr(E->getArg(0));
-    Value *Callee = CGM.getIntrinsic(Intrinsic::wasm_resize_memory, X->getType());
+    Value *Callee = CGM.getIntrinsic(Intrinsic::wasm_grow_memory, X->getType());
     return Builder.CreateCall(Callee, X);
   }
 

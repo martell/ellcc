@@ -392,6 +392,10 @@ def fno_modules_hide_internal_linkage :
   Flag<["-"], "fno-modules-hide-internal-linkage">,
   HelpText<"Make all declarations visible to redeclaration lookup, "
            "even if they have internal linkage.">;
+def ftest_module_file_extension_EQ :
+  Joined<["-"], "ftest-module-file-extension=">,
+  HelpText<"introduce a module file extension for testing purposes. "
+           "The argument is parsed as blockname:major:minor:hashed:user info">;
 def fconcepts_ts : Flag<["-"], "fconcepts-ts">,
   HelpText<"Enable C++ Extensions for Concepts.">;
 
@@ -514,8 +518,6 @@ def fobjc_runtime_has_weak : Flag<["-"], "fobjc-runtime-has-weak">,
   HelpText<"The target Objective-C runtime supports ARC weak operations">;
 def fobjc_dispatch_method_EQ : Joined<["-"], "fobjc-dispatch-method=">,
   HelpText<"Objective-C dispatch method to use">;
-def fobjc_weak : Flag<["-"], "fobjc-weak">, Group<f_Group>,
-  HelpText<"Enable ARC-style __weak references">;
 def disable_objc_default_synthesize_properties : Flag<["-"], "disable-objc-default-synthesize-properties">,
   HelpText<"disable the default synthesis of Objective-C properties">;
 def fencode_extended_block_signature : Flag<["-"], "fencode-extended-block-signature">,

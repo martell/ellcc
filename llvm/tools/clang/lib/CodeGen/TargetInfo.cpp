@@ -3333,10 +3333,6 @@ ABIArgInfo WinX86_64ABIInfo::classify(QualType Ty, unsigned &FreeSSERegs,
     if (RT->getDecl()->hasFlexibleArrayMember())
       return getNaturalAlignIndirect(Ty, /*ByVal=*/false);
 
-    // FIXME: mingw-w64-gcc emits 128-bit struct as i128
-    if (Width == 128 && IsMingw64)
-      return ABIArgInfo::getDirect(
-          llvm::IntegerType::get(getVMContext(), Width));
   }
 
   // vectorcall adds the concept of a homogenous vector aggregate, similar to
@@ -5301,6 +5297,10 @@ Address ARMABIInfo::EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
              getABIKind() == ARMABIInfo::AAPCS) {
     TyAlignForABI = std::max(TyAlignForABI, CharUnits::fromQuantity(4));
     TyAlignForABI = std::min(TyAlignForABI, CharUnits::fromQuantity(8));
+  } else if (getABIKind() == ARMABIInfo::AAPCS16_VFP) {
+    // ARMv7k allows type alignment up to 16 bytes.
+    TyAlignForABI = std::max(TyAlignForABI, CharUnits::fromQuantity(4));
+    TyAlignForABI = std::min(TyAlignForABI, CharUnits::fromQuantity(16));
   } else {
     TyAlignForABI = CharUnits::fromQuantity(4);
   }
