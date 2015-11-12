@@ -264,19 +264,23 @@ std::error_code RawInstrProfReader<IntPtrT>::readRawCounts(
 }
 
 template <class IntPtrT>
-std::error_code RawInstrProfReader<IntPtrT>::readNextRecord(
-    InstrProfRecord &Record) {
+std::error_code
+RawInstrProfReader<IntPtrT>::readNextRecord(InstrProfRecord &Record) {
   if (atEnd())
-    if (std::error_code EC = readNextHeader(ProfileEnd)) return EC;
+    if (std::error_code EC = readNextHeader(ProfileEnd))
+      return EC;
 
   // Read name ad set it in Record.
-  if (std::error_code EC = readName(Record)) return EC;
+  if (std::error_code EC = readName(Record))
+    return EC;
 
   // Read FuncHash and set it in Record.
-  if (std::error_code EC = readFuncHash(Record)) return EC;
+  if (std::error_code EC = readFuncHash(Record))
+    return EC;
 
   // Read raw counts and set Record.
-  if (std::error_code EC = readRawCounts(Record)) return EC;
+  if (std::error_code EC = readRawCounts(Record))
+    return EC;
 
   // Iterate.
   advanceData();
@@ -298,51 +302,16 @@ typedef InstrProfLookupTrait::offset_type offset_type;
 
 bool InstrProfLookupTrait::ReadValueProfilingData(
     const unsigned char *&D, const unsigned char *const End) {
+  ErrorOr<std::unique_ptr<IndexedInstrProf::ValueProfData>> VDataPtrOrErr =
+      IndexedInstrProf::ValueProfData::getValueProfData(
+          D, End, ValueProfDataEndianness);
 
-  using namespace support;
-  // Read number of value kinds with value sites.
-  if (D + sizeof(uint64_t) > End)
+  if (VDataPtrOrErr.getError())
     return false;
-  uint64_t ValueKindCount = endian::readNext<uint64_t, little, unaligned>(D);
 
-  InstrProfRecord &ProfRecord = DataBuffer.back();
-  for (uint32_t Kind = 0; Kind < ValueKindCount; ++Kind) {
+  VDataPtrOrErr.get()->deserializeTo(DataBuffer.back(), &HashKeys);
+  D += VDataPtrOrErr.get()->TotalSize;
 
-    // Read value kind and number of value sites for kind.
-    if (D + 2 * sizeof(uint64_t) > End)
-      return false;
-
-    uint64_t ValueKind = endian::readNext<uint64_t, little, unaligned>(D);
-    uint64_t ValueSiteCount = endian::readNext<uint64_t, little, unaligned>(D);
-
-    ProfRecord.reserveSites(ValueKind, ValueSiteCount);
-
-    for (uint64_t VSite = 0; VSite < ValueSiteCount; ++VSite) {
-      // Read number of value data pairs at value site.
-      if (D + sizeof(uint64_t) > End)
-        return false;
-
-      uint64_t ValueDataCount =
-          endian::readNext<uint64_t, little, unaligned>(D);
-
-      // Check if there are as many ValueDataPairs as ValueDataCount in memory.
-      if (D + (ValueDataCount << 1) * sizeof(uint64_t) > End)
-        return false;
-
-      std::unique_ptr<InstrProfValueData[]> VDataPtr(
-          ValueDataCount == 0 ? nullptr
-                              : new InstrProfValueData[ValueDataCount]);
-
-      for (uint64_t VCount = 0; VCount < ValueDataCount; ++VCount) {
-        VDataPtr[VCount].Value =
-            endian::readNext<uint64_t, little, unaligned>(D);
-        VDataPtr[VCount].Count =
-            endian::readNext<uint64_t, little, unaligned>(D);
-      }
-      ProfRecord.addValueData(ValueKind, VSite, VDataPtr.get(), ValueDataCount,
-                              &HashKeys);
-    }
-  }
   return true;
 }
 
@@ -391,13 +360,16 @@ data_type InstrProfLookupTrait::ReadData(StringRef K, const unsigned char *D,
   return DataBuffer;
 }
 
-std::error_code InstrProfReaderIndex::getRecords(
-    StringRef FuncName, ArrayRef<InstrProfRecord> &Data) {
+std::error_code
+InstrProfReaderIndex::getRecords(StringRef FuncName,
+                                 ArrayRef<InstrProfRecord> &Data) {
   auto Iter = Index->find(FuncName);
-  if (Iter == Index->end()) return instrprof_error::unknown_function;
+  if (Iter == Index->end())
+    return instrprof_error::unknown_function;
 
   Data = (*Iter);
-  if (Data.empty()) return instrprof_error::malformed;
+  if (Data.empty())
+    return instrprof_error::malformed;
 
   return instrprof_error::success;
 }
@@ -435,7 +407,8 @@ void InstrProfReaderIndex::Init(const unsigned char *Buckets,
 }
 
 bool IndexedInstrProfReader::hasFormat(const MemoryBuffer &DataBuffer) {
-  if (DataBuffer.getBufferSize() < 8) return false;
+  if (DataBuffer.getBufferSize() < 8)
+    return false;
   using namespace support;
   uint64_t Magic =
       endian::read<uint64_t, little, aligned>(DataBuffer.getBufferStart());
@@ -488,7 +461,8 @@ IndexedInstrProfReader::getInstrProfRecord(StringRef FuncName,
                                            uint64_t FuncHash) {
   ArrayRef<InstrProfRecord> Data;
   std::error_code EC = Index.getRecords(FuncName, Data);
-  if (EC != instrprof_error::success) return EC;
+  if (EC != instrprof_error::success)
+    return EC;
   // Found it. Look for counters with the right hash.
   for (unsigned I = 0, E = Data.size(); I < E; ++I) {
     // Check for a match and fill the vector if there is one.
@@ -517,7 +491,8 @@ std::error_code IndexedInstrProfReader::readNextRecord(
   ArrayRef<InstrProfRecord> Data;
 
   std::error_code EC = Index.getRecords(Data);
-  if (EC != instrprof_error::success) return error(EC);
+  if (EC != instrprof_error::success)
+    return error(EC);
 
   Record = Data[RecordIndex++];
   if (RecordIndex >= Data.size()) {

@@ -77,7 +77,17 @@ void DTLS_Destroy() {
   DTLS_Deallocate(dtls.dtv, s);
 }
 
-DTLS::DTV *DTLS_on_tls_get_addr(void *arg_void, void *res) {
+#if defined(__powerpc64__)
+// This is glibc's TLS_DTV_OFFSET:
+// "Dynamic thread vector pointers point 0x8000 past the start of each
+//  TLS block."
+static const uptr kDtvOffset = 0x8000;
+#else
+static const uptr kDtvOffset = 0;
+#endif
+
+DTLS::DTV *DTLS_on_tls_get_addr(void *arg_void, void *res,
+                                uptr static_tls_begin, uptr static_tls_end) {
   if (!common_flags()->intercept_tls_get_addr) return 0;
   TlsGetAddrParam *arg = reinterpret_cast<TlsGetAddrParam *>(arg_void);
   uptr dso_id = arg->dso_id;
@@ -85,7 +95,7 @@ DTLS::DTV *DTLS_on_tls_get_addr(void *arg_void, void *res) {
   DTLS_Resize(dso_id + 1);
   if (dtls.dtv[dso_id].beg) return 0;
   uptr tls_size = 0;
-  uptr tls_beg = reinterpret_cast<uptr>(res) - arg->offset;
+  uptr tls_beg = reinterpret_cast<uptr>(res) - arg->offset - kDtvOffset;
   // This function uses the fancy 2147483647 verbosity level,
   // because printing in this function crashes with some versions of libstdc++
   // because of the following bug:

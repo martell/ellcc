@@ -336,7 +336,7 @@ namespace ISD {
     SHL, SRA, SRL, ROTL, ROTR,
 
     /// Byte Swap and Counting operators.
-    BSWAP, CTTZ, CTLZ, CTPOP,
+    BSWAP, CTTZ, CTLZ, CTPOP, BITREVERSE,
 
     /// [SU]ABSDIFF - Signed/Unsigned absolute difference of two input integer
     /// vector. These nodes are generated from llvm.*absdiff* intrinsics.
@@ -373,8 +373,7 @@ namespace ISD {
     SETCC,
 
     /// SHL_PARTS/SRA_PARTS/SRL_PARTS - These operators are used for expanded
-    /// integer shift operations, just like ADD/SUB_PARTS.  The operation
-    /// ordering is:
+    /// integer shift operations.  The operation ordering is:
     ///       [Lo,Hi] = op [LoLHS,HiLHS], Amt
     SHL_PARTS, SRA_PARTS, SRL_PARTS,
 
@@ -590,6 +589,9 @@ namespace ISD {
     /// locations needed for debug and exception handling tables.  These nodes
     /// take a chain as input and return a chain.
     EH_LABEL,
+
+    /// CATCHPAD - Represents a catchpad instruction.
+    CATCHPAD,
 
     /// CATCHRET - Represents a return from a catch block funclet. Used for
     /// MSVC compatible exception handling. Takes a chain operand and a

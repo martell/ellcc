@@ -1478,7 +1478,9 @@ sub ProcessArgs {
 
       # Construct an absolute path.  Uses the current working directory
       # as a base if the original path was not absolute.
-      $Options{OutputDir} = abs_path(shift @$Args);
+      my $OutDir = shift @$Args;
+      mkpath($OutDir) unless (-e $OutDir);  # abs_path wants existing dir
+      $Options{OutputDir} = abs_path($OutDir);
 
       next;
     }
@@ -1737,8 +1739,8 @@ $Options{OutputDir} = GetHTMLRunDir($Options{OutputDir});
 
 # Determine the location of ccc-analyzer.
 my $AbsRealBin = Cwd::realpath($RealBin);
-my $Cmd = "$AbsRealBin/libexec/ccc-analyzer";
-my $CmdCXX = "$AbsRealBin/libexec/c++-analyzer";
+my $Cmd = "$AbsRealBin/../libexec/ccc-analyzer";
+my $CmdCXX = "$AbsRealBin/../libexec/c++-analyzer";
 
 # Portability: use less strict but portable check -e (file exists) instead of
 # non-portable -x (file is executable). On some windows ports -x just checks

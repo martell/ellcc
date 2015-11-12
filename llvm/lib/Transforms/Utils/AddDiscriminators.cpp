@@ -98,8 +98,8 @@ FunctionPass *llvm::createAddDiscriminatorsPass() {
 }
 
 static bool hasDebugInfo(const Function &F) {
-  NamedMDNode *CUNodes = F.getParent()->getNamedMetadata("llvm.dbg.cu");
-  return CUNodes != nullptr;
+  DISubprogram *S = getDISubprogram(&F);
+  return S != nullptr;
 }
 
 /// \brief Assign DWARF discriminators.
@@ -221,6 +221,38 @@ bool AddDiscriminators::runOnFunction(Function &F) {
         }
         DEBUG(dbgs() << "\n");
         Changed = true;
+      }
+    }
+  }
+
+  // Traverse all instructions and assign new discriminators to call
+  // instructions with the same lineno that are in the same basic block.
+  // Sample base profile needs to distinguish different function calls within
+  // a same source line for correct profile annotation.
+  for (BasicBlock &B : F) {
+    const DILocation *FirstDIL = NULL;
+    for (auto &I : B.getInstList()) {
+      CallInst *Current = dyn_cast<CallInst>(&I);
+      if (Current) {
+        DILocation *CurrentDIL = Current->getDebugLoc();
+        if (FirstDIL) {
+          if (CurrentDIL && CurrentDIL->getLine() == FirstDIL->getLine() &&
+              CurrentDIL->getFilename() == FirstDIL->getFilename()) {
+            auto *Scope = FirstDIL->getScope();
+            auto *File = Builder.createFile(FirstDIL->getFilename(),
+                                            Scope->getDirectory());
+            auto *NewScope = Builder.createLexicalBlockFile(
+                Scope, File, FirstDIL->computeNewDiscriminator());
+            Current->setDebugLoc(DILocation::get(
+                Ctx, CurrentDIL->getLine(), CurrentDIL->getColumn(), NewScope,
+                CurrentDIL->getInlinedAt()));
+            Changed = true;
+          } else {
+            FirstDIL = CurrentDIL;
+          }
+        } else {
+          FirstDIL = CurrentDIL;
+        }
       }
     }
   }

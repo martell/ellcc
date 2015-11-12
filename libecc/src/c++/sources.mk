@@ -1,4 +1,5 @@
 CXXFLAGS += -std=c++11 -D_XOPEN_SOURCE=700 -DLIBCXX_BUILDING_LIBCXXABI
+CXXFLAGS += -D_LIBCPP_HAS_MUSL_LIBC
 VPATH := $(VPATH):$(SRCPATH)/c++/libcxx/src
 SRCS += algorithm.cpp bind.cpp chrono.cpp condition_variable.cpp debug.cpp \
         exception.cpp future.cpp hash.cpp ios.cpp iostream.cpp locale.cpp \
