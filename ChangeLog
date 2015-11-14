@@ -1,5 +1,6 @@
 current SVN:
 
+* Fixed libncurses and libedit builds.
 * Update to LLVM r252898.
 * Update to LLVM r252410.
 

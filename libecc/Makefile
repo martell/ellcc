@@ -54,9 +54,6 @@ $(Configs)::
 	$(MAKE) $(MFLAGS) $@.ncurses.build && \
 	$(MAKE) $(MFLAGS) $@.ncurses.install
 
-# RICH: NOCXX added below because of a Microblaze C++ error.
-# Remove when fixed or if Microblaze is removed.
-
 %.ncurses.configure:
 	$(OUT)if [ -e ncurses-build/$*/Makefile ] ; then \
 	  echo Configuring ncurses for $* aready done ; \
@@ -70,7 +67,6 @@ $(Configs)::
 	      CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
 	      AR=$(ELLCC)/bin/ecc-ar \
 	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
-	      --enable-widec \
               --host=x86_64-macos \
 	      --build=x86_64-linux \
 	      --with-build-cc=cc \
@@ -89,6 +85,43 @@ $(Configs)::
 	(cd ../lib/$*/; ln -s libncurses.a libterminfo.a) ; \
 	cp -p $*/include/*.h ../include ; \
 	(cd ../include; ln -s curses.h ncurses.h ) ; \
+	$(MAKE) $(MFLAGS) -C $*/misc install
+
+$(Configs)::
+	$(OUT)$(MAKE) $(MFLAGS) $@.ncursesw.configure && \
+	$(MAKE) $(MFLAGS) $@.ncursesw.build && \
+	$(MAKE) $(MFLAGS) $@.ncursesw.install
+
+%.ncursesw.configure:
+	$(OUT)if [ -e ncursesw-build/$*/Makefile ] ; then \
+	  echo Configuring ncursesw for $* aready done ; \
+	else  \
+	  echo Configuring ncursesw for $* in ncursesw-build/$* ; \
+	  mkdir -p ncursesw-build/$* ; \
+	  cd ncursesw-build/$* ; \
+	  NOCXX="--without-cxx-binding" ; \
+	  ../../src/ncurses/configure \
+	      CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	      CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
+	      --enable-widec \
+              --host=x86_64-macos \
+	      --build=x86_64-linux \
+	      --with-build-cc=cc \
+	      --prefix=$(ELLCC) $$NOCXX ; \
+	fi
+
+%.ncursesw.build:
+	$(OUT)$(MAKE) $(MFLAGS) -C ncursesw-build/$*
+
+%.ncursesw.install:
+	echo Installing ncursesw for $*
+	$(OUT)cp -p src/ncurses/c++/curs*.h include
+	$(OUT)cd ncursesw-build ; \
+	mkdir -p ../lib/$* ; \
+	cp $*/lib/*.a ../lib/$* ; \
+	cp -p $*/include/*.h ../include ; \
 	$(MAKE) $(MFLAGS) -C $*/misc install
 
 $(Configs)::
