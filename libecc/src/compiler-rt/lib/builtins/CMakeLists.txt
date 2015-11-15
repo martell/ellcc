@@ -2,6 +2,9 @@
 # generic implementations of the core runtime library along with optimized
 # architecture-specific code in various subdirectories.
 
+# TODO: Need to add a mechanism for logging errors when builtin source files are
+# added to a sub-directory and not this CMakeLists file.
+
 set(GENERIC_SOURCES
   absvdi2.c
   absvsi2.c
@@ -161,6 +164,8 @@ endif ()
 
 if (NOT MSVC)
   set(x86_64_SOURCES
+      x86_64/chkstk.S
+      x86_64/chkstk2.S
       x86_64/floatdidf.c
       x86_64/floatdisf.c
       x86_64/floatdixf.c
@@ -180,6 +185,8 @@ if (NOT MSVC)
   set(i386_SOURCES
       i386/ashldi3.S
       i386/ashrdi3.S
+      i386/chkstk.S
+      i386/chkstk2.S
       i386/divdi3.S
       i386/floatdidf.S
       i386/floatdisf.S
@@ -238,6 +245,8 @@ set(arm_SOURCES
   arm/aeabi_uldivmod.S
   arm/bswapdi2.S
   arm/bswapsi2.S
+  arm/clzdi2.S
+  arm/clzsi2.S
   arm/comparesf2.S
   arm/divdf3vfp.S
   arm/divmodsi4.S

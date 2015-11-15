@@ -27,7 +27,6 @@ namespace {
 struct MBlazeOperand;
 
 class MBlazeAsmParser : public MCTargetAsmParser {
-  MCSubtargetInfo &STI;
   MCAsmParser &Parser;
 
   MCAsmParser &getParser() const { return Parser; }
@@ -61,11 +60,11 @@ class MBlazeAsmParser : public MCTargetAsmParser {
   /// }
 
 public:
-  MBlazeAsmParser(MCSubtargetInfo &_STI, MCAsmParser &_Parser,
+  MBlazeAsmParser(const MCSubtargetInfo &_STI, MCAsmParser &_Parser,
                   const MCInstrInfo &MII,
                   const MCTargetOptions &Options)
-    : MCTargetAsmParser(Options), STI(_STI), Parser(_Parser) {
-      setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
+    : MCTargetAsmParser(Options, _STI), Parser(_Parser) {
+      setAvailableFeatures(ComputeAvailableFeatures(getSTI().getFeatureBits()));
   }
 
   bool ParseInstruction(ParseInstructionInfo &Info, StringRef Name,
@@ -349,7 +348,7 @@ MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   default:
     break;
   case Match_Success:
-    Out.EmitInstruction(Inst, STI);
+    Out.EmitInstruction(Inst, getSTI());
     return false;
   case Match_MissingFeature:
     return Error(IDLoc, "instruction use requires an option to be enabled");

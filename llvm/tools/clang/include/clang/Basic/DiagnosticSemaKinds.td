@@ -432,8 +432,9 @@ def err_arm_invalid_specialreg : Error<"invalid special register for builtin">;
 def err_invalid_cpu_supports : Error<"invalid cpu feature string for builtin">;
 def err_builtin_needs_feature : Error<"%0 needs target feature %1">;
 def err_function_needs_feature
-    : Error<"function %0 and always_inline callee function %1 are required to "
-            "have matching target features">;
+    : Error<"always_inline function %1 requires target feature '%2', but would "
+            "be inlined into function %0 that is compiled without support for "
+            "'%2'">;
 def warn_builtin_unknown : Warning<"use of unknown builtin %0">,
   InGroup<ImplicitFunctionDeclare>, DefaultError;
 def warn_dyn_class_memaccess : Warning<
@@ -4561,9 +4562,6 @@ def err_synthesizing_arc_weak_property_disabled : Error<
 def err_synthesizing_arc_weak_property_no_runtime : Error<
   "cannot synthesize weak property because the current deployment target "
   "does not support weak references">;
-def warn_objc_weak_compat : Warning<
-  "the meaning of __weak has changed in manual reference-counting">,
-  InGroup<DiagGroup<"objc-weak-compat">>, DefaultIgnore;
 def err_arc_unsupported_weak_class : Error<
   "class is incompatible with __weak references">;
 def err_arc_weak_unavailable_assign : Error<

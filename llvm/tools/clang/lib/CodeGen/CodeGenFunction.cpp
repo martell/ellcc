@@ -716,6 +716,14 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
     }
   }
 
+  // If we're in C++ mode and the function name is "main", it is guaranteed
+  // to be norecurse by the standard (3.6.1.3 "The function main shall not be
+  // used within a program").
+  if (getLangOpts().CPlusPlus)
+    if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D))
+      if (FD->isMain())
+        Fn->addFnAttr(llvm::Attribute::NoRecurse);
+  
   llvm::BasicBlock *EntryBB = createBasicBlock("entry", CurFn);
 
   // Create a marker to make it easy to insert allocas into the entryblock
@@ -1844,7 +1852,8 @@ template void CGBuilderInserter<PreserveNames>::InsertHelper(
 #undef PreserveNames
 
 static bool hasRequiredFeatures(const SmallVectorImpl<StringRef> &ReqFeatures,
-                                CodeGenModule &CGM, const FunctionDecl *FD) {
+                                CodeGenModule &CGM, const FunctionDecl *FD,
+                                std::string &FirstMissing) {
   // If there aren't any required features listed then go ahead and return.
   if (ReqFeatures.empty())
     return false;
@@ -1862,7 +1871,11 @@ static bool hasRequiredFeatures(const SmallVectorImpl<StringRef> &ReqFeatures,
         Feature.split(OrFeatures, "|");
         return std::any_of(OrFeatures.begin(), OrFeatures.end(),
                            [&](StringRef Feature) {
-                             return CallerFeatureMap.lookup(Feature);
+                             if (!CallerFeatureMap.lookup(Feature)) {
+                               FirstMissing = Feature.str();
+                               return false;
+                             }
+                             return true;
                            });
       });
 }
@@ -1885,6 +1898,7 @@ void CodeGenFunction::checkTargetFeatures(const CallExpr *E,
   // the td file with the default cpu, for an always_inline function this is any
   // listed cpu and any listed features.
   unsigned BuiltinID = TargetDecl->getBuiltinID();
+  std::string MissingFeature;
   if (BuiltinID) {
     SmallVector<StringRef, 1> ReqFeatures;
     const char *FeatureList =
@@ -1893,8 +1907,7 @@ void CodeGenFunction::checkTargetFeatures(const CallExpr *E,
     if (!FeatureList || StringRef(FeatureList) == "")
       return;
     StringRef(FeatureList).split(ReqFeatures, ",");
-
-    if (!hasRequiredFeatures(ReqFeatures, CGM, FD))
+    if (!hasRequiredFeatures(ReqFeatures, CGM, FD, MissingFeature))
       CGM.getDiags().Report(E->getLocStart(), diag::err_builtin_needs_feature)
           << TargetDecl->getDeclName()
           << CGM.getContext().BuiltinInfo.getRequiredFeatures(BuiltinID);
@@ -1906,8 +1919,8 @@ void CodeGenFunction::checkTargetFeatures(const CallExpr *E,
     CGM.getFunctionFeatureMap(CalleeFeatureMap, TargetDecl);
     for (const auto &F : CalleeFeatureMap)
       ReqFeatures.push_back(F.getKey());
-    if (!hasRequiredFeatures(ReqFeatures, CGM, FD))
+    if (!hasRequiredFeatures(ReqFeatures, CGM, FD, MissingFeature))
       CGM.getDiags().Report(E->getLocStart(), diag::err_function_needs_feature)
-          << FD->getDeclName() << TargetDecl->getDeclName();
+          << FD->getDeclName() << TargetDecl->getDeclName() << MissingFeature;
   }
 }
