@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.18:
+
 * Update to LLVM r253132. Added lld.
 * Fixed libncurses and libedit builds.
 * Update to LLVM r252898.
