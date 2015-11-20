@@ -35,17 +35,15 @@ GotPltSection<ELFT>::GotPltSection()
     : OutputSectionBase<ELFT>(".got.plt", llvm::ELF::SHT_PROGBITS,
                               llvm::ELF::SHF_ALLOC | llvm::ELF::SHF_WRITE) {
   this->Header.sh_addralign = sizeof(uintX_t);
-  // .got.plt has 3 reserved entry
-  Entries.resize(3);
 }
 
 template <class ELFT> void GotPltSection<ELFT>::addEntry(SymbolBody *Sym) {
-  Sym->GotPltIndex = Entries.size();
+  Sym->GotPltIndex = Target->getGotPltHeaderEntriesNum() + Entries.size();
   Entries.push_back(Sym);
 }
 
 template <class ELFT> bool GotPltSection<ELFT>::empty() const {
-  return Entries.size() == 3;
+  return Entries.empty();
 }
 
 template <class ELFT>
@@ -55,15 +53,15 @@ GotPltSection<ELFT>::getEntryAddr(const SymbolBody &B) const {
 }
 
 template <class ELFT> void GotPltSection<ELFT>::finalize() {
-  this->Header.sh_size = Entries.size() * sizeof(uintX_t);
+  this->Header.sh_size =
+      (Target->getGotPltHeaderEntriesNum() + Entries.size()) * sizeof(uintX_t);
 }
 
 template <class ELFT> void GotPltSection<ELFT>::writeTo(uint8_t *Buf) {
-  write<uintX_t, ELFT::TargetEndianness, sizeof(uintX_t)>(
-      Buf, Out<ELFT>::Dynamic->getVA());
+  Target->writeGotPltHeaderEntries(Buf);
+  Buf += Target->getGotPltHeaderEntriesNum() * sizeof(uintX_t);
   for (const SymbolBody *B : Entries) {
-    if (B)
-      Target->writeGotPltEntry(Buf, Out<ELFT>::Plt->getEntryAddr(*B));
+    Target->writeGotPltEntry(Buf, Out<ELFT>::Plt->getEntryAddr(*B));
     Buf += sizeof(uintX_t);
   }
 }
@@ -660,16 +658,15 @@ template <class ELFT> void DynamicSection<ELFT>::writeTo(uint8_t *Buf) {
   if (Out<ELFT>::HashTab)
     WritePtr(DT_HASH, Out<ELFT>::HashTab->getVA());
 
+  // If --enable-new-dtags is set, lld emits DT_RUNPATH
+  // instead of DT_RPATH. The two tags are functionally
+  // equivalent except for the following:
+  // - DT_RUNPATH is searched after LD_LIBRARY_PATH, while
+  //   DT_RPATH is searched before.
+  // - DT_RUNPATH is used only to search for direct
+  //   dependencies of the object it's contained in, while
+  //   DT_RPATH is used for indirect dependencies as well.
   if (!Config->RPath.empty())
-
-    // If --enable-new-dtags is set lld emits DT_RUNPATH
-    // instead of DT_RPATH. The two tags are functionally
-    // equivalent except for the following:
-    // - DT_RUNPATH is searched after LD_LIBRARY_PATH, while
-    // DT_RPATH is searched before.
-    // - DT_RUNPATH is used only to search for direct
-    // dependencies of the object it's contained in, while
-    // DT_RPATH is used for indirect dependencies as well.
     WriteVal(Config->EnableNewDtags ? DT_RUNPATH : DT_RPATH,
              Out<ELFT>::DynStrTab->getOffset(Config->RPath));
 

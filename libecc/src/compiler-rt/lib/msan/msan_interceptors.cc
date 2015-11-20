@@ -1496,10 +1496,11 @@ int OnExit() {
   } while (false)  // FIXME
 #define COMMON_INTERCEPTOR_BLOCK_REAL(name) REAL(name)
 #define COMMON_INTERCEPTOR_ON_EXIT(ctx) OnExit()
-#define COMMON_INTERCEPTOR_LIBRARY_LOADED(filename, handle)  \
-  do {                                                       \
-    link_map *map = GET_LINK_MAP_BY_DLOPEN_HANDLE((handle)); \
-    if (map) ForEachMappedRegion(map, __msan_unpoison);      \
+#define COMMON_INTERCEPTOR_LIBRARY_LOADED(filename, handle)                    \
+  do {                                                                         \
+    link_map *map = GET_LINK_MAP_BY_DLOPEN_HANDLE((handle));                   \
+    if (filename && map)                                                       \
+      ForEachMappedRegion(map, __msan_unpoison);                               \
   } while (false)
 
 #include "sanitizer_common/sanitizer_common_interceptors.inc"

@@ -1355,7 +1355,8 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
   // Eliminate unneeded casts for indices, and replace indices which displace
   // by multiples of a zero size type with zero.
   bool MadeChange = false;
-  Type *IntPtrTy = DL.getIntPtrType(GEP.getPointerOperandType());
+  Type *IntPtrTy =
+    DL.getIntPtrType(GEP.getPointerOperandType()->getScalarType());
 
   gep_type_iterator GTI = gep_type_begin(GEP);
   for (User::op_iterator I = GEP.op_begin() + 1, E = GEP.op_end(); I != E;
@@ -1365,21 +1366,25 @@ Instruction *InstCombiner::visitGetElementPtrInst(GetElementPtrInst &GEP) {
     if (!SeqTy)
       continue;
 
+    // Index type should have the same width as IntPtr
+    Type *IndexTy = (*I)->getType();
+    Type *NewIndexType = IndexTy->isVectorTy() ?
+      VectorType::get(IntPtrTy, IndexTy->getVectorNumElements()) : IntPtrTy;
+ 
     // If the element type has zero size then any index over it is equivalent
     // to an index of zero, so replace it with zero if it is not zero already.
     if (SeqTy->getElementType()->isSized() &&
         DL.getTypeAllocSize(SeqTy->getElementType()) == 0)
       if (!isa<Constant>(*I) || !cast<Constant>(*I)->isNullValue()) {
-        *I = Constant::getNullValue(IntPtrTy);
+        *I = Constant::getNullValue(NewIndexType);
         MadeChange = true;
       }
 
-    Type *IndexTy = (*I)->getType();
-    if (IndexTy != IntPtrTy) {
+    if (IndexTy != NewIndexType) {
       // If we are using a wider index than needed for this platform, shrink
       // it to what we need.  If narrower, sign-extend it to what we need.
       // This explicit cast can make subsequent optimizations more obvious.
-      *I = Builder->CreateIntCast(*I, IntPtrTy, true);
+      *I = Builder->CreateIntCast(*I, NewIndexType, true);
       MadeChange = true;
     }
   }
@@ -2481,10 +2486,24 @@ Instruction *InstCombiner::visitLandingPadInst(LandingPadInst &LI) {
             SawCatchAll = true;
             break;
           }
-          if (AlreadyCaught.count(TypeInfo))
-            // Already caught by an earlier clause, so having it in the filter
-            // is pointless.
-            continue;
+
+          // Even if we've seen a type in a catch clause, we don't want to
+          // remove it from the filter.  An unexpected type handler may be
+          // set up for a call site which throws an exception of the same
+          // type caught.  In order for the exception thrown by the unexpected
+          // handler to propogate correctly, the filter must be correctly
+          // described for the call site.
+          //
+          // Example:
+          //
+          // void unexpected() { throw 1;}
+          // void foo() throw (int) {
+          //   std::set_unexpected(unexpected);
+          //   try {
+          //     throw 2.0;
+          //   } catch (int i) {}
+          // }
+
           // There is no point in having multiple copies of the same typeinfo in
           // a filter, so only add it if we didn't already.
           if (SeenInFilter.insert(TypeInfo).second)

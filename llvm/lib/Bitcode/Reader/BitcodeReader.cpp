@@ -405,6 +405,8 @@ private:
   std::error_code globalCleanup();
   std::error_code resolveGlobalAndAliasInits();
   std::error_code parseMetadata();
+  std::error_code parseMetadataKinds();
+  std::error_code parseMetadataKindRecord(SmallVectorImpl<uint64_t> &Record);
   std::error_code parseMetadataAttachment(Function &F);
   ErrorOr<std::string> parseModuleTriple();
   std::error_code parseUseLists();
@@ -468,12 +470,11 @@ public:
   std::error_code error(BitcodeError E);
   std::error_code error(const Twine &Message);
 
-  FunctionIndexBitcodeReader(MemoryBuffer *Buffer, LLVMContext &Context,
+  FunctionIndexBitcodeReader(MemoryBuffer *Buffer,
                              DiagnosticHandlerFunction DiagnosticHandler,
                              bool IsLazy = false,
                              bool CheckFuncSummaryPresenceOnly = false);
-  FunctionIndexBitcodeReader(LLVMContext &Context,
-                             DiagnosticHandlerFunction DiagnosticHandler,
+  FunctionIndexBitcodeReader(DiagnosticHandlerFunction DiagnosticHandler,
                              bool IsLazy = false,
                              bool CheckFuncSummaryPresenceOnly = false);
   ~FunctionIndexBitcodeReader() { freeState(); }
@@ -1893,6 +1894,21 @@ std::error_code BitcodeReader::parseValueSymbolTable(uint64_t Offset) {
   }
 }
 
+/// Parse a single METADATA_KIND record, inserting result in MDKindMap.
+std::error_code
+BitcodeReader::parseMetadataKindRecord(SmallVectorImpl<uint64_t> &Record) {
+  if (Record.size() < 2)
+    return error("Invalid record");
+
+  unsigned Kind = Record[0];
+  SmallString<8> Name(Record.begin() + 1, Record.end());
+
+  unsigned NewKind = TheModule->getMDKindID(Name.str());
+  if (!MDKindMap.insert(std::make_pair(Kind, NewKind)).second)
+    return error("Conflicting METADATA_KIND records");
+  return std::error_code();
+}
+
 static int64_t unrotateSign(uint64_t U) { return U & 1 ? ~(U >> 1) : U >> 1; }
 
 std::error_code BitcodeReader::parseMetadata() {
@@ -2351,20 +2367,52 @@ std::error_code BitcodeReader::parseMetadata() {
       break;
     }
     case bitc::METADATA_KIND: {
-      if (Record.size() < 2)
-        return error("Invalid record");
-
-      unsigned Kind = Record[0];
-      SmallString<8> Name(Record.begin()+1, Record.end());
-
-      unsigned NewKind = TheModule->getMDKindID(Name.str());
-      if (!MDKindMap.insert(std::make_pair(Kind, NewKind)).second)
-        return error("Conflicting METADATA_KIND records");
+      // Support older bitcode files that had METADATA_KIND records in a
+      // block with METADATA_BLOCK_ID.
+      if (std::error_code EC = parseMetadataKindRecord(Record))
+        return EC;
       break;
     }
     }
   }
 #undef GET_OR_DISTINCT
+}
+
+/// Parse the metadata kinds out of the METADATA_KIND_BLOCK.
+std::error_code BitcodeReader::parseMetadataKinds() {
+  if (Stream.EnterSubBlock(bitc::METADATA_KIND_BLOCK_ID))
+    return error("Invalid record");
+
+  SmallVector<uint64_t, 64> Record;
+
+  // Read all the records.
+  while (1) {
+    BitstreamEntry Entry = Stream.advanceSkippingSubblocks();
+
+    switch (Entry.Kind) {
+    case BitstreamEntry::SubBlock: // Handled for us already.
+    case BitstreamEntry::Error:
+      return error("Malformed block");
+    case BitstreamEntry::EndBlock:
+      return std::error_code();
+    case BitstreamEntry::Record:
+      // The interesting case.
+      break;
+    }
+
+    // Read a record.
+    Record.clear();
+    unsigned Code = Stream.readRecord(Entry.ID, Record);
+    switch (Code) {
+    default: // Default behavior: ignore.
+      break;
+    case bitc::METADATA_KIND: {
+      if (std::error_code EC = parseMetadataKindRecord(Record))
+        return EC;
+      break;
+    }
+    }
+  }
 }
 
 /// Decode a signed value stored with the sign bit in the LSB for dense VBR
@@ -3227,6 +3275,10 @@ std::error_code BitcodeReader::parseModule(uint64_t ResumeBit,
         }
         assert(DeferredMetadataInfo.empty() && "Unexpected deferred metadata");
         if (std::error_code EC = parseMetadata())
+          return EC;
+        break;
+      case bitc::METADATA_KIND_BLOCK_ID:
+        if (std::error_code EC = parseMetadataKinds())
           return EC;
         break;
       case bitc::FUNCTION_BLOCK_ID:
@@ -5067,10 +5119,7 @@ std::error_code BitcodeReader::parseFunctionBody(Function *F) {
       if (Record.size() < 1 || Record[0] >= BundleTags.size())
         return error("Invalid record");
 
-      OperandBundles.emplace_back();
-      OperandBundles.back().Tag = BundleTags[Record[0]];
-
-      std::vector<Value *> &Inputs = OperandBundles.back().Inputs;
+      std::vector<Value *> Inputs;
 
       unsigned OpNum = 1;
       while (OpNum != Record.size()) {
@@ -5080,6 +5129,7 @@ std::error_code BitcodeReader::parseFunctionBody(Function *F) {
         Inputs.push_back(Op);
       }
 
+      OperandBundles.emplace_back(BundleTags[Record[0]], std::move(Inputs));
       continue;
     }
     }
@@ -5355,18 +5405,15 @@ std::error_code FunctionIndexBitcodeReader::error(BitcodeError E) {
 }
 
 FunctionIndexBitcodeReader::FunctionIndexBitcodeReader(
-    MemoryBuffer *Buffer, LLVMContext &Context,
-    DiagnosticHandlerFunction DiagnosticHandler, bool IsLazy,
-    bool CheckFuncSummaryPresenceOnly)
-    : DiagnosticHandler(getDiagHandler(DiagnosticHandler, Context)),
-      Buffer(Buffer), IsLazy(IsLazy),
+    MemoryBuffer *Buffer, DiagnosticHandlerFunction DiagnosticHandler,
+    bool IsLazy, bool CheckFuncSummaryPresenceOnly)
+    : DiagnosticHandler(DiagnosticHandler), Buffer(Buffer), IsLazy(IsLazy),
       CheckFuncSummaryPresenceOnly(CheckFuncSummaryPresenceOnly) {}
 
 FunctionIndexBitcodeReader::FunctionIndexBitcodeReader(
-    LLVMContext &Context, DiagnosticHandlerFunction DiagnosticHandler,
-    bool IsLazy, bool CheckFuncSummaryPresenceOnly)
-    : DiagnosticHandler(getDiagHandler(DiagnosticHandler, Context)),
-      Buffer(nullptr), IsLazy(IsLazy),
+    DiagnosticHandlerFunction DiagnosticHandler, bool IsLazy,
+    bool CheckFuncSummaryPresenceOnly)
+    : DiagnosticHandler(DiagnosticHandler), Buffer(nullptr), IsLazy(IsLazy),
       CheckFuncSummaryPresenceOnly(CheckFuncSummaryPresenceOnly) {}
 
 void FunctionIndexBitcodeReader::freeState() { Buffer = nullptr; }
@@ -5890,11 +5937,11 @@ llvm::getBitcodeProducerString(MemoryBufferRef Buffer, LLVMContext &Context,
 // an index object with a map from function name to function summary offset.
 // The index is used to perform lazy function summary reading later.
 ErrorOr<std::unique_ptr<FunctionInfoIndex>>
-llvm::getFunctionInfoIndex(MemoryBufferRef Buffer, LLVMContext &Context,
+llvm::getFunctionInfoIndex(MemoryBufferRef Buffer,
                            DiagnosticHandlerFunction DiagnosticHandler,
                            const Module *ExportingModule, bool IsLazy) {
   std::unique_ptr<MemoryBuffer> Buf = MemoryBuffer::getMemBuffer(Buffer, false);
-  FunctionIndexBitcodeReader R(Buf.get(), Context, DiagnosticHandler, IsLazy);
+  FunctionIndexBitcodeReader R(Buf.get(), DiagnosticHandler, IsLazy);
 
   std::unique_ptr<FunctionInfoIndex> Index =
       llvm::make_unique<FunctionInfoIndex>(ExportingModule);
@@ -5912,11 +5959,10 @@ llvm::getFunctionInfoIndex(MemoryBufferRef Buffer, LLVMContext &Context,
 }
 
 // Check if the given bitcode buffer contains a function summary block.
-bool llvm::hasFunctionSummary(MemoryBufferRef Buffer, LLVMContext &Context,
+bool llvm::hasFunctionSummary(MemoryBufferRef Buffer,
                               DiagnosticHandlerFunction DiagnosticHandler) {
   std::unique_ptr<MemoryBuffer> Buf = MemoryBuffer::getMemBuffer(Buffer, false);
-  FunctionIndexBitcodeReader R(Buf.get(), Context, DiagnosticHandler, false,
-                               true);
+  FunctionIndexBitcodeReader R(Buf.get(), DiagnosticHandler, false, true);
 
   auto cleanupOnError = [&](std::error_code EC) {
     R.releaseBuffer(); // Never take ownership on error.
@@ -5936,13 +5982,11 @@ bool llvm::hasFunctionSummary(MemoryBufferRef Buffer, LLVMContext &Context,
 // Then this method is called for each function considered for importing,
 // to parse the summary information for the given function name into
 // the index.
-std::error_code
-llvm::readFunctionSummary(MemoryBufferRef Buffer, LLVMContext &Context,
-                          DiagnosticHandlerFunction DiagnosticHandler,
-                          StringRef FunctionName,
-                          std::unique_ptr<FunctionInfoIndex> Index) {
+std::error_code llvm::readFunctionSummary(
+    MemoryBufferRef Buffer, DiagnosticHandlerFunction DiagnosticHandler,
+    StringRef FunctionName, std::unique_ptr<FunctionInfoIndex> Index) {
   std::unique_ptr<MemoryBuffer> Buf = MemoryBuffer::getMemBuffer(Buffer, false);
-  FunctionIndexBitcodeReader R(Buf.get(), Context, DiagnosticHandler);
+  FunctionIndexBitcodeReader R(Buf.get(), DiagnosticHandler);
 
   auto cleanupOnError = [&](std::error_code EC) {
     R.releaseBuffer(); // Never take ownership on error.

@@ -5085,6 +5085,19 @@ void Sema::CheckAbsoluteValueFunction(const CallExpr *Call,
     return;
   }
 
+  // Taking the absolute value of a pointer is very suspicious, they probably
+  // wanted to index into an array, dereference a pointer, call a function, etc.
+  if (ArgType->isPointerType() || ArgType->canDecayToPointerType()) {
+    unsigned DiagType = 0;
+    if (ArgType->isFunctionType())
+      DiagType = 1;
+    else if (ArgType->isArrayType())
+      DiagType = 2;
+
+    Diag(Call->getExprLoc(), diag::warn_pointer_abs) << DiagType << ArgType;
+    return;
+  }
+
   // std::abs has overloads which prevent most of the absolute value problems
   // from occurring.
   if (IsStdAbs)
@@ -5633,17 +5646,15 @@ CheckReturnStackAddr(Sema &S, Expr *RetValExp, QualType lhsType,
   }
 
   if (DeclRefExpr *DR = dyn_cast<DeclRefExpr>(stackE)) { //address of local var.
-    S.Diag(diagLoc, lhsType->isReferenceType() ? diag::warn_ret_stack_ref
-                                             : diag::warn_ret_stack_addr)
+    S.Diag(diagLoc, diag::warn_ret_stack_addr_ref) << lhsType->isReferenceType()
      << DR->getDecl()->getDeclName() << diagRange;
   } else if (isa<BlockExpr>(stackE)) { // local block.
     S.Diag(diagLoc, diag::err_ret_local_block) << diagRange;
   } else if (isa<AddrLabelExpr>(stackE)) { // address of label.
     S.Diag(diagLoc, diag::warn_ret_addr_label) << diagRange;
   } else { // local temporary.
-    S.Diag(diagLoc, lhsType->isReferenceType() ? diag::warn_ret_local_temp_ref
-                                               : diag::warn_ret_local_temp_addr)
-     << diagRange;
+    S.Diag(diagLoc, diag::warn_ret_local_temp_addr_ref)
+     << lhsType->isReferenceType() << diagRange;
   }
 
   // Display the "trail" of reference variables that we followed until we

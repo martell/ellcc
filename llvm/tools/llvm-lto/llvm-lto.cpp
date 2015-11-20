@@ -15,6 +15,7 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/IR/DiagnosticPrinter.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/LTO/LTOCodeGenerator.h"
 #include "llvm/LTO/LTOModule.h"
@@ -62,6 +63,10 @@ UseDiagnosticHandler("use-diagnostic-handler", cl::init(false),
 static cl::opt<bool>
     ThinLTO("thinlto", cl::init(false),
             cl::desc("Only write combined global index for ThinLTO backends"));
+
+static cl::opt<bool>
+SaveModuleFile("save-merged-module", cl::init(false),
+               cl::desc("Write merged LTO module to file before CodeGen"));
 
 static cl::list<std::string>
 InputFilenames(cl::Positional, cl::OneOrMore,
@@ -119,6 +124,32 @@ static void handleDiagnostics(lto_codegen_diagnostic_severity_t Severity,
   errs() << Msg << "\n";
 }
 
+static void diagnosticHandler(const DiagnosticInfo &DI) {
+  raw_ostream &OS = errs();
+  OS << "llvm-lto: ";
+  switch (DI.getSeverity()) {
+  case DS_Error:
+    OS << "error: ";
+    break;
+  case DS_Warning:
+    OS << "warning: ";
+    break;
+  case DS_Remark:
+    OS << "remark: ";
+    break;
+  case DS_Note:
+    OS << "note: ";
+    break;
+  }
+
+  DiagnosticPrinterRawOStream DP(OS);
+  DI.print(DP);
+  OS << '\n';
+
+  if (DI.getSeverity() == DS_Error)
+    exit(1);
+}
+
 static std::unique_ptr<LTOModule>
 getLocalLTOModule(StringRef Path, std::unique_ptr<MemoryBuffer> &Buffer,
                   const TargetOptions &Options, std::string &Error) {
@@ -163,7 +194,7 @@ static int listSymbols(StringRef Command, const TargetOptions &Options) {
 /// index object if found, or nullptr if not.
 static std::unique_ptr<FunctionInfoIndex>
 getFunctionIndexForFile(StringRef Path, std::string &Error,
-                        LLVMContext &Context) {
+                        DiagnosticHandlerFunction DiagnosticHandler) {
   std::unique_ptr<MemoryBuffer> Buffer;
   ErrorOr<std::unique_ptr<MemoryBuffer>> BufferOrErr =
       MemoryBuffer::getFile(Path);
@@ -174,7 +205,7 @@ getFunctionIndexForFile(StringRef Path, std::string &Error,
   Buffer = std::move(BufferOrErr.get());
   ErrorOr<std::unique_ptr<object::FunctionIndexObjectFile>> ObjOrErr =
       object::FunctionIndexObjectFile::create(Buffer->getMemBufferRef(),
-                                              Context);
+                                              DiagnosticHandler);
   if (std::error_code EC = ObjOrErr.getError()) {
     Error = EC.message();
     return nullptr;
@@ -187,13 +218,12 @@ getFunctionIndexForFile(StringRef Path, std::string &Error,
 /// This is meant to enable testing of ThinLTO combined index generation,
 /// currently available via the gold plugin via -thinlto.
 static int createCombinedFunctionIndex(StringRef Command) {
-  LLVMContext Context;
   FunctionInfoIndex CombinedIndex;
   uint64_t NextModuleId = 0;
   for (auto &Filename : InputFilenames) {
     std::string Error;
     std::unique_ptr<FunctionInfoIndex> Index =
-        getFunctionIndexForFile(Filename, Error, Context);
+        getFunctionIndexForFile(Filename, Error, diagnosticHandler);
     if (!Index) {
       errs() << Command << ": error loading file '" << Filename
              << "': " << Error << "\n";
@@ -317,12 +347,26 @@ int main(int argc, char **argv) {
   if (!attrs.empty())
     CodeGen.setAttr(attrs.c_str());
 
+  if (FileType.getNumOccurrences())
+    CodeGen.setFileType(FileType);
+
   if (!OutputFilename.empty()) {
-    std::string ErrorInfo;
     if (!CodeGen.optimize(DisableVerify, DisableInline, DisableGVNLoadPRE,
-                          DisableLTOVectorization, ErrorInfo)) {
-      errs() << argv[0] << ": error optimizing the code: " << ErrorInfo << "\n";
+                          DisableLTOVectorization)) {
+      // Diagnostic messages should have been printed by the handler.
+      errs() << argv[0] << ": error optimizing the code\n";
       return 1;
+    }
+
+    if (SaveModuleFile) {
+      std::string ModuleFilename = OutputFilename;
+      ModuleFilename += ".merged.bc";
+      std::string ErrMsg;
+
+      if (!CodeGen.writeMergedModules(ModuleFilename.c_str())) {
+        errs() << argv[0] << ": writing merged module failed.\n";
+        return 1;
+      }
     }
 
     std::list<tool_output_file> OSs;
@@ -341,8 +385,9 @@ int main(int argc, char **argv) {
       OSPtrs.push_back(&OSs.back().os());
     }
 
-    if (!CodeGen.compileOptimized(OSPtrs, ErrorInfo)) {
-      errs() << argv[0] << ": error compiling the code: " << ErrorInfo << "\n";
+    if (!CodeGen.compileOptimized(OSPtrs)) {
+      // Diagnostic messages should have been printed by the handler.
+      errs() << argv[0] << ": error compiling the code\n";
       return 1;
     }
 
@@ -354,14 +399,16 @@ int main(int argc, char **argv) {
       return 1;
     }
 
-    std::string ErrorInfo;
+    if (SaveModuleFile) {
+      errs() << argv[0] << ": -save-merged-module must be specified with -o\n";
+      return 1;
+    }
+
     const char *OutputName = nullptr;
     if (!CodeGen.compile_to_file(&OutputName, DisableVerify, DisableInline,
-                                 DisableGVNLoadPRE, DisableLTOVectorization,
-                                 ErrorInfo)) {
-      errs() << argv[0]
-             << ": error compiling the code: " << ErrorInfo
-             << "\n";
+                                 DisableGVNLoadPRE, DisableLTOVectorization)) {
+      // Diagnostic messages should have been printed by the handler.
+      errs() << argv[0] << ": error compiling the code\n";
       return 1;
     }
 

@@ -403,6 +403,8 @@ namespace llvm {
       VFPCLASS, 
       // Broadcast scalar to vector
       VBROADCAST,
+      // Broadcast mask to vector
+      VBROADCASTM,
       // Broadcast subvector to vector
       SUBV_BROADCAST,
       // Insert/Extract vector element
@@ -1021,6 +1023,7 @@ namespace llvm {
     SDValue LowerToBT(SDValue And, ISD::CondCode CC,
                       SDLoc dl, SelectionDAG &DAG) const;
     SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSETCCE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSELECT(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerBRCOND(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerJumpTable(SDValue Op, SelectionDAG &DAG) const;

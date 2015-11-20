@@ -21,7 +21,12 @@ void no_specialization() {
 template<typename ...T> struct std::coroutine_traits<int, T...> {};
 
 int no_promise_type() {
-  co_await a; // expected-error {{this function cannot be a coroutine: 'coroutine_traits<int>' has no member named 'promise_type'}}
+  co_await a; // expected-error {{this function cannot be a coroutine: 'std::coroutine_traits<int>' has no member named 'promise_type'}}
+}
+
+template<> struct std::coroutine_traits<double, double> { typedef int promise_type; };
+double bad_promise_type(double) {
+  co_await a; // expected-error {{this function cannot be a coroutine: 'std::coroutine_traits<double, double>::promise_type' (aka 'int') is not a class}}
 }
 
 struct promise; // expected-note {{forward declaration}}
@@ -73,8 +78,17 @@ struct CtorDtor {
   }
 };
 
-constexpr void constexpr_coroutine() { // expected-error {{never produces a constant expression}}
-  co_yield 0; // expected-error {{'co_yield' cannot be used in a constexpr function}} expected-note {{subexpression}}
+void unevaluated() {
+  decltype(co_await a); // expected-error {{cannot be used in an unevaluated context}}
+  sizeof(co_await a); // expected-error {{cannot be used in an unevaluated context}}
+  typeid(co_await a); // expected-error {{cannot be used in an unevaluated context}}
+  decltype(co_yield a); // expected-error {{cannot be used in an unevaluated context}}
+  sizeof(co_yield a); // expected-error {{cannot be used in an unevaluated context}}
+  typeid(co_yield a); // expected-error {{cannot be used in an unevaluated context}}
+}
+
+constexpr void constexpr_coroutine() {
+  co_yield 0; // expected-error {{'co_yield' cannot be used in a constexpr function}}
 }
 
 void varargs_coroutine(const char *, ...) {

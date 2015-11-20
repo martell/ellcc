@@ -7035,7 +7035,7 @@ void Sema::CheckConversionDeclarator(Declarator &D, QualType &R,
       // If we can provide a correct fix-it hint, do so.
       if (After.isInvalid() && ConvTSI) {
         SourceLocation InsertLoc =
-            PP.getLocForEndOfToken(ConvTSI->getTypeLoc().getLocEnd());
+            getLocForEndOfToken(ConvTSI->getTypeLoc().getLocEnd());
         DB << FixItHint::CreateInsertion(InsertLoc, " ")
            << FixItHint::CreateInsertionFromRange(
                   InsertLoc, CharSourceRange::getTokenRange(Before))
@@ -8388,7 +8388,7 @@ bool Sema::CheckUsingDeclQualifier(SourceLocation UsingLoc,
         } else {
           // Convert 'using X::Y;' to 'typedef X::Y Y;'.
           SourceLocation InsertLoc =
-              PP.getLocForEndOfToken(NameInfo.getLocEnd());
+              getLocForEndOfToken(NameInfo.getLocEnd());
           Diag(InsertLoc, diag::note_using_decl_class_member_workaround)
             << 1 // typedef declaration
             << FixItHint::CreateReplacement(UsingLoc, "typedef")
@@ -8684,9 +8684,11 @@ Decl *Sema::ActOnNamespaceAliasDef(Scope *S, SourceLocation NamespaceLoc,
   assert(!R.isAmbiguous() && !R.empty());
 
   // Check if we have a previous declaration with the same name.
-  NamedDecl *PrevDecl = LookupSingleName(S, Alias, AliasLoc, LookupOrdinaryName,
-                                         ForRedeclaration);
-  if (PrevDecl && !isDeclInScope(PrevDecl, CurContext, S))
+  LookupResult PrevR(*this, Alias, AliasLoc, LookupOrdinaryName,
+                     ForRedeclaration);
+  LookupQualifiedName(PrevR, CurContext->getRedeclContext());
+  NamedDecl *PrevDecl = PrevR.getAsSingle<NamedDecl>();
+  if (PrevDecl && !isVisible(PrevDecl))
     PrevDecl = nullptr;
 
   NamedDecl *ND = R.getFoundDecl();
@@ -12213,7 +12215,7 @@ FriendDecl *Sema::CheckFriendTypeDecl(SourceLocation LocStart,
                diag::ext_unelaborated_friend_type)
           << (unsigned) RD->getTagKind()
           << T
-          << FixItHint::CreateInsertion(PP.getLocForEndOfToken(FriendLoc),
+          << FixItHint::CreateInsertion(getLocForEndOfToken(FriendLoc),
                                         InsertionText);
       } else {
         Diag(FriendLoc,

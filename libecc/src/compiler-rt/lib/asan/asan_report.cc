@@ -793,7 +793,7 @@ void ReportNewDeleteSizeMismatch(uptr addr, uptr delete_size,
   stack.Print();
   DescribeHeapAddress(addr, 1);
   ReportErrorSummary("new-delete-type-mismatch", &stack);
-  Report("HINT: if you don't care about these warnings you may set "
+  Report("HINT: if you don't care about these errors you may set "
          "ASAN_OPTIONS=new_delete_type_mismatch=0\n");
 }
 
@@ -833,7 +833,7 @@ void ReportAllocTypeMismatch(uptr addr, BufferedStackTrace *free_stack,
   stack.Print();
   DescribeHeapAddress(addr, 1);
   ReportErrorSummary("alloc-dealloc-mismatch", &stack);
-  Report("HINT: if you don't care about these warnings you may set "
+  Report("HINT: if you don't care about these errors you may set "
          "ASAN_OPTIONS=alloc_dealloc_mismatch=0\n");
 }
 
@@ -935,7 +935,7 @@ void ReportODRViolation(const __asan_global *g1, u32 stack_id1,
     Printf("  [2]:\n");
     StackDepotGet(stack_id2).Print();
   }
-  Report("HINT: if you don't care about these warnings you may set "
+  Report("HINT: if you don't care about these errors you may set "
          "ASAN_OPTIONS=detect_odr_violation=0\n");
   InternalScopedString error_msg(256);
   error_msg.append("odr-violation: global '%s' at %s",

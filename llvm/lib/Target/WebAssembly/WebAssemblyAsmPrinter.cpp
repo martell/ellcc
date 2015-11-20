@@ -107,12 +107,12 @@ std::string WebAssemblyAsmPrinter::getRegTypeName(unsigned RegNo) const {
 
 std::string WebAssemblyAsmPrinter::regToString(const MachineOperand &MO) {
   unsigned RegNo = MO.getReg();
-  if (TargetRegisterInfo::isPhysicalRegister(RegNo))
-    return WebAssemblyInstPrinter::getRegisterName(RegNo);
-
+  assert(TargetRegisterInfo::isVirtualRegister(RegNo) &&
+         "Unlowered physical register encountered during assembly printing");
+  assert(!MFI->isVRegStackified(RegNo));
   unsigned WAReg = MFI->getWAReg(RegNo);
   assert(WAReg != WebAssemblyFunctionInfo::UnusedReg);
-  return utostr(WAReg);
+  return '$' + utostr(WAReg);
 }
 
 const char *WebAssemblyAsmPrinter::toString(MVT VT) const {
@@ -146,28 +146,60 @@ void WebAssemblyAsmPrinter::EmitJumpTableInfo() {
   // Nothing to do; jump tables are incorporated into the instruction stream.
 }
 
+static void ComputeLegalValueVTs(const Function &F,
+                                 const TargetMachine &TM,
+                                 Type *Ty,
+                                 SmallVectorImpl<MVT> &ValueVTs) {
+  const DataLayout& DL(F.getParent()->getDataLayout());
+  const WebAssemblyTargetLowering &TLI =
+      *TM.getSubtarget<WebAssemblySubtarget>(F).getTargetLowering();
+  SmallVector<EVT, 4> VTs;
+  ComputeValueVTs(TLI, DL, Ty, VTs);
+
+  for (EVT VT : VTs) {
+    unsigned NumRegs = TLI.getNumRegisters(F.getContext(), VT);
+    MVT RegisterVT = TLI.getRegisterType(F.getContext(), VT);
+    for (unsigned i = 0; i != NumRegs; ++i)
+      ValueVTs.push_back(RegisterVT);
+  }
+}
+
 void WebAssemblyAsmPrinter::EmitFunctionBodyStart() {
   SmallString<128> Str;
   raw_svector_ostream OS(Str);
 
   for (MVT VT : MFI->getParams())
     OS << "\t" ".param " << toString(VT) << '\n';
-  for (MVT VT : MFI->getResults())
-    OS << "\t" ".result " << toString(VT) << '\n';
 
-  bool FirstVReg = true;
+  SmallVector<MVT, 4> ResultVTs;
+  const Function &F(*MF->getFunction());
+  ComputeLegalValueVTs(F, TM, F.getReturnType(), ResultVTs);
+  // If the return type needs to be legalized it will get converted into
+  // passing a pointer.
+  if (ResultVTs.size() == 1)
+    OS << "\t" ".result " << toString(ResultVTs.front()) << '\n';
+
+  bool FirstWAReg = true;
   for (unsigned Idx = 0, IdxE = MRI->getNumVirtRegs(); Idx != IdxE; ++Idx) {
     unsigned VReg = TargetRegisterInfo::index2VirtReg(Idx);
-    if (!MRI->use_empty(VReg)) {
-      if (FirstVReg)
-        OS << "\t" ".local ";
-      else
-        OS << ", ";
-      OS << getRegTypeName(VReg);
-      FirstVReg = false;
-    }
+    unsigned WAReg = MFI->getWAReg(VReg);
+    // Don't declare unused registers.
+    if (WAReg == WebAssemblyFunctionInfo::UnusedReg)
+      continue;
+    // Don't redeclare parameters.
+    if (WAReg < MFI->getParams().size())
+      continue;
+    // Don't declare stackified registers.
+    if (int(WAReg) < 0)
+      continue;
+    if (FirstWAReg)
+      OS << "\t" ".local ";
+    else
+      OS << ", ";
+    OS << getRegTypeName(VReg);
+    FirstWAReg = false;
   }
-  if (!FirstVReg)
+  if (!FirstWAReg)
     OS << '\n';
 
   // EmitRawText appends a newline, so strip off the last newline.
@@ -180,19 +212,7 @@ void WebAssemblyAsmPrinter::EmitFunctionBodyStart() {
 void WebAssemblyAsmPrinter::EmitInstruction(const MachineInstr *MI) {
   DEBUG(dbgs() << "EmitInstruction: " << *MI << '\n');
 
-  assert(MI->getDesc().getNumDefs() <= 1 &&
-         "Instructions with multiple result values not implemented");
-
   switch (MI->getOpcode()) {
-  case TargetOpcode::COPY: {
-    // TODO: Figure out a way to lower COPY instructions to MCInst form.
-    SmallString<128> Str;
-    raw_svector_ostream OS(Str);
-    OS << "\t" "set_local " << regToString(MI->getOperand(0)) << ", "
-               "(get_local " << regToString(MI->getOperand(1)) << ")";
-    OutStreamer->EmitRawText(OS.str());
-    break;
-  }
   case WebAssembly::ARGUMENT_I32:
   case WebAssembly::ARGUMENT_I64:
   case WebAssembly::ARGUMENT_F32:
@@ -207,21 +227,6 @@ void WebAssemblyAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     EmitToStreamer(*OutStreamer, TmpInst);
     break;
   }
-  }
-}
-
-static void ComputeLegalValueVTs(LLVMContext &Context,
-                                 const WebAssemblyTargetLowering &TLI,
-                                 const DataLayout &DL, Type *Ty,
-                                 SmallVectorImpl<MVT> &ValueVTs) {
-  SmallVector<EVT, 4> VTs;
-  ComputeValueVTs(TLI, DL, Ty, VTs);
-
-  for (EVT VT : VTs) {
-    unsigned NumRegs = TLI.getNumRegisters(Context, VT);
-    MVT RegisterVT = TLI.getRegisterType(Context, VT);
-    for (unsigned i = 0; i != NumRegs; ++i)
-      ValueVTs.push_back(RegisterVT);
   }
 }
 
@@ -248,8 +253,7 @@ void WebAssemblyAsmPrinter::EmitEndOfAsmFile(Module &M) {
       // passing a pointer.
       bool SawParam = false;
       SmallVector<MVT, 4> ResultVTs;
-      ComputeLegalValueVTs(M.getContext(), TLI, DL, F.getReturnType(),
-                           ResultVTs);
+      ComputeLegalValueVTs(F, TM, F.getReturnType(), ResultVTs);
       if (ResultVTs.size() > 1) {
         ResultVTs.clear();
         OS << " (param " << toString(TLI.getPointerTy(DL));
@@ -258,20 +262,20 @@ void WebAssemblyAsmPrinter::EmitEndOfAsmFile(Module &M) {
 
       for (const Argument &A : F.args()) {
         SmallVector<MVT, 4> ParamVTs;
-        ComputeLegalValueVTs(M.getContext(), TLI, DL, A.getType(), ParamVTs);
-        for (EVT VT : ParamVTs) {
+        ComputeLegalValueVTs(F, TM, A.getType(), ParamVTs);
+        for (MVT VT : ParamVTs) {
           if (!SawParam) {
             OS << " (param";
             SawParam = true;
           }
-          OS << ' ' << toString(VT.getSimpleVT());
+          OS << ' ' << toString(VT);
         }
       }
       if (SawParam)
         OS << ')';
 
-      for (EVT VT : ResultVTs)
-        OS << " (result " << toString(VT.getSimpleVT()) << ')';
+      for (MVT VT : ResultVTs)
+        OS << " (result " << toString(VT) << ')';
 
       OS << '\n';
     }

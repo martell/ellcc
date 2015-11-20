@@ -50,6 +50,8 @@ static std::pair<ELFKind, uint16_t> parseEmulation(StringRef S) {
     return {ELF32LEKind, EM_386};
   if (S == "elf_x86_64")
     return {ELF64LEKind, EM_X86_64};
+  if (S == "aarch64linux")
+    return {ELF64LEKind, EM_AARCH64};
   error("Unknown emulation: " + S);
 }
 
@@ -171,6 +173,7 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
   Config->SoName = getString(Args, OPT_soname);
   Config->Sysroot = getString(Args, OPT_sysroot);
 
+  Config->ZExecStack = hasZOption(Args, "execstack");
   Config->ZNodelete = hasZOption(Args, "nodelete");
   Config->ZNow = hasZOption(Args, "now");
   Config->ZOrigin = hasZOption(Args, "origin");

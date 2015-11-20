@@ -144,7 +144,7 @@ static cl::opt<bool> MaximizeBandwidth(
 ///      ...
 static cl::opt<bool> EnableMemAccessVersioning(
     "enable-mem-access-versioning", cl::init(true), cl::Hidden,
-    cl::desc("Enable symblic stride memory access versioning"));
+    cl::desc("Enable symbolic stride memory access versioning"));
 
 static cl::opt<bool> EnableInterleavedMemAccesses(
     "enable-interleaved-mem-accesses", cl::init(false), cl::Hidden,
@@ -648,7 +648,8 @@ static void propagateMetadata(Instruction *To, const Instruction *From) {
 }
 
 /// \brief Propagate known metadata from one instruction to a vector of others.
-static void propagateMetadata(SmallVectorImpl<Value *> &To, const Instruction *From) {
+static void propagateMetadata(SmallVectorImpl<Value *> &To,
+                              const Instruction *From) {
   for (Value *V : To)
     if (Instruction *I = dyn_cast<Instruction>(V))
       propagateMetadata(I, From);
@@ -1228,6 +1229,9 @@ public:
 
   /// Returns True if V is an induction variable in this loop.
   bool isInductionVariable(const Value *V);
+
+  /// Returns True if PN is a reduction variable in this loop.
+  bool isReductionVariable(PHINode *PN) { return Reductions.count(PN); }
 
   /// Return true if the block BB needs to be predicated in order for the loop
   /// to be vectorized.
@@ -2523,7 +2527,8 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr) {
   }
 }
 
-void InnerLoopVectorizer::scalarizeInstruction(Instruction *Instr, bool IfPredicateStore) {
+void InnerLoopVectorizer::scalarizeInstruction(Instruction *Instr,
+                                               bool IfPredicateStore) {
   assert(!Instr->getType()->isAggregateType() && "Can't handle vectors");
   // Holds vector parameters or scalars, in case of uniform vals.
   SmallVector<VectorParts, 4> Params;
@@ -2585,7 +2590,8 @@ void InnerLoopVectorizer::scalarizeInstruction(Instruction *Instr, bool IfPredic
       Value *Cmp = nullptr;
       if (IfPredicateStore) {
         Cmp = Builder.CreateExtractElement(Cond[Part], Builder.getInt32(Width));
-        Cmp = Builder.CreateICmp(ICmpInst::ICMP_EQ, Cmp, ConstantInt::get(Cmp->getType(), 1));
+        Cmp = Builder.CreateICmp(ICmpInst::ICMP_EQ, Cmp,
+                                 ConstantInt::get(Cmp->getType(), 1));
       }
 
       Instruction *Cloned = Instr->clone();
@@ -2653,7 +2659,8 @@ Value *InnerLoopVectorizer::getOrCreateTripCount(Loop *L) {
   IRBuilder<> Builder(L->getLoopPreheader()->getTerminator());
   // Find the loop boundaries.
   const SCEV *BackedgeTakenCount = SE->getBackedgeTakenCount(OrigLoop);
-  assert(BackedgeTakenCount != SE->getCouldNotCompute() && "Invalid loop count");
+  assert(BackedgeTakenCount != SE->getCouldNotCompute() &&
+         "Invalid loop count");
 
   Type *IdxTy = Legal->getWidestInductionType();
   
@@ -3306,7 +3313,7 @@ void InnerLoopVectorizer::vectorizeLoop() {
     assert(RdxPhi && "Unable to recover vectorized PHI");
 
     // Find the reduction variable descriptor.
-    assert(Legal->getReductionVars()->count(RdxPhi) &&
+    assert(Legal->isReductionVariable(RdxPhi) &&
            "Unable to find the reduction variable");
     RecurrenceDescriptor RdxDesc = (*Legal->getReductionVars())[RdxPhi];
 
@@ -3601,12 +3608,12 @@ InnerLoopVectorizer::createBlockInMask(BasicBlock *BB) {
   return BlockMask;
 }
 
-void InnerLoopVectorizer::widenPHIInstruction(Instruction *PN,
-                                              InnerLoopVectorizer::VectorParts &Entry,
-                                              unsigned UF, unsigned VF, PhiVector *PV) {
+void InnerLoopVectorizer::widenPHIInstruction(
+    Instruction *PN, InnerLoopVectorizer::VectorParts &Entry, unsigned UF,
+    unsigned VF, PhiVector *PV) {
   PHINode* P = cast<PHINode>(PN);
   // Handle reduction variables:
-  if (Legal->getReductionVars()->count(P)) {
+  if (Legal->isReductionVariable(P)) {
     for (unsigned part = 0; part < UF; ++part) {
       // This is phase one of vectorizing PHIs.
       Type *VecTy = (VF == 1) ? PN->getType() :
@@ -3668,7 +3675,8 @@ void InnerLoopVectorizer::widenPHIInstruction(Instruction *PN,
     case InductionDescriptor::IK_NoInduction:
       llvm_unreachable("Unknown induction");
     case InductionDescriptor::IK_IntInduction: {
-      assert(P->getType() == II.getStartValue()->getType() && "Types must match");
+      assert(P->getType() == II.getStartValue()->getType() &&
+             "Types must match");
       // Handle other induction variables that are now based on the
       // canonical one.
       Value *V = Induction;
@@ -3853,9 +3861,10 @@ void InnerLoopVectorizer::vectorizeBlockInLoop(BasicBlock *BB, PhiVector *PV) {
         Value *ScalarCast = Builder.CreateCast(CI->getOpcode(), Induction,
                                                CI->getType());
         Value *Broadcasted = getBroadcastInstrs(ScalarCast);
-        InductionDescriptor II = Legal->getInductionVars()->lookup(OldInduction);
-        Constant *Step =
-            ConstantInt::getSigned(CI->getType(), II.getStepValue()->getSExtValue());
+        InductionDescriptor II =
+            Legal->getInductionVars()->lookup(OldInduction);
+        Constant *Step = ConstantInt::getSigned(
+            CI->getType(), II.getStepValue()->getSExtValue());
         for (unsigned Part = 0; Part < UF; ++Part)
           Entry[Part] = getStepVector(Broadcasted, VF * Part, Step);
         propagateMetadata(Entry, &*it);
@@ -4521,8 +4530,8 @@ bool LoopVectorizationLegality::blockCanBePredicated(BasicBlock *BB,
       
       if (++NumPredStores > NumberOfStoresToPredicate || !isSafePtr ||
           !isSinglePredecessor) {
-        // Build a masked store if it is legal for the target, otherwise scalarize
-        // the block.
+        // Build a masked store if it is legal for the target, otherwise
+        // scalarize the block.
         bool isLegalMaskedOp =
           isLegalMaskedStore(SI->getValueOperand()->getType(),
                              SI->getPointerOperand());
@@ -4882,7 +4891,7 @@ LoopVectorizationCostModel::getSmallestAndWidestTypes() {
       // Examine PHI nodes that are reduction variables. Update the type to
       // account for the recurrence type.
       if (PHINode *PN = dyn_cast<PHINode>(it)) {
-        if (!Legal->getReductionVars()->count(PN))
+        if (!Legal->isReductionVariable(PN))
           continue;
         RecurrenceDescriptor RdxDesc = (*Legal->getReductionVars())[PN];
         T = RdxDesc.getRecurrenceType();
@@ -5049,8 +5058,7 @@ unsigned LoopVectorizationCostModel::selectInterleaveCount(bool OptForSize,
   }
 
   // Interleave if this is a large loop (small loops are already dealt with by
-  // this
-  // point) that could benefit from interleaving.
+  // this point) that could benefit from interleaving.
   bool HasReductions = (Legal->getReductionVars()->size() > 0);
   if (TTI.enableAggressiveInterleaving(HasReductions)) {
     DEBUG(dbgs() << "LV: Interleaving to expose ILP.\n");

@@ -1221,10 +1221,8 @@ void SelectionDAGBuilder::visitCatchRet(const CatchReturnInst &I) {
   // Figure out the funclet membership for the catchret's successor.
   // This will be used by the FuncletLayout pass to determine how to order the
   // BB's.
-  MachineModuleInfo &MMI = DAG.getMachineFunction().getMMI();
-  WinEHFuncInfo &EHInfo =
-      MMI.getWinEHFuncInfo(DAG.getMachineFunction().getFunction());
-  const BasicBlock *SuccessorColor = EHInfo.CatchRetSuccessorColorMap[&I];
+  WinEHFuncInfo *EHInfo = DAG.getMachineFunction().getWinEHFuncInfo();
+  const BasicBlock *SuccessorColor = EHInfo->CatchRetSuccessorColorMap[&I];
   assert(SuccessorColor && "No parent funclet for catchret!");
   MachineBasicBlock *SuccessorColorMBB = FuncInfo.MBBMap[SuccessorColor];
   assert(SuccessorColorMBB && "No MBB for SuccessorColor!");
@@ -1346,7 +1344,8 @@ void SelectionDAGBuilder::visitRet(const ReturnInst &I) {
     ComputeValueVTs(TLI, DL, PointerType::getUnqual(F->getReturnType()),
                     PtrValueVTs);
 
-    SDValue RetPtr = DAG.getRegister(DemoteReg, PtrValueVTs[0]);
+    SDValue RetPtr = DAG.getCopyFromReg(DAG.getEntryNode(), getCurSDLoc(),
+                                        DemoteReg, PtrValueVTs[0]);
     SDValue RetOp = getValue(I.getOperand(0));
 
     SmallVector<EVT, 4> ValueVTs;
@@ -5212,7 +5211,8 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   }
   case Intrinsic::instrprof_increment:
     llvm_unreachable("instrprof failed to lower an increment");
-
+  case Intrinsic::instrprof_value_profile:
+    llvm_unreachable("instrprof failed to lower a value profiling call");
   case Intrinsic::localescape: {
     MachineFunction &MF = DAG.getMachineFunction();
     const TargetInstrInfo *TII = DAG.getSubtarget().getInstrInfo();
@@ -5341,9 +5341,8 @@ SelectionDAGBuilder::lowerInvokable(TargetLowering::CallLoweringInfo &CLI,
 
     // Inform MachineModuleInfo of range.
     if (MMI.hasEHFunclets()) {
-      WinEHFuncInfo &EHInfo =
-          MMI.getWinEHFuncInfo(DAG.getMachineFunction().getFunction());
-      EHInfo.addIPToStateRange(EHPadBB, BeginLabel, EndLabel);
+      WinEHFuncInfo *EHInfo = DAG.getMachineFunction().getWinEHFuncInfo();
+      EHInfo->addIPToStateRange(EHPadBB, BeginLabel, EndLabel);
     } else {
       MMI.addInvoke(FuncInfo.MBBMap[EHPadBB], BeginLabel, EndLabel);
     }

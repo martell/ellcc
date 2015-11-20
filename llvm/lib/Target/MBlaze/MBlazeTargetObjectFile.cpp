@@ -59,7 +59,7 @@ IsGlobalInSmallSection(const GlobalValue *GV, const TargetMachine &TM,
     return false;
 
   // We can only do this for datarel or BSS objects for now.
-  if (!Kind.isBSS() && !Kind.isDataRel())
+  if (!Kind.isBSS() && !Kind.isData())
     return false;
 
   // If this is a internal constant string, there is a special
@@ -81,7 +81,7 @@ SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
   // Handle Small Section classification here.
   if (Kind.isBSS() && IsGlobalInSmallSection(GV, TM, Kind))
     return SmallBSSSection;
-  if (Kind.isDataNoRel() && IsGlobalInSmallSection(GV, TM, Kind))
+  if (Kind.isData() && IsGlobalInSmallSection(GV, TM, Kind))
     return SmallDataSection;
 
   // Otherwise, we work the same as ELF.

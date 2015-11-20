@@ -323,21 +323,35 @@ void Darwin::addProfileRTLibs(const ArgList &Args,
                               ArgStringList &CmdArgs) const {
   if (!needsProfileRT(Args)) return;
 
+  // TODO: Clean this up once autoconf is gone
+  SmallString<128> P(getDriver().ResourceDir);
+  llvm::sys::path::append(P, "lib", "darwin");
+  const char *Library = "libclang_rt.profile_osx.a";
+
   // Select the appropriate runtime library for the target.
-  if (isTargetWatchOSBased()) {
-    AddLinkRuntimeLib(Args, CmdArgs, "libclang_rt.profile_watchos.a",
-                      /*AlwaysLink*/ true);
-  } else if (isTargetTvOSBased()) {
-    AddLinkRuntimeLib(Args, CmdArgs, "libclang_rt.profile_tvos.a",
-                      /*AlwaysLink*/ true);
-  } else if (isTargetIOSBased()) {
-    AddLinkRuntimeLib(Args, CmdArgs, "libclang_rt.profile_ios.a",
-                      /*AlwaysLink*/ true);
+  if (isTargetWatchOS()) {
+    Library = "libclang_rt.profile_watchos.a";
+  } else if (isTargetWatchOSSimulator()) {
+    llvm::sys::path::append(P, "libclang_rt.profile_watchossim.a");
+    Library = getVFS().exists(P) ? "libclang_rt.profile_watchossim.a"
+                                 : "libclang_rt.profile_watchos.a";
+  } else if (isTargetTvOS()) {
+    Library = "libclang_rt.profile_tvos.a";
+  } else if (isTargetTvOSSimulator()) {
+    llvm::sys::path::append(P, "libclang_rt.profile_tvossim.a");
+    Library = getVFS().exists(P) ? "libclang_rt.profile_tvossim.a"
+                                 : "libclang_rt.profile_tvos.a";
+  } else if (isTargetIPhoneOS()) {
+    Library = "libclang_rt.profile_ios.a";
+  } else if (isTargetIOSSimulator()) {
+    llvm::sys::path::append(P, "libclang_rt.profile_iossim.a");
+    Library = getVFS().exists(P) ? "libclang_rt.profile_iossim.a"
+                                 : "libclang_rt.profile_ios.a";
   } else {
     assert(isTargetMacOS() && "unexpected non MacOS platform");
-    AddLinkRuntimeLib(Args, CmdArgs, "libclang_rt.profile_osx.a",
-                      /*AlwaysLink*/ true);
   }
+  AddLinkRuntimeLib(Args, CmdArgs, Library,
+                    /*AlwaysLink*/ true);
   return;
 }
 
@@ -1054,11 +1068,8 @@ bool Darwin::UseSjLjExceptions(const ArgList &Args) const {
       getTriple().getArch() != llvm::Triple::thumb)
     return false;
 
-  // We can't check directly for watchOS here. ComputeLLVMTriple only
-  // fills in the ArchName correctly.
-  llvm::Triple Triple(ComputeLLVMTriple(Args));
-  return !(Triple.getArchName() == "armv7k" ||
-           Triple.getArchName() == "thumbv7k");
+  // Only watchOS uses the new DWARF/Compact unwinding method.
+  return !isTargetWatchOS();
 }
 
 bool MachO::isPICDefault() const { return true; }
@@ -1633,6 +1644,7 @@ void Generic_GCC::CudaInstallationDetector::init(
         Args.getLastArgValue(options::OPT_cuda_path_EQ));
   else {
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda");
+    CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-7.5");
     CudaPathCandidates.push_back(D.SysRoot + "/usr/local/cuda-7.0");
   }
 
@@ -1650,6 +1662,31 @@ void Generic_GCC::CudaInstallationDetector::init(
           D.getVFS().exists(CudaLibPath) &&
           D.getVFS().exists(CudaLibDevicePath)))
       continue;
+
+    std::error_code EC;
+    for (llvm::sys::fs::directory_iterator LI(CudaLibDevicePath, EC), LE;
+         !EC && LI != LE; LI = LI.increment(EC)) {
+      StringRef FilePath = LI->path();
+      StringRef FileName = llvm::sys::path::filename(FilePath);
+      // Process all bitcode filenames that look like libdevice.compute_XX.YY.bc
+      const StringRef LibDeviceName = "libdevice.";
+      if (!(FileName.startswith(LibDeviceName) && FileName.endswith(".bc")))
+        continue;
+      StringRef GpuArch = FileName.slice(
+          LibDeviceName.size(), FileName.find('.', LibDeviceName.size()));
+      CudaLibDeviceMap[GpuArch] = FilePath.str();
+      // Insert map entries for specifc devices with this compute capability.
+      if (GpuArch == "compute_20") {
+        CudaLibDeviceMap["sm_20"] = FilePath;
+        CudaLibDeviceMap["sm_21"] = FilePath;
+      } else if (GpuArch == "compute_30") {
+        CudaLibDeviceMap["sm_30"] = FilePath;
+        CudaLibDeviceMap["sm_32"] = FilePath;
+      } else if (GpuArch == "compute_35") {
+        CudaLibDeviceMap["sm_35"] = FilePath;
+        CudaLibDeviceMap["sm_37"] = FilePath;
+      }
+    }
 
     IsValid = true;
     break;
@@ -2517,8 +2554,7 @@ std::string MipsLLVMToolChain::getCompilerRT(const ArgList &Args,
   llvm::sys::path::append(Path, SelectedMultilib.osSuffix(), "lib" + LibSuffix,
                           getOS());
   llvm::sys::path::append(Path, Twine("libclang_rt." + Component + "-" +
-                                      getTriple().getArchName() +
-                                      (Shared ? ".so" : ".a")));
+                                      "mips" + (Shared ? ".so" : ".a")));
   return Path.str();
 }
 
@@ -4118,6 +4154,18 @@ void Linux::AddClangCXXStdlibIncludeArgs(const ArgList &DriverArgs,
   }
 }
 
+void Linux::AddCudaIncludeArgs(const ArgList &DriverArgs,
+                               ArgStringList &CC1Args) const {
+  if (DriverArgs.hasArg(options::OPT_nocudainc))
+    return;
+
+  if (CudaInstallation.isValid()) {
+    addSystemInclude(DriverArgs, CC1Args, CudaInstallation.getIncludePath());
+    CC1Args.push_back("-include");
+    CC1Args.push_back("cuda_runtime.h");
+  }
+}
+
 bool Linux::isPIEDefault() const { return getSanitizerArgs().requiresPIE(); }
 
 SanitizerMask Linux::getSupportedSanitizers() const {
@@ -4267,6 +4315,22 @@ CudaToolChain::addClangTargetOptions(const llvm::opt::ArgList &DriverArgs,
                                      llvm::opt::ArgStringList &CC1Args) const {
   Linux::addClangTargetOptions(DriverArgs, CC1Args);
   CC1Args.push_back("-fcuda-is-device");
+
+  if (DriverArgs.hasArg(options::OPT_nocudalib))
+    return;
+
+  std::string LibDeviceFile = CudaInstallation.getLibDeviceFile(
+      DriverArgs.getLastArgValue(options::OPT_march_EQ));
+  if (!LibDeviceFile.empty()) {
+    CC1Args.push_back("-mlink-cuda-bitcode");
+    CC1Args.push_back(DriverArgs.MakeArgString(LibDeviceFile));
+
+    // Libdevice in CUDA-7.0 requires PTX version that's more recent
+    // than LLVM defaults to. Use PTX4.2 which is the PTX version that
+    // came with CUDA-7.0.
+    CC1Args.push_back("-target-feature");
+    CC1Args.push_back("+ptx42");
+  }
 }
 
 llvm::opt::DerivedArgList *
@@ -4394,6 +4458,26 @@ MyriadToolChain::MyriadToolChain(const Driver &D, const llvm::Triple &Triple,
   case llvm::Triple::shave:
     GCCInstallation.init(Triple, Args, {"sparc-myriad-elf"});
   }
+
+  if (GCCInstallation.isValid()) {
+    // The contents of LibDir are independent of the version of gcc.
+    // This contains libc, libg (a superset of libc), libm, libstdc++, libssp.
+    SmallString<128> LibDir(GCCInstallation.getParentLibPath());
+    if (Triple.getArch() == llvm::Triple::sparcel)
+      llvm::sys::path::append(LibDir, "../sparc-myriad-elf/lib/le");
+    else
+      llvm::sys::path::append(LibDir, "../sparc-myriad-elf/lib");
+    addPathIfExists(D, LibDir, getFilePaths());
+
+    // This directory contains crt{i,n,begin,end}.o as well as libgcc.
+    // These files are tied to a particular version of gcc.
+    SmallString<128> CompilerSupportDir(GCCInstallation.getInstallPath());
+    // There are actually 4 choices: {le,be} x {fpu,nofpu}
+    // but as this toolchain is for LEON sparc, it can assume FPU.
+    if (Triple.getArch() == llvm::Triple::sparcel)
+      llvm::sys::path::append(CompilerSupportDir, "le");
+    addPathIfExists(D, CompilerSupportDir, getFilePaths());
+  }
 }
 
 MyriadToolChain::~MyriadToolChain() {}
@@ -4427,6 +4511,7 @@ Tool *MyriadToolChain::SelectTool(const JobAction &JA) const {
   if (!isShaveCompilation(getTriple()))
     return ToolChain::SelectTool(JA);
   switch (JA.getKind()) {
+  case Action::PreprocessJobClass:
   case Action::CompileJobClass:
     if (!Compiler)
       Compiler.reset(new tools::SHAVE::Compiler(*this));
@@ -4438,27 +4523,6 @@ Tool *MyriadToolChain::SelectTool(const JobAction &JA) const {
   default:
     return ToolChain::getTool(JA.getKind());
   }
-}
-
-void MyriadToolChain::getCompilerSupportDir(std::string &Dir) const {
-  // This directory contains crt{i,n,begin,end}.o as well as libgcc.
-  // These files are tied to a particular version of gcc.
-  SmallString<128> Result(GCCInstallation.getInstallPath());
-  // There are actually 4 choices: {le,be} x {fpu,nofpu}
-  // but as this toolchain is for LEON sparc, it can assume FPU.
-  if (this->getTriple().getArch() == llvm::Triple::sparcel)
-    llvm::sys::path::append(Result, "le");
-  Dir.assign(Result.str());
-}
-void MyriadToolChain::getBuiltinLibDir(std::string &Dir) const {
-  // The contents of LibDir are independent of the version of gcc.
-  // This contains libc, libg (a superset of libc), libm, libstdc++, libssp.
-  SmallString<128> Result(GCCInstallation.getParentLibPath());
-  if (this->getTriple().getArch() == llvm::Triple::sparcel)
-    llvm::sys::path::append(Result, "../sparc-myriad-elf/lib/le");
-  else
-    llvm::sys::path::append(Result, "../sparc-myriad-elf/lib");
-  Dir.assign(Result.str());
 }
 
 Tool *MyriadToolChain::buildLinker() const {

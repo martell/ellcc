@@ -67,6 +67,9 @@ def warn_wrong_absolute_value_type : Warning<
   "when argument is of %select{integer|floating point|complex}2 type">,
   InGroup<AbsoluteValue>;
 def note_replace_abs_function : Note<"use function '%0' instead">;
+def warn_pointer_abs : Warning<
+  "taking the absolute value of %select{pointer|function|array}0 type %1 is suspicious">,
+  InGroup<AbsoluteValue>;
 
 def warn_infinite_recursive_function : Warning<
   "all paths through this function will call itself">,
@@ -188,6 +191,60 @@ def ext_flexible_array_init : Extension<
   "flexible array initialization is a GNU extension">, InGroup<GNUFlexibleArrayInitializer>;
 
 // Declarations.
+def ext_duplicate_declspec : ExtWarn<"duplicate '%0' declaration specifier">,
+  InGroup<DuplicateDeclSpecifier>;
+def warn_duplicate_declspec : Warning<"duplicate '%0' declaration specifier">,
+  InGroup<DuplicateDeclSpecifier>;
+def ext_plain_complex : ExtWarn<
+  "plain '_Complex' requires a type specifier; assuming '_Complex double'">;
+def ext_integer_complex : Extension<
+  "complex integer types are a GNU extension">, InGroup<GNUComplexInteger>;
+
+def err_invalid_sign_spec : Error<"'%0' cannot be signed or unsigned">;
+def err_invalid_width_spec : Error<
+  "'%select{|short|long|long long}0 %1' is invalid">;
+def err_invalid_complex_spec : Error<"'_Complex %0' is invalid">;
+def err_friend_decl_spec : Error<"'%0' is invalid in friend declarations">;
+
+def ext_auto_type_specifier : ExtWarn<
+  "'auto' type specifier is a C++11 extension">, InGroup<CXX11>;
+def warn_auto_storage_class : Warning<
+  "'auto' storage class specifier is redundant and incompatible with C++11">,
+  InGroup<CXX11Compat>, DefaultIgnore;
+
+def warn_deprecated_register : Warning<
+  "'register' storage class specifier is deprecated">,
+  InGroup<DeprecatedRegister>;
+
+def err_invalid_decl_spec_combination : Error<
+  "cannot combine with previous '%0' declaration specifier">;
+def err_invalid_vector_decl_spec_combination : Error<
+  "cannot combine with previous '%0' declaration specifier. "
+  "'__vector' must be first">;
+def err_invalid_pixel_decl_spec_combination : Error<
+  "'__pixel' must be preceded by '__vector'.  "
+  "'%0' declaration specifier not allowed here">;
+def err_invalid_vector_bool_decl_spec : Error<
+  "cannot use '%0' with '__vector bool'">;
+def err_invalid_vector_long_decl_spec : Error<
+  "cannot use 'long' with '__vector'">;
+def err_invalid_vector_float_decl_spec : Error<
+  "cannot use 'float' with '__vector'">;
+def err_invalid_vector_double_decl_spec : Error <
+  "use of 'double' with '__vector' requires VSX support to be enabled "
+  "(available on POWER7 or later)">;
+def err_invalid_vector_long_long_decl_spec : Error <
+  "use of 'long long' with '__vector bool' requires VSX support (available on "
+  "POWER7 or later) or extended Altivec support (available on POWER8 or later) " 
+  "to be enabled">;
+def err_invalid_vector_long_double_decl_spec : Error<
+  "cannot use 'long double' with '__vector'">;
+def warn_vector_long_decl_spec_combination : Warning<
+  "Use of 'long' with '__vector' is deprecated">, InGroup<Deprecated>;
+
+def err_use_of_tag_name_without_tag : Error<
+  "must use '%1' tag to refer to type %0%select{| in this scope}2">;
+
 def err_redeclaration_different_type : Error<
   "redeclaration of %0 with a different type%diff{: $ vs $|}1,2">;
 def err_bad_variable_name : Error<
@@ -2656,8 +2713,7 @@ def warn_impcast_floating_point_to_bool : Warning<
     InGroup<ImplicitConversionFloatingPointToBool>;
 def ext_ms_impcast_fn_obj : ExtWarn<
   "implicit conversion between pointer-to-function and pointer-to-object is a "
-  "Microsoft extension">,
-  InGroup<MicrosoftCast>, DefaultError, SFINAEFailure;
+  "Microsoft extension">, InGroup<MicrosoftCast>;
 
 def warn_impcast_pointer_to_bool : Warning<
     "address of%select{| function| array}0 '%1' will always evaluate to "
@@ -2767,6 +2823,10 @@ def err_mode_not_primitive : Error<
   "mode attribute only supported for integer and floating-point types">;
 def err_mode_wrong_type : Error<
   "type of machine mode does not match type of base type">;
+def warn_vector_mode_deprecated : Warning<
+  "specifying vector types with the 'mode' attribute is deprecated; "
+  "use the 'vector_size' attribute instead">,
+  InGroup<DeprecatedAttributes>;
 def err_complex_mode_vector_type : Error<
   "type of machine mode does not support base vector types">;
 def err_attr_wrong_decl : Error<
@@ -4852,9 +4912,8 @@ def warn_floatingpoint_eq : Warning<
   "comparing floating point with == or != is unsafe">,
   InGroup<DiagGroup<"float-equal">>, DefaultIgnore;
 
-def warn_division_by_zero : Warning<"division by zero is undefined">,
-  InGroup<DivZero>;
-def warn_remainder_by_zero : Warning<"remainder by zero is undefined">,
+def warn_remainder_division_by_zero : Warning<
+  "%select{remainder|division}0 by zero is undefined">,
   InGroup<DivZero>;
 def warn_shift_lhs_negative : Warning<"shifting a negative signed value is undefined">,
   InGroup<DiagGroup<"shift-negative-value">>;
@@ -5524,8 +5583,7 @@ def ext_cast_fn_obj : Extension<
   "cast between pointer-to-function and pointer-to-object is an extension">;
 def ext_ms_cast_fn_obj : ExtWarn<
   "static_cast between pointer-to-function and pointer-to-object is a "
-  "Microsoft extension">,
-  InGroup<MicrosoftCast>, DefaultError, SFINAEFailure;
+  "Microsoft extension">, InGroup<MicrosoftCast>;
 def warn_cxx98_compat_cast_fn_obj : Warning<
   "cast between pointer-to-function and pointer-to-object is incompatible with C++98">,
   InGroup<CXX98CompatPedantic>, DefaultIgnore;
@@ -6487,6 +6545,10 @@ let CategoryName = "Inline Assembly Issue" in {
     "asm constraint has an unexpected number of alternatives: %0 vs %1">;
   def err_asm_incomplete_type : Error<"asm operand has incomplete type %0">;
   def err_asm_unknown_register_name : Error<"unknown register name '%0' in asm">;
+  def err_asm_invalid_global_var_reg : Error<"register '%0' unsuitable for "
+    "global register variables on this target">;
+  def err_asm_register_size_mismatch : Error<"size of register '%0' does not "
+    "match variable size">;
   def err_asm_bad_register_type : Error<"bad type for named register variable">;
   def err_asm_invalid_input_size : Error<
     "invalid input size for constraint '%0'">;
@@ -6620,10 +6682,8 @@ def err_anonymous_union_with_storage_spec : Error<
 def err_anonymous_struct_not_member : Error<
   "anonymous %select{structs|structs and classes}0 must be "
   "%select{struct or union|class}0 members">;
-def err_anonymous_union_member_redecl : Error<
-  "member of anonymous union redeclares %0">;
-def err_anonymous_struct_member_redecl : Error<
-  "member of anonymous struct redeclares %0">;
+def err_anonymous_record_member_redecl : Error<
+  "member of anonymous %select{struct|union}0 redeclares %1">;
 def err_anonymous_record_with_type : Error<
   "types cannot be declared in an anonymous %select{struct|union}0">;
 def ext_anonymous_record_with_type : Extension<
@@ -6976,17 +7036,12 @@ def warn_null_ret : Warning<
   InGroup<NonNull>;
 
 // CHECK: returning address/reference of stack memory
-def warn_ret_stack_addr : Warning<
-  "address of stack memory associated with local variable %0 returned">,
+def warn_ret_stack_addr_ref : Warning<
+  "%select{address of|reference to}0 stack memory associated with local "
+  "variable %1 returned">,
   InGroup<ReturnStackAddress>;
-def warn_ret_stack_ref : Warning<
-  "reference to stack memory associated with local variable %0 returned">,
-  InGroup<ReturnStackAddress>;
-def warn_ret_local_temp_addr : Warning<
-  "returning address of local temporary object">,
-  InGroup<ReturnStackAddress>;
-def warn_ret_local_temp_ref : Warning<
-  "returning reference to local temporary object">,
+def warn_ret_local_temp_addr_ref : Warning<
+  "returning %select{address of|reference to}0 local temporary object">,
   InGroup<ReturnStackAddress>;
 def warn_ret_addr_label : Warning<
   "returning address of label, which is local">,
@@ -7565,6 +7620,11 @@ def err_atomic_init_constant : Error<
   " in the declaration statement in the program scope">;
 def err_opencl_implicit_vector_conversion : Error<
   "implicit conversions between vector types (%0 and %1) are not permitted">;
+
+// OpenCL Section 6.8.g
+def err_opencl_unknown_type_specifier : Error<
+  "OpenCL does not support the '%0' %select{type qualifier|storage class specifier}1">;
+
 } // end of sema category
 
 let CategoryName = "OpenMP Issue" in {
@@ -7876,6 +7936,9 @@ def note_module_import_in_extern_c : Note<
   "extern \"C\" language linkage specification begins here">;
 def err_module_import_not_at_top_level_fatal : Error<
   "import of module '%0' appears within %1">, DefaultFatal;
+def ext_module_import_not_at_top_level_noop : ExtWarn<
+  "redundant #include of module '%0' appears within %1">, DefaultError,
+  InGroup<DiagGroup<"modules-import-nested-redundant">>;
 def note_module_import_not_at_top_level : Note<"%0 begins here">;
 def err_module_self_import : Error<
   "import of module '%0' appears within same top-level module '%1'">;
@@ -7897,6 +7960,8 @@ def note_declared_coroutine_here : Note<
   "'%select{co_await|co_yield|co_return}0' here">;
 def err_coroutine_objc_method : Error<
   "Objective-C methods as coroutines are not yet supported">;
+def err_coroutine_unevaluated_context : Error<
+  "'%0' cannot be used in an unevaluated context">;
 def err_coroutine_outside_function : Error<
   "'%0' cannot be used outside a function">;
 def err_coroutine_ctor_dtor : Error<
@@ -7912,14 +7977,14 @@ def ext_coroutine_without_co_await_co_yield : ExtWarn<
 def err_implied_std_coroutine_traits_not_found : Error<
   "you need to include <coroutine> before defining a coroutine">;
 def err_malformed_std_coroutine_traits : Error<
-  "std::coroutine_traits must be a class template">;
+  "'std::coroutine_traits' must be a class template">;
 def err_implied_std_coroutine_traits_promise_type_not_found : Error<
-  "this function cannot be a coroutine: %0 has no member named 'promise_type'">;
+  "this function cannot be a coroutine: %q0 has no member named 'promise_type'">;
 def err_implied_std_coroutine_traits_promise_type_not_class : Error<
   "this function cannot be a coroutine: %0 is not a class">;
 def err_coroutine_traits_missing_specialization : Error<
   "this function cannot be a coroutine: missing definition of "
-  "specialization %0">;
+  "specialization %q0">;
 }
 
 let CategoryName = "Documentation Issue" in {

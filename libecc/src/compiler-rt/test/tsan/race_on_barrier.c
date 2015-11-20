@@ -1,4 +1,8 @@
 // RUN: %clang_tsan -O1 %s -o %t && not %run %t 2>&1 | FileCheck %s
+
+// pthread barriers are not available on OS X
+// UNSUPPORTED: darwin
+
 #include "test.h"
 
 pthread_barrier_t B;

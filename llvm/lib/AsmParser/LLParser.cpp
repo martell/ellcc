@@ -1972,17 +1972,13 @@ bool LLParser::ParseOptionalOperandBundles(
     if (ParseStringConstant(Tag))
       return true;
 
-    BundleList.emplace_back();
-    auto &OBI = BundleList.back();
-
-    OBI.Tag = std::move(Tag);
-
     if (ParseToken(lltok::lparen, "expected '(' in operand bundle"))
       return true;
 
+    std::vector<Value *> Inputs;
     while (Lex.getKind() != lltok::rparen) {
       // If this isn't the first input, we need a comma.
-      if (!OBI.Inputs.empty() &&
+      if (!Inputs.empty() &&
           ParseToken(lltok::comma, "expected ',' in input list"))
         return true;
 
@@ -1990,8 +1986,10 @@ bool LLParser::ParseOptionalOperandBundles(
       Value *Input = nullptr;
       if (ParseType(Ty) || ParseValue(Ty, Input, PFS))
         return true;
-      OBI.Inputs.push_back(Input);
+      Inputs.push_back(Input);
     }
+
+    BundleList.emplace_back(std::move(Tag), std::move(Inputs));
 
     Lex.Lex(); // Lex the ')'.
   }
@@ -5644,6 +5642,8 @@ bool LLParser::ParseLandingPad(Instruction *&Inst, PerFunctionState &PFS) {
 ///       ParameterList OptionalAttrs
 ///   ::= 'musttail' 'call' OptionalCallingConv OptionalAttrs Type Value
 ///       ParameterList OptionalAttrs
+///   ::= 'notail' 'call'  OptionalCallingConv OptionalAttrs Type Value
+///       ParameterList OptionalAttrs
 bool LLParser::ParseCall(Instruction *&Inst, PerFunctionState &PFS,
                          CallInst::TailCallKind TCK) {
   AttrBuilder RetAttrs, FnAttrs;
@@ -5658,7 +5658,8 @@ bool LLParser::ParseCall(Instruction *&Inst, PerFunctionState &PFS,
   LocTy CallLoc = Lex.getLoc();
 
   if ((TCK != CallInst::TCK_None &&
-       ParseToken(lltok::kw_call, "expected 'tail call'")) ||
+       ParseToken(lltok::kw_call,
+                  "expected 'tail call', 'musttail call', or 'notail call'")) ||
       ParseOptionalCallingConv(CC) || ParseOptionalReturnAttrs(RetAttrs) ||
       ParseType(RetType, RetTypeLoc, true /*void allowed*/) ||
       ParseValID(CalleeID) ||

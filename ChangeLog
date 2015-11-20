@@ -1,5 +1,7 @@
 current SVN:
 
+* Update to LLVM r253660.
+
 version 0.1.19:
 
 * Update to LLVM r253132. Added lld.
