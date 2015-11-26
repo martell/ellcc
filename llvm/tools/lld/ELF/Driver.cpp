@@ -52,6 +52,8 @@ static std::pair<ELFKind, uint16_t> parseEmulation(StringRef S) {
     return {ELF64LEKind, EM_X86_64};
   if (S == "aarch64linux")
     return {ELF64LEKind, EM_AARCH64};
+  if (S == "i386pe" || S == "i386pep" || S == "thumb2pe")
+    error("Windows targets are not supported on the ELF frontend: " + S);
   error("Unknown emulation: " + S);
 }
 
@@ -177,6 +179,7 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
   Config->ZNodelete = hasZOption(Args, "nodelete");
   Config->ZNow = hasZOption(Args, "now");
   Config->ZOrigin = hasZOption(Args, "origin");
+  Config->ZRelro = !hasZOption(Args, "norelro");
 
   if (auto *Arg = Args.getLastArg(OPT_O)) {
     StringRef Val = Arg->getValue();

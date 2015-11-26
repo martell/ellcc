@@ -18,6 +18,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -30,7 +31,6 @@
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Transforms/Utils/BuildLibCalls.h"
 #include "llvm/Transforms/Utils/Local.h"
 
@@ -1112,14 +1112,12 @@ Value *LibCallSimplifier::optimizePow(CallInst *CI, IRBuilder<> &B) {
       B.SetFastMathFlags(FMF);
 
       LibFunc::Func Func;
-      Function *Callee = OpC->getCalledFunction();
-      StringRef FuncName = Callee->getName();
-
-      if (TLI->getLibFunc(FuncName, Func) && TLI->has(Func) &&
-          (Func == LibFunc::exp || Func == LibFunc::exp2))
+      Function *OpCCallee = OpC->getCalledFunction();
+      if (OpCCallee && TLI->getLibFunc(OpCCallee->getName(), Func) &&
+          TLI->has(Func) && (Func == LibFunc::exp || Func == LibFunc::exp2))
         return EmitUnaryFloatFnCall(
-            B.CreateFMul(OpC->getArgOperand(0), Op2, "mul"), FuncName, B,
-            Callee->getAttributes());
+            B.CreateFMul(OpC->getArgOperand(0), Op2, "mul"),
+            OpCCallee->getName(), B, OpCCallee->getAttributes());
     }
   }
 
@@ -1382,8 +1380,7 @@ Value *LibCallSimplifier::optimizeTan(CallInst *CI, IRBuilder<> &B) {
   // tanl(atanl(x)) -> x
   LibFunc::Func Func;
   Function *F = OpC->getCalledFunction();
-  StringRef FuncName = F->getName();
-  if (TLI->getLibFunc(FuncName, Func) && TLI->has(Func) &&
+  if (F && TLI->getLibFunc(F->getName(), Func) && TLI->has(Func) &&
       ((Func == LibFunc::atan && Callee->getName() == "tan") ||
        (Func == LibFunc::atanf && Callee->getName() == "tanf") ||
        (Func == LibFunc::atanl && Callee->getName() == "tanl")))
@@ -1458,9 +1455,9 @@ LibCallSimplifier::classifyArgUse(Value *Val, BasicBlock *BB, bool IsFloat,
     return;
 
   Function *Callee = CI->getCalledFunction();
-  StringRef FuncName = Callee->getName();
   LibFunc::Func Func;
-  if (!TLI->getLibFunc(FuncName, Func) || !TLI->has(Func) || !isTrigLibCall(CI))
+  if (Callee && (!TLI->getLibFunc(Callee->getName(), Func) || !TLI->has(Func) ||
+                 !isTrigLibCall(CI)))
     return;
 
   if (IsFloat) {
@@ -2273,7 +2270,6 @@ void LibCallSimplifier::replaceAllUsesWith(Instruction *I, Value *With) {
 //   * lround(cnst) -> cnst'
 //
 // pow, powf, powl:
-//   * pow(exp(x),y)  -> exp(x*y)
 //   * pow(sqrt(x),y) -> pow(x,y*0.5)
 //   * pow(pow(x,y),z)-> pow(x,y*z)
 //
@@ -2288,9 +2284,6 @@ void LibCallSimplifier::replaceAllUsesWith(Instruction *I, Value *With) {
 //   * sqrt(expN(x))  -> expN(x*0.5)
 //   * sqrt(Nroot(x)) -> pow(x,1/(2*N))
 //   * sqrt(pow(x,y)) -> pow(|x|,y*0.5)
-//
-// tan, tanf, tanl:
-//   * tan(atan(x)) -> x
 //
 // trunc, truncf, truncl:
 //   * trunc(cnst) -> cnst'

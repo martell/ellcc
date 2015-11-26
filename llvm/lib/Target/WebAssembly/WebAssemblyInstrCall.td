@@ -12,6 +12,8 @@
 ///
 //===----------------------------------------------------------------------===//
 
+let Defs = [ARGUMENTS] in {
+
 // The call sequence start/end LLVM-isms isn't useful to WebAssembly since it's
 // a virtual ISA.
 let isCodeGenOnly = 1 in {
@@ -24,10 +26,10 @@ def : I<(outs), (ins i64imm:$amt1, i64imm:$amt2),
 multiclass CALL<WebAssemblyRegClass vt> {
   def CALL_#vt : I<(outs vt:$dst), (ins global:$callee, variable_ops),
                    [(set vt:$dst, (WebAssemblycall1 (WebAssemblywrapper tglobaladdr:$callee)))],
-                   "call    \t$callee, $dst">;
+                   "call    \t$dst, $callee">;
   def CALL_INDIRECT_#vt : I<(outs vt:$dst), (ins I32:$callee, variable_ops),
                             [(set vt:$dst, (WebAssemblycall1 I32:$callee))],
-                            "call_indirect\t$callee, $dst">;
+                            "call_indirect\t$dst, $callee">;
 }
 let Uses = [SP32, SP64], isCall = 1 in {
   defm : CALL<I32>;
@@ -42,3 +44,5 @@ let Uses = [SP32, SP64], isCall = 1 in {
                              [(WebAssemblycall0 I32:$callee)],
                              "call_indirect\t$callee">;
 } // Uses = [SP32,SP64], isCall = 1
+
+} // Defs = [ARGUMENTS]

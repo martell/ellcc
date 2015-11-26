@@ -12,7 +12,7 @@
 
 #include <string.h>
 
-__attribute__((visibility("hidden")))
+LLVM_LIBRARY_VISIBILITY
 uint64_t __llvm_profile_get_size_for_buffer(void) {
   const __llvm_profile_data *DataBegin = __llvm_profile_begin_data();
   const __llvm_profile_data *DataEnd = __llvm_profile_end_data();
@@ -27,12 +27,11 @@ uint64_t __llvm_profile_get_size_for_buffer(void) {
 
 #define PROFILE_RANGE_SIZE(Range) (Range##End - Range##Begin)
 
-__attribute__((visibility("hidden")))
+LLVM_LIBRARY_VISIBILITY
 uint64_t __llvm_profile_get_size_for_buffer_internal(
-        const __llvm_profile_data *DataBegin,
-        const __llvm_profile_data *DataEnd, const uint64_t *CountersBegin,
-        const uint64_t *CountersEnd, const char *NamesBegin,
-        const char *NamesEnd) {
+    const __llvm_profile_data *DataBegin, const __llvm_profile_data *DataEnd,
+    const uint64_t *CountersBegin, const uint64_t *CountersEnd,
+    const char *NamesBegin, const char *NamesEnd) {
   /* Match logic in __llvm_profile_write_buffer(). */
   const uint64_t NamesSize = PROFILE_RANGE_SIZE(Names) * sizeof(char);
   const uint8_t Padding = __llvm_profile_get_num_padding_bytes(NamesSize);
@@ -41,24 +40,31 @@ uint64_t __llvm_profile_get_size_for_buffer_internal(
          PROFILE_RANGE_SIZE(Counters) * sizeof(uint64_t) + NamesSize + Padding;
 }
 
-static size_t bufferWriter(const void *Data, size_t ElmSize, size_t NumElm,
-                           void **Buffer) {
-  size_t Length = ElmSize * NumElm;
-  memcpy(*Buffer, Data, Length);
-  *(char **)Buffer += Length;
-  return NumElm;
+/* The buffer writer is reponsponsible in keeping writer state
+ * across the call.
+ */
+static uint32_t bufferWriter(ProfDataIOVec *IOVecs, uint32_t NumIOVecs,
+                             void **WriterCtx) {
+  uint32_t I;
+  char **Buffer = (char **)WriterCtx;
+  for (I = 0; I < NumIOVecs; I++) {
+    size_t Length = IOVecs[I].ElmSize * IOVecs[I].NumElm;
+    memcpy(*Buffer, IOVecs[I].Data, Length);
+    *Buffer += Length;
+  }
+  return 0;
 }
 
-__attribute__((visibility("hidden"))) int
+LLVM_LIBRARY_VISIBILITY int
 __llvm_profile_write_buffer(char *Buffer) {
-  return llvmWriteProfData(Buffer, bufferWriter, 0, 0);
+  return llvmWriteProfData(bufferWriter, Buffer, 0, 0);
 }
 
-__attribute__((visibility("hidden"))) int __llvm_profile_write_buffer_internal(
+LLVM_LIBRARY_VISIBILITY int __llvm_profile_write_buffer_internal(
     char *Buffer, const __llvm_profile_data *DataBegin,
     const __llvm_profile_data *DataEnd, const uint64_t *CountersBegin,
     const uint64_t *CountersEnd, const char *NamesBegin, const char *NamesEnd) {
-  return llvmWriteProfDataImpl(Buffer, bufferWriter, DataBegin, DataEnd,
+  return llvmWriteProfDataImpl(bufferWriter, Buffer, DataBegin, DataEnd,
                                CountersBegin, CountersEnd, 0, 0, NamesBegin,
                                NamesEnd);
 }

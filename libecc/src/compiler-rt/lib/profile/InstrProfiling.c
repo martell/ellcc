@@ -12,37 +12,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-__attribute__((visibility("hidden"))) uint64_t __llvm_profile_get_magic(void) {
-  /* Magic number to detect file format and endianness.
-   *
-   * Use 255 at one end, since no UTF-8 file can use that character.  Avoid 0,
-   * so that utilities, like strings, don't grab it as a string.  129 is also
-   * invalid UTF-8, and high enough to be interesting.
-   *
-   * Use "lprofr" in the centre to stand for "LLVM Profile Raw", or "lprofR"
-   * for 32-bit platforms.
-   */
-  unsigned char R = sizeof(void *) == sizeof(uint64_t) ? 'r' : 'R';
-  return (uint64_t)255 << 56 | (uint64_t)'l' << 48 | (uint64_t)'p' << 40 |
-         (uint64_t)'r' << 32 | (uint64_t)'o' << 24 | (uint64_t)'f' << 16 |
-         (uint64_t)R << 8 | (uint64_t)129;
+LLVM_LIBRARY_VISIBILITY uint64_t __llvm_profile_get_magic(void) {
+  return sizeof(void *) == sizeof(uint64_t) ? (INSTR_PROF_RAW_MAGIC_64)
+                                            : (INSTR_PROF_RAW_MAGIC_32);
 }
 
 /* Return the number of bytes needed to add to SizeInBytes to make it
  *   the result a multiple of 8.
  */
-__attribute__((visibility("hidden"))) uint8_t
+LLVM_LIBRARY_VISIBILITY uint8_t
 __llvm_profile_get_num_padding_bytes(uint64_t SizeInBytes) {
   return 7 & (sizeof(uint64_t) - SizeInBytes % sizeof(uint64_t));
 }
 
-__attribute__((visibility("hidden"))) uint64_t
-__llvm_profile_get_version(void) {
-  /* This should be bumped any time the output format changes. */
-  return 2;
+LLVM_LIBRARY_VISIBILITY uint64_t __llvm_profile_get_version(void) {
+  return INSTR_PROF_RAW_VERSION;
 }
 
-__attribute__((visibility("hidden"))) void __llvm_profile_reset_counters(void) {
+LLVM_LIBRARY_VISIBILITY void __llvm_profile_reset_counters(void) {
   uint64_t *I = __llvm_profile_begin_counters();
   uint64_t *E = __llvm_profile_end_counters();
 
@@ -54,17 +41,19 @@ __attribute__((visibility("hidden"))) void __llvm_profile_reset_counters(void) {
   for (DI = DataBegin; DI != DataEnd; ++DI) {
     uint64_t CurrentVSiteCount = 0;
     uint32_t VKI, i;
-    if (!DI->ValueCounters)
+    if (!DI->Values)
       continue;
 
-    for (VKI = VK_FIRST; VKI <= VK_LAST; ++VKI)
+    ValueProfNode **ValueCounters = (ValueProfNode **)DI->Values;
+
+    for (VKI = IPVK_First; VKI <= IPVK_Last; ++VKI)
       CurrentVSiteCount += DI->NumValueSites[VKI];
 
     for (i = 0; i < CurrentVSiteCount; ++i) {
-      __llvm_profile_value_node *CurrentVNode = DI->ValueCounters[i];
+      ValueProfNode *CurrentVNode = ValueCounters[i];
 
       while (CurrentVNode) {
-        CurrentVNode->VData.NumTaken = 0;
+        CurrentVNode->VData.Count = 0;
         CurrentVNode = CurrentVNode->Next;
       }
     }
@@ -73,6 +62,13 @@ __attribute__((visibility("hidden"))) void __llvm_profile_reset_counters(void) {
 
 /* Total number of value profile data in bytes. */
 static uint64_t TotalValueDataSize = 0;
+
+#ifdef _MIPS_ARCH
+LLVM_LIBRARY_VISIBILITY void
+__llvm_profile_instrument_target(uint64_t TargetValue, void *Data_,
+                                 uint32_t CounterIndex) {}
+
+#else
 
 /* Allocate an array that holds the pointers to the linked lists of
  * value profile counter nodes. The number of element of the array
@@ -83,14 +79,14 @@ static uint64_t TotalValueDataSize = 0;
 static int allocateValueProfileCounters(__llvm_profile_data *Data) {
   uint64_t NumVSites = 0;
   uint32_t VKI;
-  for (VKI = VK_FIRST; VKI <= VK_LAST; ++VKI)
+  for (VKI = IPVK_First; VKI <= IPVK_Last; ++VKI)
     NumVSites += Data->NumValueSites[VKI];
 
-  __llvm_profile_value_node **Mem = (__llvm_profile_value_node **)calloc(
-      NumVSites, sizeof(__llvm_profile_value_node *));
+  ValueProfNode **Mem =
+      (ValueProfNode **)calloc(NumVSites, sizeof(ValueProfNode *));
   if (!Mem)
     return 0;
-  if (!__sync_bool_compare_and_swap(&Data->ValueCounters, 0, Mem)) {
+  if (!__sync_bool_compare_and_swap(&Data->Values, 0, Mem)) {
     free(Mem);
     return 0;
   }
@@ -104,26 +100,27 @@ static int allocateValueProfileCounters(__llvm_profile_data *Data) {
   return 1;
 }
 
-__attribute__((visibility("hidden"))) void
-__llvm_profile_instrument_target(uint64_t TargetValue, void *Data_,
+LLVM_LIBRARY_VISIBILITY void
+__llvm_profile_instrument_target(uint64_t TargetValue, void *Data,
                                  uint32_t CounterIndex) {
 
-  __llvm_profile_data *Data = (__llvm_profile_data *)Data_;
-  if (!Data)
+  __llvm_profile_data *PData = (__llvm_profile_data *)Data;
+  if (!PData)
     return;
 
-  if (!Data->ValueCounters) {
-    if (!allocateValueProfileCounters(Data))
+  if (!PData->Values) {
+    if (!allocateValueProfileCounters(PData))
       return;
   }
 
-  __llvm_profile_value_node *PrevVNode = NULL;
-  __llvm_profile_value_node *CurrentVNode = Data->ValueCounters[CounterIndex];
+  ValueProfNode **ValueCounters = (ValueProfNode **)PData->Values;
+  ValueProfNode *PrevVNode = NULL;
+  ValueProfNode *CurrentVNode = ValueCounters[CounterIndex];
 
   uint8_t VDataCount = 0;
   while (CurrentVNode) {
-    if (TargetValue == CurrentVNode->VData.TargetValue) {
-      CurrentVNode->VData.NumTaken++;
+    if (TargetValue == CurrentVNode->VData.Value) {
+      CurrentVNode->VData.Count++;
       return;
     }
     PrevVNode = CurrentVNode;
@@ -134,18 +131,17 @@ __llvm_profile_instrument_target(uint64_t TargetValue, void *Data_,
   if (VDataCount >= UCHAR_MAX)
     return;
 
-  CurrentVNode =
-      (__llvm_profile_value_node *)calloc(1, sizeof(__llvm_profile_value_node));
+  CurrentVNode = (ValueProfNode *)calloc(1, sizeof(ValueProfNode));
   if (!CurrentVNode)
     return;
 
-  CurrentVNode->VData.TargetValue = TargetValue;
-  CurrentVNode->VData.NumTaken++;
+  CurrentVNode->VData.Value = TargetValue;
+  CurrentVNode->VData.Count++;
 
   uint32_t Success = 0;
-  if (!Data->ValueCounters[CounterIndex])
-    Success = __sync_bool_compare_and_swap(&(Data->ValueCounters[CounterIndex]),
-                                           0, CurrentVNode);
+  if (!ValueCounters[CounterIndex])
+    Success = __sync_bool_compare_and_swap(&ValueCounters[CounterIndex], 0,
+                                           CurrentVNode);
   else if (PrevVNode && !PrevVNode->Next)
     Success = __sync_bool_compare_and_swap(&(PrevVNode->Next), 0, CurrentVNode);
 
@@ -153,11 +149,11 @@ __llvm_profile_instrument_target(uint64_t TargetValue, void *Data_,
     free(CurrentVNode);
     return;
   }
-  __sync_fetch_and_add(&TotalValueDataSize,
-                       Success * sizeof(__llvm_profile_value_data));
+  __sync_fetch_and_add(&TotalValueDataSize, Success * sizeof(ValueProfNode));
 }
+#endif
 
-__attribute__((visibility("hidden"))) uint64_t
+LLVM_LIBRARY_VISIBILITY uint64_t
 __llvm_profile_gather_value_data(uint8_t **VDataArray) {
 
   if (!VDataArray || 0 == TotalValueDataSize)
@@ -178,20 +174,22 @@ __llvm_profile_gather_value_data(uint8_t **VDataArray) {
     uint64_t NumVSites = 0;
     uint32_t VKI, i;
 
-    if (!I->ValueCounters)
+    if (!I->Values)
       continue;
 
-    for (VKI = VK_FIRST; VKI <= VK_LAST; ++VKI)
+    ValueProfNode **ValueCounters = (ValueProfNode **)I->Values;
+
+    for (VKI = IPVK_First; VKI <= IPVK_Last; ++VKI)
       NumVSites += I->NumValueSites[VKI];
     uint8_t Padding = __llvm_profile_get_num_padding_bytes(NumVSites);
 
     uint8_t *PerSiteCountPtr = PerSiteCountsHead;
-    __llvm_profile_value_data *VDataPtr =
-        (__llvm_profile_value_data *)(PerSiteCountPtr + NumVSites + Padding);
+    InstrProfValueData *VDataPtr =
+        (InstrProfValueData *)(PerSiteCountPtr + NumVSites + Padding);
 
     for (i = 0; i < NumVSites; ++i) {
 
-      __llvm_profile_value_node *VNode = I->ValueCounters[i];
+      ValueProfNode *VNode = ValueCounters[i];
 
       uint8_t VDataCount = 0;
       while (VNode && ((uint8_t *)(VDataPtr + 1) <= VDataEnd)) {
@@ -204,7 +202,7 @@ __llvm_profile_gather_value_data(uint8_t **VDataArray) {
       *PerSiteCountPtr = VDataCount;
       ++PerSiteCountPtr;
     }
-    I->ValueCounters = (void *)PerSiteCountsHead;
+    I->Values = (void *)PerSiteCountsHead;
     PerSiteCountsHead = (uint8_t *)VDataPtr;
   }
   return PerSiteCountsHead - *VDataArray;

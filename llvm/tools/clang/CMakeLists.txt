@@ -652,6 +652,36 @@ if (CLANG_ENABLE_BOOTSTRAP)
     set(verbose -DCMAKE_VERBOSE_MAKEFILE=On)
   endif()
 
+  set(BOOTSTRAP_DEFAULT_PASSTHROUGH
+    PACKAGE_VERSION
+    LLVM_VERSION_MAJOR
+    LLVM_VERSION_MINOR
+    LLVM_VERSION_PATCH
+    LLVM_VERSION_SUFFIX
+    CLANG_REPOSITORY_STRING
+    CMAKE_MAKE_PROGRAM)
+
+  # Find all variables that start with BOOTSTRAP_ and populate a variable with
+  # them.
+  get_cmake_property(variableNames VARIABLES)
+  foreach(variableName ${variableNames})
+    if(variableName MATCHES "^BOOTSTRAP_")
+      string(SUBSTRING ${variableName} 10 -1 varName)
+      string(REPLACE ";" "\;" value "${${variableName}}")
+      list(APPEND PASSTHROUGH_VARIABLES
+        -D${varName}=${value})
+    endif()
+  endforeach()
+
+  # Populate the passthrough variables
+  foreach(variableName ${CLANG_BOOTSTRAP_PASSTHROUGH} ${BOOTSTRAP_DEFAULT_PASSTHROUGH})
+    if(${variableName})
+      string(REPLACE ";" "\;" value ${${variableName}})
+      list(APPEND PASSTHROUGH_VARIABLES
+        -D${variableName}=${value})
+    endif()
+  endforeach()
+
   ExternalProject_Add(bootstrap
     DEPENDS clang ${LTO_DEP}
     PREFIX bootstrap
@@ -664,6 +694,7 @@ if (CLANG_ENABLE_BOOTSTRAP)
                 # seem to work, so instead I'm passing this through
                 -DCMAKE_INSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
                 ${CLANG_BOOTSTRAP_CMAKE_ARGS}
+                ${PASSTHROUGH_VARIABLES}
                 -DCMAKE_CXX_COMPILER=${LLVM_RUNTIME_OUTPUT_INTDIR}/clang++
                 -DCMAKE_C_COMPILER=${LLVM_RUNTIME_OUTPUT_INTDIR}/clang
                 -DCMAKE_ASM_COMPILER=${LLVM_RUNTIME_OUTPUT_INTDIR}/clang

@@ -17,17 +17,24 @@
 
 #define UNCONST(ptr) ((void *)(uintptr_t)(ptr))
 
-static size_t fileWriter(const void *Data, size_t ElmSize, size_t NumElm,
-                         void **File) {
-  return fwrite(Data, ElmSize, NumElm, (FILE *)*File);
+/* Return 1 if there is an error, otherwise return  0.  */
+static uint32_t fileWriter(ProfDataIOVec *IOVecs, uint32_t NumIOVecs,
+                           void **WriterCtx) {
+  uint32_t I;
+  FILE *File = (FILE *)*WriterCtx;
+  for (I = 0; I < NumIOVecs; I++) {
+    if (fwrite(IOVecs[I].Data, IOVecs[I].ElmSize, IOVecs[I].NumElm, File) !=
+        IOVecs[I].NumElm)
+      return 1;
+  }
+  return 0;
 }
-uint8_t *ValueDataBegin = NULL;
 
 static int writeFile(FILE *File) {
   uint8_t *ValueDataBegin = NULL;
   const uint64_t ValueDataSize =
       __llvm_profile_gather_value_data(&ValueDataBegin);
-  int r = llvmWriteProfData(File, fileWriter, ValueDataBegin, ValueDataSize);
+  int r = llvmWriteProfData(fileWriter, File, ValueDataBegin, ValueDataSize);
   free(ValueDataBegin);
   return r;
 }
@@ -157,7 +164,7 @@ static void setFilenameAutomatically(void) {
   resetFilenameToDefault();
 }
 
-__attribute__((visibility("hidden")))
+LLVM_LIBRARY_VISIBILITY
 void __llvm_profile_initialize_file(void) {
   /* Check if the filename has been initialized. */
   if (__llvm_profile_CurrentFilename)
@@ -167,12 +174,12 @@ void __llvm_profile_initialize_file(void) {
   setFilenameAutomatically();
 }
 
-__attribute__((visibility("hidden")))
+LLVM_LIBRARY_VISIBILITY
 void __llvm_profile_set_filename(const char *Filename) {
   setFilenamePossiblyWithPid(Filename);
 }
 
-__attribute__((visibility("hidden")))
+LLVM_LIBRARY_VISIBILITY
 void __llvm_profile_override_default_filename(const char *Filename) {
   /* If the env var is set, skip setting filename from argument. */
   const char *Env_Filename = getenv("LLVM_PROFILE_FILE");
@@ -181,7 +188,7 @@ void __llvm_profile_override_default_filename(const char *Filename) {
   setFilenamePossiblyWithPid(Filename);
 }
 
-__attribute__((visibility("hidden")))
+LLVM_LIBRARY_VISIBILITY
 int __llvm_profile_write_file(void) {
   int rc;
 
@@ -197,11 +204,9 @@ int __llvm_profile_write_file(void) {
   return rc;
 }
 
-static void writeFileWithoutReturn(void) {
-  __llvm_profile_write_file();
-}
+static void writeFileWithoutReturn(void) { __llvm_profile_write_file(); }
 
-__attribute__((visibility("hidden")))
+LLVM_LIBRARY_VISIBILITY
 int __llvm_profile_register_write_file_atexit(void) {
   static int HasBeenRegistered = 0;
 

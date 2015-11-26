@@ -1,5 +1,7 @@
 current SVN:
 
+* Fixed non-x86_64 bin directories.
+* Update to LLVM r254161.
 * Update to LLVM r253660.
 
 version 0.1.19:

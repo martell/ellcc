@@ -2103,10 +2103,14 @@ static bool DecodeAArch64Features(const Driver &D, StringRef text,
                              .Case("simd", "+neon")
                              .Case("crc", "+crc")
                              .Case("crypto", "+crypto")
+                             .Case("fp16", "+fullfp16")
+                             .Case("profile", "+spe")
                              .Case("nofp", "-fp-armv8")
                              .Case("nosimd", "-neon")
                              .Case("nocrc", "-crc")
                              .Case("nocrypto", "-crypto")
+                             .Case("nofp16", "-fullfp16")
+                             .Case("noprofile", "-spe")
                              .Default(nullptr);
     if (result)
       Features.push_back(result);
@@ -2152,6 +2156,8 @@ getAArch64ArchFeaturesFromMarch(const Driver &D, StringRef March,
     // ok, no additional features.
   } else if (Split.first == "armv8.1-a" || Split.first == "armv8.1a") {
     Features.push_back("+v8.1a");
+  } else if (Split.first == "armv8.2-a" || Split.first == "armv8.2a" ) {
+    Features.push_back("+v8.2a");
   } else {
     return false;
   }
@@ -2867,6 +2873,8 @@ static bool shouldUseFramePointer(const ArgList &Args,
   if (Arg *A = Args.getLastArg(options::OPT_fno_omit_frame_pointer,
                                options::OPT_fomit_frame_pointer))
     return A->getOption().matches(options::OPT_fno_omit_frame_pointer);
+  if (Args.hasArg(options::OPT_pg))
+    return true;
 
   return shouldUseFramePointerForTarget(Args, Triple);
 }
@@ -2876,6 +2884,8 @@ static bool shouldUseLeafFramePointer(const ArgList &Args,
   if (Arg *A = Args.getLastArg(options::OPT_mno_omit_leaf_frame_pointer,
                                options::OPT_momit_leaf_frame_pointer))
     return A->getOption().matches(options::OPT_mno_omit_leaf_frame_pointer);
+  if (Args.hasArg(options::OPT_pg))
+    return true;
 
   if (Triple.isPS4CPU())
     return false;
@@ -5764,26 +5774,6 @@ void Clang::AddClangCLArgs(const ArgList &Args, ArgStringList &CmdArgs,
       CmdArgs.push_back("msvc-fallback");
     else
       CmdArgs.push_back("msvc");
-  }
-
-  if (Arg *A =
-          Args.getLastArg(options::OPT__SLASH_W0, options::OPT__SLASH_W1,
-                          options::OPT__SLASH_W2, options::OPT__SLASH_W3,
-                          options::OPT__SLASH_W4, options::OPT__SLASH_Wall)) {
-    switch (A->getOption().getID()) {
-    case options::OPT__SLASH_W0:
-      CmdArgs.push_back("-w");
-      break;
-    case options::OPT__SLASH_W4:
-      CmdArgs.push_back("-Wextra");
-      // Fallthrough.
-    case options::OPT__SLASH_W1:
-    case options::OPT__SLASH_W2:
-    case options::OPT__SLASH_W3:
-    case options::OPT__SLASH_Wall:
-      CmdArgs.push_back("-Wall");
-      break;
-    }
   }
 }
 
@@ -8769,7 +8759,8 @@ void gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   // handled somewhere else.
   Args.ClaimAllArgs(options::OPT_w);
 
-  if (llvm::sys::path::filename(ToolChain.Linker) == "lld") {
+  const char *Exec = Args.MakeArgString(ToolChain.GetLinkerPath());
+  if (llvm::sys::path::filename(Exec) == "lld") {
     CmdArgs.push_back("-flavor");
     CmdArgs.push_back("old-gnu");
     CmdArgs.push_back("-target");
@@ -8955,8 +8946,7 @@ void gnutools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   } else if (Args.hasArg(options::OPT_rtlib_EQ))
     AddRunTimeLibs(ToolChain, D, CmdArgs, Args);
 
-  C.addCommand(llvm::make_unique<Command>(JA, *this, ToolChain.Linker.c_str(),
-                                          CmdArgs, Inputs));
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 }
 
 // NaCl ARM assembly (inline or standalone) can be written with a set of macros
@@ -9127,8 +9117,8 @@ void nacltools::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     }
   }
 
-  C.addCommand(llvm::make_unique<Command>(JA, *this, ToolChain.Linker.c_str(),
-                                          CmdArgs, Inputs));
+  const char *Exec = Args.MakeArgString(ToolChain.GetLinkerPath());
+  C.addCommand(llvm::make_unique<Command>(JA, *this, Exec, CmdArgs, Inputs));
 }
 
 void minix::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
@@ -10092,7 +10082,7 @@ void MinGW::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   StringRef LinkerName = Args.getLastArgValue(options::OPT_fuse_ld_EQ, "ld");
   if (LinkerName.equals_lower("lld")) {
     CmdArgs.push_back("-flavor");
-    CmdArgs.push_back("old-gnu");
+    CmdArgs.push_back("gnu");
   } else if (!LinkerName.equals_lower("ld")) {
     D.Diag(diag::err_drv_unsupported_linker) << LinkerName;
   }

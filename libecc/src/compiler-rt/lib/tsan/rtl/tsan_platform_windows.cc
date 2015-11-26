@@ -31,6 +31,9 @@ void FlushShadowMemory() {
 void WriteMemoryProfile(char *buf, uptr buf_size) {
 }
 
+void InitializePlatformEarly() {
+}
+
 void InitializePlatform() {
 }
 

@@ -18,7 +18,9 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/GlobalValue.h"
+#include "llvm/ProfileData/InstrProfData.inc"
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ErrorOr.h"
@@ -36,19 +38,28 @@ class Module;
 
 /// Return the name of data section containing profile counter variables.
 inline StringRef getInstrProfCountersSectionName(bool AddSegment) {
-  return AddSegment ? "__DATA,__llvm_prf_cnts" : "__llvm_prf_cnts";
+  return AddSegment ? "__DATA," INSTR_PROF_CNTS_SECT_NAME_STR
+                    : INSTR_PROF_CNTS_SECT_NAME_STR;
 }
 
 /// Return the name of data section containing names of instrumented
 /// functions.
 inline StringRef getInstrProfNameSectionName(bool AddSegment) {
-  return AddSegment ? "__DATA,__llvm_prf_names" : "__llvm_prf_names";
+  return AddSegment ? "__DATA," INSTR_PROF_NAME_SECT_NAME_STR
+                    : INSTR_PROF_NAME_SECT_NAME_STR;
 }
 
 /// Return the name of the data section containing per-function control
 /// data.
 inline StringRef getInstrProfDataSectionName(bool AddSegment) {
-  return AddSegment ? "__DATA,__llvm_prf_data" : "__llvm_prf_data";
+  return AddSegment ? "__DATA," INSTR_PROF_DATA_SECT_NAME_STR
+                    : INSTR_PROF_DATA_SECT_NAME_STR;
+}
+
+/// Return the name profile runtime entry point to do value profiling
+/// for a given site.
+inline StringRef getInstrProfValueProfFuncName() {
+  return INSTR_PROF_VALUE_PROF_FUNC_STR;
 }
 
 /// Return the name of the section containing function coverage mapping
@@ -72,7 +83,7 @@ inline StringRef getInstrProfCountersVarPrefix() {
 /// associated with a COMDAT function.
 inline StringRef getInstrProfComdatPrefix() { return "__llvm_profile_vars_"; }
 
-/// Return the name of a covarage mapping variable (internal linkage) 
+/// Return the name of a covarage mapping variable (internal linkage)
 /// for each instrumented source module. Such variables are allocated
 /// in the __llvm_covmap section.
 inline StringRef getCoverageMappingVarName() {
@@ -169,10 +180,8 @@ inline std::error_code make_error_code(instrprof_error E) {
 }
 
 enum InstrProfValueKind : uint32_t {
-  IPVK_IndirectCallTarget = 0,
-
-  IPVK_First = IPVK_IndirectCallTarget,
-  IPVK_Last = IPVK_IndirectCallTarget
+#define VALUE_PROF_KIND(Enumerator, Value) Enumerator = Value,
+#include "llvm/ProfileData/InstrProfData.inc"
 };
 
 struct InstrProfStringTable {
@@ -189,13 +198,6 @@ struct InstrProfStringTable {
     auto Result = StringValueSet.insert(Str);
     return Result.first->first().data();
   }
-};
-
-struct InstrProfValueData {
-  // Profiled value.
-  uint64_t Value;
-  // Number of times the value appears in the training run.
-  uint64_t Count;
 };
 
 struct InstrProfValueSiteRecord {
@@ -226,7 +228,7 @@ struct InstrProfValueSiteRecord {
       while (I != IE && I->Value < J->Value)
         ++I;
       if (I != IE && I->Value == J->Value) {
-        I->Count += J->Count;
+        I->Count = SaturatingAdd(I->Count, J->Count);
         ++I;
         continue;
       }
@@ -257,17 +259,22 @@ struct InstrProfRecord {
   /// site: Site.
   inline uint32_t getNumValueDataForSite(uint32_t ValueKind,
                                          uint32_t Site) const;
+  /// Return the array of profiled values at \p Site.
   inline std::unique_ptr<InstrProfValueData[]>
-  getValueForSite(uint32_t ValueKind, uint32_t Site) const;
+  getValueForSite(uint32_t ValueKind, uint32_t Site,
+                  uint64_t (*ValueMapper)(uint32_t, uint64_t) = 0) const;
+  inline void
+  getValueForSite(InstrProfValueData Dest[], uint32_t ValueKind, uint32_t Site,
+                  uint64_t (*ValueMapper)(uint32_t, uint64_t) = 0) const;
   /// Reserve space for NumValueSites sites.
   inline void reserveSites(uint32_t ValueKind, uint32_t NumValueSites);
   /// Add ValueData for ValueKind at value Site.
   inline void addValueData(uint32_t ValueKind, uint32_t Site,
                            InstrProfValueData *VData, uint32_t N,
                            ValueMapType *HashKeys);
-  /// Merge Value Profile data from Src record to this record for ValueKind.
-  inline instrprof_error mergeValueProfData(uint32_t ValueKind,
-                                            InstrProfRecord &Src);
+
+  /// Merge the counts in \p Other into this one.
+  inline instrprof_error merge(InstrProfRecord &Other);
 
   /// Used by InstrProfWriter: update the value strings to commoned strings in
   /// the writer instance.
@@ -317,6 +324,21 @@ private:
     }
     return Value;
   }
+
+  // Merge Value Profile data from Src record to this record for ValueKind.
+  instrprof_error mergeValueProfData(uint32_t ValueKind, InstrProfRecord &Src) {
+    uint32_t ThisNumValueSites = getNumValueSites(ValueKind);
+    uint32_t OtherNumValueSites = Src.getNumValueSites(ValueKind);
+    if (ThisNumValueSites != OtherNumValueSites)
+      return instrprof_error::value_site_count_mismatch;
+    std::vector<InstrProfValueSiteRecord> &ThisSiteRecords =
+        getValueSitesForKind(ValueKind);
+    std::vector<InstrProfValueSiteRecord> &OtherSiteRecords =
+        Src.getValueSitesForKind(ValueKind);
+    for (uint32_t I = 0; I < ThisNumValueSites; I++)
+      ThisSiteRecords[I].mergeValueData(OtherSiteRecords[I]);
+    return instrprof_error::success;
+  }
 };
 
 uint32_t InstrProfRecord::getNumValueKinds() const {
@@ -345,21 +367,29 @@ uint32_t InstrProfRecord::getNumValueDataForSite(uint32_t ValueKind,
   return getValueSitesForKind(ValueKind)[Site].ValueData.size();
 }
 
-std::unique_ptr<InstrProfValueData[]>
-InstrProfRecord::getValueForSite(uint32_t ValueKind, uint32_t Site) const {
+std::unique_ptr<InstrProfValueData[]> InstrProfRecord::getValueForSite(
+    uint32_t ValueKind, uint32_t Site,
+    uint64_t (*ValueMapper)(uint32_t, uint64_t)) const {
   uint32_t N = getNumValueDataForSite(ValueKind, Site);
   if (N == 0)
     return std::unique_ptr<InstrProfValueData[]>(nullptr);
 
-  std::unique_ptr<InstrProfValueData[]> VD(new InstrProfValueData[N]);
-  uint32_t I = 0;
-  for (auto V : getValueSitesForKind(ValueKind)[Site].ValueData) {
-    VD[I] = V;
-    I++;
-  }
-  assert(I == N);
+  auto VD = llvm::make_unique<InstrProfValueData[]>(N);
+  getValueForSite(VD.get(), ValueKind, Site, ValueMapper);
 
   return VD;
+}
+
+void InstrProfRecord::getValueForSite(InstrProfValueData Dest[],
+                                      uint32_t ValueKind, uint32_t Site,
+                                      uint64_t (*ValueMapper)(uint32_t,
+                                                              uint64_t)) const {
+  uint32_t I = 0;
+  for (auto V : getValueSitesForKind(ValueKind)[Site].ValueData) {
+    Dest[I].Value = ValueMapper ? ValueMapper(ValueKind, V.Value) : V.Value;
+    Dest[I].Count = V.Count;
+    I++;
+  }
 }
 
 void InstrProfRecord::addValueData(uint32_t ValueKind, uint32_t Site,
@@ -382,21 +412,6 @@ void InstrProfRecord::reserveSites(uint32_t ValueKind, uint32_t NumValueSites) {
   ValueSites.reserve(NumValueSites);
 }
 
-instrprof_error InstrProfRecord::mergeValueProfData(uint32_t ValueKind,
-                                                    InstrProfRecord &Src) {
-  uint32_t ThisNumValueSites = getNumValueSites(ValueKind);
-  uint32_t OtherNumValueSites = Src.getNumValueSites(ValueKind);
-  if (ThisNumValueSites != OtherNumValueSites)
-    return instrprof_error::value_site_count_mismatch;
-  std::vector<InstrProfValueSiteRecord> &ThisSiteRecords =
-      getValueSitesForKind(ValueKind);
-  std::vector<InstrProfValueSiteRecord> &OtherSiteRecords =
-      Src.getValueSitesForKind(ValueKind);
-  for (uint32_t I = 0; I < ThisNumValueSites; I++)
-    ThisSiteRecords[I].mergeValueData(OtherSiteRecords[I]);
-  return instrprof_error::success;
-}
-
 void InstrProfRecord::updateStrings(InstrProfStringTable *StrTab) {
   if (!StrTab)
     return;
@@ -407,13 +422,34 @@ void InstrProfRecord::updateStrings(InstrProfStringTable *StrTab) {
       VData.Value = (uint64_t)StrTab->insertString((const char *)VData.Value);
 }
 
+instrprof_error InstrProfRecord::merge(InstrProfRecord &Other) {
+  // If the number of counters doesn't match we either have bad data
+  // or a hash collision.
+  if (Counts.size() != Other.Counts.size())
+    return instrprof_error::count_mismatch;
+
+  for (size_t I = 0, E = Other.Counts.size(); I < E; ++I) {
+    if (Counts[I] + Other.Counts[I] < Counts[I])
+      return instrprof_error::counter_overflow;
+    Counts[I] += Other.Counts[I];
+  }
+
+  for (uint32_t Kind = IPVK_First; Kind <= IPVK_Last; ++Kind) {
+    instrprof_error result = mergeValueProfData(Kind, Other);
+    if (result != instrprof_error::success)
+      return result;
+  }
+
+  return instrprof_error::success;
+}
+
 inline support::endianness getHostEndianness() {
   return sys::IsLittleEndianHost ? support::little : support::big;
 }
 
 /// This is the header of the data structure that defines the on-disk
 /// layout of the value profile data of a particular kind for one function.
-struct ValueProfRecord {
+typedef struct ValueProfRecord {
   // The kind of the value profile record.
   uint32_t Kind;
   // The number of value profile sites. It is guaranteed to be non-zero;
@@ -433,37 +469,20 @@ struct ValueProfRecord {
   // of all elements in SiteCountArray[].
   // InstrProfValueData ValueData[];
 
-  /// Return the \c ValueProfRecord header size including the padding bytes.
-  static uint32_t getHeaderSize(uint32_t NumValueSites);
-  /// Return the total size of the value profile record including the
-  /// header and the value data.
-  static uint32_t getSize(uint32_t NumValueSites, uint32_t NumValueData);
-  /// Return the total size of the value profile record including the
-  /// header and the value data.
-  uint32_t getSize() const { return getSize(NumValueSites, getNumValueData()); }
-  /// Use this method to advance to the next \c ValueProfRecord.
-  ValueProfRecord *getNext();
-  /// Return the pointer to the first value profile data.
-  InstrProfValueData *getValueData();
   /// Return the number of value sites.
   uint32_t getNumValueSites() const { return NumValueSites; }
-  /// Return the number of value data.
-  uint32_t getNumValueData() const;
   /// Read data from this record and save it to Record.
   void deserializeTo(InstrProfRecord &Record,
                      InstrProfRecord::ValueMapType *VMap);
-  /// Extract data from \c Record and serialize into this instance.
-  void serializeFrom(const InstrProfRecord &Record, uint32_t ValueKind,
-                     uint32_t NumValueSites);
   /// In-place byte swap:
   /// Do byte swap for this instance. \c Old is the original order before
   /// the swap, and \c New is the New byte order.
   void swapBytes(support::endianness Old, support::endianness New);
-};
+} ValueProfRecord;
 
 /// Per-function header/control data structure for value profiling
 /// data in indexed format.
-struct ValueProfData {
+typedef struct ValueProfData {
   // Total size in bytes including this field. It must be a multiple
   // of sizeof(uint64_t).
   uint32_t TotalSize;
@@ -502,9 +521,134 @@ struct ValueProfData {
   /// Read data from this data and save it to \c Record.
   void deserializeTo(InstrProfRecord &Record,
                      InstrProfRecord::ValueMapType *VMap);
-  /// Return the first \c ValueProfRecord instance.
-  ValueProfRecord *getFirstValueProfRecord();
-};
+} ValueProfData;
+
+/* The closure is designed to abstact away two types of value profile data:
+ *  - InstrProfRecord which is the primary data structure used to
+ *    represent profile data in host tools (reader, writer, and profile-use)
+ * - value profile runtime data structure suitable to be used by C
+ *    runtime library.
+ *
+ * Both sources of data need to serialize to disk/memory-buffer in common
+ * format: ValueProfData. The abstraction allows compiler-rt's raw profiler
+ * writer to share * the same code with indexed profile writer.
+ *
+ * For documentation of the member methods below, refer to corresponding methods
+ * in class InstrProfRecord.
+ */
+typedef struct ValueProfRecordClosure {
+  const void *Record;
+  uint32_t (*GetNumValueKinds)(const void *Record);
+  uint32_t (*GetNumValueSites)(const void *Record, uint32_t VKind);
+  uint32_t (*GetNumValueData)(const void *Record, uint32_t VKind);
+  uint32_t (*GetNumValueDataForSite)(const void *R, uint32_t VK, uint32_t S);
+
+  /* After extracting the value profile data from the value profile record,
+   * this method is used to map the in-memory value to on-disk value. If
+   * the method is null, value will be written out untranslated.
+   */
+  uint64_t (*RemapValueData)(uint32_t, uint64_t Value);
+  void (*GetValueForSite)(const void *R, InstrProfValueData *Dst, uint32_t K,
+                          uint32_t S, uint64_t (*Mapper)(uint32_t, uint64_t));
+  ValueProfData *(*AllocValueProfData)(size_t TotalSizeInBytes);
+} ValueProfRecordClosure;
+
+/* A wrapper struct that represents value profile runtime data.
+ * Like InstrProfRecord class which is used by profiling host tools,
+ * ValueProfRuntimeRecord also implements the abstract intefaces defined in
+ * ValueProfRecordClosure so that the runtime data can be serialized using
+ * shared C implementation. In this structure, NumValueSites and Nodes
+ * members are the primary fields while other fields hold the derived
+ * information for fast implementation of closure interfaces.
+ */
+typedef struct ValueProfRuntimeRecord {
+  /* Number of sites for each value profile kind.  */
+  uint16_t *NumValueSites;
+  /* An array of linked-list headers. The size of of the array is the
+   * total number of value profile sites : sum(NumValueSites[*])). Each
+   * linked-list stores the values profiled for a value profile site. */
+  ValueProfNode **Nodes;
+
+  /* Total number of value profile kinds which have at least one
+   *  value profile sites. */
+  uint32_t NumValueKinds;
+  /* An array recording the number of values tracked at each site.
+   * The size of the array is TotalNumValueSites.
+   */
+  uint8_t *SiteCountArray[IPVK_Last + 1];
+  ValueProfNode **NodesKind[IPVK_Last + 1];
+} ValueProfRuntimeRecord;
+
+/* Initialize the record for runtime value profile data.  */
+void initializeValueProfRuntimeRecord(ValueProfRuntimeRecord *RuntimeRecord,
+                                      uint16_t *NumValueSites,
+                                      ValueProfNode **Nodes);
+
+/* Release memory allocated for the runtime record.  */
+void finalizeValueProfRuntimeRecord(ValueProfRuntimeRecord *RuntimeRecord);
+
+/* Return the size of ValueProfData structure that can be used to store
+   the value profile data collected at runtime. */
+uint32_t getValueProfDataSizeRT(const ValueProfRuntimeRecord *Record);
+
+/* Return a ValueProfData instance that stores the data collected at runtime. */
+ValueProfData *
+serializeValueProfDataFromRT(const ValueProfRuntimeRecord *Record);
+
+
+/*! \brief Return the \c ValueProfRecord header size including the
+ * padding bytes.
+ */
+inline uint32_t getValueProfRecordHeaderSize(uint32_t NumValueSites) {
+  uint32_t Size = offsetof(ValueProfRecord, SiteCountArray) +
+                  sizeof(uint8_t) * NumValueSites;
+  // Round the size to multiple of 8 bytes.
+  Size = (Size + 7) & ~7;
+  return Size;
+}
+
+/*! \brief Return the total size of the value profile record including the
+ * header and the value data.
+ */
+inline uint32_t getValueProfRecordSize(uint32_t NumValueSites,
+                                       uint32_t NumValueData) {
+  return getValueProfRecordHeaderSize(NumValueSites) +
+         sizeof(InstrProfValueData) * NumValueData;
+}
+
+/*! \brief Return the pointer to the start of value data array.
+ */
+inline InstrProfValueData *getValueProfRecordValueData(ValueProfRecord *This) {
+  return (InstrProfValueData *)((char *)This + getValueProfRecordHeaderSize(
+                                                   This->NumValueSites));
+}
+
+/*! \brief Return the total number of value data for \c This record.
+ */
+inline uint32_t getValueProfRecordNumValueData(ValueProfRecord *This) {
+  uint32_t NumValueData = 0;
+  uint32_t I;
+  for (I = 0; I < This->NumValueSites; I++)
+    NumValueData += This->SiteCountArray[I];
+  return NumValueData;
+}
+
+/* \brief Use this method to advance to the next \c This \c ValueProfRecord.
+ */
+inline ValueProfRecord *getValueProfRecordNext(ValueProfRecord *This) {
+  uint32_t NumValueData = getValueProfRecordNumValueData(This);
+  return (ValueProfRecord *)((char *)This +
+                             getValueProfRecordSize(This->NumValueSites,
+                                                    NumValueData));
+}
+
+/*! \brief Return the first \c ValueProfRecord instance.
+ */
+inline ValueProfRecord *getFirstValueProfRecord(ValueProfData *This) {
+  return (ValueProfRecord *)((char *)This + sizeof(ValueProfData));
+}
+
+
 
 namespace IndexedInstrProf {
 
@@ -551,31 +695,15 @@ struct Header {
 
 namespace RawInstrProf {
 
-const uint64_t Version = 2;
+const uint64_t Version = INSTR_PROF_RAW_VERSION;
 
-// Magic number to detect file format and endianness.
-// Use 255 at one end, since no UTF-8 file can use that character.  Avoid 0,
-// so that utilities, like strings, don't grab it as a string.  129 is also
-// invalid UTF-8, and high enough to be interesting.
-// Use "lprofr" in the centre to stand for "LLVM Profile Raw", or "lprofR"
-// for 32-bit platforms.
-// The magic and version need to be kept in sync with
-// projects/compiler-rt/lib/profile/InstrProfiling.c
-
-template <class IntPtrT>
-inline uint64_t getMagic();
-template <>
-inline uint64_t getMagic<uint64_t>() {
-  return uint64_t(255) << 56 | uint64_t('l') << 48 | uint64_t('p') << 40 |
-         uint64_t('r') << 32 | uint64_t('o') << 24 | uint64_t('f') << 16 |
-         uint64_t('r') << 8 | uint64_t(129);
+template <class IntPtrT> inline uint64_t getMagic();
+template <> inline uint64_t getMagic<uint64_t>() {
+  return INSTR_PROF_RAW_MAGIC_64;
 }
 
-template <>
-inline uint64_t getMagic<uint32_t>() {
-  return uint64_t(255) << 56 | uint64_t('l') << 48 | uint64_t('p') << 40 |
-         uint64_t('r') << 32 | uint64_t('o') << 24 | uint64_t('f') << 16 |
-         uint64_t('R') << 8 | uint64_t(129);
+template <> inline uint64_t getMagic<uint32_t>() {
+  return INSTR_PROF_RAW_MAGIC_32;
 }
 
 // Per-function profile data header/control structure.
@@ -593,16 +721,8 @@ template <class IntPtrT> struct LLVM_ALIGNAS(8) ProfileData {
 // compiler-rt/lib/profile/InstrProfilingFile.c  and
 // InstrProfilingBuffer.c.
 struct Header {
-  const uint64_t Magic;
-  const uint64_t Version;
-  const uint64_t DataSize;
-  const uint64_t CountersSize;
-  const uint64_t NamesSize;
-  const uint64_t CountersDelta;
-  const uint64_t NamesDelta;
-  const uint64_t ValueKindLast;
-  const uint64_t ValueDataSize;
-  const uint64_t ValueDataDelta;
+#define INSTR_PROF_RAW_HEADER(Type, Name, Init) const Type Name;
+#include "llvm/ProfileData/InstrProfData.inc"
 };
 
 }  // end namespace RawInstrProf

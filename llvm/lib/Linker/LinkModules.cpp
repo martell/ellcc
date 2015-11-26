@@ -428,7 +428,7 @@ class ModuleLinker {
 
   /// Function index passed into ModuleLinker for using in function
   /// importing/exporting handling.
-  FunctionInfoIndex *ImportIndex;
+  const FunctionInfoIndex *ImportIndex;
 
   /// Function to import from source module, all other functions are
   /// imported as declarations instead of definitions.
@@ -448,7 +448,7 @@ class ModuleLinker {
 public:
   ModuleLinker(Module *dstM, Linker::IdentifiedStructTypeSet &Set, Module *srcM,
                DiagnosticHandlerFunction DiagnosticHandler, unsigned Flags,
-               FunctionInfoIndex *Index = nullptr,
+               const FunctionInfoIndex *Index = nullptr,
                Function *FuncToImport = nullptr)
       : DstM(dstM), SrcM(srcM), TypeMap(Set),
         ValMaterializer(TypeMap, DstM, LazilyLinkGlobalValues, this),
@@ -517,11 +517,11 @@ private:
   GlobalValue *getLinkedToGlobal(const GlobalValue *SrcGV) {
     // If the source has no name it can't link.  If it has local linkage,
     // there is no name match-up going on.
-    if (!SrcGV->hasName() || SrcGV->hasLocalLinkage())
+    if (!SrcGV->hasName() || GlobalValue::isLocalLinkage(getLinkage(SrcGV)))
       return nullptr;
 
     // Otherwise see if we have a match in the destination module's symtab.
-    GlobalValue *DGV = DstM->getNamedValue(SrcGV->getName());
+    GlobalValue *DGV = DstM->getNamedValue(getName(SrcGV));
     if (!DGV)
       return nullptr;
 
@@ -2088,7 +2088,8 @@ void Linker::deleteModule() {
   Composite = nullptr;
 }
 
-bool Linker::linkInModule(Module *Src, unsigned Flags, FunctionInfoIndex *Index,
+bool Linker::linkInModule(Module *Src, unsigned Flags,
+                          const FunctionInfoIndex *Index,
                           Function *FuncToImport) {
   ModuleLinker TheLinker(Composite, IdentifiedStructTypes, Src,
                          DiagnosticHandler, Flags, Index, FuncToImport);

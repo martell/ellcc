@@ -13,8 +13,11 @@
 #ifdef _MSC_VER
 # define LLVM_ALIGNAS(x) __declspec(align(x))
 #elif __GNUC__
-# define LLVM_ALIGNAS(x) __attribute__((aligned(x)))
+#define LLVM_ALIGNAS(x) __attribute__((aligned(x)))
 #endif
+
+#define LLVM_LIBRARY_VISIBILITY __attribute__((visibility("hidden")))
+#define LLVM_SECTION(Sect) __attribute__((section(Sect)))
 
 #if defined(__FreeBSD__) && defined(__i386__)
 
@@ -22,8 +25,17 @@
  * FreeBSD 10, r232261) when compiled in 32-bit mode.
  */
 #define PRIu64 "llu"
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
 typedef unsigned long long uint64_t;
+#elif defined(__FreeBSD__) && defined(__x86_64__)
+#define PRIu64 "lu"
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+typedef unsigned long long uint64_t;
+typedef unsigned long int uintptr_t;
 
 #else /* defined(__FreeBSD__) && defined(__i386__) */
 
@@ -32,44 +44,22 @@ typedef unsigned long long uint64_t;
 
 #endif /* defined(__FreeBSD__) && defined(__i386__) */
 
-typedef enum ValueKind {
-  VK_IndirectCallTarget = 0,
-  VK_FIRST = VK_IndirectCallTarget,
-  VK_LAST = VK_IndirectCallTarget
-} __llvm_profile_value_kind;
+#include "InstrProfData.inc"
 
-typedef struct __llvm_profile_value_data {
-  uint64_t TargetValue;
-  uint64_t NumTaken;
-} __llvm_profile_value_data;
+enum ValueKind {
+#define VALUE_PROF_KIND(Enumerator, Value) Enumerator = Value,
+#include "InstrProfData.inc"
+};
 
-typedef struct __llvm_profile_value_node {
-  __llvm_profile_value_data VData;
-  struct __llvm_profile_value_node *Next;
-} __llvm_profile_value_node;
-
-typedef struct LLVM_ALIGNAS(8) __llvm_profile_data {
-  const uint32_t NameSize;
-  const uint32_t NumCounters;
-  const uint64_t FuncHash;
-  const char *const NamePtr;
-  uint64_t *const CounterPtr;
-  const uint8_t *FunctionPointer;
-  __llvm_profile_value_node **ValueCounters;
-  const uint16_t NumValueSites[VK_LAST + 1];
+typedef void *IntPtrT;
+typedef struct LLVM_ALIGNAS(INSTR_PROF_DATA_ALIGNMENT) __llvm_profile_data {
+#define INSTR_PROF_DATA(Type, LLVMType, Name, Initializer) Type Name;
+#include "InstrProfData.inc"
 } __llvm_profile_data;
 
 typedef struct __llvm_profile_header {
-  uint64_t Magic;
-  uint64_t Version;
-  uint64_t DataSize;
-  uint64_t CountersSize;
-  uint64_t NamesSize;
-  uint64_t CountersDelta;
-  uint64_t NamesDelta;
-  uint64_t ValueKindLast;
-  uint64_t ValueDataSize;
-  uint64_t ValueDataDelta;
+#define INSTR_PROF_RAW_HEADER(Type, Name, Initializer) Type Name;
+#include "InstrProfData.inc"
 } __llvm_profile_header;
 
 /*!
@@ -109,15 +99,19 @@ void __llvm_profile_reset_counters(void);
  *
  * Records the target value for the CounterIndex if not seen before. Otherwise,
  * increments the counter associated w/ the target value.
+ * void __llvm_profile_instrument_target(uint64_t TargetValue, void *Data,
+ *                                       uint32_t CounterIndex);
  */
-void __llvm_profile_instrument_target(uint64_t TargetValue,
-  void *Data_, uint32_t CounterIndex);
+void INSTR_PROF_VALUE_PROF_FUNC(
+#define VALUE_PROF_FUNC_PARAM(ArgType, ArgName, ArgLLVMType) ArgType ArgName
+#include "InstrProfData.inc"
+);
 
 /*!
  * \brief Prepares the value profiling data for output.
  *
  * Prepares a single __llvm_profile_value_data array out of the many
- * __llvm_profile_value_node trees (one per instrumented function).
+ * ValueProfNode trees (one per instrumented function).
  */
 uint64_t __llvm_profile_gather_value_data(uint8_t **DataArray);
 

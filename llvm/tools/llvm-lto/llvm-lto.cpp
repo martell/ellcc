@@ -190,29 +190,6 @@ static int listSymbols(StringRef Command, const TargetOptions &Options) {
   return 0;
 }
 
-/// Parse the function index out of an IR file and return the function
-/// index object if found, or nullptr if not.
-static std::unique_ptr<FunctionInfoIndex>
-getFunctionIndexForFile(StringRef Path, std::string &Error,
-                        DiagnosticHandlerFunction DiagnosticHandler) {
-  std::unique_ptr<MemoryBuffer> Buffer;
-  ErrorOr<std::unique_ptr<MemoryBuffer>> BufferOrErr =
-      MemoryBuffer::getFile(Path);
-  if (std::error_code EC = BufferOrErr.getError()) {
-    Error = EC.message();
-    return nullptr;
-  }
-  Buffer = std::move(BufferOrErr.get());
-  ErrorOr<std::unique_ptr<object::FunctionIndexObjectFile>> ObjOrErr =
-      object::FunctionIndexObjectFile::create(Buffer->getMemBufferRef(),
-                                              DiagnosticHandler);
-  if (std::error_code EC = ObjOrErr.getError()) {
-    Error = EC.message();
-    return nullptr;
-  }
-  return (*ObjOrErr)->takeIndex();
-}
-
 /// Create a combined index file from the input IR files and write it.
 ///
 /// This is meant to enable testing of ThinLTO combined index generation,
@@ -221,14 +198,18 @@ static int createCombinedFunctionIndex(StringRef Command) {
   FunctionInfoIndex CombinedIndex;
   uint64_t NextModuleId = 0;
   for (auto &Filename : InputFilenames) {
-    std::string Error;
-    std::unique_ptr<FunctionInfoIndex> Index =
-        getFunctionIndexForFile(Filename, Error, diagnosticHandler);
-    if (!Index) {
+    ErrorOr<std::unique_ptr<FunctionInfoIndex>> IndexOrErr =
+        llvm::getFunctionIndexForFile(Filename, diagnosticHandler);
+    if (std::error_code EC = IndexOrErr.getError()) {
+      std::string Error = EC.message();
       errs() << Command << ": error loading file '" << Filename
              << "': " << Error << "\n";
       return 1;
     }
+    std::unique_ptr<FunctionInfoIndex> Index = std::move(IndexOrErr.get());
+    // Skip files without a function summary.
+    if (!Index)
+      continue;
     CombinedIndex.mergeFrom(std::move(Index), ++NextModuleId);
   }
   std::error_code EC;

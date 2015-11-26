@@ -366,7 +366,7 @@ std::string ToolChain::GetLinkerPath() const {
     return "";
   }
 
-  return GetProgramPath("ld");
+  return GetProgramPath(DefaultLinker);
 }
 
 types::ID ToolChain::LookupTypeForExtension(const char *Ext) const {
@@ -626,7 +626,8 @@ void ToolChain::AddCXXStdlibLibArgs(const ArgList &Args,
 void ToolChain::AddFilePathLibArgs(const ArgList &Args,
                                    ArgStringList &CmdArgs) const {
   for (const auto &LibPath : getFilePaths())
-    CmdArgs.push_back(Args.MakeArgString(StringRef("-L") + LibPath));
+    if(LibPath.length() > 0)
+      CmdArgs.push_back(Args.MakeArgString(StringRef("-L") + LibPath));
 }
 
 void ToolChain::AddCCKextLibArgs(const ArgList &Args,

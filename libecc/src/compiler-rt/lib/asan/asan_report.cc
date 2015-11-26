@@ -30,7 +30,7 @@ namespace __asan {
 static void (*error_report_callback)(const char*);
 static char *error_message_buffer = nullptr;
 static uptr error_message_buffer_pos = 0;
-static uptr error_message_buffer_size = 0;
+static BlockingMutex error_message_buf_mutex(LINKER_INITIALIZED);
 
 struct ReportData {
   uptr pc;
@@ -46,16 +46,20 @@ static bool report_happened = false;
 static ReportData report_data = {};
 
 void AppendToErrorMessageBuffer(const char *buffer) {
-  if (error_message_buffer) {
-    uptr length = internal_strlen(buffer);
-    CHECK_GE(error_message_buffer_size, error_message_buffer_pos);
-    uptr remaining = error_message_buffer_size - error_message_buffer_pos;
-    internal_strncpy(error_message_buffer + error_message_buffer_pos,
-                     buffer, remaining);
-    error_message_buffer[error_message_buffer_size - 1] = '\0';
-    // FIXME: reallocate the buffer instead of truncating the message.
-    error_message_buffer_pos += Min(remaining, length);
+  BlockingMutexLock l(&error_message_buf_mutex);
+  if (!error_message_buffer) {
+    error_message_buffer =
+      (char*)MmapOrDieQuietly(kErrorMessageBufferSize, __func__);
+    error_message_buffer_pos = 0;
   }
+  uptr length = internal_strlen(buffer);
+  RAW_CHECK(kErrorMessageBufferSize >= error_message_buffer_pos);
+  uptr remaining = kErrorMessageBufferSize - error_message_buffer_pos;
+  internal_strncpy(error_message_buffer + error_message_buffer_pos,
+                   buffer, remaining);
+  error_message_buffer[kErrorMessageBufferSize - 1] = '\0';
+  // FIXME: reallocate the buffer instead of truncating the message.
+  error_message_buffer_pos += Min(remaining, length);
 }
 
 // ---------------------- Decorator ------------------------------ {{{1
@@ -684,8 +688,23 @@ class ScopedInErrorReport {
     // Print memory stats.
     if (flags()->print_stats)
       __asan_print_accumulated_stats();
+
+    // Copy the message buffer so that we could start logging without holding a
+    // lock that gets aquired during printing.
+    InternalScopedBuffer<char> buffer_copy(kErrorMessageBufferSize);
+    {
+      BlockingMutexLock l(&error_message_buf_mutex);
+      internal_memcpy(buffer_copy.data(),
+                      error_message_buffer, kErrorMessageBufferSize);
+    }
+
+    // Remove color sequences since logs cannot print them.
+    RemoveANSIEscapeSequencesFromString(buffer_copy.data());
+
+    LogFullErrorReport(buffer_copy.data());
+
     if (error_report_callback) {
-      error_report_callback(error_message_buffer);
+      error_report_callback(buffer_copy.data());
     }
     CommonSanitizerReportMutex.Unlock();
     reporting_thread_tid_ = kInvalidTid;
@@ -1116,13 +1135,8 @@ void __asan_report_error(uptr pc, uptr bp, uptr sp, uptr addr, int is_write,
 }
 
 void NOINLINE __asan_set_error_report_callback(void (*callback)(const char*)) {
+  BlockingMutexLock l(&error_message_buf_mutex);
   error_report_callback = callback;
-  if (callback) {
-    error_message_buffer_size = 1 << 16;
-    error_message_buffer =
-        (char*)MmapOrDie(error_message_buffer_size, __func__);
-    error_message_buffer_pos = 0;
-  }
 }
 
 void __asan_describe_address(uptr addr) {

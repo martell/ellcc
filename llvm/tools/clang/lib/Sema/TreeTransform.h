@@ -1648,8 +1648,33 @@ public:
   OMPClause *RebuildOMPDeviceClause(Expr *Device, SourceLocation StartLoc,
                                     SourceLocation LParenLoc,
                                     SourceLocation EndLoc) {
-    return getSema().ActOnOpenMPDeviceClause(Device, StartLoc, LParenLoc, 
+    return getSema().ActOnOpenMPDeviceClause(Device, StartLoc, LParenLoc,
                                              EndLoc);
+  }
+
+  /// \brief Build a new OpenMP 'map' clause.
+  ///
+  /// By default, performs semantic analysis to build the new OpenMP clause.
+  /// Subclasses may override this routine to provide different behavior.
+  OMPClause *RebuildOMPMapClause(
+      OpenMPMapClauseKind MapTypeModifier, OpenMPMapClauseKind MapType,
+      SourceLocation MapLoc, SourceLocation ColonLoc, ArrayRef<Expr *> VarList,
+      SourceLocation StartLoc, SourceLocation LParenLoc,
+      SourceLocation EndLoc) {
+    return getSema().ActOnOpenMPMapClause(MapTypeModifier, MapType, MapLoc,
+                                          ColonLoc, VarList,StartLoc,
+                                          LParenLoc, EndLoc);
+  }
+
+  /// \brief Build a new OpenMP 'num_teams' clause.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  OMPClause *RebuildOMPNumTeamsClause(Expr *NumTeams, SourceLocation StartLoc,
+                                      SourceLocation LParenLoc,
+                                      SourceLocation EndLoc) {
+    return getSema().ActOnOpenMPNumTeamsClause(NumTeams, StartLoc, LParenLoc, 
+                                               EndLoc);
   }
 
   /// \brief Rebuild the operand to an Objective-C \@synchronized statement.
@@ -6894,6 +6919,25 @@ TreeTransform<Derived>::TransformMSPropertyRefExpr(MSPropertyRefExpr *E) {
 }
 
 template <typename Derived>
+ExprResult TreeTransform<Derived>::TransformMSPropertySubscriptExpr(
+    MSPropertySubscriptExpr *E) {
+  auto BaseRes = getDerived().TransformExpr(E->getBase());
+  if (BaseRes.isInvalid())
+    return ExprError();
+  auto IdxRes = getDerived().TransformExpr(E->getIdx());
+  if (IdxRes.isInvalid())
+    return ExprError();
+
+  if (!getDerived().AlwaysRebuild() &&
+      BaseRes.get() == E->getBase() &&
+      IdxRes.get() == E->getIdx())
+    return E;
+
+  return getDerived().RebuildArraySubscriptExpr(
+      BaseRes.get(), SourceLocation(), IdxRes.get(), E->getRBracketLoc());
+}
+
+template <typename Derived>
 StmtResult TreeTransform<Derived>::TransformSEHTryStmt(SEHTryStmt *S) {
   StmtResult TryBlock = getDerived().TransformCompoundStmt(S->getTryBlock());
   if (TryBlock.isInvalid())
@@ -7645,6 +7689,32 @@ TreeTransform<Derived>::TransformOMPDeviceClause(OMPDeviceClause *C) {
   if (E.isInvalid())
     return nullptr;
   return getDerived().RebuildOMPDeviceClause(
+      E.get(), C->getLocStart(), C->getLParenLoc(), C->getLocEnd());
+}
+
+template <typename Derived>
+OMPClause *TreeTransform<Derived>::TransformOMPMapClause(OMPMapClause *C) {
+  llvm::SmallVector<Expr *, 16> Vars;
+  Vars.reserve(C->varlist_size());
+  for (auto *VE : C->varlists()) {
+    ExprResult EVar = getDerived().TransformExpr(cast<Expr>(VE));
+    if (EVar.isInvalid())
+      return nullptr;
+    Vars.push_back(EVar.get());
+  }
+  return getDerived().RebuildOMPMapClause(
+      C->getMapTypeModifier(), C->getMapType(), C->getMapLoc(),
+      C->getColonLoc(), Vars, C->getLocStart(), C->getLParenLoc(),
+      C->getLocEnd());
+}
+
+template <typename Derived>
+OMPClause *
+TreeTransform<Derived>::TransformOMPNumTeamsClause(OMPNumTeamsClause *C) {
+  ExprResult E = getDerived().TransformExpr(C->getNumTeams());
+  if (E.isInvalid())
+    return nullptr;
+  return getDerived().RebuildOMPNumTeamsClause(
       E.get(), C->getLocStart(), C->getLParenLoc(), C->getLocEnd());
 }
 
