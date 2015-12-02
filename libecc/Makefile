@@ -222,6 +222,36 @@ $(Configs)::
 	cp -p $*/src/vis.h ../include ; \
 	cp -p $*/src/editline/readline.h ../include
 
+$(Configs)::
+	$(OUT)$(MAKE) $(MFLAGS) $@.mbedtls.configure && \
+	$(MAKE) $(MFLAGS) $@.mbedtls.build && \
+	$(MAKE) $(MFLAGS) $@.mbedtls.install
+
+%.mbedtls.configure:
+	$(OUT)if [ -e mbedtls-build/$*/Makefile ] ; then \
+	  echo Configuring mbedtls for $* aready done ; \
+	else  \
+	  echo Configuring mbedtls for $* in mbedtls-build/$* ; \
+	  mkdir -p mbedtls-build/$* ; \
+	  cp -pr src/mbedtls/* mbedtls-build/$* ; \
+	fi
+
+%.mbedtls.build:
+	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+            AR=$(ELLCC)/bin/ecc-ar \
+            RANLIB=$(ELLCC)/bin/ecc-ranlib \
+            -C mbedtls-build/$*
+
+%.mbedtls.install:
+	$(OUT)cd mbedtls-build/$* ; \
+	echo Installing mbedtls for $*; \
+	mkdir -p ../../include/mbedtls; \
+	cp -rp include/mbedtls ../../include ; \
+	mkdir -p ../../lib/$* ; \
+	cp -rP library/libmbedtls.*    ../../lib/$* ; \
+	cp -rP library/libmbedx509.*   ../../lib/$* ; \
+	cp -rP library/libmbedcrypto.* ../../lib/$*
+
 clean:
 	$(OUT)rm -fr *-build
 
