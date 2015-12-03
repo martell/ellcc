@@ -1,6 +1,5 @@
 # Build the ELLCC Linux libraries.
 
-# RICH: TODO: Check out the warnings.
 PWD := $(shell pwd)
 ELLCC := $(PWD)/..
 LIBECC := $(ELLCC)/libecc
