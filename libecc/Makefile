@@ -247,6 +247,43 @@ $(Configs)::
 	cp -rP library/libmbedx509.*   ../../lib/$* ; \
 	cp -rP library/libmbedcrypto.* ../../lib/$*
 
+$(Configs)::
+	$(OUT)$(MAKE) $(MFLAGS) $@.c-ares.configure && \
+	$(MAKE) $(MFLAGS) $@.c-ares.build && \
+	$(MAKE) $(MFLAGS) $@.c-ares.install
+
+%.c-ares.configure:
+	$(OUT)if [ -e c-ares-build/$*/Makefile ] ; then \
+	  echo Configuring c-ares for $* aready done ; \
+	else \
+	    $(OUT)echo Configuring c-ares for $* in c-ares-build/$* ; \
+	      mkdir -p c-ares-build/$* ; \
+	      cp -pr src/c-ares/* c-ares-build/$* ; \
+	      cd c-ares-build/$* ; \
+	      CC="$(ELLCC)/bin/ecc" \
+              CFLAGS="-target $* $(CFLAGS)" \
+              CPP="$(ELLCC)/bin/ecc -E" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+                ../../src/c-ares/configure \
+	          --enable-shared=no  --prefix=$(ELLCC) \
+	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+      fi
+
+%.c-ares.build:
+	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
+            AR=$(ELLCC)/bin/ecc-ar \
+            RANLIB=$(ELLCC)/bin/ecc-ranlib \
+            -C c-ares-build/$*
+
+%.c-ares.install:
+	$(OUT)cd c-ares-build/$* ; \
+	echo Installing c-ares for $*; \
+	mkdir -p ../../include ; \
+	cp -p ares.h ares_version.h ares_dns.h \
+           ares_build.h ares_rules.h ../../include ; \
+	mkdir -p ../../lib/$* ; \
+	cp -rP .libs/libcares.a    ../../lib/$*
+
 clean:
 	$(OUT)rm -fr *-build
 

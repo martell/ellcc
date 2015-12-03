@@ -1,5 +1,7 @@
 current SVN:
 
+* Import and build c-ares 1.10.0 library.
+* Microblaze fix for mbed TLS.
 * Import and build mbed TLS 2.2.0 libraries (Formerly PolarSSL).
 
 version 0.1.20:
