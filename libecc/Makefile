@@ -6,11 +6,7 @@ ELLCC := $(PWD)/..
 LIBECC := $(ELLCC)/libecc
 Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
 ElkConfigs := $(patsubst *-elk-*,,$(shell cd $(LIBECC)/config; echo *-elk*))
-CFLAGS := -g -Qunused-arguments \
-          -Wno-unneeded-internal-declaration -Wno-cast-align \
-	  -Wno-incompatible-pointer-types -Wno-string-plus-int \
-	  -Wno-pointer-sign -Wno-array-bounds -Wno-dangling-else \
-	  -Wno-int-to-pointer-cast
+CFLAGS := -g
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
@@ -228,16 +224,16 @@ $(Configs)::
 	$(MAKE) $(MFLAGS) $@.mbedtls.install
 
 %.mbedtls.configure:
-	$(OUT)if [ -e mbedtls-build/$*/Makefile ] ; then \
-	  echo Configuring mbedtls for $* aready done ; \
-	else  \
-	  echo Configuring mbedtls for $* in mbedtls-build/$* ; \
+	$(OUT)echo Configuring mbedtls for $* in mbedtls-build/$* ; \
 	  mkdir -p mbedtls-build/$* ; \
 	  cp -pr src/mbedtls/* mbedtls-build/$* ; \
-	fi
+	  echo export CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	    > mbedtls-build/$*/Makefile ; \
+	  echo export AR=$(ELLCC)/bin/ecc-ar >> mbedtls-build/$*/Makefile ; \
+	  cat src/mbedtls/Makefile >> mbedtls-build/$*/Makefile
 
 %.mbedtls.build:
-	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
+	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
             -C mbedtls-build/$*
