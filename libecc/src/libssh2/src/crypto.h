@@ -42,6 +42,10 @@
 #include "openssl.h"
 #endif
 
+#ifdef LIBSSH2_MBEDTLS
+#include "mbedtls.h"
+#endif
+
 #ifdef LIBSSH2_LIBGCRYPT
 #include "libgcrypt.h"
 #endif

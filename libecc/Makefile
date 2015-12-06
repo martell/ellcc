@@ -5,7 +5,7 @@ ELLCC := $(PWD)/..
 LIBECC := $(ELLCC)/libecc
 Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
 ElkConfigs := $(patsubst *-elk-*,,$(shell cd $(LIBECC)/config; echo *-elk*))
-CFLAGS := -g
+CFLAGS := -g -Werror -Wno-pointer-sign
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
@@ -283,6 +283,45 @@ $(Configs)::
            ares_build.h ares_rules.h ../../include ; \
 	mkdir -p ../../lib/$* ; \
 	cp -rP .libs/libcares.a    ../../lib/$*
+
+$(Configs)::
+	$(OUT)$(MAKE) $(MFLAGS) $@.libssh2.configure && \
+	$(MAKE) $(MFLAGS) $@.libssh2.build && \
+	$(MAKE) $(MFLAGS) $@.libssh2.install
+
+%.libssh2.configure:
+	$(OUT)mkdir -p libssh2-build/$*
+	$(OUT)cp -pr src/libssh2/* libssh2-build/$*
+	$(OUT)if [ -e libssh2-build/$*/Makefile ] ; then \
+	  echo Configuring libssh2 for $* aready done ; \
+	else \
+	    $(OUT)echo Configuring libssh2 for $* in libssh2-build/$* ; \
+	      cd libssh2-build/$* ; \
+	      CC="$(ELLCC)/bin/ecc" \
+              CFLAGS="-target $* $(CFLAGS)" \
+              CPP="$(ELLCC)/bin/ecc -E" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+                ../../src/libssh2/configure \
+	          --enable-shared=no  --prefix=$(ELLCC) \
+	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+      fi
+
+%.libssh2.build:
+	$(OUT)mkdir -p libssh2-build/$*
+	$(OUT)cp -pr src/libssh2/* libssh2-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
+            AR=$(ELLCC)/bin/ecc-ar \
+            RANLIB=$(ELLCC)/bin/ecc-ranlib \
+            -C libssh2-build/$*
+
+%.libssh2.install:
+	#$(OUT)cd libssh2-build/$* ; \
+	#echo Installing libssh2 for $*; \
+	#mkdir -p ../../include ; \
+	#cp -p ares.h ares_version.h ares_dns.h \
+           #ares_build.h ares_rules.h ../../include ; \
+	#mkdir -p ../../lib/$* ; \
+	#cp -rP .libs/libcares.a    ../../lib/$*
 
 clean:
 	$(OUT)rm -fr *-build

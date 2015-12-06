@@ -175,6 +175,9 @@
 /* Use OpenSSL */
 #undef LIBSSH2_OPENSSL
 
+/* Use mbedTLS */
+#undef LIBSSH2_MBEDTLS
+
 /* Use Windows CNG */
 #undef LIBSSH2_WINCNG
 

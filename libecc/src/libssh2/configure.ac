@@ -86,6 +86,9 @@ AC_SYS_LARGEFILE
 AC_ARG_WITH(openssl,
   AC_HELP_STRING([--with-openssl],[Use OpenSSL for crypto]),
   use_openssl=$withval,use_openssl=auto)
+AC_ARG_WITH(mbedtls,
+  AC_HELP_STRING([--with-mbedtls],[Use mbedTLS for crypto]),
+  use_mbedtls=$withval,use_mbedtls=auto)
 AC_ARG_WITH(libgcrypt,
   AC_HELP_STRING([--with-libgcrypt],[Use libgcrypt for crypto]),
   use_libgcrypt=$withval,use_libgcrypt=auto)
@@ -116,6 +119,18 @@ if test "$ac_cv_libssl" = "yes"; then
   found_crypto="OpenSSL (AES-CTR: ${ac_cv_func_EVP_aes_128_ctr:-N/A})"
 fi
 AM_CONDITIONAL(OPENSSL, test "$ac_cv_libssl" = "yes")
+
+# Look for mbedTLS
+if test "$found_crypto" = "none" && test "$use_mbedtls" != "no"; then
+  AC_LIB_HAVE_LINKFLAGS([mbedtls], [mbedcrypto], [#include <mbedtls/ssl.h>])
+fi
+if test "$ac_cv_libmbedtls" = "yes"; then
+  AC_DEFINE(LIBSSH2_MBEDTLS, 1, [Use mbedTLS])
+  LIBSREQUIRED=libmbedtls,libmbedcrypto
+  LIBS="$LIBS -lmbedcrypto"
+  found_crypto="mbedTLS"
+fi
+AM_CONDITIONAL(MBEDTLS, test "$ac_cv_libmbedtls" = "yes")
 
 # Look for libgcrypt
 if test "$found_crypto" = "none" && test "$use_libgcrypt" != "no"; then
@@ -164,6 +179,7 @@ AM_CONDITIONAL(WINCNG, test "$ac_cv_libbcrypt" = "yes")
 if test "$found_crypto" = "none"; then
   AC_MSG_ERROR([No crypto library found!
 Try --with-libssl-prefix=PATH
+ or --with-libmbedtls-prefix=PATH
  or --with-libgcrypt-prefix=PATH
  or --with-wincng on Windows\
 ])

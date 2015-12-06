@@ -133,8 +133,13 @@ typedef __int64 libssh2_int64_t;
 typedef SSIZE_T ssize_t;
 #endif
 #else
+#if defined(__aarch64__) || defined(__x86_64__)
+typedef unsigned long libssh2_uint64_t;
+typedef long libssh2_int64_t;
+#else
 typedef unsigned long long libssh2_uint64_t;
 typedef long long libssh2_int64_t;
+#endif
 #endif
 
 #ifdef WIN32

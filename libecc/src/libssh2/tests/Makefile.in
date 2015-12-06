@@ -407,6 +407,7 @@ GREP = @GREP@
 HAVE_LIBBCRYPT = @HAVE_LIBBCRYPT@
 HAVE_LIBCRYPT32 = @HAVE_LIBCRYPT32@
 HAVE_LIBGCRYPT = @HAVE_LIBGCRYPT@
+HAVE_LIBMBEDTLS = @HAVE_LIBMBEDTLS@
 HAVE_LIBSSL = @HAVE_LIBSSL@
 HAVE_LIBZ = @HAVE_LIBZ@
 INSTALL = @INSTALL@
@@ -422,6 +423,8 @@ LIBCRYPT32 = @LIBCRYPT32@
 LIBCRYPT32_PREFIX = @LIBCRYPT32_PREFIX@
 LIBGCRYPT = @LIBGCRYPT@
 LIBGCRYPT_PREFIX = @LIBGCRYPT_PREFIX@
+LIBMBEDTLS = @LIBMBEDTLS@
+LIBMBEDTLS_PREFIX = @LIBMBEDTLS_PREFIX@
 LIBOBJS = @LIBOBJS@
 LIBS = @LIBS@
 LIBSREQUIRED = @LIBSREQUIRED@
@@ -436,6 +439,7 @@ LN_S = @LN_S@
 LTLIBBCRYPT = @LTLIBBCRYPT@
 LTLIBCRYPT32 = @LTLIBCRYPT32@
 LTLIBGCRYPT = @LTLIBGCRYPT@
+LTLIBMBEDTLS = @LTLIBMBEDTLS@
 LTLIBOBJS = @LTLIBOBJS@
 LTLIBSSL = @LTLIBSSL@
 LTLIBZ = @LTLIBZ@
@@ -538,9 +542,9 @@ $(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__confi
 	      exit 1;; \
 	  esac; \
 	done; \
-	echo ' cd $(top_srcdir) && $(AUTOMAKE) --foreign tests/Makefile'; \
+	echo ' cd $(top_srcdir) && $(AUTOMAKE) --gnu tests/Makefile'; \
 	$(am__cd) $(top_srcdir) && \
-	  $(AUTOMAKE) --foreign tests/Makefile
+	  $(AUTOMAKE) --gnu tests/Makefile
 .PRECIOUS: Makefile
 Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 	@case '$?' in \

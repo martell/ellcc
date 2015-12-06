@@ -69,7 +69,7 @@
    http://www.mail-archive.com/libssh2-devel%40lists.sourceforge.net/msg00224.html
 */
 #ifdef HAVE_POLL
-# include <sys/poll.h>
+# include <poll.h>
 #else
 # if defined(HAVE_SELECT) && !defined(WIN32)
 # ifdef HAVE_SYS_SELECT_H
@@ -1046,7 +1046,11 @@ void _libssh2_init_if_needed (void);
 #if defined( __BORLANDC__ ) || defined( _MSC_VER ) || defined( __MINGW32__ )
 #define LIBSSH2_INT64_T_FORMAT "I64d"
 #else
+#if defined(__aarch64__) || defined(__x86_64__)
+#define LIBSSH2_INT64_T_FORMAT "ld"
+#else
 #define LIBSSH2_INT64_T_FORMAT "lld"
+#endif
 #endif
 
 #endif /* LIBSSH2_H */
