@@ -1,6 +1,7 @@
 current SVN:
 
-* Import the libssh2 1.6.0 library.
+* Import and build the nghttp2 1.5.0 library.
+* Import and build the libssh2 1.6.0 library.
 * Import and build the c-ares 1.10.0 library.
 * Microblaze fix for mbed TLS.
 * Import and build the mbed TLS 2.2.0 libraries (Formerly PolarSSL).

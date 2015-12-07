@@ -323,6 +323,49 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -rP ./src/.libs/libssh2.a ../../lib/$*
 
+$(Configs)::
+	$(OUT)$(MAKE) $(MFLAGS) $@.nghttp2.configure && \
+	$(MAKE) $(MFLAGS) $@.nghttp2.build && \
+	$(MAKE) $(MFLAGS) $@.nghttp2.install
+
+%.nghttp2.configure:
+	$(OUT)mkdir -p nghttp2-build/$*
+	$(OUT)cp -pr src/nghttp2/* nghttp2-build/$*
+	$(OUT)if [ -e nghttp2-build/$*/Makefile ] ; then \
+	  echo Configuring nghttp2 for $* aready done ; \
+	else \
+	    $(OUT)echo Configuring nghttp2 for $* in nghttp2-build/$* ; \
+	      cd nghttp2-build/$* ; \
+	      CC="$(ELLCC)/bin/ecc" \
+              CFLAGS="-target $* $(CFLAGS)" \
+              LDFLAGS="-target $*" \
+	      CXX="$(ELLCC)/bin/ecc++" \
+              CXXFLAGS="-target $* $(CXXFLAGS)" \
+              CPP="$(ELLCC)/bin/ecc -E" \
+              CXXPP="$(ELLCC)/bin/ecc++ -E" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+                ../../src/nghttp2/configure \
+	          --enable-debug \
+	          --enable-shared=no  --prefix=$(ELLCC) \
+	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+      fi
+
+%.nghttp2.build:
+	$(OUT)mkdir -p nghttp2-build/$*
+	$(OUT)cp -pr src/nghttp2/* nghttp2-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
+            AR=$(ELLCC)/bin/ecc-ar \
+            RANLIB=$(ELLCC)/bin/ecc-ranlib \
+            -C nghttp2-build/$*
+
+%.nghttp2.install:
+	$(OUT)cd nghttp2-build/$* ; \
+	echo Installing nghttp2 for $*; \
+	mkdir -p ../../include/nghttp2 ; \
+	cp -p lib/includes/nghttp2/*.h ../../include/nghttp2 ; \
+	mkdir -p ../../lib/$* ; \
+	cp -rP ./lib/.libs/libnghttp2.a ../../lib/$*
+
 clean:
 	$(OUT)rm -fr *-build
 

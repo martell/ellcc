@@ -1,0 +1,887 @@
+commit 0d52097213e634a56a1d25023ff1a52fe130c0fc (HEAD, tag: v1.5.0, origin/master, origin/HEAD, master)
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-26
+
+    Update bash_completion
+
+commit 6444f0c5cd902a360d9d41774577b54912dcff93
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-26
+
+    Update man pages
+
+commit 1e74ee2d548bc64c50223cc9b438679fb2e959db
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-26
+
+    Bump up version number to 1.5.0, LT revision to 17:0:3
+
+commit ba9e96b8296fbe7e980016d16f4f0cead95b81d2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-26
+
+    h2load: Avoid copy of h1 request
+
+commit bd041bcbb0c349d550da577fa837ebf2c70f67f2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-26
+
+    h2load: Add --h1 option to force http/1.1 for both http and https URI
+
+commit 8e06e3737506dbcd680e0f18824057e9636c7b58
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-26
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-26
+
+    h2load: Fix crash when dealing connection: close with HTTP/1.1 server
+
+commit faad0418681bb5d19e3fe61f509d10382c493aa5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-25
+
+    Use seq to break a tie for stream weight
+    
+    Because of the nature of heap based priority queue, and our compare
+    function, streams with the same weight and same parent are handled in
+    the reverse order they pushed to the queue.  To allow stream pushed
+    earlier to be served first, secondary key "seq" is introduced to break
+    a tie.  "seq" is monotonically increased integer per parent stream,
+    and it is assigned to stream when it is pused to the queue, and gets
+    incremented.
+
+commit 3048bb9d90c9f384100c528436579f2201652451
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-25
+
+    Fix test: stream_id is not incremented
+
+commit 9088e4a16a902196cf79b404015d11baa9a2caa5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-24
+
+    Bump up version number to 1.5.0-DEV
+
+commit b08d5b1975656f705585015cdf0ad72d06b73f56
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-24
+
+    Explicitly treat stream_id 0 as error in nghttp2_session_change_stream_priority
+
+commit b53b1381b7679276432cd14a21e4dddfef066b7d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-24
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-24
+
+    Fix bug that nghttp2_session_find_stream(session, 0) returned NULL
+    
+    Previously, nghttp2_session_find_stream(session, 0) returned NULL
+    despite the fact that documentation said that it should return root
+    stream.  Now it is corrected, and it returns root stream as
+    documented.
+
+commit c44ee44cc3047812b8811d5dcea9f2021781f579
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-23
+
+    nghttpd: Fix compile error due to incomplete FileEntry
+
+commit 8f970dec0ec75bb0ca23261c479dc54f4d61d3a0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-23
+
+    Update doc
+
+commit 2fee05242ef94f64dc0b2d08cc165bf38883cb47
+Merge: 5744acc f0443d3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-23
+
+    Merge branch 'change-stream-priority'
+
+commit f0443d339809a22950d9bda56f01f265829e8206
+Merge: d62bc26 5744acc
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-23
+
+    Merge branch 'master' into change-stream-priority
+
+commit 5744acc2cabb11eb4f11c8530976ccad3749fc2b
+Merge: e95ad29 84e23bf
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-23
+
+    Merge branch 'shukitchan-master'
+
+commit 84e23bff10e03fffcfac112d2e8092efadbbdfa2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-23
+
+    h2load: clang-format
+
+commit d62bc26b6212cf1b359b91bd1eb87831527db0f9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-23
+
+    Add test for nghttp2_session_change_stream_priority()
+
+commit 718f7a5f7e1c0772df75974ebe7f1d18ba16bedb
+Author:     Kit Chan <kichan@apache.org>
+AuthorDate: 2015-11-23
+Commit:     Kit Chan <kichan@apache.org>
+CommitDate: 2015-11-23
+
+    h2load goes into infinite loop when timing script file starts with 0.0 in first line
+
+commit e95ad297ed7be75ced9bd37804293334c36fbfb0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-23
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-23
+
+    travis: Enable integration tests and neverbleed
+    
+    We added spdylay build since integration tests require it.
+
+commit dff2a1995063b29f3338a0be8cfd4bb11609a1a3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-22
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-22
+
+    nghttpx: Don't send RST_STREAM to h2 backend if backend is disconnected state
+    
+    This avoid establishing HTTP/2 backend connection again w/o pending
+    request.
+    
+    See GH-431
+
+commit aa317c89ea7e7d5424b70e563229d3332479aa02
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-21
+
+    Add API to change stream priority without sending PRIORITY frame
+    
+    The added API is nghttp2_session_change_stream_priority().  This
+    provides the same functionality to re-prioritize stream when PRIORITY
+    frame.  is received, but we do it without PRIORITY frame.  This could
+    be useful for server to change pushed stream's priority silently.
+
+commit 72f2c4b2729b32cb48bdaed65df847622cb8c09f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-21
+
+    Add nghttp2_session_check_server_session.rst to APIDOCS
+
+commit c7304317d4c61d89162500b5dc733ed9f79a5c6d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-21
+
+    nghttpd: Check validity of cached file descriptor periodically
+    
+    This commit adds ability to check status of cached file descriptor to
+    make sure that it can be reused.  We inspect last modification time
+    and number of hard links.  If last modification is changed from the
+    last validation time, or number of hard links gets 0, we don't reuse
+    file descriptor.  We also capped upper limit of the cached file
+    descriptors.  If the limit is reached, we will close file descriptor
+    which is least recently used, and its usecount is 0.
+
+commit 3673b1303a5d187d5332aa8b84c8b8b330a08aca
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-21
+
+    python: Do the same thing in 8481bc6 with HEADERS + END_STREAM flag set
+
+commit b27b002a3f0fa47a7e9a8d0dfbcd6ee8abe9b3f3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-21
+
+    python: Use nghttp2_session_get_stream_remote_close
+
+commit 8481bc6e93990aea756cccd031f6f10694bea0a1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-21
+
+    python: Send RST_STREAM if remote side is not closed and response finished
+
+commit 63a50b1ccf649b60b681f692b6c6d867990505c5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-21
+
+    Add nghttp2_session_check_server_session() API
+    
+    This is very simple API, and it returns nonzero if session is
+    initialized as server.
+
+commit 63aa3466e9d69d81ebb36cf3cf4d58ffeb82a4a8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-21
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-21
+
+    nghttpd: Fix crash with CONNECT request
+
+commit d7b0768ab88ac6b1da80c338fa173f9f13fee40e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-20
+
+    Fix bug that dep_stream->sum_dep_weight was not updated
+
+commit 4db3828fa60d6d0d4114a04ab27f7824b1f89de9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-20
+
+    Reset last_writelen to 0 when stream is removed from tree
+    
+    When stream is removed from tree, stream is either closed, or its
+    remote flow control window is depleted.  In the latter case, we
+    schedule this stream as fast as possible if its remote window gets
+    positive, since it did not sent anything in its turn.  To achieve
+    this, reset last_writelen to 0 when stream is removed from tree.
+
+commit 3bbb05f59b2d2f959a84eac3a85cb6c07e3717d9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-20
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-20
+
+    Optimize the case when only weight is changed
+
+commit ab1e8305a1dc967439acaaf3f6cbd02244464bc0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-19
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-19
+
+    asio: client: call on_error when connection is dropped
+    
+    When connection is dropped, we get "nonzero" error code ec in
+    read_socket callback.  We can just call on_error callback if ec is
+    nonzero.  But there is a problem when we did ordered shutdown.  In
+    this case, we also get EOF in ec, but we don't want to call on_error
+    because it is not an error.  To workaround this, we check return value
+    of should_stop().  If it is true, then we assume that HTTP/2 session
+    cleanly ended, and we don't call on_error.
+
+commit 8b4f6f1778648748ab4a3a65c3f9070ed3320ca5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-18
+
+    nghttpd: Defered eviction of cached fd using timer
+    
+    To make use cache fd more robust manner (e.g. among several
+    connections), eviction of cached file descriptor now takes place using
+    timer.  The timer is started when there is no handler (no
+    connections).  The timeout value is hard-coded and 2 seconds.
+
+commit 8c94341c18c20cd66a679b31fbce5599b5dd3914
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-18
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-18
+
+    h2load: Override user-agent with -H option
+    
+    This commit allows user to override user-agent with -H option.  We
+    also enabled custom header support for http/1.1 requests.  We also did
+    minor optimizations (std::vector::reserve).
+
+commit 79ee999f1be08613f50ebc890d45faefbeca8c94
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-17
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-17
+
+    Update mruby to 1.2.0
+
+commit dcf060198b2169652159391049618051232c26f2
+Merge: b95a3c4 1753bea
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-16
+
+    Merge branch 'http2-backend-push'
+
+commit 1753bea6923aaf18276efb06e6bfaa59a03c3031
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-16
+
+    nghttpx: Support server push from HTTP/2 backend
+    
+    This commits enables HTTP/2 server push from HTTP/2 backend to be
+    relayed to HTTP/2 frontend.  To use this feature, --http2-bridge or
+    --client is required.  Server push via Link header field contiues to
+    work.
+
+commit b95a3c4b2851192775d14daa5f8e543666ab0606
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-16
+
+    Consider to use CANCEL error code when closing streams with GOAWAY
+    
+    For clients, CANCEL is more appropriate for both incoming/outgoing
+    streams.  For servers, CANCEL is appropriate for its pushed stream
+    (outgoing), but REFUSED_STREAM is more appropriate for incoming
+    stream.
+
+commit b918f9650a7382132563a30b7f614963c3f1caf0
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-16
+
+    Don't send push response if GOAWAY has been received
+
+commit 7463493259a23f95866ff15a3c69187078442fe3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-16
+
+    Use error code CANCEL to reset pushed reserved stream from remote
+
+commit c3459c9e865f4fc7be4ecf035216e6fa1b6e2dc9
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-16
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-16
+
+    nghttpx: Clarify return value of nghttp2_submit_push_promise is stream ID
+
+commit fe8720341d3d2c486a1aaceef63039cdeecbb77f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-13
+
+    nghttpx: Fix crash on non-final response from backend server
+
+commit c6ef1c02b9c26bfb01e28c259c122ff55944f78e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-13
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-13
+
+    Switch to clang-format-3.6
+
+commit 7c613386db87401b947a2e5457177dd223bafeee
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-12
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-12
+
+    Update man pages
+
+commit a13c5a6bfb444f15cb706faebf8a04cc741f9b27
+Merge: dbbed64 c711a80
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-09
+
+    Merge branch 'syohex-misspelling'
+
+commit c711a804116ead69b558d6c2926dcab645e109b2
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-09
+
+    src: Fix typo
+    
+    Apply typo fixes to the original source files in the previous commit
+    which were done in generated text.
+
+commit 7e8dc73f2f8496454aa9e8360fecdb024a42f642
+Merge: dbbed64 a93e001
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-09
+
+    Merge branch 'misspelling' of https://github.com/syohex/nghttp2 into syohex-misspelling
+
+commit dbbed6414612e0ade16295d00b4ae17684ee75b5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-09
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-09
+
+    nghttpx: Fix bug that causes connection failure with backend proxy URI
+    
+    This is a regression when we introduced SSL/TLS session resumption in
+    HTTP/2 backend.  Before the introduction of session resumption,
+    conn_.tls.ssl is always nullptr when connection is made to proxy.  But
+    we have to keep conn_.tls.ssl to enable session resumption, so our
+    code breaks when it is reused.  This commit fixes this issue.
+    
+    See GH-421
+
+commit a93e0016ffb93961576de87d902af792b197159d
+Author:     Syohei YOSHIDA <syohex@gmail.com>
+AuthorDate: 2015-11-09
+Commit:     Syohei YOSHIDA <syohex@gmail.com>
+CommitDate: 2015-11-09
+
+    Correct misspellings
+
+commit 9b18e47671eb8a71aa655e9f5842947252c73194
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-08
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-08
+
+    nghttpx: Use --backend-tls-sni-field to verify certificate hostname
+
+commit aecddc2cdac111cdbed4ee55035d00d395b1387e
+Merge: b89f1f5 a4012b5
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-07
+
+    Merge pull request #418 from thinred/pr-apparmor
+    
+    added apparmor profile
+
+commit b89f1f5869c1bf289e0c166897c289afb20ccc31
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-07
+
+    asio: ALPN support
+
+commit a4012b594b8660a49acb3c0e636ffc9b3c6f5705
+Author:     Tomasz Buchert <tomasz@debian.org>
+AuthorDate: 2015-11-07
+Commit:     Tomasz Buchert <tomasz@debian.org>
+CommitDate: 2015-11-07
+
+    added apparmor profile
+
+commit ab1f70dcd7466e1d3ffa8ed95bd8b41008590846
+Merge: af4c3cb eaefce3
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-07
+
+    Merge branch 'upgrade2'
+
+commit eaefce379238bad53dacde06d437b81c987d3af8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-07
+
+    nghttp: Record request method to output it in har correctly
+
+commit 558934cee5e8b0557e089c8da08f9e973af6d033
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-07
+
+    src: Use nghttp2_session_upgrade2
+
+commit 269a10008177d359e978d6a256d00dedb8837b52
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-07
+
+    Add nghttp2_session_upgrade2(), deprecate nghttp2_session_upgrade()
+    
+    To validate actual response body length against the value declared in
+    content-length response header field, we first check request method.
+    If request method is HEAD, respose body must be 0 regardless of the
+    value in content-length.  nghttp2_session_upgrade() has no parameter
+    to indicate the request method is HEAD, so we failed to validate
+    response body if HEAD is used with HTTP Upgrade.  New
+    nghttp2_session_upgrade2() accepts new parameter to indicate that
+    request method is HEAD or not to fix this issue.  Although, this issue
+    affects client side only, we deprecate nghttp2_session_upgrade() in
+    favor of nghttp2_session_upgrade2() for both client and server side.
+
+commit af4c3cb2cfe773f6358c40b113a340b4d3c8673e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-07
+
+    Fix travis gcc build
+
+commit 6958d0b55d30728efcc92baa83e643f66078759b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-07
+
+    nghttp: Use method given in -H with ":method" in HTTP Upgrade
+
+commit 5e7e479c6c5e8c903256adba0847b5c7872f52b7
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-07
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-07
+
+    Workaround HTTP upgrade with HEAD request
+    
+    By default, we check the length of response body matches
+    content-length.  For HEAD request, this is not necessarily true, so we
+    sniff request method, and if it is HEAD, make sure that response body
+    length is 0.  But this does not work for HTTP Upgrade, since
+    nghttp2_session_upgrade() has no parameter to tell the request method
+    was HEAD.  This commit disables this response body length validation
+    for the stream upgraded by HTTP Upgrade.  We will add new version of
+    nghttp2_session_upgrade with the parameter to pass the request method
+    information so that we can handle this situation properly.
+
+commit dfbbb0812411be4f1828cd9d75fcccfa7ec6bdb8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-06
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-06
+
+    Silence warning with scan-build
+
+commit 7755c2827ca9a4892c6881e1e85a7d8e4687fa4b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-05
+
+    nghttpx: Reserve headers vector
+
+commit ac4194653382dec203b831e77378295ccca2cf08
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-05
+
+    nghttpx: Use NGHTTP2_NV_FLAG_NO_COPY_NAME and NGHTTP2_NV_FLAG_NO_COPY_VALUE
+    
+    For both HTTP/2 frontend and backend.
+    
+    Also adds http2::stringify_status to optimize status code
+    serialization.
+
+commit 43b230685fc7376535c62e07327acc240d499984
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-05
+
+    Introduce NGHTTP2_NV_FLAG_NO_COPY_NAME and NGHTTP2_NV_FLAG_NO_COPY_VALUE
+
+commit cb73fa1d3b45e111dd8ab6da4ab028c9c54f25a4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-05
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-05
+
+    h2load: Return SSL_TLSEXT_ERR_NOACK if there is protocol list overlap in NPN
+
+commit 0dc7fee7133d1cd2c7d5031c6d26cbba801d22e8
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-04
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-04
+
+    h2load: Print "space savings" to measure header compression efficiency
+
+commit 58d636abdb76d5634825f7c4f492d26e2cd63cce
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-11-02
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-11-02
+
+    Revert 918f8cca36c4349a3b03f834201f3c4e181b32d9
+    
+    For first scheduling, we might ignore weight.  This is OK since weight
+    is just a distribution of resource, rather than strict priority
+    ordering.
+
+commit be0d0e29956baed4384ddfac303c1e00de92f7cb
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-30
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-30
+
+    Rename nghttp2_session_request_allowed as nghttp2_session_check_request_allowed
+
+commit 6ff9c4d8f9574dc70057b49e7db0b7c068daae09
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-29
+
+    Update doc
+    
+    With 4825009e420da111c82ce73647c53c55e8a6e41d, static lib is no longer
+    required for unit tests.
+
+commit 1e7f0d833ec0b703fa2662968763b313e52e8c50
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-29
+
+    nghttpd: Don't show read error if mime types file is not set by user manually
+
+commit 41002a77d4e30cd933bd175ffe34765062469e5a
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-29
+
+    Remove bogus debug log
+
+commit 1c37abc0dd10e3990022f054f3599aa94a418b22
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-29
+
+    Add nghttp2_session_request_allowed() API function
+    
+    This function is useful for the client application to know that there
+    is a chance that request can be sent.  If this function returns 0,
+    there is zero chance to make a request.
+    
+    This commit also set error_code passed to
+    nghttp2_on_stream_close_callback to NGHTTP2_REFUSED_STREAM if request
+    is not sent.
+
+commit ad395f06030300a912b5b7c867366f3b3aff6186
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-29
+
+    h2load: Handle request submission failure
+    
+    If request submission is failed, make all remaining requests for that
+    client fail.
+
+commit e3878b619f1cd0b49bae1d8078b49aaf5a42ccd1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-29
+
+    h2load: Update doc
+
+commit 3641b123f31d1d7990c709b94dc80ca9c228f3e1
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-29
+
+    h2load: Stream error should be counted toward `errored`
+
+commit f29ccc9c208fd67749a7a1a3accc1ad871c2962d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-29
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-29
+
+    nghttpd: Read /etc/mime.types to set content-type header field
+    
+    User can change file name using --mime-types-file option.
+
+commit ecb4a208fb70e850a811398edbf0f11d1e81ce4e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-28
+
+    nghttpx: Use ev_feed_event to signal write for HTTP backend
+    
+    It seems that using ev_feed_event to signal write operation is much
+    faster than starting watcher.  This is probably due to the fact that
+    we don't need to wait in event loop.  The same thing cannot be done in
+    HTTP/2 frontend, since this will raise write operation for each stream
+    HEADER/DATA write, which leads to very small packets, hurting
+    performance.  Interestingly, HTTP/1 frontend also suffers the same
+    performance hit.
+
+commit d9f73c36c3d7e1c81496a81ef8c2cd50f273d00d
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-28
+
+    nghttpx: Log :authority as $http_host if available
+
+commit b915c247047f33e357d50da7a2bcceafc69f5c3d
+Merge: 559b0cf 2145ba4
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-28
+
+    Merge pull request #414 from rraptorr/systemd-pidfile
+    
+    Revert "add PIDFile directive to systemd service"
+
+commit 559b0cf729b18d3ef3cd85b63cb37aa26aa85821
+Merge: 1aa8e8c 76df93f
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-28
+
+    Merge pull request #415 from LPardue/h2load-fix-proto-negotioation
+    
+    h2load: do not overwrite protocol value
+
+commit 76df93fdf466ff036becc2bd52da9eae73b73561
+Author:     Lucas Pardue <lucas.pardue@bbc.co.uk>
+AuthorDate: 2015-10-28
+Commit:     Lucas Pardue <lucas.pardue@bbc.co.uk>
+CommitDate: 2015-10-28
+
+    h2load: do not overwrite protocol value
+
+commit 2145ba4ca77f5c2c09ea932fd1eadad3f2a123aa
+Author:     Janusz Dziemidowicz <rraptorr@nails.eu.org>
+AuthorDate: 2015-10-28
+Commit:     Janusz Dziemidowicz <rraptorr@nails.eu.org>
+CommitDate: 2015-10-28
+
+    Revert "add PIDFile directive to systemd service"
+    
+    This reverts commit 19c095a8172441690f30a21e70f73a0ec8475b2f.
+    
+    See discussion at #375 for details.
+
+commit 1aa8e8cd9fddd79942852c0b9c01601dba4a7979
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-28
+
+    nghttpx: Simplify add_header
+
+commit b051ddec2a4789f4d33ab0f39b4e32e47d63487e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-28
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-28
+
+    h2load: Show application protocol with OpenSSL < 1.0.2
+    
+    This commit also fixes the problem that application protocol is not
+    shown if cleartext spdy is used.
+
+commit 55bf22081e1308109521ce6ae732aff8cb09fd23
+Merge: 01c4916 4825009
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-27
+
+    Merge branch 'kdudka-pr410'
+
+commit 4825009e420da111c82ce73647c53c55e8a6e41d
+Author:     Kamil Dudka <kdudka@redhat.com>
+AuthorDate: 2015-10-26
+Commit:     Kamil Dudka <kdudka@redhat.com>
+CommitDate: 2015-10-26
+
+    tests: fix broken linkage with --disable-static
+
+commit 01c4916aa6dd002906291958d20a426d05d7ff72
+Merge: ad5c694 1a545ed
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-27
+
+    Merge branch 'alagoutte-scan-build'
+
+commit 1a545ed5186abe892b5000e8e3a10f02cd0ad7a6
+Merge: ad5c694 b4f363e
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-27
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-27
+
+    Merge branch 'scan-build' of https://github.com/alagoutte/nghttp2 into alagoutte-scan-build
+
+commit b4f363ef53ac41829c7d044d9556a6be3ca18a8f
+Author:     Alexis La Goutte <alexis.lagoutte@gmail.com>
+AuthorDate: 2015-10-26
+Commit:     Alexis La Goutte <alexis.lagoutte@gmail.com>
+CommitDate: 2015-10-26
+
+    Fix  Value stored to 'rv' is never read found by Clang Analyzer
+
+commit ad5c6945cf234e4c265eeb0e789ceac83244a34b
+Author:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+AuthorDate: 2015-10-25
+Commit:     Tatsuhiro Tsujikawa <tatsuhiro.t@gmail.com>
+CommitDate: 2015-10-25
+
+    Bump up version number to 1.4.1-DEV
