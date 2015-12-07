@@ -5,7 +5,7 @@ ELLCC := $(PWD)/..
 LIBECC := $(ELLCC)/libecc
 Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
 ElkConfigs := $(patsubst *-elk-*,,$(shell cd $(LIBECC)/config; echo *-elk*))
-CFLAGS := -g -Werror -Wno-pointer-sign
+CFLAGS := -g
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
@@ -302,6 +302,7 @@ $(Configs)::
               CPP="$(ELLCC)/bin/ecc -E" \
 	      AR=$(ELLCC)/bin/ecc-ar \
                 ../../src/libssh2/configure \
+	          --enable-debug \
 	          --enable-shared=no  --prefix=$(ELLCC) \
 	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
       fi

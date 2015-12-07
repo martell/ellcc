@@ -50,6 +50,7 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <stdarg.h>
 
 int _libssh2_error(LIBSSH2_SESSION* session, int errcode, const char* errmsg)
 {
@@ -211,6 +212,7 @@ void _libssh2_store_str(unsigned char **buf, const char *str, size_t len)
 
 /* Base64 Conversion */
 
+#ifdef UNUSED
 static const char base64_table[] =
 {
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
@@ -221,6 +223,7 @@ static const char base64_table[] =
 };
 
 static const char base64_pad = '=';
+#endif
 
 static const short base64_reverse_table[256] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
