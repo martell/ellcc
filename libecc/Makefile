@@ -316,13 +316,12 @@ $(Configs)::
             -C libssh2-build/$*
 
 %.libssh2.install:
-	#$(OUT)cd libssh2-build/$* ; \
-	#echo Installing libssh2 for $*; \
-	#mkdir -p ../../include ; \
-	#cp -p ares.h ares_version.h ares_dns.h \
-           #ares_build.h ares_rules.h ../../include ; \
-	#mkdir -p ../../lib/$* ; \
-	#cp -rP .libs/libcares.a    ../../lib/$*
+	$(OUT)cd libssh2-build/$* ; \
+	echo Installing libssh2 for $*; \
+	mkdir -p ../../include ; \
+	cp -p include/*.h ../../include ; \
+	mkdir -p ../../lib/$* ; \
+	cp -rP ./src/.libs/libssh2.a ../../lib/$*
 
 clean:
 	$(OUT)rm -fr *-build
