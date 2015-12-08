@@ -366,6 +366,46 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -rP ./lib/.libs/libnghttp2.a ../../lib/$*
 
+$(Configs)::
+	$(OUT)$(MAKE) $(MFLAGS) $@.curl.configure && \
+	$(MAKE) $(MFLAGS) $@.curl.build && \
+	$(MAKE) $(MFLAGS) $@.curl.install
+
+%.curl.configure:
+	$(OUT)mkdir -p curl-build/$*
+	$(OUT)cp -pr src/curl/* curl-build/$*
+	$(OUT)if [ -e curl-build/$*/src/Makefile ] ; then \
+	  echo Configuring curl for $* aready done ; \
+	else \
+	    $(OUT)echo Configuring curl for $* in curl-build/$* ; \
+	      cd curl-build/$* ; \
+	      CC="$(ELLCC)/bin/ecc" \
+              CFLAGS="-target $* $(CFLAGS)" \
+              LDFLAGS="-target $*" \
+	      CXX="$(ELLCC)/bin/ecc++" \
+              CXXFLAGS="-target $* $(CXXFLAGS)" \
+              CPP="$(ELLCC)/bin/ecc -E" \
+              CXXPP="$(ELLCC)/bin/ecc++ -E" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+                ../../src/curl/configure \
+	          --prefix=$(ELLCC) \
+		  --with-mbedtls --with-libssh2 --enable-ares \
+                  --enable-shared=no --with-nghttp2 --enable-ipv6 \
+	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+      fi
+
+%.curl.build:
+	$(OUT)mkdir -p curl-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) -C curl-build/$*
+
+%.curl.install:
+	$(OUT)cd curl-build/$* ; \
+	echo Installing curl for $*; \
+	mkdir -p ../../include/curl ; \
+	cp -p lib/includes/curl/*.h ../../include/curl ; \
+	mkdir -p ../../lib/$* ; \
+	cp -rP ./lib/.libs/libcurl.a ../../lib/$*
+
 clean:
 	$(OUT)rm -fr *-build
 
