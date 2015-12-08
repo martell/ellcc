@@ -388,7 +388,7 @@ $(Configs)::
               CXXPP="$(ELLCC)/bin/ecc++ -E" \
 	      AR=$(ELLCC)/bin/ecc-ar \
                 ../../src/libmetalink/configure \
-	          --enable-debug \
+	          --enable-debug --with-libexpat=yes \
 	          --enable-shared=no  --prefix=$(ELLCC) \
 	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
       fi
