@@ -402,7 +402,7 @@ $(Configs)::
 	$(OUT)cd curl-build/$* ; \
 	echo Installing curl for $*; \
 	mkdir -p ../../include/curl ; \
-	cp -p lib/includes/curl/*.h ../../include/curl ; \
+	cp -p include/curl/*.h ../../include/curl ; \
 	mkdir -p ../../lib/$* ; \
 	cp -rP ./lib/.libs/libcurl.a ../../lib/$*
 
