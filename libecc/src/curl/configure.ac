@@ -3025,6 +3025,25 @@ if test X"$want_h2" != Xno; then
       dnl To avoid link errors, we do not allow --with-nghttp2 without
       dnl a pkgconfig file
       AC_MSG_ERROR([--with-nghttp2 was specified but could not find libnghttp2 pkg-config file.])
+    else
+      LIBS="-lnghttp2 $LIBS"
+
+      # use nghttp2_option_set_no_recv_client_magic to require nghttp2
+      # >= 1.0.0
+      AC_CHECK_LIB(nghttp2, nghttp2_option_set_no_recv_client_magic,
+        [
+         AC_CHECK_HEADERS(nghttp2/nghttp2.h,
+            curl_h2_msg="enabled (nghttp2)"
+            NGHTTP2_ENABLED=1
+            AC_DEFINE(USE_NGHTTP2, 1, [if nghttp2 is in use])
+            AC_SUBST(USE_NGHTTP2, [1])
+         )
+        ],
+          dnl not found, revert back to clean variables
+          LDFLAGS=$CLEANLDFLAGS
+          CPPFLAGS=$CLEANCPPFLAGS
+          LIBS=$CLEANLIBS
+      )
     fi
   fi
 
