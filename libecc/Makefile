@@ -390,7 +390,7 @@ $(Configs)::
                 ../../src/curl/configure \
 	          --prefix=$(ELLCC) \
 		  --with-mbedtls --with-libssh2 --enable-ares \
-                  --enable-shared=no --with-nghttp2 --enable-ipv6 \
+                  --enable-shared=no --with-nghttp2=yes --enable-ipv6 \
 	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
       fi
 
