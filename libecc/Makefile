@@ -396,7 +396,8 @@ $(Configs)::
 
 %.curl.build:
 	$(OUT)mkdir -p curl-build/$*
-	$(OUT)$(MAKE) $(MFLAGS) -C curl-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) -C curl-build/$*/lib
+	$(OUT)$(MAKE) $(MFLAGS) -C curl-build/$*/src
 
 %.curl.install:
 	$(OUT)cd curl-build/$* ; \
