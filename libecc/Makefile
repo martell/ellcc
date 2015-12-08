@@ -367,6 +367,49 @@ $(Configs)::
 	cp -rP ./lib/.libs/libnghttp2.a ../../lib/$*
 
 $(Configs)::
+	$(OUT)$(MAKE) $(MFLAGS) $@.libmetalink.configure && \
+	$(MAKE) $(MFLAGS) $@.libmetalink.build && \
+	$(MAKE) $(MFLAGS) $@.libmetalink.install
+
+%.libmetalink.configure:
+	$(OUT)mkdir -p libmetalink-build/$*
+	$(OUT)cp -pr src/libmetalink/* libmetalink-build/$*
+	$(OUT)if [ -e libmetalink-build/$*/Makefile ] ; then \
+	  echo Configuring libmetalink for $* aready done ; \
+	else \
+	    $(OUT)echo Configuring libmetalink for $* in libmetalink-build/$* ; \
+	      cd libmetalink-build/$* ; \
+	      CC="$(ELLCC)/bin/ecc" \
+              CFLAGS="-target $* $(CFLAGS)" \
+              LDFLAGS="-target $*" \
+	      CXX="$(ELLCC)/bin/ecc++" \
+              CXXFLAGS="-target $* $(CXXFLAGS)" \
+              CPP="$(ELLCC)/bin/ecc -E" \
+              CXXPP="$(ELLCC)/bin/ecc++ -E" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+                ../../src/libmetalink/configure \
+	          --enable-debug \
+	          --enable-shared=no  --prefix=$(ELLCC) \
+	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+      fi
+
+%.libmetalink.build:
+	$(OUT)mkdir -p libmetalink-build/$*
+	$(OUT)cp -pr src/libmetalink/* libmetalink-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
+            AR=$(ELLCC)/bin/ecc-ar \
+            RANLIB=$(ELLCC)/bin/ecc-ranlib \
+            -C libmetalink-build/$*
+
+%.libmetalink.install:
+	$(OUT)cd libmetalink-build/$* ; \
+	echo Installing libmetalink for $*; \
+	mkdir -p ../../include/metalink ; \
+	cp -p lib/includes/metalink/*.h ../../include/metalink ; \
+	mkdir -p ../../lib/$* ; \
+	cp -rP ./lib/.libs/libmetalink.a ../../lib/$*
+
+$(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.curl.configure && \
 	$(MAKE) $(MFLAGS) $@.curl.build && \
 	$(MAKE) $(MFLAGS) $@.curl.install
