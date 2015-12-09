@@ -420,7 +420,7 @@ $(Configs)::
 	$(OUT)if [ -e curl-build/$*/src/Makefile ] ; then \
 	  echo Configuring curl for $* aready done ; \
 	else \
-	    $(OUT)echo Configuring curl for $* in curl-build/$* ; \
+	    echo Configuring curl for $* in curl-build/$* ; \
 	      cd curl-build/$* ; \
 	      CC="$(ELLCC)/bin/ecc" \
               CFLAGS="-target $* $(CFLAGS)" \
@@ -433,6 +433,7 @@ $(Configs)::
                 ../../src/curl/configure \
 	          --prefix=$(ELLCC) \
 		  --with-mbedtls --with-libssh2 --enable-ares \
+		  --with-libmetalink=yes \
                   --enable-shared=no --with-nghttp2=yes --enable-ipv6 \
 	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
       fi

@@ -2445,8 +2445,9 @@ if test X"$OPT_LIBMETALINK" != Xno; then
   PKGTEST="no"
   if test "x$OPT_LIBMETALINK" = "xyes"; then
     dnl this is with no partiular path given
-    PKGTEST="yes"
-    CURL_CHECK_PKGCONFIG(libmetalink)
+    #PKGTEST="yes"
+    addlib="-lmetalink -lexpat"
+    #CURL_CHECK_PKGCONFIG(libmetalink)
   else
     dnl When particular path is given, set PKG_CONFIG_LIBDIR using the path.
     LIBMETALINK_PCDIR="$OPT_LIBMETALINK/lib/pkgconfig"

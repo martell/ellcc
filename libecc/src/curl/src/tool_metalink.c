@@ -57,6 +57,14 @@
 #  define MD5_CTX    md5_context
 #  define SHA_CTX    sha1_context
 #  define SHA256_CTX sha256_context
+#elif defined(USE_MBEDTLS)
+#  include <mbedtls/md5.h>
+#  include <mbedtls/sha1.h>
+#  include <mbedtls/sha256.h>
+#  define MD5_CTX    mbedtls_md5_context
+#  define SHA_CTX    mbedtls_sha1_context
+#  define SHA256_CTX mbedtls_sha256_context
+#elif (defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
 #elif (defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && \
               (__MAC_OS_X_VERSION_MAX_ALLOWED >= 1040)) || \
       (defined(__IPHONE_OS_VERSION_MAX_ALLOWED) && \
@@ -374,6 +382,62 @@ static void SHA256_Update(SHA256_CTX *ctx,
 static void SHA256_Final(unsigned char digest[32], SHA256_CTX *ctx)
 {
   sha256_finish(ctx, digest);
+}
+
+#elif defined(USE_MBEDTLS)
+
+static int MD5_Init(MD5_CTX *ctx)
+{
+  mbedtls_md5_starts(ctx);
+  return 1;
+}
+
+static void MD5_Update(MD5_CTX *ctx,
+                       const unsigned char *input,
+                       unsigned int inputLen)
+{
+  mbedtls_md5_update(ctx, input, inputLen);
+}
+
+static void MD5_Final(unsigned char digest[16], MD5_CTX *ctx)
+{
+  mbedtls_md5_finish(ctx, digest);
+}
+
+static int SHA1_Init(SHA_CTX *ctx)
+{
+  mbedtls_sha1_starts(ctx);
+  return 1;
+}
+
+static void SHA1_Update(SHA_CTX *ctx,
+                        const unsigned char *input,
+                        unsigned int inputLen)
+{
+  mbedtls_sha1_update(ctx, input, inputLen);
+}
+
+static void SHA1_Final(unsigned char digest[20], SHA_CTX *ctx)
+{
+  mbedtls_sha1_finish(ctx, digest);
+}
+
+static int SHA256_Init(SHA256_CTX *ctx)
+{
+  mbedtls_sha256_starts(ctx, 0); /* 0 = sha256 */
+  return 1;
+}
+
+static void SHA256_Update(SHA256_CTX *ctx,
+                          const unsigned char *input,
+                          unsigned int inputLen)
+{
+  mbedtls_sha256_update(ctx, input, inputLen);
+}
+
+static void SHA256_Final(unsigned char digest[32], SHA256_CTX *ctx)
+{
+  mbedtls_sha256_finish(ctx, digest);
 }
 
 #elif defined(_WIN32) && !defined(USE_OPENSSL)
