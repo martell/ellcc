@@ -1,6 +1,6 @@
 current SVN:
 
-* Import and build the openldap 2.4.43 library.
+* Build curl with metalink support.
 * Import and build the libmetalink 0.1.3 library.
 * Import and build the curl 7.46.0 library.
 * Import and build the nghttp2 1.5.0 library.
