@@ -432,6 +432,44 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -rP ./lib/.libs/libmetalink.a ../../lib/$*
 
+%.openldap.configure:
+	$(OUT)mkdir -p openldap-build/$*
+	$(OUT)cp -pfru src/openldap/* openldap-build/$*
+	$(OUT)if [ -e openldap-build/$*/Makefile ] ; then \
+	  echo Configuring openldap for $* aready done ; \
+	else \
+	    $(OUT)echo Configuring openldap for $* in openldap-build/$* ; \
+	      cd openldap-build/$* ; \
+	      CC="$(ELLCC)/bin/ecc" \
+              CFLAGS="-target $* $(CFLAGS)" \
+              LDFLAGS="-target $*" \
+	      CXX="$(ELLCC)/bin/ecc++" \
+              CXXFLAGS="-target $* $(CXXFLAGS)" \
+              CPP="$(ELLCC)/bin/ecc -E" \
+              CXXPP="$(ELLCC)/bin/ecc++ -E" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+                ../../src/openldap/configure \
+	          --enable-debug --disable-bdb --disable-hdb \
+	          --enable-shared=no  --prefix=$(ELLCC) \
+	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+      fi
+
+%.openldap.build:
+	$(OUT)mkdir -p openldap-build/$*
+	$(OUT)cp -pfru src/openldap/* openldap-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
+            AR=$(ELLCC)/bin/ecc-ar \
+            RANLIB=$(ELLCC)/bin/ecc-ranlib \
+            -C openldap-build/$*
+
+%.openldap.install:
+	$(OUT)cd openldap-build/$* ; \
+	echo Installing openldap for $*; \
+	mkdir -p ../../include/openldap ; \
+	cp -p lib/includes/openldap/*.h ../../include/openldap ; \
+	mkdir -p ../../lib/$* ; \
+	cp -rP ./lib/.libs/libopenldap.a ../../lib/$*
+
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.curl.configure && \
 	$(MAKE) $(MFLAGS) $@.curl.build && \
