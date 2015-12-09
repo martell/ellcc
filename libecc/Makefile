@@ -37,6 +37,25 @@ $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) -C $(OBJ)/$@/musl install || exit 1
 	$(OUT)$(MAKE) $(MFLAGS) $@.musl.install
 
+musl.install:
+	$(OUT)cd musl-build ; \
+	for target in `echo *` ; do \
+	  $(MAKE) $(MFLAGS) -C .. $$target.musl.install ; \
+	done
+
+%.musl.install:
+	$(OUT)cd musl-build ; \
+	echo Installing libecc for $* ; \
+	mkdir -p ../include ; \
+	cp -pr $*/install/include/* ../include ; \
+	ln -sf ../endian.h ../include/sys ; \
+	mkdir -p ../include/`../../bin/ecc-getincarch $*` ; \
+	rm -fr ../include/`../../bin/ecc-getincarch $*`/bits ; \
+	mv ../include/bits ../include/`../../bin/ecc-getincarch $*`/bits ; \
+	(cd ../include/`../../bin/ecc-getincarch $*`; rm -rf machine; ln -sf bits machine) ;\
+	mkdir -p ../lib/$* ; \
+	cp $*/install/lib/*.a $*/install/lib/*.o ../lib/$*
+
 $(Configs)::
 	@echo Making libcompiler-rt for $@ in compiler-rt-build
 	$(OUT)mkdir -p compiler-rt-build/$@
@@ -130,7 +149,7 @@ $(Configs)::
 	else  \
 	  echo Configuring zlib for $* in zlib-build/$* ; \
 	  mkdir -p zlib-build/$* ; \
-	  cp -pfr src/zlib/* zlib-build/$* ; \
+	  cp -pfru src/zlib/* zlib-build/$* ; \
 	  cd zlib-build/$* ; \
 	  CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
 	  CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
@@ -140,6 +159,7 @@ $(Configs)::
 	fi
 
 %.zlib.build:
+	$(OUT)cp -pfru src/zlib/* zlib-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) -C zlib-build/$*
 
 %.zlib.install:
@@ -193,7 +213,7 @@ $(Configs)::
 	else \
 	  echo Configuring libedit for $* in libedit-build/$* ; \
 	  mkdir -p libedit-build/$* ; \
-	  cp -pfr src/libedit/* libedit-build/$* ; \
+	  cp -pfru src/libedit/* libedit-build/$* ; \
 	  cd libedit-build/$* ; \
 	  RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	  CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
@@ -206,6 +226,7 @@ $(Configs)::
 	fi
 
 %.libedit.build:
+	$(OUT)cp -pfru src/libedit/* libedit-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) -C libedit-build/$*
 
 %.libedit.install:
@@ -225,13 +246,14 @@ $(Configs)::
 %.mbedtls.configure:
 	$(OUT)echo Configuring mbedtls for $* in mbedtls-build/$* ; \
 	  mkdir -p mbedtls-build/$* ; \
-	  cp -pr src/mbedtls/* mbedtls-build/$* ; \
+	  cp -pfru src/mbedtls/* mbedtls-build/$* ; \
 	  echo export CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
 	    > mbedtls-build/$*/Makefile ; \
 	  echo export AR=$(ELLCC)/bin/ecc-ar >> mbedtls-build/$*/Makefile ; \
 	  cat src/mbedtls/Makefile >> mbedtls-build/$*/Makefile
 
 %.mbedtls.build:
+	$(OUT)cp -pfru src/mbedtls/* mbedtls-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -258,7 +280,7 @@ $(Configs)::
 	else \
 	    $(OUT)echo Configuring c-ares for $* in c-ares-build/$* ; \
 	      mkdir -p c-ares-build/$* ; \
-	      cp -pr src/c-ares/* c-ares-build/$* ; \
+	      cp -pfru src/c-ares/* c-ares-build/$* ; \
 	      cd c-ares-build/$* ; \
 	      CC="$(ELLCC)/bin/ecc" \
               CFLAGS="-target $* $(CFLAGS)" \
@@ -270,6 +292,7 @@ $(Configs)::
       fi
 
 %.c-ares.build:
+	$(OUT)cp -pfru src/c-ares/* c-ares-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -291,7 +314,7 @@ $(Configs)::
 
 %.libssh2.configure:
 	$(OUT)mkdir -p libssh2-build/$*
-	$(OUT)cp -pr src/libssh2/* libssh2-build/$*
+	$(OUT)cp -pfru src/libssh2/* libssh2-build/$*
 	$(OUT)if [ -e libssh2-build/$*/Makefile ] ; then \
 	  echo Configuring libssh2 for $* aready done ; \
 	else \
@@ -309,7 +332,7 @@ $(Configs)::
 
 %.libssh2.build:
 	$(OUT)mkdir -p libssh2-build/$*
-	$(OUT)cp -pr src/libssh2/* libssh2-build/$*
+	$(OUT)cp -pfru src/libssh2/* libssh2-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -330,7 +353,7 @@ $(Configs)::
 
 %.nghttp2.configure:
 	$(OUT)mkdir -p nghttp2-build/$*
-	$(OUT)cp -pr src/nghttp2/* nghttp2-build/$*
+	$(OUT)cp -pfru src/nghttp2/* nghttp2-build/$*
 	$(OUT)if [ -e nghttp2-build/$*/Makefile ] ; then \
 	  echo Configuring nghttp2 for $* aready done ; \
 	else \
@@ -352,7 +375,7 @@ $(Configs)::
 
 %.nghttp2.build:
 	$(OUT)mkdir -p nghttp2-build/$*
-	$(OUT)cp -pr src/nghttp2/* nghttp2-build/$*
+	$(OUT)cp -pfru src/nghttp2/* nghttp2-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -373,7 +396,7 @@ $(Configs)::
 
 %.libmetalink.configure:
 	$(OUT)mkdir -p libmetalink-build/$*
-	$(OUT)cp -pr src/libmetalink/* libmetalink-build/$*
+	$(OUT)cp -pfru src/libmetalink/* libmetalink-build/$*
 	$(OUT)if [ -e libmetalink-build/$*/Makefile ] ; then \
 	  echo Configuring libmetalink for $* aready done ; \
 	else \
@@ -395,7 +418,7 @@ $(Configs)::
 
 %.libmetalink.build:
 	$(OUT)mkdir -p libmetalink-build/$*
-	$(OUT)cp -pr src/libmetalink/* libmetalink-build/$*
+	$(OUT)cp -pfru src/libmetalink/* libmetalink-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -416,7 +439,7 @@ $(Configs)::
 
 %.curl.configure:
 	$(OUT)mkdir -p curl-build/$*
-	$(OUT)cp -pr src/curl/* curl-build/$*
+	$(OUT)cp -pfru src/curl/* curl-build/$*
 	$(OUT)if [ -e curl-build/$*/src/Makefile ] ; then \
 	  echo Configuring curl for $* aready done ; \
 	else \
@@ -439,7 +462,7 @@ $(Configs)::
       fi
 
 %.curl.build:
-	$(OUT)mkdir -p curl-build/$*
+	$(OUT)cp -pfru src/curl/* curl-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) -C curl-build/$*/lib
 	$(OUT)$(MAKE) $(MFLAGS) -C curl-build/$*/src
 
@@ -455,25 +478,6 @@ clean:
 	$(OUT)rm -fr *-build
 
 install:
-
-musl.install:
-	$(OUT)cd musl-build ; \
-	for target in `echo *` ; do \
-	  $(MAKE) $(MFLAGS) -C .. $$target.musl.install ; \
-	done
-
-%.musl.install:
-	$(OUT)cd musl-build ; \
-	echo Installing libecc for $* ; \
-	mkdir -p ../include ; \
-	cp -pr $*/install/include/* ../include ; \
-	ln -sf ../endian.h ../include/sys ; \
-	mkdir -p ../include/`../../bin/ecc-getincarch $*` ; \
-	rm -fr ../include/`../../bin/ecc-getincarch $*`/bits ; \
-	mv ../include/bits ../include/`../../bin/ecc-getincarch $*`/bits ; \
-	(cd ../include/`../../bin/ecc-getincarch $*`; rm -rf machine; ln -sf bits machine) ;\
-	mkdir -p ../lib/$* ; \
-	cp $*/install/lib/*.a $*/install/lib/*.o ../lib/$*
 
 c++-headers:
 	$(OUT)echo Installing C++ headers ; \
