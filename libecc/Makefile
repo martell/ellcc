@@ -432,6 +432,11 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -rP ./lib/.libs/libmetalink.a ../../lib/$*
 
+$(Configs)::
+	$(OUT)$(MAKE) $(MFLAGS) $@.openldap.configure && \
+	$(MAKE) $(MFLAGS) $@.openldap.build && \
+	$(MAKE) $(MFLAGS) $@.openldap.install
+
 %.openldap.configure:
 	$(OUT)mkdir -p openldap-build/$*
 	$(OUT)cp -pfru src/openldap/* openldap-build/$*
@@ -451,6 +456,7 @@ $(Configs)::
                 ../../src/openldap/configure \
 	          --enable-debug --disable-bdb --disable-hdb \
 	          --enable-shared=no  --prefix=$(ELLCC) \
+		  --with-yielding_select=yes \
 	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
       fi
 
@@ -465,10 +471,15 @@ $(Configs)::
 %.openldap.install:
 	$(OUT)cd openldap-build/$* ; \
 	echo Installing openldap for $*; \
-	mkdir -p ../../include/openldap ; \
-	cp -p lib/includes/openldap/*.h ../../include/openldap ; \
+	mkdir -p ../../include ; \
+	cp -p include/lber.h include/lber_types.h include/ldap.h \
+	  include/ldap_cdefs.h include/ldap_schema.h include/ldap_utf8.h \
+	  include/slapi-plugin.h include/ldap_features.h include/ldif.h \
+	  ../../include ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP ./lib/.libs/libopenldap.a ../../lib/$*
+	cp -rP ./libraries/libldap_r/.libs/libldap_r.a ../../lib/$* ; \
+	cp -rP ./libraries/libldap/.libs/libldap.a ../../lib/$* ; \
+	cp -rP ./libraries/liblber/.libs/liblber.a ../../lib/$* ; \
 
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.curl.configure && \
