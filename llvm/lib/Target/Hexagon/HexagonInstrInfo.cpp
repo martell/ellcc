@@ -776,6 +776,35 @@ bool HexagonInstrInfo::expandPostRAPseudo(MachineBasicBlock::iterator MI)
           .addImm(-MI->getOperand(1).getImm());
       MBB.erase(MI);
       return true;
+    case Hexagon::HEXAGON_V6_vassignp_128B:
+    case Hexagon::HEXAGON_V6_vassignp: {
+      unsigned SrcReg = MI->getOperand(1).getReg();
+      unsigned DstReg = MI->getOperand(0).getReg();
+      if (SrcReg != DstReg)
+        copyPhysReg(MBB, MI, DL, DstReg, SrcReg, MI->getOperand(1).isKill());
+      MBB.erase(MI);
+      return true;
+    }
+    case Hexagon::HEXAGON_V6_lo_128B:
+    case Hexagon::HEXAGON_V6_lo: {
+      unsigned SrcReg = MI->getOperand(1).getReg();
+      unsigned DstReg = MI->getOperand(0).getReg();
+      unsigned SrcSubLo = HRI.getSubReg(SrcReg, Hexagon::subreg_loreg);
+      copyPhysReg(MBB, MI, DL, DstReg, SrcSubLo, MI->getOperand(1).isKill());
+      MBB.erase(MI);
+      MRI.clearKillFlags(SrcSubLo);
+      return true;
+    }
+    case Hexagon::HEXAGON_V6_hi_128B:
+    case Hexagon::HEXAGON_V6_hi: {
+      unsigned SrcReg = MI->getOperand(1).getReg();
+      unsigned DstReg = MI->getOperand(0).getReg();
+      unsigned SrcSubHi = HRI.getSubReg(SrcReg, Hexagon::subreg_hireg);
+      copyPhysReg(MBB, MI, DL, DstReg, SrcSubHi, MI->getOperand(1).isKill());
+      MBB.erase(MI);
+      MRI.clearKillFlags(SrcSubHi);
+      return true;
+    }
     case Hexagon::STrivv_indexed_128B:
       Is128B = true;
     case Hexagon::STrivv_indexed: {
@@ -1446,7 +1475,7 @@ bool HexagonInstrInfo::isComplex(const MachineInstr *MI) const {
 }
 
 
-// Return true if the the instruction is a compund branch instruction.
+// Return true if the instruction is a compund branch instruction.
 bool HexagonInstrInfo::isCompoundBranchInstr(const MachineInstr *MI) const {
   return (getType(MI) == HexagonII::TypeCOMPOUND && MI->isBranch());
 }

@@ -94,9 +94,38 @@ bool InputSection<ELFT>::classof(const InputSectionBase<ELFT> *S) {
 
 template <class ELFT>
 template <bool isRela>
-void InputSectionBase<ELFT>::relocate(
-    uint8_t *Buf, uint8_t *BufEnd,
-    iterator_range<const Elf_Rel_Impl<ELFT, isRela> *> Rels) {
+uint8_t *
+InputSectionBase<ELFT>::findMipsPairedReloc(uint8_t *Buf, uint32_t Type,
+                                            RelIteratorRange<isRela> Rels) {
+  // Some MIPS relocations use addend calculated from addend of the relocation
+  // itself and addend of paired relocation. ABI requires to compute such
+  // combined addend in case of REL relocation record format only.
+  // See p. 4-17 at ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
+  if (isRela || Config->EMachine != EM_MIPS)
+    return nullptr;
+  if (Type == R_MIPS_HI16)
+    Type = R_MIPS_LO16;
+  else if (Type == R_MIPS_PCHI16)
+    Type = R_MIPS_PCLO16;
+  else if (Type == R_MICROMIPS_HI16)
+    Type = R_MICROMIPS_LO16;
+  else
+    return nullptr;
+  for (const auto &RI : Rels) {
+    if (RI.getType(Config->Mips64EL) != Type)
+      continue;
+    uintX_t Offset = getOffset(RI.r_offset);
+    if (Offset == (uintX_t)-1)
+      return nullptr;
+    return Buf + Offset;
+  }
+  return nullptr;
+}
+
+template <class ELFT>
+template <bool isRela>
+void InputSectionBase<ELFT>::relocate(uint8_t *Buf, uint8_t *BufEnd,
+                                      RelIteratorRange<isRela> Rels) {
   typedef Elf_Rel_Impl<ELFT, isRela> RelType;
   size_t Num = Rels.end() - Rels.begin();
   for (size_t I = 0; I < Num; ++I) {
@@ -109,12 +138,12 @@ void InputSectionBase<ELFT>::relocate(
 
     uint8_t *BufLoc = Buf + Offset;
     uintX_t AddrLoc = OutSec->getVA() + Offset;
+    auto NextRelocs = llvm::make_range(&RI, Rels.end());
 
     if (Target->isTlsLocalDynamicReloc(Type) &&
         !Target->isTlsOptimized(Type, nullptr)) {
       Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc,
-                          Out<ELFT>::Got->getVA() +
-                              Out<ELFT>::LocalModuleTlsIndexOffset +
+                          Out<ELFT>::Got->getLocalTlsIndexVA() +
                               getAddend<ELFT>(RI));
       continue;
     }
@@ -124,7 +153,8 @@ void InputSectionBase<ELFT>::relocate(
     const Elf_Shdr *SymTab = File->getSymbolTable();
     if (SymIndex < SymTab->sh_info) {
       uintX_t SymVA = getLocalRelTarget(*File, RI);
-      Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc, SymVA);
+      Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc, SymVA,
+                          findMipsPairedReloc(Buf, Type, NextRelocs));
       continue;
     }
 
@@ -133,17 +163,20 @@ void InputSectionBase<ELFT>::relocate(
     if (Target->isTlsGlobalDynamicReloc(Type) &&
         !Target->isTlsOptimized(Type, &Body)) {
       Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc,
-                          Out<ELFT>::Got->getEntryAddr(Body) +
+                          Out<ELFT>::Got->getGlobalDynAddr(Body) +
                               getAddend<ELFT>(RI));
       continue;
     }
 
     if (Target->isTlsOptimized(Type, &Body)) {
+      uintX_t SymVA = Target->relocNeedsGot(Type, Body)
+                          ? Out<ELFT>::Got->getEntryAddr(Body)
+                          : getSymVA<ELFT>(Body);
       // By optimizing TLS relocations, it is sometimes needed to skip
       // relocations that immediately follow TLS relocations. This function
       // knows how many slots we need to skip.
-      I += Target->relocateTlsOptimize(BufLoc, BufEnd, Type, AddrLoc,
-                                       getSymVA<ELFT>(Body));
+      I += Target->relocateTlsOptimize(BufLoc, BufEnd, Type, AddrLoc, SymVA,
+                                       Body);
       continue;
     }
 
@@ -153,8 +186,8 @@ void InputSectionBase<ELFT>::relocate(
       Type = Target->getPltRefReloc(Type);
     } else if (Target->relocNeedsGot(Type, Body)) {
       SymVA = Out<ELFT>::Got->getEntryAddr(Body);
-      Type = Body.isTLS() ? Target->getTlsGotReloc()
-                          : Target->getGotRefReloc(Type);
+      if (Body.isTLS())
+        Type = Target->getTlsGotReloc();
     } else if (!Target->relocNeedsCopy(Type, Body) &&
                isa<SharedSymbol<ELFT>>(Body)) {
       continue;
@@ -162,7 +195,8 @@ void InputSectionBase<ELFT>::relocate(
       continue;
     }
     Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc,
-                        SymVA + getAddend<ELFT>(RI));
+                        SymVA + getAddend<ELFT>(RI),
+                        findMipsPairedReloc(Buf, Type, NextRelocs));
   }
 }
 

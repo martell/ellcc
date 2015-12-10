@@ -16,6 +16,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/FileOutputBuffer.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/StringSaver.h"
 
 using namespace llvm;
@@ -205,11 +206,8 @@ void Writer<ELFT>::scanRelocs(
     if (Target->isTlsLocalDynamicReloc(Type)) {
       if (Target->isTlsOptimized(Type, nullptr))
         continue;
-      if (Out<ELFT>::LocalModuleTlsIndexOffset == uint32_t(-1)) {
-        Out<ELFT>::LocalModuleTlsIndexOffset =
-            Out<ELFT>::Got->addLocalModuleTlsIndex();
+      if (Out<ELFT>::Got->addCurrentModuleTlsIndex())
         Out<ELFT>::RelaDyn->addReloc({&C, &RI});
-      }
       continue;
     }
 
@@ -222,18 +220,18 @@ void Writer<ELFT>::scanRelocs(
       Body = Body->repl();
 
     if (Body && Body->isTLS() && Target->isTlsGlobalDynamicReloc(Type)) {
-      if (Target->isTlsOptimized(Type, Body))
+      bool Opt = Target->isTlsOptimized(Type, Body);
+      if (!Opt && Out<ELFT>::Got->addDynTlsEntry(Body)) {
+        Out<ELFT>::RelaDyn->addReloc({&C, &RI});
+        Out<ELFT>::RelaDyn->addReloc({nullptr, nullptr});
+        Body->setUsedInDynamicReloc();
         continue;
-      if (Body->isInGot())
+      }
+      if (!canBePreempted(Body, true))
         continue;
-      Out<ELFT>::Got->addDynTlsEntry(Body);
-      Out<ELFT>::RelaDyn->addReloc({&C, &RI});
-      Out<ELFT>::RelaDyn->addReloc({nullptr, nullptr});
-      Body->setUsedInDynamicReloc();
-      continue;
     }
 
-    if ((Body && Body->isTLS()) && !Target->isTlsDynReloc(Type))
+    if (Body && Body->isTLS() && !Target->isTlsDynReloc(Type))
       continue;
 
     bool NeedsGot = false;
@@ -535,6 +533,15 @@ StringRef Writer<ELFT>::getOutputSectionName(StringRef S) const {
 }
 
 template <class ELFT>
+void reportDiscarded(InputSectionBase<ELFT> *IS,
+                     const std::unique_ptr<ObjectFile<ELFT>> &File) {
+  if (!Config->PrintGcSections || !IS || IS->isLive())
+    return;
+  llvm::errs() << "removing unused section from '" << IS->getSectionName()
+               << "' in file '" << File->getName() << "'\n";
+}
+
+template <class ELFT>
 bool Writer<ELFT>::isDiscarded(InputSectionBase<ELFT> *IS) const {
   if (!IS || !IS->isLive() || IS == &InputSection<ELFT>::Discarded)
     return true;
@@ -567,8 +574,10 @@ template <class ELFT> void Writer<ELFT>::createSections() {
 
   for (const std::unique_ptr<ObjectFile<ELFT>> &F : Symtab.getObjectFiles()) {
     for (InputSectionBase<ELFT> *C : F->getSections()) {
-      if (isDiscarded(C))
+      if (isDiscarded(C)) {
+        reportDiscarded(C, F);
         continue;
+      }
       const Elf_Shdr *H = C->getSectionHdr();
       uintX_t OutFlags = H->sh_flags & ~SHF_GROUP;
       // For SHF_MERGE we create different output sections for each sh_entsize.

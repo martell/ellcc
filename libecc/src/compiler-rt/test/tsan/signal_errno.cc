@@ -1,4 +1,8 @@
 // RUN: %clang_tsan -O1 %s -o %t && not %run %t 2>&1 | FileCheck %s
+// This test fails on powerpc64 (VMA=44), it does not appear to be
+// a functional problem, but the Tsan report is missing some info.
+// XFAIL: powerpc64
+
 #include "test.h"
 #include <signal.h>
 #include <sys/types.h>

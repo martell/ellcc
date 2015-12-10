@@ -37,7 +37,8 @@ static OpenMPDirectiveKind ParseOpenMPDirectiveKind(Parser &P) {
       {OMPD_for, OMPD_simd, OMPD_for_simd},
       {OMPD_parallel, OMPD_for, OMPD_parallel_for},
       {OMPD_parallel_for, OMPD_simd, OMPD_parallel_for_simd},
-      {OMPD_parallel, OMPD_sections, OMPD_parallel_sections}};
+      {OMPD_parallel, OMPD_sections, OMPD_parallel_sections},
+      {OMPD_taskloop, OMPD_simd, OMPD_taskloop_simd}};
   auto Tok = P.getCurToken();
   auto DKind =
       Tok.isAnnotation()
@@ -137,6 +138,8 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirective() {
   case OMPD_cancellation_point:
   case OMPD_cancel:
   case OMPD_target_data:
+  case OMPD_taskloop:
+  case OMPD_taskloop_simd:
     Diag(Tok, diag::err_omp_unexpected_directive)
         << getOpenMPDirectiveName(DKind);
     break;
@@ -157,7 +160,7 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirective() {
 ///         'parallel for' | 'parallel sections' | 'task' | 'taskyield' |
 ///         'barrier' | 'taskwait' | 'flush' | 'ordered' | 'atomic' |
 ///         'for simd' | 'parallel for simd' | 'target' | 'target data' |
-///         'taskgroup' | 'teams' {clause}
+///         'taskgroup' | 'teams' | 'taskloop' | 'taskloop simd' {clause}
 ///         annot_pragma_openmp_end
 ///
 StmtResult
@@ -232,7 +235,9 @@ Parser::ParseOpenMPDeclarativeOrExecutableDirective(bool StandAloneAllowed) {
   case OMPD_target:
   case OMPD_teams:
   case OMPD_taskgroup:
-  case OMPD_target_data: {
+  case OMPD_target_data:
+  case OMPD_taskloop:
+  case OMPD_taskloop_simd: {
     ConsumeToken();
     // Parse directive name of the 'critical' directive if any.
     if (DKind == OMPD_critical) {
@@ -394,7 +399,9 @@ bool Parser::ParseOpenMPSimpleVarList(OpenMPDirectiveKind Kind,
 ///       schedule-clause | copyin-clause | copyprivate-clause | untied-clause |
 ///       mergeable-clause | flush-clause | read-clause | write-clause |
 ///       update-clause | capture-clause | seq_cst-clause | device-clause |
-///       simdlen-clause | threads-clause | simd-clause | num_teams-clause
+///       simdlen-clause | threads-clause | simd-clause | num_teams-clause |
+///       thread_limit-clause | priority-clause | grainsize-clause |
+///       nogroup-clause | num_tasks-clause
 ///
 OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
                                      OpenMPClauseKind CKind, bool FirstClause) {
@@ -416,6 +423,10 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
   case OMPC_ordered:
   case OMPC_device:
   case OMPC_num_teams:
+  case OMPC_thread_limit:
+  case OMPC_priority:
+  case OMPC_grainsize:
+  case OMPC_num_tasks:
     // OpenMP [2.5, Restrictions]
     //  At most one num_threads clause can appear on the directive.
     // OpenMP [2.8.1, simd construct, Restrictions]
@@ -429,6 +440,13 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
     //  At most one final clause can appear on the directive.
     // OpenMP [teams Construct, Restrictions]
     //  At most one num_teams clause can appear on the directive.
+    //  At most one thread_limit clause can appear on the directive.
+    // OpenMP [2.9.1, task Construct, Restrictions]
+    // At most one priority clause can appear on the directive.
+    // OpenMP [2.9.2, taskloop Construct, Restrictions]
+    // At most one grainsize clause can appear on the directive.
+    // OpenMP [2.9.2, taskloop Construct, Restrictions]
+    // At most one num_tasks clause can appear on the directive.
     if (!FirstClause) {
       Diag(Tok, diag::err_omp_more_one_clause)
           << getOpenMPDirectiveName(DKind) << getOpenMPClauseName(CKind) << 0;
@@ -477,6 +495,7 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
   case OMPC_seq_cst:
   case OMPC_threads:
   case OMPC_simd:
+  case OMPC_nogroup:
     // OpenMP [2.7.1, Restrictions, p. 9]
     //  Only one ordered clause can appear on a loop directive.
     // OpenMP [2.7.1, Restrictions, C/C++, p. 4]
@@ -518,8 +537,8 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
 }
 
 /// \brief Parsing of OpenMP clauses with single expressions like 'final',
-/// 'collapse', 'safelen', 'num_threads', 'simdlen', 'num_teams', 'thread_limit'
-/// or 'simdlen'.
+/// 'collapse', 'safelen', 'num_threads', 'simdlen', 'num_teams',
+/// 'thread_limit', 'simdlen', 'priority', 'grainsize' or 'num_tasks'.
 ///
 ///    final-clause:
 ///      'final' '(' expression ')'
@@ -535,6 +554,15 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
 ///
 ///    collapse-clause:
 ///      'collapse' '(' expression ')'
+///
+///    priority-clause:
+///      'priority' '(' expression ')'
+///
+///    grainsize-clause:
+///      'grainsize' '(' expression ')'
+///
+///    num_tasks-clause:
+///      'num_tasks' '(' expression ')'
 ///
 OMPClause *Parser::ParseOpenMPSingleExprClause(OpenMPClauseKind Kind) {
   SourceLocation Loc = ConsumeToken();
@@ -612,6 +640,9 @@ OMPClause *Parser::ParseOpenMPSimpleClause(OpenMPClauseKind Kind) {
 ///
 ///    simd-clause:
 ///         'simd'
+///
+///    nogroup-clause:
+///         'nogroup'
 ///
 OMPClause *Parser::ParseOpenMPClause(OpenMPClauseKind Kind) {
   SourceLocation Loc = Tok.getLocation();

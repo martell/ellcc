@@ -43,7 +43,6 @@ public:
   unsigned getGotPltHeaderEntriesNum() const { return GotPltHeaderEntriesNum; }
   virtual unsigned getDynReloc(unsigned Type) const { return Type; }
   virtual bool isTlsDynReloc(unsigned Type) const { return false; }
-  virtual unsigned getGotRefReloc(unsigned Type) const;
   virtual unsigned getPltRefReloc(unsigned Type) const;
   virtual void writeGotHeaderEntries(uint8_t *Buf) const;
   virtual void writeGotPltHeaderEntries(uint8_t *Buf) const;
@@ -58,11 +57,12 @@ public:
   virtual bool relocNeedsGot(uint32_t Type, const SymbolBody &S) const = 0;
   virtual bool relocNeedsPlt(uint32_t Type, const SymbolBody &S) const = 0;
   virtual void relocateOne(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type,
-                           uint64_t P, uint64_t SA) const = 0;
+                           uint64_t P, uint64_t SA,
+                           uint8_t *PairedLoc = nullptr) const = 0;
   virtual bool isTlsOptimized(unsigned Type, const SymbolBody *S) const;
   virtual unsigned relocateTlsOptimize(uint8_t *Loc, uint8_t *BufEnd,
-                                       uint32_t Type, uint64_t P,
-                                       uint64_t SA) const;
+                                       uint32_t Type, uint64_t P, uint64_t SA,
+                                       const SymbolBody &S) const;
   virtual ~TargetInfo();
 
 protected:
@@ -78,7 +78,6 @@ protected:
 
   unsigned CopyReloc;
   unsigned PCRelReloc;
-  unsigned GotRefReloc;
   unsigned GotReloc;
   unsigned PltReloc;
   unsigned RelativeReloc;

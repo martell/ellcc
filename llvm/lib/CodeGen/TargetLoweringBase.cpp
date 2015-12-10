@@ -840,6 +840,9 @@ void TargetLoweringBase::initActions() {
       setOperationAction(ISD::SIGN_EXTEND_VECTOR_INREG, VT, Expand);
       setOperationAction(ISD::ZERO_EXTEND_VECTOR_INREG, VT, Expand);
     }
+
+    // For most targets @llvm.get.dynamic.area.offest just returns 0.
+    setOperationAction(ISD::GET_DYNAMIC_AREA_OFFSET, VT, Expand);
   }
 
   // Most targets ignore the @llvm.prefetch intrinsic.
@@ -1650,6 +1653,10 @@ TargetLoweringBase::getTypeLegalizationCost(const DataLayout &DL,
 
     if (LK.first == TypeSplitVector || LK.first == TypeExpandInteger)
       Cost *= 2;
+
+    // Do not loop with f128 type.
+    if (MTy == LK.second)
+      return std::make_pair(Cost, MTy.getSimpleVT());
 
     // Keep legalizing the type.
     MTy = LK.second;

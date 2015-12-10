@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r255244.
 * Build curl with openldap support.
 * Import and build the openldap 2.4.43 library.
 * Build curl with metalink support.

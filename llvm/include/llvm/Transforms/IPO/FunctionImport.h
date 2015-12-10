@@ -22,26 +22,23 @@ class FunctionInfoIndex;
 /// based on the provided summary informations.
 class FunctionImporter {
 
-  /// Cache of lazily loaded module for import.
-  StringMap<std::unique_ptr<Module>> ModuleMap;
-
-  /// The context that will be used for importing.
-  LLVMContext &Context;
-
   /// The summaries index used to trigger importing.
   const FunctionInfoIndex &Index;
 
   /// Diagnostic will be sent to this handler.
   DiagnosticHandlerFunction DiagnosticHandler;
 
-  /// Retrieve a Module from the cache or lazily load it on demand.
-  Module &getOrLoadModule(StringRef FileName);
+  /// Factory function to load a Module for a given identifier
+  std::function<std::unique_ptr<Module>(StringRef Identifier)> ModuleLoader;
 
 public:
   /// Create a Function Importer.
-  FunctionImporter(LLVMContext &Context, const FunctionInfoIndex &Index,
-                   DiagnosticHandlerFunction DiagnosticHandler)
-      : Context(Context), Index(Index), DiagnosticHandler(DiagnosticHandler) {}
+  FunctionImporter(
+      const FunctionInfoIndex &Index,
+      DiagnosticHandlerFunction DiagnosticHandler,
+      std::function<std::unique_ptr<Module>(StringRef Identifier)> ModuleLoader)
+      : Index(Index), DiagnosticHandler(DiagnosticHandler),
+        ModuleLoader(ModuleLoader) {}
 
   /// Import functions in Module \p M based on the summary informations.
   bool importFunctions(Module &M);

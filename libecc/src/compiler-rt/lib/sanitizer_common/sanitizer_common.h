@@ -675,12 +675,10 @@ INLINE bool ShouldLogAfterPrintf() { return false; }
 #endif
 
 #if SANITIZER_ANDROID
-void GetExtraActivationFlags(char *buf, uptr size);
 void SanitizerInitializeUnwinder();
 AndroidApiLevel AndroidGetApiLevel();
 #else
 INLINE void AndroidLogWrite(const char *buffer_unused) {}
-INLINE void GetExtraActivationFlags(char *buf, uptr size) { *buf = '\0'; }
 INLINE void SanitizerInitializeUnwinder() {}
 INLINE AndroidApiLevel AndroidGetApiLevel() { return ANDROID_NOT_ANDROID; }
 #endif
@@ -728,6 +726,9 @@ struct SignalContext {
 };
 
 void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp);
+
+void DisableReexec();
+void MaybeReexec();
 
 }  // namespace __sanitizer
 

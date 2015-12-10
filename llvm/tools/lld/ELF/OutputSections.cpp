@@ -80,23 +80,35 @@ template <class ELFT> void GotSection<ELFT>::addEntry(SymbolBody *Sym) {
   Entries.push_back(Sym);
 }
 
-template <class ELFT> void GotSection<ELFT>::addDynTlsEntry(SymbolBody *Sym) {
-  Sym->GotIndex = Target->getGotHeaderEntriesNum() + Entries.size();
+template <class ELFT> bool GotSection<ELFT>::addDynTlsEntry(SymbolBody *Sym) {
+  if (Sym->hasGlobalDynIndex())
+    return false;
+  Sym->GlobalDynIndex = Target->getGotHeaderEntriesNum() + Entries.size();
   // Global Dynamic TLS entries take two GOT slots.
   Entries.push_back(Sym);
   Entries.push_back(nullptr);
+  return true;
 }
 
-template <class ELFT> uint32_t GotSection<ELFT>::addLocalModuleTlsIndex() {
+template <class ELFT> bool GotSection<ELFT>::addCurrentModuleTlsIndex() {
+  if (LocalTlsIndexOff != uint32_t(-1))
+    return false;
   Entries.push_back(nullptr);
   Entries.push_back(nullptr);
-  return (Entries.size() - 2) * sizeof(uintX_t);
+  LocalTlsIndexOff = (Entries.size() - 2) * sizeof(uintX_t);
+  return true;
 }
 
 template <class ELFT>
 typename GotSection<ELFT>::uintX_t
 GotSection<ELFT>::getEntryAddr(const SymbolBody &B) const {
   return this->getVA() + B.GotIndex * sizeof(uintX_t);
+}
+
+template <class ELFT>
+typename GotSection<ELFT>::uintX_t
+GotSection<ELFT>::getGlobalDynAddr(const SymbolBody &B) const {
+  return this->getVA() + B.GlobalDynIndex * sizeof(uintX_t);
 }
 
 template <class ELFT>
@@ -150,7 +162,7 @@ template <class ELFT> void PltSection<ELFT>::writeTo(uint8_t *Buf) {
     Target->writePltZeroEntry(Buf, Out<ELFT>::GotPlt->getVA(), this->getVA());
     Off += Target->getPltZeroEntrySize();
   }
-  for (std::pair<const SymbolBody *, unsigned> &I : Entries) {
+  for (auto &I : Entries) {
     const SymbolBody *E = I.first;
     unsigned RelOff = I.second;
     uint64_t GotVA =
@@ -193,6 +205,37 @@ RelocationSection<ELFT>::RelocationSection(StringRef Name, bool IsRela)
   this->Header.sh_addralign = ELFT::Is64Bits ? 8 : 4;
 }
 
+// Applies corresponding symbol and type for dynamic tls relocation.
+// Returns true if relocation was handled.
+template <class ELFT>
+bool RelocationSection<ELFT>::applyTlsDynamicReloc(SymbolBody *Body,
+                                                   uint32_t Type, Elf_Rel *P,
+                                                   Elf_Rel *N) {
+  if (Target->isTlsLocalDynamicReloc(Type)) {
+    P->setSymbolAndType(0, Target->getTlsModuleIndexReloc(), Config->Mips64EL);
+    P->r_offset = Out<ELFT>::Got->getLocalTlsIndexVA();
+    return true;
+  }
+
+  if (!Body || !Target->isTlsGlobalDynamicReloc(Type))
+    return false;
+
+  if (Target->isTlsOptimized(Type, Body)) {
+    P->setSymbolAndType(Body->getDynamicSymbolTableIndex(),
+                        Target->getTlsGotReloc(), Config->Mips64EL);
+    P->r_offset = Out<ELFT>::Got->getEntryAddr(*Body);
+    return true;
+  }
+
+  P->setSymbolAndType(Body->getDynamicSymbolTableIndex(),
+                      Target->getTlsModuleIndexReloc(), Config->Mips64EL);
+  P->r_offset = Out<ELFT>::Got->getGlobalDynAddr(*Body);
+  N->setSymbolAndType(Body->getDynamicSymbolTableIndex(),
+                      Target->getTlsOffsetReloc(), Config->Mips64EL);
+  N->r_offset = Out<ELFT>::Got->getGlobalDynAddr(*Body) + sizeof(uintX_t);
+  return true;
+}
+
 template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
   const unsigned EntrySize = IsRela ? sizeof(Elf_Rela) : sizeof(Elf_Rel);
   for (const DynamicReloc<ELFT> &Rel : Relocs) {
@@ -213,26 +256,8 @@ template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
       Body = Body->repl();
 
     uint32_t Type = RI.getType(Config->Mips64EL);
-
-    if (Target->isTlsLocalDynamicReloc(Type)) {
-      P->setSymbolAndType(0, Target->getTlsModuleIndexReloc(),
-                          Config->Mips64EL);
-      P->r_offset =
-          Out<ELFT>::Got->getVA() + Out<ELFT>::LocalModuleTlsIndexOffset;
+    if (applyTlsDynamicReloc(Body, Type, P, reinterpret_cast<Elf_Rel *>(Buf)))
       continue;
-    }
-
-    if (Body && Target->isTlsGlobalDynamicReloc(Type)) {
-      P->setSymbolAndType(Body->getDynamicSymbolTableIndex(),
-                          Target->getTlsModuleIndexReloc(), Config->Mips64EL);
-      P->r_offset = Out<ELFT>::Got->getEntryAddr(*Body);
-      auto *PNext = reinterpret_cast<Elf_Rel *>(Buf);
-      PNext->setSymbolAndType(Body->getDynamicSymbolTableIndex(),
-                              Target->getTlsOffsetReloc(), Config->Mips64EL);
-      PNext->r_offset = Out<ELFT>::Got->getEntryAddr(*Body) + sizeof(uintX_t);
-      continue;
-    }
-
     bool NeedsCopy = Body && Target->relocNeedsCopy(Type, *Body);
     bool NeedsGot = Body && Target->relocNeedsGot(Type, *Body);
     bool CanBePreempted = canBePreempted(Body, NeedsGot);
@@ -811,7 +836,7 @@ lld::elf2::getLocalRelTarget(const ObjectFile<ELFT> &File,
 
   if (Sym->getType() == STT_TLS)
     return (Section->OutSec->getVA() + Section->getOffset(*Sym) + Addend) -
-           Out<ELF64LE>::TlsPhdr->p_vaddr;
+           Out<ELFT>::TlsPhdr->p_vaddr;
 
   // According to the ELF spec reference to a local symbol from outside
   // the group are not allowed. Unfortunately .eh_frame breaks that rule

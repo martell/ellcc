@@ -16,8 +16,6 @@
 #ifndef LLVM_LIB_TARGET_WEBASSEMBLY_WEBASSEMBLYMACHINEFUNCTIONINFO_H
 #define LLVM_LIB_TARGET_WEBASSEMBLY_WEBASSEMBLYMACHINEFUNCTIONINFO_H
 
-#include "WebAssemblyRegisterInfo.h"
-#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 
 namespace llvm {
@@ -37,7 +35,7 @@ class WebAssemblyFunctionInfo final : public MachineFunctionInfo {
   /// determined or made to meet the stack requirements:
   ///   - single use (per path)
   ///   - single def (per path)
-  ///   - defined and used in FIFO order with other stack registers
+  ///   - defined and used in LIFO order with other stack registers
   BitVector VRegStackified;
 
 public:

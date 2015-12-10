@@ -31,14 +31,14 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Linker/Linker.h"
 #include "llvm/MC/SubtargetFeature.h"
-#include "llvm/Object/IRObjectFile.h"
 #include "llvm/Object/FunctionIndexObjectFile.h"
-#include "llvm/Support/raw_ostream.h"
+#include "llvm/Object/IRObjectFile.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
@@ -554,11 +554,11 @@ class LocalValueMaterializer final : public ValueMaterializer {
 
 public:
   LocalValueMaterializer(DenseSet<GlobalValue *> &Dropped) : Dropped(Dropped) {}
-  Value *materializeValueFor(Value *V) override;
+  Value *materializeDeclFor(Value *V) override;
 };
 }
 
-Value *LocalValueMaterializer::materializeValueFor(Value *V) {
+Value *LocalValueMaterializer::materializeDeclFor(Value *V) {
   auto *GO = dyn_cast<GlobalObject>(V);
   if (!GO)
     return nullptr;
@@ -900,9 +900,6 @@ static ld_plugin_status allSymbolsReadHook(raw_fd_ostream *ApiFile) {
   if (Modules.empty())
     return LDPS_OK;
 
-  LLVMContext Context;
-  Context.setDiagnosticHandler(diagnosticHandlerForContext, nullptr, true);
-
   // If we are doing ThinLTO compilation, simply build the combined
   // function index/summary and emit it. We don't need to parse the modules
   // and link them in this case.
@@ -922,6 +919,9 @@ static ld_plugin_status allSymbolsReadHook(raw_fd_ostream *ApiFile) {
         continue;
 
       CombinedIndex.mergeFrom(std::move(Index), ++NextModuleId);
+
+      if (release_input_file(F.handle) != LDPS_OK)
+        message(LDPL_FATAL, "Failed to release file information");
     }
 
     std::error_code EC;
@@ -937,8 +937,11 @@ static ld_plugin_status allSymbolsReadHook(raw_fd_ostream *ApiFile) {
     exit(0);
   }
 
+  LLVMContext Context;
+  Context.setDiagnosticHandler(diagnosticHandlerForContext, nullptr, true);
+
   std::unique_ptr<Module> Combined(new Module("ld-temp.o", Context));
-  Linker L(Combined.get());
+  Linker L(*Combined, diagnosticHandler);
 
   std::string DefaultTriple = sys::getDefaultTargetTriple();
 
@@ -956,7 +959,7 @@ static ld_plugin_status allSymbolsReadHook(raw_fd_ostream *ApiFile) {
       M->setTargetTriple(DefaultTriple);
     }
 
-    if (L.linkInModule(M.get()))
+    if (L.linkInModule(*M))
       message(LDPL_FATAL, "Failed to link module");
     if (release_input_file(F.handle) != LDPS_OK)
       message(LDPL_FATAL, "Failed to release file information");
@@ -986,7 +989,7 @@ static ld_plugin_status allSymbolsReadHook(raw_fd_ostream *ApiFile) {
       path = output_name;
     else
       path = output_name + ".bc";
-    saveBCFile(path, *L.getModule());
+    saveBCFile(path, *Combined);
     if (options::TheOutputType == options::OT_BC_ONLY)
       return LDPS_OK;
   }

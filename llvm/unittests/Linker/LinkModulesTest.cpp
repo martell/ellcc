@@ -71,6 +71,8 @@ protected:
   BasicBlock *ExitBB;
 };
 
+static void expectNoDiags(const DiagnosticInfo &DI) { EXPECT_TRUE(false); }
+
 TEST_F(LinkModuleTest, BlockAddress) {
   IRBuilder<> Builder(EntryBB);
 
@@ -93,7 +95,7 @@ TEST_F(LinkModuleTest, BlockAddress) {
   Builder.CreateRet(ConstantPointerNull::get(Type::getInt8PtrTy(Ctx)));
 
   Module *LinkedModule = new Module("MyModuleLinked", Ctx);
-  Linker::LinkModules(LinkedModule, M.get());
+  Linker::linkModules(*LinkedModule, *M, expectNoDiags);
 
   // Delete the original module.
   M.reset();
@@ -169,13 +171,13 @@ static Module *getInternal(LLVMContext &Ctx) {
 TEST_F(LinkModuleTest, EmptyModule) {
   std::unique_ptr<Module> InternalM(getInternal(Ctx));
   std::unique_ptr<Module> EmptyM(new Module("EmptyModule1", Ctx));
-  Linker::LinkModules(EmptyM.get(), InternalM.get());
+  Linker::linkModules(*EmptyM, *InternalM, expectNoDiags);
 }
 
 TEST_F(LinkModuleTest, EmptyModule2) {
   std::unique_ptr<Module> InternalM(getInternal(Ctx));
   std::unique_ptr<Module> EmptyM(new Module("EmptyModule1", Ctx));
-  Linker::LinkModules(InternalM.get(), EmptyM.get());
+  Linker::linkModules(*InternalM, *EmptyM, expectNoDiags);
 }
 
 TEST_F(LinkModuleTest, TypeMerge) {
@@ -190,7 +192,7 @@ TEST_F(LinkModuleTest, TypeMerge) {
                       "@t2 = weak global %t zeroinitializer\n";
   std::unique_ptr<Module> M2 = parseAssemblyString(M2Str, Err, C);
 
-  Linker::LinkModules(M1.get(), M2.get(), [](const llvm::DiagnosticInfo &){});
+  Linker::linkModules(*M1, *M2, [](const llvm::DiagnosticInfo &) {});
 
   EXPECT_EQ(M1->getNamedGlobal("t1")->getType(),
             M1->getNamedGlobal("t2")->getType());
@@ -267,8 +269,7 @@ TEST_F(LinkModuleTest, MoveDistinctMDs) {
   // Link into destination module.
   auto Dst = llvm::make_unique<Module>("Linked", C);
   ASSERT_TRUE(Dst.get());
-  Linker::LinkModules(Dst.get(), Src.get(),
-                      [](const llvm::DiagnosticInfo &) {});
+  Linker::linkModules(*Dst, *Src, [](const llvm::DiagnosticInfo &) {});
 
   // Check that distinct metadata was moved, not cloned.  Even !4, the uniqued
   // node, should effectively be moved, since its only operand hasn't changed.

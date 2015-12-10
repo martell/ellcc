@@ -45,12 +45,12 @@ Context *ctx;
 bool OnFinalize(bool failed);
 void OnInitialize();
 #else
-SANITIZER_INTERFACE_ATTRIBUTE
-bool WEAK OnFinalize(bool failed) {
+SANITIZER_WEAK_CXX_DEFAULT_IMPL
+bool OnFinalize(bool failed) {
   return failed;
 }
-SANITIZER_INTERFACE_ATTRIBUTE
-void WEAK OnInitialize() {}
+SANITIZER_WEAK_CXX_DEFAULT_IMPL
+void OnInitialize() {}
 #endif
 
 static char thread_registry_placeholder[sizeof(ThreadRegistry)];
@@ -317,6 +317,9 @@ void Initialize(ThreadState *thr) {
   InitializeFlags(&ctx->flags, options);
   InitializePlatformEarly();
 #ifndef SANITIZER_GO
+  // Re-exec ourselves if we need to set additional env or command line args.
+  MaybeReexec();
+
   InitializeAllocator();
   ReplaceSystemMalloc();
 #endif

@@ -46,6 +46,11 @@ endfunction()
 # This function takes an OS and a list of architectures and identifies the
 # subset of the architectures list that the installed toolchain can target.
 function(darwin_test_archs os valid_archs)
+  if(${valid_archs})
+    message(STATUS "Using cached valid architectures for ${os}.")
+    return()
+  endif()
+
   set(archs ${ARGN})
   message(STATUS "Finding valid architectures for ${os}...")
   set(SIMPLE_CPP ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/src.cpp)
@@ -73,9 +78,14 @@ function(darwin_test_archs os valid_archs)
                 OUTPUT_VARIABLE TEST_OUTPUT)
     if(${CAN_TARGET_${os}_${arch}})
       list(APPEND working_archs ${arch})
+    else()
+      file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log
+        "Testing compiler for supporting ${os}-${arch}:\n"
+        "${TEST_OUTPUT}\n")
     endif()
   endforeach()
-  set(${valid_archs} ${working_archs} PARENT_SCOPE)
+  set(${valid_archs} ${working_archs}
+    CACHE STRING "List of valid architectures for platform ${os}.")
 endfunction()
 
 # This function checks the host cpusubtype to see if it is post-haswell. Haswell

@@ -118,10 +118,12 @@ public:
   void finalize() override;
   void writeTo(uint8_t *Buf) override;
   void addEntry(SymbolBody *Sym);
-  void addDynTlsEntry(SymbolBody *Sym);
-  uint32_t addLocalModuleTlsIndex();
+  bool addDynTlsEntry(SymbolBody *Sym);
+  bool addCurrentModuleTlsIndex();
   bool empty() const { return Entries.empty(); }
   uintX_t getEntryAddr(const SymbolBody &B) const;
+  uintX_t getGlobalDynAddr(const SymbolBody &B) const;
+  uintX_t getNumEntries() const { return Entries.size(); }
 
   // Returns the symbol which corresponds to the first entry of the global part
   // of GOT on MIPS platform. It is required to fill up MIPS-specific dynamic
@@ -133,8 +135,11 @@ public:
   // the number of reserved entries. This method is MIPS-specific.
   unsigned getMipsLocalEntriesNum() const;
 
+  uint32_t getLocalTlsIndexVA() { return Base::getVA() + LocalTlsIndexOff; }
+
 private:
   std::vector<const SymbolBody *> Entries;
+  uint32_t LocalTlsIndexOff = -1;
 };
 
 template <class ELFT>
@@ -223,6 +228,9 @@ public:
   bool isRela() const { return IsRela; }
 
 private:
+  bool applyTlsDynamicReloc(SymbolBody *Body, uint32_t Type, Elf_Rel *P,
+                            Elf_Rel *N);
+
   std::vector<DynamicReloc<ELFT>> Relocs;
   const bool IsRela;
 };
@@ -427,7 +435,6 @@ template <class ELFT> struct Out {
   static SymbolTableSection<ELFT> *DynSymTab;
   static SymbolTableSection<ELFT> *SymTab;
   static Elf_Phdr *TlsPhdr;
-  static uint32_t LocalModuleTlsIndexOffset;
 };
 
 template <class ELFT> DynamicSection<ELFT> *Out<ELFT>::Dynamic;
@@ -449,7 +456,6 @@ template <class ELFT> StringTableSection<ELFT> *Out<ELFT>::StrTab;
 template <class ELFT> SymbolTableSection<ELFT> *Out<ELFT>::DynSymTab;
 template <class ELFT> SymbolTableSection<ELFT> *Out<ELFT>::SymTab;
 template <class ELFT> typename Out<ELFT>::Elf_Phdr *Out<ELFT>::TlsPhdr;
-template <class ELFT> uint32_t Out<ELFT>::LocalModuleTlsIndexOffset = -1;
 
 } // namespace elf2
 } // namespace lld

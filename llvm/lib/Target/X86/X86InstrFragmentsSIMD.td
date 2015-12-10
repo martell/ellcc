@@ -38,6 +38,8 @@ def bc_mmx  : PatFrag<(ops node:$in), (x86mmx  (bitconvert node:$in))>;
 def SDTX86VFCMP : SDTypeProfile<1, 3, [SDTCisInt<0>, SDTCisSameAs<1, 2>,
                                        SDTCisFP<1>, SDTCisVT<3, i8>,
                                        SDTCisVec<1>]>;
+def SDTX86CmpTestSae : SDTypeProfile<1, 3, [SDTCisVT<0, i32>, 
+                                     SDTCisSameAs<1, 2>, SDTCisInt<3>]>;
 
 def X86fmin    : SDNode<"X86ISD::FMIN",      SDTFPBinOp>;
 def X86fmax    : SDNode<"X86ISD::FMAX",      SDTFPBinOp>;
@@ -66,7 +68,9 @@ def X86fhsub   : SDNode<"X86ISD::FHSUB",     SDTFPBinOp>;
 def X86hadd    : SDNode<"X86ISD::HADD",      SDTIntBinOp>;
 def X86hsub    : SDNode<"X86ISD::HSUB",      SDTIntBinOp>;
 def X86comi    : SDNode<"X86ISD::COMI",      SDTX86CmpTest>;
+def X86comiSae : SDNode<"X86ISD::COMI",      SDTX86CmpTestSae>;
 def X86ucomi   : SDNode<"X86ISD::UCOMI",     SDTX86CmpTest>;
+def X86ucomiSae: SDNode<"X86ISD::UCOMI",     SDTX86CmpTestSae>;
 def X86cmps    : SDNode<"X86ISD::FSETCC",     SDTX86Cmps>;
 //def X86cmpsd   : SDNode<"X86ISD::FSETCCsd",    SDTX86Cmpsd>;
 def X86cvtdq2pd: SDNode<"X86ISD::CVTDQ2PD",
@@ -292,8 +296,6 @@ def X86insertqi : SDNode<"X86ISD::INSERTQI",
 def SDTShuff1Op : SDTypeProfile<1, 1, [SDTCisVec<0>, SDTCisSameAs<0,1>]>;
 def SDTShuff2Op : SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisSameAs<0,1>,
                                 SDTCisSameAs<0,2>]>;
-def SDTShuff3Op : SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisSameAs<0,1>,
-                                SDTCisSameAs<0,2>, SDTCisSameAs<0,3>]>;
 
 def SDTShuff2OpM : SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisSameAs<0,1>,
                                         SDTCisSameSizeAs<0,2>,
@@ -376,20 +378,26 @@ def X86vpmaddwd    : SDNode<"X86ISD::VPMADDWD"   , SDTPack>;
 
 def X86VPermilpv  : SDNode<"X86ISD::VPERMILPV", SDTShuff2OpM>;
 def X86VPermilpi  : SDNode<"X86ISD::VPERMILPI", SDTShuff2OpI>;
-def X86VPermv     : SDNode<"X86ISD::VPERMV",    SDTShuff2Op>;
+def X86VPermv     : SDNode<"X86ISD::VPERMV",
+                           SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisInt<1>,
+                                                SDTCisSameNumEltsAs<0,1>,
+                                                SDTCisSameSizeAs<0,1>,
+                                                SDTCisSameAs<0,2>]>>;
 def X86VPermi     : SDNode<"X86ISD::VPERMI",    SDTShuff2OpI>;
-def X86VPermt2Fp   : SDNode<"X86ISD::VPERMV3",
-                    SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisFP<0>,
+def X86VPermt2     : SDNode<"X86ISD::VPERMV3",
+                    SDTypeProfile<1, 3, [SDTCisVec<0>,
                                          SDTCisSameAs<0,1>, SDTCisInt<2>,
                                          SDTCisVec<2>, SDTCisSameNumEltsAs<0, 2>,
                                          SDTCisSameSizeAs<0,2>,
                                          SDTCisSameAs<0,3>]>, []>;
-def X86VPermt2Int  : SDNode<"X86ISD::VPERMV3",
-                    SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisInt<0>,
-                                         SDTCisSameAs<0,1>, SDTCisSameAs<0,2>,
+
+def X86VPermi2X   : SDNode<"X86ISD::VPERMIV3",
+                    SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisInt<1>,
+                                         SDTCisVec<1>, SDTCisSameNumEltsAs<0, 1>,
+                                         SDTCisSameSizeAs<0,1>,
+                                         SDTCisSameAs<0,2>,
                                          SDTCisSameAs<0,3>]>, []>;
 
-def X86VPermi2X   : SDNode<"X86ISD::VPERMIV3", SDTShuff3Op>;
 def X86vpternlog  : SDNode<"X86ISD::VPTERNLOG", SDTTernlog>;
 
 def X86VPerm2x128 : SDNode<"X86ISD::VPERM2X128", SDTShuff3OpI>;
@@ -399,25 +407,31 @@ def X86VRange      : SDNode<"X86ISD::VRANGE",    SDTFPBinOpImmRound>;
 def X86VReduce     : SDNode<"X86ISD::VREDUCE",   SDTFPUnaryOpImmRound>;
 def X86VRndScale   : SDNode<"X86ISD::VRNDSCALE", SDTFPUnaryOpImmRound>;
 def X86VGetMant    : SDNode<"X86ISD::VGETMANT",  SDTFPUnaryOpImmRound>;
-def X86Vfpclass    : SDNode<"X86ISD::VFPCLASS", 
+def X86Vfpclass    : SDNode<"X86ISD::VFPCLASS",
                        SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCVecEltisVT<0, i1>,
-                                            SDTCisVec<1>, SDTCisInt<2>]>, []>;
-def X86Vfpclasss   : SDNode<"X86ISD::VFPCLASS", SDTypeProfile<1, 2, [SDTCisInt<0>,
-                              SDTCisFP<1>, SDTCisInt<2>]>,[]>;
+                                            SDTCisVec<1>, SDTCisFP<1>,
+                                            SDTCisSameNumEltsAs<0,1>,
+                                            SDTCisVT<2, i32>]>, []>;
+def X86Vfpclasss   : SDNode<"X86ISD::VFPCLASSS",
+                       SDTypeProfile<1, 2, [SDTCisVT<0, i1>,
+                                            SDTCisFP<1>, SDTCisVT<2, i32>]>,[]>;
 
 def X86SubVBroadcast : SDNode<"X86ISD::SUBV_BROADCAST",
                     SDTypeProfile<1, 1, [SDTCisVec<0>, SDTCisVec<1>,
                                          SDTCisSubVecOfVec<1, 0>]>, []>;
 // SDTCisSubVecOfVec restriction cannot be applied for 128 bit version of VBROADCASTI32x2.
 def X86SubV32x2Broadcast : SDNode<"X86ISD::SUBV_BROADCAST",
-                    SDTypeProfile<1, 1, [SDTCisVec<0>, SDTCisVec<1>]>, []>;
+                    SDTypeProfile<1, 1, [SDTCisVec<0>,
+                                         SDTCisSameAs<0,1>]>, []>;
 
 def X86VBroadcast : SDNode<"X86ISD::VBROADCAST", SDTVBroadcast>;
 def X86VBroadcastm : SDNode<"X86ISD::VBROADCASTM", SDTVBroadcastm>;
 def X86Vinsert   : SDNode<"X86ISD::VINSERT",  SDTypeProfile<1, 3,
-                              [SDTCisSameAs<0, 1>, SDTCisPtrTy<3>]>, []>;
+                              [SDTCisSameAs<0, 1>, SDTCisEltOfVec<2, 1>,
+                               SDTCisPtrTy<3>]>, []>;
 def X86Vextract   : SDNode<"X86ISD::VEXTRACT",  SDTypeProfile<1, 2,
-                              [SDTCisVec<1>, SDTCisPtrTy<2>]>, []>;
+                              [SDTCisEltOfVec<0, 1>, SDTCisVec<1>,
+                               SDTCisPtrTy<2>]>, []>;
 
 def X86Blendi    : SDNode<"X86ISD::BLENDI",   SDTBlend>;
 
@@ -476,7 +490,8 @@ def X86expand  : SDNode<"X86ISD::EXPAND", SDTypeProfile<1, 1,
                               [SDTCisSameAs<0, 1>, SDTCisVec<1>]>, []>;
 
 def SDTintToFPRound: SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisFP<0>,
-                               SDTCisSameAs<0,1>, SDTCisInt<2>, SDTCisInt<3>]>;
+                                          SDTCisSameAs<0,1>, SDTCisInt<2>,
+                                          SDTCisVT<3, i32>]>;
 
 def SDTDoubleToInt: SDTypeProfile<1, 1, [SDTCisVec<0>, SDTCisVec<1>,
                                          SDTCisInt<0>, SDTCVecEltisVT<1, f64>]>;
@@ -542,24 +557,29 @@ def X86cvtph2ps     : SDNode<"ISD::FP16_TO_FP",
                               SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisVec<1>,
                                                    SDTCVecEltisVT<0, f32>,
                                                    SDTCVecEltisVT<1, i16>,
-                                                   SDTCisFP<0>, SDTCisInt<2>]> >;
+                                                   SDTCisFP<0>,
+                                                   SDTCisVT<2, i32>]> >;
 
 def X86cvtps2ph   : SDNode<"ISD::FP_TO_FP16",
                         SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisVec<1>,
                                              SDTCVecEltisVT<0, i16>,
                                              SDTCVecEltisVT<1, f32>,
-                                             SDTCisFP<1>, SDTCisInt<2>, SDTCisInt<3>]> >;
+                                             SDTCisFP<1>, SDTCisVT<2, i32>,
+                                             SDTCisVT<3, i32>]> >;
 def X86vfpextRnd  : SDNode<"X86ISD::VFPEXT",
                         SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisVec<1>,
                                              SDTCisFP<0>, SDTCisFP<1>,
+                                             SDTCVecEltisVT<0, f64>,
+                                             SDTCVecEltisVT<1, f32>,
                                              SDTCisOpSmallerThanOp<1, 0>,
-                                             SDTCisInt<2>]>>;
+                                             SDTCisVT<2, i32>]>>;
 def X86vfproundRnd: SDNode<"X86ISD::VFPROUND",
                         SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisVec<1>,
                                              SDTCisFP<0>, SDTCisFP<1>,
                                              SDTCVecEltisVT<0, f32>,
                                              SDTCVecEltisVT<1, f64>,
-                                             SDTCisInt<2>]>>;
+                                             SDTCisOpSmallerThanOp<0, 1>,
+                                             SDTCisVT<2, i32>]>>;
 
 //===----------------------------------------------------------------------===//
 // SSE Complex Patterns

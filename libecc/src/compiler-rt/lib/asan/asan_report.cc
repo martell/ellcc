@@ -31,6 +31,8 @@ static void (*error_report_callback)(const char*);
 static char *error_message_buffer = nullptr;
 static uptr error_message_buffer_pos = 0;
 static BlockingMutex error_message_buf_mutex(LINKER_INITIALIZED);
+static const unsigned kAsanBuggyPcPoolSize = 25;
+static __sanitizer::atomic_uintptr_t AsanBuggyPcPool[kAsanBuggyPcPoolSize];
 
 struct ReportData {
   uptr pc;
@@ -993,17 +995,6 @@ static INLINE void CheckForInvalidPointerPair(void *p1, void *p2) {
 }
 // ----------------------- Mac-specific reports ----------------- {{{1
 
-void WarnMacFreeUnallocated(uptr addr, uptr zone_ptr, const char *zone_name,
-                            BufferedStackTrace *stack) {
-  // Just print a warning here.
-  Printf("free_common(%p) -- attempting to free unallocated memory.\n"
-             "AddressSanitizer is ignoring this error on Mac OS now.\n",
-             addr);
-  PrintZoneForPointer(addr, zone_ptr, zone_name);
-  stack->Print();
-  DescribeHeapAddress(addr, 1);
-}
-
 void ReportMacMzReallocUnknown(uptr addr, uptr zone_ptr, const char *zone_name,
                                BufferedStackTrace *stack) {
   ScopedInErrorReport in_report;
@@ -1015,19 +1006,23 @@ void ReportMacMzReallocUnknown(uptr addr, uptr zone_ptr, const char *zone_name,
   DescribeHeapAddress(addr, 1);
 }
 
-void ReportMacCfReallocUnknown(uptr addr, uptr zone_ptr, const char *zone_name,
-                               BufferedStackTrace *stack) {
-  ScopedInErrorReport in_report;
-  Printf("cf_realloc(%p) -- attempting to realloc unallocated memory.\n"
-             "This is an unrecoverable problem, exiting now.\n",
-             addr);
-  PrintZoneForPointer(addr, zone_ptr, zone_name);
-  stack->Print();
-  DescribeHeapAddress(addr, 1);
+// -------------- SuppressErrorReport -------------- {{{1
+// Avoid error reports duplicating for ASan recover mode.
+static bool SuppressErrorReport(uptr pc) {
+  if (!common_flags()->suppress_equal_pcs) return false;
+  for (unsigned i = 0; i < kAsanBuggyPcPoolSize; i++) {
+    uptr cmp = atomic_load_relaxed(&AsanBuggyPcPool[i]);
+    if (cmp == 0 && atomic_compare_exchange_strong(&AsanBuggyPcPool[i], &cmp,
+                                                   pc, memory_order_relaxed))
+      return false;
+    if (cmp == pc) return true;
+  }
+  Die();
 }
 
 void ReportGenericError(uptr pc, uptr bp, uptr sp, uptr addr, bool is_write,
                         uptr access_size, u32 exp, bool fatal) {
+  if (!fatal && SuppressErrorReport(pc)) return;
   ENABLE_FRAME_POINTER;
 
   // Optimization experiments.
