@@ -1,5 +1,6 @@
 current SVN:
 
+* Build curl with openldap support.
 * Import and build the openldap 2.4.43 library.
 * Build curl with metalink support.
 * Import and build the libmetalink 0.1.3 library.
