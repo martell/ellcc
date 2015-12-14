@@ -142,7 +142,8 @@ int libssh2_hmac_ripemd160_init(libssh2_hmac_ctx *ctx, const void *key, int len)
 #define libssh2_hmac_final(ctx, data) mbedtls_md_hmac_finish(&(ctx), data)
 #define libssh2_hmac_cleanup(ctx) /* RICH: HMAC_cleanup(ctx) */
 
-#define libssh2_crypto_init()
+void _libssh2_mbedtls_init(void);
+#define libssh2_crypto_init _libssh2_mbedtls_init
 #define libssh2_crypto_exit()
 
 #define libssh2_rsa_ctx mbedtls_rsa_context

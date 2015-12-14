@@ -54,35 +54,23 @@
 
 static mbedtls_entropy_context entropy;
 static mbedtls_ctr_drbg_context ctr_drbg;
-static int initialized;
-static int rnd_init(void)
+
+void _libssh2_mbedtls_init(void)
 {
     int ret;
 
-    // RICH: Thread safety?
-    if (initialized) {
-      return 0;
-    }
-
+    mbedtls_ctr_drbg_init(&ctr_drbg);
     mbedtls_entropy_init(&entropy);
     if((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy,
 				    NULL, 0))) {
-      return ret;
+        fprintf(stderr, "mbedtls ctr drbg initialization failed: %d\n", ret);
+        exit(1);
     }
 
-    initialized = 1;
-    return 0;
 }
 
 int _libssh2_random(unsigned char *buf, size_t len)
 {
-    if (!initialized) {
-	int ret;
-	if ((ret = rnd_init()) != 0) {
-	    return ret;
-	}
-    }
-
     return mbedtls_ctr_drbg_random(&ctr_drbg, buf, len);
 }
 
@@ -153,6 +141,19 @@ bail:
     mbedtls_rsa_free(*rsa);
     free(*rsa);
     return -1;
+}
+
+int
+libssh2_sha1_init(libssh2_sha1_ctx *ctx)
+{
+    const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA1);
+    if (md == NULL) {
+      return -1;
+    }
+
+    mbedtls_md_init(ctx);
+
+    return mbedtls_md_setup(ctx, md, 0) == 0;
 }
 
 void
@@ -331,23 +332,8 @@ _libssh2_cipher_crypt(_libssh2_cipher_ctx * ctx,
     return 0;
 }
 
-int libssh2_sha1_init(libssh2_sha1_ctx *ctx)
-{
-    const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA1);
-    if (md == NULL) {
-      return -1;
-    }
-
-    mbedtls_md_init(ctx);
-
-    return mbedtls_md_setup(ctx, md, 0) == 0;
-}
-
-void _libssh2_init_aes_ctr(void)
-{
-}
-
-_libssh2_bn *_libssh2_bn_init(void)
+_libssh2_bn *
+_libssh2_bn_init(void)
 {
     _libssh2_bn *bn = malloc(sizeof(_libssh2_bn));
     if (bn == NULL) {
@@ -356,6 +342,12 @@ _libssh2_bn *_libssh2_bn_init(void)
 
     mbedtls_mpi_init(bn);
     return bn;
+}
+
+void
+_libssh2_init_aes_ctr(void)
+{
+    /* no implementation */
 }
 
 #endif /* LIBSSH2_MBEDTLS */
