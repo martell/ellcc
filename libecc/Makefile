@@ -555,11 +555,12 @@ $(Configs)::
 %.nanomsg.install:
 	$(OUT)cd nanomsg-build/$* ; \
 	echo Installing nanomsg for $*; \
-	mkdir -p ../../include ; \
-	cp -p ares.h ares_version.h ares_dns.h \
-           ares_build.h ares_rules.h ../../include ; \
+	mkdir -p ../../include/nanomsg ; \
+	cp -p src/bus.h src/inproc.h src/ipc.h src/nn.h src/pair.h \
+              src/pipeline.h src/pubsub.h src/reqrep.h src/survey.h \
+              src/tcp.h src/tcpmux.h src/ws.h ../../include/nanomsg ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP .libs/libcares.a    ../../lib/$*
+	cp -rP .libs/libnanomsg.a ../../lib/$*
 
 clean:
 	$(OUT)rm -fr *-build
