@@ -523,6 +523,44 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -rP ./lib/.libs/libcurl.a ../../lib/$*
 
+$(Configs)::
+	$(OUT)$(MAKE) $(MFLAGS) $@.nanomsg.configure && \
+	$(MAKE) $(MFLAGS) $@.nanomsg.build && \
+	$(MAKE) $(MFLAGS) $@.nanomsg.install
+
+%.nanomsg.configure:
+	$(OUT)if [ -e nanomsg-build/$*/Makefile ] ; then \
+	  echo Configuring nanomsg for $* aready done ; \
+	else \
+	    $(OUT)echo Configuring nanomsg for $* in nanomsg-build/$* ; \
+	      mkdir -p nanomsg-build/$* ; \
+	      cp -pfru src/nanomsg/* nanomsg-build/$* ; \
+	      cd nanomsg-build/$* ; \
+	      CC="$(ELLCC)/bin/ecc" \
+              CFLAGS="-target $* $(CFLAGS)" \
+              CPP="$(ELLCC)/bin/ecc -E" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+                ../../src/nanomsg/configure \
+	          --enable-shared=no  --prefix=$(ELLCC) \
+	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+      fi
+
+%.nanomsg.build:
+	$(OUT)cp -pfru src/nanomsg/* nanomsg-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
+            AR=$(ELLCC)/bin/ecc-ar \
+            RANLIB=$(ELLCC)/bin/ecc-ranlib \
+            -C nanomsg-build/$*
+
+%.nanomsg.install:
+	$(OUT)cd nanomsg-build/$* ; \
+	echo Installing nanomsg for $*; \
+	mkdir -p ../../include ; \
+	cp -p ares.h ares_version.h ares_dns.h \
+           ares_build.h ares_rules.h ../../include ; \
+	mkdir -p ../../lib/$* ; \
+	cp -rP .libs/libcares.a    ../../lib/$*
+
 clean:
 	$(OUT)rm -fr *-build
 
