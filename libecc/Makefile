@@ -370,7 +370,7 @@ $(Configs)::
 	    CXX="$(ELLCC)/bin/ecc++" \
             CXXFLAGS="-target $* $(CXXFLAGS)" \
             CPP="$(ELLCC)/bin/ecc -E -target $*" \
-            CXXPP="$(ELLCC)/bin/ecc++ -E" \
+            CXXPP="$(ELLCC)/bin/ecc++ -E -target $*" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
               ../../src/nghttp2/configure \
