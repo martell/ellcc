@@ -309,7 +309,7 @@ $(Configs)::
 	cp -p ares.h ares_version.h ares_dns.h \
            ares_build.h ares_rules.h ../../include ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP .libs/libcares.a    ../../lib/$*
+	cp -RP .libs/libcares.a    ../../lib/$*
 
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.libssh2.configure && \
@@ -348,7 +348,7 @@ $(Configs)::
 	mkdir -p ../../include ; \
 	cp -p include/*.h ../../include ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP ./src/.libs/libssh2.a ../../lib/$*
+	cp -RP ./src/.libs/libssh2.a ../../lib/$*
 
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.nghttp2.configure && \
@@ -392,7 +392,7 @@ $(Configs)::
 	mkdir -p ../../include/nghttp2 ; \
 	cp -p lib/includes/nghttp2/*.h ../../include/nghttp2 ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP ./lib/.libs/libnghttp2.a ../../lib/$*
+	cp -RP ./lib/.libs/libnghttp2.a ../../lib/$*
 
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.libmetalink.configure && \
@@ -436,7 +436,7 @@ $(Configs)::
 	mkdir -p ../../include/metalink ; \
 	cp -p lib/includes/metalink/*.h ../../include/metalink ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP ./lib/.libs/libmetalink.a ../../lib/$*
+	cp -RP ./lib/.libs/libmetalink.a ../../lib/$*
 
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.openldap.configure && \
@@ -484,9 +484,9 @@ $(Configs)::
 	  include/slapi-plugin.h include/ldap_features.h include/ldif.h \
 	  ../../include ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP ./libraries/libldap_r/.libs/libldap_r.a ../../lib/$* ; \
-	cp -rP ./libraries/libldap/.libs/libldap.a ../../lib/$* ; \
-	cp -rP ./libraries/liblber/.libs/liblber.a ../../lib/$* ; \
+	cp -RP ./libraries/libldap_r/.libs/libldap_r.a ../../lib/$* ; \
+	cp -RP ./libraries/libldap/.libs/libldap.a ../../lib/$* ; \
+	cp -RP ./libraries/liblber/.libs/liblber.a ../../lib/$* ; \
 
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.curl.configure && \
@@ -529,7 +529,7 @@ $(Configs)::
 	mkdir -p ../../include/curl ; \
 	cp -p include/curl/*.h ../../include/curl ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP ./lib/.libs/libcurl.a ../../lib/$*
+	cp -RP ./lib/.libs/libcurl.a ../../lib/$*
 
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.nanomsg.configure && \
@@ -569,7 +569,7 @@ $(Configs)::
               src/pipeline.h src/pubsub.h src/reqrep.h src/survey.h \
               src/tcp.h src/tcpmux.h src/ws.h ../../include/nanomsg ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP .libs/libnanomsg.a ../../lib/$*
+	cp -RP .libs/libnanomsg.a ../../lib/$*
 
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.libevent.configure && \
@@ -609,7 +609,7 @@ $(Configs)::
               src/pipeline.h src/pubsub.h src/reqrep.h src/survey.h \
               src/tcp.h src/tcpmux.h src/ws.h ../../include/libevent ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP .libs/libevent.a ../../lib/$*
+	cp -RP .libs/libevent.a ../../lib/$*
 
 clean:
 	$(OUT)rm -fr *-build
