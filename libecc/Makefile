@@ -6,7 +6,7 @@ LIBECC := $(ELLCC)/libecc
 Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
 ElkConfigs := $(patsubst *-elk-*,,$(shell cd $(LIBECC)/config; echo *-elk*))
 C)FLAGS := -g
-CPFLAGS := -pfr
+CPFLAGS := -pfru
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
