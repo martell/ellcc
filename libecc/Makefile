@@ -328,6 +328,7 @@ $(Configs)::
           CFLAGS="-target $* $(CFLAGS)" \
             CPP="$(ELLCC)/bin/ecc -E -target $*" \
 	    AR=$(ELLCC)/bin/ecc-ar \
+	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
               ../../src/libssh2/configure \
 	        --enable-debug \
 	        --enable-shared=no  --prefix=$(ELLCC) \
