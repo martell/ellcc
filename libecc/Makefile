@@ -326,7 +326,7 @@ $(Configs)::
 	  cd libssh2-build/$* ; \
 	  CC="$(ELLCC)/bin/ecc" \
           CFLAGS="-target $* $(CFLAGS)" \
-            CPP="$(ELLCC)/bin/ecc -E" \
+            CPP="$(ELLCC)/bin/ecc -E -target $*" \
 	    AR=$(ELLCC)/bin/ecc-ar \
               ../../src/libssh2/configure \
 	        --enable-debug \
@@ -368,7 +368,7 @@ $(Configs)::
             LDFLAGS="-target $*" \
 	    CXX="$(ELLCC)/bin/ecc++" \
             CXXFLAGS="-target $* $(CXXFLAGS)" \
-            CPP="$(ELLCC)/bin/ecc -E" \
+            CPP="$(ELLCC)/bin/ecc -E -target $*" \
             CXXPP="$(ELLCC)/bin/ecc++ -E" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -412,7 +412,7 @@ $(Configs)::
             LDFLAGS="-target $*" \
 	    CXX="$(ELLCC)/bin/ecc++" \
             CXXFLAGS="-target $* $(CXXFLAGS)" \
-            CPP="$(ELLCC)/bin/ecc -E" \
+            CPP="$(ELLCC)/bin/ecc -E -target $*" \
             CXXPP="$(ELLCC)/bin/ecc++ -E" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -456,8 +456,8 @@ $(Configs)::
             LDFLAGS="-target $*" \
 	    CXX="$(ELLCC)/bin/ecc++" \
             CXXFLAGS="-target $* $(CXXFLAGS)" \
-            CPP="$(ELLCC)/bin/ecc -E" \
-            CXXPP="$(ELLCC)/bin/ecc++ -E" \
+            CPP="$(ELLCC)/bin/ecc -E -target $*" \
+            CXXPP="$(ELLCC)/bin/ecc++ -E -target $*" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
               ../../src/openldap/configure \
@@ -506,8 +506,8 @@ $(Configs)::
             LDFLAGS="-target $*" \
 	    CXX="$(ELLCC)/bin/ecc++" \
             CXXFLAGS="-target $* $(CXXFLAGS)" \
-            CPP="$(ELLCC)/bin/ecc -E" \
-            CXXPP="$(ELLCC)/bin/ecc++ -E" \
+            CPP="$(ELLCC)/bin/ecc -E -target $*" \
+            CXXPP="$(ELLCC)/bin/ecc++ -E -target $*" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
               ../../src/curl/configure \
@@ -546,7 +546,7 @@ $(Configs)::
 	  cd nanomsg-build/$* ; \
 	  CC="$(ELLCC)/bin/ecc" \
             CFLAGS="-target $* $(CFLAGS)" \
-            CPP="$(ELLCC)/bin/ecc -E" \
+            CPP="$(ELLCC)/bin/ecc -E -target $*" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
               ../../src/nanomsg/configure \
@@ -586,7 +586,7 @@ $(Configs)::
 	  cd libevent-build/$* ; \
 	  CC="$(ELLCC)/bin/ecc" \
             CFLAGS="-target $* $(CFLAGS)" \
-            CPP="$(ELLCC)/bin/ecc -E" \
+            CPP="$(ELLCC)/bin/ecc -E -target $*" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
               ../../src/libevent/configure \
