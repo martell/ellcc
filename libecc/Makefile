@@ -281,19 +281,19 @@ $(Configs)::
 	$(OUT)if [ -e c-ares-build/$*/Makefile ] ; then \
 	  echo Configuring c-ares for $* aready done ; \
 	else \
-	    $(OUT)echo Configuring c-ares for $* in c-ares-build/$* ; \
-	      mkdir -p c-ares-build/$* ; \
-	      cp $(CPFLAGS) src/c-ares/* c-ares-build/$* ; \
-	      cd c-ares-build/$* ; \
-	      CC="$(ELLCC)/bin/ecc" \
-              CFLAGS="-target $* $(CFLAGS)" \
-              CPP="$(ELLCC)/bin/ecc -E -target $*" \
-	      AR=$(ELLCC)/bin/ecc-ar \
-	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
-                ../../src/c-ares/configure \
-	          --enable-shared=no  --prefix=$(ELLCC) \
-	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
-      fi
+	  echo Configuring c-ares for $* in c-ares-build/$* ; \
+	  mkdir -p c-ares-build/$* ; \
+	  cp $(CPFLAGS) src/c-ares/* c-ares-build/$* ; \
+	  cd c-ares-build/$* ; \
+	  CC="$(ELLCC)/bin/ecc" \
+            CFLAGS="-target $* $(CFLAGS)" \
+            CPP="$(ELLCC)/bin/ecc -E -target $*" \
+	    AR=$(ELLCC)/bin/ecc-ar \
+	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
+            ../../src/c-ares/configure \
+	      --enable-shared=no  --prefix=$(ELLCC) \
+	      --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+	fi
 
 %.c-ares.build:
 	$(OUT)cp $(CPFLAGS) src/c-ares/* c-ares-build/$*
@@ -322,17 +322,17 @@ $(Configs)::
 	$(OUT)if [ -e libssh2-build/$*/Makefile ] ; then \
 	  echo Configuring libssh2 for $* aready done ; \
 	else \
-	    $(OUT)echo Configuring libssh2 for $* in libssh2-build/$* ; \
-	      cd libssh2-build/$* ; \
-	      CC="$(ELLCC)/bin/ecc" \
-              CFLAGS="-target $* $(CFLAGS)" \
-              CPP="$(ELLCC)/bin/ecc -E" \
-	      AR=$(ELLCC)/bin/ecc-ar \
-                ../../src/libssh2/configure \
-	          --enable-debug \
-	          --enable-shared=no  --prefix=$(ELLCC) \
-	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
-      fi
+	  echo Configuring libssh2 for $* in libssh2-build/$* ; \
+	  cd libssh2-build/$* ; \
+	  CC="$(ELLCC)/bin/ecc" \
+          CFLAGS="-target $* $(CFLAGS)" \
+            CPP="$(ELLCC)/bin/ecc -E" \
+	    AR=$(ELLCC)/bin/ecc-ar \
+              ../../src/libssh2/configure \
+	        --enable-debug \
+	        --enable-shared=no  --prefix=$(ELLCC) \
+	        --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+        fi
 
 %.libssh2.build:
 	$(OUT)mkdir -p libssh2-build/$*
@@ -361,22 +361,22 @@ $(Configs)::
 	$(OUT)if [ -e nghttp2-build/$*/Makefile ] ; then \
 	  echo Configuring nghttp2 for $* aready done ; \
 	else \
-	    $(OUT)echo Configuring nghttp2 for $* in nghttp2-build/$* ; \
-	      cd nghttp2-build/$* ; \
-	      CC="$(ELLCC)/bin/ecc" \
-              CFLAGS="-target $* $(CFLAGS)" \
-              LDFLAGS="-target $*" \
-	      CXX="$(ELLCC)/bin/ecc++" \
-              CXXFLAGS="-target $* $(CXXFLAGS)" \
-              CPP="$(ELLCC)/bin/ecc -E" \
-              CXXPP="$(ELLCC)/bin/ecc++ -E" \
-	      AR=$(ELLCC)/bin/ecc-ar \
-	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
-                ../../src/nghttp2/configure \
-	          --enable-debug \
-	          --enable-shared=no  --prefix=$(ELLCC) \
-	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
-      fi
+	  echo Configuring nghttp2 for $* in nghttp2-build/$* ; \
+	  cd nghttp2-build/$* ; \
+	  CC="$(ELLCC)/bin/ecc" \
+            CFLAGS="-target $* $(CFLAGS)" \
+            LDFLAGS="-target $*" \
+	    CXX="$(ELLCC)/bin/ecc++" \
+            CXXFLAGS="-target $* $(CXXFLAGS)" \
+            CPP="$(ELLCC)/bin/ecc -E" \
+            CXXPP="$(ELLCC)/bin/ecc++ -E" \
+	    AR=$(ELLCC)/bin/ecc-ar \
+	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
+              ../../src/nghttp2/configure \
+	        --enable-debug \
+	        --enable-shared=no  --prefix=$(ELLCC) \
+	        --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+	fi
 
 %.nghttp2.build:
 	$(OUT)mkdir -p nghttp2-build/$*
@@ -405,22 +405,22 @@ $(Configs)::
 	$(OUT)if [ -e libmetalink-build/$*/Makefile ] ; then \
 	  echo Configuring libmetalink for $* aready done ; \
 	else \
-	    $(OUT)echo Configuring libmetalink for $* in libmetalink-build/$* ; \
-	      cd libmetalink-build/$* ; \
-	      CC="$(ELLCC)/bin/ecc" \
-              CFLAGS="-target $* $(CFLAGS)" \
-              LDFLAGS="-target $*" \
-	      CXX="$(ELLCC)/bin/ecc++" \
-              CXXFLAGS="-target $* $(CXXFLAGS)" \
-              CPP="$(ELLCC)/bin/ecc -E" \
-              CXXPP="$(ELLCC)/bin/ecc++ -E" \
-	      AR=$(ELLCC)/bin/ecc-ar \
-	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
-                ../../src/libmetalink/configure \
-	          --enable-debug --with-libexpat=yes \
-	          --enable-shared=no  --prefix=$(ELLCC) \
-	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
-      fi
+	  echo Configuring libmetalink for $* in libmetalink-build/$* ; \
+	  cd libmetalink-build/$* ; \
+	  CC="$(ELLCC)/bin/ecc" \
+            CFLAGS="-target $* $(CFLAGS)" \
+            LDFLAGS="-target $*" \
+	    CXX="$(ELLCC)/bin/ecc++" \
+            CXXFLAGS="-target $* $(CXXFLAGS)" \
+            CPP="$(ELLCC)/bin/ecc -E" \
+            CXXPP="$(ELLCC)/bin/ecc++ -E" \
+	    AR=$(ELLCC)/bin/ecc-ar \
+	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
+              ../../src/libmetalink/configure \
+	        --enable-debug --with-libexpat=yes \
+	        --enable-shared=no  --prefix=$(ELLCC) \
+	        --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+	fi
 
 %.libmetalink.build:
 	$(OUT)mkdir -p libmetalink-build/$*
@@ -449,23 +449,23 @@ $(Configs)::
 	$(OUT)if [ -e openldap-build/$*/Makefile ] ; then \
 	  echo Configuring openldap for $* aready done ; \
 	else \
-	    $(OUT)echo Configuring openldap for $* in openldap-build/$* ; \
-	      cd openldap-build/$* ; \
-	      CC="$(ELLCC)/bin/ecc" \
-              CFLAGS="-target $* $(CFLAGS)" \
-              LDFLAGS="-target $*" \
-	      CXX="$(ELLCC)/bin/ecc++" \
-              CXXFLAGS="-target $* $(CXXFLAGS)" \
-              CPP="$(ELLCC)/bin/ecc -E" \
-              CXXPP="$(ELLCC)/bin/ecc++ -E" \
-	      AR=$(ELLCC)/bin/ecc-ar \
-	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
-                ../../src/openldap/configure \
-	          --enable-debug --disable-bdb --disable-hdb \
-	          --enable-shared=no  --prefix=$(ELLCC) \
-		  --with-yielding_select=yes \
-	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
-      fi
+	  echo Configuring openldap for $* in openldap-build/$* ; \
+	  cd openldap-build/$* ; \
+	  CC="$(ELLCC)/bin/ecc" \
+            CFLAGS="-target $* $(CFLAGS)" \
+            LDFLAGS="-target $*" \
+	    CXX="$(ELLCC)/bin/ecc++" \
+            CXXFLAGS="-target $* $(CXXFLAGS)" \
+            CPP="$(ELLCC)/bin/ecc -E" \
+            CXXPP="$(ELLCC)/bin/ecc++ -E" \
+	    AR=$(ELLCC)/bin/ecc-ar \
+	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
+              ../../src/openldap/configure \
+	        --enable-debug --disable-bdb --disable-hdb \
+	        --enable-shared=no  --prefix=$(ELLCC) \
+		 --with-yielding_select=yes \
+	         --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+	fi
 
 %.openldap.build:
 	$(OUT)mkdir -p openldap-build/$*
@@ -499,24 +499,24 @@ $(Configs)::
 	$(OUT)if [ -e curl-build/$*/src/Makefile ] ; then \
 	  echo Configuring curl for $* aready done ; \
 	else \
-	    echo Configuring curl for $* in curl-build/$* ; \
-	      cd curl-build/$* ; \
-	      CC="$(ELLCC)/bin/ecc" \
-              CFLAGS="-target $* $(CFLAGS)" \
-              LDFLAGS="-target $*" \
-	      CXX="$(ELLCC)/bin/ecc++" \
-              CXXFLAGS="-target $* $(CXXFLAGS)" \
-              CPP="$(ELLCC)/bin/ecc -E" \
-              CXXPP="$(ELLCC)/bin/ecc++ -E" \
-	      AR=$(ELLCC)/bin/ecc-ar \
-	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
-                ../../src/curl/configure \
-	          --prefix=$(ELLCC) \
-		  --with-mbedtls --with-libssh2 --enable-ares \
-		  --with-libmetalink=yes \
-                  --enable-shared=no --with-nghttp2=yes --enable-ipv6 \
-	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
-      fi
+	  echo Configuring curl for $* in curl-build/$* ; \
+	  cd curl-build/$* ; \
+	  CC="$(ELLCC)/bin/ecc" \
+            CFLAGS="-target $* $(CFLAGS)" \
+            LDFLAGS="-target $*" \
+	    CXX="$(ELLCC)/bin/ecc++" \
+            CXXFLAGS="-target $* $(CXXFLAGS)" \
+            CPP="$(ELLCC)/bin/ecc -E" \
+            CXXPP="$(ELLCC)/bin/ecc++ -E" \
+	    AR=$(ELLCC)/bin/ecc-ar \
+	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
+              ../../src/curl/configure \
+	        --prefix=$(ELLCC) \
+		--with-mbedtls --with-libssh2 --enable-ares \
+		--with-libmetalink=yes \
+                --enable-shared=no --with-nghttp2=yes --enable-ipv6 \
+	        --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+	fi
 
 %.curl.build:
 	$(OUT)cp $(CPFLAGS) src/curl/* curl-build/$*
@@ -540,22 +540,22 @@ $(Configs)::
 	$(OUT)if [ -e nanomsg-build/$*/Makefile ] ; then \
 	  echo Configuring nanomsg for $* aready done ; \
 	else \
-	    $(OUT)echo Configuring nanomsg for $* in nanomsg-build/$* ; \
-	      mkdir -p nanomsg-build/$* ; \
-	      cp -pfru src/nanomsg/* nanomsg-build/$* ; \
-	      cd nanomsg-build/$* ; \
-	      CC="$(ELLCC)/bin/ecc" \
-              CFLAGS="-target $* $(CFLAGS)" \
-              CPP="$(ELLCC)/bin/ecc -E" \
-	      AR=$(ELLCC)/bin/ecc-ar \
-	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
-                ../../src/nanomsg/configure \
-	          --enable-shared=no  --prefix=$(ELLCC) \
-	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
-      fi
+	  echo Configuring nanomsg for $* in nanomsg-build/$* ; \
+	  mkdir -p nanomsg-build/$* ; \
+	  cp $(CPFLAGS) src/nanomsg/* nanomsg-build/$* ; \
+	  cd nanomsg-build/$* ; \
+	  CC="$(ELLCC)/bin/ecc" \
+            CFLAGS="-target $* $(CFLAGS)" \
+            CPP="$(ELLCC)/bin/ecc -E" \
+	    AR=$(ELLCC)/bin/ecc-ar \
+	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
+              ../../src/nanomsg/configure \
+	        --enable-shared=no  --prefix=$(ELLCC) \
+	        --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+	fi
 
 %.nanomsg.build:
-	$(OUT)cp -pfru src/nanomsg/* nanomsg-build/$*
+	$(OUT)cp $(CPFLAGS) src/nanomsg/* nanomsg-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -580,22 +580,22 @@ $(Configs)::
 	$(OUT)if [ -e libevent-build/$*/Makefile ] ; then \
 	  echo Configuring libevent for $* aready done ; \
 	else \
-	    $(OUT)echo Configuring libevent for $* in libevent-build/$* ; \
-	      mkdir -p libevent-build/$* ; \
-	      cp -pfru src/libevent/* libevent-build/$* ; \
-	      cd libevent-build/$* ; \
-	      CC="$(ELLCC)/bin/ecc" \
-              CFLAGS="-target $* $(CFLAGS)" \
-              CPP="$(ELLCC)/bin/ecc -E" \
-	      AR=$(ELLCC)/bin/ecc-ar \
-	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
-                ../../src/libevent/configure \
-	          --enable-shared=no  --prefix=$(ELLCC) \
-	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+	  echo Configuring libevent for $* in libevent-build/$* ; \
+	  mkdir -p libevent-build/$* ; \
+	  cp $(CPFLAGS) src/libevent/* libevent-build/$* ; \
+	  cd libevent-build/$* ; \
+	  CC="$(ELLCC)/bin/ecc" \
+            CFLAGS="-target $* $(CFLAGS)" \
+            CPP="$(ELLCC)/bin/ecc -E" \
+	    AR=$(ELLCC)/bin/ecc-ar \
+	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
+              ../../src/libevent/configure \
+	        --enable-shared=no  --prefix=$(ELLCC) \
+	        --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
       fi
 
 %.libevent.build:
-	$(OUT)cp -pfru src/libevent/* libevent-build/$*
+	$(OUT)cp $(CPFLAGS) src/libevent/* libevent-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
