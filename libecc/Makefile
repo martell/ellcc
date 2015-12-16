@@ -250,6 +250,8 @@ $(Configs)::
 	  echo export CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
 	    > mbedtls-build/$*/Makefile ; \
 	  echo export AR=$(ELLCC)/bin/ecc-ar >> mbedtls-build/$*/Makefile ; \
+	  echo export RANLIB=$(ELLCC)/bin/ecc-ranlib \
+	    >> mbedtls-build/$*/Makefile ; \
 	  cat src/mbedtls/Makefile >> mbedtls-build/$*/Makefile
 
 %.mbedtls.build:
@@ -286,6 +288,7 @@ $(Configs)::
               CFLAGS="-target $* $(CFLAGS)" \
               CPP="$(ELLCC)/bin/ecc -E" \
 	      AR=$(ELLCC)/bin/ecc-ar \
+	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
                 ../../src/c-ares/configure \
 	          --enable-shared=no  --prefix=$(ELLCC) \
 	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
@@ -367,6 +370,7 @@ $(Configs)::
               CPP="$(ELLCC)/bin/ecc -E" \
               CXXPP="$(ELLCC)/bin/ecc++ -E" \
 	      AR=$(ELLCC)/bin/ecc-ar \
+	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
                 ../../src/nghttp2/configure \
 	          --enable-debug \
 	          --enable-shared=no  --prefix=$(ELLCC) \
@@ -410,6 +414,7 @@ $(Configs)::
               CPP="$(ELLCC)/bin/ecc -E" \
               CXXPP="$(ELLCC)/bin/ecc++ -E" \
 	      AR=$(ELLCC)/bin/ecc-ar \
+	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
                 ../../src/libmetalink/configure \
 	          --enable-debug --with-libexpat=yes \
 	          --enable-shared=no  --prefix=$(ELLCC) \
@@ -453,6 +458,7 @@ $(Configs)::
               CPP="$(ELLCC)/bin/ecc -E" \
               CXXPP="$(ELLCC)/bin/ecc++ -E" \
 	      AR=$(ELLCC)/bin/ecc-ar \
+	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
                 ../../src/openldap/configure \
 	          --enable-debug --disable-bdb --disable-hdb \
 	          --enable-shared=no  --prefix=$(ELLCC) \
@@ -502,6 +508,7 @@ $(Configs)::
               CPP="$(ELLCC)/bin/ecc -E" \
               CXXPP="$(ELLCC)/bin/ecc++ -E" \
 	      AR=$(ELLCC)/bin/ecc-ar \
+	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
                 ../../src/curl/configure \
 	          --prefix=$(ELLCC) \
 		  --with-mbedtls --with-libssh2 --enable-ares \
@@ -540,6 +547,7 @@ $(Configs)::
               CFLAGS="-target $* $(CFLAGS)" \
               CPP="$(ELLCC)/bin/ecc -E" \
 	      AR=$(ELLCC)/bin/ecc-ar \
+	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
                 ../../src/nanomsg/configure \
 	          --enable-shared=no  --prefix=$(ELLCC) \
 	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
@@ -579,6 +587,7 @@ $(Configs)::
               CFLAGS="-target $* $(CFLAGS)" \
               CPP="$(ELLCC)/bin/ecc -E" \
 	      AR=$(ELLCC)/bin/ecc-ar \
+	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
                 ../../src/libevent/configure \
 	          --enable-shared=no  --prefix=$(ELLCC) \
 	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
