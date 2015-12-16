@@ -562,6 +562,45 @@ $(Configs)::
 	mkdir -p ../../lib/$* ; \
 	cp -rP .libs/libnanomsg.a ../../lib/$*
 
+$(Configs)::
+	$(OUT)$(MAKE) $(MFLAGS) $@.libevent.configure && \
+	$(MAKE) $(MFLAGS) $@.libevent.build && \
+	$(MAKE) $(MFLAGS) $@.libevent.install
+
+%.libevent.configure:
+	$(OUT)if [ -e libevent-build/$*/Makefile ] ; then \
+	  echo Configuring libevent for $* aready done ; \
+	else \
+	    $(OUT)echo Configuring libevent for $* in libevent-build/$* ; \
+	      mkdir -p libevent-build/$* ; \
+	      cp -pfru src/libevent/* libevent-build/$* ; \
+	      cd libevent-build/$* ; \
+	      CC="$(ELLCC)/bin/ecc" \
+              CFLAGS="-target $* $(CFLAGS)" \
+              CPP="$(ELLCC)/bin/ecc -E" \
+	      AR=$(ELLCC)/bin/ecc-ar \
+                ../../src/libevent/configure \
+	          --enable-shared=no  --prefix=$(ELLCC) \
+	          --host=`../../../bin/ecc-getarch $*`-`../../../bin/ecc-getos $*`; \
+      fi
+
+%.libevent.build:
+	$(OUT)cp -pfru src/libevent/* libevent-build/$*
+	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
+            AR=$(ELLCC)/bin/ecc-ar \
+            RANLIB=$(ELLCC)/bin/ecc-ranlib \
+            -C libevent-build/$*
+
+%.libevent.install:
+	$(OUT)cd libevent-build/$* ; \
+	echo Installing libevent for $*; \
+	mkdir -p ../../include/libevent ; \
+	cp -p src/bus.h src/inproc.h src/ipc.h src/nn.h src/pair.h \
+              src/pipeline.h src/pubsub.h src/reqrep.h src/survey.h \
+              src/tcp.h src/tcpmux.h src/ws.h ../../include/libevent ; \
+	mkdir -p ../../lib/$* ; \
+	cp -rP .libs/libevent.a ../../lib/$*
+
 clean:
 	$(OUT)rm -fr *-build
 
