@@ -5,7 +5,8 @@ ELLCC := $(PWD)/..
 LIBECC := $(ELLCC)/libecc
 Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
 ElkConfigs := $(patsubst *-elk-*,,$(shell cd $(LIBECC)/config; echo *-elk*))
-CFLAGS := -g
+C)FLAGS := -g
+CPFLAGS := -pfr
 
 ifeq ($(VERBOSE),)
   MFLAGS=--no-print-directory
@@ -149,7 +150,7 @@ $(Configs)::
 	else  \
 	  echo Configuring zlib for $* in zlib-build/$* ; \
 	  mkdir -p zlib-build/$* ; \
-	  cp -pfru src/zlib/* zlib-build/$* ; \
+	  cp $(CPFLAGS) src/zlib/* zlib-build/$* ; \
 	  cd zlib-build/$* ; \
 	  CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
 	  CXX="$(ELLCC)/bin/ecc++ -target $* $(CXXFLAGS)" \
@@ -159,7 +160,7 @@ $(Configs)::
 	fi
 
 %.zlib.build:
-	$(OUT)cp -pfru src/zlib/* zlib-build/$*
+	$(OUT)cp $(CPFLAGS) src/zlib/* zlib-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) -C zlib-build/$*
 
 %.zlib.install:
@@ -213,7 +214,7 @@ $(Configs)::
 	else \
 	  echo Configuring libedit for $* in libedit-build/$* ; \
 	  mkdir -p libedit-build/$* ; \
-	  cp -pfru src/libedit/* libedit-build/$* ; \
+	  cp $(CPFLAGS) src/libedit/* libedit-build/$* ; \
 	  cd libedit-build/$* ; \
 	  RANLIB=$(ELLCC)/bin/ecc-ranlib \
 	  CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
@@ -226,7 +227,7 @@ $(Configs)::
 	fi
 
 %.libedit.build:
-	$(OUT)cp -pfru src/libedit/* libedit-build/$*
+	$(OUT)cp $(CPFLAGS) src/libedit/* libedit-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) -C libedit-build/$*
 
 %.libedit.install:
@@ -246,7 +247,7 @@ $(Configs)::
 %.mbedtls.configure:
 	$(OUT)echo Configuring mbedtls for $* in mbedtls-build/$* ; \
 	  mkdir -p mbedtls-build/$* ; \
-	  cp -pfru src/mbedtls/* mbedtls-build/$* ; \
+	  cp $(CPFLAGS) src/mbedtls/* mbedtls-build/$* ; \
 	  echo export CC="$(ELLCC)/bin/ecc -target $* $(CFLAGS)" \
 	    > mbedtls-build/$*/Makefile ; \
 	  echo export AR=$(ELLCC)/bin/ecc-ar >> mbedtls-build/$*/Makefile ; \
@@ -255,7 +256,7 @@ $(Configs)::
 	  cat src/mbedtls/Makefile >> mbedtls-build/$*/Makefile
 
 %.mbedtls.build:
-	$(OUT)cp -pfru src/mbedtls/* mbedtls-build/$*
+	$(OUT)cp $(CPFLAGS) src/mbedtls/* mbedtls-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -267,9 +268,9 @@ $(Configs)::
 	mkdir -p ../../include/mbedtls; \
 	cp -rp include/mbedtls ../../include ; \
 	mkdir -p ../../lib/$* ; \
-	cp -rP library/libmbedtls.*    ../../lib/$* ; \
-	cp -rP library/libmbedx509.*   ../../lib/$* ; \
-	cp -rP library/libmbedcrypto.* ../../lib/$*
+	cp -RP library/libmbedtls.*    ../../lib/$* ; \
+	cp -RP library/libmbedx509.*   ../../lib/$* ; \
+	cp -RP library/libmbedcrypto.* ../../lib/$*
 
 $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) $@.c-ares.configure && \
@@ -282,11 +283,11 @@ $(Configs)::
 	else \
 	    $(OUT)echo Configuring c-ares for $* in c-ares-build/$* ; \
 	      mkdir -p c-ares-build/$* ; \
-	      cp -pfru src/c-ares/* c-ares-build/$* ; \
+	      cp $(CPFLAGS) src/c-ares/* c-ares-build/$* ; \
 	      cd c-ares-build/$* ; \
 	      CC="$(ELLCC)/bin/ecc" \
               CFLAGS="-target $* $(CFLAGS)" \
-              CPP="$(ELLCC)/bin/ecc -E" \
+              CPP="$(ELLCC)/bin/ecc -E -target $*" \
 	      AR=$(ELLCC)/bin/ecc-ar \
 	      RANLIB=$(ELLCC)/bin/ecc-ranlib \
                 ../../src/c-ares/configure \
@@ -295,7 +296,7 @@ $(Configs)::
       fi
 
 %.c-ares.build:
-	$(OUT)cp -pfru src/c-ares/* c-ares-build/$*
+	$(OUT)cp $(CPFLAGS) src/c-ares/* c-ares-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -317,7 +318,7 @@ $(Configs)::
 
 %.libssh2.configure:
 	$(OUT)mkdir -p libssh2-build/$*
-	$(OUT)cp -pfru src/libssh2/* libssh2-build/$*
+	$(OUT)cp $(CPFLAGS) src/libssh2/* libssh2-build/$*
 	$(OUT)if [ -e libssh2-build/$*/Makefile ] ; then \
 	  echo Configuring libssh2 for $* aready done ; \
 	else \
@@ -335,7 +336,7 @@ $(Configs)::
 
 %.libssh2.build:
 	$(OUT)mkdir -p libssh2-build/$*
-	$(OUT)cp -pfru src/libssh2/* libssh2-build/$*
+	$(OUT)cp $(CPFLAGS) src/libssh2/* libssh2-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -356,7 +357,7 @@ $(Configs)::
 
 %.nghttp2.configure:
 	$(OUT)mkdir -p nghttp2-build/$*
-	$(OUT)cp -pfru src/nghttp2/* nghttp2-build/$*
+	$(OUT)cp $(CPFLAGS) src/nghttp2/* nghttp2-build/$*
 	$(OUT)if [ -e nghttp2-build/$*/Makefile ] ; then \
 	  echo Configuring nghttp2 for $* aready done ; \
 	else \
@@ -379,7 +380,7 @@ $(Configs)::
 
 %.nghttp2.build:
 	$(OUT)mkdir -p nghttp2-build/$*
-	$(OUT)cp -pfru src/nghttp2/* nghttp2-build/$*
+	$(OUT)cp $(CPFLAGS) src/nghttp2/* nghttp2-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -400,7 +401,7 @@ $(Configs)::
 
 %.libmetalink.configure:
 	$(OUT)mkdir -p libmetalink-build/$*
-	$(OUT)cp -pfru src/libmetalink/* libmetalink-build/$*
+	$(OUT)cp $(CPFLAGS) src/libmetalink/* libmetalink-build/$*
 	$(OUT)if [ -e libmetalink-build/$*/Makefile ] ; then \
 	  echo Configuring libmetalink for $* aready done ; \
 	else \
@@ -423,7 +424,7 @@ $(Configs)::
 
 %.libmetalink.build:
 	$(OUT)mkdir -p libmetalink-build/$*
-	$(OUT)cp -pfru src/libmetalink/* libmetalink-build/$*
+	$(OUT)cp $(CPFLAGS) src/libmetalink/* libmetalink-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -444,7 +445,7 @@ $(Configs)::
 
 %.openldap.configure:
 	$(OUT)mkdir -p openldap-build/$*
-	$(OUT)cp -pfru src/openldap/* openldap-build/$*
+	$(OUT)cp $(CPFLAGS) src/openldap/* openldap-build/$*
 	$(OUT)if [ -e openldap-build/$*/Makefile ] ; then \
 	  echo Configuring openldap for $* aready done ; \
 	else \
@@ -468,7 +469,7 @@ $(Configs)::
 
 %.openldap.build:
 	$(OUT)mkdir -p openldap-build/$*
-	$(OUT)cp -pfru src/openldap/* openldap-build/$*
+	$(OUT)cp $(CPFLAGS) src/openldap/* openldap-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) CC="$(ELLCC)/bin/ecc -target $*" \
             AR=$(ELLCC)/bin/ecc-ar \
             RANLIB=$(ELLCC)/bin/ecc-ranlib \
@@ -494,7 +495,7 @@ $(Configs)::
 
 %.curl.configure:
 	$(OUT)mkdir -p curl-build/$*
-	$(OUT)cp -pfru src/curl/* curl-build/$*
+	$(OUT)cp $(CPFLAGS) src/curl/* curl-build/$*
 	$(OUT)if [ -e curl-build/$*/src/Makefile ] ; then \
 	  echo Configuring curl for $* aready done ; \
 	else \
@@ -518,7 +519,7 @@ $(Configs)::
       fi
 
 %.curl.build:
-	$(OUT)cp -pfru src/curl/* curl-build/$*
+	$(OUT)cp $(CPFLAGS) src/curl/* curl-build/$*
 	$(OUT)$(MAKE) $(MFLAGS) -C curl-build/$*/lib
 	$(OUT)$(MAKE) $(MFLAGS) -C curl-build/$*/src
 
