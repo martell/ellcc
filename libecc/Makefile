@@ -370,7 +370,7 @@ $(Configs)::
 	    CXX="$(ELLCC)/bin/ecc++" \
             CXXFLAGS="-target $* $(CXXFLAGS)" \
             CPP="$(ELLCC)/bin/ecc -E -target $*" \
-            CXXPP="$(ELLCC)/bin/ecc++ -E -target $*" \
+            CXXCPP="$(ELLCC)/bin/ecc++ -E -target $*" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
               ../../src/nghttp2/configure \
@@ -414,7 +414,7 @@ $(Configs)::
 	    CXX="$(ELLCC)/bin/ecc++" \
             CXXFLAGS="-target $* $(CXXFLAGS)" \
             CPP="$(ELLCC)/bin/ecc -E -target $*" \
-            CXXPP="$(ELLCC)/bin/ecc++ -E" \
+            CXXCPP="$(ELLCC)/bin/ecc++ -E" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
               ../../src/libmetalink/configure \
@@ -458,7 +458,7 @@ $(Configs)::
 	    CXX="$(ELLCC)/bin/ecc++" \
             CXXFLAGS="-target $* $(CXXFLAGS)" \
             CPP="$(ELLCC)/bin/ecc -E -target $*" \
-            CXXPP="$(ELLCC)/bin/ecc++ -E -target $*" \
+            CXXCPP="$(ELLCC)/bin/ecc++ -E -target $*" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
               ../../src/openldap/configure \
@@ -508,7 +508,7 @@ $(Configs)::
 	    CXX="$(ELLCC)/bin/ecc++" \
             CXXFLAGS="-target $* $(CXXFLAGS)" \
             CPP="$(ELLCC)/bin/ecc -E -target $*" \
-            CXXPP="$(ELLCC)/bin/ecc++ -E -target $*" \
+            CXXCPP="$(ELLCC)/bin/ecc++ -E -target $*" \
 	    AR=$(ELLCC)/bin/ecc-ar \
 	    RANLIB=$(ELLCC)/bin/ecc-ranlib \
               ../../src/curl/configure \
