@@ -2230,7 +2230,7 @@ yyreduce:
 
   case 48:
 #line 531 "cp-name-parser.y" /* yacc.c:1646  */
-    { (yyval.comp) = fill_comp (DEMANGLE_COMPONENT_CAST, (yyvsp[0].comp), NULL); }
+    { (yyval.comp) = fill_comp (DEMANGLE_COMPONENT_CONVERSION, (yyvsp[0].comp), NULL); }
 #line 2236 "cp-name-parser.c" /* yacc.c:1646  */
     break;
 

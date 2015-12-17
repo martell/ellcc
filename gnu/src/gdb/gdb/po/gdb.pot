@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2015-08-28 17:29-0400\n"
+"POT-Creation-Date: 2015-12-05 16:21+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -4639,7 +4639,7 @@ msgstr ""
 msgid "Recorded trace may be incomplete around %s."
 msgstr ""
 
-#: btrace.c:752 btrace.c:2400
+#: btrace.c:752 btrace.c:2405
 #, possible-c-format
 msgid "Failed to synchronize onto the Intel(R) Processor Trace stream: %s."
 msgstr ""
@@ -4655,12 +4655,12 @@ msgstr ""
 msgid "The recorded execution trace may have gaps."
 msgstr ""
 
-#: btrace.c:909 btrace.c:926 btrace.c:2434
+#: btrace.c:909 btrace.c:926 btrace.c:2439
 #, possible-c-format
 msgid "Failed to configure the Intel(R) Processor Trace decoder: %s."
 msgstr ""
 
-#: btrace.c:914 btrace.c:2439
+#: btrace.c:914 btrace.c:2444
 msgid "Failed to allocate the Intel(R) Processor Trace decoder."
 msgstr ""
 
@@ -4672,170 +4672,174 @@ msgstr ""
 msgid "Unexpected branch trace format."
 msgstr ""
 
-#: btrace.c:983 btrace.c:1196 common/btrace-common.c:72
+#: btrace.c:983 btrace.c:1201 common/btrace-common.c:72
 #: common/btrace-common.c:92 common/btrace-common.c:179
 #: nat/linux-btrace.c:1090 record-btrace.c:377
 msgid "Unkown branch trace format."
 msgstr ""
 
-#: btrace.c:1024 remote.c:12189 remote.c:12240 remote.c:12286
+#: btrace.c:1025
+msgid "GDB does not support Intel(R) Processor Trace."
+msgstr ""
+
+#: btrace.c:1029 remote.c:12189 remote.c:12240 remote.c:12286
 msgid "Target does not support branch tracing."
 msgstr ""
 
-#: btrace.c:1137
+#: btrace.c:1142
 msgid "Error while trying to read delta trace.  Falling back to a full read."
 msgstr ""
 
-#: btrace.c:1298
+#: btrace.c:1303
 msgid "Failed to read branch trace."
 msgstr ""
 
-#: btrace.c:1375
+#: btrace.c:1380
 #, possible-c-format
 msgid "Unsupported btrace version: \"%s\""
 msgstr ""
 
-#: btrace.c:1402
+#: btrace.c:1407
 msgid "Btrace format error."
 msgstr ""
 
-#: btrace.c:1428
+#: btrace.c:1433
 msgid "Bad raw data size."
 msgstr ""
 
-#: btrace.c:1442
+#: btrace.c:1447
 msgid "Bad hex encoding."
 msgstr ""
 
-#: btrace.c:1572
+#: btrace.c:1577
 msgid "btrace"
 msgstr ""
 
-#: btrace.c:1575
+#: btrace.c:1580
 msgid "Error parsing branch trace."
 msgstr ""
 
-#: btrace.c:1582
+#: btrace.c:1587
 msgid "Cannot process branch trace.  XML parsing is not supported."
 msgstr ""
 
-#: btrace.c:1667
+#: btrace.c:1672
 msgid "btrace-conf"
 msgstr ""
 
-#: btrace.c:1670
+#: btrace.c:1675
 msgid "Error parsing branch trace configuration."
 msgstr ""
 
-#: btrace.c:1674
+#: btrace.c:1679
 msgid "XML parsing is not supported."
 msgstr ""
 
-#: btrace.c:1728 btrace.c:1745 btrace.c:2027 btrace.c:2043 record-btrace.c:120
+#: btrace.c:1733 btrace.c:1750 btrace.c:2032 btrace.c:2048 record-btrace.c:120
 #: record-btrace.c:1735
 msgid "No trace."
 msgstr ""
 
-#: btrace.c:2395
+#: btrace.c:2400
 #, possible-c-format
 msgid "Error at trace offset 0x%<PRIx64>: %s."
 msgstr ""
 
-#: btrace.c:2577 btrace.c:2599 record.c:395 record.c:415
+#: btrace.c:2582 btrace.c:2604 record.c:395 record.c:415
 #, possible-c-format
 msgid "Expected positive number, got: %s."
 msgstr ""
 
-#: btrace.c:2581
+#: btrace.c:2586
 msgid "Number too big."
 msgstr ""
 
-#: btrace.c:2610 record.c:365 record.c:377 record.c:426
+#: btrace.c:2615 record.c:365 record.c:377 record.c:426
 #, possible-c-format
 msgid "Junk after argument: %s."
 msgstr ""
 
-#: btrace.c:2624 btrace.c:2731 btrace.c:2753 btrace.c:2817 record-btrace.c:115
+#: btrace.c:2629 btrace.c:2736 btrace.c:2758 btrace.c:2822 record-btrace.c:115
 #: record-btrace.c:394
 msgid "No thread."
 msgstr ""
 
-#: btrace.c:2632
+#: btrace.c:2637
 msgid "No trace.\n"
 msgstr ""
 
-#: btrace.c:2656
+#: btrace.c:2661
 #, possible-c-format
 msgid "'%u' is out of range."
 msgstr ""
 
-#: btrace.c:2727 btrace.c:2749 btrace.c:2813 record-btrace.c:2357
+#: btrace.c:2732 btrace.c:2754 btrace.c:2818 record-btrace.c:2357
 #: record-btrace.c:2379 record-btrace.c:2401
 msgid "Invalid argument."
 msgstr ""
 
-#: btrace.c:2823
+#: btrace.c:2828
 msgid "No btrace configuration."
 msgstr ""
 
-#: btrace.c:2825
+#: btrace.c:2830
 #, possible-c-format
 msgid "Format: %s.\n"
 msgstr ""
 
-#: btrace.c:2834 btrace.c:2850
+#: btrace.c:2839 btrace.c:2855
 #, possible-c-format
 msgid "Number of packets: %u.\n"
 msgstr ""
 
-#: btrace.c:2845
+#: btrace.c:2850
 #, possible-c-format
 msgid "Version: %u.%u.%u%s.\n"
 msgstr ""
 
-#: btrace.c:2866
+#: btrace.c:2871
 #, possible-c-format
 msgid "Skip PAD packets is %s.\n"
 msgstr ""
 
-#: btrace.c:2877
+#: btrace.c:2882
 msgid "Info about branch tracing data."
 msgstr ""
 
-#: btrace.c:2880
+#: btrace.c:2885
 msgid "Branch tracing maintenance commands."
 msgstr ""
 
-#: btrace.c:2884
+#: btrace.c:2889
 msgid "Set branch tracing specific variables."
 msgstr ""
 
-#: btrace.c:2889
+#: btrace.c:2894
 msgid "Set Intel(R) Processor Trace specific variables."
 msgstr ""
 
-#: btrace.c:2894
+#: btrace.c:2899
 msgid "Show branch tracing specific variables."
 msgstr ""
 
-#: btrace.c:2899
+#: btrace.c:2904
 msgid "Show Intel(R) Processor Trace specific variables."
 msgstr ""
 
-#: btrace.c:2905
+#: btrace.c:2910
 msgid "Set whether PAD packets should be skipped in the btrace packet history."
 msgstr ""
 
-#: btrace.c:2906
+#: btrace.c:2911
 msgid ""
 "Show whether PAD packets should be skipped in the btrace packet history."
 msgstr ""
 
-#: btrace.c:2907
+#: btrace.c:2912
 msgid "When enabled, PAD packets are ignored in the btrace packet history."
 msgstr ""
 
-#: btrace.c:2914
+#: btrace.c:2919
 msgid ""
 "Print the raw branch tracing data.\n"
 "With no argument, print ten more packets after the previous ten-line print.\n"
@@ -4847,13 +4851,13 @@ msgid ""
 "first.\n"
 msgstr ""
 
-#: btrace.c:2926
+#: btrace.c:2931
 msgid ""
 "Clears the branch tracing packet history.\n"
 "Discards the raw branch tracing data but not the execution history data.\n"
 msgstr ""
 
-#: btrace.c:2932
+#: btrace.c:2937
 msgid ""
 "Clears the branch tracing data.\n"
 "Discards the raw branch tracing data and the execution history data.\n"

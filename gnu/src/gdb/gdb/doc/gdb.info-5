@@ -21,7 +21,7 @@ END-INFO-DIR-ENTRY
    This file documents the GNU debugger GDB.
 
    This is the Tenth Edition, of 'Debugging with GDB: the GNU
-Source-Level Debugger' for GDB (GDB) Version 7.10.
+Source-Level Debugger' for GDB (GDB) Version 7.10.1.
 
    Copyright (C) 1988-2015 Free Software Foundation, Inc.
 
@@ -8745,7 +8745,7 @@ and TeX (or 'texi2roff') to typeset the printed version.
 
    GDB includes an already formatted copy of the on-line Info version of
 this manual in the 'gdb' subdirectory.  The main Info file is
-'gdb-7.10/gdb/gdb.info', and it refers to subordinate files matching
+'gdb-7.10.1/gdb/gdb.info', and it refers to subordinate files matching
 'gdb.info*' in the same directory.  If necessary, you can print out
 these files, or read them with any editor; but they are easier to read
 using the 'info' subsystem in GNU Emacs or the standalone 'info'
@@ -8755,8 +8755,8 @@ program, available as part of the GNU Texinfo distribution.
 Info formatting programs, such as 'texinfo-format-buffer' or 'makeinfo'.
 
    If you have 'makeinfo' installed, and are in the top level GDB source
-directory ('gdb-7.10', in the case of version 7.10), you can make the
-Info file by typing:
+directory ('gdb-7.10.1', in the case of version 7.10.1), you can make
+the Info file by typing:
 
      cd gdb
      make gdb.info
@@ -8781,7 +8781,7 @@ On its own, TeX cannot either read or typeset a Texinfo file.
 
    If you have TeX and a DVI printer program installed, you can typeset
 and print this manual.  First switch to the 'gdb' subdirectory of the
-main source directory (for example, to 'gdb-7.10/gdb') and type:
+main source directory (for example, to 'gdb-7.10.1/gdb') and type:
 
      make gdb.dvi
 
@@ -8789,5 +8789,5 @@ main source directory (for example, to 'gdb-7.10/gdb') and type:
 
    ---------- Footnotes ----------
 
-   (1) In 'gdb-7.10/gdb/refcard.ps' of the version 7.10 release.
+   (1) In 'gdb-7.10.1/gdb/refcard.ps' of the version 7.10.1 release.
 
