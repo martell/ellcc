@@ -141,6 +141,10 @@ static void diagnosticHandler(const DiagnosticInfo &DI) {
   errs() << '\n';
 }
 
+static void diagnosticHandlerWithContext(const DiagnosticInfo &DI, void *C) {
+  diagnosticHandler(DI);
+}
+
 /// Import any functions requested via the -import option.
 static bool importFunctions(const char *argv0, LLVMContext &Context,
                             Linker &L) {
@@ -200,7 +204,7 @@ static bool importFunctions(const char *argv0, LLVMContext &Context,
     // Link in the specified function.
     DenseSet<const GlobalValue *> FunctionsToImport;
     FunctionsToImport.insert(F);
-    if (L.linkInModule(*M, Linker::Flags::None, Index.get(),
+    if (L.linkInModule(std::move(M), Linker::Flags::None, Index.get(),
                        &FunctionsToImport))
       return false;
   }
@@ -241,7 +245,7 @@ static bool linkFiles(const char *argv0, LLVMContext &Context, Linker &L,
     if (Verbose)
       errs() << "Linking in '" << File << "'\n";
 
-    if (L.linkInModule(*M, ApplicableFlags, Index.get()))
+    if (L.linkInModule(std::move(M), ApplicableFlags, Index.get()))
       return false;
     // All linker flags apply to linking of subsequent files.
     ApplicableFlags = Flags;
@@ -265,11 +269,13 @@ int main(int argc, char **argv) {
   PrettyStackTraceProgram X(argc, argv);
 
   LLVMContext &Context = getGlobalContext();
+  Context.setDiagnosticHandler(diagnosticHandlerWithContext, nullptr, true);
+
   llvm_shutdown_obj Y;  // Call llvm_shutdown() on exit.
   cl::ParseCommandLineOptions(argc, argv, "llvm linker\n");
 
   auto Composite = make_unique<Module>("llvm-link", Context);
-  Linker L(*Composite, diagnosticHandler);
+  Linker L(*Composite);
 
   unsigned Flags = Linker::Flags::None;
   if (Internalize)

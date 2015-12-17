@@ -221,16 +221,16 @@ bool RelocationSection<ELFT>::applyTlsDynamicReloc(SymbolBody *Body,
     return false;
 
   if (Target->isTlsOptimized(Type, Body)) {
-    P->setSymbolAndType(Body->getDynamicSymbolTableIndex(),
+    P->setSymbolAndType(Body->DynamicSymbolTableIndex,
                         Target->getTlsGotReloc(), Config->Mips64EL);
     P->r_offset = Out<ELFT>::Got->getEntryAddr(*Body);
     return true;
   }
 
-  P->setSymbolAndType(Body->getDynamicSymbolTableIndex(),
+  P->setSymbolAndType(Body->DynamicSymbolTableIndex,
                       Target->getTlsModuleIndexReloc(), Config->Mips64EL);
   P->r_offset = Out<ELFT>::Got->getGlobalDynAddr(*Body);
-  N->setSymbolAndType(Body->getDynamicSymbolTableIndex(),
+  N->setSymbolAndType(Body->DynamicSymbolTableIndex,
                       Target->getTlsOffsetReloc(), Config->Mips64EL);
   N->r_offset = Out<ELFT>::Got->getGlobalDynAddr(*Body) + sizeof(uintX_t);
   return true;
@@ -258,27 +258,25 @@ template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
     uint32_t Type = RI.getType(Config->Mips64EL);
     if (applyTlsDynamicReloc(Body, Type, P, reinterpret_cast<Elf_Rel *>(Buf)))
       continue;
-    bool NeedsCopy = Body && Target->relocNeedsCopy(Type, *Body);
+    bool NeedsCopy = Body && Target->needsCopyRel(Type, *Body);
     bool NeedsGot = Body && Target->relocNeedsGot(Type, *Body);
     bool CanBePreempted = canBePreempted(Body, NeedsGot);
     bool LazyReloc = Body && Target->supportsLazyRelocations() &&
                      Target->relocNeedsPlt(Type, *Body);
 
-    if (CanBePreempted) {
-      unsigned GotReloc =
-          Body->isTLS() ? Target->getTlsGotReloc() : Target->getGotReloc();
-      if (NeedsGot)
-        P->setSymbolAndType(Body->getDynamicSymbolTableIndex(),
-                            LazyReloc ? Target->getPltReloc() : GotReloc,
-                            Config->Mips64EL);
-      else
-        P->setSymbolAndType(Body->getDynamicSymbolTableIndex(),
-                            NeedsCopy ? Target->getCopyReloc()
-                                      : Target->getDynReloc(Type),
-                            Config->Mips64EL);
-    } else {
-      P->setSymbolAndType(0, Target->getRelativeReloc(), Config->Mips64EL);
-    }
+    unsigned Sym = CanBePreempted ? Body->DynamicSymbolTableIndex : 0;
+    unsigned Reloc;
+    if (!CanBePreempted)
+      Reloc = Target->getRelativeReloc();
+    else if (LazyReloc)
+      Reloc = Target->getPltReloc();
+    else if (NeedsGot)
+      Reloc = Body->isTls() ? Target->getTlsGotReloc() : Target->getGotReloc();
+    else if (NeedsCopy)
+      Reloc = Target->getCopyReloc();
+    else
+      Reloc = Target->getDynReloc(Type);
+    P->setSymbolAndType(Sym, Reloc, Config->Mips64EL);
 
     if (NeedsGot) {
       if (LazyReloc)
@@ -385,7 +383,7 @@ template <class ELFT> void HashTableSection<ELFT>::writeTo(uint8_t *Buf) {
 
   for (SymbolBody *Body : Out<ELFT>::DynSymTab->getSymbols()) {
     StringRef Name = Body->getName();
-    unsigned I = Body->getDynamicSymbolTableIndex();
+    unsigned I = Body->DynamicSymbolTableIndex;
     uint32_t Hash = hashSysv(Name) % NumSymbols;
     Chains[I] = Buckets[Hash];
     Buckets[Hash] = I;
@@ -498,7 +496,7 @@ void GnuHashTableSection<ELFT>::writeHashTable(uint8_t *Buf) {
     int Bucket = Item.Hash % NBuckets;
     assert(PrevBucket <= Bucket);
     if (Bucket != PrevBucket) {
-      Buckets[Bucket] = Item.Body->getDynamicSymbolTableIndex();
+      Buckets[Bucket] = Item.Body->DynamicSymbolTableIndex;
       PrevBucket = Bucket;
       if (I > 0)
         Values[I - 1] |= 1;
@@ -745,7 +743,7 @@ template <class ELFT> void DynamicSection<ELFT>::writeTo(uint8_t *Buf) {
     WriteVal(DT_MIPS_SYMTABNO, Out<ELFT>::DynSymTab->getNumSymbols());
     WriteVal(DT_MIPS_LOCAL_GOTNO, Out<ELFT>::Got->getMipsLocalEntriesNum());
     if (const SymbolBody *B = Out<ELFT>::Got->getMipsFirstGlobalEntry())
-      WriteVal(DT_MIPS_GOTSYM, B->getDynamicSymbolTableIndex());
+      WriteVal(DT_MIPS_GOTSYM, B->DynamicSymbolTableIndex);
     else
       WriteVal(DT_MIPS_GOTSYM, Out<ELFT>::DynSymTab->getNumSymbols());
     WritePtr(DT_PLTGOT, Out<ELFT>::Got->getVA());
@@ -797,7 +795,7 @@ typename ELFFile<ELFT>::uintX_t lld::elf2::getSymVA(const SymbolBody &S) {
     return Out<ELFT>::Bss->getVA() + cast<DefinedCommon<ELFT>>(S).OffsetInBSS;
   case SymbolBody::SharedKind: {
     auto &SS = cast<SharedSymbol<ELFT>>(S);
-    if (SS.needsCopy())
+    if (SS.NeedsCopy)
       return Out<ELFT>::Bss->getVA() + SS.OffsetInBSS;
     return 0;
   }
@@ -1025,7 +1023,7 @@ template <class ELFT> void EHOutputSection<ELFT>::writeTo(uint8_t *Buf) {
 
     for (const EHRegion<ELFT> &F : C.Fdes) {
       StringRef FdeData = F.data();
-      memcpy(Buf + Offset, FdeData.data(), 4);              // Legnth
+      memcpy(Buf + Offset, FdeData.data(), 4);              // Length
       write32<E>(Buf + Offset + 4, Offset + 4 - CieOffset); // Pointer
       memcpy(Buf + Offset + 8, FdeData.data() + 8, FdeData.size() - 8);
       F.S->Offsets[F.Index].second = Offset;
@@ -1168,15 +1166,26 @@ bool lld::elf2::shouldKeepInSymtab(const ObjectFile<ELFT> &File,
   if (Sym.getType() == STT_SECTION)
     return false;
 
+  InputSectionBase<ELFT> *Sec = File.getSection(Sym);
   // If sym references a section in a discarded group, don't keep it.
-  if (File.getSection(Sym) == &InputSection<ELFT>::Discarded)
+  if (Sec == &InputSection<ELFT>::Discarded)
     return false;
 
   if (Config->DiscardNone)
     return true;
 
-  // ELF defines dynamic locals as symbols which name starts with ".L".
-  return !(Config->DiscardLocals && SymName.startswith(".L"));
+  // In ELF assembly .L symbols are normally discarded by the assembler.
+  // If the assembler fails to do so, the linker discards them if
+  // * --discard-locals is used.
+  // * The symbol is in a SHF_MERGE section, which is normally the reason for
+  //   the assembler keeping the .L symbol.
+  if (!SymName.startswith(".L") && !SymName.empty())
+    return true;
+
+  if (Config->DiscardLocals)
+    return false;
+
+  return !(Sec->getSectionHdr()->sh_flags & SHF_MERGE);
 }
 
 template <class ELFT>
@@ -1228,7 +1237,7 @@ template <class ELFT> void SymbolTableSection<ELFT>::finalize() {
     std::stable_sort(Symbols.begin(), Symbols.end(), sortMipsSymbols);
   size_t I = 0;
   for (SymbolBody *B : Symbols)
-    B->setDynamicSymbolTableIndex(++I);
+    B->DynamicSymbolTableIndex = ++I;
 }
 
 template <class ELFT>
@@ -1314,7 +1323,7 @@ void SymbolTableSection<ELFT>::writeGlobalSymbols(uint8_t *Buf) {
       OutSec = Out<ELFT>::Bss;
       break;
     case SymbolBody::SharedKind: {
-      if (cast<SharedSymbol<ELFT>>(Body)->needsCopy())
+      if (cast<SharedSymbol<ELFT>>(Body)->NeedsCopy)
         OutSec = Out<ELFT>::Bss;
       break;
     }

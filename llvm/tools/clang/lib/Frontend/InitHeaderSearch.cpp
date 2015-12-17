@@ -215,6 +215,7 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
     case llvm::Triple::Bitrig:
     case llvm::Triple::NaCl:
     case llvm::Triple::PS4:
+    case llvm::Triple::ELFIAMCU:
       break;
     case llvm::Triple::Win32:
       if (triple.getEnvironment() != llvm::Triple::Cygnus)
@@ -317,6 +318,7 @@ void InitHeaderSearch::AddDefaultCIncludePaths(const llvm::Triple &triple,
   case llvm::Triple::CloudABI:
   case llvm::Triple::RTEMS:
   case llvm::Triple::NaCl:
+  case llvm::Triple::ELFIAMCU:
     break;
   case llvm::Triple::PS4: {
     // <isysroot> gets prepended later in AddPath().

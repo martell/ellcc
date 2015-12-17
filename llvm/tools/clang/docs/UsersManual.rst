@@ -1042,6 +1042,12 @@ are listed below.
 
    Deprecated alias for ``-fsanitize-trap=undefined``.
 
+.. option:: -fsanitize-cfi-cross-dso
+
+   Enable cross-DSO control flow integrity checks. This flag modifies
+   the behavior of sanitizers in the ``cfi`` group to allow checking
+   of cross-DSO virtual and indirect calls.
+
 .. option:: -fno-assume-sane-operator-new
 
    Don't assume that the C++'s new operator is sane.
@@ -2080,7 +2086,7 @@ Execute ``clang-cl /?`` to see a list of supported options:
       /W1                    Enable -Wall
       /W2                    Enable -Wall
       /W3                    Enable -Wall
-      /W4                    Enable -Wall
+      /W4                    Enable -Wall and -Wextra
       /Wall                  Enable -Wall
       /WX-                   Do not treat warnings as errors
       /WX                    Treat warnings as errors

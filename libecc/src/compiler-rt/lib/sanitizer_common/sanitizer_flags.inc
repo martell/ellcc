@@ -78,6 +78,8 @@ COMMON_FLAG(bool, check_printf, true, "Check printf arguments.")
 COMMON_FLAG(bool, handle_segv, SANITIZER_NEEDS_SEGV,
             "If set, registers the tool's custom SEGV handler (both SIGBUS and "
             "SIGSEGV on OSX).")
+COMMON_FLAG(bool, handle_sigill, false,
+            "If set, registers the tool's custom SIGILL handler.")
 COMMON_FLAG(bool, handle_sigfpe, true,
             "If set, registers the tool's custom SIGFPE handler.")
 COMMON_FLAG(bool, allow_user_segv_handler, false,

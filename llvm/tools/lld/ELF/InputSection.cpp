@@ -95,7 +95,8 @@ bool InputSection<ELFT>::classof(const InputSectionBase<ELFT> *S) {
 template <class ELFT>
 template <bool isRela>
 uint8_t *
-InputSectionBase<ELFT>::findMipsPairedReloc(uint8_t *Buf, uint32_t Type,
+InputSectionBase<ELFT>::findMipsPairedReloc(uint8_t *Buf, uint32_t SymIndex,
+                                            uint32_t Type,
                                             RelIteratorRange<isRela> Rels) {
   // Some MIPS relocations use addend calculated from addend of the relocation
   // itself and addend of paired relocation. ABI requires to compute such
@@ -114,12 +115,22 @@ InputSectionBase<ELFT>::findMipsPairedReloc(uint8_t *Buf, uint32_t Type,
   for (const auto &RI : Rels) {
     if (RI.getType(Config->Mips64EL) != Type)
       continue;
+    if (RI.getSymbol(Config->Mips64EL) != SymIndex)
+      continue;
     uintX_t Offset = getOffset(RI.r_offset);
     if (Offset == (uintX_t)-1)
       return nullptr;
     return Buf + Offset;
   }
   return nullptr;
+}
+
+template <class ELFT>
+static typename llvm::object::ELFFile<ELFT>::uintX_t
+getSymSize(SymbolBody &Body) {
+  if (auto *SS = dyn_cast<Defined<ELFT>>(&Body))
+    return SS->Sym.st_size;
+  return 0;
 }
 
 template <class ELFT>
@@ -153,8 +164,8 @@ void InputSectionBase<ELFT>::relocate(uint8_t *Buf, uint8_t *BufEnd,
     const Elf_Shdr *SymTab = File->getSymbolTable();
     if (SymIndex < SymTab->sh_info) {
       uintX_t SymVA = getLocalRelTarget(*File, RI);
-      Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc, SymVA,
-                          findMipsPairedReloc(Buf, Type, NextRelocs));
+      Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc, SymVA, 0,
+                          findMipsPairedReloc(Buf, SymIndex, Type, NextRelocs));
       continue;
     }
 
@@ -186,17 +197,24 @@ void InputSectionBase<ELFT>::relocate(uint8_t *Buf, uint8_t *BufEnd,
       Type = Target->getPltRefReloc(Type);
     } else if (Target->relocNeedsGot(Type, Body)) {
       SymVA = Out<ELFT>::Got->getEntryAddr(Body);
-      if (Body.isTLS())
+      if (Body.isTls())
         Type = Target->getTlsGotReloc();
-    } else if (!Target->relocNeedsCopy(Type, Body) &&
+    } else if (!Target->needsCopyRel(Type, Body) &&
                isa<SharedSymbol<ELFT>>(Body)) {
       continue;
-    } else if (Target->isTlsDynReloc(Type)) {
+    } else if (Target->isTlsDynReloc(Type) ||
+               Target->isSizeDynReloc(Type, Body)) {
       continue;
+    } else if (Config->EMachine == EM_MIPS) {
+      if (Type == R_MIPS_HI16 && &Body == Config->MipsGpDisp)
+        SymVA = getMipsGpAddr<ELFT>() - AddrLoc;
+      else if (Type == R_MIPS_LO16 && &Body == Config->MipsGpDisp)
+        SymVA = getMipsGpAddr<ELFT>() - AddrLoc + 4;
     }
-    Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc,
-                        SymVA + getAddend<ELFT>(RI),
-                        findMipsPairedReloc(Buf, Type, NextRelocs));
+    uintX_t A = getAddend<ELFT>(RI);
+    uintX_t Size = getSymSize<ELFT>(Body);
+    Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc, SymVA + A, Size + A,
+                        findMipsPairedReloc(Buf, SymIndex, Type, NextRelocs));
   }
 }
 

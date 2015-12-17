@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r255872.
 * Import and build the libevent 2.0.22 library.
 * Import and build the nanomsg 0.8-beta library.
 * Update to LLVM r255244.

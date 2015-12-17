@@ -104,8 +104,71 @@ bool TextInstrProfReader::hasFormat(const MemoryBuffer &Buffer) {
   // 'reasonable' number of characters (up to profile magic size).
   size_t count = std::min(Buffer.getBufferSize(), sizeof(uint64_t));
   StringRef buffer = Buffer.getBufferStart();
-  return count == 0 || std::all_of(buffer.begin(), buffer.begin() + count,
-    [](char c) { return ::isprint(c) || ::isspace(c); });
+  return count == 0 ||
+         std::all_of(buffer.begin(), buffer.begin() + count,
+                     [](char c) { return ::isprint(c) || ::isspace(c); });
+}
+
+std::error_code
+TextInstrProfReader::readValueProfileData(InstrProfRecord &Record) {
+
+#define CHECK_LINE_END(Line)                                                   \
+  if (Line.is_at_end())                                                        \
+    return error(instrprof_error::truncated);
+#define READ_NUM(Str, Dst)                                                     \
+  if ((Str).getAsInteger(10, (Dst)))                                           \
+    return error(instrprof_error::malformed);
+#define VP_READ_ADVANCE(Val)                                                   \
+  CHECK_LINE_END(Line);                                                        \
+  uint32_t Val;                                                                \
+  READ_NUM((*Line), (Val));                                                    \
+  Line++;
+
+  if (Line.is_at_end())
+    return success();
+  uint32_t NumValueKinds;
+  if (Line->getAsInteger(10, NumValueKinds)) {
+    // No value profile data
+    return success();
+  }
+  if (NumValueKinds == 0 || NumValueKinds > IPVK_Last + 1)
+    return error(instrprof_error::malformed);
+  Line++;
+
+  for (uint32_t VK = 0; VK < NumValueKinds; VK++) {
+    VP_READ_ADVANCE(ValueKind);
+    if (ValueKind > IPVK_Last)
+      return error(instrprof_error::malformed);
+    VP_READ_ADVANCE(NumValueSites);
+    if (!NumValueSites)
+      continue;
+
+    Record.reserveSites(VK, NumValueSites);
+    for (uint32_t S = 0; S < NumValueSites; S++) {
+      VP_READ_ADVANCE(NumValueData);
+
+      std::vector<InstrProfValueData> CurrentValues;
+      for (uint32_t V = 0; V < NumValueData; V++) {
+        CHECK_LINE_END(Line);
+        std::pair<StringRef, StringRef> VD = Line->split(':');
+        uint64_t TakenCount, Value;
+        READ_NUM(VD.second, TakenCount);
+        if (VK == IPVK_IndirectCallTarget)
+          Value = (uint64_t)StringTable.insertString(VD.first);
+        else {
+          READ_NUM(VD.first, Value);
+        }
+        CurrentValues.push_back({Value, TakenCount});
+        Line++;
+      }
+      Record.addValueData(VK, S, CurrentValues.data(), NumValueData, nullptr);
+    }
+  }
+  return success();
+
+#undef CHECK_LINE_END
+#undef READ_NUM
+#undef VP_READ_ADVANCE
 }
 
 std::error_code TextInstrProfReader::readNextRecord(InstrProfRecord &Record) {
@@ -145,6 +208,10 @@ std::error_code TextInstrProfReader::readNextRecord(InstrProfRecord &Record) {
       return error(instrprof_error::malformed);
     Record.Counts.push_back(Count);
   }
+
+  // Check if value profile data exists and read it if so.
+  if (std::error_code EC = readValueProfileData(Record))
+    return EC;
 
   return success();
 }
@@ -206,7 +273,6 @@ std::error_code RawInstrProfReader<IntPtrT>::readHeader(
 
   CountersDelta = swap(Header.CountersDelta);
   NamesDelta = swap(Header.NamesDelta);
-  ValueDataDelta = swap(Header.ValueDataDelta);
   auto DataSize = swap(Header.DataSize);
   auto CountersSize = swap(Header.CountersSize);
   auto NamesSize = swap(Header.NamesSize);
@@ -300,11 +366,17 @@ std::error_code
 RawInstrProfReader<IntPtrT>::readValueProfilingData(InstrProfRecord &Record) {
 
   Record.clearValueData();
-  if (!Data->Values || (ValueDataDelta == 0))
+  CurValueDataSize = 0;
+  // Need to match the logic in value profile dumper code in compiler-rt:
+  uint32_t NumValueKinds = 0;
+  for (uint32_t I = 0; I < IPVK_Last + 1; I++)
+    NumValueKinds += (Data->NumValueSites[I] != 0);
+
+  if (!NumValueKinds)
     return success();
 
   ErrorOr<std::unique_ptr<ValueProfData>> VDataPtrOrErr =
-      ValueProfData::getValueProfData(getValueDataCounts(Data->Values),
+      ValueProfData::getValueProfData(ValueDataStart,
                                       (const unsigned char *)ProfileEnd,
                                       getDataEndianness());
 
@@ -312,6 +384,7 @@ RawInstrProfReader<IntPtrT>::readValueProfilingData(InstrProfRecord &Record) {
     return VDataPtrOrErr.getError();
 
   VDataPtrOrErr.get()->deserializeTo(Record, &FunctionPtrToNameMap);
+  CurValueDataSize = VDataPtrOrErr.get()->getSize();
   return success();
 }
 
@@ -335,7 +408,8 @@ RawInstrProfReader<IntPtrT>::readNextRecord(InstrProfRecord &Record) {
     return EC;
 
   // Read value data and set Record.
-  if (std::error_code EC = readValueProfilingData(Record)) return EC;
+  if (std::error_code EC = readValueProfilingData(Record))
+    return EC;
 
   // Iterate.
   advanceData();
@@ -436,7 +510,8 @@ std::error_code InstrProfReaderIndex<HashTableImpl>::getRecords(
 
   Data = *RecordIterator;
 
-  if (Data.empty()) return instrprof_error::malformed;
+  if (Data.empty())
+    return instrprof_error::malformed;
 
   return instrprof_error::success;
 }

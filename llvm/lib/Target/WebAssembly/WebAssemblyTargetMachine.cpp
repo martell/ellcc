@@ -15,7 +15,6 @@
 #include "WebAssembly.h"
 #include "MCTargetDesc/WebAssemblyMCTargetDesc.h"
 #include "WebAssemblyTargetMachine.h"
-#include "WebAssemblyTargetObjectFile.h"
 #include "WebAssemblyTargetTransformInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/Passes.h"
@@ -49,7 +48,7 @@ WebAssemblyTargetMachine::WebAssemblyTargetMachine(
     : LLVMTargetMachine(T, TT.isArch64Bit() ? "e-p:64:64-i64:64-n32:64-S128"
                                             : "e-p:32:32-i64:64-n32:64-S128",
                         TT, CPU, FS, Options, RM, CM, OL),
-      TLOF(make_unique<WebAssemblyTargetObjectFile>()) {
+      TLOF(make_unique<TargetLoweringObjectFileELF>()) {
   // WebAssembly type-checks expressions, but a noreturn function with a return
   // type that doesn't match the context will cause a check failure. So we lower
   // LLVM 'unreachable' to ISD::TRAP and then lower that to WebAssembly's
@@ -169,6 +168,9 @@ void WebAssemblyPassConfig::addPreRegAlloc() {
 
   // Mark registers as representing wasm's expression stack.
   addPass(createWebAssemblyRegStackify());
+  // The register coalescing pass has a bad interaction with COPY MIs which have
+  // EXPR_STACK as an extra operand
+  // disablePass(&RegisterCoalescerID);
 }
 
 void WebAssemblyPassConfig::addPostRegAlloc() {
@@ -176,7 +178,8 @@ void WebAssemblyPassConfig::addPostRegAlloc() {
   // virtual registers. Consider removing their restrictions and re-enabling
   // them.
   //
-  // Fails with: Regalloc must assign all vregs.
+  // We use our own PrologEpilogInserter which is very slightly modified to
+  // tolerate virtual registers.
   disablePass(&PrologEpilogCodeInserterID);
   // Fails with: should be run after register allocation.
   disablePass(&MachineCopyPropagationID);
@@ -185,11 +188,16 @@ void WebAssemblyPassConfig::addPostRegAlloc() {
   addPass(createWebAssemblyRegColoring());
 
   TargetPassConfig::addPostRegAlloc();
+
+  // Run WebAssembly's version of the PrologEpilogInserter. Target-independent
+  // PEI runs after PostRegAlloc and after ShrinkWrap. Putting it here will run
+  // PEI before ShrinkWrap but otherwise in the same position in the order.
+  addPass(createWebAssemblyPEI());
 }
 
 void WebAssemblyPassConfig::addPreEmitPass() {
   TargetPassConfig::addPreEmitPass();
-    
+
   // Put the CFG in structured form; insert BLOCK and LOOP markers.
   addPass(createWebAssemblyCFGStackify());
 

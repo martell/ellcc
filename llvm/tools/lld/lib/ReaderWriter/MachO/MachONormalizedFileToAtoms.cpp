@@ -27,12 +27,16 @@
 #include "MachONormalizedFileBinaryUtils.h"
 #include "lld/Core/Error.h"
 #include "lld/Core/LLVM.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MachO.h"
 #include "llvm/Support/LEB128.h"
+#include "llvm/Support/raw_ostream.h"
 
 using namespace llvm::MachO;
 using namespace lld::mach_o::normalized;
+
+#define DEBUG_TYPE "normalized-file-to-atoms"
 
 namespace lld {
 namespace mach_o {
@@ -82,6 +86,8 @@ const MachORelocatableSectionToAtomType sectsToAtomType[] = {
   ENTRY("__DATA", "__thread_vars",    S_THREAD_LOCAL_VARIABLES,
                                                           typeThunkTLV),
   ENTRY("__DATA", "__thread_data", S_THREAD_LOCAL_REGULAR, typeTLVInitialData),
+  ENTRY("__DATA", "__thread_bss",     S_THREAD_LOCAL_ZEROFILL,
+                                                        typeTLVInitialZeroFill),
   ENTRY("",       "",                 S_INTERPOSING,      typeInterposingTuples),
   ENTRY("__LD",   "__compact_unwind", S_REGULAR,
                                                          typeCompactUnwindInfo),
@@ -232,7 +238,7 @@ void atomFromSymbol(DefinedAtom::ContentType atomType, const Section &section,
   uint64_t size = nextSymbolAddr - symbolAddr;
   uint64_t offset = symbolAddr - section.address;
   bool noDeadStrip = (symbolDescFlags & N_NO_DEAD_STRIP) || !scatterable;
-  if (section.type == llvm::MachO::S_ZEROFILL) {
+  if (isZeroFillSection(section.type)) {
     file.addZeroFillDefinedAtom(symbolName, symbolScope, offset, size,
                                 noDeadStrip, copyRefs, &section);
   } else {
@@ -598,10 +604,37 @@ std::error_code convertRelocs(const Section &section,
     Reference::KindValue kind;
     std::error_code relocErr;
     if (handler.isPairedReloc(reloc)) {
-     // Handle paired relocations together.
+      // Handle paired relocations together.
+      const Relocation &reloc2 = *++it;
       relocErr = handler.getPairReferenceInfo(
-          reloc, *++it, inAtom, offsetInAtom, fixupAddress, isBig, scatterable,
+          reloc, reloc2, inAtom, offsetInAtom, fixupAddress, isBig, scatterable,
           atomByAddr, atomBySymbol, &kind, &target, &addend);
+      if (relocErr) {
+        return make_dynamic_error_code(
+          Twine("bad relocation (") + relocErr.message()
+           + ") in section "
+           + section.segmentName + "/" + section.sectionName
+           + " (r1_address=" + Twine::utohexstr(reloc.offset)
+           + ", r1_type=" + Twine(reloc.type)
+           + ", r1_extern=" + Twine(reloc.isExtern)
+           + ", r1_length=" + Twine((int)reloc.length)
+           + ", r1_pcrel=" + Twine(reloc.pcRel)
+           + (!reloc.scattered ? (Twine(", r1_symbolnum=")
+                                  + Twine(reloc.symbol))
+                               : (Twine(", r1_scattered=1, r1_value=")
+                                  + Twine(reloc.value)))
+           + ")"
+           + ", (r2_address=" + Twine::utohexstr(reloc2.offset)
+           + ", r2_type=" + Twine(reloc2.type)
+           + ", r2_extern=" + Twine(reloc2.isExtern)
+           + ", r2_length=" + Twine((int)reloc2.length)
+           + ", r2_pcrel=" + Twine(reloc2.pcRel)
+           + (!reloc2.scattered ? (Twine(", r2_symbolnum=")
+                                   + Twine(reloc2.symbol))
+                                : (Twine(", r2_scattered=1, r2_value=")
+                                   + Twine(reloc2.value)))
+           + ")" );
+      }
     }
     else {
       // Use ArchHandler to convert relocation record into information
@@ -609,26 +642,25 @@ std::error_code convertRelocs(const Section &section,
       relocErr = handler.getReferenceInfo(
           reloc, inAtom, offsetInAtom, fixupAddress, isBig, atomByAddr,
           atomBySymbol, &kind, &target, &addend);
+      if (relocErr) {
+        return make_dynamic_error_code(
+          Twine("bad relocation (") + relocErr.message()
+           + ") in section "
+           + section.segmentName + "/" + section.sectionName
+           + " (r_address=" + Twine::utohexstr(reloc.offset)
+           + ", r_type=" + Twine(reloc.type)
+           + ", r_extern=" + Twine(reloc.isExtern)
+           + ", r_length=" + Twine((int)reloc.length)
+           + ", r_pcrel=" + Twine(reloc.pcRel)
+           + (!reloc.scattered ? (Twine(", r_symbolnum=") + Twine(reloc.symbol))
+                               : (Twine(", r_scattered=1, r_value=")
+                                  + Twine(reloc.value)))
+           + ")" );
+      }
     }
-    if (relocErr) {
-      return make_dynamic_error_code(
-        Twine("bad relocation (") + relocErr.message()
-         + ") in section "
-         + section.segmentName + "/" + section.sectionName
-         + " (r_address=" + Twine::utohexstr(reloc.offset)
-         + ", r_type=" + Twine(reloc.type)
-         + ", r_extern=" + Twine(reloc.isExtern)
-         + ", r_length=" + Twine((int)reloc.length)
-         + ", r_pcrel=" + Twine(reloc.pcRel)
-         + (!reloc.scattered ? (Twine(", r_symbolnum=") + Twine(reloc.symbol))
-                             : (Twine(", r_scattered=1, r_value=")
-                                + Twine(reloc.value)))
-         + ")" );
-    } else {
-      // Instantiate an lld::Reference object and add to its atom.
-      inAtom->addReference(offsetInAtom, kind, target, addend,
-                           handler.kindArch());
-    }
+    // Instantiate an lld::Reference object and add to its atom.
+    inAtom->addReference(offsetInAtom, kind, target, addend,
+                         handler.kindArch());
   }
 
   return std::error_code();
@@ -864,10 +896,13 @@ std::error_code
 normalizedObjectToAtoms(MachOFile *file,
                         const NormalizedFile &normalizedFile,
                         bool copyRefs) {
+  DEBUG(llvm::dbgs() << "******** Normalizing file to atoms: "
+                    << file->path() << "\n");
   bool scatterable = ((normalizedFile.flags & MH_SUBSECTIONS_VIA_SYMBOLS) != 0);
 
   // Create atoms from each section.
   for (auto &sect : normalizedFile.sections) {
+    DEBUG(llvm::dbgs() << "Creating atoms: "; sect.dump());
     if (isDebugInfoSection(sect))
       continue;
     bool customSectionName;
@@ -1032,6 +1067,14 @@ normalizedToAtoms(const NormalizedFile &normalizedFile, StringRef path,
     llvm_unreachable("unhandled MachO file type!");
   }
 }
+
+#ifndef NDEBUG
+void Section::dump(llvm::raw_ostream &OS) const {
+  OS << "Section (\"" << segmentName << ", " << sectionName << "\"";
+  OS << ", addr: " << llvm::format_hex(address, 16, true);
+  OS << ", size: " << llvm::format_hex(content.size(), 8, true) << ")\n";
+}
+#endif
 
 } // namespace normalized
 } // namespace mach_o

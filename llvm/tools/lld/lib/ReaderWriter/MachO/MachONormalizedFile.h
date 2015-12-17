@@ -45,6 +45,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Allocator.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/MachO.h"
 #include "llvm/Support/YAMLTraits.h"
@@ -119,6 +120,15 @@ struct Section {
   ArrayRef<uint8_t> content;
   Relocations     relocations;
   IndirectSymbols indirectSymbols;
+
+#ifndef NDEBUG
+  raw_ostream& operator<<(raw_ostream &OS) const {
+    dump(OS);
+    return OS;
+  }
+
+  void dump(raw_ostream &OS = llvm::dbgs()) const;
+#endif
 };
 
 
@@ -141,6 +151,14 @@ struct Symbol {
   SymbolDesc    desc;
   Hex64         value;
 };
+
+/// Check whether the given section type indicates a zero-filled section.
+// FIXME: Utility functions of this kind should probably be moved into
+//        llvm/Support.
+inline bool isZeroFillSection(SectionType T) {
+  return (T == llvm::MachO::S_ZEROFILL ||
+          T == llvm::MachO::S_THREAD_LOCAL_ZEROFILL);
+}
 
 /// A typedef so that YAML I/O can (de/en)code the protection bits of a segment.
 LLVM_YAML_STRONG_TYPEDEF(uint32_t, VMProtect)

@@ -248,11 +248,6 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
     if (Config->Entry.empty())
       Config->Entry = (Config->EMachine == EM_MIPS) ? "__start" : "_start";
 
-    // Set either EntryAddr (if S is a number) or EntrySym (otherwise).
-    StringRef S = Config->Entry;
-    if (S.getAsInteger(0, Config->EntryAddr))
-      Config->EntrySym = Symtab.addUndefined(S);
-
     // In the assembly for 32 bit x86 the _GLOBAL_OFFSET_TABLE_ symbol
     // is magical and is used to produce a R_386_GOTPC relocation.
     // The R_386_GOTPC relocation value doesn't actually depend on the
@@ -265,15 +260,27 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
     // an undefined symbol in the .o files.
     // Given that the symbol is effectively unused, we just create a dummy
     // hidden one to avoid the undefined symbol error.
-    Symtab.addIgnoredSym("_GLOBAL_OFFSET_TABLE_");
+    Symtab.addIgnored("_GLOBAL_OFFSET_TABLE_");
   }
 
-  // Define _gp for MIPS. st_value of _gp symbol will be updated by Writer
-  // so that it points to an absolute address which is relative to GOT.
-  // See "Global Data Symbols" in Chapter 6 in the following document:
-  // ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
-  if (Config->EMachine == EM_MIPS)
-    Symtab.addAbsoluteSym("_gp", DefinedAbsolute<ELFT>::MipsGp);
+  if (!Config->Entry.empty()) {
+    // Set either EntryAddr (if S is a number) or EntrySym (otherwise).
+    StringRef S = Config->Entry;
+    if (S.getAsInteger(0, Config->EntryAddr))
+      Config->EntrySym = Symtab.addUndefined(S);
+  }
+
+  if (Config->EMachine == EM_MIPS) {
+    // On MIPS O32 ABI, _gp_disp is a magic symbol designates offset between
+    // start of function and gp pointer into GOT.
+    Config->MipsGpDisp = Symtab.addIgnored("_gp_disp");
+
+    // Define _gp for MIPS. st_value of _gp symbol will be updated by Writer
+    // so that it points to an absolute address which is relative to GOT.
+    // See "Global Data Symbols" in Chapter 6 in the following document:
+    // ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
+    Symtab.addAbsolute("_gp", DefinedAbsolute<ELFT>::MipsGp);
+  }
 
   for (std::unique_ptr<InputFile> &F : Files)
     Symtab.addFile(std::move(F));

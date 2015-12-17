@@ -279,8 +279,6 @@ public:
   /// finally block or filter expression.
   bool IsOutlinedSEHHelper;
 
-  bool IsCleanupPadScope = false;
-
   const CodeGen::CGBlockInfo *BlockInfo;
   llvm::Value *BlockPointer;
 
@@ -294,6 +292,8 @@ public:
   EHScopeStack EHStack;
   llvm::SmallVector<char, 256> LifetimeExtendedCleanupStack;
   llvm::SmallVector<const JumpDest *, 2> SEHTryEpilogueStack;
+
+  llvm::Instruction *CurrentFuncletPad = nullptr;
 
   /// Header for data within LifetimeExtendedCleanupStack.
   struct LifetimeExtendedCleanupHeader {
@@ -375,7 +375,9 @@ public:
   bool isSEHTryScope() const { return !SEHTryEpilogueStack.empty(); }
 
   /// Returns true while emitting a cleanuppad.
-  bool isCleanupPadScope() const { return IsCleanupPadScope; }
+  bool isCleanupPadScope() const {
+    return CurrentFuncletPad && isa<llvm::CleanupPadInst>(CurrentFuncletPad);
+  }
 
   /// pushFullExprCleanup - Push a cleanup to be run at the end of the
   /// current full-expression.  Safe against the possibility that
@@ -2339,6 +2341,7 @@ public:
   void EmitOMPCancelDirective(const OMPCancelDirective &S);
   void EmitOMPTaskLoopDirective(const OMPTaskLoopDirective &S);
   void EmitOMPTaskLoopSimdDirective(const OMPTaskLoopSimdDirective &S);
+  void EmitOMPDistributeDirective(const OMPDistributeDirective &S);
 
   /// \brief Emit inner loop of the worksharing/simd construct.
   ///
@@ -3005,6 +3008,11 @@ public:
   void EmitCheck(ArrayRef<std::pair<llvm::Value *, SanitizerMask>> Checked,
                  StringRef CheckName, ArrayRef<llvm::Constant *> StaticArgs,
                  ArrayRef<llvm::Value *> DynamicArgs);
+
+  /// \brief Emit a slow path cross-DSO CFI check which calls __cfi_slowpath
+  /// if Cond if false.
+  void EmitCfiSlowPathCheck(llvm::Value *Cond, llvm::ConstantInt *TypeId,
+                            llvm::Value *Ptr);
 
   /// \brief Create a basic block that will call the trap intrinsic, and emit a
   /// conditional branch to it, for the -ftrapv checks.

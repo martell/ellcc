@@ -1396,6 +1396,7 @@ struct MDFieldPrinter {
       : Out(Out), TypePrinter(TypePrinter), Machine(Machine), Context(Context) {
   }
   void printTag(const DINode *N);
+  void printMacinfoType(const DIMacroNode *N);
   void printString(StringRef Name, StringRef Value,
                    bool ShouldSkipEmpty = true);
   void printMetadata(StringRef Name, const Metadata *MD,
@@ -1416,6 +1417,14 @@ void MDFieldPrinter::printTag(const DINode *N) {
     Out << Tag;
   else
     Out << N->getTag();
+}
+
+void MDFieldPrinter::printMacinfoType(const DIMacroNode *N) {
+  Out << FS << "type: ";
+  if (const char *Type = dwarf::MacinfoString(N->getMacinfoType()))
+    Out << Type;
+  else
+    Out << N->getMacinfoType();
 }
 
 void MDFieldPrinter::printString(StringRef Name, StringRef Value,
@@ -1643,6 +1652,7 @@ static void writeDICompileUnit(raw_ostream &Out, const DICompileUnit *N,
   Printer.printMetadata("subprograms", N->getRawSubprograms());
   Printer.printMetadata("globals", N->getRawGlobalVariables());
   Printer.printMetadata("imports", N->getRawImportedEntities());
+  Printer.printMetadata("macros", N->getRawMacros());
   Printer.printInt("dwoId", N->getDWOId());
   Out << ")";
 }
@@ -1708,6 +1718,29 @@ static void writeDINamespace(raw_ostream &Out, const DINamespace *N,
   Printer.printMetadata("scope", N->getRawScope(), /* ShouldSkipNull */ false);
   Printer.printMetadata("file", N->getRawFile());
   Printer.printInt("line", N->getLine());
+  Out << ")";
+}
+
+static void writeDIMacro(raw_ostream &Out, const DIMacro *N,
+                         TypePrinting *TypePrinter, SlotTracker *Machine,
+                         const Module *Context) {
+  Out << "!DIMacro(";
+  MDFieldPrinter Printer(Out, TypePrinter, Machine, Context);
+  Printer.printMacinfoType(N);
+  Printer.printInt("line", N->getLine());
+  Printer.printString("name", N->getName());
+  Printer.printString("value", N->getValue());
+  Out << ")";
+}
+
+static void writeDIMacroFile(raw_ostream &Out, const DIMacroFile *N,
+                             TypePrinting *TypePrinter, SlotTracker *Machine,
+                             const Module *Context) {
+  Out << "!DIMacroFile(";
+  MDFieldPrinter Printer(Out, TypePrinter, Machine, Context);
+  Printer.printInt("line", N->getLine());
+  Printer.printMetadata("file", N->getRawFile(), /* ShouldSkipNull */ false);
+  Printer.printMetadata("nodes", N->getRawElements());
   Out << ")";
 }
 
@@ -2857,69 +2890,48 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
 
       writeOperand(LPI->getClause(i), true);
     }
-  } else if (const auto *CPI = dyn_cast<CatchPadInst>(&I)) {
+  } else if (const auto *CatchSwitch = dyn_cast<CatchSwitchInst>(&I)) {
+    Out << " within ";
+    writeOperand(CatchSwitch->getParentPad(), /*PrintType=*/false);
     Out << " [";
-    for (unsigned Op = 0, NumOps = CPI->getNumArgOperands(); Op < NumOps;
-         ++Op) {
+    unsigned Op = 0;
+    for (const BasicBlock *PadBB : CatchSwitch->handlers()) {
       if (Op > 0)
         Out << ", ";
-      writeOperand(CPI->getArgOperand(Op), /*PrintType=*/true);
-    }
-    Out << "]\n          to ";
-    writeOperand(CPI->getNormalDest(), /*PrintType=*/true);
-    Out << " unwind ";
-    writeOperand(CPI->getUnwindDest(), /*PrintType=*/true);
-  } else if (const auto *TPI = dyn_cast<TerminatePadInst>(&I)) {
-    Out << " [";
-    for (unsigned Op = 0, NumOps = TPI->getNumArgOperands(); Op < NumOps;
-         ++Op) {
-      if (Op > 0)
-        Out << ", ";
-      writeOperand(TPI->getArgOperand(Op), /*PrintType=*/true);
+      writeOperand(PadBB, /*PrintType=*/true);
+      ++Op;
     }
     Out << "] unwind ";
-    if (TPI->hasUnwindDest())
-      writeOperand(TPI->getUnwindDest(), /*PrintType=*/true);
+    if (const BasicBlock *UnwindDest = CatchSwitch->getUnwindDest())
+      writeOperand(UnwindDest, /*PrintType=*/true);
     else
       Out << "to caller";
-  } else if (const auto *CPI = dyn_cast<CleanupPadInst>(&I)) {
+  } else if (const auto *FPI = dyn_cast<FuncletPadInst>(&I)) {
+    Out << " within ";
+    writeOperand(FPI->getParentPad(), /*PrintType=*/false);
     Out << " [";
-    for (unsigned Op = 0, NumOps = CPI->getNumOperands(); Op < NumOps; ++Op) {
+    for (unsigned Op = 0, NumOps = FPI->getNumArgOperands(); Op < NumOps;
+         ++Op) {
       if (Op > 0)
         Out << ", ";
-      writeOperand(CPI->getOperand(Op), /*PrintType=*/true);
+      writeOperand(FPI->getArgOperand(Op), /*PrintType=*/true);
     }
-    Out << "]";
+    Out << ']';
   } else if (isa<ReturnInst>(I) && !Operand) {
     Out << " void";
   } else if (const auto *CRI = dyn_cast<CatchReturnInst>(&I)) {
-    Out << ' ';
-    writeOperand(CRI->getCatchPad(), /*PrintType=*/false);
+    Out << " from ";
+    writeOperand(CRI->getOperand(0), /*PrintType=*/false);
 
     Out << " to ";
-    writeOperand(CRI->getSuccessor(), /*PrintType=*/true);
+    writeOperand(CRI->getOperand(1), /*PrintType=*/true);
   } else if (const auto *CRI = dyn_cast<CleanupReturnInst>(&I)) {
-    Out << ' ';
-    writeOperand(CRI->getCleanupPad(), /*PrintType=*/false);
+    Out << " from ";
+    writeOperand(CRI->getOperand(0), /*PrintType=*/false);
 
     Out << " unwind ";
     if (CRI->hasUnwindDest())
-      writeOperand(CRI->getUnwindDest(), /*PrintType=*/true);
-    else
-      Out << "to caller";
-  } else if (const auto *CEPI = dyn_cast<CatchEndPadInst>(&I)) {
-    Out << " unwind ";
-    if (CEPI->hasUnwindDest())
-      writeOperand(CEPI->getUnwindDest(), /*PrintType=*/true);
-    else
-      Out << "to caller";
-  } else if (const auto *CEPI = dyn_cast<CleanupEndPadInst>(&I)) {
-    Out << ' ';
-    writeOperand(CEPI->getCleanupPad(), /*PrintType=*/false);
-
-    Out << " unwind ";
-    if (CEPI->hasUnwindDest())
-      writeOperand(CEPI->getUnwindDest(), /*PrintType=*/true);
+      writeOperand(CRI->getOperand(1), /*PrintType=*/true);
     else
       Out << "to caller";
   } else if (const CallInst *CI = dyn_cast<CallInst>(&I)) {

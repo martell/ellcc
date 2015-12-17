@@ -249,6 +249,21 @@ public:
 
 } // end namespace amdgpu
 
+namespace wasm {
+
+class LLVM_LIBRARY_VISIBILITY Linker : public GnuTool {
+public:
+  explicit Linker(const ToolChain &TC);
+  bool isLinkJob() const override;
+  bool hasIntegratedCPP() const override;
+  void ConstructJob(Compilation &C, const JobAction &JA,
+                    const InputInfo &Output, const InputInfoList &Inputs,
+                    const llvm::opt::ArgList &TCArgs,
+                    const char *LinkingOutput) const override;
+};
+
+} // end namespace wasm
+
 namespace arm {
 std::string getARMTargetCPU(StringRef CPU, StringRef Arch,
                             const llvm::Triple &Triple);
@@ -775,6 +790,16 @@ enum class FloatABI {
 
 FloatABI getARMFloatABI(const ToolChain &TC, const llvm::opt::ArgList &Args);
 } // end namespace arm
+
+namespace ppc {
+enum class FloatABI {
+  Invalid,
+  Soft,
+  Hard,
+};
+
+FloatABI getPPCFloatABI(const Driver &D, const llvm::opt::ArgList &Args);
+} // end namespace ppc
 
 namespace XCore {
 // For XCore, we do not need to instantiate tools for PreProcess, PreCompile and
