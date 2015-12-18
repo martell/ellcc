@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to GDB 7.10.1.
 * Update to QEMU 2.5.0.
 * Update to LLVM r255872.
 * Import and build the libevent 2.0.22 library.
