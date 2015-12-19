@@ -42,8 +42,9 @@ sendrelease:
 	$(OUT)echo Enter the ellcc.org password
 	$(OUT)scp ../README.txt ChangeLog ellcc-*-$(VERSION).tgz ellcc.org:/var/ftp/pub
 	$(OUT)ssh ellcc.org chmod oug+r /var/ftp/pub/\*
-	$(OUT)ssh ellcc.org cp README.txt ChangeLog \
-          /var/ftp/pub/ellcc-*-$(VERSION).tgz web/ellcc/releases
+	$(OUT)ssh ellcc.org cp  /var/ftp/pub/README.txt \
+          /var/ftp/pub/ChangeLog \
+	  /var/ftp/pub/ellcc-*-$(VERSION).tgz web/ellcc/releases
 
 .PHONY: macrelease
 macrelease:
@@ -116,6 +117,6 @@ llvm.configure:
 	    AR=$(AR) RANLIB=$(RANLIB) \
 	    --bindir=$(bindir) --prefix=$(prefix) \
 	    $(HOST) $(BUILD) $(TRGT) $(TARGETS) \
-	    --enable-shared=no -enable-pic=no --enable-keep-symbols \
+	    --enable-shared=no --enable-keep-symbols \
 	    --enable-optimized --program-prefix= ; \
 	fi
