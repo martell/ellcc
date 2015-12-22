@@ -306,8 +306,9 @@ $(Configs)::
 	$(OUT)cd c-ares-build/$* ; \
 	echo Installing c-ares for $*; \
 	mkdir -p ../../include ; \
-	cp -p ares.h ares_version.h ares_dns.h \
-           ares_build.h ares_rules.h ../../include ; \
+	cp -p ares.h ares_version.h ares_dns.h ares_rules.h ../../include ; \
+	mkdir -p ../../include/`../../../bin/ecc-getincarch $*` ; \
+	cp ares_build.h ../../include/`../../../bin/ecc-getincarch $*` ; \
 	mkdir -p ../../lib/$* ; \
 	cp -RP .libs/libcares.a    ../../lib/$*
 
@@ -529,6 +530,8 @@ $(Configs)::
 	echo Installing curl for $*; \
 	mkdir -p ../../include/curl ; \
 	cp -p include/curl/*.h ../../include/curl ; \
+	mkdir -p ../../include/`../../../bin/ecc-getincarch $*`/curl ; \
+	mv ../../include/curl/curlbuild.h ../../include/`../../../bin/ecc-getincarch $*`/curl ; \
 	mkdir -p ../../lib/$* ; \
 	cp -RP ./lib/.libs/libcurl.a ../../lib/$*
 
@@ -605,10 +608,9 @@ $(Configs)::
 %.libevent.install:
 	$(OUT)cd libevent-build/$* ; \
 	echo Installing libevent for $*; \
-	mkdir -p ../../include/libevent ; \
-	cp -p src/bus.h src/inproc.h src/ipc.h src/nn.h src/pair.h \
-              src/pipeline.h src/pubsub.h src/reqrep.h src/survey.h \
-              src/tcp.h src/tcpmux.h src/ws.h ../../include/libevent ; \
+	mkdir -p ../../include/event2 ; \
+	cp -p include/event2/*.h ../../include/event2 ; \
+	cp evdns.h event.h evhttp.h evrpc.h evutil.h ../../include ; \
 	mkdir -p ../../lib/$* ; \
 	cp -RP .libs/libevent.a ../../lib/$*
 
