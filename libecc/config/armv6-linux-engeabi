@@ -1,0 +1,14 @@
+based_on: arm-ellcc-linux
+compiler:
+  options:
+    - -target arm-ellcc-linux
+    - -march=armv6
+    - -mfpu=none
+    - -mfloat-abi=softfp
+linker:
+  static_crt1: $R/lib/armv6-linux-engeabi/crt1.o
+  dynamic_crt1: $R/lib/armv6-linux-engeabi/Scrt1.o
+  crtbegin: $R/lib/armv6-linux-engeabi/crtbegin.o
+  crtend: $R/lib/armv6-linux-engeabi/crtend.o
+  library_paths:
+    - -L$R/lib/armv6-linux-engeabi

@@ -1,5 +1,7 @@
 current SVN:
 
+* Add header files to compile Toybox.
+
 version 0.1.21:
 
 * Update to GDB 7.10.1.
