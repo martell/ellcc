@@ -25,7 +25,7 @@ dnl Do not change user variables!
 dnl http://www.gnu.org/software/automake/manual/html_node/Flag-Variables-Ordering.html
 
 AC_PREREQ(2.61)
-AC_INIT([nghttp2], [1.5.0], [t-tujikawa@users.sourceforge.net])
+AC_INIT([nghttp2], [1.6.0], [t-tujikawa@users.sourceforge.net])
 AC_CONFIG_AUX_DIR([.])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_HEADERS([config.h])
@@ -46,9 +46,9 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 dnl See versioning rule:
 dnl  http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST(LT_CURRENT, 17)
+AC_SUBST(LT_CURRENT, 18)
 AC_SUBST(LT_REVISION, 0)
-AC_SUBST(LT_AGE, 3)
+AC_SUBST(LT_AGE, 4)
 
 major=`echo $PACKAGE_VERSION |cut -d. -f1 | sed -e "s/[^0-9]//g"`
 minor=`echo $PACKAGE_VERSION |cut -d. -f2 | sed -e "s/[^0-9]//g"`
@@ -104,6 +104,11 @@ AC_ARG_ENABLE([failmalloc],
                     [Do not build failmalloc test program])],
     [request_failmalloc=$enableval], [request_failmalloc=yes])
 
+AC_ARG_ENABLE([lib-only],
+    [AS_HELP_STRING([--enable-lib-only],
+                    [Build libnghttp2 only.  This is a short hand for --disable-app --disable-examples --disable-hpack-tools --disable-python-bindings])],
+    [request_lib_only=$enableval], [request_lib_only=no])
+
 AC_ARG_WITH([libxml2],
     [AS_HELP_STRING([--with-libxml2],
                     [Use libxml2 [default=check]])],
@@ -149,6 +154,13 @@ AC_PROG_MKDIR_P
 PKG_PROG_PKG_CONFIG([0.20])
 
 AM_PATH_PYTHON([2.7],, [:])
+
+if [test "x$request_lib_only" = "xyes"]; then
+  request_app=no
+  request_hpack_tools=no
+  request_examples=no
+  request_python_bindings=no
+fi
 
 if [test "x$request_python_bindings" != "xno"]; then
   AX_PYTHON_DEVEL([>= '2.7'])
@@ -592,6 +604,7 @@ AC_CHECK_FUNCS([ \
   dup2 \
   getcwd \
   getpwnam \
+  initgroups \
   localtime_r \
   memchr \
   memmove \

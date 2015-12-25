@@ -83,4 +83,13 @@ Macros
     The length of :macro:`NGHTTP2_CLIENT_MAGIC`.
 .. macro:: NGHTTP2_INITIAL_MAX_CONCURRENT_STREAMS
 
-    Default maximum concurrent streams.
+    
+    Default maximum number of incoming concurrent streams.  Use
+    `nghttp2_submit_settings()` with
+    :macro:`NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS` to change the
+    maximum number of incoming concurrent streams.
+    
+    .. note::
+    
+      The maximum number of outgoing concurrent streams is 100 by
+      default.

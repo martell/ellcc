@@ -2,6 +2,7 @@ current SVN:
 
 version 0.1.22:
 
+* Update to nghttp2 to 1.6.0.
 * Update to LLVM r256384.
 * Add header files to compile Toybox.
 

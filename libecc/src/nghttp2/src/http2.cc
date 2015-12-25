@@ -113,6 +113,8 @@ std::string get_status_string(unsigned int status_code) {
     return "429 Too Many Requests";
   case 431:
     return "431 Request Header Fields Too Large";
+  case 451:
+    return "451 Unavailable For Legal Reasons";
   case 500:
     return "500 Internal Server Error";
   case 501:
@@ -215,6 +217,8 @@ const char *stringify_status(unsigned int status_code) {
     return "429";
   case 431:
     return "431";
+  case 451:
+    return "451";
   case 500:
     return "500";
   case 501:
@@ -454,8 +458,8 @@ std::string rewrite_location_uri(const std::string &uri,
     return "";
   }
   auto field = &u.field_data[UF_HOST];
-  if (!util::startsWith(std::begin(match_host), std::end(match_host),
-                        &uri[field->off], &uri[field->off] + field->len) ||
+  if (!util::starts_with(std::begin(match_host), std::end(match_host),
+                         &uri[field->off], &uri[field->off] + field->len) ||
       (match_host.size() != field->len && match_host[field->len] != ':')) {
     return "";
   }
@@ -471,12 +475,12 @@ std::string rewrite_location_uri(const std::string &uri,
   }
   if (u.field_set & (1 << UF_QUERY)) {
     field = &u.field_data[UF_QUERY];
-    res += "?";
+    res += '?';
     res.append(&uri[field->off], field->len);
   }
   if (u.field_set & (1 << UF_FRAGMENT)) {
     field = &u.field_data[UF_FRAGMENT];
-    res += "#";
+    res += '#';
     res.append(&uri[field->off], field->len);
   }
   return res;
@@ -1185,12 +1189,12 @@ std::string path_join(const char *base_path, size_t base_pathlen,
     }
     if (rel_querylen == 0) {
       if (base_querylen) {
-        res += "?";
+        res += '?';
         res.append(base_query, base_querylen);
       }
       return res;
     }
-    res += "?";
+    res += '?';
     res.append(rel_query, rel_querylen);
     return res;
   }
@@ -1242,7 +1246,7 @@ std::string path_join(const char *base_path, size_t base_pathlen,
       ;
   }
   if (rel_querylen) {
-    res += "?";
+    res += '?';
     res.append(rel_query, rel_querylen);
   }
   return res;
@@ -1500,7 +1504,7 @@ int construct_push_component(std::string &scheme, std::string &authority,
     if (u.field_set & (1 << UF_HOST)) {
       http2::copy_url_component(authority, &u, UF_HOST, uri);
       if (u.field_set & (1 << UF_PORT)) {
-        authority += ":";
+        authority += ':';
         authority += util::utos(u.port);
       }
     }
