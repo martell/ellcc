@@ -1,9 +1,11 @@
 current SVN:
 
-version 0.1.22:
-
+* Fix ARM cassembly with hard float and external assembler.
 * Update to nghttp2 to 1.6.0.
 * Update to LLVM r256384.
+
+version 0.1.22:
+
 * Add header files to compile Toybox.
 
 version 0.1.21:

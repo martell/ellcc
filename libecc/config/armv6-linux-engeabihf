@@ -5,6 +5,9 @@ compiler:
     - -march=armv6
     - -mfpu=vfp
     - -mfloat-abi=softfp
+assembler:
+  options:
+    - -mfpu=vfp
 linker:
   static_crt1: $R/lib/armv6-linux-engeabihf/crt1.o
   dynamic_crt1: $R/lib/armv6-linux-engeabihf/Scrt1.o
