@@ -71,6 +71,9 @@ def d_Group               : OptionGroup<"<d group>">;
 def f_Group               : OptionGroup<"<f group>">, Group<CompileOnly_Group>;
 def f_clang_Group         : OptionGroup<"<f (clang-only) group>">, Group<CompileOnly_Group>;
 def g_Group               : OptionGroup<"<g group>">;
+def gN_Group              : OptionGroup<"<gN group>">, Group<g_Group>;
+def ggdbN_Group           : OptionGroup<"<ggdbN group>">, Group<gN_Group>;
+def gTune_Group           : OptionGroup<"<gTune group>">, Group<g_Group>;
 def g_flags_Group         : OptionGroup<"<g flags group>">;
 def i_Group               : OptionGroup<"<i group>">, Group<CompileOnly_Group>;
 def clang_i_Group         : OptionGroup<"<clang i group>">, Group<i_Group>;
@@ -1130,20 +1133,20 @@ def fdebug_prefix_map_EQ
     HelpText<"remap file source paths in debug info">;
 def g_Flag : Flag<["-"], "g">, Group<g_Group>,
   HelpText<"Generate source-level debug information">;
-def gline_tables_only : Flag<["-"], "gline-tables-only">, Group<g_Group>,
+def gline_tables_only : Flag<["-"], "gline-tables-only">, Group<gN_Group>,
   HelpText<"Emit debug line number tables only">;
 def gmlt : Flag<["-"], "gmlt">, Alias<gline_tables_only>;
-def g0 : Flag<["-"], "g0">, Group<g_Group>;
-def g1 : Flag<["-"], "g1">, Group<g_Group>, Alias<gline_tables_only>;
-def g2 : Flag<["-"], "g2">, Group<g_Group>;
-def g3 : Flag<["-"], "g3">, Group<g_Group>;
-def ggdb : Flag<["-"], "ggdb">, Group<g_Group>;
-def ggdb0 : Flag<["-"], "ggdb0">, Alias<g0>;
-// Redirect ggdb1 to <gline_tables_only>, not <g1>,
-// because aliases of aliases aren't allowed.
-def ggdb1 : Flag<["-"], "ggdb1">, Alias<gline_tables_only>;
-def ggdb2 : Flag<["-"], "ggdb2">, Alias<g2>;
-def ggdb3 : Flag<["-"], "ggdb3">, Alias<g3>;
+def g0 : Flag<["-"], "g0">, Group<gN_Group>;
+def g1 : Flag<["-"], "g1">, Group<gN_Group>, Alias<gline_tables_only>;
+def g2 : Flag<["-"], "g2">, Group<gN_Group>;
+def g3 : Flag<["-"], "g3">, Group<gN_Group>;
+def ggdb : Flag<["-"], "ggdb">, Group<gTune_Group>;
+def ggdb0 : Flag<["-"], "ggdb0">, Group<ggdbN_Group>;
+def ggdb1 : Flag<["-"], "ggdb1">, Group<ggdbN_Group>;
+def ggdb2 : Flag<["-"], "ggdb2">, Group<ggdbN_Group>;
+def ggdb3 : Flag<["-"], "ggdb3">, Group<ggdbN_Group>;
+def glldb : Flag<["-"], "glldb">, Group<gTune_Group>;
+def gsce : Flag<["-"], "gsce">, Group<gTune_Group>;
 def gdwarf_2 : Flag<["-"], "gdwarf-2">, Group<g_Group>,
   HelpText<"Generate source-level debug information with dwarf version 2">;
 def gdwarf_3 : Flag<["-"], "gdwarf-3">, Group<g_Group>,
@@ -1414,8 +1417,10 @@ def mcmpb : Flag<["-"], "mcmpb">, Group<m_ppc_Features_Group>;
 def mno_cmpb : Flag<["-"], "mno-cmpb">, Group<m_ppc_Features_Group>;
 def misel : Flag<["-"], "misel">, Group<m_ppc_Features_Group>;
 def mno_isel : Flag<["-"], "mno-isel">, Group<m_ppc_Features_Group>;
-def mmfcrf : Flag<["-"], "mmfcrf">, Group<m_ppc_Features_Group>;
-def mno_mfcrf : Flag<["-"], "mno-mfcrf">, Group<m_ppc_Features_Group>;
+def mmfocrf : Flag<["-"], "mmfocrf">, Group<m_ppc_Features_Group>;
+def mmfcrf : Flag<["-"], "mmfcrf">, Alias<mmfocrf>;
+def mno_mfocrf : Flag<["-"], "mno-mfocrf">, Group<m_ppc_Features_Group>;
+def mno_mfcrf : Flag<["-"], "mno-mfcrf">, Alias<mno_mfocrf>;
 def mpopcntd : Flag<["-"], "mpopcntd">, Group<m_ppc_Features_Group>;
 def mno_popcntd : Flag<["-"], "mno-popcntd">, Group<m_ppc_Features_Group>;
 def mqpx : Flag<["-"], "mqpx">, Group<m_ppc_Features_Group>;
@@ -1454,6 +1459,11 @@ def mred_zone : Flag<["-"], "mred-zone">, Group<m_Group>;
 def mregparm_EQ : Joined<["-"], "mregparm=">, Group<m_Group>;
 def mrelax_all : Flag<["-"], "mrelax-all">, Group<m_Group>, Flags<[CC1Option,CC1AsOption]>,
   HelpText<"(integrated-as) Relax all machine instructions">;
+def mincremental_linker_compatible : Flag<["-"], "mincremental-linker-compatible">, Group<m_Group>,
+  Flags<[CC1Option,CC1AsOption]>,
+  HelpText<"(integrated-as) Emit an object file which can be used with an incremental linker">;
+def mno_incremental_linker_compatible : Flag<["-"], "mno-incremental-linker-compatible">, Group<m_Group>,
+  HelpText<"(integrated-as) Emit an object file which cannot be used with an incremental linker">;
 def mrtd : Flag<["-"], "mrtd">, Group<m_Group>, Flags<[CC1Option]>,
   HelpText<"Make StdCall calling convention the default">;
 def msmall_data_threshold_EQ : Joined <["-"], "msmall-data-threshold=">, Group<m_Group>;

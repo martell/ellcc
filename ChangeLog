@@ -2,6 +2,7 @@ current SVN:
 
 version 0.1.22:
 
+* Update to LLVM r256384.
 * Add header files to compile Toybox.
 
 version 0.1.21:

@@ -215,7 +215,7 @@ static void findLiveSetAtInst(Instruction *inst, GCPtrLivenessData &Data,
                               StatepointLiveSetTy &out);
 
 // TODO: Once we can get to the GCStrategy, this becomes
-// Optional<bool> isGCManagedPointer(const Value *V) const override {
+// Optional<bool> isGCManagedPointer(const Type *Ty) const override {
 
 static bool isGCPointerType(Type *T) {
   if (auto *PT = dyn_cast<PointerType>(T))
@@ -444,21 +444,21 @@ static BaseDefiningValueResult findBaseDefiningValue(Value *I) {
   if (isa<Constant>(I)) {
     assert(!isa<GlobalVariable>(I) && !isa<UndefValue>(I) &&
            "order of checks wrong!");
-    // Note: Finding a constant base for something marked for relocation
-    // doesn't really make sense.  The most likely case is either a) some
-    // screwed up the address space usage or b) your validating against
-    // compiled C++ code w/o the proper separation.  The only real exception
-    // is a null pointer.  You could have generic code written to index of
-    // off a potentially null value and have proven it null.  We also use
-    // null pointers in dead paths of relocation phis (which we might later
-    // want to find a base pointer for).
-    assert(isa<ConstantPointerNull>(I) &&
-           "null is the only case which makes sense");
+    // Note: Even for frontends which don't have constant references, we can
+    // see constants appearing after optimizations.  A simple example is
+    // specialization of an address computation on null feeding into a merge
+    // point where the actual use of the now-constant input is protected by
+    // another null check.  (e.g. test4 in constants.ll)
     return BaseDefiningValueResult(I, true);
   }
 
   if (CastInst *CI = dyn_cast<CastInst>(I)) {
     Value *Def = CI->stripPointerCasts();
+    // If stripping pointer casts changes the address space there is an
+    // addrspacecast in between.
+    assert(cast<PointerType>(Def->getType())->getAddressSpace() ==
+               cast<PointerType>(CI->getType())->getAddressSpace() &&
+           "unsupported addrspacecast");
     // If we find a cast instruction here, it means we've found a cast which is
     // not simply a pointer cast (i.e. an inttoptr).  We don't know how to
     // handle int->ptr conversion.
@@ -477,14 +477,11 @@ static BaseDefiningValueResult findBaseDefiningValue(Value *I) {
 
   if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(I)) {
     switch (II->getIntrinsicID()) {
-    case Intrinsic::experimental_gc_result_ptr:
     default:
       // fall through to general call handling
       break;
     case Intrinsic::experimental_gc_statepoint:
-    case Intrinsic::experimental_gc_result_float:
-    case Intrinsic::experimental_gc_result_int:
-      llvm_unreachable("these don't produce pointers");
+      llvm_unreachable("statepoints don't produce pointers");
     case Intrinsic::experimental_gc_relocate: {
       // Rerunning safepoint insertion after safepoints are already
       // inserted is not supported.  It could probably be made to work,
@@ -641,7 +638,7 @@ public:
 
 private:
   Status status;
-  Value *base; // non null only if status == base
+  AssertingVH<Value> base; // non null only if status == base
 };
 }
 
@@ -1098,10 +1095,10 @@ static Value *findBasePointer(Value *I, DefiningValueMapTy &cache) {
     NewInsts.erase(BaseI);
     ReverseMap.erase(BaseI);
     BaseI->replaceAllUsesWith(Replacement);
-    BaseI->eraseFromParent();
     assert(States.count(BDV));
     assert(States[BDV].isConflict() && States[BDV].getBase() == BaseI);
     States[BDV] = BDVState(BDVState::Conflict, Replacement);
+    BaseI->eraseFromParent();
   };
   const DataLayout &DL = cast<Instruction>(def)->getModule()->getDataLayout();
   while (!Worklist.empty()) {
@@ -1211,8 +1208,11 @@ static void findBasePointers(DominatorTree &DT, DefiningValueMapTy &DVCache,
     std::sort(Temp.begin(), Temp.end(), order_by_name);
     for (Value *Ptr : Temp) {
       Value *Base = PointerToBase[Ptr];
-      errs() << " derived %" << Ptr->getName() << " base %" << Base->getName()
-             << "\n";
+      errs() << " derived ";
+      Ptr->printAsOperand(errs(), false);
+      errs() << " base ";
+      Base->printAsOperand(errs(), false);
+      errs() << "\n";;
     }
   }
 
@@ -2381,11 +2381,28 @@ static bool insertParsePoints(Function &F, DominatorTree &DT,
   if (PrintBasePointers) {
     for (auto &Info : Records) {
       errs() << "Base Pairs: (w/Relocation)\n";
-      for (auto Pair : Info.PointerToBase)
-        errs() << " derived %" << Pair.first->getName() << " base %"
-               << Pair.second->getName() << "\n";
+      for (auto Pair : Info.PointerToBase) {
+        errs() << " derived ";
+        Pair.first->printAsOperand(errs(), false);
+        errs() << " base ";
+        Pair.second->printAsOperand(errs(), false);
+        errs() << "\n";
+      }
     }
   }
+
+  // It is possible that non-constant live variables have a constant base.  For
+  // example, a GEP with a variable offset from a global.  In this case we can
+  // remove it from the liveset.  We already don't add constants to the liveset
+  // because we assume they won't move at runtime and the GC doesn't need to be
+  // informed about them.  The same reasoning applies if the base is constant.
+  // Note that the relocation placement code relies on this filtering for
+  // correctness as it expects the base to be in the liveset, which isn't true
+  // if the base is constant.
+  for (auto &Info : Records)
+    for (auto &BasePair : Info.PointerToBase)
+      if (isa<Constant>(BasePair.second))
+        Info.LiveSet.erase(BasePair.first);
 
   for (CallInst *CI : Holders)
     CI->eraseFromParent();

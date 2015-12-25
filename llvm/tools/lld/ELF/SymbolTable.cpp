@@ -44,12 +44,12 @@ static void checkCompatibility(InputFile *FileP) {
 
 template <class ELFT>
 void SymbolTable<ELFT>::addFile(std::unique_ptr<InputFile> File) {
-  InputFile *FileP = File.release();
+  InputFile *FileP = File.get();
   checkCompatibility<ELFT>(FileP);
 
   // .a file
   if (auto *F = dyn_cast<ArchiveFile>(FileP)) {
-    ArchiveFiles.emplace_back(F);
+    ArchiveFiles.emplace_back(cast<ArchiveFile>(File.release()));
     F->parse();
     for (Lazy &Sym : F->getLazySymbols())
       addLazy(&Sym);
@@ -63,7 +63,7 @@ void SymbolTable<ELFT>::addFile(std::unique_ptr<InputFile> File) {
     if (!IncludedSoNames.insert(F->getSoName()).second)
       return;
 
-    SharedFiles.emplace_back(F);
+    SharedFiles.emplace_back(cast<SharedFile<ELFT>>(File.release()));
     F->parse();
     for (SharedSymbol<ELFT> &B : F->getSharedSymbols())
       resolve(&B);
@@ -72,22 +72,25 @@ void SymbolTable<ELFT>::addFile(std::unique_ptr<InputFile> File) {
 
   // .o file
   auto *F = cast<ObjectFile<ELFT>>(FileP);
-  ObjectFiles.emplace_back(F);
+  ObjectFiles.emplace_back(cast<ObjectFile<ELFT>>(File.release()));
   F->parse(Comdats);
   for (SymbolBody *B : F->getSymbols())
     resolve(B);
 }
 
+// Add an undefined symbol.
 template <class ELFT>
 SymbolBody *SymbolTable<ELFT>::addUndefined(StringRef Name) {
-  auto *Sym = new (Alloc) Undefined<ELFT>(Name, Undefined<ELFT>::Required);
+  auto *Sym = new (Alloc) Undefined(Name, false, STV_DEFAULT, false);
   resolve(Sym);
   return Sym;
 }
 
+// Add an undefined symbol. Unlike addUndefined, that symbol
+// doesn't have to be resolved, thus "opt" (optional).
 template <class ELFT>
 SymbolBody *SymbolTable<ELFT>::addUndefinedOpt(StringRef Name) {
-  auto *Sym = new (Alloc) Undefined<ELFT>(Name, Undefined<ELFT>::Optional);
+  auto *Sym = new (Alloc) Undefined(Name, false, STV_HIDDEN, true);
   resolve(Sym);
   return Sym;
 }
@@ -95,25 +98,21 @@ SymbolBody *SymbolTable<ELFT>::addUndefinedOpt(StringRef Name) {
 template <class ELFT>
 void SymbolTable<ELFT>::addAbsolute(StringRef Name,
                                     typename ELFFile<ELFT>::Elf_Sym &ESym) {
-  resolve(new (Alloc) DefinedAbsolute<ELFT>(Name, ESym));
+  resolve(new (Alloc) DefinedRegular<ELFT>(Name, ESym, nullptr));
 }
 
 template <class ELFT>
 void SymbolTable<ELFT>::addSynthetic(StringRef Name,
                                      OutputSectionBase<ELFT> &Section,
                                      typename ELFFile<ELFT>::uintX_t Value) {
-  typedef typename DefinedSynthetic<ELFT>::Elf_Sym Elf_Sym;
-  auto *ESym = new (Alloc) Elf_Sym;
-  memset(ESym, 0, sizeof(Elf_Sym));
-  ESym->st_value = Value;
-  auto *Sym = new (Alloc) DefinedSynthetic<ELFT>(Name, *ESym, Section);
+  auto *Sym = new (Alloc) DefinedSynthetic<ELFT>(Name, Value, Section);
   resolve(Sym);
 }
 
 template <class ELFT>
 SymbolBody *SymbolTable<ELFT>::addIgnored(StringRef Name) {
   auto *Sym = new (Alloc)
-      DefinedAbsolute<ELFT>(Name, DefinedAbsolute<ELFT>::IgnoreUndef);
+      DefinedRegular<ELFT>(Name, DefinedRegular<ELFT>::IgnoreUndef, nullptr);
   resolve(Sym);
   return Sym;
 }
@@ -127,16 +126,12 @@ template <class ELFT> bool SymbolTable<ELFT>::isUndefined(StringRef Name) {
 // Returns a file from which symbol B was created.
 // If B does not belong to any file in ObjectFiles, returns a nullptr.
 template <class ELFT>
-static ELFFileBase<ELFT> *
-findFile(std::vector<std::unique_ptr<ObjectFile<ELFT>>> &ObjectFiles,
-         SymbolBody *B) {
-  typedef typename ELFFile<ELFT>::Elf_Sym Elf_Sym;
-  typedef typename ELFFile<ELFT>::Elf_Sym_Range Elf_Sym_Range;
-
-  const Elf_Sym *Sym = &cast<ELFSymbolBody<ELFT>>(*B).Sym;
+ELFFileBase<ELFT> *
+elf2::findFile(ArrayRef<std::unique_ptr<ObjectFile<ELFT>>> ObjectFiles,
+               const SymbolBody *B) {
   for (const std::unique_ptr<ObjectFile<ELFT>> &F : ObjectFiles) {
-    Elf_Sym_Range R = F->getObj().symbols(F->getSymbolTable());
-    if (R.begin() <= Sym && Sym < R.end())
+    ArrayRef<SymbolBody *> Syms = F->getSymbols();
+    if (std::find(Syms.begin(), Syms.end(), B) != Syms.end())
       return F.get();
   }
   return nullptr;
@@ -144,8 +139,8 @@ findFile(std::vector<std::unique_ptr<ObjectFile<ELFT>>> &ObjectFiles,
 
 template <class ELFT>
 std::string SymbolTable<ELFT>::conflictMsg(SymbolBody *Old, SymbolBody *New) {
-  ELFFileBase<ELFT> *OldFile = findFile(ObjectFiles, Old);
-  ELFFileBase<ELFT> *NewFile = findFile(ObjectFiles, New);
+  ELFFileBase<ELFT> *OldFile = findFile<ELFT>(ObjectFiles, Old);
+  ELFFileBase<ELFT> *NewFile = findFile<ELFT>(ObjectFiles, New);
 
   StringRef Sym = Old->getName();
   StringRef F1 = OldFile ? OldFile->getName() : "(internal)";
@@ -163,7 +158,7 @@ template <class ELFT> void SymbolTable<ELFT>::resolve(SymbolBody *New) {
   SymbolBody *Existing = Sym->Body;
 
   if (Lazy *L = dyn_cast<Lazy>(Existing)) {
-    if (auto *Undef = dyn_cast<Undefined<ELFT>>(New)) {
+    if (auto *Undef = dyn_cast<Undefined>(New)) {
       addMemberFile(Undef, L);
       return;
     }
@@ -211,14 +206,14 @@ template <class ELFT> void SymbolTable<ELFT>::addLazy(Lazy *L) {
   Symbol *Sym = insert(L);
   if (Sym->Body == L)
     return;
-  if (auto *Undef = dyn_cast<Undefined<ELFT>>(Sym->Body)) {
+  if (auto *Undef = dyn_cast<Undefined>(Sym->Body)) {
     Sym->Body = L;
     addMemberFile(Undef, L);
   }
 }
 
 template <class ELFT>
-void SymbolTable<ELFT>::addMemberFile(Undefined<ELFT> *Undef, Lazy *L) {
+void SymbolTable<ELFT>::addMemberFile(Undefined *Undef, Lazy *L) {
   // Weak undefined symbols should not fetch members from archives.
   // If we were to keep old symbol we would not know that an archive member was
   // available if a strong undefined symbol shows up afterwards in the link.
@@ -257,3 +252,16 @@ template class lld::elf2::SymbolTable<ELF32LE>;
 template class lld::elf2::SymbolTable<ELF32BE>;
 template class lld::elf2::SymbolTable<ELF64LE>;
 template class lld::elf2::SymbolTable<ELF64BE>;
+
+template ELFFileBase<ELF32LE> *
+lld::elf2::findFile(ArrayRef<std::unique_ptr<ObjectFile<ELF32LE>>>,
+                    const SymbolBody *);
+template ELFFileBase<ELF32BE> *
+lld::elf2::findFile(ArrayRef<std::unique_ptr<ObjectFile<ELF32BE>>>,
+                    const SymbolBody *);
+template ELFFileBase<ELF64LE> *
+lld::elf2::findFile(ArrayRef<std::unique_ptr<ObjectFile<ELF64LE>>>,
+                    const SymbolBody *);
+template ELFFileBase<ELF64BE> *
+lld::elf2::findFile(ArrayRef<std::unique_ptr<ObjectFile<ELF64BE>>>,
+                    const SymbolBody *);

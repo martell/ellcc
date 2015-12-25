@@ -23,6 +23,7 @@
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/StackMaps.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -2424,9 +2425,8 @@ bool X86InstrInfo::isSafeToClobberEFLAGS(MachineBasicBlock &MBB,
   // It is safe to clobber EFLAGS at the end of a block of no successor has it
   // live in.
   if (Iter == E) {
-    for (MachineBasicBlock::succ_iterator SI = MBB.succ_begin(),
-           SE = MBB.succ_end(); SI != SE; ++SI)
-      if ((*SI)->isLiveIn(X86::EFLAGS))
+    for (MachineBasicBlock *S : MBB.successors())
+      if (S->isLiveIn(X86::EFLAGS))
         return false;
     return true;
   }
@@ -5279,6 +5279,20 @@ static bool Expand2AddrUndef(MachineInstrBuilder &MIB,
   return true;
 }
 
+/// Expand a single-def pseudo instruction to a two-addr
+/// instruction with two %k0 reads.
+/// This is used for mapping:
+///   %k4 = K_SET1
+/// to:
+///   %k4 = KXNORrr %k0, %k0
+static bool Expand2AddrKreg(MachineInstrBuilder &MIB,
+                            const MCInstrDesc &Desc, unsigned Reg) {
+  assert(Desc.getNumOperands() == 3 && "Expected two-addr instruction.");
+  MIB->setDesc(Desc);
+  MIB.addReg(Reg, RegState::Undef).addReg(Reg, RegState::Undef);
+  return true;
+}
+
 static bool expandMOV32r1(MachineInstrBuilder &MIB, const TargetInstrInfo &TII,
                           bool MinusOne) {
   MachineBasicBlock &MBB = *MIB->getParent();
@@ -5293,6 +5307,50 @@ static bool expandMOV32r1(MachineInstrBuilder &MIB, const TargetInstrInfo &TII,
   // Turn the pseudo into an INC or DEC.
   MIB->setDesc(TII.get(MinusOne ? X86::DEC32r : X86::INC32r));
   MIB.addReg(Reg);
+
+  return true;
+}
+
+bool X86InstrInfo::ExpandMOVImmSExti8(MachineInstrBuilder &MIB) const {
+  MachineBasicBlock &MBB = *MIB->getParent();
+  DebugLoc DL = MIB->getDebugLoc();
+  int64_t Imm = MIB->getOperand(1).getImm();
+  assert(Imm != 0 && "Using push/pop for 0 is not efficient.");
+  MachineBasicBlock::iterator I = MIB.getInstr();
+
+  int StackAdjustment;
+
+  if (Subtarget.is64Bit()) {
+    assert(MIB->getOpcode() == X86::MOV64ImmSExti8 ||
+           MIB->getOpcode() == X86::MOV32ImmSExti8);
+    // 64-bit mode doesn't have 32-bit push/pop, so use 64-bit operations and
+    // widen the register if necessary.
+    StackAdjustment = 8;
+    BuildMI(MBB, I, DL, get(X86::PUSH64i8)).addImm(Imm);
+    MIB->setDesc(get(X86::POP64r));
+    MIB->getOperand(0)
+        .setReg(getX86SubSuperRegister(MIB->getOperand(0).getReg(), MVT::i64));
+  } else {
+    assert(MIB->getOpcode() == X86::MOV32ImmSExti8);
+    StackAdjustment = 4;
+    BuildMI(MBB, I, DL, get(X86::PUSH32i8)).addImm(Imm);
+    MIB->setDesc(get(X86::POP32r));
+  }
+
+  // Build CFI if necessary.
+  MachineFunction &MF = *MBB.getParent();
+  const X86FrameLowering *TFL = Subtarget.getFrameLowering();
+  bool IsWin64Prologue = MF.getTarget().getMCAsmInfo()->usesWindowsCFI();
+  bool NeedsDwarfCFI =
+      !IsWin64Prologue &&
+      (MF.getMMI().hasDebugInfo() || MF.getFunction()->needsUnwindTableEntry());
+  bool EmitCFI = !TFL->hasFP(MF) && NeedsDwarfCFI;
+  if (EmitCFI) {
+    TFL->BuildCFI(MBB, I, DL,
+        MCCFIInstruction::createAdjustCfaOffset(nullptr, StackAdjustment));
+    TFL->BuildCFI(MBB, std::next(I), DL,
+        MCCFIInstruction::createAdjustCfaOffset(nullptr, -StackAdjustment));
+  }
 
   return true;
 }
@@ -5329,6 +5387,9 @@ bool X86InstrInfo::expandPostRAPseudo(MachineBasicBlock::iterator MI) const {
     return expandMOV32r1(MIB, *this, /*MinusOne=*/ false);
   case X86::MOV32r_1:
     return expandMOV32r1(MIB, *this, /*MinusOne=*/ true);
+  case X86::MOV32ImmSExti8:
+  case X86::MOV64ImmSExti8:
+    return ExpandMOVImmSExti8(MIB);
   case X86::SETB_C8r:
     return Expand2AddrUndef(MIB, get(X86::SBB8rr));
   case X86::SETB_C16r:
@@ -5353,14 +5414,22 @@ bool X86InstrInfo::expandPostRAPseudo(MachineBasicBlock::iterator MI) const {
   case X86::TEST8ri_NOREX:
     MI->setDesc(get(X86::TEST8ri));
     return true;
+ 
+  // KNL does not recognize dependency-breaking idioms for mask registers,
+  // so kxnor %k1, %k1, %k2 has a RAW dependence on %k1.
+  // Using %k0 as the undef input register is a performance heuristic based
+  // on the assumption that %k0 is used less frequently than the other mask
+  // registers, since it is not usable as a write mask.
+  // FIXME: A more advanced approach would be to choose the best input mask
+  // register based on context.
   case X86::KSET0B:
-  case X86::KSET0W: return Expand2AddrUndef(MIB, get(X86::KXORWrr));
-  case X86::KSET0D: return Expand2AddrUndef(MIB, get(X86::KXORDrr));
-  case X86::KSET0Q: return Expand2AddrUndef(MIB, get(X86::KXORQrr));
+  case X86::KSET0W: return Expand2AddrKreg(MIB, get(X86::KXORWrr), X86::K0);
+  case X86::KSET0D: return Expand2AddrKreg(MIB, get(X86::KXORDrr), X86::K0);
+  case X86::KSET0Q: return Expand2AddrKreg(MIB, get(X86::KXORQrr), X86::K0);
   case X86::KSET1B:
-  case X86::KSET1W: return Expand2AddrUndef(MIB, get(X86::KXNORWrr));
-  case X86::KSET1D: return Expand2AddrUndef(MIB, get(X86::KXNORDrr));
-  case X86::KSET1Q: return Expand2AddrUndef(MIB, get(X86::KXNORQrr));
+  case X86::KSET1W: return Expand2AddrKreg(MIB, get(X86::KXNORWrr), X86::K0);
+  case X86::KSET1D: return Expand2AddrKreg(MIB, get(X86::KXNORDrr), X86::K0);
+  case X86::KSET1Q: return Expand2AddrKreg(MIB, get(X86::KXNORQrr), X86::K0);
   case TargetOpcode::LOAD_STACK_GUARD:
     expandLoadStackGuard(MIB, *this);
     return true;

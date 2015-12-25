@@ -124,6 +124,7 @@ public:
 private:
   void initializeSections(llvm::DenseSet<StringRef> &Comdats);
   void initializeSymbols();
+  InputSectionBase<ELFT> *createInputSection(const Elf_Shdr &Sec);
 
   SymbolBody *createSymbolBody(StringRef StringTable, const Elf_Sym *Sym);
 
@@ -134,6 +135,8 @@ private:
   std::vector<SymbolBody *> SymbolBodies;
 
   llvm::BumpPtrAllocator Alloc;
+  llvm::SpecificBumpPtrAllocator<MergeInputSection<ELFT>> MAlloc;
+  llvm::SpecificBumpPtrAllocator<EHInputSection<ELFT>> EHAlloc;
 };
 
 class ArchiveFile : public InputFile {

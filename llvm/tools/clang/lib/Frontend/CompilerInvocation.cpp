@@ -405,6 +405,13 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
             .Case("limited", CodeGenOptions::LimitedDebugInfo)
             .Case("standalone", CodeGenOptions::FullDebugInfo));
   }
+  if (Arg *A = Args.getLastArg(OPT_debugger_tuning_EQ)) {
+    Opts.setDebuggerTuning(
+        llvm::StringSwitch<CodeGenOptions::DebuggerKind>(A->getValue())
+            .Case("gdb", CodeGenOptions::DebuggerKindGDB)
+            .Case("lldb", CodeGenOptions::DebuggerKindLLDB)
+            .Case("sce", CodeGenOptions::DebuggerKindSCE));
+  }
   Opts.DwarfVersion = getLastArgIntValue(Args, OPT_dwarf_version_EQ, 0, Diags);
   Opts.DebugColumnInfo = Args.hasArg(OPT_dwarf_column_info);
   Opts.EmitCodeView = Args.hasArg(OPT_gcodeview);
@@ -493,6 +500,8 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.FatalWarnings = Args.hasArg(OPT_massembler_fatal_warnings);
   Opts.EnableSegmentedStacks = Args.hasArg(OPT_split_stacks);
   Opts.RelaxAll = Args.hasArg(OPT_mrelax_all);
+  Opts.IncrementalLinkerCompatible =
+      Args.hasArg(OPT_mincremental_linker_compatible);
   Opts.OmitLeafFramePointer = Args.hasArg(OPT_momit_leaf_frame_pointer);
   Opts.SaveTempLabels = Args.hasArg(OPT_msave_temp_labels);
   Opts.NoDwarfDirectoryAsm = Args.hasArg(OPT_fno_dwarf_directory_asm);

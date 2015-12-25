@@ -48,8 +48,7 @@ private:
                   iterator_range<const Elf_Rel_Impl<ELFT, isRela> *> Rels);
   void scanRelocs(InputSection<ELFT> &C);
   void scanRelocs(InputSectionBase<ELFT> &S, const Elf_Shdr &RelSec);
-  void updateRelro(Elf_Phdr *Cur, Elf_Phdr *GnuRelroPhdr,
-                   OutputSectionBase<ELFT> *Sec, uintX_t VA);
+  void updateRelro(Elf_Phdr *Cur, Elf_Phdr *GnuRelroPhdr, uintX_t VA);
   void assignAddresses();
   void buildSectionMap();
   void openFile(StringRef OutputPath);
@@ -63,11 +62,10 @@ private:
   bool isOutputDynamic() const {
     return !Symtab.getSharedFiles().empty() || Config->Shared;
   }
-  uintX_t getEntryAddr() const;
   int getPhdrsNum() const;
 
   OutputSection<ELFT> *getBSS();
-  void addCommonSymbols(std::vector<DefinedCommon<ELFT> *> &Syms);
+  void addCommonSymbols(std::vector<DefinedCommon *> &Syms);
   void addSharedCopySymbols(std::vector<SharedSymbol<ELFT> *> &Syms);
 
   std::unique_ptr<llvm::FileOutputBuffer> Buffer;
@@ -75,6 +73,7 @@ private:
   SpecificBumpPtrAllocator<OutputSection<ELFT>> SecAlloc;
   SpecificBumpPtrAllocator<MergeOutputSection<ELFT>> MSecAlloc;
   SpecificBumpPtrAllocator<EHOutputSection<ELFT>> EHSecAlloc;
+  SpecificBumpPtrAllocator<MipsReginfoOutputSection<ELFT>> MReginfoSecAlloc;
   BumpPtrAllocator Alloc;
   std::vector<OutputSectionBase<ELFT> *> OutputSections;
   unsigned getNumSections() const { return OutputSections.size() + 1; }
@@ -208,6 +207,9 @@ void Writer<ELFT>::scanRelocs(
     SymbolBody *Body = File.getSymbolBody(SymIndex);
     uint32_t Type = RI.getType(Config->Mips64EL);
 
+    if (Target->isGotRelative(Type))
+      HasGotOffRel = true;
+
     if (Target->isTlsLocalDynamicReloc(Type)) {
       if (Target->isTlsOptimized(Type, nullptr))
         continue;
@@ -236,8 +238,15 @@ void Writer<ELFT>::scanRelocs(
         continue;
     }
 
-    if (Body && Body->isTls() && !Target->isTlsDynReloc(Type))
+    if (Body && Body->isTls() && !Target->isTlsDynReloc(Type, *Body))
       continue;
+
+    if (Target->relocNeedsDynRelative(Type)) {
+      RelType *Rel = new (Alloc) RelType;
+      Rel->setSymbolAndType(0, Target->getRelativeReloc(), Config->Mips64EL);
+      Rel->r_offset = RI.r_offset;
+      Out<ELFT>::RelaDyn->addReloc({&C, Rel});
+    }
 
     bool NeedsGot = false;
     bool NeedsPlt = false;
@@ -264,6 +273,15 @@ void Writer<ELFT>::scanRelocs(
           Out<ELFT>::Got->addEntry(Body);
         }
       }
+    }
+
+    // An STT_GNU_IFUNC symbol always uses a PLT entry, and all references
+    // to the symbol go through the PLT. This is true even for a local
+    // symbol, although local symbols normally do not require PLT entries.
+    if (Body && isGnuIFunc<ELFT>(*Body)) {
+      Body->setUsedInDynamicReloc();
+      Out<ELFT>::RelaPlt->addReloc({&C, &RI});
+      continue;
     }
 
     if (Config->EMachine == EM_MIPS && NeedsGot) {
@@ -307,21 +325,10 @@ void Writer<ELFT>::scanRelocs(InputSectionBase<ELFT> &S,
 
 template <class ELFT>
 static void reportUndefined(const SymbolTable<ELFT> &S, const SymbolBody &Sym) {
-  typedef typename ELFFile<ELFT>::Elf_Sym Elf_Sym;
-  typedef typename ELFFile<ELFT>::Elf_Sym_Range Elf_Sym_Range;
-
   if (Config->Shared && !Config->NoUndefined)
     return;
 
-  const Elf_Sym &SymE = cast<ELFSymbolBody<ELFT>>(Sym).Sym;
-  ELFFileBase<ELFT> *SymFile = nullptr;
-
-  for (const std::unique_ptr<ObjectFile<ELFT>> &File : S.getObjectFiles()) {
-    Elf_Sym_Range Syms = File->getObj().symbols(File->getSymbolTable());
-    if (&SymE > Syms.begin() && &SymE < Syms.end())
-      SymFile = File.get();
-  }
-
+  ELFFileBase<ELFT> *SymFile = findFile<ELFT>(S.getObjectFiles(), &Sym);
   std::string Message = "undefined symbol: " + Sym.getName().str();
   if (SymFile)
     Message += " in " + SymFile->getName().str();
@@ -465,27 +472,24 @@ template <class ELFT> OutputSection<ELFT> *Writer<ELFT>::getBSS() {
 // Until this function is called, common symbols do not belong to any section.
 // This function adds them to end of BSS section.
 template <class ELFT>
-void Writer<ELFT>::addCommonSymbols(std::vector<DefinedCommon<ELFT> *> &Syms) {
+void Writer<ELFT>::addCommonSymbols(std::vector<DefinedCommon *> &Syms) {
   typedef typename ELFFile<ELFT>::uintX_t uintX_t;
-  typedef typename ELFFile<ELFT>::Elf_Sym Elf_Sym;
 
   if (Syms.empty())
     return;
 
   // Sort the common symbols by alignment as an heuristic to pack them better.
-  std::stable_sort(
-    Syms.begin(), Syms.end(),
-    [](const DefinedCommon<ELFT> *A, const DefinedCommon<ELFT> *B) {
-      return A->MaxAlignment > B->MaxAlignment;
-    });
+  std::stable_sort(Syms.begin(), Syms.end(),
+                   [](const DefinedCommon *A, const DefinedCommon *B) {
+                     return A->MaxAlignment > B->MaxAlignment;
+                   });
 
   uintX_t Off = getBSS()->getSize();
-  for (DefinedCommon<ELFT> *C : Syms) {
-    const Elf_Sym &Sym = C->Sym;
+  for (DefinedCommon *C : Syms) {
     uintX_t Align = C->MaxAlignment;
     Off = RoundUpToAlignment(Off, Align);
     C->OffsetInBSS = Off;
-    Off += Sym.st_size;
+    Off += C->Size;
   }
 
   Out<ELFT>::Bss->setSize(Off);
@@ -567,6 +571,39 @@ static bool compareSections(OutputSectionBase<ELFT> *A,
   return std::distance(ItA, ItB) > 0;
 }
 
+// A statically linked executable will have rel[a].plt section
+// to hold R_[*]_IRELATIVE relocations.
+// The multi-arch libc will use these symbols to locate
+// these relocations at program startup time.
+// If RelaPlt is empty then there is no reason to create this symbols.
+template <class ELFT>
+static void addIRelocMarkers(SymbolTable<ELFT> &Symtab, bool IsDynamic) {
+  if (IsDynamic || !Out<ELFT>::RelaPlt || !Out<ELFT>::RelaPlt->hasRelocs())
+    return;
+  bool IsRela = shouldUseRela<ELFT>();
+  auto AddMarker = [&](StringRef Name, typename Writer<ELFT>::Elf_Sym &Sym) {
+    if (SymbolBody *B = Symtab.find(Name))
+      if (B->isUndefined())
+        Symtab.addAbsolute(Name, Sym);
+  };
+  AddMarker(IsRela ? "__rela_iplt_start" : "__rel_iplt_start",
+            DefinedRegular<ELFT>::RelaIpltStart);
+  AddMarker(IsRela ? "__rela_iplt_end" : "__rel_iplt_end",
+            DefinedRegular<ELFT>::RelaIpltEnd);
+}
+
+template <class ELFT> static bool includeInSymtab(const SymbolBody &B) {
+  if (!B.isUsedInRegularObj())
+    return false;
+
+  // Don't include synthetic symbols like __init_array_start in every output.
+  if (auto *U = dyn_cast<DefinedRegular<ELFT>>(&B))
+    if (&U->Sym == &DefinedRegular<ELFT>::IgnoreUndef)
+      return false;
+
+  return true;
+}
+
 // Create output section objects and add them to OutputSections.
 template <class ELFT> void Writer<ELFT>::createSections() {
   // .interp needs to be on the first page in the output file.
@@ -611,6 +648,10 @@ template <class ELFT> void Writer<ELFT>::createSections() {
           Sec = new (MSecAlloc.Allocate())
               MergeOutputSection<ELFT>(Key.Name, Key.Type, Key.Flags);
           break;
+        case InputSectionBase<ELFT>::MipsReginfo:
+          Sec = new (MReginfoSecAlloc.Allocate())
+              MipsReginfoOutputSection<ELFT>();
+          break;
         }
         OutputSections.push_back(Sec);
         RegularSections.push_back(Sec);
@@ -627,6 +668,10 @@ template <class ELFT> void Writer<ELFT>::createSections() {
       case InputSectionBase<ELFT>::Merge:
         static_cast<MergeOutputSection<ELFT> *>(Sec)
             ->addSection(cast<MergeInputSection<ELFT>>(C));
+        break;
+      case InputSectionBase<ELFT>::MipsReginfo:
+        static_cast<MipsReginfoOutputSection<ELFT> *>(Sec)
+            ->addSection(cast<MipsReginfoInputSection<ELFT>>(C));
         break;
       }
     }
@@ -678,14 +723,14 @@ template <class ELFT> void Writer<ELFT>::createSections() {
   // So, if this symbol is referenced, we just add the placeholder here
   // and update its value later.
   if (Symtab.find("_end"))
-    Symtab.addAbsolute("_end", DefinedAbsolute<ELFT>::End);
+    Symtab.addAbsolute("_end", DefinedRegular<ELFT>::End);
 
   // If there is an undefined symbol "end", we should initialize it
   // with the same value as "_end". In any other case it should stay intact,
   // because it is an allowable name for a user symbol.
   if (SymbolBody *B = Symtab.find("end"))
     if (B->isUndefined())
-      Symtab.addAbsolute("end", DefinedAbsolute<ELFT>::End);
+      Symtab.addAbsolute("end", DefinedRegular<ELFT>::End);
 
   // Scan relocations. This must be done after every symbol is declared so that
   // we can correctly decide if a dynamic relocation is needed.
@@ -701,15 +746,17 @@ template <class ELFT> void Writer<ELFT>::createSections() {
     }
   }
 
-  std::vector<DefinedCommon<ELFT> *> CommonSymbols;
+  addIRelocMarkers<ELFT>(Symtab, isOutputDynamic());
+
+  std::vector<DefinedCommon *> CommonSymbols;
   std::vector<SharedSymbol<ELFT> *> SharedCopySymbols;
   for (auto &P : Symtab.getSymbols()) {
     SymbolBody *Body = P.second->Body;
-    if (auto *U = dyn_cast<Undefined<ELFT>>(Body))
+    if (auto *U = dyn_cast<Undefined>(Body))
       if (!U->isWeak() && !U->canKeepUndefined())
         reportUndefined<ELFT>(Symtab, *Body);
 
-    if (auto *C = dyn_cast<DefinedCommon<ELFT>>(Body))
+    if (auto *C = dyn_cast<DefinedCommon>(Body))
       CommonSymbols.push_back(C);
     if (auto *SC = dyn_cast<SharedSymbol<ELFT>>(Body))
       if (SC->NeedsCopy)
@@ -743,8 +790,6 @@ template <class ELFT> void Writer<ELFT>::createSections() {
     OutputSections.push_back(Out<ELFT>::DynStrTab);
     if (Out<ELFT>::RelaDyn->hasRelocs())
       OutputSections.push_back(Out<ELFT>::RelaDyn);
-    if (Out<ELFT>::RelaPlt && Out<ELFT>::RelaPlt->hasRelocs())
-      OutputSections.push_back(Out<ELFT>::RelaPlt);
     // This is a MIPS specific section to hold a space within the data segment
     // of executable file which is pointed to by the DT_MIPS_RLD_MAP entry.
     // See "Dynamic section" in Chapter 5 in the following document:
@@ -758,10 +803,24 @@ template <class ELFT> void Writer<ELFT>::createSections() {
     }
   }
 
+  // We always need to add rel[a].plt to output if it has entries.
+  // Even during static linking it can contain R_[*]_IRELATIVE relocations.
+  if (Out<ELFT>::RelaPlt && Out<ELFT>::RelaPlt->hasRelocs()) {
+    OutputSections.push_back(Out<ELFT>::RelaPlt);
+    Out<ELFT>::RelaPlt->Static = !isOutputDynamic();
+  }
+
+  bool needsGot = !Out<ELFT>::Got->empty();
   // We add the .got section to the result for dynamic MIPS target because
   // its address and properties are mentioned in the .dynamic section.
-  if (!Out<ELFT>::Got->empty() ||
-      (isOutputDynamic() && Config->EMachine == EM_MIPS))
+  if (Config->EMachine == EM_MIPS)
+    needsGot |= isOutputDynamic();
+  // If we have a relocation that is relative to GOT (such as GOTOFFREL),
+  // we need to emit a GOT even if it's empty.
+  if (HasGotOffRel)
+    needsGot = true;
+
+  if (needsGot)
     OutputSections.push_back(Out<ELFT>::Got);
   if (Out<ELFT>::GotPlt && !Out<ELFT>::GotPlt->empty())
     OutputSections.push_back(Out<ELFT>::GotPlt);
@@ -844,9 +903,7 @@ static uint32_t toPhdrFlags(uint64_t Flags) {
 
 template <class ELFT>
 void Writer<ELFT>::updateRelro(Elf_Phdr *Cur, Elf_Phdr *GnuRelroPhdr,
-                               OutputSectionBase<ELFT> *Sec, uintX_t VA) {
-  if (!Config->ZRelro || !(Cur->p_flags & PF_W) || !isRelroSection(Sec))
-    return;
+                               uintX_t VA) {
   if (!GnuRelroPhdr->p_type)
     setPhdr(GnuRelroPhdr, PT_GNU_RELRO, PF_R, Cur->p_offset, Cur->p_vaddr,
             VA - Cur->p_vaddr, 1 /*p_align*/);
@@ -882,16 +939,25 @@ template <class ELFT> void Writer<ELFT>::assignAddresses() {
 
   Elf_Phdr GnuRelroPhdr = {};
   Elf_Phdr TlsPhdr{};
+  bool RelroAligned = false;
   uintX_t ThreadBSSOffset = 0;
   // Create phdrs as we assign VAs and file offsets to all output sections.
   for (OutputSectionBase<ELFT> *Sec : OutputSections) {
+    Elf_Phdr *PH = &Phdrs[PhdrIdx];
     if (needsPhdr<ELFT>(Sec)) {
       uintX_t Flags = toPhdrFlags(Sec->getFlags());
-      if (Phdrs[PhdrIdx].p_flags != Flags) {
-        // Flags changed. Create a new PT_LOAD.
+      bool InRelRo = Config->ZRelro && (Flags & PF_W) && isRelroSection(Sec);
+      bool FirstNonRelRo = GnuRelroPhdr.p_type && !InRelRo && !RelroAligned;
+      if (FirstNonRelRo || PH->p_flags != Flags) {
         VA = RoundUpToAlignment(VA, Target->getPageSize());
         FileOff = RoundUpToAlignment(FileOff, Target->getPageSize());
-        Elf_Phdr *PH = &Phdrs[++PhdrIdx];
+        if (FirstNonRelRo)
+          RelroAligned = true;
+      }
+
+      if (PH->p_flags != Flags) {
+        // Flags changed. Create a new PT_LOAD.
+        PH = &Phdrs[++PhdrIdx];
         setPhdr(PH, PT_LOAD, Flags, FileOff, VA, 0, Target->getPageSize());
       }
 
@@ -914,7 +980,8 @@ template <class ELFT> void Writer<ELFT>::assignAddresses() {
         VA = RoundUpToAlignment(VA, Sec->getAlign());
         Sec->setVA(VA);
         VA += Sec->getSize();
-        updateRelro(&Phdrs[PhdrIdx], &GnuRelroPhdr, Sec, VA);
+        if (InRelRo)
+          updateRelro(PH, &GnuRelroPhdr, VA);
       }
     }
 
@@ -923,9 +990,8 @@ template <class ELFT> void Writer<ELFT>::assignAddresses() {
     if (Sec->getType() != SHT_NOBITS)
       FileOff += Sec->getSize();
     if (needsPhdr<ELFT>(Sec)) {
-      Elf_Phdr *Cur = &Phdrs[PhdrIdx];
-      Cur->p_filesz = FileOff - Cur->p_offset;
-      Cur->p_memsz = VA - Cur->p_vaddr;
+      PH->p_filesz = FileOff - PH->p_offset;
+      PH->p_memsz = VA - PH->p_vaddr;
     }
   }
 
@@ -969,11 +1035,20 @@ template <class ELFT> void Writer<ELFT>::assignAddresses() {
 
   // Update "_end" and "end" symbols so that they
   // point to the end of the data segment.
-  DefinedAbsolute<ELFT>::End.st_value = VA;
+  DefinedRegular<ELFT>::End.st_value = VA;
+
+  // Update __rel_iplt_start/__rel_iplt_end to wrap the
+  // rela.plt section.
+  if (Out<ELFT>::RelaPlt) {
+    uintX_t Start = Out<ELFT>::RelaPlt->getVA();
+    DefinedRegular<ELFT>::RelaIpltStart.st_value = Start;
+    DefinedRegular<ELFT>::RelaIpltEnd.st_value =
+        Start + Out<ELFT>::RelaPlt->getSize();
+  }
 
   // Update MIPS _gp absolute symbol so that it points to the static data.
   if (Config->EMachine == EM_MIPS)
-    DefinedAbsolute<ELFT>::MipsGp.st_value = getMipsGpAddr<ELFT>();
+    DefinedRegular<ELFT>::MipsGp.st_value = getMipsGpAddr<ELFT>();
 }
 
 // Returns the number of PHDR entries.
@@ -1005,6 +1080,29 @@ template <class ELFT> int Writer<ELFT>::getPhdrsNum() const {
   return I;
 }
 
+static uint32_t getELFFlags() {
+  if (Config->EMachine != EM_MIPS)
+    return 0;
+  // FIXME: In fact ELF flags depends on ELF flags of input object files
+  // and selected emulation. For now just use hadr coded values.
+  uint32_t V = EF_MIPS_ABI_O32 | EF_MIPS_CPIC | EF_MIPS_ARCH_32R2;
+  if (Config->Shared)
+    V |= EF_MIPS_PIC;
+  return V;
+}
+
+template <class ELFT>
+static typename ELFFile<ELFT>::uintX_t getEntryAddr() {
+  if (Config->EntrySym) {
+    if (SymbolBody *E = Config->EntrySym->repl())
+      return getSymVA<ELFT>(*E);
+    return 0;
+  }
+  if (Config->EntryAddr != uint64_t(-1))
+    return Config->EntryAddr;
+  return 0;
+}
+
 template <class ELFT> void Writer<ELFT>::writeHeader() {
   uint8_t *Buf = Buffer->getBufferStart();
   memcpy(Buf, "\177ELF", 4);
@@ -1023,9 +1121,10 @@ template <class ELFT> void Writer<ELFT>::writeHeader() {
   EHdr->e_type = Config->Shared ? ET_DYN : ET_EXEC;
   EHdr->e_machine = FirstObj.getEMachine();
   EHdr->e_version = EV_CURRENT;
-  EHdr->e_entry = getEntryAddr();
+  EHdr->e_entry = getEntryAddr<ELFT>();
   EHdr->e_phoff = sizeof(Elf_Ehdr);
   EHdr->e_shoff = SectionHeaderOff;
+  EHdr->e_flags = getELFFlags();
   EHdr->e_ehsize = sizeof(Elf_Ehdr);
   EHdr->e_phentsize = sizeof(Elf_Phdr);
   EHdr->e_phnum = Phdrs.size();
@@ -1045,7 +1144,7 @@ template <class ELFT> void Writer<ELFT>::writeHeader() {
 template <class ELFT> void Writer<ELFT>::openFile(StringRef Path) {
   ErrorOr<std::unique_ptr<FileOutputBuffer>> BufferOrErr =
       FileOutputBuffer::create(Path, FileSize, FileOutputBuffer::F_executable);
-  error(BufferOrErr, Twine("failed to open ") + Path);
+  error(BufferOrErr, "failed to open " + Path);
   Buffer = std::move(*BufferOrErr);
 }
 
@@ -1063,18 +1162,6 @@ template <class ELFT> void Writer<ELFT>::writeSections() {
   for (OutputSectionBase<ELFT> *Sec : OutputSections)
     if (Sec != Out<ELFT>::Opd)
       Sec->writeTo(Buf + Sec->getFileOff());
-}
-
-template <class ELFT>
-typename ELFFile<ELFT>::uintX_t Writer<ELFT>::getEntryAddr() const {
-  if (Config->EntrySym) {
-    if (auto *E = dyn_cast<ELFSymbolBody<ELFT>>(Config->EntrySym->repl()))
-      return getSymVA<ELFT>(*E);
-    return 0;
-  }
-  if (Config->EntryAddr != uint64_t(-1))
-    return Config->EntryAddr;
-  return 0;
 }
 
 template <class ELFT>

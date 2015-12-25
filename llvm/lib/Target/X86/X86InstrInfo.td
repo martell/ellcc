@@ -156,6 +156,8 @@ def X86cas16 : SDNode<"X86ISD::LCMPXCHG16_DAG", SDTX86caspair,
 
 def X86retflag : SDNode<"X86ISD::RET_FLAG", SDTX86Ret,
                         [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
+def X86iret : SDNode<"X86ISD::IRET", SDTX86Ret,
+                        [SDNPHasChain, SDNPOptInGlue]>;
 
 def X86vastart_save_xmm_regs :
                  SDNode<"X86ISD::VASTART_SAVE_XMM_REGS",
@@ -820,6 +822,8 @@ def In32BitMode  : Predicate<"Subtarget->is32Bit()">,
                              AssemblerPredicate<"Mode32Bit", "32-bit mode">;
 def IsWin64      : Predicate<"Subtarget->isTargetWin64()">;
 def NotWin64     : Predicate<"!Subtarget->isTargetWin64()">;
+def NotWin64WithoutFP : Predicate<"!Subtarget->isTargetWin64() ||"
+                                  "Subtarget->getFrameLowering()->hasFP(*MF)">;
 def IsPS4        : Predicate<"Subtarget->isTargetPS4()">;
 def NotPS4       : Predicate<"!Subtarget->isTargetPS4()">;
 def IsNaCl       : Predicate<"Subtarget->isTargetNaCl()">;
@@ -833,6 +837,7 @@ def NearData     : Predicate<"TM.getCodeModel() == CodeModel::Small ||"
 def IsStatic     : Predicate<"TM.getRelocationModel() == Reloc::Static">;
 def IsNotPIC     : Predicate<"TM.getRelocationModel() != Reloc::PIC_">;
 def OptForSize   : Predicate<"OptForSize">;
+def OptForMinSize : Predicate<"OptForMinSize">;
 def OptForSpeed  : Predicate<"!OptForSize">;
 def FastBTMem    : Predicate<"!Subtarget->isBTMemSlow()">;
 def CallImmAddr  : Predicate<"Subtarget->IsLegalToCallImmediateAddr(TM)">;

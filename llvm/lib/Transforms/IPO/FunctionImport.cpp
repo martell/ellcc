@@ -292,6 +292,9 @@ bool FunctionImporter::importFunctions(Module &DestModule) {
                 ModuleToFunctionsToImportMap, Index, ModuleLoaderCache);
   assert(Worklist.empty() && "Worklist hasn't been flushed in GetImportList");
 
+  StringMap<std::unique_ptr<DenseMap<unsigned, MDNode *>>>
+      ModuleToTempMDValsMap;
+
   // Do the actual import of functions now, one Module at a time
   for (auto &FunctionsToImportPerModule : ModuleToFunctionsToImportMap) {
     // Get the module for the import
@@ -301,13 +304,32 @@ bool FunctionImporter::importFunctions(Module &DestModule) {
     assert(&DestModule.getContext() == &SrcModule->getContext() &&
            "Context mismatch");
 
+    // Save the mapping of value ids to temporary metadata created when
+    // importing this function. If we have already imported from this module,
+    // add new temporary metadata to the existing mapping.
+    auto &TempMDVals = ModuleToTempMDValsMap[SrcModule->getModuleIdentifier()];
+    if (!TempMDVals)
+      TempMDVals = llvm::make_unique<DenseMap<unsigned, MDNode *>>();
+
     // Link in the specified functions.
     if (TheLinker.linkInModule(std::move(SrcModule), Linker::Flags::None,
-                               &Index, &FunctionsToImport))
+                               &Index, &FunctionsToImport, TempMDVals.get()))
       report_fatal_error("Function Import: link error");
 
     ImportedCount += FunctionsToImport.size();
   }
+
+  // Now link in metadata for all modules from which we imported functions.
+  for (StringMapEntry<std::unique_ptr<DenseMap<unsigned, MDNode *>>> &SME :
+       ModuleToTempMDValsMap) {
+    // Load the specified source module.
+    auto &SrcModule = ModuleLoaderCache(SME.getKey());
+
+    // Link in all necessary metadata from this module.
+    if (TheLinker.linkInMetadata(SrcModule, SME.getValue().get()))
+      return false;
+  }
+
   DEBUG(dbgs() << "Imported " << ImportedCount << " functions for Module "
                << DestModule.getModuleIdentifier() << "\n");
   return ImportedCount;
@@ -349,6 +371,7 @@ getFunctionIndexForFile(StringRef Path, std::string &Error,
   return (*ObjOrErr)->takeIndex();
 }
 
+namespace {
 /// Pass that performs cross-module function import provided a summary file.
 class FunctionImportPass : public ModulePass {
   /// Optional function summary index to use for importing, otherwise
@@ -395,6 +418,7 @@ public:
     return false;
   }
 };
+} // anonymous namespace
 
 char FunctionImportPass::ID = 0;
 INITIALIZE_PASS_BEGIN(FunctionImportPass, "function-import",

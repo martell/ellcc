@@ -321,7 +321,7 @@ void UnwrappedLineParser::calculateBraceTypes(bool ExpectClassBody) {
   SmallVector<FormatToken *, 8> LBraceStack;
   assert(Tok->Tok.is(tok::l_brace));
   do {
-    // Get next none-comment token.
+    // Get next non-comment token.
     FormatToken *NextTok;
     unsigned ReadTokens = 0;
     do {
@@ -357,7 +357,7 @@ void UnwrappedLineParser::calculateBraceTypes(bool ExpectClassBody) {
             ProbablyBracedList =
                 NextTok->isOneOf(tok::comma, tok::period, tok::colon,
                                  tok::r_paren, tok::r_square, tok::l_brace,
-                                 tok::l_paren, tok::ellipsis) ||
+                                 tok::l_square, tok::l_paren, tok::ellipsis) ||
                 (NextTok->is(tok::semi) &&
                  (!ExpectClassBody || LBraceStack.size() != 1)) ||
                 (NextTok->isBinaryOperator() && !NextIsObjCMethod);
@@ -403,6 +403,7 @@ void UnwrappedLineParser::parseBlock(bool MustBeDeclaration, bool AddLevel,
   assert(FormatTok->isOneOf(tok::l_brace, TT_MacroBlockBegin) &&
          "'{' or macro block token expected");
   const bool MacroBlock = FormatTok->is(TT_MacroBlockBegin);
+  FormatTok->BlockKind = BK_Block;
 
   unsigned InitialLevel = Line->Level;
   nextToken();
@@ -421,6 +422,7 @@ void UnwrappedLineParser::parseBlock(bool MustBeDeclaration, bool AddLevel,
   if (MacroBlock ? !FormatTok->is(TT_MacroBlockEnd)
                  : !FormatTok->is(tok::r_brace)) {
     Line->Level = InitialLevel;
+    FormatTok->BlockKind = BK_Block;
     return;
   }
 
