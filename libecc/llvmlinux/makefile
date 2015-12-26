@@ -1,6 +1,6 @@
 # Cross compiling variables
 ARCH		:= arm
-TARGET		:= arm-linux-engeabi
+TARGET		:= armv6-linux-engeabihf
 #CROSS_COMPILE	:= arm-linux-gnueabihf-
 
 ELLCC		:= $(shell realpath $(shell pwd)/../../ellcc)

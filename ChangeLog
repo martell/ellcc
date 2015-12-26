@@ -1,5 +1,6 @@
 current SVN:
 
+* Built and booted a Raspberry Pi Linux kernel.
 * Fix ARM assembly with hard float and external assembler.
 * Update to nghttp2 to 1.6.0.
 * Update to LLVM r256384.
