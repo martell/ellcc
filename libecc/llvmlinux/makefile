@@ -2,7 +2,7 @@
 ARCH		:= arm
 TARGET		:= armv6-linux-engeabihf
 
-ELLCC		:= $(shell realpath $(shell pwd)/../../ellcc)
+ELLCC		:= $(shell realpath $(shell pwd)/../ellcc)
 HOSTCC		:= $(ELLCC)/bin/ecc
 CC		:= $(ELLCC)/bin/ecc -target $(TARGET) -I$(ELLCC)/libecc/include/$(ARCH)
 
