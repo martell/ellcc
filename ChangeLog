@@ -1,5 +1,7 @@
 current SVN:
 
+* Add header files for suckless software builds.
+
 version 0.1.23:
 
 * Built and booted a Raspberry Pi Linux kernel.
