@@ -8,6 +8,8 @@ compiler:
 assembler:
   options:
     - -mfpu=vfp
+    - -mcpu=cortex-a8
+    - -march=armv7-a
 linker:
   static_crt1: $R/lib/arm-linux-engeabihf/crt1.o
   dynamic_crt1: $R/lib/arm-linux-engeabihf/Scrt1.o
