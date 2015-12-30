@@ -15,7 +15,7 @@ NO_VDSO=1
 BUILD=$TOP/$TARGET
 # The install directory.
 ROOT=$TOP/image/$TARGET
-BOOT=$TOP/image/$BOARD
+BOOT=$TOP/image/$TARGET/$BOARD
 
 KERNEL=1
 LINUX_VERSION=4.1.15
@@ -48,17 +48,19 @@ if [ $KERNEL -ne 0 ] ; then
     cp $TOP/makefile .
     make ARCH=$ARCH BUILD=$BUILD/$BOARD TARGET=$TARGET MAXJOBS=1 $LINUX_CONFIG
     mkdir -p $BUILD/$BOARD
+    cd $BUILD/$BOARD
+    if [ $NO_VDSO -eq 1 ] ; then
+      sed -ie "s/CONFIG_VDSO=y/CONFIG_VDSO=n/" .config
+    fi
     cd $TOP
   fi
   # Build the kernel.
   cd $BUILD/$BOARD
-  if [ $NO_VDSO -eq 1 ] ; then
-    sed -ie "s/CONFIG_VDSO=y/CONFIG_VDSO=n/" .config
-  fi
   make MAXJOBS=$MAXJOBS
   # Populate /boot
   mkdir -p $BOOT
-  cp ./arch/$ARCH/boot/zImage $BOOT
+  make INSTALL_DTBS_PATH=$BOOT/dtbs dtbs_install
+  make INSTALL_PATH=$BOOT zinstall
   cd $TOP
 fi
 
@@ -70,7 +72,7 @@ if [ ! -e sinit ] ; then
 else
   cd sinit
   git pull
-  cd $TOP
+  cd ..
 fi
 if [ ! -e mksh-$MKSH_VERSION.tgz ] ; then
   wget https://www.mirbsd.org/MirOS/dist/mir/mksh/mksh-$MKSH_VERSION.tgz
@@ -82,66 +84,66 @@ if [ ! -e nldev ] ; then
 else
   cd nldev
   git pull
-  cd $TOP
+  cd ..
 fi
 if [ ! -e nlmon ] ; then
   git clone git://git.r-36.net/nlmon
 else
   cd nlmon
   git pull
-  cd $TOP
+  cd ..
 fi
 if [ ! -e sbase ] ; then
   git clone git://git.suckless.org/sbase
 else
   cd sbase
   git pull
-  cd $TOP
+  cd ..
 fi
 if [ ! -e sdhcp ] ; then
   git clone git://git.2f30.org/sdhcp
 else
   cd sdhcp
   git pull
-  cd $TOP
+  cd ..
 fi
 if [ ! -e smdev ] ; then
   git clone git://git.suckless.org/smdev
 else
   cd smdev
   git pull
-  cd $TOP
+  cd ..
 fi
 if [ ! -e svc ] ; then
   git clone git://git.r-36.net/svc
 else
   cd svc
   git pull
-  cd $TOP
+  cd ..
 fi
 if [ ! -e ubase ] ; then
   git clone git://git.suckless.org/ubase
 else
   cd ubase
   git pull
-  cd $TOP
+  cd ..
 fi
 if [ ! -e loksh ] ; then
   git clone https://github.com/dimkr/loksh.git
 else
   cd loksh
   git pull
-  cd $TOP
+  cd ..
 fi
 if [ ! -e vim ] ; then
   git clone https://github.com/vim/vim.git
   cd vim
   LDFLAGS=-Wl,-s ./configure --prefix=$ROOT/usr --with-features=$VIM_FEATURES
-  cd $TOP
+  cd ..
 else
   cd vim
   git pull
-  cd $TOP
+  cd ..
 fi
 if [ 0 -ne 0 ] ; then
   git clone https://github.com/landley/toybox.git
@@ -151,8 +153,9 @@ fi
 
 mkdir -p $ROOT/bin
 mkdir -p $ROOT/usr/bin
-mkdir -p $ROOT/usr/share/man
-
+MANPREFIX=$ROOT/usr/share/man
+DOCPREFIX=$ROOT/usr/share/doc
+mkdir -p $MANPREFIX
 
 if [ 0 -ne 0 ] ; then
 # ellcc
@@ -168,81 +171,74 @@ if [ ! -e ellcc-$TARGET-$ELLCC_VERSION.tgz ] ; then
   ln -sf ../usr/ellcc/bin/ecc++ ecc++
   cd $TOP
 fi
-
-# The Linux kernel.
-cd linux-rpi-4.1.y/
-make
-cp ./arch/arm/boot/zImage $ROOT/boot/kernel.img
-cd $TOP
+fi
 
 # sinit
 cd sinit
-make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT LIBS= install
-cd $TOP
+make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
+cd ..
 
 # The mksh shell.
 mkdir -p mksh-build
 cd mksh-build
 HAVE_SYS_SIGNAME=0 sh ../mksh/Build.sh
 cp mksh $ROOT/bin
-cd $TOP
+cd ..
 
 # nldev
 cd nldev
-make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT/usr LIBS= install
-cd $TOP
+make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
+cd ..
 
 # nlmon
 cd nlmon
-make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT/usr LIBS= install
-cd $TOP
+make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
+cd ..
 
 # sbase
 cd sbase
-make LDFLAGS=-Wl,-s PREFIX=$ROOT LIBS= install
-cd $TOP
+make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
+cd ..
 
 # sdhcp
 cd sdhcp
-make LDFLAGS=-Wl,-s PREFIX=$ROOT/usr LIBS= install
-cd $TOP
+make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
+cd ..
 
 # smdev
 cd smdev
-make LDFLAGS=-Wl,-s PREFIX=$ROOT/usr LIBS= install
-cd $TOP
+make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
+cd ..
 
 # svc
 cd svc
-# make LDFLAGS=-Wl,-s PREFIX=$ROOT/usr LIBS= install
+# make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
 cp bin/* $ROOT/bin
 cp -R svc.d $ROOT/bin
-cd $TOP
+cd ..
 
 # ubase
 cd ubase
-make LDFLAGS=-Wl,-s PREFIX=$ROOT LIBS= install
-cd $TOP
+make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
+cd ..
 
 # ksh
 cd loksh
-make LDFLAGS=-Wl,-s DESTDIR= PREFIX=$ROOT/usr install
-cd $TOP
-fi
+make LDFLAGS=-Wl,-s DESTDIR= PREFIX=$ROOT MAN_DIR=$MANPREFIX DOC_DIR=$DOCPREFIX install
+cd ..
 
 # vim
 cd vim
 make install
-cd $TOP
+cd ..
 
 # toybox
 #cd toybox/
 #make defconfig toybox
-#cd $TOP
+#cd ..
 
 # Python
 #cd Python-$PYTHON_VERSION
 #LDFLAGS=-Wl,-s ./configure --prefix=$ROOT/usr
 #make install
-#cd $TOP
-
+#cd ..
