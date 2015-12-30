@@ -1,6 +1,6 @@
 # Cross compiling variables
 ARCH		:= arm
-TARGET		:= armv6-linux-engeabihf
+TARGET		:= arm-linux-engeabihf
 
 ELLCC		:= $(shell realpath $(shell pwd)/../ellcc)
 HOSTCC		:= $(ELLCC)/bin/ecc
@@ -45,7 +45,7 @@ endif
 
 LINUXFLAGS	= CPP="$(CPP)" CC="$(CC)" HOSTCC="$(HOSTCC)" LD="$(LD)" \
 		  OBJCOPY=$(OBJCOPY)
-linuxmake	= $(MAKE) -f Makefile $(LINUXFLAGS) O=$(1) $(2)
+linuxmake	= $(MAKE) -j 6 -f Makefile $(LINUXFLAGS) O=$(1) $(2)
 
 %:
 	@$(call linuxmake,$(O),$@)

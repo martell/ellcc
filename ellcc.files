@@ -11,5 +11,5 @@ libecc/Makefile.lib
 libecc/config.musl
 libecc/src
 libecc/mingw
-libecc/llvmlinux
+libecc/ecclinux
 examples

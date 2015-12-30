@@ -1,0 +1,215 @@
+#! /bin/sh
+set -e
+TOP=`pwd`
+ROOT=$TOP/install
+TARGET=arm-linux-engeabihf
+BUILD=x86_64-linux-eng
+FETCH=0
+ELLCC_VERSION=0.1.23
+RPI_LINUX_VERSION=4.1.y
+RPI_LINUX_BOARD=bcm2709_defconfig
+MKSH_VERSION=R52
+VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
+PYTHON_VERSION=3.5.1
+MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
+export CC="$TOP/ellcc/bin/ecc -target $TARGET"
+export CXX="$TOP/ellcc/bin/ecc++ -target $TARGET"
+export AR=$TOP/ellcc/bin/ecc-ar
+export RANLIB=$TOP/ellcc/bin/ecc-ranlib
+export STRIP=$TOP/ellcc/bin/ecc-strip
+
+if [ ! -e ellcc-$BUILD-$ELLCC_VERSION.tgz ] ; then
+  wget http://ellcc.org/releases/ellcc-$BUILD-$ELLCC_VERSION.tgz
+  tar xvfp ellcc-$BUILD-$ELLCC_VERSION.tgz
+fi
+if [ ! -e rpi-$RPI_LINUX_VERSION.tar.gz ] ; then
+  wget https://github.com/raspberrypi/linux/archive/rpi-$RPI_LINUX_VERSION.tar.gz
+  tar xvfp rpi-$RPI_LINUX_VERSION.tar.gz
+  patch -p0 < ellcc/libecc/llvmlinux/ecc-rpi-$RPI_LINUX_VERSION.patch
+  cd linux-rpi-$RPI_LINUX_VERSION/
+  cp $TOP/makefile .
+  make -j $MAXJOBS $RPI_LINUX_BOARD
+  cd $TOP
+fi
+if [ ! -e sinit ] ; then
+  git clone git://git.suckless.org/sinit
+else
+  cd sinit
+  git pull
+  cd $TOP
+fi
+if [ ! -e mksh-$MKSH_VERSION.tgz ] ; then
+  wget https://www.mirbsd.org/MirOS/dist/mir/mksh/mksh-$MKSH_VERSION.tgz
+  tar xvfp mksh-$MKSH_VERSION.tgz
+fi
+
+if [ ! -e nldev ] ; then
+  git clone git://git.r-36.net/nldev
+else
+  cd nldev
+  git pull
+  cd $TOP
+fi
+if [ ! -e nlmon ] ; then
+  git clone git://git.r-36.net/nlmon
+else
+  cd nlmon
+  git pull
+  cd $TOP
+fi
+if [ ! -e sbase ] ; then
+  git clone git://git.suckless.org/sbase
+else
+  cd sbase
+  git pull
+  cd $TOP
+fi
+if [ ! -e sdhcp ] ; then
+  git clone git://git.2f30.org/sdhcp
+else
+  cd sdhcp
+  git pull
+  cd $TOP
+fi
+if [ ! -e smdev ] ; then
+  git clone git://git.suckless.org/smdev
+else
+  cd smdev
+  git pull
+  cd $TOP
+fi
+if [ ! -e svc ] ; then
+  git clone git://git.r-36.net/svc
+else
+  cd svc
+  git pull
+  cd $TOP
+fi
+if [ ! -e ubase ] ; then
+  git clone git://git.suckless.org/ubase
+else
+  cd ubase
+  git pull
+  cd $TOP
+fi
+if [ ! -e loksh ] ; then
+  git clone https://github.com/dimkr/loksh.git
+else
+  cd loksh
+  git pull
+  cd $TOP
+fi
+if [ ! -e vim ] ; then
+  git clone https://github.com/vim/vim.git
+  cd vim
+  LDFLAGS=-Wl,-s ./configure --prefix=$ROOT/usr --with-features=$VIM_FEATURES
+  cd $TOP
+else
+  cd vim
+  git pull
+  cd $TOP
+fi
+if [ 0 -ne 0 ] ; then
+  git clone https://github.com/landley/toybox.git
+  wget https://www.python.org/ftp/python/$PYTHON_VERSION/Python-/$PYTHON_VERSION.tar.xz
+  tar xvfp Python-3.5.1.tar.xz
+fi
+
+mkdir -p $ROOT/boot
+mkdir -p $ROOT/bin
+mkdir -p $ROOT/usr/bin
+mkdir -p $ROOT/usr/share/man
+
+
+if [ 0 -ne 0 ] ; then
+# ellcc
+if [ ! -e ellcc-$TARGET-$ELLCC_VERSION.tgz ] ; then
+  wget http://ellcc.org/releases/ellcc-$TARGET-$ELLCC_VERSION.tgz
+  cd $ROOT/usr
+  if [ -e ellcc ] ; then
+    rm -fr ellcc
+  fi
+  tar xvfp $TOP/ellcc-$TARGET-$ELLCC_VERSION.tgz
+  cd $ROOT/bin
+  ln -sf ../usr/ellcc/bin/ecc ecc
+  ln -sf ../usr/ellcc/bin/ecc++ ecc++
+  cd $TOP
+fi
+
+# The Linux kernel.
+cd linux-rpi-4.1.y/
+make
+cp ./arch/arm/boot/zImage $ROOT/boot/kernel.img
+cd $TOP
+
+# sinit
+cd sinit
+make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT LIBS= install
+cd $TOP
+
+# The mksh shell.
+mkdir -p mksh-build
+cd mksh-build
+HAVE_SYS_SIGNAME=0 sh ../mksh/Build.sh
+cp mksh $ROOT/bin
+cd $TOP
+
+# nldev
+cd nldev
+make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT/usr LIBS= install
+cd $TOP
+
+# nlmon
+cd nlmon
+make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT/usr LIBS= install
+cd $TOP
+
+# sbase
+cd sbase
+make LDFLAGS=-Wl,-s PREFIX=$ROOT LIBS= install
+cd $TOP
+
+# sdhcp
+cd sdhcp
+make LDFLAGS=-Wl,-s PREFIX=$ROOT/usr LIBS= install
+cd $TOP
+
+# smdev
+cd smdev
+make LDFLAGS=-Wl,-s PREFIX=$ROOT/usr LIBS= install
+cd $TOP
+
+# svc
+cd svc
+# make LDFLAGS=-Wl,-s PREFIX=$ROOT/usr LIBS= install
+cp bin/* $ROOT/bin
+cp -R svc.d $ROOT/bin
+cd $TOP
+
+# ubase
+cd ubase
+make LDFLAGS=-Wl,-s PREFIX=$ROOT LIBS= install
+cd $TOP
+
+# ksh
+cd loksh
+make LDFLAGS=-Wl,-s DESTDIR= PREFIX=$ROOT/usr install
+cd $TOP
+fi
+
+# vim
+cd vim
+make install
+cd $TOP
+
+# toybox
+#cd toybox/
+#make defconfig toybox
+#cd $TOP
+
+# Python
+#cd Python-$PYTHON_VERSION
+#LDFLAGS=-Wl,-s ./configure --prefix=$ROOT/usr
+#make install
+#cd $TOP
+

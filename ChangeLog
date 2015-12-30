@@ -1,5 +1,8 @@
 current SVN:
 
+* Create a Linux build directory and scripts.
+* Updates to build openssh.
+* Updates to build ARMv7 Linux.
 * Add header files for suckless software builds.
 
 version 0.1.23:
