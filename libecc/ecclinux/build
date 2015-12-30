@@ -1,36 +1,67 @@
 #! /bin/sh
 set -e
 TOP=`pwd`
-ROOT=$TOP/install
-TARGET=arm-linux-engeabihf
-BUILD=x86_64-linux-eng
-FETCH=0
+ELLCC=`realpath $TOP/../..`
+
+ARCH=arm
+#BOARD=bcmrpi           # Raspberry Pi
+#TARGET=armv6-linux-engeabihf # Raspberry Pi
+
+BOARD=bcm2709           # Raspberry Pi 2
+TARGET=arm-linux-engeabihf # Raspberry Pi 2
+NO_VDSO=1
+
+# The build directory.
+BUILD=$TOP/$TARGET
+# The install directory.
+ROOT=$TOP/image/$TARGET
+BOOT=$TOP/image/$BOARD
+
+KERNEL=1
+LINUX_VERSION=4.1.15
+LINUX_CONFIG=${BOARD}_defconfig
+
 ELLCC_VERSION=0.1.23
-RPI_LINUX_VERSION=4.1.y
-RPI_LINUX_BOARD=bcm2709_defconfig
 MKSH_VERSION=R52
 VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
 PYTHON_VERSION=3.5.1
-MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
-export CC="$TOP/ellcc/bin/ecc -target $TARGET"
-export CXX="$TOP/ellcc/bin/ecc++ -target $TARGET"
-export AR=$TOP/ellcc/bin/ecc-ar
-export RANLIB=$TOP/ellcc/bin/ecc-ranlib
-export STRIP=$TOP/ellcc/bin/ecc-strip
 
-if [ ! -e ellcc-$BUILD-$ELLCC_VERSION.tgz ] ; then
-  wget http://ellcc.org/releases/ellcc-$BUILD-$ELLCC_VERSION.tgz
-  tar xvfp ellcc-$BUILD-$ELLCC_VERSION.tgz
-fi
-if [ ! -e rpi-$RPI_LINUX_VERSION.tar.gz ] ; then
-  wget https://github.com/raspberrypi/linux/archive/rpi-$RPI_LINUX_VERSION.tar.gz
-  tar xvfp rpi-$RPI_LINUX_VERSION.tar.gz
-  patch -p0 < ellcc/libecc/llvmlinux/ecc-rpi-$RPI_LINUX_VERSION.patch
-  cd linux-rpi-$RPI_LINUX_VERSION/
-  cp $TOP/makefile .
-  make -j $MAXJOBS $RPI_LINUX_BOARD
+MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
+
+# Tools.
+export CC="$ELLCC/bin/ecc -target $TARGET"
+export CXX="$ELLCC/bin/ecc++ -target $TARGET"
+export AR=$ELLCC/bin/ecc-ar
+export RANLIB=$ELLCC/bin/ecc-ranlib
+export STRIP=$ELLCC/bin/ecc-strip
+
+if [ $KERNEL -ne 0 ] ; then
+  if [ ! -e linux-$LINUX_VERSION.tar.xz ] ; then
+    wget https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$LINUX_VERSION.tar.xz
+  fi
+  if [ ! -e linux-$LINUX_VERSION ] ; then
+    tar xvfp linux-$LINUX_VERSION.tar.xz
+    cd linux-$LINUX_VERSION/
+    for p in `echo ../*-$LINUX_VERSION.patch` ; do
+      patch -p1 < $p
+    done
+    cp $TOP/makefile .
+    make ARCH=$ARCH BUILD=$BUILD/$BOARD TARGET=$TARGET MAXJOBS=1 $LINUX_CONFIG
+    mkdir -p $BUILD/$BOARD
+    cd $TOP
+  fi
+  # Build the kernel.
+  cd $BUILD/$BOARD
+  if [ $NO_VDSO -eq 1 ] ; then
+    sed -ie "s/CONFIG_VDSO=y/CONFIG_VDSO=n/" .config
+  fi
+  make MAXJOBS=$MAXJOBS
+  # Populate /boot
+  mkdir -p $BOOT
+  cp ./arch/$ARCH/boot/zImage $BOOT
   cd $TOP
 fi
+exit 0
 if [ ! -e sinit ] ; then
   git clone git://git.suckless.org/sinit
 else
@@ -115,7 +146,6 @@ if [ 0 -ne 0 ] ; then
   tar xvfp Python-3.5.1.tar.xz
 fi
 
-mkdir -p $ROOT/boot
 mkdir -p $ROOT/bin
 mkdir -p $ROOT/usr/bin
 mkdir -p $ROOT/usr/share/man

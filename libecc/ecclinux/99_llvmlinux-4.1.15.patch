@@ -1,0 +1,328 @@
+diff -ru linux-rpi-4.1.y.orig/arch/arm/boot/compressed/Makefile linux-rpi-4.1.y/arch/arm/boot/compressed/Makefile
+--- linux-rpi-4.1.y.orig/arch/arm/boot/compressed/Makefile	2015-12-15 10:42:29.000000000 -0600
++++ linux-rpi-4.1.y/arch/arm/boot/compressed/Makefile	2015-12-25 14:05:35.913007976 -0600
+@@ -108,7 +108,7 @@
+ KBUILD_CFLAGS = $(subst -pg, , $(ORIG_CFLAGS))
+ endif
+ 
+-ccflags-y := -fpic -mno-single-pic-base -fno-builtin -I$(obj)
++ccflags-y := -fpic $(call cc-option,-mno-single-pic-base,) -fno-builtin -I$(obj)
+ asflags-y := -DZIMAGE
+ 
+ # Supply kernel BSS size to the decompressor via a linker symbol.
+@@ -174,7 +174,7 @@
+ 		$(bswapsdi2) FORCE
+ 	@$(check_for_multiple_zreladdr)
+ 	$(call if_changed,ld)
+-	@$(check_for_bad_syms)
++	@echo $(check_for_bad_syms)
+ 
+ $(obj)/piggy.$(suffix_y): $(obj)/../Image FORCE
+ 	$(call if_changed,$(suffix_y))
+diff -ru linux-rpi-4.1.y.orig/arch/arm/Makefile linux-rpi-4.1.y/arch/arm/Makefile
+--- linux-rpi-4.1.y.orig/arch/arm/Makefile	2015-12-15 10:42:29.000000000 -0600
++++ linux-rpi-4.1.y/arch/arm/Makefile	2015-12-20 16:46:46.334053684 -0600
+@@ -26,6 +26,10 @@
+ # Never generate .eh_frame
+ KBUILD_CFLAGS	+= $(call cc-option,-fno-dwarf2-cfi-asm)
+ 
++ifeq ($(COMPILER),clang)
++KBUILD_CFLAGS += -Wa,-mno-warn-deprecated
++endif
++
+ # Do not use arch/arm/defconfig - it's always outdated.
+ # Select a platform tht is kept up-to-date
+ KBUILD_DEFCONFIG := versatile_defconfig
+@@ -37,15 +41,15 @@
+ endif
+ 
+ ifeq ($(CONFIG_FRAME_POINTER),y)
+-KBUILD_CFLAGS	+=-fno-omit-frame-pointer -mapcs -mno-sched-prolog
++KBUILD_CFLAGS	+=-fno-omit-frame-pointer $(call cc-option,-mapcs,) $(call cc-option,-mno-sched-prolog,)
+ endif
+ 
+ ifeq ($(CONFIG_CPU_BIG_ENDIAN),y)
+-KBUILD_CPPFLAGS	+= -mbig-endian
++KBUILD_CPPFLAGS	+= $(call cc-option,-mbig-endian,)
+ AS		+= -EB
+ LD		+= -EB
+ else
+-KBUILD_CPPFLAGS	+= -mlittle-endian
++KBUILD_CPPFLAGS	+= $(call cc-option,-mlittle-endian,)
+ AS		+= -EL
+ LD		+= -EL
+ endif
+@@ -102,7 +106,7 @@
+ tune-y := $(tune-y)
+ 
+ ifeq ($(CONFIG_AEABI),y)
+-CFLAGS_ABI	:=-mabi=aapcs-linux -mno-thumb-interwork -mfpu=vfp
++CFLAGS_ABI	:=-mabi=aapcs-linux $(call cc-option,-mno-thumb-interwork,) -mfpu=vfp
+ else
+ CFLAGS_ABI	:=$(call cc-option,-mapcs-32,-mabi=apcs-gnu) $(call cc-option,-mno-thumb-interwork,)
+ endif
+@@ -126,7 +130,7 @@
+ endif
+ 
+ # Need -Uarm for gcc < 3.x
+-KBUILD_CFLAGS	+=$(CFLAGS_ABI) $(CFLAGS_ISA) $(arch-y) $(tune-y) $(call cc-option,-mshort-load-bytes,$(call cc-option,-malignment-traps,)) -msoft-float -Uarm
++KBUILD_CFLAGS	+=$(CFLAGS_ABI) $(CFLAGS_ISA) $(arch-y) $(tune-y) $(call cc-option,-mshort-load-bytes,$(call cc-option,-malignment-traps,)) -msoft-float $(call cc-option,-Uarm,)
+ KBUILD_AFLAGS	+=$(CFLAGS_ABI) $(AFLAGS_ISA) $(arch-y) $(tune-y) -include asm/unified.h -msoft-float
+ 
+ CHECKFLAGS	+= -D__arm__
+diff -ru linux-rpi-4.1.y.orig/drivers/char/broadcom/vc_sm/vmcs_sm.c linux-rpi-4.1.y/drivers/char/broadcom/vc_sm/vmcs_sm.c
+--- linux-rpi-4.1.y.orig/drivers/char/broadcom/vc_sm/vmcs_sm.c	2015-12-15 10:42:29.000000000 -0600
++++ linux-rpi-4.1.y/drivers/char/broadcom/vc_sm/vmcs_sm.c	2015-12-25 11:54:00.951183373 -0600
+@@ -197,12 +197,14 @@
+ static struct SM_STATE_T *sm_state;
+ static int sm_inited;
+ 
++#if 0 /* RICH: Unused. */
+ static const char *const sm_cache_map_vector[] = {
+ 	"(null)",
+ 	"host",
+ 	"videocore",
+ 	"host+videocore",
+ };
++#endif
+ 
+ /* ---- Private Function Prototypes -------------------------------------- */
+ 
+diff -ru linux-rpi-4.1.y.orig/drivers/md/raid10.c linux-rpi-4.1.y/drivers/md/raid10.c
+--- linux-rpi-4.1.y.orig/drivers/md/raid10.c	2015-12-15 10:42:29.000000000 -0600
++++ linux-rpi-4.1.y/drivers/md/raid10.c	2015-12-25 12:49:20.489798071 -0600
+@@ -711,11 +711,7 @@
+ 		max = biovec->bv_len;
+ 
+ 	if (mddev->merge_check_needed) {
+-		struct {
+-			struct r10bio r10_bio;
+-			struct r10dev devs[conf->copies];
+-		} on_stack;
+-		struct r10bio *r10_bio = &on_stack.r10_bio;
++		struct r10bio *r10_bio;
+ 		int s;
+ 		if (conf->reshape_progress != MaxSector) {
+ 			/* Cannot give any guidance during reshape */
+@@ -723,6 +719,11 @@
+ 				return biovec->bv_len;
+ 			return 0;
+ 		}
++		r10_bio = kmalloc(sizeof *r10_bio +
++				  conf->copies * sizeof(struct r10dev), GFP_NOIO);
++		if (!r10_bio)
++			return 0;
++
+ 		r10_bio->sector = sector;
+ 		raid10_find_phys(conf, r10_bio);
+ 		rcu_read_lock();
+@@ -755,6 +756,7 @@
+ 			}
+ 		}
+ 		rcu_read_unlock();
++		kfree(r10_bio);
+ 	}
+ 	return max;
+ }
+@@ -4558,15 +4560,16 @@
+ 	/* Use sync reads to get the blocks from somewhere else */
+ 	int sectors = r10_bio->sectors;
+ 	struct r10conf *conf = mddev->private;
+-	struct {
+-		struct r10bio r10_bio;
+-		struct r10dev devs[conf->copies];
+-	} on_stack;
+-	struct r10bio *r10b = &on_stack.r10_bio;
++	struct r10bio *r10b;
+ 	int slot = 0;
+ 	int idx = 0;
+ 	struct bio_vec *bvec = r10_bio->master_bio->bi_io_vec;
+ 
++	r10b = kmalloc(sizeof *r10b + conf->copies * sizeof(struct r10dev),
++		       GFP_NOIO);
++	if (!r10b)
++		return -ENOMEM;
++
+ 	r10b->sector = r10_bio->sector;
+ 	__raid10_find_phys(&conf->prev, r10b);
+ 
+@@ -4606,11 +4609,13 @@
+ 			/* couldn't read this block, must give up */
+ 			set_bit(MD_RECOVERY_INTR,
+ 				&mddev->recovery);
++			kfree(r10b);
+ 			return -EIO;
+ 		}
+ 		sectors -= s;
+ 		idx++;
+ 	}
++	kfree(r10b);
+ 	return 0;
+ }
+ 
+diff -ru linux-rpi-4.1.y.orig/drivers/net/wimax/i2400m/fw.c linux-rpi-4.1.y/drivers/net/wimax/i2400m/fw.c
+--- linux-rpi-4.1.y.orig/drivers/net/wimax/i2400m/fw.c	2015-12-15 10:42:29.000000000 -0600
++++ linux-rpi-4.1.y/drivers/net/wimax/i2400m/fw.c	2015-12-25 12:50:49.411822724 -0600
+@@ -652,7 +652,7 @@
+ 	struct device *dev = i2400m_dev(i2400m);
+ 	struct {
+ 		struct i2400m_bootrom_header cmd;
+-		u8 cmd_payload[chunk_len];
++		u8 cmd_payload[];
+ 	} __packed *buf;
+ 	struct i2400m_bootrom_header ack;
+ 
+Only in linux-rpi-4.1.y/: files
+diff -ru linux-rpi-4.1.y.orig/include/linux/kbuild.h linux-rpi-4.1.y/include/linux/kbuild.h
+--- linux-rpi-4.1.y.orig/include/linux/kbuild.h	2015-12-15 10:42:29.000000000 -0600
++++ linux-rpi-4.1.y/include/linux/kbuild.h	2015-12-20 16:49:41.963226190 -0600
+@@ -2,14 +2,14 @@
+ #define __LINUX_KBUILD_H
+ 
+ #define DEFINE(sym, val) \
+-        asm volatile("\n->" #sym " %0 " #val : : "i" (val))
++	asm volatile("\n@->" #sym " %0 " #val : : "i" (val))
+ 
+-#define BLANK() asm volatile("\n->" : : )
++#define BLANK() asm volatile("\n@->" : : )
+ 
+ #define OFFSET(sym, str, mem) \
+ 	DEFINE(sym, offsetof(struct str, mem))
+ 
+ #define COMMENT(x) \
+-	asm volatile("\n->#" x)
++	asm volatile("\n@->#" x)
+ 
+ #endif
+diff -ru linux-rpi-4.1.y.orig/Kbuild linux-rpi-4.1.y/Kbuild
+--- linux-rpi-4.1.y.orig/Kbuild	2015-12-15 10:42:29.000000000 -0600
++++ linux-rpi-4.1.y/Kbuild	2015-12-21 20:58:39.413366201 -0600
+@@ -7,10 +7,10 @@
+ 
+ # Default sed regexp - multiline due to syntax constraints
+ define sed-y
+-	"/^->/{s:->#\(.*\):/* \1 */:; \
+-	s:^->\([^ ]*\) [\$$#]*\([-0-9]*\) \(.*\):#define \1 \2 /* \3 */:; \
+-	s:^->\([^ ]*\) [\$$#]*\([^ ]*\) \(.*\):#define \1 \2 /* \3 */:; \
+-	s:->::; p;}"
++	"/^@->/{s:@->#\(.*\):/* \1 */:; \
++	s:^@->\([^ ]*\) [\$$#]*\([-0-9]*\) \(.*\):#define \1 \2 /* \3 */:; \
++	s:^@->\([^ ]*\) [\$$#]*\([^ ]*\) \(.*\):#define \1 \2 /* \3 */:; \
++	s:@->::; p;}"
+ endef
+ 
+ # Use filechk to avoid rebuilds when a header changes, but the resulting file
+Only in linux-rpi-4.1.y/: makefile
+diff -ru linux-rpi-4.1.y.orig/Makefile linux-rpi-4.1.y/Makefile
+--- linux-rpi-4.1.y.orig/Makefile	2015-12-15 10:42:29.000000000 -0600
++++ linux-rpi-4.1.y/Makefile	2015-12-25 11:16:24.089664554 -0600
+@@ -303,7 +303,8 @@
+ 
+ ifeq ($(shell $(HOSTCC) -v 2>&1 | grep -c "clang version"), 1)
+ HOSTCFLAGS  += -Wno-unused-value -Wno-unused-parameter \
+-		-Wno-missing-field-initializers -fno-delete-null-pointer-checks
++		-Wno-missing-field-initializers \
++                $(call cc-option,-fno-delete-null-pointer-checks,)
+ endif
+ 
+ # Decide whether to build built-in, modular, or both.
+@@ -376,6 +377,19 @@
+ AFLAGS_KERNEL	=
+ CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
+ 
++ifeq ($(COMPILER),clang)
++ifneq ($(CROSS_COMPILE),)
++CLANG_TARGET	:= -target $(notdir $(CROSS_COMPILE:%-=%))
++GCC_TOOLCHAIN	:= $(dir $(CROSS_COMPILE))
++endif
++ifneq ($(GCC_TOOLCHAIN),)
++CLANG_GCC_TC	:= -gcc-toolchain $(GCC_TOOLCHAIN)
++endif
++ifneq ($(IA),1)
++CLANG_IA_FLAG	= -no-integrated-as
++endif
++CLANG_FLAGS	:= $(CLANG_TARGET) $(CLANG_GCC_TC) $(CLANG_IA_FLAG)
++endif
+ 
+ # Use USERINCLUDE when you must reference the UAPI directories only.
+ USERINCLUDE    := \
+@@ -400,12 +414,12 @@
+ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
+ 		   -fno-strict-aliasing -fno-common \
+ 		   -Werror-implicit-function-declaration \
+-		   -Wno-format-security \
++		   -Wno-format-security $(CLANG_FLAGS) \
+ 		   -std=gnu89
+ 
+ KBUILD_AFLAGS_KERNEL :=
+ KBUILD_CFLAGS_KERNEL :=
+-KBUILD_AFLAGS   := -D__ASSEMBLY__
++KBUILD_AFLAGS   := -D__ASSEMBLY__ $(CLANG_FLAGS)
+ KBUILD_AFLAGS_MODULE  := -DMODULE
+ KBUILD_CFLAGS_MODULE  := -DMODULE
+ KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
+@@ -1261,6 +1275,8 @@
+ 	@echo  '                    (default: $$(INSTALL_MOD_PATH)/lib/firmware)'
+ 	@echo  '  dir/            - Build all files in dir and below'
+ 	@echo  '  dir/file.[oisS] - Build specified target only'
++	@echo  '  dir/file.ll     - Build the LLVM bitcode file'
++	@echo  '                    (requires compiler support for LLVM bitcode generation)'
+ 	@echo  '  dir/file.lst    - Build specified mixed source/assembly target only'
+ 	@echo  '                    (requires a recent binutils and recent build (System.map))'
+ 	@echo  '  dir/file.ko     - Build module including final link'
+@@ -1537,6 +1553,10 @@
+ 	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
+ %.symtypes: %.c prepare scripts FORCE
+ 	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
++%.ll: %.c prepare scripts FORCE
++	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
++%.ll: %.S prepare scripts FORCE
++	$(Q)$(MAKE) $(build)=$(build-dir) $(target-dir)$(notdir $@)
+ 
+ # Modules
+ /: prepare scripts FORCE
+diff -ru linux-rpi-4.1.y.orig/scripts/Kbuild.include linux-rpi-4.1.y/scripts/Kbuild.include
+--- linux-rpi-4.1.y.orig/scripts/Kbuild.include	2015-12-15 10:42:29.000000000 -0600
++++ linux-rpi-4.1.y/scripts/Kbuild.include	2015-12-25 11:25:52.120731005 -0600
+@@ -111,12 +111,12 @@
+ # Usage: cflags-y += $(call cc-option,-march=winchip-c6,-march=i586)
+ 
+ cc-option = $(call try-run,\
+-	$(CC) $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS) $(1) -c -x c /dev/null -o "$$TMP",$(1),$(2))
++	$(CC) -Werror $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS) $(1) -c -x c /dev/null -o "$$TMP",$(1),$(2))
+ 
+ # cc-option-yn
+ # Usage: flag := $(call cc-option-yn,-march=winchip-c6)
+ cc-option-yn = $(call try-run,\
+-	$(CC) $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS) $(1) -c -x c /dev/null -o "$$TMP",y,n)
++	$(CC) -Werror $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS) $(1) -c -x c /dev/null -o "$$TMP",y,n)
+ 
+ # cc-option-align
+ # Prefix align with either -falign or -malign
+@@ -126,7 +126,7 @@
+ # cc-disable-warning
+ # Usage: cflags-y += $(call cc-disable-warning,unused-but-set-variable)
+ cc-disable-warning = $(call try-run,\
+-	$(CC) $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS) -W$(strip $(1)) -c -x c /dev/null -o "$$TMP",-Wno-$(strip $(1)))
++	$(CC) -Werror $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS) -W$(strip $(1)) -c -x c /dev/null -o "$$TMP",-Wno-$(strip $(1)))
+ 
+ # cc-version
+ cc-version = $(shell $(CONFIG_SHELL) $(srctree)/scripts/gcc-version.sh $(CC))
+diff -ru linux-rpi-4.1.y.orig/scripts/mod/Makefile linux-rpi-4.1.y/scripts/mod/Makefile
+--- linux-rpi-4.1.y.orig/scripts/mod/Makefile	2015-12-15 10:42:29.000000000 -0600
++++ linux-rpi-4.1.y/scripts/mod/Makefile	2015-12-21 20:58:12.808347597 -0600
+@@ -6,10 +6,10 @@
+ devicetable-offsets-file := devicetable-offsets.h
+ 
+ define sed-y
+-	"/^->/{s:->#\(.*\):/* \1 */:; \
+-	s:^->\([^ ]*\) [\$$#]*\([-0-9]*\) \(.*\):#define \1 \2 /* \3 */:; \
+-	s:^->\([^ ]*\) [\$$#]*\([^ ]*\) \(.*\):#define \1 \2 /* \3 */:; \
+-	s:->::; p;}"
++	"/^@->/{s:@->#\(.*\):/* \1 */:; \
++	s:^@->\([^ ]*\) [\$$#]*\([-0-9]*\) \(.*\):#define \1 \2 /* \3 */:; \
++	s:^@->\([^ ]*\) [\$$#]*\([^ ]*\) \(.*\):#define \1 \2 /* \3 */:; \
++	s:@->::; p;}"
+ endef
+ 
+ quiet_cmd_offsets = GEN     $@

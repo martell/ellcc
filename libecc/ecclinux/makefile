@@ -1,14 +1,15 @@
 # Cross compiling variables
-ARCH		:= arm
-TARGET		:= arm-linux-engeabihf
+ARCH		?= arm
+TARGET		?= arm-linux-engeabihf
 
-ELLCC		:= $(shell realpath $(shell pwd)/../ellcc)
+ELLCC		:= $(shell realpath $(shell pwd)/../../..)
 HOSTCC		:= $(ELLCC)/bin/ecc
 CC		:= $(ELLCC)/bin/ecc -target $(TARGET) -I$(ELLCC)/libecc/include/$(ARCH)
 
 CPP		:= $(CC) -E
 LD		:= $(ELLCC)/bin/ecc-ld -m armelf_linux_eabi
 OBJCOPY		:= $(ELLCC)/bin/ecc-objcopy
+MAXJOBS		?= 1
 
 ifdef ARCH
 export ARCH
@@ -42,10 +43,11 @@ endif
 # Where to put build output
 #ARCH		?= x86
 #O		:= build/$(ARCH)-$(CC_NOSPACES)
+O		:= $(BUILD)
 
 LINUXFLAGS	= CPP="$(CPP)" CC="$(CC)" HOSTCC="$(HOSTCC)" LD="$(LD)" \
 		  OBJCOPY=$(OBJCOPY)
-linuxmake	= $(MAKE) -j 6 -f Makefile $(LINUXFLAGS) O=$(1) $(2)
+linuxmake	= $(MAKE) -j $(MAXJOBS) -f Makefile $(LINUXFLAGS) O=$(1) $(2)
 
 %:
 	@$(call linuxmake,$(O),$@)
