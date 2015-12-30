@@ -4,12 +4,13 @@ TOP=`pwd`
 ELLCC=`realpath $TOP/../..`
 
 ARCH=arm
-#BOARD=bcmrpi           # Raspberry Pi
-#TARGET=armv6-linux-engeabihf # Raspberry Pi
+BOARD=bcmrpi           # Raspberry Pi
+TARGET=armv6-linux-engeabihf # Raspberry Pi
+NO_VDSO=0
 
-BOARD=bcm2709           # Raspberry Pi 2
-TARGET=arm-linux-engeabihf # Raspberry Pi 2
-NO_VDSO=1
+#BOARD=bcm2709           # Raspberry Pi 2
+#TARGET=arm-linux-engeabihf # Raspberry Pi 2
+#NO_VDSO=1
 
 # The build directory.
 BUILD=$TOP/$TARGET
@@ -46,6 +47,11 @@ if [ $KERNEL -ne 0 ] ; then
       patch -p1 < $p
     done
     cp $TOP/makefile .
+    cd $TOP
+  fi
+  if [ ! -e $BUILD/$BOARD ] ; then
+    cd linux-$LINUX_VERSION/
+    # Configure the kernel.
     make ARCH=$ARCH BUILD=$BUILD/$BOARD TARGET=$TARGET MAXJOBS=1 $LINUX_CONFIG
     mkdir -p $BUILD/$BOARD
     cd $BUILD/$BOARD
