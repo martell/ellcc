@@ -62,6 +62,9 @@ if [ $KERNEL -ne 0 ] ; then
   cd $TOP
 fi
 
+# Go into the target directory.
+cd $BUILD
+
 if [ ! -e sinit ] ; then
   git clone git://git.suckless.org/sinit
 else
