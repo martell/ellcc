@@ -61,7 +61,7 @@ if [ $KERNEL -ne 0 ] ; then
   cp ./arch/$ARCH/boot/zImage $BOOT
   cd $TOP
 fi
-exit 0
+
 if [ ! -e sinit ] ; then
   git clone git://git.suckless.org/sinit
 else
