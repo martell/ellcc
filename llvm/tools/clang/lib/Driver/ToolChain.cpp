@@ -103,20 +103,22 @@ const DriverSuffix *FindDriverSuffix(StringRef ProgName) {
   // program name in order. If there is a match, the frontend type is updated as
   // necessary by applying the ModeFlag.
   static const DriverSuffix DriverSuffixes[] = {
-      {"clang", nullptr},
-      {"clang++", "--driver-mode=g++", false},
-      {"clang-c++", "--driver-mode=g++", false},
-      {"clang-cc", nullptr, false},
-      {"clang-cpp", "--driver-mode=cpp", false},
-      {"clang-g++", "--driver-mode=g++", false},
-      {"clang-gcc", nullptr, false},
+      {"clang", nullptr, false },
+      {"clang++", "--driver-mode=g++", false },
+      {"clang-c++", "--driver-mode=g++", false },
+      {"clang-cc", nullptr, false },
+      {"clang-cpp", "--driver-mode=cpp", false },
+      {"clang-g++", "--driver-mode=g++", false },
+      {"clang-gcc", nullptr, false },
       { "ecc",   nullptr, true },
       { "ecc++", "--driver-mode=g++", true },
-      {"clang-cl", "--driver-mode=cl", false},
-      {"cc", nullptr, false},
-      {"cpp", "--driver-mode=cpp", false},
-      {"cl", "--driver-mode=cl", false},
-      {"++", "--driver-mode=g++", false},
+      {"g++", "--driver-mode=g++", true },
+      {"gcc", nullptr, true },
+      {"clang-cl", "--driver-mode=cl", false },
+      {"cc", nullptr, true },
+      {"cpp", "--driver-mode=cpp", true },
+      {"cl", "--driver-mode=cl", false },
+      {"++", "--driver-mode=g++", false },
   };
 
   for (size_t i = 0; i < llvm::array_lengthof(DriverSuffixes); ++i)
