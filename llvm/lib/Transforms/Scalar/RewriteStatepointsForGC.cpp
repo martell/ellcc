@@ -1140,7 +1140,7 @@ static Value *findBasePointer(Value *I, DefiningValueMapTy &cache) {
     }
     cache[BDV] = base;
   }
-  assert(cache.find(def) != cache.end());
+  assert(cache.count(def));
   return cache[def];
 }
 
@@ -1505,11 +1505,8 @@ makeStatepointExplicitImpl(const CallSite CS, /* to replace */
     Builder.SetInsertPoint(&*UnwindBlock->getFirstInsertionPt());
     Builder.SetCurrentDebugLocation(ToReplace->getDebugLoc());
 
-    // Extract second element from landingpad return value. We will attach
-    // exceptional gc relocates to it.
-    Instruction *ExceptionalToken =
-        cast<Instruction>(Builder.CreateExtractValue(
-            UnwindBlock->getLandingPadInst(), 1, "relocate_token"));
+    // Attach exceptional gc relocates to the landingpad.
+    Instruction *ExceptionalToken = UnwindBlock->getLandingPadInst();
     Result.UnwindToken = ExceptionalToken;
 
     const unsigned LiveStartIdx = Statepoint(Token).gcArgsStartIdx();
@@ -2104,16 +2101,12 @@ static bool findRematerializableChainToBasePointer(
   }
 
   if (CastInst *CI = dyn_cast<CastInst>(CurrentValue)) {
-    Value *Def = CI->stripPointerCasts();
-
-    // This two checks are basically similar. First one is here for the
-    // consistency with findBasePointers logic.
-    assert(!isa<CastInst>(Def) && "not a pointer cast found");
     if (!CI->isNoopCast(CI->getModule()->getDataLayout()))
       return false;
 
     ChainToBase.push_back(CI);
-    return findRematerializableChainToBasePointer(ChainToBase, Def, BaseValue);
+    return findRematerializableChainToBasePointer(ChainToBase,
+                                                  CI->getOperand(0), BaseValue);
   }
 
   // Not supported instruction in the chain

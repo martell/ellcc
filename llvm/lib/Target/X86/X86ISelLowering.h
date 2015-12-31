@@ -304,6 +304,9 @@ namespace llvm {
       // Vector signed/unsigned integer to double.
       CVTDQ2PD, CVTUDQ2PD,
 
+      // Convert a vector to mask, set bits base on MSB.
+      CVT2MASK,
+
       // 128-bit vector logical left / right shift
       VSHLDQ, VSRLDQ,
 
@@ -606,15 +609,6 @@ namespace llvm {
     bool isCalleePop(CallingConv::ID CallingConv,
                      bool is64Bit, bool IsVarArg, bool TailCallOpt);
 
-    /// AVX512 static rounding constants.  These need to match the values in
-    /// avx512fintrin.h.
-    enum STATIC_ROUNDING {
-      TO_NEAREST_INT = 0,
-      TO_NEG_INF = 1,
-      TO_POS_INF = 2,
-      TO_ZERO = 3,
-      CUR_DIRECTION = 4
-    };
   }
 
   //===--------------------------------------------------------------------===//
@@ -932,9 +926,6 @@ namespace llvm {
     LegalizeTypeAction getPreferredVectorAction(EVT VT) const override;
 
     bool isIntDivCheap(EVT VT, AttributeSet Attr) const override;
-
-    void markInRegArguments(SelectionDAG &DAG, TargetLowering::ArgListTy& Args)
-      const override;
 
   protected:
     std::pair<const TargetRegisterClass *, uint8_t>

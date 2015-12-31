@@ -9,6 +9,7 @@
 
 #include "llvm/ProfileData/InstrProfReader.h"
 #include "llvm/ProfileData/InstrProfWriter.h"
+#include "llvm/Support/Compression.h"
 #include "gtest/gtest.h"
 
 #include <cstdarg>
@@ -226,57 +227,63 @@ TEST_F(InstrProfTest, get_icall_data_read_write_big_endian) {
 }
 
 TEST_F(InstrProfTest, get_icall_data_merge1) {
-  InstrProfRecord Record11("caller", 0x1234, {1, 2});
-  InstrProfRecord Record12("caller", 0x1234, {1, 2});
-  InstrProfRecord Record2("callee1", 0x1235, {3, 4});
-  InstrProfRecord Record3("callee2", 0x1235, {3, 4});
-  InstrProfRecord Record4("callee3", 0x1235, {3, 4});
-  InstrProfRecord Record5("callee3", 0x1235, {3, 4});
-  InstrProfRecord Record6("callee4", 0x1235, {3, 5});
+  static const char caller[] = "caller";
+  static const char callee1[] = "callee1";
+  static const char callee2[] = "callee2";
+  static const char callee3[] = "callee3";
+  static const char callee4[] = "callee4";
+
+  InstrProfRecord Record11(caller, 0x1234, {1, 2});
+  InstrProfRecord Record12(caller, 0x1234, {1, 2});
+  InstrProfRecord Record2(callee1, 0x1235, {3, 4});
+  InstrProfRecord Record3(callee2, 0x1235, {3, 4});
+  InstrProfRecord Record4(callee3, 0x1235, {3, 4});
+  InstrProfRecord Record5(callee3, 0x1235, {3, 4});
+  InstrProfRecord Record6(callee4, 0x1235, {3, 5});
 
   // 5 value sites.
   Record11.reserveSites(IPVK_IndirectCallTarget, 5);
-  InstrProfValueData VD0[] = {{(uint64_t) "callee1", 1},
-                              {(uint64_t) "callee2", 2},
-                              {(uint64_t) "callee3", 3},
-                              {(uint64_t) "callee4", 4}};
+  InstrProfValueData VD0[] = {{uint64_t(callee1), 1},
+                              {uint64_t(callee2), 2},
+                              {uint64_t(callee3), 3},
+                              {uint64_t(callee4), 4}};
   Record11.addValueData(IPVK_IndirectCallTarget, 0, VD0, 4, nullptr);
 
   // No valeu profile data at the second site.
   Record11.addValueData(IPVK_IndirectCallTarget, 1, nullptr, 0, nullptr);
 
-  InstrProfValueData VD2[] = {{(uint64_t) "callee1", 1},
-                              {(uint64_t) "callee2", 2},
-                              {(uint64_t) "callee3", 3}};
+  InstrProfValueData VD2[] = {{uint64_t(callee1), 1},
+                              {uint64_t(callee2), 2},
+                              {uint64_t(callee3), 3}};
   Record11.addValueData(IPVK_IndirectCallTarget, 2, VD2, 3, nullptr);
 
-  InstrProfValueData VD3[] = {{(uint64_t) "callee1", 1}};
+  InstrProfValueData VD3[] = {{uint64_t(callee1), 1}};
   Record11.addValueData(IPVK_IndirectCallTarget, 3, VD3, 1, nullptr);
 
-  InstrProfValueData VD4[] = {{(uint64_t) "callee1", 1},
-                              {(uint64_t) "callee2", 2},
-                              {(uint64_t) "callee3", 3}};
+  InstrProfValueData VD4[] = {{uint64_t(callee1), 1},
+                              {uint64_t(callee2), 2},
+                              {uint64_t(callee3), 3}};
   Record11.addValueData(IPVK_IndirectCallTarget, 4, VD4, 3, nullptr);
 
   // A differnt record for the same caller.
   Record12.reserveSites(IPVK_IndirectCallTarget, 5);
-  InstrProfValueData VD02[] = {{(uint64_t) "callee2", 5},
-                               {(uint64_t) "callee3", 3}};
+  InstrProfValueData VD02[] = {{uint64_t(callee2), 5},
+                               {uint64_t(callee3), 3}};
   Record12.addValueData(IPVK_IndirectCallTarget, 0, VD02, 2, nullptr);
 
   // No valeu profile data at the second site.
   Record12.addValueData(IPVK_IndirectCallTarget, 1, nullptr, 0, nullptr);
 
-  InstrProfValueData VD22[] = {{(uint64_t) "callee2", 1},
-                               {(uint64_t) "callee3", 3},
-                               {(uint64_t) "callee4", 4}};
+  InstrProfValueData VD22[] = {{uint64_t(callee2), 1},
+                               {uint64_t(callee3), 3},
+                               {uint64_t(callee4), 4}};
   Record12.addValueData(IPVK_IndirectCallTarget, 2, VD22, 3, nullptr);
 
   Record12.addValueData(IPVK_IndirectCallTarget, 3, nullptr, 0, nullptr);
 
-  InstrProfValueData VD42[] = {{(uint64_t) "callee1", 1},
-                               {(uint64_t) "callee2", 2},
-                               {(uint64_t) "callee3", 3}};
+  InstrProfValueData VD42[] = {{uint64_t(callee1), 1},
+                               {uint64_t(callee2), 2},
+                               {uint64_t(callee3), 3}};
   Record12.addValueData(IPVK_IndirectCallTarget, 4, VD42, 3, nullptr);
 
   Writer.addRecord(std::move(Record11));
@@ -351,6 +358,8 @@ TEST_F(InstrProfTest, get_icall_data_merge1) {
 }
 
 TEST_F(InstrProfTest, get_icall_data_merge1_saturation) {
+  static const char bar[] = "bar";
+
   const uint64_t Max = std::numeric_limits<uint64_t>::max();
 
   InstrProfRecord Record1("foo", 0x1234, {1});
@@ -362,13 +371,13 @@ TEST_F(InstrProfTest, get_icall_data_merge1_saturation) {
   auto Result2 = Writer.addRecord(std::move(Record2));
   ASSERT_EQ(Result2, instrprof_error::counter_overflow);
 
-  InstrProfRecord Record3("bar", 0x9012, {8});
+  InstrProfRecord Record3(bar, 0x9012, {8});
   auto Result3 = Writer.addRecord(std::move(Record3));
   ASSERT_EQ(Result3, instrprof_error::success);
 
   InstrProfRecord Record4("baz", 0x5678, {3, 4});
   Record4.reserveSites(IPVK_IndirectCallTarget, 1);
-  InstrProfValueData VD4[] = {{(uint64_t) "bar", 1}};
+  InstrProfValueData VD4[] = {{uint64_t(bar), 1}};
   Record4.addValueData(IPVK_IndirectCallTarget, 0, VD4, 1, nullptr);
   auto Result4 = Writer.addRecord(std::move(Record4));
   ASSERT_EQ(Result4, instrprof_error::success);
@@ -376,7 +385,7 @@ TEST_F(InstrProfTest, get_icall_data_merge1_saturation) {
   // Verify value data counter overflow.
   InstrProfRecord Record5("baz", 0x5678, {5, 6});
   Record5.reserveSites(IPVK_IndirectCallTarget, 1);
-  InstrProfValueData VD5[] = {{(uint64_t) "bar", Max}};
+  InstrProfValueData VD5[] = {{uint64_t(bar), Max}};
   Record5.addValueData(IPVK_IndirectCallTarget, 0, VD5, 1, nullptr);
   auto Result5 = Writer.addRecord(std::move(Record5));
   ASSERT_EQ(Result5, instrprof_error::counter_overflow);
@@ -573,6 +582,66 @@ TEST_F(InstrProfTest, instr_prof_symtab_test) {
   ASSERT_EQ(StringRef("bar2"), R);
   R = Symtab.getFuncName(IndexedInstrProf::ComputeHash("bar3"));
   ASSERT_EQ(StringRef("bar3"), R);
+}
+
+TEST_F(InstrProfTest, instr_prof_symtab_compression_test) {
+  std::vector<std::string> FuncNames1;
+  std::vector<std::string> FuncNames2;
+  for (int I = 0; I < 10 * 1024; I++) {
+    std::string str;
+    raw_string_ostream OS(str);
+    OS << "func_" << I;
+    FuncNames1.push_back(OS.str());
+    str.clear();
+    OS << "fooooooooooooooo_" << I;
+    FuncNames1.push_back(OS.str());
+    str.clear();
+    OS << "BAR_" << I;
+    FuncNames2.push_back(OS.str());
+    str.clear();
+    OS << "BlahblahBlahblahBar_" << I;
+    FuncNames2.push_back(OS.str());
+  }
+
+  for (int Padding = 0; Padding < 10; Padding++) {
+    for (int DoCompression = 0; DoCompression < 2; DoCompression++) {
+      // Compressing:
+      std::string FuncNameStrings1;
+      collectPGOFuncNameStrings(FuncNames1,
+                                (DoCompression != 0 && zlib::isAvailable()),
+                                FuncNameStrings1);
+
+      // Compressing:
+      std::string FuncNameStrings2;
+      collectPGOFuncNameStrings(FuncNames2,
+                                (DoCompression != 0 && zlib::isAvailable()),
+                                FuncNameStrings2);
+
+      // Join with paddings:
+      std::string FuncNameStrings = FuncNameStrings1;
+      for (int P = 0; P < Padding; P++) {
+        FuncNameStrings.push_back('\0');
+      }
+      FuncNameStrings += FuncNameStrings2;
+
+      // Now decompress
+      InstrProfSymtab Symtab;
+      Symtab.create(StringRef(FuncNameStrings));
+
+      // Now check
+      for (int I = 0; I < 10 * 1024; I++) {
+        std::string N[4];
+        N[0] = FuncNames1[2 * I];
+        N[1] = FuncNames1[2 * I + 1];
+        N[2] = FuncNames2[2 * I];
+        N[3] = FuncNames2[2 * I + 1];
+        for (int J = 0; J < 4; J++) {
+          StringRef R = Symtab.getFuncName(IndexedInstrProf::ComputeHash(N[J]));
+          ASSERT_EQ(StringRef(N[J]), R);
+        }
+      }
+    }
+  }
 }
 
 } // end anonymous namespace

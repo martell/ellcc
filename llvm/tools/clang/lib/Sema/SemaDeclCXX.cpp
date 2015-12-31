@@ -1553,9 +1553,9 @@ NoteIndirectBases(ASTContext &Context, IndirectBaseSet &Set,
 
 /// \brief Performs the actual work of attaching the given base class
 /// specifiers to a C++ class.
-bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class, CXXBaseSpecifier **Bases,
-                                unsigned NumBases) {
- if (NumBases == 0)
+bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class,
+                                MutableArrayRef<CXXBaseSpecifier *> Bases) {
+ if (Bases.empty())
     return false;
 
   // Used to keep track of which base types we have already seen, so
@@ -1571,7 +1571,7 @@ bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class, CXXBaseSpecifier **Bases,
   // Copy non-redundant base specifiers into permanent storage.
   unsigned NumGoodBases = 0;
   bool Invalid = false;
-  for (unsigned idx = 0; idx < NumBases; ++idx) {
+  for (unsigned idx = 0; idx < Bases.size(); ++idx) {
     QualType NewBaseType
       = Context.getCanonicalType(Bases[idx]->getType());
     NewBaseType = NewBaseType.getLocalUnqualifiedType();
@@ -1597,7 +1597,7 @@ bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class, CXXBaseSpecifier **Bases,
       Bases[NumGoodBases++] = Bases[idx];
 
       // Note this base's direct & indirect bases, if there could be ambiguity.
-      if (NumBases > 1)
+      if (Bases.size() > 1)
         NoteIndirectBases(Context, IndirectBaseTypes, NewBaseType);
       
       if (const RecordType *Record = NewBaseType->getAs<RecordType>()) {
@@ -1619,7 +1619,7 @@ bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class, CXXBaseSpecifier **Bases,
   }
 
   // Attach the remaining base class specifiers to the derived class.
-  Class->setBases(Bases, NumGoodBases);
+  Class->setBases(Bases.data(), NumGoodBases);
   
   for (unsigned idx = 0; idx < NumGoodBases; ++idx) {
     // Check whether this direct base is inaccessible due to ambiguity.
@@ -1654,13 +1654,13 @@ bool Sema::AttachBaseSpecifiers(CXXRecordDecl *Class, CXXBaseSpecifier **Bases,
 /// ActOnBaseSpecifiers - Attach the given base specifiers to the
 /// class, after checking whether there are any duplicate base
 /// classes.
-void Sema::ActOnBaseSpecifiers(Decl *ClassDecl, CXXBaseSpecifier **Bases,
-                               unsigned NumBases) {
-  if (!ClassDecl || !Bases || !NumBases)
+void Sema::ActOnBaseSpecifiers(Decl *ClassDecl,
+                               MutableArrayRef<CXXBaseSpecifier *> Bases) {
+  if (!ClassDecl || Bases.empty())
     return;
 
   AdjustDeclIfTemplate(ClassDecl);
-  AttachBaseSpecifiers(cast<CXXRecordDecl>(ClassDecl), Bases, NumBases);
+  AttachBaseSpecifiers(cast<CXXRecordDecl>(ClassDecl), Bases);
 }
 
 /// \brief Determine whether the type \p Derived is a C++ class that is
@@ -5626,7 +5626,9 @@ bool SpecialMemberDeletionInfo::shouldDeleteForClassSubobject(
 /// having a particular direct or virtual base class.
 bool SpecialMemberDeletionInfo::shouldDeleteForBase(CXXBaseSpecifier *Base) {
   CXXRecordDecl *BaseClass = Base->getType()->getAsCXXRecordDecl();
-  return shouldDeleteForClassSubobject(BaseClass, Base, 0);
+  // If program is correct, BaseClass cannot be null, but if it is, the error
+  // must be reported elsewhere.
+  return BaseClass && shouldDeleteForClassSubobject(BaseClass, Base, 0);
 }
 
 /// Check whether we should delete a special member function due to the class
@@ -7196,7 +7198,8 @@ Decl *Sema::ActOnStartNamespaceDef(Scope *NamespcScope,
     // as if by qualified name lookup.
     LookupResult R(*this, II, IdentLoc, LookupOrdinaryName, ForRedeclaration);
     LookupQualifiedName(R, CurContext->getRedeclContext());
-    NamedDecl *PrevDecl = R.getAsSingle<NamedDecl>();
+    NamedDecl *PrevDecl =
+        R.isSingleResult() ? R.getRepresentativeDecl() : nullptr;
     PrevNS = dyn_cast_or_null<NamespaceDecl>(PrevDecl);
 
     if (PrevNS) {
@@ -7529,7 +7532,7 @@ static bool TryNamespaceTypoCorrection(Sema &S, LookupResult &R, Scope *Sc,
                      S.PDiag(diag::err_using_directive_suggest) << Ident,
                      S.PDiag(diag::note_namespace_defined_here));
     }
-    R.addDecl(Corrected.getCorrectionDecl());
+    R.addDecl(Corrected.getFoundDecl());
     return true;
   }
   return false;
@@ -7577,9 +7580,9 @@ Decl *Sema::ActOnUsingDirective(Scope *S,
   }
   
   if (!R.empty()) {
-    NamedDecl *Named = R.getFoundDecl();
-    assert((isa<NamespaceDecl>(Named) || isa<NamespaceAliasDecl>(Named))
-        && "expected namespace decl");
+    NamedDecl *Named = R.getRepresentativeDecl();
+    NamespaceDecl *NS = R.getAsSingle<NamespaceDecl>();
+    assert(NS && "expected namespace decl");
 
     // The use of a nested name specifier may trigger deprecation warnings.
     DiagnoseUseOfDecl(Named, IdentLoc);
@@ -7596,7 +7599,6 @@ Decl *Sema::ActOnUsingDirective(Scope *S,
 
     // Find enclosing context containing both using-directive and
     // nominated namespace.
-    NamespaceDecl *NS = getNamespaceDecl(Named);
     DeclContext *CommonAncestor = cast<DeclContext>(NS);
     while (CommonAncestor && !CommonAncestor->Encloses(CurContext))
       CommonAncestor = CommonAncestor->getParent();
@@ -8667,7 +8669,7 @@ Decl *Sema::ActOnNamespaceAliasDef(Scope *S, SourceLocation NamespaceLoc,
     }
   }
   assert(!R.isAmbiguous() && !R.empty());
-  NamedDecl *ND = R.getFoundDecl();
+  NamedDecl *ND = R.getRepresentativeDecl();
 
   // Check if we have a previous declaration with the same name.
   LookupResult PrevR(*this, Alias, AliasLoc, LookupOrdinaryName,
@@ -8686,7 +8688,8 @@ Decl *Sema::ActOnNamespaceAliasDef(Scope *S, SourceLocation NamespaceLoc,
 
   // Find the previous declaration and check that we can redeclare it.
   NamespaceAliasDecl *Prev = nullptr; 
-  if (NamedDecl *PrevDecl = PrevR.getAsSingle<NamedDecl>()) {
+  if (PrevR.isSingleResult()) {
+    NamedDecl *PrevDecl = PrevR.getRepresentativeDecl();
     if (NamespaceAliasDecl *AD = dyn_cast<NamespaceAliasDecl>(PrevDecl)) {
       // We already have an alias with the same name that points to the same
       // namespace; check that it matches.
@@ -8695,12 +8698,12 @@ Decl *Sema::ActOnNamespaceAliasDef(Scope *S, SourceLocation NamespaceLoc,
       } else if (isVisible(PrevDecl)) {
         Diag(AliasLoc, diag::err_redefinition_different_namespace_alias)
           << Alias;
-        Diag(PrevDecl->getLocation(), diag::note_previous_namespace_alias)
+        Diag(AD->getLocation(), diag::note_previous_namespace_alias)
           << AD->getNamespace();
         return nullptr;
       }
     } else if (isVisible(PrevDecl)) {
-      unsigned DiagID = isa<NamespaceDecl>(PrevDecl)
+      unsigned DiagID = isa<NamespaceDecl>(PrevDecl->getUnderlyingDecl())
                             ? diag::err_redefinition
                             : diag::err_redefinition_different_kind;
       Diag(AliasLoc, DiagID) << Alias;
@@ -9467,6 +9470,10 @@ static void getDefaultArgExprsForConstructors(Sema &S, CXXRecordDecl *Class) {
   if (Class->getDescribedClassTemplate())
     return;
 
+  CallingConv ExpectedCallingConv = S.Context.getDefaultCallingConvention(
+      /*IsVariadic=*/false, /*IsCXXMethod=*/true);
+
+  CXXConstructorDecl *LastExportedDefaultCtor = nullptr;
   for (Decl *Member : Class->decls()) {
     auto *CD = dyn_cast<CXXConstructorDecl>(Member);
     if (!CD) {
@@ -9478,7 +9485,25 @@ static void getDefaultArgExprsForConstructors(Sema &S, CXXRecordDecl *Class) {
       continue;
     }
 
-    for (unsigned I = 0, E = CD->getNumParams(); I != E; ++I) {
+    CallingConv ActualCallingConv =
+        CD->getType()->getAs<FunctionProtoType>()->getCallConv();
+
+    // Skip default constructors with typical calling conventions and no default
+    // arguments.
+    unsigned NumParams = CD->getNumParams();
+    if (ExpectedCallingConv == ActualCallingConv && NumParams == 0)
+      continue;
+
+    if (LastExportedDefaultCtor) {
+      S.Diag(LastExportedDefaultCtor->getLocation(),
+             diag::err_attribute_dll_ambiguous_default_ctor) << Class;
+      S.Diag(CD->getLocation(), diag::note_entity_declared_at)
+          << CD->getDeclName();
+      return;
+    }
+    LastExportedDefaultCtor = CD;
+
+    for (unsigned I = 0; I != NumParams; ++I) {
       // Skip any default arguments that we've already instantiated.
       if (S.Context.getDefaultArgExprForConstructor(CD, I))
         continue;

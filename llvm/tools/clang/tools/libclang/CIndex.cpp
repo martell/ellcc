@@ -717,11 +717,8 @@ bool CursorVisitor::VisitClassTemplateSpecializationDecl(
           return true;
     }
   }
-  
-  if (ShouldVisitBody && VisitCXXRecordDecl(D))
-    return true;
-  
-  return false;
+
+  return ShouldVisitBody && VisitCXXRecordDecl(D);
 }
 
 bool CursorVisitor::VisitClassTemplatePartialSpecializationDecl(
@@ -946,11 +943,8 @@ bool CursorVisitor::VisitObjCMethodDecl(ObjCMethodDecl *ND) {
       return true;
   }
 
-  if (ND->isThisDeclarationADefinition() &&
-      Visit(MakeCXCursor(ND->getBody(), StmtParent, TU, RegionOfInterest)))
-    return true;
-
-  return false;
+  return ND->isThisDeclarationADefinition() &&
+         Visit(MakeCXCursor(ND->getBody(), StmtParent, TU, RegionOfInterest));
 }
 
 template <typename DeclIt>
@@ -2440,7 +2434,6 @@ void EnqueueVisitor::VisitObjCMessageExpr(const ObjCMessageExpr *M) {
 void EnqueueVisitor::VisitOffsetOfExpr(const OffsetOfExpr *E) {
   // Visit the components of the offsetof expression.
   for (unsigned N = E->getNumComponents(), I = N; I > 0; --I) {
-    typedef OffsetOfExpr::OffsetOfNode OffsetOfNode;
     const OffsetOfNode &Node = E->getComponent(I-1);
     switch (Node.getKind()) {
     case OffsetOfNode::Array:
@@ -6239,10 +6232,7 @@ static bool lexNext(Lexer &Lex, Token &Tok,
 
   ++NextIdx;
   Lex.LexFromRawLexer(Tok);
-  if (Tok.is(tok::eof))
-    return true;
-
-  return false;
+  return Tok.is(tok::eof);
 }
 
 static void annotatePreprocessorTokens(CXTranslationUnit TU,

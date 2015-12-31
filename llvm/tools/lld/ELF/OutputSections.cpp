@@ -283,17 +283,15 @@ template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
       Reloc = Target->getDynReloc(Type);
     P->setSymbolAndType(Sym, Reloc, Config->Mips64EL);
 
-    if (NeedsGot) {
-      if (LazyReloc)
-        P->r_offset = Out<ELFT>::GotPlt->getEntryAddr(*Body);
-      else
-        P->r_offset = Out<ELFT>::Got->getEntryAddr(*Body);
-    } else if (NeedsCopy) {
+    if (LazyReloc)
+      P->r_offset = Out<ELFT>::GotPlt->getEntryAddr(*Body);
+    else if (NeedsGot)
+      P->r_offset = Out<ELFT>::Got->getEntryAddr(*Body);
+    else if (NeedsCopy)
       P->r_offset = Out<ELFT>::Bss->getVA() +
                     dyn_cast<SharedSymbol<ELFT>>(Body)->OffsetInBSS;
-    } else {
+    else
       P->r_offset = C.getOffset(RI.r_offset) + C.OutSec->getVA();
-    }
 
     uintX_t OrigAddend = 0;
     if (IsRela && !NeedsGot)
@@ -768,17 +766,18 @@ OutputSection<ELFT>::OutputSection(StringRef Name, uint32_t sh_type,
     : OutputSectionBase<ELFT>(Name, sh_type, sh_flags) {}
 
 template <class ELFT>
-void OutputSection<ELFT>::addSection(InputSection<ELFT> *C) {
-  Sections.push_back(C);
-  C->OutSec = this;
-  uint32_t Align = C->getAlign();
+void OutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
+  auto *S = cast<InputSection<ELFT>>(C);
+  Sections.push_back(S);
+  S->OutSec = this;
+  uint32_t Align = S->getAlign();
   if (Align > this->Header.sh_addralign)
     this->Header.sh_addralign = Align;
 
   uintX_t Off = this->Header.sh_size;
   Off = RoundUpToAlignment(Off, Align);
-  C->OutSecOff = Off;
-  Off += C->getSize();
+  S->OutSecOff = Off;
+  Off += S->getSize();
   this->Header.sh_size = Off;
 }
 
@@ -860,8 +859,7 @@ lld::elf2::getLocalRelTarget(const ObjectFile<ELFT> &File,
     Offset += Addend;
     Addend = 0;
   }
-  return VA + cast<MergeInputSection<ELFT>>(Section)->getOffset(Offset) +
-         Addend;
+  return VA + Section->getOffset(Offset) + Addend;
 }
 
 // Returns true if a symbol can be replaced at load-time by a symbol
@@ -949,7 +947,8 @@ void EHOutputSection<ELFT>::addSectionAux(
   auto RelI = Rels.begin();
   auto RelE = Rels.end();
 
-  DenseMap<unsigned, unsigned> OffsetToIndex;
+  // Maps offset to Index/Length pair.
+  DenseMap<unsigned, std::pair<unsigned, uint32_t>> OffsetToData;
   while (!D.empty()) {
     unsigned Index = S->Offsets.size();
     S->Offsets.push_back(std::make_pair(Offset, -1));
@@ -976,21 +975,24 @@ void EHOutputSection<ELFT>::addSectionAux(
 
       std::pair<StringRef, StringRef> CieInfo(Entry, Personality);
       auto P = CieMap.insert(std::make_pair(CieInfo, Cies.size()));
-      if (P.second) {
+      if (P.second)
         Cies.push_back(C);
-        this->Header.sh_size += RoundUpToAlignment(Length, sizeof(uintX_t));
-      }
-      OffsetToIndex[Offset] = P.first->second;
+      OffsetToData[Offset] = std::make_pair(P.first->second, Length);
     } else {
       if (!HasReloc)
         error("FDE doesn't reference another section");
       InputSectionBase<ELFT> *Target = S->getRelocTarget(*RelI);
       if (Target != &InputSection<ELFT>::Discarded && Target->isLive()) {
         uint32_t CieOffset = Offset + 4 - ID;
-        auto I = OffsetToIndex.find(CieOffset);
-        if (I == OffsetToIndex.end())
+        auto I = OffsetToData.find(CieOffset);
+        if (I == OffsetToData.end())
           error("Invalid CIE reference");
-        Cies[I->second].Fdes.push_back(EHRegion<ELFT>(S, Index));
+        std::pair<unsigned, uint32_t> &IndLen = I->second;
+        Cie<ELFT> &Cie = Cies[IndLen.first];
+        if (Cie.Fdes.empty())
+          this->Header.sh_size +=
+              RoundUpToAlignment(IndLen.second, sizeof(uintX_t));
+        Cie.Fdes.push_back(EHRegion<ELFT>(S, Index));
         this->Header.sh_size += RoundUpToAlignment(Length, sizeof(uintX_t));
       }
     }
@@ -1027,7 +1029,8 @@ EHOutputSection<ELFT>::readEntryLength(ArrayRef<uint8_t> D) {
 }
 
 template <class ELFT>
-void EHOutputSection<ELFT>::addSection(EHInputSection<ELFT> *S) {
+void EHOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
+  auto *S = cast<EHInputSection<ELFT>>(C);
   const Elf_Shdr *RelSec = S->RelocSection;
   if (!RelSec)
     return addSectionAux(
@@ -1038,23 +1041,30 @@ void EHOutputSection<ELFT>::addSection(EHInputSection<ELFT> *S) {
   return addSectionAux(S, Obj.rels(RelSec));
 }
 
+template <class ELFT>
+static typename ELFFile<ELFT>::uintX_t writeAlignedCieOrFde(StringRef Data,
+                                                            uint8_t *Buf) {
+  typedef typename ELFFile<ELFT>::uintX_t uintX_t;
+  const endianness E = ELFT::TargetEndianness;
+  uint64_t Len = RoundUpToAlignment(Data.size(), sizeof(uintX_t));
+  write32<E>(Buf, Len - 4);
+  memcpy(Buf + 4, Data.data() + 4, Data.size() - 4);
+  return Len;
+}
+
 template <class ELFT> void EHOutputSection<ELFT>::writeTo(uint8_t *Buf) {
   const endianness E = ELFT::TargetEndianness;
   size_t Offset = 0;
   for (const Cie<ELFT> &C : Cies) {
     size_t CieOffset = Offset;
 
-    StringRef CieData = C.data();
-    memcpy(Buf + Offset, CieData.data(), CieData.size());
+    uintX_t CIELen = writeAlignedCieOrFde<ELFT>(C.data(), Buf + Offset);
     C.S->Offsets[C.Index].second = Offset;
-    Offset += RoundUpToAlignment(CieData.size(), sizeof(uintX_t));
+    Offset += CIELen;
 
     for (const EHRegion<ELFT> &F : C.Fdes) {
-      StringRef FdeData = F.data();
-      uintX_t Len = RoundUpToAlignment(FdeData.size(), sizeof(uintX_t));
-      write32<E>(Buf + Offset, Len - 4);                    // Length
+      uintX_t Len = writeAlignedCieOrFde<ELFT>(F.data(), Buf + Offset);
       write32<E>(Buf + Offset + 4, Offset + 4 - CieOffset); // Pointer
-      memcpy(Buf + Offset + 8, FdeData.data() + 8, FdeData.size() - 8);
       F.S->Offsets[F.Index].second = Offset;
       Offset += Len;
     }
@@ -1103,7 +1113,8 @@ static size_t findNull(StringRef S, size_t EntSize) {
 }
 
 template <class ELFT>
-void MergeOutputSection<ELFT>::addSection(MergeInputSection<ELFT> *S) {
+void MergeOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
+  auto *S = cast<MergeInputSection<ELFT>>(C);
   S->OutSec = this;
   uint32_t Align = S->getAlign();
   if (Align > this->Header.sh_addralign)
@@ -1164,16 +1175,6 @@ StringTableSection<ELFT>::StringTableSection(StringRef Name, bool Dynamic)
 template <class ELFT> void StringTableSection<ELFT>::writeTo(uint8_t *Buf) {
   StringRef Data = StrTabBuilder.data();
   memcpy(Buf, Data.data(), Data.size());
-}
-
-bool lld::elf2::includeInDynamicSymtab(const SymbolBody &B) {
-  uint8_t V = B.getVisibility();
-  if (V != STV_DEFAULT && V != STV_PROTECTED)
-    return false;
-
-  if (Config->ExportDynamic || Config->Shared)
-    return true;
-  return B.isUsedInDynamicReloc();
 }
 
 template <class ELFT>
@@ -1417,8 +1418,8 @@ void MipsReginfoOutputSection<ELFT>::writeTo(uint8_t *Buf) {
 }
 
 template <class ELFT>
-void MipsReginfoOutputSection<ELFT>::addSection(
-    MipsReginfoInputSection<ELFT> *S) {
+void MipsReginfoOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
+  auto *S = cast<MipsReginfoInputSection<ELFT>>(C);
   GeneralMask |= S->getGeneralMask();
 }
 

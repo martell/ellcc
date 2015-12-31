@@ -247,12 +247,13 @@ void llvm::error(std::error_code EC) {
   if (!EC)
     return;
 
-  outs() << ToolName << ": error reading file: " << EC.message() << ".\n";
-  outs().flush();
+  errs() << ToolName << ": error reading file: " << EC.message() << ".\n";
+  errs().flush();
   exit(1);
 }
 
-void llvm::report_error(StringRef File, std::error_code EC) {
+LLVM_ATTRIBUTE_NORETURN void llvm::report_error(StringRef File,
+                                                std::error_code EC) {
   assert(EC);
   errs() << ToolName << ": '" << File << "': " << EC.message() << ".\n";
   exit(1);

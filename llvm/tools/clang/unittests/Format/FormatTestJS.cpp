@@ -762,6 +762,7 @@ TEST_F(FormatTestJS, ClassDeclarations) {
 TEST_F(FormatTestJS, InterfaceDeclarations) {
   verifyFormat("interface I {\n"
                "  x: string;\n"
+               "  enum: string[];\n"
                "}\n"
                "var y;");
   // Ensure that state is reset after parsing the interface.
@@ -959,6 +960,14 @@ TEST_F(FormatTestJS, TypeArguments) {
                "    aaaaaaaaaaaaaaaa: aaaaaaaaaaaaaaaaaaa,\n"
                "    aaaaaaaaaaaaaaaa: aaaaaaaaaaaaaaaaaaa):\n"
                "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa {}");
+}
+
+TEST_F(FormatTestJS, UserDefinedTypeGuards) {
+  verifyFormat(
+      "function foo(check: Object):\n"
+      "    check is {foo: string, bar: string, baz: string, foobar: string} {\n"
+      "  return 'bar' in check;\n"
+      "}\n");
 }
 
 TEST_F(FormatTestJS, OptionalTypes) {

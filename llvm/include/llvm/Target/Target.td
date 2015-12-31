@@ -937,8 +937,9 @@ class AsmParser {
   // written register name matcher
   bit ShouldEmitMatchRegisterName = 1;
 
-  /// Does the instruction mnemonic allow '.'
-  bit MnemonicContainsDot = 0;
+  // HasMnemonicFirst - Set to false if target instructions don't always
+  // start with a mnemonic as the first token.
+  bit HasMnemonicFirst = 1;
 }
 def DefaultAsmParser : AsmParser;
 

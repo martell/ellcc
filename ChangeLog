@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r256671.
 * Create a Linux build directory and scripts.
 * Updates to build openssh.
 * Updates to build ARMv7 Linux.
