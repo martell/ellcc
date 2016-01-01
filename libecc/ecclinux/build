@@ -1,31 +1,72 @@
 #! /bin/sh
+
+KERNEL=1
+LINUX_VERSION=4.1.15
+ELLCC_VERSION=0.1.23
+MKSH_VERSION=R52
+VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
+PYTHON_VERSION=3.5.1
+
+usage() {
+  echo usage: $0 [options] target
+  echo "  options:"
+  echo "    -nokernel           Don't build the Linux kernel"
+  echo "  targets:"
+  echo "    help                This message"
+  echo "    bcmrpi              Raspberry Pi    (ARMv6)"
+  echo "    bcm2709             Raspberry Pi 2  (ARMv7)"
+}
+
+if [ $# -lt 1 ] ; then
+  usage
+  exit 1
+fi
+
+while [ $# -gt 1 ] ; do
+  case $1 in
+    -nokernel)
+      # Don't build the Linux kernel
+      KERNEL=0
+      shift
+      ;;
+    *)
+      echo "unknown option: $1"
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+BOARD=$1
+if [ $BOARD = "help" ] ; then
+  usage
+  exit 0
+fi
+
 set -e
 TOP=`pwd`
 ELLCC=`realpath $TOP/../..`
 
-ARCH=arm
-BOARD=bcmrpi           # Raspberry Pi
-TARGET=armv6-linux-engeabihf # Raspberry Pi
-NO_VDSO=0
 
-#BOARD=bcm2709           # Raspberry Pi 2
-#TARGET=arm-linux-engeabihf # Raspberry Pi 2
-#NO_VDSO=1
+if [ $BOARD = "bcmrpi" ] ; then
+  ARCH=arm
+  BOARD=bcmrpi                  # Raspberry Pi
+  TARGET=armv6-linux-engeabihf  # ARMv6
+  NO_VDSO=0
+elif [ $BOARD = "bcm2709" ] ; then
+  ARCH=arm
+  BOARD=bcm2709                 # Raspberry Pi 2
+  TARGET=arm-linux-engeabihf    # ARMv7
+  NO_VDSO=1
+fi
+
+LINUX_CONFIG=${BOARD}_defconfig
 
 # The build directory.
 BUILD=$TOP/$TARGET
 # The install directory.
 ROOT=$TOP/image/$TARGET
 BOOT=$TOP/image/$TARGET/$BOARD
-
-KERNEL=1
-LINUX_VERSION=4.1.15
-LINUX_CONFIG=${BOARD}_defconfig
-
-ELLCC_VERSION=0.1.23
-MKSH_VERSION=R52
-VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
-PYTHON_VERSION=3.5.1
 
 MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
 
@@ -66,6 +107,9 @@ if [ $KERNEL -ne 0 ] ; then
   # Populate /boot
   mkdir -p $BOOT
   make INSTALL_DTBS_PATH=$BOOT/dtbs dtbs_install
+  make INSTALL_MOD_PATH=$ROOT modules_install
+  rm -f $ROOT/lib/modules/*/build       # Not needed on the target.
+  rm -f $ROOT/lib/modules/*/source      # Not needed on the target.
   make INSTALL_PATH=$BOOT zinstall
   cd $TOP
 fi
