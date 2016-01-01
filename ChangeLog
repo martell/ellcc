@@ -1,5 +1,6 @@
 current SVN:
 
+* Build libraries as listed in ellcc/libecc/config/libraries.
 * Interpret e.g. cc, c++, gcc, g++ as ELLCC.
 * Update to LLVM r256671.
 * Create a Linux build directory and scripts.

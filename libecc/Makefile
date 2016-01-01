@@ -3,9 +3,9 @@
 PWD := $(shell pwd)
 ELLCC := $(PWD)/..
 LIBECC := $(ELLCC)/libecc
-Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
-ElkConfigs := $(patsubst *-elk-*,,$(shell cd $(LIBECC)/config; echo *-elk*))
-C)FLAGS := -g
+Configs := $(shell cat $(LIBECC)/config/libraries | sed -e 's/.*-elk.*//g')
+ElkConfigs := $(shell cat $(LIBECC)/config/libraries | sed -e 's/.*-linux.*//g')
+CFLAGS := -g
 CPFLAGS := -pfru
 
 ifeq ($(VERBOSE),)
