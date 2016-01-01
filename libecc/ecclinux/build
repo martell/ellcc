@@ -1,6 +1,7 @@
 #! /bin/sh
 
 KERNEL=1
+CLEAN=0
 LINUX_VERSION=4.1.15
 ELLCC_VERSION=0.1.23
 MKSH_VERSION=R52
@@ -11,6 +12,7 @@ usage() {
   echo usage: $0 [options] target
   echo "  options:"
   echo "    -nokernel           Don't build the Linux kernel"
+  echo "    -clean              Clean up a previous build"
   echo "  targets:"
   echo "    help                This message"
   echo "    bcmrpi              Raspberry Pi    (ARMv6)"
@@ -29,6 +31,11 @@ while [ $# -gt 1 ] ; do
       KERNEL=0
       shift
       ;;
+    -clean)
+      # Clean up a previous build
+      CLEAN=1
+      shift
+      ;;
     *)
       echo "unknown option: $1"
       usage
@@ -37,18 +44,15 @@ while [ $# -gt 1 ] ; do
   esac
 done
 
-BOARD=$1
-if [ $BOARD = "help" ] ; then
-  usage
-  exit 0
-fi
-
 set -e
 TOP=`pwd`
 ELLCC=`realpath $TOP/../..`
 
-
-if [ $BOARD = "bcmrpi" ] ; then
+BOARD=$1
+if [ $BOARD = "help" ] ; then
+  usage
+  exit 0
+elif [ $BOARD = "bcmrpi" ] ; then
   ARCH=arm
   BOARD=bcmrpi                  # Raspberry Pi
   TARGET=armv6-linux-engeabihf  # ARMv6
@@ -58,6 +62,10 @@ elif [ $BOARD = "bcm2709" ] ; then
   BOARD=bcm2709                 # Raspberry Pi 2
   TARGET=arm-linux-engeabihf    # ARMv7
   NO_VDSO=1
+else
+  echo "unknown target: $1"
+  usage
+  exit 1
 fi
 
 LINUX_CONFIG=${BOARD}_defconfig
@@ -67,6 +75,12 @@ BUILD=$TOP/$TARGET
 # The install directory.
 ROOT=$TOP/image/$TARGET
 BOOT=$TOP/image/$TARGET/$BOARD
+
+if [ $CLEAN -ne 0 ] ; then
+  rm -fr $BUILD
+  rm -fr $ROOT
+  exit 0
+fi
 
 MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
 
