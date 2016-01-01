@@ -7,6 +7,7 @@ ELLCC_VERSION=0.1.23
 MKSH_VERSION=R52
 VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
 PYTHON_VERSION=3.5.1
+E2FSPROGS_VERSION=1.42.13
 
 usage() {
   echo usage: $0 [options] target
@@ -72,9 +73,11 @@ LINUX_CONFIG=${BOARD}_defconfig
 
 # The build directory.
 BUILD=$TOP/$TARGET
-# The install directory.
-ROOT=$TOP/image/$TARGET
-BOOT=$TOP/image/$TARGET/$BOARD
+# The install directories.
+ROOT=$TOP/image/$TARGET         # /
+BOOT=$TOP/image/$TARGET/$BOARD  # /boot
+
+DOWNLOAD=$TOP/download
 
 if [ $CLEAN -ne 0 ] ; then
   rm -fr $BUILD
@@ -91,12 +94,14 @@ export AR=$ELLCC/bin/ecc-ar
 export RANLIB=$ELLCC/bin/ecc-ranlib
 export STRIP=$ELLCC/bin/ecc-strip
 
+mkdir -p $DOWNLOAD
+
 if [ $KERNEL -ne 0 ] ; then
-  if [ ! -e linux-$LINUX_VERSION.tar.xz ] ; then
-    wget https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$LINUX_VERSION.tar.xz
+  if [ ! -e $DOWNLOAD/linux-$LINUX_VERSION.tar.xz ] ; then
+    (cd $DOWNLOAD ; wget https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$LINUX_VERSION.tar.xz)
   fi
   if [ ! -e linux-$LINUX_VERSION ] ; then
-    tar xvfp linux-$LINUX_VERSION.tar.xz
+    tar xvfp $DOWNLOAD/linux-$LINUX_VERSION.tar.xz
     cd linux-$LINUX_VERSION/
     for p in `echo ../*-$LINUX_VERSION.patch` ; do
       patch -p1 < $p
@@ -131,74 +136,36 @@ fi
 # Go into the target directory.
 cd $BUILD
 
-if [ ! -e sinit ] ; then
-  git clone git://git.suckless.org/sinit
-else
-  cd sinit
-  git pull
-  cd ..
-fi
-if [ ! -e mksh-$MKSH_VERSION.tgz ] ; then
-  wget https://www.mirbsd.org/MirOS/dist/mir/mksh/mksh-$MKSH_VERSION.tgz
-  tar xvfp mksh-$MKSH_VERSION.tgz
-fi
+getversion () { # $1 = name $2 = URL $3 = archive
+  if [ ! -e $DOWNLOAD/$3 ] ; then
+    (cd $DOWNLOAD ; wget $2/$3)
+  fi
+  if [ ! -e $1 ] ; then
+    tar xvfp $DOWNLOAD/$3
+  fi
+}
 
-if [ ! -e nldev ] ; then
-  git clone git://git.r-36.net/nldev
-else
-  cd nldev
-  git pull
-  cd ..
-fi
-if [ ! -e nlmon ] ; then
-  git clone git://git.r-36.net/nlmon
-else
-  cd nlmon
-  git pull
-  cd ..
-fi
-if [ ! -e sbase ] ; then
-  git clone git://git.suckless.org/sbase
-else
-  cd sbase
-  git pull
-  cd ..
-fi
-if [ ! -e sdhcp ] ; then
-  git clone git://git.2f30.org/sdhcp
-else
-  cd sdhcp
-  git pull
-  cd ..
-fi
-if [ ! -e smdev ] ; then
-  git clone git://git.suckless.org/smdev
-else
-  cd smdev
-  git pull
-  cd ..
-fi
-if [ ! -e svc ] ; then
-  git clone git://git.r-36.net/svc
-else
-  cd svc
-  git pull
-  cd ..
-fi
-if [ ! -e ubase ] ; then
-  git clone git://git.suckless.org/ubase
-else
-  cd ubase
-  git pull
-  cd ..
-fi
-if [ ! -e loksh ] ; then
-  git clone https://github.com/dimkr/loksh.git
-else
-  cd loksh
-  git pull
-  cd ..
-fi
+gitsource () { # $1 = name $2 = URL
+  if [ ! -e $1 ] ; then
+    git clone $2
+  else
+    cd $1
+    git pull
+    cd ..
+  fi
+}
+
+getversion mksh https://www.mirbsd.org/MirOS/dist/mir/mksh mksh-$MKSH_VERSION.tgz
+gitsource sinit git://git.suckless.org/sinit
+gitsource sbase git://git.suckless.org/sbase
+gitsource ubase git://git.suckless.org/ubase
+gitsource smdev git://git.suckless.org/smdev
+gitsource nldev git://git.r-36.net/nldev
+gitsource nlmon git://git.r-36.net/nlmon
+gitsource svc git://git.r-36.net/svc
+gitsource sdhcp git://git.2f30.org/sdhcp
+gitsource loksh https://github.com/dimkr/loksh.git
+
 if [ ! -e vim ] ; then
   git clone https://github.com/vim/vim.git
   cd vim
@@ -209,6 +176,7 @@ else
   git pull
   cd ..
 fi
+
 if [ 0 -ne 0 ] ; then
   git clone https://github.com/landley/toybox.git
   wget https://www.python.org/ftp/python/$PYTHON_VERSION/Python-/$PYTHON_VERSION.tar.xz
@@ -243,9 +211,8 @@ make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
 cd ..
 
 # The mksh shell.
-mkdir -p mksh-build
-cd mksh-build
-HAVE_SYS_SIGNAME=0 sh ../mksh/Build.sh
+cd mksh
+HAVE_SYS_SIGNAME=0 sh ./Build.sh
 cp mksh $ROOT/bin
 cd ..
 
