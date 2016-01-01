@@ -1,3 +1,4 @@
+# Uncommented targets will be built as ELLCC hosts.
 #aarch64-linux-eng
 #armeb-linux-engeabi
 #armeb-linux-engeabihf
