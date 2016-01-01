@@ -58,7 +58,7 @@ fi
 
 if [ $all -eq 1 ] ; then
   # Build all configurations except host.
-  BldConfigs=`cd libecc/config; echo *-linux-* *-w64-mingw32`
+  BldConfigs=`cat buildhosts | grep -v ^#`
   for config in $BldConfigs ; do
     # Don't rebuild the host.
     if [ `bin/ecc-getarch $config`-`bin/ecc-getos $config` = $host-$hostos ] ; then
@@ -76,7 +76,7 @@ fi
 
 if [ "$package" != "" ] ; then
   # Package all configurations.
-  BldConfigs=`cd libecc/config; echo *-linux-* *-w64-mingw32`
+  BldConfigs=`cat buildhosts | grep -v ^#`
   for config in $BldConfigs ; do
     # The microblaze can't self host.
     if [ `bin/ecc-getarch $config` = microblaze ] ; then

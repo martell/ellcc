@@ -1,5 +1,6 @@
 current SVN:
 
+* Limit the number of build hosts.
 * Build libraries as listed in ellcc/libecc/config/libraries.
 * Interpret e.g. cc, c++, gcc, g++ as ELLCC.
 * Update to LLVM r256671.
