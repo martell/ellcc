@@ -1,0 +1,25 @@
+# /etc/profile: system-wide .profile file for the Bourne shell (sh(1))
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+MANPATH=/usr/share/man
+export PATH MANPATH
+
+if [ "$PS1" ]; then
+  if [ "`id -u`" -eq 0 ]; then
+    PS1='# '
+  else
+    PS1='$ '
+  fi
+fi
+
+if [ -d /etc/profile.d ]; then
+  for i in /etc/profile.d/*.sh; do
+    if [ -r $i ]; then
+      . $i
+    fi
+  done
+  unset i
+fi
+
+umask 022
