@@ -136,13 +136,16 @@ fi
 # Go into the target directory.
 cd $BUILD
 
-getversion () { # $1 = name $2 = URL $3 = archive
+getversion () { # $1 = name $2 = URL $3 = archive $4 = command
   eval $1=yes
   if [ ! -e $DOWNLOAD/$3 ] ; then
     (cd $DOWNLOAD ; wget $2/$3)
   fi
   if [ ! -e $1 ] ; then
     tar xvfp $DOWNLOAD/$3
+    if [ "$4" != "" ] ; then
+      eval $4
+    fi
   fi
 }
 
@@ -158,6 +161,11 @@ gitsource () { # $1 = name $2 = URL
 }
 
 #getversion mksh https://www.mirbsd.org/MirOS/dist/mir/mksh mksh-$MKSH_VERSION.tgz
+getversion e2fsprogs \
+    https://www.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v$E2FSPROGS_VERSION \
+    e2fsprogs-$E2FSPROGS_VERSION.tar.xz \
+    "mv e2fsprogs-$E2FSPROGS_VERSION e2fsprogs ; LDFLAGS=-Wl,-s ; (cd e2fsprogs ; ./configure --prefix=$ROOT/usr; make install)"
+
 gitsource sinit git://git.suckless.org/sinit
 gitsource sbase git://git.suckless.org/sbase
 gitsource ubase git://git.suckless.org/ubase
@@ -217,8 +225,9 @@ makeit () { # $1 = name, $2 = command
 
 }
 
-makeit sinit "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit mksh "HAVE_SYS_SIGNAME=0 sh ./Build.sh ; cp mksh $ROOT/bin"
+makeit e2fsprogs "make install"
+makeit sinit "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit nldev "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit nlmon "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit sbase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
