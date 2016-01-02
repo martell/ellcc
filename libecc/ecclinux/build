@@ -137,6 +137,7 @@ fi
 cd $BUILD
 
 getversion () { # $1 = name $2 = URL $3 = archive
+  eval $1=yes
   if [ ! -e $DOWNLOAD/$3 ] ; then
     (cd $DOWNLOAD ; wget $2/$3)
   fi
@@ -146,6 +147,7 @@ getversion () { # $1 = name $2 = URL $3 = archive
 }
 
 gitsource () { # $1 = name $2 = URL
+  eval $1=yes
   if [ ! -e $1 ] ; then
     git clone $2
   else
@@ -155,7 +157,7 @@ gitsource () { # $1 = name $2 = URL
   fi
 }
 
-getversion mksh https://www.mirbsd.org/MirOS/dist/mir/mksh mksh-$MKSH_VERSION.tgz
+#getversion mksh https://www.mirbsd.org/MirOS/dist/mir/mksh mksh-$MKSH_VERSION.tgz
 gitsource sinit git://git.suckless.org/sinit
 gitsource sbase git://git.suckless.org/sbase
 gitsource ubase git://git.suckless.org/ubase
@@ -205,63 +207,28 @@ if [ ! -e ellcc-$TARGET-$ELLCC_VERSION.tgz ] ; then
 fi
 fi
 
-# sinit
-cd sinit
-make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
-cd ..
+makeit () { # $1 = name, $2 = command
+  eval doit=\$$1
+  if [ "$doit" = "yes" ] ; then
+    cd $1
+    eval $2
+    cd ..
+  fi
 
-# The mksh shell.
-cd mksh
-HAVE_SYS_SIGNAME=0 sh ./Build.sh
-cp mksh $ROOT/bin
-cd ..
+}
 
-# nldev
-cd nldev
-make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
-cd ..
-
-# nlmon
-cd nlmon
-make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
-cd ..
-
-# sbase
-cd sbase
-make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
-cd ..
-
-# sdhcp
-cd sdhcp
-make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
-cd ..
-
-# smdev
-cd smdev
-make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
-cd ..
-
-# svc
-cd svc
-# make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
-cp bin/* $ROOT/bin
-cp -R svc.d $ROOT/bin
-cd ..
-
-# ubase
-cd ubase
-make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install
-cd ..
-
+makeit sinit "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
+makeit mksh "HAVE_SYS_SIGNAME=0 sh ./Build.sh ; cp mksh $ROOT/bin"
+makeit nldev "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
+makeit nlmon "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
+makeit sbase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
+makeit sdhcp "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
+makeit smdev "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
+makeit scv "cp bin/* $ROOT/bin ; cp -R svc.d $ROOT/bin"
+makeit ubase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 # ksh
-cd loksh
-make LDFLAGS=-Wl,-s DESTDIR= PREFIX=$ROOT MAN_DIR=$MANPREFIX DOC_DIR=$DOCPREFIX install
-cd ..
-
-# vim
-cd vim
-make install
-cd ..
+makeit loksh "make LDFLAGS=-Wl,-s DESTDIR= PREFIX=$ROOT MAN_DIR=$MANPREFIX DOC_DIR=$DOCPREFIX install"
+makeit vim "make install"
 
 # toybox
 #cd toybox/
