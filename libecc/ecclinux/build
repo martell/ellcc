@@ -4,7 +4,7 @@ KERNEL=1
 CLEAN=0
 LINUX_VERSION=4.1.15
 ELLCC_VERSION=0.1.23
-MKSH_VERSION=R52
+VIM_VERSION=7.4
 VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
 PYTHON_VERSION=3.5.1
 E2FSPROGS_VERSION=1.42.13
@@ -155,17 +155,14 @@ gitsource () { # $1 = name $2 = URL
     git clone $2
   else
     cd $1
+    echo "Updating $1"
     git pull
     cd ..
   fi
 }
 
-#getversion mksh https://www.mirbsd.org/MirOS/dist/mir/mksh mksh-$MKSH_VERSION.tgz
-getversion e2fsprogs \
-    https://www.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v$E2FSPROGS_VERSION \
-    e2fsprogs-$E2FSPROGS_VERSION.tar.xz \
-    "mv e2fsprogs-$E2FSPROGS_VERSION e2fsprogs ; LDFLAGS=-Wl,-s ; (cd e2fsprogs ; ./configure --prefix=$ROOT/usr; make install)"
-
+# Comment any of the following gitsource and getversion lines
+# to inhibit fetching and building that package.
 gitsource sinit git://git.suckless.org/sinit
 gitsource sbase git://git.suckless.org/sbase
 gitsource ubase git://git.suckless.org/ubase
@@ -176,16 +173,14 @@ gitsource svc git://git.r-36.net/svc
 gitsource sdhcp git://git.2f30.org/sdhcp
 gitsource loksh https://github.com/dimkr/loksh.git
 
-if [ ! -e vim ] ; then
-  git clone https://github.com/vim/vim.git
-  cd vim
-  LDFLAGS=-Wl,-s ./configure --prefix=$ROOT/usr --with-features=$VIM_FEATURES
-  cd ..
-else
-  cd vim
-  git pull
-  cd ..
-fi
+getversion e2fsprogs \
+    https://www.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v$E2FSPROGS_VERSION \
+    e2fsprogs-$E2FSPROGS_VERSION.tar.xz \
+    "mv e2fsprogs-$E2FSPROGS_VERSION e2fsprogs ; LDFLAGS=-Wl,-s ; (cd e2fsprogs ; ./configure --prefix=$ROOT/usr; make install)"
+
+getversion vim \
+    ftp://ftp.vim.org/pub/vim/unix vim-$VIM_VERSION.tar.bz2 \
+    "mv vim* vim ; LDFLAGS=-Wl,-s ; (cd vim ; ./configure --prefix=$ROOT/usr; make install)"
 
 if [ 0 -ne 0 ] ; then
   git clone https://github.com/landley/toybox.git
@@ -225,7 +220,6 @@ makeit () { # $1 = name, $2 = command
 
 }
 
-makeit mksh "HAVE_SYS_SIGNAME=0 sh ./Build.sh ; cp mksh $ROOT/bin"
 makeit e2fsprogs "make install"
 makeit sinit "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit nldev "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
