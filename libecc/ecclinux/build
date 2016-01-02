@@ -8,6 +8,7 @@ VIM_VERSION=7.4
 VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
 PYTHON_VERSION=3.5.1
 E2FSPROGS_VERSION=1.42.13
+NTFS3G_VERSION=2015.3.14
 
 usage() {
   echo usage: $0 [options] target
@@ -178,9 +179,23 @@ getversion e2fsprogs \
     e2fsprogs-$E2FSPROGS_VERSION.tar.xz \
     "mv e2fsprogs-$E2FSPROGS_VERSION e2fsprogs ; LDFLAGS=-Wl,-s ; (cd e2fsprogs ; ./configure --prefix=$ROOT/usr; make install)"
 
+configntfs3g () {
+  mv ntfs-3g* ntfs3g
+  LDFLAGS=-Wl,-s
+  cd ntfs3g
+  patch -p1 < ../../ntfs3g.patch
+  ./configure --prefix=$ROOT/usr --disable-shared --mandir=$ROOT/usr/share/man \
+  --enable-really-static
+  cd ..
+}
+
+getversion ntfs3g \
+    https://tuxera.com/opensource ntfs-3g_ntfsprogs-$NTFS3G_VERSION.tgz \
+    configntfs3g
+
 getversion vim \
     ftp://ftp.vim.org/pub/vim/unix vim-$VIM_VERSION.tar.bz2 \
-    "mv vim* vim ; LDFLAGS=-Wl,-s ; (cd vim ; ./configure --prefix=$ROOT/usr; make install)"
+    "mv vim* vim ; LDFLAGS=-Wl,-s ; (cd vim ; ./configure --prefix=$ROOT/usr)"
 
 if [ 0 -ne 0 ] ; then
   git clone https://github.com/landley/toybox.git
@@ -220,7 +235,6 @@ makeit () { # $1 = name, $2 = command
 
 }
 
-makeit e2fsprogs "make install"
 makeit sinit "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit nldev "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit nlmon "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
@@ -232,6 +246,29 @@ makeit ubase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= instal
 # ksh
 makeit loksh "make LDFLAGS=-Wl,-s DESTDIR= PREFIX=$ROOT MAN_DIR=$MANPREFIX DOC_DIR=$DOCPREFIX install"
 makeit vim "make install"
+makeit e2fsprogs "make install"
+NTFS3G_PROGS="src/lowntfs-3g \
+  src/ntfs-3g \
+  src/ntfs-3g.probe \
+  src/ntfs-3g.secaudit \
+  src/ntfs-3g.usermap \
+  ntfsprogs/mkntfs \
+  ntfsprogs/ntfscat \
+  ntfsprogs/ntfsclone \
+  ntfsprogs/ntfscluster \
+  ntfsprogs/ntfscmp \
+  ntfsprogs/ntfscp \
+  ntfsprogs/ntfsfix \
+  ntfsprogs/ntfsinfo \
+  ntfsprogs/ntfslabel \
+  ntfsprogs/ntfsls \
+  ntfsprogs/ntfsresize \
+  ntfsprogs/ntfsundelete"
+makeit ntfs3g "make; cp $NTFS3G_PROGS $ROOT/usr/sbin; \
+               for p in \`find . -name "*.8.in"| grep -v e2fsprogs\` ; do \
+                 n=\`basename \$p | sed 's:.in::g'\` ; \
+                 cp \$p $ROOT/usr/share/man/man8/\$n ; \
+               done"
 
 # toybox
 #cd toybox/
