@@ -11,13 +11,13 @@ $(BIN): $(OBJ)
 $(OBJ): config.h
 
 install: all
-	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	cp -f $(BIN) $(DESTDIR)$(PREFIX)/bin
+	mkdir -p $(DESTDIR)$(PREFIX)/sbin
+	cp -f $(BIN) $(DESTDIR)$(PREFIX)/sbin
 	mkdir -p $(DESTDIR)$(MANPREFIX)/man8
 	sed "s/VERSION/$(VERSION)/g" < $(BIN).8 > $(DESTDIR)$(MANPREFIX)/man8/$(BIN).8
 
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	rm -f $(DESTDIR)$(PREFIX)/sbin/$(BIN)
 	rm -f $(DESTDIR)$(MANPREFIX)/man8/$(BIN).8
 
 dist: clean

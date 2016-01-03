@@ -31,7 +31,7 @@ umask 022
 
 echo
 echo
-echo "         Morpheus booting"
+echo "         eccLinux booting"
 echo
 echo
 
@@ -64,7 +64,7 @@ cd /dev
 cd - 1>/dev/null
 
 echo Checking filesystems
-/bin/fsck -ATa
+/usr/sbin/fsck -ATa
 if [ $? -eq 1 ]; then
 	echo Filesystem errors exist, fix manually.
 	/bin/sh
@@ -77,7 +77,7 @@ echo Remounting root as read-write
 echo Mounting filesystems
 /bin/mount -a
 
-ln -sf /proc/mounts /etc/mtab
+/bin/ln -sf /proc/mounts /etc/mtab
 
 echo "Setting hostname to $HOSTNAME"
 /bin/hostname $HOSTNAME

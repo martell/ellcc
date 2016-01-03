@@ -9,6 +9,7 @@ VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
 PYTHON_VERSION=3.5.1
 E2FSPROGS_VERSION=1.42.13
 NTFS3G_VERSION=2015.3.14
+IPROUTE2_VERSION=4.3.0
 
 usage() {
   echo usage: $0 [options] target
@@ -183,27 +184,36 @@ gitsource sdhcp git://git.2f30.org/sdhcp
 gitsource loksh https://github.com/dimkr/loksh.git
 
 getversion e2fsprogs \
-    https://www.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v$E2FSPROGS_VERSION \
-    e2fsprogs-$E2FSPROGS_VERSION.tar.xz \
-    "mv e2fsprogs-$E2FSPROGS_VERSION e2fsprogs ; LDFLAGS=-Wl,-s ; (cd e2fsprogs ; ./configure --prefix=$ROOT/usr; make install)"
-
-configntfs3g () {
-  mv ntfs-3g* ntfs3g
-  LDFLAGS=-Wl,-s
-  cd ntfs3g
-  patch -p1 < ../../ntfs3g.patch
-  ./configure --prefix=$ROOT/usr --disable-shared --mandir=$ROOT/usr/share/man \
-  --enable-really-static
-  cd ..
-}
+  https://www.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v$E2FSPROGS_VERSION \
+  e2fsprogs-$E2FSPROGS_VERSION.tar.xz \
+  "mv e2fsprogs-$E2FSPROGS_VERSION e2fsprogs ; \
+  LDFLAGS=-Wl,-s ; \
+  (cd e2fsprogs ; ./configure --prefix=$ROOT/usr; make install)"
 
 getversion ntfs3g \
-    https://tuxera.com/opensource ntfs-3g_ntfsprogs-$NTFS3G_VERSION.tgz \
-    configntfs3g
+  https://tuxera.com/opensource ntfs-3g_ntfsprogs-$NTFS3G_VERSION.tgz \
+  "mv ntfs-3g* ntfs3g ; \
+  LDFLAGS=-Wl,-s ; \
+  (cd ntfs3g ; \
+    patch -p1 < ../../ntfs3g.patch ; \
+    ./configure --prefix=$ROOT/usr --disable-shared \
+      --mandir=$ROOT/usr/share/man \
+      --enable-really-static)"
 
 getversion vim \
-    ftp://ftp.vim.org/pub/vim/unix vim-$VIM_VERSION.tar.bz2 \
-    "mv vim* vim ; LDFLAGS=-Wl,-s ; (cd vim ; ./configure --prefix=$ROOT/usr)"
+  ftp://ftp.vim.org/pub/vim/unix vim-$VIM_VERSION.tar.bz2 \
+  "mv vim* vim ; \
+  LDFLAGS=-Wl,-s ; \
+  (cd vim ; ./configure --prefix=$ROOT/usr)"
+
+getversion iproute2 \
+  https://www.kernel.org/pub/linux/utils/net/iproute2 \
+  iproute2-$IPROUTE2_VERSION.tar.xz \
+  "mv iproute2* iproute2 ; \
+  LDFLAGS=-Wl,-s ; \
+  (cd iproute2 ; \
+   patch -p0 < ../../iproute2.patch ; \
+   PKG_CONFIG=false ./configure --prefix=$ROOT)"
 
 if [ 0 -ne 0 ] ; then
   git clone https://github.com/landley/toybox.git
@@ -269,6 +279,7 @@ makeit e2fsprogs  "make install ; \
                    rm -f e2label findfs ; \
                    ln -s tune2fs e2label ; \
                    ln -s tune2fs findfs)"
+
 NTFS3G_PROGS="src/lowntfs-3g \
   src/ntfs-3g \
   src/ntfs-3g.probe \
@@ -295,6 +306,15 @@ makeit ntfs3g   "make; cp $NTFS3G_PROGS $ROOT/usr/sbin ; \
                  ln -sf mkntfs mkfs.ntfs ; \
                  ln -sf lowntfs-3g mount.lowntfs-3g ; \
                  ln -sf ntfs-3g mount.ntfs-3g)"
+
+makeit iproute2 "make SBINDIR=$ROOT/usr/sbin \
+                  CONFDIR=$ROOT/etc/iproute2 \
+                  DATADIR=$ROOT/usr/share \
+                  DOCDIR=$ROOT/usr/doc \
+                  MANDIR=$ROOT/usr/man \
+                  ARPDDIR=$ROOT/var/lib/arpd \
+                  KERNEL_INCLUDE=$ROOT/usr/include \
+                  install"
 
 # toybox
 #cd toybox/
