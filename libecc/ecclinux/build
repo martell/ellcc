@@ -150,15 +150,23 @@ getversion () { # $1 = name $2 = URL $3 = archive $4 = command
   fi
 }
 
+CPFLAGS=-pfru
 gitsource () { # $1 = name $2 = URL
   eval $1=yes
-  if [ ! -e $1 ] ; then
-    git clone $2
+  if [ -e ../$1 ] ; then
+    # Maintained in the ELLCC tree.
+    echo "Copying $1"
+    cp $CPFLAGS ../$1 .
   else
-    cd $1
-    echo "Updating $1"
-    git pull
-    cd ..
+    # Fetched from a remote tree.
+    if [ ! -e $1 ] ; then
+      git clone $2
+    else
+      cd $1
+      echo "Updating $1"
+      git pull
+      cd ..
+    fi
   fi
 }
 
@@ -246,7 +254,21 @@ makeit ubase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= instal
 # ksh
 makeit loksh "make LDFLAGS=-Wl,-s DESTDIR= PREFIX=$ROOT MAN_DIR=$MANPREFIX DOC_DIR=$DOCPREFIX install"
 makeit vim "make install"
-makeit e2fsprogs "make install"
+makeit e2fsprogs  "make install ; \
+                  (cd $ROOT/usr/sbin ; \
+                   rm -f mkfs.ext2 mkfs.ext3 mkfs.ext4 mkfs.ext4dev ; \
+                   rm -f fsck.ext2 fsck.ext3 fsck.ext4 fsck.ext4dev ; \
+                   ln -s mke2fs mkfs.ext2 ; \
+                   ln -s mke2fs mkfs.ext3 ; \
+                   ln -s mke2fs mkfs.ext4 ; \
+                   ln -s mke2fs mkfs.ext4dev ; \
+                   ln -s e2fsck fsck.ext2 ; \
+                   ln -s e2fsck fsck.ext3  ; \
+                   ln -s e2fsck fsck.ext4 ; \
+                   ln -s e2fsck fsck.ext4dev ; 
+                   rm -f e2label findfs ; \
+                   ln -s tune2fs e2label ; \
+                   ln -s tune2fs findfs)"
 NTFS3G_PROGS="src/lowntfs-3g \
   src/ntfs-3g \
   src/ntfs-3g.probe \
@@ -264,11 +286,15 @@ NTFS3G_PROGS="src/lowntfs-3g \
   ntfsprogs/ntfsls \
   ntfsprogs/ntfsresize \
   ntfsprogs/ntfsundelete"
-makeit ntfs3g "make; cp $NTFS3G_PROGS $ROOT/usr/sbin; \
-               for p in \`find . -name "*.8.in"| grep -v e2fsprogs\` ; do \
-                 n=\`basename \$p | sed 's:.in::g'\` ; \
-                 cp \$p $ROOT/usr/share/man/man8/\$n ; \
-               done"
+makeit ntfs3g   "make; cp $NTFS3G_PROGS $ROOT/usr/sbin ; \
+                for p in \`find . -name "*.8.in"| grep -v e2fsprogs\` ; do \
+                  n=\`basename \$p | sed 's:.in::g'\` ; \
+                  cp \$p $ROOT/usr/share/man/man8/\$n ; \
+                done ; \
+                (cd $ROOT/usr/sbin ; \
+                 ln -sf mkntfs mkfs.ntfs ; \
+                 ln -sf lowntfs-3g mount.lowntfs-3g ; \
+                 ln -sf ntfs-3g mount.ntfs-3g)"
 
 # toybox
 #cd toybox/
