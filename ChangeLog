@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.24
+
 * Limit the number of build hosts.
 * Build libraries as listed in ellcc/libecc/config/libraries.
 * Interpret e.g. cc, c++, gcc, g++ as ELLCC.
