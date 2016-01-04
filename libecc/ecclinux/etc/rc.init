@@ -124,19 +124,19 @@ fi
 echo Enabling core dumps
 ulimit -c unlimited
 
-if [ -x /bin/rc.modules ]; then
+if [ -x /etc/rc.modules ]; then
 	echo Running rc.modules
-	/bin/rc.modules
+	/etc/rc.modules
 fi
 
-if [ -x /bin/rc.svc ]; then
+if [ -x /etc/rc.svc ]; then
 	echo Running rc.svc
-	/bin/rc.svc
+	/etc/rc.svc
 fi
 
-if [ -x /bin/rc.local ]; then
+if [ -x /etc/rc.local ]; then
 	echo Running rc.local
-	/bin/rc.local
+	/etc/rc.local
 fi
 
 : > /var/run/utmp
