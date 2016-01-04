@@ -83,8 +83,8 @@ echo "Setting hostname to $HOSTNAME"
 /bin/hostname $HOSTNAME
 
 echo Bringing up the lo interface
-/bin/ip addr add 127.0.0.1/8 dev lo broadcast + scope host
-/bin/ip link set lo up
+/sbin/ip addr add 127.0.0.1/8 dev lo broadcast + scope host
+/sbin/ip link set lo up
 
 HWCLOCK_PARAMS="-s"
 case $HARDWARECLOCK in

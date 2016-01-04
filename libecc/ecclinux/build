@@ -96,6 +96,7 @@ export AR=$ELLCC/bin/ecc-ar
 export RANLIB=$ELLCC/bin/ecc-ranlib
 export STRIP=$ELLCC/bin/ecc-strip
 
+mkdir -p $BUILD
 mkdir -p $DOWNLOAD
 
 if [ $KERNEL -ne 0 ] ; then
@@ -188,7 +189,7 @@ getversion e2fsprogs \
   e2fsprogs-$E2FSPROGS_VERSION.tar.xz \
   "mv e2fsprogs-$E2FSPROGS_VERSION e2fsprogs ; \
   LDFLAGS=-Wl,-s ; \
-  (cd e2fsprogs ; ./configure --prefix=$ROOT/usr; make install)"
+  (cd e2fsprogs ; ./configure --prefix=$ROOT/usr --exec-prefix=$ROOT ; make install)"
 
 getversion ntfs3g \
   https://tuxera.com/opensource ntfs-3g_ntfsprogs-$NTFS3G_VERSION.tgz \
@@ -196,7 +197,7 @@ getversion ntfs3g \
   LDFLAGS=-Wl,-s ; \
   (cd ntfs3g ; \
     patch -p1 < ../../ntfs3g.patch ; \
-    ./configure --prefix=$ROOT/usr --disable-shared \
+    ./configure --prefix=$ROOT/usr --exec-prefix=$ROOT --disable-shared \
       --mandir=$ROOT/usr/share/man \
       --enable-really-static)"
 
@@ -204,7 +205,7 @@ getversion vim \
   ftp://ftp.vim.org/pub/vim/unix vim-$VIM_VERSION.tar.bz2 \
   "mv vim* vim ; \
   LDFLAGS=-Wl,-s ; \
-  (cd vim ; ./configure --prefix=$ROOT/usr)"
+  (cd vim ; ./configure --prefix=$ROOT/usr --exec-prefix=$ROOT)"
 
 getversion iproute2 \
   https://www.kernel.org/pub/linux/utils/net/iproute2 \
@@ -213,7 +214,7 @@ getversion iproute2 \
   LDFLAGS=-Wl,-s ; \
   (cd iproute2 ; \
    patch -p0 < ../../iproute2.patch ; \
-   PKG_CONFIG=false ./configure --prefix=$ROOT)"
+   PKG_CONFIG=false ./configure --prefix=$ROOT --exec-prefix=$ROOT)"
 
 if [ 0 -ne 0 ] ; then
   git clone https://github.com/landley/toybox.git
@@ -265,7 +266,7 @@ makeit ubase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= instal
 makeit loksh "make LDFLAGS=-Wl,-s DESTDIR= PREFIX=$ROOT MAN_DIR=$MANPREFIX DOC_DIR=$DOCPREFIX install"
 makeit vim "make install"
 makeit e2fsprogs  "make install ; \
-                  (cd $ROOT/usr/sbin ; \
+                  (cd $ROOT/sbin ; \
                    rm -f mkfs.ext2 mkfs.ext3 mkfs.ext4 mkfs.ext4dev ; \
                    rm -f fsck.ext2 fsck.ext3 fsck.ext4 fsck.ext4dev ; \
                    ln -s mke2fs mkfs.ext2 ; \
@@ -297,17 +298,17 @@ NTFS3G_PROGS="src/lowntfs-3g \
   ntfsprogs/ntfsls \
   ntfsprogs/ntfsresize \
   ntfsprogs/ntfsundelete"
-makeit ntfs3g   "make; cp $NTFS3G_PROGS $ROOT/usr/sbin ; \
+makeit ntfs3g   "make; cp $NTFS3G_PROGS $ROOT/sbin ; \
                 for p in \`find . -name "*.8.in"| grep -v e2fsprogs\` ; do \
                   n=\`basename \$p | sed 's:.in::g'\` ; \
                   cp \$p $ROOT/usr/share/man/man8/\$n ; \
                 done ; \
-                (cd $ROOT/usr/sbin ; \
+                (cd $ROOT/sbin ; \
                  ln -sf mkntfs mkfs.ntfs ; \
                  ln -sf lowntfs-3g mount.lowntfs-3g ; \
                  ln -sf ntfs-3g mount.ntfs-3g)"
 
-makeit iproute2 "make SBINDIR=$ROOT/usr/sbin \
+makeit iproute2 "make SBINDIR=$ROOT/sbin \
                   CONFDIR=$ROOT/etc/iproute2 \
                   DATADIR=$ROOT/usr/share \
                   DOCDIR=$ROOT/usr/doc \
@@ -323,6 +324,6 @@ makeit iproute2 "make SBINDIR=$ROOT/usr/sbin \
 
 # Python
 #cd Python-$PYTHON_VERSION
-#LDFLAGS=-Wl,-s ./configure --prefix=$ROOT/usr
+#LDFLAGS=-Wl,-s ./configure --prefix=$ROOT/usr --exec-prefix=$ROOT
 #make install
 #cd ..
