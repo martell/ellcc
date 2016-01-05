@@ -50,6 +50,7 @@ done
 set -e
 TOP=`pwd`
 ELLCC=`realpath $TOP/../..`
+UNAME=`uname`
 
 BOARD=$1
 if [ $BOARD = "help" ] ; then
@@ -87,9 +88,18 @@ if [ $CLEAN -ne 0 ] ; then
   exit 0
 fi
 
-MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
+if [ “${UNAME}” = “Darwin” ] ; then
+  MAXJOBS=`sysctl hw.ncpu | cut -d: -f2`
+else
+  MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
+fi
 
 # Tools.
+if [ “${UNAME}” = “Darwin” ] ; then
+  export HOSTCC=clang
+else
+  export HOSTCC=$ELLCC/bin/ecc
+fi
 export CC="$ELLCC/bin/ecc -target $TARGET"
 export CXX="$ELLCC/bin/ecc++ -target $TARGET"
 export AR=$ELLCC/bin/ecc-ar
@@ -109,7 +119,11 @@ if [ $KERNEL -ne 0 ] ; then
     for p in `echo ../*-$LINUX_VERSION.patch` ; do
       patch -p1 < $p
     done
-    cp $TOP/makefile .
+    if [ “${UNAME}” = “Darwin” ] ; then
+      cp $TOP/makefile GNUmakefile
+    else
+      cp $TOP/makefile .
+    fi
     cd $TOP
   fi
   if [ ! -e $BUILD/$BOARD ] ; then

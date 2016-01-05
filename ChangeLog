@@ -1,5 +1,7 @@
 current SVN:
 
+* Some changes to build Linux on the Mac.
+
 version 0.1.24
 
 * Limit the number of build hosts.
