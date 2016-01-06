@@ -3,7 +3,14 @@ ARCH		?= arm
 TARGET		?= arm-linux-engeabihf
 
 ELLCC		:= $(shell realpath $(shell pwd)/../../..)
-HOSTCC		?= $(ELLCC)/bin/ecc
+UNAME           := $(shell uname)
+ifeq ($(UNAME),Darwin)
+  HOSTCC		:= clang
+  HOSTCFLAGS            := -I../osx_include
+else
+  HOSTCC		:= $(ELLCC)/bin/ecc
+endif
+
 CC		:= $(ELLCC)/bin/ecc -target $(TARGET) -I$(ELLCC)/libecc/include/$(ARCH)
 
 CPP		:= $(CC) -E
@@ -35,9 +42,9 @@ endif
 ifdef HOSTCC
 export HOSTCC
 endif
- ifdef HOSTCC
- export HOSTCC
- endif
+ifdef HOSTCFLAGS
+export HOSTCFLAGS
+endif
 ifdef OBJCOPY
 export OBJCOPY
 endif
@@ -73,9 +80,9 @@ endif
 #O		:= build/$(ARCH)-$(CC_NOSPACES)
 O		:= $(BUILD)
 
-LINUXFLAGS	= CPP="$(CPP)" CC="$(CC)" HOSTCC="$(HOSTCC)" LD="$(LD)" \
-                  OBJCOPY="$(OBJCOPY)" OBJDUMP="$(OBJDUMP)" AR="$(AR)" \
-                  NM="$(NM)" STRIP="$(STRIP)" SIZE="$(SIZE)"
+LINUXFLAGS	= CPP="$(CPP)" CC="$(CC)" HOSTCC="$(HOSTCC)" HOSTCFLAGS="$(HOSTCFLAGS)" \
+                  LD="$(LD)" OBJCOPY="$(OBJCOPY)" OBJDUMP="$(OBJDUMP)" \
+                  AR="$(AR)" NM="$(NM)" STRIP="$(STRIP)" SIZE="$(SIZE)"
 
 linuxmake	= $(MAKE) -j $(MAXJOBS) -f Makefile $(LINUXFLAGS) O=$(1) $(2)
 
