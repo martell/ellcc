@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.25
+
 * Additional changes to build Linux on the Mac. Thanks to Emmanuel Blot.
 * Update to mbedtls 2.2.1.
 * Some changes to build Linux on the Mac.

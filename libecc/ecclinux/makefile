@@ -16,11 +16,11 @@ CC		:= $(ELLCC)/bin/ecc -target $(TARGET) -I$(ELLCC)/libecc/include/$(ARCH)
 CPP		:= $(CC) -E
 LD		:= $(ELLCC)/bin/ecc-ld -m armelf_linux_eabi
 OBJCOPY		:= $(ELLCC)/bin/ecc-objcopy
-OBJDUMP                := $(ELLCC)/bin/ecc-objdump
-AR             := $(ELLCC)/bin/ecc-ar
-NM             := $(ELLCC)/bin/ecc-nm
-STRIP          := $(ELLCC)/bin/ecc-strip
-SIZE           := $(ELLCC)/bin/ecc-size
+OBJDUMP		:= $(ELLCC)/bin/ecc-objdump
+AR		:= $(ELLCC)/bin/ecc-ar
+NM		:= $(ELLCC)/bin/ecc-nm
+STRIP		:= $(ELLCC)/bin/ecc-strip
+SIZE		:= $(ELLCC)/bin/ecc-size
 
 MAXJOBS		?= 1
 
