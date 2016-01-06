@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to mbedtls 2.2.1.
 * Some changes to build Linux on the Mac.
 
 version 0.1.24
@@ -17,7 +18,7 @@ version 0.1.23:
 
 * Built and booted a Raspberry Pi Linux kernel.
 * Fix ARM assembly with hard float and external assembler.
-* Update to nghttp2 to 1.6.0.
+* Update to nghttp2 1.6.0.
 * Update to LLVM r256384.
 
 version 0.1.22:
