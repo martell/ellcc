@@ -1,0 +1,22 @@
+--- a/scripts/Makefile.modpost	2015-12-15 06:24:51.000000000 +0100
++++ b/scripts/Makefile.modpost	2016-01-06 11:26:24.000000000 +0100
+@@ -60,7 +60,7 @@
+ modulesymfile := $(firstword $(KBUILD_EXTMOD))/Module.symvers
+ 
+ # Step 1), find all modules listed in $(MODVERDIR)/
+-MODLISTCMD := find $(MODVERDIR) -name '*.mod' | xargs -r grep -h '\.ko$$' | sort -u
++MODLISTCMD := find $(MODVERDIR) -name '*.mod' | xargs grep -h '\.ko$$' | sort -u
+ __modules := $(shell $(MODLISTCMD))
+ modules   := $(patsubst %.o,%.ko, $(wildcard $(__modules:.ko=.o)))
+ 
+--- a/arch/arm/boot/compressed/Makefile	2016-01-06 11:50:26.000000000 +0100
++++ b/arch/arm/boot/compressed/Makefile	2016-01-06 12:10:38.000000000 +0100
+@@ -112,7 +112,7 @@
+ asflags-y := -DZIMAGE
+ 
+ # Supply kernel BSS size to the decompressor via a linker symbol.
+-KBSS_SZ = $(shell $(CROSS_COMPILE)size $(obj)/../../../../vmlinux | \
++KBSS_SZ = $(shell $(SIZE) $(obj)/../../../../vmlinux | \
+ 		awk 'END{print $$3}')
+ LDFLAGS_vmlinux = --defsym _kernel_bss_size=$(KBSS_SZ)
+ # Supply ZRELADDR to the decompressor via a linker symbol.
