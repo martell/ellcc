@@ -89,7 +89,7 @@ if [ $CLEAN -ne 0 ] ; then
 fi
 
 if [ “${UNAME}” = “Darwin” ] ; then
-  MAXJOBS=`sysctl hw.ncpu | cut -d: -f2`
+  MAXJOBS=`sysctl hw.ncpu | cut -d: -f2 | tr -d [:space:]`
 else
   MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
 fi
@@ -166,13 +166,18 @@ getversion () { # $1 = name $2 = URL $3 = archive $4 = command
   fi
 }
 
-CPFLAGS=-pfru
+if [ “${UNAME}” = “Darwin” ]; then
+  UPDATE="rsync -u"
+else
+  UPDATE="cp -pfru"
+fi
+
 gitsource () { # $1 = name $2 = URL
   eval $1=yes
   if [ -e ../$1 ] ; then
     # Maintained in the ELLCC tree.
     echo "Copying $1"
-    cp $CPFLAGS ../$1 .
+    $UPDATE ../$1 .
   else
     # Fetched from a remote tree.
     if [ ! -e $1 ] ; then

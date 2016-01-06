@@ -9,6 +9,12 @@ CC		:= $(ELLCC)/bin/ecc -target $(TARGET) -I$(ELLCC)/libecc/include/$(ARCH)
 CPP		:= $(CC) -E
 LD		:= $(ELLCC)/bin/ecc-ld -m armelf_linux_eabi
 OBJCOPY		:= $(ELLCC)/bin/ecc-objcopy
+OBJDUMP                := $(ELLCC)/bin/ecc-objdump
+AR             := $(ELLCC)/bin/ecc-ar
+NM             := $(ELLCC)/bin/ecc-nm
+STRIP          := $(ELLCC)/bin/ecc-strip
+SIZE           := $(ELLCC)/bin/ecc-size
+
 MAXJOBS		?= 1
 
 ifdef ARCH
@@ -29,6 +35,28 @@ endif
 ifdef HOSTCC
 export HOSTCC
 endif
+ ifdef HOSTCC
+ export HOSTCC
+ endif
+ifdef OBJCOPY
+export OBJCOPY
+endif
+ifdef OBJDUMP
+export OBJDUMP
+endif
+ifdef AR
+export AR
+endif
+ifdef NM
+export NM
+endif
+ifdef STRIP
+export STRIP
+endif
+ifdef SIZE
+export SIZE
+endif
+
 ifdef O
 export O
 endif
@@ -46,7 +74,9 @@ endif
 O		:= $(BUILD)
 
 LINUXFLAGS	= CPP="$(CPP)" CC="$(CC)" HOSTCC="$(HOSTCC)" LD="$(LD)" \
-		  OBJCOPY=$(OBJCOPY)
+                  OBJCOPY="$(OBJCOPY)" OBJDUMP="$(OBJDUMP)" AR="$(AR)" \
+                  NM="$(NM)" STRIP="$(STRIP)" SIZE="$(SIZE)"
+
 linuxmake	= $(MAKE) -j $(MAXJOBS) -f Makefile $(LINUXFLAGS) O=$(1) $(2)
 
 %:

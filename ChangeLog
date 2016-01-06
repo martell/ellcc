@@ -1,5 +1,6 @@
 current SVN:
 
+* Additional changes to build Linux on the Mac. Thanks to Emmanuel Blot.
 * Update to mbedtls 2.2.1.
 * Some changes to build Linux on the Mac.
 
