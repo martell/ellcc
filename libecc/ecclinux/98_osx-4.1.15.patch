@@ -120,8 +120,8 @@ diff -ru a/lib/raid6/Makefile linux-4.1.15/lib/raid6/Makefile
  hostprogs-y	+= mktables
  
  quiet_cmd_unroll = UNROLL  $@
--      cmd_unroll = $(AWK) -f $(srctree)/$(src)/unroll.awk -v N=$(UNROLL) \
-+      cmd_unroll = $(AWK) -f$(srctree)/$(src)/unroll.awk -v N=$(UNROLL) \
+-      cmd_unroll = $(AWK) -f$(srctree)/$(src)/unroll.awk -v N=$(UNROLL) \
++      cmd_unroll = $(AWK) -f $(srctree)/$(src)/unroll.awk -v N=$(UNROLL) \
                     < $< > $@ || ( rm -f $@ && exit 1 )
  
  ifeq ($(CONFIG_ALTIVEC),y)
