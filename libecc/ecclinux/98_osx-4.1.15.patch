@@ -98,4 +98,17 @@ diff -ru a/lib/raid6/test/Makefile linux-4.1.15/lib/raid6/test/Makefile
  
  tables.c: mktables
  	./mktables > tables.c
+Only in linux-4.1.15/: .gitignore
+diff -ru a/lib/raid6/Makefile linux-4.1.15/lib/raid6/Makefile
+--- a/lib/raid6/Makefile	2016-01-06 21:47:09.607361897 -0600
++++ linux-4.1.15/lib/raid6/Makefile	2016-01-06 21:48:27.780443682 -0600
+@@ -11,7 +11,7 @@
+ hostprogs-y	+= mktables
+ 
+ quiet_cmd_unroll = UNROLL  $@
+-      cmd_unroll = $(AWK) -f$(srctree)/$(src)/unroll.awk -vN=$(UNROLL) \
++      cmd_unroll = $(AWK) -f$(srctree)/$(src)/unroll.awk -v N=$(UNROLL) \
+                    < $< > $@ || ( rm -f $@ && exit 1 )
+ 
+ ifeq ($(CONFIG_ALTIVEC),y)
 Only in linux-4.1.15/: .mailmap
