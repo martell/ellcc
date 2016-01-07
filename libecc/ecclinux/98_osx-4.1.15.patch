@@ -20,3 +20,82 @@
  		awk 'END{print $$3}')
  LDFLAGS_vmlinux = --defsym _kernel_bss_size=$(KBSS_SZ)
  # Supply ZRELADDR to the decompressor via a linker symbol.
+Only in linux-4.1.15/: .gitignore
+diff -ru a/lib/raid6/test/Makefile linux-4.1.15/lib/raid6/test/Makefile
+--- a/lib/raid6/test/Makefile	2016-01-06 21:02:23.634662890 -0600
++++ linux-4.1.15/lib/raid6/test/Makefile	2016-01-06 21:04:55.341813406 -0600
+@@ -7,7 +7,7 @@
+ OPTFLAGS = -O2			# Adjust as desired
+ CFLAGS	 = -I.. -I ../../../include -g $(OPTFLAGS)
+ LD	 = ld
+-AWK	 = awk -f
++AWK	 = "awk -f"
+ AR	 = ar
+ RANLIB	 = ranlib
+ OBJS	 = int1.o int2.o int4.o int8.o int16.o int32.o recov.o algos.o tables.o
+@@ -71,49 +71,49 @@
+ 	$(CC) $(CFLAGS) -o raid6test $^
+ 
+ neon1.c: neon.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=1 < neon.uc > $@
++	$(AWK) ../unroll.awk -v N=1 < neon.uc > $@
+ 
+ neon2.c: neon.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=2 < neon.uc > $@
++	$(AWK) ../unroll.awk -v N=2 < neon.uc > $@
+ 
+ neon4.c: neon.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=4 < neon.uc > $@
++	$(AWK) ../unroll.awk -v N=4 < neon.uc > $@
+ 
+ neon8.c: neon.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=8 < neon.uc > $@
++	$(AWK) ../unroll.awk -v N=8 < neon.uc > $@
+ 
+ altivec1.c: altivec.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=1 < altivec.uc > $@
++	$(AWK) ../unroll.awk -v N=1 < altivec.uc > $@
+ 
+ altivec2.c: altivec.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=2 < altivec.uc > $@
++	$(AWK) ../unroll.awk -v N=2 < altivec.uc > $@
+ 
+ altivec4.c: altivec.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=4 < altivec.uc > $@
++	$(AWK) ../unroll.awk -v N=4 < altivec.uc > $@
+ 
+ altivec8.c: altivec.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=8 < altivec.uc > $@
++	$(AWK) ../unroll.awk -v N=8 < altivec.uc > $@
+ 
+ int1.c: int.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=1 < int.uc > $@
++	$(AWK) ../unroll.awk -v N=1 < int.uc > $@
+ 
+ int2.c: int.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=2 < int.uc > $@
++	$(AWK) ../unroll.awk -v N=2 < int.uc > $@
+ 
+ int4.c: int.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=4 < int.uc > $@
++	$(AWK) ../unroll.awk -v N=4 < int.uc > $@
+ 
+ int8.c: int.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=8 < int.uc > $@
++	$(AWK) ../unroll.awk -v N=8 < int.uc > $@
+ 
+ int16.c: int.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=16 < int.uc > $@
++	$(AWK) ../unroll.awk -v N=16 < int.uc > $@
+ 
+ int32.c: int.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=32 < int.uc > $@
++	$(AWK) ../unroll.awk -v N=32 < int.uc > $@
+ 
+ tilegx8.c: tilegx.uc ../unroll.awk
+-	$(AWK) ../unroll.awk -vN=8 < tilegx.uc > $@
++	$(AWK) ../unroll.awk -v N=8 < tilegx.uc > $@
+ 
+ tables.c: mktables
+ 	./mktables > tables.c
+Only in linux-4.1.15/: .mailmap
