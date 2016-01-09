@@ -299,8 +299,9 @@ fi
 mkdir -p $ROOT/bin
 mkdir -p $ROOT/usr/bin
 MANPREFIX=$ROOT/usr/share/man
-DOCPREFIX=$ROOT/usr/share/doc
 mkdir -p $MANPREFIX
+DOCPREFIX=$ROOT/usr/share/doc
+mkdir -p $DOCPREFIX
 
 if [ 0 -ne 0 ] ; then
 # ellcc
