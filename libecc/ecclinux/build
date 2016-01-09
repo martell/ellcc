@@ -297,7 +297,7 @@ if [ 0 -ne 0 ] ; then
 fi
 
 mkdir -p $ROOT/bin
-mkdir -p $ROOT/usr/bin
+mkdir -p $ROOT/sbin
 MANPREFIX=$ROOT/usr/share/man
 mkdir -p $MANPREFIX
 DOCPREFIX=$ROOT/usr/share/doc
