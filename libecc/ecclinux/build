@@ -236,7 +236,7 @@ fixranlib () {
 
 fixmacinstall () {
   if [ “${UNAME}” = “Darwin” ] ; then
-    sed -ie 's/install -v -D/install -v -d/' Makefile
+    sed -ie 's/install -v -D/install -v/' Makefile
   fi
 }
 
