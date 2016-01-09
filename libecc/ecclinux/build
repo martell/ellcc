@@ -104,7 +104,7 @@ for p in `echo $packages` ; do
 done
 
 # Packages to avoid on the Mac (build problems).
-mac_excludes="e2fsprogs vim"
+mac_excludes="iproute2 e2fsprogs vim"
 
 # Tools.
 if [ “${UNAME}” = “Darwin” ] ; then
