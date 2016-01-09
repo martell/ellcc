@@ -234,6 +234,12 @@ fixranlib () {
   sed -ie 's/@ranlib/@$(RANLIB)/' Makefile
 }
 
+fixmacinstall () {
+  if [ “${UNAME}” = “Darwin” ] ; then
+    sed -ie 's/install -v -D/install -v -d/' Makefile
+  fi
+}
+
 # Comment any of the following gitsource and getversion lines
 # to inhibit fetching and building that package.
 gitsource sinit git://git.suckless.org/sinit fixconfigmk
