@@ -192,10 +192,7 @@ else
   UPDATE="cp -pfru"
 fi
 
-fixconfig() {
-}
-
-gitsource () { # $1 = name $2 = URL
+gitsource () { # $1 = name $2 = URL $3 = command
   eval doit=\$$1
   if [ "$doit" != "yes" ] ; then
     return
@@ -215,8 +212,15 @@ gitsource () { # $1 = name $2 = URL
       cd ..
     fi
   fi
-  if [ -e $1/config.mk ] ; then
-      cat >> $1/config.mk <<EOF
+  if [ "$3" != "" ] ; then
+    cd $1
+    eval $3
+    cd ..
+  fi
+}
+
+fixconfigmk() {
+  cat >> config.mk <<EOF
 CC=$CC
 CXX=$CXX
 LD=$CC
@@ -224,19 +228,22 @@ AR=$AR
 RANLIB=$RANLIB
 STRIP=$STRIP
 EOF
-  fi
+}
+
+fixranlib () {
+  sed -ie 's/@ranlib/@$(RANLIB)/' Makefile
 }
 
 # Comment any of the following gitsource and getversion lines
 # to inhibit fetching and building that package.
-gitsource sinit git://git.suckless.org/sinit
-gitsource sbase git://git.suckless.org/sbase
-gitsource ubase git://git.suckless.org/ubase
-gitsource smdev git://git.suckless.org/smdev
-gitsource nldev git://git.r-36.net/nldev
-gitsource nlmon git://git.r-36.net/nlmon
+gitsource sinit git://git.suckless.org/sinit fixconfigmk
+gitsource sbase git://git.suckless.org/sbase fixconfigmk
+gitsource ubase git://git.suckless.org/ubase fixconfigmk
+gitsource smdev git://git.suckless.org/smdev "fixconfigmk ; fixranlib"
+gitsource nldev git://git.r-36.net/nldev fixconfigmk
+gitsource nlmon git://git.r-36.net/nlmon fixconfigmk
 gitsource svc git://git.r-36.net/svc
-gitsource sdhcp git://git.2f30.org/sdhcp
+gitsource sdhcp git://git.2f30.org/sdhcp "fixconfigmk ; fixranlib"
 gitsource loksh https://github.com/dimkr/loksh.git
 
 getversion e2fsprogs \
