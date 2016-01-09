@@ -250,7 +250,7 @@ gitsource nldev git://git.r-36.net/nldev fixconfigmk
 gitsource nlmon git://git.r-36.net/nlmon fixconfigmk
 gitsource svc git://git.r-36.net/svc
 gitsource sdhcp git://git.2f30.org/sdhcp "fixconfigmk ; fixranlib"
-gitsource loksh https://github.com/dimkr/loksh.git
+gitsource loksh https://github.com/dimkr/loksh.git fixmacinstall
 
 getversion e2fsprogs \
   https://www.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v$E2FSPROGS_VERSION \
