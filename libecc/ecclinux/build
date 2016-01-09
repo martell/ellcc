@@ -79,7 +79,7 @@ if [ "${BOARD}" = "" -o "${BOARD}" = "help" ] ; then
 elif [ "${BOARD}" = "bcmrpi" ] ; then
   ARCH=arm
   BOARD=bcmrpi                  # Raspberry Pi
-  UBOOT_BOARD=rpi_b
+  UBOOT_BOARD=rpi
   TARGET=armv6-linux-engeabihf  # ARMv6
   NO_VDSO=0
 elif [ "${BOARD}" = "bcm2709" ] ; then
