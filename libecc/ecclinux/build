@@ -1,5 +1,9 @@
 #! /bin/sh
 
+# The complete package list. See mac_excludes below for Mac exceptions.
+packages="sinit sbase ubase smdev nldev nlmon svc sdhcp loksh ntfs3g iproute2
+          e2fsprogs vim"
+
 KERNEL=1
 CLEAN=0
 LINUX_VERSION=4.1.15
@@ -94,12 +98,25 @@ else
   MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
 fi
 
+# Enable packages.
+for p in `echo $packages` ; do
+  eval $p=yes
+done
+
+# Packages to avoid on the Mac (build problems).
+mac_excludes="e2fsprogs vim"
+
 # Tools.
 if [ “${UNAME}” = “Darwin” ] ; then
   export HOSTCC=clang
+  # Exclude packages that fail for now.
+  for p in `echo $mac_excludes` ; do
+    eval $p=no
+  done
 else
   export HOSTCC=$ELLCC/bin/ecc
 fi
+export HOST=`echo $TARGET | sed -e "s/\([^-]*\)-\([^-]*\).*/\1-ellcc-\2/"`
 export CC="$ELLCC/bin/ecc -target $TARGET"
 export CXX="$ELLCC/bin/ecc++ -target $TARGET"
 export AR=$ELLCC/bin/ecc-ar
@@ -154,7 +171,10 @@ fi
 cd $BUILD
 
 getversion () { # $1 = name $2 = URL $3 = archive $4 = command
-  eval $1=yes
+  eval doit=\$$1
+  if [ "$doit" != "yes" ] ; then
+    return
+  fi
   if [ ! -e $DOWNLOAD/$3 ] ; then
     (cd $DOWNLOAD ; wget $2/$3)
   fi
@@ -167,13 +187,19 @@ getversion () { # $1 = name $2 = URL $3 = archive $4 = command
 }
 
 if [ “${UNAME}” = “Darwin” ]; then
-  UPDATE="rsync -u"
+  UPDATE="rsync -ru"
 else
   UPDATE="cp -pfru"
 fi
 
+fixconfig() {
+}
+
 gitsource () { # $1 = name $2 = URL
-  eval $1=yes
+  eval doit=\$$1
+  if [ "$doit" != "yes" ] ; then
+    return
+  fi
   if [ -e ../$1 ] ; then
     # Maintained in the ELLCC tree.
     echo "Copying $1"
@@ -188,6 +214,16 @@ gitsource () { # $1 = name $2 = URL
       git pull
       cd ..
     fi
+  fi
+  if [ -e $1/config.mk ] ; then
+      cat >> $1/config.mk <<EOF
+CC=$CC
+CXX=$CXX
+LD=$CC
+AR=$AR
+RANLIB=$RANLIB
+STRIP=$STRIP
+EOF
   fi
 }
 
@@ -208,7 +244,7 @@ getversion e2fsprogs \
   e2fsprogs-$E2FSPROGS_VERSION.tar.xz \
   "mv e2fsprogs-$E2FSPROGS_VERSION e2fsprogs ; \
   LDFLAGS=-Wl,-s ; \
-  (cd e2fsprogs ; ./configure --prefix=$ROOT/usr --exec-prefix=$ROOT ; make install)"
+  (cd e2fsprogs ; ./configure --host=$HOST --prefix=$ROOT/usr --exec-prefix=$ROOT ; make install)"
 
 getversion ntfs3g \
   https://tuxera.com/opensource ntfs-3g_ntfsprogs-$NTFS3G_VERSION.tgz \
@@ -216,7 +252,7 @@ getversion ntfs3g \
   LDFLAGS=-Wl,-s ; \
   (cd ntfs3g ; \
     patch -p1 < ../../ntfs3g.patch ; \
-    ./configure --prefix=$ROOT/usr --exec-prefix=$ROOT --disable-shared \
+    ./configure --host=$HOST --prefix=$ROOT/usr --exec-prefix=$ROOT --disable-shared \
       --mandir=$ROOT/usr/share/man \
       --enable-really-static)"
 
@@ -224,7 +260,13 @@ getversion vim \
   ftp://ftp.vim.org/pub/vim/unix vim-$VIM_VERSION.tar.bz2 \
   "mv vim* vim ; \
   LDFLAGS=-Wl,-s ; \
-  (cd vim ; ./configure --prefix=$ROOT/usr --exec-prefix=$ROOT)"
+  (cd vim ; export vim_cv_toupper_broken=no ; export vim_cv_terminfo=yes ; \
+            export vim_cv_tty_group=world ; export vim_cv_tty_mode=0620 ; \
+            export vim_cv_getcwd_broken=no ; \
+            export vim_cv_stat_ignores_slash=no ; \
+            vim_cv_memmove_handles_overlap=yes \
+            ./configure --host=$HOST --prefix=$ROOT/usr --exec-prefix=$ROOT \
+              --with-tlib=ncurses --enable-multibyte)"
 
 getversion iproute2 \
   https://www.kernel.org/pub/linux/utils/net/iproute2 \
@@ -233,7 +275,7 @@ getversion iproute2 \
   LDFLAGS=-Wl,-s ; \
   (cd iproute2 ; \
    patch -p0 < ../../iproute2.patch ; \
-   PKG_CONFIG=false ./configure --prefix=$ROOT --exec-prefix=$ROOT)"
+   PKG_CONFIG=false ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT)"
 
 if [ 0 -ne 0 ] ; then
   git clone https://github.com/landley/toybox.git
