@@ -5,7 +5,7 @@ packages="uboot kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh
           ntfs3g iproute2 e2fsprogs vim"
 
 # Packages to avoid on the Mac (build problems).
-mac_exclude="iproute2 e2fsprogs vim"
+mac_exclude="uboot iproute2 e2fsprogs vim"
 
 CLEAN=0
 LINUX_VERSION=4.1.15
@@ -22,8 +22,8 @@ exclude=
 usage() {
   echo usage: $0 [options] target
   echo "  options:"
-  echo "    -packages "packag1 package2 ..."    Specific packages to build"
-  echo "    -exclude  "packag1 package2 ..."    Specific packages to exclude"
+  echo "    -packages 'packag1 package2 ...'    Specific packages to build"
+  echo "    -exclude  'packag1 package2 ...'    Specific packages to exclude"
   echo "    -clean                              Clean up a previous build"
   echo "  targets:"
   echo "    help                                This message"
