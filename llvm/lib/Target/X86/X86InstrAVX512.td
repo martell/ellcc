@@ -1889,13 +1889,13 @@ multiclass avx512_scalar_fpclass<bits<8> opc, string OpcodeStr, SDNode OpNode,
   let Predicates = [prd] in {
       def rr : AVX512<opc, MRMSrcReg, (outs _.KRC:$dst),//_.KRC:$dst),
                       (ins _.RC:$src1, i32u8imm:$src2),
-                      OpcodeStr##_.Suffix#"\t{$src2, $src1, $dst | $dst, $src1, $src2}",
+                      OpcodeStr##_.Suffix#"\t{$src2, $src1, $dst|$dst, $src1, $src2}",
                       [(set _.KRC:$dst,(OpNode (_.VT _.RC:$src1),
                               (i32 imm:$src2)))], NoItinerary>;
       def rrk : AVX512<opc, MRMSrcReg, (outs _.KRC:$dst),
                       (ins _.KRCWM:$mask, _.RC:$src1, i32u8imm:$src2),
                       OpcodeStr##_.Suffix#
-                      "\t{$src2, $src1, $dst {${mask}} | $dst {${mask}}, $src1, $src2}",
+                      "\t{$src2, $src1, $dst {${mask}}|$dst {${mask}}, $src1, $src2}",
                       [(set _.KRC:$dst,(or _.KRCWM:$mask, 
                                       (OpNode (_.VT _.RC:$src1),
                                       (i32 imm:$src2))))], NoItinerary>, EVEX_K;
@@ -1903,14 +1903,14 @@ multiclass avx512_scalar_fpclass<bits<8> opc, string OpcodeStr, SDNode OpNode,
       def rm : AVX512<opc, MRMSrcMem, (outs _.KRC:$dst),
                       (ins _.MemOp:$src1, i32u8imm:$src2),
                       OpcodeStr##_.Suffix##
-                                "\t{$src2, $src1, $dst | $dst, $src1, $src2}",
+                                "\t{$src2, $src1, $dst|$dst, $src1, $src2}",
                       [(set _.KRC:$dst,
                             (OpNode (_.VT (bitconvert (_.LdFrag addr:$src1))),
                                     (i32 imm:$src2)))], NoItinerary>;
       def rmk : AVX512<opc, MRMSrcMem, (outs _.KRC:$dst),
                       (ins _.KRCWM:$mask, _.MemOp:$src1, i32u8imm:$src2),
                       OpcodeStr##_.Suffix##
-                      "\t{$src2, $src1, $dst {${mask}} | $dst {${mask}}, $src1, $src2}",
+                      "\t{$src2, $src1, $dst {${mask}}|$dst {${mask}}, $src1, $src2}",
                       [(set _.KRC:$dst,(or _.KRCWM:$mask, 
                           (OpNode (_.VT (bitconvert (_.LdFrag addr:$src1))),
                               (i32 imm:$src2))))], NoItinerary>, EVEX_K;
@@ -1925,13 +1925,13 @@ multiclass avx512_vector_fpclass<bits<8> opc, string OpcodeStr, SDNode OpNode,
                                  X86VectorVTInfo _, string mem, string broadcast>{
   def rr : AVX512<opc, MRMSrcReg, (outs _.KRC:$dst),
                       (ins _.RC:$src1, i32u8imm:$src2),
-                      OpcodeStr##_.Suffix#"\t{$src2, $src1, $dst | $dst, $src1, $src2}",
+                      OpcodeStr##_.Suffix#"\t{$src2, $src1, $dst|$dst, $src1, $src2}",
                       [(set _.KRC:$dst,(OpNode (_.VT _.RC:$src1),
                                        (i32 imm:$src2)))], NoItinerary>;
   def rrk : AVX512<opc, MRMSrcReg, (outs _.KRC:$dst),
                       (ins _.KRCWM:$mask, _.RC:$src1, i32u8imm:$src2),
                       OpcodeStr##_.Suffix#
-                      "\t{$src2, $src1, $dst {${mask}}| $dst {${mask}}, $src1, $src2}",
+                      "\t{$src2, $src1, $dst {${mask}}|$dst {${mask}}, $src1, $src2}",
                       [(set _.KRC:$dst,(or _.KRCWM:$mask, 
                                        (OpNode (_.VT _.RC:$src1),
                                        (i32 imm:$src2))))], NoItinerary>, EVEX_K;
@@ -1939,21 +1939,21 @@ multiclass avx512_vector_fpclass<bits<8> opc, string OpcodeStr, SDNode OpNode,
     def rm : AVX512<opc, MRMSrcMem, (outs _.KRC:$dst),
                       (ins _.MemOp:$src1, i32u8imm:$src2),
                       OpcodeStr##_.Suffix##mem#
-                      "\t{$src2, $src1, $dst | $dst, $src1, $src2}",
+                      "\t{$src2, $src1, $dst|$dst, $src1, $src2}",
                       [(set _.KRC:$dst,(OpNode 
                                        (_.VT (bitconvert (_.LdFrag addr:$src1))),
                                        (i32 imm:$src2)))], NoItinerary>;
     def rmk : AVX512<opc, MRMSrcMem, (outs _.KRC:$dst),
                       (ins _.KRCWM:$mask, _.MemOp:$src1, i32u8imm:$src2),
                       OpcodeStr##_.Suffix##mem#
-                      "\t{$src2, $src1, $dst {${mask}} | $dst {${mask}}, $src1, $src2}",
+                      "\t{$src2, $src1, $dst {${mask}}|$dst {${mask}}, $src1, $src2}",
                       [(set _.KRC:$dst, (or _.KRCWM:$mask, (OpNode 
                                     (_.VT (bitconvert (_.LdFrag addr:$src1))),
                                     (i32 imm:$src2))))], NoItinerary>, EVEX_K;
     def rmb : AVX512<opc, MRMSrcMem, (outs _.KRC:$dst),
                       (ins _.ScalarMemOp:$src1, i32u8imm:$src2),
                       OpcodeStr##_.Suffix##broadcast##"\t{$src2, ${src1}"##
-                                        _.BroadcastStr##", $dst | $dst, ${src1}"
+                                        _.BroadcastStr##", $dst|$dst, ${src1}"
                                                     ##_.BroadcastStr##", $src2}",
                       [(set _.KRC:$dst,(OpNode 
                                        (_.VT (X86VBroadcast 
@@ -1962,7 +1962,7 @@ multiclass avx512_vector_fpclass<bits<8> opc, string OpcodeStr, SDNode OpNode,
     def rmbk : AVX512<opc, MRMSrcMem, (outs _.KRC:$dst),
                       (ins _.KRCWM:$mask, _.ScalarMemOp:$src1, i32u8imm:$src2),
                       OpcodeStr##_.Suffix##broadcast##"\t{$src2, ${src1}"##
-                            _.BroadcastStr##", $dst {${mask}} | $dst {${mask}}, ${src1}"##
+                            _.BroadcastStr##", $dst {${mask}}|$dst {${mask}}, ${src1}"##
                                                      _.BroadcastStr##", $src2}",
                       [(set _.KRC:$dst,(or _.KRCWM:$mask, (OpNode 
                                        (_.VT (X86VBroadcast 
@@ -2366,6 +2366,7 @@ def : Pat<(xor (xor VK1:$src1, VK1:$src2), (i1 1)),
 multiclass avx512_mask_unpck<string Suffix,RegisterClass KRC, ValueType VT,
                              RegisterClass KRCSrc, Predicate prd> {
   let Predicates = [prd] in {
+    let hasSideEffects = 0 in
     def rr : I<0x4b, MRMSrcReg, (outs KRC:$dst),
                (ins KRC:$src1, KRC:$src2),
                "kunpck"#Suffix#"\t{$src2, $src1, $dst|$dst, $src1, $src2}", []>,

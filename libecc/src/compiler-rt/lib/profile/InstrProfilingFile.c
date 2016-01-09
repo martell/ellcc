@@ -17,6 +17,10 @@
 
 #define UNCONST(ptr) ((void *)(uintptr_t)(ptr))
 
+#ifdef _MSC_VER
+#define snprintf _snprintf
+#endif
+
 /* Return 1 if there is an error, otherwise return  0.  */
 static uint32_t fileWriter(ProfDataIOVec *IOVecs, uint32_t NumIOVecs,
                            void **WriterCtx) {
@@ -207,6 +211,15 @@ int __llvm_profile_write_file(void) {
   /* Check the filename. */
   if (!__llvm_profile_CurrentFilename) {
     PROF_ERR("LLVM Profile: Failed to write file : %s\n", "Filename not set");
+    return -1;
+  }
+
+  /* Check if there is llvm/runtime version mismatch.  */
+  if (GET_VERSION(__llvm_profile_get_version()) != INSTR_PROF_RAW_VERSION) {
+    PROF_ERR("LLVM Profile: runtime and instrumentation version mismatch : "
+             "expected %d, but get %d\n",
+             INSTR_PROF_RAW_VERSION,
+             (int)GET_VERSION(__llvm_profile_get_version()));
     return -1;
   }
 

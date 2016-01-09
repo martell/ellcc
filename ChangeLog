@@ -1,5 +1,7 @@
 current SVN:
 
+* Update to LLVM r257250.
+
 version 0.1.25
 
 * Additional changes to build Linux on the Mac. Thanks to Emmanuel Blot.

@@ -26,19 +26,16 @@ void link(ArrayRef<const char *> Args);
 class LinkerDriver {
 public:
   void main(ArrayRef<const char *> Args);
-  void createFiles(llvm::opt::InputArgList &Args);
-  template <class ELFT> void link(llvm::opt::InputArgList &Args);
-
   void addFile(StringRef Path);
 
 private:
-  template <template <class> class T>
-  std::unique_ptr<InputFile> createELFInputFile(MemoryBufferRef MB);
+  void readConfigs(llvm::opt::InputArgList &Args);
+  void createFiles(llvm::opt::InputArgList &Args);
+  template <class ELFT> void link(llvm::opt::InputArgList &Args);
 
   llvm::BumpPtrAllocator Alloc;
   bool WholeArchive = false;
   std::vector<std::unique_ptr<InputFile>> Files;
-  std::vector<std::unique_ptr<ArchiveFile>> OwningArchives;
   std::vector<std::unique_ptr<MemoryBuffer>> OwningMBs;
 };
 

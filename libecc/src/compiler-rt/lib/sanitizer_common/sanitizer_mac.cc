@@ -412,6 +412,12 @@ void WriteOneLineToSyslog(const char *s) {
   asl_log(nullptr, nullptr, ASL_LEVEL_ERR, "%s", s);
 }
 
+void LogMessageOnPrintf(const char *str) {
+  // Log all printf output to CrashLog.
+  if (common_flags()->abort_on_error)
+    CRAppendCrashLogMessage(str);
+}
+
 void LogFullErrorReport(const char *buffer) {
   // Log with os_trace. This will make it into the crash log.
 #if SANITIZER_OS_TRACE
@@ -445,9 +451,7 @@ void LogFullErrorReport(const char *buffer) {
   if (common_flags()->log_to_syslog)
     WriteToSyslog(buffer);
 
-  // Log to CrashLog.
-  if (common_flags()->abort_on_error)
-    CRSetCrashLogMessage(buffer);
+  // The report is added to CrashLog as part of logging all of Printf output.
 }
 
 void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp) {

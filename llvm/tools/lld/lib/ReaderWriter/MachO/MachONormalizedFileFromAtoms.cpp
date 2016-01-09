@@ -50,7 +50,8 @@ struct AtomInfo {
 
 struct SectionInfo {
   SectionInfo(StringRef seg, StringRef sect, SectionType type,
-              const MachOLinkingContext &ctxt, uint32_t attr=0);
+              const MachOLinkingContext &ctxt, uint32_t attr,
+              bool relocsToDefinedCanBeImplicit);
 
   StringRef                 segmentName;
   StringRef                 sectionName;
@@ -59,15 +60,25 @@ struct SectionInfo {
   uint64_t                  address;
   uint64_t                  size;
   uint16_t                  alignment;
+
+  /// If this is set, the any relocs in this section which point to defined
+  /// addresses can be implicitly generated.  This is the case for the
+  /// __eh_frame section where references to the function can be implicit if the
+  /// function is defined.
+  bool                      relocsToDefinedCanBeImplicit;
+
+
   std::vector<AtomInfo>     atomsAndOffsets;
   uint32_t                  normalizedSectionIndex;
   uint32_t                  finalSectionIndex;
 };
 
 SectionInfo::SectionInfo(StringRef sg, StringRef sct, SectionType t,
-                         const MachOLinkingContext &ctxt, uint32_t attrs)
+                         const MachOLinkingContext &ctxt, uint32_t attrs,
+                         bool relocsToDefinedCanBeImplicit)
  : segmentName(sg), sectionName(sct), type(t), attributes(attrs),
                  address(0), size(0), alignment(1),
+                 relocsToDefinedCanBeImplicit(relocsToDefinedCanBeImplicit),
                  normalizedSectionIndex(0), finalSectionIndex(0) {
   uint16_t align = 1;
   if (ctxt.sectionAligned(segmentName, sectionName, align)) {
@@ -193,10 +204,12 @@ SectionInfo *Util::getRelocatableSection(DefinedAtom::ContentType type) {
   StringRef sectionName;
   SectionType sectionType;
   SectionAttr sectionAttrs;
+  bool relocsToDefinedCanBeImplicit;
 
   // Use same table used by when parsing .o files.
   relocatableSectionInfoForContentType(type, segmentName, sectionName,
-                                       sectionType, sectionAttrs);
+                                       sectionType, sectionAttrs,
+                                       relocsToDefinedCanBeImplicit);
   // If we already have a SectionInfo with this name, re-use it.
   // This can happen if two ContentType map to the same mach-o section.
   for (auto sect : _sectionMap) {
@@ -207,7 +220,8 @@ SectionInfo *Util::getRelocatableSection(DefinedAtom::ContentType type) {
   }
   // Otherwise allocate new SectionInfo object.
   auto *sect = new (_allocator)
-      SectionInfo(segmentName, sectionName, sectionType, _ctx, sectionAttrs);
+      SectionInfo(segmentName, sectionName, sectionType, _ctx, sectionAttrs,
+                  relocsToDefinedCanBeImplicit);
   _sectionInfos.push_back(sect);
   _sectionMap[type] = sect;
   return sect;
@@ -287,7 +301,8 @@ SectionInfo *Util::getFinalSection(DefinedAtom::ContentType atomType) {
     }
     // Otherwise allocate new SectionInfo object.
     auto *sect = new (_allocator) SectionInfo(
-        p.segmentName, p.sectionName, p.sectionType, _ctx, sectionAttrs);
+        p.segmentName, p.sectionName, p.sectionType, _ctx, sectionAttrs,
+        /* relocsToDefinedCanBeImplicit */ false);
     _sectionInfos.push_back(sect);
     _sectionMap[atomType] = sect;
     return sect;
@@ -320,7 +335,8 @@ SectionInfo *Util::sectionForAtom(const DefinedAtom *atom) {
     StringRef segName = customName.slice(0, seperatorIndex);
     StringRef sectName = customName.drop_front(seperatorIndex + 1);
     auto *sect =
-        new (_allocator) SectionInfo(segName, sectName, S_REGULAR, _ctx);
+        new (_allocator) SectionInfo(segName, sectName, S_REGULAR, _ctx,
+                                     0, /* relocsToDefinedCanBeImplicit */ false);
     _customSections.push_back(sect);
     _sectionInfos.push_back(sect);
     return sect;
@@ -406,14 +422,8 @@ bool Util::TextSectionSorter::operator()(const SectionInfo *left,
 }
 
 void Util::organizeSections() {
-  if (_ctx.outputMachOType() == llvm::MachO::MH_OBJECT) {
-    // Leave sections ordered as normalized file specified.
-    uint32_t sectionIndex = 1;
-    for (SectionInfo *si : _sectionInfos) {
-      si->finalSectionIndex = sectionIndex++;
-    }
-  } else {
-    switch (_ctx.outputMachOType()) {
+  // NOTE!: Keep this in sync with assignAddressesToSections.
+  switch (_ctx.outputMachOType()) {
     case llvm::MachO::MH_EXECUTE:
       // Main executables, need a zero-page segment
       segmentForName("__PAGEZERO");
@@ -425,32 +435,30 @@ void Util::organizeSections() {
       break;
     default:
       break;
-    }
-    // Group sections into segments.
-    for (SectionInfo *si : _sectionInfos) {
-      SegmentInfo *seg = segmentForName(si->segmentName);
-      seg->sections.push_back(si);
-    }
-    // Sort segments.
-    std::sort(_segmentInfos.begin(), _segmentInfos.end(), SegmentSorter());
+  }
+  // Group sections into segments.
+  for (SectionInfo *si : _sectionInfos) {
+    SegmentInfo *seg = segmentForName(si->segmentName);
+    seg->sections.push_back(si);
+  }
+  // Sort segments.
+  std::sort(_segmentInfos.begin(), _segmentInfos.end(), SegmentSorter());
 
-    // Sort sections within segments.
-    for (SegmentInfo *seg : _segmentInfos) {
-      if (seg->name.equals("__TEXT")) {
-        std::sort(seg->sections.begin(), seg->sections.end(),
-                                                          TextSectionSorter());
-      }
+  // Sort sections within segments.
+  for (SegmentInfo *seg : _segmentInfos) {
+    if (seg->name.equals("__TEXT")) {
+      std::sort(seg->sections.begin(), seg->sections.end(),
+                TextSectionSorter());
     }
+  }
 
-    // Record final section indexes.
-    uint32_t segmentIndex = 0;
-    uint32_t sectionIndex = 1;
-    for (SegmentInfo *seg : _segmentInfos) {
-      seg->normalizedSegmentIndex = segmentIndex++;
-      for (SectionInfo *sect : seg->sections) {
-        sect->finalSectionIndex = sectionIndex++;
-      }
-    }
+  // Record final section indexes.
+  uint32_t segmentIndex = 0;
+  uint32_t sectionIndex = 1;
+  for (SegmentInfo *seg : _segmentInfos) {
+    seg->normalizedSegmentIndex = segmentIndex++;
+    for (SectionInfo *sect : seg->sections)
+      sect->finalSectionIndex = sectionIndex++;
   }
 }
 
@@ -487,54 +495,39 @@ void Util::layoutSectionsInTextSegment(size_t hlcSize, SegmentInfo *seg,
 }
 
 void Util::assignAddressesToSections(const NormalizedFile &file) {
+  // NOTE!: Keep this in sync with organizeSections.
   size_t hlcSize = headerAndLoadCommandsSize(file);
   uint64_t address = 0;
-  if (_ctx.outputMachOType() != llvm::MachO::MH_OBJECT) {
-    for (SegmentInfo *seg : _segmentInfos) {
-      if (seg->name.equals("__PAGEZERO")) {
-        seg->size = _ctx.pageZeroSize();
-        address += seg->size;
-      }
-      else if (seg->name.equals("__TEXT")) {
-        // _ctx.baseAddress()  == 0 implies it was either unspecified or
-        // pageZeroSize is also 0. In either case resetting address is safe.
-        address = _ctx.baseAddress() ? _ctx.baseAddress() : address;
-        layoutSectionsInTextSegment(hlcSize, seg, address);
-      } else
-        layoutSectionsInSegment(seg, address);
+  for (SegmentInfo *seg : _segmentInfos) {
+    if (seg->name.equals("__PAGEZERO")) {
+      seg->size = _ctx.pageZeroSize();
+      address += seg->size;
+    }
+    else if (seg->name.equals("__TEXT")) {
+      // _ctx.baseAddress()  == 0 implies it was either unspecified or
+      // pageZeroSize is also 0. In either case resetting address is safe.
+      address = _ctx.baseAddress() ? _ctx.baseAddress() : address;
+      layoutSectionsInTextSegment(hlcSize, seg, address);
+    } else
+      layoutSectionsInSegment(seg, address);
 
-      address = llvm::RoundUpToAlignment(address, _ctx.pageSize());
-    }
-    DEBUG_WITH_TYPE("WriterMachO-norm",
-      llvm::dbgs() << "assignAddressesToSections()\n";
-      for (SegmentInfo *sgi : _segmentInfos) {
-        llvm::dbgs()  << "   address=" << llvm::format("0x%08llX", sgi->address)
-                      << ", size="  << llvm::format("0x%08llX", sgi->size)
-                      << ", segment-name='" << sgi->name
-                      << "'\n";
-        for (SectionInfo *si : sgi->sections) {
-          llvm::dbgs()<< "      addr="  << llvm::format("0x%08llX", si->address)
-                      << ", size="  << llvm::format("0x%08llX", si->size)
-                      << ", section-name='" << si->sectionName
-                      << "\n";
-        }
-      }
-    );
-  } else {
-    for (SectionInfo *sect : _sectionInfos) {
-      sect->address = llvm::RoundUpToAlignment(address, sect->alignment);
-      address = sect->address + sect->size;
-    }
-    DEBUG_WITH_TYPE("WriterMachO-norm",
-      llvm::dbgs() << "assignAddressesToSections()\n";
-      for (SectionInfo *si : _sectionInfos) {
-        llvm::dbgs()  << "      section=" << si->sectionName
-                      << " address= "  << llvm::format("0x%08X", si->address)
-                      << " size= "  << llvm::format("0x%08X", si->size)
-                      << "\n";
-      }
-    );
+    address = llvm::RoundUpToAlignment(address, _ctx.pageSize());
   }
+  DEBUG_WITH_TYPE("WriterMachO-norm",
+    llvm::dbgs() << "assignAddressesToSections()\n";
+    for (SegmentInfo *sgi : _segmentInfos) {
+      llvm::dbgs()  << "   address=" << llvm::format("0x%08llX", sgi->address)
+                    << ", size="  << llvm::format("0x%08llX", sgi->size)
+                    << ", segment-name='" << sgi->name
+                    << "'\n";
+      for (SectionInfo *si : sgi->sections) {
+        llvm::dbgs()<< "      addr="  << llvm::format("0x%08llX", si->address)
+                    << ", size="  << llvm::format("0x%08llX", si->size)
+                    << ", section-name='" << si->sectionName
+                    << "\n";
+      }
+    }
+  );
 }
 
 void Util::copySegmentInfo(NormalizedFile &file) {
@@ -604,16 +597,9 @@ void Util::copySectionContent(NormalizedFile &file) {
 
 void Util::copySectionInfo(NormalizedFile &file) {
   file.sections.reserve(_sectionInfos.size());
-  // For final linked images, write sections grouped by segment.
-  if (_ctx.outputMachOType() != llvm::MachO::MH_OBJECT) {
-    for (SegmentInfo *sgi : _segmentInfos) {
-      for (SectionInfo *si : sgi->sections) {
-        appendSection(si, file);
-      }
-    }
-  } else {
-    // Object files write sections in default order.
-    for (SectionInfo *si : _sectionInfos) {
+  // Write sections grouped by segment.
+  for (SegmentInfo *sgi : _segmentInfos) {
+    for (SectionInfo *si : sgi->sections) {
       appendSection(si, file);
     }
   }
@@ -621,20 +607,12 @@ void Util::copySectionInfo(NormalizedFile &file) {
 
 void Util::updateSectionInfo(NormalizedFile &file) {
   file.sections.reserve(_sectionInfos.size());
-  if (_ctx.outputMachOType() != llvm::MachO::MH_OBJECT) {
-    // For final linked images, sections grouped by segment.
-    for (SegmentInfo *sgi : _segmentInfos) {
-      Segment *normSeg = &file.segments[sgi->normalizedSegmentIndex];
-      normSeg->address = sgi->address;
-      normSeg->size = sgi->size;
-      for (SectionInfo *si : sgi->sections) {
-        Section *normSect = &file.sections[si->normalizedSectionIndex];
-        normSect->address = si->address;
-      }
-    }
-  } else {
-    // Object files write sections in default order.
-    for (SectionInfo *si : _sectionInfos) {
+  // sections grouped by segment.
+  for (SegmentInfo *sgi : _segmentInfos) {
+    Segment *normSeg = &file.segments[sgi->normalizedSegmentIndex];
+    normSeg->address = sgi->address;
+    normSeg->size = sgi->size;
+    for (SectionInfo *si : sgi->sections) {
       Section *normSect = &file.sections[si->normalizedSectionIndex];
       normSect->address = si->address;
     }
@@ -663,19 +641,47 @@ void Util::buildAtomToAddressMap() {
         _entryAtom = info.atom;
       }
       DEBUG_WITH_TYPE("WriterMachO-address", llvm::dbgs()
-              << "   address="
-              << llvm::format("0x%016X", _atomToAddress[info.atom])
-              << " atom=" << info.atom
-              << " name=" << info.atom->name() << "\n");
+                      << "   address="
+                      << llvm::format("0x%016X", _atomToAddress[info.atom])
+                      << llvm::format("    0x%09lX", info.atom)
+                      << ", file=#"
+                      << info.atom->file().ordinal()
+                      << ", atom=#"
+                      << info.atom->ordinal()
+                      << ", name="
+                      << info.atom->name()
+                      << ", type="
+                      << info.atom->contentType()
+                      << "\n");
     }
   }
+  DEBUG_WITH_TYPE("WriterMachO-address", llvm::dbgs()
+                  << "assign header alias atom addresses:\n");
   for (const Atom *atom : _machHeaderAliasAtoms) {
     _atomToAddress[atom] = _ctx.baseAddress();
-    DEBUG_WITH_TYPE("WriterMachO-address", llvm::dbgs()
-              << "   address="
-              << llvm::format("0x%016X", _atomToAddress[atom])
-              << " atom=" << atom
-              << " name=" << atom->name() << "\n");
+#ifndef NDEBUG
+    if (auto *definedAtom = dyn_cast<DefinedAtom>(atom)) {
+      DEBUG_WITH_TYPE("WriterMachO-address", llvm::dbgs()
+                      << "   address="
+                      << llvm::format("0x%016X", _atomToAddress[atom])
+                      << llvm::format("    0x%09lX", atom)
+                      << ", file=#"
+                      << definedAtom->file().ordinal()
+                      << ", atom=#"
+                      << definedAtom->ordinal()
+                      << ", name="
+                      << definedAtom->name()
+                      << ", type="
+                      << definedAtom->contentType()
+                      << "\n");
+    } else {
+      DEBUG_WITH_TYPE("WriterMachO-address", llvm::dbgs()
+                      << "   address="
+                      << llvm::format("0x%016X", _atomToAddress[atom])
+                      << " atom=" << atom
+                      << " name=" << atom->name() << "\n");
+    }
+#endif
   }
 }
 
@@ -999,11 +1005,9 @@ void Util::segIndexForSection(const SectionInfo *sect, uint8_t &segmentIndex,
 
 uint32_t Util::sectionIndexForAtom(const Atom *atom) {
   uint64_t address = _atomToAddress[atom];
-  uint32_t index = 1;
   for (const SectionInfo *si : _sectionInfos) {
     if ((si->address <= address) && (address < si->address+si->size))
-      return index;
-    ++index;
+      return si->finalSectionIndex;
   }
   llvm_unreachable("atom not in any section");
 }
@@ -1036,6 +1040,11 @@ void Util::addSectionRelocs(const lld::File &, NormalizedFile &file) {
     for (const AtomInfo &info : si->atomsAndOffsets) {
       const DefinedAtom *atom = info.atom;
       for (const Reference *ref : *atom) {
+        // Skip emitting relocs for sections which are always able to be
+        // implicitly regenerated and where the relocation targets an address
+        // which is defined.
+        if (si->relocsToDefinedCanBeImplicit && isa<DefinedAtom>(ref->target()))
+          continue;
         _archHandler.appendSectionRelocations(*atom, info.offsetInSection, *ref,
                                               symIndexForAtom,
                                               sectIndexForAtom,

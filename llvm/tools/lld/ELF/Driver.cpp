@@ -26,10 +26,10 @@ using namespace llvm::object;
 using namespace lld;
 using namespace lld::elf2;
 
-Configuration *lld::elf2::Config;
-LinkerDriver *lld::elf2::Driver;
+Configuration *elf2::Config;
+LinkerDriver *elf2::Driver;
 
-void lld::elf2::link(ArrayRef<const char *> Args) {
+void elf2::link(ArrayRef<const char *> Args) {
   Configuration C;
   LinkerDriver D;
   Config = &C;
@@ -57,6 +57,24 @@ static std::pair<ELFKind, uint16_t> parseEmulation(StringRef S) {
   error("Unknown emulation: " + S);
 }
 
+// Returns slices of MB by parsing MB as an archive file.
+// Each slice consists of a member file in the archive.
+static std::vector<MemoryBufferRef> getArchiveMembers(MemoryBufferRef MB) {
+  ErrorOr<std::unique_ptr<Archive>> FileOrErr = Archive::create(MB);
+  error(FileOrErr, "Failed to parse archive");
+  std::unique_ptr<Archive> File = std::move(*FileOrErr);
+
+  std::vector<MemoryBufferRef> V;
+  for (const ErrorOr<Archive::Child> &C : File->children()) {
+    error(C, "Could not get the child of the archive " + File->getFileName());
+    ErrorOr<MemoryBufferRef> MbOrErr = C->getMemoryBufferRef();
+    error(MbOrErr, "Could not get the buffer for a child of the archive " +
+                       File->getFileName());
+    V.push_back(*MbOrErr);
+  }
+  return V;
+}
+
 // Opens and parses a file. Path has to be resolved already.
 // Newly created memory buffers are owned by this driver.
 void LinkerDriver::addFile(StringRef Path) {
@@ -75,20 +93,36 @@ void LinkerDriver::addFile(StringRef Path) {
     return;
   case file_magic::archive:
     if (WholeArchive) {
-      auto File = make_unique<ArchiveFile>(MBRef);
-      for (MemoryBufferRef &MB : File->getMembers())
-        Files.push_back(createELFFile<ObjectFile>(MB));
-      OwningArchives.emplace_back(std::move(File));
+      for (MemoryBufferRef MB : getArchiveMembers(MBRef))
+        Files.push_back(createObjectFile(MB));
       return;
     }
     Files.push_back(make_unique<ArchiveFile>(MBRef));
     return;
   case file_magic::elf_shared_object:
-    Files.push_back(createELFFile<SharedFile>(MBRef));
+    Files.push_back(createSharedFile(MBRef));
     return;
   default:
-    Files.push_back(createELFFile<ObjectFile>(MBRef));
+    Files.push_back(createObjectFile(MBRef));
   }
+}
+
+// Some command line options or some combinations of them are not allowed.
+// This function checks for such errors.
+static void checkOptions(opt::InputArgList &Args) {
+  // Traditional linkers can generate re-linkable object files instead
+  // of executables or DSOs. We don't support that since the feature
+  // does not seem to provide more value than the static archiver.
+  if (Args.hasArg(OPT_relocatable))
+    error("-r option is not supported. Use 'ar' command instead.");
+
+  // The MIPS ABI as of 2016 does not support the GNU-style symbol lookup
+  // table which is a relatively new feature.
+  if (Config->EMachine == EM_MIPS && Config->GnuHash)
+    error("The .gnu.hash section is not compatible with the MIPS target.");
+
+  if (Config->EMachine == EM_AMDGPU && !Config->Entry.empty())
+    error("-e option is not valid for AMDGPU.");
 }
 
 static StringRef
@@ -109,13 +143,9 @@ void LinkerDriver::main(ArrayRef<const char *> ArgsArr) {
   initSymbols();
 
   opt::InputArgList Args = parseArgs(&Alloc, ArgsArr);
+  readConfigs(Args);
   createFiles(Args);
-
-  // Traditional linkers can generate re-linkable object files instead
-  // of executables or DSOs. We don't support that since the feature
-  // does not seem to provide more value than the static archiver.
-  if (Args.hasArg(OPT_relocatable))
-    error("-r option is not supported. Use 'ar' command instead.");
+  checkOptions(Args);
 
   switch (Config->EKind) {
   case ELF32LEKind:
@@ -135,7 +165,8 @@ void LinkerDriver::main(ArrayRef<const char *> ArgsArr) {
   }
 }
 
-void LinkerDriver::createFiles(opt::InputArgList &Args) {
+// Initializes Config members by the command line options.
+void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   for (auto *Arg : Args.filtered(OPT_L))
     Config->SearchPaths.push_back(Arg->getValue());
 
@@ -201,7 +232,9 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
 
   for (auto *Arg : Args.filtered(OPT_undefined))
     Config->Undefined.push_back(Arg->getValue());
+}
 
+void LinkerDriver::createFiles(opt::InputArgList &Args) {
   for (auto *Arg : Args) {
     switch (Arg->getOption().getID()) {
     case OPT_l:
@@ -234,9 +267,6 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
 
   if (Files.empty())
     error("no input files.");
-
-  if (Config->GnuHash && Config->EMachine == EM_MIPS)
-    error("The .gnu.hash section is not compatible with the MIPS target.");
 }
 
 template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
@@ -245,7 +275,10 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
 
   if (!Config->Shared) {
     // Add entry symbol.
-    if (Config->Entry.empty())
+    //
+    // There is no entry symbol for AMDGPU binaries, so skip adding one to avoid
+    // having and undefined symbol.
+    if (Config->Entry.empty() && Config->EMachine != EM_AMDGPU)
       Config->Entry = (Config->EMachine == EM_MIPS) ? "__start" : "_start";
 
     // In the assembly for 32 bit x86 the _GLOBAL_OFFSET_TABLE_ symbol
@@ -287,6 +320,9 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
 
   for (StringRef S : Config->Undefined)
     Symtab.addUndefinedOpt(S);
+
+  for (auto *Arg : Args.filtered(OPT_wrap))
+    Symtab.wrap(Arg->getValue());
 
   if (Config->OutputFile.empty())
     Config->OutputFile = "a.out";

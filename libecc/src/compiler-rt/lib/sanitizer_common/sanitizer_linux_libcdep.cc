@@ -521,13 +521,13 @@ void AndroidLogInit() {
   atomic_store(&android_log_initialized, 1, memory_order_release);
 }
 
-bool ShouldLogAfterPrintf() {
+static bool ShouldLogAfterPrintf() {
   return atomic_load(&android_log_initialized, memory_order_acquire);
 }
 #else
 void AndroidLogInit() {}
 
-bool ShouldLogAfterPrintf() { return true; }
+static bool ShouldLogAfterPrintf() { return true; }
 #endif  // SANITIZER_ANDROID
 
 void WriteOneLineToSyslog(const char *s) {
@@ -536,6 +536,11 @@ void WriteOneLineToSyslog(const char *s) {
 #else
   syslog(LOG_INFO, "%s", s);
 #endif
+}
+
+void LogMessageOnPrintf(const char *str) {
+  if (common_flags()->log_to_syslog && ShouldLogAfterPrintf())
+    WriteToSyslog(str);
 }
 
 #endif // SANITIZER_LINUX

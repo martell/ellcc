@@ -91,20 +91,23 @@ template <class ELFT> class ObjectFile : public ELFFileBase<ELFT> {
   typedef typename llvm::object::ELFFile<ELFT>::Elf_Word Elf_Word;
   typedef typename llvm::object::ELFFile<ELFT>::uintX_t uintX_t;
 
+  // uint32 in ELFT's byte order
   typedef llvm::support::detail::packed_endian_specific_integral<
-      uint32_t, ELFT::TargetEndianness, 2> GroupEntryType;
+      uint32_t, ELFT::TargetEndianness, 2>
+      uint32_X;
+
   StringRef getShtGroupSignature(const Elf_Shdr &Sec);
-  ArrayRef<GroupEntryType> getShtGroupEntries(const Elf_Shdr &Sec);
+  ArrayRef<uint32_X> getShtGroupEntries(const Elf_Shdr &Sec);
 
 public:
   static bool classof(const InputFile *F) {
     return F->kind() == Base::ObjectKind;
   }
 
-  ArrayRef<SymbolBody *> getSymbols() { return this->SymbolBodies; }
+  ArrayRef<SymbolBody *> getSymbols() { return SymbolBodies; }
 
   explicit ObjectFile(MemoryBufferRef M);
-  void parse(llvm::DenseSet<StringRef> &Comdats);
+  void parse(llvm::DenseSet<StringRef> &ComdatGroups);
 
   ArrayRef<InputSectionBase<ELFT> *> getSections() const { return Sections; }
   InputSectionBase<ELFT> *getSection(const Elf_Sym &Sym) const;
@@ -113,7 +116,7 @@ public:
     uint32_t FirstNonLocal = this->Symtab->sh_info;
     if (SymbolIndex < FirstNonLocal)
       return nullptr;
-    return this->SymbolBodies[SymbolIndex - FirstNonLocal];
+    return SymbolBodies[SymbolIndex - FirstNonLocal];
   }
 
   Elf_Sym_Range getLocalSymbols();
@@ -127,7 +130,7 @@ public:
   uint32_t getMipsGp0() const;
 
 private:
-  void initializeSections(llvm::DenseSet<StringRef> &Comdats);
+  void initializeSections(llvm::DenseSet<StringRef> &ComdatGroups);
   void initializeSymbols();
   InputSectionBase<ELFT> *createInputSection(const Elf_Shdr &Sec);
 
@@ -159,7 +162,6 @@ public:
   MemoryBufferRef getMember(const Archive::Symbol *Sym);
 
   llvm::MutableArrayRef<Lazy> getLazySymbols() { return LazySymbols; }
-  std::vector<MemoryBufferRef> getMembers();
 
 private:
   std::unique_ptr<Archive> File;
@@ -194,7 +196,7 @@ public:
   explicit SharedFile(MemoryBufferRef M);
 
   void parseSoName();
-  void parse();
+  void parseRest();
 
   // Used for --as-needed
   bool AsNeeded = false;
@@ -202,8 +204,8 @@ public:
   bool isNeeded() const { return !AsNeeded || IsUsed; }
 };
 
-template <template <class> class T>
-std::unique_ptr<InputFile> createELFFile(MemoryBufferRef MB);
+std::unique_ptr<InputFile> createObjectFile(MemoryBufferRef MB);
+std::unique_ptr<InputFile> createSharedFile(MemoryBufferRef MB);
 
 } // namespace elf2
 } // namespace lld

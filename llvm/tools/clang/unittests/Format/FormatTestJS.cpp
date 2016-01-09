@@ -288,6 +288,11 @@ TEST_F(FormatTestJS, ArrayLiterals) {
                "  bbbbbbbbbbbbbbbbbbbbbbbbbbb,\n"
                "  ccccccccccccccccccccccccccc\n"
                "];");
+  verifyFormat("return [\n"
+               "  aaaa().bbbbbbbb('A'),\n"
+               "  aaaa().bbbbbbbb('B'),\n"
+               "  aaaa().bbbbbbbb('C'),\n"
+               "];");
   verifyFormat("var someVariable = SomeFunction([\n"
                "  aaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
                "  bbbbbbbbbbbbbbbbbbbbbbbbbbb,\n"
@@ -310,6 +315,8 @@ TEST_F(FormatTestJS, ArrayLiterals) {
                "      ccccccccccccccccccccccccccc\n"
                "    ],\n"
                "    aaaa);");
+  verifyFormat("var aaaa = aaaaa ||  // wrap\n"
+               "    [];");
 
   verifyFormat("someFunction([], {a: a});");
 }
@@ -733,6 +740,9 @@ TEST_F(FormatTestJS, TypeAnnotations) {
   verifyFormat("var x: P<string, (a: number) => string>;");
   verifyFormat("var x = {y: function(): z { return 1; }};");
   verifyFormat("var x = {y: function(): {a: number} { return 1; }};");
+  verifyFormat("function someFunc(args: string[]):\n"
+               "    {longReturnValue: string[]} {}",
+               getGoogleJSStyleWithColumns(60));
 }
 
 TEST_F(FormatTestJS, ClassDeclarations) {
@@ -748,6 +758,12 @@ TEST_F(FormatTestJS, ClassDeclarations) {
                "  aaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaa: aaaaaaaaaaaaaaaaaaaa):\n"
                "      aaaaaaaaaaaaaaaaaaaaaa {}\n"
                "}");
+  verifyFormat("foo = class Name {\n"
+               "  constructor() {}\n"
+               "};");
+  verifyFormat("foo = class {\n"
+               "  constructor() {}\n"
+               "};");
 
   // ':' is not a type declaration here.
   verifyFormat("class X {\n"
@@ -810,6 +826,7 @@ TEST_F(FormatTestJS, MetadataAnnotations) {
 TEST_F(FormatTestJS, Modules) {
   verifyFormat("import SomeThing from 'some/module.js';");
   verifyFormat("import {X, Y} from 'some/module.js';");
+  verifyFormat("import a, {X, Y} from 'some/module.js';");
   verifyFormat("import {\n"
                "  VeryLongImportsAreAnnoying,\n"
                "  VeryLongImportsAreAnnoying,\n"
@@ -863,6 +880,12 @@ TEST_F(FormatTestJS, Modules) {
                "  // adsdasd\n"
                "  BAZ\n"
                "}");
+  verifyFormat("export default [\n"
+               "  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+               "  bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n"
+               "];");
+  verifyFormat("export default [];");
+  verifyFormat("export default () => {};");
 }
 
 TEST_F(FormatTestJS, TemplateStrings) {
@@ -1008,6 +1031,16 @@ TEST_F(FormatTestJS, WrapAfterParen) {
                getGoogleJSStyleWithColumns(40));
   verifyFormat("while (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa &&\n"
                "       bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb) {\n}");
+}
+
+TEST_F(FormatTestJS, JSDocAnnotations) {
+  EXPECT_EQ("/**\n"
+            " * @export {this.is.a.long.path.to.a.Type}\n"
+            " */",
+            format("/**\n"
+                   " * @export {this.is.a.long.path.to.a.Type}\n"
+                   " */",
+                   getGoogleJSStyleWithColumns(20)));
 }
 
 } // end namespace tooling

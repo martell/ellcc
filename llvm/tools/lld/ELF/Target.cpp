@@ -122,7 +122,6 @@ private:
 class X86_64TargetInfo final : public TargetInfo {
 public:
   X86_64TargetInfo();
-  unsigned getPltRefReloc(unsigned Type) const override;
   bool isTlsDynReloc(unsigned Type, const SymbolBody &S) const override;
   void writeGotPltHeaderEntries(uint8_t *Buf) const override;
   void writeGotPltEntry(uint8_t *Buf, uint64_t Plt) const override;
@@ -139,7 +138,7 @@ public:
                    uint8_t *PairedLoc = nullptr) const override;
   bool isRelRelative(uint32_t Type) const override;
   bool isTlsOptimized(unsigned Type, const SymbolBody *S) const override;
-  bool isSizeDynReloc(uint32_t Type, const SymbolBody &S) const override;
+  bool isSizeReloc(uint32_t Type) const override;
   unsigned relocateTlsOptimize(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type,
                                uint64_t P, uint64_t SA,
                                const SymbolBody &S) const override;
@@ -176,7 +175,6 @@ class AArch64TargetInfo final : public TargetInfo {
 public:
   AArch64TargetInfo();
   unsigned getDynReloc(unsigned Type) const override;
-  unsigned getPltRefReloc(unsigned Type) const override;
   void writeGotPltEntry(uint8_t *Buf, uint64_t Plt) const override;
   void writePltZeroEntry(uint8_t *Buf, uint64_t GotEntryAddr,
                          uint64_t PltEntryAddr) const override;
@@ -184,6 +182,22 @@ public:
                      uint64_t PltEntryAddr, int32_t Index,
                      unsigned RelOff) const override;
   bool needsCopyRel(uint32_t Type, const SymbolBody &S) const override;
+  bool relocNeedsGot(uint32_t Type, const SymbolBody &S) const override;
+  bool relocNeedsPlt(uint32_t Type, const SymbolBody &S) const override;
+  void relocateOne(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type, uint64_t P,
+                   uint64_t SA, uint64_t ZA = 0,
+                   uint8_t *PairedLoc = nullptr) const override;
+};
+
+class AMDGPUTargetInfo final : public TargetInfo {
+public:
+  AMDGPUTargetInfo();
+  void writeGotPltEntry(uint8_t *Buf, uint64_t Plt) const override;
+  void writePltZeroEntry(uint8_t *Buf, uint64_t GotEntryAddr,
+                         uint64_t PltEntryAddr) const override;
+  void writePltEntry(uint8_t *Buf, uint64_t GotAddr, uint64_t GotEntryAddr,
+                     uint64_t PltEntryAddr, int32_t Index,
+                     unsigned RelOff) const override;
   bool relocNeedsGot(uint32_t Type, const SymbolBody &S) const override;
   bool relocNeedsPlt(uint32_t Type, const SymbolBody &S) const override;
   void relocateOne(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type, uint64_t P,
@@ -216,6 +230,8 @@ TargetInfo *createTarget() {
     return new X86TargetInfo();
   case EM_AARCH64:
     return new AArch64TargetInfo();
+  case EM_AMDGPU:
+    return new AMDGPUTargetInfo();
   case EM_MIPS:
     switch (Config->EKind) {
     case ELF32LEKind:
@@ -247,13 +263,9 @@ bool TargetInfo::needsCopyRel(uint32_t Type, const SymbolBody &S) const {
 
 bool TargetInfo::isGotRelative(uint32_t Type) const { return false; }
 
-unsigned TargetInfo::getPltRefReloc(unsigned Type) const { return PCRelReloc; }
-
 bool TargetInfo::isRelRelative(uint32_t Type) const { return true; }
 
-bool TargetInfo::isSizeDynReloc(uint32_t Type, const SymbolBody &S) const {
-  return false;
-}
+bool TargetInfo::isSizeReloc(uint32_t Type) const { return false; }
 
 unsigned TargetInfo::relocateTlsOptimize(uint8_t *Loc, uint8_t *BufEnd,
                                          uint32_t Type, uint64_t P, uint64_t SA,
@@ -320,7 +332,7 @@ void X86TargetInfo::writePltZeroEntry(uint8_t *Buf, uint64_t GotEntryAddr,
   // separate procedure linkage tables.
   if (Config->Shared) {
     const uint8_t V[] = {
-        0xff, 0xb3, 0x04, 0x00, 0x00, 0x00, // pushl 4(%ebx
+        0xff, 0xb3, 0x04, 0x00, 0x00, 0x00, // pushl 4(%ebx)
         0xff, 0xa3, 0x08, 0x00, 0x00, 0x00, // jmp *8(%ebx)
         0x90, 0x90, 0x90, 0x90              // nop;nop;nop;nop
     };
@@ -639,12 +651,6 @@ bool X86_64TargetInfo::isTlsDynReloc(unsigned Type, const SymbolBody &S) const {
   return Type == R_X86_64_GOTTPOFF || Type == R_X86_64_TLSGD;
 }
 
-unsigned X86_64TargetInfo::getPltRefReloc(unsigned Type) const {
-  if (Type == R_X86_64_PLT32)
-    return R_X86_64_PC32;
-  return Type;
-}
-
 bool X86_64TargetInfo::relocNeedsPlt(uint32_t Type, const SymbolBody &S) const {
   if (needsCopyRel(Type, S))
     return false;
@@ -698,16 +704,12 @@ bool X86_64TargetInfo::isRelRelative(uint32_t Type) const {
   case R_X86_64_PC32:
   case R_X86_64_PC64:
   case R_X86_64_PLT32:
-  case R_X86_64_SIZE32:
-  case R_X86_64_SIZE64:
     return true;
   }
 }
 
-bool X86_64TargetInfo::isSizeDynReloc(uint32_t Type,
-                                      const SymbolBody &S) const {
-  return (Type == R_X86_64_SIZE32 || Type == R_X86_64_SIZE64) &&
-         canBePreempted(&S, false);
+bool X86_64TargetInfo::isSizeReloc(uint32_t Type) const {
+  return Type == R_X86_64_SIZE32 || Type == R_X86_64_SIZE64;
 }
 
 bool X86_64TargetInfo::isTlsOptimized(unsigned Type,
@@ -1139,8 +1141,6 @@ unsigned AArch64TargetInfo::getDynReloc(unsigned Type) const {
                             "recompile with -fPIC.");
 }
 
-unsigned AArch64TargetInfo::getPltRefReloc(unsigned Type) const { return Type; }
-
 void AArch64TargetInfo::writeGotPltEntry(uint8_t *Buf, uint64_t Plt) const {
   write64le(Buf, Out<ELF64LE>::Plt->getVA());
 }
@@ -1313,6 +1313,42 @@ void AArch64TargetInfo::relocateOne(uint8_t *Loc, uint8_t *BufEnd,
   default:
     error("unrecognized reloc " + Twine(Type));
   }
+}
+
+AMDGPUTargetInfo::AMDGPUTargetInfo() {}
+
+void AMDGPUTargetInfo::writeGotPltEntry(uint8_t *Buf, uint64_t Plt) const {
+  llvm_unreachable("not implemented");
+}
+
+void AMDGPUTargetInfo::writePltZeroEntry(uint8_t *Buf, uint64_t GotEntryAddr,
+                                         uint64_t PltEntryAddr) const {
+  llvm_unreachable("not implemented");
+}
+
+void AMDGPUTargetInfo::writePltEntry(uint8_t *Buf, uint64_t GotAddr,
+                                     uint64_t GotEntryAddr,
+                                     uint64_t PltEntryAddr, int32_t Index,
+                                     unsigned RelOff) const {
+  llvm_unreachable("not implemented");
+}
+
+bool AMDGPUTargetInfo::relocNeedsGot(uint32_t Type, const SymbolBody &S) const {
+  return false;
+}
+
+bool AMDGPUTargetInfo::relocNeedsPlt(uint32_t Type, const SymbolBody &S) const {
+  return false;
+}
+
+// Implementing relocations for AMDGPU is low priority since most
+// programs don't use relocations now. Thus, this function is not
+// actually called (relocateOne is called for each relocation).
+// That's why the AMDGPU port works without implementing this function.
+void AMDGPUTargetInfo::relocateOne(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type,
+                                   uint64_t P, uint64_t SA, uint64_t ZA,
+                                   uint8_t *PairedLoc) const {
+  llvm_unreachable("not implemented");
 }
 
 template <class ELFT> MipsTargetInfo<ELFT>::MipsTargetInfo() {

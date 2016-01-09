@@ -293,6 +293,11 @@ if(APPLE)
     -lc++
     -lc++abi)
   
+  check_linker_flag("-fapplication-extension" COMPILER_RT_HAS_APP_EXTENSION)
+  if(COMPILER_RT_HAS_APP_EXTENSION)
+    list(APPEND DARWIN_COMMON_LINKFLAGS "-fapplication-extension")
+  endif()
+
   set(DARWIN_osx_CFLAGS
     ${DARWIN_COMMON_CFLAGS}
     -mmacosx-version-min=${SANITIZER_MIN_OSX_VERSION})
@@ -525,7 +530,7 @@ else()
 endif()
 
 if (PROFILE_SUPPORTED_ARCH AND
-    OS_NAME MATCHES "Darwin|Linux|FreeBSD")
+    OS_NAME MATCHES "Darwin|Linux|FreeBSD|Windows")
   set(COMPILER_RT_HAS_PROFILE TRUE)
 else()
   set(COMPILER_RT_HAS_PROFILE FALSE)

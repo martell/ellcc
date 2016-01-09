@@ -105,6 +105,7 @@ public:
   // you can access P->Backref->Body to get the resolver's result.
   void setBackref(Symbol *P) { Backref = P; }
   SymbolBody *repl() { return Backref ? Backref->Body : this; }
+  Symbol *getSymbol() { return Backref; }
 
   // Decides which symbol should "win" in the symbol table, this or
   // the Other. Returns 1 if this wins, -1 if the Other wins, or 0 if
@@ -173,7 +174,7 @@ public:
 
   // The output offset of this common symbol in the output bss. Computed by the
   // writer.
-  uint64_t OffsetInBSS;
+  uint64_t OffsetInBss;
 
   // The maximum alignment we have seen for this symbol.
   uint64_t MaxAlignment;
@@ -262,9 +263,9 @@ public:
   SharedFile<ELFT> *File;
 
   // True if the linker has to generate a copy relocation for this shared
-  // symbol. OffsetInBSS is significant only when NeedsCopy is true.
+  // symbol. OffsetInBss is significant only when NeedsCopy is true.
   bool NeedsCopy = false;
-  uintX_t OffsetInBSS = 0;
+  uintX_t OffsetInBss = 0;
 };
 
 // This class represents a symbol defined in an archive file. It is
