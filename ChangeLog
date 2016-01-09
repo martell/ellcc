@@ -1,5 +1,6 @@
 current SVN:
 
+* Build Das U-Boot on Linux.
 * Update to LLVM r257250.
 
 version 0.1.25

@@ -1,12 +1,15 @@
 #! /bin/sh
 
-# The complete package list. See mac_excludes below for Mac exceptions.
-packages="sinit sbase ubase smdev nldev nlmon svc sdhcp loksh ntfs3g iproute2
-          e2fsprogs vim"
+# The complete package list. See mac_exclude below for Mac exceptions.
+packages="uboot kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh
+          ntfs3g iproute2 e2fsprogs vim"
 
-KERNEL=1
+# Packages to avoid on the Mac (build problems).
+mac_exclude="iproute2 e2fsprogs vim"
+
 CLEAN=0
 LINUX_VERSION=4.1.15
+UBOOT_VERSION=2015.10
 ELLCC_VERSION=0.1.23
 VIM_VERSION=7.4
 VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
@@ -14,16 +17,22 @@ PYTHON_VERSION=3.5.1
 E2FSPROGS_VERSION=1.42.13
 NTFS3G_VERSION=2015.3.14
 IPROUTE2_VERSION=4.3.0
+exclude=
 
 usage() {
   echo usage: $0 [options] target
   echo "  options:"
-  echo "    -nokernel           Don't build the Linux kernel"
-  echo "    -clean              Clean up a previous build"
+  echo "    -packages "packag1 package2 ..."    Specific packages to build"
+  echo "    -exclude  "packag1 package2 ..."    Specific packages to exclude"
+  echo "    -clean                              Clean up a previous build"
   echo "  targets:"
-  echo "    help                This message"
-  echo "    bcmrpi              Raspberry Pi    (ARMv6)"
-  echo "    bcm2709             Raspberry Pi 2  (ARMv7)"
+  echo "    help                                This message"
+  echo "    bcmrpi                              Raspberry Pi    (ARMv6)"
+  echo "    bcm2709                             Raspberry Pi 2  (ARMv7)"
+  echo "  available packages:"
+  echo "    $packages"
+  echo "  packages not buildable on the Mac:"
+  echo "    $mac_exclude"
 }
 
 if [ $# -lt 1 ] ; then
@@ -33,9 +42,16 @@ fi
 
 while [ $# -gt 1 ] ; do
   case $1 in
-    -nokernel)
-      # Don't build the Linux kernel
-      KERNEL=0
+    -packages)
+      # Packages to include
+      shift
+      packages=$1
+      shift
+      ;;
+    -exclude)
+      # Packages to exclude
+      shift
+      exclude=$1
       shift
       ;;
     -clean)
@@ -57,17 +73,19 @@ ELLCC=`realpath $TOP/../..`
 UNAME=`uname`
 
 BOARD=$1
-if [ $BOARD = "help" ] ; then
+if [ "${BOARD}" = "" -o "${BOARD}" = "help" ] ; then
   usage
   exit 0
-elif [ $BOARD = "bcmrpi" ] ; then
+elif [ "${BOARD}" = "bcmrpi" ] ; then
   ARCH=arm
   BOARD=bcmrpi                  # Raspberry Pi
+  UBOOT_BOARD=rpi_b
   TARGET=armv6-linux-engeabihf  # ARMv6
   NO_VDSO=0
-elif [ $BOARD = "bcm2709" ] ; then
+elif [ "${BOARD}" = "bcm2709" ] ; then
   ARCH=arm
   BOARD=bcm2709                 # Raspberry Pi 2
+  UBOOT_BOARD=rpi_2
   TARGET=arm-linux-engeabihf    # ARMv7
   NO_VDSO=1
 else
@@ -76,19 +94,36 @@ else
   exit 1
 fi
 
+# Enable packages.
+for p in `echo $packages` ; do
+  eval $p=yes
+done
+
+# Disable packages.
+for p in `echo $exclude` ; do
+  eval $p=no
+done
+
 LINUX_CONFIG=${BOARD}_defconfig
+if [ "${UBOOT_BOARD}" != "" ] ; then
+  UBOOT_CONFIG=${UBOOT_BOARD}_defconfig
+else
+  uboot=no
+fi
 
 # The build directory.
 BUILD=$TOP/$TARGET
 # The install directories.
 ROOT=$TOP/image/$TARGET         # /
 BOOT=$TOP/image/$TARGET/$BOARD  # /boot
+UBOOT=$TOP/image/$TARGET/uboot-$UBOOT_BOARD
 
 DOWNLOAD=$TOP/download
 
 if [ $CLEAN -ne 0 ] ; then
   rm -fr $BUILD
   rm -fr $ROOT
+  rm -fr $UBOOT
   exit 0
 fi
 
@@ -98,19 +133,11 @@ else
   MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
 fi
 
-# Enable packages.
-for p in `echo $packages` ; do
-  eval $p=yes
-done
-
-# Packages to avoid on the Mac (build problems).
-mac_excludes="iproute2 e2fsprogs vim"
-
 # Tools.
 if [ “${UNAME}” = “Darwin” ] ; then
   export HOSTCC=clang
   # Exclude packages that fail for now.
-  for p in `echo $mac_excludes` ; do
+  for p in `echo $mac_exclude` ; do
     eval $p=no
   done
 else
@@ -126,7 +153,7 @@ export STRIP=$ELLCC/bin/ecc-strip
 mkdir -p $BUILD
 mkdir -p $DOWNLOAD
 
-if [ $KERNEL -ne 0 ] ; then
+if [ "$kernel" = "yes" ] ; then
   if [ ! -e $DOWNLOAD/linux-$LINUX_VERSION.tar.xz ] ; then
     (cd $DOWNLOAD ; wget https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$LINUX_VERSION.tar.xz)
   fi
@@ -147,7 +174,6 @@ if [ $KERNEL -ne 0 ] ; then
     cd linux-$LINUX_VERSION/
     # Configure the kernel.
     make ARCH=$ARCH BUILD=$BUILD/$BOARD TARGET=$TARGET MAXJOBS=1 $LINUX_CONFIG
-    mkdir -p $BUILD/$BOARD
     cd $BUILD/$BOARD
     if [ $NO_VDSO -eq 1 ] ; then
       sed -ie "s/CONFIG_VDSO=y/CONFIG_VDSO=n/" .config
@@ -164,6 +190,34 @@ if [ $KERNEL -ne 0 ] ; then
   rm -f $ROOT/lib/modules/*/build       # Not needed on the target.
   rm -f $ROOT/lib/modules/*/source      # Not needed on the target.
   make INSTALL_PATH=$BOOT zinstall
+  cd $TOP
+fi
+
+if [ "$uboot" = "yes" ] ; then
+  if [ ! -e $DOWNLOAD/u-boot-$UBOOT_VERSION.tar.bz2 ] ; then
+    (cd $DOWNLOAD ; wget ftp://ftp.denx.de/pub/u-boot/u-boot-$UBOOT_VERSION.tar.bz2)
+  fi
+  if [ ! -e u-boot-$UBOOT_VERSION ] ; then
+    tar xvfp $DOWNLOAD/u-boot-$UBOOT_VERSION.tar.bz2
+    cd u-boot-$UBOOT_VERSION/
+    for p in `echo ../*u-boot-$UBOOT_VERSION.patch` ; do
+      patch -p1 < $p
+    done
+    if [ “${UNAME}” = “Darwin” ] ; then
+      cp makefile GNUmakefile
+    fi
+    cd $TOP
+  fi
+  if [ ! -e $BUILD/$UBOOT_BOARD ] ; then
+    cd u-boot-$UBOOT_VERSION/
+    # Configure u-boot
+    make ARCH=$ARCH BUILD=$BUILD/uboot-$UBOOT_BOARD TARGET=$TARGET MAXJOBS=1 $UBOOT_CONFIG
+  fi
+  # Build u-boot
+  cd $BUILD/uboot-$UBOOT_BOARD
+  make MAXJOBS=$MAXJOBS
+  mkdir -p $UBOOT
+  # RICH
   cd $TOP
 fi
 

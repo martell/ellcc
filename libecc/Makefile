@@ -62,6 +62,7 @@ $(Configs)::
 	$(OUT)mkdir -p compiler-rt-build/$@
 	$(OUT)cp -p Makefile.lib compiler-rt-build/$@/Makefile
 	$(OUT)$(MAKE) $(MFLAGS) -C compiler-rt-build/$@ install || exit 1
+	$(OUT)cd lib/$@; ln -sf libcompiler-rt.a libgcc.a
 
 
 $(Configs)::
