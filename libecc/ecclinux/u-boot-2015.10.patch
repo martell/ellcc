@@ -1,6 +1,30 @@
-diff -Nru u-boot-2015.10.orig/common/board_f.c u-boot-2015.10/common/board_f.c
+diff -Nur u-boot-2015.10.orig/arch/arm/include/asm/global_data.h u-boot-2015.10/arch/arm/include/asm/global_data.h
+--- u-boot-2015.10.orig/arch/arm/include/asm/global_data.h	2015-10-19 18:59:38.000000000 -0500
++++ u-boot-2015.10/arch/arm/include/asm/global_data.h	2016-01-09 17:57:09.945294510 -0600
+@@ -75,6 +75,19 @@
+ 	return gd_ptr;
+ }
+ 
++static inline void arch_setup_gd(struct global_data *gd_ptr)
++{
++#ifdef CONFIG_ARM64
++	/*
++	 * Make will already error that reserving x18 is not supported at the
++	 * time of writing, clang: error: unknown argument: '-ffixed-x18'
++	 */
++	__asm__ volatile("mov x18, %0\n" : "=r" (gd_ptr));
++#else
++	__asm__ volatile("mov r9, %0\n" : "=r" (gd_ptr));
++#endif
++}
++
+ #else
+ 
+ #ifdef CONFIG_ARM64
+Binary files u-boot-2015.10.orig/arch/arm/include/asm/.global_data.h.swp and u-boot-2015.10/arch/arm/include/asm/.global_data.h.swp differ
+diff -Nur u-boot-2015.10.orig/common/board_f.c u-boot-2015.10/common/board_f.c
 --- u-boot-2015.10.orig/common/board_f.c	2015-10-19 18:59:38.000000000 -0500
-+++ u-boot-2015.10/common/board_f.c	2016-01-09 14:15:14.224583433 -0600
++++ u-boot-2015.10/common/board_f.c	2016-01-09 17:55:40.364182539 -0600
 @@ -1032,7 +1032,7 @@
  #endif /* CONFIG_X86 */
  
@@ -10,9 +34,9 @@ diff -Nru u-boot-2015.10.orig/common/board_f.c u-boot-2015.10/common/board_f.c
  __weak void arch_setup_gd(struct global_data *gd_ptr)
  {
  	gd = gd_ptr;
-diff -Nru u-boot-2015.10.orig/makefile u-boot-2015.10/makefile
+diff -Nur u-boot-2015.10.orig/makefile u-boot-2015.10/makefile
 --- u-boot-2015.10.orig/makefile	1969-12-31 18:00:00.000000000 -0600
-+++ u-boot-2015.10/makefile	2016-01-09 13:57:20.705110173 -0600
++++ u-boot-2015.10/makefile	2016-01-09 15:11:25.463018939 -0600
 @@ -0,0 +1,115 @@
 +# Cross compiling variables
 +ARCH		?= arm

@@ -116,7 +116,7 @@ BUILD=$TOP/$TARGET
 # The install directories.
 ROOT=$TOP/image/$TARGET         # /
 BOOT=$TOP/image/$TARGET/$BOARD  # /boot
-UBOOT=$TOP/image/$TARGET/uboot-$UBOOT_BOARD
+UBOOT=$TOP/image/$TARGET/u-boot-$UBOOT_BOARD
 
 DOWNLOAD=$TOP/download
 
@@ -211,10 +211,10 @@ if [ "$uboot" = "yes" ] ; then
   if [ ! -e $BUILD/$UBOOT_BOARD ] ; then
     cd u-boot-$UBOOT_VERSION/
     # Configure u-boot
-    make ARCH=$ARCH BUILD=$BUILD/uboot-$UBOOT_BOARD TARGET=$TARGET MAXJOBS=1 $UBOOT_CONFIG
+    make ARCH=$ARCH BUILD=$BUILD/u-boot-$UBOOT_BOARD TARGET=$TARGET MAXJOBS=1 $UBOOT_CONFIG
   fi
   # Build u-boot
-  cd $BUILD/uboot-$UBOOT_BOARD
+  cd $BUILD/u-boot-$UBOOT_BOARD
   make MAXJOBS=$MAXJOBS
   mkdir -p $UBOOT
   # RICH
