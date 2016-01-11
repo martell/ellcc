@@ -2,5 +2,5 @@
 
 . /etc/rc.conf
 
-/bin/svc -c
-/bin/svc -s
+/sbin/svc -c
+/sbin/svc -s

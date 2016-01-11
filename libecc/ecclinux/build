@@ -1,8 +1,15 @@
 #! /bin/sh
+set -e
 
 # The complete package list. See mac_exclude below for Mac exceptions.
-packages="uboot kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh
-          ntfs3g iproute2 e2fsprogs vim ellcc"
+packages="kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh
+          ntfs3g iproute2 e2fsprogs vim"
+
+# Extra packages, enabled by -extras.
+extras="ellcc"
+
+# Packages that build, but that are untested/unused or now needed.
+unused_packages="uboot"
 
 # Packages to avoid on the Mac (build problems).
 mac_exclude="uboot iproute2 e2fsprogs vim"
@@ -10,7 +17,7 @@ mac_exclude="uboot iproute2 e2fsprogs vim"
 CLEAN=0
 LINUX_VERSION=4.1.15
 UBOOT_VERSION=2015.10
-ELLCC_VERSION=0.1.25
+ELLCC_VERSION=0.1.26
 VIM_VERSION=7.4
 VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
 PYTHON_VERSION=3.5.1
@@ -24,6 +31,7 @@ usage() {
   echo "  options:"
   echo "    -packages 'packag1 package2 ...'    Specific packages to build"
   echo "    -exclude  'packag1 package2 ...'    Specific packages to exclude"
+  echo "    -extras                             Include additional packages"
   echo "    -clean                              Clean up a previous build"
   echo "  targets:"
   echo "    help                                This message"
@@ -31,6 +39,8 @@ usage() {
   echo "    bcm2709                             Raspberry Pi 2  (ARMv7)"
   echo "  available packages:"
   echo "    $packages"
+  echo "  extra packages:"
+  echo "    $extras"
   echo "  packages not buildable on the Mac:"
   echo "    $mac_exclude"
 }
@@ -54,6 +64,10 @@ while [ $# -gt 1 ] ; do
       exclude=$1
       shift
       ;;
+    -extras)
+      packages="$packages $extras"
+      shift
+      ;;
     -clean)
       # Clean up a previous build
       CLEAN=1
@@ -67,7 +81,6 @@ while [ $# -gt 1 ] ; do
   esac
 done
 
-set -e
 TOP=`pwd`
 ELLCC=`realpath $TOP/../..`
 UNAME=`uname`
@@ -234,20 +247,20 @@ mkdir -p $DOCPREFIX
 if [ "$ellcc" = "yes" ] ; then
   if [ ! -e $DOWNLOAD/ellcc-$TARGET-$ELLCC_VERSION.tgz ] ; then
     (cd $DOWNLOAD; wget http://ellcc.org/releases/ellcc-$TARGET-$ELLCC_VERSION.tgz)
-    cd $ROOT/usr
-    if [ -e ellcc ] ; then
-      rm -fr ellcc
-    fi
-    tar xvfp $TOP/$DOWNLOAD/ellcc-$TARGET-$ELLCC_VERSION.tgz
-    cd $ROOT/bin
-    ln -sf ../usr/ellcc/bin/ecc ecc
-    ln -sf ../usr/ellcc/bin/ecc++ ecc++
-    ln -sf ../usr/ellcc/bin/ecc cc
-    ln -sf ../usr/ellcc/bin/ecc++ c++
-    ln -sf ../usr/ellcc/bin/ecc gcc
-    ln -sf ../usr/ellcc/bin/ecc++ g++
-    cd $TOP
   fi
+  cd $ROOT/usr
+  if [ -e ellcc ] ; then
+    rm -fr ellcc
+  fi
+  tar xvfp $DOWNLOAD/ellcc-$TARGET-$ELLCC_VERSION.tgz
+  cd $ROOT/bin
+  ln -sf ../usr/ellcc/bin/ecc ecc
+  ln -sf ../usr/ellcc/bin/ecc++ ecc++
+  ln -sf ../usr/ellcc/bin/ecc cc
+  ln -sf ../usr/ellcc/bin/ecc++ c++
+  ln -sf ../usr/ellcc/bin/ecc gcc
+  ln -sf ../usr/ellcc/bin/ecc++ g++
+  cd $TOP
 fi
 
 # Go into the target directory.
@@ -395,7 +408,6 @@ makeit nlmon "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIB
 makeit sbase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit sdhcp "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit smdev "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
-makeit scv "cp bin/* $ROOT/bin ; cp -R svc.d $ROOT/bin"
 makeit ubase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 # ksh
 makeit loksh "make LDFLAGS=-Wl,-s DESTDIR= PREFIX=$ROOT MAN_DIR=$MANPREFIX DOC_DIR=$DOCPREFIX install"

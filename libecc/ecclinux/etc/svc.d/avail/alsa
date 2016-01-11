@@ -1,0 +1,33 @@
+#!/bin/sh
+
+SERVICE="alsa"
+
+[ -e "/bin/svc.d/default/$SERVICE" ] && . "/bin/svc.d/default/$SERVICE"
+
+PID=$(pidof -o %PPID $BIN)
+
+case $1 in
+	-s)
+		[ -e "$STATEFILE" ] || alsactl $PARAMS store
+		alsactl $PARAMS restore
+
+		dfiles="/sys/module/snd_ac97_codec/parameters/power_save
+			/sys/module/snd_hda_intel/parameters/power_save"
+		for f in $dfiles;
+		do
+			if [ -e $f ];
+			then
+				echo $POWERSAVE > $f
+				[ -c /dev/dsp ] && echo 1 > /dev/dsp
+			fi
+		done
+		;;
+	-k)
+		[ "$SAVEVOLUME" = "yes" ] && alsactl $PARAMS store
+		[ "$MUTEVOLUME" = "yes" ] && amixer -q set Master 0 mute
+		;;
+	*)
+		echo "usage: $0 -s|-k"
+		exit 1
+esac
+

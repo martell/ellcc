@@ -1,0 +1,68 @@
+#! /bin/sh
+TOP=`pwd`
+ELLCC=`realpath $TOP/../..`
+set -e
+if [ `id -u` -ne 0 ] ; then
+  echo "You must be root to run this command. Be careful!"
+  exit 1
+fi
+SDCARD=/dev/sdc
+BOOT=/dev/sdc1
+ROOT=/dev/sdc2
+
+echo "Warning! This command will destroy all data on $SDCARD."
+echo -n "Continue? [yes/no] "
+read answer
+if [ "$answer" != "yes" ] ; then
+  echo "OK, aborting"
+  exit 1
+fi
+
+echo "Cleaning up any old partitions."
+parted $SDCARD rm 4 || true
+parted $SDCARD rm 3 || true
+parted $SDCARD rm 2 || true
+parted $SDCARD rm 1 || true
+
+echo "Creating new partitions."
+parted -a optimal $SDCARD unit chs mkpart primary 0,130,2 8,40,31
+parted $SDCARD set 1 lba on
+parted -a optimal $SDCARD mkpart primary 67.1MB 100%
+
+echo "Creating file systems."
+mkfs -t fat $BOOT
+yes | mkfs -t ext4 $ROOT
+
+echo "Populating the SD card."
+mount $BOOT boot
+mount $ROOT root
+cp -r image/arm-linux-engeabihf/bcm2709/* boot
+cp boot/vmlinuz-4.1.15-v7 boot/kernel7.img
+cd image/arm-linux-engeabihf/
+tar cvfp - bin etc lib sbin usr var | (cd ../../root; tar xfp -)
+cp -R $ELLCC/share/terminfo ../../root/usr/share
+cd bcm2709/
+rm -fr *.old
+tar cvf - * | ( cd ../../../boot ; tar --no-same-owner -xf - )
+cd ../../..
+cd etc
+chmod oug+x rc.*
+cp -R * ../root/etc/
+cd ../sbin
+tar cvfp - * | ( cd ../root/sbin/ ; tar xf - )
+cd ../bin
+chmod oug+x * || true
+tar cvfp - * | ( cd ../root/bin/ ; tar xf - )
+cd ..
+cp boot.rpi/* boot/
+cd root
+mkdir boot root dev proc sys var/run var/log
+mknod dev/tty0 c 4 0
+chown bin.bin bin/*
+chown root.root bin/su
+chmod u+s bin/su
+cd ..
+umount boot root
+
+# Show the results.
+parted $SDCARD print

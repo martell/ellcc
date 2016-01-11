@@ -1,0 +1,32 @@
+#!/bin/sh
+
+set -x
+
+SERVICE="fancontrol"
+
+[ -e "/bin/svc.d/default/$SERVICE" ] && . "/bin/svc.d/default/$SERVICE"
+
+BIN="/usr/sbin/$SERVICE"
+
+PID=$(pidof -o %PPID -x $BIN)
+
+case $1 in
+	-s)
+		[ -z "$PID" ] && {
+			rm /run/fancontrol.pid
+			$BIN $PARAMS
+		}
+		;;
+	-k)
+		[ -n "$PID" ] && {
+			for p in $PID;
+			do
+				kill -9 $p &> /dev/null;
+			done
+		}
+		;;
+	*)
+		echo "usage: $0 -s|-k"
+		exit 1
+esac
+

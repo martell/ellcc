@@ -1,0 +1,2 @@
+PARAMS="-s /etc/cron/cron.d -c /var/spool/cron -t /var/spool/cron -S -l info"
+

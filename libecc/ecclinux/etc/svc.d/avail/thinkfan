@@ -1,0 +1,29 @@
+#!/bin/sh
+
+SERVICE="thinkfan"
+BIN="/usr/bin/thinkfan"
+PIDFILE="/var/run/thinkfan.pid"
+
+[ -e "/bin/svc.d/default/$SERVICE" ] && . "/bin/svc.d/default/$SERVICE"
+
+if [ -e "$PIDFILE" ];
+then
+	PID="$(cat "$PIDFILE")"
+else
+	PID=$(pidof -o %PPID $BIN)
+fi
+
+case $1 in
+	-s)
+		[ -e "$PIDFILE" ] && rm -f "$PIDFILE" && PID=""
+		[ -z "$PID" ] && $BIN $PARAMS >/dev/null 2>&1;
+		;;
+	-k)
+		[ -n "$PID" ] && kill -HUP $PID &> /dev/null;
+		[ -e "$PIDFILE" ] && rm -f "$PIDFILE"
+		;;
+	*)
+		echo "usage: $0 -s|-k"
+		exit 1
+esac
+

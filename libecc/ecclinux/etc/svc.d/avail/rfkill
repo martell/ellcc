@@ -1,0 +1,23 @@
+#!/bin/sh
+
+. /bin/svc.d/default/rfkill
+
+case $1 in
+	-s)
+		for s in $BLOCK;
+		do
+			rfkill block $s
+		done
+
+		for s in $UNBLOCK
+		do
+			rfkill unblock $s
+		done
+		;;
+	-k)
+		;;
+	*)
+		echo "usage: $0 -s|-k"
+		exit 1
+esac
+

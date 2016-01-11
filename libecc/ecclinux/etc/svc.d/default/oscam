@@ -1,0 +1,2 @@
+PARAMS="-b -c /etc/oscam"
+

@@ -1,0 +1,31 @@
+#!/bin/sh
+
+SERVICE="nscd"
+
+BIN="/bin/$SERVICE"
+
+PID=$(pidof -o %PPID $BIN)
+
+case $1 in
+	-s)
+		if [ -z $PID ];
+		then
+			rm -f "/run/$SERVICE.pid" 2>&1 >/dev/null
+			mkdir -p /run/nscd /var/db/nscd
+			rm -f /run/nscd/* /var/db/nscd/* 2>&1 >/dev/null
+
+			$BIN $PARAMS >/dev/null 2>&1;
+		fi
+		;;
+	-k)
+		if [ -n $PID ];
+		then
+			nscd -K 2>&1 >/dev/null
+			rm -f "/run/$SERVICE.pid" 2>&1 >/dev/null
+		fi
+		;;
+	*)
+		echo "usage: $0 -s|-k"
+		exit 1
+esac
+

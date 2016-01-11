@@ -1,0 +1,22 @@
+#!/bin/sh
+
+SERVICE="barebone"
+
+[ -e "/bin/svc.d/default/$SERVICE" ] && . "/bin/svc.d/default/$SERVICE"
+
+BIN="/usr/bin/$SERVICE"
+
+PID=$(pidof -o %PPID $BIN)
+
+case $1 in
+	-s)
+		[ -z "$PID" ] && $BIN $PARAMS;
+		;;
+	-k)
+		[ -n "$PID" ] && kill -9 $PID &> /dev/null;
+		;;
+	*)
+		echo "usage: $0 -s|-k"
+		exit 1
+esac
+

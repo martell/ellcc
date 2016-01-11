@@ -4,6 +4,8 @@ PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 MANPATH=/usr/share/man
 export PATH MANPATH
+TERMINFO=/usr/share/terminfo
+export TERMINFO
 
 if [ "$PS1" ]; then
   if [ "`id -u`" -eq 0 ]; then

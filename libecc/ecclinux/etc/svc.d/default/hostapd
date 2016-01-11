@@ -1,0 +1,2 @@
+PARAMS="-B /etc/hostapd/hostapd.conf"
+

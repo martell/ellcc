@@ -1,0 +1,2 @@
+PARAMS="-F /run/gpsd.sock /dev/ttyUSB0"
+

@@ -1,0 +1,6 @@
+STATEFILE="/var/lib/alsa/asound.state"
+PARAMS=""
+SAVEVOLUME="yes"
+MUTEVOLUME="no"
+POWERSAVE=0
+

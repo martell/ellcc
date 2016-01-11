@@ -1,0 +1,5 @@
+# Get here the HWMON_MODULES from the generated lm_sensors file, which
+# sensors-detect(8) generates.
+
+HWMON_MODULES="coretemp"
+

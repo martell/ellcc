@@ -1,0 +1,18 @@
+#!/bin/sh
+
+. /bin/svc.d/default/sensors
+
+case $1 in
+	-s)
+		for m in $HWMON_MODULES;
+		do
+			modprobe $m
+		done
+		;;
+	-k)
+		;;
+	*)
+		echo "usage: $0 -s|-k"
+		exit 1
+esac
+

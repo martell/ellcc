@@ -1,0 +1,15 @@
+#!/bin/sh
+
+. /bin/svc.d/default/hwclock
+
+case $1 in
+	-s)
+		;;
+	-k)
+		hwclock --adjust $PARAMS
+		;;
+	*)
+		echo "usage: $0 -s|-k"
+		exit 1
+esac
+

@@ -1,0 +1,15 @@
+#!/bin/sh
+
+. /bin/svc.d/default/wireless-regdom
+
+case $1 in
+	-s)
+		;;
+	-k)
+		iw reg set $REGDOM
+		;;
+	*)
+		echo "usage: $0 -s|-k"
+		exit 1
+esac
+

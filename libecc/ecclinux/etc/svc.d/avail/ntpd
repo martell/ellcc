@@ -1,0 +1,32 @@
+#!/bin/sh
+
+SERVICE="ntpd"
+
+[ -e "/bin/svc.d/default/$SERVICE" ] && . "/bin/svc.d/default/$SERVICE"
+
+BIN="/bin/$SERVICE"
+
+PID=$(pidof -o %PPID $BIN)
+
+case $1 in
+	-s)
+		if [ -z "$PID" ];
+		then
+			mkdir -p /run/openntpd >/dev/null 2>&1
+			$BIN $PARAMS >/dev/null 2>&1 &
+		fi
+		;;
+	-k)
+		if [ -n "$PID" ];
+		then
+			for p in $PID;
+			do
+				kill -9 $p >/dev/null 2>&1
+			done
+		fi
+		;;
+	*)
+		echo "usage: $0 -s|-k"
+		exit 1
+esac
+
