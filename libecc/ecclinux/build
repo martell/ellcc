@@ -2,7 +2,7 @@
 
 # The complete package list. See mac_exclude below for Mac exceptions.
 packages="uboot kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh
-          ntfs3g iproute2 e2fsprogs vim"
+          ntfs3g iproute2 e2fsprogs vim ellcc"
 
 # Packages to avoid on the Mac (build problems).
 mac_exclude="uboot iproute2 e2fsprogs vim"
@@ -10,7 +10,7 @@ mac_exclude="uboot iproute2 e2fsprogs vim"
 CLEAN=0
 LINUX_VERSION=4.1.15
 UBOOT_VERSION=2015.10
-ELLCC_VERSION=0.1.23
+ELLCC_VERSION=0.1.25
 VIM_VERSION=7.4
 VIM_FEATURES=normal # tiny, small, normal, big or huge (default: normal)
 PYTHON_VERSION=3.5.1
@@ -223,6 +223,33 @@ if [ "$uboot" = "yes" ] ; then
   cd $TOP
 fi
 
+mkdir -p $ROOT/bin
+mkdir -p $ROOT/sbin
+mkdir -p $ROOT/usr
+MANPREFIX=$ROOT/usr/share/man
+mkdir -p $MANPREFIX
+DOCPREFIX=$ROOT/usr/share/doc
+mkdir -p $DOCPREFIX
+
+if [ "$ellcc" = "yes" ] ; then
+  if [ ! -e $DOWNLOAD/ellcc-$TARGET-$ELLCC_VERSION.tgz ] ; then
+    (cd $DOWNLOAD; wget http://ellcc.org/releases/ellcc-$TARGET-$ELLCC_VERSION.tgz)
+    cd $ROOT/usr
+    if [ -e ellcc ] ; then
+      rm -fr ellcc
+    fi
+    tar xvfp $TOP/$DOWNLOAD/ellcc-$TARGET-$ELLCC_VERSION.tgz
+    cd $ROOT/bin
+    ln -sf ../usr/ellcc/bin/ecc ecc
+    ln -sf ../usr/ellcc/bin/ecc++ ecc++
+    ln -sf ../usr/ellcc/bin/ecc cc
+    ln -sf ../usr/ellcc/bin/ecc++ c++
+    ln -sf ../usr/ellcc/bin/ecc gcc
+    ln -sf ../usr/ellcc/bin/ecc++ g++
+    cd $TOP
+  fi
+fi
+
 # Go into the target directory.
 cd $BUILD
 
@@ -350,29 +377,6 @@ if [ 0 -ne 0 ] ; then
   git clone https://github.com/landley/toybox.git
   wget https://www.python.org/ftp/python/$PYTHON_VERSION/Python-/$PYTHON_VERSION.tar.xz
   tar xvfp Python-3.5.1.tar.xz
-fi
-
-mkdir -p $ROOT/bin
-mkdir -p $ROOT/sbin
-MANPREFIX=$ROOT/usr/share/man
-mkdir -p $MANPREFIX
-DOCPREFIX=$ROOT/usr/share/doc
-mkdir -p $DOCPREFIX
-
-if [ 0 -ne 0 ] ; then
-# ellcc
-if [ ! -e ellcc-$TARGET-$ELLCC_VERSION.tgz ] ; then
-  wget http://ellcc.org/releases/ellcc-$TARGET-$ELLCC_VERSION.tgz
-  cd $ROOT/usr
-  if [ -e ellcc ] ; then
-    rm -fr ellcc
-  fi
-  tar xvfp $TOP/ellcc-$TARGET-$ELLCC_VERSION.tgz
-  cd $ROOT/bin
-  ln -sf ../usr/ellcc/bin/ecc ecc
-  ln -sf ../usr/ellcc/bin/ecc++ ecc++
-  cd $TOP
-fi
 fi
 
 makeit () { # $1 = name, $2 = command

@@ -64,7 +64,7 @@ cd /dev
 cd - 1>/dev/null
 
 echo Checking filesystems
-/usr/sbin/fsck -ATa
+/sbin/fsck -ATa
 if [ $? -eq 1 ]; then
 	echo Filesystem errors exist, fix manually.
 	/bin/sh
