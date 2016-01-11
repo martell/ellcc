@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.26
+
 * Create a bootable Raspberry Pi SD Card.
 * Build Das U-Boot on Linux.
 * Update to LLVM r257250.
