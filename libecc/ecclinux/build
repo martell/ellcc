@@ -3,7 +3,7 @@ set -e
 
 # The complete package list. See mac_exclude below for Mac exceptions.
 packages="kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh
-          ntfs3g iproute2 e2fsprogs vim openssh"
+          ntfs3g iproute2 e2fsprogs vim dropbear"
 
 # Extra packages, enabled by -extras.
 extras="ellcc"
@@ -27,6 +27,7 @@ PYTHON_VERSION=3.5.1
 E2FSPROGS_VERSION=1.42.13
 NTFS3G_VERSION=2015.3.14
 IPROUTE2_VERSION=4.3.0
+DROPBEAR_VERSION=2015.71
 OPENSSH_VERSION=7.1p1
 exclude=
 
@@ -391,6 +392,16 @@ getversion iproute2 \
    patch -p0 < ../../iproute2.patch ; \
    PKG_CONFIG=false ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT)"
 
+getversion dropbear \
+  https://matt.ucc.asn.au/dropbear/releases \
+  dropbear-$DROPBEAR_VERSION.tar.bz2 \
+  "mv dropbear* dropbear ; \
+  LDFLAGS=-Wl,-s ; \
+  (cd dropbear ; \
+   patch -p1 < ../../dropbear.patch ; \
+   ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT \
+      --mandir=$ROOT/usr/share/man)"
+
 getversion openssh \
   http://mirror.team-cymru.org/pub/OpenBSD/OpenSSH/portable \
   openssh-$OPENSSH_VERSION.tar.gz \
@@ -478,5 +489,14 @@ makeit iproute2 "make SBINDIR=$ROOT/sbin \
                   KERNEL_INCLUDE=$ROOT/usr/include \
                   install"
 makeit openssh "make install"
+makeit dropbear "make PROGRAMS='dropbear dbclient dropbearkey dropbearconvert scp' \
+                     MULTI=1 STATIC=1 SCPPROGRESS=1 install ; \
+                 (cd $ROOT/bin ; \
+                    ln -sf dropbearmulti ssh ; \
+                    ln -sf dropbearmulti scp ; \
+                    ln -sf dropbearmulti dbclient ; \
+                    ln -sf dropbearmulti dropbearkey ; \
+                    ln -sf dropbearmulti dropbearconvert)"
+
 makeit toybox "make defconfig toybox"
 makeit python "make install"
