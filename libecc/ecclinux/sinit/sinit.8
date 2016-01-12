@@ -13,7 +13,7 @@ and recompiling the code.
 By default
 .Nm
 will execute
-.Dq /bin/rc.init .
+.Dq /etc/rc.init .
 You can chain your init scripts together at that point to allow for
 single-user and multi-user operation.
 .Ss Signal handling
@@ -23,11 +23,11 @@ will respond to the following signals:
 .It USR1
 Default action is to initiate the shutdown sequence by
 executing
-.Dq /bin/rc.shutdown poweroff .
+.Dq /etc/rc.shutdown poweroff .
 .It INT
 Default action is to initiate the reboot sequence by
 executing
-.Dq /bin/rc.shutdown reboot .
+.Dq /etc/rc.shutdown reboot .
 .It CHLD
 Reap children.
 .El

@@ -56,7 +56,7 @@ tar cvfp - * | ( cd ../root/bin/ ; tar xf - )
 cd ..
 cp boot.rpi/* boot/
 cd root
-mkdir boot root dev proc sys var/run var/log
+mkdir -p boot root dev proc sys tmp var/run var/log etc/dropbear
 mknod dev/tty0 c 4 0
 chown bin.bin bin/*
 chown root.root bin/su

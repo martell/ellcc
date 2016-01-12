@@ -265,6 +265,11 @@ if [ "$ellcc" = "yes" ] ; then
   ln -sf ../usr/ellcc/bin/ecc++ c++
   ln -sf ../usr/ellcc/bin/ecc gcc
   ln -sf ../usr/ellcc/bin/ecc++ g++
+  others="addr2line ar as c++filt elfedit gdb gprof ld nm objcopy objdump \
+          ranlib readelf size strings strip"
+  for p in $others ; do
+    ln -sf ../usr/ellcc/bin/ecc-$p $p
+  done
   cd $TOP
 fi
 
@@ -496,7 +501,9 @@ makeit dropbear "make PROGRAMS='dropbear dbclient dropbearkey dropbearconvert sc
                     ln -sf dropbearmulti scp ; \
                     ln -sf dropbearmulti dbclient ; \
                     ln -sf dropbearmulti dropbearkey ; \
-                    ln -sf dropbearmulti dropbearconvert)"
+                    ln -sf dropbearmulti dropbearconvert); \
+                 (cd $ROOT/sbin ; \
+                    ln -sf /bin/dropbearmulti dropbear)"
 
 makeit toybox "make defconfig toybox"
 makeit python "make install"
