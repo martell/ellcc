@@ -3,12 +3,15 @@ set -e
 
 # The complete package list. See mac_exclude below for Mac exceptions.
 packages="kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh
-          ntfs3g iproute2 e2fsprogs vim"
+          ntfs3g iproute2 e2fsprogs vim openssh"
 
 # Extra packages, enabled by -extras.
 extras="ellcc"
 
-# Packages that build, but that are untested/unused or now needed.
+# Packages that don't build currently.
+broken="openssh toybox python"
+
+# Packages that build, but that are untested/unused or not needed.
 unused_packages="uboot"
 
 # Packages to avoid on the Mac (build problems).
@@ -24,6 +27,7 @@ PYTHON_VERSION=3.5.1
 E2FSPROGS_VERSION=1.42.13
 NTFS3G_VERSION=2015.3.14
 IPROUTE2_VERSION=4.3.0
+OPENSSH_VERSION=7.1p1
 exclude=
 
 usage() {
@@ -347,6 +351,7 @@ gitsource nlmon git://git.r-36.net/nlmon fixconfigmk
 gitsource svc git://git.r-36.net/svc
 gitsource sdhcp git://git.2f30.org/sdhcp "fixconfigmk ; fixranlib"
 gitsource loksh https://github.com/dimkr/loksh.git fixmacinstall
+gitsource toybox https://github.com/landley/toybox.git
 
 getversion e2fsprogs \
   https://www.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v$E2FSPROGS_VERSION \
@@ -386,11 +391,20 @@ getversion iproute2 \
    patch -p0 < ../../iproute2.patch ; \
    PKG_CONFIG=false ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT)"
 
-if [ 0 -ne 0 ] ; then
-  git clone https://github.com/landley/toybox.git
-  wget https://www.python.org/ftp/python/$PYTHON_VERSION/Python-/$PYTHON_VERSION.tar.xz
-  tar xvfp Python-3.5.1.tar.xz
-fi
+getversion openssh \
+  http://mirror.team-cymru.org/pub/OpenBSD/OpenSSH/portable \
+  openssh-$OPENSSH_VERSION.tar.gz \
+  "mv openssh* openssh ; \
+  LDFLAGS=-Wl,-s ; \
+  (cd openssh ; \
+   ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT --without-openssl)"
+
+getversion python \
+  https://www.python.org/ftp/python/$PYTHON_VERSION \
+  Python-$PYTHON_VERSION.tar.xz \
+  "mv Python* python ; \
+  (cd python ; \
+   ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT)"
 
 makeit () { # $1 = name, $2 = command
   eval doit=\$$1
@@ -463,14 +477,6 @@ makeit iproute2 "make SBINDIR=$ROOT/sbin \
                   ARPDDIR=$ROOT/var/lib/arpd \
                   KERNEL_INCLUDE=$ROOT/usr/include \
                   install"
-
-# toybox
-#cd toybox/
-#make defconfig toybox
-#cd ..
-
-# Python
-#cd Python-$PYTHON_VERSION
-#LDFLAGS=-Wl,-s ./configure --prefix=$ROOT/usr --exec-prefix=$ROOT
-#make install
-#cd ..
+makeit openssh "make install"
+makeit toybox "make defconfig toybox"
+makeit python "make install"
