@@ -68,7 +68,7 @@ fi
 echo Storing random seed
 /bin/dd if=/dev/urandom of=/etc/random-seed count=1 bs=512 2>/dev/null
 
-/bin/svc -k
+/etc/svc -k
 
 /bin/killall5 -s TERM
 /bin/sleep 3
