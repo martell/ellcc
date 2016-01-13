@@ -34,6 +34,7 @@ mkfs -t fat $BOOT
 yes | mkfs -t ext4 $ROOT
 
 echo "Populating the SD card."
+mkdir -p root boot
 mount $BOOT boot
 mount $ROOT root
 cp -r image/arm-linux-engeabihf/bcm2709/* boot
