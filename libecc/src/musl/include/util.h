@@ -70,7 +70,8 @@ struct winsize;
 struct sockaddr;
 
 char	       *flags_to_string(unsigned long, const char *);
-pid_t		forkpty(int *, char *, struct termios *, struct winsize *);
+pid_t		forkpty(int *, char *, const struct termios *,
+                        const struct winsize *);
 const char     *getbootfile(void);
 off_t		getlabeloffset(void);
 int		getlabelsector(void);
@@ -90,8 +91,8 @@ void		logwtmpx(const char *, const char *, const char *, int, int);
 int		opendisk(const char *, int, char *, size_t, int);
 int		opendisk1(const char *, int, char *, size_t, int,
 			  int (*)(const char *, int, ...));
-int		openpty(int *, int *, char *, struct termios *,
-    struct winsize *);
+int		openpty(int *, int *, char *, const struct termios *,
+                        const struct winsize *);
 #ifndef __LIBC12_SOURCE__
 time_t		parsedate(const char *, const time_t *, const int *)
     __RENAME(__parsedate50);
