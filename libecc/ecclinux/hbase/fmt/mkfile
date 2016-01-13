@@ -1,0 +1,7 @@
+BIN = fmt
+OBJ = fmt.o
+INSTALL_BIN = fmt
+INSTALL_MAN1 = fmt.1
+DEPS = libcommon
+
+<$mkbuild/mk.default

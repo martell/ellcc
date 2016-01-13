@@ -1,0 +1,8 @@
+BIN = stty
+OBJ = stty.o
+LOCAL_CFLAGS = -DUCB
+INSTALL_BIN = stty
+INSTALL_MAN1 = stty.1b
+DEPS = libcommon
+
+<$mkbuild/mk.default

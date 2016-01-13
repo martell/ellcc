@@ -1,0 +1,7 @@
+BIN = hd
+OBJ = hd.o
+INSTALL_BIN = hd
+INSTALL_MAN1 = hd.1
+DEPS = libcommon
+
+<$mkbuild/mk.default

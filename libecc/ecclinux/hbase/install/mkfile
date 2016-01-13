@@ -1,0 +1,12 @@
+BIN = _install
+TARG = __install
+OBJ = install.o
+INSTALL_BIN = install
+INSTALL_MAN1b = install.1b
+CLEAN_FILES = install
+
+<$mkbuild/mk.default
+
+__install:QV: $BIN
+	mv _install install
+

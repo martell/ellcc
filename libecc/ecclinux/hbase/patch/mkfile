@@ -1,0 +1,7 @@
+BIN = patch
+OBJ = patch.o backupfile.o inp.o mkpath.o pch.o util.o
+LOCAL_LDFLAGS = -pthread
+INSTALL_BIN = patch
+INSTALL_MAN1 = patch.1
+
+<$mkbuild/mk.default

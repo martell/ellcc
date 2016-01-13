@@ -1,0 +1,11 @@
+BIN = pgrep
+OBJ = pgrep.o
+DEPS = libcommon
+
+<$mkbuild/mk.default
+
+INSTALL_BIN = pgrep
+INSTALL_MAN1 = pgrep.1
+INSTALL_SYMLINK = \
+	pgrep $BINDIR/pkill \
+	pgrep.1 $MANDIR/man1/pkill.1

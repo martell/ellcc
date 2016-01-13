@@ -1,0 +1,13 @@
+BIN = diff diffh
+diff_OBJ = diff.o diffdir.o diffreg.o diffver.o
+diffh_OBJ = diffh.o
+INSTALL_BIN = diff
+INSTALL_MAN1 = diff.1
+LOCAL_CFLAGS = -DDIFFH=\"$LIBDIR/diffh\"
+DEPS = libcommon
+
+<$mkbuild/mk.default
+
+diff.o: diff.h
+diffdir.o: diff.h
+diffreg.o: diff.h
