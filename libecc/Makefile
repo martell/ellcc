@@ -86,6 +86,7 @@ $(Configs)::
               --host=x86_64-macos \
 	      --build=x86_64-linux \
 	      --with-build-cc=cc \
+	      --datarootdir=$(ELLCC)/libecc/share \
 	      --prefix=$(ELLCC) $$NOCXX ; \
 	fi
 

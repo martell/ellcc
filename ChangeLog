@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.27
+
 * Add dropbear build.
 * Incomplete integration of some builds for ecclinux.
 * Add an SD card installation script.

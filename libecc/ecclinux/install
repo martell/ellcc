@@ -40,7 +40,7 @@ cp -r image/arm-linux-engeabihf/bcm2709/* boot
 cp boot/vmlinuz-4.1.15-v7 boot/kernel7.img
 cd image/arm-linux-engeabihf/
 tar cvfp - bin etc lib sbin usr var | (cd ../../root; tar xfp -)
-cp -R $ELLCC/share/terminfo ../../root/usr/share
+cp -R $ELLCC/libecc/share/terminfo  $ELLCC/libecc/share/tabset ../../root/usr/share
 cd bcm2709/
 rm -fr *.old
 tar cvf - * | ( cd ../../../boot ; tar --no-same-owner -xf - )
