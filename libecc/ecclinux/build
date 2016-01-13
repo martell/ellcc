@@ -2,7 +2,7 @@
 set -e
 
 # The complete package list. See mac_exclude below for Mac exceptions.
-packages="kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh
+packages="kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh hbase
           ntfs3g iproute2 e2fsprogs vim dropbear"
 
 # Extra packages, enabled by -extras.
@@ -96,13 +96,11 @@ if [ "${BOARD}" = "" -o "${BOARD}" = "help" ] ; then
   exit 0
 elif [ "${BOARD}" = "bcmrpi" ] ; then
   ARCH=arm
-  BOARD=bcmrpi                  # Raspberry Pi
   UBOOT_BOARD=rpi
   TARGET=armv6-linux-engeabihf  # ARMv6
   NO_VDSO=0
 elif [ "${BOARD}" = "bcm2709" ] ; then
   ARCH=arm
-  BOARD=bcm2709                 # Raspberry Pi 2
   UBOOT_BOARD=rpi_2
   TARGET=arm-linux-engeabihf    # ARMv7
   NO_VDSO=1
@@ -355,6 +353,7 @@ gitsource smdev git://git.suckless.org/smdev "fixconfigmk ; fixranlib"
 gitsource nldev git://git.r-36.net/nldev fixconfigmk
 gitsource nlmon git://git.r-36.net/nlmon fixconfigmk
 gitsource svc git://git.r-36.net/svc
+gitsource hbase git://git.2f30.org/hbase.git
 gitsource sdhcp git://git.2f30.org/sdhcp "fixconfigmk ; fixranlib"
 gitsource loksh https://github.com/dimkr/loksh.git fixmacinstall
 gitsource toybox https://github.com/landley/toybox.git
@@ -436,6 +435,7 @@ makeit sinit "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIB
 makeit nldev "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit nlmon "make LDFLAGS=-Wl,-s INCS=-I. PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit sbase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
+# makeit hbase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit sdhcp "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit smdev "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
 makeit ubase "make LDFLAGS=-Wl,-s PREFIX=$ROOT MANPREFIX=$MANPREFIX LIBS= install"
