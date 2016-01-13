@@ -47,7 +47,6 @@ static const char sccsid[] USED = "@(#)hd.sl	1.12 (gritter) 5/29/05";
 #include <wchar.h>
 #include <inttypes.h>
 #include <limits.h>
-#include "atoll.h"
 #include "mbtowi.h"
 
 #ifdef	__GLIBC__
