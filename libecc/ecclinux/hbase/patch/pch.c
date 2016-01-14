@@ -560,7 +560,7 @@ another_hunk(void)
 			if (len == 0) {
 				if (p_max - p_end < 4) {
 					/* assume blank lines got chopped */
-					(*(char *)strncpy(buf, "  \n", buf_size));
+					strncpy(buf, "  \n", buf_size);
 				} else {
 					if (repl_beginning && repl_could_be_missing) {
 						repl_missing = true;
@@ -706,7 +706,7 @@ another_hunk(void)
 				repl_could_be_missing = false;
 		change_line:
 				if (buf[1] == '\n' && canonicalize)
-					(*(char *)strncpy(buf + 1, " \n", buf_size - 1));
+					strncpy(buf + 1, " \n", buf_size - 1);
 				if (!isspace((unsigned char)buf[1]) && buf[1] != '>' &&
 				    buf[1] != '<' &&
 				    repl_beginning && repl_could_be_missing) {
@@ -941,7 +941,7 @@ hunk_done:
 			if (len == 0) {
 				if (p_max - fillnew < 3) {
 					/* assume blank lines got chopped */
-					(*(char *)strncpy(buf, " \n", buf_size));
+					strncpy(buf, " \n", buf_size);
 				} else {
 					fatal("unexpected end of file in patch\n");
 				}

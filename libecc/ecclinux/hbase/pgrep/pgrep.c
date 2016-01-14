@@ -1387,6 +1387,8 @@ makatt(enum attype at, const char *string, int optc, struct attrib *aq)
 		case ATT_SID:
 			val = getsid(0);
 			break;
+		default:
+			break;
 		}
 		break;
 	case ATT_EUID:
@@ -1420,6 +1422,8 @@ makatt(enum attype at, const char *string, int optc, struct attrib *aq)
 		break;
 	case ATT_TTY:
 		val = getrdev(string);
+		break;
+	default:
 		break;
 	}
 	ap = scalloc(1, sizeof *ap);

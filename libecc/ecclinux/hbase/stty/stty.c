@@ -721,6 +721,8 @@ list(int aflag, int hflag)
 			if (hflag == 0)
 				d += listchar(ts.c_cc, modes[i], aflag, d);
 			break;
+		default:
+			break;
 		}
 		if (d >= 72 && aflag == 0) {
 			putchar('\n');
@@ -855,6 +857,8 @@ set(void)
 					break;
 				case M_FUNCT:
 					modes[i].m_func(not);
+					break;
+				default:
 					break;
 				}
 			}

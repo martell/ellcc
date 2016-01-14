@@ -5,8 +5,11 @@ all: $(PROGS)
 
 .PHONY: $(PROGS)
 
+EXTRA_CFLAGS=if [ -e EXTRA_CFLAGS ] ; then cat EXTRA_CFLAGS ; fi
+
 $(PROGS):
-	cd $@; $(CC) $(CPPFLAGS) $(CFLAGS) -I.. -DUCB -o $@ *.c
+	cd $@ ; \
+        $(CC) $(CPPFLAGS) $(CFLAGS) `$(EXTRA_CFLAGS)` -I.. -o $@ *.c
 
 install: all
 	@for p in $(PROGS) ; do cp $$p/$$p $(PREFIX)/bin ; done
