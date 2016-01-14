@@ -3,7 +3,7 @@ set -e
 
 # The complete package list. See mac_exclude below for Mac exceptions.
 packages="kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh hbase
-          ntfs3g iproute2 e2fsprogs vim dropbear"
+          ntfs3g iproute2 e2fsprogs vim dropbear less"
 
 # Extra packages, enabled by -extras.
 extras="ellcc"
@@ -29,6 +29,8 @@ NTFS3G_VERSION=2015.3.14
 IPROUTE2_VERSION=4.3.0
 DROPBEAR_VERSION=2015.71
 OPENSSH_VERSION=7.1p1
+LESS_VERSION=481
+
 exclude=
 
 usage() {
@@ -344,8 +346,6 @@ fixmacinstall () {
   fi
 }
 
-# Comment any of the following gitsource and getversion lines
-# to inhibit fetching and building that package.
 gitsource sinit git://git.suckless.org/sinit fixconfigmk
 gitsource sbase git://git.suckless.org/sbase fixconfigmk
 gitsource ubase git://git.suckless.org/ubase fixconfigmk
@@ -420,6 +420,14 @@ getversion python \
   "mv Python* python ; \
   (cd python ; \
    ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT)"
+
+getversion less \
+  http://www.greenwoodsoftware.com/less \
+  less-$LESS_VERSION.tar.gz \
+  "mv less* less ; \
+  (cd less ; \
+   ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT \
+     --mandir=$ROOT/usr/share/man)"
 
 makeit () { # $1 = name, $2 = command
   eval doit=\$$1
@@ -507,3 +515,4 @@ makeit dropbear "make PROGRAMS='dropbear dbclient dropbearkey dropbearconvert sc
 
 makeit toybox "make defconfig toybox"
 makeit python "make install"
+makeit less "make install"
