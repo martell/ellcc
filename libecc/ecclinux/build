@@ -2,14 +2,14 @@
 set -e
 
 # The complete package list. See mac_exclude below for Mac exceptions.
-packages="kernel sinit sbase ubase smdev nldev nlmon svc sdhcp loksh hbase
-          ntfs3g iproute2 e2fsprogs vim dropbear less"
+packages="kernel sinit sbase ubase smdev nldev nlmon sdhcp loksh hbase
+          ntfs3g iproute2 e2fsprogs vim dropbear less6"
 
 # Extra packages, enabled by -extras.
 extras="ellcc"
 
 # Packages that don't build currently.
-broken="openssh toybox python"
+broken="openssh toybox python s6"
 
 # Packages that build, but that are untested/unused or not needed.
 unused_packages="uboot"
@@ -19,6 +19,7 @@ mac_exclude="uboot iproute2 e2fsprogs vim"
 
 CLEAN=0
 LINUX_VERSION=4.1.15
+S6_VERSION=2.2.4.3
 UBOOT_VERSION=2015.10
 ELLCC_VERSION=0.1.26
 VIM_VERSION=7.4
@@ -352,7 +353,6 @@ gitsource ubase git://git.suckless.org/ubase fixconfigmk
 gitsource smdev git://git.suckless.org/smdev "fixconfigmk ; fixranlib"
 gitsource nldev git://git.r-36.net/nldev fixconfigmk
 gitsource nlmon git://git.r-36.net/nlmon fixconfigmk
-gitsource svc git://git.r-36.net/svc
 gitsource hbase git://git.2f30.org/hbase.git fixconfigmk
 gitsource sdhcp git://git.2f30.org/sdhcp "fixconfigmk ; fixranlib"
 gitsource loksh https://github.com/dimkr/loksh.git fixmacinstall
@@ -426,6 +426,14 @@ getversion less \
   less-$LESS_VERSION.tar.gz \
   "mv less* less ; \
   (cd less ; \
+   ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT \
+     --mandir=$ROOT/usr/share/man)"
+
+getversion s6 \
+  http://skarnet.org/software/s6 \
+  s6-$S6_VERSION.tar.gz \
+  "mv s6* s6 ; \
+  (cd s6 ; \
    ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT \
      --mandir=$ROOT/usr/share/man)"
 
@@ -516,3 +524,4 @@ makeit dropbear "make PROGRAMS='dropbear dbclient dropbearkey dropbearconvert sc
 makeit toybox "make defconfig toybox"
 makeit python "make install"
 makeit less "make install"
+makeit less "make"
