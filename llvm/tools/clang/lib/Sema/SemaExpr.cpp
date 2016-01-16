@@ -5053,6 +5053,12 @@ Sema::BuildResolvedCallExpr(Expr *Fn, NamedDecl *NDecl,
   FunctionDecl *FDecl = dyn_cast_or_null<FunctionDecl>(NDecl);
   unsigned BuiltinID = (FDecl ? FDecl->getBuiltinID() : 0);
 
+  // Functions with 'interrupt' attribute cannot be called directly.
+  if (FDecl && FDecl->hasAttr<AnyX86InterruptAttr>()) {
+    Diag(Fn->getExprLoc(), diag::err_anyx86_interrupt_called);
+    return ExprError();
+  }
+
   // Promote the function operand.
   // We special-case function promotion here because we only allow promoting
   // builtin functions to function pointers in the callee of a call.
@@ -5602,6 +5608,39 @@ bool Sema::CheckVectorCast(SourceRange R, QualType VectorTy, QualType Ty,
   return false;
 }
 
+ExprResult Sema::prepareVectorSplat(QualType VectorTy, Expr *SplattedExpr) {
+  QualType DestElemTy = VectorTy->castAs<VectorType>()->getElementType();
+
+  if (DestElemTy == SplattedExpr->getType())
+    return SplattedExpr;
+
+  assert(DestElemTy->isFloatingType() ||
+         DestElemTy->isIntegralOrEnumerationType());
+
+  CastKind CK;
+  if (VectorTy->isExtVectorType() && SplattedExpr->getType()->isBooleanType()) {
+    // OpenCL requires that we convert `true` boolean expressions to -1, but
+    // only when splatting vectors.
+    if (DestElemTy->isFloatingType()) {
+      // To avoid having to have a CK_BooleanToSignedFloating cast kind, we cast
+      // in two steps: boolean to signed integral, then to floating.
+      ExprResult CastExprRes = ImpCastExprToType(SplattedExpr, Context.IntTy,
+                                                 CK_BooleanToSignedIntegral);
+      SplattedExpr = CastExprRes.get();
+      CK = CK_IntegralToFloating;
+    } else {
+      CK = CK_BooleanToSignedIntegral;
+    }
+  } else {
+    ExprResult CastExprRes = SplattedExpr;
+    CK = PrepareScalarCast(CastExprRes, DestElemTy);
+    if (CastExprRes.isInvalid())
+      return ExprError();
+    SplattedExpr = CastExprRes.get();
+  }
+  return ImpCastExprToType(SplattedExpr, DestElemTy, CK);
+}
+
 ExprResult Sema::CheckExtVectorCast(SourceRange R, QualType DestTy,
                                     Expr *CastExpr, CastKind &Kind) {
   assert(DestTy->isExtVectorType() && "Not an extended vector type!");
@@ -5632,15 +5671,8 @@ ExprResult Sema::CheckExtVectorCast(SourceRange R, QualType DestTy,
                 diag::err_invalid_conversion_between_vector_and_scalar)
       << DestTy << SrcTy << R;
 
-  QualType DestElemTy = DestTy->getAs<ExtVectorType>()->getElementType();
-  ExprResult CastExprRes = CastExpr;
-  CastKind CK = PrepareScalarCast(CastExprRes, DestElemTy);
-  if (CastExprRes.isInvalid())
-    return ExprError();
-  CastExpr = ImpCastExprToType(CastExprRes.get(), DestElemTy, CK).get();
-
   Kind = CK_VectorSplat;
-  return CastExpr;
+  return prepareVectorSplat(DestTy, CastExpr);
 }
 
 ExprResult
@@ -6979,13 +7011,9 @@ Sema::CheckAssignmentConstraints(QualType LHSType, ExprResult &RHS,
     if (RHSType->isExtVectorType())
       return Incompatible;
     if (RHSType->isArithmeticType()) {
-      // CK_VectorSplat does T -> vector T, so first cast to the
-      // element type.
-      QualType elType = cast<ExtVectorType>(LHSType)->getElementType();
-      if (elType != RHSType && ConvertRHS) {
-        Kind = PrepareScalarCast(RHS, elType);
-        RHS = ImpCastExprToType(RHS.get(), elType, Kind);
-      }
+      // CK_VectorSplat does T -> vector T, so first cast to the element type.
+      if (ConvertRHS)
+        RHS = prepareVectorSplat(LHSType, RHS.get());
       Kind = CK_VectorSplat;
       return Compatible;
     }
@@ -7332,11 +7360,14 @@ Sema::CheckSingleAssignmentConstraints(QualType LHSType, ExprResult &CallerRHS,
        LHSType->isBlockPointerType()) &&
       RHS.get()->isNullPointerConstant(Context,
                                        Expr::NPC_ValueDependentIsNull)) {
-    CastKind Kind;
-    CXXCastPath Path;
-    CheckPointerConversion(RHS.get(), LHSType, Kind, Path, false);
-    if (ConvertRHS)
-      RHS = ImpCastExprToType(RHS.get(), LHSType, Kind, VK_RValue, &Path);
+    if (Diagnose || ConvertRHS) {
+      CastKind Kind;
+      CXXCastPath Path;
+      CheckPointerConversion(RHS.get(), LHSType, Kind, Path,
+                             /*IgnoreBaseAccess=*/false, Diagnose);
+      if (ConvertRHS)
+        RHS = ImpCastExprToType(RHS.get(), LHSType, Kind, VK_RValue, &Path);
+    }
     return Compatible;
   }
 
@@ -7354,8 +7385,8 @@ Sema::CheckSingleAssignmentConstraints(QualType LHSType, ExprResult &CallerRHS,
   }
 
   Expr *PRE = RHS.get()->IgnoreParenCasts();
-  if (ObjCProtocolExpr *OPE = dyn_cast<ObjCProtocolExpr>(PRE)) {
-    ObjCProtocolDecl *PDecl = OPE->getProtocol();
+  if (Diagnose && isa<ObjCProtocolExpr>(PRE)) {
+    ObjCProtocolDecl *PDecl = cast<ObjCProtocolExpr>(PRE)->getProtocol();
     if (PDecl && !PDecl->hasDefinition()) {
       Diag(PRE->getExprLoc(), diag::warn_atprotocol_protocol) << PDecl->getName();
       Diag(PDecl->getLocation(), diag::note_entity_declared_at) << PDecl;
@@ -7377,11 +7408,11 @@ Sema::CheckSingleAssignmentConstraints(QualType LHSType, ExprResult &CallerRHS,
     Expr *E = RHS.get();
     if (getLangOpts().ObjCAutoRefCount)
       CheckObjCARCConversion(SourceRange(), Ty, E, CCK_ImplicitConversion,
-                             DiagnoseCFAudited);
+                             Diagnose, DiagnoseCFAudited);
     if (getLangOpts().ObjC1 &&
-        (CheckObjCBridgeRelatedConversions(E->getLocStart(),
-                                          LHSType, E->getType(), E) ||
-         ConversionToObjCStringLiteralCheck(LHSType, E))) {
+        (CheckObjCBridgeRelatedConversions(E->getLocStart(), LHSType,
+                                           E->getType(), E, Diagnose) ||
+         ConversionToObjCStringLiteralCheck(LHSType, E, Diagnose))) {
       RHS = E;
       return Compatible;
     }
@@ -8203,7 +8234,7 @@ static QualType checkOpenCLVectorShift(Sema &S,
   if (RHS.isInvalid()) return QualType();
 
   QualType LHSType = LHS.get()->getType();
-  const VectorType *LHSVecTy = LHSType->getAs<VectorType>();
+  const VectorType *LHSVecTy = LHSType->castAs<VectorType>();
   QualType LHSEleType = LHSVecTy->getElementType();
 
   // Note that RHS might not be a vector.
@@ -8939,8 +8970,9 @@ QualType Sema::CheckCompareOperands(ExprResult &LHS, ExprResult &RHS,
       else {
         Expr *E = RHS.get();
         if (getLangOpts().ObjCAutoRefCount)
-          CheckObjCARCConversion(SourceRange(), LHSType, E, CCK_ImplicitConversion, false,
-                                 Opc);
+          CheckObjCARCConversion(SourceRange(), LHSType, E,
+                                 CCK_ImplicitConversion, /*Diagnose=*/true,
+                                 /*DiagnoseCFAudited=*/false, Opc);
         RHS = ImpCastExprToType(E, LHSType,
                                 LPT ? CK_BitCast :CK_CPointerToObjCPointerCast);
       }
@@ -11808,8 +11840,8 @@ ExprResult Sema::ActOnGNUNullExpr(SourceLocation TokenLoc) {
   return new (Context) GNUNullExpr(Ty, TokenLoc);
 }
 
-bool
-Sema::ConversionToObjCStringLiteralCheck(QualType DstType, Expr *&Exp) {
+bool Sema::ConversionToObjCStringLiteralCheck(QualType DstType, Expr *&Exp,
+                                              bool Diagnose) {
   if (!getLangOpts().ObjC1)
     return false;
 
@@ -11835,8 +11867,9 @@ Sema::ConversionToObjCStringLiteralCheck(QualType DstType, Expr *&Exp) {
   StringLiteral *SL = dyn_cast<StringLiteral>(SrcExpr);
   if (!SL || !SL->isAscii())
     return false;
-  Diag(SL->getLocStart(), diag::err_missing_atsign_prefix)
-    << FixItHint::CreateInsertion(SL->getLocStart(), "@");
+  if (Diagnose)
+    Diag(SL->getLocStart(), diag::err_missing_atsign_prefix)
+      << FixItHint::CreateInsertion(SL->getLocStart(), "@");
   Exp = BuildObjCStringLiteral(SL->getLocStart(), SL).get();
   return true;
 }
@@ -13140,6 +13173,7 @@ bool Sema::tryCaptureVariable(
         case Type::ObjCObject:
         case Type::ObjCInterface:
         case Type::ObjCObjectPointer:
+        case Type::Pipe:
           llvm_unreachable("type class is never variably-modified!");
         case Type::Adjusted:
           QTy = cast<AdjustedType>(Ty)->getOriginalType();

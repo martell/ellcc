@@ -1206,7 +1206,7 @@ void SelectionDAGBuilder::visitCatchRet(const CatchReturnInst &I) {
   // This will be used by the FuncletLayout pass to determine how to order the
   // BB's.
   // A 'catchret' returns to the outer scope's color.
-  Value *ParentPad = I.getParentPad();
+  Value *ParentPad = I.getCatchSwitchParentPad();
   const BasicBlock *SuccessorColor;
   if (isa<ConstantTokenNone>(ParentPad))
     SuccessorColor = &FuncInfo.Fn->getEntryBlock();
@@ -5060,15 +5060,20 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
                              getValue(I.getArgOperand(0))));
     return nullptr;
   }
-  case Intrinsic::gcroot:
-    if (GFI) {
-      const Value *Alloca = I.getArgOperand(0)->stripPointerCasts();
-      const Constant *TypeMap = cast<Constant>(I.getArgOperand(1));
+  case Intrinsic::gcroot: {
+    MachineFunction &MF = DAG.getMachineFunction();
+    const Function *F = MF.getFunction();
+    (void)F;
+    assert(F->hasGC() &&
+           "only valid in functions with gc specified, enforced by Verifier");
+    assert(GFI && "implied by previous");
+    const Value *Alloca = I.getArgOperand(0)->stripPointerCasts();
+    const Constant *TypeMap = cast<Constant>(I.getArgOperand(1));
 
-      FrameIndexSDNode *FI = cast<FrameIndexSDNode>(getValue(Alloca).getNode());
-      GFI->addStackRoot(FI->getIndex(), TypeMap);
-    }
+    FrameIndexSDNode *FI = cast<FrameIndexSDNode>(getValue(Alloca).getNode());
+    GFI->addStackRoot(FI->getIndex(), TypeMap);
     return nullptr;
+  }
   case Intrinsic::gcread:
   case Intrinsic::gcwrite:
     llvm_unreachable("GC failed to lower gcread/gcwrite intrinsics!");

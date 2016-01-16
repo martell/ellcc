@@ -53,9 +53,11 @@ struct Configuration {
   bool AllowMultipleDefinition;
   bool AsNeeded = false;
   bool Bsymbolic;
+  bool Demangle = true;
   bool DiscardAll;
   bool DiscardLocals;
   bool DiscardNone;
+  bool EhFrameHdr;
   bool EnableNewDtags;
   bool ExportDynamic;
   bool GcSections;

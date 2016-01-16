@@ -254,6 +254,13 @@ def err_bad_variable_name : Error<
 def err_bad_parameter_name : Error<
   "%0 cannot be the name of a parameter">;
 def err_parameter_name_omitted : Error<"parameter name omitted">;
+def err_anyx86_interrupt_attribute : Error<
+  "%select{x86|x86-64}0 'interrupt' attribute only applies to functions that "
+  "have %select{a 'void' return type|"
+  "only a pointer parameter optionally followed by an integer parameter|"
+  "a pointer as the first parameter|a %2 type as the second parameter}1">;
+def err_anyx86_interrupt_called : Error<
+  "interrupt service routine cannot be called directly">;
 def warn_mips_interrupt_attribute : Warning<
    "MIPS 'interrupt' attribute only applies to functions that have "
    "%select{no parameters|a 'void' return type}0">,
@@ -2844,8 +2851,6 @@ def warn_vector_mode_deprecated : Warning<
   InGroup<DeprecatedAttributes>;
 def err_complex_mode_vector_type : Error<
   "type of machine mode does not support base vector types">;
-def err_attr_wrong_decl : Error<
-  "%0 attribute invalid on this declaration, requires typedef or value">;
 def warn_attribute_nonnull_no_pointers : Warning<
   "'nonnull' attribute applied to function with no pointer arguments">,
   InGroup<IgnoredAttributes>;
@@ -5802,12 +5807,14 @@ def warn_non_virtual_dtor : Warning<
   "%0 has virtual functions but non-virtual destructor">,
   InGroup<NonVirtualDtor>, DefaultIgnore;
 def warn_delete_non_virtual_dtor : Warning<
-  "delete called on non-final %0 that has virtual functions "
-  "but non-virtual destructor">,
+  "%select{delete|destructor}0 called on non-final %1 that has "
+  "virtual functions but non-virtual destructor">,
   InGroup<DeleteNonVirtualDtor>, DefaultIgnore;
+def note_delete_non_virtual : Note<
+  "qualify call to silence this warning">;
 def warn_delete_abstract_non_virtual_dtor : Warning<
-  "delete called on %0 that is abstract but has non-virtual destructor">,
-  InGroup<DeleteNonVirtualDtor>;
+  "%select{delete|destructor}0 called on %1 that is abstract but has "
+  "non-virtual destructor">, InGroup<DeleteNonVirtualDtor>;
 def warn_overloaded_virtual : Warning<
   "%q0 hides overloaded virtual %select{function|functions}1">,
   InGroup<OverloadedVirtual>, DefaultIgnore;
@@ -7642,6 +7649,10 @@ def err_wrong_sampler_addressspace: Error<
   "sampler type cannot be used with the __local and __global address space qualifiers">;
 def err_opencl_global_invalid_addr_space : Error<
   "program scope variable must reside in %0 address space">;
+def err_missing_actual_pipe_type : Error<
+  "missing actual type specifier for pipe">;
+def err_reference_pipe_type : Error <
+  "pipes packet types cannot be of reference type">;
 def err_opencl_no_main : Error<"%select{function|kernel}0 cannot be called 'main'">;
 def err_opencl_kernel_attr :
   Error<"attribute %0 can only be applied to a kernel function">;

@@ -42,9 +42,9 @@ static std::pair<ELFKind, uint16_t> parseEmulation(StringRef S) {
     return {ELF32BEKind, EM_MIPS};
   if (S == "elf32ltsmip")
     return {ELF32LEKind, EM_MIPS};
-  if (S == "elf32ppc")
+  if (S == "elf32ppc" || S == "elf32ppc_fbsd")
     return {ELF32BEKind, EM_PPC};
-  if (S == "elf64ppc")
+  if (S == "elf64ppc" || S == "elf64ppc_fbsd")
     return {ELF64BEKind, EM_PPC64};
   if (S == "elf_i386")
     return {ELF32LEKind, EM_386};
@@ -177,18 +177,19 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
     Config->RPath = llvm::join(RPaths.begin(), RPaths.end(), ":");
 
   if (auto *Arg = Args.getLastArg(OPT_m)) {
+    // Parse ELF{32,64}{LE,BE} and CPU type.
     StringRef S = Arg->getValue();
-    std::pair<ELFKind, uint16_t> P = parseEmulation(S);
-    Config->EKind = P.first;
-    Config->EMachine = P.second;
+    std::tie(Config->EKind, Config->EMachine) = parseEmulation(S);
     Config->Emulation = S;
   }
 
   Config->AllowMultipleDefinition = Args.hasArg(OPT_allow_multiple_definition);
   Config->Bsymbolic = Args.hasArg(OPT_Bsymbolic);
+  Config->Demangle = !Args.hasArg(OPT_no_demangle);
   Config->DiscardAll = Args.hasArg(OPT_discard_all);
   Config->DiscardLocals = Args.hasArg(OPT_discard_locals);
   Config->DiscardNone = Args.hasArg(OPT_discard_none);
+  Config->EhFrameHdr = Args.hasArg(OPT_eh_frame_hdr);
   Config->EnableNewDtags = !Args.hasArg(OPT_disable_new_dtags);
   Config->ExportDynamic = Args.hasArg(OPT_export_dynamic);
   Config->GcSections = Args.hasArg(OPT_gc_sections);
@@ -305,8 +306,9 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
 
   if (Config->EMachine == EM_MIPS) {
     // On MIPS O32 ABI, _gp_disp is a magic symbol designates offset between
-    // start of function and gp pointer into GOT.
-    Config->MipsGpDisp = Symtab.addIgnored("_gp_disp");
+    // start of function and gp pointer into GOT. Use 'strong' variant of
+    // the addIgnored to prevent '_gp_disp' substitution.
+    Config->MipsGpDisp = Symtab.addIgnoredStrong("_gp_disp");
 
     // Define _gp for MIPS. st_value of _gp symbol will be updated by Writer
     // so that it points to an absolute address which is relative to GOT.

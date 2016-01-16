@@ -25,9 +25,10 @@ using lld::mach_o::normalized::Section;
 class MachOFile : public SimpleFile {
 public:
   MachOFile(std::unique_ptr<MemoryBuffer> mb, MachOLinkingContext *ctx)
-      : SimpleFile(mb->getBufferIdentifier()), _mb(std::move(mb)), _ctx(ctx) {}
+    : SimpleFile(mb->getBufferIdentifier(), File::kindMachObject),
+      _mb(std::move(mb)), _ctx(ctx) {}
 
-  MachOFile(StringRef path) : SimpleFile(path) {}
+  MachOFile(StringRef path) : SimpleFile(path, File::kindMachObject) {}
 
   void addDefinedAtom(StringRef name, Atom::Scope scope,
                       DefinedAtom::ContentType type, DefinedAtom::Merge merge,
@@ -187,6 +188,25 @@ public:
       visitor(offAndAtom.atom, offAndAtom.offset);
   }
 
+  MachOLinkingContext::Arch arch() const { return _arch; }
+  void setArch(MachOLinkingContext::Arch arch) { _arch = arch; }
+
+  MachOLinkingContext::OS OS() const { return _os; }
+  void setOS(MachOLinkingContext::OS os) { _os = os; }
+
+  uint32_t swiftVersion() const { return _swiftVersion; }
+  void setSwiftVersion(uint32_t v) { _swiftVersion = v; }
+
+  bool subsectionsViaSymbols() const {
+    return _flags & llvm::MachO::MH_SUBSECTIONS_VIA_SYMBOLS;
+  }
+  void setFlags(normalized::FileFlags v) { _flags = v; }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const File *F) {
+    return F->kind() == File::kindMachObject;
+  }
+
 protected:
   std::error_code doParse() override {
     // Convert binary file to normalized mach-o.
@@ -220,6 +240,10 @@ private:
   MachOLinkingContext          *_ctx;
   SectionToAtoms                _sectionAtoms;
   NameToAtom                     _undefAtoms;
+  MachOLinkingContext::Arch      _arch = MachOLinkingContext::arch_unknown;
+  MachOLinkingContext::OS        _os = MachOLinkingContext::OS::unknown;
+  uint32_t                       _swiftVersion = 0;
+  normalized::FileFlags          _flags;
 };
 
 class MachODylibFile : public SharedLibraryFile {

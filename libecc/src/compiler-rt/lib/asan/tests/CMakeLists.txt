@@ -21,7 +21,8 @@ set(ASAN_UNITTEST_HEADERS
   asan_test_utils.h)
 
 set(ASAN_UNITTEST_COMMON_CFLAGS
-  ${COMPILER_RT_GTEST_INCLUDE_CFLAGS}
+  ${COMPILER_RT_UNITTEST_CFLAGS}
+  ${COMPILER_RT_GTEST_CFLAGS}
   -I${COMPILER_RT_SOURCE_DIR}/include
   -I${COMPILER_RT_SOURCE_DIR}/lib
   -I${COMPILER_RT_SOURCE_DIR}/lib/asan
@@ -32,20 +33,16 @@ set(ASAN_UNITTEST_COMMON_CFLAGS
   -Wno-non-virtual-dtor)
 append_list_if(COMPILER_RT_HAS_WVARIADIC_MACROS_FLAG -Wno-variadic-macros ASAN_UNITTEST_COMMON_CFLAGS)
 
-if(MSVC)
-  # MSVC system headers and gtest use a lot of deprecated stuff.
-  list(APPEND ASAN_UNITTEST_COMMON_CFLAGS
-       -Wno-deprecated-declarations)
+# This will ensure the target linker is used
+# during cross compilation
+set(ASAN_UNITTEST_COMMON_LINKFLAGS
+  ${COMPILER_RT_UNITTEST_LINKFLAGS})
 
-  # clang-cl doesn't support exceptions yet.
-  list(APPEND ASAN_UNITTEST_COMMON_CFLAGS
-       /fallback
-       -D_HAS_EXCEPTIONS=0)
-
-  # We should teach clang-cl to understand more pragmas.
-  list(APPEND ASAN_UNITTEST_COMMON_CFLAGS
-       -Wno-unknown-pragmas
-       -Wno-undefined-inline)
+# -gline-tables-only must be enough for ASan, so use it if possible.
+if(COMPILER_RT_TEST_COMPILER_ID MATCHES "Clang")
+  list(APPEND ASAN_UNITTEST_COMMON_CFLAGS -gline-tables-only)
+else()
+  list(APPEND ASAN_UNITTEST_COMMON_CFLAGS -g)
 endif()
 
 # Use -D instead of definitions to please custom compile command.

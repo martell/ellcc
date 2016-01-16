@@ -342,6 +342,8 @@ public:
 
   void finalizeInputFiles() override;
 
+  std::error_code handleLoadedFile(File &file) override;
+
   bool customAtomOrderer(const DefinedAtom *left, const DefinedAtom *right,
                          bool &leftBeforeRight) const;
 
@@ -396,6 +398,7 @@ private:
   uint64_t _stackSize;
   uint32_t _compatibilityVersion;
   uint32_t _currentVersion;
+  uint32_t _swiftVersion;
   StringRef _installName;
   StringRefVector _rpaths;
   bool _flatNamespace;

@@ -269,14 +269,8 @@ instrprof_error InstrProfValueSiteRecord::merge(InstrProfValueSiteRecord &Input,
     while (I != IE && I->Value < J->Value)
       ++I;
     if (I != IE && I->Value == J->Value) {
-      uint64_t JCount = J->Count;
       bool Overflowed;
-      if (Weight > 1) {
-        JCount = SaturatingMultiply(JCount, Weight, &Overflowed);
-        if (Overflowed)
-          Result = instrprof_error::counter_overflow;
-      }
-      I->Count = SaturatingAdd(I->Count, JCount, &Overflowed);
+      I->Count = SaturatingMultiplyAdd(J->Count, Weight, I->Count, &Overflowed);
       if (Overflowed)
         Result = instrprof_error::counter_overflow;
       ++I;
@@ -328,13 +322,8 @@ instrprof_error InstrProfRecord::merge(InstrProfRecord &Other,
 
   for (size_t I = 0, E = Other.Counts.size(); I < E; ++I) {
     bool Overflowed;
-    uint64_t OtherCount = Other.Counts[I];
-    if (Weight > 1) {
-      OtherCount = SaturatingMultiply(OtherCount, Weight, &Overflowed);
-      if (Overflowed)
-        Result = instrprof_error::counter_overflow;
-    }
-    Counts[I] = SaturatingAdd(Counts[I], OtherCount, &Overflowed);
+    Counts[I] =
+        SaturatingMultiplyAdd(Other.Counts[I], Weight, Counts[I], &Overflowed);
     if (Overflowed)
       Result = instrprof_error::counter_overflow;
   }
@@ -608,6 +597,41 @@ void ValueProfData::swapBytesFromHost(support::endianness Endianness) {
   }
   sys::swapByteOrder<uint32_t>(TotalSize);
   sys::swapByteOrder<uint32_t>(NumValueKinds);
+}
+
+// The argument to this method is a vector of cutoff percentages and the return
+// value is a vector of (Cutoff, MinBlockCount, NumBlocks) triplets.
+void ProfileSummary::computeDetailedSummary() {
+  if (DetailedSummaryCutoffs.empty())
+    return;
+  auto Iter = CountFrequencies.begin();
+  auto End = CountFrequencies.end();
+  std::sort(DetailedSummaryCutoffs.begin(), DetailedSummaryCutoffs.end());
+
+  uint32_t BlocksSeen = 0;
+  uint64_t CurrSum = 0, Count;
+
+  for (uint32_t Cutoff : DetailedSummaryCutoffs) {
+    assert(Cutoff <= 999999);
+    APInt Temp(128, TotalCount);
+    APInt N(128, Cutoff);
+    APInt D(128, ProfileSummary::Scale);
+    Temp *= N;
+    Temp = Temp.sdiv(D);
+    uint64_t DesiredCount = Temp.getZExtValue();
+    assert(DesiredCount <= TotalCount);
+    while (CurrSum < DesiredCount && Iter != End) {
+      Count = Iter->first;
+      uint32_t Freq = Iter->second;
+      CurrSum += (Count * Freq);
+      BlocksSeen += Freq;
+      Iter++;
+    }
+    assert(CurrSum >= DesiredCount);
+    ProfileSummaryEntry PSE = {Cutoff, Count, BlocksSeen};
+    DetailedSummary.push_back(PSE);
+  }
+  return;
 }
 
 }

@@ -35,6 +35,7 @@
 #endif
 
 using lld::mach_o::ArchHandler;
+using lld::mach_o::MachOFile;
 using lld::mach_o::MachODylibFile;
 using namespace llvm::MachO;
 
@@ -144,6 +145,7 @@ MachOLinkingContext::MachOLinkingContext()
       _doNothing(false), _pie(false), _arch(arch_unknown), _os(OS::macOSX),
       _osMinVersion(0), _pageZeroSize(0), _pageSize(4096), _baseAddress(0),
       _stackSize(0), _compatibilityVersion(0), _currentVersion(0),
+      _swiftVersion(0),
       _flatNamespace(false), _undefinedMode(UndefinedMode::error),
       _deadStrippableDylib(false), _printAtoms(false), _testingFileUsage(false),
       _keepPrivateExterns(false), _demangle(false), _archHandler(nullptr),
@@ -988,6 +990,43 @@ void MachOLinkingContext::finalizeInputFiles() {
                    });
   size_t numLibs = std::count_if(elements.begin(), elements.end(), isLibrary);
   elements.push_back(llvm::make_unique<GroupEnd>(numLibs));
+}
+
+std::error_code MachOLinkingContext::handleLoadedFile(File &file) {
+  auto *machoFile = dyn_cast<MachOFile>(&file);
+  if (!machoFile)
+    return std::error_code();
+
+  // Check that the arch of the context matches that of the file.
+  // Also set the arch of the context if it didn't have one.
+  if (_arch == arch_unknown) {
+    _arch = machoFile->arch();
+  } else if (machoFile->arch() != arch_unknown && machoFile->arch() != _arch) {
+    // Archs are different.
+    return make_dynamic_error_code(file.path() +
+                  Twine(" cannot be linked due to incompatible architecture"));
+  }
+
+  // Check that the OS of the context matches that of the file.
+  // Also set the OS of the context if it didn't have one.
+  if (_os == OS::unknown) {
+    _os = machoFile->OS();
+  } else if (machoFile->OS() != OS::unknown && machoFile->OS() != _os) {
+    // OSes are different.
+    return make_dynamic_error_code(file.path() +
+              Twine(" cannot be linked due to incompatible operating systems"));
+  }
+
+  // Check that the swift version of the context matches that of the file.
+  // Also set the swift version of the context if it didn't have one.
+  if (!_swiftVersion) {
+    _swiftVersion = machoFile->swiftVersion();
+  } else if (machoFile->swiftVersion() &&
+             machoFile->swiftVersion() != _swiftVersion) {
+    // Swift versions are different.
+    return make_dynamic_error_code("different swift versions");
+  }
+  return std::error_code();
 }
 
 } // end namespace lld

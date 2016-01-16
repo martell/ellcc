@@ -773,8 +773,9 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
   if (!Subtarget->hasV6Ops())
     setOperationAction(ISD::BSWAP, MVT::i32, Expand);
 
-  if (!(Subtarget->hasDivide() && Subtarget->isThumb2()) &&
-      !(Subtarget->hasDivideInARMMode() && !Subtarget->isThumb())) {
+  bool hasDivide = Subtarget->isThumb() ? Subtarget->hasDivide()
+                                        : Subtarget->hasDivideInARMMode();
+  if (!hasDivide) {
     // These are expanded into libcalls if the cpu doesn't have HW divider.
     setOperationAction(ISD::SDIV,  MVT::i32, LibCall);
     setOperationAction(ISD::UDIV,  MVT::i32, LibCall);
@@ -838,7 +839,8 @@ ARMTargetLowering::ARMTargetLowering(const TargetMachine &TM,
   // non-atomic form.
   if (TM.Options.ThreadModel == ThreadModel::Single)
     setOperationAction(ISD::ATOMIC_FENCE,   MVT::Other, Expand);
-  else if (Subtarget->hasAnyDataBarrier() && !Subtarget->isThumb1Only()) {
+  else if (Subtarget->hasAnyDataBarrier() && (!Subtarget->isThumb() ||
+                                              Subtarget->hasV8MBaselineOps())) {
     // ATOMIC_FENCE needs custom lowering; the others should have been expanded
     // to ldrex/strex loops already.
     setOperationAction(ISD::ATOMIC_FENCE,     MVT::Other, Custom);
@@ -1385,6 +1387,7 @@ ARMTargetLowering::getEffectiveCallingConv(CallingConv::ID CC,
     else
       return CallingConv::ARM_AAPCS;
   case CallingConv::Fast:
+  case CallingConv::CXX_FAST_TLS:
     if (!Subtarget->isAAPCS_ABI()) {
       if (Subtarget->hasVFP2() && !Subtarget->isThumb1Only() && !isVarArg)
         return CallingConv::Fast;
@@ -2346,6 +2349,19 @@ ARMTargetLowering::LowerReturn(SDValue Chain,
     // stuck together, avoiding something bad.
     Flag = Chain.getValue(1);
     RetOps.push_back(DAG.getRegister(VA.getLocReg(), VA.getLocVT()));
+  }
+  const ARMBaseRegisterInfo *TRI = Subtarget->getRegisterInfo();
+  const MCPhysReg *I =
+      TRI->getCalleeSavedRegsViaCopy(&DAG.getMachineFunction());
+  if (I) {
+    for (; *I; ++I) {
+      if (ARM::GPRRegClass.contains(*I))
+        RetOps.push_back(DAG.getRegister(*I, MVT::i32));
+      else if (ARM::DPRRegClass.contains(*I))
+        RetOps.push_back(DAG.getRegister(*I, MVT::getFloatingPointVT(64)));
+      else
+        llvm_unreachable("Unexpected register class in CSRsViaCopy!");
+    }
   }
 
   // Update chain and glue.
@@ -12391,4 +12407,51 @@ unsigned ARMTargetLowering::getExceptionSelectorRegister(
   // Platforms which do not use SjLj EH may return values in these registers
   // via the personality function.
   return Subtarget->useSjLjEH() ? ARM::NoRegister : ARM::R1;
+}
+
+void ARMTargetLowering::initializeSplitCSR(MachineBasicBlock *Entry) const {
+  // Update IsSplitCSR in ARMFunctionInfo.
+  ARMFunctionInfo *AFI = Entry->getParent()->getInfo<ARMFunctionInfo>();
+  AFI->setIsSplitCSR(true);
+}
+
+void ARMTargetLowering::insertCopiesSplitCSR(
+    MachineBasicBlock *Entry,
+    const SmallVectorImpl<MachineBasicBlock *> &Exits) const {
+  const ARMBaseRegisterInfo *TRI = Subtarget->getRegisterInfo();
+  const MCPhysReg *IStart = TRI->getCalleeSavedRegsViaCopy(Entry->getParent());
+  if (!IStart)
+    return;
+
+  const TargetInstrInfo *TII = Subtarget->getInstrInfo();
+  MachineRegisterInfo *MRI = &Entry->getParent()->getRegInfo();
+  MachineBasicBlock::iterator MBBI = Entry->begin();
+  for (const MCPhysReg *I = IStart; *I; ++I) {
+    const TargetRegisterClass *RC = nullptr;
+    if (ARM::GPRRegClass.contains(*I))
+      RC = &ARM::GPRRegClass;
+    else if (ARM::DPRRegClass.contains(*I))
+      RC = &ARM::DPRRegClass;
+    else
+      llvm_unreachable("Unexpected register class in CSRsViaCopy!");
+
+    unsigned NewVR = MRI->createVirtualRegister(RC);
+    // Create copy from CSR to a virtual register.
+    // FIXME: this currently does not emit CFI pseudo-instructions, it works
+    // fine for CXX_FAST_TLS since the C++-style TLS access functions should be
+    // nounwind. If we want to generalize this later, we may need to emit
+    // CFI pseudo-instructions.
+    assert(Entry->getParent()->getFunction()->hasFnAttribute(
+               Attribute::NoUnwind) &&
+           "Function should be nounwind in insertCopiesSplitCSR!");
+    Entry->addLiveIn(*I);
+    BuildMI(*Entry, MBBI, DebugLoc(), TII->get(TargetOpcode::COPY), NewVR)
+        .addReg(*I);
+
+    // Insert the copy-back instructions right before the terminator.
+    for (auto *Exit : Exits)
+      BuildMI(*Exit, Exit->getFirstTerminator(), DebugLoc(),
+              TII->get(TargetOpcode::COPY), *I)
+          .addReg(NewVR);
+  }
 }

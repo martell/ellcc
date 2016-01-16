@@ -154,6 +154,23 @@ private:
                          uint64_t SA) const;
 };
 
+class PPCTargetInfo final : public TargetInfo {
+public:
+  PPCTargetInfo();
+  void writeGotPltEntry(uint8_t *Buf, uint64_t Plt) const override;
+  void writePltZeroEntry(uint8_t *Buf, uint64_t GotEntryAddr,
+                         uint64_t PltEntryAddr) const override;
+  void writePltEntry(uint8_t *Buf, uint64_t GotAddr, uint64_t GotEntryAddr,
+                     uint64_t PltEntryAddr, int32_t Index,
+                     unsigned RelOff) const override;
+  bool relocNeedsGot(uint32_t Type, const SymbolBody &S) const override;
+  bool relocNeedsPlt(uint32_t Type, const SymbolBody &S) const override;
+  void relocateOne(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type, uint64_t P,
+                   uint64_t SA, uint64_t ZA = 0,
+                   uint8_t *PairedLoc = nullptr) const override;
+  bool isRelRelative(uint32_t Type) const override;
+};
+
 class PPC64TargetInfo final : public TargetInfo {
 public:
   PPC64TargetInfo();
@@ -181,6 +198,8 @@ public:
   void writePltEntry(uint8_t *Buf, uint64_t GotAddr, uint64_t GotEntryAddr,
                      uint64_t PltEntryAddr, int32_t Index,
                      unsigned RelOff) const override;
+  unsigned getTlsGotReloc(unsigned Type = -1) const override;
+  bool isTlsDynReloc(unsigned Type, const SymbolBody &S) const override;
   bool needsCopyRel(uint32_t Type, const SymbolBody &S) const override;
   bool relocNeedsGot(uint32_t Type, const SymbolBody &S) const override;
   bool relocNeedsPlt(uint32_t Type, const SymbolBody &S) const override;
@@ -208,6 +227,7 @@ public:
 template <class ELFT> class MipsTargetInfo final : public TargetInfo {
 public:
   MipsTargetInfo();
+  unsigned getDynReloc(unsigned Type) const override;
   void writeGotHeaderEntries(uint8_t *Buf) const override;
   void writeGotPltEntry(uint8_t *Buf, uint64_t Plt) const override;
   void writePltZeroEntry(uint8_t *Buf, uint64_t GotEntryAddr,
@@ -220,6 +240,7 @@ public:
   void relocateOne(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type, uint64_t P,
                    uint64_t SA, uint64_t ZA = 0,
                    uint8_t *PairedLoc = nullptr) const override;
+  bool isHintReloc(uint32_t Type) const override;
   bool isRelRelative(uint32_t Type) const override;
 };
 } // anonymous namespace
@@ -241,6 +262,8 @@ TargetInfo *createTarget() {
     default:
       error("Unsupported MIPS target");
     }
+  case EM_PPC:
+    return new PPCTargetInfo();
   case EM_PPC64:
     return new PPC64TargetInfo();
   case EM_X86_64:
@@ -262,6 +285,8 @@ bool TargetInfo::needsCopyRel(uint32_t Type, const SymbolBody &S) const {
 }
 
 bool TargetInfo::isGotRelative(uint32_t Type) const { return false; }
+
+bool TargetInfo::isHintReloc(uint32_t Type) const { return false; }
 
 bool TargetInfo::isRelRelative(uint32_t Type) const { return true; }
 
@@ -911,6 +936,37 @@ static uint16_t applyPPCHighera(uint64_t V) { return (V + 0x8000) >> 32; }
 static uint16_t applyPPCHighest(uint64_t V) { return V >> 48; }
 static uint16_t applyPPCHighesta(uint64_t V) { return (V + 0x8000) >> 48; }
 
+PPCTargetInfo::PPCTargetInfo() {}
+void PPCTargetInfo::writeGotPltEntry(uint8_t *Buf, uint64_t Plt) const {}
+void PPCTargetInfo::writePltZeroEntry(uint8_t *Buf, uint64_t GotEntryAddr,
+                                        uint64_t PltEntryAddr) const {}
+void PPCTargetInfo::writePltEntry(uint8_t *Buf, uint64_t GotAddr,
+                                  uint64_t GotEntryAddr,
+                                  uint64_t PltEntryAddr, int32_t Index,
+                                  unsigned RelOff) const {}
+bool PPCTargetInfo::relocNeedsGot(uint32_t Type, const SymbolBody &S) const {
+  return false;
+}
+bool PPCTargetInfo::relocNeedsPlt(uint32_t Type, const SymbolBody &S) const {
+  return false;
+}
+bool PPCTargetInfo::isRelRelative(uint32_t Type) const { return false; }
+
+void PPCTargetInfo::relocateOne(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type,
+                                uint64_t P, uint64_t SA, uint64_t ZA,
+                                uint8_t *PairedLoc) const {
+  switch (Type) {
+  case R_PPC_ADDR16_HA:
+    write16be(Loc, applyPPCHa(SA));
+    break;
+  case R_PPC_ADDR16_LO:
+    write16be(Loc, applyPPCLo(SA));
+    break;
+  default:
+    error("unrecognized reloc " + Twine(Type));
+  }
+}
+
 PPC64TargetInfo::PPC64TargetInfo() {
   PCRelReloc = R_PPC64_REL24;
   GotReloc = R_PPC64_GLOB_DAT;
@@ -1126,8 +1182,10 @@ void PPC64TargetInfo::relocateOne(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type,
 
 AArch64TargetInfo::AArch64TargetInfo() {
   CopyReloc = R_AARCH64_COPY;
+  IRelativeReloc = R_AARCH64_IRELATIVE;
   GotReloc = R_AARCH64_GLOB_DAT;
   PltReloc = R_AARCH64_JUMP_SLOT;
+  TlsGotReloc = R_AARCH64_TLS_TPREL64;
   LazyRelocations = true;
   PltEntrySize = 16;
   PltZeroEntrySize = 32;
@@ -1187,6 +1245,19 @@ void AArch64TargetInfo::writePltEntry(uint8_t *Buf, uint64_t GotAddr,
               GotEntryAddr);
 }
 
+unsigned AArch64TargetInfo::getTlsGotReloc(unsigned Type) const {
+  if (Type == R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21 ||
+      Type == R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC)
+    return Type;
+  return TlsGotReloc;
+}
+
+bool AArch64TargetInfo::isTlsDynReloc(unsigned Type,
+                                      const SymbolBody &S) const {
+  return Type == R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21 ||
+         Type == R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC;
+}
+
 bool AArch64TargetInfo::needsCopyRel(uint32_t Type, const SymbolBody &S) const {
   if (Config->Shared)
     return false;
@@ -1200,8 +1271,10 @@ bool AArch64TargetInfo::needsCopyRel(uint32_t Type, const SymbolBody &S) const {
   case R_AARCH64_ADR_PREL_LO21:
   case R_AARCH64_ADR_PREL_PG_HI21:
   case R_AARCH64_LDST8_ABS_LO12_NC:
+  case R_AARCH64_LDST16_ABS_LO12_NC:
   case R_AARCH64_LDST32_ABS_LO12_NC:
   case R_AARCH64_LDST64_ABS_LO12_NC:
+  case R_AARCH64_LDST128_ABS_LO12_NC:
     if (auto *SS = dyn_cast<SharedSymbol<ELF64LE>>(&S))
       return SS->Sym.getType() == STT_OBJECT;
     return false;
@@ -1210,17 +1283,28 @@ bool AArch64TargetInfo::needsCopyRel(uint32_t Type, const SymbolBody &S) const {
 
 bool AArch64TargetInfo::relocNeedsGot(uint32_t Type,
                                       const SymbolBody &S) const {
-  return Type == R_AARCH64_ADR_GOT_PAGE || Type == R_AARCH64_LD64_GOT_LO12_NC ||
-         relocNeedsPlt(Type, S);
+  switch (Type) {
+  case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
+  case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
+  case R_AARCH64_ADR_GOT_PAGE:
+  case R_AARCH64_LD64_GOT_LO12_NC:
+    return true;
+  default:
+    return relocNeedsPlt(Type, S);
+  }
 }
 
 bool AArch64TargetInfo::relocNeedsPlt(uint32_t Type,
                                       const SymbolBody &S) const {
+  if (isGnuIFunc<ELF64LE>(S))
+    return true;
   switch (Type) {
   default:
     return false;
   case R_AARCH64_CALL26:
+  case R_AARCH64_CONDBR19:
   case R_AARCH64_JUMP26:
+  case R_AARCH64_TSTBR14:
     return canBePreempted(&S, true);
   }
 }
@@ -1273,7 +1357,8 @@ void AArch64TargetInfo::relocateOne(uint8_t *Loc, uint8_t *BufEnd,
     updateAArch64Adr(Loc, X & 0x1FFFFF);
     break;
   }
-  case R_AARCH64_ADR_PREL_PG_HI21: {
+  case R_AARCH64_ADR_PREL_PG_HI21:
+  case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21: {
     uint64_t X = getAArch64Page(SA) - getAArch64Page(P);
     checkInt<33>(X, Type);
     updateAArch64Adr(Loc, (X >> 12) & 0x1FFFFF); // X[32:12]
@@ -1286,9 +1371,22 @@ void AArch64TargetInfo::relocateOne(uint8_t *Loc, uint8_t *BufEnd,
     or32le(Loc, (X & 0x0FFFFFFC) >> 2);
     break;
   }
+  case R_AARCH64_CONDBR19: {
+    uint64_t X = SA - P;
+    checkInt<21>(X, Type);
+    or32le(Loc, (X & 0x1FFFFC) << 3);
+    break;
+  }
   case R_AARCH64_LD64_GOT_LO12_NC:
+  case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
     checkAlignment<8>(SA, Type);
     or32le(Loc, (SA & 0xFF8) << 7);
+    break;
+  case R_AARCH64_LDST128_ABS_LO12_NC:
+    or32le(Loc, (SA & 0x0FF8) << 6);
+    break;
+  case R_AARCH64_LDST16_ABS_LO12_NC:
+    or32le(Loc, (SA & 0x0FFC) << 9);
     break;
   case R_AARCH64_LDST8_ABS_LO12_NC:
     or32le(Loc, (SA & 0xFFF) << 10);
@@ -1310,6 +1408,12 @@ void AArch64TargetInfo::relocateOne(uint8_t *Loc, uint8_t *BufEnd,
   case R_AARCH64_PREL64:
     write64le(Loc, SA - P);
     break;
+  case R_AARCH64_TSTBR14: {
+    uint64_t X = SA - P;
+    checkInt<16>(X, Type);
+    or32le(Loc, (X & 0xFFFC) << 3);
+    break;
+  }
   default:
     error("unrecognized reloc " + Twine(Type));
   }
@@ -1354,6 +1458,16 @@ void AMDGPUTargetInfo::relocateOne(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type,
 template <class ELFT> MipsTargetInfo<ELFT>::MipsTargetInfo() {
   PageSize = 65536;
   GotHeaderEntriesNum = 2;
+  RelativeReloc = R_MIPS_REL32;
+}
+
+template <class ELFT>
+unsigned MipsTargetInfo<ELFT>::getDynReloc(unsigned Type) const {
+  if (Type == R_MIPS_32 || Type == R_MIPS_64)
+    return R_MIPS_REL32;
+  StringRef S = getELFRelocationTypeName(EM_MIPS, Type);
+  error("Relocation " + S + " cannot be used when making a shared object; "
+                            "recompile with -fPIC.");
 }
 
 template <class ELFT>
@@ -1482,6 +1596,11 @@ void MipsTargetInfo<ELFT>::relocateOne(uint8_t *Loc, uint8_t *BufEnd,
   default:
     error("unrecognized reloc " + Twine(Type));
   }
+}
+
+template <class ELFT>
+bool MipsTargetInfo<ELFT>::isHintReloc(uint32_t Type) const {
+  return Type == R_MIPS_JALR;
 }
 
 template <class ELFT>

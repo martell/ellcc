@@ -350,6 +350,9 @@ set(mipsel_SOURCES ${mips_SOURCES})
 set(mips64_SOURCES ${mips_SOURCES})
 set(mips64el_SOURCES ${mips_SOURCES})
 
+set(wasm32_SOURCES ${GENERIC_SOURCES})
+set(wasm64_SOURCES ${GENERIC_SOURCES})
+
 add_custom_target(builtins)
 
 if (APPLE)

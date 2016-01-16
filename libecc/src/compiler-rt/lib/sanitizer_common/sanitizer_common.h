@@ -518,6 +518,19 @@ class InternalMmapVectorNoCtor {
   void clear() { size_ = 0; }
   bool empty() const { return size() == 0; }
 
+  const T *begin() const {
+    return data();
+  }
+  T *begin() {
+    return data();
+  }
+  const T *end() const {
+    return data() + size();
+  }
+  T *end() {
+    return data() + size();
+  }
+
  private:
   void Resize(uptr new_capacity) {
     CHECK_GT(new_capacity, 0);
@@ -624,8 +637,7 @@ class LoadedModule {
         : next(nullptr), beg(beg), end(end), executable(executable) {}
   };
 
-  typedef IntrusiveList<AddressRange>::ConstIterator Iterator;
-  Iterator ranges() const { return Iterator(&ranges_); }
+  const IntrusiveList<AddressRange> &ranges() const { return ranges_; }
 
  private:
   char *full_name_;  // Owned.

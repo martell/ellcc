@@ -27,6 +27,7 @@
 #include "llvm/Support/MD5.h"
 #include <cstdint>
 #include <list>
+#include <map>
 #include <system_error>
 #include <vector>
 
@@ -553,6 +554,68 @@ ValueProfData *
 serializeValueProfDataFromRT(const ValueProfRuntimeRecord *Record,
                              ValueProfData *Dst);
 
+///// Profile summary computation ////
+// The 'show' command displays richer summary of the profile data. The profile
+// summary is one or more (Cutoff, MinBlockCount, NumBlocks) triplets. Given a
+// target execution count percentile, we compute the minimum number of blocks
+// needed to reach this target and the minimum execution count of these blocks.
+struct ProfileSummaryEntry {
+  uint32_t Cutoff;        ///< The required percentile of total execution count.
+  uint64_t MinBlockCount; ///< The minimum execution count for this percentile.
+  uint64_t NumBlocks;     ///< Number of blocks >= the minumum execution count.
+};
+
+class ProfileSummary {
+  // We keep track of the number of times a count appears in the profile and
+  // keep the map sorted in the descending order of counts.
+  std::map<uint64_t, uint32_t, std::greater<uint64_t>> CountFrequencies;
+  std::vector<ProfileSummaryEntry> DetailedSummary;
+  std::vector<uint32_t> DetailedSummaryCutoffs;
+  // Sum of all counts.
+  uint64_t TotalCount;
+  uint64_t MaxBlockCount, MaxFunctionCount;
+  uint32_t NumBlocks, NumFunctions;
+  inline void addCount(uint64_t Count);
+  void computeDetailedSummary();
+
+public:
+  static const int Scale = 1000000;
+  ProfileSummary(std::vector<uint32_t> Cutoffs)
+      : DetailedSummaryCutoffs(Cutoffs), TotalCount(0), MaxBlockCount(0),
+        MaxFunctionCount(0), NumBlocks(0), NumFunctions(0) {}
+  inline void addRecord(const InstrProfRecord &);
+  inline std::vector<ProfileSummaryEntry> &getDetailedSummary();
+  uint32_t getNumBlocks() { return NumBlocks; }
+  uint64_t getTotalCount() { return TotalCount; }
+  uint32_t getNumFunctions() { return NumFunctions; }
+  uint64_t getMaxFunctionCount() { return MaxFunctionCount; }
+  uint64_t getMaxBlockCount() { return MaxBlockCount; }
+};
+
+// This is called when a count is seen in the profile.
+void ProfileSummary::addCount(uint64_t Count) {
+  TotalCount += Count;
+  if (Count > MaxBlockCount)
+    MaxBlockCount = Count;
+  NumBlocks++;
+  CountFrequencies[Count]++;
+}
+
+void ProfileSummary::addRecord(const InstrProfRecord &R) {
+  NumFunctions++;
+  if (R.Counts[0] > MaxFunctionCount)
+    MaxFunctionCount = R.Counts[0];
+
+  for (size_t I = 1, E = R.Counts.size(); I < E; ++I)
+    addCount(R.Counts[I]);
+}
+
+std::vector<ProfileSummaryEntry> &ProfileSummary::getDetailedSummary() {
+  if (!DetailedSummaryCutoffs.empty() && DetailedSummary.empty())
+    computeDetailedSummary();
+  return DetailedSummary;
+}
+
 namespace IndexedInstrProf {
 
 enum class HashT : uint32_t {
@@ -581,7 +644,26 @@ inline uint64_t ComputeHash(HashT Type, StringRef K) {
 }
 
 const uint64_t Magic = 0x8169666f72706cff; // "\xfflprofi\x81"
-const uint64_t Version = INSTR_PROF_INDEX_VERSION;
+
+enum ProfVersion {
+  // Version 1 is the first version. In this version, the value of
+  // a key/value pair can only include profile data of a single function.
+  // Due to this restriction, the number of block counters for a given
+  // function is not recorded but derived from the length of the value.
+  Version1 = 1,
+  // The version 2 format supports recording profile data of multiple
+  // functions which share the same key in one value field. To support this,
+  // the number block counters is recorded as an uint64_t field right after the
+  // function structural hash.
+  Version2 = 2,
+  // Version 3 supports value profile data. The value profile data is expected
+  // to follow the block counter profile data.
+  Version3 = 3,
+  // The current version is 3.
+  CurrentVersion = INSTR_PROF_INDEX_VERSION
+};
+const uint64_t Version = ProfVersion::CurrentVersion;
+
 const HashT HashType = HashT::MD5;
 
 inline uint64_t ComputeHash(StringRef K) { return ComputeHash(HashType, K); }
@@ -631,37 +713,6 @@ struct Header {
 };
 
 }  // end namespace RawInstrProf
-
-namespace coverage {
-
-// Profile coverage map has the following layout:
-// [CoverageMapFileHeader]
-// [ArrayStart]
-//  [CovMapFunctionRecord]
-//  [CovMapFunctionRecord]
-//  ...
-// [ArrayEnd]
-// [Encoded Region Mapping Data]
-LLVM_PACKED_START
-template <class IntPtrT> struct CovMapFunctionRecord {
-  #define COVMAP_FUNC_RECORD(Type, LLVMType, Name, Init) Type Name;
-  #include "llvm/ProfileData/InstrProfData.inc"
-};
-// Per module coverage mapping data header, i.e. CoverageMapFileHeader
-// documented above.
-struct CovMapHeader {
-#define COVMAP_HEADER(Type, LLVMType, Name, Init) Type Name;
-#include "llvm/ProfileData/InstrProfData.inc"
-};
-
-LLVM_PACKED_END
-
-enum CoverageMappingVersion {
-  CoverageMappingVersion1 = 0,
-  // The current versin is Version1
-  CoverageMappingCurrentVersion = INSTR_PROF_COVMAP_VERSION
-};
-}
 
 } // end namespace llvm
 

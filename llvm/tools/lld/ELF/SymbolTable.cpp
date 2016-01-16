@@ -120,7 +120,14 @@ SymbolBody *SymbolTable<ELFT>::addSynthetic(StringRef Name,
 // file's symbol table. Such symbols are useful for some linker-defined symbols.
 template <class ELFT>
 SymbolBody *SymbolTable<ELFT>::addIgnored(StringRef Name) {
-  return addAbsolute(Name, ElfSym<ELFT>::IgnoreUndef);
+  return addAbsolute(Name, ElfSym<ELFT>::IgnoredWeak);
+}
+
+// The 'strong' variant of the addIgnored. Adds symbol which has a global
+// binding and cannot be substituted.
+template <class ELFT>
+SymbolBody *SymbolTable<ELFT>::addIgnoredStrong(StringRef Name) {
+  return addAbsolute(Name, ElfSym<ELFT>::Ignored);
 }
 
 // Rename SYM as __wrap_SYM. The original symbol is preserved as __real_SYM.
@@ -158,7 +165,7 @@ std::string SymbolTable<ELFT>::conflictMsg(SymbolBody *Old, SymbolBody *New) {
   StringRef Sym = Old->getName();
   StringRef F1 = OldFile ? OldFile->getName() : "(internal)";
   StringRef F2 = NewFile ? NewFile->getName() : "(internal)";
-  return (Sym + " in " + F1 + " and " + F2).str();
+  return (demangle(Sym) + " in " + F1 + " and " + F2).str();
 }
 
 // This function resolves conflicts if there's an existing symbol with

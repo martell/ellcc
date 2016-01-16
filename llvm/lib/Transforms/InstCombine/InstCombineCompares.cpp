@@ -646,7 +646,8 @@ static bool canRewriteGEPAsOffset(Value *Start, Value *Base,
         // We're limiting the GEP to having one index. This will preserve
         // the original pointer type. We could handle more cases in the
         // future.
-        if (GEP->getNumIndices() != 1 || !GEP->isInBounds())
+        if (GEP->getNumIndices() != 1 || !GEP->isInBounds() ||
+            GEP->getType() != Start->getType())
           return false;
 
         if (Explored.count(GEP->getOperand(0)) == 0)
@@ -669,7 +670,7 @@ static bool canRewriteGEPAsOffset(Value *Start, Value *Base,
     for (auto *PN : PHIs)
       for (Value *Op : PN->incoming_values())
         if (Explored.count(Op) == 0)
-        WorkList.push_back(Op);
+          WorkList.push_back(Op);
   }
 
   // Make sure that we can do this. Since we can't insert GEPs in a basic
@@ -758,9 +759,8 @@ static Value *rewriteGEPAsOffset(Value *Start, Value *Base,
       continue;
     }
     if (auto *GEP = dyn_cast<GEPOperator>(Val)) {
-      Value *Index = NewInsts[GEP->getOperand(1)]
-                         ? NewInsts[GEP->getOperand(1)]
-                         : GEP->getOperand(1);
+      Value *Index = NewInsts[GEP->getOperand(1)] ? NewInsts[GEP->getOperand(1)]
+                                                  : GEP->getOperand(1);
       setInsertionPoint(Builder, GEP);
       // Indices might need to be sign extended. GEPs will magically do
       // this, but we need to do it ourselves here.
@@ -770,11 +770,14 @@ static Value *rewriteGEPAsOffset(Value *Start, Value *Base,
             Index, NewInsts[GEP->getOperand(0)]->getType(),
             GEP->getOperand(0)->getName() + ".sext");
       }
-      NewInsts[GEP] =
-          Builder.CreateAdd(NewInsts[GEP->getOperand(0)], Index,
-                            GEP->getOperand(0)->getName() + ".add");
-      continue;
 
+      auto *Op = NewInsts[GEP->getOperand(0)];
+      if (isa<ConstantInt>(Op) && dyn_cast<ConstantInt>(Op)->isZero())
+        NewInsts[GEP] = Index;
+      else
+        NewInsts[GEP] = Builder.CreateNSWAdd(
+            Op, Index, GEP->getOperand(0)->getName() + ".add");
+      continue;
     }
     if (isa<PHINode>(Val))
       continue;
@@ -801,28 +804,23 @@ static Value *rewriteGEPAsOffset(Value *Start, Value *Base,
     }
   }
 
-  // If required, create a inttoptr instruction.
-  Value *NewBase = Base;
-  setInsertionPoint(Builder, Base, false);
-  if (!Base->getType()->isPointerTy())
-    NewBase = Builder.CreateBitOrPointerCast(Base, Start->getType(),
-                      Start->getName() +  "to.ptr");
-
   for (Value *Val : Explored) {
     if (Val == Base)
       continue;
 
     // Depending on the type, for external users we have to emit
     // a GEP or a GEP + ptrtoint.
-    if (isa<Instruction>(NewInsts[Val]))
-      setInsertionPoint(Builder, NewInsts[Val], false);
-    else
-      setInsertionPoint(Builder, NewBase, false);
+    setInsertionPoint(Builder, Val, false);
 
-    Value *GEP =
-        Builder.CreateInBoundsGEP(Start->getType()->getPointerElementType(),
-                                  NewBase, makeArrayRef(NewInsts[Val]),
-                                  Val->getName() + ".ptr");
+    // If required, create an inttoptr instruction for Base.
+    Value *NewBase = Base;
+    if (!Base->getType()->isPointerTy())
+      NewBase = Builder.CreateBitOrPointerCast(Base, Start->getType(),
+                                               Start->getName() + "to.ptr");
+
+    Value *GEP = Builder.CreateInBoundsGEP(
+        Start->getType()->getPointerElementType(), NewBase,
+        makeArrayRef(NewInsts[Val]), Val->getName() + ".ptr");
 
     if (!Val->getType()->isPointerTy()) {
       Value *Cast = Builder.CreatePointerCast(GEP, Val->getType(),
@@ -836,13 +834,12 @@ static Value *rewriteGEPAsOffset(Value *Start, Value *Base,
 }
 
 /// Looks through GEPs, IntToPtrInsts and PtrToIntInsts in order to express
-/// the input Value as a GEP constant indexed GEP. Returns a pair containing
+/// the input Value as a constant indexed GEP. Returns a pair containing
 /// the GEPs Pointer and Index.
 static std::pair<Value *, Value *>
 getAsConstantIndexedAddress(Value *V, const DataLayout &DL) {
-  Type *IndexType =
-      IntegerType::get(V->getContext(),
-                       DL.getPointerTypeSizeInBits(V->getType()));
+  Type *IndexType = IntegerType::get(V->getContext(),
+                                     DL.getPointerTypeSizeInBits(V->getType()));
 
   Constant *Index = ConstantInt::getNullValue(IndexType);
   while (true) {
@@ -851,7 +848,8 @@ getAsConstantIndexedAddress(Value *V, const DataLayout &DL) {
       // overflow.
       if (!GEP->isInBounds())
         break;
-      if (GEP->hasAllConstantIndices() && GEP->getNumIndices() == 1) {
+      if (GEP->hasAllConstantIndices() && GEP->getNumIndices() == 1 &&
+          GEP->getType() == V->getType()) {
         V = GEP->getOperand(0);
         Constant *GEPIndex = static_cast<Constant *>(GEP->getOperand(1));
         Index = ConstantExpr::getAdd(

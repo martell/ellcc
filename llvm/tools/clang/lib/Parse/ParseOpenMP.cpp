@@ -146,7 +146,7 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirective() {
     break;
   }
   SkipUntil(tok::annot_pragma_openmp_end);
-  return DeclGroupPtrTy();
+  return nullptr;
 }
 
 /// \brief Parsing of declarative or executable OpenMP directives.
@@ -165,8 +165,8 @@ Parser::DeclGroupPtrTy Parser::ParseOpenMPDeclarativeDirective() {
 ///         'distribute'
 ///         annot_pragma_openmp_end
 ///
-StmtResult
-Parser::ParseOpenMPDeclarativeOrExecutableDirective(bool StandAloneAllowed) {
+StmtResult Parser::ParseOpenMPDeclarativeOrExecutableDirective(
+    AllowedContsructsKind Allowed) {
   assert(Tok.is(tok::annot_pragma_openmp) && "Not an OpenMP directive!");
   ParenBraceBracketBalancer BalancerRAIIObj(*this);
   SmallVector<Expr *, 5> Identifiers;
@@ -186,6 +186,10 @@ Parser::ParseOpenMPDeclarativeOrExecutableDirective(bool StandAloneAllowed) {
 
   switch (DKind) {
   case OMPD_threadprivate:
+    if (Allowed != ACK_Any) {
+      Diag(Tok, diag::err_omp_immediate_directive)
+          << getOpenMPDirectiveName(DKind) << 0;
+    }
     ConsumeToken();
     if (!ParseOpenMPSimpleVarList(OMPD_threadprivate, Identifiers, false)) {
       // The last seen token is annot_pragma_openmp_end - need to check for
@@ -213,7 +217,7 @@ Parser::ParseOpenMPDeclarativeOrExecutableDirective(bool StandAloneAllowed) {
   case OMPD_taskwait:
   case OMPD_cancellation_point:
   case OMPD_cancel:
-    if (!StandAloneAllowed) {
+    if (Allowed == ACK_StatementsOpenMPNonStandalone) {
       Diag(Tok, diag::err_omp_immediate_directive)
           << getOpenMPDirectiveName(DKind) << 0;
     }
@@ -299,7 +303,7 @@ Parser::ParseOpenMPDeclarativeOrExecutableDirective(bool StandAloneAllowed) {
     // If the depend clause is specified, the ordered construct is a stand-alone
     // directive.
     if (DKind == OMPD_ordered && FirstClauses[OMPC_depend].getInt()) {
-      if (!StandAloneAllowed) {
+      if (Allowed == ACK_StatementsOpenMPNonStandalone) {
         Diag(Loc, diag::err_omp_immediate_directive)
             << getOpenMPDirectiveName(DKind) << 1
             << getOpenMPClauseName(OMPC_depend);
@@ -363,11 +367,11 @@ bool Parser::ParseOpenMPSimpleVarList(OpenMPDirectiveKind Kind,
     NoIdentIsFound = false;
 
     if (AllowScopeSpecifier && getLangOpts().CPlusPlus &&
-        ParseOptionalCXXScopeSpecifier(SS, ParsedType(), false)) {
+        ParseOptionalCXXScopeSpecifier(SS, nullptr, false)) {
       IsCorrect = false;
       SkipUntil(tok::comma, tok::r_paren, tok::annot_pragma_openmp_end,
                 StopBeforeMatch);
-    } else if (ParseUnqualifiedId(SS, false, false, false, ParsedType(),
+    } else if (ParseUnqualifiedId(SS, false, false, false, nullptr,
                                   TemplateKWLoc, Name)) {
       IsCorrect = false;
       SkipUntil(tok::comma, tok::r_paren, tok::annot_pragma_openmp_end,
@@ -490,6 +494,7 @@ OMPClause *Parser::ParseOpenMPClause(OpenMPDirectiveKind DKind,
     Clause = ParseOpenMPSimpleClause(CKind);
     break;
   case OMPC_schedule:
+  case OMPC_dist_schedule:
     // OpenMP [2.7.1, Restrictions, p. 3]
     //  Only one schedule clause can appear on a loop directive.
     if (!FirstClause) {
@@ -740,6 +745,15 @@ OMPClause *Parser::ParseOpenMPSingleExprWithArgClause(OpenMPClauseKind Kind) {
          Arg[ScheduleKind] == OMPC_SCHEDULE_guided) &&
         Tok.is(tok::comma))
       DelimLoc = ConsumeAnyToken();
+  } else if (Kind == OMPC_dist_schedule) {
+    Arg.push_back(getOpenMPSimpleClauseType(
+        Kind, Tok.isAnnotation() ? "" : PP.getSpelling(Tok)));
+    KLoc.push_back(Tok.getLocation());
+    if (Tok.isNot(tok::r_paren) && Tok.isNot(tok::comma) &&
+        Tok.isNot(tok::annot_pragma_openmp_end))
+      ConsumeAnyToken();
+    if (Arg.back() == OMPC_DIST_SCHEDULE_static && Tok.is(tok::comma))
+      DelimLoc = ConsumeAnyToken();
   } else {
     assert(Kind == OMPC_if);
     KLoc.push_back(Tok.getLocation());
@@ -754,8 +768,9 @@ OMPClause *Parser::ParseOpenMPSingleExprWithArgClause(OpenMPClauseKind Kind) {
     }
   }
 
-  bool NeedAnExpression =
-      (Kind == OMPC_schedule && DelimLoc.isValid()) || Kind == OMPC_if;
+  bool NeedAnExpression = (Kind == OMPC_schedule && DelimLoc.isValid()) ||
+                          (Kind == OMPC_dist_schedule && DelimLoc.isValid()) ||
+                          Kind == OMPC_if;
   if (NeedAnExpression) {
     SourceLocation ELoc = Tok.getLocation();
     ExprResult LHS(ParseCastExpression(false, false, NotTypeCast));
@@ -816,7 +831,7 @@ static bool ParseReductionId(Parser &P, CXXScopeSpec &ReductionIdScopeSpec,
   }
   return P.ParseUnqualifiedId(ReductionIdScopeSpec, /*EnteringContext*/ false,
                               /*AllowDestructorName*/ false,
-                              /*AllowConstructorName*/ false, ParsedType(),
+                              /*AllowConstructorName*/ false, nullptr,
                               TemplateKWLoc, ReductionId);
 }
 
@@ -883,7 +898,7 @@ OMPClause *Parser::ParseOpenMPVarListClause(OpenMPDirectiveKind DKind,
   if (Kind == OMPC_reduction) {
     ColonProtectionRAIIObject ColonRAII(*this);
     if (getLangOpts().CPlusPlus) {
-      ParseOptionalCXXScopeSpecifier(ReductionIdScopeSpec, ParsedType(), false);
+      ParseOptionalCXXScopeSpecifier(ReductionIdScopeSpec, nullptr, false);
     }
     InvalidReductionId =
         ParseReductionId(*this, ReductionIdScopeSpec, ReductionId);
