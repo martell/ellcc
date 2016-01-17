@@ -1,0 +1,45 @@
+diff -ur wireless_tools.29/iwevent.c wireless_tools/iwevent.c
+--- wireless_tools.29/iwevent.c	2006-02-13 18:08:20.000000000 -0600
++++ wireless_tools/iwevent.c	2016-01-17 14:04:59.210770893 -0600
+@@ -89,7 +89,7 @@
+ {
+ 	int addr_len;
+ 
+-	memset(rth, 0, sizeof(rth));
++	memset(rth, 0, sizeof(*rth));
+ 
+ 	rth->fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+ 	if (rth->fd < 0) {
+diff -ur wireless_tools.29/Makefile wireless_tools/Makefile
+--- wireless_tools.29/Makefile	2007-09-17 18:56:46.000000000 -0500
++++ wireless_tools/Makefile	2016-01-17 14:02:15.044516695 -0600
+@@ -9,15 +9,15 @@
+ endif
+ 
+ ## Compiler to use (modify this for cross compile).
+-CC = gcc
++CC = @CC@
+ ## Other tools you need to modify for cross compile (static lib only).
+-AR = ar
+-RANLIB = ranlib
++AR = @AR@
++RANLIB = @RANLIB@
+ 
+ ## Uncomment this to build tools using static version of the library.
+ ## Mostly useful for embedded platforms without ldd, or to create
+ ## a local version (non-root).
+-# BUILD_STATIC = y
++BUILD_STATIC = y
+ 
+ ## Uncomment this to build without using libm (less efficient).
+ ## This is mostly useful for embedded platforms without maths.
+@@ -102,7 +102,8 @@
+ endif
+ 
+ # Other flags
+-CFLAGS=-Os -W -Wall -Wstrict-prototypes -Wmissing-prototypes -Wshadow \
++CFLAGS=-Os -W -Wall -Werror -Wno-self-assign \
++        -Wstrict-prototypes -Wmissing-prototypes -Wshadow \
+ 	-Wpointer-arith -Wcast-qual -Winline -I.
+ #CFLAGS=-O2 -W -Wall -Wstrict-prototypes -I.
+ DEPFLAGS=-MMD

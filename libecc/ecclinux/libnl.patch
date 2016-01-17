@@ -1,0 +1,11 @@
+diff -ur libnl-3.2.27/include/netlink-private/netlink.h libnl/include/netlink-private/netlink.h
+--- libnl-3.2.27/include/netlink-private/netlink.h	2015-05-12 08:55:42.000000000 -0500
++++ libnl/include/netlink-private/netlink.h	2016-01-17 12:57:22.120650565 -0600
+@@ -16,6 +16,7 @@
+ #include <errno.h>
+ #include <stdlib.h>
+ #include <string.h>
++#define strerror_r(e, b, l) ({ strerror_r((e),(b),(l)); (b); })
+ #include <unistd.h>
+ #include <fcntl.h>
+ #include <math.h>

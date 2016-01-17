@@ -9,7 +9,7 @@ packages="kernel sinit sbase ubase smdev nldev nlmon sdhcp loksh hbase
 extras="ellcc"
 
 # Packages that don't build currently.
-broken="openssh toybox python s6"
+broken="openssh toybox python s6 libnl iw"
 
 # Packages that build, but that are untested/unused or not needed.
 unused_packages="uboot"
@@ -28,6 +28,9 @@ PYTHON_VERSION=3.5.1
 E2FSPROGS_VERSION=1.42.13
 NTFS3G_VERSION=2015.3.14
 IPROUTE2_VERSION=4.3.0
+WIRELESS_TOOLS_VERSION=29
+LIBNL_VERSION=3.2.27
+IW_VERSION=4.3
 DROPBEAR_VERSION=2015.71
 OPENSSH_VERSION=7.1p1
 LESS_VERSION=481
@@ -396,6 +399,31 @@ getversion iproute2 \
    patch -p0 < ../../iproute2.patch ; \
    PKG_CONFIG=false ./configure --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT)"
 
+getversion libnl \
+  https://github.com/thom311/libnl/releases/download/libnl3_2_27 \
+  libnl-$LIBNL_VERSION.tar.gz \
+  "mv libnl* libnl ; \
+  (cd libnl ; \
+   patch -p1 < ../../libnl.patch ; \
+   ./configure --enable-shared=no \
+       --host=$HOST --prefix=$ROOT --exec-prefix=$ROOT)"
+
+getversion iw \
+  https://www.kernel.org/pub/software/network/iw \
+  iw-$IW_VERSION.tar.xz \
+  "mv iw* iw"
+
+getversion wireless_tools \
+  http://www.labs.hpe.com/personal/Jean_Tourrilhes/Linux \
+  wireless_tools.$WIRELESS_TOOLS_VERSION.tar.gz \
+  "mv wireless_tools* wireless_tools; \
+  (cd wireless_tools ; \
+   patch -p1 < ../../wireless_tools.patch ; \
+   sed -ie \"s:INSTALL_MAN=.*:INSTALL_MAN=$MANPREFIX:\" Makefile ; \
+   sed -ie \"s:@CC@:$CC:\" Makefile ; \
+   sed -ie \"s:@AR@:$AR:\" Makefile ; \
+   sed -ie \"s:@RANLIB@:$RANLIB:\" Makefile)"
+
 getversion dropbear \
   https://matt.ucc.asn.au/dropbear/releases \
   dropbear-$DROPBEAR_VERSION.tar.bz2 \
@@ -509,6 +537,22 @@ makeit iproute2 "make SBINDIR=$ROOT/sbin \
                   ARPDDIR=$ROOT/var/lib/arpd \
                   KERNEL_INCLUDE=$ROOT/usr/include \
                   install"
+# This will make only libnl.a and then fail.
+makeit libnl "make SBINDIR=$ROOT/sbin \
+                  DATADIR=$ROOT/usr/share \
+                  DOCDIR=$ROOT/usr/doc \
+                  MANDIR=$ROOT/usr/man || true ; \
+                  mkdir -p ../lib; cp ./lib/.libs/*.a ../lib/"
+makeit iw "make SBINDIR=$ROOT/sbin \
+                  DATADIR=$ROOT/usr/share \
+                  DOCDIR=$ROOT/usr/doc \
+                  MANDIR=$ROOT/usr/man \
+                  NO_PKG_CONFIG=1 \
+                  NL3xFOUND=Y \
+                  CFLAGS=-I../libnl/include \
+                  LDFLAGS=-L../lib"
+makeit wireless_tools "make PREFIX=$ROOT \
+                  install-bin install-man"
 makeit openssh "make install"
 makeit dropbear "make PROGRAMS='dropbear dbclient dropbearkey dropbearconvert scp' \
                      MULTI=1 STATIC=1 SCPPROGRESS=1 install ; \

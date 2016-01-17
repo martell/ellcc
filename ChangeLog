@@ -1,5 +1,6 @@
 current SVN:
 
+* Add wireless tools build to ecclinux.
 * Update to LLVM r257984.
 * Add less build to ecclinux.
 
