@@ -73,16 +73,23 @@ else
 endif
 
 ifeq ($(SUBARCH),armhf)
-SRCS += adddf3vfp.S addsf3vfp.S \
-  divdf3vfp.S divsf3vfp.S eqdf2vfp.S eqsf2vfp.S \
-  extendsfdf2vfp.S fixdfsivfp.S fixsfsivfp.S fixunsdfsivfp.S \
-  fixunssfsivfp.S floatsidfvfp.S floatsisfvfp.S \
-  floatunssidfvfp.S floatunssisfvfp.S \
-  gedf2vfp.S gesf2vfp.S gtdf2vfp.S \
-  gtsf2vfp.S ledf2vfp.S lesf2vfp.S ltdf2vfp.S ltsf2vfp.S \
-  modsi3.S muldf3vfp.S mulsf3vfp.S nedf2vfp.S negdf2vfp.S \
-  negsf2vfp.S nesf2vfp.S restore_vfp_d8_d15_regs.S \
-  save_vfp_d8_d15_regs.S subdf3vfp.S subsf3vfp.S \
-  unorddf2vfp.S unordsf2vfp.S truncdfsf2vfp.S
+  SRCS += adddf3vfp.S addsf3vfp.S \
+    divdf3vfp.S divsf3vfp.S eqdf2vfp.S eqsf2vfp.S \
+    extendsfdf2vfp.S fixdfsivfp.S fixsfsivfp.S fixunsdfsivfp.S \
+    fixunssfsivfp.S floatsidfvfp.S floatsisfvfp.S \
+    floatunssidfvfp.S floatunssisfvfp.S \
+    gedf2vfp.S gesf2vfp.S gtdf2vfp.S \
+    gtsf2vfp.S ledf2vfp.S lesf2vfp.S ltdf2vfp.S ltsf2vfp.S \
+    modsi3.S muldf3vfp.S mulsf3vfp.S nedf2vfp.S negdf2vfp.S \
+    negsf2vfp.S nesf2vfp.S restore_vfp_d8_d15_regs.S \
+    save_vfp_d8_d15_regs.S subdf3vfp.S subsf3vfp.S \
+    unorddf2vfp.S unordsf2vfp.S truncdfsf2vfp.S
 endif
 
+ifeq ($(ARCH),aarch64)
+  VPATH := $(VPATH):$(SRCPATH)/compiler-rt/lib/builtins
+  SRCS += comparetf2.c extenddftf2.c extendsftf2.c fixtfdi.c \
+    fixtfsi.c fixtfti.c fixunstfdi.c fixunstfsi.c fixunstfti.c \
+    floatditf.c floatsitf.c floatunditf.c floatunsitf.c multc3.c \
+    trunctfdf2.c trunctfsf2.c
+endif

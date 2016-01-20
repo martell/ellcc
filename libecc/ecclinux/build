@@ -29,6 +29,7 @@ E2FSPROGS_VERSION=1.42.13
 NTFS3G_VERSION=2015.3.14
 IPROUTE2_VERSION=4.3.0
 WIRELESS_TOOLS_VERSION=29
+WPA_SUPPLICANT_VERSION=2.5
 LIBNL_VERSION=3.2.27
 IW_VERSION=4.3
 DROPBEAR_VERSION=2015.71
@@ -424,6 +425,12 @@ getversion wireless_tools \
    sed -ie \"s:@AR@:$AR:\" Makefile ; \
    sed -ie \"s:@RANLIB@:$RANLIB:\" Makefile)"
 
+getversion wpa_supplicant \
+  https://w1.fi/releases \
+  wpa_supplicant-$WPA_SUPPLICANT_VERSION.tar.gz \
+  "mv wpa_supplicant* wpa_supplicant; \
+  "
+
 getversion dropbear \
   https://matt.ucc.asn.au/dropbear/releases \
   dropbear-$DROPBEAR_VERSION.tar.bz2 \
@@ -497,7 +504,7 @@ makeit e2fsprogs  "make install ; \
                    ln -s e2fsck fsck.ext2 ; \
                    ln -s e2fsck fsck.ext3  ; \
                    ln -s e2fsck fsck.ext4 ; \
-                   ln -s e2fsck fsck.ext4dev ; 
+                   ln -s e2fsck fsck.ext4dev ; \
                    rm -f e2label findfs ; \
                    ln -s tune2fs e2label ; \
                    ln -s tune2fs findfs)"
