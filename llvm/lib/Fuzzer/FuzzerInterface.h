@@ -66,14 +66,39 @@ class FuzzerRandomBase {
   // Return a random number in range [0,n).
   size_t operator()(size_t n) { return n ? Rand() % n : 0; }
   bool RandBool() { return Rand() % 2; }
+
+  // The methods below is to satisfy UniformRandomNumberGenerator:
+  // http://en.cppreference.com/w/cpp/concept/UniformRandomNumberGenerator\
+
+  // Returns a random number between 0 and RAND_MAX inclusive.
+  double operator()() { return operator()(RAND_MAX); }
+
+  // Returns the smallest value that operator() may return.
+  double min() { return 0; }
+
+  // Returns the largest value that operator() may return.
+  double max() { return RAND_MAX; }
 };
 
+// Using libc's stand/rand.
 class FuzzerRandomLibc : public FuzzerRandomBase {
  public:
   FuzzerRandomLibc(unsigned int seed) { ResetSeed(seed); }
   void ResetSeed(unsigned int seed) override;
-  ~FuzzerRandomLibc() override {}
+  ~FuzzerRandomLibc() override {};
   size_t Rand() override;
+};
+
+// Using std::mt19937
+class FuzzerRandom_mt19937 : public FuzzerRandomBase {
+ public:
+  FuzzerRandom_mt19937(unsigned int seed) { ResetSeed(seed); }
+  void ResetSeed(unsigned int seed) override;
+  ~FuzzerRandom_mt19937() override;
+  size_t Rand() override;
+ private:
+  struct Impl;
+  Impl *R = nullptr;
 };
 
 // For backward compatibility only, deprecated.

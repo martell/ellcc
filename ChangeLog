@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r258477.
 * Added missint aarch64 compiler-rt functions: __floatditf, etc.
 * Add wireless tools build to ecclinux.
 * Update to LLVM r257984.

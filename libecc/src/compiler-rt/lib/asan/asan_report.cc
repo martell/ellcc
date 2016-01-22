@@ -691,6 +691,9 @@ class ScopedInErrorReport {
     if (flags()->print_stats)
       __asan_print_accumulated_stats();
 
+    if (common_flags()->print_cmdline)
+      PrintCmdline();
+
     // Copy the message buffer so that we could start logging without holding a
     // lock that gets aquired during printing.
     InternalScopedBuffer<char> buffer_copy(kErrorMessageBufferSize);
@@ -1017,6 +1020,14 @@ static bool SuppressErrorReport(uptr pc) {
   Die();
 }
 
+static void PrintContainerOverflowHint() {
+  Printf("HINT: if you don't care about these errors you may set "
+         "ASAN_OPTIONS=detect_container_overflow=0.\n"
+         "If you suspect a false positive see also: "
+         "https://github.com/google/sanitizers/wiki/"
+         "AddressSanitizerContainerOverflow.\n");
+}
+
 void ReportGenericError(uptr pc, uptr bp, uptr sp, uptr addr, bool is_write,
                         uptr access_size, u32 exp, bool fatal) {
   if (!fatal && SuppressErrorReport(pc)) return;
@@ -1033,6 +1044,7 @@ void ReportGenericError(uptr pc, uptr bp, uptr sp, uptr addr, bool is_write,
 
   // Determine the error type.
   const char *bug_descr = "unknown-crash";
+  u8 shadow_val = 0;
   if (AddrIsInMem(addr)) {
     u8 *shadow_addr = (u8*)MemToShadow(addr);
     // If we are accessing 16 bytes, look at the second shadow byte.
@@ -1041,7 +1053,8 @@ void ReportGenericError(uptr pc, uptr bp, uptr sp, uptr addr, bool is_write,
     // If we are in the partial right redzone, look at the next shadow byte.
     if (*shadow_addr > 0 && *shadow_addr < 128)
       shadow_addr++;
-    switch (*shadow_addr) {
+    shadow_val = *shadow_addr;
+    switch (shadow_val) {
       case kAsanHeapLeftRedzoneMagic:
       case kAsanHeapRightRedzoneMagic:
       case kAsanArrayCookieMagic:
@@ -1110,6 +1123,8 @@ void ReportGenericError(uptr pc, uptr bp, uptr sp, uptr addr, bool is_write,
   stack.Print();
 
   DescribeAddress(addr, access_size, bug_descr);
+  if (shadow_val == kAsanContiguousContainerOOBMagic)
+    PrintContainerOverflowHint();
   ReportErrorSummary(bug_descr, &stack);
   PrintShadowMemoryForAddress(addr);
 }

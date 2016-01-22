@@ -648,6 +648,10 @@ void MaybeReexec() {
   LeakyResetEnv(kDyldInsertLibraries, new_env);
 }
 
+char **GetArgv() {
+  return *_NSGetArgv();
+}
+
 }  // namespace __sanitizer
 
 #endif  // SANITIZER_MAC

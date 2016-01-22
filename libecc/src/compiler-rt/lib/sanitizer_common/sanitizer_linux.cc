@@ -415,7 +415,7 @@ static void ReadNullSepFileToArray(const char *path, char ***arr,
 }
 #endif
 
-static void GetArgsAndEnv(char*** argv, char*** envp) {
+static void GetArgsAndEnv(char ***argv, char ***envp) {
 #if !SANITIZER_GO
   if (&__libc_stack_end) {
 #endif
@@ -430,6 +430,12 @@ static void GetArgsAndEnv(char*** argv, char*** envp) {
     ReadNullSepFileToArray("/proc/self/environ", envp, kMaxEnvp);
   }
 #endif
+}
+
+char **GetArgv() {
+  char **argv, **envp;
+  GetArgsAndEnv(&argv, &envp);
+  return argv;
 }
 
 void ReExec() {
