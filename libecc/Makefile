@@ -637,19 +637,21 @@ $(Configs)::
 	$(OUT)$(MAKE) $(MFLAGS) -C c++-build/$@ || exit 1
 	$(OUT)cp c++-build/$@/libc++.a lib/$@
 
+VDIRS=$(shell cd ../lib/clang/; echo *)
+VER=$(word $(words $(VDIRS)), $(VDIRS))
 clang-headers:
 	$(OUT)echo Installing clang headers
-	$(OUT)if [ -e  ../lib/clang/*/include ] ; then \
+	$(OUT)if [ -e  ../lib/clang/$(VER)/include ] ; then \
 	  mkdir -p clang ; \
-	  cp -p -r ../lib/clang/*/include/* clang ; \
-	  cp -p clang/arm_neon.h include ; \
-	  cp -p clang/altivec.h include ; \
-	  cp -p clang/emmintrin.h include ; \
-	  cp -p clang/mmintrin.h include ; \
-	  cp -p clang/mm_malloc.h include ; \
-	  cp -p clang/xmmintrin.h include ; \
-	  cp -p clang/f16cintrin.h include ; \
-	fi
+	    cp -p -r ../lib/clang/$(VER)/include/* clang ; \
+	    cp -p clang/arm_neon.h include ; \
+	    cp -p clang/altivec.h include ; \
+	    cp -p clang/emmintrin.h include ; \
+	    cp -p clang/mmintrin.h include ; \
+	    cp -p clang/mm_malloc.h include ; \
+	    cp -p clang/xmmintrin.h include ; \
+	    cp -p clang/f16cintrin.h include ; \
+	  fi
 
 $(ElkConfigs)::
 	$(OUT)echo Making libelk for $@ in elk-build/$@
