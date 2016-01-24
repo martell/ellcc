@@ -1,6 +1,6 @@
 # Cross compiling variables
-ARCH		?= arm
-TARGET		?= arm-linux-engeabihf
+ARCH		?= @ARCH@
+TARGET		?= @TARGET@
 
 ELLCC		:= $(shell realpath $(shell pwd)/../../..)
 UNAME           := $(shell uname)
@@ -14,7 +14,7 @@ endif
 CC		:= $(ELLCC)/bin/ecc -target $(TARGET) -I$(ELLCC)/libecc/include/$(ARCH)
 
 CPP		:= $(CC) -E
-LD		:= $(ELLCC)/bin/ecc-ld -m armelf_linux_eabi
+LD		:= $(ELLCC)/bin/ecc-ld -m @LD_EMUL@
 OBJCOPY		:= $(ELLCC)/bin/ecc-objcopy
 OBJDUMP		:= $(ELLCC)/bin/ecc-objdump
 AR		:= $(ELLCC)/bin/ecc-ar

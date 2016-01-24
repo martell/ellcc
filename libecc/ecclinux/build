@@ -49,6 +49,7 @@ usage() {
   echo "    help                                This message"
   echo "    bcmrpi                              Raspberry Pi    (ARMv6)"
   echo "    bcm2709                             Raspberry Pi 2  (ARMv7)"
+  echo "    x86_64                              The default x86_64 configuration"
   echo "  available packages:"
   echo "    $packages"
   echo "  extra packages:"
@@ -105,12 +106,19 @@ elif [ "${BOARD}" = "bcmrpi" ] ; then
   ARCH=arm
   UBOOT_BOARD=rpi
   TARGET=armv6-linux-engeabihf  # ARMv6
+  LD_EMUL=armelf_linux_eabi
   NO_VDSO=0
 elif [ "${BOARD}" = "bcm2709" ] ; then
   ARCH=arm
   UBOOT_BOARD=rpi_2
   TARGET=arm-linux-engeabihf    # ARMv7
+  LD_EMUL=armelf_linux_eabi
   NO_VDSO=1
+elif [ "${BOARD}" = "x86_64" ] ; then
+  ARCH=x86_64
+  TARGET=x86_64-linux-eng       # x86_64
+  LD_EMUL=elf_x86_64
+  NO_VDSO=0
 else
   echo "unknown target: $1"
   usage
@@ -151,9 +159,11 @@ if [ $CLEAN -ne 0 ] ; then
 fi
 
 if [ “${UNAME}” = “Darwin” ] ; then
+  MAKEFILE=GNUmakefile
   MAXJOBS=`sysctl hw.ncpu | cut -d: -f2 | tr -d [:space:]`
 else
   MAXJOBS=`grep processor /proc/cpuinfo | wc -l`
+  MAKEFILE=makefile
 fi
 
 # Tools.
@@ -186,16 +196,18 @@ if [ "$kernel" = "yes" ] ; then
     for p in `echo ../*-$LINUX_VERSION.patch` ; do
       patch -p1 < $p
     done
-    if [ “${UNAME}” = “Darwin” ] ; then
-      cp $TOP/makefile GNUmakefile
-    else
-      cp $TOP/makefile .
-    fi
     cd $TOP
   fi
+  cd linux-$LINUX_VERSION/
+  # Fix the makefile.
+  cp $TOP/makefile $MAKEFILE
+  sed -ie "s:@ARCH@:$ARCH:" $MAKEFILE
+  sed -ie "s:@TARGET@:$TARGET:" $MAKEFILE
+  sed -ie "s:@LD_EMUL@:$LD_EMUL:" $MAKEFILE
+  cd $TOP
   if [ ! -e $BUILD/$BOARD ] ; then
-    cd linux-$LINUX_VERSION/
     # Configure the kernel.
+    cd linux-$LINUX_VERSION/
     make ARCH=$ARCH BUILD=$BUILD/$BOARD TARGET=$TARGET MAXJOBS=1 $LINUX_CONFIG
     cd $BUILD/$BOARD
     if [ $NO_VDSO -eq 1 ] ; then
