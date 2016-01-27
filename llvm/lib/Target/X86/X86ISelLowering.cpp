@@ -5480,55 +5480,84 @@ LowerAsSplatVectorLoad(SDValue SrcOp, MVT VT, SDLoc dl, SelectionDAG &DAG) {
 /// elements can be replaced by a single large load which has the same value as
 /// a build_vector or insert_subvector whose loaded operands are 'Elts'.
 ///
-/// Example: <load i32 *a, load i32 *a+4, undef, undef> -> zextload a
-///
-/// FIXME: we'd also like to handle the case where the last elements are zero
-/// rather than undef via VZEXT_LOAD, but we do not detect that case today.
-/// There's even a handy isZeroNode for that purpose.
+/// Example: <load i32 *a, load i32 *a+4, zero, undef> -> zextload a
 static SDValue EltsFromConsecutiveLoads(EVT VT, ArrayRef<SDValue> Elts,
                                         SDLoc &DL, SelectionDAG &DAG,
                                         bool isAfterLegalize) {
   unsigned NumElems = Elts.size();
 
-  LoadSDNode *LDBase = nullptr;
-  unsigned LastLoadedElt = -1U;
+  int LastLoadedElt = -1;
+  SmallBitVector LoadMask(NumElems, false);
+  SmallBitVector ZeroMask(NumElems, false);
+  SmallBitVector UndefMask(NumElems, false);
 
-  // For each element in the initializer, see if we've found a load or an undef.
-  // If we don't find an initial load element, or later load elements are
-  // non-consecutive, bail out.
+  auto PeekThroughBitcast = [](SDValue V) {
+    while (V.getNode() && V.getOpcode() == ISD::BITCAST)
+      V = V.getOperand(0);
+    return V;
+  };
+
+  // For each element in the initializer, see if we've found a load, zero or an
+  // undef.
   for (unsigned i = 0; i < NumElems; ++i) {
-    SDValue Elt = Elts[i];
-    // Look through a bitcast.
-    if (Elt.getNode() && Elt.getOpcode() == ISD::BITCAST)
-      Elt = Elt.getOperand(0);
-    if (!Elt.getNode() ||
-        (Elt.getOpcode() != ISD::UNDEF && !ISD::isNON_EXTLoad(Elt.getNode())))
+    SDValue Elt = PeekThroughBitcast(Elts[i]);
+    if (!Elt.getNode())
       return SDValue();
-    if (!LDBase) {
-      if (Elt.getNode()->getOpcode() == ISD::UNDEF)
-        return SDValue();
-      LDBase = cast<LoadSDNode>(Elt.getNode());
-      LastLoadedElt = i;
-      continue;
-    }
-    if (Elt.getOpcode() == ISD::UNDEF)
-      continue;
 
-    LoadSDNode *LD = cast<LoadSDNode>(Elt);
-    EVT LdVT = Elt.getValueType();
-    // Each loaded element must be the correct fractional portion of the
-    // requested vector load.
-    if (LdVT.getSizeInBits() != VT.getSizeInBits() / NumElems)
+    if (Elt.isUndef())
+      UndefMask[i] = true;
+    else if (X86::isZeroNode(Elt) || ISD::isBuildVectorAllZeros(Elt.getNode()))
+      ZeroMask[i] = true;
+    else if (ISD::isNON_EXTLoad(Elt.getNode())) {
+      LoadMask[i] = true;
+      LastLoadedElt = i;
+      // Each loaded element must be the correct fractional portion of the
+      // requested vector load.
+      if ((NumElems * Elt.getValueSizeInBits()) != VT.getSizeInBits())
+        return SDValue();
+    } else
       return SDValue();
-    if (!DAG.isConsecutiveLoad(LD, LDBase, LdVT.getSizeInBits() / 8, i))
-      return SDValue();
-    LastLoadedElt = i;
+  }
+  assert((ZeroMask | UndefMask | LoadMask).count() == NumElems &&
+         "Incomplete element masks");
+
+  // Handle Special Cases - all undef or undef/zero.
+  if (UndefMask.count() == NumElems)
+    return DAG.getUNDEF(VT);
+
+  // FIXME: Should we return this as a BUILD_VECTOR instead?
+  if ((ZeroMask | UndefMask).count() == NumElems)
+    return VT.isInteger() ? DAG.getConstant(0, DL, VT)
+                          : DAG.getConstantFP(0.0, DL, VT);
+
+  int FirstLoadedElt = LoadMask.find_first();
+  SDValue EltBase = PeekThroughBitcast(Elts[FirstLoadedElt]);
+  LoadSDNode *LDBase = cast<LoadSDNode>(EltBase);
+  EVT LDBaseVT = EltBase.getValueType();
+
+  // Consecutive loads can contain UNDEFS but not ZERO elements.
+  bool IsConsecutiveLoad = true;
+  for (int i = FirstLoadedElt + 1; i <= LastLoadedElt; ++i) {
+    if (LoadMask[i]) {
+      SDValue Elt = PeekThroughBitcast(Elts[i]);
+      LoadSDNode *LD = cast<LoadSDNode>(Elt);
+      if (!DAG.isConsecutiveLoad(LD, LDBase,
+                                 Elt.getValueType().getStoreSizeInBits() / 8,
+                                 i - FirstLoadedElt)) {
+        IsConsecutiveLoad = false;
+        break;
+      }
+    } else if (ZeroMask[i]) {
+      IsConsecutiveLoad = false;
+      break;
+    }
   }
 
+  // LOAD - all consecutive load/undefs (must start/end with a load).
   // If we have found an entire vector of loads and undefs, then return a large
-  // load of the entire vector width starting at the base pointer.  If we found
-  // consecutive loads for the low half, generate a vzext_load node.
-  if (LastLoadedElt == NumElems - 1) {
+  // load of the entire vector width starting at the base pointer.
+  if (IsConsecutiveLoad && FirstLoadedElt == 0 &&
+      LastLoadedElt == (int)(NumElems - 1) && ZeroMask.none()) {
     assert(LDBase && "Did not find base load for merging consecutive loads");
     EVT EltVT = LDBase->getValueType(0);
     // Ensure that the input vector size for the merged loads matches the
@@ -5548,9 +5577,9 @@ static SDValue EltsFromConsecutiveLoads(EVT VT, ArrayRef<SDValue> Elts,
                         LDBase->getAlignment());
 
     if (LDBase->hasAnyUseOfValue(1)) {
-      SDValue NewChain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other,
-                                     SDValue(LDBase, 1),
-                                     SDValue(NewLd.getNode(), 1));
+      SDValue NewChain =
+          DAG.getNode(ISD::TokenFactor, DL, MVT::Other, SDValue(LDBase, 1),
+                      SDValue(NewLd.getNode(), 1));
       DAG.ReplaceAllUsesOfValueWith(SDValue(LDBase, 1), NewChain);
       DAG.UpdateNodeOperands(NewChain.getNode(), SDValue(LDBase, 1),
                              SDValue(NewLd.getNode(), 1));
@@ -5559,11 +5588,14 @@ static SDValue EltsFromConsecutiveLoads(EVT VT, ArrayRef<SDValue> Elts,
     return NewLd;
   }
 
-  //TODO: The code below fires only for for loading the low v2i32 / v2f32
-  //of a v4i32 / v4f32. It's probably worth generalizing.
-  EVT EltVT = VT.getVectorElementType();
-  if (NumElems == 4 && LastLoadedElt == 1 && (EltVT.getSizeInBits() == 32) &&
-      DAG.getTargetLoweringInfo().isTypeLegal(MVT::v2i64)) {
+  int LoadSize =
+      (1 + LastLoadedElt - FirstLoadedElt) * LDBaseVT.getStoreSizeInBits();
+
+  // VZEXT_LOAD - consecutive load/undefs followed by zeros/undefs.
+  // TODO: The code below fires only for for loading the low 64-bits of a
+  // of a 128-bit vector. It's probably worth generalizing more.
+  if (IsConsecutiveLoad && FirstLoadedElt == 0 && VT.is128BitVector() &&
+      (LoadSize == 64 && DAG.getTargetLoweringInfo().isTypeLegal(MVT::v2i64))) {
     SDVTList Tys = DAG.getVTList(MVT::v2i64, MVT::Other);
     SDValue Ops[] = { LDBase->getChain(), LDBase->getBasePtr() };
     SDValue ResNode =
@@ -5577,8 +5609,9 @@ static SDValue EltsFromConsecutiveLoads(EVT VT, ArrayRef<SDValue> Elts,
     // terms of dependency. We create a TokenFactor for LDBase and ResNode, and
     // update uses of LDBase's output chain to use the TokenFactor.
     if (LDBase->hasAnyUseOfValue(1)) {
-      SDValue NewChain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other,
-                             SDValue(LDBase, 1), SDValue(ResNode.getNode(), 1));
+      SDValue NewChain =
+          DAG.getNode(ISD::TokenFactor, DL, MVT::Other, SDValue(LDBase, 1),
+                      SDValue(ResNode.getNode(), 1));
       DAG.ReplaceAllUsesOfValueWith(SDValue(LDBase, 1), NewChain);
       DAG.UpdateNodeOperands(NewChain.getNode(), SDValue(LDBase, 1),
                              SDValue(ResNode.getNode(), 1));
@@ -6551,15 +6584,17 @@ X86TargetLowering::LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const {
   if (IsAllConstants)
     return SDValue();
 
-  // For AVX-length vectors, see if we can use a vector load to get all of the
-  // elements, otherwise build the individual 128-bit pieces and use
+  // See if we can use a vector load to get all of the elements.
+  if (VT.is128BitVector() || VT.is256BitVector() || VT.is512BitVector()) {
+    SmallVector<SDValue, 64> V(Op->op_begin(), Op->op_begin() + NumElems);
+    if (SDValue LD = EltsFromConsecutiveLoads(VT, V, dl, DAG, false))
+      return LD;
+  }
+
+  // For AVX-length vectors, build the individual 128-bit pieces and use
   // shuffles to put them in place.
   if (VT.is256BitVector() || VT.is512BitVector()) {
     SmallVector<SDValue, 64> V(Op->op_begin(), Op->op_begin() + NumElems);
-
-    // Check for a build vector of consecutive loads.
-    if (SDValue LD = EltsFromConsecutiveLoads(VT, V, dl, DAG, false))
-      return LD;
 
     EVT HVT = EVT::getVectorVT(*DAG.getContext(), ExtVT, NumElems/2);
 
@@ -6647,10 +6682,6 @@ X86TargetLowering::LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const {
     // Check for a build vector of consecutive loads.
     for (unsigned i = 0; i < NumElems; ++i)
       V[i] = Op.getOperand(i);
-
-    // Check for elements which are consecutive loads.
-    if (SDValue LD = EltsFromConsecutiveLoads(VT, V, dl, DAG, false))
-      return LD;
 
     // Check for a build vector from mostly shuffle plus few inserting.
     if (SDValue Sh = buildFromShuffleMostly(Op, DAG))
@@ -10974,6 +11005,7 @@ static SDValue lowerV8I32VectorShuffle(SDValue Op, SDValue V1, SDValue V2,
           lowerVectorShuffleAsShift(DL, MVT::v8i32, V1, V2, Mask, DAG))
     return Shift;
 
+  // Try to use byte rotation instructions.
   if (SDValue Rotate = lowerVectorShuffleAsByteRotate(
           DL, MVT::v8i32, V1, V2, Mask, Subtarget, DAG))
     return Rotate;
@@ -13552,7 +13584,7 @@ static SDValue LowerTruncateVecI1(SDValue Op, SelectionDAG &DAG,
   SDValue In = Op.getOperand(0);
   MVT InVT = In.getSimpleValueType();
 
-  assert(VT.getVectorElementType() == MVT::i1 && "Unexected vector type.");
+  assert(VT.getVectorElementType() == MVT::i1 && "Unexpected vector type.");
 
   // Shift LSB to MSB and use VPMOVB2M - SKX.
   unsigned ShiftInx = InVT.getScalarSizeInBits() - 1;
@@ -13585,7 +13617,7 @@ static SDValue LowerTruncateVecI1(SDValue Op, SelectionDAG &DAG,
   if (InVT.getSizeInBits() < 512 &&
       (InVT.getScalarType() == MVT::i8 || InVT.getScalarType() == MVT::i16 ||
        !Subtarget->hasVLX())) {
-    assert((NumElts == 8 || NumElts == 16) && "Unexected vector type.");
+    assert((NumElts == 8 || NumElts == 16) && "Unexpected vector type.");
 
     // TESTD/Q should be used (if BW supported we use CVT2MASK above),
     // so vector should be extended to packed dword/qword.
@@ -17070,7 +17102,7 @@ static SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, const X86Subtarget *Subtarget
         Rnd = Op.getOperand(6);
       else
         Rnd = DAG.getConstant(X86::STATIC_ROUNDING::CUR_DIRECTION, dl, MVT::i32);
-      if (IntrData->Type == FIXUPIMM || IntrData->Type == FIXUPIMM_MASKZ) 
+      if (IntrData->Type == FIXUPIMM || IntrData->Type == FIXUPIMM_MASKZ)
         return getVectorMaskingNode(DAG.getNode(IntrData->Opc0, dl, VT,
                                                 Src1, Src2, Src3, Imm, Rnd),
                                     Mask, Passthru, Subtarget, DAG);
@@ -17761,7 +17793,7 @@ static SDValue LowerINTRINSIC_W_CHAIN(SDValue Op, const X86Subtarget *Subtarget,
                               MemIntr->getMemOperand(), false);
   }
   case STOREANT: {
-    // Store (MOVNTPD, MOVNTPS, MOVNTDQ) using non-temporal hint intrinsic implementation. 
+    // Store (MOVNTPD, MOVNTPS, MOVNTDQ) using non-temporal hint intrinsic implementation.
     SDValue Data = Op.getOperand(3);
     SDValue Addr = Op.getOperand(2);
     SDValue Chain = Op.getOperand(0);
@@ -20581,6 +20613,28 @@ SDValue X86TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   }
 }
 
+/// Places new result values for the node in Results (their number
+/// and types must exactly match those of the original return values of
+/// the node), or leaves Results empty, which indicates that the node is not
+/// to be custom lowered after all.
+void X86TargetLowering::LowerOperationWrapper(SDNode *N,
+                                              SmallVectorImpl<SDValue> &Results,
+                                              SelectionDAG &DAG) const {
+  SDValue Res = LowerOperation(SDValue(N, 0), DAG);
+
+  if (!Res.getNode())
+    return;
+
+  assert((N->getNumValues() <= Res->getNumValues()) &&
+      "Lowering returned the wrong number of results!");
+
+  // Places new result values base on N result number.
+  // In some cases (LowerSINT_TO_FP for example) Res has more result values
+  // than original node, chain should be dropped(last value).
+  for (unsigned I = 0, E = N->getNumValues(); I != E; ++I)
+      Results.push_back(Res.getValue(I));
+}
+
 /// ReplaceNodeResults - Replace a node with an illegal result type
 /// with a new node built out of custom code.
 void X86TargetLowering::ReplaceNodeResults(SDNode *N,
@@ -21040,6 +21094,8 @@ const char *X86TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case X86ISD::FNMSUB_RND:         return "X86ISD::FNMSUB_RND";
   case X86ISD::FMADDSUB_RND:       return "X86ISD::FMADDSUB_RND";
   case X86ISD::FMSUBADD_RND:       return "X86ISD::FMSUBADD_RND";
+  case X86ISD::VPMADD52H:          return "X86ISD::VPMADD52H";
+  case X86ISD::VPMADD52L:          return "X86ISD::VPMADD52L";
   case X86ISD::VRNDSCALE:          return "X86ISD::VRNDSCALE";
   case X86ISD::VREDUCE:            return "X86ISD::VREDUCE";
   case X86ISD::VGETMANT:           return "X86ISD::VGETMANT";
@@ -22025,7 +22081,8 @@ X86TargetLowering::EmitLoweredSelect(MachineInstr *MI,
   if (LastCMOV == MI &&
       NextMIIt != BB->end() && NextMIIt->getOpcode() == MI->getOpcode() &&
       NextMIIt->getOperand(2).getReg() == MI->getOperand(2).getReg() &&
-      NextMIIt->getOperand(1).getReg() == MI->getOperand(0).getReg()) {
+      NextMIIt->getOperand(1).getReg() == MI->getOperand(0).getReg() &&
+      NextMIIt->getOperand(1).isKill()) {
     CascadedCMOV = &*NextMIIt;
   }
 
@@ -23937,9 +23994,19 @@ static SDValue PerformTargetShuffleCombine(SDValue N, SelectionDAG &DAG,
     SDValue Op1 = N.getOperand(1);
     SDValue Op2 = N.getOperand(2);
     unsigned InsertPSMask = cast<ConstantSDNode>(Op2)->getZExtValue();
-    unsigned DstIdx = (InsertPSMask >> 4) & 3;
+    unsigned DstIdx = (InsertPSMask >> 4) & 0x3;
+    unsigned ZeroMask = InsertPSMask & 0xF;
 
-    // Attempt to merge insertps with an inner target shuffle node.
+    // If we zero out all elements from Op0 then we don't need to reference it.
+    if (((ZeroMask | (1u << DstIdx)) == 0xF) && !Op0.isUndef())
+      return DAG.getNode(X86ISD::INSERTPS, DL, VT, DAG.getUNDEF(VT), Op1,
+                         DAG.getConstant(InsertPSMask, DL, MVT::i8));
+
+    // If we zero out the element from Op1 then we don't need to reference it.
+    if ((ZeroMask & (1u << DstIdx)) && !Op1.isUndef())
+      return DAG.getNode(X86ISD::INSERTPS, DL, VT, Op0, DAG.getUNDEF(VT),
+                         DAG.getConstant(InsertPSMask, DL, MVT::i8));
+
     SmallVector<int, 8> TargetMask;
     if (!setTargetShuffleZeroElements(Op0, TargetMask))
       return SDValue();
@@ -23979,7 +24046,7 @@ static SDValue PerformTargetShuffleCombine(SDValue N, SelectionDAG &DAG,
     }
 
     if (Updated)
-      return DAG.getNode(X86ISD::INSERTPS, DL, MVT::v4f32, Op0, Op1,
+      return DAG.getNode(X86ISD::INSERTPS, DL, VT, Op0, Op1,
                          DAG.getConstant(InsertPSMask, DL, MVT::i8));
 
     return SDValue();
@@ -27179,13 +27246,11 @@ combineVectorTruncationWithPACKUS(SDNode *N, SelectionDAG &DAG,
   // First, use mask to unset all bits that won't appear in the result.
   assert((OutSVT == MVT::i8 || OutSVT == MVT::i16) &&
          "OutSVT can only be either i8 or i16.");
-  SDValue MaskVal =
-      DAG.getConstant(OutSVT == MVT::i8 ? 0xFF : 0xFFFF, DL, InSVT);
-  SDValue MaskVec = DAG.getNode(
-      ISD::BUILD_VECTOR, DL, InVT,
-      SmallVector<SDValue, 8>(InVT.getVectorNumElements(), MaskVal));
+  APInt Mask =
+      APInt::getLowBitsSet(InSVT.getSizeInBits(), OutSVT.getSizeInBits());
+  SDValue MaskVal = DAG.getConstant(Mask, DL, InVT);
   for (auto &Reg : Regs)
-    Reg = DAG.getNode(ISD::AND, DL, InVT, MaskVec, Reg);
+    Reg = DAG.getNode(ISD::AND, DL, InVT, MaskVal, Reg);
 
   MVT UnpackedVT, PackedVT;
   if (OutSVT == MVT::i8) {
@@ -27289,17 +27354,14 @@ static SDValue combineVectorTruncation(SDNode *N, SelectionDAG &DAG,
   // Split a long vector into vectors of legal type.
   unsigned RegNum = InVT.getSizeInBits() / 128;
   SmallVector<SDValue, 8> SubVec(RegNum);
-  if (InSVT == MVT::i32) {
-    for (unsigned i = 0; i < RegNum; i++)
-      SubVec[i] = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, MVT::v4i32, In,
-                              DAG.getIntPtrConstant(i * 4, DL));
-  } else {
-    for (unsigned i = 0; i < RegNum; i++)
-      SubVec[i] = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, MVT::v2i64, In,
-                              DAG.getIntPtrConstant(i * 2, DL));
-  }
+  unsigned NumSubRegElts = 128 / InSVT.getSizeInBits();
+  EVT SubRegVT = EVT::getVectorVT(*DAG.getContext(), InSVT, NumSubRegElts);
 
-  // SSE2 provides PACKUS for only 2 x v8i16 -> v16i8 and SSE4.1 provides PAKCUS
+  for (unsigned i = 0; i < RegNum; i++)
+    SubVec[i] = DAG.getNode(ISD::EXTRACT_SUBVECTOR, DL, SubRegVT, In,
+                            DAG.getIntPtrConstant(i * NumSubRegElts, DL));
+
+  // SSE2 provides PACKUS for only 2 x v8i16 -> v16i8 and SSE4.1 provides PACKUS
   // for 2 x v4i32 -> v8i16. For SSSE3 and below, we need to use PACKSS to
   // truncate 2 x v4i32 to v8i16.
   if (Subtarget->hasSSE41() || OutSVT == MVT::i8)

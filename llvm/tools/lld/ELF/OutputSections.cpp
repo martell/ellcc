@@ -23,8 +23,6 @@ using namespace llvm::ELF;
 using namespace lld;
 using namespace lld::elf2;
 
-bool elf2::HasGotOffRel = false;
-
 template <class ELFT>
 OutputSectionBase<ELFT>::OutputSectionBase(StringRef Name, uint32_t Type,
                                            uintX_t Flags)
@@ -291,6 +289,14 @@ template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
     if (applyTlsDynamicReloc(Body, Type, P, reinterpret_cast<Elf_Rel *>(Buf)))
       continue;
 
+    // Writer::scanRelocs creates a RELATIVE reloc for some type of TLS reloc.
+    // We want to write it down as is.
+    if (Type == Target->getRelativeReloc()) {
+      P->setSymbolAndType(0, Type, Config->Mips64EL);
+      P->r_offset = C.getOffset(RI.r_offset) + C.OutSec->getVA();
+      continue;
+    }
+
     // Emit a copy relocation.
     auto *SS = dyn_cast_or_null<SharedSymbol<ELFT>>(Body);
     if (SS && SS->NeedsCopy) {
@@ -302,15 +308,25 @@ template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
 
     bool NeedsGot = Body && Target->relocNeedsGot(Type, *Body);
     bool CBP = canBePreempted(Body, NeedsGot);
+
+    // For a symbol with STT_GNU_IFUNC type, we always create a PLT and
+    // a GOT entry for the symbol, and emit an IRELATIVE reloc rather than
+    // the usual JUMP_SLOT reloc for the GOT entry. For the details, you
+    // want to read http://www.airs.com/blog/archives/403
+    if (!CBP && Body && isGnuIFunc<ELFT>(*Body)) {
+      P->setSymbolAndType(0, Target->getIRelativeReloc(), Config->Mips64EL);
+      if (Out<ELFT>::GotPlt)
+        P->r_offset = Out<ELFT>::GotPlt->getEntryAddr(*Body);
+      else
+        P->r_offset = Out<ELFT>::Got->getEntryAddr(*Body);
+      continue;
+    }
+
     bool LazyReloc = Body && Target->supportsLazyRelocations() &&
                      Target->relocNeedsPlt(Type, *Body);
-    bool IsDynRelative = Type == Target->getRelativeReloc();
 
-    unsigned Sym = CBP ? Body->DynamicSymbolTableIndex : 0;
     unsigned Reloc;
-    if (!CBP && Body && isGnuIFunc<ELFT>(*Body))
-      Reloc = Target->getIRelativeReloc();
-    else if (!CBP || IsDynRelative)
+    if (!CBP)
       Reloc = Target->getRelativeReloc();
     else if (LazyReloc)
       Reloc = Target->getPltReloc();
@@ -318,7 +334,8 @@ template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
       Reloc = Body->isTls() ? Target->getTlsGotReloc() : Target->getGotReloc();
     else
       Reloc = Target->getDynReloc(Type);
-    P->setSymbolAndType(Sym, Reloc, Config->Mips64EL);
+    P->setSymbolAndType(CBP ? Body->DynamicSymbolTableIndex : 0, Reloc,
+                        Config->Mips64EL);
 
     if (LazyReloc)
       P->r_offset = Out<ELFT>::GotPlt->getEntryAddr(*Body);
@@ -327,24 +344,18 @@ template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
     else
       P->r_offset = C.getOffset(RI.r_offset) + C.OutSec->getVA();
 
-    uintX_t OrigAddend = 0;
-    if (IsRela && !NeedsGot)
-      OrigAddend = static_cast<const Elf_Rela &>(RI).r_addend;
+    if (!IsRela)
+      continue;
 
-    uintX_t Addend;
-    if (CBP || IsDynRelative)
-      Addend = OrigAddend;
+    auto R = static_cast<const Elf_Rela &>(RI);
+    auto S = static_cast<Elf_Rela *>(P);
+    uintX_t A = NeedsGot ? 0 : R.r_addend;
+    if (CBP)
+      S->r_addend = A;
     else if (Body)
-      Addend = getSymVA<ELFT>(*Body) + OrigAddend;
-    else if (IsRela)
-      Addend =
-          getLocalRelTarget(File, static_cast<const Elf_Rela &>(RI),
-                            getAddend<ELFT>(static_cast<const Elf_Rela &>(RI)));
+      S->r_addend = getSymVA<ELFT>(*Body) + A;
     else
-      Addend = getLocalRelTarget(File, RI, 0);
-
-    if (IsRela)
-      static_cast<Elf_Rela *>(P)->r_addend = Addend;
+      S->r_addend = getLocalRelTarget(File, R, A);
   }
 }
 
@@ -595,61 +606,74 @@ template <class ELFT> void DynamicSection<ELFT>::finalize() {
   Elf_Shdr &Header = this->Header;
   Header.sh_link = Out<ELFT>::DynStrTab->SectionIndex;
 
-  unsigned NumEntries = 0;
+  // Reserve strings. We know that these are the last string to be added to
+  // DynStrTab and doing this here allows this function to set DT_STRSZ.
+  if (!Config->RPath.empty())
+    Out<ELFT>::DynStrTab->reserve(Config->RPath);
+  if (!Config->SoName.empty())
+    Out<ELFT>::DynStrTab->reserve(Config->SoName);
+  for (const std::unique_ptr<SharedFile<ELFT>> &F : SymTab.getSharedFiles())
+    if (F->isNeeded())
+      Out<ELFT>::DynStrTab->reserve(F->getSoName());
+  Out<ELFT>::DynStrTab->finalize();
+
+  auto Add = [=](Entry E) { Entries.push_back(E); };
+
   if (Out<ELFT>::RelaDyn->hasRelocs()) {
-    ++NumEntries; // DT_RELA / DT_REL
-    ++NumEntries; // DT_RELASZ / DT_RELSZ
-    ++NumEntries; // DT_RELAENT / DT_RELENT
+    bool IsRela = Out<ELFT>::RelaDyn->isRela();
+    Add({IsRela ? DT_RELA : DT_REL, Out<ELFT>::RelaDyn});
+    Add({IsRela ? DT_RELASZ : DT_RELSZ, Out<ELFT>::RelaDyn->getSize()});
+    Add({IsRela ? DT_RELAENT : DT_RELENT,
+         uintX_t(IsRela ? sizeof(Elf_Rela) : sizeof(Elf_Rel))});
   }
   if (Out<ELFT>::RelaPlt && Out<ELFT>::RelaPlt->hasRelocs()) {
-    ++NumEntries; // DT_JMPREL
-    ++NumEntries; // DT_PLTRELSZ
-    ++NumEntries; // DT_PLTGOT / DT_MIPS_PLTGOT
-    ++NumEntries; // DT_PLTREL
+    Add({DT_JMPREL, Out<ELFT>::RelaPlt});
+    Add({DT_PLTRELSZ, Out<ELFT>::RelaPlt->getSize()});
+    Add({Config->EMachine == EM_MIPS ? DT_MIPS_PLTGOT : DT_PLTGOT,
+         Out<ELFT>::GotPlt});
+    Add({DT_PLTREL, uint64_t(Out<ELFT>::RelaPlt->isRela() ? DT_RELA : DT_REL)});
   }
 
-  ++NumEntries; // DT_SYMTAB
-  ++NumEntries; // DT_SYMENT
-  ++NumEntries; // DT_STRTAB
-  ++NumEntries; // DT_STRSZ
+  Add({DT_SYMTAB, Out<ELFT>::DynSymTab});
+  Add({DT_SYMENT, sizeof(Elf_Sym)});
+  Add({DT_STRTAB, Out<ELFT>::DynStrTab});
+  Add({DT_STRSZ, Out<ELFT>::DynStrTab->getSize()});
   if (Out<ELFT>::GnuHashTab)
-    ++NumEntries; // DT_GNU_HASH
+    Add({DT_GNU_HASH, Out<ELFT>::GnuHashTab});
   if (Out<ELFT>::HashTab)
-    ++NumEntries; // DT_HASH
+    Add({DT_HASH, Out<ELFT>::HashTab});
 
-  if (!Config->RPath.empty()) {
-    ++NumEntries; // DT_RUNPATH / DT_RPATH
-    Out<ELFT>::DynStrTab->reserve(Config->RPath);
+  if (!Config->RPath.empty())
+    Add({Config->EnableNewDtags ? DT_RUNPATH : DT_RPATH,
+         Out<ELFT>::DynStrTab->addString(Config->RPath)});
+
+  if (!Config->SoName.empty())
+    Add({DT_SONAME, Out<ELFT>::DynStrTab->addString(Config->SoName)});
+
+  if (PreInitArraySec) {
+    Add({DT_PREINIT_ARRAY, PreInitArraySec});
+    Add({DT_PREINIT_ARRAYSZ, PreInitArraySec->getSize()});
+  }
+  if (InitArraySec) {
+    Add({DT_INIT_ARRAY, InitArraySec});
+    Add({DT_INIT_ARRAYSZ, (uintX_t)InitArraySec->getSize()});
+  }
+  if (FiniArraySec) {
+    Add({DT_FINI_ARRAY, FiniArraySec});
+    Add({DT_FINI_ARRAYSZ, (uintX_t)FiniArraySec->getSize()});
   }
 
-  if (!Config->SoName.empty()) {
-    ++NumEntries; // DT_SONAME
-    Out<ELFT>::DynStrTab->reserve(Config->SoName);
-  }
+  for (const std::unique_ptr<SharedFile<ELFT>> &F : SymTab.getSharedFiles())
+    if (F->isNeeded())
+      Add({DT_NEEDED, Out<ELFT>::DynStrTab->addString(F->getSoName())});
 
-  if (PreInitArraySec)
-    NumEntries += 2;
-  if (InitArraySec)
-    NumEntries += 2;
-  if (FiniArraySec)
-    NumEntries += 2;
+  if (SymbolBody *B = SymTab.find(Config->Init))
+    Add({DT_INIT, B});
+  if (SymbolBody *B = SymTab.find(Config->Fini))
+    Add({DT_FINI, B});
 
-  for (const std::unique_ptr<SharedFile<ELFT>> &F : SymTab.getSharedFiles()) {
-    if (!F->isNeeded())
-      continue;
-    Out<ELFT>::DynStrTab->reserve(F->getSoName());
-    ++NumEntries;
-  }
-
-  if (Symbol *S = SymTab.getSymbols().lookup(Config->Init))
-    InitSym = S->Body;
-  if (Symbol *S = SymTab.getSymbols().lookup(Config->Fini))
-    FiniSym = S->Body;
-  if (InitSym)
-    ++NumEntries; // DT_INIT
-  if (FiniSym)
-    ++NumEntries; // DT_FINI
-
+  uint32_t DtFlags = 0;
+  uint32_t DtFlags1 = 0;
   if (Config->Bsymbolic)
     DtFlags |= DF_SYMBOLIC;
   if (Config->ZNodelete)
@@ -664,133 +688,50 @@ template <class ELFT> void DynamicSection<ELFT>::finalize() {
   }
 
   if (DtFlags)
-    ++NumEntries; // DT_FLAGS
+    Add({DT_FLAGS, DtFlags});
   if (DtFlags1)
-    ++NumEntries; // DT_FLAGS_1
+    Add({DT_FLAGS_1, DtFlags1});
 
   if (!Config->Entry.empty())
-    ++NumEntries; // DT_DEBUG
+    Add({DT_DEBUG, (uint64_t)0});
 
   if (Config->EMachine == EM_MIPS) {
-    ++NumEntries; // DT_MIPS_RLD_VERSION
-    ++NumEntries; // DT_MIPS_FLAGS
-    ++NumEntries; // DT_MIPS_BASE_ADDRESS
-    ++NumEntries; // DT_MIPS_SYMTABNO
-    ++NumEntries; // DT_MIPS_LOCAL_GOTNO
-    ++NumEntries; // DT_MIPS_GOTSYM;
-    ++NumEntries; // DT_PLTGOT
+    Add({DT_MIPS_RLD_VERSION, 1});
+    Add({DT_MIPS_FLAGS, RHF_NOTPOT});
+    Add({DT_MIPS_BASE_ADDRESS, (uintX_t)Target->getVAStart()});
+    Add({DT_MIPS_SYMTABNO, Out<ELFT>::DynSymTab->getNumSymbols()});
+    Add({DT_MIPS_LOCAL_GOTNO, Out<ELFT>::Got->getMipsLocalEntriesNum()});
+    if (const SymbolBody *B = Out<ELFT>::Got->getMipsFirstGlobalEntry())
+      Add({DT_MIPS_GOTSYM, B->DynamicSymbolTableIndex});
+    else
+      Add({DT_MIPS_GOTSYM, Out<ELFT>::DynSymTab->getNumSymbols()});
+    Add({DT_PLTGOT, Out<ELFT>::Got});
     if (Out<ELFT>::MipsRldMap)
-      ++NumEntries; // DT_MIPS_RLD_MAP
+      Add({DT_MIPS_RLD_MAP, Out<ELFT>::MipsRldMap});
   }
 
-  ++NumEntries; // DT_NULL
-
-  Header.sh_size = NumEntries * Header.sh_entsize;
+  // +1 for DT_NULL
+  Header.sh_size = (Entries.size() + 1) * Header.sh_entsize;
 }
 
 template <class ELFT> void DynamicSection<ELFT>::writeTo(uint8_t *Buf) {
   auto *P = reinterpret_cast<Elf_Dyn *>(Buf);
 
-  auto WritePtr = [&](int32_t Tag, uint64_t Val) {
-    P->d_tag = Tag;
-    P->d_un.d_ptr = Val;
+  for (const Entry &E : Entries) {
+    P->d_tag = E.Tag;
+    switch (E.Kind) {
+    case Entry::SecAddr:
+      P->d_un.d_ptr = E.OutSec->getVA();
+      break;
+    case Entry::SymAddr:
+      P->d_un.d_ptr = getSymVA<ELFT>(*E.Sym);
+      break;
+    case Entry::PlainInt:
+      P->d_un.d_val = E.Val;
+      break;
+    }
     ++P;
-  };
-
-  auto WriteVal = [&](int32_t Tag, uint32_t Val) {
-    P->d_tag = Tag;
-    P->d_un.d_val = Val;
-    ++P;
-  };
-
-  if (Out<ELFT>::RelaDyn->hasRelocs()) {
-    bool IsRela = Out<ELFT>::RelaDyn->isRela();
-    WritePtr(IsRela ? DT_RELA : DT_REL, Out<ELFT>::RelaDyn->getVA());
-    WriteVal(IsRela ? DT_RELASZ : DT_RELSZ, Out<ELFT>::RelaDyn->getSize());
-    WriteVal(IsRela ? DT_RELAENT : DT_RELENT,
-             IsRela ? sizeof(Elf_Rela) : sizeof(Elf_Rel));
   }
-  if (Out<ELFT>::RelaPlt && Out<ELFT>::RelaPlt->hasRelocs()) {
-    WritePtr(DT_JMPREL, Out<ELFT>::RelaPlt->getVA());
-    WriteVal(DT_PLTRELSZ, Out<ELFT>::RelaPlt->getSize());
-    // On MIPS, the address of the .got.plt section is stored in
-    // the DT_MIPS_PLTGOT entry because the DT_PLTGOT entry points to
-    // the .got section. See "Dynamic Section" in the following document:
-    // https://sourceware.org/ml/binutils/2008-07/txt00000.txt
-    WritePtr((Config->EMachine == EM_MIPS) ? DT_MIPS_PLTGOT : DT_PLTGOT,
-             Out<ELFT>::GotPlt->getVA());
-    WriteVal(DT_PLTREL, Out<ELFT>::RelaPlt->isRela() ? DT_RELA : DT_REL);
-  }
-
-  WritePtr(DT_SYMTAB, Out<ELFT>::DynSymTab->getVA());
-  WritePtr(DT_SYMENT, sizeof(Elf_Sym));
-  WritePtr(DT_STRTAB, Out<ELFT>::DynStrTab->getVA());
-  WriteVal(DT_STRSZ, Out<ELFT>::DynStrTab->getSize());
-  if (Out<ELFT>::GnuHashTab)
-    WritePtr(DT_GNU_HASH, Out<ELFT>::GnuHashTab->getVA());
-  if (Out<ELFT>::HashTab)
-    WritePtr(DT_HASH, Out<ELFT>::HashTab->getVA());
-
-  // If --enable-new-dtags is set, lld emits DT_RUNPATH
-  // instead of DT_RPATH. The two tags are functionally
-  // equivalent except for the following:
-  // - DT_RUNPATH is searched after LD_LIBRARY_PATH, while
-  //   DT_RPATH is searched before.
-  // - DT_RUNPATH is used only to search for direct
-  //   dependencies of the object it's contained in, while
-  //   DT_RPATH is used for indirect dependencies as well.
-  if (!Config->RPath.empty())
-    WriteVal(Config->EnableNewDtags ? DT_RUNPATH : DT_RPATH,
-             Out<ELFT>::DynStrTab->addString(Config->RPath));
-
-  if (!Config->SoName.empty())
-    WriteVal(DT_SONAME, Out<ELFT>::DynStrTab->addString(Config->SoName));
-
-  auto WriteArray = [&](int32_t T1, int32_t T2,
-                        const OutputSectionBase<ELFT> *Sec) {
-    if (!Sec)
-      return;
-    WritePtr(T1, Sec->getVA());
-    WriteVal(T2, Sec->getSize());
-  };
-  WriteArray(DT_PREINIT_ARRAY, DT_PREINIT_ARRAYSZ, PreInitArraySec);
-  WriteArray(DT_INIT_ARRAY, DT_INIT_ARRAYSZ, InitArraySec);
-  WriteArray(DT_FINI_ARRAY, DT_FINI_ARRAYSZ, FiniArraySec);
-
-  for (const std::unique_ptr<SharedFile<ELFT>> &F : SymTab.getSharedFiles())
-    if (F->isNeeded())
-      WriteVal(DT_NEEDED, Out<ELFT>::DynStrTab->addString(F->getSoName()));
-
-  if (InitSym)
-    WritePtr(DT_INIT, getSymVA<ELFT>(*InitSym));
-  if (FiniSym)
-    WritePtr(DT_FINI, getSymVA<ELFT>(*FiniSym));
-  if (DtFlags)
-    WriteVal(DT_FLAGS, DtFlags);
-  if (DtFlags1)
-    WriteVal(DT_FLAGS_1, DtFlags1);
-  if (!Config->Entry.empty())
-    WriteVal(DT_DEBUG, 0);
-
-  // See "Dynamic Section" in Chapter 5 in the following document
-  // for detailed description:
-  // ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
-  if (Config->EMachine == EM_MIPS) {
-    WriteVal(DT_MIPS_RLD_VERSION, 1);
-    WriteVal(DT_MIPS_FLAGS, RHF_NOTPOT);
-    WritePtr(DT_MIPS_BASE_ADDRESS, Target->getVAStart());
-    WriteVal(DT_MIPS_SYMTABNO, Out<ELFT>::DynSymTab->getNumSymbols());
-    WriteVal(DT_MIPS_LOCAL_GOTNO, Out<ELFT>::Got->getMipsLocalEntriesNum());
-    if (const SymbolBody *B = Out<ELFT>::Got->getMipsFirstGlobalEntry())
-      WriteVal(DT_MIPS_GOTSYM, B->DynamicSymbolTableIndex);
-    else
-      WriteVal(DT_MIPS_GOTSYM, Out<ELFT>::DynSymTab->getNumSymbols());
-    WritePtr(DT_PLTGOT, Out<ELFT>::Got->getVA());
-    if (Out<ELFT>::MipsRldMap)
-      WritePtr(DT_MIPS_RLD_MAP, Out<ELFT>::MipsRldMap->getVA());
-  }
-
-  WriteVal(DT_NULL, 0);
 }
 
 template <class ELFT>
@@ -863,11 +804,8 @@ template <class ELFT> void EhFrameHeader<ELFT>::writeTo(uint8_t *Buf) {
 
 template <class ELFT>
 void EhFrameHeader<ELFT>::assignEhFrame(EHOutputSection<ELFT> *Sec) {
-  if (this->Sec && this->Sec != Sec) {
-    warning("multiple .eh_frame sections not supported for .eh_frame_hdr");
-    Live = false;
-    return;
-  }
+  assert((!this->Sec || this->Sec == Sec) &&
+         "multiple .eh_frame sections not supported for .eh_frame_hdr");
   Live = Config->EhFrameHdr;
   this->Sec = Sec;
 }
@@ -1777,22 +1715,30 @@ template ELFFile<ELF32BE>::uintX_t getSymVA<ELF32BE>(const SymbolBody &);
 template ELFFile<ELF64LE>::uintX_t getSymVA<ELF64LE>(const SymbolBody &);
 template ELFFile<ELF64BE>::uintX_t getSymVA<ELF64BE>(const SymbolBody &);
 
-template ELFFile<ELF32LE>::uintX_t
-getLocalRelTarget(const ObjectFile<ELF32LE> &,
-                  const ELFFile<ELF32LE>::Elf_Rel &,
-                  ELFFile<ELF32LE>::uintX_t Addend);
-template ELFFile<ELF32BE>::uintX_t
-getLocalRelTarget(const ObjectFile<ELF32BE> &,
-                  const ELFFile<ELF32BE>::Elf_Rel &,
-                  ELFFile<ELF32BE>::uintX_t Addend);
-template ELFFile<ELF64LE>::uintX_t
-getLocalRelTarget(const ObjectFile<ELF64LE> &,
-                  const ELFFile<ELF64LE>::Elf_Rel &,
-                  ELFFile<ELF64LE>::uintX_t Addend);
-template ELFFile<ELF64BE>::uintX_t
-getLocalRelTarget(const ObjectFile<ELF64BE> &,
-                  const ELFFile<ELF64BE>::Elf_Rel &,
-                  ELFFile<ELF64BE>::uintX_t Addend);
+template uint32_t getLocalRelTarget(const ObjectFile<ELF32LE> &,
+                                    const ELFFile<ELF32LE>::Elf_Rel &,
+                                    uint32_t);
+template uint32_t getLocalRelTarget(const ObjectFile<ELF32BE> &,
+                                    const ELFFile<ELF32BE>::Elf_Rel &,
+                                    uint32_t);
+template uint64_t getLocalRelTarget(const ObjectFile<ELF64LE> &,
+                                    const ELFFile<ELF64LE>::Elf_Rel &,
+                                    uint64_t);
+template uint64_t getLocalRelTarget(const ObjectFile<ELF64BE> &,
+                                    const ELFFile<ELF64BE>::Elf_Rel &,
+                                    uint64_t);
+template uint32_t getLocalRelTarget(const ObjectFile<ELF32LE> &,
+                                    const ELFFile<ELF32LE>::Elf_Rela &,
+                                    uint32_t);
+template uint32_t getLocalRelTarget(const ObjectFile<ELF32BE> &,
+                                    const ELFFile<ELF32BE>::Elf_Rela &,
+                                    uint32_t);
+template uint64_t getLocalRelTarget(const ObjectFile<ELF64LE> &,
+                                    const ELFFile<ELF64LE>::Elf_Rela &,
+                                    uint64_t);
+template uint64_t getLocalRelTarget(const ObjectFile<ELF64BE> &,
+                                    const ELFFile<ELF64BE>::Elf_Rela &,
+                                    uint64_t);
 
 template bool shouldKeepInSymtab<ELF32LE>(const ObjectFile<ELF32LE> &,
                                           StringRef,

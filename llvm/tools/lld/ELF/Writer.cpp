@@ -95,6 +95,10 @@ private:
   uintX_t SectionHeaderOff;
 
   llvm::StringMap<llvm::StringRef> InputToOutputSection;
+
+  // Flag to force GOT to be in output if we have relocations
+  // that relies on its address.
+  bool HasGotOffRel = false;
 };
 } // anonymous namespace
 
@@ -352,11 +356,9 @@ void Writer<ELFT>::scanRelocs(
 }
 
 template <class ELFT> void Writer<ELFT>::scanRelocs(InputSection<ELFT> &C) {
-  if (!(C.getSectionHdr()->sh_flags & SHF_ALLOC))
-    return;
-
-  for (const Elf_Shdr *RelSec : C.RelocSections)
-    scanRelocs(C, *RelSec);
+  if (C.getSectionHdr()->sh_flags & SHF_ALLOC)
+    for (const Elf_Shdr *RelSec : C.RelocSections)
+      scanRelocs(C, *RelSec);
 }
 
 template <class ELFT>
@@ -870,16 +872,15 @@ template <class ELFT> void Writer<ELFT>::createSections() {
     Out<ELFT>::ShStrTab->reserve(Sec->getName());
 
   // Finalizers fix each section's size.
-  // .dynamic section's finalizer may add strings to .dynstr,
-  // so finalize that early.
-  // Likewise, .dynsym is finalized early since that may fill up .gnu.hash.
-  Out<ELFT>::Dynamic->finalize();
+  // .dynsym is finalized early since that may fill up .gnu.hash.
   if (isOutputDynamic())
     Out<ELFT>::DynSymTab->finalize();
 
-  // Fill other section headers.
+  // Fill other section headers. The dynamic string table in finalized
+  // once the .dynamic finalizer has added a few last strings.
   for (OutputSectionBase<ELFT> *Sec : OutputSections)
-    Sec->finalize();
+    if (Sec != Out<ELFT>::DynStrTab)
+      Sec->finalize();
 }
 
 // This function add Out<ELFT>::* sections to OutputSections.
