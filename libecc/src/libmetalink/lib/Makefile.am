@@ -1,7 +1,7 @@
 SUBDIRS = includes
 
 AM_CPPFLAGS = -I$(srcdir)/includes -I$(builddir)/includes \
-	@XML_CPPFLAGS@ @EXPAT_CFLAGS@ \
+	@EXPAT_CFLAGS@ \
 	@DEFS@
 
 pkgconfigdir = $(libdir)/pkgconfig
@@ -48,10 +48,6 @@ OBJECTS += timegm.c
 HFILES += timegm.h
 endif
 
-if ENABLE_LIBXML2
-OBJECTS += libxml2_metalink_parser.c
-endif
-
 if ENABLE_LIBEXPAT
 OBJECTS += libexpat_metalink_parser.c
 endif
@@ -59,4 +55,4 @@ endif
 libmetalink_la_SOURCES = $(HFILES) $(OBJECTS)
 libmetalink_la_LDFLAGS = -no-undefined \
         -version-info $(LT_CURRENT):$(LT_REVISION):$(LT_AGE) \
-	@XML_LIBS@ @EXPAT_LIBS@
+	@EXPAT_LIBS@

@@ -1,6 +1,6 @@
-# generated automatically by aclocal 1.14.1 -*- Autoconf -*-
+# generated automatically by aclocal 1.15 -*- Autoconf -*-
 
-# Copyright (C) 1996-2013 Free Software Foundation, Inc.
+# Copyright (C) 1996-2014 Free Software Foundation, Inc.
 
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -19,195 +19,6 @@ m4_if(m4_defn([AC_AUTOCONF_VERSION]), [2.69],,
 You have another version of autoconf.  It may work, but is not guaranteed to.
 If you have problems, you may need to regenerate the build system entirely.
 To do so, use the procedure documented by the package, typically 'autoreconf'.])])
-
-# Configure paths for LIBXML2
-# Mike Hommey 2004-06-19
-# use CPPFLAGS instead of CFLAGS
-# Toshio Kuratomi 2001-04-21
-# Adapted from:
-# Configure paths for GLIB
-# Owen Taylor     97-11-3
-
-dnl AM_PATH_XML2([MINIMUM-VERSION, [ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND]]])
-dnl Test for XML, and define XML_CPPFLAGS and XML_LIBS
-dnl
-AC_DEFUN([AM_PATH_XML2],[ 
-AC_ARG_WITH(xml-prefix,
-            [  --with-xml-prefix=PFX   Prefix where libxml is installed (optional)],
-            xml_config_prefix="$withval", xml_config_prefix="")
-AC_ARG_WITH(xml-exec-prefix,
-            [  --with-xml-exec-prefix=PFX Exec prefix where libxml is installed (optional)],
-            xml_config_exec_prefix="$withval", xml_config_exec_prefix="")
-AC_ARG_ENABLE(xmltest,
-              [  --disable-xmltest       Do not try to compile and run a test LIBXML program],,
-              enable_xmltest=yes)
-
-  if test x$xml_config_exec_prefix != x ; then
-     xml_config_args="$xml_config_args"
-     if test x${XML2_CONFIG+set} != xset ; then
-        XML2_CONFIG=$xml_config_exec_prefix/bin/xml2-config
-     fi
-  fi
-  if test x$xml_config_prefix != x ; then
-     xml_config_args="$xml_config_args --prefix=$xml_config_prefix"
-     if test x${XML2_CONFIG+set} != xset ; then
-        XML2_CONFIG=$xml_config_prefix/bin/xml2-config
-     fi
-  fi
-
-  AC_PATH_PROG(XML2_CONFIG, xml2-config, no)
-  min_xml_version=ifelse([$1], ,2.0.0,[$1])
-  AC_MSG_CHECKING(for libxml - version >= $min_xml_version)
-  no_xml=""
-  if test "$XML2_CONFIG" = "no" ; then
-    no_xml=yes
-  else
-    XML_CPPFLAGS=`$XML2_CONFIG $xml_config_args --cflags`
-    XML_LIBS=`$XML2_CONFIG $xml_config_args --libs`
-    xml_config_major_version=`$XML2_CONFIG $xml_config_args --version | \
-           sed 's/\([[0-9]]*\).\([[0-9]]*\).\([[0-9]]*\)/\1/'`
-    xml_config_minor_version=`$XML2_CONFIG $xml_config_args --version | \
-           sed 's/\([[0-9]]*\).\([[0-9]]*\).\([[0-9]]*\)/\2/'`
-    xml_config_micro_version=`$XML2_CONFIG $xml_config_args --version | \
-           sed 's/\([[0-9]]*\).\([[0-9]]*\).\([[0-9]]*\)/\3/'`
-    if test "x$enable_xmltest" = "xyes" ; then
-      ac_save_CPPFLAGS="$CPPFLAGS"
-      ac_save_LIBS="$LIBS"
-      CPPFLAGS="$CPPFLAGS $XML_CPPFLAGS"
-      LIBS="$XML_LIBS $LIBS"
-dnl
-dnl Now check if the installed libxml is sufficiently new.
-dnl (Also sanity checks the results of xml2-config to some extent)
-dnl
-      rm -f conf.xmltest
-      AC_TRY_RUN([
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <libxml/xmlversion.h>
-
-int 
-main()
-{
-  int xml_major_version, xml_minor_version, xml_micro_version;
-  int major, minor, micro;
-  char *tmp_version;
-
-  system("touch conf.xmltest");
-
-  /* Capture xml2-config output via autoconf/configure variables */
-  /* HP/UX 9 (%@#!) writes to sscanf strings */
-  tmp_version = (char *)strdup("$min_xml_version");
-  if (sscanf(tmp_version, "%d.%d.%d", &major, &minor, &micro) != 3) {
-     printf("%s, bad version string from xml2-config\n", "$min_xml_version");
-     exit(1);
-   }
-   free(tmp_version);
-
-   /* Capture the version information from the header files */
-   tmp_version = (char *)strdup(LIBXML_DOTTED_VERSION);
-   if (sscanf(tmp_version, "%d.%d.%d", &xml_major_version, &xml_minor_version, &xml_micro_version) != 3) {
-     printf("%s, bad version string from libxml includes\n", "LIBXML_DOTTED_VERSION");
-     exit(1);
-   }
-   free(tmp_version);
-
- /* Compare xml2-config output to the libxml headers */
-  if ((xml_major_version != $xml_config_major_version) ||
-      (xml_minor_version != $xml_config_minor_version) ||
-      (xml_micro_version != $xml_config_micro_version))
-    {
-      printf("*** libxml header files (version %d.%d.%d) do not match\n",
-         xml_major_version, xml_minor_version, xml_micro_version);
-      printf("*** xml2-config (version %d.%d.%d)\n",
-         $xml_config_major_version, $xml_config_minor_version, $xml_config_micro_version);
-      return 1;
-    } 
-/* Compare the headers to the library to make sure we match */
-  /* Less than ideal -- doesn't provide us with return value feedback, 
-   * only exits if there's a serious mismatch between header and library.
-   */
-    LIBXML_TEST_VERSION;
-
-    /* Test that the library is greater than our minimum version */
-    if ((xml_major_version > major) ||
-        ((xml_major_version == major) && (xml_minor_version > minor)) ||
-        ((xml_major_version == major) && (xml_minor_version == minor) &&
-        (xml_micro_version >= micro)))
-      {
-        return 0;
-       }
-     else
-      {
-        printf("\n*** An old version of libxml (%d.%d.%d) was found.\n",
-               xml_major_version, xml_minor_version, xml_micro_version);
-        printf("*** You need a version of libxml newer than %d.%d.%d. The latest version of\n",
-           major, minor, micro);
-        printf("*** libxml is always available from ftp://ftp.xmlsoft.org.\n");
-        printf("***\n");
-        printf("*** If you have already installed a sufficiently new version, this error\n");
-        printf("*** probably means that the wrong copy of the xml2-config shell script is\n");
-        printf("*** being found. The easiest way to fix this is to remove the old version\n");
-        printf("*** of LIBXML, but you can also set the XML2_CONFIG environment to point to the\n");
-        printf("*** correct copy of xml2-config. (In this case, you will have to\n");
-        printf("*** modify your LD_LIBRARY_PATH enviroment variable, or edit /etc/ld.so.conf\n");
-        printf("*** so that the correct libraries are found at run-time))\n");
-    }
-  return 1;
-}
-],, no_xml=yes,[echo $ac_n "cross compiling; assumed OK... $ac_c"])
-       CPPFLAGS="$ac_save_CPPFLAGS"
-       LIBS="$ac_save_LIBS"
-     fi
-  fi
-
-  if test "x$no_xml" = x ; then
-     AC_MSG_RESULT(yes (version $xml_config_major_version.$xml_config_minor_version.$xml_config_micro_version))
-     ifelse([$2], , :, [$2])     
-  else
-     AC_MSG_RESULT(no)
-     if test "$XML2_CONFIG" = "no" ; then
-       echo "*** The xml2-config script installed by LIBXML could not be found"
-       echo "*** If libxml was installed in PREFIX, make sure PREFIX/bin is in"
-       echo "*** your path, or set the XML2_CONFIG environment variable to the"
-       echo "*** full path to xml2-config."
-     else
-       if test -f conf.xmltest ; then
-        :
-       else
-          echo "*** Could not run libxml test program, checking why..."
-          CPPFLAGS="$CPPFLAGS $XML_CPPFLAGS"
-          LIBS="$LIBS $XML_LIBS"
-          AC_TRY_LINK([
-#include <libxml/xmlversion.h>
-#include <stdio.h>
-],      [ LIBXML_TEST_VERSION; return 0;],
-        [ echo "*** The test program compiled, but did not run. This usually means"
-          echo "*** that the run-time linker is not finding LIBXML or finding the wrong"
-          echo "*** version of LIBXML. If it is not finding LIBXML, you'll need to set your"
-          echo "*** LD_LIBRARY_PATH environment variable, or edit /etc/ld.so.conf to point"
-          echo "*** to the installed location  Also, make sure you have run ldconfig if that"
-          echo "*** is required on your system"
-          echo "***"
-          echo "*** If you have an old version installed, it is best to remove it, although"
-          echo "*** you may also be able to get things to work by modifying LD_LIBRARY_PATH" ],
-        [ echo "*** The test program failed to compile or link. See the file config.log for the"
-          echo "*** exact error that occured. This usually means LIBXML was incorrectly installed"
-          echo "*** or that you have moved LIBXML since it was installed. In the latter case, you"
-          echo "*** may want to edit the xml2-config script: $XML2_CONFIG" ])
-          CPPFLAGS="$ac_save_CPPFLAGS"
-          LIBS="$ac_save_LIBS"
-       fi
-     fi
-
-     XML_CPPFLAGS=""
-     XML_LIBS=""
-     ifelse([$3], , :, [$3])
-  fi
-  AC_SUBST(XML_CPPFLAGS)
-  AC_SUBST(XML_LIBS)
-  rm -f conf.xmltest
-])
 
 # pkg.m4 - Macros to locate and utilise pkg-config.            -*- Autoconf -*-
 # serial 1 (pkg-config-0.24)
@@ -424,7 +235,7 @@ AS_VAR_COPY([$1], [pkg_cv_][$1])
 AS_VAR_IF([$1], [""], [$5], [$4])dnl
 ])# PKG_CHECK_VAR
 
-# Copyright (C) 2002-2013 Free Software Foundation, Inc.
+# Copyright (C) 2002-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -436,10 +247,10 @@ AS_VAR_IF([$1], [""], [$5], [$4])dnl
 # generated from the m4 files accompanying Automake X.Y.
 # (This private macro should not be called outside this file.)
 AC_DEFUN([AM_AUTOMAKE_VERSION],
-[am__api_version='1.14'
+[am__api_version='1.15'
 dnl Some users find AM_AUTOMAKE_VERSION and mistake it for a way to
 dnl require some minimum version.  Point them to the right macro.
-m4_if([$1], [1.14.1], [],
+m4_if([$1], [1.15], [],
       [AC_FATAL([Do not call $0, use AM_INIT_AUTOMAKE([$1]).])])dnl
 ])
 
@@ -455,14 +266,14 @@ m4_define([_AM_AUTOCONF_VERSION], [])
 # Call AM_AUTOMAKE_VERSION and AM_AUTOMAKE_VERSION so they can be traced.
 # This function is AC_REQUIREd by AM_INIT_AUTOMAKE.
 AC_DEFUN([AM_SET_CURRENT_AUTOMAKE_VERSION],
-[AM_AUTOMAKE_VERSION([1.14.1])dnl
+[AM_AUTOMAKE_VERSION([1.15])dnl
 m4_ifndef([AC_AUTOCONF_VERSION],
   [m4_copy([m4_PACKAGE_VERSION], [AC_AUTOCONF_VERSION])])dnl
 _AM_AUTOCONF_VERSION(m4_defn([AC_AUTOCONF_VERSION]))])
 
 # AM_AUX_DIR_EXPAND                                         -*- Autoconf -*-
 
-# Copyright (C) 2001-2013 Free Software Foundation, Inc.
+# Copyright (C) 2001-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -514,7 +325,7 @@ am_aux_dir=`cd "$ac_aux_dir" && pwd`
 
 # AM_CONDITIONAL                                            -*- Autoconf -*-
 
-# Copyright (C) 1997-2013 Free Software Foundation, Inc.
+# Copyright (C) 1997-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -545,7 +356,7 @@ AC_CONFIG_COMMANDS_PRE(
 Usually this means the macro was only invoked conditionally.]])
 fi])])
 
-# Copyright (C) 1999-2013 Free Software Foundation, Inc.
+# Copyright (C) 1999-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -736,7 +547,7 @@ _AM_SUBST_NOTMAKE([am__nodep])dnl
 
 # Generate code to set up dependency tracking.              -*- Autoconf -*-
 
-# Copyright (C) 1999-2013 Free Software Foundation, Inc.
+# Copyright (C) 1999-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -812,7 +623,7 @@ AC_DEFUN([AM_OUTPUT_DEPENDENCY_COMMANDS],
 
 # Do all the work for Automake.                             -*- Autoconf -*-
 
-# Copyright (C) 1996-2013 Free Software Foundation, Inc.
+# Copyright (C) 1996-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -902,8 +713,8 @@ AC_REQUIRE([AC_PROG_MKDIR_P])dnl
 # <http://lists.gnu.org/archive/html/automake/2012-07/msg00001.html>
 # <http://lists.gnu.org/archive/html/automake/2012-07/msg00014.html>
 AC_SUBST([mkdir_p], ['$(MKDIR_P)'])
-# We need awk for the "check" target.  The system "awk" is bad on
-# some platforms.
+# We need awk for the "check" target (and possibly the TAP driver).  The
+# system "awk" is bad on some platforms.
 AC_REQUIRE([AC_PROG_AWK])dnl
 AC_REQUIRE([AC_PROG_MAKE_SET])dnl
 AC_REQUIRE([AM_SET_LEADING_DOT])dnl
@@ -977,6 +788,9 @@ END
     AC_MSG_ERROR([Your 'rm' program is bad, sorry.])
   fi
 fi
+dnl The trailing newline in this macro's definition is deliberate, for
+dnl backward compatibility and to allow trailing 'dnl'-style comments
+dnl after the AM_INIT_AUTOMAKE invocation. See automake bug#16841.
 ])
 
 dnl Hook into '_AC_COMPILER_EXEEXT' early to learn its expansion.  Do not
@@ -1006,7 +820,7 @@ for _am_header in $config_headers :; do
 done
 echo "timestamp for $_am_arg" >`AS_DIRNAME(["$_am_arg"])`/stamp-h[]$_am_stamp_count])
 
-# Copyright (C) 2001-2013 Free Software Foundation, Inc.
+# Copyright (C) 2001-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1017,7 +831,7 @@ echo "timestamp for $_am_arg" >`AS_DIRNAME(["$_am_arg"])`/stamp-h[]$_am_stamp_co
 # Define $install_sh.
 AC_DEFUN([AM_PROG_INSTALL_SH],
 [AC_REQUIRE([AM_AUX_DIR_EXPAND])dnl
-if test x"${install_sh}" != xset; then
+if test x"${install_sh+set}" != xset; then
   case $am_aux_dir in
   *\ * | *\	*)
     install_sh="\${SHELL} '$am_aux_dir/install-sh'" ;;
@@ -1027,7 +841,7 @@ if test x"${install_sh}" != xset; then
 fi
 AC_SUBST([install_sh])])
 
-# Copyright (C) 2003-2013 Free Software Foundation, Inc.
+# Copyright (C) 2003-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1048,7 +862,7 @@ AC_SUBST([am__leading_dot])])
 
 # Check to see how 'make' treats includes.	            -*- Autoconf -*-
 
-# Copyright (C) 2001-2013 Free Software Foundation, Inc.
+# Copyright (C) 2001-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1098,7 +912,7 @@ rm -f confinc confmf
 
 # Fake the existence of programs that GNU maintainers use.  -*- Autoconf -*-
 
-# Copyright (C) 1997-2013 Free Software Foundation, Inc.
+# Copyright (C) 1997-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1137,7 +951,7 @@ fi
 
 # Helper functions for option handling.                     -*- Autoconf -*-
 
-# Copyright (C) 2001-2013 Free Software Foundation, Inc.
+# Copyright (C) 2001-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1166,7 +980,7 @@ AC_DEFUN([_AM_SET_OPTIONS],
 AC_DEFUN([_AM_IF_OPTION],
 [m4_ifset(_AM_MANGLE_OPTION([$1]), [$2], [$3])])
 
-# Copyright (C) 1999-2013 Free Software Foundation, Inc.
+# Copyright (C) 1999-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1213,7 +1027,7 @@ AC_LANG_POP([C])])
 # For backward compatibility.
 AC_DEFUN_ONCE([AM_PROG_CC_C_O], [AC_REQUIRE([AC_PROG_CC])])
 
-# Copyright (C) 2001-2013 Free Software Foundation, Inc.
+# Copyright (C) 2001-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1232,7 +1046,7 @@ AC_DEFUN([AM_RUN_LOG],
 
 # Check to make sure that the build environment is sane.    -*- Autoconf -*-
 
-# Copyright (C) 1996-2013 Free Software Foundation, Inc.
+# Copyright (C) 1996-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1313,7 +1127,7 @@ AC_CONFIG_COMMANDS_PRE(
 rm -f conftest.file
 ])
 
-# Copyright (C) 2009-2013 Free Software Foundation, Inc.
+# Copyright (C) 2009-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1373,7 +1187,7 @@ AC_SUBST([AM_BACKSLASH])dnl
 _AM_SUBST_NOTMAKE([AM_BACKSLASH])dnl
 ])
 
-# Copyright (C) 2001-2013 Free Software Foundation, Inc.
+# Copyright (C) 2001-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1401,7 +1215,7 @@ fi
 INSTALL_STRIP_PROGRAM="\$(install_sh) -c -s"
 AC_SUBST([INSTALL_STRIP_PROGRAM])])
 
-# Copyright (C) 2006-2013 Free Software Foundation, Inc.
+# Copyright (C) 2006-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1420,7 +1234,7 @@ AC_DEFUN([AM_SUBST_NOTMAKE], [_AM_SUBST_NOTMAKE($@)])
 
 # Check how to create a tarball.                            -*- Autoconf -*-
 
-# Copyright (C) 2004-2013 Free Software Foundation, Inc.
+# Copyright (C) 2004-2014 Free Software Foundation, Inc.
 #
 # This file is free software; the Free Software Foundation
 # gives unlimited permission to copy and/or distribute it,
@@ -1551,7 +1365,6 @@ AC_SUBST([am__tar])
 AC_SUBST([am__untar])
 ]) # _AM_PROG_TAR
 
-m4_include([m4/libexpat.m4])
 m4_include([m4/libtool.m4])
 m4_include([m4/ltoptions.m4])
 m4_include([m4/ltsugar.m4])

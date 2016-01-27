@@ -634,27 +634,22 @@ ac_includes_default="\
 ac_subst_vars='am__EXEEXT_FALSE
 am__EXEEXT_TRUE
 LTLIBOBJS
+LIBOBJS
 HAVE_STRPTIME_FALSE
 HAVE_STRPTIME_TRUE
 HAVE_TIMEGM_FALSE
 HAVE_TIMEGM_TRUE
-LIBOBJS
 HAVE_CUNIT_FALSE
 HAVE_CUNIT_TRUE
-ENABLE_LIBXML2_FALSE
-ENABLE_LIBXML2_TRUE
 ENABLE_LIBEXPAT_FALSE
 ENABLE_LIBEXPAT_TRUE
 CUNIT_LIBS
 CUNIT_CFLAGS
-XML_LIBS
-XML_CPPFLAGS
-XML2_CONFIG
-EXPAT_LIBS
-EXPAT_CFLAGS
 PKG_CONFIG_LIBDIR
 PKG_CONFIG_PATH
 PKG_CONFIG
+EXPAT_CFLAGS
+EXPAT_LIBS
 NUMBER_VERSION
 PATCH_VERSION
 MINOR_VERSION
@@ -794,9 +789,6 @@ with_libexpat
 with_libxml2
 enable_maintainer_mode
 enable_gcc_visibility
-with_xml_prefix
-with_xml_exec_prefix
-enable_xmltest
 '
       ac_precious_vars='build_alias
 host_alias
@@ -810,8 +802,6 @@ CPP
 PKG_CONFIG
 PKG_CONFIG_PATH
 PKG_CONFIG_LIBDIR
-EXPAT_CFLAGS
-EXPAT_LIBS
 CUNIT_CFLAGS
 CUNIT_LIBS'
 
@@ -1448,7 +1438,6 @@ Optional Features:
                           Turn on compile time warnings
   --enable-gcc-visibility Use gcc visibility attribute. This option may be
                           removed in the future release.
-  --disable-xmltest       Do not try to compile and run a test LIBXML program
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -1460,8 +1449,6 @@ Optional Packages:
                         (or the compiler's sysroot if not specified).
   --with-libexpat            use libexpat library if installed. Default: yes
   --with-libxml2             use libxml2 library if installed. Default: yes
-  --with-xml-prefix=PFX   Prefix where libxml is installed (optional)
-  --with-xml-exec-prefix=PFX Exec prefix where libxml is installed (optional)
 
 Some influential environment variables:
   CC          C compiler command
@@ -1477,9 +1464,6 @@ Some influential environment variables:
               directories to add to pkg-config's search path
   PKG_CONFIG_LIBDIR
               path overriding pkg-config's built-in search path
-  EXPAT_CFLAGS
-              C compiler flags for EXPAT, overriding pkg-config
-  EXPAT_LIBS  linker flags for EXPAT, overriding pkg-config
   CUNIT_CFLAGS
               C compiler flags for CUNIT, overriding pkg-config
   CUNIT_LIBS  linker flags for CUNIT, overriding pkg-config
@@ -10892,7 +10876,7 @@ test -n "$target_alias" &&
     NONENONEs,x,x, &&
   program_prefix=${target_alias}-
 
-am__api_version='1.14'
+am__api_version='1.15'
 
 # Find a good install program.  We prefer a C program (faster),
 # so one script is as good as another.  But avoid the broken or
@@ -11081,7 +11065,7 @@ else
 $as_echo "$as_me: WARNING: 'missing' script is too old or missing" >&2;}
 fi
 
-if test x"${install_sh}" != xset; then
+if test x"${install_sh+set}" != xset; then
   case $am_aux_dir in
   *\ * | *\	*)
     install_sh="\${SHELL} '$am_aux_dir/install-sh'" ;;
@@ -11430,8 +11414,8 @@ MAKEINFO=${MAKEINFO-"${am_missing_run}makeinfo"}
 # <http://lists.gnu.org/archive/html/automake/2012-07/msg00014.html>
 mkdir_p='$(MKDIR_P)'
 
-# We need awk for the "check" target.  The system "awk" is bad on
-# some platforms.
+# We need awk for the "check" target (and possibly the TAP driver).  The
+# system "awk" is bad on some platforms.
 # Always define AMTAR for backward compatibility.  Yes, it's still used
 # in the wild :-(  We should find a proper way to deprecate it ...
 AMTAR='$${TAR-tar}'
@@ -12279,7 +12263,64 @@ NUMBER_VERSION=`printf "0x%02x%02x%02x" $MAJOR_VERSION $MINOR_VERSION $PATCH_VER
 
 # Checks for libraries.
 
-if test "x$with_libexpat" = "xyes"; then
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for XmlInitEncoding in -lexpat" >&5
+$as_echo_n "checking for XmlInitEncoding in -lexpat... " >&6; }
+if ${ac_cv_lib_expat_XmlInitEncoding+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lexpat  $LIBS"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char XmlInitEncoding ();
+int
+main ()
+{
+return XmlInitEncoding ();
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_lib_expat_XmlInitEncoding=yes
+else
+  ac_cv_lib_expat_XmlInitEncoding=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_expat_XmlInitEncoding" >&5
+$as_echo "$ac_cv_lib_expat_XmlInitEncoding" >&6; }
+if test "x$ac_cv_lib_expat_XmlInitEncoding" = xyes; then :
+  have_expat=yes
+else
+  have_expat=no
+fi
+
+if test "x${have_expat}" = "xyes"; then
+  EXPAT_LIBS="-lexpat"
+  EXPAT_CFLAGS=""
+
+
+fi
+
+if test "x$have_expat" != "xyes" ; then
+    { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
+$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
+as_fn_error $? "expat not found. Please install it \
+and run configure again.
+See \`config.log' for more details" "$LINENO" 5; }
+fi
+
+# cunit
 
 
 
@@ -12400,419 +12441,6 @@ $as_echo "no" >&6; }
 		PKG_CONFIG=""
 	fi
 fi
-
-pkg_failed=no
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for EXPAT" >&5
-$as_echo_n "checking for EXPAT... " >&6; }
-
-if test -n "$EXPAT_CFLAGS"; then
-    pkg_cv_EXPAT_CFLAGS="$EXPAT_CFLAGS"
- elif test -n "$PKG_CONFIG"; then
-    if test -n "$PKG_CONFIG" && \
-    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"expat >= 2.1.0\""; } >&5
-  ($PKG_CONFIG --exists --print-errors "expat >= 2.1.0") 2>&5
-  ac_status=$?
-  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
-  test $ac_status = 0; }; then
-  pkg_cv_EXPAT_CFLAGS=`$PKG_CONFIG --cflags "expat >= 2.1.0" 2>/dev/null`
-		      test "x$?" != "x0" && pkg_failed=yes
-else
-  pkg_failed=yes
-fi
- else
-    pkg_failed=untried
-fi
-if test -n "$EXPAT_LIBS"; then
-    pkg_cv_EXPAT_LIBS="$EXPAT_LIBS"
- elif test -n "$PKG_CONFIG"; then
-    if test -n "$PKG_CONFIG" && \
-    { { $as_echo "$as_me:${as_lineno-$LINENO}: \$PKG_CONFIG --exists --print-errors \"expat >= 2.1.0\""; } >&5
-  ($PKG_CONFIG --exists --print-errors "expat >= 2.1.0") 2>&5
-  ac_status=$?
-  $as_echo "$as_me:${as_lineno-$LINENO}: \$? = $ac_status" >&5
-  test $ac_status = 0; }; then
-  pkg_cv_EXPAT_LIBS=`$PKG_CONFIG --libs "expat >= 2.1.0" 2>/dev/null`
-		      test "x$?" != "x0" && pkg_failed=yes
-else
-  pkg_failed=yes
-fi
- else
-    pkg_failed=untried
-fi
-
-
-
-if test $pkg_failed = yes; then
-   	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-
-if $PKG_CONFIG --atleast-pkgconfig-version 0.20; then
-        _pkg_short_errors_supported=yes
-else
-        _pkg_short_errors_supported=no
-fi
-        if test $_pkg_short_errors_supported = yes; then
-	        EXPAT_PKG_ERRORS=`$PKG_CONFIG --short-errors --print-errors --cflags --libs "expat >= 2.1.0" 2>&1`
-        else
-	        EXPAT_PKG_ERRORS=`$PKG_CONFIG --print-errors --cflags --libs "expat >= 2.1.0" 2>&1`
-        fi
-	# Put the nasty error message in config.log where it belongs
-	echo "$EXPAT_PKG_ERRORS" >&5
-
-	have_libexpat=no
-elif test $pkg_failed = untried; then
-     	{ $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-	have_libexpat=no
-else
-	EXPAT_CFLAGS=$pkg_cv_EXPAT_CFLAGS
-	EXPAT_LIBS=$pkg_cv_EXPAT_LIBS
-        { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
-$as_echo "yes" >&6; }
-	have_libexpat=yes
-fi
-  if test "x$have_libexpat" != "xyes"; then
-    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: $EXPAT_PKG_ERRORS" >&5
-$as_echo "$as_me: WARNING: $EXPAT_PKG_ERRORS" >&2;}
-
-LIBS_save=$LIBS
-CPPFLAGS_save=$CPPFLAGS
-
-LIBS="-lexpat $LIBS"
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for XML_ParserCreate in -lexpat" >&5
-$as_echo_n "checking for XML_ParserCreate in -lexpat... " >&6; }
-if ${ac_cv_lib_expat_XML_ParserCreate+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lexpat  $LIBS"
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-/* Override any GCC internal prototype to avoid an error.
-   Use char because int might match the return type of a GCC
-   builtin and then its argument prototype would still apply.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-char XML_ParserCreate ();
-int
-main ()
-{
-return XML_ParserCreate ();
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-  ac_cv_lib_expat_XML_ParserCreate=yes
-else
-  ac_cv_lib_expat_XML_ParserCreate=no
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_expat_XML_ParserCreate" >&5
-$as_echo "$ac_cv_lib_expat_XML_ParserCreate" >&6; }
-if test "x$ac_cv_lib_expat_XML_ParserCreate" = xyes; then :
-  have_libexpat=yes
-fi
-
-if test "x$have_libexpat" = "xyes"; then
-
-$as_echo "#define HAVE_LIBEXPAT 1" >>confdefs.h
-
-    EXPAT_LIBS=-lexpat
-    EXPAT_CFLAGS=
-
-
-fi
-
-LIBS=$LIBS_save
-CPPFLAGS=$CPPFLAGS_save
-
-
-  fi
-fi
-
-if test "x$with_libxml2" = "xyes" && test "x$have_libexpat" != "xyes"; then
-
-
-# Check whether --with-xml-prefix was given.
-if test "${with_xml_prefix+set}" = set; then :
-  withval=$with_xml_prefix; xml_config_prefix="$withval"
-else
-  xml_config_prefix=""
-fi
-
-
-# Check whether --with-xml-exec-prefix was given.
-if test "${with_xml_exec_prefix+set}" = set; then :
-  withval=$with_xml_exec_prefix; xml_config_exec_prefix="$withval"
-else
-  xml_config_exec_prefix=""
-fi
-
-# Check whether --enable-xmltest was given.
-if test "${enable_xmltest+set}" = set; then :
-  enableval=$enable_xmltest;
-else
-  enable_xmltest=yes
-fi
-
-
-  if test x$xml_config_exec_prefix != x ; then
-     xml_config_args="$xml_config_args"
-     if test x${XML2_CONFIG+set} != xset ; then
-        XML2_CONFIG=$xml_config_exec_prefix/bin/xml2-config
-     fi
-  fi
-  if test x$xml_config_prefix != x ; then
-     xml_config_args="$xml_config_args --prefix=$xml_config_prefix"
-     if test x${XML2_CONFIG+set} != xset ; then
-        XML2_CONFIG=$xml_config_prefix/bin/xml2-config
-     fi
-  fi
-
-  # Extract the first word of "xml2-config", so it can be a program name with args.
-set dummy xml2-config; ac_word=$2
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
-$as_echo_n "checking for $ac_word... " >&6; }
-if ${ac_cv_path_XML2_CONFIG+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  case $XML2_CONFIG in
-  [\\/]* | ?:[\\/]*)
-  ac_cv_path_XML2_CONFIG="$XML2_CONFIG" # Let the user override the test with a path.
-  ;;
-  *)
-  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
-for as_dir in $PATH
-do
-  IFS=$as_save_IFS
-  test -z "$as_dir" && as_dir=.
-    for ac_exec_ext in '' $ac_executable_extensions; do
-  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
-    ac_cv_path_XML2_CONFIG="$as_dir/$ac_word$ac_exec_ext"
-    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
-    break 2
-  fi
-done
-  done
-IFS=$as_save_IFS
-
-  test -z "$ac_cv_path_XML2_CONFIG" && ac_cv_path_XML2_CONFIG="no"
-  ;;
-esac
-fi
-XML2_CONFIG=$ac_cv_path_XML2_CONFIG
-if test -n "$XML2_CONFIG"; then
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $XML2_CONFIG" >&5
-$as_echo "$XML2_CONFIG" >&6; }
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-fi
-
-
-  min_xml_version=2.6.24
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for libxml - version >= $min_xml_version" >&5
-$as_echo_n "checking for libxml - version >= $min_xml_version... " >&6; }
-  no_xml=""
-  if test "$XML2_CONFIG" = "no" ; then
-    no_xml=yes
-  else
-    XML_CPPFLAGS=`$XML2_CONFIG $xml_config_args --cflags`
-    XML_LIBS=`$XML2_CONFIG $xml_config_args --libs`
-    xml_config_major_version=`$XML2_CONFIG $xml_config_args --version | \
-           sed 's/\([0-9]*\).\([0-9]*\).\([0-9]*\)/\1/'`
-    xml_config_minor_version=`$XML2_CONFIG $xml_config_args --version | \
-           sed 's/\([0-9]*\).\([0-9]*\).\([0-9]*\)/\2/'`
-    xml_config_micro_version=`$XML2_CONFIG $xml_config_args --version | \
-           sed 's/\([0-9]*\).\([0-9]*\).\([0-9]*\)/\3/'`
-    if test "x$enable_xmltest" = "xyes" ; then
-      ac_save_CPPFLAGS="$CPPFLAGS"
-      ac_save_LIBS="$LIBS"
-      CPPFLAGS="$CPPFLAGS $XML_CPPFLAGS"
-      LIBS="$XML_LIBS $LIBS"
-      rm -f conf.xmltest
-      if test "$cross_compiling" = yes; then :
-  echo $ac_n "cross compiling; assumed OK... $ac_c"
-else
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <libxml/xmlversion.h>
-
-int
-main()
-{
-  int xml_major_version, xml_minor_version, xml_micro_version;
-  int major, minor, micro;
-  char *tmp_version;
-
-  system("touch conf.xmltest");
-
-  /* Capture xml2-config output via autoconf/configure variables */
-  /* HP/UX 9 (%@#!) writes to sscanf strings */
-  tmp_version = (char *)strdup("$min_xml_version");
-  if (sscanf(tmp_version, "%d.%d.%d", &major, &minor, &micro) != 3) {
-     printf("%s, bad version string from xml2-config\n", "$min_xml_version");
-     exit(1);
-   }
-   free(tmp_version);
-
-   /* Capture the version information from the header files */
-   tmp_version = (char *)strdup(LIBXML_DOTTED_VERSION);
-   if (sscanf(tmp_version, "%d.%d.%d", &xml_major_version, &xml_minor_version, &xml_micro_version) != 3) {
-     printf("%s, bad version string from libxml includes\n", "LIBXML_DOTTED_VERSION");
-     exit(1);
-   }
-   free(tmp_version);
-
- /* Compare xml2-config output to the libxml headers */
-  if ((xml_major_version != $xml_config_major_version) ||
-      (xml_minor_version != $xml_config_minor_version) ||
-      (xml_micro_version != $xml_config_micro_version))
-    {
-      printf("*** libxml header files (version %d.%d.%d) do not match\n",
-         xml_major_version, xml_minor_version, xml_micro_version);
-      printf("*** xml2-config (version %d.%d.%d)\n",
-         $xml_config_major_version, $xml_config_minor_version, $xml_config_micro_version);
-      return 1;
-    }
-/* Compare the headers to the library to make sure we match */
-  /* Less than ideal -- doesn't provide us with return value feedback,
-   * only exits if there's a serious mismatch between header and library.
-   */
-    LIBXML_TEST_VERSION;
-
-    /* Test that the library is greater than our minimum version */
-    if ((xml_major_version > major) ||
-        ((xml_major_version == major) && (xml_minor_version > minor)) ||
-        ((xml_major_version == major) && (xml_minor_version == minor) &&
-        (xml_micro_version >= micro)))
-      {
-        return 0;
-       }
-     else
-      {
-        printf("\n*** An old version of libxml (%d.%d.%d) was found.\n",
-               xml_major_version, xml_minor_version, xml_micro_version);
-        printf("*** You need a version of libxml newer than %d.%d.%d. The latest version of\n",
-           major, minor, micro);
-        printf("*** libxml is always available from ftp://ftp.xmlsoft.org.\n");
-        printf("***\n");
-        printf("*** If you have already installed a sufficiently new version, this error\n");
-        printf("*** probably means that the wrong copy of the xml2-config shell script is\n");
-        printf("*** being found. The easiest way to fix this is to remove the old version\n");
-        printf("*** of LIBXML, but you can also set the XML2_CONFIG environment to point to the\n");
-        printf("*** correct copy of xml2-config. (In this case, you will have to\n");
-        printf("*** modify your LD_LIBRARY_PATH enviroment variable, or edit /etc/ld.so.conf\n");
-        printf("*** so that the correct libraries are found at run-time))\n");
-    }
-  return 1;
-}
-
-_ACEOF
-if ac_fn_c_try_run "$LINENO"; then :
-
-else
-  no_xml=yes
-fi
-rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
-  conftest.$ac_objext conftest.beam conftest.$ac_ext
-fi
-
-       CPPFLAGS="$ac_save_CPPFLAGS"
-       LIBS="$ac_save_LIBS"
-     fi
-  fi
-
-  if test "x$no_xml" = x ; then
-     { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes (version $xml_config_major_version.$xml_config_minor_version.$xml_config_micro_version)" >&5
-$as_echo "yes (version $xml_config_major_version.$xml_config_minor_version.$xml_config_micro_version)" >&6; }
-     have_libxml2=yes
-  else
-     { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-     if test "$XML2_CONFIG" = "no" ; then
-       echo "*** The xml2-config script installed by LIBXML could not be found"
-       echo "*** If libxml was installed in PREFIX, make sure PREFIX/bin is in"
-       echo "*** your path, or set the XML2_CONFIG environment variable to the"
-       echo "*** full path to xml2-config."
-     else
-       if test -f conf.xmltest ; then
-        :
-       else
-          echo "*** Could not run libxml test program, checking why..."
-          CPPFLAGS="$CPPFLAGS $XML_CPPFLAGS"
-          LIBS="$LIBS $XML_LIBS"
-          cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-
-#include <libxml/xmlversion.h>
-#include <stdio.h>
-
-int
-main ()
-{
- LIBXML_TEST_VERSION; return 0;
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_link "$LINENO"; then :
-   echo "*** The test program compiled, but did not run. This usually means"
-          echo "*** that the run-time linker is not finding LIBXML or finding the wrong"
-          echo "*** version of LIBXML. If it is not finding LIBXML, you'll need to set your"
-          echo "*** LD_LIBRARY_PATH environment variable, or edit /etc/ld.so.conf to point"
-          echo "*** to the installed location  Also, make sure you have run ldconfig if that"
-          echo "*** is required on your system"
-          echo "***"
-          echo "*** If you have an old version installed, it is best to remove it, although"
-          echo "*** you may also be able to get things to work by modifying LD_LIBRARY_PATH"
-else
-   echo "*** The test program failed to compile or link. See the file config.log for the"
-          echo "*** exact error that occured. This usually means LIBXML was incorrectly installed"
-          echo "*** or that you have moved LIBXML since it was installed. In the latter case, you"
-          echo "*** may want to edit the xml2-config script: $XML2_CONFIG"
-fi
-rm -f core conftest.err conftest.$ac_objext \
-    conftest$ac_exeext conftest.$ac_ext
-          CPPFLAGS="$ac_save_CPPFLAGS"
-          LIBS="$ac_save_LIBS"
-       fi
-     fi
-
-     XML_CPPFLAGS=""
-     XML_LIBS=""
-     :
-  fi
-
-
-  rm -f conf.xmltest
-
-   if test "x$have_libxml2" = "xyes"; then
-
-$as_echo "#define HAVE_LIBXML2 1" >>confdefs.h
-
-   fi
-fi
-
-if test "x$have_libexpat" != "xyes" && test "x$have_libxml2" != "xyes"; then
-    { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
-$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
-as_fn_error $? "Neither expat nor libxml2 found. Please install one of \
-them and run configure again.
-See \`config.log' for more details" "$LINENO" 5; }
-fi
-
-# cunit
 
 pkg_failed=no
 { $as_echo "$as_me:${as_lineno-$LINENO}: checking for CUNIT" >&5
@@ -12939,20 +12567,12 @@ fi
   fi
 fi
 
- if test "x$have_libexpat" = "xyes"; then
+ if  test "x${have_expat}" = "xyes" ; then
   ENABLE_LIBEXPAT_TRUE=
   ENABLE_LIBEXPAT_FALSE='#'
 else
   ENABLE_LIBEXPAT_TRUE='#'
   ENABLE_LIBEXPAT_FALSE=
-fi
-
- if test "x$have_libxml2" = "xyes"; then
-  ENABLE_LIBXML2_TRUE=
-  ENABLE_LIBXML2_FALSE='#'
-else
-  ENABLE_LIBXML2_TRUE='#'
-  ENABLE_LIBXML2_FALSE=
 fi
 
  if  test "x${have_cunit}" = "xyes" ; then
@@ -13202,73 +12822,6 @@ fi
 
 
 # Checks for library functions.
-for ac_header in stdlib.h
-do :
-  ac_fn_c_check_header_mongrel "$LINENO" "stdlib.h" "ac_cv_header_stdlib_h" "$ac_includes_default"
-if test "x$ac_cv_header_stdlib_h" = xyes; then :
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_STDLIB_H 1
-_ACEOF
-
-fi
-
-done
-
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for GNU libc compatible malloc" >&5
-$as_echo_n "checking for GNU libc compatible malloc... " >&6; }
-if ${ac_cv_func_malloc_0_nonnull+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  if test "$cross_compiling" = yes; then :
-  ac_cv_func_malloc_0_nonnull=yes
-else
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-#if defined STDC_HEADERS || defined HAVE_STDLIB_H
-# include <stdlib.h>
-#else
-char *malloc ();
-#endif
-
-int
-main ()
-{
-return ! malloc (0);
-  ;
-  return 0;
-}
-_ACEOF
-if ac_fn_c_try_run "$LINENO"; then :
-  ac_cv_func_malloc_0_nonnull=yes
-else
-  ac_cv_func_malloc_0_nonnull=no
-fi
-rm -f core *.core core.conftest.* gmon.out bb.out conftest$ac_exeext \
-  conftest.$ac_objext conftest.beam conftest.$ac_ext
-fi
-
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_func_malloc_0_nonnull" >&5
-$as_echo "$ac_cv_func_malloc_0_nonnull" >&6; }
-if test $ac_cv_func_malloc_0_nonnull = yes; then :
-
-$as_echo "#define HAVE_MALLOC 1" >>confdefs.h
-
-else
-  $as_echo "#define HAVE_MALLOC 0" >>confdefs.h
-
-   case " $LIBOBJS " in
-  *" malloc.$ac_objext "* ) ;;
-  *) LIBOBJS="$LIBOBJS malloc.$ac_objext"
- ;;
-esac
-
-
-$as_echo "#define malloc rpl_malloc" >>confdefs.h
-
-fi
-
-
 
 # _mkgmtime is available in Windows, behaves like timegm.
 # _mkgmtime is for mingw. mkgmtime is for NetWare.
@@ -13480,10 +13033,6 @@ fi
 
 if test -z "${ENABLE_LIBEXPAT_TRUE}" && test -z "${ENABLE_LIBEXPAT_FALSE}"; then
   as_fn_error $? "conditional \"ENABLE_LIBEXPAT\" was never defined.
-Usually this means the macro was only invoked conditionally." "$LINENO" 5
-fi
-if test -z "${ENABLE_LIBXML2_TRUE}" && test -z "${ENABLE_LIBXML2_FALSE}"; then
-  as_fn_error $? "conditional \"ENABLE_LIBXML2\" was never defined.
 Usually this means the macro was only invoked conditionally." "$LINENO" 5
 fi
 if test -z "${HAVE_CUNIT_TRUE}" && test -z "${HAVE_CUNIT_FALSE}"; then
@@ -15749,8 +15298,7 @@ fi
     CPPFLAGS:       ${CPPFLAGS}
     C preprocessor: ${CPP}
     Library types:  Shared=${enable_shared}, Static=${enable_static}
-    Libexpat:       ${have_libexpat} ${EXPAT_CFLAGS} ${EXPAT_LIBS}
-    Libxml2:        ${have_libxml2} ${XML_CPPFLAGS} ${XML_LIBS}
+    Libexpat:       ${have_expat} ${EXPAT_CFLAGS} ${EXPAT_LIBS}
     CUnit:          ${have_cunit} ${CUNIT_CFLAGS} ${CUNIT_LIBS}
 " >&5
 $as_echo "$as_me: summary of build options:
@@ -15765,7 +15313,6 @@ $as_echo "$as_me: summary of build options:
     CPPFLAGS:       ${CPPFLAGS}
     C preprocessor: ${CPP}
     Library types:  Shared=${enable_shared}, Static=${enable_static}
-    Libexpat:       ${have_libexpat} ${EXPAT_CFLAGS} ${EXPAT_LIBS}
-    Libxml2:        ${have_libxml2} ${XML_CPPFLAGS} ${XML_LIBS}
+    Libexpat:       ${have_expat} ${EXPAT_CFLAGS} ${EXPAT_LIBS}
     CUnit:          ${have_cunit} ${CUNIT_CFLAGS} ${CUNIT_LIBS}
 " >&6;}

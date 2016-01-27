@@ -80,24 +80,18 @@ AC_SUBST([NUMBER_VERSION], `printf "0x%02x%02x%02x" $MAJOR_VERSION $MINOR_VERSIO
 
 # Checks for libraries.
 
-if test "x$with_libexpat" = "xyes"; then
-  PKG_CHECK_MODULES([EXPAT], [expat >= 2.1.0], [have_libexpat=yes], [have_libexpat=no])
-  if test "x$have_libexpat" != "xyes"; then
-    AC_MSG_WARN([$EXPAT_PKG_ERRORS])
-    AM_PATH_LIBEXPAT
-  fi
+AC_CHECK_LIB([expat], [XmlInitEncoding],
+             [have_expat=yes], [have_expat=no])
+if test "x${have_expat}" = "xyes"; then
+  EXPAT_LIBS="-lexpat"
+  EXPAT_CFLAGS=""
+  AC_SUBST([EXPAT_LIBS])
+  AC_SUBST([EXPAT_CFLAGS])
 fi
 
-if test "x$with_libxml2" = "xyes" && test "x$have_libexpat" != "xyes"; then
-   AM_PATH_XML2([2.6.24], [have_libxml2=yes])
-   if test "x$have_libxml2" = "xyes"; then
-      AC_DEFINE([HAVE_LIBXML2], [1], [Define to 1 if you have libxml2.])
-   fi
-fi
-
-if test "x$have_libexpat" != "xyes" && test "x$have_libxml2" != "xyes"; then
-    AC_MSG_FAILURE([Neither expat nor libxml2 found. Please install one of \
-them and run configure again.])
+if test "x$have_expat" != "xyes" ; then
+    AC_MSG_FAILURE([expat not found. Please install it \
+and run configure again.])
 fi
 
 # cunit
@@ -116,8 +110,7 @@ if test "x${have_cunit}" = "xno"; then
   fi
 fi
 
-AM_CONDITIONAL([ENABLE_LIBEXPAT], [test "x$have_libexpat" = "xyes"])
-AM_CONDITIONAL([ENABLE_LIBXML2], [test "x$have_libxml2" = "xyes"])
+AM_CONDITIONAL([ENABLE_LIBEXPAT], [ test "x${have_expat}" = "xyes" ])
 AM_CONDITIONAL([HAVE_CUNIT], [ test "x${have_cunit}" = "xyes" ])
 
 # Checks for header files.
@@ -137,7 +130,6 @@ AC_C_CONST
 AC_TYPE_SIZE_T
 
 # Checks for library functions.
-AC_FUNC_MALLOC
 
 # _mkgmtime is available in Windows, behaves like timegm.
 # _mkgmtime is for mingw. mkgmtime is for NetWare.
@@ -196,7 +188,6 @@ AC_MSG_NOTICE([summary of build options:
     CPPFLAGS:       ${CPPFLAGS}
     C preprocessor: ${CPP}
     Library types:  Shared=${enable_shared}, Static=${enable_static}
-    Libexpat:       ${have_libexpat} ${EXPAT_CFLAGS} ${EXPAT_LIBS}
-    Libxml2:        ${have_libxml2} ${XML_CPPFLAGS} ${XML_LIBS}
+    Libexpat:       ${have_expat} ${EXPAT_CFLAGS} ${EXPAT_LIBS}
     CUnit:          ${have_cunit} ${CUNIT_CFLAGS} ${CUNIT_LIBS}
 ])
