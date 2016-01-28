@@ -1,4 +1,4 @@
-/* A Bison parser, made by GNU Bison 3.0.2.  */
+/* A Bison parser, made by GNU Bison 3.0.  */
 
 /* Bison implementation for Yacc-like parsers in C
 
@@ -44,7 +44,7 @@
 #define YYBISON 1
 
 /* Bison version.  */
-#define YYBISON_VERSION "3.0.2"
+#define YYBISON_VERSION "3.0"
 
 /* Skeleton name.  */
 #define YYSKELETON_NAME "yacc.c"
@@ -62,10 +62,10 @@
 
 
 /* Copy the first part of user declarations.  */
-#line 21 "itbl-parse.y" /* yacc.c:339  */
+#line 21 "./itbl-parse.y" /* yacc.c:339  */
 
 
-/* 
+/*
 
 Yacc grammar for instruction table entries.
 
@@ -88,7 +88,7 @@ The table is an ordinary text file that the GNU assembler reads when
 it starts.  Using the information in the table, the assembler
 generates an internal list of valid coprocessor registers and
 functions.  The assembler uses this internal list in addition to the
-standard MIPS registers and instructions which are built-in to the 
+standard MIPS registers and instructions which are built-in to the
 assembler during code generation.
 
 To specify the coprocessor table when invoking the GNU assembler, use
@@ -170,7 +170,7 @@ Here is the grammar for the coprocessor table:
 	    entrydef -> type name val
 	    entrydef -> 'insn' name val funcdef ; type of entry (instruction)
 
-	    z -> 'p'['0'..'3']	    	     ; processor number 
+	    z -> 'p'['0'..'3']	    	     ; processor number
 	    type -> ['dreg' | 'creg' | 'greg' ]	     ; type of entry (register)
 	; 'dreg', 'creg' or 'greg' specifies a data, control, or general
 	;	    register mnemonic, respectively
@@ -184,10 +184,10 @@ Here is the grammar for the coprocessor table:
 	    field -> [','] ftype frange flags
 	    flags -> ['*' flagexpr]
 	    flagexpr -> '[' flagexpr ']'
-	    flagexpr -> val '|' flagexpr 
+	    flagexpr -> val '|' flagexpr
 	    ftype -> [ type | 'immed' | 'addr' ]
 	; 'immed' specifies an immediate value; see grammar for "val" above
-	    	; 'addr' specifies a C identifier; name of symbol to be resolved at 
+	    	; 'addr' specifies a C identifier; name of symbol to be resolved at
 	;	    link time
 	    frange -> ':' val '-' val	; starting to ending bit positions, where
 	    	    	    	; where 0 is least significant bit
@@ -195,9 +195,9 @@ Here is the grammar for the coprocessor table:
 
 	    comment -> [';'|'#'] [char]*
 	    char -> any printable character
-	    ltr -> ['a'..'z'|'A'..'Z'] 
+	    ltr -> ['a'..'z'|'A'..'Z']
 	    dec -> ['0'..'9']*	    	    	    	    	     ; value in decimal
-	    hex -> '0x'['0'..'9' | 'a'..'f' | 'A'..'F']*	; value in hexadecimal 
+	    hex -> '0x'['0'..'9' | 'a'..'f' | 'A'..'F']*	; value in hexadecimal
 
 
 Examples
@@ -209,7 +209,7 @@ The table:
 
 	    p1 dreg d1 1	     ; data register "d1" for COP1 has value 1
 	    p1 creg c3 3	     ; ctrl register "c3" for COP1 has value 3
-	    p3 func fill 0x1f:24-20	      ; function "fill" for COP3 has value 31 and 
+	    p3 func fill 0x1f:24-20	      ; function "fill" for COP3 has value 31 and
 	    	    	; no fields
 
 will allow the assembler to accept the following coprocessor instructions:
@@ -217,8 +217,8 @@ will allow the assembler to accept the following coprocessor instructions:
 	    LWC1 d1,0x100 ($2)
 	    fill
 
-Here, the general purpose register "$2", and instruction "LWC1", are standard 
-mnemonics built-in to the MIPS assembler.  
+Here, the general purpose register "$2", and instruction "LWC1", are standard
+mnemonics built-in to the MIPS assembler.
 
 
 Example 2:
@@ -227,9 +227,9 @@ The table:
 
 	    p3 dreg d3 3	     ; data register "d3" for COP3 has value 3
 	    p3 creg c2 22	     ; control register "c2" for COP3 has value 22
-	    p3 func fee 0x1f:24-20 dreg:17-13 creg:12-8 immed:7-0 
-	    	; function "fee" for COP3 has value 31, and 3 fields 
-	    	; consisting of a data register, a control register, 
+	    p3 func fee 0x1f:24-20 dreg:17-13 creg:12-8 immed:7-0
+	    	; function "fee" for COP3 has value 31, and 3 fields
+	    	; consisting of a data register, a control register,
 	    	; and an immediate value.
 
 will allow the assembler to accept the following coprocessor instruction:
@@ -240,7 +240,7 @@ and will emit the object code:
 
 	    31-26  25 24-20 19-18  17-13 12-8  7-0
 	    COPz   CO fun	    	      dreg  creg  immed
-	    010011 1  11111 00	     00011 10110 00000001 
+	    010011 1  11111 00	     00011 10110 00000001
 
 	    0x4ff07601
 
@@ -261,8 +261,8 @@ instruction:
 and will emit the object code:
 
 	    31-26  25 24-20 19-18  17-13 12-8  7-0
-	    COPz   CO fun	    	      dreg  creg  
-	    010011 1  11111 00	     00011 10110 00000001 
+	    COPz   CO fun	    	      dreg  creg
+	    010011 1  11111 00	     00011 10110 00000001
 
 	    0x4ff07601
 
@@ -275,7 +275,7 @@ Additional notes:
 Encoding of ranges:
 To handle more than one bit position range within an instruction,
 use 0s to mask out the ranges which don't apply.
-May decide to modify the syntax to allow commas separate multiple 
+May decide to modify the syntax to allow commas separate multiple
 ranges within an instruction (range','range).
 
 Changes in grammar:
@@ -283,7 +283,7 @@ Changes in grammar:
 was deleted from the original format such that we now count the fields.
 
 ----
-FIXME! should really change lexical analyzer 
+FIXME! should really change lexical analyzer
 to recognize 'dreg' etc. in context sensitive way.
 Currently function names or mnemonics may be incorrectly parsed as keywords
 
@@ -308,13 +308,13 @@ FIXME! hex is ambiguous with any digit
 #if DBG_LVL >= 1
 #define DBG(x) printf x
 #else
-#define DBG(x) 
+#define DBG(x)
 #endif
 
 #if DBG_LVL >= 2
 #define DBGL2(x) printf x
 #else
-#define DBGL2(x) 
+#define DBGL2(x)
 #endif
 
 static int sbit, ebit;
@@ -322,13 +322,13 @@ static struct itbl_entry *insn=0;
 static int yyerror (const char *);
 
 
-#line 326 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:339  */
+#line 326 "itbl-parse.c" /* yacc.c:339  */
 
-# ifndef YY_NULLPTR
+# ifndef YY_NULL
 #  if defined __cplusplus && 201103L <= __cplusplus
-#   define YY_NULLPTR nullptr
+#   define YY_NULL nullptr
 #  else
-#   define YY_NULLPTR 0
+#   define YY_NULL 0
 #  endif
 # endif
 
@@ -340,7 +340,10 @@ static int yyerror (const char *);
 # define YYERROR_VERBOSE 0
 #endif
 
-
+/* In a future release of Bison, this section will be replaced
+   by #include "y.tab.h".  */
+#ifndef YY_YY_ITBL_PARSE_H_INCLUDED
+# define YY_YY_ITBL_PARSE_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -383,7 +386,7 @@ extern int yydebug;
 typedef union YYSTYPE YYSTYPE;
 union YYSTYPE
 {
-#line 282 "itbl-parse.y" /* yacc.c:355  */
+#line 282 "./itbl-parse.y" /* yacc.c:355  */
 
     char *str;
     int num;
@@ -391,7 +394,7 @@ union YYSTYPE
     unsigned long val;
   
 
-#line 395 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:355  */
+#line 398 "itbl-parse.c" /* yacc.c:355  */
 };
 # define YYSTYPE_IS_TRIVIAL 1
 # define YYSTYPE_IS_DECLARED 1
@@ -402,11 +405,11 @@ extern YYSTYPE yylval;
 
 int yyparse (void);
 
-
+#endif /* !YY_YY_ITBL_PARSE_H_INCLUDED  */
 
 /* Copy the second part of user declarations.  */
 
-#line 410 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:358  */
+#line 413 "itbl-parse.c" /* yacc.c:358  */
 
 #ifdef short
 # undef short
@@ -463,30 +466,11 @@ typedef short int yytype_int16;
 # endif
 #endif
 
-#ifndef YY_ATTRIBUTE
-# if (defined __GNUC__                                               \
-      && (2 < __GNUC__ || (__GNUC__ == 2 && 96 <= __GNUC_MINOR__)))  \
-     || defined __SUNPRO_C && 0x5110 <= __SUNPRO_C
-#  define YY_ATTRIBUTE(Spec) __attribute__(Spec)
-# else
-#  define YY_ATTRIBUTE(Spec) /* empty */
-# endif
-#endif
-
-#ifndef YY_ATTRIBUTE_PURE
-# define YY_ATTRIBUTE_PURE   YY_ATTRIBUTE ((__pure__))
-#endif
-
-#ifndef YY_ATTRIBUTE_UNUSED
-# define YY_ATTRIBUTE_UNUSED YY_ATTRIBUTE ((__unused__))
-#endif
-
-#if !defined _Noreturn \
-     && (!defined __STDC_VERSION__ || __STDC_VERSION__ < 201112)
-# if defined _MSC_VER && 1200 <= _MSC_VER
-#  define _Noreturn __declspec (noreturn)
-# else
-#  define _Noreturn YY_ATTRIBUTE ((__noreturn__))
+#ifndef __attribute__
+/* This feature is available in gcc versions 2.5 and later.  */
+# if (! defined __GNUC__ || __GNUC__ < 2 \
+      || (__GNUC__ == 2 && __GNUC_MINOR__ < 5))
+#  define __attribute__(Spec) /* empty */
 # endif
 #endif
 
@@ -719,7 +703,7 @@ static const char *const yytname[] =
   "INSN", "NUM", "ID", "NL", "PNUM", "','", "'|'", "'['", "']'", "'*'",
   "':'", "'-'", "$accept", "insntbl", "entrys", "entry", "$@1",
   "fieldspecs", "ftype", "fieldspec", "flagexpr", "flags", "range", "pnum",
-  "regtype", "name", "value", YY_NULLPTR
+  "regtype", "name", "value", YY_NULL
 };
 #endif
 
@@ -1112,11 +1096,11 @@ static int
 yysyntax_error (YYSIZE_T *yymsg_alloc, char **yymsg,
                 yytype_int16 *yyssp, int yytoken)
 {
-  YYSIZE_T yysize0 = yytnamerr (YY_NULLPTR, yytname[yytoken]);
+  YYSIZE_T yysize0 = yytnamerr (YY_NULL, yytname[yytoken]);
   YYSIZE_T yysize = yysize0;
   enum { YYERROR_VERBOSE_ARGS_MAXIMUM = 5 };
   /* Internationalized format string. */
-  const char *yyformat = YY_NULLPTR;
+  const char *yyformat = YY_NULL;
   /* Arguments of yyformat. */
   char const *yyarg[YYERROR_VERBOSE_ARGS_MAXIMUM];
   /* Number of reported tokens (one for the "unexpected", one per
@@ -1173,7 +1157,7 @@ yysyntax_error (YYSIZE_T *yymsg_alloc, char **yymsg,
                   }
                 yyarg[yycount++] = yytname[yyx];
                 {
-                  YYSIZE_T yysize1 = yysize + yytnamerr (YY_NULLPTR, yytname[yyx]);
+                  YYSIZE_T yysize1 = yysize + yytnamerr (YY_NULL, yytname[yyx]);
                   if (! (yysize <= yysize1
                          && yysize1 <= YYSTACK_ALLOC_MAXIMUM))
                     return 2;
@@ -1505,185 +1489,185 @@ yyreduce:
   switch (yyn)
     {
         case 5:
-#line 309 "itbl-parse.y" /* yacc.c:1646  */
+#line 309 "./itbl-parse.y" /* yacc.c:1661  */
     {
-	    DBG (("line %d: entry pnum=%d type=%d name=%s value=x%x\n", 
+	    DBG (("line %d: entry pnum=%d type=%d name=%s value=x%x\n",
 	    	    insntbl_line, (yyvsp[-4].num), (yyvsp[-3].num), (yyvsp[-2].str), (yyvsp[-1].val)));
 	    itbl_add_reg ((yyvsp[-4].num), (yyvsp[-3].num), (yyvsp[-2].str), (yyvsp[-1].val));
 	  }
-#line 1515 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1499 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 6:
-#line 315 "itbl-parse.y" /* yacc.c:1646  */
+#line 315 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBG (("line %d: entry pnum=%d type=INSN name=%s value=x%x",
 	    	    insntbl_line, (yyvsp[-5].num), (yyvsp[-3].str), (yyvsp[-2].val)));
 	    DBG ((" sbit=%d ebit=%d flags=0x%x\n", sbit, ebit, (yyvsp[0].val)));
 	    insn=itbl_add_insn ((yyvsp[-5].num), (yyvsp[-3].str), (yyvsp[-2].val), sbit, ebit, (yyvsp[0].val));
 	  }
-#line 1526 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1510 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 7:
-#line 322 "itbl-parse.y" /* yacc.c:1646  */
+#line 322 "./itbl-parse.y" /* yacc.c:1661  */
     {}
-#line 1532 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1516 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 13:
-#line 335 "itbl-parse.y" /* yacc.c:1646  */
+#line 335 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("ftype\n"));
 	    (yyval.num) = (yyvsp[0].num);
 	  }
-#line 1541 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1525 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 14:
-#line 340 "itbl-parse.y" /* yacc.c:1646  */
+#line 340 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("addr\n"));
 	    (yyval.num) = ADDR;
 	  }
-#line 1550 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1534 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 15:
-#line 345 "itbl-parse.y" /* yacc.c:1646  */
+#line 345 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("immed\n"));
 	    (yyval.num) = IMMED;
 	  }
-#line 1559 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1543 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 16:
-#line 353 "itbl-parse.y" /* yacc.c:1646  */
+#line 353 "./itbl-parse.y" /* yacc.c:1661  */
     {
-	    DBG (("line %d: field type=%d sbit=%d ebit=%d, flags=0x%x\n", 
+	    DBG (("line %d: field type=%d sbit=%d ebit=%d, flags=0x%x\n",
 	    	    insntbl_line, (yyvsp[-2].num), sbit, ebit, (yyvsp[0].val)));
 	    itbl_add_operand (insn, (yyvsp[-2].num), sbit, ebit, (yyvsp[0].val));
 	  }
-#line 1569 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1553 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 17:
-#line 362 "itbl-parse.y" /* yacc.c:1646  */
+#line 362 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    (yyval.val) = (yyvsp[-2].num) | (yyvsp[0].val);
 	  }
-#line 1577 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1561 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 18:
-#line 366 "itbl-parse.y" /* yacc.c:1646  */
+#line 366 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    (yyval.val) = (yyvsp[-1].val);
 	  }
-#line 1585 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1569 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 19:
-#line 370 "itbl-parse.y" /* yacc.c:1646  */
+#line 370 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    (yyval.val) = (yyvsp[0].num);
 	  }
-#line 1593 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1577 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 20:
-#line 377 "itbl-parse.y" /* yacc.c:1646  */
+#line 377 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("flags=%d\n", (yyvsp[0].val)));
 	    (yyval.val) = (yyvsp[0].val);
 	  }
-#line 1602 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1586 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 21:
-#line 382 "itbl-parse.y" /* yacc.c:1646  */
+#line 382 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    (yyval.val) = 0;
 	  }
-#line 1610 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1594 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 22:
-#line 389 "itbl-parse.y" /* yacc.c:1646  */
+#line 389 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("range %d %d\n", (yyvsp[-2].num), (yyvsp[0].num)));
 	    sbit = (yyvsp[-2].num);
 	    ebit = (yyvsp[0].num);
 	  }
-#line 1620 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1604 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 23:
-#line 395 "itbl-parse.y" /* yacc.c:1646  */
+#line 395 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    sbit = 31;
 	    ebit = 0;
 	  }
-#line 1629 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1613 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 24:
-#line 403 "itbl-parse.y" /* yacc.c:1646  */
+#line 403 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("pnum=%d\n",(yyvsp[0].num)));
 	    (yyval.num) = (yyvsp[0].num);
 	  }
-#line 1638 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1622 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 25:
-#line 411 "itbl-parse.y" /* yacc.c:1646  */
+#line 411 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("dreg\n"));
 	    (yyval.num) = DREG;
 	  }
-#line 1647 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1631 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 26:
-#line 416 "itbl-parse.y" /* yacc.c:1646  */
+#line 416 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("creg\n"));
 	    (yyval.num) = CREG;
 	  }
-#line 1656 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1640 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 27:
-#line 421 "itbl-parse.y" /* yacc.c:1646  */
+#line 421 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("greg\n"));
 	    (yyval.num) = GREG;
 	  }
-#line 1665 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1649 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 28:
-#line 429 "itbl-parse.y" /* yacc.c:1646  */
+#line 429 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("name=%s\n",(yyvsp[0].str)));
-	    (yyval.str) = (yyvsp[0].str); 
+	    (yyval.str) = (yyvsp[0].str);
 	  }
-#line 1674 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1658 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
   case 29:
-#line 445 "itbl-parse.y" /* yacc.c:1646  */
+#line 445 "./itbl-parse.y" /* yacc.c:1661  */
     {
 	    DBGL2 (("val=x%x\n",(yyvsp[0].num)));
 	    (yyval.val) = (yyvsp[0].num);
 	  }
-#line 1683 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1667 "itbl-parse.c" /* yacc.c:1661  */
     break;
 
 
-#line 1687 "../../../src/binutils/gas/itbl-parse.c" /* yacc.c:1646  */
+#line 1671 "itbl-parse.c" /* yacc.c:1661  */
       default: break;
     }
   /* User semantic actions sometimes alter yychar, and that requires
@@ -1911,7 +1895,7 @@ yyreturn:
 #endif
   return yyresult;
 }
-#line 450 "itbl-parse.y" /* yacc.c:1906  */
+#line 450 "./itbl-parse.y" /* yacc.c:1906  */
 
 
 static int

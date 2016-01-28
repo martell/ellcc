@@ -1,4 +1,4 @@
-/* A Bison parser, made by GNU Bison 3.0.2.  */
+/* A Bison parser, made by GNU Bison 3.0.  */
 
 /* Bison interface for Yacc-like parsers in C
 
@@ -30,8 +30,8 @@
    This special exception was added by the Free Software Foundation in
    version 2.2 of Bison.  */
 
-#ifndef YY_YY__________SRC_BINUTILS_BINUTILS_ARPARSE_H_INCLUDED
-# define YY_YY__________SRC_BINUTILS_BINUTILS_ARPARSE_H_INCLUDED
+#ifndef YY_YY_ARPARSE_H_INCLUDED
+# define YY_YY_ARPARSE_H_INCLUDED
 /* Debug traces.  */
 #ifndef YYDEBUG
 # define YYDEBUG 0
@@ -90,13 +90,13 @@ extern int yydebug;
 typedef union YYSTYPE YYSTYPE;
 union YYSTYPE
 {
-#line 37 "arparse.y" /* yacc.c:1909  */
+#line 37 "arparse.y" /* yacc.c:1915  */
 
   char *name;
 struct list *list ;
 
 
-#line 100 "../../../src/binutils/binutils/arparse.h" /* yacc.c:1909  */
+#line 100 "arparse.h" /* yacc.c:1915  */
 };
 # define YYSTYPE_IS_TRIVIAL 1
 # define YYSTYPE_IS_DECLARED 1
@@ -107,4 +107,4 @@ extern YYSTYPE yylval;
 
 int yyparse (void);
 
-#endif /* !YY_YY__________SRC_BINUTILS_BINUTILS_ARPARSE_H_INCLUDED  */
+#endif /* !YY_YY_ARPARSE_H_INCLUDED  */

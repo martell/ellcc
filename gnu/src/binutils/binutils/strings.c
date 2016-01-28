@@ -1,5 +1,5 @@
 /* strings -- print the strings of printable characters in files
-   Copyright (C) 1993-2014 Free Software Foundation, Inc.
+   Copyright (C) 1993-2015 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -54,6 +54,10 @@
    --target=BFDNAME
    -T {bfdname}
 		Specify a non-default object file format.
+
+  --output-separator=sep_string
+  -s sep_string	String used to separate parsed strings in output.
+		Default is newline.
 
    --help
    -h		Print the usage message on the standard output.
@@ -114,6 +118,9 @@ static char *target;
 static char encoding;
 static int encoding_bytes;
 
+/* Output string used to separate parsed strings  */
+static char *output_separator;
+
 static struct option long_options[] =
 {
   {"all", no_argument, NULL, 'a'},
@@ -124,6 +131,7 @@ static struct option long_options[] =
   {"include-all-whitespace", required_argument, NULL, 'w'},
   {"encoding", required_argument, NULL, 'e'},
   {"target", required_argument, NULL, 'T'},
+  {"output-separator", required_argument, NULL, 's'},
   {"help", no_argument, NULL, 'h'},
   {"version", no_argument, NULL, 'v'},
   {NULL, 0, NULL, 0}
@@ -164,6 +172,7 @@ main (int argc, char **argv)
 
   program_name = argv[0];
   xmalloc_set_program_name (program_name);
+  bfd_set_error_program_name (program_name);
 
   expandargv (&argc, &argv);
 
@@ -177,8 +186,9 @@ main (int argc, char **argv)
     datasection_only = TRUE;
   target = NULL;
   encoding = 's';
+  output_separator = NULL;
 
-  while ((optc = getopt_long (argc, argv, "adfhHn:wot:e:T:Vv0123456789",
+  while ((optc = getopt_long (argc, argv, "adfhHn:wot:e:T:s:Vv0123456789",
 			      long_options, (int *) 0)) != EOF)
     {
       switch (optc)
@@ -246,6 +256,10 @@ main (int argc, char **argv)
 	    usage (stderr, 1);
 	  encoding = optarg[0];
 	  break;
+
+	case 's':
+	  output_separator = optarg;
+          break;
 
 	case 'V':
 	case 'v':
@@ -333,12 +347,12 @@ strings_a_section (bfd *abfd, asection *sect, void *arg)
   bfd_size_type *filesizep;
   bfd_size_type sectsize;
   void *mem;
-     
+
   if ((sect->flags & DATA_FLAGS) != DATA_FLAGS)
     return;
 
   sectsize = bfd_get_section_size (sect);
-     
+
   if (sectsize <= 0)
     return;
 
@@ -349,7 +363,7 @@ strings_a_section (bfd *abfd, asection *sect, void *arg)
   if (*filesizep == 0)
     {
       struct stat st;
-      
+
       if (bfd_stat (abfd, &st))
 	return;
 
@@ -578,14 +592,14 @@ print_strings (const char *filename, FILE *stream, file_ptr address,
 	switch (address_radix)
 	  {
 	  case 8:
-#if __STDC_VERSION__ >= 199901L || (defined(__GNUC__) && __GNUC__ >= 2)
+#ifdef HAVE_LONG_LONG
 	    if (sizeof (start) > sizeof (long))
 	      {
-#ifndef __MSVCRT__
+# ifndef __MSVCRT__
 	        printf ("%7llo ", (unsigned long long) start);
-#else
+# else
 	        printf ("%7I64o ", (unsigned long long) start);
-#endif
+# endif
 	      }
 	    else
 #elif !BFD_HOST_64BIT_LONG
@@ -597,14 +611,14 @@ print_strings (const char *filename, FILE *stream, file_ptr address,
 	    break;
 
 	  case 10:
-#if __STDC_VERSION__ >= 199901L || (defined(__GNUC__) && __GNUC__ >= 2)
+#ifdef HAVE_LONG_LONG
 	    if (sizeof (start) > sizeof (long))
 	      {
-#ifndef __MSVCRT__
+# ifndef __MSVCRT__
 	        printf ("%7lld ", (unsigned long long) start);
-#else
+# else
 	        printf ("%7I64d ", (unsigned long long) start);
-#endif
+# endif
 	      }
 	    else
 #elif !BFD_HOST_64BIT_LONG
@@ -616,14 +630,14 @@ print_strings (const char *filename, FILE *stream, file_ptr address,
 	    break;
 
 	  case 16:
-#if __STDC_VERSION__ >= 199901L || (defined(__GNUC__) && __GNUC__ >= 2)
+#ifdef HAVE_LONG_LONG
 	    if (sizeof (start) > sizeof (long))
 	      {
-#ifndef __MSVCRT__
+# ifndef __MSVCRT__
 	        printf ("%7llx ", (unsigned long long) start);
-#else
+# else
 	        printf ("%7I64x ", (unsigned long long) start);
-#endif
+# endif
 	      }
 	    else
 #elif !BFD_HOST_64BIT_LONG
@@ -649,7 +663,10 @@ print_strings (const char *filename, FILE *stream, file_ptr address,
 	  putchar (c);
 	}
 
-      putchar ('\n');
+      if (output_separator)
+        fputs (output_separator, stdout);
+      else
+        putchar ('\n');
     }
   free (buf);
 }
@@ -680,6 +697,7 @@ usage (FILE *stream, int status)
   -T --target=<BFDNAME>     Specify the binary file format\n\
   -e --encoding={s,S,b,l,B,L} Select character size and endianness:\n\
                             s = 7-bit, S = 8-bit, {b,l} = 16-bit, {B,L} = 32-bit\n\
+  -s --output-separator=<string> String used to separate strings in output.\n\
   @<file>                   Read options from <file>\n\
   -h --help                 Display this information\n\
   -v -V --version           Print the program's version number\n"));

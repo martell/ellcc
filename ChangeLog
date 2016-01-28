@@ -1,8 +1,9 @@
 current SVN:
 
+* Update to binutils 2.26.
 * Update autoconf files for several libraries.
 * Update to LLVM r258477.
-* Added missint aarch64 compiler-rt functions: __floatditf, etc.
+* Added missing aarch64 compiler-rt functions: __floatditf, etc.
 * Add wireless tools build to ecclinux.
 * Update to LLVM r257984.
 * Add less build to ecclinux.

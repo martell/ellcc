@@ -1,5 +1,5 @@
 /* BFD back-end for AMD 64 COFF files.
-   Copyright (C) 2006-2014 Free Software Foundation, Inc.
+   Copyright (C) 2006-2015 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -143,6 +143,16 @@ coff_amd64_reloc (bfd *abfd,
 	reloc_howto_type *howto = reloc_entry->howto;
 	unsigned char *addr = (unsigned char *) data + reloc_entry->address;
 
+	/* FIXME: We do not have an end address for data, so we cannot
+	   accurately range check any addresses computed against it.
+	   cf: PR binutils/17512: file: 1085-1761-0.004.
+	   For now we do the best that we can.  */
+	if (addr < (unsigned char *) data || addr > ((unsigned char *) data) + input_section->size)
+	  {
+	    bfd_set_error (bfd_error_bad_value);
+	    return bfd_reloc_notsupported;
+	  }
+
 	switch (howto->size)
 	  {
 	  case 0:
@@ -177,7 +187,8 @@ coff_amd64_reloc (bfd *abfd,
 	    break;
 
 	  default:
-	    abort ();
+	    bfd_set_error (bfd_error_bad_value);
+	    return bfd_reloc_notsupported;
 	  }
       }
 
@@ -488,7 +499,7 @@ static reloc_howto_type howto_table[] =
       coffsym = (obj_symbols (abfd)				\
 	         + (cache_ptr->sym_ptr_ptr - symbols));		\
     else if (ptr)						\
-      coffsym = coff_symbol_from (abfd, ptr);			\
+      coffsym = coff_symbol_from (ptr);				\
     								\
     if (coffsym != NULL						\
 	&& coffsym->native->u.syment.n_scnum == 0)		\
@@ -527,7 +538,7 @@ coff_pe_amd64_relocate_section (bfd *output_bfd,
 				struct internal_syment *syms,
 				asection **sections)
 {
-  if (info->relocatable)
+  if (bfd_link_relocatable (info))
     return TRUE;
 
   return _bfd_coff_generic_relocate_section (output_bfd, info, input_bfd,input_section, contents,relocs, syms, sections);

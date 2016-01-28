@@ -1,5 +1,5 @@
 /* Morpho Technologies MT specific support for 32-bit ELF
-   Copyright (C) 2001-2014 Free Software Foundation, Inc.
+   Copyright (C) 2001-2015 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -48,8 +48,8 @@ static reloc_howto_type mt_elf_howto_table [] =
   /* This reloc does nothing.  */
   HOWTO (R_MT_NONE,           /* type */
           0,                      /* rightshift */
-          2,                      /* size (0 = byte, 1 = short, 2 = long) */
-          32,                     /* bitsize */
+          3,                      /* size (0 = byte, 1 = short, 2 = long) */
+          0,                      /* bitsize */
           FALSE,                  /* pc_relative */
           0,                      /* bitpos */
           complain_overflow_dont, /* complain_on_overflow */
@@ -236,6 +236,11 @@ mt_info_to_howto_rela
   unsigned int r_type;
 
   r_type = ELF32_R_TYPE (dst->r_info);
+  if (r_type >= (unsigned int) R_MT_max)
+    {
+      _bfd_error_handler (_("%B: invalid MT reloc number: %d"), abfd, r_type);
+      r_type = 0;
+    }
   cache_ptr->howto = & mt_elf_howto_table [r_type];
 }
 
@@ -357,7 +362,7 @@ mt_elf_relocate_section
 	RELOC_AGAINST_DISCARDED_SECTION (info, input_bfd, input_section,
 					 rel, 1, relend, howto, 0, contents);
 
-      if (info->relocatable)
+      if (bfd_link_relocatable (info))
 	continue;
 
       /* Finally, the sole MT-specific part.  */
@@ -431,7 +436,7 @@ mt_elf_check_relocs
   const Elf_Internal_Rela *     rel;
   const Elf_Internal_Rela *     rel_end;
 
-  if (info->relocatable)
+  if (bfd_link_relocatable (info))
     return TRUE;
 
   symtab_hdr = &elf_tdata (abfd)->symtab_hdr;

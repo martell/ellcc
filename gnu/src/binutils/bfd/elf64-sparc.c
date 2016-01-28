@@ -1,5 +1,5 @@
 /* SPARC-specific support for 64-bit ELF
-   Copyright (C) 1993-2014 Free Software Foundation, Inc.
+   Copyright (C) 1993-2015 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -97,7 +97,9 @@ elf64_sparc_slurp_one_reloc_table (bfd *abfd, asection *asect,
       else
 	relent->address = rela.r_offset - asect->vma;
 
-      if (ELF64_R_SYM (rela.r_info) == STN_UNDEF)
+      if (ELF64_R_SYM (rela.r_info) == STN_UNDEF
+	  /* PR 17512: file: 996185f8.  */
+	  || ELF64_R_SYM (rela.r_info) > bfd_get_symcount (abfd))
 	relent->sym_ptr_ptr = bfd_abs_section_ptr->symbol_ptr_ptr;
       else
 	{
@@ -428,7 +430,7 @@ elf64_sparc_add_symbol_hook (bfd *abfd, struct bfd_link_info *info,
        || ELF_ST_BIND (sym->st_info) == STB_GNU_UNIQUE)
       && (abfd->flags & DYNAMIC) == 0
       && bfd_get_flavour (info->output_bfd) == bfd_target_elf_flavour)
-    elf_tdata (info->output_bfd)->has_gnu_symbols = TRUE;
+    elf_tdata (info->output_bfd)->has_gnu_symbols = elf_gnu_symbol_any;
 
   if (ELF_ST_TYPE (sym->st_info) == STT_REGISTER)
     {

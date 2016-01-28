@@ -1,5 +1,5 @@
 /* opncls.c -- open and close a BFD.
-   Copyright (C) 1990-2014 Free Software Foundation, Inc.
+   Copyright (C) 1990-2015 Free Software Foundation, Inc.
 
    Written by Cygnus Support.
 
@@ -109,6 +109,8 @@ _bfd_new_bfd_contained_in (bfd *obfd)
   nbfd->my_archive = obfd;
   nbfd->direction = read_direction;
   nbfd->target_defaulted = obfd->target_defaulted;
+  nbfd->lto_output = obfd->lto_output;
+  nbfd->no_export = obfd->no_export;
   return nbfd;
 }
 
@@ -940,15 +942,19 @@ bfd_alloc (bfd *abfd, bfd_size_type size)
   unsigned long ul_size = (unsigned long) size;
 
   if (size != ul_size
-      /* A small negative size can result in objalloc_alloc allocating just
-	 1 byte of memory, but the caller will be expecting more.  So catch
-	 this case here.  */
-      || (size != 0 && (((ul_size + OBJALLOC_ALIGN - 1) &~ (OBJALLOC_ALIGN - 1)) == 0)))
+      /* Note - although objalloc_alloc takes an unsigned long as its
+	 argument, internally the size is treated as a signed long.  This can
+	 lead to problems where, for example, a request to allocate -1 bytes
+	 can result in just 1 byte being allocated, rather than
+	 ((unsigned long) -1) bytes.  Also memory checkers will often
+	 complain about attempts to allocate a negative amount of memory.
+	 So to stop these problems we fail if the size is negative.  */
+      || ((signed long) ul_size) < 0)
     {
       bfd_set_error (bfd_error_no_memory);
       return NULL;
     }
-							
+
   ret = objalloc_alloc ((struct objalloc *) abfd->memory, ul_size);
   if (ret == NULL)
     bfd_set_error (bfd_error_no_memory);
@@ -1372,7 +1378,7 @@ find_separate_debug_file (bfd *           abfd,
     }
 
   base = get_func (abfd, & crc32);
-    
+
   if (base == NULL)
     return NULL;
 

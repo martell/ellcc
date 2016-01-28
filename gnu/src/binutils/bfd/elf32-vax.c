@@ -1,5 +1,5 @@
 /* VAX series support for 32-bit ELF
-   Copyright (C) 1993-2014 Free Software Foundation, Inc.
+   Copyright (C) 1993-2015 Free Software Foundation, Inc.
    Contributed by Matt Thomas <matt@3am-software.com>.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -56,7 +56,7 @@ static bfd_boolean elf32_vax_print_private_bfd_data (bfd *, void *);
 static reloc_howto_type howto_table[] = {
   HOWTO (R_VAX_NONE,		/* type */
 	 0,			/* rightshift */
-	 0,			/* size (0 = byte, 1 = short, 2 = long) */
+	 3,			/* size (0 = byte, 1 = short, 2 = long) */
 	 0,			/* bitsize */
 	 FALSE,			/* pc_relative */
 	 0,			/* bitpos */
@@ -280,11 +280,19 @@ static reloc_howto_type howto_table[] = {
 };
 
 static void
-rtype_to_howto (bfd *abfd ATTRIBUTE_UNUSED, arelent *cache_ptr,
-		Elf_Internal_Rela *dst)
+rtype_to_howto (bfd *abfd, arelent *cache_ptr, Elf_Internal_Rela *dst)
 {
-  BFD_ASSERT (ELF32_R_TYPE(dst->r_info) < (unsigned int) R_VAX_max);
-  cache_ptr->howto = &howto_table[ELF32_R_TYPE(dst->r_info)];
+  unsigned int r_type;
+
+  r_type = ELF32_R_TYPE (dst->r_info);
+  if (r_type >= R_VAX_max)
+    {
+      (*_bfd_error_handler) (_("%B: unrecognised VAX reloc number: %d"),
+			     abfd, r_type);
+      bfd_set_error (bfd_error_bad_value);
+      r_type = R_VAX_NONE;
+    }
+  cache_ptr->howto = &howto_table[r_type];
 }
 
 #define elf_info_to_howto rtype_to_howto
@@ -556,7 +564,7 @@ elf_vax_check_relocs (bfd *abfd, struct bfd_link_info *info, asection *sec,
   asection *srelgot;
   asection *sreloc;
 
-  if (info->relocatable)
+  if (bfd_link_relocatable (info))
     return TRUE;
 
   dynobj = elf_hash_table (info)->dynobj;
@@ -618,7 +626,7 @@ elf_vax_check_relocs (bfd *abfd, struct bfd_link_info *info, asection *sec,
 	    }
 
 	  if (srelgot == NULL
-	      && (h != NULL || info->shared))
+	      && (h != NULL || bfd_link_pic (info)))
 	    {
 	      srelgot = bfd_get_linker_section (dynobj, ".rela.got");
 	      if (srelgot == NULL)
@@ -695,7 +703,7 @@ elf_vax_check_relocs (bfd *abfd, struct bfd_link_info *info, asection *sec,
 	     will be set later (it is never cleared).  We account for that
 	     possibility below by storing information in the
 	     pcrel_relocs_copied field of the hash table entry.  */
-	  if (!(info->shared
+	  if (!(bfd_link_pic (info)
 		&& (sec->flags & SEC_ALLOC) != 0
 		&& h != NULL
 		&& (!info->symbolic
@@ -737,7 +745,7 @@ elf_vax_check_relocs (bfd *abfd, struct bfd_link_info *info, asection *sec,
 
 	  /* If we are creating a shared library, we need to copy the
 	     reloc into the shared library.  */
-	  if (info->shared
+	  if (bfd_link_pic (info)
 	      && (sec->flags & SEC_ALLOC) != 0)
 	    {
 	      /* When creating a shared object, we must copy these
@@ -852,7 +860,7 @@ elf_vax_gc_sweep_hook (bfd *abfd, struct bfd_link_info *info, asection *sec,
   const Elf_Internal_Rela *rel, *relend;
   bfd *dynobj;
 
-  if (info->relocatable)
+  if (bfd_link_relocatable (info))
     return TRUE;
 
   dynobj = elf_hash_table (info)->dynobj;
@@ -962,7 +970,7 @@ elf_vax_adjust_dynamic_symbol (struct bfd_link_info *info,
 	 location in the .plt.  This is required to make function
 	 pointers compare as equal between the normal executable and
 	 the shared library.  */
-      if (!info->shared
+      if (!bfd_link_pic (info)
 	  && !h->def_regular)
 	{
 	  h->root.u.def.section = s;
@@ -1013,7 +1021,7 @@ elf_vax_adjust_dynamic_symbol (struct bfd_link_info *info,
      only references to the symbol are via the global offset table.
      For such cases we need not do anything here; the relocations will
      be handled correctly by relocate_section.  */
-  if (info->shared)
+  if (bfd_link_pic (info))
     return TRUE;
 
   /* We must allocate the symbol in our .dynbss section, which will
@@ -1043,7 +1051,7 @@ elf_vax_adjust_dynamic_symbol (struct bfd_link_info *info,
       h->needs_copy = 1;
     }
 
-  return _bfd_elf_adjust_dynamic_copy (h, s);
+  return _bfd_elf_adjust_dynamic_copy (info, h, s);
 }
 
 /* This function is called via elf_link_hash_traverse.  It resets GOT
@@ -1116,7 +1124,7 @@ elf_vax_size_dynamic_sections (bfd *output_bfd, struct bfd_link_info *info)
   if (elf_hash_table (info)->dynamic_sections_created)
     {
       /* Set the contents of the .interp section to the interpreter.  */
-      if (info->executable)
+      if (bfd_link_executable (info) && !info->nointerp)
 	{
 	  s = bfd_get_linker_section (dynobj, ".interp");
 	  BFD_ASSERT (s != NULL);
@@ -1129,7 +1137,7 @@ elf_vax_size_dynamic_sections (bfd *output_bfd, struct bfd_link_info *info)
      relative relocs against symbols defined in a regular object.  We
      allocated space for them in the check_relocs routine, but we will not
      fill them in in the relocate_section routine.  */
-  if (info->shared && info->symbolic)
+  if (bfd_link_pic (info) && info->symbolic)
     elf_vax_link_hash_traverse (elf_hash_table (info),
 				elf_vax_discard_copies,
 				NULL);
@@ -1236,7 +1244,7 @@ elf_vax_size_dynamic_sections (bfd *output_bfd, struct bfd_link_info *info)
 #define add_dynamic_entry(TAG, VAL) \
   _bfd_elf_add_dynamic_entry (info, TAG, VAL)
 
-      if (!info->shared)
+      if (!bfd_link_pic (info))
 	{
 	  if (!add_dynamic_entry (DT_DEBUG, 0))
 	    return FALSE;
@@ -1423,10 +1431,10 @@ elf_vax_relocate_section (bfd *output_bfd,
 		      && h->got.offset != (bfd_vma) -1
 		      && !h->forced_local
 		      && elf_hash_table (info)->dynamic_sections_created
-		      && (! info->shared
+		      && (! bfd_link_pic (info)
 			  || (! info->symbolic && h->dynindx != -1)
 			  || !h->def_regular))
-		  || (info->shared
+		  || (bfd_link_pic (info)
 		      && ((! info->symbolic && h->dynindx != -1)
 			  || !h->def_regular)
 		      && ((input_section->flags & SEC_ALLOC) != 0
@@ -1450,7 +1458,7 @@ elf_vax_relocate_section (bfd *output_bfd,
 	RELOC_AGAINST_DISCARDED_SECTION (info, input_bfd, input_section,
 					 rel, 1, relend, howto, 0, contents);
 
-      if (info->relocatable)
+      if (bfd_link_relocatable (info))
 	continue;
 
       switch (r_type)
@@ -1494,7 +1502,7 @@ elf_vax_relocate_section (bfd *output_bfd,
 	     reloc refers to is in a shared lib, then we made a PLT
 	     entry for this symbol and need to handle the reloc like
 	     a PLT reloc.  */
-	  if (info->shared)
+	  if (bfd_link_pic (info))
 	     goto r_vax_pc32_shared;
 	  /* Fall through.  */
 	case R_VAX_PLT32:
@@ -1557,7 +1565,7 @@ elf_vax_relocate_section (bfd *output_bfd,
 	case R_VAX_8:
 	case R_VAX_16:
 	case R_VAX_32:
-	  if (info->shared
+	  if (bfd_link_pic (info)
 	      && r_symndx != STN_UNDEF
 	      && (input_section->flags & SEC_ALLOC) != 0
 	      && ((r_type != R_VAX_PC8

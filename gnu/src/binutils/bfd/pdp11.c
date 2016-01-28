@@ -1,5 +1,5 @@
 /* BFD back-end for PDP-11 a.out binaries.
-   Copyright (C) 2001-2014 Free Software Foundation, Inc.
+   Copyright (C) 2001-2015 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -1172,6 +1172,14 @@ NAME (aout, set_section_contents) (bfd *abfd,
       if (bfd_seek (abfd, section->filepos + offset, SEEK_SET) != 0
 	  || bfd_bwrite (location, count, abfd) != count)
 	return FALSE;
+
+      /* If necessary, pad the section to its aligned size.  */
+      if ((section == obj_datasec (abfd)
+	   || section == obj_textsec (abfd))
+	  && count < section->size
+	  && (bfd_seek (abfd, section->filepos + offset + section->size - 1, SEEK_SET) != 0
+	      || bfd_bwrite ("", 1, abfd) != 1))
+	return FALSE;
     }
 
   return TRUE;
@@ -1188,6 +1196,14 @@ aout_get_external_symbols (bfd *abfd)
       struct external_nlist *syms;
 
       count = exec_hdr (abfd)->a_syms / EXTERNAL_NLIST_SIZE;
+
+      /* PR 17512: file: 011f5a08.  */
+      if (count == 0)
+	{
+	  obj_aout_external_syms (abfd) = NULL;
+	  obj_aout_external_sym_count (abfd) = count;
+	  return TRUE;
+	}
 
 #ifdef USE_MMAP
       if (! bfd_get_file_window (abfd, obj_sym_filepos (abfd),
@@ -3152,7 +3168,7 @@ aout_link_reloc_link_order (struct aout_final_link_info *flaginfo,
 
       size = bfd_get_reloc_size (howto);
       buf = bfd_zmalloc (size);
-      if (buf == NULL)
+      if (buf == NULL && size != 0)
 	return FALSE;
       r = MY_relocate_contents (howto, flaginfo->output_bfd,
 				pr->addend, buf);
@@ -3248,7 +3264,7 @@ pdp11_aout_link_input_section (struct aout_final_link_info *flaginfo,
   BFD_ASSERT (input_bfd->xvec->header_byteorder
 	      == output_bfd->xvec->header_byteorder);
 
-  relocatable = flaginfo->info->relocatable;
+  relocatable = bfd_link_relocatable (flaginfo->info);
   syms = obj_aout_external_syms (input_bfd);
   strings = obj_aout_external_strings (input_bfd);
   sym_hashes = obj_aout_sym_hashes (input_bfd);
@@ -3458,7 +3474,7 @@ pdp11_aout_link_input_section (struct aout_final_link_info *flaginfo,
 	  /* Now warn if a global symbol is undefined.  We could not
              do this earlier, because check_dynamic_reloc might want
              to skip this reloc.  */
-	  if (hundef && ! flaginfo->info->shared)
+	  if (hundef && ! bfd_link_pic (flaginfo->info))
 	    {
 	      const char *name;
 
@@ -3565,7 +3581,7 @@ aout_link_input_section (struct aout_final_link_info *flaginfo,
 
   /* If we are producing relocatable output, the relocs were
      modified, and we now write them out.  */
-  if (flaginfo->info->relocatable && rel_size > 0)
+  if (bfd_link_relocatable (flaginfo->info) && rel_size > 0)
     {
       if (bfd_seek (flaginfo->output_bfd, *reloff_ptr, SEEK_SET) != 0)
 	return FALSE;
@@ -3666,7 +3682,7 @@ NAME (aout, final_link) (bfd *abfd,
   asection *o;
   bfd_boolean have_link_order_relocs;
 
-  if (info->shared)
+  if (bfd_link_pic (info))
     abfd->flags |= DYNAMIC;
 
   aout_info.info = info;
@@ -3694,7 +3710,7 @@ NAME (aout, final_link) (bfd *abfd,
     {
       size_t sz;
 
-      if (info->relocatable)
+      if (bfd_link_relocatable (info))
 	{
 	  if (bfd_get_flavour (sub) == bfd_target_aout_flavour)
 	    {
@@ -3738,7 +3754,7 @@ NAME (aout, final_link) (bfd *abfd,
 	}
     }
 
-  if (info->relocatable)
+  if (bfd_link_relocatable (info))
     {
       if (obj_textsec (abfd) != NULL)
 	trsize += (_bfd_count_link_order_relocs (obj_textsec (abfd)
