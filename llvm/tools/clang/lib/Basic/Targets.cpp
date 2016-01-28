@@ -4210,6 +4210,7 @@ public:
     SizeType = UnsignedLongLong;
     PtrDiffType = SignedLongLong;
     IntPtrType = SignedLongLong;
+    UserLabelPrefix = "";
   }
 
   void getTargetDefines(const LangOptions &Opts,
