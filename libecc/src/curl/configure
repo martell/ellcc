@@ -10893,7 +10893,7 @@ fi
 if test "x$xc_lt_want_enable_shared" = 'xyes' &&
   test "x$xc_lt_want_enable_static" = 'xyes'; then
   case $host_os in # (
-    mingw* | pw32* | cegcc* | os2* | aix*)
+    pw32* | cegcc* | os2* | aix*)
       xc_lt_want_enable_static='no'
       ;;
   esac
@@ -20897,16 +20897,20 @@ $as_echo "yes" >&6; }
   esac
 else
   if test "$cross_compiling" = yes; then :
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-  ipv6=no
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+$as_echo "yes" >&6; }
+  ipv6=yes
 
 else
   cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
  /* is AF_INET6 available? */
 #include <sys/types.h>
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#else
 #include <sys/socket.h>
+#endif
 #include <stdlib.h> /* for exit() */
 main()
 {
@@ -20945,7 +20949,12 @@ $as_echo_n "checking if struct sockaddr_in6 has sin6_scope_id member... " >&6; }
 /* end confdefs.h.  */
 
 #include <sys/types.h>
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <netinet/in.h>
+#endif
 int main (void)
 {
 struct sockaddr_in6 s; s.sin6_scope_id = 0;
@@ -23774,7 +23783,7 @@ $as_echo "#define USE_CYASSL 1" >>confdefs.h
 
          CYASSL_ENABLED=1
          USE_CYASSL="yes"
-         curl_ssl_msg="enabled (CyaSSL)"
+         curl_ssl_msg="enabled (WolfSSL)"
 
 else
 
@@ -23791,8 +23800,8 @@ rm -f core conftest.err conftest.$ac_objext \
     fi
 
     if test "x$USE_CYASSL" = "xyes"; then
-      { $as_echo "$as_me:${as_lineno-$LINENO}: detected CyaSSL" >&5
-$as_echo "$as_me: detected CyaSSL" >&6;}
+      { $as_echo "$as_me:${as_lineno-$LINENO}: detected $cyassllibname" >&5
+$as_echo "$as_me: detected $cyassllibname" >&6;}
 
             # The cast to long int works around a bug in the HP C Compiler
 # version HP92453-01 B.11.11.23709.GP, which incorrectly rejects
@@ -23855,6 +23864,34 @@ done
 
 
       LIBS="-l$cyassllibname -lm $LIBS"
+
+      if test "x$cyassllibname" = "xwolfssl"; then
+                        for ac_func in wolfSSLv3_client_method \
+                       wolfSSL_get_peer_certificate
+do :
+  as_ac_var=`$as_echo "ac_cv_func_$ac_func" | $as_tr_sh`
+ac_fn_c_check_func "$LINENO" "$ac_func" "$as_ac_var"
+if eval test \"x\$"$as_ac_var"\" = x"yes"; then :
+  cat >>confdefs.h <<_ACEOF
+#define `$as_echo "HAVE_$ac_func" | $as_tr_cpp` 1
+_ACEOF
+
+fi
+done
+
+      else
+                for ac_func in CyaSSL_get_peer_certificate
+do :
+  ac_fn_c_check_func "$LINENO" "CyaSSL_get_peer_certificate" "ac_cv_func_CyaSSL_get_peer_certificate"
+if test "x$ac_cv_func_CyaSSL_get_peer_certificate" = xyes; then :
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_CYASSL_GET_PEER_CERTIFICATE 1
+_ACEOF
+
+fi
+done
+
+      fi
 
       if test -n "$cyassllib"; then
                                         if test "x$cross_compiling" != "xyes"; then
@@ -31041,6 +31078,12 @@ int main (void)
         struct addrinfo *ai = 0;
         int error;
 
+        #ifdef HAVE_WINSOCK2_H
+        WSADATA wsa;
+        if (WSAStartup(MAKEWORD(2,2), &wsa))
+                exit(2);
+        #endif
+
         memset(&hints, 0, sizeof(hints));
         hints.ai_flags = AI_NUMERICHOST;
         hints.ai_family = AF_UNSPEC;
@@ -33100,6 +33143,10 @@ curl_includes_arpa_inet="\
 #endif
 #ifdef HAVE_ARPA_INET_H
 #  include <arpa/inet.h>
+#endif
+#ifdef HAVE_WINSOCK2_H
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #endif
 /* includes end */"
   for ac_header in sys/types.h sys/socket.h netinet/in.h arpa/inet.h

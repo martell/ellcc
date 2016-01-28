@@ -1,92 +1,78 @@
-Curl and libcurl 7.46.0
+Curl and libcurl 7.47.0
 
- Public curl releases:         150
- Command line options:         177
+ Public curl releases:         151
+ Command line options:         179
  curl_easy_setopt() options:   221
  Public functions in libcurl:  61
  Contributors:                 1340
 
 This release includes the following changes:
 
- o configure: build silently by default
- o cookies: Add support for Publix Suffix List with libpsl
- o vtls: added support for mbedTLS [7]
- o Added CURLOPT_STREAM_DEPENDS [8]
- o Added CURLOPT_STREAM_DEPENDS_E [9]
- o Added CURLOPT_STREAM_WEIGHT [10]
- o Added CURLFORM_CONTENTLEN [14]
- o oauth2: Added support for OAUTHBEARER SASL mechanism to IMAP, POP3 and SNMP
+ o version: Add flag CURL_VERSION_PSL for libpsl
+ o http: added CURL_HTTP_VERSION_2TLS to do HTTP/2 for HTTPS only [8]
+ o curl: use 2TLS by default
+ o curl --expect100-timeout: added [10]
+ o Add .dir-locals and set c-basic-offset to 2 (for emacs) [16]
 
 This release includes the following bugfixes:
 
- o des: Fix header conditional for Curl_des_set_odd_parity
- o ntlm: get rid of unconditional use of long long [1]
- o CURLOPT_CERTINFO.3: fix reference to CURLINFO_CERTINFO
- o docs: CURLINFO_LASTSOCKET => CURLINFO_ACTIVESOCKET [2]
- o http2: Fix http2_recv to return -1 if recv returned -1
- o curl_global_init_mem: set function pointers before doing init
- o ntlm: error out without 64bit support as the code needs it [1]
- o openssl: Fix set up of pkcs12 certificate verification chain
- o acinclude: remove PKGCONFIG override [3]
- o test1531: case the size to fix the test on non-largefile builds
- o fread_func: move callback pointer from set to state struct [4]
- o test1601: fix compilation with --enable-debug and --disable-crypto-auth
- o http2: Don't pass unitialized name+len pairs to nghttp2_submit_request [5]
- o curlbuild.h: Fix non-configure compiling to mips and sh4 targets
- o tool: Generate easysrc with last cache linked-list [6]
- o cmake: Fix for add_subdirectory(curl) use-case
- o vtls: fix compiler warning for TLS backends without sha256
- o build: fix for MSDOS/djgpp
- o checksrc: add crude // detection
- o http2: on_frame_recv: trust the conn/data input
- o ftp: allow CURLOPT_IGNORE_CONTENT_LENGTH to ignore size [11]
- o polarssl/mbedtls: fix name space pollution
- o build: Fix mingw ssl gdi32 order [12]
- o build: Fix support for PKG_CONFIG
- o MacOSX-Framework: sdk regex fix for sdk 10.10 and later
- o socks: Fix incorrect port numbers in failed connect messages
- o curl.1: -E: s/private certificate/client certificate
- o curl.h: s/HTTPPOST_/CURL_HTTPOST_ [13]
- o curl_formadd: support >2GB files on windows [14]
- o http redirects: %-encode bytes outside of ascii range [15]
- o rawstr: Speed up Curl_raw_toupper by 40%
- o curl_ntlm_core: fix 2 curl_off_t constant overflows.
- o getinfo: CURLINFO_ACTIVESOCKET: fix bad socket value
- o tftp tests: verify sent options too
- o imap: Don't call imap_atom() when no mailbox specified in LIST command
- o imap: Fixed double quote in LIST command when mailbox contains spaces
- o imap: Don't check for continuation when executing a CUSTOMREQUEST [16]
- o acinclude: Remove check for 16-bit curl_off_t
- o BoringSSL: Work with stricter BIO_get_mem_data() [17]
- o cmake: Add missing feature macros in config header [18]
- o sasl_sspi: fixed unicode build for digest authentication [19]
- o sasl_sspi: fix identity memory leak in digest authentication
- o unit1602: Fixed failure in torture test
- o unit1603: Added unit tests for hash functions
- o vtls/openssl: remove unused traces of yassl ifdefs
- o openssl: remove #ifdefs for < 0.9.7 support
- o typecheck-gcc.h: add some missing options
- o curl: mark two more options strings for --libcurl output
- o openssl: Free modules on cleanup [20]
- o CURLMOPT_PUSHFUNCTION.3: *_byname() returns only the first header
- o getconnectinfo: Don't call recv(2) if socket == -1
- o http2: http_done: don't free already-freed push headers
- o zsh completion: Preserve single quotes in output [21]
- o os400: Provide options for libssh2 use in compile scripts.
- o build: Fix theoretical infinite loops [22]
- o pop3: Differentiate between success and continuation responses
- o examples: Fixed compilation warnings
- o schannel: Use GetVersionEx() when VerifyVersionInfo() isn't available
- o CURLOPT_HEADERFUNCTION.3: fix typo
- o curl: expanded the -XHEAD warning text
- o done: make sure the final progress update is made [23]
- o build: Install zsh completion [24]
- o RTSP: do not add if-modified-since without timecondition [25]
- o curl: Fixed display of URL index in password prompt for --next
- o nonblock: fix setting non-blocking mode for Amiga [26]
- o http2 push: add missing inits of new stream [27]
- o http2: convert some verbose output into debug-only output
- o Curl_read_plain: clean up ifdefs that break statements [28]
+ o curl: avoid local drive traversal when saving file on Windows [33]
+ o NTLM: do not resuse proxy connections without diff proxy credentials [34]
+ o tests: Disable the OAUTHBEARER tests when using a non-default port number [1]
+ o curl: remove keepalive #ifdef checks done on libcurl's behalf
+ o formdata: Check if length is too large for memory [2]
+ o lwip: Fix compatibility issues with later versions [3]
+ o openssl: BoringSSL doesn't have CONF_modules_free
+ o config-win32: Fix warning HAVE_WINSOCK2_H undefined
+ o build: fix compilation error with CURL_DISABLE_VERBOSE_STRINGS [4]
+ o http2: Fix hanging paused stream [5]
+ o scripts/Makefile: fix GNUism and survive no perl [6]
+ o openssl: adapt to 1.1.0+ name changes
+ o openssl: adapt to openssl >= 1.1.0 X509 opaque structs [7]
+ o HTTP2.md: spell fix and remove TODO now implemented
+ o setstropt: const-correctness [9]
+ o cyassl: fix compiler warning on type conversion
+ o gskit: Fix host subject altname verification [11]
+ o http2: Support trailer fields [12]
+ o wolfssl: handle builds without SSLv3 support
+ o cyassl: deal with lack of *get_peer_certificate [13]
+ o sockfilt: do not wait on unreliable file or pipe handle
+ o make: build zsh script even in an out-of-tree build
+ o test 1326: fix getting stuck on Windows
+ o test 87: fix file check on Windows
+ o configure: allow static builds on mingw [14]
+ o configure: detect IPv6 support on Windows [15]
+ o ConnectionExists: with *PIPEWAIT, wait for connections [17]
+ o Makefile.inc: s/curl_SOURCES/CURL_FILES [18]
+ o test 16: fixed for Windows
+ o test 252-255: use datacheck mode text for ASCII-mode LISTings
+ o tftpd server: add Windows support by writing files in binary mode
+ o ftplistparser: fix handling of file LISTings using Windows EOL
+ o tests first.c: fix calculation of sleep timeout on Windows
+ o tests (several): use datacheck mode text for ASCII-mode LISTings
+ o CURLOPT_RANGE.3: for HTTP servers, range support is optional
+ o test 1515: add MSYS support by passing a relative path
+ o curl_global_init.3: Add Windows-specific info for init via DLL [19]
+ o http2: Fix client write for trailers on stream close [20]
+ o mbedtls: Fix ALPN support
+ o connection reuse: IDN host names fixed [21]
+ o http2: Fix PUSH_PROMISE headers being treated as trailers [22]
+ o http2: handle the received SETTINGS frame [23]
+ o http2: Ensure that http2_handle_stream_close is called [24]
+ o mbedtls: implement CURLOPT_PINNEDPUBLICKEY
+ o runtests: Add mbedTLS to the SSL backends
+ o IDN host names: Remove the port number before converting to ACE [25]
+ o zsh.pl: fail if no curl is found
+ o scripts: fix zsh completion generation
+ o scripts: don't generate and install zsh completion when cross-compiling [26]
+ o lib: Prefix URLs with lower-case protocol names/schemes [27]
+ o ConnectionExists: only do pipelining/multiplexing when asked [28]
+ o configure: assume IPv6 works when cross-compiled [29]
+ o openssl: for 1.1.0+ they now provide a SSLeay() macro of their own
+ o openssl: improved error detection/reporting
+ o ssh: CURLOPT_SSH_PUBLIC_KEYFILE now treats "" as NULL again [30]
+ o mbedtls: Fix pinned key return value on fail [31]
+ o maketgz: generate date stamp with LC_TIME=C [32]
 
 This release includes the following known bugs:
 
@@ -95,45 +81,48 @@ This release includes the following known bugs:
 This release would not have looked like this without help, code, reports and
 advice from friends like these:
 
-  Anders Bakken, Dan Fandrich, Daniel Hwang, Daniel Shahaf, Daniel Stenberg,
-  Davey Shafik, Dmitry S. Baikov, Douglas Creager, Erik Johansson,
-  Flavio Medeiros, Gisle Vanem, Javier G. Sogo, John Levon, Jonas Minnberg,
-  Justin Ehlert, Kamil Dudka, Kang Lin, Kurt Fankhauser, Lauri Kasanen,
-  Lukas Ruzicka, Marcel Raad, Michał Piechowski, Mohammad AlSaleh, Norbert Kett,
-  Patrick Monnerat, Rainer Jung, Ray Satiro, Richard Hosking,
-  Sebastian Pohlschmidt, Stefan Bühler, Steve Holme, Svyatoslav Mishyn,
-  Tatsuhiro Tsujikawa, Tim Rühsen, Xiangbin Li,
-  (35 contributors)
+  Alessandro Ghedini, Anders Bakken, Christian Stewart, Dan Fandrich,
+  Daniel Schauenberg, Daniel Stenberg, Francisco Moraes, Gisle Vanem,
+  Isaac Boukris, Johannes Schindelin, John Kohl, Kamil Dudka, Marc Hoersken,
+  Michael Kaufmann, Mohammad AlSaleh, Patrick Monnerat, Ray Satiro, Steve Holme,
+  Tatsuhiro Tsujikawa, Thomas Glanzmann, Thomas Klausner,
+  (21 contributors)
 
         Thanks! (and sorry if I forgot to mention someone)
 
 References to bug reports and discussions on issues:
 
- [1] = http://curl.haxx.se/bug/?i=478
- [2] = http://curl.haxx.se/bug/?i=479
- [3] = http://curl.haxx.se/mail/lib-2015-10/0035.html
- [4] = http://curl.haxx.se/bug/?i=346
- [5] = http://curl.haxx.se/bug/?i=493
- [6] = http://curl.haxx.se/bug/?i=452
- [7] = http://curl.haxx.se/bug/?i=496
- [8] = http://curl.haxx.se/libcurl/c/CURLOPT_STREAM_DEPENDS.html
- [9] = http://curl.haxx.se/libcurl/c/CURLOPT_STREAM_DEPENDS_E.html
- [10] = http://curl.haxx.se/libcurl/c/CURLOPT_STREAM_WEIGHT.html
- [11] = http://curl.haxx.se/bug/?i=480
- [12] = https://github.com/bagder/curl/pull/501
- [13] = http://curl.haxx.se/bug/?i=506
- [14] = http://curl.haxx.se/bug/?i=425
- [15] = http://curl.haxx.se/bug/?i=473
- [16] = http://curl.haxx.se/bug/?i=486
- [17] = http://curl.haxx.se/bug/?i=524
- [18] = http://curl.haxx.se/bug/?i=523
- [19] = http://curl.haxx.se/bug/?i=525
- [20] = http://curl.haxx.se/bug/?i=526
- [21] = http://curl.haxx.se/bug/?i=532
- [22] = http://curl.haxx.se/bug/?i=535
- [23] = http://curl.haxx.se/bug/?i=538
- [24] = http://curl.haxx.se/bug/?i=534
- [25] = http://stackoverflow.com/questions/33903982/curl-timecond-none-doesnt-work-how-to-remove-if-modified-since-header
- [26] = http://curl.haxx.se/mail/lib-2015-11/0088.html
- [27] = http://curl.haxx.se/bug/?i=530
- [28] = http://curl.haxx.se/bug/?i=546
+ [1] = http://curl.haxx.se/mail/lib-2015-12/0003.html
+ [2] = https://github.com/bagder/curl/issues/425#issuecomment-154518679
+ [3] = http://curl.haxx.se/mail/lib-2015-12/0023.html
+ [4] = http://curl.haxx.se/bug/?i=558
+ [5] = http://curl.haxx.se/mail/lib-2015-11/0103.html
+ [6] = http://curl.haxx.se/bug/?i=555
+ [7] = http://curl.haxx.se/bug/?i=491
+ [8] = http://curl.haxx.se/libcurl/c/CURLOPT_HTTP_VERSION.html
+ [9] = http://curl.haxx.se/bug/?i=565
+ [10] = http://curl.haxx.se/docs/manpage.html#--expect100-timeout
+ [11] = http://curl.haxx.se/mail/lib-2015-12/0062.html
+ [12] = http://curl.haxx.se/bug/?i=564
+ [13] = http://curl.haxx.se/bug/?i=565
+ [14] = https://github.com/Alexpux/MINGW-packages/tree/master/mingw-w64-curl
+ [15] = https://github.com/Alexpux/MINGW-packages/commit/9253d0bf58a1486e91f7efb5316e7fdb48fa4007
+ [16] = http://curl.haxx.se/bug/?i=574
+ [17] = http://curl.haxx.se/bug/?i=575
+ [18] = http://curl.haxx.se/bug/?i=577
+ [19] = http://curl.haxx.se/bug/?i=586
+ [20] = http://curl.haxx.se/bug/?i=564
+ [21] = http://curl.haxx.se/bug/?i=592
+ [22] = http://curl.haxx.se/bug/?i=564
+ [23] = http://curl.haxx.se/mail/lib-2016-01/0031.html
+ [24] = http://curl.haxx.se/bug/?i=564
+ [25] = http://curl.haxx.se/bug/?i=596
+ [26] = http://curl.haxx.se/bug/?i=582
+ [27] = http://curl.haxx.se/bug/?i=597
+ [28] = http://curl.haxx.se/bug/?i=584
+ [29] = http://curl.haxx.se/bug/?i=594
+ [30] = http://curl.haxx.se/mail/lib-2016-01/0072.html
+ [31] = http://curl.haxx.se/bug/?i=601
+ [32] = http://curl.haxx.se/mail/lib-2016-01/0123.html
+ [33] = http://curl.haxx.se/docs/adv_20160127B.html
+ [34] = http://curl.haxx.se/docs/adv_20160127A.html

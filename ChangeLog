@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to curl 7.47.0.
 * Update to binutils 2.26.
 * Update autoconf files for several libraries.
 * Update to LLVM r258477.

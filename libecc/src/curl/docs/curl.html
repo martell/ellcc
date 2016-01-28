@@ -240,6 +240,9 @@ p.roffit {
 <p class="level1">(RISC OS ONLY) Sets a range of environment variables, using the names the <a class="emphasis" href="#-w">-w</a> option supports, to allow easier extraction of useful information after having run curl. 
 <p class="level0"><a name="--egd-file"></a><span class="nroffip">--egd-file &lt;file&gt;</span> 
 <p class="level1">(SSL) Specify the path name to the Entropy Gathering Daemon socket. The socket is used to seed the random engine for SSL connections. See also the <a class="emphasis" href="#--random-file">--random-file</a> option. 
+<p class="level0"><a name="--expect100-timeout"></a><span class="nroffip">--expect100-timeout &lt;seconds&gt;</span> 
+<p class="level1">(HTTP) Maximum time in seconds that you allow curl to wait for a 100-continue response when curl emits an Expects: 100-continue header in its request. By default curl will wait one second. This option accepts decimal values! When curl stops waiting, it will continue as if the response has been received. 
+<p class="level1">(Added in 7.47.0) 
 <p class="level0"><a name="--cert-type"></a><span class="nroffip">--cert-type &lt;type&gt;</span> 
 <p class="level1">(SSL) Tells curl what certificate type the provided certificate is in. PEM, DER and ENG are recognized types.  If not specified, PEM is assumed. 
 <p class="level1">If this option is used several times, the last one will be used. 
