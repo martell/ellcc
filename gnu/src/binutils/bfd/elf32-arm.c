@@ -10833,7 +10833,7 @@ elf32_arm_final_link_relocate (reloc_howto_type *           howto,
 	    (*_bfd_error_handler)
 	      (_("%B(%A+0x%lx): Overflow whilst splitting 0x%lx for group relocation %s"),
 	       input_bfd, input_section,
-	       (long) rel->r_offset, labs (signed_value), howto->name);
+	       (long) rel->r_offset, llabs (signed_value), howto->name);
 	    return bfd_reloc_overflow;
 	  }
 
@@ -10918,7 +10918,7 @@ elf32_arm_final_link_relocate (reloc_howto_type *           howto,
 	    (*_bfd_error_handler)
 	      (_("%B(%A+0x%lx): Overflow whilst splitting 0x%lx for group relocation %s"),
 	       input_bfd, input_section,
-	       (long) rel->r_offset, labs (signed_value), howto->name);
+	       (long) rel->r_offset, llabs (signed_value), howto->name);
 	    return bfd_reloc_overflow;
 	  }
 
@@ -11005,7 +11005,7 @@ elf32_arm_final_link_relocate (reloc_howto_type *           howto,
 	    (*_bfd_error_handler)
 	      (_("%B(%A+0x%lx): Overflow whilst splitting 0x%lx for group relocation %s"),
 	      input_bfd, input_section,
-	      (long) rel->r_offset, labs (signed_value), howto->name);
+	      (long) rel->r_offset, llabs (signed_value), howto->name);
 	    return bfd_reloc_overflow;
 	  }
 
