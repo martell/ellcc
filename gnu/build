@@ -27,7 +27,7 @@ moretargets=,$moretargets,x86_64-w64-mingw32,i686-w64-mingw32
 make DIR=gnu-build$builddir CC=$cc CXX=$cxx AR=$ar TARGET=$host OS=$os \
     targetlist=$targetlist$moretargets haslibs=$haslibs \
     bindir=$bindir prefix=$prefix build=$build TUPLE=$tuple \
-    binutils.configure || exit 1
+    binutils.configure --with-system-zlib=no || exit 1
 
 make -C gnu-build$builddir/binutils || exit 1
 

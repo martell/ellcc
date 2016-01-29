@@ -14634,6 +14634,15 @@ case_S:
   return 0;
 }
 
+#if defined(__ELLCC) && (defined(_WIN32) || defined(_WIN64))
+char *stpcpy(char *restrict d, const char *restrict s)
+{
+    for (; (*d=*s); s++, d++);
+
+    return d;
+}
+#endif
+
 static void
 oappend (const char *s)
 {
