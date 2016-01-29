@@ -14634,8 +14634,8 @@ case_S:
   return 0;
 }
 
-#if defined(__ELLCC) && (defined(_WIN32) || defined(_WIN64))
-char *stpcpy(char *restrict d, const char *restrict s)
+#if defined(__ELLCC__) && (defined(_WIN32) || defined(_WIN64))
+static char *stpcpy(char *restrict d, const char *restrict s)
 {
     for (; (*d=*s); s++, d++);
 

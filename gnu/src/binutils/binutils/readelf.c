@@ -160,6 +160,15 @@
 #include "safe-ctype.h"
 #include "filenames.h"
 
+#if defined(__ELLCC__) && (defined(_WIN32) || defined(_WIN64))
+static char *stpcpy(char *restrict d, const char *restrict s)
+{
+    for (; (*d=*s); s++, d++);
+
+    return d;
+}
+#endif
+
 #ifndef offsetof
 #define offsetof(TYPE, MEMBER) ((size_t) &(((TYPE *) 0)->MEMBER))
 #endif
