@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.28
+
 * Update to curl 7.47.0.
 * Update to binutils 2.26.
 * Update autoconf files for several libraries.
