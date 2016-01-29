@@ -101,6 +101,7 @@ $(Configs)::
 	cp $*/lib/*.a ../lib/$* ; \
 	(cd ../lib/$*/; ln -s libncurses.a libterminfo.a) ; \
 	cp -p $*/include/*.h ../include ; \
+	rm -f ../include/config.h ; \
 	(cd ../include; ln -s curses.h ncurses.h ) ; \
 	$(MAKE) $(MFLAGS) -C $*/misc install
 
@@ -139,6 +140,7 @@ $(Configs)::
 	mkdir -p ../lib/$* ; \
 	cp $*/lib/*.a ../lib/$* ; \
 	cp -p $*/include/*.h ../include ; \
+	rm -f ../include/config.h ; \
 	$(MAKE) $(MFLAGS) -C $*/misc install
 
 $(Configs)::
