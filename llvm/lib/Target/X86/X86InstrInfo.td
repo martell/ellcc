@@ -1914,6 +1914,8 @@ def REX64_PREFIX : I<0x48, RawFrm, (outs),  (ins), "rex64", []>,
 
 // Data16 instruction prefix
 def DATA16_PREFIX : I<0x66, RawFrm, (outs),  (ins), "data16", []>;
+// Addr32 instruction prefix
+def ADDR32_PREFIX : I<0x67, RawFrm, (outs),  (ins), "addr32", []>;
 
 // Repeat string operation instruction prefixes
 // These uses the DF flag in the EFLAGS register to inc or dec ECX

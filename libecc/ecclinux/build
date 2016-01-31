@@ -99,6 +99,7 @@ ELLCC=`realpath $TOP/../..`
 UNAME=`uname`
 
 BOARD=$1
+DTB=0
 if [ "${BOARD}" = "" -o "${BOARD}" = "help" ] ; then
   usage
   exit 0
@@ -108,17 +109,23 @@ elif [ "${BOARD}" = "bcmrpi" ] ; then
   TARGET=armv6-linux-engeabihf  # ARMv6
   LD_EMUL=armelf_linux_eabi
   NO_VDSO=0
+  DTB=1
+  INSTALL=zinstall
 elif [ "${BOARD}" = "bcm2709" ] ; then
   ARCH=arm
   UBOOT_BOARD=rpi_2
   TARGET=arm-linux-engeabihf    # ARMv7
   LD_EMUL=armelf_linux_eabi
   NO_VDSO=1
+  DTB=1
+  INSTALL=zinstall
 elif [ "${BOARD}" = "x86_64" ] ; then
   ARCH=x86_64
   TARGET=x86_64-linux-eng       # x86_64
   LD_EMUL=elf_x86_64
   NO_VDSO=0
+  DTB=0
+  INSTALL=install
 else
   echo "unknown target: $1"
   usage
@@ -220,11 +227,13 @@ if [ "$kernel" = "yes" ] ; then
   make MAXJOBS=$MAXJOBS
   # Populate /boot
   mkdir -p $BOOT
-  make INSTALL_DTBS_PATH=$BOOT/dtbs dtbs_install
+  if [ $DTB -eq 1 ] ; then
+    make INSTALL_DTBS_PATH=$BOOT/dtbs dtbs_install
+  fi
   make INSTALL_MOD_PATH=$ROOT modules_install
   rm -f $ROOT/lib/modules/*/build       # Not needed on the target.
   rm -f $ROOT/lib/modules/*/source      # Not needed on the target.
-  make INSTALL_PATH=$BOOT zinstall
+  make INSTALL_PATH=$BOOT $INSTALL
   cd $TOP
 fi
 

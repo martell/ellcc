@@ -1,5 +1,7 @@
 current SVN:
 
+* Updates to build x86_64 Linux. Not functional yet.
+
 version 0.1.28
 
 * Update to curl 7.47.0.
