@@ -1,5 +1,5 @@
 #! /bin/sh
-set -e
+set -eux
 
 # The complete package list. See mac_exclude below for Mac exceptions.
 packages="kernel sinit sbase ubase smdev nldev nlmon sdhcp loksh hbase
@@ -50,6 +50,9 @@ usage() {
   echo "    bcmrpi                              Raspberry Pi    (ARMv6)"
   echo "    bcm2709                             Raspberry Pi 2  (ARMv7)"
   echo "    x86_64                              The default x86_64 configuration"
+  echo "    i386                                The default i386 configuration"
+  echo "    malta                               Mips Malta."
+  echo "    ppc44x                              PowerPC ppc44x"
   echo "  available packages:"
   echo "    $packages"
   echo "  extra packages:"
@@ -99,6 +102,7 @@ ELLCC=`realpath $TOP/../..`
 UNAME=`uname`
 
 BOARD=$1
+UBOOT_BOARD=
 DTB=0
 if [ "${BOARD}" = "" -o "${BOARD}" = "help" ] ; then
   usage
@@ -123,6 +127,27 @@ elif [ "${BOARD}" = "x86_64" ] ; then
   ARCH=x86_64
   TARGET=x86_64-linux-eng       # x86_64
   LD_EMUL=elf_x86_64
+  NO_VDSO=0
+  DTB=0
+  INSTALL=install
+elif [ "${BOARD}" = "i386" ] ; then
+  ARCH=i386
+  TARGET=i386-linux-eng         # i386
+  LD_EMUL=elf_i386
+  NO_VDSO=0
+  DTB=0
+  INSTALL=install
+elif [ "${BOARD}" = "malta" ] ; then
+  ARCH=mips
+  TARGET=mips-linux-eng         # MIPS
+  LD_EMUL=elf32ebmip
+  NO_VDSO=0
+  DTB=0
+  INSTALL=install
+elif [ "${BOARD}" = "ppc44x" ] ; then
+  ARCH=powerpc
+  TARGET=ppc-linux-eng         # MIPS
+  LD_EMUL=elf32ppc
   NO_VDSO=0
   DTB=0
   INSTALL=install

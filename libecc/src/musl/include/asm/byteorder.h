@@ -16,7 +16,7 @@
 #define __constant_cpu_to_be32(x) ((__u32)___constant_swab32((x)))
 #else
 #define __BIG_ENDIAN_BITFIELD
-define __constant_cpu_to_be32(x) ((__u32)(x))
+#define __constant_cpu_to_be32(x) ((__u32)(x))
 #endif
 
 #endif /* _ASM_BYTEORDER_H_ */
