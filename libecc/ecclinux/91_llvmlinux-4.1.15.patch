@@ -1,0 +1,454 @@
+diff -ur linux-4.1.15.orig/arch/x86/boot/boot.h linux-4.1.15/arch/x86/boot/boot.h
+--- linux-4.1.15.orig/arch/x86/boot/boot.h	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/arch/x86/boot/boot.h	2016-01-31 11:38:25.004837156 -0600
+@@ -29,6 +29,8 @@
+ #include "ctype.h"
+ #include "cpuflags.h"
+ 
++#define asmregparm __attribute__((regparm(3)))
++
+ /* Useful macros */
+ #define BUILD_BUG_ON(condition) ((void)sizeof(char[1 - 2*!!(condition)]))
+ 
+@@ -216,10 +218,30 @@
+ 
+ /* copy.S */
+ 
+-void copy_to_fs(addr_t dst, void *src, size_t len);
+-void *copy_from_fs(void *dst, addr_t src, size_t len);
+-void copy_to_gs(addr_t dst, void *src, size_t len);
+-void *copy_from_gs(void *dst, addr_t src, size_t len);
++void asmregparm copy_to_fs(addr_t dst, void *src, size_t len);
++void * asmregparm copy_from_fs(void *dst, addr_t src, size_t len);
++void asmregparm copy_to_gs(addr_t dst, void *src, size_t len);
++void * asmregparm copy_from_gs(void *dst, addr_t src, size_t len);
++
++static inline void * asmregparm memcpy(void *d, const void *s, size_t l)
++{
++	int d0, d1, d2;
++	asm volatile("rep ; addr32 movsb\n\t"
++		     : "=&c" (d0), "=&D" (d1), "=&S" (d2)
++		     : "0" (l), "1" ((long)d), "2" ((long)s)
++		     : "memory");
++	return d;
++}
++
++static inline void * asmregparm memset(void *d, char c, size_t l)
++{
++	int d0, d1;
++	asm volatile("rep ; addr32 stosb\n\t"
++		     : "=&c" (d0), "=&D" (d1)
++		     : "0" (l), "1" (d), "a" (c)
++		     : "memory");
++	return d;
++}
+ 
+ /* a20.c */
+ int enable_a20(void);
+@@ -268,7 +290,8 @@
+ 		};
+ 	};
+ };
+-void intcall(u8 int_no, const struct biosregs *ireg, struct biosregs *oreg);
++void asmregparm intcall(u8 int_no, const struct biosregs *ireg, struct biosregs *oreg);
++ 
+ 
+ /* cmdline.c */
+ int __cmdline_find_option(unsigned long cmdline_ptr, const char *option, char *buffer, int bufsize);
+@@ -317,7 +340,7 @@
+ void __attribute__((noreturn)) go_to_protected_mode(void);
+ 
+ /* pmjump.S */
+-void __attribute__((noreturn))
++void asmregparm __attribute__((noreturn))
+ 	protected_mode_jump(u32 entrypoint, u32 bootparams);
+ 
+ /* printf.c */
+@@ -337,8 +360,8 @@
+ size_t strlen(const char *s);
+ 
+ /* tty.c */
+-void puts(const char *);
+-void putchar(int);
++void asmregparm puts(const char *);
++void asmregparm putchar(int);
+ int getchar(void);
+ void kbd_flush(void);
+ int getchar_timeout(void);
+diff -ur linux-4.1.15.orig/arch/x86/boot/memory.c linux-4.1.15/arch/x86/boot/memory.c
+--- linux-4.1.15.orig/arch/x86/boot/memory.c	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/arch/x86/boot/memory.c	2016-01-30 14:16:12.041771618 -0600
+@@ -64,7 +64,7 @@
+ 			break;
+ 		}
+ 
+-		*desc++ = buf;
++		memcpy(desc++, &buf, sizeof buf);
+ 		count++;
+ 	} while (ireg.ebx && count < ARRAY_SIZE(boot_params.e820_map));
+ 
+diff -ur linux-4.1.15.orig/arch/x86/boot/string.h linux-4.1.15/arch/x86/boot/string.h
+--- linux-4.1.15.orig/arch/x86/boot/string.h	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/arch/x86/boot/string.h	2016-01-30 15:01:13.582322906 -0600
+@@ -7,7 +7,7 @@
+ #undef memcmp
+ 
+ void *memcpy(void *dst, const void *src, size_t len);
+-void *memset(void *dst, int c, size_t len);
++// void *memset(void *dst, int c, size_t len);
+ int memcmp(const void *s1, const void *s2, size_t len);
+ 
+ /*
+diff -ur linux-4.1.15.orig/arch/x86/boot/tty.c linux-4.1.15/arch/x86/boot/tty.c
+--- linux-4.1.15.orig/arch/x86/boot/tty.c	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/arch/x86/boot/tty.c	2016-01-30 14:41:31.355330689 -0600
+@@ -27,7 +27,7 @@
+  * error during initialization.
+  */
+ 
+-static void __attribute__((section(".inittext"))) serial_putchar(int ch)
++static void asmregparm __attribute__((section(".inittext"))) serial_putchar(int ch)
+ {
+ 	unsigned timeout = 0xffff;
+ 
+@@ -60,7 +60,7 @@
+ 		serial_putchar(ch);
+ }
+ 
+-void __attribute__((section(".inittext"))) puts(const char *str)
++void asmregparm __attribute__((section(".inittext"))) puts(const char *str)
+ {
+ 	while (*str)
+ 		putchar(*str++);
+diff -ur linux-4.1.15.orig/arch/x86/boot/video-bios.c linux-4.1.15/arch/x86/boot/video-bios.c
+--- linux-4.1.15.orig/arch/x86/boot/video-bios.c	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/arch/x86/boot/video-bios.c	2016-01-30 14:43:56.548576399 -0600
+@@ -117,7 +117,7 @@
+ 	return nmodes;
+ }
+ 
+-static __videocard video_bios =
++static __videocard __used video_bios =
+ {
+ 	.card_name	= "BIOS",
+ 	.probe		= bios_probe,
+diff -ur linux-4.1.15.orig/arch/x86/boot/video-vesa.c linux-4.1.15/arch/x86/boot/video-vesa.c
+--- linux-4.1.15.orig/arch/x86/boot/video-vesa.c	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/arch/x86/boot/video-vesa.c	2016-01-30 14:17:10.170869189 -0600
+@@ -271,7 +271,7 @@
+ 
+ #endif /* not _WAKEUP */
+ 
+-static __videocard video_vesa =
++static __videocard __used video_vesa =
+ {
+ 	.card_name	= "VESA",
+ 	.probe		= vesa_probe,
+diff -ur linux-4.1.15.orig/arch/x86/Kconfig linux-4.1.15/arch/x86/Kconfig
+--- linux-4.1.15.orig/arch/x86/Kconfig	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/arch/x86/Kconfig	2016-01-30 14:08:01.080934629 -0600
+@@ -270,8 +270,8 @@
+ 
+ config ARCH_HWEIGHT_CFLAGS
+ 	string
+-	default "-fcall-saved-ecx -fcall-saved-edx" if X86_32
+-	default "-fcall-saved-rdi -fcall-saved-rsi -fcall-saved-rdx -fcall-saved-rcx -fcall-saved-r8 -fcall-saved-r9 -fcall-saved-r10 -fcall-saved-r11" if X86_64
++	default "" if X86_32
++	default "" if X86_64
+ 
+ config ARCH_SUPPORTS_UPROBES
+ 	def_bool y
+diff -ur linux-4.1.15.orig/arch/x86/kernel/head_64.S linux-4.1.15/arch/x86/kernel/head_64.S
+--- linux-4.1.15.orig/arch/x86/kernel/head_64.S	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/arch/x86/kernel/head_64.S	2016-01-24 19:50:55.533767546 -0600
+@@ -499,7 +499,12 @@
+ 	 *  too.)
+ 	 */
+ 	PMDS(0, __PAGE_KERNEL_LARGE_EXEC,
++#if defined(__ELLCC__) && defined(__x86_64__)
++        /* RICH: gas bug. */
++		256)
++#else
+ 		KERNEL_IMAGE_SIZE/PMD_SIZE)
++#endif
+ 
+ NEXT_PAGE(level2_fixmap_pgt)
+ 	.fill	506,8,0
+diff -ur linux-4.1.15.orig/arch/x86/kernel/vmlinux.lds.S linux-4.1.15/arch/x86/kernel/vmlinux.lds.S
+--- linux-4.1.15.orig/arch/x86/kernel/vmlinux.lds.S	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/arch/x86/kernel/vmlinux.lds.S	2016-01-30 14:18:23.708992625 -0600
+@@ -313,6 +313,7 @@
+ 		__bss_start = .;
+ 		*(.bss..page_aligned)
+ 		*(.bss)
++		*(.gnu.linkonce.b.*)
+ 		. = ALIGN(PAGE_SIZE);
+ 		__bss_stop = .;
+ 	}
+diff -ur linux-4.1.15.orig/arch/x86/vdso/Makefile linux-4.1.15/arch/x86/vdso/Makefile
+--- linux-4.1.15.orig/arch/x86/vdso/Makefile	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/arch/x86/vdso/Makefile	2016-01-30 10:05:39.318018361 -0600
+@@ -132,7 +132,7 @@
+ vdso32-images			= $(vdso32.so-y:%=vdso32-%.so)
+ 
+ CPPFLAGS_vdso32.lds = $(CPPFLAGS_vdso.lds)
+-VDSO_LDFLAGS_vdso32.lds = -m32 -Wl,-m,elf_i386 -Wl,-soname=linux-gate.so.1
++VDSO_LDFLAGS_vdso32.lds = -target i386-linux-eng -Wl,-m,elf_i386 -Wl,-soname=linux-gate.so.1
+ 
+ # This makes sure the $(obj) subdirectory exists even though vdso32/
+ # is not a kbuild sub-make subdirectory.
+@@ -146,13 +146,13 @@
+ 
+ KBUILD_AFLAGS_32 := $(filter-out -m64,$(KBUILD_AFLAGS))
+ $(vdso32-images:%=$(obj)/%.dbg): KBUILD_AFLAGS = $(KBUILD_AFLAGS_32)
+-$(vdso32-images:%=$(obj)/%.dbg): asflags-$(CONFIG_X86_64) += -m32
++$(vdso32-images:%=$(obj)/%.dbg): asflags-$(CONFIG_X86_64) += -target i386-linux-eng
+ 
+ KBUILD_CFLAGS_32 := $(filter-out -m64,$(KBUILD_CFLAGS))
+ KBUILD_CFLAGS_32 := $(filter-out -mcmodel=kernel,$(KBUILD_CFLAGS_32))
+ KBUILD_CFLAGS_32 := $(filter-out -fno-pic,$(KBUILD_CFLAGS_32))
+ KBUILD_CFLAGS_32 := $(filter-out -mfentry,$(KBUILD_CFLAGS_32))
+-KBUILD_CFLAGS_32 += -m32 -msoft-float -mregparm=0 -fpic
++KBUILD_CFLAGS_32 += -target i386-linux-eng -msoft-float -mregparm=0 -fpic
+ KBUILD_CFLAGS_32 += $(call cc-option, -fno-stack-protector)
+ KBUILD_CFLAGS_32 += $(call cc-option, -foptimize-sibling-calls)
+ KBUILD_CFLAGS_32 += -fno-omit-frame-pointer
+diff -ur linux-4.1.15.orig/drivers/block/loop.c linux-4.1.15/drivers/block/loop.c
+--- linux-4.1.15.orig/drivers/block/loop.c	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/drivers/block/loop.c	2016-01-30 14:50:24.194230976 -0600
+@@ -1048,7 +1048,7 @@
+ 	return 0;
+ }
+ 
+-static int
++static noinline_for_stack int
+ loop_set_status_old(struct loop_device *lo, const struct loop_info __user *arg)
+ {
+ 	struct loop_info info;
+@@ -1060,7 +1060,7 @@
+ 	return loop_set_status(lo, &info64);
+ }
+ 
+-static int
++static noinline_for_stack int
+ loop_set_status64(struct loop_device *lo, const struct loop_info64 __user *arg)
+ {
+ 	struct loop_info64 info64;
+@@ -1070,7 +1070,7 @@
+ 	return loop_set_status(lo, &info64);
+ }
+ 
+-static int
++static noinline_for_stack int
+ loop_get_status_old(struct loop_device *lo, struct loop_info __user *arg) {
+ 	struct loop_info info;
+ 	struct loop_info64 info64;
+@@ -1088,7 +1088,7 @@
+ 	return err;
+ }
+ 
+-static int
++static noinline_for_stack int
+ loop_get_status64(struct loop_device *lo, struct loop_info64 __user *arg) {
+ 	struct loop_info64 info64;
+ 	int err = 0;
+diff -ur linux-4.1.15.orig/fs/compat.c linux-4.1.15/fs/compat.c
+--- linux-4.1.15.orig/fs/compat.c	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/fs/compat.c	2016-01-30 14:23:39.136522079 -0600
+@@ -920,7 +920,7 @@
+ static int compat_filldir(struct dir_context *ctx, const char *name, int namlen,
+ 		loff_t offset, u64 ino, unsigned int d_type)
+ {
+-	struct compat_linux_dirent __user * dirent;
++	struct compat_linux_dirent __user * dirent = NULL;
+ 	struct compat_getdents_callback *buf =
+ 		container_of(ctx, struct compat_getdents_callback, ctx);
+ 	compat_ulong_t d_ino;
+@@ -1008,7 +1008,7 @@
+ 			    int namlen, loff_t offset, u64 ino,
+ 			    unsigned int d_type)
+ {
+-	struct linux_dirent64 __user *dirent;
++	struct linux_dirent64 __user *dirent = NULL;
+ 	struct compat_getdents_callback64 *buf =
+ 		container_of(ctx, struct compat_getdents_callback64, ctx);
+ 	int reclen = ALIGN(offsetof(struct linux_dirent64, d_name) + namlen + 1,
+diff -ur linux-4.1.15.orig/include/asm-generic/vmlinux.lds.h linux-4.1.15/include/asm-generic/vmlinux.lds.h
+--- linux-4.1.15.orig/include/asm-generic/vmlinux.lds.h	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/include/asm-generic/vmlinux.lds.h	2016-01-30 14:26:05.287767398 -0600
+@@ -191,6 +191,7 @@
+ #define DATA_DATA							\
+ 	*(.data)							\
+ 	*(.ref.data)							\
++	*(.gnu.linkonce.d.*)						\
+ 	*(.data..shared_aligned) /* percpu related */			\
+ 	MEM_KEEP(init.data)						\
+ 	MEM_KEEP(exit.data)						\
+@@ -415,6 +416,7 @@
+ 		*(.text.hot)						\
+ 		*(.text .text.fixup)					\
+ 		*(.ref.text)						\
++		*(.gnu.linkonce.t.*)					\
+ 	MEM_KEEP(init.text)						\
+ 	MEM_KEEP(exit.text)						\
+ 		*(.text.unlikely)
+diff -ur linux-4.1.15.orig/include/linux/kernel.h linux-4.1.15/include/linux/kernel.h
+--- linux-4.1.15.orig/include/linux/kernel.h	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/include/linux/kernel.h	2016-01-30 14:52:25.933435677 -0600
+@@ -130,7 +130,11 @@
+ 
+ 
+ #define _RET_IP_		(unsigned long)__builtin_return_address(0)
+-#define _THIS_IP_  ({ __label__ __here; __here: (unsigned long)&&__here; })
++#ifdef CONFIG_X86
++#define _THIS_IP_ ({unsigned long __ip;asm volatile("5678:mov $5678b,%0" : "=r"(__ip));__ip;})
++#else
++ #define _THIS_IP_  ({ __label__ __here; __here: (unsigned long)&&__here; })
++#endif
+ 
+ #ifdef CONFIG_LBDAF
+ # include <asm/div64.h>
+diff -ur linux-4.1.15.orig/net/core/ethtool.c linux-4.1.15/net/core/ethtool.c
+--- linux-4.1.15.orig/net/core/ethtool.c	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/net/core/ethtool.c	2016-01-30 14:55:02.601699111 -0600
+@@ -354,7 +354,7 @@
+ }
+ EXPORT_SYMBOL(__ethtool_get_settings);
+ 
+-static int ethtool_get_settings(struct net_device *dev, void __user *useraddr)
++static noinline_for_stack int ethtool_get_settings(struct net_device *dev, void __user *useraddr)
+ {
+ 	int err;
+ 	struct ethtool_cmd cmd;
+@@ -368,7 +368,7 @@
+ 	return 0;
+ }
+ 
+-static int ethtool_set_settings(struct net_device *dev, void __user *useraddr)
++static noinline_for_stack int ethtool_set_settings(struct net_device *dev, void __user *useraddr)
+ {
+ 	struct ethtool_cmd cmd;
+ 
+diff -ur linux-4.1.15.orig/net/sctp/socket.c linux-4.1.15/net/sctp/socket.c
+--- linux-4.1.15.orig/net/sctp/socket.c	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/net/sctp/socket.c	2016-01-31 09:13:30.267916933 -0600
+@@ -2503,7 +2503,7 @@
+ 	return 0;
+ }
+ 
+-static int sctp_setsockopt_peer_addr_params(struct sock *sk,
++static noinline_for_stack int sctp_setsockopt_peer_addr_params(struct sock *sk,
+ 					    char __user *optval,
+ 					    unsigned int optlen)
+ {
+@@ -2772,7 +2772,7 @@
+  *   sinfo_timetolive.  The user must provide the sinfo_assoc_id field in
+  *   to this call if the caller is using the UDP model.
+  */
+-static int sctp_setsockopt_default_send_param(struct sock *sk,
++static noinline_for_stack int sctp_setsockopt_default_send_param(struct sock *sk,
+ 					      char __user *optval,
+ 					      unsigned int optlen)
+ {
+@@ -2853,7 +2853,7 @@
+  * the association primary.  The enclosed address must be one of the
+  * association peer's addresses.
+  */
+-static int sctp_setsockopt_primary_addr(struct sock *sk, char __user *optval,
++static noinline_for_stack int sctp_setsockopt_primary_addr(struct sock *sk, char __user *optval,
+ 					unsigned int optlen)
+ {
+ 	struct sctp_prim prim;
+@@ -3139,7 +3139,7 @@
+  *   locally bound addresses. The following structure is used to make a
+  *   set primary request:
+  */
+-static int sctp_setsockopt_peer_primary_addr(struct sock *sk, char __user *optval,
++static noinline_for_stack int sctp_setsockopt_peer_primary_addr(struct sock *sk, char __user *optval,
+ 					     unsigned int optlen)
+ {
+ 	struct net *net = sock_net(sk);
+@@ -4225,7 +4225,7 @@
+  * number of unacked data chunks, and number of data chunks pending
+  * receipt.  This information is read-only.
+  */
+-static int sctp_getsockopt_sctp_status(struct sock *sk, int len,
++static noinline_for_stack int sctp_getsockopt_sctp_status(struct sock *sk, int len,
+ 				       char __user *optval,
+ 				       int __user *optlen)
+ {
+@@ -4305,7 +4305,7 @@
+  * window, and retransmission timer values.  This information is
+  * read-only.
+  */
+-static int sctp_getsockopt_peer_addr_info(struct sock *sk, int len,
++static noinline_for_stack int sctp_getsockopt_peer_addr_info(struct sock *sk, int len,
+ 					  char __user *optval,
+ 					  int __user *optlen)
+ {
+@@ -4606,7 +4606,7 @@
+  *                     SPP_SACKDELAY_ENABLE, setting both will have undefined
+  *                     results.
+  */
+-static int sctp_getsockopt_peer_addr_params(struct sock *sk, int len,
++static noinline_for_stack int sctp_getsockopt_peer_addr_params(struct sock *sk, int len,
+ 					    char __user *optval, int __user *optlen)
+ {
+ 	struct sctp_paddrparams  params;
+@@ -4802,7 +4802,7 @@
+ }
+ 
+ 
+-static int sctp_getsockopt_peer_addrs(struct sock *sk, int len,
++static noinline_for_stack int sctp_getsockopt_peer_addrs(struct sock *sk, int len,
+ 				      char __user *optval, int __user *optlen)
+ {
+ 	struct sctp_association *asoc;
+@@ -4898,7 +4898,7 @@
+ }
+ 
+ 
+-static int sctp_getsockopt_local_addrs(struct sock *sk, int len,
++static noinline_for_stack int sctp_getsockopt_local_addrs(struct sock *sk, int len,
+ 				       char __user *optval, int __user *optlen)
+ {
+ 	struct sctp_bind_addr *bp;
+@@ -5003,7 +5003,7 @@
+  * the association primary.  The enclosed address must be one of the
+  * association peer's addresses.
+  */
+-static int sctp_getsockopt_primary_addr(struct sock *sk, int len,
++static noinline_for_stack int sctp_getsockopt_primary_addr(struct sock *sk, int len,
+ 					char __user *optval, int __user *optlen)
+ {
+ 	struct sctp_prim prim;
+@@ -5084,7 +5084,7 @@
+  *
+  *   For getsockopt, it get the default sctp_sndrcvinfo structure.
+  */
+-static int sctp_getsockopt_default_send_param(struct sock *sk,
++static noinline_for_stack int sctp_getsockopt_default_send_param(struct sock *sk,
+ 					int len, char __user *optval,
+ 					int __user *optlen)
+ {
+@@ -5259,7 +5259,7 @@
+  * See [SCTP] for more information.
+  *
+  */
+-static int sctp_getsockopt_associnfo(struct sock *sk, int len,
++static noinline_for_stack int sctp_getsockopt_associnfo(struct sock *sk, int len,
+ 				     char __user *optval,
+ 				     int __user *optlen)
+ {
+diff -ur linux-4.1.15.orig/sound/pci/ac97/ac97_codec.c linux-4.1.15/sound/pci/ac97/ac97_codec.c
+--- linux-4.1.15.orig/sound/pci/ac97/ac97_codec.c	2015-12-14 23:24:51.000000000 -0600
++++ linux-4.1.15/sound/pci/ac97/ac97_codec.c	2016-01-30 14:38:50.411058324 -0600
+@@ -1172,7 +1172,7 @@
+ 	return x;
+ }
+ 
+-static struct snd_kcontrol *snd_ac97_cnew(const struct snd_kcontrol_new *_template,
++static noinline_for_stack struct snd_kcontrol *snd_ac97_cnew(const struct snd_kcontrol_new *_template,
+ 					  struct snd_ac97 * ac97)
+ {
+ 	struct snd_kcontrol_new template;
