@@ -1,18 +1,29 @@
 #! /bin/sh
-set -eux
+set -eu
 
 # The complete package list. See mac_exclude below for Mac exceptions.
 packages="kernel sinit sbase ubase smdev nldev nlmon sdhcp loksh hbase
-          ntfs3g iproute2 e2fsprogs vim dropbear less6"
+          ntfs3g iproute2 e2fsprogs vim dropbear less wireless_tools
+          wpa_supplicant"
 
 # Extra packages, enabled by -extras.
 extras="ellcc"
+for p in `echo $extras` ; do
+  eval $p=no
+done
 
 # Packages that don't build currently.
 broken="openssh toybox python s6 libnl iw"
+for p in `echo $broken` ; do
+  eval $p=no
+done
+
 
 # Packages that build, but that are untested/unused or not needed.
 unused_packages="uboot"
+for p in `echo $unused_packages` ; do
+  eval $p=no
+done
 
 # Packages to avoid on the Mac (build problems).
 mac_exclude="uboot iproute2 e2fsprogs vim"
