@@ -25,10 +25,10 @@ if(NOT LLVM_USE_INTEL_JITEVENTS )
   set(LLVM_TOOL_LLVM_JITLISTENER_BUILD Off)
 endif()
 
-if(CYGWIN)
+#if(CYGWIN)
   set(LLVM_TOOL_LTO_BUILD Off)
   set(LLVM_TOOL_LLVM_LTO_BUILD Off)
-endif()
+#endif()
 
 # Add LTO, llvm-ar, llvm-config, and llvm-profdata before clang, ExternalProject
 # requires targets specified in DEPENDS to exist before the call to

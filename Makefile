@@ -100,6 +100,9 @@ ifneq ($(CC),gcc)
     CFLAGS=$(ELLCC_ARG0)
     CXXFLAGS=$(ELLCC_ARG0)
     TARGETTUPLE=-target $(TUPLE)
+    CROSS_CMAKE_FLAGS=-DCMAKE_CROSSCOMPILING=True \
+      -DLLVM_TABLEGEN=$(shell pwd)/bin/llvm-tblgen \
+      -DCLANG_TABLEGEN=$(shell pwd)/bin/clang-tblgen
   endif
 endif
 
@@ -109,14 +112,14 @@ llvm.configure:
         else  \
           echo Configuring LLVM for $(TUPLE) in $(DIR) ; \
 	  cd $(DIR) ; \
-	    ../llvm/configure \
-	    CC="$(CC) $(TARGETTUPLE)" CFLAGS="$(CFLAGS)" \
-	    CPP="$(CC) $(TARGETTUPLE) -E $(CFLAGS)" \
-	    CXX="$(CXX) $(TARGETTUPLE)" CXXFLAGS="$(CXXFLAGS)" \
-	    CXXCPP="$(CXX) $(TARGETTUPLE) -E $(CFLAGS)" \
+	    CC="$(CC) $(TARGETTUPLE)" \
+	    CXX="$(CXX) $(TARGETTUPLE)" \
 	    AR=$(AR) RANLIB=$(RANLIB) \
-	    --bindir=$(bindir) --prefix=$(prefix) \
-	    $(HOST) $(BUILD) $(TRGT) $(TARGETS) \
-	    --enable-shared=no --enable-keep-symbols \
-	    --enable-optimized --program-prefix= ; \
+	    cmake ../llvm \
+	      $(CROSS_CMAKE_FLAGS) \
+	      -DCMAKE_C_FLAGS="$(CFLAGS)" \
+	      -DCMAKE_CXX_FLAGS="$(CXXFLAGS)" \
+	      -DLLVM_ENABLE_PIC=False \
+	      -DCMAKE_BUILD_TYPE:STRING=Release \
+	      -DCMAKE_INSTALL_PREFIX=$(prefix) ; \
 	fi

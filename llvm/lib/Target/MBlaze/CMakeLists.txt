@@ -3,6 +3,7 @@ set(LLVM_TARGET_DEFINITIONS MBlaze.td)
 tablegen(LLVM MBlazeGenRegisterInfo.inc -gen-register-info)
 tablegen(LLVM MBlazeGenInstrInfo.inc -gen-instr-info)
 tablegen(LLVM MBlazeGenCodeEmitter.inc -gen-emitter)
+tablegen(LLVM MBlazeGenMCCodeEmitter.inc -gen-emitter)
 tablegen(LLVM MBlazeGenAsmWriter.inc -gen-asm-writer)
 tablegen(LLVM MBlazeGenAsmMatcher.inc -gen-asm-matcher)
 tablegen(LLVM MBlazeGenDAGISel.inc -gen-dag-isel)
@@ -23,7 +24,6 @@ add_llvm_target(MBlazeCodeGen
   MBlazeTargetMachine.cpp
   MBlazeTargetObjectFile.cpp
   MBlazeIntrinsicInfo.cpp
-  MBlazeSelectionDAGInfo.cpp
   MBlazeAsmPrinter.cpp
   MBlazeMCInstLower.cpp
   )
