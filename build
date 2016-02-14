@@ -99,9 +99,18 @@ cp -p bin-extra/* $bindir
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 
+if [ -e bin/llvm-tblgen ] ; then
+  # We have tblgens built.
+  CROSS_CMAKE_FLAGS="-DCMAKE_CROSSCOMPILING=True \
+      -DLLVM_TABLEGEN=`pwd`/bin/llvm-tblgen \
+      -DCLANG_TABLEGEN=`pwd`/bin/clang-tblgen"
+else
+  CROSS_CMAKE_FLAGS=
+fi
 ${MAKE} DIR=llvm-build$builddir CC="$cc" CXX="$cxx" AR="$ar" RANLIB="$ranlib" \
      TARGET=$host OS=$os HOSTOS=$hostos TUPLE=$tuple \
      bindir=$bindir prefix=$prefix build=$build haslibs=$haslibs \
+     cross_cmake_flags=$CROSS_CMAKE_FLAGS \
      llvm.configure || bailout "Configure failed for llvm"
 
 # Build the LLVM tools.

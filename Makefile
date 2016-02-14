@@ -100,9 +100,6 @@ ifneq ($(CC),gcc)
     CFLAGS=$(ELLCC_ARG0)
     CXXFLAGS=$(ELLCC_ARG0)
     TARGETTUPLE=-target $(TUPLE)
-    CROSS_CMAKE_FLAGS=-DCMAKE_CROSSCOMPILING=True \
-      -DLLVM_TABLEGEN=$(shell pwd)/bin/llvm-tblgen \
-      -DCLANG_TABLEGEN=$(shell pwd)/bin/clang-tblgen
   endif
 endif
 
@@ -116,7 +113,7 @@ llvm.configure:
 	    CXX="$(CXX) $(TARGETTUPLE)" \
 	    AR=$(AR) RANLIB=$(RANLIB) \
 	    cmake ../llvm \
-	      $(CROSS_CMAKE_FLAGS) \
+	      $(cross_cmake_flags) \
 	      -DCMAKE_C_FLAGS="$(CFLAGS)" \
 	      -DCMAKE_CXX_FLAGS="$(CXXFLAGS)" \
 	      -DLLVM_ENABLE_PIC=False \
