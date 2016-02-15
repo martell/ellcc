@@ -8,7 +8,7 @@
 #define FLEX_SCANNER
 #define YY_FLEX_MAJOR_VERSION 2
 #define YY_FLEX_MINOR_VERSION 5
-#define YY_FLEX_SUBMINOR_VERSION 37
+#define YY_FLEX_SUBMINOR_VERSION 39
 #if YY_FLEX_SUBMINOR_VERSION > 0
 #define FLEX_BETA
 #endif
@@ -167,6 +167,7 @@ extern FILE *yyin, *yyout;
 #define EOB_ACT_LAST_MATCH 2
 
     #define YY_LESS_LINENO(n)
+    #define YY_LINENO_REWIND_TO(ptr)
     
 /* Return all but the first "n" matched characters back to the input stream. */
 #define yyless(n) \
@@ -1783,7 +1784,7 @@ int yywrap (void) { return 1; }
 
 
 
-#line 1787 "../../../src/binutils/ld/ldlex.c"
+#line 1788 "../../../src/binutils/ld/ldlex.c"
 
 #define INITIAL 0
 #define SCRIPT 1
@@ -1972,27 +1973,6 @@ YY_DECL
 	register char *yy_cp, *yy_bp;
 	register int yy_act;
     
-#line 121 "../../../src/binutils/ld/ldlex.l"
-
-
-  if (parser_input != input_selected)
-    {
-      /* The first token of the input determines the initial parser state.  */
-      input_type t = parser_input;
-      parser_input = input_selected;
-      switch (t)
-	{
-	case input_script: return INPUT_SCRIPT; break;
-	case input_mri_script: return INPUT_MRI_SCRIPT; break;
-	case input_version_script: return INPUT_VERSION_SCRIPT; break;
-	case input_dynamic_list: return INPUT_DYNAMIC_LIST; break;
-	case input_defsym: return INPUT_DEFSYM; break;
-	default: abort ();
-	}
-    }
-
-#line 1995 "../../../src/binutils/ld/ldlex.c"
-
 	if ( !(yy_init) )
 		{
 		(yy_init) = 1;
@@ -2019,6 +1999,28 @@ YY_DECL
 		yy_load_buffer_state( );
 		}
 
+	{
+#line 121 "../../../src/binutils/ld/ldlex.l"
+
+
+  if (parser_input != input_selected)
+    {
+      /* The first token of the input determines the initial parser state.  */
+      input_type t = parser_input;
+      parser_input = input_selected;
+      switch (t)
+	{
+	case input_script: return INPUT_SCRIPT; break;
+	case input_mri_script: return INPUT_MRI_SCRIPT; break;
+	case input_version_script: return INPUT_VERSION_SCRIPT; break;
+	case input_dynamic_list: return INPUT_DYNAMIC_LIST; break;
+	case input_defsym: return INPUT_DEFSYM; break;
+	default: abort ();
+	}
+    }
+
+#line 2023 "../../../src/binutils/ld/ldlex.c"
+
 	while ( 1 )		/* loops until end-of-file is reached */
 		{
 		yy_cp = (yy_c_buf_p);
@@ -2035,7 +2037,7 @@ YY_DECL
 yy_match:
 		do
 			{
-			register YY_CHAR yy_c = yy_ec[YY_SC_TO_UI(*yy_cp)];
+			register YY_CHAR yy_c = yy_ec[YY_SC_TO_UI(*yy_cp)] ;
 			if ( yy_accept[yy_current_state] )
 				{
 				(yy_last_accepting_state) = yy_current_state;
@@ -3198,7 +3200,7 @@ YY_RULE_SETUP
 #line 475 "../../../src/binutils/ld/ldlex.l"
 ECHO;
 	YY_BREAK
-#line 3202 "../../../src/binutils/ld/ldlex.c"
+#line 3204 "../../../src/binutils/ld/ldlex.c"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -3327,6 +3329,7 @@ ECHO;
 			"fatal flex scanner internal error--no action found" );
 	} /* end of action switch */
 		} /* end of scanning one token */
+	} /* end of user's declarations */
 } /* end of yylex */
 
 /* yy_get_next_buffer - try to read in a new buffer
