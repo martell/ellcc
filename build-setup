@@ -11,6 +11,7 @@ targetlist=`echo ${targets} | sed -e "s/ /,/g"`
 # RICH: I don't assume that yet. I haven't put it in my path.
 bin=${prefix}/bin
 bindir=${bin}
+install=${prefix}
 # Get the build processor. For now it is also the host and target processor.
 build=`uname -m`
 case "${build}" in
@@ -84,6 +85,7 @@ if [ $# -ge 1 ] ; then
   host=`${prefix}/bin/ecc-getarch $1`
   arg1=$1
   bindir=${bindir}-$1
+  install=${prefix}/install-$1
   # OG: The host OS may be something else.... let ${hostos} find out
   #hostos=Linux
   tuple=$1

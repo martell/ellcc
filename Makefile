@@ -118,5 +118,5 @@ llvm.configure:
 	      -DCMAKE_CXX_FLAGS="$(CXXFLAGS)" \
 	      -DLLVM_ENABLE_PIC=False \
 	      -DCMAKE_BUILD_TYPE:STRING=Release \
-	      -DCMAKE_INSTALL_PREFIX=$(prefix) ; \
+	      -DCMAKE_INSTALL_PREFIX=$(install) ; \
 	fi

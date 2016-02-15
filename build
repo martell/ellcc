@@ -109,12 +109,12 @@ else
 fi
 ${MAKE} DIR=llvm-build$builddir CC="$cc" CXX="$cxx" AR="$ar" RANLIB="$ranlib" \
      TARGET=$host OS=$os HOSTOS=$hostos TUPLE=$tuple \
-     bindir=$bindir prefix=$prefix build=$build haslibs=$haslibs \
+     install=$install build=$build haslibs=$haslibs \
      cross_cmake_flags="$CROSS_CMAKE_FLAGS" \
      llvm.configure || bailout "Configure failed for llvm"
 
 # Build the LLVM tools.
-${MAKE} -C llvm-build$builddir -j ${maxjobs} || bailout "Make failed for llvm"
+${MAKE} -C llvm-build$builddir -j ${maxjobs} || bailout "Make failed for LLVM"
 
 # Build the GNU tools.
 cd gnu
@@ -122,10 +122,7 @@ cd gnu
 cd ..
 
 # Install LLVM components.
-mv bin bin.save
-${MAKE} -j ${maxjobs} -C llvm-build$builddir install
-rm -fr bin
-mv bin.save bin
+${MAKE} -j ${maxjobs} -C llvm-build$builddir install ||  bailout "Install failed for LLVM"
 
 # Now install the LLVM tools in the appropriate bin directory.
 rm -f $bindir/clang-[0-9]*
