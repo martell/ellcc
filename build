@@ -107,6 +107,9 @@ if [ -e bin/llvm-tblgen ] ; then
 else
   CROSS_CMAKE_FLAGS=
 fi
+if [ "$os" = "mingw32" ] ; then
+  CROSS_CMAKE_FLAGS="$CROSS_CMAKE_FLAGS -DWIN32=True"
+fi
 ${MAKE} DIR=llvm-build$builddir CC="$cc" CXX="$cxx" AR="$ar" RANLIB="$ranlib" \
      TARGET=$host OS=$os HOSTOS=$hostos TUPLE=$tuple \
      install=$install build=$build haslibs=$haslibs \

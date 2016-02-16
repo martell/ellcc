@@ -26,7 +26,7 @@
  */
 
 // RICH: Not implemented yet.
-#if !defined(__microblaze__) && !defined(_mips) && !defined(__ppc__)
+#if !defined(__microblaze__)
 
 #include <stdint.h>
 #include <string.h>
@@ -39,6 +39,7 @@
 #pragma redefine_extname __atomic_store_c SYMBOL_NAME(__atomic_store)
 #pragma redefine_extname __atomic_exchange_c SYMBOL_NAME(__atomic_exchange)
 #pragma redefine_extname __atomic_compare_exchange_c SYMBOL_NAME(__atomic_compare_exchange)
+#pragma redefine_extname __atomic_is_lock_free_c SYMBOL_NAME(__atomic_is_lock_free)
 
 /// Number of locks.  This allocates one page on 32-bit platforms, two on
 /// 64-bit.  This can be specified externally if a different trade between
@@ -159,6 +160,15 @@ static __inline Lock *lock_for_pointer(void *ptr) {
   }\
   } while (0)
 
+
+// A check for lock free.
+int __atomic_is_lock_free_c(size_t size, void *p)
+{
+#define LOCK_FREE_ACTION(type) return 1;
+  LOCK_FREE_CASES();
+#undef LOCK_FREE_ACTION
+  return 0 ;
+}
 
 /// An atomic load operation.  This is atomic with respect to the source
 /// pointer only.
