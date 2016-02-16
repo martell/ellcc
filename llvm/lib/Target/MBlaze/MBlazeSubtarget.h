@@ -19,7 +19,7 @@
 #include "MBlazeInstrInfo.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCInstrItineraries.h"
-#include "llvm/Target/TargetSelectionDAGInfo.h"
+#include "llvm/CodeGen/SelectionDAGTargetInfo.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
 #include <string>
 
@@ -47,7 +47,7 @@ protected:
 
   /// TargetTriple - What processor and OS we're targeting.
   Triple TargetTriple;
-  const TargetSelectionDAGInfo TSInfo;
+  const SelectionDAGTargetInfo TSInfo;
   std::unique_ptr<const MBlazeInstrInfo> InstrInfo;
   std::unique_ptr<const MBlazeFrameLowering> FrameLowering;
   std::unique_ptr<const MBlazeTargetLowering> TLInfo;
@@ -83,7 +83,7 @@ public:
   bool hasBarrel() const { return HasBarrel; }
   const Triple &getTargetTriple() const { return TargetTriple; }
 
-  const TargetSelectionDAGInfo *getSelectionDAGInfo() const override
+  const SelectionDAGTargetInfo *getSelectionDAGInfo() const override
   { return &TSInfo; }
   const MBlazeInstrInfo *getInstrInfo() const override
   { return InstrInfo.get(); }

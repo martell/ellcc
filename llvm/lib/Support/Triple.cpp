@@ -62,6 +62,7 @@ const char *Triple::getArchTypeName(ArchType Kind) {
   case spir:        return "spir";
   case spir64:      return "spir64";
   case kalimba:     return "kalimba";
+  case lanai:       return "lanai";
   case shave:       return "shave";
   case wasm32:      return "wasm32";
   case wasm64:      return "wasm64";
@@ -132,6 +133,7 @@ const char *Triple::getArchTypePrefix(ArchType Kind) {
   case spir:
   case spir64:      return "spir";
   case kalimba:     return "kalimba";
+  case lanai:       return "lanai";
   case shave:       return "shave";
   case wasm32:
   case wasm64:      return "wasm";
@@ -155,6 +157,8 @@ const char *Triple::getVendorTypeName(VendorType Kind) {
   case NVIDIA: return "nvidia";
   case CSR: return "csr";
   case Myriad: return "myriad";
+  case AMD: return "amd";
+  case Mesa: return "mesa";
   }
 
   llvm_unreachable("Invalid VendorType!");
@@ -192,6 +196,7 @@ const char *Triple::getOSTypeName(OSType Kind) {
   case ELFIAMCU: return "elfiamcu";
   case TvOS: return "tvos";
   case WatchOS: return "watchos";
+  case Mesa3D: return "mesa3d";
   }
 
   llvm_unreachable("Invalid OSType");
@@ -278,6 +283,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
     .Case("spir", spir)
     .Case("spir64", spir64)
     .Case("kalimba", kalimba)
+    .Case("lanai", lanai)
     .Case("shave", shave)
     .Case("wasm32", wasm32)
     .Case("wasm64", wasm64)
@@ -389,6 +395,7 @@ static Triple::ArchType parseArch(StringRef ArchName) {
     .Case("spir", Triple::spir)
     .Case("spir64", Triple::spir64)
     .StartsWith("kalimba", Triple::kalimba)
+    .Case("lanai", Triple::lanai)
     .Case("shave", Triple::shave)
     .Case("wasm32", Triple::wasm32)
     .Case("wasm64", Triple::wasm64)
@@ -422,6 +429,8 @@ static Triple::VendorType parseVendor(StringRef VendorName) {
     .Case("nvidia", Triple::NVIDIA)
     .Case("csr", Triple::CSR)
     .Case("myriad", Triple::Myriad)
+    .Case("amd", Triple::AMD)
+    .Case("mesa", Triple::Mesa)
     .Default(Triple::UnknownVendor);
 }
 
@@ -456,6 +465,7 @@ static Triple::OSType parseOS(StringRef OSName) {
     .StartsWith("elfiamcu", Triple::ELFIAMCU)
     .StartsWith("tvos", Triple::TvOS)
     .StartsWith("watchos", Triple::WatchOS)
+    .StartsWith("mesa3d", Triple::Mesa3D)
     .Default(Triple::UnknownOS);
 }
 
@@ -578,6 +588,7 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
   case Triple::bpfeb:
   case Triple::bpfel:
   case Triple::hexagon:
+  case Triple::lanai:
   case Triple::hsail:
   case Triple::hsail64:
   case Triple::kalimba:
@@ -1134,6 +1145,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::hsail:
   case llvm::Triple::spir:
   case llvm::Triple::kalimba:
+  case llvm::Triple::lanai:
   case llvm::Triple::shave:
   case llvm::Triple::wasm32:
     return 32;
@@ -1209,6 +1221,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::thumbeb:
   case Triple::x86:
   case Triple::xcore:
+  case Triple::lanai:
   case Triple::shave:
   case Triple::wasm32:
     // Already 32-bit.
@@ -1239,6 +1252,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::hexagon:
   case Triple::kalimba:
   case Triple::mblaze:
+  case Triple::lanai:
   case Triple::msp430:
   case Triple::nios2:
   case Triple::r600:
@@ -1328,6 +1342,7 @@ Triple Triple::getBigEndianArchVariant() const {
   case Triple::aarch64_be:
   case Triple::armeb:
   case Triple::bpfeb:
+  case Triple::lanai:
   case Triple::mips64:
   case Triple::mips:
   case Triple::ppc64:
@@ -1354,6 +1369,7 @@ Triple Triple::getLittleEndianArchVariant() const {
   Triple T(*this);
   switch (getArch()) {
   case Triple::UnknownArch:
+  case Triple::lanai:
   case Triple::ppc:
   case Triple::sparcv9:
   case Triple::systemz:
@@ -1429,6 +1445,7 @@ StringRef Triple::getARMCPUForArch(StringRef MArch) const {
   case llvm::Triple::MacOSX:
   case llvm::Triple::IOS:
   case llvm::Triple::WatchOS:
+  case llvm::Triple::TvOS:
     if (MArch == "v7k")
       return "cortex-a7";
     break;

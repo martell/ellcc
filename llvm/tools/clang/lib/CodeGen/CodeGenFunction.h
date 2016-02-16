@@ -952,7 +952,7 @@ private:
 public:
   /// Increment the profiler's counter for the given statement.
   void incrementProfileCounter(const Stmt *S) {
-    if (CGM.getCodeGenOpts().ProfileInstrGenerate)
+    if (CGM.getCodeGenOpts().hasProfileClangInstr())
       PGO.emitCounterIncrement(Builder, S);
     PGO.setCurrentStmt(S);
   }
@@ -1573,6 +1573,10 @@ public:
   Address EmitLoadOfReference(Address Ref, const ReferenceType *RefTy,
                               AlignmentSource *Source = nullptr);
   LValue EmitLoadOfReferenceLValue(Address Ref, const ReferenceType *RefTy);
+
+  Address EmitLoadOfPointer(Address Ptr, const PointerType *PtrTy,
+                            AlignmentSource *Source = nullptr);
+  LValue EmitLoadOfPointerLValue(Address Ptr, const PointerType *PtrTy);
 
   /// CreateTempAlloca - This creates a alloca and inserts it into the entry
   /// block. The caller is responsible for setting an appropriate alignment on
@@ -2343,6 +2347,9 @@ public:
   void EmitOMPTargetDataDirective(const OMPTargetDataDirective &S);
   void EmitOMPTargetEnterDataDirective(const OMPTargetEnterDataDirective &S);
   void EmitOMPTargetExitDataDirective(const OMPTargetExitDataDirective &S);
+  void EmitOMPTargetParallelDirective(const OMPTargetParallelDirective &S);
+  void
+  EmitOMPTargetParallelForDirective(const OMPTargetParallelForDirective &S);
   void EmitOMPTeamsDirective(const OMPTeamsDirective &S);
   void
   EmitOMPCancellationPointDirective(const OMPCancellationPointDirective &S);
@@ -2806,19 +2813,25 @@ public:
   llvm::Value *EmitARCAutoreleaseReturnValue(llvm::Value *value);
   llvm::Value *EmitARCRetainAutoreleaseReturnValue(llvm::Value *value);
   llvm::Value *EmitARCRetainAutoreleasedReturnValue(llvm::Value *value);
+  llvm::Value *EmitARCUnsafeClaimAutoreleasedReturnValue(llvm::Value *value);
 
   std::pair<LValue,llvm::Value*>
   EmitARCStoreAutoreleasing(const BinaryOperator *e);
   std::pair<LValue,llvm::Value*>
   EmitARCStoreStrong(const BinaryOperator *e, bool ignored);
+  std::pair<LValue,llvm::Value*>
+  EmitARCStoreUnsafeUnretained(const BinaryOperator *e, bool ignored);
 
   llvm::Value *EmitObjCThrowOperand(const Expr *expr);
   llvm::Value *EmitObjCConsumeObject(QualType T, llvm::Value *Ptr);
   llvm::Value *EmitObjCExtendObjectLifetime(QualType T, llvm::Value *Ptr);
 
   llvm::Value *EmitARCExtendBlockObject(const Expr *expr);
+  llvm::Value *EmitARCReclaimReturnedObject(const Expr *e,
+                                            bool allowUnsafeClaim);
   llvm::Value *EmitARCRetainScalarExpr(const Expr *expr);
   llvm::Value *EmitARCRetainAutoreleaseScalarExpr(const Expr *expr);
+  llvm::Value *EmitARCUnsafeUnretainedScalarExpr(const Expr *expr);
 
   void EmitARCIntrinsicUse(ArrayRef<llvm::Value*> values);
 

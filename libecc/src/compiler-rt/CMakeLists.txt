@@ -66,12 +66,12 @@ if (NOT COMPILER_RT_STANDALONE_BUILD)
   # Windows where we need to use clang-cl instead.
   if(NOT MSVC)
     set(COMPILER_RT_TEST_COMPILER ${LLVM_RUNTIME_OUTPUT_INTDIR}/clang)
-    set(COMPILER_RT_TEST_COMPILER_EXE "-o")
-    set(COMPILER_RT_TEST_COMPILER_OBJ "-o")
+    set(COMPILER_RT_TEST_CXX_COMPILER ${LLVM_RUNTIME_OUTPUT_INTDIR}/clang++)
   else()
     set(COMPILER_RT_TEST_COMPILER ${LLVM_RUNTIME_OUTPUT_INTDIR}/clang-cl.exe)
     set(COMPILER_RT_TEST_COMPILER_EXE "-Fe")
     set(COMPILER_RT_TEST_COMPILER_OBJ "-Fo")
+    set(COMPILER_RT_TEST_CXX_COMPILER ${LLVM_RUNTIME_OUTPUT_INTDIR}/clang++.exe)
   endif()
   set(COMPILER_RT_TEST_COMPILER_ID Clang)
 else()
@@ -89,6 +89,7 @@ else()
   set(COMPILER_RT_TEST_COMPILER_ID ${CMAKE_C_COMPILER_ID})
   set(COMPILER_RT_TEST_COMPILER_EXE "-o")
   set(COMPILER_RT_TEST_COMPILER_OBJ "-o")
+  set(COMPILER_RT_TEST_CXX_COMPILER ${CMAKE_CXX_COMPILER} CACHE PATH "C++ Compiler to use for testing")
 
   if (NOT LLVM_CONFIG_PATH)
     find_program(LLVM_CONFIG_PATH "llvm-config"
@@ -112,7 +113,7 @@ else()
 
   # Make use of LLVM CMake modules.
   file(TO_CMAKE_PATH ${LLVM_BINARY_DIR} LLVM_BINARY_DIR_CMAKE_STYLE)
-  set(LLVM_CMAKE_PATH "${LLVM_BINARY_DIR_CMAKE_STYLE}/share/llvm/cmake")
+  set(LLVM_CMAKE_PATH "${LLVM_BINARY_DIR_CMAKE_STYLE}/lib${LLVM_LIBDIR_SUFFIX}/cmake/llvm")
   list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_PATH}")
   # Get some LLVM variables from LLVMConfig.
   include("${LLVM_CMAKE_PATH}/LLVMConfig.cmake")
@@ -300,6 +301,8 @@ append_list_if(COMPILER_RT_HAS_WD4800_FLAG /wd4800 SANITIZER_COMMON_CFLAGS)
 if(APPLE AND SANITIZER_MIN_OSX_VERSION VERSION_LESS "10.9")
   # Mac OS X prior to 10.9 had problems with exporting symbols from
   # libc++/libc++abi.
+  set(SANITIZER_CAN_USE_CXXABI FALSE)
+elseif(MSVC)
   set(SANITIZER_CAN_USE_CXXABI FALSE)
 else()
   set(SANITIZER_CAN_USE_CXXABI TRUE)

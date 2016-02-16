@@ -748,6 +748,40 @@ void LiveRange::flushSegmentSet() {
   verify();
 }
 
+bool LiveRange::isLiveAtIndexes(ArrayRef<SlotIndex> Slots) const {
+  ArrayRef<SlotIndex>::iterator SlotI = Slots.begin();
+  ArrayRef<SlotIndex>::iterator SlotE = Slots.end();
+
+  // If there are no regmask slots, we have nothing to search.
+  if (SlotI == SlotE)
+    return false;
+
+  // Start our search at the first segment that ends after the first slot.
+  const_iterator SegmentI = find(*SlotI);
+  const_iterator SegmentE = end();
+
+  // If there are no segments that end after the first slot, we're done.
+  if (SegmentI == SegmentE)
+    return false;
+
+  // Look for each slot in the live range.
+  for ( ; SlotI != SlotE; ++SlotI) {
+    // Go to the next segment that ends after the current slot.
+    // The slot may be within a hole in the range.
+    SegmentI = advanceTo(SegmentI, *SlotI);
+    if (SegmentI == SegmentE)
+      return false;
+
+    // If this segment contains the slot, we're done.
+    if (SegmentI->contains(*SlotI))
+      return true;
+    // Otherwise, look for the next slot.
+  }
+
+  // We didn't find a segment containing any of the slots.
+  return false;
+}
+
 void LiveInterval::freeSubRange(SubRange *S) {
   S->~SubRange();
   // Memory was allocated with BumpPtr allocator and is not freed here.
@@ -1025,7 +1059,7 @@ raw_ostream& llvm::operator<<(raw_ostream& os, const LiveRange::Segment &S) {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-void LiveRange::Segment::dump() const {
+LLVM_DUMP_METHOD void LiveRange::Segment::dump() const {
   dbgs() << *this << "\n";
 }
 #endif
@@ -1070,11 +1104,11 @@ void LiveInterval::print(raw_ostream &OS) const {
 }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
-void LiveRange::dump() const {
+LLVM_DUMP_METHOD void LiveRange::dump() const {
   dbgs() << *this << "\n";
 }
 
-void LiveInterval::dump() const {
+LLVM_DUMP_METHOD void LiveInterval::dump() const {
   dbgs() << *this << "\n";
 }
 #endif
@@ -1172,8 +1206,7 @@ void LiveRangeUpdater::print(raw_ostream &OS) const {
   OS << '\n';
 }
 
-void LiveRangeUpdater::dump() const
-{
+LLVM_DUMP_METHOD void LiveRangeUpdater::dump() const {
   print(errs());
 }
 

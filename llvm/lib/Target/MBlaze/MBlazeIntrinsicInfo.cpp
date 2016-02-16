@@ -67,11 +67,6 @@ lookupName(const char *Name, unsigned Len) const {
   return 0;
 }
 
-unsigned MBlazeIntrinsicInfo::
-lookupGCCName(const char *Name) const {
-    return mblazeIntrinsic::getIntrinsicForGCCBuiltin("mblaze",Name);
-}
-
 bool MBlazeIntrinsicInfo::isOverloaded(unsigned IntrID) const {
   if (IntrID == 0)
     return false;

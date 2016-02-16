@@ -129,6 +129,8 @@ public:
   void setKeepPrivateExterns(bool v) { _keepPrivateExterns = v; }
   bool demangleSymbols() const { return _demangle; }
   void setDemangleSymbols(bool d) { _demangle = d; }
+  bool mergeObjCCategories() const { return _mergeObjCCategories; }
+  void setMergeObjCCategories(bool v) { _mergeObjCCategories = v; }
   /// Create file at specified path which will contain a binary encoding
   /// of all input and output file paths.
   std::error_code createDependencyFile(StringRef path);
@@ -147,6 +149,26 @@ public:
   const StringRefVector &sysLibRoots() const { return _syslibRoots; }
   bool PIE() const { return _pie; }
   void setPIE(bool pie) { _pie = pie; }
+  bool generateVersionLoadCommand() const {
+    return _generateVersionLoadCommand;
+  }
+  void setGenerateVersionLoadCommand(bool v) {
+    _generateVersionLoadCommand = v;
+  }
+
+  bool generateFunctionStartsLoadCommand() const {
+    return _generateFunctionStartsLoadCommand;
+  }
+  void setGenerateFunctionStartsLoadCommand(bool v) {
+    _generateFunctionStartsLoadCommand = v;
+  }
+
+  bool generateDataInCodeLoadCommand() const {
+    return _generateDataInCodeLoadCommand;
+  }
+  void setGenerateDataInCodeLoadCommand(bool v) {
+    _generateDataInCodeLoadCommand = v;
+  }
 
   uint64_t stackSize() const { return _stackSize; }
   void setStackSize(uint64_t stackSize) { _stackSize = stackSize; }
@@ -155,6 +177,14 @@ public:
   void setBaseAddress(uint64_t baseAddress) { _baseAddress = baseAddress; }
 
   ObjCConstraint objcConstraint() const { return _objcConstraint; }
+
+  uint32_t osMinVersion() const { return _osMinVersion; }
+
+  uint32_t sdkVersion() const { return _sdkVersion; }
+  void setSdkVersion(uint64_t v) { _sdkVersion = v; }
+
+  uint64_t sourceVersion() const { return _sourceVersion; }
+  void setSourceVersion(uint64_t v) { _sourceVersion = v; }
 
   uint32_t swiftVersion() const { return _swiftVersion; }
 
@@ -358,6 +388,10 @@ public:
   /// bits are xxxx.yy.zz.  Largest number is 65535.255.255
   static bool parsePackedVersion(StringRef str, uint32_t &result);
 
+  /// Construct 64-bit value from string "A.B.C.D.E" where
+  /// bits are aaaa.bb.cc.dd.ee.  Largest number is 16777215.1023.1023.1023.1023
+  static bool parsePackedVersion(StringRef str, uint64_t &result);
+
   void finalizeInputFiles() override;
 
   std::error_code handleLoadedFile(File &file) override;
@@ -410,6 +444,8 @@ private:
   Arch _arch;
   OS _os;
   uint32_t _osMinVersion;
+  uint32_t _sdkVersion = 0;
+  uint64_t _sourceVersion = 0;
   uint64_t _pageZeroSize;
   uint64_t _pageSize;
   uint64_t _baseAddress;
@@ -427,6 +463,10 @@ private:
   bool _testingFileUsage;
   bool _keepPrivateExterns;
   bool _demangle;
+  bool _mergeObjCCategories = true;
+  bool _generateVersionLoadCommand = false;
+  bool _generateFunctionStartsLoadCommand = false;
+  bool _generateDataInCodeLoadCommand = false;
   StringRef _bundleLoader;
   mutable std::unique_ptr<mach_o::ArchHandler> _archHandler;
   mutable std::unique_ptr<Writer> _writer;

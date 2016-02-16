@@ -337,6 +337,11 @@ void MultiplexConsumer::CompleteTentativeDefinition(VarDecl *D) {
     Consumer->CompleteTentativeDefinition(D);
 }
 
+void MultiplexConsumer::AssignInheritanceModel(CXXRecordDecl *RD) {
+  for (auto &Consumer : Consumers)
+    Consumer->AssignInheritanceModel(RD);
+}
+
 void MultiplexConsumer::HandleVTable(CXXRecordDecl *RD) {
   for (auto &Consumer : Consumers)
     Consumer->HandleVTable(RD);
@@ -353,6 +358,13 @@ ASTDeserializationListener *MultiplexConsumer::GetASTDeserializationListener() {
 void MultiplexConsumer::PrintStats() {
   for (auto &Consumer : Consumers)
     Consumer->PrintStats();
+}
+
+bool MultiplexConsumer::shouldSkipFunctionBody(Decl *D) {
+  bool Skip = true;
+  for (auto &Consumer : Consumers)
+    Skip = Skip && Consumer->shouldSkipFunctionBody(D);
+  return Skip;
 }
 
 void MultiplexConsumer::InitializeSema(Sema &S) {

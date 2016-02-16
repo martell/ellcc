@@ -156,9 +156,12 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$use_autoconf" = "no" ]; then
-  # See llvm.org/PR26146.
-  echo Skipping test-suite when using CMake.
-  do_test_suite="no"
+  if [ "$do_test_suite" = "yes" ]; then
+    # See llvm.org/PR26146.
+    echo Skipping test-suite build when using CMake.
+    echo It will still be exported.
+    do_test_suite="export-only"
+  fi
 fi
 
 # Check required arguments.
@@ -203,9 +206,11 @@ if [ $do_libs = "yes" ]; then
     projects="$projects libunwind"
   fi
 fi
-if [ $do_test_suite = "yes" ]; then
-  projects="$projects test-suite"
-fi
+case $do_test_suite in
+  yes|export-only)
+    projects="$projects test-suite"
+    ;;
+esac
 if [ $do_openmp = "yes" ]; then
   projects="$projects openmp"
 fi
@@ -278,8 +283,15 @@ function export_sources() {
         clang-tools-extra)
             projsrc=llvm.src/tools/clang/tools/extra
             ;;
-        compiler-rt|libcxx|libcxxabi|libunwind|openmp|test-suite)
+        compiler-rt|libcxx|libcxxabi|libunwind|openmp)
             projsrc=llvm.src/projects/$proj
+            ;;
+        test-suite)
+            if [ $do_test_suite = 'yes' ]; then
+              projsrc=llvm.src/projects/$proj
+            else
+              projsrc=$proj.src
+            fi
             ;;
         *)
             echo "error: unknown project $proj"
@@ -541,8 +553,9 @@ for Flavor in $Flavors ; do
             # Substitute 'Phase2' for 'Phase3' in the Phase 2 object file in
             # case there are build paths in the debug info. On some systems,
             # sed adds a newline to the output, so pass $p3 through sed too.
-            if ! cmp -s <(sed -e 's,Phase2,Phase3,g' $p2) <(sed -e '' $p3) \
-                    16 16 ; then
+            if ! cmp -s \
+                <(env LC_CTYPE=C sed -e 's,Phase2,Phase3,g' $p2) \
+                <(env LC_CTYPE=C sed -e '' $p3) 16 16; then
                 echo "file `basename $p2` differs between phase 2 and phase 3"
             fi
         done

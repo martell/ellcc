@@ -209,11 +209,15 @@ Parser::ParseSingleDeclarationAfterTemplate(
   if (Tok.is(tok::semi)) {
     ProhibitAttributes(prefixAttrs);
     DeclEnd = ConsumeToken();
+    RecordDecl *AnonRecord = nullptr;
     Decl *Decl = Actions.ParsedFreeStandingDeclSpec(
         getCurScope(), AS, DS,
         TemplateInfo.TemplateParams ? *TemplateInfo.TemplateParams
                                     : MultiTemplateParamsArg(),
-        TemplateInfo.Kind == ParsedTemplateInfo::ExplicitInstantiation);
+        TemplateInfo.Kind == ParsedTemplateInfo::ExplicitInstantiation,
+        AnonRecord);
+    assert(!AnonRecord &&
+           "Anonymous unions/structs should not be valid with template");
     DS.complete(Decl);
     return Decl;
   }
@@ -827,6 +831,7 @@ bool Parser::ParseGreaterThanInTemplateList(SourceLocation &RAngleLoc,
   }
 
   // Strip the initial '>' from the token.
+  Token PrevTok = Tok;
   if (RemainingToken == tok::equal && Next.is(tok::equal) &&
       areTokensAdjacent(Tok, Next)) {
     // Join two adjacent '=' tokens into one, for cases like:
@@ -842,6 +847,21 @@ bool Parser::ParseGreaterThanInTemplateList(SourceLocation &RAngleLoc,
   Tok.setLocation(Lexer::AdvanceToTokenCharacter(RAngleLoc, 1,
                                                  PP.getSourceManager(),
                                                  getLangOpts()));
+
+  // The advance from '>>' to '>' in a ObjectiveC template argument list needs
+  // to be properly reflected in the token cache to allow correct interaction
+  // between annotation and backtracking.
+  if (ObjCGenericList && PrevTok.getKind() == tok::greatergreater &&
+      RemainingToken == tok::greater && PP.IsPreviousCachedToken(PrevTok)) {
+    PrevTok.setKind(RemainingToken);
+    PrevTok.setLength(1);
+    // Break tok::greatergreater into two tok::greater but only add the second
+    // one in case the client asks to consume the last token.
+    if (ConsumeLastToken)
+      PP.ReplacePreviousCachedToken({PrevTok, Tok});
+    else
+      PP.ReplacePreviousCachedToken({PrevTok});
+  }
 
   if (!ConsumeLastToken) {
     // Since we're not supposed to consume the '>' token, we need to push
@@ -1349,7 +1369,7 @@ void Parser::ParseLateTemplatedFuncDef(LateParsedTemplate &LPT) {
   // Append the current token at the end of the new token stream so that it
   // doesn't get lost.
   LPT.Toks.push_back(Tok);
-  PP.EnterTokenStream(LPT.Toks.data(), LPT.Toks.size(), true, false);
+  PP.EnterTokenStream(LPT.Toks, true);
 
   // Consume the previously pushed token.
   ConsumeAnyToken(/*ConsumeCodeCompletionTok=*/true);

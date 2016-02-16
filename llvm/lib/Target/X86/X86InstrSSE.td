@@ -649,6 +649,8 @@ let Predicates = [UseAVX] in {
   def : Pat<(v4f64 (X86vzmovl (insert_subvector undef,
                    (v2f64 (scalar_to_vector (loadf64 addr:$src))), (iPTR 0)))),
             (SUBREG_TO_REG (i32 0), (VMOVSDrm addr:$src), sub_xmm)>;
+  def : Pat<(v4f64 (X86vzload addr:$src)),
+            (SUBREG_TO_REG (i32 0), (VMOVSDrm addr:$src), sub_xmm)>;
   }
 
   // Extract and store.
@@ -3760,6 +3762,8 @@ def PAUSE : I<0x90, RawFrm, (outs), (ins),
 
 let SchedRW = [WriteFence] in {
 // Load, store, and memory fence
+// TODO: As with mfence, we may want to ease the availablity of sfence/lfence
+// to include any 64-bit target.
 def SFENCE : I<0xAE, MRM_F8, (outs), (ins),
                "sfence", [(int_x86_sse_sfence)], IIC_SSE_SFENCE>,
                PS, Requires<[HasSSE1]>;
@@ -3768,7 +3772,7 @@ def LFENCE : I<0xAE, MRM_E8, (outs), (ins),
                TB, Requires<[HasSSE2]>;
 def MFENCE : I<0xAE, MRM_F0, (outs), (ins),
                "mfence", [(int_x86_sse2_mfence)], IIC_SSE_MFENCE>,
-               TB, Requires<[HasSSE2]>;
+               TB, Requires<[HasMFence]>;
 } // SchedRW
 
 def : Pat<(X86SFence), (SFENCE)>;
@@ -5058,19 +5062,14 @@ let Predicates = [UseAVX], AddedComplexity = 20 in {
   def : Pat<(v4i64 (X86vzmovl (insert_subvector undef,
               (v2i64 (scalar_to_vector (loadi64 addr:$src))), (iPTR 0)))),
             (SUBREG_TO_REG (i64 0), (VMOVZQI2PQIrm addr:$src), sub_xmm)>;
+  def : Pat<(v4i64 (X86vzload addr:$src)),
+            (SUBREG_TO_REG (i64 0), (VMOVZQI2PQIrm addr:$src), sub_xmm)>;
 }
 
 let Predicates = [UseSSE2], AddedComplexity = 20 in {
   def : Pat<(v2i64 (X86vzmovl (bc_v2i64 (loadv4f32 addr:$src)))),
             (MOVZQI2PQIrm addr:$src)>;
   def : Pat<(v2i64 (X86vzload addr:$src)), (MOVZQI2PQIrm addr:$src)>;
-}
-
-let Predicates = [HasAVX] in {
-def : Pat<(v4i64 (alignedX86vzload addr:$src)),
-          (SUBREG_TO_REG (i32 0), (VMOVAPSrm addr:$src), sub_xmm)>;
-def : Pat<(v4i64 (X86vzload addr:$src)),
-          (SUBREG_TO_REG (i32 0), (VMOVUPSrm addr:$src), sub_xmm)>;
 }
 
 //===---------------------------------------------------------------------===//
@@ -5890,45 +5889,48 @@ multiclass SS41I_pmovx_rrrm<bits<8> opc, string OpcodeStr, X86MemOperand MemOp,
 multiclass SS41I_pmovx_rm_all<bits<8> opc, string OpcodeStr,
                           X86MemOperand MemOp, X86MemOperand MemYOp,
                           OpndItins SSEItins, OpndItins AVXItins,
-                          OpndItins AVX2Itins> {
+                          OpndItins AVX2Itins, Predicate prd> {
   defm NAME : SS41I_pmovx_rrrm<opc, OpcodeStr, MemOp, VR128, VR128, SSEItins>;
-  let Predicates = [HasAVX, NoVLX] in
+  let Predicates = [HasAVX, prd] in
     defm V#NAME   : SS41I_pmovx_rrrm<opc, !strconcat("v", OpcodeStr), MemOp,
                                      VR128, VR128, AVXItins>, VEX;
-  let Predicates = [HasAVX2, NoVLX] in
+  let Predicates = [HasAVX2, prd] in
     defm V#NAME#Y : SS41I_pmovx_rrrm<opc, !strconcat("v", OpcodeStr), MemYOp,
                                      VR256, VR128, AVX2Itins>, VEX, VEX_L;
 }
 
-multiclass SS41I_pmovx_rm<bits<8> opc, string OpcodeStr,
-                                X86MemOperand MemOp, X86MemOperand MemYOp> {
+multiclass SS41I_pmovx_rm<bits<8> opc, string OpcodeStr, X86MemOperand MemOp, 
+                          X86MemOperand MemYOp, Predicate prd> {
   defm PMOVSX#NAME : SS41I_pmovx_rm_all<opc, !strconcat("pmovsx", OpcodeStr),
                                         MemOp, MemYOp,
                                         SSE_INTALU_ITINS_SHUFF_P,
                                         DEFAULT_ITINS_SHUFFLESCHED,
-                                        DEFAULT_ITINS_SHUFFLESCHED>;
+                                        DEFAULT_ITINS_SHUFFLESCHED, prd>;
   defm PMOVZX#NAME : SS41I_pmovx_rm_all<!add(opc, 0x10),
                                         !strconcat("pmovzx", OpcodeStr),
                                         MemOp, MemYOp,
                                         SSE_INTALU_ITINS_SHUFF_P,
                                         DEFAULT_ITINS_SHUFFLESCHED,
-                                        DEFAULT_ITINS_SHUFFLESCHED>;
+                                        DEFAULT_ITINS_SHUFFLESCHED, prd>;
 }
 
-defm BW : SS41I_pmovx_rm<0x20, "bw", i64mem, i128mem>;
-defm WD : SS41I_pmovx_rm<0x23, "wd", i64mem, i128mem>;
-defm DQ : SS41I_pmovx_rm<0x25, "dq", i64mem, i128mem>;
+defm BW : SS41I_pmovx_rm<0x20, "bw", i64mem, i128mem, NoVLX_Or_NoBWI>;
+defm WD : SS41I_pmovx_rm<0x23, "wd", i64mem, i128mem, NoVLX>;
+defm DQ : SS41I_pmovx_rm<0x25, "dq", i64mem, i128mem, NoVLX>;
 
-defm BD : SS41I_pmovx_rm<0x21, "bd", i32mem, i64mem>;
-defm WQ : SS41I_pmovx_rm<0x24, "wq", i32mem, i64mem>;
+defm BD : SS41I_pmovx_rm<0x21, "bd", i32mem, i64mem, NoVLX>;
+defm WQ : SS41I_pmovx_rm<0x24, "wq", i32mem, i64mem, NoVLX>;
 
-defm BQ : SS41I_pmovx_rm<0x22, "bq", i16mem, i32mem>;
+defm BQ : SS41I_pmovx_rm<0x22, "bq", i16mem, i32mem, NoVLX>;
 
 // AVX2 Patterns
 multiclass SS41I_pmovx_avx2_patterns<string OpcPrefix, string ExtTy, SDNode ExtOp> {
   // Register-Register patterns
+  let Predicates = [HasAVX, NoVLX_Or_NoBWI] in {
   def : Pat<(v16i16 (ExtOp (v16i8 VR128:$src))),
             (!cast<I>(OpcPrefix#BWYrr) VR128:$src)>;
+  }
+  let Predicates = [HasAVX, NoVLX] in {
   def : Pat<(v8i32 (ExtOp (v16i8 VR128:$src))),
             (!cast<I>(OpcPrefix#BDYrr) VR128:$src)>;
   def : Pat<(v4i64 (ExtOp (v16i8 VR128:$src))),
@@ -5941,10 +5943,13 @@ multiclass SS41I_pmovx_avx2_patterns<string OpcPrefix, string ExtTy, SDNode ExtO
 
   def : Pat<(v4i64 (ExtOp (v4i32 VR128:$src))),
             (!cast<I>(OpcPrefix#DQYrr) VR128:$src)>;
-
+  }
   // On AVX2, we also support 256bit inputs.
+  let Predicates = [HasAVX, NoVLX_Or_NoBWI] in {
   def : Pat<(v16i16 (ExtOp (v32i8 VR256:$src))),
             (!cast<I>(OpcPrefix#BWYrr) (EXTRACT_SUBREG VR256:$src, sub_xmm))>;
+  }
+  let Predicates = [HasAVX, NoVLX] in {
   def : Pat<(v8i32 (ExtOp (v32i8 VR256:$src))),
             (!cast<I>(OpcPrefix#BDYrr) (EXTRACT_SUBREG VR256:$src, sub_xmm))>;
   def : Pat<(v4i64 (ExtOp (v32i8 VR256:$src))),
@@ -5957,10 +5962,14 @@ multiclass SS41I_pmovx_avx2_patterns<string OpcPrefix, string ExtTy, SDNode ExtO
 
   def : Pat<(v4i64 (ExtOp (v8i32 VR256:$src))),
             (!cast<I>(OpcPrefix#DQYrr) (EXTRACT_SUBREG VR256:$src, sub_xmm))>;
+  }
 
   // Simple Register-Memory patterns
+  let Predicates = [HasAVX, NoVLX_Or_NoBWI] in {
   def : Pat<(v16i16 (!cast<PatFrag>(ExtTy#"extloadvi8") addr:$src)),
             (!cast<I>(OpcPrefix#BWYrm) addr:$src)>;
+  }
+  let Predicates = [HasAVX, NoVLX] in {
   def : Pat<(v8i32 (!cast<PatFrag>(ExtTy#"extloadvi8") addr:$src)),
             (!cast<I>(OpcPrefix#BDYrm) addr:$src)>;
   def : Pat<(v4i64 (!cast<PatFrag>(ExtTy#"extloadvi8") addr:$src)),
@@ -5973,8 +5982,10 @@ multiclass SS41I_pmovx_avx2_patterns<string OpcPrefix, string ExtTy, SDNode ExtO
 
   def : Pat<(v4i64 (!cast<PatFrag>(ExtTy#"extloadvi32") addr:$src)),
             (!cast<I>(OpcPrefix#DQYrm) addr:$src)>;
-
+  }
+  
   // AVX2 Register-Memory patterns
+  let Predicates = [HasAVX, NoVLX_Or_NoBWI] in {  
   def : Pat<(v16i16 (ExtOp (bc_v16i8 (loadv2i64 addr:$src)))),
             (!cast<I>(OpcPrefix#BWYrm) addr:$src)>;
   def : Pat<(v16i16 (ExtOp (v16i8 (vzmovl_v2i64 addr:$src)))),
@@ -5983,7 +5994,8 @@ multiclass SS41I_pmovx_avx2_patterns<string OpcPrefix, string ExtTy, SDNode ExtO
             (!cast<I>(OpcPrefix#BWYrm) addr:$src)>;
   def : Pat<(v16i16 (ExtOp (bc_v16i8 (loadv2i64 addr:$src)))),
             (!cast<I>(OpcPrefix#BWYrm) addr:$src)>;
-
+  }
+  let Predicates = [HasAVX, NoVLX] in {
   def : Pat<(v8i32 (ExtOp (bc_v16i8 (v2i64 (scalar_to_vector (loadi64 addr:$src)))))),
             (!cast<I>(OpcPrefix#BDYrm) addr:$src)>;
   def : Pat<(v8i32 (ExtOp (v16i8 (vzmovl_v2i64 addr:$src)))),
@@ -6028,18 +6040,20 @@ multiclass SS41I_pmovx_avx2_patterns<string OpcPrefix, string ExtTy, SDNode ExtO
             (!cast<I>(OpcPrefix#DQYrm) addr:$src)>;
   def : Pat<(v4i64 (ExtOp (bc_v4i32 (loadv2i64 addr:$src)))),
             (!cast<I>(OpcPrefix#DQYrm) addr:$src)>;
+  }
 }
 
-let Predicates = [HasAVX2, NoVLX] in {
-  defm : SS41I_pmovx_avx2_patterns<"VPMOVSX", "s", X86vsext>;
-  defm : SS41I_pmovx_avx2_patterns<"VPMOVZX", "z", X86vzext>;
-}
+defm : SS41I_pmovx_avx2_patterns<"VPMOVSX", "s", X86vsext>;
+defm : SS41I_pmovx_avx2_patterns<"VPMOVZX", "z", X86vzext>;
 
 // SSE4.1/AVX patterns.
 multiclass SS41I_pmovx_patterns<string OpcPrefix, string ExtTy,
                                 SDNode ExtOp, PatFrag ExtLoad16> {
+  let Predicates = [HasAVX, NoVLX_Or_NoBWI] in {
   def : Pat<(v8i16 (ExtOp (v16i8 VR128:$src))),
             (!cast<I>(OpcPrefix#BWrr) VR128:$src)>;
+  }
+  let Predicates = [HasAVX, NoVLX] in {
   def : Pat<(v4i32 (ExtOp (v16i8 VR128:$src))),
             (!cast<I>(OpcPrefix#BDrr) VR128:$src)>;
   def : Pat<(v2i64 (ExtOp (v16i8 VR128:$src))),
@@ -6052,9 +6066,12 @@ multiclass SS41I_pmovx_patterns<string OpcPrefix, string ExtTy,
 
   def : Pat<(v2i64 (ExtOp (v4i32 VR128:$src))),
             (!cast<I>(OpcPrefix#DQrr) VR128:$src)>;
-
+  }
+  let Predicates = [HasAVX, NoVLX_Or_NoBWI] in {
   def : Pat<(v8i16 (!cast<PatFrag>(ExtTy#"extloadvi8") addr:$src)),
             (!cast<I>(OpcPrefix#BWrm) addr:$src)>;
+  }
+  let Predicates = [HasAVX, NoVLX] in {
   def : Pat<(v4i32 (!cast<PatFrag>(ExtTy#"extloadvi8") addr:$src)),
             (!cast<I>(OpcPrefix#BDrm) addr:$src)>;
   def : Pat<(v2i64 (!cast<PatFrag>(ExtTy#"extloadvi8") addr:$src)),
@@ -6067,7 +6084,8 @@ multiclass SS41I_pmovx_patterns<string OpcPrefix, string ExtTy,
 
   def : Pat<(v2i64 (!cast<PatFrag>(ExtTy#"extloadvi32") addr:$src)),
             (!cast<I>(OpcPrefix#DQrm) addr:$src)>;
-
+  }
+  let Predicates = [HasAVX, NoVLX_Or_NoBWI] in {
   def : Pat<(v8i16 (ExtOp (bc_v16i8 (v2i64 (scalar_to_vector (loadi64 addr:$src)))))),
             (!cast<I>(OpcPrefix#BWrm) addr:$src)>;
   def : Pat<(v8i16 (ExtOp (bc_v16i8 (v2f64 (scalar_to_vector (loadf64 addr:$src)))))),
@@ -6078,7 +6096,8 @@ multiclass SS41I_pmovx_patterns<string OpcPrefix, string ExtTy,
             (!cast<I>(OpcPrefix#BWrm) addr:$src)>;
   def : Pat<(v8i16 (ExtOp (bc_v16i8 (loadv2i64 addr:$src)))),
             (!cast<I>(OpcPrefix#BWrm) addr:$src)>;
-
+  }
+  let Predicates = [HasAVX, NoVLX] in {
   def : Pat<(v4i32 (ExtOp (bc_v16i8 (v4i32 (scalar_to_vector (loadi32 addr:$src)))))),
             (!cast<I>(OpcPrefix#BDrm) addr:$src)>;
   def : Pat<(v4i32 (ExtOp (v16i8 (vzmovl_v4i32 addr:$src)))),
@@ -6127,12 +6146,11 @@ multiclass SS41I_pmovx_patterns<string OpcPrefix, string ExtTy,
             (!cast<I>(OpcPrefix#DQrm) addr:$src)>;
   def : Pat<(v2i64 (ExtOp (bc_v4i32 (loadv2i64 addr:$src)))),
             (!cast<I>(OpcPrefix#DQrm) addr:$src)>;
+  }
 }
 
-let Predicates = [HasAVX, NoVLX] in {
-  defm : SS41I_pmovx_patterns<"VPMOVSX", "s", X86vsext, extloadi32i16>;
-  defm : SS41I_pmovx_patterns<"VPMOVZX", "z", X86vzext, loadi16_anyext>;
-}
+defm : SS41I_pmovx_patterns<"VPMOVSX", "s", X86vsext, extloadi32i16>;
+defm : SS41I_pmovx_patterns<"VPMOVZX", "z", X86vzext, loadi16_anyext>;
 
 let Predicates = [UseSSE41] in {
   defm : SS41I_pmovx_patterns<"PMOVSX", "s", X86vsext, extloadi32i16>;
@@ -8277,9 +8295,14 @@ let Predicates = [HasF16C] in {
 
 // Patterns for  matching conversions from float to half-float and vice versa.
 let Predicates = [HasF16C] in {
+  // Use MXCSR.RC for rounding instead of explicitly specifying the default
+  // rounding mode (Nearest-Even, encoded as 0). Both are equivalent in the
+  // configurations we support (the default). However, falling back to MXCSR is
+  // more consistent with other instructions, which are always controlled by it.
+  // It's encoded as 0b100.
   def : Pat<(fp_to_f16 FR32:$src),
             (i16 (EXTRACT_SUBREG (VMOVPDI2DIrr (VCVTPS2PHrr
-              (COPY_TO_REGCLASS FR32:$src, VR128), 0)), sub_16bit))>;
+              (COPY_TO_REGCLASS FR32:$src, VR128), 4)), sub_16bit))>;
 
   def : Pat<(f16_to_fp GR16:$src),
             (f32 (COPY_TO_REGCLASS (VCVTPH2PSrr
@@ -8287,7 +8310,7 @@ let Predicates = [HasF16C] in {
 
   def : Pat<(f16_to_fp (i16 (fp_to_f16 FR32:$src))),
             (f32 (COPY_TO_REGCLASS (VCVTPH2PSrr
-              (VCVTPS2PHrr (COPY_TO_REGCLASS FR32:$src, VR128), 0)), FR32)) >;
+              (VCVTPS2PHrr (COPY_TO_REGCLASS FR32:$src, VR128), 4)), FR32)) >;
 }
 
 //===----------------------------------------------------------------------===//
@@ -8389,48 +8412,51 @@ let Predicates = [HasAVX2] in {
             (VBROADCASTSDYrr (v2f64 (EXTRACT_SUBREG (v4f64 VR256:$src),
                                                     sub_xmm)))>;
 
-  // Provide fallback in case the load node that is used in the patterns above
-  // is used by additional users, which prevents the pattern selection.
+// Provide fallback in case the load node that is used in the patterns above
+// is used by additional users, which prevents the pattern selection.
   let AddedComplexity = 20 in {
-    def : Pat<(v4f32 (X86VBroadcast FR32:$src)),
-              (VBROADCASTSSrr (COPY_TO_REGCLASS FR32:$src, VR128))>;
-    def : Pat<(v8f32 (X86VBroadcast FR32:$src)),
-              (VBROADCASTSSYrr (COPY_TO_REGCLASS FR32:$src, VR128))>;
-    def : Pat<(v4f64 (X86VBroadcast FR64:$src)),
-              (VBROADCASTSDYrr (COPY_TO_REGCLASS FR64:$src, VR128))>;
-
-    def : Pat<(v4i32 (X86VBroadcast GR32:$src)),
-              (VBROADCASTSSrr (COPY_TO_REGCLASS GR32:$src, VR128))>;
-    def : Pat<(v8i32 (X86VBroadcast GR32:$src)),
-              (VBROADCASTSSYrr (COPY_TO_REGCLASS GR32:$src, VR128))>;
-    def : Pat<(v4i64 (X86VBroadcast GR64:$src)),
-              (VBROADCASTSDYrr (COPY_TO_REGCLASS GR64:$src, VR128))>;
-
-    def : Pat<(v16i8 (X86VBroadcast GR8:$src)),
-          (VPBROADCASTBrr (COPY_TO_REGCLASS
-                           (i32 (SUBREG_TO_REG (i32 0), GR8:$src, sub_8bit)),
-                           VR128))>;
-    def : Pat<(v32i8 (X86VBroadcast GR8:$src)),
-          (VPBROADCASTBYrr (COPY_TO_REGCLASS
-                            (i32 (SUBREG_TO_REG (i32 0), GR8:$src, sub_8bit)),
-                            VR128))>;
-
-    def : Pat<(v8i16 (X86VBroadcast GR16:$src)),
-          (VPBROADCASTWrr (COPY_TO_REGCLASS
-                           (i32 (SUBREG_TO_REG (i32 0), GR16:$src, sub_16bit)),
-                           VR128))>;
-    def : Pat<(v16i16 (X86VBroadcast GR16:$src)),
-          (VPBROADCASTWYrr (COPY_TO_REGCLASS
-                            (i32 (SUBREG_TO_REG (i32 0), GR16:$src, sub_16bit)),
-                            VR128))>;
-
-    // The patterns for VPBROADCASTD are not needed because they would match
-    // the exact same thing as VBROADCASTSS patterns.
-
-    def : Pat<(v2i64 (X86VBroadcast GR64:$src)),
-          (VPBROADCASTQrr (COPY_TO_REGCLASS GR64:$src, VR128))>;
-    // The v4i64 pattern is not needed because VBROADCASTSDYrr already match.
+  def : Pat<(v4f32 (X86VBroadcast FR32:$src)),
+            (VBROADCASTSSrr (COPY_TO_REGCLASS FR32:$src, VR128))>;
+  def : Pat<(v8f32 (X86VBroadcast FR32:$src)),
+            (VBROADCASTSSYrr (COPY_TO_REGCLASS FR32:$src, VR128))>;
+  def : Pat<(v4f64 (X86VBroadcast FR64:$src)),
+            (VBROADCASTSDYrr (COPY_TO_REGCLASS FR64:$src, VR128))>;
   }
+}
+
+let Predicates = [HasAVX2, NoVLX_Or_NoBWI], AddedComplexity = 20 in {
+  def : Pat<(v16i8 (X86VBroadcast GR8:$src)),
+        (VPBROADCASTBrr (COPY_TO_REGCLASS
+                         (i32 (SUBREG_TO_REG (i32 0), GR8:$src, sub_8bit)),
+                         VR128))>;
+  def : Pat<(v32i8 (X86VBroadcast GR8:$src)),
+        (VPBROADCASTBYrr (COPY_TO_REGCLASS
+                          (i32 (SUBREG_TO_REG (i32 0), GR8:$src, sub_8bit)),
+                          VR128))>;
+
+  def : Pat<(v8i16 (X86VBroadcast GR16:$src)),
+        (VPBROADCASTWrr (COPY_TO_REGCLASS
+                         (i32 (SUBREG_TO_REG (i32 0), GR16:$src, sub_16bit)),
+                         VR128))>;
+  def : Pat<(v16i16 (X86VBroadcast GR16:$src)),
+        (VPBROADCASTWYrr (COPY_TO_REGCLASS
+                          (i32 (SUBREG_TO_REG (i32 0), GR16:$src, sub_16bit)),
+                          VR128))>;  
+}
+let Predicates = [HasAVX2, NoVLX], AddedComplexity = 20 in {
+  def : Pat<(v4i32 (X86VBroadcast GR32:$src)),
+            (VBROADCASTSSrr (COPY_TO_REGCLASS GR32:$src, VR128))>;
+  def : Pat<(v8i32 (X86VBroadcast GR32:$src)),
+            (VBROADCASTSSYrr (COPY_TO_REGCLASS GR32:$src, VR128))>;
+  def : Pat<(v4i64 (X86VBroadcast GR64:$src)),
+            (VBROADCASTSDYrr (COPY_TO_REGCLASS GR64:$src, VR128))>;
+
+  // The patterns for VPBROADCASTD are not needed because they would match
+  // the exact same thing as VBROADCASTSS patterns.
+
+  def : Pat<(v2i64 (X86VBroadcast GR64:$src)),
+        (VPBROADCASTQrr (COPY_TO_REGCLASS GR64:$src, VR128))>;
+  // The v4i64 pattern is not needed because VBROADCASTSDYrr already match.
 }
 
 // AVX1 broadcast patterns
@@ -8443,10 +8469,9 @@ def : Pat<(v4i32 (X86VBroadcast (loadi32 addr:$src))),
           (VBROADCASTSSrm addr:$src)>;
 }
 
-let Predicates = [HasAVX] in {
   // Provide fallback in case the load node that is used in the patterns above
   // is used by additional users, which prevents the pattern selection.
-  let AddedComplexity = 20 in {
+let Predicates = [HasAVX], AddedComplexity = 20 in {
   // 128bit broadcasts:
   def : Pat<(v4f32 (X86VBroadcast FR32:$src)),
             (VPSHUFDri (COPY_TO_REGCLASS FR32:$src, VR128), 0)>;
@@ -8459,6 +8484,11 @@ let Predicates = [HasAVX] in {
               (VPSHUFDri (COPY_TO_REGCLASS FR64:$src, VR128), 0x44), sub_xmm),
               (VPSHUFDri (COPY_TO_REGCLASS FR64:$src, VR128), 0x44), 1)>;
 
+  def : Pat<(v2f64 (X86VBroadcast f64:$src)),
+            (VMOVDDUPrr (COPY_TO_REGCLASS FR64:$src, VR128))>;  
+}
+
+let Predicates = [HasAVX, NoVLX], AddedComplexity = 20 in {
   def : Pat<(v4i32 (X86VBroadcast GR32:$src)),
             (VPSHUFDri (COPY_TO_REGCLASS GR32:$src, VR128), 0)>;
   def : Pat<(v8i32 (X86VBroadcast GR32:$src)),
@@ -8469,12 +8499,9 @@ let Predicates = [HasAVX] in {
             (VINSERTF128rr (INSERT_SUBREG (v4i64 (IMPLICIT_DEF)),
               (VPSHUFDri (COPY_TO_REGCLASS GR64:$src, VR128), 0x44), sub_xmm),
               (VPSHUFDri (COPY_TO_REGCLASS GR64:$src, VR128), 0x44), 1)>;
-  }
-
-  def : Pat<(v2f64 (X86VBroadcast f64:$src)),
-            (VMOVDDUPrr (COPY_TO_REGCLASS FR64:$src, VR128))>;
+  
   def : Pat<(v2i64 (X86VBroadcast i64:$src)),
-            (VMOVDDUPrr (COPY_TO_REGCLASS GR64:$src, VR128))>;
+              (VMOVDDUPrr (COPY_TO_REGCLASS GR64:$src, VR128))>;
 }
 
 //===----------------------------------------------------------------------===//

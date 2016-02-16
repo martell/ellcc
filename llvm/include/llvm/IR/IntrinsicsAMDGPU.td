@@ -17,25 +17,21 @@ class AMDGPUReadPreloadRegisterIntrinsic<string name>
 
 let TargetPrefix = "r600" in {
 
-class R600ReadPreloadRegisterIntrinsic<string name>
-  : Intrinsic<[llvm_i32_ty], [], [IntrNoMem]>,
-    GCCBuiltin<name>;
-
-multiclass R600ReadPreloadRegisterIntrinsic_xyz<string prefix> {
-  def _x : R600ReadPreloadRegisterIntrinsic<!strconcat(prefix, "_x")>;
-  def _y : R600ReadPreloadRegisterIntrinsic<!strconcat(prefix, "_y")>;
-  def _z : R600ReadPreloadRegisterIntrinsic<!strconcat(prefix, "_z")>;
+multiclass AMDGPUReadPreloadRegisterIntrinsic_xyz<string prefix> {
+  def _x : AMDGPUReadPreloadRegisterIntrinsic<!strconcat(prefix, "_x")>;
+  def _y : AMDGPUReadPreloadRegisterIntrinsic<!strconcat(prefix, "_y")>;
+  def _z : AMDGPUReadPreloadRegisterIntrinsic<!strconcat(prefix, "_z")>;
 }
 
-defm int_r600_read_global_size : R600ReadPreloadRegisterIntrinsic_xyz <
+defm int_r600_read_global_size : AMDGPUReadPreloadRegisterIntrinsic_xyz <
                                        "__builtin_r600_read_global_size">;
-defm int_r600_read_local_size : R600ReadPreloadRegisterIntrinsic_xyz <
+defm int_r600_read_local_size : AMDGPUReadPreloadRegisterIntrinsic_xyz <
                                        "__builtin_r600_read_local_size">;
-defm int_r600_read_ngroups : R600ReadPreloadRegisterIntrinsic_xyz <
+defm int_r600_read_ngroups : AMDGPUReadPreloadRegisterIntrinsic_xyz <
                                        "__builtin_r600_read_ngroups">;
-defm int_r600_read_tgid : R600ReadPreloadRegisterIntrinsic_xyz <
+defm int_r600_read_tgid : AMDGPUReadPreloadRegisterIntrinsic_xyz <
                                        "__builtin_r600_read_tgid">;
-defm int_r600_read_tidig : R600ReadPreloadRegisterIntrinsic_xyz <
+defm int_r600_read_tidig : AMDGPUReadPreloadRegisterIntrinsic_xyz <
                                        "__builtin_r600_read_tidig">;
 
 def int_r600_rat_store_typed :
@@ -64,6 +60,11 @@ def int_AMDGPU_ldexp : Intrinsic<
 
 let TargetPrefix = "amdgcn" in {
 
+defm int_amdgcn_workitem_id : AMDGPUReadPreloadRegisterIntrinsic_xyz <
+  "__builtin_amdgcn_workitem_id">;
+defm int_amdgcn_workgroup_id : AMDGPUReadPreloadRegisterIntrinsic_xyz <
+  "__builtin_amdgcn_workgroup_id">;
+
 def int_amdgcn_s_barrier : GCCBuiltin<"__builtin_amdgcn_s_barrier">,
   Intrinsic<[], [], [IntrConvergent]>;
 
@@ -91,6 +92,18 @@ def int_amdgcn_trig_preop : Intrinsic<
   [llvm_anyfloat_ty], [LLVMMatchType<0>, llvm_i32_ty], [IntrNoMem]
 >;
 
+def int_amdgcn_sin : Intrinsic<
+  [llvm_anyfloat_ty], [LLVMMatchType<0>], [IntrNoMem]
+>;
+
+def int_amdgcn_cos : Intrinsic<
+  [llvm_anyfloat_ty], [LLVMMatchType<0>], [IntrNoMem]
+>;
+
+def int_amdgcn_log_clamp : Intrinsic<
+  [llvm_anyfloat_ty], [LLVMMatchType<0>], [IntrNoMem]
+>;
+
 def int_amdgcn_rcp : Intrinsic<
   [llvm_anyfloat_ty], [LLVMMatchType<0>], [IntrNoMem]
 >;
@@ -99,7 +112,7 @@ def int_amdgcn_rsq :  Intrinsic<
   [llvm_anyfloat_ty], [LLVMMatchType<0>], [IntrNoMem]
 >;
 
-def int_amdgcn_rsq_clamped :  Intrinsic<
+def int_amdgcn_rsq_clamp : Intrinsic<
   [llvm_anyfloat_ty], [LLVMMatchType<0>], [IntrNoMem]>;
 
 def int_amdgcn_ldexp : Intrinsic<
@@ -138,32 +151,12 @@ def int_amdgcn_buffer_wbinvl1_sc :
   GCCBuiltin<"__builtin_amdgcn_buffer_wbinvl1_sc">,
   Intrinsic<[], [], []>;
 
-// On CI+
-def int_amdgcn_buffer_wbinvl1_vol :
-  GCCBuiltin<"__builtin_amdgcn_buffer_wbinvl1_vol">,
-  Intrinsic<[], [], []>;
-
 def int_amdgcn_buffer_wbinvl1 :
   GCCBuiltin<"__builtin_amdgcn_buffer_wbinvl1">,
   Intrinsic<[], [], []>;
 
 def int_amdgcn_s_dcache_inv :
   GCCBuiltin<"__builtin_amdgcn_s_dcache_inv">,
-  Intrinsic<[], [], []>;
-
-// CI+
-def int_amdgcn_s_dcache_inv_vol :
-  GCCBuiltin<"__builtin_amdgcn_s_dcache_inv_vol">,
-  Intrinsic<[], [], []>;
-
-// VI
-def int_amdgcn_s_dcache_wb :
-  GCCBuiltin<"__builtin_amdgcn_s_dcache_wb">,
-  Intrinsic<[], [], []>;
-
-// VI
-def int_amdgcn_s_dcache_wb_vol :
-  GCCBuiltin<"__builtin_amdgcn_s_dcache_wb_vol">,
   Intrinsic<[], [], []>;
 
 def int_amdgcn_dispatch_ptr :
@@ -193,4 +186,35 @@ def int_amdgcn_mbcnt_lo :
 def int_amdgcn_mbcnt_hi :
   GCCBuiltin<"__builtin_amdgcn_mbcnt_hi">,
   Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+
+//===----------------------------------------------------------------------===//
+// CI+ Intrinsics
+//===----------------------------------------------------------------------===//
+
+def int_amdgcn_s_dcache_inv_vol :
+  GCCBuiltin<"__builtin_amdgcn_s_dcache_inv_vol">,
+  Intrinsic<[], [], []>;
+
+def int_amdgcn_buffer_wbinvl1_vol :
+  GCCBuiltin<"__builtin_amdgcn_buffer_wbinvl1_vol">,
+  Intrinsic<[], [], []>;
+
+//===----------------------------------------------------------------------===//
+// VI Intrinsics
+//===----------------------------------------------------------------------===//
+
+// llvm.amdgcn.mov.dpp.i32 <src> <dpp_ctrl> <bound_ctrl> <bank_mask> <row_mask>
+def int_amdgcn_mov_dpp :
+  Intrinsic<[llvm_anyint_ty],
+            [LLVMMatchType<0>, llvm_i32_ty, llvm_i1_ty, llvm_i32_ty,
+             llvm_i32_ty], [IntrNoMem, IntrConvergent]>;
+
+def int_amdgcn_s_dcache_wb :
+  GCCBuiltin<"__builtin_amdgcn_s_dcache_wb">,
+  Intrinsic<[], [], []>;
+
+def int_amdgcn_s_dcache_wb_vol :
+  GCCBuiltin<"__builtin_amdgcn_s_dcache_wb_vol">,
+  Intrinsic<[], [], []>;
+
 }

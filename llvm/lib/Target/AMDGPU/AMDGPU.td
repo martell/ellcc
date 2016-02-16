@@ -169,6 +169,24 @@ def FeatureFP64Denormals : SubtargetFeature<"fp64-denormals",
   [FeatureFP64]
 >;
 
+def FeatureFPExceptions : SubtargetFeature<"fp-exceptions",
+  "FPExceptions",
+  "true",
+  "Enable floating point exceptions"
+>;
+
+class FeatureMaxPrivateElementSize<int size> : SubtargetFeature<
+  "max-private-element-size-"#size,
+  "MaxPrivateElementSize",
+  !cast<string>(size),
+  "Maximum private access size may be "#size
+>;
+
+def FeatureMaxPrivateElementSize4 : FeatureMaxPrivateElementSize<4>;
+def FeatureMaxPrivateElementSize8 : FeatureMaxPrivateElementSize<8>;
+def FeatureMaxPrivateElementSize16 : FeatureMaxPrivateElementSize<16>;
+
+
 def FeatureEnableHugeScratchBuffer : SubtargetFeature<
   "huge-scratch-buffer",
   "EnableHugeScratchBuffer",
@@ -290,7 +308,7 @@ def FeatureSeaIslands : SubtargetFeatureGeneration<"SEA_ISLANDS",
 def FeatureVolcanicIslands : SubtargetFeatureGeneration<"VOLCANIC_ISLANDS",
   [FeatureFP64, FeatureLocalMemorySize65536,
    FeatureWavefrontSize64, FeatureFlatAddressSpace, FeatureGCN,
-   FeatureGCN3Encoding, FeatureCIInsts, FeatureLDSBankCount32]
+   FeatureGCN3Encoding, FeatureCIInsts]
 >;
 
 //===----------------------------------------------------------------------===//

@@ -1,8 +1,10 @@
 current SVN:
 
+* Update to LLVM r258915.
 * Build lld as part of the ELLCC build.
 * Use cmake to build clang/LLVM for all targets.
 * Updates to build x86_64, i386, PowerPC and MIPS Linux. Not functional yet.
+* Update to LLVM r258804.
 
 version 0.1.28
 

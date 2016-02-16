@@ -414,53 +414,14 @@ static const char * const IntrinsicNameTable[] = {
 #undef GET_INTRINSIC_NAME_TABLE
 };
 
-static int lookupLLVMIntrinsicByName(ArrayRef<const char *> NameTable,
-                                     StringRef Name) {
-  // Do a binary search over the table of intrinsic names.
-  const char *const *NameEntry =
-      std::lower_bound(NameTable.begin(), NameTable.end(), Name.data(),
-                       [](const char *LHS, const char *RHS) {
-                         // Don't compare the first 5 characters, they are
-                         // always "llvm.".
-                         return strcmp(LHS + 5, RHS + 5) < 0;
-                       });
-  unsigned Idx = NameEntry - NameTable.begin();
-
-  // Check if this is a direct match.
-  if (Idx < NameTable.size() && strcmp(Name.data(), NameTable[Idx]) == 0)
-    return Idx;
-
-  // Otherwise, back up one entry to look for a prefix of Name where the next
-  // character in Name is a dot.
-  if (Idx == 0)
-    return -1;
-  --Idx;
-  bool CheckPrefixes = true;
-  while (CheckPrefixes) {
-    StringRef FoundName = NameTable[Idx];
-    if (Name.startswith(FoundName) && Name[FoundName.size()] == '.')
-      return Idx;
-    if (Idx == 0)
-      return -1;
-    --Idx;
-    // We have to keep scanning backwards until the previous entry is not a
-    // prefix of the current entry. Consider a key of llvm.foo.f64 and a table
-    // of llvm.foo and llvm.foo.bar.
-    CheckPrefixes = FoundName.startswith(NameTable[Idx]);
-  }
-
-  return -1;
-}
-
 /// \brief This does the actual lookup of an intrinsic ID which
 /// matches the given function name.
 static Intrinsic::ID lookupIntrinsicID(const ValueName *ValName) {
   StringRef Name = ValName->getKey();
-  assert(Name.data()[Name.size()] == '\0' && "non-null terminated ValueName");
 
   ArrayRef<const char *> NameTable(&IntrinsicNameTable[1],
                                    std::end(IntrinsicNameTable));
-  int Idx = lookupLLVMIntrinsicByName(NameTable, Name);
+  int Idx = Intrinsic::lookupLLVMIntrinsicByName(NameTable, Name);
   Intrinsic::ID ID = static_cast<Intrinsic::ID>(Idx + 1);
   if (ID == Intrinsic::not_intrinsic)
     return ID;
@@ -1035,4 +996,28 @@ Optional<uint64_t> Function::getEntryCount() const {
         return CI->getValue().getZExtValue();
       }
   return None;
+}
+
+std::string Function::getGlobalIdentifier(StringRef FuncName,
+                                          GlobalValue::LinkageTypes Linkage,
+                                          StringRef FileName) {
+
+  // Function names may be prefixed with a binary '1' to indicate
+  // that the backend should not modify the symbols due to any platform
+  // naming convention. Do not include that '1' in the PGO profile name.
+  if (FuncName[0] == '\1')
+    FuncName = FuncName.substr(1);
+
+  std::string NewFuncName = FuncName;
+  if (llvm::GlobalValue::isLocalLinkage(Linkage)) {
+    // For local symbols, prepend the main file name to distinguish them.
+    // Do not include the full path in the file name since there's no guarantee
+    // that it will stay the same, e.g., if the files are checked out from
+    // version control in different locations.
+    if (FileName.empty())
+      NewFuncName = NewFuncName.insert(0, "<unknown>:");
+    else
+      NewFuncName = NewFuncName.insert(0, FileName.str() + ":");
+  }
+  return NewFuncName;
 }

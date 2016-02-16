@@ -58,7 +58,6 @@ public:
   };
 
 private:
-  std::string DevName;
   bool DumpCode;
   bool R600ALUInst;
   bool HasVertexCache;
@@ -67,6 +66,7 @@ private:
   bool FP64;
   bool FP64Denormals;
   bool FP32Denormals;
+  bool FPExceptions;
   bool FastFMAF32;
   bool HalfRate64Ops;
   bool CaymanISA;
@@ -81,6 +81,7 @@ private:
   unsigned WavefrontSize;
   bool CFALUBug;
   int LocalMemorySize;
+  unsigned MaxPrivateElementSize;
   bool EnableVGPRSpilling;
   bool SGPRInitBug;
   bool IsGCN;
@@ -149,6 +150,10 @@ public:
 
   bool hasFP64Denormals() const {
     return FP64Denormals;
+  }
+
+  bool hasFPExceptions() const {
+    return FPExceptions;
   }
 
   bool hasFastFMAF32() const {
@@ -249,6 +254,10 @@ public:
     return LocalMemorySize;
   }
 
+  unsigned getMaxPrivateElementSize() const {
+    return MaxPrivateElementSize;
+  }
+
   bool hasSGPRInitBug() const {
     return SGPRInitBug;
   }
@@ -272,10 +281,6 @@ public:
   // Helper functions to simplify if statements
   bool isTargetELF() const {
     return false;
-  }
-
-  StringRef getDeviceName() const {
-    return DevName;
   }
 
   bool enableHugeScratchBuffer() const {

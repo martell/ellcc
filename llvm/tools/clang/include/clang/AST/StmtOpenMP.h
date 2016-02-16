@@ -691,7 +691,8 @@ public:
            T->getStmtClass() == OMPParallelForSimdDirectiveClass ||
            T->getStmtClass() == OMPTaskLoopDirectiveClass ||
            T->getStmtClass() == OMPTaskLoopSimdDirectiveClass ||
-           T->getStmtClass() == OMPDistributeDirectiveClass;
+           T->getStmtClass() == OMPDistributeDirectiveClass ||
+           T->getStmtClass() == OMPTargetParallelForDirectiveClass;
   }
 };
 
@@ -2153,6 +2154,146 @@ public:
 
   static bool classof(const Stmt *T) {
     return T->getStmtClass() == OMPTargetExitDataDirectiveClass;
+  }
+};
+
+/// \brief This represents '#pragma omp target parallel' directive.
+///
+/// \code
+/// #pragma omp target parallel if(a)
+/// \endcode
+/// In this example directive '#pragma omp target parallel' has clause 'if' with
+/// condition 'a'.
+///
+class OMPTargetParallelDirective : public OMPExecutableDirective {
+  friend class ASTStmtReader;
+  /// \brief Build directive with the given start and end location.
+  ///
+  /// \param StartLoc Starting location of the directive kind.
+  /// \param EndLoc Ending location of the directive.
+  /// \param NumClauses Number of clauses.
+  ///
+  OMPTargetParallelDirective(SourceLocation StartLoc, SourceLocation EndLoc,
+                             unsigned NumClauses)
+      : OMPExecutableDirective(this, OMPTargetParallelDirectiveClass,
+                               OMPD_target_parallel, StartLoc, EndLoc,
+                               NumClauses, /*NumChildren=*/1) {}
+
+  /// \brief Build an empty directive.
+  ///
+  /// \param NumClauses Number of clauses.
+  ///
+  explicit OMPTargetParallelDirective(unsigned NumClauses)
+      : OMPExecutableDirective(this, OMPTargetParallelDirectiveClass,
+                               OMPD_target_parallel, SourceLocation(),
+                               SourceLocation(), NumClauses,
+                               /*NumChildren=*/1) {}
+
+public:
+  /// \brief Creates directive with a list of \a Clauses.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the directive kind.
+  /// \param EndLoc Ending Location of the directive.
+  /// \param Clauses List of clauses.
+  /// \param AssociatedStmt Statement, associated with the directive.
+  ///
+  static OMPTargetParallelDirective *
+  Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation EndLoc,
+         ArrayRef<OMPClause *> Clauses, Stmt *AssociatedStmt);
+
+  /// \brief Creates an empty directive with the place for \a NumClauses
+  /// clauses.
+  ///
+  /// \param C AST context.
+  /// \param NumClauses Number of clauses.
+  ///
+  static OMPTargetParallelDirective *
+  CreateEmpty(const ASTContext &C, unsigned NumClauses, EmptyShell);
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == OMPTargetParallelDirectiveClass;
+  }
+};
+
+/// \brief This represents '#pragma omp target parallel for' directive.
+///
+/// \code
+/// #pragma omp target parallel for private(a,b) reduction(+:c,d)
+/// \endcode
+/// In this example directive '#pragma omp target parallel for' has clauses
+/// 'private' with the variables 'a' and 'b' and 'reduction' with operator '+'
+/// and variables 'c' and 'd'.
+///
+class OMPTargetParallelForDirective : public OMPLoopDirective {
+  friend class ASTStmtReader;
+
+  /// \brief true if current region has inner cancel directive.
+  bool HasCancel;
+
+  /// \brief Build directive with the given start and end location.
+  ///
+  /// \param StartLoc Starting location of the directive kind.
+  /// \param EndLoc Ending location of the directive.
+  /// \param CollapsedNum Number of collapsed nested loops.
+  /// \param NumClauses Number of clauses.
+  ///
+  OMPTargetParallelForDirective(SourceLocation StartLoc, SourceLocation EndLoc,
+                                unsigned CollapsedNum, unsigned NumClauses)
+      : OMPLoopDirective(this, OMPTargetParallelForDirectiveClass,
+                         OMPD_target_parallel_for, StartLoc, EndLoc,
+                         CollapsedNum, NumClauses),
+        HasCancel(false) {}
+
+  /// \brief Build an empty directive.
+  ///
+  /// \param CollapsedNum Number of collapsed nested loops.
+  /// \param NumClauses Number of clauses.
+  ///
+  explicit OMPTargetParallelForDirective(unsigned CollapsedNum,
+                                         unsigned NumClauses)
+      : OMPLoopDirective(this, OMPTargetParallelForDirectiveClass,
+                         OMPD_target_parallel_for, SourceLocation(),
+                         SourceLocation(), CollapsedNum, NumClauses),
+        HasCancel(false) {}
+
+  /// \brief Set cancel state.
+  void setHasCancel(bool Has) { HasCancel = Has; }
+
+public:
+  /// \brief Creates directive with a list of \a Clauses.
+  ///
+  /// \param C AST context.
+  /// \param StartLoc Starting location of the directive kind.
+  /// \param EndLoc Ending Location of the directive.
+  /// \param CollapsedNum Number of collapsed loops.
+  /// \param Clauses List of clauses.
+  /// \param AssociatedStmt Statement, associated with the directive.
+  /// \param Exprs Helper expressions for CodeGen.
+  /// \param HasCancel true if current directive has inner cancel directive.
+  ///
+  static OMPTargetParallelForDirective *
+  Create(const ASTContext &C, SourceLocation StartLoc, SourceLocation EndLoc,
+         unsigned CollapsedNum, ArrayRef<OMPClause *> Clauses,
+         Stmt *AssociatedStmt, const HelperExprs &Exprs, bool HasCancel);
+
+  /// \brief Creates an empty directive with the place
+  /// for \a NumClauses clauses.
+  ///
+  /// \param C AST context.
+  /// \param CollapsedNum Number of collapsed nested loops.
+  /// \param NumClauses Number of clauses.
+  ///
+  static OMPTargetParallelForDirective *CreateEmpty(const ASTContext &C,
+                                                    unsigned NumClauses,
+                                                    unsigned CollapsedNum,
+                                                    EmptyShell);
+
+  /// \brief Return true if current directive has inner cancel directive.
+  bool hasCancel() const { return HasCancel; }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == OMPTargetParallelForDirectiveClass;
   }
 };
 

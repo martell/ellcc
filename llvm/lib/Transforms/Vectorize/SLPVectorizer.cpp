@@ -1741,6 +1741,13 @@ int BoUpSLP::getSpillCost() {
       continue;
     }
 
+    // Update LiveValues.
+    LiveValues.erase(PrevInst);
+    for (auto &J : PrevInst->operands()) {
+      if (isa<Instruction>(&*J) && ScalarToTreeEntry.count(&*J))
+        LiveValues.insert(cast<Instruction>(&*J));
+    }
+
     DEBUG(
       dbgs() << "SLP: #LV: " << LiveValues.size();
       for (auto *X : LiveValues)
@@ -1748,13 +1755,6 @@ int BoUpSLP::getSpillCost() {
       dbgs() << ", Looking at ";
       Inst->dump();
       );
-
-    // Update LiveValues.
-    LiveValues.erase(PrevInst);
-    for (auto &J : PrevInst->operands()) {
-      if (isa<Instruction>(&*J) && ScalarToTreeEntry.count(&*J))
-        LiveValues.insert(cast<Instruction>(&*J));
-    }
 
     // Now find the sequence of instructions between PrevInst and Inst.
     BasicBlock::reverse_iterator InstIt(Inst->getIterator()),
@@ -1779,7 +1779,6 @@ int BoUpSLP::getSpillCost() {
     PrevInst = Inst;
   }
 
-  DEBUG(dbgs() << "SLP: SpillCost=" << Cost << "\n");
   return Cost;
 }
 
@@ -1801,7 +1800,7 @@ int BoUpSLP::getTreeCost() {
   for (TreeEntry &TE : VectorizableTree) {
     int C = getEntryCost(&TE);
     DEBUG(dbgs() << "SLP: Adding cost " << C << " for bundle that starts with "
-          << TE.Scalars[0] << " .\n");
+                 << *TE.Scalars[0] << ".\n");
     Cost += C;
   }
 
@@ -1833,10 +1832,13 @@ int BoUpSLP::getTreeCost() {
         TTI->getVectorInstrCost(Instruction::ExtractElement, VecTy, EU.Lane);
   }
 
-  Cost += getSpillCost();
+  int SpillCost = getSpillCost();
+  Cost += SpillCost + ExtractCost;
 
-  DEBUG(dbgs() << "SLP: Total Cost " << Cost + ExtractCost<< ".\n");
-  return  Cost + ExtractCost;
+  DEBUG(dbgs() << "SLP: Spill Cost = " << SpillCost << ".\n"
+               << "SLP: Extract Cost = " << ExtractCost << ".\n"
+               << "SLP: Total Cost = " << Cost << ".\n");
+  return Cost;
 }
 
 int BoUpSLP::getGatherCost(Type *Ty) {
@@ -1883,10 +1885,10 @@ void BoUpSLP::reorderAltShuffleOperands(ArrayRef<Value *> VL,
       if (LoadInst *L1 = dyn_cast<LoadInst>(Right[j + 1])) {
         Instruction *VL1 = cast<Instruction>(VL[j]);
         Instruction *VL2 = cast<Instruction>(VL[j + 1]);
-        if (isConsecutiveAccess(L, L1, DL, *SE) && VL1->isCommutative()) {
+        if (VL1->isCommutative() && isConsecutiveAccess(L, L1, DL, *SE)) {
           std::swap(Left[j], Right[j]);
           continue;
-        } else if (isConsecutiveAccess(L, L1, DL, *SE) && VL2->isCommutative()) {
+        } else if (VL2->isCommutative() && isConsecutiveAccess(L, L1, DL, *SE)) {
           std::swap(Left[j + 1], Right[j + 1]);
           continue;
         }
@@ -1897,10 +1899,10 @@ void BoUpSLP::reorderAltShuffleOperands(ArrayRef<Value *> VL,
       if (LoadInst *L1 = dyn_cast<LoadInst>(Left[j + 1])) {
         Instruction *VL1 = cast<Instruction>(VL[j]);
         Instruction *VL2 = cast<Instruction>(VL[j + 1]);
-        if (isConsecutiveAccess(L, L1, DL, *SE) && VL1->isCommutative()) {
+        if (VL1->isCommutative() && isConsecutiveAccess(L, L1, DL, *SE)) {
           std::swap(Left[j], Right[j]);
           continue;
-        } else if (isConsecutiveAccess(L, L1, DL, *SE) && VL2->isCommutative()) {
+        } else if (VL2->isCommutative() && isConsecutiveAccess(L, L1, DL, *SE)) {
           std::swap(Left[j + 1], Right[j + 1]);
           continue;
         }
@@ -2535,8 +2537,8 @@ Value *BoUpSLP::vectorizeTree() {
   // sign extend the extracted values below.
   auto *ScalarRoot = VectorizableTree[0].Scalars[0];
   if (MinBWs.count(ScalarRoot)) {
-    BasicBlock::iterator I(cast<Instruction>(VectorRoot));
-    Builder.SetInsertPoint(&*++I);
+    if (auto *I = dyn_cast<Instruction>(VectorRoot))
+      Builder.SetInsertPoint(&*++BasicBlock::iterator(I));
     auto BundleWidth = VectorizableTree[0].Scalars.size();
     auto *MinTy = IntegerType::get(F->getContext(), MinBWs[ScalarRoot]);
     auto *VecTy = VectorType::get(MinTy, BundleWidth);
@@ -2575,7 +2577,7 @@ Value *BoUpSLP::vectorizeTree() {
           if (PH->getIncomingValue(i) == Scalar) {
             Builder.SetInsertPoint(PH->getIncomingBlock(i)->getTerminator());
             Value *Ex = Builder.CreateExtractElement(Vec, Lane);
-            if (MinBWs.count(Scalar))
+            if (MinBWs.count(ScalarRoot))
               Ex = Builder.CreateSExt(Ex, Scalar->getType());
             CSEBlocks.insert(PH->getIncomingBlock(i));
             PH->setOperand(i, Ex);
@@ -2584,7 +2586,7 @@ Value *BoUpSLP::vectorizeTree() {
       } else {
         Builder.SetInsertPoint(cast<Instruction>(User));
         Value *Ex = Builder.CreateExtractElement(Vec, Lane);
-        if (MinBWs.count(Scalar))
+        if (MinBWs.count(ScalarRoot))
           Ex = Builder.CreateSExt(Ex, Scalar->getType());
         CSEBlocks.insert(cast<Instruction>(User)->getParent());
         User->replaceUsesOfWith(Scalar, Ex);
@@ -2592,7 +2594,7 @@ Value *BoUpSLP::vectorizeTree() {
     } else {
       Builder.SetInsertPoint(&F->getEntryBlock().front());
       Value *Ex = Builder.CreateExtractElement(Vec, Lane);
-      if (MinBWs.count(Scalar))
+      if (MinBWs.count(ScalarRoot))
         Ex = Builder.CreateSExt(Ex, Scalar->getType());
       CSEBlocks.insert(&F->getEntryBlock());
       User->replaceUsesOfWith(Scalar, Ex);
@@ -3292,6 +3294,11 @@ void BoUpSLP::computeMinimumValueSizes() {
   // a truncation, we mark it as seeding another demotion.
   for (auto &Entry : VectorizableTree)
     Expr.insert(Entry.Scalars[0]);
+
+  // Ensure the root of the vectorizable tree doesn't form a cycle. It must
+  // have a single external user that is not in the vectorizable tree.
+  if (!TreeRoot[0]->hasOneUse() || Expr.count(*TreeRoot[0]->user_begin()))
+    return;
 
   // Conservatively determine if we can actually truncate the root of the
   // expression. Collect the values that can be demoted in ToDemote and

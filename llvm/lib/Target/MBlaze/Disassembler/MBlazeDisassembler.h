@@ -15,7 +15,7 @@
 #ifndef MBLAZEDISASSEMBLER_H
 #define MBLAZEDISASSEMBLER_H
 
-#include "llvm/MC/MCDisassembler.h"
+#include "llvm/MC/MCDisassembler/MCDisassembler.h"
 
 namespace llvm {
 

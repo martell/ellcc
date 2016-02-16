@@ -21,6 +21,7 @@
 #include "clang/Sema/Scope.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
+
 using namespace clang;
 
 /// Skips attributes after an Objective-C @ directive. Emits a diagnostic.
@@ -99,16 +100,20 @@ class Parser::ObjCTypeParamListScope {
   Sema &Actions;
   Scope *S;
   ObjCTypeParamList *Params;
+
 public:
   ObjCTypeParamListScope(Sema &Actions, Scope *S)
       : Actions(Actions), S(S), Params(nullptr) {}
+
   ~ObjCTypeParamListScope() {
     leave();
   }
+
   void enter(ObjCTypeParamList *P) {
     assert(!Params);
     Params = P;
   }
+
   void leave() {
     if (Params)
       Actions.popObjCTypeParamList(S, Params);
@@ -847,6 +852,7 @@ static void diagnoseRedundantPropertyNullability(Parser &P,
 ///     nullable
 ///     null_unspecified
 ///     null_resettable
+///     class
 ///
 void Parser::ParseObjCPropertyAttribute(ObjCDeclSpec &DS) {
   assert(Tok.getKind() == tok::l_paren);
@@ -962,6 +968,8 @@ void Parser::ParseObjCPropertyAttribute(ObjCDeclSpec &DS) {
 
       // Also set the null_resettable bit.
       DS.setPropertyAttributes(ObjCDeclSpec::DQ_PR_null_resettable);
+    } else if (II->isStr("class")) {
+      DS.setPropertyAttributes(ObjCDeclSpec::DQ_PR_class);
     } else {
       Diag(AttrName, diag::err_objc_expected_property_attr) << II;
       SkipUntil(tok::r_paren, StopAtSemi);
@@ -1958,7 +1966,6 @@ void Parser::ParseObjCClassInstanceVariables(Decl *interfaceDecl,
   }
   HelperActionsForIvarDeclarations(interfaceDecl, atLoc,
                                    T, AllIvarDecls, false);
-  return;
 }
 
 ///   objc-protocol-declaration:
@@ -2327,8 +2334,10 @@ Decl *Parser::ParseObjCPropertySynthesize(SourceLocation atLoc) {
       propertyIvar = Tok.getIdentifierInfo();
       propertyIvarLoc = ConsumeToken(); // consume ivar-name
     }
-    Actions.ActOnPropertyImplDecl(getCurScope(), atLoc, propertyLoc, true,
-                                  propertyId, propertyIvar, propertyIvarLoc);
+    Actions.ActOnPropertyImplDecl(
+        getCurScope(), atLoc, propertyLoc, true,
+        propertyId, propertyIvar, propertyIvarLoc,
+        ObjCPropertyQueryKind::OBJC_PR_query_unknown);
     if (Tok.isNot(tok::comma))
       break;
     ConsumeToken(); // consume ','
@@ -2348,6 +2357,31 @@ Decl *Parser::ParseObjCPropertyDynamic(SourceLocation atLoc) {
   assert(Tok.isObjCAtKeyword(tok::objc_dynamic) &&
          "ParseObjCPropertyDynamic(): Expected '@dynamic'");
   ConsumeToken(); // consume dynamic
+
+  bool isClassProperty = false;
+  if (Tok.is(tok::l_paren)) {
+    ConsumeParen();
+    const IdentifierInfo *II = Tok.getIdentifierInfo();
+
+    if (!II) {
+      Diag(Tok, diag::err_objc_expected_property_attr) << II;
+      SkipUntil(tok::r_paren, StopAtSemi);
+    } else {
+      SourceLocation AttrName = ConsumeToken(); // consume attribute name
+      if (II->isStr("class")) {
+        isClassProperty = true;
+        if (Tok.isNot(tok::r_paren)) {
+          Diag(Tok, diag::err_expected) << tok::r_paren;
+          SkipUntil(tok::r_paren, StopAtSemi);
+        } else
+          ConsumeParen();
+      } else {
+        Diag(AttrName, diag::err_objc_expected_property_attr) << II;
+        SkipUntil(tok::r_paren, StopAtSemi);
+      }
+    }
+  }
+
   while (true) {
     if (Tok.is(tok::code_completion)) {
       Actions.CodeCompleteObjCPropertyDefinition(getCurScope());
@@ -2363,8 +2397,11 @@ Decl *Parser::ParseObjCPropertyDynamic(SourceLocation atLoc) {
     
     IdentifierInfo *propertyId = Tok.getIdentifierInfo();
     SourceLocation propertyLoc = ConsumeToken(); // consume property name
-    Actions.ActOnPropertyImplDecl(getCurScope(), atLoc, propertyLoc, false,
-                                  propertyId, nullptr, SourceLocation());
+    Actions.ActOnPropertyImplDecl(
+        getCurScope(), atLoc, propertyLoc, false,
+        propertyId, nullptr, SourceLocation(),
+        isClassProperty ? ObjCPropertyQueryKind::OBJC_PR_query_class :
+        ObjCPropertyQueryKind::OBJC_PR_query_unknown);
 
     if (Tok.isNot(tok::comma))
       break;
@@ -2904,7 +2941,6 @@ bool Parser::isStartOfObjCClassMessageMissingOpenBracket() {
   if (!getLangOpts().ObjC1 || !NextToken().is(tok::identifier) || 
       InMessageExpression)
     return false;
-  
   
   ParsedType Type;
 
@@ -3534,7 +3570,7 @@ ExprResult Parser::ParseObjCSelectorExpression(SourceLocation AtLoc) {
                                              T.getOpenLocation(),
                                              T.getCloseLocation(),
                                              !HasOptionalParen);
- }
+}
 
 void Parser::ParseLexedObjCMethodDefs(LexedMethod &LM, bool parseMethod) {
   // MCDecl might be null due to error in method or c-function  prototype, etc.
@@ -3552,8 +3588,8 @@ void Parser::ParseLexedObjCMethodDefs(LexedMethod &LM, bool parseMethod) {
   // Append the current token at the end of the new token stream so that it
   // doesn't get lost.
   LM.Toks.push_back(Tok);
-  PP.EnterTokenStream(LM.Toks.data(), LM.Toks.size(), true, false);
-  
+  PP.EnterTokenStream(LM.Toks, true);
+
   // Consume the previously pushed token.
   ConsumeAnyToken(/*ConsumeCodeCompletionTok=*/true);
     
@@ -3590,6 +3626,4 @@ void Parser::ParseLexedObjCMethodDefs(LexedMethod &LM, bool parseMethod) {
       while (Tok.getLocation() != OrigLoc && Tok.isNot(tok::eof))
         ConsumeAnyToken();
   }
-  
-  return;
 }

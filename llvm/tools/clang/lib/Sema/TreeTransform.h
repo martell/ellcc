@@ -7414,6 +7414,28 @@ StmtResult TreeTransform<Derived>::TransformOMPTargetExitDataDirective(
 }
 
 template <typename Derived>
+StmtResult TreeTransform<Derived>::TransformOMPTargetParallelDirective(
+    OMPTargetParallelDirective *D) {
+  DeclarationNameInfo DirName;
+  getDerived().getSema().StartOpenMPDSABlock(OMPD_target_parallel, DirName,
+                                             nullptr, D->getLocStart());
+  StmtResult Res = getDerived().TransformOMPExecutableDirective(D);
+  getDerived().getSema().EndOpenMPDSABlock(Res.get());
+  return Res;
+}
+
+template <typename Derived>
+StmtResult TreeTransform<Derived>::TransformOMPTargetParallelForDirective(
+    OMPTargetParallelForDirective *D) {
+  DeclarationNameInfo DirName;
+  getDerived().getSema().StartOpenMPDSABlock(OMPD_target_parallel_for, DirName,
+                                             nullptr, D->getLocStart());
+  StmtResult Res = getDerived().TransformOMPExecutableDirective(D);
+  getDerived().getSema().EndOpenMPDSABlock(Res.get());
+  return Res;
+}
+
+template <typename Derived>
 StmtResult
 TreeTransform<Derived>::TransformOMPTeamsDirective(OMPTeamsDirective *D) {
   DeclarationNameInfo DirName;
@@ -7934,6 +7956,12 @@ OMPClause *TreeTransform<Derived>::TransformOMPDistScheduleClause(
   return getDerived().RebuildOMPDistScheduleClause(
       C->getDistScheduleKind(), E.get(), C->getLocStart(), C->getLParenLoc(),
       C->getDistScheduleKindLoc(), C->getCommaLoc(), C->getLocEnd());
+}
+
+template <typename Derived>
+OMPClause *
+TreeTransform<Derived>::TransformOMPDefaultmapClause(OMPDefaultmapClause *C) {
+  return C;
 }
 
 //===----------------------------------------------------------------------===//

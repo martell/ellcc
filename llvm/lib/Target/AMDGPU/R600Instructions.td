@@ -1101,7 +1101,7 @@ class RECIP_UINT_Common <bits<11> inst> : R600_1OP_Helper <
 
 // Clamped to maximum.
 class RECIPSQRT_CLAMPED_Common <bits<11> inst> : R600_1OP_Helper <
-  inst, "RECIPSQRT_CLAMPED", AMDGPUrsq_clamped
+  inst, "RECIPSQRT_CLAMPED", AMDGPUrsq_clamp
 > {
   let Itinerary = TransALU;
 }
@@ -1718,12 +1718,6 @@ def : BitConvert <v4i32, v4f32, R600_Reg128>;
 def : DwordAddrPat  <i32, R600_Reg32>;
 
 } // End isR600toCayman Predicate
-
-let Predicates = [isR600] in {
-// Intrinsic patterns
-defm : Expand24IBitOps<MULLO_INT_r600, ADD_INT>;
-defm : Expand24UBitOps<MULLO_UINT_r600, ADD_INT>;
-} // End isR600
 
 def getLDSNoRetOp : InstrMapping {
   let FilterClass = "R600_LDS_1A1D";

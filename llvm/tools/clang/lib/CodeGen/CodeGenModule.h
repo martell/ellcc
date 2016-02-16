@@ -166,6 +166,9 @@ struct ObjCEntrypoints {
   /// id objc_storeWeak(id*, id);
   llvm::Constant *objc_storeWeak;
 
+  /// id objc_unsafeClaimAutoreleasedReturnValue(id);
+  llvm::Constant *objc_unsafeClaimAutoreleasedReturnValue;
+
   /// A void(void) inline asm to use to mark that the return value of
   /// a call will be immediately retain.
   llvm::InlineAsm *retainAutoreleasedReturnValueMarker;
@@ -994,6 +997,8 @@ public:
 
   void EmitVTable(CXXRecordDecl *Class);
 
+  void RefreshTypeCacheForClass(const CXXRecordDecl *Class);
+
   /// \brief Appends Opts to the "Linker Options" metadata value.
   void AppendLinkerOptions(StringRef Opts);
 
@@ -1122,6 +1127,9 @@ public:
 
   /// Create a bitset entry for the given function and add it to BitsetsMD.
   void CreateFunctionBitSetEntry(const FunctionDecl *FD, llvm::Function *F);
+
+  /// Returns whether this module needs the "all-vtables" bitset.
+  bool NeedAllVtablesBitSet() const;
 
   /// Create a bitset entry for the given vtable and add it to BitsetsMD.
   void CreateVTableBitSetEntry(llvm::NamedMDNode *BitsetsMD,
