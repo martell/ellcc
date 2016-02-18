@@ -1,5 +1,6 @@
 current SVN:
 
+* Update the ecclinux kernel version to 4.1.18.
 * Update to LLVM r258915.
 * Build lld as part of the ELLCC build.
 * Use cmake to build clang/LLVM for all targets.
