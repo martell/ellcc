@@ -29,6 +29,7 @@ done
 mac_exclude="uboot iproute2 e2fsprogs vim"
 
 CLEAN=0
+#LINUX_VERSION=4.5-rc4
 LINUX_VERSION=4.1.18
 S6_VERSION=2.2.4.3
 UBOOT_VERSION=2015.10
