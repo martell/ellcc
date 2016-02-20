@@ -637,6 +637,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.SanitizeCoverageTraceCmp = Args.hasArg(OPT_fsanitize_coverage_trace_cmp);
   Opts.SanitizeCoverage8bitCounters =
       Args.hasArg(OPT_fsanitize_coverage_8bit_counters);
+  Opts.SanitizeCoverageTracePC = Args.hasArg(OPT_fsanitize_coverage_trace_pc);
   Opts.SanitizeMemoryTrackOrigins =
       getLastArgIntValue(Args, OPT_fsanitize_memory_track_origins_EQ, 0, Diags);
   Opts.SanitizeMemoryUseAfterDtor =
@@ -1687,6 +1688,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.ObjCExceptions = Args.hasArg(OPT_fobjc_exceptions);
   Opts.CXXExceptions = Args.hasArg(OPT_fcxx_exceptions);
   Opts.SjLjExceptions = Args.hasArg(OPT_fsjlj_exceptions);
+  Opts.ExternCNoUnwind = Args.hasArg(OPT_fexternc_nounwind);
   Opts.TraditionalCPP = Args.hasArg(OPT_traditional_cpp);
 
   Opts.RTTI = Opts.CPlusPlus && !Args.hasArg(OPT_fno_rtti);
@@ -1762,10 +1764,8 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DebuggerCastResultToId = Args.hasArg(OPT_fdebugger_cast_result_to_id);
   Opts.DebuggerObjCLiteral = Args.hasArg(OPT_fdebugger_objc_literal);
   Opts.ApplePragmaPack = Args.hasArg(OPT_fapple_pragma_pack);
-  Opts.CurrentModule = Args.getLastArgValue(OPT_fmodule_name);
+  Opts.CurrentModule = Args.getLastArgValue(OPT_fmodule_name_EQ);
   Opts.AppExt = Args.hasArg(OPT_fapplication_extension);
-  Opts.ImplementationOfModule =
-      Args.getLastArgValue(OPT_fmodule_implementation_of);
   Opts.ModuleFeatures = Args.getAllArgValues(OPT_fmodule_feature);
   std::sort(Opts.ModuleFeatures.begin(), Opts.ModuleFeatures.end());
   Opts.NativeHalfType |= Args.hasArg(OPT_fnative_half_type);
@@ -1782,12 +1782,6 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DeclSpecKeyword =
       Args.hasFlag(OPT_fdeclspec, OPT_fno_declspec,
                    (Opts.MicrosoftExt || Opts.Borland || Opts.CUDA));
-
-  if (!Opts.CurrentModule.empty() && !Opts.ImplementationOfModule.empty() &&
-      Opts.CurrentModule != Opts.ImplementationOfModule) {
-    Diags.Report(diag::err_conflicting_module_names)
-        << Opts.CurrentModule << Opts.ImplementationOfModule;
-  }
 
   // For now, we only support local submodule visibility in C++ (because we
   // heavily depend on the ODR for merging redefinitions).

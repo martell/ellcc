@@ -211,7 +211,7 @@ template <bool Is64Bits> struct SectionKey {
   StringRef Name;
   uint32_t Type;
   uintX_t Flags;
-  uintX_t EntSize;
+  uintX_t Alignment;
 };
 }
 namespace llvm {
@@ -225,13 +225,13 @@ template <bool Is64Bits> struct DenseMapInfo<SectionKey<Is64Bits>> {
                                 0, 0};
   }
   static unsigned getHashValue(const SectionKey<Is64Bits> &Val) {
-    return hash_combine(Val.Name, Val.Type, Val.Flags, Val.EntSize);
+    return hash_combine(Val.Name, Val.Type, Val.Flags, Val.Alignment);
   }
   static bool isEqual(const SectionKey<Is64Bits> &LHS,
                       const SectionKey<Is64Bits> &RHS) {
     return DenseMapInfo<StringRef>::isEqual(LHS.Name, RHS.Name) &&
            LHS.Type == RHS.Type && LHS.Flags == RHS.Flags &&
-           LHS.EntSize == RHS.EntSize;
+           LHS.Alignment == RHS.Alignment;
   }
 };
 }
@@ -339,7 +339,7 @@ void Writer<ELFT>::scanRelocs(
     // to the symbol go through the PLT. This is true even for a local
     // symbol, although local symbols normally do not require PLT entries.
     if (Body && isGnuIFunc<ELFT>(*Body)) {
-      if (Body->isInGot())
+      if (Body->isInPlt())
         continue;
       Out<ELFT>::Plt->addEntry(Body);
       bool CBP = canBePreempted(Body, /*NeedsGot=*/true);
@@ -733,7 +733,8 @@ StringRef Writer<ELFT>::getOutputSectionName(InputSectionBase<ELFT> *S) const {
 
   StringRef Name = S->getSectionName();
   for (StringRef V : {".text.", ".rodata.", ".data.rel.ro.", ".data.", ".bss.",
-                      ".init_array.", ".fini_array.", ".ctors.", ".dtors."})
+                      ".init_array.", ".fini_array.", ".ctors.", ".dtors.",
+                      ".tbss.", ".gcc_except_table.", ".tdata."})
     if (Name.startswith(V))
       return V.drop_back();
   return Name;
@@ -779,11 +780,14 @@ template <class ELFT> static bool includeInSymtab(const SymbolBody &B) {
   if (!B.isUsedInRegularObj())
     return false;
 
-  // Don't include synthetic symbols like __init_array_start in every output.
-  if (auto *U = dyn_cast<DefinedRegular<ELFT>>(&B))
-    if (&U->Sym == &ElfSym<ELFT>::Ignored)
+  if (auto *D = dyn_cast<DefinedRegular<ELFT>>(&B)) {
+    // Don't include synthetic symbols like __init_array_start in every output.
+    if (&D->Sym == &ElfSym<ELFT>::Ignored)
       return false;
-
+    // Exclude symbols pointing to garbage-collected sections.
+    if (D->Section && !D->Section->isLive())
+      return false;
+  }
   return true;
 }
 
@@ -836,7 +840,8 @@ OutputSectionFactory<ELFT>::create(InputSectionBase<ELFT> *C,
     Sec = new EHOutputSection<ELFT>(Key.Name, Key.Type, Key.Flags);
     break;
   case InputSectionBase<ELFT>::Merge:
-    Sec = new MergeOutputSection<ELFT>(Key.Name, Key.Type, Key.Flags);
+    Sec = new MergeOutputSection<ELFT>(Key.Name, Key.Type, Key.Flags,
+                                       Key.Alignment);
     break;
   case InputSectionBase<ELFT>::MipsReginfo:
     Sec = new MipsReginfoOutputSection<ELFT>();
@@ -859,10 +864,15 @@ OutputSectionFactory<ELFT>::createKey(InputSectionBase<ELFT> *C,
   const Elf_Shdr *H = C->getSectionHdr();
   uintX_t Flags = H->sh_flags & ~SHF_GROUP;
 
-  // For SHF_MERGE we create different output sections for each sh_entsize.
-  // This makes each output section simple and keeps a single level
-  // mapping from input to output.
-  uintX_t EntSize = isa<MergeInputSection<ELFT>>(C) ? H->sh_entsize : 0;
+  // For SHF_MERGE we create different output sections for each alignment.
+  // This makes each output section simple and keeps a single level mapping from
+  // input to output.
+  uintX_t Alignment = 0;
+  if (isa<MergeInputSection<ELFT>>(C)) {
+    Alignment = H->sh_addralign;
+    if (H->sh_entsize > Alignment)
+      Alignment = H->sh_entsize;
+  }
 
   // GNU as can give .eh_frame secion type SHT_PROGBITS or SHT_X86_64_UNWIND
   // depending on the construct. We want to canonicalize it so that
@@ -872,7 +882,7 @@ OutputSectionFactory<ELFT>::createKey(InputSectionBase<ELFT> *C,
       isa<EHInputSection<ELFT>>(C))
     Type = SHT_X86_64_UNWIND;
 
-  return SectionKey<ELFT::Is64Bits>{OutsecName, Type, Flags, EntSize};
+  return SectionKey<ELFT::Is64Bits>{OutsecName, Type, Flags, Alignment};
 }
 
 // The linker is expected to define some symbols depending on

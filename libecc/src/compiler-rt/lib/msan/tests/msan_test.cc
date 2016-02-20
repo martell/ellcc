@@ -1114,8 +1114,8 @@ TEST(MemorySanitizer, gethostbyname_r_erange) {
   struct hostent he;
   struct hostent *result;
   int err;
-  int res = gethostbyname_r("localhost", &he, buf, sizeof(buf), &result, &err);
-  ASSERT_EQ(ERANGE, res);
+  gethostbyname_r("localhost", &he, buf, sizeof(buf), &result, &err);
+  ASSERT_EQ(ERANGE, errno);
   EXPECT_NOT_POISONED(err);
 }
 
@@ -2808,6 +2808,22 @@ TEST(MemorySanitizer, getrlimit) {
   ASSERT_EQ(result, 0);
   EXPECT_NOT_POISONED(limit.rlim_cur);
   EXPECT_NOT_POISONED(limit.rlim_max);
+
+  struct rlimit limit2;
+  __msan_poison(&limit2, sizeof(limit2));
+  result = prlimit(getpid(), RLIMIT_DATA, &limit, &limit2);
+  ASSERT_EQ(result, 0);
+  EXPECT_NOT_POISONED(limit2.rlim_cur);
+  EXPECT_NOT_POISONED(limit2.rlim_max);
+
+  __msan_poison(&limit, sizeof(limit));
+  result = prlimit(getpid(), RLIMIT_DATA, nullptr, &limit);
+  ASSERT_EQ(result, 0);
+  EXPECT_NOT_POISONED(limit.rlim_cur);
+  EXPECT_NOT_POISONED(limit.rlim_max);
+
+  result = prlimit(getpid(), RLIMIT_DATA, &limit, nullptr);
+  ASSERT_EQ(result, 0);
 }
 
 TEST(MemorySanitizer, getrusage) {

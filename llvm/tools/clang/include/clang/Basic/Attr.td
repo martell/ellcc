@@ -451,7 +451,8 @@ def Availability : InheritableAttr {
   let Spellings = [GNU<"availability">];
   let Args = [IdentifierArgument<"platform">, VersionArgument<"introduced">,
               VersionArgument<"deprecated">, VersionArgument<"obsoleted">,
-              BoolArgument<"unavailable">, StringArgument<"message">];
+              BoolArgument<"unavailable">, StringArgument<"message">,
+              BoolArgument<"nopartial">];
   let AdditionalMembers =
 [{static llvm::StringRef getPrettyPlatformName(llvm::StringRef Platform) {
     return llvm::StringSwitch<llvm::StringRef>(Platform)
@@ -654,6 +655,12 @@ def OpenCLKernel : InheritableAttr {
   let Spellings = [Keyword<"__kernel">, Keyword<"kernel">];
   let Subjects = SubjectList<[Function], ErrorDiag>;
   let Documentation = [Undocumented];
+}
+
+def OpenCLUnrollHint : InheritableAttr {
+  let Spellings = [GNU<"opencl_unroll_hint">];
+  let Args = [UnsignedArgument<"UnrollHint">];
+  let Documentation = [OpenCLUnrollHintDocs];
 }
 
 // This attribute is both a type attribute, and a declaration attribute (for

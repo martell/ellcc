@@ -1,8 +1,9 @@
 current SVN:
 
+* Update to LLVM r261439.
 * Added kernel version to 4.5-rc4 to ecclinux. Builds but is not functional.
 * Update the ecclinux kernel version to 4.1.18.
-* Update to LLVM r258915.
+* Update to LLVM r260915.
 * Build lld as part of the ELLCC build.
 * Use cmake to build clang/LLVM for all targets.
 * Updates to build x86_64, i386, PowerPC and MIPS Linux. Not functional yet.

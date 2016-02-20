@@ -2483,11 +2483,9 @@ static void addExceptionArgs(const ArgList &Args, types::ID InputType,
   }
 
   if (types::isCXX(InputType)) {
-    // Disable C++ EH by default on XCore, PS4, and MSVC.
-    // FIXME: Remove MSVC from this list once things work.
-    bool CXXExceptionsEnabled = Triple.getArch() != llvm::Triple::xcore &&
-                                !Triple.isPS4CPU() &&
-                                !Triple.isWindowsMSVCEnvironment();
+    // Disable C++ EH by default on XCore and PS4.
+    bool CXXExceptionsEnabled =
+        Triple.getArch() != llvm::Triple::xcore && !Triple.isPS4CPU();
     Arg *ExceptionArg = Args.getLastArg(
         options::OPT_fcxx_exceptions, options::OPT_fno_cxx_exceptions,
         options::OPT_fexceptions, options::OPT_fno_exceptions);
@@ -4992,7 +4990,7 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // -fmodule-name specifies the module that is currently being built (or
   // used for header checking by -fmodule-maps).
-  Args.AddLastArg(CmdArgs, options::OPT_fmodule_name);
+  Args.AddLastArg(CmdArgs, options::OPT_fmodule_name_EQ);
 
   // -fmodule-map-file can be used to specify files containing module
   // definitions.
@@ -5858,10 +5856,9 @@ static bool maybeConsumeDash(const std::string &EH, size_t &I) {
 
 namespace {
 struct EHFlags {
-  EHFlags() : Synch(false), Asynch(false), NoExceptC(false) {}
-  bool Synch;
-  bool Asynch;
-  bool NoExceptC;
+  bool Synch = false;
+  bool Asynch = false;
+  bool NoUnwindC = false;
 };
 } // end anonymous namespace
 
@@ -5870,8 +5867,7 @@ struct EHFlags {
 /// - s: Cleanup after "synchronous" exceptions, aka C++ exceptions.
 /// - a: Cleanup after "asynchronous" exceptions, aka structured exceptions.
 ///      The 'a' modifier is unimplemented and fundamentally hard in LLVM IR.
-/// - c: Assume that extern "C" functions are implicitly noexcept.  This
-///      modifier is an optimization, so we ignore it for now.
+/// - c: Assume that extern "C" functions are implicitly nounwind.
 /// The default is /EHs-c-, meaning cleanups are disabled.
 static EHFlags parseClangCLEHFlags(const Driver &D, const ArgList &Args) {
   EHFlags EH;
@@ -5885,7 +5881,7 @@ static EHFlags parseClangCLEHFlags(const Driver &D, const ArgList &Args) {
         EH.Asynch = maybeConsumeDash(EHVal, I);
         continue;
       case 'c':
-        EH.NoExceptC = maybeConsumeDash(EHVal, I);
+        EH.NoUnwindC = maybeConsumeDash(EHVal, I);
         continue;
       case 's':
         EH.Synch = maybeConsumeDash(EHVal, I);
@@ -5896,6 +5892,12 @@ static EHFlags parseClangCLEHFlags(const Driver &D, const ArgList &Args) {
       D.Diag(clang::diag::err_drv_invalid_value) << "/EH" << EHVal;
       break;
     }
+  }
+  // The /GX, /GX- flags are only processed if there are not /EH flags.
+  if (EHArgs.empty() &&
+      Args.hasFlag(options::OPT__SLASH_GX, options::OPT__SLASH_GX_)) {
+    EH.Synch = true;
+    EH.NoUnwindC = true;
   }
 
   return EH;
@@ -5975,10 +5977,11 @@ void Clang::AddClangCLArgs(const ArgList &Args, ArgStringList &CmdArgs,
 
   const Driver &D = getToolChain().getDriver();
   EHFlags EH = parseClangCLEHFlags(D, Args);
-  // FIXME: Do something with NoExceptC.
   if (EH.Synch || EH.Asynch) {
     CmdArgs.push_back("-fcxx-exceptions");
     CmdArgs.push_back("-fexceptions");
+    if (EH.NoUnwindC)
+      CmdArgs.push_back("-fexternc-nounwind");
   }
 
   // /EP should expand to -E -P.
@@ -10300,6 +10303,8 @@ std::unique_ptr<Command> visualstudio::Compiler::GetCommand(
   // Flags that can simply be passed through.
   Args.AddAllArgs(CmdArgs, options::OPT__SLASH_LD);
   Args.AddAllArgs(CmdArgs, options::OPT__SLASH_LDd);
+  Args.AddAllArgs(CmdArgs, options::OPT__SLASH_GX);
+  Args.AddAllArgs(CmdArgs, options::OPT__SLASH_GX_);
   Args.AddAllArgs(CmdArgs, options::OPT__SLASH_EH);
   Args.AddAllArgs(CmdArgs, options::OPT__SLASH_Zl);
 
@@ -11285,15 +11290,20 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
   assert(gpu_archs.size() == 1 && "Exactly one GPU Arch required for ptxas.");
   const std::string& gpu_arch = gpu_archs[0];
 
-
   ArgStringList CmdArgs;
   CmdArgs.push_back(TC.getTriple().isArch64Bit() ? "-m64" : "-m32");
+  if (Args.getLastArg(options::OPT_cuda_noopt_device_debug)) {
+    // ptxas does not accept -g option if optimization is enabled, so
+    // we ignore the compiler's -O* options if we want debug info.
+    CmdArgs.push_back("-g");
+    CmdArgs.push_back("--dont-merge-basicblocks");
+    CmdArgs.push_back("--return-at-end");
+  } else if (Arg *A = Args.getLastArg(options::OPT_O_Group)) {
+    // Map the -O we received to -O{0,1,2,3}.
+    //
+    // TODO: Perhaps we should map host -O2 to ptxas -O3. -O3 is ptxas's
+    // default, so it may correspond more closely to the spirit of clang -O2.
 
-  // Map the -O we received to -O{0,1,2,3}.
-  //
-  // TODO: Perhaps we should map host -O2 to ptxas -O3. -O3 is ptxas's default,
-  // so it may correspond more closely to the spirit of clang -O2.
-  if (Arg *A = Args.getLastArg(options::OPT_O_Group)) {
     // -O3 seems like the least-bad option when -Osomething is specified to
     // clang but it isn't handled below.
     StringRef OOpt = "3";
@@ -11318,9 +11328,6 @@ void NVPTX::Assembler::ConstructJob(Compilation &C, const JobAction &JA,
     // to no optimizations, but ptxas's default is -O3.
     CmdArgs.push_back("-O0");
   }
-
-  // Don't bother passing -g to ptxas: It's enabled by default at -O0, and
-  // not supported at other optimization levels.
 
   CmdArgs.push_back("--gpu-name");
   CmdArgs.push_back(Args.MakeArgString(gpu_arch));

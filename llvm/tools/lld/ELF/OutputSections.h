@@ -65,7 +65,7 @@ public:
   typedef typename llvm::object::ELFFile<ELFT>::uintX_t uintX_t;
   typedef typename llvm::object::ELFFile<ELFT>::Elf_Shdr Elf_Shdr;
 
-  OutputSectionBase(StringRef Name, uint32_t sh_type, uintX_t sh_flags);
+  OutputSectionBase(StringRef Name, uint32_t Type, uintX_t Flags);
   void setVA(uintX_t VA) { Header.sh_addr = VA; }
   uintX_t getVA() const { return Header.sh_addr; }
   void setFileOffset(uintX_t Off) { Header.sh_offset = Off; }
@@ -212,6 +212,8 @@ template <class ELFT> struct DynamicReloc {
       : Type(Type), OKind(Off_Sec), OffsetSec(OffsetSec),
         OffsetInSec(OffsetInSec), TargetSec(TargetSec),
         OffsetInTargetSec(OffsetInTargetSec), Addend(Addend) {}
+
+  uintX_t getOffset() const;
 };
 
 template <class ELFT>
@@ -230,7 +232,7 @@ public:
   StringTableSection<ELFT> &getStrTabSec() const { return StrTabSec; }
   unsigned getNumSymbols() const { return NumLocals + Symbols.size() + 1; }
 
-  ArrayRef<std::pair<SymbolBody *, unsigned>> getSymbols() const {
+  ArrayRef<std::pair<SymbolBody *, size_t>> getSymbols() const {
     return Symbols;
   }
 
@@ -241,10 +243,13 @@ private:
   void writeLocalSymbols(uint8_t *&Buf);
   void writeGlobalSymbols(uint8_t *Buf);
 
+  const OutputSectionBase<ELFT> *getOutputSection(SymbolBody *Sym);
   static uint8_t getSymbolBinding(SymbolBody *Body);
 
   SymbolTable<ELFT> &Table;
-  std::vector<std::pair<SymbolBody *, unsigned>> Symbols;
+
+  // A vector of symbols and their string table offsets.
+  std::vector<std::pair<SymbolBody *, size_t>> Symbols;
 };
 
 template <class ELFT>
@@ -277,7 +282,7 @@ public:
   typedef typename llvm::object::ELFFile<ELFT>::Elf_Rel Elf_Rel;
   typedef typename llvm::object::ELFFile<ELFT>::Elf_Rela Elf_Rela;
   typedef typename llvm::object::ELFFile<ELFT>::uintX_t uintX_t;
-  OutputSection(StringRef Name, uint32_t sh_type, uintX_t sh_flags);
+  OutputSection(StringRef Name, uint32_t Type, uintX_t Flags);
   void addSection(InputSectionBase<ELFT> *C) override;
   void sortInitFini();
   void sortCtorsDtors();
@@ -295,14 +300,15 @@ class MergeOutputSection final : public OutputSectionBase<ELFT> {
   bool shouldTailMerge() const;
 
 public:
-  MergeOutputSection(StringRef Name, uint32_t sh_type, uintX_t sh_flags);
+  MergeOutputSection(StringRef Name, uint32_t Type, uintX_t Flags,
+                     uintX_t Alignment);
   void addSection(InputSectionBase<ELFT> *S) override;
   void writeTo(uint8_t *Buf) override;
   unsigned getOffset(StringRef Val);
   void finalize() override;
 
 private:
-  llvm::StringTableBuilder Builder{llvm::StringTableBuilder::RAW};
+  llvm::StringTableBuilder Builder;
 };
 
 // FDE or CIE
@@ -327,7 +333,7 @@ public:
   typedef typename llvm::object::ELFFile<ELFT>::Elf_Shdr Elf_Shdr;
   typedef typename llvm::object::ELFFile<ELFT>::Elf_Rel Elf_Rel;
   typedef typename llvm::object::ELFFile<ELFT>::Elf_Rela Elf_Rela;
-  EHOutputSection(StringRef Name, uint32_t sh_type, uintX_t sh_flags);
+  EHOutputSection(StringRef Name, uint32_t Type, uintX_t Flags);
   void writeTo(uint8_t *Buf) override;
 
   template <bool IsRela>
@@ -398,7 +404,7 @@ public:
 
   // Adds symbols to the hash table.
   // Sorts the input to satisfy GNU hash section requirements.
-  void addSymbols(std::vector<std::pair<SymbolBody *, unsigned>> &Symbols);
+  void addSymbols(std::vector<std::pair<SymbolBody *, size_t>> &Symbols);
 
 private:
   static unsigned calcNBuckets(unsigned NumHashed);
@@ -408,13 +414,13 @@ private:
   void writeBloomFilter(uint8_t *&Buf);
   void writeHashTable(uint8_t *Buf);
 
-  struct HashedSymbolData {
+  struct SymbolData {
     SymbolBody *Body;
-    unsigned STName;
+    size_t STName;
     uint32_t Hash;
   };
 
-  std::vector<HashedSymbolData> HashedSymbols;
+  std::vector<SymbolData> Symbols;
 
   unsigned MaskWords;
   unsigned NBuckets;
