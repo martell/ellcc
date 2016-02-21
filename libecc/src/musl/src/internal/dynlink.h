@@ -64,6 +64,10 @@ struct fdpic_dummy_loadmap {
 #define DL_FDPIC 0
 #endif
 
+#ifndef DL_NOMMU_SUPPORT
+#define DL_NOMMU_SUPPORT 0
+#endif
+
 #if !DL_FDPIC
 #define IS_RELATIVE(x,s) ( \
 	(R_TYPE(x) == REL_RELATIVE) || \
@@ -77,6 +81,10 @@ struct fdpic_dummy_loadmap {
 
 #ifndef NEED_MIPS_GOT_RELOCS
 #define NEED_MIPS_GOT_RELOCS 0
+#endif
+
+#ifndef DT_DEBUG_INDIRECT
+#define DT_DEBUG_INDIRECT 0
 #endif
 
 #define AUX_CNT 32

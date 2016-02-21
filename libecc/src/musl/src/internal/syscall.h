@@ -17,9 +17,7 @@
 typedef long syscall_arg_t;
 #endif
 
-#ifdef SHARED
 __attribute__((visibility("hidden")))
-#endif
 long __syscall_ret(unsigned long), __syscall(syscall_arg_t, ...),
 	__syscall_cp(syscall_arg_t, syscall_arg_t, syscall_arg_t, syscall_arg_t,
 	             syscall_arg_t, syscall_arg_t, syscall_arg_t);
@@ -65,7 +63,7 @@ long __syscall_ret(unsigned long), __syscall(syscall_arg_t, ...),
 #define __syscall_cp(...) __SYSCALL_DISP(__syscall_cp,__VA_ARGS__)
 #define syscall_cp(...) __syscall_ret(__syscall_cp(__VA_ARGS__))
 
-#ifdef SYS_socket
+#ifndef SYSCALL_USE_SOCKETCALL
 #define __socketcall(nm,a,b,c,d,e,f) syscall(SYS_##nm, a, b, c, d, e, f)
 #define __socketcall_cp(nm,a,b,c,d,e,f) syscall_cp(SYS_##nm, a, b, c, d, e, f)
 #else
