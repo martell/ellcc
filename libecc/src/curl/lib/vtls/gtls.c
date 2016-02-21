@@ -9,7 +9,7 @@
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.haxx.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -62,7 +62,7 @@
 
 /*
  Some hackish cast macros based on:
- http://library.gnome.org/devel/glib/unstable/glib-Type-Conversion-Macros.html
+ https://developer.gnome.org/glib/unstable/glib-Type-Conversion-Macros.html
 */
 #ifndef GNUTLS_POINTER_TO_INT_CAST
 #define GNUTLS_POINTER_TO_INT_CAST(p) ((int) (long) (p))

@@ -9,7 +9,7 @@
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.haxx.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -2250,11 +2250,11 @@ static int X509V3_ext(struct SessionHandle *data,
   int i;
   size_t j;
 
-  if(sk_X509_EXTENSION_num(exts) <= 0)
+  if((int)sk_X509_EXTENSION_num(exts) <= 0)
     /* no extensions, bail out */
     return 1;
 
-  for(i=0; i<sk_X509_EXTENSION_num(exts); i++) {
+  for(i=0; i < (int)sk_X509_EXTENSION_num(exts); i++) {
     ASN1_OBJECT *obj;
     X509_EXTENSION *ext = sk_X509_EXTENSION_value(exts, i);
     BUF_MEM *biomem;

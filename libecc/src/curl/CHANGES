@@ -6,6 +6,209 @@
 
                                   Changelog
 
+Version 7.47.1 (8 Feb 2016)
+
+Daniel Stenberg (8 Feb 2016)
+- RELEASE-NOTES: curl 7.47.1 time!
+
+Jay Satiro (8 Feb 2016)
+- tool_operhlp: Check for backslashes in get_url_file_name
+  
+  Extract the filename from the last slash or backslash. Prior to this
+  change backslashes could be part of the filename.
+  
+  This change needed for the curl tool built for Cygwin. Refer to the
+  CYGWIN addendum in advisory 20160127B.
+  
+  Bug: https://curl.haxx.se/docs/adv_20160127B.html
+
+Daniel Stenberg (7 Feb 2016)
+- RELEASE-NOTES: synced with d6a8869ea34
+
+Jay Satiro (6 Feb 2016)
+- openssl: Fix signed/unsigned mismatch warning in X509V3_ext
+  
+  sk_X509_EXTENSION_num may return an unsigned integer, however the value
+  will fit in an int.
+  
+  Bug: https://github.com/curl/curl/commit/dd1b44c#commitcomment-15913896
+  Reported-by: Gisle Vanem
+
+Daniel Stenberg (7 Feb 2016)
+- TODO: 17.11 -w output to stderr
+
+Jay Satiro (6 Feb 2016)
+- [Michael Kaufmann brought this change]
+
+  idn_win32: Better error checking
+  
+  .. also fix a conversion bug in the unused function
+  curl_win32_ascii_to_idn().
+  
+  And remove wprintfs on error (Jay).
+  
+  Bug: https://github.com/curl/curl/pull/637
+
+- [Gisle Vanem brought this change]
+
+  examples/asiohiper: Avoid function name collision on Windows
+  
+  closesocket => close_socket
+  Winsock already has the former.
+  
+  Bug: https://curl.haxx.se/mail/lib-2016-02/0016.html
+
+- [Gisle Vanem brought this change]
+
+  examples/htmltitle: Use _stricmp on Windows
+  
+  Bug: https://curl.haxx.se/mail/lib-2016-02/0017.html
+
+Daniel Stenberg (6 Feb 2016)
+- COPYING: clarify that Daniel is not the sole author
+  
+  ... done on request and as it is a fair point.
+
+Jay Satiro (5 Feb 2016)
+- unit1604: Fix unit setup return code
+
+- tool_doswin: Use type SANITIZEcode in sanitize_file_name
+
+- tool_doswin: Improve sanitization processing
+  
+  - Add unit test 1604 to test the sanitize_file_name function.
+  
+  - Use -DCURL_STATICLIB when building libcurltool for unit testing.
+  
+  - Better detection of reserved DOS device names.
+  
+  - New flags to modify sanitize behavior:
+  
+  SANITIZE_ALLOW_COLONS: Allow colons
+  SANITIZE_ALLOW_PATH: Allow path separators and colons
+  SANITIZE_ALLOW_RESERVED: Allow reserved device names
+  SANITIZE_ALLOW_TRUNCATE: Allow truncating a long filename
+  
+  - Restore sanitization of banned characters from user-specified outfile.
+  
+  Prior to this commit sanitization of a user-specified outfile was
+  temporarily disabled in 2b6dadc because there was no way to allow path
+  separators and colons through while replacing other banned characters.
+  Now in such a case we call the sanitize function with
+  SANITIZE_ALLOW_PATH which allows path separators and colons to pass
+  through.
+  
+  
+  Closes https://github.com/curl/curl/issues/624
+  Reported-by: Octavio Schroeder
+
+- [Viktor Szakats brought this change]
+
+  URLs: change more http to https
+
+- sasl_sspi: Fix memory leak in domain populate
+  
+  Free an existing domain before replacing it.
+  
+  Bug: https://github.com/curl/curl/issues/635
+  Reported-by: silveja1@users.noreply.github.com
+
+Daniel Stenberg (4 Feb 2016)
+- [Viktor Szakats brought this change]
+
+  URLs: follow GitHub project rename (also Travis CI)
+  
+  Closes #632
+
+- CHANGES.o: fix references to curl.haxx.nu
+  
+  I removed the scheme prefix from the URLs references this host name, as
+  we don't own/run that anymore but the name is kept for historic reasons.
+
+- HISTORY: add some info about when we used which host names
+
+Jay Satiro (2 Feb 2016)
+- [Viktor Szakats brought this change]
+
+  URLs: change more http to https
+
+Dan Fandrich (3 Feb 2016)
+- URLs: Change more haxx.se URLs from http: to https:
+
+Daniel Stenberg (3 Feb 2016)
+- RELEASE-NOTES: synced with 4af40b364
+
+- URLs: change all http:// URLs to https://
+
+- configure: update the copyright year range in output
+
+- dotdot: allow an empty input string too
+  
+  It isn't used by the code in current conditions but for safety it seems
+  sensible to at least not crash on such input.
+  
+  Extended unit test 1395 to verify this too as well as a plain "/" input.
+
+- HTTPS: update a bunch of URLs from HTTP to HTTPS
+
+- [Sergei Nikulov brought this change]
+
+  AppVeyor: updated to handle OpenSSL/WinSSL builds
+  
+  Closes #621
+
+Jay Satiro (1 Feb 2016)
+- tool_operate: Don't sanitize --output path (Windows)
+  
+  Due to path separators being incorrectly sanitized in --output
+  pathnames, eg -o c:\foo => c__foo
+  
+  This is a partial revert of 3017d8a until I write a proper fix. The
+  remote-name will continue to be sanitized, but if the user specified an
+  --output with string replacement (#1, #2, etc) that data is unsanitized
+  until I finish a fix.
+  
+  Bug: https://github.com/bagder/curl/issues/624
+  Reported-by: Octavio Schroeder
+
+- curl.1: Explain remote-name behavior if file already exists
+  
+  .. also warn about letting the server pick the filename.
+
+- [Gisle Vanem brought this change]
+
+  urldata: Error on missing SSL backend-specific connect info
+
+Daniel Stenberg (28 Jan 2016)
+- bump: towards the next (7.47.1 ?)
+
+- [Sergei Nikulov brought this change]
+
+  cmake: fixed when OpenSSL enabled on Windows and schannel detected
+  
+  Closes #617
+
+Jay Satiro (28 Jan 2016)
+- [Sergei Nikulov brought this change]
+
+  urldata: moved common variable out of ifdef
+  
+  Closes https://github.com/bagder/curl/pull/618
+
+- [Viktor Szakats brought this change]
+
+  tool_doswin: silence unused function warning
+  
+  tool_doswin.c:185:14: warning: 'msdosify' defined but not used
+  [-Wunused-function]
+  
+  Closes https://github.com/bagder/curl/pull/616
+
+Daniel Stenberg (27 Jan 2016)
+- getredirect.c: fix variable name
+  
+  Reported-by: Bernard Spil
+
 Version 7.47.0 (27 Jan 2016)
 
 Daniel Stenberg (27 Jan 2016)
@@ -5259,254 +5462,3 @@ Daniel Stenberg (17 Mar 2015)
 - checksrc: introduce a whitelisting concept
 
 - checksrc: use space after comma
-
-- checksrc: use space before paren in "return (expr);"
-
-- CONTRIBUTE: refer to git log instead of deprecated CHANGES file
-
-- CURLOPT_*.3: more examples and edits
-
-- CURLOPT_*.3: added lots of small example sections
-
-- CURLOPT_PRIVATE.3: provide an example
-
-- CURLOPT_*TIMEOUT.3: provide examples
-
-- CURLOPT_USERAGENT.3: added an example
-
-- CURLOPT_STDERR.3: added an example
-
-- curl_easy_perform.3: remove superfluous close brace from example
-
-- free: instead of Curl_safefree()
-  
-  Since we just started make use of free(NULL) in order to simplify code,
-  this change takes it a step further and:
-  
-  - converts lots of Curl_safefree() calls to good old free()
-  - makes Curl_safefree() not check the pointer before free()
-  
-  The (new) rule of thumb is: if you really want a function call that
-  frees a pointer and then assigns it to NULL, then use Curl_safefree().
-  But we will prefer just using free() from now on.
-
-- [Markus Elfring brought this change]
-
-  Bug #149: Deletion of unnecessary checks before a few calls of cURL functions
-  
-  The following functions return immediately if a null pointer was passed.
-  * Curl_cookie_cleanup
-  * curl_formfree
-  
-  It is therefore not needed that a function caller repeats a corresponding check.
-  
-  This issue was fixed by using the software Coccinelle 1.0.0-rc24.
-  
-  Signed-off-by: Markus Elfring <elfring@users.sourceforge.net>
-
-- [Markus Elfring brought this change]
-
-  Bug #149: Deletion of unnecessary checks before calls of the function "free"
-  
-  The function "free" is documented in the way that no action shall occur for
-  a passed null pointer. It is therefore not needed that a function caller
-  repeats a corresponding check.
-  http://stackoverflow.com/questions/18775608/free-a-null-pointer-anyway-or-check-first
-  
-  This issue was fixed by using the software Coccinelle 1.0.0-rc24.
-  
-  Signed-off-by: Markus Elfring <elfring@users.sourceforge.net>
-
-- [Jay Satiro brought this change]
-
-  connect: Fix happy eyeballs logic for IPv4-only builds
-  
-  Bug: https://github.com/bagder/curl/pull/168
-  
-  (trynextip)
-  - Don't try the "other" protocol family unless IPv6 is available. In an
-  IPv4-only build the other family can only be IPv6 which is unavailable.
-  
-  This change essentially stops IPv4-only builds from attempting the
-  "happy eyeballs" secondary parallel connection that is supposed to be
-  used by the "other" address family.
-  
-  Prior to this change in IPv4-only builds that secondary parallel
-  connection attempt could be erroneously used by the same family (IPv4)
-  which caused a bug where every address after the first for a host could
-  be tried twice, often in parallel. This change fixes that bug. An
-  example of the bug is shown below.
-  
-  Assume MTEST resolves to 3 addresses 127.0.0.2, 127.0.0.3 and 127.0.0.4:
-  
-  * STATE: INIT => CONNECT handle 0x64f4b0; line 1046 (connection #-5000)
-  * Rebuilt URL to: http://MTEST/
-  * Added connection 0. The cache now contains 1 members
-  * STATE: CONNECT => WAITRESOLVE handle 0x64f4b0; line 1083
-  (connection #0)
-  *   Trying 127.0.0.2...
-  * STATE: WAITRESOLVE => WAITCONNECT handle 0x64f4b0; line 1163
-  (connection #0)
-  *   Trying 127.0.0.3...
-  * connect to 127.0.0.2 port 80 failed: Connection refused
-  *   Trying 127.0.0.3...
-  * connect to 127.0.0.3 port 80 failed: Connection refused
-  *   Trying 127.0.0.4...
-  * connect to 127.0.0.3 port 80 failed: Connection refused
-  *   Trying 127.0.0.4...
-  * connect to 127.0.0.4 port 80 failed: Connection refused
-  * connect to 127.0.0.4 port 80 failed: Connection refused
-  * Failed to connect to MTEST port 80: Connection refused
-  * Closing connection 0
-  * The cache now contains 0 members
-  * Expire cleared
-  curl: (7) Failed to connect to MTEST port 80: Connection refused
-  
-  The bug was born in commit bagder/curl@2d435c7.
-
-- mksymbolsmanpage.pl: use std header and generate better nroff header
-
-- [Frank Meier brought this change]
-
-  closesocket: call multi socket cb on close even with custom close
-  
-  In function Curl_closesocket() in connect.c the call to
-  Curl_multi_closed() was wrongly omitted if a socket close function
-  (CURLOPT_CLOSESOCKETFUNCTION) is registered.
-  
-  That would lead to not removing the socket from the internal hash table
-  and not calling the multi socket callback appropriately.
-  
-  Bug: http://curl.haxx.se/bug/view.cgi?id=1493
-
-- [Tobias Stoeckmann brought this change]
-
-  hostip: Fix signal race in Curl_resolv_timeout.
-  
-  A signal handler for SIGALRM is installed in Curl_resolv_timeout. It is
-  configured to interrupt system calls and uses siglongjmp to return into
-  the function if alarm() goes off.
-  
-  The signal handler is installed before curl_jmpenv is initialized.
-  This means that an already installed alarm timer could trigger the
-  newly installed signal handler, leading to undefined behavior when it
-  accesses the uninitialized curl_jmpenv.
-  
-  Even if there is no previously installed alarm available, the code in
-  Curl_resolv_timeout itself installs an alarm before the environment is
-  fully set up. If the process is sent into suspend right after that, the
-  signal handler could be called too early as in previous scenario.
-  
-  To fix this, the signal handler should only be installed and the alarm
-  timer only be set after sigsetjmp has been called.
-
-- http2: detect prematures close without data transfered
-  
-  ... by using the regular Curl_http_done() method which checks for
-  that. This makes test 1801 fail consistently with error 56 (which seems
-  fine) to that test is also updated here.
-  
-  Reported-by: Ben Darnell
-  Bug: https://github.com/bagder/curl/issues/166
-
-Dan Fandrich (13 Mar 2015)
-- test320: Expect the Host header to be the first header
-  
-  Required for the test to work after a5d994941c2b.
-
-Daniel Stenberg (12 Mar 2015)
-- RELEASE-NOTES: synced with 186e46d88dd
-
-- openssl: use colons properly in the ciphers list
-  
-  While the previous string worked, this is the documented format.
-  
-  Reported-by: Richard Moore
-
-- openssl: sort the ciphers on strength
-  
-  This makes curl pick better (stronger) ciphers by default. The strongest
-  available ciphers are fine according to the HTTP/2 spec so an OpenSSL
-  built curl is no longer rejected by string HTTP/2 servers.
-  
-  Bug: http://curl.haxx.se/bug/view.cgi?id=1487
-
-- [Fabian Keil brought this change]
-
-  test203[0-3]: Expect the Host header to be the first header
-  
-  Required for the tests to work after a5d994941c2b.
-
-- openssl: show the cipher selection to use
-
-- http: always send Host: header as first header
-  
-  ...after the method line:
-  
-   "Since the Host field-value is critical information for handling a
-   request, a user agent SHOULD generate Host as the first header field
-   following the request-line." / RFC 7230 section 5.4
-  
-  Additionally, this will also make libcurl ignore multiple specified
-  custom Host: headers and only use the first one. Test 1121 has been
-  updated accordingly
-  
-  Bug: http://curl.haxx.se/bug/view.cgi?id=1491
-  Reported-by: Rainer Canavan
-
-- [Alexander Pepper brought this change]
-
-  mk-ca-bundle bugfix: Don't report SHA1 numbers with "-q".
-  
-  Also unified printing to STDERR by creating the helper method "report".
-
-- proxy: re-use proxy connections (regression)
-  
-  When checking for a connection to re-use, a proxy-using request must
-  check for and use a proxy connection and not one based on the host
-  name!
-  
-  Added test 1421 to verify
-  
-  Bug: http://curl.haxx.se/bug/view.cgi?id=1492
-
-- [Jay Satiro brought this change]
-
-  memanalyze.pl: handle free(NULL)
-
-- [Jay Satiro brought this change]
-
-  .travis.yml: Change CI make test to make test-full
-  
-  - Change the continuous integration script to use 'make test-full'
-  instead of just 'make test' so that the diagnostic log output is
-  printed to stdout when a test fails.
-  
-  - Change the continuous integration script to use
-  './configure --enable-debug' instead of just './configure' so that the
-  memory analyzer will work during testing.
-  
-  Prior to this change Travis used its default C test script:
-  ./configure && make && make test
-
-- [Alessandro Ghedini brought this change]
-
-  gtls: correctly align certificate status verification messages
-
-- [Alessandro Ghedini brought this change]
-
-  gtls: don't print double newline after certificate dates
-
-- [Alessandro Ghedini brought this change]
-
-  gtls: print negotiated TLS version and full cipher suite name
-  
-  Instead of priting cipher and MAC algorithms names separately, print the
-  whole cipher suite string which also includes the key exchange algorithm,
-  along with the negotiated TLS version.
-
-- gtls: fix compiler warnings
-
-- [Alessandro Ghedini brought this change]
-
-  gtls: add support for CURLOPT_CAPATH

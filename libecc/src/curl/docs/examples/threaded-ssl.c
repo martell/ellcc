@@ -9,7 +9,7 @@
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
- * are also available at http://curl.haxx.se/docs/copyright.html.
+ * are also available at https://curl.haxx.se/docs/copyright.html.
  *
  * You may opt to use, copy, modify, merge, publish, distribute and/or sell
  * copies of the Software, and permit persons to whom the Software is
@@ -29,9 +29,9 @@
  * (libgcrypt) so far.
  *
  * OpenSSL docs for this:
- *   http://www.openssl.org/docs/crypto/threads.html
+ *   https://www.openssl.org/docs/crypto/threads.html
  * gcrypt docs for this:
- *   http://gnupg.org/documentation/manuals/gcrypt/Multi_002dThreading.html
+ *   https://gnupg.org/documentation/manuals/gcrypt/Multi_002dThreading.html
  */
 
 #define USE_OPENSSL /* or USE_GNUTLS accordingly */

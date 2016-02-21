@@ -1,5 +1,6 @@
 current SVN:
 
+* Update the curl library to version 7.47.1.
 * Update the c-ares library to version 1.11.0.
 * Update to LLVM r261439.
 * Added kernel version to 4.5-rc4 to ecclinux. Builds but is not functional.
