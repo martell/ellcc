@@ -1,7 +1,7 @@
 AC_PREREQ(2.57)
 
 dnl Version not hardcoded here. Fetched later from ares_version.h
-AC_INIT([c-ares], [1.10.0],
+AC_INIT([c-ares], [1.11.0],
   [c-ares mailing list: http://cool.haxx.se/mailman/listinfo/c-ares])
 
 XC_OVR_ZZ50
@@ -12,6 +12,7 @@ AC_CONFIG_SRCDIR([ares_ipv6.h])
 AC_CONFIG_HEADERS([ares_config.h ares_build.h])
 AC_CONFIG_MACRO_DIR([m4])
 AM_MAINTAINER_MODE
+m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 CARES_CHECK_OPTION_DEBUG
 CARES_CHECK_OPTION_OPTIMIZE
@@ -19,6 +20,7 @@ CARES_CHECK_OPTION_WARNINGS
 CARES_CHECK_OPTION_WERROR
 CARES_CHECK_OPTION_CURLDEBUG
 CARES_CHECK_OPTION_SYMBOL_HIDING
+CARES_CHECK_OPTION_EXPOSE_STATICS
 
 XC_CHECK_PATH_SEPARATOR
 
@@ -64,6 +66,8 @@ if test -z "$AR" || test "$AR" = "not_found"; then
 fi
 AC_SUBST([AR])
 
+AX_CODE_COVERAGE
+
 dnl Remove non-configure distributed ares_build.h
 if test -f ${srcdir}/ares_build.h; then
   rm -f ${srcdir}/ares_build.h
@@ -79,7 +83,7 @@ AC_DEFINE_UNQUOTED(OS, "${host}", [cpu-machine-OS])
 
 XC_CHECK_PROG_CC
 
-AM_INIT_AUTOMAKE
+XC_AUTOMAKE
 
 dnl This defines _ALL_SOURCE for AIX
 CARES_CHECK_AIX_ALL_SOURCE
@@ -346,6 +350,30 @@ if test "$HAVE_GETHOSTBYNAME" != "1"; then
   AC_MSG_ERROR([couldn't find libraries for gethostbyname()])
 fi
 
+dnl resolv lib for iPhone
+AS_IF([test "x$host_vendor" = "xapple"], [
+  AC_MSG_CHECKING([for iPhone target])
+  AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([[
+#include "TargetConditionals.h"
+    ]], [[
+#if TARGET_OS_IPHONE == 0
+#error Not an iPhone target
+#endif
+return 0;
+    ]])
+  ],[
+    AC_MSG_RESULT([yes])
+    AC_SEARCH_LIBS([res_servicename], [resolv], [
+      AC_DEFINE([CARES_USE_LIBRESOLV], [1], [Use resolver library to configure cares])
+    ], [
+      AC_MSG_ERROR([Unable to find libresolv which is required for iPhone targets])
+    ])
+  ],[
+    AC_MSG_RESULT([no])
+  ])
+])
+
 dnl resolve lib?
 AC_CHECK_FUNC(strcasecmp, , [ AC_CHECK_LIB(resolve, strcasecmp) ])
 
@@ -457,7 +485,6 @@ AC_CHECK_SIZEOF(size_t)
 AC_CHECK_SIZEOF(long)
 AC_CHECK_SIZEOF(int)
 AC_CHECK_SIZEOF(short)
-CARES_CONFIGURE_LONG
 AC_CHECK_SIZEOF(time_t)
 
 AC_CHECK_TYPE(long long,
@@ -850,5 +877,10 @@ squeeze CARES_PRIVATE_LIBS
 
 XC_CHECK_BUILD_FLAGS
 
+if test "x$cross_compiling" = "xno"; then
+  AC_CONFIG_SUBDIRS([test])
+fi
+
 AC_CONFIG_FILES([Makefile libcares.pc])
 AC_OUTPUT
+XC_AMEND_DISTCLEAN(['.'])

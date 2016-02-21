@@ -1,5 +1,6 @@
 current SVN:
 
+* Update the c-ares library to version 1.11.0.
 * Update to LLVM r261439.
 * Added kernel version to 4.5-rc4 to ecclinux. Builds but is not functional.
 * Update the ecclinux kernel version to 4.1.18.
@@ -11,7 +12,7 @@ current SVN:
 
 version 0.1.28
 
-* Update to curl 7.47.0.
+* Update the curl library to version 7.47.0.
 * Update to binutils 2.26.
 * Update autoconf files for several libraries.
 * Update to LLVM r258477.
