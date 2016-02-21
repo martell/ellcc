@@ -131,8 +131,8 @@ ${MAKE} -j ${maxjobs} -C llvm-build$builddir install ||  bailout "Install failed
 rm -f $bindir/clang-[0-9]*
 cp llvm-build$builddir/bin/* $bindir
 cd $bindir
-ln -s clang-[0-9]* ecc
-ln -s clang-[0-9]* ecc++
+ln -sf clang-[0-9]* ecc
+ln -sf clang-[0-9]* ecc++
 cd - 
 
 if [ "$host" != "$build" ] ; then
