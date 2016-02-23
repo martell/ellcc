@@ -307,8 +307,10 @@ mips64*|powerpc64*) fail "$0: unsupported target \"$target\"" ;;
 arm*) ARCH=arm ;;
 thumb*) ARCH=arm ;;
 aarch64*) ARCH=aarch64 ;;
+i?86-nt32*) ARCH=nt32 ;;
 i?86*) ARCH=i386 ;;
 x86_64-x32*|x32*|x86_64*x32) ARCH=x32 ;;
+x86_64-nt64*) ARCH=nt64 ;;
 x86_64*) ARCH=x86_64 ;;
 mips*|mipsel*) ARCH=mips ;;
 microblaze*) ARCH=microblaze ;;
@@ -594,6 +596,20 @@ fi
 if test "$ARCH" = "arm" ; then
 trycppif __ARMEB__ "$t" && SUBARCH=${SUBARCH}eb
 trycppif __ARM_PCS_VFP "$t" && SUBARCH=${SUBARCH}hf
+# Versions of clang up until at least 3.8 have the wrong constraint codes
+# for floating point operands to inline asm. Detect this so the affected
+# source files can just disable the asm.
+if test "$cc_family" = clang ; then
+printf "checking whether clang's vfp asm constraints work... "
+echo 'float f(float x) { __asm__("":"+t"(x)); return x; }' > "$tmpc"
+if $CC $CFLAGS_C99FSE $CPPFLAGS $CFLAGS -c -o /dev/null "$tmpc" >/dev/null 2>&1 ; then
+printf "yes\n"
+else
+printf "no\n"
+CFLAGS_AUTO="$CFLAGS_AUTO -DBROKEN_VFP_ASM"
+CFLAGS_AUTO="${CFLAGS_AUTO# }"
+fi
+fi
 fi
 
 if test "$ARCH" = "aarch64" ; then
@@ -662,9 +678,19 @@ fail "$0: error: unsupported long double type"
 fi
 
 #
-# Enable depends if requessted.
+# Enable depends if requested.
 #
 test "$depends" = yes && CFLAGS_AUTO="$CFLAGS_AUTO -MD -MP"
+
+#
+# Some build systems globally pass in broken CFLAGS like -ffast-math
+# for all packages. On recent GCC we can detect this and error out
+# early rather than producing a seriously-broken math library.
+#
+if trycppif "__FAST_MATH__" \
+  "$CFLAGS_C99FSE $CPPFLAGS $CFLAGS" ; then
+fail "$0: error: compiler has broken floating point; check CFLAGS"
+fi
 
 printf "creating config.mak... "
 

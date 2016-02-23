@@ -17,16 +17,22 @@ includedir = $(prefix)/include
 libdir = $(prefix)/lib
 syslibdir = /lib
 
-BASE_SRCS = $(sort $(wildcard $(srcdir)/src/*/*.c))
+SRC_DIRS = $(addprefix $(srcdir)/,src/* crt ldso)
+BASE_GLOBS = $(addsuffix /*.c,$(SRC_DIRS))
+ARCH_GLOBS = $(addsuffix /$(ARCH)/*.[csS],$(SRC_DIRS))
+BASE_SRCS = $(sort $(wildcard $(BASE_GLOBS)))
+ARCH_SRCS = $(sort $(wildcard $(ARCH_GLOBS)))
 BASE_OBJS = $(patsubst $(srcdir)/%,%.o,$(basename $(BASE_SRCS)))
-ARCH_SRCS = $(wildcard $(srcdir)/src/*/$(ARCH)/*.[csS])
 ARCH_OBJS = $(patsubst $(srcdir)/%,%.o,$(basename $(ARCH_SRCS)))
 REPLACED_OBJS = $(sort $(subst /$(ARCH)/,/,$(ARCH_OBJS)))
-LDSO_SRCS = $(sort $(wildcard $(srcdir)/ldso/*.c))
-LDSO_OBJS = $(patsubst $(srcdir)/%,obj/%.lo,$(basename $(LDSO_SRCS)))
-OBJS = $(addprefix obj/, $(filter-out $(REPLACED_OBJS), $(sort $(BASE_OBJS) $(ARCH_OBJS))))
-AOBJS = $(OBJS)
-LOBJS = $(OBJS:.o=.lo)
+ALL_OBJS = $(addprefix obj/, $(filter-out $(REPLACED_OBJS), $(sort $(BASE_OBJS) $(ARCH_OBJS))))
+
+LIBC_OBJS = $(filter obj/src/%,$(ALL_OBJS))
+LDSO_OBJS = $(filter obj/ldso/%,$(ALL_OBJS:%.o=%.lo))
+CRT_OBJS = $(filter obj/crt/%,$(ALL_OBJS))
+
+AOBJS = $(LIBC_OBJS)
+LOBJS = $(LIBC_OBJS:.o=.lo)
 DEPS = $(OBJS:.o=.d)
 GENH = obj/include/bits/alltypes.h
 GENH_INT = obj/src/internal/version.h
@@ -57,7 +63,7 @@ ALL_INCLUDES = $(sort $(INCLUDES:$(srcdir)/%=%) $(GENH:obj/%=%) $(ARCH_INCLUDES:
 
 EMPTY_LIB_NAMES = m rt pthread crypt util xnet resolv dl
 EMPTY_LIBS = $(EMPTY_LIB_NAMES:%=lib/lib%.a)
-CRT_LIBS = lib/crt1.o lib/Scrt1.o lib/rcrt1.o lib/crti.o lib/crtn.o lib/crtbegin.o lib/crtend.o
+CRT_LIBS = $(addprefix lib/,$(notdir $(CRT_OBJS)))
 STATIC_LIBS = lib/libc.a
 SHARED_LIBS = lib/libc.so
 TOOL_LIBS = lib/musl-gcc.specs
@@ -72,25 +78,21 @@ LDSO_PATHNAME = $(syslibdir)/ld-musl-$(ARCH)$(SUBARCH).so.1
 -include config.mak
 
 ifeq ($(ARCH),)
-$(error Please set ARCH in config.mak before running make.)
-endif
+
+all:
+	@echo "Please set ARCH in config.mak before running make."
+	@exit 1
+
+else
 
 all: $(ALL_LIBS) $(ALL_TOOLS)
 
-OBJ_DIRS = $(sort $(patsubst %/,%,$(dir $(ALL_LIBS) $(ALL_TOOLS) $(OBJS) $(LDSO_OBJS) $(GENH) $(GENH_INT))) $(addprefix obj/, crt crt/$(ARCH) include))
+OBJ_DIRS = $(sort $(patsubst %/,%,$(dir $(ALL_LIBS) $(ALL_TOOLS) $(ALL_OBJS) $(GENH) $(GENH_INT))) obj/include)
 
-$(ALL_LIBS) $(ALL_TOOLS) $(CRT_LIBS:lib/%=obj/crt/%) $(OBJS) $(LOBJS) $(GENH) $(GENH_INT): | $(OBJ_DIRS)
+$(ALL_LIBS) $(ALL_TOOLS) $(ALL_OBJS) $(ALL_OBJS:%.o=%.lo) $(GENH) $(GENH_INT): | $(OBJ_DIRS)
 
 $(OBJ_DIRS):
 	mkdir -p $@
-
-install: install-libs install-headers install-tools
-
-clean:
-	rm -rf obj lib
-
-distclean: clean
-	rm -f config.mak
 
 obj/include/bits/alltypes.h: $(srcdir)/arch/$(ARCH)/bits/alltypes.h.in $(srcdir)/include/alltypes.h.in $(srcdir)/tools/mkalltypes.sed
 	sed -f $(srcdir)/tools/mkalltypes.sed $(srcdir)/arch/$(ARCH)/bits/alltypes.h.in $(srcdir)/include/alltypes.h.in > $@
@@ -127,7 +129,7 @@ NOSSP_SRCS = $(wildcard crt/*.c) \
 	ldso/dlstart.c ldso/dynlink.c
 $(NOSSP_SRCS:%.c=obj/%.o) $(NOSSP_SRCS:%.c=obj/%.lo): CFLAGS_ALL += $(CFLAGS_NOSSP)
 
-$(CRT_LIBS:lib/%=obj/crt/%): CFLAGS_ALL += -DCRT
+$(CRT_OBJS): CFLAGS_ALL += -DCRT
 
 $(LOBJS) $(LDSO_OBJS): CFLAGS_ALL += -fPIC
 define mkasmdepS
@@ -177,13 +179,10 @@ $(EMPTY_LIBS):
 	rm -f $@
 	$(AR) rc $@
 
+lib/%.o: obj/crt/$(ARCH)/%.o
+	cp $< $@
+
 lib/%.o: obj/crt/%.o
-	cp $< $@
-
-lib/crti.o: obj/crt/$(ARCH)/crti.o
-	cp $< $@
-
-lib/crtn.o: obj/crt/$(ARCH)/crtn.o
 	cp $< $@
 
 lib/musl-gcc.specs: $(srcdir)/tools/musl-gcc.specs.sh config.mak
@@ -227,14 +226,25 @@ install-headers: $(ALL_INCLUDES:include/%=$(DESTDIR)$(includedir)/%)
 
 install-tools: $(ALL_TOOLS:obj/%=$(DESTDIR)$(bindir)/%)
 
+install: install-libs install-headers install-tools
+
 musl-git-%.tar.gz: .git
 	 git --git-dir=$(srcdir)/.git archive --format=tar.gz --prefix=$(patsubst %.tar.gz,%,$@)/ -o $@ $(patsubst musl-git-%.tar.gz,%,$@)
 
 musl-%.tar.gz: .git
 	 git --git-dir=$(srcdir)/.git archive --format=tar.gz --prefix=$(patsubst %.tar.gz,%,$@)/ -o $@ v$(patsubst musl-%.tar.gz,%,$@)
 
--include $(DEPS)
-
 .SECONDARY:
 
+endif
+
+clean:
+	rm -rf obj lib
+
+distclean: clean
+	rm -f config.mak
+
 .PHONY: all clean install install-libs install-headers install-tools
+
+-include $(DEPS)
+

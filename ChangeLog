@@ -1,6 +1,6 @@
 current SVN:
 
-* Update to musl 1.1.13.
+* Update to musl 1.1.14.
 * Update the openldap library to version 2.4.44.
 * Update the curl library to version 7.47.1.
 * Update the c-ares library to version 1.11.0.
