@@ -1969,15 +1969,14 @@ StrengthenNoWrapFlags(ScalarEvolution *SE, SCEVTypes Type,
 
     const APInt &C = cast<SCEVConstant>(Ops[0])->getAPInt();
     if (!(SignOrUnsignWrap & SCEV::FlagNSW)) {
-      auto NSWRegion =
-        ConstantRange::makeNoWrapRegion(Instruction::Add, C, OBO::NoSignedWrap);
+      auto NSWRegion = ConstantRange::makeGuaranteedNoWrapRegion(
+          Instruction::Add, C, OBO::NoSignedWrap);
       if (NSWRegion.contains(SE->getSignedRange(Ops[1])))
         Flags = ScalarEvolution::setFlags(Flags, SCEV::FlagNSW);
     }
     if (!(SignOrUnsignWrap & SCEV::FlagNUW)) {
-      auto NUWRegion =
-        ConstantRange::makeNoWrapRegion(Instruction::Add, C,
-                                        OBO::NoUnsignedWrap);
+      auto NUWRegion = ConstantRange::makeGuaranteedNoWrapRegion(
+          Instruction::Add, C, OBO::NoUnsignedWrap);
       if (NUWRegion.contains(SE->getUnsignedRange(Ops[1])))
         Flags = ScalarEvolution::setFlags(Flags, SCEV::FlagNUW);
     }
@@ -3895,6 +3894,12 @@ const SCEV *ScalarEvolution::createAddRecFromPHI(PHINode *PN) {
         }
       }
     }
+
+    // Remove the temporary PHI node SCEV that has been inserted while intending
+    // to create an AddRecExpr for this PHI node. We can not keep this temporary
+    // as it will prevent later (possibly simpler) SCEV expressions to be added
+    // to the ValueExprMap.
+    ValueExprMap.erase(PN);
   }
 
   return nullptr;

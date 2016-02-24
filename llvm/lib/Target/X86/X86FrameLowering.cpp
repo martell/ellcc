@@ -462,6 +462,8 @@ void X86FrameLowering::inlineStackProbe(MachineFunction &MF,
   }
 
   if (ChkStkStub != nullptr) {
+    assert(!ChkStkStub->isBundled() &&
+           "Not expecting bundled instructions here");
     MachineBasicBlock::iterator MBBI = std::next(ChkStkStub->getIterator());
     assert(std::prev(MBBI).operator==(ChkStkStub) &&
       "MBBI expected after __chkstk_stub.");

@@ -2544,8 +2544,8 @@ static bool ContainsCompileAction(const Action *A) {
   if (isa<CompileJobAction>(A) || isa<BackendJobAction>(A))
     return true;
 
-  for (const auto &Act : *A)
-    if (ContainsCompileAction(Act))
+  for (const auto &AI : A->inputs())
+    if (ContainsCompileAction(AI))
       return true;
 
   return false;
@@ -5894,8 +5894,10 @@ static EHFlags parseClangCLEHFlags(const Driver &D, const ArgList &Args) {
     }
   }
   // The /GX, /GX- flags are only processed if there are not /EH flags.
+  // The default is that /GX is not specified.
   if (EHArgs.empty() &&
-      Args.hasFlag(options::OPT__SLASH_GX, options::OPT__SLASH_GX_)) {
+      Args.hasFlag(options::OPT__SLASH_GX, options::OPT__SLASH_GX_,
+                   /*default=*/false)) {
     EH.Synch = true;
     EH.NoUnwindC = true;
   }
@@ -6860,7 +6862,10 @@ void wasm::Linker::ConstructJob(Compilation &C, const JobAction &JA,
                                 const InputInfoList &Inputs,
                                 const ArgList &Args,
                                 const char *LinkingOutput) const {
-  const char *Linker = Args.MakeArgString(getToolChain().GetLinkerPath());
+
+  const ToolChain &ToolChain = getToolChain();
+  const Driver &D = ToolChain.getDriver();
+  const char *Linker = Args.MakeArgString(ToolChain.GetLinkerPath());
   ArgStringList CmdArgs;
   CmdArgs.push_back("-flavor");
   CmdArgs.push_back("ld");
@@ -6872,9 +6877,48 @@ void wasm::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   if (areOptimizationsEnabled(Args))
     CmdArgs.push_back("--gc-sections");
 
-  AddLinkerInputs(getToolChain(), Inputs, Args, CmdArgs);
+  if (Args.hasArg(options::OPT_rdynamic))
+    CmdArgs.push_back("-export-dynamic");
+  if (Args.hasArg(options::OPT_s))
+    CmdArgs.push_back("--strip-all");
+  if (Args.hasArg(options::OPT_shared))
+    CmdArgs.push_back("-shared");
+  if (Args.hasArg(options::OPT_static))
+    CmdArgs.push_back("-Bstatic");
+
+  Args.AddAllArgs(CmdArgs, options::OPT_L);
+  ToolChain.AddFilePathLibArgs(Args, CmdArgs);
+
+  if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nostartfiles)) {
+    if (Args.hasArg(options::OPT_shared))
+      CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("rcrt1.o")));
+    else if (Args.hasArg(options::OPT_pie))
+      CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("Scrt1.o")));
+    else
+      CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crt1.o")));
+
+    CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crti.o")));
+  }
+
+  AddLinkerInputs(ToolChain, Inputs, Args, CmdArgs);
+
+  if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs)) {
+    if (D.CCCIsCXX())
+      ToolChain.AddCXXStdlibLibArgs(Args, CmdArgs);
+
+    if (Args.hasArg(options::OPT_pthread))
+      CmdArgs.push_back("-lpthread");
+
+    CmdArgs.push_back("-lc");
+    CmdArgs.push_back("-lcompiler_rt");
+  }
+
+  if (!Args.hasArg(options::OPT_nostdlib, options::OPT_nostartfiles))
+    CmdArgs.push_back(Args.MakeArgString(ToolChain.GetFilePath("crtn.o")));
+
   CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());
+
   C.addCommand(llvm::make_unique<Command>(JA, *this, Linker, CmdArgs, Inputs));
 }
 

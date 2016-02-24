@@ -51,6 +51,8 @@ public:
   /// Create a MachineInstrBuilder for manipulating an existing instruction.
   /// F must be the machine function that was used to allocate I.
   MachineInstrBuilder(MachineFunction &F, MachineInstr *I) : MF(&F), MI(I) {}
+  MachineInstrBuilder(MachineFunction &F, MachineBasicBlock::iterator I)
+      : MF(&F), MI(&*I) {}
 
   /// Allow automatic conversion to the machine instruction we are working on.
   operator MachineInstr*() const { return MI; }
@@ -426,15 +428,13 @@ class MIBundleBuilder {
 public:
   /// Create an MIBundleBuilder that inserts instructions into a new bundle in
   /// BB above the bundle or instruction at Pos.
-  MIBundleBuilder(MachineBasicBlock &BB,
-                  MachineBasicBlock::iterator Pos)
-    : MBB(BB), Begin(Pos.getInstrIterator()), End(Begin) {}
+  MIBundleBuilder(MachineBasicBlock &BB, MachineBasicBlock::iterator Pos)
+      : MBB(BB), Begin(Pos.getInstrIterator()), End(Begin) {}
 
   /// Create a bundle from the sequence of instructions between B and E.
-  MIBundleBuilder(MachineBasicBlock &BB,
-                  MachineBasicBlock::iterator B,
+  MIBundleBuilder(MachineBasicBlock &BB, MachineBasicBlock::iterator B,
                   MachineBasicBlock::iterator E)
-    : MBB(BB), Begin(B.getInstrIterator()), End(E.getInstrIterator()) {
+      : MBB(BB), Begin(B.getInstrIterator()), End(E.getInstrIterator()) {
     assert(B != E && "No instructions to bundle");
     ++B;
     while (B != E) {

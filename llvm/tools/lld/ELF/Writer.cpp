@@ -249,16 +249,17 @@ static bool handleTlsRelocation(unsigned Type, SymbolBody *Body,
     return true;
   }
 
-  if (!Body || !Body->isTls())
+  if (!Body || !Body->IsTls)
     return false;
 
   if (Target->isTlsGlobalDynamicRel(Type)) {
-    if (!Target->canRelaxTls(Type, Body) &&
-        Out<ELFT>::Got->addDynTlsEntry(Body)) {
-      Out<ELFT>::RelaDyn->addReloc(
-          {Target->TlsModuleIndexRel, DynamicReloc<ELFT>::Off_GTlsIndex, Body});
-      Out<ELFT>::RelaDyn->addReloc(
-          {Target->TlsOffsetRel, DynamicReloc<ELFT>::Off_GTlsOffset, Body});
+    if (!Target->canRelaxTls(Type, Body)) {
+      if (Out<ELFT>::Got->addDynTlsEntry(Body)) {
+        Out<ELFT>::RelaDyn->addReloc({Target->TlsModuleIndexRel,
+                                      DynamicReloc<ELFT>::Off_GTlsIndex, Body});
+        Out<ELFT>::RelaDyn->addReloc(
+            {Target->TlsOffsetRel, DynamicReloc<ELFT>::Off_GTlsOffset, Body});
+      }
       return true;
     }
     if (!canBePreempted(Body, true))
@@ -327,7 +328,7 @@ void Writer<ELFT>::scanRelocs(
     if (auto *B = dyn_cast_or_null<SharedSymbol<ELFT>>(Body)) {
       if (B->needsCopy())
         continue;
-      if (Target->needsCopyRel(Type, *B)) {
+      if (Target->needsCopyRel<ELFT>(Type, *B)) {
         B->NeedsCopyOrPltAddr = true;
         Out<ELFT>::RelaDyn->addReloc(
             {Target->CopyRel, DynamicReloc<ELFT>::Off_Bss, B});
@@ -405,7 +406,7 @@ void Writer<ELFT>::scanRelocs(
       if (CBP || Dynrel) {
         uint32_t DynType;
         if (CBP)
-          DynType = Body->isTls() ? Target->TlsGotRel : Target->GotRel;
+          DynType = Body->IsTls ? Target->TlsGotRel : Target->GotRel;
         else
           DynType = Target->RelativeRel;
         Out<ELFT>::RelaDyn->addReloc(
@@ -548,7 +549,7 @@ template <class ELFT> void Writer<ELFT>::copyLocalSymbols() {
         continue;
       if (Sym.st_shndx != SHN_ABS) {
         InputSectionBase<ELFT> *Section = F->getSection(Sym);
-        if (!Section->isLive())
+        if (!Section->Live)
           continue;
       }
       ++Out<ELFT>::SymTab->NumLocals;
@@ -743,7 +744,7 @@ StringRef Writer<ELFT>::getOutputSectionName(InputSectionBase<ELFT> *S) const {
 template <class ELFT>
 void reportDiscarded(InputSectionBase<ELFT> *IS,
                      const std::unique_ptr<ObjectFile<ELFT>> &File) {
-  if (!Config->PrintGcSections || !IS || IS->isLive())
+  if (!Config->PrintGcSections || !IS || IS->Live)
     return;
   llvm::errs() << "removing unused section from '" << IS->getSectionName()
                << "' in file '" << File->getName() << "'\n";
@@ -751,7 +752,7 @@ void reportDiscarded(InputSectionBase<ELFT> *IS,
 
 template <class ELFT>
 bool Writer<ELFT>::isDiscarded(InputSectionBase<ELFT> *S) const {
-  return !S || !S->isLive() || S == &InputSection<ELFT>::Discarded ||
+  return !S || !S->Live || S == &InputSection<ELFT>::Discarded ||
          Script->isDiscarded(S);
 }
 
@@ -785,7 +786,7 @@ template <class ELFT> static bool includeInSymtab(const SymbolBody &B) {
     if (&D->Sym == &ElfSym<ELFT>::Ignored)
       return false;
     // Exclude symbols pointing to garbage-collected sections.
-    if (D->Section && !D->Section->isLive())
+    if (D->Section && !D->Section->Live)
       return false;
   }
   return true;
@@ -1336,7 +1337,8 @@ template <class ELFT> void Writer<ELFT>::assignAddresses() {
     if (PageAlign.count(Sec))
       Align = std::max<uintX_t>(Align, Target->PageSize);
 
-    FileOff = alignTo(FileOff, Align);
+    if (Sec->getType() != SHT_NOBITS)
+      FileOff = alignTo(FileOff, Align);
     Sec->setFileOffset(FileOff);
     if (Sec->getType() != SHT_NOBITS)
       FileOff += Sec->getSize();

@@ -1382,7 +1382,7 @@ static bool SinkThenElseCodeToEnd(BranchInst *BI1) {
 
     // We need to update RE1 and RE2 if we are going to sink the first
     // instruction in the basic block down.
-    bool UpdateRE1 = (I1 == BB1->begin()), UpdateRE2 = (I2 == BB2->begin());
+    bool UpdateRE1 = (I1 == &BB1->front()), UpdateRE2 = (I2 == &BB2->front());
     // Sink the instruction.
     BBEnd->getInstList().splice(FirstNonPhiInBBEnd->getIterator(),
                                 BB1->getInstList(), I1);
@@ -2134,7 +2134,7 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI, unsigned BonusInstThreshold) {
   // as "bonus instructions", and only allow this transformation when the
   // number of the bonus instructions does not exceed a certain threshold.
   unsigned NumBonusInsts = 0;
-  for (auto I = BB->begin(); Cond != I; ++I) {
+  for (auto I = BB->begin(); Cond != &*I; ++I) {
     // Ignore dbg intrinsics.
     if (isa<DbgInfoIntrinsic>(I))
       continue;
@@ -2232,7 +2232,7 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI, unsigned BonusInstThreshold) {
     // We already make sure Cond is the last instruction before BI. Therefore,
     // all instructions before Cond other than DbgInfoIntrinsic are bonus
     // instructions.
-    for (auto BonusInst = BB->begin(); Cond != BonusInst; ++BonusInst) {
+    for (auto BonusInst = BB->begin(); Cond != &*BonusInst; ++BonusInst) {
       if (isa<DbgInfoIntrinsic>(BonusInst))
         continue;
       Instruction *NewBonusInst = BonusInst->clone();
@@ -5278,9 +5278,17 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
   if ((pred_empty(BB) &&
        BB != &BB->getParent()->getEntryBlock()) ||
       BB->getSinglePredecessor() == BB) {
-    DEBUG(dbgs() << "Removing BB: \n" << *BB);
-    DeleteDeadBlock(BB);
-    return true;
+    // Get the block mostly empty.
+    Changed |= removeAllNonTerminatorAndEHPadInstructions(BB) > 0;
+    // Now, verify that we succeeded getting the block empty.
+    // This will not be the case if this unreachable BB creates a token which is
+    // consumed by other unreachable blocks.
+    Instruction *FirstNonPHI = BB->getFirstNonPHI();
+    if (isa<TerminatorInst>(FirstNonPHI) && FirstNonPHI->use_empty()) {
+      DEBUG(dbgs() << "Removing BB: \n" << *BB);
+      DeleteDeadBlock(BB);
+      return true;
+    }
   }
 
   // Check to see if we can constant propagate this terminator instruction
