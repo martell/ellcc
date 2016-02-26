@@ -1,6 +1,6 @@
 /* Python pretty-printing
 
-   Copyright (C) 2008-2015 Free Software Foundation, Inc.
+   Copyright (C) 2008-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -393,7 +393,7 @@ print_string_repr (PyObject *printer, const char *hint,
 static void
 py_restore_tstate (void *p)
 {
-  PyFrameObject *frame = p;
+  PyFrameObject *frame = (PyFrameObject *) p;
   PyThreadState *tstate = PyThreadState_GET ();
 
   tstate->frame = frame;

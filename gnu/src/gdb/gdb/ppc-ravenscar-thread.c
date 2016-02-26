@@ -1,6 +1,6 @@
 /* Ravenscar PowerPC target support.
 
-   Copyright (C) 2011-2015 Free Software Foundation, Inc.
+   Copyright (C) 2011-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -123,7 +123,7 @@ supply_register_at_address (struct regcache *regcache, int regnum,
   int buf_size = register_size (gdbarch, regnum);
   gdb_byte *buf;
 
-  buf = alloca (buf_size);
+  buf = (gdb_byte *) alloca (buf_size);
   read_memory (register_addr, buf, buf_size);
   regcache_raw_supply (regcache, regnum, buf);
 }

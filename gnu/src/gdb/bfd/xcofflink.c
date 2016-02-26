@@ -1,5 +1,5 @@
 /* POWER/PowerPC XCOFF linker support.
-   Copyright (C) 1995-2015 Free Software Foundation, Inc.
+   Copyright (C) 1995-2016 Free Software Foundation, Inc.
    Written by Ian Lance Taylor <ian@cygnus.com>, Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -1050,7 +1050,7 @@ xcoff_link_create_extra_sections (bfd * abfd, struct bfd_link_info *info)
 	 won't work if we're producing an XCOFF output file with no
 	 XCOFF input files.  FIXME.  */
 
-      if (!info->relocatable
+      if (!bfd_link_relocatable (info)
 	  && xcoff_hash_table (info)->loader_section == NULL)
 	{
 	  asection *lsec;
@@ -2700,7 +2700,7 @@ xcoff_mark_symbol (struct bfd_link_info *info, struct xcoff_link_hash_entry *h)
 
   /* If we're marking an undefined symbol, try find some way of
      defining it.  */
-  if (!info->relocatable
+  if (!bfd_link_relocatable (info)
       && (h->flags & XCOFF_IMPORT) == 0
       && (h->flags & XCOFF_DEF_REGULAR) == 0
       && (h->root.type == bfd_link_hash_undefined
@@ -3714,7 +3714,7 @@ bfd_xcoff_size_dynamic_sections (bfd *output_bfd,
     }
 
   /* Garbage collect unused sections.  */
-  if (info->relocatable || !gc)
+  if (bfd_link_relocatable (info) || !gc)
     {
       gc = FALSE;
       xcoff_hash_table (info)->gc = FALSE;
@@ -4145,7 +4145,7 @@ xcoff_link_input_bfd (struct xcoff_final_link_info *flinfo,
   if (! flinfo->info->keep_memory)
     copy = TRUE;
   hash = TRUE;
-  if ((output_bfd->flags & BFD_TRADITIONAL_FORMAT) != 0)
+  if (flinfo->info->traditional_format)
     hash = FALSE;
 
   if (! _bfd_coff_get_external_symbols (input_bfd))
@@ -5118,7 +5118,8 @@ xcoff_find_tc0 (bfd *output_bfd, struct xcoff_final_link_info *flinfo)
   xcoff_data (output_bfd)->sntoc = section_index;
 
   /* Fill out the TC0 symbol.  */
-  if (!bfd_xcoff_put_symbol_name (output_bfd, flinfo->strtab, &irsym, "TOC"))
+  if (!bfd_xcoff_put_symbol_name (output_bfd, flinfo->info, flinfo->strtab,
+				  &irsym, "TOC"))
     return FALSE;
   irsym.n_value = best_address;
   irsym.n_scnum = section_index;
@@ -5383,7 +5384,8 @@ xcoff_write_global_symbol (struct bfd_hash_entry *bh, void * inf)
 	 the reloc.  */
       if (flinfo->info->strip != strip_all)
 	{
-	  result = bfd_xcoff_put_symbol_name (output_bfd, flinfo->strtab,
+	  result = bfd_xcoff_put_symbol_name (output_bfd, flinfo->info,
+					      flinfo->strtab,
 					      &irsym, h->root.root.string);
 	  if (!result)
 	    return FALSE;
@@ -5557,8 +5559,8 @@ xcoff_write_global_symbol (struct bfd_hash_entry *bh, void * inf)
 
   h->indx = obj_raw_syment_count (output_bfd);
 
-  result = bfd_xcoff_put_symbol_name (output_bfd, flinfo->strtab, &isym,
-				      h->root.root.string);
+  result = bfd_xcoff_put_symbol_name (output_bfd, flinfo->info, flinfo->strtab,
+				      &isym, h->root.root.string);
   if (!result)
     return FALSE;
 
@@ -5830,7 +5832,7 @@ _bfd_xcoff_bfd_final_link (bfd *abfd, struct bfd_link_info *info)
   file_ptr pos;
   bfd_size_type amt;
 
-  if (info->shared)
+  if (bfd_link_pic (info))
     abfd->flags |= DYNAMIC;
 
   symesz = bfd_coff_symesz (abfd);

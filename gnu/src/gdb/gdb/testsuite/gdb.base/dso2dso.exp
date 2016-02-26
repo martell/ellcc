@@ -1,4 +1,4 @@
-# Copyright 2015 Free Software Foundation, Inc.
+# Copyright 2015-2016 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -64,7 +64,7 @@ if { ![runto_main] } {
 }
 
 set bp_location [gdb_get_line_number "STOP HERE" [file tail $srcfile_libdso1]]
-gdb_breakpoint ${srcfile_libdso1}:${bp_location}
+gdb_breakpoint ${libdso1}.c:${bp_location}
 
 gdb_continue_to_breakpoint "at call to sub2" \
     ".*sub2 ().*"

@@ -1,6 +1,6 @@
 /* Do various things to symbol tables (other than lookup), for GDB.
 
-   Copyright (C) 1986-2015 Free Software Foundation, Inc.
+   Copyright (C) 1986-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -876,7 +876,7 @@ static int
 maintenance_expand_file_matcher (const char *filename, void *data,
 				 int basenames)
 {
-  const char *regexp = data;
+  const char *regexp = (const char *) data;
 
   QUIT;
 

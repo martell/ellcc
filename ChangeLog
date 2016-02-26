@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to GDB 7.11.
 * Update to LLVM r261735.
 * Update to musl 1.1.14.
 * Update the openldap library to version 2.4.44.

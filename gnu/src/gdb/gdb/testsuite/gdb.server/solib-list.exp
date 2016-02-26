@@ -1,4 +1,4 @@
-# Copyright 2010-2015 Free Software Foundation, Inc.
+# Copyright 2010-2016 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -89,15 +89,6 @@ foreach nonstop { 0 1 } { with_test_prefix "non-stop $nonstop" {
 	-re "Remote debugging using .*\r\n$gdb_prompt " {
 	    # Do not anchor end, there may be more output in non-stop mode.
 	    pass $test
-	}
-    }
-
-    if $nonstop {
-	set test "non-stop interior stop"
-	gdb_test_multiple "" $test {
-	    -re " #1 stopped\\.\r\n" {
-		pass $test
-	    }
 	}
     }
 

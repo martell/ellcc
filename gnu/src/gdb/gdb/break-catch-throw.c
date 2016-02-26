@@ -1,6 +1,6 @@
 /* Everything about catch/throw catchpoints, for GDB.
 
-   Copyright (C) 1986-2015 Free Software Foundation, Inc.
+   Copyright (C) 1986-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -35,6 +35,7 @@
 #include "cp-abi.h"
 #include "gdb_regex.h"
 #include "cp-support.h"
+#include "location.h"
 
 /* Enums for exception-handling support.  */
 enum exception_event_kind
@@ -210,25 +211,33 @@ re_set_exception_catchpoint (struct breakpoint *self)
   struct symtabs_and_lines sals_end = {0};
   struct cleanup *cleanup;
   enum exception_event_kind kind = classify_exception_breakpoint (self);
+  struct event_location *location;
+  struct program_space *filter_pspace = current_program_space;
 
   /* We first try to use the probe interface.  */
   TRY
     {
-      char *spec = ASTRDUP (exception_functions[kind].probe);
-
-      sals = parse_probes (&spec, NULL);
+      location
+	= new_probe_location (exception_functions[kind].probe);
+      cleanup = make_cleanup_delete_event_location (location);
+      sals = parse_probes (location, filter_pspace, NULL);
+      do_cleanups (cleanup);
     }
-
   CATCH (e, RETURN_MASK_ERROR)
     {
-
       /* Using the probe interface failed.  Let's fallback to the normal
 	 catchpoint mode.  */
       TRY
 	{
-	  char *spec = ASTRDUP (exception_functions[kind].function);
+	  struct explicit_location explicit_loc;
 
-	  self->ops->decode_linespec (self, &spec, &sals);
+	  initialize_explicit_location (&explicit_loc);
+	  explicit_loc.function_name
+	    = ASTRDUP (exception_functions[kind].function);
+	  location = new_explicit_location (&explicit_loc);
+	  cleanup = make_cleanup_delete_event_location (location);
+	  self->ops->decode_location (self, location, filter_pspace, &sals);
+	  do_cleanups (cleanup);
 	}
       CATCH (ex, RETURN_MASK_ERROR)
 	{
@@ -242,7 +251,7 @@ re_set_exception_catchpoint (struct breakpoint *self)
   END_CATCH
 
   cleanup = make_cleanup (xfree, sals.sals);
-  update_breakpoint_locations (self, sals, sals_end);
+  update_breakpoint_locations (self, filter_pspace, sals, sals_end);
   do_cleanups (cleanup);
 }
 
@@ -255,6 +264,7 @@ print_it_exception_catchpoint (bpstat bs)
   enum exception_event_kind kind = classify_exception_breakpoint (b);
 
   annotate_catchpoint (b->number);
+  maybe_print_thread_hit_breakpoint (uiout);
 
   bp_temp = b->disposition == disp_del;
   ui_out_text (uiout, 

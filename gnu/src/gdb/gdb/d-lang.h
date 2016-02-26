@@ -1,6 +1,6 @@
 /* D language support definitions for GDB, the GNU debugger.
 
-   Copyright (C) 2005-2015 Free Software Foundation, Inc.
+   Copyright (C) 2005-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -67,6 +67,16 @@ extern const char *d_main_name (void);
 extern char *d_demangle (const char *mangled, int options);
 
 extern const struct builtin_d_type *builtin_d_type (struct gdbarch *);
+
+/* Defined in d-namespace.c  */
+
+extern struct block_symbol d_lookup_symbol_nonlocal (const struct language_defn *,
+						     const char *,
+						     const struct block *,
+						     const domain_enum);
+
+extern struct block_symbol d_lookup_nested_symbol (struct type *, const char *,
+						   const struct block *);
 
 /* Defined in d-valprint.c  */
 

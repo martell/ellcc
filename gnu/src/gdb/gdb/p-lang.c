@@ -1,6 +1,6 @@
 /* Pascal language support routines for GDB, the GNU debugger.
 
-   Copyright (C) 2000-2015 Free Software Foundation, Inc.
+   Copyright (C) 2000-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -339,7 +339,7 @@ const struct op_print pascal_op_print_tab[] =
   {"^", UNOP_IND, PREC_SUFFIX, 1},
   {"@", UNOP_ADDR, PREC_PREFIX, 0},
   {"sizeof", UNOP_SIZEOF, PREC_PREFIX, 0},
-  {NULL, 0, 0, 0}
+  {NULL, OP_NULL, PREC_PREFIX, 0}
 };
 
 enum pascal_primitive_types {

@@ -1,5 +1,5 @@
 /* OpenCL language support for GDB, the GNU debugger.
-   Copyright (C) 2010-2015 Free Software Foundation, Inc.
+   Copyright (C) 2010-2016 Free Software Foundation, Inc.
 
    Contributed by Ken Werner <ken.werner@de.ibm.com>.
 
@@ -69,7 +69,7 @@ static struct gdbarch_data *opencl_type_data;
 static struct type **
 builtin_opencl_type (struct gdbarch *gdbarch)
 {
-  return gdbarch_data (gdbarch, opencl_type_data);
+  return (struct type **) gdbarch_data (gdbarch, opencl_type_data);
 }
 
 /* Returns the corresponding OpenCL vector type from the given type code,
@@ -1007,7 +1007,7 @@ opencl_print_type (struct type *type, const char *varstring,
      be printed using their TYPE_NAME.  */
   if (show > 0)
     {
-      CHECK_TYPEDEF (type);
+      type = check_typedef (type);
       if (TYPE_CODE (type) == TYPE_CODE_ARRAY && TYPE_VECTOR (type)
 	  && TYPE_NAME (type) != NULL)
 	show = 0;

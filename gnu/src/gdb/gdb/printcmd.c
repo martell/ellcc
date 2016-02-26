@@ -1,6 +1,6 @@
 /* Print values for GNU debugger GDB.
 
-   Copyright (C) 1986-2015 Free Software Foundation, Inc.
+   Copyright (C) 1986-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -346,7 +346,7 @@ float_type_from_length (struct type *type)
    supported at this level.  */
 
 void
-print_scalar_formatted (const void *valaddr, struct type *type,
+print_scalar_formatted (const gdb_byte *valaddr, struct type *type,
 			const struct value_print_options *options,
 			int size, struct ui_file *stream)
 {
@@ -358,9 +358,9 @@ print_scalar_formatted (const void *valaddr, struct type *type,
   /* String printing should go through val_print_scalar_formatted.  */
   gdb_assert (options->format != 's');
 
-  if (len > sizeof(LONGEST) &&
-      (TYPE_CODE (type) == TYPE_CODE_INT
-       || TYPE_CODE (type) == TYPE_CODE_ENUM))
+  if (len > sizeof(LONGEST)
+      && (TYPE_CODE (type) == TYPE_CODE_INT
+	  || TYPE_CODE (type) == TYPE_CODE_ENUM))
     {
       switch (options->format)
 	{
@@ -1208,7 +1208,7 @@ address_info (char *exp, int from_tty)
     error (_("Argument required."));
 
   sym = lookup_symbol (exp, get_selected_block (&context_pc), VAR_DOMAIN,
-		       &is_a_field_of_this);
+		       &is_a_field_of_this).symbol;
   if (sym == NULL)
     {
       if (is_a_field_of_this.type != NULL)
@@ -1376,16 +1376,19 @@ address_info (char *exp, int from_tty)
 	else
 	  {
 	    section = MSYMBOL_OBJ_SECTION (msym.objfile, msym.minsym);
-	    load_addr = BMSYMBOL_VALUE_ADDRESS (msym);
 
 	    if (section
 		&& (section->the_bfd_section->flags & SEC_THREAD_LOCAL) != 0)
-	      printf_filtered (_("a thread-local variable at offset %s "
-				 "in the thread-local storage for `%s'"),
-			       paddress (gdbarch, load_addr),
-			       objfile_name (section->objfile));
+	      {
+		load_addr = MSYMBOL_VALUE_RAW_ADDRESS (msym.minsym);
+		printf_filtered (_("a thread-local variable at offset %s "
+				   "in the thread-local storage for `%s'"),
+				 paddress (gdbarch, load_addr),
+				 objfile_name (section->objfile));
+	      }
 	    else
 	      {
+		load_addr = BMSYMBOL_VALUE_ADDRESS (msym);
 		printf_filtered (_("static storage at address "));
 		fputs_filtered (paddress (gdbarch, load_addr), gdb_stdout);
 		if (section_is_overlay (section))
@@ -1534,17 +1537,27 @@ display_command (char *arg, int from_tty)
   innermost_block = NULL;
   expr = parse_expression (exp);
 
-  newobj = (struct display *) xmalloc (sizeof (struct display));
+  newobj = XNEW (struct display);
 
   newobj->exp_string = xstrdup (exp);
   newobj->exp = expr;
   newobj->block = innermost_block;
   newobj->pspace = current_program_space;
-  newobj->next = display_chain;
   newobj->number = ++display_number;
   newobj->format = fmt;
   newobj->enabled_p = 1;
-  display_chain = newobj;
+  newobj->next = NULL;
+
+  if (display_chain == NULL)
+    display_chain = newobj;
+  else
+    {
+      struct display *last;
+
+      for (last = display_chain; last->next != NULL; last = last->next)
+	;
+      last->next = newobj;
+    }
 
   if (from_tty)
     do_one_display (newobj);
@@ -1988,7 +2001,11 @@ print_variable_and_value (const char *name, struct symbol *var,
       struct value *val;
       struct value_print_options opts;
 
-      val = read_var_value (var, frame);
+      /* READ_VAR_VALUE needs a block in order to deal with non-local
+	 references (i.e. to handle nested functions).  In this context, we
+	 print variables that are local to this frame, so we can avoid passing
+	 a block to it.  */
+      val = read_var_value (var, NULL, frame);
       get_user_print_options (&opts);
       opts.deref_ref = 1;
       common_val_print (val, stream, indent, &opts, current_language);
@@ -2057,7 +2074,7 @@ printf_wide_c_string (struct ui_file *stream, const char *format,
   struct type *wctype = lookup_typename (current_language, gdbarch,
 					 "wchar_t", NULL, 0);
   int wcwidth = TYPE_LENGTH (wctype);
-  gdb_byte *buf = alloca (wcwidth);
+  gdb_byte *buf = (gdb_byte *) alloca (wcwidth);
   struct obstack output;
   struct cleanup *inner_cleanup;
 
@@ -2196,7 +2213,7 @@ printf_pointer (struct ui_file *stream, const char *format,
   long val = value_as_long (value);
 #endif
 
-  fmt = alloca (strlen (format) + 5);
+  fmt = (char *) alloca (strlen (format) + 5);
 
   /* Copy up to the leading %.  */
   p = format;
@@ -2252,7 +2269,7 @@ ui_printf (const char *arg, struct ui_file *stream)
   int allocated_args = 20;
   struct cleanup *old_cleanups;
 
-  val_args = xmalloc (allocated_args * sizeof (struct value *));
+  val_args = XNEWVEC (struct value *, allocated_args);
   old_cleanups = make_cleanup (free_current_contents, &val_args);
 
   if (s == 0)

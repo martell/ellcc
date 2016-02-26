@@ -1,7 +1,7 @@
 /* *INDENT-OFF* */ /* ATTRIBUTE_PRINTF confuses indent, avoid running it
 		      for now.  */
 /* Basic, host-specific, and target-specific definitions for GDB.
-   Copyright (C) 1986-2015 Free Software Foundation, Inc.
+   Copyright (C) 1986-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -183,6 +183,11 @@ enum language
     language_minimal,		/* All other languages, minimal support only */
     nr_languages
   };
+
+/* The number of bits needed to represent all languages, with enough
+   padding to allow for reasonable growth.  */
+#define LANGUAGE_BITS 5
+gdb_static_assert (nr_languages <= (1 << LANGUAGE_BITS));
 
 enum precision_type
   {
@@ -647,7 +652,6 @@ extern void (*deprecated_readline_begin_hook) (char *, ...)
      ATTRIBUTE_FPTR_PRINTF_1;
 extern char *(*deprecated_readline_hook) (const char *);
 extern void (*deprecated_readline_end_hook) (void);
-extern void (*deprecated_register_changed_hook) (int regno);
 extern void (*deprecated_context_hook) (int);
 extern ptid_t (*deprecated_target_wait_hook) (ptid_t ptid,
 					      struct target_waitstatus *status,

@@ -3,7 +3,7 @@
 
 /* Dynamic architecture support for GDB, the GNU debugger.
 
-   Copyright (C) 1998-2015 Free Software Foundation, Inc.
+   Copyright (C) 1998-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -11,12 +11,12 @@
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 3 of the License, or
    (at your option) any later version.
-  
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-  
+
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
@@ -269,6 +269,7 @@ struct gdbarch
   gdbarch_core_xfer_shared_libraries_ftype *core_xfer_shared_libraries;
   gdbarch_core_xfer_shared_libraries_aix_ftype *core_xfer_shared_libraries_aix;
   gdbarch_core_pid_to_str_ftype *core_pid_to_str;
+  gdbarch_core_thread_name_ftype *core_thread_name;
   const char * gcore_bfd_target;
   int vtable_function_descriptors;
   int vbit_in_delta;
@@ -345,7 +346,7 @@ gdbarch_alloc (const struct gdbarch_info *info,
      then use that to allocate the architecture vector.  */
   struct obstack *obstack = XNEW (struct obstack);
   obstack_init (obstack);
-  gdbarch = obstack_alloc (obstack, sizeof (*gdbarch));
+  gdbarch = XOBNEW (obstack, struct gdbarch);
   memset (gdbarch, 0, sizeof (*gdbarch));
   gdbarch->obstack = obstack;
 
@@ -447,6 +448,14 @@ gdbarch_obstack_zalloc (struct gdbarch *arch, long size)
 
   memset (data, 0, size);
   return data;
+}
+
+/* See gdbarch.h.  */
+
+char *
+gdbarch_obstack_strdup (struct gdbarch *arch, const char *string)
+{
+  return obstack_strdup (arch->obstack, string);
 }
 
 
@@ -604,6 +613,7 @@ verify_gdbarch (struct gdbarch *gdbarch)
   /* Skip verify of core_xfer_shared_libraries, has predicate.  */
   /* Skip verify of core_xfer_shared_libraries_aix, has predicate.  */
   /* Skip verify of core_pid_to_str, has predicate.  */
+  /* Skip verify of core_thread_name, has predicate.  */
   /* Skip verify of gcore_bfd_target, has predicate.  */
   /* Skip verify of vtable_function_descriptors, invalid_p == 0 */
   /* Skip verify of vbit_in_delta, invalid_p == 0 */
@@ -815,6 +825,12 @@ gdbarch_dump (struct gdbarch *gdbarch, struct ui_file *file)
   fprintf_unfiltered (file,
                       "gdbarch_dump: core_read_description = <%s>\n",
                       host_address_to_string (gdbarch->core_read_description));
+  fprintf_unfiltered (file,
+                      "gdbarch_dump: gdbarch_core_thread_name_p() = %d\n",
+                      gdbarch_core_thread_name_p (gdbarch));
+  fprintf_unfiltered (file,
+                      "gdbarch_dump: core_thread_name = <%s>\n",
+                      host_address_to_string (gdbarch->core_thread_name));
   fprintf_unfiltered (file,
                       "gdbarch_dump: gdbarch_core_xfer_shared_libraries_p() = %d\n",
                       gdbarch_core_xfer_shared_libraries_p (gdbarch));
@@ -3546,6 +3562,30 @@ set_gdbarch_core_pid_to_str (struct gdbarch *gdbarch,
 }
 
 int
+gdbarch_core_thread_name_p (struct gdbarch *gdbarch)
+{
+  gdb_assert (gdbarch != NULL);
+  return gdbarch->core_thread_name != NULL;
+}
+
+const char *
+gdbarch_core_thread_name (struct gdbarch *gdbarch, struct thread_info *thr)
+{
+  gdb_assert (gdbarch != NULL);
+  gdb_assert (gdbarch->core_thread_name != NULL);
+  if (gdbarch_debug >= 2)
+    fprintf_unfiltered (gdb_stdlog, "gdbarch_core_thread_name called\n");
+  return gdbarch->core_thread_name (gdbarch, thr);
+}
+
+void
+set_gdbarch_core_thread_name (struct gdbarch *gdbarch,
+                              gdbarch_core_thread_name_ftype core_thread_name)
+{
+  gdbarch->core_thread_name = core_thread_name;
+}
+
+int
 gdbarch_gcore_bfd_target_p (struct gdbarch *gdbarch)
 {
   gdb_assert (gdbarch != NULL);
@@ -4394,13 +4434,13 @@ set_gdbarch_has_shared_address_space (struct gdbarch *gdbarch,
 }
 
 int
-gdbarch_fast_tracepoint_valid_at (struct gdbarch *gdbarch, CORE_ADDR addr, int *isize, char **msg)
+gdbarch_fast_tracepoint_valid_at (struct gdbarch *gdbarch, CORE_ADDR addr, char **msg)
 {
   gdb_assert (gdbarch != NULL);
   gdb_assert (gdbarch->fast_tracepoint_valid_at != NULL);
   if (gdbarch_debug >= 2)
     fprintf_unfiltered (gdb_stdlog, "gdbarch_fast_tracepoint_valid_at called\n");
-  return gdbarch->fast_tracepoint_valid_at (gdbarch, addr, isize, msg);
+  return gdbarch->fast_tracepoint_valid_at (gdbarch, addr, msg);
 }
 
 void
@@ -4894,7 +4934,7 @@ static struct gdbarch_registration *gdbarch_registry = NULL;
 static void
 append_name (const char ***buf, int *nr, const char *name)
 {
-  *buf = xrealloc (*buf, sizeof (char**) * (*nr + 1));
+  *buf = XRESIZEVEC (const char *, *buf, *nr + 1);
   (*buf)[*nr] = name;
   *nr += 1;
 }

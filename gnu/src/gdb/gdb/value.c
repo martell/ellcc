@@ -1,6 +1,6 @@
 /* Low level packing and unpacking of values for GDB, the GNU Debugger.
 
-   Copyright (C) 1986-2015 Free Software Foundation, Inc.
+   Copyright (C) 1986-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -234,11 +234,11 @@ struct value
     } computed;
   } location;
 
-  /* Describes offset of a value within lval of a structure in bytes.
-     If lval == lval_memory, this is an offset to the address.  If
-     lval == lval_register, this is a further offset from
-     location.address within the registers structure.  Note also the
-     member embedded_offset below.  */
+  /* Describes offset of a value within lval of a structure in target
+     addressable memory units.  If lval == lval_memory, this is an offset to
+     the address.  If lval == lval_register, this is a further offset from
+     location.address within the registers structure.  Note also the member
+     embedded_offset below.  */
   int offset;
 
   /* Only used for bitfields; number of bits contained in them.  */
@@ -291,19 +291,19 @@ struct value
 
      When we store the entire object, `enclosing_type' is the run-time
      type -- the complete object -- and `embedded_offset' is the
-     offset of `type' within that larger type, in bytes.  The
-     value_contents() macro takes `embedded_offset' into account, so
-     most GDB code continues to see the `type' portion of the value,
-     just as the inferior would.
+     offset of `type' within that larger type, in target addressable memory
+     units.  The value_contents() macro takes `embedded_offset' into account,
+     so most GDB code continues to see the `type' portion of the value, just
+     as the inferior would.
 
      If `type' is a pointer to an object, then `enclosing_type' is a
      pointer to the object's run-time type, and `pointed_to_offset' is
-     the offset in bytes from the full object to the pointed-to object
-     -- that is, the value `embedded_offset' would have if we followed
-     the pointer and fetched the complete object.  (I don't really see
-     the point.  Why not just determine the run-time type when you
-     indirect, and avoid the special case?  The contents don't matter
-     until you indirect anyway.)
+     the offset in target addressable memory units from the full object
+     to the pointed-to object -- that is, the value `embedded_offset' would
+     have if we followed the pointer and fetched the complete object.
+     (I don't really see the point.  Why not just determine the
+     run-time type when you indirect, and avoid the special case?  The
+     contents don't matter until you indirect anyway.)
 
      If we're not doing anything fancy, `enclosing_type' is equal to
      `type', and `embedded_offset' is zero, so everything works
@@ -339,6 +339,14 @@ struct value
      different string representation and related error strings.  */
   VEC(range_s) *optimized_out;
 };
+
+/* See value.h.  */
+
+struct gdbarch *
+get_value_arch (const struct value *value)
+{
+  return get_type_arch (value_type (value));
+}
 
 int
 value_bits_available (const struct value *value, int offset, int length)
@@ -922,7 +930,7 @@ allocate_value_lazy (struct type *type)
      description correctly.  */
   check_typedef (type);
 
-  val = (struct value *) xzalloc (sizeof (struct value));
+  val = XCNEW (struct value);
   val->contents = NULL;
   val->next = all_values;
   all_values = val;
@@ -947,13 +955,86 @@ allocate_value_lazy (struct type *type)
   return val;
 }
 
+/* The maximum size, in bytes, that GDB will try to allocate for a value.
+   The initial value of 64k was not selected for any specific reason, it is
+   just a reasonable starting point.  */
+
+static int max_value_size = 65536; /* 64k bytes */
+
+/* It is critical that the MAX_VALUE_SIZE is at least as big as the size of
+   LONGEST, otherwise GDB will not be able to parse integer values from the
+   CLI; for example if the MAX_VALUE_SIZE could be set to 1 then GDB would
+   be unable to parse "set max-value-size 2".
+
+   As we want a consistent GDB experience across hosts with different sizes
+   of LONGEST, this arbitrary minimum value was selected, so long as this
+   is bigger than LONGEST on all GDB supported hosts we're fine.  */
+
+#define MIN_VALUE_FOR_MAX_VALUE_SIZE 16
+gdb_static_assert (sizeof (LONGEST) <= MIN_VALUE_FOR_MAX_VALUE_SIZE);
+
+/* Implement the "set max-value-size" command.  */
+
+static void
+set_max_value_size (char *args, int from_tty,
+		    struct cmd_list_element *c)
+{
+  gdb_assert (max_value_size == -1 || max_value_size >= 0);
+
+  if (max_value_size > -1 && max_value_size < MIN_VALUE_FOR_MAX_VALUE_SIZE)
+    {
+      max_value_size = MIN_VALUE_FOR_MAX_VALUE_SIZE;
+      error (_("max-value-size set too low, increasing to %d bytes"),
+	     max_value_size);
+    }
+}
+
+/* Implement the "show max-value-size" command.  */
+
+static void
+show_max_value_size (struct ui_file *file, int from_tty,
+		     struct cmd_list_element *c, const char *value)
+{
+  if (max_value_size == -1)
+    fprintf_filtered (file, _("Maximum value size is unlimited.\n"));
+  else
+    fprintf_filtered (file, _("Maximum value size is %d bytes.\n"),
+		      max_value_size);
+}
+
+/* Called before we attempt to allocate or reallocate a buffer for the
+   contents of a value.  TYPE is the type of the value for which we are
+   allocating the buffer.  If the buffer is too large (based on the user
+   controllable setting) then throw an error.  If this function returns
+   then we should attempt to allocate the buffer.  */
+
+static void
+check_type_length_before_alloc (const struct type *type)
+{
+  unsigned int length = TYPE_LENGTH (type);
+
+  if (max_value_size > -1 && length > max_value_size)
+    {
+      if (TYPE_NAME (type) != NULL)
+	error (_("value of type `%s' requires %u bytes, which is more "
+		 "than max-value-size"), TYPE_NAME (type), length);
+      else
+	error (_("value requires %u bytes, which is more than "
+		 "max-value-size"), length);
+    }
+}
+
 /* Allocate the contents of VAL if it has not been allocated yet.  */
 
 static void
 allocate_value_contents (struct value *val)
 {
   if (!val->contents)
-    val->contents = (gdb_byte *) xzalloc (TYPE_LENGTH (val->enclosing_type));
+    {
+      check_type_length_before_alloc (val->enclosing_type);
+      val->contents
+	= (gdb_byte *) xzalloc (TYPE_LENGTH (val->enclosing_type));
+    }
 }
 
 /* Allocate a  value  and its contents for type TYPE.  */
@@ -1083,8 +1164,11 @@ set_value_parent (struct value *value, struct value *parent)
 gdb_byte *
 value_contents_raw (struct value *value)
 {
+  struct gdbarch *arch = get_value_arch (value);
+  int unit_size = gdbarch_addressable_memory_unit_size (arch);
+
   allocate_value_contents (value);
-  return value->contents + value->embedded_offset;
+  return value->contents + value->embedded_offset * unit_size;
 }
 
 gdb_byte *
@@ -1234,7 +1318,7 @@ value_ranges_copy_adjusted (struct value *dst, int dst_bit_offset,
 			bit_length);
 }
 
-/* Copy LENGTH bytes of SRC value's (all) contents
+/* Copy LENGTH target addressable memory units of SRC value's (all) contents
    (value_contents_all) starting at SRC_OFFSET, into DST value's (all)
    contents, starting at DST_OFFSET.  If unavailable contents are
    being copied from SRC, the corresponding DST contents are marked
@@ -1249,8 +1333,9 @@ value_contents_copy_raw (struct value *dst, int dst_offset,
 			 struct value *src, int src_offset, int length)
 {
   range_s *r;
-  int i;
   int src_bit_offset, dst_bit_offset, bit_length;
+  struct gdbarch *arch = get_value_arch (src);
+  int unit_size = gdbarch_addressable_memory_unit_size (arch);
 
   /* A lazy DST would make that this copy operation useless, since as
      soon as DST's contents were un-lazied (by a later value_contents
@@ -1267,14 +1352,14 @@ value_contents_copy_raw (struct value *dst, int dst_offset,
 					     TARGET_CHAR_BIT * length));
 
   /* Copy the data.  */
-  memcpy (value_contents_all_raw (dst) + dst_offset,
-	  value_contents_all_raw (src) + src_offset,
-	  length);
+  memcpy (value_contents_all_raw (dst) + dst_offset * unit_size,
+	  value_contents_all_raw (src) + src_offset * unit_size,
+	  length * unit_size);
 
   /* Copy the meta-data, adjusted.  */
-  src_bit_offset = src_offset * TARGET_CHAR_BIT;
-  dst_bit_offset = dst_offset * TARGET_CHAR_BIT;
-  bit_length = length * TARGET_CHAR_BIT;
+  src_bit_offset = src_offset * unit_size * HOST_CHAR_BIT;
+  dst_bit_offset = dst_offset * unit_size * HOST_CHAR_BIT;
+  bit_length = length * unit_size * HOST_CHAR_BIT;
 
   value_ranges_copy_adjusted (dst, dst_bit_offset,
 			      src, src_bit_offset,
@@ -1811,11 +1896,8 @@ record_latest_value (struct value *val)
   i = value_history_count % VALUE_HISTORY_CHUNK;
   if (i == 0)
     {
-      struct value_history_chunk *newobj
-	= (struct value_history_chunk *)
+      struct value_history_chunk *newobj = XCNEW (struct value_history_chunk);
 
-      xmalloc (sizeof (struct value_history_chunk));
-      memset (newobj->values, 0, sizeof newobj->values);
       newobj->next = value_history_chain;
       value_history_chain = newobj;
     }
@@ -2075,9 +2157,8 @@ complete_internalvar (const char *name)
 struct internalvar *
 create_internalvar (const char *name)
 {
-  struct internalvar *var;
+  struct internalvar *var = XNEW (struct internalvar);
 
-  var = (struct internalvar *) xmalloc (sizeof (struct internalvar));
   var->name = concat (name, (char *)NULL);
   var->kind = INTERNALVAR_VOID;
   var->next = internalvars;
@@ -2271,17 +2352,21 @@ set_internalvar_component (struct internalvar *var, int offset, int bitpos,
 			   int bitsize, struct value *newval)
 {
   gdb_byte *addr;
+  struct gdbarch *arch;
+  int unit_size;
 
   switch (var->kind)
     {
     case INTERNALVAR_VALUE:
       addr = value_contents_writeable (var->u.value);
+      arch = get_value_arch (var->u.value);
+      unit_size = gdbarch_addressable_memory_unit_size (arch);
 
       if (bitsize)
 	modify_field (value_type (var->u.value), addr + offset,
 		      value_as_long (newval), bitpos, bitsize);
       else
-	memcpy (addr + offset, value_contents (newval),
+	memcpy (addr + offset * unit_size, value_contents (newval),
 		TYPE_LENGTH (value_type (newval)));
       break;
 
@@ -2852,7 +2937,7 @@ unpack_double (struct type *type, const gdb_byte *valaddr, int *invp)
   int nosign;
 
   *invp = 0;			/* Assume valid.  */
-  CHECK_TYPEDEF (type);
+  type = check_typedef (type);
   code = TYPE_CODE (type);
   len = TYPE_LENGTH (type);
   nosign = TYPE_UNSIGNED (type);
@@ -2937,9 +3022,9 @@ value_static_field (struct type *type, int fieldno)
     {
       const char *phys_name = TYPE_FIELD_STATIC_PHYSNAME (type, fieldno);
       /* TYPE_FIELD_NAME (type, fieldno); */
-      struct symbol *sym = lookup_symbol (phys_name, 0, VAR_DOMAIN, 0);
+      struct block_symbol sym = lookup_symbol (phys_name, 0, VAR_DOMAIN, 0);
 
-      if (sym == NULL)
+      if (sym.symbol == NULL)
 	{
 	  /* With some compilers, e.g. HP aCC, static data members are
 	     reported as non-debuggable symbols.  */
@@ -2955,7 +3040,7 @@ value_static_field (struct type *type, int fieldno)
 	    }
 	}
       else
-	retval = value_of_variable (sym, NULL);
+	retval = value_of_variable (sym.symbol, sym.block);
       break;
     }
     default:
@@ -2974,9 +3059,12 @@ value_static_field (struct type *type, int fieldno)
 void
 set_value_enclosing_type (struct value *val, struct type *new_encl_type)
 {
-  if (TYPE_LENGTH (new_encl_type) > TYPE_LENGTH (value_enclosing_type (val))) 
-    val->contents =
-      (gdb_byte *) xrealloc (val->contents, TYPE_LENGTH (new_encl_type));
+  if (TYPE_LENGTH (new_encl_type) > TYPE_LENGTH (value_enclosing_type (val)))
+    {
+      check_type_length_before_alloc (new_encl_type);
+      val->contents
+	= (gdb_byte *) xrealloc (val->contents, TYPE_LENGTH (new_encl_type));
+    }
 
   val->enclosing_type = new_encl_type;
 }
@@ -2992,8 +3080,10 @@ value_primitive_field (struct value *arg1, int offset,
 {
   struct value *v;
   struct type *type;
+  struct gdbarch *arch = get_value_arch (arg1);
+  int unit_size = gdbarch_addressable_memory_unit_size (arch);
 
-  CHECK_TYPEDEF (arg_type);
+  arg_type = check_typedef (arg_type);
   type = TYPE_FIELD_TYPE (arg_type, fieldno);
 
   /* Call check_typedef on our type to make sure that, if TYPE
@@ -3070,7 +3160,8 @@ value_primitive_field (struct value *arg1, int offset,
   else
     {
       /* Plain old data member */
-      offset += TYPE_FIELD_BITPOS (arg_type, fieldno) / 8;
+      offset += (TYPE_FIELD_BITPOS (arg_type, fieldno)
+	         / (HOST_CHAR_BIT * unit_size));
 
       /* Lazy register values with offsets are not supported.  */
       if (VALUE_LVAL (arg1) == lval_register && value_lazy (arg1))
@@ -3083,7 +3174,7 @@ value_primitive_field (struct value *arg1, int offset,
 	  v = allocate_value (type);
 	  value_contents_copy_raw (v, value_embedded_offset (v),
 				   arg1, value_embedded_offset (arg1) + offset,
-				   TYPE_LENGTH (type));
+				   type_length_units (type));
 	}
       v->offset = (value_offset (arg1) + offset
 		   + value_embedded_offset (arg1));
@@ -3122,7 +3213,7 @@ value_fn_field (struct value **arg1p, struct fn_field *f,
   struct symbol *sym;
   struct bound_minimal_symbol msym;
 
-  sym = lookup_symbol (physname, 0, VAR_DOMAIN, 0);
+  sym = lookup_symbol (physname, 0, VAR_DOMAIN, 0).symbol;
   if (sym != NULL)
     {
       memset (&msym, 0, sizeof (msym));
@@ -3195,7 +3286,7 @@ unpack_bits_as_long (struct type *field_type, const gdb_byte *valaddr,
 
   /* Read the minimum number of bytes required; there may not be
      enough bytes to read an entire ULONGEST.  */
-  CHECK_TYPEDEF (field_type);
+  field_type = check_typedef (field_type);
   if (bitsize)
     bytes_read = ((bitpos % 8) + bitsize + 7) / 8;
   else
@@ -3825,7 +3916,7 @@ value_fetch_lazy (struct value *val)
       if (TYPE_LENGTH (type))
 	read_value_memory (val, 0, value_stack (val),
 			   addr, value_contents_all_raw (val),
-			   TYPE_LENGTH (type));
+			   type_length_units (type));
     }
   else if (VALUE_LVAL (val) == lval_register)
     {
@@ -3884,7 +3975,7 @@ value_fetch_lazy (struct value *val)
       set_value_lazy (val, 0);
       value_contents_copy (val, value_embedded_offset (val),
 			   new_val, value_embedded_offset (new_val),
-			   TYPE_LENGTH (type));
+			   type_length_units (type));
 
       if (frame_debug)
 	{
@@ -3998,4 +4089,17 @@ Check whether an expression is void.\n\
 Usage: $_isvoid (expression)\n\
 Return 1 if the expression is void, zero otherwise."),
 			 isvoid_internal_fn, NULL);
+
+  add_setshow_zuinteger_unlimited_cmd ("max-value-size",
+				       class_support, &max_value_size, _("\
+Set maximum sized value gdb will load from the inferior."), _("\
+Show maximum sized value gdb will load from the inferior."), _("\
+Use this to control the maximum size, in bytes, of a value that gdb\n\
+will load from the inferior.  Setting this value to 'unlimited'\n\
+disables checking.\n\
+Setting this does not invalidate already allocated values, it only\n\
+prevents future values, larger than this size, from being allocated."),
+			    set_max_value_size,
+			    show_max_value_size,
+			    &setlist, &showlist);
 }

@@ -632,7 +632,7 @@ static const yytype_uint16 yyrline[] =
      425,   429,   433,   437,   441,   445,   449,   453,   455,   459,
      463,   467,   471,   475,   479,   483,   490,   496,   502,   510,
      521,   531,   540,   543,   552,   559,   563,   573,   585,   593,
-     597,   620,   665
+     597,   620,   663
 };
 #endif
 
@@ -2133,7 +2133,7 @@ yyreduce:
     { struct symbol *sym
 			    = lookup_symbol (copy_name ((yyvsp[0].sval)),
 					     expression_context_block,
-					     VAR_DOMAIN, 0);
+					     VAR_DOMAIN, 0).symbol;
 			  (yyval.sym) = sym;}
 #line 2140 "m2-exp.c" /* yacc.c:1646  */
     break;
@@ -2142,7 +2142,7 @@ yyreduce:
 #line 574 "m2-exp.y" /* yacc.c:1646  */
     { struct symbol *tem
 			    = lookup_symbol (copy_name ((yyvsp[0].sval)), (yyvsp[-2].bval),
-					     VAR_DOMAIN, 0);
+					     VAR_DOMAIN, 0).symbol;
 			  if (!tem || SYMBOL_CLASS (tem) != LOC_BLOCK)
 			    error (_("No function \"%s\" in specified context."),
 				   copy_name ((yyvsp[0].sval)));
@@ -2162,53 +2162,51 @@ yyreduce:
 
   case 80:
 #line 598 "m2-exp.y" /* yacc.c:1646  */
-    { struct symbol *sym;
-			  sym = lookup_symbol (copy_name ((yyvsp[0].sval)), (yyvsp[-2].bval),
-					       VAR_DOMAIN, 0);
-			  if (sym == 0)
+    { struct block_symbol sym
+			    = lookup_symbol (copy_name ((yyvsp[0].sval)), (yyvsp[-2].bval),
+					     VAR_DOMAIN, 0);
+
+			  if (sym.symbol == 0)
 			    error (_("No symbol \"%s\" in specified context."),
 				   copy_name ((yyvsp[0].sval)));
-			  if (symbol_read_needs_frame (sym))
+			  if (symbol_read_needs_frame (sym.symbol))
 			    {
 			      if (innermost_block == 0
-				  || contained_in (block_found,
+				  || contained_in (sym.block,
 						   innermost_block))
-				innermost_block = block_found;
+				innermost_block = sym.block;
 			    }
 
 			  write_exp_elt_opcode (pstate, OP_VAR_VALUE);
-			  /* block_found is set by lookup_symbol.  */
-			  write_exp_elt_block (pstate, block_found);
-			  write_exp_elt_sym (pstate, sym);
+			  write_exp_elt_block (pstate, sym.block);
+			  write_exp_elt_sym (pstate, sym.symbol);
 			  write_exp_elt_opcode (pstate, OP_VAR_VALUE); }
 #line 2186 "m2-exp.c" /* yacc.c:1646  */
     break;
 
   case 81:
 #line 621 "m2-exp.y" /* yacc.c:1646  */
-    { struct symbol *sym;
+    { struct block_symbol sym;
 			  struct field_of_this_result is_a_field_of_this;
 
- 			  sym = lookup_symbol (copy_name ((yyvsp[0].sval)),
+			  sym = lookup_symbol (copy_name ((yyvsp[0].sval)),
 					       expression_context_block,
 					       VAR_DOMAIN,
 					       &is_a_field_of_this);
-			  if (sym)
+
+			  if (sym.symbol)
 			    {
-			      if (symbol_read_needs_frame (sym))
+			      if (symbol_read_needs_frame (sym.symbol))
 				{
 				  if (innermost_block == 0 ||
-				      contained_in (block_found, 
+				      contained_in (sym.block,
 						    innermost_block))
-				    innermost_block = block_found;
+				    innermost_block = sym.block;
 				}
 
 			      write_exp_elt_opcode (pstate, OP_VAR_VALUE);
-			      /* We want to use the selected frame, not
-				 another more inner frame which happens to
-				 be in the same block.  */
-			      write_exp_elt_block (pstate, NULL);
-			      write_exp_elt_sym (pstate, sym);
+			      write_exp_elt_block (pstate, sym.block);
+			      write_exp_elt_sym (pstate, sym.symbol);
 			      write_exp_elt_opcode (pstate, OP_VAR_VALUE);
 			    }
 			  else
@@ -2227,20 +2225,20 @@ yyreduce:
 				       copy_name ((yyvsp[0].sval)));
 			    }
 			}
-#line 2232 "m2-exp.c" /* yacc.c:1646  */
+#line 2230 "m2-exp.c" /* yacc.c:1646  */
     break;
 
   case 82:
-#line 666 "m2-exp.y" /* yacc.c:1646  */
+#line 664 "m2-exp.y" /* yacc.c:1646  */
     { (yyval.tval) = lookup_typename (parse_language (pstate),
 						parse_gdbarch (pstate),
 						copy_name ((yyvsp[0].sval)),
 						expression_context_block, 0); }
-#line 2241 "m2-exp.c" /* yacc.c:1646  */
+#line 2239 "m2-exp.c" /* yacc.c:1646  */
     break;
 
 
-#line 2245 "m2-exp.c" /* yacc.c:1646  */
+#line 2243 "m2-exp.c" /* yacc.c:1646  */
       default: break;
     }
   /* User semantic actions sometimes alter yychar, and that requires
@@ -2468,7 +2466,7 @@ yyreturn:
 #endif
   return yyresult;
 }
-#line 673 "m2-exp.y" /* yacc.c:1906  */
+#line 671 "m2-exp.y" /* yacc.c:1906  */
 
 
 /* Take care of parsing a number (anything that starts with a digit).
@@ -2827,7 +2825,7 @@ yylex (void)
 
     if (lookup_symtab (tmp))
       return BLOCKNAME;
-    sym = lookup_symbol (tmp, expression_context_block, VAR_DOMAIN, 0);
+    sym = lookup_symbol (tmp, expression_context_block, VAR_DOMAIN, 0).symbol;
     if (sym && SYMBOL_CLASS (sym) == LOC_BLOCK)
       return BLOCKNAME;
     if (lookup_typename (parse_language (pstate), parse_gdbarch (pstate),

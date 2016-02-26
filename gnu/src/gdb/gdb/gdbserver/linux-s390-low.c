@@ -1,6 +1,6 @@
 /* GNU/Linux S/390 specific low level interface, for the remote server
    for GDB.
-   Copyright (C) 2001-2015 Free Software Foundation, Inc.
+   Copyright (C) 2001-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -24,7 +24,7 @@
 #include "elf/common.h"
 
 #include <asm/ptrace.h>
-#include <sys/ptrace.h>
+#include "nat/gdb_ptrace.h"
 #include <sys/uio.h>
 #include <elf.h>
 
@@ -390,12 +390,21 @@ static struct regset_info s390_regsets[] = {
     EXTENDED_REGS, s390_fill_vxrs_low, s390_store_vxrs_low },
   { PTRACE_GETREGSET, PTRACE_SETREGSET, NT_S390_VXRS_HIGH, 0,
     EXTENDED_REGS, s390_fill_vxrs_high, s390_store_vxrs_high },
-  { 0, 0, 0, -1, -1, NULL, NULL }
+  NULL_REGSET
 };
 
 
-static const unsigned char s390_breakpoint[] = { 0, 1 };
+static const gdb_byte s390_breakpoint[] = { 0, 1 };
 #define s390_breakpoint_len 2
+
+/* Implementation of linux_target_ops method "sw_breakpoint_from_kind".  */
+
+static const gdb_byte *
+s390_sw_breakpoint_from_kind (int kind, int *size)
+{
+  *size = s390_breakpoint_len;
+  return s390_breakpoint;
+}
 
 static CORE_ADDR
 s390_get_pc (struct regcache *regcache)
@@ -600,6 +609,14 @@ s390_breakpoint_at (CORE_ADDR pc)
   return memcmp (c, s390_breakpoint, s390_breakpoint_len) == 0;
 }
 
+/* Support for hardware single step.  */
+
+static int
+s390_supports_hardware_single_step (void)
+{
+  return 1;
+}
+
 static struct usrregs_info s390_usrregs_info =
   {
     s390_num_regs,
@@ -665,8 +682,8 @@ struct linux_target_ops the_low_target = {
   NULL, /* fetch_register */
   s390_get_pc,
   s390_set_pc,
-  s390_breakpoint,
-  s390_breakpoint_len,
+  NULL, /* breakpoint_kind_from_pc */
+  s390_sw_breakpoint_from_kind,
   NULL,
   s390_breakpoint_len,
   s390_breakpoint_at,
@@ -677,6 +694,20 @@ struct linux_target_ops the_low_target = {
   NULL,
   s390_collect_ptrace_register,
   s390_supply_ptrace_register,
+  NULL, /* siginfo_fixup */
+  NULL, /* new_process */
+  NULL, /* new_thread */
+  NULL, /* new_fork */
+  NULL, /* prepare_to_resume */
+  NULL, /* process_qsupported */
+  NULL, /* supports_tracepoints */
+  NULL, /* get_thread_area */
+  NULL, /* install_fast_tracepoint_jump_pad */
+  NULL, /* emit_ops */
+  NULL, /* get_min_fast_tracepoint_insn_len */
+  NULL, /* supports_range_stepping */
+  NULL, /* breakpoint_kind_from_current_state */
+  s390_supports_hardware_single_step,
 };
 
 void

@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux x86.
 
-   Copyright (C) 2002-2015 Free Software Foundation, Inc.
+   Copyright (C) 2002-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -71,5 +71,8 @@ extern struct target_desc *tdesc_i386_avx512_linux;
 #define I386_LINUX_XSAVE_XCR0_OFFSET 464
 
 extern int i386_linux_gregset_reg_offset[];
+
+/* Return x86 siginfo type.  */
+extern struct type *x86_linux_get_siginfo_type (struct gdbarch *gdbarch);
 
 #endif /* i386-linux-tdep.h */

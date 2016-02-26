@@ -1,5 +1,5 @@
 /* List lines of source files for GDB, the GNU debugger.
-   Copyright (C) 1986-2015 Free Software Foundation, Inc.
+   Copyright (C) 1986-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -42,6 +42,7 @@
 #include "completer.h"
 #include "ui-out.h"
 #include "readline/readline.h"
+#include "common/enum-flags.h"
 
 #define OPEN_MODE (O_RDONLY | O_BINARY)
 #define FDOPEN_MODE FOPEN_RB
@@ -94,7 +95,7 @@ static struct program_space *current_source_pspace;
    and friends should be rewritten to count characters and see where
    things are wrapping, but that would be a fair amount of work.  */
 
-int lines_to_list = 10;
+static int lines_to_list = 10;
 static void
 show_lines_to_list (struct ui_file *file, int from_tty,
 		    struct cmd_list_element *c, const char *value)
@@ -274,7 +275,7 @@ select_source_symtab (struct symtab *s)
 
   /* Make the default place to list be the function `main'
      if one exists.  */
-  if (lookup_symbol (main_name (), 0, VAR_DOMAIN, 0))
+  if (lookup_symbol (main_name (), 0, VAR_DOMAIN, 0).symbol)
     {
       sals = decode_line_with_current_source (main_name (),
 					      DECODE_LINE_FUNFIRSTLINE);
@@ -746,6 +747,9 @@ openp (const char *path, int opts, const char *string,
   struct cleanup *back_to;
   int ix;
   char *dir;
+  /* The errno set for the last name we tried to open (and
+     failed).  */
+  int last_errno = 0;
 
   /* The open syscall MODE parameter is not specified.  */
   gdb_assert ((mode & O_CREAT) == 0);
@@ -775,7 +779,7 @@ openp (const char *path, int opts, const char *string,
 
       if (is_regular_file (string))
 	{
-	  filename = alloca (strlen (string) + 1);
+	  filename = (char *) alloca (strlen (string) + 1);
 	  strcpy (filename, string);
 	  fd = gdb_open_cloexec (filename, mode, 0);
 	  if (fd >= 0)
@@ -786,6 +790,7 @@ openp (const char *path, int opts, const char *string,
 	  filename = NULL;
 	  fd = -1;
 	}
+      last_errno = errno;
 
       if (!(opts & OPF_SEARCH_IN_PATH))
 	for (i = 0; string[i]; i++)
@@ -806,8 +811,9 @@ openp (const char *path, int opts, const char *string,
     string += 2;
 
   alloclen = strlen (path) + strlen (string) + 2;
-  filename = alloca (alloclen);
+  filename = (char *) alloca (alloclen);
   fd = -1;
+  last_errno = ENOENT;
 
   dir_vec = dirnames_to_char_ptr_vec (path);
   back_to = make_cleanup_free_char_ptr_vec (dir_vec);
@@ -827,7 +833,7 @@ openp (const char *path, int opts, const char *string,
 	  if (newlen > alloclen)
 	    {
 	      alloclen = newlen;
-	      filename = alloca (alloclen);
+	      filename = (char *) alloca (alloclen);
 	    }
 	  strcpy (filename, current_directory);
 	}
@@ -845,7 +851,7 @@ openp (const char *path, int opts, const char *string,
 	  if (newlen > alloclen)
 	    {
 	      alloclen = newlen;
-	      filename = alloca (alloclen);
+	      filename = (char *) alloca (alloclen);
 	    }
 	  strcpy (filename, tilde_expanded);
 	  xfree (tilde_expanded);
@@ -878,6 +884,7 @@ openp (const char *path, int opts, const char *string,
 	  fd = gdb_open_cloexec (filename, mode, 0);
 	  if (fd >= 0)
 	    break;
+	  last_errno = errno;
 	}
     }
 
@@ -895,6 +902,7 @@ done:
 	*filename_opened = gdb_abspath (filename);
     }
 
+  errno = last_errno;
   return fd;
 }
 
@@ -1197,7 +1205,7 @@ find_source_lines (struct symtab *s, int desc)
   int size;
 
   gdb_assert (s);
-  line_charpos = (int *) xmalloc (lines_allocated * sizeof (int));
+  line_charpos = XNEWVEC (int, lines_allocated);
   if (fstat (desc, &st) < 0)
     perror_with_name (symtab_to_filename_for_display (s));
 
@@ -1320,7 +1328,7 @@ identify_source_line (struct symtab *s, int line, int mid_statement,
 
 static void
 print_source_lines_base (struct symtab *s, int line, int stopline,
-			 enum print_source_lines_flags flags)
+			 print_source_lines_flags flags)
 {
   int c;
   int desc;
@@ -1354,7 +1362,7 @@ print_source_lines_base (struct symtab *s, int line, int stopline,
   else
     {
       desc = last_source_error;
-	  flags |= PRINT_SOURCE_LINES_NOERROR;
+      flags |= PRINT_SOURCE_LINES_NOERROR;
       noprint = 1;
     }
 
@@ -1366,7 +1374,7 @@ print_source_lines_base (struct symtab *s, int line, int stopline,
 	{
 	  const char *filename = symtab_to_filename_for_display (s);
 	  int len = strlen (filename) + 100;
-	  char *name = alloca (len);
+	  char *name = (char *) alloca (len);
 
 	  xsnprintf (name, len, "%d\t%s", line, filename);
 	  print_sys_errmsg (name, errno);
@@ -1393,7 +1401,7 @@ print_source_lines_base (struct symtab *s, int line, int stopline,
 	      /* ui_out_field_string may free S_FULLNAME by calling
 		 open_source_file for it again.  See e.g.,
 		 tui_field_string->tui_show_source.  */
-	      local_fullname = alloca (strlen (s_fullname) + 1);
+	      local_fullname = (char *) alloca (strlen (s_fullname) + 1);
 	      strcpy (local_fullname, s_fullname);
 
 	      ui_out_field_string (uiout, "fullname", local_fullname);
@@ -1480,7 +1488,7 @@ print_source_lines_base (struct symtab *s, int line, int stopline,
 
 void
 print_source_lines (struct symtab *s, int line, int stopline,
-		    enum print_source_lines_flags flags)
+		    print_source_lines_flags flags)
 {
   print_source_lines_base (s, line, stopline, flags);
 }
@@ -1508,8 +1516,7 @@ line_info (char *arg, int from_tty)
 	sal.line = current_source_line;
 
       sals.nelts = 1;
-      sals.sals = (struct symtab_and_line *)
-	xmalloc (sizeof (struct symtab_and_line));
+      sals.sals = XNEW (struct symtab_and_line);
       sals.sals[0] = sal;
     }
   else
@@ -1645,7 +1652,7 @@ forward_search_command (char *regex, int from_tty)
       int cursize, newsize;
 
       cursize = 256;
-      buf = xmalloc (cursize);
+      buf = (char *) xmalloc (cursize);
       p = buf;
 
       c = fgetc (stream);
@@ -1657,7 +1664,7 @@ forward_search_command (char *regex, int from_tty)
 	  if (p - buf == cursize)
 	    {
 	      newsize = cursize + cursize / 2;
-	      buf = xrealloc (buf, newsize);
+	      buf = (char *) xrealloc (buf, newsize);
 	      p = buf + cursize;
 	      cursize = newsize;
 	    }
@@ -1816,9 +1823,8 @@ void
 add_substitute_path_rule (char *from, char *to)
 {
   struct substitute_path_rule *rule;
-  struct substitute_path_rule *new_rule;
+  struct substitute_path_rule *new_rule = XNEW (struct substitute_path_rule);
 
-  new_rule = xmalloc (sizeof (struct substitute_path_rule));
   new_rule->from = xstrdup (from);
   new_rule->to = xstrdup (to);
   new_rule->next = NULL;

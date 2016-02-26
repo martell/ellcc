@@ -1,5 +1,5 @@
 /* MIPS ELF support for BFD.
-   Copyright (C) 1993-2015 Free Software Foundation, Inc.
+   Copyright (C) 1993-2016 Free Software Foundation, Inc.
 
    By Ian Lance Taylor, Cygnus Support, <ian@cygnus.com>, from
    information in the System V Application Binary Interface, MIPS
@@ -1297,6 +1297,10 @@ enum
 
   /* Using -mips32r2 -mfp64 -mno-odd-spreg.  */
   Val_GNU_MIPS_ABI_FP_64A = 7,
+
+  /* This is reserved for backward-compatibility with an earlier
+     implementation of the MIPS NaN2008 functionality.  */
+  Val_GNU_MIPS_ABI_FP_NAN2008 = 8,
 
   /* Values defined for Tag_GNU_MIPS_ABI_MSA.  */
 

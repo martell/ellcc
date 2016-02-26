@@ -622,8 +622,8 @@ static const yytype_uint16 yyrline[] =
      433,   433,   456,   460,   464,   468,   472,   476,   480,   486,
      492,   498,   504,   510,   516,   520,   524,   528,   532,   539,
      546,   554,   568,   576,   579,   594,   605,   609,   641,   669,
-     687,   697,   712,   727,   728,   759,   831,   842,   846,   848,
-     850,   853,   861,   862,   863,   864,   867,   868
+     687,   698,   713,   729,   730,   761,   830,   841,   845,   847,
+     849,   852,   860,   861,   862,   863,   866,   867
 };
 #endif
 
@@ -1676,7 +1676,7 @@ yyreduce:
 			      struct stoken stringsval;
 			      char *buf;
 
-			      buf = alloca (strlen (arrayname) + 1);
+			      buf = (char *) alloca (strlen (arrayname) + 1);
 			      stringsval.ptr = buf;
 			      stringsval.length = strlen (arrayname);
 			      strcpy (buf, arrayname);
@@ -1972,7 +1972,7 @@ yyreduce:
 			  write_exp_elt_type (pstate,
 					    parse_type (pstate)->builtin_int);
 			  current_type = parse_type (pstate)->builtin_int;
-			  CHECK_TYPEDEF ((yyvsp[-1].tval));
+			  (yyvsp[-1].tval) = check_typedef ((yyvsp[-1].tval));
 			  write_exp_elt_longcst (pstate,
 						 (LONGEST) TYPE_LENGTH ((yyvsp[-1].tval)));
 			  write_exp_elt_opcode (pstate, OP_LONG); }
@@ -2050,8 +2050,8 @@ yyreduce:
   case 59:
 #line 670 "p-exp.y" /* yacc.c:1646  */
     {
-			  if ((yyvsp[0].ssym).sym != 0)
-			      (yyval.bval) = SYMBOL_BLOCK_VALUE ((yyvsp[0].ssym).sym);
+			  if ((yyvsp[0].ssym).sym.symbol != 0)
+			      (yyval.bval) = SYMBOL_BLOCK_VALUE ((yyvsp[0].ssym).sym.symbol);
 			  else
 			    {
 			      struct symtab *tem =
@@ -2071,35 +2071,37 @@ yyreduce:
 #line 688 "p-exp.y" /* yacc.c:1646  */
     { struct symbol *tem
 			    = lookup_symbol (copy_name ((yyvsp[0].sval)), (yyvsp[-2].bval),
-					     VAR_DOMAIN, NULL);
+					     VAR_DOMAIN, NULL).symbol;
+
 			  if (!tem || SYMBOL_CLASS (tem) != LOC_BLOCK)
 			    error (_("No function \"%s\" in specified context."),
 				   copy_name ((yyvsp[0].sval)));
 			  (yyval.bval) = SYMBOL_BLOCK_VALUE (tem); }
-#line 2081 "p-exp.c" /* yacc.c:1646  */
+#line 2082 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 61:
-#line 698 "p-exp.y" /* yacc.c:1646  */
-    { struct symbol *sym;
+#line 699 "p-exp.y" /* yacc.c:1646  */
+    { struct block_symbol sym;
+
 			  sym = lookup_symbol (copy_name ((yyvsp[0].sval)), (yyvsp[-2].bval),
 					       VAR_DOMAIN, NULL);
-			  if (sym == 0)
+			  if (sym.symbol == 0)
 			    error (_("No symbol \"%s\" in specified context."),
 				   copy_name ((yyvsp[0].sval)));
 
 			  write_exp_elt_opcode (pstate, OP_VAR_VALUE);
-			  /* block_found is set by lookup_symbol.  */
-			  write_exp_elt_block (pstate, block_found);
-			  write_exp_elt_sym (pstate, sym);
+			  write_exp_elt_block (pstate, sym.block);
+			  write_exp_elt_sym (pstate, sym.symbol);
 			  write_exp_elt_opcode (pstate, OP_VAR_VALUE); }
-#line 2098 "p-exp.c" /* yacc.c:1646  */
+#line 2099 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 62:
-#line 713 "p-exp.y" /* yacc.c:1646  */
+#line 714 "p-exp.y" /* yacc.c:1646  */
     {
 			  struct type *type = (yyvsp[-2].tval);
+
 			  if (TYPE_CODE (type) != TYPE_CODE_STRUCT
 			      && TYPE_CODE (type) != TYPE_CODE_UNION)
 			    error (_("`%s' is not defined as an aggregate type."),
@@ -2110,11 +2112,11 @@ yyreduce:
 			  write_exp_string (pstate, (yyvsp[0].sval));
 			  write_exp_elt_opcode (pstate, OP_SCOPE);
 			}
-#line 2115 "p-exp.c" /* yacc.c:1646  */
+#line 2117 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 64:
-#line 729 "p-exp.y" /* yacc.c:1646  */
+#line 731 "p-exp.y" /* yacc.c:1646  */
     {
 			  char *name = copy_name ((yyvsp[0].sval));
 			  struct symbol *sym;
@@ -2122,7 +2124,7 @@ yyreduce:
 
 			  sym =
 			    lookup_symbol (name, (const struct block *) NULL,
-					   VAR_DOMAIN, NULL);
+					   VAR_DOMAIN, NULL).symbol;
 			  if (sym)
 			    {
 			      write_exp_elt_opcode (pstate, OP_VAR_VALUE);
@@ -2143,31 +2145,28 @@ yyreduce:
 			    error (_("No symbol \"%s\" in current context."),
 				   name);
 			}
-#line 2148 "p-exp.c" /* yacc.c:1646  */
+#line 2150 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 65:
-#line 760 "p-exp.y" /* yacc.c:1646  */
-    { struct symbol *sym = (yyvsp[0].ssym).sym;
+#line 762 "p-exp.y" /* yacc.c:1646  */
+    { struct block_symbol sym = (yyvsp[0].ssym).sym;
 
-			  if (sym)
+			  if (sym.symbol)
 			    {
-			      if (symbol_read_needs_frame (sym))
+			      if (symbol_read_needs_frame (sym.symbol))
 				{
 				  if (innermost_block == 0
-				      || contained_in (block_found,
+				      || contained_in (sym.block,
 						       innermost_block))
-				    innermost_block = block_found;
+				    innermost_block = sym.block;
 				}
 
 			      write_exp_elt_opcode (pstate, OP_VAR_VALUE);
-			      /* We want to use the selected frame, not
-				 another more inner frame which happens to
-				 be in the same block.  */
-			      write_exp_elt_block (pstate, NULL);
-			      write_exp_elt_sym (pstate, sym);
+			      write_exp_elt_block (pstate, sym.block);
+			      write_exp_elt_sym (pstate, sym.symbol);
 			      write_exp_elt_opcode (pstate, OP_VAR_VALUE);
-			      current_type = sym->type; }
+			      current_type = sym.symbol->type; }
 			  else if ((yyvsp[0].ssym).is_a_field_of_this)
 			    {
 			      struct value * this_val;
@@ -2176,9 +2175,9 @@ yyreduce:
 			         not inadvertently convert from a method call
 				 to data ref.  */
 			      if (innermost_block == 0
-				  || contained_in (block_found,
+				  || contained_in (sym.block,
 						   innermost_block))
-				innermost_block = block_found;
+				innermost_block = sym.block;
 			      write_exp_elt_opcode (pstate, OP_THIS);
 			      write_exp_elt_opcode (pstate, OP_THIS);
 			      write_exp_elt_opcode (pstate, STRUCTOP_PTR);
@@ -2216,61 +2215,61 @@ yyreduce:
 				       copy_name ((yyvsp[0].ssym).stoken));
 			    }
 			}
-#line 2221 "p-exp.c" /* yacc.c:1646  */
+#line 2220 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 68:
-#line 847 "p-exp.y" /* yacc.c:1646  */
+#line 846 "p-exp.y" /* yacc.c:1646  */
     { (yyval.tval) = lookup_pointer_type ((yyvsp[0].tval)); }
-#line 2227 "p-exp.c" /* yacc.c:1646  */
+#line 2226 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 69:
-#line 849 "p-exp.y" /* yacc.c:1646  */
+#line 848 "p-exp.y" /* yacc.c:1646  */
     { (yyval.tval) = (yyvsp[0].tsym).type; }
-#line 2233 "p-exp.c" /* yacc.c:1646  */
+#line 2232 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 70:
-#line 851 "p-exp.y" /* yacc.c:1646  */
+#line 850 "p-exp.y" /* yacc.c:1646  */
     { (yyval.tval) = lookup_struct (copy_name ((yyvsp[0].sval)),
 					      expression_context_block); }
-#line 2240 "p-exp.c" /* yacc.c:1646  */
+#line 2239 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 71:
-#line 854 "p-exp.y" /* yacc.c:1646  */
+#line 853 "p-exp.y" /* yacc.c:1646  */
     { (yyval.tval) = lookup_struct (copy_name ((yyvsp[0].sval)),
 					      expression_context_block); }
-#line 2247 "p-exp.c" /* yacc.c:1646  */
+#line 2246 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 72:
-#line 861 "p-exp.y" /* yacc.c:1646  */
+#line 860 "p-exp.y" /* yacc.c:1646  */
     { (yyval.sval) = (yyvsp[0].ssym).stoken; }
-#line 2253 "p-exp.c" /* yacc.c:1646  */
+#line 2252 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 73:
-#line 862 "p-exp.y" /* yacc.c:1646  */
+#line 861 "p-exp.y" /* yacc.c:1646  */
     { (yyval.sval) = (yyvsp[0].ssym).stoken; }
-#line 2259 "p-exp.c" /* yacc.c:1646  */
+#line 2258 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 74:
-#line 863 "p-exp.y" /* yacc.c:1646  */
+#line 862 "p-exp.y" /* yacc.c:1646  */
     { (yyval.sval) = (yyvsp[0].tsym).stoken; }
-#line 2265 "p-exp.c" /* yacc.c:1646  */
+#line 2264 "p-exp.c" /* yacc.c:1646  */
     break;
 
   case 75:
-#line 864 "p-exp.y" /* yacc.c:1646  */
+#line 863 "p-exp.y" /* yacc.c:1646  */
     { (yyval.sval) = (yyvsp[0].ssym).stoken; }
-#line 2271 "p-exp.c" /* yacc.c:1646  */
+#line 2270 "p-exp.c" /* yacc.c:1646  */
     break;
 
 
-#line 2275 "p-exp.c" /* yacc.c:1646  */
+#line 2274 "p-exp.c" /* yacc.c:1646  */
       default: break;
     }
   /* User semantic actions sometimes alter yychar, and that requires
@@ -2498,7 +2497,7 @@ yyreturn:
 #endif
   return yyresult;
 }
-#line 878 "p-exp.y" /* yacc.c:1906  */
+#line 877 "p-exp.y" /* yacc.c:1906  */
 
 
 /* Take care of parsing a number (anything that starts with a digit).
@@ -3132,7 +3131,7 @@ yylex (void)
 	  static const char this_name[] = "this";
 
 	  if (lookup_symbol (this_name, expression_context_block,
-			     VAR_DOMAIN, NULL))
+			     VAR_DOMAIN, NULL).symbol)
 	    {
 	      xfree (uptokstart);
 	      return THIS;
@@ -3155,7 +3154,7 @@ yylex (void)
         so in expression to enter hexadecimal values
         we still need to use C syntax with 0xff  */
       write_dollar_variable (pstate, yylval.sval);
-      tmp = alloca (namelen + 1);
+      tmp = (char *) alloca (namelen + 1);
       memcpy (tmp, tokstart, namelen);
       tmp[namelen] = '\0';
       intvar = lookup_only_internalvar (tmp + 1);
@@ -3182,7 +3181,7 @@ yylex (void)
       sym = NULL;
     else
       sym = lookup_symbol (tmp, expression_context_block,
-			   VAR_DOMAIN, &is_a_field_of_this);
+			   VAR_DOMAIN, &is_a_field_of_this).symbol;
     /* second chance uppercased (as Free Pascal does).  */
     if (!sym && is_a_field_of_this.type == NULL && !is_a_field)
       {
@@ -3197,7 +3196,7 @@ yylex (void)
 	 sym = NULL;
        else
 	 sym = lookup_symbol (tmp, expression_context_block,
-			      VAR_DOMAIN, &is_a_field_of_this);
+			      VAR_DOMAIN, &is_a_field_of_this).symbol;
       }
     /* Third chance Capitalized (as GPC does).  */
     if (!sym && is_a_field_of_this.type == NULL && !is_a_field)
@@ -3219,7 +3218,7 @@ yylex (void)
 	 sym = NULL;
        else
 	 sym = lookup_symbol (tmp, expression_context_block,
-			      VAR_DOMAIN, &is_a_field_of_this);
+			      VAR_DOMAIN, &is_a_field_of_this).symbol;
       }
 
     if (is_a_field || (is_a_field_of_this.type != NULL))
@@ -3229,7 +3228,8 @@ yylex (void)
 	tempbuf [namelen] = 0;
 	yylval.sval.ptr = tempbuf;
 	yylval.sval.length = namelen;
-	yylval.ssym.sym = NULL;
+	yylval.ssym.sym.symbol = NULL;
+	yylval.ssym.sym.block = NULL;
 	xfree (uptokstart);
         yylval.ssym.is_a_field_of_this = is_a_field_of_this.type != NULL;
 	if (is_a_field)
@@ -3243,7 +3243,8 @@ yylex (void)
     if ((sym && SYMBOL_CLASS (sym) == LOC_BLOCK)
         || lookup_symtab (tmp))
       {
-	yylval.ssym.sym = sym;
+	yylval.ssym.sym.symbol = sym;
+	yylval.ssym.sym.block = NULL;
 	yylval.ssym.is_a_field_of_this = is_a_field_of_this.type != NULL;
 	xfree (uptokstart);
 	return BLOCKNAME;
@@ -3299,7 +3300,9 @@ yylex (void)
 		      struct symbol *cur_sym;
 		      /* As big as the whole rest of the expression, which is
 			 at least big enough.  */
-		      char *ncopy = alloca (strlen (tmp)+strlen (namestart)+3);
+		      char *ncopy
+			= (char *) alloca (strlen (tmp) + strlen (namestart)
+					   + 3);
 		      char *tmp1;
 
 		      tmp1 = ncopy;
@@ -3310,7 +3313,7 @@ yylex (void)
 		      memcpy (tmp1, namestart, p - namestart);
 		      tmp1[p - namestart] = '\0';
 		      cur_sym = lookup_symbol (ncopy, expression_context_block,
-					       VAR_DOMAIN, NULL);
+					       VAR_DOMAIN, NULL).symbol;
 		      if (cur_sym)
 			{
 			  if (SYMBOL_CLASS (cur_sym) == LOC_TYPEDEF)
@@ -3358,7 +3361,8 @@ yylex (void)
 	hextype = parse_number (pstate, tokstart, namelen, 0, &newlval);
 	if (hextype == INT)
 	  {
-	    yylval.ssym.sym = sym;
+	    yylval.ssym.sym.symbol = sym;
+	    yylval.ssym.sym.block = NULL;
 	    yylval.ssym.is_a_field_of_this = is_a_field_of_this.type != NULL;
 	    xfree (uptokstart);
 	    return NAME_OR_INT;
@@ -3367,7 +3371,8 @@ yylex (void)
 
     xfree(uptokstart);
     /* Any other kind of symbol.  */
-    yylval.ssym.sym = sym;
+    yylval.ssym.sym.symbol = sym;
+    yylval.ssym.sym.block = NULL;
     return NAME;
   }
 }

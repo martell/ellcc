@@ -1,5 +1,5 @@
 /* BFD back-end for Intel 386 PE IMAGE COFF files.
-   Copyright (C) 2006-2015 Free Software Foundation, Inc.
+   Copyright (C) 2006-2016 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -346,7 +346,7 @@ pex64_dump_xdata (FILE *file, bfd *abfd,
     end_addr = sec_size;
 
   pex64_get_unwind_info (abfd, &ui, &xdata[addr]);
-  
+
   if (ui.Version != 1 && ui.Version != 2)
     {
       unsigned int i;

@@ -1,6 +1,6 @@
 /* Core dump and executable file functions below target vector, for GDB.
 
-   Copyright (C) 1986-2015 Free Software Foundation, Inc.
+   Copyright (C) 1986-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -547,7 +547,7 @@ get_core_register_section (struct regcache *regcache,
 	       section_name);
     }
 
-  contents = alloca (size);
+  contents = (char *) alloca (size);
   if (! bfd_get_section_contents (core_bfd, section, contents,
 				  (file_ptr) 0, size))
     {
@@ -656,7 +656,7 @@ struct spuid_list
 static void
 add_to_spuid_list (bfd *abfd, asection *asect, void *list_p)
 {
-  struct spuid_list *list = list_p;
+  struct spuid_list *list = (struct spuid_list *) list_p;
   enum bfd_endian byte_order
     = bfd_big_endian (abfd) ? BFD_ENDIAN_BIG : BFD_ENDIAN_LITTLE;
   int fd, pos = 0;
@@ -986,6 +986,15 @@ core_pid_to_str (struct target_ops *ops, ptid_t ptid)
   return buf;
 }
 
+static const char *
+core_thread_name (struct target_ops *self, struct thread_info *thr)
+{
+  if (core_gdbarch
+      && gdbarch_core_thread_name_p (core_gdbarch))
+    return gdbarch_core_thread_name (core_gdbarch, thr);
+  return NULL;
+}
+
 static int
 core_has_memory (struct target_ops *ops)
 {
@@ -1038,6 +1047,7 @@ init_core_ops (void)
   core_ops.to_thread_alive = core_thread_alive;
   core_ops.to_read_description = core_read_description;
   core_ops.to_pid_to_str = core_pid_to_str;
+  core_ops.to_thread_name = core_thread_name;
   core_ops.to_stratum = process_stratum;
   core_ops.to_has_memory = core_has_memory;
   core_ops.to_has_stack = core_has_stack;

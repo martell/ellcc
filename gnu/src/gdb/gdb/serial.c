@@ -1,6 +1,6 @@
 /* Generic serial interface routines
 
-   Copyright (C) 1992-2015 Free Software Foundation, Inc.
+   Copyright (C) 1992-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -404,7 +404,7 @@ serial_write (struct serial *scb, const void *buf, size_t count)
 {
   if (serial_logfp != NULL)
     {
-      const char *str = buf;
+      const char *str = (const char *) buf;
       size_t c;
 
       for (c = 0; c < count; c++)
@@ -416,7 +416,7 @@ serial_write (struct serial *scb, const void *buf, size_t count)
     }
   if (serial_debug_p (scb))
     {
-      const char *str = buf;
+      const char *str = (const char *) buf;
       size_t c;
 
       for (c = 0; c < count; c++)

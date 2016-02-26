@@ -1,6 +1,6 @@
 /* Target-dependent code for the i386.
 
-   Copyright (C) 2001-2015 Free Software Foundation, Inc.
+   Copyright (C) 2001-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -193,7 +193,7 @@ struct gdbarch_tdep
   const struct target_desc *tdesc;
 
   /* Register group function.  */
-  const void *register_reggroup_p;
+  gdbarch_register_reggroup_p_ftype *register_reggroup_p;
 
   /* Offset of saved PC in jmp_buf.  */
   int jb_pc_offset;

@@ -1,6 +1,6 @@
 /* Definitions for dealing with stack frames, for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2015 Free Software Foundation, Inc.
+   Copyright (C) 1986-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -68,6 +68,8 @@
    stack *address, ...
 
    */
+
+#include "language.h"
 
 struct symtab_and_line;
 struct frame_unwind;
@@ -813,5 +815,10 @@ extern struct frame_info *create_new_frame (CORE_ADDR base, CORE_ADDR pc);
 
 extern int frame_unwinder_is (struct frame_info *fi,
 			      const struct frame_unwind *unwinder);
+
+/* Return the language of FRAME.  */
+
+extern enum language get_frame_language (struct frame_info *frame);
+
 
 #endif /* !defined (FRAME_H)  */

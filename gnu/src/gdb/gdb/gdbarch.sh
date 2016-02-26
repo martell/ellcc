@@ -2,7 +2,7 @@
 
 # Architecture commands for GDB, the GNU debugger.
 #
-# Copyright (C) 1998-2015 Free Software Foundation, Inc.
+# Copyright (C) 1998-2016 Free Software Foundation, Inc.
 #
 # This file is part of GDB.
 #
@@ -461,6 +461,7 @@ m:int:ecoff_reg_to_regnum:int ecoff_regnr:ecoff_regnr::no_op_reg_to_regnum::0
 # Convert from an sdb register number to an internal gdb register number.
 m:int:sdb_reg_to_regnum:int sdb_regnr:sdb_regnr::no_op_reg_to_regnum::0
 # Provide a default mapping from a DWARF2 register number to a gdb REGNUM.
+# Return -1 for bad REGNUM.  Note: Several targets get this wrong.
 m:int:dwarf2_reg_to_regnum:int dwarf2_regnr:dwarf2_regnr::no_op_reg_to_regnum::0
 m:const char *:register_name:int regnr:regnr::0
 
@@ -720,6 +721,9 @@ M:ULONGEST:core_xfer_shared_libraries_aix:gdb_byte *readbuf, ULONGEST offset, UL
 # How the core target converts a PTID from a core file to a string.
 M:char *:core_pid_to_str:ptid_t ptid:ptid
 
+# How the core target extracts the name of a thread from a core file.
+M:const char *:core_thread_name:struct thread_info *thr:thr
+
 # BFD target to use when generating a core file.
 V:const char *:gcore_bfd_target:::0:0:::pstring (gdbarch->gcore_bfd_target)
 
@@ -763,6 +767,10 @@ V:ULONGEST:max_insn_length:::0:0
 # If your architecture doesn't need to adjust instructions before
 # single-stepping them, consider using simple_displaced_step_copy_insn
 # here.
+#
+# If the instruction cannot execute out of line, return NULL.  The
+# core falls back to stepping past the instruction in-line instead in
+# that case.
 M:struct displaced_step_closure *:displaced_step_copy_insn:CORE_ADDR from, CORE_ADDR to, struct regcache *regs:from, to, regs
 
 # Return true if GDB should use hardware single-stepping to execute
@@ -1018,7 +1026,7 @@ v:int:has_global_breakpoints:::0:0::0
 m:int:has_shared_address_space:void:::default_has_shared_address_space::0
 
 # True if a fast tracepoint can be set at an address.
-m:int:fast_tracepoint_valid_at:CORE_ADDR addr, int *isize, char **msg:addr, isize, msg::default_fast_tracepoint_valid_at::0
+m:int:fast_tracepoint_valid_at:CORE_ADDR addr, char **msg:addr, msg::default_fast_tracepoint_valid_at::0
 
 # Return the "auto" target charset.
 f:const char *:auto_charset:void::default_auto_charset:default_auto_charset::0
@@ -1172,7 +1180,7 @@ cat <<EOF
 
 /* Dynamic architecture support for GDB, the GNU debugger.
 
-   Copyright (C) 1998-2015 Free Software Foundation, Inc.
+   Copyright (C) 1998-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -1180,12 +1188,12 @@ cat <<EOF
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 3 of the License, or
    (at your option) any later version.
-  
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-  
+
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
@@ -1233,7 +1241,6 @@ struct target_desc;
 struct objfile;
 struct symbol;
 struct displaced_step_closure;
-struct core_regset_section;
 struct syscall;
 struct agent_expr;
 struct axs_value;
@@ -1243,6 +1250,7 @@ struct ravenscar_arch_ops;
 struct elf_internal_linux_prpsinfo;
 struct mem_range;
 struct syscalls_info;
+struct thread_info;
 
 #include "regcache.h"
 
@@ -1425,7 +1433,7 @@ struct gdbarch_info
   bfd *abfd;
 
   /* Use default: NULL (ZERO).  */
-  struct gdbarch_tdep_info *tdep_info;
+  void *tdep_info;
 
   /* Use default: GDB_OSABI_UNINITIALIZED (-1).  */
   enum gdb_osabi osabi;
@@ -1482,6 +1490,11 @@ extern void *gdbarch_obstack_zalloc (struct gdbarch *gdbarch, long size);
 #define GDBARCH_OBSTACK_CALLOC(GDBARCH, NR, TYPE) ((TYPE *) gdbarch_obstack_zalloc ((GDBARCH), (NR) * sizeof (TYPE)))
 #define GDBARCH_OBSTACK_ZALLOC(GDBARCH, TYPE) ((TYPE *) gdbarch_obstack_zalloc ((GDBARCH), sizeof (TYPE)))
 
+/* Duplicate STRING, returning an equivalent string that's allocated on the
+   obstack associated with GDBARCH.  The string is freed when the corresponding
+   architecture is also freed.  */
+
+extern char *gdbarch_obstack_strdup (struct gdbarch *arch, const char *string);
 
 /* Helper function.  Force an update of the current architecture.
 
@@ -1737,7 +1750,7 @@ gdbarch_alloc (const struct gdbarch_info *info,
      then use that to allocate the architecture vector.  */
   struct obstack *obstack = XNEW (struct obstack);
   obstack_init (obstack);
-  gdbarch = obstack_alloc (obstack, sizeof (*gdbarch));
+  gdbarch = XOBNEW (obstack, struct gdbarch);
   memset (gdbarch, 0, sizeof (*gdbarch));
   gdbarch->obstack = obstack;
 
@@ -1785,6 +1798,14 @@ gdbarch_obstack_zalloc (struct gdbarch *arch, long size)
 
   memset (data, 0, size);
   return data;
+}
+
+/* See gdbarch.h.  */
+
+char *
+gdbarch_obstack_strdup (struct gdbarch *arch, const char *string)
+{
+  return obstack_strdup (arch->obstack, string);
 }
 
 
@@ -2197,7 +2218,7 @@ static struct gdbarch_registration *gdbarch_registry = NULL;
 static void
 append_name (const char ***buf, int *nr, const char *name)
 {
-  *buf = xrealloc (*buf, sizeof (char**) * (*nr + 1));
+  *buf = XRESIZEVEC (const char *, *buf, *nr + 1);
   (*buf)[*nr] = name;
   *nr += 1;
 }

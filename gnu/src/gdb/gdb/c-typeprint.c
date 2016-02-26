@@ -1,5 +1,5 @@
 /* Support for printing C and C++ types for GDB, the GNU debugger.
-   Copyright (C) 1986-2015 Free Software Foundation, Inc.
+   Copyright (C) 1986-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -50,7 +50,7 @@ static void c_type_print_modifier (struct type *,
 static const char *
 find_typedef_for_canonicalize (struct type *t, void *data)
 {
-  return find_typedef_in_hash (data, t);
+  return find_typedef_in_hash ((const struct type_print_options *) data, t);
 }
 
 /* Print NAME on STREAM.  If the 'raw' field of FLAGS is not set,
@@ -89,7 +89,7 @@ c_print_type (struct type *type,
   const char *local_name;
 
   if (show > 0)
-    CHECK_TYPEDEF (type);
+    type = check_typedef (type);
 
   local_name = find_typedef_in_hash (flags, type);
   if (local_name != NULL)
@@ -144,7 +144,7 @@ c_print_typedef (struct type *type,
 		 struct symbol *new_symbol,
 		 struct ui_file *stream)
 {
-  CHECK_TYPEDEF (type);
+  type = check_typedef (type);
   fprintf_filtered (stream, "typedef ");
   type_print (type, "", stream, 0);
   if (TYPE_NAME ((SYMBOL_TYPE (new_symbol))) == 0
@@ -876,7 +876,7 @@ c_type_print_base (struct type *type, struct ui_file *stream,
       return;
     }
 
-  CHECK_TYPEDEF (type);
+  type = check_typedef (type);
 
   switch (TYPE_CODE (type))
     {
@@ -1305,27 +1305,27 @@ c_type_print_base (struct type *type, struct ui_file *stream,
 	      if (TYPE_NFIELDS (type) != 0 || TYPE_NFN_FIELDS (type) != 0)
 		fprintf_filtered (stream, "\n");
 
-		for (i = 0; i < TYPE_TYPEDEF_FIELD_COUNT (type); i++)
-		  {
-		    struct type *target = TYPE_TYPEDEF_FIELD_TYPE (type, i);
+	      for (i = 0; i < TYPE_TYPEDEF_FIELD_COUNT (type); i++)
+		{
+		  struct type *target = TYPE_TYPEDEF_FIELD_TYPE (type, i);
 
-		    /* Dereference the typedef declaration itself.  */
-		    gdb_assert (TYPE_CODE (target) == TYPE_CODE_TYPEDEF);
-		    target = TYPE_TARGET_TYPE (target);
+		  /* Dereference the typedef declaration itself.  */
+		  gdb_assert (TYPE_CODE (target) == TYPE_CODE_TYPEDEF);
+		  target = TYPE_TARGET_TYPE (target);
 
-		    print_spaces_filtered (level + 4, stream);
-		    fprintf_filtered (stream, "typedef ");
+		  print_spaces_filtered (level + 4, stream);
+		  fprintf_filtered (stream, "typedef ");
 
-		    /* We want to print typedefs with substitutions
-		       from the template parameters or globally-known
-		       typedefs but not local typedefs.  */
-		    c_print_type (target,
-				  TYPE_TYPEDEF_FIELD_NAME (type, i),
-				  stream, show - 1, level + 4,
-				  &semi_local_flags);
-		    fprintf_filtered (stream, ";\n");
-		  }
-	      }
+		  /* We want to print typedefs with substitutions
+		     from the template parameters or globally-known
+		     typedefs but not local typedefs.  */
+		  c_print_type (target,
+				TYPE_TYPEDEF_FIELD_NAME (type, i),
+				stream, show - 1, level + 4,
+				&semi_local_flags);
+		  fprintf_filtered (stream, ";\n");
+		}
+	    }
 
 	    fprintfi_filtered (level, stream, "}");
 	  }

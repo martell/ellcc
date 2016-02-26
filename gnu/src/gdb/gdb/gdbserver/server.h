@@ -1,5 +1,5 @@
 /* Common definitions for remote server for GDB.
-   Copyright (C) 1993-2015 Free Software Foundation, Inc.
+   Copyright (C) 1993-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -86,6 +86,8 @@ extern int run_once;
 extern int multi_process;
 extern int report_fork_events;
 extern int report_vfork_events;
+extern int report_exec_events;
+extern int report_thread_events;
 extern int non_stop;
 
 /* True if the "swbreak+" feature is active.  In that case, GDB wants
@@ -114,10 +116,14 @@ typedef int gdb_fildes_t;
 extern int handle_serial_event (int err, gdb_client_data client_data);
 extern int handle_target_event (int err, gdb_client_data client_data);
 
+/* Get rid of the currently pending stop replies that match PTID.  */
+extern void discard_queued_stop_replies (ptid_t ptid);
+
 #include "remote-utils.h"
 
 #include "utils.h"
 #include "debug.h"
+#include "gdb_vecs.h"
 
 /* Maximum number of bytes to read/write at once.  The value here
    is chosen to fill up a packet (the headers account for the 32).  */
@@ -127,5 +133,11 @@ extern int handle_target_event (int err, gdb_client_data client_data);
    value to accomodate multiple register formats.  This value must be at least
    as large as the largest register set supported by gdbserver.  */
 #define PBUFSIZ 16384
+
+/* Definition for an unknown syscall, used basically in error-cases.  */
+#define UNKNOWN_SYSCALL (-1)
+
+/* Definition for any syscall, used for unfiltered syscall reporting.  */
+#define ANY_SYSCALL (-2)
 
 #endif /* SERVER_H */

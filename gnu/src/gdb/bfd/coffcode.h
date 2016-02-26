@@ -1,5 +1,5 @@
 /* Support for the generic parts of most COFF variants, for BFD.
-   Copyright (C) 1990-2015 Free Software Foundation, Inc.
+   Copyright (C) 1990-2016 Free Software Foundation, Inc.
    Written by Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -962,7 +962,7 @@ handle_COMDAT (bfd * abfd,
 	  /* All 3 branches use this.  */
 	  symname = _bfd_coff_internal_syment_name (abfd, &isym, buf);
 
-	  /* PR 17512 file: 078-11867-0.004  */ 
+	  /* PR 17512 file: 078-11867-0.004  */
 	  if (symname == NULL)
 	    {
 	      _bfd_error_handler (_("%B: unable to load COMDAT section name"), abfd);
@@ -2091,7 +2091,7 @@ coff_mkobject_hook (bfd * abfd,
     }
   if (coff->go32stub != NULL)
     memcpy (coff->go32stub, internal_f->go32stub, GO32_STUBSIZE);
-  
+
   return coff;
 }
 #endif
@@ -4684,7 +4684,7 @@ coff_slurp_line_table (bfd *abfd, asection *asect)
 	      *p++ = &lineno_cache[i];
 
 	  BFD_ASSERT ((unsigned int) (p - func_table) == nbr_func);
-	  
+
 	  /* Sort by functions.  */
 	  qsort (func_table, nbr_func, sizeof (alent *), coff_sort_func_alent);
 
@@ -5155,7 +5155,7 @@ coff_classify_symbol (bfd *abfd,
 	  asection *sec;
 	  char * name;
  	  char buf[SYMNMLEN + 1];
- 
+
 	  name = _bfd_coff_internal_syment_name (abfd, syment, buf)
  	  sec = coff_section_from_bfd_index (abfd, syment->n_scnum);
 	  if (sec != NULL && name != NULL
@@ -5759,6 +5759,7 @@ coff_bigobj_swap_sym_in (bfd * abfd, void * ext1, void * in1)
     }
 
   in->n_value = H_GET_32 (abfd, ext->e_value);
+  BFD_ASSERT (sizeof (in->n_scnum) >= 4);
   in->n_scnum = H_GET_32 (abfd, ext->e_scnum);
   in->n_type = H_GET_16 (abfd, ext->e_type);
   in->n_sclass = H_GET_8 (abfd, ext->e_sclass);

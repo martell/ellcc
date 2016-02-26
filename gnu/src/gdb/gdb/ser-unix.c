@@ -1,6 +1,6 @@
 /* Serial interface for local (hardwired) serial ports on Un*x like systems
 
-   Copyright (C) 1992-2015 Free Software Foundation, Inc.
+   Copyright (C) 1992-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -26,7 +26,7 @@
 #include <sys/types.h>
 #include "terminal.h"
 #include <sys/socket.h>
-#include <sys/time.h>
+#include "gdb_sys_time.h"
 
 #include "gdb_select.h"
 #include "gdbcmd.h"
@@ -178,9 +178,7 @@ set_tty_state (struct serial *scb, struct hardwire_ttystate *state)
 static serial_ttystate
 hardwire_get_tty_state (struct serial *scb)
 {
-  struct hardwire_ttystate *state;
-
-  state = (struct hardwire_ttystate *) xmalloc (sizeof *state);
+  struct hardwire_ttystate *state = XNEW (struct hardwire_ttystate);
 
   if (get_tty_state (scb, state))
     {
@@ -194,9 +192,8 @@ hardwire_get_tty_state (struct serial *scb)
 static serial_ttystate
 hardwire_copy_tty_state (struct serial *scb, serial_ttystate ttystate)
 {
-  struct hardwire_ttystate *state;
+  struct hardwire_ttystate *state = XNEW (struct hardwire_ttystate);
 
-  state = (struct hardwire_ttystate *) xmalloc (sizeof *state);
   *state = *(struct hardwire_ttystate *) ttystate;
 
   return (serial_ttystate) state;

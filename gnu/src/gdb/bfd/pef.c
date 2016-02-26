@@ -1,5 +1,5 @@
 /* PEF support for BFD.
-   Copyright (C) 1999-2015 Free Software Foundation, Inc.
+   Copyright (C) 1999-2016 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -487,7 +487,7 @@ bfd_pef_scan_start_address (bfd *abfd)
     goto end;
 
   for (section = abfd->sections; section != NULL; section = section->next)
-    if ((section->index + 1) == header.main_section)
+    if ((long) (section->index + 1) == header.main_section)
       break;
 
   if (section == NULL)

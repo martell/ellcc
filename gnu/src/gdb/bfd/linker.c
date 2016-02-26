@@ -1,5 +1,5 @@
 /* linker.c -- BFD linker routines
-   Copyright (C) 1993-2015 Free Software Foundation, Inc.
+   Copyright (C) 1993-2016 Free Software Foundation, Inc.
    Written by Steve Chamberlain and Ian Lance Taylor, Cygnus Support
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -1475,7 +1475,8 @@ _bfd_generic_link_add_one_symbol (struct bfd_link_info *info,
   else if (bfd_is_com_section (section))
     {
       row = COMMON_ROW;
-      if (strcmp (name, "__gnu_lto_slim") == 0)
+      if (!bfd_link_relocatable (info)
+	  && strcmp (name, "__gnu_lto_slim") == 0)
 	(*_bfd_error_handler)
 	  (_("%s: plugin needed to handle lto object"),
 	   bfd_get_filename (abfd));
@@ -1906,7 +1907,7 @@ _bfd_generic_final_link (bfd *abfd, struct bfd_link_info *info)
   if (! generic_add_output_symbol (abfd, &outsymalloc, NULL))
     return FALSE;
 
-  if (info->relocatable)
+  if (bfd_link_relocatable (info))
     {
       /* Allocate space for the output relocs for each section.  */
       for (o = abfd->sections; o != NULL; o = o->next)
@@ -2210,7 +2211,7 @@ _bfd_generic_link_output_symbols (bfd *output_bfd,
 		  break;
 		case discard_sec_merge:
 		  output = TRUE;
-		  if (info->relocatable
+		  if (bfd_link_relocatable (info)
 		      || ! (sym->section->flags & SEC_MERGE))
 		    break;
 		  /* FALLTHROUGH */
@@ -2380,7 +2381,7 @@ _bfd_generic_reloc_link_order (bfd *abfd,
 {
   arelent *r;
 
-  if (! info->relocatable)
+  if (! bfd_link_relocatable (info))
     abort ();
   if (sec->orelocation == NULL)
     abort ();
@@ -2611,7 +2612,7 @@ default_indirect_link_order (bfd *output_bfd,
   BFD_ASSERT (input_section->output_offset == link_order->offset);
   BFD_ASSERT (input_section->size == link_order->size);
 
-  if (info->relocatable
+  if (bfd_link_relocatable (info)
       && input_section->reloc_count > 0
       && output_section->orelocation == NULL)
     {
@@ -2705,7 +2706,7 @@ default_indirect_link_order (bfd *output_bfd,
 	goto error_return;
       new_contents = (bfd_get_relocated_section_contents
 		      (output_bfd, info, link_order, contents,
-		       info->relocatable,
+		       bfd_link_relocatable (info),
 		       _bfd_generic_link_get_symbols (input_bfd)));
       if (!new_contents)
 	goto error_return;

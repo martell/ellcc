@@ -1,6 +1,6 @@
 /* Everything about syscall catchpoints, for GDB.
 
-   Copyright (C) 2009-2015 Free Software Foundation, Inc.
+   Copyright (C) 2009-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -85,7 +85,8 @@ get_catch_syscall_inferior_data (struct inferior *inf)
 {
   struct catch_syscall_inferior_data *inf_data;
 
-  inf_data = inferior_data (inf, catch_syscall_inferior_data);
+  inf_data = ((struct catch_syscall_inferior_data *)
+	      inferior_data (inf, catch_syscall_inferior_data));
   if (inf_data == NULL)
     {
       inf_data = XCNEW (struct catch_syscall_inferior_data);
@@ -253,11 +254,12 @@ print_it_catch_syscall (bpstat bs)
   get_syscall_by_number (gdbarch, last.value.syscall_number, &s);
 
   annotate_catchpoint (b->number);
+  maybe_print_thread_hit_breakpoint (uiout);
 
   if (b->disposition == disp_del)
-    ui_out_text (uiout, "\nTemporary catchpoint ");
+    ui_out_text (uiout, "Temporary catchpoint ");
   else
-    ui_out_text (uiout, "\nCatchpoint ");
+    ui_out_text (uiout, "Catchpoint ");
   if (ui_out_is_mi_like_p (uiout))
     {
       ui_out_field_string (uiout, "reason",

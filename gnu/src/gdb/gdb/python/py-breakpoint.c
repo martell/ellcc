@@ -1,6 +1,6 @@
 /* Python interface to breakpoints
 
-   Copyright (C) 2008-2015 Free Software Foundation, Inc.
+   Copyright (C) 2008-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -30,6 +30,7 @@
 #include "ada-lang.h"
 #include "arch-utils.h"
 #include "language.h"
+#include "location.h"
 
 /* Number of live breakpoints.  */
 static int bppy_live;
@@ -202,7 +203,7 @@ bppy_set_thread (PyObject *self, PyObject *newvalue, void *closure)
       if (! gdb_py_int_as_long (newvalue, &id))
 	return -1;
 
-      if (! valid_thread_id (id))
+      if (!valid_global_thread_id (id))
 	{
 	  PyErr_SetString (PyExc_RuntimeError,
 			   _("Invalid thread ID."));
@@ -380,7 +381,7 @@ bppy_set_hit_count (PyObject *self, PyObject *newvalue, void *closure)
 static PyObject *
 bppy_get_location (PyObject *self, void *closure)
 {
-  char *str;
+  const char *str;
   gdbpy_breakpoint_object *obj = (gdbpy_breakpoint_object *) self;
 
   BPPY_REQUIRE_VALID (obj);
@@ -388,8 +389,7 @@ bppy_get_location (PyObject *self, void *closure)
   if (obj->bp->type != bp_breakpoint)
     Py_RETURN_NONE;
 
-  str = obj->bp->addr_string;
-
+  str = event_location_to_string (obj->bp->location);
   if (! str)
     str = "";
   return PyString_Decode (str, strlen (str), host_charset (), NULL);
@@ -663,15 +663,20 @@ bppy_init (PyObject *self, PyObject *args, PyObject *kwargs)
 
   TRY
     {
-      char *copy = xstrdup (spec);
+      char *copy = xstrdup (skip_spaces_const (spec));
       struct cleanup *cleanup = make_cleanup (xfree, copy);
 
       switch (type)
 	{
 	case bp_breakpoint:
 	  {
+	    struct event_location *location;
+
+	    location
+	      = string_to_event_location_basic (&copy, current_language);
+	    make_cleanup_delete_event_location (location);
 	    create_breakpoint (python_gdbarch,
-			       copy, NULL, -1, NULL,
+			       location, NULL, -1, NULL,
 			       0,
 			       temporary_bp, bp_breakpoint,
 			       0,
@@ -716,7 +721,7 @@ bppy_init (PyObject *self, PyObject *args, PyObject *kwargs)
 static int
 build_bp_list (struct breakpoint *b, void *arg)
 {
-  PyObject *list = arg;
+  PyObject *list = (PyObject *) arg;
   PyObject *bp = (PyObject *) b->py_bp_object;
   int iserr = 0;
 

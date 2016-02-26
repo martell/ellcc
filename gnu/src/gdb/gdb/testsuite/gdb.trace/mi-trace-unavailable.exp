@@ -1,4 +1,4 @@
-# Copyright 2013-2015 Free Software Foundation, Inc.
+# Copyright 2013-2016 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -135,6 +135,8 @@ proc test_trace_unavailable { data_source } {
 	    set pcnum 16
 	} elseif [is_x86_like_target] {
 	    set pcnum 8
+	} elseif [is_aarch64_target] {
+	    set pcnum 32
 	} else {
 	    # Other ports support tracepoint should define the number
 	    # of its own pc register.

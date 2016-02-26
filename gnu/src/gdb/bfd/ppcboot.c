@@ -1,5 +1,5 @@
 /* BFD back-end for PPCbug boot records.
-   Copyright (C) 1996-2015 Free Software Foundation, Inc.
+   Copyright (C) 1996-2016 Free Software Foundation, Inc.
    Written by Michael Meissner, Cygnus Support, <meissner@cygnus.com>
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -402,7 +402,7 @@ ppcboot_bfd_print_private_bfd_data (bfd *abfd, void * farg)
   if (tdata->header.os_id)
     fprintf (f, "OS_ID               = 0x%.2x\n", tdata->header.os_id);
 
-  if (tdata->header.partition_name)
+  if (tdata->header.partition_name[0])
     fprintf (f, _("Partition name      = \"%s\"\n"), tdata->header.partition_name);
 
   for (i = 0; i < 4; i++)

@@ -1,6 +1,6 @@
 /* Work with executable files, for GDB. 
 
-   Copyright (C) 1988-2015 Free Software Foundation, Inc.
+   Copyright (C) 1988-2016 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -254,7 +254,7 @@ exec_file_attach (const char *filename, int from_tty)
 #if defined(__GO32__) || defined(_WIN32) || defined(__CYGWIN__)
 	  if (scratch_chan < 0)
 	    {
-	      char *exename = alloca (strlen (filename) + 5);
+	      char *exename = (char *) alloca (strlen (filename) + 5);
 
 	      strcat (strcpy (exename, filename), ".exe");
 	      scratch_chan = openp (getenv ("PATH"), OPF_TRY_CWD_FIRST,
@@ -283,7 +283,7 @@ exec_file_attach (const char *filename, int from_tty)
 
       if (!exec_bfd)
 	{
-	  error (_("\"%s\": could not open as an executable file: %s"),
+	  error (_("\"%s\": could not open as an executable file: %s."),
 		 scratch_pathname, bfd_errmsg (bfd_get_error ()));
 	}
 
@@ -453,8 +453,8 @@ resize_section_table (struct target_section_table *table, int adjustment)
 
   if (new_count)
     {
-      table->sections = xrealloc (table->sections,
-				  sizeof (struct target_section) * new_count);
+      table->sections = XRESIZEVEC (struct target_section, table->sections,
+				    new_count);
       table->sections_end = table->sections + new_count;
     }
   else
@@ -475,7 +475,7 @@ build_section_table (struct bfd *some_bfd, struct target_section **start,
   count = bfd_count_sections (some_bfd);
   if (*start)
     xfree (* start);
-  *start = (struct target_section *) xmalloc (count * sizeof (**start));
+  *start = XNEWVEC (struct target_section, count);
   *end = *start;
   bfd_map_over_sections (some_bfd, add_to_section_table, (char *) end);
   if (*end > *start + count)
