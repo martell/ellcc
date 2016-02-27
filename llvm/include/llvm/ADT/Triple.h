@@ -155,7 +155,6 @@ public:
     Solaris,
     Win32,
     Haiku,
-    SA,         // ELLCC: Stand Alone
     Minix,
     RTEMS,
     NaCl,       // Native Client

@@ -1027,14 +1027,6 @@ public:
     case 'W': // Vector constant that does not require memory
     case 'j': // Vector constant that is all zeros.
       break;
-    case '{':
-      // RICH: FIXME: Should figure out how to call
-      // TargetInfo::isValidGCCRegisterName() to
-      // verify that the register is legal.
-      ++Name;
-      while (*Name && *Name != '}')
-        ++Name;
-      return *Name == '}';
     // End FIXME.
     }
     return true;
@@ -2096,14 +2088,6 @@ public:
     case 'f': // Floating point register
       Info.setAllowsRegister();
       return true;
-    case '{':
-      // RICH: FIXME: Should figure out how to call
-      // TargetInfo::isValidGCCRegisterName() to
-      // verify that the register is legal.
-      ++Name;
-      while (*Name && *Name != '}')
-        ++Name;
-      return *Name == '}';
     }
   }
   const char *getClobbers() const override {
@@ -3808,14 +3792,6 @@ X86TargetInfo::validateAsmConstraint(const char *&Name,
   case 'C': // SSE floating point constant.
   case 'G': // x87 floating point constant.
     return true;
-  case '{':
-    // RICH: FIXME: Should figure out how to call
-    // TargetInfo::isValidGCCRegisterName() to
-    // verify that the register is legal.
-    ++Name;
-    while (*Name && *Name != '}')
-      ++Name;
-    return *Name == '}';
   }
 }
 
@@ -4530,46 +4506,6 @@ protected:
 
   static const Builtin::Info BuiltinInfo[];
 
-#if RICH
-  static bool shouldUseInlineAtomic(const llvm::Triple &T) {
-    StringRef ArchName = T.getArchName();
-    if (T.getArch() == llvm::Triple::arm ||
-        T.getArch() == llvm::Triple::armeb) {
-      StringRef VersionStr;
-      if (ArchName.startswith("armv"))
-        VersionStr = ArchName.substr(4, 1);
-      else if (ArchName.startswith("armebv"))
-        VersionStr = ArchName.substr(6, 1);
-      else
-        return false;
-      unsigned Version = 0;
-      while (!VersionStr.empty() && isdigit(VersionStr[0])) {
-        Version = Version * 10 + (VersionStr[0] - '0');
-        VersionStr = VersionStr.substr(1);
-      }
-#if RICH
-      // Replaced to handle e.g. armv6eb.
-      if (VersionStr.getAsInteger(10, Version))
-        return false;
-#endif
-      return Version >= 6;
-    }
-    assert(T.getArch() == llvm::Triple::thumb ||
-           T.getArch() == llvm::Triple::thumbeb);
-    StringRef VersionStr;
-    if (ArchName.startswith("thumbv"))
-      VersionStr = ArchName.substr(6, 1);
-    else if (ArchName.startswith("thumbebv"))
-      VersionStr = ArchName.substr(8, 1);
-    else
-      return false;
-    unsigned Version;
-    if (VersionStr.getAsInteger(10, Version))
-      return false;
-    return Version >= 7;
-  }
-
-#endif
   void setABIAAPCS() {
     IsAAPCS = true;
 
@@ -5225,14 +5161,6 @@ public:
     case 'w': // VFP Floating point register double precision
       Info.setAllowsRegister();
       return true;
-    case '{':
-      // RICH: FIXME: Should figure out how to call
-      // TargetInfo::isValidGCCRegisterName() to
-      // verify that the register is legal.
-      ++Name;
-      while (*Name && *Name != '}')
-        ++Name;
-      return *Name == '}';
     case 'I':
     case 'J':
     case 'K':
@@ -6213,14 +6141,6 @@ public:
     case 'N': // Same as 'K' but zext (required for SIMode)
     case 'O': // The constant 4096
       return true;
-    case '{':
-      // RICH: FIXME: Should figure out how to call
-      // TargetInfo::isValidGCCRegisterName() to
-      // verify that the register is legal.
-      ++Name;
-      while (*Name && *Name != '}')
-        ++Name;
-      return *Name == '}';
     }
     return false;
   }
@@ -7006,14 +6926,6 @@ public:
     case 'x': // hilo register pair
       Info.setAllowsRegister();
       return true;
-    case '{':
-      // RICH: FIXME: Should figure out how to call
-      // TargetInfo::isValidGCCRegisterName() to
-      // verify that the register is legal.
-      ++Name;
-      while (*Name && *Name != '}')
-        ++Name;
-      return *Name == '}';
     case 'I': // Signed 16-bit constant
     case 'J': // Integer 0
     case 'K': // Unsigned 16-bit constant

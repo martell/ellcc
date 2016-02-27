@@ -183,7 +183,6 @@ const char *Triple::getOSTypeName(OSType Kind) {
   case Win32: return "windows";
   case Haiku: return "haiku";
   case Minix: return "minix";
-  case SA: return "sa";
   case RTEMS: return "rtems";
   case NaCl: return "nacl";
   case CNK: return "cnk";
@@ -452,7 +451,6 @@ static Triple::OSType parseOS(StringRef OSName) {
     .StartsWith("windows", Triple::Win32)
     .StartsWith("haiku", Triple::Haiku)
     .StartsWith("minix", Triple::Minix)
-    .StartsWith("sa", Triple::SA)
     .StartsWith("rtems", Triple::RTEMS)
     .StartsWith("nacl", Triple::NaCl)
     .StartsWith("cnk", Triple::CNK)
