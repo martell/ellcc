@@ -14,9 +14,12 @@
 #include "OutputSections.h"
 #include "Target.h"
 
+#include "llvm/Support/Endian.h"
+
 using namespace llvm;
 using namespace llvm::ELF;
 using namespace llvm::object;
+using namespace llvm::support::endian;
 
 using namespace lld;
 using namespace lld::elf2;
@@ -25,17 +28,14 @@ template <class ELFT>
 InputSectionBase<ELFT>::InputSectionBase(ObjectFile<ELFT> *File,
                                          const Elf_Shdr *Header,
                                          Kind SectionKind)
-    : Header(Header), File(File), SectionKind(SectionKind) {
+    : Header(Header), File(File), SectionKind(SectionKind), Repl(this) {
   // The garbage collector sets sections' Live bits.
   // If GC is disabled, all sections are considered live by default.
-  // NB: "Discarded" section is initialized at start-up and when it
-  // happens Config is still null.
-  Live = Config && !Config->GcSections;
+  Live = !Config->GcSections;
 
   // The ELF spec states that a value of 0 means the section has
   // no alignment constraits.
-  if (Header)
-    Align = std::max<uintX_t>(Header->sh_addralign, 1);
+  Align = std::max<uintX_t>(Header->sh_addralign, 1);
 }
 
 template <class ELFT> StringRef InputSectionBase<ELFT>::getSectionName() const {
@@ -84,7 +84,7 @@ InputSectionBase<ELFT>::getRelocTarget(const Elf_Rel &Rel) const {
   uint32_t SymIndex = Rel.getSymbol(Config->Mips64EL);
   if (SymbolBody *B = File->getSymbolBody(SymIndex))
     if (auto *D = dyn_cast<DefinedRegular<ELFT>>(B->repl()))
-      return D->Section;
+      return D->Section->Repl;
   // Local symbol
   if (const Elf_Sym *Sym = File->getLocalSymbol(SymIndex))
     if (InputSectionBase<ELFT> *Sec = File->getSection(*Sym))
@@ -108,6 +108,58 @@ bool InputSection<ELFT>::classof(const InputSectionBase<ELFT> *S) {
 }
 
 template <class ELFT>
+InputSectionBase<ELFT> *InputSection<ELFT>::getRelocatedSection() {
+  assert(this->Header->sh_type == SHT_RELA || this->Header->sh_type == SHT_REL);
+  ArrayRef<InputSectionBase<ELFT> *> Sections = this->File->getSections();
+  return Sections[this->Header->sh_info];
+}
+
+// This is used for -r. We can't use memcpy to copy relocations because we need
+// to update symbol table offset and section index for each relocation. So we
+// copy relocations one by one.
+template <class ELFT>
+template <bool isRela>
+void InputSection<ELFT>::copyRelocations(uint8_t *Buf,
+                                         RelIteratorRange<isRela> Rels) {
+  typedef Elf_Rel_Impl<ELFT, isRela> RelType;
+  InputSectionBase<ELFT> *RelocatedSection = getRelocatedSection();
+
+  for (const RelType &Rel : Rels) {
+    uint32_t SymIndex = Rel.getSymbol(Config->Mips64EL);
+    uint32_t Type = Rel.getType(Config->Mips64EL);
+    const Elf_Shdr *SymTab = this->File->getSymbolTable();
+
+    RelType *P = reinterpret_cast<RelType *>(Buf);
+    Buf += sizeof(RelType);
+
+    // Relocation for local symbol here means that it is probably
+    // rel[a].eh_frame section which has references to
+    // sections in r_info field. Also needs fix for addend.
+    if (SymIndex < SymTab->sh_info)
+      fatal("Relocation against local symbols is not supported yet");
+
+    SymbolBody *Body = this->File->getSymbolBody(SymIndex)->repl();
+    P->r_offset = RelocatedSection->getOffset(Rel.r_offset);
+    P->setSymbolAndType(Body->DynsymIndex, Type, Config->Mips64EL);
+  }
+}
+
+static uint32_t getMipsPairedRelocType(uint32_t Type) {
+  if (Config->EMachine != EM_MIPS)
+    return R_MIPS_NONE;
+  switch (Type) {
+  case R_MIPS_HI16:
+    return R_MIPS_LO16;
+  case R_MIPS_PCHI16:
+    return R_MIPS_PCLO16;
+  case R_MICROMIPS_HI16:
+    return R_MICROMIPS_LO16;
+  default:
+    return R_MIPS_NONE;
+  }
+}
+
+template <class ELFT>
 template <bool isRela>
 uint8_t *
 InputSectionBase<ELFT>::findMipsPairedReloc(uint8_t *Buf, uint32_t SymIndex,
@@ -117,15 +169,7 @@ InputSectionBase<ELFT>::findMipsPairedReloc(uint8_t *Buf, uint32_t SymIndex,
   // itself and addend of paired relocation. ABI requires to compute such
   // combined addend in case of REL relocation record format only.
   // See p. 4-17 at ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
-  if (isRela || Config->EMachine != EM_MIPS)
-    return nullptr;
-  if (Type == R_MIPS_HI16)
-    Type = R_MIPS_LO16;
-  else if (Type == R_MIPS_PCHI16)
-    Type = R_MIPS_PCLO16;
-  else if (Type == R_MICROMIPS_HI16)
-    Type = R_MICROMIPS_LO16;
-  else
+  if (isRela || Type == R_MIPS_NONE)
     return nullptr;
   for (const auto &RI : Rels) {
     if (RI.getType(Config->Mips64EL) != Type)
@@ -191,20 +235,31 @@ void InputSectionBase<ELFT>::relocate(uint8_t *Buf, uint8_t *BufEnd,
     uintX_t A = getAddend<ELFT>(RI);
     if (!Body) {
       uintX_t SymVA = getLocalRelTarget(*File, RI, A);
+      uint8_t *PairedLoc = nullptr;
       if (Config->EMachine == EM_MIPS) {
         if (Type == R_MIPS_GPREL16 || Type == R_MIPS_GPREL32)
           // We need to adjust SymVA value in case of R_MIPS_GPREL16/32
           // relocations because they use the following expression to calculate
           // the relocation's result for local symbol: S + A + GP0 - G.
           SymVA += File->getMipsGp0();
-        else if (Type == R_MIPS_GOT16)
+        else if (Type == R_MIPS_GOT16) {
           // R_MIPS_GOT16 relocation against local symbol requires index of
           // a local GOT entry which contains page address corresponds
-          // to the symbol address.
-          SymVA = Out<ELFT>::Got->getMipsLocalPageAddr(SymVA);
+          // to sum of the symbol address and addend. The addend in that case
+          // is calculated using addends from R_MIPS_GOT16 and paired
+          // R_MIPS_LO16 relocations.
+          const endianness E = ELFT::TargetEndianness;
+          uint8_t *LowLoc =
+              findMipsPairedReloc(Buf, SymIndex, R_MIPS_LO16, NextRelocs);
+          uint64_t AHL = read32<E>(BufLoc) << 16;
+          if (LowLoc)
+            AHL += SignExtend64<16>(read32<E>(LowLoc));
+          SymVA = Out<ELFT>::Got->getMipsLocalPageAddr(SymVA + AHL);
+        } else
+          PairedLoc = findMipsPairedReloc(
+              Buf, SymIndex, getMipsPairedRelocType(Type), NextRelocs);
       }
-      Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc, SymVA, 0,
-                          findMipsPairedReloc(Buf, SymIndex, Type, NextRelocs));
+      Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc, SymVA, 0, PairedLoc);
       continue;
     }
 
@@ -217,10 +272,11 @@ void InputSectionBase<ELFT>::relocate(uint8_t *Buf, uint8_t *BufEnd,
     }
 
     uintX_t SymVA = Body->getVA<ELFT>();
-    if (Target->needsPlt(Type, *Body)) {
+    bool CBP = canBePreempted(Body);
+    if (Target->needsPlt<ELFT>(Type, *Body)) {
       SymVA = Body->getPltVA<ELFT>();
     } else if (Target->needsGot(Type, *Body)) {
-      if (Config->EMachine == EM_MIPS && !canBePreempted(Body, true))
+      if (Config->EMachine == EM_MIPS && !CBP)
         // Under some conditions relocations against non-local symbols require
         // entries in the local part of MIPS GOT. In that case we need an entry
         // initialized by full address of the symbol.
@@ -234,7 +290,7 @@ void InputSectionBase<ELFT>::relocate(uint8_t *Buf, uint8_t *BufEnd,
       continue;
     } else if (Target->isTlsDynRel(Type, *Body)) {
       continue;
-    } else if (Target->isSizeRel(Type) && canBePreempted(Body, false)) {
+    } else if (Target->isSizeRel(Type) && CBP) {
       // A SIZE relocation is supposed to set a symbol size, but if a symbol
       // can be preempted, the size at runtime may be different than link time.
       // If that's the case, we leave the field alone rather than filling it
@@ -250,7 +306,9 @@ void InputSectionBase<ELFT>::relocate(uint8_t *Buf, uint8_t *BufEnd,
     }
     uintX_t Size = Body->getSize<ELFT>();
     Target->relocateOne(BufLoc, BufEnd, Type, AddrLoc, SymVA + A, Size + A,
-                        findMipsPairedReloc(Buf, SymIndex, Type, NextRelocs));
+                        findMipsPairedReloc(Buf, SymIndex,
+                                            getMipsPairedRelocType(Type),
+                                            NextRelocs));
   }
 }
 
@@ -259,9 +317,21 @@ template <class ELFT> void InputSection<ELFT>::writeTo(uint8_t *Buf) {
     return;
   // Copy section contents from source object file to output file.
   ArrayRef<uint8_t> Data = this->getSectionData();
+  ELFFile<ELFT> &EObj = this->File->getObj();
+
+  // That happens with -r. In that case we need fix the relocation position and
+  // target. No relocations are applied.
+  if (this->Header->sh_type == SHT_RELA) {
+    this->copyRelocations(Buf + OutSecOff, EObj.relas(this->Header));
+    return;
+  }
+  if (this->Header->sh_type == SHT_REL) {
+    this->copyRelocations(Buf + OutSecOff, EObj.rels(this->Header));
+    return;
+  }
+
   memcpy(Buf + OutSecOff, Data.data(), Data.size());
 
-  ELFFile<ELFT> &EObj = this->File->getObj();
   uint8_t *BufEnd = Buf + OutSecOff + Data.size();
   // Iterate over all relocation sections that apply to this section.
   for (const Elf_Shdr *RelSec : this->RelocSections) {
@@ -270,6 +340,13 @@ template <class ELFT> void InputSection<ELFT>::writeTo(uint8_t *Buf) {
     else
       this->relocate(Buf, BufEnd, EObj.rels(RelSec));
   }
+}
+
+template <class ELFT>
+void InputSection<ELFT>::replace(InputSection<ELFT> *Other) {
+  this->Align = std::max(this->Align, Other->Align);
+  Other->Repl = this->Repl;
+  Other->Live = false;
 }
 
 template <class ELFT>

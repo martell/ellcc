@@ -99,7 +99,7 @@ cp -p bin-extra/* $bindir
 # Configure for an LLVM+Clang build.
 mkdir -p llvm-build$builddir
 
-if [ -e bin/llvm-tblgen ] ; then
+if [ -e bin/llvm-tblgen -a \( "`basename $bindir`" != "bin" \) ] ; then
   # We have tblgens built.
   CROSS_CMAKE_FLAGS="-DCMAKE_CROSSCOMPILING=True \
       -DLLVM_TABLEGEN=`pwd`/bin/llvm-tblgen \

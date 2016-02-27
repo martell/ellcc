@@ -71,6 +71,12 @@ template <class ELFT> static bool isReserved(InputSectionBase<ELFT> *Sec) {
     return true;
   default:
     StringRef S = Sec->getSectionName();
+
+    // We do not want to reclaim sections if they can be referred
+    // by __start_* and __stop_* symbols.
+    if (isValidCIdentifier(S))
+      return true;
+
     return S.startswith(".ctors") || S.startswith(".dtors") ||
            S.startswith(".init") || S.startswith(".fini") ||
            S.startswith(".jcr");
@@ -118,7 +124,7 @@ template <class ELFT> void elf2::markLive(SymbolTable<ELFT> *Symtab) {
   // script KEEP command.
   for (const std::unique_ptr<ObjectFile<ELFT>> &F : Symtab->getObjectFiles())
     for (InputSectionBase<ELFT> *Sec : F->getSections())
-      if (Sec && Sec != &InputSection<ELFT>::Discarded)
+      if (Sec && Sec != InputSection<ELFT>::Discarded)
         if (isReserved(Sec) || Script->shouldKeep<ELFT>(Sec))
           Enqueue(Sec);
 

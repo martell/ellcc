@@ -7720,6 +7720,10 @@ def err_opencl_invalid_type_array : Error<
   "array of %0 type is invalid in OpenCL">;
 def err_opencl_ternary_with_block : Error<
   "block type cannot be used as expression in ternary expression in OpenCL">;
+def err_opencl_pointer_to_type : Error<
+  "pointer to type %0 is invalid in OpenCL">;
+def err_opencl_type_can_only_be_used_as_function_parameter : Error <
+  "type %0 can only be used as a function parameter in OpenCL">;
 
 // OpenCL v2.0 s6.13.6 -- Builtin Pipe Functions
 def err_opencl_builtin_pipe_first_arg : Error<
@@ -7730,6 +7734,14 @@ def err_opencl_builtin_pipe_invalid_arg : Error<
   "invalid argument type to function %0 (expecting %1)">;
 def err_opencl_builtin_pipe_invalid_access_modifier : Error<
   "invalid pipe access modifier (expecting %0)">;
+
+// OpenCL access qualifier
+def err_opencl_invalid_access_qualifier : Error<
+  "access qualifier can only be used for pipe and image type">;
+def err_opencl_invalid_read_write : Error<
+  "access qualifier %0 can not be used for %1 %select{|earlier than OpenCL2.0 version}2">;
+def err_opencl_multiple_access_qualifiers : Error<
+  "multiple access qualifiers">;
 
 // OpenCL Section 6.8.g
 def err_opencl_unknown_type_specifier : Error<

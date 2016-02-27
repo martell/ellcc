@@ -47,23 +47,23 @@ namespace clang {
     unsigned AnonymousDeclNumber;
     GlobalDeclID NamedDeclForTagDecl;
     IdentifierInfo *TypedefNameForLinkage;
-    
+
     bool HasPendingBody;
 
     uint64_t GetCurrentCursorOffset();
-    
+
     SourceLocation ReadSourceLocation(const RecordData &R, unsigned &I) {
       return Reader.ReadSourceLocation(F, R, I);
     }
-    
+
     SourceRange ReadSourceRange(const RecordData &R, unsigned &I) {
       return Reader.ReadSourceRange(F, R, I);
     }
-    
+
     TypeSourceInfo *GetTypeSourceInfo(const RecordData &R, unsigned &I) {
       return Reader.GetTypeSourceInfo(F, R, I);
     }
-    
+
     serialization::DeclID ReadDeclID(const RecordData &R, unsigned &I) {
       return Reader.ReadDeclID(F, R, I);
     }
@@ -1423,6 +1423,7 @@ void ASTDeclReader::ReadCXXDefinitionData(
   Data.DeclaredNonTrivialSpecialMembers = Record[Idx++];
   Data.HasIrrelevantDestructor = Record[Idx++];
   Data.HasConstexprNonCopyMoveConstructor = Record[Idx++];
+  Data.HasDefaultedDefaultConstructor = Record[Idx++];
   Data.DefaultedDefaultConstructorIsConstexpr = Record[Idx++];
   Data.HasConstexprDefaultConstructor = Record[Idx++];
   Data.HasNonLiteralTypeFieldsOrBases = Record[Idx++];
@@ -1548,6 +1549,7 @@ void ASTDeclReader::MergeDefinitionData(
   OR_FIELD(DeclaredNonTrivialSpecialMembers)
   MATCH_FIELD(HasIrrelevantDestructor)
   OR_FIELD(HasConstexprNonCopyMoveConstructor)
+  OR_FIELD(HasDefaultedDefaultConstructor)
   MATCH_FIELD(DefaultedDefaultConstructorIsConstexpr)
   OR_FIELD(HasConstexprDefaultConstructor)
   MATCH_FIELD(HasNonLiteralTypeFieldsOrBases)

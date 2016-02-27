@@ -53,7 +53,9 @@ getLocalRelTarget(const ObjectFile<ELFT> &File,
                   const llvm::object::Elf_Rel_Impl<ELFT, IsRela> &Rel,
                   typename llvm::object::ELFFile<ELFT>::uintX_t Addend);
 
-bool canBePreempted(const SymbolBody *Body, bool NeedsGot);
+bool canBePreempted(const SymbolBody *Body);
+
+bool isValidCIdentifier(StringRef S);
 
 // This represents a section in an output file.
 // Different sub classes represent different types of sections. Some contain
@@ -287,6 +289,7 @@ public:
   void sortInitFini();
   void sortCtorsDtors();
   void writeTo(uint8_t *Buf) override;
+  void finalize() override;
 
 private:
   void reassignOffsets();

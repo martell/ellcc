@@ -186,18 +186,18 @@ void elf2::ObjectFile<ELFT>::initializeSections(
   const ELFFile<ELFT> &Obj = this->ELFObj;
   for (const Elf_Shdr &Sec : Obj.sections()) {
     ++I;
-    if (Sections[I] == &InputSection<ELFT>::Discarded)
+    if (Sections[I] == InputSection<ELFT>::Discarded)
       continue;
 
     switch (Sec.sh_type) {
     case SHT_GROUP:
-      Sections[I] = &InputSection<ELFT>::Discarded;
+      Sections[I] = InputSection<ELFT>::Discarded;
       if (ComdatGroups.insert(getShtGroupSignature(Sec)).second)
         continue;
       for (uint32_t SecIndex : getShtGroupEntries(Sec)) {
         if (SecIndex >= Size)
           fatal("Invalid section index in group");
-        Sections[SecIndex] = &InputSection<ELFT>::Discarded;
+        Sections[SecIndex] = InputSection<ELFT>::Discarded;
       }
       break;
     case SHT_SYMTAB:
@@ -222,11 +222,14 @@ void elf2::ObjectFile<ELFT>::initializeSections(
       // Strictly speaking, a relocation section must be included in the
       // group of the section it relocates. However, LLVM 3.3 and earlier
       // would fail to do so, so we gracefully handle that case.
-      if (RelocatedSection == &InputSection<ELFT>::Discarded)
+      if (RelocatedSection == InputSection<ELFT>::Discarded)
         continue;
       if (!RelocatedSection)
         fatal("Unsupported relocation reference");
-      if (auto *S = dyn_cast<InputSection<ELFT>>(RelocatedSection)) {
+      if (Config->Relocatable) {
+        // For -r, relocation sections are handled as regular input sections.
+        Sections[I] = new (Alloc) InputSection<ELFT>(this, &Sec);
+      } else if (auto *S = dyn_cast<InputSection<ELFT>>(RelocatedSection)) {
         S->RelocSections.push_back(&Sec);
       } else if (auto *S = dyn_cast<EHInputSection<ELFT>>(RelocatedSection)) {
         if (S->RelocSection)
@@ -255,7 +258,7 @@ elf2::ObjectFile<ELFT>::createInputSection(const Elf_Shdr &Sec) {
   // is controlled only by the command line option (-z execstack) in LLD,
   // .note.GNU-stack is ignored.
   if (Name == ".note.GNU-stack")
-    return &InputSection<ELFT>::Discarded;
+    return InputSection<ELFT>::Discarded;
 
   // A MIPS object file has a special section that contains register
   // usage info, which needs to be handled by the linker specially.
@@ -288,7 +291,10 @@ elf2::ObjectFile<ELFT>::getSection(const Elf_Sym &Sym) const {
     return nullptr;
   if (Index >= Sections.size() || !Sections[Index])
     fatal("Invalid section index");
-  return Sections[Index];
+  InputSectionBase<ELFT> *S = Sections[Index];
+  if (S == InputSectionBase<ELFT>::Discarded)
+    return S;
+  return S->Repl;
 }
 
 template <class ELFT>
@@ -313,7 +319,7 @@ SymbolBody *elf2::ObjectFile<ELFT>::createSymbolBody(const Elf_Sym *Sym) {
   case STB_WEAK:
   case STB_GNU_UNIQUE: {
     InputSectionBase<ELFT> *Sec = getSection(*Sym);
-    if (Sec == &InputSection<ELFT>::Discarded)
+    if (Sec == InputSection<ELFT>::Discarded)
       return new (Alloc) UndefinedElf<ELFT>(Name, *Sym);
     return new (Alloc) DefinedRegular<ELFT>(Name, *Sym, Sec);
   }
@@ -447,10 +453,12 @@ void BitcodeFile::parse() {
     Sym.printName(OS);
     StringRef NameRef = Saver.save(StringRef(Name));
     SymbolBody *Body;
-    if (Sym.getFlags() & object::BasicSymbolRef::SF_Undefined)
+    uint32_t Flags = Sym.getFlags();
+    if (Flags & BasicSymbolRef::SF_Undefined)
       Body = new (Alloc) Undefined(NameRef, false, STV_DEFAULT, false);
     else
-      Body = new (Alloc) DefinedBitcode(NameRef);
+      Body =
+          new (Alloc) DefinedBitcode(NameRef, Flags & BasicSymbolRef::SF_Weak);
     SymbolBodies.push_back(Body);
   }
 }

@@ -9,6 +9,7 @@
 
 #include "OutputSections.h"
 #include "Config.h"
+#include "LinkerScript.h"
 #include "SymbolTable.h"
 #include "Target.h"
 #include "llvm/Support/Dwarf.h"
@@ -23,6 +24,18 @@ using namespace llvm::ELF;
 
 using namespace lld;
 using namespace lld::elf2;
+
+static bool isAlpha(char C) {
+  return ('a' <= C && C <= 'z') || ('A' <= C && C <= 'Z') || C == '_';
+}
+
+static bool isAlnum(char C) { return isAlpha(C) || ('0' <= C && C <= '9'); }
+
+// Returns true if S is valid as a C language identifier.
+bool elf2::isValidCIdentifier(StringRef S) {
+  return !S.empty() && isAlpha(S[0]) &&
+         std::all_of(S.begin() + 1, S.end(), isAlnum);
+}
 
 template <class ELFT>
 OutputSectionBase<ELFT>::OutputSectionBase(StringRef Name, uint32_t Type,
@@ -163,7 +176,7 @@ template <class ELFT> void GotSection<ELFT>::writeTo(uint8_t *Buf) {
     // for detailed description:
     // ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
     // As the first approach, we can just store addresses for all symbols.
-    if (Config->EMachine != EM_MIPS && canBePreempted(B, false))
+    if (Config->EMachine != EM_MIPS && canBePreempted(B))
       continue; // The dynamic linker will take care of it.
     uintX_t VA = B->getVA<ELFT>();
     write<uintX_t, ELFT::TargetEndianness, sizeof(uintX_t)>(Entry, VA);
@@ -728,12 +741,28 @@ template <class ELFT> void EhFrameHeader<ELFT>::reserveFde() {
 }
 
 template <class ELFT>
-OutputSection<ELFT>::OutputSection(StringRef Name, uint32_t Type,
-                                   uintX_t Flags)
-    : OutputSectionBase<ELFT>(Name, Type, Flags) {}
+OutputSection<ELFT>::OutputSection(StringRef Name, uint32_t Type, uintX_t Flags)
+    : OutputSectionBase<ELFT>(Name, Type, Flags) {
+  if (Type == SHT_RELA)
+    this->Header.sh_entsize = sizeof(Elf_Rela);
+  else if (Type == SHT_REL)
+    this->Header.sh_entsize = sizeof(Elf_Rel);
+}
+
+template <class ELFT> void OutputSection<ELFT>::finalize() {
+  uint32_t Type = this->Header.sh_type;
+  if (Type != SHT_RELA && Type != SHT_REL)
+    return;
+  this->Header.sh_link = Out<ELFT>::SymTab->SectionIndex;
+  // sh_info for SHT_REL[A] sections should contain the section header index of
+  // the section to which the relocation applies.
+  InputSectionBase<ELFT> *S = Sections[0]->getRelocatedSection();
+  this->Header.sh_info = S->OutSec->SectionIndex;
+}
 
 template <class ELFT>
 void OutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
+  assert(C->Live);
   auto *S = cast<InputSection<ELFT>>(C);
   Sections.push_back(S);
   S->OutSec = this;
@@ -884,7 +913,7 @@ elf2::getLocalRelTarget(const ObjectFile<ELFT> &File,
   // the group are not allowed. Unfortunately .eh_frame breaks that rule
   // and must be treated specially. For now we just replace the symbol with
   // 0.
-  if (Section == &InputSection<ELFT>::Discarded || !Section->Live)
+  if (Section == InputSection<ELFT>::Discarded || !Section->Live)
     return Addend;
 
   uintX_t Offset = Sym->st_value;
@@ -897,7 +926,7 @@ elf2::getLocalRelTarget(const ObjectFile<ELFT> &File,
 
 // Returns true if a symbol can be replaced at load-time by a symbol
 // with the same name defined in other ELF executable or DSO.
-bool elf2::canBePreempted(const SymbolBody *Body, bool NeedsGot) {
+bool elf2::canBePreempted(const SymbolBody *Body) {
   if (!Body)
     return false;  // Body is a local symbol.
   if (Body->isShared())
@@ -907,26 +936,14 @@ bool elf2::canBePreempted(const SymbolBody *Body, bool NeedsGot) {
     if (!Body->isWeak())
       return true;
 
-    // This is an horrible corner case. Ideally we would like to say that any
-    // undefined symbol can be preempted so that the dynamic linker has a
-    // chance of finding it at runtime.
-    //
-    // The problem is that the code sequence used to test for weak undef
-    // functions looks like
-    // if (func) func()
-    // If the code is -fPIC the first reference is a load from the got and
-    // everything works.
-    // If the code is not -fPIC there is no reasonable way to solve it:
-    // * A relocation writing to the text segment will fail (it is ro).
-    // * A copy relocation doesn't work for functions.
-    // * The trick of using a plt entry as the address would fail here since
-    //   the plt entry would have a non zero address.
-    // Since we cannot do anything better, we just resolve the symbol to 0 and
-    // don't produce a dynamic relocation.
-    //
-    // As an extra hack, assume that if we are producing a shared library the
-    // user knows what he or she is doing and can handle a dynamic relocation.
-    return Config->Shared || NeedsGot;
+    // Ideally the static linker should see a definition for every symbol, but
+    // shared object are normally allowed to have undefined references that the
+    // static linker never sees a definition for.
+    if (Config->Shared)
+      return true;
+
+    // Otherwise, just resolve to 0.
+    return false;
   }
   if (!Config->Shared)
     return false;
@@ -937,7 +954,17 @@ bool elf2::canBePreempted(const SymbolBody *Body, bool NeedsGot) {
   return true;
 }
 
+static void fill(uint8_t *Buf, size_t Size, ArrayRef<uint8_t> A) {
+  size_t I = 0;
+  for (; I + A.size() < Size; I += A.size())
+    memcpy(Buf + I, A.data(), A.size());
+  memcpy(Buf + I, A.data(), Size - I);
+}
+
 template <class ELFT> void OutputSection<ELFT>::writeTo(uint8_t *Buf) {
+  ArrayRef<uint8_t> Filler = Script->getFiller(this->Name);
+  if (!Filler.empty())
+    fill(Buf, this->getSize(), Filler);
   for (InputSection<ELFT> *C : Sections)
     C->writeTo(Buf);
 }
@@ -1147,7 +1174,7 @@ void EHOutputSection<ELFT>::addSectionAux(
       if (!HasReloc)
         fatal("FDE doesn't reference another section");
       InputSectionBase<ELFT> *Target = S->getRelocTarget(*RelI);
-      if (Target != &InputSection<ELFT>::Discarded && Target->Live) {
+      if (Target != InputSection<ELFT>::Discarded && Target->Live) {
         uint32_t CieOffset = Offset + 4 - ID;
         auto I = OffsetToIndex.find(CieOffset);
         if (I == OffsetToIndex.end())
@@ -1368,6 +1395,13 @@ template <class ELFT> void SymbolTableSection<ELFT>::finalize() {
   this->Header.sh_link = StrTabSec.SectionIndex;
   this->Header.sh_info = NumLocals + 1;
 
+  if (Config->Relocatable) {
+    size_t I = NumLocals;
+    for (const std::pair<SymbolBody *, size_t> &P : Symbols)
+      P.first->DynsymIndex = ++I;
+    return;
+  }
+
   if (!StrTabSec.isDynamic()) {
     std::stable_sort(Symbols.begin(), Symbols.end(),
                      [](const std::pair<SymbolBody *, unsigned> &L,
@@ -1421,8 +1455,11 @@ void SymbolTableSection<ELFT>::writeLocalSymbols(uint8_t *&Buf) {
         const OutputSectionBase<ELFT> *OutSec = Section->OutSec;
         ESym->st_shndx = OutSec->SectionIndex;
         VA = Section->getOffset(*Sym);
-        // Symbol offsets for AMDGPU need to be the offset in bytes of the
-        // symbol from the beginning of the section.
+
+        // Symbol offsets for AMDGPU are the offsets in bytes of the
+        // symbols from the beginning of the section. There seems to be no
+        // reason for that deviation -- it's just that the definition of
+        // st_value field in AMDGPU's ELF is odd.
         if (Config->EMachine != EM_AMDGPU)
           VA += OutSec->getVA();
       }
@@ -1474,6 +1511,14 @@ void SymbolTableSection<ELFT>::writeGlobalSymbols(uint8_t *Buf) {
       ESym->st_shndx = OutSec->SectionIndex;
     else if (isa<DefinedRegular<ELFT>>(Body))
       ESym->st_shndx = SHN_ABS;
+
+    // On MIPS we need to mark symbol which has a PLT entry and requires pointer
+    // equality by STO_MIPS_PLT flag. That is necessary to help dynamic linker
+    // distinguish such symbols and MIPS lazy-binding stubs.
+    // https://sourceware.org/ml/binutils/2008-07/txt00000.txt
+    if (Config->EMachine == EM_MIPS && Body->isInPlt() &&
+        Body->NeedsCopyOrPltAddr)
+      ESym->st_other |= STO_MIPS_PLT;
     ++ESym;
   }
 }
