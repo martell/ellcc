@@ -113,7 +113,7 @@ llvm.configure:
 	    CXX="$(CXX) $(TARGETTUPLE)" \
 	    cmake ../llvm \
 	      $(cross_cmake_flags) \
-	      -DCMAKE_AR=$(AR)   -DCMAKE_RANLIB=$(RANLIB) \
+	      -DCMAKE_AR=$(AR) -DCMAKE_RANLIB=$(RANLIB) \
 	      -DCMAKE_C_FLAGS="$(CFLAGS)" \
 	      -DCMAKE_CXX_FLAGS="$(CXXFLAGS)" \
 	      -DLLVM_ENABLE_PIC=False \

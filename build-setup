@@ -61,10 +61,12 @@ cc=gcc
 cxx=g++
 hcc=gcc
 hcxx=g++
-ar=ar
+# RICH: Getting around a cmake bug:
+ar=`which ar`
 builddir=""
 haslibs=no
-ranlib=ranlib
+# RICH: Getting around a cmake bug:
+ranlib=`which ranlib`
 WHY="build for $host with host libraries using gcc"
 
 # OG: Assume 2 jobs if we can't work out the number of CPUs on the host
