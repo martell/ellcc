@@ -57,8 +57,11 @@ def fini : Separate<["-"], "fini">, MetaVarName<"<symbol>">,
 def hash_style : Separate<["--", "-"], "hash-style">,
   HelpText<"Specify hash style (sysv, gnu or both)">;
 
+def help : Flag<["--", "-"], "help">,
+  HelpText<"Print option help">;
+
 def icf : Flag<["--"], "icf=all">,
-  HelpText<"Enable Identical Code Folding.">;
+  HelpText<"Enable identical code folding">;
 
 def gc_sections : Flag<["--"], "gc-sections">,
   HelpText<"Enable garbage collection of unused sections">;
@@ -77,7 +80,7 @@ def no_allow_shlib_undefined : Flag<["--"], "no-allow-shlib-undefined">;
 def no_as_needed : Flag<["--"], "no-as-needed">;
 
 def no_demangle: Flag<["--"], "no-demangle">,
-  HelpText<"Demangle symbol names">;
+  HelpText<"Do not demangle symbol names">;
 
 def no_whole_archive : Flag<["--", "-"], "no-whole-archive">,
   HelpText<"Restores the default behavior of loading archive members">;
@@ -88,7 +91,7 @@ def noinhibit_exec : Flag<["--"], "noinhibit-exec">,
 def no_undefined : Flag<["--"], "no-undefined">,
   HelpText<"Report unresolved symbols even if the linker is creating a shared library">;
 
-def o : Separate<["-"], "o">, MetaVarName<"<path>">,
+def o : JoinedOrSeparate<["-"], "o">, MetaVarName<"<path>">,
   HelpText<"Path to file to write output">;
 
 def print_gc_sections: Flag<["--"], "print-gc-sections">,
@@ -100,7 +103,8 @@ def rpath : Separate<["-"], "rpath">,
 def relocatable : Flag<["--"], "relocatable">,
   HelpText<"Create relocatable object file">;
 
-def script : Separate<["--"], "script">, HelpText<"Read linker script">;
+def script : Separate<["--"], "script">,
+  HelpText<"Read linker script">;
 
 def shared : Flag<["-"], "shared">,
   HelpText<"Build a shared object">;
@@ -118,6 +122,9 @@ def undefined : Joined<["--"], "undefined=">,
   HelpText<"Force undefined symbol during linking">;
 
 def verbose : Flag<["--"], "verbose">;
+
+def version : Flag<["--", "-"], "version">,
+  HelpText<"Display the version number">;
 
 def whole_archive : Flag<["--", "-"], "whole-archive">,
   HelpText<"Force load of all members in a static library">;
@@ -137,7 +144,7 @@ def alias_Bstatic_static: Flag<["-"], "static">, Alias<Bstatic>;
 def alias_L__library_path : Joined<["--"], "library-path=">, Alias<L>;
 def alias_discard_all_x: Flag<["-"], "x">, Alias<discard_all>;
 def alias_discard_locals_X: Flag<["-"], "X">, Alias<discard_locals>;
-def alias_entry_e : Separate<["-"], "e">, Alias<entry>;
+def alias_entry_e : JoinedOrSeparate<["-"], "e">, Alias<entry>;
 def alias_export_dynamic_E: Flag<["-"], "E">, Alias<export_dynamic>;
 def alias_fini_fini : Joined<["-"], "fini=">, Alias<fini>;
 def alias_hash_style_hash_style : Joined<["--", "-"], "hash-style=">, Alias<hash_style>;
@@ -147,11 +154,11 @@ def alias_o_output : Joined<["--"], "output=">, Alias<o>;
 def alias_rpath_rpath : Joined<["-"], "rpath=">, Alias<rpath>;
 def alias_relocatable_r : Flag<["-"], "r">, Alias<relocatable>;
 def alias_shared_Bshareable : Flag<["-"], "Bshareable">, Alias<shared>;
-def alias_soname_h : Separate<["-"], "h">, Alias<soname>;
+def alias_soname_h : JoinedOrSeparate<["-"], "h">, Alias<soname>;
 def alias_soname_soname : Separate<["-"], "soname">, Alias<soname>;
-def alias_script_T : Separate<["-"], "T">, Alias<script>;
+def alias_script_T : JoinedOrSeparate<["-"], "T">, Alias<script>;
 def alias_strip_all: Flag<["-"], "s">, Alias<strip_all>;
-def alias_undefined_u : Separate<["-"], "u">, Alias<undefined>;
+def alias_undefined_u : JoinedOrSeparate<["-"], "u">, Alias<undefined>;
 def alias_wrap_wrap : Joined<["--", "-"], "wrap=">, Alias<wrap>;
 
 // Our symbol resolution algorithm handles symbols in archive files differently

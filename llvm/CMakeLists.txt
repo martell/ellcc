@@ -728,6 +728,7 @@ if( LLVM_INCLUDE_TESTS )
     DEPENDS ${LLVM_LIT_DEPENDS}
     ARGS ${LLVM_LIT_EXTRA_ARGS}
     )
+  add_custom_target(test-depends DEPENDS ${LLVM_LIT_DEPENDS})
 endif()
 
 if (LLVM_INCLUDE_DOCS)
@@ -779,8 +780,15 @@ if(LLVM_DISTRIBUTION_COMPONENTS)
     message(FATAL_ERROR "LLVM_DISTRIBUTION_COMPONENTS cannot be specified with multi-configuration generators (i.e. Xcode or Visual Studio)")
   endif()
   
+  add_custom_target(distribution)
   add_custom_target(install-distribution)
   foreach(target ${LLVM_DISTRIBUTION_COMPONENTS})
+    if(TARGET ${target})
+      add_dependencies(distribution ${target})
+    else()
+      message(FATAL_ERROR "Specified distribution component '${target}' doesn't have a target")
+    endif()
+
     if(TARGET install-${target})
       add_dependencies(install-distribution install-${target})
     else()

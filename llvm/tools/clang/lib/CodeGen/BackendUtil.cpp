@@ -437,6 +437,14 @@ void EmitAssemblyHelper::CreatePasses(FunctionInfoIndex *FunctionIndex) {
     Options.InstrProfileOutput = CodeGenOpts.InstrProfileOutput;
     MPM->add(createInstrProfilingPass(Options));
   }
+  if (CodeGenOpts.hasProfileIRInstr()) {
+    if (!CodeGenOpts.InstrProfileOutput.empty())
+      PMBuilder.PGOInstrGen = CodeGenOpts.InstrProfileOutput;
+    else
+      PMBuilder.PGOInstrGen = "default.profraw";
+  }
+  if (CodeGenOpts.hasProfileIRUse())
+    PMBuilder.PGOInstrUse = CodeGenOpts.ProfileInstrumentUsePath;
 
   if (!CodeGenOpts.SampleProfileFile.empty())
     MPM->add(createSampleProfileLoaderPass(CodeGenOpts.SampleProfileFile));

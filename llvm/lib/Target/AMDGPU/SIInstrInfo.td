@@ -463,7 +463,7 @@ def DSOffset01MatchClass : AsmOperandClass {
 
 class GDSBaseMatchClass <string parser> : AsmOperandClass {
   let Name = "GDS"#parser;
-  let PredicateMethod = "isImm";
+  let PredicateMethod = "isGDS";
   let ParserMethod = parser;
   let RenderMethod = "addImmOperands";
   let IsOptional = 1;
@@ -474,7 +474,7 @@ def GDS01MatchClass : GDSBaseMatchClass <"parseDSOff01OptionalOps">;
 
 class GLCBaseMatchClass <string parser> : AsmOperandClass {
   let Name = "GLC"#parser;
-  let PredicateMethod = "isImm";
+  let PredicateMethod = "isGLC";
   let ParserMethod = parser;
   let RenderMethod = "addImmOperands";
   let IsOptional = 1;
@@ -485,7 +485,7 @@ def GLCFlatMatchClass : GLCBaseMatchClass <"parseFlatOptionalOps">;
 
 class SLCBaseMatchClass <string parser> : AsmOperandClass {
   let Name = "SLC"#parser;
-  let PredicateMethod = "isImm";
+  let PredicateMethod = "isSLC";
   let ParserMethod = parser;
   let RenderMethod = "addImmOperands";
   let IsOptional = 1;
@@ -497,7 +497,7 @@ def SLCFlatAtomicMatchClass : SLCBaseMatchClass <"parseFlatAtomicOptionalOps">;
 
 class TFEBaseMatchClass <string parser> : AsmOperandClass {
   let Name = "TFE"#parser;
-  let PredicateMethod = "isImm";
+  let PredicateMethod = "isTFE";
   let ParserMethod = parser;
   let RenderMethod = "addImmOperands";
   let IsOptional = 1;
@@ -509,7 +509,7 @@ def TFEFlatAtomicMatchClass : TFEBaseMatchClass <"parseFlatAtomicOptionalOps">;
 
 def OModMatchClass : AsmOperandClass {
   let Name = "OMod";
-  let PredicateMethod = "isImm";
+  let PredicateMethod = "isOMod";
   let ParserMethod = "parseVOP3OptionalOps";
   let RenderMethod = "addImmOperands";
   let IsOptional = 1;
@@ -517,7 +517,7 @@ def OModMatchClass : AsmOperandClass {
 
 def ClampMatchClass : AsmOperandClass {
   let Name = "Clamp";
-  let PredicateMethod = "isImm";
+  let PredicateMethod = "isClamp";
   let ParserMethod = "parseVOP3OptionalOps";
   let RenderMethod = "addImmOperands";
   let IsOptional = 1;
@@ -2405,6 +2405,23 @@ multiclass DS_1A1D_RET <bits<8> op, string opName, RegisterClass rc,
     let data1 = 0 in {
       def _si : DS_Off16_Real_si <op, opName, outs, ins, asm>;
       def _vi : DS_Off16_Real_vi <op, opName, outs, ins, asm>;
+    }
+  }
+}
+
+multiclass DS_1A1D_PERMUTE <bits<8> op, string opName, RegisterClass rc,
+                            SDPatternOperator node = null_frag,
+  dag outs = (outs rc:$vdst),
+  dag ins = (ins VGPR_32:$addr, rc:$data0),
+  string asm = opName#" $vdst, $addr, $data0"> {
+
+  let mayLoad = 0, mayStore = 0, isConvergent = 1 in {
+    def "" : DS_Pseudo <opName, outs, ins,
+     [(set (i32 rc:$vdst),
+         (node (i32 VGPR_32:$addr), (i32 rc:$data0)))]>;
+
+    let data1 = 0, offset0 = 0, offset1 = 0, gds = 0  in {
+      def "_vi" : DS_Real_vi <op, opName, outs, ins, asm>;
     }
   }
 }

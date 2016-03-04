@@ -11,6 +11,7 @@ include(CheckFunctionExists)
 include(CheckCXXSourceCompiles)
 include(TestBigEndian)
 
+include(CheckCompilerVersion)
 include(HandleLLVMStdlib)
 
 if( UNIX AND NOT (BEOS OR HAIKU) )
@@ -105,6 +106,10 @@ if( NOT PURE_WINDOWS )
   endif()
   check_library_exists(dl dlopen "" HAVE_LIBDL)
   check_library_exists(rt clock_gettime "" HAVE_LIBRT)
+endif()
+
+if(HAVE_LIBPTHREAD)
+  set(PTHREAD_LIB pthread)
 endif()
 
 # Don't look for these libraries on Windows. Also don't look for them if we're

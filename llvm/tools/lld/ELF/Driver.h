@@ -17,12 +17,9 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace lld {
-namespace elf2 {
+namespace elf {
 
 extern class LinkerDriver *Driver;
-
-// Entry point of the ELF linker. Returns true on success.
-bool link(ArrayRef<const char *> Args, llvm::raw_ostream &Error = llvm::errs());
 
 class LinkerDriver {
 public:
@@ -53,11 +50,14 @@ enum {
 #undef OPTION
 };
 
+void printHelp(const char *Argv0);
+void printVersion();
+
 std::string findFromSearchPaths(StringRef Path);
 std::string searchLibrary(StringRef Path);
 std::string buildSysrootedPath(llvm::StringRef Dir, llvm::StringRef File);
 
-} // namespace elf2
+} // namespace elf
 } // namespace lld
 
 #endif

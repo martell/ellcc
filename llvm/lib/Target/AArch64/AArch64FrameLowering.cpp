@@ -127,12 +127,7 @@ bool AArch64FrameLowering::canUseRedZone(const MachineFunction &MF) const {
   const AArch64FunctionInfo *AFI = MF.getInfo<AArch64FunctionInfo>();
   unsigned NumBytes = AFI->getLocalStackSize();
 
-  // Note: currently hasFP() is always true for hasCalls(), but that's an
-  // implementation detail of the current code, not a strict requirement,
-  // so stay safe here and check both.
-  if (MFI->hasCalls() || hasFP(MF) || NumBytes > 128)
-    return false;
-  return true;
+  return !(MFI->hasCalls() || hasFP(MF) || NumBytes > 128);
 }
 
 /// hasFP - Return true if the specified function should have a dedicated frame
@@ -140,9 +135,12 @@ bool AArch64FrameLowering::canUseRedZone(const MachineFunction &MF) const {
 bool AArch64FrameLowering::hasFP(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
   const TargetRegisterInfo *RegInfo = MF.getSubtarget().getRegisterInfo();
-  return (MFI->hasCalls() || MFI->hasVarSizedObjects() ||
-          MFI->isFrameAddressTaken() || MFI->hasStackMap() ||
-          MFI->hasPatchPoint() || RegInfo->needsStackRealignment(MF));
+  // Retain behavior of always omitting the FP for leaf functions when possible.
+  return (MFI->hasCalls() &&
+          MF.getTarget().Options.DisableFramePointerElim(MF)) ||
+         MFI->hasVarSizedObjects() || MFI->isFrameAddressTaken() ||
+         MFI->hasStackMap() || MFI->hasPatchPoint() ||
+         RegInfo->needsStackRealignment(MF);
 }
 
 /// hasReservedCallFrame - Under normal circumstances, when a frame pointer is

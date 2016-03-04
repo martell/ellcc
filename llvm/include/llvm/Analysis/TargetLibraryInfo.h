@@ -309,6 +309,8 @@ private:
   TargetLibraryInfoImpl &lookupInfoImpl(Triple T);
 };
 
+extern template class AnalysisBase<TargetLibraryAnalysis>;
+
 class TargetLibraryInfoWrapperPass : public ImmutablePass {
   TargetLibraryInfoImpl TLIImpl;
   TargetLibraryInfo TLI;

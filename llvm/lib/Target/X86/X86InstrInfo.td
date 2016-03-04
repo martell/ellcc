@@ -72,6 +72,10 @@ def SDTX86cas : SDTypeProfile<0, 3, [SDTCisPtrTy<0>, SDTCisInt<1>,
                                      SDTCisVT<2, i8>]>;
 def SDTX86caspair : SDTypeProfile<0, 1, [SDTCisPtrTy<0>]>;
 
+def SDTLockBinaryArithWithFlags : SDTypeProfile<1, 2, [SDTCisVT<0, i32>,
+                                                       SDTCisPtrTy<1>,
+                                                       SDTCisInt<2>]>;
+
 def SDTX86Ret     : SDTypeProfile<0, -1, [SDTCisVT<0, i16>]>;
 
 def SDT_X86CallSeqStart : SDCallSeqStart<[SDTCisVT<0, i32>]>;
@@ -234,6 +238,22 @@ def X86xor_flag  : SDNode<"X86ISD::XOR",  SDTBinaryArithWithFlags,
                           [SDNPCommutative]>;
 def X86and_flag  : SDNode<"X86ISD::AND",  SDTBinaryArithWithFlags,
                           [SDNPCommutative]>;
+
+def X86lock_add  : SDNode<"X86ISD::LADD",  SDTLockBinaryArithWithFlags,
+                          [SDNPHasChain, SDNPMayStore, SDNPMayLoad,
+                           SDNPMemOperand]>;
+def X86lock_sub  : SDNode<"X86ISD::LSUB",  SDTLockBinaryArithWithFlags,
+                          [SDNPHasChain, SDNPMayStore, SDNPMayLoad,
+                           SDNPMemOperand]>;
+def X86lock_or  : SDNode<"X86ISD::LOR",  SDTLockBinaryArithWithFlags,
+                         [SDNPHasChain, SDNPMayStore, SDNPMayLoad,
+                          SDNPMemOperand]>;
+def X86lock_xor  : SDNode<"X86ISD::LXOR",  SDTLockBinaryArithWithFlags,
+                          [SDNPHasChain, SDNPMayStore, SDNPMayLoad,
+                           SDNPMemOperand]>;
+def X86lock_and  : SDNode<"X86ISD::LAND",  SDTLockBinaryArithWithFlags,
+                          [SDNPHasChain, SDNPMayStore, SDNPMayLoad,
+                           SDNPMemOperand]>;
 
 def X86bextr  : SDNode<"X86ISD::BEXTR",  SDTIntBinOp>;
 
@@ -1102,12 +1122,12 @@ def PUSH32rmm: I<0xFF, MRM6m, (outs), (ins i32mem:$src), "push{l}\t$src",[],
 
 let mayLoad = 1, mayStore = 1, usesCustomInserter = 1,
     SchedRW = [WriteRMW], Defs = [ESP] in {
-  let Uses = [ESP, EFLAGS] in
+  let Uses = [ESP] in
   def RDFLAGS32 : PseudoI<(outs GR32:$dst), (ins),
                    [(set GR32:$dst, (int_x86_flags_read_u32))]>,
                 Requires<[Not64BitMode]>;
 
-  let Uses = [RSP, EFLAGS] in
+  let Uses = [RSP] in
   def RDFLAGS64 : PseudoI<(outs GR64:$dst), (ins),
                    [(set GR64:$dst, (int_x86_flags_read_u64))]>,
                 Requires<[In64BitMode]>;

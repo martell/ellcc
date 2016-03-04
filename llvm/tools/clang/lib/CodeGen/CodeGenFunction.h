@@ -276,6 +276,8 @@ public:
   /// potentially set the return value.
   bool SawAsmBlock;
 
+  const FunctionDecl *CurSEHParent = nullptr;
+
   /// True if the current function is an outlined SEH helper. This can be a
   /// finally block or filter expression.
   bool IsOutlinedSEHHelper;
@@ -1150,10 +1152,7 @@ public:
     return getInvokeDestImpl();
   }
 
-  bool currentFunctionUsesSEHTry() const {
-    const auto *FD = dyn_cast_or_null<FunctionDecl>(CurCodeDecl);
-    return FD && FD->usesSEHTry();
-  }
+  bool currentFunctionUsesSEHTry() const { return CurSEHParent != nullptr; }
 
   const TargetInfo &getTarget() const { return Target; }
   llvm::LLVMContext &getLLVMContext() { return CGM.getLLVMContext(); }
@@ -2222,6 +2221,8 @@ public:
   llvm::Function *EmitCapturedStmt(const CapturedStmt &S, CapturedRegionKind K);
   llvm::Function *GenerateCapturedStmtFunction(const CapturedStmt &S);
   Address GenerateCapturedStmtArgument(const CapturedStmt &S);
+  llvm::Function *GenerateOpenMPCapturedStmtFunction(const CapturedStmt &S,
+                                                     QualType ReturnQTy);
   llvm::Function *GenerateOpenMPCapturedStmtFunction(const CapturedStmt &S);
   void GenerateOpenMPCapturedVars(const CapturedStmt &S,
                                   SmallVectorImpl<llvm::Value *> &CapturedVars);

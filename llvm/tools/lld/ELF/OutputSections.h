@@ -20,7 +20,7 @@
 #include <type_traits>
 
 namespace lld {
-namespace elf2 {
+namespace elf {
 
 class SymbolBody;
 template <class ELFT> class SymbolTable;
@@ -240,6 +240,9 @@ public:
 
   unsigned NumLocals = 0;
   StringTableSection<ELFT> &StrTabSec;
+
+  // Local symbol -> ID, filled only when producing relocatable output.
+  llvm::DenseMap<const Elf_Sym *, uint32_t> Locals;
 
 private:
   void writeLocalSymbols(uint8_t *&Buf);
@@ -579,7 +582,7 @@ template <class ELFT> typename Out<ELFT>::Elf_Phdr *Out<ELFT>::TlsPhdr;
 template <class ELFT> OutputSectionBase<ELFT> *Out<ELFT>::ElfHeader;
 template <class ELFT> OutputSectionBase<ELFT> *Out<ELFT>::ProgramHeaders;
 
-} // namespace elf2
+} // namespace elf
 } // namespace lld
 
 #endif // LLD_ELF_OUTPUT_SECTIONS_H

@@ -1454,6 +1454,11 @@ const SCEV *ScalarEvolution::getZeroExtendExpr(const SCEV *Op,
       unsigned BitWidth = getTypeSizeInBits(AR->getType());
       const Loop *L = AR->getLoop();
 
+      if (!AR->hasNoUnsignedWrap()) {
+        auto NewFlags = proveNoWrapViaConstantRanges(AR);
+        const_cast<SCEVAddRecExpr *>(AR)->setNoWrapFlags(NewFlags);
+      }
+
       // If we have special knowledge that this addrec won't overflow,
       // we don't need to do any further analysis.
       if (AR->hasNoUnsignedWrap())
@@ -1612,10 +1617,6 @@ const SCEV *ScalarEvolution::getSignExtendExpr(const SCEV *Op,
   void *IP = nullptr;
   if (const SCEV *S = UniqueSCEVs.FindNodeOrInsertPos(ID, IP)) return S;
 
-  // If the input value is provably positive, build a zext instead.
-  if (isKnownNonNegative(Op))
-    return getZeroExtendExpr(Op, Ty);
-
   // sext(trunc(x)) --> sext(x) or x or trunc(x)
   if (const SCEVTruncateExpr *ST = dyn_cast<SCEVTruncateExpr>(Op)) {
     // It's possible the bits taken off by the truncate were all sign bits. If
@@ -1666,6 +1667,11 @@ const SCEV *ScalarEvolution::getSignExtendExpr(const SCEV *Op,
       const SCEV *Step = AR->getStepRecurrence(*this);
       unsigned BitWidth = getTypeSizeInBits(AR->getType());
       const Loop *L = AR->getLoop();
+
+      if (!AR->hasNoSignedWrap()) {
+        auto NewFlags = proveNoWrapViaConstantRanges(AR);
+        const_cast<SCEVAddRecExpr *>(AR)->setNoWrapFlags(NewFlags);
+      }
 
       // If we have special knowledge that this addrec won't overflow,
       // we don't need to do any further analysis.
@@ -1780,6 +1786,11 @@ const SCEV *ScalarEvolution::getSignExtendExpr(const SCEV *Op,
             getSignExtendExpr(Step, Ty), L, AR->getNoWrapFlags());
       }
     }
+
+  // If the input value is provably positive and we could not simplify
+  // away the sext build a zext instead.
+  if (isKnownNonNegative(Op))
+    return getZeroExtendExpr(Op, Ty);
 
   // The cast wasn't folded; create an explicit cast node.
   // Recompute the insert position, as it may have been invalidated.
@@ -3650,8 +3661,7 @@ PushDefUseChildren(Instruction *I,
 /// instructions that depend on the given instruction and removes them from
 /// the ValueExprMapType map if they reference SymName. This is used during PHI
 /// resolution.
-void
-ScalarEvolution::ForgetSymbolicName(Instruction *PN, const SCEV *SymName) {
+void ScalarEvolution::forgetSymbolicName(Instruction *PN, const SCEV *SymName) {
   SmallVector<Instruction *, 16> Worklist;
   PushDefUseChildren(PN, Worklist);
 
@@ -3756,6 +3766,37 @@ private:
   bool Valid;
 };
 } // end anonymous namespace
+
+SCEV::NoWrapFlags
+ScalarEvolution::proveNoWrapViaConstantRanges(const SCEVAddRecExpr *AR) {
+  if (!AR->isAffine())
+    return SCEV::FlagAnyWrap;
+
+  typedef OverflowingBinaryOperator OBO;
+  SCEV::NoWrapFlags Result = SCEV::FlagAnyWrap;
+
+  if (!AR->hasNoSignedWrap()) {
+    ConstantRange AddRecRange = getSignedRange(AR);
+    ConstantRange IncRange = getSignedRange(AR->getStepRecurrence(*this));
+
+    auto NSWRegion = ConstantRange::makeGuaranteedNoWrapRegion(
+        Instruction::Add, IncRange, OBO::NoSignedWrap);
+    if (NSWRegion.contains(AddRecRange))
+      Result = ScalarEvolution::setFlags(Result, SCEV::FlagNSW);
+  }
+
+  if (!AR->hasNoUnsignedWrap()) {
+    ConstantRange AddRecRange = getUnsignedRange(AR);
+    ConstantRange IncRange = getUnsignedRange(AR->getStepRecurrence(*this));
+
+    auto NUWRegion = ConstantRange::makeGuaranteedNoWrapRegion(
+        Instruction::Add, IncRange, OBO::NoUnsignedWrap);
+    if (NUWRegion.contains(AddRecRange))
+      Result = ScalarEvolution::setFlags(Result, SCEV::FlagNUW);
+  }
+
+  return Result;
+}
 
 const SCEV *ScalarEvolution::createAddRecFromPHI(PHINode *PN) {
   const Loop *L = LI.getLoopFor(PN->getParent());
@@ -3864,7 +3905,7 @@ const SCEV *ScalarEvolution::createAddRecFromPHI(PHINode *PN) {
           // Okay, for the entire analysis of this edge we assumed the PHI
           // to be symbolic.  We now need to go back and purge all of the
           // entries for the scalars that use the symbolic expression.
-          ForgetSymbolicName(PN, SymbolicName);
+          forgetSymbolicName(PN, SymbolicName);
           ValueExprMap[SCEVCallbackVH(PN, this)] = PHISCEV;
           return PHISCEV;
         }
@@ -3888,7 +3929,7 @@ const SCEV *ScalarEvolution::createAddRecFromPHI(PHINode *PN) {
           // Okay, for the entire analysis of this edge we assumed the PHI
           // to be symbolic.  We now need to go back and purge all of the
           // entries for the scalars that use the symbolic expression.
-          ForgetSymbolicName(PN, SymbolicName);
+          forgetSymbolicName(PN, SymbolicName);
           ValueExprMap[SCEVCallbackVH(PN, this)] = Shifted;
           return Shifted;
         }
@@ -4392,66 +4433,22 @@ ScalarEvolution::getRange(const SCEV *S,
 
     // TODO: non-affine addrec
     if (AddRec->isAffine()) {
-      Type *Ty = AddRec->getType();
       const SCEV *MaxBECount = getMaxBackedgeTakenCount(AddRec->getLoop());
       if (!isa<SCEVCouldNotCompute>(MaxBECount) &&
           getTypeSizeInBits(MaxBECount->getType()) <= BitWidth) {
+        auto RangeFromAffine = getRangeForAffineAR(
+            AddRec->getStart(), AddRec->getStepRecurrence(*this), MaxBECount,
+            BitWidth);
+        if (!RangeFromAffine.isFullSet())
+          ConservativeResult =
+              ConservativeResult.intersectWith(RangeFromAffine);
 
-        // Check for overflow.  This must be done with ConstantRange arithmetic
-        // because we could be called from within the ScalarEvolution overflow
-        // checking code.
-
-        MaxBECount = getNoopOrZeroExtend(MaxBECount, Ty);
-        ConstantRange MaxBECountRange = getUnsignedRange(MaxBECount);
-        ConstantRange ZExtMaxBECountRange =
-            MaxBECountRange.zextOrTrunc(BitWidth * 2 + 1);
-
-        const SCEV *Start = AddRec->getStart();
-        const SCEV *Step = AddRec->getStepRecurrence(*this);
-        ConstantRange StepSRange = getSignedRange(Step);
-        ConstantRange SExtStepSRange = StepSRange.sextOrTrunc(BitWidth * 2 + 1);
-
-        ConstantRange StartURange = getUnsignedRange(Start);
-        ConstantRange EndURange =
-            StartURange.add(MaxBECountRange.multiply(StepSRange));
-
-        // Check for unsigned overflow.
-        ConstantRange ZExtStartURange =
-            StartURange.zextOrTrunc(BitWidth * 2 + 1);
-        ConstantRange ZExtEndURange = EndURange.zextOrTrunc(BitWidth * 2 + 1);
-        if (ZExtStartURange.add(ZExtMaxBECountRange.multiply(SExtStepSRange)) ==
-            ZExtEndURange) {
-          APInt Min = APIntOps::umin(StartURange.getUnsignedMin(),
-                                     EndURange.getUnsignedMin());
-          APInt Max = APIntOps::umax(StartURange.getUnsignedMax(),
-                                     EndURange.getUnsignedMax());
-          bool IsFullRange = Min.isMinValue() && Max.isMaxValue();
-          if (!IsFullRange)
-            ConservativeResult =
-                ConservativeResult.intersectWith(ConstantRange(Min, Max + 1));
-        }
-
-        ConstantRange StartSRange = getSignedRange(Start);
-        ConstantRange EndSRange =
-            StartSRange.add(MaxBECountRange.multiply(StepSRange));
-
-        // Check for signed overflow. This must be done with ConstantRange
-        // arithmetic because we could be called from within the ScalarEvolution
-        // overflow checking code.
-        ConstantRange SExtStartSRange =
-            StartSRange.sextOrTrunc(BitWidth * 2 + 1);
-        ConstantRange SExtEndSRange = EndSRange.sextOrTrunc(BitWidth * 2 + 1);
-        if (SExtStartSRange.add(ZExtMaxBECountRange.multiply(SExtStepSRange)) ==
-            SExtEndSRange) {
-          APInt Min = APIntOps::smin(StartSRange.getSignedMin(),
-                                     EndSRange.getSignedMin());
-          APInt Max = APIntOps::smax(StartSRange.getSignedMax(),
-                                     EndSRange.getSignedMax());
-          bool IsFullRange = Min.isMinSignedValue() && Max.isMaxSignedValue();
-          if (!IsFullRange)
-            ConservativeResult =
-                ConservativeResult.intersectWith(ConstantRange(Min, Max + 1));
-        }
+        auto RangeFromFactoring = getRangeViaFactoring(
+            AddRec->getStart(), AddRec->getStepRecurrence(*this), MaxBECount,
+            BitWidth);
+        if (!RangeFromFactoring.isFullSet())
+          ConservativeResult =
+              ConservativeResult.intersectWith(RangeFromFactoring);
       }
     }
 
@@ -4491,6 +4488,153 @@ ScalarEvolution::getRange(const SCEV *S,
   return setRange(S, SignHint, ConservativeResult);
 }
 
+ConstantRange ScalarEvolution::getRangeForAffineAR(const SCEV *Start,
+                                                   const SCEV *Step,
+                                                   const SCEV *MaxBECount,
+                                                   unsigned BitWidth) {
+  assert(!isa<SCEVCouldNotCompute>(MaxBECount) &&
+         getTypeSizeInBits(MaxBECount->getType()) <= BitWidth &&
+         "Precondition!");
+
+  ConstantRange Result(BitWidth, /* isFullSet = */ true);
+
+  // Check for overflow.  This must be done with ConstantRange arithmetic
+  // because we could be called from within the ScalarEvolution overflow
+  // checking code.
+
+  MaxBECount = getNoopOrZeroExtend(MaxBECount, Start->getType());
+  ConstantRange MaxBECountRange = getUnsignedRange(MaxBECount);
+  ConstantRange ZExtMaxBECountRange =
+      MaxBECountRange.zextOrTrunc(BitWidth * 2 + 1);
+
+  ConstantRange StepSRange = getSignedRange(Step);
+  ConstantRange SExtStepSRange = StepSRange.sextOrTrunc(BitWidth * 2 + 1);
+
+  ConstantRange StartURange = getUnsignedRange(Start);
+  ConstantRange EndURange =
+      StartURange.add(MaxBECountRange.multiply(StepSRange));
+
+  // Check for unsigned overflow.
+  ConstantRange ZExtStartURange = StartURange.zextOrTrunc(BitWidth * 2 + 1);
+  ConstantRange ZExtEndURange = EndURange.zextOrTrunc(BitWidth * 2 + 1);
+  if (ZExtStartURange.add(ZExtMaxBECountRange.multiply(SExtStepSRange)) ==
+      ZExtEndURange) {
+    APInt Min = APIntOps::umin(StartURange.getUnsignedMin(),
+                               EndURange.getUnsignedMin());
+    APInt Max = APIntOps::umax(StartURange.getUnsignedMax(),
+                               EndURange.getUnsignedMax());
+    bool IsFullRange = Min.isMinValue() && Max.isMaxValue();
+    if (!IsFullRange)
+      Result =
+          Result.intersectWith(ConstantRange(Min, Max + 1));
+  }
+
+  ConstantRange StartSRange = getSignedRange(Start);
+  ConstantRange EndSRange =
+      StartSRange.add(MaxBECountRange.multiply(StepSRange));
+
+  // Check for signed overflow. This must be done with ConstantRange
+  // arithmetic because we could be called from within the ScalarEvolution
+  // overflow checking code.
+  ConstantRange SExtStartSRange = StartSRange.sextOrTrunc(BitWidth * 2 + 1);
+  ConstantRange SExtEndSRange = EndSRange.sextOrTrunc(BitWidth * 2 + 1);
+  if (SExtStartSRange.add(ZExtMaxBECountRange.multiply(SExtStepSRange)) ==
+      SExtEndSRange) {
+    APInt Min =
+        APIntOps::smin(StartSRange.getSignedMin(), EndSRange.getSignedMin());
+    APInt Max =
+        APIntOps::smax(StartSRange.getSignedMax(), EndSRange.getSignedMax());
+    bool IsFullRange = Min.isMinSignedValue() && Max.isMaxSignedValue();
+    if (!IsFullRange)
+      Result =
+          Result.intersectWith(ConstantRange(Min, Max + 1));
+  }
+
+  return Result;
+}
+
+ConstantRange ScalarEvolution::getRangeViaFactoring(const SCEV *Start,
+                                                    const SCEV *Step,
+                                                    const SCEV *MaxBECount,
+                                                    unsigned BitWidth) {
+  APInt Offset(BitWidth, 0);
+
+  if (auto *SA = dyn_cast<SCEVAddExpr>(Start)) {
+    // Peel off a constant offset, if possible.  In the future we could consider
+    // being smarter here and handle {Start+Step,+,Step} too.
+    if (SA->getNumOperands() != 2 || !isa<SCEVConstant>(SA->getOperand(0)))
+      return ConstantRange(BitWidth, /* isFullSet = */ true);
+    Offset = cast<SCEVConstant>(SA->getOperand(0))->getAPInt();
+    Start = SA->getOperand(1);
+  }
+
+  if (!isa<SCEVUnknown>(Start) || !isa<SCEVUnknown>(Step))
+    // We don't have anything new to contribute in this case.
+    return ConstantRange(BitWidth, /* isFullSet = */ true);
+
+  //    RangeOf({C?A:B,+,C?P:Q}) == RangeOf(C?{A,+,P}:{B,+,Q})
+  // == RangeOf({A,+,P}) union RangeOf({B,+,Q})
+
+  struct SelectPattern {
+    Value *Condition = nullptr;
+    const APInt *TrueValue = nullptr;
+    const APInt *FalseValue = nullptr;
+
+    explicit SelectPattern(const SCEVUnknown *SU) {
+      using namespace llvm::PatternMatch;
+
+      if (!match(SU->getValue(),
+                 m_Select(m_Value(Condition), m_APInt(TrueValue),
+                          m_APInt(FalseValue)))) {
+        Condition = nullptr;
+        TrueValue = FalseValue = nullptr;
+      }
+    }
+
+    bool isRecognized() {
+      assert(((Condition && TrueValue && FalseValue) ||
+              (!Condition && !TrueValue && !FalseValue)) &&
+             "Invariant: either all three are non-null or all three are null");
+      return TrueValue != nullptr;
+    }
+  };
+
+  SelectPattern StartPattern(cast<SCEVUnknown>(Start));
+  if (!StartPattern.isRecognized())
+    return ConstantRange(BitWidth, /* isFullSet = */ true);
+
+  SelectPattern StepPattern(cast<SCEVUnknown>(Step));
+  if (!StepPattern.isRecognized())
+    return ConstantRange(BitWidth, /* isFullSet = */ true);
+
+  if (StartPattern.Condition != StepPattern.Condition) {
+    // We don't handle this case today; but we could, by considering four
+    // possibilities below instead of two. I'm not sure if there are cases where
+    // that will help over what getRange already does, though.
+    return ConstantRange(BitWidth, /* isFullSet = */ true);
+  }
+
+  // NB! Calling ScalarEvolution::getConstant is fine, but we should not try to
+  // construct arbitrary general SCEV expressions here.  This function is called
+  // from deep in the call stack, and calling getSCEV (on a sext instruction,
+  // say) can end up caching a suboptimal value.
+
+  // FIXME: without the explicit `this` receiver below, MSVC errors out with
+  // C2352 and C2512 (otherwise it isn't needed).
+
+  const SCEV *TrueStart = this->getConstant(*StartPattern.TrueValue + Offset);
+  const SCEV *TrueStep = this->getConstant(*StepPattern.TrueValue);
+  const SCEV *FalseStart = this->getConstant(*StartPattern.FalseValue + Offset);
+  const SCEV *FalseStep = this->getConstant(*StepPattern.FalseValue);
+
+  ConstantRange TrueRange =
+      this->getRangeForAffineAR(TrueStart, TrueStep, MaxBECount, BitWidth);
+  ConstantRange FalseRange =
+      this->getRangeForAffineAR(FalseStart, FalseStep, MaxBECount, BitWidth);
+
+  return TrueRange.unionWith(FalseRange);
+}
+
 SCEV::NoWrapFlags ScalarEvolution::getNoWrapFlagsFromUB(const Value *V) {
   if (isa<ConstantExpr>(V)) return SCEV::FlagAnyWrap;
   const BinaryOperator *BinOp = cast<BinaryOperator>(V);
@@ -4501,9 +4645,8 @@ SCEV::NoWrapFlags ScalarEvolution::getNoWrapFlagsFromUB(const Value *V) {
     Flags = ScalarEvolution::setFlags(Flags, SCEV::FlagNUW);
   if (BinOp->hasNoSignedWrap())
     Flags = ScalarEvolution::setFlags(Flags, SCEV::FlagNSW);
-  if (Flags == SCEV::FlagAnyWrap) {
+  if (Flags == SCEV::FlagAnyWrap)
     return SCEV::FlagAnyWrap;
-  }
 
   // Here we check that BinOp is in the header of the innermost loop
   // containing BinOp, since we only deal with instructions in the loop
@@ -4511,9 +4654,9 @@ SCEV::NoWrapFlags ScalarEvolution::getNoWrapFlagsFromUB(const Value *V) {
   // recurrence, but getting that requires computing the SCEV of the operands,
   // which can be expensive. This check we can do cheaply to rule out some
   // cases early.
-  Loop *innermostContainingLoop = LI.getLoopFor(BinOp->getParent());
-  if (innermostContainingLoop == nullptr ||
-      innermostContainingLoop->getHeader() != BinOp->getParent())
+  Loop *InnermostContainingLoop = LI.getLoopFor(BinOp->getParent());
+  if (InnermostContainingLoop == nullptr ||
+      InnermostContainingLoop->getHeader() != BinOp->getParent())
     return SCEV::FlagAnyWrap;
 
   // Only proceed if we can prove that BinOp does not yield poison.
@@ -9553,6 +9696,8 @@ void ScalarEvolution::verify() const {
 
   // TODO: Verify more things.
 }
+
+template class llvm::AnalysisBase<ScalarEvolutionAnalysis>;
 
 ScalarEvolution ScalarEvolutionAnalysis::run(Function &F,
                                              AnalysisManager<Function> *AM) {

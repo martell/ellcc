@@ -16,7 +16,7 @@
 #include "SymbolTable.h"
 #include "Target.h"
 #include "Writer.h"
-#include "llvm/ADT/STLExtras.h"
+#include "lld/Driver/Driver.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
@@ -27,12 +27,12 @@ using namespace llvm::ELF;
 using namespace llvm::object;
 
 using namespace lld;
-using namespace lld::elf2;
+using namespace lld::elf;
 
-Configuration *elf2::Config;
-LinkerDriver *elf2::Driver;
+Configuration *elf::Config;
+LinkerDriver *elf::Driver;
 
-bool elf2::link(ArrayRef<const char *> Args, raw_ostream &Error) {
+bool elf::link(ArrayRef<const char *> Args, raw_ostream &Error) {
   HasError = false;
   ErrorOS = &Error;
   Configuration C;
@@ -41,7 +41,7 @@ bool elf2::link(ArrayRef<const char *> Args, raw_ostream &Error) {
   Config = &C;
   Driver = &D;
   Script = &LS;
-  Driver->main(Args.slice(1));
+  Driver->main(Args);
   return !HasError;
 }
 
@@ -70,17 +70,18 @@ static std::pair<ELFKind, uint16_t> parseEmulation(StringRef S) {
 // Returns slices of MB by parsing MB as an archive file.
 // Each slice consists of a member file in the archive.
 static std::vector<MemoryBufferRef> getArchiveMembers(MemoryBufferRef MB) {
-  ErrorOr<std::unique_ptr<Archive>> FileOrErr = Archive::create(MB);
-  fatal(FileOrErr, "Failed to parse archive");
-  std::unique_ptr<Archive> File = std::move(*FileOrErr);
+  std::unique_ptr<Archive> File =
+      check(Archive::create(MB), "Failed to parse archive");
 
   std::vector<MemoryBufferRef> V;
-  for (const ErrorOr<Archive::Child> &C : File->children()) {
-    fatal(C, "Could not get the child of the archive " + File->getFileName());
-    ErrorOr<MemoryBufferRef> MbOrErr = C->getMemoryBufferRef();
-    fatal(MbOrErr, "Could not get the buffer for a child of the archive " +
-                       File->getFileName());
-    V.push_back(*MbOrErr);
+  for (const ErrorOr<Archive::Child> &COrErr : File->children()) {
+    Archive::Child C = check(COrErr, "Could not get the child of the archive " +
+                                         File->getFileName());
+    MemoryBufferRef Mb =
+        check(C.getMemoryBufferRef(),
+              "Could not get the buffer for a child of the archive " +
+                  File->getFileName());
+    V.push_back(Mb);
   }
   return V;
 }
@@ -142,8 +143,15 @@ static void checkOptions(opt::InputArgList &Args) {
   if (Config->EMachine == EM_AMDGPU && !Config->Entry.empty())
     error("-e option is not valid for AMDGPU.");
 
-  if (Config->Relocatable && Config->Shared)
+  if (!Config->Relocatable)
+    return;
+
+  if (Config->Shared)
     error("-r and -shared may not be used together");
+  if (Config->GcSections)
+    error("-r and --gc-sections may not be used together");
+  if (Config->ICF)
+    error("-r and --icf may not be used together");
 }
 
 static StringRef
@@ -163,7 +171,16 @@ static bool hasZOption(opt::InputArgList &Args, StringRef Key) {
 void LinkerDriver::main(ArrayRef<const char *> ArgsArr) {
   initSymbols();
 
-  opt::InputArgList Args = parseArgs(&Alloc, ArgsArr);
+  opt::InputArgList Args = parseArgs(&Alloc, ArgsArr.slice(1));
+  if (Args.hasArg(OPT_help)) {
+    printHelp(ArgsArr[0]);
+    return;
+  }
+  if (Args.hasArg(OPT_version)) {
+    printVersion();
+    return;
+  }
+
   readConfigs(Args);
   createFiles(Args);
   checkOptions(Args);

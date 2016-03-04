@@ -30,7 +30,7 @@ using namespace llvm::object;
 using namespace llvm::ELF;
 
 using namespace lld;
-using namespace lld::elf2;
+using namespace lld::elf;
 
 // All input object files must be for the same architecture
 // (e.g. it does not make sense to link x86 object files with
@@ -82,7 +82,7 @@ void SymbolTable<ELFT>::addFile(std::unique_ptr<InputFile> File) {
   // LLVM bitcode file.
   if (auto *F = dyn_cast<BitcodeFile>(FileP)) {
     BitcodeFiles.emplace_back(cast<BitcodeFile>(File.release()));
-    F->parse();
+    F->parse(ComdatGroups);
     for (SymbolBody *B : F->getSymbols())
       resolve(B);
     return;
@@ -112,8 +112,9 @@ std::unique_ptr<InputFile> SymbolTable<ELFT>::codegen(Module &M) {
     fatal("Target not found: " + ErrMsg);
 
   TargetOptions Options;
+  Reloc::Model R = Config->Shared ? Reloc::PIC_ : Reloc::Static;
   std::unique_ptr<TargetMachine> TM(
-      TheTarget->createTargetMachine(TripleStr, "", "", Options));
+      TheTarget->createTargetMachine(TripleStr, "", "", Options, R));
 
   raw_svector_ostream OS(OwningLTOData);
   legacy::PassManager CodeGenPasses;
@@ -135,11 +136,9 @@ ObjectFile<ELFT> *SymbolTable<ELFT>::createCombinedLtoObject() {
   for (const std::unique_ptr<BitcodeFile> &F : BitcodeFiles) {
     std::unique_ptr<MemoryBuffer> Buffer =
         MemoryBuffer::getMemBuffer(F->MB, false);
-    ErrorOr<std::unique_ptr<Module>> MOrErr =
-        getLazyBitcodeModule(std::move(Buffer), Context,
-                             /*ShouldLazyLoadMetadata*/ true);
-    fatal(MOrErr);
-    std::unique_ptr<Module> &M = *MOrErr;
+    std::unique_ptr<Module> M =
+        check(getLazyBitcodeModule(std::move(Buffer), Context,
+                                   /*ShouldLazyLoadMetadata*/ true));
     L.linkInModule(std::move(M));
   }
   std::unique_ptr<InputFile> F = codegen(Combined);
@@ -151,11 +150,12 @@ template <class ELFT> void SymbolTable<ELFT>::addCombinedLtoObject() {
   if (BitcodeFiles.empty())
     return;
   ObjectFile<ELFT> *Obj = createCombinedLtoObject();
-  // FIXME: We probably have to ignore comdats here.
-  Obj->parse(ComdatGroups);
+  llvm::DenseSet<StringRef> DummyGroups;
+  Obj->parse(DummyGroups);
   for (SymbolBody *Body : Obj->getSymbols()) {
     Symbol *Sym = insert(Body);
-    assert(isa<DefinedBitcode>(Sym->Body));
+    if (!Sym->Body->isUndefined() && Body->isUndefined())
+      continue;
     Sym->Body = Body;
   }
 }
@@ -187,9 +187,9 @@ SymbolBody *SymbolTable<ELFT>::addAbsolute(StringRef Name, Elf_Sym &ESym) {
 
 template <class ELFT>
 SymbolBody *SymbolTable<ELFT>::addSynthetic(StringRef Name,
-                                            OutputSectionBase<ELFT> &Section,
-                                            uintX_t Value) {
-  auto *Sym = new (Alloc) DefinedSynthetic<ELFT>(Name, Value, Section);
+                                            OutputSectionBase<ELFT> &Sec,
+                                            uintX_t Val, uint8_t Visibility) {
+  auto *Sym = new (Alloc) DefinedSynthetic<ELFT>(Name, Val, Sec, Visibility);
   resolve(Sym);
   return Sym;
 }
@@ -356,7 +356,7 @@ template <class ELFT> void SymbolTable<ELFT>::scanShlibUndefined() {
           Sym->MustBeInDynSym = true;
 }
 
-template class elf2::SymbolTable<ELF32LE>;
-template class elf2::SymbolTable<ELF32BE>;
-template class elf2::SymbolTable<ELF64LE>;
-template class elf2::SymbolTable<ELF64BE>;
+template class elf::SymbolTable<ELF32LE>;
+template class elf::SymbolTable<ELF32BE>;
+template class elf::SymbolTable<ELF64LE>;
+template class elf::SymbolTable<ELF64BE>;

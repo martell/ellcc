@@ -190,9 +190,7 @@ bool AArch64RegisterInfo::hasBasePointer(const MachineFunction &MF) const {
     // If it's wrong, we'll materialize the constant and still get to the
     // object; it's just suboptimal. Negative offsets use the unscaled
     // load/store instructions, which have a 9-bit signed immediate.
-    if (MFI->getLocalFrameSize() < 256)
-      return false;
-    return true;
+    return MFI->getLocalFrameSize() >= 256;
   }
 
   return false;
@@ -231,9 +229,7 @@ bool AArch64RegisterInfo::requiresFrameIndexScavenging(
 bool
 AArch64RegisterInfo::cannotEliminateFrame(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
-  // Only consider eliminating leaf frames.
-  if (MFI->hasCalls() || (MF.getTarget().Options.DisableFramePointerElim(MF) &&
-                          MFI->adjustsStack()))
+  if (MF.getTarget().Options.DisableFramePointerElim(MF) && MFI->adjustsStack())
     return true;
   return MFI->hasVarSizedObjects() || MFI->isFrameAddressTaken();
 }

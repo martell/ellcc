@@ -26,7 +26,7 @@ using namespace llvm::ELF;
 using namespace llvm::object;
 
 using namespace lld;
-using namespace lld::elf2;
+using namespace lld::elf;
 
 namespace {
 // The writer writes a SymbolTable result to a file.
@@ -123,7 +123,7 @@ private:
 
 template <class ELFT> static bool shouldUseRela() { return ELFT::Is64Bits; }
 
-template <class ELFT> void elf2::writeResult(SymbolTable<ELFT> *Symtab) {
+template <class ELFT> void elf::writeResult(SymbolTable<ELFT> *Symtab) {
   typedef typename ELFFile<ELFT>::uintX_t uintX_t;
 
   // Create singleton output sections.
@@ -221,7 +221,7 @@ template <class ELFT> void Writer<ELFT>::run() {
   writeSections();
   if (HasError)
     return;
-  fatal(Buffer->commit());
+  check(Buffer->commit());
 }
 
 namespace {
@@ -528,8 +528,12 @@ static void reportUndefined(SymbolTable<ELFT> &Symtab, SymbolBody *Sym) {
 template <class ELFT>
 static bool shouldKeepInSymtab(const ObjectFile<ELFT> &File, StringRef SymName,
                                const typename ELFFile<ELFT>::Elf_Sym &Sym) {
-  if (Sym.getType() == STT_SECTION || Sym.getType() == STT_FILE)
+  if (Sym.getType() == STT_FILE)
     return false;
+
+  // We keep sections in symtab for relocatable output.
+  if (Sym.getType() == STT_SECTION)
+    return Config->Relocatable;
 
   InputSectionBase<ELFT> *Sec = File.getSection(Sym);
   // If sym references a section in a discarded group, don't keep it.
@@ -560,17 +564,20 @@ template <class ELFT> void Writer<ELFT>::copyLocalSymbols() {
     return;
   for (const std::unique_ptr<ObjectFile<ELFT>> &F : Symtab.getObjectFiles()) {
     for (const Elf_Sym &Sym : F->getLocalSymbols()) {
-      ErrorOr<StringRef> SymNameOrErr = Sym.getName(F->getStringTable());
-      fatal(SymNameOrErr);
-      StringRef SymName = *SymNameOrErr;
+      StringRef SymName = check(Sym.getName(F->getStringTable()));
       if (!shouldKeepInSymtab<ELFT>(*F, SymName, Sym))
         continue;
       if (Sym.st_shndx != SHN_ABS) {
         InputSectionBase<ELFT> *Section = F->getSection(Sym);
         if (!Section->Live)
           continue;
+        // That can happen if creating relocatable output.
+        if (Sym.getType() == STT_SECTION)
+          SymName = Section->getSectionName();
       }
       ++Out<ELFT>::SymTab->NumLocals;
+      if (Config->Relocatable)
+        Out<ELFT>::SymTab->Locals[&Sym] = Out<ELFT>::SymTab->NumLocals;
       F->KeptLocalSyms.push_back(std::make_pair(
           &Sym, Out<ELFT>::SymTab->StrTabSec.addString(SymName)));
     }
@@ -1001,9 +1008,13 @@ template <class ELFT> bool Writer<ELFT>::createSections() {
   // The linker needs to define SECNAME_start, SECNAME_end and SECNAME_stop
   // symbols for sections, so that the runtime can get the start and end
   // addresses of each section by section name. Add such symbols.
-  addStartEndSymbols();
-  for (OutputSectionBase<ELFT> *Sec : RegularSections)
-    addStartStopSymbols(Sec);
+  if (!Config->Relocatable) {
+    addStartEndSymbols();
+    for (OutputSectionBase<ELFT> *Sec : RegularSections)
+      addStartStopSymbols(Sec);
+  }
+  if (isOutputDynamic())
+    Symtab.addSynthetic("_DYNAMIC", *Out<ELFT>::Dynamic, 0, STV_HIDDEN);
 
   // Define __rel[a]_iplt_{start,end} symbols if needed.
   addRelIpltSymbols();
@@ -1146,8 +1157,8 @@ template <class ELFT> void Writer<ELFT>::addStartEndSymbols() {
   auto Define = [&](StringRef Start, StringRef End,
                     OutputSectionBase<ELFT> *OS) {
     if (OS) {
-      Symtab.addSynthetic(Start, *OS, 0);
-      Symtab.addSynthetic(End, *OS, OS->getSize());
+      Symtab.addSynthetic(Start, *OS, 0, STV_DEFAULT);
+      Symtab.addSynthetic(End, *OS, OS->getSize(), STV_DEFAULT);
     } else {
       Symtab.addIgnored(Start);
       Symtab.addIgnored(End);
@@ -1177,10 +1188,10 @@ void Writer<ELFT>::addStartStopSymbols(OutputSectionBase<ELFT> *Sec) {
   StringRef Stop = Saver.save("__stop_" + S);
   if (SymbolBody *B = Symtab.find(Start))
     if (B->isUndefined())
-      Symtab.addSynthetic(Start, *Sec, 0);
+      Symtab.addSynthetic(Start, *Sec, 0, STV_DEFAULT);
   if (SymbolBody *B = Symtab.find(Stop))
     if (B->isUndefined())
-      Symtab.addSynthetic(Stop, *Sec, Sec->getSize());
+      Symtab.addSynthetic(Stop, *Sec, Sec->getSize(), STV_DEFAULT);
 }
 
 template <class ELFT> static bool needsPtLoad(OutputSectionBase<ELFT> *Sec) {
@@ -1247,6 +1258,7 @@ template <class ELFT> void Writer<ELFT>::createPhdrs() {
 
   Phdr TlsHdr(PT_TLS, PF_R);
   Phdr RelRo(PT_GNU_RELRO, PF_R);
+  Phdr Note(PT_NOTE, PF_R);
   for (OutputSectionBase<ELFT> *Sec : OutputSections) {
     if (!(Sec->getFlags() & SHF_ALLOC))
       break;
@@ -1273,6 +1285,8 @@ template <class ELFT> void Writer<ELFT>::createPhdrs() {
 
     if (isRelroSection(Sec))
       AddSec(RelRo, Sec);
+    if (Sec->getType() == SHT_NOTE)
+      AddSec(Note, Sec);
   }
 
   // Add the TLS segment unless it's empty.
@@ -1301,6 +1315,9 @@ template <class ELFT> void Writer<ELFT>::createPhdrs() {
   // pages for the stack non-executable.
   if (!Config->ZExecStack)
     AddHdr(PT_GNU_STACK, PF_R | PF_W);
+
+  if (Note.First)
+    Phdrs.push_back(std::move(Note));
 }
 
 // Used for relocatable output (-r). In this case we create only ELF file
@@ -1310,9 +1327,11 @@ template <class ELFT> void Writer<ELFT>::assignAddressesRelocatable() {
   Out<ELFT>::ElfHeader->setSize(sizeof(Elf_Ehdr));
   uintX_t FileOff = 0;
   for (OutputSectionBase<ELFT> *Sec : OutputSections) {
-    FileOff = alignTo(FileOff, Sec->getAlign());
+    if (Sec->getType() != SHT_NOBITS)
+      FileOff = alignTo(FileOff, Sec->getAlign());
     Sec->setFileOffset(FileOff);
-    FileOff += Sec->getSize();
+    if (Sec->getType() != SHT_NOBITS)
+      FileOff += Sec->getSize();
   }
   SectionHeaderOff = alignTo(FileOff, sizeof(uintX_t));
   FileSize = SectionHeaderOff + getNumSections() * sizeof(Elf_Shdr);
@@ -1389,15 +1408,15 @@ template <class ELFT> void Writer<ELFT>::assignAddresses() {
       H.p_offset = PHdr.First->getFileOff();
       H.p_vaddr = PHdr.First->getVA();
     }
-    if (PHdr.H.p_type == PT_LOAD)
+    if (H.p_type == PT_LOAD)
       H.p_align = Target->PageSize;
-    else if (PHdr.H.p_type == PT_GNU_RELRO)
+    else if (H.p_type == PT_GNU_RELRO)
       H.p_align = 1;
     H.p_paddr = H.p_vaddr;
 
     // The TLS pointer goes after PT_TLS. At least glibc will align it,
     // so round up the size to make sure the offsets are correct.
-    if (PHdr.H.p_type == PT_TLS) {
+    if (H.p_type == PT_TLS) {
       Out<ELFT>::TlsPhdr = &H;
       H.p_memsz = alignTo(H.p_memsz, H.p_align);
     }
@@ -1457,15 +1476,16 @@ template <class ELFT> void Writer<ELFT>::fixAbsoluteSymbols() {
   if (Config->EMachine == EM_MIPS)
     ElfSym<ELFT>::MipsGp.st_value = getMipsGpAddr<ELFT>();
 
-  // _etext points to location after the last read-only loadable segment.
-  // _edata points to the end of the last non SHT_NOBITS section.
-  for (OutputSectionBase<ELFT> *Sec : OutputSections) {
-    if (!(Sec->getFlags() & SHF_ALLOC))
+  // _etext is the first location after the last read-only loadable segment.
+  // _edata is the first location after the last read-write loadable segment.
+  for (Phdr &PHdr : Phdrs) {
+    if (PHdr.H.p_type != PT_LOAD)
       continue;
-    if (!(Sec->getFlags() & SHF_WRITE))
-      ElfSym<ELFT>::Etext.st_value = Sec->getVA() + Sec->getSize();
-    if (Sec->getType() != SHT_NOBITS)
-      ElfSym<ELFT>::Edata.st_value = Sec->getVA() + Sec->getSize();
+    uintX_t Val = PHdr.H.p_vaddr + PHdr.H.p_filesz;
+    if (PHdr.H.p_flags & PF_W)
+      ElfSym<ELFT>::Edata.st_value = Val;
+    else
+      ElfSym<ELFT>::Etext.st_value = Val;
   }
 }
 
@@ -1535,7 +1555,7 @@ template <class ELFT> void Writer<ELFT>::writeSections() {
       Sec->writeTo(Buf + Sec->getFileOff());
 }
 
-template void elf2::writeResult<ELF32LE>(SymbolTable<ELF32LE> *Symtab);
-template void elf2::writeResult<ELF32BE>(SymbolTable<ELF32BE> *Symtab);
-template void elf2::writeResult<ELF64LE>(SymbolTable<ELF64LE> *Symtab);
-template void elf2::writeResult<ELF64BE>(SymbolTable<ELF64BE> *Symtab);
+template void elf::writeResult<ELF32LE>(SymbolTable<ELF32LE> *Symtab);
+template void elf::writeResult<ELF32BE>(SymbolTable<ELF32BE> *Symtab);
+template void elf::writeResult<ELF64LE>(SymbolTable<ELF64LE> *Symtab);
+template void elf::writeResult<ELF64BE>(SymbolTable<ELF64BE> *Symtab);

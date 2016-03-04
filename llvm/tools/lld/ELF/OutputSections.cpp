@@ -23,7 +23,7 @@ using namespace llvm::support::endian;
 using namespace llvm::ELF;
 
 using namespace lld;
-using namespace lld::elf2;
+using namespace lld::elf;
 
 static bool isAlpha(char C) {
   return ('a' <= C && C <= 'z') || ('A' <= C && C <= 'Z') || C == '_';
@@ -32,7 +32,7 @@ static bool isAlpha(char C) {
 static bool isAlnum(char C) { return isAlpha(C) || ('0' <= C && C <= '9'); }
 
 // Returns true if S is valid as a C language identifier.
-bool elf2::isValidCIdentifier(StringRef S) {
+bool elf::isValidCIdentifier(StringRef S) {
   return !S.empty() && isAlpha(S[0]) &&
          std::all_of(S.begin() + 1, S.end(), isAlnum);
 }
@@ -668,25 +668,31 @@ template <class ELFT>
 typename EhFrameHeader<ELFT>::uintX_t
 EhFrameHeader<ELFT>::getFdePc(uintX_t EhVA, const FdeData &F) {
   const endianness E = ELFT::TargetEndianness;
-  assert((F.Enc & 0xF0) != DW_EH_PE_datarel);
-
-  uintX_t FdeOff = EhVA + F.Off + 8;
-  switch (F.Enc & 0xF) {
+  uint8_t Size = F.Enc & 0x7;
+  if (Size == DW_EH_PE_absptr)
+    Size = sizeof(uintX_t) == 8 ? DW_EH_PE_udata8 : DW_EH_PE_udata4;
+  uint64_t PC;
+  switch (Size) {
   case DW_EH_PE_udata2:
-  case DW_EH_PE_sdata2:
-    return FdeOff + read16<E>(F.PCRel);
+    PC = read16<E>(F.PCRel);
+    break;
   case DW_EH_PE_udata4:
-  case DW_EH_PE_sdata4:
-    return FdeOff + read32<E>(F.PCRel);
+    PC = read32<E>(F.PCRel);
+    break;
   case DW_EH_PE_udata8:
-  case DW_EH_PE_sdata8:
-    return FdeOff + read64<E>(F.PCRel);
-  case DW_EH_PE_absptr:
-    if (sizeof(uintX_t) == 8)
-      return FdeOff + read64<E>(F.PCRel);
-    return FdeOff + read32<E>(F.PCRel);
+    PC = read64<E>(F.PCRel);
+    break;
+  default:
+    fatal("unknown FDE size encoding");
   }
-  fatal("unknown FDE size encoding");
+  switch (F.Enc & 0x70) {
+  case DW_EH_PE_absptr:
+    return PC;
+  case DW_EH_PE_pcrel:
+    return PC + EhVA + F.Off + 8;
+  default:
+    fatal("unknown FDE size relative encoding");
+  }
 }
 
 template <class ELFT> void EhFrameHeader<ELFT>::writeTo(uint8_t *Buf) {
@@ -886,9 +892,9 @@ template <class ELFT> void OutputSection<ELFT>::sortCtorsDtors() {
 // For non-local symbols, use SymbolBody::getVA instead.
 template <class ELFT, bool IsRela>
 typename ELFFile<ELFT>::uintX_t
-elf2::getLocalRelTarget(const ObjectFile<ELFT> &File,
-                        const Elf_Rel_Impl<ELFT, IsRela> &RI,
-                        typename ELFFile<ELFT>::uintX_t Addend) {
+elf::getLocalRelTarget(const ObjectFile<ELFT> &File,
+                       const Elf_Rel_Impl<ELFT, IsRela> &RI,
+                       typename ELFFile<ELFT>::uintX_t Addend) {
   typedef typename ELFFile<ELFT>::Elf_Sym Elf_Sym;
   typedef typename ELFFile<ELFT>::uintX_t uintX_t;
 
@@ -926,7 +932,7 @@ elf2::getLocalRelTarget(const ObjectFile<ELFT> &File,
 
 // Returns true if a symbol can be replaced at load-time by a symbol
 // with the same name defined in other ELF executable or DSO.
-bool elf2::canBePreempted(const SymbolBody *Body) {
+bool elf::canBePreempted(const SymbolBody *Body) {
   if (!Body)
     return false;  // Body is a local symbol.
   if (Body->isShared())
@@ -1084,8 +1090,10 @@ uint8_t EHOutputSection<ELFT>::getFdeEncoding(ArrayRef<uint8_t> D) {
       skipAugP<ELFT>(D);
       continue;
     }
-    if (C == 'L')
+    if (C == 'L') {
+      readByte(D);
       continue;
+    }
     fatal("unknown .eh_frame augmentation string: " + Aug);
   }
   return DW_EH_PE_absptr;
@@ -1491,7 +1499,7 @@ void SymbolTableSection<ELFT>::writeGlobalSymbols(uint8_t *Buf) {
     SymbolBody *Body = P.first;
     size_t StrOff = P.second;
 
-    unsigned char Type = STT_NOTYPE;
+    uint8_t Type = STT_NOTYPE;
     uintX_t Size = 0;
     if (const Elf_Sym *InputSym = getElfSym<ELFT>(*Body)) {
       Type = InputSym->getType();
@@ -1586,7 +1594,7 @@ void MipsReginfoOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
 }
 
 namespace lld {
-namespace elf2 {
+namespace elf {
 template class OutputSectionBase<ELF32LE>;
 template class OutputSectionBase<ELF32BE>;
 template class OutputSectionBase<ELF64LE>;

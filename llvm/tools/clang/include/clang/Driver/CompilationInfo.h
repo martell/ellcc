@@ -10,7 +10,7 @@
 #ifndef LLVM_CLANG_DRIVER_COMPILATION_INFO_H
 #define LLVM_CLANG_DRIVER_COMPILATION_INFO_H
 
-#include "llvm/MC/YAML.h"
+#include "llvm/ObjectYAML/YAML.h"
 
 namespace clang {
 namespace driver {

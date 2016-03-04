@@ -657,8 +657,7 @@ namespace llvm {
       DenseMap<const SCEV *, ConstantRange> &Cache =
           Hint == HINT_RANGE_UNSIGNED ? UnsignedRanges : SignedRanges;
 
-      std::pair<DenseMap<const SCEV *, ConstantRange>::iterator, bool> Pair =
-          Cache.insert(std::make_pair(S, CR));
+      auto Pair = Cache.insert({S, CR});
       if (!Pair.second)
         Pair.first->second = CR;
       return Pair.first->second;
@@ -666,6 +665,19 @@ namespace llvm {
 
     /// Determine the range for a particular SCEV.
     ConstantRange getRange(const SCEV *S, RangeSignHint Hint);
+
+    /// Determines the range for the affine SCEVAddRecExpr {\p Start,+,\p Stop}.
+    /// Helper for \c getRange.
+    ConstantRange getRangeForAffineAR(const SCEV *Start, const SCEV *Stop,
+                                      const SCEV *MaxBECount,
+                                      unsigned BitWidth);
+
+    /// Try to compute a range for the affine SCEVAddRecExpr {\p Start,+,\p
+    /// Stop} by "factoring out" a ternary expression from the add recurrence.
+    /// Helper called by \c getRange.
+    ConstantRange getRangeViaFactoring(const SCEV *Start, const SCEV *Stop,
+                                       const SCEV *MaxBECount,
+                                       unsigned BitWidth);
 
     /// We know that there is no SCEV for the specified value.  Analyze the
     /// expression.
@@ -698,7 +710,7 @@ namespace llvm {
     /// This looks up computed SCEV values for all instructions that depend on
     /// the given instruction and removes them from the ValueExprMap map if they
     /// reference SymName. This is used during PHI resolution.
-    void ForgetSymbolicName(Instruction *I, const SCEV *SymName);
+    void forgetSymbolicName(Instruction *I, const SCEV *SymName);
 
     /// Return the BackedgeTakenInfo for the given loop, lazily computing new
     /// values if the loop hasn't been analyzed yet.
@@ -887,6 +899,9 @@ namespace llvm {
     template<typename ExtendOpTy>
     bool proveNoWrapByVaryingStart(const SCEV *Start, const SCEV *Step,
                                    const Loop *L);
+
+    /// Try to prove NSW or NUW on \p AR relying on ConstantRange manipulation.
+    SCEV::NoWrapFlags proveNoWrapViaConstantRanges(const SCEVAddRecExpr *AR);
 
     bool isMonotonicPredicateImpl(const SCEVAddRecExpr *LHS,
                                   ICmpInst::Predicate Pred, bool &Increasing);
@@ -1420,6 +1435,8 @@ namespace llvm {
 
     ScalarEvolution run(Function &F, AnalysisManager<Function> *AM);
   };
+
+  extern template class AnalysisBase<ScalarEvolutionAnalysis>;
 
   /// \brief Printer pass for the \c ScalarEvolutionAnalysis results.
   class ScalarEvolutionPrinterPass

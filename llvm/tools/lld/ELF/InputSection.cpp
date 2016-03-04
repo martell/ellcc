@@ -22,7 +22,7 @@ using namespace llvm::object;
 using namespace llvm::support::endian;
 
 using namespace lld;
-using namespace lld::elf2;
+using namespace lld::elf;
 
 template <class ELFT>
 InputSectionBase<ELFT>::InputSectionBase(ObjectFile<ELFT> *File,
@@ -39,17 +39,12 @@ InputSectionBase<ELFT>::InputSectionBase(ObjectFile<ELFT> *File,
 }
 
 template <class ELFT> StringRef InputSectionBase<ELFT>::getSectionName() const {
-  ErrorOr<StringRef> Name = File->getObj().getSectionName(this->Header);
-  fatal(Name);
-  return *Name;
+  return check(File->getObj().getSectionName(this->Header));
 }
 
 template <class ELFT>
 ArrayRef<uint8_t> InputSectionBase<ELFT>::getSectionData() const {
-  ErrorOr<ArrayRef<uint8_t>> Ret =
-      this->File->getObj().getSectionContents(this->Header);
-  fatal(Ret);
-  return *Ret;
+  return check(this->File->getObj().getSectionContents(this->Header));
 }
 
 template <class ELFT>
@@ -132,11 +127,15 @@ void InputSection<ELFT>::copyRelocations(uint8_t *Buf,
     RelType *P = reinterpret_cast<RelType *>(Buf);
     Buf += sizeof(RelType);
 
-    // Relocation for local symbol here means that it is probably
-    // rel[a].eh_frame section which has references to
-    // sections in r_info field. Also needs fix for addend.
-    if (SymIndex < SymTab->sh_info)
-      fatal("Relocation against local symbols is not supported yet");
+    // Relocation against local symbol here means that it is probably
+    // rel[a].eh_frame section which has references to sections in r_info field.
+    if (SymIndex < SymTab->sh_info) {
+      const Elf_Sym *Sym = this->File->getLocalSymbol(SymIndex);
+      uint32_t Idx = Out<ELFT>::SymTab->Locals[Sym];
+      P->r_offset = RelocatedSection->getOffset(Rel.r_offset);
+      P->setSymbolAndType(Idx, Type, Config->Mips64EL);
+      continue;
+    }
 
     SymbolBody *Body = this->File->getSymbolBody(SymIndex)->repl();
     P->r_offset = RelocatedSection->getOffset(Rel.r_offset);
@@ -459,27 +458,27 @@ bool MipsReginfoInputSection<ELFT>::classof(const InputSectionBase<ELFT> *S) {
   return S->SectionKind == InputSectionBase<ELFT>::MipsReginfo;
 }
 
-template class elf2::InputSectionBase<ELF32LE>;
-template class elf2::InputSectionBase<ELF32BE>;
-template class elf2::InputSectionBase<ELF64LE>;
-template class elf2::InputSectionBase<ELF64BE>;
+template class elf::InputSectionBase<ELF32LE>;
+template class elf::InputSectionBase<ELF32BE>;
+template class elf::InputSectionBase<ELF64LE>;
+template class elf::InputSectionBase<ELF64BE>;
 
-template class elf2::InputSection<ELF32LE>;
-template class elf2::InputSection<ELF32BE>;
-template class elf2::InputSection<ELF64LE>;
-template class elf2::InputSection<ELF64BE>;
+template class elf::InputSection<ELF32LE>;
+template class elf::InputSection<ELF32BE>;
+template class elf::InputSection<ELF64LE>;
+template class elf::InputSection<ELF64BE>;
 
-template class elf2::EHInputSection<ELF32LE>;
-template class elf2::EHInputSection<ELF32BE>;
-template class elf2::EHInputSection<ELF64LE>;
-template class elf2::EHInputSection<ELF64BE>;
+template class elf::EHInputSection<ELF32LE>;
+template class elf::EHInputSection<ELF32BE>;
+template class elf::EHInputSection<ELF64LE>;
+template class elf::EHInputSection<ELF64BE>;
 
-template class elf2::MergeInputSection<ELF32LE>;
-template class elf2::MergeInputSection<ELF32BE>;
-template class elf2::MergeInputSection<ELF64LE>;
-template class elf2::MergeInputSection<ELF64BE>;
+template class elf::MergeInputSection<ELF32LE>;
+template class elf::MergeInputSection<ELF32BE>;
+template class elf::MergeInputSection<ELF64LE>;
+template class elf::MergeInputSection<ELF64BE>;
 
-template class elf2::MipsReginfoInputSection<ELF32LE>;
-template class elf2::MipsReginfoInputSection<ELF32BE>;
-template class elf2::MipsReginfoInputSection<ELF64LE>;
-template class elf2::MipsReginfoInputSection<ELF64BE>;
+template class elf::MipsReginfoInputSection<ELF32LE>;
+template class elf::MipsReginfoInputSection<ELF32BE>;
+template class elf::MipsReginfoInputSection<ELF64LE>;
+template class elf::MipsReginfoInputSection<ELF64BE>;

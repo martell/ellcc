@@ -32,9 +32,7 @@ class LinkingContext;
 /// and producing a merged graph.
 class Resolver {
 public:
-  Resolver(LinkingContext &ctx)
-      : _ctx(ctx), _symbolTable(ctx), _result(new MergedFile()),
-        _fileIndex(0) {}
+  Resolver(LinkingContext &ctx) : _ctx(ctx), _result(new MergedFile()) {}
 
   // InputFiles::Handler methods
   void doDefinedAtom(const DefinedAtom&);
@@ -63,23 +61,17 @@ private:
   bool undefinesAdded(int begin, int end);
   File *getFile(int &index);
 
-  /// \brief Add section group/.gnu.linkonce if it does not exist previously.
-  void maybeAddSectionGroupOrGnuLinkOnce(const DefinedAtom &atom);
-
   /// \brief The main function that iterates over the files to resolve
-  void updatePreloadArchiveMap();
   bool resolveUndefines();
   void updateReferences();
   void deadStripOptimize();
   bool checkUndefines();
   void removeCoalescedAwayAtoms();
-  void checkDylibSymbolCollisions();
   ErrorOr<bool> forEachUndefines(File &file, bool searchForOverrides,
                                  UndefCallback callback);
 
   void markLive(const Atom *atom);
   void addAtoms(const std::vector<const DefinedAtom *>&);
-  void maybePreloadArchiveMember(StringRef sym);
 
   class MergedFile : public SimpleFile {
   public:
@@ -99,11 +91,6 @@ private:
   // --start-group and --end-group
   std::vector<File *> _files;
   std::map<File *, bool> _newUndefinesAdded;
-  size_t _fileIndex;
-
-  // Preloading
-  llvm::StringMap<ArchiveLibraryFile *> _archiveMap;
-  llvm::DenseSet<ArchiveLibraryFile *> _archiveSeen;
 
   // List of undefined symbols.
   std::vector<StringRef> _undefines;

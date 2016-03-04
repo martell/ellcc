@@ -23,7 +23,7 @@
 #include "llvm/Support/StringSaver.h"
 
 namespace lld {
-namespace elf2 {
+namespace elf {
 
 using llvm::object::Archive;
 
@@ -183,7 +183,7 @@ class BitcodeFile : public InputFile {
 public:
   explicit BitcodeFile(MemoryBufferRef M);
   static bool classof(const InputFile *F);
-  void parse();
+  void parse(llvm::DenseSet<StringRef> &ComdatGroups);
   ArrayRef<SymbolBody *> getSymbols() { return SymbolBodies; }
 
 private:
@@ -231,7 +231,7 @@ std::unique_ptr<InputFile> createObjectFile(MemoryBufferRef MB,
                                             StringRef ArchiveName = "");
 std::unique_ptr<InputFile> createSharedFile(MemoryBufferRef MB);
 
-} // namespace elf2
+} // namespace elf
 } // namespace lld
 
 #endif

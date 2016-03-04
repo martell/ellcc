@@ -14,7 +14,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace lld {
-namespace elf2 {
+namespace elf {
 
 bool HasError;
 llvm::raw_ostream *ErrorOS;
@@ -50,15 +50,14 @@ void fatal(const Twine &Msg) {
   exit(1);
 }
 
-void fatal(std::error_code EC, const Twine &Prefix) {
-  if (EC)
-    fatal(Prefix + ": " + EC.message());
+void fatal(const Twine &Msg, const Twine &Prefix) {
+  fatal(Prefix + ": " + Msg);
 }
 
-void fatal(std::error_code EC) {
+void check(std::error_code EC) {
   if (EC)
     fatal(EC.message());
 }
 
-} // namespace elf2
+} // namespace elf
 } // namespace lld
