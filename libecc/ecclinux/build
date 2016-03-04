@@ -61,10 +61,12 @@ usage() {
   echo "    help                                This message"
   echo "    bcmrpi                              Raspberry Pi    (ARMv6)"
   echo "    bcm2709                             Raspberry Pi 2  (ARMv7)"
+  echo "    bcm2837                             Raspberry Pi 3  (ARMv8)"
   echo "    x86_64                              The default x86_64 configuration"
   echo "    i386                                The default i386 configuration"
   echo "    malta                               Mips Malta."
   echo "    ppc44x                              PowerPC ppc44x"
+  echo "    mpc85xx_smp				PowerPC p2020"
   echo "  available packages:"
   echo "    $packages"
   echo "  extra packages:"
@@ -125,6 +127,7 @@ if [ "${BOARD}" = "" -o "${BOARD}" = "help" ] ; then
   exit 0
 elif [ "${BOARD}" = "bcmrpi" ] ; then
   ARCH=arm
+  LINUX_CONFIG=${BOARD}_defconfig
   UBOOT_BOARD=rpi
   TARGET=armv6-linux-engeabihf  # ARMv6
   LD_EMUL=armelf_linux_eabi
@@ -133,14 +136,25 @@ elif [ "${BOARD}" = "bcmrpi" ] ; then
   INSTALL=zinstall
 elif [ "${BOARD}" = "bcm2709" ] ; then
   ARCH=arm
+  LINUX_CONFIG=${BOARD}_defconfig
   UBOOT_BOARD=rpi_2
   TARGET=arm-linux-engeabihf    # ARMv7
   LD_EMUL=armelf_linux_eabi
   NO_VDSO=1
   DTB=1
   INSTALL=zinstall
+elif [ "${BOARD}" = "bcm2837" ] ; then
+  ARCH=arm64
+  LINUX_CONFIG=defconfig
+  UBOOT_BOARD=rpi_3
+  TARGET=aarch64-linux-eng 	# ARMv8
+  LD_EMUL=aarch64linux
+  NO_VDSO=1
+  DTB=1
+  INSTALL=zinstall
 elif [ "${BOARD}" = "x86_64" ] ; then
   ARCH=x86_64
+  LINUX_CONFIG=${BOARD}_defconfig
   TARGET=x86_64-linux-eng       # x86_64
   LD_EMUL=elf_x86_64
   NO_VDSO=0
@@ -148,6 +162,7 @@ elif [ "${BOARD}" = "x86_64" ] ; then
   INSTALL=install
 elif [ "${BOARD}" = "i386" ] ; then
   ARCH=i386
+  LINUX_CONFIG=${BOARD}_defconfig
   TARGET=i386-linux-eng         # i386
   LD_EMUL=elf_i386
   NO_VDSO=0
@@ -155,6 +170,7 @@ elif [ "${BOARD}" = "i386" ] ; then
   INSTALL=install
 elif [ "${BOARD}" = "malta" ] ; then
   ARCH=mips
+  LINUX_CONFIG=${BOARD}_defconfig
   TARGET=mips-linux-eng         # MIPS
   LD_EMUL=elf32ebmip
   NO_VDSO=0
@@ -162,6 +178,16 @@ elif [ "${BOARD}" = "malta" ] ; then
   INSTALL=install
 elif [ "${BOARD}" = "ppc44x" ] ; then
   ARCH=powerpc
+  LINUX_CONFIG=${BOARD}_defconfig
+  TARGET=ppc-linux-eng         # MIPS
+  LD_EMUL=elf32ppc
+  NO_VDSO=0
+  DTB=0
+  INSTALL=install
+elif [ "${BOARD}" = "mpc85xx_smp" ] ; then
+  ARCH=powerpc
+  LINUX_CONFIG=${BOARD}_defconfig
+  UBOOT_BOARD=P2020RDB-PC
   TARGET=ppc-linux-eng         # MIPS
   LD_EMUL=elf32ppc
   NO_VDSO=0
@@ -183,7 +209,6 @@ for p in `echo $exclude` ; do
   eval $p=no
 done
 
-LINUX_CONFIG=${BOARD}_defconfig
 if [ "${UBOOT_BOARD}" != "" ] ; then
   UBOOT_CONFIG=${UBOOT_BOARD}_defconfig
 else
