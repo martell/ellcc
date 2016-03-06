@@ -1,0 +1,53 @@
+global:
+  static_default: true
+compiler:
+  cxx_include_dirs:
+    - $R/include/c++
+  c_include_dirs:
+    - $R/include/mips
+    - $R/include
+  options:
+    - -target mips64-ellcc-linux
+    - -mcpu=mips64r2
+    - -mabi=64
+    - -integrated-as
+assembler:
+  exe: $E/mips-elf-as$X
+  options:
+    - -64
+  output:
+    - -o $O
+    - -mips64r2
+linker:
+  exe: $E/ecc-ld$X
+  options:
+    - elf64ebmip
+    - --build-id
+    - --eh-frame-hdr
+  output:
+    - -o $O
+  start:
+    - -e _start
+  opt_static:
+    - -Bstatic
+  opt_rdynamic:
+    - -export-dynamic
+  opt_dynamic:
+    - -Bdynamic
+  opt_shared:
+    - -shared
+  opt_notshared:
+    - -dynamic-linker /usr/libexec/ld.so
+  opt_pthread:
+    - -pthread
+  cxx_libraries:
+    - -lc++
+    - -lm
+  profile_libraries:
+    - -lprofile-rt
+  static_crt1: $R/lib/mips64-linux/crt1.o
+  dynamic_crt1: $R/lib/mips64-linux/Scrt1.o
+  crtbegin: $R/lib/mips64-linux/crtbegin.o
+  crtend: $R/lib/mips64-linux/crtend.o
+  library_paths:
+    - -L$R/lib/mips64-linux
