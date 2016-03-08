@@ -1,0 +1,58 @@
+global:
+  static_default: true
+compiler:
+  cxx_include_dirs:
+    - $R/include/c++
+  c_include_dirs:
+    - $R/include/elk/microblaze
+    - $R/include/elk
+    - $R/include/microblaze
+    - $R/include
+  options:
+    - -target microblaze-ellcc-linux
+    - -no-integrated-as
+    - -D__ELK__=1
+assembler:
+  exe: $E/microblaze-elf-as$X
+  output:
+    - -o $O
+linker:
+  exe: $E/ecc-ld$X
+  options:
+    - -Telk.ld
+    - -m elf32mb_linux
+  output:
+    - -o $O
+  start:
+    - -e _start
+  opt_static:
+    - -Bstatic
+  opt_rdynamic:
+    - -export-dynamic
+  opt_dynamic:
+    - -Bdynamic
+  opt_shared:
+    - -shared
+  opt_notshared:
+    - -dynamic-linker /usr/libexec/ld.so
+  opt_pthread:
+    - -pthread
+  static_crt1: $R/lib/microblaze-elk/crt1.o
+  dynamic_crt1: $R/lib/microblaze-elk/Scrt1.o
+  crtbegin: $R/lib/microblaze-linux/crtbegin.o
+  crtend: $R/lib/microblaze-linux/crtend.o
+  library_paths:
+    - -L$R/lib/microblaze-elk
+    - -L$R/lib/elk
+    - -L$R/lib/microblaze-linux
+  cxx_libraries:
+    - -lc++
+    - -lm
+  profile_libraries:
+    - -lprofile-rt
+  c_libraries:
+    - -lelk
+    - -(
+    - -lc
+    - -lcompiler-rt
+    - -)

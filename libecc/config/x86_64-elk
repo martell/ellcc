@@ -1,0 +1,61 @@
+global:
+  static_default: true
+compiler:
+  cxx_include_dirs:
+    - $R/include/c++
+  c_include_dirs:
+    - $R/include/elk/x86_64
+    - $R/include/elk
+    - $R/include/x86_64
+    - $R/include
+  options:
+    - -target x86_64-ellcc-linux
+    - -integrated-as
+    - -D__ELK__=1
+assembler:
+  exe: $E/x86_64-elf-as$X
+  output:
+    - -o $O
+linker:
+  exe: $E/ecc-ld$X
+  options:
+    - -Telk.ld
+    - -m elf_x86_64
+    - --build-id
+    - --hash-style=gnu
+    - --eh-frame-hdr
+  output:
+    - -o $O
+  start:
+    - -e _start
+  opt_static:
+    - -Bstatic
+  opt_rdynamic:
+    - -export-dynamic
+  opt_dynamic:
+    - -Bdynamic
+  opt_shared:
+    - -shared
+  opt_notshared:
+    - -dynamic-linker /usr/libexec/ld.so
+  opt_pthread:
+    - -pthread
+  static_crt1: $R/lib/x86_64-elk/crt1.o
+  dynamic_crt1: $R/lib/x86_64-elk/Scrt1.o
+  crtbegin: $R/lib/x86_64-linux/crtbegin.o
+  crtend: $R/lib/x86_64-linux/crtend.o
+  library_paths:
+    - -L$R/lib/x86_64-elk
+    - -L$R/lib/elk
+    - -L$R/lib/x86_64-linux
+  cxx_libraries:
+    - -lc++
+    - -lm
+  profile_libraries:
+    - -lprofile-rt
+  c_libraries:
+    - -lelk
+    - -(
+    - -lc
+    - -lcompiler-rt
+    - -)

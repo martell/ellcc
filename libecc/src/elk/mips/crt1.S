@@ -210,19 +210,19 @@ unhandled_swi:
         weak_call(__setup_console)      // If not, set up the console.
 nosetup:
         // Get the additional arguments.
-        lw      $s0, SAVE + (4 * 4)($sp)
+        lw      $s0, (SAVE + (4 * 4))($sp)
         nop
         sw      $s0, (4 * 6)($sp)
         nop
-        lw      $s0, SAVE + (4 * 5)($sp)
+        lw      $s0, (SAVE + (4 * 5))($sp)
         nop
         sw      $s0, (4 * 7)($sp)
         nop
-        lw      $s0, SAVE + (4 * 6)($sp)
+        lw      $s0, (SAVE + (4 * 6))($sp)
         nop
         sw      $s0, (4 * 8)($sp)
         nop
-        lw      $s0, SAVE + (4 * 7)($sp)
+        lw      $s0, (SAVE + (4 * 7))($sp)
         nop
         sw      $s0, (4 * 9)($sp)
 

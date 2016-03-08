@@ -3,17 +3,22 @@
 #
 case "$1" in
 # Catch these early to simplify matching for 32-bit archs
-mips64*|powerpc64*) echo unknown && exit 1 ;;
-armeb*) ARCH=armeb ;;
+arm*eb*) ARCH=armeb ;;
 arm*) ARCH=arm ;;
 thumb*) ARCH=arm ;;
+cortex*) ARCH=arm ;;
+arm64*) ARCH=aarch64 ;;
 aarch64*) ARCH=aarch64 ;;
 i?86*) ARCH=i386 ;;
+x86_32*) ARCH=i386 ;;
 x86_64-x32*|x32*|x86_64*x32) ARCH=x32 ;;
 x86_64*) ARCH=x86_64 ;;
+mips64*) ARCH=mips64 ;;
+mipsel*) ARCH=mipsel ;;
 mipsel*) ARCH=mipsel ;;
 mips*) ARCH=mips ;;
 microblaze*) ARCH=microblaze ;;
+powerpc64*) ARCH=ppc64 ;;
 powerpc*) ARCH=ppc ;;
 sh[1-9bel-]*|sh|superh*) ARCH=sh ;;
 ppc*) ARCH=ppc ;;

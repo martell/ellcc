@@ -1,5 +1,6 @@
 current SVN:
 
+* Updated configuration files.
 * Update to LLVM r262682.
 * Update to LLVM r262139.
 * Update to GDB 7.11.

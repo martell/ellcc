@@ -1,6 +1,33 @@
 .syntax unified
 .text
 
+#if defined(__thumb__)
+.global __a_barrier
+.hidden __a_barrier
+.type __a_barrier,%function
+__a_barrier:
+	bx lr
+.global __a_cas
+.hidden __a_cas
+.type __a_cas,%function
+__a_cas:
+	mov r3,r0
+	ldr r0,[r2]
+	subs r0,r3,r0
+        it eq
+	streq r1,[r2]
+	bx lr
+.global __aeabi_read_tp
+.type __aeabi_read_tp,%function
+__aeabi_read_tp:
+
+.global __a_gettp
+.hidden __a_gettp
+.type __a_gettp,%function
+__a_gettp:
+	mrc p15,0,r0,c13,c0,3
+	bx lr
+#else
 .global __a_barrier
 .hidden __a_barrier
 .type __a_barrier,%function
@@ -114,3 +141,4 @@ __a_cas_ptr:
 .hidden __a_gettp_ptr
 __a_gettp_ptr:
 	.word 0
+#endif /* __thumb__ */

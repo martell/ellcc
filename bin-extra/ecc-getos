@@ -2,7 +2,6 @@
 # This script returns the OS for a tuple.
 #
 case "$1" in
-# Catch these early to simplify matching for 32-bit archs
-*-linux-*) echo linux ;;
+*-linux*) echo linux ;;
 *) echo unknown && exit 1 ;;
 esac

@@ -327,7 +327,7 @@ case $basic_machine in
 		basic_machine=mt-unknown
 		;;
 
-	strongarm | thumb | xscale)
+	strongarm | thumb | cortex | xscale)
 		basic_machine=arm-unknown
 		;;
 

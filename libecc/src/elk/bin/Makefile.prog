@@ -2,7 +2,7 @@
 ELLCC=../../../../..
 PROG = $(shell basename `pwd`)
 TUPLE = $(shell cd ../..; basename `pwd`)
-LTUPLE = $(shell echo $(TUPLE) | sed -e "s/-elk-/-linux-/")
+LTUPLE = $(shell echo $(TUPLE) | sed -e "s/-elk/-linux/")
 ARCH = $(shell $(ELLCC)/bin/ecc-getincarch $(TUPLE))
 LIB = $(patsubst %-build,%,$(shell basename `cd ../../..; pwd`))
 LIBNAME = lib$(LIB).a

@@ -3,8 +3,10 @@
 #
 case "$1" in
 armv6*) ARCH=armv6 ;;
-arm*hf) ARCH=armhf ;;
+arm*sf) ARCH=armsf ;;
+arm*) ARCH=armhf ;;
 mips*sf) ARCH=mipssf ;;
+mips*) ARCH=mipshf ;;
 *) echo unknown && exit 1 ;;
 esac
 echo $ARCH
