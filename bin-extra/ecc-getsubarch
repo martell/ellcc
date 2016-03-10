@@ -2,7 +2,8 @@
 # This script returns the arch for a tuple.
 #
 case "$1" in
-armv6*) ARCH=armv6 ;;
+arm*v6*) ARCH=armv6 ;;
+arm64*) ARCH=arm64 ;;
 arm*sf) ARCH=armsf ;;
 arm*) ARCH=armhf ;;
 mips*sf) ARCH=mipssf ;;

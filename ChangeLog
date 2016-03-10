@@ -1,5 +1,7 @@
 current SVN:
 
+* Renamed aarch64 to arm64v8.
+* Made target names more consistant.
 * Updated configuration files.
 * Update to LLVM r262682.
 * Update to LLVM r262139.
