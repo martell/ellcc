@@ -12,6 +12,7 @@
 #include "LinkerScript.h"
 #include "SymbolTable.h"
 #include "Target.h"
+#include "lld/Core/Parallel.h"
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/MathExtras.h"
 #include <map>
@@ -52,9 +53,9 @@ GotPltSection<ELFT>::GotPltSection()
   this->Header.sh_addralign = sizeof(uintX_t);
 }
 
-template <class ELFT> void GotPltSection<ELFT>::addEntry(SymbolBody *Sym) {
-  Sym->GotPltIndex = Target->GotPltHeaderEntriesNum + Entries.size();
-  Entries.push_back(Sym);
+template <class ELFT> void GotPltSection<ELFT>::addEntry(SymbolBody &Sym) {
+  Sym.GotPltIndex = Target->GotPltHeaderEntriesNum + Entries.size();
+  Entries.push_back(&Sym);
 }
 
 template <class ELFT> bool GotPltSection<ELFT>::empty() const {
@@ -83,21 +84,21 @@ GotSection<ELFT>::GotSection()
   this->Header.sh_addralign = sizeof(uintX_t);
 }
 
-template <class ELFT> void GotSection<ELFT>::addEntry(SymbolBody *Sym) {
-  Sym->GotIndex = Entries.size();
-  Entries.push_back(Sym);
+template <class ELFT> void GotSection<ELFT>::addEntry(SymbolBody &Sym) {
+  Sym.GotIndex = Entries.size();
+  Entries.push_back(&Sym);
 }
 
 template <class ELFT> void GotSection<ELFT>::addMipsLocalEntry() {
   ++MipsLocalEntries;
 }
 
-template <class ELFT> bool GotSection<ELFT>::addDynTlsEntry(SymbolBody *Sym) {
-  if (Sym->hasGlobalDynIndex())
+template <class ELFT> bool GotSection<ELFT>::addDynTlsEntry(SymbolBody &Sym) {
+  if (Sym.hasGlobalDynIndex())
     return false;
-  Sym->GlobalDynIndex = Target->GotHeaderEntriesNum + Entries.size();
+  Sym.GlobalDynIndex = Target->GotHeaderEntriesNum + Entries.size();
   // Global Dynamic TLS entries take two GOT slots.
-  Entries.push_back(Sym);
+  Entries.push_back(&Sym);
   Entries.push_back(nullptr);
   return true;
 }
@@ -176,7 +177,7 @@ template <class ELFT> void GotSection<ELFT>::writeTo(uint8_t *Buf) {
     // for detailed description:
     // ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
     // As the first approach, we can just store addresses for all symbols.
-    if (Config->EMachine != EM_MIPS && canBePreempted(B))
+    if (Config->EMachine != EM_MIPS && canBePreempted(*B))
       continue; // The dynamic linker will take care of it.
     uintX_t VA = B->getVA<ELFT>();
     write<uintX_t, ELFT::TargetEndianness, sizeof(uintX_t)>(Entry, VA);
@@ -208,12 +209,12 @@ template <class ELFT> void PltSection<ELFT>::writeTo(uint8_t *Buf) {
   }
 }
 
-template <class ELFT> void PltSection<ELFT>::addEntry(SymbolBody *Sym) {
-  Sym->PltIndex = Entries.size();
+template <class ELFT> void PltSection<ELFT>::addEntry(SymbolBody &Sym) {
+  Sym.PltIndex = Entries.size();
   unsigned RelOff = Target->UseLazyBinding
                         ? Out<ELFT>::RelaPlt->getRelocOffset()
                         : Out<ELFT>::RelaDyn->getRelocOffset();
-  Entries.push_back(std::make_pair(Sym, RelOff));
+  Entries.push_back(std::make_pair(&Sym, RelOff));
 }
 
 template <class ELFT> void PltSection<ELFT>::finalize() {
@@ -265,13 +266,12 @@ template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
     SymbolBody *Sym = Rel.Sym;
 
     if (IsRela) {
-      uintX_t VA = 0;
+      uintX_t VA;
       if (Rel.UseSymVA)
-        VA = Sym->getVA<ELFT>();
-      else if (Rel.TargetSec)
-        VA = Rel.TargetSec->getOffset(Rel.OffsetInTargetSec) +
-             Rel.TargetSec->OutSec->getVA();
-      reinterpret_cast<Elf_Rela *>(P)->r_addend = Rel.Addend + VA;
+        VA = Sym->getVA<ELFT>(Rel.Addend);
+      else
+        VA = Rel.Addend;
+      reinterpret_cast<Elf_Rela *>(P)->r_addend = VA;
     }
 
     P->r_offset = Rel.getOffset();
@@ -888,58 +888,17 @@ template <class ELFT> void OutputSection<ELFT>::sortCtorsDtors() {
   reassignOffsets();
 }
 
-// Returns a VA which a relocatin RI refers to. Used only for local symbols.
-// For non-local symbols, use SymbolBody::getVA instead.
-template <class ELFT, bool IsRela>
-typename ELFFile<ELFT>::uintX_t
-elf::getLocalRelTarget(const ObjectFile<ELFT> &File,
-                       const Elf_Rel_Impl<ELFT, IsRela> &RI,
-                       typename ELFFile<ELFT>::uintX_t Addend) {
-  typedef typename ELFFile<ELFT>::Elf_Sym Elf_Sym;
-  typedef typename ELFFile<ELFT>::uintX_t uintX_t;
-
-  // PPC64 has a special relocation representing the TOC base pointer
-  // that does not have a corresponding symbol.
-  if (Config->EMachine == EM_PPC64 && RI.getType(false) == R_PPC64_TOC)
-    return getPPC64TocBase() + Addend;
-
-  const Elf_Sym *Sym =
-      File.getObj().getRelocationSymbol(&RI, File.getSymbolTable());
-
-  if (!Sym)
-    fatal("Unsupported relocation without symbol");
-
-  InputSectionBase<ELFT> *Section = File.getSection(*Sym);
-
-  if (Sym->getType() == STT_TLS)
-    return (Section->OutSec->getVA() + Section->getOffset(*Sym) + Addend) -
-           Out<ELFT>::TlsPhdr->p_vaddr;
-
-  // According to the ELF spec reference to a local symbol from outside
-  // the group are not allowed. Unfortunately .eh_frame breaks that rule
-  // and must be treated specially. For now we just replace the symbol with
-  // 0.
-  if (Section == InputSection<ELFT>::Discarded || !Section->Live)
-    return Addend;
-
-  uintX_t Offset = Sym->st_value;
-  if (Sym->getType() == STT_SECTION) {
-    Offset += Addend;
-    Addend = 0;
-  }
-  return Section->OutSec->getVA() + Section->getOffset(Offset) + Addend;
-}
-
 // Returns true if a symbol can be replaced at load-time by a symbol
 // with the same name defined in other ELF executable or DSO.
-bool elf::canBePreempted(const SymbolBody *Body) {
-  if (!Body)
-    return false;  // Body is a local symbol.
-  if (Body->isShared())
+bool elf::canBePreempted(const SymbolBody &Body) {
+  if (Body.isLocal())
+    return false;
+
+  if (Body.isShared())
     return true;
 
-  if (Body->isUndefined()) {
-    if (!Body->isWeak())
+  if (Body.isUndefined()) {
+    if (!Body.isWeak())
       return true;
 
     // Ideally the static linker should see a definition for every symbol, but
@@ -953,9 +912,9 @@ bool elf::canBePreempted(const SymbolBody *Body) {
   }
   if (!Config->Shared)
     return false;
-  if (Body->getVisibility() != STV_DEFAULT)
+  if (Body.getVisibility() != STV_DEFAULT)
     return false;
-  if (Config->Bsymbolic || (Config->BsymbolicFunctions && Body->isFunc()))
+  if (Config->Bsymbolic || (Config->BsymbolicFunctions && Body.IsFunc))
     return false;
   return true;
 }
@@ -971,8 +930,13 @@ template <class ELFT> void OutputSection<ELFT>::writeTo(uint8_t *Buf) {
   ArrayRef<uint8_t> Filler = Script->getFiller(this->Name);
   if (!Filler.empty())
     fill(Buf, this->getSize(), Filler);
-  for (InputSection<ELFT> *C : Sections)
-    C->writeTo(Buf);
+  if (Config->Threads) {
+    parallel_for_each(Sections.begin(), Sections.end(),
+                      [=](InputSection<ELFT> *C) { C->writeTo(Buf); });
+  } else {
+    for (InputSection<ELFT> *C : Sections)
+      C->writeTo(Buf);
+  }
 }
 
 template <class ELFT>
@@ -1168,7 +1132,7 @@ void EHOutputSection<ELFT>::addSectionAux(
       SymbolBody *Personality = nullptr;
       if (HasReloc) {
         uint32_t SymIndex = RelI->getSymbol(Config->Mips64EL);
-        Personality = S->getFile()->getSymbolBody(SymIndex)->repl();
+        Personality = &S->getFile()->getSymbolBody(SymIndex).repl();
       }
 
       std::pair<StringRef, SymbolBody *> CieInfo(Entry, Personality);
@@ -1182,7 +1146,7 @@ void EHOutputSection<ELFT>::addSectionAux(
       if (!HasReloc)
         fatal("FDE doesn't reference another section");
       InputSectionBase<ELFT> *Target = S->getRelocTarget(*RelI);
-      if (Target != InputSection<ELFT>::Discarded && Target->Live) {
+      if (Target && Target->Live) {
         uint32_t CieOffset = Offset + 4 - ID;
         auto I = OffsetToIndex.find(CieOffset);
         if (I == OffsetToIndex.end())
@@ -1463,13 +1427,7 @@ void SymbolTableSection<ELFT>::writeLocalSymbols(uint8_t *&Buf) {
         const OutputSectionBase<ELFT> *OutSec = Section->OutSec;
         ESym->st_shndx = OutSec->SectionIndex;
         VA = Section->getOffset(*Sym);
-
-        // Symbol offsets for AMDGPU are the offsets in bytes of the
-        // symbols from the beginning of the section. There seems to be no
-        // reason for that deviation -- it's just that the definition of
-        // st_value field in AMDGPU's ELF is odd.
-        if (Config->EMachine != EM_AMDGPU)
-          VA += OutSec->getVA();
+        VA += OutSec->getVA();
       }
       ESym->st_name = P.second;
       ESym->st_size = Sym->st_size;
@@ -1538,9 +1496,9 @@ SymbolTableSection<ELFT>::getOutputSection(SymbolBody *Sym) {
   case SymbolBody::DefinedSyntheticKind:
     return &cast<DefinedSynthetic<ELFT>>(Sym)->Section;
   case SymbolBody::DefinedRegularKind: {
-    auto *D = cast<DefinedRegular<ELFT>>(Sym->repl());
-    if (D->Section)
-      return D->Section->OutSec;
+    auto &D = cast<DefinedRegular<ELFT>>(Sym->repl());
+    if (D.Section)
+      return D.Section->OutSec;
     break;
   }
   case SymbolBody::DefinedCommonKind:
@@ -1674,30 +1632,5 @@ template class SymbolTableSection<ELF32LE>;
 template class SymbolTableSection<ELF32BE>;
 template class SymbolTableSection<ELF64LE>;
 template class SymbolTableSection<ELF64BE>;
-
-template uint32_t getLocalRelTarget(const ObjectFile<ELF32LE> &,
-                                    const ELFFile<ELF32LE>::Elf_Rel &,
-                                    uint32_t);
-template uint32_t getLocalRelTarget(const ObjectFile<ELF32BE> &,
-                                    const ELFFile<ELF32BE>::Elf_Rel &,
-                                    uint32_t);
-template uint64_t getLocalRelTarget(const ObjectFile<ELF64LE> &,
-                                    const ELFFile<ELF64LE>::Elf_Rel &,
-                                    uint64_t);
-template uint64_t getLocalRelTarget(const ObjectFile<ELF64BE> &,
-                                    const ELFFile<ELF64BE>::Elf_Rel &,
-                                    uint64_t);
-template uint32_t getLocalRelTarget(const ObjectFile<ELF32LE> &,
-                                    const ELFFile<ELF32LE>::Elf_Rela &,
-                                    uint32_t);
-template uint32_t getLocalRelTarget(const ObjectFile<ELF32BE> &,
-                                    const ELFFile<ELF32BE>::Elf_Rela &,
-                                    uint32_t);
-template uint64_t getLocalRelTarget(const ObjectFile<ELF64LE> &,
-                                    const ELFFile<ELF64LE>::Elf_Rela &,
-                                    uint64_t);
-template uint64_t getLocalRelTarget(const ObjectFile<ELF64BE> &,
-                                    const ELFFile<ELF64BE>::Elf_Rela &,
-                                    uint64_t);
 }
 }

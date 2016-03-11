@@ -38,3 +38,35 @@ void goo(Base *b) {
 // CHECK-NEXT: RelBase | Sub | c:objc(cs)Sub
 @interface Sub : Base<Prot2, Prot1>
 @end
+
+@interface NSArray<ObjectType> : Base
+// CHECK-NOT: ObjectType
+-(ObjectType)getit;
+@end
+
+// CHECK: [[@LINE+1]]:6 | function/C | over_func | c:@F@over_func#I# | __Z9over_funci | Decl | rel: 0
+void over_func(int x) __attribute__((overloadable));
+// CHECK: [[@LINE+1]]:6 | function/C | over_func | c:@F@over_func#f# | __Z9over_funcf | Decl | rel: 0
+void over_func(float x) __attribute__((overloadable));
+
+// CHECK: [[@LINE+1]]:6 | enum/C | MyEnum | c:@E@MyEnum | <no-cgname> | Def | rel: 0
+enum MyEnum {
+  // CHECK: [[@LINE+2]]:3 | enumerator/C | EnumeratorInNamed | c:@E@MyEnum@EnumeratorInNamed | <no-cgname> | Def,RelChild | rel: 1
+  // CHECK-NEXT: RelChild | MyEnum | c:@E@MyEnum
+  EnumeratorInNamed
+};
+
+// CHECK: [[@LINE+1]]:1 | enum/C | <no-name> | c:@Ea@One | <no-cgname> | Def | rel: 0
+enum {
+  // CHECK: [[@LINE+2]]:3 | enumerator/C | One | c:@Ea@One@One | <no-cgname> | Def,RelChild | rel: 1
+  // CHECK-NEXT: RelChild | <no-name> | c:@Ea@One
+  One,
+  // CHECK: [[@LINE+2]]:3 | enumerator/C | Two | c:@Ea@One@Two | <no-cgname> | Def,RelChild | rel: 1
+  // CHECK-NEXT: RelChild | <no-name> | c:@Ea@One
+  Two,
+};
+
+// CHECK: [[@LINE+1]]:13 | typedef/C | jmp_buf | c:index-source.m@T@jmp_buf | <no-cgname> | Def | rel: 0
+typedef int jmp_buf[(18)];
+// CHECK: [[@LINE+1]]:19 | typedef/C | jmp_buf | c:index-source.m@T@jmp_buf | <no-cgname> | Ref | rel: 0
+extern int setjmp(jmp_buf);

@@ -118,6 +118,8 @@ def strip_all : Flag<["--"], "strip-all">,
 def sysroot : Joined<["--"], "sysroot=">,
   HelpText<"Set the system root">;
 
+def threads : Joined<["--"], "threads">;
+
 def undefined : Joined<["--"], "undefined=">,
   HelpText<"Force undefined symbol during linking">;
 
@@ -182,3 +184,6 @@ def G : Separate<["-"], "G">;
 
 // Aliases for ignored options
 def alias_version_script_version_script : Joined<["--"], "version-script=">, Alias<version_script>;
+
+// Debugging options
+def save_temps : Flag<["-"], "save-temps">;

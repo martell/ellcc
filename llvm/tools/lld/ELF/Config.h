@@ -65,14 +65,16 @@ struct Configuration {
   bool GnuHash = false;
   bool ICF;
   bool Mips64EL = false;
-  bool NoInhibitExec;
   bool NoUndefined;
+  bool NoinhibitExec;
   bool PrintGcSections;
   bool Relocatable;
+  bool SaveTemps;
   bool Shared;
   bool Static = false;
   bool StripAll;
   bool SysvHash = true;
+  bool Threads;
   bool Verbose;
   bool ZExecStack;
   bool ZNodelete;

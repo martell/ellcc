@@ -43,6 +43,8 @@ static cl::opt<bool>
 PrefetchWrites("loop-prefetch-writes", cl::Hidden, cl::init(false),
                cl::desc("Prefetch write addresses"));
 
+STATISTIC(NumPrefetches, "Number of prefetches inserted");
+
 namespace llvm {
   void initializeLoopDataPrefetchPass(PassRegistry&);
 }
@@ -99,9 +101,12 @@ bool LoopDataPrefetch::runOnFunction(Function &F) {
   AC = &getAnalysis<AssumptionCacheTracker>().getAssumptionCache(F);
   TTI = &getAnalysis<TargetTransformInfoWrapperPass>().getTTI(F);
 
+  // If PrefetchDistance is not set, don't run the pass.  This gives an
+  // opportunity for targets to run this pass for selected subtargets only
+  // (whose TTI sets PrefetchDistance).
+  if (TTI->getPrefetchDistance() == 0)
+    return false;
   assert(TTI->getCacheLineSize() && "Cache line size is not set for target");
-  assert(TTI->getPrefetchDistance() &&
-         "Prefetch distance is not set for target");
 
   bool MadeChange = false;
 
@@ -145,6 +150,10 @@ bool LoopDataPrefetch::runOnLoop(Loop *L) {
   unsigned ItersAhead = TTI->getPrefetchDistance() / LoopSize;
   if (!ItersAhead)
     ItersAhead = 1;
+
+  DEBUG(dbgs() << "Prefetching " << ItersAhead
+               << " iterations ahead (loop size: " << LoopSize << ") in "
+               << L->getHeader()->getParent()->getName() << ": " << *L);
 
   SmallVector<std::pair<Instruction *, const SCEVAddRecExpr *>, 16> PrefLoads;
   for (Loop::block_iterator I = L->block_begin(), IE = L->block_end();
@@ -216,6 +225,9 @@ bool LoopDataPrefetch::runOnLoop(Loop *L) {
           {PrefPtrValue,
            ConstantInt::get(I32, MemI->mayReadFromMemory() ? 0 : 1),
            ConstantInt::get(I32, 3), ConstantInt::get(I32, 1)});
+      ++NumPrefetches;
+      DEBUG(dbgs() << "  Access: " << *PtrValue << ", SCEV: " << *LSCEV
+                   << "\n");
 
       MadeChange = true;
     }

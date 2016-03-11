@@ -177,6 +177,8 @@ public:
 private:
   // Mode in which we are running the combiner.
   const bool MinimizeSize;
+  /// Enable combines that trigger rarely but are costly in compiletime.
+  const bool ExpensiveCombines;
 
   AliasAnalysis *AA;
 
@@ -195,11 +197,12 @@ private:
 
 public:
   InstCombiner(InstCombineWorklist &Worklist, BuilderTy *Builder,
-               bool MinimizeSize, AliasAnalysis *AA,
+               bool MinimizeSize, bool ExpensiveCombines, AliasAnalysis *AA,
                AssumptionCache *AC, TargetLibraryInfo *TLI,
                DominatorTree *DT, const DataLayout &DL, LoopInfo *LI)
       : Worklist(Worklist), Builder(Builder), MinimizeSize(MinimizeSize),
-        AA(AA), AC(AC), TLI(TLI), DT(DT), DL(DL), LI(LI), MadeIRChange(false) {}
+        ExpensiveCombines(ExpensiveCombines), AA(AA), AC(AC), TLI(TLI), DT(DT),
+        DL(DL), LI(LI), MadeIRChange(false) {}
 
   /// \brief Run the combiner over the entire worklist until it is empty.
   ///
@@ -391,7 +394,6 @@ private:
   Instruction *scalarizePHI(ExtractElementInst &EI, PHINode *PN);
   Value *EvaluateInDifferentElementOrder(Value *V, ArrayRef<int> Mask);
   Instruction *foldCastedBitwiseLogic(BinaryOperator &I);
-  Instruction *optimizeBitCastFromPhi(CastInst &CI, PHINode *PN);
 
 public:
   /// \brief Inserts an instruction \p New before instruction \p Old

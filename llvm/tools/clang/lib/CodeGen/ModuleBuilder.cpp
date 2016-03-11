@@ -98,7 +98,7 @@ namespace {
       Ctx = &Context;
 
       M->setTargetTriple(Ctx->getTargetInfo().getTriple().getTriple());
-      M->setDataLayout(Ctx->getTargetInfo().getDataLayoutString());
+      M->setDataLayout(Ctx->getTargetInfo().getDataLayout());
       Builder.reset(new CodeGen::CodeGenModule(Context, HeaderSearchOpts,
                                                PreprocessorOpts, CodeGenOpts,
                                                *M, Diags, CoverageInfo));
@@ -184,6 +184,15 @@ namespace {
                 Ctx->DeclMustBeEmitted(VD)) {
               Builder->EmitGlobal(VD);
             }
+          }
+        }
+      }
+      // For OpenMP emit declare reduction functions, if required.
+      if (Ctx->getLangOpts().OpenMP) {
+        for (Decl *Member : D->decls()) {
+          if (auto *DRD = dyn_cast<OMPDeclareReductionDecl>(Member)) {
+            if (Ctx->DeclMustBeEmitted(DRD))
+              Builder->EmitGlobal(DRD);
           }
         }
       }

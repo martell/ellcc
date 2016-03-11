@@ -66,10 +66,12 @@ DECODE_OPERAND(VReg_64)
 DECODE_OPERAND(VReg_96)
 DECODE_OPERAND(VReg_128)
 
+DECODE_OPERAND(SGPR_32)
 DECODE_OPERAND(SReg_32)
 DECODE_OPERAND(SReg_64)
 DECODE_OPERAND(SReg_128)
 DECODE_OPERAND(SReg_256)
+DECODE_OPERAND(SReg_512)
 
 #define GET_SUBTARGETINFO_ENUM
 #include "AMDGPUGenSubtargetInfo.inc"
@@ -119,7 +121,7 @@ DecodeStatus AMDGPUDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
 
   DecodeStatus Res = MCDisassembler::Fail;
   do {
-    // ToDo: better to switch enc len using some bit predicate
+    // ToDo: better to switch encoding length using some bit predicate
     // but it is unknown yet, so try all we can
     if (Bytes.size() < 4) break;
     const uint32_t DW = eatB32(Bytes);

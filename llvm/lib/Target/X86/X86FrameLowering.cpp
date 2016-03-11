@@ -159,6 +159,7 @@ static unsigned findDeadCallerSavedReg(MachineBasicBlock &MBB,
   unsigned Opc = MBBI->getOpcode();
   switch (Opc) {
   default: return 0;
+  case X86::RET:
   case X86::RETL:
   case X86::RETQ:
   case X86::RETIL:
@@ -2446,7 +2447,8 @@ bool X86FrameLowering::adjustStackWithPops(MachineBasicBlock &MBB,
 
     bool IsDef = false;
     for (const MachineOperand &MO : Prev->implicit_operands()) {
-      if (MO.isReg() && MO.isDef() && MO.getReg() == Candidate) {
+      if (MO.isReg() && MO.isDef() &&
+          TRI->isSuperOrSubRegisterEq(MO.getReg(), Candidate)) {
         IsDef = true;
         break;
       }

@@ -1898,6 +1898,7 @@ void OMPClauseReader::VisitOMPClauseWithPreInit(OMPClauseWithPreInit *C) {
 }
 
 void OMPClauseReader::VisitOMPClauseWithPostUpdate(OMPClauseWithPostUpdate *C) {
+  VisitOMPClauseWithPreInit(C);
   C->setPostUpdateExpr(Reader->Reader.ReadSubExpr());
 }
 
@@ -2025,7 +2026,6 @@ void OMPClauseReader::VisitOMPFirstprivateClause(OMPFirstprivateClause *C) {
 }
 
 void OMPClauseReader::VisitOMPLastprivateClause(OMPLastprivateClause *C) {
-  VisitOMPClauseWithPreInit(C);
   VisitOMPClauseWithPostUpdate(C);
   C->setLParenLoc(Reader->ReadSourceLocation(Record, Idx));
   unsigned NumVars = C->varlist_size();
@@ -2063,7 +2063,6 @@ void OMPClauseReader::VisitOMPSharedClause(OMPSharedClause *C) {
 }
 
 void OMPClauseReader::VisitOMPReductionClause(OMPReductionClause *C) {
-  VisitOMPClauseWithPreInit(C);
   VisitOMPClauseWithPostUpdate(C);
   C->setLParenLoc(Reader->ReadSourceLocation(Record, Idx));
   C->setColonLoc(Reader->ReadSourceLocation(Record, Idx));
@@ -2099,6 +2098,7 @@ void OMPClauseReader::VisitOMPReductionClause(OMPReductionClause *C) {
 }
 
 void OMPClauseReader::VisitOMPLinearClause(OMPLinearClause *C) {
+  VisitOMPClauseWithPostUpdate(C);
   C->setLParenLoc(Reader->ReadSourceLocation(Record, Idx));
   C->setColonLoc(Reader->ReadSourceLocation(Record, Idx));
   C->setModifier(static_cast<OpenMPLinearClauseKind>(Record[Idx++]));
@@ -2308,7 +2308,8 @@ void ASTStmtReader::VisitOMPLoopDirective(OMPLoopDirective *D) {
   D->setInit(Reader.ReadSubExpr());
   D->setInc(Reader.ReadSubExpr());
   if (isOpenMPWorksharingDirective(D->getDirectiveKind()) ||
-      isOpenMPTaskLoopDirective(D->getDirectiveKind())) {
+      isOpenMPTaskLoopDirective(D->getDirectiveKind()) ||
+      isOpenMPDistributeDirective(D->getDirectiveKind())) {
     D->setIsLastIterVariable(Reader.ReadSubExpr());
     D->setLowerBoundVariable(Reader.ReadSubExpr());
     D->setUpperBoundVariable(Reader.ReadSubExpr());

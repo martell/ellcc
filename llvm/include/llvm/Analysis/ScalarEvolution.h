@@ -1392,7 +1392,7 @@ namespace llvm {
     getWrapPredicate(const SCEVAddRecExpr *AR,
                      SCEVWrapPredicate::IncrementWrapFlags AddedFlags);
 
-    /// Re-writes the SCEV according to the Predicates in \p Preds.
+    /// Re-writes the SCEV according to the Predicates in \p A.
     const SCEV *rewriteUsingPredicate(const SCEV *S, const Loop *L,
                                       SCEVUnionPredicate &A);
     /// Tries to convert the \p S expression to an AddRec expression,
@@ -1430,22 +1430,25 @@ namespace llvm {
   };
 
   /// \brief Analysis pass that exposes the \c ScalarEvolution for a function.
-  struct ScalarEvolutionAnalysis : AnalysisBase<ScalarEvolutionAnalysis> {
+  class ScalarEvolutionAnalysis
+      : public AnalysisInfoMixin<ScalarEvolutionAnalysis> {
+    friend AnalysisInfoMixin<ScalarEvolutionAnalysis>;
+    static char PassID;
+
+  public:
     typedef ScalarEvolution Result;
 
-    ScalarEvolution run(Function &F, AnalysisManager<Function> *AM);
+    ScalarEvolution run(Function &F, AnalysisManager<Function> &AM);
   };
-
-  extern template class AnalysisBase<ScalarEvolutionAnalysis>;
 
   /// \brief Printer pass for the \c ScalarEvolutionAnalysis results.
   class ScalarEvolutionPrinterPass
-      : public PassBase<ScalarEvolutionPrinterPass> {
+      : public PassInfoMixin<ScalarEvolutionPrinterPass> {
     raw_ostream &OS;
 
   public:
     explicit ScalarEvolutionPrinterPass(raw_ostream &OS) : OS(OS) {}
-    PreservedAnalyses run(Function &F, AnalysisManager<Function> *AM);
+    PreservedAnalyses run(Function &F, AnalysisManager<Function> &AM);
   };
 
   class ScalarEvolutionWrapperPass : public FunctionPass {

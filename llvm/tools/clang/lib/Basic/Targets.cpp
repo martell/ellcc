@@ -102,9 +102,7 @@ protected:
 
 public:
   CloudABITargetInfo(const llvm::Triple &Triple)
-      : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-  }
+      : OSTargetInfo<Target>(Triple) {}
 };
 
 static void getDarwinDefines(MacroBuilder &Builder, const LangOptions &Opts,
@@ -284,8 +282,6 @@ protected:
 public:
   DragonFlyBSDTargetInfo(const llvm::Triple &Triple)
       : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-
     switch (Triple.getArch()) {
     default:
     case llvm::Triple::x86:
@@ -327,8 +323,6 @@ protected:
   }
 public:
   FreeBSDTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-
     switch (Triple.getArch()) {
     default:
     case llvm::Triple::x86:
@@ -369,9 +363,7 @@ protected:
   }
 public:
   KFreeBSDTargetInfo(const llvm::Triple &Triple)
-      : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-  }
+      : OSTargetInfo<Target>(Triple) {}
 };
 
 // Minix Target
@@ -393,9 +385,7 @@ protected:
     DefineStd(Builder, "unix", Opts);
   }
 public:
-  MinixTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-  }
+  MinixTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {}
 };
 
 // Linux target
@@ -423,7 +413,6 @@ protected:
   }
 public:
   LinuxTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
     this->WIntType = TargetInfo::UnsignedInt;
 
     switch (Triple.getArch()) {
@@ -468,7 +457,6 @@ protected:
   }
 public:
   NetBSDTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
     this->MCountName = "_mcount";
   }
 };
@@ -489,7 +477,6 @@ protected:
   }
 public:
   OpenBSDTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
     this->TLSSupported = false;
 
       switch (Triple.getArch()) {
@@ -538,7 +525,6 @@ protected:
   }
 public:
   BitrigTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
     this->MCountName = "__mcount";
   }
 };
@@ -556,9 +542,7 @@ protected:
     Builder.defineMacro("__ELF__");
   }
 public:
-  PSPTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-  }
+  PSPTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {}
 };
 
 // PS3 PPU Target
@@ -578,13 +562,12 @@ protected:
   }
 public:
   PS3PPUTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
     this->LongWidth = this->LongAlign = 32;
     this->PointerWidth = this->PointerAlign = 32;
     this->IntMaxType = TargetInfo::SignedLongLong;
     this->Int64Type = TargetInfo::SignedLongLong;
     this->SizeType = TargetInfo::UnsignedInt;
-    this->DataLayoutString = "E-m:e-p:32:32-i64:64-n32:64";
+    this->resetDataLayout("E-m:e-p:32:32-i64:64-n32:64");
   }
 };
 
@@ -606,7 +589,6 @@ public:
 
     // On PS4, TLS variable cannot be aligned to more than 32 bytes (256 bits).
     this->MaxTLSAlign = 256;
-    this->UserLabelPrefix = "";
 
     // On PS4, do not honor explicit bit field alignment,
     // as in "__attribute__((aligned(2))) int b : 1;".
@@ -649,7 +631,6 @@ protected:
   }
 public:
   SolarisTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
     this->WCharType = this->SignedInt;
     // FIXME: WIntType should be SignedLong
   }
@@ -730,7 +711,6 @@ protected:
 
 public:
   NaClTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
     this->LongAlign = 32;
     this->LongWidth = 32;
     this->PointerAlign = 32;
@@ -750,16 +730,16 @@ public:
     if (Triple.getArch() == llvm::Triple::arm) {
       // Handled in ARM's setABI().
     } else if (Triple.getArch() == llvm::Triple::armeb) {
-      this->DataLayoutString = "E-p:32:32-i64:64-v128:64:128-n32-S128";
+      this->resetDataLayout("E-p:32:32-i64:64-v128:64:128-n32-S128");
     } else if (Triple.getArch() == llvm::Triple::x86) {
-      this->DataLayoutString = "e-m:e-p:32:32-i64:64-n8:16:32-S128";
+      this->resetDataLayout("e-m:e-p:32:32-i64:64-n8:16:32-S128");
     } else if (Triple.getArch() == llvm::Triple::x86_64) {
-      this->DataLayoutString = "e-m:e-p:32:32-i64:64-n8:16:32:64-S128";
+      this->resetDataLayout("e-m:e-p:32:32-i64:64-n8:16:32:64-S128");
     } else if (Triple.getArch() == llvm::Triple::mipsel) {
-      // Handled on mips' setDataLayoutString.
+      // Handled on mips' setDataLayout.
     } else {
       assert(Triple.getArch() == llvm::Triple::le32);
-      this->DataLayoutString = "e-p:32:32-i64:64";
+      this->resetDataLayout("e-p:32:32-i64:64");
     }
   }
 };
@@ -786,7 +766,6 @@ public:
   explicit WebAssemblyOSTargetInfo(const llvm::Triple &Triple)
       : OSTargetInfo<Target>(Triple) {
     this->MCountName = "__mcount";
-    this->UserLabelPrefix = "";
     this->TheCXXABI.set(TargetCXXABI::WebAssembly);
   }
 };
@@ -1500,7 +1479,7 @@ ArrayRef<TargetInfo::GCCRegAlias> PPCTargetInfo::getGCCRegAliases() const {
 class PPC32TargetInfo : public PPCTargetInfo {
 public:
   PPC32TargetInfo(const llvm::Triple &Triple) : PPCTargetInfo(Triple) {
-    DataLayoutString = "E-m:e-p:32:32-i64:64-n32";
+    resetDataLayout("E-m:e-p:32:32-i64:64-n32");
 
     switch (getTriple().getOS()) {
     case llvm::Triple::Linux:
@@ -1540,10 +1519,10 @@ public:
     Int64Type = SignedLong;
 
     if ((Triple.getArch() == llvm::Triple::ppc64le)) {
-      DataLayoutString = "e-m:e-i64:64-n32:64";
+      resetDataLayout("e-m:e-i64:64-n32:64");
       ABI = "elfv2";
     } else {
-      DataLayoutString = "E-m:e-i64:64-n32:64";
+      resetDataLayout("E-m:e-i64:64-n32:64");
       ABI = "elfv1";
     }
 
@@ -1590,7 +1569,7 @@ public:
     PtrDiffType = SignedInt; // for http://llvm.org/bugs/show_bug.cgi?id=15726
     LongLongAlign = 32;
     SuitableAlign = 128;
-    DataLayoutString = "E-m:o-p:32:32-f64:32:64-n32";
+    resetDataLayout("E-m:o-p:32:32-f64:32:64-n32");
   }
   BuiltinVaListKind getBuiltinVaListKind() const override {
     return TargetInfo::CharPtrBuiltinVaList;
@@ -1604,7 +1583,7 @@ public:
       : DarwinTargetInfo<PPC64TargetInfo>(Triple) {
     HasAlignMac68kSupport = true;
     SuitableAlign = 128;
-    DataLayoutString = "E-m:o-i64:64-n32:64";
+    resetDataLayout("E-m:o-i64:64-n32:64");
   }
 };
 
@@ -1746,7 +1725,7 @@ public:
     SizeType = TargetInfo::UnsignedInt;
     PtrDiffType = TargetInfo::SignedInt;
     IntPtrType = TargetInfo::SignedInt;
-    DataLayoutString = "e-p:32:32-i64:64-v16:16-v32:32-n16:32:64";
+    resetDataLayout("e-p:32:32-i64:64-v16:16-v32:32-n16:32:64");
   }
 };
 
@@ -1757,7 +1736,7 @@ public:
     SizeType = TargetInfo::UnsignedLong;
     PtrDiffType = TargetInfo::SignedLong;
     IntPtrType = TargetInfo::SignedLong;
-    DataLayoutString = "e-i64:64-v16:16-v32:32-n16:32:64";
+    resetDataLayout("e-i64:64-v16:16-v32:32-n16:32:64");
   }
 };
 
@@ -1816,13 +1795,13 @@ public:
     : TargetInfo(Triple) {
 
     if (Triple.getArch() == llvm::Triple::amdgcn) {
-      DataLayoutString = DataLayoutStringSI;
+      resetDataLayout(DataLayoutStringSI);
       GPU = GK_SOUTHERN_ISLANDS;
       hasFP64 = true;
       hasFMAF = true;
       hasLDEXPF = true;
     } else {
-      DataLayoutString = DataLayoutStringR600;
+      resetDataLayout(DataLayoutStringR600);
       GPU = GK_R600;
       hasFP64 = false;
       hasFMAF = false;
@@ -1956,7 +1935,7 @@ public:
     case GK_R700:
     case GK_EVERGREEN:
     case GK_NORTHERN_ISLANDS:
-      DataLayoutString = DataLayoutStringR600;
+      resetDataLayout(DataLayoutStringR600);
       hasFP64 = false;
       hasFMAF = false;
       hasLDEXPF = false;
@@ -1965,7 +1944,7 @@ public:
     case GK_R700_DOUBLE_OPS:
     case GK_EVERGREEN_DOUBLE_OPS:
     case GK_CAYMAN:
-      DataLayoutString = DataLayoutStringR600DoubleOps;
+      resetDataLayout(DataLayoutStringR600DoubleOps);
       hasFP64 = true;
       hasFMAF = true;
       hasLDEXPF = false;
@@ -1973,7 +1952,7 @@ public:
     case GK_SOUTHERN_ISLANDS:
     case GK_SEA_ISLANDS:
     case GK_VOLCANIC_ISLANDS:
-      DataLayoutString = DataLayoutStringSI;
+      resetDataLayout(DataLayoutStringSI);
       hasFP64 = true;
       hasFMAF = true;
       hasLDEXPF = true;
@@ -2053,7 +2032,7 @@ class MBlazeTargetInfo : public TargetInfo {
 
 public:
   MBlazeTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
-    DataLayoutString = "E-m:e-p:32:32-n32-S32";
+    this->resetDataLayout("E-m:e-p:32:32-n32-S32");
     // Microblaze targets default to using the ARM C++ ABI.
     TheCXXABI.set(TargetCXXABI::GenericARM);
     // Microblaze supports atomics up to 4 bytes.
@@ -2925,7 +2904,6 @@ bool X86TargetInfo::initFeatureMap(
     setFeatureEnabledImpl(Features, "prfchw", true);
     setFeatureEnabledImpl(Features, "cx16", true);
     setFeatureEnabledImpl(Features, "fxsr", true);
-    setFeatureEnabledImpl(Features, "xsave", true);
     break;
   case CK_BDVER4:
     setFeatureEnabledImpl(Features, "avx2", true);
@@ -3890,7 +3868,7 @@ public:
     LongDoubleWidth = 96;
     LongDoubleAlign = 32;
     SuitableAlign = 128;
-    DataLayoutString = "e-m:e-p:32:32-f64:32:64-f80:32-n8:16:32-S128";
+    resetDataLayout("e-m:e-p:32:32-f64:32:64-f80:32-n8:16:32-S128");
     SizeType = UnsignedInt;
     PtrDiffType = SignedInt;
     IntPtrType = SignedInt;
@@ -3987,7 +3965,7 @@ public:
       UseSignedCharForObjCBool = false;
     SizeType = UnsignedLong;
     IntPtrType = SignedLong;
-    DataLayoutString = "e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128";
+    resetDataLayout("e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128");
     HasAlignMac68kSupport = true;
   }
 
@@ -4012,9 +3990,9 @@ public:
     DoubleAlign = LongLongAlign = 64;
     bool IsWinCOFF =
         getTriple().isOSWindows() && getTriple().isOSBinFormatCOFF();
-    DataLayoutString = IsWinCOFF
-                           ? "e-m:x-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32"
-                           : "e-m:e-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32";
+    resetDataLayout(IsWinCOFF
+                        ? "e-m:x-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32"
+                        : "e-m:e-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32");
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -4093,7 +4071,7 @@ public:
       : X86_32TargetInfo(Triple) {
     WCharType = UnsignedShort;
     DoubleAlign = LongLongAlign = 64;
-    DataLayoutString = "e-m:x-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32";
+    resetDataLayout("e-m:x-p:32:32-i64:64-f80:32-n8:16:32-a:0:32-S32");
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -4116,7 +4094,6 @@ public:
     IntPtrType = SignedLong;
     PtrDiffType = SignedLong;
     ProcessIDType = SignedLong;
-    this->UserLabelPrefix = "";
     this->TLSSupported = false;
   }
   void getTargetDefines(const LangOptions &Opts,
@@ -4133,9 +4110,7 @@ public:
   MCUX86_32TargetInfo(const llvm::Triple &Triple) : X86_32TargetInfo(Triple) {
     LongDoubleWidth = 64;
     LongDoubleFormat = &llvm::APFloat::IEEEdouble;
-    DataLayoutString =
-        "e-m:e-p:32:32-i64:32-f64:32-f128:32-n8:16:32-a:0:32-S32";
-    UserLabelPrefix = "";
+    resetDataLayout("e-m:e-p:32:32-i64:32-f64:32-f128:32-n8:16:32-a:0:32-S32");
     WIntType = UnsignedInt;
   }
 
@@ -4170,8 +4145,6 @@ protected:
 
 public:
   RTEMSTargetInfo(const llvm::Triple &Triple) : OSTargetInfo<Target>(Triple) {
-    this->UserLabelPrefix = "";
-
     switch (Triple.getArch()) {
     default:
     case llvm::Triple::x86:
@@ -4199,7 +4172,6 @@ public:
     SizeType = UnsignedLong;
     IntPtrType = SignedLong;
     PtrDiffType = SignedLong;
-    this->UserLabelPrefix = "";
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -4230,10 +4202,10 @@ public:
     RegParmMax = 6;
 
     // Pointers are 32-bit in x32.
-    DataLayoutString = IsX32 ? "e-m:e-p:32:32-i64:64-f80:128-n8:16:32:64-S128"
-                             : IsWinCOFF
-                                   ? "e-m:w-i64:64-f80:128-n8:16:32:64-S128"
-                                   : "e-m:e-i64:64-f80:128-n8:16:32:64-S128";
+    resetDataLayout(IsX32
+                        ? "e-m:e-p:32:32-i64:64-f80:128-n8:16:32:64-S128"
+                        : IsWinCOFF ? "e-m:w-i64:64-f80:128-n8:16:32:64-S128"
+                                    : "e-m:e-i64:64-f80:128-n8:16:32:64-S128");
 
     // Use fpret only for long double.
     RealTypeUsesObjCFPRet = (1 << TargetInfo::LongDouble);
@@ -4310,7 +4282,6 @@ public:
     SizeType = UnsignedLongLong;
     PtrDiffType = SignedLongLong;
     IntPtrType = SignedLongLong;
-    this->UserLabelPrefix = "";
   }
 
   void getTargetDefines(const LangOptions &Opts,
@@ -4388,7 +4359,6 @@ public:
       : X86_64TargetInfo(Triple) {
     TLSSupported = false;
     WCharType = UnsignedShort;
-    UserLabelPrefix = "";
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -4416,7 +4386,7 @@ public:
     llvm::Triple T = llvm::Triple(Triple);
     if (T.isiOS())
       UseSignedCharForObjCBool = false;
-    DataLayoutString = "e-m:o-i64:64-f80:128-n8:16:32:64-S128";
+    resetDataLayout("e-m:o-i64:64-f80:128-n8:16:32:64-S128");
   }
 
   bool handleTargetFeatures(std::vector<std::string> &Features,
@@ -4556,26 +4526,26 @@ protected:
     // Thumb1 add sp, #imm requires the immediate value be multiple of 4,
     // so set preferred for small types to 32.
     if (T.isOSBinFormatMachO()) {
-      DataLayoutString =
-          BigEndian ? "E-m:o-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64"
-                    : "e-m:o-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64";
+      resetDataLayout(BigEndian
+                          ? "E-m:o-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64"
+                          : "e-m:o-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64");
     } else if (T.isOSWindows()) {
       assert(!BigEndian && "Windows on ARM does not support big endian");
-      DataLayoutString = "e"
-                         "-m:w"
-                         "-p:32:32"
-                         "-i64:64"
-                         "-v128:64:128"
-                         "-a:0:32"
-                         "-n32"
-                         "-S64";
+      resetDataLayout("e"
+                      "-m:w"
+                      "-p:32:32"
+                      "-i64:64"
+                      "-v128:64:128"
+                      "-a:0:32"
+                      "-n32"
+                      "-S64");
     } else if (T.isOSNaCl()) {
       assert(!BigEndian && "NaCl on ARM does not support big endian");
-      DataLayoutString = "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S128";
+      resetDataLayout("e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S128");
     } else {
-      DataLayoutString =
-          BigEndian ? "E-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64"
-                    : "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64";
+      resetDataLayout(BigEndian
+                          ? "E-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64"
+                          : "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64");
     }
 
     // FIXME: Enumerated types are variable width in straight AAPCS.
@@ -4612,17 +4582,17 @@ protected:
 
     if (T.isOSBinFormatMachO() && IsAAPCS16) {
       assert(!BigEndian && "AAPCS16 does not support big-endian");
-      DataLayoutString = "e-m:o-p:32:32-i64:64-a:0:32-n32-S128";
+      resetDataLayout("e-m:o-p:32:32-i64:64-a:0:32-n32-S128");
     } else if (T.isOSBinFormatMachO())
-      DataLayoutString =
+      resetDataLayout(
           BigEndian
               ? "E-m:o-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32"
-              : "e-m:o-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32";
+              : "e-m:o-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32");
     else
-      DataLayoutString =
+      resetDataLayout(
           BigEndian
               ? "E-m:e-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32"
-              : "e-m:e-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32";
+              : "e-m:e-p:32:32-f64:32:64-v64:32:64-v128:32:128-a:0:32-n32-S32");
 
     // FIXME: Override "preferred align" for double and long long.
   }
@@ -5389,7 +5359,6 @@ public:
     : WindowsTargetInfo<ARMleTargetInfo>(Triple), Triple(Triple) {
     WCharType = UnsignedShort;
     SizeType = UnsignedInt;
-    UserLabelPrefix = "";
   }
   void getVisualStudioDefines(const LangOptions &Opts,
                               MacroBuilder &Builder) const {
@@ -5485,7 +5454,7 @@ public:
     TLSSupported = false;
     WCharType = UnsignedShort;
     DoubleAlign = LongLongAlign = 64;
-    DataLayoutString = "e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64";
+    resetDataLayout("e-m:e-p:32:32-i64:64-v128:64:128-a:0:32-n32-S64");
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -5532,7 +5501,7 @@ public:
 };
 
 class AArch64TargetInfo : public TargetInfo {
-  virtual void setDataLayoutString() = 0;
+  virtual void setDataLayout() = 0;
   static const TargetInfo::GCCRegAlias GCCRegAliases[];
   static const char *const GCCRegNames[];
 
@@ -5713,7 +5682,7 @@ public:
         V8_1A = 1;
     }
 
-    setDataLayoutString();
+    setDataLayout();
 
     return true;
   }
@@ -5873,11 +5842,11 @@ const Builtin::Info AArch64TargetInfo::BuiltinInfo[] = {
 };
 
 class AArch64leTargetInfo : public AArch64TargetInfo {
-  void setDataLayoutString() override {
+  void setDataLayout() override {
     if (getTriple().isOSBinFormatMachO())
-      DataLayoutString = "e-m:o-i64:64-i128:128-n32:64-S128";
+      resetDataLayout("e-m:o-i64:64-i128:128-n32:64-S128");
     else
-      DataLayoutString = "e-m:e-i64:64-i128:128-n32:64-S128";
+      resetDataLayout("e-m:e-i64:64-i128:128-n32:64-S128");
   }
 
 public:
@@ -5893,9 +5862,9 @@ public:
 };
 
 class AArch64beTargetInfo : public AArch64TargetInfo {
-  void setDataLayoutString() override {
+  void setDataLayout() override {
     assert(!getTriple().isOSBinFormatMachO());
-    DataLayoutString = "E-m:e-i64:64-i128:128-n32:64-S128";
+    resetDataLayout("E-m:e-i64:64-i128:128-n32:64-S128");
   }
 
 public:
@@ -5957,9 +5926,9 @@ public:
     // Specify the vector alignment explicitly. For v512x1, the calculated
     // alignment would be 512*alignment(i1), which is 512 bytes, instead of
     // the required minimum of 64 bytes.
-    DataLayoutString = "e-m:e-p:32:32:32-a:0-n16:32-"
+    resetDataLayout("e-m:e-p:32:32:32-a:0-n16:32-"
         "i64:64:64-i32:32:32-i16:16:16-i1:8:8-f32:32:32-f64:64:64-"
-        "v32:32:32-v64:64:64-v512:512:512-v1024:1024:1024-v2048:2048:2048";
+        "v32:32:32-v64:64:64-v512:512:512-v1024:1024:1024-v2048:2048:2048");
     SizeType    = UnsignedInt;
     PtrDiffType = SignedInt;
     IntPtrType  = SignedInt;
@@ -6128,6 +6097,12 @@ class SparcTargetInfo : public TargetInfo {
 public:
   SparcTargetInfo(const llvm::Triple &Triple)
       : TargetInfo(Triple), SoftFloat(false) {}
+
+  int getEHDataRegisterNumber(unsigned RegNo) const override {
+    if (RegNo == 0) return 24;
+    if (RegNo == 1) return 25;
+    return -1;
+  }
 
   bool handleTargetFeatures(std::vector<std::string> &Features,
                             DiagnosticsEngine &Diags) override {
@@ -6317,7 +6292,7 @@ ArrayRef<TargetInfo::GCCRegAlias> SparcTargetInfo::getGCCRegAliases() const {
 class SparcV8TargetInfo : public SparcTargetInfo {
 public:
   SparcV8TargetInfo(const llvm::Triple &Triple) : SparcTargetInfo(Triple) {
-    DataLayoutString = "E-m:e-p:32:32-i64:64-f128:64-n32-S64";
+    resetDataLayout("E-m:e-p:32:32-i64:64-f128:64-n32-S64");
     // NetBSD / OpenBSD use long (same as llvm default); everyone else uses int.
     switch (getTriple().getOS()) {
     default:
@@ -6358,7 +6333,7 @@ public:
 class SparcV8elTargetInfo : public SparcV8TargetInfo {
  public:
   SparcV8elTargetInfo(const llvm::Triple &Triple) : SparcV8TargetInfo(Triple) {
-    DataLayoutString = "e-m:e-p:32:32-i64:64-f128:64-n32-S64";
+    resetDataLayout("e-m:e-p:32:32-i64:64-f128:64-n32-S64");
     BigEndian = false;
   }
 };
@@ -6368,7 +6343,7 @@ class SparcV9TargetInfo : public SparcTargetInfo {
 public:
   SparcV9TargetInfo(const llvm::Triple &Triple) : SparcTargetInfo(Triple) {
     // FIXME: Support Sparc quad-precision long double?
-    DataLayoutString = "E-m:e-i64:64-n32:64-S128";
+    resetDataLayout("E-m:e-i64:64-n32:64-S128");
     // This is an LP64 platform.
     LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
 
@@ -6429,7 +6404,7 @@ public:
     LongDoubleFormat = &llvm::APFloat::IEEEquad;
     DefaultAlignForAttributeAligned = 64;
     MinGlobalAlign = 16;
-    DataLayoutString = "E-m:e-i1:8:16-i8:8:16-i64:64-f128:64-a:8:16-n32:64";
+    resetDataLayout("E-m:e-i1:8:16-i8:8:16-i64:64-f128:64-a:8:16-n32:64");
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
   }
   void getTargetDefines(const LangOptions &Opts,
@@ -6504,8 +6479,8 @@ public:
     // If we use the vector ABI, vector types are 64-bit aligned.
     if (HasVector) {
       MaxVectorAlign = 64;
-      DataLayoutString = "E-m:e-i1:8:16-i8:8:16-i64:64-f128:64"
-                         "-v128:64-a:8:16-n32:64";
+      resetDataLayout("E-m:e-i1:8:16-i8:8:16-i64:64-f128:64"
+                      "-v128:64-a:8:16-n32:64");
     }
     return true;
   }
@@ -6595,7 +6570,7 @@ public:
     IntPtrType = SignedInt;
     PtrDiffType = SignedInt;
     SigAtomicType = SignedLong;
-    DataLayoutString = "e-m:e-p:16:16-i32:16:32-a:16-n8:16";
+    resetDataLayout("e-m:e-p:16:16-i32:16:32-a:16-n8:16");
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -6688,8 +6663,8 @@ public:
     FloatFormat = &llvm::APFloat::IEEEsingle;
     DoubleFormat = &llvm::APFloat::IEEEsingle;
     LongDoubleFormat = &llvm::APFloat::IEEEsingle;
-    DataLayoutString = "E-p:32:32-i8:8:32-i16:16:32-i64:32"
-                       "-f64:32-v64:32-v128:32-a:0:32-n32";
+    resetDataLayout("E-p:32:32-i8:8:32-i16:16:32-i64:32"
+                    "-f64:32-v64:32-v128:32-a:0:32-n32");
     AddrSpaceMap = &TCEOpenCLAddrSpaceMap;
     UseAddrSpaceMapMangling = true;
   }
@@ -6729,10 +6704,10 @@ public:
     RegParmMax = 5;
     if (Triple.getArch() == llvm::Triple::bpfeb) {
       BigEndian = true;
-      DataLayoutString = "E-m:e-p:64:64-i64:64-n32:64-S128";
+      resetDataLayout("E-m:e-p:64:64-i64:64-n32:64-S128");
     } else {
       BigEndian = false;
-      DataLayoutString = "e-m:e-p:64:64-i64:64-n32:64-S128";
+      resetDataLayout("e-m:e-p:64:64-i64:64-n32:64-S128");
     }
     MaxAtomicPromoteWidth = 64;
     MaxAtomicInlineWidth = 64;
@@ -6767,7 +6742,7 @@ public:
 };
 
 class MipsTargetInfoBase : public TargetInfo {
-  virtual void setDataLayoutString() = 0;
+  virtual void setDataLayout() = 0;
 
   static const Builtin::Info BuiltinInfo[];
   std::string CPU;
@@ -6838,6 +6813,8 @@ public:
   initFeatureMap(llvm::StringMap<bool> &Features, DiagnosticsEngine &Diags,
                  StringRef CPU,
                  const std::vector<std::string> &FeaturesVec) const override {
+    if (CPU.empty())
+      CPU = getCPU();
     if (CPU == "octeon")
       Features["mips64r2"] = Features["cnmips"] = true;
     else
@@ -7061,7 +7038,7 @@ public:
         IsNan2008 = false;
     }
 
-    setDataLayoutString();
+    setDataLayout();
 
     return true;
   }
@@ -7168,8 +7145,8 @@ public:
 };
 
 class Mips32EBTargetInfo : public Mips32TargetInfoBase {
-  void setDataLayoutString() override {
-    DataLayoutString = "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64";
+  void setDataLayout() override {
+    resetDataLayout("E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64");
   }
 
 public:
@@ -7186,8 +7163,8 @@ public:
 };
 
 class Mips32ELTargetInfo : public Mips32TargetInfoBase {
-  void setDataLayoutString() override {
-    DataLayoutString = "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64";
+  void setDataLayout() override {
+    resetDataLayout("e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32-S64");
   }
 
 public:
@@ -7328,12 +7305,11 @@ public:
 };
 
 class Mips64EBTargetInfo : public Mips64TargetInfoBase {
-  void setDataLayoutString() override {
+  void setDataLayout() override {
     if (ABI == "n32")
-      DataLayoutString = "E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128";
+      resetDataLayout("E-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128");
     else
-      DataLayoutString = "E-m:m-i8:8:32-i16:16:32-i64:64-n32:64-S128";
-
+      resetDataLayout("E-m:m-i8:8:32-i16:16:32-i64:64-n32:64-S128");
   }
 
 public:
@@ -7348,11 +7324,11 @@ public:
 };
 
 class Mips64ELTargetInfo : public Mips64TargetInfoBase {
-  void setDataLayoutString() override {
+  void setDataLayout() override {
     if (ABI == "n32")
-      DataLayoutString = "e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128";
+      resetDataLayout("e-m:m-p:32:32-i8:8:32-i16:16:32-i64:64-n32:64-S128");
     else
-      DataLayoutString = "e-m:m-i8:8:32-i16:16:32-i64:64-n32:64-S128";
+      resetDataLayout("e-m:m-i8:8:32-i16:16:32-i64:64-n32:64-S128");
   }
 public:
   Mips64ELTargetInfo(const llvm::Triple &Triple)
@@ -7372,7 +7348,6 @@ class PNaClTargetInfo : public TargetInfo {
 public:
   PNaClTargetInfo(const llvm::Triple &Triple) : TargetInfo(Triple) {
     BigEndian = false;
-    this->UserLabelPrefix = "";
     this->LongAlign = 32;
     this->LongWidth = 32;
     this->PointerAlign = 32;
@@ -7444,7 +7419,7 @@ public:
     NoAsmVariants = true;
     LongWidth = LongAlign = PointerWidth = PointerAlign = 64;
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
-    DataLayoutString = "e-m:e-v128:32-v16:16-v32:32-v96:32-n8:16:32:64-S128";
+    resetDataLayout("e-m:e-v128:32-v16:16-v32:32-v96:32-n8:16:32:64-S128");
   }
 
   void getTargetDefines(const LangOptions &Opts,
@@ -7593,7 +7568,7 @@ public:
   explicit WebAssembly32TargetInfo(const llvm::Triple &T)
       : WebAssemblyTargetInfo(T) {
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 32;
-    DataLayoutString = "e-m:e-p:32:32-i64:64-n32:64-S128";
+    resetDataLayout("e-m:e-p:32:32-i64:64-n32:64-S128");
   }
 
 protected:
@@ -7611,7 +7586,7 @@ public:
     LongAlign = LongWidth = 64;
     PointerAlign = PointerWidth = 64;
     MaxAtomicPromoteWidth = MaxAtomicInlineWidth = 64;
-    DataLayoutString = "e-m:e-p:64:64-i64:64-n32:64-S128";
+    resetDataLayout("e-m:e-p:64:64-i64:64-n32:64-S128");
   }
 
 protected:
@@ -7691,8 +7666,8 @@ public:
     PointerWidth = PointerAlign = 32;
     SizeType = TargetInfo::UnsignedInt;
     PtrDiffType = IntPtrType = TargetInfo::SignedInt;
-    DataLayoutString = "e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-"
-                       "v96:128-v192:256-v256:256-v512:512-v1024:1024";
+    resetDataLayout("e-p:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-"
+                    "v96:128-v192:256-v256:256-v512:512-v1024:1024");
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -7706,8 +7681,8 @@ public:
     PointerWidth = PointerAlign = 64;
     SizeType = TargetInfo::UnsignedLong;
     PtrDiffType = IntPtrType = TargetInfo::SignedLong;
-    DataLayoutString = "e-i64:64-v16:16-v24:32-v32:32-v48:64-"
-                       "v96:128-v192:256-v256:256-v512:512-v1024:1024";
+    resetDataLayout("e-i64:64-v16:16-v24:32-v32:32-v48:64-"
+                    "v96:128-v192:256-v256:256-v512:512-v1024:1024");
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {
@@ -7730,8 +7705,8 @@ public:
     WCharType = UnsignedChar;
     WIntType = UnsignedInt;
     UseZeroLengthBitfieldAlignment = true;
-    DataLayoutString = "e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i64:32"
-                       "-f64:32-a:0:32-n32";
+    resetDataLayout("e-m:e-p:32:32-i1:8:32-i8:8:32-i16:16:32-i64:32"
+                    "-f64:32-a:0:32-n32");
   }
   void getTargetDefines(const LangOptions &Opts,
                         MacroBuilder &Builder) const override {

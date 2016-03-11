@@ -40,10 +40,6 @@ template <class ELFT> class OutputSection;
 template <class ELFT> class OutputSectionBase;
 template <class ELFT> class SharedFile;
 
-// Initializes global objects defined in this file.
-// Called at the beginning of main().
-void initSymbols();
-
 // Returns a demangled C++ symbol name. If Name is not a mangled
 // name or the system does not provide __cxa_demangle function,
 // it returns the unmodified string.
@@ -83,8 +79,8 @@ public:
   bool isCommon() const { return SymbolKind == DefinedCommonKind; }
   bool isLazy() const { return SymbolKind == LazyKind; }
   bool isShared() const { return SymbolKind == SharedKind; }
+  bool isLocal() const { return IsLocal; }
   bool isUsedInRegularObj() const { return IsUsedInRegularObj; }
-  bool isFunc() const { return IsFunc; }
 
   // Returns the symbol name.
   StringRef getName() const { return Name; }
@@ -101,7 +97,8 @@ public:
   bool isInPlt() const { return PltIndex != -1U; }
 
   template <class ELFT>
-  typename llvm::object::ELFFile<ELFT>::uintX_t getVA() const;
+  typename llvm::object::ELFFile<ELFT>::uintX_t
+  getVA(typename llvm::object::ELFFile<ELFT>::uintX_t Addend = 0) const;
   template <class ELFT>
   typename llvm::object::ELFFile<ELFT>::uintX_t getGotVA() const;
   template <class ELFT>
@@ -118,7 +115,7 @@ public:
   // has chosen the object among other objects having the same name,
   // you can access P->Backref->Body to get the resolver's result.
   void setBackref(Symbol *P) { Backref = P; }
-  SymbolBody *repl() { return Backref ? Backref->Body : this; }
+  SymbolBody &repl() { return Backref ? *Backref->Body : *this; }
   Symbol *getSymbol() { return Backref; }
 
   // Decides which symbol should "win" in the symbol table, this or
@@ -127,16 +124,18 @@ public:
   template <class ELFT> int compare(SymbolBody *Other);
 
 protected:
-  SymbolBody(Kind K, StringRef Name, bool IsWeak, uint8_t Visibility,
-             bool IsTls, bool IsFunc)
-      : SymbolKind(K), IsWeak(IsWeak), Visibility(Visibility),
-        MustBeInDynSym(false), NeedsCopyOrPltAddr(false), IsTls(IsTls),
-        IsFunc(IsFunc), Name(Name) {
+  SymbolBody(Kind K, StringRef Name, bool IsWeak, bool IsLocal,
+             uint8_t Visibility, uint8_t Type)
+      : SymbolKind(K), IsWeak(IsWeak), IsLocal(IsLocal), Visibility(Visibility),
+        MustBeInDynSym(false), NeedsCopyOrPltAddr(false), Name(Name) {
+    IsFunc = Type == llvm::ELF::STT_FUNC;
+    IsTls = Type == llvm::ELF::STT_TLS;
     IsUsedInRegularObj = K != SharedKind && K != LazyKind;
   }
 
   const unsigned SymbolKind : 8;
   unsigned IsWeak : 1;
+  unsigned IsLocal : 1;
   unsigned Visibility : 2;
 
   // True if the symbol was used for linking and thus need to be
@@ -154,10 +153,9 @@ public:
   unsigned NeedsCopyOrPltAddr : 1;
 
   unsigned IsTls : 1;
-
-protected:
   unsigned IsFunc : 1;
 
+protected:
   StringRef Name;
   Symbol *Backref = nullptr;
 };
@@ -165,8 +163,8 @@ protected:
 // The base class for any defined symbols.
 class Defined : public SymbolBody {
 public:
-  Defined(Kind K, StringRef Name, bool IsWeak, uint8_t Visibility, bool IsTls,
-          bool IsFunction);
+  Defined(Kind K, StringRef Name, bool IsWeak, bool IsLocal, uint8_t Visibility,
+          uint8_t Type);
   static bool classof(const SymbolBody *S) { return S->isDefined(); }
 };
 
@@ -178,8 +176,8 @@ protected:
 public:
   DefinedElf(Kind K, StringRef N, const Elf_Sym &Sym)
       : Defined(K, N, Sym.getBinding() == llvm::ELF::STB_WEAK,
-                Sym.getVisibility(), Sym.getType() == llvm::ELF::STT_TLS,
-                Sym.getType() == llvm::ELF::STT_FUNC),
+                Sym.getBinding() == llvm::ELF::STB_LOCAL, Sym.getVisibility(),
+                Sym.getType()),
         Sym(Sym) {}
 
   const Elf_Sym &Sym;
@@ -190,7 +188,7 @@ public:
 
 class DefinedBitcode : public Defined {
 public:
-  DefinedBitcode(StringRef Name, bool IsWeak);
+  DefinedBitcode(StringRef Name, bool IsWeak, uint8_t Visibility);
   static bool classof(const SymbolBody *S);
 };
 
@@ -208,7 +206,7 @@ public:
   uint64_t OffsetInBss;
 
   // The maximum alignment we have seen for this symbol.
-  uint64_t MaxAlignment;
+  uint64_t Alignment;
 
   uint64_t Size;
 };
@@ -267,7 +265,7 @@ class Undefined : public SymbolBody {
   bool CanKeepUndefined;
 
 protected:
-  Undefined(Kind K, StringRef N, bool IsWeak, uint8_t Visibility, bool IsTls);
+  Undefined(Kind K, StringRef N, bool IsWeak, uint8_t Visibility, uint8_t Type);
 
 public:
   Undefined(StringRef N, bool IsWeak, uint8_t Visibility,
@@ -318,8 +316,8 @@ public:
 class Lazy : public SymbolBody {
 public:
   Lazy(ArchiveFile *F, const llvm::object::Archive::Symbol S)
-      : SymbolBody(LazyKind, S.getName(), false, llvm::ELF::STV_DEFAULT,
-                   /*IsTls*/ false, /*IsFunction*/ false),
+      : SymbolBody(LazyKind, S.getName(), false, false, llvm::ELF::STV_DEFAULT,
+                   /* Type */ 0),
         File(F), Sym(S) {}
 
   static bool classof(const SymbolBody *S) { return S->kind() == LazyKind; }

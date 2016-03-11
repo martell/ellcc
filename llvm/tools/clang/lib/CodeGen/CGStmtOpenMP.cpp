@@ -45,25 +45,10 @@ class OMPLexicalScope {
     }
   }
 
-  class PostUpdateCleanup final : public EHScopeStack::Cleanup {
-    const OMPExecutableDirective &S;
-
-  public:
-    PostUpdateCleanup(const OMPExecutableDirective &S) : S(S) {}
-
-    void Emit(CodeGenFunction &CGF, Flags /*flags*/) override {
-      if (!CGF.HaveInsertPoint())
-        return;
-      (void)S;
-      // TODO: add cleanups for clauses that require post update.
-    }
-  };
-
 public:
   OMPLexicalScope(CodeGenFunction &CGF, const OMPExecutableDirective &S)
       : Scope(CGF, S.getSourceRange()) {
     emitPreInitStmt(CGF, S);
-    CGF.EHStack.pushCleanup<PostUpdateCleanup>(NormalAndEHCleanup, S);
   }
 };
 } // namespace
@@ -188,8 +173,7 @@ CodeGenFunction::GenerateOpenMPCapturedStmtFunction(const CapturedStmt &S) {
   // Create the function declaration.
   FunctionType::ExtInfo ExtInfo;
   const CGFunctionInfo &FuncInfo =
-      CGM.getTypes().arrangeFreeFunctionDeclaration(Ctx.VoidTy, Args, ExtInfo,
-                                                    /*IsVariadic=*/false);
+      CGM.getTypes().arrangeBuiltinFunctionDeclaration(Ctx.VoidTy, Args);
   llvm::FunctionType *FuncLLVMTy = CGM.getTypes().GetFunctionType(FuncInfo);
 
   llvm::Function *F = llvm::Function::Create(
@@ -1129,17 +1113,19 @@ void CodeGenFunction::EmitOMPLinearClauseInit(const OMPLoopDirective &D) {
   for (const auto *C : D.getClausesOfKind<OMPLinearClause>()) {
     for (auto Init : C->inits()) {
       auto *VD = cast<VarDecl>(cast<DeclRefExpr>(Init)->getDecl());
-      auto *OrigVD = cast<VarDecl>(
-          cast<DeclRefExpr>(VD->getInit()->IgnoreImpCasts())->getDecl());
-      DeclRefExpr DRE(const_cast<VarDecl *>(OrigVD),
-                      CapturedStmtInfo->lookup(OrigVD) != nullptr,
-                      VD->getInit()->getType(), VK_LValue,
-                      VD->getInit()->getExprLoc());
-      AutoVarEmission Emission = EmitAutoVarAlloca(*VD);
-      EmitExprAsInit(&DRE, VD,
-               MakeAddrLValue(Emission.getAllocatedAddress(), VD->getType()),
-                     /*capturedByInit=*/false);
-      EmitAutoVarCleanups(Emission);
+      if (auto *Ref = dyn_cast<DeclRefExpr>(VD->getInit()->IgnoreImpCasts())) {
+        AutoVarEmission Emission = EmitAutoVarAlloca(*VD);
+        auto *OrigVD = cast<VarDecl>(Ref->getDecl());
+        DeclRefExpr DRE(const_cast<VarDecl *>(OrigVD),
+                        CapturedStmtInfo->lookup(OrigVD) != nullptr,
+                        VD->getInit()->getType(), VK_LValue,
+                        VD->getInit()->getExprLoc());
+        EmitExprAsInit(&DRE, VD, MakeAddrLValue(Emission.getAllocatedAddress(),
+                                                VD->getType()),
+                       /*capturedByInit=*/false);
+        EmitAutoVarCleanups(Emission);
+      } else
+        EmitVarDecl(*VD);
     }
     // Emit the linear steps for the linear clauses.
     // If a step is not constant, it is pre-calculated before the loop.
@@ -1152,14 +1138,26 @@ void CodeGenFunction::EmitOMPLinearClauseInit(const OMPLoopDirective &D) {
   }
 }
 
-static void emitLinearClauseFinal(CodeGenFunction &CGF,
-                                  const OMPLoopDirective &D) {
+static void emitLinearClauseFinal(
+    CodeGenFunction &CGF, const OMPLoopDirective &D,
+    const llvm::function_ref<llvm::Value *(CodeGenFunction &)> &CondGen) {
   if (!CGF.HaveInsertPoint())
     return;
+  llvm::BasicBlock *DoneBB = nullptr;
   // Emit the final values of the linear variables.
   for (const auto *C : D.getClausesOfKind<OMPLinearClause>()) {
     auto IC = C->varlist_begin();
     for (auto F : C->finals()) {
+      if (!DoneBB) {
+        if (auto *Cond = CondGen(CGF)) {
+          // If the first post-update expression is found, emit conditional
+          // block if it was requested.
+          auto *ThenBB = CGF.createBasicBlock(".omp.linear.pu");
+          DoneBB = CGF.createBasicBlock(".omp.linear.pu.done");
+          CGF.Builder.CreateCondBr(Cond, ThenBB, DoneBB);
+          CGF.EmitBlock(ThenBB);
+        }
+      }
       auto *OrigVD = cast<VarDecl>(cast<DeclRefExpr>(*IC)->getDecl());
       DeclRefExpr DRE(const_cast<VarDecl *>(OrigVD),
                       CGF.CapturedStmtInfo->lookup(OrigVD) != nullptr,
@@ -1172,7 +1170,11 @@ static void emitLinearClauseFinal(CodeGenFunction &CGF,
       CGF.EmitIgnoredExpr(F);
       ++IC;
     }
+    if (auto *PostUpdate = C->getPostUpdateExpr())
+      CGF.EmitIgnoredExpr(PostUpdate);
   }
+  if (DoneBB)
+    CGF.EmitBlock(DoneBB, /*IsFinished=*/true);
 }
 
 static void emitAlignedClause(CodeGenFunction &CGF,
@@ -1309,13 +1311,26 @@ void CodeGenFunction::EmitOMPSimdInit(const OMPLoopDirective &D,
   emitSimdlenSafelenClause(*this, D, IsMonotonic);
 }
 
-void CodeGenFunction::EmitOMPSimdFinal(const OMPLoopDirective &D) {
+void CodeGenFunction::EmitOMPSimdFinal(
+    const OMPLoopDirective &D,
+    const llvm::function_ref<llvm::Value *(CodeGenFunction &)> &CondGen) {
   if (!HaveInsertPoint())
     return;
+  llvm::BasicBlock *DoneBB = nullptr;
   auto IC = D.counters().begin();
   for (auto F : D.finals()) {
     auto *OrigVD = cast<VarDecl>(cast<DeclRefExpr>((*IC))->getDecl());
     if (LocalDeclMap.count(OrigVD) || CapturedStmtInfo->lookup(OrigVD)) {
+      if (!DoneBB) {
+        if (auto *Cond = CondGen(*this)) {
+          // If the first post-update expression is found, emit conditional
+          // block if it was requested.
+          auto *ThenBB = createBasicBlock(".omp.final.then");
+          DoneBB = createBasicBlock(".omp.final.done");
+          Builder.CreateCondBr(Cond, ThenBB, DoneBB);
+          EmitBlock(ThenBB);
+        }
+      }
       DeclRefExpr DRE(const_cast<VarDecl *>(OrigVD),
                       CapturedStmtInfo->lookup(OrigVD) != nullptr,
                       (*IC)->getType(), VK_LValue, (*IC)->getExprLoc());
@@ -1328,7 +1343,8 @@ void CodeGenFunction::EmitOMPSimdFinal(const OMPLoopDirective &D) {
     }
     ++IC;
   }
-  emitLinearClauseFinal(*this, D);
+  if (DoneBB)
+    EmitBlock(DoneBB, /*IsFinished=*/true);
 }
 
 void CodeGenFunction::EmitOMPSimdDirective(const OMPSimdDirective &S) {
@@ -1400,7 +1416,10 @@ void CodeGenFunction::EmitOMPSimdDirective(const OMPSimdDirective &S) {
       emitPostUpdateForReductionClause(
           CGF, S, [](CodeGenFunction &) -> llvm::Value * { return nullptr; });
     }
-    CGF.EmitOMPSimdFinal(S);
+    CGF.EmitOMPSimdFinal(
+        S, [](CodeGenFunction &) -> llvm::Value * { return nullptr; });
+    emitLinearClauseFinal(
+        CGF, S, [](CodeGenFunction &) -> llvm::Value * { return nullptr; });
     // Emit: if (PreCond) - end.
     if (ContBlock) {
       CGF.EmitBranch(ContBlock);
@@ -1410,81 +1429,14 @@ void CodeGenFunction::EmitOMPSimdDirective(const OMPSimdDirective &S) {
   CGM.getOpenMPRuntime().emitInlinedDirective(*this, OMPD_simd, CodeGen);
 }
 
-void CodeGenFunction::EmitOMPForOuterLoop(
-    OpenMPScheduleClauseKind ScheduleKind, bool IsMonotonic,
+void CodeGenFunction::EmitOMPOuterLoop(bool DynamicOrOrdered, bool IsMonotonic,
     const OMPLoopDirective &S, OMPPrivateScope &LoopScope, bool Ordered,
     Address LB, Address UB, Address ST, Address IL, llvm::Value *Chunk) {
   auto &RT = CGM.getOpenMPRuntime();
 
-  // Dynamic scheduling of the outer loop (dynamic, guided, auto, runtime).
-  const bool DynamicOrOrdered = Ordered || RT.isDynamic(ScheduleKind);
-
-  assert((Ordered ||
-          !RT.isStaticNonchunked(ScheduleKind, /*Chunked=*/Chunk != nullptr)) &&
-         "static non-chunked schedule does not need outer loop");
-
-  // Emit outer loop.
-  //
-  // OpenMP [2.7.1, Loop Construct, Description, table 2-1]
-  // When schedule(dynamic,chunk_size) is specified, the iterations are
-  // distributed to threads in the team in chunks as the threads request them.
-  // Each thread executes a chunk of iterations, then requests another chunk,
-  // until no chunks remain to be distributed. Each chunk contains chunk_size
-  // iterations, except for the last chunk to be distributed, which may have
-  // fewer iterations. When no chunk_size is specified, it defaults to 1.
-  //
-  // When schedule(guided,chunk_size) is specified, the iterations are assigned
-  // to threads in the team in chunks as the executing threads request them.
-  // Each thread executes a chunk of iterations, then requests another chunk,
-  // until no chunks remain to be assigned. For a chunk_size of 1, the size of
-  // each chunk is proportional to the number of unassigned iterations divided
-  // by the number of threads in the team, decreasing to 1. For a chunk_size
-  // with value k (greater than 1), the size of each chunk is determined in the
-  // same way, with the restriction that the chunks do not contain fewer than k
-  // iterations (except for the last chunk to be assigned, which may have fewer
-  // than k iterations).
-  //
-  // When schedule(auto) is specified, the decision regarding scheduling is
-  // delegated to the compiler and/or runtime system. The programmer gives the
-  // implementation the freedom to choose any possible mapping of iterations to
-  // threads in the team.
-  //
-  // When schedule(runtime) is specified, the decision regarding scheduling is
-  // deferred until run time, and the schedule and chunk size are taken from the
-  // run-sched-var ICV. If the ICV is set to auto, the schedule is
-  // implementation defined
-  //
-  // while(__kmpc_dispatch_next(&LB, &UB)) {
-  //   idx = LB;
-  //   while (idx <= UB) { BODY; ++idx;
-  //   __kmpc_dispatch_fini_(4|8)[u](); // For ordered loops only.
-  //   } // inner loop
-  // }
-  //
-  // OpenMP [2.7.1, Loop Construct, Description, table 2-1]
-  // When schedule(static, chunk_size) is specified, iterations are divided into
-  // chunks of size chunk_size, and the chunks are assigned to the threads in
-  // the team in a round-robin fashion in the order of the thread number.
-  //
-  // while(UB = min(UB, GlobalUB), idx = LB, idx < UB) {
-  //   while (idx <= UB) { BODY; ++idx; } // inner loop
-  //   LB = LB + ST;
-  //   UB = UB + ST;
-  // }
-  //
-
   const Expr *IVExpr = S.getIterationVariable();
   const unsigned IVSize = getContext().getTypeSize(IVExpr->getType());
   const bool IVSigned = IVExpr->getType()->hasSignedIntegerRepresentation();
-
-  if (DynamicOrOrdered) {
-    llvm::Value *UBVal = EmitScalarExpr(S.getLastIteration());
-    RT.emitForDispatchInit(*this, S.getLocStart(), ScheduleKind,
-                           IVSize, IVSigned, Ordered, UBVal, Chunk);
-  } else {
-    RT.emitForStaticInit(*this, S.getLocStart(), ScheduleKind,
-                         IVSize, IVSigned, Ordered, IL, LB, UB, ST, Chunk);
-  }
 
   auto LoopExit = getJumpDestInCurrentScope("omp.dispatch.end");
 
@@ -1565,6 +1517,111 @@ void CodeGenFunction::EmitOMPForOuterLoop(
   // Tell the runtime we are done.
   if (!DynamicOrOrdered)
     RT.emitForStaticFinish(*this, S.getLocEnd());
+
+}
+
+void CodeGenFunction::EmitOMPForOuterLoop(
+    OpenMPScheduleClauseKind ScheduleKind, bool IsMonotonic,
+    const OMPLoopDirective &S, OMPPrivateScope &LoopScope, bool Ordered,
+    Address LB, Address UB, Address ST, Address IL, llvm::Value *Chunk) {
+  auto &RT = CGM.getOpenMPRuntime();
+
+  // Dynamic scheduling of the outer loop (dynamic, guided, auto, runtime).
+  const bool DynamicOrOrdered = Ordered || RT.isDynamic(ScheduleKind);
+
+  assert((Ordered ||
+          !RT.isStaticNonchunked(ScheduleKind, /*Chunked=*/Chunk != nullptr)) &&
+         "static non-chunked schedule does not need outer loop");
+
+  // Emit outer loop.
+  //
+  // OpenMP [2.7.1, Loop Construct, Description, table 2-1]
+  // When schedule(dynamic,chunk_size) is specified, the iterations are
+  // distributed to threads in the team in chunks as the threads request them.
+  // Each thread executes a chunk of iterations, then requests another chunk,
+  // until no chunks remain to be distributed. Each chunk contains chunk_size
+  // iterations, except for the last chunk to be distributed, which may have
+  // fewer iterations. When no chunk_size is specified, it defaults to 1.
+  //
+  // When schedule(guided,chunk_size) is specified, the iterations are assigned
+  // to threads in the team in chunks as the executing threads request them.
+  // Each thread executes a chunk of iterations, then requests another chunk,
+  // until no chunks remain to be assigned. For a chunk_size of 1, the size of
+  // each chunk is proportional to the number of unassigned iterations divided
+  // by the number of threads in the team, decreasing to 1. For a chunk_size
+  // with value k (greater than 1), the size of each chunk is determined in the
+  // same way, with the restriction that the chunks do not contain fewer than k
+  // iterations (except for the last chunk to be assigned, which may have fewer
+  // than k iterations).
+  //
+  // When schedule(auto) is specified, the decision regarding scheduling is
+  // delegated to the compiler and/or runtime system. The programmer gives the
+  // implementation the freedom to choose any possible mapping of iterations to
+  // threads in the team.
+  //
+  // When schedule(runtime) is specified, the decision regarding scheduling is
+  // deferred until run time, and the schedule and chunk size are taken from the
+  // run-sched-var ICV. If the ICV is set to auto, the schedule is
+  // implementation defined
+  //
+  // while(__kmpc_dispatch_next(&LB, &UB)) {
+  //   idx = LB;
+  //   while (idx <= UB) { BODY; ++idx;
+  //   __kmpc_dispatch_fini_(4|8)[u](); // For ordered loops only.
+  //   } // inner loop
+  // }
+  //
+  // OpenMP [2.7.1, Loop Construct, Description, table 2-1]
+  // When schedule(static, chunk_size) is specified, iterations are divided into
+  // chunks of size chunk_size, and the chunks are assigned to the threads in
+  // the team in a round-robin fashion in the order of the thread number.
+  //
+  // while(UB = min(UB, GlobalUB), idx = LB, idx < UB) {
+  //   while (idx <= UB) { BODY; ++idx; } // inner loop
+  //   LB = LB + ST;
+  //   UB = UB + ST;
+  // }
+  //
+
+  const Expr *IVExpr = S.getIterationVariable();
+  const unsigned IVSize = getContext().getTypeSize(IVExpr->getType());
+  const bool IVSigned = IVExpr->getType()->hasSignedIntegerRepresentation();
+
+  if (DynamicOrOrdered) {
+    llvm::Value *UBVal = EmitScalarExpr(S.getLastIteration());
+    RT.emitForDispatchInit(*this, S.getLocStart(), ScheduleKind,
+                           IVSize, IVSigned, Ordered, UBVal, Chunk);
+  } else {
+    RT.emitForStaticInit(*this, S.getLocStart(), ScheduleKind, IVSize, IVSigned,
+                         Ordered, IL, LB, UB, ST, Chunk);
+  }
+
+  EmitOMPOuterLoop(DynamicOrOrdered, IsMonotonic, S, LoopScope, Ordered, LB, UB,
+                   ST, IL, Chunk);
+}
+
+void CodeGenFunction::EmitOMPDistributeOuterLoop(
+    OpenMPDistScheduleClauseKind ScheduleKind,
+    const OMPDistributeDirective &S, OMPPrivateScope &LoopScope,
+    Address LB, Address UB, Address ST, Address IL, llvm::Value *Chunk) {
+
+  auto &RT = CGM.getOpenMPRuntime();
+
+  // Emit outer loop.
+  // Same behavior as a OMPForOuterLoop, except that schedule cannot be
+  // dynamic
+  //
+
+  const Expr *IVExpr = S.getIterationVariable();
+  const unsigned IVSize = getContext().getTypeSize(IVExpr->getType());
+  const bool IVSigned = IVExpr->getType()->hasSignedIntegerRepresentation();
+
+  RT.emitDistributeStaticInit(*this, S.getLocStart(), ScheduleKind,
+                              IVSize, IVSigned, /* Ordered = */ false,
+                              IL, LB, UB, ST, Chunk);
+
+  EmitOMPOuterLoop(/* DynamicOrOrdered = */ false, /* IsMonotonic = */ false,
+                   S, LoopScope, /* Ordered = */ false, LB, UB, ST, IL, Chunk);
 }
 
 /// \brief Emit a helper variable and return corresponding lvalue.
@@ -1626,18 +1683,18 @@ bool CodeGenFunction::EmitOMPWorksharingLoop(const OMPLoopDirective &S) {
 
     emitAlignedClause(*this, S);
     EmitOMPLinearClauseInit(S);
+    // Emit helper vars inits.
+    LValue LB =
+        EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getLowerBoundVariable()));
+    LValue UB =
+        EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getUpperBoundVariable()));
+    LValue ST =
+        EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getStrideVariable()));
+    LValue IL =
+        EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getIsLastIterVariable()));
+
     // Emit 'then' code.
     {
-      // Emit helper vars inits.
-      LValue LB =
-          EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getLowerBoundVariable()));
-      LValue UB =
-          EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getUpperBoundVariable()));
-      LValue ST =
-          EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getStrideVariable()));
-      LValue IL =
-          EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getIsLastIterVariable()));
-
       OMPPrivateScope LoopScope(*this);
       if (EmitOMPFirstprivateClause(S, LoopScope)) {
         // Emit implicit barrier to synchronize threads and avoid data races on
@@ -1734,8 +1791,15 @@ bool CodeGenFunction::EmitOMPWorksharingLoop(const OMPLoopDirective &S) {
             S, Builder.CreateIsNotNull(EmitLoadOfScalar(IL, S.getLocStart())));
     }
     if (isOpenMPSimdDirective(S.getDirectiveKind())) {
-      EmitOMPSimdFinal(S);
+      EmitOMPSimdFinal(S, [&](CodeGenFunction &CGF) -> llvm::Value * {
+        return CGF.Builder.CreateIsNotNull(
+            CGF.EmitLoadOfScalar(IL, S.getLocStart()));
+      });
     }
+    emitLinearClauseFinal(*this, S, [&](CodeGenFunction &CGF) -> llvm::Value * {
+      return CGF.Builder.CreateIsNotNull(
+          CGF.EmitLoadOfScalar(IL, S.getLocStart()));
+    });
     // We're now done with the loop, so jump to the continuation block.
     if (ContBlock) {
       EmitBranch(ContBlock);
@@ -2191,9 +2255,130 @@ void CodeGenFunction::EmitOMPFlushDirective(const OMPFlushDirective &S) {
   }(), S.getLocStart());
 }
 
+void CodeGenFunction::EmitOMPDistributeLoop(const OMPDistributeDirective &S) {
+  // Emit the loop iteration variable.
+  auto IVExpr = cast<DeclRefExpr>(S.getIterationVariable());
+  auto IVDecl = cast<VarDecl>(IVExpr->getDecl());
+  EmitVarDecl(*IVDecl);
+
+  // Emit the iterations count variable.
+  // If it is not a variable, Sema decided to calculate iterations count on each
+  // iteration (e.g., it is foldable into a constant).
+  if (auto LIExpr = dyn_cast<DeclRefExpr>(S.getLastIteration())) {
+    EmitVarDecl(*cast<VarDecl>(LIExpr->getDecl()));
+    // Emit calculation of the iterations count.
+    EmitIgnoredExpr(S.getCalcLastIteration());
+  }
+
+  auto &RT = CGM.getOpenMPRuntime();
+
+  // Check pre-condition.
+  {
+    // Skip the entire loop if we don't meet the precondition.
+    // If the condition constant folds and can be elided, avoid emitting the
+    // whole loop.
+    bool CondConstant;
+    llvm::BasicBlock *ContBlock = nullptr;
+    if (ConstantFoldsToSimpleInteger(S.getPreCond(), CondConstant)) {
+      if (!CondConstant)
+        return;
+    } else {
+      auto *ThenBlock = createBasicBlock("omp.precond.then");
+      ContBlock = createBasicBlock("omp.precond.end");
+      emitPreCond(*this, S, S.getPreCond(), ThenBlock, ContBlock,
+                  getProfileCount(&S));
+      EmitBlock(ThenBlock);
+      incrementProfileCounter(&S);
+    }
+
+    // Emit 'then' code.
+    {
+      // Emit helper vars inits.
+      LValue LB =
+          EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getLowerBoundVariable()));
+      LValue UB =
+          EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getUpperBoundVariable()));
+      LValue ST =
+          EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getStrideVariable()));
+      LValue IL =
+          EmitOMPHelperVar(*this, cast<DeclRefExpr>(S.getIsLastIterVariable()));
+
+      OMPPrivateScope LoopScope(*this);
+      emitPrivateLoopCounters(*this, LoopScope, S.counters(),
+                              S.private_counters());
+      (void)LoopScope.Privatize();
+
+      // Detect the distribute schedule kind and chunk.
+      llvm::Value *Chunk = nullptr;
+      OpenMPDistScheduleClauseKind ScheduleKind = OMPC_DIST_SCHEDULE_unknown;
+      if (auto *C = S.getSingleClause<OMPDistScheduleClause>()) {
+        ScheduleKind = C->getDistScheduleKind();
+        if (const auto *Ch = C->getChunkSize()) {
+          Chunk = EmitScalarExpr(Ch);
+          Chunk = EmitScalarConversion(Chunk, Ch->getType(),
+          S.getIterationVariable()->getType(),
+          S.getLocStart());
+        }
+      }
+      const unsigned IVSize = getContext().getTypeSize(IVExpr->getType());
+      const bool IVSigned = IVExpr->getType()->hasSignedIntegerRepresentation();
+
+      // OpenMP [2.10.8, distribute Construct, Description]
+      // If dist_schedule is specified, kind must be static. If specified,
+      // iterations are divided into chunks of size chunk_size, chunks are
+      // assigned to the teams of the league in a round-robin fashion in the
+      // order of the team number. When no chunk_size is specified, the
+      // iteration space is divided into chunks that are approximately equal
+      // in size, and at most one chunk is distributed to each team of the
+      // league. The size of the chunks is unspecified in this case.
+      if (RT.isStaticNonchunked(ScheduleKind,
+                                /* Chunked */ Chunk != nullptr)) {
+        RT.emitDistributeStaticInit(*this, S.getLocStart(), ScheduleKind,
+                             IVSize, IVSigned, /* Ordered = */ false,
+                             IL.getAddress(), LB.getAddress(),
+                             UB.getAddress(), ST.getAddress());
+        auto LoopExit =
+            getJumpDestInCurrentScope(createBasicBlock("omp.loop.exit"));
+        // UB = min(UB, GlobalUB);
+        EmitIgnoredExpr(S.getEnsureUpperBound());
+        // IV = LB;
+        EmitIgnoredExpr(S.getInit());
+        // while (idx <= UB) { BODY; ++idx; }
+        EmitOMPInnerLoop(S, LoopScope.requiresCleanups(), S.getCond(),
+                         S.getInc(),
+                         [&S, LoopExit](CodeGenFunction &CGF) {
+                           CGF.EmitOMPLoopBody(S, LoopExit);
+                           CGF.EmitStopPoint(&S);
+                         },
+                         [](CodeGenFunction &) {});
+        EmitBlock(LoopExit.getBlock());
+        // Tell the runtime we are done.
+        RT.emitForStaticFinish(*this, S.getLocStart());
+      } else {
+        // Emit the outer loop, which requests its work chunk [LB..UB] from
+        // runtime and runs the inner loop to process it.
+        EmitOMPDistributeOuterLoop(ScheduleKind, S, LoopScope,
+                            LB.getAddress(), UB.getAddress(), ST.getAddress(),
+                            IL.getAddress(), Chunk);
+      }
+    }
+
+    // We're now done with the loop, so jump to the continuation block.
+    if (ContBlock) {
+      EmitBranch(ContBlock);
+      EmitBlock(ContBlock, true);
+    }
+  }
+}
+
 void CodeGenFunction::EmitOMPDistributeDirective(
     const OMPDistributeDirective &S) {
-  llvm_unreachable("CodeGen for 'omp distribute' is not supported yet.");
+  LexicalScope Scope(*this, S.getSourceRange());
+  auto &&CodeGen = [&S](CodeGenFunction &CGF) {
+    CGF.EmitOMPDistributeLoop(S);
+  };
+  CGM.getOpenMPRuntime().emitInlinedDirective(*this, OMPD_distribute, CodeGen,
+                                              false);
 }
 
 static llvm::Function *emitOutlinedOrderedFunction(CodeGenModule &CGM,

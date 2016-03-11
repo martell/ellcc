@@ -2358,8 +2358,10 @@ def warn_cxx11_gnu_attribute_on_type : Warning<
 def warn_unhandled_ms_attribute_ignored : Warning<
   "__declspec attribute %0 is not supported">, 
   InGroup<IgnoredAttributes>;
-def err_attribute_invalid_on_stmt : Error<
+def err_decl_attribute_invalid_on_stmt : Error<
   "%0 attribute cannot be applied to a statement">;
+def err_stmt_attribute_invalid_on_decl : Error<
+  "%0 attribute cannot be applied to a declaration">;
 def warn_declspec_attribute_ignored : Warning<
   "attribute %0 is ignored, place it after "
   "\"%select{class|struct|interface|union|enum}1\" to apply attribute to "
@@ -2466,8 +2468,7 @@ def warn_attribute_wrong_decl_type : Warning<
   "variables and functions|functions and methods|parameters|"
   "functions, methods and blocks|functions, methods, and classes|"
   "functions, methods, and parameters|classes|enums|variables|methods|"
-  "variables, functions and labels|fields and global variables|structs|"
-  "variables and typedefs|thread-local variables|"
+  "fields and global variables|structs|variables and typedefs|thread-local variables|"
   "variables and fields|variables, data members and tag types|"
   "types and namespaces|Objective-C interfaces|methods and properties|"
   "struct or union|struct, union or class|types|"
@@ -2475,7 +2476,9 @@ def warn_attribute_wrong_decl_type : Warning<
   "variables, functions and classes|Objective-C protocols|"
   "functions and global variables|structs, unions, and typedefs|structs and typedefs|"
   "interface or protocol declarations|kernel functions|non-K&R-style functions|"
-  "variables, enums, fields and typedefs}1">,
+  "variables, enums, fields and typedefs|functions, methods, enums, and classes|"
+  "structs, classes, variables, functions, and inline namespaces|"
+  "variables, functions, methods, types, enumerations, enumerators, labels, and non-static data members}1">,
   InGroup<IgnoredAttributes>;
 def err_attribute_wrong_decl_type : Error<warn_attribute_wrong_decl_type.Text>;
 def warn_type_attribute_wrong_type : Warning<
@@ -3219,7 +3222,12 @@ def note_ovl_candidate_bad_conv_incomplete : Note<"candidate "
     "function (the implicit move assignment operator)|"
     "constructor (inherited)}0%1 "
     "not viable: cannot convert argument of incomplete type "
-    "%diff{$ to $|to parameter type}2,3">;
+    "%diff{$ to $|to parameter type}2,3 for "
+    "%select{%ordinal5 argument|object argument}4"
+    "%select{|; dereference the argument with *|"
+    "; take the address of the argument with &|"
+    "; remove *|"
+    "; remove &}6">;
 def note_ovl_candidate_bad_list_argument : Note<"candidate "
     "%select{function|function|constructor|"
     "function |function |constructor |"
@@ -4188,6 +4196,13 @@ def err_definition_of_explicitly_defaulted_member : Error<
 def err_redefinition_extern_inline : Error<
   "redefinition of a 'extern inline' function %0 is not supported in "
   "%select{C99 mode|C++}1">;
+def warn_attr_abi_tag_namespace : Warning<
+  "'abi_tag' attribute on %select{non-inline|anonymous}0 namespace ignored">,
+  InGroup<IgnoredAttributes>;
+def err_abi_tag_on_redeclaration : Error<
+  "cannot add 'abi_tag' attribute in a redeclaration">;
+def err_new_abi_tag_on_redeclaration : Error<
+  "'abi_tag' %0 missing in original declaration">;
 
 def note_deleted_dtor_no_operator_delete : Note<
   "virtual destructor requires an unambiguous, accessible 'operator delete'">;
@@ -6582,11 +6597,16 @@ def warn_side_effects_typeid : Warning<
   "expression with side effects will be evaluated despite being used as an "
   "operand to 'typeid'">, InGroup<PotentiallyEvaluatedExpression>;
 def warn_unused_result : Warning<
-  "ignoring return value of function declared with warn_unused_result "
-  "attribute">, InGroup<DiagGroup<"unused-result">>;
+  "ignoring return value of function declared with %0 attribute">,
+  InGroup<DiagGroup<"unused-result">>;
 def warn_unused_volatile : Warning<
   "expression result unused; assign into a variable to force a volatile load">,
   InGroup<DiagGroup<"unused-volatile-lvalue">>;
+
+def ext_cxx14_attr : Extension<
+  "use of the %0 attribute is a C++14 extension">, InGroup<CXX14>;
+def ext_cxx1z_attr : Extension<
+  "use of the %0 attribute is a C++1z extension">, InGroup<CXX1z>;
 
 def warn_unused_comparison : Warning<
   "%select{%select{|in}1equality|relational}0 comparison result unused">,
@@ -7299,16 +7319,15 @@ def note_insert_fallthrough_fixit : Note<
 def note_insert_break_fixit : Note<
   "insert 'break;' to avoid fall-through">;
 def err_fallthrough_attr_wrong_target : Error<
-  "clang::fallthrough attribute is only allowed on empty statements">;
+  "%0 attribute is only allowed on empty statements">;
 def note_fallthrough_insert_semi_fixit : Note<"did you forget ';'?">;
 def err_fallthrough_attr_outside_switch : Error<
   "fallthrough annotation is outside switch statement">;
-def warn_fallthrough_attr_invalid_placement : Warning<
-  "fallthrough annotation does not directly precede switch label">,
-  InGroup<ImplicitFallthrough>;
+def err_fallthrough_attr_invalid_placement : Error<
+  "fallthrough annotation does not directly precede switch label">;
 def warn_fallthrough_attr_unreachable : Warning<
   "fallthrough annotation in unreachable code">,
-  InGroup<ImplicitFallthrough>;
+  InGroup<ImplicitFallthrough>, DefaultIgnore;
 
 def warn_unreachable_default : Warning<
   "default label in switch which covers all enumeration values">,
@@ -7671,9 +7690,6 @@ def err_asm_naked_this_ref : Error<
 def err_asm_naked_parm_ref : Error<
   "parameter references not allowed in naked functions">;
 
-def ext_deprecated_attr_is_a_cxx14_extension : ExtWarn<
-  "use of the 'deprecated' attribute is a C++14 extension">, InGroup<CXX14>;
-
 // OpenCL warnings and errors.
 def err_invalid_astype_of_different_size : Error<
   "invalid reinterpretation: sizes of %0 and %1 must match">;
@@ -7746,7 +7762,7 @@ def err_opencl_type_can_only_be_used_as_function_parameter : Error <
 def err_opencl_builtin_pipe_first_arg : Error<
   "first argument to %0 must be a pipe type">;
 def err_opencl_builtin_pipe_arg_num : Error<
-    "invalid number of arguments to function: %0">;
+  "invalid number of arguments to function: %0">;
 def err_opencl_builtin_pipe_invalid_arg : Error<
   "invalid argument type to function %0 (expecting %1)">;
 def err_opencl_builtin_pipe_invalid_access_modifier : Error<
@@ -7809,8 +7825,8 @@ def err_omp_expected_named_var_member_or_array_expression: Error<
   "expected expression containing only member accesses and/or array sections based on named variables">;
 def err_omp_bit_fields_forbidden_in_map_clause : Error<
   "bit fields cannot be used to specify storage in a map clause">;
-def err_omp_array_section_in_rightmost_expression : Error<
-  "array section can only be associated with the rightmost variable in a map clause expression">;
+def err_array_section_does_not_specify_contiguous_storage : Error<
+  "array section does not specify contiguous storage">;
 def err_omp_union_type_not_allowed : Error<
   "mapped storage cannot be derived from a union">;
 def err_omp_expected_access_to_data_field : Error<

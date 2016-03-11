@@ -760,6 +760,20 @@ ModRefInfo BasicAAResult::getModRefInfo(ImmutableCallSite CS,
       return MRI_NoModRef;
   }
 
+  // If the CallSite is to malloc or calloc, we can assume that it doesn't
+  // modify any IR visible value.  This is only valid because we assume these
+  // routines do not read values visible in the IR.  TODO: Consider special
+  // casing realloc and strdup routines which access only their arguments as
+  // well.  Or alternatively, replace all of this with inaccessiblememonly once
+  // that's implemented fully. 
+  auto *Inst = CS.getInstruction();
+  if (isMallocLikeFn(Inst, &TLI) || isCallocLikeFn(Inst, &TLI)) {
+    // Be conservative if the accessed pointer may alias the allocation -
+    // fallback to the generic handling below.
+    if (getBestAAResults().alias(MemoryLocation(Inst), Loc) == NoAlias)
+      return MRI_NoModRef;
+  }
+
   // While the assume intrinsic is marked as arbitrarily writing so that
   // proper control dependencies will be maintained, it never aliases any
   // particular memory location.
@@ -1592,12 +1606,14 @@ bool BasicAAResult::constantOffsetHeuristic(
 // BasicAliasAnalysis Pass
 //===----------------------------------------------------------------------===//
 
-BasicAAResult BasicAA::run(Function &F, AnalysisManager<Function> *AM) {
+char BasicAA::PassID;
+
+BasicAAResult BasicAA::run(Function &F, AnalysisManager<Function> &AM) {
   return BasicAAResult(F.getParent()->getDataLayout(),
-                       AM->getResult<TargetLibraryAnalysis>(F),
-                       AM->getResult<AssumptionAnalysis>(F),
-                       AM->getCachedResult<DominatorTreeAnalysis>(F),
-                       AM->getCachedResult<LoopAnalysis>(F));
+                       AM.getResult<TargetLibraryAnalysis>(F),
+                       AM.getResult<AssumptionAnalysis>(F),
+                       &AM.getResult<DominatorTreeAnalysis>(F),
+                       AM.getCachedResult<LoopAnalysis>(F));
 }
 
 BasicAAWrapperPass::BasicAAWrapperPass() : FunctionPass(ID) {
@@ -1610,6 +1626,7 @@ void BasicAAWrapperPass::anchor() {}
 INITIALIZE_PASS_BEGIN(BasicAAWrapperPass, "basicaa",
                       "Basic Alias Analysis (stateless AA impl)", true, true)
 INITIALIZE_PASS_DEPENDENCY(AssumptionCacheTracker)
+INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass)
 INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_END(BasicAAWrapperPass, "basicaa",
                     "Basic Alias Analysis (stateless AA impl)", true, true)
@@ -1621,12 +1638,11 @@ FunctionPass *llvm::createBasicAAWrapperPass() {
 bool BasicAAWrapperPass::runOnFunction(Function &F) {
   auto &ACT = getAnalysis<AssumptionCacheTracker>();
   auto &TLIWP = getAnalysis<TargetLibraryInfoWrapperPass>();
-  auto *DTWP = getAnalysisIfAvailable<DominatorTreeWrapperPass>();
+  auto &DTWP = getAnalysis<DominatorTreeWrapperPass>();
   auto *LIWP = getAnalysisIfAvailable<LoopInfoWrapperPass>();
 
   Result.reset(new BasicAAResult(F.getParent()->getDataLayout(), TLIWP.getTLI(),
-                                 ACT.getAssumptionCache(F),
-                                 DTWP ? &DTWP->getDomTree() : nullptr,
+                                 ACT.getAssumptionCache(F), &DTWP.getDomTree(),
                                  LIWP ? &LIWP->getLoopInfo() : nullptr));
 
   return false;
@@ -1635,6 +1651,7 @@ bool BasicAAWrapperPass::runOnFunction(Function &F) {
 void BasicAAWrapperPass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
   AU.addRequired<AssumptionCacheTracker>();
+  AU.addRequired<DominatorTreeWrapperPass>();
   AU.addRequired<TargetLibraryInfoWrapperPass>();
 }
 

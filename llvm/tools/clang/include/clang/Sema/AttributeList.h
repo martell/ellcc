@@ -491,6 +491,7 @@ public:
 
   bool isTargetSpecificAttr() const;
   bool isTypeAttr() const;
+  bool isStmtAttr() const;
 
   bool hasCustomParsing() const;
   unsigned getMinArgs() const;
@@ -870,7 +871,6 @@ enum AttributeDeclKind {
   ExpectedEnum,
   ExpectedVariable,
   ExpectedMethod,
-  ExpectedVariableFunctionOrLabel,
   ExpectedFieldOrGlobalVar,
   ExpectedStruct,
   ExpectedVariableOrTypedef,
@@ -893,7 +893,10 @@ enum AttributeDeclKind {
   ExpectedObjectiveCInterfaceOrProtocol,
   ExpectedKernelFunction,
   ExpectedFunctionWithProtoType,
-  ExpectedVariableEnumFieldOrTypedef
+  ExpectedVariableEnumFieldOrTypedef,
+  ExpectedFunctionMethodEnumOrClass,
+  ExpectedStructClassVariableFunctionOrInlineNamespace,
+  ExpectedForMaybeUnused
 };
 
 }  // end namespace clang

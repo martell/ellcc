@@ -18,8 +18,10 @@
 #include "lld/Core/LLVM.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/IR/Comdat.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/ELF.h"
+#include "llvm/Object/IRObjectFile.h"
 #include "llvm/Support/StringSaver.h"
 
 namespace lld {
@@ -84,8 +86,7 @@ protected:
   ArrayRef<Elf_Word> SymtabSHNDX;
   StringRef StringTable;
   void initStringTable();
-  Elf_Sym_Range getNonLocalSymbols();
-  Elf_Sym_Range getSymbolsHelper(bool);
+  Elf_Sym_Range getElfSymbols(bool OnlyGlobals);
 };
 
 // .o file.
@@ -110,7 +111,9 @@ public:
     return F->kind() == Base::ObjectKind;
   }
 
-  ArrayRef<SymbolBody *> getSymbols() { return SymbolBodies; }
+  ArrayRef<SymbolBody *> getSymbols();
+  ArrayRef<SymbolBody *> getLocalSymbols();
+  ArrayRef<SymbolBody *> getNonLocalSymbols();
 
   explicit ObjectFile(MemoryBufferRef M);
   void parse(llvm::DenseSet<StringRef> &ComdatGroups);
@@ -118,15 +121,9 @@ public:
   ArrayRef<InputSectionBase<ELFT> *> getSections() const { return Sections; }
   InputSectionBase<ELFT> *getSection(const Elf_Sym &Sym) const;
 
-  SymbolBody *getSymbolBody(uint32_t SymbolIndex) const {
-    uint32_t FirstNonLocal = this->Symtab->sh_info;
-    if (SymbolIndex < FirstNonLocal)
-      return nullptr;
-    return SymbolBodies[SymbolIndex - FirstNonLocal];
+  SymbolBody &getSymbolBody(uint32_t SymbolIndex) const {
+    return *SymbolBodies[SymbolIndex];
   }
-
-  Elf_Sym_Range getLocalSymbols();
-  const Elf_Sym *getLocalSymbol(uintX_t SymIndex);
 
   const Elf_Shdr *getSymbolTable() const { return this->Symtab; };
 
@@ -185,11 +182,16 @@ public:
   static bool classof(const InputFile *F);
   void parse(llvm::DenseSet<StringRef> &ComdatGroups);
   ArrayRef<SymbolBody *> getSymbols() { return SymbolBodies; }
+  static bool shouldSkip(const llvm::object::BasicSymbolRef &Sym);
 
 private:
   std::vector<SymbolBody *> SymbolBodies;
   llvm::BumpPtrAllocator Alloc;
   llvm::StringSaver Saver{Alloc};
+  SymbolBody *
+  createSymbolBody(const llvm::DenseSet<const llvm::Comdat *> &KeptComdats,
+                   const llvm::object::IRObjectFile &Obj,
+                   const llvm::object::BasicSymbolRef &Sym);
 };
 
 // .so file.

@@ -20,7 +20,7 @@
 #include "Symbols.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/IR/LegacyPassManager.h"
-#include "llvm/Linker/Linker.h"
+#include "llvm/Linker/IRMover.h"
 #include "llvm/Support/StringSaver.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetMachine.h"
@@ -84,7 +84,8 @@ void SymbolTable<ELFT>::addFile(std::unique_ptr<InputFile> File) {
     BitcodeFiles.emplace_back(cast<BitcodeFile>(File.release()));
     F->parse(ComdatGroups);
     for (SymbolBody *B : F->getSymbols())
-      resolve(B);
+      if (B)
+        resolve(B);
     return;
   }
 
@@ -92,8 +93,17 @@ void SymbolTable<ELFT>::addFile(std::unique_ptr<InputFile> File) {
   auto *F = cast<ObjectFile<ELFT>>(FileP);
   ObjectFiles.emplace_back(cast<ObjectFile<ELFT>>(File.release()));
   F->parse(ComdatGroups);
-  for (SymbolBody *B : F->getSymbols())
+  for (SymbolBody *B : F->getNonLocalSymbols())
     resolve(B);
+}
+
+// This is for use when debugging LTO.
+static void saveLtoObjectFile(StringRef Buffer) {
+  std::error_code EC;
+  raw_fd_ostream OS(Config->OutputFile.str() + ".lto.o", EC,
+                    sys::fs::OpenFlags::F_None);
+  check(EC);
+  OS << Buffer;
 }
 
 // Codegen the module M and returns the resulting InputFile.
@@ -123,7 +133,49 @@ std::unique_ptr<InputFile> SymbolTable<ELFT>::codegen(Module &M) {
     fatal("Failed to setup codegen");
   CodeGenPasses.run(M);
   LtoBuffer = MemoryBuffer::getMemBuffer(OwningLTOData, "", false);
+  if (Config->SaveTemps)
+    saveLtoObjectFile(LtoBuffer->getBuffer());
   return createObjectFile(*LtoBuffer);
+}
+
+static void addBitcodeFile(IRMover &Mover, BitcodeFile &F,
+                           LLVMContext &Context) {
+
+  std::unique_ptr<IRObjectFile> Obj =
+      check(IRObjectFile::create(F.MB, Context));
+  std::vector<GlobalValue *> Keep;
+  unsigned BodyIndex = 0;
+  ArrayRef<SymbolBody *> Bodies = F.getSymbols();
+
+  for (const BasicSymbolRef &Sym : Obj->symbols()) {
+    GlobalValue *GV = Obj->getSymbolGV(Sym.getRawDataRefImpl());
+    assert(GV);
+    if (GV->hasAppendingLinkage()) {
+      Keep.push_back(GV);
+      continue;
+    }
+    if (BitcodeFile::shouldSkip(Sym))
+      continue;
+    SymbolBody *B = Bodies[BodyIndex++];
+    if (!B || &B->repl() != B)
+      continue;
+    auto *DB = dyn_cast<DefinedBitcode>(B);
+    if (!DB)
+      continue;
+    Keep.push_back(GV);
+  }
+
+  Mover.move(Obj->takeModule(), Keep,
+             [](GlobalValue &, IRMover::ValueAdder) {});
+}
+
+// This is for use when debugging LTO.
+static void saveBCFile(Module &M) {
+  std::error_code EC;
+  raw_fd_ostream OS(Config->OutputFile.str() + ".lto.bc", EC,
+                    sys::fs::OpenFlags::F_None);
+  check(EC);
+  WriteBitcodeToFile(&M, OS, /* ShouldPreserveUseListOrder */ true);
 }
 
 // Merge all the bitcode files we have seen, codegen the result and return
@@ -132,15 +184,11 @@ template <class ELFT>
 ObjectFile<ELFT> *SymbolTable<ELFT>::createCombinedLtoObject() {
   LLVMContext Context;
   Module Combined("ld-temp.o", Context);
-  Linker L(Combined);
-  for (const std::unique_ptr<BitcodeFile> &F : BitcodeFiles) {
-    std::unique_ptr<MemoryBuffer> Buffer =
-        MemoryBuffer::getMemBuffer(F->MB, false);
-    std::unique_ptr<Module> M =
-        check(getLazyBitcodeModule(std::move(Buffer), Context,
-                                   /*ShouldLazyLoadMetadata*/ true));
-    L.linkInModule(std::move(M));
-  }
+  IRMover Mover(Combined);
+  for (const std::unique_ptr<BitcodeFile> &F : BitcodeFiles)
+    addBitcodeFile(Mover, *F, Context);
+  if (Config->SaveTemps)
+    saveBCFile(Combined);
   std::unique_ptr<InputFile> F = codegen(Combined);
   ObjectFiles.emplace_back(cast<ObjectFile<ELFT>>(F.release()));
   return &*ObjectFiles.back();
@@ -152,7 +200,7 @@ template <class ELFT> void SymbolTable<ELFT>::addCombinedLtoObject() {
   ObjectFile<ELFT> *Obj = createCombinedLtoObject();
   llvm::DenseSet<StringRef> DummyGroups;
   Obj->parse(DummyGroups);
-  for (SymbolBody *Body : Obj->getSymbols()) {
+  for (SymbolBody *Body : Obj->getNonLocalSymbols()) {
     Symbol *Sym = insert(Body);
     if (!Sym->Body->isUndefined() && Body->isUndefined())
       continue;
@@ -331,7 +379,7 @@ void SymbolTable<ELFT>::addMemberFile(Undefined *Undef, Lazy *L) {
     L->setWeak();
 
     // FIXME: Do we need to copy more?
-    L->IsTls = Undef->IsTls;
+    L->IsTls |= Undef->IsTls;
     return;
   }
 

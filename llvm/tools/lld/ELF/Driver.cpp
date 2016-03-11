@@ -104,9 +104,8 @@ void LinkerDriver::addFile(StringRef Path) {
     return;
   case file_magic::archive:
     if (WholeArchive) {
-      StringRef S = MBRef.getBufferIdentifier();
       for (MemoryBufferRef MB : getArchiveMembers(MBRef))
-        Files.push_back(createObjectFile(MB, S));
+        Files.push_back(createObjectFile(MB, Path));
       return;
     }
     Files.push_back(make_unique<ArchiveFile>(MBRef));
@@ -169,8 +168,6 @@ static bool hasZOption(opt::InputArgList &Args, StringRef Key) {
 }
 
 void LinkerDriver::main(ArrayRef<const char *> ArgsArr) {
-  initSymbols();
-
   opt::InputArgList Args = parseArgs(&Alloc, ArgsArr.slice(1));
   if (Args.hasArg(OPT_help)) {
     printHelp(ArgsArr[0]);
@@ -235,12 +232,14 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->ExportDynamic = Args.hasArg(OPT_export_dynamic);
   Config->GcSections = Args.hasArg(OPT_gc_sections);
   Config->ICF = Args.hasArg(OPT_icf);
-  Config->NoInhibitExec = Args.hasArg(OPT_noinhibit_exec);
   Config->NoUndefined = Args.hasArg(OPT_no_undefined);
+  Config->NoinhibitExec = Args.hasArg(OPT_noinhibit_exec);
   Config->PrintGcSections = Args.hasArg(OPT_print_gc_sections);
   Config->Relocatable = Args.hasArg(OPT_relocatable);
+  Config->SaveTemps = Args.hasArg(OPT_save_temps);
   Config->Shared = Args.hasArg(OPT_shared);
   Config->StripAll = Args.hasArg(OPT_strip_all);
+  Config->Threads = Args.hasArg(OPT_threads);
   Config->Verbose = Args.hasArg(OPT_verbose);
 
   Config->DynamicLinker = getString(Args, OPT_dynamic_linker);
@@ -316,11 +315,21 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
     error("no input files.");
 }
 
+template <class ELFT> static void initSymbols() {
+  ElfSym<ELFT>::Etext.setBinding(STB_GLOBAL);
+  ElfSym<ELFT>::Edata.setBinding(STB_GLOBAL);
+  ElfSym<ELFT>::End.setBinding(STB_GLOBAL);
+  ElfSym<ELFT>::Ignored.setBinding(STB_WEAK);
+  ElfSym<ELFT>::Ignored.setVisibility(STV_HIDDEN);
+}
+
 template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
+  initSymbols<ELFT>();
   // For LTO
   InitializeAllTargets();
   InitializeAllTargetMCs();
   InitializeAllAsmPrinters();
+  InitializeAllAsmParsers();
 
   SymbolTable<ELFT> Symtab;
   std::unique_ptr<TargetInfo> TI(createTarget());

@@ -46,6 +46,11 @@ bool LLParser::Run() {
   // Prime the lexer.
   Lex.Lex();
 
+  if (Context.discardValueNames())
+    return Error(
+        Lex.getLoc(),
+        "Can't read textual IR with a Context that discards named Values");
+
   return ParseTopLevelEntities() ||
          ValidateEndOfModule();
 }
@@ -60,6 +65,22 @@ bool LLParser::parseStandaloneConstantValue(Constant *&C,
     return true;
   if (Lex.getKind() != lltok::Eof)
     return Error(Lex.getLoc(), "expected end of string");
+  return false;
+}
+
+bool LLParser::parseTypeAtBeginning(Type *&Ty, unsigned &Read,
+                                    const SlotMapping *Slots) {
+  restoreParsingState(Slots);
+  Lex.Lex();
+
+  Read = 0;
+  SMLoc Start = Lex.getLoc();
+  Ty = nullptr;
+  if (ParseType(Ty))
+    return true;
+  SMLoc End = Lex.getLoc();
+  Read = End.getPointer() - Start.getPointer();
+
   return false;
 }
 
