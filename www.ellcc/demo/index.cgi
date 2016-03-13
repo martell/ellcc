@@ -214,16 +214,24 @@ allows you to compile for a wider set of processors.
 END
 
 my %llvmTargets = ();
-$llvmTargets{'microblaze'} = { label => 'Microblaze soft core', triple => 'microblaze-linux-eng'  };
-$llvmTargets{'mips32r2'} = { label => 'Mips', triple => 'mips-linux-eng'  };
-$llvmTargets{'mips32r2sf'} = { label => 'Mips Soft Float', triple => 'mips-linux-engsf'  };
-$llvmTargets{'arm'} = { label => 'ARM 32-bit Soft Float', triple => 'arm-linux-engeabi' };
-$llvmTargets{'arm'} = { label => 'ARM 32-bit', triple => 'arm-linux-engeabihf' };
-$llvmTargets{'thumb'} = { label => 'ARM Thumb', triple => 'thumb-linux-engeabi'  };
-$llvmTargets{'aarch64'} = { label => 'ARM AArch64', triple => 'aarch64-linux-eng'  };
-$llvmTargets{'ppc'} = { label => 'PowerPC 32-bit', triple => 'ppc-linux-eng'  };
-$llvmTargets{'i386'} = { label => 'X86 32-bit', triple => 'i386-linux-eng'  };
-$llvmTargets{'x86_64'}  = { label => 'X86 64-bit', triple => 'x86_64-linux-eng' };
+$llvmTargets{'microblaze'} = { label => 'Microblaze soft core',
+                               triple => 'microblaze-linux'  };
+$llvmTargets{'mips32r2'} = { label => 'Mips',
+                             triple => 'mips32r2-linux'  };
+$llvmTargets{'mips32r2sf'} = { label => 'Mips Soft Float', 
+                               triple => 'mips32r2sf-linux'  };
+$llvmTargets{'arm'} = { label => 'ARM 32-bit Soft Float',
+                        triple => 'arm32v7sf-linux' };
+$llvmTargets{'arm'} = { label => 'ARM 32-bit',
+                        triple => 'arm32v7-linux' };
+$llvmTargets{'cortex-m3'} = { label => 'ARM Cortex-M3 (Thumb)',
+                              triple => 'cortex-m3-linux'  };
+$llvmTargets{'arm64v8'} = { label => 'ARM AArch64',
+                            triple => 'arm64v8-linux'  };
+$llvmTargets{'ppc32'} = { label => 'PowerPC 32-bit',
+                          triple => 'ppc32-linux'  };
+$llvmTargets{'x86_32'} = { label => 'X86 32-bit', triple => 'x86_32-linuxg'  };
+$llvmTargets{'x86_64'}  = { label => 'X86 64-bit', triple => 'x86_64-linux' };
 $llvmTargets{'llvm'} = { label => 'LLVM assembly' };
 $llvmTargets{'cpp'} = { label => 'LLVM C++ API code' };
 my %targetLabels = map { $_ => $llvmTargets{$_}->{'label'} } keys %llvmTargets;
