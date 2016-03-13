@@ -16,4 +16,4 @@ mips32r2-linux
 #x86_32-linux
 x86_64-linux
 #x86_32-w64-mingw32
-x86_64-w64-mingw32
+#x86_64-w64-mingw32
