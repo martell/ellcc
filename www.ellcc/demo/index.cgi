@@ -230,7 +230,7 @@ $llvmTargets{'arm64v8'} = { label => 'ARM AArch64',
                             triple => 'arm64v8-linux'  };
 $llvmTargets{'ppc32'} = { label => 'PowerPC 32-bit',
                           triple => 'ppc32-linux'  };
-$llvmTargets{'x86_32'} = { label => 'X86 32-bit', triple => 'x86_32-linuxg'  };
+$llvmTargets{'x86_32'} = { label => 'X86 32-bit', triple => 'x86_32-linux'  };
 $llvmTargets{'x86_64'}  = { label => 'X86 64-bit', triple => 'x86_64-linux' };
 $llvmTargets{'llvm'} = { label => 'LLVM assembly' };
 $llvmTargets{'cpp'} = { label => 'LLVM C++ API code' };
