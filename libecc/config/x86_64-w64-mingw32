@@ -5,7 +5,7 @@ global:
 compiler:
   options:
     - -target x86_64-ellcc-mingw
-    # - -no-integrated-as
+    - -integrated-as
   c_include_dirs:
     - $R/clang
     - $R/mingw/include
