@@ -17,7 +17,7 @@ SHELL=/bin/sh
 # Get all linux configurations.
 ELLCC = ../../..
 LIBECC = $(ELLCC)/libecc
-Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux-*))
+Configs := $(patsubst %.notyet,,$(shell cd $(LIBECC)/config; echo *-linux))
 
 all: ecc $(Configs)
 

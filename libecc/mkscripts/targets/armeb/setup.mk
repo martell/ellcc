@@ -1,6 +1,6 @@
-TARGET := armeb
+TARGET := arm32v7eb
 Arch.$(TARGET) := armeb
-Triple.$(TARGET) := $(TARGET)-ellcc-$(OS)-eabi
+Triple.$(TARGET) := $(TARGET)-$(OS)
 TARGET.$(TARGET) := -target $(Triple.$(TARGET))
 ASFLAGS.$(TARGET) := $(TARGET.$(TARGET)) -march=armv7 -mfpu=vfp -mfloat-abi=softfp \
 		    $(ASFLAGS)

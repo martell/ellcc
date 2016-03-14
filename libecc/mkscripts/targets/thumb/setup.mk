@@ -1,6 +1,6 @@
-TARGET := thumb
+TARGET := cortex-m3
 Arch.$(TARGET) := thumb
-Triple.$(TARGET) := thumb-linux-engeabi
+Triple.$(TARGET) := $(TARGET)-linux
 TARGET.$(TARGET) := -target $(Triple.$(TARGET))
 ASFLAGS.$(TARGET) := $(TARGET.$(TARGET)) $(ASFLAGS)
 CFLAGS.$(TARGET) := $(TARGET.$(TARGET)) $(CFLAGS)

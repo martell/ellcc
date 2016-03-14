@@ -1,6 +1,6 @@
 TARGET := ppc64
 Arch.$(TARGET) := ppc64
-Triple.$(TARGET) := $(TARGET)-ellcc-$(OS)
+Triple.$(TARGET) := $(TARGET)-$(OS)
 TARGET.$(TARGET) := -target $(Triple.$(TARGET))
 ASFLAGS.$(TARGET) := $(TARGET.$(TARGET)) $(ASFLAGS)
 CFLAGS.$(TARGET) := $(TARGET.$(TARGET)) $(CFLAGS)
