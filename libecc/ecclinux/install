@@ -37,9 +37,9 @@ echo "Populating the SD card."
 mkdir -p root boot
 mount $BOOT boot
 mount $ROOT root
-cp -r image/arm-linux-engeabihf/bcm2709/* boot
+cp -r image/arm32v7-linux/bcm2709/* boot
 cp boot/vmlinuz-*-v7 boot/kernel7.img
-cd image/arm-linux-engeabihf/
+cd image/arm32v7-linux/
 tar cvfp - bin etc lib sbin usr var | (cd ../../root; tar xfp -)
 cp -R $ELLCC/libecc/share/terminfo  $ELLCC/libecc/share/tabset ../../root/usr/share
 cd bcm2709/
