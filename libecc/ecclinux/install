@@ -33,12 +33,15 @@ echo "Creating file systems."
 mkfs -t fat $BOOT
 yes | mkfs -t ext4 $ROOT
 
+cd image/arm32v7-linux/bcm2709
+perl ../../../linux-4.5/scripts/mkknlimg vmlinuz-*-v7 kernel7.img
+cd -
+
 echo "Populating the SD card."
 mkdir -p root boot
 mount $BOOT boot
 mount $ROOT root
 cp -r image/arm32v7-linux/bcm2709/* boot
-cp boot/vmlinuz-*-v7 boot/kernel7.img
 cd image/arm32v7-linux/
 tar cvfp - bin etc lib sbin usr var | (cd ../../root; tar xfp -)
 cp -R $ELLCC/libecc/share/terminfo  $ELLCC/libecc/share/tabset ../../root/usr/share
