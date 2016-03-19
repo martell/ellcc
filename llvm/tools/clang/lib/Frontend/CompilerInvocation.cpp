@@ -541,6 +541,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DisableFPElim =
       (Args.hasArg(OPT_mdisable_fp_elim) || Args.hasArg(OPT_pg));
   Opts.DisableFree = Args.hasArg(OPT_disable_free);
+  Opts.DiscardValueNames = Args.hasArg(OPT_discard_value_names);
   Opts.DisableTailCalls = Args.hasArg(OPT_mdisable_tail_calls);
   Opts.FloatABI = Args.getLastArgValue(OPT_mfloat_abi);
   if (Arg *A = Args.getLastArg(OPT_meabi)) {
@@ -607,7 +608,7 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
 
   Opts.PrepareForLTO = Args.hasArg(OPT_flto, OPT_flto_EQ);
   const Arg *A = Args.getLastArg(OPT_flto, OPT_flto_EQ);
-  Opts.EmitFunctionSummary = A && A->containsValue("thin");
+  Opts.EmitSummaryIndex = A && A->containsValue("thin");
   if (Arg *A = Args.getLastArg(OPT_fthinlto_index_EQ)) {
     if (IK != IK_LLVM_IR)
       Diags.Report(diag::err_drv_argument_only_allowed_with)
@@ -705,6 +706,9 @@ static bool ParseCodeGenArgs(CodeGenOptions &Opts, ArgList &Args, InputKind IK,
         static_cast<CodeGenOptions::ObjCDispatchMethodKind>(Method));
     }
   }
+
+  if (Args.hasArg(OPT_fno_objc_convert_messages_to_runtime_calls))
+    Opts.ObjCConvertMessagesToRuntimeCalls = 0;
 
   Opts.EmulatedTLS =
       Args.hasFlag(OPT_femulated_tls, OPT_fno_emulated_tls, false);
@@ -1050,18 +1054,10 @@ static InputKind ParseFrontendArgs(FrontendOptions &Opts, ArgList &Args,
     Opts.Plugins.emplace_back(A->getValue(0));
     Opts.ProgramAction = frontend::PluginAction;
     Opts.ActionName = A->getValue();
-
-    for (const Arg *AA : Args.filtered(OPT_plugin_arg))
-      if (AA->getValue(0) == Opts.ActionName)
-        Opts.PluginArgs.emplace_back(AA->getValue(1));
   }
-
   Opts.AddPluginActions = Args.getAllArgValues(OPT_add_plugin);
-  Opts.AddPluginArgs.resize(Opts.AddPluginActions.size());
-  for (int i = 0, e = Opts.AddPluginActions.size(); i != e; ++i)
-    for (const Arg *A : Args.filtered(OPT_plugin_arg))
-      if (A->getValue(0) == Opts.AddPluginActions[i])
-        Opts.AddPluginArgs[i].emplace_back(A->getValue(1));
+  for (const Arg *AA : Args.filtered(OPT_plugin_arg))
+    Opts.PluginArgs[AA->getValue(0)].emplace_back(AA->getValue(1));
 
   for (const std::string &Arg :
          Args.getAllArgValues(OPT_ftest_module_file_extension_EQ)) {
@@ -1438,6 +1434,7 @@ void CompilerInvocation::setLangDefaults(LangOptions &Opts, InputKind IK,
     Opts.LaxVectorConversions = 0;
     Opts.DefaultFPContract = 1;
     Opts.NativeHalfType = 1;
+    Opts.NativeHalfArgsAndReturns = 1;
   }
 
   Opts.CUDA = IK == IK_CUDA || IK == IK_PreprocessedCuda ||
@@ -1799,7 +1796,11 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.ModuleFeatures = Args.getAllArgValues(OPT_fmodule_feature);
   std::sort(Opts.ModuleFeatures.begin(), Opts.ModuleFeatures.end());
   Opts.NativeHalfType |= Args.hasArg(OPT_fnative_half_type);
-  Opts.HalfArgsAndReturns = Args.hasArg(OPT_fallow_half_arguments_and_returns);
+  Opts.NativeHalfArgsAndReturns |= Args.hasArg(OPT_fnative_half_arguments_and_returns);
+  // Enable HalfArgsAndReturns if present in Args or if NativeHalfArgsAndReturns
+  // is enabled.
+  Opts.HalfArgsAndReturns = Args.hasArg(OPT_fallow_half_arguments_and_returns)
+                            | Opts.NativeHalfArgsAndReturns;
   Opts.GNUAsm = !Args.hasArg(OPT_fno_gnu_inline_asm);
 
   // __declspec is enabled by default for the PS4 by the driver, and also
@@ -1883,7 +1884,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   }
 
   // Get the OpenMP target triples if any.
-  if (Arg *A = Args.getLastArg(options::OPT_omptargets_EQ)) {
+  if (Arg *A = Args.getLastArg(options::OPT_fomptargets_EQ)) {
 
     for (unsigned i = 0; i < A->getNumValues(); ++i) {
       llvm::Triple TT(A->getValue(i));
@@ -1897,7 +1898,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
 
   // Get OpenMP host file path if any and report if a non existent file is
   // found
-  if (Arg *A = Args.getLastArg(options::OPT_omp_host_ir_file_path)) {
+  if (Arg *A = Args.getLastArg(options::OPT_fomp_host_ir_file_path)) {
     Opts.OMPHostIRFile = A->getValue();
     if (!llvm::sys::fs::exists(Opts.OMPHostIRFile))
       Diags.Report(clang::diag::err_drv_omp_host_ir_file_not_found)
@@ -2152,6 +2153,14 @@ bool CompilerInvocation::CreateFromArgs(CompilerInvocation &Res,
     if (Res.getFrontendOpts().ProgramAction == frontend::RewriteObjC)
       Res.getLangOpts()->ObjCExceptions = 1;
   }
+
+  // FIXME: Override value name discarding when asan or msan is used because the
+  // backend passes depend on the name of the alloca in order to print out
+  // names.
+  Res.getCodeGenOpts().DiscardValueNames &=
+      !Res.getLangOpts()->Sanitize.has(SanitizerKind::Address) &&
+      !Res.getLangOpts()->Sanitize.has(SanitizerKind::Memory);
+
   // FIXME: ParsePreprocessorArgs uses the FileManager to read the contents of
   // PCH file and find the original header name. Remove the need to do that in
   // ParsePreprocessorArgs and remove the FileManager

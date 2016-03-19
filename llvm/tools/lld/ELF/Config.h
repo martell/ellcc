@@ -54,6 +54,7 @@ struct Configuration {
   bool AsNeeded = false;
   bool Bsymbolic;
   bool BsymbolicFunctions;
+  bool BuildId;
   bool Demangle = true;
   bool DiscardAll;
   bool DiscardLocals;
@@ -67,7 +68,10 @@ struct Configuration {
   bool Mips64EL = false;
   bool NoUndefined;
   bool NoinhibitExec;
+  bool Pic;
+  bool Pie;
   bool PrintGcSections;
+  bool Rela;
   bool Relocatable;
   bool SaveTemps;
   bool Shared;
@@ -76,6 +80,7 @@ struct Configuration {
   bool SysvHash = true;
   bool Threads;
   bool Verbose;
+  bool WarnCommon;
   bool ZExecStack;
   bool ZNodelete;
   bool ZNow;

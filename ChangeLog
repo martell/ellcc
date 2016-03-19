@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r263883.
 * Update the ecclinux kernel version to 4.1.19.
 
 version 0.1.29:

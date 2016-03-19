@@ -2370,8 +2370,9 @@ Instruction *InstCombiner::visitExtractValueInst(ExtractValueInst &EV) {
 static bool isCatchAll(EHPersonality Personality, Constant *TypeInfo) {
   switch (Personality) {
   case EHPersonality::GNU_C:
-    // The GCC C EH personality only exists to support cleanups, so it's not
-    // clear what the semantics of catch clauses are.
+  case EHPersonality::Rust:
+    // The GCC C EH and Rust personality only exists to support cleanups, so
+    // it's not clear what the semantics of catch clauses are.
     return false;
   case EHPersonality::Unknown:
     return false;
@@ -3054,7 +3055,7 @@ combineInstructionsOverFunction(Function &F, InstCombineWorklist &Worklist,
 
   /// Builder - This is an IRBuilder that automatically inserts new
   /// instructions into the worklist when they are created.
-  IRBuilder<true, TargetFolder, InstCombineIRInserter> Builder(
+  IRBuilder<TargetFolder, InstCombineIRInserter> Builder(
       F.getContext(), TargetFolder(DL), InstCombineIRInserter(Worklist, &AC));
 
   // Lower dbg.declare intrinsics otherwise their value may be clobbered

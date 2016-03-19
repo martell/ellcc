@@ -785,7 +785,6 @@ struct SignalContext {
 
 void GetPcSpBp(void *context, uptr *pc, uptr *sp, uptr *bp);
 
-void DisableReexec();
 void MaybeReexec();
 
 template <typename Fn>

@@ -57,6 +57,8 @@ static unsigned ClangCallConvToLLVMCallConv(CallingConv CC) {
   case CC_X86VectorCall: return llvm::CallingConv::X86_VectorCall;
   case CC_SpirFunction: return llvm::CallingConv::SPIR_FUNC;
   case CC_SpirKernel: return llvm::CallingConv::SPIR_KERNEL;
+  case CC_PreserveMost: return llvm::CallingConv::PreserveMost;
+  case CC_PreserveAll: return llvm::CallingConv::PreserveAll;
   }
 }
 
@@ -186,6 +188,12 @@ static CallingConv getCallingConventionForDecl(const Decl *D, bool IsWindows) {
 
   if (D->hasAttr<SysVABIAttr>())
     return IsWindows ? CC_X86_64SysV : CC_C;
+
+  if (D->hasAttr<PreserveMostAttr>())
+    return CC_PreserveMost;
+
+  if (D->hasAttr<PreserveAllAttr>())
+    return CC_PreserveAll;
 
   return CC_C;
 }
@@ -3840,7 +3848,7 @@ RValue CodeGenFunction::EmitCall(const CGFunctionInfo &CallInfo,
   }
 
   llvm::Instruction *CI = CS.getInstruction();
-  if (Builder.isNamePreserving() && !CI->getType()->isVoidTy())
+  if (!CI->getType()->isVoidTy())
     CI->setName("call");
 
   // Emit any writebacks immediately.  Arguably this should happen

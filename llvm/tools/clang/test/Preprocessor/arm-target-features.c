@@ -14,7 +14,7 @@
 // CHECK-V7: __ARM_ARCH 7
 // CHECK-V7: __ARM_ARCH_7A__ 1
 // CHECK-V7-NOT: __ARM_FEATURE_CRC32
-// CHECK-V7-NOT: __ARM_FEATURE_NUMERIC_MAXMIN                                   
+// CHECK-V7-NOT: __ARM_FEATURE_NUMERIC_MAXMIN
 // CHECK-V7-NOT: __ARM_FEATURE_DIRECTED_ROUNDING
 // CHECK-V7: __ARM_FP 0xC
 
@@ -389,16 +389,18 @@
 // R5-THUMB:#define __ARM_FEATURE_DSP
 // R5-THUMB:#define __ARM_FP 0xC
 
-// Test whether predefines are as expected when targeting cortex-r7.
-// RUN: %clang -target armv7 -mcpu=cortex-r7 -x c -E -dM %s -o - | FileCheck --check-prefix=R7-ARM %s
-// R7-ARM:#define __ARM_ARCH_EXT_IDIV__ 1
-// R7-ARM:#define __ARM_FEATURE_DSP
-// R7-ARM:#define __ARM_FP 0xE
+// Test whether predefines are as expected when targeting cortex-r7 and cortex-r8.
+// RUN: %clang -target armv7 -mcpu=cortex-r7 -x c -E -dM %s -o - | FileCheck --check-prefix=R7-R8-ARM %s
+// RUN: %clang -target armv7 -mcpu=cortex-r8 -x c -E -dM %s -o - | FileCheck --check-prefix=R7-R8-ARM %s
+// R7-R8-ARM:#define __ARM_ARCH_EXT_IDIV__ 1
+// R7-R8-ARM:#define __ARM_FEATURE_DSP
+// R7-R8-ARM:#define __ARM_FP 0xE
 
-// RUN: %clang -target armv7 -mthumb -mcpu=cortex-r7 -x c -E -dM %s -o - | FileCheck --check-prefix=R7-THUMB %s
-// R7-THUMB:#define __ARM_ARCH_EXT_IDIV__ 1
-// R7-THUMB:#define __ARM_FEATURE_DSP
-// R7-THUMB:#define __ARM_FP 0xE
+// RUN: %clang -target armv7 -mthumb -mcpu=cortex-r7 -x c -E -dM %s -o - | FileCheck --check-prefix=R7-R8-THUMB %s
+// RUN: %clang -target armv7 -mthumb -mcpu=cortex-r8 -x c -E -dM %s -o - | FileCheck --check-prefix=R7-R8-THUMB %s
+// R7-R8-THUMB:#define __ARM_ARCH_EXT_IDIV__ 1
+// R7-R8-THUMB:#define __ARM_FEATURE_DSP
+// R7-R8-THUMB:#define __ARM_FP 0xE
 
 // Test whether predefines are as expected when targeting cortex-m0.
 // RUN: %clang -target armv7 -mthumb -mcpu=cortex-m0 -x c -E -dM %s -o - | FileCheck --check-prefix=M0-THUMB %s
