@@ -653,6 +653,7 @@ clang-headers:
 	    cp -p clang/mm_malloc.h include ; \
 	    cp -p clang/xmmintrin.h include ; \
 	    cp -p clang/f16cintrin.h include ; \
+	    cp -p clang/stdatomic.h include ; \
 	  fi
 
 $(ElkConfigs)::
