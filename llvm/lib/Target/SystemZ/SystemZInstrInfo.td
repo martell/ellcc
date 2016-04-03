@@ -67,9 +67,14 @@ let isBranch = 1, isTerminator = 1, Uses = [CC] in {
                       "brc\t$R1, $I2", []>;
   def AsmBRCL : InstRIL<0xC04, (outs), (ins imm32zx4:$R1, brtarget32:$I2),
                         "brcl\t$R1, $I2", []>;
+  def AsmBC : InstRX<0x47, (outs), (ins imm32zx4:$R1, bdxaddr12only:$XBD2),
+                     "bc\t$R1, $XBD2", []>;
   def AsmBCR : InstRR<0x07, (outs), (ins imm32zx4:$R1, GR64:$R2),
                       "bcr\t$R1, $R2", []>;
 }
+
+def AsmNop  : InstAlias<"nop\t$XBD", (AsmBC 0, bdxaddr12only:$XBD), 0>;
+def AsmNopR : InstAlias<"nopr\t$R", (AsmBCR 0, GR64:$R), 0>;
 
 // Fused compare-and-branch instructions.  As for normal branches,
 // we handle these instructions internally in their raw CRJ-like form,
@@ -192,7 +197,7 @@ defm AsmJLE  : IntCondExtendedMnemonic<12, "le", "nh">;
 
 // Decrement a register and branch if it is nonzero.  These don't clobber CC,
 // but we might need to split long branches into sequences that do.
-let isBranch = 1, isTerminator = 1, Defs = [CC] in {
+let Defs = [CC] in {
   def BRCT  : BranchUnaryRI<"brct",  0xA76, GR32>;
   def BRCTG : BranchUnaryRI<"brctg", 0xA77, GR64>;
 }

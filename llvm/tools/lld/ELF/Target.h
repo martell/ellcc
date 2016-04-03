@@ -17,6 +17,7 @@
 
 namespace lld {
 namespace elf {
+class InputFile;
 class SymbolBody;
 
 class TargetInfo {
@@ -31,6 +32,7 @@ public:
   virtual void writeGotHeader(uint8_t *Buf) const {}
   virtual void writeGotPltHeader(uint8_t *Buf) const {}
   virtual void writeGotPlt(uint8_t *Buf, uint64_t Plt) const {};
+  virtual uint64_t getImplicitAddend(const uint8_t *Buf, uint32_t Type) const;
 
   // If lazy binding is supported, the first entry of the PLT has code
   // to call the dynamic linker to resolve PLT entries the first time
@@ -55,16 +57,19 @@ public:
 
   virtual bool isSizeRel(uint32_t Type) const;
   virtual bool needsDynRelative(uint32_t Type) const { return false; }
-  virtual bool needsGot(uint32_t Type, SymbolBody &S) const;
+  virtual bool needsGot(uint32_t Type, const SymbolBody &S) const;
   virtual bool refersToGotEntry(uint32_t Type) const;
 
   enum PltNeed { Plt_No, Plt_Explicit, Plt_Implicit };
-  template <class ELFT>
   PltNeed needsPlt(uint32_t Type, const SymbolBody &S) const;
 
+  virtual bool needsThunk(uint32_t Type, const InputFile &File,
+                          const SymbolBody &S) const;
+
+  virtual void writeThunk(uint8_t *Buf, uint64_t S) const {}
+
   virtual void relocateOne(uint8_t *Loc, uint8_t *BufEnd, uint32_t Type,
-                           uint64_t P, uint64_t SA, uint64_t ZA = 0,
-                           uint8_t *PairedLoc = nullptr) const = 0;
+                           uint64_t P, uint64_t SA) const = 0;
   virtual bool isGotRelative(uint32_t Type) const;
   bool canRelaxTls(uint32_t Type, const SymbolBody *S) const;
   template <class ELFT>
@@ -95,6 +100,7 @@ public:
   unsigned PltZeroSize = 0;
   unsigned GotHeaderEntriesNum = 0;
   unsigned GotPltHeaderEntriesNum = 3;
+  uint32_t ThunkSize = 0;
   bool UseLazyBinding = false;
 
 private:

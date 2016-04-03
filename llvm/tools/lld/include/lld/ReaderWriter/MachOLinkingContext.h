@@ -13,6 +13,7 @@
 #include "lld/Core/LinkingContext.h"
 #include "lld/Core/Reader.h"
 #include "lld/Core/Writer.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -92,6 +93,18 @@ public:
   std::string demangle(StringRef symbolName) const override;
 
   void createImplicitFiles(std::vector<std::unique_ptr<File>> &) override;
+
+  /// Creates a new file which is owned by the context.  Returns a pointer to
+  /// the new file.
+  template <class T, class... Args>
+  typename std::enable_if<!std::is_array<T>::value, T *>::type
+  make_file(Args &&... args) const {
+    auto file = std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+    auto *filePtr = file.get();
+    auto *ctx = const_cast<MachOLinkingContext *>(this);
+    ctx->getNodes().push_back(llvm::make_unique<FileNode>(std::move(file)));
+    return filePtr;
+  }
 
   uint32_t getCPUType() const;
   uint32_t getCPUSubType() const;
@@ -212,12 +225,12 @@ public:
   /// The -lFoo option is documented to search for libFoo.dylib and libFoo.a in
   /// that order, unless Foo ends in ".o", in which case only the exact file
   /// matches (e.g. -lfoo.o would only find foo.o).
-  ErrorOr<StringRef> searchDirForLibrary(StringRef path,
-                                         StringRef libName) const;
+  llvm::Optional<StringRef> searchDirForLibrary(StringRef path,
+                                                StringRef libName) const;
 
   /// \brief Iterates through all search path entries looking for libName (as
   /// specified by -lFoo).
-  ErrorOr<StringRef> searchLibrary(StringRef libName) const;
+  llvm::Optional<StringRef> searchLibrary(StringRef libName) const;
 
   /// Add a framework search path.  Internally, this method may be prepended
   /// the path with syslibroot.
@@ -225,7 +238,7 @@ public:
 
   /// \brief Iterates through all framework directories looking for
   /// Foo.framework/Foo (when fwName = "Foo").
-  ErrorOr<StringRef> findPathForFramework(StringRef fwName) const;
+  llvm::Optional<StringRef> findPathForFramework(StringRef fwName) const;
 
   /// \brief The dylib's binary compatibility version, in the raw uint32 format.
   ///
@@ -394,7 +407,7 @@ public:
 
   void finalizeInputFiles() override;
 
-  std::error_code handleLoadedFile(File &file) override;
+  llvm::Error handleLoadedFile(File &file) override;
 
   bool customAtomOrderer(const DefinedAtom *left, const DefinedAtom *right,
                          bool &leftBeforeRight) const;

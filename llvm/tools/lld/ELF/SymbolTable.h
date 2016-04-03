@@ -11,11 +11,8 @@
 #define LLD_ELF_SYMBOL_TABLE_H
 
 #include "InputFiles.h"
+#include "LTO.h"
 #include "llvm/ADT/MapVector.h"
-
-namespace llvm {
-class Module;
-}
 
 namespace lld {
 namespace elf {
@@ -71,12 +68,7 @@ private:
   void addLazy(Lazy *New);
   void addMemberFile(Undefined *Undef, Lazy *L);
   void resolve(SymbolBody *Body);
-  std::unique_ptr<InputFile> codegen(llvm::Module &M);
   std::string conflictMsg(SymbolBody *Old, SymbolBody *New);
-
-  SmallString<0> OwningLTOData;
-  std::unique_ptr<MemoryBuffer> LtoBuffer;
-  ObjectFile<ELFT> *createCombinedLtoObject();
 
   // The order the global symbols are in is not defined. We can use an arbitrary
   // order, but it has to be reproducible. That is true even when cross linking.
@@ -101,6 +93,8 @@ private:
 
   // Set of .so files to not link the same shared object file more than once.
   llvm::DenseSet<StringRef> SoNames;
+
+  std::unique_ptr<BitcodeCompiler> Lto;
 };
 
 } // namespace elf

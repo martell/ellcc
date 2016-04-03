@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/Frontend/Utils.h"
+#include "clang/Lex/Preprocessor.h"
 #include "clang/Serialization/ASTReader.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/iterator_range.h"
@@ -22,25 +23,42 @@
 using namespace clang;
 
 namespace {
-/// Private implementation for ModuleDependencyCollector
+/// Private implementations for ModuleDependencyCollector
 class ModuleDependencyListener : public ASTReaderListener {
   ModuleDependencyCollector &Collector;
-  llvm::StringMap<std::string> SymLinkMap;
-
-  bool getRealPath(StringRef SrcPath, SmallVectorImpl<char> &Result);
-  std::error_code copyToRoot(StringRef Src);
 public:
   ModuleDependencyListener(ModuleDependencyCollector &Collector)
       : Collector(Collector) {}
   bool needsInputFileVisitation() override { return true; }
   bool needsSystemInputFileVisitation() override { return true; }
   bool visitInputFile(StringRef Filename, bool IsSystem, bool IsOverridden,
-                      bool IsExplicitModule) override;
+                      bool IsExplicitModule) override {
+    Collector.addFile(Filename);
+    return true;
+  }
 };
+
+struct ModuleDependencyMMCallbacks : public ModuleMapCallbacks {
+  ModuleDependencyCollector &Collector;
+  ModuleDependencyMMCallbacks(ModuleDependencyCollector &Collector)
+      : Collector(Collector) {}
+
+  void moduleMapAddHeader(const FileEntry &File) override {
+    StringRef HeaderPath = File.getName();
+    if (llvm::sys::path::is_absolute(HeaderPath))
+      Collector.addFile(HeaderPath);
+  }
+};
+
 }
 
 void ModuleDependencyCollector::attachToASTReader(ASTReader &R) {
   R.addListener(llvm::make_unique<ModuleDependencyListener>(*this));
+}
+
+void ModuleDependencyCollector::attachToPreprocessor(Preprocessor &PP) {
+  PP.getHeaderSearchInfo().getModuleMap().addModuleMapCallbacks(
+      llvm::make_unique<ModuleDependencyMMCallbacks>(*this));
 }
 
 void ModuleDependencyCollector::writeFileMap() {
@@ -50,10 +68,14 @@ void ModuleDependencyCollector::writeFileMap() {
   SmallString<256> Dest = getDest();
   llvm::sys::path::append(Dest, "vfs.yaml");
 
+  // Default to use relative overlay directories in the VFS yaml file. This
+  // allows crash reproducer scripts to work across machines.
+  VFSWriter.setOverlayDir(getDest());
+
   std::error_code EC;
   llvm::raw_fd_ostream OS(Dest, EC, llvm::sys::fs::F_Text);
   if (EC) {
-    setHasErrors();
+    HasErrors = true;
     return;
   }
   VFSWriter.write(OS);
@@ -77,8 +99,8 @@ static bool real_path(StringRef SrcPath, SmallVectorImpl<char> &RealPath) {
 #endif
 }
 
-bool ModuleDependencyListener::getRealPath(StringRef SrcPath,
-                                           SmallVectorImpl<char> &Result) {
+bool ModuleDependencyCollector::getRealPath(StringRef SrcPath,
+                                            SmallVectorImpl<char> &Result) {
   using namespace llvm::sys;
   SmallString<256> RealPath;
   StringRef FileName = path::filename(SrcPath);
@@ -101,7 +123,7 @@ bool ModuleDependencyListener::getRealPath(StringRef SrcPath,
   return true;
 }
 
-std::error_code ModuleDependencyListener::copyToRoot(StringRef Src) {
+std::error_code ModuleDependencyCollector::copyToRoot(StringRef Src) {
   using namespace llvm::sys;
 
   // We need an absolute path to append to the root.
@@ -127,7 +149,7 @@ std::error_code ModuleDependencyListener::copyToRoot(StringRef Src) {
                              !StringRef(CanonicalPath).equals(RealPath);
 
   // Build the destination path.
-  SmallString<256> Dest = Collector.getDest();
+  SmallString<256> Dest = getDest();
   path::append(Dest, path::relative_path(HasRemovedSymlinkComponent ? RealPath
                                                              : CanonicalPath));
 
@@ -141,18 +163,15 @@ std::error_code ModuleDependencyListener::copyToRoot(StringRef Src) {
 
   // Use the canonical path under the root for the file mapping. Also create
   // an additional entry for the real path.
-  Collector.addFileMapping(CanonicalPath, Dest);
+  addFileMapping(CanonicalPath, Dest);
   if (HasRemovedSymlinkComponent)
-    Collector.addFileMapping(RealPath, Dest);
+    addFileMapping(RealPath, Dest);
 
   return std::error_code();
 }
 
-bool ModuleDependencyListener::visitInputFile(StringRef Filename, bool IsSystem,
-                                              bool IsOverridden,
-                                              bool IsExplicitModule) {
-  if (Collector.insertSeen(Filename))
+void ModuleDependencyCollector::addFile(StringRef Filename) {
+  if (insertSeen(Filename))
     if (copyToRoot(Filename))
-      Collector.setHasErrors();
-  return true;
+      HasErrors = true;
 }

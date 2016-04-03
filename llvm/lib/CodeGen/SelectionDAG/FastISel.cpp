@@ -89,6 +89,8 @@ void FastISel::ArgListEntry::setAttributes(ImmutableCallSite *CS,
   IsByVal = CS->paramHasAttr(AttrIdx, Attribute::ByVal);
   IsInAlloca = CS->paramHasAttr(AttrIdx, Attribute::InAlloca);
   IsReturned = CS->paramHasAttr(AttrIdx, Attribute::Returned);
+  IsSwiftSelf = CS->paramHasAttr(AttrIdx, Attribute::SwiftSelf);
+  IsSwiftError = CS->paramHasAttr(AttrIdx, Attribute::SwiftError);
   Alignment = CS->getParamAlignment(AttrIdx);
 }
 
@@ -957,6 +959,10 @@ bool FastISel::lowerCallTo(CallLoweringInfo &CLI) {
       Flags.setInReg();
     if (Arg.IsSRet)
       Flags.setSRet();
+    if (Arg.IsSwiftSelf)
+      Flags.setSwiftSelf();
+    if (Arg.IsSwiftError)
+      Flags.setSwiftError();
     if (Arg.IsByVal)
       Flags.setByVal();
     if (Arg.IsInAlloca) {
@@ -1350,6 +1356,12 @@ bool FastISel::selectInstruction(const Instruction *I) {
       removeDeadLocalValueCode(SavedLastLocalValue);
       return false;
     }
+
+  // FastISel does not handle any operand bundles except OB_funclet.
+  if (ImmutableCallSite CS = ImmutableCallSite(I))
+    for (unsigned i = 0, e = CS.getNumOperandBundles(); i != e; ++i)
+      if (CS.getOperandBundleAt(i).getTagID() != LLVMContext::OB_funclet)
+        return false;
 
   DbgLoc = I->getDebugLoc();
 

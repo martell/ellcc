@@ -196,6 +196,9 @@ class Verifier : public InstVisitor<Verifier>, VerifierSupport {
   /// \brief Keep track of the metadata nodes that have been checked already.
   SmallPtrSet<const Metadata *, 32> MDNodes;
 
+  /// Track all DICompileUnits visited.
+  SmallPtrSet<const Metadata *, 2> CUVisited;
+
   /// \brief Track unresolved string-based type references.
   SmallDenseMap<const MDString *, const MDNode *, 32> UnresolvedTypeRefs;
 
@@ -302,7 +305,9 @@ public:
     visitModuleFlags(M);
     visitModuleIdents(M);
 
-    // Verify type referneces last.
+    verifyCompileUnits();
+
+    // Verify type references last.
     verifyTypeRefs();
 
     return !Broken;
@@ -421,6 +426,8 @@ private:
   void visitCleanupReturnInst(CleanupReturnInst &CRI);
 
   void verifyCallSite(CallSite CS);
+  void verifySwiftErrorCallSite(CallSite CS, const Value *SwiftErrorVal);
+  void verifySwiftErrorValue(const Value *SwiftErrorVal);
   void verifyMustTailCall(CallInst &CI);
   bool performTypeCheck(Intrinsic::ID ID, Function *F, Type *Ty, int VT,
                         unsigned ArgNo, std::string &Suffix);
@@ -444,12 +451,15 @@ private:
   void verifyFrameRecoverIndices();
   void verifySiblingFuncletUnwinds();
 
-  // Module-level debug info verification...
+  /// @{
+  /// Module-level debug info verification...
   void verifyTypeRefs();
+  void verifyCompileUnits();
   template <class MapTy>
   void verifyBitPieceExpression(const DbgInfoIntrinsic &I,
                                 const MapTy &TypeRefs);
   void visitUnresolvedTypeRef(const MDString *S, const MDNode *N);
+  /// @}
 };
 } // End anonymous namespace
 
@@ -929,6 +939,9 @@ void Verifier::visitDICompileUnit(const DICompileUnit &N) {
   Assert(!N.getFile()->getFilename().empty(), "invalid filename", &N,
          N.getFile());
 
+  Assert((N.getEmissionKind() <= DICompileUnit::LastEmissionKind),
+         "invalid emission kind", &N);
+
   if (auto *Array = N.getRawEnumTypes()) {
     Assert(isa<MDTuple>(Array), "invalid enum list", &N, Array);
     for (Metadata *Op : N.getEnumTypes()->operands()) {
@@ -969,6 +982,7 @@ void Verifier::visitDICompileUnit(const DICompileUnit &N) {
       Assert(Op && isa<DIMacroNode>(Op), "invalid macro ref", &N, Op);
     }
   }
+  CUVisited.insert(&N);
 }
 
 void Verifier::visitDISubprogram(const DISubprogram &N) {
@@ -1335,9 +1349,12 @@ void Verifier::verifyParameterAttrs(AttributeSet Attrs, unsigned Idx, Type *Ty,
                !Attrs.hasAttribute(Idx, Attribute::StructRet) &&
                !Attrs.hasAttribute(Idx, Attribute::NoCapture) &&
                !Attrs.hasAttribute(Idx, Attribute::Returned) &&
-               !Attrs.hasAttribute(Idx, Attribute::InAlloca),
-           "Attributes 'byval', 'inalloca', 'nest', 'sret', 'nocapture', and "
-           "'returned' do not apply to return values!",
+               !Attrs.hasAttribute(Idx, Attribute::InAlloca) &&
+               !Attrs.hasAttribute(Idx, Attribute::SwiftSelf) &&
+               !Attrs.hasAttribute(Idx, Attribute::SwiftError),
+           "Attributes 'byval', 'inalloca', 'nest', 'sret', 'nocapture', "
+           "'returned', 'swiftself', and 'swifterror' do not apply to return "
+           "values!",
            V);
 
   // Check for mutually incompatible attributes.  Only inreg is compatible with
@@ -1397,9 +1414,18 @@ void Verifier::verifyParameterAttrs(AttributeSet Attrs, unsigned Idx, Type *Ty,
              "Attributes 'byval' and 'inalloca' do not support unsized types!",
              V);
     }
+    if (!isa<PointerType>(PTy->getElementType()))
+      Assert(!Attrs.hasAttribute(Idx, Attribute::SwiftError),
+             "Attribute 'swifterror' only applies to parameters "
+             "with pointer to pointer type!",
+             V);
   } else {
     Assert(!Attrs.hasAttribute(Idx, Attribute::ByVal),
            "Attribute 'byval' only applies to parameters with pointer type!",
+           V);
+    Assert(!Attrs.hasAttribute(Idx, Attribute::SwiftError),
+           "Attribute 'swifterror' only applies to parameters "
+           "with pointer type!",
            V);
   }
 }
@@ -1414,6 +1440,8 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeSet Attrs,
   bool SawNest = false;
   bool SawReturned = false;
   bool SawSRet = false;
+  bool SawSwiftSelf = false;
+  bool SawSwiftError = false;
 
   for (unsigned i = 0, e = Attrs.getNumSlots(); i != e; ++i) {
     unsigned Idx = Attrs.getSlotIndex(i);
@@ -1451,6 +1479,17 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeSet Attrs,
       Assert(Idx == 1 || Idx == 2,
              "Attribute 'sret' is not on first or second parameter!", V);
       SawSRet = true;
+    }
+
+    if (Attrs.hasAttribute(Idx, Attribute::SwiftSelf)) {
+      Assert(!SawSwiftSelf, "Cannot have multiple 'swiftself' parameters!", V);
+      SawSwiftSelf = true;
+    }
+
+    if (Attrs.hasAttribute(Idx, Attribute::SwiftError)) {
+      Assert(!SawSwiftError, "Cannot have multiple 'swifterror' parameters!",
+             V);
+      SawSwiftError = true;
     }
 
     if (Attrs.hasAttribute(Idx, Attribute::InAlloca)) {
@@ -1865,6 +1904,11 @@ void Verifier::visitFunction(const Function &F) {
              "Function takes metadata but isn't an intrinsic", &Arg, &F);
       Assert(!Arg.getType()->isTokenTy(),
              "Function takes token but isn't an intrinsic", &Arg, &F);
+    }
+
+    // Check that swifterror argument is only used by loads and stores.
+    if (Attrs.hasAttribute(i+1, Attribute::SwiftError)) {
+      verifySwiftErrorValue(&Arg);
     }
     ++i;
   }
@@ -2442,6 +2486,18 @@ void Verifier::verifyCallSite(CallSite CS) {
              "inalloca argument for call has mismatched alloca", AI, I);
   }
 
+  // For each argument of the callsite, if it has the swifterror argument,
+  // make sure the underlying alloca has swifterror as well.
+  for (unsigned i = 0, e = FTy->getNumParams(); i != e; ++i)
+    if (CS.paramHasAttr(i+1, Attribute::SwiftError)) {
+      Value *SwiftErrorArg = CS.getArgument(i);
+      auto AI = dyn_cast<AllocaInst>(SwiftErrorArg->stripInBoundsOffsets());
+      Assert(AI, "swifterror argument should come from alloca", AI, I);
+      if (AI)
+        Assert(AI->isSwiftError(),
+               "swifterror argument for call has mismatched alloca", AI, I);
+    }
+
   if (FTy->isVarArg()) {
     // FIXME? is 'nest' even legal here?
     bool SawNest = false;
@@ -2545,7 +2601,8 @@ static bool isTypeCongruent(Type *L, Type *R) {
 static AttrBuilder getParameterABIAttributes(int I, AttributeSet Attrs) {
   static const Attribute::AttrKind ABIAttrs[] = {
       Attribute::StructRet, Attribute::ByVal, Attribute::InAlloca,
-      Attribute::InReg, Attribute::Returned};
+      Attribute::InReg, Attribute::Returned, Attribute::SwiftSelf,
+      Attribute::SwiftError};
   AttrBuilder Copy;
   for (auto AK : ABIAttrs) {
     if (Attrs.hasAttribute(I + 1, AK))
@@ -2904,6 +2961,42 @@ void Verifier::visitStoreInst(StoreInst &SI) {
   visitInstruction(SI);
 }
 
+/// Check that SwiftErrorVal is used as a swifterror argument in CS.
+void Verifier::verifySwiftErrorCallSite(CallSite CS,
+                                        const Value *SwiftErrorVal) {
+  unsigned Idx = 0;
+  for (CallSite::arg_iterator I = CS.arg_begin(), E = CS.arg_end();
+       I != E; ++I, ++Idx) {
+    if (*I == SwiftErrorVal) {
+      Assert(CS.paramHasAttr(Idx+1, Attribute::SwiftError),
+             "swifterror value when used in a callsite should be marked "
+             "with swifterror attribute",
+              SwiftErrorVal, CS);
+    }
+  }
+}
+
+void Verifier::verifySwiftErrorValue(const Value *SwiftErrorVal) {
+  // Check that swifterror value is only used by loads, stores, or as
+  // a swifterror argument.
+  for (const User *U : SwiftErrorVal->users()) {
+    Assert(isa<LoadInst>(U) || isa<StoreInst>(U) || isa<CallInst>(U) ||
+           isa<InvokeInst>(U),
+           "swifterror value can only be loaded and stored from, or "
+           "as a swifterror argument!",
+           SwiftErrorVal, U);
+    // If it is used by a store, check it is the second operand.
+    if (auto StoreI = dyn_cast<StoreInst>(U))
+      Assert(StoreI->getOperand(1) == SwiftErrorVal,
+             "swifterror value should be the second operand when used "
+             "by stores", SwiftErrorVal, U);
+    if (auto CallI = dyn_cast<CallInst>(U))
+      verifySwiftErrorCallSite(const_cast<CallInst*>(CallI), SwiftErrorVal);
+    if (auto II = dyn_cast<InvokeInst>(U))
+      verifySwiftErrorCallSite(const_cast<InvokeInst*>(II), SwiftErrorVal);
+  }
+}
+
 void Verifier::visitAllocaInst(AllocaInst &AI) {
   SmallPtrSet<Type*, 4> Visited;
   PointerType *PTy = AI.getType();
@@ -2916,6 +3009,10 @@ void Verifier::visitAllocaInst(AllocaInst &AI) {
          "Alloca array size must have integer type", &AI);
   Assert(AI.getAlignment() <= Value::MaximumAlignment,
          "huge alignment values are unsupported", &AI);
+
+  if (AI.isSwiftError()) {
+    verifySwiftErrorValue(&AI);
+  }
 
   visitInstruction(AI);
 }
@@ -3397,8 +3494,14 @@ void Verifier::verifyDominatesUse(Instruction &I, unsigned i) {
       return;
   }
 
+  // Quick check whether the def has already been encountered in the same block.
+  // PHI nodes are not checked to prevent accepting preceeding PHIs, because PHI
+  // uses are defined to happen on the incoming edge, not at the instruction.
+  if (!isa<PHINode>(I) && InstsInThisBlock.count(Op))
+    return;
+
   const Use &U = I.getOperandUse(i);
-  Assert(InstsInThisBlock.count(Op) || DT.dominates(Op, U),
+  Assert(DT.dominates(Op, U),
          "Instruction does not dominate all uses!", Op, &I);
 }
 
@@ -4083,6 +4186,14 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
     break;
   }
 
+  case Intrinsic::experimental_guard: {
+    Assert(CS.isCall(), "experimental_guard cannot be invoked", CS);
+    Assert(CS.countOperandBundlesOfType(LLVMContext::OB_deopt) == 1,
+           "experimental_guard must have exactly one "
+           "\"deopt\" operand bundle");
+    break;
+  }
+
   case Intrinsic::experimental_deoptimize: {
     Assert(CS.isCall(), "experimental_deoptimize cannot be invoked", CS);
     Assert(CS.countOperandBundlesOfType(LLVMContext::OB_deopt) == 1,
@@ -4243,6 +4354,18 @@ void Verifier::visitUnresolvedTypeRef(const MDString *S, const MDNode *N) {
   // This is in its own function so we get an error for each bad type ref (not
   // just the first).
   Assert(false, "unresolved type ref", S, N);
+}
+
+void Verifier::verifyCompileUnits() {
+  auto *CUs = M->getNamedMetadata("llvm.dbg.cu");
+  SmallPtrSet<const Metadata *, 2> Listed;
+  if (CUs)
+    Listed.insert(CUs->op_begin(), CUs->op_end());
+  Assert(
+      std::all_of(CUVisited.begin(), CUVisited.end(),
+                  [&Listed](const Metadata *CU) { return Listed.count(CU); }),
+      "All DICompileUnits must be listed in llvm.dbg.cu");
+  CUVisited.clear();
 }
 
 void Verifier::verifyTypeRefs() {

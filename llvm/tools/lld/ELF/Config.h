@@ -79,6 +79,7 @@ struct Configuration {
   bool StripAll;
   bool SysvHash = true;
   bool Threads;
+  bool Trace;
   bool Verbose;
   bool WarnCommon;
   bool ZExecStack;
@@ -89,7 +90,8 @@ struct Configuration {
   ELFKind EKind = ELFNoneKind;
   uint16_t EMachine = llvm::ELF::EM_NONE;
   uint64_t EntryAddr = -1;
-  unsigned Optimize = 0;
+  unsigned LtoO;
+  unsigned Optimize;
 };
 
 // The only instance of Configuration struct.

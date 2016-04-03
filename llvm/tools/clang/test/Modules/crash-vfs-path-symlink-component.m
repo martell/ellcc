@@ -38,23 +38,24 @@
 // CHECKSH-NOT: "-fmodules-cache-path="
 // CHECKSH: "crash-vfs-{{[^ ]*}}.m"
 // CHECKSH: "-ivfsoverlay" "crash-vfs-{{[^ ]*}}.cache/vfs/vfs.yaml"
+// CHECKSH: "-fmodules-cache-path=crash-vfs-{{[^ ]*}}.cache/modules"
 
 // CHECKYAML: 'type': 'directory'
-// CHECKYAML: 'name': "{{[^ ]*}}/i/usr/include",
+// CHECKYAML: 'name': "/[[PATH:.*]]/i/usr/include",
 // CHECKYAML-NEXT: 'contents': [
 // CHECKYAML-NEXT:   {
 // CHECKYAML-NEXT:     'type': 'file',
 // CHECKYAML-NEXT:     'name': "module.map",
-// CHECKYAML-NEXT:     'external-contents': "{{[^ ]*}}.cache/vfs/{{[^ ]*}}/i/usr/include/module.map"
+// CHECKYAML-NEXT:     'external-contents': "/[[PATH]]/i/usr/include/module.map"
 // CHECKYAML-NEXT:   },
 
 // CHECKYAML: 'type': 'directory'
-// CHECKYAML: 'name': "{{[^ ]*}}/i/usr",
+// CHECKYAML: 'name': "/[[PATH]]/i/usr",
 // CHECKYAML-NEXT: 'contents': [
 // CHECKYAML-NEXT:   {
 // CHECKYAML-NEXT:     'type': 'file',
 // CHECKYAML-NEXT:     'name': "module.map",
-// CHECKYAML-NEXT:     'external-contents': "{{[^ ]*}}.cache/vfs/{{[^ ]*}}/i/usr/include/module.map"
+// CHECKYAML-NEXT:     'external-contents': "/[[PATH]]/i/usr/include/module.map"
 // CHECKYAML-NEXT:   },
 
 // Test that by using the previous generated YAML file clang is able to find the

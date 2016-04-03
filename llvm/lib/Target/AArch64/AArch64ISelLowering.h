@@ -378,6 +378,8 @@ public:
     return AArch64::X1;
   }
 
+  bool isIntDivCheap(EVT VT, AttributeSet Attr) const override;
+
   bool isCheapToSpeculateCttz() const override {
     return true;
   }
@@ -424,7 +426,6 @@ private:
 
   bool isEligibleForTailCallOptimization(
       SDValue Callee, CallingConv::ID CalleeCC, bool isVarArg,
-      bool isCalleeStructRet, bool isCallerStructRet,
       const SmallVectorImpl<ISD::OutputArg> &Outs,
       const SmallVectorImpl<SDValue> &OutVals,
       const SmallVectorImpl<ISD::InputArg> &Ins, SelectionDAG &DAG) const;

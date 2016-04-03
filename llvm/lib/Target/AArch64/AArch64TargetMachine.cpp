@@ -104,14 +104,16 @@ EnableGlobalMerge("aarch64-global-merge", cl::Hidden,
 static cl::opt<bool>
     EnableLoopDataPrefetch("aarch64-loop-data-prefetch", cl::Hidden,
                            cl::desc("Enable the loop data prefetch pass"),
-                           cl::init(false));
+                           cl::init(true));
 
 extern "C" void LLVMInitializeAArch64Target() {
   // Register the target.
   RegisterTargetMachine<AArch64leTargetMachine> X(TheAArch64leTarget);
   RegisterTargetMachine<AArch64beTargetMachine> Y(TheAArch64beTarget);
   RegisterTargetMachine<AArch64leTargetMachine> Z(TheARM64Target);
-  initializeGlobalISel(*PassRegistry::getPassRegistry());
+  auto PR = PassRegistry::getPassRegistry();
+  initializeGlobalISel(*PR);
+  initializeAArch64ExpandPseudoPass(*PR);
 }
 
 //===----------------------------------------------------------------------===//

@@ -131,6 +131,27 @@ if (NOT CMAKE_SIZEOF_VOID_P EQUAL 4 AND
   message(FATAL_ERROR "Please use architecture with 4 or 8 byte pointers.")
 endif()
 
+# Find and run MSVC (not clang-cl) and get its version. This will tell clang-cl
+# what version of MSVC to pretend to be so that the STL works.
+set(MSVC_VERSION_FLAG "")
+if (MSVC)
+  # Find and run MSVC (not clang-cl) and get its version. This will tell
+  # clang-cl what version of MSVC to pretend to be so that the STL works.
+  execute_process(COMMAND "$ENV{VSINSTALLDIR}/VC/bin/cl.exe"
+    OUTPUT_QUIET
+    ERROR_VARIABLE MSVC_COMPAT_VERSION
+    )
+  string(REGEX REPLACE "^.*Compiler Version ([0-9.]+) for .*$" "\\1"
+    MSVC_COMPAT_VERSION "${MSVC_COMPAT_VERSION}")
+  if (MSVC_COMPAT_VERSION MATCHES "^[0-9].+$")
+    set(MSVC_VERSION_FLAG "-fms-compatibility-version=${MSVC_COMPAT_VERSION}")
+    # Add this flag into the host build if this is clang-cl.
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+      append("${MSVC_VERSION_FLAG}" CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
+    endif()
+  endif()
+endif()
+
 # Generate the COMPILER_RT_SUPPORTED_ARCH list.
 if(ANDROID)
   # Examine compiler output to determine target architecture.
@@ -147,9 +168,9 @@ elseif(NOT APPLE) # Supported archs for Apple platforms are generated later
       test_target_arch(i386 __i386__ "-m32")
     else()
       if (CMAKE_SIZEOF_VOID_P EQUAL 4)
-        test_target_arch(i386 "" "")
+        test_target_arch(i386 "" "${MSVC_VERSION_FLAG}")
       else()
-        test_target_arch(x86_64 "" "")
+        test_target_arch(x86_64 "" "${MSVC_VERSION_FLAG}")
       endif()
     endif()
   elseif("${COMPILER_RT_DEFAULT_TARGET_ARCH}" MATCHES "powerpc")
@@ -392,6 +413,7 @@ if(APPLE)
           list(APPEND SANITIZER_COMMON_SUPPORTED_OS ${platform}sim)
           list(APPEND BUILTIN_SUPPORTED_OS ${platform}sim)
           list(APPEND PROFILE_SUPPORTED_OS ${platform}sim)
+          list(APPEND TSAN_SUPPORTED_OS ${platform}sim)
         endif()
         foreach(arch ${DARWIN_${platform}sim_ARCHS})
           list(APPEND COMPILER_RT_SUPPORTED_ARCH ${arch})

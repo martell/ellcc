@@ -2570,11 +2570,18 @@ Value *BoUpSLP::vectorizeTree() {
     Value *Lane = Builder.getInt32(it->Lane);
     // Generate extracts for out-of-tree users.
     // Find the insertion point for the extractelement lane.
-    if (isa<Instruction>(Vec)){
+    if (auto *VecI = dyn_cast<Instruction>(Vec)) {
       if (PHINode *PH = dyn_cast<PHINode>(User)) {
         for (int i = 0, e = PH->getNumIncomingValues(); i != e; ++i) {
           if (PH->getIncomingValue(i) == Scalar) {
-            Builder.SetInsertPoint(PH->getIncomingBlock(i)->getTerminator());
+            TerminatorInst *IncomingTerminator =
+                PH->getIncomingBlock(i)->getTerminator();
+            if (isa<CatchSwitchInst>(IncomingTerminator)) {
+              Builder.SetInsertPoint(VecI->getParent(),
+                                     std::next(VecI->getIterator()));
+            } else {
+              Builder.SetInsertPoint(PH->getIncomingBlock(i)->getTerminator());
+            }
             Value *Ex = Builder.CreateExtractElement(Vec, Lane);
             if (MinBWs.count(ScalarRoot))
               Ex = Builder.CreateSExt(Ex, Scalar->getType());
@@ -3439,8 +3446,9 @@ struct SLPVectorizer : public FunctionPass {
       collectSeedInstructions(BB);
 
       // Vectorize trees that end at stores.
-      if (NumStores > 0) {
-        DEBUG(dbgs() << "SLP: Found " << NumStores << " stores.\n");
+      if (!Stores.empty()) {
+        DEBUG(dbgs() << "SLP: Found stores for " << Stores.size()
+                     << " underlying objects.\n");
         Changed |= vectorizeStoreChains(R);
       }
 
@@ -3450,8 +3458,9 @@ struct SLPVectorizer : public FunctionPass {
       // Vectorize the index computations of getelementptr instructions. This
       // is primarily intended to catch gather-like idioms ending at
       // non-consecutive loads.
-      if (NumGEPs > 0) {
-        DEBUG(dbgs() << "SLP: Found " << NumGEPs << " GEPs.\n");
+      if (!GEPs.empty()) {
+        DEBUG(dbgs() << "SLP: Found GEPs for " << GEPs.size()
+                     << " underlying objects.\n");
         Changed |= vectorizeGEPIndices(BB, R);
       }
     }
@@ -3526,12 +3535,6 @@ private:
 
   /// The getelementptr instructions in a basic block organized by base pointer.
   WeakVHListMap GEPs;
-
-  /// The number of store instructions in a basic block.
-  unsigned NumStores;
-
-  /// The number of getelementptr instructions in a basic block.
-  unsigned NumGEPs;
 
   unsigned MaxVecRegSize; // This is set by TTI or overridden by cl::opt.
   unsigned MinVecRegSize; // Set by cl::opt (default: 128).
@@ -3670,7 +3673,6 @@ void SLPVectorizer::collectSeedInstructions(BasicBlock *BB) {
   // Initialize the collections. We will make a single pass over the block.
   Stores.clear();
   GEPs.clear();
-  NumStores = NumGEPs = 0;
 
   // Visit the store and getelementptr instructions in BB and organize them in
   // Stores and GEPs according to the underlying objects of their pointer
@@ -3685,7 +3687,6 @@ void SLPVectorizer::collectSeedInstructions(BasicBlock *BB) {
       if (!isValidElementType(SI->getValueOperand()->getType()))
         continue;
       Stores[GetUnderlyingObject(SI->getPointerOperand(), *DL)].push_back(SI);
-      ++NumStores;
     }
 
     // Ignore getelementptr instructions that have more than one index, a
@@ -3698,7 +3699,6 @@ void SLPVectorizer::collectSeedInstructions(BasicBlock *BB) {
       if (!isValidElementType(Idx->getType()))
         continue;
       GEPs[GetUnderlyingObject(GEP->getPointerOperand(), *DL)].push_back(GEP);
-      ++NumGEPs;
     }
   }
 }

@@ -35,20 +35,20 @@ public:
   Resolver(LinkingContext &ctx) : _ctx(ctx), _result(new MergedFile()) {}
 
   // InputFiles::Handler methods
-  void doDefinedAtom(const DefinedAtom&);
-  bool doUndefinedAtom(const UndefinedAtom &);
-  void doSharedLibraryAtom(const SharedLibraryAtom &);
-  void doAbsoluteAtom(const AbsoluteAtom &);
+  void doDefinedAtom(OwningAtomPtr<DefinedAtom> atom);
+  bool doUndefinedAtom(OwningAtomPtr<UndefinedAtom> atom);
+  void doSharedLibraryAtom(OwningAtomPtr<SharedLibraryAtom> atom);
+  void doAbsoluteAtom(OwningAtomPtr<AbsoluteAtom> atom);
 
   // Handle files, this adds atoms from the current file thats
   // being processed by the resolver
-  ErrorOr<bool> handleFile(File &);
+  llvm::Expected<bool> handleFile(File &);
 
   // Handle an archive library file.
-  ErrorOr<bool> handleArchiveFile(File &);
+  llvm::Expected<bool> handleArchiveFile(File &);
 
   // Handle a shared library file.
-  std::error_code handleSharedLibrary(File &);
+  llvm::Error handleSharedLibrary(File &);
 
   /// @brief do work of merging and resolving and return list
   bool resolve();
@@ -56,7 +56,7 @@ public:
   std::unique_ptr<SimpleFile> resultFile() { return std::move(_result); }
 
 private:
-  typedef std::function<ErrorOr<bool>(StringRef, bool)> UndefCallback;
+  typedef std::function<llvm::Expected<bool>(StringRef)> UndefCallback;
 
   bool undefinesAdded(int begin, int end);
   File *getFile(int &index);
@@ -67,21 +67,19 @@ private:
   void deadStripOptimize();
   bool checkUndefines();
   void removeCoalescedAwayAtoms();
-  ErrorOr<bool> forEachUndefines(File &file, bool searchForOverrides,
-                                 UndefCallback callback);
+  llvm::Expected<bool> forEachUndefines(File &file, UndefCallback callback);
 
   void markLive(const Atom *atom);
-  void addAtoms(const std::vector<const DefinedAtom *>&);
 
   class MergedFile : public SimpleFile {
   public:
     MergedFile() : SimpleFile("<linker-internal>", kindResolverMergedObject) {}
-    void addAtoms(std::vector<const Atom*>& atoms);
+    void addAtoms(llvm::MutableArrayRef<OwningAtomPtr<Atom>> atoms);
   };
 
   LinkingContext &_ctx;
   SymbolTable _symbolTable;
-  std::vector<const Atom *>     _atoms;
+  std::vector<OwningAtomPtr<Atom>>     _atoms;
   std::set<const Atom *>        _deadStripRoots;
   llvm::DenseSet<const Atom *>  _liveAtoms;
   llvm::DenseSet<const Atom *>  _deadAtoms;

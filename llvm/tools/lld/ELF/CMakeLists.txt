@@ -9,6 +9,7 @@ add_lld_library(lldELF
   ICF.cpp
   InputFiles.cpp
   InputSection.cpp
+  LTO.cpp
   LinkerScript.cpp
   MarkLive.cpp
   OutputSections.cpp
@@ -30,6 +31,7 @@ add_lld_library(lldELF
   MC
   Support
   Target
+  TransformUtils
 
   LINK_LIBS
   lldConfig

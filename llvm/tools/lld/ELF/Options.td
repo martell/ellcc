@@ -75,6 +75,9 @@ def init : Separate<["-"], "init">, MetaVarName<"<symbol>">,
 def l : JoinedOrSeparate<["-"], "l">, MetaVarName<"<libName>">,
   HelpText<"Root name of library to use">;
 
+def lto_O : Joined<["--"], "lto-O">, MetaVarName<"<opt-level>">,
+  HelpText<"Optimization level for LTO">;
+
 def m : JoinedOrSeparate<["-"], "m">,
   HelpText<"Set target emulation">;
 
@@ -126,6 +129,9 @@ def sysroot : Joined<["--"], "sysroot=">,
 
 def threads : Joined<["--"], "threads">;
 
+def trace: Flag<["--"], "trace">,
+  HelpText<"Print the names of the input files">;
+
 def undefined : Joined<["--"], "undefined=">,
   HelpText<"Force undefined symbol during linking">;
 
@@ -169,6 +175,7 @@ def alias_shared_Bshareable : Flag<["-"], "Bshareable">, Alias<shared>;
 def alias_soname_h : JoinedOrSeparate<["-"], "h">, Alias<soname>;
 def alias_soname_soname : Separate<["-"], "soname">, Alias<soname>;
 def alias_script_T : JoinedOrSeparate<["-"], "T">, Alias<script>;
+def alias_trace : Flag<["-"], "t">, Alias<trace>;
 def alias_strip_all: Flag<["-"], "s">, Alias<strip_all>;
 def alias_undefined_u : JoinedOrSeparate<["-"], "u">, Alias<undefined>;
 def alias_wrap_wrap : Joined<["--", "-"], "wrap=">, Alias<wrap>;
@@ -188,16 +195,20 @@ def start_group_paren: Flag<["-"], "(">;
 // just ignore the option on lld side as it's easier. In fact, the linker could
 // be called 'ld' and understanding which linker is used would require parsing of
 // --version output.
-def plugin : Separate<["-"], "plugin">;
-def plugin_opt : Joined<["-"], "plugin-opt=">;
+def plugin : Separate<["--", "-"], "plugin">;
+def plugin_eq : Joined<["--", "-"], "plugin=">;
+def plugin_opt : Separate<["--", "-"], "plugin-opt">;
+def plugin_opt_eq : Joined<["--", "-"], "plugin-opt=">;
 
 // Options listed below are silently ignored for now for compatibility.
 def fatal_warnings : Flag<["--"], "fatal-warnings">;
 def no_add_needed : Flag<["--"], "no-add-needed">;
+def no_dynamic_linker : Flag<["--"], "no-dynamic-linker">;
 def no_fatal_warnings : Flag<["--"], "no-fatal-warnings">;
 def no_warn_common : Flag<["--", "-"], "no-warn-common">;
 def no_warn_mismatch : Flag<["--"], "no-warn-mismatch">;
 def rpath_link : Separate<["--", "-"], "rpath-link">;
+def rpath_link_eq : Joined<["--", "-"], "rpath-link=">;
 def version_script : Separate<["--"], "version-script">;
 def warn_shared_textrel : Flag<["--"], "warn-shared-textrel">;
 def G : Separate<["-"], "G">;
@@ -205,5 +216,6 @@ def G : Separate<["-"], "G">;
 // Aliases for ignored options
 def alias_version_script_version_script : Joined<["--"], "version-script=">, Alias<version_script>;
 
-// Debugging options
+// Debugging/developer options
 def save_temps : Flag<["-"], "save-temps">;
+def mllvm : Separate<["-"], "mllvm">;

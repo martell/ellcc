@@ -1402,8 +1402,9 @@ bool AArch64InstrInfo::getMemOpBaseRegImmOfs(
 bool AArch64InstrInfo::getMemOpBaseRegImmOfsWidth(
     MachineInstr *LdSt, unsigned &BaseReg, int64_t &Offset, unsigned &Width,
     const TargetRegisterInfo *TRI) const {
+  assert(LdSt->mayLoadOrStore() && "Expected a memory operation.");
   // Handle only loads/stores with base register followed by immediate offset.
-  if (LdSt->getNumOperands() != 3)
+  if (LdSt->getNumExplicitOperands() != 3)
     return false;
   if (!LdSt->getOperand(1).isReg() || !LdSt->getOperand(2).isImm())
     return false;
@@ -2663,17 +2664,17 @@ static bool getMaddPatterns(MachineInstr &Root,
   bool Found = false;
 
   if (!isCombineInstrCandidate(Opc))
-    return 0;
+    return false;
   if (isCombineInstrSettingFlag(Opc)) {
     int Cmp_NZCV = Root.findRegisterDefOperandIdx(AArch64::NZCV, true);
     // When NZCV is live bail out.
     if (Cmp_NZCV == -1)
-      return 0;
+      return false;
     unsigned NewOpc = convertFlagSettingOpcode(&Root);
     // When opcode can't change bail out.
     // CHECKME: do we miss any cases for opcode conversion?
     if (NewOpc == Opc)
-      return 0;
+      return false;
     Opc = NewOpc;
   }
 
@@ -3081,8 +3082,8 @@ void AArch64InstrInfo::genAlternativeCodeSequence(
 /// to
 ///   b.<condition code>
 ///
-/// \brief Replace compare and branch sequence by TBZ/TBNZ instruction when
-/// the compare's constant operand is power of 2.
+/// Replace compare and branch sequence by TBZ/TBNZ instruction when the
+/// compare's constant operand is power of 2.
 ///
 /// Examples:
 ///   and  w8, w8, #0x400

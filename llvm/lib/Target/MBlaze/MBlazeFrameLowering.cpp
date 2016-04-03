@@ -185,7 +185,7 @@ void MBlazeFrameLowering::emitEpilogue(MachineFunction &MF,
 }
 
 // Eliminate ADJCALLSTACKDOWN/ADJCALLSTACKUP pseudo instructions
-void MBlazeFrameLowering::
+MachineBasicBlock::iterator MBlazeFrameLowering::
 eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
                               MachineBasicBlock::iterator I) const {
   const MBlazeInstrInfo &TII =
@@ -219,7 +219,7 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
   }
 
   // Simply discard ADJCALLSTACKDOWN, ADJCALLSTACKUP instructions.
-  MBB.erase(I);
+  return MBB.erase(I);
 }
 
 

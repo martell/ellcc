@@ -2366,6 +2366,13 @@ public:
   void EmitOMPDistributeDirective(const OMPDistributeDirective &S);
   void EmitOMPDistributeLoop(const OMPDistributeDirective &S);
 
+  /// Emit outlined function for the target directive.
+  static std::pair<llvm::Function * /*OutlinedFn*/,
+                   llvm::Constant * /*OutlinedFnID*/>
+  EmitOMPTargetDirectiveOutlinedFunction(CodeGenModule &CGM,
+                                         const OMPTargetDirective &S,
+                                         StringRef ParentName,
+                                         bool IsOffloadEntry);
   /// \brief Emit inner loop of the worksharing/simd construct.
   ///
   /// \param S Directive, for which the inner loop must be emitted.
@@ -2821,13 +2828,11 @@ public:
   llvm::Value *EmitARCStoreStrongCall(Address addr, llvm::Value *value,
                                       bool resultIgnored);
   llvm::Value *EmitARCRetain(QualType type, llvm::Value *value);
-  llvm::Value *EmitARCRetainNonBlock(llvm::Value *value,
-                                     llvm::Type *returnType = nullptr);
+  llvm::Value *EmitARCRetainNonBlock(llvm::Value *value);
   llvm::Value *EmitARCRetainBlock(llvm::Value *value, bool mandatory);
   void EmitARCDestroyStrong(Address addr, ARCPreciseLifetime_t precise);
   void EmitARCRelease(llvm::Value *value, ARCPreciseLifetime_t precise);
-  llvm::Value *EmitARCAutorelease(llvm::Value *value,
-                                  llvm::Type *returnType = nullptr);
+  llvm::Value *EmitARCAutorelease(llvm::Value *value);
   llvm::Value *EmitARCAutoreleaseReturnValue(llvm::Value *value);
   llvm::Value *EmitARCRetainAutoreleaseReturnValue(llvm::Value *value);
   llvm::Value *EmitARCRetainAutoreleasedReturnValue(llvm::Value *value);
@@ -2840,8 +2845,6 @@ public:
   std::pair<LValue,llvm::Value*>
   EmitARCStoreUnsafeUnretained(const BinaryOperator *e, bool ignored);
 
-  llvm::Value *EmitObjCAlloc(llvm::Value *value,
-                             llvm::Type *returnType = nullptr);
   llvm::Value *EmitObjCThrowOperand(const Expr *expr);
   llvm::Value *EmitObjCConsumeObject(QualType T, llvm::Value *Ptr);
   llvm::Value *EmitObjCExtendObjectLifetime(QualType T, llvm::Value *Ptr);

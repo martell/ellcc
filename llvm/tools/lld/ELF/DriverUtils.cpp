@@ -35,18 +35,17 @@ using namespace lld::elf;
 #undef PREFIX
 
 // Create table mapping all options defined in Options.td
-static const opt::OptTable::Info infoTable[] = {
+static const opt::OptTable::Info OptInfo[] = {
 #define OPTION(X1, X2, ID, KIND, GROUP, ALIAS, X6, X7, X8, X9, X10)            \
   {                                                                            \
     X1, X2, X9, X10, OPT_##ID, opt::Option::KIND##Class, X8, X7, OPT_##GROUP,  \
         OPT_##ALIAS, X6                                                        \
-  }                                                                            \
-  ,
+  },
 #include "Options.inc"
 #undef OPTION
 };
 
-ELFOptTable::ELFOptTable() : OptTable(infoTable) {}
+ELFOptTable::ELFOptTable() : OptTable(OptInfo) {}
 
 // Parses a given list of options.
 opt::InputArgList ELFOptTable::parse(ArrayRef<const char *> Argv) {
@@ -99,20 +98,14 @@ std::string elf::findFromSearchPaths(StringRef Path) {
 // Searches a given library from input search paths, which are filled
 // from -L command line switches. Returns a path to an existent library file.
 std::string elf::searchLibrary(StringRef Path) {
-  std::vector<std::string> Names;
-  if (Path[0] == ':') {
-    Names.push_back(Path.drop_front());
-  } else {
-    if (!Config->Static)
-      Names.push_back(("lib" + Path + ".so").str());
-    Names.push_back(("lib" + Path + ".a").str());
-  }
-  for (const std::string &Name : Names) {
-    std::string S = findFromSearchPaths(Name);
+  if (Path.startswith(":"))
+    return findFromSearchPaths(Path.substr(1));
+  if (!Config->Static) {
+    std::string S = findFromSearchPaths(("lib" + Path + ".so").str());
     if (!S.empty())
       return S;
   }
-  return "";
+  return findFromSearchPaths(("lib" + Path + ".a").str());
 }
 
 // Makes a path by concatenating Dir and File.

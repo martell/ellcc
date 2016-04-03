@@ -1172,6 +1172,11 @@ public:
     return nullptr;
   }
 
+  /// Returns true if the platform's atomic operations are sign extended.
+  virtual bool hasSignExtendedAtomicOps() const {
+    return false;
+  }
+
   /// Returns true if we should normalize
   /// select(N0&N1, X, Y) => select(N0, select(N1, X, Y), Y) and
   /// select(N0|N1, X, Y) => select(N0, select(N1, X, Y, Y)) if it is likely
@@ -2321,11 +2326,14 @@ public:
     bool isByVal    : 1;
     bool isInAlloca : 1;
     bool isReturned : 1;
+    bool isSwiftSelf : 1;
+    bool isSwiftError : 1;
     uint16_t Alignment;
 
     ArgListEntry() : isSExt(false), isZExt(false), isInReg(false),
       isSRet(false), isNest(false), isByVal(false), isInAlloca(false),
-      isReturned(false), Alignment(0) { }
+      isReturned(false), isSwiftSelf(false), isSwiftError(false),
+      Alignment(0) { }
 
     void setAttributes(ImmutableCallSite *CS, unsigned AttrIdx);
   };
@@ -2845,6 +2853,16 @@ public:
   /// \param Result output after conversion
   /// \returns True, if the expansion was successful, false otherwise
   bool expandFP_TO_SINT(SDNode *N, SDValue &Result, SelectionDAG &DAG) const;
+
+  /// Turn load of vector type into a load of the individual elements.
+  /// \param LD load to expand
+  /// \returns MERGE_VALUEs of the scalar loads with their chains.
+  SDValue scalarizeVectorLoad(LoadSDNode *LD, SelectionDAG &DAG) const;
+
+  // Turn a store of a vector type into stores of the individual elements.
+  /// \param ST Store with a vector value type
+  /// \returns MERGE_VALUs of the individual store chains.
+  SDValue scalarizeVectorStore(StoreSDNode *ST, SelectionDAG &DAG) const;
 
   //===--------------------------------------------------------------------===//
   // Instruction Emitting Hooks

@@ -667,62 +667,6 @@ TSAN_INTERCEPTOR(uptr, malloc_usable_size, void *p) {
 }
 #endif
 
-TSAN_INTERCEPTOR(void*, memset, void *dst, int v, uptr size) {
-  // On FreeBSD we get here from libthr internals on thread initialization.
-  if (!COMMON_INTERCEPTOR_NOTHING_IS_INITIALIZED) {
-    SCOPED_TSAN_INTERCEPTOR(memset, dst, v, size);
-    MemoryAccessRange(thr, pc, (uptr)dst, size, true);
-  }
-  return internal_memset(dst, v, size);
-}
-
-TSAN_INTERCEPTOR(void*, memcpy, void *dst, const void *src, uptr size) {
-  // On FreeBSD we get here from libthr internals on thread initialization.
-  if (!COMMON_INTERCEPTOR_NOTHING_IS_INITIALIZED) {
-    SCOPED_TSAN_INTERCEPTOR(memcpy, dst, src, size);
-    MemoryAccessRange(thr, pc, (uptr)dst, size, true);
-    MemoryAccessRange(thr, pc, (uptr)src, size, false);
-  }
-  // On OS X, calling internal_memcpy here will cause memory corruptions,
-  // because memcpy and memmove are actually aliases of the same implementation.
-  // We need to use internal_memmove here.
-  return internal_memmove(dst, src, size);
-}
-
-TSAN_INTERCEPTOR(void*, memmove, void *dst, void *src, uptr n) {
-  if (!COMMON_INTERCEPTOR_NOTHING_IS_INITIALIZED) {
-    SCOPED_TSAN_INTERCEPTOR(memmove, dst, src, n);
-    MemoryAccessRange(thr, pc, (uptr)dst, n, true);
-    MemoryAccessRange(thr, pc, (uptr)src, n, false);
-  }
-  return REAL(memmove)(dst, src, n);
-}
-
-TSAN_INTERCEPTOR(char*, strchr, char *s, int c) {
-  SCOPED_TSAN_INTERCEPTOR(strchr, s, c);
-  char *res = REAL(strchr)(s, c);
-  uptr len = internal_strlen(s);
-  uptr n = res ? (char*)res - (char*)s + 1 : len + 1;
-  READ_STRING_OF_LEN(thr, pc, s, len, n);
-  return res;
-}
-
-#if !SANITIZER_MAC
-TSAN_INTERCEPTOR(char*, strchrnul, char *s, int c) {
-  SCOPED_TSAN_INTERCEPTOR(strchrnul, s, c);
-  char *res = REAL(strchrnul)(s, c);
-  uptr len = (char*)res - (char*)s + 1;
-  READ_STRING(thr, pc, s, len);
-  return res;
-}
-#endif
-
-TSAN_INTERCEPTOR(char*, strrchr, char *s, int c) {
-  SCOPED_TSAN_INTERCEPTOR(strrchr, s, c);
-  MemoryAccessRange(thr, pc, (uptr)s, internal_strlen(s) + 1, false);
-  return REAL(strrchr)(s, c);
-}
-
 TSAN_INTERCEPTOR(char*, strcpy, char *dst, const char *src) {  // NOLINT
   SCOPED_TSAN_INTERCEPTOR(strcpy, dst, src);  // NOLINT
   uptr srclen = internal_strlen(src);
@@ -2111,7 +2055,7 @@ TSAN_INTERCEPTOR(int, sigaction, int sig, sigaction_t *act, sigaction_t *old) {
 TSAN_INTERCEPTOR(sighandler_t, signal, int sig, sighandler_t h) {
   sigaction_t act;
   act.sa_handler = h;
-  REAL(memset)(&act.sa_mask, -1, sizeof(act.sa_mask));
+  internal_memset(&act.sa_mask, -1, sizeof(act.sa_mask));
   act.sa_flags = 0;
   sigaction_t old;
   int res = sigaction(sig, &act, &old);
@@ -2192,7 +2136,13 @@ TSAN_INTERCEPTOR(int, fork, int fake) {
     return REAL(fork)(fake);
   SCOPED_INTERCEPTOR_RAW(fork, fake);
   ForkBefore(thr, pc);
-  int pid = REAL(fork)(fake);
+  int pid;
+  {
+    // On OS X, REAL(fork) can call intercepted functions (OSSpinLockLock), and
+    // we'll assert in CheckNoLocks() unless we ignore interceptors.
+    ScopedIgnoreInterceptors ignore;
+    pid = REAL(fork)(fake);
+  }
   if (pid == 0) {
     // child
     ForkChildAfter(thr, pc);
@@ -2602,12 +2552,6 @@ void InitializeInterceptors() {
   TSAN_MAYBE_INTERCEPT_PVALLOC;
   TSAN_INTERCEPT(posix_memalign);
 
-  TSAN_INTERCEPT(memset);
-  TSAN_INTERCEPT(memcpy);
-  TSAN_INTERCEPT(memmove);
-  TSAN_INTERCEPT(strchr);
-  TSAN_INTERCEPT(strchrnul);
-  TSAN_INTERCEPT(strrchr);
   TSAN_INTERCEPT(strcpy);  // NOLINT
   TSAN_INTERCEPT(strncpy);
   TSAN_INTERCEPT(strdup);

@@ -13,6 +13,7 @@
 #include "Config.h"
 
 #include "lld/Core/LLVM.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/MC/StringTableBuilder.h"
 #include "llvm/Object/ELF.h"
 
@@ -82,6 +83,11 @@ public:
       Header.sh_addralign = Align;
   }
 
+  // If true, this section will be page aligned on disk.
+  // Typically the first section of each PT_LOAD segment has this flag.
+  bool PageAlign = false;
+
+  virtual void assignOffsets() {}
   virtual void finalize() {}
   virtual void writeTo(uint8_t *Buf) {}
   virtual ~OutputSectionBase() = default;
@@ -100,7 +106,6 @@ public:
   void finalize() override;
   void writeTo(uint8_t *Buf) override;
   void addEntry(SymbolBody &Sym);
-  void addMipsLocalEntry();
   bool addDynTlsEntry(SymbolBody &Sym);
   bool addTlsIndex();
   bool empty() const { return MipsLocalEntries == 0 && Entries.empty(); }
@@ -125,6 +130,8 @@ private:
   std::vector<const SymbolBody *> Entries;
   uint32_t TlsIndexOff = -1;
   uint32_t MipsLocalEntries = 0;
+  // Output sections referenced by MIPS GOT relocations.
+  llvm::SmallPtrSet<const OutputSectionBase<ELFT> *, 10> MipsOutSections;
   llvm::DenseMap<uintX_t, size_t> MipsLocalGotPos;
 
   uintX_t getMipsLocalEntryAddr(uintX_t EntryValue);
@@ -265,10 +272,10 @@ public:
   void sortInitFini();
   void sortCtorsDtors();
   void writeTo(uint8_t *Buf) override;
+  void assignOffsets() override;
   void finalize() override;
 
 private:
-  void reassignOffsets();
   std::vector<InputSection<ELFT> *> Sections;
 };
 

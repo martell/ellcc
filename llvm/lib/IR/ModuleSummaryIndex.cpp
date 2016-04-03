@@ -23,7 +23,7 @@ void ModuleSummaryIndex::mergeFrom(std::unique_ptr<ModuleSummaryIndex> Other,
 
   StringRef ModPath;
   for (auto &OtherGlobalValInfoLists : *Other) {
-    uint64_t ValueGUID = OtherGlobalValInfoLists.first;
+    GlobalValue::GUID ValueGUID = OtherGlobalValInfoLists.first;
     GlobalValueInfoList &List = OtherGlobalValInfoLists.second;
 
     // Assert that the value info list only has one entry, since we shouldn't
@@ -37,9 +37,11 @@ void ModuleSummaryIndex::mergeFrom(std::unique_ptr<ModuleSummaryIndex> Other,
 
     // Add the module path string ref for this module if we haven't already
     // saved a reference to it.
-    if (ModPath.empty())
-      ModPath = addModulePath(Info->summary()->modulePath(), NextModuleId);
-    else
+    if (ModPath.empty()) {
+      auto Path = Info->summary()->modulePath();
+      ModPath = addModulePath(Path, NextModuleId, Other->getModuleHash(Path))
+                    ->first();
+    } else
       assert(ModPath == Info->summary()->modulePath() &&
              "Each module in the combined map should have a unique ID");
 

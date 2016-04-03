@@ -37,6 +37,8 @@ static typename ELFT::uint getSymVA(const SymbolBody &Body,
   switch (Body.kind()) {
   case SymbolBody::DefinedSyntheticKind: {
     auto &D = cast<DefinedSynthetic<ELFT>>(Body);
+    if (D.Value == DefinedSynthetic<ELFT>::SectionEnd)
+      return D.Section.getVA() + D.Section.getSize();
     return D.Section.getVA() + D.Value;
   }
   case SymbolBody::DefinedRegularKind: {
@@ -112,12 +114,6 @@ bool SymbolBody::isPreemptible() const {
   return true;
 }
 
-template <class ELFT> bool SymbolBody::isGnuIfunc() const {
-  if (auto *D = dyn_cast<DefinedElf<ELFT>>(this))
-    return D->Sym.getType() == STT_GNU_IFUNC;
-  return false;
-}
-
 template <class ELFT>
 typename ELFT::uint SymbolBody::getVA(typename ELFT::uint Addend) const {
   typename ELFT::uint OutVA = getSymVA<ELFT>(*this, Addend);
@@ -139,10 +135,27 @@ template <class ELFT> typename ELFT::uint SymbolBody::getPltVA() const {
          PltIndex * Target->PltEntrySize;
 }
 
+template <class ELFT> typename ELFT::uint SymbolBody::getThunkVA() const {
+  auto *D = cast<DefinedRegular<ELFT>>(this);
+  auto *S = cast<InputSection<ELFT>>(D->Section);
+  return S->OutSec->getVA() + S->OutSecOff + S->getThunkOff() +
+         ThunkIndex * Target->ThunkSize;
+}
+
 template <class ELFT> typename ELFT::uint SymbolBody::getSize() const {
-  if (auto *B = dyn_cast<DefinedElf<ELFT>>(this))
-    return B->Sym.st_size;
+  if (const typename ELFT::Sym *Sym = getElfSym<ELFT>())
+    return Sym->st_size;
   return 0;
+}
+
+template <class ELFT> const typename ELFT::Sym *SymbolBody::getElfSym() const {
+  if (auto *S = dyn_cast<DefinedRegular<ELFT>>(this))
+    return &S->Sym;
+  if (auto *S = dyn_cast<SharedSymbol<ELFT>>(this))
+    return &S->Sym;
+  if (auto *S = dyn_cast<UndefinedElf<ELFT>>(this))
+    return &S->Sym;
+  return nullptr;
 }
 
 static uint8_t getMinVisibility(uint8_t VA, uint8_t VB) {
@@ -157,9 +170,7 @@ static int compareCommons(DefinedCommon *A, DefinedCommon *B) {
   if (Config->WarnCommon)
     warning("multiple common of " + A->getName());
   A->Alignment = B->Alignment = std::max(A->Alignment, B->Alignment);
-  if (A->Size < B->Size)
-    return -1;
-  return 1;
+  return A->Size < B->Size ? -1 : 1;
 }
 
 // Returns 1, 0 or -1 if this symbol should take precedence
@@ -281,11 +292,6 @@ std::string elf::demangle(StringRef Name) {
 #endif
 }
 
-template bool SymbolBody::template isGnuIfunc<ELF32LE>() const;
-template bool SymbolBody::template isGnuIfunc<ELF32BE>() const;
-template bool SymbolBody::template isGnuIfunc<ELF64LE>() const;
-template bool SymbolBody::template isGnuIfunc<ELF64BE>() const;
-
 template uint32_t SymbolBody::template getVA<ELF32LE>(uint32_t) const;
 template uint32_t SymbolBody::template getVA<ELF32BE>(uint32_t) const;
 template uint64_t SymbolBody::template getVA<ELF64LE>(uint64_t) const;
@@ -310,6 +316,16 @@ template uint32_t SymbolBody::template getSize<ELF32LE>() const;
 template uint32_t SymbolBody::template getSize<ELF32BE>() const;
 template uint64_t SymbolBody::template getSize<ELF64LE>() const;
 template uint64_t SymbolBody::template getSize<ELF64BE>() const;
+
+template const ELF32LE::Sym *SymbolBody::template getElfSym<ELF32LE>() const;
+template const ELF32BE::Sym *SymbolBody::template getElfSym<ELF32BE>() const;
+template const ELF64LE::Sym *SymbolBody::template getElfSym<ELF64LE>() const;
+template const ELF64BE::Sym *SymbolBody::template getElfSym<ELF64BE>() const;
+
+template uint32_t SymbolBody::template getThunkVA<ELF32LE>() const;
+template uint32_t SymbolBody::template getThunkVA<ELF32BE>() const;
+template uint64_t SymbolBody::template getThunkVA<ELF64LE>() const;
+template uint64_t SymbolBody::template getThunkVA<ELF64BE>() const;
 
 template int SymbolBody::compare<ELF32LE>(SymbolBody *Other);
 template int SymbolBody::compare<ELF32BE>(SymbolBody *Other);

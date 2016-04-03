@@ -123,6 +123,11 @@ std::string GlobalValue::getGlobalIdentifier(StringRef Name,
   return NewName;
 }
 
+std::string GlobalValue::getGlobalIdentifier() const {
+  return getGlobalIdentifier(getName(), getLinkage(),
+                             getParent()->getSourceFileName());
+}
+
 const char *GlobalValue::getSection() const {
   if (auto *GA = dyn_cast<GlobalAlias>(this)) {
     // In general we cannot compute this at the IR level, but we try.
@@ -289,16 +294,26 @@ void GlobalVariable::copyAttributesFrom(const GlobalValue *Src) {
 
 
 //===----------------------------------------------------------------------===//
+// GlobalIndirectSymbol Implementation
+//===----------------------------------------------------------------------===//
+
+GlobalIndirectSymbol::GlobalIndirectSymbol(Type *Ty, ValueTy VTy,
+    unsigned AddressSpace, LinkageTypes Linkage, const Twine &Name,
+    Constant *Symbol)
+    : GlobalValue(Ty, VTy, &Op<0>(), 1, Linkage, Name, AddressSpace) {
+    Op<0>() = Symbol;
+}
+
+
+//===----------------------------------------------------------------------===//
 // GlobalAlias Implementation
 //===----------------------------------------------------------------------===//
 
 GlobalAlias::GlobalAlias(Type *Ty, unsigned AddressSpace, LinkageTypes Link,
                          const Twine &Name, Constant *Aliasee,
                          Module *ParentModule)
-    : GlobalValue(Ty, Value::GlobalAliasVal, &Op<0>(), 1, Link, Name,
-                  AddressSpace) {
-  Op<0>() = Aliasee;
-
+    : GlobalIndirectSymbol(Ty, Value::GlobalAliasVal, AddressSpace, Link, Name,
+                           Aliasee) {
   if (ParentModule)
     ParentModule->getAliasList().push_back(this);
 }
@@ -347,5 +362,5 @@ void GlobalAlias::eraseFromParent() {
 void GlobalAlias::setAliasee(Constant *Aliasee) {
   assert((!Aliasee || Aliasee->getType() == getType()) &&
          "Alias and aliasee types should match!");
-  setOperand(0, Aliasee);
+  setIndirectSymbol(Aliasee);
 }

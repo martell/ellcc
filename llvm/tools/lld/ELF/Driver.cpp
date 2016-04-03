@@ -46,13 +46,15 @@ bool elf::link(ArrayRef<const char *> Args, raw_ostream &Error) {
 }
 
 static std::pair<ELFKind, uint16_t> parseEmulation(StringRef S) {
+  if (S.endswith("_fbsd"))
+    S = S.drop_back(5);
   if (S == "elf32btsmip")
     return {ELF32BEKind, EM_MIPS};
   if (S == "elf32ltsmip")
     return {ELF32LEKind, EM_MIPS};
-  if (S == "elf32ppc" || S == "elf32ppc_fbsd")
+  if (S == "elf32ppc")
     return {ELF32BEKind, EM_PPC};
-  if (S == "elf64ppc" || S == "elf64ppc_fbsd")
+  if (S == "elf64ppc")
     return {ELF64BEKind, EM_PPC64};
   if (S == "elf_i386")
     return {ELF32LEKind, EM_386};
@@ -69,7 +71,8 @@ static std::pair<ELFKind, uint16_t> parseEmulation(StringRef S) {
 
 // Returns slices of MB by parsing MB as an archive file.
 // Each slice consists of a member file in the archive.
-static std::vector<MemoryBufferRef> getArchiveMembers(MemoryBufferRef MB) {
+std::vector<MemoryBufferRef>
+LinkerDriver::getArchiveMembers(MemoryBufferRef MB) {
   std::unique_ptr<Archive> File =
       check(Archive::create(MB), "failed to parse archive");
 
@@ -77,12 +80,17 @@ static std::vector<MemoryBufferRef> getArchiveMembers(MemoryBufferRef MB) {
   for (const ErrorOr<Archive::Child> &COrErr : File->children()) {
     Archive::Child C = check(COrErr, "could not get the child of the archive " +
                                          File->getFileName());
-    MemoryBufferRef Mb =
+    MemoryBufferRef MBRef =
         check(C.getMemoryBufferRef(),
               "could not get the buffer for a child of the archive " +
                   File->getFileName());
-    V.push_back(Mb);
+    V.push_back(MBRef);
   }
+
+  // Take ownership of memory buffers created for members of thin archives.
+  for (std::unique_ptr<MemoryBuffer> &MB : File->takeThinBuffers())
+    OwningMBs.push_back(std::move(MB));
+
   return V;
 }
 
@@ -90,7 +98,8 @@ static std::vector<MemoryBufferRef> getArchiveMembers(MemoryBufferRef MB) {
 // Newly created memory buffers are owned by this driver.
 void LinkerDriver::addFile(StringRef Path) {
   using namespace llvm::sys::fs;
-  log(Path);
+  if (Config->Verbose || Config->Trace)
+    llvm::outs() << Path << "\n";
   auto MBOrErr = MemoryBuffer::getFile(Path);
   if (!MBOrErr) {
     error(MBOrErr, "cannot open " + Path);
@@ -133,6 +142,24 @@ void LinkerDriver::addLibrary(StringRef Name) {
     addFile(Path);
 }
 
+// This function is called on startup. We need this for LTO since
+// LTO calls LLVM functions to compile bitcode files to native code.
+// Technically this can be delayed until we read bitcode files, but
+// we don't bother to do lazily because the initialization is fast.
+static void initLLVM(opt::InputArgList &Args) {
+  InitializeAllTargets();
+  InitializeAllTargetMCs();
+  InitializeAllAsmPrinters();
+  InitializeAllAsmParsers();
+
+  // Parse and evaluate -mllvm options.
+  std::vector<const char *> V;
+  V.push_back("lld (LLVM option parsing)");
+  for (auto *Arg : Args.filtered(OPT_mllvm))
+    V.push_back(Arg->getValue());
+  cl::ParseCommandLineOptions(V.size(), V.data());
+}
+
 // Some command line options or some combinations of them are not allowed.
 // This function checks for such errors.
 static void checkOptions(opt::InputArgList &Args) {
@@ -147,17 +174,16 @@ static void checkOptions(opt::InputArgList &Args) {
   if (Config->Pie && Config->Shared)
     error("-shared and -pie may not be used together");
 
-  if (!Config->Relocatable)
-    return;
-
-  if (Config->Shared)
-    error("-r and -shared may not be used together");
-  if (Config->GcSections)
-    error("-r and --gc-sections may not be used together");
-  if (Config->ICF)
-    error("-r and --icf may not be used together");
-  if (Config->Pie)
-    error("-r and -pie may not be used together");
+  if (Config->Relocatable) {
+    if (Config->Shared)
+      error("-r and -shared may not be used together");
+    if (Config->GcSections)
+      error("-r and --gc-sections may not be used together");
+    if (Config->ICF)
+      error("-r and --icf may not be used together");
+    if (Config->Pie)
+      error("-r and -pie may not be used together");
+  }
 }
 
 static StringRef
@@ -165,6 +191,16 @@ getString(opt::InputArgList &Args, unsigned Key, StringRef Default = "") {
   if (auto *Arg = Args.getLastArg(Key))
     return Arg->getValue();
   return Default;
+}
+
+static int getInteger(opt::InputArgList &Args, unsigned Key, int Default) {
+  int V = Default;
+  if (auto *Arg = Args.getLastArg(Key)) {
+    StringRef S = Arg->getValue();
+    if (S.getAsInteger(10, V))
+      error(Arg->getSpelling() + ": number expected, but got " + S);
+  }
+  return V;
 }
 
 static bool hasZOption(opt::InputArgList &Args, StringRef Key) {
@@ -186,6 +222,7 @@ void LinkerDriver::main(ArrayRef<const char *> ArgsArr) {
     return;
   }
 
+  initLLVM(Args);
   readConfigs(Args);
   createFiles(Args);
   checkOptions(Args);
@@ -250,6 +287,7 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->Shared = Args.hasArg(OPT_shared);
   Config->StripAll = Args.hasArg(OPT_strip_all);
   Config->Threads = Args.hasArg(OPT_threads);
+  Config->Trace = Args.hasArg(OPT_trace);
   Config->Verbose = Args.hasArg(OPT_verbose);
   Config->WarnCommon = Args.hasArg(OPT_warn_common);
 
@@ -261,6 +299,11 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->SoName = getString(Args, OPT_soname);
   Config->Sysroot = getString(Args, OPT_sysroot);
 
+  Config->Optimize = getInteger(Args, OPT_O, 0);
+  Config->LtoO = getInteger(Args, OPT_lto_O, 2);
+  if (Config->LtoO > 3)
+    error("invalid optimization level for LTO: " + getString(Args, OPT_lto_O));
+
   Config->ZExecStack = hasZOption(Args, "execstack");
   Config->ZNodelete = hasZOption(Args, "nodelete");
   Config->ZNow = hasZOption(Args, "now");
@@ -271,12 +314,6 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
 
   if (Config->Relocatable)
     Config->StripAll = false;
-
-  if (auto *Arg = Args.getLastArg(OPT_O)) {
-    StringRef Val = Arg->getValue();
-    if (Val.getAsInteger(10, Config->Optimize))
-      error("invalid optimization level");
-  }
 
   if (auto *Arg = Args.getLastArg(OPT_hash_style)) {
     StringRef S = Arg->getValue();
@@ -337,12 +374,6 @@ template <class ELFT> static void initSymbols() {
 }
 
 template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
-  // For LTO
-  InitializeAllTargets();
-  InitializeAllTargetMCs();
-  InitializeAllAsmPrinters();
-  InitializeAllAsmParsers();
-
   initSymbols<ELFT>();
 
   SymbolTable<ELFT> Symtab;
@@ -405,13 +436,17 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
   for (StringRef S : Config->Undefined)
     Symtab.addUndefinedOpt(S);
 
+  // -save-temps creates a file based on the output file name so we want
+  // to set it right before LTO. This code can't be moved to option parsing
+  // because linker scripts can override the output filename using the
+  // OUTPUT() directive.
+  if (Config->OutputFile.empty())
+    Config->OutputFile = "a.out";
+
   Symtab.addCombinedLtoObject();
 
   for (auto *Arg : Args.filtered(OPT_wrap))
     Symtab.wrap(Arg->getValue());
-
-  if (Config->OutputFile.empty())
-    Config->OutputFile = "a.out";
 
   // Write the result to the file.
   Symtab.scanShlibUndefined();

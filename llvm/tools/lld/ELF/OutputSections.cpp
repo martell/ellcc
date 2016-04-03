@@ -90,12 +90,58 @@ GotSection<ELFT>::GotSection()
 }
 
 template <class ELFT> void GotSection<ELFT>::addEntry(SymbolBody &Sym) {
+  if (Config->EMachine == EM_MIPS) {
+    // For "true" local symbols which can be referenced from the same module
+    // only compiler creates two instructions for address loading:
+    //
+    // lw   $8, 0($gp) # R_MIPS_GOT16
+    // addi $8, $8, 0  # R_MIPS_LO16
+    //
+    // The first instruction loads high 16 bits of the symbol address while
+    // the second adds an offset. That allows to reduce number of required
+    // GOT entries because only one global offset table entry is necessary
+    // for every 64 KBytes of local data. So for local symbols we need to
+    // allocate number of GOT entries to hold all required "page" addresses.
+    //
+    // All global symbols (hidden and regular) considered by compiler uniformly.
+    // It always generates a single `lw` instruction and R_MIPS_GOT16 relocation
+    // to load address of the symbol. So for each such symbol we need to
+    // allocate dedicated GOT entry to store its address.
+    //
+    // If a symbol is preemptible we need help of dynamic linker to get its
+    // final address. The corresponding GOT entries are allocated in the
+    // "global" part of GOT. Entries for non preemptible global symbol allocated
+    // in the "local" part of GOT.
+    //
+    // See "Global Offset Table" in Chapter 5:
+    // ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
+    if (Sym.isLocal()) {
+      // At this point we do not know final symbol value so to reduce number
+      // of allocated GOT entries do the following trick. Save all output
+      // sections referenced by GOT relocations. Then later in the `finalize`
+      // method calculate number of "pages" required to cover all saved output
+      // section and allocate appropriate number of GOT entries.
+      auto *OutSec = cast<DefinedRegular<ELFT>>(&Sym)->Section->OutSec;
+      MipsOutSections.insert(OutSec);
+      return;
+    }
+    if (!Sym.isPreemptible()) {
+      // In case of non-local symbols require an entry in the local part
+      // of MIPS GOT, we set GotIndex to 1 just to accent that this symbol
+      // has the GOT entry and escape creation more redundant GOT entries.
+      // FIXME (simon): We can try to store such symbols in the `Entries`
+      // container. But in that case we have to sort out that container
+      // and update GotIndex assigned to symbols.
+      Sym.GotIndex = 1;
+      ++MipsLocalEntries;
+      return;
+    }
+    // All preemptible symbols with MIPS GOT entries should be represented
+    // in the dynamic symbols table.
+    Sym.MustBeInDynSym = true;
+  }
   Sym.GotIndex = Entries.size();
   Entries.push_back(&Sym);
-}
-
-template <class ELFT> void GotSection<ELFT>::addMipsLocalEntry() {
-  ++MipsLocalEntries;
 }
 
 template <class ELFT> bool GotSection<ELFT>::addDynTlsEntry(SymbolBody &Sym) {
@@ -159,6 +205,14 @@ unsigned GotSection<ELFT>::getMipsLocalEntriesNum() const {
 }
 
 template <class ELFT> void GotSection<ELFT>::finalize() {
+  for (const OutputSectionBase<ELFT> *OutSec : MipsOutSections) {
+    // Calculate an upper bound of MIPS GOT entries required to store page
+    // addresses of local symbols. We assume the worst case - each 64kb
+    // page of the output section has at least one GOT relocation against it.
+    // Add 0x8000 to the section's size because the page address stored
+    // in the GOT entry is calculated as (value + 0x8000) & ~0xffff.
+    MipsLocalEntries += (OutSec->getSize() + 0x8000 + 0xfffe) / 0xffff;
+  }
   this->Header.sh_size =
       (Target->GotHeaderEntriesNum + MipsLocalEntries + Entries.size()) *
       sizeof(uintX_t);
@@ -767,12 +821,6 @@ void OutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
   Sections.push_back(S);
   S->OutSec = this;
   this->updateAlign(S->Align);
-
-  uintX_t Off = this->Header.sh_size;
-  Off = alignTo(Off, S->Align);
-  S->OutSecOff = Off;
-  Off += S->getSize();
-  this->Header.sh_size = Off;
 }
 
 // If an input string is in the form of "foo.N" where N is a number,
@@ -789,8 +837,8 @@ static int getPriority(StringRef S) {
 }
 
 // This function is called after we sort input sections
-// to update their offsets.
-template <class ELFT> void OutputSection<ELFT>::reassignOffsets() {
+// and scan relocations to setup sections' offsets.
+template <class ELFT> void OutputSection<ELFT>::assignOffsets() {
   uintX_t Off = 0;
   for (InputSection<ELFT> *S : Sections) {
     Off = alignTo(Off, S->Align);
@@ -818,7 +866,6 @@ template <class ELFT> void OutputSection<ELFT>::sortInitFini() {
   Sections.clear();
   for (Pair &P : V)
     Sections.push_back(P.second);
-  reassignOffsets();
 }
 
 // Returns true if S matches /Filename.?\.o$/.
@@ -879,7 +926,6 @@ static bool compCtors(const InputSection<ELFT> *A,
 // Read the comment above.
 template <class ELFT> void OutputSection<ELFT>::sortCtorsDtors() {
   std::stable_sort(Sections.begin(), Sections.end(), compCtors<ELFT>);
-  reassignOffsets();
 }
 
 static void fill(uint8_t *Buf, size_t Size, ArrayRef<uint8_t> A) {
@@ -1316,8 +1362,12 @@ SymbolTableSection<ELFT>::SymbolTableSection(
 // ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
 static bool sortMipsSymbols(const std::pair<SymbolBody *, unsigned> &L,
                             const std::pair<SymbolBody *, unsigned> &R) {
-  if (!L.first->isInGot() || !R.first->isInGot())
-    return R.first->isInGot();
+  // Sort entries related to non-local preemptible symbols by GOT indexes.
+  // All other entries go to the first part of GOT in arbitrary order.
+  bool LIsInLocalGot = !L.first->isInGot() || !L.first->isPreemptible();
+  bool RIsInLocalGot = !R.first->isInGot() || !R.first->isPreemptible();
+  if (LIsInLocalGot || RIsInLocalGot)
+    return !RIsInLocalGot;
   return L.first->GotIndex < R.first->GotIndex;
 }
 
@@ -1380,33 +1430,21 @@ void SymbolTableSection<ELFT>::writeLocalSymbols(uint8_t *&Buf) {
       const Elf_Sym *Sym = P.first;
 
       auto *ESym = reinterpret_cast<Elf_Sym *>(Buf);
-      uintX_t VA = 0;
       if (Sym->st_shndx == SHN_ABS) {
         ESym->st_shndx = SHN_ABS;
-        VA = Sym->st_value;
+        ESym->st_value = Sym->st_value;
       } else {
         InputSectionBase<ELFT> *Section = File->getSection(*Sym);
         const OutputSectionBase<ELFT> *OutSec = Section->OutSec;
         ESym->st_shndx = OutSec->SectionIndex;
-        VA = Section->getOffset(*Sym);
-        VA += OutSec->getVA();
+        ESym->st_value = OutSec->getVA() + Section->getOffset(*Sym);
       }
       ESym->st_name = P.second;
       ESym->st_size = Sym->st_size;
       ESym->setBindingAndType(Sym->getBinding(), Sym->getType());
-      ESym->st_value = VA;
       Buf += sizeof(*ESym);
     }
   }
-}
-
-template <class ELFT>
-static const typename ELFT::Sym *getElfSym(SymbolBody &Body) {
-  if (auto *EBody = dyn_cast<DefinedElf<ELFT>>(&Body))
-    return &EBody->Sym;
-  if (auto *EBody = dyn_cast<UndefinedElf<ELFT>>(&Body))
-    return &EBody->Sym;
-  return nullptr;
 }
 
 template <class ELFT>
@@ -1420,7 +1458,7 @@ void SymbolTableSection<ELFT>::writeGlobalSymbols(uint8_t *Buf) {
 
     uint8_t Type = STT_NOTYPE;
     uintX_t Size = 0;
-    if (const Elf_Sym *InputSym = getElfSym<ELFT>(*Body)) {
+    if (const Elf_Sym *InputSym = Body->getElfSym<ELFT>()) {
       Type = InputSym->getType();
       Size = InputSym->st_size;
     } else if (auto *C = dyn_cast<DefinedCommon>(Body)) {
@@ -1483,7 +1521,7 @@ uint8_t SymbolTableSection<ELFT>::getSymbolBinding(SymbolBody *Body) {
   uint8_t Visibility = Body->getVisibility();
   if (Visibility != STV_DEFAULT && Visibility != STV_PROTECTED)
     return STB_LOCAL;
-  if (const Elf_Sym *ESym = getElfSym<ELFT>(*Body))
+  if (const Elf_Sym *ESym = Body->getElfSym<ELFT>())
     return ESym->getBinding();
   if (isa<DefinedSynthetic<ELFT>>(Body))
     return STB_LOCAL;

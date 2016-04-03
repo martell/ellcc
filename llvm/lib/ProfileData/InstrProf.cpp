@@ -83,9 +83,31 @@ std::string getPGOFuncName(StringRef RawFuncName,
   return GlobalValue::getGlobalIdentifier(RawFuncName, Linkage, FileName);
 }
 
-std::string getPGOFuncName(const Function &F, uint64_t Version) {
-  return getPGOFuncName(F.getName(), F.getLinkage(), F.getParent()->getName(),
-                        Version);
+// Return the PGOFuncName. This function has some special handling when called
+// in LTO optimization. The following only applies when calling in LTO passes
+// (when \c InLTO is true): LTO's internalization privatizes many global linkage
+// symbols. This happens after value profile annotation, but those internal
+// linkage functions should not have a source prefix.
+// To differentiate compiler generated internal symbols from original ones,
+// PGOFuncName meta data are created and attached to the original internal
+// symbols in the value profile annotation step
+// (PGOUseFunc::annotateIndirectCallSites). If a symbol does not have the meta
+// data, its original linkage must be non-internal.
+std::string getPGOFuncName(const Function &F, bool InLTO, uint64_t Version) {
+  if (!InLTO)
+    return getPGOFuncName(F.getName(), F.getLinkage(), F.getParent()->getName(),
+                          Version);
+
+  // In LTO mode (when InLTO is true), first check if there is a meta data.
+  if (MDNode *MD = getPGOFuncNameMetadata(F)) {
+    StringRef S = cast<MDString>(MD->getOperand(0))->getString();
+    return S.str();
+  }
+
+  // If there is no meta data, the function must be a global before the value
+  // profile annotation pass. Its current linkage may be internal if it is
+  // internalized in LTO mode.
+  return getPGOFuncName(F.getName(), GlobalValue::ExternalLinkage, "");
 }
 
 StringRef getFuncNameWithoutPrefix(StringRef PGOFuncName, StringRef FileName) {
@@ -149,18 +171,31 @@ GlobalVariable *createPGOFuncNameVar(Function &F, StringRef PGOFuncName) {
   return createPGOFuncNameVar(*F.getParent(), F.getLinkage(), PGOFuncName);
 }
 
-void InstrProfSymtab::create(const Module &M) {
-  for (const Function &F : M)
-    addFuncName(getPGOFuncName(F));
+void InstrProfSymtab::create(Module &M, bool InLTO) {
+  for (Function &F : M) {
+    // Function may not have a name: like using asm("") to overwrite the name.
+    // Ignore in this case.
+    if (!F.hasName())
+      continue;
+    const std::string &PGOFuncName = getPGOFuncName(F, InLTO);
+    addFuncName(PGOFuncName);
+    MD5FuncMap.emplace_back(Function::getGUID(PGOFuncName), &F);
+  }
 
   finalizeSymtab();
 }
 
 int collectPGOFuncNameStrings(const std::vector<std::string> &NameStrs,
                               bool doCompression, std::string &Result) {
+  assert(NameStrs.size() && "No name data to emit");
+
   uint8_t Header[16], *P = Header;
   std::string UncompressedNameStrings =
-      join(NameStrs.begin(), NameStrs.end(), StringRef(" "));
+      join(NameStrs.begin(), NameStrs.end(), getInstrProfNameSeparator());
+
+  assert(StringRef(UncompressedNameStrings)
+                 .count(getInstrProfNameSeparator()) == (NameStrs.size() - 1) &&
+         "PGO name is invalid (contains separator token)");
 
   unsigned EncLen = encodeULEB128(UncompressedNameStrings.length(), P);
   P += EncLen;
@@ -238,7 +273,7 @@ int readPGOFuncNameStrings(StringRef NameStrings, InstrProfSymtab &Symtab) {
     }
     // Now parse the name strings.
     SmallVector<StringRef, 0> Names;
-    NameStrings.split(Names, ' ');
+    NameStrings.split(Names, getInstrProfNameSeparator());
     for (StringRef &Name : Names)
       Symtab.addFuncName(Name);
 
@@ -600,11 +635,12 @@ void annotateValueSite(Module &M, Instruction &Inst,
   std::unique_ptr<InstrProfValueData[]> VD =
       InstrProfR.getValueForSite(ValueKind, SiteIdx, &Sum);
 
-  annotateValueSite(M, Inst, VD.get(), NV, Sum, ValueKind, MaxMDCount);
+  ArrayRef<InstrProfValueData> VDs(VD.get(), NV);
+  annotateValueSite(M, Inst, VDs, Sum, ValueKind, MaxMDCount);
 }
 
 void annotateValueSite(Module &M, Instruction &Inst,
-                       const InstrProfValueData VD[], uint32_t NV,
+                       ArrayRef<InstrProfValueData> VDs,
                        uint64_t Sum, InstrProfValueKind ValueKind,
                        uint32_t MaxMDCount) {
   LLVMContext &Ctx = M.getContext();
@@ -621,11 +657,11 @@ void annotateValueSite(Module &M, Instruction &Inst,
 
   // Value Profile Data
   uint32_t MDCount = MaxMDCount;
-  for (uint32_t I = 0; I < NV; ++I) {
+  for (auto &VD : VDs) {
     Vals.push_back(MDHelper.createConstant(
-        ConstantInt::get(Type::getInt64Ty(Ctx), VD[I].Value)));
+        ConstantInt::get(Type::getInt64Ty(Ctx), VD.Value)));
     Vals.push_back(MDHelper.createConstant(
-        ConstantInt::get(Type::getInt64Ty(Ctx), VD[I].Count)));
+        ConstantInt::get(Type::getInt64Ty(Ctx), VD.Count)));
     if (--MDCount == 0)
       break;
   }
@@ -683,4 +719,19 @@ bool getValueProfDataFromInst(const Instruction &Inst,
   }
   return true;
 }
+
+MDNode *getPGOFuncNameMetadata(const Function &F) {
+  return F.getMetadata(getPGOFuncNameMetadataName());
+}
+
+void createPGOFuncNameMetadata(Function &F) {
+  const std::string &FuncName = getPGOFuncName(F);
+  if (FuncName == F.getName())
+    return;
+
+  LLVMContext &C = F.getContext();
+  MDNode *N = MDNode::get(C, MDString::get(C, FuncName.c_str()));
+  F.setMetadata(getPGOFuncNameMetadataName(), N);
+}
+
 } // end namespace llvm

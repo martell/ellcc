@@ -300,6 +300,7 @@ template <> struct MappingTraits<FormatStyle> {
                    Style.ExperimentalAutoDetectBinPacking);
     IO.mapOptional("ForEachMacros", Style.ForEachMacros);
     IO.mapOptional("IncludeCategories", Style.IncludeCategories);
+    IO.mapOptional("IncludeIsMainRegex", Style.IncludeIsMainRegex);
     IO.mapOptional("IndentCaseLabels", Style.IndentCaseLabels);
     IO.mapOptional("IndentWidth", Style.IndentWidth);
     IO.mapOptional("IndentWrappedFunctionNames",
@@ -517,6 +518,7 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.IncludeCategories = {{"^\"(llvm|llvm-c|clang|clang-c)/", 2},
                                  {"^(<|\"(gtest|isl|json)/)", 3},
                                  {".*", 1}};
+  LLVMStyle.IncludeIsMainRegex = "$";
   LLVMStyle.IndentCaseLabels = false;
   LLVMStyle.IndentWrappedFunctionNames = false;
   LLVMStyle.IndentWidth = 2;
@@ -569,6 +571,7 @@ FormatStyle getGoogleStyle(FormatStyle::LanguageKind Language) {
   GoogleStyle.ConstructorInitializerAllOnOneLineOrOnePerLine = true;
   GoogleStyle.DerivePointerAlignment = true;
   GoogleStyle.IncludeCategories = {{"^<.*\\.h>", 1}, {"^<.*", 2}, {".*", 3}};
+  GoogleStyle.IncludeIsMainRegex = "([-_](test|unittest))?$";
   GoogleStyle.IndentCaseLabels = true;
   GoogleStyle.KeepEmptyLinesAtTheStartOfBlocks = false;
   GoogleStyle.ObjCSpaceAfterProperty = false;
@@ -1961,8 +1964,12 @@ tooling::Replacements sortIncludes(const FormatStyle &Style, StringRef Code,
           StringRef HeaderStem =
               llvm::sys::path::stem(IncludeName.drop_front(1).drop_back(1));
           if (FileStem.startswith(HeaderStem)) {
-            Category = 0;
-            MainIncludeFound = true;
+            llvm::Regex MainIncludeRegex(
+                (HeaderStem + Style.IncludeIsMainRegex).str());
+            if (MainIncludeRegex.match(FileStem)) {
+              Category = 0;
+              MainIncludeFound = true;
+            }
           }
         }
         IncludesInBlock.push_back({IncludeName, Line, Prev, Category});
@@ -1991,24 +1998,15 @@ tooling::Replacements formatReplacements(StringRef Code,
 
   std::string NewCode = applyAllReplacements(Code, Replaces);
   std::vector<tooling::Range> ChangedRanges =
-      tooling::calculateChangedRangesInFile(Replaces);
+      tooling::calculateChangedRanges(Replaces);
   StringRef FileName = Replaces.begin()->getFilePath();
   tooling::Replacements FormatReplaces =
       reformat(Style, NewCode, ChangedRanges, FileName);
 
   tooling::Replacements MergedReplacements =
       mergeReplacements(Replaces, FormatReplaces);
-  return MergedReplacements;
-}
 
-std::string applyAllReplacementsAndFormat(StringRef Code,
-                                          const tooling::Replacements &Replaces,
-                                          const FormatStyle &Style) {
-  tooling::Replacements NewReplacements =
-      formatReplacements(Code, Replaces, Style);
-  if (NewReplacements.empty())
-    return Code; // Exit early to avoid overhead in `applyAllReplacements`.
-  return applyAllReplacements(Code, NewReplacements);
+  return MergedReplacements;
 }
 
 tooling::Replacements reformat(const FormatStyle &Style,
@@ -2091,7 +2089,10 @@ static FormatStyle::LanguageKind getLanguageByFileName(StringRef FileName) {
 }
 
 FormatStyle getStyle(StringRef StyleName, StringRef FileName,
-                     StringRef FallbackStyle) {
+                     StringRef FallbackStyle, vfs::FileSystem *FS) {
+  if (!FS) {
+    FS = vfs::getRealFileSystem().get();
+  }
   FormatStyle Style = getLLVMStyle();
   Style.Language = getLanguageByFileName(FileName);
   if (!getPredefinedStyle(FallbackStyle, Style.Language, &Style)) {
@@ -2122,28 +2123,34 @@ FormatStyle getStyle(StringRef StyleName, StringRef FileName,
   llvm::sys::fs::make_absolute(Path);
   for (StringRef Directory = Path; !Directory.empty();
        Directory = llvm::sys::path::parent_path(Directory)) {
-    if (!llvm::sys::fs::is_directory(Directory))
+
+    auto Status = FS->status(Directory);
+    if (!Status ||
+        Status->getType() != llvm::sys::fs::file_type::directory_file) {
       continue;
+    }
+
     SmallString<128> ConfigFile(Directory);
 
     llvm::sys::path::append(ConfigFile, ".clang-format");
     DEBUG(llvm::dbgs() << "Trying " << ConfigFile << "...\n");
-    bool IsFile = false;
-    // Ignore errors from is_regular_file: we only need to know if we can read
-    // the file or not.
-    llvm::sys::fs::is_regular_file(Twine(ConfigFile), IsFile);
 
+    Status = FS->status(ConfigFile.str());
+    bool IsFile =
+        Status && (Status->getType() == llvm::sys::fs::file_type::regular_file);
     if (!IsFile) {
       // Try _clang-format too, since dotfiles are not commonly used on Windows.
       ConfigFile = Directory;
       llvm::sys::path::append(ConfigFile, "_clang-format");
       DEBUG(llvm::dbgs() << "Trying " << ConfigFile << "...\n");
-      llvm::sys::fs::is_regular_file(Twine(ConfigFile), IsFile);
+      Status = FS->status(ConfigFile.str());
+      IsFile = Status &&
+               (Status->getType() == llvm::sys::fs::file_type::regular_file);
     }
 
     if (IsFile) {
       llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Text =
-          llvm::MemoryBuffer::getFile(ConfigFile.c_str());
+          FS->getBufferForFile(ConfigFile.str());
       if (std::error_code EC = Text.getError()) {
         llvm::errs() << EC.message() << "\n";
         break;

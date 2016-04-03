@@ -681,6 +681,7 @@ RValue CodeGenFunction::EmitBuiltinExpr(const FunctionDecl *FD,
   case Builtin::BI__builtin_bswap64: {
     return RValue::get(emitUnaryBuiltin(*this, E, Intrinsic::bswap));
   }
+  case Builtin::BI__builtin_bitreverse8:
   case Builtin::BI__builtin_bitreverse16:
   case Builtin::BI__builtin_bitreverse32:
   case Builtin::BI__builtin_bitreverse64: {
@@ -6415,7 +6416,7 @@ Value *CodeGenFunction::EmitX86BuiltinExpr(unsigned BuiltinID,
 
     // Check the value of the bit corresponding to the feature requested.
     Value *Bitset = Builder.CreateAnd(
-        Features, llvm::ConstantInt::get(Int32Ty, 1 << Feature));
+        Features, llvm::ConstantInt::get(Int32Ty, 1ULL << Feature));
     return Builder.CreateICmpNE(Bitset, llvm::ConstantInt::get(Int32Ty, 0));
   }
   case X86::BI_mm_prefetch: {
@@ -7104,6 +7105,14 @@ Value *CodeGenFunction::EmitAMDGPUBuiltinExpr(unsigned BuiltinID,
   case AMDGPU::BI__builtin_amdgcn_ldexp:
   case AMDGPU::BI__builtin_amdgcn_ldexpf:
     return emitFPIntBuiltin(*this, E, Intrinsic::amdgcn_ldexp);
+  case AMDGPU::BI__builtin_amdgcn_frexp_mant:
+  case AMDGPU::BI__builtin_amdgcn_frexp_mantf: {
+    return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_frexp_mant);
+  }
+  case AMDGPU::BI__builtin_amdgcn_frexp_exp:
+  case AMDGPU::BI__builtin_amdgcn_frexp_expf: {
+    return emitUnaryBuiltin(*this, E, Intrinsic::amdgcn_frexp_exp);
+  }
   case AMDGPU::BI__builtin_amdgcn_class:
   case AMDGPU::BI__builtin_amdgcn_classf:
     return emitFPIntBuiltin(*this, E, Intrinsic::amdgcn_class);
@@ -7437,6 +7446,22 @@ Value *CodeGenFunction::EmitNVPTXBuiltinExpr(unsigned BuiltinID,
     Value *FnALAF32 =
         CGM.getIntrinsic(Intrinsic::nvvm_atomic_load_add_f32, Ptr->getType());
     return Builder.CreateCall(FnALAF32, {Ptr, Val});
+  }
+
+  case NVPTX::BI__nvvm_atom_inc_gen_ui: {
+    Value *Ptr = EmitScalarExpr(E->getArg(0));
+    Value *Val = EmitScalarExpr(E->getArg(1));
+    Value *FnALI32 =
+        CGM.getIntrinsic(Intrinsic::nvvm_atomic_load_inc_32, Ptr->getType());
+    return Builder.CreateCall(FnALI32, {Ptr, Val});
+  }
+
+  case NVPTX::BI__nvvm_atom_dec_gen_ui: {
+    Value *Ptr = EmitScalarExpr(E->getArg(0));
+    Value *Val = EmitScalarExpr(E->getArg(1));
+    Value *FnALD32 =
+        CGM.getIntrinsic(Intrinsic::nvvm_atomic_load_dec_32, Ptr->getType());
+    return Builder.CreateCall(FnALD32, {Ptr, Val});
   }
 
   default:

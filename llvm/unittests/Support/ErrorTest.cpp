@@ -9,6 +9,7 @@
 
 #include "llvm/Support/Error.h"
 #include "llvm/Support/Errc.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "gtest/gtest.h"
 #include <memory>
 
@@ -30,6 +31,13 @@ public:
     OS << "CustomError { " << getInfo() << "}";
   }
 
+  std::error_code convertToErrorCode() const override {
+    llvm_unreachable("CustomError doesn't support ECError conversion");
+  }
+
+  // Used by ErrorInfo::classID.
+  static char ID;
+
 protected:
   // This error is subclassed below, but we can't use inheriting constructors
   // yet, so we can't propagate the constructors through ErrorInfo. Instead
@@ -39,6 +47,8 @@ protected:
 
   int Info;
 };
+
+char CustomError::ID = 0;
 
 // Custom error class with a custom base class and some additional random
 // 'info'.
@@ -57,9 +67,18 @@ public:
     OS << "CustomSubError { " << getInfo() << ", " << getExtraInfo() << "}";
   }
 
+  std::error_code convertToErrorCode() const override {
+    llvm_unreachable("CustomSubError doesn't support ECError conversion");
+  }
+
+  // Used by ErrorInfo::classID.
+  static char ID;
+
 protected:
   int ExtraInfo;
 };
+
+char CustomSubError::ID = 0;
 
 static Error handleCustomError(const CustomError &CE) { return Error(); }
 
@@ -83,6 +102,32 @@ TEST(Error, CheckedSuccess) {
 TEST(Error, UncheckedSuccess) {
   EXPECT_DEATH({ Error E; }, "Program aborted due to an unhandled Error:")
       << "Unchecked Error Succes value did not cause abort()";
+}
+#endif
+
+// ErrorAsOutParameter tester.
+void errAsOutParamHelper(Error &Err) {
+  ErrorAsOutParameter ErrAsOutParam(Err);
+  // Verify that checked flag is raised - assignment should not crash.
+  Err = Error::success();
+  // Raise the checked bit manually - caller should still have to test the
+  // error.
+  (void)!!Err;
+}
+
+// Test that ErrorAsOutParameter sets the checked flag on construction.
+TEST(Error, ErrorAsOutParameterChecked) {
+  Error E;
+  errAsOutParamHelper(E);
+  (void)!!E;
+}
+
+// Test that ErrorAsOutParameter clears the checked flag on destruction.
+#ifndef NDEBUG
+TEST(Error, ErrorAsOutParameterUnchecked) {
+  EXPECT_DEATH({ Error E; errAsOutParamHelper(E); },
+               "Program aborted due to an unhandled Error:")
+      << "ErrorAsOutParameter did not clear the checked flag on destruction.";
 }
 #endif
 
@@ -236,7 +281,7 @@ TEST(Error, HandlerShadowing) {
         DummyExtraInfo = SE.getExtraInfo();
       });
 
-  EXPECT_TRUE(CaughtErrorInfo = 42 && DummyInfo == 0 && DummyExtraInfo == 0)
+  EXPECT_TRUE(CaughtErrorInfo == 42 && DummyInfo == 0 && DummyExtraInfo == 0)
       << "General Error handler did not shadow specific handler";
 }
 
@@ -407,7 +452,7 @@ TEST(Error, ExpectedCovariance) {
   A2 = Expected<std::unique_ptr<D>>(nullptr);
 }
 
-TEST(Error, ECError) {
+TEST(Error, ErrorCodeConversions) {
   // Round-trip a success value to check that it converts correctly.
   EXPECT_EQ(errorToErrorCode(errorCodeToError(std::error_code())),
             std::error_code())
@@ -418,6 +463,29 @@ TEST(Error, ECError) {
             errc::invalid_argument)
       << "std::error_code error value should round-trip via Error "
          "conversions";
+
+  // Round-trip a success value through ErrorOr/Expected to check that it
+  // converts correctly.
+  {
+    auto Orig = ErrorOr<int>(42);
+    auto RoundTripped =
+      expectedToErrorOr(errorOrToExpected(ErrorOr<int>(42)));
+    EXPECT_EQ(*Orig, *RoundTripped)
+      << "ErrorOr<T> success value should round-trip via Expected<T> "
+         "conversions.";
+  }
+
+  // Round-trip a failure value through ErrorOr/Expected to check that it
+  // converts correctly.
+  {
+    auto Orig = ErrorOr<int>(errc::invalid_argument);
+    auto RoundTripped =
+      expectedToErrorOr(
+          errorOrToExpected(ErrorOr<int>(errc::invalid_argument)));
+    EXPECT_EQ(Orig.getError(), RoundTripped.getError())
+      << "ErrorOr<T> failure value should round-trip via Expected<T> "
+         "conversions.";
+  }
 }
 
 } // end anon namespace

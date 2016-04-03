@@ -35,14 +35,15 @@
 // CHECKSH-NOT: "-fmodules-cache-path="
 // CHECKSH: "crash-vfs-{{[^ ]*}}.m"
 // CHECKSH: "-ivfsoverlay" "crash-vfs-{{[^ ]*}}.cache/vfs/vfs.yaml"
+// CHECKSH: "-fmodules-cache-path=crash-vfs-{{[^ ]*}}.cache/modules"
 
-// CHECKYAML: 'type': 'directory'
-// CHECKYAML: 'name': "{{[^ ]*}}/Inputs/crash-recovery/usr/include",
+// CHECKYAML:     'type': 'directory'
+// CHECKYAML:     'name': "/[[PATH:.*]]/Inputs/crash-recovery/usr/include",
 // CHECKYAML-NEXT: 'contents': [
 // CHECKYAML-NEXT:   {
 // CHECKYAML-NEXT:     'type': 'file',
 // CHECKYAML-NEXT:     'name': "module.map",
-// CHECKYAML-NEXT:     'external-contents': "{{[^ ]*}}/Inputs/crash-recovery/usr/include/module.map"
+// CHECKYAML-NEXT:     'external-contents': "/[[PATH]]/Inputs/crash-recovery/usr/include/module.map"
 // CHECKYAML-NEXT:   },
 
 // Replace the paths in the YAML files with relative ".." traversals
@@ -51,9 +52,10 @@
 
 // RUN: sed -e "s@usr/include@usr/include/../include@g" \
 // RUN:     %t/crash-vfs-*.cache/vfs/vfs.yaml > %t/vfs.yaml
+// RUN: cp %t/vfs.yaml %t/crash-vfs-*.cache/vfs/vfs.yaml
 // RUN: unset FORCE_CLANG_DIAGNOSTICS_CRASH
 // RUN: %clang -E %s -I %S/Inputs/crash-recovery -isysroot %/t/i/ \
-// RUN:     -ivfsoverlay %t/vfs.yaml -fmodules \
+// RUN:     -ivfsoverlay %t/crash-vfs-*.cache/vfs/vfs.yaml -fmodules \
 // RUN:     -fmodules-cache-path=%t/m/ 2>&1 \
 // RUN:     | FileCheck %s --check-prefix=CHECKOVERLAY
 

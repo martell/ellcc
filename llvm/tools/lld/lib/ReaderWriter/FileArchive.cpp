@@ -42,7 +42,7 @@ public:
 
   /// \brief Check if any member of the archive contains an Atom with the
   /// specified name and return the File object for that member, or nullptr.
-  File *find(StringRef name, bool dataSymbolOnly) override {
+  File *find(StringRef name) override {
     auto member = _symbolMemberMap.find(name);
     if (member == _symbolMemberMap.end())
       return nullptr;
@@ -57,9 +57,6 @@ public:
     const char *memberStart = buf->data();
     if (_membersInstantiated.count(memberStart))
       return nullptr;
-    if (dataSymbolOnly && !isDataSymbol(ci, name))
-      return nullptr;
-
     _membersInstantiated.insert(memberStart);
 
     std::unique_ptr<File> result;
@@ -88,20 +85,27 @@ public:
     return std::error_code();
   }
 
-  const AtomVector<DefinedAtom> &defined() const override {
+  const AtomRange<DefinedAtom> defined() const override {
     return _noDefinedAtoms;
   }
 
-  const AtomVector<UndefinedAtom> &undefined() const override {
+  const AtomRange<UndefinedAtom> undefined() const override {
     return _noUndefinedAtoms;
   }
 
-  const AtomVector<SharedLibraryAtom> &sharedLibrary() const override {
+  const AtomRange<SharedLibraryAtom> sharedLibrary() const override {
     return _noSharedLibraryAtoms;
   }
 
-  const AtomVector<AbsoluteAtom> &absolute() const override {
+  const AtomRange<AbsoluteAtom> absolute() const override {
     return _noAbsoluteAtoms;
+  }
+
+  void clearAtoms() override {
+    _noDefinedAtoms.clear();
+    _noUndefinedAtoms.clear();
+    _noSharedLibraryAtoms.clear();
+    _noAbsoluteAtoms.clear();
   }
 
 protected:
@@ -148,43 +152,6 @@ private:
     // so that the bufffer is deallocated when all the members are destructed.
     result->setSharedMemoryBuffer(_mb);
     return std::error_code();
-  }
-
-  // Parses the given memory buffer as an object file, and returns true
-  // code if the given symbol is a data symbol. If the symbol is not a data
-  // symbol or does not exist, returns false.
-  bool isDataSymbol(Archive::child_iterator cOrErr, StringRef symbol) const {
-    if (cOrErr->getError())
-      return false;
-    Archive::child_iterator member = cOrErr->get();
-    ErrorOr<llvm::MemoryBufferRef> buf = (*member)->getMemoryBufferRef();
-    if (buf.getError())
-      return false;
-    std::unique_ptr<MemoryBuffer> mb(MemoryBuffer::getMemBuffer(
-        buf.get().getBuffer(), buf.get().getBufferIdentifier(), false));
-
-    auto objOrErr(ObjectFile::createObjectFile(mb->getMemBufferRef()));
-    if (objOrErr.getError())
-      return false;
-    std::unique_ptr<ObjectFile> obj = std::move(objOrErr.get());
-
-    for (SymbolRef sym : obj->symbols()) {
-      // Skip until we find the symbol.
-      ErrorOr<StringRef> name = sym.getName();
-      if (!name)
-        return false;
-      if (*name != symbol)
-        continue;
-      uint32_t flags = sym.getFlags();
-      if (flags <= SymbolRef::SF_Undefined)
-        continue;
-
-      // Returns true if it's a data symbol.
-      SymbolRef::Type type = sym.getType();
-      if (type == SymbolRef::ST_Data)
-        return true;
-    }
-    return false;
   }
 
   std::error_code buildTableOfContents() {

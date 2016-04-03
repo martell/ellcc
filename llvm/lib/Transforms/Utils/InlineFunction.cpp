@@ -428,12 +428,14 @@ static BasicBlock *HandleCallsInBlockInlinedThroughInvoke(
       continue;
 
     // We do not need to (and in fact, cannot) convert possibly throwing calls
-    // to @llvm.experimental_deoptimize into invokes.  The caller's "segment" of
-    // the deoptimization continuation attached to the newly inlined
-    // @llvm.experimental_deoptimize call should contain the exception handling
-    // logic, if any.
+    // to @llvm.experimental_deoptimize (resp. @llvm.experimental.guard) into
+    // invokes.  The caller's "segment" of the deoptimization continuation
+    // attached to the newly inlined @llvm.experimental_deoptimize
+    // (resp. @llvm.experimental.guard) call should contain the exception
+    // handling logic, if any.
     if (auto *F = CI->getCalledFunction())
-      if (F->getIntrinsicID() == Intrinsic::experimental_deoptimize)
+      if (F->getIntrinsicID() == Intrinsic::experimental_deoptimize ||
+          F->getIntrinsicID() == Intrinsic::experimental_guard)
         continue;
 
     if (auto FuncletBundle = CI->getOperandBundle(LLVMContext::OB_funclet)) {
@@ -1701,10 +1703,13 @@ bool llvm::InlineFunction(CallSite CS, InlineFunctionInfo &IFI,
 
       builder.CreateLifetimeStart(AI, AllocaSize);
       for (ReturnInst *RI : Returns) {
-        // Don't insert llvm.lifetime.end calls between a musttail call and a
-        // return.  The return kills all local allocas.
+        // Don't insert llvm.lifetime.end calls between a musttail or deoptimize
+        // call and a return.  The return kills all local allocas.
         if (InlinedMustTailCalls &&
             RI->getParent()->getTerminatingMustTailCall())
+          continue;
+        if (InlinedDeoptimizeCalls &&
+            RI->getParent()->getTerminatingDeoptimizeCall())
           continue;
         IRBuilder<>(RI).CreateLifetimeEnd(AI, AllocaSize);
       }
@@ -1726,9 +1731,11 @@ bool llvm::InlineFunction(CallSite CS, InlineFunctionInfo &IFI,
     // Insert a call to llvm.stackrestore before any return instructions in the
     // inlined function.
     for (ReturnInst *RI : Returns) {
-      // Don't insert llvm.stackrestore calls between a musttail call and a
-      // return.  The return will restore the stack pointer.
+      // Don't insert llvm.stackrestore calls between a musttail or deoptimize
+      // call and a return.  The return will restore the stack pointer.
       if (InlinedMustTailCalls && RI->getParent()->getTerminatingMustTailCall())
+        continue;
+      if (InlinedDeoptimizeCalls && RI->getParent()->getTerminatingDeoptimizeCall())
         continue;
       IRBuilder<>(RI).CreateCall(StackRestore, SavedPtr);
     }

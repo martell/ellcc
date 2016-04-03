@@ -42,6 +42,9 @@
 
 #if defined(__CUDA__) && defined(__clang__)
 
+// Include some forward declares that must come before cmath.
+#include <__clang_cuda_math_forward_declares.h>
+
 // Include some standard headers to avoid CUDA headers including them
 // while some required macros (like __THROW) are in a weird state.
 #include <cmath>
@@ -199,7 +202,6 @@ static inline __device__ void __brkpt(int __c) { __brkpt(); }
 // Set up compiler macros expected to be seen during compilation.
 #undef __CUDABE__
 #define __CUDACC__
-#define __NVCC__
 
 #if defined(__CUDA_ARCH__)
 // We need to emit IR declaration for non-existing __nvvm_reflect() to

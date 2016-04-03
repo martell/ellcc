@@ -1576,12 +1576,12 @@ def VOP_CNDMASK : VOPProfile <[i32, i32, i32, untyped]> {
 
 def VOP_F32_F32_F32_F32 : VOPProfile <[f32, f32, f32, f32]>;
 def VOP_MADAK : VOPProfile <[f32, f32, f32, f32]> {
-  field dag Ins32 = (ins VCSrc_32:$src0, VGPR_32:$vsrc1, u32imm:$k);
-  field string Asm32 = "$vdst, $src0, $vsrc1, $k";
+  field dag Ins32 = (ins VCSrc_32:$src0, VGPR_32:$src1, u32imm:$imm);
+  field string Asm32 = "$vdst, $src0, $src1, $imm";
 }
 def VOP_MADMK : VOPProfile <[f32, f32, f32, f32]> {
-  field dag Ins32 = (ins VCSrc_32:$src0, u32imm:$k, VGPR_32:$vsrc1);
-  field string Asm32 = "$vdst, $src0, $k, $vsrc1";
+  field dag Ins32 = (ins VCSrc_32:$src0, u32imm:$imm, VGPR_32:$src1);
+  field string Asm32 = "$vdst, $src0, $imm, $src1";
 }
 def VOP_MAC : VOPProfile <[f32, f32, f32, f32]> {
   let Ins32 = (ins Src0RC32:$src0, Src1RC32:$src1, VGPR_32:$src2);
@@ -1705,6 +1705,8 @@ class VOP1_DPP <vop1 op, string opName, VOPProfile p> :
   VOP1_DPPe <op.VI>,
   VOP_DPP <p.OutsDPP, p.InsDPP, opName#p.AsmDPP, [], p.HasModifiers> {
   let AssemblerPredicates = [isVI];
+  let DecoderNamespace = "DPP";
+  let DisableDecoder = DisableVIDecoder;
   let src0_modifiers = !if(p.HasModifiers, ?, 0);
   let src1_modifiers = 0;
 }
@@ -1767,6 +1769,8 @@ class VOP2_DPP <vop2 op, string opName, VOPProfile p> :
   VOP2_DPPe <op.VI>,
   VOP_DPP <p.OutsDPP, p.InsDPP, opName#p.AsmDPP, [], p.HasModifiers> {
   let AssemblerPredicates = [isVI];
+  let DecoderNamespace = "DPP";
+  let DisableDecoder = DisableVIDecoder;
   let src0_modifiers = !if(p.HasModifiers, ?, 0);
   let src1_modifiers = !if(p.HasModifiers, ?, 0);
 }
@@ -2372,6 +2376,7 @@ class VINTRP_Real_si <bits <2> op, string opName, dag outs, dag ins,
   VINTRPCommon <outs, ins, asm, []>,
   VINTRPe <op>,
   SIMCInstr<opName, SISubtarget.SI> {
+  let AssemblerPredicate = SIAssemblerPredicate;
   let DecoderNamespace = "SICI";
   let DisableDecoder = DisableSIDecoder;
 }
@@ -2381,6 +2386,7 @@ class VINTRP_Real_vi <bits <2> op, string opName, dag outs, dag ins,
   VINTRPCommon <outs, ins, asm, []>,
   VINTRPe_vi <op>,
   SIMCInstr<opName, SISubtarget.VI> {
+  let AssemblerPredicate = VIAssemblerPredicate;
   let DecoderNamespace = "VI";
   let DisableDecoder = DisableVIDecoder;
 }
@@ -2742,6 +2748,7 @@ class MUBUF_Real_si <mubuf op, string opName, dag outs, dag ins,
   MUBUFe <op.SI>,
   SIMCInstr<opName, SISubtarget.SI> {
   let lds = 0;
+  let AssemblerPredicate = SIAssemblerPredicate;
   let DecoderNamespace="SICI";
   let DisableDecoder = DisableSIDecoder;
 }
@@ -2752,6 +2759,7 @@ class MUBUF_Real_vi <mubuf op, string opName, dag outs, dag ins,
   MUBUFe_vi <op.VI>,
   SIMCInstr<opName, SISubtarget.VI> {
   let lds = 0;
+  let AssemblerPredicate = VIAssemblerPredicate;
   let DecoderNamespace="VI";
   let DisableDecoder = DisableVIDecoder;
 }
