@@ -67,6 +67,11 @@ public:
 
   bool runOnMachineFunction(MachineFunction &F) override;
 
+  MachineFunctionProperties getRequiredProperties() const override {
+    return MachineFunctionProperties().set(
+        MachineFunctionProperties::Property::AllVRegsAllocated);
+  }
+
 private:
   MbbIterator findClosestSuitableAluInstr(MachineBasicBlock *BB,
                                           const MbbIterator &MemInstr,
@@ -85,7 +90,7 @@ private:
 char LanaiMemAluCombiner::ID = 0;
 
 INITIALIZE_PASS(LanaiMemAluCombiner, DEBUG_TYPE,
-                "Lanai memory ALU combiner pass", false, false);
+                "Lanai memory ALU combiner pass", false, false)
 
 namespace {
 bool isSpls(uint16_t Opcode) { return Lanai::splsIdempotent(Opcode) == Opcode; }

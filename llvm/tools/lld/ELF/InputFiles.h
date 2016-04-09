@@ -36,7 +36,14 @@ class SymbolBody;
 // The root class of input files.
 class InputFile {
 public:
-  enum Kind { ObjectKind, SharedKind, ArchiveKind, BitcodeKind };
+  enum Kind {
+    ObjectKind,
+    SharedKind,
+    LazyObjectKind,
+    ArchiveKind,
+    BitcodeKind,
+  };
+
   Kind kind() const { return FileKind; }
 
   StringRef getName() const { return MB.getBufferIdentifier(); }
@@ -129,7 +136,7 @@ public:
 
   // The number is the offset in the string table. It will be used as the
   // st_name of the symbol.
-  std::vector<std::pair<const Elf_Sym *, unsigned>> KeptLocalSyms;
+  std::vector<std::pair<const DefinedRegular<ELFT> *, unsigned>> KeptLocalSyms;
 
 private:
   void initializeSections(llvm::DenseSet<StringRef> &ComdatGroups);
@@ -146,13 +153,44 @@ private:
   std::vector<SymbolBody *> SymbolBodies;
 
   // MIPS .reginfo section defined by this file.
-  MipsReginfoInputSection<ELFT> *MipsReginfo = nullptr;
+  std::unique_ptr<MipsReginfoInputSection<ELFT>> MipsReginfo;
 
   llvm::BumpPtrAllocator Alloc;
+  llvm::SpecificBumpPtrAllocator<InputSection<ELFT>> IAlloc;
   llvm::SpecificBumpPtrAllocator<MergeInputSection<ELFT>> MAlloc;
   llvm::SpecificBumpPtrAllocator<EHInputSection<ELFT>> EHAlloc;
 };
 
+// LazyObjectFile is analogous to ArchiveFile in the sense that
+// the file contains lazy symbols. The difference is that
+// LazyObjectFile wraps a single file instead of multiple files.
+//
+// This class is used for --start-lib and --end-lib options which
+// instruct the linker to link object files between them with the
+// archive file semantics.
+class LazyObjectFile : public InputFile {
+public:
+  explicit LazyObjectFile(MemoryBufferRef M) : InputFile(LazyObjectKind, M) {}
+
+  static bool classof(const InputFile *F) {
+    return F->kind() == LazyObjectKind;
+  }
+
+  void parse();
+
+  llvm::MutableArrayRef<LazyObject> getLazySymbols() { return LazySymbols; }
+
+private:
+  std::vector<StringRef> getSymbols();
+  template <class ELFT> std::vector<StringRef> getElfSymbols();
+  std::vector<StringRef> getBitcodeSymbols();
+
+  llvm::BumpPtrAllocator Alloc;
+  llvm::StringSaver Saver{Alloc};
+  std::vector<LazyObject> LazySymbols;
+};
+
+// An ArchiveFile object represents a .a file.
 class ArchiveFile : public InputFile {
 public:
   explicit ArchiveFile(MemoryBufferRef M) : InputFile(ArchiveKind, M) {}
@@ -164,11 +202,11 @@ public:
   // (So that we don't instantiate same members more than once.)
   MemoryBufferRef getMember(const Archive::Symbol *Sym);
 
-  llvm::MutableArrayRef<Lazy> getLazySymbols() { return LazySymbols; }
+  llvm::MutableArrayRef<LazyArchive> getLazySymbols() { return LazySymbols; }
 
 private:
   std::unique_ptr<Archive> File;
-  std::vector<Lazy> LazySymbols;
+  std::vector<LazyArchive> LazySymbols;
   llvm::DenseSet<uint64_t> Seen;
 };
 

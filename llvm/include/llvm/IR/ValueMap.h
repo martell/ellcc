@@ -87,6 +87,9 @@ class ValueMap {
   MapT Map;
   std::unique_ptr<MDMapT> MDMap;
   ExtraData Data;
+
+  bool MayMapMetadata = true;
+
   ValueMap(const ValueMap&) = delete;
   ValueMap& operator=(const ValueMap&) = delete;
 public:
@@ -100,12 +103,16 @@ public:
   explicit ValueMap(const ExtraData &Data, unsigned NumInitBuckets = 64)
       : Map(NumInitBuckets), Data(Data) {}
 
-  bool hasMD() const { return MDMap; }
+  bool hasMD() const { return bool(MDMap); }
   MDMapT &MD() {
     if (!MDMap)
       MDMap.reset(new MDMapT);
     return *MDMap;
   }
+
+  bool mayMapMetadata() const { return MayMapMetadata; }
+  void enableMapMetadata() { MayMapMetadata = true; }
+  void disableMapMetadata() { MayMapMetadata = false; }
 
   /// Get the mapped metadata, if it's in the map.
   Optional<Metadata *> getMappedMD(const Metadata *MD) const {

@@ -2816,13 +2816,6 @@ bool AArch64TargetLowering::isEligibleForTailCallOptimization(
   CallingConv::ID CallerCC = CallerF->getCallingConv();
   bool CCMatch = CallerCC == CalleeCC;
 
-  // Disable tailcall for CXX_FAST_TLS when callee and caller have different
-  // calling conventions, given that CXX_FAST_TLS has a bigger CSR set.
-  if (!CCMatch &&
-      (CallerCC == CallingConv::CXX_FAST_TLS ||
-       CalleeCC == CallingConv::CXX_FAST_TLS))
-    return false;
-
   // Byval parameters hand the function a pointer directly into the stack area
   // we want to reuse during a tail call. Working around this *is* possible (see
   // X86) but less efficient and uglier in LowerCall.
@@ -2882,6 +2875,13 @@ bool AArch64TargetLowering::isEligibleForTailCallOptimization(
                                   CCAssignFnForCall(CalleeCC, isVarArg),
                                   CCAssignFnForCall(CallerCC, isVarArg)))
     return false;
+  // The callee has to preserve all registers the caller needs to preserve.
+  if (!CCMatch) {
+    const AArch64RegisterInfo *TRI = Subtarget->getRegisterInfo();
+    if (!TRI->regmaskSubsetEqual(TRI->getCallPreservedMask(MF, CallerCC),
+                                 TRI->getCallPreservedMask(MF, CalleeCC)))
+      return false;
+  }
 
   // Nothing more to check if the callee is taking no arguments
   if (Outs.empty())
@@ -10132,7 +10132,7 @@ Value *AArch64TargetLowering::emitLoadLinked(IRBuilder<> &Builder, Value *Addr,
                                              AtomicOrdering Ord) const {
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
   Type *ValTy = cast<PointerType>(Addr->getType())->getElementType();
-  bool IsAcquire = isAtLeastAcquire(Ord);
+  bool IsAcquire = isAcquireOrStronger(Ord);
 
   // Since i128 isn't legal and intrinsics don't get type-lowered, the ldrexd
   // intrinsic must return {i64, i64} and we have to recombine them into a
@@ -10174,7 +10174,7 @@ Value *AArch64TargetLowering::emitStoreConditional(IRBuilder<> &Builder,
                                                    Value *Val, Value *Addr,
                                                    AtomicOrdering Ord) const {
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
-  bool IsRelease = isAtLeastRelease(Ord);
+  bool IsRelease = isReleaseOrStronger(Ord);
 
   // Since the intrinsics must have legal type, the i128 intrinsics take two
   // parameters: "i64, i64". We must marshal Val into the appropriate form
@@ -10210,6 +10210,22 @@ bool AArch64TargetLowering::functionArgumentNeedsConsecutiveRegisters(
 bool AArch64TargetLowering::shouldNormalizeToSelectSequence(LLVMContext &,
                                                             EVT) const {
   return false;
+}
+
+Value *AArch64TargetLowering::getStackCookieLocation(IRBuilder<> &IRB) const {
+  if (!Subtarget->isTargetAndroid())
+    return TargetLowering::getStackCookieLocation(IRB);
+
+  // Android provides a fixed TLS slot for the stack cookie. See the definition
+  // of TLS_SLOT_STACK_GUARD in
+  // https://android.googlesource.com/platform/bionic/+/master/libc/private/bionic_tls.h
+  const unsigned TlsOffset = 0x28;
+  Module *M = IRB.GetInsertBlock()->getParent()->getParent();
+  Function *ThreadPointerFunc =
+      Intrinsic::getDeclaration(M, Intrinsic::aarch64_thread_pointer);
+  return IRB.CreatePointerCast(
+      IRB.CreateConstGEP1_32(IRB.CreateCall(ThreadPointerFunc), TlsOffset),
+      Type::getInt8PtrTy(IRB.getContext())->getPointerTo(0));
 }
 
 Value *AArch64TargetLowering::getSafeStackPointerLocation(IRBuilder<> &IRB) const {

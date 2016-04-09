@@ -427,6 +427,10 @@ added in the future:
 
     - On X86-64 the callee preserves all general purpose registers, except for
       RDI and RAX.
+"``swiftcc``" - This calling convention is used for Swift language.
+    - On X86-64 RCX and R8 are available for additional integer returns, and
+      XMM2 and XMM3 are available for additional FP/vector returns.
+    - On iOS platforms, we use AAPCS-VFP calling convention.
 "``cc <n>``" - Numbered convention
     Any calling convention may be specified by number, allowing
     target-specific calling conventions to be used. Target specific
@@ -759,6 +763,25 @@ some can only be checked when producing an object file:
 
 * No global value in the expression can be a declaration, since that
   would require a relocation, which is not possible.
+
+.. _langref_ifunc:
+
+IFuncs
+-------
+
+IFuncs, like as aliases, don't create any new data or func. They are just a new
+symbol that dynamic linker resolves at runtime by calling a resolver function.
+
+IFuncs have a name and a resolver that is a function called by dynamic linker
+that returns address of another function associated with the name.
+
+IFunc may have an optional :ref:`linkage type <linkage>` and an optional
+:ref:`visibility style <visibility>`.
+
+Syntax::
+
+    @<Name> = [Linkage] [Visibility] ifunc <IFuncTy>, <ResolverTy>* @<Resolver>
+
 
 .. _langref_comdats:
 

@@ -398,7 +398,7 @@ class IRLinker {
   bool HasError = false;
 
   /// Flags to pass to value mapper invocations.
-  RemapFlags ValueMapperFlags = RF_MoveDistinctMDs;
+  RemapFlags ValueMapperFlags = RF_MoveDistinctMDs | RF_IgnoreMissingLocals;
 
   /// Set of subprogram metadata that does not need to be linked into the
   /// destination module, because the functions were not imported directly
@@ -963,56 +963,26 @@ bool IRLinker::linkFunctionBody(Function &Dst, Function &Src) {
   if (std::error_code EC = Src.materialize())
     return emitError(EC.message());
 
-  // Link in the prefix data.
+  // Link in the operands without remapping.
   if (Src.hasPrefixData())
-    Dst.setPrefixData(MapValue(Src.getPrefixData(), ValueMap, ValueMapperFlags,
-                               &TypeMap, &GValMaterializer));
-
-  // Link in the prologue data.
+    Dst.setPrefixData(Src.getPrefixData());
   if (Src.hasPrologueData())
-    Dst.setPrologueData(MapValue(Src.getPrologueData(), ValueMap,
-                                 ValueMapperFlags, &TypeMap,
-                                 &GValMaterializer));
-
-  // Link in the personality function.
+    Dst.setPrologueData(Src.getPrologueData());
   if (Src.hasPersonalityFn())
-    Dst.setPersonalityFn(MapValue(Src.getPersonalityFn(), ValueMap,
-                                  ValueMapperFlags, &TypeMap,
-                                  &GValMaterializer));
+    Dst.setPersonalityFn(Src.getPersonalityFn());
 
-  // Go through and convert function arguments over, remembering the mapping.
-  Function::arg_iterator DI = Dst.arg_begin();
-  for (Argument &Arg : Src.args()) {
-    DI->setName(Arg.getName()); // Copy the name over.
-
-    // Add a mapping to our mapping.
-    ValueMap[&Arg] = &*DI;
-    ++DI;
-  }
-
-  // Copy over the metadata attachments.
+  // Copy over the metadata attachments without remapping.
   SmallVector<std::pair<unsigned, MDNode *>, 8> MDs;
   Src.getAllMetadata(MDs);
   for (const auto &I : MDs)
-    Dst.setMetadata(I.first, MapMetadata(I.second, ValueMap, ValueMapperFlags,
-                                         &TypeMap, &GValMaterializer));
+    Dst.setMetadata(I.first, I.second);
 
-  // Splice the body of the source function into the dest function.
+  // Steal arguments and splice the body of Src into Dst.
+  Dst.stealArgumentListFrom(Src);
   Dst.getBasicBlockList().splice(Dst.end(), Src.getBasicBlockList());
 
-  // At this point, all of the instructions and values of the function are now
-  // copied over.  The only problem is that they are still referencing values in
-  // the Source function as operands.  Loop through all of the operands of the
-  // functions and patch them up to point to the local versions.
-  for (BasicBlock &BB : Dst)
-    for (Instruction &I : BB)
-      RemapInstruction(&I, ValueMap, RF_IgnoreMissingEntries | ValueMapperFlags,
-                       &TypeMap, &GValMaterializer);
-
-  // There is no need to map the arguments anymore.
-  for (Argument &Arg : Src.args())
-    ValueMap.erase(&Arg);
-
+  // Everything has been moved over.  Remap it.
+  RemapFunction(Dst, ValueMap, ValueMapperFlags, &TypeMap, &GValMaterializer);
   return false;
 }
 

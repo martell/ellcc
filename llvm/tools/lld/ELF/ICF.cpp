@@ -102,14 +102,12 @@ private:
   void forEachGroup(std::vector<InputSection<ELFT> *> &V, Comparator Eq);
 
   template <class RelTy>
-  static bool relocationEq(iterator_range<const RelTy *> RA,
-                           iterator_range<const RelTy *> RB);
+  static bool relocationEq(ArrayRef<RelTy> RA, ArrayRef<RelTy> RB);
 
   template <class RelTy>
   static bool variableEq(const InputSection<ELFT> *A,
-                         const InputSection<ELFT> *B,
-                         iterator_range<const RelTy *> RA,
-                         iterator_range<const RelTy *> RB);
+                         const InputSection<ELFT> *B, ArrayRef<RelTy> RA,
+                         ArrayRef<RelTy> RB);
 
   static bool equalsConstant(const InputSection<ELFT> *A,
                              const InputSection<ELFT> *B);
@@ -132,7 +130,7 @@ template <class ELFT> uint64_t ICF<ELFT>::getHash(InputSection<ELFT> *S) {
 
 // Returns true if Sec is subject of ICF.
 template <class ELFT> bool ICF<ELFT>::isEligible(InputSectionBase<ELFT> *Sec) {
-  if (!Sec || Sec == InputSection<ELFT>::Discarded || !Sec->Live)
+  if (!Sec || Sec == &InputSection<ELFT>::Discarded || !Sec->Live)
     return false;
   auto *S = dyn_cast<InputSection<ELFT>>(Sec);
   if (!S)
@@ -206,8 +204,7 @@ void ICF<ELFT>::forEachGroup(std::vector<InputSection<ELFT> *> &V,
 // Compare two lists of relocations.
 template <class ELFT>
 template <class RelTy>
-bool ICF<ELFT>::relocationEq(iterator_range<const RelTy *> RelsA,
-                             iterator_range<const RelTy *> RelsB) {
+bool ICF<ELFT>::relocationEq(ArrayRef<RelTy> RelsA, ArrayRef<RelTy> RelsB) {
   const RelTy *IA = RelsA.begin();
   const RelTy *EA = RelsA.end();
   const RelTy *IB = RelsB.begin();
@@ -252,9 +249,8 @@ bool ICF<ELFT>::equalsConstant(const InputSection<ELFT> *A,
 template <class ELFT>
 template <class RelTy>
 bool ICF<ELFT>::variableEq(const InputSection<ELFT> *A,
-                           const InputSection<ELFT> *B,
-                           iterator_range<const RelTy *> RelsA,
-                           iterator_range<const RelTy *> RelsB) {
+                           const InputSection<ELFT> *B, ArrayRef<RelTy> RelsA,
+                           ArrayRef<RelTy> RelsB) {
   const RelTy *IA = RelsA.begin();
   const RelTy *EA = RelsA.end();
   const RelTy *IB = RelsB.begin();
@@ -270,7 +266,7 @@ bool ICF<ELFT>::variableEq(const InputSection<ELFT> *A,
     auto *DB = dyn_cast<DefinedRegular<ELFT>>(&SB);
     if (!DA || !DB)
       return false;
-    if (DA->Sym.st_value != DB->Sym.st_value)
+    if (DA->Value != DB->Value)
       return false;
     InputSection<ELFT> *X = dyn_cast<InputSection<ELFT>>(DA->Section);
     InputSection<ELFT> *Y = dyn_cast<InputSection<ELFT>>(DB->Section);

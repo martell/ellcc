@@ -779,10 +779,12 @@ public:
                                     const BasicBlock *EHPadBB);
 
   void LowerDeoptimizeCall(const CallInst *CI);
+  void LowerDeoptimizingReturn();
 
   void LowerCallSiteWithDeoptBundleImpl(ImmutableCallSite CS, SDValue Callee,
                                         const BasicBlock *EHPadBB,
-                                        bool VarArgDisallowed);
+                                        bool VarArgDisallowed,
+                                        bool ForceVoidReturnTy);
 
 private:
   // Terminator instructions.
@@ -895,6 +897,8 @@ private:
   bool visitBinaryFloatCall(const CallInst &I, unsigned Opcode);
   void visitAtomicLoad(const LoadInst &I);
   void visitAtomicStore(const StoreInst &I);
+  void visitLoadFromSwiftError(const LoadInst &I);
+  void visitStoreToSwiftError(const StoreInst &I);
 
   void visitInlineAsm(ImmutableCallSite CS);
   const char *visitIntrinsicCall(const CallInst &I, unsigned Intrinsic);

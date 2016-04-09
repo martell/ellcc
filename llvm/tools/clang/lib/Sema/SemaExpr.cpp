@@ -4915,6 +4915,9 @@ static bool isPlaceholderToRemoveAsArg(QualType type) {
 
   switch (placeholder->getKind()) {
   // Ignore all the non-placeholder types.
+#define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
+  case BuiltinType::Id:
+#include "clang/AST/OpenCLImageTypes.def"
 #define PLACEHOLDER_TYPE(ID, SINGLETON_ID)
 #define BUILTIN_TYPE(ID, SINGLETON_ID) case BuiltinType::ID:
 #include "clang/AST/BuiltinTypes.def"
@@ -5089,8 +5092,6 @@ Sema::ActOnCallExpr(Scope *S, Expr *Fn, SourceLocation LParenLoc,
 
     // Determine whether this is a dependent call inside a C++ template,
     // in which case we won't do any semantic analysis now.
-    // FIXME: Will need to cache the results of name lookup (including ADL) in
-    // Fn.
     bool Dependent = false;
     if (Fn->isTypeDependent())
       Dependent = true;
@@ -13816,6 +13817,9 @@ void Sema::MarkVariableReferenced(SourceLocation Loc, VarDecl *Var) {
 
 static void MarkExprReferenced(Sema &SemaRef, SourceLocation Loc,
                                Decl *D, Expr *E, bool MightBeOdrUse) {
+  if (SemaRef.isInOpenMPDeclareTargetContext())
+    SemaRef.checkDeclIsAllowedInOpenMPTarget(E, D);
+
   if (VarDecl *Var = dyn_cast<VarDecl>(D)) {
     DoMarkVarDeclReferenced(SemaRef, Loc, Var, E);
     return;
@@ -14839,8 +14843,10 @@ ExprResult Sema::CheckPlaceholderExpr(Expr *E) {
     return ExprError();
 
   // Everything else should be impossible.
-#define BUILTIN_TYPE(Id, SingletonId) \
+#define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
   case BuiltinType::Id:
+#include "clang/AST/OpenCLImageTypes.def"
+#define BUILTIN_TYPE(Id, SingletonId) case BuiltinType::Id:
 #define PLACEHOLDER_TYPE(Id, SingletonId)
 #include "clang/AST/BuiltinTypes.def"
     break;

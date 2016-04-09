@@ -711,6 +711,10 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
       Fn->addFnAttr(llvm::Attribute::NoInline);
   }
 
+  // Add no-jump-tables value.
+  Fn->addFnAttr("no-jump-tables",
+                llvm::toStringRef(CGM.getCodeGenOpts().NoUseJumpTables));
+
   if (getLangOpts().OpenCL) {
     // Add metadata for a kernel function.
     if (const FunctionDecl *FD = dyn_cast_or_null<FunctionDecl>(D))
@@ -916,7 +920,7 @@ void CodeGenFunction::EmitBlockWithFallThrough(llvm::BasicBlock *BB,
 static void TryMarkNoThrow(llvm::Function *F) {
   // LLVM treats 'nounwind' on a function as part of the type, so we
   // can't do this on functions that can be overwritten.
-  if (F->mayBeOverridden()) return;
+  if (F->isInterposable()) return;
 
   for (llvm::BasicBlock &BB : *F)
     for (llvm::Instruction &I : BB)

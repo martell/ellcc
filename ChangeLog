@@ -1,5 +1,6 @@
 current SVN:
 
+* Update to LLVM r265848.
 * Update to LLVM r265256.
 * Added stdatomic.h.
 * Update to LLVM r263883.

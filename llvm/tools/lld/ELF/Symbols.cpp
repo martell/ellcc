@@ -31,7 +31,6 @@ using namespace lld::elf;
 template <class ELFT>
 static typename ELFT::uint getSymVA(const SymbolBody &Body,
                                     typename ELFT::uint &Addend) {
-  typedef typename ELFT::Sym Elf_Sym;
   typedef typename ELFT::uint uintX_t;
 
   switch (Body.kind()) {
@@ -45,18 +44,24 @@ static typename ELFT::uint getSymVA(const SymbolBody &Body,
     auto &D = cast<DefinedRegular<ELFT>>(Body);
     InputSectionBase<ELFT> *SC = D.Section;
 
+    // According to the ELF spec reference to a local symbol from outside
+    // the group are not allowed. Unfortunately .eh_frame breaks that rule
+    // and must be treated specially. For now we just replace the symbol with
+    // 0.
+    if (SC == &InputSection<ELFT>::Discarded)
+      return 0;
+
     // This is an absolute symbol.
     if (!SC)
-      return D.Sym.st_value;
+      return D.Value;
 
-    const Elf_Sym &Sym = D.Sym;
-    uintX_t Offset = Sym.st_value;
-    if (Sym.getType() == STT_SECTION) {
+    uintX_t Offset = D.Value;
+    if (D.isSection()) {
       Offset += Addend;
       Addend = 0;
     }
     uintX_t VA = SC->OutSec->getVA() + SC->getOffset(Offset);
-    if (Sym.getType() == STT_TLS)
+    if (D.isTls())
       return VA - Out<ELFT>::TlsPhdr->p_vaddr;
     return VA;
   }
@@ -66,20 +71,45 @@ static typename ELFT::uint getSymVA(const SymbolBody &Body,
     auto &SS = cast<SharedSymbol<ELFT>>(Body);
     if (!SS.NeedsCopyOrPltAddr)
       return 0;
-    if (SS.IsFunc)
+    if (SS.isFunc())
       return Body.getPltVA<ELFT>();
     return Out<ELFT>::Bss->getVA() + SS.OffsetInBss;
   }
   case SymbolBody::UndefinedElfKind:
-  case SymbolBody::UndefinedKind:
+  case SymbolBody::UndefinedBitcodeKind:
     return 0;
-  case SymbolBody::LazyKind:
+  case SymbolBody::LazyArchiveKind:
+  case SymbolBody::LazyObjectKind:
     assert(Body.isUsedInRegularObj() && "lazy symbol reached writer");
     return 0;
   case SymbolBody::DefinedBitcodeKind:
     llvm_unreachable("should have been replaced");
   }
   llvm_unreachable("invalid symbol kind");
+}
+
+SymbolBody::SymbolBody(Kind K, uint32_t NameOffset, uint8_t StOther,
+                       uint8_t Type)
+    : SymbolKind(K), Type(Type), Binding(STB_LOCAL), StOther(StOther),
+      NameOffset(NameOffset) {
+  init();
+}
+
+SymbolBody::SymbolBody(Kind K, StringRef Name, uint8_t Binding, uint8_t StOther,
+                       uint8_t Type)
+    : SymbolKind(K), Type(Type), Binding(Binding), StOther(StOther),
+      Name({Name.data(), Name.size()}) {
+  assert(!isLocal());
+  init();
+}
+
+void SymbolBody::init() {
+  Kind K = kind();
+  IsUsedInRegularObj = K == DefinedRegularKind || K == DefinedCommonKind ||
+                       K == DefinedSyntheticKind || K == UndefinedElfKind;
+  CanKeepUndefined = false;
+  MustBeInDynSym = false;
+  NeedsCopyOrPltAddr = false;
 }
 
 // Returns true if a symbol can be replaced at load-time by a symbol
@@ -109,7 +139,7 @@ bool SymbolBody::isPreemptible() const {
     return false;
   if (getVisibility() != STV_DEFAULT)
     return false;
-  if (Config->Bsymbolic || (Config->BsymbolicFunctions && IsFunc))
+  if (Config->Bsymbolic || (Config->BsymbolicFunctions && isFunc()))
     return false;
   return true;
 }
@@ -121,13 +151,20 @@ typename ELFT::uint SymbolBody::getVA(typename ELFT::uint Addend) const {
 }
 
 template <class ELFT> typename ELFT::uint SymbolBody::getGotVA() const {
-  return Out<ELFT>::Got->getVA() +
-         (Out<ELFT>::Got->getMipsLocalEntriesNum() + GotIndex) *
-             sizeof(typename ELFT::uint);
+  return Out<ELFT>::Got->getVA() + getGotOffset<ELFT>();
+}
+
+template <class ELFT> typename ELFT::uint SymbolBody::getGotOffset() const {
+  return (Out<ELFT>::Got->getMipsLocalEntriesNum() + GotIndex) *
+         sizeof(typename ELFT::uint);
 }
 
 template <class ELFT> typename ELFT::uint SymbolBody::getGotPltVA() const {
-  return Out<ELFT>::GotPlt->getVA() + GotPltIndex * sizeof(typename ELFT::uint);
+  return Out<ELFT>::GotPlt->getVA() + getGotPltOffset<ELFT>();
+}
+
+template <class ELFT> typename ELFT::uint SymbolBody::getGotPltOffset() const {
+  return GotPltIndex * sizeof(typename ELFT::uint);
 }
 
 template <class ELFT> typename ELFT::uint SymbolBody::getPltVA() const {
@@ -143,19 +180,15 @@ template <class ELFT> typename ELFT::uint SymbolBody::getThunkVA() const {
 }
 
 template <class ELFT> typename ELFT::uint SymbolBody::getSize() const {
-  if (const typename ELFT::Sym *Sym = getElfSym<ELFT>())
-    return Sym->st_size;
+  if (const auto *C = dyn_cast<DefinedCommon>(this))
+    return C->Size;
+  if (const auto *DR = dyn_cast<DefinedRegular<ELFT>>(this))
+    return DR->Size;
+  if (const auto *S = dyn_cast<SharedSymbol<ELFT>>(this))
+    return S->Sym.st_size;
+  if (const auto *U = dyn_cast<UndefinedElf<ELFT>>(this))
+    return U->Size;
   return 0;
-}
-
-template <class ELFT> const typename ELFT::Sym *SymbolBody::getElfSym() const {
-  if (auto *S = dyn_cast<DefinedRegular<ELFT>>(this))
-    return &S->Sym;
-  if (auto *S = dyn_cast<SharedSymbol<ELFT>>(this))
-    return &S->Sym;
-  if (auto *S = dyn_cast<UndefinedElf<ELFT>>(this))
-    return &S->Sym;
-  return nullptr;
 }
 
 static uint8_t getMinVisibility(uint8_t VA, uint8_t VB) {
@@ -175,7 +208,7 @@ static int compareCommons(DefinedCommon *A, DefinedCommon *B) {
 
 // Returns 1, 0 or -1 if this symbol should take precedence
 // over the Other, tie or lose, respectively.
-template <class ELFT> int SymbolBody::compare(SymbolBody *Other) {
+int SymbolBody::compare(SymbolBody *Other) {
   assert(!isLazy() && !Other->isLazy());
   std::tuple<bool, bool, bool> L(isDefined(), !isShared(), !isWeak());
   std::tuple<bool, bool, bool> R(Other->isDefined(), !Other->isShared(),
@@ -183,20 +216,28 @@ template <class ELFT> int SymbolBody::compare(SymbolBody *Other) {
 
   // Normalize
   if (L > R)
-    return -Other->compare<ELFT>(this);
+    return -Other->compare(this);
 
-  Visibility = Other->Visibility =
-      getMinVisibility(Visibility, Other->Visibility);
+  if (isShared() != Other->isShared()) {
+    SymbolBody *Shared = isShared() ? this : Other;
+    Shared->MustBeInDynSym = true;
+    if (Shared->getVisibility() == STV_DEFAULT) {
+      // We want to export all symbols that exist in the executable and are
+      // preemptable in DSOs, so that the symbols in the executable can
+      // preempt symbols in the DSO at runtime.
+      SymbolBody *NonShared = isShared() ? Other : this;
+      NonShared->MustBeInDynSym = true;
+    }
+  }
+
+  if (!isShared() && !Other->isShared()) {
+    uint8_t V = getMinVisibility(getVisibility(), Other->getVisibility());
+    setVisibility(V);
+    Other->setVisibility(V);
+  }
 
   if (IsUsedInRegularObj || Other->IsUsedInRegularObj)
     IsUsedInRegularObj = Other->IsUsedInRegularObj = true;
-
-  // We want to export all symbols that exist both in the executable
-  // and in DSOs, so that the symbols in the executable can interrupt
-  // symbols in the DSO at runtime.
-  if (isShared() != Other->isShared())
-    if (isa<DefinedRegular<ELFT>>(isShared() ? Other : this))
-      MustBeInDynSym = Other->MustBeInDynSym = true;
 
   if (L != R)
     return -1;
@@ -212,51 +253,67 @@ template <class ELFT> int SymbolBody::compare(SymbolBody *Other) {
   return isCommon() ? -1 : 1;
 }
 
-Defined::Defined(Kind K, StringRef Name, bool IsWeak, bool IsLocal,
-                 uint8_t Visibility, uint8_t Type)
-    : SymbolBody(K, Name, IsWeak, IsLocal, Visibility, Type) {}
+Defined::Defined(Kind K, StringRef Name, uint8_t Binding, uint8_t StOther,
+                 uint8_t Type)
+    : SymbolBody(K, Name, Binding, StOther, Type) {}
 
-DefinedBitcode::DefinedBitcode(StringRef Name, bool IsWeak, uint8_t Visibility)
-    : Defined(DefinedBitcodeKind, Name, IsWeak, false, Visibility,
-              0 /* Type */) {}
+Defined::Defined(Kind K, uint32_t NameOffset, uint8_t StOther, uint8_t Type)
+    : SymbolBody(K, NameOffset, StOther, Type) {}
+
+DefinedBitcode::DefinedBitcode(StringRef Name, bool IsWeak, uint8_t StOther)
+    : Defined(DefinedBitcodeKind, Name, IsWeak ? STB_WEAK : STB_GLOBAL,
+              StOther, 0 /* Type */) {}
 
 bool DefinedBitcode::classof(const SymbolBody *S) {
   return S->kind() == DefinedBitcodeKind;
 }
 
-Undefined::Undefined(SymbolBody::Kind K, StringRef N, bool IsWeak,
-                     uint8_t Visibility, uint8_t Type)
-    : SymbolBody(K, N, IsWeak, false, Visibility, Type),
-      CanKeepUndefined(false) {}
+UndefinedBitcode::UndefinedBitcode(StringRef N, bool IsWeak, uint8_t StOther)
+    : SymbolBody(SymbolBody::UndefinedBitcodeKind, N,
+                 IsWeak ? STB_WEAK : STB_GLOBAL, StOther, 0 /* Type */) {}
 
-Undefined::Undefined(StringRef N, bool IsWeak, uint8_t Visibility,
-                     bool CanKeepUndefined)
-    : Undefined(SymbolBody::UndefinedKind, N, IsWeak, Visibility, 0 /* Type */) {
+template <typename ELFT>
+UndefinedElf<ELFT>::UndefinedElf(StringRef N, const Elf_Sym &Sym)
+    : SymbolBody(SymbolBody::UndefinedElfKind, N, Sym.getBinding(),
+                 Sym.st_other, Sym.getType()),
+      Size(Sym.st_size) {}
+
+template <typename ELFT>
+UndefinedElf<ELFT>::UndefinedElf(StringRef Name, uint8_t Binding,
+                                 uint8_t StOther, uint8_t Type,
+                                 bool CanKeepUndefined)
+    : SymbolBody(SymbolBody::UndefinedElfKind, Name, Binding, StOther, Type) {
   this->CanKeepUndefined = CanKeepUndefined;
 }
 
 template <typename ELFT>
-UndefinedElf<ELFT>::UndefinedElf(StringRef N, const Elf_Sym &Sym)
-    : Undefined(SymbolBody::UndefinedElfKind, N,
-                Sym.getBinding() == llvm::ELF::STB_WEAK, Sym.getVisibility(),
-                Sym.getType()),
-      Sym(Sym) {}
+UndefinedElf<ELFT>::UndefinedElf(const Elf_Sym &Sym)
+    : SymbolBody(SymbolBody::UndefinedElfKind, Sym.st_name, Sym.st_other,
+                 Sym.getType()),
+      Size(Sym.st_size) {
+  assert(Sym.getBinding() == STB_LOCAL);
+}
 
 template <typename ELFT>
 DefinedSynthetic<ELFT>::DefinedSynthetic(StringRef N, uintX_t Value,
                                          OutputSectionBase<ELFT> &Section,
-                                         uint8_t Visibility)
-    : Defined(SymbolBody::DefinedSyntheticKind, N, false, false, Visibility,
+                                         uint8_t StOther)
+    : Defined(SymbolBody::DefinedSyntheticKind, N, STB_GLOBAL, StOther,
               0 /* Type */),
       Value(Value), Section(Section) {}
 
 DefinedCommon::DefinedCommon(StringRef N, uint64_t Size, uint64_t Alignment,
-                             bool IsWeak, uint8_t Visibility)
-    : Defined(SymbolBody::DefinedCommonKind, N, IsWeak, false, Visibility,
-              0 /* Type */),
+                             uint8_t Binding, uint8_t StOther, uint8_t Type)
+    : Defined(SymbolBody::DefinedCommonKind, N, Binding, StOther, Type),
       Alignment(Alignment), Size(Size) {}
 
-std::unique_ptr<InputFile> Lazy::getMember() {
+std::unique_ptr<InputFile> Lazy::getFile() {
+  if (auto *S = dyn_cast<LazyArchive>(this))
+    return S->getFile();
+  return cast<LazyObject>(this)->getFile();
+}
+
+std::unique_ptr<InputFile> LazyArchive::getFile() {
   MemoryBufferRef MBRef = File->getMember(&Sym);
 
   // getMember returns an empty buffer if the member was already
@@ -264,6 +321,10 @@ std::unique_ptr<InputFile> Lazy::getMember() {
   if (MBRef.getBuffer().empty())
     return std::unique_ptr<InputFile>(nullptr);
   return createObjectFile(MBRef, File->getName());
+}
+
+std::unique_ptr<InputFile> LazyObject::getFile() {
+  return createObjectFile(MBRef);
 }
 
 // Returns the demangled C++ symbol name for Name.
@@ -302,10 +363,20 @@ template uint32_t SymbolBody::template getGotVA<ELF32BE>() const;
 template uint64_t SymbolBody::template getGotVA<ELF64LE>() const;
 template uint64_t SymbolBody::template getGotVA<ELF64BE>() const;
 
+template uint32_t SymbolBody::template getGotOffset<ELF32LE>() const;
+template uint32_t SymbolBody::template getGotOffset<ELF32BE>() const;
+template uint64_t SymbolBody::template getGotOffset<ELF64LE>() const;
+template uint64_t SymbolBody::template getGotOffset<ELF64BE>() const;
+
 template uint32_t SymbolBody::template getGotPltVA<ELF32LE>() const;
 template uint32_t SymbolBody::template getGotPltVA<ELF32BE>() const;
 template uint64_t SymbolBody::template getGotPltVA<ELF64LE>() const;
 template uint64_t SymbolBody::template getGotPltVA<ELF64BE>() const;
+
+template uint32_t SymbolBody::template getGotPltOffset<ELF32LE>() const;
+template uint32_t SymbolBody::template getGotPltOffset<ELF32BE>() const;
+template uint64_t SymbolBody::template getGotPltOffset<ELF64LE>() const;
+template uint64_t SymbolBody::template getGotPltOffset<ELF64BE>() const;
 
 template uint32_t SymbolBody::template getPltVA<ELF32LE>() const;
 template uint32_t SymbolBody::template getPltVA<ELF32BE>() const;
@@ -317,20 +388,10 @@ template uint32_t SymbolBody::template getSize<ELF32BE>() const;
 template uint64_t SymbolBody::template getSize<ELF64LE>() const;
 template uint64_t SymbolBody::template getSize<ELF64BE>() const;
 
-template const ELF32LE::Sym *SymbolBody::template getElfSym<ELF32LE>() const;
-template const ELF32BE::Sym *SymbolBody::template getElfSym<ELF32BE>() const;
-template const ELF64LE::Sym *SymbolBody::template getElfSym<ELF64LE>() const;
-template const ELF64BE::Sym *SymbolBody::template getElfSym<ELF64BE>() const;
-
 template uint32_t SymbolBody::template getThunkVA<ELF32LE>() const;
 template uint32_t SymbolBody::template getThunkVA<ELF32BE>() const;
 template uint64_t SymbolBody::template getThunkVA<ELF64LE>() const;
 template uint64_t SymbolBody::template getThunkVA<ELF64BE>() const;
-
-template int SymbolBody::compare<ELF32LE>(SymbolBody *Other);
-template int SymbolBody::compare<ELF32BE>(SymbolBody *Other);
-template int SymbolBody::compare<ELF64LE>(SymbolBody *Other);
-template int SymbolBody::compare<ELF64BE>(SymbolBody *Other);
 
 template class elf::UndefinedElf<ELF32LE>;
 template class elf::UndefinedElf<ELF32BE>;

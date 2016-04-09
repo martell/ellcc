@@ -637,6 +637,14 @@ public:
       getTruncStoreAction(ValVT.getSimpleVT(), MemVT.getSimpleVT()) == Legal;
   }
 
+  /// Return true if the specified store with truncation has solution on this
+  /// target.
+  bool isTruncStoreLegalOrCustom(EVT ValVT, EVT MemVT) const {
+    return isTypeLegal(ValVT) && MemVT.isSimple() &&
+      (getTruncStoreAction(ValVT.getSimpleVT(), MemVT.getSimpleVT()) == Legal ||
+       getTruncStoreAction(ValVT.getSimpleVT(), MemVT.getSimpleVT()) == Custom);
+  }
+
   /// Return how the indexed load should be treated: either it is legal, needs
   /// to be promoted to a larger size, needs to be expanded to some other code
   /// sequence, or the target has a custom expander for it.
@@ -1003,12 +1011,10 @@ public:
     return PrefLoopAlignment;
   }
 
-  /// Return true if the target stores stack protector cookies at a fixed offset
-  /// in some non-standard address space, and populates the address space and
-  /// offset as appropriate.
-  virtual bool getStackCookieLocation(unsigned &/*AddressSpace*/,
-                                      unsigned &/*Offset*/) const {
-    return false;
+  /// If the target has a standard location for the stack protector cookie,
+  /// returns the address of that location. Otherwise, returns nullptr.
+  virtual Value *getStackCookieLocation(IRBuilder<> &IRB) const {
+    return nullptr;
   }
 
   /// If the target has a standard location for the unsafe stack pointer,
@@ -1102,7 +1108,7 @@ public:
   virtual Instruction *emitLeadingFence(IRBuilder<> &Builder,
                                         AtomicOrdering Ord, bool IsStore,
                                         bool IsLoad) const {
-    if (isAtLeastRelease(Ord) && IsStore)
+    if (isReleaseOrStronger(Ord) && IsStore)
       return Builder.CreateFence(Ord);
     else
       return nullptr;
@@ -1111,7 +1117,7 @@ public:
   virtual Instruction *emitTrailingFence(IRBuilder<> &Builder,
                                          AtomicOrdering Ord, bool IsStore,
                                          bool IsLoad) const {
-    if (isAtLeastAcquire(Ord))
+    if (isAcquireOrStronger(Ord))
       return Builder.CreateFence(Ord);
     else
       return nullptr;
@@ -2267,6 +2273,12 @@ public:
     return false;
   }
 
+  /// Return true if the target supports swifterror attribute. It optimizes
+  /// loads and stores to reading and writing a specific register.
+  virtual bool supportSwiftError() const {
+    return false;
+  }
+
   /// Return true if the target supports that a subset of CSRs for the given
   /// machine function is handled explicitly via copies.
   virtual bool supportSplitCSR(MachineFunction *MF) const {
@@ -2369,6 +2381,7 @@ public:
     SmallVector<ISD::OutputArg, 32> Outs;
     SmallVector<SDValue, 32> OutVals;
     SmallVector<ISD::InputArg, 32> Ins;
+    SmallVector<SDValue, 4> InVals;
 
     CallLoweringInfo(SelectionDAG &DAG)
         : RetTy(nullptr), RetSExt(false), RetZExt(false), IsVarArg(false),

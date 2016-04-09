@@ -133,13 +133,13 @@ static unsigned GetEncodedRMWOperation(AtomicRMWInst::BinOp Op) {
 
 static unsigned GetEncodedOrdering(AtomicOrdering Ordering) {
   switch (Ordering) {
-  case NotAtomic: return bitc::ORDERING_NOTATOMIC;
-  case Unordered: return bitc::ORDERING_UNORDERED;
-  case Monotonic: return bitc::ORDERING_MONOTONIC;
-  case Acquire: return bitc::ORDERING_ACQUIRE;
-  case Release: return bitc::ORDERING_RELEASE;
-  case AcquireRelease: return bitc::ORDERING_ACQREL;
-  case SequentiallyConsistent: return bitc::ORDERING_SEQCST;
+  case AtomicOrdering::NotAtomic: return bitc::ORDERING_NOTATOMIC;
+  case AtomicOrdering::Unordered: return bitc::ORDERING_UNORDERED;
+  case AtomicOrdering::Monotonic: return bitc::ORDERING_MONOTONIC;
+  case AtomicOrdering::Acquire: return bitc::ORDERING_ACQUIRE;
+  case AtomicOrdering::Release: return bitc::ORDERING_RELEASE;
+  case AtomicOrdering::AcquireRelease: return bitc::ORDERING_ACQREL;
+  case AtomicOrdering::SequentiallyConsistent: return bitc::ORDERING_SEQCST;
   }
   llvm_unreachable("Invalid ordering");
 }
@@ -806,6 +806,18 @@ static uint64_t WriteModuleInfo(const Module *M, const ValueEnumerator &VE,
     Vals.push_back(A.hasUnnamedAddr());
     unsigned AbbrevToUse = 0;
     Stream.EmitRecord(bitc::MODULE_CODE_ALIAS, Vals, AbbrevToUse);
+    Vals.clear();
+  }
+
+  // Emit the ifunc information.
+  for (const GlobalIFunc &I : M->ifuncs()) {
+    // IFUNC: [ifunc type, address space, resolver val#, linkage, visibility]
+    Vals.push_back(VE.getTypeID(I.getValueType()));
+    Vals.push_back(I.getType()->getAddressSpace());
+    Vals.push_back(VE.getValueID(I.getResolver()));
+    Vals.push_back(getEncodedLinkage(I));
+    Vals.push_back(getEncodedVisibility(I));
+    Stream.EmitRecord(bitc::MODULE_CODE_IFUNC, Vals);
     Vals.clear();
   }
 
@@ -1708,8 +1720,7 @@ static void WriteConstants(unsigned FirstVal, unsigned LastVal,
           Record.push_back(
               CDS->getElementAsAPFloat(i).bitcastToAPInt().getLimitedValue());
       }
-    } else if (isa<ConstantArray>(C) || isa<ConstantStruct>(C) ||
-               isa<ConstantVector>(C)) {
+    } else if (isa<ConstantAggregate>(C)) {
       Code = bitc::CST_CODE_AGGREGATE;
       for (const Value *Op : C->operands())
         Record.push_back(VE.getValueID(Op));
@@ -3051,7 +3062,7 @@ static void WritePerModuleGlobalValueSummary(
 
 /// Emit the combined summary section into the combined index file.
 static void WriteCombinedGlobalValueSummary(
-    const ModuleSummaryIndex &I, BitstreamWriter &Stream,
+    const ModuleSummaryIndex &Index, BitstreamWriter &Stream,
     std::map<GlobalValue::GUID, unsigned> &GUIDToValueIdMap,
     unsigned GlobalValueId) {
   Stream.EnterSubblock(bitc::GLOBALVAL_SUMMARY_BLOCK_ID, 3);
@@ -3090,13 +3101,13 @@ static void WriteCombinedGlobalValueSummary(
   unsigned FSModRefsAbbrev = Stream.EmitAbbrev(Abbv);
 
   SmallVector<uint64_t, 64> NameVals;
-  for (const auto &FII : I) {
+  for (const auto &FII : Index) {
     for (auto &FI : FII.second) {
       GlobalValueSummary *S = FI->summary();
       assert(S);
 
       if (auto *VS = dyn_cast<GlobalVarSummary>(S)) {
-        NameVals.push_back(I.getModuleId(VS->modulePath()));
+        NameVals.push_back(Index.getModuleId(VS->modulePath()));
         NameVals.push_back(getEncodedLinkage(VS->linkage()));
         for (auto &RI : VS->refs()) {
           const auto &VMI = GUIDToValueIdMap.find(RI);
@@ -3125,7 +3136,7 @@ static void WriteCombinedGlobalValueSummary(
       }
 
       auto *FS = cast<FunctionSummary>(S);
-      NameVals.push_back(I.getModuleId(FS->modulePath()));
+      NameVals.push_back(Index.getModuleId(FS->modulePath()));
       NameVals.push_back(getEncodedLinkage(FS->linkage()));
       NameVals.push_back(FS->instCount());
       NameVals.push_back(FS->refs().size());

@@ -19,6 +19,7 @@ namespace lld {
 namespace elf {
 
 template <class ELFT> class ICF;
+template <class ELFT> class DefinedRegular;
 template <class ELFT> class ObjectFile;
 template <class ELFT> class OutputSection;
 template <class ELFT> class OutputSectionBase;
@@ -40,6 +41,8 @@ public:
   enum Kind { Regular, EHFrame, Merge, MipsReginfo };
   Kind SectionKind;
 
+  InputSectionBase() : Repl(this) {}
+
   InputSectionBase(ObjectFile<ELFT> *File, const Elf_Shdr *Header,
                    Kind SectionKind);
   OutputSectionBase<ELFT> *OutSec = nullptr;
@@ -58,12 +61,12 @@ public:
   // Returns the size of this section (even if this is a common or BSS.)
   size_t getSize() const;
 
-  static InputSectionBase<ELFT> *Discarded;
+  static InputSectionBase<ELFT> Discarded;
 
   StringRef getSectionName() const;
   const Elf_Shdr *getSectionHdr() const { return Header; }
   ObjectFile<ELFT> *getFile() const { return File; }
-  uintX_t getOffset(const Elf_Sym &Sym);
+  uintX_t getOffset(const DefinedRegular<ELFT> &Sym);
 
   // Translate an offset in the input section to an offset in the output
   // section.
@@ -76,8 +79,7 @@ public:
   InputSectionBase<ELFT> *getRelocTarget(const Elf_Rela &Rel) const;
 
   template <class RelTy>
-  void relocate(uint8_t *Buf, uint8_t *BufEnd,
-                llvm::iterator_range<const RelTy *> Rels);
+  void relocate(uint8_t *Buf, uint8_t *BufEnd, llvm::ArrayRef<RelTy> Rels);
 
 private:
   template <class RelTy>
@@ -85,9 +87,7 @@ private:
                                const RelTy *Rel, const RelTy *End);
 };
 
-template <class ELFT>
-InputSectionBase<ELFT> *
-    InputSectionBase<ELFT>::Discarded = (InputSectionBase<ELFT> *)-1ULL;
+template <class ELFT> InputSectionBase<ELFT> InputSectionBase<ELFT>::Discarded;
 
 // Usually sections are copied to the output as atomic chunks of data,
 // but some special types of sections are split into small pieces of data
@@ -180,7 +180,7 @@ public:
 
 private:
   template <class RelTy>
-  void copyRelocations(uint8_t *Buf, llvm::iterator_range<const RelTy *> Rels);
+  void copyRelocations(uint8_t *Buf, llvm::ArrayRef<RelTy> Rels);
 
   // Called by ICF to merge two input sections.
   void replace(InputSection<ELFT> *Other);

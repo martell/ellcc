@@ -55,8 +55,8 @@ typename ELFT::SymRange ELFFileBase<ELFT>::getElfSymbols(bool OnlyGlobals) {
     fatal("invalid sh_info in symbol table");
 
   if (OnlyGlobals)
-    return make_range(Syms.begin() + FirstNonLocal, Syms.end());
-  return make_range(Syms.begin(), Syms.end());
+    return makeArrayRef(Syms.begin() + FirstNonLocal, Syms.end());
+  return makeArrayRef(Syms.begin(), Syms.end());
 }
 
 template <class ELFT>
@@ -175,18 +175,18 @@ void elf::ObjectFile<ELFT>::initializeSections(
   const ELFFile<ELFT> &Obj = this->ELFObj;
   for (const Elf_Shdr &Sec : Obj.sections()) {
     ++I;
-    if (Sections[I] == InputSection<ELFT>::Discarded)
+    if (Sections[I] == &InputSection<ELFT>::Discarded)
       continue;
 
     switch (Sec.sh_type) {
     case SHT_GROUP:
-      Sections[I] = InputSection<ELFT>::Discarded;
+      Sections[I] = &InputSection<ELFT>::Discarded;
       if (ComdatGroups.insert(getShtGroupSignature(Sec)).second)
         continue;
       for (uint32_t SecIndex : getShtGroupEntries(Sec)) {
         if (SecIndex >= Size)
           fatal("invalid section index in group");
-        Sections[SecIndex] = InputSection<ELFT>::Discarded;
+        Sections[SecIndex] = &InputSection<ELFT>::Discarded;
       }
       break;
     case SHT_SYMTAB:
@@ -204,7 +204,7 @@ void elf::ObjectFile<ELFT>::initializeSections(
       // If -r is given, we do not interpret or apply relocation
       // but just copy relocation sections to output.
       if (Config->Relocatable) {
-        Sections[I] = new (Alloc) InputSection<ELFT>(this, &Sec);
+        Sections[I] = new (IAlloc.Allocate()) InputSection<ELFT>(this, &Sec);
         break;
       }
 
@@ -242,7 +242,7 @@ elf::ObjectFile<ELFT>::getRelocTarget(const Elf_Shdr &Sec) {
   // Strictly speaking, a relocation section must be included in the
   // group of the section it relocates. However, LLVM 3.3 and earlier
   // would fail to do so, so we gracefully handle that case.
-  if (Target == InputSection<ELFT>::Discarded)
+  if (Target == &InputSection<ELFT>::Discarded)
     return nullptr;
 
   if (!Target)
@@ -260,16 +260,21 @@ elf::ObjectFile<ELFT>::createInputSection(const Elf_Shdr &Sec) {
   // is controlled only by the command line option (-z execstack) in LLD,
   // .note.GNU-stack is ignored.
   if (Name == ".note.GNU-stack")
-    return InputSection<ELFT>::Discarded;
+    return &InputSection<ELFT>::Discarded;
 
-  if (Name == ".note.GNU-split-stack")
+  if (Name == ".note.GNU-split-stack") {
     error("objects using splitstacks are not supported");
+    return &InputSection<ELFT>::Discarded;
+  }
+
+  if (Config->StripDebug && Name.startswith(".debug"))
+    return &InputSection<ELFT>::Discarded;
 
   // A MIPS object file has a special section that contains register
   // usage info, which needs to be handled by the linker specially.
   if (Config->EMachine == EM_MIPS && Name == ".reginfo") {
-    MipsReginfo = new (Alloc) MipsReginfoInputSection<ELFT>(this, &Sec);
-    return MipsReginfo;
+    MipsReginfo.reset(new MipsReginfoInputSection<ELFT>(this, &Sec));
+    return MipsReginfo.get();
   }
 
   // We dont need special handling of .eh_frame sections if relocatable
@@ -278,7 +283,7 @@ elf::ObjectFile<ELFT>::createInputSection(const Elf_Shdr &Sec) {
     return new (EHAlloc.Allocate()) EHInputSection<ELFT>(this, &Sec);
   if (shouldMerge<ELFT>(Sec))
     return new (MAlloc.Allocate()) MergeInputSection<ELFT>(this, &Sec);
-  return new (Alloc) InputSection<ELFT>(this, &Sec);
+  return new (IAlloc.Allocate()) InputSection<ELFT>(this, &Sec);
 }
 
 template <class ELFT> void elf::ObjectFile<ELFT>::initializeSymbols() {
@@ -299,7 +304,7 @@ elf::ObjectFile<ELFT>::getSection(const Elf_Sym &Sym) const {
   if (Index >= Sections.size() || !Sections[Index])
     fatal("invalid section index");
   InputSectionBase<ELFT> *S = Sections[Index];
-  if (S == InputSectionBase<ELFT>::Discarded)
+  if (S == &InputSectionBase<ELFT>::Discarded)
     return S;
   return S->Repl;
 }
@@ -309,9 +314,9 @@ SymbolBody *elf::ObjectFile<ELFT>::createSymbolBody(const Elf_Sym *Sym) {
   unsigned char Binding = Sym->getBinding();
   InputSectionBase<ELFT> *Sec = getSection(*Sym);
   if (Binding == STB_LOCAL) {
-    if (Sec == InputSection<ELFT>::Discarded)
-      Sec = nullptr;
-    return new (Alloc) DefinedRegular<ELFT>("", *Sym, Sec);
+    if (Sym->st_shndx == SHN_UNDEF)
+      return new (Alloc) UndefinedElf<ELFT>(*Sym);
+    return new (Alloc) DefinedRegular<ELFT>(*Sym, Sec);
   }
 
   StringRef Name = check(Sym->getName(this->StringTable));
@@ -320,9 +325,8 @@ SymbolBody *elf::ObjectFile<ELFT>::createSymbolBody(const Elf_Sym *Sym) {
   case SHN_UNDEF:
     return new (Alloc) UndefinedElf<ELFT>(Name, *Sym);
   case SHN_COMMON:
-    return new (Alloc) DefinedCommon(Name, Sym->st_size, Sym->st_value,
-                                     Sym->getBinding() == llvm::ELF::STB_WEAK,
-                                     Sym->getVisibility());
+    return new (Alloc) DefinedCommon(Name, Sym->st_size, Sym->st_value, Binding,
+                                     Sym->st_other, Sym->getType());
   }
 
   switch (Binding) {
@@ -331,7 +335,7 @@ SymbolBody *elf::ObjectFile<ELFT>::createSymbolBody(const Elf_Sym *Sym) {
   case STB_GLOBAL:
   case STB_WEAK:
   case STB_GNU_UNIQUE:
-    if (Sec == InputSection<ELFT>::Discarded)
+    if (Sec == &InputSection<ELFT>::Discarded)
       return new (Alloc) UndefinedElf<ELFT>(Name, *Sym);
     return new (Alloc) DefinedRegular<ELFT>(Name, *Sym, Sec);
   }
@@ -474,16 +478,18 @@ BitcodeFile::createSymbolBody(const DenseSet<const Comdat *> &KeptComdats,
   uint32_t Flags = Sym.getFlags();
   bool IsWeak = Flags & BasicSymbolRef::SF_Weak;
   if (Flags & BasicSymbolRef::SF_Undefined) {
-    Body = new (Alloc) Undefined(NameRef, IsWeak, Visibility, false);
+    Body = new (Alloc) UndefinedBitcode(NameRef, IsWeak, Visibility);
   } else if (Flags & BasicSymbolRef::SF_Common) {
     const DataLayout &DL = M.getDataLayout();
     uint64_t Size = DL.getTypeAllocSize(GV->getValueType());
     Body = new (Alloc)
-        DefinedCommon(NameRef, Size, GV->getAlignment(), IsWeak, Visibility);
+        DefinedCommon(NameRef, Size, GV->getAlignment(),
+                      IsWeak ? STB_WEAK : STB_GLOBAL, Visibility, /*Type*/ 0);
   } else {
     Body = new (Alloc) DefinedBitcode(NameRef, IsWeak, Visibility);
   }
-  Body->IsTls = GV->isThreadLocal();
+  if (GV->isThreadLocal())
+    Body->Type = STT_TLS;
   return Body;
 }
 
@@ -530,28 +536,34 @@ static std::unique_ptr<InputFile> createELFFileAux(MemoryBufferRef MB) {
 
 template <template <class> class T>
 static std::unique_ptr<InputFile> createELFFile(MemoryBufferRef MB) {
-  std::pair<unsigned char, unsigned char> Type = getElfArchType(MB.getBuffer());
-  if (Type.second != ELF::ELFDATA2LSB && Type.second != ELF::ELFDATA2MSB)
+  unsigned char Size;
+  unsigned char Endian;
+  std::tie(Size, Endian) = getElfArchType(MB.getBuffer());
+  if (Endian != ELFDATA2LSB && Endian != ELFDATA2MSB)
     fatal("invalid data encoding: " + MB.getBufferIdentifier());
 
-  if (Type.first == ELF::ELFCLASS32) {
-    if (Type.second == ELF::ELFDATA2LSB)
+  if (Size == ELFCLASS32) {
+    if (Endian == ELFDATA2LSB)
       return createELFFileAux<T<ELF32LE>>(MB);
     return createELFFileAux<T<ELF32BE>>(MB);
   }
-  if (Type.first == ELF::ELFCLASS64) {
-    if (Type.second == ELF::ELFDATA2LSB)
+  if (Size == ELFCLASS64) {
+    if (Endian == ELFDATA2LSB)
       return createELFFileAux<T<ELF64LE>>(MB);
     return createELFFileAux<T<ELF64BE>>(MB);
   }
   fatal("invalid file class: " + MB.getBufferIdentifier());
 }
 
+static bool isBitcode(MemoryBufferRef MB) {
+  using namespace sys::fs;
+  return identify_magic(MB.getBuffer()) == file_magic::bitcode;
+}
+
 std::unique_ptr<InputFile> elf::createObjectFile(MemoryBufferRef MB,
                                                  StringRef ArchiveName) {
-  using namespace sys::fs;
   std::unique_ptr<InputFile> F;
-  if (identify_magic(MB.getBuffer()) == file_magic::bitcode)
+  if (isBitcode(MB))
     F.reset(new BitcodeFile(MB));
   else
     F = createELFFile<ObjectFile>(MB);
@@ -561,6 +573,68 @@ std::unique_ptr<InputFile> elf::createObjectFile(MemoryBufferRef MB,
 
 std::unique_ptr<InputFile> elf::createSharedFile(MemoryBufferRef MB) {
   return createELFFile<SharedFile>(MB);
+}
+
+void LazyObjectFile::parse() {
+  for (StringRef Sym : getSymbols())
+    LazySymbols.emplace_back(Sym, this->MB);
+}
+
+template <class ELFT> std::vector<StringRef> LazyObjectFile::getElfSymbols() {
+  typedef typename ELFT::Shdr Elf_Shdr;
+  typedef typename ELFT::Sym Elf_Sym;
+  typedef typename ELFT::SymRange Elf_Sym_Range;
+
+  const ELFFile<ELFT> Obj = createELFObj<ELFT>(this->MB);
+  for (const Elf_Shdr &Sec : Obj.sections()) {
+    if (Sec.sh_type != SHT_SYMTAB)
+      continue;
+    Elf_Sym_Range Syms = Obj.symbols(&Sec);
+    uint32_t FirstNonLocal = Sec.sh_info;
+    StringRef StringTable = check(Obj.getStringTableForSymtab(Sec));
+    std::vector<StringRef> V;
+    for (const Elf_Sym &Sym : Syms.slice(FirstNonLocal))
+      if (Sym.st_shndx != SHN_UNDEF)
+        V.push_back(check(Sym.getName(StringTable)));
+    return V;
+  }
+  return {};
+}
+
+std::vector<StringRef> LazyObjectFile::getBitcodeSymbols() {
+  LLVMContext Context;
+  std::unique_ptr<IRObjectFile> Obj =
+      check(IRObjectFile::create(this->MB, Context));
+  std::vector<StringRef> V;
+  for (const BasicSymbolRef &Sym : Obj->symbols()) {
+    if (BitcodeFile::shouldSkip(Sym))
+      continue;
+    if (Sym.getFlags() == BasicSymbolRef::SF_Undefined)
+      continue;
+    SmallString<64> Name;
+    raw_svector_ostream OS(Name);
+    Sym.printName(OS);
+    V.push_back(Saver.save(StringRef(Name)));
+  }
+  return V;
+}
+
+// Returns a vector of globally-visible defined symbol names.
+std::vector<StringRef> LazyObjectFile::getSymbols() {
+  if (isBitcode(this->MB))
+    return getBitcodeSymbols();
+
+  unsigned char Size;
+  unsigned char Endian;
+  std::tie(Size, Endian) = getElfArchType(this->MB.getBuffer());
+  if (Size == ELFCLASS32) {
+    if (Endian == ELFDATA2LSB)
+      return getElfSymbols<ELF32LE>();
+    return getElfSymbols<ELF32BE>();
+  }
+  if (Endian == ELFDATA2LSB)
+    return getElfSymbols<ELF64LE>();
+  return getElfSymbols<ELF64BE>();
 }
 
 template class elf::ELFFileBase<ELF32LE>;

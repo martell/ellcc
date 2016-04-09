@@ -140,12 +140,13 @@ def SIconstdata_ptr : SDNode<
 
 class flat_ld <SDPatternOperator ld> : PatFrag<(ops node:$ptr),
                                                (ld node:$ptr), [{
-  return isFlatLoad(dyn_cast<LoadSDNode>(N)) ||
-         isGlobalLoad(dyn_cast<LoadSDNode>(N)) ||
-         isConstantLoad(cast<LoadSDNode>(N), -1);
+  return isFlatLoad(dyn_cast<MemSDNode>(N)) ||
+         isGlobalLoad(dyn_cast<MemSDNode>(N)) ||
+         isConstantLoad(cast<MemSDNode>(N), -1);
 }]>;
 
 def flat_load : flat_ld <load>;
+def atomic_flat_load : flat_ld<atomic_load>;
 def flat_az_extloadi8 : flat_ld <az_extloadi8>;
 def flat_sextloadi8 : flat_ld <sextloadi8>;
 def flat_az_extloadi16 : flat_ld <az_extloadi16>;
@@ -153,11 +154,12 @@ def flat_sextloadi16 : flat_ld <sextloadi16>;
 
 class flat_st <SDPatternOperator st> : PatFrag<(ops node:$val, node:$ptr),
                                                (st node:$val, node:$ptr), [{
-  return isFlatStore(dyn_cast<StoreSDNode>(N)) ||
-         isGlobalStore(dyn_cast<StoreSDNode>(N));
+  return isFlatStore(dyn_cast<MemSDNode>(N)) ||
+         isGlobalStore(dyn_cast<MemSDNode>(N));
 }]>;
 
 def flat_store: flat_st <store>;
+def atomic_flat_store: flat_st <atomic_store>;
 def flat_truncstorei8 : flat_st <truncstorei8>;
 def flat_truncstorei16 : flat_st <truncstorei16>;
 
@@ -166,6 +168,12 @@ def mubuf_load : PatFrag <(ops node:$ptr), (load node:$ptr), [{
 	return isGlobalLoad(cast<LoadSDNode>(N)) ||
          isConstantLoad(cast<LoadSDNode>(N), -1);
 }]>;
+
+def mubuf_load_atomic : PatFrag <(ops node:$ptr), (atomic_load node:$ptr), [{
+	return isGlobalLoad(cast<MemSDNode>(N)) ||
+         isConstantLoad(cast<MemSDNode>(N), -1);
+}]>;
+
 
 def smrd_load : PatFrag <(ops node:$ptr), (load node:$ptr), [{
   return isConstantLoad(cast<LoadSDNode>(N), -1) &&
@@ -721,6 +729,7 @@ def MUBUFAddr64 : ComplexPattern<i64, 7, "SelectMUBUFAddr64">;
 def MUBUFAddr64Atomic : ComplexPattern<i64, 5, "SelectMUBUFAddr64">;
 def MUBUFScratch : ComplexPattern<i64, 4, "SelectMUBUFScratch">;
 def MUBUFOffset : ComplexPattern<i64, 6, "SelectMUBUFOffset">;
+def MUBUFOffsetNoGLC : ComplexPattern<i64, 3, "SelectMUBUFOffset">;
 def MUBUFOffsetAtomic : ComplexPattern<i64, 4, "SelectMUBUFOffset">;
 def MUBUFIntrinsicOffset : ComplexPattern<i32, 2, "SelectMUBUFIntrinsicOffset">;
 def MUBUFIntrinsicVOffset : ComplexPattern<i32, 3, "SelectMUBUFIntrinsicVOffset">;
@@ -796,6 +805,7 @@ class EXPCommon : InstSI<
 
   let EXP_CNT = 1;
   let Uses = [EXEC];
+  let SchedRW = [WriteExport];
 }
 
 multiclass EXP_m {
@@ -1361,7 +1371,11 @@ class getIns64 <RegisterOperand Src0RC, RegisterOperand Src1RC,
 class getInsDPP <RegisterClass Src0RC, RegisterClass Src1RC, int NumSrcArgs,
                                                              bit HasModifiers> {
 
-  dag ret = !if (!eq(NumSrcArgs, 1),
+  dag ret = !if (!eq(NumSrcArgs, 0),
+                // VOP1 without input operands (V_NOP)
+                (ins dpp_ctrl:$dpp_ctrl, row_mask:$row_mask,
+                     bank_mask:$bank_mask, bound_ctrl:$bound_ctrl),
+            !if (!eq(NumSrcArgs, 1),
               !if (!eq(HasModifiers, 1),
                 // VOP1_DPP with modifiers
                 (ins InputModsNoDefault:$src0_modifiers, Src0RC:$src0,
@@ -1384,7 +1398,15 @@ class getInsDPP <RegisterClass Src0RC, RegisterClass Src1RC, int NumSrcArgs,
                 (ins Src0RC:$src0, Src1RC:$src1, dpp_ctrl:$dpp_ctrl, 
                 row_mask:$row_mask, bank_mask:$bank_mask, 
                 bound_ctrl:$bound_ctrl)
-             /* endif */));
+             /* endif */)));
+}
+
+class getOutsDPP <bit HasDst, ValueType DstVT, RegisterOperand DstRCDPP> {
+  dag ret = !if(HasDst,
+                !if(!eq(DstVT.Size, 1),
+                    (outs DstRCDPP:$sdst), // sdst for VOPC
+                    (outs DstRCDPP:$vdst)),
+                (outs)); // V_NOP
 }
 
 // Returns the assembly string for the inputs and outputs of a VOP[12C]
@@ -1417,7 +1439,11 @@ class getAsm64 <bit HasDst, int NumSrcArgs, bit HasModifiers, ValueType DstVT = 
 }
 
 class getAsmDPP <bit HasDst, int NumSrcArgs, bit HasModifiers, ValueType DstVT = i32> {
-  string dst = !if(!eq(DstVT.Size, 1), "$sdst", "$vdst"); // use $sdst for VOPC
+  string dst = !if(HasDst,
+                   !if(!eq(DstVT.Size, 1),
+                       "$sdst",
+                       "$vdst"),
+                    ""); // use $sdst for VOPC
   string src0 = !if(!eq(NumSrcArgs, 1), "$src0_modifiers", "$src0_modifiers,");
   string src1 = !if(!eq(NumSrcArgs, 1), "",
                    !if(!eq(NumSrcArgs, 2), " $src1_modifiers",
@@ -1426,6 +1452,26 @@ class getAsmDPP <bit HasDst, int NumSrcArgs, bit HasModifiers, ValueType DstVT =
                      getAsm32<0, NumSrcArgs, DstVT>.ret,
                      ", "#src0#src1);
   string ret = dst#args#" $dpp_ctrl $row_mask $bank_mask $bound_ctrl";
+}
+
+class getHasDPP <int NumSrcArgs, ValueType DstVT = i32, ValueType Src0VT = i32,
+                 ValueType Src1VT = i32> {
+  bit ret = !if(!eq(NumSrcArgs, 3),
+                0, // NumSrcArgs == 3 - No DPP for VOP3
+                !if(!eq(DstVT.Size, 1),
+                    0, // No DPP for VOPC
+                    !if(!eq(DstVT.Size, 64),
+                        0, // 64-bit dst - No DPP for 64-bit operands
+                        !if(!eq(Src0VT.Size, 64),
+                            0, // 64-bit src0
+                            !if(!eq(Src0VT.Size, 64),
+                                0, // 64-bit src2
+                                1
+                            )
+                        )
+                    )
+                )
+            );
 }
 
 class VOPProfile <list<ValueType> _ArgVT> {
@@ -1451,14 +1497,15 @@ class VOPProfile <list<ValueType> _ArgVT> {
   field int NumSrcArgs = getNumSrcArgs<Src0VT, Src1VT, Src2VT>.ret;
   field bit HasModifiers = hasModifiers<Src0VT>.ret;
 
+  field bit HasDPP = getHasDPP<NumSrcArgs, DstVT, Src0VT, Src1VT>.ret;
+
   field dag Outs = !if(HasDst,(outs DstRC:$vdst),(outs));
 
   // VOP3b instructions are a special case with a second explicit
   // output. This is manually overridden for them.
   field dag Outs32 = Outs;
   field dag Outs64 = Outs;
-  field dag OutsDPP = !if(!eq(DstVT.Size, 1), (outs DstRCDPP:$sdst), // sdst for VOPC
-                                              (outs DstRCDPP:$vdst));
+  field dag OutsDPP = getOutsDPP<HasDst, DstVT, DstRCDPP>.ret;
 
   field dag Ins32 = getIns32<Src0RC32, Src1RC32, NumSrcArgs>.ret;
   field dag Ins64 = getIns64<Src0RC64, Src1RC64, Src2RC64, NumSrcArgs,
@@ -1468,6 +1515,10 @@ class VOPProfile <list<ValueType> _ArgVT> {
   field string Asm32 = getAsm32<HasDst, NumSrcArgs, DstVT>.ret;
   field string Asm64 = getAsm64<HasDst, NumSrcArgs, HasModifiers, DstVT>.ret;
   field string AsmDPP = getAsmDPP<HasDst, NumSrcArgs, HasModifiers, DstVT>.ret;
+}
+
+class VOP_NO_DPP <VOPProfile p> : VOPProfile <p.ArgVT> {
+  let HasDPP = 0;
 }
 
 // FIXME: I think these F16/I16 profiles will need to use f16/i16 types in order
@@ -1578,10 +1629,12 @@ def VOP_F32_F32_F32_F32 : VOPProfile <[f32, f32, f32, f32]>;
 def VOP_MADAK : VOPProfile <[f32, f32, f32, f32]> {
   field dag Ins32 = (ins VCSrc_32:$src0, VGPR_32:$src1, u32imm:$imm);
   field string Asm32 = "$vdst, $src0, $src1, $imm";
+  field bit HasDPP = 0;
 }
 def VOP_MADMK : VOPProfile <[f32, f32, f32, f32]> {
   field dag Ins32 = (ins VCSrc_32:$src0, u32imm:$imm, VGPR_32:$src1);
   field string Asm32 = "$vdst, $src0, $imm, $src1";
+  field bit HasDPP = 0;
 }
 def VOP_MAC : VOPProfile <[f32, f32, f32, f32]> {
   let Ins32 = (ins Src0RC32:$src0, Src1RC32:$src1, VGPR_32:$src2);
@@ -1704,7 +1757,7 @@ multiclass VOP1_m <vop1 op, string opName, VOPProfile p, list<dag> pattern,
 class VOP1_DPP <vop1 op, string opName, VOPProfile p> :
   VOP1_DPPe <op.VI>,
   VOP_DPP <p.OutsDPP, p.InsDPP, opName#p.AsmDPP, [], p.HasModifiers> {
-  let AssemblerPredicates = [isVI];
+  let AssemblerPredicates = !if(p.HasDPP, [isVI], [DisableInst]);
   let DecoderNamespace = "DPP";
   let DisableDecoder = DisableVIDecoder;
   let src0_modifiers = !if(p.HasModifiers, ?, 0);
@@ -1768,7 +1821,7 @@ multiclass VOP2_m <vop2 op, string opName, VOPProfile p, list <dag> pattern,
 class VOP2_DPP <vop2 op, string opName, VOPProfile p> :
   VOP2_DPPe <op.VI>,
   VOP_DPP <p.OutsDPP, p.InsDPP, opName#p.AsmDPP, [], p.HasModifiers> {
-  let AssemblerPredicates = [isVI];
+  let AssemblerPredicates = !if(p.HasDPP, [isVI], [DisableInst]);
   let DecoderNamespace = "DPP";
   let DisableDecoder = DisableVIDecoder;
   let src0_modifiers = !if(p.HasModifiers, ?, 0);

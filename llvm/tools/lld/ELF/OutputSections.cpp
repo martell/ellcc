@@ -14,7 +14,9 @@
 #include "Target.h"
 #include "lld/Core/Parallel.h"
 #include "llvm/Support/Dwarf.h"
+#include "llvm/Support/MD5.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/SHA1.h"
 #include <map>
 
 using namespace llvm;
@@ -136,9 +138,6 @@ template <class ELFT> void GotSection<ELFT>::addEntry(SymbolBody &Sym) {
       ++MipsLocalEntries;
       return;
     }
-    // All preemptible symbols with MIPS GOT entries should be represented
-    // in the dynamic symbols table.
-    Sym.MustBeInDynSym = true;
   }
   Sym.GotIndex = Entries.size();
   Entries.push_back(&Sym);
@@ -192,6 +191,12 @@ template <class ELFT>
 typename GotSection<ELFT>::uintX_t
 GotSection<ELFT>::getGlobalDynAddr(const SymbolBody &B) const {
   return this->getVA() + B.GlobalDynIndex * sizeof(uintX_t);
+}
+
+template <class ELFT>
+typename GotSection<ELFT>::uintX_t
+GotSection<ELFT>::getGlobalDynOffset(const SymbolBody &B) const {
+  return B.GlobalDynIndex * sizeof(uintX_t);
 }
 
 template <class ELFT>
@@ -291,31 +296,7 @@ RelocationSection<ELFT>::RelocationSection(StringRef Name)
 
 template <class ELFT>
 void RelocationSection<ELFT>::addReloc(const DynamicReloc<ELFT> &Reloc) {
-  SymbolBody *Sym = Reloc.Sym;
-  if (!Reloc.UseSymVA && Sym)
-    Sym->MustBeInDynSym = true;
   Relocs.push_back(Reloc);
-}
-
-template <class ELFT>
-typename ELFT::uint DynamicReloc<ELFT>::getOffset() const {
-  switch (OKind) {
-  case Off_GTlsIndex:
-    return Out<ELFT>::Got->getGlobalDynAddr(*Sym);
-  case Off_GTlsOffset:
-    return Out<ELFT>::Got->getGlobalDynAddr(*Sym) + sizeof(uintX_t);
-  case Off_LTlsIndex:
-    return Out<ELFT>::Got->getTlsIndexVA();
-  case Off_Sec:
-    return OffsetSec->getOffset(OffsetInSec) + OffsetSec->OutSec->getVA();
-  case Off_Bss:
-    return cast<SharedSymbol<ELFT>>(Sym)->OffsetInBss + Out<ELFT>::Bss->getVA();
-  case Off_Got:
-    return Sym->getGotVA<ELFT>();
-  case Off_GotPlt:
-    return Sym->getGotPltVA<ELFT>();
-  }
-  llvm_unreachable("invalid offset kind");
 }
 
 template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
@@ -326,7 +307,7 @@ template <class ELFT> void RelocationSection<ELFT>::writeTo(uint8_t *Buf) {
 
     if (Config->Rela)
       P->r_addend = Rel.UseSymVA ? Sym->getVA<ELFT>(Rel.Addend) : Rel.Addend;
-    P->r_offset = Rel.getOffset();
+    P->r_offset = Rel.OffsetInSec + Rel.OffsetSec->getVA();
     uint32_t SymIdx = (!Rel.UseSymVA && Sym) ? Sym->DynsymIndex : 0;
     P->setSymbolAndType(SymIdx, Rel.Type, Config->Mips64EL);
   }
@@ -836,16 +817,11 @@ static int getPriority(StringRef S) {
   return V;
 }
 
-// This function is called after we sort input sections
-// and scan relocations to setup sections' offsets.
-template <class ELFT> void OutputSection<ELFT>::assignOffsets() {
-  uintX_t Off = 0;
-  for (InputSection<ELFT> *S : Sections) {
-    Off = alignTo(Off, S->Align);
-    S->OutSecOff = Off;
-    Off += S->getSize();
-  }
-  this->Header.sh_size = Off;
+template <class ELFT>
+void OutputSection<ELFT>::forEachInputSection(
+    std::function<void(InputSectionBase<ELFT> *S)> F) {
+  for (InputSection<ELFT> *S : Sections)
+    F(S);
 }
 
 // Sorts input sections by section name suffixes, so that .foo.N comes
@@ -953,6 +929,13 @@ EHOutputSection<ELFT>::EHOutputSection(StringRef Name, uint32_t Type,
                                        uintX_t Flags)
     : OutputSectionBase<ELFT>(Name, Type, Flags) {
   Out<ELFT>::EhFrameHdr->assignEhFrame(this);
+}
+
+template <class ELFT>
+void EHOutputSection<ELFT>::forEachInputSection(
+    std::function<void(InputSectionBase<ELFT> *)> F) {
+  for (EHInputSection<ELFT> *S : Sections)
+    F(S);
 }
 
 template <class ELFT>
@@ -1100,7 +1083,7 @@ static typename ELFT::uint readEntryLength(ArrayRef<uint8_t> D) {
 template <class ELFT>
 template <class RelTy>
 void EHOutputSection<ELFT>::addSectionAux(EHInputSection<ELFT> *S,
-                                          iterator_range<const RelTy *> Rels) {
+                                          ArrayRef<RelTy> Rels) {
   const endianness E = ELFT::TargetEndianness;
 
   S->OutSec = this;
@@ -1175,7 +1158,7 @@ void EHOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
   auto *S = cast<EHInputSection<ELFT>>(C);
   const Elf_Shdr *RelSec = S->RelocSection;
   if (!RelSec) {
-    addSectionAux(S, make_range<const Elf_Rela *>(nullptr, nullptr));
+    addSectionAux(S, makeArrayRef<Elf_Rela>(nullptr, nullptr));
     return;
   }
   ELFFile<ELFT> &Obj = S->getFile()->getObj();
@@ -1186,31 +1169,43 @@ void EHOutputSection<ELFT>::addSection(InputSectionBase<ELFT> *C) {
 }
 
 template <class ELFT>
-static typename ELFT::uint writeAlignedCieOrFde(StringRef Data, uint8_t *Buf) {
+static void writeAlignedCieOrFde(StringRef Data, uint8_t *Buf) {
   typedef typename ELFT::uint uintX_t;
   const endianness E = ELFT::TargetEndianness;
   uint64_t Len = alignTo(Data.size(), sizeof(uintX_t));
   write32<E>(Buf, Len - 4);
   memcpy(Buf + 4, Data.data() + 4, Data.size() - 4);
-  return Len;
+}
+
+template <class ELFT> void EHOutputSection<ELFT>::finalize() {
+  if (Finalized)
+    return;
+  Finalized = true;
+
+  size_t Offset = 0;
+  for (const Cie<ELFT> &C : Cies) {
+    C.S->Offsets[C.Index].second = Offset;
+    Offset += alignTo(C.data().size(), sizeof(uintX_t));
+
+    for (const EHRegion<ELFT> &F : C.Fdes) {
+      F.S->Offsets[F.Index].second = Offset;
+      Offset += alignTo(F.data().size(), sizeof(uintX_t));
+    }
+  }
 }
 
 template <class ELFT> void EHOutputSection<ELFT>::writeTo(uint8_t *Buf) {
   const endianness E = ELFT::TargetEndianness;
-  size_t Offset = 0;
   for (const Cie<ELFT> &C : Cies) {
-    size_t CieOffset = Offset;
-
-    uintX_t CIELen = writeAlignedCieOrFde<ELFT>(C.data(), Buf + Offset);
-    C.S->Offsets[C.Index].second = Offset;
-    Offset += CIELen;
+    size_t CieOffset = C.S->Offsets[C.Index].second;
+    writeAlignedCieOrFde<ELFT>(C.data(), Buf + CieOffset);
 
     for (const EHRegion<ELFT> &F : C.Fdes) {
-      uintX_t Len = writeAlignedCieOrFde<ELFT>(F.data(), Buf + Offset);
+      size_t Offset = F.S->Offsets[F.Index].second;
+      writeAlignedCieOrFde<ELFT>(F.data(), Buf + Offset);
       write32<E>(Buf + Offset + 4, Offset + 4 - CieOffset); // Pointer
-      F.S->Offsets[F.Index].second = Offset;
+
       Out<ELFT>::EhFrameHdr->addFde(C.FdeEncoding, Offset, Buf + Offset + 8);
-      Offset += Len;
     }
   }
 
@@ -1371,6 +1366,15 @@ static bool sortMipsSymbols(const std::pair<SymbolBody *, unsigned> &L,
   return L.first->GotIndex < R.first->GotIndex;
 }
 
+static uint8_t getSymbolBinding(SymbolBody *Body) {
+  uint8_t Visibility = Body->getVisibility();
+  if (Visibility != STV_DEFAULT && Visibility != STV_PROTECTED)
+    return STB_LOCAL;
+  if (Config->NoGnuUnique && Body->Binding == STB_GNU_UNIQUE)
+    return STB_GLOBAL;
+  return Body->Binding;
+}
+
 template <class ELFT> void SymbolTableSection<ELFT>::finalize() {
   if (this->Header.sh_size)
     return; // Already finalized.
@@ -1426,25 +1430,32 @@ void SymbolTableSection<ELFT>::writeLocalSymbols(uint8_t *&Buf) {
   // Iterate over all input object files to copy their local symbols
   // to the output symbol table pointed by Buf.
   for (const std::unique_ptr<ObjectFile<ELFT>> &File : Table.getObjectFiles()) {
-    for (const std::pair<const Elf_Sym *, size_t> &P : File->KeptLocalSyms) {
-      const Elf_Sym *Sym = P.first;
-
+    for (const std::pair<const DefinedRegular<ELFT> *, size_t> &P :
+         File->KeptLocalSyms) {
+      const DefinedRegular<ELFT> &Body = *P.first;
+      InputSectionBase<ELFT> *Section = Body.Section;
       auto *ESym = reinterpret_cast<Elf_Sym *>(Buf);
-      if (Sym->st_shndx == SHN_ABS) {
+
+      if (!Section) {
         ESym->st_shndx = SHN_ABS;
-        ESym->st_value = Sym->st_value;
+        ESym->st_value = Body.Value;
       } else {
-        InputSectionBase<ELFT> *Section = File->getSection(*Sym);
         const OutputSectionBase<ELFT> *OutSec = Section->OutSec;
         ESym->st_shndx = OutSec->SectionIndex;
-        ESym->st_value = OutSec->getVA() + Section->getOffset(*Sym);
+        ESym->st_value = OutSec->getVA() + Section->getOffset(Body);
       }
       ESym->st_name = P.second;
-      ESym->st_size = Sym->st_size;
-      ESym->setBindingAndType(Sym->getBinding(), Sym->getType());
+      ESym->st_size = Body.template getSize<ELFT>();
+      ESym->setBindingAndType(Body.Binding, Body.Type);
       Buf += sizeof(*ESym);
     }
   }
+}
+
+static uint8_t getSymbolVisibility(SymbolBody *Body) {
+  if (Body->isShared())
+    return STV_DEFAULT;
+  return Body->getVisibility();
 }
 
 template <class ELFT>
@@ -1456,20 +1467,13 @@ void SymbolTableSection<ELFT>::writeGlobalSymbols(uint8_t *Buf) {
     SymbolBody *Body = P.first;
     size_t StrOff = P.second;
 
-    uint8_t Type = STT_NOTYPE;
-    uintX_t Size = 0;
-    if (const Elf_Sym *InputSym = Body->getElfSym<ELFT>()) {
-      Type = InputSym->getType();
-      Size = InputSym->st_size;
-    } else if (auto *C = dyn_cast<DefinedCommon>(Body)) {
-      Type = STT_OBJECT;
-      Size = C->Size;
-    }
+    uint8_t Type = Body->Type;
+    uintX_t Size = Body->getSize<ELFT>();
 
     ESym->setBindingAndType(getSymbolBinding(Body), Type);
     ESym->st_size = Size;
     ESym->st_name = StrOff;
-    ESym->setVisibility(Body->getVisibility());
+    ESym->setVisibility(getSymbolVisibility(Body));
     ESym->st_value = Body->getVA<ELFT>();
 
     if (const OutputSectionBase<ELFT> *OutSec = getOutputSection(Body))
@@ -1507,8 +1511,9 @@ SymbolTableSection<ELFT>::getOutputSection(SymbolBody *Sym) {
       return Out<ELFT>::Bss;
     break;
   case SymbolBody::UndefinedElfKind:
-  case SymbolBody::UndefinedKind:
-  case SymbolBody::LazyKind:
+  case SymbolBody::UndefinedBitcodeKind:
+  case SymbolBody::LazyArchiveKind:
+  case SymbolBody::LazyObjectKind:
     break;
   case SymbolBody::DefinedBitcodeKind:
     llvm_unreachable("should have been replaced");
@@ -1517,35 +1522,24 @@ SymbolTableSection<ELFT>::getOutputSection(SymbolBody *Sym) {
 }
 
 template <class ELFT>
-uint8_t SymbolTableSection<ELFT>::getSymbolBinding(SymbolBody *Body) {
-  uint8_t Visibility = Body->getVisibility();
-  if (Visibility != STV_DEFAULT && Visibility != STV_PROTECTED)
-    return STB_LOCAL;
-  if (const Elf_Sym *ESym = Body->getElfSym<ELFT>())
-    return ESym->getBinding();
-  if (isa<DefinedSynthetic<ELFT>>(Body))
-    return STB_LOCAL;
-  return Body->isWeak() ? STB_WEAK : STB_GLOBAL;
-}
-
-template <class ELFT>
-BuildIdSection<ELFT>::BuildIdSection()
-    : OutputSectionBase<ELFT>(".note.gnu.build-id", SHT_NOTE, SHF_ALLOC) {
-  // 16 bytes for the note section header and 8 bytes for FNV1 hash.
-  this->Header.sh_size = 24;
+BuildIdSection<ELFT>::BuildIdSection(size_t HashSize)
+    : OutputSectionBase<ELFT>(".note.gnu.build-id", SHT_NOTE, SHF_ALLOC),
+      HashSize(HashSize) {
+  // 16 bytes for the note section header.
+  this->Header.sh_size = 16 + HashSize;
 }
 
 template <class ELFT> void BuildIdSection<ELFT>::writeTo(uint8_t *Buf) {
   const endianness E = ELFT::TargetEndianness;
   write32<E>(Buf, 4);                   // Name size
-  write32<E>(Buf + 4, sizeof(Hash));    // Content size
+  write32<E>(Buf + 4, HashSize);        // Content size
   write32<E>(Buf + 8, NT_GNU_BUILD_ID); // Type
   memcpy(Buf + 12, "GNU", 4);           // Name string
   HashBuf = Buf + 16;
 }
 
-template <class ELFT> void BuildIdSection<ELFT>::update(ArrayRef<uint8_t> Buf) {
-  // 64-bit FNV1 hash
+template <class ELFT> void BuildIdFnv1<ELFT>::update(ArrayRef<uint8_t> Buf) {
+  // 64-bit FNV-1 hash
   const uint64_t Prime = 0x100000001b3;
   for (uint8_t B : Buf) {
     Hash *= Prime;
@@ -1553,9 +1547,27 @@ template <class ELFT> void BuildIdSection<ELFT>::update(ArrayRef<uint8_t> Buf) {
   }
 }
 
-template <class ELFT> void BuildIdSection<ELFT>::writeBuildId() {
+template <class ELFT> void BuildIdFnv1<ELFT>::writeBuildId() {
   const endianness E = ELFT::TargetEndianness;
-  write64<E>(HashBuf, Hash);
+  write64<E>(this->HashBuf, Hash);
+}
+
+template <class ELFT> void BuildIdMd5<ELFT>::update(ArrayRef<uint8_t> Buf) {
+  Hash.update(Buf);
+}
+
+template <class ELFT> void BuildIdMd5<ELFT>::writeBuildId() {
+  MD5::MD5Result Res;
+  Hash.final(Res);
+  memcpy(this->HashBuf, Res, 16);
+}
+
+template <class ELFT> void BuildIdSha1<ELFT>::update(ArrayRef<uint8_t> Buf) {
+  Hash.update(Buf);
+}
+
+template <class ELFT> void BuildIdSha1<ELFT>::writeBuildId() {
+  memcpy(this->HashBuf, Hash.final().data(), 20);
 }
 
 template <class ELFT>
@@ -1666,5 +1678,20 @@ template class BuildIdSection<ELF32LE>;
 template class BuildIdSection<ELF32BE>;
 template class BuildIdSection<ELF64LE>;
 template class BuildIdSection<ELF64BE>;
+
+template class BuildIdFnv1<ELF32LE>;
+template class BuildIdFnv1<ELF32BE>;
+template class BuildIdFnv1<ELF64LE>;
+template class BuildIdFnv1<ELF64BE>;
+
+template class BuildIdMd5<ELF32LE>;
+template class BuildIdMd5<ELF32BE>;
+template class BuildIdMd5<ELF64LE>;
+template class BuildIdMd5<ELF64BE>;
+
+template class BuildIdSha1<ELF32LE>;
+template class BuildIdSha1<ELF32BE>;
+template class BuildIdSha1<ELF64LE>;
+template class BuildIdSha1<ELF64BE>;
 }
 }

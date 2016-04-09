@@ -66,7 +66,7 @@ static std::pair<ELFKind, uint16_t> parseEmulation(StringRef S) {
     error("Windows targets are not supported on the ELF frontend: " + S);
   else
     error("unknown emulation: " + S);
-  return {ELFNoneKind, 0};
+  return {ELFNoneKind, EM_NONE};
 }
 
 // Returns slices of MB by parsing MB as an archive file.
@@ -129,7 +129,10 @@ void LinkerDriver::addFile(StringRef Path) {
     Files.push_back(createSharedFile(MBRef));
     return;
   default:
-    Files.push_back(createObjectFile(MBRef));
+    if (InLib)
+      Files.push_back(make_unique<LazyObjectFile>(MBRef));
+    else
+      Files.push_back(createObjectFile(MBRef));
   }
 }
 
@@ -268,8 +271,8 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->AllowMultipleDefinition = Args.hasArg(OPT_allow_multiple_definition);
   Config->Bsymbolic = Args.hasArg(OPT_Bsymbolic);
   Config->BsymbolicFunctions = Args.hasArg(OPT_Bsymbolic_functions);
-  Config->BuildId = Args.hasArg(OPT_build_id);
   Config->Demangle = !Args.hasArg(OPT_no_demangle);
+  Config->DisableVerify = Args.hasArg(OPT_disable_verify);
   Config->DiscardAll = Args.hasArg(OPT_discard_all);
   Config->DiscardLocals = Args.hasArg(OPT_discard_locals);
   Config->DiscardNone = Args.hasArg(OPT_discard_none);
@@ -278,6 +281,7 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->ExportDynamic = Args.hasArg(OPT_export_dynamic);
   Config->GcSections = Args.hasArg(OPT_gc_sections);
   Config->ICF = Args.hasArg(OPT_icf);
+  Config->NoGnuUnique = Args.hasArg(OPT_no_gnu_unique);
   Config->NoUndefined = Args.hasArg(OPT_no_undefined);
   Config->NoinhibitExec = Args.hasArg(OPT_noinhibit_exec);
   Config->Pie = Args.hasArg(OPT_pie);
@@ -286,6 +290,7 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->SaveTemps = Args.hasArg(OPT_save_temps);
   Config->Shared = Args.hasArg(OPT_shared);
   Config->StripAll = Args.hasArg(OPT_strip_all);
+  Config->StripDebug = Args.hasArg(OPT_strip_debug);
   Config->Threads = Args.hasArg(OPT_threads);
   Config->Trace = Args.hasArg(OPT_trace);
   Config->Verbose = Args.hasArg(OPT_verbose);
@@ -310,10 +315,15 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->ZOrigin = hasZOption(Args, "origin");
   Config->ZRelro = !hasZOption(Args, "norelro");
 
-  Config->Pic = Config->Pie || Config->Shared;
-
   if (Config->Relocatable)
     Config->StripAll = false;
+
+  // --strip-all implies --strip-debug.
+  if (Config->StripAll)
+    Config->StripDebug = true;
+
+  // Config->Pic is true if we are generating position-independent code.
+  Config->Pic = Config->Pie || Config->Shared;
 
   if (auto *Arg = Args.getLastArg(OPT_hash_style)) {
     StringRef S = Arg->getValue();
@@ -324,6 +334,19 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
       Config->GnuHash = true;
     } else if (S != "sysv")
       error("unknown hash style: " + S);
+  }
+
+  // Parse --build-id or --build-id=<style>.
+  if (Args.hasArg(OPT_build_id))
+    Config->BuildId = BuildIdKind::Fnv1;
+  if (auto *Arg = Args.getLastArg(OPT_build_id_eq)) {
+    StringRef S = Arg->getValue();
+    if (S == "md5") {
+      Config->BuildId = BuildIdKind::Md5;
+    } else if (S == "sha1") {
+      Config->BuildId = BuildIdKind::Sha1;
+    } else
+      error("unknown --build-id style: " + S);
   }
 
   for (auto *Arg : Args.filtered(OPT_undefined))
@@ -358,6 +381,12 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
     case OPT_no_whole_archive:
       WholeArchive = false;
       break;
+    case OPT_start_lib:
+      InLib = true;
+      break;
+    case OPT_end_lib:
+      InLib = false;
+      break;
     }
   }
 
@@ -365,17 +394,7 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
     error("no input files.");
 }
 
-template <class ELFT> static void initSymbols() {
-  ElfSym<ELFT>::Etext.setBinding(STB_GLOBAL);
-  ElfSym<ELFT>::Edata.setBinding(STB_GLOBAL);
-  ElfSym<ELFT>::End.setBinding(STB_GLOBAL);
-  ElfSym<ELFT>::Ignored.setBinding(STB_WEAK);
-  ElfSym<ELFT>::Ignored.setVisibility(STV_HIDDEN);
-}
-
 template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
-  initSymbols<ELFT>();
-
   SymbolTable<ELFT> Symtab;
   std::unique_ptr<TargetInfo> TI(createTarget());
   Target = TI.get();
@@ -389,21 +408,6 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
       Config->EMachine != EM_AMDGPU)
     Config->Entry = Config->EMachine == EM_MIPS ? "__start" : "_start";
 
-  // In the assembly for 32 bit x86 the _GLOBAL_OFFSET_TABLE_ symbol
-  // is magical and is used to produce a R_386_GOTPC relocation.
-  // The R_386_GOTPC relocation value doesn't actually depend on the
-  // symbol value, so it could use an index of STN_UNDEF which, according
-  // to the spec, means the symbol value is 0.
-  // Unfortunately both gas and MC keep the _GLOBAL_OFFSET_TABLE_ symbol in
-  // the object file.
-  // The situation is even stranger on x86_64 where the assembly doesn't
-  // need the magical symbol, but gas still puts _GLOBAL_OFFSET_TABLE_ as
-  // an undefined symbol in the .o files.
-  // Given that the symbol is effectively unused, we just create a dummy
-  // hidden one to avoid the undefined symbol error.
-  if (!Config->Relocatable)
-    Symtab.addIgnored("_GLOBAL_OFFSET_TABLE_");
-
   if (!Config->Entry.empty()) {
     // Set either EntryAddr (if S is a number) or EntrySym (otherwise).
     StringRef S = Config->Entry;
@@ -412,20 +416,11 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
   }
 
   if (Config->EMachine == EM_MIPS) {
-    // On MIPS O32 ABI, _gp_disp is a magic symbol designates offset between
-    // start of function and 'gp' pointer into GOT.
-    Config->MipsGpDisp = Symtab.addIgnored("_gp_disp");
-    // The __gnu_local_gp is a magic symbol equal to the current value of 'gp'
-    // pointer. This symbol is used in the code generated by .cpload pseudo-op
-    // in case of using -mno-shared option.
-    // https://sourceware.org/ml/binutils/2004-12/msg00094.html
-    Config->MipsLocalGp = Symtab.addIgnored("__gnu_local_gp");
-
     // Define _gp for MIPS. st_value of _gp symbol will be updated by Writer
     // so that it points to an absolute address which is relative to GOT.
     // See "Global Data Symbols" in Chapter 6 in the following document:
     // ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
-    Symtab.addAbsolute("_gp", ElfSym<ELFT>::MipsGp);
+    ElfSym<ELFT>::MipsGp = Symtab.addAbsolute("_gp", STV_DEFAULT);
   }
 
   for (std::unique_ptr<InputFile> &F : Files)

@@ -72,8 +72,9 @@ typename ELFT::uint InputSectionBase<ELFT>::getOffset(uintX_t Offset) {
 }
 
 template <class ELFT>
-typename ELFT::uint InputSectionBase<ELFT>::getOffset(const Elf_Sym &Sym) {
-  return getOffset(Sym.st_value);
+typename ELFT::uint
+InputSectionBase<ELFT>::getOffset(const DefinedRegular<ELFT> &Sym) {
+  return getOffset(Sym.Value);
 }
 
 // Returns a section that Rel relocation is pointing to.
@@ -130,8 +131,7 @@ template <class ELFT> uint64_t InputSection<ELFT>::getThunksSize() const {
 // copy relocations one by one.
 template <class ELFT>
 template <class RelTy>
-void InputSection<ELFT>::copyRelocations(uint8_t *Buf,
-                                         iterator_range<const RelTy *> Rels) {
+void InputSection<ELFT>::copyRelocations(uint8_t *Buf, ArrayRef<RelTy> Rels) {
   InputSectionBase<ELFT> *RelocatedSection = getRelocatedSection();
 
   for (const RelTy &Rel : Rels) {
@@ -241,7 +241,7 @@ static uintX_t getMipsGotVA(const SymbolBody &Body, uintX_t SymVA,
 template <class ELFT>
 template <class RelTy>
 void InputSectionBase<ELFT>::relocate(uint8_t *Buf, uint8_t *BufEnd,
-                                      iterator_range<const RelTy *> Rels) {
+                                      ArrayRef<RelTy> Rels) {
   size_t Num = Rels.end() - Rels.begin();
   for (size_t I = 0; I < Num; ++I) {
     const RelTy &RI = *(Rels.begin() + I);
@@ -305,7 +305,7 @@ void InputSectionBase<ELFT>::relocate(uint8_t *Buf, uint8_t *BufEnd,
         SymVA = getMipsGotVA<ELFT>(Body, SymVA, BufLoc);
       else
         SymVA = Body.getGotVA<ELFT>() + A;
-      if (Body.IsTls)
+      if (Body.isTls())
         Type = Target->getTlsGotRel(Type);
     } else if (Target->isSizeRel(Type) && Body.isPreemptible()) {
       // A SIZE relocation is supposed to set a symbol size, but if a symbol

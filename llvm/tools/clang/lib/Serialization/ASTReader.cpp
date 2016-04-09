@@ -217,8 +217,13 @@ static bool checkLanguageOptions(const LangOptions &LangOpts,
   if (!AllowCompatibleDifferences)                                 \
     ENUM_LANGOPT(Name, Bits, Default, Description)
 
+#define COMPATIBLE_VALUE_LANGOPT(Name, Bits, Default, Description) \
+  if (!AllowCompatibleDifferences)                                 \
+    VALUE_LANGOPT(Name, Bits, Default, Description)
+
 #define BENIGN_LANGOPT(Name, Bits, Default, Description)
 #define BENIGN_ENUM_LANGOPT(Name, Type, Bits, Default, Description)
+#define BENIGN_VALUE_LANGOPT(Name, Type, Bits, Default, Description)
 #include "clang/Basic/LangOptions.def"
 
   if (ExistingLangOpts.ModuleFeatures != LangOpts.ModuleFeatures) {
@@ -6087,42 +6092,11 @@ QualType ASTReader::GetType(TypeID ID) {
     case PREDEF_TYPE_OBJC_SEL:
       T = Context.ObjCBuiltinSelTy;
       break;
-    case PREDEF_TYPE_IMAGE1D_ID:
-      T = Context.OCLImage1dTy;
+#define IMAGE_TYPE(ImgType, Id, SingletonId, Access, Suffix) \
+    case PREDEF_TYPE_##Id##_ID: \
+      T = Context.SingletonId; \
       break;
-    case PREDEF_TYPE_IMAGE1D_ARR_ID:
-      T = Context.OCLImage1dArrayTy;
-      break;
-    case PREDEF_TYPE_IMAGE1D_BUFF_ID:
-      T = Context.OCLImage1dBufferTy;
-      break;
-    case PREDEF_TYPE_IMAGE2D_ID:
-      T = Context.OCLImage2dTy;
-      break;
-    case PREDEF_TYPE_IMAGE2D_ARR_ID:
-      T = Context.OCLImage2dArrayTy;
-      break;
-    case PREDEF_TYPE_IMAGE2D_DEP_ID:
-      T = Context.OCLImage2dDepthTy;
-      break;
-    case PREDEF_TYPE_IMAGE2D_ARR_DEP_ID:
-      T = Context.OCLImage2dArrayDepthTy;
-      break;
-    case PREDEF_TYPE_IMAGE2D_MSAA_ID:
-      T = Context.OCLImage2dMSAATy;
-      break;
-    case PREDEF_TYPE_IMAGE2D_ARR_MSAA_ID:
-      T = Context.OCLImage2dArrayMSAATy;
-      break;
-    case PREDEF_TYPE_IMAGE2D_MSAA_DEP_ID:
-      T = Context.OCLImage2dMSAADepthTy;
-      break;
-    case PREDEF_TYPE_IMAGE2D_ARR_MSAA_DEPTH_ID:
-      T = Context.OCLImage2dArrayMSAADepthTy;
-      break;
-    case PREDEF_TYPE_IMAGE3D_ID:
-      T = Context.OCLImage3dTy;
-      break;
+#include "clang/AST/OpenCLImageTypes.def"
     case PREDEF_TYPE_SAMPLER_ID:
       T = Context.OCLSamplerTy;
       break;
