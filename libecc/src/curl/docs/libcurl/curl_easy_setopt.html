@@ -315,7 +315,9 @@ p.roffit {
 <p class="level1">Authentication address. See <span Class="emphasis">CURLOPT_MAIL_AUTH(3)</span> <a name="TFTP"></a><h2 class="nroffsh">TFTP OPTIONS</h2>
 <p class="level0">
 <p class="level0"><a name="CURLOPTTFTPBLKSIZE"></a><span class="nroffip">CURLOPT_TFTP_BLKSIZE</span> 
-<p class="level1">TFTP block size. See <span Class="emphasis">CURLOPT_TFTP_BLKSIZE(3)</span> <a name="FTP"></a><h2 class="nroffsh">FTP OPTIONS</h2>
+<p class="level1">TFTP block size. See <span Class="emphasis">CURLOPT_TFTP_BLKSIZE(3)</span> 
+<p class="level0"><a name="CURLOPTTFTPNOOPTIONS"></a><span class="nroffip">CURLOPT_TFTP_NO_OPTIONS</span> 
+<p class="level1">Do not send TFTP options requests. See <span Class="emphasis">CURLOPT_TFTP_NO_OPTIONS(3)</span> <a name="FTP"></a><h2 class="nroffsh">FTP OPTIONS</h2>
 <p class="level0">
 <p class="level0"><a name="CURLOPTFTPPORT"></a><span class="nroffip">CURLOPT_FTPPORT</span> 
 <p class="level1">Use active FTP. See <span Class="emphasis">CURLOPT_FTPPORT(3)</span> 
@@ -526,7 +528,7 @@ p.roffit {
 CURL *curl = curl_easy_init();
 if(curl) {
 &nbsp; CURLcode res;
-&nbsp; curl_easy_setopt(curl, CURLOPT_URL, "<a href="http://example.com">http://example.com</a>");
+&nbsp; curl_easy_setopt(curl, CURLOPT_URL, "http://example.com");
 &nbsp; res = curl_easy_perform(curl);
 &nbsp; curl_easy_cleanup(curl);
 }

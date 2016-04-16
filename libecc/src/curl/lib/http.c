@@ -5,7 +5,7 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2015, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 1998 - 2016, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
@@ -567,10 +567,12 @@ output_auth_headers(struct connectdata *conn,
 {
   const char *auth = NULL;
   CURLcode result = CURLE_OK;
+#if !defined(CURL_DISABLE_VERBOSE_STRINGS) || defined(USE_SPNEGO)
   struct SessionHandle *data = conn->data;
+#endif
 #ifdef USE_SPNEGO
-  struct negotiatedata *negdata = proxy?
-    &data->state.proxyneg:&data->state.negotiate;
+  struct negotiatedata *negdata = proxy ?
+    &data->state.proxyneg : &data->state.negotiate;
 #endif
 
 #ifdef CURL_DISABLE_CRYPTO_AUTH
@@ -1091,7 +1093,7 @@ CURLcode Curl_add_buffer_send(Curl_send_buffer *in,
   }
 
 
-  if(conn->handler->flags & PROTOPT_SSL) {
+  if((conn->handler->flags & PROTOPT_SSL) && conn->httpversion != 20) {
     /* We never send more than CURL_MAX_WRITE_SIZE bytes in one single chunk
        when we speak HTTPS, as if only a fraction of it is sent now, this data
        needs to fit into the normal read-callback buffer later on and that
@@ -2292,7 +2294,6 @@ CURLcode Curl_http(struct connectdata *conn, bool *done)
                      "%s" /* TE: */
                      "%s" /* accept-encoding */
                      "%s" /* referer */
-                     "%s" /* Proxy-Connection */
                      "%s",/* transfer-encoding */
 
                      ftp_typecode,
@@ -2315,10 +2316,6 @@ CURLcode Curl_http(struct connectdata *conn, bool *done)
                      conn->allocptr.accept_encoding:"",
                      (data->change.referer && conn->allocptr.ref)?
                      conn->allocptr.ref:"" /* Referer: <data> */,
-                     (conn->bits.httpproxy &&
-                      !conn->bits.tunnel_proxy &&
-                      !Curl_checkProxyheaders(conn, "Proxy-Connection:"))?
-                     "Proxy-Connection: Keep-Alive\r\n":"",
                      te
       );
 
@@ -3597,8 +3594,7 @@ CURLcode Curl_http_readwrite_headers(struct SessionHandle *data,
 
     }
     else if(checkprefix("Content-Encoding:", k->p) &&
-            (data->set.str[STRING_ENCODING] ||
-             conn->httpversion == 20)) {
+            data->set.str[STRING_ENCODING]) {
       /*
        * Process Content-Encoding. Look for the values: identity,
        * gzip, deflate, compress, x-gzip and x-compress. x-gzip and

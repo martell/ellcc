@@ -7,7 +7,7 @@
  *                            | (__| |_| |  _ <| |___
  *                             \___|\___/|_| \_\_____|
  *
- * Copyright (C) 1998 - 2015, Daniel Stenberg, <daniel@haxx.se>, et al.
+ * Copyright (C) 1998 - 2016, Daniel Stenberg, <daniel@haxx.se>, et al.
  *
  * This software is licensed as described in the file COPYING, which
  * you should have received as part of this distribution. The terms
@@ -297,6 +297,7 @@ struct ssl_connect_data {
   mbedtls_x509_crl crl;
   mbedtls_pk_context pk;
   mbedtls_ssl_config config;
+  const char *protocols[3];
 #elif defined(USE_POLARSSL)
   ctr_drbg_context ctr_drbg;
   entropy_context entropy;
@@ -920,6 +921,7 @@ struct connectdata {
 
   struct ssl_connect_data ssl[2]; /* this is for ssl-stuff */
   struct ssl_config_data ssl_config;
+  bool tls_upgraded;
 
   struct ConnectBits bits;    /* various state-flags for this connection */
 
@@ -1498,7 +1500,8 @@ struct UserDefined {
   long connecttimeout;  /* in milliseconds, 0 means no timeout */
   long accepttimeout;   /* in milliseconds, 0 means no timeout */
   long server_response_timeout; /* in milliseconds, 0 means no timeout */
-  long tftp_blksize ; /* in bytes, 0 means use default */
+  long tftp_blksize;    /* in bytes, 0 means use default */
+  bool tftp_no_options; /* do not send TFTP options requests */
   curl_off_t filesize;  /* size of file to upload, -1 means unknown */
   long low_speed_limit; /* bytes/second */
   long low_speed_time;  /* number of seconds */

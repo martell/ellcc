@@ -73,7 +73,7 @@ host = curl_slist_append(NULL, "example.com:80:127.0.0.1");
 curl = curl_easy_init();
 if(curl) {
 &nbsp; curl_easy_setopt(curl, CURLOPT_RESOLVE, host);
-&nbsp; curl_easy_setopt(curl, CURLOPT_URL, "<a href="http://example.com">http://example.com</a>");
+&nbsp; curl_easy_setopt(curl, CURLOPT_URL, "http://example.com");
 &nbsp; res = curl_easy_perform(curl);
 &nbsp;
 &nbsp; /* always cleanup */

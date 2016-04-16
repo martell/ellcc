@@ -19,7 +19,7 @@
 .\" * KIND, either express or implied.
 .\" *
 .\" **************************************************************************
-.TH libcurl-symbols 3 "feb  8, 2016" "libcurl 7.41.0" "libcurl symbols"
+.TH libcurl-symbols 3 "mar 22, 2016" "libcurl 7.41.0" "libcurl symbols"
 .SH NAME
 libcurl-symbols \- libcurl symbol version information
 .SH "libcurl symbols"
@@ -564,6 +564,9 @@ Introduced in 7.4.1
 Introduced in 7.9.6
 .IP CURLINFO_TLS_SESSION
 Introduced in 7.34.0
+Deprecated since 7.48.0
+.IP CURLINFO_TLS_SSL_PTR
+Introduced in 7.48.0
 .IP CURLINFO_TOTAL_TIME
 Introduced in 7.4.1
 .IP CURLINFO_TYPEMASK
@@ -1144,6 +1147,8 @@ Introduced in 7.11.2
 Introduced in 7.7
 .IP CURLOPT_TFTP_BLKSIZE
 Introduced in 7.19.4
+.IP CURLOPT_TFTP_NO_OPTIONS
+Introduced in 7.48.0
 .IP CURLOPT_TIMECONDITION
 Introduced in 7.1
 .IP CURLOPT_TIMEOUT

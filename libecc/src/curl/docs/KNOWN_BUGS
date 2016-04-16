@@ -3,6 +3,24 @@ join in and help us correct one or more of these! Also be sure to check the
 changelog of the current development status, as one or more of these problems
 may have been fixed since this was written!
 
+93. It is not possible to pass a 64-bit value using CURLFORM_CONTENTLEN with
+  CURLFORM_ARRAY, when compiled on 32-bit platforms that support 64-bit
+  integers. This is because the underlying structure 'curl_forms' uses a dual
+  purpose char* for storing these values in via casting. For more information
+  see the now closed related issue:
+  https://github.com/curl/curl/issues/608
+  
+92. curl tool 7.47.1 in Windows will not --output to literal paths \\?\ or to
+  reserved dos device names unless the device prefix \\.\ is used. To send
+  output to a device that has a reserved dos device name you can use the
+  Windows device prefix (eg: --output \\.\NUL). You can also use the
+  redirection operator to send output to a literal path or a reserved device
+  name (eg: > NUL).
+  The next release of curl will support --output in Windows to literal paths
+  and to reserved device names without the device prefix.
+  https://github.com/curl/curl/commit/c3aac48
+  https://github.com/curl/curl/commit/4fc80f3
+
 91. "curl_easy_perform hangs with imap and PolarSSL"
   https://github.com/curl/curl/issues/334
 

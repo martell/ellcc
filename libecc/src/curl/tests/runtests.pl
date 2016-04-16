@@ -2311,7 +2311,7 @@ sub checksystem {
             $curl =~ s/^(.*)(libcurl.*)/$1/g;
 
             $libcurl = $2;
-            if($curl =~ /mingw32/) {
+            if($curl =~ /mingw(32|64)/) {
                 # This is a windows minw32 build, we need to translate the
                 # given path to the "actual" windows path. The MSYS shell
                 # has a builtin 'pwd -W' command which converts the path.
@@ -2608,7 +2608,8 @@ sub checksystem {
     logmsg sprintf("%s", $http_unix?"HTTP-unix ":"");
     logmsg sprintf("%s\n", $ftp_ipv6?"FTP-IPv6 ":"OFF");
 
-    logmsg sprintf("* Env: %s", $valgrind?"Valgrind ":"");
+    logmsg sprintf("* Env: %s%s", $valgrind?"Valgrind ":"",
+                   $run_event_based?"event-based ":"");
     logmsg sprintf("%s\n", $libtool?"Libtool ":"");
 
     if($verbose) {

@@ -1,5 +1,6 @@
 current SVN:
 
+* Update the curl library to version 7.48.0.
 * Update to LLVM r266470.
 * Update to LLVM r265848.
 * Update to LLVM r265256.
