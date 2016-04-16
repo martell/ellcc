@@ -292,9 +292,9 @@ bool SIInstrInfo::getMemOpBaseRegImmOfs(MachineInstr *LdSt, unsigned &BaseReg,
   return false;
 }
 
-bool SIInstrInfo::shouldClusterLoads(MachineInstr *FirstLdSt,
-                                     MachineInstr *SecondLdSt,
-                                     unsigned NumLoads) const {
+bool SIInstrInfo::shouldClusterMemOps(MachineInstr *FirstLdSt,
+                                      MachineInstr *SecondLdSt,
+                                      unsigned NumLoads) const {
 	const MachineOperand *FirstDst = nullptr;
 	const MachineOperand *SecondDst = nullptr;
 
@@ -551,6 +551,8 @@ static unsigned getVGPRSpillSaveOpcode(unsigned Size) {
     return AMDGPU::SI_SPILL_V32_SAVE;
   case 8:
     return AMDGPU::SI_SPILL_V64_SAVE;
+  case 12:
+    return AMDGPU::SI_SPILL_V96_SAVE;
   case 16:
     return AMDGPU::SI_SPILL_V128_SAVE;
   case 32:
@@ -642,6 +644,8 @@ static unsigned getVGPRSpillRestoreOpcode(unsigned Size) {
     return AMDGPU::SI_SPILL_V32_RESTORE;
   case 8:
     return AMDGPU::SI_SPILL_V64_RESTORE;
+  case 12:
+    return AMDGPU::SI_SPILL_V96_RESTORE;
   case 16:
     return AMDGPU::SI_SPILL_V128_RESTORE;
   case 32:
@@ -1054,6 +1058,8 @@ static void removeModOperands(MachineInstr &MI) {
   MI.RemoveOperand(Src0ModIdx);
 }
 
+// TODO: Maybe this should be removed this and custom fold everything in
+// SIFoldOperands?
 bool SIInstrInfo::FoldImmediate(MachineInstr *UseMI, MachineInstr *DefMI,
                                 unsigned Reg, MachineRegisterInfo *MRI) const {
   if (!MRI->hasOneNonDBGUse(Reg))
@@ -1068,6 +1074,14 @@ bool SIInstrInfo::FoldImmediate(MachineInstr *UseMI, MachineInstr *DefMI,
         hasModifiersSet(*UseMI, AMDGPU::OpName::src2_modifiers)) {
       return false;
     }
+
+    const MachineOperand &ImmOp = DefMI->getOperand(1);
+
+    // If this is a free constant, there's no reason to do this.
+    // TODO: We could fold this here instead of letting SIFoldOperands do it
+    // later.
+    if (isInlineConstant(ImmOp, 4))
+      return false;
 
     MachineOperand *Src0 = getNamedOperand(*UseMI, AMDGPU::OpName::src0);
     MachineOperand *Src1 = getNamedOperand(*UseMI, AMDGPU::OpName::src1);

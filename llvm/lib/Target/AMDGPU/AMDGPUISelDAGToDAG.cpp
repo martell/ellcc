@@ -337,7 +337,8 @@ SDNode *AMDGPUDAGToDAGISel::Select(SDNode *N) {
     return nullptr;   // Already selected.
   }
 
-  if (isa<AtomicSDNode>(N))
+  if (isa<AtomicSDNode>(N) ||
+      (Opc == AMDGPUISD::ATOMIC_INC || Opc == AMDGPUISD::ATOMIC_DEC))
     N = glueCopyToM0(N);
 
   switch (Opc) {
@@ -660,7 +661,9 @@ bool AMDGPUDAGToDAGISel::isPrivateLoad(const LoadSDNode *N) const {
 
 bool AMDGPUDAGToDAGISel::isUniformBr(const SDNode *N) const {
   const BasicBlock *BB = FuncInfo->MBB->getBasicBlock();
-  return BB->getTerminator()->getMetadata("amdgpu.uniform");
+  const Instruction *Term = BB->getTerminator();
+  return Term->getMetadata("amdgpu.uniform") ||
+         Term->getMetadata("structurizecfg.uniform");
 }
 
 const char *AMDGPUDAGToDAGISel::getPassName() const {

@@ -804,7 +804,12 @@ arm::FloatABI arm::getARMFloatABI(const ToolChain &TC, const ArgList &Args) {
         break;
       default:
         // Assume "soft", but warn the user we are guessing.
-        ABI = FloatABI::Soft;
+        if (Triple.isOSBinFormatMachO() &&
+            Triple.getSubArch() == llvm::Triple::ARMSubArch_v7em)
+          ABI = FloatABI::Hard;
+        else
+          ABI = FloatABI::Soft;
+
         if (Triple.getOS() != llvm::Triple::UnknownOS ||
             !Triple.isOSBinFormatMachO()) {
           ABI = FloatABI::Hard;
@@ -2463,6 +2468,22 @@ static void getWebAssemblyTargetFeatures(const ArgList &Args,
   handleTargetFeaturesGroup(Args, Features, options::OPT_m_wasm_Features_Group);
 }
 
+static void getAMDGPUTargetFeatures(const Driver &D, const ArgList &Args,
+                                    std::vector<const char *> &Features) {
+  if (const Arg *dAbi = Args.getLastArg(options::OPT_mamdgpu_debugger_abi)) {
+    StringRef value = dAbi->getValue();
+    if (value == "1.0") {
+      Features.push_back("+amdgpu-debugger-insert-nops");
+      Features.push_back("+amdgpu-debugger-reserve-trap-regs");
+    } else {
+      D.Diag(diag::err_drv_clang_unsupported) << dAbi->getAsString(Args);
+    }
+  }
+
+  handleTargetFeaturesGroup(
+    Args, Features, options::OPT_m_amdgpu_Features_Group);
+}
+
 static void getTargetFeatures(const ToolChain &TC, const llvm::Triple &Triple,
                               const ArgList &Args, ArgStringList &CmdArgs,
                               bool ForAS) {
@@ -2507,6 +2528,10 @@ static void getTargetFeatures(const ToolChain &TC, const llvm::Triple &Triple,
   case llvm::Triple::wasm32:
   case llvm::Triple::wasm64:
     getWebAssemblyTargetFeatures(Args, Features);
+    break;
+  case llvm::Triple::r600:
+  case llvm::Triple::amdgcn:
+    getAMDGPUTargetFeatures(D, Args, Features);
     break;
   }
 
@@ -4959,15 +4984,10 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
 
   // -stack-protector=0 is default.
   unsigned StackProtectorLevel = 0;
-  if (getToolChain().getSanitizerArgs().needsSafeStackRt()) {
-    Args.ClaimAllArgs(options::OPT_fno_stack_protector);
-    Args.ClaimAllArgs(options::OPT_fstack_protector_all);
-    Args.ClaimAllArgs(options::OPT_fstack_protector_strong);
-    Args.ClaimAllArgs(options::OPT_fstack_protector);
-  } else if (Arg *A = Args.getLastArg(options::OPT_fno_stack_protector,
-                                      options::OPT_fstack_protector_all,
-                                      options::OPT_fstack_protector_strong,
-                                      options::OPT_fstack_protector)) {
+  if (Arg *A = Args.getLastArg(options::OPT_fno_stack_protector,
+                               options::OPT_fstack_protector_all,
+                               options::OPT_fstack_protector_strong,
+                               options::OPT_fstack_protector)) {
     if (A->getOption().matches(options::OPT_fstack_protector)) {
       StackProtectorLevel = std::max<unsigned>(
           LangOptions::SSPOn,
@@ -8451,12 +8471,12 @@ void freebsd::Linker::ConstructJob(Compilation &C, const JobAction &JA,
   if (IsPIE)
     CmdArgs.push_back("-pie");
 
+  CmdArgs.push_back("--eh-frame-hdr");
   if (Args.hasArg(options::OPT_static)) {
     CmdArgs.push_back("-Bstatic");
   } else {
     if (Args.hasArg(options::OPT_rdynamic))
       CmdArgs.push_back("-export-dynamic");
-    CmdArgs.push_back("--eh-frame-hdr");
     if (Args.hasArg(options::OPT_shared)) {
       CmdArgs.push_back("-Bshareable");
     } else {

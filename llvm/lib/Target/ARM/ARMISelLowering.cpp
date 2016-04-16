@@ -2146,10 +2146,11 @@ ARMTargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
                                   CCAssignFnForNode(CallerCC, true, isVarArg)))
     return false;
   // The callee has to preserve all registers the caller needs to preserve.
+  const ARMBaseRegisterInfo *TRI = Subtarget->getRegisterInfo();
+  const uint32_t *CallerPreserved = TRI->getCallPreservedMask(MF, CallerCC);
   if (CalleeCC != CallerCC) {
-    const ARMBaseRegisterInfo *TRI = Subtarget->getRegisterInfo();
-    if (!TRI->regmaskSubsetEqual(TRI->getCallPreservedMask(MF, CallerCC),
-                                 TRI->getCallPreservedMask(MF, CalleeCC)))
+    const uint32_t *CalleePreserved = TRI->getCallPreservedMask(MF, CalleeCC);
+    if (!TRI->regmaskSubsetEqual(CallerPreserved, CalleePreserved))
       return false;
   }
 
@@ -2206,6 +2207,10 @@ ARMTargetLowering::IsEligibleForTailCallOptimization(SDValue Callee,
         }
       }
     }
+
+    const MachineRegisterInfo &MRI = MF.getRegInfo();
+    if (!parametersInCSRMatch(MRI, CallerPreserved, ArgLocs, OutVals))
+      return false;
   }
 
   return true;

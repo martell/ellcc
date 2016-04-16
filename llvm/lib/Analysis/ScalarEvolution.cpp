@@ -117,7 +117,7 @@ VerifySCEV("verify-scev",
            cl::desc("Verify ScalarEvolution's backedge taken counts (slow)"));
 static cl::opt<bool>
     VerifySCEVMap("verify-scev-maps",
-                  cl::desc("Verify no dangling value in ScalarEvolution's"
+                  cl::desc("Verify no dangling value in ScalarEvolution's "
                            "ExprValueMap (slow)"));
 
 //===----------------------------------------------------------------------===//
@@ -10363,4 +10363,27 @@ PredicatedScalarEvolution::PredicatedScalarEvolution(
       Generation(Init.Generation), BackedgeCount(Init.BackedgeCount) {
   for (auto I = Init.FlagsMap.begin(), E = Init.FlagsMap.end(); I != E; ++I)
     FlagsMap.insert(*I);
+}
+
+void PredicatedScalarEvolution::print(raw_ostream &OS, unsigned Depth) const {
+  // For each block.
+  for (auto *BB : L.getBlocks())
+    for (auto &I : *BB) {
+      if (!SE.isSCEVable(I.getType()))
+        continue;
+
+      auto *Expr = SE.getSCEV(&I);
+      auto II = RewriteMap.find(Expr);
+
+      if (II == RewriteMap.end())
+        continue;
+
+      // Don't print things that are not interesting.
+      if (II->second.second == Expr)
+        continue;
+
+      OS.indent(Depth) << "[PSE]" << I << ":\n";
+      OS.indent(Depth + 2) << *Expr << "\n";
+      OS.indent(Depth + 2) << "--> " << *II->second.second << "\n";
+    }
 }

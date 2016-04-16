@@ -2014,7 +2014,10 @@ void SelectionDAGBuilder::visitSPDescriptorParent(StackProtectorDescriptor &SPD,
   MachineFrameInfo *MFI = ParentBB->getParent()->getFrameInfo();
   int FI = MFI->getStackProtectorIndex();
 
-  const Value *IRGuard = SPD.getGuard();
+  const Module &M = *ParentBB->getParent()->getFunction()->getParent();
+  const Value *IRGuard = TLI.getSDStackGuard(M);
+  assert(IRGuard && "Currently there must be an IR guard in order to use "
+                    "SelectionDAG SSP");
   SDValue GuardPtr = getValue(IRGuard);
   SDValue StackSlotPtr = DAG.getFrameIndex(FI, PtrTy);
 
@@ -5117,7 +5120,8 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   case Intrinsic::trunc:
   case Intrinsic::rint:
   case Intrinsic::nearbyint:
-  case Intrinsic::round: {
+  case Intrinsic::round:
+  case Intrinsic::canonicalize: {
     unsigned Opcode;
     switch (Intrinsic) {
     default: llvm_unreachable("Impossible intrinsic");  // Can't reach here.
@@ -5131,6 +5135,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     case Intrinsic::rint:      Opcode = ISD::FRINT;      break;
     case Intrinsic::nearbyint: Opcode = ISD::FNEARBYINT; break;
     case Intrinsic::round:     Opcode = ISD::FROUND;     break;
+    case Intrinsic::canonicalize: Opcode = ISD::FCANONICALIZE; break;
     }
 
     setValue(&I, DAG.getNode(Opcode, sdl,
@@ -5138,18 +5143,28 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
                              getValue(I.getArgOperand(0))));
     return nullptr;
   }
-  case Intrinsic::minnum:
-    setValue(&I, DAG.getNode(ISD::FMINNUM, sdl,
-                             getValue(I.getArgOperand(0)).getValueType(),
+  case Intrinsic::minnum: {
+    auto VT = getValue(I.getArgOperand(0)).getValueType();
+    unsigned Opc =
+        I.hasNoNaNs() && TLI.isOperationLegalOrCustom(ISD::FMINNAN, VT)
+            ? ISD::FMINNAN
+            : ISD::FMINNUM;
+    setValue(&I, DAG.getNode(Opc, sdl, VT,
                              getValue(I.getArgOperand(0)),
                              getValue(I.getArgOperand(1))));
     return nullptr;
-  case Intrinsic::maxnum:
-    setValue(&I, DAG.getNode(ISD::FMAXNUM, sdl,
-                             getValue(I.getArgOperand(0)).getValueType(),
+  }
+  case Intrinsic::maxnum: {
+    auto VT = getValue(I.getArgOperand(0)).getValueType();
+    unsigned Opc =
+        I.hasNoNaNs() && TLI.isOperationLegalOrCustom(ISD::FMAXNAN, VT)
+            ? ISD::FMAXNAN
+            : ISD::FMAXNUM;
+    setValue(&I, DAG.getNode(Opc, sdl, VT,
                              getValue(I.getArgOperand(0)),
                              getValue(I.getArgOperand(1))));
     return nullptr;
+  }
   case Intrinsic::copysign:
     setValue(&I, DAG.getNode(ISD::FCOPYSIGN, sdl,
                              getValue(I.getArgOperand(0)).getValueType(),
@@ -5517,18 +5532,6 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   case Intrinsic::invariant_end:
     // Discard region information.
     return nullptr;
-  case Intrinsic::stackprotectorcheck: {
-    // Do not actually emit anything for this basic block. Instead we initialize
-    // the stack protector descriptor and export the guard variable so we can
-    // access it in FinishBasicBlock.
-    const BasicBlock *BB = I.getParent();
-    SPDescriptor.initialize(BB, FuncInfo.MBBMap[BB], I);
-    ExportFromCurrentBlock(SPDescriptor.getGuard());
-
-    // Flush our exports since we are going to process a terminator.
-    (void)getControlRoot();
-    return nullptr;
-  }
   case Intrinsic::clear_cache:
     return TLI.getClearCacheBuiltinName();
   case Intrinsic::donothing:
@@ -5548,7 +5551,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
     return nullptr;
   }
   case Intrinsic::experimental_gc_result: {
-    visitGCResult(I);
+    visitGCResult(cast<GCResultInst>(I));
     return nullptr;
   }
   case Intrinsic::experimental_gc_relocate: {

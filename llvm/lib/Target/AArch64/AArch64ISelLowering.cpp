@@ -412,6 +412,8 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
 
   setOperationAction(ISD::PREFETCH, MVT::Other, Custom);
 
+  setOperationAction(ISD::ATOMIC_CMP_SWAP, MVT::i128, Custom);
+
   // Lower READCYCLECOUNTER using an mrs from PMCCNTR_EL0.
   // This requires the Performance Monitors extension.
   if (Subtarget->hasPerfMon())
@@ -638,86 +640,85 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
     PredictableSelectIsExpensive = true;
 }
 
-void AArch64TargetLowering::addTypeForNEON(EVT VT, EVT PromotedBitwiseVT) {
+void AArch64TargetLowering::addTypeForNEON(MVT VT, MVT PromotedBitwiseVT) {
   if (VT == MVT::v2f32 || VT == MVT::v4f16) {
-    setOperationAction(ISD::LOAD, VT.getSimpleVT(), Promote);
-    AddPromotedToType(ISD::LOAD, VT.getSimpleVT(), MVT::v2i32);
+    setOperationAction(ISD::LOAD, VT, Promote);
+    AddPromotedToType(ISD::LOAD, VT, MVT::v2i32);
 
-    setOperationAction(ISD::STORE, VT.getSimpleVT(), Promote);
-    AddPromotedToType(ISD::STORE, VT.getSimpleVT(), MVT::v2i32);
+    setOperationAction(ISD::STORE, VT, Promote);
+    AddPromotedToType(ISD::STORE, VT, MVT::v2i32);
   } else if (VT == MVT::v2f64 || VT == MVT::v4f32 || VT == MVT::v8f16) {
-    setOperationAction(ISD::LOAD, VT.getSimpleVT(), Promote);
-    AddPromotedToType(ISD::LOAD, VT.getSimpleVT(), MVT::v2i64);
+    setOperationAction(ISD::LOAD, VT, Promote);
+    AddPromotedToType(ISD::LOAD, VT, MVT::v2i64);
 
-    setOperationAction(ISD::STORE, VT.getSimpleVT(), Promote);
-    AddPromotedToType(ISD::STORE, VT.getSimpleVT(), MVT::v2i64);
+    setOperationAction(ISD::STORE, VT, Promote);
+    AddPromotedToType(ISD::STORE, VT, MVT::v2i64);
   }
 
   // Mark vector float intrinsics as expand.
   if (VT == MVT::v2f32 || VT == MVT::v4f32 || VT == MVT::v2f64) {
-    setOperationAction(ISD::FSIN, VT.getSimpleVT(), Expand);
-    setOperationAction(ISD::FCOS, VT.getSimpleVT(), Expand);
-    setOperationAction(ISD::FPOWI, VT.getSimpleVT(), Expand);
-    setOperationAction(ISD::FPOW, VT.getSimpleVT(), Expand);
-    setOperationAction(ISD::FLOG, VT.getSimpleVT(), Expand);
-    setOperationAction(ISD::FLOG2, VT.getSimpleVT(), Expand);
-    setOperationAction(ISD::FLOG10, VT.getSimpleVT(), Expand);
-    setOperationAction(ISD::FEXP, VT.getSimpleVT(), Expand);
-    setOperationAction(ISD::FEXP2, VT.getSimpleVT(), Expand);
+    setOperationAction(ISD::FSIN, VT, Expand);
+    setOperationAction(ISD::FCOS, VT, Expand);
+    setOperationAction(ISD::FPOWI, VT, Expand);
+    setOperationAction(ISD::FPOW, VT, Expand);
+    setOperationAction(ISD::FLOG, VT, Expand);
+    setOperationAction(ISD::FLOG2, VT, Expand);
+    setOperationAction(ISD::FLOG10, VT, Expand);
+    setOperationAction(ISD::FEXP, VT, Expand);
+    setOperationAction(ISD::FEXP2, VT, Expand);
 
     // But we do support custom-lowering for FCOPYSIGN.
-    setOperationAction(ISD::FCOPYSIGN, VT.getSimpleVT(), Custom);
+    setOperationAction(ISD::FCOPYSIGN, VT, Custom);
   }
 
-  setOperationAction(ISD::EXTRACT_VECTOR_ELT, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::INSERT_VECTOR_ELT, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::BUILD_VECTOR, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::VECTOR_SHUFFLE, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::EXTRACT_SUBVECTOR, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::SRA, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::SRL, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::SHL, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::AND, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::OR, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::SETCC, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::CONCAT_VECTORS, VT.getSimpleVT(), Legal);
+  setOperationAction(ISD::EXTRACT_VECTOR_ELT, VT, Custom);
+  setOperationAction(ISD::INSERT_VECTOR_ELT, VT, Custom);
+  setOperationAction(ISD::BUILD_VECTOR, VT, Custom);
+  setOperationAction(ISD::VECTOR_SHUFFLE, VT, Custom);
+  setOperationAction(ISD::EXTRACT_SUBVECTOR, VT, Custom);
+  setOperationAction(ISD::SRA, VT, Custom);
+  setOperationAction(ISD::SRL, VT, Custom);
+  setOperationAction(ISD::SHL, VT, Custom);
+  setOperationAction(ISD::AND, VT, Custom);
+  setOperationAction(ISD::OR, VT, Custom);
+  setOperationAction(ISD::SETCC, VT, Custom);
+  setOperationAction(ISD::CONCAT_VECTORS, VT, Legal);
 
-  setOperationAction(ISD::SELECT, VT.getSimpleVT(), Expand);
-  setOperationAction(ISD::SELECT_CC, VT.getSimpleVT(), Expand);
-  setOperationAction(ISD::VSELECT, VT.getSimpleVT(), Expand);
+  setOperationAction(ISD::SELECT, VT, Expand);
+  setOperationAction(ISD::SELECT_CC, VT, Expand);
+  setOperationAction(ISD::VSELECT, VT, Expand);
   for (MVT InnerVT : MVT::all_valuetypes())
-    setLoadExtAction(ISD::EXTLOAD, InnerVT, VT.getSimpleVT(), Expand);
+    setLoadExtAction(ISD::EXTLOAD, InnerVT, VT, Expand);
 
   // CNT supports only B element sizes.
   if (VT != MVT::v8i8 && VT != MVT::v16i8)
-    setOperationAction(ISD::CTPOP, VT.getSimpleVT(), Expand);
+    setOperationAction(ISD::CTPOP, VT, Expand);
 
-  setOperationAction(ISD::UDIV, VT.getSimpleVT(), Expand);
-  setOperationAction(ISD::SDIV, VT.getSimpleVT(), Expand);
-  setOperationAction(ISD::UREM, VT.getSimpleVT(), Expand);
-  setOperationAction(ISD::SREM, VT.getSimpleVT(), Expand);
-  setOperationAction(ISD::FREM, VT.getSimpleVT(), Expand);
+  setOperationAction(ISD::UDIV, VT, Expand);
+  setOperationAction(ISD::SDIV, VT, Expand);
+  setOperationAction(ISD::UREM, VT, Expand);
+  setOperationAction(ISD::SREM, VT, Expand);
+  setOperationAction(ISD::FREM, VT, Expand);
 
-  setOperationAction(ISD::FP_TO_SINT, VT.getSimpleVT(), Custom);
-  setOperationAction(ISD::FP_TO_UINT, VT.getSimpleVT(), Custom);
+  setOperationAction(ISD::FP_TO_SINT, VT, Custom);
+  setOperationAction(ISD::FP_TO_UINT, VT, Custom);
 
   // [SU][MIN|MAX] are available for all NEON types apart from i64.
-  if (!VT.isFloatingPoint() &&
-      VT.getSimpleVT() != MVT::v2i64 && VT.getSimpleVT() != MVT::v1i64)
+  if (!VT.isFloatingPoint() && VT != MVT::v2i64 && VT != MVT::v1i64)
     for (unsigned Opcode : {ISD::SMIN, ISD::SMAX, ISD::UMIN, ISD::UMAX})
-      setOperationAction(Opcode, VT.getSimpleVT(), Legal);
+      setOperationAction(Opcode, VT, Legal);
 
   // F[MIN|MAX][NUM|NAN] are available for all FP NEON types (not f16 though!).
   if (VT.isFloatingPoint() && VT.getVectorElementType() != MVT::f16)
     for (unsigned Opcode : {ISD::FMINNAN, ISD::FMAXNAN,
                             ISD::FMINNUM, ISD::FMAXNUM})
-      setOperationAction(Opcode, VT.getSimpleVT(), Legal);
+      setOperationAction(Opcode, VT, Legal);
 
   if (Subtarget->isLittleEndian()) {
     for (unsigned im = (unsigned)ISD::PRE_INC;
          im != (unsigned)ISD::LAST_INDEXED_MODE; ++im) {
-      setIndexedLoadAction(im, VT.getSimpleVT(), Legal);
-      setIndexedStoreAction(im, VT.getSimpleVT(), Legal);
+      setIndexedLoadAction(im, VT, Legal);
+      setIndexedStoreAction(im, VT, Legal);
     }
   }
 }
@@ -2636,6 +2637,7 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
   }
 
   // varargs
+  AArch64FunctionInfo *FuncInfo = MF.getInfo<AArch64FunctionInfo>();
   if (isVarArg) {
     if (!Subtarget->isTargetDarwin()) {
       // The AAPCS variadic function ABI is identical to the non-variadic
@@ -2644,15 +2646,13 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
       saveVarArgRegisters(CCInfo, DAG, DL, Chain);
     }
 
-    AArch64FunctionInfo *AFI = MF.getInfo<AArch64FunctionInfo>();
     // This will point to the next argument passed via stack.
     unsigned StackOffset = CCInfo.getNextStackOffset();
     // We currently pass all varargs at 8-byte alignment.
     StackOffset = ((StackOffset + 7) & ~7);
-    AFI->setVarArgsStackIndex(MFI->CreateFixedObject(4, StackOffset, true));
+    FuncInfo->setVarArgsStackIndex(MFI->CreateFixedObject(4, StackOffset, true));
   }
 
-  AArch64FunctionInfo *FuncInfo = MF.getInfo<AArch64FunctionInfo>();
   unsigned StackArgSize = CCInfo.getNextStackOffset();
   bool TailCallOpt = MF.getTarget().Options.GuaranteedTailCallOpt;
   if (DoesCalleeRestoreStack(CallConv, TailCallOpt)) {
@@ -2876,10 +2876,11 @@ bool AArch64TargetLowering::isEligibleForTailCallOptimization(
                                   CCAssignFnForCall(CallerCC, isVarArg)))
     return false;
   // The callee has to preserve all registers the caller needs to preserve.
+  const AArch64RegisterInfo *TRI = Subtarget->getRegisterInfo();
+  const uint32_t *CallerPreserved = TRI->getCallPreservedMask(MF, CallerCC);
   if (!CCMatch) {
-    const AArch64RegisterInfo *TRI = Subtarget->getRegisterInfo();
-    if (!TRI->regmaskSubsetEqual(TRI->getCallPreservedMask(MF, CallerCC),
-                                 TRI->getCallPreservedMask(MF, CalleeCC)))
+    const uint32_t *CalleePreserved = TRI->getCallPreservedMask(MF, CalleeCC);
+    if (!TRI->regmaskSubsetEqual(CallerPreserved, CalleePreserved))
       return false;
   }
 
@@ -2894,9 +2895,16 @@ bool AArch64TargetLowering::isEligibleForTailCallOptimization(
 
   const AArch64FunctionInfo *FuncInfo = MF.getInfo<AArch64FunctionInfo>();
 
-  // If the stack arguments for this call would fit into our own save area then
-  // the call can be made tail.
-  return CCInfo.getNextStackOffset() <= FuncInfo->getBytesInStackArgArea();
+  // If the stack arguments for this call do not fit into our own save area then
+  // the call cannot be made tail.
+  if (CCInfo.getNextStackOffset() > FuncInfo->getBytesInStackArgArea())
+    return false;
+
+  const MachineRegisterInfo &MRI = MF.getRegInfo();
+  if (!parametersInCSRMatch(MRI, CallerPreserved, ArgLocs, OutVals))
+    return false;
+
+  return true;
 }
 
 SDValue AArch64TargetLowering::addTokenForArgument(SDValue Chain,
@@ -10043,6 +10051,31 @@ static void ReplaceReductionResults(SDNode *N,
   Results.push_back(SplitVal);
 }
 
+static void ReplaceCMP_SWAP_128Results(SDNode *N,
+                                       SmallVectorImpl<SDValue> & Results,
+                                       SelectionDAG &DAG) {
+  assert(N->getValueType(0) == MVT::i128 &&
+         "AtomicCmpSwap on types less than 128 should be legal");
+  SDValue Ops[] = {N->getOperand(1),
+                   N->getOperand(2)->getOperand(0),
+                   N->getOperand(2)->getOperand(1),
+                   N->getOperand(3)->getOperand(0),
+                   N->getOperand(3)->getOperand(1),
+                   N->getOperand(0)};
+  SDNode *CmpSwap = DAG.getMachineNode(
+      AArch64::CMP_SWAP_128, SDLoc(N),
+      DAG.getVTList(MVT::i64, MVT::i64, MVT::i32, MVT::Other), Ops);
+
+  MachineFunction &MF = DAG.getMachineFunction();
+  MachineSDNode::mmo_iterator MemOp = MF.allocateMemRefsArray(1);
+  MemOp[0] = cast<MemSDNode>(N)->getMemOperand();
+  cast<MachineSDNode>(CmpSwap)->setMemRefs(MemOp, MemOp + 1);
+
+  Results.push_back(SDValue(CmpSwap, 0));
+  Results.push_back(SDValue(CmpSwap, 1));
+  Results.push_back(SDValue(CmpSwap, 3));
+}
+
 void AArch64TargetLowering::ReplaceNodeResults(
     SDNode *N, SmallVectorImpl<SDValue> &Results, SelectionDAG &DAG) const {
   switch (N->getOpcode()) {
@@ -10073,6 +10106,9 @@ void AArch64TargetLowering::ReplaceNodeResults(
   case ISD::FP_TO_SINT:
     assert(N->getValueType(0) == MVT::i128 && "unexpected illegal conversion");
     // Let normal code take care of it by not adding anything to Results.
+    return;
+  case ISD::ATOMIC_CMP_SWAP:
+    ReplaceCMP_SWAP_128Results(N, Results, DAG);
     return;
   }
 }
@@ -10125,7 +10161,12 @@ AArch64TargetLowering::shouldExpandAtomicRMWInIR(AtomicRMWInst *AI) const {
 
 bool AArch64TargetLowering::shouldExpandAtomicCmpXchgInIR(
     AtomicCmpXchgInst *AI) const {
-  return true;
+  // At -O0, fast-regalloc cannot cope with the live vregs necessary to
+  // implement cmpxchg without spilling. If the address being exchanged is also
+  // on the stack and close enough to the spill slot, this can lead to a
+  // situation where the monitor always gets cleared and the atomic operation
+  // can never succeed. So at -O0 we need a late-expanded pseudo-inst instead.
+  return getTargetMachine().getOptLevel() != 0;
 }
 
 Value *AArch64TargetLowering::emitLoadLinked(IRBuilder<> &Builder, Value *Addr,
@@ -10212,9 +10253,9 @@ bool AArch64TargetLowering::shouldNormalizeToSelectSequence(LLVMContext &,
   return false;
 }
 
-Value *AArch64TargetLowering::getStackCookieLocation(IRBuilder<> &IRB) const {
+Value *AArch64TargetLowering::getIRStackGuard(IRBuilder<> &IRB) const {
   if (!Subtarget->isTargetAndroid())
-    return TargetLowering::getStackCookieLocation(IRB);
+    return TargetLowering::getIRStackGuard(IRB);
 
   // Android provides a fixed TLS slot for the stack cookie. See the definition
   // of TLS_SLOT_STACK_GUARD in

@@ -14,6 +14,7 @@
 #include "LLParser.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/AsmParser/SlotMapping.h"
 #include "llvm/IR/AutoUpgrade.h"
 #include "llvm/IR/CallingConv.h"
@@ -1051,6 +1052,15 @@ bool LLParser::ParseFnAttributeValuePairs(AttrBuilder &B,
       B.addStackAlignmentAttr(Alignment);
       continue;
     }
+    case lltok::kw_allocsize: {
+      unsigned ElemSizeArg;
+      Optional<unsigned> NumElemsArg;
+      // inAttrGrp doesn't matter; we only support allocsize(a[, b])
+      if (parseAllocSizeArguments(ElemSizeArg, NumElemsArg))
+        return true;
+      B.addAllocSizeAttr(ElemSizeArg, NumElemsArg);
+      continue;
+    }
     case lltok::kw_alwaysinline: B.addAttribute(Attribute::AlwaysInline); break;
     case lltok::kw_argmemonly: B.addAttribute(Attribute::ArgMemOnly); break;
     case lltok::kw_builtin: B.addAttribute(Attribute::Builtin); break;
@@ -1787,6 +1797,35 @@ bool LLParser::ParseOptionalCommaAlign(unsigned &Alignment,
     if (ParseOptionalAlignment(Alignment)) return true;
   }
 
+  return false;
+}
+
+bool LLParser::parseAllocSizeArguments(unsigned &BaseSizeArg,
+                                       Optional<unsigned> &HowManyArg) {
+  Lex.Lex();
+
+  auto StartParen = Lex.getLoc();
+  if (!EatIfPresent(lltok::lparen))
+    return Error(StartParen, "expected '('");
+
+  if (ParseUInt32(BaseSizeArg))
+    return true;
+
+  if (EatIfPresent(lltok::comma)) {
+    auto HowManyAt = Lex.getLoc();
+    unsigned HowMany;
+    if (ParseUInt32(HowMany))
+      return true;
+    if (HowMany == BaseSizeArg)
+      return Error(HowManyAt,
+                   "'allocsize' indices can't refer to the same parameter");
+    HowManyArg = HowMany;
+  } else
+    HowManyArg = None;
+
+  auto EndParen = Lex.getLoc();
+  if (!EatIfPresent(lltok::rparen))
+    return Error(EndParen, "expected ')'");
   return false;
 }
 
@@ -3836,8 +3875,7 @@ bool LLParser::ParseDIFile(MDNode *&Result, bool IsDistinct) {
 ///   ::= !DICompileUnit(language: DW_LANG_C99, file: !0, producer: "clang",
 ///                      isOptimized: true, flags: "-O2", runtimeVersion: 1,
 ///                      splitDebugFilename: "abc.debug",
-///                      emissionKind: FullDebug,
-///                      enums: !1, retainedTypes: !2, subprograms: !3,
+///                      emissionKind: FullDebug, enums: !1, retainedTypes: !2,
 ///                      globals: !4, imports: !5, macros: !6, dwoId: 0x0abcd)
 bool LLParser::ParseDICompileUnit(MDNode *&Result, bool IsDistinct) {
   if (!IsDistinct)
@@ -3854,7 +3892,6 @@ bool LLParser::ParseDICompileUnit(MDNode *&Result, bool IsDistinct) {
   OPTIONAL(emissionKind, EmissionKindField, );                                 \
   OPTIONAL(enums, MDField, );                                                  \
   OPTIONAL(retainedTypes, MDField, );                                          \
-  OPTIONAL(subprograms, MDField, );                                            \
   OPTIONAL(globals, MDField, );                                                \
   OPTIONAL(imports, MDField, );                                                \
   OPTIONAL(macros, MDField, );                                                 \
@@ -3865,8 +3902,7 @@ bool LLParser::ParseDICompileUnit(MDNode *&Result, bool IsDistinct) {
   Result = DICompileUnit::getDistinct(
       Context, language.Val, file.Val, producer.Val, isOptimized.Val, flags.Val,
       runtimeVersion.Val, splitDebugFilename.Val, emissionKind.Val, enums.Val,
-      retainedTypes.Val, subprograms.Val, globals.Val, imports.Val, macros.Val,
-      dwoId.Val);
+      retainedTypes.Val, globals.Val, imports.Val, macros.Val, dwoId.Val);
   return false;
 }
 
@@ -3895,6 +3931,7 @@ bool LLParser::ParseDISubprogram(MDNode *&Result, bool IsDistinct) {
   OPTIONAL(virtualIndex, MDUnsignedField, (0, UINT32_MAX));                    \
   OPTIONAL(flags, DIFlagField, );                                              \
   OPTIONAL(isOptimized, MDBoolField, );                                        \
+  OPTIONAL(unit, MDField, );                                                   \
   OPTIONAL(templateParams, MDField, );                                         \
   OPTIONAL(declaration, MDField, );                                            \
   OPTIONAL(variables, MDField, );
@@ -3907,11 +3944,11 @@ bool LLParser::ParseDISubprogram(MDNode *&Result, bool IsDistinct) {
         "missing 'distinct', required for !DISubprogram when 'isDefinition'");
 
   Result = GET_OR_DISTINCT(
-      DISubprogram,
-      (Context, scope.Val, name.Val, linkageName.Val, file.Val, line.Val,
-       type.Val, isLocal.Val, isDefinition.Val, scopeLine.Val,
-       containingType.Val, virtuality.Val, virtualIndex.Val, flags.Val,
-       isOptimized.Val, templateParams.Val, declaration.Val, variables.Val));
+      DISubprogram, (Context, scope.Val, name.Val, linkageName.Val, file.Val,
+                     line.Val, type.Val, isLocal.Val, isDefinition.Val,
+                     scopeLine.Val, containingType.Val, virtuality.Val,
+                     virtualIndex.Val, flags.Val, isOptimized.Val, unit.Val,
+                     templateParams.Val, declaration.Val, variables.Val));
   return false;
 }
 

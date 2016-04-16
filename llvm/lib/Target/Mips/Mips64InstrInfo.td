@@ -63,6 +63,10 @@ def PowerOf2HI : PatLeaf<(imm), [{
     return false;
 }]>;
 
+def assertzext_lt_i32 : PatFrag<(ops node:$src), (assertzext node:$src), [{
+  return cast<VTSDNode>(N->getOperand(1))->getVT().bitsLT(MVT::i32);
+}]>;
+
 //===----------------------------------------------------------------------===//
 // Instructions specific format
 //===----------------------------------------------------------------------===//
@@ -224,10 +228,12 @@ def PseudoDMULT  : MultDivPseudo<DMULT, ACC128, GPR64Opnd, MipsMult,
                                  II_DMULT>, ISA_MIPS3_NOT_32R6_64R6;
 def PseudoDMULTu : MultDivPseudo<DMULTu, ACC128, GPR64Opnd, MipsMultu,
                                  II_DMULTU>, ISA_MIPS3_NOT_32R6_64R6;
-def DSDIV : Div<"ddiv", II_DDIV, GPR64Opnd, [HI0_64, LO0_64]>,
-            MULT_FM<0, 0x1e>, ISA_MIPS3_NOT_32R6_64R6;
-def DUDIV : Div<"ddivu", II_DDIVU, GPR64Opnd, [HI0_64, LO0_64]>,
-            MULT_FM<0, 0x1f>, ISA_MIPS3_NOT_32R6_64R6;
+let AdditionalPredicates = [NotInMicroMips] in {
+  def DSDIV : Div<"ddiv", II_DDIV, GPR64Opnd, [HI0_64, LO0_64]>,
+              MULT_FM<0, 0x1e>, ISA_MIPS3_NOT_32R6_64R6;
+  def DUDIV : Div<"ddivu", II_DDIVU, GPR64Opnd, [HI0_64, LO0_64]>,
+              MULT_FM<0, 0x1f>, ISA_MIPS3_NOT_32R6_64R6;
+}
 def PseudoDSDIV : MultDivPseudo<DSDIV, ACC128, GPR64Opnd, MipsDivRem,
                                 II_DDIV, 0, 1, 1>, ISA_MIPS3_NOT_32R6_64R6;
 def PseudoDUDIV : MultDivPseudo<DUDIV, ACC128, GPR64Opnd, MipsDivRemU,
@@ -509,7 +515,17 @@ defm : SetgeImmPats<GPR64, SLTi64, SLTiu64>;
 // truncate
 def : MipsPat<(trunc (assertsext GPR64:$src)),
               (EXTRACT_SUBREG GPR64:$src, sub_32)>;
-def : MipsPat<(trunc (assertzext GPR64:$src)),
+// The forward compatibility strategy employed by MIPS requires us to treat
+// values as being sign extended to an infinite number of bits. This allows
+// existing software to run without modification on any future MIPS
+// implementation (e.g. 128-bit, or 1024-bit). Being compatible with this
+// strategy requires that truncation acts as a sign-extension for values being
+// fed into instructions operating on 32-bit values. Such instructions have
+// undefined results if this is not true.
+// For our case, this means that we can't issue an extract_subreg for nodes
+// such as (trunc:i32 (assertzext:i64 X, i32)), because the sign-bit of the
+// lower subreg would not be replicated into the upper half.
+def : MipsPat<(trunc (assertzext_lt_i32 GPR64:$src)),
               (EXTRACT_SUBREG GPR64:$src, sub_32)>;
 def : MipsPat<(i32 (trunc GPR64:$src)),
               (SLL (EXTRACT_SUBREG GPR64:$src, sub_32), 0)>;

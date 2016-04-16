@@ -48,11 +48,12 @@ declare void @ibar(i32*) #1
 
 !llvm.module.flags = !{!7, !8}
 !llvm.ident = !{!9}
+!llvm.dbg.cu = !{!24}
 
 !1 = !DIFile(filename: "vectorization-remarks.c", directory: ".")
 !2 = !{}
 !3 = !{!4}
-!4 = distinct !DISubprogram(name: "foo", line: 5, isLocal: false, isDefinition: true, virtualIndex: 6, flags: DIFlagPrototyped, isOptimized: true, scopeLine: 6, file: !1, scope: !5, type: !6, variables: !2)
+!4 = distinct !DISubprogram(name: "foo", line: 5, isLocal: false, isDefinition: true, virtualIndex: 6, flags: DIFlagPrototyped, isOptimized: true, unit: !24, scopeLine: 6, file: !1, scope: !5, type: !6, variables: !2)
 !5 = !DIFile(filename: "vectorization-remarks.c", directory: ".")
 !6 = !DISubroutineType(types: !2)
 !7 = !{i32 2, !"Dwarf Version", i32 4}
@@ -72,3 +73,4 @@ declare void @ibar(i32*) #1
 !21 = !{!13, !13, i64 0}
 !22 = !DILocation(line: 20, column: 3, scope: !4)
 !23 = !DILocation(line: 21, column: 3, scope: !4)
+!24 = distinct !DICompileUnit(language: DW_LANG_C89, file: !1)

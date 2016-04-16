@@ -844,10 +844,6 @@ def li16_imm : Operand<i32> {
   let ParserMatchClass = ConstantUImm7Sub1AsmOperandClass;
 }
 
-
-def pcrel16      : Operand<i32> {
-}
-
 def MipsMemAsmOperand : AsmOperandClass {
   let Name = "Mem";
   let ParserMethod = "parseMemOperand";
@@ -1385,8 +1381,8 @@ class DEI_FT<string opstr, RegisterOperand RO> :
 // Sync
 let hasSideEffects = 1 in
 class SYNC_FT<string opstr> :
-  InstSE<(outs), (ins i32imm:$stype), "sync $stype", [(MipsSync imm:$stype)],
-         NoItinerary, FrmOther, opstr>;
+  InstSE<(outs), (ins uimm5:$stype), "sync $stype",
+         [(MipsSync immZExt5:$stype)], NoItinerary, FrmOther, opstr>;
 
 class SYNCI_FT<string opstr> :
   InstSE<(outs), (ins mem_simm16:$addr), !strconcat(opstr, "\t$addr"), [],
@@ -1769,7 +1765,8 @@ let DecoderNamespace = "COP3_" in {
 }
 }
 
-def SYNC : MMRel, StdMMR6Rel, SYNC_FT<"sync">, SYNC_FM, ISA_MIPS32;
+def SYNC : MMRel, StdMMR6Rel, SYNC_FT<"sync">, SYNC_FM,
+           ISA_MIPS32;
 def SYNCI : MMRel, StdMMR6Rel, SYNCI_FT<"synci">, SYNCI_FM, ISA_MIPS32R2;
 
 let AdditionalPredicates = [NotInMicroMips] in {
@@ -1930,11 +1927,12 @@ def MULT  : MMRel, Mult<"mult", II_MULT, GPR32Opnd, [HI0, LO0]>,
             MULT_FM<0, 0x18>, ISA_MIPS1_NOT_32R6_64R6;
 def MULTu : MMRel, Mult<"multu", II_MULTU, GPR32Opnd, [HI0, LO0]>,
             MULT_FM<0, 0x19>, ISA_MIPS1_NOT_32R6_64R6;
-def SDIV  : MMRel, Div<"div", II_DIV, GPR32Opnd, [HI0, LO0]>,
-            MULT_FM<0, 0x1a>, ISA_MIPS1_NOT_32R6_64R6;
-def UDIV  : MMRel, Div<"divu", II_DIVU, GPR32Opnd, [HI0, LO0]>,
-            MULT_FM<0, 0x1b>, ISA_MIPS1_NOT_32R6_64R6;
-
+let AdditionalPredicates = [NotInMicroMips] in {
+  def SDIV  : MMRel, Div<"div", II_DIV, GPR32Opnd, [HI0, LO0]>,
+              MULT_FM<0, 0x1a>, ISA_MIPS1_NOT_32R6_64R6;
+  def UDIV  : MMRel, Div<"divu", II_DIVU, GPR32Opnd, [HI0, LO0]>,
+              MULT_FM<0, 0x1b>, ISA_MIPS1_NOT_32R6_64R6;
+}
 def MTHI : MMRel, MoveToLOHI<"mthi", GPR32Opnd, [HI0]>, MTLO_FM<0x11>,
            ISA_MIPS1_NOT_32R6_64R6;
 def MTLO : MMRel, MoveToLOHI<"mtlo", GPR32Opnd, [LO0]>, MTLO_FM<0x13>,
@@ -2002,12 +2000,12 @@ def PseudoMSUBU : MAddSubPseudo<MSUBU, MipsMSubu, II_MSUBU>,
                   ISA_MIPS32_NOT_32R6_64R6;
 }
 
-def PseudoSDIV : MultDivPseudo<SDIV, ACC64, GPR32Opnd, MipsDivRem, II_DIV,
-                               0, 1, 1>, ISA_MIPS1_NOT_32R6_64R6;
-def PseudoUDIV : MultDivPseudo<UDIV, ACC64, GPR32Opnd, MipsDivRemU, II_DIVU,
-                               0, 1, 1>, ISA_MIPS1_NOT_32R6_64R6;
 let AdditionalPredicates = [NotInMicroMips] in {
-def RDHWR : MMRel, ReadHardware<GPR32Opnd, HWRegsOpnd>, RDHWR_FM;
+  def PseudoSDIV : MultDivPseudo<SDIV, ACC64, GPR32Opnd, MipsDivRem, II_DIV,
+                                 0, 1, 1>, ISA_MIPS1_NOT_32R6_64R6;
+  def PseudoUDIV : MultDivPseudo<UDIV, ACC64, GPR32Opnd, MipsDivRemU, II_DIVU,
+                                 0, 1, 1>, ISA_MIPS1_NOT_32R6_64R6;
+  def RDHWR : MMRel, ReadHardware<GPR32Opnd, HWRegsOpnd>, RDHWR_FM;
 }
 // TODO: Add '0 < pos+size <= 32' constraint check to ext instruction
 def EXT : MMRel, ExtBase<"ext", GPR32Opnd, uimm5, uimm5_plus1, immZExt5,
@@ -2362,10 +2360,10 @@ def SDivMacro : MipsAsmPseudoInst<(outs), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
 def UDivMacro : MipsAsmPseudoInst<(outs), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
                                   "divu\t$rs, $rt">; //, ISA_MIPS1_NOT_32R6_64R6;
 
-def DSDivMacro : MipsAsmPseudoInst<(outs), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+def DSDivMacro : MipsAsmPseudoInst<(outs), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
                                    "ddiv\t$rs, $rt">; //, ISA_MIPS64_NOT_64R6;
 
-def DUDivMacro : MipsAsmPseudoInst<(outs), (ins GPR32Opnd:$rs, GPR32Opnd:$rt),
+def DUDivMacro : MipsAsmPseudoInst<(outs), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
                                    "ddivu\t$rs, $rt">; //, ISA_MIPS64_NOT_64R6;
 
 def Ulh : MipsAsmPseudoInst<(outs GPR32Opnd:$rt), (ins mem:$addr),

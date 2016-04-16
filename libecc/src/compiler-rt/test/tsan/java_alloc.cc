@@ -25,8 +25,12 @@ int main() {
   pthread_create(&th, 0, Thread, (void*)(jheap + kHeapSize / 4));
   stress(jheap);
   pthread_join(th, 0);
-  printf("OK\n");
-  return __tsan_java_fini();
+  if (__tsan_java_fini() != 0) {
+    fprintf(stderr, "FAILED\n");
+    return 1;
+  }
+  fprintf(stderr, "DONE\n");
+  return 0;
 }
 
 // CHECK-NOT: WARNING: ThreadSanitizer: data race

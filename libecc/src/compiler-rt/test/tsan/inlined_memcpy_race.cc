@@ -1,4 +1,4 @@
-// RUN: %clangxx_tsan -O1 %s -o %t && not %run %t 2>&1 | FileCheck %s
+// RUN: %clangxx_tsan -O1 %s -o %t && %deflake %run %t 2>&1 | FileCheck %s
 #include "test.h"
 #include <string.h>
 
@@ -29,13 +29,7 @@ int main() {
   pthread_create(&t[1], NULL, MemSetThread, x);
   pthread_join(t[0], NULL);
   pthread_join(t[1], NULL);
-  // Race on y between memmove and memset
-  pthread_create(&t[0], NULL, MemMoveThread, y);
-  pthread_create(&t[1], NULL, MemSetThread, y);
-  pthread_join(t[0], NULL);
-  pthread_join(t[1], NULL);
-
-  printf("PASS\n");
+  fprintf(stderr, "PASS\n");
   return 0;
 }
 

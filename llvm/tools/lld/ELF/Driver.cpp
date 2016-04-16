@@ -9,6 +9,7 @@
 
 #include "Driver.h"
 #include "Config.h"
+#include "DynamicList.h"
 #include "Error.h"
 #include "ICF.h"
 #include "InputFiles.h"
@@ -98,16 +99,12 @@ LinkerDriver::getArchiveMembers(MemoryBufferRef MB) {
 // Newly created memory buffers are owned by this driver.
 void LinkerDriver::addFile(StringRef Path) {
   using namespace llvm::sys::fs;
-  if (Config->Verbose || Config->Trace)
+  if (Config->Verbose)
     llvm::outs() << Path << "\n";
-  auto MBOrErr = MemoryBuffer::getFile(Path);
-  if (!MBOrErr) {
-    error(MBOrErr, "cannot open " + Path);
+  Optional<MemoryBufferRef> Buffer = readFile(Path);
+  if (!Buffer.hasValue())
     return;
-  }
-  std::unique_ptr<MemoryBuffer> &MB = *MBOrErr;
-  MemoryBufferRef MBRef = MB->getMemBufferRef();
-  OwningMBs.push_back(std::move(MB)); // take MB ownership
+  MemoryBufferRef MBRef = *Buffer;
 
   switch (identify_magic(MBRef.getBuffer())) {
   case file_magic::unknown:
@@ -134,6 +131,22 @@ void LinkerDriver::addFile(StringRef Path) {
     else
       Files.push_back(createObjectFile(MBRef));
   }
+}
+
+Optional<MemoryBufferRef> LinkerDriver::readFile(StringRef Path) {
+  auto MBOrErr = MemoryBuffer::getFile(Path);
+  error(MBOrErr, "cannot open " + Path);
+  if (HasError)
+    return None;
+  std::unique_ptr<MemoryBuffer> &MB = *MBOrErr;
+  MemoryBufferRef MBRef = MB->getMemBufferRef();
+  OwningMBs.push_back(std::move(MB)); // take MB ownership
+  return MBRef;
+}
+
+void LinkerDriver::readDynamicList(StringRef Path) {
+  if (Optional<MemoryBufferRef> Buffer = readFile(Path))
+    parseDynamicList(*Buffer);
 }
 
 // Add a given library by searching it from input search paths.
@@ -351,6 +364,9 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
 
   for (auto *Arg : Args.filtered(OPT_undefined))
     Config->Undefined.push_back(Arg->getValue());
+
+  if (Args.hasArg(OPT_dynamic_list))
+    readDynamicList(getString(Args, OPT_dynamic_list));
 }
 
 void LinkerDriver::createFiles(opt::InputArgList &Args) {
@@ -412,15 +428,7 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
     // Set either EntryAddr (if S is a number) or EntrySym (otherwise).
     StringRef S = Config->Entry;
     if (S.getAsInteger(0, Config->EntryAddr))
-      Config->EntrySym = Symtab.addUndefined(S);
-  }
-
-  if (Config->EMachine == EM_MIPS) {
-    // Define _gp for MIPS. st_value of _gp symbol will be updated by Writer
-    // so that it points to an absolute address which is relative to GOT.
-    // See "Global Data Symbols" in Chapter 6 in the following document:
-    // ftp://www.linux-mips.org/pub/linux/mips/doc/ABI/mipsabi.pdf
-    ElfSym<ELFT>::MipsGp = Symtab.addAbsolute("_gp", STV_DEFAULT);
+      Config->EntrySym = Symtab.addUndefined(S)->getSymbol();
   }
 
   for (std::unique_ptr<InputFile> &F : Files)
@@ -445,6 +453,7 @@ template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
 
   // Write the result to the file.
   Symtab.scanShlibUndefined();
+  Symtab.scanDynamicList();
   if (Config->GcSections)
     markLive<ELFT>(&Symtab);
   if (Config->ICF)

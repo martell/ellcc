@@ -962,7 +962,11 @@ namespace llvm {
 
     /// If the target has a standard location for the stack protector cookie,
     /// returns the address of that location. Otherwise, returns nullptr.
-    Value *getStackCookieLocation(IRBuilder<> &IRB) const override;
+    Value *getIRStackGuard(IRBuilder<> &IRB) const override;
+
+    void insertSSPDeclarations(Module &M) const override;
+
+    Value *getSDStackGuard(const Module &M) const override;
 
     /// Return true if the target stores SafeStack pointer at a fixed offset in
     /// some non-standard address space, and populates the address space and
@@ -979,6 +983,10 @@ namespace llvm {
     LegalizeTypeAction getPreferredVectorAction(EVT VT) const override;
 
     bool isIntDivCheap(EVT VT, AttributeSet Attr) const override;
+
+    bool supportSwiftError() const override {
+      return true;
+    }
 
   protected:
     std::pair<const TargetRegisterClass *, uint8_t>

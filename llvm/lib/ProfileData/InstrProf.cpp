@@ -398,8 +398,14 @@ uint64_t InstrProfRecord::remapValue(uint64_t Value, uint32_t ValueKind,
         std::lower_bound(ValueMap->begin(), ValueMap->end(), Value,
                          [](const std::pair<uint64_t, uint64_t> &LHS,
                             uint64_t RHS) { return LHS.first < RHS; });
-    if (Result != ValueMap->end())
+   // Raw function pointer collected by value profiler may be from 
+   // external functions that are not instrumented. They won't have
+   // mapping data to be used by the deserializer. Force the value to
+   // be 0 in this case.
+    if (Result != ValueMap->end() && Result->first == Value)
       Value = (uint64_t)Result->second;
+    else
+      Value = 0;
     break;
   }
   }
@@ -630,6 +636,8 @@ void annotateValueSite(Module &M, Instruction &Inst,
                        InstrProfValueKind ValueKind, uint32_t SiteIdx,
                        uint32_t MaxMDCount) {
   uint32_t NV = InstrProfR.getNumValueDataForSite(ValueKind, SiteIdx);
+  if (!NV)
+    return;
 
   uint64_t Sum = 0;
   std::unique_ptr<InstrProfValueData[]> VD =

@@ -587,6 +587,7 @@ void MDNodeMapper::mapDistinctNodes() {
 
 void MDNodeMapper::mapUniquedNodes() {
   // Construct uniqued nodes, building forward references as necessary.
+  SmallVector<MDNode *, 16> CyclicNodes;
   for (auto *N : POT) {
     if (N->isDistinct())
       continue;
@@ -601,11 +602,12 @@ void MDNodeMapper::mapUniquedNodes() {
 
     TempMDNode ClonedN = D.Placeholder ? std::move(D.Placeholder) : N->clone();
     remapOperands(D, *ClonedN);
-    M.mapToMetadata(N, MDNode::replaceWithUniqued(std::move(ClonedN)));
+    CyclicNodes.push_back(MDNode::replaceWithUniqued(std::move(ClonedN)));
+    M.mapToMetadata(N, CyclicNodes.back());
   }
 
   // Resolve cycles.
-  for (auto *N : POT)
+  for (auto *N : CyclicNodes)
     if (!N->isResolved())
       N->resolveCycles();
 }
@@ -745,11 +747,11 @@ void llvm::RemapInstruction(Instruction *I, ValueToValueMapTy &VM,
 
 void Mapper::remapInstruction(Instruction *I) {
   // Remap operands.
-  for (User::op_iterator op = I->op_begin(), E = I->op_end(); op != E; ++op) {
-    Value *V = mapValue(*op);
+  for (Use &Op : I->operands()) {
+    Value *V = mapValue(Op);
     // If we aren't ignoring missing entries, assert that something happened.
     if (V)
-      *op = V;
+      Op = V;
     else
       assert((Flags & RF_IgnoreMissingLocals) &&
              "Referenced value not in value map!");

@@ -83,6 +83,12 @@ namespace __sanitizer {
                  SANITIZER_ANDROID ? FIRST_32_SECOND_64(104, 128) :
                                      FIRST_32_SECOND_64(144, 216);
   const unsigned struct_kernel_stat64_sz = 104;
+#elif defined(__s390__) && !defined(__s390x__)
+  const unsigned struct_kernel_stat_sz = 64;
+  const unsigned struct_kernel_stat64_sz = 104;
+#elif defined(__s390x__)
+  const unsigned struct_kernel_stat_sz = 144;
+  const unsigned struct_kernel_stat64_sz = 0;
 #endif
   struct __sanitizer_perf_event_attr {
     unsigned type;
@@ -103,7 +109,7 @@ namespace __sanitizer {
 
 #if SANITIZER_LINUX || SANITIZER_FREEBSD
 
-#if defined(__powerpc64__)
+#if defined(__powerpc64__) || defined(__s390__)
   const unsigned struct___old_kernel_stat_sz = 0;
 #else
   const unsigned struct___old_kernel_stat_sz = 32;
@@ -180,7 +186,7 @@ namespace __sanitizer {
     unsigned __seq;
     u64 __unused1;
     u64 __unused2;
-#elif defined(__mips__) || defined(__aarch64__)
+#elif defined(__mips__) || defined(__aarch64__) || defined(__s390x__)
     unsigned int mode;
     unsigned short __seq;
     unsigned short __pad1;
@@ -568,7 +574,11 @@ namespace __sanitizer {
     int sa_flags;
     __sanitizer_sigset_t sa_mask;
 #else
+#if defined(__s390x__)
+    int sa_resv;
+#else
     __sanitizer_sigset_t sa_mask;
+#endif
 #ifndef __mips__
     int sa_flags;
 #endif
@@ -578,6 +588,9 @@ namespace __sanitizer {
 #endif
 #if defined(__mips__) && (SANITIZER_WORDSIZE == 32)
     int sa_resv[1];
+#endif
+#if defined(__s390x__)
+    __sanitizer_sigset_t sa_mask;
 #endif
   };
 #endif // !SANITIZER_ANDROID

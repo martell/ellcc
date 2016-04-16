@@ -22,6 +22,7 @@
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -1807,10 +1808,18 @@ bool CodeGenPrepare::optimizeCallInst(CallInst *CI, bool& ModifiedDT) {
     default: break;
     case Intrinsic::objectsize: {
       // Lower all uses of llvm.objectsize.*
-      bool Min = (cast<ConstantInt>(II->getArgOperand(1))->getZExtValue() == 1);
+      uint64_t Size;
       Type *ReturnTy = CI->getType();
-      Constant *RetVal = ConstantInt::get(ReturnTy, Min ? 0 : -1ULL);
-
+      Constant *RetVal = nullptr;
+      ConstantInt *Op1 = cast<ConstantInt>(II->getArgOperand(1));
+      ObjSizeMode Mode = Op1->isZero() ? ObjSizeMode::Max : ObjSizeMode::Min;
+      if (getObjectSize(II->getArgOperand(0),
+                        Size, *DL, TLInfo, false, Mode)) {
+        RetVal = ConstantInt::get(ReturnTy, Size);
+      } else {
+        RetVal = ConstantInt::get(ReturnTy,
+                                  Mode == ObjSizeMode::Min ? 0 : -1ULL);
+      }
       // Substituting this can cause recursive simplifications, which can
       // invalidate our iterator.  Use a WeakVH to hold onto it in case this
       // happens.
@@ -5368,43 +5377,38 @@ bool CodeGenPrepare::sinkAndCmp(Function &F) {
   if (!TLI || !TLI->isMaskAndBranchFoldingLegal())
     return false;
   bool MadeChange = false;
-  for (Function::iterator I = F.begin(), E = F.end(); I != E; ) {
-    BasicBlock *BB = &*I++;
-
+  for (BasicBlock &BB : F) {
     // Does this BB end with the following?
     //   %andVal = and %val, #single-bit-set
     //   %icmpVal = icmp %andResult, 0
     //   br i1 %cmpVal label %dest1, label %dest2"
-    BranchInst *Brcc = dyn_cast<BranchInst>(BB->getTerminator());
+    BranchInst *Brcc = dyn_cast<BranchInst>(BB.getTerminator());
     if (!Brcc || !Brcc->isConditional())
       continue;
     ICmpInst *Cmp = dyn_cast<ICmpInst>(Brcc->getOperand(0));
-    if (!Cmp || Cmp->getParent() != BB)
+    if (!Cmp || Cmp->getParent() != &BB)
       continue;
     ConstantInt *Zero = dyn_cast<ConstantInt>(Cmp->getOperand(1));
     if (!Zero || !Zero->isZero())
       continue;
     Instruction *And = dyn_cast<Instruction>(Cmp->getOperand(0));
-    if (!And || And->getOpcode() != Instruction::And || And->getParent() != BB)
+    if (!And || And->getOpcode() != Instruction::And || And->getParent() != &BB)
       continue;
     ConstantInt* Mask = dyn_cast<ConstantInt>(And->getOperand(1));
     if (!Mask || !Mask->getUniqueInteger().isPowerOf2())
       continue;
-    DEBUG(dbgs() << "found and; icmp ?,0; brcc\n"); DEBUG(BB->dump());
+    DEBUG(dbgs() << "found and; icmp ?,0; brcc\n"); DEBUG(BB.dump());
 
     // Push the "and; icmp" for any users that are conditional branches.
     // Since there can only be one branch use per BB, we don't need to keep
     // track of which BBs we insert into.
-    for (Value::use_iterator UI = Cmp->use_begin(), E = Cmp->use_end();
-         UI != E; ) {
-      Use &TheUse = *UI;
+    for (Use &TheUse : Cmp->uses()) {
       // Find brcc use.
-      BranchInst *BrccUser = dyn_cast<BranchInst>(*UI);
-      ++UI;
+      BranchInst *BrccUser = dyn_cast<BranchInst>(TheUse);
       if (!BrccUser || !BrccUser->isConditional())
         continue;
       BasicBlock *UserBB = BrccUser->getParent();
-      if (UserBB == BB) continue;
+      if (UserBB == &BB) continue;
       DEBUG(dbgs() << "found Brcc use\n");
 
       // Sink the "and; icmp" to use.

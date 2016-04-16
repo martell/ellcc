@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/Analysis/ModuleSummaryAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Bitcode/BitcodeWriterPass.h"
@@ -172,6 +173,10 @@ static void ResolveODR(GlobalValue &GV, const ModuleSummaryIndex &Index,
 /// one copy.
 static void ResolveODR(Module &TheModule,
                              const ModuleSummaryIndex &Index) {
+  if (Index.modulePaths().size() == 1)
+    // Nothing to do if we don't have multiple modules
+    return;
+
   // We won't optimize the globals that are referenced by an alias for now
   // Ideally we should turn the alias into a global and duplicate the definition
   // when needed.
@@ -326,7 +331,8 @@ ProcessThinLTOModule(Module &TheModule, const ModuleSummaryIndex &Index,
     SmallVector<char, 128> OutputBuffer;
     {
       raw_svector_ostream OS(OutputBuffer);
-      WriteBitcodeToFile(&TheModule, OS, true, true);
+      ModuleSummaryIndexBuilder IndexBuilder(&TheModule);
+      WriteBitcodeToFile(&TheModule, OS, true, &IndexBuilder.getIndex());
     }
     return make_unique<ObjectMemoryBuffer>(std::move(OutputBuffer));
   }

@@ -99,12 +99,13 @@ template <class ELFT> void elf::markLive(SymbolTable<ELFT> *Symtab) {
 
   auto MarkSymbol = [&](SymbolBody *Sym) {
     if (Sym)
-      if (auto *D = dyn_cast<DefinedRegular<ELFT>>(&Sym->repl()))
+      if (auto *D = dyn_cast<DefinedRegular<ELFT>>(Sym))
         Enqueue(D->Section);
   };
 
   // Add GC root symbols.
-  MarkSymbol(Config->EntrySym);
+  if (Config->EntrySym)
+    MarkSymbol(Config->EntrySym->Body);
   MarkSymbol(Symtab->find(Config->Init));
   MarkSymbol(Symtab->find(Config->Fini));
   for (StringRef S : Config->Undefined)
@@ -113,8 +114,8 @@ template <class ELFT> void elf::markLive(SymbolTable<ELFT> *Symtab) {
   // Preserve externally-visible symbols if the symbols defined by this
   // file can interrupt other ELF file's symbols at runtime.
   if (Config->Shared || Config->ExportDynamic) {
-    for (const std::pair<StringRef, Symbol *> &P : Symtab->getSymbols()) {
-      SymbolBody *B = P.second->Body;
+    for (const Symbol *S : Symtab->getSymbols()) {
+      SymbolBody *B = S->Body;
       if (B->getVisibility() == STV_DEFAULT)
         MarkSymbol(B);
     }

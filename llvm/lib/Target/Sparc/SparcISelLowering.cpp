@@ -473,7 +473,7 @@ LowerFormalArguments_32(SDValue Chain,
     auto PtrVT = getPointerTy(DAG.getDataLayout());
 
     if (VA.needsCustom()) {
-      assert(VA.getValVT() == MVT::f64 || MVT::v2i32);
+      assert(VA.getValVT() == MVT::f64 || VA.getValVT() == MVT::v2i32);
       // If it is double-word aligned, just load.
       if (Offset % 8 == 0) {
         int FI = MF.getFrameInfo()->CreateFixedObject(8,
@@ -1611,6 +1611,13 @@ SparcTargetLowering::SparcTargetLowering(TargetMachine &TM,
   }
 
   // ATOMICs.
+  // Atomics are only supported on Sparcv9. (32bit atomics are also
+  // supported by the Leon sparcv8 variant, but we don't support that
+  // yet.)
+  if (Subtarget->isV9())
+    setMaxAtomicSizeInBitsSupported(64);
+  else
+    setMaxAtomicSizeInBitsSupported(0);
 
   setOperationAction(ISD::ATOMIC_SWAP, MVT::i32, Legal);
   setOperationAction(ISD::ATOMIC_CMP_SWAP, MVT::i32,

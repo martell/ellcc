@@ -951,13 +951,10 @@ void Verifier::visitDICompileUnit(const DICompileUnit &N) {
   if (auto *Array = N.getRawRetainedTypes()) {
     Assert(isa<MDTuple>(Array), "invalid retained type list", &N, Array);
     for (Metadata *Op : N.getRetainedTypes()->operands()) {
-      Assert(Op && isa<DIType>(Op), "invalid retained type", &N, Op);
-    }
-  }
-  if (auto *Array = N.getRawSubprograms()) {
-    Assert(isa<MDTuple>(Array), "invalid subprogram list", &N, Array);
-    for (Metadata *Op : N.getSubprograms()->operands()) {
-      Assert(Op && isa<DISubprogram>(Op), "invalid subprogram ref", &N, Op);
+      Assert(Op && (isa<DIType>(Op) ||
+                    (isa<DISubprogram>(Op) &&
+                     cast<DISubprogram>(Op)->isDefinition() == false)),
+             "invalid retained type", &N, Op);
     }
   }
   if (auto *Array = N.getRawGlobalVariables()) {
@@ -994,10 +991,9 @@ void Verifier::visitDISubprogram(const DISubprogram &N) {
          N.getRawContainingType());
   if (auto *Params = N.getRawTemplateParams())
     visitTemplateParams(N, *Params);
-  if (auto *S = N.getRawDeclaration()) {
+  if (auto *S = N.getRawDeclaration())
     Assert(isa<DISubprogram>(S) && !cast<DISubprogram>(S)->isDefinition(),
            "invalid subprogram declaration", &N, S);
-  }
   if (auto *RawVars = N.getRawVariables()) {
     auto *Vars = dyn_cast<MDTuple>(RawVars);
     Assert(Vars, "invalid variable list", &N, RawVars);
@@ -1009,8 +1005,16 @@ void Verifier::visitDISubprogram(const DISubprogram &N) {
   Assert(!hasConflictingReferenceFlags(N.getFlags()), "invalid reference flags",
          &N);
 
-  if (N.isDefinition())
+  auto *Unit = N.getRawUnit();
+  if (N.isDefinition()) {
+    // Subprogram definitions (not part of the type hierarchy).
     Assert(N.isDistinct(), "subprogram definitions must be distinct", &N);
+    Assert(Unit, "subprogram definitions must have a compile unit", &N);
+    Assert(isa<DICompileUnit>(Unit), "invalid unit type", &N, Unit);
+  } else {
+    // Subprogram declarations (part of the type hierarchy).
+    Assert(!Unit, "subprogram declarations must not have a compile unit", &N);
+  }
 }
 
 void Verifier::visitDILexicalBlockBase(const DILexicalBlockBase &N) {
@@ -1313,7 +1317,8 @@ void Verifier::verifyAttributeTypes(AttributeSet Attrs, unsigned Idx,
         I->getKindAsEnum() == Attribute::ArgMemOnly ||
         I->getKindAsEnum() == Attribute::NoRecurse ||
         I->getKindAsEnum() == Attribute::InaccessibleMemOnly ||
-        I->getKindAsEnum() == Attribute::InaccessibleMemOrArgMemOnly) {
+        I->getKindAsEnum() == Attribute::InaccessibleMemOrArgMemOnly ||
+        I->getKindAsEnum() == Attribute::AllocSize) {
       if (!isFunction) {
         CheckFailed("Attribute '" + I->getAsString() +
                     "' only applies to functions!", V);
@@ -1545,6 +1550,33 @@ void Verifier::verifyFunctionAttrs(FunctionType *FT, AttributeSet Attrs,
     Assert(GV->hasUnnamedAddr(),
            "Attribute 'jumptable' requires 'unnamed_addr'", V);
   }
+
+  if (Attrs.hasAttribute(AttributeSet::FunctionIndex, Attribute::AllocSize)) {
+    std::pair<unsigned, Optional<unsigned>> Args =
+        Attrs.getAllocSizeArgs(AttributeSet::FunctionIndex);
+
+    auto CheckParam = [&](StringRef Name, unsigned ParamNo) {
+      if (ParamNo >= FT->getNumParams()) {
+        CheckFailed("'allocsize' " + Name + " argument is out of bounds", V);
+        return false;
+      }
+
+      if (!FT->getParamType(ParamNo)->isIntegerTy()) {
+        CheckFailed("'allocsize' " + Name +
+                        " argument must refer to an integer parameter",
+                    V);
+        return false;
+      }
+
+      return true;
+    };
+
+    if (!CheckParam("element size", Args.first))
+      return;
+
+    if (Args.second && !CheckParam("number of elements", *Args.second))
+      return;
+  }
 }
 
 void Verifier::verifyFunctionMetadata(
@@ -1746,11 +1778,11 @@ void Verifier::verifyStatepoint(ImmutableCallSite CS) {
     const CallInst *Call = dyn_cast<const CallInst>(U);
     Assert(Call, "illegal use of statepoint token", &CI, U);
     if (!Call) continue;
-    Assert(isa<GCRelocateInst>(Call) || isGCResult(Call),
+    Assert(isa<GCRelocateInst>(Call) || isa<GCResultInst>(Call),
            "gc.result or gc.relocate are the only value uses"
            "of a gc.statepoint",
            &CI, U);
-    if (isGCResult(Call)) {
+    if (isa<GCResultInst>(Call)) {
       Assert(Call->getArgOperand(0) == &CI,
              "gc.result connected to wrong gc.statepoint", &CI, Call);
     } else if (isa<GCRelocateInst>(Call)) {
@@ -1994,6 +2026,8 @@ void Verifier::visitFunction(const Function &F) {
   auto *N = F.getSubprogram();
   if (!N)
     return;
+
+  visitDISubprogram(*N);
 
   // Check that all !dbg attachments lead to back to N (or, at least, another
   // subprogram that describes the same function).
@@ -4391,7 +4425,7 @@ void Verifier::verifyTypeRefs() {
     auto *Array = CU->getRawRetainedTypes();
     if (!Array || !isa<MDTuple>(Array))
       continue;
-    for (DIType *Op : CU->getRetainedTypes())
+    for (DIScope *Op : CU->getRetainedTypes())
       if (auto *T = dyn_cast_or_null<DICompositeType>(Op))
         if (auto *S = T->getRawIdentifier()) {
           UnresolvedTypeRefs.erase(S);

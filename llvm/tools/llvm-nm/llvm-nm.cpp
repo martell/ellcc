@@ -343,7 +343,7 @@ static void darwinPrintSymbol(SymbolicFile &Obj, SymbolListT::iterator I,
           MachO::REFERENCE_FLAG_UNDEFINED_LAZY)
         outs() << "undefined [lazy bound]) ";
       else if ((NDesc & MachO::REFERENCE_TYPE) ==
-               MachO::REFERENCE_FLAG_UNDEFINED_LAZY)
+               MachO::REFERENCE_FLAG_PRIVATE_UNDEFINED_LAZY)
         outs() << "undefined [private lazy bound]) ";
       else if ((NDesc & MachO::REFERENCE_TYPE) ==
                MachO::REFERENCE_FLAG_PRIVATE_UNDEFINED_NON_LAZY)
@@ -1020,7 +1020,7 @@ static void dumpSymbolNamesFromFile(std::string &Filename) {
   if (error(BufferOrErr.getError(), Filename))
     return;
 
-  LLVMContext &Context = getGlobalContext();
+  LLVMContext Context;
   Expected<std::unique_ptr<Binary>> BinaryOrErr = createBinary(
       BufferOrErr.get()->getMemBufferRef(), NoLLVMBitcode ? nullptr : &Context);
   if (!BinaryOrErr) {

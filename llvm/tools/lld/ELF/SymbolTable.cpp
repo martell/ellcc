@@ -45,6 +45,15 @@ template <class ELFT> static bool isCompatible(InputFile *FileP) {
   return false;
 }
 
+// Returns "(internal)", "foo.a(bar.o)" or "baz.o".
+static std::string getFilename(InputFile *F) {
+  if (!F)
+    return "(internal)";
+  if (!F->ArchiveName.empty())
+    return (F->ArchiveName + "(" + F->getName() + ")").str();
+  return F->getName();
+}
+
 // Add symbols in File to the symbol table.
 template <class ELFT>
 void SymbolTable<ELFT>::addFile(std::unique_ptr<InputFile> File) {
@@ -60,6 +69,18 @@ void SymbolTable<ELFT>::addFile(std::unique_ptr<InputFile> File) {
       addLazy(&Sym);
     return;
   }
+
+  // Lazy object file
+  if (auto *F = dyn_cast<LazyObjectFile>(FileP)) {
+    LazyObjectFiles.emplace_back(cast<LazyObjectFile>(File.release()));
+    F->parse();
+    for (Lazy &Sym : F->getLazySymbols())
+      addLazy(&Sym);
+    return;
+  }
+
+  if (Config->Trace)
+    llvm::outs() << getFilename(FileP) << "\n";
 
   // .so file
   if (auto *F = dyn_cast<SharedFile<ELFT>>(FileP)) {
@@ -82,15 +103,6 @@ void SymbolTable<ELFT>::addFile(std::unique_ptr<InputFile> File) {
     for (SymbolBody *B : F->getSymbols())
       if (B)
         resolve(B);
-    return;
-  }
-
-  // Lazy object file
-  if (auto *F = dyn_cast<LazyObjectFile>(FileP)) {
-    LazyObjectFiles.emplace_back(cast<LazyObjectFile>(File.release()));
-    F->parse();
-    for (Lazy &Sym : F->getLazySymbols())
-      addLazy(&Sym);
     return;
   }
 
@@ -161,8 +173,8 @@ DefinedRegular<ELFT> *SymbolTable<ELFT>::addAbsolute(StringRef Name,
 template <class ELFT>
 SymbolBody *SymbolTable<ELFT>::addSynthetic(StringRef Name,
                                             OutputSectionBase<ELFT> &Sec,
-                                            uintX_t Val, uint8_t Visibility) {
-  auto *Sym = new (Alloc) DefinedSynthetic<ELFT>(Name, Val, Sec, Visibility);
+                                            uintX_t Val) {
+  auto *Sym = new (Alloc) DefinedSynthetic<ELFT>(Name, Val, Sec);
   resolve(Sym);
   return Sym;
 }
@@ -204,15 +216,6 @@ template <class ELFT> InputFile *SymbolTable<ELFT>::findFile(SymbolBody *B) {
       return F.get();
   }
   return nullptr;
-}
-
-// Returns "(internal)", "foo.a(bar.o)" or "baz.o".
-static std::string getFilename(InputFile *F) {
-  if (!F)
-    return "(internal)";
-  if (!F->ArchiveName.empty())
-    return (F->ArchiveName + "(" + F->getName() + ")").str();
-  return F->getName();
 }
 
 // Construct a string in the form of "Sym in File1 and File2".
@@ -270,9 +273,15 @@ template <class ELFT> void SymbolTable<ELFT>::resolve(SymbolBody *New) {
 // Find an existing symbol or create and insert a new one.
 template <class ELFT> Symbol *SymbolTable<ELFT>::insert(SymbolBody *New) {
   StringRef Name = New->getName();
-  Symbol *&Sym = Symtab[Name];
-  if (!Sym)
+  unsigned NumSyms = SymVector.size();
+  auto P = Symtab.insert(std::make_pair(Name, NumSyms));
+  Symbol *Sym;
+  if (P.second) {
     Sym = new (Alloc) Symbol{New};
+    SymVector.push_back(Sym);
+  } else {
+    Sym = SymVector[P.first->second];
+  }
   New->setBackref(Sym);
   return Sym;
 }
@@ -281,7 +290,7 @@ template <class ELFT> SymbolBody *SymbolTable<ELFT>::find(StringRef Name) {
   auto It = Symtab.find(Name);
   if (It == Symtab.end())
     return nullptr;
-  return It->second->Body;
+  return SymVector[It->second]->Body;
 }
 
 template <class ELFT> void SymbolTable<ELFT>::addLazy(Lazy *L) {
@@ -334,6 +343,14 @@ template <class ELFT> void SymbolTable<ELFT>::scanShlibUndefined() {
       if (SymbolBody *Sym = find(U))
         if (Sym->isDefined())
           Sym->MustBeInDynSym = true;
+}
+
+// This function process the dynamic list option by marking all the symbols
+// to be exported in the dynamic table.
+template <class ELFT> void SymbolTable<ELFT>::scanDynamicList() {
+  for (StringRef S : Config->DynamicList)
+    if (SymbolBody *B = find(S))
+      B->MustBeInDynSym = true;
 }
 
 template class elf::SymbolTable<ELF32LE>;
