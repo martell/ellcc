@@ -34,6 +34,7 @@
 #ifdef HAVE_NETDB_H
 #include <netdb.h>
 #endif // HAVE_NETDB_H
+#include <sys/un.h>
 
 #include <vector>
 #include <string>
@@ -100,6 +101,11 @@ struct Config {
   bool verbose;
   bool timing_script;
   std::string base_uri;
+  // true if UNIX domain socket is used.  In this case, base_uri is
+  // not used in usual way.
+  bool base_uri_unix;
+  // used when UNIX domain socket is used (base_uri_unix is true).
+  sockaddr_un unix_addr;
   // list of supported NPN/ALPN protocol strings in the order of
   // preference.
   std::vector<std::string> npn_list;
@@ -112,7 +118,6 @@ struct Config {
 };
 
 struct RequestStat {
-  RequestStat();
   // time point when request was sent
   std::chrono::steady_clock::time_point request_time;
   // time point when stream was closed
@@ -208,9 +213,21 @@ enum ClientState { CLIENT_IDLE, CLIENT_CONNECTED };
 
 struct Client;
 
+// We use systematic sampling method
+struct Sampling {
+  // sampling interval
+  double interval;
+  // cumulative value of interval, and the next point is the integer
+  // rounded up from this value.
+  double point;
+  // number of samples seen, including discarded samples.
+  size_t n;
+};
+
 struct Worker {
-  std::vector<std::unique_ptr<Client>> clients;
   Stats stats;
+  Sampling request_times_smp;
+  Sampling client_smp;
   struct ev_loop *loop;
   SSL_CTX *ssl_ctx;
   Config *config;
@@ -226,24 +243,32 @@ struct Worker {
   // at most nreqs_rem clients get an extra request
   size_t nreqs_rem;
   size_t rate;
+  // maximum number of samples in this worker thread
+  size_t max_samples;
   ev_timer timeout_watcher;
   // The next client ID this worker assigns
   uint32_t next_client_id;
 
   Worker(uint32_t id, SSL_CTX *ssl_ctx, size_t nreq_todo, size_t nclients,
-         size_t rate, Config *config);
+         size_t rate, size_t max_samples, Config *config);
   ~Worker();
   Worker(Worker &&o) = default;
   void run();
+  void sample_req_stat(RequestStat *req_stat);
+  void sample_client_stat(ClientStat *cstat);
+  void report_progress();
+  void report_rate_progress();
 };
 
 struct Stream {
+  RequestStat req_stat;
   int status_success;
   Stream();
 };
 
 struct Client {
   std::unordered_map<int32_t, Stream> streams;
+  ClientStat cstat;
   std::unique_ptr<Session> session;
   ev_io wev;
   ev_io rev;
@@ -282,13 +307,18 @@ struct Client {
   int connect();
   void disconnect();
   void fail();
+  // Call this function when do_read() returns -1.  This function
+  // tries to connect to the remote host again if it is requested.  If
+  // so, this function returns 0, and this object should be retained.
+  // Otherwise, this function returns -1, and this object should be
+  // deleted.
+  int try_again_or_fail();
   void timeout();
   void restart_timeout();
   int submit_request();
   void process_request_failure();
   void process_timedout_streams();
   void process_abandoned_streams();
-  void report_progress();
   void report_tls_info();
   void report_app_info();
   void terminate_session();
@@ -318,8 +348,12 @@ struct Client {
   // |success| == true means that the request/response was exchanged
   // |successfully, but it does not mean response carried successful
   // |HTTP status code.
-  void on_stream_close(int32_t stream_id, bool success, RequestStat *req_stat,
-                       bool final = false);
+  void on_stream_close(int32_t stream_id, bool success, bool final = false);
+  // Returns RequestStat for |stream_id|.  This function must be
+  // called after on_request(stream_id), and before
+  // on_stream_close(stream_id, ...).  Otherwise, this will return
+  // nullptr.
+  RequestStat *get_req_stat(int32_t stream_id);
 
   void record_request_time(RequestStat *req_stat);
   void record_connect_start_time();

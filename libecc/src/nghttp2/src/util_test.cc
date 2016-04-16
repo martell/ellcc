@@ -39,22 +39,24 @@ using namespace nghttp2;
 namespace shrpx {
 
 void test_util_streq(void) {
-  CU_ASSERT(util::streq("alpha", "alpha", 5));
-  CU_ASSERT(util::streq("alpha", "alphabravo", 5));
-  CU_ASSERT(!util::streq("alpha", "alphabravo", 6));
-  CU_ASSERT(!util::streq("alphabravo", "alpha", 5));
-  CU_ASSERT(!util::streq("alpha", "alphA", 5));
-  CU_ASSERT(!util::streq("", "a", 1));
-  CU_ASSERT(util::streq("", "", 0));
-  CU_ASSERT(!util::streq("alpha", "", 0));
+  CU_ASSERT(
+      util::streq(StringRef::from_lit("alpha"), StringRef::from_lit("alpha")));
+  CU_ASSERT(!util::streq(StringRef::from_lit("alpha"),
+                         StringRef::from_lit("alphabravo")));
+  CU_ASSERT(!util::streq(StringRef::from_lit("alphabravo"),
+                         StringRef::from_lit("alpha")));
+  CU_ASSERT(
+      !util::streq(StringRef::from_lit("alpha"), StringRef::from_lit("alphA")));
+  CU_ASSERT(!util::streq(StringRef{}, StringRef::from_lit("a")));
+  CU_ASSERT(util::streq(StringRef{}, StringRef{}));
+  CU_ASSERT(!util::streq(StringRef::from_lit("alpha"), StringRef{}));
 
-  CU_ASSERT(util::streq("alpha", 5, "alpha", 5));
-  CU_ASSERT(!util::streq("alpha", 4, "alpha", 5));
-  CU_ASSERT(!util::streq("alpha", 5, "alpha", 4));
-  CU_ASSERT(!util::streq("alpha", 5, "alphA", 5));
-  char *a = nullptr;
-  char *b = nullptr;
-  CU_ASSERT(util::streq(a, 0, b, 0));
+  CU_ASSERT(
+      !util::streq(StringRef::from_lit("alph"), StringRef::from_lit("alpha")));
+  CU_ASSERT(
+      !util::streq(StringRef::from_lit("alpha"), StringRef::from_lit("alph")));
+  CU_ASSERT(
+      !util::streq(StringRef::from_lit("alpha"), StringRef::from_lit("alphA")));
 
   CU_ASSERT(util::streq_l("alpha", "alpha", 5));
   CU_ASSERT(util::streq_l("alpha", "alphabravo", 5));
@@ -73,17 +75,15 @@ void test_util_strieq(void) {
   CU_ASSERT(!util::strieq(std::string("alpha"), std::string("AlPhA ")));
   CU_ASSERT(!util::strieq(std::string(), std::string("AlPhA ")));
 
-  CU_ASSERT(util::strieq("alpha", "alpha", 5));
-  CU_ASSERT(util::strieq("alpha", "AlPhA", 5));
-  CU_ASSERT(util::strieq("", static_cast<const char *>(nullptr), 0));
-  CU_ASSERT(!util::strieq("alpha", "AlPhA ", 6));
-  CU_ASSERT(!util::strieq("", "AlPhA ", 6));
-
-  CU_ASSERT(util::strieq("alpha", "alpha"));
-  CU_ASSERT(util::strieq("alpha", "AlPhA"));
-  CU_ASSERT(util::strieq("", ""));
-  CU_ASSERT(!util::strieq("alpha", "AlPhA "));
-  CU_ASSERT(!util::strieq("", "AlPhA "));
+  CU_ASSERT(
+      util::strieq(StringRef::from_lit("alpha"), StringRef::from_lit("alpha")));
+  CU_ASSERT(
+      util::strieq(StringRef::from_lit("alpha"), StringRef::from_lit("AlPhA")));
+  CU_ASSERT(util::strieq(StringRef{}, StringRef{}));
+  CU_ASSERT(!util::strieq(StringRef::from_lit("alpha"),
+                          StringRef::from_lit("AlPhA ")));
+  CU_ASSERT(
+      !util::strieq(StringRef::from_lit(""), StringRef::from_lit("AlPhA ")));
 
   CU_ASSERT(util::strieq_l("alpha", "alpha", 5));
   CU_ASSERT(util::strieq_l("alpha", "AlPhA", 5));
@@ -91,11 +91,11 @@ void test_util_strieq(void) {
   CU_ASSERT(!util::strieq_l("alpha", "AlPhA ", 6));
   CU_ASSERT(!util::strieq_l("", "AlPhA ", 6));
 
-  CU_ASSERT(util::strieq_l("alpha", "alpha"));
-  CU_ASSERT(util::strieq_l("alpha", "AlPhA"));
-  CU_ASSERT(util::strieq_l("", ""));
-  CU_ASSERT(!util::strieq_l("alpha", "AlPhA "));
-  CU_ASSERT(!util::strieq_l("", "AlPhA "));
+  CU_ASSERT(util::strieq_l("alpha", StringRef::from_lit("alpha")));
+  CU_ASSERT(util::strieq_l("alpha", StringRef::from_lit("AlPhA")));
+  CU_ASSERT(util::strieq_l("", StringRef{}));
+  CU_ASSERT(!util::strieq_l("alpha", StringRef::from_lit("AlPhA ")));
+  CU_ASSERT(!util::strieq_l("", StringRef::from_lit("AlPhA ")));
 }
 
 void test_util_inp_strlower(void) {
@@ -157,6 +157,15 @@ void test_util_percent_decode(void) {
     std::string s = "%66%";
     CU_ASSERT("f%" == util::percent_decode(std::begin(s), std::end(s)));
   }
+  BlockAllocator balloc(1024, 1024);
+
+  CU_ASSERT("foobar" == util::percent_decode(
+                            balloc, StringRef::from_lit("%66%6F%6f%62%61%72")));
+
+  CU_ASSERT("f%6" ==
+            util::percent_decode(balloc, StringRef::from_lit("%66%6")));
+
+  CU_ASSERT("f%" == util::percent_decode(balloc, StringRef::from_lit("%66%")));
 }
 
 void test_util_quote_string(void) {
@@ -221,8 +230,7 @@ void test_util_select_h2(void) {
   // picked up because it has precedence over the other.
   const unsigned char t6[] = "\x5h2-14\x5h2-16";
   CU_ASSERT(util::select_h2(&out, &outlen, t6, sizeof(t6) - 1));
-  CU_ASSERT(memcmp(NGHTTP2_H2_16, out, str_size(NGHTTP2_H2_16)) == 0);
-  CU_ASSERT(str_size(NGHTTP2_H2_16) == outlen);
+  CU_ASSERT(util::streq(NGHTTP2_H2_16, StringRef{out, outlen}));
 }
 
 void test_util_ipv6_numeric_addr(void) {
@@ -234,28 +242,46 @@ void test_util_ipv6_numeric_addr(void) {
   CU_ASSERT(!util::ipv6_numeric_addr("localhost"));
 }
 
-void test_util_utos_with_unit(void) {
-  CU_ASSERT("0" == util::utos_with_unit(0));
-  CU_ASSERT("1023" == util::utos_with_unit(1023));
-  CU_ASSERT("1K" == util::utos_with_unit(1024));
-  CU_ASSERT("1K" == util::utos_with_unit(1025));
-  CU_ASSERT("1M" == util::utos_with_unit(1 << 20));
-  CU_ASSERT("1G" == util::utos_with_unit(1 << 30));
-  CU_ASSERT("1024G" == util::utos_with_unit(1LL << 40));
+void test_util_utos(void) {
+  uint8_t buf[32];
+
+  CU_ASSERT(("0" == StringRef{buf, util::utos(buf, 0)}));
+  CU_ASSERT(("123" == StringRef{buf, util::utos(buf, 123)}));
+  CU_ASSERT(("18446744073709551615" ==
+             StringRef{buf, util::utos(buf, 18446744073709551615ULL)}));
 }
 
-void test_util_utos_with_funit(void) {
-  CU_ASSERT("0" == util::utos_with_funit(0));
-  CU_ASSERT("1023" == util::utos_with_funit(1023));
-  CU_ASSERT("1.00K" == util::utos_with_funit(1024));
-  CU_ASSERT("1.00K" == util::utos_with_funit(1025));
-  CU_ASSERT("1.09K" == util::utos_with_funit(1119));
-  CU_ASSERT("1.27K" == util::utos_with_funit(1300));
-  CU_ASSERT("1.00M" == util::utos_with_funit(1 << 20));
-  CU_ASSERT("1.18M" == util::utos_with_funit(1234567));
-  CU_ASSERT("1.00G" == util::utos_with_funit(1 << 30));
-  CU_ASSERT("4492450797.23G" == util::utos_with_funit(4823732313248234343LL));
-  CU_ASSERT("1024.00G" == util::utos_with_funit(1LL << 40));
+void test_util_make_string_ref_uint(void) {
+  BlockAllocator balloc(1024, 1024);
+
+  CU_ASSERT("0" == util::make_string_ref_uint(balloc, 0));
+  CU_ASSERT("123" == util::make_string_ref_uint(balloc, 123));
+  CU_ASSERT("18446744073709551615" ==
+            util::make_string_ref_uint(balloc, 18446744073709551615ULL));
+}
+
+void test_util_utos_unit(void) {
+  CU_ASSERT("0" == util::utos_unit(0));
+  CU_ASSERT("1023" == util::utos_unit(1023));
+  CU_ASSERT("1K" == util::utos_unit(1024));
+  CU_ASSERT("1K" == util::utos_unit(1025));
+  CU_ASSERT("1M" == util::utos_unit(1 << 20));
+  CU_ASSERT("1G" == util::utos_unit(1 << 30));
+  CU_ASSERT("1024G" == util::utos_unit(1LL << 40));
+}
+
+void test_util_utos_funit(void) {
+  CU_ASSERT("0" == util::utos_funit(0));
+  CU_ASSERT("1023" == util::utos_funit(1023));
+  CU_ASSERT("1.00K" == util::utos_funit(1024));
+  CU_ASSERT("1.00K" == util::utos_funit(1025));
+  CU_ASSERT("1.09K" == util::utos_funit(1119));
+  CU_ASSERT("1.27K" == util::utos_funit(1300));
+  CU_ASSERT("1.00M" == util::utos_funit(1 << 20));
+  CU_ASSERT("1.18M" == util::utos_funit(1234567));
+  CU_ASSERT("1.00G" == util::utos_funit(1 << 30));
+  CU_ASSERT("4492450797.23G" == util::utos_funit(4823732313248234343LL));
+  CU_ASSERT("1024.00G" == util::utos_funit(1LL << 40));
 }
 
 void test_util_parse_uint_with_unit(void) {
@@ -353,32 +379,50 @@ void test_util_format_duration(void) {
 }
 
 void test_util_starts_with(void) {
-  CU_ASSERT(util::starts_with("foo", "foo"));
-  CU_ASSERT(util::starts_with("fooo", "foo"));
-  CU_ASSERT(util::starts_with("ofoo", ""));
-  CU_ASSERT(!util::starts_with("ofoo", "foo"));
+  CU_ASSERT(util::starts_with(StringRef::from_lit("foo"),
+                              StringRef::from_lit("foo")));
+  CU_ASSERT(util::starts_with(StringRef::from_lit("fooo"),
+                              StringRef::from_lit("foo")));
+  CU_ASSERT(util::starts_with(StringRef::from_lit("ofoo"), StringRef{}));
+  CU_ASSERT(!util::starts_with(StringRef::from_lit("ofoo"),
+                               StringRef::from_lit("foo")));
 
-  CU_ASSERT(util::istarts_with("FOO", "fOO"));
-  CU_ASSERT(util::starts_with("ofoo", ""));
-  CU_ASSERT(util::istarts_with("fOOo", "Foo"));
-  CU_ASSERT(!util::istarts_with("ofoo", "foo"));
+  CU_ASSERT(util::istarts_with(StringRef::from_lit("FOO"),
+                               StringRef::from_lit("fOO")));
+  CU_ASSERT(util::istarts_with(StringRef::from_lit("ofoo"), StringRef{}));
+  CU_ASSERT(util::istarts_with(StringRef::from_lit("fOOo"),
+                               StringRef::from_lit("Foo")));
+  CU_ASSERT(!util::istarts_with(StringRef::from_lit("ofoo"),
+                                StringRef::from_lit("foo")));
+
+  CU_ASSERT(util::istarts_with_l(StringRef::from_lit("fOOo"), "Foo"));
+  CU_ASSERT(!util::istarts_with_l(StringRef::from_lit("ofoo"), "foo"));
 }
 
 void test_util_ends_with(void) {
-  CU_ASSERT(util::ends_with("foo", "foo"));
-  CU_ASSERT(util::ends_with("foo", ""));
-  CU_ASSERT(util::ends_with("ofoo", "foo"));
-  CU_ASSERT(!util::ends_with("ofoo", "fo"));
+  CU_ASSERT(
+      util::ends_with(StringRef::from_lit("foo"), StringRef::from_lit("foo")));
+  CU_ASSERT(util::ends_with(StringRef::from_lit("foo"), StringRef{}));
+  CU_ASSERT(
+      util::ends_with(StringRef::from_lit("ofoo"), StringRef::from_lit("foo")));
+  CU_ASSERT(
+      !util::ends_with(StringRef::from_lit("ofoo"), StringRef::from_lit("fo")));
 
-  CU_ASSERT(util::iends_with("fOo", "Foo"));
-  CU_ASSERT(util::iends_with("foo", ""));
-  CU_ASSERT(util::iends_with("oFoo", "fOO"));
-  CU_ASSERT(!util::iends_with("ofoo", "fo"));
+  CU_ASSERT(
+      util::iends_with(StringRef::from_lit("fOo"), StringRef::from_lit("Foo")));
+  CU_ASSERT(util::iends_with(StringRef::from_lit("foo"), StringRef{}));
+  CU_ASSERT(util::iends_with(StringRef::from_lit("oFoo"),
+                             StringRef::from_lit("fOO")));
+  CU_ASSERT(!util::iends_with(StringRef::from_lit("ofoo"),
+                              StringRef::from_lit("fo")));
+
+  CU_ASSERT(util::iends_with_l(StringRef::from_lit("oFoo"), "fOO"));
+  CU_ASSERT(!util::iends_with_l(StringRef::from_lit("ofoo"), "fo"));
 }
 
 void test_util_parse_http_date(void) {
-  CU_ASSERT(1001939696 ==
-            util::parse_http_date("Mon, 1 Oct 2001 12:34:56 GMT"));
+  CU_ASSERT(1001939696 == util::parse_http_date(StringRef::from_lit(
+                              "Mon, 1 Oct 2001 12:34:56 GMT")));
 }
 
 void test_util_localtime_date(void) {
@@ -422,31 +466,66 @@ void test_util_get_uint64(void) {
 }
 
 void test_util_parse_config_str_list(void) {
-  auto res = util::parse_config_str_list("a");
+  auto res = util::parse_config_str_list(StringRef::from_lit("a"));
   CU_ASSERT(1 == res.size());
   CU_ASSERT("a" == res[0]);
 
-  res = util::parse_config_str_list("a,");
+  res = util::parse_config_str_list(StringRef::from_lit("a,"));
   CU_ASSERT(2 == res.size());
   CU_ASSERT("a" == res[0]);
   CU_ASSERT("" == res[1]);
 
-  res = util::parse_config_str_list(":a::", ':');
+  res = util::parse_config_str_list(StringRef::from_lit(":a::"), ':');
   CU_ASSERT(4 == res.size());
   CU_ASSERT("" == res[0]);
   CU_ASSERT("a" == res[1]);
   CU_ASSERT("" == res[2]);
   CU_ASSERT("" == res[3]);
 
-  res = util::parse_config_str_list("");
+  res = util::parse_config_str_list(StringRef{});
   CU_ASSERT(1 == res.size());
   CU_ASSERT("" == res[0]);
 
-  res = util::parse_config_str_list("alpha,bravo,charlie");
+  res = util::parse_config_str_list(StringRef::from_lit("alpha,bravo,charlie"));
   CU_ASSERT(3 == res.size());
   CU_ASSERT("alpha" == res[0]);
   CU_ASSERT("bravo" == res[1]);
   CU_ASSERT("charlie" == res[2]);
+}
+
+void test_util_make_http_hostport(void) {
+  CU_ASSERT("localhost" ==
+            util::make_http_hostport(StringRef::from_lit("localhost"), 80));
+  CU_ASSERT("[::1]" ==
+            util::make_http_hostport(StringRef::from_lit("::1"), 443));
+  CU_ASSERT("localhost:3000" ==
+            util::make_http_hostport(StringRef::from_lit("localhost"), 3000));
+}
+
+void test_util_make_hostport(void) {
+  CU_ASSERT("localhost:80" ==
+            util::make_hostport(StringRef::from_lit("localhost"), 80));
+  CU_ASSERT("[::1]:443" ==
+            util::make_hostport(StringRef::from_lit("::1"), 443));
+}
+
+void test_util_strifind(void) {
+  CU_ASSERT(util::strifind(StringRef::from_lit("gzip, deflate, bzip2"),
+                           StringRef::from_lit("gzip")));
+
+  CU_ASSERT(util::strifind(StringRef::from_lit("gzip, deflate, bzip2"),
+                           StringRef::from_lit("dEflate")));
+
+  CU_ASSERT(util::strifind(StringRef::from_lit("gzip, deflate, bzip2"),
+                           StringRef::from_lit("BZIP2")));
+
+  CU_ASSERT(util::strifind(StringRef::from_lit("nghttp2"), StringRef{}));
+
+  // Be aware this fact
+  CU_ASSERT(!util::strifind(StringRef{}, StringRef{}));
+
+  CU_ASSERT(!util::strifind(StringRef::from_lit("nghttp2"),
+                            StringRef::from_lit("http1")));
 }
 
 } // namespace shrpx

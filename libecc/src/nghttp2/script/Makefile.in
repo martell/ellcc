@@ -182,7 +182,6 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
-am__extra_recursive_targets = it-recursive itprep-recursive
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 am__DIST_COMMON = $(srcdir)/Makefile.in
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -208,6 +207,7 @@ CPPFLAGS = @CPPFLAGS@
 CUNIT_CFLAGS = @CUNIT_CFLAGS@
 CUNIT_LIBS = @CUNIT_LIBS@
 CXX = @CXX@
+CXX1XCXXFLAGS = @CXX1XCXXFLAGS@
 CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
@@ -295,6 +295,7 @@ STRIP = @STRIP@
 TESTLDADD = @TESTLDADD@
 VERSION = @VERSION@
 WARNCFLAGS = @WARNCFLAGS@
+WARNCXXFLAGS = @WARNCXXFLAGS@
 XML2_CONFIG = @XML2_CONFIG@
 XML_CPPFLAGS = @XML_CPPFLAGS@
 XML_LIBS = @XML_LIBS@
@@ -361,7 +362,7 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-EXTRA_DIST = README.rst
+EXTRA_DIST = README.rst CMakeLists.txt
 dist_pkgdata_SCRIPTS = fetch-ocsp-response
 all: all-am
 
@@ -436,8 +437,6 @@ mostlyclean-libtool:
 
 clean-libtool:
 	-rm -rf .libs _libs
-it-local: 
-itprep-local: 
 tags TAGS:
 
 ctags CTAGS:
@@ -560,14 +559,6 @@ install-ps-am:
 
 installcheck-am:
 
-it: it-am
-
-it-am: it-local
-
-itprep: itprep-am
-
-itprep-am: itprep-local
-
 maintainer-clean: maintainer-clean-am
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
@@ -596,8 +587,7 @@ uninstall-am: uninstall-dist_pkgdataSCRIPTS
 	install-exec install-exec-am install-html install-html-am \
 	install-info install-info-am install-man install-pdf \
 	install-pdf-am install-ps install-ps-am install-strip \
-	installcheck installcheck-am installdirs it-am it-local \
-	itprep-am itprep-local maintainer-clean \
+	installcheck installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-generic \
 	mostlyclean-libtool pdf pdf-am ps ps-am tags-am uninstall \
 	uninstall-am uninstall-dist_pkgdataSCRIPTS

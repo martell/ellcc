@@ -69,15 +69,20 @@ public:
       const boost::posix_time::time_duration &tls_handshake_timeout,
       const boost::posix_time::time_duration &read_timeout,
       SocketArgs &&... args)
-      : socket_(std::forward<SocketArgs>(args)...), mux_(mux),
+      : socket_(std::forward<SocketArgs>(args)...),
+        mux_(mux),
         deadline_(socket_.get_io_service()),
         tls_handshake_timeout_(tls_handshake_timeout),
-        read_timeout_(read_timeout), writing_(false), stopped_(false) {}
+        read_timeout_(read_timeout),
+        writing_(false),
+        stopped_(false) {}
 
   /// Start the first asynchronous operation for the connection.
   void start() {
+    boost::system::error_code ec;
+
     handler_ = std::make_shared<http2_handler>(
-        socket_.get_io_service(), socket_.lowest_layer().remote_endpoint(),
+        socket_.get_io_service(), socket_.lowest_layer().remote_endpoint(ec),
         [this]() { do_write(); }, mux_);
     if (handler_->start() != 0) {
       stop();

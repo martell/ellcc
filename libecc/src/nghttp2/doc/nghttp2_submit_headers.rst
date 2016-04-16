@@ -77,11 +77,14 @@ Synopsis
         No stream ID is available because maximum stream ID was
         reached.
     :macro:`NGHTTP2_ERR_INVALID_ARGUMENT`
-        The *stream_id* is 0.
+        The *stream_id* is 0; or trying to depend on itself (stream ID
+        equals ``pri_spec->stream_id``).
     :macro:`NGHTTP2_ERR_DATA_EXIST`
         DATA or HEADERS has been already submitted and not fully
         processed yet.  This happens if stream denoted by *stream_id*
         is in reserved state.
+    :macro:`NGHTTP2_ERR_PROTO`
+        The *stream_id* is -1, and *session* is server session.
     
     .. warning::
     

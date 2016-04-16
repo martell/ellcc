@@ -49,7 +49,8 @@ namespace {
 mrb_value response_get_http_version_major(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-  return mrb_fixnum_value(downstream->get_response_major());
+  const auto &resp = downstream->response();
+  return mrb_fixnum_value(resp.http_major);
 }
 } // namespace
 
@@ -57,7 +58,8 @@ namespace {
 mrb_value response_get_http_version_minor(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-  return mrb_fixnum_value(downstream->get_response_minor());
+  const auto &resp = downstream->response();
+  return mrb_fixnum_value(resp.http_minor);
 }
 } // namespace
 
@@ -65,8 +67,8 @@ namespace {
 mrb_value response_get_status(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-
-  return mrb_fixnum_value(downstream->get_response_http_status());
+  const auto &resp = downstream->response();
+  return mrb_fixnum_value(resp.http_status);
 }
 } // namespace
 
@@ -74,6 +76,7 @@ namespace {
 mrb_value response_set_status(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
+  auto &resp = downstream->response();
 
   mrb_int status;
   mrb_get_args(mrb, "i", &status);
@@ -83,7 +86,7 @@ mrb_value response_set_status(mrb_state *mrb, mrb_value self) {
               "invalid status; it should be [200, 999], inclusive");
   }
 
-  downstream->set_response_http_status(status);
+  resp.http_status = status;
 
   return self;
 }
@@ -93,7 +96,9 @@ namespace {
 mrb_value response_get_headers(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-  return create_headers_hash(mrb, downstream->get_response_headers());
+  const auto &resp = downstream->response();
+
+  return create_headers_hash(mrb, resp.fs.headers());
 }
 } // namespace
 
@@ -101,6 +106,8 @@ namespace {
 mrb_value response_mod_header(mrb_state *mrb, mrb_value self, bool repl) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
+  auto &resp = downstream->response();
+  auto &balloc = downstream->get_block_allocator();
 
   mrb_value key, values;
   mrb_get_args(mrb, "oo", &key, &values);
@@ -111,17 +118,21 @@ mrb_value response_mod_header(mrb_state *mrb, mrb_value self, bool repl) {
 
   key = mrb_funcall(mrb, key, "downcase", 0);
 
+  auto keyref =
+      make_string_ref(balloc, StringRef{RSTRING_PTR(key),
+                                        static_cast<size_t>(RSTRING_LEN(key))});
+  auto token = http2::lookup_token(keyref.byte(), keyref.size());
+
   if (repl) {
     size_t p = 0;
-    auto &headers = downstream->get_response_headers();
+    auto &headers = resp.fs.headers();
     for (size_t i = 0; i < headers.size(); ++i) {
-      auto &hd = headers[i];
-      if (util::streq(std::begin(hd.name), hd.name.size(), RSTRING_PTR(key),
-                      RSTRING_LEN(key))) {
+      auto &kv = headers[i];
+      if (kv.name == keyref) {
         continue;
       }
       if (i != p) {
-        headers[p++] = std::move(hd);
+        headers[p++] = std::move(kv);
       }
     }
     headers.resize(p);
@@ -131,17 +142,21 @@ mrb_value response_mod_header(mrb_state *mrb, mrb_value self, bool repl) {
     auto n = mrb_ary_len(mrb, values);
     for (int i = 0; i < n; ++i) {
       auto value = mrb_ary_entry(values, i);
-      downstream->add_response_header(
-          std::string(RSTRING_PTR(key), RSTRING_LEN(key)),
-          std::string(RSTRING_PTR(value), RSTRING_LEN(value)));
+      resp.fs.add_header_token(
+          keyref,
+          make_string_ref(balloc,
+                          StringRef{RSTRING_PTR(value),
+                                    static_cast<size_t>(RSTRING_LEN(value))}),
+          false, token);
     }
   } else if (!mrb_nil_p(values)) {
-    downstream->add_response_header(
-        std::string(RSTRING_PTR(key), RSTRING_LEN(key)),
-        std::string(RSTRING_PTR(values), RSTRING_LEN(values)));
+    resp.fs.add_header_token(
+        keyref,
+        make_string_ref(balloc,
+                        StringRef{RSTRING_PTR(values),
+                                  static_cast<size_t>(RSTRING_LEN(values))}),
+        false, token);
   }
-
-  data->response_headers_dirty = true;
 
   return mrb_nil_value();
 }
@@ -163,8 +178,9 @@ namespace {
 mrb_value response_clear_headers(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
+  auto &resp = downstream->response();
 
-  downstream->clear_response_headers();
+  resp.fs.clear_headers();
 
   return mrb_nil_value();
 }
@@ -174,7 +190,10 @@ namespace {
 mrb_value response_return(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
+  auto &resp = downstream->response();
   int rv;
+
+  auto &balloc = downstream->get_block_allocator();
 
   if (downstream->get_response_state() == Downstream::MSG_COMPLETE) {
     mrb_raise(mrb, E_RUNTIME_ERROR, "response has already been committed");
@@ -187,13 +206,8 @@ mrb_value response_return(mrb_state *mrb, mrb_value self) {
   const uint8_t *body = nullptr;
   size_t bodylen = 0;
 
-  if (downstream->get_response_http_status() == 0) {
-    downstream->set_response_http_status(200);
-  }
-
-  if (data->response_headers_dirty) {
-    downstream->index_response_headers();
-    data->response_headers_dirty = false;
+  if (resp.http_status == 0) {
+    resp.http_status = 200;
   }
 
   if (downstream->expect_response_body() && vallen > 0) {
@@ -201,21 +215,25 @@ mrb_value response_return(mrb_state *mrb, mrb_value self) {
     bodylen = vallen;
   }
 
-  auto cl = downstream->get_response_header(http2::HD_CONTENT_LENGTH);
-  if (cl) {
-    cl->value = util::utos(bodylen);
-  } else {
-    downstream->add_response_header("content-length", util::utos(bodylen),
-                                    http2::HD_CONTENT_LENGTH);
-  }
-  downstream->set_response_content_length(bodylen);
+  auto content_length = util::make_string_ref_uint(balloc, bodylen);
 
-  auto date = downstream->get_response_header(http2::HD_DATE);
+  auto cl = resp.fs.header(http2::HD_CONTENT_LENGTH);
+  if (cl) {
+    cl->value = content_length;
+  } else {
+    resp.fs.add_header_token(StringRef::from_lit("content-length"),
+                             content_length, false, http2::HD_CONTENT_LENGTH);
+  }
+  resp.fs.content_length = bodylen;
+
+  auto date = resp.fs.header(http2::HD_DATE);
   if (!date) {
     auto lgconf = log_config();
     lgconf->update_tstamp(std::chrono::system_clock::now());
-    downstream->add_response_header("date", lgconf->time_http_str,
-                                    http2::HD_DATE);
+    resp.fs.add_header_token(
+        StringRef::from_lit("date"),
+        make_string_ref(balloc, StringRef{lgconf->time_http_str}), false,
+        http2::HD_DATE);
   }
 
   auto upstream = downstream->get_upstream();

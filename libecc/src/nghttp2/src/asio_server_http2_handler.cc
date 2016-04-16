@@ -105,6 +105,13 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
     }
   // fall through
   default:
+    if (req.header_buffer_size() + namelen + valuelen > 64_k) {
+      nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE, frame->hd.stream_id,
+                                NGHTTP2_INTERNAL_ERROR);
+      break;
+    }
+    req.update_header_buffer_size(namelen + valuelen);
+
     req.header().emplace(std::string(name, name + namelen),
                          header_value{std::string(value, value + valuelen),
                                       (flags & NGHTTP2_NV_FLAG_NO_INDEX) != 0});
@@ -230,8 +237,14 @@ int on_frame_not_send_callback(nghttp2_session *session,
 http2_handler::http2_handler(boost::asio::io_service &io_service,
                              boost::asio::ip::tcp::endpoint ep,
                              connection_write writefun, serve_mux &mux)
-    : writefun_(writefun), mux_(mux), io_service_(io_service), remote_ep_(ep),
-      session_(nullptr), buf_(nullptr), buflen_(0), inside_callback_(false),
+    : writefun_(writefun),
+      mux_(mux),
+      io_service_(io_service),
+      remote_ep_(ep),
+      session_(nullptr),
+      buf_(nullptr),
+      buflen_(0),
+      inside_callback_(false),
       tstamp_cached_(time(nullptr)),
       formatted_date_(util::http_date(tstamp_cached_)) {}
 

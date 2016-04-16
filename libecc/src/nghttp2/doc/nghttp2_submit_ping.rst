@@ -14,8 +14,12 @@ Synopsis
     received PING frame.  The library automatically submits PING frame
     in this case.
     
-    The *flags* is currently ignored and should be
-    :macro:`NGHTTP2_FLAG_NONE`.
+    The *flags* is bitwise OR of 0 or more of the following value.
+    
+    * :macro:`NGHTTP2_FLAG_ACK`
+    
+    Unless `nghttp2_option_set_no_auto_ping_ack()` is used, the *flags*
+    should be :macro:`NGHTTP2_FLAG_NONE`.
     
     If the *opaque_data* is non ``NULL``, then it should point to the 8
     bytes array of memory to specify opaque data to send with PING

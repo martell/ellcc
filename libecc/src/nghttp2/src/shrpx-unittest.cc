@@ -33,11 +33,15 @@
 #include "shrpx_ssl_test.h"
 #include "shrpx_downstream_test.h"
 #include "shrpx_config_test.h"
+#include "shrpx_worker_test.h"
 #include "http2_test.h"
 #include "util_test.h"
 #include "nghttp2_gzip_test.h"
 #include "buffer_test.h"
 #include "memchunk_test.h"
+#include "template_test.h"
+#include "shrpx_http_test.h"
+#include "base64_test.h"
 #include "shrpx_config.h"
 #include "ssl.h"
 
@@ -69,6 +73,8 @@ int main(int argc, char *argv[]) {
                    shrpx::test_shrpx_ssl_create_lookup_tree) ||
       !CU_add_test(pSuite, "ssl_cert_lookup_tree_add_cert_from_file",
                    shrpx::test_shrpx_ssl_cert_lookup_tree_add_cert_from_file) ||
+      !CU_add_test(pSuite, "ssl_tls_hostname_match",
+                   shrpx::test_shrpx_ssl_tls_hostname_match) ||
       !CU_add_test(pSuite, "http2_add_header", shrpx::test_http2_add_header) ||
       !CU_add_test(pSuite, "http2_get_header", shrpx::test_http2_get_header) ||
       !CU_add_test(pSuite, "http2_copy_headers_to_nva",
@@ -84,12 +90,6 @@ int main(int argc, char *argv[]) {
                    shrpx::test_http2_index_header) ||
       !CU_add_test(pSuite, "http2_lookup_token",
                    shrpx::test_http2_lookup_token) ||
-      !CU_add_test(pSuite, "http2_check_http2_pseudo_header",
-                   shrpx::test_http2_check_http2_pseudo_header) ||
-      !CU_add_test(pSuite, "http2_http2_header_allowed",
-                   shrpx::test_http2_http2_header_allowed) ||
-      !CU_add_test(pSuite, "http2_mandatory_request_headers_presence",
-                   shrpx::test_http2_mandatory_request_headers_presence) ||
       !CU_add_test(pSuite, "http2_parse_link_header",
                    shrpx::test_http2_parse_link_header) ||
       !CU_add_test(pSuite, "http2_path_join", shrpx::test_http2_path_join) ||
@@ -101,14 +101,10 @@ int main(int argc, char *argv[]) {
                    shrpx::test_http2_get_pure_path_component) ||
       !CU_add_test(pSuite, "http2_construct_push_component",
                    shrpx::test_http2_construct_push_component) ||
-      !CU_add_test(pSuite, "downstream_index_request_headers",
-                   shrpx::test_downstream_index_request_headers) ||
-      !CU_add_test(pSuite, "downstream_index_response_headers",
-                   shrpx::test_downstream_index_response_headers) ||
-      !CU_add_test(pSuite, "downstream_get_request_header",
-                   shrpx::test_downstream_get_request_header) ||
-      !CU_add_test(pSuite, "downstream_get_response_header",
-                   shrpx::test_downstream_get_response_header) ||
+      !CU_add_test(pSuite, "downstream_field_store_append_last_header",
+                   shrpx::test_downstream_field_store_append_last_header) ||
+      !CU_add_test(pSuite, "downstream_field_store_header",
+                   shrpx::test_downstream_field_store_header) ||
       !CU_add_test(pSuite, "downstream_crumble_request_cookie",
                    shrpx::test_downstream_crumble_request_cookie) ||
       !CU_add_test(pSuite, "downstream_assemble_request_cookie",
@@ -123,8 +119,12 @@ int main(int argc, char *argv[]) {
                    shrpx::test_shrpx_config_read_tls_ticket_key_file) ||
       !CU_add_test(pSuite, "config_read_tls_ticket_key_file_aes_256",
                    shrpx::test_shrpx_config_read_tls_ticket_key_file_aes_256) ||
-      !CU_add_test(pSuite, "config_match_downstream_addr_group",
-                   shrpx::test_shrpx_config_match_downstream_addr_group) ||
+      !CU_add_test(pSuite, "worker_match_downstream_addr_group",
+                   shrpx::test_shrpx_worker_match_downstream_addr_group) ||
+      !CU_add_test(pSuite, "http_create_forwarded",
+                   shrpx::test_shrpx_http_create_forwarded) ||
+      !CU_add_test(pSuite, "http_create_via_header_value",
+                   shrpx::test_shrpx_http_create_via_header_value) ||
       !CU_add_test(pSuite, "util_streq", shrpx::test_util_streq) ||
       !CU_add_test(pSuite, "util_strieq", shrpx::test_util_strieq) ||
       !CU_add_test(pSuite, "util_inp_strlower",
@@ -144,10 +144,11 @@ int main(int argc, char *argv[]) {
       !CU_add_test(pSuite, "util_select_h2", shrpx::test_util_select_h2) ||
       !CU_add_test(pSuite, "util_ipv6_numeric_addr",
                    shrpx::test_util_ipv6_numeric_addr) ||
-      !CU_add_test(pSuite, "util_utos_with_unit",
-                   shrpx::test_util_utos_with_unit) ||
-      !CU_add_test(pSuite, "util_utos_with_funit",
-                   shrpx::test_util_utos_with_funit) ||
+      !CU_add_test(pSuite, "util_utos", shrpx::test_util_utos) ||
+      !CU_add_test(pSuite, "util_make_string_ref_uint",
+                   shrpx::test_util_make_string_ref_uint) ||
+      !CU_add_test(pSuite, "util_utos_unit", shrpx::test_util_utos_unit) ||
+      !CU_add_test(pSuite, "util_utos_funit", shrpx::test_util_utos_funit) ||
       !CU_add_test(pSuite, "util_parse_uint_with_unit",
                    shrpx::test_util_parse_uint_with_unit) ||
       !CU_add_test(pSuite, "util_parse_uint", shrpx::test_util_parse_uint) ||
@@ -166,6 +167,11 @@ int main(int argc, char *argv[]) {
       !CU_add_test(pSuite, "util_get_uint64", shrpx::test_util_get_uint64) ||
       !CU_add_test(pSuite, "util_parse_config_str_list",
                    shrpx::test_util_parse_config_str_list) ||
+      !CU_add_test(pSuite, "util_make_http_hostport",
+                   shrpx::test_util_make_http_hostport) ||
+      !CU_add_test(pSuite, "util_make_hostport",
+                   shrpx::test_util_make_hostport) ||
+      !CU_add_test(pSuite, "util_strifind", shrpx::test_util_strifind) ||
       !CU_add_test(pSuite, "gzip_inflate", test_nghttp2_gzip_inflate) ||
       !CU_add_test(pSuite, "buffer_write", nghttp2::test_buffer_write) ||
       !CU_add_test(pSuite, "pool_recycle", nghttp2::test_pool_recycle) ||
@@ -182,7 +188,13 @@ int main(int argc, char *argv[]) {
       !CU_add_test(pSuite, "peek_memchunk_disable_peek_no_drain",
                    nghttp2::test_peek_memchunks_disable_peek_no_drain) ||
       !CU_add_test(pSuite, "peek_memchunk_reset",
-                   nghttp2::test_peek_memchunks_reset)) {
+                   nghttp2::test_peek_memchunks_reset) ||
+      !CU_add_test(pSuite, "template_immutable_string",
+                   nghttp2::test_template_immutable_string) ||
+      !CU_add_test(pSuite, "template_string_ref",
+                   nghttp2::test_template_string_ref) ||
+      !CU_add_test(pSuite, "base64_encode", nghttp2::test_base64_encode) ||
+      !CU_add_test(pSuite, "base64_decode", nghttp2::test_base64_decode)) {
     CU_cleanup_registry();
     return CU_get_error();
   }

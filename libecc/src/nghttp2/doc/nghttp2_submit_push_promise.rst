@@ -63,7 +63,7 @@ Synopsis
         The *stream_id* is 0; The *stream_id* does not designate stream
         that peer initiated.
     :macro:`NGHTTP2_ERR_STREAM_CLOSED`
-        The stream was alreay closed; or the *stream_id* is invalid.
+        The stream was already closed; or the *stream_id* is invalid.
     
     .. warning::
     

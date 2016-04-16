@@ -187,7 +187,6 @@ man1dir = $(mandir)/man1
 am__installdirs = "$(DESTDIR)$(man1dir)"
 NROFF = nroff
 MANS = $(man_MANS)
-am__extra_recursive_targets = it-recursive itprep-recursive
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 am__DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/asio_http2.h.rst.in \
 	$(srcdir)/asio_http2_client.h.rst.in \
@@ -224,6 +223,7 @@ CPPFLAGS = @CPPFLAGS@
 CUNIT_CFLAGS = @CUNIT_CFLAGS@
 CUNIT_LIBS = @CUNIT_LIBS@
 CXX = @CXX@
+CXX1XCXXFLAGS = @CXX1XCXXFLAGS@
 CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
@@ -311,6 +311,7 @@ STRIP = @STRIP@
 TESTLDADD = @TESTLDADD@
 VERSION = @VERSION@
 WARNCFLAGS = @WARNCFLAGS@
+WARNCXXFLAGS = @WARNCXXFLAGS@
 XML2_CONFIG = @XML2_CONFIG@
 XML_CPPFLAGS = @XML_CPPFLAGS@
 XML_LIBS = @XML_LIBS@
@@ -404,37 +405,48 @@ APIDOCS = \
 	nghttp2_hd_inflate_hd.rst \
 	nghttp2_hd_inflate_new.rst \
 	nghttp2_hd_inflate_new2.rst \
+	nghttp2_http2_strerror.rst \
 	nghttp2_is_fatal.rst \
 	nghttp2_nv_compare_name.rst \
 	nghttp2_option_del.rst \
 	nghttp2_option_new.rst \
 	nghttp2_option_set_max_reserved_remote_streams.rst \
+	nghttp2_option_set_no_auto_ping_ack.rst \
 	nghttp2_option_set_no_auto_window_update.rst \
 	nghttp2_option_set_no_http_messaging.rst \
 	nghttp2_option_set_no_recv_client_magic.rst \
 	nghttp2_option_set_peer_max_concurrent_streams.rst \
+	nghttp2_option_set_user_recv_extension_type.rst \
 	nghttp2_pack_settings_payload.rst \
 	nghttp2_priority_spec_check_default.rst \
 	nghttp2_priority_spec_default_init.rst \
 	nghttp2_priority_spec_init.rst \
+	nghttp2_rcbuf_decref.rst \
+	nghttp2_rcbuf_get_buf.rst \
+	nghttp2_rcbuf_incref.rst \
 	nghttp2_select_next_protocol.rst \
 	nghttp2_session_callbacks_del.rst \
 	nghttp2_session_callbacks_new.rst \
 	nghttp2_session_callbacks_set_before_frame_send_callback.rst \
 	nghttp2_session_callbacks_set_data_source_read_length_callback.rst \
+	nghttp2_session_callbacks_set_error_callback.rst \
 	nghttp2_session_callbacks_set_on_begin_frame_callback.rst \
 	nghttp2_session_callbacks_set_on_begin_headers_callback.rst \
 	nghttp2_session_callbacks_set_on_data_chunk_recv_callback.rst \
+	nghttp2_session_callbacks_set_on_extension_chunk_recv_callback.rst \
 	nghttp2_session_callbacks_set_on_frame_not_send_callback.rst \
 	nghttp2_session_callbacks_set_on_frame_recv_callback.rst \
 	nghttp2_session_callbacks_set_on_frame_send_callback.rst \
 	nghttp2_session_callbacks_set_on_header_callback.rst \
+	nghttp2_session_callbacks_set_on_header_callback2.rst \
 	nghttp2_session_callbacks_set_on_invalid_frame_recv_callback.rst \
 	nghttp2_session_callbacks_set_on_stream_close_callback.rst \
+	nghttp2_session_callbacks_set_pack_extension_callback.rst \
 	nghttp2_session_callbacks_set_recv_callback.rst \
 	nghttp2_session_callbacks_set_select_padding_callback.rst \
 	nghttp2_session_callbacks_set_send_callback.rst \
 	nghttp2_session_callbacks_set_send_data_callback.rst \
+	nghttp2_session_callbacks_set_unpack_extension_callback.rst \
 	nghttp2_session_client_new.rst \
 	nghttp2_session_client_new2.rst \
 	nghttp2_session_client_new3.rst \
@@ -486,6 +498,7 @@ APIDOCS = \
 	nghttp2_stream_get_weight.rst \
 	nghttp2_strerror.rst \
 	nghttp2_submit_data.rst \
+	nghttp2_submit_extension.rst \
 	nghttp2_submit_goaway.rst \
 	nghttp2_submit_headers.rst \
 	nghttp2_submit_ping.rst \
@@ -500,15 +513,19 @@ APIDOCS = \
 	nghttp2_submit_window_update.rst \
 	nghttp2_version.rst
 
-EXTRA_DIST = \
-	mkapiref.py \
+RST_FILES = \
 	README.rst \
 	programmers-guide.rst \
-	$(APIDOCS) \
 	nghttp.1.rst \
 	nghttpd.1.rst \
 	nghttpx.1.rst \
-	h2load.1.rst \
+	h2load.1.rst
+
+EXTRA_DIST = \
+	CMakeLists.txt \
+	mkapiref.py \
+	$(RST_FILES) \
+	$(APIDOCS) \
 	sources/index.rst \
 	sources/tutorial-client.rst \
 	sources/tutorial-server.rst \
@@ -674,8 +691,6 @@ uninstall-man1:
 	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^1][0-9a-z]*$$,1,;x' \
 	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
 	dir='$(DESTDIR)$(man1dir)'; $(am__uninstall_files_from_dir)
-it-local: 
-itprep-local: 
 tags TAGS:
 
 ctags CTAGS:
@@ -798,14 +813,6 @@ install-ps-am:
 
 installcheck-am:
 
-it: it-am
-
-it-am: it-local
-
-itprep: itprep-am
-
-itprep-am: itprep-local
-
 maintainer-clean: maintainer-clean-am
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
@@ -836,10 +843,10 @@ uninstall-man: uninstall-man1
 	install-html install-html-am install-info install-info-am \
 	install-man install-man1 install-pdf install-pdf-am install-ps \
 	install-ps-am install-strip installcheck installcheck-am \
-	installdirs it-am it-local itprep-am itprep-local \
-	maintainer-clean maintainer-clean-generic mostlyclean \
-	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
-	tags-am uninstall uninstall-am uninstall-man uninstall-man1
+	installdirs maintainer-clean maintainer-clean-generic \
+	mostlyclean mostlyclean-generic mostlyclean-libtool pdf pdf-am \
+	ps ps-am tags-am uninstall uninstall-am uninstall-man \
+	uninstall-man1
 
 .PRECIOUS: Makefile
 
@@ -867,13 +874,15 @@ help:
 
 apiref.rst: \
 	$(top_builddir)/lib/includes/nghttp2/nghttp2ver.h \
-	$(top_builddir)/lib/includes/nghttp2/nghttp2.h
+	$(top_srcdir)/lib/includes/nghttp2/nghttp2.h
+	for i in $(RST_FILES); do [ -e $(builddir)/$$i ] || cp $(srcdir)/$$i $(builddir); done
 	$(PYTHON) $(top_srcdir)/doc/mkapiref.py \
 	apiref.rst macros.rst enums.rst types.rst . $^
 
 $(APIDOCS): apiref.rst
 
 clean-local:
+	[ $(srcdir) = $(builddir) ] || for i in $(RST_FILES); do [ -e $(builddir)/$$i ] && rm $(builddir)/$$i; done
 	-rm -f apiref.rst
 	-rm -f $(APIDOCS)
 	-rm -rf $(BUILDDIR)/*

@@ -41,7 +41,10 @@ using namespace nghttp2;
 namespace h2load {
 
 Http1Session::Http1Session(Client *client)
-    : stream_req_counter_(1), stream_resp_counter_(1), client_(client), htp_(),
+    : stream_req_counter_(1),
+      stream_resp_counter_(1),
+      client_(client),
+      htp_(),
       complete_(false) {
   http_parser_init(&htp_, HTTP_RESPONSE);
   htp_.data = this;
@@ -80,9 +83,11 @@ int htp_msg_completecb(http_parser *htp) {
   auto client = session->get_client();
 
   auto final = http_should_keep_alive(htp) == 0;
-  client->on_stream_close(session->stream_resp_counter_, true,
-                          session->req_stats_[session->stream_resp_counter_],
-                          final);
+  auto req_stat = client->get_req_stat(session->stream_resp_counter_);
+
+  assert(req_stat);
+
+  client->on_stream_close(session->stream_resp_counter_, true, final);
 
   session->stream_resp_counter_ += 2;
 
@@ -150,7 +155,7 @@ http_parser_settings htp_hooks = {
 
 void Http1Session::on_connect() { client_->signal_write(); }
 
-int Http1Session::submit_request(RequestStat *req_stat) {
+int Http1Session::submit_request() {
   auto config = client_->worker->config;
   const auto &req = config->h1reqs[client_->reqidx];
   client_->reqidx++;
@@ -159,12 +164,12 @@ int Http1Session::submit_request(RequestStat *req_stat) {
     client_->reqidx = 0;
   }
 
-  assert(req_stat);
+  client_->on_request(stream_req_counter_);
+
+  auto req_stat = client_->get_req_stat(stream_req_counter_);
+
   client_->record_request_time(req_stat);
   client_->wb.write(req.c_str(), req.size());
-
-  client_->on_request(stream_req_counter_);
-  req_stats_[stream_req_counter_] = req_stat;
 
   // increment for next request
   stream_req_counter_ += 2;

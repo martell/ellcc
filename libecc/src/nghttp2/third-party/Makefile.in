@@ -113,6 +113,7 @@ build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
 @ENABLE_THIRD_PARTY_TRUE@@HAVE_NEVERBLEED_TRUE@am__append_1 = libneverbleed.la
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@am__append_2 = build_config.rb mruby/*
 subdir = third-party
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/ax_boost_asio.m4 \
@@ -195,7 +196,6 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
-am__extra_recursive_targets = it-recursive itprep-recursive
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
 # and print each of them once, without duplicates.  Input order is
@@ -239,6 +239,7 @@ CPPFLAGS = @CPPFLAGS@
 CUNIT_CFLAGS = @CUNIT_CFLAGS@
 CUNIT_LIBS = @CUNIT_LIBS@
 CXX = @CXX@
+CXX1XCXXFLAGS = @CXX1XCXXFLAGS@
 CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
@@ -326,6 +327,7 @@ STRIP = @STRIP@
 TESTLDADD = @TESTLDADD@
 VERSION = @VERSION@
 WARNCFLAGS = @WARNCFLAGS@
+WARNCXXFLAGS = @WARNCXXFLAGS@
 XML2_CONFIG = @XML2_CONFIG@
 XML_CPPFLAGS = @XML_CPPFLAGS@
 XML_LIBS = @XML_LIBS@
@@ -392,7 +394,8 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-AM_CPPFLAGS = -Wall @DEFS@
+AM_CPPFLAGS = @DEFS@
+EXTRA_DIST = CMakeLists.txt $(am__append_2)
 @ENABLE_THIRD_PARTY_TRUE@noinst_LTLIBRARIES = libhttp-parser.la \
 @ENABLE_THIRD_PARTY_TRUE@	$(am__append_1)
 @ENABLE_THIRD_PARTY_TRUE@libhttp_parser_la_SOURCES = \
@@ -402,7 +405,6 @@ AM_CPPFLAGS = -Wall @DEFS@
 @ENABLE_THIRD_PARTY_TRUE@@HAVE_NEVERBLEED_TRUE@libneverbleed_la_CPPFLAGS = @OPENSSL_CFLAGS@
 @ENABLE_THIRD_PARTY_TRUE@@HAVE_NEVERBLEED_TRUE@libneverbleed_la_LIBADD = @OPENSSL_LIBS@
 @ENABLE_THIRD_PARTY_TRUE@@HAVE_NEVERBLEED_TRUE@libneverbleed_la_SOURCES = neverbleed/neverbleed.c neverbleed/neverbleed.h
-@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@EXTRA_DIST = build_config.rb mruby/*
 all: all-am
 
 .SUFFIXES:
@@ -521,8 +523,6 @@ clean-libtool:
 	-rm -rf .libs _libs
 	-rm -rf http-parser/.libs http-parser/_libs
 	-rm -rf neverbleed/.libs neverbleed/_libs
-it-local: 
-itprep-local: 
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -699,14 +699,6 @@ install-ps-am:
 
 installcheck-am:
 
-it: it-am
-
-it-am: it-local
-
-itprep: itprep-am
-
-itprep-am: itprep-local
-
 maintainer-clean: maintainer-clean-am
 	-rm -rf http-parser/$(DEPDIR) neverbleed/$(DEPDIR)
 	-rm -f Makefile
@@ -738,11 +730,10 @@ uninstall-am:
 	install-dvi-am install-exec install-exec-am install-html \
 	install-html-am install-info install-info-am install-man \
 	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs it-am \
-	it-local itprep-am itprep-local maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-compile \
-	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
-	tags tags-am uninstall uninstall-am
+	install-strip installcheck installcheck-am installdirs \
+	maintainer-clean maintainer-clean-generic mostlyclean \
+	mostlyclean-compile mostlyclean-generic mostlyclean-libtool \
+	pdf pdf-am ps ps-am tags tags-am uninstall uninstall-am
 
 .PRECIOUS: Makefile
 
@@ -761,7 +752,9 @@ uninstall-am:
 @ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@all-local: mruby
 
 @ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@clean-local:
-@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	-rm -rf "${abs_builddir}/mruby/build"
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	MRUBY_CONFIG="${srcdir}/build_config.rb" \
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	BUILD_DIR="${abs_builddir}/mruby/build" \
+@ENABLE_THIRD_PARTY_TRUE@@HAVE_MRUBY_TRUE@	"${srcdir}/mruby/minirake" -f "${srcdir}/mruby/Rakefile" clean
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

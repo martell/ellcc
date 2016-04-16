@@ -62,6 +62,8 @@ Synopsis
         processed yet.  Normally, this does not happen, but when
         application wrongly calls `nghttp2_submit_response()` twice,
         this may happen.
+    :macro:`NGHTTP2_ERR_PROTO`
+        The *session* is client session.
     
     .. warning::
     

@@ -11,4 +11,7 @@ Synopsis
 
     
     Sets callback function invoked when a header name/value pair is
-    received.
+    received.  If both
+    `nghttp2_session_callbacks_set_on_header_callback()` and
+    `nghttp2_session_callbacks_set_on_header_callback2()` are used to
+    set callbacks, the latter has the precedence.

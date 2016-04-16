@@ -151,7 +151,6 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
-am__extra_recursive_targets = it-recursive itprep-recursive
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 am__DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/config.go.in \
 	$(srcdir)/setenv.in
@@ -178,6 +177,7 @@ CPPFLAGS = @CPPFLAGS@
 CUNIT_CFLAGS = @CUNIT_CFLAGS@
 CUNIT_LIBS = @CUNIT_LIBS@
 CXX = @CXX@
+CXX1XCXXFLAGS = @CXX1XCXXFLAGS@
 CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
@@ -265,6 +265,7 @@ STRIP = @STRIP@
 TESTLDADD = @TESTLDADD@
 VERSION = @VERSION@
 WARNCFLAGS = @WARNCFLAGS@
+WARNCXXFLAGS = @WARNCXXFLAGS@
 XML2_CONFIG = @XML2_CONFIG@
 XML_CPPFLAGS = @XML_CPPFLAGS@
 XML_LIBS = @XML_LIBS@
@@ -331,11 +332,15 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-EXTRA_DIST = \
+GO_FILES = \
 	nghttpx_http1_test.go \
 	nghttpx_http2_test.go \
 	nghttpx_spdy_test.go \
-	server_tester.go \
+	server_tester.go
+
+EXTRA_DIST = \
+	CMakeLists.txt \
+	$(GO_FILES) \
 	server.key \
 	server.crt \
 	alt-server.key \
@@ -388,8 +393,6 @@ mostlyclean-libtool:
 
 clean-libtool:
 	-rm -rf .libs _libs
-it-local: 
-itprep-local: 
 tags TAGS:
 
 ctags CTAGS:
@@ -509,14 +512,6 @@ install-ps-am:
 
 installcheck-am:
 
-it: it-am
-
-it-am: it-local
-
-itprep: itprep-am
-
-itprep-am: itprep-local
-
 maintainer-clean: maintainer-clean-am
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
@@ -544,22 +539,22 @@ uninstall-am:
 	install-dvi-am install-exec install-exec-am install-html \
 	install-html-am install-info install-info-am install-man \
 	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs it-am \
-	it-local itprep-am itprep-local maintainer-clean \
-	maintainer-clean-generic mostlyclean mostlyclean-generic \
-	mostlyclean-libtool pdf pdf-am ps ps-am tags-am uninstall \
-	uninstall-am
+	install-strip installcheck installcheck-am installdirs \
+	maintainer-clean maintainer-clean-generic mostlyclean \
+	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
+	tags-am uninstall uninstall-am
 
 .PRECIOUS: Makefile
 
 
-itprep-local:
+itprep:
 	go get -d -v golang.org/x/net/http2
 	go get -d -v github.com/tatsuhiro-t/go-nghttp2
 	go get -d -v github.com/tatsuhiro-t/spdy
 	go get -d -v golang.org/x/net/websocket
 
-it-local:
+it:
+	for i in $(GO_FILES); do [ -e $(builddir)/$$i ] || cp $(srcdir)/$$i $(builddir); done
 	sh setenv go test -v
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.

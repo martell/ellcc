@@ -40,7 +40,7 @@ Synopsis
     :macro:`NGHTTP2_ERR_HEADER_COMP`
         Inflation process has failed.
     :macro:`NGHTTP2_ERR_BUFFER_ERROR`
-        The heder field name or value is too large.
+        The header field name or value is too large.
     
     Example follows::
     

@@ -36,6 +36,7 @@
 
 #include <vector>
 #include <string>
+#include <iomanip>
 
 #include <openssl/crypto.h>
 #include <openssl/x509.h>
@@ -70,7 +71,7 @@ namespace ssl {
 namespace {
 int next_proto_cb(SSL *s, const unsigned char **data, unsigned int *len,
                   void *arg) {
-  auto &prefs = get_config()->alpn_prefs;
+  auto &prefs = get_config()->tls.alpn_prefs;
   *data = prefs.data();
   *len = prefs.size();
   return SSL_TLSEXT_ERR_OK;
@@ -124,13 +125,13 @@ set_alpn_prefs(const std::vector<std::string> &protos) {
 namespace {
 int ssl_pem_passwd_cb(char *buf, int size, int rwflag, void *user_data) {
   auto config = static_cast<Config *>(user_data);
-  int len = (int)strlen(config->private_key_passwd.get());
+  auto len = static_cast<int>(config->tls.private_key_passwd.size());
   if (size < len + 1) {
     LOG(ERROR) << "ssl_pem_passwd_cb: buf is too small " << size;
     return 0;
   }
   // Copy string including last '\0'.
-  memcpy(buf, config->private_key_passwd.get(), len + 1);
+  memcpy(buf, config->tls.private_key_passwd.c_str(), len + 1);
   return len;
 }
 } // namespace
@@ -144,7 +145,8 @@ int servername_callback(SSL *ssl, int *al, void *arg) {
   if (cert_tree) {
     const char *hostname = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
     if (hostname) {
-      auto ssl_ctx = cert_tree->lookup(hostname, strlen(hostname));
+      auto len = strlen(hostname);
+      auto ssl_ctx = cert_tree->lookup(StringRef{hostname, len});
       if (ssl_ctx) {
         SSL_set_SSL_CTX(ssl, ssl_ctx);
       }
@@ -191,8 +193,8 @@ int ocsp_resp_cb(SSL *ssl, void *arg) {
 } // namespace
 #endif // OPENSSL_IS_BORINGSSL
 
-constexpr char MEMCACHED_SESSION_CACHE_KEY_PREFIX[] =
-    "nghttpx:tls-session-cache:";
+constexpr auto MEMCACHED_SESSION_CACHE_KEY_PREFIX =
+    StringRef::from_lit("nghttpx:tls-session-cache:");
 
 namespace {
 int tls_session_new_cb(SSL *ssl, SSL_SESSION *session) {
@@ -212,7 +214,7 @@ int tls_session_new_cb(SSL *ssl, SSL_SESSION *session) {
 
   auto req = make_unique<MemcachedRequest>();
   req->op = MEMCACHED_OP_ADD;
-  req->key = MEMCACHED_SESSION_CACHE_KEY_PREFIX;
+  req->key = MEMCACHED_SESSION_CACHE_KEY_PREFIX.str();
   req->key += util::format_hex(id, idlen);
 
   auto sessionlen = i2d_SSL_SESSION(session, nullptr);
@@ -269,7 +271,7 @@ SSL_SESSION *tls_session_get_cb(SSL *ssl, unsigned char *id, int idlen,
 
   auto req = make_unique<MemcachedRequest>();
   req->op = MEMCACHED_OP_GET;
-  req->key = MEMCACHED_SESSION_CACHE_KEY_PREFIX;
+  req->key = MEMCACHED_SESSION_CACHE_KEY_PREFIX.str();
   req->key += util::format_hex(id, idlen);
   req->cb = [conn](MemcachedRequest *, MemcachedResult res) {
     if (LOG_ENABLED(INFO)) {
@@ -346,7 +348,7 @@ int ticket_key_cb(SSL *ssl, unsigned char *key_name, unsigned char *iv,
 
     std::copy(std::begin(key.data.name), std::end(key.data.name), key_name);
 
-    EVP_EncryptInit_ex(ctx, get_config()->tls_ticket_key_cipher, nullptr,
+    EVP_EncryptInit_ex(ctx, get_config()->tls.ticket.cipher, nullptr,
                        key.data.enc_key.data(), iv);
     HMAC_Init_ex(hctx, key.data.hmac_key.data(), key.hmac_keylen, key.hmac,
                  nullptr);
@@ -411,14 +413,14 @@ int alpn_select_proto_cb(SSL *ssl, const unsigned char **out,
   // We assume that get_config()->npn_list contains ALPN protocol
   // identifier sorted by preference order.  So we just break when we
   // found the first overlap.
-  for (const auto &target_proto_id : get_config()->npn_list) {
+  for (const auto &target_proto_id : get_config()->tls.npn_list) {
     for (auto p = in, end = in + inlen; p < end;) {
       auto proto_id = p + 1;
       auto proto_len = *p;
 
       if (proto_id + proto_len <= end &&
-          util::streq(target_proto_id.c_str(), target_proto_id.size(), proto_id,
-                      proto_len)) {
+          util::streq(StringRef{target_proto_id},
+                      StringRef{proto_id, proto_len})) {
 
         *out = reinterpret_cast<const unsigned char *>(proto_id);
         *outlen = proto_len;
@@ -435,25 +437,29 @@ int alpn_select_proto_cb(SSL *ssl, const unsigned char **out,
 } // namespace
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 
-namespace {
-constexpr const char *tls_names[] = {"TLSv1.2", "TLSv1.1", "TLSv1.0"};
-constexpr size_t tls_namelen = array_size(tls_names);
-constexpr long int tls_masks[] = {SSL_OP_NO_TLSv1_2, SSL_OP_NO_TLSv1_1,
-                                  SSL_OP_NO_TLSv1};
-} // namespace
+struct TLSProtocol {
+  StringRef name;
+  long int mask;
+};
+
+constexpr TLSProtocol TLS_PROTOS[] = {
+    TLSProtocol{StringRef::from_lit("TLSv1.2"), SSL_OP_NO_TLSv1_2},
+    TLSProtocol{StringRef::from_lit("TLSv1.1"), SSL_OP_NO_TLSv1_1},
+    TLSProtocol{StringRef::from_lit("TLSv1.0"), SSL_OP_NO_TLSv1}};
 
 long int create_tls_proto_mask(const std::vector<std::string> &tls_proto_list) {
   long int res = 0;
 
-  for (size_t i = 0; i < tls_namelen; ++i) {
-    size_t j;
-    for (j = 0; j < tls_proto_list.size(); ++j) {
-      if (util::strieq(tls_names[i], tls_proto_list[j])) {
+  for (auto &supported : TLS_PROTOS) {
+    auto ok = false;
+    for (auto &name : tls_proto_list) {
+      if (util::strieq(supported.name, name)) {
+        ok = true;
         break;
       }
     }
-    if (j == tls_proto_list.size()) {
-      res |= tls_masks[i];
+    if (!ok) {
+      res |= supported.mask;
     }
   }
   return res;
@@ -477,22 +483,24 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file
       SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION | SSL_OP_SINGLE_ECDH_USE |
       SSL_OP_SINGLE_DH_USE | SSL_OP_CIPHER_SERVER_PREFERENCE;
 
-  SSL_CTX_set_options(ssl_ctx, ssl_opts | get_config()->tls_proto_mask);
+  auto &tlsconf = get_config()->tls;
+
+  SSL_CTX_set_options(ssl_ctx, ssl_opts | tlsconf.tls_proto_mask);
 
   const unsigned char sid_ctx[] = "shrpx";
   SSL_CTX_set_session_id_context(ssl_ctx, sid_ctx, sizeof(sid_ctx) - 1);
   SSL_CTX_set_session_cache_mode(ssl_ctx, SSL_SESS_CACHE_SERVER);
 
-  if (get_config()->session_cache_memcached_host) {
+  if (!tlsconf.session_cache.memcached.host.empty()) {
     SSL_CTX_sess_set_new_cb(ssl_ctx, tls_session_new_cb);
     SSL_CTX_sess_set_get_cb(ssl_ctx, tls_session_get_cb);
   }
 
-  SSL_CTX_set_timeout(ssl_ctx, get_config()->tls_session_timeout.count());
+  SSL_CTX_set_timeout(ssl_ctx, tlsconf.session_timeout.count());
 
   const char *ciphers;
-  if (get_config()->ciphers) {
-    ciphers = get_config()->ciphers.get();
+  if (!tlsconf.ciphers.empty()) {
+    ciphers = tlsconf.ciphers.c_str();
   } else {
     ciphers = nghttp2::ssl::DEFAULT_CIPHER_LIST;
   }
@@ -525,9 +533,9 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file
 
 #endif // OPENSSL_NO_EC
 
-  if (get_config()->dh_param_file) {
+  if (!tlsconf.dh_param_file.empty()) {
     // Read DH parameters from file
-    auto bio = BIO_new_file(get_config()->dh_param_file.get(), "r");
+    auto bio = BIO_new_file(tlsconf.dh_param_file.c_str(), "r");
     if (bio == nullptr) {
       LOG(FATAL) << "BIO_new_file() failed: "
                  << ERR_error_string(ERR_get_error(), nullptr);
@@ -546,7 +554,7 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file
 
   SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
   SSL_CTX_set_mode(ssl_ctx, SSL_MODE_RELEASE_BUFFERS);
-  if (get_config()->private_key_passwd) {
+  if (!tlsconf.private_key_passwd.empty()) {
     SSL_CTX_set_default_passwd_cb(ssl_ctx, ssl_pem_passwd_cb);
     SSL_CTX_set_default_passwd_cb_userdata(ssl_ctx, (void *)get_config());
   }
@@ -576,14 +584,13 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file
                << ERR_error_string(ERR_get_error(), nullptr);
     DIE();
   }
-  if (get_config()->verify_client) {
-    if (get_config()->verify_client_cacert) {
+  if (tlsconf.client_verify.enabled) {
+    if (!tlsconf.client_verify.cacert.empty()) {
       if (SSL_CTX_load_verify_locations(
-              ssl_ctx, get_config()->verify_client_cacert.get(), nullptr) !=
-          1) {
+              ssl_ctx, tlsconf.client_verify.cacert.c_str(), nullptr) != 1) {
 
         LOG(FATAL) << "Could not load trusted ca certificates from "
-                   << get_config()->verify_client_cacert.get() << ": "
+                   << tlsconf.client_verify.cacert << ": "
                    << ERR_error_string(ERR_get_error(), nullptr);
         DIE();
       }
@@ -591,11 +598,10 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file
       // error even though it returns success. See
       // http://forum.nginx.org/read.php?29,242540
       ERR_clear_error();
-      auto list =
-          SSL_load_client_CA_file(get_config()->verify_client_cacert.get());
+      auto list = SSL_load_client_CA_file(tlsconf.client_verify.cacert.c_str());
       if (!list) {
         LOG(FATAL) << "Could not load ca certificates from "
-                   << get_config()->verify_client_cacert.get() << ": "
+                   << tlsconf.client_verify.cacert << ": "
                    << ERR_error_string(ERR_get_error(), nullptr);
         DIE();
       }
@@ -628,9 +634,9 @@ SSL_CTX *create_ssl_context(const char *private_key_file, const char *cert_file
 }
 
 namespace {
-int select_next_proto_cb(SSL *ssl, unsigned char **out, unsigned char *outlen,
-                         const unsigned char *in, unsigned int inlen,
-                         void *arg) {
+int select_h2_next_proto_cb(SSL *ssl, unsigned char **out,
+                            unsigned char *outlen, const unsigned char *in,
+                            unsigned int inlen, void *arg) {
   if (!util::select_h2(const_cast<const unsigned char **>(out), outlen, in,
                        inlen)) {
     return SSL_TLSEXT_ERR_NOACK;
@@ -640,11 +646,49 @@ int select_next_proto_cb(SSL *ssl, unsigned char **out, unsigned char *outlen,
 }
 } // namespace
 
+namespace {
+int select_h1_next_proto_cb(SSL *ssl, unsigned char **out,
+                            unsigned char *outlen, const unsigned char *in,
+                            unsigned int inlen, void *arg) {
+  auto end = in + inlen;
+  for (; in < end;) {
+    if (util::streq(NGHTTP2_H1_1_ALPN, StringRef{in, in + (in[0] + 1)})) {
+      *out = const_cast<unsigned char *>(in) + 1;
+      *outlen = in[0];
+      return SSL_TLSEXT_ERR_OK;
+    }
+    in += in[0] + 1;
+  }
+
+  return SSL_TLSEXT_ERR_NOACK;
+}
+} // namespace
+
+namespace {
+int select_next_proto_cb(SSL *ssl, unsigned char **out, unsigned char *outlen,
+                         const unsigned char *in, unsigned int inlen,
+                         void *arg) {
+  auto conn = static_cast<Connection *>(SSL_get_app_data(ssl));
+  switch (conn->proto) {
+  case PROTO_HTTP1:
+    return select_h1_next_proto_cb(ssl, out, outlen, in, inlen, arg);
+  case PROTO_HTTP2:
+    return select_h2_next_proto_cb(ssl, out, outlen, in, inlen, arg);
+  default:
+    return SSL_TLSEXT_ERR_NOACK;
+  }
+}
+} // namespace
+
 SSL_CTX *create_ssl_client_context(
 #ifdef HAVE_NEVERBLEED
-    neverbleed_t *nb
+    neverbleed_t *nb,
 #endif // HAVE_NEVERBLEED
-    ) {
+    const StringRef &cacert, const StringRef &cert_file,
+    const StringRef &private_key_file,
+    int (*next_proto_select_cb)(SSL *s, unsigned char **out,
+                                unsigned char *outlen, const unsigned char *in,
+                                unsigned int inlen, void *arg)) {
   auto ssl_ctx = SSL_CTX_new(SSLv23_client_method());
   if (!ssl_ctx) {
     LOG(FATAL) << ERR_error_string(ERR_get_error(), nullptr);
@@ -656,11 +700,13 @@ SSL_CTX *create_ssl_client_context(
                             SSL_OP_NO_COMPRESSION |
                             SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION;
 
-  SSL_CTX_set_options(ssl_ctx, ssl_opts | get_config()->tls_proto_mask);
+  auto &tlsconf = get_config()->tls;
+
+  SSL_CTX_set_options(ssl_ctx, ssl_opts | tlsconf.tls_proto_mask);
 
   const char *ciphers;
-  if (get_config()->ciphers) {
-    ciphers = get_config()->ciphers.get();
+  if (!tlsconf.ciphers.empty()) {
+    ciphers = tlsconf.ciphers.c_str();
   } else {
     ciphers = nghttp2::ssl::DEFAULT_CIPHER_LIST;
   }
@@ -678,57 +724,48 @@ SSL_CTX *create_ssl_client_context(
               << ERR_error_string(ERR_get_error(), nullptr);
   }
 
-  if (get_config()->cacert) {
-    if (SSL_CTX_load_verify_locations(ssl_ctx, get_config()->cacert.get(),
-                                      nullptr) != 1) {
+  if (!cacert.empty()) {
+    if (SSL_CTX_load_verify_locations(ssl_ctx, cacert.c_str(), nullptr) != 1) {
 
-      LOG(FATAL) << "Could not load trusted ca certificates from "
-                 << get_config()->cacert.get() << ": "
-                 << ERR_error_string(ERR_get_error(), nullptr);
+      LOG(FATAL) << "Could not load trusted ca certificates from " << cacert
+                 << ": " << ERR_error_string(ERR_get_error(), nullptr);
       DIE();
     }
   }
 
-  if (get_config()->client_private_key_file) {
+  if (!cert_file.empty()) {
+    if (SSL_CTX_use_certificate_chain_file(ssl_ctx, cert_file.c_str()) != 1) {
+
+      LOG(FATAL) << "Could not load client certificate from " << cert_file
+                 << ": " << ERR_error_string(ERR_get_error(), nullptr);
+      DIE();
+    }
+  }
+
+  if (!private_key_file.empty()) {
 #ifndef HAVE_NEVERBLEED
-    if (SSL_CTX_use_PrivateKey_file(ssl_ctx,
-                                    get_config()->client_private_key_file.get(),
+    if (SSL_CTX_use_PrivateKey_file(ssl_ctx, private_key_file.c_str(),
                                     SSL_FILETYPE_PEM) != 1) {
       LOG(FATAL) << "Could not load client private key from "
-                 << get_config()->client_private_key_file.get() << ": "
+                 << private_key_file << ": "
                  << ERR_error_string(ERR_get_error(), nullptr);
       DIE();
     }
 #else  // HAVE_NEVERBLEED
     std::array<char, NEVERBLEED_ERRBUF_SIZE> errbuf;
-    if (neverbleed_load_private_key_file(
-            nb, ssl_ctx, get_config()->client_private_key_file.get(),
-            errbuf.data()) != 1) {
-      LOG(FATAL) << "neverbleed_load_private_key_file failed: "
+    if (neverbleed_load_private_key_file(nb, ssl_ctx, private_key_file.c_str(),
+                                         errbuf.data()) != 1) {
+      LOG(FATAL) << "neverbleed_load_private_key_file: could not load client "
+                    "private key from " << private_key_file << ": "
                  << errbuf.data();
       DIE();
     }
 #endif // HAVE_NEVERBLEED
   }
-  if (get_config()->client_cert_file) {
-    if (SSL_CTX_use_certificate_chain_file(
-            ssl_ctx, get_config()->client_cert_file.get()) != 1) {
 
-      LOG(FATAL) << "Could not load client certificate from "
-                 << get_config()->client_cert_file.get() << ": "
-                 << ERR_error_string(ERR_get_error(), nullptr);
-      DIE();
-    }
-  }
-  // NPN selection callback
-  SSL_CTX_set_next_proto_select_cb(ssl_ctx, select_next_proto_cb, nullptr);
-
-#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-  // ALPN advertisement; We only advertise HTTP/2
-  auto proto_list = util::get_default_alpn();
-
-  SSL_CTX_set_alpn_protos(ssl_ctx, proto_list.data(), proto_list.size());
-#endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
+  // NPN selection callback.  This is required to set SSL_CTX because
+  // OpenSSL does not offer SSL_set_next_proto_select_cb.
+  SSL_CTX_set_next_proto_select_cb(ssl_ctx, next_proto_select_cb, nullptr);
 
   return ssl_ctx;
 }
@@ -745,27 +782,34 @@ SSL *create_ssl(SSL_CTX *ssl_ctx) {
 }
 
 ClientHandler *accept_connection(Worker *worker, int fd, sockaddr *addr,
-                                 int addrlen) {
+                                 int addrlen, const UpstreamAddr *faddr) {
   char host[NI_MAXHOST];
   char service[NI_MAXSERV];
   int rv;
-  rv = getnameinfo(addr, addrlen, host, sizeof(host), service, sizeof(service),
-                   NI_NUMERICHOST | NI_NUMERICSERV);
-  if (rv != 0) {
-    LOG(ERROR) << "getnameinfo() failed: " << gai_strerror(rv);
 
-    return nullptr;
-  }
+  if (addr->sa_family == AF_UNIX) {
+    std::copy_n("localhost", sizeof("localhost"), host);
+    service[0] = '\0';
+  } else {
+    rv = getnameinfo(addr, addrlen, host, sizeof(host), service,
+                     sizeof(service), NI_NUMERICHOST | NI_NUMERICSERV);
+    if (rv != 0) {
+      LOG(ERROR) << "getnameinfo() failed: " << gai_strerror(rv);
 
-  if (addr->sa_family != AF_UNIX) {
+      return nullptr;
+    }
+
     rv = util::make_socket_nodelay(fd);
     if (rv == -1) {
       LOG(WARN) << "Setting option TCP_NODELAY failed: errno=" << errno;
     }
   }
   SSL *ssl = nullptr;
-  auto ssl_ctx = worker->get_sv_ssl_ctx();
-  if (ssl_ctx) {
+  if (faddr->tls) {
+    auto ssl_ctx = worker->get_sv_ssl_ctx();
+
+    assert(ssl_ctx);
+
     ssl = create_ssl(ssl_ctx);
     if (!ssl) {
       return nullptr;
@@ -777,169 +821,224 @@ ClientHandler *accept_connection(Worker *worker, int fd, sockaddr *addr,
     }
   }
 
-  return new ClientHandler(worker, fd, ssl, host, service);
+  return new ClientHandler(worker, fd, ssl, host, service, addr->sa_family,
+                           faddr);
 }
 
-namespace {
-bool tls_hostname_match(const char *pattern, const char *hostname) {
-  const char *ptWildcard = strchr(pattern, '*');
-  if (ptWildcard == nullptr) {
+bool tls_hostname_match(const StringRef &pattern, const StringRef &hostname) {
+  auto ptWildcard = std::find(std::begin(pattern), std::end(pattern), '*');
+  if (ptWildcard == std::end(pattern)) {
     return util::strieq(pattern, hostname);
   }
-  const char *ptLeftLabelEnd = strchr(pattern, '.');
-  bool wildcardEnabled = true;
+
+  auto ptLeftLabelEnd = std::find(std::begin(pattern), std::end(pattern), '.');
+  auto wildcardEnabled = true;
   // Do case-insensitive match. At least 2 dots are required to enable
   // wildcard match. Also wildcard must be in the left-most label.
   // Don't attempt to match a presented identifier where the wildcard
   // character is embedded within an A-label.
-  if (ptLeftLabelEnd == 0 || strchr(ptLeftLabelEnd + 1, '.') == 0 ||
-      ptLeftLabelEnd < ptWildcard || util::istarts_with(pattern, "xn--")) {
+  if (ptLeftLabelEnd == std::end(pattern) ||
+      std::find(ptLeftLabelEnd + 1, std::end(pattern), '.') ==
+          std::end(pattern) ||
+      ptLeftLabelEnd < ptWildcard || util::istarts_with_l(pattern, "xn--")) {
     wildcardEnabled = false;
   }
+
   if (!wildcardEnabled) {
     return util::strieq(pattern, hostname);
   }
-  const char *hnLeftLabelEnd = strchr(hostname, '.');
-  if (hnLeftLabelEnd == 0 || !util::strieq(ptLeftLabelEnd, hnLeftLabelEnd)) {
+
+  auto hnLeftLabelEnd =
+      std::find(std::begin(hostname), std::end(hostname), '.');
+  if (hnLeftLabelEnd == std::end(hostname) ||
+      !util::strieq(StringRef{ptLeftLabelEnd, std::end(pattern)},
+                    StringRef{hnLeftLabelEnd, std::end(hostname)})) {
     return false;
   }
   // Perform wildcard match. Here '*' must match at least one
   // character.
-  if (hnLeftLabelEnd - hostname < ptLeftLabelEnd - pattern) {
+  if (hnLeftLabelEnd - std::begin(hostname) <
+      ptLeftLabelEnd - std::begin(pattern)) {
     return false;
   }
-  return util::istarts_with(hostname, hnLeftLabelEnd, pattern, ptWildcard) &&
-         util::iends_with(hostname, hnLeftLabelEnd, ptWildcard + 1,
-                          ptLeftLabelEnd);
+  return util::istarts_with(StringRef{std::begin(hostname), hnLeftLabelEnd},
+                            StringRef{std::begin(pattern), ptWildcard}) &&
+         util::iends_with(StringRef{std::begin(hostname), hnLeftLabelEnd},
+                          StringRef{ptWildcard + 1, ptLeftLabelEnd});
+}
+
+namespace {
+// if return value is not empty, StringRef.c_str() must be freed using
+// OPENSSL_free().
+StringRef get_common_name(X509 *cert) {
+  auto subjectname = X509_get_subject_name(cert);
+  if (!subjectname) {
+    LOG(WARN) << "Could not get X509 name object from the certificate.";
+    return StringRef{};
+  }
+  int lastpos = -1;
+  for (;;) {
+    lastpos = X509_NAME_get_index_by_NID(subjectname, NID_commonName, lastpos);
+    if (lastpos == -1) {
+      break;
+    }
+    auto entry = X509_NAME_get_entry(subjectname, lastpos);
+
+    unsigned char *p;
+    auto plen = ASN1_STRING_to_UTF8(&p, X509_NAME_ENTRY_get_data(entry));
+    if (plen < 0) {
+      continue;
+    }
+    if (std::find(p, p + plen, '\0') != p + plen) {
+      // Embedded NULL is not permitted.
+      continue;
+    }
+    if (plen == 0) {
+      LOG(WARN) << "X509 name is empty";
+      OPENSSL_free(p);
+      continue;
+    }
+
+    return StringRef{p, static_cast<size_t>(plen)};
+  }
+  return StringRef{};
 }
 } // namespace
 
 namespace {
-int verify_hostname(const char *hostname, const Address *addr,
-                    const std::vector<std::string> &dns_names,
-                    const std::vector<std::string> &ip_addrs,
-                    const std::string &common_name) {
-  if (util::numeric_host(hostname)) {
-    if (ip_addrs.empty()) {
-      return util::strieq(common_name.c_str(), hostname) ? 0 : -1;
-    }
-    const void *saddr;
-    switch (addr->su.storage.ss_family) {
-    case AF_INET:
-      saddr = &addr->su.in.sin_addr;
-      break;
-    case AF_INET6:
-      saddr = &addr->su.in6.sin6_addr;
-      break;
-    default:
-      return -1;
-    }
-    for (size_t i = 0; i < ip_addrs.size(); ++i) {
-      if (addr->len == ip_addrs[i].size() &&
-          memcmp(saddr, ip_addrs[i].c_str(), addr->len) == 0) {
-        return 0;
-      }
-    }
-  } else {
-    if (dns_names.empty()) {
-      return tls_hostname_match(common_name.c_str(), hostname) ? 0 : -1;
-    }
-    for (size_t i = 0; i < dns_names.size(); ++i) {
-      if (tls_hostname_match(dns_names[i].c_str(), hostname)) {
-        return 0;
-      }
-    }
+int verify_numeric_hostname(X509 *cert, const StringRef &hostname,
+                            const Address *addr) {
+  const void *saddr;
+  switch (addr->su.storage.ss_family) {
+  case AF_INET:
+    saddr = &addr->su.in.sin_addr;
+    break;
+  case AF_INET6:
+    saddr = &addr->su.in6.sin6_addr;
+    break;
+  default:
+    return -1;
   }
-  return -1;
-}
-} // namespace
 
-void get_altnames(X509 *cert, std::vector<std::string> &dns_names,
-                  std::vector<std::string> &ip_addrs,
-                  std::string &common_name) {
-  GENERAL_NAMES *altnames = static_cast<GENERAL_NAMES *>(
+  auto altnames = static_cast<GENERAL_NAMES *>(
       X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
   if (altnames) {
     auto altnames_deleter = defer(GENERAL_NAMES_free, altnames);
     size_t n = sk_GENERAL_NAME_num(altnames);
     for (size_t i = 0; i < n; ++i) {
-      const GENERAL_NAME *altname = sk_GENERAL_NAME_value(altnames, i);
-      if (altname->type == GEN_DNS) {
-        const char *name;
-        name = reinterpret_cast<char *>(ASN1_STRING_data(altname->d.ia5));
-        if (!name) {
-          continue;
-        }
-        size_t len = ASN1_STRING_length(altname->d.ia5);
-        if (std::find(name, name + len, '\0') != name + len) {
-          // Embedded NULL is not permitted.
-          continue;
-        }
-        dns_names.push_back(std::string(name, len));
-      } else if (altname->type == GEN_IPADD) {
-        const unsigned char *ip_addr = altname->d.iPAddress->data;
-        if (!ip_addr) {
-          continue;
-        }
-        size_t len = altname->d.iPAddress->length;
-        ip_addrs.push_back(
-            std::string(reinterpret_cast<const char *>(ip_addr), len));
+      auto altname = sk_GENERAL_NAME_value(altnames, i);
+      if (altname->type != GEN_IPADD) {
+        continue;
+      }
+
+      auto ip_addr = altname->d.iPAddress->data;
+      if (!ip_addr) {
+        continue;
+      }
+      size_t ip_addrlen = altname->d.iPAddress->length;
+
+      if (addr->len == ip_addrlen && memcmp(saddr, ip_addr, ip_addrlen) == 0) {
+        return 0;
       }
     }
   }
-  X509_NAME *subjectname = X509_get_subject_name(cert);
-  if (!subjectname) {
-    LOG(WARN) << "Could not get X509 name object from the certificate.";
-    return;
-  }
-  int lastpos = -1;
-  while (1) {
-    lastpos = X509_NAME_get_index_by_NID(subjectname, NID_commonName, lastpos);
-    if (lastpos == -1) {
-      break;
-    }
-    X509_NAME_ENTRY *entry = X509_NAME_get_entry(subjectname, lastpos);
-    unsigned char *out;
-    int outlen = ASN1_STRING_to_UTF8(&out, X509_NAME_ENTRY_get_data(entry));
-    if (outlen < 0) {
-      continue;
-    }
-    if (std::find(out, out + outlen, '\0') != out + outlen) {
-      // Embedded NULL is not permitted.
-      continue;
-    }
-    common_name.assign(&out[0], &out[outlen]);
-    OPENSSL_free(out);
-    break;
-  }
-}
 
-int check_cert(SSL *ssl, const DownstreamAddr *addr) {
+  auto cn = get_common_name(cert);
+  if (cn.empty()) {
+    return -1;
+  }
+
+  // cn is not NULL terminated
+  auto rv = util::streq(hostname, cn);
+  OPENSSL_free(const_cast<char *>(cn.c_str()));
+
+  if (rv) {
+    return 0;
+  }
+
+  return -1;
+}
+} // namespace
+
+namespace {
+int verify_hostname(X509 *cert, const StringRef &hostname,
+                    const Address *addr) {
+  if (util::numeric_host(hostname.c_str())) {
+    return verify_numeric_hostname(cert, hostname, addr);
+  }
+
+  auto altnames = static_cast<GENERAL_NAMES *>(
+      X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
+  if (altnames) {
+    auto altnames_deleter = defer(GENERAL_NAMES_free, altnames);
+    size_t n = sk_GENERAL_NAME_num(altnames);
+    for (size_t i = 0; i < n; ++i) {
+      auto altname = sk_GENERAL_NAME_value(altnames, i);
+      if (altname->type != GEN_DNS) {
+        continue;
+      }
+
+      auto name = reinterpret_cast<char *>(ASN1_STRING_data(altname->d.ia5));
+      if (!name) {
+        continue;
+      }
+
+      auto len = ASN1_STRING_length(altname->d.ia5);
+      if (std::find(name, name + len, '\0') != name + len) {
+        // Embedded NULL is not permitted.
+        continue;
+      }
+
+      if (tls_hostname_match(StringRef{name, static_cast<size_t>(len)},
+                             hostname)) {
+        return 0;
+      }
+    }
+  }
+
+  auto cn = get_common_name(cert);
+  if (cn.empty()) {
+    return -1;
+  }
+
+  auto rv = util::strieq(hostname, cn);
+  OPENSSL_free(const_cast<char *>(cn.c_str()));
+
+  if (rv) {
+    return 0;
+  }
+
+  return -1;
+}
+} // namespace
+
+int check_cert(SSL *ssl, const Address *addr, const StringRef &host) {
   auto cert = SSL_get_peer_certificate(ssl);
   if (!cert) {
     LOG(ERROR) << "No certificate found";
     return -1;
   }
   auto cert_deleter = defer(X509_free, cert);
-  long verify_res = SSL_get_verify_result(ssl);
+  auto verify_res = SSL_get_verify_result(ssl);
   if (verify_res != X509_V_OK) {
     LOG(ERROR) << "Certificate verification failed: "
                << X509_verify_cert_error_string(verify_res);
     return -1;
   }
-  std::string common_name;
-  std::vector<std::string> dns_names;
-  std::vector<std::string> ip_addrs;
-  get_altnames(cert, dns_names, ip_addrs, common_name);
-  auto hostname = get_config()->backend_tls_sni_name
-                      ? get_config()->backend_tls_sni_name.get()
-                      : addr->host.get();
-  if (verify_hostname(hostname, &addr->addr, dns_names, ip_addrs,
-                      common_name) != 0) {
+
+  if (verify_hostname(cert, host, addr) != 0) {
     LOG(ERROR) << "Certificate verification failed: hostname does not match";
     return -1;
   }
   return 0;
+}
+
+int check_cert(SSL *ssl, const DownstreamAddr *addr) {
+  auto &backend_sni_name = get_config()->tls.backend_sni_name;
+
+  auto hostname = !backend_sni_name.empty() ? StringRef(backend_sni_name)
+                                            : StringRef(addr->host);
+  return check_cert(ssl, &addr->addr, hostname);
 }
 
 CertLookupTree::CertLookupTree() {
@@ -951,8 +1050,8 @@ CertLookupTree::CertLookupTree() {
 namespace {
 // The |offset| is the index in the hostname we are examining.  We are
 // going to scan from |offset| in backwards.
-void cert_lookup_tree_add_cert(CertNode *node, SSL_CTX *ssl_ctx, char *hostname,
-                               size_t len, int offset) {
+void cert_lookup_tree_add_cert(CertNode *node, SSL_CTX *ssl_ctx,
+                               const char *hostname, size_t len, int offset) {
   int i, next_len = node->next.size();
   char c = hostname[offset];
   CertNode *cn = nullptr;
@@ -969,7 +1068,7 @@ void cert_lookup_tree_add_cert(CertNode *node, SSL_CTX *ssl_ctx, char *hostname,
       // some restrictions for wildcard hostname. We just ignore
       // these rules here but do the proper check when we do the
       // match.
-      node->wildcard_certs.emplace_back(hostname, ssl_ctx);
+      node->wildcard_certs.push_back({ssl_ctx, hostname, len});
       return;
     }
 
@@ -986,7 +1085,7 @@ void cert_lookup_tree_add_cert(CertNode *node, SSL_CTX *ssl_ctx, char *hostname,
       new_node->ssl_ctx = ssl_ctx;
     } else {
       new_node->ssl_ctx = nullptr;
-      new_node->wildcard_certs.emplace_back(hostname, ssl_ctx);
+      new_node->wildcard_certs.push_back({ssl_ctx, hostname, len});
     }
     node->next.push_back(std::move(new_node));
     return;
@@ -1037,24 +1136,25 @@ void cert_lookup_tree_add_cert(CertNode *node, SSL_CTX *ssl_ctx, char *hostname,
 }
 } // namespace
 
-void CertLookupTree::add_cert(SSL_CTX *ssl_ctx, const char *hostname,
-                              size_t len) {
-  if (len == 0) {
+void CertLookupTree::add_cert(SSL_CTX *ssl_ctx, const StringRef &hostname) {
+  if (hostname.empty()) {
     return;
   }
   // Copy hostname including terminal NULL
-  hosts_.push_back(make_unique<char[]>(len + 1));
-  const auto &host_copy = hosts_.back();
-  for (size_t i = 0; i < len; ++i) {
-    host_copy[i] = util::lowcase(hostname[i]);
-  }
-  host_copy[len] = '\0';
-  cert_lookup_tree_add_cert(&root_, ssl_ctx, host_copy.get(), len, len - 1);
+  auto host_copy = make_unique<char[]>(hostname.size() + 1);
+  std::copy(std::begin(hostname), std::end(hostname), host_copy.get());
+  host_copy[hostname.size()] = '\0';
+  util::inp_strlower(&host_copy[0], &host_copy[0] + hostname.size());
+
+  cert_lookup_tree_add_cert(&root_, ssl_ctx, host_copy.get(), hostname.size(),
+                            hostname.size() - 1);
+
+  hosts_.push_back(std::move(host_copy));
 }
 
 namespace {
-SSL_CTX *cert_lookup_tree_lookup(CertNode *node, const char *hostname,
-                                 size_t len, int offset) {
+SSL_CTX *cert_lookup_tree_lookup(CertNode *node, const StringRef &hostname,
+                                 int offset) {
   int i, j;
   for (i = node->first, j = offset;
        i > node->last && j >= 0 && node->str[i] == util::lowcase(hostname[j]);
@@ -1073,23 +1173,28 @@ SSL_CTX *cert_lookup_tree_lookup(CertNode *node, const char *hostname,
     // one character.
     return nullptr;
   }
+
   for (const auto &wildcert : node->wildcard_certs) {
-    if (tls_hostname_match(wildcert.first, hostname)) {
-      return wildcert.second;
+    if (tls_hostname_match(StringRef{wildcert.hostname, wildcert.hostnamelen},
+                           hostname)) {
+      return wildcert.ssl_ctx;
     }
   }
   auto c = util::lowcase(hostname[j]);
   for (const auto &next_node : node->next) {
     if (next_node->str[next_node->first] == c) {
-      return cert_lookup_tree_lookup(next_node.get(), hostname, len, j);
+      return cert_lookup_tree_lookup(next_node.get(), hostname, j);
     }
   }
   return nullptr;
 }
 } // namespace
 
-SSL_CTX *CertLookupTree::lookup(const char *hostname, size_t len) {
-  return cert_lookup_tree_lookup(&root_, hostname, len, len - 1);
+SSL_CTX *CertLookupTree::lookup(const StringRef &hostname) {
+  if (hostname.empty()) {
+    return nullptr;
+  }
+  return cert_lookup_tree_lookup(&root_, hostname, hostname.size() - 1);
 }
 
 int cert_lookup_tree_add_cert_from_file(CertLookupTree *lt, SSL_CTX *ssl_ctx,
@@ -1111,25 +1216,59 @@ int cert_lookup_tree_add_cert_from_file(CertLookupTree *lt, SSL_CTX *ssl_ctx,
     return -1;
   }
   auto cert_deleter = defer(X509_free, cert);
-  std::string common_name;
-  std::vector<std::string> dns_names;
-  std::vector<std::string> ip_addrs;
-  get_altnames(cert, dns_names, ip_addrs, common_name);
-  for (auto &dns_name : dns_names) {
-    lt->add_cert(ssl_ctx, dns_name.c_str(), dns_name.size());
+
+  auto altnames = static_cast<GENERAL_NAMES *>(
+      X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
+  if (altnames) {
+    auto altnames_deleter = defer(GENERAL_NAMES_free, altnames);
+    size_t n = sk_GENERAL_NAME_num(altnames);
+    for (size_t i = 0; i < n; ++i) {
+      auto altname = sk_GENERAL_NAME_value(altnames, i);
+      if (altname->type != GEN_DNS) {
+        continue;
+      }
+
+      auto name = reinterpret_cast<char *>(ASN1_STRING_data(altname->d.ia5));
+      if (!name) {
+        continue;
+      }
+
+      auto len = ASN1_STRING_length(altname->d.ia5);
+      if (std::find(name, name + len, '\0') != name + len) {
+        // Embedded NULL is not permitted.
+        continue;
+      }
+
+      lt->add_cert(ssl_ctx, StringRef{name, static_cast<size_t>(len)});
+    }
   }
-  lt->add_cert(ssl_ctx, common_name.c_str(), common_name.size());
+
+  auto cn = get_common_name(cert);
+  if (cn.empty()) {
+    return 0;
+  }
+
+  lt->add_cert(ssl_ctx, cn);
+
+  OPENSSL_free(const_cast<char *>(cn.c_str()));
+
   return 0;
 }
 
 bool in_proto_list(const std::vector<std::string> &protos,
-                   const unsigned char *needle, size_t len) {
+                   const StringRef &needle) {
   for (auto &proto : protos) {
-    if (util::streq(proto.c_str(), proto.size(), needle, len)) {
+    if (util::streq(StringRef{proto}, needle)) {
       return true;
     }
   }
   return false;
+}
+
+bool upstream_tls_enabled() {
+  const auto &faddrs = get_config()->conn.listener.addrs;
+  return std::any_of(std::begin(faddrs), std::end(faddrs),
+                     [](const UpstreamAddr &faddr) { return faddr.tls; });
 }
 
 SSL_CTX *setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
@@ -1139,12 +1278,14 @@ SSL_CTX *setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
                                   neverbleed_t *nb
 #endif // HAVE_NEVERBLEED
                                   ) {
-  if (get_config()->upstream_no_tls) {
+  if (!upstream_tls_enabled()) {
     return nullptr;
   }
 
-  auto ssl_ctx = ssl::create_ssl_context(get_config()->private_key_file.get(),
-                                         get_config()->cert_file.get()
+  auto &tlsconf = get_config()->tls;
+
+  auto ssl_ctx = ssl::create_ssl_context(tlsconf.private_key_file.c_str(),
+                                         tlsconf.cert_file.c_str()
 #ifdef HAVE_NEVERBLEED
                                              ,
                                          nb
@@ -1153,7 +1294,7 @@ SSL_CTX *setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
 
   all_ssl_ctx.push_back(ssl_ctx);
 
-  if (get_config()->subcerts.empty()) {
+  if (tlsconf.subcerts.empty()) {
     return ssl_ctx;
   }
 
@@ -1163,7 +1304,7 @@ SSL_CTX *setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
     return ssl_ctx;
   }
 
-  for (auto &keycert : get_config()->subcerts) {
+  for (auto &keycert : tlsconf.subcerts) {
     auto ssl_ctx =
         ssl::create_ssl_context(keycert.first.c_str(), keycert.second.c_str()
 #ifdef HAVE_NEVERBLEED
@@ -1180,7 +1321,7 @@ SSL_CTX *setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
   }
 
   if (ssl::cert_lookup_tree_add_cert_from_file(
-          cert_tree, ssl_ctx, get_config()->cert_file.get()) == -1) {
+          cert_tree, ssl_ctx, tlsconf.cert_file.c_str()) == -1) {
     LOG(FATAL) << "Failed to add default certificate.";
     DIE();
   }
@@ -1189,14 +1330,13 @@ SSL_CTX *setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
 }
 
 bool downstream_tls_enabled() {
-  if (get_config()->client_mode) {
-    return !get_config()->downstream_no_tls;
-  }
+  const auto &groups = get_config()->conn.downstream.addr_groups;
 
-  return get_config()->http2_bridge && !get_config()->downstream_no_tls;
+  return std::any_of(std::begin(groups), std::end(groups),
+                     [](const DownstreamAddrGroupConfig &g) { return g.tls; });
 }
 
-SSL_CTX *setup_client_ssl_context(
+SSL_CTX *setup_downstream_client_ssl_context(
 #ifdef HAVE_NEVERBLEED
     neverbleed_t *nb
 #endif // HAVE_NEVERBLEED
@@ -1205,18 +1345,80 @@ SSL_CTX *setup_client_ssl_context(
     return nullptr;
   }
 
+  auto &tlsconf = get_config()->tls;
+
   return ssl::create_ssl_client_context(
 #ifdef HAVE_NEVERBLEED
-      nb
+      nb,
 #endif // HAVE_NEVERBLEED
-      );
+      StringRef{tlsconf.cacert}, StringRef{tlsconf.client.cert_file},
+      StringRef{tlsconf.client.private_key_file}, select_next_proto_cb);
+}
+
+void setup_downstream_http2_alpn(SSL *ssl) {
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+  // ALPN advertisement
+  auto alpn = util::get_default_alpn();
+  SSL_set_alpn_protos(ssl, alpn.data(), alpn.size());
+#endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
+}
+
+void setup_downstream_http1_alpn(SSL *ssl) {
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+  // ALPN advertisement
+  SSL_set_alpn_protos(ssl, NGHTTP2_H1_1_ALPN.byte(), NGHTTP2_H1_1_ALPN.size());
+#endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 }
 
 CertLookupTree *create_cert_lookup_tree() {
-  if (get_config()->upstream_no_tls || get_config()->subcerts.empty()) {
+  if (!upstream_tls_enabled() || get_config()->tls.subcerts.empty()) {
     return nullptr;
   }
   return new ssl::CertLookupTree();
+}
+
+namespace {
+std::vector<uint8_t> serialize_ssl_session(SSL_SESSION *session) {
+  auto len = i2d_SSL_SESSION(session, nullptr);
+  auto buf = std::vector<uint8_t>(len);
+  auto p = buf.data();
+  i2d_SSL_SESSION(session, &p);
+
+  return buf;
+}
+} // namespace
+
+void try_cache_tls_session(DownstreamAddr *addr, SSL_SESSION *session,
+                           ev_tstamp t) {
+  auto &cache = addr->tls_session_cache;
+
+  if (cache.last_updated + 1_min > t) {
+    if (LOG_ENABLED(INFO)) {
+      LOG(INFO) << "Cache for addr=" << util::to_numeric_addr(&addr->addr)
+                << " is still host.  Not updating.";
+    }
+    return;
+  }
+
+  if (LOG_ENABLED(INFO)) {
+    LOG(INFO) << "Update cache entry for SSL_SESSION=" << session
+              << ", addr=" << util::to_numeric_addr(&addr->addr)
+              << ", timestamp=" << std::fixed << std::setprecision(6) << t;
+  }
+
+  cache.session_data = serialize_ssl_session(session);
+  cache.last_updated = t;
+}
+
+SSL_SESSION *reuse_tls_session(const DownstreamAddr *addr) {
+  auto &cache = addr->tls_session_cache;
+
+  if (cache.session_data.empty()) {
+    return nullptr;
+  }
+
+  auto p = cache.session_data.data();
+  return d2i_SSL_SESSION(nullptr, &p, cache.session_data.size());
 }
 
 } // namespace ssl

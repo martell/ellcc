@@ -63,12 +63,13 @@ OPTIONS
     are used solely.  Definition of a base URI overrides all
     scheme, host or port values.
 
-.. option:: -m, --max-concurrent-streams=(auto|<N>)
+.. option:: -m, --max-concurrent-streams=<N>
 
-    Max concurrent streams to  issue per session.  If "auto"
-    is given, the number of given URIs is used.
+    Max  concurrent  streams  to issue  per  session.   When
+    http/1.1  is used,  this  specifies the  number of  HTTP
+    pipelining requests in-flight.
 
-    Default: ``auto``
+    Default: ``1``
 
 .. option:: -w, --window-bits=<N>
 
@@ -170,12 +171,17 @@ OPTIONS
     Definition of a  base URI overrides all  scheme, host or
     port values.
 
-.. option:: -B, --base-uri=<URI>
+.. option:: -B, --base-uri=(<URI>|unix:<PATH>)
 
     Specify URI from which the scheme, host and port will be
     used  for  all requests.   The  base  URI overrides  all
     values  defined either  at  the command  line or  inside
-    input files.
+    input files.  If argument  starts with "unix:", then the
+    rest  of the  argument will  be treated  as UNIX  domain
+    socket path.   The connection is made  through that path
+    instead of TCP.   In this case, scheme  is inferred from
+    the first  URI appeared  in the  command line  or inside
+    input files as usual.
 
 .. option:: --npn-list=<LIST>
 

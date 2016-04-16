@@ -6,10 +6,10 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/hpack"
 	"github.com/tatsuhiro-t/go-nghttp2"
 	"github.com/tatsuhiro-t/spdy"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/hpack"
 	"golang.org/x/net/websocket"
 	"io"
 	"io/ioutil"
@@ -29,7 +29,8 @@ import (
 const (
 	serverBin  = buildDir + "/src/nghttpx"
 	serverPort = 3009
-	testDir    = buildDir + "/integration-tests"
+	testDir    = sourceDir + "/integration-tests"
+	logDir     = buildDir + "/integration-tests"
 )
 
 func pair(name, value string) hpack.HeaderField {
@@ -85,14 +86,18 @@ func newServerTesterTLSConfig(args []string, t *testing.T, handler http.HandlerF
 
 // newServerTesterInternal creates test context.  If frontendTLS is
 // true, set up TLS frontend connection.
-func newServerTesterInternal(args []string, t *testing.T, handler http.Handler, frontendTLS bool, clientConfig *tls.Config) *serverTester {
+func newServerTesterInternal(src_args []string, t *testing.T, handler http.Handler, frontendTLS bool, clientConfig *tls.Config) *serverTester {
 	ts := httptest.NewUnstartedServer(handler)
 
+	args := []string{}
+
 	backendTLS := false
-	for _, k := range args {
+	for _, k := range src_args {
 		switch k {
 		case "--http2-bridge":
 			backendTLS = true
+		default:
+			args = append(args, k)
 		}
 	}
 	if backendTLS {
@@ -101,9 +106,9 @@ func newServerTesterInternal(args []string, t *testing.T, handler http.Handler, 
 		// NextProtos separately for ts.TLS.  NextProtos set
 		// in nghttp2.ConfigureServer is effectively ignored.
 		ts.TLS = new(tls.Config)
-		ts.TLS.NextProtos = append(ts.TLS.NextProtos, "h2-14")
+		ts.TLS.NextProtos = append(ts.TLS.NextProtos, "h2")
 		ts.StartTLS()
-		args = append(args, "-k")
+		args = append(args, "-k", "--backend-tls")
 	} else {
 		ts.Start()
 	}
@@ -111,8 +116,6 @@ func newServerTesterInternal(args []string, t *testing.T, handler http.Handler, 
 	if frontendTLS {
 		scheme = "https"
 		args = append(args, testDir+"/server.key", testDir+"/server.crt")
-	} else {
-		args = append(args, "--frontend-no-tls")
 	}
 
 	backendURL, err := url.Parse(ts.URL)
@@ -123,8 +126,17 @@ func newServerTesterInternal(args []string, t *testing.T, handler http.Handler, 
 	// URL.Host looks like "127.0.0.1:8080", but we want
 	// "127.0.0.1,8080"
 	b := "-b" + strings.Replace(backendURL.Host, ":", ",", -1)
-	args = append(args, fmt.Sprintf("-f127.0.0.1,%v", serverPort), b,
-		"--errorlog-file="+testDir+"/log.txt", "-LINFO")
+	if backendTLS {
+		b += ";;proto=h2;tls"
+	}
+
+	noTLS := "no-tls"
+	if frontendTLS {
+		noTLS = ""
+	}
+
+	args = append(args, fmt.Sprintf("-f127.0.0.1,%v;%v", serverPort, noTLS), b,
+		"--errorlog-file="+logDir+"/log.txt", "-LINFO")
 
 	authority := fmt.Sprintf("127.0.0.1:%v", serverPort)
 

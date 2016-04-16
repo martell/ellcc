@@ -38,12 +38,21 @@ namespace nghttp2 {
 namespace asio_http2 {
 namespace client {
 
-session_impl::session_impl(boost::asio::io_service &io_service)
-    : wblen_(0), io_service_(io_service), resolver_(io_service),
-      deadline_(io_service), connect_timeout_(boost::posix_time::seconds(60)),
-      read_timeout_(boost::posix_time::seconds(60)), session_(nullptr),
-      data_pending_(nullptr), data_pendinglen_(0), writing_(false),
-      inside_callback_(false), stopped_(false) {}
+session_impl::session_impl(
+    boost::asio::io_service &io_service,
+    const boost::posix_time::time_duration &connect_timeout)
+    : wblen_(0),
+      io_service_(io_service),
+      resolver_(io_service),
+      deadline_(io_service),
+      connect_timeout_(connect_timeout),
+      read_timeout_(boost::posix_time::seconds(60)),
+      session_(nullptr),
+      data_pending_(nullptr),
+      data_pendinglen_(0),
+      writing_(false),
+      inside_callback_(false),
+      stopped_(false) {}
 
 session_impl::~session_impl() {
   // finish up all active stream
@@ -174,6 +183,12 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
     if (token == http2::HD__STATUS) {
       res.status_code(util::parse_uint(value, valuelen));
     } else {
+      if (res.header_buffer_size() + namelen + valuelen > 64_k) {
+        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
+                                  frame->hd.stream_id, NGHTTP2_INTERNAL_ERROR);
+        break;
+      }
+      res.update_header_buffer_size(namelen + valuelen);
 
       if (token == http2::HD_CONTENT_LENGTH) {
         res.content_length(util::parse_uint(value, valuelen));
@@ -214,6 +229,13 @@ int on_header_callback(nghttp2_session *session, const nghttp2_frame *frame,
       }
     // fall through
     default:
+      if (req.header_buffer_size() + namelen + valuelen > 64_k) {
+        nghttp2_submit_rst_stream(session, NGHTTP2_FLAG_NONE,
+                                  frame->hd.stream_id, NGHTTP2_INTERNAL_ERROR);
+        break;
+      }
+      req.update_header_buffer_size(namelen + valuelen);
+
       req.header().emplace(
           std::string(name, name + namelen),
           header_value{std::string(value, value + valuelen),
@@ -698,9 +720,7 @@ void session_impl::stop() {
   stopped_ = true;
 }
 
-void session_impl::connect_timeout(const boost::posix_time::time_duration &t) {
-  connect_timeout_ = t;
-}
+bool session_impl::stopped() const { return stopped_; }
 
 void session_impl::read_timeout(const boost::posix_time::time_duration &t) {
   read_timeout_ = t;

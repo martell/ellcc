@@ -44,8 +44,10 @@ void test_util_utox(void);
 void test_util_http_date(void);
 void test_util_select_h2(void);
 void test_util_ipv6_numeric_addr(void);
-void test_util_utos_with_unit(void);
-void test_util_utos_with_funit(void);
+void test_util_utos(void);
+void test_util_make_string_ref_uint(void);
+void test_util_utos_unit(void);
+void test_util_utos_funit(void);
 void test_util_parse_uint_with_unit(void);
 void test_util_parse_uint(void);
 void test_util_parse_duration_with_unit(void);
@@ -57,6 +59,9 @@ void test_util_parse_http_date(void);
 void test_util_localtime_date(void);
 void test_util_get_uint64(void);
 void test_util_parse_config_str_list(void);
+void test_util_make_http_hostport(void);
+void test_util_make_hostport(void);
+void test_util_strifind(void);
 
 } // namespace shrpx
 

@@ -58,12 +58,12 @@ To build the documentation, you need to install:
 
 * sphinx (http://sphinx-doc.org/)
 
-To build and run the application programs (``nghttp``, ``nghttpd`` and
-``nghttpx``) in the ``src`` directory, the following packages are
-required:
+To build and run the application programs (``nghttp``, ``nghttpd``,
+``nghttpx`` and ``h2load``) in the ``src`` directory, the following packages
+are required:
 
 * OpenSSL >= 1.0.1
-* libev >= 4.15
+* libev >= 4.11
 * zlib >= 1.2.3
 
 ALPN support requires OpenSSL >= 1.0.2 (released 22 January 2015).
@@ -110,8 +110,9 @@ If you are using Ubuntu 14.04 LTS (trusty) or Debian 7.0 (wheezy) and above run 
       zlib1g-dev libcunit1-dev libssl-dev libxml2-dev libev-dev libevent-dev libjansson-dev \
       libjemalloc-dev cython python3-dev python-setuptools
 
-spdylay is not packaged in Ubuntu, so you need to build it yourself:
-http://tatsuhiro-t.github.io/spdylay/
+From Ubuntu 15.10, spdylay has been available as a package named
+`libspdylay-dev`.  For the earlier Ubuntu release, you need to build
+it yourself: http://tatsuhiro-t.github.io/spdylay/
 
 To enable mruby support for nghttpx, `mruby
 <https://github.com/mruby/mruby>`_ is required.  We need to build
@@ -159,6 +160,17 @@ To compile the source code, gcc >= 4.8.3 or clang >= 3.4 is required.
    disable multi-threading in nghttpd, nghttpx and h2load to prevent
    them from crashing. A patch is welcome to make multi threading work
    on Mac OS X platform.
+
+.. note::
+
+   To compile the associated applications (nghttp, nghttpd, nghttpx
+   and h2load), you must use the ``--enable-app`` configure option and
+   ensure that the specified requirements above are met.  Normally,
+   configure script checks required dependencies to build these
+   applications, and enable ``--enable-app`` automatically, so you
+   don't have to use it explicitly.  But if you found that
+   applications were not built, then using ``--enable-app`` may find
+   that cause, such as the missing dependency.
 
 Notes for building on Windows (Mingw/Cygwin)
 --------------------------------------------
@@ -274,7 +286,7 @@ for this 24 bytes byte string and updated API.
   ``NGHTTP2_CLIENT_MAGIC_LEN``.
 * ``NGHTTP2_BAD_PREFACE`` was renamed as ``NGHTTP2_BAD_CLIENT_MAGIC``
 
-The alreay deprecated ``NGHTTP2_CLIENT_CONNECTION_HEADER`` and
+The already deprecated ``NGHTTP2_CLIENT_CONNECTION_HEADER`` and
 ``NGHTTP2_CLIENT_CONNECTION_HEADER_LEN`` were removed.
 
 If application uses these macros, just replace old ones with new ones.
@@ -635,50 +647,54 @@ nghttpx - proxy
 HTTP/1.1, and powers http://nghttp2.org and supports HTTP/2 server
 push.
 
+We reworked ``nghttpx`` command-line interface, and as a result, there
+are several incompatibles from 1.8.0 or earlier.  This is necessary to
+extend its capability, and secure the further feature enhancements in
+the future release.  Please read `Migration from nghttpx v1.8.0 or
+earlier
+<https://nghttp2.org/documentation/nghttpx-howto.html#migration-from-nghttpx-v1-8-0-or-earlier>`_
+to know how to migrate from earlier releases.
+
 ``nghttpx`` implements `important performance-oriented features
 <https://istlsfastyet.com/#server-performance>`_ in TLS, such as
 session IDs, session tickets (with automatic key rotation), OCSP
 stapling, dynamic record sizing, ALPN/NPN, forward secrecy and SPDY &
-HTTP/2.
+HTTP/2.  ``nghttpx`` also offers the functionality to share session
+cache and ticket keys among multiple ``nghttpx`` instances via
+memcached.
 
-``nghttpx`` has several operational modes:
+``nghttpx`` has 2 operation modes:
 
-================== ============================ ============== =============
-Mode option        Frontend                     Backend        Note
-================== ============================ ============== =============
-default mode       HTTP/2, SPDY, HTTP/1.1 (TLS) HTTP/1.1       Reverse proxy
-``--http2-proxy``  HTTP/2, SPDY, HTTP/1.1 (TLS) HTTP/1.1       SPDY proxy
-``--http2-bridge`` HTTP/2, SPDY, HTTP/1.1 (TLS) HTTP/2 (TLS)
-``--client``       HTTP/2, HTTP/1.1             HTTP/2 (TLS)
-``--client-proxy`` HTTP/2, HTTP/1.1             HTTP/2 (TLS)   Forward proxy
-================== ============================ ============== =============
+================== ====================== ================ =============
+Mode option        Frontend               Backend          Note
+================== ====================== ================ =============
+default mode       HTTP/2, SPDY, HTTP/1.1 HTTP/1.1, HTTP/2 Reverse proxy
+``--http2-proxy``  HTTP/2, SPDY, HTTP/1.1 HTTP/1.1, HTTP/2 Forward proxy
+================== ====================== ================ =============
 
 The interesting mode at the moment is the default mode.  It works like
 a reverse proxy and listens for HTTP/2, SPDY and HTTP/1.1 and can be
 deployed as a SSL/TLS terminator for existing web server.
 
-The default mode, ``--http2-proxy`` and ``--http2-bridge`` modes use
-SSL/TLS in the frontend connection by default.  To disable SSL/TLS,
-use the ``--frontend-no-tls`` option.  If that option is used, SPDY is
-disabled in the frontend and incoming HTTP/1.1 connections can be
-upgraded to HTTP/2 through HTTP Upgrade.
-
-The ``--http2-bridge``, ``--client`` and ``--client-proxy`` modes use
-SSL/TLS in the backend connection by default.  To disable SSL/TLS, use
-the ``--backend-no-tls`` option.
+In all modes, the frontend connections are encrypted by SSL/TLS by
+default.  To disable encryption, use the ``no-tls`` keyword in
+``--frontend`` option.  If encryption is disabled, SPDY is disabled in
+the frontend and incoming HTTP/1.1 connections can be upgraded to
+HTTP/2 through HTTP Upgrade.  On the other hard, backend connections
+are not encrypted by default.  To encrypt backend connections, use
+``tls`` keyword in ``--backend`` option.
 
 ``nghttpx`` supports a configuration file.  See the ``--conf`` option and
 sample configuration file ``nghttpx.conf.sample``.
 
-In the default mode, (without any of ``--http2-proxy``,
-``--http2-bridge``, ``--client-proxy`` and ``--client`` options),
-``nghttpx`` works as reverse proxy to the backend server::
+In the default mode, ``nghttpx`` works as reverse proxy to the backend
+server::
 
-    Client <-- (HTTP/2, SPDY, HTTP/1.1) --> nghttpx <-- (HTTP/1.1) --> Web Server
+    Client <-- (HTTP/2, SPDY, HTTP/1.1) --> nghttpx <-- (HTTP/1.1, HTTP/2) --> Web Server
                                           [reverse proxy]
 
-With the ``--http2-proxy`` option, it works as a so called secure proxy (aka
-SPDY proxy)::
+With the ``--http2-proxy`` option, it works as forward proxy, and it
+is so called secure HTTP/2 proxy (aka SPDY proxy)::
 
     Client <-- (HTTP/2, SPDY, HTTP/1.1) --> nghttpx <-- (HTTP/1.1) --> Proxy
                                            [secure proxy]          (e.g., Squid, ATS)
@@ -686,9 +702,9 @@ SPDY proxy)::
 The ``Client`` in the above example needs to be configured to use
 ``nghttpx`` as secure proxy.
 
-At the time of this writing, Chrome is the only browser which supports
-secure proxy.  One way to configure Chrome to use a secure proxy is
-to create a proxy.pac script like this:
+At the time of this writing, both Chrome and Firefox support secure
+HTTP/2 proxy.  One way to configure Chrome to use a secure proxy is to
+create a proxy.pac script like this:
 
 .. code-block:: javascript
 
@@ -704,37 +720,9 @@ Then run Chrome with the following arguments::
 
     $ google-chrome --proxy-pac-url=file:///path/to/proxy.pac --use-npn
 
-With ``--http2-bridge``, it accepts HTTP/2, SPDY and HTTP/1.1
-connections and communicates with the backend in HTTP/2::
-
-    Client <-- (HTTP/2, SPDY, HTTP/1.1) --> nghttpx <-- (HTTP/2) --> Web or HTTP/2 Proxy etc
-                                                                         (e.g., nghttpx -s)
-
-With ``--client-proxy``, it works as a forward proxy and expects
-that the backend is an HTTP/2 proxy::
-
-    Client <-- (HTTP/2, HTTP/1.1) --> nghttpx <-- (HTTP/2) --> HTTP/2 Proxy
-                                     [forward proxy]               (e.g., nghttpx -s)
-
-The ``Client`` needs to be configured to use nghttpx as a forward
-proxy.  The frontend HTTP/1.1 connection can be upgraded to HTTP/2
-through HTTP Upgrade.  With the above configuration, one can use
-HTTP/1.1 client to access and test their HTTP/2 servers.
-
-With ``--client``, it works as a reverse proxy and expects that
-the backend is an HTTP/2 Web server::
-
-    Client <-- (HTTP/2, HTTP/1.1) --> nghttpx <-- (HTTP/2) --> Web Server
-                                    [reverse proxy]
-
-The frontend HTTP/1.1 connection can be upgraded to HTTP/2
-through HTTP Upgrade.
-
-For the operation modes which talk to the backend in HTTP/2 over
-SSL/TLS, the backend connections can be tunneled through an HTTP proxy.
+The backend HTTP/2 connections can be tunneled through an HTTP proxy.
 The proxy is specified using ``--backend-http-proxy-uri``.  The
-following figure illustrates the example of the ``--http2-bridge`` and
-``--backend-http-proxy-uri`` options to talk to the outside HTTP/2
+following figure illustrates how nghttpx talks to the outside HTTP/2
 proxy through an HTTP proxy::
 
     Client <-- (HTTP/2, SPDY, HTTP/1.1) --> nghttpx <-- (HTTP/2) --
@@ -1462,3 +1450,16 @@ full real name when contributing!
 See `Contribution Guidelines
 <https://nghttp2.org/documentation/contribute.html>`_ for more
 details.
+
+Release schedule
+----------------
+
+In general, we follow `Semantic Versioning <http://semver.org/>`_.  We
+release MINOR version update every month, and usually we ship it
+around 25th day of every month.
+
+We may release PATCH releases between the regular releases, mainly for
+severe security bug fixes.
+
+We have no plan to break API compatibility changes involving soname
+bump, so MAJOR version will stay 1 for the foreseeable future.

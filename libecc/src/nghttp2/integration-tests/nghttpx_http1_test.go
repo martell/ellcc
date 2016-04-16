@@ -103,26 +103,26 @@ Content-Length: 0
 	}
 }
 
-// TestH1H1ConnectFailure tests that server handles the situation that
-// connection attempt to HTTP/1 backend failed.
-func TestH1H1ConnectFailure(t *testing.T) {
-	st := newServerTester(nil, t, noopHandler)
-	defer st.Close()
+// // TestH1H1ConnectFailure tests that server handles the situation that
+// // connection attempt to HTTP/1 backend failed.
+// func TestH1H1ConnectFailure(t *testing.T) {
+// 	st := newServerTester(nil, t, noopHandler)
+// 	defer st.Close()
 
-	// shutdown backend server to simulate backend connect failure
-	st.ts.Close()
+// 	// shutdown backend server to simulate backend connect failure
+// 	st.ts.Close()
 
-	res, err := st.http1(requestParam{
-		name: "TestH1H1ConnectFailure",
-	})
-	if err != nil {
-		t.Fatalf("Error st.http1() = %v", err)
-	}
-	want := 503
-	if got := res.status; got != want {
-		t.Errorf("status: %v; want %v", got, want)
-	}
-}
+// 	res, err := st.http1(requestParam{
+// 		name: "TestH1H1ConnectFailure",
+// 	})
+// 	if err != nil {
+// 		t.Fatalf("Error st.http1() = %v", err)
+// 	}
+// 	want := 503
+// 	if got := res.status; got != want {
+// 		t.Errorf("status: %v; want %v", got, want)
+// 	}
+// }
 
 // TestH1H1GracefulShutdown tests graceful shutdown.
 func TestH1H1GracefulShutdown(t *testing.T) {
@@ -182,6 +182,66 @@ func TestH1H1HostRewrite(t *testing.T) {
 	}
 	if got, want := res.header.Get("request-host"), st.backendHost; got != want {
 		t.Errorf("request-host: %v; want %v", got, want)
+	}
+}
+
+// TestH1H1BadHost tests that server rejects request including bad
+// characters in host header field.
+func TestH1H1BadHost(t *testing.T) {
+	st := newServerTester(nil, t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("server should not forward this request")
+	})
+	defer st.Close()
+
+	if _, err := io.WriteString(st.conn, "GET / HTTP/1.1\r\nTest-Case: TestH1H1HBadHost\r\nHost: foo\"bar\r\n\r\n"); err != nil {
+		t.Fatalf("Error io.WriteString() = %v", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(st.conn), nil)
+	if err != nil {
+		t.Fatalf("Error http.ReadResponse() = %v", err)
+	}
+	if got, want := resp.StatusCode, 400; got != want {
+		t.Errorf("status: %v; want %v", got, want)
+	}
+}
+
+// TestH1H1BadAuthority tests that server rejects request including
+// bad characters in authority component of requset URI.
+func TestH1H1BadAuthority(t *testing.T) {
+	st := newServerTester(nil, t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("server should not forward this request")
+	})
+	defer st.Close()
+
+	if _, err := io.WriteString(st.conn, "GET http://foo\"bar/ HTTP/1.1\r\nTest-Case: TestH1H1HBadAuthority\r\nHost: foobar\r\n\r\n"); err != nil {
+		t.Fatalf("Error io.WriteString() = %v", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(st.conn), nil)
+	if err != nil {
+		t.Fatalf("Error http.ReadResponse() = %v", err)
+	}
+	if got, want := resp.StatusCode, 400; got != want {
+		t.Errorf("status: %v; want %v", got, want)
+	}
+}
+
+// TestH1H1BadScheme tests that server rejects request including
+// bad characters in scheme component of requset URI.
+func TestH1H1BadScheme(t *testing.T) {
+	st := newServerTester(nil, t, func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("server should not forward this request")
+	})
+	defer st.Close()
+
+	if _, err := io.WriteString(st.conn, "GET http*://example.com/ HTTP/1.1\r\nTest-Case: TestH1H1HBadScheme\r\nHost: example.com\r\n\r\n"); err != nil {
+		t.Fatalf("Error io.WriteString() = %v", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(st.conn), nil)
+	if err != nil {
+		t.Fatalf("Error http.ReadResponse() = %v", err)
+	}
+	if got, want := resp.StatusCode, 400; got != want {
+		t.Errorf("status: %v; want %v", got, want)
 	}
 }
 
@@ -471,26 +531,26 @@ func TestH1H1RespPhaseReturn(t *testing.T) {
 	}
 }
 
-// TestH1H2ConnectFailure tests that server handles the situation that
-// connection attempt to HTTP/2 backend failed.
-func TestH1H2ConnectFailure(t *testing.T) {
-	st := newServerTester([]string{"--http2-bridge"}, t, noopHandler)
-	defer st.Close()
+// // TestH1H2ConnectFailure tests that server handles the situation that
+// // connection attempt to HTTP/2 backend failed.
+// func TestH1H2ConnectFailure(t *testing.T) {
+// 	st := newServerTester([]string{"--http2-bridge"}, t, noopHandler)
+// 	defer st.Close()
 
-	// simulate backend connect attempt failure
-	st.ts.Close()
+// 	// simulate backend connect attempt failure
+// 	st.ts.Close()
 
-	res, err := st.http1(requestParam{
-		name: "TestH1H2ConnectFailure",
-	})
-	if err != nil {
-		t.Fatalf("Error st.http1() = %v", err)
-	}
-	want := 503
-	if got := res.status; got != want {
-		t.Errorf("status: %v; want %v", got, want)
-	}
-}
+// 	res, err := st.http1(requestParam{
+// 		name: "TestH1H2ConnectFailure",
+// 	})
+// 	if err != nil {
+// 		t.Fatalf("Error st.http1() = %v", err)
+// 	}
+// 	want := 503
+// 	if got := res.status; got != want {
+// 		t.Errorf("status: %v; want %v", got, want)
+// 	}
+// }
 
 // TestH1H2NoHost tests that server rejects request without Host
 // header field for HTTP/2 backend.

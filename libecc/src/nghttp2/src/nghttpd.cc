@@ -143,6 +143,11 @@ Options:
               Default: 1
   -e, --error-gzip
               Make error response gzipped.
+  -w, --window-bits=<N>
+              Sets the stream level initial window size to 2**<N>-1.
+  -W, --connection-window-bits=<N>
+              Sets  the  connection  level   initial  window  size  to
+              2**<N>-1.
   --dh-param-file=<PATH>
               Path to file that contains  DH parameters in PEM format.
               Without  this   option,  DHE   cipher  suites   are  not
@@ -164,6 +169,8 @@ Options:
               Path  to file  that contains  MIME media  types and  the
               extensions that represent them.
               Default: )" << config.mime_types_file << R"(
+  --no-content-length
+              Don't send content-length header field.
   --version   Display version information and exit.
   -h, --help  Display this help and exit.
 
@@ -200,6 +207,8 @@ int main(int argc, char **argv) {
         {"max-concurrent-streams", required_argument, nullptr, 'm'},
         {"workers", required_argument, nullptr, 'n'},
         {"error-gzip", no_argument, nullptr, 'e'},
+        {"window-bits", required_argument, nullptr, 'w'},
+        {"connection-window-bits", required_argument, nullptr, 'W'},
         {"no-tls", no_argument, &flag, 1},
         {"color", no_argument, &flag, 2},
         {"version", no_argument, &flag, 3},
@@ -209,11 +218,11 @@ int main(int argc, char **argv) {
         {"hexdump", no_argument, &flag, 7},
         {"echo-upload", no_argument, &flag, 8},
         {"mime-types-file", required_argument, &flag, 9},
+        {"no-content-length", no_argument, &flag, 10},
         {nullptr, 0, nullptr, 0}};
     int option_index = 0;
-    int c = getopt_long(argc, argv, "DVb:c:d:ehm:n:p:va:", long_options,
+    int c = getopt_long(argc, argv, "DVb:c:d:ehm:n:p:va:w:W:", long_options,
                         &option_index);
-    char *end;
     if (c == -1) {
       break;
     }
@@ -246,11 +255,12 @@ int main(int argc, char **argv) {
       config.max_concurrent_streams = n;
       break;
     }
-    case 'n':
+    case 'n': {
 #ifdef NOTHREADS
       std::cerr << "-n: WARNING: Threading disabled at build time, "
                 << "no threads created." << std::endl;
 #else
+      char *end;
       errno = 0;
       config.num_worker = strtoul(optarg, &end, 10);
       if (errno == ERANGE || *end != '\0' || config.num_worker == 0) {
@@ -259,6 +269,7 @@ int main(int argc, char **argv) {
       }
 #endif // NOTHREADS
       break;
+    }
     case 'h':
       print_help(std::cout);
       exit(EXIT_SUCCESS);
@@ -278,6 +289,26 @@ int main(int argc, char **argv) {
         std::cerr << "-p: Bad option value: " << optarg << std::endl;
       }
       break;
+    case 'w':
+    case 'W': {
+      char *endptr;
+      errno = 0;
+      auto n = strtoul(optarg, &endptr, 10);
+      if (errno != 0 || *endptr != '\0' || n >= 31) {
+        std::cerr << "-" << static_cast<char>(c)
+                  << ": specify the integer in the range [0, 30], inclusive"
+                  << std::endl;
+        exit(EXIT_FAILURE);
+      }
+
+      if (c == 'w') {
+        config.window_bits = n;
+      } else {
+        config.connection_window_bits = n;
+      }
+
+      break;
+    }
     case '?':
       util::show_candidates(argv[optind - 1], long_options);
       exit(EXIT_FAILURE);
@@ -340,6 +371,10 @@ int main(int argc, char **argv) {
         mime_types_file_set_manually = true;
         config.mime_types_file = optarg;
         break;
+      case 10:
+        // no-content-length option
+        config.no_content_length = true;
+        break;
       }
       break;
     default:
@@ -384,6 +419,15 @@ int main(int argc, char **argv) {
       std::cerr << "--mime-types-file: Could not open mime types file: "
                 << config.mime_types_file << std::endl;
     }
+  }
+
+  auto &trailer_names = config.trailer_names;
+  for (auto &h : config.trailer) {
+    trailer_names += h.name;
+    trailer_names += ", ";
+  }
+  if (trailer_names.size() >= 2) {
+    trailer_names.resize(trailer_names.size() - 2);
   }
 
   set_color_output(color || isatty(fileno(stdout)));

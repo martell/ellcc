@@ -31,6 +31,25 @@ Types (structs, unions and typedefs)
         points to the :macro:`NGHTTP2_PROTO_VERSION_ID` string this
         instance implements (since age ==1)
 
+.. type:: nghttp2_vec
+
+    
+    The object representing single contagious buffer.
+
+    .. member::   uint8_t *base
+
+        The pointer to the buffer.
+    .. member::   size_t len
+
+        The length of the buffer.
+
+.. type:: nghttp2_rcbuf
+
+    
+    The object representing reference counted buffer.  The details of
+    this structure are intentionally hidden from the public API.
+
+
 .. type:: nghttp2_nv
 
     
@@ -129,13 +148,13 @@ Types (structs, unions and typedefs)
     :macro:`NGHTTP2_FLAG_END_STREAM` set, and
     :macro:`NGHTTP2_DATA_FLAG_EOF` flag is set to *\*data_flags*, DATA
     frame will have END_STREAM flag set.  Usually, this is expected
-    behaviour and all are fine.  One exception is send trailer header
-    fields.  You cannot send trailers after sending frame with
-    END_STREAM set.  To avoid this problem, one can set
+    behaviour and all are fine.  One exception is send trailer fields.
+    You cannot send trailer fields after sending frame with END_STREAM
+    set.  To avoid this problem, one can set
     :macro:`NGHTTP2_DATA_FLAG_NO_END_STREAM` along with
     :macro:`NGHTTP2_DATA_FLAG_EOF` to signal the library not to set
     END_STREAM in DATA frame.  Then application can use
-    `nghttp2_submit_trailer()` to send trailers.
+    `nghttp2_submit_trailer()` to send trailer fields.
     `nghttp2_submit_trailer()` can be called inside this callback.
     
     If the application wants to postpone DATA frames (e.g.,
@@ -669,7 +688,7 @@ Types (structs, unions and typedefs)
     NGHTTP2_HCAT_REQUEST``.  If *session* is configured as server side,
     ``frame->headers.cat`` is either ``NGHTTP2_HCAT_REQUEST``
     containing request headers or ``NGHTTP2_HCAT_HEADERS`` containing
-    trailer headers and never get PUSH_PROMISE in this callback.
+    trailer fields and never get PUSH_PROMISE in this callback.
     
     For the client applications, ``frame->hd.type`` is either
     ``NGHTTP2_HEADERS`` or ``NGHTTP2_PUSH_PROMISE``.  In case of
@@ -681,7 +700,7 @@ Types (structs, unions and typedefs)
     non-final response code and finally client gets exactly one HEADERS
     frame with ``frame->headers.cat == NGHTTP2_HCAT_HEADERS``
     containing final response headers (non-1xx status code).  The
-    trailer headers also has ``frame->headers.cat ==
+    trailer fields also has ``frame->headers.cat ==
     NGHTTP2_HCAT_HEADERS`` which does not contain any status code.
     
     Returning :macro:`NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE` will close
@@ -773,6 +792,33 @@ Types (structs, unions and typedefs)
     
     To set this callback to :type:`nghttp2_session_callbacks`, use
     `nghttp2_session_callbacks_set_on_header_callback()`.
+    
+    .. warning::
+    
+      Application should properly limit the total buffer size to store
+      incoming header fields.  Without it, peer may send large number
+      of header fields or large header fields to cause out of memory in
+      local endpoint.  Due to how HPACK works, peer can do this
+      effectively without using much memory on their own.
+.. type:: typedef int (*nghttp2_on_header_callback2)(nghttp2_session *session, const nghttp2_frame *frame, nghttp2_rcbuf *name, nghttp2_rcbuf *value, uint8_t flags, void *user_data)
+
+    
+    Callback function invoked when a header name/value pair is received
+    for the *frame*.  The *name* is header name.  The *value* is header
+    value.  The *flags* is bitwise OR of one or more of
+    :type:`nghttp2_nv_flag`.
+    
+    This callback behaves like :type:`nghttp2_on_header_callback`,
+    except that *name* and *value* are stored in reference counted
+    buffer.  If application wishes to keep these references without
+    copying them, use `nghttp2_rcbuf_incref()` to increment their
+    reference count.  It is the application's responsibility to call
+    `nghttp2_rcbuf_decref()` if they called `nghttp2_rcbuf_incref()` so
+    as not to leak memory.  If the *session* is created by
+    `nghttp2_session_server_new3()` or `nghttp2_session_client_new3()`,
+    the function to free memory is the one belongs to the mem
+    parameter.  As long as this free function alives, *name* and
+    *value* can live after *session* was destroyed.
 .. type:: typedef ssize_t (*nghttp2_select_padding_callback)(nghttp2_session *session, const nghttp2_frame *frame, size_t max_payloadlen, void *user_data)
 
     
@@ -833,6 +879,103 @@ Types (structs, unions and typedefs)
     
     To set this callback to :type:`nghttp2_session_callbacks`, use
     `nghttp2_session_callbacks_set_on_begin_frame_callback()`.
+.. type:: typedef int (*nghttp2_on_extension_chunk_recv_callback)( nghttp2_session *session, const nghttp2_frame_hd *hd, const uint8_t *data, size_t len, void *user_data)
+
+    
+    Callback function invoked when chunk of extension frame payload is
+    received.  The *hd* points to frame header.  The received
+    chunk is *data* of length *len*.
+    
+    The implementation of this function must return 0 if it succeeds.
+    
+    To abort processing this extension frame, return
+    :macro:`NGHTTP2_ERR_CANCEL`.
+    
+    If fatal error occurred, application should return
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  In this case,
+    `nghttp2_session_recv()` and `nghttp2_session_mem_recv()` functions
+    immediately return :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  If the
+    other values are returned, currently they are treated as
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.
+.. type:: typedef int (*nghttp2_unpack_extension_callback)(nghttp2_session *session, void **payload, const nghttp2_frame_hd *hd, void *user_data)
+
+    
+    Callback function invoked when library asks the application to
+    unpack extension payload from its wire format.  The extension
+    payload has been passed to the application using
+    :type:`nghttp2_on_extension_chunk_recv_callback`.  The frame header
+    is already unpacked by the library and provided as *hd*.
+    
+    To receive extension frames, the application must tell desired
+    extension frame type to the library using
+    `nghttp2_option_set_user_recv_extension_type()`.
+    
+    The implementation of this function may store the pointer to the
+    created object as a result of unpacking in *\*payload*, and returns
+    0.  The pointer stored in *\*payload* is opaque to the library, and
+    the library does not own its pointer.  *\*payload* is initialized as
+    ``NULL``.  The *\*payload* is available as ``frame->ext.payload`` in
+    :type:`nghttp2_on_frame_recv_callback`.  Therefore if application
+    can free that memory inside :type:`nghttp2_on_frame_recv_callback`
+    callback.  Of course, application has a liberty not ot use
+    *\*payload*, and do its own mechanism to process extension frames.
+    
+    To abort processing this extension frame, return
+    :macro:`NGHTTP2_ERR_CANCEL`.
+    
+    If fatal error occurred, application should return
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  In this case,
+    `nghttp2_session_recv()` and `nghttp2_session_mem_recv()` functions
+    immediately return :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  If the
+    other values are returned, currently they are treated as
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.
+.. type:: typedef ssize_t (*nghttp2_pack_extension_callback)(nghttp2_session *session, uint8_t *buf, size_t len, const nghttp2_frame *frame, void *user_data)
+
+    
+    Callback function invoked when library asks the application to pack
+    extension payload in its wire format.  The frame header will be
+    packed by library.  Application must pack payload only.
+    ``frame->ext.payload`` is the object passed to
+    `nghttp2_submit_extension()` as payload parameter.  Application
+    must pack extension payload to the *buf* of its capacity *len*
+    bytes.  The *len* is at least 16KiB.
+    
+    The implementation of this function should return the number of
+    bytes written into *buf* when it succeeds.
+    
+    To abort processing this extension frame, return
+    :macro:`NGHTTP2_ERR_CANCEL`, and
+    :type:`nghttp2_on_frame_not_send_callback` will be invoked.
+    
+    If fatal error occurred, application should return
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  In this case,
+    `nghttp2_session_send()` and `nghttp2_session_mem_send()` functions
+    immediately return :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  If the
+    other values are returned, currently they are treated as
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  If the return value is
+    strictly larger than *len*, it is treated as
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.
+.. type:: typedef int (*nghttp2_error_callback)(nghttp2_session *session, const char *msg, size_t len, void *user_data)
+
+    
+    Callback function invoked when library provides the error message
+    intended for human consumption.  This callback is solely for
+    debugging purpose.  The *msg* is typically NULL-terminated string
+    of length *len*.  *len* does not include the sentinel NULL
+    character.
+    
+    The format of error message may change between nghttp2 library
+    versions.  The application should not depend on the particular
+    format.
+    
+    Normally, application should return 0 from this callback.  If fatal
+    error occurred while doing something in this callback, application
+    should return :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  In this case,
+    library will return immediately with return value
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`.  Currently, if nonzero value
+    is returned from this callback, they are treated as
+    :macro:`NGHTTP2_ERR_CALLBACK_FAILURE`, but application should not
+    rely on this details.
 .. type:: nghttp2_session_callbacks
 
     

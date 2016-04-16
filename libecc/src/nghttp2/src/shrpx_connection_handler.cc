@@ -102,10 +102,17 @@ void thread_join_async_cb(struct ev_loop *loop, ev_async *w, int revent) {
 }
 } // namespace
 
+namespace {
+std::random_device rd;
+} // namespace
+
 ConnectionHandler::ConnectionHandler(struct ev_loop *loop)
-    : single_worker_(nullptr), loop_(loop),
+    : gen_(rd()),
+      single_worker_(nullptr),
+      loop_(loop),
       tls_ticket_key_memcached_get_retry_count_(0),
-      tls_ticket_key_memcached_fail_count_(0), worker_round_robin_cnt_(0),
+      tls_ticket_key_memcached_fail_count_(0),
+      worker_round_robin_cnt_(0),
       graceful_shutdown_(false) {
   ev_timer_init(&disable_acceptor_timer_, acceptor_disable_cb, 0., 0.);
   disable_acceptor_timer_.data = this;
@@ -176,7 +183,7 @@ int ConnectionHandler::create_single_worker() {
                                                   nb_.get()
 #endif // HAVE_NEVERBLEED
                                                       );
-  auto cl_ssl_ctx = ssl::setup_client_ssl_context(
+  auto cl_ssl_ctx = ssl::setup_downstream_client_ssl_context(
 #ifdef HAVE_NEVERBLEED
       nb_.get()
 #endif // HAVE_NEVERBLEED
@@ -186,8 +193,23 @@ int ConnectionHandler::create_single_worker() {
     all_ssl_ctx_.push_back(cl_ssl_ctx);
   }
 
-  single_worker_ = make_unique<Worker>(loop_, sv_ssl_ctx, cl_ssl_ctx, cert_tree,
-                                       ticket_keys_);
+  auto &tlsconf = get_config()->tls;
+  auto &memcachedconf = get_config()->tls.session_cache.memcached;
+
+  SSL_CTX *session_cache_ssl_ctx = nullptr;
+  if (memcachedconf.tls) {
+    session_cache_ssl_ctx = ssl::create_ssl_client_context(
+#ifdef HAVE_NEVERBLEED
+        nb_.get(),
+#endif // HAVE_NEVERBLEED
+        StringRef{tlsconf.cacert}, StringRef{memcachedconf.cert_file},
+        StringRef{memcachedconf.private_key_file}, nullptr);
+    all_ssl_ctx_.push_back(session_cache_ssl_ctx);
+  }
+
+  single_worker_ =
+      make_unique<Worker>(loop_, sv_ssl_ctx, cl_ssl_ctx, session_cache_ssl_ctx,
+                          cert_tree, ticket_keys_);
 #ifdef HAVE_MRUBY
   if (single_worker_->create_mruby_context() != 0) {
     return -1;
@@ -208,7 +230,7 @@ int ConnectionHandler::create_worker_thread(size_t num) {
                                                   nb_.get()
 #endif // HAVE_NEVERBLEED
                                                       );
-  auto cl_ssl_ctx = ssl::setup_client_ssl_context(
+  auto cl_ssl_ctx = ssl::setup_downstream_client_ssl_context(
 #ifdef HAVE_NEVERBLEED
       nb_.get()
 #endif // HAVE_NEVERBLEED
@@ -218,11 +240,25 @@ int ConnectionHandler::create_worker_thread(size_t num) {
     all_ssl_ctx_.push_back(cl_ssl_ctx);
   }
 
+  auto &tlsconf = get_config()->tls;
+  auto &memcachedconf = get_config()->tls.session_cache.memcached;
+
   for (size_t i = 0; i < num; ++i) {
     auto loop = ev_loop_new(0);
 
-    auto worker = make_unique<Worker>(loop, sv_ssl_ctx, cl_ssl_ctx, cert_tree,
-                                      ticket_keys_);
+    SSL_CTX *session_cache_ssl_ctx = nullptr;
+    if (memcachedconf.tls) {
+      session_cache_ssl_ctx = ssl::create_ssl_client_context(
+#ifdef HAVE_NEVERBLEED
+          nb_.get(),
+#endif // HAVE_NEVERBLEED
+          StringRef{tlsconf.cacert}, StringRef{memcachedconf.cert_file},
+          StringRef{memcachedconf.private_key_file}, nullptr);
+      all_ssl_ctx_.push_back(session_cache_ssl_ctx);
+    }
+    auto worker =
+        make_unique<Worker>(loop, sv_ssl_ctx, cl_ssl_ctx, session_cache_ssl_ctx,
+                            cert_tree, ticket_keys_);
 #ifdef HAVE_MRUBY
     if (worker->create_mruby_context() != 0) {
       return -1;
@@ -290,19 +326,20 @@ void ConnectionHandler::graceful_shutdown_worker() {
 #endif // NOTHREADS
 }
 
-int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen) {
+int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen,
+                                         const UpstreamAddr *faddr) {
   if (LOG_ENABLED(INFO)) {
     LLOG(INFO, this) << "Accepted connection. fd=" << fd;
   }
 
   if (get_config()->num_worker == 1) {
-
+    auto &upstreamconf = get_config()->conn.upstream;
     if (single_worker_->get_worker_stat()->num_connections >=
-        get_config()->worker_frontend_connections) {
+        upstreamconf.worker_connections) {
 
       if (LOG_ENABLED(INFO)) {
         LLOG(INFO, this) << "Too many connections >="
-                         << get_config()->worker_frontend_connections;
+                         << upstreamconf.worker_connections;
       }
 
       close(fd);
@@ -310,7 +347,7 @@ int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen) {
     }
 
     auto client =
-        ssl::accept_connection(single_worker_.get(), fd, addr, addrlen);
+        ssl::accept_connection(single_worker_.get(), fd, addr, addrlen, faddr);
     if (!client) {
       LLOG(ERROR, this) << "ClientHandler creation failed";
 
@@ -331,6 +368,7 @@ int ConnectionHandler::handle_connection(int fd, sockaddr *addr, int addrlen) {
   wev.client_fd = fd;
   memcpy(&wev.client_addr, addr, addrlen);
   wev.client_addrlen = addrlen;
+  wev.faddr = faddr;
 
   workers_[idx]->send(wev);
 
@@ -345,43 +383,23 @@ Worker *ConnectionHandler::get_single_worker() const {
   return single_worker_.get();
 }
 
-void ConnectionHandler::set_acceptor(std::unique_ptr<AcceptHandler> h) {
-  acceptor_ = std::move(h);
-}
-
-AcceptHandler *ConnectionHandler::get_acceptor() const {
-  return acceptor_.get();
-}
-
-void ConnectionHandler::set_acceptor6(std::unique_ptr<AcceptHandler> h) {
-  acceptor6_ = std::move(h);
-}
-
-AcceptHandler *ConnectionHandler::get_acceptor6() const {
-  return acceptor6_.get();
+void ConnectionHandler::add_acceptor(std::unique_ptr<AcceptHandler> h) {
+  acceptors_.push_back(std::move(h));
 }
 
 void ConnectionHandler::enable_acceptor() {
-  if (acceptor_) {
-    acceptor_->enable();
-  }
-
-  if (acceptor6_) {
-    acceptor6_->enable();
+  for (auto &a : acceptors_) {
+    a->enable();
   }
 }
 
 void ConnectionHandler::disable_acceptor() {
-  if (acceptor_) {
-    acceptor_->disable();
-  }
-
-  if (acceptor6_) {
-    acceptor6_->disable();
+  for (auto &a : acceptors_) {
+    a->disable();
   }
 }
 
-void ConnectionHandler::disable_acceptor_temporary(ev_tstamp t) {
+void ConnectionHandler::sleep_acceptor(ev_tstamp t) {
   if (t == 0. || ev_is_active(&disable_acceptor_timer_)) {
     return;
   }
@@ -393,11 +411,8 @@ void ConnectionHandler::disable_acceptor_temporary(ev_tstamp t) {
 }
 
 void ConnectionHandler::accept_pending_connection() {
-  if (acceptor_) {
-    acceptor_->accept_connection();
-  }
-  if (acceptor6_) {
-    acceptor6_->accept_connection();
+  for (auto &a : acceptors_) {
+    a->accept_connection();
   }
 }
 
@@ -446,7 +461,8 @@ int ConnectionHandler::start_ocsp_update(const char *cert_file) {
   assert(!ev_is_active(&ocsp_.chldev));
 
   char *const argv[] = {
-      const_cast<char *>(get_config()->fetch_ocsp_response_file.get()),
+      const_cast<char *>(
+          get_config()->tls.ocsp.fetch_ocsp_response_file.c_str()),
       const_cast<char *>(cert_file), nullptr};
   char *const envp[] = {nullptr};
 
@@ -630,7 +646,7 @@ void ConnectionHandler::proceed_next_cert_ocsp() {
     if (ocsp_.next == all_ssl_ctx_.size()) {
       ocsp_.next = 0;
       // We have updated all ocsp response, and schedule next update.
-      ev_timer_set(&ocsp_timer_, get_config()->ocsp_update_interval, 0.);
+      ev_timer_set(&ocsp_timer_, get_config()->tls.ocsp.update_interval, 0.);
       ev_timer_start(loop_, &ocsp_timer_);
       return;
     }
@@ -667,13 +683,9 @@ ConnectionHandler::get_tls_ticket_key_memcached_dispatcher() const {
   return tls_ticket_key_memcached_dispatcher_.get();
 }
 
-namespace {
-std::random_device rd;
-} // namespace
-
 void ConnectionHandler::on_tls_ticket_key_network_error(ev_timer *w) {
   if (++tls_ticket_key_memcached_get_retry_count_ >=
-      get_config()->tls_ticket_key_memcached_max_retry) {
+      get_config()->tls.ticket.memcached.max_retry) {
     LOG(WARN) << "Memcached: tls ticket get retry all failed "
               << tls_ticket_key_memcached_get_retry_count_ << " times.";
 
@@ -683,7 +695,7 @@ void ConnectionHandler::on_tls_ticket_key_network_error(ev_timer *w) {
 
   auto dist = std::uniform_int_distribution<int>(
       1, std::min(60, 1 << tls_ticket_key_memcached_get_retry_count_));
-  auto t = dist(rd);
+  auto t = dist(gen_);
 
   LOG(WARN)
       << "Memcached: tls ticket get failed due to network error, retrying in "
@@ -697,7 +709,7 @@ void ConnectionHandler::on_tls_ticket_key_not_found(ev_timer *w) {
   tls_ticket_key_memcached_get_retry_count_ = 0;
 
   if (++tls_ticket_key_memcached_fail_count_ >=
-      get_config()->tls_ticket_key_memcached_max_fail) {
+      get_config()->tls.ticket.memcached.max_fail) {
     LOG(WARN) << "Memcached: could not get tls ticket; disable tls ticket";
 
     tls_ticket_key_memcached_fail_count_ = 0;
@@ -742,8 +754,24 @@ void ConnectionHandler::on_tls_ticket_key_get_success(
 
 void ConnectionHandler::schedule_next_tls_ticket_key_memcached_get(
     ev_timer *w) {
-  ev_timer_set(w, get_config()->tls_ticket_key_memcached_interval, 0.);
+  ev_timer_set(w, get_config()->tls.ticket.memcached.interval, 0.);
   ev_timer_start(loop_, w);
+}
+
+SSL_CTX *ConnectionHandler::create_tls_ticket_key_memcached_ssl_ctx() {
+  auto &tlsconf = get_config()->tls;
+  auto &memcachedconf = get_config()->tls.ticket.memcached;
+
+  auto ssl_ctx = ssl::create_ssl_client_context(
+#ifdef HAVE_NEVERBLEED
+      nb_.get(),
+#endif // HAVE_NEVERBLEED
+      StringRef{tlsconf.cacert}, StringRef{memcachedconf.cert_file},
+      StringRef{memcachedconf.private_key_file}, nullptr);
+
+  all_ssl_ctx_.push_back(ssl_ctx);
+
+  return ssl_ctx;
 }
 
 #ifdef HAVE_NEVERBLEED

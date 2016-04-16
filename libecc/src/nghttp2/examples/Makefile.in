@@ -280,7 +280,6 @@ am__can_run_installinfo = \
     n|no|NO) false;; \
     *) (install-info --version) >/dev/null 2>&1;; \
   esac
-am__extra_recursive_targets = it-recursive itprep-recursive
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) $(LISP)
 # Read a list of newline-separated strings from the standard input,
 # and print each of them once, without duplicates.  Input order is
@@ -324,6 +323,7 @@ CPPFLAGS = @CPPFLAGS@
 CUNIT_CFLAGS = @CUNIT_CFLAGS@
 CUNIT_LIBS = @CUNIT_LIBS@
 CXX = @CXX@
+CXX1XCXXFLAGS = @CXX1XCXXFLAGS@
 CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
@@ -411,6 +411,7 @@ STRIP = @STRIP@
 TESTLDADD = @TESTLDADD@
 VERSION = @VERSION@
 WARNCFLAGS = @WARNCFLAGS@
+WARNCXXFLAGS = @WARNCXXFLAGS@
 XML2_CONFIG = @XML2_CONFIG@
 XML_CPPFLAGS = @XML_CPPFLAGS@
 XML_LIBS = @XML_LIBS@
@@ -477,9 +478,10 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
+EXTRA_DIST = CMakeLists.txt
 @ENABLE_EXAMPLES_TRUE@AM_CFLAGS = $(WARNCFLAGS)
+@ENABLE_EXAMPLES_TRUE@AM_CXXFLAGS = $(WARNCXXFLAGS) $(CXX1XCXXFLAGS)
 @ENABLE_EXAMPLES_TRUE@AM_CPPFLAGS = \
-@ENABLE_EXAMPLES_TRUE@	-Wall \
 @ENABLE_EXAMPLES_TRUE@	-I$(top_srcdir)/lib/includes \
 @ENABLE_EXAMPLES_TRUE@	-I$(top_builddir)/lib/includes \
 @ENABLE_EXAMPLES_TRUE@	-I$(top_srcdir)/src/includes \
@@ -730,8 +732,6 @@ mostlyclean-libtool:
 
 clean-libtool:
 	-rm -rf .libs _libs
-it-local: 
-itprep-local: 
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -900,14 +900,6 @@ install-ps-am:
 
 installcheck-am:
 
-it: it-am
-
-it-am: it-local
-
-itprep: itprep-am
-
-itprep-am: itprep-local
-
 maintainer-clean: maintainer-clean-am
 	-rm -rf ./$(DEPDIR)
 	-rm -f Makefile
@@ -939,11 +931,10 @@ uninstall-am:
 	install-exec-am install-html install-html-am install-info \
 	install-info-am install-man install-pdf install-pdf-am \
 	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs it-am it-local itprep-am \
-	itprep-local maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-compile mostlyclean-generic \
-	mostlyclean-libtool pdf pdf-am ps ps-am tags tags-am uninstall \
-	uninstall-am
+	installcheck-am installdirs maintainer-clean \
+	maintainer-clean-generic mostlyclean mostlyclean-compile \
+	mostlyclean-generic mostlyclean-libtool pdf pdf-am ps ps-am \
+	tags tags-am uninstall uninstall-am
 
 .PRECIOUS: Makefile
 

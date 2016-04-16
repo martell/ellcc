@@ -175,13 +175,18 @@ void server::start_accept(tcp::acceptor &acceptor, serve_mux &mux) {
       });
 }
 
-void server::stop() { io_service_pool_.stop(); }
+void server::stop() {
+  io_service_pool_.stop();
+  for (auto &acceptor : acceptors_) {
+    acceptor.close();
+  }
+}
 
 void server::join() { io_service_pool_.join(); }
 
 const std::vector<std::shared_ptr<boost::asio::io_service>> &
-server::get_io_services() const {
-  return io_service_pool_.get_io_services();
+server::io_services() const {
+  return io_service_pool_.io_services();
 }
 
 } // namespace server

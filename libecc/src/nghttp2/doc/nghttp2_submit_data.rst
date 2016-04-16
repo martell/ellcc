@@ -29,7 +29,7 @@ Synopsis
     :macro:`NGHTTP2_ERR_INVALID_ARGUMENT`
         The *stream_id* is 0.
     :macro:`NGHTTP2_ERR_STREAM_CLOSED`
-        The stream was alreay closed; or the *stream_id* is invalid.
+        The stream was already closed; or the *stream_id* is invalid.
     
     .. note::
     

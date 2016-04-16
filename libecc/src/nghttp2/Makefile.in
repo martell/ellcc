@@ -192,7 +192,6 @@ am__recursive_targets = \
   $(am__extra_recursive_targets)
 AM_RECURSIVE_TARGETS = $(am__recursive_targets:-recursive=) TAGS CTAGS \
 	cscope distdir dist dist-all distcheck
-am__extra_recursive_targets = it-recursive itprep-recursive
 am__tagged_files = $(HEADERS) $(SOURCES) $(TAGS_FILES) \
 	$(LISP)config.h.in
 # Read a list of newline-separated strings from the standard input,
@@ -283,6 +282,7 @@ CPPFLAGS = @CPPFLAGS@
 CUNIT_CFLAGS = @CUNIT_CFLAGS@
 CUNIT_LIBS = @CUNIT_LIBS@
 CXX = @CXX@
+CXX1XCXXFLAGS = @CXX1XCXXFLAGS@
 CXXCPP = @CXXCPP@
 CXXDEPMODE = @CXXDEPMODE@
 CXXFLAGS = @CXXFLAGS@
@@ -370,6 +370,7 @@ STRIP = @STRIP@
 TESTLDADD = @TESTLDADD@
 VERSION = @VERSION@
 WARNCFLAGS = @WARNCFLAGS@
+WARNCXXFLAGS = @WARNCXXFLAGS@
 XML2_CONFIG = @XML2_CONFIG@
 XML_CPPFLAGS = @XML_CPPFLAGS@
 XML_LIBS = @XML_LIBS@
@@ -455,7 +456,19 @@ AM_DISTCHECK_CONFIGURE_FLAGS = --disable-python-bindings
 ACLOCAL_AMFLAGS = -I m4
 dist_doc_DATA = README.rst
 EXTRA_DIST = nghttpx.conf.sample proxy.pac.sample android-config android-make \
-	Dockerfile.android
+	Dockerfile.android \
+	cmakeconfig.h.in \
+	CMakeLists.txt \
+	CMakeOptions.txt \
+	cmake/FindSpdylay.cmake \
+	cmake/ExtractValidFlags.cmake \
+	cmake/FindJemalloc.cmake \
+	cmake/FindLibev.cmake \
+	cmake/FindCUnit.cmake \
+	cmake/Version.cmake \
+	cmake/FindCython.cmake \
+	cmake/FindLibevent.cmake \
+	cmake/FindJansson.cmake
 
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-recursive
@@ -575,8 +588,6 @@ $(am__recursive_targets):
 	if test "$$dot_seen" = "no"; then \
 	  $(MAKE) $(AM_MAKEFLAGS) "$$target-am" || exit 1; \
 	fi; test -z "$$fail"
-it-local: 
-itprep-local: 
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -926,14 +937,6 @@ install-ps-am:
 
 installcheck-am:
 
-it: it-recursive
-
-it-am: it-local
-
-itprep: itprep-recursive
-
-itprep-am: itprep-local
-
 maintainer-clean: maintainer-clean-recursive
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
 	-rm -rf $(top_srcdir)/autom4te.cache
@@ -968,8 +971,7 @@ uninstall-am: uninstall-dist_docDATA
 	install-exec-am install-html install-html-am install-info \
 	install-info-am install-man install-pdf install-pdf-am \
 	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs installdirs-am it-am it-local \
-	itprep-am itprep-local maintainer-clean \
+	installcheck-am installdirs installdirs-am maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-generic \
 	mostlyclean-libtool pdf pdf-am ps ps-am tags tags-am uninstall \
 	uninstall-am uninstall-dist_docDATA

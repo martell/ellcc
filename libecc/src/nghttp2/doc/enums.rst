@@ -161,6 +161,10 @@ Enums
 
         (``-534``) 
         Unexpected internal error, but recovered.
+    .. macro:: NGHTTP2_ERR_CANCEL
+
+        (``-535``) 
+        Indicates that a processing was canceled.
     .. macro:: NGHTTP2_ERR_FATAL
 
         (``-900``) 
@@ -409,7 +413,7 @@ Enums
         (``0x02``) 
         Indicates that END_STREAM flag must not be set even if
         NGHTTP2_DATA_FLAG_EOF is set.  Usually this flag is used to send
-        trailer header fields with `nghttp2_submit_request()` or
+        trailer fields with `nghttp2_submit_request()` or
         `nghttp2_submit_response()`.
     .. macro:: NGHTTP2_DATA_FLAG_NO_COPY
 
@@ -422,9 +426,9 @@ Enums
     
     The category of HEADERS, which indicates the role of the frame.  In
     HTTP/2 spec, request, response, push response and other arbitrary
-    headers (e.g., trailers) are all called just HEADERS.  To give the
-    application the role of incoming HEADERS frame, we define several
-    categories.
+    headers (e.g., trailer fields) are all called just HEADERS.  To
+    give the application the role of incoming HEADERS frame, we define
+    several categories.
 
     .. macro:: NGHTTP2_HCAT_REQUEST
 

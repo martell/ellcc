@@ -49,7 +49,8 @@ namespace {
 mrb_value request_get_http_version_major(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-  return mrb_fixnum_value(downstream->get_request_major());
+  const auto &req = downstream->request();
+  return mrb_fixnum_value(req.http_major);
 }
 } // namespace
 
@@ -57,7 +58,8 @@ namespace {
 mrb_value request_get_http_version_minor(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-  return mrb_fixnum_value(downstream->get_request_minor());
+  const auto &req = downstream->request();
+  return mrb_fixnum_value(req.http_minor);
 }
 } // namespace
 
@@ -65,9 +67,10 @@ namespace {
 mrb_value request_get_method(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-  auto method = http2::to_method_string(downstream->get_request_method());
+  const auto &req = downstream->request();
+  auto method = http2::to_method_string(req.method);
 
-  return mrb_str_new_cstr(mrb, method);
+  return mrb_str_new(mrb, method.c_str(), method.size());
 }
 } // namespace
 
@@ -75,6 +78,7 @@ namespace {
 mrb_value request_set_method(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
+  auto &req = downstream->request();
 
   check_phase(mrb, data->phase, PHASE_REQUEST);
 
@@ -90,7 +94,7 @@ mrb_value request_set_method(mrb_state *mrb, mrb_value self) {
     mrb_raise(mrb, E_RUNTIME_ERROR, "method not supported");
   }
 
-  downstream->set_request_method(token);
+  req.method = token;
 
   return self;
 }
@@ -100,9 +104,9 @@ namespace {
 mrb_value request_get_authority(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-  auto &authority = downstream->get_request_http2_authority();
+  const auto &req = downstream->request();
 
-  return mrb_str_new(mrb, authority.c_str(), authority.size());
+  return mrb_str_new(mrb, req.authority.c_str(), req.authority.size());
 }
 } // namespace
 
@@ -110,6 +114,9 @@ namespace {
 mrb_value request_set_authority(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
+  auto &req = downstream->request();
+
+  auto &balloc = downstream->get_block_allocator();
 
   check_phase(mrb, data->phase, PHASE_REQUEST);
 
@@ -120,7 +127,8 @@ mrb_value request_set_authority(mrb_state *mrb, mrb_value self) {
     mrb_raise(mrb, E_RUNTIME_ERROR, "authority must not be empty string");
   }
 
-  downstream->set_request_http2_authority(std::string(authority, n));
+  req.authority =
+      make_string_ref(balloc, StringRef{authority, static_cast<size_t>(n)});
 
   return self;
 }
@@ -130,9 +138,9 @@ namespace {
 mrb_value request_get_scheme(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-  auto &scheme = downstream->get_request_http2_scheme();
+  const auto &req = downstream->request();
 
-  return mrb_str_new(mrb, scheme.c_str(), scheme.size());
+  return mrb_str_new(mrb, req.scheme.c_str(), req.scheme.size());
 }
 } // namespace
 
@@ -140,6 +148,9 @@ namespace {
 mrb_value request_set_scheme(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
+  auto &req = downstream->request();
+
+  auto &balloc = downstream->get_block_allocator();
 
   check_phase(mrb, data->phase, PHASE_REQUEST);
 
@@ -150,7 +161,8 @@ mrb_value request_set_scheme(mrb_state *mrb, mrb_value self) {
     mrb_raise(mrb, E_RUNTIME_ERROR, "scheme must not be empty string");
   }
 
-  downstream->set_request_http2_scheme(std::string(scheme, n));
+  req.scheme =
+      make_string_ref(balloc, StringRef{scheme, static_cast<size_t>(n)});
 
   return self;
 }
@@ -160,9 +172,9 @@ namespace {
 mrb_value request_get_path(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-  auto &path = downstream->get_request_path();
+  const auto &req = downstream->request();
 
-  return mrb_str_new(mrb, path.c_str(), path.size());
+  return mrb_str_new(mrb, req.path.c_str(), req.path.size());
 }
 } // namespace
 
@@ -170,6 +182,9 @@ namespace {
 mrb_value request_set_path(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
+  auto &req = downstream->request();
+
+  auto &balloc = downstream->get_block_allocator();
 
   check_phase(mrb, data->phase, PHASE_REQUEST);
 
@@ -177,7 +192,8 @@ mrb_value request_set_path(mrb_state *mrb, mrb_value self) {
   mrb_int pathlen;
   mrb_get_args(mrb, "s", &path, &pathlen);
 
-  downstream->set_request_path(std::string(path, pathlen));
+  req.path =
+      make_string_ref(balloc, StringRef{path, static_cast<size_t>(pathlen)});
 
   return self;
 }
@@ -187,7 +203,8 @@ namespace {
 mrb_value request_get_headers(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
-  return create_headers_hash(mrb, downstream->get_request_headers());
+  const auto &req = downstream->request();
+  return create_headers_hash(mrb, req.fs.headers());
 }
 } // namespace
 
@@ -195,6 +212,8 @@ namespace {
 mrb_value request_mod_header(mrb_state *mrb, mrb_value self, bool repl) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
+  auto &req = downstream->request();
+  auto &balloc = downstream->get_block_allocator();
 
   check_phase(mrb, data->phase, PHASE_REQUEST);
 
@@ -207,17 +226,21 @@ mrb_value request_mod_header(mrb_state *mrb, mrb_value self, bool repl) {
 
   key = mrb_funcall(mrb, key, "downcase", 0);
 
+  auto keyref =
+      make_string_ref(balloc, StringRef{RSTRING_PTR(key),
+                                        static_cast<size_t>(RSTRING_LEN(key))});
+  auto token = http2::lookup_token(keyref.byte(), keyref.size());
+
   if (repl) {
     size_t p = 0;
-    auto &headers = downstream->get_request_headers();
+    auto &headers = req.fs.headers();
     for (size_t i = 0; i < headers.size(); ++i) {
-      auto &hd = headers[i];
-      if (util::streq(std::begin(hd.name), hd.name.size(), RSTRING_PTR(key),
-                      RSTRING_LEN(key))) {
+      auto &kv = headers[i];
+      if (kv.name == keyref) {
         continue;
       }
       if (i != p) {
-        headers[p++] = std::move(hd);
+        headers[p++] = std::move(kv);
       }
     }
     headers.resize(p);
@@ -227,17 +250,21 @@ mrb_value request_mod_header(mrb_state *mrb, mrb_value self, bool repl) {
     auto n = mrb_ary_len(mrb, values);
     for (int i = 0; i < n; ++i) {
       auto value = mrb_ary_entry(values, i);
-      downstream->add_request_header(
-          std::string(RSTRING_PTR(key), RSTRING_LEN(key)),
-          std::string(RSTRING_PTR(value), RSTRING_LEN(value)));
+      req.fs.add_header_token(
+          keyref,
+          make_string_ref(balloc,
+                          StringRef{RSTRING_PTR(value),
+                                    static_cast<size_t>(RSTRING_LEN(value))}),
+          false, token);
     }
   } else if (!mrb_nil_p(values)) {
-    downstream->add_request_header(
-        std::string(RSTRING_PTR(key), RSTRING_LEN(key)),
-        std::string(RSTRING_PTR(values), RSTRING_LEN(values)));
+    req.fs.add_header_token(
+        keyref,
+        make_string_ref(balloc,
+                        StringRef{RSTRING_PTR(values),
+                                  static_cast<size_t>(RSTRING_LEN(values))}),
+        false, token);
   }
-
-  data->request_headers_dirty = true;
 
   return mrb_nil_value();
 }
@@ -259,10 +286,11 @@ namespace {
 mrb_value request_clear_headers(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
+  auto &req = downstream->request();
 
   check_phase(mrb, data->phase, PHASE_REQUEST);
 
-  downstream->clear_request_headers();
+  req.fs.clear_headers();
 
   return mrb_nil_value();
 }
@@ -278,7 +306,7 @@ mrb_value request_push(mrb_state *mrb, mrb_value self) {
   mrb_int len;
   mrb_get_args(mrb, "s", &uri, &len);
 
-  upstream->initiate_push(downstream, uri, len);
+  upstream->initiate_push(downstream, StringRef{uri, static_cast<size_t>(len)});
 
   return mrb_nil_value();
 }

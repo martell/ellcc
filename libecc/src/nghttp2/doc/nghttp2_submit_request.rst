@@ -65,6 +65,11 @@ Synopsis
     :macro:`NGHTTP2_ERR_STREAM_ID_NOT_AVAILABLE`
         No stream ID is available because maximum stream ID was
         reached.
+    :macro:`NGHTTP2_ERR_INVALID_ARGUMENT`
+        Trying to depend on itself (new stream ID equals
+        ``pri_spec->stream_id``).
+    :macro:`NGHTTP2_ERR_PROTO`
+        The *session* is server session.
     
     .. warning::
     
