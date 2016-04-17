@@ -1,5 +1,7 @@
 current SVN:
 
+version 0.1.30:
+
 * Update the nghttp2 library to version 1.9.2.
 * Update the curl library to version 7.48.0.
 * Update to LLVM r266470.
