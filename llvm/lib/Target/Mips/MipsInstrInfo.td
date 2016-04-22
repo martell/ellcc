@@ -1705,11 +1705,13 @@ def SRAV : MMRel, shift_rotate_reg<"srav", GPR32Opnd, II_SRAV, sra>,
            SRLV_FM<7, 0>;
 
 // Rotate Instructions
-def ROTR  : MMRel, shift_rotate_imm<"rotr", uimm5, GPR32Opnd, II_ROTR, rotr,
-                                    immZExt5>,
-            SRA_FM<2, 1>, ISA_MIPS32R2;
-def ROTRV : MMRel, shift_rotate_reg<"rotrv", GPR32Opnd, II_ROTRV, rotr>,
-            SRLV_FM<6, 1>, ISA_MIPS32R2;
+let AdditionalPredicates = [NotInMicroMips] in {
+  def ROTR  : MMRel, shift_rotate_imm<"rotr", uimm5, GPR32Opnd, II_ROTR, rotr,
+                                      immZExt5>,
+              SRA_FM<2, 1>, ISA_MIPS32R2;
+  def ROTRV : MMRel, shift_rotate_reg<"rotrv", GPR32Opnd, II_ROTRV, rotr>,
+              SRLV_FM<6, 1>, ISA_MIPS32R2;
+}
 
 /// Load and Store Instructions
 ///  aligned
@@ -1749,7 +1751,7 @@ def LWC2 : LW_FT2<"lwc2", COP2Opnd, NoItinerary, load>, LW_FM<0x32>,
            ISA_MIPS1_NOT_32R6_64R6;
 def SWC2 : SW_FT2<"swc2", COP2Opnd, NoItinerary, store>, LW_FM<0x3a>,
            ISA_MIPS1_NOT_32R6_64R6;
-def LDC2 : LW_FT2<"ldc2", COP2Opnd, NoItinerary, load>, LW_FM<0x36>,
+def LDC2 : StdMMR6Rel, LW_FT2<"ldc2", COP2Opnd, NoItinerary, load>, LW_FM<0x36>,
            ISA_MIPS2_NOT_32R6_64R6;
 def SDC2 : SW_FT2<"sdc2", COP2Opnd, NoItinerary, store>, LW_FM<0x3e>,
            ISA_MIPS2_NOT_32R6_64R6;
@@ -2075,11 +2077,12 @@ def JALR_HB : JALR_HB_DESC, JALR_HB_ENC, ISA_MIPS32;
 
 class TLB<string asmstr> : InstSE<(outs), (ins), asmstr, [], NoItinerary,
                                       FrmOther, asmstr>;
-def TLBP : MMRel, TLB<"tlbp">, COP0_TLB_FM<0x08>;
-def TLBR : MMRel, TLB<"tlbr">, COP0_TLB_FM<0x01>;
-def TLBWI : MMRel, TLB<"tlbwi">, COP0_TLB_FM<0x02>;
-def TLBWR : MMRel, TLB<"tlbwr">, COP0_TLB_FM<0x06>;
-
+let AdditionalPredicates = [NotInMicroMips] in {
+  def TLBP : MMRel, TLB<"tlbp">, COP0_TLB_FM<0x08>;
+  def TLBR : MMRel, TLB<"tlbr">, COP0_TLB_FM<0x01>;
+  def TLBWI : MMRel, TLB<"tlbwi">, COP0_TLB_FM<0x02>;
+  def TLBWR : MMRel, TLB<"tlbwr">, COP0_TLB_FM<0x06>;
+}
 class CacheOp<string instr_asm, Operand MemOpnd> :
     InstSE<(outs), (ins  MemOpnd:$addr, uimm5:$hint),
            !strconcat(instr_asm, "\t$hint, $addr"), [], NoItinerary, FrmOther,
@@ -2223,7 +2226,9 @@ def : MipsInstAlias<"beqz $rs,$offset",
                     (BEQ GPR32Opnd:$rs, ZERO, brtarget:$offset), 0>;
 def : MipsInstAlias<"beqzl $rs,$offset",
                     (BEQL GPR32Opnd:$rs, ZERO, brtarget:$offset), 0>;
-def : MipsInstAlias<"syscall", (SYSCALL 0), 1>;
+let AdditionalPredicates = [NotInMicroMips] in {
+  def : MipsInstAlias<"syscall", (SYSCALL 0), 1>;
+}
 
 def : MipsInstAlias<"break", (BREAK 0, 0), 1>;
 def : MipsInstAlias<"break $imm", (BREAK uimm10:$imm, 0), 1>;

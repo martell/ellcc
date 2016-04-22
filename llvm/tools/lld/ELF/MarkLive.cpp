@@ -116,7 +116,7 @@ template <class ELFT> void elf::markLive(SymbolTable<ELFT> *Symtab) {
   if (Config->Shared || Config->ExportDynamic) {
     for (const Symbol *S : Symtab->getSymbols()) {
       SymbolBody *B = S->Body;
-      if (B->getVisibility() == STV_DEFAULT)
+      if (B->includeInDynsym())
         MarkSymbol(B);
     }
   }
@@ -126,7 +126,7 @@ template <class ELFT> void elf::markLive(SymbolTable<ELFT> *Symtab) {
   for (const std::unique_ptr<ObjectFile<ELFT>> &F : Symtab->getObjectFiles())
     for (InputSectionBase<ELFT> *Sec : F->getSections())
       if (Sec && Sec != &InputSection<ELFT>::Discarded)
-        if (isReserved(Sec) || Script->shouldKeep<ELFT>(Sec))
+        if (isReserved(Sec) || Script<ELFT>::X->shouldKeep(Sec))
           Enqueue(Sec);
 
   // Mark all reachable sections.

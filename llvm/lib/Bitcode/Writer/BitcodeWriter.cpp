@@ -28,12 +28,11 @@
 #include "llvm/IR/Operator.h"
 #include "llvm/IR/UseListOrder.h"
 #include "llvm/IR/ValueSymbolTable.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Program.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/SHA1.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cctype>
 #include <map>
 using namespace llvm;
@@ -2890,6 +2889,9 @@ static void WritePerModuleGlobalValueSummary(const Module *M,
   if (M->empty())
     return;
 
+  if (Index.begin() == Index.end())
+    return;
+
   Stream.EnterSubblock(bitc::GLOBALVAL_SUMMARY_BLOCK_ID, 3);
 
   // Abbrev for FS_PERMODULE.
@@ -2925,16 +2927,24 @@ static void WritePerModuleGlobalValueSummary(const Module *M,
   Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 8));
   unsigned FSModRefsAbbrev = Stream.EmitAbbrev(Abbv);
 
+  // Abbrev for FS_ALIAS.
+  Abbv = new BitCodeAbbrev();
+  Abbv->Add(BitCodeAbbrevOp(bitc::FS_ALIAS));
+  Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 8));   // valueid
+  Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 5)); // linkage
+  Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 8));   // valueid
+  unsigned FSAliasAbbrev = Stream.EmitAbbrev(Abbv);
+
   SmallVector<uint64_t, 64> NameVals;
   // Iterate over the list of functions instead of the Index to
   // ensure the ordering is stable.
   for (const Function &F : *M) {
     if (F.isDeclaration())
       continue;
-    // Skip anonymous functions. We will emit a function summary for
-    // any aliases below.
+    // Summary emission does not support anonymous functions, they have to
+    // renamed using the anonymous function renaming pass.
     if (!F.hasName())
-      continue;
+      report_fatal_error("Unexpected anonymous function when writing summary");
 
     auto *Info = Index.getGlobalValueInfo(F);
     WritePerModuleFunctionSummaryRecord(
@@ -2947,6 +2957,20 @@ static void WritePerModuleGlobalValueSummary(const Module *M,
   // of a function scope.
   for (const GlobalVariable &G : M->globals())
     WriteModuleLevelReferences(G, Index, VE, NameVals, FSModRefsAbbrev, Stream);
+
+  for (const GlobalAlias &A : M->aliases()) {
+    auto *Aliasee = A.getBaseObject();
+    if (!Aliasee->hasName())
+      // Nameless function don't have an entry in the summary, skip it.
+      continue;
+    auto AliasId = VE.getValueID(&A);
+    auto AliaseeId = VE.getValueID(Aliasee);
+    NameVals.push_back(AliasId);
+    NameVals.push_back(getEncodedLinkage(A.getLinkage()));
+    NameVals.push_back(AliaseeId);
+    Stream.EmitRecord(bitc::FS_ALIAS, NameVals, FSAliasAbbrev);
+    NameVals.clear();
+  }
 
   Stream.ExitBlock();
 }
@@ -2991,11 +3015,31 @@ static void WriteCombinedGlobalValueSummary(
   Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 8));
   unsigned FSModRefsAbbrev = Stream.EmitAbbrev(Abbv);
 
+  // Abbrev for FS_COMBINED_ALIAS.
+  Abbv = new BitCodeAbbrev();
+  Abbv->Add(BitCodeAbbrevOp(bitc::FS_COMBINED_ALIAS));
+  Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 8));   // modid
+  Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::Fixed, 5)); // linkage
+  Abbv->Add(BitCodeAbbrevOp(BitCodeAbbrevOp::VBR, 8));   // offset
+  unsigned FSAliasAbbrev = Stream.EmitAbbrev(Abbv);
+
+  // The aliases are emitted as a post-pass, and will point to the summary
+  // offset id of the aliasee. For this purpose we need to be able to get back
+  // from the summary to the offset
+  SmallVector<GlobalValueInfo *, 64> Aliases;
+  DenseMap<const GlobalValueSummary *, uint64_t> SummaryToOffsetMap;
+
   SmallVector<uint64_t, 64> NameVals;
   for (const auto &FII : Index) {
     for (auto &FI : FII.second) {
       GlobalValueSummary *S = FI->summary();
       assert(S);
+      if (isa<AliasSummary>(S)) {
+        // Will process aliases as a post-pass because the reader wants all
+        // global to be loaded first.
+        Aliases.push_back(FI.get());
+        continue;
+      }
 
       if (auto *VS = dyn_cast<GlobalVarSummary>(S)) {
         NameVals.push_back(Index.getModuleId(VS->modulePath()));
@@ -3018,6 +3062,8 @@ static void WriteCombinedGlobalValueSummary(
         // reader will invoke readRecord after the abbrev id read.
         FI->setBitcodeIndex(Stream.GetCurrentBitNo() +
                             Stream.GetAbbrevIDWidth());
+        // Store temporarily the offset in the map for a possible alias.
+        SummaryToOffsetMap[S] = FI->bitcodeIndex();
 
         // Emit the finished record.
         Stream.EmitRecord(bitc::FS_COMBINED_GLOBALVAR_INIT_REFS, NameVals,
@@ -3069,6 +3115,8 @@ static void WriteCombinedGlobalValueSummary(
       // in the VST entry. Add the current code size since the
       // reader will invoke readRecord after the abbrev id read.
       FI->setBitcodeIndex(Stream.GetCurrentBitNo() + Stream.GetAbbrevIDWidth());
+      // Store temporarily the offset in the map for a possible alias.
+      SummaryToOffsetMap[S] = FI->bitcodeIndex();
 
       unsigned FSAbbrev =
           (HasProfileData ? FSCallsProfileAbbrev : FSCallsAbbrev);
@@ -3079,6 +3127,24 @@ static void WriteCombinedGlobalValueSummary(
       Stream.EmitRecord(Code, NameVals, FSAbbrev);
       NameVals.clear();
     }
+  }
+
+  for (auto GVI : Aliases) {
+    AliasSummary *AS = cast<AliasSummary>(GVI->summary());
+    NameVals.push_back(Index.getModuleId(AS->modulePath()));
+    NameVals.push_back(getEncodedLinkage(AS->linkage()));
+    auto AliaseeOffset = SummaryToOffsetMap[&AS->getAliasee()];
+    assert(AliaseeOffset);
+    NameVals.push_back(AliaseeOffset);
+
+    // Record the starting offset of this summary entry for use
+    // in the VST entry. Add the current code size since the
+    // reader will invoke readRecord after the abbrev id read.
+    GVI->setBitcodeIndex(Stream.GetCurrentBitNo() + Stream.GetAbbrevIDWidth());
+
+    // Emit the finished record.
+    Stream.EmitRecord(bitc::FS_COMBINED_ALIAS, NameVals, FSAliasAbbrev);
+    NameVals.clear();
   }
 
   Stream.ExitBlock();

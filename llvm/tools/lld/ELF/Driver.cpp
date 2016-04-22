@@ -36,12 +36,14 @@ LinkerDriver *elf::Driver;
 bool elf::link(ArrayRef<const char *> Args, raw_ostream &Error) {
   HasError = false;
   ErrorOS = &Error;
+
   Configuration C;
   LinkerDriver D;
-  LinkerScript LS;
+  ScriptConfiguration SC;
   Config = &C;
   Driver = &D;
-  Script = &LS;
+  ScriptConfig = &SC;
+
   Driver->main(Args);
   return !HasError;
 }
@@ -108,7 +110,7 @@ void LinkerDriver::addFile(StringRef Path) {
 
   switch (identify_magic(MBRef.getBuffer())) {
   case file_magic::unknown:
-    Script->read(MBRef);
+    readLinkerScript(MBRef);
     return;
   case file_magic::archive:
     if (WholeArchive) {
@@ -287,6 +289,7 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->Demangle = !Args.hasArg(OPT_no_demangle);
   Config->DisableVerify = Args.hasArg(OPT_disable_verify);
   Config->DiscardAll = Args.hasArg(OPT_discard_all);
+  Config->DiscardValueNames = !Args.hasArg(OPT_lto_no_discard_value_names);
   Config->DiscardLocals = Args.hasArg(OPT_discard_locals);
   Config->DiscardNone = Args.hasArg(OPT_discard_none);
   Config->EhFrameHdr = Args.hasArg(OPT_eh_frame_hdr);
@@ -321,6 +324,9 @@ void LinkerDriver::readConfigs(opt::InputArgList &Args) {
   Config->LtoO = getInteger(Args, OPT_lto_O, 2);
   if (Config->LtoO > 3)
     error("invalid optimization level for LTO: " + getString(Args, OPT_lto_O));
+  Config->LtoJobs = getInteger(Args, OPT_lto_jobs, 1);
+  if (Config->LtoJobs == 0)
+    error("number of threads must be > 0");
 
   Config->ZExecStack = hasZOption(Args, "execstack");
   Config->ZNodelete = hasZOption(Args, "nodelete");
@@ -412,8 +418,11 @@ void LinkerDriver::createFiles(opt::InputArgList &Args) {
 
 template <class ELFT> void LinkerDriver::link(opt::InputArgList &Args) {
   SymbolTable<ELFT> Symtab;
+
   std::unique_ptr<TargetInfo> TI(createTarget());
   Target = TI.get();
+  LinkerScript<ELFT> LS;
+  Script<ELFT>::X = &LS;
 
   Config->Rela = ELFT::Is64Bits;
 

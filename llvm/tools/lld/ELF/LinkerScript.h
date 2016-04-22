@@ -19,6 +19,10 @@
 namespace lld {
 namespace elf {
 
+// Parses a linker script. Calling this function updates
+// Config and ScriptConfig.
+void readLinkerScript(MemoryBufferRef MB);
+
 class ScriptParser;
 template <class ELFT> class InputSectionBase;
 template <class ELFT> class OutputSectionBase;
@@ -26,73 +30,79 @@ template <class ELFT> class OutputSectionBase;
 // This class represents each rule in SECTIONS command.
 class SectionRule {
 public:
-  SectionRule(StringRef D, StringRef S, bool Keep)
-      : Dest(D), Keep(Keep), SectionPattern(S) {}
+  SectionRule(StringRef D, StringRef S)
+      : Dest(D), SectionPattern(S) {}
 
   // Returns true if S should be in Dest section.
   template <class ELFT> bool match(InputSectionBase<ELFT> *S);
 
   StringRef Dest;
 
-  // KEEP command saves unused sections even if --gc-sections is specified.
-  bool Keep = false;
-
 private:
   StringRef SectionPattern;
 };
 
 // This enum represents what we can observe in SECTIONS tag of script:
-// Expr is a location counter change, like ". = . + 0x1000"
-// Section is a description of output section, like ".data :..."
-enum class Command { Expr, Section };
+// ExprKind is a location counter change, like ". = . + 0x1000"
+// SectionKind is a description of output section, like ".data :..."
+enum SectionsCommandKind { ExprKind, SectionKind };
 
-struct LocationNode {
-  Command Type;
+struct SectionsCommand {
+  SectionsCommandKind Kind;
   std::vector<StringRef> Expr;
   StringRef SectionName;
 };
 
-// This is a runner of the linker script.
-class LinkerScript {
-  friend class ScriptParser;
-
-public:
-  // Parses a linker script. Calling this function may update
-  // this object and Config.
-  void read(MemoryBufferRef MB);
-
-  template <class ELFT> StringRef getOutputSection(InputSectionBase<ELFT> *S);
-  ArrayRef<uint8_t> getFiller(StringRef Name);
-  template <class ELFT> bool isDiscarded(InputSectionBase<ELFT> *S);
-  template <class ELFT> bool shouldKeep(InputSectionBase<ELFT> *S);
-  template <class ELFT>
-  void assignAddresses(std::vector<OutputSectionBase<ELFT> *> &S);
-  int compareSections(StringRef A, StringRef B);
-
-  bool Exists = false;
-
-private:
-  template <class ELFT>
-  void fixupLocations(std::vector<OutputSectionBase<ELFT> *> &);
-  uint64_t evaluate(std::vector<StringRef> &Tokens, uint64_t LocCounter);
-  template <class ELFT> SectionRule *find(InputSectionBase<ELFT> *S);
-
+// ScriptConfiguration holds linker script parse results.
+struct ScriptConfiguration {
   // SECTIONS commands.
   std::vector<SectionRule> Sections;
-
-  // Output sections are sorted by this order.
-  std::vector<StringRef> SectionOrder;
 
   // Section fill attribute for each section.
   llvm::StringMap<std::vector<uint8_t>> Filler;
 
   // Used to assign addresses to sections.
-  std::vector<LocationNode> Locations;
+  std::vector<SectionsCommand> Commands;
+
+  bool DoLayout = false;
 
   llvm::BumpPtrAllocator Alloc;
+
+  // List of section patterns specified with KEEP commands. They will
+  // be kept even if they are unused and --gc-sections is specified.
+  std::vector<StringRef> KeptSections;
 };
 
-extern LinkerScript *Script;
+extern ScriptConfiguration *ScriptConfig;
+
+// This is a runner of the linker script.
+template <class ELFT> class LinkerScript {
+public:
+  StringRef getOutputSection(InputSectionBase<ELFT> *S);
+  ArrayRef<uint8_t> getFiller(StringRef Name);
+  bool isDiscarded(InputSectionBase<ELFT> *S);
+  bool shouldKeep(InputSectionBase<ELFT> *S);
+  void assignAddresses(ArrayRef<OutputSectionBase<ELFT> *> S);
+  int compareSections(StringRef A, StringRef B);
+
+private:
+  // "ScriptConfig" is a bit too long, so define a short name for it.
+  ScriptConfiguration &Opt = *ScriptConfig;
+
+  int getSectionIndex(StringRef Name);
+  SectionRule *find(InputSectionBase<ELFT> *S);
+
+  uint64_t evaluate(ArrayRef<StringRef> Tokens);
+  uint64_t parseExpr(ArrayRef<StringRef> &Tokens);
+  uint64_t parsePrimary(ArrayRef<StringRef> &Tokens);
+  uint64_t parseExpr1(ArrayRef<StringRef> &Tokens, uint64_t Lhs, int MinPrec);
+  typename ELFT::uint Dot;
+};
+
+// Variable template is a C++14 feature, so we can't template
+// a global variable. Use a struct to workaround.
+template <class ELFT> struct Script { static LinkerScript<ELFT> *X; };
+template <class ELFT> LinkerScript<ELFT> *Script<ELFT>::X;
 
 } // namespace elf
 } // namespace lld

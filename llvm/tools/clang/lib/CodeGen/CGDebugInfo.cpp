@@ -1664,8 +1664,11 @@ llvm::DIType *CGDebugInfo::CreateType(const ObjCInterfaceType *Ty,
   if (!ID)
     return nullptr;
 
-  // Return a forward declaration if this type was imported from a clang module.
-  if (DebugTypeExtRefs && ID->isFromASTFile() && ID->getDefinition())
+  // Return a forward declaration if this type was imported from a clang module,
+  // and this is not the compile unit with the implementation of the type (which
+  // may contain hidden ivars).
+  if (DebugTypeExtRefs && ID->isFromASTFile() && ID->getDefinition() &&
+      !ID->getImplementation())
     return DBuilder.createForwardDecl(llvm::dwarf::DW_TAG_structure_type,
                                       ID->getName(),
                                       getDeclContextDescriptor(ID), Unit, 0);
@@ -2373,6 +2376,30 @@ llvm::DICompositeType *CGDebugInfo::CreateLimitedType(const RecordType *Ty) {
   llvm::DICompositeType *RealDecl = DBuilder.createReplaceableCompositeType(
       getTagForRecord(RD), RDName, RDContext, DefUnit, Line, 0, Size, Align, 0,
       FullName);
+
+  // Elements of composite types usually have back to the type, creating
+  // uniquing cycles.  Distinct nodes are more efficient.
+  switch (RealDecl->getTag()) {
+  default:
+    llvm_unreachable("invalid composite type tag");
+
+  case llvm::dwarf::DW_TAG_array_type:
+  case llvm::dwarf::DW_TAG_enumeration_type:
+    // Array elements and most enumeration elements don't have back references,
+    // so they don't tend to be involved in uniquing cycles and there is some
+    // chance of merging them when linking together two modules.  Only make
+    // them distinct if they are ODR-uniqued.
+    if (FullName.empty())
+      break;
+
+  case llvm::dwarf::DW_TAG_structure_type:
+  case llvm::dwarf::DW_TAG_union_type:
+  case llvm::dwarf::DW_TAG_class_type:
+    // Immediatley resolve to a distinct node.
+    RealDecl =
+        llvm::MDNode::replaceWithDistinct(llvm::TempDICompositeType(RealDecl));
+    break;
+  }
 
   RegionMap[Ty->getDecl()].reset(RealDecl);
   TypeCache[QualType(Ty, 0).getAsOpaquePtr()].reset(RealDecl);
@@ -3238,9 +3265,14 @@ void CGDebugInfo::EmitDeclareOfBlockLiteralArgVariable(const CGBlockInfo &block,
 
     // If we have a null capture, this must be the C++ 'this' capture.
     if (!capture) {
-      const CXXMethodDecl *method =
-          cast<CXXMethodDecl>(blockDecl->getNonClosureContext());
-      QualType type = method->getThisType(C);
+      QualType type;
+      if (auto *Method =
+              cast_or_null<CXXMethodDecl>(blockDecl->getNonClosureContext()))
+        type = Method->getThisType(C);
+      else if (auto *RDecl = dyn_cast<CXXRecordDecl>(blockDecl->getParent()))
+        type = QualType(RDecl->getTypeForDecl(), 0);
+      else
+        llvm_unreachable("unexpected block declcontext");
 
       fields.push_back(createFieldType("this", type, 0, loc, AS_public,
                                        offsetInBits, tunit, tunit));

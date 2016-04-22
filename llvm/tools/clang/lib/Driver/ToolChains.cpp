@@ -422,6 +422,8 @@ void DarwinClang::AddLinkRuntimeLibArgs(const ArgList &Args,
                       /*AlwaysLink=*/true);
     AddLinkSanitizerLibArgs(Args, CmdArgs, "stats");
   }
+  if (Sanitize.needsEsanRt())
+    AddLinkSanitizerLibArgs(Args, CmdArgs, "esan");
 
   // Otherwise link libSystem, then the dynamic runtime library, and finally any
   // target specific static runtime library.
@@ -4127,11 +4129,14 @@ void Linux::AddCudaIncludeArgs(const ArgList &DriverArgs,
   if (DriverArgs.hasArg(options::OPT_nocudainc))
     return;
 
-  if (CudaInstallation.isValid()) {
-    addSystemInclude(DriverArgs, CC1Args, CudaInstallation.getIncludePath());
-    CC1Args.push_back("-include");
-    CC1Args.push_back("__clang_cuda_runtime_wrapper.h");
+  if (!CudaInstallation.isValid()) {
+    getDriver().Diag(diag::err_drv_no_cuda_installation);
+    return;
   }
+
+  addSystemInclude(DriverArgs, CC1Args, CudaInstallation.getIncludePath());
+  CC1Args.push_back("-include");
+  CC1Args.push_back("__clang_cuda_runtime_wrapper.h");
 }
 
 bool Linux::isPIEDefault() const { return getSanitizerArgs().requiresPIE(); }
@@ -4158,6 +4163,8 @@ SanitizerMask Linux::getSupportedSanitizers() const {
     Res |= SanitizerKind::Thread;
   if (IsX86_64 || IsMIPS64 || IsPowerPC64 || IsAArch64)
     Res |= SanitizerKind::Memory;
+  if (IsX86_64)
+    Res |= SanitizerKind::Efficiency;
   if (IsX86 || IsX86_64) {
     Res |= SanitizerKind::Function;
   }

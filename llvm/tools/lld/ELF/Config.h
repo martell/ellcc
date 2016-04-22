@@ -58,6 +58,7 @@ struct Configuration {
   bool Demangle = true;
   bool DisableVerify;
   bool DiscardAll;
+  bool DiscardValueNames;
   bool DiscardLocals;
   bool DiscardNone;
   bool EhFrameHdr;
@@ -94,6 +95,7 @@ struct Configuration {
   ELFKind EKind = ELFNoneKind;
   uint16_t EMachine = llvm::ELF::EM_NONE;
   uint64_t EntryAddr = -1;
+  unsigned LtoJobs;
   unsigned LtoO;
   unsigned Optimize;
 };

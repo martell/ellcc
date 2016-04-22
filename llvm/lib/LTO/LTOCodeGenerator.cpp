@@ -84,6 +84,7 @@ LTOCodeGenerator::LTOCodeGenerator(LLVMContext &Context)
     : Context(Context), MergedModule(new Module("ld-temp.o", Context)),
       TheLinker(new Linker(*MergedModule)) {
   Context.setDiscardValueNames(LTODiscardValueNames);
+  Context.enableDebugTypeODRUniquing();
   initializeLTOPasses();
 }
 
@@ -130,6 +131,9 @@ bool LTOCodeGenerator::addModule(LTOModule *Mod) {
   for (int i = 0, e = undefs.size(); i != e; ++i)
     AsmUndefinedRefs[undefs[i]] = 1;
 
+  // We've just changed the input, so let's make sure we verify it.
+  HasVerifiedInput = false;
+
   return !ret;
 }
 
@@ -145,6 +149,9 @@ void LTOCodeGenerator::setModule(std::unique_ptr<LTOModule> Mod) {
   const std::vector<const char*> &Undefs = Mod->getAsmUndefinedRefs();
   for (int I = 0, E = Undefs.size(); I != E; ++I)
     AsmUndefinedRefs[Undefs[I]] = 1;
+
+  // We've just changed the input, so let's make sure we verify it.
+  HasVerifiedInput = false;
 }
 
 void LTOCodeGenerator::setTargetOptions(TargetOptions Options) {
@@ -185,6 +192,9 @@ void LTOCodeGenerator::setOptLevel(unsigned Level) {
 bool LTOCodeGenerator::writeMergedModules(const char *Path) {
   if (!determineTarget())
     return false;
+
+  // We always run the verifier once on the merged module.
+  verifyMergedModuleOnce();
 
   // mark which symbols can not be internalized
   applyScopeRestrictions();
@@ -298,7 +308,7 @@ bool LTOCodeGenerator::determineTarget() {
   if (TargetMach)
     return true;
 
-  std::string TripleStr = MergedModule->getTargetTriple();
+  TripleStr = MergedModule->getTargetTriple();
   if (TripleStr.empty()) {
     TripleStr = sys::getDefaultTargetTriple();
     MergedModule->setTargetTriple(TripleStr);
@@ -307,8 +317,8 @@ bool LTOCodeGenerator::determineTarget() {
 
   // create target machine from info for merged modules
   std::string ErrMsg;
-  const Target *march = TargetRegistry::lookupTarget(TripleStr, ErrMsg);
-  if (!march) {
+  MArch = TargetRegistry::lookupTarget(TripleStr, ErrMsg);
+  if (!MArch) {
     emitError(ErrMsg);
     return false;
   }
@@ -328,10 +338,14 @@ bool LTOCodeGenerator::determineTarget() {
       MCpu = "cyclone";
   }
 
-  TargetMach.reset(march->createTargetMachine(TripleStr, MCpu, FeatureStr,
-                                              Options, RelocModel,
-                                              CodeModel::Default, CGOptLevel));
+  TargetMach = createTargetMachine();
   return true;
+}
+
+std::unique_ptr<TargetMachine> LTOCodeGenerator::createTargetMachine() {
+  return std::unique_ptr<TargetMachine>(
+      MArch->createTargetMachine(TripleStr, MCpu, FeatureStr, Options,
+                                 RelocModel, CodeModel::Default, CGOptLevel));
 }
 
 void LTOCodeGenerator::applyScopeRestrictions() {
@@ -408,6 +422,16 @@ void LTOCodeGenerator::restoreLinkageForExternals() {
                 externalize);
 }
 
+void LTOCodeGenerator::verifyMergedModuleOnce() {
+  // Only run on the first call.
+  if (HasVerifiedInput)
+    return;
+  HasVerifiedInput = true;
+
+  if (verifyModule(*MergedModule, &dbgs()))
+    report_fatal_error("Broken module found, compilation aborted!");
+}
+
 /// Optimize merged modules using various IPO passes
 bool LTOCodeGenerator::optimize(bool DisableVerify, bool DisableInline,
                                 bool DisableGVNLoadPRE,
@@ -417,8 +441,7 @@ bool LTOCodeGenerator::optimize(bool DisableVerify, bool DisableInline,
 
   // We always run the verifier once on the merged module, the `DisableVerify`
   // parameter only applies to subsequent verify.
-  if (verifyModule(*MergedModule, &dbgs()))
-    report_fatal_error("Broken module found, compilation aborted!");
+  verifyMergedModuleOnce();
 
   // Mark which symbols can not be internalized
   this->applyScopeRestrictions();
@@ -456,6 +479,10 @@ bool LTOCodeGenerator::compileOptimized(ArrayRef<raw_pwrite_stream *> Out) {
   if (!this->determineTarget())
     return false;
 
+  // We always run the verifier once on the merged module.  If it has already
+  // been called in optimize(), this call will return early.
+  verifyMergedModuleOnce();
+
   legacy::PassManager preCodeGenPasses;
 
   // If the bitcode files contain ARC code and were compiled with optimization,
@@ -472,9 +499,9 @@ bool LTOCodeGenerator::compileOptimized(ArrayRef<raw_pwrite_stream *> Out) {
   // parallelism level 1. This is achieved by having splitCodeGen return the
   // original module at parallelism level 1 which we then assign back to
   // MergedModule.
-  MergedModule = splitCodeGen(
-      std::move(MergedModule), Out, {}, MCpu, FeatureStr, Options, RelocModel,
-      CodeModel::Default, CGOptLevel, FileType, ShouldRestoreGlobalsLinkage);
+  MergedModule = splitCodeGen(std::move(MergedModule), Out, {},
+                              [&]() { return createTargetMachine(); }, FileType,
+                              ShouldRestoreGlobalsLinkage);
 
   // If statistics were requested, print them out after codegen.
   if (llvm::AreStatisticsEnabled())

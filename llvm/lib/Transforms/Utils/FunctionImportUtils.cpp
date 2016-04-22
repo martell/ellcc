@@ -132,7 +132,7 @@ FunctionImportGlobalProcessing::getLinkage(const GlobalValue *SGV) {
     // linker. The module linking caller needs to enforce this.
     assert(!doImportAsDefinition(SGV));
     // If imported as a declaration, it becomes external_weak.
-    return GlobalValue::ExternalWeakLinkage;
+    return SGV->getLinkage();
 
   case GlobalValue::WeakODRLinkage:
     // For weak_odr linkage, there is a guarantee that all copies will be
@@ -206,6 +206,26 @@ void FunctionImportGlobalProcessing::processGlobalForThinLTO(GlobalValue &GV) {
 }
 
 void FunctionImportGlobalProcessing::processGlobalsForThinLTO() {
+  // We cannot currently promote or rename anything that is in llvm.used,
+  // since any such value may have a use that won't see the new name.
+  // Specifically, any uses within inline assembly are not visible to the
+  // compiler. Prevent changing any such values on the exporting side,
+  // since we would already have guarded against an import from this module by
+  // suppressing its index generation. See comments on what is required
+  // in order to implement a finer grained solution in
+  // ModuleSummaryIndexBuilder::ModuleSummaryIndexBuilder().
+  SmallPtrSet<GlobalValue *, 8> Used;
+  collectUsedGlobalVariables(M, Used, /*CompilerUsed*/ false);
+  for (GlobalValue *V : Used) {
+    if (!V->hasLocalLinkage())
+      continue;
+    // We would have blocked importing from this module by suppressing index
+    // generation.
+    assert(!isPerformingImport() &&
+           "Should have blocked importing from module with local used");
+    return;
+  }
+
   for (GlobalVariable &GV : M.globals())
     processGlobalForThinLTO(GV);
   for (Function &SF : M)

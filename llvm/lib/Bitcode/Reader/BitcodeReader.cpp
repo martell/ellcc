@@ -107,7 +107,12 @@ class BitcodeReaderMetadataList {
   bool AnyFwdRefs;
   unsigned MinFwdRef;
   unsigned MaxFwdRef;
-  std::vector<TrackingMDRef> MetadataPtrs;
+
+  /// Array of metadata references.
+  ///
+  /// Don't use std::vector here.  Some versions of libc++ copy (instead of
+  /// move) on resize, and TrackingMDRef is very expensive to copy.
+  SmallVector<TrackingMDRef, 1> MetadataPtrs;
 
   LLVMContext &Context;
 public:
@@ -2188,16 +2193,40 @@ std::error_code BitcodeReader::parseMetadata(bool ModuleLevel) {
       if (Record.size() != 16)
         return error("Invalid record");
 
-      MetadataList.assignValue(
-          GET_OR_DISTINCT(DICompositeType, Record[0],
-                          (Context, Record[1], getMDString(Record[2]),
-                           getMDOrNull(Record[3]), Record[4],
-                           getMDOrNull(Record[5]), getMDOrNull(Record[6]),
-                           Record[7], Record[8], Record[9], Record[10],
-                           getMDOrNull(Record[11]), Record[12],
-                           getMDOrNull(Record[13]), getMDOrNull(Record[14]),
-                           getMDString(Record[15]))),
-          NextMetadataNo++);
+      // If we have a UUID and this is not a forward declaration, lookup the
+      // mapping.
+      bool IsDistinct = Record[0];
+      unsigned Tag = Record[1];
+      MDString *Name = getMDString(Record[2]);
+      Metadata *File = getMDOrNull(Record[3]);
+      unsigned Line = Record[4];
+      Metadata *Scope = getMDOrNull(Record[5]);
+      Metadata *BaseType = getMDOrNull(Record[6]);
+      uint64_t SizeInBits = Record[7];
+      uint64_t AlignInBits = Record[8];
+      uint64_t OffsetInBits = Record[9];
+      unsigned Flags = Record[10];
+      Metadata *Elements = getMDOrNull(Record[11]);
+      unsigned RuntimeLang = Record[12];
+      Metadata *VTableHolder = getMDOrNull(Record[13]);
+      Metadata *TemplateParams = getMDOrNull(Record[14]);
+      auto *Identifier = getMDString(Record[15]);
+      DICompositeType *CT = nullptr;
+      if (Identifier)
+        CT = DICompositeType::buildODRType(
+            Context, *Identifier, Tag, Name, File, Line, Scope, BaseType,
+            SizeInBits, AlignInBits, OffsetInBits, Flags, Elements, RuntimeLang,
+            VTableHolder, TemplateParams);
+
+      // Create a node if we didn't get a lazy ODR type.
+      if (!CT)
+        CT = GET_OR_DISTINCT(DICompositeType, IsDistinct,
+                             (Context, Tag, Name, File, Line, Scope, BaseType,
+                              SizeInBits, AlignInBits, OffsetInBits, Flags,
+                              Elements, RuntimeLang, VTableHolder,
+                              TemplateParams, Identifier));
+
+      MetadataList.assignValue(CT, NextMetadataNo++);
       break;
     }
     case bitc::METADATA_SUBROUTINE_TYPE: {
@@ -5865,6 +5894,35 @@ std::error_code ModuleSummaryIndexBitcodeReader::parseEntireSummary() {
       Info->setSummary(std::move(FS));
       break;
     }
+    // FS_ALIAS: [valueid, linkage, valueid]
+    // Aliases must be emitted (and parsed) after all FS_PERMODULE entries, as
+    // they expect all aliasee summaries to be available.
+    case bitc::FS_ALIAS: {
+      unsigned ValueID = Record[0];
+      uint64_t RawLinkage = Record[1];
+      unsigned AliaseeID = Record[2];
+      std::unique_ptr<AliasSummary> AS =
+          llvm::make_unique<AliasSummary>(getDecodedLinkage(RawLinkage));
+      // The module path string ref set in the summary must be owned by the
+      // index's module string table. Since we don't have a module path
+      // string table section in the per-module index, we create a single
+      // module path string table entry with an empty (0) ID to take
+      // ownership.
+      AS->setModulePath(
+          TheIndex->addModulePath(Buffer->getBufferIdentifier(), 0)->first());
+
+      GlobalValue::GUID AliaseeGUID = getGUIDFromValueId(AliaseeID);
+      auto *AliaseeInfo = TheIndex->getGlobalValueInfo(AliaseeGUID);
+      if (!AliaseeInfo->summary())
+        return error("Alias expects aliasee summary to be parsed");
+      AS->setAliasee(AliaseeInfo->summary());
+
+      GlobalValue::GUID GUID = getGUIDFromValueId(ValueID);
+      auto *Info = TheIndex->getGlobalValueInfo(GUID);
+      assert(!Info->summary() && "Expected a single summary per VST entry");
+      Info->setSummary(std::move(AS));
+      break;
+    }
     // FS_PERMODULE_GLOBALVAR_INIT_REFS: [valueid, linkage, n x valueid]
     case bitc::FS_PERMODULE_GLOBALVAR_INIT_REFS: {
       unsigned ValueID = Record[0];
@@ -5920,6 +5978,28 @@ std::error_code ModuleSummaryIndexBitcodeReader::parseEntireSummary() {
       auto *Info = getInfoFromSummaryOffset(CurRecordBit);
       assert(!Info->summary() && "Expected a single summary per VST entry");
       Info->setSummary(std::move(FS));
+      Combined = true;
+      break;
+    }
+    // FS_COMBINED_ALIAS: [modid, linkage, offset]
+    // Aliases must be emitted (and parsed) after all FS_COMBINED entries, as
+    // they expect all aliasee summaries to be available.
+    case bitc::FS_COMBINED_ALIAS: {
+      uint64_t ModuleId = Record[0];
+      uint64_t RawLinkage = Record[1];
+      uint64_t AliaseeSummaryOffset = Record[2];
+      std::unique_ptr<AliasSummary> AS =
+          llvm::make_unique<AliasSummary>(getDecodedLinkage(RawLinkage));
+      AS->setModulePath(ModuleIdMap[ModuleId]);
+
+      auto *AliaseeInfo = getInfoFromSummaryOffset(AliaseeSummaryOffset);
+      if (!AliaseeInfo->summary())
+        return error("Alias expects aliasee summary to be parsed");
+      AS->setAliasee(AliaseeInfo->summary());
+
+      auto *Info = getInfoFromSummaryOffset(CurRecordBit);
+      assert(!Info->summary() && "Expected a single summary per VST entry");
+      Info->setSummary(std::move(AS));
       Combined = true;
       break;
     }

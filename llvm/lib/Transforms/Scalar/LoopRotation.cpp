@@ -70,7 +70,7 @@ static void RewriteUsesOfClonedInstructions(BasicBlock *OrigHeader,
     if (OrigHeaderVal->use_empty())
       continue;
 
-    Value *OrigPreHeaderVal = ValueMap[OrigHeaderVal];
+    Value *OrigPreHeaderVal = ValueMap.lookup(OrigHeaderVal);
 
     // The value now exits in two versions: the initial value in the preheader
     // and the loop "next" value in the original header.
@@ -585,7 +585,7 @@ public:
   }
 
   bool runOnLoop(Loop *L, LPPassManager &LPM) override {
-    if (skipOptnoneFunction(L))
+    if (skipLoop(L))
       return false;
     Function &F = *L->getHeader()->getParent();
 

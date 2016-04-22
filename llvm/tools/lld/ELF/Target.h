@@ -25,7 +25,6 @@ class TargetInfo {
 public:
   uint64_t getVAStart() const;
   virtual bool isTlsInitialExecRel(uint32_t Type) const;
-  virtual bool pointsToLocalDynamicGotEntry(uint32_t Type) const;
   virtual bool isTlsLocalDynamicRel(uint32_t Type) const;
   virtual bool isTlsGlobalDynamicRel(uint32_t Type) const;
   virtual uint32_t getDynRel(uint32_t Type) const { return Type; }
@@ -56,12 +55,6 @@ public:
   // dynamic linker if isRelRelative returns true.
   virtual bool isRelRelative(uint32_t Type) const;
 
-  virtual bool needsDynRelative(uint32_t Type) const { return false; }
-  virtual bool refersToGotEntry(uint32_t Type) const;
-
-  enum PltNeed { Plt_No, Plt_Explicit, Plt_Implicit };
-  PltNeed needsPlt(uint32_t Type, const SymbolBody &S) const;
-
   virtual bool needsThunk(uint32_t Type, const InputFile &File,
                           const SymbolBody &S) const;
 
@@ -69,9 +62,6 @@ public:
 
   virtual RelExpr getRelExpr(uint32_t Type, const SymbolBody &S) const = 0;
   virtual void relocateOne(uint8_t *Loc, uint32_t Type, uint64_t Val) const = 0;
-  virtual bool isGotRelative(uint32_t Type) const;
-  bool canRelaxTls(uint32_t Type, const SymbolBody *S) const;
-  template <class ELFT>
   bool needsCopyRel(uint32_t Type, const SymbolBody &S) const;
   virtual ~TargetInfo();
 
@@ -108,7 +98,6 @@ public:
 
 private:
   virtual bool needsCopyRelImpl(uint32_t Type) const;
-  virtual bool needsPltImpl(uint32_t Type) const;
 };
 
 uint64_t getPPC64TocBase();

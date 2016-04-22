@@ -15,8 +15,6 @@
 #ifndef LLVM_IR_DIBUILDER_H
 #define LLVM_IR_DIBUILDER_H
 
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/TrackingMDRef.h"
 #include "llvm/IR/ValueHandle.h"
@@ -31,6 +29,7 @@ namespace llvm {
   class Constant;
   class LLVMContext;
   class StringRef;
+  template <typename T> class ArrayRef;
 
   class DIBuilder {
     Module &M;
@@ -52,7 +51,11 @@ namespace llvm {
     bool AllowUnresolvedNodes;
 
     /// Each subprogram's preserved local variables.
-    DenseMap<MDNode *, std::vector<TrackingMDNodeRef>> PreservedVariables;
+    ///
+    /// Do not use a std::vector.  Some versions of libc++ apparently copy
+    /// instead of move on grow operations, and TrackingMDRef is expensive to
+    /// copy.
+    DenseMap<MDNode *, SmallVector<TrackingMDNodeRef, 1>> PreservedVariables;
 
     DIBuilder(const DIBuilder &) = delete;
     void operator=(const DIBuilder &) = delete;
@@ -524,17 +527,6 @@ namespace llvm {
         bool isDefinition, unsigned ScopeLine, unsigned Flags = 0,
         bool isOptimized = false, DITemplateParameterArray TParams = nullptr,
         DISubprogram *Decl = nullptr);
-
-    /// FIXME: this is added for dragonegg. Once we update dragonegg
-    /// to call resolve function, this will be removed.
-    DISubprogram *createFunction(DIScopeRef Scope, StringRef Name,
-                                 StringRef LinkageName, DIFile *File,
-                                 unsigned LineNo, DISubroutineType *Ty,
-                                 bool isLocalToUnit, bool isDefinition,
-                                 unsigned ScopeLine, unsigned Flags = 0,
-                                 bool isOptimized = false,
-                                 DITemplateParameterArray TParams = nullptr,
-                                 DISubprogram *Decl = nullptr);
 
     /// Create a new descriptor for the specified C++ method.
     /// See comments in \a DISubprogram* for descriptions of these fields.

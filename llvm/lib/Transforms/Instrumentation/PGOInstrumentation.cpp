@@ -50,7 +50,6 @@
 
 #include "CFGMST.h"
 #include "IndirectCallSiteVisitor.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/Triple.h"
@@ -779,6 +778,9 @@ static void createIRLevelProfileFlagVariable(Module &M) {
 }
 
 bool PGOInstrumentationGen::runOnModule(Module &M) {
+  if (skipModule(M))
+    return false;
+
   createIRLevelProfileFlagVariable(M);
   for (auto &F : M) {
     if (F.isDeclaration())
@@ -802,6 +804,9 @@ static void setPGOCountOnFunc(PGOUseFunc &Func,
 }
 
 bool PGOInstrumentationUse::runOnModule(Module &M) {
+  if (skipModule(M))
+    return false;
+
   DEBUG(dbgs() << "Read in profile counters: ");
   auto &Ctx = M.getContext();
   // Read the counter array from file.

@@ -60,34 +60,8 @@ protected:
 
 public:
   enum MetadataKind {
-    MDTupleKind,
-    DILocationKind,
-    GenericDINodeKind,
-    DISubrangeKind,
-    DIEnumeratorKind,
-    DIBasicTypeKind,
-    DIDerivedTypeKind,
-    DICompositeTypeKind,
-    DISubroutineTypeKind,
-    DIFileKind,
-    DICompileUnitKind,
-    DISubprogramKind,
-    DILexicalBlockKind,
-    DILexicalBlockFileKind,
-    DINamespaceKind,
-    DIModuleKind,
-    DITemplateTypeParameterKind,
-    DITemplateValueParameterKind,
-    DIGlobalVariableKind,
-    DILocalVariableKind,
-    DIExpressionKind,
-    DIObjCPropertyKind,
-    DIImportedEntityKind,
-    ConstantAsMetadataKind,
-    LocalAsMetadataKind,
-    MDStringKind,
-    DIMacroKind,
-    DIMacroFileKind
+#define HANDLE_METADATA_LEAF(CLASS) CLASS##Kind,
+#include "llvm/IR/Metadata.def"
   };
 
 protected:
@@ -1295,6 +1269,8 @@ public:
   void setOperand(unsigned I, MDNode *New);
   StringRef getName() const;
   void print(raw_ostream &ROS, bool IsForDebug = false) const;
+  void print(raw_ostream &ROS, ModuleSlotTracker &MST,
+             bool IsForDebug = false) const;
   void dump() const;
 
   // ---------------------------------------------------------------------------

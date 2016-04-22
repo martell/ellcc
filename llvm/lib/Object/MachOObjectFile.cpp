@@ -46,12 +46,11 @@ malformedError(std::string FileName, std::string Msg,
                                         ECOverride);
 }
 
-
 // FIXME: Remove ECOverride once Error has been plumbed down to obj tool code.
 static Error
-malformedError(const MachOObjectFile &Obj, std::string Msg,
+malformedError(const MachOObjectFile &Obj, Twine Msg,
                object_error ECOverride = object_error::parse_failed) {
-  return malformedError(Obj.getFileName(), std::move(Msg), ECOverride);
+  return malformedError(Obj.getFileName(), Msg.str(), ECOverride);
 }
 
 // FIXME: Replace all uses of this function with getStructOrErr.
@@ -272,20 +271,20 @@ MachOObjectFile::MachOObjectFile(MemoryBufferRef Object, bool IsLittleEndian,
       DyldInfoLoadCmd(nullptr), UuidLoadCmd(nullptr),
       HasPageZeroSegment(false) {
   ErrorAsOutParameter ErrAsOutParam(Err);
-  uint64_t big_size;
+  uint64_t BigSize;
   if (is64Bit()) {
     parseHeader(this, Header64, Err);
-    big_size = sizeof(MachO::mach_header_64);
+    BigSize = sizeof(MachO::mach_header_64);
   } else {
     parseHeader(this, Header, Err);
-    big_size = sizeof(MachO::mach_header);
+    BigSize = sizeof(MachO::mach_header);
   }
   if (Err)
     return;
-  big_size += getHeader().sizeofcmds;
-  if (getData().data() + big_size > getData().end()) {
+  BigSize += getHeader().sizeofcmds;
+  if (getData().data() + BigSize > getData().end()) {
     Err = malformedError(getFileName(), "truncated or malformed object "
-                         "(load commands extends past the end of the file)");
+                         "(load commands extend past the end of the file)");
     return;
   }
 
@@ -390,9 +389,9 @@ MachOObjectFile::MachOObjectFile(MemoryBufferRef Object, bool IsLittleEndian,
                            "the symbol table)");
       return;
     }
-    uint64_t big_size = Dysymtab.ilocalsym;
-    big_size += Dysymtab.nlocalsym;
-    if (Dysymtab.nlocalsym != 0 && big_size > Symtab.nsyms) {
+    uint64_t BigSize = Dysymtab.ilocalsym;
+    BigSize += Dysymtab.nlocalsym;
+    if (Dysymtab.nlocalsym != 0 && BigSize > Symtab.nsyms) {
       Err = malformedError(*this,
                            "truncated or malformed object (ilocalsym plus "
                            "nlocalsym in LC_DYSYMTAB load command extends past "
@@ -406,9 +405,9 @@ MachOObjectFile::MachOObjectFile(MemoryBufferRef Object, bool IsLittleEndian,
                            "the symbol table)");
       return;
     }
-    big_size = Dysymtab.iextdefsym;
-    big_size += Dysymtab.nextdefsym;
-    if (Dysymtab.nextdefsym != 0 && big_size > Symtab.nsyms) {
+    BigSize = Dysymtab.iextdefsym;
+    BigSize += Dysymtab.nextdefsym;
+    if (Dysymtab.nextdefsym != 0 && BigSize > Symtab.nsyms) {
       Err = malformedError(*this,
                            "truncated or malformed object (iextdefsym plus "
                            "nextdefsym in LC_DYSYMTAB load command extends "
@@ -422,9 +421,9 @@ MachOObjectFile::MachOObjectFile(MemoryBufferRef Object, bool IsLittleEndian,
                            "the symbol table)");
       return;
     }
-    big_size = Dysymtab.iundefsym;
-    big_size += Dysymtab.nundefsym;
-    if (Dysymtab.nundefsym != 0 && big_size > Symtab.nsyms) {
+    BigSize = Dysymtab.iundefsym;
+    BigSize += Dysymtab.nundefsym;
+    if (Dysymtab.nundefsym != 0 && BigSize > Symtab.nsyms) {
       Err = malformedError(*this,
                            "truncated or malformed object (iundefsym plus "
                            "nundefsym in LC_DYSYMTAB load command extends past "
@@ -444,12 +443,16 @@ void MachOObjectFile::moveSymbolNext(DataRefImpl &Symb) const {
   Symb.p += SymbolTableEntrySize;
 }
 
-ErrorOr<StringRef> MachOObjectFile::getSymbolName(DataRefImpl Symb) const {
+Expected<StringRef> MachOObjectFile::getSymbolName(DataRefImpl Symb) const {
   StringRef StringTable = getStringTableData();
   MachO::nlist_base Entry = getSymbolTableEntryBase(this, Symb);
   const char *Start = &StringTable.data()[Entry.n_strx];
-  if (Start < getData().begin() || Start >= getData().end())
-    return object_error::parse_failed;
+  if (Start < getData().begin() || Start >= getData().end()) {
+    return malformedError(*this, Twine("truncated or malformed object (bad "
+                          "string index: ") + Twine(Entry.n_strx) + Twine(" for "
+                          "symbol at index ") + Twine(getSymbolIndex(Symb)) +
+                          Twine(")"));
+  }
   return StringRef(Start);
 }
 
@@ -1106,6 +1109,18 @@ basic_symbol_iterator MachOObjectFile::getSymbolByIndex(unsigned Index) const {
   DRI.p = reinterpret_cast<uintptr_t>(getPtr(this, Symtab.symoff));
   DRI.p += Index * SymbolTableEntrySize;
   return basic_symbol_iterator(SymbolRef(DRI, this));
+}
+
+uint64_t MachOObjectFile::getSymbolIndex(DataRefImpl Symb) const {
+  MachO::symtab_command Symtab = getSymtabLoadCommand();
+  if (!SymtabLoadCmd)
+    report_fatal_error("getSymbolIndex() called with no symbol table symbol");
+  unsigned SymbolTableEntrySize =
+    is64Bit() ? sizeof(MachO::nlist_64) : sizeof(MachO::nlist);
+  DataRefImpl DRIstart;
+  DRIstart.p = reinterpret_cast<uintptr_t>(getPtr(this, Symtab.symoff));
+  uint64_t Index = (Symb.p - DRIstart.p) / SymbolTableEntrySize;
+  return Index;
 }
 
 section_iterator MachOObjectFile::section_begin() const {

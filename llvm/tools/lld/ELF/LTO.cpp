@@ -16,6 +16,7 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/CodeGen/ParallelCG.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Linker/IRMover.h"
 #include "llvm/Support/StringSaver.h"
@@ -33,10 +34,13 @@ using namespace lld;
 using namespace lld::elf;
 
 // This is for use when debugging LTO.
-static void saveLtoObjectFile(StringRef Buffer) {
+static void saveLtoObjectFile(StringRef Buffer, unsigned I, bool Many) {
+  SmallString<128> Filename = Config->OutputFile;
+  if (Many)
+    Filename += utostr(I);
+  Filename += ".lto.o";
   std::error_code EC;
-  raw_fd_ostream OS(Config->OutputFile.str() + ".lto.o", EC,
-                    sys::fs::OpenFlags::F_None);
+  raw_fd_ostream OS(Filename, EC, sys::fs::OpenFlags::F_None);
   check(EC);
   OS << Buffer;
 }
@@ -70,6 +74,17 @@ static void runLTOPasses(Module &M, TargetMachine &TM) {
     saveBCFile(M, ".lto.opt.bc");
 }
 
+static bool shouldInternalize(const SmallPtrSet<GlobalValue *, 8> &Used,
+                              SymbolBody &B, GlobalValue *GV) {
+  if (B.isUsedInRegularObj())
+    return false;
+
+  if (Used.count(GV))
+    return false;
+
+  return !B.includeInDynsym();
+}
+
 void BitcodeCompiler::add(BitcodeFile &F) {
   std::unique_ptr<IRObjectFile> Obj =
       check(IRObjectFile::create(F.MB, Context));
@@ -78,6 +93,8 @@ void BitcodeCompiler::add(BitcodeFile &F) {
   ArrayRef<SymbolBody *> Bodies = F.getSymbols();
 
   Module &M = Obj->getModule();
+  if (M.getDataLayoutStr().empty())
+    fatal("invalid bitcode file: " + F.getName() + " has no datalayout");
 
   // If a symbol appears in @llvm.used, the linker is required
   // to treat the symbol as there is a reference to the symbol
@@ -115,13 +132,8 @@ void BitcodeCompiler::add(BitcodeFile &F) {
     // we imported the symbols and satisfied undefined references
     // to it. We can't just change linkage here because otherwise
     // the IRMover will just rename the symbol.
-    // Shared libraries need to be handled slightly differently.
-    // For now, let's be conservative and just never internalize
-    // symbols when creating a shared library.
-    if (!Config->Shared && !Config->ExportDynamic && !B->isUsedInRegularObj() &&
-        !B->MustBeInDynSym)
-      if (!Used.count(GV))
-        InternalizedSyms.insert(GV->getName());
+    if (shouldInternalize(Used, *B, GV))
+      InternalizedSyms.insert(GV->getName());
 
     Keep.push_back(GV);
   }
@@ -136,9 +148,36 @@ static void internalize(GlobalValue &GV) {
   GV.setLinkage(GlobalValue::InternalLinkage);
 }
 
+std::vector<std::unique_ptr<InputFile>> BitcodeCompiler::runSplitCodegen(
+    const std::function<std::unique_ptr<TargetMachine>()> &TMFactory) {
+  unsigned NumThreads = Config->LtoJobs;
+  OwningData.resize(NumThreads);
+
+  std::list<raw_svector_ostream> OSs;
+  std::vector<raw_pwrite_stream *> OSPtrs;
+  for (SmallString<0> &Obj : OwningData) {
+    OSs.emplace_back(Obj);
+    OSPtrs.push_back(&OSs.back());
+  }
+
+  splitCodeGen(std::move(Combined), OSPtrs, {}, TMFactory);
+
+  std::vector<std::unique_ptr<InputFile>> ObjFiles;
+  for (SmallString<0> &Obj : OwningData)
+    ObjFiles.push_back(createObjectFile(
+        MemoryBufferRef(Obj, "LLD-INTERNAL-combined-lto-object")));
+
+  if (Config->SaveTemps)
+    for (unsigned I = 0; I < NumThreads; ++I)
+      saveLtoObjectFile(OwningData[I], I, NumThreads > 1);
+
+  return ObjFiles;
+}
+
 // Merge all the bitcode files we have seen, codegen the result
 // and return the resulting ObjectFile.
-std::unique_ptr<InputFile> BitcodeCompiler::compile() {
+std::vector<std::unique_ptr<InputFile>> BitcodeCompiler::compile() {
+  TheTriple = Combined->getTargetTriple();
   for (const auto &Name : InternalizedSyms) {
     GlobalValue *GV = Combined->getNamedValue(Name.first());
     assert(GV);
@@ -148,29 +187,20 @@ std::unique_ptr<InputFile> BitcodeCompiler::compile() {
   if (Config->SaveTemps)
     saveBCFile(*Combined, ".lto.bc");
 
-  std::unique_ptr<TargetMachine> TM(getTargetMachine());
-  runLTOPasses(*Combined, *TM);
-
-  raw_svector_ostream OS(OwningData);
-  legacy::PassManager CodeGenPasses;
-  if (TM->addPassesToEmitFile(CodeGenPasses, OS,
-                              TargetMachine::CGFT_ObjectFile))
-    fatal("failed to setup codegen");
-  CodeGenPasses.run(*Combined);
-  MB = MemoryBuffer::getMemBuffer(OwningData,
-                                  "LLD-INTERNAL-combined-lto-object", false);
-  if (Config->SaveTemps)
-    saveLtoObjectFile(MB->getBuffer());
-  return createObjectFile(*MB);
-}
-
-TargetMachine *BitcodeCompiler::getTargetMachine() {
-  StringRef TripleStr = Combined->getTargetTriple();
   std::string Msg;
-  const Target *T = TargetRegistry::lookupTarget(TripleStr, Msg);
+  const Target *T = TargetRegistry::lookupTarget(TheTriple, Msg);
   if (!T)
     fatal("target not found: " + Msg);
   TargetOptions Options = InitTargetOptionsFromCodeGenFlags();
   Reloc::Model R = Config->Pic ? Reloc::PIC_ : Reloc::Static;
-  return T->createTargetMachine(TripleStr, "", "", Options, R);
+
+  auto CreateTargetMachine = [&]() {
+    return std::unique_ptr<TargetMachine>(
+        T->createTargetMachine(TheTriple, "", "", Options, R));
+  };
+
+  std::unique_ptr<TargetMachine> TM = CreateTargetMachine();
+  runLTOPasses(*Combined, *TM);
+
+  return runSplitCodegen(CreateTargetMachine);
 }

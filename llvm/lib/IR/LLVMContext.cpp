@@ -311,6 +311,21 @@ bool LLVMContext::shouldDiscardValueNames() const {
   return pImpl->DiscardValueNames;
 }
 
+bool LLVMContext::isODRUniquingDebugTypes() const { return !!pImpl->DITypeMap; }
+
+void LLVMContext::enableDebugTypeODRUniquing() {
+  if (pImpl->DITypeMap)
+    return;
+
+  pImpl->DITypeMap.emplace();
+}
+
+void LLVMContext::disableDebugTypeODRUniquing() { pImpl->DITypeMap.reset(); }
+
 void LLVMContext::setDiscardValueNames(bool Discard) {
   pImpl->DiscardValueNames = Discard;
+}
+
+OptBisect &LLVMContext::getOptBisect() {
+  return pImpl->getOptBisect();
 }

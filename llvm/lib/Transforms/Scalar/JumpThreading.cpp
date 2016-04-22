@@ -187,7 +187,7 @@ FunctionPass *llvm::createJumpThreadingPass(int Threshold) { return new JumpThre
 /// runOnFunction - Top level algorithm.
 ///
 bool JumpThreading::runOnFunction(Function &F) {
-  if (skipOptnoneFunction(F))
+  if (skipFunction(F))
     return false;
 
   DEBUG(dbgs() << "Jump threading on function '" << F.getName() << "'\n");
@@ -928,9 +928,11 @@ bool JumpThreading::ProcessImpliedCondition(BasicBlock *BB) {
     if (!PBI || !PBI->isConditional() || PBI->getSuccessor(0) != CurrentBB)
       return false;
 
-    if (isImpliedCondition(PBI->getCondition(), Cond, DL)) {
-      BI->getSuccessor(1)->removePredecessor(BB);
-      BranchInst::Create(BI->getSuccessor(0), BI);
+    Optional<bool> Implication =
+        isImpliedCondition(PBI->getCondition(), Cond, DL);
+    if (Implication) {
+      BI->getSuccessor(*Implication ? 1 : 0)->removePredecessor(BB);
+      BranchInst::Create(BI->getSuccessor(*Implication ? 0 : 1), BI);
       BI->eraseFromParent();
       return true;
     }

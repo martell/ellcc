@@ -102,6 +102,10 @@ static cl::opt<bool>
 VerifyEach("verify-each", cl::desc("Verify after each transform"));
 
 static cl::opt<bool>
+    DisableDITypeMap("disable-debug-info-type-map",
+                     cl::desc("Don't use a uniquing type map for debug info"));
+
+static cl::opt<bool>
 StripDebug("strip-debug",
            cl::desc("Strip debugger symbol info from translation unit"));
 
@@ -135,6 +139,10 @@ OptLevelOz("Oz",
 static cl::opt<bool>
 OptLevelO3("O3",
            cl::desc("Optimization level 3. Similar to clang -O3"));
+
+static cl::opt<unsigned>
+CodeGenOptLevel("codegen-opt-level",
+                cl::desc("Override optimization level for codegen hooks"));
 
 static cl::opt<std::string>
 TargetTriple("mtriple", cl::desc("Override target triple for module"));
@@ -272,6 +280,8 @@ static void AddStandardLinkPasses(legacy::PassManagerBase &PM) {
 //
 
 static CodeGenOpt::Level GetCodeGenOptLevel() {
+  if (CodeGenOptLevel.getNumOccurrences())
+    return static_cast<CodeGenOpt::Level>(unsigned(CodeGenOptLevel));
   if (OptLevelO1)
     return CodeGenOpt::Less;
   if (OptLevelO2)
@@ -359,6 +369,8 @@ int main(int argc, char **argv) {
   SMDiagnostic Err;
 
   Context.setDiscardValueNames(DiscardValueNames);
+  if (!DisableDITypeMap)
+    Context.enableDebugTypeODRUniquing();
 
   // Load the input module...
   std::unique_ptr<Module> M = parseIRFile(InputFilename, Err, Context);

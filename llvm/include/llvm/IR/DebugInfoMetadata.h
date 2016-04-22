@@ -14,7 +14,6 @@
 #ifndef LLVM_IR_DEBUGINFOMETADATA_H
 #define LLVM_IR_DEBUGINFOMETADATA_H
 
-#include "llvm/ADT/Optional.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/Support/Dwarf.h"
 
@@ -43,6 +42,8 @@
   DEFINE_MDNODE_GET_DISTINCT_TEMPORARY(CLASS, FORMAL, ARGS)
 
 namespace llvm {
+
+template <typename T> class Optional;
 
 /// \brief Pointer union between a subclass of DINode and MDString.
 ///
@@ -173,6 +174,9 @@ protected:
       return nullptr;
     return MDString::get(Context, S);
   }
+
+  /// Allow subclasses to mutate the tag.
+  void setTag(unsigned Tag) { SubclassData16 = Tag; }
 
 public:
   unsigned getTag() const { return SubclassData16; }
@@ -529,10 +533,27 @@ protected:
   DIType(LLVMContext &C, unsigned ID, StorageType Storage, unsigned Tag,
          unsigned Line, uint64_t SizeInBits, uint64_t AlignInBits,
          uint64_t OffsetInBits, unsigned Flags, ArrayRef<Metadata *> Ops)
-      : DIScope(C, ID, Storage, Tag, Ops), Line(Line), Flags(Flags),
-        SizeInBits(SizeInBits), AlignInBits(AlignInBits),
-        OffsetInBits(OffsetInBits) {}
+      : DIScope(C, ID, Storage, Tag, Ops) {
+    init(Line, SizeInBits, AlignInBits, OffsetInBits, Flags);
+  }
   ~DIType() = default;
+
+  void init(unsigned Line, uint64_t SizeInBits, uint64_t AlignInBits,
+            uint64_t OffsetInBits, unsigned Flags) {
+    this->Line = Line;
+    this->Flags = Flags;
+    this->SizeInBits = SizeInBits;
+    this->AlignInBits = AlignInBits;
+    this->OffsetInBits = OffsetInBits;
+  }
+
+  /// Change fields in place.
+  void mutate(unsigned Tag, unsigned Line, uint64_t SizeInBits,
+              uint64_t AlignInBits, uint64_t OffsetInBits, unsigned Flags) {
+    assert(isDistinct() && "Only distinct nodes can mutate");
+    setTag(Tag);
+    init(Line, SizeInBits, AlignInBits, OffsetInBits, Flags);
+  }
 
 public:
   TempDIType clone() const {
@@ -769,6 +790,16 @@ class DICompositeType : public DIType {
         RuntimeLang(RuntimeLang) {}
   ~DICompositeType() = default;
 
+  /// Change fields in place.
+  void mutate(unsigned Tag, unsigned Line, unsigned RuntimeLang,
+              uint64_t SizeInBits, uint64_t AlignInBits, uint64_t OffsetInBits,
+              unsigned Flags) {
+    assert(isDistinct() && "Only distinct nodes can mutate");
+    assert(getRawIdentifier() && "Only ODR-uniqued nodes should mutate");
+    this->RuntimeLang = RuntimeLang;
+    DIType::mutate(Tag, Line, SizeInBits, AlignInBits, OffsetInBits, Flags);
+  }
+
   static DICompositeType *
   getImpl(LLVMContext &Context, unsigned Tag, StringRef Name, Metadata *File,
           unsigned Line, DIScopeRef Scope, DITypeRef BaseType,
@@ -823,6 +854,40 @@ public:
                      VTableHolder, TemplateParams, Identifier))
 
   TempDICompositeType clone() const { return cloneImpl(); }
+
+  /// Get a DICompositeType with the given ODR identifier.
+  ///
+  /// If \a LLVMContext::isODRUniquingDebugTypes(), gets the mapped
+  /// DICompositeType for the given ODR \c Identifier.  If none exists, creates
+  /// a new node.
+  ///
+  /// Else, returns \c nullptr.
+  static DICompositeType *
+  getODRType(LLVMContext &Context, MDString &Identifier, unsigned Tag,
+             MDString *Name, Metadata *File, unsigned Line, Metadata *Scope,
+             Metadata *BaseType, uint64_t SizeInBits, uint64_t AlignInBits,
+             uint64_t OffsetInBits, unsigned Flags, Metadata *Elements,
+             unsigned RuntimeLang, Metadata *VTableHolder,
+             Metadata *TemplateParams);
+  static DICompositeType *getODRTypeIfExists(LLVMContext &Context,
+                                             MDString &Identifier);
+
+  /// Build a DICompositeType with the given ODR identifier.
+  ///
+  /// Looks up the mapped DICompositeType for the given ODR \c Identifier.  If
+  /// it doesn't exist, creates a new one.  If it does exist and \a
+  /// isForwardDecl(), and the new arguments would be a definition, mutates the
+  /// the type in place.  In either case, returns the type.
+  ///
+  /// If not \a LLVMContext::isODRUniquingDebugTypes(), this function returns
+  /// nullptr.
+  static DICompositeType *
+  buildODRType(LLVMContext &Context, MDString &Identifier, unsigned Tag,
+               MDString *Name, Metadata *File, unsigned Line, Metadata *Scope,
+               Metadata *BaseType, uint64_t SizeInBits, uint64_t AlignInBits,
+               uint64_t OffsetInBits, unsigned Flags, Metadata *Elements,
+               unsigned RuntimeLang, Metadata *VTableHolder,
+               Metadata *TemplateParams);
 
   DITypeRef getBaseType() const { return DITypeRef(getRawBaseType()); }
   DINodeArray getElements() const {
@@ -1097,6 +1162,12 @@ public:
   /// Return this if it's an \a DISubprogram; otherwise, look up the scope
   /// chain.
   DISubprogram *getSubprogram() const;
+
+  /// Get the first non DILexicalBlockFile scope of this scope.
+  ///
+  /// Return this if it's not a \a DILexicalBlockFIle; otherwise, look up the
+  /// scope chain.
+  DILocalScope *getNonLexicalBlockFileScope() const;
 
   static bool classof(const Metadata *MD) {
     return MD->getMetadataID() == DISubprogramKind ||
@@ -1868,13 +1939,16 @@ class DILocalVariable : public DIVariable {
   friend class LLVMContextImpl;
   friend class MDNode;
 
-  unsigned Arg;
-  unsigned Flags;
+  unsigned Arg : 16;
+  unsigned Flags : 16;
 
   DILocalVariable(LLVMContext &C, StorageType Storage, unsigned Line,
                   unsigned Arg, unsigned Flags, ArrayRef<Metadata *> Ops)
       : DIVariable(C, DILocalVariableKind, Storage, Line, Ops), Arg(Arg),
-        Flags(Flags) {}
+        Flags(Flags) {
+    assert(Flags < (1 << 16) && "DILocalVariable: Flags out of range");
+    assert(Arg < (1 << 16) && "DILocalVariable: Arg out of range");
+  }
   ~DILocalVariable() = default;
 
   static DILocalVariable *getImpl(LLVMContext &Context, DIScope *Scope,

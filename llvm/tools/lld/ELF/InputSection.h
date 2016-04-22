@@ -29,11 +29,15 @@ template <class ELFT> class OutputSectionBase;
 enum RelExpr {
   R_ABS,
   R_GOT,
+  R_GOTONLY_PC,
+  R_GOTREL,
+  R_GOT_OFF,
+  R_GOT_FROM_END,
   R_GOT_PAGE_PC,
   R_GOT_PC,
   R_MIPS_GOT,
   R_MIPS_GOT_LOCAL,
-  R_MIPS_GP0,
+  R_NEG_TLS,
   R_PAGE_PC,
   R_PC,
   R_PLT,
@@ -48,11 +52,18 @@ enum RelExpr {
   R_RELAX_TLS_LD_TO_LE,
   R_SIZE,
   R_THUNK,
+  R_TLS,
   R_TLSGD,
   R_TLSGD_PC,
   R_TLSLD,
   R_TLSLD_PC
 };
+
+inline bool refersToGotEntry(RelExpr Expr) {
+  return Expr == R_GOT || Expr == R_GOT_OFF || Expr == R_MIPS_GOT ||
+         Expr == R_MIPS_GOT_LOCAL || Expr == R_GOT_PAGE_PC ||
+         Expr == R_GOT_PC || Expr == R_GOT_FROM_END;
+}
 
 struct Relocation {
   RelExpr Expr;

@@ -12,8 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Config/config.h" // plugin-api.h requires HAVE_STDINT_H
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
@@ -21,6 +19,7 @@
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/CodeGen/ParallelCG.h"
+#include "llvm/Config/config.h" // plugin-api.h requires HAVE_STDINT_H
 #include "llvm/IR/AutoUpgrade.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -31,8 +30,8 @@
 #include "llvm/IR/Verifier.h"
 #include "llvm/Linker/IRMover.h"
 #include "llvm/MC/SubtargetFeature.h"
-#include "llvm/Object/ModuleSummaryIndexObjectFile.h"
 #include "llvm/Object/IRObjectFile.h"
+#include "llvm/Object/ModuleSummaryIndexObjectFile.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -45,7 +44,6 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/FunctionImportUtils.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
-#include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include <list>
 #include <plugin-api.h>
@@ -168,8 +166,10 @@ namespace options {
   static unsigned Parallelism = 0;
 #ifdef NDEBUG
   static bool DisableVerify = true;
+  static bool DiscardValueNames = true;
 #else
   static bool DisableVerify = false;
+  static bool DiscardValueNames = false;
 #endif
   static std::string obj_path;
   static std::string extra_library_path;
@@ -226,6 +226,10 @@ namespace options {
         message(LDPL_FATAL, "Invalid parallelism level: %s", opt_ + 5);
     } else if (opt == "disable-verify") {
       DisableVerify = true;
+    } else if (opt == "discard-value-names") {
+      DiscardValueNames = true;
+    } else if (opt == "no-discard-value-names") {
+      DiscardValueNames = false;
     } else {
       // Save this option to pass to the code generator.
       // ParseCommandLineOptions() expects argv[0] to be program name. Lazily
@@ -879,9 +883,16 @@ public:
   void runCodegenPasses();
 
 private:
+  const Target *TheTarget;
+  std::string TripleStr;
+  std::string FeaturesString;
+  TargetOptions Options;
+
   /// Create a target machine for the module. Must be unique for each
   /// module/task.
   void initTargetMachine();
+
+  std::unique_ptr<TargetMachine> createTargetMachine();
 
   /// Run all LTO passes on the module.
   void runLTOPasses();
@@ -917,20 +928,26 @@ static CodeGenOpt::Level getCGOptLevel() {
 }
 
 void CodeGen::initTargetMachine() {
-  const std::string &TripleStr = M->getTargetTriple();
+  TripleStr = M->getTargetTriple();
   Triple TheTriple(TripleStr);
 
   std::string ErrMsg;
-  const Target *TheTarget = TargetRegistry::lookupTarget(TripleStr, ErrMsg);
+  TheTarget = TargetRegistry::lookupTarget(TripleStr, ErrMsg);
   if (!TheTarget)
     message(LDPL_FATAL, "Target not found: %s", ErrMsg.c_str());
 
   SubtargetFeatures Features = getFeatures(TheTriple);
-  TargetOptions Options = InitTargetOptionsFromCodeGenFlags();
+  FeaturesString = Features.getString();
+  Options = InitTargetOptionsFromCodeGenFlags();
+
+  TM = createTargetMachine();
+}
+
+std::unique_ptr<TargetMachine> CodeGen::createTargetMachine() {
   CodeGenOpt::Level CGOptLevel = getCGOptLevel();
 
-  TM.reset(TheTarget->createTargetMachine(
-      TripleStr, options::mcpu, Features.getString(), Options, RelocationModel,
+  return std::unique_ptr<TargetMachine>(TheTarget->createTargetMachine(
+      TripleStr, options::mcpu, FeaturesString, Options, RelocationModel,
       CodeModel::Default, CGOptLevel));
 }
 
@@ -990,14 +1007,6 @@ void CodeGen::runCodegenPasses() {
 }
 
 void CodeGen::runSplitCodeGen(const SmallString<128> &BCFilename) {
-  const std::string &TripleStr = M->getTargetTriple();
-  Triple TheTriple(TripleStr);
-
-  SubtargetFeatures Features = getFeatures(TheTriple);
-
-  TargetOptions Options = InitTargetOptionsFromCodeGenFlags();
-  CodeGenOpt::Level CGOptLevel = getCGOptLevel();
-
   SmallString<128> Filename;
   // Note that openOutputFile will append a unique ID for each task
   if (!options::obj_path.empty())
@@ -1038,8 +1047,8 @@ void CodeGen::runSplitCodeGen(const SmallString<128> &BCFilename) {
     }
 
     // Run backend tasks.
-    splitCodeGen(std::move(M), OSPtrs, BCOSPtrs, options::mcpu, Features.getString(),
-                 Options, RelocationModel, CodeModel::Default, CGOptLevel);
+    splitCodeGen(std::move(M), OSPtrs, BCOSPtrs,
+                 [&]() { return createTargetMachine(); });
   }
 
   for (auto &Filename : Filenames)
@@ -1110,6 +1119,8 @@ static void thinLTOBackendTask(claimed_file &F, const void *View,
                                raw_fd_ostream *OS, unsigned TaskID) {
   // Need to use a separate context for each task
   LLVMContext Context;
+  Context.setDiscardValueNames(options::DiscardValueNames);
+  Context.enableDebugTypeODRUniquing(); // Merge debug info types.
   Context.setDiagnosticHandler(diagnosticHandlerForContext, nullptr, true);
 
   std::unique_ptr<llvm::Module> NewModule(new llvm::Module(File.name, Context));
@@ -1231,6 +1242,8 @@ static ld_plugin_status allSymbolsReadHook(raw_fd_ostream *ApiFile) {
   }
 
   LLVMContext Context;
+  Context.setDiscardValueNames(options::DiscardValueNames);
+  Context.enableDebugTypeODRUniquing(); // Merge debug info types.
   Context.setDiagnosticHandler(diagnosticHandlerForContext, nullptr, true);
 
   std::unique_ptr<Module> Combined(new Module("ld-temp.o", Context));

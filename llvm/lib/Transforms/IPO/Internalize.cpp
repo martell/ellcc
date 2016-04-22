@@ -31,7 +31,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
-#include "llvm/Transforms/Utils/ModuleUtils.h"
 #include <fstream>
 #include <set>
 using namespace llvm;
@@ -106,6 +105,9 @@ public:
   }
 
   bool runOnModule(Module &M) override {
+    if (skipModule(M))
+      return false;
+
     CallGraphWrapperPass *CGPass =
         getAnalysisIfAvailable<CallGraphWrapperPass>();
     CallGraph *CG = CGPass ? &CGPass->getCallGraph() : nullptr;

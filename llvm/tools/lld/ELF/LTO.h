@@ -21,6 +21,7 @@
 #ifndef LLD_ELF_LTO_H
 #define LLD_ELF_LTO_H
 
+#include "Config.h"
 #include "lld/Core/LLVM.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringSet.h"
@@ -37,20 +38,25 @@ class InputFile;
 class BitcodeCompiler {
 public:
   void add(BitcodeFile &F);
-  std::unique_ptr<InputFile> compile();
+  std::vector<std::unique_ptr<InputFile>> compile();
 
   BitcodeCompiler()
-      : Combined(new llvm::Module("ld-temp.o", Context)), Mover(*Combined) {}
+      : Combined(new llvm::Module("ld-temp.o", Context)), Mover(*Combined) {
+    Context.setDiscardValueNames(Config->DiscardValueNames);
+    Context.enableDebugTypeODRUniquing();
+  }
 
 private:
-  llvm::TargetMachine *getTargetMachine();
+  std::vector<std::unique_ptr<InputFile>> runSplitCodegen(
+      const std::function<std::unique_ptr<llvm::TargetMachine>()> &TMFactory);
 
   llvm::LLVMContext Context;
   std::unique_ptr<llvm::Module> Combined;
   llvm::IRMover Mover;
-  SmallString<0> OwningData;
+  std::vector<SmallString<0>> OwningData;
   std::unique_ptr<MemoryBuffer> MB;
   llvm::StringSet<> InternalizedSyms;
+  std::string TheTriple;
 };
 }
 }

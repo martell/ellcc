@@ -16,7 +16,6 @@
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/MC/MCContext.h"
@@ -42,6 +41,8 @@ using namespace llvm;
 namespace {
 
 struct OptionalOperand;
+
+enum RegisterKind { IS_UNKNOWN, IS_VGPR, IS_SGPR, IS_TTMP, IS_SPECIAL };
 
 class AMDGPUOperand : public MCParsedAsmOperand {
   enum KindTy {
@@ -455,6 +456,8 @@ private:
   bool ParseSectionDirectiveHSADataGlobalAgent();
   bool ParseSectionDirectiveHSADataGlobalProgram();
   bool ParseSectionDirectiveHSARodataReadonlyAgent();
+  bool AddNextRegisterToList(unsigned& Reg, unsigned& RegWidth, RegisterKind RegKind, unsigned Reg1, unsigned RegNum);
+  bool ParseAMDGPURegister(RegisterKind& RegKind, unsigned& Reg, unsigned& RegNum, unsigned& RegWidth);
 
 public:
   enum AMDGPUMatchResultTy {
@@ -574,8 +577,6 @@ struct OptionalOperand {
 
 }
 
-enum  RegisterKind { IS_VGPR, IS_SGPR, IS_TTMP };
-
 static int getRegClass(RegisterKind Is, unsigned RegWidth) {
   if (Is == IS_VGPR) {
     switch (RegWidth) {
@@ -606,14 +607,15 @@ static int getRegClass(RegisterKind Is, unsigned RegWidth) {
   return -1;
 }
 
-static unsigned getRegForName(StringRef RegName) {
-
+static unsigned getSpecialRegForName(StringRef RegName) {
   return StringSwitch<unsigned>(RegName)
     .Case("exec", AMDGPU::EXEC)
     .Case("vcc", AMDGPU::VCC)
     .Case("flat_scratch", AMDGPU::FLAT_SCR)
     .Case("m0", AMDGPU::M0)
     .Case("scc", AMDGPU::SCC)
+    .Case("tba", AMDGPU::TBA)
+    .Case("tma", AMDGPU::TMA)
     .Case("flat_scratch_lo", AMDGPU::FLAT_SCR_LO)
     .Case("flat_scratch_hi", AMDGPU::FLAT_SCR_HI)
     .Case("vcc_lo", AMDGPU::VCC_LO)
@@ -637,86 +639,136 @@ bool AMDGPUAsmParser::ParseRegister(unsigned &RegNo, SMLoc &StartLoc, SMLoc &End
   return false;
 }
 
+bool AMDGPUAsmParser::AddNextRegisterToList(unsigned& Reg, unsigned& RegWidth, RegisterKind RegKind, unsigned Reg1, unsigned RegNum)
+{
+  switch (RegKind) {
+  case IS_SPECIAL:
+    if (Reg == AMDGPU::EXEC_LO && Reg1 == AMDGPU::EXEC_HI) { Reg = AMDGPU::EXEC; RegWidth = 2; return true; }
+    if (Reg == AMDGPU::FLAT_SCR_LO && Reg1 == AMDGPU::FLAT_SCR_HI) { Reg = AMDGPU::FLAT_SCR; RegWidth = 2; return true; }
+    if (Reg == AMDGPU::VCC_LO && Reg1 == AMDGPU::VCC_HI) { Reg = AMDGPU::VCC; RegWidth = 2; return true; }
+    if (Reg == AMDGPU::TBA_LO && Reg1 == AMDGPU::TBA_HI) { Reg = AMDGPU::TBA; RegWidth = 2; return true; }
+    if (Reg == AMDGPU::TMA_LO && Reg1 == AMDGPU::TMA_HI) { Reg = AMDGPU::TMA; RegWidth = 2; return true; }
+    return false;
+  case IS_VGPR:
+  case IS_SGPR:
+  case IS_TTMP:
+    if (Reg1 != Reg + RegWidth) { return false; }
+    RegWidth++;
+    return true;
+  default:
+    assert(false); return false;
+  }
+}
+
+bool AMDGPUAsmParser::ParseAMDGPURegister(RegisterKind& RegKind, unsigned& Reg, unsigned& RegNum, unsigned& RegWidth)
+{
+  const MCRegisterInfo *TRI = getContext().getRegisterInfo();
+  if (getLexer().is(AsmToken::Identifier)) {
+    StringRef RegName = Parser.getTok().getString();
+    if ((Reg = getSpecialRegForName(RegName))) {
+      Parser.Lex();
+      RegKind = IS_SPECIAL;
+    } else {
+      unsigned RegNumIndex = 0;
+      if (RegName[0] == 'v') { RegNumIndex = 1; RegKind = IS_VGPR; }
+      else if (RegName[0] == 's') { RegNumIndex = 1; RegKind = IS_SGPR; }
+      else if (RegName.startswith("ttmp")) { RegNumIndex = strlen("ttmp"); RegKind = IS_TTMP; }
+      else { return false; }
+      if (RegName.size() > RegNumIndex) {
+        // Single 32-bit register: vXX.
+        if (RegName.substr(RegNumIndex).getAsInteger(10, RegNum)) { return false; }
+        Parser.Lex();
+        RegWidth = 1;
+      } else {
+        // Range of registers: v[XX:YY].
+        Parser.Lex();
+        int64_t RegLo, RegHi;
+        if (getLexer().isNot(AsmToken::LBrac)) { return false; }
+        Parser.Lex();
+
+        if (getParser().parseAbsoluteExpression(RegLo)) { return false; }
+
+        if (getLexer().isNot(AsmToken::Colon)) { return false; }
+        Parser.Lex();
+
+        if (getParser().parseAbsoluteExpression(RegHi)) { return false; }
+
+        if (getLexer().isNot(AsmToken::RBrac)) { return false; }
+        Parser.Lex();
+
+        RegNum = (unsigned) RegLo;
+        RegWidth = (RegHi - RegLo) + 1;
+      }
+    }
+  } else if (getLexer().is(AsmToken::LBrac)) {
+    // List of consecutive registers: [s0,s1,s2,s3]
+    Parser.Lex();
+    if (!ParseAMDGPURegister(RegKind, Reg, RegNum, RegWidth)) { return false; }
+    if (RegWidth != 1) { return false; }
+    RegisterKind RegKind1;
+    unsigned Reg1, RegNum1, RegWidth1;
+    do {
+      if (getLexer().is(AsmToken::Comma)) {
+        Parser.Lex();
+      } else if (getLexer().is(AsmToken::RBrac)) {
+        Parser.Lex();
+        break;
+      } else if (ParseAMDGPURegister(RegKind1, Reg1, RegNum1, RegWidth1)) {
+        if (RegWidth1 != 1) { return false; }
+        if (RegKind1 != RegKind) { return false; }
+        if (!AddNextRegisterToList(Reg, RegWidth, RegKind1, Reg1, RegNum1)) { return false; }
+      } else {
+        return false;
+      }
+    } while (true);
+  } else {
+    return false;
+  }
+  switch (RegKind) {
+  case IS_SPECIAL:
+    RegNum = 0;
+    RegWidth = 1;
+    break;
+  case IS_VGPR:
+  case IS_SGPR:
+  case IS_TTMP:
+  {
+    unsigned Size = 1;
+    if (RegKind == IS_SGPR || RegKind == IS_TTMP) {
+      // SGPR and TTMP registers must be are aligned. Max required alignment is 4 dwords.
+      Size = std::min(RegWidth, 4u);
+    }
+    if (RegNum % Size != 0) { return false; }
+    RegNum = RegNum / Size;
+    int RCID = getRegClass(RegKind, RegWidth);
+    if (RCID == -1) { return false; }
+    const MCRegisterClass RC = TRI->getRegClass(RCID);
+    if (RegNum >= RC.getNumRegs()) { return false; }
+    Reg = RC.getRegister(RegNum);
+    break;
+  }
+
+  default:
+    assert(false); return false;
+  }
+
+  if (!subtargetHasRegister(*TRI, Reg)) { return false; }
+  return true;
+}
+
 std::unique_ptr<AMDGPUOperand> AMDGPUAsmParser::parseRegister() {
-  const AsmToken &Tok = Parser.getTok();
+  const auto &Tok = Parser.getTok();
   SMLoc StartLoc = Tok.getLoc();
   SMLoc EndLoc = Tok.getEndLoc();
   const MCRegisterInfo *TRI = getContext().getRegisterInfo();
 
-  StringRef RegName = Tok.getString();
-  unsigned RegNo = getRegForName(RegName);
+  RegisterKind RegKind;
+  unsigned Reg, RegNum, RegWidth;
 
-  if (RegNo) {
-    Parser.Lex();
-    if (!subtargetHasRegister(*TRI, RegNo))
-      return nullptr;
-    return AMDGPUOperand::CreateReg(RegNo, StartLoc, EndLoc,
-                                    TRI, &getSTI(), false);
+  if (!ParseAMDGPURegister(RegKind, Reg, RegNum, RegWidth)) {
+    return nullptr;
   }
-
-  // Match vgprs, sgprs and ttmps
-  if (RegName[0] != 's' && RegName[0] != 'v' && !RegName.startswith("ttmp"))
-    return nullptr;
-
-  const RegisterKind Is = RegName[0] == 'v' ? IS_VGPR : RegName[0] == 's' ? IS_SGPR : IS_TTMP;
-  unsigned RegWidth;
-  unsigned RegIndexInClass;
-  if (RegName.size() > (Is == IS_TTMP ? strlen("ttmp") : 1) ) {
-    // We have a single 32-bit register. Syntax: vXX
-    RegWidth = 1;
-    if (RegName.substr(Is == IS_TTMP ? strlen("ttmp") : 1).getAsInteger(10, RegIndexInClass))
-      return nullptr;
-    Parser.Lex();
-  } else {
-    // We have a register greater than 32-bits (a range of single registers). Syntax: v[XX:YY]
-
-    int64_t RegLo, RegHi;
-    Parser.Lex();
-    if (getLexer().isNot(AsmToken::LBrac))
-      return nullptr;
-
-    Parser.Lex();
-    if (getParser().parseAbsoluteExpression(RegLo))
-      return nullptr;
-
-    if (getLexer().isNot(AsmToken::Colon))
-      return nullptr;
-
-    Parser.Lex();
-    if (getParser().parseAbsoluteExpression(RegHi))
-      return nullptr;
-
-    if (getLexer().isNot(AsmToken::RBrac))
-      return nullptr;
-
-    Parser.Lex();
-    RegWidth = (RegHi - RegLo) + 1;
-    if (Is == IS_VGPR) {
-      // VGPR registers aren't aligned.
-      RegIndexInClass = RegLo;
-    } else {
-      // SGPR and TTMP registers must be are aligned. Max required alignment is 4 dwords.
-      unsigned Size = std::min(RegWidth, 4u);
-      if (RegLo % Size != 0)
-        return nullptr;
-
-      RegIndexInClass = RegLo / Size;
-    }
-  }
-
-  int RCID = getRegClass(Is, RegWidth);
-  if (RCID == -1)
-    return nullptr;
-
-  const MCRegisterClass RC = TRI->getRegClass(RCID);
-  if (RegIndexInClass >= RC.getNumRegs())
-    return nullptr;
-
-  RegNo = RC.getRegister(RegIndexInClass);
-  if (!subtargetHasRegister(*TRI, RegNo))
-    return nullptr;
-
-  return AMDGPUOperand::CreateReg(RegNo, StartLoc, EndLoc,
+  return AMDGPUOperand::CreateReg(Reg, StartLoc, EndLoc,
                                   TRI, &getSTI(), false);
 }
 
@@ -1115,6 +1167,7 @@ AMDGPUAsmParser::parseOperand(OperandVector &Operands, StringRef Mnemonic) {
           AMDGPUOperand::CreateImm(F.bitcastToAPInt().getZExtValue(), S));
       return MatchOperand_Success;
     }
+    case AsmToken::LBrac:
     case AsmToken::Identifier: {
       if (auto R = parseRegister()) {
         unsigned Modifiers = 0;
@@ -1974,7 +2027,6 @@ bool AMDGPUOperand::isDPPCtrl() const {
 
 AMDGPUAsmParser::OperandMatchResultTy
 AMDGPUAsmParser::parseDPPCtrlOps(OperandVector &Operands) {
-  // ToDo: use same syntax as sp3 for dpp_ctrl
   SMLoc S = Parser.getTok().getLoc();
   StringRef Prefix;
   int64_t Int;
@@ -1990,6 +2042,19 @@ AMDGPUAsmParser::parseDPPCtrlOps(OperandVector &Operands) {
   } else if (Prefix == "row_half_mirror") {
     Int = 0x141;
   } else {
+    // Check to prevent parseDPPCtrlOps from eating invalid tokens
+    if (Prefix != "quad_perm"
+        && Prefix != "row_shl"
+        && Prefix != "row_shr"
+        && Prefix != "row_ror"
+        && Prefix != "wave_shl"
+        && Prefix != "wave_rol"
+        && Prefix != "wave_shr"
+        && Prefix != "wave_ror"
+        && Prefix != "row_bcast") {
+      return MatchOperand_NoMatch;
+    }
+
     Parser.Lex();
     if (getLexer().isNot(AsmToken::Colon))
       return MatchOperand_ParseFail;
@@ -2061,7 +2126,7 @@ AMDGPUAsmParser::parseDPPCtrlOps(OperandVector &Operands) {
           Int = 0x143;
         }
       } else {
-        return MatchOperand_NoMatch;
+        return MatchOperand_ParseFail;
       }
     }
   }

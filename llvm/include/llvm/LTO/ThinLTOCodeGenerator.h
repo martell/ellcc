@@ -17,7 +17,6 @@
 #define LLVM_LTO_THINLTOCODEGENERATOR_H
 
 #include "llvm-c/lto.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Support/CodeGen.h"
@@ -27,6 +26,7 @@
 #include <string>
 
 namespace llvm {
+class StringRef;
 class ModuleSummaryIndex;
 class LLVMContext;
 class TargetMachine;
@@ -110,8 +110,8 @@ public:
   struct CachingOptions {
     std::string Path;
     int PruningInterval = -1;               // seconds, -1 to disable pruning
-    unsigned int Expiration;                // seconds.
-    unsigned MaxPercentageOfAvailableSpace; // percentage.
+    unsigned int Expiration = 0;            // seconds.
+    unsigned MaxPercentageOfAvailableSpace = 0; // percentage.
   };
 
   /// Provide a path to a directory where to store the cached files for

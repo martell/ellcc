@@ -43,9 +43,7 @@
 #include "llvm/Transforms/Utils/CtorUtils.h"
 #include "llvm/Transforms/Utils/Evaluator.h"
 #include "llvm/Transforms/Utils/GlobalStatus.h"
-#include "llvm/Transforms/Utils/ModuleUtils.h"
 #include <algorithm>
-#include <deque>
 using namespace llvm;
 
 #define DEBUG_TYPE "globalopt"
@@ -2530,6 +2528,9 @@ bool GlobalOpt::OptimizeEmptyGlobalCXXDtors(Function *CXAAtExitFn) {
 }
 
 bool GlobalOpt::runOnModule(Module &M) {
+  if (skipModule(M))
+    return false;
+
   bool Changed = false;
 
   auto &DL = M.getDataLayout();

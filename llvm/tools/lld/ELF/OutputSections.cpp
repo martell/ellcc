@@ -166,19 +166,19 @@ template <class ELFT> bool GotSection<ELFT>::addTlsIndex() {
 
 template <class ELFT>
 typename GotSection<ELFT>::uintX_t
-GotSection<ELFT>::getMipsLocalPageAddr(uintX_t EntryValue) {
+GotSection<ELFT>::getMipsLocalPageOffset(uintX_t EntryValue) {
   // Initialize the entry by the %hi(EntryValue) expression
   // but without right-shifting.
-  return getMipsLocalEntryAddr((EntryValue + 0x8000) & ~0xffff);
+  return getMipsLocalEntryOffset((EntryValue + 0x8000) & ~0xffff);
 }
 
 template <class ELFT>
 typename GotSection<ELFT>::uintX_t
-GotSection<ELFT>::getMipsLocalEntryAddr(uintX_t EntryValue) {
+GotSection<ELFT>::getMipsLocalEntryOffset(uintX_t EntryValue) {
   size_t NewIndex = Target->GotHeaderEntriesNum + MipsLocalGotPos.size();
   auto P = MipsLocalGotPos.insert(std::make_pair(EntryValue, NewIndex));
   assert(!P.second || MipsLocalGotPos.size() <= MipsLocalEntries);
-  return this->getVA() + P.first->second * sizeof(uintX_t);
+  return P.first->second * sizeof(uintX_t) - MipsGPOffset;
 }
 
 template <class ELFT>
@@ -908,7 +908,7 @@ static void fill(uint8_t *Buf, size_t Size, ArrayRef<uint8_t> A) {
 }
 
 template <class ELFT> void OutputSection<ELFT>::writeTo(uint8_t *Buf) {
-  ArrayRef<uint8_t> Filler = Script->getFiller(this->Name);
+  ArrayRef<uint8_t> Filler = Script<ELFT>::X->getFiller(this->Name);
   if (!Filler.empty())
     fill(Buf, this->getSize(), Filler);
   if (Config->Threads) {

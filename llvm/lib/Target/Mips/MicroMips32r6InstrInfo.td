@@ -40,13 +40,29 @@ class BEQZC16_MMR6_ENC : BEQZC_BNEZC_FM_MM16R6<0x23>;
 class BNEZC16_MMR6_ENC : BEQZC_BNEZC_FM_MM16R6<0x2b>;
 class BITSWAP_MMR6_ENC : POOL32A_BITSWAP_FM_MMR6<0b101100>;
 class BRK_MMR6_ENC : BREAK_MMR6_ENC<"break">;
-class BEQZALC_MMR6_ENC : CMP_BRANCH_1R_RT_OFF16_FM_MMR6<0b011101>;
-class BNEZALC_MMR6_ENC : CMP_BRANCH_1R_RT_OFF16_FM_MMR6<0b011111>;
-class BGTZALC_MMR6_ENC : CMP_BRANCH_1R_RT_OFF16_FM_MMR6<0b111000>;
-class BLTZALC_MMR6_ENC : CMP_BRANCH_1R_BOTH_OFF16_FM_MMR6<0b111000>;
-class BGEZALC_MMR6_ENC : CMP_BRANCH_1R_BOTH_OFF16_FM_MMR6<0b110000>;
-class BLEZALC_MMR6_ENC : CMP_BRANCH_1R_RT_OFF16_FM_MMR6<0b110000>;
+class BGEC_MMR6_ENC : CMP_BRANCH_2R_OFF16_FM_MMR6<"bgec", 0b111001>;
+class BGEUC_MMR6_ENC : CMP_BRANCH_2R_OFF16_FM_MMR6<"bgeuc", 0b110000>,
+                       DecodeDisambiguates<"BlezGroupBranchMMR6">;
+class BLTC_MMR6_ENC : CMP_BRANCH_2R_OFF16_FM_MMR6<"bltc", 0b110001>;
+class BLTUC_MMR6_ENC : CMP_BRANCH_2R_OFF16_FM_MMR6<"bltuc", 0b111000>,
+                       DecodeDisambiguates<"BgtzGroupBranchMMR6">;
+class BEQC_MMR6_ENC : CMP_BRANCH_2R_OFF16_FM_MMR6<"beqc", 0b011101>;
+class BNEC_MMR6_ENC : CMP_BRANCH_2R_OFF16_FM_MMR6<"bnec", 0b011111>;
+class BEQZALC_MMR6_ENC : CMP_BRANCH_1R_RT_OFF16_FM_MMR6<"beqzalc", 0b011101>;
+class BNEZALC_MMR6_ENC : CMP_BRANCH_1R_RT_OFF16_FM_MMR6<"bnezalc", 0b011111>;
+class BGTZALC_MMR6_ENC : CMP_BRANCH_1R_RT_OFF16_FM_MMR6<"bgtzalc", 0b111000>,
+                         MMDecodeDisambiguatedBy<"BgtzGroupBranchMMR6">;
+class BLTZALC_MMR6_ENC : CMP_BRANCH_1R_BOTH_OFF16_FM_MMR6<"bltzalc", 0b111000>,
+                         MMDecodeDisambiguatedBy<"BgtzGroupBranchMMR6">;
+class BGEZALC_MMR6_ENC : CMP_BRANCH_1R_BOTH_OFF16_FM_MMR6<"bgezalc", 0b110000>,
+                         MMDecodeDisambiguatedBy<"BlezGroupBranchMMR6">;
+class BLEZALC_MMR6_ENC : CMP_BRANCH_1R_RT_OFF16_FM_MMR6<"blezalc", 0b110000>,
+                         MMDecodeDisambiguatedBy<"BlezGroupBranchMMR6">;
 class CACHE_MMR6_ENC : CACHE_PREF_FM_MMR6<0b001000, 0b0110>;
+class CFC1_MMR6_ENC : POOL32F_MFTC1_FM_MMR6<"cfc1", 0b01000000>;
+class CFC2_MMR6_ENC : POOL32A_MFTC2_FM_MMR6<"cfc2", 0b1100110100>;
+class CTC1_MMR6_ENC : POOL32F_MFTC1_FM_MMR6<"ctc1", 0b01100000>;
+class CTC2_MMR6_ENC : POOL32A_MFTC2_FM_MMR6<"ctc2", 0b1101110100>;
 class CLO_MMR6_ENC : POOL32A_2R_FM_MMR6<0b0100101100>;
 class CLZ_MMR6_ENC : SPECIAL_2R_FM_MMR6<0b010000>;
 class DIV_MMR6_ENC : ARITH_FM_MMR6<"div", 0x118>;
@@ -62,6 +78,8 @@ class JIALC_MMR6_ENC : JMP_IDX_COMPACT_FM<0b100000>;
 class JIC_MMR6_ENC   : JMP_IDX_COMPACT_FM<0b101000>;
 class JRC16_MMR6_ENC: POOL16C_JALRC_FM_MM16R6<0x3>;
 class JRCADDIUSP_MMR6_ENC : POOL16C_JRCADDIUSP_FM_MM16R6<0x13>;
+class LDC1_MMR6_ENC : LDWC1_SDWC1_FM_MMR6<"ldc1", 0b101111>;
+class LDC2_MMR6_ENC : POOL32B_LDWC2_SDWC2_FM_MMR6<"ldc2", 0b0010>;
 class LSA_MMR6_ENC : POOL32A_LSA_FM<0b001111>;
 class LWPC_MMR6_ENC  : PCREL19_FM_MMR6<0b01>;
 class LWM16_MMR6_ENC : POOL16C_LWM_SWM_FM_MM16R6<0x2>;
@@ -185,7 +203,7 @@ class TLBINVF_MMR6_ENC : POOL32A_TLBINV_FM_MMR6<"tlbinvf", 0x14d>;
 
 class CMP_CBR_RT_Z_MMR6_DESC_BASE<string instr_asm, DAGOperand opnd,
                                   RegisterOperand GPROpnd>
-    : BRANCH_DESC_BASE, MMR6Arch<instr_asm> {
+    : BRANCH_DESC_BASE {
   dag InOperandList = (ins GPROpnd:$rt, opnd:$offset);
   dag OutOperandList = (outs);
   string AsmString = !strconcat(instr_asm, "\t$rt, $offset");
@@ -221,6 +239,27 @@ class BNEZALC_MMR6_DESC : CMP_CBR_RT_Z_MMR6_DESC_BASE<"bnezalc", brtarget_mm,
                                                       GPR32Opnd> {
   list<Register> Defs = [RA];
 }
+
+class CMP_CBR_2R_MMR6_DESC_BASE<string instr_asm, DAGOperand opnd,
+                                RegisterOperand GPROpnd> : BRANCH_DESC_BASE {
+  dag InOperandList = (ins GPROpnd:$rs, GPROpnd:$rt, opnd:$offset);
+  dag OutOperandList = (outs);
+  string AsmString = !strconcat(instr_asm, "\t$rs, $rt, $offset");
+  list<Register> Defs = [AT];
+}
+
+class BGEC_MMR6_DESC : CMP_CBR_2R_MMR6_DESC_BASE<"bgec", brtarget_mm,
+                                                 GPR32Opnd>;
+class BGEUC_MMR6_DESC : CMP_CBR_2R_MMR6_DESC_BASE<"bgeuc", brtarget_mm,
+                                                 GPR32Opnd>;
+class BLTC_MMR6_DESC : CMP_CBR_2R_MMR6_DESC_BASE<"bltc", brtarget_mm,
+                                                 GPR32Opnd>;
+class BLTUC_MMR6_DESC : CMP_CBR_2R_MMR6_DESC_BASE<"bltuc", brtarget_mm,
+                                                 GPR32Opnd>;
+class BEQC_MMR6_DESC : CMP_CBR_2R_MMR6_DESC_BASE<"beqc", brtarget_mm,
+                                                 GPR32Opnd>;
+class BNEC_MMR6_DESC : CMP_CBR_2R_MMR6_DESC_BASE<"bnec", brtarget_mm,
+                                                 GPR32Opnd>;
 
 /// Floating Point Instructions
 class FADD_S_MMR6_ENC : POOL32F_ARITH_FM_MMR6<"add.s", 0, 0b00110000>;
@@ -664,6 +703,48 @@ class MFHC1_D64_MMR6_DESC : MFC1_MMR6_DESC_BASE<"mfhc1", GPR32Opnd, FGR64Opnd,
                                                 II_MFHC1>, HARDFLOAT, FGR_64;
 class MFHC2_MMR6_DESC : MFC2_MMR6_DESC_BASE<"mfhc2", GPR32Opnd, COP2Opnd>;
 
+class CFC1_MMR6_DESC : MTC1_MMR6_DESC_BASE<"cfc1", GPR32Opnd, CCROpnd, II_CFC1>,
+                       HARDFLOAT;
+class CFC2_MMR6_DESC : MTC2_MMR6_DESC_BASE<"cfc2", GPR32Opnd, COP2Opnd>;
+class CTC1_MMR6_DESC : MTC1_MMR6_DESC_BASE<"ctc1", CCROpnd, GPR32Opnd, II_CTC1>,
+                       HARDFLOAT;
+class CTC2_MMR6_DESC : MTC2_MMR6_DESC_BASE<"ctc2", COP2Opnd, GPR32Opnd>;
+
+class LDWC1_DESC_BASE<string opstr, RegisterOperand RC, InstrItinClass Itin,
+                      SDPatternOperator OpNode = null_frag> : MipsR6Inst,
+                      HARDFLOAT {
+  dag InOperandList = (ins mem_mm_16:$addr);
+  dag OutOperandList = (outs RC:$ft);
+  string AsmString = !strconcat(opstr, "\t$ft, $addr");
+  list<dag> Pattern = [(set RC:$ft, (OpNode addrDefault:$addr))];
+  Format f = FrmFI;
+  InstrItinClass Itinerary = Itin;
+  string BaseOpcode = opstr;
+  bit mayLoad = 1;
+  let DecoderMethod = "DecodeFMemMMR6";
+}
+class LDC1_D32_MMR6_DESC : LDWC1_DESC_BASE<
+                           "ldc1", AFGR64Opnd, II_LDC1, load>, FGR_32;
+class LDC1_D64_MMR6_DESC : LDWC1_DESC_BASE<
+                           "ldc1", FGR64Opnd, II_LDC1, load>, FGR_64;
+
+class COP2LD_MMR6_DESC_BASE<string opstr, RegisterOperand COPOpnd,
+                            InstrItinClass Itin,
+                            SDPatternOperator OpNode = null_frag> {
+  dag OutOperandList = (outs COPOpnd:$rt);
+  dag InOperandList = (ins mem_mm_11:$addr);
+  string AsmString = !strconcat(opstr, "\t$rt, $addr");
+  list<dag> Pattern = [(set COPOpnd:$rt, (OpNode addrDefault:$addr))];
+  Format f = FrmFI;
+  InstrItinClass Itinerary = Itin;
+  string BaseOpcode = opstr;
+  bit mayLoad = 1;
+  string DecoderMethod = "DecodeFMemCop2MMR6";
+}
+
+class LDC2_MMR6_DESC : COP2LD_MMR6_DESC_BASE<"ldc2", COP2Opnd, NoItinerary,
+                                             load>;
+
 /// Floating Point Instructions
 class FARITH_MMR6_DESC_BASE<string instr_asm, RegisterOperand RC,
                             InstrItinClass Itin, bit isComm,
@@ -1092,18 +1173,14 @@ def BITSWAP_MMR6 : R6MMR6Rel, BITSWAP_MMR6_ENC, BITSWAP_MMR6_DESC,
                    ISA_MICROMIPS32R6;
 def BEQZALC_MMR6 : R6MMR6Rel, BEQZALC_MMR6_ENC, BEQZALC_MMR6_DESC,
                    ISA_MICROMIPS32R6;
-def BGEZALC_MMR6 : R6MMR6Rel, BGEZALC_MMR6_ENC, BGEZALC_MMR6_DESC,
-                   ISA_MICROMIPS32R6;
-def BGTZALC_MMR6 : R6MMR6Rel, BGTZALC_MMR6_ENC, BGTZALC_MMR6_DESC,
-                   ISA_MICROMIPS32R6;
-def BLEZALC_MMR6 : R6MMR6Rel, BLEZALC_MMR6_ENC, BLEZALC_MMR6_DESC,
-                   ISA_MICROMIPS32R6;
-def BLTZALC_MMR6 : R6MMR6Rel, BLTZALC_MMR6_ENC, BLTZALC_MMR6_DESC,
-                   ISA_MICROMIPS32R6;
 def BNEZALC_MMR6 : R6MMR6Rel, BNEZALC_MMR6_ENC, BNEZALC_MMR6_DESC,
                    ISA_MICROMIPS32R6;
 def BREAK_MMR6 : StdMMR6Rel, BRK_MMR6_DESC, BRK_MMR6_ENC, ISA_MICROMIPS32R6;
 def CACHE_MMR6 : R6MMR6Rel, CACHE_MMR6_ENC, CACHE_MMR6_DESC, ISA_MICROMIPS32R6;
+def CFC1_MMR6 : StdMMR6Rel, CFC1_MMR6_DESC, CFC1_MMR6_ENC, ISA_MICROMIPS32R6;
+def CFC2_MMR6 : StdMMR6Rel, CFC2_MMR6_ENC, CFC2_MMR6_DESC, ISA_MICROMIPS32R6;
+def CTC1_MMR6 : StdMMR6Rel, CTC1_MMR6_DESC, CTC1_MMR6_ENC, ISA_MICROMIPS32R6;
+def CTC2_MMR6 : StdMMR6Rel, CTC2_MMR6_ENC, CTC2_MMR6_DESC, ISA_MICROMIPS32R6;
 def CLO_MMR6 : R6MMR6Rel, CLO_MMR6_ENC, CLO_MMR6_DESC, ISA_MICROMIPS32R6;
 def CLZ_MMR6 : R6MMR6Rel, CLZ_MMR6_ENC, CLZ_MMR6_DESC, ISA_MICROMIPS32R6;
 def DIV_MMR6 : R6MMR6Rel, DIV_MMR6_DESC, DIV_MMR6_ENC, ISA_MICROMIPS32R6;
@@ -1122,6 +1199,13 @@ def JIC_MMR6 : R6MMR6Rel, JIC_MMR6_ENC, JIC_MMR6_DESC, ISA_MICROMIPS32R6;
 def JRC16_MMR6 : R6MMR6Rel, JRC16_MMR6_DESC, JRC16_MMR6_ENC, ISA_MICROMIPS32R6;
 def JRCADDIUSP_MMR6 : R6MMR6Rel, JRCADDIUSP_MMR6_DESC, JRCADDIUSP_MMR6_ENC,
                       ISA_MICROMIPS32R6;
+def LDC1_D32_MMR6 : StdMMR6Rel, LDC1_D32_MMR6_DESC, LDC1_MMR6_ENC,
+                    ISA_MICROMIPS32R6;
+let DecoderNamespace = "MicroMips32r6FP64" in {
+  def LDC1_D64_MMR6 : LDC1_D64_MMR6_DESC, LDC1_MMR6_ENC,
+                      ISA_MICROMIPS32R6;
+}
+def LDC2_MMR6 : StdMMR6Rel, LDC2_MMR6_ENC, LDC2_MMR6_DESC, ISA_MICROMIPS32R6;
 def LSA_MMR6 : R6MMR6Rel, LSA_MMR6_ENC, LSA_MMR6_DESC, ISA_MICROMIPS32R6;
 def LWPC_MMR6 : R6MMR6Rel, LWPC_MMR6_ENC, LWPC_MMR6_DESC, ISA_MICROMIPS32R6;
 def LWM16_MMR6 : StdMMR6Rel, LWM16_MMR6_DESC, LWM16_MMR6_ENC, ISA_MICROMIPS32R6;
@@ -1366,6 +1450,21 @@ def TLBINV_MMR6 : StdMMR6Rel, TLBINV_MMR6_ENC, TLBINV_MMR6_DESC,
 def TLBINVF_MMR6 : StdMMR6Rel, TLBINVF_MMR6_ENC, TLBINVF_MMR6_DESC,
                    ISA_MICROMIPS32R6;
 }
+
+def BGEC_MMR6 : R6MMR6Rel, BGEC_MMR6_ENC, BGEC_MMR6_DESC, ISA_MICROMIPS32R6;
+def BGEUC_MMR6 : R6MMR6Rel, BGEUC_MMR6_ENC, BGEUC_MMR6_DESC, ISA_MICROMIPS32R6;
+def BLTC_MMR6 : R6MMR6Rel, BLTC_MMR6_ENC, BLTC_MMR6_DESC, ISA_MICROMIPS32R6;
+def BLTUC_MMR6 : R6MMR6Rel, BLTUC_MMR6_ENC, BLTUC_MMR6_DESC, ISA_MICROMIPS32R6;
+def BEQC_MMR6 : R6MMR6Rel, BEQC_MMR6_ENC, BEQC_MMR6_DESC, ISA_MICROMIPS32R6;
+def BNEC_MMR6 : R6MMR6Rel, BNEC_MMR6_ENC, BNEC_MMR6_DESC, ISA_MICROMIPS32R6;
+def BGEZALC_MMR6 : R6MMR6Rel, BGEZALC_MMR6_ENC, BGEZALC_MMR6_DESC,
+                   ISA_MICROMIPS32R6;
+def BGTZALC_MMR6 : R6MMR6Rel, BGTZALC_MMR6_ENC, BGTZALC_MMR6_DESC,
+                   ISA_MICROMIPS32R6;
+def BLEZALC_MMR6 : R6MMR6Rel, BLEZALC_MMR6_ENC, BLEZALC_MMR6_DESC,
+                   ISA_MICROMIPS32R6;
+def BLTZALC_MMR6 : R6MMR6Rel, BLTZALC_MMR6_ENC, BLTZALC_MMR6_DESC,
+                   ISA_MICROMIPS32R6;
 
 //===----------------------------------------------------------------------===//
 //

@@ -1,3 +1,4 @@
+#include "llvm/ADT/SmallString.h"
 #include "clang/Driver/CompilationInfo.h"
 #include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/Driver.h"

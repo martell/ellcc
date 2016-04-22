@@ -438,7 +438,7 @@ static StoreInst *combineStoreToNewValue(InstCombiner &IC, StoreInst &SI, Value 
   return NewStore;
 }
 
-/// \brief Combine loads to match the type of value their uses after looking
+/// \brief Combine loads to match the type of their uses' value after looking
 /// through intervening bitcasts.
 ///
 /// The core idea here is that if the result of a load is used in an operation,
@@ -640,7 +640,7 @@ static bool isObjectSizeLessThanOrEq(Value *V, uint64_t MaxSize,
     }
 
     if (GlobalAlias *GA = dyn_cast<GlobalAlias>(P)) {
-      if (!GA->isInterposable())
+      if (GA->isInterposable())
         return false;
       Worklist.push_back(GA->getAliasee());
       continue;
@@ -809,10 +809,6 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
       return &LI;
   }
 
-  // None of the following transforms are legal for volatile/atomic loads.
-  // FIXME: Some of it is okay for atomic loads; needs refactoring.
-  if (!LI.isSimple()) return nullptr;
-
   if (Instruction *Res = unpackLoadToAggregate(*this, LI))
     return Res;
 
@@ -839,6 +835,10 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
         LI, Builder->CreateBitOrPointerCast(AvailableVal, LI.getType(),
                                             LI.getName() + ".cast"));
   }
+
+  // None of the following transforms are legal for volatile/ordered atomic
+  // loads.  Most of them do apply for unordered atomics.
+  if (!LI.isUnordered()) return nullptr;
 
   // load(gep null, ...) -> unreachable
   if (GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(Op)) {
@@ -887,8 +887,11 @@ Instruction *InstCombiner::visitLoadInst(LoadInst &LI) {
                                            SI->getOperand(1)->getName()+".val");
         LoadInst *V2 = Builder->CreateLoad(SI->getOperand(2),
                                            SI->getOperand(2)->getName()+".val");
+        assert(LI.isUnordered() && "implied by above");
         V1->setAlignment(Align);
+        V1->setAtomic(LI.getOrdering(), LI.getSynchScope());
         V2->setAlignment(Align);
+        V2->setAtomic(LI.getOrdering(), LI.getSynchScope());
         return SelectInst::Create(SI->getCondition(), V1, V2);
       }
 
@@ -945,8 +948,8 @@ static bool combineStoreToValueType(InstCombiner &IC, StoreInst &SI) {
     return true;
   }
 
-  // FIXME: We should also canonicalize loads of vectors when their elements are
-  // cast to other types.
+  // FIXME: We should also canonicalize stores of vectors when their elements
+  // are cast to other types.
   return false;
 }
 

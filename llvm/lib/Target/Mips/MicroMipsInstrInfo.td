@@ -96,6 +96,14 @@ def mem_mm_9 : Operand<i32> {
   let OperandType = "OPERAND_MEMORY";
 }
 
+def mem_mm_11 : Operand<i32> {
+  let PrintMethod = "printMemOperand";
+  let MIOperandInfo = (ops ptr_rc, simm11);
+  let EncoderMethod = "getMemEncodingMMImm11";
+  let ParserMatchClass = MipsMemSimm11AsmOperand;
+  let OperandType = "OPERAND_MEMORY";
+}
+
 def mem_mm_12 : Operand<i32> {
   let PrintMethod = "printMemOperand";
   let MIOperandInfo = (ops ptr_rc, simm12);
@@ -1023,4 +1031,7 @@ def : MipsInstAlias<"tltu $rs, $rt",
                     (TLTU_MM GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
 def : MipsInstAlias<"tne $rs, $rt",
                     (TNE_MM GPR32Opnd:$rs, GPR32Opnd:$rt, 0), 1>;
+def : MipsInstAlias<"rotr $rt, $imm",
+                    (ROTR_MM GPR32Opnd:$rt, GPR32Opnd:$rt, uimm5:$imm), 0>;
+def : MipsInstAlias<"syscall", (SYSCALL_MM 0), 1>;
 }

@@ -25,6 +25,7 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/OptBisect.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
@@ -513,7 +514,7 @@ bool EarlyCSE::processNode(DomTreeNode *Node) {
 
   // If this node has a single predecessor which ends in a conditional branch,
   // we can infer the value of the branch condition given that we took this
-  // path.  We need the single predeccesor to ensure there's not another path
+  // path.  We need the single predecessor to ensure there's not another path
   // which reaches this block where the condition might hold a different
   // value.  Since we're adding this to the scoped hash table (like any other
   // def), it will have been popped if we encounter a future merge block.
@@ -819,6 +820,9 @@ bool EarlyCSE::run() {
 
 PreservedAnalyses EarlyCSEPass::run(Function &F,
                                     AnalysisManager<Function> &AM) {
+  if (skipPassForFunction(name(), F))
+    return PreservedAnalyses::all();
+
   auto &TLI = AM.getResult<TargetLibraryAnalysis>(F);
   auto &TTI = AM.getResult<TargetIRAnalysis>(F);
   auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
@@ -853,7 +857,7 @@ public:
   }
 
   bool runOnFunction(Function &F) override {
-    if (skipOptnoneFunction(F))
+    if (skipFunction(F))
       return false;
 
     auto &TLI = getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
