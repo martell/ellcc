@@ -55,7 +55,7 @@
     #define _LIBUNWIND_SUPPORT_DWARF_INDEX    0
   #endif
 
-#elif __ELLCC__
+#elif 0 && defined(__ELLCC__)
   #ifdef __cplusplus
     extern "C" {
   #endif
@@ -65,11 +65,7 @@
     }
   #endif
 
-  #define _LIBUNWIND_BUILD_ZERO_COST_APIS (__arm__ || __aarch64__ || __i386__ || \
-                                           __microblaze__ || __mips__ || \
-                                           __ppc__ || __x86_64__)
   #define _LIBUNWIND_BUILD_SJLJ_APIS      (0)
-  #define _LIBUNWIND_SUPPORT_FRAME_APIS   (__i386__ || __x86_64__)
   #define _LIBUNWIND_EXPORT               __attribute__((visibility("default")))
   #define _LIBUNWIND_HIDDEN               __attribute__((visibility("hidden")))
   #define _LIBUNWIND_LOG(msg, ...) fprintf(stderr, "libuwind: " msg, __VA_ARGS__)
